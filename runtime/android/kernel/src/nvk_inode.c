@@ -63,7 +63,8 @@ static int _neverc_krt_inode_times_contract(
 
 	if (!_neverc_krt_private_layout_allowed())
 		return -1;
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_INODE_TIMES);
 	if (!layout)
 		return -1;
 
@@ -204,7 +205,8 @@ static int _neverc_krt_path_inode_contract(
 
 	if (!_neverc_krt_private_layout_allowed())
 		return -1;
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_PATH_INODE);
 	if (!layout ||
 	    layout->path_size != sizeof(struct neverc_krt_path_storage) ||
 	    layout->path_dentry_size != sizeof(void *) ||
@@ -227,7 +229,8 @@ static int _neverc_krt_filename_name_contract(
 
 	if (!_neverc_krt_private_layout_allowed())
 		return -1;
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_FILENAME_NAME);
 	if (!layout || layout->filename_name_size != sizeof(const char *) ||
 	    !_neverc_krt_field_fits(layout->filename_size,
 				    layout->filename_name,

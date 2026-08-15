@@ -14,8 +14,11 @@ static struct neverc_krt_interpose _neverc_krt_cred_perm_interpose;
 static __always_inline u32 _neverc_krt_se_current_uid(void)
 {
 	const struct neverc_krt_gki_layout *layout =
-		_neverc_krt_get_gki_layout();
+		_neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
 	unsigned long task;
+
+	if (!layout)
+		return 0xFFFFFFFFU;
 	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
 
 	unsigned long cred_ptr;
@@ -491,4 +494,3 @@ void neverc_krt_selinux_remove_interposes(void)
 	if (_neverc_krt_avc_interpose.active)
 		neverc_krt_interpose_remove(&_neverc_krt_avc_interpose);
 }
-

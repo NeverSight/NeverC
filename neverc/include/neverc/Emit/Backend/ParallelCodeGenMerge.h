@@ -49,6 +49,11 @@ struct ParallelOptimizationHooks {
   std::function<void(llvm::PassBuilder &)> ConfigurePassBuilder;
   std::function<void(llvm::ModulePassManager &)> PreOpt;
   std::function<void(llvm::ModulePassManager &)> PostOpt;
+  /// Runs once after all optimized partitions have been reassembled into a
+  /// complete module and before that module is split again for code generation.
+  /// Use this for module-scope plugins and any pass that owns global symbols or
+  /// module-wide state.
+  std::function<void(llvm::ModulePassManager &)> WholeModulePostOpt;
 };
 
 /// The complete artifact set owned by one codegen request. A DWP is optional,

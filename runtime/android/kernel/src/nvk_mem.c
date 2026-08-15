@@ -259,8 +259,7 @@ static int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
 	default:
 		return -1;
 	}
-	page_mask = _neverc_krt_physical_page_mask_for_shift(
-		_neverc_krt_get_gki_layout(), page_shift);
+	page_mask = _neverc_krt_physical_page_mask_for_shift(page_shift);
 	if (!page_mask)
 		return -1;
 	levels = (va_bits - page_shift + bits_per_level - 1) /

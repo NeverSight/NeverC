@@ -66,19 +66,6 @@ static __always_inline int _neverc_krt_task_walk_field_fits(
 	return size && offset < size && width <= size - offset;
 }
 
-int _neverc_krt_layout_fields_proven(unsigned long required)
-{
-	int match = neverc_krt_check_kernel_match();
-
-	if (!required)
-		return 0;
-	/* Same-series COMPAT uses the selected family layout, matching the
-	 * historical activate contract.  A live certificate may overlay
-	 * offsets, but it is not required to use the API. */
-	return match == NEVERC_KRT_VER_EXACT ||
-	       match == NEVERC_KRT_VER_COMPAT;
-}
-
 int neverc_krt_task_layout_available(unsigned int required)
 {
 	const unsigned int supported =
@@ -100,7 +87,7 @@ int neverc_krt_task_layout_available(unsigned int required)
 		certificates |= NEVERC_KRT_LAYOUT_CERT_TASK_USER_STATE;
 	if (required & NEVERC_KRT_TASK_LAYOUT_THREADS)
 		certificates |= NEVERC_KRT_LAYOUT_CERT_TASK_THREADS;
-	if (!_neverc_krt_layout_fields_proven(certificates))
+	if (!_neverc_krt_get_proven_gki_layout(certificates))
 		return 0;
 	if (NEVERC_KRT_TASK_RUNTIME_INIT())
 		return 0;
@@ -143,10 +130,8 @@ int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data)
 
 	if (!callback)
 		return -EINVAL;
-	if (!_neverc_krt_layout_fields_proven(
-		    NEVERC_KRT_LAYOUT_CERT_TASK_WALK))
-		return -EOPNOTSUPP;
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_WALK);
 	if (!layout || !layout->task_tasks ||
 	    !_neverc_krt_task_walk_field_fits(
 		layout->task_size, layout->task_tasks,

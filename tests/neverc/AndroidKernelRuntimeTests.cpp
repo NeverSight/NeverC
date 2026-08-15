@@ -4,8 +4,8 @@
 #include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ObjectFile.h"
@@ -378,8 +378,8 @@ protected:
       return ::testing::AssertionFailure()
              << "release symbol map contains no renamed symbols";
 
-    auto ObjectOrErr = llvm::object::ObjectFile::createObjectFile(
-        llvm::MemoryBufferRef(
+    auto ObjectOrErr =
+        llvm::object::ObjectFile::createObjectFile(llvm::MemoryBufferRef(
             llvm::StringRef(ImageBytes.data(), ImageBytes.size()),
             "module.ko"));
     if (!ObjectOrErr)
@@ -423,25 +423,23 @@ TEST_F(AndroidKernelRuntimeTest,
   writeFile(Source, kAndroidKernelModule);
   const fs::path Output = tmpFile("nvk_release_symbol_map.ko");
 
-  const CmdResult Release =
-      linkKernelModule("", Source, Output,
-                       /*UseDeterministicXorStrKey=*/true,
-                       /*EmitDebugInfo=*/false,
-                       /*StripSymbols=*/true);
+  const CmdResult Release = linkKernelModule("", Source, Output,
+                                             /*UseDeterministicXorStrKey=*/true,
+                                             /*EmitDebugInfo=*/false,
+                                             /*StripSymbols=*/true);
   ASSERT_EQ(Release.exitCode, 0) << Release.err;
   const std::string ReleaseBytes = readFile(Output);
   EXPECT_TRUE(hasMatchingReleaseSymbolMap(Output, ReleaseBytes));
 #ifndef _WIN32
   llvm::sys::fs::file_status MapStatus;
-  ASSERT_FALSE(llvm::sys::fs::status(
-      Output.string() + ".symbols.json", MapStatus));
+  ASSERT_FALSE(
+      llvm::sys::fs::status(Output.string() + ".symbols.json", MapStatus));
   EXPECT_EQ(MapStatus.permissions() &
                 (llvm::sys::fs::group_all | llvm::sys::fs::others_all),
             llvm::sys::fs::no_perms);
 #endif
 
-  const fs::path PluginOutput =
-      tmpFile("nvk_release_symbol_map_plugin.ko");
+  const fs::path PluginOutput = tmpFile("nvk_release_symbol_map_plugin.ko");
   const CmdResult PluginRelease = linkKernelModule(
       NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN, Source, PluginOutput,
       /*UseDeterministicXorStrKey=*/true,
@@ -449,16 +447,14 @@ TEST_F(AndroidKernelRuntimeTest,
       /*StripSymbols=*/true);
   ASSERT_EQ(PluginRelease.exitCode, 0) << PluginRelease.err;
   const std::string PluginReleaseBytes = readFile(PluginOutput);
-  EXPECT_TRUE(
-      hasMatchingReleaseSymbolMap(PluginOutput, PluginReleaseBytes));
+  EXPECT_TRUE(hasMatchingReleaseSymbolMap(PluginOutput, PluginReleaseBytes));
 
   const CmdResult Debug = linkKernelModule("", Source, Output);
   ASSERT_EQ(Debug.exitCode, 0) << Debug.err;
   EXPECT_FALSE(fs::exists(Output.string() + ".symbols.json"));
 
-  const CmdResult PluginDebug =
-      linkKernelModule(NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN, Source,
-                       PluginOutput);
+  const CmdResult PluginDebug = linkKernelModule(
+      NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN, Source, PluginOutput);
   ASSERT_EQ(PluginDebug.exitCode, 0) << PluginDebug.err;
   EXPECT_FALSE(fs::exists(PluginOutput.string() + ".symbols.json"));
 }
@@ -468,18 +464,16 @@ TEST_F(AndroidKernelRuntimeTest,
   ScopedEnvironmentVariable BuildID(
       "NEVERC_ANDROID_KERNEL_BUILD_ID",
       "KERNEL=510 PROFILE=release NEVERC=/opt/neverc");
-  ScopedEnvironmentVariable BuildExtra(
-      "NEVERC_ANDROID_KERNEL_BUILD_EXTRA",
-      "-DTEST_FIRST=1 -DTEST_SECOND=two");
+  ScopedEnvironmentVariable BuildExtra("NEVERC_ANDROID_KERNEL_BUILD_EXTRA",
+                                       "-DTEST_FIRST=1 -DTEST_SECOND=two");
   const fs::path Source = tmpFile("nvk_release_build_state.c");
   const fs::path Output = tmpFile("nvk_release_build_state.ko");
   writeFile(Source, kAndroidKernelModule);
 
-  const CmdResult Release =
-      linkKernelModule("", Source, Output,
-                       /*UseDeterministicXorStrKey=*/true,
-                       /*EmitDebugInfo=*/false,
-                       /*StripSymbols=*/true);
+  const CmdResult Release = linkKernelModule("", Source, Output,
+                                             /*UseDeterministicXorStrKey=*/true,
+                                             /*EmitDebugInfo=*/false,
+                                             /*StripSymbols=*/true);
   ASSERT_EQ(Release.exitCode, 0) << Release.err;
   const std::string BuildState =
       "KERNEL=510 PROFILE=release NEVERC=/opt/neverc\n";
@@ -505,11 +499,10 @@ TEST_F(AndroidKernelRuntimeTest,
   writeFile(Source, kAndroidKernelModule);
   writeFile(ExtraState, "-DSTALE_EXTRA=1\n");
 
-  const CmdResult Release =
-      linkKernelModule("", Source, Output,
-                       /*UseDeterministicXorStrKey=*/true,
-                       /*EmitDebugInfo=*/false,
-                       /*StripSymbols=*/true);
+  const CmdResult Release = linkKernelModule("", Source, Output,
+                                             /*UseDeterministicXorStrKey=*/true,
+                                             /*EmitDebugInfo=*/false,
+                                             /*StripSymbols=*/true);
   ASSERT_EQ(Release.exitCode, 0) << Release.err;
   EXPECT_FALSE(fs::exists(ExtraState));
   const std::string BuildState =
@@ -532,11 +525,10 @@ TEST_F(AndroidKernelRuntimeTest,
   writeFile(Source, kAndroidKernelModule);
   writeFile(ExtraState, "-DSTALE_EXTRA=1\n");
 
-  const CmdResult Release =
-      linkKernelModule("", Source, Output,
-                       /*UseDeterministicXorStrKey=*/true,
-                       /*EmitDebugInfo=*/false,
-                       /*StripSymbols=*/true);
+  const CmdResult Release = linkKernelModule("", Source, Output,
+                                             /*UseDeterministicXorStrKey=*/true,
+                                             /*EmitDebugInfo=*/false,
+                                             /*StripSymbols=*/true);
   ASSERT_EQ(Release.exitCode, 0) << Release.err;
   EXPECT_FALSE(fs::exists(ExtraState));
   const std::string BuildState =
@@ -560,11 +552,10 @@ TEST_F(AndroidKernelRuntimeTest,
   writeFile(Sidecar, "preexisting-map");
   ASSERT_TRUE(fs::create_directory(tmp() / ".nvk-build-flags"));
 
-  const CmdResult Release =
-      linkKernelModule("", Source, Output,
-                       /*UseDeterministicXorStrKey=*/true,
-                       /*EmitDebugInfo=*/false,
-                       /*StripSymbols=*/true);
+  const CmdResult Release = linkKernelModule("", Source, Output,
+                                             /*UseDeterministicXorStrKey=*/true,
+                                             /*EmitDebugInfo=*/false,
+                                             /*StripSymbols=*/true);
   EXPECT_NE(Release.exitCode, 0) << Release.err;
   EXPECT_EQ(readFile(Output), "preexisting-main");
   EXPECT_EQ(readFile(Sidecar), "preexisting-map");
@@ -577,8 +568,7 @@ TEST_F(AndroidKernelRuntimeTest,
   writeFile(FirstSource,
             std::string(kAndroidKernelModule) +
                 "int duplicate_release_symbol(void) { return 1; }\n");
-  writeFile(SecondSource,
-            "int duplicate_release_symbol(void) { return 2; }\n");
+  writeFile(SecondSource, "int duplicate_release_symbol(void) { return 2; }\n");
   const fs::path Output = tmpFile("nvk_release_duplicate.ko");
   const fs::path Sidecar(Output.string() + ".symbols.json");
   writeFile(Output, "preexisting-main");
@@ -598,11 +588,10 @@ TEST_F(AndroidKernelRuntimeTest,
        ReleaseRejectsStreamOutputWithoutSymbolMapPath) {
   const fs::path Source = tmpFile("nvk_release_stdout.c");
   writeFile(Source, kAndroidKernelModule);
-  const CmdResult Release =
-      linkKernelModule("", Source, fs::path("-"),
-                       /*UseDeterministicXorStrKey=*/true,
-                       /*EmitDebugInfo=*/false,
-                       /*StripSymbols=*/true);
+  const CmdResult Release = linkKernelModule("", Source, fs::path("-"),
+                                             /*UseDeterministicXorStrKey=*/true,
+                                             /*EmitDebugInfo=*/false,
+                                             /*StripSymbols=*/true);
   EXPECT_NE(Release.exitCode, 0);
   EXPECT_NE(Release.err.find(
                 "Android kernel release symbol maps require a file output"),
@@ -786,8 +775,7 @@ TEST_F(AndroidKernelRuntimeTest,
   writeFile(Source, kAndroidKernelXorStrModule);
 
   const CmdResult Build = ncc({
-      std::string("-fplugin=") +
-          NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH_PLUGIN,
+      std::string("-fplugin=") + NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH_PLUGIN,
       "--target=aarch64-linux-android",
       "-fandroid-kernel-driver-mode",
       "-DNVK_KERNEL=510",
@@ -847,9 +835,8 @@ TEST_F(AndroidKernelRuntimeTest,
   // inside the LTO replacement hook itself.
   for (const char *Mode : {"", "-flto=full"}) {
     SCOPED_TRACE(Mode[0] ? Mode : "auto-lto");
-    const fs::path Output = tmpFile(
-        Mode[0] ? "nvk_late_runtime_full_lto.ko"
-                : "nvk_late_runtime_auto_lto.ko");
+    const fs::path Output = tmpFile(Mode[0] ? "nvk_late_runtime_full_lto.ko"
+                                            : "nvk_late_runtime_auto_lto.ko");
     std::vector<std::string> Args = {
         std::string("-fplugin=") +
             NEVERC_TEST_IR_PASS_LATE_NVK_REFERENCE_PLUGIN,
@@ -874,8 +861,7 @@ TEST_F(AndroidKernelRuntimeTest,
   // code-generation boundary.
   const fs::path NativeOutput = tmpFile("nvk_late_runtime_no_lto.ko");
   const CmdResult NativeBuild = ncc({
-      std::string("-fplugin=") +
-          NEVERC_TEST_IR_PASS_LATE_NVK_REFERENCE_PLUGIN,
+      std::string("-fplugin=") + NEVERC_TEST_IR_PASS_LATE_NVK_REFERENCE_PLUGIN,
       "--target=aarch64-linux-android",
       "-fandroid-kernel-driver-mode",
       "-DNVK_KERNEL=510",
@@ -923,8 +909,7 @@ TEST_F(AndroidKernelRuntimeTest,
 
   const std::string Bytes = readFile(Output);
   ASSERT_TRUE(isElfImage(Bytes));
-  EXPECT_TRUE(
-      hasNoUndefinedSymbolNamed(Bytes, "plugin_late_nvk_runtime"))
+  EXPECT_TRUE(hasNoUndefinedSymbolNamed(Bytes, "plugin_late_nvk_runtime"))
       << "the provider did not introduce the LTO-only runtime reference";
   EXPECT_TRUE(hasNoUndefinedSymbolNamed(Bytes, "neverc_krt_fmt_init"));
   EXPECT_TRUE(hasNoSymbolContaining(Bytes, "__neverc_xorstr_"));
@@ -932,11 +917,12 @@ TEST_F(AndroidKernelRuntimeTest,
   EXPECT_EQ(Bytes.find("vsscanf"), std::string::npos);
 }
 
-TEST_F(AndroidKernelRuntimeTest,
-       LateLTOIRPassRuntimeReferenceIsMaterialized) {
+TEST_F(AndroidKernelRuntimeTest, LateLTOIRPassRuntimeReferenceIsMaterialized) {
   const fs::path Source = testDir() / "Inputs/nvk_late_runtime_reference.c";
   const fs::path Output = tmpFile("nvk_late_ir_pass_runtime_full_lto.ko");
   ASSERT_TRUE(fs::exists(Source)) << Source;
+  ScopedEnvironmentVariable StrictPCG("NEVERC_PCG_STRICT", "1");
+  ScopedEnvironmentVariable DebugPCG("NEVERC_PCG_DEBUG", "1");
 
   // The pass is a no-op in the frontend task and introduces the NVK symbol
   // only from the CommonLTO pre-codegen callback.  This exercises the
@@ -952,6 +938,10 @@ TEST_F(AndroidKernelRuntimeTest,
       "-g",
       "-flto=full",
       "-fstring-encrypt-key=1",
+      "-mllvm",
+      "-neverc-pcg-min-funcs=2",
+      "-mllvm",
+      "-neverc-pcg-weight-floor=0",
       "-r",
       "-nostdlib",
       Source.string(),
@@ -962,8 +952,7 @@ TEST_F(AndroidKernelRuntimeTest,
 
   const std::string Bytes = readFile(Output);
   ASSERT_TRUE(isElfImage(Bytes));
-  EXPECT_TRUE(
-      hasNoUndefinedSymbolNamed(Bytes, "plugin_late_nvk_runtime"));
+  EXPECT_TRUE(hasNoUndefinedSymbolNamed(Bytes, "plugin_late_nvk_runtime"));
   EXPECT_TRUE(hasNoUndefinedSymbolNamed(Bytes, "neverc_krt_fmt_init"));
   EXPECT_TRUE(hasNoSymbolContaining(Bytes, "__neverc_xorstr_"));
   EXPECT_EQ(Bytes.find("vsnprintf"), std::string::npos);
@@ -1023,13 +1012,15 @@ TEST_F(AndroidKernelRuntimeTest, PublicSdkLayouts) {
 // binds no object phase has nothing to contribute to a built-in target's merge,
 // so the bridge must transparently defer the whole link to the native driver
 // and produce a byte-identical .ko.
-TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkDefersToNativeByteForByte) {
+TEST_F(AndroidKernelRuntimeTest,
+       RelocatablePluginLinkDefersToNativeByteForByte) {
   const fs::path Source = tmpFile("nvk_defer.c");
   writeFile(Source, kAndroidKernelModule);
   const fs::path NativeKo = tmpFile("nvk_defer_native.ko");
   const fs::path PluginKo = tmpFile("nvk_defer_plugin.ko");
 
-  const CmdResult Native = linkKernelModule(/*PluginPath=*/"", Source, NativeKo);
+  const CmdResult Native =
+      linkKernelModule(/*PluginPath=*/"", Source, NativeKo);
   ASSERT_EQ(Native.exitCode, 0) << Native.err;
   const CmdResult Plugin =
       linkKernelModule(NEVERC_TEST_EMPTY_PLUGIN, Source, PluginKo);
@@ -1051,13 +1042,15 @@ TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkDefersToNativeByteForByte)
 // match the native .ko byte-for-byte except for the single marker byte the
 // plugin deliberately writes -- proving the LTO-lowering and merge stages are
 // faithful to the native `-r` link.
-TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkLowersLTOBitcodeAndMerges) {
+TEST_F(AndroidKernelRuntimeTest,
+       RelocatablePluginLinkLowersLTOBitcodeAndMerges) {
   const fs::path Source = tmpFile("nvk_merge.c");
   writeFile(Source, kAndroidKernelModule);
   const fs::path NativeKo = tmpFile("nvk_merge_native.ko");
   const fs::path PluginKo = tmpFile("nvk_merge_plugin.ko");
 
-  const CmdResult Native = linkKernelModule(/*PluginPath=*/"", Source, NativeKo);
+  const CmdResult Native =
+      linkKernelModule(/*PluginPath=*/"", Source, NativeKo);
   ASSERT_EQ(Native.exitCode, 0) << Native.err;
   const CmdResult Plugin =
       linkKernelModule(NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN, Source, PluginKo);
@@ -1103,15 +1096,14 @@ TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkLowersLTOBitcodeAndMerges)
 TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkHandlesSeveralInputs) {
   const fs::path First = tmpFile("nvk_multi_a.c");
   const fs::path Second = tmpFile("nvk_multi_b.c");
-  writeFile(First,
-            "#include <nvkmod.h>\n"
-            "extern int nvk_multi_helper(int x);\n"
-            "static int m_init(void) { return nvk_multi_helper(1); }\n"
-            "static void m_exit(void) {}\n"
-            "module_init(m_init);\n"
-            "module_exit(m_exit);\n"
-            "MODULE_LICENSE(\"GPL v2\");\n"
-            "NEVERC_KRT_DEFINE_MODULE(\"neverc_test_multi\");\n");
+  writeFile(First, "#include <nvkmod.h>\n"
+                   "extern int nvk_multi_helper(int x);\n"
+                   "static int m_init(void) { return nvk_multi_helper(1); }\n"
+                   "static void m_exit(void) {}\n"
+                   "module_init(m_init);\n"
+                   "module_exit(m_exit);\n"
+                   "MODULE_LICENSE(\"GPL v2\");\n"
+                   "NEVERC_KRT_DEFINE_MODULE(\"neverc_test_multi\");\n");
   // A static helper of the same name in both units, so a lookup for the second
   // unit's copy hashes onto the entry recorded for the first one and compares
   // against it.
@@ -1124,8 +1116,8 @@ TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkHandlesSeveralInputs) {
   const CmdResult Native =
       linkKernelModule(/*PluginPath=*/"", Sources, NativeKo);
   ASSERT_EQ(Native.exitCode, 0) << Native.err;
-  const CmdResult Plugin = linkKernelModule(
-      NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN, Sources, PluginKo);
+  const CmdResult Plugin =
+      linkKernelModule(NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN, Sources, PluginKo);
   ASSERT_EQ(Plugin.exitCode, 0) << Plugin.err;
 
   const std::string NativeBytes = readFile(NativeKo);
@@ -1151,18 +1143,18 @@ TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkHandlesSeveralInputs) {
 TEST_F(AndroidKernelRuntimeTest, EmbeddedRuntimeLocalsCoalesceAcrossTUs) {
   const fs::path First = tmpFile("nvk_coalesce_a.c");
   const fs::path Second = tmpFile("nvk_coalesce_b.c");
-  writeFile(First,
-            "#include <nvkmod.h>\n"
-            "extern int nvk_coalesce_helper(void);\n"
-            "static int m_init(void) { return nvk_coalesce_helper(); }\n"
-            "static void m_exit(void) {}\n"
-            "module_init(m_init);\n"
-            "module_exit(m_exit);\n"
-            "MODULE_LICENSE(\"GPL v2\");\n"
-            "NEVERC_KRT_DEFINE_MODULE(\"neverc_test_coalesce\");\n");
-  writeFile(Second,
-            "#include <nvk_mem.h>\n"
-            "int nvk_coalesce_helper(void) { return neverc_krt_mem_init(); }\n");
+  writeFile(First, "#include <nvkmod.h>\n"
+                   "extern int nvk_coalesce_helper(void);\n"
+                   "static int m_init(void) { return nvk_coalesce_helper(); }\n"
+                   "static void m_exit(void) {}\n"
+                   "module_init(m_init);\n"
+                   "module_exit(m_exit);\n"
+                   "MODULE_LICENSE(\"GPL v2\");\n"
+                   "NEVERC_KRT_DEFINE_MODULE(\"neverc_test_coalesce\");\n");
+  writeFile(
+      Second,
+      "#include <nvk_mem.h>\n"
+      "int nvk_coalesce_helper(void) { return neverc_krt_mem_init(); }\n");
   const fs::path Output = tmpFile("nvk_coalesce.ko");
   ScopedEnvironmentVariable StrictPCG("NEVERC_PCG_STRICT", "1");
   ScopedEnvironmentVariable DebugPCG("NEVERC_PCG_DEBUG", "1");
@@ -1193,9 +1185,9 @@ TEST_F(AndroidKernelRuntimeTest, EmbeddedRuntimeLocalsCoalesceAcrossTUs) {
   ASSERT_TRUE(isElfImage(Bytes));
   EXPECT_TRUE(hasAndroidLoaderContract(Bytes, /*RequireEmptyTags=*/true));
 
-  auto ObjectOrErr = llvm::object::ObjectFile::createObjectFile(
-      llvm::MemoryBufferRef(llvm::StringRef(Bytes.data(), Bytes.size()),
-                            "module.ko"));
+  auto ObjectOrErr =
+      llvm::object::ObjectFile::createObjectFile(llvm::MemoryBufferRef(
+          llvm::StringRef(Bytes.data(), Bytes.size()), "module.ko"));
   ASSERT_TRUE(static_cast<bool>(ObjectOrErr))
       << renderError(ObjectOrErr.takeError());
 
@@ -1216,8 +1208,7 @@ TEST_F(AndroidKernelRuntimeTest, EmbeddedRuntimeLocalsCoalesceAcrossTUs) {
                  Dot != llvm::StringRef::npos) {
         const llvm::StringRef Suffix = Canonical.drop_front(Dot + 1);
         if (!Suffix.empty() &&
-            llvm::all_of(Suffix,
-                         [](char C) { return C >= '0' && C <= '9'; }))
+            llvm::all_of(Suffix, [](char C) { return C >= '0' && C <= '9'; }))
           Canonical = Canonical.take_front(Dot);
       }
       ++CanonicalNameCounts[Canonical];
@@ -1232,9 +1223,8 @@ TEST_F(AndroidKernelRuntimeTest, EmbeddedRuntimeLocalsCoalesceAcrossTUs) {
         << "duplicate nvk runtime private symbol: " << Entry.getKey().str();
   }
   for (const auto &Entry : CanonicalNameCounts) {
-    EXPECT_EQ(Entry.getValue(), 1U)
-        << "nvk runtime private was not coalesced: "
-        << FirstSpelling.lookup(Entry.getKey());
+    EXPECT_EQ(Entry.getValue(), 1U) << "nvk runtime private was not coalesced: "
+                                    << FirstSpelling.lookup(Entry.getKey());
   }
 }
 

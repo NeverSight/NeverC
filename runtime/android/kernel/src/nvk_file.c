@@ -179,8 +179,9 @@ int neverc_krt_file_stat(const char *path, struct neverc_krt_file_stat *out)
 	out->gid = 0;
 
 	if (_neverc_krt_vfs_fstatat || _neverc_krt_vfs_stat) {
-		layout = _neverc_krt_get_gki_layout();
-		if (!layout->kstat_size ||
+		layout = _neverc_krt_get_proven_gki_layout(
+			NEVERC_KRT_LAYOUT_CERT_FULL);
+		if (!layout || !layout->kstat_size ||
 		    layout->kstat_size > sizeof(kstat_buf))
 			return -1;
 
@@ -209,4 +210,3 @@ int neverc_krt_file_stat(const char *path, struct neverc_krt_file_stat *out)
 	neverc_krt_file_close(&f);
 	return 0;
 }
-

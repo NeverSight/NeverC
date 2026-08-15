@@ -43,6 +43,13 @@ const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
 	return &fixture_layout;
 }
 
+const struct neverc_krt_gki_layout *_neverc_krt_get_proven_gki_layout(
+	unsigned long required)
+{
+	return (fixture_certificates & required) == required ?
+		&fixture_layout : NULL;
+}
+
 unsigned long _neverc_krt_current_layout_certificates(void)
 {
 	return fixture_certificates;
@@ -91,7 +98,7 @@ int neverc_krt_test_thread_nofault_available(void)
 static void fixture_reset(void)
 {
 	fixture_match = NEVERC_KRT_VER_EXACT;
-	fixture_certificates = 0;
+	fixture_certificates = NEVERC_KRT_LAYOUT_CERT_TASK_THREADS;
 	fixture_reads = 0;
 	fixture_fail_read_on = 0;
 	fixture_rcu_depth = 0;
@@ -198,6 +205,12 @@ static void check_version_policy_allows_family_compat(void)
 	fixture_reset();
 	fixture_link_group(&signal, &task, 1);
 	fixture_match = NEVERC_KRT_VER_COMPAT;
+	fixture_certificates = 0;
+	assert(neverc_krt_task_thread_ids(
+		(struct task_struct *)&task, tids, 2) == -EOPNOTSUPP);
+	assert(tids[0] == 0 && tids[1] == 0);
+
+	fixture_certificates = NEVERC_KRT_LAYOUT_CERT_TASK_THREADS;
 	assert(neverc_krt_task_thread_ids(
 		(struct task_struct *)&task, tids, 2) == 1);
 	assert(tids[0] == 301 && tids[1] == 0);

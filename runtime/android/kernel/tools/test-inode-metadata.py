@@ -170,7 +170,22 @@ def check_profile_evidence():
         raise RuntimeError("unexpected filename/path/inode certificate count")
     certificate = None
     for candidate in certificates:
-        if "inode_times" not in candidate or "filename_name" not in candidate:
+        runtime_fields = candidate.get("runtime_layout", {}).get("fields")
+        if runtime_fields is not None:
+            required = {
+                "filename_size", "filename_name", "filename_name_size",
+                "path_size", "path_dentry", "path_dentry_size",
+                "dentry_size", "dentry_inode", "dentry_inode_size",
+                "inode_size", "inode_atime_sec", "inode_atime_sec_size",
+                "inode_mtime_sec", "inode_mtime_sec_size",
+                "inode_atime_nsec", "inode_atime_nsec_size",
+                "inode_mtime_nsec", "inode_mtime_nsec_size",
+            }
+            if not required.issubset(runtime_fields):
+                raise RuntimeError(
+                    "full layout certificate is missing filename/path/inode evidence"
+                )
+        elif "inode_times" not in candidate or "filename_name" not in candidate:
             raise RuntimeError(
                 "layout certificate is missing filename/path/inode evidence"
             )

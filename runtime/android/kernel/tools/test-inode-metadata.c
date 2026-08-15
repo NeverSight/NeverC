@@ -98,7 +98,10 @@ static struct neverc_krt_gki_layout fixture_layout = {
 	.inode_mtime_nsec_size = sizeof(((struct fixture_inode *)0)->mtime_nsec),
 };
 static int fixture_version_match = NEVERC_KRT_VER_EXACT;
-static unsigned long fixture_layout_certificates;
+static unsigned long fixture_layout_certificates =
+	NEVERC_KRT_LAYOUT_CERT_INODE_TIMES |
+	NEVERC_KRT_LAYOUT_CERT_PATH_INODE |
+	NEVERC_KRT_LAYOUT_CERT_FILENAME_NAME;
 static int fixture_have_igrab = 1;
 static int fixture_have_iput = 1;
 static int fixture_igrab_returns_null;
@@ -114,6 +117,13 @@ static int fixture_fail_write_on_again;
 const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
 {
 	return &fixture_layout;
+}
+
+const struct neverc_krt_gki_layout *_neverc_krt_get_proven_gki_layout(
+	unsigned long required)
+{
+	return (fixture_layout_certificates & required) == required ?
+		&fixture_layout : NULL;
 }
 
 int neverc_krt_check_kernel_match(void)
@@ -212,6 +222,16 @@ static void check_compatible_release_uses_family_layout(void)
 
 	fixture_version_match = NEVERC_KRT_VER_COMPAT;
 	fixture_layout_certificates = 0;
+	assert(neverc_krt_inode_set_times(&inode, 1, 2, 3, 4) != 0);
+	assert(neverc_krt_inode_get_times(&inode, &times) != 0);
+	assert(neverc_krt_path_inode_get(&path) == NULL);
+	assert(neverc_krt_path_storage_available() == 0);
+	assert(neverc_krt_filename_name_available() == 0);
+	assert(neverc_krt_filename_name(&filename) == NULL);
+
+	fixture_layout_certificates = NEVERC_KRT_LAYOUT_CERT_INODE_TIMES |
+		NEVERC_KRT_LAYOUT_CERT_PATH_INODE |
+		NEVERC_KRT_LAYOUT_CERT_FILENAME_NAME;
 	assert(neverc_krt_inode_set_times(&inode, 1, 2, 3, 4) == 0);
 	assert(neverc_krt_inode_get_times(&inode, &times) == 0);
 	assert(times.atime_sec == 1 && times.atime_nsec == 2);
@@ -232,7 +252,9 @@ static void check_compatible_release_uses_family_layout(void)
 	assert(neverc_krt_filename_name_available() == 0);
 	assert(neverc_krt_filename_name(&filename) == NULL);
 	fixture_version_match = NEVERC_KRT_VER_EXACT;
-	fixture_layout_certificates = 0;
+	fixture_layout_certificates = NEVERC_KRT_LAYOUT_CERT_INODE_TIMES |
+		NEVERC_KRT_LAYOUT_CERT_PATH_INODE |
+		NEVERC_KRT_LAYOUT_CERT_FILENAME_NAME;
 }
 
 static void check_filename_layout_and_read_fail_closed(void)

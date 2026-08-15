@@ -55,7 +55,8 @@ static int _neverc_krt_dir_contract(
 {
 	int match = neverc_krt_check_kernel_match();
 	const struct neverc_krt_gki_layout *layout =
-		_neverc_krt_get_gki_layout();
+		_neverc_krt_get_proven_gki_layout(
+			NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT);
 	const struct neverc_krt_runtime_caps *caps =
 		_neverc_krt_current_caps();
 	unsigned long actor_end;

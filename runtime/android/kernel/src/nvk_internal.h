@@ -193,14 +193,13 @@ struct neverc_krt_gki_layout {
 
 /*
  * Page-aligned physical address mask for the live TCR granule.
- * PA width comes from the active layout when present; the mask itself
- * is always computed from that width plus the live shift so a 4K
- * catalog cannot paint a 16K walk.
+ * Both PA width and granule come from live TCR_EL1 state.  This bootstrap
+ * primitive does not depend on profile selection or certificate state, so it
+ * remains usable while the kernel banner and family layout are bootstrapped.
  */
-unsigned long _neverc_krt_physical_page_mask_for_shift(
-	const struct neverc_krt_gki_layout *layout, int page_shift);
+unsigned long _neverc_krt_physical_page_mask_for_shift(int page_shift);
 
-/* Exact per-field evidence published only for a certified live identity. */
+/* Field groups a token-exact certificate may overlay on the family table. */
 #define NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT (1UL << 0)
 #define NEVERC_KRT_LAYOUT_CERT_INODE_TIMES (1UL << 1)
 #define NEVERC_KRT_LAYOUT_CERT_PATH_INODE  (1UL << 2)
@@ -211,6 +210,7 @@ unsigned long _neverc_krt_physical_page_mask_for_shift(
 #define NEVERC_KRT_LAYOUT_CERT_TASK_USER_STATE (1UL << 7)
 #define NEVERC_KRT_LAYOUT_CERT_USER_PTMAP (1UL << 8)
 #define NEVERC_KRT_LAYOUT_CERT_FILE_DENTRY (1UL << 9)
+#define NEVERC_KRT_LAYOUT_CERT_FULL (1UL << 10)
 #define NEVERC_KRT_LAYOUT_CERT_PRIVATE_FIELDS \
 	(NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT | \
 	 NEVERC_KRT_LAYOUT_CERT_INODE_TIMES | \
@@ -278,9 +278,9 @@ const struct neverc_krt_runtime_caps *_neverc_krt_current_caps(void);
 /* Active profile policy; -1 means bootstrap has not selected a profile. */
 int _neverc_krt_current_kcfi_mode(void);
 int _neverc_krt_current_profile_id(void);
-const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void);
-/* True on EXACT or same-series COMPAT.  `required` must be non-zero. */
-int _neverc_krt_layout_fields_proven(unsigned long required);
+/* Returns the activated EXACT/COMPAT family table plus any token overlay. */
+const struct neverc_krt_gki_layout *_neverc_krt_get_proven_gki_layout(
+	unsigned long required);
 unsigned long _neverc_krt_get_module_size(void);
 unsigned long _neverc_krt_get_kimage_vaddr_base(void);
 unsigned long _neverc_krt_get_file_dentry_off(void);

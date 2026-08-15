@@ -1,27 +1,6 @@
 {
   "certificates": [
     {
-      "dir_context": {
-        "member_sizes": {
-          "actor": 8,
-          "pos": 8
-        },
-        "members": {
-          "actor": 0,
-          "pos": 8
-        },
-        "size": 16
-      },
-      "filename_name": {
-        "member_sizes": {
-          "name": 8
-        },
-        "members": {
-          "name": 0
-        },
-        "size": 32
-      },
-      "filldir_abi": "returns_int",
       "identity": {
         "android_release": 12,
         "kmi_generation": 9,
@@ -30,40 +9,10 @@
         "linux_patch": 205,
         "page_shift": 12
       },
-      "inode_times": {
-        "member_sizes": {
-          "atime_nsec": 8,
-          "atime_sec": 8,
-          "mtime_nsec": 8,
-          "mtime_sec": 8
-        },
-        "members": {
-          "atime_nsec": 96,
-          "atime_sec": 88,
-          "mtime_nsec": 112,
-          "mtime_sec": 104
-        },
-        "size": 704
-      },
-      "path_inode": {
-        "dentry": {
-          "member_sizes": {
-            "d_inode": 8
-          },
-          "members": {
-            "d_inode": 48
-          },
-          "size": 208
-        },
-        "path": {
-          "member_sizes": {
-            "dentry": 8
-          },
-          "members": {
-            "dentry": 8
-          },
-          "size": 16
-        }
+      "manifest_evidence": {
+        "config_sha256": "3ce3565dde844c0e3d8920a4378ca10e3dad036ed7d656b4d91a3c119593cd86",
+        "layout_sha256": "fbb980d42959763b8638ef044bf4ef7852b77e0183c8b7726a5eb846c705b891",
+        "vmlinux_build_id": "e6d8eab7727734158d38eb6201f4a68d587a70b3"
       },
       "profile_id": 510,
       "raw_dwarf": {
@@ -71,203 +20,141 @@
         "size": 319082812
       },
       "release_token": "5.10.205-android12-9-dirty",
-      "task_ref": {
-        "task_struct": {
-          "member_sizes": {
-            "usage": 4
-          },
-          "members": {
-            "usage": 64
-          },
-          "size": 4736
-        }
-      },
-      "task_threads": {
-        "signal_struct": {
-          "member_sizes": {
-            "thread_head": 16
-          },
-          "members": {
-            "thread_head": 16
-          },
-          "size": 1120
+      "runtime_layout": {
+        "fields": {
+          "cred_cap_ambient": 72,
+          "cred_cap_bset": 64,
+          "cred_cap_effective": 56,
+          "cred_cap_inheritable": 40,
+          "cred_cap_permitted": 48,
+          "cred_egid": 24,
+          "cred_euid": 20,
+          "cred_fsgid": 32,
+          "cred_fsuid": 28,
+          "cred_gid": 8,
+          "cred_securebits": 36,
+          "cred_sgid": 16,
+          "cred_size": 168,
+          "cred_suid": 12,
+          "cred_uid": 4,
+          "dentry_inode": 48,
+          "dentry_inode_size": 8,
+          "dentry_name": 40,
+          "dentry_size": 208,
+          "dir_context_actor": 0,
+          "dir_context_actor_size": 8,
+          "dir_context_pos": 8,
+          "dir_context_pos_size": 8,
+          "dir_context_size": 16,
+          "file_dentry": 24,
+          "filename_name": 0,
+          "filename_name_size": 8,
+          "filename_size": 32,
+          "ftrace_ops_flags": 16,
+          "ftrace_ops_func": 0,
+          "inode_atime_nsec": 96,
+          "inode_atime_nsec_size": 8,
+          "inode_atime_sec": 88,
+          "inode_atime_sec_size": 8,
+          "inode_mtime_nsec": 112,
+          "inode_mtime_nsec_size": 8,
+          "inode_mtime_sec": 104,
+          "inode_mtime_sec_size": 8,
+          "inode_size": 704,
+          "kobject_name": 0,
+          "kstat_file_size": 56,
+          "kstat_gid": 52,
+          "kstat_mode": 4,
+          "kstat_size": 144,
+          "kstat_uid": 48,
+          "mm_count": 88,
+          "mm_count_size": 4,
+          "mm_mmap_lock": 112,
+          "mm_mmap_lock_size": 64,
+          "mm_page_table_lock": 108,
+          "mm_page_table_lock_size": 4,
+          "mm_pgd": 72,
+          "mm_pgd_size": 8,
+          "mm_size": 952,
+          "module_exit": 960,
+          "module_init": 400,
+          "module_kobj": 80,
+          "module_list": 8,
+          "module_name": 24,
+          "module_size": 1024,
+          "nsproxy_mnt_ns": 24,
+          "nsproxy_net_ns": 40,
+          "path_dentry": 8,
+          "path_dentry_size": 8,
+          "path_size": 16,
+          "pt_regs_pc": 256,
+          "pt_regs_pc_size": 8,
+          "pt_regs_pstate": 264,
+          "pt_regs_pstate_size": 8,
+          "pt_regs_regs": 0,
+          "pt_regs_regs_size": 248,
+          "pt_regs_size": 336,
+          "pt_regs_sp": 248,
+          "pt_regs_sp_size": 8,
+          "seccomp_mode": 0,
+          "signal_size": 1120,
+          "signal_thread_head": 16,
+          "skb_data": 216,
+          "sock_dport": 12,
+          "sock_num": 14,
+          "task_comm": 1936,
+          "task_comm_size": 16,
+          "task_cred": 1920,
+          "task_flags": 68,
+          "task_group_leader": 1544,
+          "task_mm": 1304,
+          "task_nsproxy": 2000,
+          "task_parent": 1504,
+          "task_pid": 1480,
+          "task_real_cred": 1912,
+          "task_real_parent": 1496,
+          "task_seccomp": 2120,
+          "task_signal": 2008,
+          "task_size": 4736,
+          "task_stack": 56,
+          "task_stack_refcount": 2768,
+          "task_stack_size": 16384,
+          "task_tasks": 1224,
+          "task_tgid": 1484,
+          "task_thread_node": 1672,
+          "task_thread_pid": 1584,
+          "task_usage": 64,
+          "user_contiguous_bit": 52,
+          "user_contiguous_entries": 16,
+          "user_descriptor_address_mask": 281474976706560,
+          "user_index_bits": 9,
+          "user_pa_bits": 48,
+          "user_page_shift": 12,
+          "user_pgd_shift": 30,
+          "user_pgtable_levels": 3,
+          "user_physical_address_mask": 281474976710655,
+          "user_physical_page_mask": 281474976706560,
+          "user_pmd_shift": 21,
+          "user_pte_shift": 12,
+          "user_tlbi_all_asid": 1,
+          "user_va_bits": 39,
+          "vma_end": 8,
+          "vma_end_size": 8,
+          "vma_file": 160,
+          "vma_flags": 80,
+          "vma_mm": 64,
+          "vma_page_prot": 72,
+          "vma_pgoff": 152,
+          "vma_size": 232,
+          "vma_start": 0,
+          "vma_start_size": 8,
+          "vmap_va_end": 8,
+          "vmap_va_start": 0
         },
-        "task_struct": {
-          "member_sizes": {
-            "pid": 4,
-            "signal": 8,
-            "thread_node": 16,
-            "thread_pid": 8
-          },
-          "members": {
-            "pid": 1480,
-            "signal": 2008,
-            "thread_node": 1672,
-            "thread_pid": 1584
-          },
-          "size": 4736
-        }
-      },
-      "task_user_state": {
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264
-          },
-          "size": 336
-        },
-        "task_struct": {
-          "member_sizes": {
-            "flags": 4,
-            "stack": 8,
-            "stack_refcount": 4
-          },
-          "members": {
-            "flags": 68,
-            "stack": 56,
-            "stack_refcount": 2768
-          },
-          "size": 4736
-        }
-      },
-      "task_walk": {
-        "cred": {
-          "member_sizes": {
-            "egid": 4,
-            "euid": 4,
-            "fsgid": 4,
-            "fsuid": 4,
-            "gid": 4,
-            "sgid": 4,
-            "suid": 4,
-            "uid": 4
-          },
-          "members": {
-            "egid": 24,
-            "euid": 20,
-            "fsgid": 32,
-            "fsuid": 28,
-            "gid": 8,
-            "sgid": 16,
-            "suid": 12,
-            "uid": 4
-          },
-          "size": 168
-        },
-        "task_struct": {
-          "member_sizes": {
-            "comm": 16,
-            "group_leader": 8,
-            "mm": 8,
-            "parent": 8,
-            "real_cred": 8,
-            "real_parent": 8,
-            "tasks": 16
-          },
-          "members": {
-            "comm": 1936,
-            "group_leader": 1544,
-            "mm": 1304,
-            "parent": 1504,
-            "real_cred": 1912,
-            "real_parent": 1496,
-            "tasks": 1224
-          },
-          "size": 4736
-        }
-      },
-      "user_ptmap": {
-        "geometry": {
-          "contiguous_bit": 52,
-          "contiguous_entries": 16,
-          "descriptor_address_mask": 281474976706560,
-          "index_bits": 9,
-          "pa_bits": 48,
-          "page_shift": 12,
-          "pgd_shift": 30,
-          "pgtable_levels": 3,
-          "physical_address_mask": 281474976710655,
-          "physical_page_mask": 281474976706560,
-          "pmd_shift": 21,
-          "pte_shift": 12,
-          "tlbi_all_asid": 1,
-          "va_bits": 39
-        },
-        "mm_struct": {
-          "member_sizes": {
-            "mm_count": 4,
-            "mmap_lock": 64,
-            "page_table_lock": 4,
-            "pgd": 8
-          },
-          "members": {
-            "mm_count": 88,
-            "mmap_lock": 112,
-            "page_table_lock": 108,
-            "pgd": 72
-          },
-          "size": 952
-        },
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8,
-            "regs": 248,
-            "sp": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264,
-            "regs": 0,
-            "sp": 248
-          },
-          "size": 336
-        },
-        "vm_area_struct": {
-          "member_sizes": {
-            "vm_end": 8,
-            "vm_flags": 8,
-            "vm_mm": 8,
-            "vm_pgoff": 8,
-            "vm_start": 8
-          },
-          "members": {
-            "vm_end": 8,
-            "vm_flags": 80,
-            "vm_mm": 64,
-            "vm_pgoff": 152,
-            "vm_start": 0
-          },
-          "size": 232
-        }
+        "schema": 1
       }
     },
     {
-      "dir_context": {
-        "member_sizes": {
-          "actor": 8,
-          "pos": 8
-        },
-        "members": {
-          "actor": 0,
-          "pos": 8
-        },
-        "size": 16
-      },
-      "filename_name": {
-        "member_sizes": {
-          "name": 8
-        },
-        "members": {
-          "name": 0
-        },
-        "size": 32
-      },
-      "filldir_abi": "returns_int",
       "identity": {
         "android_release": 13,
         "kmi_generation": 8,
@@ -276,40 +163,10 @@
         "linux_patch": 153,
         "page_shift": 12
       },
-      "inode_times": {
-        "member_sizes": {
-          "atime_nsec": 8,
-          "atime_sec": 8,
-          "mtime_nsec": 8,
-          "mtime_sec": 8
-        },
-        "members": {
-          "atime_nsec": 96,
-          "atime_sec": 88,
-          "mtime_nsec": 112,
-          "mtime_sec": 104
-        },
-        "size": 752
-      },
-      "path_inode": {
-        "dentry": {
-          "member_sizes": {
-            "d_inode": 8
-          },
-          "members": {
-            "d_inode": 48
-          },
-          "size": 208
-        },
-        "path": {
-          "member_sizes": {
-            "dentry": 8
-          },
-          "members": {
-            "dentry": 8
-          },
-          "size": 16
-        }
+      "manifest_evidence": {
+        "config_sha256": "3427d7527b9ea042e7ee18925513e909309b969a02ef6aa9cab74456419c184f",
+        "layout_sha256": "1fe21ec9aa923ecd3fa422b8f73897ddfaa28c66837def476f49b1ddda0063c8",
+        "vmlinux_build_id": "46bce3e578063bb112e1ba144d4f6067054216ed"
       },
       "profile_id": 515,
       "raw_btf": {
@@ -317,203 +174,141 @@
         "size": 5755545
       },
       "release_token": "5.15.153-android13-8-00026-g06276351e9ff-dirty",
-      "task_ref": {
-        "task_struct": {
-          "member_sizes": {
-            "usage": 4
-          },
-          "members": {
-            "usage": 56
-          },
-          "size": 4608
-        }
-      },
-      "task_threads": {
-        "signal_struct": {
-          "member_sizes": {
-            "thread_head": 16
-          },
-          "members": {
-            "thread_head": 16
-          },
-          "size": 1120
+      "runtime_layout": {
+        "fields": {
+          "cred_cap_ambient": 72,
+          "cred_cap_bset": 64,
+          "cred_cap_effective": 56,
+          "cred_cap_inheritable": 40,
+          "cred_cap_permitted": 48,
+          "cred_egid": 24,
+          "cred_euid": 20,
+          "cred_fsgid": 32,
+          "cred_fsuid": 28,
+          "cred_gid": 8,
+          "cred_securebits": 36,
+          "cred_sgid": 16,
+          "cred_size": 176,
+          "cred_suid": 12,
+          "cred_uid": 4,
+          "dentry_inode": 48,
+          "dentry_inode_size": 8,
+          "dentry_name": 40,
+          "dentry_size": 208,
+          "dir_context_actor": 0,
+          "dir_context_actor_size": 8,
+          "dir_context_pos": 8,
+          "dir_context_pos_size": 8,
+          "dir_context_size": 16,
+          "file_dentry": 24,
+          "filename_name": 0,
+          "filename_name_size": 8,
+          "filename_size": 32,
+          "ftrace_ops_flags": 16,
+          "ftrace_ops_func": 0,
+          "inode_atime_nsec": 96,
+          "inode_atime_nsec_size": 8,
+          "inode_atime_sec": 88,
+          "inode_atime_sec_size": 8,
+          "inode_mtime_nsec": 112,
+          "inode_mtime_nsec_size": 8,
+          "inode_mtime_sec": 104,
+          "inode_mtime_sec_size": 8,
+          "inode_size": 752,
+          "kobject_name": 0,
+          "kstat_file_size": 56,
+          "kstat_gid": 52,
+          "kstat_mode": 4,
+          "kstat_size": 144,
+          "kstat_uid": 48,
+          "mm_count": 80,
+          "mm_count_size": 4,
+          "mm_mmap_lock": 104,
+          "mm_mmap_lock_size": 64,
+          "mm_page_table_lock": 100,
+          "mm_page_table_lock_size": 4,
+          "mm_pgd": 64,
+          "mm_pgd_size": 8,
+          "mm_size": 992,
+          "module_exit": 888,
+          "module_init": 376,
+          "module_kobj": 80,
+          "module_list": 8,
+          "module_name": 24,
+          "module_size": 960,
+          "nsproxy_mnt_ns": 24,
+          "nsproxy_net_ns": 40,
+          "path_dentry": 8,
+          "path_dentry_size": 8,
+          "path_size": 16,
+          "pt_regs_pc": 256,
+          "pt_regs_pc_size": 8,
+          "pt_regs_pstate": 264,
+          "pt_regs_pstate_size": 8,
+          "pt_regs_regs": 0,
+          "pt_regs_regs_size": 248,
+          "pt_regs_size": 336,
+          "pt_regs_sp": 248,
+          "pt_regs_sp_size": 8,
+          "seccomp_mode": 0,
+          "signal_size": 1120,
+          "signal_thread_head": 16,
+          "skb_data": 216,
+          "sock_dport": 12,
+          "sock_num": 14,
+          "task_comm": 1960,
+          "task_comm_size": 16,
+          "task_cred": 1944,
+          "task_flags": 60,
+          "task_group_leader": 1560,
+          "task_mm": 1312,
+          "task_nsproxy": 2024,
+          "task_parent": 1520,
+          "task_pid": 1496,
+          "task_real_cred": 1936,
+          "task_real_parent": 1512,
+          "task_seccomp": 2144,
+          "task_signal": 2032,
+          "task_size": 4608,
+          "task_stack": 48,
+          "task_stack_refcount": 2848,
+          "task_stack_size": 16384,
+          "task_tasks": 1232,
+          "task_tgid": 1500,
+          "task_thread_node": 1688,
+          "task_thread_pid": 1600,
+          "task_usage": 56,
+          "user_contiguous_bit": 52,
+          "user_contiguous_entries": 16,
+          "user_descriptor_address_mask": 281474976706560,
+          "user_index_bits": 9,
+          "user_pa_bits": 48,
+          "user_page_shift": 12,
+          "user_pgd_shift": 30,
+          "user_pgtable_levels": 3,
+          "user_physical_address_mask": 281474976710655,
+          "user_physical_page_mask": 281474976706560,
+          "user_pmd_shift": 21,
+          "user_pte_shift": 12,
+          "user_tlbi_all_asid": 1,
+          "user_va_bits": 39,
+          "vma_end": 8,
+          "vma_end_size": 8,
+          "vma_file": 160,
+          "vma_flags": 80,
+          "vma_mm": 64,
+          "vma_page_prot": 72,
+          "vma_pgoff": 152,
+          "vma_size": 232,
+          "vma_start": 0,
+          "vma_start_size": 8,
+          "vmap_va_end": 8,
+          "vmap_va_start": 0
         },
-        "task_struct": {
-          "member_sizes": {
-            "pid": 4,
-            "signal": 8,
-            "thread_node": 16,
-            "thread_pid": 8
-          },
-          "members": {
-            "pid": 1496,
-            "signal": 2032,
-            "thread_node": 1688,
-            "thread_pid": 1600
-          },
-          "size": 4608
-        }
-      },
-      "task_user_state": {
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264
-          },
-          "size": 336
-        },
-        "task_struct": {
-          "member_sizes": {
-            "flags": 4,
-            "stack": 8,
-            "stack_refcount": 4
-          },
-          "members": {
-            "flags": 60,
-            "stack": 48,
-            "stack_refcount": 2848
-          },
-          "size": 4608
-        }
-      },
-      "task_walk": {
-        "cred": {
-          "member_sizes": {
-            "egid": 4,
-            "euid": 4,
-            "fsgid": 4,
-            "fsuid": 4,
-            "gid": 4,
-            "sgid": 4,
-            "suid": 4,
-            "uid": 4
-          },
-          "members": {
-            "egid": 24,
-            "euid": 20,
-            "fsgid": 32,
-            "fsuid": 28,
-            "gid": 8,
-            "sgid": 16,
-            "suid": 12,
-            "uid": 4
-          },
-          "size": 176
-        },
-        "task_struct": {
-          "member_sizes": {
-            "comm": 16,
-            "group_leader": 8,
-            "mm": 8,
-            "parent": 8,
-            "real_cred": 8,
-            "real_parent": 8,
-            "tasks": 16
-          },
-          "members": {
-            "comm": 1960,
-            "group_leader": 1560,
-            "mm": 1312,
-            "parent": 1520,
-            "real_cred": 1936,
-            "real_parent": 1512,
-            "tasks": 1232
-          },
-          "size": 4608
-        }
-      },
-      "user_ptmap": {
-        "geometry": {
-          "contiguous_bit": 52,
-          "contiguous_entries": 16,
-          "descriptor_address_mask": 281474976706560,
-          "index_bits": 9,
-          "pa_bits": 48,
-          "page_shift": 12,
-          "pgd_shift": 30,
-          "pgtable_levels": 3,
-          "physical_address_mask": 281474976710655,
-          "physical_page_mask": 281474976706560,
-          "pmd_shift": 21,
-          "pte_shift": 12,
-          "tlbi_all_asid": 1,
-          "va_bits": 39
-        },
-        "mm_struct": {
-          "member_sizes": {
-            "mm_count": 4,
-            "mmap_lock": 64,
-            "page_table_lock": 4,
-            "pgd": 8
-          },
-          "members": {
-            "mm_count": 80,
-            "mmap_lock": 104,
-            "page_table_lock": 100,
-            "pgd": 64
-          },
-          "size": 992
-        },
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8,
-            "regs": 248,
-            "sp": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264,
-            "regs": 0,
-            "sp": 248
-          },
-          "size": 336
-        },
-        "vm_area_struct": {
-          "member_sizes": {
-            "vm_end": 8,
-            "vm_flags": 8,
-            "vm_mm": 8,
-            "vm_pgoff": 8,
-            "vm_start": 8
-          },
-          "members": {
-            "vm_end": 8,
-            "vm_flags": 80,
-            "vm_mm": 64,
-            "vm_pgoff": 152,
-            "vm_start": 0
-          },
-          "size": 232
-        }
+        "schema": 1
       }
     },
     {
-      "dir_context": {
-        "member_sizes": {
-          "actor": 8,
-          "pos": 8
-        },
-        "members": {
-          "actor": 0,
-          "pos": 8
-        },
-        "size": 16
-      },
-      "filename_name": {
-        "member_sizes": {
-          "name": 8
-        },
-        "members": {
-          "name": 0
-        },
-        "size": 32
-      },
-      "filldir_abi": "returns_bool",
       "identity": {
         "android_release": 14,
         "kmi_generation": 11,
@@ -522,40 +317,10 @@
         "linux_patch": 93,
         "page_shift": 12
       },
-      "inode_times": {
-        "member_sizes": {
-          "atime_nsec": 8,
-          "atime_sec": 8,
-          "mtime_nsec": 8,
-          "mtime_sec": 8
-        },
-        "members": {
-          "atime_nsec": 96,
-          "atime_sec": 88,
-          "mtime_nsec": 112,
-          "mtime_sec": 104
-        },
-        "size": 704
-      },
-      "path_inode": {
-        "dentry": {
-          "member_sizes": {
-            "d_inode": 8
-          },
-          "members": {
-            "d_inode": 48
-          },
-          "size": 208
-        },
-        "path": {
-          "member_sizes": {
-            "dentry": 8
-          },
-          "members": {
-            "dentry": 8
-          },
-          "size": 16
-        }
+      "manifest_evidence": {
+        "config_sha256": "0f8bb251a72cd0066191acbd01224e9642098c52f2a136949e0e5c9bcb4d3a51",
+        "layout_sha256": "2ea4cdfb9973e3503012bf3383eeab204785cd30b7010ec1ef2e8b307225da6f",
+        "vmlinux_build_id": "677592b1b59ce497208c298eb8557306d5f2c9ba"
       },
       "profile_id": 601,
       "raw_btf": {
@@ -563,203 +328,141 @@
         "size": 4295530
       },
       "release_token": "6.1.93-android14-11-maybe-dirty",
-      "task_ref": {
-        "task_struct": {
-          "member_sizes": {
-            "usage": 4
-          },
-          "members": {
-            "usage": 64
-          },
-          "size": 4800
-        }
-      },
-      "task_threads": {
-        "signal_struct": {
-          "member_sizes": {
-            "thread_head": 16
-          },
-          "members": {
-            "thread_head": 16
-          },
-          "size": 1128
+      "runtime_layout": {
+        "fields": {
+          "cred_cap_ambient": 72,
+          "cred_cap_bset": 64,
+          "cred_cap_effective": 56,
+          "cred_cap_inheritable": 40,
+          "cred_cap_permitted": 48,
+          "cred_egid": 24,
+          "cred_euid": 20,
+          "cred_fsgid": 32,
+          "cred_fsuid": 28,
+          "cred_gid": 8,
+          "cred_securebits": 36,
+          "cred_sgid": 16,
+          "cred_size": 176,
+          "cred_suid": 12,
+          "cred_uid": 4,
+          "dentry_inode": 48,
+          "dentry_inode_size": 8,
+          "dentry_name": 40,
+          "dentry_size": 208,
+          "dir_context_actor": 0,
+          "dir_context_actor_size": 8,
+          "dir_context_pos": 8,
+          "dir_context_pos_size": 8,
+          "dir_context_size": 16,
+          "file_dentry": 24,
+          "filename_name": 0,
+          "filename_name_size": 8,
+          "filename_size": 32,
+          "ftrace_ops_flags": 16,
+          "ftrace_ops_func": 0,
+          "inode_atime_nsec": 96,
+          "inode_atime_nsec_size": 8,
+          "inode_atime_sec": 88,
+          "inode_atime_sec_size": 8,
+          "inode_mtime_nsec": 112,
+          "inode_mtime_nsec_size": 8,
+          "inode_mtime_sec": 104,
+          "inode_mtime_sec_size": 8,
+          "inode_size": 704,
+          "kobject_name": 0,
+          "kstat_file_size": 56,
+          "kstat_gid": 52,
+          "kstat_mode": 4,
+          "kstat_size": 152,
+          "kstat_uid": 48,
+          "mm_count": 72,
+          "mm_count_size": 4,
+          "mm_mmap_lock": 96,
+          "mm_mmap_lock_size": 64,
+          "mm_page_table_lock": 92,
+          "mm_page_table_lock_size": 4,
+          "mm_pgd": 56,
+          "mm_pgd_size": 8,
+          "mm_size": 960,
+          "module_exit": 984,
+          "module_init": 368,
+          "module_kobj": 80,
+          "module_list": 8,
+          "module_name": 24,
+          "module_size": 1088,
+          "nsproxy_mnt_ns": 24,
+          "nsproxy_net_ns": 40,
+          "path_dentry": 8,
+          "path_dentry_size": 8,
+          "path_size": 16,
+          "pt_regs_pc": 256,
+          "pt_regs_pc_size": 8,
+          "pt_regs_pstate": 264,
+          "pt_regs_pstate_size": 8,
+          "pt_regs_regs": 0,
+          "pt_regs_regs_size": 248,
+          "pt_regs_size": 336,
+          "pt_regs_sp": 248,
+          "pt_regs_sp_size": 8,
+          "seccomp_mode": 0,
+          "signal_size": 1128,
+          "signal_thread_head": 16,
+          "skb_data": 224,
+          "sock_dport": 12,
+          "sock_num": 14,
+          "task_comm": 2120,
+          "task_comm_size": 16,
+          "task_cred": 2104,
+          "task_flags": 68,
+          "task_group_leader": 1648,
+          "task_mm": 1440,
+          "task_nsproxy": 2184,
+          "task_parent": 1608,
+          "task_pid": 1584,
+          "task_real_cred": 2096,
+          "task_real_parent": 1600,
+          "task_seccomp": 2304,
+          "task_signal": 2192,
+          "task_size": 4800,
+          "task_stack": 56,
+          "task_stack_refcount": 3000,
+          "task_stack_size": 16384,
+          "task_tasks": 1360,
+          "task_tgid": 1588,
+          "task_thread_node": 1776,
+          "task_thread_pid": 1688,
+          "task_usage": 64,
+          "user_contiguous_bit": 52,
+          "user_contiguous_entries": 16,
+          "user_descriptor_address_mask": 281474976706560,
+          "user_index_bits": 9,
+          "user_pa_bits": 48,
+          "user_page_shift": 12,
+          "user_pgd_shift": 30,
+          "user_pgtable_levels": 3,
+          "user_physical_address_mask": 281474976710655,
+          "user_physical_page_mask": 281474976706560,
+          "user_pmd_shift": 21,
+          "user_pte_shift": 12,
+          "user_tlbi_all_asid": 1,
+          "user_va_bits": 39,
+          "vma_end": 8,
+          "vma_end_size": 8,
+          "vma_file": 136,
+          "vma_flags": 32,
+          "vma_mm": 16,
+          "vma_page_prot": 24,
+          "vma_pgoff": 128,
+          "vma_size": 200,
+          "vma_start": 0,
+          "vma_start_size": 8,
+          "vmap_va_end": 8,
+          "vmap_va_start": 0
         },
-        "task_struct": {
-          "member_sizes": {
-            "pid": 4,
-            "signal": 8,
-            "thread_node": 16,
-            "thread_pid": 8
-          },
-          "members": {
-            "pid": 1584,
-            "signal": 2192,
-            "thread_node": 1776,
-            "thread_pid": 1688
-          },
-          "size": 4800
-        }
-      },
-      "task_user_state": {
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264
-          },
-          "size": 336
-        },
-        "task_struct": {
-          "member_sizes": {
-            "flags": 4,
-            "stack": 8,
-            "stack_refcount": 4
-          },
-          "members": {
-            "flags": 68,
-            "stack": 56,
-            "stack_refcount": 3000
-          },
-          "size": 4800
-        }
-      },
-      "task_walk": {
-        "cred": {
-          "member_sizes": {
-            "egid": 4,
-            "euid": 4,
-            "fsgid": 4,
-            "fsuid": 4,
-            "gid": 4,
-            "sgid": 4,
-            "suid": 4,
-            "uid": 4
-          },
-          "members": {
-            "egid": 24,
-            "euid": 20,
-            "fsgid": 32,
-            "fsuid": 28,
-            "gid": 8,
-            "sgid": 16,
-            "suid": 12,
-            "uid": 4
-          },
-          "size": 176
-        },
-        "task_struct": {
-          "member_sizes": {
-            "comm": 16,
-            "group_leader": 8,
-            "mm": 8,
-            "parent": 8,
-            "real_cred": 8,
-            "real_parent": 8,
-            "tasks": 16
-          },
-          "members": {
-            "comm": 2120,
-            "group_leader": 1648,
-            "mm": 1440,
-            "parent": 1608,
-            "real_cred": 2096,
-            "real_parent": 1600,
-            "tasks": 1360
-          },
-          "size": 4800
-        }
-      },
-      "user_ptmap": {
-        "geometry": {
-          "contiguous_bit": 52,
-          "contiguous_entries": 16,
-          "descriptor_address_mask": 281474976706560,
-          "index_bits": 9,
-          "pa_bits": 48,
-          "page_shift": 12,
-          "pgd_shift": 30,
-          "pgtable_levels": 3,
-          "physical_address_mask": 281474976710655,
-          "physical_page_mask": 281474976706560,
-          "pmd_shift": 21,
-          "pte_shift": 12,
-          "tlbi_all_asid": 1,
-          "va_bits": 39
-        },
-        "mm_struct": {
-          "member_sizes": {
-            "mm_count": 4,
-            "mmap_lock": 64,
-            "page_table_lock": 4,
-            "pgd": 8
-          },
-          "members": {
-            "mm_count": 72,
-            "mmap_lock": 96,
-            "page_table_lock": 92,
-            "pgd": 56
-          },
-          "size": 960
-        },
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8,
-            "regs": 248,
-            "sp": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264,
-            "regs": 0,
-            "sp": 248
-          },
-          "size": 336
-        },
-        "vm_area_struct": {
-          "member_sizes": {
-            "vm_end": 8,
-            "vm_flags": 8,
-            "vm_mm": 8,
-            "vm_pgoff": 8,
-            "vm_start": 8
-          },
-          "members": {
-            "vm_end": 8,
-            "vm_flags": 32,
-            "vm_mm": 16,
-            "vm_pgoff": 128,
-            "vm_start": 0
-          },
-          "size": 200
-        }
+        "schema": 1
       }
     },
     {
-      "dir_context": {
-        "member_sizes": {
-          "actor": 8,
-          "pos": 8
-        },
-        "members": {
-          "actor": 0,
-          "pos": 8
-        },
-        "size": 16
-      },
-      "filename_name": {
-        "member_sizes": {
-          "name": 8
-        },
-        "members": {
-          "name": 0
-        },
-        "size": 32
-      },
-      "filldir_abi": "returns_bool",
       "identity": {
         "android_release": 15,
         "kmi_generation": 8,
@@ -768,40 +471,10 @@
         "linux_patch": 46,
         "page_shift": 12
       },
-      "inode_times": {
-        "member_sizes": {
-          "atime_nsec": 8,
-          "atime_sec": 8,
-          "mtime_nsec": 8,
-          "mtime_sec": 8
-        },
-        "members": {
-          "atime_nsec": 96,
-          "atime_sec": 88,
-          "mtime_nsec": 112,
-          "mtime_sec": 104
-        },
-        "size": 704
-      },
-      "path_inode": {
-        "dentry": {
-          "member_sizes": {
-            "d_inode": 8
-          },
-          "members": {
-            "d_inode": 48
-          },
-          "size": 208
-        },
-        "path": {
-          "member_sizes": {
-            "dentry": 8
-          },
-          "members": {
-            "dentry": 8
-          },
-          "size": 16
-        }
+      "manifest_evidence": {
+        "config_sha256": "f8144579bc3abed286615cb14c0a4a07b016d34dfc6b34503f06523a0785a596",
+        "layout_sha256": "4c4bcc8266da74b84e24258656d0542f52965b7708a2b3cd305c978c49ed26c3",
+        "vmlinux_build_id": "c8217a07b30c199c79ee075785a9e5419a13860e"
       },
       "profile_id": 606,
       "raw_btf": {
@@ -809,179 +482,138 @@
         "size": 5912804
       },
       "release_token": "6.6.46-android15-8-maybe-dirty-4k",
-      "task_ref": {
-        "task_struct": {
-          "member_sizes": {
-            "usage": 4
-          },
-          "members": {
-            "usage": 64
-          },
-          "size": 4800
-        }
-      },
-      "task_threads": {
-        "signal_struct": {
-          "member_sizes": {
-            "thread_head": 16
-          },
-          "members": {
-            "thread_head": 16
-          },
-          "size": 1136
+      "runtime_layout": {
+        "fields": {
+          "cred_cap_ambient": 80,
+          "cred_cap_bset": 72,
+          "cred_cap_effective": 64,
+          "cred_cap_inheritable": 48,
+          "cred_cap_permitted": 56,
+          "cred_egid": 28,
+          "cred_euid": 24,
+          "cred_fsgid": 36,
+          "cred_fsuid": 32,
+          "cred_gid": 12,
+          "cred_securebits": 40,
+          "cred_sgid": 20,
+          "cred_size": 184,
+          "cred_suid": 16,
+          "cred_uid": 8,
+          "dentry_inode": 48,
+          "dentry_inode_size": 8,
+          "dentry_name": 40,
+          "dentry_size": 208,
+          "dir_context_actor": 0,
+          "dir_context_actor_size": 8,
+          "dir_context_pos": 8,
+          "dir_context_pos_size": 8,
+          "dir_context_size": 16,
+          "file_dentry": 176,
+          "filename_name": 0,
+          "filename_name_size": 8,
+          "filename_size": 32,
+          "ftrace_ops_flags": 16,
+          "ftrace_ops_func": 0,
+          "inode_atime_nsec": 96,
+          "inode_atime_nsec_size": 8,
+          "inode_atime_sec": 88,
+          "inode_atime_sec_size": 8,
+          "inode_mtime_nsec": 112,
+          "inode_mtime_nsec_size": 8,
+          "inode_mtime_sec": 104,
+          "inode_mtime_sec_size": 8,
+          "inode_size": 704,
+          "kobject_name": 0,
+          "kstat_file_size": 56,
+          "kstat_gid": 52,
+          "kstat_mode": 4,
+          "kstat_size": 160,
+          "kstat_uid": 48,
+          "mm_count": 0,
+          "mm_count_size": 4,
+          "mm_mmap_lock": 144,
+          "mm_mmap_lock_size": 64,
+          "mm_page_table_lock": 140,
+          "mm_page_table_lock_size": 4,
+          "mm_pgd": 112,
+          "mm_pgd_size": 8,
+          "mm_size": 1216,
+          "module_exit": 1464,
+          "module_init": 392,
+          "module_kobj": 104,
+          "module_list": 8,
+          "module_name": 24,
+          "module_size": 1536,
+          "nsproxy_mnt_ns": 24,
+          "nsproxy_net_ns": 40,
+          "path_dentry": 8,
+          "path_dentry_size": 8,
+          "path_size": 16,
+          "pt_regs_pc": 256,
+          "pt_regs_pc_size": 8,
+          "pt_regs_pstate": 264,
+          "pt_regs_pstate_size": 8,
+          "pt_regs_regs": 0,
+          "pt_regs_regs_size": 248,
+          "pt_regs_size": 336,
+          "pt_regs_sp": 248,
+          "pt_regs_sp_size": 8,
+          "seccomp_mode": 0,
+          "signal_size": 1136,
+          "signal_thread_head": 16,
+          "skb_data": 216,
+          "sock_dport": 12,
+          "sock_num": 14,
+          "task_comm": 2096,
+          "task_comm_size": 16,
+          "task_cred": 2080,
+          "task_flags": 68,
+          "task_group_leader": 1624,
+          "task_mm": 1440,
+          "task_nsproxy": 2160,
+          "task_parent": 1584,
+          "task_pid": 1560,
+          "task_real_cred": 2072,
+          "task_real_parent": 1576,
+          "task_seccomp": 2280,
+          "task_signal": 2168,
+          "task_size": 4800,
+          "task_stack": 56,
+          "task_stack_refcount": 2976,
+          "task_stack_size": 16384,
+          "task_tasks": 1360,
+          "task_tgid": 1564,
+          "task_thread_node": 1752,
+          "task_thread_pid": 1664,
+          "task_usage": 64,
+          "user_contiguous_bit": 52,
+          "user_contiguous_entries": 16,
+          "user_descriptor_address_mask": 281474976706560,
+          "user_index_bits": 9,
+          "user_pa_bits": 48,
+          "user_page_shift": 12,
+          "user_pgd_shift": 30,
+          "user_pgtable_levels": 3,
+          "user_physical_address_mask": 281474976710655,
+          "user_physical_page_mask": 281474976706560,
+          "user_pmd_shift": 21,
+          "user_pte_shift": 12,
+          "user_tlbi_all_asid": 1,
+          "user_va_bits": 39,
+          "vma_end": 8,
+          "vma_end_size": 8,
+          "vma_file": 128,
+          "vma_flags": 32,
+          "vma_mm": 16,
+          "vma_page_prot": 24,
+          "vma_pgoff": 120,
+          "vma_size": 200,
+          "vma_start": 0,
+          "vma_start_size": 8,
+          "vmap_va_end": 8,
+          "vmap_va_start": 0
         },
-        "task_struct": {
-          "member_sizes": {
-            "pid": 4,
-            "signal": 8,
-            "thread_node": 16,
-            "thread_pid": 8
-          },
-          "members": {
-            "pid": 1560,
-            "signal": 2168,
-            "thread_node": 1752,
-            "thread_pid": 1664
-          },
-          "size": 4800
-        }
-      },
-      "task_user_state": {
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264
-          },
-          "size": 336
-        },
-        "task_struct": {
-          "member_sizes": {
-            "flags": 4,
-            "stack": 8,
-            "stack_refcount": 4
-          },
-          "members": {
-            "flags": 68,
-            "stack": 56,
-            "stack_refcount": 2976
-          },
-          "size": 4800
-        }
-      },
-      "task_walk": {
-        "cred": {
-          "member_sizes": {
-            "egid": 4,
-            "euid": 4,
-            "fsgid": 4,
-            "fsuid": 4,
-            "gid": 4,
-            "sgid": 4,
-            "suid": 4,
-            "uid": 4
-          },
-          "members": {
-            "egid": 28,
-            "euid": 24,
-            "fsgid": 36,
-            "fsuid": 32,
-            "gid": 12,
-            "sgid": 20,
-            "suid": 16,
-            "uid": 8
-          },
-          "size": 184
-        },
-        "task_struct": {
-          "member_sizes": {
-            "comm": 16,
-            "group_leader": 8,
-            "mm": 8,
-            "parent": 8,
-            "real_cred": 8,
-            "real_parent": 8,
-            "tasks": 16
-          },
-          "members": {
-            "comm": 2096,
-            "group_leader": 1624,
-            "mm": 1440,
-            "parent": 1584,
-            "real_cred": 2072,
-            "real_parent": 1576,
-            "tasks": 1360
-          },
-          "size": 4800
-        }
-      },
-      "user_ptmap": {
-        "geometry": {
-          "contiguous_bit": 52,
-          "contiguous_entries": 16,
-          "descriptor_address_mask": 281474976706560,
-          "index_bits": 9,
-          "pa_bits": 48,
-          "page_shift": 12,
-          "pgd_shift": 30,
-          "pgtable_levels": 3,
-          "physical_address_mask": 281474976710655,
-          "physical_page_mask": 281474976706560,
-          "pmd_shift": 21,
-          "pte_shift": 12,
-          "tlbi_all_asid": 1,
-          "va_bits": 39
-        },
-        "mm_struct": {
-          "member_sizes": {
-            "mm_count": 4,
-            "mmap_lock": 64,
-            "page_table_lock": 4,
-            "pgd": 8
-          },
-          "members": {
-            "mm_count": 0,
-            "mmap_lock": 144,
-            "page_table_lock": 140,
-            "pgd": 112
-          },
-          "size": 1216
-        },
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8,
-            "regs": 248,
-            "sp": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264,
-            "regs": 0,
-            "sp": 248
-          },
-          "size": 336
-        },
-        "vm_area_struct": {
-          "member_sizes": {
-            "vm_end": 8,
-            "vm_flags": 8,
-            "vm_mm": 8,
-            "vm_pgoff": 8,
-            "vm_start": 8
-          },
-          "members": {
-            "vm_end": 8,
-            "vm_flags": 32,
-            "vm_mm": 16,
-            "vm_pgoff": 120,
-            "vm_start": 0
-          },
-          "size": 200
-        }
+        "schema": 1
       }
     },
     {
@@ -996,6 +628,7 @@
         },
         "size": 16
       },
+      "file_dentry": 72,
       "filename_name": {
         "member_sizes": {
           "name": 8
@@ -1005,7 +638,6 @@
         },
         "size": 32
       },
-      "file_dentry": 72,
       "filldir_abi": "returns_bool",
       "identity": {
         "android_release": 16,
@@ -1226,28 +858,6 @@
       }
     },
     {
-      "dir_context": {
-        "member_sizes": {
-          "actor": 8,
-          "pos": 8
-        },
-        "members": {
-          "actor": 0,
-          "pos": 8
-        },
-        "size": 16
-      },
-      "filename_name": {
-        "member_sizes": {
-          "name": 8
-        },
-        "members": {
-          "name": 0
-        },
-        "size": 32
-      },
-      "file_dentry": 72,
-      "filldir_abi": "returns_bool",
       "identity": {
         "android_release": 16,
         "kmi_generation": 5,
@@ -1256,40 +866,10 @@
         "linux_patch": 45,
         "page_shift": 12
       },
-      "inode_times": {
-        "member_sizes": {
-          "atime_nsec": 4,
-          "atime_sec": 8,
-          "mtime_nsec": 4,
-          "mtime_sec": 8
-        },
-        "members": {
-          "atime_nsec": 112,
-          "atime_sec": 88,
-          "mtime_nsec": 116,
-          "mtime_sec": 96
-        },
-        "size": 704
-      },
-      "path_inode": {
-        "dentry": {
-          "member_sizes": {
-            "d_inode": 8
-          },
-          "members": {
-            "d_inode": 48
-          },
-          "size": 208
-        },
-        "path": {
-          "member_sizes": {
-            "dentry": 8
-          },
-          "members": {
-            "dentry": 8
-          },
-          "size": 16
-        }
+      "manifest_evidence": {
+        "config_sha256": "e09802fcfc9e86d4aed06cff0ce2e56fa3ed54032e2aa24ec09c4db8d35930c2",
+        "layout_sha256": "ea239a64f1e836532c8251ae74d8a5e471c2c1737664a75b87873cd958153430",
+        "vmlinux_build_id": "6a001961f9314d5c5b7a7134f9e4176e7227490b"
       },
       "profile_id": 612,
       "raw_btf": {
@@ -1297,203 +877,141 @@
         "size": 6633775
       },
       "release_token": "6.12.45-android16-5-maybe-dirty-4k",
-      "task_ref": {
-        "task_struct": {
-          "member_sizes": {
-            "usage": 4
-          },
-          "members": {
-            "usage": 64
-          },
-          "size": 5184
-        }
-      },
-      "task_threads": {
-        "signal_struct": {
-          "member_sizes": {
-            "thread_head": 16
-          },
-          "members": {
-            "thread_head": 16
-          },
-          "size": 1120
+      "runtime_layout": {
+        "fields": {
+          "cred_cap_ambient": 80,
+          "cred_cap_bset": 72,
+          "cred_cap_effective": 64,
+          "cred_cap_inheritable": 48,
+          "cred_cap_permitted": 56,
+          "cred_egid": 28,
+          "cred_euid": 24,
+          "cred_fsgid": 36,
+          "cred_fsuid": 32,
+          "cred_gid": 12,
+          "cred_securebits": 40,
+          "cred_sgid": 20,
+          "cred_size": 184,
+          "cred_suid": 16,
+          "cred_uid": 8,
+          "dentry_inode": 48,
+          "dentry_inode_size": 8,
+          "dentry_name": 40,
+          "dentry_size": 208,
+          "dir_context_actor": 0,
+          "dir_context_actor_size": 8,
+          "dir_context_pos": 8,
+          "dir_context_pos_size": 8,
+          "dir_context_size": 16,
+          "file_dentry": 72,
+          "filename_name": 0,
+          "filename_name_size": 8,
+          "filename_size": 32,
+          "ftrace_ops_flags": 16,
+          "ftrace_ops_func": 0,
+          "inode_atime_nsec": 112,
+          "inode_atime_nsec_size": 4,
+          "inode_atime_sec": 88,
+          "inode_atime_sec_size": 8,
+          "inode_mtime_nsec": 116,
+          "inode_mtime_nsec_size": 4,
+          "inode_mtime_sec": 96,
+          "inode_mtime_sec_size": 8,
+          "inode_size": 704,
+          "kobject_name": 0,
+          "kstat_file_size": 56,
+          "kstat_gid": 52,
+          "kstat_mode": 4,
+          "kstat_size": 184,
+          "kstat_uid": 48,
+          "mm_count": 0,
+          "mm_count_size": 4,
+          "mm_mmap_lock": 136,
+          "mm_mmap_lock_size": 64,
+          "mm_page_table_lock": 132,
+          "mm_page_table_lock_size": 4,
+          "mm_pgd": 104,
+          "mm_pgd_size": 8,
+          "mm_size": 1216,
+          "module_exit": 1528,
+          "module_init": 392,
+          "module_kobj": 104,
+          "module_list": 8,
+          "module_name": 24,
+          "module_size": 1600,
+          "nsproxy_mnt_ns": 24,
+          "nsproxy_net_ns": 40,
+          "path_dentry": 8,
+          "path_dentry_size": 8,
+          "path_size": 16,
+          "pt_regs_pc": 256,
+          "pt_regs_pc_size": 8,
+          "pt_regs_pstate": 264,
+          "pt_regs_pstate_size": 8,
+          "pt_regs_regs": 0,
+          "pt_regs_regs_size": 248,
+          "pt_regs_size": 336,
+          "pt_regs_sp": 248,
+          "pt_regs_sp_size": 8,
+          "seccomp_mode": 0,
+          "signal_size": 1120,
+          "signal_thread_head": 16,
+          "skb_data": 224,
+          "sock_dport": 12,
+          "sock_num": 14,
+          "task_comm": 2320,
+          "task_comm_size": 16,
+          "task_cred": 2304,
+          "task_flags": 68,
+          "task_group_leader": 1864,
+          "task_mm": 1672,
+          "task_nsproxy": 2384,
+          "task_parent": 1824,
+          "task_pid": 1800,
+          "task_real_cred": 2296,
+          "task_real_parent": 1816,
+          "task_seccomp": 2504,
+          "task_signal": 2392,
+          "task_size": 5184,
+          "task_stack": 56,
+          "task_stack_refcount": 3280,
+          "task_stack_size": 16384,
+          "task_tasks": 1592,
+          "task_tgid": 1804,
+          "task_thread_node": 1976,
+          "task_thread_pid": 1904,
+          "task_usage": 64,
+          "user_contiguous_bit": 52,
+          "user_contiguous_entries": 16,
+          "user_descriptor_address_mask": 1125899906838528,
+          "user_index_bits": 9,
+          "user_pa_bits": 48,
+          "user_page_shift": 12,
+          "user_pgd_shift": 30,
+          "user_pgtable_levels": 3,
+          "user_physical_address_mask": 281474976710655,
+          "user_physical_page_mask": 281474976706560,
+          "user_pmd_shift": 21,
+          "user_pte_shift": 12,
+          "user_tlbi_all_asid": 1,
+          "user_va_bits": 39,
+          "vma_end": 8,
+          "vma_end_size": 8,
+          "vma_file": 88,
+          "vma_flags": 32,
+          "vma_mm": 16,
+          "vma_page_prot": 24,
+          "vma_pgoff": 80,
+          "vma_size": 256,
+          "vma_start": 0,
+          "vma_start_size": 8,
+          "vmap_va_end": 8,
+          "vmap_va_start": 0
         },
-        "task_struct": {
-          "member_sizes": {
-            "pid": 4,
-            "signal": 8,
-            "thread_node": 16,
-            "thread_pid": 8
-          },
-          "members": {
-            "pid": 1800,
-            "signal": 2392,
-            "thread_node": 1976,
-            "thread_pid": 1904
-          },
-          "size": 5184
-        }
-      },
-      "task_user_state": {
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264
-          },
-          "size": 336
-        },
-        "task_struct": {
-          "member_sizes": {
-            "flags": 4,
-            "stack": 8,
-            "stack_refcount": 4
-          },
-          "members": {
-            "flags": 68,
-            "stack": 56,
-            "stack_refcount": 3280
-          },
-          "size": 5184
-        }
-      },
-      "task_walk": {
-        "cred": {
-          "member_sizes": {
-            "egid": 4,
-            "euid": 4,
-            "fsgid": 4,
-            "fsuid": 4,
-            "gid": 4,
-            "sgid": 4,
-            "suid": 4,
-            "uid": 4
-          },
-          "members": {
-            "egid": 28,
-            "euid": 24,
-            "fsgid": 36,
-            "fsuid": 32,
-            "gid": 12,
-            "sgid": 20,
-            "suid": 16,
-            "uid": 8
-          },
-          "size": 184
-        },
-        "task_struct": {
-          "member_sizes": {
-            "comm": 16,
-            "group_leader": 8,
-            "mm": 8,
-            "parent": 8,
-            "real_cred": 8,
-            "real_parent": 8,
-            "tasks": 16
-          },
-          "members": {
-            "comm": 2320,
-            "group_leader": 1864,
-            "mm": 1672,
-            "parent": 1824,
-            "real_cred": 2296,
-            "real_parent": 1816,
-            "tasks": 1592
-          },
-          "size": 5184
-        }
-      },
-      "user_ptmap": {
-        "geometry": {
-          "contiguous_bit": 52,
-          "contiguous_entries": 16,
-          "descriptor_address_mask": 1125899906838528,
-          "index_bits": 9,
-          "pa_bits": 48,
-          "page_shift": 12,
-          "pgd_shift": 30,
-          "pgtable_levels": 3,
-          "physical_address_mask": 281474976710655,
-          "physical_page_mask": 281474976706560,
-          "pmd_shift": 21,
-          "pte_shift": 12,
-          "tlbi_all_asid": 1,
-          "va_bits": 39
-        },
-        "mm_struct": {
-          "member_sizes": {
-            "mm_count": 4,
-            "mmap_lock": 64,
-            "page_table_lock": 4,
-            "pgd": 8
-          },
-          "members": {
-            "mm_count": 0,
-            "mmap_lock": 136,
-            "page_table_lock": 132,
-            "pgd": 104
-          },
-          "size": 1216
-        },
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8,
-            "regs": 248,
-            "sp": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264,
-            "regs": 0,
-            "sp": 248
-          },
-          "size": 336
-        },
-        "vm_area_struct": {
-          "member_sizes": {
-            "vm_end": 8,
-            "vm_flags": 8,
-            "vm_mm": 8,
-            "vm_pgoff": 8,
-            "vm_start": 8
-          },
-          "members": {
-            "vm_end": 8,
-            "vm_flags": 32,
-            "vm_mm": 16,
-            "vm_pgoff": 80,
-            "vm_start": 0
-          },
-          "size": 256
-        }
+        "schema": 1
       }
     },
     {
-      "dir_context": {
-        "member_sizes": {
-          "actor": 8,
-          "pos": 8
-        },
-        "members": {
-          "actor": 0,
-          "pos": 8
-        },
-        "size": 24
-      },
-      "filename_name": {
-        "member_sizes": {
-          "name": 8
-        },
-        "members": {
-          "name": 0
-        },
-        "size": 32
-      },
-      "filldir_abi": "returns_bool",
       "identity": {
         "android_release": 17,
         "kmi_generation": 5,
@@ -1502,40 +1020,10 @@
         "linux_patch": 24,
         "page_shift": 12
       },
-      "inode_times": {
-        "member_sizes": {
-          "atime_nsec": 4,
-          "atime_sec": 8,
-          "mtime_nsec": 4,
-          "mtime_sec": 8
-        },
-        "members": {
-          "atime_nsec": 112,
-          "atime_sec": 88,
-          "mtime_nsec": 116,
-          "mtime_sec": 96
-        },
-        "size": 688
-      },
-      "path_inode": {
-        "dentry": {
-          "member_sizes": {
-            "d_inode": 8
-          },
-          "members": {
-            "d_inode": 48
-          },
-          "size": 208
-        },
-        "path": {
-          "member_sizes": {
-            "dentry": 8
-          },
-          "members": {
-            "dentry": 8
-          },
-          "size": 16
-        }
+      "manifest_evidence": {
+        "config_sha256": "91d87b6df0893d0ceab416278c393b943c32411c26e2964922bf996fc24c57a7",
+        "layout_sha256": "baa888b6d1024b6025b6119fe9e0128c61dda167ee57d21bc3add857cb33ae57",
+        "vmlinux_build_id": "e36c2ac50c3578e730c54bab1ae6fd6da4645c85"
       },
       "profile_id": 618,
       "raw_btf": {
@@ -1543,203 +1031,141 @@
         "size": 6972797
       },
       "release_token": "6.18.24-android17-5-maybe-dirty-4k",
-      "task_ref": {
-        "task_struct": {
-          "member_sizes": {
-            "usage": 4
-          },
-          "members": {
-            "usage": 64
-          },
-          "size": 4736
-        }
-      },
-      "task_threads": {
-        "signal_struct": {
-          "member_sizes": {
-            "thread_head": 16
-          },
-          "members": {
-            "thread_head": 16
-          },
-          "size": 1176
+      "runtime_layout": {
+        "fields": {
+          "cred_cap_ambient": 80,
+          "cred_cap_bset": 72,
+          "cred_cap_effective": 64,
+          "cred_cap_inheritable": 48,
+          "cred_cap_permitted": 56,
+          "cred_egid": 28,
+          "cred_euid": 24,
+          "cred_fsgid": 36,
+          "cred_fsuid": 32,
+          "cred_gid": 12,
+          "cred_securebits": 40,
+          "cred_sgid": 20,
+          "cred_size": 184,
+          "cred_suid": 16,
+          "cred_uid": 8,
+          "dentry_inode": 48,
+          "dentry_inode_size": 8,
+          "dentry_name": 40,
+          "dentry_size": 208,
+          "dir_context_actor": 0,
+          "dir_context_actor_size": 8,
+          "dir_context_pos": 8,
+          "dir_context_pos_size": 8,
+          "dir_context_size": 24,
+          "file_dentry": 72,
+          "filename_name": 0,
+          "filename_name_size": 8,
+          "filename_size": 32,
+          "ftrace_ops_flags": 16,
+          "ftrace_ops_func": 0,
+          "inode_atime_nsec": 112,
+          "inode_atime_nsec_size": 4,
+          "inode_atime_sec": 88,
+          "inode_atime_sec_size": 8,
+          "inode_mtime_nsec": 116,
+          "inode_mtime_nsec_size": 4,
+          "inode_mtime_sec": 96,
+          "inode_mtime_sec_size": 8,
+          "inode_size": 688,
+          "kobject_name": 0,
+          "kstat_file_size": 56,
+          "kstat_gid": 52,
+          "kstat_mode": 4,
+          "kstat_size": 192,
+          "kstat_uid": 48,
+          "mm_count": 0,
+          "mm_count_size": 4,
+          "mm_mmap_lock": 136,
+          "mm_mmap_lock_size": 64,
+          "mm_page_table_lock": 132,
+          "mm_page_table_lock_size": 4,
+          "mm_pgd": 104,
+          "mm_pgd_size": 8,
+          "mm_size": 1344,
+          "module_exit": 1536,
+          "module_init": 376,
+          "module_kobj": 104,
+          "module_list": 8,
+          "module_name": 24,
+          "module_size": 1664,
+          "nsproxy_mnt_ns": 24,
+          "nsproxy_net_ns": 40,
+          "path_dentry": 8,
+          "path_dentry_size": 8,
+          "path_size": 16,
+          "pt_regs_pc": 256,
+          "pt_regs_pc_size": 8,
+          "pt_regs_pstate": 264,
+          "pt_regs_pstate_size": 8,
+          "pt_regs_regs": 0,
+          "pt_regs_regs_size": 248,
+          "pt_regs_size": 320,
+          "pt_regs_sp": 248,
+          "pt_regs_sp_size": 8,
+          "seccomp_mode": 0,
+          "signal_size": 1176,
+          "signal_thread_head": 16,
+          "skb_data": 224,
+          "sock_dport": 12,
+          "sock_num": 14,
+          "task_comm": 2328,
+          "task_comm_size": 16,
+          "task_cred": 2312,
+          "task_flags": 68,
+          "task_group_leader": 1880,
+          "task_mm": 1688,
+          "task_nsproxy": 2392,
+          "task_parent": 1840,
+          "task_pid": 1816,
+          "task_real_cred": 2304,
+          "task_real_parent": 1832,
+          "task_seccomp": 2512,
+          "task_signal": 2400,
+          "task_size": 4736,
+          "task_stack": 56,
+          "task_stack_refcount": 3288,
+          "task_stack_size": 16384,
+          "task_tasks": 1608,
+          "task_tgid": 1820,
+          "task_thread_node": 1992,
+          "task_thread_pid": 1920,
+          "task_usage": 64,
+          "user_contiguous_bit": 52,
+          "user_contiguous_entries": 16,
+          "user_descriptor_address_mask": 1125899906838528,
+          "user_index_bits": 9,
+          "user_pa_bits": 48,
+          "user_page_shift": 12,
+          "user_pgd_shift": 30,
+          "user_pgtable_levels": 3,
+          "user_physical_address_mask": 281474976710655,
+          "user_physical_page_mask": 281474976706560,
+          "user_pmd_shift": 21,
+          "user_pte_shift": 12,
+          "user_tlbi_all_asid": 1,
+          "user_va_bits": 39,
+          "vma_end": 8,
+          "vma_end_size": 8,
+          "vma_file": 88,
+          "vma_flags": 32,
+          "vma_mm": 16,
+          "vma_page_prot": 24,
+          "vma_pgoff": 80,
+          "vma_size": 256,
+          "vma_start": 0,
+          "vma_start_size": 8,
+          "vmap_va_end": 8,
+          "vmap_va_start": 0
         },
-        "task_struct": {
-          "member_sizes": {
-            "pid": 4,
-            "signal": 8,
-            "thread_node": 16,
-            "thread_pid": 8
-          },
-          "members": {
-            "pid": 1816,
-            "signal": 2400,
-            "thread_node": 1992,
-            "thread_pid": 1920
-          },
-          "size": 4736
-        }
-      },
-      "task_user_state": {
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264
-          },
-          "size": 320
-        },
-        "task_struct": {
-          "member_sizes": {
-            "flags": 4,
-            "stack": 8,
-            "stack_refcount": 4
-          },
-          "members": {
-            "flags": 68,
-            "stack": 56,
-            "stack_refcount": 3288
-          },
-          "size": 4736
-        }
-      },
-      "task_walk": {
-        "cred": {
-          "member_sizes": {
-            "egid": 4,
-            "euid": 4,
-            "fsgid": 4,
-            "fsuid": 4,
-            "gid": 4,
-            "sgid": 4,
-            "suid": 4,
-            "uid": 4
-          },
-          "members": {
-            "egid": 28,
-            "euid": 24,
-            "fsgid": 36,
-            "fsuid": 32,
-            "gid": 12,
-            "sgid": 20,
-            "suid": 16,
-            "uid": 8
-          },
-          "size": 184
-        },
-        "task_struct": {
-          "member_sizes": {
-            "comm": 16,
-            "group_leader": 8,
-            "mm": 8,
-            "parent": 8,
-            "real_cred": 8,
-            "real_parent": 8,
-            "tasks": 16
-          },
-          "members": {
-            "comm": 2328,
-            "group_leader": 1880,
-            "mm": 1688,
-            "parent": 1840,
-            "real_cred": 2304,
-            "real_parent": 1832,
-            "tasks": 1608
-          },
-          "size": 4736
-        }
-      },
-      "user_ptmap": {
-        "geometry": {
-          "contiguous_bit": 52,
-          "contiguous_entries": 16,
-          "descriptor_address_mask": 1125899906838528,
-          "index_bits": 9,
-          "pa_bits": 48,
-          "page_shift": 12,
-          "pgd_shift": 30,
-          "pgtable_levels": 3,
-          "physical_address_mask": 281474976710655,
-          "physical_page_mask": 281474976706560,
-          "pmd_shift": 21,
-          "pte_shift": 12,
-          "tlbi_all_asid": 1,
-          "va_bits": 39
-        },
-        "mm_struct": {
-          "member_sizes": {
-            "mm_count": 4,
-            "mmap_lock": 64,
-            "page_table_lock": 4,
-            "pgd": 8
-          },
-          "members": {
-            "mm_count": 0,
-            "mmap_lock": 136,
-            "page_table_lock": 132,
-            "pgd": 104
-          },
-          "size": 1344
-        },
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8,
-            "regs": 248,
-            "sp": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264,
-            "regs": 0,
-            "sp": 248
-          },
-          "size": 320
-        },
-        "vm_area_struct": {
-          "member_sizes": {
-            "vm_end": 8,
-            "vm_flags": 8,
-            "vm_mm": 8,
-            "vm_pgoff": 8,
-            "vm_start": 8
-          },
-          "members": {
-            "vm_end": 8,
-            "vm_flags": 32,
-            "vm_mm": 16,
-            "vm_pgoff": 80,
-            "vm_start": 0
-          },
-          "size": 256
-        }
+        "schema": 1
       }
     },
     {
-      "dir_context": {
-        "member_sizes": {
-          "actor": 8,
-          "pos": 8
-        },
-        "members": {
-          "actor": 0,
-          "pos": 8
-        },
-        "size": 16
-      },
-      "filename_name": {
-        "member_sizes": {
-          "name": 8
-        },
-        "members": {
-          "name": 0
-        },
-        "size": 32
-      },
-      "filldir_abi": "returns_int",
       "identity": {
         "android_release": 13,
         "kmi_generation": 4,
@@ -1748,40 +1174,10 @@
         "linux_patch": 223,
         "page_shift": 12
       },
-      "inode_times": {
-        "member_sizes": {
-          "atime_nsec": 8,
-          "atime_sec": 8,
-          "mtime_nsec": 8,
-          "mtime_sec": 8
-        },
-        "members": {
-          "atime_nsec": 96,
-          "atime_sec": 88,
-          "mtime_nsec": 112,
-          "mtime_sec": 104
-        },
-        "size": 704
-      },
-      "path_inode": {
-        "dentry": {
-          "member_sizes": {
-            "d_inode": 8
-          },
-          "members": {
-            "d_inode": 48
-          },
-          "size": 208
-        },
-        "path": {
-          "member_sizes": {
-            "dentry": 8
-          },
-          "members": {
-            "dentry": 8
-          },
-          "size": 16
-        }
+      "manifest_evidence": {
+        "config_sha256": "6c449c4e5305e6db776a57197e489e14a05fab569f7a7ab3c6c5c41b48d35313",
+        "layout_sha256": "90b3782a87354db091200624b45aee13e4f41983d1370cb6bde77725c91fb677",
+        "vmlinux_build_id": "d2c6bededf522a14de184c527101226c3e258942"
       },
       "profile_id": 51013,
       "raw_btf": {
@@ -1789,203 +1185,141 @@
         "size": 5910813
       },
       "release_token": "5.10.223-android13-4-00011-ga33040a671e2-dirty",
-      "task_ref": {
-        "task_struct": {
-          "member_sizes": {
-            "usage": 4
-          },
-          "members": {
-            "usage": 64
-          },
-          "size": 4736
-        }
-      },
-      "task_threads": {
-        "signal_struct": {
-          "member_sizes": {
-            "thread_head": 16
-          },
-          "members": {
-            "thread_head": 16
-          },
-          "size": 1120
+      "runtime_layout": {
+        "fields": {
+          "cred_cap_ambient": 72,
+          "cred_cap_bset": 64,
+          "cred_cap_effective": 56,
+          "cred_cap_inheritable": 40,
+          "cred_cap_permitted": 48,
+          "cred_egid": 24,
+          "cred_euid": 20,
+          "cred_fsgid": 32,
+          "cred_fsuid": 28,
+          "cred_gid": 8,
+          "cred_securebits": 36,
+          "cred_sgid": 16,
+          "cred_size": 168,
+          "cred_suid": 12,
+          "cred_uid": 4,
+          "dentry_inode": 48,
+          "dentry_inode_size": 8,
+          "dentry_name": 40,
+          "dentry_size": 208,
+          "dir_context_actor": 0,
+          "dir_context_actor_size": 8,
+          "dir_context_pos": 8,
+          "dir_context_pos_size": 8,
+          "dir_context_size": 16,
+          "file_dentry": 24,
+          "filename_name": 0,
+          "filename_name_size": 8,
+          "filename_size": 32,
+          "ftrace_ops_flags": 16,
+          "ftrace_ops_func": 0,
+          "inode_atime_nsec": 96,
+          "inode_atime_nsec_size": 8,
+          "inode_atime_sec": 88,
+          "inode_atime_sec_size": 8,
+          "inode_mtime_nsec": 112,
+          "inode_mtime_nsec_size": 8,
+          "inode_mtime_sec": 104,
+          "inode_mtime_sec_size": 8,
+          "inode_size": 704,
+          "kobject_name": 0,
+          "kstat_file_size": 56,
+          "kstat_gid": 52,
+          "kstat_mode": 4,
+          "kstat_size": 144,
+          "kstat_uid": 48,
+          "mm_count": 88,
+          "mm_count_size": 4,
+          "mm_mmap_lock": 112,
+          "mm_mmap_lock_size": 64,
+          "mm_page_table_lock": 108,
+          "mm_page_table_lock_size": 4,
+          "mm_pgd": 72,
+          "mm_pgd_size": 8,
+          "mm_size": 992,
+          "module_exit": 936,
+          "module_init": 400,
+          "module_kobj": 80,
+          "module_list": 8,
+          "module_name": 24,
+          "module_size": 1024,
+          "nsproxy_mnt_ns": 24,
+          "nsproxy_net_ns": 40,
+          "path_dentry": 8,
+          "path_dentry_size": 8,
+          "path_size": 16,
+          "pt_regs_pc": 256,
+          "pt_regs_pc_size": 8,
+          "pt_regs_pstate": 264,
+          "pt_regs_pstate_size": 8,
+          "pt_regs_regs": 0,
+          "pt_regs_regs_size": 248,
+          "pt_regs_size": 336,
+          "pt_regs_sp": 248,
+          "pt_regs_sp_size": 8,
+          "seccomp_mode": 0,
+          "signal_size": 1120,
+          "signal_thread_head": 16,
+          "skb_data": 216,
+          "sock_dport": 12,
+          "sock_num": 14,
+          "task_comm": 1936,
+          "task_comm_size": 16,
+          "task_cred": 1920,
+          "task_flags": 68,
+          "task_group_leader": 1544,
+          "task_mm": 1304,
+          "task_nsproxy": 2000,
+          "task_parent": 1504,
+          "task_pid": 1480,
+          "task_real_cred": 1912,
+          "task_real_parent": 1496,
+          "task_seccomp": 2120,
+          "task_signal": 2008,
+          "task_size": 4736,
+          "task_stack": 56,
+          "task_stack_refcount": 2768,
+          "task_stack_size": 16384,
+          "task_tasks": 1224,
+          "task_tgid": 1484,
+          "task_thread_node": 1672,
+          "task_thread_pid": 1584,
+          "task_usage": 64,
+          "user_contiguous_bit": 52,
+          "user_contiguous_entries": 16,
+          "user_descriptor_address_mask": 281474976706560,
+          "user_index_bits": 9,
+          "user_pa_bits": 48,
+          "user_page_shift": 12,
+          "user_pgd_shift": 30,
+          "user_pgtable_levels": 3,
+          "user_physical_address_mask": 281474976710655,
+          "user_physical_page_mask": 281474976706560,
+          "user_pmd_shift": 21,
+          "user_pte_shift": 12,
+          "user_tlbi_all_asid": 1,
+          "user_va_bits": 39,
+          "vma_end": 8,
+          "vma_end_size": 8,
+          "vma_file": 160,
+          "vma_flags": 80,
+          "vma_mm": 64,
+          "vma_page_prot": 72,
+          "vma_pgoff": 152,
+          "vma_size": 232,
+          "vma_start": 0,
+          "vma_start_size": 8,
+          "vmap_va_end": 8,
+          "vmap_va_start": 0
         },
-        "task_struct": {
-          "member_sizes": {
-            "pid": 4,
-            "signal": 8,
-            "thread_node": 16,
-            "thread_pid": 8
-          },
-          "members": {
-            "pid": 1480,
-            "signal": 2008,
-            "thread_node": 1672,
-            "thread_pid": 1584
-          },
-          "size": 4736
-        }
-      },
-      "task_user_state": {
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264
-          },
-          "size": 336
-        },
-        "task_struct": {
-          "member_sizes": {
-            "flags": 4,
-            "stack": 8,
-            "stack_refcount": 4
-          },
-          "members": {
-            "flags": 68,
-            "stack": 56,
-            "stack_refcount": 2768
-          },
-          "size": 4736
-        }
-      },
-      "task_walk": {
-        "cred": {
-          "member_sizes": {
-            "egid": 4,
-            "euid": 4,
-            "fsgid": 4,
-            "fsuid": 4,
-            "gid": 4,
-            "sgid": 4,
-            "suid": 4,
-            "uid": 4
-          },
-          "members": {
-            "egid": 24,
-            "euid": 20,
-            "fsgid": 32,
-            "fsuid": 28,
-            "gid": 8,
-            "sgid": 16,
-            "suid": 12,
-            "uid": 4
-          },
-          "size": 168
-        },
-        "task_struct": {
-          "member_sizes": {
-            "comm": 16,
-            "group_leader": 8,
-            "mm": 8,
-            "parent": 8,
-            "real_cred": 8,
-            "real_parent": 8,
-            "tasks": 16
-          },
-          "members": {
-            "comm": 1936,
-            "group_leader": 1544,
-            "mm": 1304,
-            "parent": 1504,
-            "real_cred": 1912,
-            "real_parent": 1496,
-            "tasks": 1224
-          },
-          "size": 4736
-        }
-      },
-      "user_ptmap": {
-        "geometry": {
-          "contiguous_bit": 52,
-          "contiguous_entries": 16,
-          "descriptor_address_mask": 281474976706560,
-          "index_bits": 9,
-          "pa_bits": 48,
-          "page_shift": 12,
-          "pgd_shift": 30,
-          "pgtable_levels": 3,
-          "physical_address_mask": 281474976710655,
-          "physical_page_mask": 281474976706560,
-          "pmd_shift": 21,
-          "pte_shift": 12,
-          "tlbi_all_asid": 1,
-          "va_bits": 39
-        },
-        "mm_struct": {
-          "member_sizes": {
-            "mm_count": 4,
-            "mmap_lock": 64,
-            "page_table_lock": 4,
-            "pgd": 8
-          },
-          "members": {
-            "mm_count": 88,
-            "mmap_lock": 112,
-            "page_table_lock": 108,
-            "pgd": 72
-          },
-          "size": 992
-        },
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8,
-            "regs": 248,
-            "sp": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264,
-            "regs": 0,
-            "sp": 248
-          },
-          "size": 336
-        },
-        "vm_area_struct": {
-          "member_sizes": {
-            "vm_end": 8,
-            "vm_flags": 8,
-            "vm_mm": 8,
-            "vm_pgoff": 8,
-            "vm_start": 8
-          },
-          "members": {
-            "vm_end": 8,
-            "vm_flags": 80,
-            "vm_mm": 64,
-            "vm_pgoff": 152,
-            "vm_start": 0
-          },
-          "size": 232
-        }
+        "schema": 1
       }
     },
     {
-      "dir_context": {
-        "member_sizes": {
-          "actor": 8,
-          "pos": 8
-        },
-        "members": {
-          "actor": 0,
-          "pos": 8
-        },
-        "size": 16
-      },
-      "filename_name": {
-        "member_sizes": {
-          "name": 8
-        },
-        "members": {
-          "name": 0
-        },
-        "size": 32
-      },
-      "filldir_abi": "returns_int",
       "identity": {
         "android_release": 14,
         "kmi_generation": 11,
@@ -1994,40 +1328,10 @@
         "linux_patch": 164,
         "page_shift": 12
       },
-      "inode_times": {
-        "member_sizes": {
-          "atime_nsec": 8,
-          "atime_sec": 8,
-          "mtime_nsec": 8,
-          "mtime_sec": 8
-        },
-        "members": {
-          "atime_nsec": 96,
-          "atime_sec": 88,
-          "mtime_nsec": 112,
-          "mtime_sec": 104
-        },
-        "size": 752
-      },
-      "path_inode": {
-        "dentry": {
-          "member_sizes": {
-            "d_inode": 8
-          },
-          "members": {
-            "d_inode": 48
-          },
-          "size": 208
-        },
-        "path": {
-          "member_sizes": {
-            "dentry": 8
-          },
-          "members": {
-            "dentry": 8
-          },
-          "size": 16
-        }
+      "manifest_evidence": {
+        "config_sha256": "11340d4227ac4ed99d00560daa9317f2290a9e71082bb53d1baefa1f9f0508cd",
+        "layout_sha256": "81d95cea163c171d42b50904e10069bb380c3545eeb426154b1beb7eee874557",
+        "vmlinux_build_id": "04b7e217e5601b15989535cbdad96f6c62b777a7"
       },
       "profile_id": 51514,
       "raw_btf": {
@@ -2035,181 +1339,140 @@
         "size": 5264740
       },
       "release_token": "5.15.164-android14-11-maybe-dirty",
-      "task_ref": {
-        "task_struct": {
-          "member_sizes": {
-            "usage": 4
-          },
-          "members": {
-            "usage": 56
-          },
-          "size": 4736
-        }
-      },
-      "task_threads": {
-        "signal_struct": {
-          "member_sizes": {
-            "thread_head": 16
-          },
-          "members": {
-            "thread_head": 16
-          },
-          "size": 1120
+      "runtime_layout": {
+        "fields": {
+          "cred_cap_ambient": 72,
+          "cred_cap_bset": 64,
+          "cred_cap_effective": 56,
+          "cred_cap_inheritable": 40,
+          "cred_cap_permitted": 48,
+          "cred_egid": 24,
+          "cred_euid": 20,
+          "cred_fsgid": 32,
+          "cred_fsuid": 28,
+          "cred_gid": 8,
+          "cred_securebits": 36,
+          "cred_sgid": 16,
+          "cred_size": 176,
+          "cred_suid": 12,
+          "cred_uid": 4,
+          "dentry_inode": 48,
+          "dentry_inode_size": 8,
+          "dentry_name": 40,
+          "dentry_size": 208,
+          "dir_context_actor": 0,
+          "dir_context_actor_size": 8,
+          "dir_context_pos": 8,
+          "dir_context_pos_size": 8,
+          "dir_context_size": 16,
+          "file_dentry": 24,
+          "filename_name": 0,
+          "filename_name_size": 8,
+          "filename_size": 32,
+          "ftrace_ops_flags": 16,
+          "ftrace_ops_func": 0,
+          "inode_atime_nsec": 96,
+          "inode_atime_nsec_size": 8,
+          "inode_atime_sec": 88,
+          "inode_atime_sec_size": 8,
+          "inode_mtime_nsec": 112,
+          "inode_mtime_nsec_size": 8,
+          "inode_mtime_sec": 104,
+          "inode_mtime_sec_size": 8,
+          "inode_size": 752,
+          "kobject_name": 0,
+          "kstat_file_size": 56,
+          "kstat_gid": 52,
+          "kstat_mode": 4,
+          "kstat_size": 144,
+          "kstat_uid": 48,
+          "mm_count": 80,
+          "mm_count_size": 4,
+          "mm_mmap_lock": 104,
+          "mm_mmap_lock_size": 64,
+          "mm_page_table_lock": 100,
+          "mm_page_table_lock_size": 4,
+          "mm_pgd": 64,
+          "mm_pgd_size": 8,
+          "mm_size": 992,
+          "module_exit": 976,
+          "module_init": 376,
+          "module_kobj": 80,
+          "module_list": 8,
+          "module_name": 24,
+          "module_size": 1024,
+          "nsproxy_mnt_ns": 24,
+          "nsproxy_net_ns": 40,
+          "path_dentry": 8,
+          "path_dentry_size": 8,
+          "path_size": 16,
+          "pt_regs_pc": 256,
+          "pt_regs_pc_size": 8,
+          "pt_regs_pstate": 264,
+          "pt_regs_pstate_size": 8,
+          "pt_regs_regs": 0,
+          "pt_regs_regs_size": 248,
+          "pt_regs_size": 336,
+          "pt_regs_sp": 248,
+          "pt_regs_sp_size": 8,
+          "seccomp_mode": 0,
+          "signal_size": 1120,
+          "signal_thread_head": 16,
+          "skb_data": 216,
+          "sock_dport": 12,
+          "sock_num": 14,
+          "task_comm": 2064,
+          "task_comm_size": 16,
+          "task_cred": 2048,
+          "task_flags": 60,
+          "task_group_leader": 1664,
+          "task_mm": 1416,
+          "task_nsproxy": 2128,
+          "task_parent": 1624,
+          "task_pid": 1600,
+          "task_real_cred": 2040,
+          "task_real_parent": 1616,
+          "task_seccomp": 2248,
+          "task_signal": 2136,
+          "task_size": 4736,
+          "task_stack": 48,
+          "task_stack_refcount": 2952,
+          "task_stack_size": 16384,
+          "task_tasks": 1336,
+          "task_tgid": 1604,
+          "task_thread_node": 1792,
+          "task_thread_pid": 1704,
+          "task_usage": 56,
+          "user_contiguous_bit": 52,
+          "user_contiguous_entries": 16,
+          "user_descriptor_address_mask": 281474976706560,
+          "user_index_bits": 9,
+          "user_pa_bits": 48,
+          "user_page_shift": 12,
+          "user_pgd_shift": 30,
+          "user_pgtable_levels": 3,
+          "user_physical_address_mask": 281474976710655,
+          "user_physical_page_mask": 281474976706560,
+          "user_pmd_shift": 21,
+          "user_pte_shift": 12,
+          "user_tlbi_all_asid": 1,
+          "user_va_bits": 39,
+          "vma_end": 8,
+          "vma_end_size": 8,
+          "vma_file": 160,
+          "vma_flags": 80,
+          "vma_mm": 64,
+          "vma_page_prot": 72,
+          "vma_pgoff": 152,
+          "vma_size": 232,
+          "vma_start": 0,
+          "vma_start_size": 8,
+          "vmap_va_end": 8,
+          "vmap_va_start": 0
         },
-        "task_struct": {
-          "member_sizes": {
-            "pid": 4,
-            "signal": 8,
-            "thread_node": 16,
-            "thread_pid": 8
-          },
-          "members": {
-            "pid": 1600,
-            "signal": 2136,
-            "thread_node": 1792,
-            "thread_pid": 1704
-          },
-          "size": 4736
-        }
-      },
-      "task_user_state": {
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264
-          },
-          "size": 336
-        },
-        "task_struct": {
-          "member_sizes": {
-            "flags": 4,
-            "stack": 8,
-            "stack_refcount": 4
-          },
-          "members": {
-            "flags": 60,
-            "stack": 48,
-            "stack_refcount": 2952
-          },
-          "size": 4736
-        }
-      },
-      "task_walk": {
-        "cred": {
-          "member_sizes": {
-            "egid": 4,
-            "euid": 4,
-            "fsgid": 4,
-            "fsuid": 4,
-            "gid": 4,
-            "sgid": 4,
-            "suid": 4,
-            "uid": 4
-          },
-          "members": {
-            "egid": 24,
-            "euid": 20,
-            "fsgid": 32,
-            "fsuid": 28,
-            "gid": 8,
-            "sgid": 16,
-            "suid": 12,
-            "uid": 4
-          },
-          "size": 176
-        },
-        "task_struct": {
-          "member_sizes": {
-            "comm": 16,
-            "group_leader": 8,
-            "mm": 8,
-            "parent": 8,
-            "real_cred": 8,
-            "real_parent": 8,
-            "tasks": 16
-          },
-          "members": {
-            "comm": 2064,
-            "group_leader": 1664,
-            "mm": 1416,
-            "parent": 1624,
-            "real_cred": 2040,
-            "real_parent": 1616,
-            "tasks": 1336
-          },
-          "size": 4736
-        }
-      },
-      "user_ptmap": {
-        "geometry": {
-          "contiguous_bit": 52,
-          "contiguous_entries": 16,
-          "descriptor_address_mask": 281474976706560,
-          "index_bits": 9,
-          "pa_bits": 48,
-          "page_shift": 12,
-          "pgd_shift": 30,
-          "pgtable_levels": 3,
-          "physical_address_mask": 281474976710655,
-          "physical_page_mask": 281474976706560,
-          "pmd_shift": 21,
-          "pte_shift": 12,
-          "tlbi_all_asid": 1,
-          "va_bits": 39
-        },
-        "mm_struct": {
-          "member_sizes": {
-            "mm_count": 4,
-            "mmap_lock": 64,
-            "page_table_lock": 4,
-            "pgd": 8
-          },
-          "members": {
-            "mm_count": 80,
-            "mmap_lock": 104,
-            "page_table_lock": 100,
-            "pgd": 64
-          },
-          "size": 992
-        },
-        "pt_regs": {
-          "member_sizes": {
-            "pc": 8,
-            "pstate": 8,
-            "regs": 248,
-            "sp": 8
-          },
-          "members": {
-            "pc": 256,
-            "pstate": 264,
-            "regs": 0,
-            "sp": 248
-          },
-          "size": 336
-        },
-        "vm_area_struct": {
-          "member_sizes": {
-            "vm_end": 8,
-            "vm_flags": 8,
-            "vm_mm": 8,
-            "vm_pgoff": 8,
-            "vm_start": 8
-          },
-          "members": {
-            "vm_end": 8,
-            "vm_flags": 80,
-            "vm_mm": 64,
-            "vm_pgoff": 152,
-            "vm_start": 0
-          },
-          "size": 232
-        }
+        "schema": 1
       }
     }
   ],
-  "schema": 1
+  "schema": 2
 }

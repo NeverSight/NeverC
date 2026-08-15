@@ -22,8 +22,11 @@ static int _neverc_krt_vmalloc_interposed;
 static __always_inline struct list_head *
 _neverc_krt_get_mod_list(struct neverc_krt_this_module *mod)
 {
-	return (struct list_head *)((char *)mod +
-		_neverc_krt_get_gki_layout()->module_list);
+	const struct neverc_krt_gki_layout *layout =
+		_neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
+
+	return layout && mod ? (struct list_head *)((char *)mod +
+		layout->module_list) : (struct list_head *)0;
 }
 
 /* ---- internal typedefs ---- */
@@ -90,9 +93,11 @@ void neverc_krt_vis_filter(struct neverc_krt_vis_state *state,
 	struct list_head *our;
 	unsigned long n_raw, p_raw;
 
-	if (state->filtered) return;
+	if (!state || !mod || state->filtered) return;
 
 	our = _neverc_krt_get_mod_list(mod);
+	if (!our)
+		return;
 	if (neverc_krt_mem_read(&n_raw, &our->next, 8) ||
 	    neverc_krt_mem_read(&p_raw, &our->prev, 8))
 		return;
@@ -126,9 +131,11 @@ void neverc_krt_vis_restore(struct neverc_krt_vis_state *state,
 {
 	struct list_head *our;
 
-	if (!state->filtered) return;
+	if (!state || !mod || !state->filtered) return;
 
 	our = _neverc_krt_get_mod_list(mod);
+	if (!our)
+		return;
 
 	if (!state->saved_next || !state->saved_prev)
 		return;
@@ -180,7 +187,9 @@ void neverc_krt_vis_sysfs_remove(struct neverc_krt_vis_state *state,
 	if (!state || !mod || state->sysfs_removed || !_neverc_krt_kobject_del)
 		return;
 
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
+	if (!layout)
+		return;
 	kobj = (unsigned char *)mod + layout->module_kobj;
 	if (neverc_krt_mem_read(
 		    &name, (unsigned char *)kobj + layout->kobject_name,
@@ -205,9 +214,10 @@ static int _neverc_krt_mod_seq_show_filter(void *seq, void *v)
 
 	if (v && _neverc_krt_vis_target_name) {
 		const struct neverc_krt_gki_layout *layout =
-			_neverc_krt_get_gki_layout();
+			_neverc_krt_get_proven_gki_layout(
+				NEVERC_KRT_LAYOUT_CERT_FULL);
 		unsigned long list_addr = (unsigned long)v;
-		if (list_addr >= 0xFFFF000000000000UL &&
+		if (layout && list_addr >= 0xFFFF000000000000UL &&
 		    list_addr < 0xFFFFFFFFFFFFF000UL) {
 			unsigned long mod_base = list_addr - layout->module_list;
 			char nbuf[64];
@@ -351,10 +361,14 @@ void neverc_krt_vis_maps_filter_add_self(void)
 void neverc_krt_vis_wipe_modinfo(struct neverc_krt_this_module *mod)
 {
 	const struct neverc_krt_gki_layout *layout =
-		_neverc_krt_get_gki_layout();
+		_neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
 	volatile unsigned char *p = (volatile unsigned char *)mod;
 	unsigned long i;
-	unsigned long name_start = layout->module_name;
+	unsigned long name_start;
+
+	if (!layout || !mod)
+		return;
+	name_start = layout->module_name;
 	for (i = name_start; i < name_start + 56 && i < _neverc_krt_get_module_size(); i++)
 		p[i] = 0;
 }
@@ -369,9 +383,10 @@ static int _neverc_krt_vmalloc_show_filter(void *seq, void *v)
 
 	if (v && _neverc_krt_vmalloc_vis_start) {
 		const struct neverc_krt_gki_layout *layout =
-			_neverc_krt_get_gki_layout();
+			_neverc_krt_get_proven_gki_layout(
+				NEVERC_KRT_LAYOUT_CERT_FULL);
 		unsigned long start = 0;
-		if (!neverc_krt_mem_read(
+		if (layout && !neverc_krt_mem_read(
 			    &start, (const char *)v + layout->vmap_va_start,
 			    sizeof(start)) && start) {
 			if (start >= _neverc_krt_vmalloc_vis_start &&

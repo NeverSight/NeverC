@@ -12,7 +12,9 @@ generation + page; a certificate may overlay measured offsets.
 
 import argparse
 import json
+import mmap
 from pathlib import Path
+import re
 import sys
 
 from elftools.elf.elffile import ELFFile
@@ -24,21 +26,8 @@ DEFAULT_CATALOG = RUNTIME_ROOT / "arm64/gki-profiles.json"
 DEFAULT_MANIFEST_ROOT = RUNTIME_ROOT / "arm64/gki-manifests"
 DEFAULT_CERTIFICATES = RUNTIME_ROOT / "arm64/gki-layout-certificates.json"
 
-CERTIFICATE_STRUCTURES = (
-    "cred",
-    "dentry",
-    "dir_context",
-    "file",
-    "filename",
-    "inode",
-    "mm_struct",
-    "path",
-    "pt_regs",
-    "signal_struct",
-    "task_struct",
-    "timespec64",
-    "vm_area_struct",
-)
+LINUX_RELEASE_RE = re.compile(rb"Linux version ([0-9][^ \x00]*)")
+SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 
 
 def load_tool(name, filename):
@@ -55,6 +44,7 @@ def load_tool(name, filename):
 COMPAT = load_tool("nvk_generate_compat_table", "generate-compat-table.py")
 MANIFEST = load_tool("nvk_generate_gki_manifest", "generate-gki-manifest.py")
 EXTRACT = load_tool("nvk_extract_btf_layouts", "extract-btf-layouts.py")
+CERTIFICATE_STRUCTURES = tuple(COMPAT.neverc_read_members_by_struct())
 
 
 def narrow_layout(layout, members):
@@ -85,6 +75,39 @@ def identity_from_token(release_token, page_shift):
         "kmi_generation": int(match.group("kmi")),
         "page_shift": page_shift,
     }
+
+
+def release_token_from_vmlinux_bytes(image):
+    """Return the one release token measured from a vmlinux banner."""
+    try:
+        tokens = sorted({
+            match.decode("ascii", errors="strict")
+            for match in LINUX_RELEASE_RE.findall(image)
+        })
+    except UnicodeDecodeError as error:
+        raise ValueError("vmlinux release token is not ASCII") from error
+    if len(tokens) != 1:
+        raise ValueError(
+            "vmlinux must contain exactly one Linux release token; "
+            f"found {tokens}"
+        )
+    return tokens[0]
+
+
+def release_token_from_vmlinux(vmlinux):
+    with vmlinux.open("rb") as stream:
+        with mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as image:
+            return release_token_from_vmlinux_bytes(image)
+
+
+def assert_expected_release_token(measured, expected):
+    """Treat a caller token as an assertion, never as identity evidence."""
+    if expected is not None and measured != expected:
+        raise ValueError(
+            f"release token mismatch: vmlinux has {measured!r}, "
+            f"expected {expected!r}"
+        )
+    return measured
 
 
 def layout_evidence(vmlinux):
@@ -227,6 +250,99 @@ def build_certificate(profile, manifest, release_token, layouts, evidence_name,
     return certificate
 
 
+def _validate_target_manifest_evidence(observed_manifest, evidence_name,
+                                       evidence):
+    manifest_evidence = observed_manifest.get("evidence")
+    required = ("config_sha256", "layout_sha256", "vmlinux_build_id")
+    if (
+        not isinstance(manifest_evidence, dict)
+        or any(not manifest_evidence.get(name) for name in required)
+        or not all(
+            isinstance(manifest_evidence[name], str)
+            for name in required
+        )
+        or not SHA256_HEX.fullmatch(manifest_evidence["config_sha256"])
+        or not SHA256_HEX.fullmatch(manifest_evidence["layout_sha256"])
+    ):
+        raise ValueError(
+            "full certificate requires a target-bound manifest with "
+            "config, layout, and vmlinux build evidence"
+        )
+    expected_format = "BTF" if evidence_name == "raw_btf" else "DWARF"
+    if manifest_evidence.get("layout_format") != expected_format:
+        raise ValueError(
+            "target-bound manifest layout format does not match vmlinux"
+        )
+    if manifest_evidence["layout_sha256"] != evidence.get("sha256"):
+        raise ValueError(
+            "target-bound manifest layout digest does not match vmlinux"
+        )
+    return {
+        "config_sha256": manifest_evidence["config_sha256"],
+        "layout_sha256": manifest_evidence["layout_sha256"],
+        "vmlinux_build_id": manifest_evidence["vmlinux_build_id"],
+    }
+
+
+def build_full_certificate(profile, family_manifest, observed_manifest,
+                           release_token, evidence_name, evidence,
+                           catalog_profiles=None):
+    """Build a complete exact-token runtime layout certificate."""
+    provenance = _validate_target_manifest_evidence(
+        observed_manifest, evidence_name, evidence
+    )
+    page_shift = observed_manifest["config"]["PAGE_SHIFT"]
+    identity = identity_from_token(release_token, page_shift)
+    family = (
+        profile["linux_major"],
+        profile["linux_minor"],
+        profile["page_shift"],
+    )
+    observed_family = (
+        identity["linux_major"],
+        identity["linux_minor"],
+        identity["page_shift"],
+    )
+    if observed_family != family:
+        raise ValueError(
+            f"{release_token}: identity {observed_family} is outside "
+            f"profile family {family}"
+        )
+    if catalog_profiles:
+        owner = COMPAT.dedicated_compile_family(catalog_profiles, identity)
+        if owner is not None and owner != profile["legacy_id"]:
+            raise ValueError(
+                f"{release_token}: Android {identity['android_release']} "
+                f"KMI {identity['kmi_generation']} is compile family {owner}, "
+                f"not an overlay on {profile['legacy_id']}"
+            )
+
+    expected_loader = COMPAT.compile_loader_abi_contract(family_manifest)
+    observed_loader = COMPAT.compile_loader_abi_contract(observed_manifest)
+    if observed_loader != expected_loader:
+        differences = ", ".join(
+            f"{name}={expected_loader[name]}->{observed_loader[name]}"
+            for name in COMPAT.LOADER_ABI_FIELD_NAMES
+            if expected_loader[name] != observed_loader[name]
+        )
+        raise ValueError(
+            f"{release_token}: loader ABI differs from compile profile "
+            f"{profile['legacy_id']}: {differences}; add a dedicated profile"
+        )
+
+    return {
+        "profile_id": profile["legacy_id"],
+        "release_token": release_token,
+        "identity": identity,
+        evidence_name: evidence,
+        "manifest_evidence": provenance,
+        "runtime_layout": {
+            "schema": 1,
+            "fields": COMPAT.compile_runtime_layout(observed_manifest),
+        },
+    }
+
+
 def merge_certificate(document, certificate):
     records = list(document.get("certificates", []))
     identity_key = (certificate["profile_id"], certificate["release_token"])
@@ -239,7 +355,8 @@ def merge_certificate(document, certificate):
     records.sort(
         key=lambda record: (record["profile_id"], record["release_token"])
     )
-    return {"schema": 1, "certificates": records}
+    schema = 2 if any("runtime_layout" in record for record in records) else 1
+    return {"schema": schema, "certificates": records}
 
 
 def load_profile(catalog_path, profile_id):
@@ -256,7 +373,20 @@ def main():
     )
     parser.add_argument("--profile", required=True, type=int)
     parser.add_argument("--vmlinux", required=True, type=Path)
-    parser.add_argument("--release-token", required=True)
+    parser.add_argument(
+        "--release-token",
+        help="optional expected token; identity is always read from vmlinux",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help="target build .config/auto.conf required for a full certificate",
+    )
+    parser.add_argument(
+        "--legacy-partial",
+        action="store_true",
+        help="emit the historical partial-field certificate schema",
+    )
     parser.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
     parser.add_argument(
         "--manifest-root", type=Path, default=DEFAULT_MANIFEST_ROOT
@@ -282,9 +412,10 @@ def main():
             raise ValueError(
                 f"{manifest_path}: profile does not match --profile"
             )
-        layouts = EXTRACT.extract_layouts(
-            str(args.vmlinux), CERTIFICATE_STRUCTURES
+        measured_token = assert_expected_release_token(
+            release_token_from_vmlinux(args.vmlinux), args.release_token
         )
+        layouts = EXTRACT.extract_layouts(str(args.vmlinux), CERTIFICATE_STRUCTURES)
         missing = sorted(set(CERTIFICATE_STRUCTURES) - set(layouts))
         # timespec64 is only required when inode still uses compound timestamps.
         if "timespec64" in missing and "inode" in layouts:
@@ -303,20 +434,48 @@ def main():
                 + ", ".join(missing)
             )
         evidence_name, evidence = layout_evidence(args.vmlinux)
-        certificate = build_certificate(
-            profile,
-            manifest,
-            args.release_token,
-            layouts,
-            evidence_name,
-            evidence,
-            catalog.get("profiles"),
-        )
+        if args.legacy_partial:
+            certificate = build_certificate(
+                profile,
+                manifest,
+                measured_token,
+                layouts,
+                evidence_name,
+                evidence,
+                catalog.get("profiles"),
+            )
+        else:
+            if args.config is None:
+                raise ValueError(
+                    "--config is required for a target-bound full certificate"
+                )
+            config = MANIFEST.read_config(args.config)
+            target_evidence = MANIFEST.elf_evidence(args.vmlinux)
+            target_evidence["config_sha256"] = MANIFEST.sha256_file(args.config)
+            if target_evidence["layout_sha256"] != evidence["sha256"]:
+                raise ValueError(
+                    "vmlinux layout evidence changed during certificate build"
+                )
+            observed_manifest = {
+                "profile": args.profile,
+                "config": config,
+                "layouts": layouts,
+                "evidence": target_evidence,
+            }
+            certificate = build_full_certificate(
+                profile,
+                manifest,
+                observed_manifest,
+                measured_token,
+                evidence_name,
+                evidence,
+                catalog.get("profiles"),
+            )
         if args.merge is not None:
             if args.merge.exists():
                 document = json.loads(args.merge.read_text(encoding="utf-8"))
             else:
-                document = {"schema": 1, "certificates": []}
+                document = {"schema": 2, "certificates": []}
             document = merge_certificate(document, certificate)
             args.merge.write_text(
                 json.dumps(document, indent=2, sort_keys=True) + "\n",
@@ -324,7 +483,7 @@ def main():
             )
             print(
                 f"generate-layout-certificate: merged {args.profile} "
-                f"{args.release_token} ({evidence_name}) -> {args.merge}"
+                f"{measured_token} ({evidence_name}) -> {args.merge}"
             )
         if args.output is not None:
             args.output.write_text(
@@ -333,7 +492,7 @@ def main():
             )
             print(
                 f"generate-layout-certificate: wrote {args.profile} "
-                f"{args.release_token} ({evidence_name}) -> {args.output}"
+                f"{measured_token} ({evidence_name}) -> {args.output}"
             )
     except (
         json.JSONDecodeError,

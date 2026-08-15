@@ -110,7 +110,8 @@ int neverc_krt_anti_check_caller_comm(const char *expected)
 		if (!off) return 0;
 	}
 
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_WALK);
 	if (!layout || !layout->task_comm_size || !layout->task_size ||
 	    off + layout->task_comm_size > layout->task_size)
 		return 0;

@@ -74,20 +74,38 @@ static int _neverc_krt_decode_page_shift(unsigned long tcr)
 	}
 }
 
-unsigned long _neverc_krt_physical_page_mask_for_shift(
-	const struct neverc_krt_gki_layout *layout, int page_shift)
+static unsigned long _neverc_krt_decode_pa_bits(unsigned long tcr)
+{
+	switch ((tcr >> 32) & 7UL) {
+	case 0:
+		return 32;
+	case 1:
+		return 36;
+	case 2:
+		return 40;
+	case 3:
+		return 42;
+	case 4:
+		return 44;
+	case 5:
+		return 48;
+	case 6:
+		return 52;
+	default:
+		return 0;
+	}
+}
+
+unsigned long _neverc_krt_physical_page_mask_for_shift(int page_shift)
 {
 	unsigned long offset_mask;
-	unsigned long pa_bits;
+	unsigned long pa_bits = _neverc_krt_decode_pa_bits(
+		_neverc_krt_read_tcr());
 
 	if (page_shift != 12 && page_shift != 14 && page_shift != 16)
 		return 0;
 	offset_mask = (1UL << page_shift) - 1;
-	pa_bits = 48;
-	if (layout && layout->user_pa_bits >= 36 &&
-	    layout->user_pa_bits <= 52)
-		pa_bits = layout->user_pa_bits;
-	if (pa_bits >= sizeof(unsigned long) * 8)
+	if (!pa_bits || pa_bits >= sizeof(unsigned long) * 8)
 		return 0;
 	return ((1UL << pa_bits) - 1) & ~offset_mask;
 }
@@ -101,8 +119,7 @@ static unsigned long _neverc_krt_page_offset_mask(int page_shift)
 
 static unsigned long _neverc_krt_pte_addr_mask(int page_shift)
 {
-	return _neverc_krt_physical_page_mask_for_shift(
-		_neverc_krt_get_gki_layout(), page_shift);
+	return _neverc_krt_physical_page_mask_for_shift(page_shift);
 }
 
 static unsigned long _neverc_krt_par_to_phys(unsigned long par,

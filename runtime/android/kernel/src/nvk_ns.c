@@ -54,7 +54,10 @@ static void *_neverc_krt_task_pid_ptr(struct task_struct *task)
 	if (_neverc_krt_task_pid_struct)
 		return _neverc_krt_task_pid_struct(task);
 
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_THREADS);
+	if (!layout)
+		return (void *)0;
 	if (neverc_krt_mem_read(&pid,
 			(const char *)task + layout->task_thread_pid,
 			sizeof(pid)))
@@ -96,7 +99,9 @@ static void *_neverc_krt_get_nsproxy(struct task_struct *task)
 
 	if (!task) return (void *)0;
 
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
+	if (!layout)
+		return (void *)0;
 	if (neverc_krt_mem_read(&nsproxy,
 			(const char *)task + layout->task_nsproxy,
 			sizeof(nsproxy)))
@@ -123,7 +128,10 @@ int neverc_krt_ns_get_info(struct task_struct *task, struct neverc_krt_ns_info *
 	void *nsproxy = _neverc_krt_get_nsproxy(task);
 	if (nsproxy) {
 		unsigned long mnt_val, net_val;
-		layout = _neverc_krt_get_gki_layout();
+		layout = _neverc_krt_get_proven_gki_layout(
+			NEVERC_KRT_LAYOUT_CERT_FULL);
+		if (!layout)
+			return -1;
 		if (!neverc_krt_mem_read(&mnt_val,
 				(const char *)nsproxy + layout->nsproxy_mnt_ns,
 				sizeof(mnt_val)) &&
@@ -138,4 +146,3 @@ int neverc_krt_ns_get_info(struct task_struct *task, struct neverc_krt_ns_info *
 
 	return 0;
 }
-

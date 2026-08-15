@@ -150,10 +150,9 @@ static void _neverc_krt_pid_readdir_ctx(neverc_krt_reg_ctx *ctx)
 	const struct neverc_krt_runtime_caps *caps;
 
 	if (!dir_ctx_ptr) return;
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT);
 	if (!layout ||
-	    !_neverc_krt_layout_fields_proven(
-		    NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT) ||
 	    layout->dir_context_actor_size != sizeof(void *) ||
 	    !layout->dir_context_size ||
 	    layout->dir_context_actor + layout->dir_context_actor_size >

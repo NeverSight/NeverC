@@ -28,6 +28,8 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Linker/Linker.h"
+#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Object/ModuleSymbolTable.h"
 #include "llvm/Object/SymbolicFile.h"
@@ -93,11 +95,12 @@ static llvm::cl::opt<unsigned> PcgWeightFloor(
                    "count reaches this floor"));
 static llvm::cl::opt<unsigned> PcgLoopFloor(
     "neverc-pcg-loop-floor", llvm::cl::init(56), llvm::cl::Hidden,
-    llvm::cl::desc("Engage parallel codegen when the module's loop (back-edge) "
-                   "count reaches this floor, even if the instruction count is "
-                   "below -neverc-pcg-weight-floor; loop-dense modules are "
-                   "SCEV-superlinear and benefit from parallelism despite a low "
-                   "instruction count (0 = disable the loop signal)"));
+    llvm::cl::desc(
+        "Engage parallel codegen when the module's loop (back-edge) "
+        "count reaches this floor, even if the instruction count is "
+        "below -neverc-pcg-weight-floor; loop-dense modules are "
+        "SCEV-superlinear and benefit from parallelism despite a low "
+        "instruction count (0 = disable the loop signal)"));
 static llvm::cl::opt<unsigned> PcgOptWeightDiv(
     "neverc-pcg-opt-weight-div", llvm::cl::init(12000), llvm::cl::Hidden,
     llvm::cl::desc("Parallel opt+codegen: one partition per this many "
@@ -122,11 +125,12 @@ static llvm::cl::opt<unsigned> PcgCgLoopDiv(
                    "is off by default here)"));
 static llvm::cl::opt<unsigned> PcgCgMaxParts(
     "neverc-pcg-cg-max-parts", llvm::cl::init(16), llvm::cl::Hidden,
-    llvm::cl::desc("Parallel codegen-only: maximum partition count.  A fixed "
-                   "ceiling (not the host core count) so the partition count -- "
-                   "and therefore the emitted object's layout -- is reproducible "
-                   "across machines; execution parallelism is bounded "
-                   "separately by the worker pool"));
+    llvm::cl::desc(
+        "Parallel codegen-only: maximum partition count.  A fixed "
+        "ceiling (not the host core count) so the partition count -- "
+        "and therefore the emitted object's layout -- is reproducible "
+        "across machines; execution parallelism is bounded "
+        "separately by the worker pool"));
 
 // Auto-LTO IV-widening cost bound. Whole-program inlining can concentrate
 // dozens of loops in one partition-straggler function; widening every IV in
@@ -202,10 +206,11 @@ struct ScevHugeThresholdGuard {
 // overrides everything.
 static llvm::cl::opt<unsigned> PcgLoopsPerThread(
     "neverc-pcg-loops-per-thread", llvm::cl::init(96), llvm::cl::Hidden,
-    llvm::cl::desc("Auto-LTO parallel opt: target loop (back-edge) count per "
-                   "worker thread; the pool is sized to the module's loop work "
-                   "and clamped to the performance-core count "
-                   "(0 = disable work proportioning, use the full core count)"));
+    llvm::cl::desc(
+        "Auto-LTO parallel opt: target loop (back-edge) count per "
+        "worker thread; the pool is sized to the module's loop work "
+        "and clamped to the performance-core count "
+        "(0 = disable work proportioning, use the full core count)"));
 static llvm::cl::opt<unsigned> PcgWeightPerThread(
     "neverc-pcg-weight-per-thread", llvm::cl::init(10000), llvm::cl::Hidden,
     llvm::cl::desc("Auto-LTO parallel opt: target instruction count per worker "
@@ -413,6 +418,10 @@ struct PreparedPartition {
   /// could not be computed.  Set by preparePartitions on a miss, consumed
   /// by the codegen worker to store the produced object.
   std::string CacheKey;
+  /// The cache payload is already optimized bitcode.  The worker still owns
+  /// this partition for reassembly, but must not replay its optimization or
+  /// plugin callbacks.
+  bool SkipOptimization = false;
   PreparedPartition() = default;
 };
 
@@ -588,12 +597,14 @@ struct ParallelCGContext {
   /// outputs differ for identical partition bitcode.
   const PartitionCacheHooks *Cache = nullptr;
   StringRef PipeTag;
+  bool CacheStoresOptimizedIR = false;
 
   bool init(Module &Mod, TargetMachine &TM, bool WithSplitDwarf);
   bool resolvePartitions(unsigned WeightDiv, unsigned LoopDiv,
                          unsigned MaxParts);
   bool externalizeAndSerialize(Module &Mod);
   void preparePartitions(StringRef BCRef, TargetMachine &TM);
+  std::unique_ptr<Module> reassembleOptimizedPartitions(Module &Mod);
   bool finalizeResults(Module &Mod, ParallelCodeGenOutputs Outputs);
   void restoreLinkage(Module &Mod);
 };
@@ -726,7 +737,8 @@ bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
   SmallString<32> PCGSuffix;
   {
     auto H = hash_value(Mod.getModuleIdentifier());
-    raw_svector_ostream(PCGSuffix) << merge::PcgSymbolMarker << (H & 0xFFFFFFFF);
+    raw_svector_ostream(PCGSuffix)
+        << merge::PcgSymbolMarker << (H & 0xFFFFFFFF);
   }
 
   auto ExternalizeGV = [&](GlobalValue &GV) {
@@ -839,8 +851,8 @@ bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
       if (!PinFrameOwner)
         continue;
       // localrecover's first operand names the frame being recovered.
-      if (const auto *Owner = dyn_cast<Function>(
-              Call->getArgOperand(0)->stripPointerCasts()))
+      if (const auto *Owner =
+              dyn_cast<Function>(Call->getArgOperand(0)->stripPointerCasts()))
         PinnedToP0.insert(Owner->getName());
     }
   };
@@ -1166,20 +1178,49 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
       MPart.setDataLayout(PP->PTM->createDataLayout());
 
       if (Cache && Cache->enabled()) {
-        // Key = this partition's exact post-IPO bitcode.  Serializing it
-        // is now safe because the lazy materializer was drained above.
+        // Key = this partition's exact post-IPO bitcode.  Serializing it is now
+        // safe because the lazy materializer was drained above.  The ordinary
+        // path caches the emitted object; a two-stage whole-module pipeline
+        // caches optimized IR instead, because that IR must be reassembled
+        // before module passes can run.
         stripUnreferencedDeclarations(MPart);
         SmallString<0> PartBC;
         {
           raw_svector_ostream BCOS(PartBC);
           WriteBitcodeToFile(MPart, BCOS, false);
         }
+        SmallVector<char, 0> CachedIR;
+        SmallVectorImpl<char> &CachedArtifact =
+            CacheStoresOptimizedIR
+                ? static_cast<SmallVectorImpl<char> &>(CachedIR)
+                : static_cast<SmallVectorImpl<char> &>(Results[p].ObjBuffer);
         if (Cache->Lookup(PipeTag, StringRef(PartBC.data(), PartBC.size()),
-                          PP->CacheKey, Results[p].ObjBuffer)) {
-          // Hit: object restored; leave Parts[p] empty so the codegen
-          // worker skips this partition.
-          Results[p].Success = true;
-          continue;
+                          PP->CacheKey, CachedArtifact)) {
+          if (!CacheStoresOptimizedIR) {
+            // Object hit: leave Parts[p] empty so the codegen worker skips it.
+            Results[p].Success = true;
+            continue;
+          }
+
+          auto CachedContext = std::make_unique<LLVMContext>();
+          CachedContext->setDiscardValueNames(true);
+          CachedContext->setDiagnosticHandler(
+              std::make_unique<PartitionDiagnosticHandler>(Results[p]));
+          auto Parsed = parseBitcodeFile(
+              MemoryBufferRef(StringRef(CachedIR.data(), CachedIR.size()),
+                              "lto-pcg-cached-optimized"),
+              *CachedContext);
+          if (Parsed && !verifyModule(**Parsed, &errs())) {
+            // Module must die before the LLVMContext that owns all of its
+            // uniqued types/constants.  Replacing the context first leaves the
+            // old Module briefly pointing into freed context storage.
+            PP->M.reset();
+            PP->Ctx = std::move(CachedContext);
+            PP->M = std::move(*Parsed);
+            PP->SkipOptimization = true;
+          } else if (!Parsed) {
+            consumeError(Parsed.takeError());
+          }
         }
       }
       Parts[p] = std::move(PP);
@@ -1189,6 +1230,92 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
     PrepWorkers.emplace_back(PrepWorker);
   for (auto &T : PrepWorkers)
     T.join();
+}
+
+std::unique_ptr<Module>
+ParallelCGContext::reassembleOptimizedPartitions(Module &Mod) {
+  StringSet<> Reported;
+  for (unsigned I = 0; I != NumPartitions; ++I)
+    for (const std::string &Message : Results[I].Errors)
+      if (Reported.insert(Message).second)
+        Mod.getContext().emitError(Message);
+  if (!Reported.empty())
+    return nullptr;
+
+  for (unsigned I = 0; I != NumPartitions; ++I)
+    if (!Results[I].Success || !Parts[I]) {
+      Mod.getContext().emitError(
+          "parallel optimization did not produce every IR partition");
+      return nullptr;
+    }
+
+  // Workers deliberately use independent LLVMContexts.  Serialize their
+  // optimized ownership slices and parse them back into the caller's context
+  // before linking: LLVM's IR linker requires one shared context, and this
+  // boundary also prevents worker-owned handles from escaping their thread.
+  std::unique_ptr<Module> Combined;
+  for (unsigned I = 0; I != NumPartitions; ++I) {
+    SmallVector<char, 0> Bitcode;
+    {
+      raw_svector_ostream Stream(Bitcode);
+      WriteBitcodeToFile(*Parts[I]->M, Stream, false);
+    }
+    auto Parsed = parseBitcodeFile(
+        MemoryBufferRef(StringRef(Bitcode.data(), Bitcode.size()),
+                        "lto-pcg-optimized"),
+        Mod.getContext());
+    if (!Parsed) {
+      Mod.getContext().emitError(
+          "could not deserialize an optimized PCG partition: " +
+          toString(Parsed.takeError()));
+      return nullptr;
+    }
+    if (!Combined) {
+      Combined = std::move(*Parsed);
+      continue;
+    }
+    if (Linker::linkModules(*Combined, std::move(*Parsed))) {
+      Mod.getContext().emitError(
+          "could not reassemble optimized PCG partitions");
+      return nullptr;
+    }
+  }
+  if (!Combined)
+    return nullptr;
+
+  // The first split promoted original file-local values under collision-free
+  // .__pcg names.  Now that every owner is back in one module, restore the
+  // source linkage before any module pass sees the IR and before the final
+  // codegen-only split computes a new ownership graph.
+  for (const LinkageEntry &Entry : SavedLinkage) {
+    GlobalValue *Restored = Combined->getNamedValue(Entry.GV->getName());
+    if (!Restored)
+      continue; // legitimately removed by optimization
+    if (GlobalValue *Collision = Combined->getNamedValue(Entry.OrigName);
+        Collision && Collision != Restored) {
+      Mod.getContext().emitError(
+          "partition-local optimization created a module symbol that collides "
+          "with restored file-local value '" +
+          Entry.OrigName + "'");
+      return nullptr;
+    }
+    Restored->setName(Entry.OrigName);
+    Restored->setLinkage(Entry.Linkage);
+    Restored->setVisibility(Entry.Visibility);
+    if (auto *F = dyn_cast<Function>(Restored)) {
+      if (Entry.AddedOriginalLocalAttr)
+        F->removeFnAttr(PCGOriginalLocalAttr);
+      if (Entry.AddedOriginalAddressTakenAttr)
+        F->removeFnAttr(PCGOriginalAddressTakenAttr);
+    }
+  }
+
+  if (verifyModule(*Combined, &errs())) {
+    Mod.getContext().emitError(
+        "optimized PCG partitions reassembled into an invalid module");
+    return nullptr;
+  }
+  return Combined;
 }
 
 bool ParallelCGContext::finalizeResults(Module &Mod,
@@ -1416,6 +1543,61 @@ bool finalizeSplitDwarfArtifacts(const Triple &Target, ArrayRef<char> Object,
 // only the actual PM.run() is concurrent.
 static std::mutex PassConfigMutex;
 
+/// Final fallback after the whole-module barrier has run.  At that point
+/// replaying the caller's serial optimization path would execute externally
+/// visible plugin callbacks twice.  Emit the already-optimized, already-sealed
+/// module directly instead and commit bytes only after codegen (and optional
+/// DWP packaging) succeeds.
+static bool
+runSerialCodeGenAfterWholeModuleBarrier(Module &Mod, TargetMachine &TM,
+                                        ParallelCodeGenOutputs Outputs) {
+  SmallVector<char, 0> Object;
+  SmallVector<char, 0> Dwo;
+  raw_svector_ostream ObjectOS(Object);
+  raw_svector_ostream DwoOS(Dwo);
+
+  const DebugCompressionType Compression = TM.Options.CompressDebugSections;
+  MCAsmInfo *AsmInfo = nullptr;
+  if (Outputs.DwarfPackage) {
+    AsmInfo = const_cast<MCAsmInfo *>(TM.getMCAsmInfo());
+    TM.Options.CompressDebugSections = DebugCompressionType::None;
+    AsmInfo->setCompressDebugSections(DebugCompressionType::None);
+  }
+  auto RestoreCompression = make_scope_exit([&] {
+    if (!Outputs.DwarfPackage)
+      return;
+    TM.Options.CompressDebugSections = Compression;
+    AsmInfo->setCompressDebugSections(Compression);
+  });
+
+  legacy::PassManager PM;
+  {
+    std::lock_guard<std::mutex> Lock(PassConfigMutex);
+    PM.add(createTargetTransformInfoWrapperPass(TM.getTargetIRAnalysis()));
+    TargetLibraryInfoImpl TLII(Triple(Mod.getTargetTriple()));
+    PM.add(new TargetLibraryInfoWrapperPass(TLII));
+    if (TM.addPassesToEmitFile(PM, ObjectOS,
+                               Outputs.DwarfPackage ? &DwoOS : nullptr,
+                               CodeGenFileType::ObjectFile, true))
+      return false;
+  }
+  PM.run(Mod);
+
+  if (Outputs.DwarfPackage) {
+    std::string Error;
+    if (!finalizeSplitDwarfArtifacts(TM.getTargetTriple(), Object, Dwo,
+                                     Compression, Outputs, &Error)) {
+      Mod.getContext().emitError(
+          "could not finalize serial split-DWARF fallback: " + Error);
+      return false;
+    }
+    return true;
+  }
+
+  Outputs.Object.write(Object.data(), Object.size());
+  return true;
+}
+
 bool runParallelCodeGen(Module &Mod, TargetMachine &TM,
                         ParallelCodeGenOutputs Outputs,
                         unsigned /*NumPartitions*/,
@@ -1514,11 +1696,18 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
              << " LoopCount=" << Ctx.LoopCount << ")\n";
     return false;
   }
+  const bool NeedsWholeModuleBarrier =
+      Hooks && static_cast<bool>(Hooks->WholeModulePostOpt);
+  // A whole-module pass consumes optimized IR, not an object from an earlier
+  // partition.  In that mode the same content-addressed cache stores optimized
+  // partition bitcode; it can be reassembled on a hit and avoids rerunning the
+  // expensive function pipeline while final codegen remains cheap.
   Ctx.Cache = Ctx.EmitSplitDwarf ? nullptr : Cache;
+  Ctx.CacheStoresOptimizedIR = NeedsWholeModuleBarrier;
   if (Ctx.Cache && Ctx.Cache->BypassForUnseededXorStr &&
       (Ctx.Cache->AutomaticXorStrEnabled || containsXorStrSupport(Mod)))
     Ctx.Cache = nullptr;
-  Ctx.PipeTag = "p-opt";
+  Ctx.PipeTag = NeedsWholeModuleBarrier ? "p-opt-ir-v1" : "p-opt";
 
   if (!Ctx.resolvePartitions(/*WeightDiv=*/PcgOptWeightDiv,
                              /*LoopDiv=*/PcgOptLoopDiv,
@@ -1536,7 +1725,9 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
            << " TotalWeight=" << Ctx.TotalWeight
            << " LoopCount=" << Ctx.LoopCount
            << " NumPartitions=" << Ctx.NumPartitions
-           << " WorkerThreadCap=" << Ctx.WorkerThreadCap << "\n";
+           << " WorkerThreadCap=" << Ctx.WorkerThreadCap
+           << " WholeModuleBarrier=" << (NeedsWholeModuleBarrier ? "yes" : "no")
+           << "\n";
 
   if (!Ctx.externalizeAndSerialize(Mod))
     return false;
@@ -1563,8 +1754,7 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
   SharedPTO.SLPVectorization = OptLevel >= 2;
   SharedPTO.CallGraphProfile = false;
   SharedPTO.NevercFastIPO = true;
-  SharedPTO.NevercIndVarWidenMaxFunctionLoops =
-      PcgIndVarWidenMaxFunctionLoops;
+  SharedPTO.NevercIndVarWidenMaxFunctionLoops = PcgIndVarWidenMaxFunctionLoops;
 
   // Bound SCEV's huge-expression cost for every partition's optimization (see
   // PcgScevHugeExprThreshold).  Established here, before any worker starts, and
@@ -1592,7 +1782,7 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
         auto &PP = *Ctx.Parts[p];
         auto &MPart = *PP.M;
 
-        {
+        if (!PP.SkipOptimization) {
           LoopAnalysisManager LAM;
           FunctionAnalysisManager FAM;
           CGSCCAnalysisManager CGAM;
@@ -1621,6 +1811,18 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
           MPM.run(MPart, MAM);
         }
 
+        if (NeedsWholeModuleBarrier) {
+          Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
+          if (Ctx.Results[p].Success && Ctx.Cache && !PP.CacheKey.empty() &&
+              !PP.SkipOptimization) {
+            SmallVector<char, 0> OptimizedBitcode;
+            raw_svector_ostream Stream(OptimizedBitcode);
+            WriteBitcodeToFile(MPart, Stream, false);
+            Ctx.Cache->Store(PP.CacheKey, OptimizedBitcode);
+          }
+          continue;
+        }
+
         raw_svector_ostream ObjOS(*PP.ObjBuf);
         SmallVector<char, 0> UnusedDwo;
         raw_svector_ostream DwoOS(PP.DwoBuf ? *PP.DwoBuf : UnusedDwo);
@@ -1647,6 +1849,57 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
       Workers.emplace_back(Worker);
     for (auto &T : Workers)
       T.join();
+  }
+
+  if (NeedsWholeModuleBarrier) {
+    std::unique_ptr<Module> Combined = Ctx.reassembleOptimizedPartitions(Mod);
+    if (!Combined) {
+      Ctx.restoreLinkage(Mod);
+      return false;
+    }
+
+    LoopAnalysisManager LAM;
+    FunctionAnalysisManager FAM;
+    CGSCCAnalysisManager CGAM;
+    ModuleAnalysisManager MAM;
+    PassInstrumentationCallbacks PIC;
+    StandardInstrumentations SI(Combined->getContext(), false, false);
+    SI.registerCallbacks(PIC, &MAM);
+    PassBuilder PB(&TM, PipelineTuningOptions(), std::nullopt, &PIC);
+    FAM.registerPass([&] { return TargetLibraryAnalysis(*Ctx.SharedTLII); });
+    PB.registerModuleAnalyses(MAM);
+    PB.registerCGSCCAnalyses(CGAM);
+    PB.registerFunctionAnalyses(FAM);
+    PB.registerLoopAnalyses(LAM);
+    PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+    ModulePassManager WholeModulePasses;
+    Hooks->WholeModulePostOpt(WholeModulePasses);
+    WholeModulePasses.addPass(VerifierPass());
+    WholeModulePasses.run(*Combined, MAM);
+
+    // Module-scope plugins and finalizers may create new functions or global
+    // state.  Split the resulting complete graph afresh for code generation so
+    // every definition receives exactly one deterministic owner.
+    if (runParallelCodeGen(*Combined, TM, Outputs, Ctx.NumPartitions,
+                           /*Cache=*/nullptr))
+      return true;
+
+    // Do not return to lto::backend after any whole-module plugin callback has
+    // run: its generic fallback would optimize the mother module and replay
+    // those callbacks.  Codegen the sealed combined IR directly instead.
+    if (runSerialCodeGenAfterWholeModuleBarrier(*Combined, TM, Outputs))
+      return true;
+
+    // A false return would make lto::backend optimize the original mother
+    // module and replay every externally visible plugin callback.  Both
+    // code-generation routes have already failed, so there is no correct
+    // fallback left; fail explicitly without violating exactly-once plugin
+    // semantics.
+    report_fatal_error(
+        "neverc: code generation failed after the whole-module IR-plugin "
+        "barrier; refusing to replay plugin passes",
+        /*gen_crash_diag=*/false);
   }
 
   return Ctx.finalizeResults(Mod, Outputs);

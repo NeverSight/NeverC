@@ -13,11 +13,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/LTO/LTOBackend.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/Analysis/ModuleSummaryAnalysis.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/PassManager.h"
@@ -239,8 +239,8 @@ createTargetMachine(const Config &Conf, const Target *TheTarget, Module &M) {
 
   assert(TM && "Failed to create target machine");
   if (Conf.MachinePassHooks)
-    static_cast<LLVMTargetMachine *>(TM.get())
-        ->setMachinePipelineHooks(Conf.MachinePassHooks);
+    static_cast<LLVMTargetMachine *>(TM.get())->setMachinePipelineHooks(
+        Conf.MachinePassHooks);
 
   if (std::optional<uint64_t> LargeDataThreshold = M.getLargeDataThreshold())
     TM->setLargeDataThreshold(*LargeDataThreshold);
@@ -359,8 +359,11 @@ static void runNewPMPasses(const Config &Conf, Module &Mod, TargetMachine *TM,
     MPM.addPass(PB.buildLTODefaultPipeline(OL, ExportSummary));
   }
 
-  // Mirror PreOptPassHook for the post-optimization insertion point.
-  if (Conf.PostOptPassHook)
+  // With parallel optimization the pipeline above is only the whole-module
+  // simplification half.  The real post-optimization barrier is reached after
+  // the deferred function pipeline (or after PCG recombines its optimized
+  // partitions), so do not fire a final hook prematurely here.
+  if (Conf.PostOptPassHook && !Conf.LTOParallelOpt)
     Conf.PostOptPassHook(MPM);
 
   if (!Conf.DisableVerify)
@@ -429,8 +432,7 @@ Error lto::finalizeOptimizationRemarks(
 
 Error lto::backend(const Config &C, AddStreamFn AddStream,
                    unsigned ParallelCodeGenParallelismLevel, Module &Mod,
-                   ModuleSummaryIndex &CombinedIndex,
-                   bool SkipOptimization) {
+                   ModuleSummaryIndex &CombinedIndex, bool SkipOptimization) {
   auto BackendDone = make_scope_exit([&] {
     if (C.BackendDoneHook)
       C.BackendDoneHook();
@@ -486,6 +488,8 @@ Error lto::backend(const Config &C, AddStreamFn AddStream,
     MPM.addPass(PB.buildModuleOptimizationPipeline(
         OL, ThinOrFullLTOPhase::FullLTOPostLink));
     MPM.addPass(GlobalDCEPass(/*InLTOPostLink=*/true));
+    if (C.PostOptPassHook)
+      C.PostOptPassHook(MPM);
     MPM.run(Mod, MAM);
   };
 

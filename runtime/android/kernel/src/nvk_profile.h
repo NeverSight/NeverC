@@ -18,14 +18,12 @@ enum neverc_krt_ftrace_callback_abi {
 enum neverc_krt_filldir_abi {
   NEVERC_KRT_FILLDIR_ABI_UNSUPPORTED = 0,
   NEVERC_KRT_FILLDIR_ABI_RETURNS_INT = NEVERC_KRT_PROFILE_FILLDIR_RETURNS_INT,
-  NEVERC_KRT_FILLDIR_ABI_RETURNS_BOOL =
-      NEVERC_KRT_PROFILE_FILLDIR_RETURNS_BOOL,
+  NEVERC_KRT_FILLDIR_ABI_RETURNS_BOOL = NEVERC_KRT_PROFILE_FILLDIR_RETURNS_BOOL,
 };
 
 enum neverc_krt_kallsyms_iter_abi {
   NEVERC_KRT_KALLSYMS_ABI_UNSUPPORTED = 0,
-  NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE =
-      NEVERC_KRT_PROFILE_KALLSYMS_WITH_MODULE,
+  NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE = NEVERC_KRT_PROFILE_KALLSYMS_WITH_MODULE,
   NEVERC_KRT_KALLSYMS_ABI_ADDRESS_ONLY =
       NEVERC_KRT_PROFILE_KALLSYMS_ADDRESS_ONLY,
 };
@@ -73,15 +71,15 @@ struct neverc_krt_observed_identity {
 };
 
 /*
- * Exact means the certified KMI identity matches: Linux patch, Android
- * generation, KMI, and page size.  The catalog release token is
- * measurement evidence and is not part of Exact; git / -dirty suffixes
- * therefore do not demote a same-KMI kernel to Compatible.
+ * Exact means the numeric KMI identity matches: Linux patch, Android
+ * generation, KMI, and page size.  The release token is deliberately not part
+ * of Exact, so OEM / git / -dirty suffixes do not demote the match.
  * Compatible is available only to an explicitly selected build profile and
  * always requires the same Linux major.minor series and page size.
  * Compatible also requires the Android generation when the banner names
- * one; Linux patch, KMI, and release token are ignored.  A certificate
- * may overlay measured offsets but is not required to activate.
+ * one; Linux patch, KMI, and release token are ignored.  Exact and Compatible
+ * both activate the selected family's complete default runtime layout.  A
+ * token-exact certificate may overlay that layout but is never an enable gate.
  * A dedicated compile family is not a leftover overlay.  Callers without
  * an explicit profile must continue to require a token-exact identity.
  */
@@ -91,9 +89,15 @@ enum neverc_krt_profile_match {
   NEVERC_KRT_PROFILE_MATCH_EXACT = 2,
 };
 
-static inline const struct neverc_krt_profile *neverc_krt_find_profile_in_table(
-    const struct neverc_krt_profile *profiles, unsigned long count,
-    unsigned int legacy_id) {
+static inline int neverc_krt_profile_match_uses_family_layout(
+    enum neverc_krt_profile_match match) {
+  return match == NEVERC_KRT_PROFILE_MATCH_COMPATIBLE ||
+         match == NEVERC_KRT_PROFILE_MATCH_EXACT;
+}
+
+static inline const struct neverc_krt_profile *
+neverc_krt_find_profile_in_table(const struct neverc_krt_profile *profiles,
+                                 unsigned long count, unsigned int legacy_id) {
   unsigned long i;
 
   for (i = 0; i < count; i++) {
@@ -105,13 +109,13 @@ static inline const struct neverc_krt_profile *neverc_krt_find_profile_in_table(
 const struct neverc_krt_profile *
 neverc_krt_find_profile(unsigned int legacy_id);
 const struct neverc_krt_profile *neverc_krt_find_profile_by_identity(
-    unsigned int linux_major, unsigned int linux_minor, unsigned int linux_patch,
-    unsigned int android_release, unsigned int kmi_generation,
-    unsigned int page_shift, const char *release_token,
-    unsigned long release_token_length);
-enum neverc_krt_profile_match neverc_krt_match_profile(
-    const struct neverc_krt_profile *profile,
-    const struct neverc_krt_observed_identity *identity);
+    unsigned int linux_major, unsigned int linux_minor,
+    unsigned int linux_patch, unsigned int android_release,
+    unsigned int kmi_generation, unsigned int page_shift,
+    const char *release_token, unsigned long release_token_length);
+enum neverc_krt_profile_match
+neverc_krt_match_profile(const struct neverc_krt_profile *profile,
+                         const struct neverc_krt_observed_identity *identity);
 int neverc_krt_parse_banner_identity(
     const char *banner, struct neverc_krt_observed_identity *identity);
 /*
@@ -140,8 +144,8 @@ struct neverc_krt_certificate_identity {
 };
 
 static inline int neverc_krt_release_token_bytes_equal(
-    const char *expected, unsigned long expected_length,
-    const char *observed, unsigned long observed_length) {
+    const char *expected, unsigned long expected_length, const char *observed,
+    unsigned long observed_length) {
   unsigned long i;
 
   if (!expected || !observed || !expected_length || !observed_length ||

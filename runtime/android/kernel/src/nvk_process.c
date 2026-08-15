@@ -219,15 +219,17 @@ static void _neverc_krt_resolve_task_offsets(void)
 	if (__atomic_load_n(&_neverc_krt_toff.resolved, __ATOMIC_ACQUIRE))
 		return;
 
-	layout = _neverc_krt_get_gki_layout();
-	if (!layout)
-		return;
-	_neverc_krt_toff.tasks = layout->task_tasks;
-	_neverc_krt_toff.usage = layout->task_usage;
-	if (_neverc_krt_layout_fields_proven(
-		    NEVERC_KRT_LAYOUT_CERT_TASK_WALK))
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_WALK);
+	if (layout) {
+		_neverc_krt_toff.tasks = layout->task_tasks;
 		__atomic_store_n(&_neverc_krt_off_comm, layout->task_comm,
 				 __ATOMIC_RELEASE);
+	}
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_REF);
+	if (layout)
+		_neverc_krt_toff.usage = layout->task_usage;
 
 	__atomic_store_n(&_neverc_krt_toff.resolved, 1, __ATOMIC_RELEASE);
 }
@@ -238,11 +240,10 @@ static int _neverc_krt_task_get(struct task_struct *task)
 	unsigned long usage_off;
 	refcount_t *usage;
 
-	if (!task || !_neverc_krt_kernel_pointer_is_valid(task) ||
-	    !_neverc_krt_layout_fields_proven(
-		    NEVERC_KRT_LAYOUT_CERT_TASK_REF))
+	if (!task || !_neverc_krt_kernel_pointer_is_valid(task))
 		return -1;
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_REF);
 	if (!layout)
 		return -1;
 	usage_off = _neverc_krt_task_offsets()->usage;
@@ -270,7 +271,7 @@ int neverc_krt_process_init(void)
 	ret = neverc_krt_mem_init();
 	if (ret)
 		return ret;
-	if (!_neverc_krt_get_gki_layout())
+	if (neverc_krt_compat_init())
 		return -1;
 	_neverc_krt_resolve_task_offsets();
 
@@ -338,11 +339,10 @@ int neverc_krt_task_has_user_mm(struct task_struct *task)
 
 	if (!task || !_neverc_krt_kernel_pointer_is_valid(task))
 		return -1;
-	if (!_neverc_krt_layout_fields_proven(
-		    NEVERC_KRT_LAYOUT_CERT_TASK_WALK) ||
-	    !_neverc_krt_mem_nofault_available())
+	if (!_neverc_krt_mem_nofault_available())
 		return -1;
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_WALK);
 	if (!layout || !layout->task_mm)
 		return -1;
 	if (neverc_krt_mem_read(&mm,
@@ -394,11 +394,10 @@ int neverc_krt_task_parent_tgid(struct task_struct *task)
 	if (!task || !_neverc_krt_task_pointer_is_valid(task))
 		return -1;
 	_neverc_krt_ensure_pid_ops();
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_WALK);
 	if (!layout || !layout->task_parent ||
 	    (!_neverc_krt_task_tgid_nr && !_neverc_krt_task_pid_nr_ns) ||
-	    !_neverc_krt_layout_fields_proven(
-		    NEVERC_KRT_LAYOUT_CERT_TASK_WALK) ||
 	    !_neverc_krt_mem_nofault_available() ||
 	    _neverc_krt_rcu_read_begin())
 		return -1;
@@ -422,11 +421,10 @@ int neverc_krt_task_has_tgid_ancestor(struct task_struct *task,
 	    target_tgid <= 0)
 		return -1;
 	_neverc_krt_ensure_pid_ops();
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_WALK);
 	if (!layout || !layout->task_parent ||
 	    (!_neverc_krt_task_tgid_nr && !_neverc_krt_task_pid_nr_ns) ||
-	    !_neverc_krt_layout_fields_proven(
-		    NEVERC_KRT_LAYOUT_CERT_TASK_WALK) ||
 	    !_neverc_krt_mem_nofault_available() ||
 	    _neverc_krt_rcu_read_begin())
 		return -1;
@@ -473,13 +471,12 @@ int neverc_krt_task_match_group_ancestry(
 		return -1;
 
 	_neverc_krt_ensure_pid_ops();
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_WALK);
 	if (!layout || !layout->task_group_leader ||
 	    !layout->task_real_parent || !layout->task_comm ||
 	    (!_neverc_krt_task_pid_nr && !_neverc_krt_task_pid_nr_ns) ||
 	    (!_neverc_krt_task_tgid_nr && !_neverc_krt_task_pid_nr_ns) ||
-	    !_neverc_krt_layout_fields_proven(
-		    NEVERC_KRT_LAYOUT_CERT_TASK_WALK) ||
 	    !_neverc_krt_mem_nofault_available())
 		return -1;
 
@@ -581,14 +578,13 @@ int neverc_krt_task_user_state_snapshot(
 		return -1;
 	__builtin_memset(snapshot, 0, sizeof(*snapshot));
 	if (!task || !_neverc_krt_kernel_pointer_is_valid(task) ||
-	    !_neverc_krt_layout_fields_proven(
-		    NEVERC_KRT_LAYOUT_CERT_TASK_USER_STATE) ||
 	    !_neverc_krt_mem_nofault_available())
 		return -1;
 	if (!_neverc_krt_proc_inited && neverc_krt_process_init())
 		return -1;
 	_neverc_krt_ensure_task_stack_ops();
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_USER_STATE);
 	if (!layout || !layout->task_stack || !layout->task_stack_refcount ||
 	    !layout->task_stack_size || !layout->task_flags ||
 	    !layout->pt_regs_size || !layout->pt_regs_pc ||
@@ -665,7 +661,7 @@ struct task_struct *neverc_krt_find_task(int pid)
 	struct task_struct *t;
 
 	_neverc_krt_ensure_task_lookup();
-	if (!_neverc_krt_layout_fields_proven(
+	if (!_neverc_krt_get_proven_gki_layout(
 		    NEVERC_KRT_LAYOUT_CERT_TASK_REF))
 		return (void *)0;
 	if (!_neverc_krt_find_get_pid || !_neverc_krt_get_pid_task ||
@@ -686,14 +682,13 @@ void neverc_krt_put_task(struct task_struct *task)
 	unsigned long usage_off;
 	refcount_t *usage;
 
-	if (!task || !_neverc_krt_kernel_pointer_is_valid(task) ||
-	    !_neverc_krt_layout_fields_proven(
-		    NEVERC_KRT_LAYOUT_CERT_TASK_REF))
+	if (!task || !_neverc_krt_kernel_pointer_is_valid(task))
 		return;
 	_neverc_krt_ensure_task_lookup();
 	if (!_neverc_krt_put_task_struct)
 		return;
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_REF);
 	if (!layout)
 		return;
 	usage_off = _neverc_krt_task_offsets()->usage;
@@ -723,7 +718,8 @@ static int _neverc_krt_find_by_name_cb(struct task_struct *task, void *data)
 
 	if (!off)
 		return 0;
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_WALK);
 	if (!layout || !layout->task_comm_size || !layout->task_size ||
 	    off + layout->task_comm_size > layout->task_size)
 		return 0;
@@ -750,9 +746,9 @@ struct task_struct *neverc_krt_find_task_by_name(const char *name)
 {
 	struct _neverc_krt_find_ctx ctx = { .target = name, .result = (void *)0 };
 
-	if (!name || !_neverc_krt_layout_fields_proven(
-		     NEVERC_KRT_LAYOUT_CERT_TASK_WALK |
-		     NEVERC_KRT_LAYOUT_CERT_TASK_REF) ||
+	if (!name || !_neverc_krt_get_proven_gki_layout(
+			     NEVERC_KRT_LAYOUT_CERT_TASK_WALK |
+			     NEVERC_KRT_LAYOUT_CERT_TASK_REF) ||
 	    !_neverc_krt_mem_nofault_available())
 		return (void *)0;
 	neverc_krt_for_each_task(_neverc_krt_find_by_name_cb, &ctx);
@@ -791,7 +787,7 @@ int neverc_krt_task_comm_safe(struct task_struct *task, char *buf, int bufsz)
 	if (!buf || bufsz < 1) return -1;
 	buf[0] = '\0';
 	if (!task || !_neverc_krt_kernel_pointer_is_valid(task) ||
-	    !_neverc_krt_layout_fields_proven(
+	    !_neverc_krt_get_proven_gki_layout(
 		    NEVERC_KRT_LAYOUT_CERT_TASK_WALK) ||
 	    !_neverc_krt_mem_nofault_available())
 		return -1;
@@ -806,7 +802,8 @@ int neverc_krt_task_comm_safe(struct task_struct *task, char *buf, int bufsz)
 	int max;
 
 	if (!off) return -1;
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_WALK);
 	if (!layout || !layout->task_comm_size || !layout->task_size ||
 	    off + layout->task_comm_size > layout->task_size)
 		return -1;
@@ -827,7 +824,7 @@ const char *neverc_krt_task_comm(struct task_struct *task)
 	unsigned long off;
 
 	if (!task || !_neverc_krt_kernel_pointer_is_valid(task) ||
-	    !_neverc_krt_layout_fields_proven(
+	    !_neverc_krt_get_proven_gki_layout(
 		    NEVERC_KRT_LAYOUT_CERT_TASK_WALK))
 		return "";
 

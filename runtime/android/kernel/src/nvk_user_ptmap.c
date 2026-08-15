@@ -1642,10 +1642,7 @@ static int _neverc_krt_ptmap_production_initialize(void)
 	int profile_id;
 	int kcfi_mode;
 
-	if (neverc_krt_compat_init() ||
-	    !_neverc_krt_layout_fields_proven(
-		NEVERC_KRT_LAYOUT_CERT_USER_PTMAP |
-		NEVERC_KRT_LAYOUT_CERT_TASK_WALK))
+	if (neverc_krt_compat_init())
 		return -EOPNOTSUPP;
 	profile_id = _neverc_krt_current_profile_id();
 	profile = profile_id < 0 ? (const struct neverc_krt_profile *)0 :
@@ -1653,7 +1650,9 @@ static int _neverc_krt_ptmap_production_initialize(void)
 	if (!profile || _neverc_krt_ptmap_policy_for_kernel(
 			profile->linux_major, profile->linux_minor, &policy))
 		return -EOPNOTSUPP;
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_USER_PTMAP |
+		NEVERC_KRT_LAYOUT_CERT_TASK_WALK);
 	if (!_neverc_krt_ptmap_production_layout_valid(layout, &policy))
 		return -EOPNOTSUPP;
 	if (neverc_krt_mem_init() || !_neverc_krt_mem_nofault_available() ||

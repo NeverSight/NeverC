@@ -9,26 +9,25 @@ neverc_krt_find_profile(unsigned int legacy_id) {
       neverc_krt_canonical_legacy_id(legacy_id));
 }
 
-static int neverc_krt_release_token_equal(
-    const char *expected, const char *observed,
-    unsigned long observed_length) {
+static int neverc_krt_release_token_equal(const char *expected,
+                                          const char *observed,
+                                          unsigned long observed_length) {
   unsigned long expected_length = 0;
 
   if (!expected)
     return 0;
   while (expected[expected_length])
     expected_length++;
-  return neverc_krt_release_token_bytes_equal(
-      expected, expected_length, observed, observed_length);
+  return neverc_krt_release_token_bytes_equal(expected, expected_length,
+                                              observed, observed_length);
 }
 
-enum neverc_krt_profile_match neverc_krt_match_profile(
-    const struct neverc_krt_profile *profile,
-    const struct neverc_krt_observed_identity *identity) {
-  if (!profile || !identity ||
-      profile->linux_major != identity->linux_major ||
-      profile->linux_minor != identity->linux_minor ||
-      !identity->page_shift || profile->page_shift != identity->page_shift)
+enum neverc_krt_profile_match
+neverc_krt_match_profile(const struct neverc_krt_profile *profile,
+                         const struct neverc_krt_observed_identity *identity) {
+  if (!profile || !identity || profile->linux_major != identity->linux_major ||
+      profile->linux_minor != identity->linux_minor || !identity->page_shift ||
+      profile->page_shift != identity->page_shift)
     return NEVERC_KRT_PROFILE_MATCH_NONE;
 
   /*
@@ -36,10 +35,10 @@ enum neverc_krt_profile_match neverc_krt_match_profile(
    * release token are ignored.  A certificate may overlay measured
    * offsets; it is not required to activate.
    *
-   * EXACT is the certified KMI identity: same patch + Android + KMI +
-   * page.  The catalog token is measurement evidence (often a local
-   * -dirty / git suffix); it is not part of EXACT.  Auto-select still
-   * requires a byte-for-byte token via neverc_krt_find_profile_by_identity.
+   * EXACT is the numeric KMI identity: same patch + Android + KMI + page.
+   * The catalog token is measurement evidence (often carrying an OEM, git, or
+   * -dirty suffix), not part of the match class.  Token equality is required
+   * only by exact auto-selection and certificate overlay.
    */
   if (identity->has_android_identity &&
       profile->android_release != identity->android_release)
@@ -55,10 +54,10 @@ enum neverc_krt_profile_match neverc_krt_match_profile(
 }
 
 const struct neverc_krt_profile *neverc_krt_find_profile_by_identity(
-    unsigned int linux_major, unsigned int linux_minor, unsigned int linux_patch,
-    unsigned int android_release, unsigned int kmi_generation,
-    unsigned int page_shift, const char *release_token,
-    unsigned long release_token_length) {
+    unsigned int linux_major, unsigned int linux_minor,
+    unsigned int linux_patch, unsigned int android_release,
+    unsigned int kmi_generation, unsigned int page_shift,
+    const char *release_token, unsigned long release_token_length) {
   unsigned long i;
   struct neverc_krt_observed_identity identity = {
       .linux_major = linux_major,
@@ -166,9 +165,9 @@ int neverc_krt_parse_banner_identity(
         status = neverc_krt_parse_uint(&android, &kmi_generation);
         if (status == -2)
           return -1;
-        if (!status && (*android == '\0' || *android == '-' ||
-                        *android == ' ' || *android == '\n' ||
-                        *android == '\t')) {
+        if (!status &&
+            (*android == '\0' || *android == '-' || *android == ' ' ||
+             *android == '\n' || *android == '\t')) {
           parsed.android_release = android_release;
           parsed.kmi_generation = kmi_generation;
           parsed.has_android_identity = 1;

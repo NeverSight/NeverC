@@ -36,9 +36,9 @@ of independently overridable macros:
 - `arm64/gki-profiles.json` names each profile and owns semantic identity plus
   ABI capabilities;
 - `arm64/gki-manifests/<id>.json` is the checked layout/config evidence;
-- `arm64/gki-layout-certificates.json` optionally overlays measured offsets for
-  a later patch of the same Android/KMI, or for a leftover KMI of a family
-  that has no dedicated compile handle;
+- `arm64/gki-layout-certificates.json` optionally overlays a measured runtime
+  layout when the live release token matches byte-for-byte; a missing or
+  non-matching certificate leaves the complete compile-family table active;
 - `arm64/gki-release.json` pins exact release, vermagic, and KCFI evidence;
 - `tools/generate-compat-table.py` validates those three sources together and
   generates the public profile configuration and private runtime tables.
@@ -212,15 +212,18 @@ compile/link suites.
 Automatic validation is a reusable job in the same Linux build run/check suite,
 so a result cannot be attached to a different default-branch SHA. For diagnosis,
 dispatch `validate-gki-runtime` with an exact matching compiler run ID and one
-profile (or `all`). These archives describe pinned stock GKI builds only. An
-exact identity is certified by this gate; an explicitly selected profile may
-also activate on an observed OEM kernel with the same Linux `major.minor` and
-page size, but it is reported as `NEVERC_KRT_VER_COMPAT`, not certified as
-exact. A missing/unparseable banner, a different series, or a different page
-size remains fail-closed. The selected family also requires the Android
-generation named in the handle; Linux patch, KMI, and release token are
-ignored. A certificate may overlay measured offsets; it is not required
-to activate. A different Android generation that also changes
+profile (or `all`). These archives describe pinned stock GKI builds only. The
+gate certifies the pinned stock token and loader contract. Runtime
+`NEVERC_KRT_VER_EXACT` is deliberately a numeric match class, not a claim that
+the OEM token was measured: it means patch + Android generation + KMI + page
+match, with token suffixes ignored. An explicitly selected profile may also
+activate on an observed OEM kernel with the same Linux `major.minor`, Android
+generation, and page size as `NEVERC_KRT_VER_COMPAT`. A missing/unparseable
+banner, a different series, or a different page size remains fail-closed.
+Linux patch, KMI, and release token do not reject the compatible path. Both
+match classes start with the complete family layout; a byte-exact certificate
+may overlay measured offsets but is not required to activate or use them. A
+different Android generation that also changes
 loader-visible `struct module` / vermagic is its own compile-time family
 (`51013`, `51514`) and fail-closes on the older compile handle.
 
@@ -355,9 +358,12 @@ fallback.
 
 ## Same Linux series, different Android generation
 
-The Linux patch number (the `223` in `5.10.223`) does **not** move the fields
-NeverC reads, as long as the Android generation and page size stay the same.
-What *does* move them is a new Android generation on the same `major.minor`.
+The Linux patch number (the `223` in `5.10.223`) does not select another
+NeverC family table when Android generation and page size stay the same.
+That table is the permissive runtime default; if a measured patch does move a
+runtime-read field, a byte-exact certificate overlays the changed layout.
+A new Android generation on the same `major.minor` is instead a distinct
+compile family because it can also change loader-visible ABI.
 Official AOSP `include/linux/module.h` keeps the same field order inside a
 Linux series (`android12-5.10` matches `android13-5.10`; `android13-5.15`
 matches `android14-5.15`, including the optional `build_id[]`). The loader-

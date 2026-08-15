@@ -230,7 +230,9 @@ int neverc_krt_cred_set_ids_pid(int pid, u32 target_uid, u32 target_gid)
 		       target_uid, target_gid, target_uid, target_gid };
 	int ret;
 
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
+	if (!layout)
+		return -2;
 	base = layout->cred_uid;
 	if (layout->cred_gid != base + 4 ||
 	    layout->cred_suid != base + 8 ||

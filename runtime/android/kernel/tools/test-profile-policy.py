@@ -391,9 +391,8 @@ def main():
             if not certificate_is_leftover(certificate):
                 continue
             leftover_count += 1
-            missing = [
-                field
-                for field in private_certificate_fields
+            missing = [] if "runtime_layout" in certificate else [
+                field for field in private_certificate_fields
                 if field not in certificate
             ]
             if missing:
@@ -409,7 +408,10 @@ def main():
         for index, candidate in enumerate(certificates["certificates"]):
             if certificate_is_leftover(candidate):
                 continue
-            if "filename_name" not in candidate:
+            if (
+                "filename_name" not in candidate
+                and "runtime_layout" not in candidate
+            ):
                 continue
             same_generation_certificate = candidate
             same_generation_index = index
@@ -538,6 +540,37 @@ def main():
                     f"unexpected {name} diagnostic: " + result.stderr.strip()
                 )
 
+        def render_certificates(name, document):
+            candidate = tmp_root / f"{name}.json"
+            output = tmp_root / f"{name}-compat.inc"
+            candidate.write_text(
+                json.dumps(document, indent=2) + "\n", encoding="utf-8"
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(generator),
+                    "--layout-certificates",
+                    str(candidate),
+                    "--profile-ids-header",
+                    str(tmp_root / f"{name}-ids.h"),
+                    "--profile-header",
+                    str(tmp_root / f"{name}-profile.h"),
+                    "--profile-table",
+                    str(tmp_root / f"{name}-profile.inc"),
+                    "--output",
+                    str(output),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"generator rejected valid certificate {name}: "
+                    + result.stderr.strip()
+                )
+            return output.read_text(encoding="utf-8")
+
         mismatched = copy.deepcopy(catalog)
         mismatched["profiles"].pop()
         expect_catalog_error(
@@ -616,6 +649,20 @@ def main():
             "invalid-capability", invalid_capability, "invalid filldir_abi"
         )
 
+        unsafe_ftrace_regs = copy.deepcopy(catalog)
+        ftrace_regs_profile = next(
+            profile
+            for profile in unsafe_ftrace_regs["profiles"]
+            if profile["capabilities"]["ftrace_callback_abi"]
+            == "ftrace_regs"
+        )
+        ftrace_regs_profile["capabilities"]["ftrace_registration_api"] = True
+        expect_catalog_error(
+            "unsafe-ftrace-regs-registration",
+            unsafe_ftrace_regs,
+            "requires a modeled ftrace_regs-to-pt_regs layout",
+        )
+
         missing_vermagic = copy.deepcopy(catalog)
         for profile in missing_vermagic["profiles"]:
             if profile.get("legacy_id") in (51013, 51514):
@@ -689,12 +736,12 @@ def main():
 
         invalid_certificate_layout = copy.deepcopy(certificates)
         invalid_certificate_layout["certificates"][live_certificate_index]["dir_context"][
-            "size"
-        ] = 24
+            "members"
+        ]["pos"] = 16
         expect_certificate_error(
             "invalid-certificate-layout",
             invalid_certificate_layout,
-            "dir_context layout mismatches profile family",
+            "dir_context.pos is out of bounds",
         )
 
         invalid_certificate_abi = copy.deepcopy(certificates)
@@ -893,37 +940,46 @@ def main():
         leftover_incomplete["certificates"][live_certificate_index].pop(
             "inode_times"
         )
-        expect_certificate_error(
-            "leftover-incomplete-private-fields",
-            leftover_incomplete,
-            "leftover Android/KMI certificate must prove every private layout field",
+        leftover_rendered = render_certificates(
+            "leftover-partial-fields", leftover_incomplete
         )
+        token_anchor = leftover_rendered.index(
+            f'.release_token = "{live_certificate["release_token"]}"'
+        )
+        record_start = leftover_rendered.index("\t\t.field_bits =", token_anchor)
+        record_end = leftover_rendered.index("\n", record_start)
+        if "NEVERC_KRT_LAYOUT_CERT_INODE_TIMES" in leftover_rendered[
+            record_start:record_end
+        ]:
+            raise RuntimeError(
+                "partial leftover certificate published an absent inode bit"
+            )
 
-        leftover_filename_only = copy.deepcopy(certificates)
-        leftover_filename_only_certificate = leftover_filename_only[
-            "certificates"
-        ][live_certificate_index]
-        for field in (
-            "dir_context",
-            "filldir_abi",
-            "inode_times",
-            "path_inode",
-            "task_ref",
-            "task_threads",
-            "task_user_state",
-            "task_walk",
-            "user_ptmap",
-        ):
-            leftover_filename_only_certificate.pop(field)
-        expect_certificate_error(
-            "leftover-filename-only",
-            leftover_filename_only,
-            "leftover Android/KMI certificate must prove every private layout field",
-        )
+        def filename_only_from_full(certificate):
+            fields = certificate["runtime_layout"]["fields"]
+            result = {
+                key: copy.deepcopy(certificate[key])
+                for key in (
+                    "identity", "profile_id", "release_token"
+                )
+            }
+            for evidence_key in ("raw_btf", "raw_dwarf"):
+                if evidence_key in certificate:
+                    result[evidence_key] = copy.deepcopy(
+                        certificate[evidence_key]
+                    )
+            result["filename_name"] = {
+                "size": fields["filename_size"],
+                "members": {"name": fields["filename_name"]},
+                "member_sizes": {
+                    "name": fields["filename_name_size"]
+                },
+            }
+            return result
 
         independent_fields = copy.deepcopy(certificates)
-        independent_fields["certificates"][same_generation_index].pop(
-            "inode_times"
+        independent_fields["certificates"][same_generation_index] = (
+            filename_only_from_full(same_generation_certificate)
         )
         independent_path = tmp_root / "independent-field-certificate.json"
         independent_output = tmp_root / "independent-field-compat.inc"
@@ -969,21 +1025,9 @@ def main():
             )
 
         filename_only_fields = copy.deepcopy(certificates)
-        filename_only_certificate = filename_only_fields["certificates"][
-            same_generation_index
-        ]
-        for field in (
-            "dir_context",
-            "filldir_abi",
-            "inode_times",
-            "path_inode",
-            "task_ref",
-            "task_threads",
-            "task_user_state",
-            "task_walk",
-            "user_ptmap",
-        ):
-            filename_only_certificate.pop(field)
+        filename_only_fields["certificates"][same_generation_index] = (
+            filename_only_from_full(same_generation_certificate)
+        )
         filename_only_path = tmp_root / "filename-only-certificate.json"
         filename_only_output = tmp_root / "filename-only-compat.inc"
         filename_only_path.write_text(

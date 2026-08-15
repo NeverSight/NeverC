@@ -133,6 +133,10 @@ LAYOUT_CERTIFICATE_BASE_KEYS = frozenset({
     "release_token",
 })
 LAYOUT_CERTIFICATE_EVIDENCE_KEYS = frozenset({"raw_btf", "raw_dwarf"})
+LAYOUT_CERTIFICATE_FULL_KEYS = frozenset({
+    "manifest_evidence",
+    "runtime_layout",
+})
 LAYOUT_CERTIFICATE_FIELD_KEYS = frozenset({
     "dir_context",
     "file_dentry",
@@ -164,6 +168,11 @@ LAYOUT_CERTIFICATE_IDENTITY_KEYS = frozenset({
     "linux_minor",
     "linux_patch",
     "page_shift",
+})
+LAYOUT_CERTIFICATE_MANIFEST_EVIDENCE_KEYS = frozenset({
+    "config_sha256",
+    "layout_sha256",
+    "vmlinux_build_id",
 })
 
 
@@ -417,6 +426,51 @@ LAYOUT_FIELDS = (
     ("dentry_size", "dentry", None),
     ("dentry_inode", "dentry", "d_inode"),
     ("dentry_inode_size", "dentry", ("member_size", "d_inode")),
+)
+
+RUNTIME_LAYOUT_USER_GEOMETRY_FIELDS = (
+    ("user_page_shift", "page_shift"),
+    ("user_va_bits", "va_bits"),
+    ("user_pa_bits", "pa_bits"),
+    ("user_pgtable_levels", "pgtable_levels"),
+    ("user_pgd_shift", "pgd_shift"),
+    ("user_pmd_shift", "pmd_shift"),
+    ("user_pte_shift", "pte_shift"),
+    ("user_index_bits", "index_bits"),
+    ("user_contiguous_bit", "contiguous_bit"),
+    ("user_contiguous_entries", "contiguous_entries"),
+    ("user_descriptor_address_mask", "descriptor_address_mask"),
+    ("user_physical_address_mask", "physical_address_mask"),
+    ("user_physical_page_mask", "physical_page_mask"),
+    ("user_tlbi_all_asid", "tlbi_all_asid"),
+)
+RUNTIME_LAYOUT_INODE_FIELDS = (
+    ("inode_size", None, None),
+    ("inode_atime_sec", "members", "atime_sec"),
+    ("inode_atime_sec_size", "member_sizes", "atime_sec"),
+    ("inode_mtime_sec", "members", "mtime_sec"),
+    ("inode_mtime_sec_size", "member_sizes", "mtime_sec"),
+    ("inode_atime_nsec", "members", "atime_nsec"),
+    ("inode_atime_nsec_size", "member_sizes", "atime_nsec"),
+    ("inode_mtime_nsec", "members", "mtime_nsec"),
+    ("inode_mtime_nsec_size", "member_sizes", "mtime_nsec"),
+)
+RUNTIME_LAYOUT_FIXED_FIELDS = (
+    ("ftrace_ops_func", 0),
+    ("ftrace_ops_flags", 16),
+)
+RUNTIME_LAYOUT_FIELD_NAMES = (
+    tuple(output_name for output_name, _structure, _field in LAYOUT_FIELDS)
+    + ("task_stack_size",)
+    + tuple(output_name for output_name, _value in RUNTIME_LAYOUT_FIXED_FIELDS)
+    + tuple(
+        output_name
+        for output_name, _container, _member_name in RUNTIME_LAYOUT_INODE_FIELDS
+    )
+    + tuple(
+        output_name
+        for output_name, _geometry_name in RUNTIME_LAYOUT_USER_GEOMETRY_FIELDS
+    )
 )
 
 # Loader / inode facts compile_layout_contract reads that are not LAYOUT_FIELDS rows.
@@ -1213,6 +1267,46 @@ def arm64_task_stack_size(manifest):
     return 1 << max(page_shift, 14)
 
 
+def compile_runtime_layout(manifest):
+    """Flatten every field emitted into struct neverc_krt_gki_layout."""
+    layouts = manifest["layouts"]
+    runtime_layout = {
+        output_name: layout_value(layouts, structure, field)
+        for output_name, structure, field in LAYOUT_FIELDS
+    }
+    user_geometry = normalize_user_ptmap_layout(
+        manifest, f"profile {manifest.get('profile')}"
+    )["geometry"]
+    runtime_layout.update({
+        output_name: user_geometry[geometry_name]
+        for output_name, geometry_name in RUNTIME_LAYOUT_USER_GEOMETRY_FIELDS
+    })
+    runtime_layout.update(dict(RUNTIME_LAYOUT_FIXED_FIELDS))
+
+    inode_times = normalize_inode_times_layout(
+        layouts, f"profile {manifest.get('profile')}"
+    )
+    for output_name, container, member_name in RUNTIME_LAYOUT_INODE_FIELDS:
+        if inode_times is None:
+            runtime_layout[output_name] = 0
+        elif container is None:
+            runtime_layout[output_name] = inode_times["size"]
+        else:
+            runtime_layout[output_name] = inode_times[container][member_name]
+    runtime_layout["task_stack_size"] = arm64_task_stack_size(manifest)
+
+    expected = set(RUNTIME_LAYOUT_FIELD_NAMES)
+    actual = set(runtime_layout)
+    if actual != expected:
+        missing = ", ".join(sorted(expected - actual)) or "-"
+        extra = ", ".join(sorted(actual - expected)) or "-"
+        raise ValueError(
+            "runtime layout projection drift: "
+            f"missing [{missing}], extra [{extra}]"
+        )
+    return runtime_layout
+
+
 def require_u32(record, key, context, *, allow_zero=True):
     value = record.get(key)
     lower_bound = 0 if allow_zero else 1
@@ -1352,6 +1446,14 @@ def load_catalog(path):
                 raise ValueError(f"{context}: invalid {key}")
         if not isinstance(capabilities["ftrace_registration_api"], bool):
             raise ValueError(f"{context}: ftrace_registration_api must be boolean")
+        if (
+            capabilities["ftrace_registration_api"]
+            and capabilities["ftrace_callback_abi"] == "ftrace_regs"
+        ):
+            raise ValueError(
+                f"{context}: ftrace_regs registration requires a modeled "
+                "ftrace_regs-to-pt_regs layout"
+            )
         profiles.append(profile)
 
     return sorted(profiles, key=lambda profile: profile["legacy_id"])
@@ -1445,7 +1547,8 @@ def load_layout_certificates(path, profile_evidence):
         "schema", "certificates"
     }:
         raise ValueError(f"{path}: certificate document keys do not match schema")
-    if document.get("schema") != 1:
+    document_schema = document.get("schema")
+    if document_schema not in (1, 2):
         raise ValueError(f"{path}: unsupported certificate schema")
     records = document.get("certificates")
     if not isinstance(records, list) or not records:
@@ -1468,21 +1571,27 @@ def load_layout_certificates(path, profile_evidence):
                 LAYOUT_CERTIFICATE_BASE_KEYS
                 | LAYOUT_CERTIFICATE_EVIDENCE_KEYS
                 | LAYOUT_CERTIFICATE_FIELD_KEYS
+                | LAYOUT_CERTIFICATE_FULL_KEYS
             )
             or len(evidence_keys) != 1
-            or not keys.intersection({
-                "dir_context",
-                "filename_name",
-                "inode_times",
-                "path_inode",
-                "task_ref",
-                "task_threads",
-                "task_user_state",
-                "task_walk",
-                "user_ptmap",
-                "file_dentry",
-            })
+            or not (
+                "runtime_layout" in keys
+                or keys.intersection({
+                    "dir_context",
+                    "filename_name",
+                    "inode_times",
+                    "path_inode",
+                    "task_ref",
+                    "task_threads",
+                    "task_user_state",
+                    "task_walk",
+                    "user_ptmap",
+                    "file_dentry",
+                })
+            )
             or (("dir_context" in keys) != ("filldir_abi" in keys))
+            or (("runtime_layout" in keys) != ("manifest_evidence" in keys))
+            or ("runtime_layout" in keys and document_schema != 2)
         ):
             raise ValueError(f"{context}: certificate keys do not match schema")
         certificate = dict(original)
@@ -1563,6 +1672,62 @@ def load_layout_certificates(path, profile_evidence):
                 f"{context}: {evidence_name}.size must be a positive uint64"
             )
 
+        if "runtime_layout" in certificate:
+            runtime_layout = certificate["runtime_layout"]
+            if (
+                not isinstance(runtime_layout, dict)
+                or set(runtime_layout) != {"schema", "fields"}
+                or runtime_layout.get("schema") != 1
+                or not isinstance(runtime_layout.get("fields"), dict)
+                or set(runtime_layout["fields"])
+                != set(RUNTIME_LAYOUT_FIELD_NAMES)
+            ):
+                raise ValueError(
+                    f"{context}: runtime_layout keys do not match schema"
+                )
+            for field_name in RUNTIME_LAYOUT_FIELD_NAMES:
+                value = runtime_layout["fields"][field_name]
+                if (
+                    not isinstance(value, int)
+                    or isinstance(value, bool)
+                    or value < 0
+                    or value > UINT64_MAX
+                ):
+                    raise ValueError(
+                        f"{context}: runtime_layout.{field_name} "
+                        "must be a uint64"
+                    )
+            manifest_evidence = certificate["manifest_evidence"]
+            if (
+                not isinstance(manifest_evidence, dict)
+                or set(manifest_evidence)
+                != LAYOUT_CERTIFICATE_MANIFEST_EVIDENCE_KEYS
+                or not SHA256_HEX.fullmatch(
+                    str(manifest_evidence.get("config_sha256", ""))
+                )
+                or not SHA256_HEX.fullmatch(
+                    str(manifest_evidence.get("layout_sha256", ""))
+                )
+                or not isinstance(
+                    manifest_evidence.get("vmlinux_build_id"), str
+                )
+                or not manifest_evidence["vmlinux_build_id"]
+                or manifest_evidence["layout_sha256"] != evidence_hash
+            ):
+                raise ValueError(
+                    f"{context}: manifest_evidence is not target-bound"
+                )
+            expected_loader = compile_loader_abi_contract(manifest)
+            observed_loader = {
+                name: runtime_layout["fields"][name]
+                for name in LOADER_ABI_FIELD_NAMES
+            }
+            if observed_loader != expected_loader:
+                raise ValueError(
+                    f"{context}: runtime_layout loader ABI mismatches "
+                    "profile family"
+                )
+
         if "dir_context" in certificate:
             dir_context = certificate["dir_context"]
             if (
@@ -1575,19 +1740,6 @@ def load_layout_certificates(path, profile_evidence):
             ):
                 raise ValueError(f"{context}: dir_context keys do not match schema")
             validate_dir_context_layout({"dir_context": dir_context}, context)
-            family_dir = manifest["layouts"]["dir_context"]
-            if (
-                dir_context["size"] != family_dir["size"]
-                or any(
-                    dir_context["members"][name] != family_dir["members"][name]
-                    or dir_context["member_sizes"][name]
-                    != family_dir["member_sizes"][name]
-                    for name in DIR_CONTEXT_MEMBER_KEYS
-                )
-            ):
-                raise ValueError(
-                    f"{context}: dir_context layout mismatches profile family"
-                )
 
             filldir_abi = certificate["filldir_abi"]
             if filldir_abi not in CAPABILITY_ABIS["filldir_abi"]:
@@ -1664,10 +1816,6 @@ def load_layout_certificates(path, profile_evidence):
                     f"{context}: pt_regs certificate views disagree"
                 )
 
-        leftover_android_kmi = (
-            identity["android_release"] != profile["android_release"]
-            or identity["kmi_generation"] != profile["kmi_generation"]
-        )
         owner = dedicated_compile_family(
             (family for family, _ in families.values()),
             identity,
@@ -1677,18 +1825,6 @@ def load_layout_certificates(path, profile_evidence):
                 f"{context}: {release_token} is compile family {owner}, "
                 f"not a leftover overlay on {profile_id}"
             )
-        if leftover_android_kmi:
-            missing = sorted(
-                name
-                for name in LAYOUT_CERTIFICATE_PRIVATE_FIELD_KEYS
-                if name not in certificate
-            )
-            if missing:
-                raise ValueError(
-                    f"{context}: leftover Android/KMI certificate must prove "
-                    "every private layout field"
-                )
-
         identity_key = (profile_id, release_token)
         if identity_key in seen_identities:
             raise ValueError(f"{context}: duplicate certificate identity")
@@ -1737,6 +1873,21 @@ def compile_layout_contract(manifest):
         "has_task_cpu": "cpu" in thread_info_members,
         "task_cpu": thread_info_members.get("cpu", 0),
     }
+
+
+LOADER_ABI_FIELD_NAMES = (
+    "module_size",
+    "module_list",
+    "module_name",
+    "module_init",
+    "module_exit",
+)
+
+
+def compile_loader_abi_contract(manifest):
+    """Return fields the kernel consumes before module init can run."""
+    contract = compile_layout_contract(manifest)
+    return {name: contract[name] for name in LOADER_ABI_FIELD_NAMES}
 
 
 def abi_config_symbol(field, semantic_name):
@@ -1997,6 +2148,26 @@ def render_profile_table(profile_evidence):
     return "\n".join(lines)
 
 
+RUNTIME_LAYOUT_HEX_FIELDS = frozenset({
+    "user_descriptor_address_mask",
+    "user_physical_address_mask",
+    "user_physical_page_mask",
+})
+
+
+def render_runtime_layout_fields(runtime_layout, indent):
+    """Render one complete neverc_krt_gki_layout initializer."""
+    lines = []
+    for field_name in RUNTIME_LAYOUT_FIELD_NAMES:
+        value = runtime_layout[field_name]
+        if field_name in RUNTIME_LAYOUT_HEX_FIELDS:
+            rendered = f"0x{value:016x}UL"
+        else:
+            rendered = str(value)
+        lines.append(f"{indent}.{field_name} = {rendered},")
+    return lines
+
+
 def render_compat_table(profile_evidence, layout_certificates):
     lines = [
         "/* SPDX-License-Identifier: GPL-2.0 */",
@@ -2023,86 +2194,17 @@ def render_compat_table(profile_evidence, layout_certificates):
 
     for profile, manifest, _ in profile_evidence:
         layouts = manifest["layouts"]
-        user_ptmap = normalize_user_ptmap_layout(
-            manifest, f"profile {profile['legacy_id']}"
-        )
-        user_geometry = user_ptmap["geometry"]
-        inode_times = normalize_inode_times_layout(
-            layouts, f"profile {profile['legacy_id']}"
-        )
-        file_dentry = (
-            member(layouts, "file", "f_path")
-            + member(layouts, "path", "dentry")
-        )
+        runtime_layout = compile_runtime_layout(manifest)
         lines.extend([
             "\t{",
             f"\t\t.profile_id = {profile['legacy_id']},",
             f"\t\t.module_size = {layouts['module']['size']},",
-            f"\t\t.file_dentry_off = {file_dentry},",
+            f"\t\t.file_dentry_off = {runtime_layout['file_dentry']},",
             f"\t\t.off_init = {member(layouts, 'module', 'init')},",
             f"\t\t.off_exit = {member(layouts, 'module', 'exit')},",
             "\t\t.layout = {",
         ])
-        for output_name, structure, field in LAYOUT_FIELDS:
-            lines.append(
-                f"\t\t\t.{output_name} = "
-                f"{layout_value(layouts, structure, field)},"
-            )
-        lines.extend([
-            f"\t\t\t.user_page_shift = {user_geometry['page_shift']},",
-            f"\t\t\t.user_va_bits = {user_geometry['va_bits']},",
-            f"\t\t\t.user_pa_bits = {user_geometry['pa_bits']},",
-            f"\t\t\t.user_pgtable_levels = "
-            f"{user_geometry['pgtable_levels']},",
-            f"\t\t\t.user_pgd_shift = {user_geometry['pgd_shift']},",
-            f"\t\t\t.user_pmd_shift = {user_geometry['pmd_shift']},",
-            f"\t\t\t.user_pte_shift = {user_geometry['pte_shift']},",
-            f"\t\t\t.user_index_bits = {user_geometry['index_bits']},",
-            f"\t\t\t.user_contiguous_bit = "
-            f"{user_geometry['contiguous_bit']},",
-            f"\t\t\t.user_contiguous_entries = "
-            f"{user_geometry['contiguous_entries']},",
-            f"\t\t\t.user_descriptor_address_mask = "
-            f"0x{user_geometry['descriptor_address_mask']:016x}UL,",
-            f"\t\t\t.user_physical_address_mask = "
-            f"0x{user_geometry['physical_address_mask']:016x}UL,",
-            f"\t\t\t.user_physical_page_mask = "
-            f"0x{user_geometry['physical_page_mask']:016x}UL,",
-            f"\t\t\t.user_tlbi_all_asid = "
-            f"{user_geometry['tlbi_all_asid']},",
-            # GKI BTF omits struct ftrace_ops. Catalog kit headers keep
-            # the prefix func, next, flags at 0 / 8 / 16.
-            "\t\t\t.ftrace_ops_func = 0,",
-            "\t\t\t.ftrace_ops_flags = 16,",
-        ])
-        inode_values = {
-            "inode_size": 0,
-            "inode_atime_sec": 0,
-            "inode_atime_sec_size": 0,
-            "inode_mtime_sec": 0,
-            "inode_mtime_sec_size": 0,
-            "inode_atime_nsec": 0,
-            "inode_atime_nsec_size": 0,
-            "inode_mtime_nsec": 0,
-            "inode_mtime_nsec_size": 0,
-        }
-        if inode_times is not None:
-            inode_values.update({
-                "inode_size": inode_times["size"],
-                "inode_atime_sec": inode_times["members"]["atime_sec"],
-                "inode_atime_sec_size": inode_times["member_sizes"]["atime_sec"],
-                "inode_mtime_sec": inode_times["members"]["mtime_sec"],
-                "inode_mtime_sec_size": inode_times["member_sizes"]["mtime_sec"],
-                "inode_atime_nsec": inode_times["members"]["atime_nsec"],
-                "inode_atime_nsec_size": inode_times["member_sizes"]["atime_nsec"],
-                "inode_mtime_nsec": inode_times["members"]["mtime_nsec"],
-                "inode_mtime_nsec_size": inode_times["member_sizes"]["mtime_nsec"],
-            })
-        for output_name, value in inode_values.items():
-            lines.append(f"\t\t\t.{output_name} = {value},")
-        lines.append(
-            f"\t\t\t.task_stack_size = {arm64_task_stack_size(manifest)},"
-        )
+        lines.extend(render_runtime_layout_fields(runtime_layout, "\t\t\t"))
         lines.extend(["\t\t},", "\t},"])
 
     lines.extend(["};", ""])
@@ -2119,6 +2221,7 @@ def render_compat_table(profile_evidence, layout_certificates):
         "\tconst char *release_token;",
         "\tunsigned long release_token_length;",
         "\tunsigned long field_bits;",
+        "\tstruct neverc_krt_gki_layout runtime_layout;",
         "\tunsigned long dir_context_size;",
         "\tunsigned long dir_context_actor;",
         "\tunsigned long dir_context_actor_size;",
@@ -2234,6 +2337,8 @@ def render_compat_table(profile_evidence, layout_certificates):
             evidence_kind = "Raw DWARF"
             evidence = certificate["raw_dwarf"]
         field_bits = []
+        if "runtime_layout" in certificate:
+            field_bits.append("NEVERC_KRT_LAYOUT_CERT_FULL")
         if "dir_context" in certificate:
             field_bits.append("NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT")
         if "filename_name" in certificate:
@@ -2270,6 +2375,12 @@ def render_compat_table(profile_evidence, layout_certificates):
             f"{len(certificate['release_token'])}UL,",
             f"\t\t.field_bits = {' | '.join(field_bits)},",
         ])
+        if "runtime_layout" in certificate:
+            lines.append("\t\t.runtime_layout = {")
+            lines.extend(render_runtime_layout_fields(
+                certificate["runtime_layout"]["fields"], "\t\t\t"
+            ))
+            lines.append("\t\t},")
         if "dir_context" in certificate:
             layout = certificate["dir_context"]
             lines.extend([

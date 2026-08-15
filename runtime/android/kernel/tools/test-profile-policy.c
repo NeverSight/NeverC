@@ -35,26 +35,24 @@ static void check_exact_lookup(void) {
 }
 
 static void check_identity_lookup(void) {
-  static const char release[] =
-      "6.12.89-android16-6-maybe-dirty-4k";
+  static const char release[] = "6.12.89-android16-6-maybe-dirty-4k";
   const struct neverc_krt_profile *profile;
 
-  profile = neverc_krt_find_profile_by_identity(
-      6, 12, 89, 16, 6, 12, release, sizeof(release) - 1);
+  profile = neverc_krt_find_profile_by_identity(6, 12, 89, 16, 6, 12, release,
+                                                sizeof(release) - 1);
   assert(profile != NULL && profile->legacy_id == 612);
+  assert(neverc_krt_find_profile_by_identity(6, 13, 89, 16, 6, 12, release,
+                                             sizeof(release) - 1) == NULL);
+  assert(neverc_krt_find_profile_by_identity(6, 12, 90, 16, 6, 12, release,
+                                             sizeof(release) - 1) == NULL);
+  assert(neverc_krt_find_profile_by_identity(6, 12, 89, 17, 6, 12, release,
+                                             sizeof(release) - 1) == NULL);
+  assert(neverc_krt_find_profile_by_identity(6, 12, 89, 16, 7, 12, release,
+                                             sizeof(release) - 1) == NULL);
+  assert(neverc_krt_find_profile_by_identity(6, 12, 89, 16, 6, 14, release,
+                                             sizeof(release) - 1) == NULL);
   assert(neverc_krt_find_profile_by_identity(
-             6, 13, 89, 16, 6, 12, release, sizeof(release) - 1) == NULL);
-  assert(neverc_krt_find_profile_by_identity(
-             6, 12, 90, 16, 6, 12, release, sizeof(release) - 1) == NULL);
-  assert(neverc_krt_find_profile_by_identity(
-             6, 12, 89, 17, 6, 12, release, sizeof(release) - 1) == NULL);
-  assert(neverc_krt_find_profile_by_identity(
-             6, 12, 89, 16, 7, 12, release, sizeof(release) - 1) == NULL);
-  assert(neverc_krt_find_profile_by_identity(
-             6, 12, 89, 16, 6, 14, release, sizeof(release) - 1) == NULL);
-  assert(neverc_krt_find_profile_by_identity(
-             6, 12, 89, 16, 6, 12,
-             "6.12.89-android16-6-oem",
+             6, 12, 89, 16, 6, 12, "6.12.89-android16-6-oem",
              sizeof("6.12.89-android16-6-oem") - 1) == NULL);
 }
 
@@ -70,21 +68,25 @@ static void check_selected_profile_compatibility(void) {
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_EXACT);
   assert(neverc_krt_parse_banner_identity(
-             "Linux version 6.12.89-android16-6-oem SMP",
-             &identity) == 0);
+             "Linux version 6.12.89-android16-6-oem SMP", &identity) == 0);
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_EXACT);
 
+  /* A pinned 612 build must keep its family layout on a future patch/KMI. */
   assert(neverc_krt_parse_banner_identity(
-             "Linux version 6.12.38-android16-5-oem-4k SMP",
-             &identity) == 0);
+             "Linux version 6.12.138-android16-99-oem-4k SMP", &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 6.12.38-android16-5-oem-4k SMP", &identity) == 0);
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
   assert(neverc_krt_parse_banner_identity(
-             "Linux version 6.12.50-android15-8-oem-4k SMP",
-             &identity) == 0);
+             "Linux version 6.12.50-android15-8-oem-4k SMP", &identity) == 0);
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_NONE);
@@ -147,14 +149,14 @@ static void check_selected_profile_compatibility(void) {
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_EXACT);
   assert(neverc_krt_parse_banner_identity(
-             "Linux version 5.10.223-android13-4-gdeadbeef SMP",
-             &identity) == 0);
+             "Linux version 5.10.223-android13-4-gdeadbeef SMP", &identity) ==
+         0);
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_EXACT);
   assert(neverc_krt_parse_banner_identity(
-             "Linux version 5.10.200-android13-9-oem-special SMP",
-             &identity) == 0);
+             "Linux version 5.10.200-android13-9-oem-special SMP", &identity) ==
+         0);
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
@@ -179,8 +181,8 @@ static void check_selected_profile_compatibility(void) {
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_EXACT);
   assert(neverc_krt_parse_banner_identity(
-             "Linux version 5.15.100-android14-8-oem-special SMP",
-             &identity) == 0);
+             "Linux version 5.15.100-android14-8-oem-special SMP", &identity) ==
+         0);
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
@@ -211,6 +213,12 @@ static void check_fail_closed_enums(void) {
   assert(NEVERC_KRT_FILLDIR_ABI_UNSUPPORTED == 0);
   assert(NEVERC_KRT_KALLSYMS_ABI_UNSUPPORTED == 0);
   assert(NEVERC_KRT_DO_MMAP_ABI_UNSUPPORTED == 0);
+  assert(!neverc_krt_profile_match_uses_family_layout(
+      NEVERC_KRT_PROFILE_MATCH_NONE));
+  assert(neverc_krt_profile_match_uses_family_layout(
+      NEVERC_KRT_PROFILE_MATCH_COMPATIBLE));
+  assert(neverc_krt_profile_match_uses_family_layout(
+      NEVERC_KRT_PROFILE_MATCH_EXACT));
 }
 
 static void check_capability_contracts(void) {
@@ -317,14 +325,12 @@ static void check_vermagic_format_keeps_long_tokens(void) {
   char buf[128];
   char too_small[64];
 
-  assert(neverc_krt_format_vermagic_from_banner(banner, buf, sizeof(buf)) ==
-         0);
+  assert(neverc_krt_format_vermagic_from_banner(banner, buf, sizeof(buf)) == 0);
   assert(strcmp(buf, expected) == 0);
   assert(neverc_krt_format_vermagic_from_banner(banner, too_small,
                                                 sizeof(too_small)) == -3);
   assert(neverc_krt_format_vermagic_from_banner(banner, buf, 0) == -1);
-  assert(neverc_krt_format_vermagic_from_banner(NULL, buf, sizeof(buf)) ==
-         -1);
+  assert(neverc_krt_format_vermagic_from_banner(NULL, buf, sizeof(buf)) == -1);
   assert(neverc_krt_format_vermagic_from_banner("not a banner", buf,
                                                 sizeof(buf)) == -2);
 }
@@ -348,9 +354,10 @@ static void check_certificate_select_is_token_exact(void) {
   struct neverc_krt_observed_identity identity;
 
   assert(profile != NULL);
-  assert(neverc_krt_parse_banner_identity(
-             "Linux version 6.12.38-android16-5-g8c67d4274c0a-ab14275539-4k SMP",
-             &identity) == 0);
+  assert(
+      neverc_krt_parse_banner_identity(
+          "Linux version 6.12.38-android16-5-g8c67d4274c0a-ab14275539-4k SMP",
+          &identity) == 0);
   identity.page_shift = 12;
   assert(neverc_krt_select_certificate_identity(leftover, 1, profile,
                                                 &identity) == &leftover[0]);

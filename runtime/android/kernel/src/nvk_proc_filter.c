@@ -477,8 +477,8 @@ static int _neverc_krt_net_port_filtered(u16 port)
 static int _neverc_krt_extract_ports(void *sk, u16 *sport, u16 *dport)
 {
 	const struct neverc_krt_gki_layout *layout =
-		_neverc_krt_get_gki_layout();
-	if (!sk) return -1;
+		_neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
+	if (!sk || !layout) return -1;
 	const unsigned char *p = (const unsigned char *)sk;
 	u16 dp_be, sp_host;
 
@@ -651,10 +651,12 @@ void neverc_krt_vis_cmdline_filter_cleanup(void)
 static int _neverc_krt_file_match_path(void *file, const char *target)
 {
 	const struct neverc_krt_gki_layout *layout =
-		_neverc_krt_get_gki_layout();
+		_neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
 	unsigned long dentry = 0, name_ptr = 0;
 
 	unsigned long off = _neverc_krt_get_file_dentry_off();
+	if (!layout || !off)
+		return 0;
 
 	if (neverc_krt_mem_read(&dentry,
 			 (void *)((unsigned long)file + off), 8))

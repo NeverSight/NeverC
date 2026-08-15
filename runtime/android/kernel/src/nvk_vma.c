@@ -155,7 +155,8 @@ int neverc_krt_vma_snapshot(const void *vma,
 	if (!vma)
 		return -1;
 
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_USER_PTMAP);
 	if (!layout ||
 	    !_neverc_krt_vma_field_fits(layout->vma_size, layout->vma_start,
 					sizeof(value.start)) ||
@@ -200,7 +201,8 @@ static void *_neverc_krt_task_mm(struct task_struct *task, int *referenced)
 		}
 	}
 
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_WALK);
 	if (!layout ||
 	    !_neverc_krt_vma_field_fits(layout->task_size, layout->task_mm,
 					sizeof(mm)))
@@ -224,7 +226,8 @@ static void _neverc_krt_read_vma_info(const void *vma,
 				      struct neverc_krt_vma_info *info)
 {
 	const struct neverc_krt_gki_layout *layout =
-		_neverc_krt_get_gki_layout();
+		_neverc_krt_get_proven_gki_layout(
+			NEVERC_KRT_LAYOUT_CERT_USER_PTMAP);
 	struct neverc_krt_vma_snapshot snapshot;
 	unsigned long raw_flags = 0;
 

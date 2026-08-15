@@ -102,7 +102,8 @@ int neverc_krt_task_thread_ids(struct task_struct *task, int *tids,
 	if (match != NEVERC_KRT_VER_EXACT &&
 	    match != NEVERC_KRT_VER_COMPAT)
 		return -EOPNOTSUPP;
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(
+		NEVERC_KRT_LAYOUT_CERT_TASK_THREADS);
 	if (!_neverc_krt_thread_layout_is_valid(layout))
 		return -EOPNOTSUPP;
 	if (!NEVERC_KRT_THREAD_NOFAULT_AVAILABLE())

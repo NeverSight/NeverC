@@ -52,7 +52,8 @@ static struct neverc_krt_runtime_caps fixture_caps = {
 	.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_INT,
 };
 static int fixture_version_match = NEVERC_KRT_VER_EXACT;
-static unsigned long fixture_layout_certificates;
+static unsigned long fixture_layout_certificates =
+	NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT;
 static int fixture_fail_next_read;
 static int fixture_fail_next_write;
 
@@ -74,6 +75,13 @@ const struct neverc_krt_runtime_caps *_neverc_krt_current_caps(void)
 const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
 {
 	return &fixture_layout;
+}
+
+const struct neverc_krt_gki_layout *_neverc_krt_get_proven_gki_layout(
+	unsigned long required)
+{
+	return (fixture_layout_certificates & required) == required ?
+		&fixture_layout : NULL;
 }
 
 long neverc_krt_mem_read(void *dst, const void *src, size_t len)
@@ -300,10 +308,15 @@ static void check_match_contracts(void)
 
 	fixture_version_match = NEVERC_KRT_VER_EXACT;
 	fixture_layout_certificates = 0;
-	assert(neverc_krt_dir_filter_available() == 1);
+	assert(neverc_krt_dir_filter_available() == 0);
 
 	fixture_version_match = NEVERC_KRT_VER_COMPAT;
 	fixture_layout_certificates = 0;
+	assert(neverc_krt_dir_filter_available() == 0);
+	assert(neverc_krt_dir_filter_begin(&scope, &reader.context,
+			hide_named_entry, NULL, &proxy) != 0);
+
+	fixture_layout_certificates = NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT;
 	assert(neverc_krt_dir_filter_available() == 1);
 	assert(neverc_krt_dir_filter_begin(&scope, &reader.context,
 			hide_named_entry, NULL, &proxy) == 0);
@@ -320,7 +333,7 @@ static void check_match_contracts(void)
 			hide_named_entry, NULL, &proxy) != 0);
 
 	fixture_version_match = NEVERC_KRT_VER_EXACT;
-	fixture_layout_certificates = 0;
+	fixture_layout_certificates = NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT;
 }
 
 static void check_failure_paths(void)
@@ -334,7 +347,7 @@ static void check_failure_paths(void)
 	void *other_proxy = NULL;
 
 	fixture_version_match = NEVERC_KRT_VER_EXACT;
-	fixture_layout_certificates = 0;
+	fixture_layout_certificates = NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT;
 	fixture_caps.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_INT;
 	reader.context.actor = (void *)fixture_actor_int;
 

@@ -15,6 +15,25 @@ RUNTIME_ROOT = TOOLS_ROOT.parent
 PROFILES = (510, 51013, 515, 51514, 601, 606, 612, 618)
 
 
+def certificate_dir_context(certificate):
+    if "dir_context" in certificate:
+        return certificate["dir_context"]
+    fields = certificate.get("runtime_layout", {}).get("fields")
+    if fields is None:
+        return None
+    return {
+        "member_sizes": {
+            "actor": fields["dir_context_actor_size"],
+            "pos": fields["dir_context_pos_size"],
+        },
+        "members": {
+            "actor": fields["dir_context_actor"],
+            "pos": fields["dir_context_pos"],
+        },
+        "size": fields["dir_context_size"],
+    }
+
+
 def check_profile_evidence():
     expected_abis = {
         510: "returns_int",
@@ -124,15 +143,17 @@ def check_profile_evidence():
         ).read_text(encoding="utf-8")
     )
     certificates = certificate_document.get("certificates", [])
-    if certificate_document.get("schema") != 1 or not certificates:
+    if certificate_document.get("schema") != 2 or not certificates:
         raise RuntimeError(
             f"unexpected dir_context certificate: {certificate_document}"
         )
     original_612 = None
     for certificate in certificates:
-        if certificate.get("dir_context") != expected_layout and not (
+        actual_dir_context = certificate_dir_context(certificate)
+        if actual_dir_context != expected_layout and not (
             certificate.get("profile_id") == 618
-            and certificate.get("dir_context", {}).get("size") == 24
+            and actual_dir_context is not None
+            and actual_dir_context.get("size") == 24
         ):
             raise RuntimeError(
                 f"dir_context certificate fields mismatch: {certificate}"

@@ -17,18 +17,23 @@ static __always_inline unsigned long
 _neverc_krt_seccomp_mode_addr(struct task_struct *task)
 {
 	const struct neverc_krt_gki_layout *layout =
-		_neverc_krt_get_gki_layout();
+		_neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
 
-	return (unsigned long)task + layout->task_seccomp +
-	       layout->seccomp_mode;
+	return layout ? (unsigned long)task + layout->task_seccomp +
+		layout->seccomp_mode : 0;
 }
 
 int neverc_krt_seccomp_get_mode(struct task_struct *task)
 {
+	unsigned long mode_addr;
+
 	if (!task) return -1;
+	mode_addr = _neverc_krt_seccomp_mode_addr(task);
+	if (!mode_addr)
+		return -1;
 	int mode;
 	if (neverc_krt_mem_read(&mode,
-			(void *)_neverc_krt_seccomp_mode_addr(task), 4))
+			(void *)mode_addr, 4))
 		return -1;
 	return mode;
 }
@@ -41,19 +46,27 @@ int neverc_krt_seccomp_is_filtered(struct task_struct *task)
 
 int neverc_krt_seccomp_disable(struct task_struct *task)
 {
+	unsigned long mode_addr;
+
 	if (!task) return -1;
+	mode_addr = _neverc_krt_seccomp_mode_addr(task);
+	if (!mode_addr)
+		return -1;
 
 	int zero = 0;
-	return neverc_krt_mem_write(
-		(void *)_neverc_krt_seccomp_mode_addr(task), &zero, 4);
+	return neverc_krt_mem_write((void *)mode_addr, &zero, 4);
 }
 
 int neverc_krt_seccomp_set_mode(struct task_struct *task, int mode)
 {
-	if (!task || mode < 0 || mode > 2) return -1;
+	unsigned long mode_addr;
 
-	return neverc_krt_mem_write(
-		(void *)_neverc_krt_seccomp_mode_addr(task), &mode, 4);
+	if (!task || mode < 0 || mode > 2) return -1;
+	mode_addr = _neverc_krt_seccomp_mode_addr(task);
+	if (!mode_addr)
+		return -1;
+
+	return neverc_krt_mem_write((void *)mode_addr, &mode, 4);
 }
 
 static int _neverc_krt_seccomp_is_allowed_pid(int pid)
@@ -163,4 +176,3 @@ int neverc_krt_seccomp_disallow_pid(int pid)
 	__asm__ __volatile__("sev" ::: "memory");
 	return -1;
 }
-

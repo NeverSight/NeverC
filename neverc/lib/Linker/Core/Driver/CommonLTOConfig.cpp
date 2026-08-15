@@ -170,29 +170,24 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
 
   std::shared_ptr<LTOPluginContext> PluginContext;
   if (Cfg.pluginSession) {
-    auto Task =
-        Cfg.pluginSession->createTask(NEVERC_TASK_LTO, Cfg.pluginTask);
+    auto Task = Cfg.pluginSession->createTask(NEVERC_TASK_LTO, Cfg.pluginTask);
     if (!Task) {
-      error("failed to create LTO plugin task: " +
-            toString(Task.takeError()));
+      error("failed to create LTO plugin task: " + toString(Task.takeError()));
     } else {
       PluginContext = std::make_shared<LTOPluginContext>();
       PluginContext->Task =
           std::shared_ptr<neverc::plugin::PluginTaskContext>(std::move(*Task));
 
-      auto IRPlan =
-          neverc::plugin::IRPassPlan::create(*PluginContext->Task);
+      auto IRPlan = neverc::plugin::IRPassPlan::create(*PluginContext->Task);
       if (!IRPlan) {
         error("failed to create LTO IR pass plan: " +
               toString(IRPlan.takeError()));
       } else {
         PluginContext->IRPasses =
-            std::shared_ptr<neverc::plugin::IRPassPlan>(
-                std::move(*IRPlan));
+            std::shared_ptr<neverc::plugin::IRPassPlan>(std::move(*IRPlan));
       }
 
-      auto MIRPlan =
-          neverc::plugin::MIRPassPlan::create(*PluginContext->Task);
+      auto MIRPlan = neverc::plugin::MIRPassPlan::create(*PluginContext->Task);
       if (!MIRPlan) {
         error("failed to create LTO MIR pass plan: " +
               toString(MIRPlan.takeError()));
@@ -202,182 +197,197 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
           c.MachinePassHooks = PluginContext->MIRPasses;
       }
       c.HostContext = PluginContext;
-      c.ModuleOptimizeHook =
-          [PluginContext, OptLevel,
-           AndroidKernelModule = Cfg.androidKernelModule,
-           XorStrKeySeed = Cfg.xorStrKeySeed,
-           EncryptCallStrings = Cfg.encryptCallStrings,
-           EncryptCallStringsMaxLen = Cfg.encryptCallStringsMaxLen](
-              std::unique_ptr<Module> &ModuleValue, bool &SkipBuiltin) {
-            // Seal inputs before a replacement provider can erase literal
-            // provenance, and materialize volatile wipes before it can discard
-            // the buffer metadata used to discover them.  The mandatory tail
-            // below remains necessary for literals introduced by the provider.
-            if (EncryptCallStrings) {
-              ModuleAnalysisManager MAM;
-              (void)neverc::xorstr::EncryptCallStringsPass(
-                  EncryptCallStringsMaxLen, XorStrKeySeed)
-                  .run(*ModuleValue, MAM);
-            }
-            FunctionAnalysisManager FAM;
-            for (Function &F : *ModuleValue)
-              if (!F.isDeclaration())
-                (void)neverc::xorstr::XorStrCleanupPass().run(F, FAM);
+      c.ModuleOptimizeHook = [PluginContext, OptLevel,
+                              AndroidKernelModule = Cfg.androidKernelModule,
+                              XorStrKeySeed = Cfg.xorStrKeySeed,
+                              EncryptCallStrings = Cfg.encryptCallStrings,
+                              EncryptCallStringsMaxLen =
+                                  Cfg.encryptCallStringsMaxLen](
+                                 std::unique_ptr<Module> &ModuleValue,
+                                 bool &SkipBuiltin) {
+        // Seal inputs before a replacement provider can erase literal
+        // provenance, and materialize volatile wipes before it can discard
+        // the buffer metadata used to discover them.  The mandatory tail
+        // below remains necessary for literals introduced by the provider.
+        if (EncryptCallStrings) {
+          ModuleAnalysisManager MAM;
+          (void)neverc::xorstr::EncryptCallStringsPass(EncryptCallStringsMaxLen,
+                                                       XorStrKeySeed)
+              .run(*ModuleValue, MAM);
+        }
+        FunctionAnalysisManager FAM;
+        for (Function &F : *ModuleValue)
+          if (!F.isDeclaration())
+            (void)neverc::xorstr::XorStrCleanupPass().run(F, FAM);
 
-            const std::optional<neverc::Emit::AndroidKernel::Contract>
-                RequiredAndroidContract =
-                    neverc::Emit::AndroidKernel::getContract(*ModuleValue);
-            auto Runtime =
-                neverc::plugin::PluginIROptimizationProviderRuntime::create(
-                    *PluginContext->Task, *ModuleValue, OptLevel,
-                    /*DisableLLVMPasses=*/false,
-                    [](Module &) { return Error::success(); });
-            if (!Runtime) {
-              linker::error("failed to create LTO optimization transition: " +
-                            toString(Runtime.takeError()));
-              return false;
-            }
-            if (Error E = (*Runtime)->execute()) {
-              linker::error("LTO optimization transition failed: " +
-                            toString(std::move(E)));
-              return false;
-            }
-            SkipBuiltin = !(*Runtime)->ranBuiltinPipeline();
-            if ((*Runtime)->ownsModule())
-              ModuleValue = (*Runtime)->releaseOwnedModule();
-            if (!ModuleValue)
-              return false;
-            if (RequiredAndroidContract) {
-              const std::optional<neverc::Emit::AndroidKernel::Contract>
-                  PublishedContract =
-                      neverc::Emit::AndroidKernel::getContract(*ModuleValue);
-              if (!PublishedContract ||
-                  *PublishedContract != *RequiredAndroidContract) {
-                linker::error(
-                    "LTO optimization provider dropped or changed the "
-                    "Android kernel profile contract");
-                return false;
-              }
-            }
-            // A replacement provider can introduce a fresh NVK declaration
-            // after the frontend and the ordinary LTO pipeline have already
-            // linked runtimes.  Materialize it from the module the provider
-            // actually published, before either builtin optimization or the
-            // provider-owned native boundary proceeds.
-            if (AndroidKernelModule) {
-              ModuleAnalysisManager MAM;
-              (void)neverc::NvkKernelRuntimeLinkerPass(/*PreLink=*/false)
-                  .run(*ModuleValue, MAM);
-              (void)neverc::Emit::AndroidKernel::KernelFunctionAttrsPass().run(
-                  *ModuleValue, MAM);
-            }
-            // A provider that owns the complete optimization transition asks
-            // LTO to bypass opt(), which also bypasses PostOptPassHook.  KCFI
-            // prefix materialization is a code-generation invariant, so seal
-            // the provider's final module here on that path.
-            if (SkipBuiltin) {
-              ModuleAnalysisManager MAM;
-              if (EncryptCallStrings)
-                (void)neverc::xorstr::EncryptCallStringsPass(
-                    EncryptCallStringsMaxLen, XorStrKeySeed)
-                    .run(*ModuleValue, MAM);
-              FunctionAnalysisManager FAM;
-              for (Function &F : *ModuleValue)
-                if (!F.isDeclaration())
-                  (void)neverc::xorstr::XorStrCleanupPass().run(F, FAM);
-              (void)neverc::xorstr::FinalizeXorStrPass(XorStrKeySeed)
-                  .run(*ModuleValue, MAM);
-              neverc::Emit::AndroidKernel::finalizeKCFIPrefixes(*ModuleValue);
-            }
-            return true;
-          };
+        const std::optional<neverc::Emit::AndroidKernel::Contract>
+            RequiredAndroidContract =
+                neverc::Emit::AndroidKernel::getContract(*ModuleValue);
+        auto Runtime =
+            neverc::plugin::PluginIROptimizationProviderRuntime::create(
+                *PluginContext->Task, *ModuleValue, OptLevel,
+                /*DisableLLVMPasses=*/false,
+                [](Module &) { return Error::success(); });
+        if (!Runtime) {
+          linker::error("failed to create LTO optimization transition: " +
+                        toString(Runtime.takeError()));
+          return false;
+        }
+        if (Error E = (*Runtime)->execute()) {
+          linker::error("LTO optimization transition failed: " +
+                        toString(std::move(E)));
+          return false;
+        }
+        SkipBuiltin = !(*Runtime)->ranBuiltinPipeline();
+        if ((*Runtime)->ownsModule())
+          ModuleValue = (*Runtime)->releaseOwnedModule();
+        if (!ModuleValue)
+          return false;
+        if (RequiredAndroidContract) {
+          const std::optional<neverc::Emit::AndroidKernel::Contract>
+              PublishedContract =
+                  neverc::Emit::AndroidKernel::getContract(*ModuleValue);
+          if (!PublishedContract ||
+              *PublishedContract != *RequiredAndroidContract) {
+            linker::error("LTO optimization provider dropped or changed the "
+                          "Android kernel profile contract");
+            return false;
+          }
+        }
+        // A replacement provider can introduce a fresh NVK declaration
+        // after the frontend and the ordinary LTO pipeline have already
+        // linked runtimes.  Materialize it from the module the provider
+        // actually published, before either builtin optimization or the
+        // provider-owned native boundary proceeds.
+        if (AndroidKernelModule) {
+          ModuleAnalysisManager MAM;
+          (void)neverc::NvkKernelRuntimeLinkerPass(/*PreLink=*/false)
+              .run(*ModuleValue, MAM);
+          (void)neverc::Emit::AndroidKernel::KernelFunctionAttrsPass().run(
+              *ModuleValue, MAM);
+        }
+        // A provider that owns the complete optimization transition asks
+        // LTO to bypass opt(), which also bypasses PostOptPassHook.  KCFI
+        // prefix materialization is a code-generation invariant, so seal
+        // the provider's final module here on that path.
+        if (SkipBuiltin) {
+          ModuleAnalysisManager MAM;
+          if (EncryptCallStrings)
+            (void)neverc::xorstr::EncryptCallStringsPass(
+                EncryptCallStringsMaxLen, XorStrKeySeed)
+                .run(*ModuleValue, MAM);
+          FunctionAnalysisManager FAM;
+          for (Function &F : *ModuleValue)
+            if (!F.isDeclaration())
+              (void)neverc::xorstr::XorStrCleanupPass().run(F, FAM);
+          (void)neverc::xorstr::FinalizeXorStrPass(XorStrKeySeed)
+              .run(*ModuleValue, MAM);
+          neverc::Emit::AndroidKernel::finalizeKCFIPrefixes(*ModuleValue);
+        }
+        return true;
+      };
       c.BackendDoneHook = [PluginContext] { PluginContext->finish(); };
       c.DisableVerify = false;
     }
   }
 
-  NevercIROptimizationLevel PluginLevel =
-      pluginOptimizationLevel(OptLevel);
-  auto AddFinalModulePasses =
+  NevercIROptimizationLevel PluginLevel = pluginOptimizationLevel(OptLevel);
+  const bool HasIRPluginPasses = PluginContext && PluginContext->IRPasses &&
+                                 !PluginContext->IRPasses->empty();
+  auto AddNvkWholeModuleLowering =
+      [AndroidKernelModule = Cfg.androidKernelModule](ModulePassManager &MPM) {
+        if (!AndroidKernelModule)
+          return;
+        MPM.addPass(neverc::NvkKernelRuntimeLinkerPass(/*PreLink=*/false));
+        MPM.addPass(neverc::Emit::AndroidKernel::KernelFunctionAttrsPass());
+      };
+  auto AddPostOptimizationFinalPasses =
       [AndroidKernelModule = Cfg.androidKernelModule,
        XorStrKeySeed = Cfg.xorStrKeySeed,
        EncryptCallStrings = Cfg.encryptCallStrings,
-       EncryptCallStringsMaxLen = Cfg.encryptCallStringsMaxLen](
-          ModulePassManager &MPM) {
-    // This tail runs after every LTO IR-pass callback.  Runtime lowering and
-    // kernel attributes are semantic code-generation invariants, so a plugin
-    // cannot evade them by introducing a declaration at pre-codegen time.
-    if (AndroidKernelModule) {
-      MPM.addPass(neverc::NvkKernelRuntimeLinkerPass(/*PreLink=*/false));
-      MPM.addPass(
-          neverc::Emit::AndroidKernel::KernelFunctionAttrsPass());
-    }
-    if (EncryptCallStrings)
-      MPM.addPass(neverc::xorstr::EncryptCallStringsPass(
-          EncryptCallStringsMaxLen, XorStrKeySeed));
-    MPM.addPass(createModuleToFunctionPassAdaptor(
-        neverc::xorstr::XorStrCleanupPass()));
-    MPM.addPass(neverc::xorstr::FinalizeXorStrPass(XorStrKeySeed));
-    MPM.addPass(neverc::Emit::AndroidKernel::FinalizeKCFIPrefixesPass());
-  };
-  c.PostOptPassHook = AddFinalModulePasses;
+       EncryptCallStringsMaxLen =
+           Cfg.encryptCallStringsMaxLen](ModulePassManager &MPM) {
+        // NVK runtime materialization is intentionally absent here: it runs
+        // once on the intact LTO module before partitioning.  The remaining
+        // passes are valid on ordinary PCG ownership slices when no external IR
+        // plugin is present.
+        if (AndroidKernelModule)
+          MPM.addPass(neverc::Emit::AndroidKernel::KernelFunctionAttrsPass());
+        if (EncryptCallStrings)
+          MPM.addPass(neverc::xorstr::EncryptCallStringsPass(
+              EncryptCallStringsMaxLen, XorStrKeySeed));
+        MPM.addPass(createModuleToFunctionPassAdaptor(
+            neverc::xorstr::XorStrCleanupPass()));
+        MPM.addPass(neverc::xorstr::FinalizeXorStrPass(XorStrKeySeed));
+        MPM.addPass(neverc::Emit::AndroidKernel::FinalizeKCFIPrefixesPass());
+      };
+  c.PreOptPassHook = AddNvkWholeModuleLowering;
+  c.PostOptPassHook = AddPostOptimizationFinalPasses;
 
   auto ParallelHooks = std::make_shared<neverc::ParallelOptimizationHooks>();
-  ParallelHooks->PostOpt = AddFinalModulePasses;
-  if (PluginContext && PluginContext->IRPasses &&
-      !PluginContext->IRPasses->empty()) {
-    neverc::plugin::IRPassPlan *IRPasses =
-        PluginContext->IRPasses.get();
+  ParallelHooks->PostOpt = AddPostOptimizationFinalPasses;
+  if (HasIRPluginPasses) {
+    neverc::plugin::IRPassPlan *IRPasses = PluginContext->IRPasses.get();
     auto AddPreOpt = [IRPasses, PluginLevel](ModulePassManager &MPM) {
       IRPasses->addPasses(
           MPM,
-          {NEVERC_PHASE_IR_PASS_PRE_OPT_HIGH,
-           NEVERC_PHASE_IR_PASS_PRE_OPT_LOW},
+          {NEVERC_PHASE_IR_PASS_PRE_OPT_HIGH, NEVERC_PHASE_IR_PASS_PRE_OPT_LOW},
           PluginLevel);
-      IRPasses->addPasses(
-          MPM,
-          {NEVERC_PHASE_IR_PASS_PIPELINE_START_HIGH,
-           NEVERC_PHASE_IR_PASS_PIPELINE_START_LOW},
-          PluginLevel);
+      IRPasses->addPasses(MPM,
+                          {NEVERC_PHASE_IR_PASS_PIPELINE_START_HIGH,
+                           NEVERC_PHASE_IR_PASS_PIPELINE_START_LOW},
+                          PluginLevel);
+    };
+    auto AddOptimizerLast = [IRPasses, PluginLevel](ModulePassManager &MPM) {
+      IRPasses->addPasses(MPM,
+                          {NEVERC_PHASE_IR_PASS_OPTIMIZER_LAST_HIGH,
+                           NEVERC_PHASE_IR_PASS_OPTIMIZER_LAST_LOW},
+                          PluginLevel);
     };
     auto AddPostOpt = [IRPasses, PluginLevel](ModulePassManager &MPM) {
-      IRPasses->addPasses(
-          MPM,
-          {NEVERC_PHASE_IR_PASS_POST_OPT_HIGH,
-           NEVERC_PHASE_IR_PASS_POST_OPT_LOW},
-          PluginLevel);
-      IRPasses->addPasses(
-          MPM,
-          {NEVERC_PHASE_IR_PASS_PRE_CODEGEN_HIGH,
-           NEVERC_PHASE_IR_PASS_PRE_CODEGEN_LOW},
-          PluginLevel);
+      IRPasses->addPasses(MPM,
+                          {NEVERC_PHASE_IR_PASS_POST_OPT_HIGH,
+                           NEVERC_PHASE_IR_PASS_POST_OPT_LOW},
+                          PluginLevel);
+      IRPasses->addPasses(MPM,
+                          {NEVERC_PHASE_IR_PASS_PRE_CODEGEN_HIGH,
+                           NEVERC_PHASE_IR_PASS_PRE_CODEGEN_LOW},
+                          PluginLevel);
     };
-    auto ConfigurePassBuilder =
-        [IRPasses, PluginLevel](PassBuilder &PB) {
-          PB.registerOptimizerLastEPCallback(
-              [IRPasses, PluginLevel](ModulePassManager &MPM,
-                                      OptimizationLevel) {
-                IRPasses->addPasses(
-                    MPM,
-                    {NEVERC_PHASE_IR_PASS_OPTIMIZER_LAST_HIGH,
-                     NEVERC_PHASE_IR_PASS_OPTIMIZER_LAST_LOW},
-                    PluginLevel);
-              });
+    c.PreOptPassHook = [AddPreOpt,
+                        AddNvkWholeModuleLowering](ModulePassManager &MPM) {
+      AddPreOpt(MPM);
+      // Semantic lowering stays on the intact module.  This also catches NVK
+      // references introduced by PRE_OPT / PIPELINE_START plugin passes.
+      AddNvkWholeModuleLowering(MPM);
+    };
+    c.PostOptPassHook =
+        [AddOptimizerLast, AddPostOpt, AddNvkWholeModuleLowering,
+         AddPostOptimizationFinalPasses](ModulePassManager &MPM) {
+          AddOptimizerLast(MPM);
+          AddPostOpt(MPM);
+          // POST_OPT / PRE_CODEGEN plugins may introduce fresh runtime
+          // references. This second invocation is a no-op unless they did;
+          // materialization is still performed once for each newly published
+          // definition graph.
+          AddNvkWholeModuleLowering(MPM);
+          AddPostOptimizationFinalPasses(MPM);
         };
-    c.PreOptPassHook = AddPreOpt;
-    c.PostOptPassHook = [AddPostOpt,
-                         AddFinalModulePasses](ModulePassManager &MPM) {
-      AddPostOpt(MPM);
-      AddFinalModulePasses(MPM);
-    };
-    c.PassBuilderHook = ConfigurePassBuilder;
-    ParallelHooks->ConfigurePassBuilder = ConfigurePassBuilder;
-    ParallelHooks->PreOpt = AddPreOpt;
-    ParallelHooks->PostOpt = [AddPostOpt,
-                              AddFinalModulePasses](ModulePassManager &MPM) {
-      AddPostOpt(MPM);
-      AddFinalModulePasses(MPM);
-    };
+    ParallelHooks->WholeModulePostOpt =
+        [AddOptimizerLast, AddPostOpt, AddNvkWholeModuleLowering,
+         AddPostOptimizationFinalPasses](ModulePassManager &MPM) {
+          // All third-party IR passes execute against a complete module.  Even
+          // a function- or loop-level pass may create module-owned helpers,
+          // aliases, globals, or registration tables, so replaying it
+          // independently in PCG partitions is not a sound isolation boundary.
+          AddOptimizerLast(MPM);
+          AddPostOpt(MPM);
+          AddNvkWholeModuleLowering(MPM);
+          AddPostOptimizationFinalPasses(MPM);
+        };
+    // No external IR callback or module-owning tail may execute in a PCG
+    // partition.  The callback above is the sole post-optimization boundary.
+    ParallelHooks->PostOpt = {};
     PluginContext->ParallelHooks = ParallelHooks;
   }
 
@@ -389,7 +399,7 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
   std::shared_ptr<neverc::PartitionCacheHooks> pcgCache;
   bool HasMutatingPluginPasses =
       PluginContext &&
-      ((PluginContext->IRPasses && !PluginContext->IRPasses->empty()) ||
+      (HasIRPluginPasses ||
        (PluginContext->MIRPasses && !PluginContext->MIRPasses->empty()));
   if (!HasMutatingPluginPasses && ltoPartitionCacheUsable(Cfg)) {
     pcgCache = std::make_shared<neverc::PartitionCacheHooks>();
@@ -402,9 +412,9 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
     };
     pcgCache->Store = ltoPartitionCacheStore;
   }
-  c.ParallelCodeGenHook = [pcgCache, PluginContext](
-                              Module &M, TargetMachine &TM,
-                              raw_pwrite_stream &OS, unsigned NP) {
+  c.ParallelCodeGenHook = [pcgCache,
+                           PluginContext](Module &M, TargetMachine &TM,
+                                          raw_pwrite_stream &OS, unsigned NP) {
     if (PluginContext && PluginContext->MIRPasses &&
         PluginContext->MIRPasses->requiresSerialCodeGen())
       return false;

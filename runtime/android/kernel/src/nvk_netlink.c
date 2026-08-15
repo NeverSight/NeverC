@@ -76,7 +76,9 @@ int neverc_krt_nl_init(void)
 	if (_neverc_krt_nl_inited) return 0;
 
 	neverc_krt_mem_init();
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
+	if (!layout)
+		return -1;
 	_neverc_krt_skb_data_off = layout->skb_data;
 
 	_neverc_krt_nl_create =
@@ -293,4 +295,3 @@ void neverc_krt_nl_revoke_auth(void)
 	_neverc_krt_nl_auth_pid = 0;
 	_neverc_krt_nl_auth_ok = 0;
 }
-

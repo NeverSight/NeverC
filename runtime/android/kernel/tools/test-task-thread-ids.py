@@ -15,6 +15,36 @@ RUNTIME_ROOT = TOOLS_ROOT.parent
 PROFILES = (510, 51013, 515, 51514, 601, 606, 612, 618)
 
 
+def certificate_task_threads(certificate):
+    if "task_threads" in certificate:
+        return certificate["task_threads"]
+    fields = certificate.get("runtime_layout", {}).get("fields")
+    if fields is None:
+        return None
+    return {
+        "task_struct": {
+            "size": fields["task_size"],
+            "members": {
+                "pid": fields["task_pid"],
+                "signal": fields["task_signal"],
+                "thread_node": fields["task_thread_node"],
+                "thread_pid": fields["task_thread_pid"],
+            },
+            "member_sizes": {
+                "pid": 4,
+                "signal": 8,
+                "thread_node": 16,
+                "thread_pid": 8,
+            },
+        },
+        "signal_struct": {
+            "size": fields["signal_size"],
+            "members": {"thread_head": fields["signal_thread_head"]},
+            "member_sizes": {"thread_head": 16},
+        },
+    }
+
+
 def check_profile_evidence():
     expected = {
         510: (4736, 1480, 1584, 2008, 1672, 1120, 16),
@@ -98,11 +128,11 @@ def check_compatibility_certificate():
         )
     )
     certificates = document.get("certificates", [])
-    if document.get("schema") != 1 or not certificates:
+    if document.get("schema") != 2 or not certificates:
         raise RuntimeError("unexpected task-thread certificate document")
     certificate = None
     for candidate in certificates:
-        if "task_threads" not in candidate:
+        if certificate_task_threads(candidate) is None:
             raise RuntimeError(
                 "layout certificate is missing task-thread evidence"
             )
@@ -113,7 +143,7 @@ def check_compatibility_certificate():
             certificate = candidate
     if certificate is None:
         raise RuntimeError("task-thread certificate raw BTF identity mismatch")
-    if certificate.get("task_threads") != {
+    if certificate_task_threads(certificate) != {
         "task_struct": {
             "size": 5184,
             "members": {
@@ -146,7 +176,7 @@ def check_compatibility_certificate():
         raise RuntimeError("missing android14-5.15 certificate on 51514")
     if android14_515["identity"]["android_release"] != 14:
         raise RuntimeError("android14-5.15 certificate identity mismatch")
-    if android14_515["task_threads"]["task_struct"] != {
+    if certificate_task_threads(android14_515)["task_struct"] != {
         "size": 4736,
         "members": {
             "pid": 1600,
@@ -163,9 +193,14 @@ def check_compatibility_certificate():
     }:
         raise RuntimeError(
             "android14-5.15 task-thread certificate mismatch: "
-            + str(android14_515["task_threads"]["task_struct"])
+            + str(certificate_task_threads(android14_515)["task_struct"])
         )
-    if android14_515["task_walk"]["task_struct"]["members"]["comm"] != 2064:
+    android14_fields = android14_515.get("runtime_layout", {}).get("fields")
+    android14_comm = (
+        android14_fields["task_comm"] if android14_fields is not None
+        else android14_515["task_walk"]["task_struct"]["members"]["comm"]
+    )
+    if android14_comm != 2064:
         raise RuntimeError("android14-5.15 comm overlay mismatch")
 
     if certificate.get("task_walk") != {

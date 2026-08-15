@@ -18,27 +18,6 @@ RUNTIME_ROOT = TOOLS_ROOT.parent
 DEFAULT_MANIFEST_ROOT = RUNTIME_ROOT / "arm64/gki-manifests"
 DEFAULT_CERTIFICATES = RUNTIME_ROOT / "arm64/gki-layout-certificates.json"
 
-COMPARE_FIELDS = (
-    ("dir_context", "dir_context", ("actor", "pos")),
-    ("filename", "filename", ("name",)),
-    ("inode", "inode", None),
-    ("path", "path", ("dentry",)),
-    ("dentry", "dentry", ("d_inode",)),
-    ("cred", "cred", ("uid", "gid", "suid", "sgid", "euid", "egid", "fsuid", "fsgid")),
-    ("task_struct", "task_struct", (
-        "comm", "flags", "group_leader", "mm", "parent", "pid", "real_cred",
-        "real_parent", "signal", "stack", "stack_refcount", "tasks",
-        "thread_node", "thread_pid", "usage",
-    )),
-    ("signal_struct", "signal_struct", ("thread_head",)),
-    ("mm_struct", "mm_struct", ("mm_count", "mmap_lock", "page_table_lock", "pgd")),
-    ("vm_area_struct", "vm_area_struct", (
-        "vm_start", "vm_end", "vm_mm", "vm_flags", "vm_pgoff",
-    )),
-    ("pt_regs", "pt_regs", ("regs", "sp", "pc", "pstate")),
-)
-
-
 def load_tool(name, filename):
     import importlib.util
 
@@ -55,26 +34,30 @@ EXTRACT = load_tool("nvk_compare_extract", "extract-btf-layouts.py")
 CERT = load_tool("nvk_compare_cert", "generate-layout-certificate.py")
 
 
+def runtime_compare_members_by_struct():
+    """Return the canonical source fields consumed by NeverC's runtime."""
+    return COMPAT.neverc_read_members_by_struct()
+
+
 def project_layout(layouts, structure, members):
     if structure not in layouts:
         return None
     layout = layouts[structure]
-    if members is None:
-        if structure == "inode":
-            try:
-                normalized = COMPAT.normalize_inode_times_layout(
-                    {"inode": layout, "timespec64": layouts.get("timespec64", {})},
-                    structure,
-                )
-            except ValueError:
-                normalized = None
-            if normalized is not None:
-                return {
-                    "size": normalized["size"],
-                    "members": dict(sorted(normalized["members"].items())),
-                    "member_sizes": dict(sorted(normalized["member_sizes"].items())),
-                }
-        members = tuple(sorted(layout.get("members", {})))
+    if structure == "inode":
+        try:
+            normalized = COMPAT.normalize_inode_times_layout(
+                {"inode": layout, "timespec64": layouts.get("timespec64", {})},
+                structure,
+            )
+        except ValueError:
+            normalized = None
+        if normalized is not None:
+            return {
+                "size": normalized["size"],
+                "members": dict(sorted(normalized["members"].items())),
+                "member_sizes": dict(sorted(normalized["member_sizes"].items())),
+            }
+    members = tuple(sorted(members))
     present = [name for name in members if name in layout.get("members", {})]
     if not present:
         return {"size": layout.get("size"), "members": {}, "member_sizes": {}}
@@ -90,9 +73,79 @@ def project_layout(layouts, structure, members):
 
 def project_all(layouts):
     return {
-        label: project_layout(layouts, structure, members)
-        for label, structure, members in COMPARE_FIELDS
+        structure: project_layout(layouts, structure, members)
+        for structure, members in runtime_compare_members_by_struct().items()
     }
+
+
+def project_runtime_fields(layouts):
+    """Project every flat runtime field supported by the supplied layouts.
+
+    Raw BTF/DWARF extracts do not contain profile geometry, so this function is
+    intentionally partial.  A missing key means "not evidenced by this input",
+    not zero and not an inferred ABI match.
+    """
+    fields = {}
+    for output_name, structure, member_name in COMPAT.LAYOUT_FIELDS:
+        try:
+            fields[output_name] = COMPAT.layout_value(
+                layouts, structure, member_name
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    try:
+        inode_times = COMPAT.normalize_inode_times_layout(
+            layouts, "layout comparison"
+        )
+    except ValueError:
+        inode_times = None
+    if inode_times is not None:
+        for output_name, container, member_name in (
+            COMPAT.RUNTIME_LAYOUT_INODE_FIELDS
+        ):
+            if container is None:
+                fields[output_name] = inode_times["size"]
+            else:
+                fields[output_name] = inode_times[container][member_name]
+
+    fields.update(dict(COMPAT.RUNTIME_LAYOUT_FIXED_FIELDS))
+    return fields
+
+
+def canonical_fields(layouts, *, runtime_layout=None, identity=None):
+    """Return one comparable, provenance-preserving flat field map.
+
+    ``runtime.*`` is the ABI NeverC actually consumes.  ``source.*`` retains
+    raw struct evidence (including loader-only facts) when the input provides
+    it.  This lets a schema-2 full runtime certificate compare directly with a
+    manifest without pretending the certificate contains source fields it did
+    not certify.
+    """
+    fields = {}
+    for structure, projected in project_all(layouts).items():
+        if projected is None:
+            continue
+        size = projected.get("size")
+        if size is not None:
+            fields[f"source.{structure}.size"] = size
+        for member_name, offset in projected.get("members", {}).items():
+            fields[f"source.{structure}.{member_name}.offset"] = offset
+        for member_name, width in projected.get("member_sizes", {}).items():
+            if width is not None:
+                fields[f"source.{structure}.{member_name}.width"] = width
+
+    projected_runtime = project_runtime_fields(layouts)
+    if runtime_layout is not None:
+        projected_runtime.update(runtime_layout)
+    if identity is not None and "page_shift" in identity:
+        page_shift = identity["page_shift"]
+        projected_runtime.setdefault("task_stack_size", 1 << max(page_shift, 14))
+    fields.update({
+        f"runtime.{name}": value
+        for name, value in projected_runtime.items()
+    })
+    return fields
 
 
 def identity_key(identity):
@@ -115,13 +168,15 @@ def load_json(path):
 
 def record_from_extract(path, release_token, layouts=None):
     if layouts is None:
-        layouts = EXTRACT.extract_layouts(str(path), CERT.CERTIFICATE_STRUCTURES)
+        layouts = EXTRACT.extract_layouts(
+            str(path), tuple(runtime_compare_members_by_struct())
+        )
     identity = CERT.identity_from_token(release_token, 12)
     return {
         "source": str(path),
         "release_token": release_token,
         "identity": identity,
-        "fields": project_all(layouts),
+        "fields": canonical_fields(layouts, identity=identity),
     }
 
 
@@ -137,22 +192,40 @@ def record_from_manifest(path):
         f"{profile['linux_patch']}-android{profile['android_release']}-"
         f"{profile['kmi_generation']}"
     )
+    identity = {
+        "linux_major": profile["linux_major"],
+        "linux_minor": profile["linux_minor"],
+        "linux_patch": profile["linux_patch"],
+        "android_release": profile["android_release"],
+        "kmi_generation": profile["kmi_generation"],
+        "page_shift": profile["page_shift"],
+    }
     return {
         "source": str(path),
         "release_token": release_token,
-        "identity": {
-            "linux_major": profile["linux_major"],
-            "linux_minor": profile["linux_minor"],
-            "linux_patch": profile["linux_patch"],
-            "android_release": profile["android_release"],
-            "kmi_generation": profile["kmi_generation"],
-            "page_shift": profile["page_shift"],
-        },
-        "fields": project_all(manifest["layouts"]),
+        "identity": identity,
+        "fields": canonical_fields(
+            manifest["layouts"],
+            runtime_layout=COMPAT.compile_runtime_layout(manifest),
+            identity=identity,
+        ),
     }
 
 
 def record_from_certificate(certificate):
+    full_runtime_layout = certificate.get("runtime_layout")
+    if full_runtime_layout is not None:
+        return {
+            "source": f"certificate:{certificate['release_token']}",
+            "release_token": certificate["release_token"],
+            "identity": certificate["identity"],
+            "fields": canonical_fields(
+                {},
+                runtime_layout=full_runtime_layout["fields"],
+                identity=certificate["identity"],
+            ),
+        }
+
     layouts = {
         "dir_context": certificate.get("dir_context"),
         "filename": certificate.get("filename_name"),
@@ -201,40 +274,53 @@ def record_from_certificate(certificate):
             },
         }
     layouts = {key: value for key, value in layouts.items() if value}
+    runtime_layout = project_runtime_fields(layouts)
+    if "file_dentry" in certificate:
+        runtime_layout["file_dentry"] = certificate["file_dentry"]
+    geometry = certificate.get("user_ptmap", {}).get("geometry", {})
+    for output_name, geometry_name in (
+        COMPAT.RUNTIME_LAYOUT_USER_GEOMETRY_FIELDS
+    ):
+        if geometry_name in geometry:
+            runtime_layout[output_name] = geometry[geometry_name]
     return {
         "source": f"certificate:{certificate['release_token']}",
         "release_token": certificate["release_token"],
         "identity": certificate["identity"],
-        "fields": project_all(layouts),
+        "fields": canonical_fields(
+            layouts,
+            runtime_layout=runtime_layout,
+            identity=certificate["identity"],
+        ),
     }
 
 
-def diff_fields(left, right):
-    diffs = []
-    labels = sorted(set(left) | set(right))
-    for label in labels:
-        lval = left.get(label)
-        rval = right.get(label)
-        if lval == rval:
-            continue
-        if lval is None or rval is None:
-            diffs.append(f"{label}: missing on one side")
-            continue
-        if lval.get("size") != rval.get("size"):
-            diffs.append(f"{label}.size {lval.get('size')} != {rval.get('size')}")
-        names = sorted(set(lval.get("members", {})) | set(rval.get("members", {})))
-        for name in names:
-            lo = lval.get("members", {}).get(name)
-            ro = rval.get("members", {}).get(name)
-            if lo is None or ro is None:
+def compare_field_maps(left, right):
+    mismatches = []
+    evidence_gaps = []
+    left_namespaces = {name.partition(".")[0] for name in left}
+    right_namespaces = {name.partition(".")[0] for name in right}
+    for label in sorted(set(left) | set(right)):
+        if label not in left or label not in right:
+            namespace = label.partition(".")[0]
+            # A full runtime certificate intentionally has no raw ``source``
+            # namespace.  Absence of an entire evidence class is not a per-field
+            # layout gap; partial coverage within a supplied class still is.
+            if (
+                namespace not in left_namespaces
+                or namespace not in right_namespaces
+            ):
                 continue
-            if lo != ro:
-                diffs.append(f"{label}.{name} offset {lo} != {ro}")
-            lw = lval.get("member_sizes", {}).get(name)
-            rw = rval.get("member_sizes", {}).get(name)
-            if lw is not None and rw is not None and lw != rw:
-                diffs.append(f"{label}.{name} width {lw} != {rw}")
-    return diffs
+            evidence_gaps.append(f"{label}: missing on one side")
+        elif left[label] != right[label]:
+            mismatches.append(f"{label} {left[label]} != {right[label]}")
+    return mismatches, evidence_gaps
+
+
+def diff_fields(left, right):
+    """Compatibility wrapper returning both mismatches and evidence gaps."""
+    mismatches, evidence_gaps = compare_field_maps(left, right)
+    return mismatches + evidence_gaps
 
 
 def compare_groups(records, key_fn, title):
@@ -251,7 +337,9 @@ def compare_groups(records, key_fn, title):
         for item in items:
             print(f"  {item['release_token']}  ({item['source']})")
         for item in items[1:]:
-            diffs = diff_fields(baseline["fields"], item["fields"])
+            diffs, evidence_gaps = compare_field_maps(
+                baseline["fields"], item["fields"]
+            )
             if diffs:
                 any_diff = True
                 print(f"  DIFF {baseline['release_token']} vs {item['release_token']}")
@@ -261,6 +349,10 @@ def compare_groups(records, key_fn, title):
                 print(
                     f"  MATCH {baseline['release_token']} vs {item['release_token']}"
                 )
+            if evidence_gaps:
+                print("  EVIDENCE GAP (not counted as a layout difference)")
+                for line in evidence_gaps:
+                    print(f"    {line}")
         print()
     if not any_diff:
         print("no field diffs inside any group\n")

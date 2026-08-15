@@ -2,6 +2,8 @@
 """Unit tests for compatible-identity layout certificate assembly."""
 
 import importlib.util
+import copy
+import json
 from pathlib import Path
 import unittest
 
@@ -198,7 +200,129 @@ def fixture_manifest():
     }
 
 
+def checked_profile_and_manifest(profile_id=515):
+    catalog = json.loads(
+        (TOOLS_ROOT.parent / "arm64/gki-profiles.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    profile = next(
+        item for item in catalog["profiles"]
+        if item["legacy_id"] == profile_id
+    )
+    manifest = json.loads(
+        (TOOLS_ROOT.parent / f"arm64/gki-manifests/{profile_id}.json")
+        .read_text(encoding="utf-8")
+    )
+    return profile, manifest, catalog["profiles"]
+
+
 class GenerateLayoutCertificateTests(unittest.TestCase):
+    def test_full_certificate_contains_every_runtime_layout_field(self):
+        profile, manifest, catalog = checked_profile_and_manifest()
+        certificate = CERT.build_full_certificate(
+            profile,
+            manifest,
+            manifest,
+            "5.15.208-android13-8-gc33e1c033f09",
+            "raw_btf",
+            {
+                "sha256": manifest["evidence"]["layout_sha256"],
+                "size": 12,
+            },
+            catalog,
+        )
+
+        self.assertEqual(
+            certificate["runtime_layout"]["schema"],
+            1,
+        )
+        self.assertEqual(
+            set(certificate["runtime_layout"]["fields"]),
+            set(COMPAT.RUNTIME_LAYOUT_FIELD_NAMES),
+        )
+        self.assertEqual(
+            certificate["runtime_layout"]["fields"],
+            COMPAT.compile_runtime_layout(manifest),
+        )
+
+    def test_full_certificate_rejects_loader_abi_difference(self):
+        profile, family_manifest, catalog = checked_profile_and_manifest()
+        observed = copy.deepcopy(family_manifest)
+        observed["layouts"]["module"]["size"] += 8
+
+        with self.assertRaisesRegex(ValueError, "loader ABI"):
+            CERT.build_full_certificate(
+                profile,
+                family_manifest,
+                observed,
+                "5.15.208-android13-8-gc33e1c033f09",
+                "raw_btf",
+                {
+                    "sha256": observed["evidence"]["layout_sha256"],
+                    "size": 12,
+                },
+                catalog,
+            )
+
+    def test_full_certificate_accepts_runtime_only_difference(self):
+        profile, family_manifest, catalog = checked_profile_and_manifest()
+        observed = copy.deepcopy(family_manifest)
+        observed["layouts"]["task_struct"]["members"]["comm"] += 8
+
+        certificate = CERT.build_full_certificate(
+            profile,
+            family_manifest,
+            observed,
+            "5.15.208-android13-8-gc33e1c033f09",
+            "raw_btf",
+            {
+                "sha256": observed["evidence"]["layout_sha256"],
+                "size": 12,
+            },
+            catalog,
+        )
+
+        self.assertEqual(
+            certificate["runtime_layout"]["fields"]["task_comm"],
+            family_manifest["layouts"]["task_struct"]["members"]["comm"]
+            + 8,
+        )
+
+    def test_full_certificate_requires_target_config_and_build_evidence(self):
+        profile, family_manifest, catalog = checked_profile_and_manifest()
+        observed = copy.deepcopy(family_manifest)
+        observed["evidence"].pop("config_sha256")
+
+        with self.assertRaisesRegex(ValueError, "target-bound manifest"):
+            CERT.build_full_certificate(
+                profile,
+                family_manifest,
+                observed,
+                "5.15.208-android13-8-gc33e1c033f09",
+                "raw_btf",
+                {
+                    "sha256": observed["evidence"]["layout_sha256"],
+                    "size": 12,
+                },
+                catalog,
+            )
+
+    def test_release_token_is_measured_not_trusted_from_the_cli(self):
+        image = (
+            b"prefix Linux version "
+            b"5.15.208-android13-8-gc33e1c033f09 SMP suffix\0"
+        )
+        self.assertEqual(
+            CERT.release_token_from_vmlinux_bytes(image),
+            "5.15.208-android13-8-gc33e1c033f09",
+        )
+        with self.assertRaisesRegex(ValueError, "release token mismatch"):
+            CERT.assert_expected_release_token(
+                "5.15.208-android13-8-gc33e1c033f09",
+                "5.15.208-android13-8-oem",
+            )
+
     def test_build_certificate_includes_public_vma_fields(self):
         certificate = CERT.build_certificate(
             fixture_profile(),

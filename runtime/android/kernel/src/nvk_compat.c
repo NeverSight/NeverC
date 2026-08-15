@@ -23,7 +23,7 @@ static struct neverc_krt_gki_layout _neverc_krt_active_effective_layout;
  */
 static const struct neverc_krt_profile *_neverc_krt_active_profile;
 static const struct neverc_krt_layout_entry *_neverc_krt_active_layout;
-static int _neverc_krt_active_match = NEVERC_KRT_VER_UNKNOWN;
+static enum neverc_krt_profile_match _neverc_krt_active_profile_match;
 
 static __always_inline const struct neverc_krt_layout_entry *
 _neverc_krt_find_layout(unsigned int profile_id)
@@ -80,18 +80,16 @@ _neverc_krt_select_layout_certificate(
 	return (const struct neverc_krt_layout_certificate_entry *)0;
 }
 
-static __always_inline unsigned long _neverc_krt_match_layout_certificates(
+static __always_inline void _neverc_krt_overlay_layout_certificate(
 	const struct neverc_krt_profile *profile,
-	const struct neverc_krt_layout_entry *layout,
 	const struct neverc_krt_observed_identity *identity,
 	struct neverc_krt_gki_layout *effective_layout)
 {
 	const struct neverc_krt_layout_certificate_entry *certificate;
-	unsigned long field_bits = 0;
 	unsigned long matched_bits;
 
-	if (!profile || !layout || !identity || !identity->has_android_identity)
-		return 0;
+	if (!profile || !identity || !identity->has_android_identity)
+		return;
 	/*
 	 * Overlay only a byte-for-byte release token.  A leftover
 	 * Android/KMI certificate for another patch must not paint a
@@ -99,24 +97,28 @@ static __always_inline unsigned long _neverc_krt_match_layout_certificates(
 	 */
 	certificate = _neverc_krt_select_layout_certificate(profile, identity);
 	if (!certificate)
-		return 0;
+		return;
 
 	matched_bits = certificate->field_bits;
-	/* dir_context proves equality with the family layout.  The other
-	 * certificates carry live-identity offsets that overlay it. */
-	if ((matched_bits & NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT) &&
-	    (certificate->dir_context_size !=
-			layout->layout.dir_context_size ||
-	     certificate->dir_context_actor !=
-			layout->layout.dir_context_actor ||
-	     certificate->dir_context_actor_size !=
-			layout->layout.dir_context_actor_size ||
-	     certificate->dir_context_pos !=
-			layout->layout.dir_context_pos ||
-	     certificate->dir_context_pos_size !=
-			layout->layout.dir_context_pos_size ||
-	     certificate->filldir_abi != profile->caps.filldir_abi))
-		matched_bits &= ~NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT;
+	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_FULL) {
+		/* A full certificate is generated from this exact vmlinux token and
+		 * carries every runtime-read field.  Loader-visible fields were
+		 * checked against the compile profile before generation. */
+		__builtin_memcpy(effective_layout, &certificate->runtime_layout,
+				 sizeof(*effective_layout));
+		return;
+	}
+	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT) {
+		effective_layout->dir_context_size =
+			certificate->dir_context_size;
+		effective_layout->dir_context_actor =
+			certificate->dir_context_actor;
+		effective_layout->dir_context_actor_size =
+			certificate->dir_context_actor_size;
+		effective_layout->dir_context_pos = certificate->dir_context_pos;
+		effective_layout->dir_context_pos_size =
+			certificate->dir_context_pos_size;
+	}
 
 	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_FILENAME_NAME) {
 		effective_layout->filename_size = certificate->filename_size;
@@ -283,8 +285,6 @@ static __always_inline unsigned long _neverc_krt_match_layout_certificates(
 	}
 	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_FILE_DENTRY)
 		effective_layout->file_dentry = certificate->file_dentry;
-	field_bits |= matched_bits & NEVERC_KRT_LAYOUT_CERT_PRIVATE_FIELDS;
-	return field_bits;
 }
 
 static __always_inline const struct neverc_krt_profile *
@@ -312,11 +312,11 @@ int _neverc_krt_version_setup(unsigned int profile_id)
 	selected = __atomic_load_n(&_neverc_krt_selected_profile,
 				   __ATOMIC_ACQUIRE);
 	if (selected)
-		return selected->legacy_id == profile_id ? 0 : -2;
+		return selected->legacy_id == profile->legacy_id ? 0 : -2;
 	if (!__atomic_compare_exchange_n(&_neverc_krt_selected_profile, &selected,
 					 profile, 0, __ATOMIC_RELEASE,
 					 __ATOMIC_ACQUIRE))
-		return selected->legacy_id == profile_id ? 0 : -2;
+		return selected->legacy_id == profile->legacy_id ? 0 : -2;
 	return 0;
 }
 
@@ -345,7 +345,7 @@ int _neverc_krt_current_profile_id(void)
 unsigned long _neverc_krt_get_module_size(void)
 {
 	const struct neverc_krt_gki_layout *layout =
-		_neverc_krt_get_gki_layout();
+		_neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
 
 	return layout ? layout->module_size : 0;
 }
@@ -357,17 +357,39 @@ unsigned long _neverc_krt_get_kimage_vaddr_base(void)
 	return profile ? profile->kimage_vaddr : 0;
 }
 
-const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
+static const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
 {
 	return _neverc_krt_current_layout() ?
 		&_neverc_krt_active_effective_layout :
 		(const struct neverc_krt_gki_layout *)0;
 }
 
+static int _neverc_krt_layout_fields_proven(unsigned long required)
+{
+	enum neverc_krt_profile_match match;
+
+	if (!required || neverc_krt_compat_init())
+		return 0;
+	/* Activation publishes a complete family table for both EXACT and COMPAT.
+	 * Certificate bits describe optional overlays; they never gate defaults. */
+	match = __atomic_load_n(&_neverc_krt_active_profile_match,
+				__ATOMIC_ACQUIRE);
+	return neverc_krt_profile_match_uses_family_layout(match);
+}
+
+const struct neverc_krt_gki_layout *_neverc_krt_get_proven_gki_layout(
+	unsigned long required)
+{
+	if (!_neverc_krt_layout_fields_proven(required))
+		return (const struct neverc_krt_gki_layout *)0;
+	return _neverc_krt_get_gki_layout();
+}
+
 unsigned long _neverc_krt_get_file_dentry_off(void)
 {
 	const struct neverc_krt_gki_layout *layout =
-		_neverc_krt_get_gki_layout();
+		_neverc_krt_get_proven_gki_layout(
+			NEVERC_KRT_LAYOUT_CERT_FILE_DENTRY);
 
 	return layout ? layout->file_dentry : 0;
 }
@@ -411,7 +433,6 @@ _neverc_krt_activate_observed(
 	const struct neverc_krt_profile *active;
 	const struct neverc_krt_layout_entry *layout;
 	enum neverc_krt_profile_match profile_match;
-	int version_match;
 
 	selected = __atomic_load_n(&_neverc_krt_selected_profile,
 				   __ATOMIC_ACQUIRE);
@@ -442,16 +463,12 @@ _neverc_krt_activate_observed(
 		return -1;
 	__builtin_memcpy(&_neverc_krt_active_effective_layout, &layout->layout,
 			 sizeof(_neverc_krt_active_effective_layout));
-	version_match = profile_match == NEVERC_KRT_PROFILE_MATCH_EXACT ?
-		NEVERC_KRT_VER_EXACT : NEVERC_KRT_VER_COMPAT;
-	if (version_match == NEVERC_KRT_VER_COMPAT)
-		(void)_neverc_krt_match_layout_certificates(
-			profile, layout, identity,
-			&_neverc_krt_active_effective_layout);
+	_neverc_krt_overlay_layout_certificate(
+		profile, identity, &_neverc_krt_active_effective_layout);
 
 	_neverc_krt_kinfo = *observed;
 	__atomic_store_n(&_neverc_krt_active_layout, layout, __ATOMIC_RELEASE);
-	__atomic_store_n(&_neverc_krt_active_match, version_match,
+	__atomic_store_n(&_neverc_krt_active_profile_match, profile_match,
 			 __ATOMIC_RELEASE);
 	/*
 	 * Publish the active profile with an acq_rel compare-exchange (the
@@ -578,9 +595,15 @@ int neverc_krt_check_kernel_match(void)
 {
 	int ret = neverc_krt_compat_init();
 
-	if (!ret && _neverc_krt_current_profile())
-		return __atomic_load_n(&_neverc_krt_active_match,
-				       __ATOMIC_ACQUIRE);
+	if (!ret && _neverc_krt_current_profile()) {
+		enum neverc_krt_profile_match match = __atomic_load_n(
+			&_neverc_krt_active_profile_match, __ATOMIC_ACQUIRE);
+
+		if (match == NEVERC_KRT_PROFILE_MATCH_EXACT)
+			return NEVERC_KRT_VER_EXACT;
+		if (match == NEVERC_KRT_PROFILE_MATCH_COMPATIBLE)
+			return NEVERC_KRT_VER_COMPAT;
+	}
 	return _neverc_krt_kinfo.detected ? NEVERC_KRT_VER_MISMATCH :
 		NEVERC_KRT_VER_UNKNOWN;
 }
@@ -589,7 +612,7 @@ int neverc_krt_verify_module_offsets(struct neverc_krt_this_module *mod,
 				     const char *expected_name)
 {
 	const struct neverc_krt_gki_layout *layout =
-		_neverc_krt_get_gki_layout();
+		_neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
 	struct list_head *list;
 	const char *name;
 
@@ -717,7 +740,7 @@ int neverc_krt_should_abort_on_mismatch(void)
 unsigned long neverc_krt_rt_off_init(void)
 {
 	const struct neverc_krt_gki_layout *layout =
-		_neverc_krt_get_gki_layout();
+		_neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
 
 	return layout ? layout->module_init : 0;
 }
@@ -725,7 +748,7 @@ unsigned long neverc_krt_rt_off_init(void)
 unsigned long neverc_krt_rt_off_exit(void)
 {
 	const struct neverc_krt_gki_layout *layout =
-		_neverc_krt_get_gki_layout();
+		_neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
 
 	return layout ? layout->module_exit : 0;
 }

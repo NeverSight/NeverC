@@ -402,6 +402,35 @@ check_single_runtime_definition()
 	fi
 }
 
+check_single_runtime_family_definition()
+{
+	local ko="$1"
+	local symbol="$2"
+	local table
+	local matches
+	local count
+
+	table="$(read_symbols "$ko")"
+	# Parallel code generation temporarily externalizes private definitions and
+	# gives the one surviving instance a deterministic .__pcg suffix.  Treat
+	# that spelling as the same logical symbol, while still rejecting the old
+	# broken result that contained both the canonical and PCG spellings (or an
+	# LTO-generated numeric duplicate).
+	matches="$(printf '%s\n' "$table" | awk -v symbol="$symbol" '
+		$(NF - 1) !~ /^[Uu]$/ {
+			name = $NF
+			sub(/\.__pcg[0-9]+$/, "", name)
+			if (name == symbol) print
+		}')"
+	count="$(printf '%s\n' "$matches" | awk 'NF { count++ }
+		END { print count + 0 }')"
+	if [ "$count" -ne 1 ]; then
+		echo "FAIL: expected one definition family for $symbol in $ko, found $count" >&2
+		printf '%s\n' "$matches" >&2
+		return 1
+	fi
+}
+
 check_no_runtime_definition()
 {
 	local ko="$1"
@@ -698,7 +727,7 @@ run_shared_state_test()
 
 	check_no_undefined_runtime "$ko"
 	for symbol in "${SHARED_STATE_SYMBOLS[@]}"; do
-		check_single_runtime_definition "$ko" "$symbol"
+		check_single_runtime_family_definition "$ko" "$symbol"
 		check_no_duplicate_comdat "$ko" "$symbol"
 	done
 	echo "PASS: shared runtime state @ $kernel ($mode)"

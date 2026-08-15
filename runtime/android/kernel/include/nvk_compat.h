@@ -45,7 +45,7 @@ void *neverc_krt_lookup_module_free(void);
 int neverc_krt_has_cfi(void);
 
 enum neverc_krt_version_match {
-	/* Certified KMI identity and page size matched (token suffix ignored). */
+	/* Numeric patch + Android/KMI + page identity; token suffix ignored. */
 	NEVERC_KRT_VER_EXACT   =  0,
 	/*
 	 * Explicitly selected profile; same Linux major.minor, Android

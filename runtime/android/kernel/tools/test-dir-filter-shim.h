@@ -33,6 +33,8 @@ struct neverc_krt_gki_layout {
 
 const struct neverc_krt_runtime_caps *_neverc_krt_current_caps(void);
 const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void);
+const struct neverc_krt_gki_layout *_neverc_krt_get_proven_gki_layout(
+	unsigned long required);
 int neverc_krt_check_kernel_match(void);
 unsigned long _neverc_krt_current_layout_certificates(void);
 long neverc_krt_mem_read(void *dst, const void *src, size_t len);

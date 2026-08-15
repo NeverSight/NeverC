@@ -2808,7 +2808,7 @@ static void _neverc_krt_ftrace_thunk_common(unsigned long ip,
 	const struct neverc_krt_gki_layout *layout;
 	if (!h->replace) return;
 
-	layout = _neverc_krt_get_gki_layout();
+	layout = _neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
 	if (!layout || !layout->pt_regs_pc ||
 	    layout->pt_regs_pc + sizeof(unsigned long) > layout->pt_regs_size)
 		return;
@@ -2847,7 +2847,8 @@ static int _neverc_krt_ftrace_interpose_install_impl(
 		return -1;
 	{
 		const struct neverc_krt_gki_layout *layout =
-			_neverc_krt_get_gki_layout();
+			_neverc_krt_get_proven_gki_layout(
+				NEVERC_KRT_LAYOUT_CERT_FULL);
 		unsigned char *ops_bytes;
 		unsigned long thunk;
 		unsigned long i;
