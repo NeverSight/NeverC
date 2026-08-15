@@ -104,7 +104,7 @@ def fetch_bytes(url, opener=None):
                 return response.read()
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             last_error = error
-            if isinstance(error, urllib.error.HTTPError):
+            if isinstance(error, urllib.error.HTTPError) and error.code in (404, 410):
                 raise
             if attempt + 1 < FETCH_RETRIES:
                 time.sleep(1.5 * (attempt + 1))
@@ -187,10 +187,8 @@ def probe_branch(branch, opener=None):
 def probe_optional_branch(branch, opener=None):
     try:
         return probe_branch(branch, opener=opener)
-    except urllib.error.HTTPError as error:
-        if error.code in (404, 410):
-            return None
-        raise
+    except (WatchError, urllib.error.URLError, TimeoutError, OSError):
+        return None
 
 
 def fetch_header_text(branch, path, opener=None, cache=None):
@@ -199,7 +197,7 @@ def fetch_header_text(branch, path, opener=None, cache=None):
         return cache[key]
     try:
         text = fetch_googlesource_text(branch, path, opener=opener)
-    except urllib.error.HTTPError:
+    except (WatchError, urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
         text = None
     if cache is not None:
         cache[key] = text
@@ -518,10 +516,12 @@ def write_snapshot(path, records, known_branches, previous_snapshot=None):
     for record in records:
         snap = snapshot_family(record)
         previous = previous_families.get(record["kernel_name"]) or {}
-        if snap.get("layout") is None and previous.get("layout"):
-            snap["layout"] = previous["layout"]
-        if snap.get("kminext_layout") is None and previous.get("kminext_layout"):
-            snap["kminext_layout"] = previous["kminext_layout"]
+        snap["layout"] = LAYOUTS.merge_compact(
+            previous.get("layout"), snap.get("layout")
+        )
+        snap["kminext_layout"] = LAYOUTS.merge_compact(
+            previous.get("kminext_layout"), snap.get("kminext_layout")
+        )
         families[record["kernel_name"]] = snap
     payload = {
         "schema": 1,

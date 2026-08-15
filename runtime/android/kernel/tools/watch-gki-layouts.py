@@ -312,15 +312,56 @@ def compact_fingerprint(structs):
         "missing": missing,
         "used": used,
     }
-    digest = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-    payload["digest"] = digest
+    payload["digest"] = _fingerprint_digest(payload)
     return payload
 
 
 def _struct_name(key):
     return key.split(".", 1)[0]
+
+
+def _fingerprint_digest(payload):
+    body = {
+        "member_counts": payload.get("member_counts") or {},
+        "missing": payload.get("missing") or [],
+        "used": payload.get("used") or {},
+    }
+    return hashlib.sha256(
+        json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def merge_compact(previous, current):
+    """Keep previously seen structs when the current probe is incomplete."""
+    if current is None:
+        return previous
+    if previous is None:
+        return current
+    previous_counts = previous.get("member_counts") or {}
+    current_counts = current.get("member_counts") or {}
+    if set(previous_counts) <= set(current_counts):
+        return current
+    member_counts = dict(previous_counts)
+    member_counts.update(current_counts)
+    used = {
+        key: value
+        for key, value in (previous.get("used") or {}).items()
+        if _struct_name(key) not in current_counts
+    }
+    used.update(current.get("used") or {})
+    missing = [
+        key
+        for key in (previous.get("missing") or [])
+        if _struct_name(key) not in current_counts
+    ]
+    missing.extend(current.get("missing") or [])
+    payload = {
+        "member_counts": member_counts,
+        "missing": missing,
+        "used": used,
+    }
+    payload["digest"] = _fingerprint_digest(payload)
+    return payload
 
 
 def diff_compact(old, new, *, against):

@@ -229,9 +229,29 @@ class ProbeTests(unittest.TestCase):
                 hdrs=None,
                 fp=None,
             )
-        record = watch.probe_family(family(), opener=FakeOpener(mapping))
+        with mock.patch.object(watch.time, "sleep"):
+            record = watch.probe_family(family(), opener=FakeOpener(mapping))
         self.assertEqual(record["live"]["linux_release"], "6.12.90")
         self.assertIsNone(record["layout"])
+
+    def test_kminext_http_error_does_not_drop_stable_probe(self):
+        mapping = {
+            aosp_url("android16-6.12", "Makefile"): encode_text(makefile(6, 12, 90)),
+            aosp_url("android16-6.12", "build.config.constants"): encode_text(
+                constants("android16-6.12", 6)
+            ),
+            aosp_url("android16-6.12-kminext", "Makefile"): urllib.error.HTTPError(
+                aosp_url("android16-6.12-kminext", "Makefile"),
+                503,
+                "unavailable",
+                hdrs=None,
+                fp=None,
+            ),
+        }
+        with mock.patch.object(watch.time, "sleep"):
+            record = watch.probe_family(family(), opener=FakeOpener(mapping))
+        self.assertEqual(record["live"]["linux_release"], "6.12.90")
+        self.assertIsNone(record["kminext"])
 
 
 class DiffTests(unittest.TestCase):
@@ -380,6 +400,36 @@ class DiffTests(unittest.TestCase):
         self.assertEqual(
             written["families"]["android16-6.12"]["kminext_layout"], layout
         )
+
+    def test_snapshot_merges_partial_layout_over_previous(self):
+        previous_layout = {
+            "digest": "full",
+            "member_counts": {"module": 3, "path": 2},
+            "missing": [],
+            "used": {
+                "module.init": {"index": 1, "decl": "int (*init)(void)"},
+                "path.dentry": {"index": 1, "decl": "struct dentry *dentry"},
+            },
+        }
+        partial = {
+            "digest": "partial",
+            "member_counts": {"module": 3},
+            "missing": [],
+            "used": {"module.init": {"index": 1, "decl": "int (*init)(void)"}},
+        }
+        previous = {
+            "source": "live",
+            "families": {"android16-6.12": {"layout": previous_layout}},
+        }
+        record = live_record(live_patch=90, live_kmi=6, layout=partial)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "snap.json"
+            written = watch.write_snapshot(
+                path, [record], ["android16-6.12"], previous_snapshot=previous
+            )
+        kept = written["families"]["android16-6.12"]["layout"]
+        self.assertIn("path", kept["member_counts"])
+        self.assertIn("path.dentry", kept["used"])
 
 
 class DiscordTests(unittest.TestCase):

@@ -128,6 +128,31 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(layouts.diff_compact(full, partial, against="snapshot"), [])
         self.assertEqual(layouts.diff_compact(partial, full, against="snapshot"), [])
 
+    def test_merge_keeps_structs_missing_from_a_partial_probe(self):
+        full = layouts.compact_fingerprint(
+            {
+                "task_struct": layouts.fingerprint_struct(TASK_HEADER, next(
+                    item for item in layouts.WATCHED_STRUCTS if item["name"] == "task_struct"
+                )),
+                "path": layouts.fingerprint_struct(
+                    "struct path { struct vfsmount *mnt; struct dentry *dentry; };",
+                    {"name": "path", "fields": ("dentry",)},
+                ),
+            }
+        )
+        partial = layouts.compact_fingerprint(
+            {
+                "task_struct": layouts.fingerprint_struct(TASK_HEADER, next(
+                    item for item in layouts.WATCHED_STRUCTS if item["name"] == "task_struct"
+                )),
+            }
+        )
+        merged = layouts.merge_compact(full, partial)
+        self.assertIn("path", merged["member_counts"])
+        self.assertIn("path.dentry", merged["used"])
+        self.assertEqual(layouts.merge_compact(full, None), full)
+        self.assertEqual(layouts.merge_compact(None, partial), partial)
+
     def test_trailing_unused_member_is_sizeof_risk_only(self):
         spec = {
             "name": "path",
