@@ -307,6 +307,16 @@ def main():
                 "build-gki-kernels matrix is missing catalog profiles: "
                 + ", ".join(missing_matrix)
             )
+        if '"key":"51514"' in workflow:
+            if "--lto=thin" not in workflow:
+                raise RuntimeError(
+                    "android14-5.15 must build with ThinLTO so classic CFI "
+                    "runtime symbols remain in the official ksymtab check"
+                )
+            if "--nokmi_symbol_list_strict_mode" in workflow:
+                raise RuntimeError(
+                    "android14-5.15 must keep official kmi_symbol_list_strict_mode"
+                )
         watch_workflow = (
             RUNTIME_ROOT.parents[2] / ".github/workflows/watch-gki-updates.yml"
         ).read_text(encoding="utf-8")
