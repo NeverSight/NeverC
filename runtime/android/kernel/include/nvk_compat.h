@@ -47,7 +47,10 @@ int neverc_krt_has_cfi(void);
 enum neverc_krt_version_match {
 	/* Complete certified release identity and page size matched. */
 	NEVERC_KRT_VER_EXACT   =  0,
-	/* Explicitly selected profile; same Linux major.minor and page size. */
+	/*
+	 * Explicitly selected profile; same Linux major.minor and page size.
+	 * Private fields still require their own exact compatibility certificate.
+	 */
 	NEVERC_KRT_VER_COMPAT  =  1,
 	NEVERC_KRT_VER_MISMATCH = -1,
 	NEVERC_KRT_VER_UNKNOWN  = -2,
@@ -65,6 +68,10 @@ unsigned long neverc_krt_rt_off_exit(void);
 int neverc_krt_validate_runtime(struct neverc_krt_this_module *mod,
 				const char *name,
 				void *init_fn, void *exit_fn);
+/*
+ * Rewrite a "vermagic=" blob inside this_module after identity accept.
+ * This is not a loader bypass: insmod already compared .modinfo.
+ */
 int neverc_krt_patch_vermagic(struct neverc_krt_this_module *mod);
 int neverc_krt_fixup_runtime(struct neverc_krt_this_module *mod,
 			     const char *name,

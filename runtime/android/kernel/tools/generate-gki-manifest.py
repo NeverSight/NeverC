@@ -21,9 +21,11 @@ STRUCTURES = (
     "cred",
     "delayed_work",
     "dentry",
+    "dir_context",
     "dev_pm_ops",
     "file",
     "file_operations",
+    "filename",
     "firmware",
     "hrtimer",
     "idr",
@@ -32,6 +34,7 @@ STRUCTURES = (
     "kprobe",
     "kref",
     "miscdevice",
+    "mm_struct",
     "module",
     "module_kobject",
     "mutex",
@@ -56,6 +59,7 @@ STRUCTURES = (
     "semaphore",
     "seq_operations",
     "sg_table",
+    "signal_struct",
     "sk_buff",
     "sock_common",
     "task_struct",
@@ -69,6 +73,71 @@ STRUCTURES = (
     "wait_queue_head",
     "work_struct",
 )
+OPTIONAL_STRUCTURES = ("inode",)
+MEMBER_SIZE_MEMBERS = {
+    "cred": frozenset({
+        "egid",
+        "euid",
+        "fsgid",
+        "fsuid",
+        "gid",
+        "sgid",
+        "suid",
+        "uid",
+    }),
+    "dentry": frozenset({"d_inode"}),
+    "dir_context": frozenset({"actor", "count", "dt_flags_mask", "pos"}),
+    "filename": frozenset({"name"}),
+    "inode": frozenset({
+        "i_atime",
+        "i_atime_nsec",
+        "i_atime_sec",
+        "i_mtime",
+        "i_mtime_nsec",
+        "i_mtime_sec",
+    }),
+    "path": frozenset({"dentry"}),
+    "mm_struct": frozenset({
+        "mm_count",
+        "mmap_lock",
+        "page_table_lock",
+        "pgd",
+    }),
+    "pt_regs": frozenset({"pc", "pstate", "regs", "sp"}),
+    "signal_struct": frozenset({"thread_head"}),
+    "task_struct": frozenset({
+        "comm",
+        "flags",
+        "group_leader",
+        "mm",
+        "parent",
+        "pid",
+        "real_cred",
+        "real_parent",
+        "signal",
+        "stack",
+        "stack_refcount",
+        "thread_node",
+        "thread_pid",
+        "tasks",
+        "usage",
+    }),
+    "timespec64": frozenset({"tv_nsec", "tv_sec"}),
+    "vm_area_struct": frozenset({"vm_end", "vm_start"}),
+}
+FILTERED_STRUCTURE_MEMBERS = {
+    # struct filename is opaque to SDK callers; retain only the accessor field.
+    "filename": MEMBER_SIZE_MEMBERS["filename"],
+    # struct inode is intentionally a narrow private-field certificate input;
+    # do not expand the checked manifest with unrelated VFS internals.
+    "inode": MEMBER_SIZE_MEMBERS["inode"],
+    # User page-table operations consume mm only through a narrow, generated
+    # runtime contract.  Do not retain unrelated private mm fields.
+    "mm_struct": MEMBER_SIZE_MEMBERS["mm_struct"],
+    # Thread enumeration is profile-backed, but only this list anchor is part
+    # of the private signal_struct contract.
+    "signal_struct": MEMBER_SIZE_MEMBERS["signal_struct"],
+}
 CONFIG_KEYS = (
     "CONFIG_ARM64_4K_PAGES",
     "CONFIG_ARM64_16K_PAGES",
@@ -317,12 +386,40 @@ def main():
             f"generate-gki-manifest: extracting GKI {args.profile} layouts",
             flush=True,
         )
-        layouts = layout_tool.extract_layouts(args.vmlinux, STRUCTURES)
+        requested_structures = STRUCTURES
+        if base is None:
+            requested_structures += OPTIONAL_STRUCTURES
+        else:
+            requested_structures += tuple(
+                structure for structure in OPTIONAL_STRUCTURES
+                if structure in base.get("layouts", {})
+            )
+        layouts = layout_tool.extract_layouts(
+            args.vmlinux, requested_structures
+        )
+        for structure, layout in layouts.items():
+            filtered_members = FILTERED_STRUCTURE_MEMBERS.get(structure)
+            if filtered_members is not None:
+                layout["members"] = {
+                    member: offset
+                    for member, offset in layout.get("members", {}).items()
+                    if member in filtered_members
+                }
+                layout.pop("bitfields", None)
+            retained_members = MEMBER_SIZE_MEMBERS.get(structure)
+            if retained_members is None:
+                layout.pop("member_sizes", None)
+            elif "member_sizes" in layout:
+                layout["member_sizes"] = {
+                    member: width
+                    for member, width in layout["member_sizes"].items()
+                    if member in retained_members
+                }
         print(
             f"generate-gki-manifest: extracted {len(layouts)} layouts",
             flush=True,
         )
-        missing = sorted(set(STRUCTURES) - set(layouts))
+        missing = sorted(set(requested_structures) - set(layouts))
         if missing:
             raise ValueError(
                 "layout evidence is missing required structures: "

@@ -108,8 +108,10 @@ jobs:
           jq -e '.schema == 1' "$catalog_path" >/dev/null || die "unsupported profile catalog schema"
           release_profiles=$(jq -c '.profiles | keys | sort' "$lock_path")
           catalog_profiles=$(jq -c '[.profiles[].legacy_id | tostring] | sort' "$catalog_path")
-          [ "$release_profiles" = "$catalog_profiles" ] || \
-            die "release lock and catalog profile sets differ"
+          missing=$(jq -n --argjson release "$release_profiles" --argjson catalog "$catalog_profiles" \
+            '$release - $catalog | length')
+          [ "$missing" = "0" ] || \
+            die "release lock has profiles missing from the catalog"
 
           selected=${INPUT_PROFILE:-all}
           if [ "$selected" = "all" ]; then
@@ -209,7 +211,19 @@ jobs:
           python3 runtime/android/kernel/tools/test-check-sdk-exports.py -v
           python3 runtime/android/kernel/tools/test-user-copy-backend.py -v
           python3 runtime/android/kernel/tools/test-user-copy-adapter.py
+          python3 runtime/android/kernel/tools/test-dir-filter.py
+          python3 runtime/android/kernel/tools/test-inode-metadata.py
+          python3 runtime/android/kernel/tools/test-task-thread-ids.py
+          python3 runtime/android/kernel/tools/test-task-user-state-pt-regs.py
+          python3 runtime/android/kernel/tools/test-user-ptmap-contract.py
+          python3 runtime/android/kernel/tools/test-interpose-remove-ctx-many.py
+          python3 runtime/android/kernel/tools/test-interpose-ctx-stub.py \
+            --compiler compiler-root/install/bin/neverc
+          python3 runtime/android/kernel/tools/test-interpose-kcfi-trampoline.py \
+            --compiler compiler-root/install/bin/neverc
+          python3 runtime/android/kernel/tools/test-mem-patch-insn.py
           python3 runtime/android/kernel/tools/test-extract-btf-layouts.py -v
+          python3 runtime/android/kernel/tools/test-generate-layout-certificate.py -v
           python3 runtime/android/kernel/tools/test-verify-gki-release.py -v
           python3 runtime/android/kernel/tools/test-verify-android-module.py -v
           python3 runtime/android/kernel/tools/test-build-gki-smoke-modules.py -v
@@ -226,7 +240,7 @@ jobs:
           bash runtime/android/kernel/tools/test-runtime-linkage.sh compiler-root/install/bin/neverc --full
           bash runtime/android/kernel/tools/test-all.sh compiler-root/install/bin/neverc
 
-      - name: Build and verify six loader-ready smoke modules
+      - name: Build and verify lock-pinned loader-ready smoke modules
         run: |
           python3 runtime/android/kernel/tools/build-gki-smoke-modules.py \
             --compiler compiler-root/install/bin/neverc \

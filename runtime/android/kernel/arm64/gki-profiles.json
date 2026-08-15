@@ -1,6 +1,7 @@
 {
   "profiles": [
     {
+      "aliases": [51012],
       "android_release": 12,
       "capabilities": {
         "do_mmap_abi": "without_vm_flags",
@@ -10,6 +11,7 @@
         "kallsyms_iter_abi": "with_module"
       },
       "kcfi_mode": "disabled",
+      "shadow_call_stack_mode": "static",
       "kernel_name": "android12-5.10",
       "kimage_vaddr": "0xFFFFFFC008000000",
       "kmi_generation": 9,
@@ -25,11 +27,35 @@
       "capabilities": {
         "do_mmap_abi": "without_vm_flags",
         "filldir_abi": "returns_int",
+        "ftrace_callback_abi": "pt_regs",
+        "ftrace_registration_api": false,
+        "kallsyms_iter_abi": "with_module"
+      },
+      "kcfi_mode": "disabled",
+      "kernel_name": "android13-5.10",
+      "kimage_vaddr": "0xFFFFFFC008000000",
+      "kmi_generation": 4,
+      "legacy_id": 51013,
+      "linux_major": 5,
+      "linux_minor": 10,
+      "linux_patch": 223,
+      "page_shift": 12,
+      "shadow_call_stack_mode": "static",
+      "symbol": "ANDROID13_5_10_KMI4",
+      "vermagic": "5.10.223-android13-4-00011-ga33040a671e2-dirty SMP preempt mod_unload modversions aarch64"
+    },
+    {
+      "aliases": [51513],
+      "android_release": 13,
+      "capabilities": {
+        "do_mmap_abi": "without_vm_flags",
+        "filldir_abi": "returns_int",
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": true,
         "kallsyms_iter_abi": "with_module"
       },
       "kcfi_mode": "disabled",
+      "shadow_call_stack_mode": "static",
       "kernel_name": "android13-5.15",
       "kimage_vaddr": "0xFFFFFFC008000000",
       "kmi_generation": 8,
@@ -44,12 +70,35 @@
       "android_release": 14,
       "capabilities": {
         "do_mmap_abi": "without_vm_flags",
+        "filldir_abi": "returns_int",
+        "ftrace_callback_abi": "ftrace_regs",
+        "ftrace_registration_api": false,
+        "kallsyms_iter_abi": "with_module"
+      },
+      "kcfi_mode": "disabled",
+      "kernel_name": "android14-5.15",
+      "kimage_vaddr": "0xFFFFFFC008000000",
+      "kmi_generation": 11,
+      "legacy_id": 51514,
+      "linux_major": 5,
+      "linux_minor": 15,
+      "linux_patch": 164,
+      "page_shift": 12,
+      "shadow_call_stack_mode": "static",
+      "symbol": "ANDROID14_5_15_KMI11",
+      "vermagic": "5.15.164-android14-11-maybe-dirty SMP preempt mod_unload modversions aarch64"
+    },
+    {
+      "android_release": 14,
+      "capabilities": {
+        "do_mmap_abi": "without_vm_flags",
         "filldir_abi": "returns_bool",
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": true,
         "kallsyms_iter_abi": "with_module"
       },
       "kcfi_mode": "classic",
+      "shadow_call_stack_mode": "dynamic",
       "kernel_name": "android14-6.1",
       "kimage_vaddr": "0xFFFFFFC008000000",
       "kmi_generation": 11,
@@ -70,6 +119,7 @@
         "kallsyms_iter_abi": "address_only"
       },
       "kcfi_mode": "classic",
+      "shadow_call_stack_mode": "dynamic",
       "kernel_name": "android15-6.6",
       "kimage_vaddr": "0xFFFFFFC080000000",
       "kmi_generation": 8,
@@ -90,6 +140,7 @@
         "kallsyms_iter_abi": "address_only"
       },
       "kcfi_mode": "normalized",
+      "shadow_call_stack_mode": "dynamic",
       "kernel_name": "android16-6.12",
       "kimage_vaddr": "0xFFFFFFC080000000",
       "kmi_generation": 6,
@@ -110,6 +161,7 @@
         "kallsyms_iter_abi": "address_only"
       },
       "kcfi_mode": "normalized",
+      "shadow_call_stack_mode": "dynamic",
       "kernel_name": "android17-6.18",
       "kimage_vaddr": "0xFFFFFFC080000000",
       "kmi_generation": 5,

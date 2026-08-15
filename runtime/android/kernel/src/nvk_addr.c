@@ -129,6 +129,18 @@ unsigned long neverc_krt_va_bits(void)
 	return _neverc_krt_decode_va_bits(_neverc_krt_read_tcr());
 }
 
+int _neverc_krt_kernel_pointer_is_valid(const void *pointer)
+{
+	unsigned long address = (unsigned long)pointer;
+	unsigned long va_bits = neverc_krt_va_bits();
+	unsigned long kernel_base;
+
+	if (!pointer || va_bits < 36 || va_bits > 52)
+		return 0;
+	kernel_base = 0UL - (1UL << va_bits);
+	return address >= kernel_base && !(address & 7UL);
+}
+
 int neverc_krt_page_shift(void)
 {
 	return _neverc_krt_decode_page_shift(_neverc_krt_read_tcr());
@@ -584,4 +596,3 @@ int neverc_krt_pte_set_ro_range(unsigned long start, unsigned long end)
 	}
 	return count;
 }
-

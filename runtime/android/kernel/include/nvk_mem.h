@@ -18,6 +18,20 @@ int neverc_krt_mem_make_ro(unsigned long addr);
 int neverc_krt_mem_write_protected(unsigned long addr, const void *src,
 				   size_t len);
 
+/* Synchronously replace one aligned AArch64 instruction in live kernel text.
+ * The backend uses the kernel instruction-patching API and publishes the
+ * change with the required barriers; it never exposes page-table layouts to
+ * callers. */
+int neverc_krt_mem_patch_instruction(unsigned long addr, u32 insn);
+int neverc_krt_mem_patch_instruction_available(void);
+
+/*
+ * Publish page-table changes to every EL1 stage-1 translation context.
+ * This is intentionally stronger than a per-mm invalidation and is suitable
+ * for kernel/init_mm mappings whose helpers may be inline-only on GKI.
+ */
+void neverc_krt_mem_flush_tlb_all(void);
+
 void *neverc_krt_mem_scan(const void *start, size_t region_len,
 			  const void *pattern, size_t pat_len);
 void *neverc_krt_mem_scan_mask(const void *start, size_t region_len,

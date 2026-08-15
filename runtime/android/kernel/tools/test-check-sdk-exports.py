@@ -48,7 +48,7 @@ class CurrentSdkManifestTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("clang"), "clang is required")
     def test_current_declarations_match_every_checked_manifest(self):
         manifest_root = PATH.parents[1] / "arm64/gki-manifests"
-        for profile in (510, 515, 601, 606, 612, 618):
+        for profile in (510, 51013, 515, 51514, 601, 606, 612, 618):
             with self.subTest(profile=profile):
                 manifest = json.loads(
                     (manifest_root / f"{profile}.json").read_text(encoding="utf-8")

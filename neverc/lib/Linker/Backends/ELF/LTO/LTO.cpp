@@ -8,6 +8,7 @@
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/SymbolTable.h"
 #include "Linker/ELF/Symbols.h"
+#include "neverc/Foundation/AndroidKernelRuntimeContract.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/LTO/LTO.h"
@@ -101,7 +102,21 @@ BitcodeCompiler::prepare(BitcodeFile &f) const {
     // Preserved symbols: anything visible to non-IR consumers --
     // relocatable links, regular-obj refs, __start_/__stop_ pairs,
     // dynamic exports, and wrapped symbols.
-    r.VisibleToRegularObj = config->relocatable || sym->isUsedInRegularObj ||
+    //
+    // Embedded-runtime private definitions (the NeverC nvk kernel runtime links
+    // one identical copy into every consumer TU under a reserved namespace) are
+    // the sole exception at the delivered .ko boundary.  A relocatable (-r)
+    // link normally forces every symbol VisibleToRegularObj, which makes LTO
+    // keep and rename per-TU copies of these hidden weak/ODR privates.  That
+    // would split mutable runtime state in the final module.  Intermediate .o
+    // links must still preserve the symbols, however: internalizing them there
+    // would prevent a later native link from coalescing that partial object
+    // with runtime copies from additional translation units.
+    const bool isRuntimePrivate =
+        config->finalizeAndroidKernelModule &&
+        neverc::AndroidKernelRuntimeContract::isLocalSymbol(sym->getName());
+    r.VisibleToRegularObj = (config->relocatable && !isRuntimePrivate) ||
+                            sym->isUsedInRegularObj ||
                             sym->referencedAfterWrap ||
                             (r.Prevailing && sym->includeInDynsym()) ||
                             usedStartStop.count(objSym.getSectionName());

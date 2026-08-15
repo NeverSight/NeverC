@@ -79,9 +79,21 @@
  * Bootstrap reports an exact match only when the pinned release token,
  * Android/KMI identity, and runtime page size all match.  When the build has
  * explicitly selected a profile, an observed OEM release in the same Linux
- * major.minor series and with the same page size may activate that layout as
- * NEVERC_KRT_VER_COMPAT.  Unobservable, cross-series, and page-size-mismatched
- * identities fail closed; there is no nearest-profile or maximum-size guess.
+ * major.minor series and with the same page size may activate as
+ * NEVERC_KRT_VER_COMPAT.  A different Android generation on that series
+ * overlays a layout certificate.  A different Android generation that
+ * also changes loader-visible struct module / vermagic is a separate
+ * compile-time family.
+ * Unobservable, cross-series, page-size-mismatched, and uncertified
+ * cross-generation identities fail closed.
  */
 
 #endif /* NVKMOD_VERSION_H */
+
+/*
+ * Alias remapping lives in nvk_profile_ids.h outside that header's guard.
+ * Re-include it after this facade's guard so a later #include <nvkmod_version.h>
+ * still remaps 51012/51513 when the first pass ran before those spellings
+ * were visible.
+ */
+#include <nvk_profile_ids.h>

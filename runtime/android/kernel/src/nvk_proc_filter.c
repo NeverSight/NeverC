@@ -235,14 +235,14 @@ static int _neverc_krt_dmesg_should_suppress(const char *text)
 	return 0;
 }
 
-static __attribute__((__noinline__)) long _neverc_krt_dmesg_ret0(void)
-{ return 0; }
-
 static void _neverc_krt_dmesg_ctx_handler(neverc_krt_reg_ctx *ctx)
 {
 	const char *fmt = (const char *)ctx->regs[_neverc_krt_dmesg_fmt_reg];
 	if (fmt && _neverc_krt_dmesg_should_suppress(fmt))
-		ctx->force_jump = (u64)(unsigned long)_neverc_krt_dmesg_ret0;
+		/* Return through the saved kernel LR.  Redirecting to a runtime-local
+		 * ret0 helper would let the ctx lease reach zero before the CPU entered
+		 * that helper, so module teardown could free the destination first. */
+		NEVERC_KRT_CTX_SKIP(ctx, 0);
 }
 
 int neverc_krt_vis_dmesg_suppress_install(const char *module_name)

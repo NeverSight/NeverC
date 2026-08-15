@@ -12,11 +12,15 @@ struct device;
 /*
  * Minimal source-compatible view of struct regmap_config.  The kernel consumes
  * this object by field offset, and the upstream layout changed in 5.15, 6.1,
- * and 6.12.  Keep only the commonly useful fields named; zero-filled opaque
- * ranges represent fields that drivers using this SDK do not initialize.
+ * and 6.12.  android14-5.15 dropped the 8-byte reg_update_bits slot that
+ * android13-5.15 inserted before fast_io, so that KMI matches 5.10 again.
+ * Keep only the commonly useful fields named; zero-filled opaque ranges
+ * represent fields that drivers using this SDK do not initialize.
  */
 struct regmap_config {
-#if NEVERC_KRT_LINUX_IS_SERIES(5, 10)
+#if NEVERC_KRT_LINUX_IS_SERIES(5, 10) || \
+    (NEVERC_KRT_LINUX_IS_SERIES(5, 15) && \
+     NEVERC_KRT_PROFILE_ANDROID_RELEASE >= 14)
 	const char *name;
 	int reg_bits;
 	int reg_stride;
@@ -75,7 +79,9 @@ struct regmap_config {
 #endif
 };
 
-#if NEVERC_KRT_LINUX_IS_SERIES(5, 10)
+#if NEVERC_KRT_LINUX_IS_SERIES(5, 10) || \
+    (NEVERC_KRT_LINUX_IS_SERIES(5, 15) && \
+     NEVERC_KRT_PROFILE_ANDROID_RELEASE >= 14)
 #define __NVK_REGMAP_SIZE             280
 #define __NVK_REGMAP_VAL_BITS_OFF     20
 #define __NVK_REGMAP_FAST_IO_OFF      120

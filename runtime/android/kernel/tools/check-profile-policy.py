@@ -34,7 +34,12 @@ def matching_lines(path, pattern):
 
 def load_profile_ids(path):
     document = json.loads(path.read_text(encoding="utf-8"))
-    profile_ids = [profile["legacy_id"] for profile in document["profiles"]]
+    profile_ids = []
+    for profile in document["profiles"]:
+        profile_ids.append(profile["legacy_id"])
+        aliases = profile.get("aliases", [])
+        if isinstance(aliases, list):
+            profile_ids.extend(aliases)
     if not profile_ids or any(
         not isinstance(profile_id, int) or isinstance(profile_id, bool)
         for profile_id in profile_ids

@@ -13,12 +13,15 @@
 //  runner, so the plugin's object-merge / object-phase providers can then run on
 //  real native objects.
 //
-//  Symbol resolution here is the relocatable-link subset: every symbol stays
-//  visible to regular objects (a `-r` output keeps all symbols) and each name
+//  Symbol resolution here is the relocatable-link subset: symbols stay visible
+//  to regular objects (a `-r` output keeps them for later links) and each name
 //  gets exactly one prevailing definition (first non-weak definition wins, else
-//  the first definition).  This is intentionally simpler than the full-link
-//  resolution the native backend derives from its symbol table; a relocatable
-//  link neither internalizes nor exports, so the extra facts do not apply.
+//  the first definition).  Embedded nvk runtime privates are the exception:
+//  they must coalesce to one instance, matching the native ELF BitcodeCompiler
+//  resolution.  This is otherwise simpler than the full-link resolution the
+//  native backend derives from its symbol table.  The exception applies only
+//  when this link finalizes the delivered .ko; partial objects keep the symbols
+//  visible so later links can still coalesce them.
 //
 //===----------------------------------------------------------------------===//
 
@@ -27,6 +30,7 @@
 #include "Linker/Core/Driver/LTOCache.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/Core/Runtime/Session.h"
+#include "neverc/Foundation/AndroidKernelRuntimeContract.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/LTO/LTO.h"
@@ -124,8 +128,15 @@ runPluginRelocatableLTO(const LinkerDriverConfig &Config,
     size_t SymbolIndex = 0;
     for (const lto::InputFile::Symbol &Symbol : Files[FileIndex]->symbols()) {
       lto::SymbolResolution Resolution;
-      // A relocatable output preserves every symbol for later links.
-      Resolution.VisibleToRegularObj = true;
+      // Relocatable outputs preserve symbols for later links.  At the delivered
+      // .ko boundary only, let embedded-runtime ODR privates coalesce to one
+      // instance; doing that in an intermediate .o would internalize its copy
+      // before later native inputs have a chance to coalesce with it.  This
+      // mirrors the native ELF BitcodeCompiler resolution.
+      const bool IsRuntimePrivate =
+          Config.finalizeAndroidKernelModule &&
+          neverc::AndroidKernelRuntimeContract::isLocalSymbol(Symbol.getName());
+      Resolution.VisibleToRegularObj = !IsRuntimePrivate;
       if (!Symbol.isUndefined()) {
         auto It = Winners.find(Symbol.getName());
         Resolution.Prevailing = It != Winners.end() &&

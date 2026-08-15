@@ -421,22 +421,30 @@ int neverc_krt_vis_vmalloc_filter(void)
 /*  Pause / remove interposes                                                */
 /* ==================================================================== */
 
-void neverc_krt_vis_pause_interposes(void)
+int neverc_krt_vis_pause_interposes(void)
 {
-	if (_neverc_krt_vmalloc_interposed)
-		neverc_krt_interpose_pause(&_neverc_krt_vmalloc_interpose);
-	if (_neverc_krt_ks_interposed)
-		neverc_krt_interpose_pause(&_neverc_krt_ks_interpose);
+	int ret = 0;
+	int next;
+
+	if (_neverc_krt_vmalloc_interposed) {
+		next = neverc_krt_interpose_pause(&_neverc_krt_vmalloc_interpose);
+		if (next && !ret)
+			ret = next;
+	}
+	if (_neverc_krt_ks_interposed) {
+		next = neverc_krt_interpose_pause(&_neverc_krt_ks_interpose);
+		if (next && !ret)
+			ret = next;
+	}
+	return ret;
 }
 
 void neverc_krt_vis_remove_interposes(void)
 {
-	if (_neverc_krt_ks_interposed) {
-		neverc_krt_interpose_remove(&_neverc_krt_ks_interpose);
+	if (_neverc_krt_ks_interposed &&
+	    neverc_krt_interpose_remove(&_neverc_krt_ks_interpose) == 0)
 		_neverc_krt_ks_interposed = 0;
-	}
-	if (_neverc_krt_vmalloc_interposed) {
-		neverc_krt_interpose_remove(&_neverc_krt_vmalloc_interpose);
+	if (_neverc_krt_vmalloc_interposed &&
+	    neverc_krt_interpose_remove(&_neverc_krt_vmalloc_interpose) == 0)
 		_neverc_krt_vmalloc_interposed = 0;
-	}
 }

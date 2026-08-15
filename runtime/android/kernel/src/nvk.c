@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /* nvk.c — runtime init/cleanup coordinator. */
 #include <nvk.h>
+#include "nvk_internal.h"
+
+#include <linux/errno.h>
 
 static struct neverc_krt_state _neverc_krt_state;
 
@@ -77,15 +80,26 @@ int neverc_krt_interpose_auto_by_name(struct neverc_krt_interpose *h,
 	return neverc_krt_interpose_auto(h, target, replace, orig, ft);
 }
 
-void neverc_krt_cleanup_all(void)
+int neverc_krt_cleanup_all(void)
 {
+	int ret;
+
+	if (_neverc_krt_user_ptmap_claim_cleanup())
+		return -EBUSY;
+
 	_neverc_krt_state.ready = 0;
 	__asm__ __volatile__("dsb ish" ::: "memory");
 
 	neverc_krt_thread_stop_all();
 
-	neverc_krt_vis_pause_interposes();
-	neverc_krt_selinux_pause_interposes();
+	ret = neverc_krt_vis_pause_interposes();
+	if (!ret)
+		ret = neverc_krt_selinux_pause_interposes();
+	if (ret) {
+		_neverc_krt_state.ready = 1;
+		_neverc_krt_user_ptmap_release_cleanup();
+		return ret;
+	}
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
 
@@ -107,7 +121,12 @@ void neverc_krt_cleanup_all(void)
 	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("isb" ::: "memory");
 
-	neverc_krt_interpose_cleanup();
+	ret = neverc_krt_interpose_cleanup();
+	if (ret) {
+		_neverc_krt_state.ready = 1;
+		_neverc_krt_user_ptmap_release_cleanup();
+	}
+	return ret;
 }
 
 int neverc_krt_init_ftrace(void)

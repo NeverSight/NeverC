@@ -24,10 +24,14 @@ typedef struct {
 	u64 regs[31];       /* X0 - X30                          */
 	u64 fpcr;           /* saved FPCR                        */
 	u64 nzcv;           /* saved NZCV flags                  */
-	u64 force_jump;     /* if nonzero, redirect execution    */
+	u64 force_jump;     /* if nonzero, redirect via RET X17  */
 	u64 fpsr;           /* saved FPSR                        */
-	u64 _pad;           /* align to 16                       */
+	/* Internal force mode, reset by the generated stub on every entry. */
+	u64 _pad;
 } neverc_krt_reg_ctx;
+
+/* PAC tag strip — declared early: FORCE_JUMP/SKIP macros need it. */
+unsigned long neverc_krt_strip_pac(unsigned long addr);
 
 /* Register access macros */
 #define NEVERC_KRT_CTX_X(ctx, n) ((ctx)->regs[n])
@@ -48,26 +52,48 @@ typedef struct {
 #define NEVERC_KRT_CTX_SYSCALL_NR(ctx)     NEVERC_KRT_CTX_X8(ctx)
 
 /*
- * Redirect execution to an arbitrary address after the handler returns.
+ * Redirect after the handler returns via RET X17 (BTI return type; see stub).
+ * Addresses must be PAC-stripped and must outlive removal of the interpose
+ * owner (normally the saved kernel LR or retained original trampoline).  Use
+ * NEVERC_KRT_CTX_REDIRECT for owner-module replacement code.
  */
 #define NEVERC_KRT_CTX_FORCE_JUMP(ctx, addr) \
-	do { (ctx)->force_jump = (u64)(unsigned long)(addr); } while (0)
+	do { \
+		(ctx)->force_jump = (u64)neverc_krt_strip_pac( \
+			(unsigned long)(addr)); \
+		(ctx)->_pad = 0; \
+	} while (0)
 
 /*
  * Skip the original function entirely; return ret_val to the caller.
  */
 #define NEVERC_KRT_CTX_SKIP(ctx, ret_val) do {           \
 	(ctx)->regs[0] = (u64)(unsigned long)(ret_val);  \
-	(ctx)->force_jump = (ctx)->regs[30];             \
+	(ctx)->force_jump = (u64)neverc_krt_strip_pac(   \
+		(unsigned long)(ctx)->regs[30]);         \
+	(ctx)->_pad = 0;                                   \
 } while (0)
 
 /* Skip the original function (void return). */
 #define NEVERC_KRT_CTX_SKIP_VOID(ctx) \
-	do { (ctx)->force_jump = (ctx)->regs[30]; } while (0)
+	do { \
+		(ctx)->force_jump = (u64)neverc_krt_strip_pac( \
+			(unsigned long)(ctx)->regs[30]); \
+		(ctx)->_pad = 0; \
+	} while (0)
 
-/* Redirect execution to a different function. */
+/*
+ * Redirect a function-entry interpose to a replacement and retain the lease
+ * until that function returns.  This CALL mode assumes the captured LR is the
+ * unsigned caller LR at a function entry; arbitrary-instruction probes can
+ * hold a PAC-signed in-function LR and must use a direct kernel continuation
+ * instead.  FORCE_JUMP/SKIP remain direct transfers for such continuations.
+ */
 #define NEVERC_KRT_CTX_REDIRECT(ctx, fn_addr) \
-	NEVERC_KRT_CTX_FORCE_JUMP(ctx, fn_addr)
+	do { \
+		NEVERC_KRT_CTX_FORCE_JUMP((ctx), (fn_addr)); \
+		(ctx)->_pad = 1; \
+	} while (0)
 
 /* Set argument N (X0..X7 for AAPCS64). */
 #define NEVERC_KRT_CTX_SET_ARG(ctx, n, val) \
@@ -173,6 +199,12 @@ enum neverc_krt_interpose_err {
 	NEVERC_KRT_INTERPOSE_E_ALLOC    = -4,
 	NEVERC_KRT_INTERPOSE_E_PATCH    = -5,
 	NEVERC_KRT_INTERPOSE_E_CONFLICT = -6,
+	/* A C-callable original trampoline could not inherit the target's KCFI
+	 * type prefix.  The entry is left untouched. */
+	NEVERC_KRT_INTERPOSE_E_KCFI     = -7,
+	/* This item installed successfully, but another item in the same batch
+	 * failed and the successful installation was rolled back. */
+	NEVERC_KRT_INTERPOSE_E_ROLLBACK = -8,
 };
 
 /* ====================================================================
@@ -209,9 +241,11 @@ struct neverc_krt_interpose {
 int neverc_krt_interpose_init(void);
 
 /*
- * Release all resources. Called on module unload.
+ * Release all resources.  Call this before committing to module unload.
+ * E_PATCH means at least one target entry could not be restored; the engine
+ * remains initialized and the caller must keep the module loaded and retry.
  */
-void neverc_krt_interpose_cleanup(void);
+int neverc_krt_interpose_cleanup(void);
 
 /* ====================================================================
  * API 1: Function-entry interpose (neverc_krt_interpose_register)
@@ -247,6 +281,10 @@ struct neverc_krt_interpose_ref {
  * @ref      Filled with opaque handle for unregister.
  *
  * Returns 0 on success, negative error code on failure.
+ * Exceptional E_PATCH contract: if @ref.slot is non-negative, entry
+ * publication and restore both failed.  The retained slot is disabled and
+ * accepts only unregister/cleanup; the caller must keep @handler/@ref alive
+ * and retry unregister until it succeeds.
  */
 int neverc_krt_interpose_register(void *target, void *handler, int priority,
 			     void **orig, struct neverc_krt_interpose_ref *ref);
@@ -254,6 +292,9 @@ int neverc_krt_interpose_register(void *target, void *handler, int priority,
 /*
  * Remove a previously registered interpose.
  * If it was the last handler on that target, the interpose is fully removed.
+ * A faulted multi-handler chain is recovered only by interpose cleanup;
+ * unregister returns E_PATCH rather than re-enabling a partially restored
+ * entry.
  */
 int neverc_krt_interpose_unregister(struct neverc_krt_interpose_ref *ref);
 
@@ -298,6 +339,8 @@ struct neverc_krt_probe_ref {
  * @ref      Filled with opaque handle for unregister.
  *
  * Returns 0 on success, negative error code on failure.
+ * On E_PATCH, a non-negative @ref.slot denotes the same retained-disabled
+ * recovery ownership contract as neverc_krt_interpose_register().
  */
 int neverc_krt_probe_register(void *addr,
 			      neverc_krt_ctx_handler_t handler,
@@ -307,6 +350,8 @@ int neverc_krt_probe_register(void *addr,
 /*
  * Remove a previously registered probe.
  * If it was the last handler at that address, the patch is fully restored.
+ * Faulted multi-handler probe chains follow the same cleanup-only recovery
+ * rule as function-entry interposes.
  */
 int neverc_krt_probe_unregister(struct neverc_krt_probe_ref *ref);
 
@@ -314,12 +359,6 @@ int neverc_krt_probe_unregister(struct neverc_krt_probe_ref *ref);
  * Query how many handlers are registered at a given address.
  */
 int neverc_krt_probe_count(void *addr);
-
-/* ====================================================================
- * Utility: PAC stripping
- * ==================================================================== */
-
-unsigned long neverc_krt_strip_pac(unsigned long addr);
 
 /* ====================================================================
  * Re-entry guard

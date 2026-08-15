@@ -18,8 +18,9 @@ typedef void *(*neverc_krt_page_address_fn)(void *page);
 typedef void  (*neverc_krt_put_page_fn)(void *page);
 typedef void  (*neverc_krt_kunmap_fn)(void *page);
 typedef void *(*neverc_krt_kmap_fn)(void *page);
-typedef void  (*neverc_krt_mmap_read_lock_fn)(void *mm);
-typedef void  (*neverc_krt_mmap_read_unlock_fn)(void *mm);
+typedef void  (*neverc_krt_mmap_read_lock_fn)(struct mm_struct *mm);
+typedef void  (*neverc_krt_mmap_read_unlock_fn)(struct mm_struct *mm);
+typedef void  (*neverc_krt_mm_ref_fn)(struct mm_struct *mm);
 
 /* ---- internal variables (file-local) ---- */
 
@@ -33,6 +34,8 @@ static neverc_krt_kmap_fn              _neverc_krt_kmap;
 static neverc_krt_kunmap_fn            _neverc_krt_kunmap;
 static neverc_krt_mmap_read_lock_fn    _neverc_krt_mmap_read_lock;
 static neverc_krt_mmap_read_unlock_fn  _neverc_krt_mmap_read_unlock;
+static neverc_krt_mm_ref_fn            _neverc_krt_mmgrab;
+static neverc_krt_mm_ref_fn            _neverc_krt_mmdrop;
 neverc_krt_get_task_mm_fn              _neverc_krt_get_task_mm = (void *)0;
 neverc_krt_mmput_fn                    _neverc_krt_mmput = (void *)0;
 static int                             _neverc_krt_vma_inited;
@@ -52,6 +55,12 @@ static void *_neverc_krt_task_mm(struct task_struct *task, int *referenced);
 static void _neverc_krt_task_mm_put(void *mm, int referenced);
 static void _neverc_krt_read_vma_info(const void *vma, struct neverc_krt_vma_info *info);
 static int _neverc_krt_find_map_cb(const struct neverc_krt_vma_info *vma, void *data);
+
+static __always_inline int _neverc_krt_vma_field_fits(
+	unsigned long size, unsigned long offset, unsigned long width)
+{
+	return size && offset < size && width <= size - offset;
+}
 
 int neverc_krt_vma_init(void)
 {
@@ -85,10 +94,93 @@ int neverc_krt_vma_init(void)
 		(neverc_krt_get_task_mm_fn)NEVERC_KRT_LOOKUP("get_task_mm");
 	_neverc_krt_mmput =
 		(neverc_krt_mmput_fn)NEVERC_KRT_LOOKUP("mmput");
+	_neverc_krt_mmgrab =
+		(neverc_krt_mm_ref_fn)NEVERC_KRT_LOOKUP("mmgrab");
+	if (!_neverc_krt_mmgrab)
+		_neverc_krt_mmgrab =
+			(neverc_krt_mm_ref_fn)NEVERC_KRT_LOOKUP(
+				"rust_helper_mmgrab");
+	_neverc_krt_mmdrop =
+		(neverc_krt_mm_ref_fn)NEVERC_KRT_LOOKUP("mmdrop");
+	if (!_neverc_krt_mmdrop)
+		_neverc_krt_mmdrop =
+			(neverc_krt_mm_ref_fn)NEVERC_KRT_LOOKUP(
+				"rust_helper_mmdrop");
 
 	_neverc_krt_vma_inited = 1;
 	return _neverc_krt_find_vma ? 0 :
 	       (_neverc_krt_access_task_vm || _neverc_krt_access_mm_vm) ? 0 : -1;
+}
+
+void *neverc_krt_task_mm_get(struct task_struct *task)
+{
+	neverc_krt_vma_init();
+	if (!task || !_neverc_krt_get_task_mm || !_neverc_krt_mmput)
+		return (void *)0;
+	return _neverc_krt_get_task_mm(task);
+}
+
+void neverc_krt_task_mm_put(void *mm)
+{
+	neverc_krt_vma_init();
+	if (mm && _neverc_krt_mmput)
+		_neverc_krt_mmput((struct mm_struct *)mm);
+}
+
+int neverc_krt_mm_grab(void *mm)
+{
+	neverc_krt_vma_init();
+	if (!mm || !_neverc_krt_mmgrab || !_neverc_krt_mmdrop)
+		return -1;
+	_neverc_krt_mmgrab((struct mm_struct *)mm);
+	return 0;
+}
+
+void neverc_krt_mm_drop(void *mm)
+{
+	neverc_krt_vma_init();
+	if (mm && _neverc_krt_mmdrop)
+		_neverc_krt_mmdrop((struct mm_struct *)mm);
+}
+
+int neverc_krt_vma_snapshot(const void *vma,
+			    struct neverc_krt_vma_snapshot *snapshot)
+{
+	const struct neverc_krt_gki_layout *layout;
+	struct neverc_krt_vma_snapshot value;
+
+	if (!snapshot)
+		return -1;
+	__builtin_memset(snapshot, 0, sizeof(*snapshot));
+	if (!vma)
+		return -1;
+
+	layout = _neverc_krt_get_gki_layout();
+	if (!layout ||
+	    !_neverc_krt_vma_field_fits(layout->vma_size, layout->vma_start,
+					sizeof(value.start)) ||
+	    !_neverc_krt_vma_field_fits(layout->vma_size, layout->vma_end,
+					sizeof(value.end)) ||
+	    !_neverc_krt_vma_field_fits(layout->vma_size, layout->vma_mm,
+					sizeof(value.mm_identity)))
+		return -2;
+
+	__builtin_memset(&value, 0, sizeof(value));
+	if (neverc_krt_mem_read(&value.start,
+			(const char *)vma + layout->vma_start,
+			sizeof(value.start)) ||
+	    neverc_krt_mem_read(&value.end,
+			(const char *)vma + layout->vma_end,
+			sizeof(value.end)) ||
+	    neverc_krt_mem_read(&value.mm_identity,
+			(const char *)vma + layout->vma_mm,
+			sizeof(value.mm_identity)))
+		return -3;
+	if (value.end < value.start)
+		return -4;
+
+	*snapshot = value;
+	return 0;
 }
 
 static void *_neverc_krt_task_mm(struct task_struct *task, int *referenced)
@@ -109,6 +201,10 @@ static void *_neverc_krt_task_mm(struct task_struct *task, int *referenced)
 	}
 
 	layout = _neverc_krt_get_gki_layout();
+	if (!layout ||
+	    !_neverc_krt_vma_field_fits(layout->task_size, layout->task_mm,
+					sizeof(mm)))
+		return (void *)0;
 	if (neverc_krt_mem_read(&mm,
 			(const char *)task + layout->task_mm, sizeof(mm)))
 		return (void *)0;
@@ -121,7 +217,7 @@ static void *_neverc_krt_task_mm(struct task_struct *task, int *referenced)
 static void _neverc_krt_task_mm_put(void *mm, int referenced)
 {
 	if (mm && referenced && _neverc_krt_mmput)
-		_neverc_krt_mmput(mm);
+		_neverc_krt_mmput((struct mm_struct *)mm);
 }
 
 static void _neverc_krt_read_vma_info(const void *vma,
@@ -129,24 +225,25 @@ static void _neverc_krt_read_vma_info(const void *vma,
 {
 	const struct neverc_krt_gki_layout *layout =
 		_neverc_krt_get_gki_layout();
+	struct neverc_krt_vma_snapshot snapshot;
 	unsigned long raw_flags = 0;
 
 	__builtin_memset(info, 0, sizeof(*info));
-	if (neverc_krt_mem_read(&info->start,
-			(const char *)vma + layout->vma_start,
-			sizeof(info->start)))
+	if (neverc_krt_vma_snapshot(vma, &snapshot))
 		return;
-	if (neverc_krt_mem_read(&info->end,
-			(const char *)vma + layout->vma_end,
-			sizeof(info->end))) {
-		info->end = 0;
-		return;
-	}
-	if (neverc_krt_mem_read(&raw_flags,
+	info->start = snapshot.start;
+	info->end = snapshot.end;
+	if (!layout ||
+	    !_neverc_krt_vma_field_fits(layout->vma_size, layout->vma_flags,
+					sizeof(raw_flags)) ||
+	    neverc_krt_mem_read(&raw_flags,
 			(const char *)vma + layout->vma_flags,
 			sizeof(raw_flags)))
 		raw_flags = 0;
-	if (neverc_krt_mem_read(&info->pgoff,
+	if (!layout ||
+	    !_neverc_krt_vma_field_fits(layout->vma_size, layout->vma_pgoff,
+					sizeof(info->pgoff)) ||
+	    neverc_krt_mem_read(&info->pgoff,
 			(const char *)vma + layout->vma_pgoff,
 			sizeof(info->pgoff)))
 		info->pgoff = 0;
@@ -166,20 +263,22 @@ int neverc_krt_vma_find(struct task_struct *task, unsigned long addr,
 	if (!mm) return -2;
 
 	if (_neverc_krt_mmap_read_lock) {
-		_neverc_krt_mmap_read_lock(mm);
+		_neverc_krt_mmap_read_lock((struct mm_struct *)mm);
 		locked = 1;
 	}
 
 	vma = _neverc_krt_find_vma(mm, addr);
 	if (!vma) {
-		if (locked) _neverc_krt_mmap_read_unlock(mm);
+		if (locked)
+			_neverc_krt_mmap_read_unlock((struct mm_struct *)mm);
 		_neverc_krt_task_mm_put(mm, mm_referenced);
 		return -3;
 	}
 
 	_neverc_krt_read_vma_info(vma, info);
 
-	if (locked) _neverc_krt_mmap_read_unlock(mm);
+	if (locked)
+		_neverc_krt_mmap_read_unlock((struct mm_struct *)mm);
 	_neverc_krt_task_mm_put(mm, mm_referenced);
 
 	if (addr < info->start)
@@ -201,7 +300,7 @@ int neverc_krt_vma_walk(struct task_struct *task,
 	if (!mm) return -2;
 
 	if (_neverc_krt_mmap_read_lock) {
-		_neverc_krt_mmap_read_lock(mm);
+		_neverc_krt_mmap_read_lock((struct mm_struct *)mm);
 		locked = 1;
 	}
 
@@ -226,7 +325,8 @@ int neverc_krt_vma_walk(struct task_struct *task,
 		if (count > 65536) break;
 	}
 
-	if (locked) _neverc_krt_mmap_read_unlock(mm);
+	if (locked)
+		_neverc_krt_mmap_read_unlock((struct mm_struct *)mm);
 	_neverc_krt_task_mm_put(mm, mm_referenced);
 	return count;
 }
@@ -333,4 +433,3 @@ int neverc_krt_vma_find_writable(struct task_struct *task,
 	*out = ctx.result;
 	return 0;
 }
-

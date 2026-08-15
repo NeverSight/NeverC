@@ -1,6 +1,8 @@
 #include "Core/AndroidKernelEmitter.h"
 #include "neverc/Foundation/AndroidKernelProfileContract.h"
+#include "neverc/Foundation/AndroidKernelRuntimeContract.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
@@ -14,11 +16,15 @@
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include <cstdint>
+#include <string>
 
 using namespace neverc::Emit;
 
 static_assert(neverc::AndroidKernelProfileContract::MaxKCFIMode ==
               static_cast<uint32_t>(AndroidKernel::KCFIMode::Normalized));
+static_assert(
+    neverc::AndroidKernelProfileContract::MaxShadowCallStackMode ==
+    static_cast<uint32_t>(AndroidKernel::ShadowCallStackMode::Dynamic));
 
 namespace {
 
@@ -27,10 +33,14 @@ constexpr llvm::StringLiteral KCFIModeModuleFlag =
     "neverc.android.kernel.kcfi.mode";
 constexpr llvm::StringLiteral ProfileModuleFlag =
     "neverc.android.kernel.profile";
+constexpr llvm::StringLiteral SCSModeModuleFlag =
+    "neverc.android.kernel.scs.mode";
 constexpr llvm::StringLiteral KCFIModeSourceMarker =
     "__neverc_krt_kcfi_mode_marker";
 constexpr llvm::StringLiteral ProfileSourceMarker =
     "__neverc_krt_profile_marker";
+constexpr llvm::StringLiteral SCSModeSourceMarker =
+    "__neverc_krt_scs_mode_marker";
 constexpr llvm::StringLiteral PCGOriginalLocalAttr =
     "neverc.pcg.original-local";
 constexpr llvm::StringLiteral PCGOriginalAddressTakenAttr =
@@ -173,10 +183,13 @@ std::optional<uint32_t> consumeSourceMarker(llvm::Module &M,
 }
 
 void materializeNativeProfileContract(llvm::Module &M, uint32_t Profile,
-                                      AndroidKernel::KCFIMode Mode) {
+                                      AndroidKernel::KCFIMode Mode,
+                                      AndroidKernel::ShadowCallStackMode
+                                          ShadowCallStack) {
   namespace ProfileContract = neverc::AndroidKernelProfileContract;
-  const uint64_t Serialized =
-      ProfileContract::encode(Profile, static_cast<unsigned>(Mode));
+  const uint64_t Serialized = ProfileContract::encode(
+      Profile, static_cast<unsigned>(Mode),
+      static_cast<unsigned>(ShadowCallStack));
   llvm::GlobalVariable *Record =
       M.getNamedGlobal(ProfileContract::NativeSymbol);
   if (Record) {
@@ -242,10 +255,12 @@ std::optional<uint32_t> AndroidKernel::getProfile(const llvm::Module &M) {
 std::optional<AndroidKernel::Contract>
 AndroidKernel::getContract(const llvm::Module &M) {
   const std::optional<KCFIMode> Mode = getKCFIMode(M);
+  const std::optional<ShadowCallStackMode> ShadowCallStack =
+      getShadowCallStackMode(M);
   const std::optional<uint32_t> Profile = getProfile(M);
-  if (!Mode || !Profile)
+  if (!Mode || !ShadowCallStack || !Profile)
     return std::nullopt;
-  return Contract{*Mode, *Profile};
+  return Contract{*Mode, *ShadowCallStack, *Profile};
 }
 
 void AndroidKernel::setKCFITypePair(llvm::Function &F, uint32_t Standard,
@@ -286,7 +301,12 @@ void AndroidKernel::finalizeKCFIPrefixes(llvm::Module &M) {
   if (!Profile)
     llvm::report_fatal_error(
         "Android kernel module is missing its native profile contract");
-  materializeNativeProfileContract(M, *Profile, *Mode);
+  const std::optional<ShadowCallStackMode> ShadowCallStack =
+      getShadowCallStackMode(M);
+  if (!ShadowCallStack)
+    llvm::report_fatal_error(
+        "Android kernel module is missing its shadow-call-stack contract");
+  materializeNativeProfileContract(M, *Profile, *Mode, *ShadowCallStack);
 
   // This is intentionally also the fail-safe selection point.  The normal
   // builtin pipeline prepares types earlier, but an IR optimization provider
@@ -384,15 +404,75 @@ static void emitCFICheckStubs(llvm::Module &M) {
                 llvm::GlobalValue::HiddenVisibility, 4);
 }
 
-// Apply per-function attributes that cannot be expressed via ToolChain flags:
-//   ShadowCallStack  — -fsanitize=shadow-call-stack would pull in the
-//                      sanitizer runtime which the kernel does not export
+std::optional<AndroidKernel::ShadowCallStackMode>
+AndroidKernel::getShadowCallStackMode(const llvm::Module &M) {
+  llvm::Metadata *Flag = M.getModuleFlag(SCSModeModuleFlag);
+  if (!Flag)
+    return std::nullopt;
+  const auto *Value = llvm::mdconst::dyn_extract<llvm::ConstantInt>(Flag);
+  if (!Value || Value->getBitWidth() > 32)
+    llvm::report_fatal_error(
+        "missing or invalid Android kernel shadow-call-stack mode");
+  switch (Value->getZExtValue()) {
+  case static_cast<unsigned>(AndroidKernel::ShadowCallStackMode::Static):
+    return AndroidKernel::ShadowCallStackMode::Static;
+  case static_cast<unsigned>(AndroidKernel::ShadowCallStackMode::Dynamic):
+    return AndroidKernel::ShadowCallStackMode::Dynamic;
+  default:
+    llvm::report_fatal_error(
+        "invalid Android kernel shadow-call-stack mode module flag");
+  }
+  llvm_unreachable("invalid Android kernel shadow-call-stack mode");
+}
+
+static bool isKernelConstrainedTargetFeature(llvm::StringRef Feature) {
+  return neverc::AndroidKernelRuntimeContract::isRequiredAArch64FeatureName(
+      Feature);
+}
+
+static void applyKernelTargetFeatures(llvm::Function &F) {
+  std::string Features;
+  auto Append = [&](llvm::StringRef Feature) {
+    if (!Features.empty())
+      Features.push_back(',');
+    Features.append(Feature.data(), Feature.size());
+  };
+
+  const llvm::Attribute Existing = F.getFnAttribute("target-features");
+  if (Existing.isValid()) {
+    llvm::SmallVector<llvm::StringRef, 16> ExistingFeatures;
+    Existing.getValueAsString().split(ExistingFeatures, ',', /*MaxSplit=*/-1,
+                                      /*KeepEmpty=*/false);
+    for (llvm::StringRef Feature : ExistingFeatures)
+      if (!isKernelConstrainedTargetFeature(Feature))
+        Append(Feature);
+  }
+  neverc::AndroidKernelRuntimeContract::forEachRequiredAArch64Feature(Append);
+
+  F.addFnAttr("target-features", Features);
+}
+
+// Apply the kernel target and profile-selected control-flow attributes after
+// the embedded runtime has been linked.  Legacy GKI profiles use
+// compiler-emitted static SCS.  GKI profiles with dynamic SCS must enter the
+// kernel with PAC instructions only; emitting both explicit x18 SCS operations
+// and PAC corrupts the task's shadow stack when the module returns through
+// kernel code.
 //   remove UWTable   — kernel modules do not use .eh_frame
 static void applyKernelFunctionAttrs(llvm::Module &M) {
+  const std::optional<AndroidKernel::ShadowCallStackMode> SCSMode =
+      AndroidKernel::getShadowCallStackMode(M);
+  if (!SCSMode)
+    llvm::report_fatal_error(
+        "missing Android kernel shadow-call-stack mode module flag");
   for (llvm::Function &F : M) {
     if (F.isDeclaration())
       continue;
-    F.addFnAttr(llvm::Attribute::ShadowCallStack);
+    applyKernelTargetFeatures(F);
+    if (*SCSMode == AndroidKernel::ShadowCallStackMode::Static)
+      F.addFnAttr(llvm::Attribute::ShadowCallStack);
+    else
+      F.removeFnAttr(llvm::Attribute::ShadowCallStack);
     F.addFnAttr("branch-target-enforcement", "true");
     F.addFnAttr("sign-return-address", "all");
     F.addFnAttr("sign-return-address-key", "a_key");
@@ -439,9 +519,19 @@ void AndroidKernel::emitFixups(llvm::Module &M, unsigned Arch, KCFIMode Mode) {
   if (*Profile == 0)
     llvm::report_fatal_error("invalid Android kernel source profile marker");
 
+  const std::optional<uint32_t> SCSMode =
+      consumeSourceMarker(M, SCSModeSourceMarker,
+                          "shadow-call-stack mode marker");
+  if (!SCSMode ||
+      (*SCSMode != static_cast<unsigned>(ShadowCallStackMode::Static) &&
+       *SCSMode != static_cast<unsigned>(ShadowCallStackMode::Dynamic)))
+    llvm::report_fatal_error(
+        "invalid Android kernel source shadow-call-stack mode marker");
+
   M.addModuleFlag(llvm::Module::Error, KCFIModeModuleFlag,
                   static_cast<unsigned>(Mode));
   M.addModuleFlag(llvm::Module::Error, ProfileModuleFlag, *Profile);
+  M.addModuleFlag(llvm::Module::Error, SCSModeModuleFlag, *SCSMode);
 
   emitPLTSections(M);
   emitCFICheckStubs(M);

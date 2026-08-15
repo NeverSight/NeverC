@@ -14,6 +14,7 @@
 #include "ToolChains/CommonArgs.h"
 #include "neverc/Compiler/FrontendOptions.h"
 #include "neverc/Config/config.h"
+#include "neverc/Foundation/AndroidKernelRuntimeContract.h"
 #include "neverc/Foundation/Core/MakeSupport.h"
 #include "neverc/Foundation/Core/Version.h"
 #include "neverc/Foundation/Diagnostic/CLWarnings.h"
@@ -2745,9 +2746,18 @@ void addNeverCSpecificFlags(types::ID InputType, const ArgList &Args,
     if (!Args.hasArg(options::OPT_ffreestanding))
       CmdArgs.push_back("-ffreestanding");
     CmdArgs.push_back("-fdirect-access-external-data");
-    CmdArgs.push_back("-target-feature");
-    CmdArgs.push_back("+reserve-x18");
-    CmdArgs.push_back("-mgeneral-regs-only");
+    // addNeverCSpecificFlags runs after the target-specific driver has already
+    // translated machine options into cc1 -target-feature arguments.  Passing
+    // the driver-only -mgeneral-regs-only spelling here is therefore too late:
+    // cc1 accepts it, but the function target-features still retain FP/NEON and
+    // optimized aggregate copies may use Q registers in kernel context.  State
+    // the general-register-only contract in the cc1 feature stream itself so it
+    // is copied onto reconstructed functions and survives the IR pipeline.
+    AndroidKernelRuntimeContract::forEachRequiredAArch64Feature(
+        [&](llvm::StringRef Feature) {
+          CmdArgs.push_back("-target-feature");
+          CmdArgs.push_back(Args.MakeArgString(Feature));
+        });
     //   * branch protection              GKI uses pac-ret+leaf+bti for all
     //                                   aarch64 modules.  Push the CC1-level
     //                                   equivalents so LangOpts/codegen emit

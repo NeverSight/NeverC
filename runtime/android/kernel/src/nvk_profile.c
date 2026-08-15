@@ -4,8 +4,9 @@
 
 const struct neverc_krt_profile *
 neverc_krt_find_profile(unsigned int legacy_id) {
-  return neverc_krt_find_profile_in_table(_neverc_krt_profiles,
-                                          NEVERC_KRT_PROFILE_COUNT, legacy_id);
+  return neverc_krt_find_profile_in_table(
+      _neverc_krt_profiles, NEVERC_KRT_PROFILE_COUNT,
+      neverc_krt_canonical_legacy_id(legacy_id));
 }
 
 static int neverc_krt_release_token_equal(
@@ -164,5 +165,47 @@ int neverc_krt_parse_banner_identity(
     }
   }
   *identity = parsed;
+  return 0;
+}
+
+int neverc_krt_format_vermagic_from_banner(const char *banner, char *out,
+                                           unsigned long out_size) {
+  static const char *const flags[] = {
+      "SMP", "preempt", "mod_unload", "modversions", "aarch64",
+  };
+  struct neverc_krt_observed_identity identity;
+  unsigned long needed;
+  unsigned long i;
+  unsigned long pos;
+
+  if (!banner || !out || !out_size)
+    return -1;
+  if (neverc_krt_parse_banner_identity(banner, &identity) ||
+      !identity.release_token || !identity.release_token_length)
+    return -2;
+
+  needed = identity.release_token_length;
+  for (i = 0; i < sizeof(flags) / sizeof(flags[0]); i++) {
+    const char *flag = flags[i];
+    unsigned long flag_length = 0;
+
+    while (flag[flag_length])
+      flag_length++;
+    needed += 1UL + flag_length;
+  }
+  if (needed + 1UL > out_size)
+    return -3;
+
+  pos = 0;
+  for (i = 0; i < identity.release_token_length; i++)
+    out[pos++] = identity.release_token[i];
+  for (i = 0; i < sizeof(flags) / sizeof(flags[0]); i++) {
+    const char *flag = flags[i];
+
+    out[pos++] = ' ';
+    while (*flag)
+      out[pos++] = *flag++;
+  }
+  out[pos] = '\0';
   return 0;
 }

@@ -70,12 +70,27 @@ void vfree(const void *addr);
 
 /* ---- kvmalloc / kvfree ---- */
 
-#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
-void *__kvmalloc_node_noprof(size_t size, gfp_t flags, int node);
-#define kvmalloc(size, flags) __kvmalloc_node_noprof(size, flags, -1)
+/*
+ * Android GKI enables CONFIG_SLAB_BUCKETS from 6.12 onward, so the exported
+ * __kvmalloc_node_noprof ABI contains an otherwise header-private buckets
+ * pointer.  Linux 6.18 inserts the alignment argument before flags as well.
+ * These declarations intentionally model the fixed official GKI profiles;
+ * an arbitrary vendor kernel built without SLAB_BUCKETS needs its own profile
+ * capability instead of silently using either ABI.
+ */
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
+void *__kvmalloc_node_noprof(size_t size, void *buckets,
+			     unsigned long align, gfp_t flags, int node);
+#define kvmalloc(size, flags) \
+	__kvmalloc_node_noprof((size), (void *)0, 1UL, (flags), -1)
+#elif NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
+void *__kvmalloc_node_noprof(size_t size, void *buckets,
+			     gfp_t flags, int node);
+#define kvmalloc(size, flags) \
+	__kvmalloc_node_noprof((size), (void *)0, (flags), -1)
 #else
 void *kvmalloc_node(size_t size, gfp_t flags, int node);
-#define kvmalloc(size, flags) kvmalloc_node(size, flags, -1)
+#define kvmalloc(size, flags) kvmalloc_node((size), (flags), -1)
 #endif
 
 void kvfree(const void *addr);

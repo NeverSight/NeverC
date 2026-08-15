@@ -11,7 +11,7 @@ MODULE_CONTRACT_CHECKER="$SCRIPT_DIR/verify-android-module.py"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-KERNELS=(510 515 601 606 612 618)
+KERNELS=(510 51013 515 51514 601 606 612 618)
 DEMO_SPECS=(
   "android-kernel-hello:main.c"
   "android-kernel-driver:main.c"

@@ -461,14 +461,15 @@ TEST_F(DriverTest, AndroidKernelModeUsesGeneralRegistersOnly) {
        "-DNVK_KERNEL=510", "-c", Source.string(), "-o",
        tmpFile("android-kernel-general-registers.o").string()});
   ASSERT_EQ(Result.exitCode, 0) << Result.err;
-  EXPECT_NE(Result.err.find("\"-target-feature\" \"-fp-armv8\""),
-            std::string::npos)
-      << Result.err;
-  EXPECT_NE(Result.err.find("\"-target-feature\" \"-neon\""), std::string::npos)
-      << Result.err;
-  EXPECT_NE(Result.err.find("\"-target-feature\" \"+reserve-x18\""),
-            std::string::npos)
-      << Result.err;
+  for (const char *Feature :
+       {"+reserve-x18", "+v8a", "-fp-armv8", "-crypto", "-neon", "-sve",
+        "-sve2", "-sme", "-sme2"}) {
+    const std::string Expected =
+        std::string("\"-target-feature\" \"") + Feature + "\"";
+    EXPECT_NE(Result.err.find(Expected), std::string::npos)
+        << "missing " << Expected << " in:\n"
+        << Result.err;
+  }
 }
 
 TEST_F(DriverTest, StripOptionRemovesNamesAndDwarfAcrossFormats) {

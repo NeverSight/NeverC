@@ -1,5 +1,6 @@
 #include "ToolChains/Arch/AArch64.h"
 #include "ToolChains/CommonArgs.h"
+#include "neverc/Foundation/AndroidKernelRuntimeContract.h"
 #include "neverc/Invoke/Driver.h"
 #include "neverc/Invoke/DriverDiagnostic.h"
 #include "neverc/Invoke/Options.h"
@@ -295,9 +296,8 @@ void aarch64::getAArch64TargetFeatures(const Driver &D,
   // default +fp-armv8/+neon feature set in LTO bitcode.
   if (Args.getLastArg(options::OPT_mgeneral_regs_only) ||
       Args.hasArg(options::OPT_fandroid_kernel_driver_mode)) {
-    Features.push_back("-fp-armv8");
-    Features.push_back("-crypto");
-    Features.push_back("-neon");
+    AndroidKernelRuntimeContract::forEachGeneralRegisterOnlyAArch64Feature(
+        [&](llvm::StringRef Feature) { Features.push_back(Feature); });
   }
 
   if (Arg *A = Args.getLastArg(options::OPT_mtp_mode_EQ)) {

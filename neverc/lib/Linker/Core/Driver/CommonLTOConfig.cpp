@@ -7,6 +7,7 @@
 #include "neverc/Emit/AndroidKernelKCFI.h"
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
 #include "neverc/Emit/NvkKernelRuntimeLinker.h"
+#include "neverc/Foundation/AndroidKernelRuntimeContract.h"
 #include "neverc/Plugin/Host/IROptimizationProvider.h"
 #include "neverc/Plugin/Host/IRPassPlugin.h"
 #include "neverc/Plugin/Host/MIRPassPlugin.h"
@@ -137,7 +138,8 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
     // attributes before it is linked into the consumer module.  Restore the
     // AArch64 kernel code-generation contract at the final LTO boundary: SIMD
     // state is unavailable in ordinary kernel C paths and x18 is reserved.
-    c.MAttrs = {"-fp-armv8", "-crypto", "-neon", "+reserve-x18"};
+    neverc::AndroidKernelRuntimeContract::forEachRequiredAArch64Feature(
+        [&](StringRef Feature) { c.MAttrs.push_back(Feature.str()); });
   }
 
   // An Android kernel link may consume precompiled full-LTO inputs.  If none

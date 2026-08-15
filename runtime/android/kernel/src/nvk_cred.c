@@ -6,6 +6,7 @@
 
 typedef void *(*neverc_krt_prepare_creds_fn)(void);
 typedef int   (*neverc_krt_commit_creds_fn)(void *);
+typedef void  (*neverc_krt_abort_creds_fn)(void *);
 typedef void  (*neverc_krt_put_cred_fn)(const void *);
 typedef void *(*neverc_krt_get_task_cred_fn)(struct task_struct *);
 
@@ -13,9 +14,16 @@ typedef void *(*neverc_krt_get_task_cred_fn)(struct task_struct *);
 
 static neverc_krt_prepare_creds_fn _neverc_krt_prepare_creds;
 static neverc_krt_commit_creds_fn  _neverc_krt_commit_creds;
+static neverc_krt_abort_creds_fn   _neverc_krt_abort_creds;
 static neverc_krt_get_task_cred_fn _neverc_krt_get_task_cred;
 static neverc_krt_put_cred_fn _neverc_krt_cred_put;
 static int                    _neverc_krt_cred_inited;
+
+static __always_inline int _neverc_krt_cred_field_fits(
+	unsigned long size, unsigned long offset, unsigned long width)
+{
+	return size && offset < size && width <= size - offset;
+}
 
 static __always_inline void
 _neverc_krt_cred_write_ids(void *cred,
@@ -32,6 +40,58 @@ _neverc_krt_cred_write_ids(void *cred,
 	*(u32 *)(p + layout->cred_egid) = gid;
 	*(u32 *)(p + layout->cred_fsuid) = uid;
 	*(u32 *)(p + layout->cred_fsgid) = gid;
+}
+
+static __always_inline int _neverc_krt_cred_ids_layout_ready(
+	const struct neverc_krt_gki_layout *layout)
+{
+	return layout &&
+	       _neverc_krt_cred_field_fits(layout->cred_size, layout->cred_uid,
+					   sizeof(u32)) &&
+	       _neverc_krt_cred_field_fits(layout->cred_size, layout->cred_gid,
+					   sizeof(u32)) &&
+	       _neverc_krt_cred_field_fits(layout->cred_size, layout->cred_suid,
+					   sizeof(u32)) &&
+	       _neverc_krt_cred_field_fits(layout->cred_size, layout->cred_sgid,
+					   sizeof(u32)) &&
+	       _neverc_krt_cred_field_fits(layout->cred_size, layout->cred_euid,
+					   sizeof(u32)) &&
+	       _neverc_krt_cred_field_fits(layout->cred_size, layout->cred_egid,
+					   sizeof(u32)) &&
+	       _neverc_krt_cred_field_fits(layout->cred_size, layout->cred_fsuid,
+					   sizeof(u32)) &&
+	       _neverc_krt_cred_field_fits(layout->cred_size, layout->cred_fsgid,
+					   sizeof(u32));
+}
+
+static __always_inline int _neverc_krt_cred_caps_layout_ready(
+	const struct neverc_krt_gki_layout *layout)
+{
+	return layout &&
+	       _neverc_krt_cred_field_fits(layout->cred_size,
+					   layout->cred_securebits,
+					   sizeof(u32)) &&
+	       _neverc_krt_cred_field_fits(layout->cred_size,
+					   layout->cred_cap_inheritable,
+					   _NEVERC_KRT_CRED_CAP_SIZE) &&
+	       _neverc_krt_cred_field_fits(layout->cred_size,
+					   layout->cred_cap_permitted,
+					   _NEVERC_KRT_CRED_CAP_SIZE) &&
+	       _neverc_krt_cred_field_fits(layout->cred_size,
+					   layout->cred_cap_effective,
+					   _NEVERC_KRT_CRED_CAP_SIZE) &&
+	       _neverc_krt_cred_field_fits(layout->cred_size,
+					   layout->cred_cap_bset,
+					   _NEVERC_KRT_CRED_CAP_SIZE) &&
+	       _neverc_krt_cred_field_fits(layout->cred_size,
+					   layout->cred_cap_ambient,
+					   _NEVERC_KRT_CRED_CAP_SIZE);
+}
+
+static void _neverc_krt_cred_discard(void *cred)
+{
+	if (cred && _neverc_krt_abort_creds)
+		_neverc_krt_abort_creds(cred);
 }
 
 static __always_inline unsigned long
@@ -67,18 +127,24 @@ int neverc_krt_cred_init(void)
 {
 	if (_neverc_krt_cred_inited) return 0;
 
-	neverc_krt_process_init();
+	if (neverc_krt_process_init())
+		return -1;
+	if (!_neverc_krt_get_gki_layout())
+		return -1;
 
 	_neverc_krt_prepare_creds =
 		(neverc_krt_prepare_creds_fn)NEVERC_KRT_LOOKUP("prepare_creds");
 	_neverc_krt_commit_creds =
 		(neverc_krt_commit_creds_fn)NEVERC_KRT_LOOKUP("commit_creds");
+	_neverc_krt_abort_creds =
+		(neverc_krt_abort_creds_fn)NEVERC_KRT_LOOKUP("abort_creds");
 	_neverc_krt_get_task_cred =
 		(neverc_krt_get_task_cred_fn)NEVERC_KRT_LOOKUP("get_task_cred");
 	_neverc_krt_cred_put =
 		(neverc_krt_put_cred_fn)NEVERC_KRT_LOOKUP("__put_cred");
 
-	if (!_neverc_krt_prepare_creds || !_neverc_krt_commit_creds)
+	if (!_neverc_krt_prepare_creds || !_neverc_krt_commit_creds ||
+	    !_neverc_krt_abort_creds)
 		return -1;
 
 	_neverc_krt_cred_inited = 1;
@@ -125,6 +191,8 @@ void neverc_krt_task_put_cred(void *cred)
 		return;
 
 	layout = _neverc_krt_get_gki_layout();
+	if (!layout)
+		return;
 	uid_off = layout->cred_uid;
 	if (uid_off >= sizeof(long)) {
 		long *usage = (long *)cred;
@@ -143,39 +211,84 @@ int neverc_krt_cred_get_ids(struct task_struct *task,
 			    struct neverc_krt_cred_ids *ids)
 {
 	const struct neverc_krt_gki_layout *layout;
+	struct neverc_krt_cred_ids value = { 0 };
 	const void *cred;
 	unsigned long cred_val;
 	const unsigned char *p;
+	int result = -1;
 
-	if (!task || !ids) return -1;
+	if (!ids)
+		return -1;
+	__builtin_memset(ids, 0, sizeof(*ids));
+	if (!task || !_neverc_krt_kernel_pointer_is_valid(task) ||
+	    !_neverc_krt_layout_fields_proven(
+		    NEVERC_KRT_LAYOUT_CERT_TASK_WALK) ||
+	    !_neverc_krt_mem_nofault_available())
+		return -1;
 
 	layout = _neverc_krt_get_gki_layout();
+	if (!layout || !_neverc_krt_cred_field_fits(
+			layout->task_size, layout->task_real_cred,
+			sizeof(cred_val)) ||
+	    !_neverc_krt_cred_field_fits(
+			layout->cred_size, layout->cred_uid,
+			sizeof(value.uid)) ||
+	    !_neverc_krt_cred_field_fits(
+			layout->cred_size, layout->cred_gid,
+			sizeof(value.gid)) ||
+	    !_neverc_krt_cred_field_fits(
+			layout->cred_size, layout->cred_suid,
+			sizeof(value.suid)) ||
+	    !_neverc_krt_cred_field_fits(
+			layout->cred_size, layout->cred_sgid,
+			sizeof(value.sgid)) ||
+	    !_neverc_krt_cred_field_fits(
+			layout->cred_size, layout->cred_euid,
+			sizeof(value.euid)) ||
+	    !_neverc_krt_cred_field_fits(
+			layout->cred_size, layout->cred_egid,
+			sizeof(value.egid)) ||
+	    !_neverc_krt_cred_field_fits(
+			layout->cred_size, layout->cred_fsuid,
+			sizeof(value.fsuid)) ||
+	    !_neverc_krt_cred_field_fits(
+			layout->cred_size, layout->cred_fsgid,
+			sizeof(value.fsgid)) ||
+	    (unsigned long)task > ~0UL - layout->task_real_cred ||
+	    _neverc_krt_rcu_read_begin())
+		return -1;
 	if (neverc_krt_mem_read(&cred_val,
 			(const char *)task + layout->task_real_cred,
 			sizeof(cred_val)))
-		return -1;
+		goto out_unlock;
 	cred = (const void *)cred_val;
-	if (!cred) return -1;
+	if (!_neverc_krt_kernel_pointer_is_valid(cred))
+		goto out_unlock;
 
 	p = (const unsigned char *)cred;
-	if (neverc_krt_mem_read(&ids->uid, p + layout->cred_uid,
-				sizeof(ids->uid)) ||
-	    neverc_krt_mem_read(&ids->gid, p + layout->cred_gid,
-				sizeof(ids->gid)) ||
-	    neverc_krt_mem_read(&ids->suid, p + layout->cred_suid,
-				sizeof(ids->suid)) ||
-	    neverc_krt_mem_read(&ids->sgid, p + layout->cred_sgid,
-				sizeof(ids->sgid)) ||
-	    neverc_krt_mem_read(&ids->euid, p + layout->cred_euid,
-				sizeof(ids->euid)) ||
-	    neverc_krt_mem_read(&ids->egid, p + layout->cred_egid,
-				sizeof(ids->egid)) ||
-	    neverc_krt_mem_read(&ids->fsuid, p + layout->cred_fsuid,
-				sizeof(ids->fsuid)) ||
-	    neverc_krt_mem_read(&ids->fsgid, p + layout->cred_fsgid,
-				sizeof(ids->fsgid)))
-		return -1;
-	return 0;
+	if (neverc_krt_mem_read(&value.uid, p + layout->cred_uid,
+				sizeof(value.uid)) ||
+	    neverc_krt_mem_read(&value.gid, p + layout->cred_gid,
+				sizeof(value.gid)) ||
+	    neverc_krt_mem_read(&value.suid, p + layout->cred_suid,
+				sizeof(value.suid)) ||
+	    neverc_krt_mem_read(&value.sgid, p + layout->cred_sgid,
+				sizeof(value.sgid)) ||
+	    neverc_krt_mem_read(&value.euid, p + layout->cred_euid,
+				sizeof(value.euid)) ||
+	    neverc_krt_mem_read(&value.egid, p + layout->cred_egid,
+				sizeof(value.egid)) ||
+	    neverc_krt_mem_read(&value.fsuid, p + layout->cred_fsuid,
+				sizeof(value.fsuid)) ||
+	    neverc_krt_mem_read(&value.fsgid, p + layout->cred_fsgid,
+				sizeof(value.fsgid)))
+		goto out_unlock;
+	*ids = value;
+	result = 0;
+
+out_unlock:
+	_neverc_krt_rcu_read_end();
+	return result;
 }
 
 int neverc_krt_cred_set_uid0(void)
@@ -190,6 +303,11 @@ int neverc_krt_cred_set_uid0(void)
 	if (!cred) return -1;
 
 	layout = _neverc_krt_get_gki_layout();
+	if (!_neverc_krt_cred_ids_layout_ready(layout) ||
+	    !_neverc_krt_cred_caps_layout_ready(layout)) {
+		_neverc_krt_cred_discard(cred);
+		return -1;
+	}
 
 	/*
 	 * Raw writes are safe here: prepare_creds() returns a freshly
@@ -224,6 +342,10 @@ int neverc_krt_cred_set_uid(u32 uid, u32 gid)
 	if (!cred) return -1;
 
 	layout = _neverc_krt_get_gki_layout();
+	if (!_neverc_krt_cred_ids_layout_ready(layout)) {
+		_neverc_krt_cred_discard(cred);
+		return -1;
+	}
 	_neverc_krt_cred_write_ids(cred, layout, uid, gid);
 
 	return _neverc_krt_commit_creds(cred);
@@ -241,6 +363,10 @@ int neverc_krt_cred_set_caps_full(void)
 	if (!cred) return -1;
 
 	layout = _neverc_krt_get_gki_layout();
+	if (!_neverc_krt_cred_caps_layout_ready(layout)) {
+		_neverc_krt_cred_discard(cred);
+		return -1;
+	}
 	_neverc_krt_cred_fill_cap(
 		cred, layout->cred_cap_inheritable, 0xFFFFFFFFU);
 	_neverc_krt_cred_fill_cap(
@@ -270,7 +396,17 @@ int neverc_krt_cred_set_cap(int cap, int set_type)
 	if (!cred) return -1;
 
 	layout = _neverc_krt_get_gki_layout();
+	if (!_neverc_krt_cred_caps_layout_ready(layout)) {
+		_neverc_krt_cred_discard(cred);
+		return -1;
+	}
 	set_off = _neverc_krt_cred_cap_offset(layout, set_type);
+	if (set_off == ~0UL ||
+	    !_neverc_krt_cred_field_fits(layout->cred_size, set_off + 4UL,
+					 sizeof(u32))) {
+		_neverc_krt_cred_discard(cred);
+		return -1;
+	}
 	unsigned char *p = (unsigned char *)cred;
 
 	int word = cap / 32;
@@ -296,7 +432,17 @@ int neverc_krt_cred_clear_cap(int cap, int set_type)
 	if (!cred) return -1;
 
 	layout = _neverc_krt_get_gki_layout();
+	if (!_neverc_krt_cred_caps_layout_ready(layout)) {
+		_neverc_krt_cred_discard(cred);
+		return -1;
+	}
 	set_off = _neverc_krt_cred_cap_offset(layout, set_type);
+	if (set_off == ~0UL ||
+	    !_neverc_krt_cred_field_fits(layout->cred_size, set_off + 4UL,
+					 sizeof(u32))) {
+		_neverc_krt_cred_discard(cred);
+		return -1;
+	}
 	unsigned char *p = (unsigned char *)cred;
 
 	int word = cap / 32;
@@ -315,26 +461,46 @@ int neverc_krt_cred_has_cap(struct task_struct *task, int cap, int set_type)
 	const unsigned char *p;
 	unsigned long cred_val;
 
-	if (!task || cap < 0 || cap > 63 || set_type < 0 || set_type > 4)
+	if (!task || cap < 0 || cap > 63 || set_type < 0 || set_type > 4 ||
+	    !_neverc_krt_kernel_pointer_is_valid(task) ||
+	    !_neverc_krt_layout_fields_proven(
+		    NEVERC_KRT_LAYOUT_CERT_TASK_WALK) ||
+	    !_neverc_krt_mem_nofault_available())
 		return -1;
 
 	layout = _neverc_krt_get_gki_layout();
+	if (!_neverc_krt_cred_caps_layout_ready(layout) ||
+	    !_neverc_krt_cred_field_fits(layout->task_size,
+					 layout->task_real_cred,
+					 sizeof(cred_val)) ||
+	    _neverc_krt_rcu_read_begin())
+		return -1;
 	if (neverc_krt_mem_read(&cred_val,
 			(const char *)task + layout->task_real_cred,
 			sizeof(cred_val)))
-		return -1;
+		goto out_unlock;
 	cred = (const void *)cred_val;
-	if (!cred) return -1;
+	if (!_neverc_krt_kernel_pointer_is_valid(cred))
+		goto out_unlock;
 
 	p = (const unsigned char *)cred;
 	set_off = _neverc_krt_cred_cap_offset(layout, set_type);
+	if (set_off == ~0UL ||
+	    !_neverc_krt_cred_field_fits(layout->cred_size, set_off + 4UL,
+					 sizeof(u32)))
+		goto out_unlock;
 
 	int word = cap / 32;
 	int bit = cap % 32;
 	u32 cap_val;
 	if (neverc_krt_mem_read(&cap_val, p + set_off + word * 4, 4))
-		return -1;
+		goto out_unlock;
+	_neverc_krt_rcu_read_end();
 	return (cap_val >> bit) & 1;
+
+out_unlock:
+	_neverc_krt_rcu_read_end();
+	return -1;
 }
 
 int neverc_krt_cred_clear_securebits(void)
@@ -349,8 +515,11 @@ int neverc_krt_cred_clear_securebits(void)
 	if (!cred) return -1;
 
 	layout = _neverc_krt_get_gki_layout();
+	if (!_neverc_krt_cred_caps_layout_ready(layout)) {
+		_neverc_krt_cred_discard(cred);
+		return -1;
+	}
 	*(u32 *)((unsigned char *)cred + layout->cred_securebits) = 0;
 
 	return _neverc_krt_commit_creds(cred);
 }
-

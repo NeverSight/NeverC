@@ -3,6 +3,7 @@
 #include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
 #include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/BinaryFormat/ELF.h"
@@ -1141,6 +1142,100 @@ TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkHandlesSeveralInputs) {
   EXPECT_EQ(Differences, 1U)
       << "plugin LTO-lower + merge over several inputs diverged from the "
          "native relocatable link";
+}
+
+// Each consumer TU independently links a copy of the embedded nvk runtime
+// under __neverc_nvk_local.*.  LTO must coalesce those hidden ODR copies;
+// otherwise -O1+ leaves non-identical duplicates (name, name.1, ...) and
+// bootstrap writes one instance while every other TU reads a zero one.
+TEST_F(AndroidKernelRuntimeTest, EmbeddedRuntimeLocalsCoalesceAcrossTUs) {
+  const fs::path First = tmpFile("nvk_coalesce_a.c");
+  const fs::path Second = tmpFile("nvk_coalesce_b.c");
+  writeFile(First,
+            "#include <nvkmod.h>\n"
+            "extern int nvk_coalesce_helper(void);\n"
+            "static int m_init(void) { return nvk_coalesce_helper(); }\n"
+            "static void m_exit(void) {}\n"
+            "module_init(m_init);\n"
+            "module_exit(m_exit);\n"
+            "MODULE_LICENSE(\"GPL v2\");\n"
+            "NEVERC_KRT_DEFINE_MODULE(\"neverc_test_coalesce\");\n");
+  writeFile(Second,
+            "#include <nvk_mem.h>\n"
+            "int nvk_coalesce_helper(void) { return neverc_krt_mem_init(); }\n");
+  const fs::path Output = tmpFile("nvk_coalesce.ko");
+  ScopedEnvironmentVariable StrictPCG("NEVERC_PCG_STRICT", "1");
+  ScopedEnvironmentVariable DebugPCG("NEVERC_PCG_DEBUG", "1");
+
+  const CmdResult Build = ncc({
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=510",
+      "-O2",
+      "-fstring-encrypt-key=1",
+      "-mllvm",
+      "-neverc-pcg-min-funcs=2",
+      "-mllvm",
+      "-neverc-pcg-weight-floor=0",
+      "-nostdlib",
+      "-r",
+      First.string(),
+      Second.string(),
+      "-o",
+      Output.string(),
+  });
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+  ASSERT_TRUE(Build.stderrContains("[pcg] SUCCESS"))
+      << "test did not exercise parallel full-LTO:\n"
+      << Build.err;
+
+  const std::string Bytes = readFile(Output);
+  ASSERT_TRUE(isElfImage(Bytes));
+  EXPECT_TRUE(hasAndroidLoaderContract(Bytes, /*RequireEmptyTags=*/true));
+
+  auto ObjectOrErr = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(llvm::StringRef(Bytes.data(), Bytes.size()),
+                            "module.ko"));
+  ASSERT_TRUE(static_cast<bool>(ObjectOrErr))
+      << renderError(ObjectOrErr.takeError());
+
+  llvm::StringMap<unsigned> NameCounts;
+  llvm::StringMap<unsigned> CanonicalNameCounts;
+  llvm::StringMap<std::string> FirstSpelling;
+  for (const llvm::object::SymbolRef &Symbol : (*ObjectOrErr)->symbols()) {
+    auto NameOrErr = Symbol.getName();
+    ASSERT_TRUE(static_cast<bool>(NameOrErr))
+        << renderError(NameOrErr.takeError());
+    if (NameOrErr->starts_with("__neverc_nvk_local.")) {
+      ++NameCounts[*NameOrErr];
+      llvm::StringRef Canonical = *NameOrErr;
+      if (const size_t Marker = Canonical.find(".__pcg");
+          Marker != llvm::StringRef::npos) {
+        Canonical = Canonical.take_front(Marker);
+      } else if (const size_t Dot = Canonical.rfind('.');
+                 Dot != llvm::StringRef::npos) {
+        const llvm::StringRef Suffix = Canonical.drop_front(Dot + 1);
+        if (!Suffix.empty() &&
+            llvm::all_of(Suffix,
+                         [](char C) { return C >= '0' && C <= '9'; }))
+          Canonical = Canonical.take_front(Dot);
+      }
+      ++CanonicalNameCounts[Canonical];
+      FirstSpelling.try_emplace(Canonical, NameOrErr->str());
+    }
+  }
+  ASSERT_FALSE(NameCounts.empty())
+      << "expected unstripped nvk runtime locals in the .ko";
+
+  for (const auto &Entry : NameCounts) {
+    EXPECT_EQ(Entry.getValue(), 1U)
+        << "duplicate nvk runtime private symbol: " << Entry.getKey().str();
+  }
+  for (const auto &Entry : CanonicalNameCounts) {
+    EXPECT_EQ(Entry.getValue(), 1U)
+        << "nvk runtime private was not coalesced: "
+        << FirstSpelling.lookup(Entry.getKey());
+  }
 }
 
 TEST_F(AndroidKernelRuntimeTest, RelocatableLinkCollectsCompilerAllocTags) {

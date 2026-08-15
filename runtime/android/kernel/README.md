@@ -36,6 +36,9 @@ of independently overridable macros:
 - `arm64/gki-profiles.json` names each profile and owns semantic identity plus
   ABI capabilities;
 - `arm64/gki-manifests/<id>.json` is the checked layout/config evidence;
+- `arm64/gki-layout-certificates.json` optionally overlays measured offsets for
+  a later patch of the same Android/KMI, or for a leftover KMI of a family
+  that has no dedicated compile handle;
 - `arm64/gki-release.json` pins exact release, vermagic, and KCFI evidence;
 - `tools/generate-compat-table.py` validates those three sources together and
   generates the public profile configuration and private runtime tables.
@@ -84,9 +87,11 @@ runtime/android/kernel/
     nvk_timer.h                #   hrtimer, timestamps (ktime/arch counter), busy-wait
     nvk_power.h                #   PM notifier (suspend/resume) + reboot notifier
     nvk_cpu.h                  #   CPU topology, online enumeration, per-CPU data, SMP calls
+    nvk_inode.h                #   opaque filename/path/inode access and path→inode refs
   arm64/
     gki-profiles.json          # semantic profile identity + named capabilities
     gki-manifests/*.json       # authoritative layout/config evidence
+    gki-layout-certificates.json # compatible-identity private-field evidence
     gki-release.json           # pinned release/vermagic/KCFI evidence
     include/                   # minimal cross-version kernel compatibility headers
       linux/*.h                #   types, kernel, printk, list, slab, fs, ...
@@ -105,6 +110,7 @@ runtime/android/kernel/
     run-gki-qemu-smoke.sh      # boot Image and require module load + unload
     check-source-boundaries.py # enforce public/private source boundaries
     test-sdk-layouts.sh        # compile layout-sensitive headers for every GKI
+    test-inode-metadata.py     # host behavior/evidence test for opaque filename/path/inode access
     test-runtime-linkage.sh    # focused multi-TU auto/full/no-LTO checks
     test-all.sh                # full demo × kernel-profile × linkage-mode matrix
 ```
@@ -165,8 +171,10 @@ The two GKI workflows have deliberately different jobs:
   It syncs and builds complete Android kernel trees, verifies their direct
   `struct module` relocation evidence, and publishes release archives.
 - `.github/workflows/validate-gki-runtime.yml` is the lightweight consumer and
-  compatibility gate. It downloads the six pinned archives from release
-  `gki-build-20260701` instead of rebuilding kernels.
+  compatibility gate. It downloads every archive pinned in
+  `arm64/gki-release.json` (eight families on `gki-build-20260701`: the
+  six official GKI series plus android13-5.10 / android14-5.15). QEMU and
+  smoke therefore cover `51013` and `51514` as well as the original six.
 
 The consumer checks each asset's name, byte size, and SHA-256 before safe
 extraction; regenerates all 55 checked BTF/DWARF layouts from `vmlinux`; checks
@@ -205,7 +213,12 @@ exact identity is certified by this gate; an explicitly selected profile may
 also activate on an observed OEM kernel with the same Linux `major.minor` and
 page size, but it is reported as `NEVERC_KRT_VER_COMPAT`, not certified as
 exact. A missing/unparseable banner, a different series, or a different page
-size remains fail-closed.
+size remains fail-closed. A live banner that names a different Android
+release or KMI on that same series activates only when that variant has no
+dedicated compile family and a leftover certificate covers it. A different
+Android generation that also changes loader-visible `struct module` /
+vermagic is its own compile-time family (`51013`, `51514`) and fail-closes
+on the older compile handle.
 
 ## SDK headers
 
@@ -259,15 +272,18 @@ string literals via xorstr.
 
 The checked manifest for each profile holds the `name`/`init`/`exit` offsets and
 total size of `struct module`. Generated headers consume those facts; no
-handwritten runtime or compiler source branch enumerates `510` through `618`.
-All current profiles
-are **verified** against stock GKI `gki_defconfig` evidence computed from each
-kernel's own prepared headers via `tools/gen_struct_module_offsets.c`:
+handwritten runtime or compiler source branch enumerates catalog IDs.
+Official pinned families are **verified** against stock GKI `gki_defconfig`
+evidence computed from each kernel's own prepared headers via
+`tools/gen_struct_module_offsets.c`. Local Android-generation families
+(`51013`, `51514`) are verified against the measured local `vmlinux`:
 
 | preset | release | NAME | INIT | EXIT | sizeof |
 |--------|---------|------|------|------|--------|
 | `510` (android12-5.10) | 5.10.257| 24 | 400 (0x190) | 960 (0x3C0)  | 1024 (0x400) |
+| `51013` (android13-5.10) | 5.10.223| 24 | 400 (0x190) | 936 (0x3A8)  | 1024 (0x400) |
 | `515` (android13-5.15) | 5.15.208| 24 | 376 (0x178) | 888 (0x378)  | 960 (0x3C0)  |
+| `51514` (android14-5.15) | 5.15.164| 24 | 376 (0x178) | 976 (0x3D0)  | 1024 (0x400) |
 | `601` (android14-6.1)  | 6.1.174 | 24 | 368 (0x170) | 984 (0x3D8)  | 1088 (0x440) |
 | `606` (android15-6.6)  | 6.6.139 | 24 | 392 (0x188) | 1464 (0x5B8) | 1536 (0x600) |
 | `612` (android16-6.12) | 6.12.89 | 24 | 392 (0x188) | 1528 (0x5F8) | 1600 (0x640) |
@@ -299,16 +315,16 @@ contract prevents.
 
 `tools/gen-offsets.sh` drives `tools/gen_struct_module_offsets.c` (a no-run
 "asm-offsets" probe). It works fully on Linux / an already-prepared tree; on
-macOS, where the kernel build system can't run, prepare the four newer trees in
+macOS, where the kernel build system can't run, prepare the GKI trees in
 a throwaway Linux container instead:
 
 ```
-# from a host with Docker; computes offsets for all four raw GKI trees at once
+# from a host with Docker; computes offsets for the raw GKI trees at once
 docker run --rm -v <repo>/local_docs:/work -v <repo>/runtime/android/kernel/tools:/tools:ro \
   ubuntu:24.04 bash -lc '
     apt-get update -qq && apt-get install -y -qq build-essential clang lld llvm \
       bc bison flex libssl-dev libelf-dev libdw-dev cpio kmod rsync >/dev/null
-    for kit in GKI-android13-5.15-kit GKI-android14-6.1-kit GKI-android15-6.6-kit GKI-android16-6.12-kit GKI-android17-6.18-kit; do
+    for kit in GKI-android12-5.10-kit GKI-android13-5.15-kit GKI-android14-6.1-kit GKI-android15-6.6-kit GKI-android16-6.12-kit GKI-android17-6.18-kit; do
       KT=/work/$kit/common; O=/build/$kit
       make -C $KT O=$O ARCH=arm64 LLVM=1 -j"$(nproc)" gki_defconfig modules_prepare
       clang --target=aarch64-linux-gnu -fno-lto -nostdlibinc -std=gnu11 -D__KERNEL__ -DNVK_GEN_KSRC=1 \
@@ -328,6 +344,80 @@ same Linux `major.minor` plus same page size reports `COMPAT`. The observed OEM
 patch/Android/KMI fields remain visible and are never overwritten with pinned
 values. There is no cross-series, unknown-banner, nearest-version, or
 maximum-layout fallback.
+
+## Same Linux series, different Android generation
+
+The Linux patch number (the `223` in `5.10.223`) does **not** move the fields
+NeverC reads, as long as Android release, KMI, and page size stay the same.
+What *does* move them is a new Android generation on the same `major.minor`.
+Official AOSP `include/linux/module.h` keeps the same field order inside a
+Linux series (`android12-5.10` matches `android13-5.10`; `android13-5.15`
+matches `android14-5.15`, including the optional `build_id[]`). The loader-
+visible size/`exit` deltas are that generation's GKI `CONFIG_*` / KMI, which
+is why the compile IDs follow the measured `vmlinux`, not a source rewrite.
+The loader also reads vermagic and `.gnu.linkonce.this_module` before our
+init runs, so one `.ko` cannot carry two `struct module` images. That is why
+android12-5.10 and android13-5.10 are different compile-time families, and
+why android13-5.15 and android14-5.15 are too:
+
+| Compile handle | Alias | Live banner family | Loader-visible `struct module` | Notes |
+|----------------|-------|--------------------|--------------------------------|-------|
+| `510` | `51012` | `5.10.*-android12-9` (pinned official) | size 1024, `init` 400, `exit` 960 | Official CI/release key |
+| `51013` | — | `5.10.*-android13-4` | size 1024, `init` 400, `exit` 936 | Pinned CI/release key (`gki-android13-5.10-build.tar.gz`) |
+| `515` | `51513` | `5.15.*-android13-8` (pinned official) | size 960, `init` 376, `exit` 888 | Official CI/release key |
+| `51514` | — | `5.15.*-android14-11` | size 1024, `init` 376, `exit` 976 | Pinned CI/release key (`gki-android14-5.15-build.tar.gz`); `task_struct` 4608→4736, `comm` 1960→2064 |
+
+`-DNVK_KERNEL=51012` is only a spelling for `510`. `-DNVK_KERNEL=51513` is
+only a spelling for `515`. Compile a module for android13-5.10 with
+`-DNVK_KERNEL=51013`, and for android14-5.15 with `-DNVK_KERNEL=51514`.
+A `510` android12 `.ko` will not `insmod` on android13-5.10: vermagic names
+`android12-9`, and even a forced load would write `module.exit` at 960
+instead of 936. A `515` android13 `.ko` is worse on android14-5.15: the
+pinned `this_module` is 960 bytes and the kernel's `struct module` is 1024.
+
+Local trees used for the new families (do not treat these binaries as
+drop-in replacements for the pinned 510/515 archives):
+
+| Tree | Banner |
+|------|--------|
+| `local_docs/android12-5.10-bin` | `5.10.205-android12-9-dirty` |
+| `local_docs/android13-5.10-bin` | `5.10.223-android13-4-00011-ga33040a671e2-dirty` |
+| `local_docs/android13-5.15-bin` | `5.15.153-android13-8-00026-g06276351e9ff-dirty` |
+| `local_docs/android14-5.15-bin` | `5.15.164-android14-11-maybe-dirty` |
+
+`insmod` compares the compile-time `.modinfo` vermagic as a full string
+before NeverC init runs. `51013` is pinned to the local dirty token above,
+so a module built with `-DNVK_KERNEL=51013` loads on that tree and on the
+matching CI archive, not on an official android13-5.10 with a different
+suffix. `neverc_krt_patch_vermagic()` cannot change that: it only rewrites
+a post-load `vermagic=` blob inside `this_module` after the selected
+identity has been accepted, and it refuses to emit a truncated string.
+Same-Android/KMI `COMPAT` is a post-load layout policy, not a loader
+bypass. Ship a `.ko` whose vermagic matches the target kernel, or accept
+a forced load.
+
+`CONFIG_CFI_CLANG` on 5.10/5.15 is classic Clang CFI (`__cfi_check` /
+`__cfi_slowpath`), not NeverC `kcfi_mode`. 51013/51514 keep
+`kcfi_mode=disabled` and emit no KCFI type-id prefixes. KCFI entry
+prefixes start at the 601 family.
+
+Activation with the selected compile family:
+
+1. Exact token + Android/KMI + page → `EXACT`, that family's layout.
+2. Same Android/KMI as the selected family, different patch/token → `COMPAT`,
+   family layout (a same-generation certificate may overlay).
+3. Same Linux series + page, **different** Android release or KMI → fail
+   closed when that Android/KMI already has its own compile family
+   (`51013`, `51514`). A leftover certificate is only allowed when no
+   dedicated family exists (for example 612 on a later KMI of the same
+   Android 16 series). It does not fix vermagic / `this_module`.
+4. OEM banner with no `-androidN-KMI` → `COMPAT` on the selected series
+   (historical path).
+
+Certificates match a live identity by series + Android + KMI + page first, and
+prefer a byte-for-byte release token when one is present. A later
+`5.15.170-android14-11-…` therefore reuses the android14-5.15 certificate
+on the `51514` family without a new compile handle.
 
 Inspect any generated module before deployment with:
 
@@ -367,9 +457,10 @@ Verified against GKI `6.18.24` (`gki_defconfig`, `CONFIG_COMPAT=y`):
 OEM kernels with `CONFIG_LOCALVERSION` (for example `"-4k"`) may share a
 `struct module` layout with stock GKI. Selecting the matching series/profile at
 build time permits the same-page OEM identity as `COMPAT`; exact certification
-still requires its own evidence-backed profile. Runtime vermagic patching is
-performed only after either the exact or explicitly selected compatible
-identity has been accepted.
+still requires its own evidence-backed profile. That compatibility path
+starts after a successful load. The `.modinfo` vermagic baked at compile
+time must still match the running kernel, or the loader rejects the
+module before init.
 
 ## Source-level debugging
 

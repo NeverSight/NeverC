@@ -15,7 +15,7 @@ REPO_ROOT = TOOLS_ROOT.parents[3]
 DEFAULT_MANIFEST_ROOT = (
     REPO_ROOT / "runtime/android/kernel/arm64/gki-manifests"
 )
-PROFILES = (510, 515, 601, 606, 612, 618)
+PROFILES = (510, 51013, 515, 51514, 601, 606, 612, 618)
 ARM64_INCLUDE_ROOT = RUNTIME_ROOT / "arm64" / "include"
 PUBLIC_INCLUDE_ROOT = RUNTIME_ROOT / "include"
 SDK_INCLUDES = tuple(

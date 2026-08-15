@@ -65,6 +65,16 @@
       "size": 8
     },
     "cred": {
+      "member_sizes": {
+        "egid": 4,
+        "euid": 4,
+        "fsgid": 4,
+        "fsuid": 4,
+        "gid": 4,
+        "sgid": 4,
+        "suid": 4,
+        "uid": 4
+      },
       "members": {
         "cap_ambient": 72,
         "cap_bset": 64,
@@ -108,6 +118,9 @@
       "size": 136
     },
     "dentry": {
+      "member_sizes": {
+        "d_inode": 8
+      },
       "members": {
         "android_kabi_reserved1": 192,
         "android_kabi_reserved2": 200,
@@ -159,6 +172,17 @@
         "thaw_noirq": 136
       },
       "size": 192
+    },
+    "dir_context": {
+      "member_sizes": {
+        "actor": 8,
+        "pos": 8
+      },
+      "members": {
+        "actor": 0,
+        "pos": 8
+      },
+      "size": 16
     },
     "file": {
       "members": {
@@ -229,6 +253,15 @@
       },
       "size": 288
     },
+    "filename": {
+      "member_sizes": {
+        "name": 8
+      },
+      "members": {
+        "name": 0
+      },
+      "size": 32
+    },
     "firmware": {
       "members": {
         "data": 8,
@@ -258,6 +291,17 @@
         "idr_rt": 0
       },
       "size": 24
+    },
+    "inode": {
+      "member_sizes": {
+        "i_atime": 16,
+        "i_mtime": 16
+      },
+      "members": {
+        "i_atime": 88,
+        "i_mtime": 104
+      },
+      "size": 752
     },
     "kobject": {
       "bitfields": {
@@ -355,6 +399,21 @@
         "this_device": 48
       },
       "size": 80
+    },
+    "mm_struct": {
+      "member_sizes": {
+        "mm_count": 4,
+        "mmap_lock": 64,
+        "page_table_lock": 4,
+        "pgd": 8
+      },
+      "members": {
+        "mm_count": 80,
+        "mmap_lock": 104,
+        "page_table_lock": 100,
+        "pgd": 64
+      },
+      "size": 992
     },
     "module": {
       "members": {
@@ -532,6 +591,9 @@
       "size": 4
     },
     "path": {
+      "member_sizes": {
+        "dentry": 8
+      },
       "members": {
         "dentry": 8,
         "mnt": 0
@@ -556,6 +618,12 @@
       "size": 96
     },
     "pt_regs": {
+      "member_sizes": {
+        "pc": 8,
+        "pstate": 8,
+        "regs": 248,
+        "sp": 8
+      },
       "members": {
         "exit_rcu": 328,
         "lockdep_hardirqs": 320,
@@ -720,6 +788,15 @@
         "sgl": 0
       },
       "size": 16
+    },
+    "signal_struct": {
+      "member_sizes": {
+        "thread_head": 16
+      },
+      "members": {
+        "thread_head": 16
+      },
+      "size": 1120
     },
     "sk_buff": {
       "bitfields": {
@@ -1054,6 +1131,23 @@
           "bit_size": 1
         }
       },
+      "member_sizes": {
+        "comm": 16,
+        "flags": 4,
+        "group_leader": 8,
+        "mm": 8,
+        "parent": 8,
+        "pid": 4,
+        "real_cred": 8,
+        "real_parent": 8,
+        "signal": 8,
+        "stack": 8,
+        "stack_refcount": 4,
+        "tasks": 16,
+        "thread_node": 16,
+        "thread_pid": 8,
+        "usage": 4
+      },
       "members": {
         "__state": 40,
         "acct_rss_mem1": 2376,
@@ -1295,6 +1389,10 @@
       "size": 56
     },
     "timespec64": {
+      "member_sizes": {
+        "tv_nsec": 8,
+        "tv_sec": 8
+      },
       "members": {
         "tv_nsec": 8,
         "tv_sec": 0
@@ -1302,6 +1400,10 @@
       "size": 16
     },
     "vm_area_struct": {
+      "member_sizes": {
+        "vm_end": 8,
+        "vm_start": 8
+      },
       "members": {
         "android_kabi_reserved1": 200,
         "android_kabi_reserved2": 208,

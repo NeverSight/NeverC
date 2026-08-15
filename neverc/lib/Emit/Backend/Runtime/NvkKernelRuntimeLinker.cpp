@@ -1,5 +1,6 @@
 #include "neverc/Emit/NvkKernelRuntimeLinker.h"
 #include "Backend/Runtime/RuntimeLinkerUtils.h"
+#include "neverc/Foundation/AndroidKernelRuntimeContract.h"
 #include "neverc/Foundation/Builtin/BuiltinNvkKernel.h"
 #include "neverc/Foundation/Builtin/BuiltinNvkKernelNames.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -15,7 +16,6 @@ using namespace neverc;
 namespace {
 
 constexpr StringLiteral NvkRuntimeMetadata = "neverc.nvk.runtime";
-constexpr StringLiteral NvkRuntimeLocalPrefix = "__neverc_nvk_local.";
 
 } // namespace
 
@@ -33,7 +33,8 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     return PreservedAnalyses::all();
 
   auto NvkMod = parseBitcodeAndPrepare(Embedded, M, "nvk kernel runtime");
-  namespaceRuntimeLocals(*NvkMod, NvkRuntimeLocalPrefix);
+  namespaceRuntimeLocals(
+      *NvkMod, AndroidKernelRuntimeContract::LocalSymbolPrefix);
 
   // Call-graph + data-graph prune: keep only symbols transitively
   // reachable from user references (walks both function bodies AND
@@ -111,9 +112,21 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   for (Function &F : M)
     if (IsNvkFn(F))
       MakeCoalescible(F);
-  for (GlobalVariable &GV : M.globals())
-    if (!GV.isDeclaration() && IsNvkGlobal(GV) && !GV.hasAppendingLinkage())
-      MakeCoalescible(GV);
+  for (GlobalVariable &GV : M.globals()) {
+    if (GV.isDeclaration() || !IsNvkGlobal(GV) || GV.hasAppendingLinkage())
+      continue;
+    MakeCoalescible(GV);
+    // A mutable runtime global (e.g. the compat activation state written once at
+    // bootstrap and read across many later functions) is coalesced to a single
+    // instance below/at LTO.  Once collapsed to one non-interposable definition,
+    // hasDefinitiveInitializer() is true, so the optimizer at -O1+ would fold
+    // cross-function reads back to the zero initializer and report a spurious
+    // kernel MISMATCH even after activation succeeded.  Mark mutable runtime
+    // globals externally_initialized so no pass may assume the initializer;
+    // read-only tables keep theirs and stay foldable.
+    if (!GV.isConstant())
+      GV.setExternallyInitialized(true);
+  }
 
   if (IsPreLink) {
     // Pre-link: skip DCE. The LTO optimizer will internalize and DCE

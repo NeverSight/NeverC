@@ -35,7 +35,7 @@ case "$SCOPE" in
 	KERNELS=(612)
 	;;
 --full)
-	KERNELS=(510 515 601 606 612 618)
+	KERNELS=(510 51013 515 51514 601 606 612 618)
 	;;
 *)
 	echo "usage: $0 [neverc] [--smoke|--full]" >&2
@@ -109,6 +109,42 @@ void cleanup_module(void)
 NEVERC_KRT_DEFINE_MODULE("nvk_rt_inline_test");
 EOF
 
+	cat >"$dir/thread_ids_owner.c" <<'EOF'
+#include <nvkmod.h>
+
+int thread_ids_consumer(void);
+
+int init_module(void)
+{
+	return thread_ids_consumer();
+}
+
+void cleanup_module(void)
+{
+}
+
+NEVERC_KRT_DEFINE_MODULE("nvk_rt_thread_ids_test");
+EOF
+
+	cat >"$dir/ptmap_owner.c" <<'EOF'
+#include <nvkmod.h>
+
+int ptmap_consumer(volatile unsigned long *seed);
+
+static volatile unsigned long ptmap_test_seed;
+
+int init_module(void)
+{
+	return ptmap_consumer(&ptmap_test_seed);
+}
+
+void cleanup_module(void)
+{
+}
+
+NEVERC_KRT_DEFINE_MODULE("nvk_rt_ptmap_test");
+EOF
+
 	cat >"$dir/crypto_consumer.c" <<'EOF'
 #include <nvk_crypto.h>
 
@@ -161,6 +197,39 @@ int inline_consumer(void)
 	       neverc_krt_interpose_is_enabled(&interpose) &&
 	       neverc_krt_interpose_hits(&interpose) == 0 &&
 	       neverc_krt_mem_atomic_read64(&atomic_value) == 1;
+}
+EOF
+
+	cat >"$dir/thread_ids_consumer.c" <<'EOF'
+#include <nvk_process.h>
+
+int thread_ids_consumer(void)
+{
+	int tids[2];
+
+	return neverc_krt_task_thread_ids(
+		(struct task_struct *)0, tids, sizeof(tids) / sizeof(tids[0])) +
+		neverc_krt_task_layout_available(
+			NEVERC_KRT_TASK_LAYOUT_THREADS);
+}
+EOF
+
+	cat >"$dir/ptmap_consumer.c" <<'EOF'
+#include <nvk_user_ptmap.h>
+
+int ptmap_consumer(volatile unsigned long *seed)
+{
+	struct neverc_krt_user_ptmap_install request = {
+		.mm = (void *)*seed,
+		.address = *seed,
+		.private_slots = NEVERC_KRT_USER_PTMAP_PRIVATE_ALL,
+	};
+	struct neverc_krt_user_ptmap *map = (void *)0;
+
+	if (!neverc_krt_user_ptmap_available() ||
+	    neverc_krt_user_ptmap_busy())
+		return -1;
+	return neverc_krt_user_ptmap_install(&request, &map);
 }
 EOF
 }
@@ -285,6 +354,33 @@ check_no_undefined_runtime()
 		echo "$bad" >&2
 		return 1
 	fi
+}
+
+check_undefined_sdk_exports()
+{
+	local kernel="$1"
+	local ko="$2"
+	local manifest="$REPO_ROOT/runtime/android/kernel/arm64/gki-manifests/$kernel.json"
+
+	python3 - "$ko" "$manifest" "$NM" <<'PY'
+import json
+import subprocess
+import sys
+
+ko, manifest, nm = sys.argv[1:]
+undefined = {
+    line.split()[-1]
+    for line in subprocess.check_output([nm, "-u", ko], text=True).splitlines()
+    if line.split()
+}
+with open(manifest, "r", encoding="utf-8") as handle:
+    exported = set(json.load(handle)["sdk_exports"])
+outside = sorted(undefined - exported)
+if outside:
+    print("FAIL: undefined symbols outside profile SDK exports:",
+          " ".join(outside), file=sys.stderr)
+    raise SystemExit(1)
+PY
 }
 
 check_single_runtime_definition()
@@ -487,6 +583,77 @@ run_markerless_inline_test()
 	echo "PASS: markerless forced-inline runtime consumer @ $kernel ($mode)"
 }
 
+run_markerless_thread_ids_test()
+{
+	local kernel="$1"
+	local mode="$2"
+	local dir="$TMP_ROOT/thread-ids-$kernel-$mode"
+	local ko="$dir/thread-ids.ko"
+	local lto_flag=""
+	local -a compiler_args
+
+	case "$mode" in
+	auto)
+		;;
+	full)
+		lto_flag="-flto=full"
+		;;
+	none)
+		lto_flag="-fno-lto"
+		;;
+	esac
+
+	mkdir -p "$dir"
+	write_markerless_sources "$dir"
+
+	compiler_args=(
+		--target=aarch64-linux-android
+		-fandroid-kernel-driver-mode
+		-DNVK_KERNEL="$kernel"
+		-Wall -Wno-unused
+	)
+	if [ -n "$lto_flag" ]; then
+		compiler_args+=("$lto_flag")
+	fi
+	compiler_args+=(
+		-r -nostdlib
+		"$dir/thread_ids_owner.c" "$dir/thread_ids_consumer.c"
+		-o "$ko"
+	)
+
+	"$NEVERC" "${compiler_args[@]}"
+
+	check_no_undefined_runtime "$ko"
+	check_single_runtime_definition "$ko" neverc_krt_task_thread_ids
+	check_single_runtime_definition "$ko" neverc_krt_task_layout_available
+	echo "PASS: markerless task thread-ID runtime consumer @ $kernel ($mode)"
+}
+
+run_markerless_ptmap_test()
+{
+	local kernel="$1"
+	local dir="$TMP_ROOT/ptmap-$kernel"
+	local ko="$dir/ptmap.ko"
+
+	mkdir -p "$dir"
+	write_markerless_sources "$dir"
+
+	"$NEVERC" --target=aarch64-linux-android \
+		-fandroid-kernel-driver-mode \
+		-DNVK_KERNEL="$kernel" \
+		-Wall -Wno-unused \
+		-r -nostdlib \
+		"$dir/ptmap_owner.c" "$dir/ptmap_consumer.c" \
+		-o "$ko"
+
+	check_no_undefined_runtime "$ko"
+	check_undefined_sdk_exports "$kernel" "$ko"
+	check_single_runtime_definition "$ko" neverc_krt_user_ptmap_available
+	check_single_runtime_definition "$ko" neverc_krt_user_ptmap_busy
+	check_single_runtime_definition "$ko" neverc_krt_user_ptmap_install
+	echo "PASS: markerless user-ptmap runtime consumer @ $kernel"
+}
+
 run_shared_state_test()
 {
 	local kernel="$1"
@@ -569,9 +736,11 @@ run_collision_test()
 
 for kernel in "${KERNELS[@]}"; do
 	run_markerless_test "$kernel"
+	run_markerless_ptmap_test "$kernel"
 	for mode in "${LTO_MODES[@]}"; do
 		run_markerless_addr_test "$kernel" "$mode"
 		run_markerless_inline_test "$kernel" "$mode"
+		run_markerless_thread_ids_test "$kernel" "$mode"
 		run_shared_state_test "$kernel" "$mode"
 	done
 	run_collision_test "$kernel"

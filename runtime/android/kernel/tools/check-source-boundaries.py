@@ -11,6 +11,9 @@ PUBLIC_HEADER_ROOTS = (
     RUNTIME_ROOT / "include",
     RUNTIME_ROOT / "arm64" / "include",
 )
+TEST_INTERFACE_HEADERS = (
+    RUNTIME_ROOT / "tools" / "test-user-ptmap-host.h",
+)
 CALLER_SIDE_PUBLIC_FUNCTIONS = {
     "nvk_cpu.h": {
         "_neverc_krt_cpu_idx_safe",
@@ -273,6 +276,11 @@ def check_function_interfaces(source_paths):
         for root in PUBLIC_HEADER_ROOTS
         for path in sorted(root.rglob("*.h"))
     )
+    test_interface_code = "\n".join(
+        code_only(path.read_text(encoding="utf-8"))
+        for path in TEST_INTERFACE_HEADERS
+        if path.is_file()
+    )
     internal_path = RUNTIME_ROOT / "src" / "nvk_internal.h"
     profile_path = RUNTIME_ROOT / "src" / "nvk_profile.h"
     internal_code = code_only(internal_path.read_text(encoding="utf-8"))
@@ -288,12 +296,13 @@ def check_function_interfaces(source_paths):
             line_number = code.count("\n", 0, match.start("name")) + 1
             token = re.compile(rf"\b{re.escape(name)}\b")
             declared_public = token.search(public_code) is not None
+            declared_test = token.search(test_interface_code) is not None
             declared_internal = token.search(internal_code) is not None
             referenced_elsewhere = any(
                 other_path != path and token.search(other_code) is not None
                 for other_path, other_code in source_code.items()
             )
-            if not declared_public and not declared_internal:
+            if not declared_public and not declared_test and not declared_internal:
                 violations.append(
                     (
                         path,

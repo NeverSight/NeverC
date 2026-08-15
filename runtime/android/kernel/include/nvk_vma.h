@@ -20,7 +20,30 @@ struct neverc_krt_vma_info {
 	unsigned long pgoff;
 };
 
+/*
+ * Stable view of a kernel-owned vm_area_struct.  Callers pass the VMA only as
+ * an opaque address; the runtime selects the configured GKI layout and copies
+ * the fields.  mm_identity is a borrowed identity token, not an mm reference,
+ * and is only safe for comparison while the caller's VMA lifetime is valid.
+ */
+struct neverc_krt_vma_snapshot {
+	unsigned long start;
+	unsigned long end;
+	void *mm_identity;
+};
+
 int neverc_krt_vma_init(void);
+
+int neverc_krt_vma_snapshot(const void *vma,
+			    struct neverc_krt_vma_snapshot *snapshot);
+
+/* Opaque, referenced mm lease. Pair every successful get with put. */
+void *neverc_krt_task_mm_get(struct task_struct *task);
+void neverc_krt_task_mm_put(void *mm);
+
+/* Hold/drop an mm_count reference without exposing struct mm_struct layout. */
+int neverc_krt_mm_grab(void *mm);
+void neverc_krt_mm_drop(void *mm);
 
 int neverc_krt_vma_find(struct task_struct *task, unsigned long addr,
 			struct neverc_krt_vma_info *info);

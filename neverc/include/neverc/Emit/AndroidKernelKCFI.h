@@ -25,9 +25,20 @@ constexpr bool isConcrete(KCFIMode Mode) {
   return Mode != KCFIMode::Unspecified;
 }
 
+/// Shadow-call-stack policy is part of the object ABI: static mode emits x18
+/// pushes/pops, while dynamic mode deliberately omits them.
+enum class ShadowCallStackMode : uint8_t {
+  Static = 1,
+  Dynamic = 2,
+};
+
 /// Read and validate the module's selected Android kernel KCFI mode. A missing
 /// flag denotes a non-Android module; malformed values fail closed.
 std::optional<KCFIMode> getKCFIMode(const llvm::Module &M);
+
+/// Read and validate the selected shadow-call-stack ABI mode.
+std::optional<ShadowCallStackMode>
+getShadowCallStackMode(const llvm::Module &M);
 
 /// Read and validate the opaque Android kernel profile contract carried by the
 /// module.  The compiler deliberately assigns no version semantics to it.
@@ -38,10 +49,12 @@ std::optional<uint32_t> getProfile(const llvm::Module &M);
 /// unit instead of duplicating parallel checks.
 struct Contract {
   KCFIMode Mode;
+  ShadowCallStackMode ShadowCallStack;
   uint32_t Profile;
 
   bool operator==(const Contract &Other) const {
-    return Mode == Other.Mode && Profile == Other.Profile;
+    return Mode == Other.Mode && ShadowCallStack == Other.ShadowCallStack &&
+           Profile == Other.Profile;
   }
   bool operator!=(const Contract &Other) const { return !(*this == Other); }
 };

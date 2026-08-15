@@ -4,6 +4,23 @@
 #include "nvk_compat_table.inc"
 
 static const struct neverc_krt_profile *_neverc_krt_selected_profile;
+static struct neverc_krt_gki_layout _neverc_krt_active_effective_layout;
+
+/*
+ * Activation state.  Published once by _neverc_krt_activate_observed() during
+ * single-threaded bootstrap, then read by many other functions.
+ *
+ * This mutable state must resolve to exactly one instance across the whole
+ * module.  The embedded runtime is linked into every consumer TU, so each TU
+ * carries its own copy of these globals; the final kernel `-r` link coalesces
+ * them to a single instance (the final relocatable LTO resolution internalizes
+ * the runtime's reserved __neverc_nvk_local.* privates; parallel codegen then
+ * demotes its temporary cross-partition aliases before the object merge). They
+ * are also marked externally_initialized so the -O1+ optimizer never assumes
+ * the zero initializer once coalesced to one non-interposable definition.
+ * Ordering is guarded by
+ * _neverc_krt_selected_profile; access stays acquire/release for publish.
+ */
 static const struct neverc_krt_profile *_neverc_krt_active_profile;
 static const struct neverc_krt_layout_entry *_neverc_krt_active_layout;
 static int _neverc_krt_active_match = NEVERC_KRT_VER_UNKNOWN;
@@ -18,6 +35,264 @@ _neverc_krt_find_layout(unsigned int profile_id)
 			return &_neverc_krt_layouts[i];
 	}
 	return (const struct neverc_krt_layout_entry *)0;
+}
+
+static __always_inline int _neverc_krt_release_token_equal(
+	const struct neverc_krt_layout_certificate_entry *certificate,
+	const struct neverc_krt_observed_identity *identity)
+{
+	unsigned long i;
+
+	if (!certificate->release_token || !identity->release_token ||
+	    certificate->release_token_length != identity->release_token_length)
+		return 0;
+	for (i = 0; i < certificate->release_token_length; i++) {
+		if (certificate->release_token[i] != identity->release_token[i])
+			return 0;
+	}
+	return 1;
+}
+
+static __always_inline int _neverc_krt_certificate_on_variant(
+	const struct neverc_krt_layout_certificate_entry *certificate,
+	const struct neverc_krt_profile *profile,
+	const struct neverc_krt_observed_identity *identity)
+{
+	return certificate->profile_id == profile->legacy_id &&
+	       certificate->linux_major == identity->linux_major &&
+	       certificate->linux_minor == identity->linux_minor &&
+	       certificate->android_release == identity->android_release &&
+	       certificate->kmi_generation == identity->kmi_generation &&
+	       certificate->page_shift == identity->page_shift;
+}
+
+static __always_inline const struct neverc_krt_layout_certificate_entry *
+_neverc_krt_select_layout_certificate(
+	const struct neverc_krt_profile *profile,
+	const struct neverc_krt_observed_identity *identity)
+{
+	const struct neverc_krt_layout_certificate_entry *variant = 0;
+	unsigned long i;
+
+	for (i = 0; i < NEVERC_KRT_LAYOUT_CERTIFICATE_COUNT; i++) {
+		const struct neverc_krt_layout_certificate_entry *certificate =
+			&_neverc_krt_layout_certificates[i];
+
+		if (!_neverc_krt_certificate_on_variant(certificate, profile,
+							identity))
+			continue;
+		if (_neverc_krt_release_token_equal(certificate, identity))
+			return certificate;
+		if (!variant)
+			variant = certificate;
+	}
+	return variant;
+}
+
+static __always_inline unsigned long _neverc_krt_match_layout_certificates(
+	const struct neverc_krt_profile *profile,
+	const struct neverc_krt_layout_entry *layout,
+	const struct neverc_krt_observed_identity *identity,
+	struct neverc_krt_gki_layout *effective_layout)
+{
+	const struct neverc_krt_layout_certificate_entry *certificate;
+	unsigned long field_bits = 0;
+	unsigned long matched_bits;
+
+	if (!profile || !layout || !identity || !identity->has_android_identity)
+		return 0;
+	/*
+	 * Prefer a byte-for-byte release token.  Otherwise accept any
+	 * certificate for this selected series plus the live Android/KMI
+	 * pair so a selected family can overlay another Android
+	 * generation on the same Linux series.
+	 */
+	certificate = _neverc_krt_select_layout_certificate(profile, identity);
+	if (!certificate)
+		return 0;
+
+	matched_bits = certificate->field_bits;
+	/* dir_context proves equality with the family layout.  The other
+	 * certificates carry live-identity offsets that overlay it. */
+	if ((matched_bits & NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT) &&
+	    (certificate->dir_context_size !=
+			layout->layout.dir_context_size ||
+	     certificate->dir_context_actor !=
+			layout->layout.dir_context_actor ||
+	     certificate->dir_context_actor_size !=
+			layout->layout.dir_context_actor_size ||
+	     certificate->dir_context_pos !=
+			layout->layout.dir_context_pos ||
+	     certificate->dir_context_pos_size !=
+			layout->layout.dir_context_pos_size ||
+	     certificate->filldir_abi != profile->caps.filldir_abi))
+		matched_bits &= ~NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT;
+
+	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_FILENAME_NAME) {
+		effective_layout->filename_size = certificate->filename_size;
+		effective_layout->filename_name = certificate->filename_name;
+		effective_layout->filename_name_size =
+			certificate->filename_name_size;
+	}
+	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_PATH_INODE) {
+		effective_layout->path_size = certificate->path_size;
+		effective_layout->path_dentry = certificate->path_dentry;
+		effective_layout->path_dentry_size =
+			certificate->path_dentry_size;
+		effective_layout->dentry_size = certificate->dentry_size;
+		effective_layout->dentry_inode = certificate->dentry_inode;
+		effective_layout->dentry_inode_size =
+			certificate->dentry_inode_size;
+	}
+	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_INODE_TIMES) {
+		effective_layout->inode_size = certificate->inode_size;
+		effective_layout->inode_atime_sec =
+			certificate->inode_atime_sec;
+		effective_layout->inode_atime_sec_size =
+			certificate->inode_atime_sec_size;
+		effective_layout->inode_mtime_sec =
+			certificate->inode_mtime_sec;
+		effective_layout->inode_mtime_sec_size =
+			certificate->inode_mtime_sec_size;
+		effective_layout->inode_atime_nsec =
+			certificate->inode_atime_nsec;
+		effective_layout->inode_atime_nsec_size =
+			certificate->inode_atime_nsec_size;
+		effective_layout->inode_mtime_nsec =
+			certificate->inode_mtime_nsec;
+		effective_layout->inode_mtime_nsec_size =
+			certificate->inode_mtime_nsec_size;
+	}
+	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_TASK_WALK) {
+		effective_layout->task_size =
+			certificate->task_walk_task_size;
+		effective_layout->task_tasks = certificate->task_tasks;
+		effective_layout->task_mm = certificate->task_mm;
+		effective_layout->task_parent = certificate->task_parent;
+		effective_layout->task_real_parent =
+			certificate->task_real_parent;
+		effective_layout->task_group_leader =
+			certificate->task_group_leader;
+		effective_layout->task_real_cred =
+			certificate->task_real_cred;
+		effective_layout->task_comm = certificate->task_comm;
+		effective_layout->cred_size = certificate->cred_size;
+		effective_layout->cred_uid = certificate->cred_uid;
+		effective_layout->cred_gid = certificate->cred_gid;
+		effective_layout->cred_suid = certificate->cred_suid;
+		effective_layout->cred_sgid = certificate->cred_sgid;
+		effective_layout->cred_euid = certificate->cred_euid;
+		effective_layout->cred_egid = certificate->cred_egid;
+		effective_layout->cred_fsuid = certificate->cred_fsuid;
+		effective_layout->cred_fsgid = certificate->cred_fsgid;
+	}
+	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_TASK_REF) {
+		effective_layout->task_size =
+			certificate->task_ref_task_size;
+		effective_layout->task_usage = certificate->task_usage;
+	}
+	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_TASK_USER_STATE) {
+		effective_layout->task_size =
+			certificate->task_user_state_task_size;
+		effective_layout->task_stack = certificate->task_stack;
+		effective_layout->task_stack_refcount =
+			certificate->task_stack_refcount;
+		effective_layout->task_flags = certificate->task_flags;
+		effective_layout->pt_regs_size = certificate->pt_regs_size;
+		effective_layout->pt_regs_pc = certificate->pt_regs_pc;
+		effective_layout->pt_regs_pstate =
+			certificate->pt_regs_pstate;
+	}
+	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_TASK_THREADS) {
+		effective_layout->task_size = certificate->task_size;
+		effective_layout->task_pid = certificate->task_pid;
+		effective_layout->task_thread_pid =
+			certificate->task_thread_pid;
+		effective_layout->task_signal = certificate->task_signal;
+		effective_layout->task_thread_node =
+			certificate->task_thread_node;
+		effective_layout->signal_size = certificate->signal_size;
+		effective_layout->signal_thread_head =
+			certificate->signal_thread_head;
+	}
+	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_USER_PTMAP) {
+		effective_layout->mm_size = certificate->mm_size;
+		effective_layout->mm_count = certificate->mm_count;
+		effective_layout->mm_count_size =
+			certificate->mm_count_size;
+		effective_layout->mm_pgd = certificate->mm_pgd;
+		effective_layout->mm_pgd_size = certificate->mm_pgd_size;
+		effective_layout->mm_page_table_lock =
+			certificate->mm_page_table_lock;
+		effective_layout->mm_page_table_lock_size =
+			certificate->mm_page_table_lock_size;
+		effective_layout->mm_mmap_lock =
+			certificate->mm_mmap_lock;
+		effective_layout->mm_mmap_lock_size =
+			certificate->mm_mmap_lock_size;
+		effective_layout->vma_size = certificate->vma_size;
+		effective_layout->vma_start = certificate->vma_start;
+		effective_layout->vma_start_size =
+			certificate->vma_start_size;
+		effective_layout->vma_end = certificate->vma_end;
+		effective_layout->vma_end_size =
+			certificate->vma_end_size;
+		if (certificate->vma_mm_size &&
+		    certificate->vma_flags_size &&
+		    certificate->vma_pgoff_size) {
+			effective_layout->vma_mm = certificate->vma_mm;
+			effective_layout->vma_flags =
+				certificate->vma_flags;
+			effective_layout->vma_pgoff =
+				certificate->vma_pgoff;
+		}
+		effective_layout->pt_regs_size =
+			certificate->pt_regs_size;
+		effective_layout->pt_regs_regs =
+			certificate->pt_regs_regs;
+		effective_layout->pt_regs_regs_size =
+			certificate->pt_regs_regs_size;
+		effective_layout->pt_regs_sp = certificate->pt_regs_sp;
+		effective_layout->pt_regs_sp_size =
+			certificate->pt_regs_sp_size;
+		effective_layout->pt_regs_pc = certificate->pt_regs_pc;
+		effective_layout->pt_regs_pc_size =
+			certificate->pt_regs_pc_size;
+		effective_layout->pt_regs_pstate =
+			certificate->pt_regs_pstate;
+		effective_layout->pt_regs_pstate_size =
+			certificate->pt_regs_pstate_size;
+		effective_layout->user_page_shift =
+			certificate->user_page_shift;
+		effective_layout->user_va_bits =
+			certificate->user_va_bits;
+		effective_layout->user_pa_bits =
+			certificate->user_pa_bits;
+		effective_layout->user_pgtable_levels =
+			certificate->user_pgtable_levels;
+		effective_layout->user_pgd_shift =
+			certificate->user_pgd_shift;
+		effective_layout->user_pmd_shift =
+			certificate->user_pmd_shift;
+		effective_layout->user_pte_shift =
+			certificate->user_pte_shift;
+		effective_layout->user_index_bits =
+			certificate->user_index_bits;
+		effective_layout->user_contiguous_bit =
+			certificate->user_contiguous_bit;
+		effective_layout->user_contiguous_entries =
+			certificate->user_contiguous_entries;
+		effective_layout->user_descriptor_address_mask =
+			certificate->user_descriptor_address_mask;
+		effective_layout->user_physical_address_mask =
+			certificate->user_physical_address_mask;
+		effective_layout->user_physical_page_mask =
+			certificate->user_physical_page_mask;
+		effective_layout->user_tlbi_all_asid =
+			certificate->user_tlbi_all_asid;
+	}
+	field_bits |= matched_bits & NEVERC_KRT_LAYOUT_CERT_PRIVATE_FIELDS;
+	return field_bits;
 }
 
 static __always_inline const struct neverc_krt_profile *
@@ -40,7 +315,7 @@ int _neverc_krt_version_setup(unsigned int profile_id)
 		neverc_krt_find_profile(profile_id);
 	const struct neverc_krt_profile *selected;
 
-	if (!profile || !_neverc_krt_find_layout(profile_id))
+	if (!profile || !_neverc_krt_find_layout(profile->legacy_id))
 		return -1;
 	selected = __atomic_load_n(&_neverc_krt_selected_profile,
 				   __ATOMIC_ACQUIRE);
@@ -61,6 +336,20 @@ const struct neverc_krt_runtime_caps *_neverc_krt_current_caps(void)
 		(const struct neverc_krt_runtime_caps *)0;
 }
 
+int _neverc_krt_current_kcfi_mode(void)
+{
+	const struct neverc_krt_profile *profile = _neverc_krt_current_profile();
+
+	return profile ? (int)profile->kcfi_mode : -1;
+}
+
+int _neverc_krt_current_profile_id(void)
+{
+	const struct neverc_krt_profile *profile = _neverc_krt_current_profile();
+
+	return profile ? (int)profile->legacy_id : -1;
+}
+
 unsigned long _neverc_krt_get_module_size(void)
 {
 	const struct neverc_krt_layout_entry *layout =
@@ -78,10 +367,8 @@ unsigned long _neverc_krt_get_kimage_vaddr_base(void)
 
 const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
 {
-	const struct neverc_krt_layout_entry *layout =
-		_neverc_krt_current_layout();
-
-	return layout ? &layout->layout :
+	return _neverc_krt_current_layout() ?
+		&_neverc_krt_active_effective_layout :
 		(const struct neverc_krt_gki_layout *)0;
 }
 
@@ -163,16 +450,44 @@ _neverc_krt_activate_observed(
 	layout = _neverc_krt_find_layout(profile->legacy_id);
 	if (!layout)
 		return -1;
+	__builtin_memcpy(&_neverc_krt_active_effective_layout, &layout->layout,
+			 sizeof(_neverc_krt_active_effective_layout));
 	version_match = profile_match == NEVERC_KRT_PROFILE_MATCH_EXACT ?
 		NEVERC_KRT_VER_EXACT : NEVERC_KRT_VER_COMPAT;
+	if (version_match == NEVERC_KRT_VER_COMPAT) {
+		unsigned long certificate_bits =
+			_neverc_krt_match_layout_certificates(
+				profile, layout, identity,
+				&_neverc_krt_active_effective_layout);
+
+		/*
+		 * Same Linux series, different Android/KMI than the selected
+		 * compile family: every private layout field must come from a
+		 * variant certificate.  A partial certificate would overlay
+		 * one structure and leave the rest on the wrong-generation
+		 * family table.  Same-generation COMPAT still uses the family
+		 * layout without a certificate.
+		 */
+		if (identity->has_android_identity &&
+		    (identity->android_release != profile->android_release ||
+		     identity->kmi_generation != profile->kmi_generation) &&
+		    (certificate_bits & NEVERC_KRT_LAYOUT_CERT_PRIVATE_FIELDS) !=
+			    NEVERC_KRT_LAYOUT_CERT_PRIVATE_FIELDS)
+			return -1;
+	}
 
 	_neverc_krt_kinfo = *observed;
 	__atomic_store_n(&_neverc_krt_active_layout, layout, __ATOMIC_RELEASE);
 	__atomic_store_n(&_neverc_krt_active_match, version_match,
 			 __ATOMIC_RELEASE);
+	/*
+	 * Publish the active profile with an acq_rel compare-exchange (the
+	 * format-slot idiom).  Activation is single threaded (guarded by
+	 * _neverc_krt_selected_profile).
+	 */
 	active = (const struct neverc_krt_profile *)0;
 	if (!__atomic_compare_exchange_n(&_neverc_krt_active_profile, &active,
-					 profile, 0, __ATOMIC_RELEASE,
+					 profile, 0, __ATOMIC_ACQ_REL,
 					 __ATOMIC_ACQUIRE) &&
 	    active->legacy_id != profile->legacy_id)
 		return -2;
@@ -396,60 +711,56 @@ int neverc_krt_validate_runtime(struct neverc_krt_this_module *mod,
 int neverc_krt_patch_vermagic(struct neverc_krt_this_module *mod)
 {
 	const char *banner;
+	char ban_raw[128];
+	char ver_buf[128];
+	unsigned char *base;
+	unsigned long modsz;
+	unsigned long written;
+	unsigned long scan;
 	int match = neverc_krt_check_kernel_match();
+	int formatted;
 
 	if (match < 0)
 		return match;
 
+	/*
+	 * This rewrites a "vermagic=" blob inside this_module after the
+	 * selected identity has already been accepted.  The loader compared
+	 * .modinfo before init, so this cannot make insmod accept another
+	 * kernel.
+	 */
 	banner = (const char *)NEVERC_KRT_LOOKUP("linux_banner");
 	if (!banner)
 		banner = (const char *)NEVERC_KRT_LOOKUP("linux_proc_banner");
-	if (!banner) return -1;
+	if (!banner)
+		return -1;
 
-	char ban_raw[64];
 	if (neverc_krt_mem_read(ban_raw, banner, sizeof(ban_raw)))
 		return -1;
-	ban_raw[63] = '\0';
+	ban_raw[sizeof(ban_raw) - 1] = '\0';
+	formatted = neverc_krt_format_vermagic_from_banner(
+		ban_raw, ver_buf, sizeof(ver_buf));
+	if (formatted)
+		return formatted;
 
-	const char *p = ban_raw;
-	while (*p && !(*p >= '0' && *p <= '9')) p++;
-	if (!*p) return -2;
+	written = 0;
+	while (ver_buf[written])
+		written++;
 
-	char ver_buf[64];
-	int vi = 0;
-	while (*p && *p != ' ' && *p != '\n' && vi < 30) {
-		ver_buf[vi++] = *p++;
-	}
-
-	while (*p == ' ') p++;
-
-	const char *flags[] = {
-		"SMP", "preempt", "mod_unload", "modversions", "aarch64", 0
-	};
-	int fi;
-	for (fi = 0; flags[fi]; fi++) {
-		if (vi > 0) ver_buf[vi++] = ' ';
-		const char *f = flags[fi];
-		while (*f && vi < 62) ver_buf[vi++] = *f++;
-	}
-	ver_buf[vi] = '\0';
-
-	unsigned char *base = (unsigned char *)mod;
-	unsigned long modsz = _neverc_krt_get_module_size();
-	unsigned long scan;
+	base = (unsigned char *)mod;
+	modsz = _neverc_krt_get_module_size();
 	for (scan = 0; scan + 9 < modsz; scan++) {
 		unsigned char sw[9];
+
 		if (neverc_krt_mem_read(sw, base + scan, 9))
 			continue;
 		if (sw[0] == 'v' && sw[1] == 'e' &&
 		    sw[2] == 'r' && sw[3] == 'm' &&
 		    sw[4] == 'a' && sw[5] == 'g' &&
 		    sw[6] == 'i' && sw[7] == 'c' && sw[8] == '=') {
-			if (vi > 60) vi = 60;
-			ver_buf[vi] = '\0';
 			neverc_krt_mem_write_protected(
 				(unsigned long)(base + scan + 9),
-				ver_buf, vi + 1);
+				ver_buf, written + 1);
 			return 0;
 		}
 	}

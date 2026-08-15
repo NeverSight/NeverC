@@ -84,7 +84,7 @@ void neverc_krt_vis_maps_filter_add_self(void);
 
 void neverc_krt_vis_wipe_modinfo(struct neverc_krt_this_module *mod);
 
-void neverc_krt_vis_pause_interposes(void);
+int neverc_krt_vis_pause_interposes(void);
 void neverc_krt_vis_remove_interposes(void);
 
 /* --- /proc/vmallocinfo filter --- */

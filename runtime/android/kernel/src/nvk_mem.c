@@ -99,7 +99,7 @@ static __always_inline unsigned long _neverc_krt_strip_tags(unsigned long addr)
 	return addr & ~(0xFFUL << 56);
 }
 
-unsigned long _neverc_krt_mem_get_page_size(void)
+static unsigned long _neverc_krt_mem_get_page_size(void)
 {
 	if (__builtin_expect(_neverc_krt_mem_page_sz != 0, 1))
 		return _neverc_krt_mem_page_sz;
@@ -161,6 +161,15 @@ int neverc_krt_mem_init(void)
 	return 0;
 }
 
+int _neverc_krt_mem_nofault_available(void)
+{
+	/* Do not resolve symbols lazily here: task-list consumers can call this
+	 * from non-sleepable hooks.  Bootstrap must already have selected a
+	 * fault-catching read backend, otherwise structured walks fail closed. */
+	return __atomic_load_n(&_neverc_krt_probe_read, __ATOMIC_ACQUIRE) !=
+		(neverc_krt_probe_read_fn)0;
+}
+
 long neverc_krt_mem_read(void *dst, const void *src, size_t len)
 {
 	if (likely(_neverc_krt_probe_read))
@@ -204,9 +213,17 @@ _neverc_krt_pa_to_lm(unsigned long pa, int va_bits)
 	return pa - *_neverc_krt_memstart_addr + page_offset;
 }
 
-static __always_inline void _neverc_krt_flush_tlb_all(void)
+void neverc_krt_mem_flush_tlb_all(void)
 {
 	__asm__ __volatile__("dsb ishst" ::: "memory");
+	__asm__ __volatile__("tlbi vmalle1is" ::: "memory");
+	/*
+	 * NeverC modules cannot use the host kernel's ALTERNATIVE patch sites.
+	 * Repeat the broadcast unconditionally so CPUs covered by
+	 * ARM64_WORKAROUND_REPEAT_TLBI get the required TLBI/DSB pair; the
+	 * stronger sequence is valid on unaffected CPUs as well.
+	 */
+	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("tlbi vmalle1is" ::: "memory");
 	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("isb" ::: "memory");
@@ -266,7 +283,7 @@ static int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
 				new_desc = desc | _NEVERC_KRT_PTE_RDONLY;
 			if (new_desc == desc) return 0;
 			*(volatile unsigned long *)entry_addr = new_desc;
-			_neverc_krt_flush_tlb_all();
+			neverc_krt_mem_flush_tlb_all();
 			return 0;
 		}
 
@@ -296,7 +313,7 @@ static int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
 		if (new_desc == desc) return 0;
 
 		*(volatile unsigned long *)pte_addr = new_desc;
-		_neverc_krt_flush_tlb_all();
+		neverc_krt_mem_flush_tlb_all();
 	}
 	return 0;
 }
@@ -387,6 +404,24 @@ static int _neverc_krt_mem_write_via_insn_write(unsigned long addr,
 	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("isb" ::: "memory");
 	return ret;
+}
+
+int neverc_krt_mem_patch_instruction(unsigned long addr, u32 insn)
+{
+	if (!addr || (addr & 3UL))
+		return -EINVAL;
+	if (!_neverc_krt_mem_inited && neverc_krt_mem_init())
+		return -ENODEV;
+	return _neverc_krt_mem_write_via_insn_write(addr, &insn,
+						     sizeof(insn));
+}
+
+int neverc_krt_mem_patch_instruction_available(void)
+{
+	if (!_neverc_krt_mem_inited && neverc_krt_mem_init())
+		return 0;
+	return _neverc_krt_insn_patch_text != (neverc_krt_insn_patch_text_fn)0 ||
+		_neverc_krt_insn_write != (neverc_krt_insn_write_fn)0;
 }
 
 int neverc_krt_mem_write_protected(unsigned long addr, const void *src,

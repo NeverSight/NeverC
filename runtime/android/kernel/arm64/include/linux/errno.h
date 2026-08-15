@@ -33,6 +33,7 @@
 #define ENODATA 61
 #define EOVERFLOW 75
 #define ETIMEDOUT 110
+#define EUCLEAN 117
 #define ENOTSUPP 524
 
 #endif /* _NEVERC_KRT_LINUX_ERRNO_H */

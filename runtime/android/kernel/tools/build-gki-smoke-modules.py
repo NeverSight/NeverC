@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and inspect compiler-emitted entry ABIs on six zero-import GKI modules."""
+"""Build and inspect compiler-emitted entry ABIs on lock-pinned zero-import GKI modules."""
 
 import argparse
 import importlib.util
@@ -59,7 +59,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--profiles",
         default="all",
-        help="all or a comma-separated subset of 510,515,601,606,612,618",
+        help="all lock-pinned profiles, or a comma-separated subset",
     )
     return parser.parse_args(argv)
 
@@ -123,15 +123,26 @@ def main(argv=None):
         nm = resolve_tool(args.nm, "nm")
         readelf = verify.find_readelf(args.readelf)
         if args.profiles == "all":
-            profiles = list(verify.EXPECTED_PROFILES)
+            profiles = [
+                profile
+                for profile in verify.ALLOWED_PROFILES
+                if profile in lock["profiles"]
+            ]
         else:
             profiles = [value.strip() for value in args.profiles.split(",")]
             if not profiles or any(
-                value not in verify.EXPECTED_PROFILES for value in profiles
+                value not in verify.ALLOWED_PROFILES for value in profiles
             ):
                 raise RuntimeError("--profiles contains an unsupported profile")
             if len(profiles) != len(set(profiles)):
                 raise RuntimeError("--profiles contains a duplicate profile")
+            missing = [
+                profile for profile in profiles if profile not in lock["profiles"]
+            ]
+            if missing:
+                raise RuntimeError(
+                    "release lock does not pin profile(s): " + ", ".join(missing)
+                )
 
         args.output_dir.mkdir(parents=True, exist_ok=True)
         source = TOOLS / "gki-qemu-smoke-module.c"

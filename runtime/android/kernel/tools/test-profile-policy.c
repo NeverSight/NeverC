@@ -3,11 +3,14 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <string.h>
 
 static void check_exact_lookup(void) {
   static const unsigned int supported[] = {
-      510, 515, 601, 606, 612, 618,
+      510, 51013, 515, 51514, 601, 606, 612, 618,
   };
+  static const unsigned int aliases[] = {51012, 51513};
+  static const unsigned int alias_canonical[] = {510, 515};
   static const unsigned int unsupported[] = {
       0, 509, 511, 613, 620, 700,
   };
@@ -18,6 +21,13 @@ static void check_exact_lookup(void) {
         neverc_krt_find_profile(supported[i]);
     assert(profile != NULL);
     assert(profile->legacy_id == supported[i]);
+  }
+
+  for (i = 0; i < sizeof(aliases) / sizeof(aliases[0]); i++) {
+    const struct neverc_krt_profile *profile =
+        neverc_krt_find_profile(aliases[i]);
+    assert(profile != NULL);
+    assert(profile->legacy_id == alias_canonical[i]);
   }
 
   for (i = 0; i < sizeof(unsupported) / sizeof(unsupported[0]); i++)
@@ -87,6 +97,47 @@ static void check_selected_profile_compatibility(void) {
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+
+  profile = neverc_krt_find_profile(510);
+  assert(profile != NULL);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 5.10.223-android13-4-00011-ga33040a671e2-dirty SMP",
+             &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+
+  profile = neverc_krt_find_profile(515);
+  assert(profile != NULL);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 5.15.164-android14-11-maybe-dirty SMP",
+             &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+
+  profile = neverc_krt_find_profile(51013);
+  assert(profile != NULL);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 5.10.223-android13-4-00011-ga33040a671e2-dirty SMP",
+             &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_EXACT);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 5.10.205-android12-9-dirty SMP", &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+
+  profile = neverc_krt_find_profile(51514);
+  assert(profile != NULL);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 5.15.164-android14-11-maybe-dirty SMP",
+             &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_EXACT);
 }
 
 static void check_lookup_does_not_depend_on_order(void) {
@@ -121,6 +172,20 @@ static void check_capability_contracts(void) {
   assert(profile->caps.kallsyms_iter_abi ==
          NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE);
   assert(profile->caps.do_mmap_abi == NEVERC_KRT_DO_MMAP_ABI_WITHOUT_VM_FLAGS);
+  assert(profile->caps.has_ftrace_registration_api == 1);
+
+  profile = neverc_krt_find_profile(51013);
+  assert(profile->kcfi_mode == 0);
+  assert(profile->caps.ftrace_callback_abi == NEVERC_KRT_FTRACE_ABI_PT_REGS);
+  assert(profile->caps.filldir_abi == NEVERC_KRT_FILLDIR_ABI_RETURNS_INT);
+  assert(profile->caps.has_ftrace_registration_api == 0);
+
+  profile = neverc_krt_find_profile(51514);
+  assert(profile->kcfi_mode == 0);
+  assert(profile->caps.ftrace_callback_abi ==
+         NEVERC_KRT_FTRACE_ABI_FTRACE_REGS);
+  assert(profile->caps.filldir_abi == NEVERC_KRT_FILLDIR_ABI_RETURNS_INT);
+  assert(profile->caps.has_ftrace_registration_api == 0);
 
   profile = neverc_krt_find_profile(601);
   assert(profile->kcfi_mode == 1);
@@ -191,6 +256,28 @@ static void check_banner_identity_parsing(void) {
              "Linux version 6.12.89-android16-4294967302", &identity) != 0);
 }
 
+static void check_vermagic_format_keeps_long_tokens(void) {
+  static const char banner[] =
+      "Linux version 5.10.223-android13-4-00011-ga33040a671e2-dirty "
+      "(build-user@build-host)";
+  static const char expected[] =
+      "5.10.223-android13-4-00011-ga33040a671e2-dirty "
+      "SMP preempt mod_unload modversions aarch64";
+  char buf[128];
+  char too_small[64];
+
+  assert(neverc_krt_format_vermagic_from_banner(banner, buf, sizeof(buf)) ==
+         0);
+  assert(strcmp(buf, expected) == 0);
+  assert(neverc_krt_format_vermagic_from_banner(banner, too_small,
+                                                sizeof(too_small)) == -3);
+  assert(neverc_krt_format_vermagic_from_banner(banner, buf, 0) == -1);
+  assert(neverc_krt_format_vermagic_from_banner(NULL, buf, sizeof(buf)) ==
+         -1);
+  assert(neverc_krt_format_vermagic_from_banner("not a banner", buf,
+                                                sizeof(buf)) == -2);
+}
+
 int main(void) {
   check_exact_lookup();
   check_identity_lookup();
@@ -199,5 +286,6 @@ int main(void) {
   check_fail_closed_enums();
   check_capability_contracts();
   check_banner_identity_parsing();
+  check_vermagic_format_keeps_long_tokens();
   return 0;
 }

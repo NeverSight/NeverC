@@ -18,6 +18,7 @@
 #include <nvk_compat.h>
 #include <nvk_anti.h>
 #include <nvk_vma.h>
+#include <nvk_dir.h>
 #include <nvk_cred_sess.h>
 #include <nvk_ksyms.h>
 #include <nvk_seccomp.h>
@@ -29,6 +30,8 @@
 #include <nvk_timer.h>
 #include <nvk_power.h>
 #include <nvk_cpu.h>
+#include <nvk_inode.h>
+#include <nvk_user_ptmap.h>
 
 #define NEVERC_KRT_SUB_MEM       0
 #define NEVERC_KRT_SUB_PROCESS   1
@@ -58,7 +61,12 @@ struct neverc_krt_state {
 
 int neverc_krt_sub_ok(int sub);
 int neverc_krt_init_all(void);
-void neverc_krt_cleanup_all(void);
+/*
+ * Returns -EBUSY when a user page-table map still owns pages, or E_PATCH when
+ * an interpose entry cannot be restored.  The module must remain loaded and
+ * call cleanup again; unloading after that error is unsafe.
+ */
+int neverc_krt_cleanup_all(void);
 int neverc_krt_init_ftrace(void);
 const struct neverc_krt_state *neverc_krt_get_state(void);
 

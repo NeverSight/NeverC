@@ -13,6 +13,7 @@ from elftools.elf.elffile import ELFFile
 
 BTF_MAGIC = 0xEB9F
 BTF_KIND_INT = 1
+BTF_KIND_PTR = 2
 BTF_KIND_ARRAY = 3
 BTF_KIND_STRUCT = 4
 BTF_KIND_UNION = 5
@@ -77,6 +78,31 @@ def resolve_btf_record(records, type_id):
     return 0, None
 
 
+def btf_type_size(data, records, type_id, endian, pointer_size):
+    _, record = resolve_btf_record(records, type_id)
+    if record is None:
+        return None
+    if record["kind"] == BTF_KIND_PTR:
+        return pointer_size
+    if record["kind"] in (
+        BTF_KIND_INT,
+        BTF_KIND_STRUCT,
+        BTF_KIND_UNION,
+        BTF_KIND_ENUM,
+        BTF_KIND_ENUM64,
+    ):
+        return record["size_or_type"]
+    if record["kind"] == BTF_KIND_ARRAY:
+        element_type, _index_type, count = struct.unpack_from(
+            endian + "III", data, record["payload"]
+        )
+        element_size = btf_type_size(
+            data, records, element_type, endian, pointer_size
+        )
+        return None if element_size is None else element_size * count
+    return None
+
+
 def structure_members(
     data,
     records,
@@ -85,13 +111,15 @@ def structure_members(
     endian,
     base_bit_offset=0,
     active=None,
+    pointer_size=8,
 ):
     members = {}
     bitfields = {}
+    member_sizes = {}
     if active is None:
         active = set()
     if type_id in active:
-        return members, bitfields
+        return members, bitfields, member_sizes
 
     active.add(type_id)
     record = records[type_id]
@@ -115,7 +143,7 @@ def structure_members(
                 BTF_KIND_STRUCT,
                 BTF_KIND_UNION,
             ):
-                nested_members, nested_bitfields = structure_members(
+                nested_members, nested_bitfields, nested_member_sizes = structure_members(
                     data,
                     records,
                     nested_type_id,
@@ -123,9 +151,11 @@ def structure_members(
                     endian,
                     absolute_bit_offset,
                     active,
+                    pointer_size,
                 )
                 members.update(nested_members)
                 bitfields.update(nested_bitfields)
+                member_sizes.update(nested_member_sizes)
                 continue
 
         if bit_size:
@@ -135,6 +165,11 @@ def structure_members(
             }
         elif absolute_bit_offset % 8 == 0:
             members[name] = absolute_bit_offset // 8
+            size = btf_type_size(
+                data, records, member_type_id, endian, pointer_size
+            )
+            if size is not None:
+                member_sizes[name] = size
         else:
             bitfields[name] = {
                 "bit_offset": absolute_bit_offset,
@@ -142,13 +177,13 @@ def structure_members(
             }
 
     active.remove(type_id)
-    return members, bitfields
+    return members, bitfields, member_sizes
 
 
-def structure_layout(data, records, type_id, strings, endian):
+def structure_layout(data, records, type_id, strings, endian, pointer_size):
     record = records[type_id]
-    members, bitfields = structure_members(
-        data, records, type_id, strings, endian
+    members, bitfields, member_sizes = structure_members(
+        data, records, type_id, strings, endian, pointer_size=pointer_size
     )
     layout = {
         "size": record["size_or_type"],
@@ -156,6 +191,8 @@ def structure_layout(data, records, type_id, strings, endian):
     }
     if bitfields:
         layout["bitfields"] = dict(sorted(bitfields.items()))
+    if member_sizes:
+        layout["member_sizes"] = dict(sorted(member_sizes.items()))
     return layout
 
 
@@ -177,7 +214,7 @@ def enum_constants(data, offset, count, strings, endian, wide):
     return constants
 
 
-def parse_btf(data, requested, constants_only=False):
+def parse_btf(data, requested, constants_only=False, pointer_size=8):
     if len(data) < 24:
         raise ValueError("truncated BTF header")
 
@@ -270,6 +307,7 @@ def parse_btf(data, requested, constants_only=False):
                     type_id,
                     strings,
                     endian,
+                    pointer_size,
                 )
                 remaining.remove(name)
                 if not remaining:
@@ -321,18 +359,69 @@ def resolve_dwarf_die(die):
     return None
 
 
+def dwarf_type_size(die, pointer_size, active=None):
+    die = resolve_dwarf_die(die)
+    if die is None:
+        return None
+    if active is None:
+        active = set()
+    if die.offset in active:
+        return None
+    size = die.attributes.get("DW_AT_byte_size")
+    if size is not None:
+        return int(size.value)
+    if die.tag in (
+        "DW_TAG_pointer_type",
+        "DW_TAG_reference_type",
+        "DW_TAG_rvalue_reference_type",
+    ):
+        return pointer_size
+    if die.tag == "DW_TAG_array_type":
+        element = die.get_DIE_from_attribute("DW_AT_type")
+        active.add(die.offset)
+        try:
+            element_size = dwarf_type_size(element, pointer_size, active)
+        finally:
+            active.remove(die.offset)
+        if element_size is None:
+            return None
+        count = 1
+        dimensions = 0
+        for child in die.iter_children():
+            if child.tag != "DW_TAG_subrange_type":
+                continue
+            count_attribute = child.attributes.get("DW_AT_count")
+            if count_attribute is not None:
+                dimension = int(count_attribute.value)
+            else:
+                upper = child.attributes.get("DW_AT_upper_bound")
+                if upper is None:
+                    return None
+                lower = child.attributes.get("DW_AT_lower_bound")
+                lower_value = int(lower.value) if lower is not None else 0
+                dimension = int(upper.value) - lower_value + 1
+            if dimension < 0:
+                return None
+            count *= dimension
+            dimensions += 1
+        return element_size * count if dimensions else None
+    return None
+
+
 def dwarf_structure_members(
     die,
     expression_parser,
     base_offset=0,
     active=None,
+    pointer_size=8,
 ):
     members = {}
     bitfields = {}
+    member_sizes = {}
     if active is None:
         active = set()
     if die.offset in active:
-        return members, bitfields
+        return members, bitfields, member_sizes
 
     active.add(die.offset)
     for child in die.iter_children():
@@ -354,14 +443,16 @@ def dwarf_structure_members(
                 "DW_TAG_structure_type",
                 "DW_TAG_union_type",
             ):
-                nested_members, nested_bitfields = dwarf_structure_members(
+                nested_members, nested_bitfields, nested_member_sizes = dwarf_structure_members(
                     nested,
                     expression_parser,
                     base_offset + location,
                     active,
+                    pointer_size,
                 )
                 members.update(nested_members)
                 bitfields.update(nested_bitfields)
+                member_sizes.update(nested_member_sizes)
                 continue
 
         data_bit_offset = child.attributes.get("DW_AT_data_bit_offset")
@@ -373,17 +464,24 @@ def dwarf_structure_members(
             }
         elif location is not None:
             members[name] = base_offset + location
+            size = dwarf_type_size(
+                child.get_DIE_from_attribute("DW_AT_type"), pointer_size
+            )
+            if size is not None:
+                member_sizes[name] = size
 
     active.remove(die.offset)
-    return members, bitfields
+    return members, bitfields, member_sizes
 
 
-def dwarf_structure_layout(die, expression_parser):
+def dwarf_structure_layout(die, expression_parser, pointer_size=8):
     size_attribute = die.attributes.get("DW_AT_byte_size")
     if size_attribute is None:
         return None
 
-    members, bitfields = dwarf_structure_members(die, expression_parser)
+    members, bitfields, member_sizes = dwarf_structure_members(
+        die, expression_parser, pointer_size=pointer_size
+    )
 
     layout = {
         "size": int(size_attribute.value),
@@ -391,6 +489,8 @@ def dwarf_structure_layout(die, expression_parser):
     }
     if bitfields:
         layout["bitfields"] = dict(sorted(bitfields.items()))
+    if member_sizes:
+        layout["member_sizes"] = dict(sorted(member_sizes.items()))
     return layout
 
 
@@ -400,6 +500,7 @@ def extract_dwarf_cu_layouts(
     remaining,
     layouts,
     constants_only,
+    pointer_size,
 ):
     """Scan one CU so its DIE locals are dead before its cache is released."""
     for die in compilation_unit.iter_DIEs():
@@ -417,7 +518,9 @@ def extract_dwarf_cu_layouts(
             and dwarf_name(die) in remaining
         ):
             name = dwarf_name(die)
-            layout = dwarf_structure_layout(die, expression_parser)
+            layout = dwarf_structure_layout(
+                die, expression_parser, pointer_size
+            )
             if layout is not None:
                 layouts[name] = layout
                 remaining.remove(name)
@@ -451,12 +554,17 @@ def extract_dwarf_layouts(elf, requested, constants_only=False):
     layouts = {}
     for compilation_unit in dwarf.iter_CUs():
         try:
+            try:
+                pointer_size = int(compilation_unit["address_size"])
+            except (KeyError, TypeError):
+                pointer_size = 8
             complete = extract_dwarf_cu_layouts(
                 compilation_unit,
                 expression_parser,
                 remaining,
                 layouts,
                 constants_only,
+                pointer_size,
             )
         finally:
             release_dwarf_caches(dwarf, compilation_unit)
@@ -470,7 +578,10 @@ def extract_layouts(path, requested, constants_only=False):
         elf = ELFFile(stream)
         section = elf.get_section_by_name(".BTF")
         if section is not None:
-            return parse_btf(section.data(), requested, constants_only)
+            return parse_btf(
+                section.data(), requested, constants_only,
+                pointer_size=elf.elfclass // 8,
+            )
         return extract_dwarf_layouts(elf, requested, constants_only)
 
 

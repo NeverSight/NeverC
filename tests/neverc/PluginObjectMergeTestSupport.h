@@ -189,8 +189,8 @@ addAndroidKernelProfileContract(PluginObjectGraph &Graph) {
   Section.Name = ".neverc.android.kernel.profile";
   Section.Flags = NEVERC_OBJECT_SECTION_ALLOCATED;
   Section.Alignment = 8;
-  // Native contract for profile 612 with normalized KCFI.
-  Section.Data = {UINT8_C(0x02), UINT8_C(0x00), UINT8_C(0x00), UINT8_C(0x00),
+  // Native contract v1 for profile 612 with normalized KCFI and dynamic SCS.
+  Section.Data = {UINT8_C(0x02), UINT8_C(0x02), UINT8_C(0x01), UINT8_C(0x00),
                   UINT8_C(0x64), UINT8_C(0x02), UINT8_C(0x00), UINT8_C(0x00)};
   const uint64_t SectionID = Section.ID;
   Graph.sections().push_back(std::move(Section));
@@ -617,7 +617,7 @@ init_module:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   return assembleBuiltinObject(Route, Assembly);
@@ -658,7 +658,7 @@ modinfo_key:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   return assembleBuiltinObject(Route, Assembly);
@@ -696,7 +696,7 @@ init_module:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   return assembleBuiltinObject(Route, Assembly);
@@ -736,7 +736,7 @@ init_module:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   return assembleBuiltinObject(Route, Assembly);
@@ -776,7 +776,7 @@ init_module:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   return assembleBuiltinObject(Route, Assembly);

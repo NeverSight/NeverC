@@ -27,7 +27,7 @@ void neverc_krt_selinux_restore_state(struct neverc_krt_selinux_policy *state);
 int neverc_krt_selinux_policy_full(struct neverc_krt_selinux_policy *state);
 void neverc_krt_selinux_policy_remove(struct neverc_krt_selinux_policy *state);
 
-void neverc_krt_selinux_pause_interposes(void);
+int neverc_krt_selinux_pause_interposes(void);
 void neverc_krt_selinux_remove_interposes(void);
 
 /* --- Per-UID selective SELinux policy-control helpers --- */

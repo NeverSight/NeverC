@@ -929,7 +929,7 @@ secondary_release_entry:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   auto Second = assembleBuiltinObject(*AndroidRoute, SecondAssembly);
@@ -1059,7 +1059,7 @@ init_module:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 
     .addrsig
@@ -1200,7 +1200,7 @@ init_module:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   auto NamedImage = assembleBuiltinObject(*AndroidRoute, Assembly);
@@ -1324,7 +1324,7 @@ init_module:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   auto Image = assembleBuiltinObject(*AndroidRoute, Assembly);
@@ -1424,7 +1424,7 @@ init_module:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   constexpr StringLiteral SecondAssembly = R"(
@@ -1444,7 +1444,7 @@ second_partition_entry:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   auto First = assembleBuiltinObject(*AndroidRoute, FirstAssembly);
@@ -1560,7 +1560,7 @@ init_module:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   constexpr StringLiteral SecondAssembly = R"(
@@ -1580,7 +1580,7 @@ second_partition_entry:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   auto First = assembleBuiltinObject(*AndroidRoute, FirstAssembly);
@@ -1985,7 +1985,7 @@ livepatch_target:
     .globl __neverc_android_kernel_profile_contract
     .type __neverc_android_kernel_profile_contract, %object
 __neverc_android_kernel_profile_contract:
-    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .byte 2, 2, 1, 0, 100, 2, 0, 0
     .size __neverc_android_kernel_profile_contract, 8
 )";
   auto Input = assembleBuiltinObject(*AndroidRoute, Assembly);

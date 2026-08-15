@@ -431,29 +431,53 @@ int neverc_krt_se_selective_install(void)
 
 void neverc_krt_se_selective_cleanup(void)
 {
-	if (!_neverc_krt_se_sel.active) return;
+	int failed = 0;
 
-	if (_neverc_krt_se_sel.capable_interpose.active)
-		neverc_krt_interpose_remove(&_neverc_krt_se_sel.capable_interpose);
-	if (_neverc_krt_se_sel.inode_interpose.active)
-		neverc_krt_interpose_remove(&_neverc_krt_se_sel.inode_interpose);
-	if (_neverc_krt_se_sel.avc_interpose.active)
-		neverc_krt_interpose_remove(&_neverc_krt_se_sel.avc_interpose);
+	if (!_neverc_krt_se_sel.active)
+		return;
 
-	_neverc_krt_se_sel.active = 0;
-	_neverc_krt_se_sel.count = 0;
+	if (_neverc_krt_se_sel.capable_interpose.active &&
+	    neverc_krt_interpose_remove(&_neverc_krt_se_sel.capable_interpose))
+		failed = 1;
+	if (_neverc_krt_se_sel.inode_interpose.active &&
+	    neverc_krt_interpose_remove(&_neverc_krt_se_sel.inode_interpose))
+		failed = 1;
+	if (_neverc_krt_se_sel.avc_interpose.active &&
+	    neverc_krt_interpose_remove(&_neverc_krt_se_sel.avc_interpose))
+		failed = 1;
+
+	if (!failed) {
+		_neverc_krt_se_sel.active = 0;
+		_neverc_krt_se_sel.count = 0;
+	}
 }
 
-void neverc_krt_selinux_pause_interposes(void)
+int neverc_krt_selinux_pause_interposes(void)
 {
-	if (_neverc_krt_avc_interpose.active)
-		neverc_krt_interpose_pause(&_neverc_krt_avc_interpose);
-	if (_neverc_krt_inode_interpose.active)
-		neverc_krt_interpose_pause(&_neverc_krt_inode_interpose);
-	if (_neverc_krt_task_perm_interpose.active)
-		neverc_krt_interpose_pause(&_neverc_krt_task_perm_interpose);
-	if (_neverc_krt_cred_perm_interpose.active)
-		neverc_krt_interpose_pause(&_neverc_krt_cred_perm_interpose);
+	int ret = 0;
+	int next;
+
+	if (_neverc_krt_avc_interpose.active) {
+		next = neverc_krt_interpose_pause(&_neverc_krt_avc_interpose);
+		if (next && !ret)
+			ret = next;
+	}
+	if (_neverc_krt_inode_interpose.active) {
+		next = neverc_krt_interpose_pause(&_neverc_krt_inode_interpose);
+		if (next && !ret)
+			ret = next;
+	}
+	if (_neverc_krt_task_perm_interpose.active) {
+		next = neverc_krt_interpose_pause(&_neverc_krt_task_perm_interpose);
+		if (next && !ret)
+			ret = next;
+	}
+	if (_neverc_krt_cred_perm_interpose.active) {
+		next = neverc_krt_interpose_pause(&_neverc_krt_cred_perm_interpose);
+		if (next && !ret)
+			ret = next;
+	}
+	return ret;
 }
 
 void neverc_krt_selinux_remove_interposes(void)

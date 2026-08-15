@@ -222,6 +222,24 @@ def main():
     user_copy_behavior_test = os.path.join(
         args.runtime_dir, "tools", "test-user-copy-adapter.py"
     )
+    dir_filter_behavior_test = os.path.join(
+        args.runtime_dir, "tools", "test-dir-filter.py"
+    )
+    inode_metadata_behavior_test = os.path.join(
+        args.runtime_dir, "tools", "test-inode-metadata.py"
+    )
+    thread_ids_behavior_test = os.path.join(
+        args.runtime_dir, "tools", "test-task-thread-ids.py"
+    )
+    interpose_remove_behavior_test = os.path.join(
+        args.runtime_dir, "tools", "test-interpose-remove-ctx-many.py"
+    )
+    task_user_state_pt_regs_test = os.path.join(
+        args.runtime_dir, "tools", "test-task-user-state-pt-regs.py"
+    )
+    user_ptmap_contract_test = os.path.join(
+        args.runtime_dir, "tools", "test-user-ptmap-contract.py"
+    )
 
     sources = sorted(glob.glob(os.path.join(src_dir, "*.c")))
 
@@ -252,6 +270,30 @@ def main():
     if not os.path.isfile(user_copy_behavior_test):
         print("error: user-copy behavior test not found: "
               f"{user_copy_behavior_test}", file=sys.stderr)
+        sys.exit(1)
+    if not os.path.isfile(dir_filter_behavior_test):
+        print("error: directory-filter behavior test not found: "
+              f"{dir_filter_behavior_test}", file=sys.stderr)
+        sys.exit(1)
+    if not os.path.isfile(inode_metadata_behavior_test):
+        print("error: inode-metadata behavior test not found: "
+              f"{inode_metadata_behavior_test}", file=sys.stderr)
+        sys.exit(1)
+    if not os.path.isfile(thread_ids_behavior_test):
+        print("error: task-thread-ID behavior test not found: "
+              f"{thread_ids_behavior_test}", file=sys.stderr)
+        sys.exit(1)
+    if not os.path.isfile(interpose_remove_behavior_test):
+        print("error: interpose remove behavior test not found: "
+              f"{interpose_remove_behavior_test}", file=sys.stderr)
+        sys.exit(1)
+    if not os.path.isfile(task_user_state_pt_regs_test):
+        print("error: task-user-state pt_regs test not found: "
+              f"{task_user_state_pt_regs_test}", file=sys.stderr)
+        sys.exit(1)
+    if not os.path.isfile(user_ptmap_contract_test):
+        print("error: user-ptmap contract test not found: "
+              f"{user_ptmap_contract_test}", file=sys.stderr)
         sys.exit(1)
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
@@ -289,6 +331,60 @@ def main():
     except subprocess.CalledProcessError as e:
         print(f"error: user-copy adapter test failed (exit {e.returncode})",
               file=sys.stderr)
+        sys.exit(1)
+
+    print("  [test] directory-filter adapter", file=sys.stderr)
+    try:
+        subprocess.check_call([sys.executable, dir_filter_behavior_test])
+    except subprocess.CalledProcessError as e:
+        print(f"error: directory-filter adapter test failed "
+              f"(exit {e.returncode})", file=sys.stderr)
+        sys.exit(1)
+
+    print("  [test] inode metadata adapter", file=sys.stderr)
+    try:
+        subprocess.check_call([sys.executable, inode_metadata_behavior_test])
+    except subprocess.CalledProcessError as e:
+        print(f"error: inode metadata adapter test failed "
+              f"(exit {e.returncode})", file=sys.stderr)
+        sys.exit(1)
+
+    print("  [test] task thread-ID snapshot", file=sys.stderr)
+    try:
+        subprocess.check_call([sys.executable, thread_ids_behavior_test])
+    except subprocess.CalledProcessError as e:
+        print(f"error: task thread-ID snapshot test failed "
+              f"(exit {e.returncode})", file=sys.stderr)
+        sys.exit(1)
+
+    print("  [test] interpose partial remove", file=sys.stderr)
+    try:
+        subprocess.check_call(
+            [sys.executable, interpose_remove_behavior_test]
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"error: interpose partial remove test failed "
+              f"(exit {e.returncode})", file=sys.stderr)
+        sys.exit(1)
+
+    print("  [test] task user-state pt_regs", file=sys.stderr)
+    try:
+        subprocess.check_call(
+            [sys.executable, task_user_state_pt_regs_test]
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"error: task user-state pt_regs test failed "
+              f"(exit {e.returncode})", file=sys.stderr)
+        sys.exit(1)
+
+    print("  [test] user page-table map contract", file=sys.stderr)
+    try:
+        subprocess.check_call(
+            [sys.executable, user_ptmap_contract_test]
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"error: user page-table map contract test failed "
+              f"(exit {e.returncode})", file=sys.stderr)
         sys.exit(1)
 
     src_dir_abs = os.path.abspath(src_dir)

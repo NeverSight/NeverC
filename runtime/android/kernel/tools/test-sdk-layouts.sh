@@ -8,7 +8,7 @@ REPO_ROOT=$(CDPATH= cd -- "$HERE/../../../.." && pwd)
 KERNEL_ROOT=$(CDPATH= cd -- "$HERE/.." && pwd)
 NEVERC="${1:-$REPO_ROOT/build-neverc/bin/neverc}"
 
-for kernel in 510 515 601 606 612 618; do
+for kernel in 510 51013 515 51514 601 606 612 618; do
 	"$NEVERC" \
 		--target=aarch64-linux-android \
 		-fandroid-kernel-driver-mode \

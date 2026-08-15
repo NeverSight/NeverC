@@ -75,8 +75,15 @@ struct neverc_krt_observed_identity {
 /*
  * Exact means the certified GKI release token matches byte-for-byte.
  * Compatible is available only to an explicitly selected build profile and
- * requires the same Linux major.minor series and page size.  Callers without
- * an explicit profile must continue to require an exact identity.
+ * requires the same Linux major.minor series and page size.  Same Android/KMI
+ * with a different patch or token uses the family layout; a certificate may
+ * overlay measured offsets but is not required.  A different Android/KMI pair
+ * on that series is still Compatible here; activation then needs a leftover
+ * certificate on this same compile family that covers every private layout
+ * field.  A dedicated compile family for that Android/KMI is not a leftover
+ * and cannot be selected by overlaying another family's certificate.
+ * Callers without an explicit profile must continue to require an exact
+ * identity.
  */
 enum neverc_krt_profile_match {
   NEVERC_KRT_PROFILE_MATCH_NONE = 0,
@@ -107,5 +114,13 @@ enum neverc_krt_profile_match neverc_krt_match_profile(
     const struct neverc_krt_observed_identity *identity);
 int neverc_krt_parse_banner_identity(
     const char *banner, struct neverc_krt_observed_identity *identity);
+/*
+ * Build the loader vermagic string from a linux_banner.  The release
+ * token is copied in full; the standard GKI feature flags are appended.
+ * Returns 0, or -1/-2/-3 for bad arguments, an unparseable banner, or
+ * an output buffer that cannot hold the complete string.
+ */
+int neverc_krt_format_vermagic_from_banner(const char *banner, char *out,
+                                           unsigned long out_size);
 
 #endif /* NEVERC_KRT_PROFILE_H */

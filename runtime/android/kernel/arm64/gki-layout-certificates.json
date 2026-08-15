@@ -1,0 +1,2213 @@
+{
+  "certificates": [
+    {
+      "dir_context": {
+        "member_sizes": {
+          "actor": 8,
+          "pos": 8
+        },
+        "members": {
+          "actor": 0,
+          "pos": 8
+        },
+        "size": 16
+      },
+      "filename_name": {
+        "member_sizes": {
+          "name": 8
+        },
+        "members": {
+          "name": 0
+        },
+        "size": 32
+      },
+      "filldir_abi": "returns_int",
+      "identity": {
+        "android_release": 12,
+        "kmi_generation": 9,
+        "linux_major": 5,
+        "linux_minor": 10,
+        "linux_patch": 205,
+        "page_shift": 12
+      },
+      "inode_times": {
+        "member_sizes": {
+          "atime_nsec": 8,
+          "atime_sec": 8,
+          "mtime_nsec": 8,
+          "mtime_sec": 8
+        },
+        "members": {
+          "atime_nsec": 96,
+          "atime_sec": 88,
+          "mtime_nsec": 112,
+          "mtime_sec": 104
+        },
+        "size": 704
+      },
+      "path_inode": {
+        "dentry": {
+          "member_sizes": {
+            "d_inode": 8
+          },
+          "members": {
+            "d_inode": 48
+          },
+          "size": 208
+        },
+        "path": {
+          "member_sizes": {
+            "dentry": 8
+          },
+          "members": {
+            "dentry": 8
+          },
+          "size": 16
+        }
+      },
+      "profile_id": 510,
+      "raw_dwarf": {
+        "sha256": "fbb980d42959763b8638ef044bf4ef7852b77e0183c8b7726a5eb846c705b891",
+        "size": 319082812
+      },
+      "release_token": "5.10.205-android12-9-dirty",
+      "task_ref": {
+        "task_struct": {
+          "member_sizes": {
+            "usage": 4
+          },
+          "members": {
+            "usage": 64
+          },
+          "size": 4736
+        }
+      },
+      "task_threads": {
+        "signal_struct": {
+          "member_sizes": {
+            "thread_head": 16
+          },
+          "members": {
+            "thread_head": 16
+          },
+          "size": 1120
+        },
+        "task_struct": {
+          "member_sizes": {
+            "pid": 4,
+            "signal": 8,
+            "thread_node": 16,
+            "thread_pid": 8
+          },
+          "members": {
+            "pid": 1480,
+            "signal": 2008,
+            "thread_node": 1672,
+            "thread_pid": 1584
+          },
+          "size": 4736
+        }
+      },
+      "task_user_state": {
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264
+          },
+          "size": 336
+        },
+        "task_struct": {
+          "member_sizes": {
+            "flags": 4,
+            "stack": 8,
+            "stack_refcount": 4
+          },
+          "members": {
+            "flags": 68,
+            "stack": 56,
+            "stack_refcount": 2768
+          },
+          "size": 4736
+        }
+      },
+      "task_walk": {
+        "cred": {
+          "member_sizes": {
+            "egid": 4,
+            "euid": 4,
+            "fsgid": 4,
+            "fsuid": 4,
+            "gid": 4,
+            "sgid": 4,
+            "suid": 4,
+            "uid": 4
+          },
+          "members": {
+            "egid": 24,
+            "euid": 20,
+            "fsgid": 32,
+            "fsuid": 28,
+            "gid": 8,
+            "sgid": 16,
+            "suid": 12,
+            "uid": 4
+          },
+          "size": 168
+        },
+        "task_struct": {
+          "member_sizes": {
+            "comm": 16,
+            "group_leader": 8,
+            "mm": 8,
+            "parent": 8,
+            "real_cred": 8,
+            "real_parent": 8,
+            "tasks": 16
+          },
+          "members": {
+            "comm": 1936,
+            "group_leader": 1544,
+            "mm": 1304,
+            "parent": 1504,
+            "real_cred": 1912,
+            "real_parent": 1496,
+            "tasks": 1224
+          },
+          "size": 4736
+        }
+      },
+      "user_ptmap": {
+        "geometry": {
+          "contiguous_bit": 52,
+          "contiguous_entries": 16,
+          "descriptor_address_mask": 281474976706560,
+          "index_bits": 9,
+          "pa_bits": 48,
+          "page_shift": 12,
+          "pgd_shift": 30,
+          "pgtable_levels": 3,
+          "physical_address_mask": 281474976710655,
+          "physical_page_mask": 281474976706560,
+          "pmd_shift": 21,
+          "pte_shift": 12,
+          "tlbi_all_asid": 1,
+          "va_bits": 39
+        },
+        "mm_struct": {
+          "member_sizes": {
+            "mm_count": 4,
+            "mmap_lock": 64,
+            "page_table_lock": 4,
+            "pgd": 8
+          },
+          "members": {
+            "mm_count": 88,
+            "mmap_lock": 112,
+            "page_table_lock": 108,
+            "pgd": 72
+          },
+          "size": 952
+        },
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8,
+            "regs": 248,
+            "sp": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264,
+            "regs": 0,
+            "sp": 248
+          },
+          "size": 336
+        },
+        "vm_area_struct": {
+          "member_sizes": {
+            "vm_end": 8,
+            "vm_flags": 8,
+            "vm_mm": 8,
+            "vm_pgoff": 8,
+            "vm_start": 8
+          },
+          "members": {
+            "vm_end": 8,
+            "vm_flags": 80,
+            "vm_mm": 64,
+            "vm_pgoff": 152,
+            "vm_start": 0
+          },
+          "size": 232
+        }
+      }
+    },
+    {
+      "dir_context": {
+        "member_sizes": {
+          "actor": 8,
+          "pos": 8
+        },
+        "members": {
+          "actor": 0,
+          "pos": 8
+        },
+        "size": 16
+      },
+      "filename_name": {
+        "member_sizes": {
+          "name": 8
+        },
+        "members": {
+          "name": 0
+        },
+        "size": 32
+      },
+      "filldir_abi": "returns_int",
+      "identity": {
+        "android_release": 13,
+        "kmi_generation": 8,
+        "linux_major": 5,
+        "linux_minor": 15,
+        "linux_patch": 153,
+        "page_shift": 12
+      },
+      "inode_times": {
+        "member_sizes": {
+          "atime_nsec": 8,
+          "atime_sec": 8,
+          "mtime_nsec": 8,
+          "mtime_sec": 8
+        },
+        "members": {
+          "atime_nsec": 96,
+          "atime_sec": 88,
+          "mtime_nsec": 112,
+          "mtime_sec": 104
+        },
+        "size": 752
+      },
+      "path_inode": {
+        "dentry": {
+          "member_sizes": {
+            "d_inode": 8
+          },
+          "members": {
+            "d_inode": 48
+          },
+          "size": 208
+        },
+        "path": {
+          "member_sizes": {
+            "dentry": 8
+          },
+          "members": {
+            "dentry": 8
+          },
+          "size": 16
+        }
+      },
+      "profile_id": 515,
+      "raw_btf": {
+        "sha256": "1fe21ec9aa923ecd3fa422b8f73897ddfaa28c66837def476f49b1ddda0063c8",
+        "size": 5755545
+      },
+      "release_token": "5.15.153-android13-8-00026-g06276351e9ff-dirty",
+      "task_ref": {
+        "task_struct": {
+          "member_sizes": {
+            "usage": 4
+          },
+          "members": {
+            "usage": 56
+          },
+          "size": 4608
+        }
+      },
+      "task_threads": {
+        "signal_struct": {
+          "member_sizes": {
+            "thread_head": 16
+          },
+          "members": {
+            "thread_head": 16
+          },
+          "size": 1120
+        },
+        "task_struct": {
+          "member_sizes": {
+            "pid": 4,
+            "signal": 8,
+            "thread_node": 16,
+            "thread_pid": 8
+          },
+          "members": {
+            "pid": 1496,
+            "signal": 2032,
+            "thread_node": 1688,
+            "thread_pid": 1600
+          },
+          "size": 4608
+        }
+      },
+      "task_user_state": {
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264
+          },
+          "size": 336
+        },
+        "task_struct": {
+          "member_sizes": {
+            "flags": 4,
+            "stack": 8,
+            "stack_refcount": 4
+          },
+          "members": {
+            "flags": 60,
+            "stack": 48,
+            "stack_refcount": 2848
+          },
+          "size": 4608
+        }
+      },
+      "task_walk": {
+        "cred": {
+          "member_sizes": {
+            "egid": 4,
+            "euid": 4,
+            "fsgid": 4,
+            "fsuid": 4,
+            "gid": 4,
+            "sgid": 4,
+            "suid": 4,
+            "uid": 4
+          },
+          "members": {
+            "egid": 24,
+            "euid": 20,
+            "fsgid": 32,
+            "fsuid": 28,
+            "gid": 8,
+            "sgid": 16,
+            "suid": 12,
+            "uid": 4
+          },
+          "size": 176
+        },
+        "task_struct": {
+          "member_sizes": {
+            "comm": 16,
+            "group_leader": 8,
+            "mm": 8,
+            "parent": 8,
+            "real_cred": 8,
+            "real_parent": 8,
+            "tasks": 16
+          },
+          "members": {
+            "comm": 1960,
+            "group_leader": 1560,
+            "mm": 1312,
+            "parent": 1520,
+            "real_cred": 1936,
+            "real_parent": 1512,
+            "tasks": 1232
+          },
+          "size": 4608
+        }
+      },
+      "user_ptmap": {
+        "geometry": {
+          "contiguous_bit": 52,
+          "contiguous_entries": 16,
+          "descriptor_address_mask": 281474976706560,
+          "index_bits": 9,
+          "pa_bits": 48,
+          "page_shift": 12,
+          "pgd_shift": 30,
+          "pgtable_levels": 3,
+          "physical_address_mask": 281474976710655,
+          "physical_page_mask": 281474976706560,
+          "pmd_shift": 21,
+          "pte_shift": 12,
+          "tlbi_all_asid": 1,
+          "va_bits": 39
+        },
+        "mm_struct": {
+          "member_sizes": {
+            "mm_count": 4,
+            "mmap_lock": 64,
+            "page_table_lock": 4,
+            "pgd": 8
+          },
+          "members": {
+            "mm_count": 80,
+            "mmap_lock": 104,
+            "page_table_lock": 100,
+            "pgd": 64
+          },
+          "size": 992
+        },
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8,
+            "regs": 248,
+            "sp": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264,
+            "regs": 0,
+            "sp": 248
+          },
+          "size": 336
+        },
+        "vm_area_struct": {
+          "member_sizes": {
+            "vm_end": 8,
+            "vm_flags": 8,
+            "vm_mm": 8,
+            "vm_pgoff": 8,
+            "vm_start": 8
+          },
+          "members": {
+            "vm_end": 8,
+            "vm_flags": 80,
+            "vm_mm": 64,
+            "vm_pgoff": 152,
+            "vm_start": 0
+          },
+          "size": 232
+        }
+      }
+    },
+    {
+      "dir_context": {
+        "member_sizes": {
+          "actor": 8,
+          "pos": 8
+        },
+        "members": {
+          "actor": 0,
+          "pos": 8
+        },
+        "size": 16
+      },
+      "filename_name": {
+        "member_sizes": {
+          "name": 8
+        },
+        "members": {
+          "name": 0
+        },
+        "size": 32
+      },
+      "filldir_abi": "returns_bool",
+      "identity": {
+        "android_release": 14,
+        "kmi_generation": 11,
+        "linux_major": 6,
+        "linux_minor": 1,
+        "linux_patch": 93,
+        "page_shift": 12
+      },
+      "inode_times": {
+        "member_sizes": {
+          "atime_nsec": 8,
+          "atime_sec": 8,
+          "mtime_nsec": 8,
+          "mtime_sec": 8
+        },
+        "members": {
+          "atime_nsec": 96,
+          "atime_sec": 88,
+          "mtime_nsec": 112,
+          "mtime_sec": 104
+        },
+        "size": 704
+      },
+      "path_inode": {
+        "dentry": {
+          "member_sizes": {
+            "d_inode": 8
+          },
+          "members": {
+            "d_inode": 48
+          },
+          "size": 208
+        },
+        "path": {
+          "member_sizes": {
+            "dentry": 8
+          },
+          "members": {
+            "dentry": 8
+          },
+          "size": 16
+        }
+      },
+      "profile_id": 601,
+      "raw_btf": {
+        "sha256": "2ea4cdfb9973e3503012bf3383eeab204785cd30b7010ec1ef2e8b307225da6f",
+        "size": 4295530
+      },
+      "release_token": "6.1.93-android14-11-maybe-dirty",
+      "task_ref": {
+        "task_struct": {
+          "member_sizes": {
+            "usage": 4
+          },
+          "members": {
+            "usage": 64
+          },
+          "size": 4800
+        }
+      },
+      "task_threads": {
+        "signal_struct": {
+          "member_sizes": {
+            "thread_head": 16
+          },
+          "members": {
+            "thread_head": 16
+          },
+          "size": 1128
+        },
+        "task_struct": {
+          "member_sizes": {
+            "pid": 4,
+            "signal": 8,
+            "thread_node": 16,
+            "thread_pid": 8
+          },
+          "members": {
+            "pid": 1584,
+            "signal": 2192,
+            "thread_node": 1776,
+            "thread_pid": 1688
+          },
+          "size": 4800
+        }
+      },
+      "task_user_state": {
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264
+          },
+          "size": 336
+        },
+        "task_struct": {
+          "member_sizes": {
+            "flags": 4,
+            "stack": 8,
+            "stack_refcount": 4
+          },
+          "members": {
+            "flags": 68,
+            "stack": 56,
+            "stack_refcount": 3000
+          },
+          "size": 4800
+        }
+      },
+      "task_walk": {
+        "cred": {
+          "member_sizes": {
+            "egid": 4,
+            "euid": 4,
+            "fsgid": 4,
+            "fsuid": 4,
+            "gid": 4,
+            "sgid": 4,
+            "suid": 4,
+            "uid": 4
+          },
+          "members": {
+            "egid": 24,
+            "euid": 20,
+            "fsgid": 32,
+            "fsuid": 28,
+            "gid": 8,
+            "sgid": 16,
+            "suid": 12,
+            "uid": 4
+          },
+          "size": 176
+        },
+        "task_struct": {
+          "member_sizes": {
+            "comm": 16,
+            "group_leader": 8,
+            "mm": 8,
+            "parent": 8,
+            "real_cred": 8,
+            "real_parent": 8,
+            "tasks": 16
+          },
+          "members": {
+            "comm": 2120,
+            "group_leader": 1648,
+            "mm": 1440,
+            "parent": 1608,
+            "real_cred": 2096,
+            "real_parent": 1600,
+            "tasks": 1360
+          },
+          "size": 4800
+        }
+      },
+      "user_ptmap": {
+        "geometry": {
+          "contiguous_bit": 52,
+          "contiguous_entries": 16,
+          "descriptor_address_mask": 281474976706560,
+          "index_bits": 9,
+          "pa_bits": 48,
+          "page_shift": 12,
+          "pgd_shift": 30,
+          "pgtable_levels": 3,
+          "physical_address_mask": 281474976710655,
+          "physical_page_mask": 281474976706560,
+          "pmd_shift": 21,
+          "pte_shift": 12,
+          "tlbi_all_asid": 1,
+          "va_bits": 39
+        },
+        "mm_struct": {
+          "member_sizes": {
+            "mm_count": 4,
+            "mmap_lock": 64,
+            "page_table_lock": 4,
+            "pgd": 8
+          },
+          "members": {
+            "mm_count": 72,
+            "mmap_lock": 96,
+            "page_table_lock": 92,
+            "pgd": 56
+          },
+          "size": 960
+        },
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8,
+            "regs": 248,
+            "sp": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264,
+            "regs": 0,
+            "sp": 248
+          },
+          "size": 336
+        },
+        "vm_area_struct": {
+          "member_sizes": {
+            "vm_end": 8,
+            "vm_flags": 8,
+            "vm_mm": 8,
+            "vm_pgoff": 8,
+            "vm_start": 8
+          },
+          "members": {
+            "vm_end": 8,
+            "vm_flags": 32,
+            "vm_mm": 16,
+            "vm_pgoff": 128,
+            "vm_start": 0
+          },
+          "size": 200
+        }
+      }
+    },
+    {
+      "dir_context": {
+        "member_sizes": {
+          "actor": 8,
+          "pos": 8
+        },
+        "members": {
+          "actor": 0,
+          "pos": 8
+        },
+        "size": 16
+      },
+      "filename_name": {
+        "member_sizes": {
+          "name": 8
+        },
+        "members": {
+          "name": 0
+        },
+        "size": 32
+      },
+      "filldir_abi": "returns_bool",
+      "identity": {
+        "android_release": 15,
+        "kmi_generation": 8,
+        "linux_major": 6,
+        "linux_minor": 6,
+        "linux_patch": 46,
+        "page_shift": 12
+      },
+      "inode_times": {
+        "member_sizes": {
+          "atime_nsec": 8,
+          "atime_sec": 8,
+          "mtime_nsec": 8,
+          "mtime_sec": 8
+        },
+        "members": {
+          "atime_nsec": 96,
+          "atime_sec": 88,
+          "mtime_nsec": 112,
+          "mtime_sec": 104
+        },
+        "size": 704
+      },
+      "path_inode": {
+        "dentry": {
+          "member_sizes": {
+            "d_inode": 8
+          },
+          "members": {
+            "d_inode": 48
+          },
+          "size": 208
+        },
+        "path": {
+          "member_sizes": {
+            "dentry": 8
+          },
+          "members": {
+            "dentry": 8
+          },
+          "size": 16
+        }
+      },
+      "profile_id": 606,
+      "raw_btf": {
+        "sha256": "4c4bcc8266da74b84e24258656d0542f52965b7708a2b3cd305c978c49ed26c3",
+        "size": 5912804
+      },
+      "release_token": "6.6.46-android15-8-maybe-dirty-4k",
+      "task_ref": {
+        "task_struct": {
+          "member_sizes": {
+            "usage": 4
+          },
+          "members": {
+            "usage": 64
+          },
+          "size": 4800
+        }
+      },
+      "task_threads": {
+        "signal_struct": {
+          "member_sizes": {
+            "thread_head": 16
+          },
+          "members": {
+            "thread_head": 16
+          },
+          "size": 1136
+        },
+        "task_struct": {
+          "member_sizes": {
+            "pid": 4,
+            "signal": 8,
+            "thread_node": 16,
+            "thread_pid": 8
+          },
+          "members": {
+            "pid": 1560,
+            "signal": 2168,
+            "thread_node": 1752,
+            "thread_pid": 1664
+          },
+          "size": 4800
+        }
+      },
+      "task_user_state": {
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264
+          },
+          "size": 336
+        },
+        "task_struct": {
+          "member_sizes": {
+            "flags": 4,
+            "stack": 8,
+            "stack_refcount": 4
+          },
+          "members": {
+            "flags": 68,
+            "stack": 56,
+            "stack_refcount": 2976
+          },
+          "size": 4800
+        }
+      },
+      "task_walk": {
+        "cred": {
+          "member_sizes": {
+            "egid": 4,
+            "euid": 4,
+            "fsgid": 4,
+            "fsuid": 4,
+            "gid": 4,
+            "sgid": 4,
+            "suid": 4,
+            "uid": 4
+          },
+          "members": {
+            "egid": 28,
+            "euid": 24,
+            "fsgid": 36,
+            "fsuid": 32,
+            "gid": 12,
+            "sgid": 20,
+            "suid": 16,
+            "uid": 8
+          },
+          "size": 184
+        },
+        "task_struct": {
+          "member_sizes": {
+            "comm": 16,
+            "group_leader": 8,
+            "mm": 8,
+            "parent": 8,
+            "real_cred": 8,
+            "real_parent": 8,
+            "tasks": 16
+          },
+          "members": {
+            "comm": 2096,
+            "group_leader": 1624,
+            "mm": 1440,
+            "parent": 1584,
+            "real_cred": 2072,
+            "real_parent": 1576,
+            "tasks": 1360
+          },
+          "size": 4800
+        }
+      },
+      "user_ptmap": {
+        "geometry": {
+          "contiguous_bit": 52,
+          "contiguous_entries": 16,
+          "descriptor_address_mask": 281474976706560,
+          "index_bits": 9,
+          "pa_bits": 48,
+          "page_shift": 12,
+          "pgd_shift": 30,
+          "pgtable_levels": 3,
+          "physical_address_mask": 281474976710655,
+          "physical_page_mask": 281474976706560,
+          "pmd_shift": 21,
+          "pte_shift": 12,
+          "tlbi_all_asid": 1,
+          "va_bits": 39
+        },
+        "mm_struct": {
+          "member_sizes": {
+            "mm_count": 4,
+            "mmap_lock": 64,
+            "page_table_lock": 4,
+            "pgd": 8
+          },
+          "members": {
+            "mm_count": 0,
+            "mmap_lock": 144,
+            "page_table_lock": 140,
+            "pgd": 112
+          },
+          "size": 1216
+        },
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8,
+            "regs": 248,
+            "sp": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264,
+            "regs": 0,
+            "sp": 248
+          },
+          "size": 336
+        },
+        "vm_area_struct": {
+          "member_sizes": {
+            "vm_end": 8,
+            "vm_flags": 8,
+            "vm_mm": 8,
+            "vm_pgoff": 8,
+            "vm_start": 8
+          },
+          "members": {
+            "vm_end": 8,
+            "vm_flags": 32,
+            "vm_mm": 16,
+            "vm_pgoff": 120,
+            "vm_start": 0
+          },
+          "size": 200
+        }
+      }
+    },
+    {
+      "dir_context": {
+        "member_sizes": {
+          "actor": 8,
+          "pos": 8
+        },
+        "members": {
+          "actor": 0,
+          "pos": 8
+        },
+        "size": 16
+      },
+      "filename_name": {
+        "member_sizes": {
+          "name": 8
+        },
+        "members": {
+          "name": 0
+        },
+        "size": 32
+      },
+      "filldir_abi": "returns_bool",
+      "identity": {
+        "android_release": 16,
+        "kmi_generation": 5,
+        "linux_major": 6,
+        "linux_minor": 12,
+        "linux_patch": 38,
+        "page_shift": 12
+      },
+      "inode_times": {
+        "member_sizes": {
+          "atime_nsec": 4,
+          "atime_sec": 8,
+          "mtime_nsec": 4,
+          "mtime_sec": 8
+        },
+        "members": {
+          "atime_nsec": 112,
+          "atime_sec": 88,
+          "mtime_nsec": 116,
+          "mtime_sec": 96
+        },
+        "size": 704
+      },
+      "path_inode": {
+        "dentry": {
+          "member_sizes": {
+            "d_inode": 8
+          },
+          "members": {
+            "d_inode": 48
+          },
+          "size": 208
+        },
+        "path": {
+          "member_sizes": {
+            "dentry": 8
+          },
+          "members": {
+            "dentry": 8
+          },
+          "size": 16
+        }
+      },
+      "profile_id": 612,
+      "raw_btf": {
+        "sha256": "ae81b5a86e938c2d2db08e4c78c712143a61c1d823f96383a019b86e9e8b2e79",
+        "size": 6909037
+      },
+      "release_token": "6.12.38-android16-5-g8c67d4274c0a-ab14275539-4k",
+      "task_ref": {
+        "task_struct": {
+          "member_sizes": {
+            "usage": 4
+          },
+          "members": {
+            "usage": 64
+          },
+          "size": 5184
+        }
+      },
+      "task_threads": {
+        "signal_struct": {
+          "member_sizes": {
+            "thread_head": 16
+          },
+          "members": {
+            "thread_head": 16
+          },
+          "size": 1120
+        },
+        "task_struct": {
+          "member_sizes": {
+            "pid": 4,
+            "signal": 8,
+            "thread_node": 16,
+            "thread_pid": 8
+          },
+          "members": {
+            "pid": 1800,
+            "signal": 2392,
+            "thread_node": 1976,
+            "thread_pid": 1904
+          },
+          "size": 5184
+        }
+      },
+      "task_user_state": {
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264
+          },
+          "size": 336
+        },
+        "task_struct": {
+          "member_sizes": {
+            "flags": 4,
+            "stack": 8,
+            "stack_refcount": 4
+          },
+          "members": {
+            "flags": 68,
+            "stack": 56,
+            "stack_refcount": 3280
+          },
+          "size": 5184
+        }
+      },
+      "task_walk": {
+        "cred": {
+          "member_sizes": {
+            "egid": 4,
+            "euid": 4,
+            "fsgid": 4,
+            "fsuid": 4,
+            "gid": 4,
+            "sgid": 4,
+            "suid": 4,
+            "uid": 4
+          },
+          "members": {
+            "egid": 28,
+            "euid": 24,
+            "fsgid": 36,
+            "fsuid": 32,
+            "gid": 12,
+            "sgid": 20,
+            "suid": 16,
+            "uid": 8
+          },
+          "size": 184
+        },
+        "task_struct": {
+          "member_sizes": {
+            "comm": 16,
+            "group_leader": 8,
+            "mm": 8,
+            "parent": 8,
+            "real_cred": 8,
+            "real_parent": 8,
+            "tasks": 16
+          },
+          "members": {
+            "comm": 2320,
+            "group_leader": 1864,
+            "mm": 1672,
+            "parent": 1824,
+            "real_cred": 2296,
+            "real_parent": 1816,
+            "tasks": 1592
+          },
+          "size": 5184
+        }
+      },
+      "user_ptmap": {
+        "geometry": {
+          "contiguous_bit": 52,
+          "contiguous_entries": 16,
+          "descriptor_address_mask": 1125899906838528,
+          "index_bits": 9,
+          "pa_bits": 48,
+          "page_shift": 12,
+          "pgd_shift": 30,
+          "pgtable_levels": 3,
+          "physical_address_mask": 281474976710655,
+          "physical_page_mask": 281474976706560,
+          "pmd_shift": 21,
+          "pte_shift": 12,
+          "tlbi_all_asid": 1,
+          "va_bits": 39
+        },
+        "mm_struct": {
+          "member_sizes": {
+            "mm_count": 4,
+            "mmap_lock": 64,
+            "page_table_lock": 4,
+            "pgd": 8
+          },
+          "members": {
+            "mm_count": 0,
+            "mmap_lock": 136,
+            "page_table_lock": 132,
+            "pgd": 104
+          },
+          "size": 1216
+        },
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8,
+            "regs": 248,
+            "sp": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264,
+            "regs": 0,
+            "sp": 248
+          },
+          "size": 336
+        },
+        "vm_area_struct": {
+          "member_sizes": {
+            "vm_end": 8,
+            "vm_start": 8
+          },
+          "members": {
+            "vm_end": 8,
+            "vm_start": 0
+          },
+          "size": 256
+        }
+      }
+    },
+    {
+      "dir_context": {
+        "member_sizes": {
+          "actor": 8,
+          "pos": 8
+        },
+        "members": {
+          "actor": 0,
+          "pos": 8
+        },
+        "size": 16
+      },
+      "filename_name": {
+        "member_sizes": {
+          "name": 8
+        },
+        "members": {
+          "name": 0
+        },
+        "size": 32
+      },
+      "filldir_abi": "returns_bool",
+      "identity": {
+        "android_release": 16,
+        "kmi_generation": 5,
+        "linux_major": 6,
+        "linux_minor": 12,
+        "linux_patch": 45,
+        "page_shift": 12
+      },
+      "inode_times": {
+        "member_sizes": {
+          "atime_nsec": 4,
+          "atime_sec": 8,
+          "mtime_nsec": 4,
+          "mtime_sec": 8
+        },
+        "members": {
+          "atime_nsec": 112,
+          "atime_sec": 88,
+          "mtime_nsec": 116,
+          "mtime_sec": 96
+        },
+        "size": 704
+      },
+      "path_inode": {
+        "dentry": {
+          "member_sizes": {
+            "d_inode": 8
+          },
+          "members": {
+            "d_inode": 48
+          },
+          "size": 208
+        },
+        "path": {
+          "member_sizes": {
+            "dentry": 8
+          },
+          "members": {
+            "dentry": 8
+          },
+          "size": 16
+        }
+      },
+      "profile_id": 612,
+      "raw_btf": {
+        "sha256": "ea239a64f1e836532c8251ae74d8a5e471c2c1737664a75b87873cd958153430",
+        "size": 6633775
+      },
+      "release_token": "6.12.45-android16-5-maybe-dirty-4k",
+      "task_ref": {
+        "task_struct": {
+          "member_sizes": {
+            "usage": 4
+          },
+          "members": {
+            "usage": 64
+          },
+          "size": 5184
+        }
+      },
+      "task_threads": {
+        "signal_struct": {
+          "member_sizes": {
+            "thread_head": 16
+          },
+          "members": {
+            "thread_head": 16
+          },
+          "size": 1120
+        },
+        "task_struct": {
+          "member_sizes": {
+            "pid": 4,
+            "signal": 8,
+            "thread_node": 16,
+            "thread_pid": 8
+          },
+          "members": {
+            "pid": 1800,
+            "signal": 2392,
+            "thread_node": 1976,
+            "thread_pid": 1904
+          },
+          "size": 5184
+        }
+      },
+      "task_user_state": {
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264
+          },
+          "size": 336
+        },
+        "task_struct": {
+          "member_sizes": {
+            "flags": 4,
+            "stack": 8,
+            "stack_refcount": 4
+          },
+          "members": {
+            "flags": 68,
+            "stack": 56,
+            "stack_refcount": 3280
+          },
+          "size": 5184
+        }
+      },
+      "task_walk": {
+        "cred": {
+          "member_sizes": {
+            "egid": 4,
+            "euid": 4,
+            "fsgid": 4,
+            "fsuid": 4,
+            "gid": 4,
+            "sgid": 4,
+            "suid": 4,
+            "uid": 4
+          },
+          "members": {
+            "egid": 28,
+            "euid": 24,
+            "fsgid": 36,
+            "fsuid": 32,
+            "gid": 12,
+            "sgid": 20,
+            "suid": 16,
+            "uid": 8
+          },
+          "size": 184
+        },
+        "task_struct": {
+          "member_sizes": {
+            "comm": 16,
+            "group_leader": 8,
+            "mm": 8,
+            "parent": 8,
+            "real_cred": 8,
+            "real_parent": 8,
+            "tasks": 16
+          },
+          "members": {
+            "comm": 2320,
+            "group_leader": 1864,
+            "mm": 1672,
+            "parent": 1824,
+            "real_cred": 2296,
+            "real_parent": 1816,
+            "tasks": 1592
+          },
+          "size": 5184
+        }
+      },
+      "user_ptmap": {
+        "geometry": {
+          "contiguous_bit": 52,
+          "contiguous_entries": 16,
+          "descriptor_address_mask": 1125899906838528,
+          "index_bits": 9,
+          "pa_bits": 48,
+          "page_shift": 12,
+          "pgd_shift": 30,
+          "pgtable_levels": 3,
+          "physical_address_mask": 281474976710655,
+          "physical_page_mask": 281474976706560,
+          "pmd_shift": 21,
+          "pte_shift": 12,
+          "tlbi_all_asid": 1,
+          "va_bits": 39
+        },
+        "mm_struct": {
+          "member_sizes": {
+            "mm_count": 4,
+            "mmap_lock": 64,
+            "page_table_lock": 4,
+            "pgd": 8
+          },
+          "members": {
+            "mm_count": 0,
+            "mmap_lock": 136,
+            "page_table_lock": 132,
+            "pgd": 104
+          },
+          "size": 1216
+        },
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8,
+            "regs": 248,
+            "sp": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264,
+            "regs": 0,
+            "sp": 248
+          },
+          "size": 336
+        },
+        "vm_area_struct": {
+          "member_sizes": {
+            "vm_end": 8,
+            "vm_flags": 8,
+            "vm_mm": 8,
+            "vm_pgoff": 8,
+            "vm_start": 8
+          },
+          "members": {
+            "vm_end": 8,
+            "vm_flags": 32,
+            "vm_mm": 16,
+            "vm_pgoff": 80,
+            "vm_start": 0
+          },
+          "size": 256
+        }
+      }
+    },
+    {
+      "dir_context": {
+        "member_sizes": {
+          "actor": 8,
+          "pos": 8
+        },
+        "members": {
+          "actor": 0,
+          "pos": 8
+        },
+        "size": 24
+      },
+      "filename_name": {
+        "member_sizes": {
+          "name": 8
+        },
+        "members": {
+          "name": 0
+        },
+        "size": 32
+      },
+      "filldir_abi": "returns_bool",
+      "identity": {
+        "android_release": 17,
+        "kmi_generation": 5,
+        "linux_major": 6,
+        "linux_minor": 18,
+        "linux_patch": 24,
+        "page_shift": 12
+      },
+      "inode_times": {
+        "member_sizes": {
+          "atime_nsec": 4,
+          "atime_sec": 8,
+          "mtime_nsec": 4,
+          "mtime_sec": 8
+        },
+        "members": {
+          "atime_nsec": 112,
+          "atime_sec": 88,
+          "mtime_nsec": 116,
+          "mtime_sec": 96
+        },
+        "size": 688
+      },
+      "path_inode": {
+        "dentry": {
+          "member_sizes": {
+            "d_inode": 8
+          },
+          "members": {
+            "d_inode": 48
+          },
+          "size": 208
+        },
+        "path": {
+          "member_sizes": {
+            "dentry": 8
+          },
+          "members": {
+            "dentry": 8
+          },
+          "size": 16
+        }
+      },
+      "profile_id": 618,
+      "raw_btf": {
+        "sha256": "baa888b6d1024b6025b6119fe9e0128c61dda167ee57d21bc3add857cb33ae57",
+        "size": 6972797
+      },
+      "release_token": "6.18.24-android17-5-maybe-dirty-4k",
+      "task_ref": {
+        "task_struct": {
+          "member_sizes": {
+            "usage": 4
+          },
+          "members": {
+            "usage": 64
+          },
+          "size": 4736
+        }
+      },
+      "task_threads": {
+        "signal_struct": {
+          "member_sizes": {
+            "thread_head": 16
+          },
+          "members": {
+            "thread_head": 16
+          },
+          "size": 1176
+        },
+        "task_struct": {
+          "member_sizes": {
+            "pid": 4,
+            "signal": 8,
+            "thread_node": 16,
+            "thread_pid": 8
+          },
+          "members": {
+            "pid": 1816,
+            "signal": 2400,
+            "thread_node": 1992,
+            "thread_pid": 1920
+          },
+          "size": 4736
+        }
+      },
+      "task_user_state": {
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264
+          },
+          "size": 320
+        },
+        "task_struct": {
+          "member_sizes": {
+            "flags": 4,
+            "stack": 8,
+            "stack_refcount": 4
+          },
+          "members": {
+            "flags": 68,
+            "stack": 56,
+            "stack_refcount": 3288
+          },
+          "size": 4736
+        }
+      },
+      "task_walk": {
+        "cred": {
+          "member_sizes": {
+            "egid": 4,
+            "euid": 4,
+            "fsgid": 4,
+            "fsuid": 4,
+            "gid": 4,
+            "sgid": 4,
+            "suid": 4,
+            "uid": 4
+          },
+          "members": {
+            "egid": 28,
+            "euid": 24,
+            "fsgid": 36,
+            "fsuid": 32,
+            "gid": 12,
+            "sgid": 20,
+            "suid": 16,
+            "uid": 8
+          },
+          "size": 184
+        },
+        "task_struct": {
+          "member_sizes": {
+            "comm": 16,
+            "group_leader": 8,
+            "mm": 8,
+            "parent": 8,
+            "real_cred": 8,
+            "real_parent": 8,
+            "tasks": 16
+          },
+          "members": {
+            "comm": 2328,
+            "group_leader": 1880,
+            "mm": 1688,
+            "parent": 1840,
+            "real_cred": 2304,
+            "real_parent": 1832,
+            "tasks": 1608
+          },
+          "size": 4736
+        }
+      },
+      "user_ptmap": {
+        "geometry": {
+          "contiguous_bit": 52,
+          "contiguous_entries": 16,
+          "descriptor_address_mask": 1125899906838528,
+          "index_bits": 9,
+          "pa_bits": 48,
+          "page_shift": 12,
+          "pgd_shift": 30,
+          "pgtable_levels": 3,
+          "physical_address_mask": 281474976710655,
+          "physical_page_mask": 281474976706560,
+          "pmd_shift": 21,
+          "pte_shift": 12,
+          "tlbi_all_asid": 1,
+          "va_bits": 39
+        },
+        "mm_struct": {
+          "member_sizes": {
+            "mm_count": 4,
+            "mmap_lock": 64,
+            "page_table_lock": 4,
+            "pgd": 8
+          },
+          "members": {
+            "mm_count": 0,
+            "mmap_lock": 136,
+            "page_table_lock": 132,
+            "pgd": 104
+          },
+          "size": 1344
+        },
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8,
+            "regs": 248,
+            "sp": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264,
+            "regs": 0,
+            "sp": 248
+          },
+          "size": 320
+        },
+        "vm_area_struct": {
+          "member_sizes": {
+            "vm_end": 8,
+            "vm_flags": 8,
+            "vm_mm": 8,
+            "vm_pgoff": 8,
+            "vm_start": 8
+          },
+          "members": {
+            "vm_end": 8,
+            "vm_flags": 32,
+            "vm_mm": 16,
+            "vm_pgoff": 80,
+            "vm_start": 0
+          },
+          "size": 256
+        }
+      }
+    },
+    {
+      "dir_context": {
+        "member_sizes": {
+          "actor": 8,
+          "pos": 8
+        },
+        "members": {
+          "actor": 0,
+          "pos": 8
+        },
+        "size": 16
+      },
+      "filename_name": {
+        "member_sizes": {
+          "name": 8
+        },
+        "members": {
+          "name": 0
+        },
+        "size": 32
+      },
+      "filldir_abi": "returns_int",
+      "identity": {
+        "android_release": 13,
+        "kmi_generation": 4,
+        "linux_major": 5,
+        "linux_minor": 10,
+        "linux_patch": 223,
+        "page_shift": 12
+      },
+      "inode_times": {
+        "member_sizes": {
+          "atime_nsec": 8,
+          "atime_sec": 8,
+          "mtime_nsec": 8,
+          "mtime_sec": 8
+        },
+        "members": {
+          "atime_nsec": 96,
+          "atime_sec": 88,
+          "mtime_nsec": 112,
+          "mtime_sec": 104
+        },
+        "size": 704
+      },
+      "path_inode": {
+        "dentry": {
+          "member_sizes": {
+            "d_inode": 8
+          },
+          "members": {
+            "d_inode": 48
+          },
+          "size": 208
+        },
+        "path": {
+          "member_sizes": {
+            "dentry": 8
+          },
+          "members": {
+            "dentry": 8
+          },
+          "size": 16
+        }
+      },
+      "profile_id": 51013,
+      "raw_btf": {
+        "sha256": "90b3782a87354db091200624b45aee13e4f41983d1370cb6bde77725c91fb677",
+        "size": 5910813
+      },
+      "release_token": "5.10.223-android13-4-00011-ga33040a671e2-dirty",
+      "task_ref": {
+        "task_struct": {
+          "member_sizes": {
+            "usage": 4
+          },
+          "members": {
+            "usage": 64
+          },
+          "size": 4736
+        }
+      },
+      "task_threads": {
+        "signal_struct": {
+          "member_sizes": {
+            "thread_head": 16
+          },
+          "members": {
+            "thread_head": 16
+          },
+          "size": 1120
+        },
+        "task_struct": {
+          "member_sizes": {
+            "pid": 4,
+            "signal": 8,
+            "thread_node": 16,
+            "thread_pid": 8
+          },
+          "members": {
+            "pid": 1480,
+            "signal": 2008,
+            "thread_node": 1672,
+            "thread_pid": 1584
+          },
+          "size": 4736
+        }
+      },
+      "task_user_state": {
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264
+          },
+          "size": 336
+        },
+        "task_struct": {
+          "member_sizes": {
+            "flags": 4,
+            "stack": 8,
+            "stack_refcount": 4
+          },
+          "members": {
+            "flags": 68,
+            "stack": 56,
+            "stack_refcount": 2768
+          },
+          "size": 4736
+        }
+      },
+      "task_walk": {
+        "cred": {
+          "member_sizes": {
+            "egid": 4,
+            "euid": 4,
+            "fsgid": 4,
+            "fsuid": 4,
+            "gid": 4,
+            "sgid": 4,
+            "suid": 4,
+            "uid": 4
+          },
+          "members": {
+            "egid": 24,
+            "euid": 20,
+            "fsgid": 32,
+            "fsuid": 28,
+            "gid": 8,
+            "sgid": 16,
+            "suid": 12,
+            "uid": 4
+          },
+          "size": 168
+        },
+        "task_struct": {
+          "member_sizes": {
+            "comm": 16,
+            "group_leader": 8,
+            "mm": 8,
+            "parent": 8,
+            "real_cred": 8,
+            "real_parent": 8,
+            "tasks": 16
+          },
+          "members": {
+            "comm": 1936,
+            "group_leader": 1544,
+            "mm": 1304,
+            "parent": 1504,
+            "real_cred": 1912,
+            "real_parent": 1496,
+            "tasks": 1224
+          },
+          "size": 4736
+        }
+      },
+      "user_ptmap": {
+        "geometry": {
+          "contiguous_bit": 52,
+          "contiguous_entries": 16,
+          "descriptor_address_mask": 281474976706560,
+          "index_bits": 9,
+          "pa_bits": 48,
+          "page_shift": 12,
+          "pgd_shift": 30,
+          "pgtable_levels": 3,
+          "physical_address_mask": 281474976710655,
+          "physical_page_mask": 281474976706560,
+          "pmd_shift": 21,
+          "pte_shift": 12,
+          "tlbi_all_asid": 1,
+          "va_bits": 39
+        },
+        "mm_struct": {
+          "member_sizes": {
+            "mm_count": 4,
+            "mmap_lock": 64,
+            "page_table_lock": 4,
+            "pgd": 8
+          },
+          "members": {
+            "mm_count": 88,
+            "mmap_lock": 112,
+            "page_table_lock": 108,
+            "pgd": 72
+          },
+          "size": 992
+        },
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8,
+            "regs": 248,
+            "sp": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264,
+            "regs": 0,
+            "sp": 248
+          },
+          "size": 336
+        },
+        "vm_area_struct": {
+          "member_sizes": {
+            "vm_end": 8,
+            "vm_flags": 8,
+            "vm_mm": 8,
+            "vm_pgoff": 8,
+            "vm_start": 8
+          },
+          "members": {
+            "vm_end": 8,
+            "vm_flags": 80,
+            "vm_mm": 64,
+            "vm_pgoff": 152,
+            "vm_start": 0
+          },
+          "size": 232
+        }
+      }
+    },
+    {
+      "dir_context": {
+        "member_sizes": {
+          "actor": 8,
+          "pos": 8
+        },
+        "members": {
+          "actor": 0,
+          "pos": 8
+        },
+        "size": 16
+      },
+      "filename_name": {
+        "member_sizes": {
+          "name": 8
+        },
+        "members": {
+          "name": 0
+        },
+        "size": 32
+      },
+      "filldir_abi": "returns_int",
+      "identity": {
+        "android_release": 14,
+        "kmi_generation": 11,
+        "linux_major": 5,
+        "linux_minor": 15,
+        "linux_patch": 164,
+        "page_shift": 12
+      },
+      "inode_times": {
+        "member_sizes": {
+          "atime_nsec": 8,
+          "atime_sec": 8,
+          "mtime_nsec": 8,
+          "mtime_sec": 8
+        },
+        "members": {
+          "atime_nsec": 96,
+          "atime_sec": 88,
+          "mtime_nsec": 112,
+          "mtime_sec": 104
+        },
+        "size": 752
+      },
+      "path_inode": {
+        "dentry": {
+          "member_sizes": {
+            "d_inode": 8
+          },
+          "members": {
+            "d_inode": 48
+          },
+          "size": 208
+        },
+        "path": {
+          "member_sizes": {
+            "dentry": 8
+          },
+          "members": {
+            "dentry": 8
+          },
+          "size": 16
+        }
+      },
+      "profile_id": 51514,
+      "raw_btf": {
+        "sha256": "81d95cea163c171d42b50904e10069bb380c3545eeb426154b1beb7eee874557",
+        "size": 5264740
+      },
+      "release_token": "5.15.164-android14-11-maybe-dirty",
+      "task_ref": {
+        "task_struct": {
+          "member_sizes": {
+            "usage": 4
+          },
+          "members": {
+            "usage": 56
+          },
+          "size": 4736
+        }
+      },
+      "task_threads": {
+        "signal_struct": {
+          "member_sizes": {
+            "thread_head": 16
+          },
+          "members": {
+            "thread_head": 16
+          },
+          "size": 1120
+        },
+        "task_struct": {
+          "member_sizes": {
+            "pid": 4,
+            "signal": 8,
+            "thread_node": 16,
+            "thread_pid": 8
+          },
+          "members": {
+            "pid": 1600,
+            "signal": 2136,
+            "thread_node": 1792,
+            "thread_pid": 1704
+          },
+          "size": 4736
+        }
+      },
+      "task_user_state": {
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264
+          },
+          "size": 336
+        },
+        "task_struct": {
+          "member_sizes": {
+            "flags": 4,
+            "stack": 8,
+            "stack_refcount": 4
+          },
+          "members": {
+            "flags": 60,
+            "stack": 48,
+            "stack_refcount": 2952
+          },
+          "size": 4736
+        }
+      },
+      "task_walk": {
+        "cred": {
+          "member_sizes": {
+            "egid": 4,
+            "euid": 4,
+            "fsgid": 4,
+            "fsuid": 4,
+            "gid": 4,
+            "sgid": 4,
+            "suid": 4,
+            "uid": 4
+          },
+          "members": {
+            "egid": 24,
+            "euid": 20,
+            "fsgid": 32,
+            "fsuid": 28,
+            "gid": 8,
+            "sgid": 16,
+            "suid": 12,
+            "uid": 4
+          },
+          "size": 176
+        },
+        "task_struct": {
+          "member_sizes": {
+            "comm": 16,
+            "group_leader": 8,
+            "mm": 8,
+            "parent": 8,
+            "real_cred": 8,
+            "real_parent": 8,
+            "tasks": 16
+          },
+          "members": {
+            "comm": 2064,
+            "group_leader": 1664,
+            "mm": 1416,
+            "parent": 1624,
+            "real_cred": 2040,
+            "real_parent": 1616,
+            "tasks": 1336
+          },
+          "size": 4736
+        }
+      },
+      "user_ptmap": {
+        "geometry": {
+          "contiguous_bit": 52,
+          "contiguous_entries": 16,
+          "descriptor_address_mask": 281474976706560,
+          "index_bits": 9,
+          "pa_bits": 48,
+          "page_shift": 12,
+          "pgd_shift": 30,
+          "pgtable_levels": 3,
+          "physical_address_mask": 281474976710655,
+          "physical_page_mask": 281474976706560,
+          "pmd_shift": 21,
+          "pte_shift": 12,
+          "tlbi_all_asid": 1,
+          "va_bits": 39
+        },
+        "mm_struct": {
+          "member_sizes": {
+            "mm_count": 4,
+            "mmap_lock": 64,
+            "page_table_lock": 4,
+            "pgd": 8
+          },
+          "members": {
+            "mm_count": 80,
+            "mmap_lock": 104,
+            "page_table_lock": 100,
+            "pgd": 64
+          },
+          "size": 992
+        },
+        "pt_regs": {
+          "member_sizes": {
+            "pc": 8,
+            "pstate": 8,
+            "regs": 248,
+            "sp": 8
+          },
+          "members": {
+            "pc": 256,
+            "pstate": 264,
+            "regs": 0,
+            "sp": 248
+          },
+          "size": 336
+        },
+        "vm_area_struct": {
+          "member_sizes": {
+            "vm_end": 8,
+            "vm_flags": 8,
+            "vm_mm": 8,
+            "vm_pgoff": 8,
+            "vm_start": 8
+          },
+          "members": {
+            "vm_end": 8,
+            "vm_flags": 80,
+            "vm_mm": 64,
+            "vm_pgoff": 152,
+            "vm_start": 0
+          },
+          "size": 232
+        }
+      }
+    }
+  ],
+  "schema": 1
+}

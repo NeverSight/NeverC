@@ -17,6 +17,8 @@ __attribute__((visibility("hidden")))
 const unsigned int __neverc_krt_kcfi_mode_marker = NEVERC_KRT_PROFILE_KCFI_MODE;
 __attribute__((visibility("hidden")))
 const unsigned int __neverc_krt_profile_marker = NEVERC_KRT_PROFILE_ID;
+__attribute__((visibility("hidden")))
+const unsigned int __neverc_krt_scs_mode_marker = NEVERC_KRT_PROFILE_SCS_MODE;
 #define NEVERC_KRT_PROFILE_MARKERS_EMITTED 1
 #endif
 #endif

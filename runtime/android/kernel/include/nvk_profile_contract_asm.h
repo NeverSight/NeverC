@@ -17,7 +17,9 @@
 /* Keep this serialization identical to AndroidKernelProfileContract::encode. */
 	.pushsection .neverc.android.kernel.profile,"a",@progbits
 	.balign 8
-	.quad ((NEVERC_KRT_PROFILE_ID << 32) | NEVERC_KRT_PROFILE_KCFI_MODE)
+	.quad ((NEVERC_KRT_PROFILE_ID << 32) | (1 << 16) | \
+	       (NEVERC_KRT_PROFILE_SCS_MODE << 8) | \
+	       NEVERC_KRT_PROFILE_KCFI_MODE)
 	.popsection;
 #define NEVERC_KRT_PROFILE_ASM_CONTRACT_EMITTED 1
 #endif

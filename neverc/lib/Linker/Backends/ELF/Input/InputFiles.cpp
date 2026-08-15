@@ -538,6 +538,8 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
             neverc::AndroidKernelProfileContract::profile(contract);
         uint32_t mode =
             neverc::AndroidKernelProfileContract::kcfiMode(contract);
+        uint32_t scsMode =
+            neverc::AndroidKernelProfileContract::shadowCallStackMode(contract);
         if (!neverc::AndroidKernelProfileContract::isValid(contract)) {
           error(toString(this) +
                 ": invalid native Android kernel profile contract");
@@ -555,12 +557,16 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
           uint32_t existingMode =
               neverc::AndroidKernelProfileContract::kcfiMode(
                   *elfState().androidKernelContract);
+          uint32_t existingSCSMode =
+              neverc::AndroidKernelProfileContract::shadowCallStackMode(
+                  *elfState().androidKernelContract);
           error("incompatible Android kernel profile contracts\n>>> " +
                 toString(elfState().androidKernelContractFile) +
                 " selects profile " + Twine(existingProfile) + " / KCFI mode " +
-                Twine(existingMode) + "\n>>> " + toString(this) +
+                Twine(existingMode) + " / SCS mode " +
+                Twine(existingSCSMode) + "\n>>> " + toString(this) +
                 " selects profile " + Twine(profile) + " / KCFI mode " +
-                Twine(mode));
+                Twine(mode) + " / SCS mode " + Twine(scsMode));
         }
       }
     }

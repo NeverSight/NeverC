@@ -22,6 +22,9 @@
 #include <linux/semaphore.h>
 #include <linux/sysfs.h>
 #include <linux/workqueue.h>
+#include <nvk_process.h>
+#include <nvk_inode.h>
+#include <nvk_vma.h>
 
 _Static_assert(WORK_DATA_INIT() == WORK_STRUCT_NO_POOL,
 	       "work_struct initializer must encode the no-pool sentinel");
@@ -83,6 +86,85 @@ static enum hrtimer_restart nvk_test_hrtimer_callback(struct hrtimer *timer)
 {
 	(void)timer;
 	return HRTIMER_NORESTART;
+}
+
+static int nvk_test_opaque_vma_snapshot(const void *vma)
+{
+	struct neverc_krt_vma_snapshot snapshot = { 0 };
+	int (*snapshot_fn)(const void *, struct neverc_krt_vma_snapshot *) =
+		neverc_krt_vma_snapshot;
+
+	return snapshot_fn(vma, &snapshot) + (int)(snapshot.end - snapshot.start) +
+	       (snapshot.mm_identity != (void *)0);
+}
+
+static int nvk_test_opaque_inode_accessors(void *inode, const void *path)
+{
+	struct neverc_krt_inode_times times = { 0 };
+	struct neverc_krt_path_storage path_storage = { { 0, 0 } };
+	int (*filename_available_fn)(void) =
+		neverc_krt_filename_name_available;
+	const char *(*filename_name_fn)(const void *) =
+		neverc_krt_filename_name;
+	int (*path_available_fn)(void) = neverc_krt_path_storage_available;
+	void *(*path_inode_get_fn)(const void *) = neverc_krt_path_inode_get;
+	void (*inode_put_fn)(void *) = neverc_krt_inode_put;
+	int (*get_times_fn)(const void *, struct neverc_krt_inode_times *) =
+		neverc_krt_inode_get_times;
+	int (*set_times_fn)(void *, s64, u32, s64, u32) =
+		neverc_krt_inode_set_times;
+	void *referenced = path_inode_get_fn(
+		path ? path : (const void *)&path_storage);
+	int result = get_times_fn(inode, &times) +
+		set_times_fn(inode, times.atime_sec, times.atime_nsec,
+			     times.mtime_sec, times.mtime_nsec) +
+		filename_available_fn() + path_available_fn() +
+		(filename_name_fn(path) != (const char *)0);
+
+	if (referenced)
+		inode_put_fn(referenced);
+	return result;
+}
+
+static int nvk_test_comm_predicate(const char *comm, void *data)
+{
+	(void)comm;
+	(void)data;
+	return 0;
+}
+
+static int nvk_test_opaque_task_accessors(struct task_struct *task)
+{
+	struct neverc_krt_task_user_state snapshot = { 0 };
+	struct neverc_krt_task_identity identity = { 0 };
+	int (*parent_tgid_fn)(struct task_struct *) =
+		neverc_krt_task_parent_tgid;
+	int (*ancestry_fn)(struct task_struct *, int) =
+		neverc_krt_task_has_tgid_ancestor;
+	int (*snapshot_fn)(struct task_struct *,
+			   struct neverc_krt_task_user_state *) =
+		neverc_krt_task_user_state_snapshot;
+	int (*identity_fn)(struct task_struct *, unsigned int,
+			   neverc_krt_task_comm_predicate_t, void *,
+			   struct neverc_krt_task_identity *) =
+		neverc_krt_task_match_group_ancestry;
+	int (*thread_ids_fn)(struct task_struct *, int *, size_t) =
+		neverc_krt_task_thread_ids;
+	int (*layout_available_fn)(unsigned int) =
+		neverc_krt_task_layout_available;
+	int tids[2] = { 0 };
+
+	return parent_tgid_fn(task) + ancestry_fn(task, 1) +
+	       identity_fn(task, 16, nvk_test_comm_predicate, (void *)0,
+			   &identity) +
+	       thread_ids_fn(task, tids, 2) + tids[0] + tids[1] +
+	       layout_available_fn(NEVERC_KRT_TASK_LAYOUT_WALK |
+				   NEVERC_KRT_TASK_LAYOUT_REF |
+				   NEVERC_KRT_TASK_LAYOUT_USER_STATE |
+				   NEVERC_KRT_TASK_LAYOUT_THREADS) +
+	       snapshot_fn(task, &snapshot) + identity.pid + identity.tgid +
+	       (int)identity.uid + (int)snapshot.flags +
+	       (int)snapshot.pc + (int)snapshot.pstate + snapshot.user_mode;
 }
 
 static const struct dev_pm_ops nvk_test_pm_ops = {
@@ -154,5 +236,8 @@ int nvk_test_sdk_layouts(void)
 	       (int)netlink.groups + (int)hrtimer.function(&hrtimer) +
 	       (int)sizeof(tasklet) + (int)idr.__idr_base +
 	       (sysfs_group.attrs == (void *)0) + (mapping == (void *)0) +
-	       (int)sizeof(cpumask) + saved_preempt_count;
+	       (int)sizeof(cpumask) + saved_preempt_count +
+	       nvk_test_opaque_vma_snapshot((const void *)0) +
+	       nvk_test_opaque_inode_accessors((void *)0, (const void *)0) +
+	       nvk_test_opaque_task_accessors((struct task_struct *)0);
 }

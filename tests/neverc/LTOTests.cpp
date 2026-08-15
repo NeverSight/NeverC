@@ -2117,7 +2117,8 @@ TEST_F(LTOTest, AndroidKernelProfilesEmitKcfiEntryTypeIds) {
     uint32_t ExitTypeId;
   };
   const Profile Profiles[] = {
-      {"510", 0x00000000, 0x00000000}, {"515", 0x00000000, 0x00000000},
+      {"510", 0x00000000, 0x00000000}, {"51013", 0x00000000, 0x00000000},
+      {"515", 0x00000000, 0x00000000}, {"51514", 0x00000000, 0x00000000},
       {"601", 0x36b1c5a6, 0xa540670c}, {"606", 0x36b1c5a6, 0xa540670c},
       {"612", 0x6fbb3035, 0xe5c47d60}, {"618", 0x6fbb3035, 0xe5c47d60},
   };
@@ -2936,6 +2937,7 @@ int kcfi_implicit_profile_callback(void) { return 1; }
   EXPECT_EQ(*Prefix, 0x6fbb3035u);
   EXPECT_EQ(Bytes.find("__neverc_krt_kcfi_mode_marker"), std::string::npos);
   EXPECT_EQ(Bytes.find("__neverc_krt_profile_marker"), std::string::npos);
+  EXPECT_EQ(Bytes.find("__neverc_krt_scs_mode_marker"), std::string::npos);
 }
 
 TEST_F(LTOTest, AndroidKernelUserForcedConfigPrecedesProfileMarker) {
@@ -2969,6 +2971,7 @@ int kcfi_forced_config_callback(void) { return 1; }
   EXPECT_EQ(*Prefix, 0x6fbb3035u);
   EXPECT_EQ(Bytes.find("__neverc_krt_kcfi_mode_marker"), std::string::npos);
   EXPECT_EQ(Bytes.find("__neverc_krt_profile_marker"), std::string::npos);
+  EXPECT_EQ(Bytes.find("__neverc_krt_scs_mode_marker"), std::string::npos);
 }
 
 TEST_F(LTOTest, AndroidKernelTextualIROutputKeepsProfileContractPrintable) {
@@ -2993,11 +2996,151 @@ TEST_F(LTOTest, AndroidKernelTextualIROutputKeepsProfileContractPrintable) {
   const std::string IR = readFile(Output);
   EXPECT_NE(IR.find("neverc.android.kernel.profile"), std::string::npos);
   EXPECT_NE(IR.find(".neverc.android.kernel.profile"), std::string::npos);
-  EXPECT_NE(IR.find("shadowcallstack"), std::string::npos);
+  EXPECT_EQ(IR.find("shadowcallstack"), std::string::npos);
+  EXPECT_NE(IR.find("\"branch-target-enforcement\"=\"true\""),
+            std::string::npos);
+  EXPECT_NE(IR.find("\"sign-return-address\"=\"all\""),
+            std::string::npos);
+  EXPECT_NE(IR.find("\"sign-return-address-key\"=\"a_key\""),
+            std::string::npos);
   std::istringstream Lines(IR);
   for (std::string Line; std::getline(Lines, Line);)
     if (Line.rfind("attributes #", 0) == 0)
       EXPECT_EQ(Line.find("uwtable"), std::string::npos) << Line;
+}
+
+// Android kernel code must never acquire an FP/SIMD/SVE-capable per-function
+// subtarget while IR is reconstructed or optimized.  A variadic 32-byte
+// aggregate is the code shape that otherwise lets AArch64 lower the copy
+// through Q registers, so assert the public compiler output keeps the
+// general-register-only feature contract on the final function.
+TEST_F(LTOTest, AndroidKernelDriverModeRetainsGeneralRegsOnlyFeatures) {
+  auto Source = tmpFile("android_kernel_general_regs_only.c");
+  auto Output = tmpFile("android_kernel_general_regs_only.ll");
+  writeFile(Source, R"c(
+#include <stdarg.h>
+
+extern int neverc_krt_mem_init(void);
+
+struct aggregate32 {
+  unsigned long words[4];
+};
+
+__attribute__((noinline))
+unsigned long android_kernel_general_regs_probe(int count, ...) {
+  va_list args;
+  struct aggregate32 value;
+  va_start(args, count);
+  value = va_arg(args, struct aggregate32);
+  va_end(args);
+  return value.words[0] + value.words[3] +
+         (unsigned long)neverc_krt_mem_init();
+}
+)c");
+
+  auto Result = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-O2",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-fno-lto",
+      "-S",
+      "-emit-llvm",
+      "-o",
+      Output.string(),
+      Source.string(),
+  });
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+
+  const std::string IR = readFile(Output);
+  EXPECT_NE(IR.find("@android_kernel_general_regs_probe"), std::string::npos);
+  EXPECT_NE(IR.find("\"target-features\"="), std::string::npos);
+  EXPECT_NE(IR.find("-fp-armv8"), std::string::npos) << IR;
+  EXPECT_NE(IR.find("-neon"), std::string::npos) << IR;
+  EXPECT_NE(IR.find("-sve"), std::string::npos) << IR;
+  EXPECT_NE(IR.find("-sve2"), std::string::npos) << IR;
+  EXPECT_NE(IR.find("-sme"), std::string::npos) << IR;
+  EXPECT_NE(IR.find("-sme2"), std::string::npos) << IR;
+  EXPECT_EQ(IR.find("+fp-armv8"), std::string::npos) << IR;
+  EXPECT_EQ(IR.find("+neon"), std::string::npos) << IR;
+  EXPECT_EQ(IR.find("+sve"), std::string::npos) << IR;
+  EXPECT_EQ(IR.find("+sve2"), std::string::npos) << IR;
+  EXPECT_EQ(IR.find("+sme"), std::string::npos) << IR;
+  EXPECT_EQ(IR.find("+sme2"), std::string::npos) << IR;
+
+  // The runtime bitcode is linked before KernelFunctionAttrsPass.  Its target
+  // attributes were stripped while retargeting, so the pass must materialize
+  // the same contract on runtime definitions rather than relying on the
+  // source TU's cc1 defaults.
+  size_t RuntimeDef = std::string::npos;
+  for (size_t Search = IR.find("define "); Search != std::string::npos;
+       Search = IR.find("define ", Search + 1)) {
+    const size_t LineEnd = IR.find('\n', Search);
+    const size_t Name = IR.find("@neverc_krt_mem_init()", Search);
+    if (Name != std::string::npos &&
+        (LineEnd == std::string::npos || Name < LineEnd)) {
+      RuntimeDef = Search;
+      break;
+    }
+  }
+  ASSERT_NE(RuntimeDef, std::string::npos) << IR;
+  const size_t RuntimeDefEnd = IR.find('\n', RuntimeDef);
+  const size_t RuntimeGroup = IR.find(" #", RuntimeDef);
+  ASSERT_NE(RuntimeDefEnd, std::string::npos) << IR;
+  ASSERT_NE(RuntimeGroup, std::string::npos) << IR;
+  ASSERT_LT(RuntimeGroup, RuntimeDefEnd) << IR;
+  const size_t RuntimeGroupBegin = RuntimeGroup + 2;
+  const size_t RuntimeGroupEnd =
+      IR.find_first_not_of("0123456789", RuntimeGroupBegin);
+  ASSERT_NE(RuntimeGroupEnd, std::string::npos) << IR;
+  const std::string RuntimeAttrMarker =
+      "attributes #" +
+      IR.substr(RuntimeGroupBegin, RuntimeGroupEnd - RuntimeGroupBegin) + " =";
+  const size_t RuntimeAttrsBegin = IR.find(RuntimeAttrMarker);
+  ASSERT_NE(RuntimeAttrsBegin, std::string::npos) << IR;
+  const size_t RuntimeAttrsEnd = IR.find('\n', RuntimeAttrsBegin);
+  const std::string RuntimeAttrs =
+      IR.substr(RuntimeAttrsBegin, RuntimeAttrsEnd - RuntimeAttrsBegin);
+  EXPECT_NE(RuntimeAttrs.find("+reserve-x18"), std::string::npos)
+      << RuntimeAttrs;
+  EXPECT_NE(RuntimeAttrs.find("+v8a"), std::string::npos) << RuntimeAttrs;
+  EXPECT_NE(RuntimeAttrs.find("-fp-armv8"), std::string::npos) << RuntimeAttrs;
+  EXPECT_NE(RuntimeAttrs.find("-crypto"), std::string::npos) << RuntimeAttrs;
+  EXPECT_NE(RuntimeAttrs.find("-neon"), std::string::npos) << RuntimeAttrs;
+  EXPECT_NE(RuntimeAttrs.find("-sve"), std::string::npos) << RuntimeAttrs;
+  EXPECT_NE(RuntimeAttrs.find("-sve2"), std::string::npos) << RuntimeAttrs;
+  EXPECT_NE(RuntimeAttrs.find("-sme"), std::string::npos) << RuntimeAttrs;
+  EXPECT_NE(RuntimeAttrs.find("-sme2"), std::string::npos) << RuntimeAttrs;
+}
+
+TEST_F(LTOTest, AndroidKernelLegacyProfileRetainsStaticShadowCallStack) {
+  auto Source = tmpFile("android_kernel_legacy_scs.c");
+  auto Output = tmpFile("android_kernel_legacy_scs.ll");
+  writeFile(Source, "int android_kernel_legacy_scs(void) { return 1; }\n");
+
+  auto Result = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=510",
+      "-fno-lto",
+      "-S",
+      "-emit-llvm",
+      "-o",
+      Output.string(),
+      Source.string(),
+  });
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+
+  const std::string IR = readFile(Output);
+  EXPECT_NE(IR.find("shadowcallstack"), std::string::npos);
+  EXPECT_NE(IR.find("\"branch-target-enforcement\"=\"true\""),
+            std::string::npos);
+  EXPECT_NE(IR.find("\"sign-return-address\"=\"all\""),
+            std::string::npos);
+  EXPECT_NE(IR.find("\"sign-return-address-key\"=\"a_key\""),
+            std::string::npos);
 }
 
 TEST_F(LTOTest, AndroidKernelProfileContractFailsClosed) {
@@ -3005,6 +3148,7 @@ TEST_F(LTOTest, AndroidKernelProfileContractFailsClosed) {
   auto InvalidMarker =
       tmpFile("android_kernel_profile_contract_invalid_marker.c");
   auto ZeroProfile = tmpFile("android_kernel_profile_contract_zero_profile.c");
+  auto MissingSCS = tmpFile("android_kernel_profile_contract_missing_scs.c");
   writeFile(Plain, "int android_profile_contract_plain(void) { return 1; }\n");
   writeFile(InvalidMarker, R"c(
 __attribute__((visibility("hidden")))
@@ -3019,6 +3163,13 @@ const unsigned int __neverc_krt_kcfi_mode_marker = 0;
 __attribute__((visibility("hidden")))
 const unsigned int __neverc_krt_profile_marker = 0;
 int android_profile_contract_zero(void) { return 1; }
+)c");
+  writeFile(MissingSCS, R"c(
+__attribute__((visibility("hidden")))
+const unsigned int __neverc_krt_kcfi_mode_marker = 2;
+__attribute__((visibility("hidden")))
+const unsigned int __neverc_krt_profile_marker = 612;
+int android_profile_contract_missing_scs(void) { return 1; }
 )c");
 
   struct Failure {
@@ -3048,6 +3199,10 @@ int android_profile_contract_zero(void) { return 1; }
        {},
        ZeroProfile,
        "invalid Android kernel source profile marker"},
+      {"missing_scs_marker",
+       {},
+       MissingSCS,
+       "invalid Android kernel source shadow-call-stack mode marker"},
       {"unsupported_profile",
        {"-DNVK_KERNEL=620"},
        Plain,
