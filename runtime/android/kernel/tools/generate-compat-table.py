@@ -1260,11 +1260,21 @@ def normalize_user_ptmap_layout(manifest, context):
 
 
 def arm64_task_stack_size(manifest):
-    """Return THREAD_SIZE for the certified non-KASAN ARM64 GKI profile."""
-    page_shift = manifest["config"]["PAGE_SHIFT"]
+    """Return ARM64 THREAD_SIZE measured from the certified vmlinux."""
+    config = manifest["config"]
+    page_shift = config["PAGE_SHIFT"]
     if page_shift not in (12, 14, 16):
         raise ValueError("manifest has unsupported ARM64 PAGE_SHIFT")
-    return 1 << max(page_shift, 14)
+    thread_size = config.get("THREAD_SIZE")
+    if (
+        isinstance(thread_size, bool)
+        or not isinstance(thread_size, int)
+        or thread_size < (1 << 14)
+        or thread_size > (1 << 20)
+        or thread_size & (thread_size - 1)
+    ):
+        raise ValueError("manifest has invalid ARM64 THREAD_SIZE evidence")
+    return thread_size
 
 
 def compile_runtime_layout(manifest):

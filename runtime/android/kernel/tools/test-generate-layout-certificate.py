@@ -5,7 +5,9 @@ import importlib.util
 import copy
 import json
 from pathlib import Path
+import tempfile
 import unittest
+from unittest import mock
 
 
 TOOLS_ROOT = Path(__file__).resolve().parent
@@ -218,6 +220,77 @@ def checked_profile_and_manifest(profile_id=515):
 
 
 class GenerateLayoutCertificateTests(unittest.TestCase):
+    def test_arm64_task_stack_size_uses_vmlinux_stack_boundaries(self):
+        class FakeSymbol:
+            def __init__(self, value):
+                self.value = value
+
+            def __getitem__(self, key):
+                if key != "st_value":
+                    raise KeyError(key)
+                return self.value
+
+        class FakeSymbolTable:
+            def get_symbol_by_name(self, name):
+                values = {
+                    "__start_init_stack": 0x100000,
+                    "__end_init_stack": 0x104000,
+                }
+                return [FakeSymbol(values[name])]
+
+        class FakeELF:
+            def get_section_by_name(self, name):
+                return FakeSymbolTable() if name == ".symtab" else None
+
+        with tempfile.TemporaryDirectory() as directory:
+            vmlinux = Path(directory) / "vmlinux"
+            vmlinux.write_bytes(b"ELF")
+            config = {
+                "PAGE_SHIFT": 12,
+                # Deliberately contradictory external evidence: the measured
+                # binary stack boundaries remain authoritative.
+                "CONFIG_KASAN_GENERIC": True,
+            }
+            with mock.patch.object(
+                CERT.MANIFEST, "ELFFile", return_value=FakeELF()
+            ):
+                config = CERT.MANIFEST.bind_arm64_runtime_config(
+                    config, vmlinux
+                )
+
+        self.assertEqual(config["THREAD_SIZE"], 1 << 14)
+        self.assertEqual(
+            COMPAT.arm64_task_stack_size({"config": config}),
+            1 << 14,
+        )
+
+    def test_arm64_task_stack_size_uses_config_for_legacy_vmlinux(self):
+        class FakeELF:
+            def get_section_by_name(self, _name):
+                return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            vmlinux = Path(directory) / "vmlinux"
+            vmlinux.write_bytes(b"ELF")
+            config = {
+                "PAGE_SHIFT": 12,
+                "CONFIG_KASAN_GENERIC": True,
+                "CONFIG_KASAN_SW_TAGS": False,
+                "CONFIG_VMAP_STACK": True,
+            }
+            with mock.patch.object(
+                CERT.MANIFEST, "ELFFile", return_value=FakeELF()
+            ):
+                config = CERT.MANIFEST.bind_arm64_runtime_config(
+                    config, vmlinux
+                )
+
+        self.assertEqual(config["THREAD_SIZE"], 1 << 15)
+        self.assertEqual(
+            COMPAT.arm64_task_stack_size({"config": config}),
+            1 << 15,
+        )
+
     def test_full_certificate_contains_every_runtime_layout_field(self):
         profile, manifest, catalog = checked_profile_and_manifest()
         certificate = CERT.build_full_certificate(

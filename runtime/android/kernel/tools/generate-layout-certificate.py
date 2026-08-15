@@ -449,7 +449,9 @@ def main():
                 raise ValueError(
                     "--config is required for a target-bound full certificate"
                 )
-            config = MANIFEST.read_config(args.config)
+            config = MANIFEST.bind_arm64_runtime_config(
+                MANIFEST.read_config(args.config), args.vmlinux
+            )
             target_evidence = MANIFEST.elf_evidence(args.vmlinux)
             target_evidence["config_sha256"] = MANIFEST.sha256_file(args.config)
             if target_evidence["layout_sha256"] != evidence["sha256"]:

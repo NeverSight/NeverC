@@ -149,12 +149,15 @@ CONFIG_KEYS = (
     "CONFIG_DEBUG_INFO_BTF_MODULES",
     "CONFIG_DEBUG_LOCK_ALLOC",
     "CONFIG_DEBUG_SPINLOCK",
+    "CONFIG_KASAN_GENERIC",
+    "CONFIG_KASAN_SW_TAGS",
     "CONFIG_MMU",
     "CONFIG_MODULE_UNLOAD",
     "CONFIG_NR_CPUS",
     "CONFIG_PGTABLE_LEVELS",
     "CONFIG_PREEMPT_RT",
     "CONFIG_SECCOMP",
+    "CONFIG_VMAP_STACK",
 )
 SHF_COMPRESSED = 0x800
 ELF_HASH_CHUNK_SIZE = 1024 * 1024
@@ -253,6 +256,56 @@ def read_config(path):
         raise ValueError("GKI config must select exactly one ARM64 page size")
     values["PAGE_SHIFT"] = selected[0]
     return values
+
+
+def arm64_thread_size(vmlinux, config):
+    """Measure THREAD_SIZE from vmlinux, with config fallback for old kernels."""
+    with vmlinux.open("rb") as stream:
+        elf = ELFFile(stream)
+        symbols = elf.get_section_by_name(".symtab")
+        values = {}
+        if symbols is not None:
+            for name in ("__start_init_stack", "__end_init_stack"):
+                matches = symbols.get_symbol_by_name(name)
+                if matches:
+                    if len(matches) != 1:
+                        raise ValueError(
+                            f"vmlinux has ambiguous {name} stack evidence"
+                        )
+                    values[name] = int(matches[0]["st_value"])
+
+    if values:
+        if len(values) != 2:
+            raise ValueError("vmlinux has incomplete thread-stack boundaries")
+        size = values["__end_init_stack"] - values["__start_init_stack"]
+    else:
+        page_shift = config["PAGE_SHIFT"]
+        minimum_shift = 14 + int(
+            config.get("CONFIG_KASAN_GENERIC") is True
+            or config.get("CONFIG_KASAN_SW_TAGS") is True
+        )
+        if (
+            config.get("CONFIG_VMAP_STACK") is True
+            and minimum_shift < page_shift
+        ):
+            size = 1 << page_shift
+        else:
+            size = 1 << minimum_shift
+
+    if (
+        size < (1 << 14)
+        or size > (1 << 20)
+        or size & (size - 1)
+    ):
+        raise ValueError("vmlinux has invalid ARM64 THREAD_SIZE evidence")
+    return size
+
+
+def bind_arm64_runtime_config(config, vmlinux):
+    """Bind config-derived facts to runtime geometry measured from vmlinux."""
+    bound = dict(config)
+    bound["THREAD_SIZE"] = arm64_thread_size(vmlinux, bound)
+    return bound
 
 
 def gnu_build_id(elf):
@@ -433,6 +486,7 @@ def main():
         else:
             config = base["config"]
             evidence["config_sha256"] = base["evidence"]["config_sha256"]
+        config = bind_arm64_runtime_config(config, args.vmlinux)
         if args.symvers is not None:
             evidence["symvers_sha256"] = sha256_file(args.symvers)
             sdk_exports = sdk_export_evidence(

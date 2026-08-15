@@ -10,13 +10,17 @@
     "CONFIG_DEBUG_INFO_BTF_MODULES": true,
     "CONFIG_DEBUG_LOCK_ALLOC": false,
     "CONFIG_DEBUG_SPINLOCK": false,
+    "CONFIG_KASAN_GENERIC": true,
+    "CONFIG_KASAN_SW_TAGS": false,
     "CONFIG_MMU": true,
     "CONFIG_MODULE_UNLOAD": true,
     "CONFIG_NR_CPUS": 32,
     "CONFIG_PGTABLE_LEVELS": 3,
     "CONFIG_PREEMPT_RT": false,
     "CONFIG_SECCOMP": true,
-    "PAGE_SHIFT": 12
+    "CONFIG_VMAP_STACK": true,
+    "PAGE_SHIFT": 12,
+    "THREAD_SIZE": 16384
   },
   "evidence": {
     "config_sha256": "91d87b6df0893d0ceab416278c393b943c32411c26e2964922bf996fc24c57a7",
