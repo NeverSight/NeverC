@@ -354,7 +354,7 @@ or maximum-layout fallback.
 ## Same Linux series, different Android generation
 
 The Linux patch number (the `223` in `5.10.223`) does **not** move the fields
-NeverC reads, as long as Android release, KMI, and page size stay the same.
+NeverC reads, as long as the Android generation and page size stay the same.
 What *does* move them is a new Android generation on the same `major.minor`.
 Official AOSP `include/linux/module.h` keeps the same field order inside a
 Linux series (`android12-5.10` matches `android13-5.10`; `android13-5.15`
@@ -376,10 +376,14 @@ why android13-5.15 and android14-5.15 are too:
 `-DNVK_KERNEL=51012` is only a spelling for `510`. `-DNVK_KERNEL=51513` is
 only a spelling for `515`. Compile a module for android13-5.10 with
 `-DNVK_KERNEL=51013`, and for android14-5.15 with `-DNVK_KERNEL=51514`.
-A `510` android12 `.ko` will not `insmod` on android13-5.10: vermagic names
-`android12-9`, and even a forced load would write `module.exit` at 960
-instead of 936. A `515` android13 `.ko` is worse on android14-5.15: the
-pinned `this_module` is 960 bytes and the kernel's `struct module` is 1024.
+Do not ship a `510` android12 `.ko` onto android13-5.10, or a `515`
+android13 `.ko` onto android14-5.15. GKI `CONFIG_MODVERSIONS` drops the
+first vermagic token, so the `android12-9` / `android13-8` spelling is
+**not** what stops the loader. The compile families differ in
+loader-visible `struct module`: `510` writes `exit` at 960 on a 1024-byte
+image that android13-5.10 reads at 936; `515` is 960 bytes on a kernel
+whose `struct module` is 1024. After a successful load, activate also
+fail-closes on the wrong Android generation.
 
 Local trees used for the new families (do not treat these binaries as
 drop-in replacements for the pinned 510/515 archives):
@@ -391,16 +395,20 @@ drop-in replacements for the pinned 510/515 archives):
 | `local_docs/android13-5.15-bin` | `5.15.153-android13-8-00026-g06276351e9ff-dirty` |
 | `local_docs/android14-5.15-bin` | `5.15.164-android14-11-maybe-dirty` |
 
-`insmod` compares the compile-time `.modinfo` vermagic as a full string
-before NeverC init runs. `51013` is pinned to the local dirty token above,
-so a module built with `-DNVK_KERNEL=51013` loads on that tree and on the
-matching CI archive, not on an official android13-5.10 with a different
-suffix. `neverc_krt_patch_vermagic()` cannot change that: it only rewrites
-a post-load `vermagic=` blob inside `this_module` after the selected
-identity has been accepted, and it refuses to emit a truncated string.
-Same-Android/KMI `COMPAT` is a post-load layout policy, not a loader
-bypass. Ship a `.ko` whose vermagic matches the target kernel, or accept
-a forced load.
+On GKI (`CONFIG_MODVERSIONS=y`) the loader compares vermagic **flags**
+(`SMP preempt mod_unload modversions aarch64`) after dropping the first
+token. Sublevel, `-dirty`, and git suffix therefore do **not** block
+`insmod`. A `-DNVK_KERNEL=51013` module loads on any same-page
+`5.10.*-android13-*` GKI whose `struct module` matches this family
+(size 1024, `init` 400, `exit` 936), including the local dirty tree and
+other official/OEM tokens. The same rule applies to `51514` on
+`5.15.*-android14-*`. `neverc_krt_patch_vermagic()` still cannot help
+the loader: it only rewrites a post-load `vermagic=` blob inside
+`this_module` after the selected identity has been accepted, and it
+refuses to emit a truncated string. Same-generation `COMPAT` is the
+post-load layout policy (patch / KMI / token ignored; a certificate may
+overlay fields). Ship the compile family that matches the Android
+generation; do not mix `510`/`51013` or `515`/`51514`.
 
 `CONFIG_CFI_CLANG` on 5.10/5.15 is classic Clang CFI (`__cfi_check` /
 `__cfi_slowpath`), not NeverC `kcfi_mode`. 51013/51514 keep
