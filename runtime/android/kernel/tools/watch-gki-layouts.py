@@ -319,14 +319,29 @@ def compact_fingerprint(structs):
     return payload
 
 
+def _struct_name(key):
+    return key.split(".", 1)[0]
+
+
 def diff_compact(old, new, *, against):
     if old is None or new is None:
         return []
     if old.get("digest") == new.get("digest"):
         return []
+    old_counts = old.get("member_counts") or {}
+    new_counts = new.get("member_counts") or {}
+    comparable = set(old_counts) & set(new_counts)
     changes = []
-    old_used = old.get("used") or {}
-    new_used = new.get("used") or {}
+    old_used = {
+        key: value
+        for key, value in (old.get("used") or {}).items()
+        if _struct_name(key) in comparable
+    }
+    new_used = {
+        key: value
+        for key, value in (new.get("used") or {}).items()
+        if _struct_name(key) in comparable
+    }
     for key in sorted(set(old_used) | set(new_used)):
         previous = old_used.get(key)
         current = new_used.get(key)
@@ -373,8 +388,12 @@ def diff_compact(old, new, *, against):
             }
         )
     reported = {(item["struct"], item["field"]) for item in changes}
-    old_missing = set(old.get("missing") or [])
-    new_missing = set(new.get("missing") or [])
+    old_missing = {
+        key for key in (old.get("missing") or []) if _struct_name(key) in comparable
+    }
+    new_missing = {
+        key for key in (new.get("missing") or []) if _struct_name(key) in comparable
+    }
     for key in sorted(new_missing - old_missing):
         struct_name, field = key.split(".", 1)
         if (struct_name, field) in reported:
@@ -391,9 +410,7 @@ def diff_compact(old, new, *, against):
         )
         reported.add((struct_name, field))
     used_structs = {item["struct"] for item in changes}
-    old_counts = old.get("member_counts") or {}
-    new_counts = new.get("member_counts") or {}
-    for struct_name in sorted(set(old_counts) | set(new_counts)):
+    for struct_name in sorted(comparable):
         if old_counts.get(struct_name) == new_counts.get(struct_name):
             continue
         if struct_name in used_structs:

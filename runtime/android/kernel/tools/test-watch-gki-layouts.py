@@ -106,6 +106,28 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(comm["severity"], "offset_risk")
         self.assertIn("index 5 -> 6", comm["detail"])
 
+    def test_incomplete_probe_does_not_invent_field_changes(self):
+        full = layouts.compact_fingerprint(
+            {
+                "task_struct": layouts.fingerprint_struct(TASK_HEADER, next(
+                    item for item in layouts.WATCHED_STRUCTS if item["name"] == "task_struct"
+                )),
+                "path": layouts.fingerprint_struct(
+                    "struct path { struct vfsmount *mnt; struct dentry *dentry; };",
+                    {"name": "path", "fields": ("dentry",)},
+                ),
+            }
+        )
+        partial = layouts.compact_fingerprint(
+            {
+                "task_struct": layouts.fingerprint_struct(TASK_HEADER, next(
+                    item for item in layouts.WATCHED_STRUCTS if item["name"] == "task_struct"
+                )),
+            }
+        )
+        self.assertEqual(layouts.diff_compact(full, partial, against="snapshot"), [])
+        self.assertEqual(layouts.diff_compact(partial, full, against="snapshot"), [])
+
     def test_trailing_unused_member_is_sizeof_risk_only(self):
         spec = {
             "name": "path",

@@ -104,7 +104,7 @@ def fetch_bytes(url, opener=None):
                 return response.read()
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             last_error = error
-            if isinstance(error, urllib.error.HTTPError) and error.code in (404, 410):
+            if isinstance(error, urllib.error.HTTPError):
                 raise
             if attempt + 1 < FETCH_RETRIES:
                 time.sleep(1.5 * (attempt + 1))
@@ -199,11 +199,8 @@ def fetch_header_text(branch, path, opener=None, cache=None):
         return cache[key]
     try:
         text = fetch_googlesource_text(branch, path, opener=opener)
-    except urllib.error.HTTPError as error:
-        if error.code in (404, 410):
-            text = None
-        else:
-            raise
+    except urllib.error.HTTPError:
+        text = None
     if cache is not None:
         cache[key] = text
     return text
@@ -212,7 +209,10 @@ def fetch_header_text(branch, path, opener=None, cache=None):
 def probe_layouts(branch, opener=None, cache=None):
     texts = {}
     for path in LAYOUTS.unique_header_paths():
-        text = fetch_header_text(branch, path, opener=opener, cache=cache)
+        try:
+            text = fetch_header_text(branch, path, opener=opener, cache=cache)
+        except (WatchError, urllib.error.URLError, TimeoutError, OSError):
+            text = None
         if text:
             texts[path] = text
     structs = LAYOUTS.fingerprint_headers(texts)
@@ -510,13 +510,23 @@ def build_report(records, errors, snapshot, known_branches, force_notify):
     }
 
 
-def write_snapshot(path, records, known_branches):
+def write_snapshot(path, records, known_branches, previous_snapshot=None):
+    previous_families = {}
+    if previous_snapshot is not None:
+        previous_families = previous_snapshot.get("families") or {}
+    families = {}
+    for record in records:
+        snap = snapshot_family(record)
+        previous = previous_families.get(record["kernel_name"]) or {}
+        if snap.get("layout") is None and previous.get("layout"):
+            snap["layout"] = previous["layout"]
+        if snap.get("kminext_layout") is None and previous.get("kminext_layout"):
+            snap["kminext_layout"] = previous["kminext_layout"]
+        families[record["kernel_name"]] = snap
     payload = {
         "schema": 1,
         "source": "live",
-        "families": {
-            record["kernel_name"]: snapshot_family(record) for record in records
-        },
+        "families": families,
         "known_gki_branches": known_branches,
     }
     Path(path).write_text(
@@ -875,7 +885,12 @@ def main(argv=None, opener=None, environ=None):
     if args.summary_out is not None:
         Path(args.summary_out).write_text(markdown, encoding="utf-8")
     if args.snapshot_out is not None:
-        write_snapshot(args.snapshot_out, records, known_branches)
+        write_snapshot(
+            args.snapshot_out,
+            records,
+            known_branches,
+            previous_snapshot=snapshot,
+        )
 
     payload = build_discord_payload(report)
     if args.dry_run:

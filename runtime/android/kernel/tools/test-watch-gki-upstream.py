@@ -214,6 +214,25 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(record["live"]["linux_release"], "6.6.142")
         self.assertIsNone(record["kminext"])
 
+    def test_header_fetch_errors_do_not_drop_version_probe(self):
+        mapping = {
+            aosp_url("android16-6.12", "Makefile"): encode_text(makefile(6, 12, 90)),
+            aosp_url("android16-6.12", "build.config.constants"): encode_text(
+                constants("android16-6.12", 6)
+            ),
+        }
+        for path in watch.LAYOUTS.unique_header_paths():
+            mapping[aosp_url("android16-6.12", path)] = urllib.error.HTTPError(
+                aosp_url("android16-6.12", path),
+                500,
+                "unavailable",
+                hdrs=None,
+                fp=None,
+            )
+        record = watch.probe_family(family(), opener=FakeOpener(mapping))
+        self.assertEqual(record["live"]["linux_release"], "6.12.90")
+        self.assertIsNone(record["layout"])
+
 
 class DiffTests(unittest.TestCase):
     def test_first_run_compares_to_catalog_and_skips_historical_branches(self):
@@ -334,6 +353,33 @@ class DiffTests(unittest.TestCase):
             "known_gki_branches": ["android16-6.12"],
         }
         self.assertEqual(watch.collect_changes(records, snapshot, ["android16-6.12"]), [])
+
+    def test_snapshot_keeps_previous_layout_when_probe_is_empty(self):
+        layout = {
+            "digest": "keep-me",
+            "member_counts": {"module": 3},
+            "missing": [],
+            "used": {"module.init": {"index": 1, "decl": "int (*init)(void)"}},
+        }
+        previous = {
+            "source": "live",
+            "families": {
+                "android16-6.12": {
+                    "layout": layout,
+                    "kminext_layout": layout,
+                }
+            },
+        }
+        record = live_record(live_patch=90, live_kmi=6, layout=None, kminext_layout=None)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "snap.json"
+            written = watch.write_snapshot(
+                path, [record], ["android16-6.12"], previous_snapshot=previous
+            )
+        self.assertEqual(written["families"]["android16-6.12"]["layout"], layout)
+        self.assertEqual(
+            written["families"]["android16-6.12"]["kminext_layout"], layout
+        )
 
 
 class DiscordTests(unittest.TestCase):
