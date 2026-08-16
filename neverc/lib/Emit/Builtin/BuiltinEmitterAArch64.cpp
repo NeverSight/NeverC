@@ -4098,6 +4098,27 @@ Value *FunctionEmitter::genAArch64BuiltinExpr(unsigned BuiltinID,
         ME.getIntrinsic(Intrinsic::ptrauth_sign_generic), {Input, Modifier});
   }
 
+  if (BuiltinID == neverc::AArch64::BI__builtin_arm_wsp_write) {
+    Value *Input = genScalarExpr(E->getArg(0));
+    auto *FTy = llvm::FunctionType::get(VoidTy, {Int32Ty}, false);
+    auto *IA = llvm::InlineAsm::get(FTy, "mov wsp, ${0:w}", "r",
+                                    /*hasSideEffects=*/true);
+    Builder.CreateCall(IA, {Input});
+    return Builder.CreateZExt(Input, Int64Ty);
+  }
+
+  if (BuiltinID == neverc::AArch64::BI__builtin_arm_wsp_zero_extend) {
+    auto *ReadTy = llvm::FunctionType::get(Int32Ty, {}, false);
+    auto *ReadSP = llvm::InlineAsm::get(ReadTy, "mov ${0:w}, wsp", "=r",
+                                        /*hasSideEffects=*/true);
+    Value *Input = Builder.CreateCall(ReadSP);
+    auto *WriteTy = llvm::FunctionType::get(VoidTy, {Int32Ty}, false);
+    auto *WriteSP = llvm::InlineAsm::get(WriteTy, "mov wsp, ${0:w}", "r",
+                                         /*hasSideEffects=*/true);
+    Builder.CreateCall(WriteSP, {Input});
+    return Builder.CreateZExt(Input, Int64Ty);
+  }
+
   // Memory Operations (MOPS)
   if (BuiltinID == AArch64::BI__builtin_arm_mops_memset_tag) {
     Value *Dst = genScalarExpr(E->getArg(0));

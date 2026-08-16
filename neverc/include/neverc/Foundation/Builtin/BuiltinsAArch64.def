@@ -67,6 +67,10 @@ TARGET_BUILTIN(__builtin_arm_subp, "Uiv*v*", "t", "mte")
 // Generic pointer authentication code (PACGA)
 TARGET_BUILTIN(__builtin_arm_pacga, "WUiWUiWUi", "nc", "pauth")
 
+// Architectural WSP write.  Returns the zero-extended value installed in SP.
+TARGET_BUILTIN(__builtin_arm_wsp_write, "WUiUi", "n", "")
+TARGET_BUILTIN(__builtin_arm_wsp_zero_extend, "WUi", "n", "")
+
 // Memory Operations
 TARGET_BUILTIN(__builtin_arm_mops_memset_tag, "v*v*iz", "", "mte,mops")
 
