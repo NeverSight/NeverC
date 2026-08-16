@@ -1,4 +1,5 @@
 #include "neverc/std/path.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
