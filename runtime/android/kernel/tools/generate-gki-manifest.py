@@ -74,6 +74,7 @@ STRUCTURES = (
     "work_struct",
 )
 OPTIONAL_STRUCTURES = ("inode",)
+MODULE_MEMORY_STRUCTURES = ("module_layout", "module_memory")
 MEMBER_SIZE_MEMBERS = {
     "cred": frozenset({
         "egid",
@@ -159,6 +160,7 @@ CONFIG_KEYS = (
     "CONFIG_SECCOMP",
     "CONFIG_VMAP_STACK",
 )
+CONFIG_INPUT_KEYS = (*CONFIG_KEYS, "CONFIG_CFI")
 SHF_COMPRESSED = 0x800
 ELF_HASH_CHUNK_SIZE = 1024 * 1024
 
@@ -233,7 +235,7 @@ def parse_config_value(value):
 
 
 def read_config(path):
-    values = {key: False for key in CONFIG_KEYS}
+    values = {key: False for key in CONFIG_INPUT_KEYS}
     with path.open(encoding="utf-8") as stream:
         for raw_line in stream:
             line = raw_line.strip()
@@ -243,6 +245,13 @@ def read_config(path):
             if key in values:
                 values[key] = parse_config_value(value)
 
+    # Android 17 / Linux 6.18 uses the upstream CONFIG_CFI spelling. Keep the
+    # manifest's stable CONFIG_CFI_CLANG field while accepting either source
+    # key, and never silently downgrade modern CFI to false.
+    modern_cfi = values.pop("CONFIG_CFI")
+    values["CONFIG_CFI_CLANG"] = bool(
+        values["CONFIG_CFI_CLANG"] or modern_cfi
+    )
     page_sizes = {
         "CONFIG_ARM64_4K_PAGES": 12,
         "CONFIG_ARM64_16K_PAGES": 14,
@@ -379,6 +388,59 @@ def elf_evidence(path):
     }
 
 
+def module_memory_layout(layouts):
+    """Project old module_layout and split module_memory to one read contract."""
+    module = layouts.get("module", {})
+    members = module.get("members", {})
+    member_sizes = module.get("member_sizes", {})
+    if "mem" in members:
+        member_name = "mem"
+        entry_name = "module_memory"
+    elif "core_layout" in members:
+        member_name = "core_layout"
+        entry_name = "module_layout"
+    else:
+        raise ValueError("struct module lacks core_layout or mem allocation evidence")
+
+    entry = layouts.get(entry_name)
+    if not isinstance(entry, dict):
+        raise ValueError(f"layout evidence is missing required {entry_name}")
+    entry_size = entry.get("size")
+    member_size = member_sizes.get(member_name)
+    entry_members = entry.get("members", {})
+    entry_member_sizes = entry.get("member_sizes", {})
+    if (
+        not isinstance(entry_size, int)
+        or entry_size <= 0
+        or not isinstance(member_size, int)
+        or member_size <= 0
+        or member_size % entry_size
+        or entry_member_sizes.get("base") != 8
+        or entry_member_sizes.get("size") != 4
+    ):
+        raise ValueError("module allocation layout lacks width/stride evidence")
+    count = member_size // entry_size
+    if member_name == "core_layout" and count != 1:
+        raise ValueError("legacy module core_layout must contain one allocation")
+    if member_name == "mem" and count != 7:
+        raise ValueError("split module mem must contain seven allocations")
+    result = {
+        "base_offset": entry_members.get("base"),
+        "count": count,
+        "memory_offset": members[member_name],
+        "size_offset": entry_members.get("size"),
+        "stride": entry_size,
+    }
+    if any(not isinstance(value, int) or value < 0 for value in result.values()):
+        raise ValueError("module allocation layout contains an invalid offset")
+    if (
+        result["base_offset"] + 8 > entry_size
+        or result["size_offset"] + 4 > entry_size
+    ):
+        raise ValueError("module allocation fields exceed their entry")
+    return result
+
+
 def sdk_export_evidence(compiler, profile, symvers):
     export_tool = load_tool("nvk_check_sdk_exports", "check-sdk-exports.py")
     declarations = export_tool.sdk_declarations(compiler, profile)
@@ -448,8 +510,11 @@ def main():
                 if structure in base.get("layouts", {})
             )
         layouts = layout_tool.extract_layouts(
-            args.vmlinux, requested_structures
+            args.vmlinux, requested_structures + MODULE_MEMORY_STRUCTURES
         )
+        projected_module_memory = module_memory_layout(layouts)
+        for auxiliary_structure in MODULE_MEMORY_STRUCTURES:
+            layouts.pop(auxiliary_structure, None)
         for structure, layout in layouts.items():
             filtered_members = FILTERED_STRUCTURE_MEMBERS.get(structure)
             if filtered_members is not None:
@@ -500,6 +565,7 @@ def main():
             "evidence": evidence,
             "kernel_name": args.kernel_name,
             "layouts": layouts,
+            "module_memory_layout": projected_module_memory,
             "profile": args.profile,
             "schema": 1,
             "sdk_exports": sdk_exports,

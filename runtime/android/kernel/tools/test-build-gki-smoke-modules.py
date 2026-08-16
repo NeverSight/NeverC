@@ -78,6 +78,11 @@ class CompilerPrefixTests(unittest.TestCase):
         self.assertEqual(details, {"versions_entries": 0, "alloc_tags_size": 0})
         self.assertEqual(verifier.calls, [(Path("smoke.ko"), True)])
 
+    def test_import_contract_requires_zero_undefined_symbols(self):
+        self.assertEqual(build.validate_imports(""), set())
+        with self.assertRaisesRegex(RuntimeError, "undefined imports"):
+            build.validate_imports(" U register_kprobe\n")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -116,40 +116,38 @@ struct neverc_krt_user_ptmap_test_profile_policy {
 	unsigned int pte_release_internal_rcu;
 };
 
-/* Keep opaque fixture IDs on the test side; production dispatches only from
- * the generated profile's semantic Linux identity. */
-static inline int neverc_krt_user_ptmap_test_profile_identity(
-	unsigned int profile_id, unsigned int *linux_major,
-	unsigned int *linux_minor)
+#define NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_510 1U
+#define NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_515 2U
+#define NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_601 3U
+#define NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_606 4U
+#define NEVERC_KRT_USER_PTMAP_BACKEND_NORMALIZED_612_PLUS 5U
+
+/* Mirror only the generated profile-to-capability projection at the host
+ * boundary.  Production dispatch never infers this backend from a version. */
+static inline int neverc_krt_user_ptmap_test_profile_backend(
+	unsigned int profile_id, unsigned int *backend)
 {
-	if (!linux_major || !linux_minor)
+	if (!backend)
 		return -1;
 	switch (profile_id) {
 	case 510:
 	case 51013:
-		*linux_major = 5;
-		*linux_minor = 10;
+		*backend = NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_510;
 		return 0;
 	case 515:
 	case 51514:
-		*linux_major = 5;
-		*linux_minor = 15;
+		*backend = NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_515;
 		return 0;
 	case 601:
-		*linux_major = 6;
-		*linux_minor = 1;
+		*backend = NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_601;
 		return 0;
 	case 606:
-		*linux_major = 6;
-		*linux_minor = 6;
+		*backend = NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_606;
 		return 0;
 	case 612:
-		*linux_major = 6;
-		*linux_minor = 12;
-		return 0;
 	case 618:
-		*linux_major = 6;
-		*linux_minor = 18;
+		*backend =
+			NEVERC_KRT_USER_PTMAP_BACKEND_NORMALIZED_612_PLUS;
 		return 0;
 	default:
 		return -1;

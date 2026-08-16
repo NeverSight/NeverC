@@ -43,9 +43,12 @@ struct neverc_krt_pm_notifier {
 	int registered;
 };
 
+#define NEVERC_KRT_PM_NOTIFIER_INIT { .nb = {0}, .callback = 0, .registered = 0 }
+
 int neverc_krt_pm_register(struct neverc_krt_pm_notifier *pm,
 			   neverc_krt_pm_callback_t cb, int priority);
-void neverc_krt_pm_unregister(struct neverc_krt_pm_notifier *pm);
+/* Keep the object alive and retry if unregister returns nonzero. */
+int neverc_krt_pm_unregister(struct neverc_krt_pm_notifier *pm);
 
 /* ------------------------------------------------------------------ */
 /*  Reboot / shutdown notifier                                        */
@@ -59,9 +62,13 @@ struct neverc_krt_reboot_notifier {
 	int registered;
 };
 
+#define NEVERC_KRT_REBOOT_NOTIFIER_INIT \
+	{ .nb = {0}, .callback = 0, .registered = 0 }
+
 int neverc_krt_reboot_register(struct neverc_krt_reboot_notifier *rn,
 			       neverc_krt_reboot_callback_t cb, int priority);
-void neverc_krt_reboot_unregister(struct neverc_krt_reboot_notifier *rn);
+/* Keep the object alive and retry if unregister returns nonzero. */
+int neverc_krt_reboot_unregister(struct neverc_krt_reboot_notifier *rn);
 
 /* Event classification helpers */
 int neverc_krt_is_shutdown_event(unsigned long event);

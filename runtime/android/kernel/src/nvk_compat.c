@@ -24,6 +24,7 @@ static struct neverc_krt_gki_layout _neverc_krt_active_effective_layout;
 static const struct neverc_krt_profile *_neverc_krt_active_profile;
 static const struct neverc_krt_layout_entry *_neverc_krt_active_layout;
 static enum neverc_krt_profile_match _neverc_krt_active_profile_match;
+static unsigned long _neverc_krt_active_layout_certificates;
 
 static __always_inline const struct neverc_krt_layout_entry *
 _neverc_krt_find_layout(unsigned int profile_id)
@@ -80,7 +81,8 @@ _neverc_krt_select_layout_certificate(
 	return (const struct neverc_krt_layout_certificate_entry *)0;
 }
 
-static __always_inline void _neverc_krt_overlay_layout_certificate(
+static __always_inline unsigned long
+_neverc_krt_overlay_layout_certificate(
 	const struct neverc_krt_profile *profile,
 	const struct neverc_krt_observed_identity *identity,
 	struct neverc_krt_gki_layout *effective_layout)
@@ -89,7 +91,7 @@ static __always_inline void _neverc_krt_overlay_layout_certificate(
 	unsigned long matched_bits;
 
 	if (!profile || !identity || !identity->has_android_identity)
-		return;
+		return 0;
 	/*
 	 * Overlay only a byte-for-byte release token.  A leftover
 	 * Android/KMI certificate for another patch must not paint a
@@ -97,7 +99,7 @@ static __always_inline void _neverc_krt_overlay_layout_certificate(
 	 */
 	certificate = _neverc_krt_select_layout_certificate(profile, identity);
 	if (!certificate)
-		return;
+		return 0;
 
 	matched_bits = certificate->field_bits;
 	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_FULL) {
@@ -106,7 +108,8 @@ static __always_inline void _neverc_krt_overlay_layout_certificate(
 		 * checked against the compile profile before generation. */
 		__builtin_memcpy(effective_layout, &certificate->runtime_layout,
 				 sizeof(*effective_layout));
-		return;
+		return NEVERC_KRT_LAYOUT_CERT_FULL |
+		       NEVERC_KRT_LAYOUT_CERT_PRIVATE_FIELDS;
 	}
 	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT) {
 		effective_layout->dir_context_size =
@@ -285,6 +288,7 @@ static __always_inline void _neverc_krt_overlay_layout_certificate(
 	}
 	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_FILE_DENTRY)
 		effective_layout->file_dentry = certificate->file_dentry;
+	return matched_bits;
 }
 
 static __always_inline const struct neverc_krt_profile *
@@ -433,6 +437,7 @@ _neverc_krt_activate_observed(
 	const struct neverc_krt_profile *active;
 	const struct neverc_krt_layout_entry *layout;
 	enum neverc_krt_profile_match profile_match;
+	unsigned long layout_certificates;
 
 	selected = __atomic_load_n(&_neverc_krt_selected_profile,
 				   __ATOMIC_ACQUIRE);
@@ -463,10 +468,17 @@ _neverc_krt_activate_observed(
 		return -1;
 	__builtin_memcpy(&_neverc_krt_active_effective_layout, &layout->layout,
 			 sizeof(_neverc_krt_active_effective_layout));
-	_neverc_krt_overlay_layout_certificate(
+	layout_certificates =
+		neverc_krt_profile_match_uses_family_layout(profile_match) ?
+		NEVERC_KRT_LAYOUT_CERT_FULL |
+			NEVERC_KRT_LAYOUT_CERT_PRIVATE_FIELDS :
+		0;
+	layout_certificates |= _neverc_krt_overlay_layout_certificate(
 		profile, identity, &_neverc_krt_active_effective_layout);
 
 	_neverc_krt_kinfo = *observed;
+	__atomic_store_n(&_neverc_krt_active_layout_certificates,
+			 layout_certificates, __ATOMIC_RELEASE);
 	__atomic_store_n(&_neverc_krt_active_layout, layout, __ATOMIC_RELEASE);
 	__atomic_store_n(&_neverc_krt_active_profile_match, profile_match,
 			 __ATOMIC_RELEASE);

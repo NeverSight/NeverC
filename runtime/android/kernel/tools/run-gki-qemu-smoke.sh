@@ -12,7 +12,7 @@ Usage: run-gki-qemu-smoke.sh --image PATH --module PATH --output-dir DIR [option
 
 Required:
   --image PATH       released arm64 GKI dist/Image
-  --module PATH      zero-import NeverC smoke .ko
+  --module PATH      NeverC loader-only smoke .ko
   --output-dir DIR   directory for initramfs and qemu.log
 
 Options:
@@ -61,6 +61,8 @@ case "$TIMEOUT_SECONDS" in
 '' | *[!0-9]*) die "--timeout must be a positive integer" ;;
 esac
 [ "$TIMEOUT_SECONDS" -gt 0 ] || die "--timeout must be greater than zero"
+MODULE_FILE=neverc-smoke.ko
+MODULE_NAME=neverc_gki_smoke
 
 resolve_tool() {
 	local value=$1 label=$2
@@ -94,10 +96,13 @@ printf '[host] timeout: '
 
 "$CROSS_CC" \
 	-static -no-pie -Os -Wall -Wextra -Werror \
+	-DNEVERC_GKI_MODULE_PATH="\"/$MODULE_FILE\"" \
+	-DNEVERC_GKI_MODULE_NAME="\"$MODULE_NAME\"" \
 	-o "$INIT_BINARY" "$INIT_SOURCE"
 "$PYTHON" "$INITRAMFS_WRITER" \
 	--init "$INIT_BINARY" \
 	--module "$MODULE" \
+	--module-name "$MODULE_FILE" \
 	--output "$INITRAMFS"
 
 set +e
@@ -139,7 +144,7 @@ has_exact_guest_marker() {
 }
 
 if grep -Eq 'NEVERC_GKI_(LOAD|UNLOAD)_FAIL' "$QEMU_LOG"; then
-	fail_with_log "guest emitted a load/unload failure marker"
+	fail_with_log "guest emitted a load or unload failure marker"
 fi
 if [ "$QEMU_STATUS" -eq 124 ] || [ "$QEMU_STATUS" -eq 137 ]; then
 	fail_with_log "QEMU timed out after ${TIMEOUT_SECONDS}s"
@@ -152,4 +157,4 @@ if ! has_exact_guest_marker NEVERC_GKI_LOAD_PASS || \
 	fail_with_log "missing guest success markers"
 fi
 
-printf '[host] PASS: module loaded and unloaded; log=%s\n' "$QEMU_LOG"
+printf '[host] PASS: smoke module loaded and unloaded; log=%s\n' "$QEMU_LOG"

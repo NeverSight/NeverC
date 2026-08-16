@@ -107,9 +107,11 @@ int neverc_krt_vma_init(void)
 			(neverc_krt_mm_ref_fn)NEVERC_KRT_LOOKUP(
 				"rust_helper_mmdrop");
 
+	if (!_neverc_krt_find_vma &&
+	    !_neverc_krt_access_task_vm && !_neverc_krt_access_mm_vm)
+		return -1;
 	_neverc_krt_vma_inited = 1;
-	return _neverc_krt_find_vma ? 0 :
-	       (_neverc_krt_access_task_vm || _neverc_krt_access_mm_vm) ? 0 : -1;
+	return 0;
 }
 
 void *neverc_krt_task_mm_get(struct task_struct *task)

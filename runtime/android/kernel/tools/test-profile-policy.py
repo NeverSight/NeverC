@@ -28,6 +28,9 @@ def main():
     rendered_profile_layouts = rendered_compat.split(
         "struct neverc_krt_layout_certificate_entry", 1
     )[0]
+    rendered_profiles = (SOURCE_ROOT / "nvk_profile_table.inc").read_text(
+        encoding="utf-8"
+    )
     for field, value in (
         ("filename_size", 32),
         ("filename_name", 0),
@@ -43,6 +46,20 @@ def main():
         if rendered_profile_layouts.count(f".{field} = {value},") != catalog_count:
             raise RuntimeError(
                 f"generated profile layouts lack {catalog_count} {field} facts"
+            )
+    expected_module_memory_facts = (
+        ("module_memory_count", 1, 5),
+        ("module_memory_count", 7, 3),
+        ("module_memory_base", 0, 8),
+        ("module_memory_size", 8, 7),
+        ("module_memory_size", 12, 1),
+    )
+    for field, value, expected_count in expected_module_memory_facts:
+        actual_count = rendered_profiles.count(f".{field} = {value},")
+        if actual_count != expected_count:
+            raise RuntimeError(
+                f"generated profile layouts have {actual_count} {field}={value} "
+                f"facts; expected {expected_count}"
             )
 
     with tempfile.TemporaryDirectory(prefix="neverc-profile-policy-") as tmp:

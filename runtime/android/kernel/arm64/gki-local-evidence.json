@@ -1,0 +1,115 @@
+{
+  "profiles": {
+    "510": {
+      "manifest_bound_artifacts": [],
+      "artifacts": {
+        "config": "android12-5.10-bin/out/android12-5.10/common/.config",
+        "image": "android12-5.10-bin/out/android12-5.10/dist/Image",
+        "symvers": "android12-5.10-bin/out/android12-5.10/common/Module.symvers",
+        "system_map": "android12-5.10-bin/out/android12-5.10/dist/System.map",
+        "vmlinux": "android12-5.10-bin/out/android12-5.10/dist/vmlinux"
+      },
+      "source_roots": [
+        "GKI-android12-5.10-kit/common"
+      ]
+    },
+    "51013": {
+      "manifest_bound_artifacts": [
+        "vmlinux"
+      ],
+      "artifacts": {
+        "config": "android13-5.10-bin/out/android13-5.10/common/.config",
+        "image": "android13-5.10-bin/out/android13-5.10/dist/Image",
+        "symvers": "android13-5.10-bin/out/android13-5.10/dist/vmlinux.symvers",
+        "system_map": "android13-5.10-bin/out/android13-5.10/dist/System.map",
+        "vmlinux": "android13-5.10-bin/out/android13-5.10/dist/vmlinux"
+      },
+      "source_roots": [
+        "GKI-android13-5.10-kit/common"
+      ]
+    },
+    "515": {
+      "manifest_bound_artifacts": [],
+      "artifacts": {
+        "config": "android13-5.15-bin/out/android13-5.15/common/.config",
+        "image": "android13-5.15-bin/out/android13-5.15/dist/Image",
+        "symvers": "android13-5.15-bin/out/android13-5.15/common/Module.symvers",
+        "system_map": "android13-5.15-bin/out/android13-5.15/dist/System.map",
+        "vmlinux": "android13-5.15-bin/out/android13-5.15/dist/vmlinux"
+      },
+      "source_roots": [
+        "GKI-android13-5.15-kit/common"
+      ]
+    },
+    "51514": {
+      "manifest_bound_artifacts": [
+        "vmlinux"
+      ],
+      "artifacts": {
+        "config": "android14-5.15-bin/out/cache/699a89ee/common/.config",
+        "image": "android14-5.15-bin/out/cache/699a89ee/common/arch/arm64/boot/Image",
+        "symvers": "android14-5.15-bin/out/cache/699a89ee/common/Module.symvers",
+        "system_map": "android14-5.15-bin/out/cache/699a89ee/common/System.map",
+        "vmlinux": "android14-5.15-bin/out/cache/699a89ee/common/vmlinux"
+      },
+      "source_roots": [
+        "GKI-android14-5.15-kit/common"
+      ]
+    },
+    "601": {
+      "manifest_bound_artifacts": [],
+      "artifacts": {
+        "config": "android14-6.1-bin/out/cache/699a89ee/common/.config",
+        "image": "android14-6.1-bin/out/cache/699a89ee/common/arch/arm64/boot/Image",
+        "symvers": "android14-6.1-bin/out/cache/699a89ee/common/Module.symvers",
+        "system_map": "android14-6.1-bin/out/cache/699a89ee/common/System.map",
+        "vmlinux": "android14-6.1-bin/out/cache/699a89ee/common/vmlinux"
+      },
+      "source_roots": [
+        "GKI-android14-6.1-kit/common"
+      ]
+    },
+    "606": {
+      "manifest_bound_artifacts": [],
+      "artifacts": {
+        "config": "android-15-6.6-bin/out/cache/a028d124/common/.config",
+        "image": "android-15-6.6-bin/out/cache/a028d124/common/arch/arm64/boot/Image",
+        "symvers": "android-15-6.6-bin/out/cache/a028d124/common/Module.symvers",
+        "system_map": "android-15-6.6-bin/out/cache/a028d124/common/System.map",
+        "vmlinux": "android-15-6.6-bin/out/cache/a028d124/common/vmlinux"
+      },
+      "source_roots": [
+        "GKI-android15-6.6-kit/common"
+      ]
+    },
+    "612": {
+      "manifest_bound_artifacts": [],
+      "artifacts": {
+        "config": "android16-6.12-bin/out/cache/491561e8/common/.config",
+        "image": "android16-6.12-bin/out/cache/491561e8/common/arch/arm64/boot/Image",
+        "symvers": "android16-6.12-bin/out/cache/491561e8/common/Module.symvers",
+        "system_map": "android16-6.12-bin/out/cache/491561e8/common/System.map",
+        "vmlinux": "android16-6.12-bin/out/cache/491561e8/common/vmlinux"
+      },
+      "source_roots": [
+        "GKI-android16-6.12-kit/common"
+      ]
+    },
+    "618": {
+      "manifest_bound_artifacts": [
+        "vmlinux"
+      ],
+      "artifacts": {
+        "config": null,
+        "image": "gki-android17-6.18-build-bin/dist/Image",
+        "symvers": null,
+        "system_map": "gki-android17-6.18-build-bin/dist/System.map",
+        "vmlinux": "gki-android17-6.18-build-bin/dist/vmlinux"
+      },
+      "source_roots": [
+        "GKI-android17-6.18-kit/common"
+      ]
+    }
+  },
+  "schema": 1
+}

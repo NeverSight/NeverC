@@ -46,8 +46,11 @@ const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
 const struct neverc_krt_gki_layout *_neverc_krt_get_proven_gki_layout(
 	unsigned long required)
 {
-	return (fixture_certificates & required) == required ?
-		&fixture_layout : NULL;
+	(void)required;
+	if (fixture_match != NEVERC_KRT_VER_EXACT &&
+	    fixture_match != NEVERC_KRT_VER_COMPAT)
+		return NULL;
+	return &fixture_layout;
 }
 
 unsigned long _neverc_krt_current_layout_certificates(void)
@@ -207,8 +210,8 @@ static void check_version_policy_allows_family_compat(void)
 	fixture_match = NEVERC_KRT_VER_COMPAT;
 	fixture_certificates = 0;
 	assert(neverc_krt_task_thread_ids(
-		(struct task_struct *)&task, tids, 2) == -EOPNOTSUPP);
-	assert(tids[0] == 0 && tids[1] == 0);
+		(struct task_struct *)&task, tids, 2) == 1);
+	assert(tids[0] == 301 && tids[1] == 0);
 
 	fixture_certificates = NEVERC_KRT_LAYOUT_CERT_TASK_THREADS;
 	assert(neverc_krt_task_thread_ids(

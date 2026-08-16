@@ -287,8 +287,10 @@ int neverc_krt_ksyms_init(void)
 	_neverc_krt_sprint_symbol_no_off =
 		(neverc_krt_sprint_symbol_fn)NEVERC_KRT_LOOKUP("sprint_symbol_no_offset");
 
+	if (!_neverc_krt_on_each_symbol)
+		return -1;
 	_neverc_krt_ksyms_inited = 1;
-	return _neverc_krt_on_each_symbol ? 0 : -1;
+	return 0;
 }
 
 static int _neverc_krt_ksym_adapt_common(void *data, const char *name,

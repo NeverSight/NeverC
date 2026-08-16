@@ -12,10 +12,11 @@ int neverc_krt_process_init(void);
 #define NEVERC_KRT_TASK_LAYOUT_USER_STATE (1U << 2)
 #define NEVERC_KRT_TASK_LAYOUT_THREADS    (1U << 3)
 
-/* Return 1 only when every requested private task-layout class is exact or
- * independently certified for the live COMPAT identity and its non-sleeping
- * read/lifetime helpers are ready.  A zero request is available; unknown flag
- * bits are rejected.  Call during module initialization, before Hooks. */
+/* Return 1 when every requested task-layout class is covered by the selected
+ * family table (EXACT or same-series COMPAT) and the non-sleeping
+ * read/lifetime helpers are ready.  A certificate may overlay offsets; it is
+ * not required.  A zero request is available; unknown flag bits are rejected.
+ * Call during module initialization, before Hooks. */
 int neverc_krt_task_layout_available(unsigned int required);
 
 int neverc_krt_current_pid(void);

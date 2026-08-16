@@ -52,7 +52,8 @@
 #define NEVERC_KRT_SUB_TIMER    16
 #define NEVERC_KRT_SUB_POWER    17
 #define NEVERC_KRT_SUB_CPU      18
-#define NEVERC_KRT_SUB_COUNT    19
+#define NEVERC_KRT_SUB_VMA      19
+#define NEVERC_KRT_SUB_COUNT    20
 
 struct neverc_krt_state {
 	u32 ready;
@@ -60,6 +61,14 @@ struct neverc_krt_state {
 };
 
 int neverc_krt_sub_ok(int sub);
+/*
+ * Pins NEVERC_KRT_KERNEL, then records every subsystem status.  Bootstrap,
+ * mem, compat, and the core helpers (process/cred/thread/interpose/ksyms/
+ * timer/cpu/vma) can fail the call.  Feature backends (vis/file/ns/power/
+ * binder/selinux/netlink/syscall/xmem/addr) stay recorded and fail at
+ * their APIs.  ready is 1 when that required path succeeded.  A failed
+ * required attempt stays active until cleanup.
+ */
 int neverc_krt_init_all(void);
 /*
  * Returns -EBUSY when a user page-table map still owns pages, or E_PATCH when

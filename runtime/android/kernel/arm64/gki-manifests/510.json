@@ -1268,6 +1268,13 @@
       "size": 48
     }
   },
+  "module_memory_layout": {
+    "base_offset": 0,
+    "count": 1,
+    "memory_offset": 448,
+    "size_offset": 8,
+    "stride": 80
+  },
   "profile": 510,
   "schema": 1,
   "sdk_exports": [

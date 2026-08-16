@@ -43,7 +43,7 @@ int neverc_krt_inode_set_times(void *opaque_inode,
 
 /*
  * Return struct filename::name from a borrowed opaque filename, or NULL when
- * the selected private-layout contract is unavailable or unreadable.  The
+ * the selected family layout is unavailable or unreadable.  The
  * returned pointer is borrowed: it is valid only while the opaque filename
  * and its kernel-owned name remain alive, and callers must not free it.
  */

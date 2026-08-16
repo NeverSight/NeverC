@@ -122,8 +122,11 @@ const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
 const struct neverc_krt_gki_layout *_neverc_krt_get_proven_gki_layout(
 	unsigned long required)
 {
-	return (fixture_layout_certificates & required) == required ?
-		&fixture_layout : NULL;
+	(void)required;
+	if (fixture_version_match != NEVERC_KRT_VER_EXACT &&
+	    fixture_version_match != NEVERC_KRT_VER_COMPAT)
+		return NULL;
+	return &fixture_layout;
 }
 
 int neverc_krt_check_kernel_match(void)
@@ -222,12 +225,15 @@ static void check_compatible_release_uses_family_layout(void)
 
 	fixture_version_match = NEVERC_KRT_VER_COMPAT;
 	fixture_layout_certificates = 0;
-	assert(neverc_krt_inode_set_times(&inode, 1, 2, 3, 4) != 0);
-	assert(neverc_krt_inode_get_times(&inode, &times) != 0);
-	assert(neverc_krt_path_inode_get(&path) == NULL);
-	assert(neverc_krt_path_storage_available() == 0);
-	assert(neverc_krt_filename_name_available() == 0);
-	assert(neverc_krt_filename_name(&filename) == NULL);
+	assert(neverc_krt_inode_set_times(&inode, 1, 2, 3, 4) == 0);
+	assert(neverc_krt_inode_get_times(&inode, &times) == 0);
+	assert(times.atime_sec == 1 && times.atime_nsec == 2);
+	assert(times.mtime_sec == 3 && times.mtime_nsec == 4);
+	assert(neverc_krt_path_inode_get(&path) == &inode);
+	assert(neverc_krt_path_storage_available() == 1);
+	assert(neverc_krt_filename_name_available() == 1);
+	assert(neverc_krt_filename_name(&filename) == name);
+	neverc_krt_inode_put(&inode);
 
 	fixture_layout_certificates = NEVERC_KRT_LAYOUT_CERT_INODE_TIMES |
 		NEVERC_KRT_LAYOUT_CERT_PATH_INODE |

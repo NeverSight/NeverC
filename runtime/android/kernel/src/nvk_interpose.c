@@ -2988,6 +2988,7 @@ int neverc_krt_interpose_auto(struct neverc_krt_interpose *h, void *target,
 			 struct neverc_krt_ftrace_interpose *ft_fallback)
 {
 	enum neverc_krt_scan_result scan = neverc_krt_interpose_scan(target);
+	const struct neverc_krt_runtime_caps *caps;
 	int inline_ret = NEVERC_KRT_INTERPOSE_E_RELOC;
 	int ret;
 
@@ -3000,7 +3001,9 @@ int neverc_krt_interpose_auto(struct neverc_krt_interpose *h, void *target,
 			return inline_ret;
 	}
 
-	if (ft_fallback && _neverc_krt_ftrace_avail) {
+	caps = _neverc_krt_current_caps();
+	if (ft_fallback && _neverc_krt_ftrace_avail && caps &&
+	    caps->has_ftrace_registration_api) {
 		ret = neverc_krt_ftrace_interpose_install(ft_fallback,
 					      target, replace, orig);
 		if (ret == 0) return ret;

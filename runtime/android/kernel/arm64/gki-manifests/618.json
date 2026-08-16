@@ -5,7 +5,7 @@
     "CONFIG_ARM64_64K_PAGES": false,
     "CONFIG_ARM64_PA_BITS": 48,
     "CONFIG_ARM64_VA_BITS": 39,
-    "CONFIG_CFI_CLANG": false,
+    "CONFIG_CFI_CLANG": true,
     "CONFIG_COMPAT": true,
     "CONFIG_DEBUG_INFO_BTF_MODULES": true,
     "CONFIG_DEBUG_LOCK_ALLOC": false,
@@ -1517,6 +1517,13 @@
       },
       "size": 32
     }
+  },
+  "module_memory_layout": {
+    "base_offset": 0,
+    "count": 7,
+    "memory_offset": 384,
+    "size_offset": 12,
+    "stride": 72
   },
   "profile": 618,
   "schema": 1,

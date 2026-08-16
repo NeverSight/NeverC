@@ -80,8 +80,11 @@ const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
 const struct neverc_krt_gki_layout *_neverc_krt_get_proven_gki_layout(
 	unsigned long required)
 {
-	return (fixture_layout_certificates & required) == required ?
-		&fixture_layout : NULL;
+	(void)required;
+	if (fixture_version_match != NEVERC_KRT_VER_EXACT &&
+	    fixture_version_match != NEVERC_KRT_VER_COMPAT)
+		return NULL;
+	return &fixture_layout;
 }
 
 long neverc_krt_mem_read(void *dst, const void *src, size_t len)
@@ -308,13 +311,14 @@ static void check_match_contracts(void)
 
 	fixture_version_match = NEVERC_KRT_VER_EXACT;
 	fixture_layout_certificates = 0;
-	assert(neverc_krt_dir_filter_available() == 0);
+	assert(neverc_krt_dir_filter_available() == 1);
 
 	fixture_version_match = NEVERC_KRT_VER_COMPAT;
 	fixture_layout_certificates = 0;
-	assert(neverc_krt_dir_filter_available() == 0);
+	assert(neverc_krt_dir_filter_available() == 1);
 	assert(neverc_krt_dir_filter_begin(&scope, &reader.context,
-			hide_named_entry, NULL, &proxy) != 0);
+			hide_named_entry, NULL, &proxy) == 0);
+	assert(neverc_krt_dir_filter_end(&scope) == 0);
 
 	fixture_layout_certificates = NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT;
 	assert(neverc_krt_dir_filter_available() == 1);

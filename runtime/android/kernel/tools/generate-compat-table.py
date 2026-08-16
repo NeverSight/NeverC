@@ -79,13 +79,62 @@ CAPABILITY_ABIS = {
             2,
         ),
     },
+    "binder_filter_backend": {
+        "transaction": (
+            "NEVERC_KRT_PROFILE_BINDER_FILTER_TRANSACTION",
+            "NEVERC_KRT_BINDER_FILTER_BACKEND_TRANSACTION",
+            1,
+        ),
+    },
+    "vmalloc_visibility_backend": {
+        "seq_operations": (
+            "NEVERC_KRT_PROFILE_VMALLOC_VIS_SEQ_OPERATIONS",
+            "NEVERC_KRT_VMALLOC_VIS_BACKEND_SEQ_OPERATIONS",
+            1,
+        ),
+        "named_show": (
+            "NEVERC_KRT_PROFILE_VMALLOC_VIS_NAMED_SHOW",
+            "NEVERC_KRT_VMALLOC_VIS_BACKEND_NAMED_SHOW",
+            2,
+        ),
+    },
+    "user_ptmap_backend": {
+        "legacy_510": (
+            "NEVERC_KRT_PROFILE_USER_PTMAP_LEGACY_510",
+            "NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_510",
+            1,
+        ),
+        "legacy_515": (
+            "NEVERC_KRT_PROFILE_USER_PTMAP_LEGACY_515",
+            "NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_515",
+            2,
+        ),
+        "classic_601": (
+            "NEVERC_KRT_PROFILE_USER_PTMAP_CLASSIC_601",
+            "NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_601",
+            3,
+        ),
+        "classic_606": (
+            "NEVERC_KRT_PROFILE_USER_PTMAP_CLASSIC_606",
+            "NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_606",
+            4,
+        ),
+        "normalized_612_plus": (
+            "NEVERC_KRT_PROFILE_USER_PTMAP_NORMALIZED_612_PLUS",
+            "NEVERC_KRT_USER_PTMAP_BACKEND_NORMALIZED_612_PLUS",
+            5,
+        ),
+    },
 }
 CAPABILITY_KEYS = frozenset({
+    "binder_filter_backend",
     "do_mmap_abi",
     "filldir_abi",
     "ftrace_callback_abi",
     "ftrace_registration_api",
     "kallsyms_iter_abi",
+    "user_ptmap_backend",
+    "vmalloc_visibility_backend",
 })
 PROFILE_KEYS = frozenset({
     "android_release",
@@ -472,6 +521,13 @@ RUNTIME_LAYOUT_FIELD_NAMES = (
         for output_name, _geometry_name in RUNTIME_LAYOUT_USER_GEOMETRY_FIELDS
     )
 )
+MODULE_MEMORY_LAYOUT_KEYS = frozenset({
+    "base_offset",
+    "count",
+    "memory_offset",
+    "size_offset",
+    "stride",
+})
 
 # Loader / inode facts compile_layout_contract reads that are not LAYOUT_FIELDS rows.
 LOADER_LAYOUT_MEMBERS = (
@@ -1317,6 +1373,45 @@ def compile_runtime_layout(manifest):
     return runtime_layout
 
 
+def compile_module_memory_layout(manifest):
+    """Validate the profile's unified module allocation-array projection."""
+    context = f"profile {manifest.get('profile')}"
+    layout = manifest.get("module_memory_layout")
+    if not isinstance(layout, dict) or set(layout) != MODULE_MEMORY_LAYOUT_KEYS:
+        raise ValueError(f"{context}: module_memory_layout keys do not match schema")
+    for key in MODULE_MEMORY_LAYOUT_KEYS:
+        value = layout[key]
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < 0
+            or value > UINT64_MAX
+        ):
+            raise ValueError(f"{context}: invalid module_memory_layout.{key}")
+    if layout["count"] not in (1, 7) or layout["stride"] == 0:
+        raise ValueError(f"{context}: unsupported module memory array geometry")
+    if (
+        layout["base_offset"] + 8 > layout["stride"]
+        or layout["size_offset"] + 4 > layout["stride"]
+    ):
+        raise ValueError(f"{context}: module memory fields exceed their entry")
+
+    module = manifest.get("layouts", {}).get("module", {})
+    module_size = module.get("size")
+    members = module.get("members", {})
+    expected_member = "core_layout" if layout["count"] == 1 else "mem"
+    if (
+        not isinstance(module_size, int)
+        or module_size <= 0
+        or members.get(expected_member) != layout["memory_offset"]
+        or layout["memory_offset"] > module_size
+        or layout["count"] * layout["stride"]
+        > module_size - layout["memory_offset"]
+    ):
+        raise ValueError(f"{context}: module memory projection mismatches struct module")
+    return dict(layout)
+
+
 def require_u32(record, key, context, *, allow_zero=True):
     value = record.get(key)
     lower_bound = 0 if allow_zero else 1
@@ -1510,6 +1605,7 @@ def validate_evidence(profiles, manifest_root, release_lock_path):
         if manifest.get("config", {}).get("PAGE_SHIFT") != profile["page_shift"]:
             raise ValueError(f"{manifest_path}: page_shift mismatch")
         layouts = manifest.get("layouts", {})
+        compile_module_memory_layout(manifest)
         validate_dir_context_layout(layouts, manifest_path)
         normalize_filename_name_layout(layouts, manifest_path)
         normalize_path_inode_layout(layouts, manifest_path)
@@ -2012,6 +2108,12 @@ def render_profile_header(profile_evidence):
             f"{abi_config_symbol('kallsyms_iter_abi', caps['kallsyms_iter_abi'])}",
             f"#    define NEVERC_KRT_PROFILE_DO_MMAP_ABI "
             f"{abi_config_symbol('do_mmap_abi', caps['do_mmap_abi'])}",
+            f"#    define NEVERC_KRT_PROFILE_BINDER_FILTER_BACKEND "
+            f"{abi_config_symbol('binder_filter_backend', caps['binder_filter_backend'])}",
+            f"#    define NEVERC_KRT_PROFILE_VMALLOC_VISIBILITY_BACKEND "
+            f"{abi_config_symbol('vmalloc_visibility_backend', caps['vmalloc_visibility_backend'])}",
+            f"#    define NEVERC_KRT_PROFILE_USER_PTMAP_BACKEND "
+            f"{abi_config_symbol('user_ptmap_backend', caps['user_ptmap_backend'])}",
             f"#    define NEVERC_KRT_PROFILE_HAS_FTRACE_REGISTRATION_API "
             f"{int(caps['ftrace_registration_api'])}",
             f"#    define NEVERC_KRT_PROFILE_VERMAGIC "
@@ -2125,8 +2227,9 @@ def render_profile_table(profile_evidence):
         "static const struct neverc_krt_profile",
         "_neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {",
     ])
-    for profile, _, release in profile_evidence:
+    for profile, manifest, release in profile_evidence:
         caps = profile["capabilities"]
+        module_memory = compile_module_memory_layout(manifest)
         lines.extend([
             "\t{",
             f"\t\t.legacy_id = {profile['legacy_id']},",
@@ -2140,6 +2243,12 @@ def render_profile_table(profile_evidence):
             f"\t\t.kimage_vaddr = "
             f"0x{profile['kimage_vaddr_value']:016X}UL,",
             f"\t\t.kcfi_mode = {KCFI_MODES[profile['kcfi_mode']][0]},",
+            f"\t\t.module_memory_offset = "
+            f"{module_memory['memory_offset']},",
+            f"\t\t.module_memory_count = {module_memory['count']},",
+            f"\t\t.module_memory_stride = {module_memory['stride']},",
+            f"\t\t.module_memory_base = {module_memory['base_offset']},",
+            f"\t\t.module_memory_size = {module_memory['size_offset']},",
             "\t\t.caps = {",
             f"\t\t\t.ftrace_callback_abi = "
             f"{abi_runtime_symbol('ftrace_callback_abi', caps['ftrace_callback_abi'])},",
@@ -2149,6 +2258,12 @@ def render_profile_table(profile_evidence):
             f"{abi_runtime_symbol('kallsyms_iter_abi', caps['kallsyms_iter_abi'])},",
             f"\t\t\t.do_mmap_abi = "
             f"{abi_runtime_symbol('do_mmap_abi', caps['do_mmap_abi'])},",
+            f"\t\t\t.binder_filter_backend = "
+            f"{abi_runtime_symbol('binder_filter_backend', caps['binder_filter_backend'])},",
+            f"\t\t\t.vmalloc_visibility_backend = "
+            f"{abi_runtime_symbol('vmalloc_visibility_backend', caps['vmalloc_visibility_backend'])},",
+            f"\t\t\t.user_ptmap_backend = "
+            f"{abi_runtime_symbol('user_ptmap_backend', caps['user_ptmap_backend'])},",
             f"\t\t\t.has_ftrace_registration_api = "
             f"{int(caps['ftrace_registration_api'])},",
             "\t\t},",

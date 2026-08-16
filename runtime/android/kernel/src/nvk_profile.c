@@ -32,8 +32,8 @@ neverc_krt_match_profile(const struct neverc_krt_profile *profile,
 
   /*
    * COMPAT is series + Android generation + page.  Patch, KMI, and
-   * release token are ignored.  A certificate may overlay measured
-   * offsets; it is not required to activate.
+   * release token are ignored.  Both COMPAT and EXACT use the family's
+   * default runtime layout; a certificate may overlay offsets later.
    *
    * EXACT is the numeric KMI identity: same patch + Android + KMI + page.
    * The catalog token is measurement evidence (often carrying an OEM, git, or

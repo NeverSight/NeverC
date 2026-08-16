@@ -206,8 +206,8 @@ code generation. The build helper verifies those bytes without modifying the
 It boots every released `dist/Image` under QEMU, calls `finit_module`, then
 `delete_module`, and requires separate load/unload success markers. This smoke
 test proves module format, loader entry-point offsets, and the pinned entry-call
-ABI; runtime symbol bootstrap and API behavior remain covered by the
-compile/link suites.
+ABI. It is **loader-green**, not a claim that every runtime API ran in the
+guest.
 
 Automatic validation is a reusable job in the same Linux build run/check suite,
 so a result cannot be attached to a different default-branch SHA. For diagnosis,
@@ -232,7 +232,7 @@ loader-visible `struct module` / vermagic is its own compile-time family
 | Header | Purpose |
 |--------|---------|
 | `nvkmod.h` | Module entry point, kprobe bootstrap, `NVK_BOOTSTRAP()`, `NVK_DEFINE_MODULE()` |
-| `nvk_interpose.h` | arm64 inline-interpose engine v2 — simple/context/batch modes + absolute relocation (10 insn types) + BTI/PAC/kCFI-safe + SMP-safe DMB barriers + atomic stop_machine patch + D-cache→I-cache coherent + deep quiescence uninterpose + poison-on-free pool (32 pages) + ftrace fallback + interpose chain + pause/resume + 6.12+ execmem support |
+| `nvk_interpose.h` | arm64 inline-interpose engine v2 — simple/context/batch modes + absolute relocation (10 insn types) + BTI/PAC/kCFI-safe + SMP-safe DMB barriers + atomic stop_machine patch + D-cache→I-cache coherent + deep quiescence uninterpose + poison-on-free pool (32 pages) + interpose chain + pause/resume + 6.12+ execmem support. The ftrace registration API is capability-closed on every current GKI profile. |
 | `nvk_mem.h` | `nvk_mem_read/write`, `nvk_mem_read_user`, `nvk_mem_scan`, `nvk_mem_scan_mask`, `nvk_mem_write_protected` — MTE-tag-aware, dynamic page size (4K/16K/64K) |
 | `nvk_syscall.h` | `nvk_syscall_replace/restore`, `nvk_syscall_get`, arm64 syscall number definitions |
 | `nvk_process.h` | `nvk_current_pid`, `nvk_find_task_by_name`, `nvk_for_each_task`, task comm/pid resolution |
@@ -410,11 +410,11 @@ token. Sublevel, `-dirty`, and git suffix therefore do **not** block
 `5.10.*-android13-*` GKI whose `struct module` matches this family
 (size 1024, `init` 400, `exit` 936), including the local dirty tree and
 other official/OEM tokens. The same rule applies to `51514` on
-`5.15.*-android14-*`. Same-generation `COMPAT` is the post-load layout
-policy (patch / KMI / token ignored). A certificate overlays fields only
-when the live release token matches byte-for-byte; it is not required
-to activate. Ship the compile family that matches the Android
-generation; do not mix `510`/`51013` or `515`/`51514`.
+`5.15.*-android14-*`. Same-generation `COMPAT` remains a post-load
+profile/capability class (patch / KMI / token ignored) and uses the family
+table as the default runtime layout. A certificate overlays measured offsets
+only when the live token matches byte-for-byte. Ship the compile family that
+matches the Android generation; do not mix `510`/`51013` or `515`/`51514`.
 
 `CONFIG_CFI_CLANG` on 5.10/5.15 is classic Clang CFI (`__cfi_check` /
 `__cfi_slowpath`), not NeverC `kcfi_mode`. 51013/51514 keep
@@ -465,9 +465,11 @@ Verified against GKI `6.18.24` (`gki_defconfig`, `CONFIG_COMPAT=y`):
 
 **Not available on 6.18** (kernel removed the symbols from the export table):
 
-- **ftrace interpose fallback** — `register_ftrace_function`, `unregister_ftrace_function`,
-  `ftrace_set_filter_ip` are gone. `neverc_krt_ftrace_init()` returns `-1`;
-  use inline patching or kprobes via `neverc_krt_interpose_auto()`.
+- **ftrace interpose fallback** — every current profile sets
+  `ftrace_registration_api=false`. `neverc_krt_ftrace_interpose_install()` and
+  the ftrace arm of `neverc_krt_interpose_auto()` refuse that path. Use inline
+  patching or an explicit kprobe helper. This is a product-wide capability
+  close, not a 6.18-only degradation.
 - **`override_creds` / `revert_creds`** — there is no exported drop-in
   replacement with the same temporary-override semantics. Use
   `neverc_krt_cred_set_*` helpers for explicit credential changes; they are

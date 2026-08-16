@@ -49,9 +49,9 @@ const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
 const struct neverc_krt_gki_layout *_neverc_krt_get_proven_gki_layout(
 	unsigned long required)
 {
+	(void)required;
 	return (fixture_match == NEVERC_KRT_VER_EXACT ||
-		fixture_match == NEVERC_KRT_VER_COMPAT) &&
-		(fixture_certificates & required) == required ?
+		fixture_match == NEVERC_KRT_VER_COMPAT) ?
 		&fixture_layout : NULL;
 }
 
@@ -312,11 +312,11 @@ static void check_aggregate_private_layout_availability(void)
 	fixture_user_state_available = 1;
 	fixture_match = NEVERC_KRT_VER_COMPAT;
 	fixture_certificates = 0;
-	assert(neverc_krt_task_layout_available(required) == 0);
+	assert(neverc_krt_task_layout_available(required) == 1);
 	for (i = 0; i < sizeof(public_bits) / sizeof(public_bits[0]); i++) {
 		fixture_certificates = certificates & ~certificate_bits[i];
-		assert(neverc_krt_task_layout_available(public_bits[i]) == 0);
-		assert(neverc_krt_task_layout_available(required) == 0);
+		assert(neverc_krt_task_layout_available(public_bits[i]) == 1);
+		assert(neverc_krt_task_layout_available(required) == 1);
 	}
 	fixture_match = NEVERC_KRT_VER_MISMATCH;
 	fixture_certificates = certificates;
@@ -341,14 +341,14 @@ static void check_availability_proves_layout_before_runtime_init(void)
 
 	fixture_match = NEVERC_KRT_VER_COMPAT;
 	fixture_certificates = 0;
-	assert(neverc_krt_task_layout_available(required) == 0);
-	assert(fixture_runtime_init_calls == 1);
+	assert(neverc_krt_task_layout_available(required) == 1);
+	assert(fixture_runtime_init_calls == 2);
 
 	fixture_match = NEVERC_KRT_VER_EXACT;
 	fixture_certificates = NEVERC_KRT_LAYOUT_CERT_TASK_WALK;
 	fixture_runtime_init_fail = 1;
 	assert(neverc_krt_task_layout_available(required) == 0);
-	assert(fixture_runtime_init_calls == 2);
+	assert(fixture_runtime_init_calls == 3);
 }
 
 static void check_missing_safety_backends_fail_before_walk(void)

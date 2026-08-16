@@ -50,14 +50,14 @@ def newc_entry(
     return record
 
 
-def build_archive(init_path, module_path):
+def build_archive(init_path, module_path, module_name="neverc-smoke.ko"):
     entries = [
         (".", stat.S_IFDIR | 0o755, b"", 0, 0),
         ("dev", stat.S_IFDIR | 0o755, b"", 0, 0),
         ("dev/console", stat.S_IFCHR | 0o600, b"", 5, 1),
         ("init", stat.S_IFREG | 0o755, Path(init_path).read_bytes(), 0, 0),
         (
-            "neverc-smoke.ko",
+            module_name,
             stat.S_IFREG | 0o644,
             Path(module_path).read_bytes(),
             0,
@@ -88,6 +88,7 @@ def parse_args(argv=None):
     )
     parser.add_argument("--init", required=True, type=Path)
     parser.add_argument("--module", required=True, type=Path)
+    parser.add_argument("--module-name", default="neverc-smoke.ko")
     parser.add_argument("--output", required=True, type=Path)
     return parser.parse_args(argv)
 
@@ -101,8 +102,19 @@ def main(argv=None):
                 file=sys.stderr,
             )
             return 2
+    if (
+        not args.module_name
+        or "/" in args.module_name
+        or "\\" in args.module_name
+        or args.module_name in {".", ".."}
+    ):
+        print(
+            "build-gki-initramfs: error: --module-name must be a basename",
+            file=sys.stderr,
+        )
+        return 2
     try:
-        archive = build_archive(args.init, args.module)
+        archive = build_archive(args.init, args.module, args.module_name)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open("wb") as raw:
             with gzip.GzipFile(

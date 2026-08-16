@@ -181,6 +181,7 @@ int neverc_krt_selinux_init(void)
 		return 0;
 	}
 
+	_neverc_krt_se_method = 0;
 	_neverc_krt_selinux_inited = 1;
 	return -1;
 }

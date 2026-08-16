@@ -36,11 +36,42 @@ enum neverc_krt_do_mmap_abi {
       NEVERC_KRT_PROFILE_DO_MMAP_WITH_VM_FLAGS,
 };
 
+enum neverc_krt_binder_filter_backend {
+  NEVERC_KRT_BINDER_FILTER_BACKEND_UNSUPPORTED = 0,
+  NEVERC_KRT_BINDER_FILTER_BACKEND_TRANSACTION =
+      NEVERC_KRT_PROFILE_BINDER_FILTER_TRANSACTION,
+};
+
+enum neverc_krt_vmalloc_visibility_backend {
+  NEVERC_KRT_VMALLOC_VIS_BACKEND_UNSUPPORTED = 0,
+  NEVERC_KRT_VMALLOC_VIS_BACKEND_SEQ_OPERATIONS =
+      NEVERC_KRT_PROFILE_VMALLOC_VIS_SEQ_OPERATIONS,
+  NEVERC_KRT_VMALLOC_VIS_BACKEND_NAMED_SHOW =
+      NEVERC_KRT_PROFILE_VMALLOC_VIS_NAMED_SHOW,
+};
+
+enum neverc_krt_user_ptmap_backend {
+  NEVERC_KRT_USER_PTMAP_BACKEND_UNSUPPORTED = 0,
+  NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_510 =
+      NEVERC_KRT_PROFILE_USER_PTMAP_LEGACY_510,
+  NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_515 =
+      NEVERC_KRT_PROFILE_USER_PTMAP_LEGACY_515,
+  NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_601 =
+      NEVERC_KRT_PROFILE_USER_PTMAP_CLASSIC_601,
+  NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_606 =
+      NEVERC_KRT_PROFILE_USER_PTMAP_CLASSIC_606,
+  NEVERC_KRT_USER_PTMAP_BACKEND_NORMALIZED_612_PLUS =
+      NEVERC_KRT_PROFILE_USER_PTMAP_NORMALIZED_612_PLUS,
+};
+
 struct neverc_krt_runtime_caps {
   enum neverc_krt_ftrace_callback_abi ftrace_callback_abi;
   enum neverc_krt_filldir_abi filldir_abi;
   enum neverc_krt_kallsyms_iter_abi kallsyms_iter_abi;
   enum neverc_krt_do_mmap_abi do_mmap_abi;
+  enum neverc_krt_binder_filter_backend binder_filter_backend;
+  enum neverc_krt_vmalloc_visibility_backend vmalloc_visibility_backend;
+  enum neverc_krt_user_ptmap_backend user_ptmap_backend;
   unsigned char has_ftrace_registration_api;
 };
 
@@ -55,6 +86,11 @@ struct neverc_krt_profile {
   const char *release_token;
   unsigned long kimage_vaddr;
   unsigned char kcfi_mode;
+  unsigned long module_memory_offset;
+  unsigned long module_memory_count;
+  unsigned long module_memory_stride;
+  unsigned long module_memory_base;
+  unsigned long module_memory_size;
   struct neverc_krt_runtime_caps caps;
 };
 
@@ -156,6 +192,15 @@ static inline int neverc_krt_release_token_bytes_equal(
       return 0;
   }
   return 1;
+}
+
+static inline int neverc_krt_profile_identity_uses_family_layout(
+    const struct neverc_krt_profile *profile,
+    const struct neverc_krt_observed_identity *identity) {
+  if (!profile || !identity)
+    return 0;
+  return neverc_krt_profile_match_uses_family_layout(
+      neverc_krt_match_profile(profile, identity));
 }
 
 static inline int neverc_krt_certificate_identity_on_variant(

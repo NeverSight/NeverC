@@ -14,6 +14,7 @@ import unittest
 TOOLS = Path(__file__).resolve().parent
 HARNESS = TOOLS / "run-gki-qemu-smoke.sh"
 WRITER = TOOLS / "build-gki-initramfs.py"
+WORKFLOW = TOOLS.parents[3] / ".github/workflows/validate-gki-runtime.yml"
 
 
 def parse_newc(payload):
@@ -80,6 +81,14 @@ class InitramfsTests(unittest.TestCase):
             self.assertEqual((console["rdevmajor"], console["rdevminor"]), (5, 1))
             self.assertEqual(entries["init"]["data"], b"init-binary")
             self.assertEqual(entries["neverc-smoke.ko"]["data"], b"module-binary")
+
+
+class WorkflowContractTests(unittest.TestCase):
+    def test_kernel_matrix_does_not_run_functional_modules(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn("gki-runtime-functional-modules", workflow)
+        self.assertNotIn("--mode functional", workflow)
+        self.assertNotIn("gki-qemu-functional-module.c", workflow)
 
 
 class HarnessTests(unittest.TestCase):

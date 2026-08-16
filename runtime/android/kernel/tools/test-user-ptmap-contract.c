@@ -1440,23 +1440,28 @@ static void check_profile_policy_is_exact(void)
 	size_t i;
 
 	for (i = 0; i < ARRAY_COUNT(profiles); i++) {
-		unsigned int linux_major;
-		unsigned int linux_minor;
+		unsigned int backend;
 		int follow_pte;
 		int pin_with_vmas;
 		int get_free_pages;
 		int desc48;
 		unsigned int rcu_release;
 
-		assert(neverc_krt_user_ptmap_test_profile_identity(
-			       profiles[i], &linux_major, &linux_minor) == 0);
-		follow_pte = linux_major == 5 ||
-			     (linux_major == 6 && linux_minor <= 6);
-		pin_with_vmas = linux_major == 5 ||
-				(linux_major == 6 && linux_minor == 1);
+		assert(neverc_krt_user_ptmap_test_profile_backend(
+			       profiles[i], &backend) == 0);
+		follow_pte =
+			backend !=
+			NEVERC_KRT_USER_PTMAP_BACKEND_NORMALIZED_612_PLUS;
+		pin_with_vmas =
+			backend == NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_510 ||
+			backend == NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_515 ||
+			backend == NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_601;
 		get_free_pages = follow_pte;
 		desc48 = follow_pte;
-		rcu_release = linux_major == 6 && linux_minor >= 6;
+		rcu_release =
+			backend == NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_606 ||
+			backend ==
+			NEVERC_KRT_USER_PTMAP_BACKEND_NORMALIZED_612_PLUS;
 		memset(&policy, 0xa5, sizeof(policy));
 		assert(neverc_krt_user_ptmap_test_profile_policy(
 			profiles[i], &policy) == 0);

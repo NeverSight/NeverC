@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and inspect compiler-emitted entry ABIs on lock-pinned zero-import GKI modules."""
+"""Build and inspect lock-pinned loader-only GKI smoke modules."""
 
 import argparse
 import importlib.util
@@ -45,7 +45,7 @@ def resolve_tool(value, label):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="build checked zero-import NeverC GKI smoke modules"
+        description="build checked NeverC GKI loader-only smoke modules"
     )
     parser.add_argument("--compiler", required=True)
     parser.add_argument("--output-dir", required=True, type=Path)
@@ -113,6 +113,20 @@ def inspect_loader_contract(module, verifier):
     return details
 
 
+def validate_imports(output):
+    symbols = {
+        line.split()[-1]
+        for line in output.splitlines()
+        if line.split()
+    }
+    if symbols:
+        raise RuntimeError(
+            "smoke module has undefined imports: "
+            + ", ".join(sorted(symbols))
+        )
+    return symbols
+
+
 def main(argv=None):
     args = parse_args(argv)
     try:
@@ -148,7 +162,7 @@ def main(argv=None):
         source = TOOLS / "gki-qemu-smoke-module.c"
         verifier = REPO_ROOT / "utils/build/verify_gki_offsets.sh"
         generator = TOOLS / "generate-compat-table.py"
-        index = {"schema": 1, "modules": {}}
+        index = {"kind": "smoke", "schema": 1, "modules": {}}
         for profile in profiles:
             entry = lock["profiles"][profile]
             output = args.output_dir / f"neverc-gki-smoke-{profile}.ko"
@@ -197,11 +211,7 @@ def main(argv=None):
                 raise RuntimeError(
                     f"nm failed for profile {profile}: {undefined.stderr.strip()}"
                 )
-            if undefined.stdout.strip():
-                raise RuntimeError(
-                    f"profile {profile} smoke module has undefined imports:\n"
-                    + undefined.stdout
-                )
+            imports = validate_imports(undefined.stdout)
 
             details = verify.inspect_offset_module(output, entry["vermagic"])
             verify.run_offset_verifier(
@@ -212,12 +222,13 @@ def main(argv=None):
                 "file": output.name,
                 "kcfi_typeids": kcfi_typeids,
                 "loader_contract": loader_contract,
+                "imports": sorted(imports),
                 "sha256": digest,
                 "size": output.stat().st_size,
                 "vermagic": details["vermagic"],
             }
             print(
-                f"[smoke] PASS profile={profile} imports=0 "
+                f"[smoke] PASS profile={profile} imports={len(imports)} "
                 f"sha256={digest} file={output}"
             )
 

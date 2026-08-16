@@ -148,13 +148,12 @@ struct _neverc_krt_ptmap_profile_policy {
 #define _NEVERC_KRT_PTMAP_DESC50_MASK 0x0003fffffffff000ULL
 
 /*
- * Profile IDs are opaque handles owned by the generated policy table.  Build
- * the private helper ABI from that table's semantic Linux identity instead of
- * re-enumerating opaque IDs here.  Each accepted major/minor pair is exact;
- * an unproved future series remains unavailable until its ABI is certified.
+ * Profile IDs and Linux version numbers stay outside this backend.  The
+ * generated profile table certifies one explicit user-ptmap ABI family; an
+ * unknown or future family remains unavailable until evidence adds a backend.
  */
-static int _neverc_krt_ptmap_policy_for_kernel(
-	unsigned int linux_major, unsigned int linux_minor,
+static int _neverc_krt_ptmap_policy_for_backend(
+	unsigned int backend,
 	struct _neverc_krt_ptmap_profile_policy *policy)
 {
 	if (!policy)
@@ -163,18 +162,19 @@ static int _neverc_krt_ptmap_policy_for_kernel(
 	policy->physical_address_mask = _NEVERC_KRT_PTMAP_PA48_ADDRESS_MASK;
 	policy->physical_page_mask = _NEVERC_KRT_PTMAP_PA48_PAGE_MASK;
 
-	if (linux_major == 5U &&
-	    (linux_minor == 10U || linux_minor == 15U)) {
+	if (backend == NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_510 ||
+	    backend == NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_515) {
 		policy->descriptor_address_mask =
 			_NEVERC_KRT_PTMAP_PA48_PAGE_MASK;
 		policy->pte_route = _NEVERC_KRT_PTMAP_FOLLOW_PTE;
 		policy->pin_abi = _NEVERC_KRT_PTMAP_PIN_WITH_VMAS;
 		policy->alloc_abi = _NEVERC_KRT_PTMAP_GET_FREE_PAGES;
-		policy->use_find_vma_prev = linux_minor == 15U;
+		policy->use_find_vma_prev =
+			backend == NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_515;
 		policy->kcfi_mode = _NEVERC_KRT_PTMAP_KCFI_DISABLED;
 		return 0;
 	}
-	if (linux_major == 6U && linux_minor == 1U) {
+	if (backend == NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_601) {
 		policy->descriptor_address_mask =
 			_NEVERC_KRT_PTMAP_PA48_PAGE_MASK;
 		policy->pte_route = _NEVERC_KRT_PTMAP_FOLLOW_PTE;
@@ -183,7 +183,7 @@ static int _neverc_krt_ptmap_policy_for_kernel(
 		policy->kcfi_mode = _NEVERC_KRT_PTMAP_KCFI_CLASSIC;
 		policy->kcfi_pte_acquire = 0x14f277e5U;
 		policy->kcfi_pin = 0x485e012fU;
-	} else if (linux_major == 6U && linux_minor == 6U) {
+	} else if (backend == NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_606) {
 		policy->descriptor_address_mask =
 			_NEVERC_KRT_PTMAP_PA48_PAGE_MASK;
 		policy->pte_route = _NEVERC_KRT_PTMAP_FOLLOW_PTE;
@@ -193,8 +193,9 @@ static int _neverc_krt_ptmap_policy_for_kernel(
 		policy->kcfi_mode = _NEVERC_KRT_PTMAP_KCFI_CLASSIC;
 		policy->kcfi_pte_acquire = 0x14f277e5U;
 		policy->kcfi_pin = 0x208b8d20U;
-	} else if (linux_major == 6U &&
-		   (linux_minor == 12U || linux_minor == 18U)) {
+	} else if (
+		backend ==
+		NEVERC_KRT_USER_PTMAP_BACKEND_NORMALIZED_612_PLUS) {
 		policy->descriptor_address_mask = _NEVERC_KRT_PTMAP_DESC50_MASK;
 		policy->pte_route = _NEVERC_KRT_PTMAP_PTE_OFFSET_MAP_LOCK;
 		policy->pin_abi = _NEVERC_KRT_PTMAP_PIN_WITHOUT_VMAS;
@@ -395,16 +396,14 @@ int neverc_krt_user_ptmap_test_profile_policy(
 	struct neverc_krt_user_ptmap_test_profile_policy *output)
 {
 	struct _neverc_krt_ptmap_profile_policy policy;
-	unsigned int linux_major;
-	unsigned int linux_minor;
+	unsigned int backend;
 
 	if (!output)
 		return -EINVAL;
 	__builtin_memset(output, 0, sizeof(*output));
-	if (neverc_krt_user_ptmap_test_profile_identity(
-			profile_id, &linux_major, &linux_minor) ||
-	    _neverc_krt_ptmap_policy_for_kernel(
-			linux_major, linux_minor, &policy))
+	if (neverc_krt_user_ptmap_test_profile_backend(
+			profile_id, &backend) ||
+	    _neverc_krt_ptmap_policy_for_backend(backend, &policy))
 		return -EOPNOTSUPP;
 	output->descriptor_address_mask = policy.descriptor_address_mask;
 	output->physical_address_mask = policy.physical_address_mask;
@@ -422,13 +421,11 @@ int neverc_krt_user_ptmap_test_runtime_gate(
 	const uint32_t *observed_tags, size_t observed_tag_count)
 {
 	struct _neverc_krt_ptmap_profile_policy policy;
-	unsigned int linux_major;
-	unsigned int linux_minor;
+	unsigned int backend;
 
-	if (neverc_krt_user_ptmap_test_profile_identity(
-			profile_id, &linux_major, &linux_minor) ||
-	    _neverc_krt_ptmap_policy_for_kernel(
-			linux_major, linux_minor, &policy))
+	if (neverc_krt_user_ptmap_test_profile_backend(
+			profile_id, &backend) ||
+	    _neverc_krt_ptmap_policy_for_backend(backend, &policy))
 		return -EOPNOTSUPP;
 	return _neverc_krt_ptmap_runtime_gate(
 		&policy, tcr_el1, kcfi_mode, observed_tags, observed_tag_count);
@@ -1656,8 +1653,8 @@ static int _neverc_krt_ptmap_production_initialize(void)
 	profile_id = _neverc_krt_current_profile_id();
 	profile = profile_id < 0 ? (const struct neverc_krt_profile *)0 :
 		neverc_krt_find_profile((unsigned int)profile_id);
-	if (!profile || _neverc_krt_ptmap_policy_for_kernel(
-			profile->linux_major, profile->linux_minor, &policy))
+	if (!profile || _neverc_krt_ptmap_policy_for_backend(
+			profile->caps.user_ptmap_backend, &policy))
 		return -EOPNOTSUPP;
 	layout = _neverc_krt_get_proven_gki_layout(
 		NEVERC_KRT_LAYOUT_CERT_USER_PTMAP |

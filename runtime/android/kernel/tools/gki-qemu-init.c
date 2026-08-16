@@ -19,6 +19,13 @@
 #error "SYS_delete_module is required"
 #endif
 
+#ifndef NEVERC_GKI_MODULE_PATH
+#define NEVERC_GKI_MODULE_PATH "/neverc-smoke.ko"
+#endif
+#ifndef NEVERC_GKI_MODULE_NAME
+#define NEVERC_GKI_MODULE_NAME "neverc_gki_smoke"
+#endif
+
 static void emit(const char *format, ...)
 {
 	va_list arguments;
@@ -49,7 +56,7 @@ int main(void)
 			(void)close(console);
 	}
 
-	module = open("/neverc-smoke.ko", O_RDONLY | O_CLOEXEC);
+	module = open(NEVERC_GKI_MODULE_PATH, O_RDONLY | O_CLOEXEC);
 	if (module < 0) {
 		saved_errno = errno;
 		emit("NEVERC_GKI_LOAD_FAIL syscall=open errno=%d %s\n",
@@ -66,7 +73,7 @@ int main(void)
 	(void)close(module);
 	emit("NEVERC_GKI_LOAD_PASS\n");
 
-	if (syscall(SYS_delete_module, "neverc_gki_smoke", 0) != 0) {
+	if (syscall(SYS_delete_module, NEVERC_GKI_MODULE_NAME, 0) != 0) {
 		saved_errno = errno;
 		emit("NEVERC_GKI_UNLOAD_FAIL syscall=delete_module errno=%d %s\n",
 		     saved_errno, strerror(saved_errno));

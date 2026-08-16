@@ -4,11 +4,14 @@
       "aliases": [51012],
       "android_release": 12,
       "capabilities": {
+        "binder_filter_backend": "transaction",
         "do_mmap_abi": "without_vm_flags",
         "filldir_abi": "returns_int",
         "ftrace_callback_abi": "pt_regs",
         "ftrace_registration_api": false,
-        "kallsyms_iter_abi": "with_module"
+        "kallsyms_iter_abi": "with_module",
+        "user_ptmap_backend": "legacy_510",
+        "vmalloc_visibility_backend": "seq_operations"
       },
       "kcfi_mode": "disabled",
       "shadow_call_stack_mode": "static",
@@ -25,11 +28,14 @@
     {
       "android_release": 13,
       "capabilities": {
+        "binder_filter_backend": "transaction",
         "do_mmap_abi": "without_vm_flags",
         "filldir_abi": "returns_int",
         "ftrace_callback_abi": "pt_regs",
         "ftrace_registration_api": false,
-        "kallsyms_iter_abi": "with_module"
+        "kallsyms_iter_abi": "with_module",
+        "user_ptmap_backend": "legacy_510",
+        "vmalloc_visibility_backend": "seq_operations"
       },
       "kcfi_mode": "disabled",
       "kernel_name": "android13-5.10",
@@ -48,11 +54,14 @@
       "aliases": [51513],
       "android_release": 13,
       "capabilities": {
+        "binder_filter_backend": "transaction",
         "do_mmap_abi": "without_vm_flags",
         "filldir_abi": "returns_int",
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": false,
-        "kallsyms_iter_abi": "with_module"
+        "kallsyms_iter_abi": "with_module",
+        "user_ptmap_backend": "legacy_515",
+        "vmalloc_visibility_backend": "seq_operations"
       },
       "kcfi_mode": "disabled",
       "shadow_call_stack_mode": "static",
@@ -69,11 +78,14 @@
     {
       "android_release": 14,
       "capabilities": {
+        "binder_filter_backend": "transaction",
         "do_mmap_abi": "without_vm_flags",
         "filldir_abi": "returns_int",
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": false,
-        "kallsyms_iter_abi": "with_module"
+        "kallsyms_iter_abi": "with_module",
+        "user_ptmap_backend": "legacy_515",
+        "vmalloc_visibility_backend": "seq_operations"
       },
       "kcfi_mode": "disabled",
       "kernel_name": "android14-5.15",
@@ -91,11 +103,14 @@
     {
       "android_release": 14,
       "capabilities": {
+        "binder_filter_backend": "transaction",
         "do_mmap_abi": "without_vm_flags",
         "filldir_abi": "returns_bool",
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": false,
-        "kallsyms_iter_abi": "with_module"
+        "kallsyms_iter_abi": "with_module",
+        "user_ptmap_backend": "classic_601",
+        "vmalloc_visibility_backend": "seq_operations"
       },
       "kcfi_mode": "classic",
       "shadow_call_stack_mode": "dynamic",
@@ -112,11 +127,14 @@
     {
       "android_release": 15,
       "capabilities": {
+        "binder_filter_backend": "transaction",
         "do_mmap_abi": "with_vm_flags",
         "filldir_abi": "returns_bool",
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": false,
-        "kallsyms_iter_abi": "address_only"
+        "kallsyms_iter_abi": "address_only",
+        "user_ptmap_backend": "classic_606",
+        "vmalloc_visibility_backend": "seq_operations"
       },
       "kcfi_mode": "classic",
       "shadow_call_stack_mode": "dynamic",
@@ -133,11 +151,14 @@
     {
       "android_release": 16,
       "capabilities": {
+        "binder_filter_backend": "transaction",
         "do_mmap_abi": "with_vm_flags",
         "filldir_abi": "returns_bool",
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": false,
-        "kallsyms_iter_abi": "address_only"
+        "kallsyms_iter_abi": "address_only",
+        "user_ptmap_backend": "normalized_612_plus",
+        "vmalloc_visibility_backend": "named_show"
       },
       "kcfi_mode": "normalized",
       "shadow_call_stack_mode": "dynamic",
@@ -154,11 +175,14 @@
     {
       "android_release": 17,
       "capabilities": {
+        "binder_filter_backend": "transaction",
         "do_mmap_abi": "with_vm_flags",
         "filldir_abi": "returns_bool",
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": false,
-        "kallsyms_iter_abi": "address_only"
+        "kallsyms_iter_abi": "address_only",
+        "user_ptmap_backend": "normalized_612_plus",
+        "vmalloc_visibility_backend": "named_show"
       },
       "kcfi_mode": "normalized",
       "shadow_call_stack_mode": "dynamic",

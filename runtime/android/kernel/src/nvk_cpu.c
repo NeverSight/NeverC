@@ -175,8 +175,10 @@ int neverc_krt_cpu_init(void)
 		_neverc_krt_cpu_online_mask =
 			(unsigned long *)NEVERC_KRT_LOOKUP("cpu_online_mask");
 
+	if (!_neverc_krt_nr_cpu_ids_ptr || !_neverc_krt_cpu_online_mask)
+		return -1;
 	_neverc_krt_cpu_inited = 1;
-	return (_neverc_krt_nr_cpu_ids_ptr && _neverc_krt_cpu_online_mask) ? 0 : -1;
+	return 0;
 }
 
 int neverc_krt_num_possible_cpus(void)

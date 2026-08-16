@@ -1,5 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0 */
+#if defined(NEVERC_KRT_POWER_HOST_TEST)
+#include "test-power-notifier-shim.h"
+#else
 #include <nvk.h>
+#include <linux/errno.h>
+#endif
 
 typedef int (*neverc_krt_reg_pm_fn)(struct notifier_block *nb);
 typedef int (*neverc_krt_unreg_pm_fn)(struct notifier_block *nb);
@@ -44,26 +49,52 @@ static int _neverc_krt_pm_trampoline(struct notifier_block *nb,
 int neverc_krt_pm_register(struct neverc_krt_pm_notifier *pm,
 			   neverc_krt_pm_callback_t cb, int priority)
 {
-	if (!pm || !cb) return -1;
-	if (!_neverc_krt_register_pm) return -2;
+	int expected = 0;
+	int ret;
 
-	__builtin_memset(pm, 0, sizeof(*pm));
+	if (!pm || !cb) return -EINVAL;
+	if (!_neverc_krt_register_pm) return -EOPNOTSUPP;
+	if (!__atomic_compare_exchange_n(
+		    &pm->registered, &expected, 2, 0,
+		    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+		return expected == 1 || expected == 2 ? -EBUSY : -EINVAL;
+
 	pm->callback = cb;
 	pm->nb.notifier_call = _neverc_krt_pm_trampoline;
 	pm->nb.priority = priority;
 
-	int ret = _neverc_krt_register_pm(&pm->nb);
-	if (ret == 0)
-		pm->registered = 1;
+	ret = _neverc_krt_register_pm(&pm->nb);
+	__atomic_store_n(&pm->registered, ret ? 0 : 1, __ATOMIC_RELEASE);
 	return ret;
 }
 
-void neverc_krt_pm_unregister(struct neverc_krt_pm_notifier *pm)
+int neverc_krt_pm_unregister(struct neverc_krt_pm_notifier *pm)
 {
-	if (!pm || !pm->registered) return;
-	if (_neverc_krt_unregister_pm)
-		_neverc_krt_unregister_pm(&pm->nb);
-	pm->registered = 0;
+	int expected = 1;
+	int ret;
+
+	if (!pm) return -EINVAL;
+	if (!__atomic_compare_exchange_n(
+		    &pm->registered, &expected, 2, 0,
+		    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+		if (expected == 0)
+			return 0;
+		return expected == 2 ? -EBUSY : -EINVAL;
+	}
+	if (!_neverc_krt_unregister_pm) {
+		__atomic_store_n(&pm->registered, 1, __ATOMIC_RELEASE);
+		return -EOPNOTSUPP;
+	}
+	ret = _neverc_krt_unregister_pm(&pm->nb);
+	if (ret) {
+		__atomic_store_n(&pm->registered, 1, __ATOMIC_RELEASE);
+		return ret;
+	}
+	pm->callback = (neverc_krt_pm_callback_t)0;
+	pm->nb.notifier_call = (notifier_fn_t)0;
+	pm->nb.priority = 0;
+	__atomic_store_n(&pm->registered, 0, __ATOMIC_RELEASE);
+	return 0;
 }
 
 static int _neverc_krt_reboot_trampoline(struct notifier_block *nb,
@@ -81,26 +112,52 @@ static int _neverc_krt_reboot_trampoline(struct notifier_block *nb,
 int neverc_krt_reboot_register(struct neverc_krt_reboot_notifier *rn,
 			       neverc_krt_reboot_callback_t cb, int priority)
 {
-	if (!rn || !cb) return -1;
-	if (!_neverc_krt_register_reboot) return -2;
+	int expected = 0;
+	int ret;
 
-	__builtin_memset(rn, 0, sizeof(*rn));
+	if (!rn || !cb) return -EINVAL;
+	if (!_neverc_krt_register_reboot) return -EOPNOTSUPP;
+	if (!__atomic_compare_exchange_n(
+		    &rn->registered, &expected, 2, 0,
+		    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+		return expected == 1 || expected == 2 ? -EBUSY : -EINVAL;
+
 	rn->callback = cb;
 	rn->nb.notifier_call = _neverc_krt_reboot_trampoline;
 	rn->nb.priority = priority;
 
-	int ret = _neverc_krt_register_reboot(&rn->nb);
-	if (ret == 0)
-		rn->registered = 1;
+	ret = _neverc_krt_register_reboot(&rn->nb);
+	__atomic_store_n(&rn->registered, ret ? 0 : 1, __ATOMIC_RELEASE);
 	return ret;
 }
 
-void neverc_krt_reboot_unregister(struct neverc_krt_reboot_notifier *rn)
+int neverc_krt_reboot_unregister(struct neverc_krt_reboot_notifier *rn)
 {
-	if (!rn || !rn->registered) return;
-	if (_neverc_krt_unregister_reboot)
-		_neverc_krt_unregister_reboot(&rn->nb);
-	rn->registered = 0;
+	int expected = 1;
+	int ret;
+
+	if (!rn) return -EINVAL;
+	if (!__atomic_compare_exchange_n(
+		    &rn->registered, &expected, 2, 0,
+		    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+		if (expected == 0)
+			return 0;
+		return expected == 2 ? -EBUSY : -EINVAL;
+	}
+	if (!_neverc_krt_unregister_reboot) {
+		__atomic_store_n(&rn->registered, 1, __ATOMIC_RELEASE);
+		return -EOPNOTSUPP;
+	}
+	ret = _neverc_krt_unregister_reboot(&rn->nb);
+	if (ret) {
+		__atomic_store_n(&rn->registered, 1, __ATOMIC_RELEASE);
+		return ret;
+	}
+	rn->callback = (neverc_krt_reboot_callback_t)0;
+	rn->nb.notifier_call = (notifier_fn_t)0;
+	rn->nb.priority = 0;
+	__atomic_store_n(&rn->registered, 0, __ATOMIC_RELEASE);
+	return 0;
 }
 
 int neverc_krt_is_shutdown_event(unsigned long event)

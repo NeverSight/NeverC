@@ -15,7 +15,7 @@ int neverc_krt_ns_init(void)
 {
 	if (_neverc_krt_ns_inited) return 0;
 
-	neverc_krt_process_init();
+	(void)neverc_krt_process_init();
 
 	_neverc_krt_task_pid_ns =
 		(neverc_krt_task_active_pid_ns_fn)NEVERC_KRT_LOOKUP("task_active_pid_ns");
@@ -37,7 +37,7 @@ void *neverc_krt_ns_get_pid_ns(struct task_struct *task)
 
 int neverc_krt_ns_same_pidns(struct task_struct *a, struct task_struct *b)
 {
-	if (!_neverc_krt_task_pid_ns) return -1;
+	if (!_neverc_krt_task_pid_ns || !a || !b) return -1;
 	void *ns_a = _neverc_krt_task_pid_ns(a);
 	void *ns_b = _neverc_krt_task_pid_ns(b);
 	if (!ns_a || !ns_b) return -1;
@@ -70,7 +70,7 @@ static void *_neverc_krt_task_pid_ptr(struct task_struct *task)
 
 int neverc_krt_ns_pid_in_ns(struct task_struct *task, void *target_ns)
 {
-	if (!_neverc_krt_pid_nr_ns) return -1;
+	if (!_neverc_krt_pid_nr_ns || !task || !target_ns) return -1;
 	void *pid = _neverc_krt_task_pid_ptr(task);
 	if (!pid) return -1;
 	return _neverc_krt_pid_nr_ns(pid, target_ns);
