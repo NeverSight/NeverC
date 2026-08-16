@@ -214,6 +214,52 @@ TEST_F(DriverTest, CrossAArch64) {
               "aarch64-linux-gnu", "-fneverc-types");
 }
 
+TEST_F(DriverTest, AArch64FixedFP16BuiltinsEmitInstructions) {
+  const auto Source = tmpFile("aarch64-fixed-fp16-builtins.c");
+  const auto Assembly = tmpFile("aarch64-fixed-fp16-builtins.s");
+  writeFile(Source, R"(
+unsigned short scvtf_w(unsigned long long x) {
+  return __builtin_arm_scvtf_fixed(x, 16, 0);
+}
+unsigned short scvtf_x(unsigned long long x) {
+  return __builtin_arm_scvtf_fixed(x, 64, 1);
+}
+unsigned short ucvtf_w(unsigned long long x) {
+  return __builtin_arm_ucvtf_fixed(x, 16, 0);
+}
+unsigned short ucvtf_x(unsigned long long x) {
+  return __builtin_arm_ucvtf_fixed(x, 64, 1);
+}
+unsigned long long fcvtzs_w(unsigned short x) {
+  return __builtin_arm_fcvtzs_fixed(x, 16, 0);
+}
+unsigned long long fcvtzs_x(unsigned short x) {
+  return __builtin_arm_fcvtzs_fixed(x, 64, 1);
+}
+unsigned long long fcvtzu_w(unsigned short x) {
+  return __builtin_arm_fcvtzu_fixed(x, 16, 0);
+}
+unsigned long long fcvtzu_x(unsigned short x) {
+  return __builtin_arm_fcvtzu_fixed(x, 64, 1);
+}
+)");
+
+  auto Result = ncc({"-target", "aarch64-linux-gnu",
+                     "-march=armv8.2-a+fp16", "-ffreestanding", "-O2", "-S",
+                     Source.string(), "-o", Assembly.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+
+  const std::string Text = readFile(Assembly);
+  for (const char *Instruction : {
+           "scvtf\th0, w0, #16", "scvtf\th0, x0, #64",
+           "ucvtf\th0, w0, #16", "ucvtf\th0, x0, #64",
+           "fcvtzs\tw8, h0, #16", "fcvtzs\tx0, h0, #64",
+           "fcvtzu\tw8, h0, #16", "fcvtzu\tx0, h0, #64",
+       })
+    EXPECT_NE(Text.find(Instruction), std::string::npos) << Instruction << '\n'
+                                                         << Text;
+}
+
 TEST_F(DriverTest, CrossAppleIOS) {
   // test_basic.c pulls in <stdio.h>; resolving libc headers for an Apple
   // target requires the host Apple SDK (-isysroot), which only exists on a

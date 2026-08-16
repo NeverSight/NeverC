@@ -21,6 +21,14 @@ BUILTIN(__builtin_arm_strex, "i.", "t")
 BUILTIN(__builtin_arm_stlex, "i.", "t")
 BUILTIN(__builtin_arm_clrex, "v", "")
 
+// Scalar fixed-point conversions between a GPR and FP16.  The value crosses
+// the C boundary as raw register bits; the last constant selects W (0) or X
+// (1), preserving the architectural register width in generated High-C.
+TARGET_BUILTIN(__builtin_arm_scvtf_fixed, "UsULLiIUiIUi", "n", "fullfp16")
+TARGET_BUILTIN(__builtin_arm_ucvtf_fixed, "UsULLiIUiIUi", "n", "fullfp16")
+TARGET_BUILTIN(__builtin_arm_fcvtzs_fixed, "ULLiUsIUiIUi", "n", "fullfp16")
+TARGET_BUILTIN(__builtin_arm_fcvtzu_fixed, "ULLiUsIUiIUi", "n", "fullfp16")
+
 // Bit manipulation
 BUILTIN(__builtin_arm_rbit, "UiUi", "nc")
 BUILTIN(__builtin_arm_rbit64, "WUiWUi", "nc")

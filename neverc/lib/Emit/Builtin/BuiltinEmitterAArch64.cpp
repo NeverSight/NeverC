@@ -3870,6 +3870,52 @@ Value *FunctionEmitter::genAArch64BuiltinExpr(unsigned BuiltinID,
     return genNounwindRuntimeCall(ME.createRuntimeFunction(FTy, Name), Ops);
   }
 
+  if (BuiltinID == neverc::AArch64::BI__builtin_arm_scvtf_fixed ||
+      BuiltinID == neverc::AArch64::BI__builtin_arm_ucvtf_fixed ||
+      BuiltinID == neverc::AArch64::BI__builtin_arm_fcvtzs_fixed ||
+      BuiltinID == neverc::AArch64::BI__builtin_arm_fcvtzu_fixed) {
+    const bool IntToFP =
+        BuiltinID == neverc::AArch64::BI__builtin_arm_scvtf_fixed ||
+        BuiltinID == neverc::AArch64::BI__builtin_arm_ucvtf_fixed;
+    const bool IsUnsigned =
+        BuiltinID == neverc::AArch64::BI__builtin_arm_ucvtf_fixed ||
+        BuiltinID == neverc::AArch64::BI__builtin_arm_fcvtzu_fixed;
+    const bool Is64 = E->getArg(2)
+                          ->EvaluateKnownConstInt(getContext())
+                          .getZExtValue() != 0;
+    const uint64_t FBits = E->getArg(1)
+                               ->EvaluateKnownConstInt(getContext())
+                               .getZExtValue();
+    llvm::IntegerType *GPRTy = Is64 ? Int64Ty : Int32Ty;
+    const std::string Width = Is64 ? "x" : "w";
+    const std::string Scale = std::to_string(FBits);
+
+    if (IntToFP) {
+      llvm::Value *Value = genScalarExpr(E->getArg(0));
+      Value = Builder.CreateIntCast(Value, GPRTy, /*isSigned=*/false);
+      const std::string Mnemonic = IsUnsigned ? "ucvtf" : "scvtf";
+      const std::string Asm = Mnemonic + " ${0:h}, ${1:" + Width +
+                              "}, #" + Scale;
+      auto *FTy = llvm::FunctionType::get(HalfTy, {GPRTy}, false);
+      auto *IA = llvm::InlineAsm::get(FTy, Asm, "=w,r",
+                                      /*hasSideEffects=*/true);
+      llvm::Value *Result = Builder.CreateCall(IA, {Value}, Mnemonic);
+      return Builder.CreateBitCast(Result, Int16Ty);
+    }
+
+    llvm::Value *Bits = genScalarExpr(E->getArg(0));
+    Bits = Builder.CreateIntCast(Bits, Int16Ty, /*isSigned=*/false);
+    llvm::Value *Value = Builder.CreateBitCast(Bits, HalfTy);
+    const std::string Mnemonic = IsUnsigned ? "fcvtzu" : "fcvtzs";
+    const std::string Asm = Mnemonic + " ${0:" + Width +
+                            "}, ${1:h}, #" + Scale;
+    auto *FTy = llvm::FunctionType::get(GPRTy, {HalfTy}, false);
+    auto *IA = llvm::InlineAsm::get(FTy, Asm, "=r,w",
+                                    /*hasSideEffects=*/true);
+    llvm::Value *Result = Builder.CreateCall(IA, {Value}, Mnemonic);
+    return Is64 ? Result : Builder.CreateZExt(Result, Int64Ty);
+  }
+
   if ((BuiltinID == neverc::AArch64::BI__builtin_arm_ldrex ||
        BuiltinID == neverc::AArch64::BI__builtin_arm_ldaex) &&
       getContext().getTypeSize(E->getType()) == 128) {

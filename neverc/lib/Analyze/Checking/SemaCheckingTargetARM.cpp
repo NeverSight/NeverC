@@ -466,6 +466,22 @@ bool Sema::CheckAArch64BuiltinFunctionCall(const TargetInfo &TI,
     return CheckARMBuiltinExclusiveCall(BuiltinID, TheCall, 128);
   }
 
+  if (BuiltinID == AArch64::BI__builtin_arm_scvtf_fixed ||
+      BuiltinID == AArch64::BI__builtin_arm_ucvtf_fixed ||
+      BuiltinID == AArch64::BI__builtin_arm_fcvtzs_fixed ||
+      BuiltinID == AArch64::BI__builtin_arm_fcvtzu_fixed) {
+    if (SemaBuiltinConstantArgRange(TheCall, 2, 0, 1))
+      return true;
+    if (TheCall->getArg(2)->isValueDependent())
+      return false;
+
+    llvm::APSInt Is64;
+    if (SemaBuiltinConstantArg(TheCall, 2, Is64))
+      return true;
+    return SemaBuiltinConstantArgRange(TheCall, 1, 1,
+                                       Is64.getZExtValue() ? 64 : 32);
+  }
+
   if (BuiltinID == AArch64::BI__builtin_arm_prefetch) {
     return SemaBuiltinConstantArgRange(TheCall, 1, 0, 1) ||
            SemaBuiltinConstantArgRange(TheCall, 2, 0, 3) ||
@@ -818,4 +834,3 @@ bool Sema::SemaBuiltinARMSpecialReg(unsigned BuiltinID, CallExpr *TheCall,
 
   return false;
 }
-
