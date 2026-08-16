@@ -64,6 +64,26 @@ enum neverc_krt_user_ptmap_backend {
       NEVERC_KRT_PROFILE_USER_PTMAP_NORMALIZED_612_PLUS,
 };
 
+enum neverc_krt_procmap_ioctl_layout {
+  NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_UNSUPPORTED =
+      NEVERC_KRT_PROFILE_PROCMAP_IOCTL_UNSUPPORTED,
+  NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_GKI_612 =
+      NEVERC_KRT_PROFILE_PROCMAP_IOCTL_GKI_612,
+  NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_GKI_618 =
+      NEVERC_KRT_PROFILE_PROCMAP_IOCTL_GKI_618,
+};
+
+struct neverc_krt_maps_ioctl_layout {
+  unsigned long file_size;
+  unsigned long file_private_data;
+  unsigned long seq_file_size;
+  unsigned long seq_file_file;
+  unsigned long seq_file_operations;
+  unsigned long seq_file_private;
+  unsigned long proc_maps_private_size;
+  unsigned long proc_maps_private_mm;
+};
+
 struct neverc_krt_runtime_caps {
   enum neverc_krt_ftrace_callback_abi ftrace_callback_abi;
   enum neverc_krt_filldir_abi filldir_abi;
@@ -72,6 +92,8 @@ struct neverc_krt_runtime_caps {
   enum neverc_krt_binder_filter_backend binder_filter_backend;
   enum neverc_krt_vmalloc_visibility_backend vmalloc_visibility_backend;
   enum neverc_krt_user_ptmap_backend user_ptmap_backend;
+  enum neverc_krt_procmap_ioctl_layout procmap_ioctl_layout;
+  struct neverc_krt_maps_ioctl_layout procmap_ioctl;
   unsigned char has_ftrace_registration_api;
 };
 

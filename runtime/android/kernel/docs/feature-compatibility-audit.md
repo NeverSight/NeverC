@@ -25,7 +25,8 @@ Auditor: `tools/audit-gki-evidence.py`.
 | 618 | image, System.map, vmlinux | `GKI-android17-6.18-kit/common` | vmlinux | local config/symvers missing |
 
 Required System.map symbols now include binder, vmalloc backend, visibility
-mutex/kobject/list-head, file I/O, pid-namespace, and power notifiers.
+mutex/kobject/list-head, `modules_op`, `mounts_op`, `proc_pid_maps_op`,
+`proc_pid_maps_operations`, file I/O, pid-namespace, and power notifiers.
 `vfs_fstatat` or `vfs_stat` is accepted. The auditor now reports every
 unbound `config`, `Module.symvers`, or `vmlinux` as a failure; the current local
 catalog therefore remains red until the pinned artifacts replace the
@@ -55,7 +56,7 @@ same-family development builds.
 | VFS / inode / dir / file | real; file init records I/O symbols and fails at the API | dir/inode/file | yes | loader smoke | supported / guest unverified |
 | binder | `binder_transaction` + overflow-checked allocation rejection | lifecycle + reject ordering | yes | none | supported; live rejection still guest-unverified |
 | SELinux / seccomp | real, opt-in | no | partial | none | unverified |
-| visibility | transactional list restore + multi-range vmalloc + proc hooks | list rollback + vmalloc | yes | none | supported / guest unverified |
+| visibility | transactional list restore + multi-range vmalloc + scoped maps and rendered mounts hooks | list rollback + vmalloc + maps/mounts contracts | yes | none | supported / guest unverified |
 | mem / VMA / ptmap | real; ptmap 4K-only via capability | yes | yes | loader smoke | ptmap 4K supported; mapping mutation guest-unverified |
 | namespace / netlink | real; ns/netlink stay optional and fail at their APIs | no | yes | none | supported / guest unverified |
 | crypto / anti | software crypto; heuristic anti | no | partial | none | crypto supported; anti unverified |
@@ -71,6 +72,18 @@ same-family development builds.
   seven `module_memory` ranges from the generated profile table.
 - `vmallocinfo` resolution no longer depends on compiler-local `s_show.N`.
 - `/proc/modules` now reads `modules_op.show` instead of ambiguous `m_show`.
+- `/proc/pid/maps` interposes `proc_pid_maps_op.show` and skips VMAs that
+  overlap recorded ranges. New callers can scope a range to one task's
+  referenced `mm`; the legacy range API remains intentionally global.
+  Linux 6.12+ `PROCMAP_QUERY` is rejected for a global rule or the queried
+  maps file's matching `mm`.  Private `file` / `seq_file` /
+  `proc_maps_private` offsets live in the family capability table.  An
+  unrecognized COMPAT private layout leaves a task-scoped query alone
+  instead of disabling every process.  `install()` on those kernels
+  rejects any global-only rule and requires `add_task`.
+- `/proc/mounts` reads `mounts_op.show`, parses the mountpoint field in mounts,
+  mountinfo, and mountstats output, and matches kernel path escaping instead of
+  guessing a `struct mount` field or scanning unrelated device/options text.
 - `neverc_krt_init_all()` records every subsystem and pins `NEVERC_KRT_KERNEL`.
   Core helpers that every 5.10–6.18 GKI must export (mem/compat/process/cred/
   thread/interpose/ksyms/timer/cpu/vma) fail the load if missing. Feature
@@ -106,6 +119,6 @@ same-family development builds.
 
 | Layer | What it proves |
 |-------|----------------|
-| Host contracts | binder reject/lifecycle, transactional list restore, power notifier ownership, vmalloc ranges, ptmap backends, init-all status, evidence audit |
+| Host contracts | binder reject/lifecycle, transactional list restore, power notifier ownership, vmalloc ranges, scoped maps/mounts seq_ops, retained-hook ownership, ptmap backends, init-all status, evidence audit |
 | Compile / ELF | demos × 8 profiles, smoke `.ko` |
 | QEMU smoke | vermagic + `struct module` init/exit offsets + load/unload |

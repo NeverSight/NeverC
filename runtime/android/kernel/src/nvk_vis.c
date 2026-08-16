@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /* nvk_vis.c — Module visibility management (list, sysfs, proc, kallsyms, vmalloc). */
 #include <nvk.h>
+#include <linux/fs.h>
 #include "nvk_internal.h"
 #include "nvk_vis_list.h"
+#include "nvk_vis_seq.h"
 #include "nvk_vis_vmalloc.h"
 
 static __always_inline int _neverc_krt_str_starts_with(const char *str,
@@ -20,6 +22,9 @@ static struct neverc_krt_interpose _neverc_krt_ks_interpose;
 static int _neverc_krt_ks_interposed;
 static struct neverc_krt_interpose _neverc_krt_vmalloc_interpose;
 static int _neverc_krt_vmalloc_interposed;
+static struct neverc_krt_interpose _neverc_krt_maps_interpose;
+static struct neverc_krt_interpose _neverc_krt_maps_ioctl_interpose;
+static void *_neverc_krt_maps_seq_operations;
 
 static __always_inline struct list_head *
 _neverc_krt_get_mod_list(struct neverc_krt_this_module *mod)
@@ -39,18 +44,15 @@ typedef void (*neverc_krt_kobject_del_fn)(void *kobj);
 typedef int  (*neverc_krt_mod_seq_show_fn)(void *seq, void *v);
 typedef int  (*neverc_krt_mod_addr_fn)(unsigned long addr);
 typedef int  (*neverc_krt_vmalloc_show_fn)(void *seq, void *v);
-
-/* ---- internal structs ---- */
-
-struct neverc_krt_vis_maps_filter_region {
-	unsigned long start;
-	unsigned long end;
-};
+typedef long (*neverc_krt_maps_ioctl_fn)(
+	void *file, unsigned int command, unsigned long argument);
 
 /* ---- internal variables ---- */
 
-static struct neverc_krt_vis_maps_filter_region _neverc_krt_maps_regions[NEVERC_KRT_VIS_MAPS_FILTER_MAX];
+static struct neverc_krt_maps_filter_region
+	_neverc_krt_maps_regions[NEVERC_KRT_VIS_MAPS_FILTER_MAX];
 static int _neverc_krt_maps_region_count;
+static int _neverc_krt_maps_region_owned_count;
 
 static neverc_krt_mutex_lock_fn   _neverc_krt_vis_mutex_lock;
 static neverc_krt_mutex_unlock_fn _neverc_krt_vis_mutex_unlock;
@@ -69,6 +71,8 @@ static unsigned long              _neverc_krt_vis_mod_end;
 static struct neverc_krt_vis_state *_neverc_krt_ks_state;
 
 static neverc_krt_vmalloc_show_fn _neverc_krt_orig_vmalloc_show;
+static neverc_krt_mod_seq_show_fn _neverc_krt_orig_maps_show;
+static neverc_krt_maps_ioctl_fn   _neverc_krt_orig_maps_ioctl;
 static struct neverc_krt_vmalloc_range
 	_neverc_krt_vmalloc_ranges[NEVERC_KRT_VMALLOC_RANGE_MAX];
 static int _neverc_krt_vmalloc_range_count;
@@ -419,33 +423,92 @@ rollback_proc:
 }
 
 /* ==================================================================== */
-/*  /proc/pid/maps module region filter                                 */
+/*  /proc/pid/maps VMA range filter                                    */
 /* ==================================================================== */
+
+static int _neverc_krt_maps_filter_add_region(
+	unsigned long start, unsigned long end, void *mm_identity)
+{
+	int idx;
+
+	/* Region slots are immutable while either reader hook is live. */
+	if (_neverc_krt_maps_interpose.active ||
+	    _neverc_krt_maps_ioctl_interpose.active)
+		return -EBUSY;
+	if (start >= end)
+		return -EINVAL;
+	idx = __atomic_load_n(
+		&_neverc_krt_maps_region_count, __ATOMIC_ACQUIRE);
+	if (idx >= NEVERC_KRT_VIS_MAPS_FILTER_MAX)
+		return -ENOSPC;
+	_neverc_krt_maps_regions[idx].start = start;
+	_neverc_krt_maps_regions[idx].end = end;
+	_neverc_krt_maps_regions[idx].mm_identity = mm_identity;
+	_neverc_krt_maps_region_owned_count = idx + 1;
+	__atomic_store_n(
+		&_neverc_krt_maps_region_count, idx + 1, __ATOMIC_RELEASE);
+	return 0;
+}
 
 int neverc_krt_vis_maps_filter_add(unsigned long start, unsigned long end)
 {
-	if (_neverc_krt_maps_region_count >= NEVERC_KRT_VIS_MAPS_FILTER_MAX)
-		return -1;
-	int idx = _neverc_krt_maps_region_count++;
-	_neverc_krt_maps_regions[idx].start = start;
-	_neverc_krt_maps_regions[idx].end = end;
-	return 0;
+	return _neverc_krt_maps_filter_add_region(
+		start, end, (void *)0);
+}
+
+int neverc_krt_vis_maps_filter_add_task(
+	struct task_struct *task, unsigned long start, unsigned long end)
+{
+	void *mm_identity;
+	int ret;
+
+	if (!task)
+		return -EINVAL;
+	mm_identity = neverc_krt_task_mm_get(task);
+	if (!mm_identity)
+		return -EOPNOTSUPP;
+	ret = _neverc_krt_maps_filter_add_region(
+		start, end, mm_identity);
+	if (ret)
+		neverc_krt_task_mm_put(mm_identity);
+	return ret;
 }
 
 int neverc_krt_vis_maps_should_filter(unsigned long addr)
 {
+	int count = __atomic_load_n(
+		&_neverc_krt_maps_region_count, __ATOMIC_ACQUIRE);
+
+	/*
+	 * This legacy helper has no task/mm parameter, so only global rules can
+	 * answer it without turning a process-scoped range into a global one.
+	 */
+	return _neverc_krt_maps_global_address_should_hide(
+		addr, _neverc_krt_maps_regions, count);
+}
+
+static void _neverc_krt_vis_maps_regions_release(void)
+{
 	int i;
-	for (i = 0; i < _neverc_krt_maps_region_count; i++) {
-		if (addr >= _neverc_krt_maps_regions[i].start &&
-		    addr < _neverc_krt_maps_regions[i].end)
-			return 1;
+
+	for (i = 0; i < _neverc_krt_maps_region_owned_count; i++) {
+		if (_neverc_krt_maps_regions[i].mm_identity)
+			neverc_krt_task_mm_put(
+				_neverc_krt_maps_regions[i].mm_identity);
+		_neverc_krt_maps_regions[i].start = 0;
+		_neverc_krt_maps_regions[i].end = 0;
+		_neverc_krt_maps_regions[i].mm_identity = (void *)0;
 	}
-	return 0;
+	_neverc_krt_maps_region_owned_count = 0;
 }
 
 void neverc_krt_vis_maps_filter_clear(void)
 {
-	_neverc_krt_maps_region_count = 0;
+	__atomic_store_n(
+		&_neverc_krt_maps_region_count, 0, __ATOMIC_RELEASE);
+	if (!_neverc_krt_maps_interpose.active &&
+	    !_neverc_krt_maps_ioctl_interpose.active)
+		_neverc_krt_vis_maps_regions_release();
 }
 
 void neverc_krt_vis_maps_filter_add_self(void)
@@ -454,6 +517,188 @@ void neverc_krt_vis_maps_filter_add_self(void)
 	unsigned long start = (unsigned long)mod_base;
 	unsigned long end = start + _neverc_krt_get_module_size();
 	neverc_krt_vis_maps_filter_add(start, end);
+}
+
+static int _neverc_krt_maps_show_filter(void *seq, void *v)
+{
+	int range_count = __atomic_load_n(
+		&_neverc_krt_maps_region_count, __ATOMIC_ACQUIRE);
+
+	if (!_neverc_krt_orig_maps_show)
+		return 0;
+
+	if (v && range_count > 0) {
+		const struct neverc_krt_gki_layout *layout =
+			_neverc_krt_get_proven_gki_layout(
+				NEVERC_KRT_LAYOUT_CERT_FULL);
+
+		if (layout &&
+		    layout->vma_start_size == sizeof(unsigned long) &&
+		    layout->vma_end_size == sizeof(unsigned long) &&
+		    _neverc_krt_maps_vma_should_hide(
+			    v, layout->vma_size, layout->vma_start,
+			    layout->vma_end, layout->vma_mm,
+			    _neverc_krt_maps_regions, range_count))
+			return 0;
+	}
+
+	return _neverc_krt_orig_maps_show(seq, v);
+}
+
+static long _neverc_krt_maps_ioctl_filter(
+	void *file, unsigned int command, unsigned long argument)
+{
+	struct neverc_krt_maps_ioctl_layout ioctl_layout;
+	int range_count = __atomic_load_n(
+		&_neverc_krt_maps_region_count, __ATOMIC_ACQUIRE);
+	void *maps_operations = (void *)0;
+	void *target_mm = (void *)0;
+	int target_mm_known = 0;
+
+	/*
+	 * Binary PROCMAP_QUERY bypasses seq_operations.show on Linux 6.12+.
+	 * Resolve the maps file's referenced mm from the family-table
+	 * private layouts so a process-scoped rule does not disable unrelated
+	 * processes.  If a COMPAT kernel changes those private layouts, the
+	 * query is left alone unless a global rule is present.
+	 */
+	if (command == NEVERC_KRT_PROCMAP_QUERY && range_count > 0) {
+		const struct neverc_krt_runtime_caps *caps =
+			_neverc_krt_current_caps();
+
+		maps_operations = __atomic_load_n(
+			&_neverc_krt_maps_seq_operations, __ATOMIC_ACQUIRE);
+		if (caps &&
+		    !_neverc_krt_maps_ioctl_layout_from_caps(
+			    caps, &ioctl_layout) &&
+		    !_neverc_krt_maps_ioctl_target_mm(
+			    file, maps_operations, &ioctl_layout, &target_mm))
+			target_mm_known = 1;
+	}
+	if (_neverc_krt_maps_ioctl_should_block(
+		    command, _neverc_krt_maps_regions, range_count,
+		    target_mm, target_mm_known))
+		return -ENOTTY;
+	if (!_neverc_krt_orig_maps_ioctl)
+		return -ENOTTY;
+	return _neverc_krt_orig_maps_ioctl(file, command, argument);
+}
+
+static int _neverc_krt_maps_release_interpose(
+	struct neverc_krt_interpose *handle, void **orig)
+{
+	int ret;
+
+	if (!handle->active) {
+		if (orig)
+			*orig = (void *)0;
+		return 0;
+	}
+	ret = neverc_krt_interpose_remove(handle);
+	if (!ret && orig)
+		*orig = (void *)0;
+	return ret;
+}
+
+int neverc_krt_vis_maps_filter_install(void)
+{
+	const struct neverc_krt_runtime_caps *caps;
+	void *ioctl_target = (void *)0;
+	void *show_target;
+	int ioctl_required = 0;
+	int ioctl_rollback;
+	int range_count;
+	int rollback;
+	int ret;
+
+	show_target = _neverc_krt_resolve_maps_show();
+	if (!show_target)
+		return -1;
+	caps = _neverc_krt_current_caps();
+	if (caps)
+		ioctl_required = _neverc_krt_maps_ioctl_required(
+			caps->procmap_ioctl_layout);
+
+	if (_neverc_krt_maps_interpose.active ||
+	    _neverc_krt_maps_ioctl_interpose.active) {
+		if (_neverc_krt_maps_interpose.active &&
+		    READ_ONCE(_neverc_krt_maps_interpose.enabled) &&
+		    (!ioctl_required ||
+		     (_neverc_krt_maps_ioctl_interpose.active &&
+		      READ_ONCE(_neverc_krt_maps_ioctl_interpose.enabled))))
+			return 0;
+		return -EUCLEAN;
+	}
+	range_count = __atomic_load_n(
+		&_neverc_krt_maps_region_count, __ATOMIC_ACQUIRE);
+	if (range_count <= 0)
+		return -EINVAL;
+	if (!_neverc_krt_maps_ioctl_install_allowed(
+		    ioctl_required, _neverc_krt_maps_regions, range_count))
+		return -EINVAL;
+	if (ioctl_required) {
+		ioctl_target = _neverc_krt_resolve_maps_ioctl(
+			__builtin_offsetof(struct file_operations,
+					   unlocked_ioctl));
+		if (!ioctl_target)
+			return -EOPNOTSUPP;
+	}
+
+	ret = neverc_krt_interpose_install(&_neverc_krt_maps_interpose,
+					   show_target,
+					   (void *)_neverc_krt_maps_show_filter,
+					   (void **)&_neverc_krt_orig_maps_show);
+	if (ret) {
+		if (!_neverc_krt_maps_interpose.active)
+			_neverc_krt_orig_maps_show =
+				(neverc_krt_mod_seq_show_fn)0;
+		return ret;
+	}
+
+	if (!_neverc_krt_maps_should_install_ioctl(ioctl_required,
+						   ioctl_target))
+		return 0;
+
+	__atomic_store_n(&_neverc_krt_maps_seq_operations,
+			 _neverc_krt_resolve_maps_seq_operations(),
+			 __ATOMIC_RELEASE);
+	ret = neverc_krt_interpose_install(
+		&_neverc_krt_maps_ioctl_interpose, ioctl_target,
+		(void *)_neverc_krt_maps_ioctl_filter,
+		(void **)&_neverc_krt_orig_maps_ioctl);
+	if (!ret)
+		return 0;
+
+	/*
+	 * E_PATCH can leave the ioctl handle active-but-disabled.  Drop it
+	 * before rolling back show so a failed install does not keep a
+	 * reader hook that cleanup would miss if the caller only retries.
+	 */
+	ioctl_rollback = _neverc_krt_maps_release_interpose(
+		&_neverc_krt_maps_ioctl_interpose,
+		(void **)&_neverc_krt_orig_maps_ioctl);
+	if (!_neverc_krt_maps_ioctl_interpose.active)
+		__atomic_store_n(&_neverc_krt_maps_seq_operations, (void *)0,
+				 __ATOMIC_RELEASE);
+	rollback = _neverc_krt_maps_release_interpose(
+		&_neverc_krt_maps_interpose,
+		(void **)&_neverc_krt_orig_maps_show);
+	return _neverc_krt_maps_failed_second_hook_status(
+		ret, ioctl_rollback, rollback);
+}
+
+void neverc_krt_vis_maps_filter_cleanup(void)
+{
+	(void)_neverc_krt_maps_release_interpose(
+		&_neverc_krt_maps_ioctl_interpose,
+		(void **)&_neverc_krt_orig_maps_ioctl);
+	if (!_neverc_krt_maps_ioctl_interpose.active)
+		__atomic_store_n(&_neverc_krt_maps_seq_operations, (void *)0,
+				 __ATOMIC_RELEASE);
+	(void)_neverc_krt_maps_release_interpose(
+		&_neverc_krt_maps_interpose,
+		(void **)&_neverc_krt_orig_maps_show);
+	neverc_krt_vis_maps_filter_clear();
 }
 
 /* ==================================================================== */
@@ -551,12 +796,18 @@ int neverc_krt_vis_vmalloc_filter(void)
 	int ret = neverc_krt_interpose_install(&_neverc_krt_vmalloc_interpose, target,
 				   (void *)_neverc_krt_vmalloc_show_filter,
 				   (void **)&_neverc_krt_orig_vmalloc_show);
+	if (_neverc_krt_interpose_install_is_owned(
+		    ret, _neverc_krt_vmalloc_interpose.active))
+		_neverc_krt_vmalloc_interposed = 1;
 	if (ret) {
-		_neverc_krt_vmalloc_range_count = 0;
+		if (!_neverc_krt_vmalloc_interpose.active) {
+			_neverc_krt_vmalloc_range_count = 0;
+			_neverc_krt_orig_vmalloc_show =
+				(neverc_krt_vmalloc_show_fn)0;
+		}
 		return ret;
 	}
 
-	_neverc_krt_vmalloc_interposed = 1;
 	return 0;
 }
 
@@ -578,6 +829,17 @@ int neverc_krt_vis_pause_interposes(void)
 	}
 	if (_neverc_krt_vmalloc_interposed) {
 		next = neverc_krt_interpose_pause(&_neverc_krt_vmalloc_interpose);
+		if (next && !ret)
+			ret = next;
+	}
+	if (_neverc_krt_maps_ioctl_interpose.active) {
+		next = neverc_krt_interpose_pause(
+			&_neverc_krt_maps_ioctl_interpose);
+		if (next && !ret)
+			ret = next;
+	}
+	if (_neverc_krt_maps_interpose.active) {
+		next = neverc_krt_interpose_pause(&_neverc_krt_maps_interpose);
 		if (next && !ret)
 			ret = next;
 	}
@@ -617,5 +879,29 @@ int neverc_krt_vis_remove_interposes(void)
 				(neverc_krt_vmalloc_show_fn)0;
 		}
 	}
+	if (_neverc_krt_maps_ioctl_interpose.active) {
+		next = neverc_krt_interpose_remove(
+			&_neverc_krt_maps_ioctl_interpose);
+		if (next && !ret) {
+			ret = next;
+		} else if (!next) {
+			_neverc_krt_orig_maps_ioctl =
+				(neverc_krt_maps_ioctl_fn)0;
+			__atomic_store_n(&_neverc_krt_maps_seq_operations,
+					 (void *)0, __ATOMIC_RELEASE);
+		}
+	}
+	if (_neverc_krt_maps_interpose.active) {
+		next = neverc_krt_interpose_remove(&_neverc_krt_maps_interpose);
+		if (next && !ret) {
+			ret = next;
+		} else if (!next) {
+			_neverc_krt_orig_maps_show =
+				(neverc_krt_mod_seq_show_fn)0;
+		}
+	}
+	if (!_neverc_krt_maps_ioctl_interpose.active &&
+	    !_neverc_krt_maps_interpose.active)
+		neverc_krt_vis_maps_filter_clear();
 	return ret;
 }

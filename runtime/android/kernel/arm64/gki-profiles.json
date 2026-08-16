@@ -10,6 +10,17 @@
         "ftrace_callback_abi": "pt_regs",
         "ftrace_registration_api": false,
         "kallsyms_iter_abi": "with_module",
+        "procmap_ioctl": {
+          "file_private_data": 0,
+          "file_size": 0,
+          "proc_maps_private_mm": 0,
+          "proc_maps_private_size": 0,
+          "seq_file_file": 0,
+          "seq_file_operations": 0,
+          "seq_file_private": 0,
+          "seq_file_size": 0
+        },
+        "procmap_ioctl_layout": "unsupported",
         "user_ptmap_backend": "legacy_510",
         "vmalloc_visibility_backend": "seq_operations"
       },
@@ -34,6 +45,17 @@
         "ftrace_callback_abi": "pt_regs",
         "ftrace_registration_api": false,
         "kallsyms_iter_abi": "with_module",
+        "procmap_ioctl": {
+          "file_private_data": 0,
+          "file_size": 0,
+          "proc_maps_private_mm": 0,
+          "proc_maps_private_size": 0,
+          "seq_file_file": 0,
+          "seq_file_operations": 0,
+          "seq_file_private": 0,
+          "seq_file_size": 0
+        },
+        "procmap_ioctl_layout": "unsupported",
         "user_ptmap_backend": "legacy_510",
         "vmalloc_visibility_backend": "seq_operations"
       },
@@ -60,6 +82,17 @@
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": false,
         "kallsyms_iter_abi": "with_module",
+        "procmap_ioctl": {
+          "file_private_data": 0,
+          "file_size": 0,
+          "proc_maps_private_mm": 0,
+          "proc_maps_private_size": 0,
+          "seq_file_file": 0,
+          "seq_file_operations": 0,
+          "seq_file_private": 0,
+          "seq_file_size": 0
+        },
+        "procmap_ioctl_layout": "unsupported",
         "user_ptmap_backend": "legacy_515",
         "vmalloc_visibility_backend": "seq_operations"
       },
@@ -84,6 +117,17 @@
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": false,
         "kallsyms_iter_abi": "with_module",
+        "procmap_ioctl": {
+          "file_private_data": 0,
+          "file_size": 0,
+          "proc_maps_private_mm": 0,
+          "proc_maps_private_size": 0,
+          "seq_file_file": 0,
+          "seq_file_operations": 0,
+          "seq_file_private": 0,
+          "seq_file_size": 0
+        },
+        "procmap_ioctl_layout": "unsupported",
         "user_ptmap_backend": "legacy_515",
         "vmalloc_visibility_backend": "seq_operations"
       },
@@ -109,6 +153,17 @@
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": false,
         "kallsyms_iter_abi": "with_module",
+        "procmap_ioctl": {
+          "file_private_data": 0,
+          "file_size": 0,
+          "proc_maps_private_mm": 0,
+          "proc_maps_private_size": 0,
+          "seq_file_file": 0,
+          "seq_file_operations": 0,
+          "seq_file_private": 0,
+          "seq_file_size": 0
+        },
+        "procmap_ioctl_layout": "unsupported",
         "user_ptmap_backend": "classic_601",
         "vmalloc_visibility_backend": "seq_operations"
       },
@@ -133,6 +188,17 @@
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": false,
         "kallsyms_iter_abi": "address_only",
+        "procmap_ioctl": {
+          "file_private_data": 0,
+          "file_size": 0,
+          "proc_maps_private_mm": 0,
+          "proc_maps_private_size": 0,
+          "seq_file_file": 0,
+          "seq_file_operations": 0,
+          "seq_file_private": 0,
+          "seq_file_size": 0
+        },
+        "procmap_ioctl_layout": "unsupported",
         "user_ptmap_backend": "classic_606",
         "vmalloc_visibility_backend": "seq_operations"
       },
@@ -157,6 +223,17 @@
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": false,
         "kallsyms_iter_abi": "address_only",
+        "procmap_ioctl": {
+          "file_private_data": 32,
+          "file_size": 216,
+          "proc_maps_private_mm": 16,
+          "proc_maps_private_size": 120,
+          "seq_file_file": 120,
+          "seq_file_operations": 104,
+          "seq_file_private": 128,
+          "seq_file_size": 136
+        },
+        "procmap_ioctl_layout": "gki_612",
         "user_ptmap_backend": "normalized_612_plus",
         "vmalloc_visibility_backend": "named_show"
       },
@@ -181,6 +258,17 @@
         "ftrace_callback_abi": "ftrace_regs",
         "ftrace_registration_api": false,
         "kallsyms_iter_abi": "address_only",
+        "procmap_ioctl": {
+          "file_private_data": 24,
+          "file_size": 208,
+          "proc_maps_private_mm": 112,
+          "proc_maps_private_size": 136,
+          "seq_file_file": 112,
+          "seq_file_operations": 96,
+          "seq_file_private": 120,
+          "seq_file_size": 128
+        },
+        "procmap_ioctl_layout": "gki_618",
         "user_ptmap_backend": "normalized_612_plus",
         "vmalloc_visibility_backend": "named_show"
       },

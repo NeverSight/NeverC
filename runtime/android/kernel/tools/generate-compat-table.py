@@ -125,7 +125,34 @@ CAPABILITY_ABIS = {
             5,
         ),
     },
+    "procmap_ioctl_layout": {
+        "unsupported": (
+            "NEVERC_KRT_PROFILE_PROCMAP_IOCTL_UNSUPPORTED",
+            "NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_UNSUPPORTED",
+            0,
+        ),
+        "gki_612": (
+            "NEVERC_KRT_PROFILE_PROCMAP_IOCTL_GKI_612",
+            "NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_GKI_612",
+            1,
+        ),
+        "gki_618": (
+            "NEVERC_KRT_PROFILE_PROCMAP_IOCTL_GKI_618",
+            "NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_GKI_618",
+            2,
+        ),
+    },
 }
+PROCMAP_IOCTL_FIELD_NAMES = (
+    "file_size",
+    "file_private_data",
+    "seq_file_size",
+    "seq_file_file",
+    "seq_file_operations",
+    "seq_file_private",
+    "proc_maps_private_size",
+    "proc_maps_private_mm",
+)
 CAPABILITY_KEYS = frozenset({
     "binder_filter_backend",
     "do_mmap_abi",
@@ -133,9 +160,57 @@ CAPABILITY_KEYS = frozenset({
     "ftrace_callback_abi",
     "ftrace_registration_api",
     "kallsyms_iter_abi",
+    "procmap_ioctl",
+    "procmap_ioctl_layout",
     "user_ptmap_backend",
     "vmalloc_visibility_backend",
 })
+
+
+def validate_procmap_ioctl(capabilities, context):
+    layout = capabilities.get("procmap_ioctl")
+    if not isinstance(layout, dict) or set(layout) != set(PROCMAP_IOCTL_FIELD_NAMES):
+        raise ValueError(f"{context}: procmap_ioctl keys do not match schema")
+    for key in PROCMAP_IOCTL_FIELD_NAMES:
+        value = layout[key]
+        if type(value) is not int or value < 0:
+            raise ValueError(f"{context}: invalid procmap_ioctl.{key}")
+    supported = capabilities["procmap_ioctl_layout"] != "unsupported"
+    nonzero = any(layout[key] for key in PROCMAP_IOCTL_FIELD_NAMES)
+    if supported and not nonzero:
+        raise ValueError(
+            f"{context}: supported procmap_ioctl_layout needs measured offsets"
+        )
+    if not supported and nonzero:
+        raise ValueError(
+            f"{context}: unsupported procmap_ioctl_layout must be zero"
+        )
+    if not supported:
+        return
+    pointer_size = 8
+    if (
+        layout["file_size"] < pointer_size
+        or layout["file_private_data"] > layout["file_size"] - pointer_size
+        or layout["seq_file_size"] < pointer_size
+        or layout["seq_file_file"] > layout["seq_file_size"] - pointer_size
+        or layout["seq_file_operations"] > layout["seq_file_size"] - pointer_size
+        or layout["seq_file_private"] > layout["seq_file_size"] - pointer_size
+        or layout["proc_maps_private_size"] < pointer_size
+        or layout["proc_maps_private_mm"]
+        > layout["proc_maps_private_size"] - pointer_size
+    ):
+        raise ValueError(f"{context}: procmap_ioctl offsets do not fit")
+
+
+def render_procmap_ioctl_fields(layout, indent):
+    inner = indent + "\t"
+    lines = [f"{indent}.procmap_ioctl = {{"]
+    for name in PROCMAP_IOCTL_FIELD_NAMES:
+        lines.append(f"{inner}.{name} = {layout[name]},")
+    lines.append(f"{indent}}},")
+    return lines
+
+
 PROFILE_KEYS = frozenset({
     "android_release",
     "capabilities",
@@ -1551,6 +1626,7 @@ def load_catalog(path):
                 raise ValueError(f"{context}: invalid {key}")
         if not isinstance(capabilities["ftrace_registration_api"], bool):
             raise ValueError(f"{context}: ftrace_registration_api must be boolean")
+        validate_procmap_ioctl(capabilities, context)
         if (
             capabilities["ftrace_registration_api"]
             and capabilities["ftrace_callback_abi"] == "ftrace_regs"
@@ -2114,6 +2190,8 @@ def render_profile_header(profile_evidence):
             f"{abi_config_symbol('vmalloc_visibility_backend', caps['vmalloc_visibility_backend'])}",
             f"#    define NEVERC_KRT_PROFILE_USER_PTMAP_BACKEND "
             f"{abi_config_symbol('user_ptmap_backend', caps['user_ptmap_backend'])}",
+            f"#    define NEVERC_KRT_PROFILE_PROCMAP_IOCTL_LAYOUT "
+            f"{abi_config_symbol('procmap_ioctl_layout', caps['procmap_ioctl_layout'])}",
             f"#    define NEVERC_KRT_PROFILE_HAS_FTRACE_REGISTRATION_API "
             f"{int(caps['ftrace_registration_api'])}",
             f"#    define NEVERC_KRT_PROFILE_VERMAGIC "
@@ -2264,6 +2342,11 @@ def render_profile_table(profile_evidence):
             f"{abi_runtime_symbol('vmalloc_visibility_backend', caps['vmalloc_visibility_backend'])},",
             f"\t\t\t.user_ptmap_backend = "
             f"{abi_runtime_symbol('user_ptmap_backend', caps['user_ptmap_backend'])},",
+            f"\t\t\t.procmap_ioctl_layout = "
+            f"{abi_runtime_symbol('procmap_ioctl_layout', caps['procmap_ioctl_layout'])},",
+        ])
+        lines.extend(render_procmap_ioctl_fields(caps["procmap_ioctl"], "\t\t\t"))
+        lines.extend([
             f"\t\t\t.has_ftrace_registration_api = "
             f"{int(caps['ftrace_registration_api'])},",
             "\t\t},",

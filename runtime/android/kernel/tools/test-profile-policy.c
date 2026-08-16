@@ -243,6 +243,9 @@ static void check_capability_contracts(void) {
          NEVERC_KRT_VMALLOC_VIS_BACKEND_SEQ_OPERATIONS);
   assert(profile->caps.user_ptmap_backend ==
          NEVERC_KRT_USER_PTMAP_BACKEND_LEGACY_510);
+  assert(profile->caps.procmap_ioctl_layout ==
+         NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_UNSUPPORTED);
+  assert(profile->caps.procmap_ioctl.file_size == 0);
 
   profile = neverc_krt_find_profile(51013);
   assert(profile->kcfi_mode == 0);
@@ -279,6 +282,8 @@ static void check_capability_contracts(void) {
          NEVERC_KRT_VMALLOC_VIS_BACKEND_SEQ_OPERATIONS);
   assert(profile->caps.user_ptmap_backend ==
          NEVERC_KRT_USER_PTMAP_BACKEND_CLASSIC_606);
+  assert(profile->caps.procmap_ioctl_layout ==
+         NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_UNSUPPORTED);
 
   profile = neverc_krt_find_profile(612);
   assert(profile->kcfi_mode == 2);
@@ -291,6 +296,11 @@ static void check_capability_contracts(void) {
          NEVERC_KRT_VMALLOC_VIS_BACKEND_NAMED_SHOW);
   assert(profile->caps.user_ptmap_backend ==
          NEVERC_KRT_USER_PTMAP_BACKEND_NORMALIZED_612_PLUS);
+  assert(profile->caps.procmap_ioctl_layout ==
+         NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_GKI_612);
+  assert(profile->caps.procmap_ioctl.file_private_data == 32);
+  assert(profile->caps.procmap_ioctl.seq_file_private == 128);
+  assert(profile->caps.procmap_ioctl.proc_maps_private_mm == 16);
 
   profile = neverc_krt_find_profile(618);
   assert(profile->kcfi_mode == 2);
@@ -301,6 +311,11 @@ static void check_capability_contracts(void) {
          NEVERC_KRT_VMALLOC_VIS_BACKEND_NAMED_SHOW);
   assert(profile->caps.user_ptmap_backend ==
          NEVERC_KRT_USER_PTMAP_BACKEND_NORMALIZED_612_PLUS);
+  assert(profile->caps.procmap_ioctl_layout ==
+         NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_GKI_618);
+  assert(profile->caps.procmap_ioctl.file_private_data == 24);
+  assert(profile->caps.procmap_ioctl.seq_file_private == 120);
+  assert(profile->caps.procmap_ioctl.proc_maps_private_mm == 112);
 }
 
 static void check_banner_identity_parsing(void) {

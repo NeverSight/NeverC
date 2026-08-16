@@ -2,6 +2,8 @@
 #ifndef NEVERC_KRT_VIS_VMALLOC_INTERNAL_H
 #define NEVERC_KRT_VIS_VMALLOC_INTERNAL_H
 
+#include "nvk_vis_seq.h"
+
 #define NEVERC_KRT_VMALLOC_RANGE_MAX 7
 
 struct neverc_krt_vmalloc_range {
@@ -74,28 +76,6 @@ static inline int _neverc_krt_collect_module_vmalloc_ranges(
 	}
 
 	return used ? (int)used : -1;
-}
-
-static inline void *_neverc_krt_seq_operations_show(const void *operations)
-{
-	void *show = (void *)0;
-
-	if (!operations ||
-	    neverc_krt_mem_read(
-		    &show, (const char *)operations + 3 * sizeof(void *),
-		    sizeof(show)))
-		return (void *)0;
-	return show;
-}
-
-/*
- * /proc/modules uses a compiler-local m_show on every current GKI.  Android
- * 12 5.10 only exports the unique-hashed form, so a plain m_show lookup
- * fails.  modules_op.show is the stable slot on 5.10–6.18.
- */
-static inline void *_neverc_krt_resolve_modules_show(void)
-{
-	return _neverc_krt_seq_operations_show(NEVERC_KRT_LOOKUP("modules_op"));
 }
 
 /*

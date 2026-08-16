@@ -3,6 +3,7 @@
 #include <nvk.h>
 #include <linux/errno.h>
 #include "nvk_internal.h"
+#include "nvk_vis_seq.h"
 
 static __always_inline int _neverc_krt_str_contains(const char *haystack,
 						    const char *needle)
@@ -113,8 +114,13 @@ static int                        _neverc_krt_vis_file_rewrite_cnt;
 
 int neverc_krt_vis_mount_filter_add(const char *path)
 {
+	if (_neverc_krt_mnt_filter.active ||
+	    _neverc_krt_mounts_interpose.active)
+		return -EBUSY;
+	if (!path || !*path)
+		return -EINVAL;
 	if (_neverc_krt_mnt_filter.count >= NEVERC_KRT_VIS_MOUNT_FILTER_MAX)
-		return -1;
+		return -ENOSPC;
 
 	int idx = _neverc_krt_mnt_filter.count;
 	const char *src = path;
@@ -123,86 +129,93 @@ int neverc_krt_vis_mount_filter_add(const char *path)
 	while (*src && i < NEVERC_KRT_VIS_MOUNT_PATH_MAX - 1) {
 		dst[i++] = *src++;
 	}
+	if (*src) {
+		dst[0] = '\0';
+		return -ENAMETOOLONG;
+	}
 	dst[i] = '\0';
 	_neverc_krt_mnt_filter.count++;
 	return 0;
 }
 
-static int _neverc_krt_mnt_path_match(const char *haystack)
+static int _neverc_krt_mnt_output_match(void *seq, unsigned long begin)
 {
-	char buf[NEVERC_KRT_VIS_MOUNT_PATH_MAX];
-	int plen = 0;
 	int i;
 
 	for (i = 0; i < _neverc_krt_mnt_filter.count; i++) {
 		const char *path = _neverc_krt_mnt_filter.paths[i];
-		plen = 0;
-		while (path[plen]) plen++;
-		if (plen <= 0 || plen >= NEVERC_KRT_VIS_MOUNT_PATH_MAX)
-			continue;
-		if (neverc_krt_mem_read(buf, haystack, plen))
-			continue;
-		int j, match = 1;
-		for (j = 0; j < plen; j++) {
-			if (buf[j] != path[j]) { match = 0; break; }
-		}
-		if (match) return 1;
+
+		if (_neverc_krt_mount_output_matches_path(seq, begin, path))
+			return 1;
 	}
 	return 0;
 }
 
 static int _neverc_krt_mounts_show_filter(void *seq, void *v)
 {
+	struct neverc_krt_seq_file_prefix before;
+	int ret;
+
 	if (!_neverc_krt_orig_mounts_show_fn)
 		return 0;
-	if (v && _neverc_krt_mnt_filter.count > 0) {
-		unsigned long *mount_ptr = (unsigned long *)v;
-		unsigned long i;
-		for (i = 0; i < 32; i++) {
-			unsigned long val;
-			if (neverc_krt_mem_read(&val, &mount_ptr[i], 8))
-				continue;
-			if (val > 0xFFFF000000000000UL &&
-			    val < 0xFFFFFFFFFFFFF000UL) {
-				const char *name = (const char *)val;
-				unsigned char c;
-				if (!neverc_krt_mem_read(&c, name, 1) &&
-				    c == '/' &&
-				    _neverc_krt_mnt_path_match(name))
-					return 0;
-			}
-		}
-	}
-	return _neverc_krt_orig_mounts_show_fn(seq, v);
+	if (!seq || _neverc_krt_mnt_filter.count <= 0 ||
+	    neverc_krt_mem_read(&before, seq, sizeof(before)))
+		return _neverc_krt_orig_mounts_show_fn(seq, v);
+
+	ret = _neverc_krt_orig_mounts_show_fn(seq, v);
+	if (!ret &&
+	    _neverc_krt_mnt_output_match(seq, before.count) &&
+	    !_neverc_krt_seq_file_rewind(seq, before.count))
+		return 0;
+	return ret;
 }
 
 int neverc_krt_vis_mount_filter_install(void)
 {
 	void *target;
 
-	if (_neverc_krt_mnt_filter.active) return 0;
+	if (_neverc_krt_mnt_filter.active) {
+		if (_neverc_krt_mounts_interpose.active &&
+		    READ_ONCE(_neverc_krt_mounts_interpose.enabled))
+			return 0;
+		return -EUCLEAN;
+	}
+	if (_neverc_krt_mounts_interpose.active)
+		return -EUCLEAN;
+	if (_neverc_krt_mnt_filter.count <= 0)
+		return -EINVAL;
 
-	target = NEVERC_KRT_LOOKUP("show_vfsmnt");
-	if (!target)
-		target = NEVERC_KRT_LOOKUP("show_mountinfo");
+	target = _neverc_krt_resolve_mounts_show();
 	if (!target) return -1;
 
 	int ret = neverc_krt_interpose_install(&_neverc_krt_mounts_interpose, target,
 				   (void *)_neverc_krt_mounts_show_filter,
 				   (void **)&_neverc_krt_orig_mounts_show_fn);
+	if (_neverc_krt_interpose_install_is_owned(
+		    ret, _neverc_krt_mounts_interpose.active))
+		_neverc_krt_mnt_filter.active = 1;
+	if (ret && !_neverc_krt_mounts_interpose.active)
+		_neverc_krt_orig_mounts_show_fn =
+			(neverc_krt_mounts_show_fn)0;
 	if (ret) return ret;
 
-	_neverc_krt_mnt_filter.active = 1;
 	return 0;
 }
 
 void neverc_krt_vis_mount_filter_cleanup(void)
 {
-	if (!_neverc_krt_mnt_filter.active) return;
-	if (_neverc_krt_mounts_interpose.active)
-		neverc_krt_interpose_remove(&_neverc_krt_mounts_interpose);
+	if (!_neverc_krt_mnt_filter.active &&
+	    !_neverc_krt_mounts_interpose.active)
+		return;
+	if (_neverc_krt_mounts_interpose.active &&
+	    neverc_krt_interpose_remove(&_neverc_krt_mounts_interpose)) {
+		_neverc_krt_mnt_filter.active = 1;
+		_neverc_krt_mnt_filter.count = 0;
+		return;
+	}
 	_neverc_krt_mnt_filter.active = 0;
 	_neverc_krt_mnt_filter.count = 0;
+	_neverc_krt_orig_mounts_show_fn = (neverc_krt_mounts_show_fn)0;
 }
 
 

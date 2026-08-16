@@ -216,7 +216,7 @@ int neverc_krt_cleanup_all(void)
 	neverc_krt_vis_kmsg_read_filter_cleanup();
 	neverc_krt_vis_pid_cleanup();
 	neverc_krt_vis_mount_filter_cleanup();
-	neverc_krt_vis_maps_filter_clear();
+	neverc_krt_vis_maps_filter_cleanup();
 	neverc_krt_vis_proc_attr_filter_cleanup();
 	neverc_krt_se_selective_cleanup();
 

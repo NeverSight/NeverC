@@ -24,6 +24,7 @@ def main() -> int:
                 "-Wall",
                 "-Wextra",
                 "-Werror",
+                f"-I{RUNTIME_ROOT / 'include'}",
                 f"-I{RUNTIME_ROOT / 'src'}",
                 str(TOOLS_ROOT / "test-vmalloc-visibility.c"),
                 "-o",

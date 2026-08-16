@@ -7,6 +7,7 @@
 #include <linux/list.h>
 
 struct neverc_krt_this_module;
+struct task_struct;
 
 #include <nvk_interpose.h>
 
@@ -69,18 +70,32 @@ void neverc_krt_vis_pid_cleanup(void);
 #define NEVERC_KRT_VIS_MOUNT_FILTER_MAX 8
 #define NEVERC_KRT_VIS_MOUNT_PATH_MAX   64
 
+/* Configure paths before install; additions return -EBUSY while hooked. */
 int neverc_krt_vis_mount_filter_add(const char *path);
 int neverc_krt_vis_mount_filter_install(void);
 void neverc_krt_vis_mount_filter_cleanup(void);
 
-/* --- /proc/pid/maps module region filter --- */
+/* --- /proc/pid/maps VMA range filter --- */
 
 #define NEVERC_KRT_VIS_MAPS_FILTER_MAX 4
 
+/* Configure ranges before install; additions return -EBUSY while hooks live. */
+/* Legacy global-address rule.  Kernels that filter PROCMAP_QUERY reject
+ * install() unless every live rule was added with add_task. */
 int neverc_krt_vis_maps_filter_add(unsigned long start, unsigned long end);
+/*
+ * Scope a range to one task address space.  The runtime owns an mm reference
+ * until maps_filter_clear/cleanup has quiesced both maps reader hooks.
+ */
+int neverc_krt_vis_maps_filter_add_task(
+	struct task_struct *task, unsigned long start, unsigned long end);
+/* Address-only legacy query; task-scoped rules require the hooked VMA/mm. */
 int neverc_krt_vis_maps_should_filter(unsigned long addr);
+int neverc_krt_vis_maps_filter_install(void);
 void neverc_krt_vis_maps_filter_clear(void);
+/* Legacy kernel-address helper; kernel module addresses are not user VMAs. */
 void neverc_krt_vis_maps_filter_add_self(void);
+void neverc_krt_vis_maps_filter_cleanup(void);
 
 void neverc_krt_vis_wipe_modinfo(struct neverc_krt_this_module *mod);
 
