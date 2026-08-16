@@ -9,6 +9,7 @@
 #if !defined(_WIN32)
 #include <unistd.h>
 #include <sys/stat.h>
+#include <signal.h>
 #endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -188,6 +189,7 @@ static void test_look_path(void) {
 
     p = neverc_exec_look_path("this_command_does_not_exist_xyz", buf, sizeof(buf));
     ASSERT_TRUE(p == NULL);
+    ASSERT_TRUE(neverc_exec_look_path("", buf, sizeof(buf)) == NULL);
 
 #if !defined(_WIN32)
     p = neverc_exec_look_path("bin", buf, sizeof(buf));
@@ -252,6 +254,88 @@ static void test_combined_output(void) {
 }
 
 #if !defined(_WIN32)
+static int parse_int_output(const neverc_exec_output_t *out) {
+    char tmp[32];
+    size_t n = out->len < sizeof(tmp) - 1 ? out->len : sizeof(tmp) - 1;
+    memcpy(tmp, out->data, n);
+    tmp[n] = '\0';
+    return atoi(tmp);
+}
+
+static int run_print_blocked_usr1(void) {
+    sigset_t cur, empty;
+    sigemptyset(&empty);
+    if (sigprocmask(SIG_BLOCK, &empty, &cur) != 0) return 1;
+    return printf("%d\n", sigismember(&cur, SIGUSR1)) < 0 ? 1 : 0;
+}
+
+static void test_unread_stdin_is_not_failure(void) {
+    printf("[unread_stdin]\n");
+    const char *args[] = {"-c", "exit 0"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command("/bin/sh", args, 2);
+    ASSERT_TRUE(cmd != NULL);
+    if (!cmd) return;
+
+    size_t n = 256 * 1024;
+    char *data = (char *)malloc(n);
+    ASSERT_TRUE(data != NULL);
+    if (!data) {
+        neverc_exec_cmd_free(cmd);
+        return;
+    }
+    memset(data, 'x', n);
+    neverc_exec_cmd_set_stdin(cmd, data, n);
+
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+    ASSERT_INT_EQ(st.signaled, 0);
+
+    neverc_exec_cmd_free(cmd);
+    free(data);
+}
+
+static void test_signaled_status(void) {
+    printf("[signaled_status]\n");
+    const char *args[] = {"-c", "kill -s USR1 $$"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command("/bin/sh", args, 2);
+    ASSERT_TRUE(cmd != NULL);
+    if (!cmd) return;
+
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
+    ASSERT_INT_EQ(st.signaled, 1);
+    ASSERT_INT_EQ(st.signal_num, SIGUSR1);
+    ASSERT_INT_EQ(st.exit_code, -1);
+    neverc_exec_cmd_free(cmd);
+}
+
+static void test_exec_resets_signal_mask(const char *executable) {
+    printf("[exec_signal_mask]\n");
+    sigset_t block, old;
+    sigemptyset(&block);
+    sigaddset(&block, SIGUSR1);
+    ASSERT_INT_EQ(sigprocmask(SIG_BLOCK, &block, &old), 0);
+
+    const char *args[] = {"--print-blocked-usr1"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command(executable, args, 1);
+    ASSERT_TRUE(cmd != NULL);
+    if (!cmd) {
+        sigprocmask(SIG_SETMASK, &old, NULL);
+        return;
+    }
+
+    neverc_exec_output_t out = {0};
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_output(cmd, &out, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+    ASSERT_INT_EQ(parse_int_output(&out), 0);
+
+    neverc_exec_output_free(&out);
+    neverc_exec_cmd_free(cmd);
+    sigprocmask(SIG_SETMASK, &old, NULL);
+}
+
 static void test_env_still_searches_path(void) {
     printf("[env_path_search]\n");
     const char *env[] = { "PATH=/usr/bin:/bin", "HOME=/" };
@@ -318,6 +402,10 @@ int main(int argc, char **argv) {
     if (argc == 2 &&
         strcmp(argv[1], "--bidirectional-child") == 0)
         return run_bidirectional_child();
+#if !defined(_WIN32)
+    if (argc == 2 && strcmp(argv[1], "--print-blocked-usr1") == 0)
+        return run_print_blocked_usr1();
+#endif
     if (argc >= 2 && strcmp(argv[1], "--print-argv") == 0) {
         int i;
         for (i = 2; i < argc; i++) {
@@ -342,6 +430,9 @@ int main(int argc, char **argv) {
     test_look_path();
     test_combined_output();
 #if !defined(_WIN32)
+    test_unread_stdin_is_not_failure();
+    test_signaled_status();
+    test_exec_resets_signal_mask(argv[0]);
     test_env_still_searches_path();
     test_set_dir();
 #endif

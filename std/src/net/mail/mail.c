@@ -225,8 +225,16 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
             memcpy(h->value + vpos, data + pos, line_len);
             vpos += line_len;
 
-            if (line_end < len && data[line_end] == '\r') line_end++;
-            if (line_end < len && data[line_end] == '\n') line_end++;
+            /* RFC 5322 line break is CRLF (LF alone is accepted). A bare CR
+             * must not terminate the line: that splits "From: a\rBcc: b" into
+             * two headers and smuggles a field. */
+            if (line_end < len && data[line_end] == '\r') {
+                if (line_end + 1 >= len || data[line_end + 1] != '\n')
+                    return -1;
+                line_end += 2;
+            } else if (line_end < len && data[line_end] == '\n') {
+                line_end++;
+            }
 
             /* Check for continuation */
             if (line_end < len && (data[line_end] == ' ' || data[line_end] == '\t')) {

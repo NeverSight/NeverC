@@ -70,6 +70,7 @@ int neverc_unicode_is_upper(uint32_t r) {
     if (unicode_is_latin_extended_upper(r)) return 1;
     /* Titlecase triples (Ǆ/Ǉ/Ǌ/Ǳ): the Lu member of each */
     if (r == 0x01C4 || r == 0x01C7 || r == 0x01CA || r == 0x01F1) return 1;
+    if (r == 0x212A) return 1; /* Kelvin sign */
     /* Greek uppercase */
     if (r >= 0x391 && r <= 0x3A9 && r != 0x3A2) return 1;
     /* Cyrillic uppercase */
@@ -114,8 +115,8 @@ int neverc_unicode_is_letter(uint32_t r) {
         (r >= 0x309D && r <= 0x309F)) return 1;
     if ((r >= 0x30A1 && r <= 0x30FA) ||
         (r >= 0x30FC && r <= 0x30FF)) return 1;
-    /* Hangul Syllables */
-    if (r >= 0xAC00 && r <= 0xD7AF) return 1;
+    /* Hangul Syllables (assigned through U+D7A3; U+D7A4..U+D7AF are Cn) */
+    if (r >= 0xAC00 && r <= 0xD7A3) return 1;
     /* Latin Extended Additional */
     if (r >= 0x1E00 && r <= 0x1EFF) return 1;
     /* Arabic letters */
@@ -170,7 +171,14 @@ int neverc_unicode_is_punct(uint32_t r) {
     if (r >= 0x3001 && r <= 0x3003) return 1;
     if (r == 0x3008 || r == 0x3009 || r == 0x300A || r == 0x300B) return 1;
     if (r == 0x30A0 || r == 0x30FB) return 1;
-    if (r >= 0xFF01 && r <= 0xFF0F) return 1;
+    /* Fullwidth ASCII punct; skip U+FF04 (Sc) and U+FF0B (Sm) */
+    if ((r >= 0xFF01 && r <= 0xFF03) ||
+        (r >= 0xFF05 && r <= 0xFF0A) ||
+        (r >= 0xFF0C && r <= 0xFF0F)) return 1;
+    /* Misc Technical / Dingbat punctuation (not symbols) */
+    if ((r >= 0x2308 && r <= 0x230B) ||
+        (r >= 0x2329 && r <= 0x232A) ||
+        (r >= 0x2768 && r <= 0x2775)) return 1;
     return 0;
 }
 
@@ -214,6 +222,7 @@ uint32_t neverc_unicode_to_upper(uint32_t r) {
 uint32_t neverc_unicode_to_lower(uint32_t r) {
     if (r == 0x0130) return 0x0069;
     if (r == 0x0178) return 0x00FF;
+    if (r == 0x212A) return 'k';
     if (r >= 0x01C4 && r <= 0x01C6) return 0x01C6;
     if (r >= 0x01C7 && r <= 0x01C9) return 0x01C9;
     if (r >= 0x01CA && r <= 0x01CC) return 0x01CC;
@@ -262,6 +271,7 @@ int neverc_unicode_is_number(uint32_t r) {
     if (r >= 0x2080 && r <= 0x2089) return 1;
     if (r >= 0x00B2 && r <= 0x00B3) return 1;
     if (r == 0x00B9 || r == 0x00BC || r == 0x00BD || r == 0x00BE) return 1;
+    if (r >= 0x2776 && r <= 0x2793) return 1; /* Dingbat circled numbers */
     return 0;
 }
 
@@ -274,12 +284,18 @@ int neverc_unicode_is_symbol(uint32_t r) {
     if (r == 0x00B0 || r == 0x00B1) return 1;
     if (r == 0x00B4 || r == 0x00B8) return 1;
     if (r == 0x00D7 || r == 0x00F7) return 1;
+    if (r == 0xFF04 || r == 0xFF0B) return 1;
     if (r >= 0x2190 && r <= 0x21FF) return 1;
     if (r >= 0x2200 && r <= 0x22FF) return 1;
-    if (r >= 0x2300 && r <= 0x23FF) return 1;
+    /* Misc Technical: skip U+2308..U+230B and U+2329..U+232A (punctuation) */
+    if ((r >= 0x2300 && r <= 0x2307) ||
+        (r >= 0x230C && r <= 0x2328) ||
+        (r >= 0x232B && r <= 0x23FF)) return 1;
     if (r >= 0x2600 && r <= 0x26FF) return 1;
-    if (r >= 0x2700 && r <= 0x27BF) return 1;
-    if (r >= 0x20A0 && r <= 0x20CF) return 1;
+    /* Dingbats: skip U+2768..U+2775 (P) and U+2776..U+2793 (No) */
+    if ((r >= 0x2700 && r <= 0x2767) ||
+        (r >= 0x2794 && r <= 0x27BF)) return 1;
+    if (r >= 0x20A0 && r <= 0x20C1) return 1;
     if (r >= 0x309B && r <= 0x309C) return 1;
     return 0;
 }

@@ -14,8 +14,11 @@
 #define NC_REGEXP_REALLOC realloc
 #endif
 
-/* NFA state types */
-enum { NFA_MATCH, NFA_CHAR, NFA_ANY, NFA_SPLIT, NFA_CLASS, NFA_ANCHOR_START, NFA_ANCHOR_END };
+/* NFA state types. CAP_OPEN/CLOSE are epsilon edges that record a group. */
+enum {
+    NFA_MATCH, NFA_CHAR, NFA_ANY, NFA_SPLIT, NFA_CLASS,
+    NFA_ANCHOR_START, NFA_ANCHOR_END, NFA_CAP_OPEN, NFA_CAP_CLOSE
+};
 
 typedef struct {
     uint8_t bitmap[32];
@@ -154,6 +157,7 @@ static int is_meta(char c) {
 
 static int decode_char_esc(char esc, int *out) {
     switch (esc) {
+    case 'a': *out = '\a'; return 1;
     case 'n': *out = '\n'; return 1;
     case 't': *out = '\t'; return 1;
     case 'r': *out = '\r'; return 1;
@@ -161,6 +165,121 @@ static int decode_char_esc(char esc, int *out) {
     case 'v': *out = '\v'; return 1;
     default: return 0;
     }
+}
+
+static int hex_digit(int c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+#ifndef NCI_RE_MAX_RUNE
+#define NCI_RE_MAX_RUNE 0x10FFFF
+#endif
+
+/* After consuming `\x`. Go: `\xHH` (exactly two digits) or `\x{H+}`. */
+static int parse_hex_escape(parser_t *par, int *out) {
+    if (*par->p == '{') {
+        par->p++;
+        int v = 0, n = 0;
+        while (*par->p && *par->p != '}') {
+            int d = hex_digit((unsigned char)*par->p);
+            if (d < 0) {
+                par->err = "invalid escape sequence";
+                return 0;
+            }
+            if (v > (NCI_RE_MAX_RUNE - d) / 16) {
+                par->err = "invalid escape sequence";
+                return 0;
+            }
+            v = v * 16 + d;
+            n++;
+            par->p++;
+        }
+        if (*par->p != '}' || n == 0) {
+            par->err = "invalid escape sequence";
+            return 0;
+        }
+        par->p++;
+        *out = v;
+        return 1;
+    }
+    int x = hex_digit((unsigned char)*par->p);
+    if (x < 0 || !*par->p) {
+        par->err = "invalid escape sequence";
+        return 0;
+    }
+    par->p++;
+    int y = hex_digit((unsigned char)*par->p);
+    if (y < 0 || !*par->p) {
+        par->err = "invalid escape sequence";
+        return 0;
+    }
+    par->p++;
+    *out = x * 16 + y;
+    return 1;
+}
+
+static int rune_utf8(int r, unsigned char out[4]) {
+    if (r < 0 || r > NCI_RE_MAX_RUNE) return 0;
+    if (r >= 0xD800 && r <= 0xDFFF) return 0;
+    if (r < 0x80) {
+        out[0] = (unsigned char)r;
+        return 1;
+    }
+    if (r < 0x800) {
+        out[0] = (unsigned char)(0xC0 | (r >> 6));
+        out[1] = (unsigned char)(0x80 | (r & 0x3F));
+        return 2;
+    }
+    if (r < 0x10000) {
+        out[0] = (unsigned char)(0xE0 | (r >> 12));
+        out[1] = (unsigned char)(0x80 | ((r >> 6) & 0x3F));
+        out[2] = (unsigned char)(0x80 | (r & 0x3F));
+        return 3;
+    }
+    out[0] = (unsigned char)(0xF0 | (r >> 18));
+    out[1] = (unsigned char)(0x80 | ((r >> 12) & 0x3F));
+    out[2] = (unsigned char)(0x80 | ((r >> 6) & 0x3F));
+    out[3] = (unsigned char)(0x80 | (r & 0x3F));
+    return 4;
+}
+
+static frag_t mk_concat(frag_t a, frag_t b);
+
+static frag_t frag_rune(neverc_regexp_t *re, int r) {
+    unsigned char b[4];
+    int n = rune_utf8(r, b);
+    if (n <= 0) {
+        frag_t z = { NULL, NULL };
+        return z;
+    }
+    frag_t rfrag = { NULL, NULL };
+    for (int i = 0; i < n; i++) {
+        nfa_state_t *s = new_state(re, NFA_CHAR);
+        nfa_state_t *e = new_state(re, NFA_MATCH);
+        s->ch = b[i];
+        s->out1 = e;
+        rfrag = mk_concat(rfrag, frag(s, e));
+    }
+    return rfrag;
+}
+
+static frag_t wrap_cap(neverc_regexp_t *re, int cap, frag_t inner) {
+    nfa_state_t *open = new_state(re, NFA_CAP_OPEN);
+    nfa_state_t *close = new_state(re, NFA_CAP_CLOSE);
+    nfa_state_t *end = new_state(re, NFA_MATCH);
+    open->ch = cap;
+    close->ch = cap;
+    if (inner.start) {
+        open->out1 = inner.start;
+        if (inner.end) inner.end->out1 = close;
+    } else {
+        open->out1 = close;
+    }
+    close->out1 = end;
+    return frag(open, end);
 }
 
 static int is_perl_class_escape(char esc) {
@@ -195,7 +314,32 @@ static frag_t parse_atom(parser_t *par) {
 
     if (c == '(') {
         par->p++;
-        par->re->ngroups++;
+        int capturing = 1;
+        if (par->p[0] == '?' && par->p[1] == ':') {
+            par->p += 2;
+            capturing = 0;
+        } else if (par->p[0] == '?' && par->p[1] == 'P' && par->p[2] == '<') {
+            par->p += 3;
+            while (*par->p && *par->p != '>') par->p++;
+            if (*par->p != '>') {
+                par->err = "invalid named capture";
+                return frag(NULL, NULL);
+            }
+            par->p++;
+        } else if (par->p[0] == '?' && par->p[1] == '<') {
+            par->p += 2;
+            while (*par->p && *par->p != '>') par->p++;
+            if (*par->p != '>') {
+                par->err = "invalid named capture";
+                return frag(NULL, NULL);
+            }
+            par->p++;
+        } else if (par->p[0] == '?') {
+            par->err = "invalid or unsupported Perl syntax";
+            return frag(NULL, NULL);
+        }
+        int cap = 0;
+        if (capturing) cap = ++par->re->ngroups;
         if (++par->depth > NCI_REGEXP_MAX_DEPTH) {
             par->err = "expression nested too deeply";
             par->depth--;
@@ -205,7 +349,8 @@ static frag_t parse_atom(parser_t *par) {
         par->depth--;
         if (*par->p == ')') par->p++;
         else par->err = "missing )";
-        return f;
+        if (par->err || !capturing) return f;
+        return wrap_cap(par->re, cap, f);
     }
 
     if (c == '[') {
@@ -248,9 +393,17 @@ static frag_t parse_atom(parser_t *par) {
                         if (!cc_test(&ws, i)) cc_set(cc, i);
                     entries++; continue;
                 }
-                int decoded;
-                if (decode_char_esc(esc, &decoded)) lo = decoded;
-                else lo = (uint8_t)esc;
+                if (esc == 'x') {
+                    if (!parse_hex_escape(par, &lo)) return frag(NULL, NULL);
+                    if (lo < 0 || lo > 255) {
+                        par->err = "invalid escape sequence";
+                        return frag(NULL, NULL);
+                    }
+                } else {
+                    int decoded;
+                    if (decode_char_esc(esc, &decoded)) lo = decoded;
+                    else lo = (uint8_t)esc;
+                }
             }
             if (*par->p == '-' && par->p[1] && par->p[1] != ']') {
                 par->p++;
@@ -262,9 +415,17 @@ static frag_t parse_atom(parser_t *par) {
                         par->err = "invalid character class range";
                         return frag(NULL, NULL);
                     }
-                    int decoded;
-                    if (decode_char_esc(esc, &decoded)) hi = decoded;
-                    else hi = (uint8_t)esc;
+                    if (esc == 'x') {
+                        if (!parse_hex_escape(par, &hi)) return frag(NULL, NULL);
+                        if (hi < 0 || hi > 255) {
+                            par->err = "invalid escape sequence";
+                            return frag(NULL, NULL);
+                        }
+                    } else {
+                        int decoded;
+                        if (decode_char_esc(esc, &decoded)) hi = decoded;
+                        else hi = (uint8_t)esc;
+                    }
                 } else {
                     hi = (uint8_t)*par->p++;
                 }
@@ -321,6 +482,16 @@ static frag_t parse_atom(parser_t *par) {
     if (c == '\\' && par->p[1]) {
         par->p++;
         char esc = *par->p++;
+        if (esc == 'x') {
+            int r;
+            if (!parse_hex_escape(par, &r)) return frag(NULL, NULL);
+            frag_t hf = frag_rune(par->re, r);
+            if (!hf.start) {
+                par->err = "invalid escape sequence";
+                return frag(NULL, NULL);
+            }
+            return hf;
+        }
         charclass_t *cc = new_class(par->re);
         if (esc == 'd') { for (int i = '0'; i <= '9'; i++) cc_set(cc, i); }
         else if (esc == 'D') { for (int i = '0'; i <= '9'; i++) cc_set(cc, i); cc->negated = 1; }
@@ -655,6 +826,10 @@ static void add_state(statelist_t *sl, nfa_state_t *s, int *visited, int gen) {
         add_state(sl, s->out1, visited, gen);
         return;
     }
+    if (s->type == NFA_CAP_OPEN || s->type == NFA_CAP_CLOSE) {
+        add_state(sl, s->out1, visited, gen);
+        return;
+    }
     if (sl->n < sl->cap)
         sl->states[sl->n++] = s;
 }
@@ -718,6 +893,10 @@ static void fb_walk(nfa_state_t *s, int *vis, int gen, uint8_t fb[32],
     case NFA_MATCH:
         if (s->out1) fb_walk(s->out1, vis, gen, fb, full, unsafe);
         return;                       /* accept node: empty-match is filtered out anyway */
+    case NFA_CAP_OPEN:
+    case NFA_CAP_CLOSE:
+        fb_walk(s->out1, vis, gen, fb, full, unsafe);
+        return;
     case NFA_ANCHOR_START:
     case NFA_ANCHOR_END:
         *unsafe = 1;                  /* let the normal scan handle anchors */
@@ -980,6 +1159,10 @@ static void search_add(tlist_t *tl, nfa_state_t *s, size_t start, size_t pos,
         search_add(tl, s->out1, start, pos, text, slen, visited, gen);
         return;
     }
+    if (s->type == NFA_CAP_OPEN || s->type == NFA_CAP_CLOSE) {
+        search_add(tl, s->out1, start, pos, text, slen, visited, gen);
+        return;
+    }
     if (s->type == NFA_ANCHOR_START) {
         if (pos == 0) search_add(tl, s->out1, start, pos, text, slen, visited, gen);
         return;
@@ -1096,6 +1279,145 @@ const char *neverc_regexp_find(neverc_regexp_t *re, const char *s,
     return res;
 }
 
+/* Pike-style epsilon walk that copies capture slots on CAP_OPEN/CLOSE. */
+static void cap_add(nfa_state_t **st, size_t *capstore, int *n, int capn,
+                    int nslots, nfa_state_t *s, const size_t *caps,
+                    size_t pos, const char *text, size_t slen,
+                    int *visited, int gen) {
+    if (!s || visited[s->id] == gen) return;
+    visited[s->id] = gen;
+    if (s->type == NFA_SPLIT) {
+        cap_add(st, capstore, n, capn, nslots, s->out1, caps, pos, text, slen, visited, gen);
+        cap_add(st, capstore, n, capn, nslots, s->out2, caps, pos, text, slen, visited, gen);
+        return;
+    }
+    if (s->type == NFA_MATCH && s->out1 != NULL) {
+        cap_add(st, capstore, n, capn, nslots, s->out1, caps, pos, text, slen, visited, gen);
+        return;
+    }
+    if (s->type == NFA_CAP_OPEN || s->type == NFA_CAP_CLOSE) {
+        size_t *tmp = (size_t *)NC_REGEXP_MALLOC((size_t)nslots * sizeof(size_t));
+        if (!tmp) return;
+        memcpy(tmp, caps, (size_t)nslots * sizeof(size_t));
+        int g = s->ch;
+        if (g > 0 && 2 * g + 1 < nslots) {
+            if (s->type == NFA_CAP_OPEN) {
+                tmp[2 * g] = pos;
+                tmp[2 * g + 1] = (size_t)-1;
+            } else {
+                tmp[2 * g + 1] = pos;
+            }
+        }
+        cap_add(st, capstore, n, capn, nslots, s->out1, tmp, pos, text, slen, visited, gen);
+        free(tmp);
+        return;
+    }
+    if (s->type == NFA_ANCHOR_START) {
+        if (pos == 0)
+            cap_add(st, capstore, n, capn, nslots, s->out1, caps, pos, text, slen, visited, gen);
+        return;
+    }
+    if (s->type == NFA_ANCHOR_END) {
+        if (anchor_end_at(text, slen, pos))
+            cap_add(st, capstore, n, capn, nslots, s->out1, caps, pos, text, slen, visited, gen);
+        return;
+    }
+    if (*n < capn) {
+        st[*n] = s;
+        memcpy(capstore + (size_t)(*n) * (size_t)nslots, caps,
+               (size_t)nslots * sizeof(size_t));
+        (*n)++;
+    }
+}
+
+/* Longest match from a fixed start, recording capturing groups (Go FindSubmatch). */
+static int nfa_exec_caps(neverc_regexp_t *re, const char *s, size_t slen,
+                         size_t start, size_t *match_end,
+                         size_t *out_caps, int nslots) {
+    int nstates = re->nstates > 0 ? re->nstates : 1;
+    nfa_state_t **cur_st = (nfa_state_t **)NC_REGEXP_MALLOC(
+        (size_t)nstates * sizeof(*cur_st));
+    nfa_state_t **next_st = (nfa_state_t **)NC_REGEXP_MALLOC(
+        (size_t)nstates * sizeof(*next_st));
+    size_t *cur_cap = (size_t *)NC_REGEXP_MALLOC(
+        (size_t)nstates * (size_t)nslots * sizeof(size_t));
+    size_t *next_cap = (size_t *)NC_REGEXP_MALLOC(
+        (size_t)nstates * (size_t)nslots * sizeof(size_t));
+    int *visited = (int *)NC_REGEXP_CALLOC((size_t)nstates, sizeof(int));
+    size_t *init = (size_t *)NC_REGEXP_MALLOC((size_t)nslots * sizeof(size_t));
+    if (!cur_st || !next_st || !cur_cap || !next_cap || !visited || !init) {
+        free(cur_st); free(next_st); free(cur_cap); free(next_cap);
+        free(visited); free(init);
+        return 0;
+    }
+    for (int i = 0; i < nslots; i++) init[i] = (size_t)-1;
+    init[0] = start;
+
+    int gen = 1, cur_n = 0;
+    cap_add(cur_st, cur_cap, &cur_n, nstates, nslots, re->start, init,
+            start, s, slen, visited, gen);
+
+    size_t best_end = (size_t)-1;
+    for (int i = 0; i < cur_n; i++) {
+        if (cur_st[i]->type == NFA_MATCH && cur_st[i]->out1 == NULL) {
+            best_end = start;
+            memcpy(out_caps, cur_cap + (size_t)i * (size_t)nslots,
+                   (size_t)nslots * sizeof(size_t));
+            out_caps[0] = start;
+            out_caps[1] = start;
+        }
+    }
+
+    for (size_t i = start; i < slen; i++) {
+        int ch = (unsigned char)s[i];
+        if (gen == INT_MAX) {
+            memset(visited, 0, (size_t)nstates * sizeof(*visited));
+            gen = 1;
+        } else {
+            gen++;
+        }
+        int next_n = 0;
+        for (int j = 0; j < cur_n; j++) {
+            nfa_state_t *st = cur_st[j];
+            int ok = 0;
+            switch (st->type) {
+            case NFA_CHAR:  ok = (st->ch == ch); break;
+            case NFA_ANY:   ok = (ch != '\n'); break;
+            case NFA_CLASS: ok = cc_test(st->cls, ch); break;
+            default: break;
+            }
+            if (ok)
+                cap_add(next_st, next_cap, &next_n, nstates, nslots, st->out1,
+                        cur_cap + (size_t)j * (size_t)nslots, i + 1, s, slen,
+                        visited, gen);
+        }
+        nfa_state_t **tmp_st = cur_st; cur_st = next_st; next_st = tmp_st;
+        size_t *tmp_cap = cur_cap; cur_cap = next_cap; next_cap = tmp_cap;
+        cur_n = next_n;
+
+        for (int j = 0; j < cur_n; j++) {
+            if (cur_st[j]->type == NFA_MATCH && cur_st[j]->out1 == NULL) {
+                best_end = i + 1;
+                memcpy(out_caps, cur_cap + (size_t)j * (size_t)nslots,
+                       (size_t)nslots * sizeof(size_t));
+                out_caps[0] = start;
+                out_caps[1] = best_end;
+            }
+        }
+        if (cur_n == 0) break;
+    }
+
+    if (best_end != (size_t)-1) {
+        if (match_end) *match_end = best_end;
+        free(cur_st); free(next_st); free(cur_cap); free(next_cap);
+        free(visited); free(init);
+        return 1;
+    }
+    free(cur_st); free(next_st); free(cur_cap); free(next_cap);
+    free(visited); free(init);
+    return 0;
+}
+
 int neverc_regexp_find_submatch(neverc_regexp_t *re, const char *s,
                                 neverc_regexp_match_t *matches, int max_matches) {
     size_t match_len;
@@ -1104,6 +1426,33 @@ int neverc_regexp_find_submatch(neverc_regexp_t *re, const char *s,
     if (max_matches > 0 && matches) {
         matches[0].start = found;
         matches[0].len = match_len;
+        int nfill = max_matches;
+        int ng = re->ngroups + 1;
+        if (nfill > ng) nfill = ng;
+        for (int i = 1; i < max_matches; i++) {
+            matches[i].start = NULL;
+            matches[i].len = 0;
+        }
+        if (re->ngroups > 0 && nfill > 1) {
+            int nslots = 2 * (re->ngroups + 1);
+            size_t *caps = (size_t *)NC_REGEXP_MALLOC((size_t)nslots * sizeof(size_t));
+            if (caps) {
+                size_t slen = strlen(s);
+                size_t ms = (size_t)(found - s), end = 0;
+                if (nfa_exec_caps(re, s, slen, ms, &end, caps, nslots) &&
+                    end == ms + match_len) {
+                    for (int g = 1; g < nfill; g++) {
+                        if (caps[2 * g] != (size_t)-1 &&
+                            caps[2 * g + 1] != (size_t)-1 &&
+                            caps[2 * g + 1] >= caps[2 * g]) {
+                            matches[g].start = s + caps[2 * g];
+                            matches[g].len = caps[2 * g + 1] - caps[2 * g];
+                        }
+                    }
+                }
+                free(caps);
+            }
+        }
     }
     return 1;
 }
@@ -1155,7 +1504,8 @@ char **neverc_regexp_find_all(neverc_regexp_t *re, const char *s,
             }
         }
         results[(*count)++] = match;
-        pos = me;                               /* non-empty match -> always advances */
+        /* Always advance: empty-width matches would otherwise loop. */
+        pos = (me > pos) ? me : pos + 1;
     }
     search_ctx_free(&ctx);
     return results;
@@ -1219,7 +1569,7 @@ char *neverc_regexp_replace_all(neverc_regexp_t *re, const char *src,
             goto oom;
         /* Copy replacement */
         if (regexp_append(&result, &wi, &cap, repl, rlen) != 0) goto oom;
-        pos = end;                              /* non-empty match -> always advances */
+        pos = (end > pos) ? end : pos + 1;      /* empty-width: advance one byte */
     }
 
     /* Copy remaining */
@@ -1273,7 +1623,7 @@ char **neverc_regexp_split(neverc_regexp_t *re, const char *s,
         memcpy(seg, s + pos, seg_len);
         seg[seg_len] = '\0';
         results[(*count)++] = seg;
-        pos = end;
+        pos = (end > pos) ? end : pos + 1;
     }
 
     /* Remaining */

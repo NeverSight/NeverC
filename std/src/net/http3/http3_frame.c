@@ -204,7 +204,7 @@ int neverc_h3_write_data_frame(uint8_t *buf, size_t cap,
     size_t pos = 0, w;
     if (neverc_quic_varint_encode(H3_FRAME_DATA, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
     if (neverc_quic_varint_encode(data_len, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
-    if (pos + data_len > cap) return -1;
+    if (pos > cap || data_len > cap - pos) return -1;
     if (data_len) {
         if (!data) return -1;
         memcpy(buf + pos, data, data_len);
@@ -230,7 +230,7 @@ int neverc_h3_write_headers_frame(uint8_t *buf, size_t cap,
     size_t pos = 0, w;
     if (neverc_quic_varint_encode(H3_FRAME_HEADERS, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
     if (neverc_quic_varint_encode(headers_len, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
-    if (pos + headers_len > cap) return -1;
+    if (pos > cap || headers_len > cap - pos) return -1;
     if (headers_len) memcpy(buf + pos, encoded_headers, headers_len);
     pos += headers_len;
     *written = pos;

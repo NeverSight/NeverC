@@ -52,6 +52,45 @@ static const char *elf_get_string(const uint8_t *strtab, size_t strtab_len,
     return (const char *)(strtab + (size_t)offset);
 }
 
+/* Resolve section names from e_shstrndx. SHN_UNDEF (0) means the file has no
+ * name table — do not treat section 0 as one (its sh_size is a section count
+ * when extended numbering is in use). A declared table must be SHT_STRTAB,
+ * lie inside the file, and contain a NUL-terminated string for every name
+ * index; otherwise Open would accept a malformed header and leave names empty
+ * or, worse, interpret an out-of-range sh_size as a string-table length. */
+static int elf_load_section_names(neverc_elf_file_t *f, uint16_t shstrndx) {
+    if (shstrndx == NEVERC_SHN_UNDEF)
+        return 0;
+    if (shstrndx >= f->section_count || !f->data || !f->sections)
+        return -1;
+
+    const neverc_elf_section_t *str = &f->sections[shstrndx];
+    if (str->type != NEVERC_SHT_STRTAB)
+        return -1;
+    if (str->offset > f->data_len ||
+        str->size > f->data_len - str->offset)
+        return -1;
+
+    const uint8_t *strtab = f->data + (size_t)str->offset;
+    size_t strtab_len = (size_t)str->size;
+    for (uint32_t i = 0; i < f->section_count; i++) {
+        uint64_t name_idx = f->sections[i].name_idx;
+        if (name_idx >= strtab_len)
+            return -1;
+        const uint8_t *start = strtab + (size_t)name_idx;
+        const uint8_t *nul = (const uint8_t *)memchr(
+            start, 0, strtab_len - (size_t)name_idx);
+        if (!nul)
+            return -1;
+        size_t nlen = (size_t)(nul - start);
+        if (nlen >= sizeof(f->sections[i].name))
+            nlen = sizeof(f->sections[i].name) - 1;
+        memcpy(f->sections[i].name, start, nlen);
+        f->sections[i].name[nlen] = '\0';
+    }
+    return 0;
+}
+
 /* ===== Parsing ===== */
 
 int neverc_elf_is_valid(const uint8_t *data, size_t len) {
@@ -66,7 +105,8 @@ static int parse_sections_32(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32) {
     uint16_t shnum = r16(d + 48);
     uint16_t shstrndx = r16(d + 50);
 
-    if (shoff == 0 || shnum == 0) return 0;
+    if (shnum == 0) return 0;
+    if (shoff == 0) return -1;
     /* Each entry is read as a fixed 40-byte Elf32_Shdr; a smaller (or zero)
      * shentsize would defeat the table bound while the fixed-offset reads still
      * run off the buffer. The shoff>len guard + division avoid overflow. */
@@ -92,24 +132,7 @@ static int parse_sections_32(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32) {
         f->sections[i].entsize  = r32(sh + 36);
     }
 
-    if (shstrndx < shnum) {
-        uint64_t str_off = f->sections[shstrndx].offset;
-        uint64_t str_sz = f->sections[shstrndx].size;
-        if (str_off <= f->data_len && str_sz <= f->data_len - str_off) {
-            const uint8_t *strtab = d + (size_t)str_off;
-            size_t strtab_len = (size_t)str_sz;
-            for (uint32_t i = 0; i < shnum; i++) {
-                const char *name = elf_get_string(strtab, strtab_len,
-                                                   f->sections[i].name_idx);
-                size_t nlen = strlen(name);
-                if (nlen >= sizeof(f->sections[i].name))
-                    nlen = sizeof(f->sections[i].name) - 1;
-                memcpy(f->sections[i].name, name, nlen);
-                f->sections[i].name[nlen] = '\0';
-            }
-        }
-    }
-    return 0;
+    return elf_load_section_names(f, shstrndx);
 }
 
 static int parse_sections_64(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
@@ -120,7 +143,8 @@ static int parse_sections_64(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
     uint16_t shnum = r16(d + 60);
     uint16_t shstrndx = r16(d + 62);
 
-    if (shoff == 0 || shnum == 0) return 0;
+    if (shnum == 0) return 0;
+    if (shoff == 0) return -1;
     /* Each entry is read as a fixed 64-byte Elf64_Shdr; reject a smaller/zero
      * shentsize and bound the table without overflowing (shoff is 64-bit and
      * attacker-controlled, so shoff + shnum*shentsize could wrap). */
@@ -147,23 +171,7 @@ static int parse_sections_64(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
         f->sections[i].entsize  = r64(sh + 56);
     }
 
-    if (shstrndx < shnum) {
-        uint64_t str_off = f->sections[shstrndx].offset;
-        uint64_t str_sz  = f->sections[shstrndx].size;
-        if (str_off <= f->data_len && str_sz <= f->data_len - str_off) {
-            const uint8_t *strtab = d + (size_t)str_off;
-            for (uint32_t i = 0; i < shnum; i++) {
-                const char *name = elf_get_string(strtab, (size_t)str_sz,
-                                                   f->sections[i].name_idx);
-                size_t nlen = strlen(name);
-                if (nlen >= sizeof(f->sections[i].name))
-                    nlen = sizeof(f->sections[i].name) - 1;
-                memcpy(f->sections[i].name, name, nlen);
-                f->sections[i].name[nlen] = '\0';
-            }
-        }
-    }
-    return 0;
+    return elf_load_section_names(f, shstrndx);
 }
 
 static int parse_progs_32(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32) {
@@ -172,7 +180,8 @@ static int parse_progs_32(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32) {
     uint16_t phentsize = r16(d + 42);
     uint16_t phnum = r16(d + 44);
 
-    if (phoff == 0 || phnum == 0) return 0;
+    if (phnum == 0) return 0;
+    if (phoff == 0) return -1;
     /* Each entry is read as a fixed 32-byte Elf32_Phdr; reject a smaller/zero
      * phentsize and bound the table without overflowing. */
     if (phentsize < 32) return -1;
@@ -204,7 +213,8 @@ static int parse_progs_64(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
     uint16_t phentsize = r16(d + 54);
     uint16_t phnum = r16(d + 56);
 
-    if (phoff == 0 || phnum == 0) return 0;
+    if (phnum == 0) return 0;
+    if (phoff == 0) return -1;
     /* Each entry is read as a fixed 56-byte Elf64_Phdr; reject a smaller/zero
      * phentsize and bound the table without overflowing (phoff is 64-bit). */
     if (phentsize < 56) return -1;

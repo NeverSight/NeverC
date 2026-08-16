@@ -210,6 +210,13 @@ static void header_handler(neverc_http_request_t *req,
         neverc_http_write_string(w, "no ua");
 }
 
+static void cl_mismatch_handler(neverc_http_request_t *req,
+                                neverc_http_response_writer_t *w) {
+    (void)req;
+    (void)neverc_http_set_content_length(w, 3U);
+    neverc_http_write_string(w, "abcdef");
+}
+
 static void redirect_relative_handler(neverc_http_request_t *req,
                                       neverc_http_response_writer_t *w) {
     (void)req;
@@ -331,6 +338,7 @@ static pid_t start_test_server(int port) {
         neverc_http_mux_handle(mux, "/post", post_handler);
         neverc_http_mux_handle(mux, "/query", query_handler);
         neverc_http_mux_handle(mux, "/header", header_handler);
+        neverc_http_mux_handle(mux, "/cl-mismatch", cl_mismatch_handler);
         neverc_http_mux_handle(mux, "/method", method_handler);
         neverc_http_mux_handle(mux, "/delete", delete_handler);
         neverc_http_mux_handle(mux, "/a/b/start", redirect_relative_handler);
@@ -1215,6 +1223,114 @@ static void test_malformed_request(void) {
             buf, sizeof(buf));
         check_int("http10 resp", n > 0, 1);
         check_int("http10 body", strstr(buf, "Hello, World!") != NULL, 1);
+    }
+
+    /* RFC 9112: invalid Host field values are 400. */
+    {
+        int n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: example.com/foo\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("host path 400", strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: user@localhost\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("host userinfo 400",
+                  strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: localhost:99999\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("host port 400", strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: [::1\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("host ipv6 400", strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: localhost extra\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("host space 400", strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: [::1]\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("host ipv6 ok", strstr(buf, "Hello, World!") != NULL, 1);
+    }
+
+    /* Duplicate Host / Content-Length, CL+TE, and obs-fold are 400. */
+    {
+        int n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: localhost\r\nHost: evil\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("dup host 400", strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "POST /post HTTP/1.1\r\nHost: localhost\r\n"
+            "Content-Length: 0\r\nContent-Length: 0\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("dup cl 400", strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "POST /post HTTP/1.1\r\nHost: localhost\r\n"
+            "Content-Length: 0\r\nTransfer-Encoding: chunked\r\n"
+            "Connection: close\r\n\r\n0\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("cl+te 400", strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: localhost\r\n"
+            "X-Foo: bar\r\n baz\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("header fold 400",
+                  strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "POST /post HTTP/1.1\r\nHost: localhost\r\n"
+            "Content-Length: 99999999999999999999\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("cl overflow 400",
+                  strstr(buf, "400 Bad Request") != NULL, 1);
+    }
+
+    /* asterisk-form is only valid for OPTIONS. */
+    {
+        int n = do_http_request(port,
+            "GET * HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("get star 400", strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "OPTIONS * HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("options star not 400",
+                  strstr(buf, "400 Bad Request") == NULL, 1);
+    }
+
+    /* Chunk trailers must not be promoted into request headers. */
+    {
+        int n = do_http_request(port,
+            "POST /header HTTP/1.1\r\nHost: localhost\r\n"
+            "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+            "0\r\nUser-Agent: injected\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("trailer not header", strstr(buf, "no ua") != NULL, 1);
+        check_int("trailer not injected",
+                  strstr(buf, "ua=injected") == NULL, 1);
+        (void)n;
+    }
+
+    /* Content-Length smaller than the buffered body must not emit extra
+     * bytes that a downstream parser would treat as the next response. */
+    {
+        int n = do_http_request(port,
+            "GET /cl-mismatch HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("cl mismatch no leak",
+                  n >= 0 && strstr(buf, "abcdef") == NULL, 1);
     }
 
     stop_test_server(server_pid);

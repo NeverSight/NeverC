@@ -176,6 +176,23 @@ static void test_data_frame_write(void) {
     ASSERT_TRUE(memcmp(buf + hdr.header_size, "Hello", 5) == 0);
 }
 
+static void test_data_frame_rejects_undersized_buffer(void) {
+    uint8_t buf[8];
+    uint8_t data[16];
+    size_t written = 0;
+    memset(data, 'A', sizeof(data));
+    ASSERT_EQ(neverc_h3_write_data_frame(buf, sizeof(buf), data, sizeof(data),
+                                         &written), -1);
+}
+
+static void test_headers_frame_rejects_undersized_buffer(void) {
+    uint8_t buf[4];
+    uint8_t headers[8] = { 0x00, 0x00, 0xC0, 25, 0, 0, 0, 0 };
+    size_t written = 0;
+    ASSERT_EQ(neverc_h3_write_headers_frame(buf, sizeof(buf), headers, 8,
+                                            &written), -1);
+}
+
 static void test_data_frame_empty(void) {
     uint8_t buf[64];
     size_t written;
@@ -559,6 +576,8 @@ int main(void) {
     test_settings_grease_ignored();
     test_settings_zero_values();
     test_data_frame_write();
+    test_data_frame_rejects_undersized_buffer();
+    test_headers_frame_rejects_undersized_buffer();
     test_data_frame_empty();
     test_headers_frame_write();
     test_goaway_frame_write();
@@ -579,5 +598,6 @@ int main(void) {
     test_qpack_encoder_create_destroy();
 
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

@@ -621,6 +621,7 @@ static int h2_client_handshake(int fd) {
 typedef struct {
     int fd;
     int streaming;
+    uint32_t max_streams;
 } h2_serve_ctx_t;
 
 static void h2_test_handler(neverc_http_request_t *req,
@@ -654,6 +655,8 @@ static void h2_run_server_child(h2_serve_ctx_t *ctx) {
         neverc_http_mux_free(mux);
         _exit(1);
     }
+    if (ctx->max_streams > 0)
+        neverc_h2_server_set_max_streams(server, ctx->max_streams);
     int rc = neverc_h2_serve_conn(server, ctx->fd);
     neverc_h2_server_destroy(server);
     neverc_http_mux_free(mux);
@@ -784,8 +787,9 @@ TEST(h2c_continuation_headers) {
 
 }
 
-static int h2_send_headers(int fd, const neverc_hpack_header_t *headers,
-                           int count, int end_stream) {
+static int h2_send_headers_on(int fd, uint32_t stream_id,
+                              const neverc_hpack_header_t *headers,
+                              int count, int end_stream) {
     neverc_hpack_encoder_t *enc = neverc_hpack_encoder_create(4096);
     if (!enc) return -1;
     uint8_t block[2048];
@@ -799,12 +803,17 @@ static int h2_send_headers(int fd, const neverc_hpack_header_t *headers,
         .type = NC_H2_FRAME_HEADERS,
         .flags = (uint8_t)(NC_H2_FLAG_END_HEADERS |
                            (end_stream ? NC_H2_FLAG_END_STREAM : 0)),
-        .stream_id = 1
+        .stream_id = stream_id
     };
     uint8_t header[9];
     if (neverc_h2_frame_header_write(&frame, header) != 0) return -1;
     if (sock_write_all(fd, header, sizeof(header)) != 0) return -1;
     return sock_write_all(fd, block, block_len);
+}
+
+static int h2_send_headers(int fd, const neverc_hpack_header_t *headers,
+                           int count, int end_stream) {
+    return h2_send_headers_on(fd, 1, headers, count, end_stream);
 }
 
 static int h2_send_data(int fd, const void *data, size_t length) {
@@ -820,7 +829,8 @@ static int h2_send_data(int fd, const void *data, size_t length) {
     return length == 0 ? 0 : sock_write_all(fd, data, length);
 }
 
-static int h2_read_rst(int fd, uint32_t *error_code) {
+static int h2_read_rst_on(int fd, uint32_t expect_stream,
+                          uint32_t *error_code) {
     for (;;) {
         uint8_t header[9];
         if (sock_read_all(fd, header, sizeof(header)) != 0) return -1;
@@ -836,8 +846,8 @@ static int h2_read_rst(int fd, uint32_t *error_code) {
         }
         if (length > 0 && sock_read_all(fd, payload, length) != 0)
             return -1;
-        if (header[3] == NC_H2_FRAME_RST_STREAM && stream_id == 1 &&
-            length == 4) {
+        if (header[3] == NC_H2_FRAME_RST_STREAM &&
+            stream_id == expect_stream && length == 4) {
             *error_code = ((uint32_t)payload[0] << 24) |
                           ((uint32_t)payload[1] << 16) |
                           ((uint32_t)payload[2] << 8) | payload[3];
@@ -848,13 +858,40 @@ static int h2_read_rst(int fd, uint32_t *error_code) {
     }
 }
 
-static int h2_pipe_handshake(neverc_tcp_conn_t **client, pid_t *child,
-                             int streaming) {
+static int h2_read_rst(int fd, uint32_t *error_code) {
+    return h2_read_rst_on(fd, 1, error_code);
+}
+
+static int h2_read_goaway(int fd, uint32_t *error_code) {
+    for (;;) {
+        uint8_t header[9];
+        if (sock_read_all(fd, header, sizeof(header)) != 0) return -1;
+        uint32_t length = ((uint32_t)header[0] << 16) |
+                          ((uint32_t)header[1] << 8) | header[2];
+        uint8_t payload[256];
+        if (length > sizeof(payload)) {
+            if (h2_drain_frame_payload(fd, length) != 0) return -1;
+            continue;
+        }
+        if (length > 0 && sock_read_all(fd, payload, length) != 0)
+            return -1;
+        if (header[3] == NC_H2_FRAME_GOAWAY && length >= 8) {
+            *error_code = ((uint32_t)payload[4] << 24) |
+                          ((uint32_t)payload[5] << 16) |
+                          ((uint32_t)payload[6] << 8) | payload[7];
+            return 0;
+        }
+    }
+}
+
+static int h2_pipe_handshake_opts(neverc_tcp_conn_t **client, pid_t *child,
+                                  int streaming, uint32_t max_streams) {
     neverc_tcp_conn_t *server = NULL;
     if (neverc_tcp_pipe(client, &server) != 0) return -1;
     h2_serve_ctx_t ctx = {
         .fd = neverc_tcp_conn_fd(server),
         .streaming = streaming,
+        .max_streams = max_streams,
     };
     *child = fork();
     if (*child < 0) {
@@ -877,6 +914,11 @@ static int h2_pipe_handshake(neverc_tcp_conn_t **client, pid_t *child,
         return -1;
     }
     return 0;
+}
+
+static int h2_pipe_handshake(neverc_tcp_conn_t **client, pid_t *child,
+                             int streaming) {
+    return h2_pipe_handshake_opts(client, child, streaming, 0);
 }
 
 TEST(h2c_rejects_missing_authority) {
@@ -1000,6 +1042,102 @@ TEST(h2c_rejects_streaming_content_length_overrun) {
     ASSERT_EQ(h2_send_data(fd, "abcde", 5), 0);
     uint32_t error_code = 0xffffffffU;
     ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
+TEST(h2c_rejects_header_name_crlf) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+        { .name = "x-foo\r\nx-injected", .value = "1" },
+    };
+    ASSERT_EQ(h2_send_headers(fd, headers, 5, 1), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
+TEST(h2c_rejects_method_with_space) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET /admin" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    ASSERT_EQ(h2_send_headers(fd, headers, 4, 1), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
+TEST(h2c_rejects_reused_refused_stream_id) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake_opts(&client, &child, 0, 1), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    ASSERT_EQ(h2_send_headers_on(fd, 1, headers, 4, 0), 0);
+    ASSERT_EQ(h2_send_headers_on(fd, 3, headers, 4, 1), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst_on(fd, 3, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_REFUSED_STREAM);
+    error_code = 0xffffffffU;
+    ASSERT_EQ(h2_send_headers_on(fd, 3, headers, 4, 1), 0);
+    ASSERT_EQ(h2_read_rst_on(fd, 3, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_STREAM_CLOSED);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
+TEST(h2c_rejects_overpadded_data_on_closed_stream) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    ASSERT_EQ(h2_send_headers(fd, headers, 4, 1), 0);
+    uint8_t data_hdr[9] = {
+        0, 0, 1, NC_H2_FRAME_DATA, NC_H2_FLAG_PADDED, 0, 0, 0, 1
+    };
+    uint8_t pad_len = 1;
+    ASSERT_EQ(sock_write_all(fd, data_hdr, sizeof(data_hdr)), 0);
+    ASSERT_EQ(sock_write_all(fd, &pad_len, 1), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_goaway(fd, &error_code), 0);
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
@@ -1322,6 +1460,10 @@ int main(void) {
     run_test_h2c_rejects_path_fragment();
     run_test_h2c_rejects_host_authority_mismatch();
     run_test_h2c_rejects_streaming_content_length_overrun();
+    run_test_h2c_rejects_header_name_crlf();
+    run_test_h2c_rejects_method_with_space();
+    run_test_h2c_rejects_reused_refused_stream_id();
+    run_test_h2c_rejects_overpadded_data_on_closed_stream();
     run_test_h2_client_invalid_trailer_emits_terminal_error();
     run_test_h2_client_queue_overflow_emits_terminal_error();
     run_test_h2_client_rejects_server_enable_push();

@@ -202,6 +202,49 @@ static void test_draw_src_self_overlap(void) {
     neverc_image_rgba_free(&img);
 }
 
+/* Opaque OVER is a copy; same-buffer shift-down/right must not reread
+ * pixels already written (Go drawCopyOver walks bottom-to-top / right-to-left). */
+static void test_draw_over_self_overlap(void) {
+    printf("[draw_over_self_overlap]\n");
+    neverc_image_rgba_t img;
+    neverc_image_rgba_init(&img, neverc_rect(0, 0, 4, 4));
+    for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 4; x++)
+            neverc_image_rgba_set(&img, x, y, (uint8_t)(y * 10), (uint8_t)x, 0, 255);
+
+    neverc_draw(&img, neverc_rect(0, 1, 4, 4), &img, neverc_pt(0, 0),
+                NEVERC_DRAW_OVER);
+    uint8_t r, g, b, a;
+    neverc_image_rgba_at(&img, 0, 1, &r, &g, &b, &a);
+    check("over_self_overlap_row1", r == 0);
+    neverc_image_rgba_at(&img, 0, 2, &r, &g, &b, &a);
+    check("over_self_overlap_row2", r == 10);
+    neverc_image_rgba_at(&img, 0, 3, &r, &g, &b, &a);
+    check("over_self_overlap_row3", r == 20);
+    neverc_image_rgba_at(&img, 0, 0, &r, &g, &b, &a);
+    check("over_self_overlap_row0_unchanged", r == 0);
+
+    neverc_image_rgba_free(&img);
+
+    neverc_image_rgba_init(&img, neverc_rect(0, 0, 4, 1));
+    neverc_image_rgba_set(&img, 0, 0, 10, 0, 0, 255);
+    neverc_image_rgba_set(&img, 1, 0, 20, 0, 0, 255);
+    neverc_image_rgba_set(&img, 2, 0, 30, 0, 0, 255);
+    neverc_image_rgba_set(&img, 3, 0, 40, 0, 0, 255);
+    neverc_draw(&img, neverc_rect(1, 0, 4, 1), &img, neverc_pt(0, 0),
+                NEVERC_DRAW_OVER);
+    neverc_image_rgba_at(&img, 0, 0, &r, &g, &b, &a);
+    check("over_self_overlap_col0", r == 10);
+    neverc_image_rgba_at(&img, 1, 0, &r, &g, &b, &a);
+    check("over_self_overlap_col1", r == 10);
+    neverc_image_rgba_at(&img, 2, 0, &r, &g, &b, &a);
+    check("over_self_overlap_col2", r == 20);
+    neverc_image_rgba_at(&img, 3, 0, &r, &g, &b, &a);
+    check("over_self_overlap_col3", r == 30);
+
+    neverc_image_rgba_free(&img);
+}
+
 int main(void) {
     test_draw_src();
     test_draw_uniform();
@@ -211,6 +254,7 @@ int main(void) {
     test_draw_gray_clip();
     test_draw_clip_int_overflow();
     test_draw_src_self_overlap();
+    test_draw_over_self_overlap();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
 }

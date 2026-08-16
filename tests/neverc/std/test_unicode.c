@@ -293,6 +293,46 @@ static void test_unicode_conformance_edges(void) {
               neverc_unicode_simple_fold(0x0130), 0x0130);
     check_u32("fold dotless i to itself",
               neverc_unicode_simple_fold(0x0131), 0x0131);
+
+    check_int("Hangul HIH is letter",
+              neverc_unicode_is_letter(0xD7A3), 1);
+    check_int("Hangul unassigned after HIH is not letter",
+              neverc_unicode_is_letter(0xD7A4), 0);
+    check_int("fullwidth dollar is symbol not punct",
+              neverc_unicode_is_symbol(0xFF04) &&
+              !neverc_unicode_is_punct(0xFF04), 1);
+    check_int("fullwidth plus is symbol not punct",
+              neverc_unicode_is_symbol(0xFF0B) &&
+              !neverc_unicode_is_punct(0xFF0B), 1);
+    check_int("left ceiling is punct not symbol",
+              neverc_unicode_is_punct(0x2308) &&
+              !neverc_unicode_is_symbol(0x2308), 1);
+    check_int("left angle bracket is punct not symbol",
+              neverc_unicode_is_punct(0x2329) &&
+              !neverc_unicode_is_symbol(0x2329), 1);
+    check_int("dingbat paren is punct not symbol",
+              neverc_unicode_is_punct(0x2768) &&
+              !neverc_unicode_is_symbol(0x2768), 1);
+    check_int("dingbat circled one is number not symbol",
+              neverc_unicode_is_number(0x2776) &&
+              !neverc_unicode_is_symbol(0x2776) &&
+              !neverc_unicode_is_digit(0x2776), 1);
+    check_int("SOM sign is symbol",
+              neverc_unicode_is_symbol(0x20C0), 1);
+    check_int("Saudi riyal is symbol",
+              neverc_unicode_is_symbol(0x20C1), 1);
+    check_int("unassigned after riyal is not symbol",
+              neverc_unicode_is_symbol(0x20C2), 0);
+    check_int("Kelvin is uppercase letter",
+              neverc_unicode_is_upper(0x212A) &&
+              neverc_unicode_is_letter(0x212A), 1);
+    check_u32("Kelvin lowercase",
+              neverc_unicode_to_lower(0x212A), 'k');
+    check_int("reclassified printables stay print",
+              neverc_unicode_is_print(0xFF04) &&
+              neverc_unicode_is_print(0x2308) &&
+              neverc_unicode_is_print(0x2768) &&
+              neverc_unicode_is_print(0x2776), 1);
 }
 
 int main(void) {

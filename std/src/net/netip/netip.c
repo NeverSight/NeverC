@@ -24,10 +24,26 @@ static inline int fmt_u16_hex(char *p, uint16_t v) {
     return n;
 }
 
+/* IPv4-mapped IPv6 (::ffff:0:0/96), matching Go netip.Addr.Is4In6. */
+static int addr_is_4in6(const neverc_netip_addr_t *addr) {
+    if (addr->is_v4) return 0;
+    for (int i = 0; i < 10; i++)
+        if (addr->addr[i] != 0) return 0;
+    return addr->addr[10] == 0xff && addr->addr[11] == 0xff;
+}
+
+static int append_zone(const neverc_netip_addr_t *addr, char *out, int pos) {
+    if (!addr->zone[0]) return pos;
+    out[pos++] = '%';
+    size_t zl = strlen(addr->zone);
+    memcpy(out + pos, addr->zone, zl);
+    return pos + (int)zl;
+}
+
 /*
  * Format an address into out (caller guarantees >= 110 bytes of room).
- * Returns the number of bytes written (no NUL terminator). Produces output
- * byte-for-byte identical to the previous snprintf implementation.
+ * Returns the number of bytes written (no NUL terminator). IPv4-mapped
+ * IPv6 uses Go netip form "::ffff:a.b.c.d" rather than hex groups.
  */
 static int format_addr_raw(const neverc_netip_addr_t *addr, char *out) {
     if (addr->is_v4) {
@@ -37,6 +53,17 @@ static int format_addr_raw(const neverc_netip_addr_t *addr, char *out) {
         pos += fmt_u32_dec(out + pos, addr->addr[14]); out[pos++] = '.';
         pos += fmt_u32_dec(out + pos, addr->addr[15]);
         return pos;
+    }
+
+    if (addr_is_4in6(addr)) {
+        int pos = 0;
+        memcpy(out, "::ffff:", 7);
+        pos = 7;
+        pos += fmt_u32_dec(out + pos, addr->addr[12]); out[pos++] = '.';
+        pos += fmt_u32_dec(out + pos, addr->addr[13]); out[pos++] = '.';
+        pos += fmt_u32_dec(out + pos, addr->addr[14]); out[pos++] = '.';
+        pos += fmt_u32_dec(out + pos, addr->addr[15]);
+        return append_zone(addr, out, pos);
     }
 
     uint16_t groups[8];
@@ -66,13 +93,7 @@ static int format_addr_raw(const neverc_netip_addr_t *addr, char *out) {
         if (i > 0 && i != best_start + best_len) out[pos++] = ':';
         pos += fmt_u16_hex(out + pos, groups[i]);
     }
-    if (addr->zone[0]) {
-        out[pos++] = '%';
-        size_t zl = strlen(addr->zone);
-        memcpy(out + pos, addr->zone, zl);
-        pos += (int)zl;
-    }
-    return pos;
+    return append_zone(addr, out, pos);
 }
 
 /*
@@ -281,6 +302,8 @@ int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
         memcpy(addrbuf, s+1, alen);
         addrbuf[alen] = '\0';
         if (neverc_netip_parse_addr(addrbuf, &out->addr) != 0) return -1;
+        /* Go netip.ParseAddrPort: brackets are valid only for IPv6. */
+        if (out->addr.is_v4) return -1;
         colon = rb + 1;
     } else {
         /* IPv4: find last colon */
@@ -332,10 +355,15 @@ int neverc_netip_parse_prefix(const char *s, neverc_netip_prefix_t *out) {
     memcpy(addrbuf, s, alen);
     addrbuf[alen] = '\0';
     if (neverc_netip_parse_addr(addrbuf, &out->addr) != 0) return -1;
+    /* Go netip.ParsePrefix rejects IPv6 zones (go.dev/issue/51899). */
+    if (!out->addr.is_v4 && out->addr.zone[0]) return -1;
 
+    const char *bits_str = slash + 1;
+    size_t blen = strlen(bits_str);
+    /* strconv.Atoi allows leading zeros; Go ParsePrefix does not. */
+    if (blen > 1 && (bits_str[0] < '1' || bits_str[0] > '9')) return -1;
     unsigned bits;
-    size_t blen = strlen(slash + 1);
-    if (parse_decimal(slash + 1, (int)blen, &bits) != 0) return -1;
+    if (parse_decimal(bits_str, (int)blen, &bits) != 0) return -1;
     int maxbits = out->addr.is_v4 ? 32 : 128;
     if ((int)bits > maxbits) return -1;
     out->bits = (uint8_t)bits;
@@ -450,6 +478,8 @@ int neverc_netip_addr_equal(const neverc_netip_addr_t *a, const neverc_netip_add
 
 int neverc_netip_prefix_contains(const neverc_netip_prefix_t *pfx, const neverc_netip_addr_t *addr) {
     if (!pfx || !addr || !pfx->valid || !addr->valid) return 0;
+    /* Go netip.Prefix.Contains is false when the address has a zone. */
+    if (addr->zone[0]) return 0;
     if (pfx->addr.is_v4 != addr->is_v4) return 0;
 
     int start = pfx->addr.is_v4 ? 12 : 0;

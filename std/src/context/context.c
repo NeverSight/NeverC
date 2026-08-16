@@ -50,6 +50,7 @@ struct neverc_context {
     neverc_context_t *parent;
     volatile int32_t refs;
     volatile int32_t cancelled;
+    volatile int64_t cancel_at; /* unix-ms; 0 = not explicitly canceled */
     int64_t deadline_ms;
     const char *key;
     const void *value;
@@ -79,7 +80,14 @@ static neverc_context_t *ctx_create(ctx_kind_t kind,
 }
 
 static void ctx_cancel_impl(neverc_context_t *ctx) {
-    if (ctx) NEVERC_ATOMIC_STORE32((int32_t *)&ctx->cancelled, 1);
+    if (!ctx)
+        return;
+    int64_t ts = now_ms();
+    if (ts < 1)
+        ts = 1;
+    /* First explicit cancel wins; later calls stay idempotent. */
+    if (NEVERC_ATOMIC_CAS64(&ctx->cancel_at, (int64_t)0, ts))
+        NEVERC_ATOMIC_STORE32(&ctx->cancelled, 1);
 }
 
 /*
@@ -333,28 +341,46 @@ neverc_context_t *neverc_context_without_cancel(neverc_context_t *parent) {
     return ctx;
 }
 
-int neverc_context_done(const neverc_context_t *ctx) {
+/*
+ * Go records the first cancel/deadline that fires and never overwrites Err.
+ * Walk the chain and pick the earliest event so a later child deadline cannot
+ * replace a parent cancel, and a later cancel() cannot replace a deadline.
+ */
+static const char *ctx_reason(const neverc_context_t *ctx, const char **cause_out) {
+    const char *err = NULL;
+    const char *cause = NULL;
+    int64_t best = INT64_MAX;
+    int64_t now = now_ms();
+
     while (ctx) {
-        if (NEVERC_ATOMIC_LOAD32((int32_t *)&ctx->cancelled)) return 1;
+        if (ctx->kind == CTX_WITHOUT_CANCEL)
+            break;
+
+        int64_t cancel_at = NEVERC_ATOMIC_LOAD64((int64_t *)&ctx->cancel_at);
+        if (cancel_at > 0 && cancel_at < best) {
+            best = cancel_at;
+            err = "context canceled";
+            cause = ctx->cause ? ctx->cause : err;
+        }
         if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0 &&
-            now_ms() >= ctx->deadline_ms) return 1;
-        if (ctx->kind == CTX_WITHOUT_CANCEL) return 0;
+            now >= ctx->deadline_ms && ctx->deadline_ms < best) {
+            best = ctx->deadline_ms;
+            err = "context deadline exceeded";
+            cause = ctx->cause ? ctx->cause : err;
+        }
         ctx = ctx->parent;
     }
-    return 0;
+    if (cause_out)
+        *cause_out = cause;
+    return err;
+}
+
+int neverc_context_done(const neverc_context_t *ctx) {
+    return ctx_reason(ctx, NULL) != NULL;
 }
 
 const char *neverc_context_err(const neverc_context_t *ctx) {
-    while (ctx) {
-        if (NEVERC_ATOMIC_LOAD32((int32_t *)&ctx->cancelled))
-            return "context canceled";
-        if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0 &&
-            now_ms() >= ctx->deadline_ms)
-            return "context deadline exceeded";
-        if (ctx->kind == CTX_WITHOUT_CANCEL) return NULL;
-        ctx = ctx->parent;
-    }
-    return NULL;
+    return ctx_reason(ctx, NULL);
 }
 
 const void *neverc_context_value(const neverc_context_t *ctx, const char *key) {
@@ -368,17 +394,10 @@ const void *neverc_context_value(const neverc_context_t *ctx, const char *key) {
 }
 
 const char *neverc_context_cause(const neverc_context_t *ctx) {
-    while (ctx) {
-        if (NEVERC_ATOMIC_LOAD32((int32_t *)&ctx->cancelled))
-            return ctx->cause ? ctx->cause : "context canceled";
-        if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0 &&
-            now_ms() >= ctx->deadline_ms)
-            return ctx->cause ? ctx->cause :
-                                "context deadline exceeded";
-        if (ctx->kind == CTX_WITHOUT_CANCEL) return NULL;
-        ctx = ctx->parent;
-    }
-    return NULL;
+    const char *cause = NULL;
+    if (!ctx_reason(ctx, &cause))
+        return NULL;
+    return cause;
 }
 
 int64_t neverc_context_deadline(const neverc_context_t *ctx) {

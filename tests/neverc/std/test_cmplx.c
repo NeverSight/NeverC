@@ -176,6 +176,13 @@ static void test_pow(void) {
     /* pow(e, i*pi) = -1 (Euler) */
     z = neverc_cmplx_pow(C(NEVERC_MATH_E, 0.0), C(0.0, NEVERC_MATH_PI));
     check_cmplx("pow(e,i*pi)=-1", z, -1.0, 0.0);
+
+    /* IEEE 754: z^0 = 1 for every z. exp(0*log(Inf|NaN)) is NaN without this. */
+    check_cmplx("pow(Inf,0)=1", neverc_cmplx_pow(C(NC_INF, 0.0), C(0.0, 0.0)), 1.0, 0.0);
+    check_cmplx("pow(-Inf,0)=1", neverc_cmplx_pow(C(-NC_INF, 0.0), C(0.0, 0.0)), 1.0, 0.0);
+    check_cmplx("pow(Inf+Inf i,0)=1", neverc_cmplx_pow(C(NC_INF, NC_INF), C(0.0, 0.0)), 1.0, 0.0);
+    check_cmplx("pow(NaN,0)=1", neverc_cmplx_pow(C(NC_NAN, 0.0), C(0.0, 0.0)), 1.0, 0.0);
+    check_cmplx("pow(NaN+NaN i,0)=1", neverc_cmplx_pow(C(NC_NAN, NC_NAN), C(0.0, 0.0)), 1.0, 0.0);
 }
 
 /* ===== Trigonometric ===== */
@@ -324,6 +331,18 @@ static void test_inv_trig(void) {
     check_cmplx("atan(0)", neverc_cmplx_atan(C(0.0, 0.0)), 0.0, 0.0);
     /* C99/Go: atan(-i) is 0 - i∞, not NaN. */
     check_cmplx("atan(-i)", neverc_cmplx_atan(C(0.0, -1.0)), 0.0, -NC_INF);
+
+    /* Inf arguments: the algebraic forms do Inf*0 and used to return NaN. */
+    check_cmplx("asin(+Inf)", neverc_cmplx_asin(C(NC_INF, 0.0)), NEVERC_MATH_PI / 2.0, NC_INF);
+    check_cmplx("asin(-Inf)", neverc_cmplx_asin(C(-NC_INF, 0.0)), -NEVERC_MATH_PI / 2.0, NC_INF);
+    check_cmplx("asin(1+i*Inf)", neverc_cmplx_asin(C(1.0, NC_INF)), 0.0, NC_INF);
+    check_cmplx("asin(-1-i*Inf)", neverc_cmplx_asin(C(-1.0, -NC_INF)), -0.0, -NC_INF);
+    check_cmplx("asin(Inf+i*Inf)", neverc_cmplx_asin(C(NC_INF, NC_INF)), NEVERC_MATH_PI / 4.0, NC_INF);
+    check_cmplx("acos(+Inf)", neverc_cmplx_acos(C(NC_INF, 0.0)), 0.0, -NC_INF);
+    check_cmplx("atan(+Inf)", neverc_cmplx_atan(C(NC_INF, 0.0)), NEVERC_MATH_PI / 2.0, 0.0);
+    check_cmplx("atan(-Inf)", neverc_cmplx_atan(C(-NC_INF, 0.0)), -NEVERC_MATH_PI / 2.0, 0.0);
+    check_cmplx("atan(i*Inf)", neverc_cmplx_atan(C(0.0, NC_INF)), NEVERC_MATH_PI / 2.0, 0.0);
+    check_cmplx("atan(-i*Inf)", neverc_cmplx_atan(C(0.0, -NC_INF)), NEVERC_MATH_PI / 2.0, -0.0);
 
     /* Real-valued consistency: asin(0.5+0i) should have re = asin(0.5) */
     double as_real = neverc_cmplx_asin(C(0.5, 0.0)).re;

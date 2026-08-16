@@ -6,7 +6,7 @@
  *
  * Parses regular expression patterns into abstract syntax trees.
  * Supports: literal, char class, ., *, +, ?, {n,m}, |, (), (?:),
- *           anchors (^ $ \b \B \A \z), escapes (\d \w \s \D \W \S).
+ *           anchors (^ $ \b \B \A \z), escapes (\d \w \s \D \W \S \xHH \x{H+}).
  */
 
 #include <stddef.h>

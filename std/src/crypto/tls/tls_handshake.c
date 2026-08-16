@@ -741,8 +741,8 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
                     conn, "failed to decrypt server handshake record");
             if (inner_type != TLS_CT_HANDSHAKE) {
                 if (inner_type == TLS_CT_ALERT)
-                    return nci_tls_error(
-                        conn, "server sent an alert during handshake");
+                    return nci_tls_fail_handshake_alert(
+                        conn, record_data, record_len);
                 return nci_tls_protocol_error(
                     conn, TLS_ALERT_UNEXPECTED_MESSAGE,
                     "server sent non-handshake data during handshake");
@@ -2217,8 +2217,8 @@ int nci_tls_server_handshake(neverc_tls_conn_t *conn,
                 return -1;
             if (inner_type != TLS_CT_HANDSHAKE) {
                 if (inner_type == TLS_CT_ALERT)
-                    return nci_tls_error(
-                        conn, "client sent an alert during handshake");
+                    return nci_tls_fail_handshake_alert(
+                        conn, record_data, record_len);
                 return nci_tls_protocol_error(
                     conn, TLS_ALERT_UNEXPECTED_MESSAGE,
                     "client sent non-handshake data during handshake");
@@ -2830,8 +2830,8 @@ static int tls_async_process_client_flight(
                 conn, &inner_type, record_data, &record_len);
             if (receive_result != 0) return receive_result;
             if (inner_type == TLS_CT_ALERT)
-                return nci_tls_error(
-                    conn, "client sent an alert during handshake");
+                return nci_tls_fail_handshake_alert(
+                    conn, record_data, record_len);
             if (inner_type != TLS_CT_HANDSHAKE || record_len == 0)
                 return nci_tls_protocol_error(
                     conn, TLS_ALERT_UNEXPECTED_MESSAGE,
@@ -3316,6 +3316,15 @@ int nci_tls_handle_peer_alert(
     conn->closed = 1;
     conn->failure_reason = "TLS peer sent a fatal alert";
     return -1;
+}
+
+int nci_tls_fail_handshake_alert(
+    neverc_tls_conn_t *conn, const uint8_t *data, size_t data_len) {
+    int result = nci_tls_handle_peer_alert(conn, data, data_len);
+    if (result < 0)
+        return -1;
+    return nci_tls_error(
+        conn, "peer sent an alert during TLS handshake");
 }
 
 #if defined(NEVERC_TLS_TESTING)

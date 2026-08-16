@@ -84,6 +84,9 @@ static void test_isabs(void) {
     ASSERT_TRUE(neverc_filepath_isabs("\\\\server\\share"));
     ASSERT_TRUE(neverc_filepath_isabs("\\\\server\\share\\foo"));
     ASSERT_TRUE(neverc_filepath_isabs("\\\\?\\C:\\foo"));
+    ASSERT_TRUE(neverc_filepath_isabs("1:\\foo"));
+    ASSERT_FALSE(neverc_filepath_isabs("\\\\..\\..\\a"));
+    ASSERT_FALSE(neverc_filepath_isabs("\\\\i\\..\\c$"));
 #else
     ASSERT_TRUE(neverc_filepath_isabs("/foo"));
     ASSERT_TRUE(neverc_filepath_isabs("/"));
@@ -125,6 +128,9 @@ static void test_clean(void) {
     ASSERT_STR_EQ(neverc_filepath_clean("a\\..\\c:", buf, sizeof(buf)), ".\\c:");
     ASSERT_STR_EQ(neverc_filepath_clean("//host/share/foo/../baz", buf, sizeof(buf)),
                   "\\\\host\\share\\baz");
+    ASSERT_STR_EQ(neverc_filepath_clean("\\\\i\\..\\c$", buf, sizeof(buf)), "\\c$");
+    ASSERT_STR_EQ(neverc_filepath_clean("/a/../??/a", buf, sizeof(buf)), "\\.\\??\\a");
+    ASSERT_STR_EQ(neverc_filepath_clean("\\\\?\\C:\\", buf, sizeof(buf)), "\\\\?\\C:\\");
 #else
     ASSERT_STR_EQ(neverc_filepath_clean("abc/def/../..", buf, sizeof(buf)), ".");
     ASSERT_STR_EQ(neverc_filepath_clean("/abc/def/../../..", buf, sizeof(buf)), "/");
@@ -182,15 +188,17 @@ static void test_join(void) {
 #ifdef _WIN32
     ASSERT_STR_EQ(neverc_filepath_join("C:\\foo", "bar", buf, sizeof(buf)), "C:\\foo\\bar");
     ASSERT_STR_EQ(neverc_filepath_join("a", "b\\c", buf, sizeof(buf)), "a\\b\\c");
-    ASSERT_STR_EQ(neverc_filepath_join("C:\\foo", "D:\\bar", buf, sizeof(buf)), "D:\\bar");
-    ASSERT_STR_EQ(neverc_filepath_join("safe", "C:\\Windows", buf, sizeof(buf)), "C:\\Windows");
-    ASSERT_STR_EQ(neverc_filepath_join("C:\\foo", "\\bar", buf, sizeof(buf)), "C:\\bar");
-    ASSERT_STR_EQ(neverc_filepath_join("a", "C:b", buf, sizeof(buf)), "C:b");
+    ASSERT_STR_EQ(neverc_filepath_join("C:\\foo", "D:\\bar", buf, sizeof(buf)), "C:\\foo\\D:\\bar");
+    ASSERT_STR_EQ(neverc_filepath_join("safe", "C:\\Windows", buf, sizeof(buf)), "safe\\C:\\Windows");
+    ASSERT_STR_EQ(neverc_filepath_join("C:\\foo", "\\bar", buf, sizeof(buf)), "C:\\foo\\bar");
+    ASSERT_STR_EQ(neverc_filepath_join("a", "C:b", buf, sizeof(buf)), "a\\C:b");
 #else
     ASSERT_STR_EQ(neverc_filepath_join("/foo", "bar", buf, sizeof(buf)), "/foo/bar");
     ASSERT_STR_EQ(neverc_filepath_join("a", "b/c", buf, sizeof(buf)), "a/b/c");
-    ASSERT_STR_EQ(neverc_filepath_join("safe", "/etc/passwd", buf, sizeof(buf)), "/etc/passwd");
-    ASSERT_STR_EQ(neverc_filepath_join("/foo", "/bar", buf, sizeof(buf)), "/bar");
+    ASSERT_STR_EQ(neverc_filepath_join("safe", "/etc/passwd", buf, sizeof(buf)), "safe/etc/passwd");
+    ASSERT_STR_EQ(neverc_filepath_join("/foo", "/bar", buf, sizeof(buf)), "/foo/bar");
+    ASSERT_STR_EQ(neverc_filepath_join("a", "/b", buf, sizeof(buf)), "a/b");
+    ASSERT_STR_EQ(neverc_filepath_join("//", "a", buf, sizeof(buf)), "/a");
 #endif
     ASSERT_STR_EQ(neverc_filepath_join("", "foo", buf, sizeof(buf)), "foo");
     ASSERT_STR_EQ(neverc_filepath_join("foo", "", buf, sizeof(buf)), "foo");
@@ -198,6 +206,7 @@ static void test_join(void) {
 #ifdef _WIN32
     ASSERT_STR_EQ(neverc_filepath_join("C:", "a", buf, sizeof(buf)), "C:a");
     ASSERT_STR_EQ(neverc_filepath_join("C:", "\\a", buf, sizeof(buf)), "C:\\a");
+    ASSERT_STR_EQ(neverc_filepath_join("\\", "??\\a", buf, sizeof(buf)), "\\.\\??\\a");
 #endif
 }
 
@@ -241,6 +250,13 @@ static void test_match(void) {
     ASSERT_TRUE(neverc_filepath_match("[abc]", "b"));
     ASSERT_FALSE(neverc_filepath_match("[abc]", "d"));
     ASSERT_INT_EQ(neverc_filepath_match("[abc", "a"), -1);
+    ASSERT_TRUE(neverc_filepath_match("a?b", "a\xe2\x98\xba" "b"));
+    ASSERT_TRUE(neverc_filepath_match("a[^a]b", "a\xe2\x98\xba" "b"));
+    ASSERT_FALSE(neverc_filepath_match("a???b", "a\xe2\x98\xba" "b"));
+    ASSERT_TRUE(neverc_filepath_match("[a-\xce\xb6]*", "\xce\xb1"));
+    ASSERT_INT_EQ(neverc_filepath_match("[\x80]", "a"), -1);
+    ASSERT_INT_EQ(neverc_filepath_match("x*[", "y"), -1);
+    ASSERT_INT_EQ(neverc_filepath_match("x[", "y"), -1);
 #ifndef _WIN32
     ASSERT_TRUE(neverc_filepath_match("\\*", "*"));
     ASSERT_FALSE(neverc_filepath_match("\\*", "a"));
@@ -250,7 +266,11 @@ static void test_match(void) {
 static void test_to_from_slash(void) {
     printf("[to_from_slash]\n");
     char buf[256];
+#ifdef _WIN32
     ASSERT_STR_EQ(neverc_filepath_to_slash("a\\b\\c", buf, sizeof(buf)), "a/b/c");
+#else
+    ASSERT_STR_EQ(neverc_filepath_to_slash("a\\b\\c", buf, sizeof(buf)), "a\\b\\c");
+#endif
     ASSERT_STR_EQ(neverc_filepath_to_slash("a/b/c", buf, sizeof(buf)), "a/b/c");
 #ifdef _WIN32
     ASSERT_STR_EQ(neverc_filepath_from_slash("a/b/c", buf, sizeof(buf)), "a\\b\\c");

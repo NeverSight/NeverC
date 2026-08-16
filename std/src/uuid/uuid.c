@@ -1,5 +1,6 @@
 #include "neverc/std/uuid.h"
 #include "neverc/std/_platform.h"
+#include <stddef.h>
 #include <string.h>
 
 #ifndef NCI_UUID_RANDOM
@@ -100,15 +101,48 @@ void neverc_uuid_to_string(neverc_uuid_t u, char out[37]) {
     out[36] = '\0';
 }
 
+static int uuid_ascii_ieq(const char *a, const char *b, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        unsigned char ca = (unsigned char)a[i];
+        unsigned char cb = (unsigned char)b[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (unsigned char)(ca + 32);
+        if (cb >= 'A' && cb <= 'Z') cb = (unsigned char)(cb + 32);
+        if (ca != cb) return 0;
+    }
+    return 1;
+}
+
 int neverc_uuid_parse(const char *s, neverc_uuid_t *out) {
     if (!s || !out) return -1;
-    if (strlen(s) != 36) return -1;
+    size_t n = strlen(s);
+    /* google/uuid.Parse: 32 hex, 36 dashed, urn:uuid: + 36, or {36}. */
+    if (n == 45 && uuid_ascii_ieq(s, "urn:uuid:", 9)) {
+        s += 9;
+        n = 36;
+    } else if (n == 38 && s[0] == '{' && s[37] == '}') {
+        s += 1;
+        n = 36;
+    }
+
+    neverc_uuid_t parsed;
+    uint8_t bad = 0;
+    if (n == 32) {
+        const uint8_t *p = (const uint8_t *)s;
+        for (int i = 0; i < 16; i++) {
+            uint8_t hi = reverse_hex[p[i * 2]];
+            uint8_t lo = reverse_hex[p[i * 2 + 1]];
+            bad |= (uint8_t)(hi | lo);
+            parsed.bytes[i] = (uint8_t)((hi << 4) | lo);
+        }
+        if (bad & 0xf0) return -1;
+        *out = parsed;
+        return 0;
+    }
+    if (n != 36) return -1;
     if (s[8] != '-' || s[13] != '-' || s[18] != '-' || s[23] != '-')
         return -1;
 
     const uint8_t *p = (const uint8_t *)s;
-    neverc_uuid_t parsed;
-    uint8_t bad = 0;
     for (int i = 0; i < 16; i++) {
         uint8_t hi = reverse_hex[p[byte_off[i]]];
         uint8_t lo = reverse_hex[p[byte_off[i] + 1]];

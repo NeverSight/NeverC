@@ -59,6 +59,32 @@ static void test_decode_soft_break(void) {
 
     n = neverc_qp_decode("=A", 2, out, sizeof(out));
     ASSERT_EQ(n, -1);
+
+    /* RFC 2045: transport may pad "=\r\n" with WSP; still a soft break. */
+    n = neverc_qp_decode("Hello= \r\nWorld", 14, out, sizeof(out));
+    ASSERT_EQ(n, 10);
+    ASSERT_MEMEQ(out, "HelloWorld", 10);
+
+    n = neverc_qp_decode("Hello=\t\nWorld", 13, out, sizeof(out));
+    ASSERT_EQ(n, 10);
+    ASSERT_MEMEQ(out, "HelloWorld", 10);
+
+    n = neverc_qp_decode("= \r\n", 4, out, sizeof(out));
+    ASSERT_EQ(n, 0);
+
+    /* Trailing WSP on a line is transport padding and must be deleted. */
+    n = neverc_qp_decode("line1  \r\nline2", 14, out, sizeof(out));
+    ASSERT_EQ(n, 12);
+    ASSERT_MEMEQ(out, "line1\r\nline2", 12);
+
+    n = neverc_qp_decode("hello  ", 7, out, sizeof(out));
+    ASSERT_EQ(n, 5);
+    ASSERT_MEMEQ(out, "hello", 5);
+
+    /* Encoded trailing space survives; the extra literal spaces do not. */
+    n = neverc_qp_decode("hello=20  \n", 11, out, sizeof(out));
+    ASSERT_EQ(n, 7);
+    ASSERT_MEMEQ(out, "hello \n", 7);
 }
 
 static void test_encode_basic(void) {

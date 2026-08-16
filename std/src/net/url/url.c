@@ -1,4 +1,5 @@
 #include "neverc/std/net/url.h"
+#include "neverc/std/net/netip.h"
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>
@@ -204,10 +205,18 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
         if (*p == '[') {
             const char *bracket = memchr(p + 1, ']',
                 (size_t)(authority_end - p - 1));
-            if (!bracket || bracket == p + 1 ||
-                !valid_host_text(p + 1, (size_t)(bracket - p - 1)) ||
-                copy_exact(u->host, sizeof(u->host), p + 1,
-                           (size_t)(bracket - p - 1)) != 0)
+            if (!bracket || bracket == p + 1)
+                return -1;
+            size_t hlen = (size_t)(bracket - p - 1);
+            char hostbuf[256];
+            neverc_netip_addr_t addr;
+            /* Go net/url: only a valid IPv6 (including IPv4-mapped) literal
+             * may be enclosed in brackets. IPv4 and non-IP text are errors. */
+            if (hlen >= sizeof(hostbuf) ||
+                copy_exact(hostbuf, sizeof(hostbuf), p + 1, hlen) != 0 ||
+                neverc_netip_parse_addr(hostbuf, &addr) != 0 ||
+                addr.is_v4 ||
+                copy_exact(u->host, sizeof(u->host), p + 1, hlen) != 0)
                 return -1;
             if (bracket + 1 < authority_end) {
                 if (bracket[1] != ':' ||

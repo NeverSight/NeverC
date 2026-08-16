@@ -343,6 +343,8 @@ int neverc_strconv_unquote(const char *s, char *buf, size_t bufsize) {
     size_t out = 0;
 
     if (quote == '\'') {
+        /* Go interpreted literals reject a raw newline (escaped "\\n" is fine). */
+        if (src_len > 0 && src[0] == '\n') return -1;
         uint32_t r;
         int multibyte;
         int consumed = neverc_strconv_unquote_char(
@@ -366,11 +368,14 @@ int neverc_strconv_unquote(const char *s, char *buf, size_t bufsize) {
          * themselves (single-byte, not a backslash escape or the quote char).
          * Avoids per-character unquote_char + utf8 re-encode for typical text. */
         unsigned char c0 = (unsigned char)src[0];
+        if (c0 == '\n') return -1;
         if (c0 < 0x80 && c0 != '\\' && c0 != (unsigned char)quote) {
             size_t run = 1;
             while (run < src_len) {
                 unsigned char cc = (unsigned char)src[run];
-                if (cc >= 0x80 || cc == '\\' || cc == (unsigned char)quote) break;
+                if (cc >= 0x80 || cc == '\\' || cc == (unsigned char)quote ||
+                    cc == '\n')
+                    break;
                 run++;
             }
             if (out + run >= bufsize) return -1;
@@ -495,6 +500,7 @@ int neverc_strconv_quoted_prefix(const char *s, size_t *prefix_len) {
             if (consumed < 0) return -1;
             i += (size_t)consumed;
         } else {
+            if (s[i] == '\n') return -1;
             uint32_t r;
             int width;
             neverc_utf8_decode_rune((const uint8_t *)s + i, slen - i, &r, &width);

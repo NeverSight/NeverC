@@ -395,77 +395,64 @@ static const signed char mime_qp_hex[256] = {
     -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
 };
 
-static size_t mime_qp_decoded_size(const char *src, size_t src_len) {
-    size_t si = 0, size = 0;
-    while (si < src_len) {
-        size_t remaining = src_len - si;
-        if (src[si] == '=' && remaining >= 3 &&
-            src[si + 1] == '\r' && src[si + 2] == '\n') {
-            si += 3;
-        } else if (src[si] == '=' && remaining >= 2 &&
-                   src[si + 1] == '\n') {
-            si += 2;
-        } else if (src[si] == '=' && remaining >= 2 &&
-                   src[si + 1] == '\r') {
-            si += 2;
-            if (si < src_len && src[si] == '\n')
-                si++;
-        } else if (src[si] == '=' && remaining == 1) {
-            si += 1;
-        } else if (src[si] == '=' && remaining >= 3 &&
-                   mime_qp_hex[(unsigned char)src[si + 1]] >= 0 &&
-                   mime_qp_hex[(unsigned char)src[si + 2]] >= 0) {
-            si += 3;
-            size++;
-        } else if (src[si] == '=') {
-            /* Invalid / truncated escape: decode will fail. Overestimate. */
-            size += remaining;
-            break;
-        } else {
-            si++;
-            size++;
-        }
-    }
-    return size;
-}
-
 int neverc_mime_qp_decode(const char *src, size_t src_len,
                            char *dst, size_t dst_cap, size_t *out_len) {
     if (out_len) *out_len = 0;
     if ((!src || !dst) && src_len != 0) return -1;
-    size_t required = mime_qp_decoded_size(src, src_len);
-    if (required > dst_cap) return -1;
 
     size_t si = 0, di = 0;
     while (si < src_len) {
-        size_t remaining = src_len - si;
-        if (src[si] == '=' && remaining >= 3 &&
-            src[si + 1] == '\r' && src[si + 2] == '\n') {
-            si += 3;
-        } else if (src[si] == '=' && remaining >= 2 &&
-                   src[si + 1] == '\n') {
-            si += 2;
-        } else if (src[si] == '=' && remaining >= 2 &&
-                   src[si + 1] == '\r') {
-            si += 2;
-            if (si < src_len && src[si] == '\n')
-                si++;
-        } else if (src[si] == '=' && remaining == 1) {
-            si += 1;
-        } else if (src[si] == '=' && remaining >= 3) {
-            int high = mime_qp_hex[(unsigned char)src[si + 1]];
-            int low = mime_qp_hex[(unsigned char)src[si + 2]];
-            if (high >= 0 && low >= 0) {
-                dst[di++] = (char)((high << 4) | low);
-                si += 3;
-            } else {
-                return -1;
+        unsigned char c = (unsigned char)src[si];
+
+        if (c == '=') {
+            if (si + 2 < src_len) {
+                int high = mime_qp_hex[(unsigned char)src[si + 1]];
+                int low = mime_qp_hex[(unsigned char)src[si + 2]];
+                if (high >= 0 && low >= 0) {
+                    if (di >= dst_cap) return -1;
+                    dst[di++] = (char)((high << 4) | low);
+                    si += 3;
+                    continue;
+                }
             }
-        } else if (src[si] == '=') {
+            /* Soft break: '=' WSP* (CRLF | LF | CR | EOF) (RFC 2045 6.7). */
+            size_t j = si + 1;
+            while (j < src_len && (src[j] == ' ' || src[j] == '\t'))
+                j++;
+            if (j >= src_len) {
+                si = j;
+                continue;
+            }
+            if (src[j] == '\n') {
+                si = j + 1;
+                continue;
+            }
+            if (src[j] == '\r') {
+                si = j + 1;
+                if (si < src_len && src[si] == '\n')
+                    si++;
+                continue;
+            }
             return -1;
-        } else {
-            dst[di++] = src[si++];
         }
+
+        if (c == ' ' || c == '\t') {
+            size_t j = si;
+            while (j < src_len && (src[j] == ' ' || src[j] == '\t'))
+                j++;
+            if (j >= src_len || src[j] == '\n' || src[j] == '\r') {
+                si = j;
+                continue;
+            }
+            if (j - si > dst_cap - di) return -1;
+            memcpy(dst + di, src + si, j - si);
+            di += j - si;
+            si = j;
+            continue;
+        }
+
+        if (di >= dst_cap) return -1;
+        dst[di++] = src[si++];
     }
     if (out_len) *out_len = di;
     return 0;

@@ -188,6 +188,24 @@ static void test_width_padding(void) {
 
     r = neverc_fmt_sprintf("%*d", 8, 42);
     check_str("star width", r, "      42"); free(r);
+
+    r = neverc_fmt_sprintf("%p", (void *)0);
+    check_str("nil pointer", r, "0x0"); free(r);
+
+    r = neverc_fmt_sprintf("%#p", (void *)0);
+    check_str("sharp pointer omits 0x", r, "0"); free(r);
+
+    r = neverc_fmt_sprintf("%010p", (void *)0);
+    check_str("zero pad pointer keeps 0x", r, "0x00000000"); free(r);
+
+    r = neverc_fmt_sprintf("%p", (void *)0x1b);
+    check_str("pointer hex", r, "0x1b"); free(r);
+
+    r = neverc_fmt_sprintf("%#p", (void *)0x1b);
+    check_str("sharp pointer hex", r, "1b"); free(r);
+
+    r = neverc_fmt_sprintf("%.4p", (void *)0);
+    check_str("pointer precision", r, "0x0000"); free(r);
 }
 
 static void test_mixed(void) {

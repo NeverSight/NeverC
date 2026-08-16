@@ -212,7 +212,16 @@ static void test_parse_errors(void) {
         "{{end}}",
         "{{else}}",
         "{{if}}",
-        "{{range}}"
+        "{{range}}",
+        "{{.Name | html}}",
+        "{{.Name|html}}",
+        "{{if .Show | html}}yes{{end}}",
+        "{{range .Present | html}}x{{end}}",
+        "{{printf .Name}}",
+        "{{html .Name}}",
+        "{{.Name .Other}}",
+        "{{if .Show extra}}yes{{end}}",
+        "{{if Show}}yes{{end}}"
     };
 
     for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
@@ -222,6 +231,30 @@ static void test_parse_errors(void) {
         check_true("invalid template reports error", err != NULL);
         neverc_template_free(tmpl);
     }
+}
+
+static void test_pipeline_rejected(void) {
+    printf("[pipeline rejected]\n");
+    neverc_template_data_t data;
+    neverc_template_data_init(&data);
+    neverc_template_data_set(&data, "Name", "<script>alert(1)</script>");
+    size_t outlen = 99;
+
+    /* A ported Go template that asks for HTML escaping must not parse as
+     * a lookup of the key "Name | html" and emit the raw value. */
+    char *r = neverc_template_render("{{.Name | html}}", &data, &outlen);
+    check_true("pipeline render rejected", r == NULL && outlen == 0);
+    free(r);
+
+    const char *err = NULL;
+    neverc_template_t *tmpl = neverc_template_parse("{{.Name|html}}", &err);
+    check_true("pipeline without spaces rejected", tmpl == NULL && err != NULL);
+    neverc_template_free(tmpl);
+
+    r = neverc_template_render("{{.Name}}", &data, &outlen);
+    check_str("raw text substitution", r, "<script>alert(1)</script>");
+    free(r);
+    neverc_template_data_free(&data);
 }
 
 static void test_null_safety(void) {
@@ -263,6 +296,7 @@ int main(void) {
     test_range_subset();
     test_action_whitespace();
     test_parse_errors();
+    test_pipeline_rejected();
     test_null_safety();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

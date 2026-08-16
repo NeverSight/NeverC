@@ -8,7 +8,9 @@
  * PEM encoding/decoding — C port of Go encoding/pem.
  * Encode wraps neverc_base64_encode. Decode matches Go's armor rules:
  * find the next END line, take the last line-start BEGIN before it, and
- * skip a candidate whose type/trailer/headers/body are malformed.
+ * skip a candidate whose type/trailer/headers/body are malformed. A ':'
+ * on the END line with no body/blank before it is type injection: Go
+ * consumes that END as a header and aborts the whole Decode.
  */
 
 #define PEM_LINE_LEN 64
@@ -25,7 +27,7 @@ int neverc_pem_encode(char *out, size_t out_cap,
         data_len > SIZE_MAX - 2)
         return -1;
     size_t type_len = strlen(type_str);
-    if (type_len == 0 || type_len > 200)
+    if (type_len > 200)
         return -1;
     for (size_t i = 0; i < type_len; ++i) {
         unsigned char c = (unsigned char)type_str[i];
@@ -110,6 +112,24 @@ static int pem_is_space(unsigned char c) {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
+static const char *pem_trim_line(const char *start, const char *eol) {
+    const char *content_end = eol;
+    if (content_end > start && content_end[-1] == '\r')
+        --content_end;
+    while (content_end > start &&
+           (content_end[-1] == ' ' || content_end[-1] == '\t'))
+        --content_end;
+    return content_end;
+}
+
+static int pem_line_has_colon(const char *start, const char *content_end) {
+    for (const char *c = start; c < content_end; ++c) {
+        if (*c == ':')
+            return 1;
+    }
+    return 0;
+}
+
 /*
  * RFC 1421 encapsulated headers are `Name: value` lines, terminated by a
  * blank line or by the first line that is not a header (the base64 body).
@@ -118,38 +138,40 @@ static int pem_is_space(unsigned char c) {
  * Go rejects a block that has headers and then END with no blank line and
  * no body (endIndex < 0 after consuming the header lines). *bare_headers
  * reports that case so the caller can skip the candidate.
+ *
+ * *reached_end is set when every line before END is a header (or the
+ * preamble is empty). Go's header loop then consumes the END line itself
+ * if that line contains ':'; endTrailerIndex goes negative and Decode
+ * returns no block at all.
  */
 static const char *pem_skip_headers(const char *start, const char *end,
-                                    int *bare_headers) {
+                                    int *bare_headers, int *reached_end) {
     int had_header = 0;
     const char *p = start;
     *bare_headers = 0;
+    *reached_end = 1;
     while (p < end) {
         const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
         const char *eol = nl ? nl : end;
-        const char *content_end = eol;
-        if (content_end > p && content_end[-1] == '\r')
-            --content_end;
-        while (content_end > p &&
-               (content_end[-1] == ' ' || content_end[-1] == '\t'))
-            --content_end;
-        if (content_end == p)
-            return nl ? nl + 1 : end;
-        int has_colon = 0;
-        for (const char *c = p; c < content_end; ++c) {
-            if (*c == ':') {
-                has_colon = 1;
-                break;
-            }
+        const char *content_end = pem_trim_line(p, eol);
+        if (content_end == p || !pem_line_has_colon(p, content_end)) {
+            *reached_end = 0;
+            return content_end == p && nl ? nl + 1 : p;
         }
-        if (!has_colon)
-            return p;
         had_header = 1;
         p = nl ? nl + 1 : end;
     }
     if (had_header)
         *bare_headers = 1;
     return p;
+}
+
+/* getLine of the END line, then bytes.Cut on ':'. */
+static int pem_end_line_has_colon(const char *end_line, const char *pem_end) {
+    const char *nl = (const char *)memchr(
+        end_line, '\n', (size_t)(pem_end - end_line));
+    const char *eol = nl ? nl : pem_end;
+    return pem_line_has_colon(end_line, pem_trim_line(end_line, eol));
 }
 
 /* Go searches for "\n-----END " and returns the '-----END ' that follows. */
@@ -300,14 +322,32 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
             --header_end;
 
         const char *type_start = begin + 11;
-        if ((size_t)(header_end - type_start) <= dash_len ||
+        if (header_end < type_start ||
+            (size_t)(header_end - type_start) < dash_len ||
             memcmp(header_end - dash_len, DASHES, dash_len) != 0) {
             search = end_line + 9;
             continue;
         }
         const char *type_end = header_end - dash_len;
         size_t type_len = (size_t)(type_end - type_start);
-        if (type_len == 0) {
+
+        int bare_headers = 0;
+        int reached_end = 0;
+        const char *body_start = pem_skip_headers(
+            line_end + 1, end_line, &bare_headers, &reached_end);
+        /*
+         * Go parses headers before checking the END trailer. A ':' on the
+         * END line (type injection or a truncated `-----END FOO:`) is then
+         * a header; endTrailerIndex goes negative and Decode aborts.
+         */
+        if (reached_end && pem_end_line_has_colon(end_line, pem_end))
+            return -1;
+        if (bare_headers) {
+            search = end_line + 9;
+            continue;
+        }
+        /* C type is a NUL-terminated string; skip a type that would truncate. */
+        if (memchr(type_start, '\0', type_len) != NULL) {
             search = end_line + 9;
             continue;
         }
@@ -335,14 +375,6 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
             continue;
         }
         const char *after_end = eol ? eol + 1 : pem_end;
-
-        int bare_headers = 0;
-        const char *body_start =
-            pem_skip_headers(line_end + 1, end_line, &bare_headers);
-        if (bare_headers) {
-            search = end_line + 9;
-            continue;
-        }
 
         size_t decoded_len = 0;
         int body = pem_decode_body(

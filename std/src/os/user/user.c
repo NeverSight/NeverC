@@ -54,7 +54,7 @@ int neverc_user_current(neverc_user_t *u) {
     if (SHGetFolderPathA(NULL, CSIDL_PROFILE, NULL, 0, home) == S_OK)
         snprintf(u->home_dir, sizeof(u->home_dir), "%s", home);
 
-    return 0;
+    return (u->username[0] && u->uid[0]) ? 0 : -1;
 }
 
 int neverc_user_lookup(const char *username, neverc_user_t *u) {
@@ -180,7 +180,7 @@ int neverc_user_current(neverc_user_t *u) {
 }
 
 int neverc_user_lookup(const char *username, neverc_user_t *u) {
-    if (!username || !u) return -1;
+    if (!username || username[0] == '\0' || !u) return -1;
     struct passwd pwd;
     struct passwd *res = NULL;
     size_t bufsz = user_pw_bufsize();
@@ -203,7 +203,7 @@ int neverc_user_lookup(const char *username, neverc_user_t *u) {
 }
 
 int neverc_user_lookup_id(int uid, neverc_user_t *u) {
-    if (!u) return -1;
+    if (!u || uid < 0) return -1;
     return user_lookup_uid((uid_t)uid, u);
 }
 
@@ -215,7 +215,7 @@ static int user_fill_group(const struct group *gr, neverc_group_t *g) {
 }
 
 int neverc_user_lookup_group(const char *name, neverc_group_t *g) {
-    if (!name || !g) return -1;
+    if (!name || name[0] == '\0' || !g) return -1;
     struct group grp;
     struct group *res = NULL;
     size_t bufsz = user_gr_bufsize();
@@ -238,7 +238,7 @@ int neverc_user_lookup_group(const char *name, neverc_group_t *g) {
 }
 
 int neverc_user_lookup_group_id(int gid, neverc_group_t *g) {
-    if (!g) return -1;
+    if (!g || gid < 0) return -1;
     struct group grp;
     struct group *res = NULL;
     size_t bufsz = user_gr_bufsize();
@@ -263,7 +263,7 @@ int neverc_user_lookup_group_id(int gid, neverc_group_t *g) {
 const char *neverc_user_home_dir(void) {
     static char buf[1024];
     const char *h = getenv("HOME");
-    if (h) { snprintf(buf, sizeof(buf), "%s", h); return buf; }
+    if (h && h[0]) { snprintf(buf, sizeof(buf), "%s", h); return buf; }
     neverc_user_t u;
     if (user_lookup_uid(getuid(), &u) == 0 && u.home_dir[0]) {
         snprintf(buf, sizeof(buf), "%s", u.home_dir);
@@ -276,11 +276,13 @@ const char *neverc_user_cache_dir(void) {
     static char buf[1024];
 #if defined(NEVERC_PLATFORM_APPLE)
     const char *home = neverc_user_home_dir();
+    if (!home || !home[0]) return "";
     snprintf(buf, sizeof(buf), "%s/Library/Caches", home);
 #else
     const char *xdg = getenv("XDG_CACHE_HOME");
     if (xdg && xdg[0]) { snprintf(buf, sizeof(buf), "%s", xdg); return buf; }
     const char *home = neverc_user_home_dir();
+    if (!home || !home[0]) return "";
     snprintf(buf, sizeof(buf), "%s/.cache", home);
 #endif
     return buf;
@@ -290,11 +292,13 @@ const char *neverc_user_config_dir(void) {
     static char buf[1024];
 #if defined(NEVERC_PLATFORM_APPLE)
     const char *home = neverc_user_home_dir();
+    if (!home || !home[0]) return "";
     snprintf(buf, sizeof(buf), "%s/Library/Application Support", home);
 #else
     const char *xdg = getenv("XDG_CONFIG_HOME");
     if (xdg && xdg[0]) { snprintf(buf, sizeof(buf), "%s", xdg); return buf; }
     const char *home = neverc_user_home_dir();
+    if (!home || !home[0]) return "";
     snprintf(buf, sizeof(buf), "%s/.config", home);
 #endif
     return buf;

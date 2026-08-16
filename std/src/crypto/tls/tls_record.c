@@ -914,8 +914,8 @@ int nci_tls_recv_plain_handshake_message(
             conn, &record_type, record_data, &record_len);
         if (record_result != 0) return record_result;
         if (record_type == TLS_CT_ALERT)
-            return nci_tls_error(
-                conn, "peer sent an alert during TLS handshake");
+            return nci_tls_fail_handshake_alert(
+                conn, record_data, record_len);
         if (record_type == TLS_CT_CHANGE_CIPHER_SPEC) {
             /* RFC 8446 D.4: a 1-byte 0x01 CCS MUST be discarded after the
              * first ClientHello and before the peer Finished. */

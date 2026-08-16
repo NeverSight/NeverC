@@ -98,14 +98,73 @@ static void test_unescape(void) {
     free(r8);
 
     char *r9 = neverc_html_unescape_string("a&#0;b", &outlen);
-    check_str("numeric NUL becomes replacement", r9, "a?b");
-    check_true("numeric NUL length stays visible", outlen == 3);
+    check_str("numeric NUL becomes replacement", r9, "a\xef\xbf\xbd" "b");
+    check_true("numeric NUL length stays visible", outlen == 5);
     free(r9);
 
     char *r10 = neverc_html_unescape_string(
         "a&#184467440737095516160;b", &outlen);
-    check_str("overflowing numeric entity becomes replacement", r10, "a?b");
+    check_str("overflowing numeric entity becomes replacement", r10,
+              "a\xef\xbf\xbd" "b");
     free(r10);
+
+    char *r11 = neverc_html_unescape_string("caf&#233;", &outlen);
+    check_str("latin-1 numeric", r11, "caf\xc3\xa9");
+    free(r11);
+
+    char *r12 = neverc_html_unescape_string("&#x1F600;", &outlen);
+    check_str("emoji numeric", r12, "\xf0\x9f\x98\x80");
+    free(r12);
+
+    char *r13 = neverc_html_unescape_string("A&nbsp;B", &outlen);
+    check_str("nbsp named", r13, "A\xc2\xa0" "B");
+    free(r13);
+
+    char *r14 = neverc_html_unescape_string("&#x80;", &outlen);
+    check_str("win1252 euro", r14, "\xe2\x82\xac");
+    free(r14);
+
+    char *r15 = neverc_html_unescape_string("&notin;&not;", &outlen);
+    check_str("named longest match", r15, "\xe2\x88\x89" "\xc2\xac");
+    free(r15);
+
+    char *r16 = neverc_html_unescape_string("a&amp b", &outlen);
+    check_str("unterminated amp", r16, "a& b");
+    free(r16);
+
+    char *r17 = neverc_html_unescape_string("&amp", &outlen);
+    check_str("unterminated amp eof", r17, "&");
+    free(r17);
+
+    char *r18 = neverc_html_unescape_string("&ampfoo", &outlen);
+    check_str("amp prefix stays literal", r18, "&ampfoo");
+    free(r18);
+
+    char *r19 = neverc_html_unescape_string("A&nbsp B", &outlen);
+    check_str("unterminated nbsp", r19, "A\xc2\xa0" " B");
+    free(r19);
+
+    char *r20 = neverc_html_unescape_string("&AMP;&LT;&GT;&QUOT;", &outlen);
+    check_str("html5 uppercase aliases", r20, "&<>\"");
+    free(r20);
+
+    char *r21 = neverc_html_unescape_string("&COPY;&REG;&TRADE;", &outlen);
+    check_str("html5 uppercase named", r21,
+              "\xc2\xa9" "\xc2\xae" "\xe2\x84\xa2");
+    free(r21);
+
+    char *r22 = neverc_html_unescape_string("&AMPfoo", &outlen);
+    check_str("AMP prefix stays literal", r22, "&AMPfoo");
+    free(r22);
+
+    char *r23 = neverc_html_unescape_string("&#xFFFD;&#65533;", &outlen);
+    check_str("explicit replacement rune", r23,
+              "\xef\xbf\xbd" "\xef\xbf\xbd");
+    free(r23);
+
+    char *r24 = neverc_html_unescape_string("&#x81;", &outlen);
+    check_str("undefined win1252 is replacement", r24, "\xef\xbf\xbd");
+    free(r24);
 
     outlen = 123;
     check_true("unescape rejects NULL input",

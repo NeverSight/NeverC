@@ -92,84 +92,71 @@ static int scan_identifier(neverc_scanner_t *s) {
     return NEVERC_SCANNER_IDENT;
 }
 
+/* Go text/scanner digits(): '_' and, for base<=10, every decimal digit stay
+ * in the token (invalid digits for 0b/0o are still consumed). */
+static void scan_digits(neverc_scanner_t *s, int base) {
+    for (;;) {
+        int ch = peek_ch(s);
+        if (ch == NEVERC_SCANNER_EOF) return;
+        if (ch == '_') {
+            emit(s, next_ch(s));
+            continue;
+        }
+        if (base > 10) {
+            if (!is_hex_digit(ch)) return;
+        } else if (!is_digit(ch)) {
+            return;
+        }
+        emit(s, next_ch(s));
+    }
+}
+
 static int scan_number(neverc_scanner_t *s, int first) {
     int is_float = (first == '.');
+    int base = 10;
     emit(s, first);
 
-    if (first == '.' ) {
-        while (s->pos < s->src_len && is_digit(peek_ch(s)))
-            emit(s, next_ch(s));
-        if (s->pos < s->src_len && (peek_ch(s) == 'e' || peek_ch(s) == 'E')) {
-            emit(s, next_ch(s));
-            if (s->pos < s->src_len && (peek_ch(s) == '+' || peek_ch(s) == '-'))
-                emit(s, next_ch(s));
-            while (s->pos < s->src_len && is_digit(peek_ch(s)))
-                emit(s, next_ch(s));
-        }
-        return NEVERC_SCANNER_FLOAT;
-    }
-
-    if (first == '0' && s->pos < s->src_len) {
+    if (!is_float && first == '0' && s->pos < s->src_len) {
         int ch = peek_ch(s);
         if (ch == 'x' || ch == 'X') {
             emit(s, next_ch(s));
-            while (s->pos < s->src_len && is_hex_digit(peek_ch(s)))
-                emit(s, next_ch(s));
-            if ((s->mode & NEVERC_SCAN_FLOATS) && s->pos < s->src_len &&
-                peek_ch(s) == '.') {
-                is_float = 1;
-                emit(s, next_ch(s));
-                while (s->pos < s->src_len && is_hex_digit(peek_ch(s)))
-                    emit(s, next_ch(s));
-            }
-            if ((s->mode & NEVERC_SCAN_FLOATS) && s->pos < s->src_len &&
-                (peek_ch(s) == 'p' || peek_ch(s) == 'P')) {
-                is_float = 1;
-                emit(s, next_ch(s));
-                if (s->pos < s->src_len && (peek_ch(s) == '+' || peek_ch(s) == '-'))
-                    emit(s, next_ch(s));
-                while (s->pos < s->src_len && is_digit(peek_ch(s)))
-                    emit(s, next_ch(s));
-            }
-            return is_float ? NEVERC_SCANNER_FLOAT : NEVERC_SCANNER_INT;
-        }
-        if (ch == 'b' || ch == 'B') {
+            base = 16;
+        } else if (ch == 'o' || ch == 'O') {
             emit(s, next_ch(s));
-            while (s->pos < s->src_len && (peek_ch(s) == '0' || peek_ch(s) == '1'))
-                emit(s, next_ch(s));
-            return NEVERC_SCANNER_INT;
-        }
-        if (ch == 'o' || ch == 'O') {
+            base = 8;
+        } else if (ch == 'b' || ch == 'B') {
             emit(s, next_ch(s));
-            while (s->pos < s->src_len && is_oct_digit(peek_ch(s)))
-                emit(s, next_ch(s));
-            return NEVERC_SCANNER_INT;
+            base = 2;
+        } else {
+            base = 8;
         }
-        while (s->pos < s->src_len && is_oct_digit(peek_ch(s)))
-            emit(s, next_ch(s));
     }
 
-    while (s->pos < s->src_len && is_digit(peek_ch(s)))
-        emit(s, next_ch(s));
+    if (!is_float)
+        scan_digits(s, base);
 
-    /* Go text/scanner: a '.' after digits starts a float whenever ScanFloats
-     * is set, even with no fractional digits ("1.", "1.e10", "1.foo"). */
+    /* Go: '.' after the mantissa starts a float whenever ScanFloats is set,
+     * including 0b/0o prefixes and with no fractional digits ("1.", "0b1.0"). */
     if ((s->mode & NEVERC_SCAN_FLOATS) && s->pos < s->src_len &&
         peek_ch(s) == '.') {
         is_float = 1;
         emit(s, next_ch(s));
-        while (s->pos < s->src_len && is_digit(peek_ch(s)))
-            emit(s, next_ch(s));
     }
 
-    if ((s->mode & NEVERC_SCAN_FLOATS) && s->pos < s->src_len &&
-        (peek_ch(s) == 'e' || peek_ch(s) == 'E')) {
-        is_float = 1;
-        emit(s, next_ch(s));
-        if (s->pos < s->src_len && (peek_ch(s) == '+' || peek_ch(s) == '-'))
+    if (is_float)
+        scan_digits(s, base);
+
+    /* Go accepts e/E and p/P exponents under ScanFloats for every prefix
+     * (invalid combinations are still one Float token). */
+    if ((s->mode & NEVERC_SCAN_FLOATS) && s->pos < s->src_len) {
+        int ch = peek_ch(s);
+        if (ch == 'e' || ch == 'E' || ch == 'p' || ch == 'P') {
+            is_float = 1;
             emit(s, next_ch(s));
-        while (s->pos < s->src_len && is_digit(peek_ch(s)))
-            emit(s, next_ch(s));
+            if (s->pos < s->src_len && (peek_ch(s) == '+' || peek_ch(s) == '-'))
+                emit(s, next_ch(s));
+            scan_digits(s, 10);
+        }
     }
 
     return is_float ? NEVERC_SCANNER_FLOAT : NEVERC_SCANNER_INT;

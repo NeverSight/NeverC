@@ -171,17 +171,39 @@ char *neverc_html_attr_escape(const char *s) {
     return neverc_html_escape(s);
 }
 
-/* \ ' " \n \r escape to 2 chars (extra 1); < > & ` $ escape to \u00XX (extra 5). */
+/* \ ' " / \n \r \t escape to 2 chars (extra 1); < > & ` $ = + and other
+ * controls escape to \u00XX (extra 5). U+2028/U+2029 are handled in the
+ * scanner: 3 UTF-8 bytes become 6-char \u2028/\u2029 (extra 3). */
 static const uint8_t js_esc_extra[256] = {
-    ['\\'] = 1, ['\''] = 1, ['"'] = 1, ['\n'] = 1, ['\r'] = 1,
+    ['\\'] = 1, ['\''] = 1, ['"'] = 1, ['/'] = 1,
+    ['\n'] = 1, ['\r'] = 1, ['\t'] = 1,
     ['<'] = 5, ['>'] = 5, ['&'] = 5, ['`'] = 5, ['$'] = 5,
+    ['='] = 5, ['+'] = 5,
 };
+
+static int js_is_line_sep(const char *s, size_t i, size_t slen, int *ps) {
+    if (i + 2 >= slen) return 0;
+    if ((unsigned char)s[i] != 0xE2 || (unsigned char)s[i + 1] != 0x80)
+        return 0;
+    unsigned char c2 = (unsigned char)s[i + 2];
+    if (c2 == 0xA8) { if (ps) *ps = 0; return 1; }
+    if (c2 == 0xA9) { if (ps) *ps = 1; return 1; }
+    return 0;
+}
 
 char *neverc_html_js_escape(const char *s) {
     if (!s) return dup_cstr("");
     size_t slen = strlen(s), extra = 0;
-    for (size_t i = 0; i < slen; i++) {
-        size_t add = js_esc_extra[(unsigned char)s[i]];
+    for (size_t i = 0; i < slen; ) {
+        if (js_is_line_sep(s, i, slen, NULL)) {
+            if (extra > SIZE_MAX - 3U) return NULL;
+            extra += 3U;
+            i += 3;
+            continue;
+        }
+        unsigned char c = (unsigned char)s[i++];
+        size_t add = js_esc_extra[c];
+        if (add == 0 && c < 0x20) add = 5;
         if (extra > SIZE_MAX - add) return NULL;
         extra += add;
     }
@@ -192,20 +214,36 @@ char *neverc_html_js_escape(const char *s) {
     if (extra == 0) { memcpy(r, s, slen); r[slen] = '\0'; return r; }
 
     size_t wi = 0;
-    for (size_t i = 0; i < slen; i++) {
-        unsigned char c = (unsigned char)s[i];
-        if (js_esc_extra[c] == 0) { r[wi++] = (char)c; continue; }
+    for (size_t i = 0; i < slen; ) {
+        int ps = 0;
+        if (js_is_line_sep(s, i, slen, &ps)) {
+            memcpy(r + wi, ps ? "\\u2029" : "\\u2028", 6);
+            wi += 6;
+            i += 3;
+            continue;
+        }
+        unsigned char c = (unsigned char)s[i++];
+        if (js_esc_extra[c] == 0 && c >= 0x20) { r[wi++] = (char)c; continue; }
         switch (c) {
             case '\\': memcpy(r + wi, "\\\\",   2); wi += 2; break;
             case '\'': memcpy(r + wi, "\\'",    2); wi += 2; break;
             case '"':  memcpy(r + wi, "\\\"",   2); wi += 2; break;
+            case '/':  memcpy(r + wi, "\\/",    2); wi += 2; break;
             case '\n': memcpy(r + wi, "\\n",    2); wi += 2; break;
             case '\r': memcpy(r + wi, "\\r",    2); wi += 2; break;
+            case '\t': memcpy(r + wi, "\\t",    2); wi += 2; break;
             case '<':  memcpy(r + wi, "\\u003c", 6); wi += 6; break;
             case '>':  memcpy(r + wi, "\\u003e", 6); wi += 6; break;
             case '&':  memcpy(r + wi, "\\u0026", 6); wi += 6; break;
             case '`':  memcpy(r + wi, "\\u0060", 6); wi += 6; break;
             case '$':  memcpy(r + wi, "\\u0024", 6); wi += 6; break;
+            case '=':  memcpy(r + wi, "\\u003d", 6); wi += 6; break;
+            case '+':  memcpy(r + wi, "\\u002b", 6); wi += 6; break;
+            default:
+                r[wi++] = '\\'; r[wi++] = 'u'; r[wi++] = '0'; r[wi++] = '0';
+                r[wi++] = nc_uphex[c >> 4];
+                r[wi++] = nc_uphex[c & 0x0f];
+                break;
         }
     }
     r[wi] = '\0';

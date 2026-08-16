@@ -401,7 +401,7 @@ static int os_remove_dir_contents(int dir_fd) {
 #endif
 
 int neverc_os_remove_all(const char *path) {
-    if (!path) return -1;
+    if (!path || path[0] == '\0') return -1;
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
     DWORD attrs = GetFileAttributesA(path);
@@ -500,6 +500,39 @@ int neverc_os_rename(const char *oldpath, const char *newpath) {
 
 /* ---- File Info ---- */
 
+static int os_is_sep(char c) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return c == '/' || c == '\\';
+#else
+    return c == '/';
+#endif
+}
+
+static void os_fill_base_name(char *dst, size_t cap, const char *name) {
+    if (!dst || cap == 0) return;
+    dst[0] = '\0';
+    if (!name) return;
+    size_t len = strlen(name);
+    while (len > 1 && os_is_sep(name[len - 1]))
+        len--;
+    size_t start = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (os_is_sep(name[i]))
+            start = i + 1;
+    }
+    size_t n = len - start;
+    if (n == 0) {
+        if (cap > 1 && len > 0 && os_is_sep(name[0])) {
+            dst[0] = name[0];
+            dst[1] = '\0';
+        }
+        return;
+    }
+    if (n >= cap) n = cap - 1;
+    memcpy(dst, name + start, n);
+    dst[n] = '\0';
+}
+
 int neverc_os_stat(const char *name, neverc_os_fileinfo_t *info) {
     if (!name || !info) return -1;
     memset(info, 0, sizeof(*info));
@@ -522,14 +555,7 @@ int neverc_os_stat(const char *name, neverc_os_fileinfo_t *info) {
     info->is_dir = S_ISDIR(st.st_mode);
 #endif
 
-    const char *base = strrchr(name, '/');
-#if defined(NEVERC_PLATFORM_WINDOWS)
-    const char *base2 = strrchr(name, '\\');
-    if (base2 && (!base || base2 > base)) base = base2;
-#endif
-    base = base ? base + 1 : name;
-    strncpy(info->name, base, sizeof(info->name) - 1);
-    info->name[sizeof(info->name) - 1] = '\0';
+    os_fill_base_name(info->name, sizeof(info->name), name);
     return 0;
 }
 
@@ -548,10 +574,7 @@ int neverc_os_lstat(const char *name, neverc_os_fileinfo_t *info) {
     info->mod_time = (int64_t)st.st_mtime;
     info->is_dir = S_ISDIR(st.st_mode);
 
-    const char *base = strrchr(name, '/');
-    base = base ? base + 1 : name;
-    strncpy(info->name, base, sizeof(info->name) - 1);
-    info->name[sizeof(info->name) - 1] = '\0';
+    os_fill_base_name(info->name, sizeof(info->name), name);
     return 0;
 #endif
 }
@@ -777,8 +800,9 @@ void neverc_os_clearenv(void) {
         if (!name) break;
         memcpy(name, environ[0], nlen);
         name[nlen] = '\0';
-        unsetenv(name);
+        int rc = unsetenv(name);
         if (name != stack_name) free(name);
+        if (rc != 0) break;
     }
 #endif
 }
@@ -975,12 +999,19 @@ int neverc_os_read_dir(const char *dirname, neverc_os_dir_entry_t **entries,
         arr[length].is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
         length++;
     } while (FindNextFileA(h, &fd));
+    DWORD err = GetLastError();
     FindClose(h);
+    if (err != ERROR_NO_MORE_FILES) { free(arr); return -1; }
 #else
     DIR *d = opendir(dirname);
     if (!d) { free(arr); return -1; }
-    struct dirent *ent;
-    while ((ent = readdir(d)) != NULL) {
+    for (;;) {
+        errno = 0;
+        struct dirent *ent = readdir(d);
+        if (!ent) {
+            if (errno != 0) { closedir(d); free(arr); return -1; }
+            break;
+        }
         if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
         if (length >= cap) {
             if (cap > SIZE_MAX / 2 || cap * 2 > SIZE_MAX / sizeof(*arr)) {
@@ -1008,7 +1039,7 @@ int neverc_os_read_dir(const char *dirname, neverc_os_dir_entry_t **entries,
         }
         length++;
     }
-    closedir(d);
+    if (closedir(d) != 0) { free(arr); return -1; }
 #endif
     *entries = arr;
     *count = length;
@@ -1067,7 +1098,7 @@ int neverc_os_geteuid(void) {
 }
 
 static int os_copy_cstr(char *buf, size_t cap, const char *src) {
-    if (!buf || cap == 0 || !src) return -1;
+    if (!buf || cap == 0 || !src || src[0] == '\0') return -1;
     size_t n = strlen(src);
     if (n >= cap) return -1;
     memcpy(buf, src, n + 1);
@@ -1182,13 +1213,13 @@ int neverc_os_pipe(neverc_os_file_t **r, neverc_os_file_t **w) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
     HANDLE hRead, hWrite;
     if (!CreatePipe(&hRead, &hWrite, NULL, 0)) return -1;
-    rfd = _open_osfhandle((intptr_t)hRead, _O_RDONLY | _O_BINARY);
+    rfd = _open_osfhandle((intptr_t)hRead, _O_RDONLY | _O_BINARY | _O_NOINHERIT);
     if (rfd < 0) {
         CloseHandle(hRead);
         CloseHandle(hWrite);
         return -1;
     }
-    wfd = _open_osfhandle((intptr_t)hWrite, _O_WRONLY | _O_BINARY);
+    wfd = _open_osfhandle((intptr_t)hWrite, _O_WRONLY | _O_BINARY | _O_NOINHERIT);
     if (wfd < 0) {
         close_file_descriptor(rfd);
         CloseHandle(hWrite);
@@ -1199,6 +1230,14 @@ int neverc_os_pipe(neverc_os_file_t **r, neverc_os_file_t **w) {
     if (pipe(fds) < 0) return -1;
     rfd = fds[0];
     wfd = fds[1];
+#ifdef FD_CLOEXEC
+    if (fcntl(rfd, F_SETFD, FD_CLOEXEC) != 0 ||
+        fcntl(wfd, F_SETFD, FD_CLOEXEC) != 0) {
+        close_file_descriptor(rfd);
+        close_file_descriptor(wfd);
+        return -1;
+    }
+#endif
 #endif
 
     neverc_os_file_t *reader = file_from_descriptor(rfd, "rb");
@@ -1218,8 +1257,9 @@ int neverc_os_pipe(neverc_os_file_t **r, neverc_os_file_t **w) {
 }
 
 int neverc_os_chown(const char *name, int uid, int gid) {
+    if (!name) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    (void)name; (void)uid; (void)gid;
+    (void)uid; (void)gid;
     return 0;
 #else
     return chown(name, (uid_t)uid, (gid_t)gid) == 0 ? 0 : -1;
@@ -1227,8 +1267,9 @@ int neverc_os_chown(const char *name, int uid, int gid) {
 }
 
 int neverc_os_lchown(const char *name, int uid, int gid) {
+    if (!name) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    (void)name; (void)uid; (void)gid;
+    (void)uid; (void)gid;
     return 0;
 #else
     return lchown(name, (uid_t)uid, (gid_t)gid) == 0 ? 0 : -1;

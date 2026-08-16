@@ -1,4 +1,5 @@
 #include "neverc/std/path.h"
+#include "neverc/std/unicode/utf8.h"
 #include <string.h>
 
 /* Go path.Match: * / ? / [class] / \escape. Returns 1, 0, or -1 (bad pattern). */
@@ -27,14 +28,20 @@ static const char *scan_chunk(const char *pattern, int *star,
     return p;
 }
 
-static int get_esc(const char *chunk, size_t clen, size_t *i, unsigned char *out) {
+static int get_esc(const char *chunk, size_t clen, size_t *i, uint32_t *out) {
     if (*i >= clen || chunk[*i] == '-' || chunk[*i] == ']')
         return -1;
     if (chunk[*i] == '\\') {
         (*i)++;
         if (*i >= clen) return -1;
     }
-    *out = (unsigned char)chunk[(*i)++];
+    uint32_t r;
+    int n;
+    neverc_utf8_decode_rune((const uint8_t *)chunk + *i, clen - *i, &r, &n);
+    if (n <= 0 || (r == NEVERC_UTF8_RUNE_ERROR && n == 1))
+        return -1;
+    *out = r;
+    *i += (size_t)n;
     if (*i >= clen) return -1;
     return 0;
 }
@@ -47,10 +54,12 @@ static int match_chunk(const char *chunk, size_t clen, const char *s,
         if (!failed && *s == '\0')
             failed = 1;
         if (chunk[i] == '[') {
-            unsigned char r = 0;
+            uint32_t r = 0;
             if (!failed) {
-                r = (unsigned char)*s;
-                s++;
+                int n;
+                neverc_utf8_decode_rune((const uint8_t *)s, strlen(s), &r, &n);
+                if (n > 0)
+                    s += n;
             }
             i++;
             int negated = 0;
@@ -65,7 +74,7 @@ static int match_chunk(const char *chunk, size_t clen, const char *s,
                     i++;
                     break;
                 }
-                unsigned char lo, hi;
+                uint32_t lo, hi;
                 if (get_esc(chunk, clen, &i, &lo) != 0)
                     return -1;
                 hi = lo;
@@ -84,8 +93,11 @@ static int match_chunk(const char *chunk, size_t clen, const char *s,
             if (!failed) {
                 if (*s == '/')
                     failed = 1;
-                if (*s)
-                    s++;
+                uint32_t r;
+                int n;
+                neverc_utf8_decode_rune((const uint8_t *)s, strlen(s), &r, &n);
+                if (n > 0)
+                    s += n;
             }
             i++;
         } else {
@@ -140,6 +152,7 @@ int neverc_path_match(const char *pattern, const char *name) {
         if (star) {
             int advanced = 0;
             const char *n;
+            /* Go skips one byte at a time, not one rune. */
             for (n = name; *n && *n != '/'; n++) {
                 ok = match_chunk(chunk, clen, n + 1, &t);
                 if (ok < 0)

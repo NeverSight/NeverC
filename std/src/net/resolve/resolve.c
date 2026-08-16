@@ -83,7 +83,7 @@ int neverc_net_lookup_ip(const char *network, const char *host,
     else if (strcmp(network, "ip6") == 0)
         hints.ai_family = AF_INET6;
     else
-        hints.ai_family = AF_UNSPEC;
+        return -1;
 
     int rc = getaddrinfo(host, NULL, &hints, &result);
     if (rc != 0) return -1;
@@ -140,6 +140,8 @@ static int port_text_valid(const char *port) {
 
 int neverc_net_lookup_port(const char *network, const char *service) {
     if (!service || !service[0]) return -1;
+    if (network && strcmp(network, "tcp") != 0 && strcmp(network, "udp") != 0)
+        return -1;
     ensure_wsa_init();
 
     unsigned port_value;
@@ -605,8 +607,9 @@ int neverc_net_join_host_port(const char *host, const char *port,
   #define pipe_mutex_unlock(m)  LeaveCriticalSection(m)
   #define pipe_cond_init(c)     InitializeConditionVariable(c)
   #define pipe_cond_destroy(c)  ((void)(c))
-  #define pipe_cond_signal(c)   WakeConditionVariable(c)
-  #define pipe_cond_wait(c, m)  SleepConditionVariableCS(c, m, INFINITE)
+  #define pipe_cond_signal(c)    WakeConditionVariable(c)
+  #define pipe_cond_broadcast(c) WakeAllConditionVariable(c)
+  #define pipe_cond_wait(c, m)   SleepConditionVariableCS(c, m, INFINITE)
 #else
   typedef pthread_mutex_t pipe_mutex_t;
   typedef pthread_cond_t pipe_cond_t;
@@ -616,8 +619,9 @@ int neverc_net_join_host_port(const char *host, const char *port,
   #define pipe_mutex_unlock(m)  pthread_mutex_unlock(m)
   #define pipe_cond_init(c)     pthread_cond_init(c, NULL)
   #define pipe_cond_destroy(c)  pthread_cond_destroy(c)
-  #define pipe_cond_signal(c)   pthread_cond_signal(c)
-  #define pipe_cond_wait(c, m)  pthread_cond_wait(c, m)
+  #define pipe_cond_signal(c)    pthread_cond_signal(c)
+  #define pipe_cond_broadcast(c) pthread_cond_broadcast(c)
+  #define pipe_cond_wait(c, m)   pthread_cond_wait(c, m)
 #endif
 
 #define PIPE_BUF_SIZE 65536
@@ -633,10 +637,16 @@ typedef struct {
     pipe_cond_t   not_full;
 } pipe_ring_t;
 
+typedef struct {
+    pipe_ring_t  *rings[2];
+    pipe_mutex_t  lock;
+    int           refs;
+} pipe_shared_t;
+
 struct neverc_net_pipe {
     pipe_ring_t *read_ring;   /* ring buffer this endpoint reads from */
     pipe_ring_t *write_ring;  /* ring buffer this endpoint writes to */
-    struct neverc_net_pipe *peer;
+    pipe_shared_t *shared;
 };
 
 static void ring_init(pipe_ring_t *r) {
@@ -659,24 +669,29 @@ int neverc_net_pipe(neverc_net_pipe_t **end1, neverc_net_pipe_t **end2) {
     pipe_ring_t *r2 = (pipe_ring_t *)calloc(1, sizeof(pipe_ring_t));
     neverc_net_pipe_t *p1 = (neverc_net_pipe_t *)calloc(1, sizeof(*p1));
     neverc_net_pipe_t *p2 = (neverc_net_pipe_t *)calloc(1, sizeof(*p2));
+    pipe_shared_t *shared = (pipe_shared_t *)calloc(1, sizeof(*shared));
 
-    if (!r1 || !r2 || !p1 || !p2) {
-        free(r1); free(r2); free(p1); free(p2);
+    if (!r1 || !r2 || !p1 || !p2 || !shared) {
+        free(r1); free(r2); free(p1); free(p2); free(shared);
         return -1;
     }
 
     ring_init(r1);
     ring_init(r2);
+    pipe_mutex_init(&shared->lock);
+    shared->rings[0] = r1;
+    shared->rings[1] = r2;
+    shared->refs = 2;
 
     /* p1 writes to r1, p2 reads from r1
      * p2 writes to r2, p1 reads from r2 */
     p1->write_ring = r1;
     p1->read_ring = r2;
-    p1->peer = p2;
+    p1->shared = shared;
 
     p2->write_ring = r2;
     p2->read_ring = r1;
-    p2->peer = p1;
+    p2->shared = shared;
 
     *end1 = p1;
     *end2 = p2;
@@ -766,28 +781,42 @@ int neverc_net_pipe_write(neverc_net_pipe_t *p, const void *data, size_t len) {
 void neverc_net_pipe_close(neverc_net_pipe_t *p) {
     if (!p) return;
 
-    /* Close both directions — signal readers/writers */
+    /* Close both directions and wake every waiter. Signal would leave a
+     * second blocked reader/writer parked after the first consumes EOF. */
     if (p->write_ring) {
         pipe_mutex_lock(&p->write_ring->lock);
         p->write_ring->closed = 1;
-        pipe_cond_signal(&p->write_ring->not_empty);
-        pipe_cond_signal(&p->write_ring->not_full);
+        pipe_cond_broadcast(&p->write_ring->not_empty);
+        pipe_cond_broadcast(&p->write_ring->not_full);
         pipe_mutex_unlock(&p->write_ring->lock);
     }
     if (p->read_ring) {
         pipe_mutex_lock(&p->read_ring->lock);
         p->read_ring->closed = 1;
-        pipe_cond_signal(&p->read_ring->not_empty);
-        pipe_cond_signal(&p->read_ring->not_full);
+        pipe_cond_broadcast(&p->read_ring->not_empty);
+        pipe_cond_broadcast(&p->read_ring->not_full);
         pipe_mutex_unlock(&p->read_ring->lock);
     }
 
-    /* If peer is already closed, free the rings */
-    if (p->peer == NULL) {
-        if (p->write_ring) { ring_destroy(p->write_ring); free(p->write_ring); }
-        if (p->read_ring)  { ring_destroy(p->read_ring);  free(p->read_ring); }
-    } else {
-        p->peer->peer = NULL;
+    pipe_shared_t *shared = p->shared;
+    int last = 0;
+    if (shared) {
+        pipe_mutex_lock(&shared->lock);
+        if (shared->refs > 0) shared->refs--;
+        last = (shared->refs == 0);
+        pipe_mutex_unlock(&shared->lock);
+        if (last) {
+            if (shared->rings[0]) {
+                ring_destroy(shared->rings[0]);
+                free(shared->rings[0]);
+            }
+            if (shared->rings[1]) {
+                ring_destroy(shared->rings[1]);
+                free(shared->rings[1]);
+            }
+            pipe_mutex_destroy(&shared->lock);
+            free(shared);
+        }
     }
     free(p);
 }

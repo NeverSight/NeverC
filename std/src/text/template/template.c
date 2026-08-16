@@ -81,6 +81,18 @@ static char *trim_ws(const char *s, size_t len) {
     return dup_str(s, len);
 }
 
+/* A data selector is exactly ".Key". Extra tokens and '|' pipelines are
+ * invalid: "| html" must not be swallowed into the key (a silent no-op). */
+static char *parse_dot_key(const char *s) {
+    if (!s || s[0] != '.') return NULL;
+    s++;
+    if (*s == '\0' || is_action_ws(*s) || *s == '|') return NULL;
+    const char *start = s;
+    while (*s && !is_action_ws(*s) && *s != '|') s++;
+    if (*s != '\0') return NULL;
+    return dup_str(start, (size_t)(s - start));
+}
+
 /* "if" / "range" plus whitespace (space, tab, or newline), matching Go. */
 static int action_keyword(const char *action, const char *kw, const char **rest) {
     size_t n = strlen(kw);
@@ -120,26 +132,19 @@ static int parse_action(const char **p, const char *end,
         tnode_t node;
         memset(&node, 0, sizeof(node));
         node.type = NODE_IF;
-        node.key = trim_ws(kw_rest, strlen(kw_rest));
-        if (!node.key || node.key[0] == '\0') {
-            free(action);
-            free_node_contents(&node);
-            return -1;
-        }
-        if (node.key[0] == '.') {
-            char *nk = dup_str(node.key + 1, strlen(node.key + 1));
-            if (!nk) {
+        {
+            char *rest = trim_ws(kw_rest, strlen(kw_rest));
+            if (!rest) {
+                free(action);
+                return -1;
+            }
+            node.key = parse_dot_key(rest);
+            free(rest);
+            if (!node.key) {
                 free(action);
                 free_node_contents(&node);
                 return -1;
             }
-            free(node.key);
-            node.key = nk;
-        }
-        if (node.key[0] == '\0') {
-            free(action);
-            free_node_contents(&node);
-            return -1;
         }
 
         if (depth >= 128) {
@@ -185,26 +190,19 @@ static int parse_action(const char **p, const char *end,
         tnode_t node;
         memset(&node, 0, sizeof(node));
         node.type = NODE_RANGE;
-        node.key = trim_ws(kw_rest, strlen(kw_rest));
-        if (!node.key || node.key[0] == '\0') {
-            free(action);
-            free_node_contents(&node);
-            return -1;
-        }
-        if (node.key[0] == '.') {
-            char *nk = dup_str(node.key + 1, strlen(node.key + 1));
-            if (!nk) {
+        {
+            char *rest = trim_ws(kw_rest, strlen(kw_rest));
+            if (!rest) {
+                free(action);
+                return -1;
+            }
+            node.key = parse_dot_key(rest);
+            free(rest);
+            if (!node.key) {
                 free(action);
                 free_node_contents(&node);
                 return -1;
             }
-            free(node.key);
-            node.key = nk;
-        }
-        if (node.key[0] == '\0') {
-            free(action);
-            free_node_contents(&node);
-            return -1;
         }
         if (depth >= 128) {
             free(action);
@@ -238,15 +236,11 @@ static int parse_action(const char **p, const char *end,
         return 2;
     }
 
-    /* Variable: {{.Key}} */
+    /* Variable: {{.Key}} — not a pipeline or function call. */
     tnode_t node;
     memset(&node, 0, sizeof(node));
     node.type = NODE_VAR;
-    if (action[0] == '.') {
-        node.key = dup_str(action + 1, strlen(action + 1));
-    } else {
-        node.key = dup_str(action, strlen(action));
-    }
+    node.key = parse_dot_key(action);
     free(action);
     if (!node.key || add_node(nodes, count, cap, node) != 0) {
         free_node_contents(&node);

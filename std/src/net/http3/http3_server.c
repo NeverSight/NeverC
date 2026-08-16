@@ -588,8 +588,11 @@ static int h3_read_request(h3_conn_t *connection,
                    type == NC_H3_FRAME_CANCEL_PUSH ||
                    type == NC_H3_FRAME_PUSH_PROMISE) {
             return -1;
-        } else if (trailers || length > H3_MAX_HEADER_SECTION ||
+        } else if (length > H3_MAX_HEADER_SECTION ||
                    h3_skip_exact(stream, length) != 0) {
+            /* RFC 9114 §9: unknown types, including GREASE, MUST be ignored
+             * even after trailers. DATA/HEADERS after trailers are rejected
+             * above. */
             return -1;
         }
     }
@@ -1655,7 +1658,7 @@ static int h3_client_read_response(h3_conn_t *connection,
                    type == NC_H3_FRAME_CANCEL_PUSH ||
                    type == NC_H3_FRAME_PUSH_PROMISE) {
             return -1;
-        } else if (trailers || length > H3_MAX_HEADER_SECTION ||
+        } else if (length > H3_MAX_HEADER_SECTION ||
                    h3_skip_exact(stream, length) != 0) {
             return -1;
         }

@@ -54,13 +54,28 @@ static int random_mod(neverc_bigint_t *r, const neverc_bigint_t *n) {
     return result;
 }
 
-static void mod_inv_dsa(neverc_bigint_t *r, const neverc_bigint_t *a, const neverc_bigint_t *p) {
-    neverc_bigint_t exp, two;
-    neverc_bigint_init(&exp); neverc_bigint_init(&two);
+/* Fermat inverse a^(m-2) mod m, then require r*a ≡ 1 (mod m). Fermat is
+ * wrong when m is composite; without the product check, w=0 makes
+ * (r=1, s) verify for any hash when gcd(s, q) > 1. */
+static int dsa_mod_inv(neverc_bigint_t *r, const neverc_bigint_t *a,
+                       const neverc_bigint_t *m) {
+    neverc_bigint_t exp, two, prod, one;
+    neverc_bigint_init(&exp);
+    neverc_bigint_init(&two);
+    neverc_bigint_init(&prod);
+    neverc_bigint_init(&one);
     neverc_bigint_set_int64(&two, 2);
-    neverc_bigint_sub(&exp, p, &two);
-    neverc_bigint_exp(r, a, &exp, p);
-    neverc_bigint_free(&exp); neverc_bigint_free(&two);
+    neverc_bigint_set_int64(&one, 1);
+    neverc_bigint_sub(&exp, m, &two);
+    neverc_bigint_exp(r, a, &exp, m);
+    neverc_bigint_mul(&prod, r, a);
+    neverc_bigint_mod(&prod, &prod, m);
+    int ok = neverc_bigint_cmp(&prod, &one) == 0;
+    neverc_bigint_free(&exp);
+    neverc_bigint_free(&two);
+    neverc_bigint_free(&prod);
+    neverc_bigint_free(&one);
+    return ok ? 0 : -1;
 }
 
 void neverc_dsa_public_key_init(neverc_dsa_public_key_t *k) {
@@ -170,10 +185,12 @@ static int hash_to_int_dsa(neverc_bigint_t *r, const unsigned char *hash,
 int neverc_dsa_sign(const neverc_dsa_private_key_t *key,
                      const unsigned char *hash, size_t hash_len,
                      neverc_dsa_signature_t *sig) {
-    if (!key || !hash || hash_len == 0 || !sig)
+    if (!sig)
         return -1;
     neverc_bigint_set_int64(&sig->r, 0);
     neverc_bigint_set_int64(&sig->s, 0);
+    if (!key || !hash || hash_len == 0)
+        return -1;
     if (!dsa_group_valid(&key->pub) ||
         neverc_bigint_sign(&key->x) <= 0 ||
         neverc_bigint_cmp(&key->x, &key->pub.q) >= 0)
@@ -198,7 +215,8 @@ int neverc_dsa_sign(const neverc_dsa_private_key_t *key,
         neverc_bigint_mod(&sig->r, &tmp, &key->pub.q);
         if (neverc_bigint_is_zero(&sig->r)) continue;
 
-        mod_inv_dsa(&kinv, &k, &key->pub.q);
+        if (dsa_mod_inv(&kinv, &k, &key->pub.q) != 0)
+            continue;
 
         neverc_bigint_mul(&tmp, &key->x, &sig->r);
         neverc_bigint_add(&tmp, &z, &tmp);
@@ -242,8 +260,8 @@ int neverc_dsa_verify(const neverc_dsa_public_key_t *key,
     neverc_bigint_init(&v1); neverc_bigint_init(&v2);
     neverc_bigint_init(&v);
 
-    mod_inv_dsa(&w, &sig->s, &key->q);
-    if (hash_to_int_dsa(&z, hash, hash_len, &key->q) != 0) {
+    if (dsa_mod_inv(&w, &sig->s, &key->q) != 0 ||
+        hash_to_int_dsa(&z, hash, hash_len, &key->q) != 0) {
         neverc_bigint_free(&w); neverc_bigint_free(&z);
         neverc_bigint_free(&u1); neverc_bigint_free(&u2);
         neverc_bigint_free(&v1); neverc_bigint_free(&v2);

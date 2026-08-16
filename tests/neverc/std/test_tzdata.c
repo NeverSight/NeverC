@@ -190,6 +190,23 @@ static void test_dst_offset(void) {
 
     const neverc_tzdata_zone_t *utc = neverc_tzdata_utc();
     check_int("UTC no dst any month", neverc_tzdata_offset_for_month(utc, 6), 0);
+
+    const neverc_tzdata_zone_t *sp = neverc_tzdata_lookup("America/Sao_Paulo");
+    check_int("Sao_Paulo Jan (std)",
+              neverc_tzdata_offset_for_month(sp, 1), -10800);
+    check_int("Sao_Paulo Jul (std)",
+              neverc_tzdata_offset_for_month(sp, 7), -10800);
+
+    const neverc_tzdata_zone_t *cai = neverc_tzdata_lookup("Africa/Cairo");
+    check_int("Cairo Jan (std)", neverc_tzdata_offset_for_month(cai, 1), 7200);
+    check_int("Cairo Jul (dst)", neverc_tzdata_offset_for_month(cai, 7), 10800);
+
+    const neverc_tzdata_zone_t *yyc = neverc_tzdata_lookup("America/Edmonton");
+    check_int("Edmonton Jan (std)",
+              neverc_tzdata_offset_for_month(yyc, 1), -21600);
+    const neverc_tzdata_zone_t *yvr = neverc_tzdata_lookup("America/Vancouver");
+    check_int("Vancouver Jan (std)",
+              neverc_tzdata_offset_for_month(yvr, 1), -25200);
 }
 
 /* ===== Offsets correctness ===== */
@@ -224,6 +241,40 @@ static void test_offsets(void) {
 
     z = neverc_tzdata_lookup("America/Caracas");
     check_int("Caracas offset -4h", z ? z->utc_offset : 0, -14400);
+
+    /* IANA current rules (tzdata 2026c): completed offset/DST changes */
+    z = neverc_tzdata_lookup("America/Sao_Paulo");
+    check_int("Sao_Paulo offset -3h", z ? z->utc_offset : 0, -10800);
+    check_int("Sao_Paulo no dst", z ? z->has_dst : -1, 0);
+
+    z = neverc_tzdata_lookup("Asia/Tehran");
+    check_int("Tehran offset +3:30", z ? z->utc_offset : 0, 12600);
+    check_int("Tehran no dst", z ? z->has_dst : -1, 0);
+
+    z = neverc_tzdata_lookup("Asia/Almaty");
+    check_int("Almaty offset +5h", z ? z->utc_offset : 0, 18000);
+    check_int("Almaty no dst", z ? z->has_dst : -1, 0);
+
+    z = neverc_tzdata_lookup("Pacific/Fiji");
+    check_int("Fiji offset +12h", z ? z->utc_offset : 0, 43200);
+    check_int("Fiji no dst", z ? z->has_dst : -1, 0);
+
+    z = neverc_tzdata_lookup("Africa/Cairo");
+    check_int("Cairo offset +2h", z ? z->utc_offset : 0, 7200);
+    check_int("Cairo dst offset +3h", z ? z->dst_offset : 0, 10800);
+    check_int("Cairo has dst", z ? z->has_dst : 0, 1);
+
+    z = neverc_tzdata_lookup("Africa/Casablanca");
+    check_int("Casablanca offset +1h", z ? z->utc_offset : 0, 3600);
+    check_int("Casablanca no dst", z ? z->has_dst : -1, 0);
+
+    z = neverc_tzdata_lookup("America/Edmonton");
+    check_int("Edmonton offset -6h", z ? z->utc_offset : 0, -21600);
+    check_int("Edmonton no dst", z ? z->has_dst : -1, 0);
+
+    z = neverc_tzdata_lookup("America/Vancouver");
+    check_int("Vancouver offset -7h", z ? z->utc_offset : 0, -25200);
+    check_int("Vancouver no dst", z ? z->has_dst : -1, 0);
 }
 
 /* ===== Edge cases ===== */

@@ -47,7 +47,19 @@ static void test_js_escape(void) {
     free(e);
 
     e = neverc_html_js_escape("`+$");
-    check_str("template literal", e, "\\u0060+\\u0024");
+    check_str("template literal", e, "\\u0060\\u002b\\u0024");
+    free(e);
+
+    e = neverc_html_js_escape("a=b/c");
+    check_str("equals and slash", e, "a\\u003db\\/c");
+    free(e);
+
+    e = neverc_html_js_escape("\x01");
+    check_str("control", e, "\\u0001");
+    free(e);
+
+    e = neverc_html_js_escape("\xe2\x80\xa8" "x");
+    check_str("line separator", e, "\\u2028x");
     free(e);
 }
 

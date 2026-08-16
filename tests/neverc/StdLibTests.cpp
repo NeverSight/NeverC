@@ -275,7 +275,7 @@ TEST_F(StdLibTest, StrconvAllocationFailure) {
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
-STD_TEST(path, "src/path/base.c", "src/path/dir.c", "src/path/ext.c", "src/path/isabs.c", "src/path/clean.c", "src/path/join.c", "src/path/split.c", "src/path/match.c")
+STD_TEST(path, "src/path/base.c", "src/path/dir.c", "src/path/ext.c", "src/path/isabs.c", "src/path/clean.c", "src/path/join.c", "src/path/split.c", "src/path/match.c", "src/unicode/utf8/utf8.c")
 STD_TEST(sort, "src/sort/sort.c")
 // Differential fuzz over the shared sort + substring-search engines (catches
 // structural regressions like the Timsort merge-invariant overflow).
@@ -679,7 +679,7 @@ TEST_F(StdLibTest, HttpClientAllocationFailure) {
 #endif
 STD_TEST(websocket, "src/net/websocket/websocket.c", TCP_DEPS,
     "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", HTTP_TLS_DEPS)
-STD_TEST(url, "src/net/url/url.c")
+STD_TEST(url, "src/net/url/url.c", "src/net/netip/netip.c")
 STD_TEST(netip, "src/net/netip/netip.c")
 STD_TEST(mail, "src/net/mail/mail.c")
 STD_TEST(textproto, "src/net/textproto/textproto.c")
@@ -794,7 +794,7 @@ TEST_F(StdLibTest, NetEventLoopAllocationFailure) {
 }
 
 // ===== Path =====
-STD_TEST(filepath, "src/path/filepath/filepath.c")
+STD_TEST(filepath, "src/path/filepath/filepath.c", "src/unicode/utf8/utf8.c")
 
 // ===== Image =====
 STD_TEST(color, "src/image/color/color.c")

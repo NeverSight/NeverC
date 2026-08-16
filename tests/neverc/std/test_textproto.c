@@ -129,6 +129,62 @@ static void test_read_mime_header(void) {
         "NotAHeader\r\n\r\n", strlen("NotAHeader\r\n\r\n"), &h, &consumed);
     check("line without colon rejected", rc == -1);
     neverc_mime_header_free(&h);
+
+    neverc_mime_header_init(&h);
+    rc = neverc_textproto_read_mime_header(
+        "X-Name: ok\rInjected: evil\r\n\r\n",
+        strlen("X-Name: ok\rInjected: evil\r\n\r\n"), &h, &consumed);
+    check("CR in header value rejected", rc == -1);
+    neverc_mime_header_free(&h);
+
+    neverc_mime_header_init(&h);
+    rc = neverc_textproto_read_mime_header(
+        "X-Name\rInjected: ok\r\n\r\n",
+        strlen("X-Name\rInjected: ok\r\n\r\n"), &h, &consumed);
+    check("CR in header name rejected", rc == -1);
+    neverc_mime_header_free(&h);
+
+    neverc_mime_header_init(&h);
+    rc = neverc_textproto_read_mime_header(
+        "X Name: ok\r\n\r\n", strlen("X Name: ok\r\n\r\n"), &h, &consumed);
+    check("space in header name rejected", rc == -1);
+    neverc_mime_header_free(&h);
+
+    neverc_mime_header_init(&h);
+    rc = neverc_textproto_read_mime_header(
+        "X-Name: ok\x01more\r\n\r\n",
+        strlen("X-Name: ok\x01more\r\n\r\n"), &h, &consumed);
+    check("CTL in header value rejected", rc == -1);
+    neverc_mime_header_free(&h);
+
+    char nul_hdr[] = "X-Name: ok\0Y-Injected: evil\r\n\r\n";
+    neverc_mime_header_init(&h);
+    rc = neverc_textproto_read_mime_header(nul_hdr, sizeof(nul_hdr) - 1, &h,
+                                          &consumed);
+    check("embedded NUL in header line rejected", rc == -1);
+    neverc_mime_header_free(&h);
+
+    const char *tab_val = "X-Name: a\tb\r\n\r\n";
+    neverc_mime_header_init(&h);
+    consumed = 0;
+    rc = neverc_textproto_read_mime_header(tab_val, strlen(tab_val), &h,
+                                          &consumed);
+    check("tab in value ok", rc == 0);
+    check_str("tab value", neverc_mime_header_get(&h, "X-Name"), "a\tb");
+    neverc_mime_header_free(&h);
+
+    neverc_mime_header_init(&h);
+    neverc_mime_header_add(&h, "X-Bad\rName", "v");
+    check("add rejects CR in name",
+          neverc_mime_header_get(&h, "X-Bad\rName") == NULL);
+    neverc_mime_header_add(&h, "X-Ok", "v\r\nInjected: x");
+    check("add rejects CR in value", neverc_mime_header_get(&h, "X-Ok") == NULL);
+    neverc_mime_header_set(&h, "X-Ok", "safe");
+    neverc_mime_header_set(&h, "X-Ok", "v\rInjected");
+    check("set rejects CR in value",
+          neverc_mime_header_get(&h, "X-Ok") &&
+              strcmp(neverc_mime_header_get(&h, "X-Ok"), "safe") == 0);
+    neverc_mime_header_free(&h);
 }
 
 static void test_read_line(void) {
@@ -160,6 +216,15 @@ static void test_read_line(void) {
     rc = neverc_textproto_read_line("no newline", 10, line, sizeof(line),
                                      &consumed);
     check("incomplete line rejected", rc == -1);
+
+    char nul_line[] = "hello\0world\r\n";
+    rc = neverc_textproto_read_line(nul_line, sizeof(nul_line) - 1, line,
+                                    sizeof(line), &consumed);
+    check("embedded NUL in line rejected", rc == -1);
+
+    rc = neverc_textproto_read_line("hello\rworld\n", 12, line, sizeof(line),
+                                    &consumed);
+    check("embedded CR in line rejected", rc == -1);
 }
 
 static void test_read_code_line(void) {

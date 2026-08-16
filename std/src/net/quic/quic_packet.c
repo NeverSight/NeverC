@@ -235,15 +235,19 @@ uint64_t neverc_quic_decode_packet_number(uint64_t largest_received,
                                            unsigned packet_number_bits) {
     if (packet_number_bits == 0 || packet_number_bits > 32)
         return truncated;
-    uint64_t expected = largest_received + 1;
+    uint64_t expected = largest_received < UINT64_MAX ?
+        largest_received + 1 : UINT64_MAX;
     uint64_t window = UINT64_C(1) << packet_number_bits;
     uint64_t half_window = window / 2;
     uint64_t mask = window - 1;
-    uint64_t candidate = (expected & ~mask) | truncated;
-    if (candidate + half_window <= expected &&
-        candidate <= ((UINT64_C(1) << 62) - 1) - window)
+    uint64_t candidate = (expected & ~mask) | (truncated & mask);
+    int too_small = expected >= half_window &&
+                    candidate <= expected - half_window;
+    if (too_small && candidate <= QUIC_VARINT_MAX - window)
         candidate += window;
-    else if (candidate > expected + half_window && candidate >= window)
+    else if (candidate >= window &&
+             expected <= UINT64_MAX - half_window &&
+             candidate > expected + half_window)
         candidate -= window;
     return candidate;
 }

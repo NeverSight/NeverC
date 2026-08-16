@@ -274,6 +274,44 @@ static void test_delete_func_probe_chain(void) {
     neverc_map_free(m);
 }
 
+static void test_tombstone_shrink_then_reinsert(void) {
+    printf("[tombstone_shrink_then_reinsert]\n");
+    neverc_map_t *m = neverc_map_new();
+    int vals[80];
+    char key[32];
+    for (int i = 0; i < 80; i++) {
+        vals[i] = i + 1;
+        snprintf(key, sizeof(key), "t%d", i);
+        ASSERT_INT_EQ(neverc_map_set(m, key, &vals[i]), 0);
+    }
+    ASSERT_INT_EQ((int)neverc_map_len(m), 80);
+
+    /* Drop most keys so tombstones outnumber live entries and force a
+     * shrink/rehash; surviving keys must still resolve. */
+    for (int i = 0; i < 70; i++) {
+        snprintf(key, sizeof(key), "t%d", i);
+        ASSERT_INT_EQ(neverc_map_delete(m, key), 0);
+    }
+    ASSERT_INT_EQ((int)neverc_map_len(m), 10);
+    for (int i = 70; i < 80; i++) {
+        snprintf(key, sizeof(key), "t%d", i);
+        ASSERT_TRUE(neverc_map_has(m, key));
+        ASSERT_INT_EQ(*(int *)neverc_map_get(m, key), i + 1);
+    }
+    for (int i = 0; i < 70; i++) {
+        snprintf(key, sizeof(key), "t%d", i);
+        ASSERT_TRUE(!neverc_map_has(m, key));
+        ASSERT_INT_EQ(neverc_map_set(m, key, &vals[i]), 0);
+    }
+    ASSERT_INT_EQ((int)neverc_map_len(m), 80);
+    for (int i = 0; i < 80; i++) {
+        snprintf(key, sizeof(key), "t%d", i);
+        ASSERT_TRUE(neverc_map_has(m, key));
+        ASSERT_INT_EQ(*(int *)neverc_map_get(m, key), i + 1);
+    }
+    neverc_map_free(m);
+}
+
 static void test_delete_then_reinsert(void) {
     printf("[delete_then_reinsert]\n");
     neverc_map_t *m = neverc_map_new();
@@ -316,6 +354,7 @@ int main(void) {
     test_delete_func_callback_can_delete_current();
     test_foreach_callback_key_survives_mutation();
     test_delete_func_callback_can_resize();
+    test_tombstone_shrink_then_reinsert();
     test_delete_then_reinsert();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

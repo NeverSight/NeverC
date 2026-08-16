@@ -997,6 +997,14 @@ static void *fake_server_thread(void *arg) {
                 (void)neverc_tcp_write(
                     ctx->tcp, wrong_version_record,
                     sizeof(wrong_version_record));
+            } else if (ctx->response_mode == 5) {
+                /* RFC 8446 §6: an Alert is exactly 2 bytes. */
+                static const uint8_t truncated_alert[] = {
+                    21, 0x03, 0x03, 0x00, 0x01, 2
+                };
+                (void)neverc_tcp_write(
+                    ctx->tcp, truncated_alert,
+                    sizeof(truncated_alert));
             } else {
                 /* HelloRetryRequest magic in ServerHello.random. */
                 uint8_t hello_retry[5 + 4 + 2 + 32];
@@ -1460,6 +1468,108 @@ static void test_oversized_client_handshake_alert(void) {
 #endif
     check_int("server_reject_oversized_client_handshake",
               ctx.handshake_ok, 0);
+    neverc_tls_config_free(config);
+}
+
+static void test_malformed_handshake_alert(void) {
+    printf("[malformed_handshake_alert]\n");
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_malformed_alert_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    fake_server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.response_mode = 5;
+    ctx.alert_description = -1;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, fake_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, fake_server_thread, &ctx) == 0;
+#endif
+    check_int("start_malformed_alert_thread", thread_started, 1);
+    if (!thread_started) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    neverc_tls_config_t *config = neverc_tls_config_new();
+    neverc_tls_config_insecure_skip_verify(config);
+    const char *err = NULL;
+    neverc_tls_conn_t *client =
+        neverc_tls_client(client_tcp, config, &err);
+    check_null("reject_truncated_handshake_alert", client);
+    neverc_tls_close(client);
+    neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    check_int("malformed_alert_server_saw_client_hello",
+              ctx.saw_client_hello, 1);
+    check_int("send_decode_error_for_truncated_alert",
+              ctx.alert_description, 50);
+    neverc_tls_config_free(config);
+}
+
+static void test_application_io_before_handshake(void) {
+    printf("[application_io_before_handshake]\n");
+    neverc_tls_config_t *config = neverc_tls_config_new();
+    check_not_null("io_before_handshake_config", config);
+    if (!config)
+        return;
+    check_int("io_before_handshake_load_certificate",
+              neverc_tls_config_load_cert_mem(
+                  config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_io_before_handshake_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(config);
+        return;
+    }
+
+    const char *err = NULL;
+    neverc_tls_conn_t *server =
+        neverc_tls_server_begin(server_tcp, config, &err);
+    check_not_null("server_begin_before_handshake", server);
+    if (server) {
+        uint8_t buffer[8];
+        neverc_tls_io_result_t read_result =
+            neverc_tls_try_read(server, buffer, sizeof(buffer));
+        check_int("try_read_before_handshake",
+                  read_result.status, NEVERC_TLS_IO_ERROR);
+        check_int("try_read_before_handshake_transferred",
+                  (int)read_result.transferred, 0);
+        check_int("read_before_handshake",
+                  neverc_tls_read(server, buffer, sizeof(buffer)),
+                  -1);
+        neverc_tls_io_result_t write_result =
+            neverc_tls_try_write(server, "x", 1);
+        check_int("try_write_before_handshake",
+                  write_result.status, NEVERC_TLS_IO_ERROR);
+        neverc_tls_close(server);
+    }
+    neverc_tcp_close(client_tcp);
+    neverc_tcp_close(server_tcp);
     neverc_tls_config_free(config);
 }
 
@@ -2496,6 +2606,8 @@ int main(void) {
     test_oversized_server_handshake_alert();
     test_malformed_client_hello_alert();
     test_oversized_client_handshake_alert();
+    test_malformed_handshake_alert();
+    test_application_io_before_handshake();
 #endif
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);

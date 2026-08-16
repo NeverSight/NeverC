@@ -158,7 +158,33 @@ static void test_wait_null(void) {
     printf("[wait_null]\n");
     ASSERT_INT_EQ(neverc_signal_wait(NULL, 1), -1);
     ASSERT_INT_EQ(neverc_signal_wait(NULL, 0), -1);
+    int dummy = NEVERC_SIGINT;
+    ASSERT_INT_EQ(neverc_signal_wait(&dummy, -1), -1);
 }
+
+#if !defined(_WIN32)
+static void test_wait_invalid_and_pending(void) {
+    printf("[wait_invalid_and_pending]\n");
+    int bad = 999999;
+    ASSERT_INT_EQ(neverc_signal_wait(&bad, 1), -1);
+    int kill_sig = SIGKILL;
+    ASSERT_INT_EQ(neverc_signal_wait(&kill_sig, 1), -1);
+
+    sigset_t block, saved, before_wait, after, empty;
+    sigemptyset(&block);
+    sigemptyset(&empty);
+    sigaddset(&block, SIGUSR1);
+    ASSERT_INT_EQ(sigprocmask(SIG_BLOCK, &block, &saved), 0);
+    raise(SIGUSR1);
+    ASSERT_INT_EQ(sigprocmask(SIG_BLOCK, &empty, &before_wait), 0);
+    int usr1 = SIGUSR1;
+    ASSERT_INT_EQ(neverc_signal_wait(&usr1, 1), SIGUSR1);
+    ASSERT_INT_EQ(sigprocmask(SIG_BLOCK, &empty, &after), 0);
+    ASSERT_TRUE(sigismember(&after, SIGUSR1) ==
+                sigismember(&before_wait, SIGUSR1));
+    sigprocmask(SIG_SETMASK, &saved, NULL);
+}
+#endif
 
 int main(void) {
     printf("=== NeverC os/signal Tests ===\n");
@@ -168,6 +194,9 @@ int main(void) {
     test_multiple_signals();
     test_constants();
     test_wait_null();
+#if !defined(_WIN32)
+    test_wait_invalid_and_pending();
+#endif
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

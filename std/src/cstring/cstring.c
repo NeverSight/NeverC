@@ -536,6 +536,15 @@ static char **gen_split(const char *s, const char *sep,
     size_t seplen = strlen(sep);
 
     if (seplen == 0) {
+        /* Go SplitN(s, "", 1) is the original string, including "". */
+        if (n == 1) {
+            char **arr = alloc_string_array(1);
+            if (!arr) return NULL;
+            arr[0] = nc_strdup(s, slen);
+            if (!arr[0]) { free(arr); return NULL; }
+            *out_count = 1;
+            return arr;
+        }
         size_t cnt = utf8_rune_count(s, slen);
         if (n > 0 && cnt > (size_t)n) cnt = (size_t)n;
         if (cnt == 0) return NULL;

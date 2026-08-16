@@ -108,6 +108,20 @@ static void test_size_overflow_rejected(void) {
     unsigned char rev = 0x5a;
     neverc_slices_reverse(&rev, overflowing_len, 2);
     ASSERT_INT_EQ(rev, 0x5a);
+
+    /* Read paths used to walk i*elem_size without a span check and would
+     * compute an overflowing pointer from a 1-byte dummy buffer. */
+    ASSERT_INT_EQ(neverc_slices_is_sorted(&a, overflowing_len, 2, cmp_int), 0);
+    ASSERT_INT_EQ(neverc_slices_compare(&a, overflowing_len, &b,
+                                        overflowing_len, 2, cmp_int), 0);
+    ASSERT_INT_EQ(neverc_slices_index(&a, overflowing_len, &b, 2, eq_int), -1);
+    ASSERT_TRUE(!neverc_slices_contains(&a, overflowing_len, &b, 2, eq_int));
+    ASSERT_INT_EQ(neverc_slices_min(&a, overflowing_len, 2, cmp_int), -1);
+    ASSERT_INT_EQ(neverc_slices_max(&a, overflowing_len, 2, cmp_int), -1);
+    int found = 1;
+    ASSERT_INT_EQ(neverc_slices_binary_search(&a, overflowing_len, &b, 2,
+                                              cmp_int, &found), 0);
+    ASSERT_INT_EQ(found, 0);
 }
 
 static void test_min_max(void) {
@@ -230,6 +244,8 @@ static void test_func_ops(void) {
                 overflowing_len);
     ASSERT_TRUE(neverc_slices_delete_func(&byte, overflowing_len, 2, is_even) ==
                 overflowing_len);
+    ASSERT_INT_EQ(neverc_slices_index_func(&byte, overflowing_len, 2, is_even),
+                  -1);
 }
 
 static void test_null_guards(void) {

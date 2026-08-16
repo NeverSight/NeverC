@@ -3,6 +3,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#if !defined(_WIN32)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -180,6 +184,24 @@ static void test_stat(void) {
     ASSERT_TRUE(strcmp(info.name, "neverc_test_os_stat.txt") == 0);
 
     neverc_os_remove(path);
+
+    char dirbuf[1024], slashbuf[1026];
+    make_test_path(dirbuf, sizeof(dirbuf), "neverc_test_os_stat_dir");
+    neverc_os_remove_all(dirbuf);
+    ASSERT_EQ(neverc_os_mkdir(dirbuf, 0755), 0);
+#if defined(_WIN32)
+    snprintf(slashbuf, sizeof(slashbuf), "%s\\", dirbuf);
+#else
+    snprintf(slashbuf, sizeof(slashbuf), "%s/", dirbuf);
+#endif
+    ASSERT_EQ(neverc_os_stat(slashbuf, &info), 0);
+    ASSERT_TRUE(info.is_dir);
+    ASSERT_TRUE(strcmp(info.name, "neverc_test_os_stat_dir") == 0);
+#if !defined(_WIN32)
+    ASSERT_EQ(neverc_os_lstat(slashbuf, &info), 0);
+    ASSERT_TRUE(strcmp(info.name, "neverc_test_os_stat_dir") == 0);
+#endif
+    neverc_os_remove_all(dirbuf);
 }
 
 static void test_mkdir(void) {
@@ -363,6 +385,17 @@ static void test_read_dir(void) {
     ASSERT_EQ(neverc_os_read_dir(NULL, &entries, &count), -1);
     ASSERT_EQ(neverc_os_readlink("unused", (char *)&count, 0), -1);
 
+    char filebuf[1024];
+    make_test_path(filebuf, sizeof(filebuf), "neverc_test_os_readdir_file");
+    ASSERT_EQ(neverc_os_write_file(filebuf, (const unsigned char *)"x", 1, 0600),
+              0);
+    entries = (neverc_os_dir_entry_t *)1;
+    count = 99;
+    ASSERT_EQ(neverc_os_read_dir(filebuf, &entries, &count), -1);
+    ASSERT_TRUE(entries == NULL);
+    ASSERT_EQ((int)count, 0);
+    neverc_os_remove(filebuf);
+
 #if !defined(_WIN32)
     char target[80], linkpath[1024], small[8], big[128];
     memset(target, 't', 70);
@@ -398,6 +431,22 @@ static void test_user_dirs(void) {
     ASSERT_EQ(neverc_os_user_home_dir(one, 1), -1);
     ASSERT_EQ(neverc_os_user_cache_dir(NULL, 16), -1);
     ASSERT_EQ(neverc_os_user_config_dir(NULL, 16), -1);
+
+#if defined(_WIN32)
+    const char *home_key = "USERPROFILE";
+#else
+    const char *home_key = "HOME";
+#endif
+    const char *cur_home = neverc_os_getenv(home_key);
+    char *saved_home = cur_home ? strdup(cur_home) : NULL;
+    ASSERT_EQ(neverc_os_setenv(home_key, ""), 0);
+    ASSERT_EQ(neverc_os_user_home_dir(buf, sizeof(buf)), -1);
+    if (saved_home) {
+        neverc_os_setenv(home_key, saved_home);
+        free(saved_home);
+    } else {
+        neverc_os_unsetenv(home_key);
+    }
 }
 
 static void test_executable(void) {
@@ -448,6 +497,32 @@ static void test_pipe(void) {
     ASSERT_TRUE(memcmp(buf, "ping", sizeof(buf)) == 0);
     neverc_os_close(reader);
     neverc_os_close(writer);
+
+#if !defined(_WIN32)
+    printf("[pipe_cloexec]\n");
+    int before[256];
+    for (int fd = 0; fd < 256; fd++)
+        before[fd] = fcntl(fd, F_GETFD) >= 0;
+
+    reader = NULL;
+    writer = NULL;
+    ASSERT_EQ(neverc_os_pipe(&reader, &writer), 0);
+    ASSERT_TRUE(reader != NULL && writer != NULL);
+    if (reader && writer) {
+        int seen = 0, cloexec = 0;
+        for (int fd = 0; fd < 256; fd++) {
+            if (before[fd]) continue;
+            int flags = fcntl(fd, F_GETFD);
+            if (flags < 0) continue;
+            seen++;
+            if (flags & FD_CLOEXEC) cloexec++;
+        }
+        ASSERT_TRUE(seen >= 2);
+        ASSERT_EQ(cloexec, seen);
+        neverc_os_close(reader);
+        neverc_os_close(writer);
+    }
+#endif
 }
 
 static void test_error_classification_and_ownership(void) {
@@ -458,6 +533,9 @@ static void test_error_classification_and_ownership(void) {
     ASSERT_TRUE(neverc_os_is_permission(EPERM));
     ASSERT_TRUE(neverc_os_is_exist(EEXIST));
     ASSERT_TRUE(neverc_os_is_not_exist(ENOENT));
+    ASSERT_EQ(neverc_os_remove_all(""), -1);
+    ASSERT_EQ(neverc_os_chown(NULL, 0, 0), -1);
+    ASSERT_EQ(neverc_os_lchown(NULL, 0, 0), -1);
 
     char path[1024];
     make_test_path(path, sizeof(path), "neverc_missing_chown_target");

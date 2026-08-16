@@ -260,6 +260,25 @@ static void test_qp_decode(void) {
     ASSERT_STR_EQ(out, "hello");
     ASSERT_INT_EQ(neverc_mime_qp_decode("hello=\n", 7, out, sizeof(out), &out_len), 0);
     ASSERT_INT_EQ((int)out_len, 5);
+
+    ASSERT_INT_EQ(neverc_mime_qp_decode("Hello= \r\nWorld", 14, out,
+                                        sizeof(out), &out_len), 0);
+    out[out_len] = '\0';
+    ASSERT_STR_EQ(out, "HelloWorld");
+
+    ASSERT_INT_EQ(neverc_mime_qp_decode("line1  \r\nline2", 14, out,
+                                        sizeof(out), &out_len), 0);
+    out[out_len] = '\0';
+    ASSERT_STR_EQ(out, "line1\r\nline2");
+
+    ASSERT_INT_EQ(neverc_mime_qp_decode("hello=20  \n", 11, out,
+                                        sizeof(out), &out_len), 0);
+    out[out_len] = '\0';
+    ASSERT_STR_EQ(out, "hello \n");
+
+    out_len = 99;
+    ASSERT_INT_EQ(neverc_mime_qp_decode("= \r\n", 4, out, 0, &out_len), 0);
+    ASSERT_INT_EQ((int)out_len, 0);
 }
 
 static void test_qp_encode(void) {

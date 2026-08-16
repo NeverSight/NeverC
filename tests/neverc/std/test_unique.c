@@ -131,6 +131,18 @@ static void test_null_handling(void) {
     ASSERT_TRUE(!neverc_unique_handle_valid(h));
     h = neverc_unique_make_bytes(NULL, 0);
     ASSERT_TRUE(!neverc_unique_handle_valid(h));
+    h = neverc_unique_make_bytes(NULL, 4);
+    ASSERT_TRUE(!neverc_unique_handle_valid(h));
+
+    unsigned char empty_mark = 0;
+    neverc_unique_handle_t empty = neverc_unique_make_bytes(&empty_mark, 0);
+    ASSERT_TRUE(neverc_unique_handle_valid(empty));
+    size_t empty_len = 99;
+    const void *empty_ptr = neverc_unique_bytes_value(empty, &empty_len);
+    ASSERT_TRUE(empty_ptr != NULL);
+    ASSERT_INT_EQ((long long)empty_len, 0);
+    neverc_unique_handle_t empty2 = neverc_unique_make_bytes(&empty_mark, 0);
+    ASSERT_TRUE(neverc_unique_handle_equal(empty, empty2));
 }
 
 static void test_count(void) {

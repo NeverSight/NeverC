@@ -65,7 +65,22 @@ static void test_parse(void) {
     check_int("parse invalid", err, -1);
 
     err = neverc_uuid_parse("550e8400e29b41d4a716446655440000", &u);
-    check_int("parse no dashes", err, -1);
+    check_int("parse no dashes", err, 0);
+    neverc_uuid_to_string(u, out);
+    check_str("no dashes normalizes", out, "550e8400-e29b-41d4-a716-446655440000");
+
+    err = neverc_uuid_parse("urn:uuid:550e8400-e29b-41d4-a716-446655440000", &u);
+    check_int("parse urn", err, 0);
+    neverc_uuid_to_string(u, out);
+    check_str("urn normalizes", out, "550e8400-e29b-41d4-a716-446655440000");
+
+    err = neverc_uuid_parse("{550e8400-e29b-41d4-a716-446655440000}", &u);
+    check_int("parse braces", err, 0);
+    neverc_uuid_to_string(u, out);
+    check_str("braces normalize", out, "550e8400-e29b-41d4-a716-446655440000");
+
+    err = neverc_uuid_parse("URN:UUID:550e8400-e29b-41d4-a716-446655440000", &u);
+    check_int("parse urn case", err, 0);
 
     memset(&u, 0xa5, sizeof(u));
     neverc_uuid_t unchanged = u;

@@ -180,6 +180,10 @@ static void grpc_test_frame_and_timeout(void) {
     CHECK(neverc_grpc_timeout_encode(UINT64_C(1500000000), timeout) == 0);
     CHECK(neverc_grpc_timeout_decode(timeout, &timeout_ms) == 0);
     CHECK(timeout_ms >= 1500 && timeout_ms <= 1501);
+    CHECK(neverc_grpc_timeout_encode(0, timeout) == 0);
+    CHECK(strcmp(timeout, "0n") == 0);
+    CHECK(neverc_grpc_timeout_decode("0n", &timeout_ms) == 0);
+    CHECK(timeout_ms == 0);
     CHECK(neverc_grpc_timeout_decode("99999999999S", &timeout_ms) == -1);
     CHECK(strcmp(neverc_grpc_status_name(NEVERC_GRPC_UNAUTHENTICATED),
                  "UNAUTHENTICATED") == 0);

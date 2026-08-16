@@ -307,7 +307,7 @@ static size_t nci_partition(char *base, size_t n, size_t es,
     size_t scan_l = 0, scan_r = 0;
     size_t orig_l = first, orig_r = last;
 
-    while (first + NCI_BLK - 1 < last) {
+    while (first <= last && last - first >= NCI_BLK) {
         if (num_l == 0) {
             orig_l = first;
             scan_l = 0;
@@ -318,7 +318,9 @@ static size_t nci_partition(char *base, size_t n, size_t es,
             first += NCI_BLK;
         }
         if (num_r == 0) {
-            if (first + NCI_BLK - 1 > last && num_l == 0) break;
+            if (num_l == 0 &&
+                (first > last || last - first < NCI_BLK - 1))
+                break;
             orig_r = last;
             scan_r = 0;
             size_t blk = last - first + 1;
@@ -368,15 +370,23 @@ static size_t nci_partition(char *base, size_t n, size_t es,
  */
 static void nci_break_patterns(char *base, size_t n, size_t es, char *tmp) {
     if (n < 8) return;
+    /* Saturate instead of shifting into 0: n > 2^(word-1) made the old
+     * `while (modulus < n) modulus <<= 1` loop forever. */
     size_t modulus = 1;
-    while (modulus < n) modulus <<= 1;
+    while (modulus < n && modulus <= (SIZE_MAX >> 1))
+        modulus <<= 1;
     uint64_t r = (uint64_t)n;
     size_t mid = n / 2;
     for (size_t k = 0; k < 3; k++) {
         size_t idx = mid - 1 + k;
         r = r * UINT64_C(0xd1342543de82ef95) + 1;
-        size_t other = (size_t)(r & (uint64_t)(modulus - 1));
-        if (other >= n) other -= n;
+        size_t other;
+        if (modulus < n)
+            other = (size_t)(r % (uint64_t)n);
+        else {
+            other = (size_t)(r & (uint64_t)(modulus - 1));
+            if (other >= n) other -= n;
+        }
         nci_swap(NCI_ELEM(base, idx, es), NCI_ELEM(base, other, es), es, tmp);
     }
 }
@@ -697,6 +707,10 @@ static void nci_tim_merge(char *base, size_t lo1, size_t len1,
  * so the unsigned arithmetic never underflows.
  */
 static int nci_tim_power(size_t s1, size_t n1, size_t n2, size_t n) {
+    /* 2*s1+n1 and the later a<<=1 stay in range only for n <= SIZE_MAX/2.
+     * Bigger arrays still sort correctly with a conservative power of 1. */
+    if (n > SIZE_MAX / 2)
+        return 1;
     int power = 0;
     size_t a = 2 * s1 + n1;
     size_t b = a + n1 + n2;
@@ -904,12 +918,12 @@ static size_t NAME##_part_(TYPE *a, size_t n, size_t pi, int *ap) {          \
      * inputs, the same win the generic nci_partition already takes. */        \
     unsigned char ol_[NCI_BLK], or_[NCI_BLK];                               \
     size_t nl_=0, nr_=0, sl_=0, sr_=0, gl_=first, gr_=last;                 \
-    while (first + NCI_BLK - 1 < last) {                                     \
+    while (first<=last && last-first>=NCI_BLK) {                             \
         if (nl_==0) { gl_=first; sl_=0;                                      \
             for (size_t k=0;k<NCI_BLK;k++) { ol_[nl_]=(unsigned char)k;      \
                 nl_ += (size_t)!LESS(a[first+k],pv); }                       \
             first += NCI_BLK; }                                              \
-        if (nr_==0) { if (first+NCI_BLK-1>last && nl_==0) break;             \
+        if (nr_==0) { if(nl_==0&&(first>last||last-first<NCI_BLK-1)) break;  \
             gr_=last; sr_=0; size_t b_=last-first+1;                         \
             if (b_>NCI_BLK) b_=NCI_BLK;                                      \
             if (b_==0) break;                                                \
@@ -941,13 +955,16 @@ static void NAME##_loop_(TYPE *a, size_t n, int limit) {                     \
         if (limit==0) { NAME##_heap_(a,n); return; }                         \
         if (!wb) {                                                           \
             if (n >= 8) {                                                    \
-                size_t md_=1; while(md_<n)md_<<=1;                           \
+                size_t md_=1;                                                \
+                while(md_<n && md_<=(SIZE_MAX>>1)) md_<<=1;                  \
                 uint64_t rr_=(uint64_t)n; size_t mm_=n/2;                    \
                 for(size_t kk_=0;kk_<3;kk_++){                              \
                     size_t ix_=mm_-1+kk_;                                    \
                     rr_=rr_*UINT64_C(0xd1342543de82ef95)+1;                  \
-                    size_t oo_=(size_t)(rr_&(uint64_t)(md_-1));              \
-                    if(oo_>=n)oo_-=n;                                        \
+                    size_t oo_;                                              \
+                    if(md_<n) oo_=(size_t)(rr_%(uint64_t)n);                 \
+                    else { oo_=(size_t)(rr_&(uint64_t)(md_-1));              \
+                           if(oo_>=n)oo_-=n; }                               \
                     TYPE tt_=a[ix_];a[ix_]=a[oo_];a[oo_]=tt_;               \
                 }                                                            \
             }                                                                \

@@ -306,6 +306,84 @@ static void test_invalid_pem(void) {
                             out_buf, sizeof(out_buf),
                             &bytes_written, NULL);
     check_int("headers without blank or body", rc, -1);
+
+    /* Go: empty type is Type "" (HasSuffix "-----" on a type line of "-----"). */
+    const char *empty_type =
+        "-----BEGIN -----\n"
+        "YQ==\n"
+        "-----END -----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(empty_type, strlen(empty_type),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("empty type decode", rc, 0);
+    check_str("empty type string", type_buf, "");
+    check_int("empty type len", (int)bytes_written, 1);
+    check_mem("empty type data", out_buf, (const uint8_t *)"a", 1);
+
+    char empty_type_pem[64];
+    int empty_type_enc = neverc_pem_encode(
+        empty_type_pem, sizeof(empty_type_pem), "",
+        (const uint8_t *)"a", 1);
+    check_int("empty type encode", empty_type_enc > 0, 1);
+    bytes_written = 0;
+    rc = neverc_pem_decode(empty_type_pem, (size_t)empty_type_enc,
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("empty type encode/decode", rc, 0);
+    check_str("empty type encode type", type_buf, "");
+    check_int("empty type encode len", (int)bytes_written, 1);
+
+    /* Colon in the type makes the END line a header when there is no body. */
+    const char *colon_empty =
+        "-----BEGIN FOO:BAR-----\n"
+        "-----END FOO:BAR-----\n";
+    rc = neverc_pem_decode(colon_empty, strlen(colon_empty),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("colon type empty body", rc, -1);
+
+    const char *colon_body =
+        "-----BEGIN FOO:BAR-----\n"
+        "YQ==\n"
+        "-----END FOO:BAR-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(colon_body, strlen(colon_body),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("colon type with body", rc, 0);
+    check_str("colon type string", type_buf, "FOO:BAR");
+    check_int("colon type len", (int)bytes_written, 1);
+    check_mem("colon type data", out_buf, (const uint8_t *)"a", 1);
+
+    const char *colon_valid_headers =
+        "-----BEGIN FOO:BAR-----\n"
+        "Header: 1\n"
+        "\n"
+        "-----END FOO:BAR-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(colon_valid_headers, strlen(colon_valid_headers),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("colon type headers+blank", rc, 0);
+    check_str("colon type headers type", type_buf, "FOO:BAR");
+    check_int("colon type headers len", (int)bytes_written, 0);
+
+    /* Embedded NUL would truncate the C type string to a prefix. */
+    static const char nul_type[] =
+        "-----BEGIN CERT" "\x00" "EVIL-----\n"
+        "YQ==\n"
+        "-----END CERT" "\x00" "EVIL-----\n";
+    rc = neverc_pem_decode(nul_type, sizeof(nul_type) - 1,
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("NUL type injection", rc, -1);
 }
 
 static void test_go_armor(void) {
@@ -414,6 +492,66 @@ static void test_go_armor(void) {
     check_int("leading garbage", rc, 0);
     check_str("leading garbage type", type_buf, "TEST BLOCK");
     check_int("leading garbage len", (int)bytes_written, 5);
+
+    /*
+     * Go consumes a colon-bearing END as a header when no body precedes it,
+     * then aborts (endTrailerIndex < 0). A later valid block must not win.
+     */
+    const char *colon_then_valid =
+        "-----BEGIN FOO:BAR-----\n"
+        "-----END FOO:BAR-----\n"
+        "-----BEGIN TEST BLOCK-----\n"
+        "aGVsbG8=\n"
+        "-----END TEST BLOCK-----\n";
+    rc = neverc_pem_decode(colon_then_valid, strlen(colon_then_valid),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("colon type aborts later block", rc, -1);
+
+    const char *mismatch_colon_then_valid =
+        "-----BEGIN INVALID-----\n"
+        "Header: 1\n"
+        "-----END INVALID:X-----\n"
+        "-----BEGIN TEST BLOCK-----\n"
+        "aGVsbG8=\n"
+        "-----END TEST BLOCK-----\n";
+    rc = neverc_pem_decode(mismatch_colon_then_valid,
+                            strlen(mismatch_colon_then_valid),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("colon END trailer aborts later block", rc, -1);
+
+    const char *truncated_colon_then_valid =
+        "-----BEGIN FOO-----\n"
+        "-----END FOO:B\n"
+        "-----BEGIN TEST BLOCK-----\n"
+        "aGVsbG8=\n"
+        "-----END TEST BLOCK-----\n";
+    rc = neverc_pem_decode(truncated_colon_then_valid,
+                            strlen(truncated_colon_then_valid),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("truncated colon END aborts later block", rc, -1);
+
+    const char *too_few_dashes_then_valid =
+        "-----BEGIN FOO-----\n"
+        "dGVzdA==\n"
+        "-----END FOO----\n"
+        "-----BEGIN TEST BLOCK-----\n"
+        "aGVsbG8=\n"
+        "-----END TEST BLOCK-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(too_few_dashes_then_valid,
+                            strlen(too_few_dashes_then_valid),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("truncated dashes then valid", rc, 0);
+    check_str("truncated dashes type", type_buf, "TEST BLOCK");
+    check_int("truncated dashes len", (int)bytes_written, 5);
 }
 
 static void test_large_data(void) {

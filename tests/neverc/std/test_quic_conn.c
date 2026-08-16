@@ -13,6 +13,7 @@
 
 /* Pull in source directly for unit testing */
 #include "../../../std/src/net/quic/quic_varint.c"
+#include "../../../std/src/net/quic/quic_packet.c"
 #include "../../../std/src/net/quic/quic_transport_params.c"
 #include "../../../std/src/net/quic/quic_loss.c"
 
@@ -511,6 +512,155 @@ static void test_stream_get_id(void) {
     neverc_quic_conn_destroy(conn);
 }
 
+static void test_transport_params_absent_flow_control_is_zero(void) {
+    quic_transport_params_t tp;
+    ASSERT_EQ(neverc_quic_transport_params_decode((const uint8_t *)"", 0, &tp),
+              0);
+    ASSERT_EQ(tp.initial_max_data, 0);
+    ASSERT_EQ(tp.initial_max_stream_data_bidi_local, 0);
+    ASSERT_EQ(tp.initial_max_stream_data_bidi_remote, 0);
+    ASSERT_EQ(tp.initial_max_stream_data_uni, 0);
+    ASSERT_EQ(tp.initial_max_streams_bidi, 0);
+    ASSERT_EQ(tp.initial_max_streams_uni, 0);
+    ASSERT_EQ(tp.max_idle_timeout, 0);
+    ASSERT_EQ(tp.max_udp_payload_size, 65527);
+    ASSERT_EQ(tp.ack_delay_exponent, 3);
+    ASSERT_EQ(tp.max_ack_delay, 25);
+    ASSERT_EQ(tp.active_connection_id_limit, 2);
+    ASSERT_EQ(tp.max_datagram_frame_size, 0);
+}
+
+static void test_transport_params_partial_does_not_invent_limits(void) {
+    uint8_t buf[16];
+    size_t pos = 0, written = 0;
+    size_t value_len = neverc_quic_varint_len(100);
+    ASSERT_EQ(neverc_quic_varint_encode(0x04, buf + pos, sizeof(buf) - pos,
+                                        &written), 0);
+    pos += written;
+    ASSERT_EQ(neverc_quic_varint_encode(value_len, buf + pos,
+                                        sizeof(buf) - pos, &written), 0);
+    pos += written;
+    ASSERT_EQ(neverc_quic_varint_encode(100, buf + pos, sizeof(buf) - pos,
+                                        &written), 0);
+    pos += written;
+
+    quic_transport_params_t tp;
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, pos, &tp), 0);
+    ASSERT_EQ(tp.initial_max_data, 100);
+    ASSERT_EQ(tp.initial_max_streams_bidi, 0);
+    ASSERT_EQ(tp.initial_max_stream_data_bidi_remote, 0);
+    ASSERT_EQ(tp.initial_max_stream_data_uni, 0);
+}
+
+static void test_effective_idle_timeout(void) {
+    ASSERT_EQ(neverc_quic_effective_idle_timeout_ms(30000, 0), 30000);
+    ASSERT_EQ(neverc_quic_effective_idle_timeout_ms(30000, 5000), 5000);
+    ASSERT_EQ(neverc_quic_effective_idle_timeout_ms(30000, 60000), 30000);
+    ASSERT_EQ(neverc_quic_effective_idle_timeout_ms(0, 5000), 5000);
+    ASSERT_EQ(neverc_quic_effective_idle_timeout_ms(0, 0), 0);
+}
+
+static void test_stream_receive_opens_lower_ids(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    uint8_t byte = 'x';
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 8;
+    frame.data = &byte;
+    frame.data_len = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    ASSERT_EQ(conn->n_streams, 3);
+    ASSERT_NOT_NULL(neverc_quic_conn_find_stream(conn, 0));
+    ASSERT_NOT_NULL(neverc_quic_conn_find_stream(conn, 4));
+    ASSERT_NOT_NULL(neverc_quic_conn_find_stream(conn, 8));
+    ASSERT_EQ(conn->opened_peer_streams_bidi, 3);
+    ASSERT_EQ(neverc_quic_conn_find_stream(conn, 0)->peer_initiated, 1);
+    ASSERT_EQ(neverc_quic_conn_find_stream(conn, 8)->recv_len, 1);
+
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_stream_receive_opens_lower_uni_ids(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    uint8_t byte = 'u';
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 10;
+    frame.data = &byte;
+    frame.data_len = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    ASSERT_EQ(conn->n_streams, 3);
+    ASSERT_NOT_NULL(neverc_quic_conn_find_stream(conn, 2));
+    ASSERT_NOT_NULL(neverc_quic_conn_find_stream(conn, 6));
+    ASSERT_NOT_NULL(neverc_quic_conn_find_stream(conn, 10));
+    ASSERT_EQ(conn->opened_peer_streams_uni, 3);
+
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_stream_receive_gap_respects_limit(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    conn->local_params.initial_max_streams_bidi = 2;
+    uint8_t byte = 'x';
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 8;
+    frame.data = &byte;
+    frame.data_len = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), -1);
+    ASSERT_EQ(conn->n_streams, 0);
+
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_max_stream_data_creates_peer_bidi(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    /* RFC 9000 §19.10: MAX_STREAM_DATA only raises the send window. */
+    conn->peer_params.initial_max_stream_data_bidi_local = 0;
+    ASSERT_EQ(neverc_quic_stream_apply_max_stream_data(conn, 8, 4096), 0);
+    ASSERT_EQ(conn->n_streams, 3);
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, 8);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_EQ(stream->send_max_data, 4096);
+    ASSERT_NOT_NULL(neverc_quic_conn_find_stream(conn, 0));
+    ASSERT_EQ(neverc_quic_stream_apply_max_stream_data(conn, 2, 4096), -1);
+    ASSERT_EQ(neverc_quic_stream_apply_max_stream_data(conn, 1, 4096), -1);
+
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_stop_sending_creates_peer_bidi(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    ASSERT_EQ(neverc_quic_stream_apply_stop_sending(conn, 8, 0x01), 0);
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, 8);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_EQ(stream->reset_pending, 1);
+    ASSERT_EQ(stream->reset_error_code, 0x01);
+    ASSERT_EQ(conn->n_streams, 3);
+    ASSERT_EQ(neverc_quic_stream_apply_stop_sending(conn, 2, 0x01), -1);
+    ASSERT_EQ(neverc_quic_stream_apply_stop_sending(conn, 1, 0x01), -1);
+
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_decode_packet_number_wrap_and_limit(void) {
+    ASSERT_EQ(neverc_quic_decode_packet_number(250, 5, 8), 261);
+    ASSERT_EQ(neverc_quic_decode_packet_number(0, 1, 8), 1);
+    uint64_t decoded = neverc_quic_decode_packet_number(
+        (UINT64_C(1) << 62) - 1, 0, 32);
+    ASSERT_TRUE(decoded > ((UINT64_C(1) << 62) - 1));
+}
+
 /* ======================================================================
  * main
  * ====================================================================== */
@@ -541,6 +691,15 @@ int main(void) {
     test_conn_loss_timeout_cancelled_at_amplification_limit();
     test_conn_alpn();
     test_stream_get_id();
+    test_transport_params_absent_flow_control_is_zero();
+    test_transport_params_partial_does_not_invent_limits();
+    test_effective_idle_timeout();
+    test_stream_receive_opens_lower_ids();
+    test_stream_receive_opens_lower_uni_ids();
+    test_stream_receive_gap_respects_limit();
+    test_max_stream_data_creates_peer_bidi();
+    test_stop_sending_creates_peer_bidi();
+    test_decode_packet_number_wrap_and_limit();
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

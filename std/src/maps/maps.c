@@ -256,7 +256,11 @@ static void map_emplace(uint8_t *ctrl, map_entry_t *slots, size_t cap, map_entry
 /* Smallest power-of-two capacity (>= MAP_INIT_CAP) that holds len at <=7/8. */
 static size_t map_ideal_cap(size_t len) {
     size_t cap = MAP_INIT_CAP;
-    while (len > map_max_load(cap)) cap <<= 1;
+    while (len > map_max_load(cap)) {
+        if (cap > (SIZE_MAX >> 1))
+            return cap;
+        cap <<= 1;
+    }
     return cap;
 }
 
@@ -424,7 +428,15 @@ int neverc_maps_set(neverc_map_t *m, const char *key, void *value) {
     if (m->len + m->tombstones >= map_max_load(m->cap)) {
         /* Mostly tombstones with few live entries → reclaim in place; otherwise
          * genuinely full → grow to 2x. */
-        size_t new_cap = (m->len <= map_max_load(m->cap) / 2) ? m->cap : m->cap * 2;
+        size_t new_cap;
+        if (m->len <= map_max_load(m->cap) / 2)
+            new_cap = m->cap;
+        else if (m->cap > (SIZE_MAX >> 1)) {
+            free(dup);
+            return -1;
+        } else {
+            new_cap = m->cap * 2;
+        }
         if (map_resize(m, new_cap) < 0) { free(dup); return -1; }
         target = map_find_insert(m, h);   /* fresh table: first EMPTY */
         was_empty = 1;
@@ -503,7 +515,10 @@ size_t neverc_maps_len(const neverc_map_t *m) {
 }
 
 char **neverc_maps_keys(const neverc_map_t *m, size_t *count) {
-    if (!m || m->len == 0) { if (count) *count = 0; return NULL; }
+    if (!m || m->len == 0 || m->len > SIZE_MAX / sizeof(char *)) {
+        if (count) *count = 0;
+        return NULL;
+    }
     char **keys = (char **)malloc(m->len * sizeof(char *));
     if (!keys) { if (count) *count = 0; return NULL; }
     size_t k = 0;
@@ -514,7 +529,10 @@ char **neverc_maps_keys(const neverc_map_t *m, size_t *count) {
 }
 
 void **neverc_maps_values(const neverc_map_t *m, size_t *count) {
-    if (!m || m->len == 0) { if (count) *count = 0; return NULL; }
+    if (!m || m->len == 0 || m->len > SIZE_MAX / sizeof(void *)) {
+        if (count) *count = 0;
+        return NULL;
+    }
     void **vals = (void **)malloc(m->len * sizeof(void *));
     if (!vals) { if (count) *count = 0; return NULL; }
     size_t k = 0;

@@ -176,11 +176,14 @@ static DWORD WINAPI exec_windows_write_stdin(LPVOID argument) {
         DWORD chunk = remaining > 65536U ? 65536U : (DWORD)remaining;
         DWORD written = 0;
         if (!WriteFile(writer->pipe, writer->data + offset,
-                       chunk, &written, NULL) ||
-            written == 0) {
-            writer->failed = 1;
+                       chunk, &written, NULL)) {
+            DWORD err = GetLastError();
+            if (err != ERROR_BROKEN_PIPE && err != ERROR_NO_DATA &&
+                err != ERROR_PIPE_NOT_CONNECTED)
+                writer->failed = 1;
             break;
         }
+        if (written == 0) break;
         offset += written;
     }
     CloseHandle(writer->pipe);
@@ -356,7 +359,8 @@ int neverc_exec_cmd_combined_output(neverc_exec_cmd_t *cmd, neverc_exec_output_t
 }
 
 const char *neverc_exec_look_path(const char *file, char *buf, size_t cap) {
-    if (!file || !buf || cap == 0 || cap > MAXDWORD) return NULL;
+    if (!file || file[0] == '\0' || !buf || cap == 0 || cap > MAXDWORD)
+        return NULL;
     DWORD len = SearchPathA(NULL, file, ".exe", (DWORD)cap, buf, NULL);
     return len > 0 && len < cap ? buf : NULL;
 }
@@ -368,6 +372,7 @@ const char *neverc_exec_look_path(const char *file, char *buf, size_t cap) {
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 
 static int exec_is_exe_file(const char *path) {
     if (access(path, X_OK) != 0) return 0;
@@ -375,9 +380,28 @@ static int exec_is_exe_file(const char *path) {
     return stat(path, &st) == 0 && S_ISREG(st.st_mode);
 }
 
+static int exec_set_cloexec(int fd) {
+#ifdef FD_CLOEXEC
+    return fcntl(fd, F_SETFD, FD_CLOEXEC);
+#else
+    (void)fd;
+    return 0;
+#endif
+}
+
+static int exec_pipe(int fds[2]) {
+    if (pipe(fds) < 0) return -1;
+    if (exec_set_cloexec(fds[0]) != 0 || exec_set_cloexec(fds[1]) != 0) {
+        close(fds[0]);
+        close(fds[1]);
+        return -1;
+    }
+    return 0;
+}
+
 static const char *exec_look_in_path(const char *file, const char *path_env,
                                      char *buf, size_t cap) {
-    if (!file || !buf || cap == 0) return NULL;
+    if (!file || file[0] == '\0' || !buf || cap == 0) return NULL;
     if (strchr(file, '/')) {
         if (exec_is_exe_file(file)) {
             size_t flen = strlen(file);
@@ -393,13 +417,13 @@ static const char *exec_look_in_path(const char *file, const char *path_env,
         const char *colon = strchr(p, ':');
         size_t dlen = colon ? (size_t)(colon - p) : strlen(p);
         if (dlen == 0) {
-            if (2 + flen + 1 <= cap) {
+            if (cap >= 3 && flen <= cap - 3) {
                 buf[0] = '.';
                 buf[1] = '/';
                 memcpy(buf + 2, file, flen + 1);
                 if (exec_is_exe_file(buf)) return buf;
             }
-        } else if (dlen + 1 + flen + 1 <= cap) {
+        } else if (cap >= 2 && dlen <= cap - 2 && flen <= cap - 2 - dlen) {
             memcpy(buf, p, dlen);
             buf[dlen] = '/';
             memcpy(buf + dlen + 1, file, flen + 1);
@@ -427,10 +451,10 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
     int stdin_pipe[2] = {-1, -1};
 
     if (capture_stdout || capture_stderr) {
-        if (pipe(stdout_pipe) < 0) return -1;
+        if (exec_pipe(stdout_pipe) < 0) return -1;
     }
     if (cmd->stdin_data && cmd->stdin_len > 0) {
-        if (pipe(stdin_pipe) < 0) {
+        if (exec_pipe(stdin_pipe) < 0) {
             if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
             return -1;
         }
@@ -444,7 +468,10 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
     }
 
     if (pid == 0) {
-        /* Child */
+        /* Child: do not inherit a blocked mask from the parent. */
+        sigset_t empty;
+        sigemptyset(&empty);
+        sigprocmask(SIG_SETMASK, &empty, NULL);
         if (cmd->dir) {
             if (chdir(cmd->dir) < 0) _exit(127);
         }
@@ -488,6 +515,7 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
         if (stdin_writer == 0) {
             if (stdout_pipe[0] >= 0)
                 close(stdout_pipe[0]);
+            signal(SIGPIPE, SIG_IGN);
             size_t offset = 0;
             while (offset < cmd->stdin_len) {
                 size_t remaining = cmd->stdin_len - offset;
@@ -499,6 +527,10 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
                     (const char *)cmd->stdin_data + offset, chunk);
                 if (written < 0 && errno == EINTR)
                     continue;
+                if (written < 0 && errno == EPIPE) {
+                    close(stdin_pipe[1]);
+                    _exit(0);
+                }
                 if (written <= 0) {
                     close(stdin_pipe[1]);
                     _exit(125);
@@ -547,8 +579,13 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
         do {
             writer_waited = waitpid(stdin_writer, &writer_status, 0);
         } while (writer_waited < 0 && errno == EINTR);
-        if (writer_waited < 0 || !WIFEXITED(writer_status) ||
-            WEXITSTATUS(writer_status) != 0)
+        if (writer_waited < 0)
+            run_error = 1;
+        else if (WIFSIGNALED(writer_status) &&
+                 WTERMSIG(writer_status) == SIGPIPE)
+            ;
+        else if (!WIFEXITED(writer_status) ||
+                 WEXITSTATUS(writer_status) != 0)
             run_error = 1;
     }
     if (st && waited > 0) {

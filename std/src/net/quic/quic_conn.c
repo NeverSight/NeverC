@@ -597,13 +597,36 @@ static quic_stream_t *get_or_create_receive_stream_locked(
         conn->local_params.initial_max_streams_uni :
         conn->local_params.initial_max_streams_bidi;
     if (ordinal > limit) return NULL;
+
+    /* RFC 9000 §2.1: a stream ID used out of order also opens every
+     * lower-numbered stream of the same type. */
+    uint64_t first_id = stream_id & 3U;
+    size_t needed = 0;
+    for (uint64_t id = first_id; id <= stream_id; id += 4U) {
+        if (!neverc_quic_conn_find_stream(conn, id))
+            needed++;
+        if (id > UINT64_MAX - 4U) break;
+    }
+    if (needed > (size_t)(QUIC_MAX_STREAMS - conn->n_streams))
+        return NULL;
+
+    quic_stream_t *created = NULL;
+    for (uint64_t id = first_id; id <= stream_id; id += 4U) {
+        quic_stream_t *existing = neverc_quic_conn_find_stream(conn, id);
+        if (!existing) {
+            existing = conn_add_stream_locked(conn, id, 1);
+            if (!existing) return NULL;
+        }
+        if (id == stream_id) created = existing;
+        if (id > UINT64_MAX - 4U) break;
+    }
     if (stream_is_uni(stream_id)) {
         if (ordinal > conn->opened_peer_streams_uni)
             conn->opened_peer_streams_uni = ordinal;
     } else if (ordinal > conn->opened_peer_streams_bidi) {
         conn->opened_peer_streams_bidi = ordinal;
     }
-    return conn_add_stream_locked(conn, stream_id, 1);
+    return created;
 }
 
 int neverc_quic_stream_receive_locked(struct neverc_quic_conn *conn,
@@ -708,6 +731,65 @@ int neverc_quic_stream_receive_reset(
     if (!conn) return -1;
     nc_mutex_lock(&conn->lock);
     int result = neverc_quic_stream_receive_reset_locked(conn, frame);
+    nc_mutex_unlock(&conn->lock);
+    return result;
+}
+
+int neverc_quic_stream_apply_max_stream_data_locked(
+    struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t maximum) {
+    if (!conn || stream_id > QUIC_VARINT_MAX || maximum > QUIC_VARINT_MAX)
+        return -1;
+    /* Receive-only streams have no send side (RFC 9000 §19.10). */
+    if (stream_is_uni(stream_id) && !stream_is_local(conn, stream_id))
+        return -1;
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, stream_id);
+    if (!stream) {
+        if (stream_is_local(conn, stream_id)) return -1;
+        stream = get_or_create_receive_stream_locked(conn, stream_id);
+    }
+    if (!stream) return -1;
+    nc_mutex_lock(&stream->lock);
+    if (maximum > stream->send_max_data) stream->send_max_data = maximum;
+    nc_cond_broadcast(&stream->write_cond);
+    nc_mutex_unlock(&stream->lock);
+    return 0;
+}
+
+int neverc_quic_stream_apply_max_stream_data(
+    struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t maximum) {
+    if (!conn) return -1;
+    nc_mutex_lock(&conn->lock);
+    int result = neverc_quic_stream_apply_max_stream_data_locked(
+        conn, stream_id, maximum);
+    nc_mutex_unlock(&conn->lock);
+    return result;
+}
+
+int neverc_quic_stream_apply_stop_sending_locked(
+    struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t error_code) {
+    if (!conn || stream_id > QUIC_VARINT_MAX || error_code > QUIC_VARINT_MAX)
+        return -1;
+    if (stream_is_uni(stream_id) && !stream_is_local(conn, stream_id))
+        return -1;
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, stream_id);
+    if (!stream) {
+        if (stream_is_local(conn, stream_id)) return -1;
+        stream = get_or_create_receive_stream_locked(conn, stream_id);
+    }
+    if (!stream) return -1;
+    nc_mutex_lock(&stream->lock);
+    stream->reset_pending = 1;
+    stream->reset_error_code = error_code;
+    nc_mutex_unlock(&stream->lock);
+    return 0;
+}
+
+int neverc_quic_stream_apply_stop_sending(
+    struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t error_code) {
+    if (!conn) return -1;
+    nc_mutex_lock(&conn->lock);
+    int result = neverc_quic_stream_apply_stop_sending_locked(
+        conn, stream_id, error_code);
     nc_mutex_unlock(&conn->lock);
     return result;
 }

@@ -55,10 +55,25 @@ static int decode_tp_varint(const uint8_t *value, size_t length,
            consumed == length ? 0 : -1;
 }
 
+uint64_t neverc_quic_effective_idle_timeout_ms(uint64_t local_ms,
+                                              uint64_t peer_ms) {
+    if (peer_ms == 0) return local_ms;
+    if (local_ms == 0) return peer_ms;
+    return local_ms < peer_ms ? local_ms : peer_ms;
+}
+
 int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
                                          quic_transport_params_t *tp) {
     if (!tp || (len > 0 && !buf)) return -1;
-    neverc_quic_transport_params_default(tp);
+    /* RFC 9000 §18.2: omitted initial_max_* and max_idle_timeout are 0.
+     * Substituting local send defaults would grant flow-control credit the
+     * peer never advertised. Only parameters with non-zero RFC defaults
+     * are filled in here. */
+    memset(tp, 0, sizeof(*tp));
+    tp->max_udp_payload_size = 65527;
+    tp->ack_delay_exponent = 3;
+    tp->max_ack_delay = 25;
+    tp->active_connection_id_limit = 2;
 
     const uint8_t *p = buf;
     size_t rem = len;

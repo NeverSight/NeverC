@@ -71,6 +71,19 @@ static void test_parse_ipv6(void) {
     neverc_netip_addr_string(&addr, buf, sizeof(buf));
     ASSERT_STREQ(buf, "fe80::1%eth0");
 
+    ASSERT_EQ(neverc_netip_parse_addr("::ffff:192.168.1.1", &addr), 0);
+    ASSERT_TRUE(!addr.is_v4);
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "::ffff:192.168.1.1");
+
+    ASSERT_EQ(neverc_netip_parse_addr("::ffff:c0a8:101", &addr), 0);
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "::ffff:192.168.1.1");
+
+    ASSERT_EQ(neverc_netip_parse_addr("::ffff:192.168.1.1%eth0", &addr), 0);
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "::ffff:192.168.1.1%eth0");
+
     ASSERT_EQ(neverc_netip_parse_addr("ff02::1", &addr), 0);
     neverc_netip_addr_string(&addr, buf, sizeof(buf));
     ASSERT_STREQ(buf, "ff02::1");
@@ -207,6 +220,13 @@ static void test_prefix(void) {
     ASSERT_EQ(neverc_netip_parse_prefix("1.2.3.4/33", &pfx), -1);
     ASSERT_EQ(neverc_netip_parse_prefix("1.2.3.4/", &pfx), -1);
     ASSERT_EQ(neverc_netip_parse_prefix("2001:db8::/129", &pfx), -1);
+    ASSERT_EQ(neverc_netip_parse_prefix("fe80::1%eth0/64", &pfx), -1);
+    ASSERT_EQ(neverc_netip_parse_prefix("1.2.3.4/08", &pfx), -1);
+    ASSERT_EQ(neverc_netip_parse_prefix("10.0.0.0/0", &pfx), 0);
+
+    ASSERT_EQ(neverc_netip_parse_prefix("2001:db8::/32", &pfx), 0);
+    neverc_netip_parse_addr("2001:db8::1%eth0", &addr);
+    ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
 }
 
 static void test_addrport(void) {
@@ -232,6 +252,14 @@ static void test_addrport(void) {
     ASSERT_EQ(neverc_netip_parse_addrport(NULL, &ap), -1);
     ASSERT_EQ(neverc_netip_parse_addrport("[::1]", &ap), -1);
     ASSERT_EQ(neverc_netip_parse_addrport("192.168.1.1", &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport("[192.168.1.1]:80", &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport("[fe80::1%eth0]:80", &ap), 0);
+    ASSERT_EQ(ap.port, 80);
+    neverc_netip_addrport_string(&ap, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "[fe80::1%eth0]:80");
+    ASSERT_EQ(neverc_netip_parse_addrport("[::ffff:192.168.1.1]:80", &ap), 0);
+    neverc_netip_addrport_string(&ap, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "[::ffff:192.168.1.1]:80");
 }
 
 static void test_wellknown(void) {

@@ -249,6 +249,66 @@ static void test_format_layout(void) {
     s = neverc_time_format(t, "2006/01/02");
     check_bool("format date only", strcmp(s, "2024/03/15") == 0, 1);
     free(s);
+
+    s = neverc_time_format(t, "Mon Jan 02 2006");
+    check_bool("format jan mon", strcmp(s, "Fri Mar 15 2024") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(t, "Monday January 02");
+    check_bool("format full names", strcmp(s, "Friday March 15") == 0, 1);
+    free(s);
+
+    neverc_time_t sept = neverc_time_date(2024, 9, 4, 0, 0, 0, 0);
+    s = neverc_time_format(sept, "January");
+    check_bool("format january expands", strcmp(s, "September") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(t, "3:04PM");
+    check_bool("format 12h pm", strcmp(s, "2:30PM") == 0, 1);
+    free(s);
+
+    neverc_time_t morning = neverc_time_date(2024, 3, 15, 0, 5, 0, 0);
+    s = neverc_time_format(morning, "3:04pm");
+    check_bool("format 12h am", strcmp(s, "12:05am") == 0, 1);
+    free(s);
+
+    neverc_time_t fifth = neverc_time_date(2024, 1, 5, 0, 0, 0, 123456789);
+    s = neverc_time_format(fifth, "Jan _2 06 MST");
+    check_bool("format space day and zone", strcmp(s, "Jan  5 24 UTC") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(fifth, "1/2/2006");
+    check_bool("format unpadded", strcmp(s, "1/5/2024") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(fifth, "15:04:05.000");
+    check_bool("format exact frac", strcmp(s, "00:00:00.123") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(fifth, "15:04:05.999");
+    check_bool("format trim frac", strcmp(s, "00:00:00.123") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(neverc_time_date(2024, 1, 5, 0, 0, 0, 0),
+                          "15:04:05.999");
+    check_bool("format omit zero frac", strcmp(s, "00:00:00") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(t, "2006-01-02T15:04:05Z07:00");
+    check_bool("format rfc3339 layout",
+               strcmp(s, "2024-03-15T14:30:45Z") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(neverc_time_date(2024, 6, 15, 12, 0, 0, 0),
+                           "2006-01-02T15:04:05Z0700");
+    check_bool("format Z0700", strcmp(s, "2024-06-15T12:00:00Z") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(neverc_time_date(2024, 6, 15, 12, 0, 0, 0),
+                           "2006-01-02T15:04:05-07");
+    check_bool("format hour-only zone",
+               strcmp(s, "2024-06-15T12:00:00+00") == 0, 1);
+    free(s);
 }
 
 static void test_parse_layout(void) {
@@ -259,6 +319,62 @@ static void test_parse_layout(void) {
     check_int("parse year", neverc_time_year(t), 2024);
     check_int("parse month", neverc_time_month(t), 6);
     check_int("parse day", neverc_time_day(t), 15);
+
+    ok = neverc_time_parse("Jan 02 2006", "Jun 15 2024", &t);
+    check_int("parse jan ok", ok, 0);
+    check_int("parse jan month", neverc_time_month(t), 6);
+    check_int("parse jan day", neverc_time_day(t), 15);
+
+    ok = neverc_time_parse("Monday January 02 2006", "Saturday June 15 2024", &t);
+    check_int("parse full names", ok, 0);
+    check_int("parse full month", neverc_time_month(t), 6);
+
+    check_int("parse weekday mismatch",
+              neverc_time_parse("Mon 2006-01-02", "Sun 2024-06-15", &t), -1);
+    check_int("parse bad month name",
+              neverc_time_parse("Jan 02", "Xxx 15", &t), -1);
+
+    ok = neverc_time_parse("3:04PM", "2:30PM", &t);
+    check_int("parse 12h pm", ok, 0);
+    check_int("parse 12h hour", neverc_time_hour(t), 14);
+    check_int("parse 12h min", neverc_time_minute(t), 30);
+
+    ok = neverc_time_parse("3:04PM", "12:05AM", &t);
+    check_int("parse 12h midnight", ok, 0);
+    check_int("parse 12h midnight hour", neverc_time_hour(t), 0);
+
+    ok = neverc_time_parse("Jan _2 06", "jun  5 69", &t);
+    check_int("parse space day and 2-digit year", ok, 0);
+    check_int("parse 2-digit year 69", neverc_time_year(t), 1969);
+    check_int("parse case-insensitive month", neverc_time_month(t), 6);
+    check_int("parse space day", neverc_time_day(t), 5);
+
+    ok = neverc_time_parse("1/2/2006", "6/5/2024", &t);
+    check_int("parse unpadded", ok, 0);
+    check_int("parse unpadded month", neverc_time_month(t), 6);
+    check_int("parse unpadded day", neverc_time_day(t), 5);
+
+    ok = neverc_time_parse("15:04:05.000", "12:30:45.123", &t);
+    check_int("parse exact frac", ok, 0);
+    check_int("parse frac nsec", neverc_time_nanosecond(t), 123000000);
+
+    ok = neverc_time_parse("2006-01-02T15:04:05Z07:00",
+                           "2024-06-15T12:00:00+08:00", &t);
+    check_int("parse numeric zone", ok, 0);
+    check_int("parse zone hour utc", neverc_time_hour(t), 4);
+
+    ok = neverc_time_parse("2006-01-02T15:04:05Z0700",
+                           "2024-06-15T12:00:00+0800", &t);
+    check_int("parse Z0700", ok, 0);
+    check_int("parse Z0700 hour utc", neverc_time_hour(t), 4);
+
+    ok = neverc_time_parse("2006-01-02T15:04:05-07",
+                           "2024-06-15T12:00:00+08", &t);
+    check_int("parse hour-only zone", ok, 0);
+    check_int("parse hour-only zone utc", neverc_time_hour(t), 4);
+
+    check_int("parse missing exact frac",
+              neverc_time_parse("15:04:05.000", "12:30:45", &t), -1);
 }
 
 static void test_truncate_round(void) {

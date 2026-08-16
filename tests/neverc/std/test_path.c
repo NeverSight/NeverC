@@ -250,6 +250,29 @@ static void test_match(void) {
     check_int("bang is not negation", neverc_path_match("[!a]", "b"), 0);
     check_int("caret negation", neverc_path_match("[^a]", "b"), 1);
     check_int("caret negation no", neverc_path_match("[^a]", "a"), 0);
+    check_int("utf8 question", neverc_path_match("?", "\xe4\xb8\x96"), 1);
+    check_int("utf8 question is one rune",
+              neverc_path_match("??", "\xe4\xb8\x96"), 0);
+    check_int("utf8 class",
+              neverc_path_match("[\xe4\xb8\x80-\xe9\xbe\xa5]", "\xe4\xb8\x96"), 1);
+    /* Official Go path.Match cases: ☺ = e2 98 ba, α = ce b1, ζ = ce b6. */
+    check_int("question matches smiley",
+              neverc_path_match("a?b", "a\xe2\x98\xba" "b"), 1);
+    check_int("class matches smiley",
+              neverc_path_match("a[^a]b", "a\xe2\x98\xba" "b"), 1);
+    check_int("three questions vs one rune",
+              neverc_path_match("a???b", "a\xe2\x98\xba" "b"), 0);
+    check_int("unicode range alpha",
+              neverc_path_match("[a-\xce\xb6]*", "\xce\xb1"), 1);
+    check_int("invalid utf8 in class", neverc_path_match("[\x80]", "a"), -1);
+    check_int("escaped class close", neverc_path_match("[\\]a]", "]"), 1);
+    check_int("escaped dash class", neverc_path_match("[\\-]", "-"), 1);
+    check_int("empty class", neverc_path_match("[]a]", "]"), -1);
+    check_int("dash only class", neverc_path_match("[-]", "-"), -1);
+    check_int("double dash range", neverc_path_match("[a-b-c]", "a"), -1);
+    check_int("unclosed after literal", neverc_path_match("a[", "a"), -1);
+    check_int("unclosed later chunk", neverc_path_match("a/b[", "x"), -1);
+    check_int("remainder bad class", neverc_path_match("x*[", "y"), -1);
 }
 
 int main(void) {

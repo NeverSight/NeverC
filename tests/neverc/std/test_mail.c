@@ -133,6 +133,20 @@ static void test_parse_message(void) {
     }
     n += (size_t)snprintf(many + n, sizeof(many) - n, "\r\n");
     ASSERT_EQ(neverc_mail_parse_message(many, n, &m), -1);
+
+    /* Bare CR is not a line break. Treating it as one smuggles Bcc. */
+    const char *bare_cr = "From: user@x.com\rBcc: hidden@x.com\r\n\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(bare_cr, strlen(bare_cr), &m), -1);
+    const char *bare_cr_fold = "From: user@x.com\r Bcc: hidden@x.com\r\n\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(bare_cr_fold, strlen(bare_cr_fold), &m),
+              -1);
+
+    const char *lf_only = "From: a@b.com\nTo: c@d.com\n\nbody";
+    ASSERT_EQ(neverc_mail_parse_message(lf_only, strlen(lf_only), &m), 0);
+    ASSERT_STREQ(neverc_mail_header_get(&m, "From"), "a@b.com");
+    ASSERT_STREQ(neverc_mail_header_get(&m, "To"), "c@d.com");
+    ASSERT_TRUE(m.body_len == 4);
+    ASSERT_TRUE(memcmp(m.body, "body", 4) == 0);
 }
 
 static void test_parse_date(void) {

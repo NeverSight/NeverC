@@ -330,6 +330,48 @@ static void test_sof_chroma_420(void) {
     free(img.pixels);
 }
 
+static int patch_sof_sampling(uint8_t *data, size_t length, uint8_t sampling) {
+    size_t sof = find_marker(data, length, 0xC0);
+    if (sof == SIZE_MAX || sof + 11 >= length) return -1;
+    data[sof + 11] = sampling; /* SOF0: id at +10, H/V at +11 */
+    return 0;
+}
+
+static void test_sof_grayscale_ignores_sampling(void) {
+    printf("[sof_grayscale_ignores_sampling]\n");
+    uint8_t pixels[64];
+    memset(pixels, 128, sizeof(pixels));
+    neverc_jpeg_image_t source = {
+        .width = 8, .height = 8, .channels = 1,
+        .pixels = pixels, .stride = 8
+    };
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&source, 95, &encoded, &encoded_length), 0);
+    if (!encoded) return;
+
+    /* 2x2: MCU geometry would become 16x16 / 4 blocks without the SOF rule. */
+    ASSERT_EQ(patch_sof_sampling(encoded, encoded_length, 0x22), 0);
+    neverc_jpeg_image_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length, &decoded), 0);
+    ASSERT_EQ(decoded.width, 8);
+    ASSERT_EQ(decoded.height, 8);
+    ASSERT_EQ(decoded.channels, 1);
+    ASSERT_NEAR(decoded.pixels[4 * 8 + 4], 128, 10);
+    neverc_jpeg_free(&decoded);
+
+    /* 4x4: interleaved 10-block cap would reject a legal 1-block grayscale MCU. */
+    ASSERT_EQ(patch_sof_sampling(encoded, encoded_length, 0x44), 0);
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length, &decoded), 0);
+    ASSERT_EQ(decoded.width, 8);
+    ASSERT_EQ(decoded.height, 8);
+    neverc_jpeg_free(&decoded);
+
+    free(encoded);
+}
+
 int main(void) {
     printf("NeverC image/jpeg tests\n");
     test_encode_decode_rgb();
@@ -340,6 +382,7 @@ int main(void) {
     test_rejects_malformed_streams();
     test_quality_levels();
     test_sof_chroma_420();
+    test_sof_grayscale_ignores_sampling();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

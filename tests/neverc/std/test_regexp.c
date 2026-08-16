@@ -52,6 +52,8 @@ static void test_match(void) {
     check_bool("alt match b", neverc_regexp_match_string("cat|dog", "dog"), 1);
     check_bool("alt no match", neverc_regexp_match_string("cat|dog", "bird"), 0);
     check_bool("group match", neverc_regexp_match_string("(ab)+", "abab"), 1);
+    check_bool("noncap group", neverc_regexp_match_string("(?:ab)+", "abab"), 1);
+    check_bool("noncap group no", neverc_regexp_match_string("(?:ab)+", "abx"), 0);
 }
 
 static void test_character_classes(void) {
@@ -84,6 +86,15 @@ static void test_character_classes(void) {
     check_bool("{3} literal braces", neverc_regexp_match_string("{3}", "{3}"), 1);
     check_bool("] literal", neverc_regexp_match_string("]", "]"), 1);
     check_bool("a] literal", neverc_regexp_match_string("a]", "a]"), 1);
+    check_bool("\\x41 is A", neverc_regexp_match_string("\\x41", "A"), 1);
+    check_bool("\\x61 is a", neverc_regexp_match_string("\\x61", "a"), 1);
+    /* NeverC C hex is greedy: "\x96B" is one value, so split the text literal. */
+    check_bool("\\x96B", neverc_regexp_match_string("\\x96B", "\x96" "B"), 1);
+    check_bool("\\x96 not whole", neverc_regexp_match_string("\\x96", "\x96" "B"), 0);
+    check_bool("\\x{41} is A", neverc_regexp_match_string("\\x{41}", "A"), 1);
+    check_bool("[\\x41-\\x43] B", neverc_regexp_match_string("[\\x41-\\x43]", "B"), 1);
+    check_bool("[\\x41-\\x43] D no", neverc_regexp_match_string("[\\x41-\\x43]", "D"), 0);
+    check_bool("\\a bell", neverc_regexp_match_string("\\a", "\a"), 1);
 }
 
 static void test_find(void) {
@@ -102,6 +113,39 @@ static void test_find(void) {
     m = neverc_regexp_find(re, "no digits here", &mlen);
     check_bool("find null", m == NULL, 1);
 
+    neverc_regexp_free(re);
+}
+
+static void test_find_submatch(void) {
+    printf("[find_submatch]\n");
+    neverc_regexp_match_t m[4];
+    neverc_regexp_t *re = neverc_regexp_compile("(a+)(b+)", NULL);
+    int n = neverc_regexp_find_submatch(re, "xxaaabbcyy", m, 3);
+    check_int("submatch found", n, 1);
+    check_int("submatch full len", (int)m[0].len, 5);
+    check_int("group1 len", (int)m[1].len, 3);
+    check_int("group2 len", (int)m[2].len, 2);
+    if (m[1].start && m[1].len == 3)
+        check_int("group1 a", m[1].start[0] == 'a' && m[1].start[2] == 'a', 1);
+    if (m[2].start && m[2].len == 2)
+        check_int("group2 b", m[2].start[0] == 'b' && m[2].start[1] == 'b', 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("(?:ab)(c)", NULL);
+    memset(m, 0, sizeof(m));
+    n = neverc_regexp_find_submatch(re, "abc", m, 2);
+    check_int("noncap submatch", n, 1);
+    check_int("noncap group1 len", (int)m[1].len, 1);
+    if (m[1].start) check_int("noncap group1 c", m[1].start[0] == 'c', 1);
+    neverc_regexp_free(re);
+
+    /* Empty-width: ()* must not loop; find stays non-empty so no match. */
+    re = neverc_regexp_compile("()*", NULL);
+    check_bool("()* compiles", re != NULL, 1);
+    int count = 0;
+    char **all = neverc_regexp_find_all(re, "abc", -1, &count);
+    check_int("empty-width find_all count", count, 0);
+    neverc_regexp_free_strings(all, count);
     neverc_regexp_free(re);
 }
 
@@ -331,6 +375,21 @@ static void test_repeat_braces(void) {
     re = neverc_regexp_compile("[a-\\d]", &err);
     check_bool("[a-\\d] range rejected", re == NULL, 1);
     neverc_regexp_free(re);
+
+    err = NULL;
+    re = neverc_regexp_compile("\\x", &err);
+    check_bool("\\x rejected", re == NULL, 1);
+    neverc_regexp_free(re);
+
+    err = NULL;
+    re = neverc_regexp_compile("\\x4", &err);
+    check_bool("\\x4 rejected", re == NULL, 1);
+    neverc_regexp_free(re);
+
+    err = NULL;
+    re = neverc_regexp_compile("\\xGG", &err);
+    check_bool("\\xGG rejected", re == NULL, 1);
+    neverc_regexp_free(re);
 }
 
 static void test_invalid_inputs(void) {
@@ -499,6 +558,7 @@ int main(void) {
     test_match();
     test_character_classes();
     test_find();
+    test_find_submatch();
     test_find_all();
     test_replace();
     test_anchors();
@@ -508,6 +568,7 @@ int main(void) {
     test_empty_and_edge_cases();
     test_quote_meta();
     test_must_compile();
+    test_submatch_and_hex();
     test_find_differential();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

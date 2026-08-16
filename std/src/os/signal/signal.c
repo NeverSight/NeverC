@@ -83,7 +83,8 @@ void neverc_signal_notify(int signum, neverc_signal_handler_t handler) {
     sa.sa_handler = posix_signal_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
-    sigaction(signum, &sa, NULL);
+    if (sigaction(signum, &sa, NULL) != 0)
+        g_handlers[signum] = NULL;
 }
 
 void neverc_signal_stop(int signum) {
@@ -116,17 +117,19 @@ int neverc_signal_wait(const int *sigs, int nsigs) {
     if (!sigs || nsigs <= 0) return -1;
     sigset_t set;
     sigemptyset(&set);
-    for (int i = 0; i < nsigs; i++)
-        sigaddset(&set, sigs[i]);
+    for (int i = 0; i < nsigs; i++) {
+        if (sigs[i] == SIGKILL || sigs[i] == SIGSTOP) return -1;
+        if (sigaddset(&set, sigs[i]) != 0) return -1;
+    }
 
     sigset_t old;
-    sigprocmask(SIG_BLOCK, &set, &old);
+    if (sigprocmask(SIG_BLOCK, &set, &old) != 0) return -1;
 
     int sig = 0;
-    sigwait(&set, &sig);
+    int rc = sigwait(&set, &sig);
 
     sigprocmask(SIG_SETMASK, &old, NULL);
-    return sig;
+    return rc == 0 ? sig : -1;
 }
 
 #endif /* POSIX */

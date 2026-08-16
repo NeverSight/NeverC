@@ -296,6 +296,42 @@ static void test_null_source(void) {
     ASSERT_INT_EQ(neverc_scanner_scan(NULL), NEVERC_SCANNER_EOF);
 }
 
+static void test_number_separators_and_prefixes(void) {
+    printf("[number_separators_and_prefixes]\n");
+    neverc_scanner_t s;
+    const char *src = "1_000 0x_f00d 0b_10 0b0190 0o8123";
+    neverc_scanner_init(&s, src, strlen(src));
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "1_000");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0x_f00d");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0b_10");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0b0190");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0o8123");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+}
+
+static void test_prefix_floats(void) {
+    printf("[prefix_floats]\n");
+    neverc_scanner_t s;
+    const char *src = "0b1.0 0o1.2 0p0 1.0P-1";
+    neverc_scanner_init(&s, src, strlen(src));
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_FLOAT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0b1.0");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_FLOAT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0o1.2");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_FLOAT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0p0");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_FLOAT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "1.0P-1");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+}
+
 static void test_mixed(void) {
     printf("[mixed]\n");
     neverc_scanner_t s;
@@ -330,6 +366,8 @@ int main(void) {
     test_ints_do_not_consume_fraction();
     test_ints_do_not_consume_hex_float();
     test_block_comments_are_not_nested();
+    test_number_separators_and_prefixes();
+    test_prefix_floats();
     test_null_source();
     test_mixed();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);

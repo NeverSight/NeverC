@@ -888,6 +888,30 @@ static void h2_remove_stream(h2_conn_t *conn, uint32_t id);
 static void h2_dispatch_request(h2_conn_t *conn, h2_stream_t *stream);
 static int h2_submit_request(h2_conn_t *conn, h2_stream_t *stream);
 
+static int h2_is_tchar(unsigned char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') ||
+           c == '!' || c == '#' || c == '$' || c == '%' || c == '&' ||
+           c == '\'' || c == '*' || c == '+' || c == '-' || c == '.' ||
+           c == '^' || c == '_' || c == 0x60 || c == '|' || c == '~';
+}
+
+static int h2_name_valid(const char *name) {
+    if (!name || !name[0]) return 0;
+    for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
+        if (*p >= 'A' && *p <= 'Z') return 0;
+        if (!h2_is_tchar(*p)) return 0;
+    }
+    return 1;
+}
+
+static int h2_token_valid(const char *value) {
+    if (!value || !value[0]) return 0;
+    for (const unsigned char *p = (const unsigned char *)value; *p; p++)
+        if (!h2_is_tchar(*p)) return 0;
+    return 1;
+}
+
 static int h2_value_valid(const char *value) {
     if (!value) return 0;
     for (const unsigned char *p = (const unsigned char *)value; *p; p++)
@@ -944,10 +968,6 @@ static int h2_validate_request_headers(h2_conn_t *conn,
         if (list_size > conn->local_settings.max_header_list_size ||
             !h2_value_valid(value))
             return -1;
-        for (size_t j = 0; j < name_length; j++)
-            if ((unsigned char)name[j] >= 'A' &&
-                (unsigned char)name[j] <= 'Z')
-                return -1;
         if (name[0] == ':') {
             if (regular_seen) return -1;
             const char **slot = NULL;
@@ -961,7 +981,7 @@ static int h2_validate_request_headers(h2_conn_t *conn,
             continue;
         }
         regular_seen = 1;
-        if (name_length == 0 ||
+        if (!h2_name_valid(name) ||
             strcmp(name, "connection") == 0 ||
             strcmp(name, "proxy-connection") == 0 ||
             strcmp(name, "keep-alive") == 0 ||
@@ -981,7 +1001,8 @@ static int h2_validate_request_headers(h2_conn_t *conn,
             content_length_seen = 1;
         }
     }
-    if (!method || !*method || strcmp(method, "CONNECT") == 0 ||
+    if (!method || !h2_token_valid(method) ||
+        strcmp(method, "CONNECT") == 0 ||
         !scheme || (strcmp(scheme, "http") != 0 &&
                     strcmp(scheme, "https") != 0) ||
         !path || (path[0] != '/' && strcmp(path, "*") != 0) ||
@@ -1005,17 +1026,14 @@ static int h2_validate_trailers(h2_conn_t *conn,
         const char *value = trailers[i].value;
         size_t name_length = strlen(name);
         size_t value_length = strlen(value);
-        if (name_length == 0 || name[0] == ':' || !h2_value_valid(value) ||
+        if (name_length == 0 || name[0] == ':' || !h2_name_valid(name) ||
+            !h2_value_valid(value) ||
             name_length > SIZE_MAX - value_length - 32 ||
             list_size > SIZE_MAX - name_length - value_length - 32)
             return -1;
         list_size += name_length + value_length + 32;
         if (list_size > conn->local_settings.max_header_list_size)
             return -1;
-        for (size_t j = 0; j < name_length; j++)
-            if ((unsigned char)name[j] >= 'A' &&
-                (unsigned char)name[j] <= 'Z')
-                return -1;
         if (strcmp(name, "connection") == 0 ||
             strcmp(name, "proxy-connection") == 0 ||
             strcmp(name, "keep-alive") == 0 ||
@@ -1185,6 +1203,22 @@ static int h2_closed_stream_was_reset(h2_conn_t *conn, uint32_t id,
         }
     }
     return 0;
+}
+
+/* RFC 9113 §5.1.1: a stream identifier cannot be reused after the client
+ * first uses it, even when the server refuses the stream. */
+static void h2_consume_idle_stream_id(h2_conn_t *conn, uint32_t id) {
+    if (id <= conn->max_stream_id)
+        return;
+    conn->max_stream_id = id;
+    h2_closed_stream_t *entry =
+        &conn->closed_streams[conn->closed_stream_next];
+    entry->id = id;
+    entry->reset = 1;
+    conn->closed_stream_next =
+        (conn->closed_stream_next + 1U) % H2_CLOSED_STREAM_HISTORY;
+    if (conn->closed_stream_count < H2_CLOSED_STREAM_HISTORY)
+        conn->closed_stream_count++;
 }
 
 static h2_stream_t *h2_create_stream(h2_conn_t *conn, uint32_t id) {
@@ -1903,7 +1937,14 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 break;
             }
             if (!stream) {
+                if ((fhdr.stream_id & 1U) == 0) {
+                    (void)h2_conn_write_goaway(&conn,
+                                               NC_H2_PROTOCOL_ERROR);
+                    free(payload);
+                    goto cleanup;
+                }
                 if (nc_atomic_load(&conn.goaway_sent)) {
+                    h2_consume_idle_stream_id(&conn, fhdr.stream_id);
                     if (h2_reject_headers_keep_hpack(
                             &conn, &fhdr, payload,
                             NC_H2_REFUSED_STREAM) != 0) {
@@ -1911,12 +1952,6 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                         goto cleanup;
                     }
                     break;
-                }
-                if ((fhdr.stream_id & 1U) == 0) {
-                    (void)h2_conn_write_goaway(&conn,
-                                               NC_H2_PROTOCOL_ERROR);
-                    free(payload);
-                    goto cleanup;
                 }
                 if (fhdr.stream_id <= conn.max_stream_id) {
                     int found = 0;
@@ -1939,6 +1974,7 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 }
                 if (nc_atomic_load(&conn.active_streams) >=
                     (int)conn.local_settings.max_concurrent_streams) {
+                    h2_consume_idle_stream_id(&conn, fhdr.stream_id);
                     if (h2_reject_headers_keep_hpack(
                             &conn, &fhdr, payload,
                             NC_H2_REFUSED_STREAM) != 0) {
@@ -1949,6 +1985,7 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 }
                 stream = h2_create_stream(&conn, fhdr.stream_id);
                 if (!stream) {
+                    h2_consume_idle_stream_id(&conn, fhdr.stream_id);
                     if (h2_reject_headers_keep_hpack(
                             &conn, &fhdr, payload,
                             NC_H2_REFUSED_STREAM) != 0) {
@@ -2014,6 +2051,13 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
         }
 
         case NC_H2_FRAME_DATA: {
+            const uint8_t *data = NULL;
+            size_t data_length = 0;
+            if (h2_data_fragment(&fhdr, payload, &data, &data_length) != 0) {
+                (void)h2_conn_write_goaway(&conn, NC_H2_PROTOCOL_ERROR);
+                free(payload);
+                goto cleanup;
+            }
             h2_stream_t *stream = h2_find_stream(&conn, fhdr.stream_id);
             if (!stream && fhdr.stream_id > conn.max_stream_id) {
                 (void)h2_conn_write_goaway(&conn, NC_H2_PROTOCOL_ERROR);
@@ -2031,13 +2075,6 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 (void)h2_conn_write_rst(&conn, fhdr.stream_id,
                                         NC_H2_STREAM_CLOSED);
                 break;
-            }
-            const uint8_t *data = NULL;
-            size_t data_length = 0;
-            if (h2_data_fragment(&fhdr, payload, &data, &data_length) != 0) {
-                (void)h2_conn_write_goaway(&conn, NC_H2_PROTOCOL_ERROR);
-                free(payload);
-                goto cleanup;
             }
             nc_mutex_lock(&conn.state_lock);
             if (fhdr.length > (uint32_t)conn.conn_recv_window ||

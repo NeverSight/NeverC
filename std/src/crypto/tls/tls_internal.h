@@ -396,6 +396,9 @@ int nci_tls_handle_post_handshake(
 int nci_tls_handle_peer_alert(
     neverc_tls_conn_t *conn,
     const uint8_t *data, size_t data_len);
+int nci_tls_fail_handshake_alert(
+    neverc_tls_conn_t *conn,
+    const uint8_t *data, size_t data_len);
 
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
 neverc_tls_conn_t *nci_tls_start_handshake(

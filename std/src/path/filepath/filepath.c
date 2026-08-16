@@ -4,6 +4,7 @@
  */
 
 #include "neverc/std/path/filepath.h"
+#include "neverc/std/unicode/utf8.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,28 +17,92 @@ static int is_sep(char c) {
 #endif
 }
 
+#ifdef _WIN32
+static char ascii_upper(char c) {
+    if (c >= 'a' && c <= 'z')
+        return (char)(c - ('a' - 'A'));
+    return c;
+}
+
+/* Go pathHasPrefixFold: case-insensitive, separators equivalent. */
+static int path_has_prefix_fold(const char *s, size_t slen,
+                                const char *prefix, size_t plen) {
+    size_t i;
+    if (slen < plen)
+        return 0;
+    for (i = 0; i < plen; i++) {
+        if (is_sep(prefix[i])) {
+            if (!is_sep(s[i]))
+                return 0;
+        } else if (ascii_upper(s[i]) != ascii_upper(prefix[i])) {
+            return 0;
+        }
+    }
+    if (slen > plen && !is_sep(s[plen]))
+        return 0;
+    return 1;
+}
+
+static size_t unc_len(const char *path, size_t len, size_t prefix_len) {
+    int count = 0;
+    size_t i;
+    for (i = prefix_len; i < len; i++) {
+        if (is_sep(path[i])) {
+            count++;
+            if (count == 2)
+                return i;
+        }
+    }
+    return len;
+}
+
+/* Reject a volume that contains a ".." component (Go validVolumeNameLen). */
+static size_t valid_volume_name_len(const char *path, size_t n) {
+    size_t i = 0;
+    while (i < n) {
+        size_t start = i;
+        while (i < n && !is_sep(path[i]))
+            i++;
+        if (i - start == 2 && path[start] == '.' && path[start + 1] == '.')
+            return 0;
+        if (i < n)
+            i++;
+    }
+    return n;
+}
+#endif
+
 static size_t volume_name_len(const char *path) {
 #ifdef _WIN32
     size_t len = strlen(path);
-    if (len >= 2 && path[1] == ':' &&
-        ((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z')))
+    /* Go: any path[1]==':' is a drive volume, not only A-Z. */
+    if (len >= 2 && path[1] == ':')
         return 2;
-    /* UNC: \\host\share or incomplete \\host (Go uncLen). */
-    if (len >= 2 && is_sep(path[0]) && is_sep(path[1])) {
-        int slashes = 0;
+    if (len == 0 || !is_sep(path[0]))
+        return 0;
+    /* Device prefixes: \\.  \\?  \?? */
+    if (path_has_prefix_fold(path, len, "\\\\.", 3) ||
+        path_has_prefix_fold(path, len, "\\\\?", 3) ||
+        path_has_prefix_fold(path, len, "\\??", 3)) {
         size_t i;
-        for (i = 2; i < len; i++) {
-            if (is_sep(path[i])) {
-                slashes++;
-                if (slashes == 2)
-                    return i;
-            }
+        if (len == 3)
+            return 3;
+        if (path_has_prefix_fold(path + 4, len - 4, "UNC", 3))
+            return valid_volume_name_len(path, unc_len(path, len, 8));
+        /* Next component after the prefix is part of the volume. */
+        for (i = 0; i < len - 4; i++) {
+            if (is_sep(path[4 + i]))
+                return valid_volume_name_len(path, 4 + i);
         }
-        return len;
+        return valid_volume_name_len(path, len);
     }
-#endif
+    if (len >= 2 && is_sep(path[1]))
+        return valid_volume_name_len(path, unc_len(path, len, 2));
+    return 0;
+#else
     (void)path;
     return 0;
+#endif
 }
 
 const char *neverc_filepath_base(const char *path, char *buf, size_t buf_len) {
@@ -106,10 +171,13 @@ const char *neverc_filepath_ext(const char *path) {
 int neverc_filepath_isabs(const char *path) {
     if (!path) return 0;
 #ifdef _WIN32
+    size_t vol = volume_name_len(path);
+    if (vol == 0)
+        return 0;
+    /* UNC / device paths that start with two separators are absolute. */
     if (is_sep(path[0]) && is_sep(path[1]))
         return 1;
-    size_t vol = volume_name_len(path);
-    return vol > 0 && path[vol] != '\0' && is_sep(path[vol]);
+    return path[vol] != '\0' && is_sep(path[vol]);
 #else
     return path[0] == '/';
 #endif
@@ -200,7 +268,7 @@ const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
     }
 
 #ifdef _WIN32
-    /* postClean: a/../c: must not become a drive-relative path. */
+    /* postClean: do not turn a relative path into a drive or \??\ device path. */
     if (vol == 0 && opos >= 2) {
         size_t i;
         int has_colon = 0;
@@ -215,6 +283,12 @@ const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
             memmove(out + 2, out, opos);
             out[0] = '.';
             out[1] = NEVERC_FILEPATH_SEP;
+            opos += 2;
+        } else if (opos >= 3 && is_sep(out[0]) && out[1] == '?' && out[2] == '?') {
+            if (opos + 2 > out_cap) goto clean_failed;
+            memmove(out + 2, out, opos);
+            out[0] = NEVERC_FILEPATH_SEP;
+            out[1] = '.';
             opos += 2;
         }
     }
@@ -241,39 +315,51 @@ const char *neverc_filepath_join(const char *a, const char *b, char *buf, size_t
     }
     if (a_empty) return neverc_filepath_clean(b, buf, buf_len);
     if (b_empty) return neverc_filepath_clean(a, buf, buf_len);
-    if (neverc_filepath_isabs(b) || volume_name_len(b) > 0)
-        return neverc_filepath_clean(b, buf, buf_len);
-#ifdef _WIN32
-    if (is_sep(b[0])) {
-        size_t avol = volume_name_len(a);
-        size_t blen = strlen(b);
-        if (avol > SIZE_MAX - blen - 1) return NULL;
-        char *rooted = (char *)malloc(avol + blen + 1);
-        if (!rooted) return NULL;
-        memcpy(rooted, a, avol);
-        memcpy(rooted + avol, b, blen + 1);
-        const char *result = neverc_filepath_clean(rooted, buf, buf_len);
-        free(rooted);
-        return result;
-    }
-#endif
 
     size_t alen = strlen(a), blen = strlen(b);
-    int skip_sep = 0;
+    const char *buse = b;
+    size_t buse_len = blen;
+    size_t extra = 0;
 #ifdef _WIN32
-    /* Join("C:", "foo") is drive-relative "C:foo", not "C:\foo". */
-    skip_sep = (alen > 0 && a[alen - 1] == ':');
+    /* Go path/filepath.Join: later absolute/volume elements are not discarded. */
+    {
+        char last = a[alen - 1];
+        if (is_sep(last)) {
+            while (buse_len > 0 && is_sep(buse[0])) {
+                buse++;
+                buse_len--;
+            }
+            /* Join(`\`, `??\a`) must be `\.\??\a`, not a Root Local Device path. */
+            if (alen == 1 && buse_len >= 2 && buse[0] == '?' && buse[1] == '?' &&
+                (buse_len == 2 || is_sep(buse[2])))
+                extra = 2;
+        } else if (last == ':') {
+            /* Join("C:", "foo") is drive-relative "C:foo". */
+        } else {
+            extra = 1;
+        }
+    }
+#else
+    extra = 1;
 #endif
-    if (blen > SIZE_MAX - 2 || alen > SIZE_MAX - blen - 2) return NULL;
-    size_t joined_len = alen + (skip_sep ? 0 : 1) + blen;
+    if (buse_len > SIZE_MAX - 2 || alen > SIZE_MAX - buse_len - extra) return NULL;
+    size_t joined_len = alen + extra + buse_len;
     char *tmp = (char *)malloc(joined_len + 1);
     if (!tmp) return NULL;
     memcpy(tmp, a, alen);
-    if (skip_sep) {
-        memcpy(tmp + alen, b, blen);
-    } else {
-        tmp[alen] = NEVERC_FILEPATH_SEP;
-        memcpy(tmp + alen + 1, b, blen);
+    {
+        size_t o = alen;
+#ifdef _WIN32
+        if (extra == 2) {
+            tmp[o++] = '.';
+            tmp[o++] = NEVERC_FILEPATH_SEP;
+        } else if (extra == 1) {
+            tmp[o++] = NEVERC_FILEPATH_SEP;
+        }
+#else
+        tmp[o++] = NEVERC_FILEPATH_SEP;
+#endif
+        memcpy(tmp + o, buse, buse_len);
     }
     tmp[joined_len] = '\0';
 
@@ -331,14 +417,20 @@ static const char *filepath_scan_chunk(const char *pattern, int *star,
 }
 
 static int filepath_get_esc(const char *chunk, size_t clen, size_t *i,
-                            unsigned char *out) {
+                            uint32_t *out) {
     if (*i >= clen || chunk[*i] == '-' || chunk[*i] == ']')
         return -1;
     if (FILEPATH_MATCH_ESCAPE && chunk[*i] == '\\') {
         (*i)++;
         if (*i >= clen) return -1;
     }
-    *out = (unsigned char)chunk[(*i)++];
+    uint32_t r;
+    int n;
+    neverc_utf8_decode_rune((const uint8_t *)chunk + *i, clen - *i, &r, &n);
+    if (n <= 0 || (r == NEVERC_UTF8_RUNE_ERROR && n == 1))
+        return -1;
+    *out = r;
+    *i += (size_t)n;
     if (*i >= clen) return -1;
     return 0;
 }
@@ -351,10 +443,12 @@ static int filepath_match_chunk(const char *chunk, size_t clen, const char *s,
         if (!failed && *s == '\0')
             failed = 1;
         if (chunk[i] == '[') {
-            unsigned char r = 0;
+            uint32_t r = 0;
             if (!failed) {
-                r = (unsigned char)*s;
-                s++;
+                int n;
+                neverc_utf8_decode_rune((const uint8_t *)s, strlen(s), &r, &n);
+                if (n > 0)
+                    s += n;
             }
             i++;
             int negated = 0;
@@ -369,7 +463,7 @@ static int filepath_match_chunk(const char *chunk, size_t clen, const char *s,
                     i++;
                     break;
                 }
-                unsigned char lo, hi;
+                uint32_t lo, hi;
                 if (filepath_get_esc(chunk, clen, &i, &lo) != 0)
                     return -1;
                 hi = lo;
@@ -388,8 +482,11 @@ static int filepath_match_chunk(const char *chunk, size_t clen, const char *s,
             if (!failed) {
                 if (is_sep(*s))
                     failed = 1;
-                if (*s)
-                    s++;
+                uint32_t r;
+                int n;
+                neverc_utf8_decode_rune((const uint8_t *)s, strlen(s), &r, &n);
+                if (n > 0)
+                    s += n;
             }
             i++;
         } else {
@@ -444,6 +541,7 @@ int neverc_filepath_match(const char *pattern, const char *name) {
         if (star) {
             int advanced = 0;
             const char *n;
+            /* Go skips one byte at a time, not one rune. */
             for (n = name; *n && !is_sep(*n); n++) {
                 ok = filepath_match_chunk(chunk, clen, n + 1, &t);
                 if (ok < 0)
@@ -461,14 +559,7 @@ int neverc_filepath_match(const char *pattern, const char *name) {
                 continue;
         }
 
-        pattern = rest_pat;
-        while (*pattern) {
-            rest_pat = filepath_scan_chunk(pattern, &star, &chunk, &clen);
-            const char *dummy = NULL;
-            if (filepath_match_chunk(chunk, clen, "", &dummy) < 0)
-                return -1;
-            pattern = rest_pat;
-        }
+        /* Go filepath.Match does not validate leftover pattern chunks. */
         return 0;
     }
     return *name == '\0' ? 1 : 0;
@@ -478,7 +569,7 @@ const char *neverc_filepath_to_slash(const char *path, char *buf, size_t buf_len
     size_t len = strlen(path);
     if (len + 1 > buf_len) return NULL;
     for (size_t i = 0; i < len; i++)
-        buf[i] = (path[i] == '\\') ? '/' : path[i];
+        buf[i] = (path[i] == NEVERC_FILEPATH_SEP) ? '/' : path[i];
     buf[len] = '\0';
     return buf;
 }

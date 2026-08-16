@@ -51,15 +51,34 @@ static int out_pad(neverc_tabwriter_t *w, size_t count, char ch) {
     return 0;
 }
 
+/* Go unicode/utf8.RuneCount: each DecodeRune is width 1. Invalid sequences
+ * (including a lone continuation such as 0x96) consume one byte and count 1. */
+static size_t utf8_rune_len(const unsigned char *s, size_t n) {
+    unsigned char c;
+    if (n == 0) return 0;
+    c = s[0];
+    if (c < 0x80) return 1;
+    if (c >= 0xC2 && c < 0xE0) {
+        if (n >= 2 && (s[1] & 0xC0) == 0x80) return 2;
+    } else if (c >= 0xE0 && c < 0xF0 && n >= 3 &&
+               (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80) {
+        if ((c > 0xE0 || s[1] >= 0xA0) && (c != 0xED || s[1] < 0xA0))
+            return 3;
+    } else if (c >= 0xF0 && c < 0xF5 && n >= 4 &&
+               (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80 &&
+               (s[3] & 0xC0) == 0x80) {
+        if ((c > 0xF0 || s[1] >= 0x90) && (c < 0xF4 || s[1] < 0x90))
+            return 4;
+    }
+    return 1;
+}
+
 static int rune_width(const char *s, size_t len) {
     int w = 0;
-    for (size_t i = 0; i < len; ) {
-        unsigned char c = (unsigned char)s[i];
-        if (c < 0x80) { w++; i++; }
-        else if (c < 0xC0) { i++; }
-        else if (c < 0xE0) { w++; i += 2; }
-        else if (c < 0xF0) { w++; i += 3; }
-        else { w++; i += 4; }
+    size_t i = 0;
+    while (i < len) {
+        i += utf8_rune_len((const unsigned char *)s + i, len - i);
+        w++;
     }
     return w;
 }
@@ -92,104 +111,141 @@ static void end_cell(neverc_tabwriter_t *w, int htab) {
     }
 }
 
-static int flush_lines(neverc_tabwriter_t *w) {
-    memset(w->col_widths, 0, sizeof(w->col_widths));
+static void reset_cells(neverc_tabwriter_t *w) {
+    w->buf_len = 0;
+    w->buf_carved = 0;
+    w->ncells = 0;
+    w->nlines = 0;
     w->ncols = 0;
+    begin_line(w);
+}
 
-    /* lines_start/lines_ncells hold at most MAX_LINES entries; write() lets
-     * nlines grow past that, so clamp the render to the tracked range. */
-    int last_line = (w->nlines < NEVERC_TABWRITER_MAX_LINES)
-        ? w->nlines : NEVERC_TABWRITER_MAX_LINES - 1;
+static int line_ncells(const neverc_tabwriter_t *w, int ln) {
+    return (ln >= 0 && ln < NEVERC_TABWRITER_MAX_LINES) ? w->lines_ncells[ln] : 0;
+}
 
-    for (int ln = 0; ln <= last_line; ln++) {
-        int start = w->lines_start[ln];
-        int nc = w->lines_ncells[ln];
-        for (int c = 0; c < nc - 1; c++) {
-            int col = c;
-            int cw = w->cells[start + c].width;
-            if (col >= NEVERC_TABWRITER_MAX_COLS) break;
-            if (cw > w->col_widths[col])
-                w->col_widths[col] = cw;
-            if (col + 1 > w->ncols) w->ncols = col + 1;
+static int line_start(const neverc_tabwriter_t *w, int ln) {
+    return (ln >= 0 && ln < NEVERC_TABWRITER_MAX_LINES) ? w->lines_start[ln] : 0;
+}
+
+/* Go writePadding: tab padchar (or TabIndent useTabs) snaps to tab stops
+ * and emits '\t'; otherwise emit (cellw-textw) padchars. */
+static int write_padding(neverc_tabwriter_t *w, int textw, int cellw, int use_tabs) {
+    if (textw < 0) textw = 0;
+    if (cellw < 0) cellw = 0;
+    if (w->padchar == '\t' || use_tabs) {
+        int tw = w->tabwidth;
+        if (tw <= 0) return 0;
+        if (cellw > 0) {
+            int rem = cellw % tw;
+            if (rem != 0) {
+                if (cellw > INT32_MAX - (tw - rem)) return -1;
+                cellw += tw - rem;
+            }
         }
+        int n = cellw - textw;
+        if (n < 0) n = 0;
+        int ntabs = (n + tw - 1) / tw;
+        return out_pad(w, (size_t)ntabs, '\t');
     }
+    if (cellw < textw) return 0;
+    return out_pad(w, (size_t)(cellw - textw), w->padchar);
+}
 
-    size_t buf_pos = 0;
-    for (int ln = 0; ln <= last_line; ln++) {
-        int start = w->lines_start[ln];
-        int nc = w->lines_ncells[ln];
-        for (int c = 0; c < nc; c++) {
-            neverc_tabwriter_cell_t *cell = &w->cells[start + c];
-            if (cell->size < 0 ||
-                out_append(w, w->buf + buf_pos,
-                           (size_t)cell->size) != 0)
-                return -1;
-
-            if (c < nc - 1) {
-                int col = c;
-                size_t minimum_padding =
-                    w->padding > 0 ? (size_t)w->padding : 0U;
-                size_t pad_needed = minimum_padding;
-                if (col < w->ncols &&
-                    w->col_widths[col] > cell->width) {
-                    pad_needed +=
-                        (size_t)(w->col_widths[col] - cell->width);
-                }
-                if (w->minwidth > 0) {
-                    size_t cell_w = cell->width > 0 ? (size_t)cell->width : 0U;
-                    size_t minw = (size_t)w->minwidth;
-                    if (cell_w < minw) {
-                        size_t want = minw - cell_w;
-                        if (want > pad_needed) pad_needed = want;
-                    }
-                }
-
-                /* tabwidth is the tab-stop distance used only when padding
-                 * with '\t' (Go text/tabwriter). Space/dot padding must not
-                 * snap to those stops — that over-padded every htab cell. */
-                if (w->padchar == '\t' && w->tabwidth > 0) {
-                    size_t width =
-                        cell->width > 0 ? (size_t)cell->width : 0U;
-                    size_t tabwidth = (size_t)w->tabwidth;
-                    if (pad_needed > SIZE_MAX - width) return -1;
-                    size_t target = width + pad_needed;
-                    size_t remainder = target % tabwidth;
-                    if (remainder != 0) {
-                        size_t extra = tabwidth - remainder;
-                        if (target > SIZE_MAX - extra) return -1;
-                        target += extra;
-                    }
-                    size_t ntabs = 0;
-                    size_t col = width;
-                    while (col < target) {
-                        size_t step = tabwidth - (col % tabwidth);
-                        if (col > SIZE_MAX - step) return -1;
-                        col += step;
-                        ntabs++;
-                    }
-                    pad_needed = ntabs;
-                }
-
+static int write_lines(neverc_tabwriter_t *w, size_t *buf_pos,
+                       int line0, int line1, int n_lines) {
+    for (int i = line0; i < line1; i++) {
+        int start = line_start(w, i);
+        int nc = line_ncells(w, i);
+        int use_tabs = (w->flags & NEVERC_TABWRITER_TAB_INDENT) != 0;
+        for (int j = 0; j < nc; j++) {
+            neverc_tabwriter_cell_t *c = &w->cells[start + j];
+            if (j > 0 && (w->flags & NEVERC_TABWRITER_DEBUG)) {
+                if (out_append(w, "|", 1) != 0) return -1;
+            }
+            if (c->size < 0) return -1;
+            if (c->size == 0) {
+                if (j < w->ncols &&
+                    write_padding(w, c->width, w->col_widths[j], use_tabs) != 0)
+                    return -1;
+            } else {
+                use_tabs = 0;
                 if (w->flags & NEVERC_TABWRITER_ALIGN_RIGHT) {
-                    size_t cell_size = (size_t)cell->size;
-                    if (cell_size > w->out_len ||
-                        out_reserve(w, pad_needed) != 0)
+                    if (j < w->ncols &&
+                        write_padding(w, c->width, w->col_widths[j], 0) != 0)
                         return -1;
-                    size_t cell_start = w->out_len - cell_size;
-                    memmove(w->out_buf + cell_start + pad_needed,
-                            w->out_buf + cell_start, cell_size);
-                    memset(w->out_buf + cell_start, w->padchar, pad_needed);
-                    w->out_len += pad_needed;
+                    if (out_append(w, w->buf + *buf_pos, (size_t)c->size) != 0)
+                        return -1;
+                    *buf_pos += (size_t)c->size;
                 } else {
-                    if (out_pad(w, pad_needed, w->padchar) != 0)
+                    if (out_append(w, w->buf + *buf_pos, (size_t)c->size) != 0)
+                        return -1;
+                    *buf_pos += (size_t)c->size;
+                    if (j < w->ncols &&
+                        write_padding(w, c->width, w->col_widths[j], 0) != 0)
                         return -1;
                 }
             }
-            buf_pos += (size_t)cell->size;
         }
-        if (ln < w->nlines && out_append(w, "\n", 1) != 0)
+        if (i + 1 != n_lines && out_append(w, "\n", 1) != 0)
             return -1;
     }
+    return 0;
+}
+
+/* Go Writer.format: elastic tabstops — a short line ends the current
+ * column block so later rows do not stretch earlier ones. */
+static int format_block(neverc_tabwriter_t *w, size_t *buf_pos,
+                        int line0, int line1, int n_lines) {
+    int column = w->ncols;
+    int this;
+    for (this = line0; this < line1; this++) {
+        if (column >= line_ncells(w, this) - 1)
+            continue;
+
+        if (write_lines(w, buf_pos, line0, this, n_lines) != 0)
+            return -1;
+        line0 = this;
+
+        int width = w->minwidth > 0 ? w->minwidth : 0;
+        int pad = w->padding > 0 ? w->padding : 0;
+        int discardable = 1;
+        for (; this < line1; this++) {
+            int nc = line_ncells(w, this);
+            if (column >= nc - 1)
+                break;
+            neverc_tabwriter_cell_t *c =
+                &w->cells[line_start(w, this) + column];
+            int ww = c->width + pad;
+            if (ww > width) width = ww;
+            if (c->width > 0 || c->htab)
+                discardable = 0;
+        }
+        if (discardable && (w->flags & NEVERC_TABWRITER_DISCARD_EMPTY_COLS))
+            width = 0;
+
+        if (w->ncols >= NEVERC_TABWRITER_MAX_COLS)
+            return write_lines(w, buf_pos, line0, line1, n_lines);
+        w->col_widths[w->ncols++] = width;
+        if (format_block(w, buf_pos, line0, this, n_lines) != 0)
+            return -1;
+        w->ncols--;
+        line0 = this;
+    }
+    return write_lines(w, buf_pos, line0, line1, n_lines);
+}
+
+static int flush_lines(neverc_tabwriter_t *w) {
+    int n_lines = (w->nlines < NEVERC_TABWRITER_MAX_LINES)
+        ? w->nlines + 1 : NEVERC_TABWRITER_MAX_LINES;
+    size_t buf_pos = 0;
+    w->ncols = 0;
+    return format_block(w, &buf_pos, 0, n_lines, n_lines);
+}
+
+static int out_terminate(neverc_tabwriter_t *w) {
+    if (out_reserve(w, 0) != 0) return -1;
+    w->out_buf[w->out_len] = '\0';
     return 0;
 }
 
@@ -201,9 +257,39 @@ void neverc_tabwriter_init(neverc_tabwriter_t *w, int minwidth, int tabwidth,
     w->tabwidth = tabwidth;
     w->padding = padding;
     w->padchar = padchar ? padchar : ' ';
+    /* Go Init: tab padding forces left alignment. */
+    if (w->padchar == '\t')
+        flags &= ~NEVERC_TABWRITER_ALIGN_RIGHT;
     w->flags = flags;
     w->nlines = 0;
     begin_line(w);
+}
+
+static size_t find_delim(const char *p, size_t n, char *which) {
+    const char *t = (const char *)memchr(p, '\t', n);
+    const char *v = (const char *)memchr(p, '\v', n);
+    const char *nl = (const char *)memchr(p, '\n', n);
+    const char *f = (const char *)memchr(p, '\f', n);
+    const char *best = NULL;
+    char ch = 0;
+    if (t && (!best || t < best)) { best = t; ch = '\t'; }
+    if (v && (!best || v < best)) { best = v; ch = '\v'; }
+    if (nl && (!best || nl < best)) { best = nl; ch = '\n'; }
+    if (f && (!best || f < best)) { best = f; ch = '\f'; }
+    *which = ch;
+    return best ? (size_t)(best - p) : n;
+}
+
+static int append_run(neverc_tabwriter_t *w, const char *data, size_t run) {
+    if (!run) return 0;
+    size_t space = (w->buf_len < NEVERC_TABWRITER_MAX_BUF)
+                 ? (size_t)NEVERC_TABWRITER_MAX_BUF - w->buf_len : 0;
+    size_t take = run < space ? run : space;
+    if (take) {
+        memcpy(w->buf + w->buf_len, data, take);
+        w->buf_len += take;
+    }
+    return 0;
 }
 
 void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len) {
@@ -212,59 +298,57 @@ void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len)
         w->failed = 1;
         return;
     }
-    /* Scan a line at a time (memchr to the '\n'), then carve tab-separated
-     * cells inside it (memchr to each '\t'), bulk-copying every plain run into
-     * w->buf. This replaces the byte-at-a-time classify/store loop; the cell
-     * boundaries, buffer-cap truncation and line bookkeeping are identical. */
+    /* Go treats '\t' as a hard tab, '\v' as a soft tab, and both '\n' and
+     * '\f' as line breaks. '\f' also flushes the current column block. */
     size_t i = 0;
     while (i < len) {
-        const char *nl = (const char *)memchr(data + i, '\n', len - i);
-        size_t line_end = nl ? (size_t)(nl - data) : len;
+        char delim = 0;
+        size_t rel = find_delim(data + i, len - i, &delim);
+        if (append_run(w, data + i, rel) != 0) return;
+        i += rel;
+        if (!delim) break;
 
-        while (i < line_end) {
-            const char *tab = (const char *)memchr(data + i, '\t', line_end - i);
-            size_t cell_end = tab ? (size_t)(tab - data) : line_end;
-            size_t run = cell_end - i;
-            if (run) {
-                size_t space = (w->buf_len < NEVERC_TABWRITER_MAX_BUF)
-                             ? (size_t)NEVERC_TABWRITER_MAX_BUF - w->buf_len : 0;
-                size_t take = run < space ? run : space;
-                if (take) {
-                    memcpy(w->buf + w->buf_len, data + i, take);
-                    w->buf_len += take;
-                }
-            }
-            if (tab) {
-                if (w->buf_len < NEVERC_TABWRITER_MAX_BUF)
-                    end_cell(w, 1);
-                i = cell_end + 1;
-            } else {
-                i = cell_end;   /* run reaches line end; cell stays open */
-            }
-        }
-
-        if (nl) {
+        if (delim == '\t' || delim == '\v') {
+            if (w->buf_len < NEVERC_TABWRITER_MAX_BUF)
+                end_cell(w, delim == '\t');
+            if (w->failed) return;
+        } else {
             end_cell(w, 0);
+            if (w->failed) return;
             w->nlines++;
             if (w->nlines < NEVERC_TABWRITER_MAX_LINES)
                 begin_line(w);
-            i = line_end + 1;
-        } else {
-            break;  /* no terminator: trailing cell is carved later by flush */
+            if (delim == '\f') {
+                if (flush_lines(w) != 0) {
+                    w->failed = 1;
+                    return;
+                }
+                if ((w->flags & NEVERC_TABWRITER_DEBUG) &&
+                    out_append(w, "---\n", 4) != 0) {
+                    w->failed = 1;
+                    return;
+                }
+                if (out_terminate(w) != 0) return;
+                reset_cells(w);
+            }
         }
+        i++;
     }
 }
 
 void neverc_tabwriter_flush(neverc_tabwriter_t *w) {
     if (!w || w->failed) return;
-    end_cell(w, 0);
+    /* Go flush: only terminate the incomplete cell when it has bytes.
+     * A trailing htab must remain the last cell of the line (not a column). */
+    if (w->buf_len > (size_t)w->buf_carved)
+        end_cell(w, 0);
     if (flush_lines(w) != 0) {
         w->failed = 1;
         return;
     }
-    if (out_reserve(w, 0) != 0)
+    if (out_terminate(w) != 0)
         return;
-    w->out_buf[w->out_len] = '\0';
+    reset_cells(w);
 }
 
 const char *neverc_tabwriter_output(const neverc_tabwriter_t *w, size_t *len) {

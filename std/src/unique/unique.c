@@ -132,7 +132,7 @@ static void *intern_alloc(const void *data, size_t len) {
     unsigned char *base = (unsigned char *)malloc(sizeof(size_t) + len);
     if (!base) return NULL;
     memcpy(base, &len, sizeof(size_t));
-    memcpy(base + sizeof(size_t), data, len);
+    if (len > 0) memcpy(base + sizeof(size_t), data, len);
     return base + sizeof(size_t);
 }
 static void intern_free(void *dataptr) {
@@ -267,7 +267,7 @@ neverc_unique_handle_t neverc_unique_make_uint64(uint64_t v) {
 }
 
 neverc_unique_handle_t neverc_unique_make_bytes(const void *data, size_t len) {
-    if (!data || len == 0) { neverc_unique_handle_t h = {NULL}; return h; }
+    if (!data) { neverc_unique_handle_t h = {NULL}; return h; }
     return intern(UK_BYTES, data, len);
 }
 

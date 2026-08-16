@@ -140,6 +140,68 @@ static void test_recorder(void) {
     neverc_httptest_recorder_free(rec);
 }
 
+#ifndef _WIN32
+static int httptest_raw(const char *addr, const char *request,
+                        char *response, size_t response_length) {
+    const char *error = NULL;
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &error);
+    if (!conn) return -1;
+    neverc_tcp_set_timeout(conn, 2000);
+    neverc_tcp_write(conn, request, strlen(request));
+    int total = 0;
+    while (total < (int)response_length - 1) {
+        int n = neverc_tcp_read(conn, response + total,
+                                response_length - 1 - (size_t)total);
+        if (n <= 0) break;
+        total += n;
+    }
+    response[total] = '\0';
+    neverc_tcp_close(conn);
+    return total;
+}
+
+static void test_httptest_strict_parser(void) {
+    printf("[strict_parser]\n");
+
+    neverc_httptest_server_t *ts = neverc_httptest_new_server(echo_handler);
+    check_not_null("strict server", ts);
+    if (!ts) return;
+
+    const char *addr = neverc_httptest_addr(ts);
+    char buf[4096];
+
+    int n = httptest_raw(addr,
+        "GET / HTTP/1.1\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("no host 400",
+              n > 0 && strstr(buf, "400 Bad Request") != NULL, 1);
+
+    n = httptest_raw(addr,
+        "GET / HTTP/1.1\r\nHost: example.com/foo\r\n"
+        "Connection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("invalid host 400",
+              n > 0 && strstr(buf, "400 Bad Request") != NULL, 1);
+
+    n = httptest_raw(addr,
+        "GET / HTTP/1.1\r\nHost: localhost\r\nX-Foo: bar\r\n"
+        " baz\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("fold 400",
+              n > 0 && strstr(buf, "400 Bad Request") != NULL, 1);
+
+    n = httptest_raw(addr,
+        "POST / HTTP/1.1\r\nHost: localhost\r\n"
+        "Content-Length: 4\r\nConnection: close\r\n\r\n"
+        "ABCDXXXX",
+        buf, sizeof(buf));
+    check_int("cl honored", n > 0 && strstr(buf, "ABCD") != NULL, 1);
+    check_int("cl extra ignored", strstr(buf, "XXXX") == NULL, 1);
+
+    neverc_httptest_close(ts);
+}
+#endif
+
 int main(void) {
     printf("=== NeverC httptest Tests ===\n");
 
@@ -147,6 +209,9 @@ int main(void) {
     test_new_server();
     test_server_with_path();
     test_server_status_code();
+#ifndef _WIN32
+    test_httptest_strict_parser();
+#endif
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);
     if (tests_failed > 0)

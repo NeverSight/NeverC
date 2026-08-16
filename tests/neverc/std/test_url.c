@@ -115,6 +115,12 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[::1]:80"), 0);
     ASSERT_STR_EQ(u.host, "::1");
     ASSERT_STR_EQ(u.port, "80");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://[hello]/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://[192.168.1.1]/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%eth0]/"), 0);
+    ASSERT_STR_EQ(u.host, "fe80::1%eth0");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://[::ffff:192.168.1.1]/"), 0);
+    ASSERT_STR_EQ(u.host, "::ffff:192.168.1.1");
 
     char long_url[400];
     memcpy(long_url, "https://", 8);

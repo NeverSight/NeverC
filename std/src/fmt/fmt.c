@@ -387,9 +387,10 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             break;
         }
         case 'p': {
+            /* Hex digits only; "0x" is an alt prefix so zero-padding and %#p
+             * (Go: suppress 0x) apply around it instead of splitting "0x". */
             void *ptr = va_arg(args, void *);
-            tmp[0] = '0'; tmp[1] = 'x';
-            tlen = 2 + fmt_uint_base(tmp + 2, (uint64_t)(uintptr_t)ptr, 16, 0);
+            tlen = fmt_uint_base(tmp, (uint64_t)(uintptr_t)ptr, 16, 0);
             break;
         }
         default:
@@ -405,7 +406,8 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             verb == 'g' || verb == 'G';
         int is_int_verb =
             verb == 'd' || verb == 'i' || verb == 'u' ||
-            verb == 'x' || verb == 'X' || verb == 'o' || verb == 'b';
+            verb == 'x' || verb == 'X' || verb == 'o' || verb == 'b' ||
+            verb == 'p';
         int is_signed_verb =
             verb == 'd' || verb == 'i' || is_float_verb;
         int formatted_has_sign =
@@ -455,6 +457,9 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
                 alt_prefix = "0";
                 alt_len = 1;
             }
+        } else if (verb == 'p') {
+            alt_prefix = "0x";
+            alt_len = 2;
         }
         /* Precision on integers suppresses the zero flag (Go/C99). */
         int use_zero_padding =

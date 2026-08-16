@@ -1,11 +1,13 @@
 #include "neverc/std/net/resolve.h"
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
 #ifndef _WIN32
 #include <pthread.h>
+#include <unistd.h>
 #endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -156,6 +158,11 @@ static void test_lookup_ip(void) {
             if (strchr(addrs.addrs[i], ':')) all_v4 = 0;
         check_true("ip4 filter works", all_v4);
     }
+
+    check_int("unknown ip network rejected",
+              neverc_net_lookup_ip("tcp", "localhost", &addrs), -1);
+    check_int("invalid ip network rejected",
+              neverc_net_lookup_ip("ipx", "localhost", &addrs), -1);
 }
 
 /* ===== LookupPort ===== */
@@ -177,6 +184,10 @@ static void test_lookup_port(void) {
               neverc_net_lookup_port("tcp", "+80"), -1);
     check_int("whitespace numeric rejected",
               neverc_net_lookup_port("tcp", " 80"), -1);
+    check_int("unknown port network rejected",
+              neverc_net_lookup_port("sctp", "http"), -1);
+    check_int("unknown network rejects numeric port",
+              neverc_net_lookup_port("bogus", "8080"), -1);
 
     neverc_net_addrs_t rev;
     check_int("empty reverse addr rejected",
@@ -298,6 +309,34 @@ static void test_pipe(void) {
     neverc_net_pipe_close(end2);
 }
 
+#ifndef _WIN32
+static void *pipe_eof_waiter(void *arg) {
+    neverc_net_pipe_t *p = (neverc_net_pipe_t *)arg;
+    char buf[8];
+    int n = neverc_net_pipe_read(p, buf, sizeof(buf));
+    return (void *)(intptr_t)n;
+}
+
+static void test_pipe_close_wakes_all(void) {
+    printf("[pipe_close_wakes_all]\n");
+    neverc_net_pipe_t *end1, *end2;
+    check_int("wake-all pipe create", neverc_net_pipe(&end1, &end2), 0);
+
+    pthread_t t1, t2;
+    pthread_create(&t1, NULL, pipe_eof_waiter, end2);
+    pthread_create(&t2, NULL, pipe_eof_waiter, end2);
+    usleep(50000);
+    neverc_net_pipe_close(end1);
+
+    void *r1 = (void *)(intptr_t)-2, *r2 = (void *)(intptr_t)-2;
+    pthread_join(t1, &r1);
+    pthread_join(t2, &r2);
+    check_int("first waiter eof", (int)(intptr_t)r1, 0);
+    check_int("second waiter eof", (int)(intptr_t)r2, 0);
+    neverc_net_pipe_close(end2);
+}
+#endif
+
 /* ===== Large pipe transfer ===== */
 
 #ifndef _WIN32
@@ -371,6 +410,9 @@ int main(void) {
     test_lookup_port();
     test_lookup_cname();
     test_pipe();
+#ifndef _WIN32
+    test_pipe_close_wakes_all();
+#endif
     test_pipe_large();
 
     printf("\n%d tests, %d passed, %d failed\n",

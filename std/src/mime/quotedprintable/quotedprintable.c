@@ -1,4 +1,5 @@
 #include "neverc/std/mime/quotedprintable.h"
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -31,40 +32,34 @@ int neverc_qp_decode(const char *src, size_t src_len,
     size_t si = 0, di = 0;
 
     while (si < src_len) {
-        if (src[si] == '=') {
-            /* Consecutive =XX hex escapes — tight inner loop, no outer overhead. */
-            if (si + 2 < src_len &&
-                src[si + 1] != '\r' && src[si + 1] != '\n') {
+        unsigned char c = (unsigned char)src[si];
+
+        if (c == '=') {
+            if (si + 2 < src_len) {
                 int hi = qp_hex_val[(unsigned char)src[si + 1]];
                 int lo = qp_hex_val[(unsigned char)src[si + 2]];
                 if (hi >= 0 && lo >= 0) {
-                    do {
-                        if (di >= out_cap) return -1;
-                        out[di++] = (unsigned char)((hi << 4) | lo);
-                        si += 3;
-                        if (si + 2 >= src_len || src[si] != '=' ||
-                            src[si + 1] == '\r' || src[si + 1] == '\n')
-                            break;
-                        hi = qp_hex_val[(unsigned char)src[si + 1]];
-                        lo = qp_hex_val[(unsigned char)src[si + 2]];
-                    } while (hi >= 0 && lo >= 0);
+                    if (di >= out_cap) return -1;
+                    out[di++] = (unsigned char)((hi << 4) | lo);
+                    si += 3;
                     continue;
                 }
-                return -1;
             }
-            /* Soft line break: =\r\n, =\n, =\r, or a lone '=' at EOF.
-             * The previous `si + 2 >= src_len` reject treated "hello=\n" and a
-             * trailing '=' as errors; both are valid soft breaks. */
-            if (si + 1 >= src_len) {
-                si += 1;
+            /* Soft break: '=' WSP* (CRLF | LF | CR | EOF). Transport may
+             * insert spaces between '=' and the line ending (RFC 2045 6.7). */
+            size_t j = si + 1;
+            while (j < src_len && (src[j] == ' ' || src[j] == '\t'))
+                j++;
+            if (j >= src_len) {
+                si = j;
                 continue;
             }
-            if (src[si + 1] == '\n') {
-                si += 2;
+            if (src[j] == '\n') {
+                si = j + 1;
                 continue;
             }
-            if (src[si + 1] == '\r') {
-                si += 2;
+            if (src[j] == '\r') {
+                si = j + 1;
                 if (si < src_len && src[si] == '\n')
                     si++;
                 continue;
@@ -72,16 +67,37 @@ int neverc_qp_decode(const char *src, size_t src_len,
             return -1;
         }
 
-        /* Literal run up to the next '=' (or end). */
+        if (c == ' ' || c == '\t') {
+            size_t j = si;
+            while (j < src_len && (src[j] == ' ' || src[j] == '\t'))
+                j++;
+            /* Trailing WSP on a line is transport padding and must be dropped. */
+            if (j >= src_len || src[j] == '\n' || src[j] == '\r') {
+                si = j;
+                continue;
+            }
+            if (j - si > out_cap - di) return -1;
+            memcpy(out + di, src + si, j - si);
+            di += j - si;
+            si = j;
+            continue;
+        }
+
         {
-            const char *eq = (const char *)memchr(src + si, '=', src_len - si);
-            size_t run = eq ? (size_t)(eq - (src + si)) : (src_len - si);
-            if (run > out_cap - di) return -1;
-            memcpy(out + di, src + si, run);
-            di += run;
-            si += run;
+            size_t j = si + 1;
+            while (j < src_len) {
+                unsigned char u = (unsigned char)src[j];
+                if (u == '=' || u == ' ' || u == '\t')
+                    break;
+                j++;
+            }
+            if (j - si > out_cap - di) return -1;
+            memcpy(out + di, src + si, j - si);
+            di += j - si;
+            si = j;
         }
     }
+    if (di > (size_t)INT_MAX) return -1;
     return (int)di;
 }
 

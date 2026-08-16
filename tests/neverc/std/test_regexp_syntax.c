@@ -317,6 +317,34 @@ static void test_parse_escapes(void) {
     check_not_null("\\n", n);
     check_int("\\n rune", (n && n->nrunes > 0) ? n->runes[0] : 0, '\n');
     neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("\\x41", 0, &err);
+    check_not_null("\\x41", n);
+    check_op("\\x41 op", n, NC_RE_OP_LITERAL);
+    check_int("\\x41 rune", (n && n->nrunes > 0) ? n->runes[0] : 0, 'A');
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("\\x96B", 0, &err);
+    check_not_null("\\x96B", n);
+    check_op("\\x96B op", n, NC_RE_OP_CONCAT);
+    check_int("\\x96B nsubs", n ? n->nsubs : 0, 2);
+    check_int("\\x96B lo", (n && n->nsubs > 0 && n->subs[0]->nrunes > 0) ?
+              n->subs[0]->runes[0] : -1, 0x96);
+    check_int("\\x96B hi", (n && n->nsubs > 1 && n->subs[1]->nrunes > 0) ?
+              n->subs[1]->runes[0] : -1, 'B');
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("\\x{41}", 0, &err);
+    check_not_null("\\x{41}", n);
+    check_int("\\x{41} rune", (n && n->nrunes > 0) ? n->runes[0] : 0, 'A');
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("\\x", 0, &err);
+    check_null("\\x invalid", n);
+    n = neverc_regexp_syntax_parse("\\x4", 0, &err);
+    check_null("\\x4 invalid", n);
+    n = neverc_regexp_syntax_parse("\\xGG", 0, &err);
+    check_null("\\xGG invalid", n);
 }
 
 /* ===== String conversion ===== */
@@ -439,6 +467,15 @@ static void test_errors(void) {
 
     n = neverc_regexp_syntax_parse("a{3", 0, &err);
     check_null("bad repeat", n);
+
+    n = neverc_regexp_syntax_parse("a{2}*", 0, &err);
+    check_null("stacked a{2}*", n);
+
+    n = neverc_regexp_syntax_parse("a{2}{3}", 0, &err);
+    check_null("stacked a{2}{3}", n);
+
+    n = neverc_regexp_syntax_parse("a{1001}", 0, &err);
+    check_null("repeat over 1000", n);
 
     n = neverc_regexp_syntax_parse("[z-a]", 0, &err);
     check_null("inverted class range", n);

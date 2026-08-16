@@ -106,6 +106,11 @@ static int consume_varint(const uint8_t **buf, size_t *rem, uint64_t *val) {
     return 0;
 }
 
+/* RFC 9000 §19.6 / §19.8: offset + length MUST NOT exceed 2^62-1. */
+static int quic_end_offset_ok(uint64_t offset, uint64_t len) {
+    return offset <= QUIC_VARINT_MAX && len <= QUIC_VARINT_MAX - offset;
+}
+
 int neverc_quic_parse_crypto_frame(const uint8_t *buf, size_t len,
                                     quic_frame_crypto_t *out, size_t *consumed) {
     const uint8_t *p = buf;
@@ -122,7 +127,7 @@ int neverc_quic_parse_crypto_frame(const uint8_t *buf, size_t len,
     /* Length */
     uint64_t dlen;
     if (consume_varint(&p, &rem, &dlen) != 0) return -1;
-    if (dlen > rem) return -1;
+    if (dlen > rem || !quic_end_offset_ok(out->offset, dlen)) return -1;
 
     out->data = p;
     out->data_len = (size_t)dlen;
@@ -166,11 +171,12 @@ int neverc_quic_parse_stream_frame(const uint8_t *buf, size_t len,
     if (has_len) {
         uint64_t dlen;
         if (consume_varint(&p, &rem, &dlen) != 0) return -1;
-        if (dlen > rem) return -1;
+        if (dlen > rem || !quic_end_offset_ok(out->offset, dlen)) return -1;
         out->data = p;
         out->data_len = (size_t)dlen;
         p += dlen;
     } else {
+        if (!quic_end_offset_ok(out->offset, (uint64_t)rem)) return -1;
         out->data = p;
         out->data_len = rem;
         p += rem;
@@ -371,7 +377,7 @@ int neverc_quic_write_crypto_frame(uint8_t *buf, size_t cap,
                                     size_t *written) {
     if (written) *written = 0;
     if (!buf || !written || (data_len && !data) ||
-        offset > QUIC_VARINT_MAX || data_len > QUIC_VARINT_MAX ||
+        !quic_end_offset_ok(offset, data_len) ||
         data_len > SIZE_MAX - 17)
         return -1;
     size_t need = neverc_quic_varint_len(QUIC_FRAME_CRYPTO) +
@@ -397,8 +403,7 @@ int neverc_quic_write_stream_frame(uint8_t *buf, size_t cap,
     if (!buf || !frame || !written ||
         (frame->data_len && !frame->data) ||
         frame->stream_id > QUIC_VARINT_MAX ||
-        frame->offset > QUIC_VARINT_MAX ||
-        frame->data_len > QUIC_VARINT_MAX ||
+        !quic_end_offset_ok(frame->offset, frame->data_len) ||
         frame->data_len > SIZE_MAX - 25)
         return -1;
     uint8_t type_byte = QUIC_FRAME_STREAM_BASE;

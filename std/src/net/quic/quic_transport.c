@@ -283,16 +283,8 @@ static int qt_add_peer_cid(struct neverc_quic_conn *conn,
 
 static int qt_handle_stop_sending(struct neverc_quic_conn *conn,
                                   const quic_frame_stop_sending_t *frame) {
-    quic_stream_t *stream = neverc_quic_conn_find_stream(conn,
-                                                          frame->stream_id);
-    if (!stream || (qt_stream_is_uni(frame->stream_id) &&
-                    stream->peer_initiated))
-        return -1;
-    nc_mutex_lock(&stream->lock);
-    stream->reset_pending = 1;
-    stream->reset_error_code = frame->error_code;
-    nc_mutex_unlock(&stream->lock);
-    return 0;
+    return neverc_quic_stream_apply_stop_sending_locked(
+        conn, frame->stream_id, frame->error_code);
 }
 
 static int qt_handle_frames(struct neverc_quic_conn *conn,
@@ -386,13 +378,9 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
                 qt_decode_varint_at(payload, payload_len, &cursor,
                                     &maximum) != 0)
                 return -1;
-            quic_stream_t *stream = neverc_quic_conn_find_stream(conn,
-                                                                  stream_id);
-            if (!stream) return -1;
-            nc_mutex_lock(&stream->lock);
-            if (maximum > stream->send_max_data) stream->send_max_data = maximum;
-            nc_cond_broadcast(&stream->write_cond);
-            nc_mutex_unlock(&stream->lock);
+            if (neverc_quic_stream_apply_max_stream_data_locked(
+                    conn, stream_id, maximum) != 0)
+                return -1;
             consumed = cursor - position;
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_MAX_STREAMS_BIDI ||
@@ -636,6 +624,8 @@ decrypt_attempt:
         conn->pn[space].largest_recv : 0;
     packet_number = neverc_quic_decode_packet_number(
         largest, header.pkt_number, (unsigned)header.pkt_number_len * 8U);
+    if (packet_number > QUIC_VARINT_MAX)
+        goto decrypt_failed;
     plaintext = (uint8_t *)malloc(header.payload_len - 16U + 1U);
     if (!plaintext) goto decrypt_failed;
     if (neverc_quic_decrypt_payload(keys, packet_number, copy,
@@ -737,6 +727,8 @@ decrypt_complete:
             conn->peer_params.initial_max_streams_bidi;
         conn->peer_max_streams_uni =
             conn->peer_params.initial_max_streams_uni;
+        conn->idle_timeout_ms = neverc_quic_effective_idle_timeout_ms(
+            conn->idle_timeout_ms, conn->peer_params.max_idle_timeout);
         conn->peer_disable_migration =
             conn->peer_params.disable_active_migration;
         const char *alpn = neverc_quic_tls_alpn(conn->tls);
@@ -1492,7 +1484,8 @@ void neverc_quic_conn_tick(struct neverc_quic_conn *conn, uint64_t now_ms) {
         nc_mutex_unlock(&conn->lock);
         return;
     }
-    if (now_ms >= conn->last_activity_ms &&
+    if (conn->idle_timeout_ms != 0 &&
+        now_ms >= conn->last_activity_ms &&
         now_ms - conn->last_activity_ms >= conn->idle_timeout_ms) {
         int changed = neverc_quic_conn_close_locked(
             conn, 0, "idle timeout", 0);

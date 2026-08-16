@@ -908,6 +908,15 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
                 comp_v[i] = samp & 0x0F;
                 if (comp_h[i] < 1 || comp_h[i] > 4 ||
                     comp_v[i] < 1 || comp_v[i] > 4) goto fail;
+                /* ITU T.81 A.2.2 / 4.8.2: a one-component scan is
+                 * non-interleaved; the MCU is one 8x8 data unit regardless of
+                 * the nominal H/V in SOF. Honoring 2x2 here would expect four
+                 * blocks per 16x16 MCU (and 4x4 would trip the interleaved
+                 * 10-block cap) and reject valid grayscale streams. */
+                if (ncomp == 1) {
+                    comp_h[i] = 1;
+                    comp_v[i] = 1;
+                }
                 blocks_per_mcu += comp_h[i] * comp_v[i];
                 comp_quant[i] = br_read_byte_raw(&br);
                 if (comp_quant[i] >= 4) goto fail;

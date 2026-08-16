@@ -35,6 +35,9 @@ int neverc_slices_equal(const void *s1, size_t len1, const void *s2, size_t len2
 int neverc_slices_compare(const void *s1, size_t len1, const void *s2, size_t len2,
                            size_t elem_size, neverc_cmp_func_t cmp) {
     if (!cmp || elem_size == 0) return 0;
+    if ((len1 > 0 && len1 > SIZE_MAX / elem_size) ||
+        (len2 > 0 && len2 > SIZE_MAX / elem_size))
+        return 0;
     if (len1 > 0 && !s1) len1 = 0;
     if (len2 > 0 && !s2) len2 = 0;
     size_t minlen = len1 < len2 ? len1 : len2;
@@ -56,7 +59,9 @@ int neverc_slices_contains(const void *slice, size_t len, const void *elem,
 
 int neverc_slices_index(const void *slice, size_t len, const void *elem,
                          size_t elem_size, neverc_eq_func_t eq) {
-    if (len == 0 || !slice || !elem || elem_size == 0 || !eq) return -1;
+    if (len == 0 || !slice || !elem || elem_size == 0 || !eq ||
+        len > SIZE_MAX / elem_size)
+        return -1;
     const char *p = (const char *)slice;
     for (size_t i = 0; i < len; i++) {
         if (eq(p + i * elem_size, elem)) return (int)i;
@@ -86,7 +91,8 @@ void neverc_slices_sort(void *slice, size_t len, size_t elem_size, neverc_cmp_fu
 
 int neverc_slices_is_sorted(const void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
     if (len <= 1) return 1;
-    if (!slice || elem_size == 0 || !cmp) return 0;
+    if (!slice || elem_size == 0 || !cmp || len > SIZE_MAX / elem_size)
+        return 0;
     const char *p = (const char *)slice;
     for (size_t i = 1; i < len; i++) {
         if (cmp(p + (i - 1) * elem_size, p + i * elem_size) > 0) return 0;
@@ -96,7 +102,8 @@ int neverc_slices_is_sorted(const void *slice, size_t len, size_t elem_size, nev
 
 int neverc_slices_binary_search(const void *slice, size_t len, const void *target,
                                  size_t elem_size, neverc_cmp_func_t cmp, int *found) {
-    if (!slice || !target || elem_size == 0 || !cmp) {
+    if (!slice || !target || elem_size == 0 || !cmp ||
+        (len > 0 && len > SIZE_MAX / elem_size)) {
         if (found) *found = 0;
         return 0;
     }
@@ -156,7 +163,9 @@ void *neverc_slices_clone(const void *slice, size_t len, size_t elem_size) {
 }
 
 int neverc_slices_min(const void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
-    if (len == 0 || !slice || !cmp || elem_size == 0) return -1;
+    if (len == 0 || !slice || !cmp || elem_size == 0 ||
+        len > SIZE_MAX / elem_size)
+        return -1;
     const char *p = (const char *)slice;
     int mi = 0;
     for (size_t i = 1; i < len; i++) {
@@ -166,7 +175,9 @@ int neverc_slices_min(const void *slice, size_t len, size_t elem_size, neverc_cm
 }
 
 int neverc_slices_max(const void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
-    if (len == 0 || !slice || !cmp || elem_size == 0) return -1;
+    if (len == 0 || !slice || !cmp || elem_size == 0 ||
+        len > SIZE_MAX / elem_size)
+        return -1;
     const char *p = (const char *)slice;
     int mi = 0;
     for (size_t i = 1; i < len; i++) {
@@ -348,7 +359,9 @@ int neverc_slices_contains_func(const void *slice, size_t len, size_t elem_size,
 
 int neverc_slices_index_func(const void *slice, size_t len, size_t elem_size,
                               neverc_slices_pred_func_t f) {
-    if (!slice || !f || elem_size == 0 || len == 0) return -1;
+    if (!slice || !f || elem_size == 0 || len == 0 ||
+        len > SIZE_MAX / elem_size)
+        return -1;
     const char *p = (const char *)slice;
     for (size_t i = 0; i < len; i++)
         if (f(p + i * elem_size)) return (int)i;

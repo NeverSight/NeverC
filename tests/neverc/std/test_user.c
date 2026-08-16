@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -86,6 +89,26 @@ static void test_home_dir(void) {
     ASSERT_TRUE(home != NULL);
     ASSERT_TRUE(strlen(home) > 0);
     printf("  home=%s\n", home);
+
+#if !defined(_WIN32)
+    const char *old = getenv("HOME");
+    char *saved = old ? strdup(old) : NULL;
+    setenv("HOME", "", 1);
+    home = neverc_user_home_dir();
+    ASSERT_TRUE(home != NULL && home[0] != '\0');
+    const char *cache = neverc_user_cache_dir();
+    ASSERT_TRUE(cache != NULL && strcmp(cache, "/Library/Caches") != 0);
+    ASSERT_TRUE(strcmp(cache, "/.cache") != 0);
+    const char *config = neverc_user_config_dir();
+    ASSERT_TRUE(config != NULL && strcmp(config, "/Library/Application Support") != 0);
+    ASSERT_TRUE(strcmp(config, "/.config") != 0);
+    if (saved) {
+        setenv("HOME", saved, 1);
+        free(saved);
+    } else {
+        unsetenv("HOME");
+    }
+#endif
 }
 
 static void test_cache_dir(void) {
@@ -111,6 +134,13 @@ static void test_null_args(void) {
     ASSERT_EQ_INT(neverc_user_lookup_id(0, NULL), -1);
     ASSERT_EQ_INT(neverc_user_lookup_group(NULL, NULL), -1);
     ASSERT_EQ_INT(neverc_user_lookup_group_id(0, NULL), -1);
+
+    neverc_user_t u;
+    neverc_group_t g;
+    ASSERT_EQ_INT(neverc_user_lookup("", &u), -1);
+    ASSERT_EQ_INT(neverc_user_lookup_id(-1, &u), -1);
+    ASSERT_EQ_INT(neverc_user_lookup_group("", &g), -1);
+    ASSERT_EQ_INT(neverc_user_lookup_group_id(-1, &g), -1);
 }
 
 int main(void) {

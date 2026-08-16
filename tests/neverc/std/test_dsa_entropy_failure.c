@@ -27,9 +27,11 @@ int main(void) {
 
     neverc_dsa_private_key_init(&key);
     neverc_dsa_signature_init(&signature);
+    /* 4^23 ≡ 1 (mod 47): g=2 is a non-residue, so g=4 is in the q-subgroup.
+     * Sign must reach the nonce RNG rather than fail group validation. */
     neverc_bigint_set_int64(&key.pub.p, 47);
     neverc_bigint_set_int64(&key.pub.q, 23);
-    neverc_bigint_set_int64(&key.pub.g, 2);
+    neverc_bigint_set_int64(&key.pub.g, 4);
     neverc_bigint_set_int64(&key.x, 3);
     neverc_bigint_set_int64(&signature.r, 7);
     neverc_bigint_set_int64(&signature.s, 11);

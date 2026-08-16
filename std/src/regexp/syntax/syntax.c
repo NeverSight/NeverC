@@ -145,6 +145,54 @@ static int add_escape_class(parser_t *p, neverc_regexp_syntax_node_t *n,
 #ifndef NCI_RE_MAX_RUNE
 #define NCI_RE_MAX_RUNE 0x10FFFF
 #endif
+#ifndef NCI_RE_MAX_REPEAT
+#define NCI_RE_MAX_REPEAT 1000
+#endif
+
+static int peek(parser_t *p);
+static int next(parser_t *p);
+
+static int hex_digit(int c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+/* After consuming `\x`. Go: `\xHH` or `\x{H+}`. */
+static int parse_hex_rune(parser_t *p, int *out) {
+    int c = peek(p);
+    if (c == '{') {
+        next(p);
+        int v = 0, n = 0;
+        for (;;) {
+            c = peek(p);
+            if (c == '}') {
+                if (n == 0) { p->err = "invalid escape sequence"; return 0; }
+                next(p);
+                *out = v;
+                return 1;
+            }
+            int d = hex_digit(c);
+            if (d < 0) { p->err = "invalid escape sequence"; return 0; }
+            if (v > (NCI_RE_MAX_RUNE - d) / 16) {
+                p->err = "invalid escape sequence";
+                return 0;
+            }
+            v = v * 16 + d;
+            n++;
+            next(p);
+        }
+    }
+    int x = hex_digit(c);
+    if (x < 0) { p->err = "invalid escape sequence"; return 0; }
+    next(p);
+    int y = hex_digit(peek(p));
+    if (y < 0) { p->err = "invalid escape sequence"; return 0; }
+    next(p);
+    *out = x * 16 + y;
+    return 1;
+}
 
 static int is_perl_class_escape(int escape) {
     int lower = escape | 0x20;
@@ -239,6 +287,11 @@ static neverc_regexp_syntax_node_t *parse_escape(parser_t *p) {
     case 'n': return literal_node(p, '\n');
     case 'r': return literal_node(p, '\r');
     case 'v': return literal_node(p, '\v');
+    case 'x': {
+        int r;
+        if (!parse_hex_rune(p, &r)) return NULL;
+        return literal_node(p, r);
+    }
     default: return literal_node(p, c);
     }
 }
@@ -278,6 +331,12 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
             case 'r': c = '\r'; break;
             case 'f': c = '\f'; break;
             case 'v': c = '\v'; break;
+            case 'x':
+                if (!parse_hex_rune(p, &c)) {
+                    neverc_regexp_syntax_free(n);
+                    return NULL;
+                }
+                break;
             default:  c = esc; break;
             }
         } else {
@@ -295,7 +354,12 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
                     neverc_regexp_syntax_free(n);
                     return NULL;
                 }
-                if (hi == 'n') hi = '\n';
+                if (hi == 'x') {
+                    if (!parse_hex_rune(p, &hi)) {
+                        neverc_regexp_syntax_free(n);
+                        return NULL;
+                    }
+                } else if (hi == 'n') hi = '\n';
                 else if (hi == 't') hi = '\t';
                 else if (hi == 'r') hi = '\r';
                 else if (hi == 'f') hi = '\f';
@@ -484,6 +548,11 @@ static neverc_regexp_syntax_node_t *parse_repeat(parser_t *p) {
                 }
         }
         if (next(p) != '}') { p->err = "bad repeat syntax"; neverc_regexp_syntax_free(atom); return NULL; }
+        if (min_val > NCI_RE_MAX_REPEAT || max_val > NCI_RE_MAX_REPEAT) {
+            p->err = "invalid repeat count";
+            neverc_regexp_syntax_free(atom);
+            return NULL;
+        }
         if (max_val >= 0 && max_val < min_val) {
             p->err = "invalid repeat range";
             neverc_regexp_syntax_free(atom);
@@ -510,6 +579,20 @@ static neverc_regexp_syntax_node_t *parse_repeat(parser_t *p) {
     if (peek(p) == '?') {
         next(p);
         rep->flags |= NC_RE_FLAG_NON_GREEDY;
+    }
+
+    /* Go/Perl: a second *+? or {n} after a quantifier is invalid (a{2}*, a**).
+     * A single trailing '?' is the non-greedy flag, already consumed above. */
+    {
+        int nxt = peek(p);
+        if (nxt == '*' || nxt == '+' || nxt == '?' ||
+            (nxt == '{' && p->pos + 1 < p->len &&
+             p->src[p->pos + 1] >= '0' && p->src[p->pos + 1] <= '9')) {
+            p->err = "invalid nested repetition operator";
+            neverc_regexp_syntax_free(atom);
+            neverc_regexp_syntax_free(rep);
+            return NULL;
+        }
     }
 
     if (!add_sub(p, rep, atom)) {

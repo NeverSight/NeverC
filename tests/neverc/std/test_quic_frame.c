@@ -117,6 +117,88 @@ static void test_stream_frame_with_offset_and_fin(void) {
     ASSERT_EQ(out.fin, 1);
 }
 
+static void test_crypto_frame_rejects_offset_length_overflow(void) {
+    /* RFC 9000 §19.6: offset + length MUST NOT exceed 2^62-1. */
+    uint8_t overflow[] = {
+        0x06,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, /* offset = 2^62-1 */
+        0x01, 'A',
+    };
+    quic_frame_crypto_t out;
+    size_t consumed;
+    ASSERT_EQ(neverc_quic_parse_crypto_frame(overflow, sizeof(overflow),
+                                             &out, &consumed), -1);
+
+    uint8_t at_limit[] = {
+        0x06,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, /* offset = 2^62-1 */
+        0x00,
+    };
+    ASSERT_EQ(neverc_quic_parse_crypto_frame(at_limit, sizeof(at_limit),
+                                             &out, &consumed), 0);
+    ASSERT_EQ(out.offset, QUIC_VARINT_MAX);
+    ASSERT_EQ(out.data_len, 0);
+
+    uint8_t data[] = { 'A' };
+    uint8_t buf[32];
+    size_t written;
+    ASSERT_EQ(neverc_quic_write_crypto_frame(buf, sizeof(buf), QUIC_VARINT_MAX,
+                                             data, 1, &written), -1);
+    ASSERT_EQ(neverc_quic_write_crypto_frame(buf, sizeof(buf), QUIC_VARINT_MAX,
+                                             data, 0, &written), 0);
+}
+
+static void test_stream_frame_rejects_offset_length_overflow(void) {
+    /* RFC 9000 §19.8: offset + length MUST NOT exceed 2^62-1. */
+    uint8_t overflow_len[] = {
+        0x0E, /* STREAM + OFF + LEN */
+        0x00,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, /* offset = 2^62-1 */
+        0x01, 'A',
+    };
+    quic_frame_stream_t out;
+    size_t consumed;
+    ASSERT_EQ(neverc_quic_parse_stream_frame(overflow_len, sizeof(overflow_len),
+                                             &out, &consumed), -1);
+
+    uint8_t overflow_to_end[] = {
+        0x0C, /* STREAM + OFF, no LEN: data extends to packet end */
+        0x00,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        'A',
+    };
+    ASSERT_EQ(neverc_quic_parse_stream_frame(overflow_to_end,
+                                             sizeof(overflow_to_end),
+                                             &out, &consumed), -1);
+
+    uint8_t at_limit[] = {
+        0x0E,
+        0x00,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0x00,
+    };
+    ASSERT_EQ(neverc_quic_parse_stream_frame(at_limit, sizeof(at_limit),
+                                             &out, &consumed), 0);
+    ASSERT_EQ(out.offset, QUIC_VARINT_MAX);
+    ASSERT_EQ(out.data_len, 0);
+
+    uint8_t data[] = { 'A' };
+    quic_frame_stream_t frame = {
+        .stream_id = 0,
+        .offset = QUIC_VARINT_MAX,
+        .data = data,
+        .data_len = 1,
+        .fin = 0,
+    };
+    uint8_t buf[32];
+    size_t written;
+    ASSERT_EQ(neverc_quic_write_stream_frame(buf, sizeof(buf), &frame,
+                                             &written), -1);
+    frame.data_len = 0;
+    ASSERT_EQ(neverc_quic_write_stream_frame(buf, sizeof(buf), &frame,
+                                             &written), 0);
+}
+
 static void test_stream_frame_nonminimal_type(void) {
     /* RFC 9000 §16: type 0x0a (STREAM + LEN) encoded as a 2-byte varint. */
     uint8_t buf[] = { 0x40, 0x0A, 0x04, 0x05, 'h', 'e', 'l', 'l', 'o' };
@@ -466,9 +548,11 @@ int main(void) {
 
     test_crypto_frame_roundtrip();
     test_crypto_frame_with_offset();
+    test_crypto_frame_rejects_offset_length_overflow();
     test_stream_frame_basic();
     test_stream_frame_with_offset_and_fin();
     test_stream_frame_large_id();
+    test_stream_frame_rejects_offset_length_overflow();
     test_stream_frame_nonminimal_type();
     test_ack_frame_single_range();
     test_ack_frame_multiple_ranges();

@@ -249,6 +249,7 @@ static const char *fast_status_line(int code, size_t *len) {
 
 static void rw_apply_gzip(neverc_http_response_writer_t *w) {
     if (!w->gzip_enabled || !w->accepts_gzip ||
+        w->has_content_length_override ||
         w->body.len < w->gzip_min_size || w->body.len == 0 ||
         w->status < 200 || w->status == 204 || w->status == 304)
         return;
@@ -295,6 +296,15 @@ static int rw_flush(neverc_http_response_writer_t *w) {
 
     nc_buf_t hdr;
     nc_buf_init(&hdr);
+
+    if (w->has_content_length_override &&
+        !w->head_request && !status_forbids_body) {
+        if (w->body.len > w->content_length_override)
+            goto fail;
+        if (w->body.len > 0 &&
+            w->body.len < w->content_length_override)
+            w->keep_alive = 0;
+    }
 
     size_t sl_len = 0;
     const char *sl = fast_status_line(w->status, &sl_len);
@@ -1399,6 +1409,58 @@ static int http_valid_field_value(const char *s, size_t length) {
     return 1;
 }
 
+static int http_valid_port(const char *s, size_t length) {
+    if (!s || length == 0) return 0;
+    unsigned value = 0;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c < '0' || c > '9') return 0;
+        unsigned digit = (unsigned)(c - '0');
+        if (value > (65535U - digit) / 10U) return 0;
+        value = value * 10U + digit;
+    }
+    return value > 0;
+}
+
+/* RFC 9112: Host must be uri-host [ ":" port ]. Reject values that can
+ * desynchronize intermediaries (userinfo, path, spaces, bad ports). */
+static int http_valid_host(const char *value, size_t length) {
+    if (!value || length == 0) return 0;
+    if (value[0] == '[') {
+        const char *close = (const char *)memchr(value, ']', length);
+        if (!close || close == value + 1) return 0;
+        size_t inner = (size_t)(close - value - 1);
+        int has_colon = 0;
+        for (size_t i = 0; i < inner; i++) {
+            unsigned char c = (unsigned char)value[1 + i];
+            if (c == ':') has_colon = 1;
+            if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
+                c == '?' || c == '#' || c == '@' || c == '[' || c == ']')
+                return 0;
+        }
+        if (!has_colon &&
+            !(inner > 2 && (value[1] == 'v' || value[1] == 'V')))
+            return 0;
+        size_t after = length - (size_t)(close - value) - 1;
+        if (after == 0) return 1;
+        return close[1] == ':' && http_valid_port(close + 2, after - 1);
+    }
+
+    const char *colon = (const char *)memchr(value, ':', length);
+    size_t host_length = colon ? (size_t)(colon - value) : length;
+    if (host_length == 0) return 0;
+    for (size_t i = 0; i < host_length; i++) {
+        unsigned char c = (unsigned char)value[i];
+        if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
+            c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
+            c == ',' || c == ':')
+            return 0;
+    }
+    if (!colon) return 1;
+    if (memchr(colon + 1, ':', length - host_length - 1)) return 0;
+    return http_valid_port(colon + 1, length - host_length - 1);
+}
+
 static void http_trim_ows(const char **value, size_t *length) {
     while (*length > 0 && (**value == ' ' || **value == '\t')) {
         (*value)++;
@@ -1414,6 +1476,14 @@ static int http_field_name_is(const char *name, size_t length,
     size_t expected_length = strlen(expected);
     return length == expected_length &&
            strcasecmp_n(name, expected, length) == 0;
+}
+
+static int http_forbidden_trailer(const char *name, size_t length) {
+    return http_field_name_is(name, length, "Content-Length") ||
+           http_field_name_is(name, length, "Transfer-Encoding") ||
+           http_field_name_is(name, length, "Host") ||
+           http_field_name_is(name, length, "Connection") ||
+           http_field_name_is(name, length, "Trailer");
 }
 
 static int http_value_has_token(const char *value, size_t length,
@@ -1518,8 +1588,13 @@ static int http_parse_chunk_size(const char *line, size_t length,
         value = value * 16 + digit;
         digits++;
     }
-    if (digits == 0 || (digits < length && line[digits] != ';')) return -1;
-    if (!http_valid_field_value(line + digits, length - digits)) return -1;
+    if (digits == 0) return -1;
+    if (digits < length) {
+        if (line[digits] != ';' || digits + 1 >= length ||
+            !http_is_tchar((unsigned char)line[digits + 1]) ||
+            !http_valid_field_value(line + digits, length - digits))
+            return -1;
+    }
     *chunk_size = value;
     return 0;
 }
@@ -1564,15 +1639,8 @@ static int parse_chunked_request_body(const char *raw, size_t raw_length,
                 size_t value_length = (size_t)(line_end - value);
                 http_trim_ows(&value, &value_length);
                 if (!http_valid_field_value(value, value_length) ||
-                    http_field_name_is(cursor, (size_t)(colon - cursor),
-                                       "Content-Length") ||
-                    http_field_name_is(cursor, (size_t)(colon - cursor),
-                                       "Transfer-Encoding") ||
-                    http_field_name_is(cursor, (size_t)(colon - cursor),
-                                       "Host") ||
-                    parsed_request_add_header(
-                        request, cursor, (size_t)(colon - cursor),
-                        value, value_length) != 0)
+                    http_forbidden_trailer(
+                        cursor, (size_t)(colon - cursor)))
                     goto invalid;
                 cursor = line_end + 2;
             }
@@ -1638,7 +1706,8 @@ static int parse_request_mode(const char *raw, size_t raw_length,
                (size_t)(request_line_end - target_end - 1)))
         goto invalid;
     size_t target_length = (size_t)(target_end - target);
-    if (target[0] != '/' && !(target_length == 1 && target[0] == '*'))
+    int asterisk_form = target_length == 1 && target[0] == '*';
+    if (target[0] != '/' && !asterisk_form)
         goto invalid;
     for (size_t i = 0; i < target_length; i++) {
         unsigned char c = (unsigned char)target[i];
@@ -1665,7 +1734,8 @@ static int parse_request_mode(const char *raw, size_t raw_length,
     }
     request->http_version = strndup_safe(version, version_length);
     if (!request->method || !request->path || !request->http_version ||
-        (query && !request->query))
+        (query && !request->query) ||
+        (asterisk_form && strcmp(request->method, "OPTIONS") != 0))
         goto invalid;
 
     int host_seen = 0;
@@ -1688,7 +1758,9 @@ static int parse_request_mode(const char *raw, size_t raw_length,
         if (!http_valid_field_value(value, value_length)) goto invalid;
 
         if (http_field_name_is(cursor, name_length, "Host")) {
-            if (host_seen || value_length == 0) goto invalid;
+            if (host_seen || value_length == 0 ||
+                !http_valid_host(value, value_length))
+                goto invalid;
             host_seen = 1;
             request->host = strndup_safe(value, value_length);
             if (!request->host) goto invalid;
@@ -2273,9 +2345,7 @@ static int http1_stream_validate_trailer(const char *line, size_t length) {
     http_trim_ows(&value, &value_length);
     size_t name_length = (size_t)(colon - line);
     if (!http_valid_field_value(value, value_length) ||
-        http_field_name_is(line, name_length, "Content-Length") ||
-        http_field_name_is(line, name_length, "Transfer-Encoding") ||
-        http_field_name_is(line, name_length, "Host"))
+        http_forbidden_trailer(line, name_length))
         return -1;
     return 0;
 }

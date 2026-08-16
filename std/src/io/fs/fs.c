@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <errno.h>
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
   #include <windows.h>
@@ -67,18 +68,57 @@ static int fs_matches_reserve(char ***matches, size_t *cap, size_t needed) {
     return 1;
 }
 
+static int fs_is_sep(char c) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return c == '/' || c == '\\';
+#else
+    return c == '/';
+#endif
+}
+
+static void fs_fill_base_name(char *dst, size_t cap, const char *name) {
+    if (!dst || cap == 0) return;
+    dst[0] = '\0';
+    if (!name) return;
+    size_t len = strlen(name);
+    while (len > 1 && fs_is_sep(name[len - 1]))
+        len--;
+    size_t start = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (fs_is_sep(name[i]))
+            start = i + 1;
+    }
+    size_t n = len - start;
+    if (n == 0) {
+        if (cap > 1 && len > 0 && fs_is_sep(name[0])) {
+            dst[0] = name[0];
+            dst[1] = '\0';
+        }
+        return;
+    }
+    if (n >= cap) n = cap - 1;
+    memcpy(dst, name + start, n);
+    dst[n] = '\0';
+}
+
 static char *fs_join_path(const char *dir, const char *name) {
     size_t dlen = strlen(dir), nlen = strlen(name);
-    if (dlen > SIZE_MAX - nlen - 2) return NULL;
-    char *full = (char *)malloc(dlen + nlen + 2);
+    while (dlen > 1 && fs_is_sep(dir[dlen - 1]))
+        dlen--;
+    int need_sep = dlen > 0 && !fs_is_sep(dir[dlen - 1]);
+    size_t extra = need_sep ? 1 : 0;
+    if (dlen > SIZE_MAX - nlen - extra - 1) return NULL;
+    char *full = (char *)malloc(dlen + extra + nlen + 1);
     if (!full) return NULL;
     memcpy(full, dir, dlen);
+    if (need_sep) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    full[dlen] = '\\';
+        full[dlen] = '\\';
 #else
-    full[dlen] = '/';
+        full[dlen] = '/';
 #endif
-    memcpy(full + dlen + 1, name, nlen + 1);
+    }
+    memcpy(full + dlen + extra, name, nlen + 1);
     return full;
 }
 
@@ -149,10 +189,7 @@ int neverc_fs_stat(const char *path, neverc_fs_file_info_t *info) {
     WIN32_FILE_ATTRIBUTE_DATA attr;
     if (!GetFileAttributesExA(path, GetFileExInfoStandard, &attr))
         return -1;
-    const char *base = strrchr(path, '\\');
-    if (!base) base = strrchr(path, '/');
-    base = base ? base + 1 : path;
-    strncpy(info->name, base, sizeof(info->name) - 1);
+    fs_fill_base_name(info->name, sizeof(info->name), path);
     LARGE_INTEGER sz;
     sz.HighPart = attr.nFileSizeHigh; sz.LowPart = attr.nFileSizeLow;
     info->size = sz.QuadPart;
@@ -162,18 +199,17 @@ int neverc_fs_stat(const char *path, neverc_fs_file_info_t *info) {
     ull.HighPart = attr.ftLastWriteTime.dwHighDateTime;
     info->mod_time = (time_t)((ull.QuadPart - 116444736000000000ULL) / 10000000ULL);
     info->mode = info->is_dir ? NEVERC_FS_MODE_DIR | 0755 : 0644;
+    if (attr.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
+        info->mode |= NEVERC_FS_MODE_LINK;
 #else
     struct stat st;
     if (stat(path, &st) != 0) return -1;
-    const char *base = strrchr(path, '/');
-    base = base ? base + 1 : path;
-    strncpy(info->name, base, sizeof(info->name) - 1);
+    fs_fill_base_name(info->name, sizeof(info->name), path);
     info->size = st.st_size;
     info->mod_time = st.st_mtime;
     info->is_dir = S_ISDIR(st.st_mode) ? 1 : 0;
     info->mode = st.st_mode & 07777;
     if (info->is_dir) info->mode |= NEVERC_FS_MODE_DIR;
-    if (S_ISLNK(st.st_mode)) info->mode |= NEVERC_FS_MODE_LINK;
     if (S_ISFIFO(st.st_mode)) info->mode |= NEVERC_FS_MODE_PIPE;
     if (S_ISSOCK(st.st_mode)) info->mode |= NEVERC_FS_MODE_SOCKET;
 #endif
@@ -184,6 +220,8 @@ int neverc_fs_read_file(const char *path, uint8_t **data, size_t *size) {
     if (!path || !data || !size) return -1;
     *data = NULL;
     *size = 0;
+    neverc_fs_file_info_t info;
+    if (neverc_fs_stat(path, &info) != 0 || info.is_dir) return -1;
     FILE *f = fopen(path, "rb");
     if (!f) return -1;
     if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return -1; }
@@ -242,7 +280,16 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
         }
         (*count)++;
     } while (FindNextFileA(h, &fd));
-    FindClose(h);
+    {
+        DWORD err = GetLastError();
+        FindClose(h);
+        if (err != ERROR_NO_MORE_FILES) {
+            free(result);
+            *entries = NULL;
+            *count = 0;
+            return -1;
+        }
+    }
     *entries = result;
 #else
     DIR *d = opendir(path);
@@ -251,13 +298,25 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
     neverc_fs_dir_entry_t *result =
         (neverc_fs_dir_entry_t *)malloc(cap * sizeof(*result));
     if (!result) { closedir(d); return -1; }
-    struct dirent *de;
-    while ((de = readdir(d)) != NULL) {
+    for (;;) {
+        errno = 0;
+        struct dirent *de = readdir(d);
+        if (!de) {
+            if (errno != 0) {
+                free(result);
+                closedir(d);
+                *entries = NULL;
+                *count = 0;
+                return -1;
+            }
+            break;
+        }
         if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
             continue;
         if (!fs_entries_reserve(&result, &cap, *count + 1)) {
             free(result);
             closedir(d);
+            *entries = NULL;
             *count = 0;
             return -1;
         }
@@ -266,12 +325,26 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
         strncpy(e->name, de->d_name, sizeof(e->name) - 1);
         if (de->d_type == DT_DIR) {
             e->is_dir = 1;
+            e->mode = NEVERC_FS_MODE_DIR;
+        } else if (de->d_type == DT_LNK) {
+            e->mode = NEVERC_FS_MODE_LINK;
+        } else if (de->d_type == DT_FIFO) {
+            e->mode = NEVERC_FS_MODE_PIPE;
+        } else if (de->d_type == DT_SOCK) {
+            e->mode = NEVERC_FS_MODE_SOCKET;
         } else if (de->d_type == DT_UNKNOWN) {
             char *full = fs_join_path(path, de->d_name);
             if (full) {
                 struct stat st;
-                if (lstat(full, &st) == 0 && S_ISDIR(st.st_mode))
-                    e->is_dir = 1;
+                if (lstat(full, &st) == 0) {
+                    if (S_ISDIR(st.st_mode)) {
+                        e->is_dir = 1;
+                        e->mode |= NEVERC_FS_MODE_DIR;
+                    }
+                    if (S_ISLNK(st.st_mode)) e->mode |= NEVERC_FS_MODE_LINK;
+                    if (S_ISFIFO(st.st_mode)) e->mode |= NEVERC_FS_MODE_PIPE;
+                    if (S_ISSOCK(st.st_mode)) e->mode |= NEVERC_FS_MODE_SOCKET;
+                }
                 free(full);
             }
         }
@@ -370,18 +443,16 @@ int neverc_fs_walk_dir(const char *root,
                                  void *userdata),
                        void *userdata) {
     if (!root || !fn) return -1;
+    neverc_fs_file_info_t info;
+    if (neverc_fs_stat(root, &info) != 0) return -1;
     neverc_fs_dir_entry_t root_entry;
     memset(&root_entry, 0, sizeof(root_entry));
-    const char *base = strrchr(root, '/');
-#if defined(NEVERC_PLATFORM_WINDOWS)
-    const char *base2 = strrchr(root, '\\');
-    if (base2 && (!base || base2 > base)) base = base2;
-#endif
-    base = base ? base + 1 : root;
-    strncpy(root_entry.name, base, sizeof(root_entry.name) - 1);
-    root_entry.is_dir = 1;
+    memcpy(root_entry.name, info.name, sizeof(root_entry.name));
+    root_entry.is_dir = info.is_dir;
+    root_entry.mode = info.mode;
     int rc = fn(root, &root_entry, userdata);
     if (rc != 0) return rc;
+    if (!info.is_dir) return 0;
     return walk_recursive(root, fn, userdata);
 }
 

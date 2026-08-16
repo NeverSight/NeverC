@@ -14,6 +14,39 @@ static int nc_toupper(int c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; }
 static int nc_tolower(int c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
 static int nc_isdigit(int c) { return c >= '0' && c <= '9'; }
 
+/* RFC 7230 tchar / RFC 5322 ftext: printable token except ':'. */
+static int textproto_is_tchar(unsigned char c) {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9'))
+        return 1;
+    switch (c) {
+    case '!': case '#': case '$': case '%': case '&': case '\'':
+    case '*': case '+': case '-': case '.': case '^': case '_':
+    case '`': case '|': case '~':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int textproto_field_name_ok(const char *s) {
+    if (!s || !s[0]) return 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (!textproto_is_tchar(*p)) return 0;
+    }
+    return 1;
+}
+
+/* HTAB / SP / VCHAR / obs-text. Reject other CTL, including CR/LF/NUL. */
+static int textproto_field_value_ok(const char *s) {
+    if (!s) return 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        unsigned char c = *p;
+        if ((c < 0x20 && c != '\t') || c == 0x7f) return 0;
+    }
+    return 1;
+}
+
 void neverc_mime_header_init(neverc_mime_header_t *h) {
     if (!h) return;
     memset(h, 0, sizeof(*h));
@@ -109,7 +142,9 @@ static int mime_header_grow(neverc_mime_header_t *h) {
 
 static int mime_header_add_checked(neverc_mime_header_t *h, const char *key,
                                    const char *value) {
-    if (!h || !key || h->count > h->capacity ||
+    if (!h || !key || !textproto_field_name_ok(key) ||
+        !textproto_field_value_ok(value ? value : "") ||
+        h->count > h->capacity ||
         (h->capacity > 0 && (!h->keys || !h->values))) return -1;
     char *canonical = neverc_textproto_canonical_mime_header_key(key);
     if (!canonical) return -1;
@@ -132,7 +167,9 @@ void neverc_mime_header_add(neverc_mime_header_t *h, const char *key,
 }
 
 void neverc_mime_header_set(neverc_mime_header_t *h, const char *key, const char *value) {
-    if (!h || !key || h->count > h->capacity ||
+    if (!h || !key || !textproto_field_name_ok(key) ||
+        !textproto_field_value_ok(value ? value : "") ||
+        h->count > h->capacity ||
         (h->capacity > 0 && (!h->keys || !h->values))) return;
     for (size_t i = 0; i < h->count; i++) {
         if (canon_eq(h->keys[i], key)) {
@@ -191,6 +228,13 @@ int neverc_textproto_read_line(const char *data, size_t len,
         return -1;
     }
     if (!nl) {
+        if (consumed) *consumed = 0;
+        return -1;
+    }
+    /* A CR or NUL inside the line is not a terminator. Keeping it in the
+     * field name/value lets "Name: a\rInjected: b" re-serialize as two
+     * headers; strlen-based copies would also hide the suffix after NUL. */
+    if (memchr(data, '\r', line_len) || memchr(data, '\0', line_len)) {
         if (consumed) *consumed = 0;
         return -1;
     }

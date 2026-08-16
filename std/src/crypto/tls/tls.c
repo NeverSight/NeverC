@@ -236,7 +236,7 @@ static int nci_tls_read_unlocked(
     neverc_tls_conn_t *conn, void *buf, size_t buflen) {
     if (!conn || !buf || buflen == 0)
         return -1;
-    if (conn->closed)
+    if (conn->closed || !conn->handshake_done)
         return -1;
 
     /* Return bytes transferred by a previous reactor owner first. */

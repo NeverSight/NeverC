@@ -252,6 +252,88 @@ static void test_elf_symbol_count_overflow(void) {
           symbols == NULL && count == 0);
 }
 
+static void test_elf_malformed_tables(void) {
+    size_t len = 0;
+    uint8_t *data = build_minimal_elf64(&len);
+    CHECK("build malformed ELF fixtures", data != NULL);
+    if (!data) return;
+
+    neverc_elf_file_t f;
+    uint8_t saved_shstrndx = data[62];
+    data[62] = 99;
+    CHECK("reject shstrndx past section table",
+          neverc_elf_open(&f, data, len) < 0);
+    data[62] = saved_shstrndx;
+
+    uint8_t *sh2 = NULL;
+    /* Section headers start at e_shoff (ELF64, offset 40). */
+    size_t shdr_off = (size_t)data[40] | ((size_t)data[41] << 8) |
+                      ((size_t)data[42] << 16) | ((size_t)data[43] << 24);
+    sh2 = data + shdr_off + 2 * 64;
+    uint8_t saved_off = sh2[24];
+    sh2[24] = 0xFF;
+    sh2[25] = 0xFF;
+    CHECK("reject shstrtab section past EOF",
+          neverc_elf_open(&f, data, len) < 0);
+    sh2[24] = saved_off;
+    sh2[25] = 0;
+
+    uint8_t saved_type = sh2[4];
+    sh2[4] = NEVERC_SHT_NOBITS;
+    CHECK("reject SHT_NOBITS as section name table",
+          neverc_elf_open(&f, data, len) < 0);
+    sh2[4] = saved_type;
+
+    uint8_t *sh1 = data + shdr_off + 64;
+    uint8_t saved_name = sh1[0];
+    sh1[0] = 0xFF;
+    CHECK("reject section name index past string table",
+          neverc_elf_open(&f, data, len) < 0);
+    sh1[0] = saved_name;
+
+    /* Overwrite the whole .shstrtab so no name has a terminating NUL. */
+    uint8_t saved_shstr[17];
+    memcpy(saved_shstr, data + 64, sizeof(saved_shstr));
+    memset(data + 64, 'A', sizeof(saved_shstr));
+    CHECK("reject unterminated section name",
+          neverc_elf_open(&f, data, len) < 0);
+    memcpy(data + 64, saved_shstr, sizeof(saved_shstr));
+
+    data[40] = 0; data[41] = 0; data[42] = 0; data[43] = 0;
+    CHECK("reject shnum without a section header offset",
+          neverc_elf_open(&f, data, len) < 0);
+    data[40] = (uint8_t)shdr_off;
+    data[41] = (uint8_t)(shdr_off >> 8);
+    data[42] = (uint8_t)(shdr_off >> 16);
+    data[43] = (uint8_t)(shdr_off >> 24);
+
+    data[54] = 56; /* e_phentsize */
+    data[56] = 1;  /* e_phnum = 1, e_phoff stays 0 */
+    CHECK("reject phnum without a program header offset",
+          neverc_elf_open(&f, data, len) < 0);
+    data[54] = 0;
+    data[56] = 0;
+
+    /* e_shstrndx = 0 must not treat section 0's sh_size as a string table. */
+    data[62] = 0;
+    CHECK("SHN_UNDEF shstrndx opens without names",
+          neverc_elf_open(&f, data, len) == 0);
+    CHECK("SHN_UNDEF leaves .text unresolved",
+          neverc_elf_section(&f, ".text") == NULL);
+    neverc_elf_close(&f);
+    data[62] = saved_shstrndx;
+
+    uint8_t truncated[32];
+    memcpy(truncated, data, sizeof(truncated));
+    truncated[4] = NEVERC_ELFCLASS64;
+    truncated[5] = NEVERC_ELFDATA2LSB;
+    truncated[6] = 1;
+    CHECK("reject truncated ELF64 header",
+          neverc_elf_open(&f, truncated, sizeof(truncated)) < 0);
+
+    free(data);
+}
+
 static void test_elf_self_binary(void) {
     /*
      * On macOS we're running a Mach-O binary, not ELF.
@@ -269,6 +351,7 @@ int main(void) {
     test_elf64_parse();
     test_elf_invalid();
     test_elf_symbol_count_overflow();
+    test_elf_malformed_tables();
     test_elf_self_binary();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);

@@ -111,6 +111,16 @@ static void test_parse_int(void) {
     check_int("overflow trailing junk signed is syntax",
               neverc_strconv_parse_int("18446744073709551616x", 10, &v),
               NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("min int64 exact",
+              neverc_strconv_parse_int("-9223372036854775808", 10, &v), 0);
+    check_ll("min int64 exact val", v, LLONG_MIN);
+    check_int("min int64 minus one",
+              neverc_strconv_parse_int("-9223372036854775809", 10, &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_ll("min int64 minus one clamp", v, LLONG_MIN);
+    check_int("sign after prefix is syntax",
+              neverc_strconv_parse_int("0x+f", 0, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
 }
 
 /* ===== ParseUint ===== */
@@ -151,6 +161,15 @@ static void test_parse_uint(void) {
     check_int("explicit oct prefix",
               neverc_strconv_parse_uint("0o377", 8, &v), 0);
     check_ull("explicit oct prefix val", v, 255);
+    check_int("uint rejects leading plus",
+              neverc_strconv_parse_uint("+1", 10, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("implicit octal underscores",
+              neverc_strconv_parse_uint("0_1_2_3_4_5", 0, &v), 0);
+    check_ull("implicit octal underscores val", v, 012345);
+    check_int("non-ascii digit rejected",
+              neverc_strconv_parse_uint("\x96" "B", 16, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
     check_int("overflow trailing junk is syntax",
               neverc_strconv_parse_uint("18446744073709551616x", 10, &v),
               NEVERC_STRCONV_ERR_SYNTAX);
@@ -457,6 +476,18 @@ static void test_unquote(void) {
 
     n = neverc_strconv_unquote("\"", buf, sizeof(buf));
     check_int("unquote single quote", n, -1);
+
+    /* Go interpreted string/rune literals cannot contain a raw newline. */
+    char raw_nl_string[] = {'"', 'h', 'i', '\n', 'x', '"', '\0'};
+    check_int("reject raw newline in interpreted string",
+              neverc_strconv_unquote(raw_nl_string, buf, sizeof(buf)), -1);
+    char raw_nl_rune[] = {'\'', '\n', '\'', '\0'};
+    check_int("reject raw newline in rune literal",
+              neverc_strconv_unquote(raw_nl_rune, buf, sizeof(buf)), -1);
+    char raw_nl_backtick[] = {'`', 'a', '\n', 'b', '`', '\0'};
+    n = neverc_strconv_unquote(raw_nl_backtick, buf, sizeof(buf));
+    check_int("raw string keeps newline len", n, 3);
+    check_str("raw string keeps newline", buf, "a\nb");
 }
 
 /* ===== CanBackquote ===== */
@@ -561,6 +592,13 @@ static void test_quoted_prefix(void) {
 
     check_int("bad prefix", neverc_strconv_quoted_prefix("not quoted", &plen), -1);
     check_int("unclosed", neverc_strconv_quoted_prefix("\"unclosed", &plen), -1);
+
+    char raw_nl_prefix[] = {'"', 'h', 'i', '\n', 'x', '"', '\0'};
+    check_int("quoted_prefix rejects raw newline",
+              neverc_strconv_quoted_prefix(raw_nl_prefix, &plen), -1);
+    check_int("quoted_prefix accepts escaped newline",
+              neverc_strconv_quoted_prefix("\"hello\\nworld\" rest", &plen), 0);
+    check_int("quoted_prefix escaped newline length", (int)plen, 14);
 }
 
 /* ===== FormatComplex / ParseComplex ===== */

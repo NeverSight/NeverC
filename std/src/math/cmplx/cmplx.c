@@ -138,9 +138,11 @@ neverc_cmplx_t neverc_cmplx_sqrt(neverc_cmplx_t z) {
 }
 
 neverc_cmplx_t neverc_cmplx_pow(neverc_cmplx_t x, neverc_cmplx_t y) {
+    /* IEEE 754 / Go math.Pow: z^0 = 1 for every z. exp(0*log(Inf|NaN)) is NaN. */
+    if (RE(y) == 0.0 && IM(y) == 0.0)
+        return MK(1.0, 0.0);
     if (RE(x) == 0.0 && IM(x) == 0.0) {
         double yr = RE(y), yi = IM(y);
-        if (yr == 0.0 && yi == 0.0) return MK(1.0, 0.0);
         if (neverc_math_isnan(yr) || neverc_math_isnan(yi))
             return neverc_cmplx_nan_val();
         if (yr < 0.0) {
@@ -244,6 +246,29 @@ neverc_cmplx_t neverc_cmplx_tanh(neverc_cmplx_t z) {
 neverc_cmplx_t neverc_cmplx_asin(neverc_cmplx_t z) {
     /* asin(z) = -i * log(i*z + sqrt(1 - z*z)) */
     double a = RE(z), b = IM(z);
+    /* Inf/NaN: the algebraic form does Inf*0 and returns NaN (Go math/cmplx.Asin). */
+    if (b == 0.0 && neverc_math_abs(a) <= 1.0)
+        return MK(neverc_math_asin(a), b);
+    if (a == 0.0 && neverc_math_abs(b) <= 1.0)
+        return MK(a, neverc_math_asinh(b));
+    if (neverc_math_isnan(b)) {
+        if (a == 0.0)
+            return MK(a, neverc_math_nan());
+        if (neverc_math_isinf(a, 0))
+            return MK(neverc_math_nan(), a);
+        return neverc_cmplx_nan_val();
+    }
+    if (neverc_math_isinf(b, 0)) {
+        if (neverc_math_isnan(a))
+            return z;
+        if (neverc_math_isinf(a, 0))
+            return MK(neverc_math_copysign(NEVERC_MATH_PI / 4.0, a), b);
+        return MK(neverc_math_copysign(0.0, a), b);
+    }
+    if (neverc_math_isinf(a, 0))
+        return MK(neverc_math_copysign(NEVERC_MATH_PI / 2.0, a),
+                  neverc_math_copysign(a, b));
+
     neverc_cmplx_t z2 = MK(a*a - b*b, 2.0*a*b);
     neverc_cmplx_t one_minus_z2 = MK(1.0 - RE(z2), -IM(z2));
     neverc_cmplx_t sq = neverc_cmplx_sqrt(one_minus_z2);
@@ -261,6 +286,20 @@ neverc_cmplx_t neverc_cmplx_acos(neverc_cmplx_t z) {
 neverc_cmplx_t neverc_cmplx_atan(neverc_cmplx_t z) {
     /* atan(z) = (1/2i) * log((1+iz)/(1-iz)) */
     double a = RE(z), b = IM(z);
+    /* Inf: (1±Inf)/(1∓Inf) is NaN; C99/Go: atan(±Inf) = ±π/2, atan(±i∞) = ±π/2. */
+    if (b == 0.0)
+        return MK(neverc_math_atan(a), b);
+    if (a == 0.0 && neverc_math_abs(b) <= 1.0)
+        return MK(a, neverc_math_atanh(b));
+    if (neverc_math_isinf(b, 0) || neverc_math_isinf(a, 0)) {
+        if (neverc_math_isnan(a))
+            return MK(neverc_math_nan(), neverc_math_copysign(0.0, b));
+        return MK(neverc_math_copysign(NEVERC_MATH_PI / 2.0, a),
+                  neverc_math_copysign(0.0, b));
+    }
+    if (neverc_math_isnan(a) || neverc_math_isnan(b))
+        return neverc_cmplx_nan_val();
+
     neverc_cmplx_t num = MK(1.0 - b, a);
     neverc_cmplx_t den = MK(1.0 + b, -a);
     double d2 = RE(den) * RE(den) + IM(den) * IM(den);

@@ -211,18 +211,26 @@ int neverc_multipart_parse(const unsigned char *data, size_t data_len,
             &df, pos, remaining, dlen, &closing, &after);
         if (!next) goto fail;
 
-        /* Part data is between pos and next (minus preceding \r\n) */
+        /* Headers + body sit between pos and the next dash-boundary. Do not
+         * strip the delimiter's preceding CRLF before parsing headers: when
+         * the body is empty that CRLF is also the header terminator
+         * (Go: "--b\\r\\nH: v\\r\\n\\r\\n--b--"). */
         size_t part_len = (size_t)(next - pos);
-        if (part_len >= 2 && pos[part_len-2] == '\r' && pos[part_len-1] == '\n') part_len -= 2;
-        else if (part_len >= 1 && pos[part_len-1] == '\n') part_len -= 1;
 
-        /* Parse headers and body */
         neverc_multipart_part_t *part = &out->parts[out->part_count];
         size_t body_offset = 0;
         if (parse_headers(pos, part_len, part, &body_offset) != 0)
             goto fail;
         part->body = pos + body_offset;
-        part->body_len = part_len - body_offset;
+        size_t body_len = part_len - body_offset;
+        /* RFC 2046: the line break immediately before the next dash-boundary
+         * belongs to the delimiter, not the body. */
+        if (body_len >= 2 && part->body[body_len - 2] == '\r' &&
+            part->body[body_len - 1] == '\n')
+            body_len -= 2;
+        else if (body_len >= 1 && part->body[body_len - 1] == '\n')
+            body_len -= 1;
+        part->body_len = body_len;
         out->part_count++;
 
         if (closing) return 0;

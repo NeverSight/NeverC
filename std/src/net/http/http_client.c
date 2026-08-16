@@ -741,12 +741,14 @@ static int scan_chunked_body(const char *source, size_t source_length,
             chunk_size = chunk_size * 16 + digit;
             digits++;
         }
-        if (digits == 0 || (cursor + digits < line_end &&
-                            cursor[digits] != ';') ||
-            !client_valid_field_value(cursor + digits,
-                                      (size_t)(line_end -
-                                               (cursor + digits))))
-            return -1;
+        if (digits == 0) return -1;
+        if (cursor + digits < line_end) {
+            if (cursor[digits] != ';' || cursor + digits + 1 >= line_end ||
+                !client_is_tchar((unsigned char)cursor[digits + 1]) ||
+                !client_valid_field_value(
+                    cursor + digits, (size_t)(line_end - (cursor + digits))))
+                return -1;
+        }
         size_t auxiliary_increment = line_length - 1U;
         if (state->auxiliary_length > trailer_limit ||
             auxiliary_increment > trailer_limit - state->auxiliary_length)
@@ -1290,10 +1292,13 @@ static int stream_chunk_size(const char *line, size_t length,
         value = value * 16 + digit;
         digits++;
     }
-    if (digits == 0 ||
-        (digits < length && line[digits] != ';') ||
-        !client_valid_field_value(line + digits, length - digits))
-        return -1;
+    if (digits == 0) return -1;
+    if (digits < length) {
+        if (line[digits] != ';' || digits + 1 >= length ||
+            !client_is_tchar((unsigned char)line[digits + 1]) ||
+            !client_valid_field_value(line + digits, length - digits))
+            return -1;
+    }
     *chunk_size = value;
     return 0;
 }

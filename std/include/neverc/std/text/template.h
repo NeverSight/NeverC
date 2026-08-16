@@ -7,7 +7,8 @@
  * Supports literal text, {{.Key}}, {{if .Key}}...{{else}}...{{end}}, and
  * {{range .Key}}...{{end}}. Data values are borrowed strings. Since the data
  * model has no collection type, range executes its body once when the named
- * value exists; pipelines and template functions are not supported.
+ * value exists; pipelines and template functions are rejected as invalid
+ * syntax rather than treated as key names.
  */
 
 #include <stddef.h>

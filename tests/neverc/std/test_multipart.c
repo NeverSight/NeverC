@@ -99,6 +99,125 @@ static void test_write_roundtrip(void) {
     free(reader);
 }
 
+static void test_parse_empty_parts_and_preamble(void) {
+    printf("[parse empty parts / preamble]\n");
+    neverc_multipart_reader_t *reader =
+        (neverc_multipart_reader_t *)calloc(1, sizeof(*reader));
+    ASSERT_TRUE(reader != NULL);
+    if (!reader) return;
+
+    /* Go parseTests: "single empty part, --boundary" */
+    const char *empty_close =
+        "--abc\r\n"
+        "Foo: bar\r\n"
+        "\r\n"
+        "--abc--";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)empty_close, strlen(empty_close),
+                  "abc", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "Foo"), "bar");
+    ASSERT_EQ((int)reader->parts[0].body_len, 0);
+
+    /* Go: "single empty part, \\r\\n--boundary" */
+    const char *empty_crlf_close =
+        "--abc\r\n"
+        "Foo: bar\r\n"
+        "\r\n"
+        "\r\n--abc--";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)empty_crlf_close,
+                  strlen(empty_crlf_close), "abc", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_EQ((int)reader->parts[0].body_len, 0);
+
+    /* Go: "final part empty" — two empty bodies back-to-back */
+    const char *two_empty =
+        "--abc\r\n"
+        "Foo: bar\r\n"
+        "\r\n"
+        "--abc\r\n"
+        "Foo2: bar2\r\n"
+        "\r\n"
+        "--abc--";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)two_empty, strlen(two_empty),
+                  "abc", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 2);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "Foo"), "bar");
+    ASSERT_EQ((int)reader->parts[0].body_len, 0);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[1], "Foo2"),
+                 "bar2");
+    ASSERT_EQ((int)reader->parts[1].body_len, 0);
+
+    /* Go: "final part empty then lwsp" — close may omit the trailing CRLF */
+    const char *empty_lwsp_eof =
+        "--abc\r\n"
+        "Foo: bar\r\n"
+        "\r\n"
+        "--abc-- \t";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)empty_lwsp_eof,
+                  strlen(empty_lwsp_eof), "abc", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_EQ((int)reader->parts[0].body_len, 0);
+
+    /* Go: "leading line" / TestMultipart preamble is ignored */
+    const char *preamble =
+        "This is a multi-part message. This line is ignored.\r\n"
+        "--MyBoundary\r\n"
+        "foo: bar\r\n"
+        "\r\n"
+        "My value\r\nThe end.\r\n"
+        "--MyBoundary--\r\n"
+        "useless trailer\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)preamble, strlen(preamble),
+                  "MyBoundary", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "foo"), "bar");
+    ASSERT_EQ((int)reader->parts[0].body_len, (int)strlen("My value\r\nThe end."));
+    ASSERT_TRUE(memcmp(reader->parts[0].body, "My value\r\nThe end.",
+                       reader->parts[0].body_len) == 0);
+
+    /* Mid-line "--boundary" in the preamble is not a delimiter */
+    const char *preamble_embed =
+        "ignore --MyBoundary here\r\n"
+        "--MyBoundary\r\n"
+        "\r\n"
+        "ok\r\n"
+        "--MyBoundary--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)preamble_embed,
+                  strlen(preamble_embed), "MyBoundary", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_EQ((int)reader->parts[0].body_len, 2);
+    ASSERT_TRUE(memcmp(reader->parts[0].body, "ok", 2) == 0);
+
+    /* LF-only preamble + empty part (Go TestMultipartOnlyNewlines) */
+    const char *lf_preamble_empty =
+        "ignored\n"
+        "--MyBoundary\n"
+        "name: x\n"
+        "\n"
+        "--MyBoundary--\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)lf_preamble_empty,
+                  strlen(lf_preamble_empty), "MyBoundary", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "name"), "x");
+    ASSERT_EQ((int)reader->parts[0].body_len, 0);
+
+    free(reader);
+}
+
 static void test_generate_boundary(void) {
     printf("[generate boundary]\n");
     char b1[64], b2[64];
@@ -123,6 +242,22 @@ static void test_rejects_malformed_input(void) {
     ASSERT_EQ(neverc_multipart_parse(
                   (const unsigned char *)truncated, strlen(truncated),
                   "b", reader),
+              -1);
+    ASSERT_EQ(reader->part_count, 0);
+
+    /* Go TestMultipartTruncated: preamble + part + "--boundary-" is not a
+     * close and must not be treated as a complete message. */
+    const char *truncated_dash =
+        "This is a multi-part message. This line is ignored.\r\n"
+        "--MyBoundary\r\n"
+        "foo-bar: baz\r\n"
+        "\r\n"
+        "Oh no, premature EOF!\r\n"
+        "--MyBoundary-";
+    memset(reader, 0xa5, sizeof(*reader));
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)truncated_dash,
+                  strlen(truncated_dash), "MyBoundary", reader),
               -1);
     ASSERT_EQ(reader->part_count, 0);
 
@@ -212,6 +347,7 @@ int main(void) {
     printf("=== NeverC mime/multipart Tests ===\n");
     test_parse_basic();
     test_parse_multiple_headers();
+    test_parse_empty_parts_and_preamble();
     test_write_roundtrip();
     test_generate_boundary();
     test_rejects_malformed_input();

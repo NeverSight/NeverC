@@ -71,9 +71,32 @@ static void test_stat(void) {
     int rc = neverc_fs_stat(tmpdir, &info);
     check("stat_tmp", rc == 0);
     check("tmp_is_dir", info.is_dir == 1);
+    char tmp_name[256];
+    memcpy(tmp_name, info.name, sizeof(tmp_name));
 
     rc = neverc_fs_stat("/nonexistent_path_12345", &info);
     check("stat_nonexistent", rc != 0);
+
+    {
+        char slashed[1100];
+        size_t tlen = strlen(tmpdir);
+        if (tlen > 0 && tlen + 2 < sizeof(slashed)) {
+            memcpy(slashed, tmpdir, tlen);
+#if defined(_WIN32)
+            slashed[tlen] = '\\';
+#else
+            slashed[tlen] = '/';
+#endif
+            slashed[tlen + 1] = '\0';
+            neverc_fs_file_info_t slash_info;
+            rc = neverc_fs_stat(slashed, &slash_info);
+            check("stat_trailing_slash", rc == 0);
+            check("stat_trailing_slash_is_dir", slash_info.is_dir == 1);
+            check("stat_trailing_slash_name", slash_info.name[0] != '\0');
+            check("stat_trailing_slash_name_match",
+                  strcmp(slash_info.name, tmp_name) == 0);
+        }
+    }
 }
 
 static void test_read_file(void) {
@@ -101,6 +124,19 @@ static void test_read_file(void) {
     check("read_size", size == 11);
     check("read_content", data && memcmp(data, "hello world", 11) == 0);
     free(data);
+
+    neverc_fs_dir_entry_t *as_dir = (neverc_fs_dir_entry_t *)1;
+    size_t as_dir_count = 99;
+    check("readdir_file_fails",
+          neverc_fs_read_dir(filepath, &as_dir, &as_dir_count) != 0);
+    check("readdir_file_clears", as_dir == NULL && as_dir_count == 0);
+
+    uint8_t *dir_data = (uint8_t *)1;
+    size_t dir_size = 99;
+    check("read_file_dir_fails",
+          neverc_fs_read_file(tmpdir, &dir_data, &dir_size) != 0);
+    check("read_file_dir_clears", dir_data == NULL && dir_size == 0);
+
     remove(filepath);
 }
 
@@ -138,13 +174,37 @@ static void test_glob(void) {
     check("glob_ok", rc == 0);
     check("glob_found", count >= 1);
     neverc_fs_free_matches(matches, count);
+
+    {
+        char slashed[1100];
+        size_t tlen = strlen(tmpdir);
+        if (tlen > 0 && tlen + 2 < sizeof(slashed)) {
+            memcpy(slashed, tmpdir, tlen);
+#if defined(_WIN32)
+            slashed[tlen] = '\\';
+#else
+            slashed[tlen] = '/';
+#endif
+            slashed[tlen + 1] = '\0';
+            matches = NULL;
+            count = 0;
+            rc = neverc_fs_glob(slashed, "neverc_glob_test_*.txt",
+                                &matches, &count);
+            check("glob_trailing_slash_ok", rc == 0);
+            check("glob_trailing_slash_found", count >= 1);
+            neverc_fs_free_matches(matches, count);
+        }
+    }
     remove(filepath);
 }
 
 static int walk_count;
 static int walk_saw_secret;
+static int walk_root_is_dir;
 static int walk_cb(const char *path, const neverc_fs_dir_entry_t *entry, void *ud) {
-    (void)path; (void)entry; (void)ud;
+    (void)path; (void)ud;
+    if (walk_count == 0)
+        walk_root_is_dir = entry ? entry->is_dir : -1;
     walk_count++;
     return 0;
 }
@@ -183,9 +243,21 @@ static void test_walk_dir(void) {
     if (fb) { fprintf(fb, "b"); fclose(fb); }
 
     walk_count = 0;
+    walk_root_is_dir = -1;
     int rc = neverc_fs_walk_dir(walkdir, walk_cb, NULL);
     check("walk_ok", rc == 0);
     check("walk_found_files", walk_count >= 3);
+    check("walk_root_is_dir", walk_root_is_dir == 1);
+
+    walk_count = 0;
+    walk_root_is_dir = -1;
+    rc = neverc_fs_walk_dir(file_a, walk_cb, NULL);
+    check("walk_file_ok", rc == 0);
+    check("walk_file_once", walk_count == 1);
+    check("walk_file_not_dir", walk_root_is_dir == 0);
+
+    check("walk_missing",
+          neverc_fs_walk_dir("/nonexistent_path_12345", walk_cb, NULL) != 0);
 
     remove(file_b);
     remove(file_a);

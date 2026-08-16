@@ -314,6 +314,40 @@ static int cmp_int_generic(const void *a, const void *b) {
     return (ia > ib) - (ia < ib);
 }
 
+static void test_partition_patterns(void) {
+    printf("[partition_patterns]\n");
+    enum { N = 4096 };
+    int rev[N];
+    for (int i = 0; i < N; i++)
+        rev[i] = N - 1 - i;
+    neverc_sort_ints(rev, N);
+    check_true("reverse-sorted ints", neverc_sort_ints_are_sorted(rev, N));
+    check_int("reverse min", rev[0], 0);
+    check_int("reverse max", rev[N - 1], N - 1);
+
+    int few[N];
+    for (int i = 0; i < N; i++)
+        few[i] = i % 7;
+    neverc_sort_ints(few, N);
+    check_true("few-unique ints", neverc_sort_ints_are_sorted(few, N));
+
+    pair_t pairs[256];
+    for (int i = 0; i < 256; i++) {
+        pairs[i].key = 255 - i;
+        pairs[i].order = i;
+    }
+    neverc_sort_stable(pairs, 256, sizeof(pair_t), cmp_pair);
+    int ok_sorted = 1, ok_stable = 1;
+    for (int i = 1; i < 256; i++) {
+        if (pairs[i - 1].key > pairs[i].key) ok_sorted = 0;
+        if (pairs[i - 1].key == pairs[i].key &&
+            pairs[i - 1].order >= pairs[i].order)
+            ok_stable = 0;
+    }
+    check_true("stable reverse-key sorted", ok_sorted);
+    check_true("stable reverse-key order", ok_stable);
+}
+
 static void test_slice_aliases(void) {
     printf("[slice aliases]\n");
     int arr[] = {5, 3, 1, 4, 2};
@@ -347,6 +381,7 @@ int main(void) {
     test_ints_are_sorted();
     test_doubles_are_sorted();
     test_find();
+    test_partition_patterns();
     test_slice_aliases();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

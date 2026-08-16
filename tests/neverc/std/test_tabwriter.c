@@ -177,6 +177,86 @@ static void test_space_pad_ignores_tabwidth(neverc_tabwriter_t *w) {
     ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a  b\naa bb");
 }
 
+static void test_trailing_htab_is_last_cell(neverc_tabwriter_t *w) {
+    printf("[trailing_htab_is_last_cell]\n");
+    /* Go tests 4a / 5c: a trailing htab does not invent an extra column. */
+    neverc_tabwriter_init(w, 8, 0, 1, '.', 0);
+    neverc_tabwriter_write(w, "\t", 1);
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "");
+
+    neverc_tabwriter_reset(w);
+    neverc_tabwriter_write(w, "*\t*\t", 4);
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "*.......*");
+}
+
+static void test_align_right_trailing_htab(neverc_tabwriter_t *w) {
+    printf("[align_right_trailing_htab]\n");
+    neverc_tabwriter_init(w, 8, 0, 1, '.', NEVERC_TABWRITER_ALIGN_RIGHT);
+    neverc_tabwriter_write(w, "*\t*\t", 4);
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), ".......**");
+}
+
+static void test_formfeed_breaks_columns(neverc_tabwriter_t *w) {
+    printf("[formfeed_breaks_columns]\n");
+    /* Go test 9c: '\f' flushes so the next table is formatted independently. */
+    neverc_tabwriter_init(w, 1, 0, 0, '.', 0);
+    const char *in = "1\t2\t3\t4\f11\t222\t3333\t44444\n";
+    neverc_tabwriter_write(w, in, strlen(in));
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "1234\n11222333344444\n");
+}
+
+static void test_vertical_tab_ends_cell(neverc_tabwriter_t *w) {
+    printf("[vertical_tab_ends_cell]\n");
+    neverc_tabwriter_init(w, 1, 0, 1, '.', 0);
+    neverc_tabwriter_write(w, "a\vb\n", 4);
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a.b\n");
+}
+
+static void test_invalid_utf8_rune_width(neverc_tabwriter_t *w) {
+    printf("[invalid_utf8_rune_width]\n");
+    /* Go utf8.RuneCount: 0x96 is one rune, so "A\x96B" has width 3.
+     * NeverC hex escapes consume following hex digits — split the literal. */
+    neverc_tabwriter_init(w, 5, 0, 0, '.', 0);
+    const char in[] = {'A', '\x96', 'B', '\t', 'x', '\n'};
+    neverc_tabwriter_write(w, in, sizeof(in));
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "A" "\x96" "B..x\n");
+}
+
+static void test_flush_then_write_is_independent(neverc_tabwriter_t *w) {
+    printf("[flush_then_write_is_independent]\n");
+    neverc_tabwriter_init(w, 1, 0, 1, '.', 0);
+    neverc_tabwriter_write(w, "a\tb\n", 4);
+    neverc_tabwriter_flush(w);
+    neverc_tabwriter_write(w, "ccc\tdd\n", 7);
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a.b\nccc.dd\n");
+}
+
+static void test_elastic_tabstops_ragged(neverc_tabwriter_t *w) {
+    printf("[elastic_tabstops_ragged]\n");
+    /* A 1-cell line breaks the column block (Go elastic tabstops). */
+    neverc_tabwriter_init(w, 1, 0, 1, ' ', 0);
+    const char *in = "aaaa\tbbb\naa\tb\na\naa\tcccc";
+    neverc_tabwriter_write(w, in, strlen(in));
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL),
+                  "aaaa bbb\naa   b\na\naa cccc");
+}
+
+static void test_discard_empty_soft_columns(neverc_tabwriter_t *w) {
+    printf("[discard_empty_soft_columns]\n");
+    neverc_tabwriter_init(w, 4, 0, 0, '.', NEVERC_TABWRITER_DISCARD_EMPTY_COLS);
+    neverc_tabwriter_write(w, "a\v\vb", 4);
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a...b");
+}
+
 int main(void) {
     printf("=== NeverC text/tabwriter Tests ===\n");
     neverc_tabwriter_t *w =
@@ -206,6 +286,22 @@ int main(void) {
     test_minwidth(w);
     neverc_tabwriter_reset(w);
     test_space_pad_ignores_tabwidth(w);
+    neverc_tabwriter_reset(w);
+    test_trailing_htab_is_last_cell(w);
+    neverc_tabwriter_reset(w);
+    test_align_right_trailing_htab(w);
+    neverc_tabwriter_reset(w);
+    test_formfeed_breaks_columns(w);
+    neverc_tabwriter_reset(w);
+    test_vertical_tab_ends_cell(w);
+    neverc_tabwriter_reset(w);
+    test_invalid_utf8_rune_width(w);
+    neverc_tabwriter_reset(w);
+    test_flush_then_write_is_independent(w);
+    neverc_tabwriter_reset(w);
+    test_elastic_tabstops_ragged(w);
+    neverc_tabwriter_reset(w);
+    test_discard_empty_soft_columns(w);
     neverc_tabwriter_reset(w);
     free(w);
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);

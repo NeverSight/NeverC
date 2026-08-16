@@ -15,6 +15,21 @@ static inline uint8_t over_component(uint8_t dst, uint8_t src, uint8_t sa) {
     return (uint8_t)((s * 255 + d * (255 - a) + 127) / 255);
 }
 
+static inline void over_pixel(uint8_t *d, const uint8_t *s) {
+    uint8_t sa = s[3];
+    if (sa == 255) {
+        d[0] = s[0];
+        d[1] = s[1];
+        d[2] = s[2];
+        d[3] = s[3];
+    } else if (sa != 0) {
+        d[0] = over_component(d[0], s[0], sa);
+        d[1] = over_component(d[1], s[1], sa);
+        d[2] = over_component(d[2], s[2], sa);
+        d[3] = over_component(d[3], sa, sa);
+    }
+}
+
 /* Intersect `a` with a (possibly 64-bit) rect. Used for source/mask bounds
  * translated by (r.min - origin): that add/sub overflows 32-bit int and wraps
  * into dst space, so a mapping that is actually far off-image looks like a
@@ -74,14 +89,24 @@ void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
         + (size_t)(sy - (int64_t)src->rect.min.y) * src_stride
         + (size_t)(sx - (int64_t)src->rect.min.x) * 4;
 
-    /* Same-buffer SRC shifted down would otherwise copy top-to-bottom and
-     * reread rows already overwritten (classic overlapping blit). memmove
-     * already covers the horizontal case within a row. */
-    if (op == NEVERC_DRAW_SRC && dst->pix == src->pix &&
-        dst->stride == src->stride &&
-        (dy0 - dst->rect.min.y) > (int)(sy - (int64_t)src->rect.min.y)) {
-        size_t rows = (size_t)(dy1 - dy0);
-        if (rows > 0) {
+    /* Same-buffer blit: Go drawCopySrc walks bottom-to-top when dest is
+     * below src (copy/memmove covers horizontal overlap). drawCopyOver
+     * also walks right-to-left when dest is below src or on the same row
+     * and strictly to the right — otherwise OVER rereads pixels it just
+     * wrote. Compare buffer rows/cols so aliased images with different
+     * origins still get the right direction. */
+    int64_t drow = (int64_t)dy0 - (int64_t)dst->rect.min.y;
+    int64_t srow = sy - (int64_t)src->rect.min.y;
+    int64_t dcol = (int64_t)dx0 - (int64_t)dst->rect.min.x;
+    int64_t scol = sx - (int64_t)src->rect.min.x;
+    int same_buf = dst->pix == src->pix && dst->stride == src->stride;
+    int y_backward = same_buf && drow > srow;
+    int over_backward = same_buf &&
+        (drow > srow || (drow == srow && dcol > scol));
+    size_t rows = (size_t)(dy1 - dy0);
+
+    if (op == NEVERC_DRAW_SRC) {
+        if (y_backward && rows > 0) {
             dbase += (rows - 1U) * dst_stride;
             sbase += (rows - 1U) * src_stride;
             for (size_t n = rows; n > 0; n--) {
@@ -89,35 +114,41 @@ void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
                 dbase -= dst_stride;
                 sbase -= src_stride;
             }
+        } else {
+            for (int y = dy0; y < dy1; y++) {
+                memmove(dbase, sbase, (size_t)w * 4);
+                dbase += dst_stride;
+                sbase += src_stride;
+            }
+        }
+        return;
+    }
+
+    if (over_backward && rows > 0) {
+        dbase += (rows - 1U) * dst_stride;
+        sbase += (rows - 1U) * src_stride;
+        for (size_t n = rows; n > 0; n--) {
+            uint8_t *dptr = dbase + (size_t)(w - 1) * 4;
+            const uint8_t *sptr = sbase + (size_t)(w - 1) * 4;
+            for (int i = 0; i < w; i++) {
+                over_pixel(dptr, sptr);
+                dptr -= 4;
+                sptr -= 4;
+            }
+            dbase -= dst_stride;
+            sbase -= src_stride;
         }
         return;
     }
 
     for (int y = dy0; y < dy1; y++) {
-        uint8_t *drow = dbase;
-        const uint8_t *srow = sbase;
-
-        if (op == NEVERC_DRAW_SRC) {
-            memmove(drow, srow, (size_t)w * 4);
-        } else {
-            for (int i = 0; i < w; i++) {
-                uint8_t sa = srow[3];
-                if (sa == 255) {
-                    drow[0] = srow[0];
-                    drow[1] = srow[1];
-                    drow[2] = srow[2];
-                    drow[3] = srow[3];
-                } else if (sa != 0) {
-                    drow[0] = over_component(drow[0], srow[0], sa);
-                    drow[1] = over_component(drow[1], srow[1], sa);
-                    drow[2] = over_component(drow[2], srow[2], sa);
-                    drow[3] = over_component(drow[3], sa, sa);
-                }
-                drow += 4;
-                srow += 4;
-            }
+        uint8_t *dptr = dbase;
+        const uint8_t *sptr = sbase;
+        for (int i = 0; i < w; i++) {
+            over_pixel(dptr, sptr);
+            dptr += 4;
+            sptr += 4;
         }
-
         dbase += dst_stride;
         sbase += src_stride;
     }

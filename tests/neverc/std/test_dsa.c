@@ -205,6 +205,65 @@ static void test_verify_rejects_order_two_key(void) {
     neverc_dsa_private_key_free(&key);
 }
 
+static void test_sign_rejects_invalid_inputs(void) {
+    printf("[invalid_inputs]\n");
+    neverc_dsa_private_key_t key;
+    neverc_dsa_private_key_init(&key);
+    setup_go_dsa_key(&key);
+
+    uint8_t hash[32];
+    neverc_sha256_sum((const uint8_t *)"in", 2, hash);
+
+    neverc_dsa_signature_t sig;
+    neverc_dsa_signature_init(&sig);
+    neverc_bigint_set_int64(&sig.r, 99);
+    neverc_bigint_set_int64(&sig.s, 99);
+
+    ASSERT_TRUE(neverc_dsa_sign(NULL, hash, 32, &sig) != 0);
+    ASSERT_TRUE(neverc_bigint_is_zero(&sig.r));
+    ASSERT_TRUE(neverc_bigint_is_zero(&sig.s));
+
+    neverc_bigint_set_int64(&sig.r, 99);
+    neverc_bigint_set_int64(&sig.s, 99);
+    ASSERT_TRUE(neverc_dsa_sign(&key, NULL, 32, &sig) != 0);
+    ASSERT_TRUE(neverc_bigint_is_zero(&sig.r));
+    ASSERT_TRUE(neverc_bigint_is_zero(&sig.s));
+
+    neverc_bigint_set_int64(&sig.r, 99);
+    neverc_bigint_set_int64(&sig.s, 99);
+    ASSERT_TRUE(neverc_dsa_sign(&key, hash, 0, &sig) != 0);
+    ASSERT_TRUE(neverc_bigint_is_zero(&sig.r));
+    ASSERT_TRUE(neverc_bigint_is_zero(&sig.s));
+
+    ASSERT_TRUE(neverc_dsa_sign(&key, hash, 32, NULL) != 0);
+
+    neverc_dsa_signature_free(&sig);
+    neverc_dsa_private_key_free(&key);
+}
+
+static void test_verify_rejects_noninvertible_s(void) {
+    printf("[noninvertible_s]\n");
+    /* q=9=3^2 is composite. s=3 is not invertible; Fermat then yields w=0
+     * and (r=1,s=3) would verify for any hash. p=19, g=y=4, 4^9 ≡ 1 (mod 19). */
+    neverc_dsa_public_key_t pub;
+    neverc_dsa_public_key_init(&pub);
+    neverc_bigint_set_int64(&pub.p, 19);
+    neverc_bigint_set_int64(&pub.q, 9);
+    neverc_bigint_set_int64(&pub.g, 4);
+    neverc_bigint_set_int64(&pub.y, 4);
+
+    neverc_dsa_signature_t sig;
+    neverc_dsa_signature_init(&sig);
+    neverc_bigint_set_int64(&sig.r, 1);
+    neverc_bigint_set_int64(&sig.s, 3);
+
+    uint8_t hash[1] = {0x01};
+    ASSERT_TRUE(neverc_dsa_verify(&pub, hash, sizeof(hash), &sig) != 0);
+
+    neverc_dsa_signature_free(&sig);
+    neverc_dsa_public_key_free(&pub);
+}
+
 static void test_sign_rejects_weak_private_key(void) {
     printf("[weak_private_key]\n");
     neverc_dsa_private_key_t key;
@@ -263,6 +322,8 @@ int main(void) {
     test_verify_negative_sig();
     test_verify_identity_public_key();
     test_verify_rejects_order_two_key();
+    test_verify_rejects_noninvertible_s();
+    test_sign_rejects_invalid_inputs();
     test_sign_rejects_weak_private_key();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

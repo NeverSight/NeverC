@@ -582,6 +582,8 @@ int neverc_quic_write_handshake_done(uint8_t *buf, size_t cap,
                                      size_t *written);
 
 void neverc_quic_transport_params_default(quic_transport_params_t *params);
+uint64_t neverc_quic_effective_idle_timeout_ms(uint64_t local_ms,
+                                              uint64_t peer_ms);
 int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
                                         quic_transport_params_t *params);
 int neverc_quic_transport_params_encode(
@@ -707,6 +709,14 @@ int neverc_quic_stream_receive_locked(struct neverc_quic_conn *conn,
 int neverc_quic_stream_receive_reset(
     struct neverc_quic_conn *conn,
     const quic_frame_reset_stream_t *frame);
+int neverc_quic_stream_apply_max_stream_data(
+    struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t maximum);
+int neverc_quic_stream_apply_max_stream_data_locked(
+    struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t maximum);
+int neverc_quic_stream_apply_stop_sending(
+    struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t error_code);
+int neverc_quic_stream_apply_stop_sending_locked(
+    struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t error_code);
 int neverc_quic_stream_receive_reset_locked(
     struct neverc_quic_conn *conn,
     const quic_frame_reset_stream_t *frame);

@@ -111,7 +111,10 @@ int neverc_grpc_timeout_encode(uint64_t timeout_ns, char output[10]) {
     } units[] = {
         {1, 'n'}, {1000, 'u'}, {1000000, 'm'}, {1000000000, 'S'},
         {UINT64_C(60000000000), 'M'}, {UINT64_C(3600000000000), 'H'}};
-    if (timeout_ns == 0) timeout_ns = 1;
+    if (timeout_ns == 0) {
+        memcpy(output, "0n", 3);
+        return 0;
+    }
     for (size_t i = 0; i < sizeof(units) / sizeof(units[0]); i++) {
         uint64_t unit = units[i].nanoseconds;
         uint64_t value = timeout_ns / unit +
@@ -713,7 +716,7 @@ static int grpc_client_header_block_build(
     int64_t deadline = context ? neverc_context_deadline(context) : 0;
     if (deadline > 0) {
         int64_t remaining_ms = deadline - grpc_now_ms();
-        uint64_t timeout_ns = remaining_ms <= 0 ? 1 :
+        uint64_t timeout_ns = remaining_ms <= 0 ? 0 :
             (uint64_t)remaining_ms > UINT64_MAX / 1000000
                 ? UINT64_MAX : (uint64_t)remaining_ms * 1000000;
         char encoded_timeout[10];
@@ -1173,7 +1176,7 @@ neverc_grpc_result_t *neverc_grpc_client_call(
     int64_t deadline = context ? neverc_context_deadline(context) : 0;
     if (metadata_valid && deadline > 0) {
         int64_t remaining_ms = deadline - grpc_now_ms();
-        uint64_t timeout_ns = remaining_ms <= 0 ? 1 :
+        uint64_t timeout_ns = remaining_ms <= 0 ? 0 :
             (uint64_t)remaining_ms > UINT64_MAX / 1000000
                 ? UINT64_MAX : (uint64_t)remaining_ms * 1000000;
         if (neverc_grpc_timeout_encode(timeout_ns, timeout_value) != 0) {
