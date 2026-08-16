@@ -4103,6 +4103,26 @@ Value *FunctionEmitter::genAArch64BuiltinExpr(unsigned BuiltinID,
         ME.getIntrinsic(Intrinsic::aarch64_mops_memset_tag), {Dst, Val, Size});
   }
 
+  if (BuiltinID == neverc::AArch64::BI__builtin_arm_subg) {
+    llvm::Type *ResultTy = convertType(E->getType());
+    llvm::Value *Pointer = genScalarExpr(E->getArg(0));
+    Pointer = Builder.CreatePtrToInt(Pointer, Int64Ty);
+    const uint64_t AddressOffset = E->getArg(1)
+                                       ->EvaluateKnownConstInt(getContext())
+                                       .getZExtValue();
+    const uint64_t TagOffset = E->getArg(2)
+                                   ->EvaluateKnownConstInt(getContext())
+                                   .getZExtValue();
+    const std::string Asm = "subg ${0:x}, ${1:x}, #" +
+                            std::to_string(AddressOffset) + ", #" +
+                            std::to_string(TagOffset);
+    auto *FTy = llvm::FunctionType::get(Int64Ty, {Int64Ty}, false);
+    auto *IA = llvm::InlineAsm::get(FTy, Asm, "=r,r",
+                                    /*hasSideEffects=*/false);
+    llvm::Value *Result = Builder.CreateCall(IA, {Pointer}, "subg");
+    return Builder.CreateIntToPtr(Result, ResultTy);
+  }
+
   // Memory Tagging Extensions (MTE) Intrinsics
   Intrinsic::ID MTEIntrinsicID = Intrinsic::not_intrinsic;
   switch (BuiltinID) {

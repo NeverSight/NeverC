@@ -260,6 +260,25 @@ unsigned long long fcvtzu_x(unsigned short x) {
                                                          << Text;
 }
 
+TEST_F(DriverTest, AArch64SubgBuiltinEmitsInstruction) {
+  const auto Source = tmpFile("aarch64-subg-builtin.c");
+  const auto Assembly = tmpFile("aarch64-subg-builtin.s");
+  writeFile(Source, R"(
+void *subg(void *pointer) {
+  return __builtin_arm_subg(pointer, 112, 9);
+}
+)");
+
+  auto Result = ncc({"-target", "aarch64-linux-gnu",
+                     "-march=armv8.5-a+memtag", "-ffreestanding", "-O2", "-S",
+                     Source.string(), "-o", Assembly.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+
+  const std::string Text = readFile(Assembly);
+  EXPECT_NE(Text.find("subg\t"), std::string::npos) << Text;
+  EXPECT_NE(Text.find("#112, #9"), std::string::npos) << Text;
+}
+
 TEST_F(DriverTest, CrossAppleIOS) {
   // test_basic.c pulls in <stdio.h>; resolving libc headers for an Apple
   // target requires the host Apple SDK (-isysroot), which only exists on a
