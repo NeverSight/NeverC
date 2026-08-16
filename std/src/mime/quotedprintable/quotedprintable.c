@@ -199,13 +199,20 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
                     out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
                     line_len = 0;
                 }
-                size_t budget = line_cap - line_len;
+                if (wrap && line_len >= line_cap)
+                    return -1;
+                size_t budget = wrap ? (line_cap - line_len) : run;
                 size_t chunk = run < budget ? run : budget;
-                if (chunk > 0 && wrap && chunk == budget &&
-                    (src[i + chunk - 1] == ' ' || src[i + chunk - 1] == '\t'))
-                    chunk--;
-                if (chunk == 0)
+                if (chunk == 0 || i + chunk > src_len)
                     break;
+                /* A WSP in the last column would become ` \r\n` after the
+                 * next soft break. Leave that byte for the per-byte path. */
+                if (wrap && chunk == budget &&
+                    (src[i + chunk - 1] == ' ' || src[i + chunk - 1] == '\t')) {
+                    if (chunk == 1)
+                        break;
+                    chunk--;
+                }
                 if (di + chunk > out_cap) return -1;
                 if (chunk >= QP_BULK_MIN) {
                     memcpy(out + di, src + i, chunk);

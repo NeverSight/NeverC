@@ -67,14 +67,16 @@ static void test_encode_basic(void) {
     int n;
 
     n = neverc_qp_encode((const unsigned char*)"Hello World", 11, out, sizeof(out), 76);
-    out[n] = '\0';
-    /* Space in the middle is not trailing, so it's kept as-is */
     ASSERT_EQ(n > 0, 1);
+    if (n > 0 && (size_t)n < sizeof(out)) out[n] = '\0';
+    /* Space in the middle is not trailing, so it's kept as-is */
 
     n = neverc_qp_encode((const unsigned char*)"\x00\x01\xff", 3, out, sizeof(out), 76);
     ASSERT_EQ(n, 9); /* =00=01=FF */
-    out[n] = '\0';
-    ASSERT_MEMEQ(out, "=00=01=FF", 9);
+    if (n > 0 && (size_t)n < sizeof(out)) {
+        out[n] = '\0';
+        ASSERT_MEMEQ(out, "=00=01=FF", 9);
+    }
 
     char long_src[80];
     memset(long_src, 'A', sizeof(long_src));
@@ -93,6 +95,8 @@ static void test_encode_basic(void) {
     n = neverc_qp_encode((const unsigned char *)wrap_src, sizeof(wrap_src),
                          out, sizeof(out), 76);
     ASSERT_EQ(n > 0, 1);
+    if (n <= 0 || (size_t)n >= sizeof(out))
+        return;
     out[n] = '\0';
     ASSERT_EQ(strstr(out, " =\r\n") == NULL, 1);
     ASSERT_EQ(strstr(out, "=20") != NULL, 1);
