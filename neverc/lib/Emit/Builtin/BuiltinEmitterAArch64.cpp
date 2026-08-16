@@ -1274,8 +1274,8 @@ const std::pair<unsigned, unsigned> NEONEquivalentIntrinsicMap[] = {
 namespace {
 const ARMVectorIntrinsicInfo AArch64SVEIntrinsicMap[] = {
 #define GET_SVE_LLVM_INTRINSIC_MAP
-#include "neverc/Foundation/Builtin/BuiltinsAArch64NeonSVEBridge_cg.def"
 #include "neverc/Foundation/arm_sve_builtin_cg.td.h"
+#include "neverc/Foundation/Builtin/BuiltinsAArch64NeonSVEBridge_cg.def"
 #undef GET_SVE_LLVM_INTRINSIC_MAP
 };
 } // namespace

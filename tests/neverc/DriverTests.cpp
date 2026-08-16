@@ -298,6 +298,25 @@ unsigned long long pacga(unsigned long long value,
   EXPECT_NE(Text.find("pacga\tx0, x0, x1"), std::string::npos) << Text;
 }
 
+TEST_F(DriverTest, AArch64SVECountBuiltinEmitsInstruction) {
+  const auto Source = tmpFile("aarch64-sve-count-builtin.c");
+  const auto Assembly = tmpFile("aarch64-sve-count-builtin.s");
+  writeFile(Source, R"(
+#include <arm_sve.h>
+unsigned long long count_bytes(void) {
+  return svcntb();
+}
+)");
+
+  auto Result = ncc({"-target", "aarch64-linux-gnu",
+                     "-march=armv8.2-a+sve", "-ffreestanding", "-O2", "-S",
+                     Source.string(), "-o", Assembly.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+
+  const std::string Text = readFile(Assembly);
+  EXPECT_NE(Text.find("rdvl\tx0, #1"), std::string::npos) << Text;
+}
+
 TEST_F(DriverTest, CrossAppleIOS) {
   // test_basic.c pulls in <stdio.h>; resolving libc headers for an Apple
   // target requires the host Apple SDK (-isysroot), which only exists on a
