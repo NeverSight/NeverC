@@ -4091,6 +4091,13 @@ Value *FunctionEmitter::genAArch64BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateCall(F, {Arg0, Arg1});
   }
 
+  if (BuiltinID == neverc::AArch64::BI__builtin_arm_pacga) {
+    Value *Input = genScalarExpr(E->getArg(0));
+    Value *Modifier = genScalarExpr(E->getArg(1));
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::ptrauth_sign_generic), {Input, Modifier});
+  }
+
   // Memory Operations (MOPS)
   if (BuiltinID == AArch64::BI__builtin_arm_mops_memset_tag) {
     Value *Dst = genScalarExpr(E->getArg(0));

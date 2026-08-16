@@ -64,6 +64,9 @@ TARGET_BUILTIN(__builtin_arm_ldg, "v*v*", "t", "mte")
 TARGET_BUILTIN(__builtin_arm_stg, "vv*", "t", "mte")
 TARGET_BUILTIN(__builtin_arm_subp, "Uiv*v*", "t", "mte")
 
+// Generic pointer authentication code (PACGA)
+TARGET_BUILTIN(__builtin_arm_pacga, "WUiWUiWUi", "nc", "pauth")
+
 // Memory Operations
 TARGET_BUILTIN(__builtin_arm_mops_memset_tag, "v*v*iz", "", "mte,mops")
 

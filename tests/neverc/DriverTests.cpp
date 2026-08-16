@@ -279,6 +279,25 @@ void *subg(void *pointer) {
   EXPECT_NE(Text.find("#112, #9"), std::string::npos) << Text;
 }
 
+TEST_F(DriverTest, AArch64PacgaBuiltinEmitsInstruction) {
+  const auto Source = tmpFile("aarch64-pacga-builtin.c");
+  const auto Assembly = tmpFile("aarch64-pacga-builtin.s");
+  writeFile(Source, R"(
+unsigned long long pacga(unsigned long long value,
+                         unsigned long long discriminator) {
+  return __builtin_arm_pacga(value, discriminator);
+}
+)");
+
+  auto Result = ncc({"-target", "aarch64-linux-gnu",
+                     "-march=armv8.3-a+pauth", "-ffreestanding", "-O2", "-S",
+                     Source.string(), "-o", Assembly.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+
+  const std::string Text = readFile(Assembly);
+  EXPECT_NE(Text.find("pacga\tx0, x0, x1"), std::string::npos) << Text;
+}
+
 TEST_F(DriverTest, CrossAppleIOS) {
   // test_basic.c pulls in <stdio.h>; resolving libc headers for an Apple
   // target requires the host Apple SDK (-isysroot), which only exists on a
