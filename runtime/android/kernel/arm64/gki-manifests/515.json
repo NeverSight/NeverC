@@ -10,7 +10,7 @@
     "CONFIG_DEBUG_INFO_BTF_MODULES": true,
     "CONFIG_DEBUG_LOCK_ALLOC": false,
     "CONFIG_DEBUG_SPINLOCK": false,
-    "CONFIG_KASAN_GENERIC": false,
+    "CONFIG_KASAN_GENERIC": true,
     "CONFIG_KASAN_SW_TAGS": false,
     "CONFIG_MMU": true,
     "CONFIG_MODULE_UNLOAD": true,
@@ -20,7 +20,7 @@
     "CONFIG_SECCOMP": true,
     "CONFIG_VMAP_STACK": true,
     "PAGE_SHIFT": 12,
-    "THREAD_SIZE": 16384
+    "THREAD_SIZE": 32768
   },
   "evidence": {
     "config_sha256": "4ca175ef54c8ccf68203b2e93517373687c8a284259d7711c6982def7584dd34",
