@@ -22,7 +22,10 @@ static void controlled_free(void *ptr) {
 
 #define malloc controlled_malloc
 #define free controlled_free
+#include "../../../std/src/bytes/bytes.c"
+#define utf8_decode cstring_utf8_decode
 #include "../../../std/src/cstring/cstring.c"
+#undef utf8_decode
 #undef malloc
 #undef free
 

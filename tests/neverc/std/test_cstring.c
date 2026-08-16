@@ -126,7 +126,7 @@ static void test_index_any(void) {
     check_int("index_any empty chars", neverc_cstring_index_any("hello", ""), -1);
     check_int("index_any first", neverc_cstring_index_any("aardvark", "a"), 0);
     check_int("index_any UTF-8 rune",
-              neverc_cstring_index_any("a\xe4\xb8\x96b", "\xe4\xb8\x96"), 1);
+              neverc_cstring_index_any("a\xe4\xb8\x96" "b", "\xe4\xb8\x96"), 1);
     check_int("index_any does not match UTF-8 fragments",
               neverc_cstring_index_any("\xc4\x96", "\xe4\xb8\x96"), -1);
 }
@@ -137,7 +137,7 @@ static void test_last_index_any(void) {
     check_int("last_index_any none", neverc_cstring_last_index_any("crwth", "aeiou"), -1);
     check_int("last_index_any empty", neverc_cstring_last_index_any("hello", ""), -1);
     check_int("last_index_any UTF-8 rune",
-              neverc_cstring_last_index_any("a\xe4\xb8\x96b\xe4\xb8\x96",
+              neverc_cstring_last_index_any("a\xe4\xb8\x96" "b\xe4\xb8\x96",
                                             "\xe4\xb8\x96"), 5);
 }
 
@@ -589,7 +589,7 @@ static void test_fields(void) {
     }
     neverc_cstring_free_split(arr, count);
 
-    arr = neverc_cstring_fields("a\xc2\xa0b\xe3\x80\x80c", &count);
+    arr = neverc_cstring_fields("a\xc2\xa0" "b\xe3\x80\x80" "c", &count);
     check_size("fields Unicode White_Space", count, 3);
     if (count == 3) {
         check_str("fields unicode[0]", arr[0], "a");
@@ -744,7 +744,7 @@ static void test_edge_cases(void) {
     }
     neverc_cstring_free_split(arr, cnt);
 
-    arr = neverc_cstring_split("A\xe4\xb8\x96B", "", &cnt);
+    arr = neverc_cstring_split("A\xe4\xb8\x96" "B", "", &cnt);
     check_size("split empty sep UTF-8 count", cnt, 3);
     if (cnt == 3) {
         check_str("split empty utf8[0]", arr[0], "A");
@@ -754,9 +754,9 @@ static void test_edge_cases(void) {
     neverc_cstring_free_split(arr, cnt);
 
     check_int("count empty sep UTF-8",
-              neverc_cstring_count("A\xe4\xb8\x96B", ""), 4);
+              neverc_cstring_count("A\xe4\xb8\x96" "B", ""), 4);
 
-    r = neverc_cstring_replace("A\xe4\xb8\x96B", "", "-", -1);
+    r = neverc_cstring_replace("A\xe4\xb8\x96" "B", "", "-", -1);
     check_str("replace empty old UTF-8", r, "-A-\xe4\xb8\x96-B-");
     free(r);
 }

@@ -1035,7 +1035,7 @@ TEST_F(StdLibTest, RegexpSyntaxAllocationFailure) {
 STD_TEST(tzdata, "src/time/tzdata/tzdata.c")
 
 // ===== CString =====
-STD_TEST(cstring, "src/cstring/cstring.c")
+STD_TEST(cstring, "src/cstring/cstring.c", "src/bytes/bytes.c")
 TEST_F(StdLibTest, CStringAllocationFailure) {
   auto r = compileAndRunStdTest("cstring_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
