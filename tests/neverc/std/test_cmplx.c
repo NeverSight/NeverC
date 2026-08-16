@@ -345,6 +345,17 @@ static void test_special(void) {
     check_true("isinf(0-Inf*i)", neverc_cmplx_isinf(C(0.0, -NC_INF)));
     check_true("!isinf(1+2i)", !neverc_cmplx_isinf(C(1.0, 2.0)));
     check_true("!isinf(NaN+0i)", !neverc_cmplx_isinf(C(NC_NAN, 0.0)));
+
+    /* Go math/cmplx: Inf imag saturates tan to ±i; Inf real saturates tanh to ±1.
+     * The sin/cos (sinh/cosh) ratio overflows to NaN without these cases. */
+    check_cmplx("tan(1+i*Inf)", neverc_cmplx_tan(C(1.0, NC_INF)), 0.0, 1.0);
+    check_cmplx("tan(1-i*Inf)", neverc_cmplx_tan(C(1.0, -NC_INF)), 0.0, -1.0);
+    check_cmplx("tan(Inf+i*Inf)", neverc_cmplx_tan(C(NC_INF, NC_INF)), 0.0, 1.0);
+    check_cmplx("tan(0+NaN*i)", neverc_cmplx_tan(C(0.0, NC_NAN)), 0.0, NC_NAN);
+    check_cmplx("tanh(Inf+i)", neverc_cmplx_tanh(C(NC_INF, 1.0)), 1.0, 0.0);
+    check_cmplx("tanh(-Inf+i)", neverc_cmplx_tanh(C(-NC_INF, 1.0)), -1.0, 0.0);
+    check_cmplx("tanh(Inf+i*Inf)", neverc_cmplx_tanh(C(NC_INF, NC_INF)), 1.0, 0.0);
+    check_cmplx("tanh(NaN+0i)", neverc_cmplx_tanh(C(NC_NAN, 0.0)), NC_NAN, 0.0);
 }
 
 /* ===== Known computed values ===== */
@@ -392,5 +403,5 @@ int main(void) {
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
-    return tests_failed > 0 ? 1 : 0;
+    return tests_failed;
 }

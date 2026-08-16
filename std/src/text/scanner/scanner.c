@@ -115,13 +115,15 @@ static int scan_number(neverc_scanner_t *s, int first) {
             emit(s, next_ch(s));
             while (s->pos < s->src_len && is_hex_digit(peek_ch(s)))
                 emit(s, next_ch(s));
-            if (s->pos < s->src_len && peek_ch(s) == '.') {
+            if ((s->mode & NEVERC_SCAN_FLOATS) && s->pos < s->src_len &&
+                peek_ch(s) == '.') {
                 is_float = 1;
                 emit(s, next_ch(s));
                 while (s->pos < s->src_len && is_hex_digit(peek_ch(s)))
                     emit(s, next_ch(s));
             }
-            if (s->pos < s->src_len && (peek_ch(s) == 'p' || peek_ch(s) == 'P')) {
+            if ((s->mode & NEVERC_SCAN_FLOATS) && s->pos < s->src_len &&
+                (peek_ch(s) == 'p' || peek_ch(s) == 'P')) {
                 is_float = 1;
                 emit(s, next_ch(s));
                 if (s->pos < s->src_len && (peek_ch(s) == '+' || peek_ch(s) == '-'))

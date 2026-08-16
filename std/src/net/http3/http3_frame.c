@@ -438,6 +438,23 @@ static int qpack_find_static_name(const char *name) {
  *   - Literal:                   0 0 1 0 NameLen(3+) + Name + ValueLen(7+) + Value
  */
 
+/* RFC 9110 §5.5: CR, LF, and NUL in field names/values MUST NOT be consumed. */
+static int qpack_bytes_forbidden(const uint8_t *s, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = s[i];
+        if (c == 0 || c == '\r' || c == '\n') return 1;
+    }
+    return 0;
+}
+
+static int qpack_cstring_forbidden(const char *s) {
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '\r' || c == '\n') return 1;
+    }
+    return 0;
+}
+
 static int qpack_encode_integer(uint8_t *buf, size_t cap, size_t *pos,
                                   uint64_t value, uint8_t prefix_bits) {
     if (!buf || !pos || prefix_bits == 0 || prefix_bits >= 8 || *pos >= cap)
@@ -480,7 +497,9 @@ int neverc_qpack_encode(neverc_qpack_encoder_t *enc,
     for (int i = 0; i < nheaders; i++) {
         const char *name = headers[i].name;
         const char *value = headers[i].value;
-        if (!name || !value) return -1;
+        if (!name || !value ||
+            qpack_cstring_forbidden(name) || qpack_cstring_forbidden(value))
+            return -1;
 
         int idx = qpack_find_static(name, value);
         if (idx >= 0) {
@@ -571,6 +590,10 @@ static char *qpack_decode_string(const uint8_t *buf, size_t len, size_t *pos,
         char *s = (char *)malloc((size_t)slen + 1U);
         if (!s) return NULL;
         memcpy(s, buf + *pos, (size_t)slen);
+        if (qpack_bytes_forbidden((const uint8_t *)s, (size_t)slen)) {
+            free(s);
+            return NULL;
+        }
         s[slen] = '\0';
         *pos += (size_t)slen;
         return s;
@@ -582,7 +605,8 @@ static char *qpack_decode_string(const uint8_t *buf, size_t len, size_t *pos,
     size_t decoded = 0;
     if (neverc_hpack_huffman_decode(buf + *pos, (size_t)slen,
                                      (uint8_t *)s, capacity - 1U,
-                                     &decoded) != 0) {
+                                     &decoded) != 0 ||
+        qpack_bytes_forbidden((const uint8_t *)s, decoded)) {
         free(s);
         return NULL;
     }

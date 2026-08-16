@@ -247,6 +247,28 @@ static void test_ints_do_not_consume_fraction(void) {
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
 }
 
+static void test_ints_do_not_consume_hex_float(void) {
+    printf("[ints_do_not_consume_hex_float]\n");
+    neverc_scanner_t s;
+    const char *src = "0x1.0p1 0x2p3";
+    neverc_scanner_init(&s, src, strlen(src));
+    neverc_scanner_set_mode(&s, NEVERC_SCAN_INTS | NEVERC_SCAN_IDENTS);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0x1");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), '.');
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "p1");
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0x2");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "p3");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+}
+
 static void test_block_comments_are_not_nested(void) {
     printf("[block_comments_are_not_nested]\n");
     neverc_scanner_t s;
@@ -306,6 +328,7 @@ int main(void) {
     test_raw_strings();
     test_float_dot_and_exponent();
     test_ints_do_not_consume_fraction();
+    test_ints_do_not_consume_hex_float();
     test_block_comments_are_not_nested();
     test_null_source();
     test_mixed();

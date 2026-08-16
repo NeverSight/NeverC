@@ -495,24 +495,29 @@ static int html_is_ascii_ws(unsigned char c) {
            c == '\f' || c == '\v';
 }
 
-static int html_in_script(const char *buf, size_t len) {
+static int html_in_named_tag(const char *buf, size_t len,
+                             const char *open, size_t open_len,
+                             const char *close, size_t close_len) {
     if (!buf || len == 0) return 0;
     int in = 0;
     for (size_t i = 0; i < len; i++) {
         if (buf[i] != '<') continue;
-        if (i + 8 <= len && html_ci_eq_n(buf + i, "</script", 8))
+        if (i + close_len <= len && html_ci_eq_n(buf + i, close, close_len))
             in = 0;
-        else if (i + 7 <= len && html_ci_eq_n(buf + i, "<script", 7) &&
-                 (i + 7 == len || !nc_isalnum((unsigned char)buf[i + 7])))
+        else if (i + open_len <= len && html_ci_eq_n(buf + i, open, open_len) &&
+                 (i + open_len == len ||
+                  !nc_isalnum((unsigned char)buf[i + open_len])))
             in = 1;
     }
     return in;
 }
 
-static int html_ends_ci(const char *buf, size_t len, const char *suf) {
-    size_t sl = strlen(suf);
-    if (len < sl) return 0;
-    return html_ci_eq_n(buf + len - sl, suf, sl);
+static int html_in_script(const char *buf, size_t len) {
+    return html_in_named_tag(buf, len, "<script", 7, "</script", 8);
+}
+
+static int html_in_style_tag(const char *buf, size_t len) {
+    return html_in_named_tag(buf, len, "<style", 6, "</style", 7);
 }
 
 static int html_attr_name_eq(const char *name, size_t nlen, const char *want) {
@@ -520,21 +525,20 @@ static int html_attr_name_eq(const char *name, size_t nlen, const char *want) {
     return nlen == wlen && html_ci_eq_n(name, want, nlen);
 }
 
-/*
- * HTML allows whitespace around '='. The previous suffix table only matched
- * `name="` / `name='` / `name=` glued together, so `href = "{{.X}}"` and
- * `onclick = "{{.X}}"` fell through to HTML escaping — which leaves
- * javascript: and event-handler text intact.
- */
-static int html_trailing_attr(const char *buf, size_t len, int *quoted,
-                              const char **name, size_t *nlen) {
-    if (!buf || len == 0) return 0;
-    size_t end = len;
-    *quoted = 0;
-    if (buf[end - 1] == '"' || buf[end - 1] == '\'') {
-        *quoted = 1;
-        end--;
-    }
+static int html_is_url_attr_name(const char *name, size_t nlen) {
+    static const char *urls[] = {
+        "href", "src", "action", "formaction", "cite", "poster",
+        "background", "data", "srcset", "ping", "xlink:href",
+        "longdesc", "usemap", "icon", "manifest", "archive",
+        "classid", "codebase", "profile", NULL
+    };
+    for (int i = 0; urls[i]; i++)
+        if (html_attr_name_eq(name, nlen, urls[i])) return 1;
+    return 0;
+}
+
+static int html_parse_attr_name(const char *buf, size_t end,
+                                const char **name, size_t *nlen) {
     while (end > 0 && html_is_ascii_ws((unsigned char)buf[end - 1])) end--;
     if (end == 0 || buf[end - 1] != '=') return 0;
     end--;
@@ -549,76 +553,142 @@ static int html_trailing_attr(const char *buf, size_t len, int *quoted,
     return 1;
 }
 
-static int html_in_url_attr(const char *buf, size_t len) {
-    int quoted = 0;
-    const char *name = NULL;
-    size_t nlen = 0;
-    if (html_trailing_attr(buf, len, &quoted, &name, &nlen)) {
-        (void)quoted;
-        static const char *urls[] = {
-            "href", "src", "action", "formaction", "cite", "poster",
-            "background", "data", "srcset", "ping", "xlink:href", NULL
-        };
-        for (int i = 0; urls[i]; i++)
-            if (html_attr_name_eq(name, nlen, urls[i])) return 1;
+/*
+ * Locate `name=` / `name="` / `name='` even with whitespace around '=' or
+ * after the opening quote (`href=" {{.X}}"`), and when the interpolation
+ * continues an already-started value (`href="java{{.X}}"`).
+ */
+static int html_trailing_attr(const char *buf, size_t len, int *quoted,
+                              const char **name, size_t *nlen,
+                              const char **prefix, size_t *plen) {
+    *quoted = 0;
+    *prefix = NULL;
+    *plen = 0;
+    if (!buf || len == 0) return 0;
+
+    size_t end = len;
+    while (end > 0 && html_is_ascii_ws((unsigned char)buf[end - 1])) end--;
+    if (end == 0) return 0;
+
+    if (buf[end - 1] == '"' || buf[end - 1] == '\'') {
+        *quoted = 1;
+        return html_parse_attr_name(buf, end - 1, name, nlen);
     }
-    return html_ends_ci(buf, len, "url(") ||
-           html_ends_ci(buf, len, "url(\"") ||
-           html_ends_ci(buf, len, "url('");
+
+    size_t i = end;
+    while (i > 0) {
+        char c = buf[i - 1];
+        if (c == '"' || c == '\'' || c == '=' || c == '<' || c == '>')
+            break;
+        i--;
+    }
+    if (i == 0) return 0;
+    if (buf[i - 1] == '"' || buf[i - 1] == '\'') {
+        *quoted = 1;
+        *prefix = buf + i;
+        *plen = end - i;
+        return html_parse_attr_name(buf, i - 1, name, nlen);
+    }
+    if (buf[i - 1] == '=') {
+        *quoted = 0;
+        *prefix = buf + i;
+        *plen = end - i;
+        return html_parse_attr_name(buf, i, name, nlen);
+    }
+    return 0;
 }
 
-static int html_in_event_attr(const char *buf, size_t len) {
-    int quoted = 0;
-    const char *name = NULL;
-    size_t nlen = 0;
-    if (!html_trailing_attr(buf, len, &quoted, &name, &nlen)) return 0;
-    (void)quoted;
-    return nlen > 2 && html_ci_eq_n(name, "on", 2);
+/* `url({{.X}})`, `url("{{.X}}")`, and the same with a value prefix. */
+static int html_in_css_url(const char *buf, size_t len,
+                           const char **prefix, size_t *plen) {
+    *prefix = NULL;
+    *plen = 0;
+    if (!buf || len == 0) return 0;
+    size_t i = len;
+    while (i > 0) {
+        char c = buf[i - 1];
+        if (c == '(' || c == '"' || c == '\'' || c == ';' ||
+            c == '{' || c == '}' || c == '<' || c == '>')
+            break;
+        i--;
+    }
+    if (i == 0) return 0;
+    if (buf[i - 1] == '"' || buf[i - 1] == '\'') {
+        if (i < 5 || !html_ci_eq_n(buf + i - 5, "url(", 4)) return 0;
+        *prefix = buf + i;
+        *plen = len - i;
+        return 1;
+    }
+    if (buf[i - 1] == '(' && i >= 4 && html_ci_eq_n(buf + i - 4, "url(", 4)) {
+        *prefix = buf + i;
+        *plen = len - i;
+        return 1;
+    }
+    return 0;
 }
 
-static int html_in_style_attr(const char *buf, size_t len) {
-    int quoted = 0;
-    const char *name = NULL;
-    size_t nlen = 0;
-    if (!html_trailing_attr(buf, len, &quoted, &name, &nlen)) return 0;
-    (void)quoted;
-    return html_attr_name_eq(name, nlen, "style");
+typedef struct {
+    const char *s;
+    size_t n;
+    size_t i;
+} html_span_t;
+
+static int html_span_done(const html_span_t *a, const html_span_t *b) {
+    return a->i >= a->n && b->i >= b->n;
 }
 
-static int html_attr_unquoted(const char *buf, size_t len) {
-    int quoted = 0;
-    const char *name = NULL;
-    size_t nlen = 0;
-    return html_trailing_attr(buf, len, &quoted, &name, &nlen) && !quoted;
+static unsigned char html_span_peek(const html_span_t *a, const html_span_t *b) {
+    if (a->i < a->n) return (unsigned char)a->s[a->i];
+    if (b->i < b->n) return (unsigned char)b->s[b->i];
+    return 0;
 }
 
-/* Match a scheme even when ASCII whitespace is sprinkled through it
- * (`java\tscript:`, `\x0cjavascript:`, `javascript :`). */
-static int html_scheme_is(const char *s, const char *scheme) {
-    if (!s || !scheme) return 0;
-    while (*s && html_is_ascii_ws((unsigned char)*s)) s++;
+static void html_span_next(html_span_t *a, html_span_t *b) {
+    if (a->i < a->n) a->i++;
+    else if (b->i < b->n) b->i++;
+}
+
+static void html_span_skip_ws(html_span_t *a, html_span_t *b) {
+    while (!html_span_done(a, b) && html_is_ascii_ws(html_span_peek(a, b)))
+        html_span_next(a, b);
+}
+
+/* Match a scheme across a static prefix plus the interpolated value, even
+ * when ASCII whitespace is sprinkled through it (`java\tscript:`). */
+static int html_scheme_is_parts(const char *prefix, size_t plen,
+                                const char *s, const char *scheme) {
+    if (!scheme) return 0;
+    html_span_t a = { prefix ? prefix : "", plen, 0 };
+    html_span_t b = { s ? s : "", s ? strlen(s) : 0, 0 };
+    html_span_skip_ws(&a, &b);
     while (*scheme) {
-        while (*s && html_is_ascii_ws((unsigned char)*s)) s++;
-        if (!*s) return 0;
-        char a = *s++, b = *scheme++;
-        if (a >= 'A' && a <= 'Z') a = (char)(a + 32);
-        if (b >= 'A' && b <= 'Z') b = (char)(b + 32);
-        if (a != b) return 0;
+        html_span_skip_ws(&a, &b);
+        if (html_span_done(&a, &b)) return 0;
+        char ch = (char)html_span_peek(&a, &b);
+        html_span_next(&a, &b);
+        char want = *scheme++;
+        if (ch >= 'A' && ch <= 'Z') ch = (char)(ch + 32);
+        if (want >= 'A' && want <= 'Z') want = (char)(want + 32);
+        if (ch != want) return 0;
     }
-    while (*s && html_is_ascii_ws((unsigned char)*s)) s++;
-    return *s == ':';
+    html_span_skip_ws(&a, &b);
+    return !html_span_done(&a, &b) && html_span_peek(&a, &b) == ':';
 }
 
-static int html_dangerous_url(const char *s) {
-    if (!s) return 0;
-    return html_scheme_is(s, "javascript") ||
-           html_scheme_is(s, "vbscript") ||
-           html_scheme_is(s, "data");
+static int html_dangerous_url_parts(const char *prefix, size_t plen,
+                                    const char *s) {
+    static const char *schemes[] = { "javascript", "vbscript", "data", NULL };
+    for (int i = 0; schemes[i]; i++) {
+        if (html_scheme_is_parts(NULL, 0, s, schemes[i])) return 1;
+        if (plen > 0 && html_scheme_is_parts(prefix, plen, s, schemes[i]))
+            return 1;
+    }
+    return 0;
 }
 
-/* Unquoted event handlers: wrap as a JS string inside a quoted HTML attr so
- * `onclick={{.X}}` with X=alert(1) cannot run. */
-static char *html_escape_unquoted_event(const char *s) {
+/* Event handlers: wrap as a JS string so `onclick="{{.X}}"` / `onclick={{.X}}`
+ * with X=alert(1) cannot run. */
+static char *html_escape_event(const char *s) {
     char *js = neverc_html_js_escape(s);
     if (!js) return NULL;
     size_t n = strlen(js);
@@ -647,27 +717,43 @@ static int execute_nodes(const node_t *n,
         case NODE_VAR: {
             const char *val = neverc_html_template_data_get(data, n->text);
             if (val) {
-                int in_url = html_in_url_attr(*buf, *len);
-                int in_event = html_in_event_attr(*buf, *len);
-                int in_style = html_in_style_attr(*buf, *len);
-                int unquoted = html_attr_unquoted(*buf, *len);
+                int quoted = 0;
+                const char *aname = NULL;
+                size_t nlen = 0;
+                const char *aprefix = NULL;
+                size_t aplen = 0;
+                int in_attr = html_trailing_attr(
+                    *buf, *len, &quoted, &aname, &nlen, &aprefix, &aplen);
+                const char *uprefix = NULL;
+                size_t uplen = 0;
+                int in_css_url = html_in_css_url(*buf, *len, &uprefix, &uplen);
+                int in_url = in_css_url ||
+                    (in_attr && html_is_url_attr_name(aname, nlen));
+                int in_event = in_attr && nlen > 2 &&
+                    html_ci_eq_n(aname, "on", 2);
+                int in_style_attr = in_attr &&
+                    html_attr_name_eq(aname, nlen, "style");
+                int unquoted = in_attr && !quoted;
+                const char *dprefix = in_css_url ? uprefix :
+                    (in_url ? aprefix : NULL);
+                size_t dplen = in_css_url ? uplen : (in_url ? aplen : 0);
                 char *escaped;
                 /* URL context wins over <script src="..."> so javascript:/data:
                  * are neutralized instead of JS-escaped (a no-op for those). */
-                if (in_url && html_dangerous_url(val))
+                if (in_url && html_dangerous_url_parts(dprefix, dplen, val))
                     escaped = neverc_html_escape("#");
-                else if (in_event && unquoted)
-                    escaped = html_escape_unquoted_event(val);
-                else if (html_in_script(*buf, *len) || in_event)
+                else if (in_event)
+                    escaped = html_escape_event(val);
+                else if (html_in_script(*buf, *len))
                     escaped = neverc_html_js_escape(val);
-                else if (in_style)
+                else if (html_in_style_tag(*buf, *len) || in_style_attr)
                     escaped = neverc_html_css_escape(val);
                 else
                     escaped = neverc_html_escape(val);
                 if (!escaped) return -1;
-                /* Quote previously-unquoted attrs so spaces cannot start a new
-                 * attribute (`class={{.X}}` with X=`x onmouseover=alert(1)`). */
-                if (unquoted &&
+                /* Quote a whole unquoted value so spaces cannot start a new
+                 * attribute. Skip when a prefix is already in the value. */
+                if (unquoted && aplen == 0 &&
                     buf_append(buf, len, cap, "\"", 1) != 0) {
                     free(escaped);
                     return -1;
@@ -677,7 +763,7 @@ static int execute_nodes(const node_t *n,
                     return -1;
                 }
                 free(escaped);
-                if (unquoted &&
+                if (unquoted && aplen == 0 &&
                     buf_append(buf, len, cap, "\"", 1) != 0)
                     return -1;
             }

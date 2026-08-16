@@ -75,9 +75,14 @@ typedef struct {
  * past `len`.
  */
 static void fbr_refill(flate_br_t *r) {
-    if (r->pos + 8 <= r->len) {
+    /* `len - pos` (not `pos + 8`) so a 32-bit pos near SIZE_MAX cannot wrap
+     * and take the 8-byte load past the end of src. */
+    if (r->pos <= r->len && r->len - r->pos >= 8) {
         uint64_t w;
         memcpy(&w, r->buf + r->pos, 8);
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        w = __builtin_bswap64(w);
+#endif
         r->bits |= w << r->nbits;
         unsigned add = (63u - r->nbits) >> 3;   /* whole bytes consumed, 0..7 */
         r->pos += add;
@@ -707,7 +712,7 @@ int neverc_flate_compress(const uint8_t *src, size_t src_len,
 
     while (pos < src_len) {
         unsigned cl = 0, cd = 0;
-        if (pos + MIN_MATCH <= src_len) {
+        if (src_len - pos >= MIN_MATCH) {
             find_match(src, src_len, pos, head, prev, max_chain, nice, &cl, &cd);
             hash_insert(head, prev, src, pos);
         }
@@ -717,7 +722,7 @@ int neverc_flate_compress(const uint8_t *src, size_t src_len,
                 if (enc_match(&e, cl, cd) < 0) goto fail;
                 size_t mend = pos + cl;
                 for (size_t k = pos + 1; k < mend; k++)
-                    if (k + MIN_MATCH <= src_len) hash_insert(head, prev, src, k);
+                    if (src_len - k >= MIN_MATCH) hash_insert(head, prev, src, k);
                 pos = mend;
             } else {
                 if (enc_lit(&e, src[pos]) < 0) goto fail;
@@ -735,7 +740,7 @@ int neverc_flate_compress(const uint8_t *src, size_t src_len,
                 if (enc_match(&e, prev_len, prev_dist) < 0) goto fail;
                 size_t mend = (pos - 1) + prev_len;
                 for (size_t k = pos + 1; k < mend; k++)
-                    if (k + MIN_MATCH <= src_len) hash_insert(head, prev, src, k);
+                    if (src_len - k >= MIN_MATCH) hash_insert(head, prev, src, k);
                 pos = mend;
                 have = 0; prev_len = 0;
             }

@@ -30,6 +30,16 @@ static int mail_field_has_ctl(const char *s, size_t len) {
     return 0;
 }
 
+/* RFC 5322 field-name is 1*ftext (printable US-ASCII except ':'). */
+static int mail_field_name_ok(const char *s, size_t len) {
+    if (len == 0) return 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c < 33 || c > 126 || c == ':') return 0;
+    }
+    return 1;
+}
+
 static int mail_address_safe(const char *s) {
     if (!s || !s[0]) return 0;
     for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
@@ -128,12 +138,13 @@ int neverc_mail_parse_address_list(const char *s,
 
         char buf[512] = {0};
         size_t len = (size_t)(p - start);
-        if (len >= sizeof(buf)) len = sizeof(buf) - 1;
+        if (len == 0 || len >= sizeof(buf)) return -1;
         memcpy(buf, start, len);
         buf[len] = '\0';
 
-        if (neverc_mail_parse_address(buf, &out[count]) == 0)
-            count++;
+        if (neverc_mail_parse_address(buf, &out[count]) != 0)
+            return -1;
+        count++;
 
         if (*p == ',') p++;
     }
@@ -188,11 +199,13 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
 
         /* Find colon (or the line's '\n', whichever comes first) */
         size_t colon = i + scan_first2(data + i, len - i, ':', '\n');
-        if (colon >= len || data[colon] != ':') break;
+        if (colon >= len || data[colon] != ':') return -1;
 
         neverc_mail_header_t *h = &out->headers[out->header_count];
         size_t klen = colon - i;
-        if (klen >= sizeof(h->key)) klen = sizeof(h->key) - 1;
+        if (klen == 0 || klen >= sizeof(h->key) ||
+            !mail_field_name_ok(data + i, klen))
+            return -1;
         memcpy(h->key, data + i, klen);
         h->key[klen] = '\0';
 
@@ -206,11 +219,11 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
             size_t line_end = pos + scan_first2(data + pos, len - pos, '\r', '\n');
 
             size_t line_len = line_end - pos;
-            if (vpos + line_len + 1 < sizeof(h->value)) {
-                if (vpos > 0 && pos != vstart) h->value[vpos++] = ' ';
-                memcpy(h->value + vpos, data + pos, line_len);
-                vpos += line_len;
-            }
+            size_t need = line_len + ((vpos > 0 && pos != vstart) ? 1U : 0U);
+            if (need >= sizeof(h->value) - vpos) return -1;
+            if (vpos > 0 && pos != vstart) h->value[vpos++] = ' ';
+            memcpy(h->value + vpos, data + pos, line_len);
+            vpos += line_len;
 
             if (line_end < len && data[line_end] == '\r') line_end++;
             if (line_end < len && data[line_end] == '\n') line_end++;
@@ -224,13 +237,28 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
                 break;
             }
         }
+        if (mail_field_has_ctl(h->value, vpos)) return -1;
         h->value[vpos] = '\0';
         out->header_count++;
         i = pos;
     }
 
+    if (i < len) {
+        if (data[i] == '\r' && i + 1 < len && data[i + 1] == '\n') {
+            out->body = data + i + 2;
+            out->body_len = len - i - 2;
+            return 0;
+        }
+        if (data[i] == '\n') {
+            out->body = data + i + 1;
+            out->body_len = len - i - 1;
+            return 0;
+        }
+        return -1;
+    }
+
     out->body = data + i;
-    out->body_len = len - i;
+    out->body_len = 0;
     return 0;
 }
 

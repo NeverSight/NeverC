@@ -183,6 +183,23 @@ static void test_parse_repeat(void) {
     check_not_null("a{3}?", n);
     check_int("a{3}? non-greedy", n ? (n->flags & NC_RE_FLAG_NON_GREEDY) != 0 : 0, 1);
     neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("{", 0, &err);
+    check_not_null("literal {", n);
+    check_op("literal { op", n, NC_RE_OP_LITERAL);
+    check_int("literal { rune", (n && n->nrunes > 0) ? n->runes[0] : 0, '{');
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("a{}", 0, &err);
+    check_not_null("a{} literals", n);
+    check_op("a{} op", n, NC_RE_OP_CONCAT);
+    check_int("a{} nsubs", n ? n->nsubs : 0, 3);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("{3}", 0, &err);
+    check_not_null("{3} literals", n);
+    check_op("{3} op", n, NC_RE_OP_CONCAT);
+    neverc_regexp_syntax_free(n);
 }
 
 /* ===== Alternation / Groups ===== */
@@ -251,6 +268,20 @@ static void test_parse_charclass(void) {
     check_not_null("[^0-9]", n);
     check_int("[^0-9] negated", n ? (n->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 0, 1);
     neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[\\D]", 0, &err);
+    check_not_null("[\\D]", n);
+    check_op("[\\D] op", n, NC_RE_OP_CHAR_CLASS);
+    check_int("[\\D] nrunes", n ? n->nrunes : 0, 4);
+    check_int("[\\D] lo0", (n && n->nrunes >= 2) ? n->runes[0] : -1, 0);
+    check_int("[\\D] hi0", (n && n->nrunes >= 2) ? n->runes[1] : -1, '0' - 1);
+    check_int("[\\D] lo1", (n && n->nrunes >= 4) ? n->runes[2] : -1, '9' + 1);
+    check_int("[\\D] hi1", (n && n->nrunes >= 4) ? n->runes[3] : -1, 0x10FFFF);
+    check_int("[\\D] not negated", n ? (n->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 1, 0);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[a-\\d]", 0, &err);
+    check_null("[a-\\d] class as range end", n);
 }
 
 /* ===== Escapes ===== */

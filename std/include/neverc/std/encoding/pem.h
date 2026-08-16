@@ -12,7 +12,8 @@ extern "C" {
  * PEM encoding/decoding (RFC 1421).
  *
  * Encode: writes "-----BEGIN <type>-----\n<base64>\n-----END <type>-----\n"
- * Decode: extracts type string and raw binary data from PEM block
+ * Decode: extracts type string and raw binary data from the next valid PEM
+ * block, skipping malformed armor the same way as Go encoding/pem.Decode.
  *
  * Unlike Go's version, this C API uses caller-provided buffers rather than
  * allocating memory. Returns the number of bytes written, or -1 on error.

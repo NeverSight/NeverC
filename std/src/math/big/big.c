@@ -751,7 +751,9 @@ static void nat_toom3(uint32_t *rd, const uint32_t *x, size_t xn,
      * allocation per node (instead of ~15) keeps Toom-3's constant factor low
      * enough to beat Karatsuba near the crossover. */
     uint32_t *buf = (uint32_t *)calloc(7 * ek + 8 * pn, 4);
-    if (!buf) { nat_mul(rd, x, xn, y, yn); return; }   /* OOM: Karatsuba */
+    /* Must not call nat_mul: the caller already chose Toom-3, so that
+     * re-enters this function and recurses until the stack dies. */
+    if (!buf) { nat_mul_basic(rd, x, xn, y, yn); return; }
     uint32_t *ex1 = buf, *ex2 = ex1 + ek, *exm = ex2 + ek;
     uint32_t *ey1 = exm + ek, *ey2 = ey1 + ek, *eym = ey2 + ek, *tmp = eym + ek;
     uint32_t *p0 = tmp + ek, *p1 = p0 + pn, *pm1 = p1 + pn, *p2 = pm1 + pn;
@@ -800,7 +802,8 @@ static void nat_toom3_sqr(uint32_t *rd, const uint32_t *x, size_t n, size_t k) {
     size_t pn = 2 * k + 4;
 
     uint32_t *buf = (uint32_t *)calloc(4 * ek + 8 * pn, 4);
-    if (!buf) { nat_sqr(rd, x, n); return; }        /* OOM: Karatsuba squaring */
+    /* Must not call nat_sqr: that re-enters Toom-3-sqr on the same n. */
+    if (!buf) { nat_sqr_basic(rd, x, n); return; }
     uint32_t *ex1 = buf, *ex2 = ex1 + ek, *exm = ex2 + ek, *tmp = exm + ek;
     uint32_t *p0 = tmp + ek, *p1 = p0 + pn, *pm1 = p1 + pn, *p2 = pm1 + pn;
     uint32_t *pinf = p2 + pn, *t1 = pinf + pn, *t2 = t1 + pn, *t3 = t2 + pn;

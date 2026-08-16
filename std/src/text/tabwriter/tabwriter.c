@@ -144,18 +144,30 @@ static int flush_lines(neverc_tabwriter_t *w) {
                     }
                 }
 
-                if (cell->htab && w->tabwidth > 0) {
+                /* tabwidth is the tab-stop distance used only when padding
+                 * with '\t' (Go text/tabwriter). Space/dot padding must not
+                 * snap to those stops — that over-padded every htab cell. */
+                if (w->padchar == '\t' && w->tabwidth > 0) {
                     size_t width =
                         cell->width > 0 ? (size_t)cell->width : 0U;
                     size_t tabwidth = (size_t)w->tabwidth;
                     if (pad_needed > SIZE_MAX - width) return -1;
-                    size_t total = width + pad_needed;
-                    size_t remainder = total % tabwidth;
+                    size_t target = width + pad_needed;
+                    size_t remainder = target % tabwidth;
                     if (remainder != 0) {
                         size_t extra = tabwidth - remainder;
-                        if (pad_needed > SIZE_MAX - extra) return -1;
-                        pad_needed += extra;
+                        if (target > SIZE_MAX - extra) return -1;
+                        target += extra;
                     }
+                    size_t ntabs = 0;
+                    size_t col = width;
+                    while (col < target) {
+                        size_t step = tabwidth - (col % tabwidth);
+                        if (col > SIZE_MAX - step) return -1;
+                        col += step;
+                        ntabs++;
+                    }
+                    pad_needed = ntabs;
                 }
 
                 if (w->flags & NEVERC_TABWRITER_ALIGN_RIGHT) {

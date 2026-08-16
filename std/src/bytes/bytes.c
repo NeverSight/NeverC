@@ -159,7 +159,8 @@ int neverc_bytes_equal(const uint8_t *a, size_t alen,
 
 int neverc_bytes_compare(const uint8_t *a, size_t alen,
                          const uint8_t *b, size_t blen) {
-    if (!bytes_span_valid(a, alen) || !bytes_span_valid(b, blen)) return 0;
+    if (!bytes_span_valid(a, alen)) { a = NULL; alen = 0; }
+    if (!bytes_span_valid(b, blen)) { b = NULL; blen = 0; }
     size_t n = alen < blen ? alen : blen;
     if (n > 0) {
         int r = memcmp(a, b, n);
@@ -556,9 +557,8 @@ uint8_t *neverc_bytes_join(const uint8_t **slices, const size_t *lens,
                            size_t *outlen) {
     if (!outlen) return NULL;
     *outlen = 0;
-    if (!bytes_span_valid(sep, seplen) ||
-        (count > 0 && (!slices || !lens))) return NULL;
     if (count == 0) return bytes_alloc(0);
+    if (!bytes_span_valid(sep, seplen) || !slices || !lens) return NULL;
     size_t total = 0;
     for (size_t i = 0; i < count; i++) {
         if (!bytes_span_valid(slices[i], lens[i]) || lens[i] > SIZE_MAX - total)
@@ -820,8 +820,13 @@ int neverc_bytes_cut(const uint8_t *s, size_t slen,
                      const uint8_t *sep, size_t seplen,
                      const uint8_t **before, size_t *blen,
                      const uint8_t **after, size_t *alen) {
-    if (!before || !blen || !after || !alen ||
-        !bytes_span_valid(s, slen) || !bytes_span_valid(sep, seplen)) return 0;
+    if (!before || !blen || !after || !alen) return 0;
+    if (!bytes_span_valid(s, slen)) { s = NULL; slen = 0; }
+    if (!bytes_span_valid(sep, seplen)) {
+        *before = s; *blen = slen;
+        *after = bytes_offset(s, slen); *alen = 0;
+        return 0;
+    }
     size_t idx = neverc_bytes_index(s, slen, sep, seplen);
     if (idx == (size_t)-1) {
         *before = s; *blen = slen;
@@ -836,8 +841,12 @@ int neverc_bytes_cut(const uint8_t *s, size_t slen,
 int neverc_bytes_cut_prefix(const uint8_t *s, size_t slen,
                             const uint8_t *prefix, size_t plen,
                             const uint8_t **after, size_t *alen) {
-    if (!after || !alen || !bytes_span_valid(s, slen) ||
-        !bytes_span_valid(prefix, plen)) return 0;
+    if (!after || !alen) return 0;
+    if (!bytes_span_valid(s, slen)) { s = NULL; slen = 0; }
+    if (!bytes_span_valid(prefix, plen)) {
+        *after = s; *alen = slen;
+        return 0;
+    }
     if (neverc_bytes_has_prefix(s, slen, prefix, plen)) {
         *after = bytes_offset(s, plen); *alen = slen - plen;
         return 1;
@@ -849,8 +858,12 @@ int neverc_bytes_cut_prefix(const uint8_t *s, size_t slen,
 int neverc_bytes_cut_suffix(const uint8_t *s, size_t slen,
                             const uint8_t *suffix, size_t sfxlen,
                             const uint8_t **before, size_t *blen) {
-    if (!before || !blen || !bytes_span_valid(s, slen) ||
-        !bytes_span_valid(suffix, sfxlen)) return 0;
+    if (!before || !blen) return 0;
+    if (!bytes_span_valid(s, slen)) { s = NULL; slen = 0; }
+    if (!bytes_span_valid(suffix, sfxlen)) {
+        *before = s; *blen = slen;
+        return 0;
+    }
     if (neverc_bytes_has_suffix(s, slen, suffix, sfxlen)) {
         *before = s; *blen = slen - sfxlen;
         return 1;
@@ -1034,8 +1047,13 @@ int neverc_bytes_cut_last(const uint8_t *s, size_t slen,
                           const uint8_t *sep, size_t seplen,
                           const uint8_t **before, size_t *blen,
                           const uint8_t **after, size_t *alen) {
-    if (!before || !blen || !after || !alen ||
-        !bytes_span_valid(s, slen) || !bytes_span_valid(sep, seplen)) return 0;
+    if (!before || !blen || !after || !alen) return 0;
+    if (!bytes_span_valid(s, slen)) { s = NULL; slen = 0; }
+    if (!bytes_span_valid(sep, seplen)) {
+        *before = s; *blen = slen;
+        *after = bytes_offset(s, slen); *alen = 0;
+        return 0;
+    }
     size_t idx = neverc_bytes_last_index(s, slen, sep, seplen);
     if (idx == (size_t)-1) {
         *before = s; *blen = slen;

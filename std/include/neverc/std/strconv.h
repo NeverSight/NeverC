@@ -19,8 +19,9 @@ extern "C" {
 int neverc_strconv_atoi(const char *s, int *result);
 int neverc_strconv_atol(const char *s, long long *result);
 
-/* With base 0, Go-style base prefixes and digit-separating underscores are
- * accepted. Explicit bases reject underscores. */
+/* Base 0 accepts Go-style prefixes (0x/0b/0o/leading 0) and digit-separating
+ * underscores. Explicit bases 2/8/16 also accept 0b/0o/0x prefixes but
+ * reject underscores. */
 int neverc_strconv_parse_int(const char *s, int base, long long *result);
 int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *result);
 int neverc_strconv_parse_float(const char *s, double *result);

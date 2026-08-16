@@ -122,8 +122,9 @@ static void test_template_url_and_script(void) {
 
     neverc_html_template_data_set(&data, "Name", "');alert(1);//");
     out = neverc_html_template_render("<img onclick=\"{{.Name}}\">", &data);
-    check("onclick uses js escape", out && strstr(out, "\\'") != NULL);
-    check("onclick no html entity quote", out && strstr(out, "&#39;") == NULL);
+    check("onclick is js string", out && strstr(out, "&#39;") != NULL);
+    check("onclick no raw quote breakout",
+          out && strstr(out, "');alert") == NULL);
     free(out);
 
     neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
@@ -134,8 +135,9 @@ static void test_template_url_and_script(void) {
 
     neverc_html_template_data_set(&data, "Name", "');alert(1);//");
     out = neverc_html_template_render("<img onclick = \"{{.Name}}\">", &data);
-    check("spaced onclick uses js escape", out && strstr(out, "\\'") != NULL);
-    check("spaced onclick no html entity", out && strstr(out, "&#39;") == NULL);
+    check("spaced onclick is js string", out && strstr(out, "&#39;") != NULL);
+    check("spaced onclick no raw quote breakout",
+          out && strstr(out, "');alert") == NULL);
     free(out);
 
     neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
@@ -196,6 +198,40 @@ static void test_template_url_and_script(void) {
     neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
     out = neverc_html_template_render("<img srcset=\"{{.Link}}\">", &data);
     check("srcset js url neutralized", out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render("<a href=\" {{.Link}}\">x</a>", &data);
+    check("space after href quote neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check("space after href quote becomes hash",
+          out && strstr(out, "href=\" #\"") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "script:alert(1)");
+    out = neverc_html_template_render("<a href=\"java{{.Link}}\">x</a>", &data);
+    check("split javascript scheme neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check("split javascript becomes hash",
+          out && strstr(out, "href=\"java#\"") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Name", "alert(1)");
+    out = neverc_html_template_render("<img onclick=\"{{.Name}}\">", &data);
+    check("quoted onclick is js string",
+          out && strstr(out, "&#39;alert(1)&#39;") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Color", "!B");
+    out = neverc_html_template_render("<style>{{.Color}}</style>", &data);
+    check_str("style tag uses css escape", out, "<style>\\21 B</style>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "script:alert(1)");
+    out = neverc_html_template_render(
+        "<div style=\"background:url(java{{.Link}})\">", &data);
+    check("css url() split scheme neutralized",
+          out && strstr(out, "javascript:") == NULL);
     free(out);
     neverc_html_template_data_free(&data);
 }

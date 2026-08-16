@@ -117,6 +117,21 @@ static void test_stream_frame_with_offset_and_fin(void) {
     ASSERT_EQ(out.fin, 1);
 }
 
+static void test_stream_frame_nonminimal_type(void) {
+    /* RFC 9000 §16: type 0x0a (STREAM + LEN) encoded as a 2-byte varint. */
+    uint8_t buf[] = { 0x40, 0x0A, 0x04, 0x05, 'h', 'e', 'l', 'l', 'o' };
+    quic_frame_stream_t out;
+    size_t consumed;
+    ASSERT_EQ(neverc_quic_parse_stream_frame(buf, sizeof(buf), &out, &consumed),
+              0);
+    ASSERT_EQ(consumed, sizeof(buf));
+    ASSERT_EQ(out.stream_id, 4);
+    ASSERT_EQ(out.offset, 0);
+    ASSERT_EQ(out.data_len, 5);
+    ASSERT_EQ(out.fin, 0);
+    ASSERT_TRUE(memcmp(out.data, "hello", 5) == 0);
+}
+
 static void test_stream_frame_large_id(void) {
     uint8_t data[] = "x";
     quic_frame_stream_t frame = {
@@ -454,6 +469,7 @@ int main(void) {
     test_stream_frame_basic();
     test_stream_frame_with_offset_and_fin();
     test_stream_frame_large_id();
+    test_stream_frame_nonminimal_type();
     test_ack_frame_single_range();
     test_ack_frame_multiple_ranges();
     test_connection_close_transport();

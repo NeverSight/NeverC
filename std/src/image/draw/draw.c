@@ -1,4 +1,5 @@
 #include "neverc/std/image/draw.h"
+#include <stdint.h>
 #include <string.h>
 
 /*
@@ -12,6 +13,23 @@ static inline uint8_t over_component(uint8_t dst, uint8_t src, uint8_t sa) {
     uint32_t d = dst;
     uint32_t a = sa;
     return (uint8_t)((s * 255 + d * (255 - a) + 127) / 255);
+}
+
+/* Intersect `a` with a (possibly 64-bit) rect. Used for source/mask bounds
+ * translated by (r.min - origin): that add/sub overflows 32-bit int and wraps
+ * into dst space, so a mapping that is actually far off-image looks like a
+ * valid clip and the row loops read off src/mask->pix. The result is empty or
+ * inside `a`, so it always fits in neverc_rect_t. */
+static neverc_rect_t rect_intersect_i64(neverc_rect_t a,
+                                        int64_t bx0, int64_t by0,
+                                        int64_t bx1, int64_t by1) {
+    int64_t x0 = (int64_t)a.min.x > bx0 ? (int64_t)a.min.x : bx0;
+    int64_t y0 = (int64_t)a.min.y > by0 ? (int64_t)a.min.y : by0;
+    int64_t x1 = (int64_t)a.max.x < bx1 ? (int64_t)a.max.x : bx1;
+    int64_t y1 = (int64_t)a.max.y < by1 ? (int64_t)a.max.y : by1;
+    if (x0 >= x1 || y0 >= y1)
+        return (neverc_rect_t){{0, 0}, {0, 0}};
+    return (neverc_rect_t){{(int)x0, (int)y0}, {(int)x1, (int)y1}};
 }
 
 /*
@@ -31,18 +49,19 @@ void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
      * (x - r.min.x + sp.x, y - r.min.y + sp.y), so staying inside src->rect
      * bounds the dst rect by src->rect shifted by (r.min - sp). Without this, a
      * source smaller than r over-reads its buffer (Go does this in
-     * image/draw.clip). */
-    neverc_rect_t src_clip = {
-        { src->rect.min.x + r.min.x - sp.x, src->rect.min.y + r.min.y - sp.y },
-        { src->rect.max.x + r.min.x - sp.x, src->rect.max.y + r.min.y - sp.y }
-    };
-    clip = neverc_rect_intersect(clip, src_clip);
+     * image/draw.clip). The translation is done in 64-bit so extreme origins
+     * cannot wrap into dst and look like an in-bounds source read. */
+    clip = rect_intersect_i64(clip,
+        (int64_t)src->rect.min.x + (int64_t)r.min.x - (int64_t)sp.x,
+        (int64_t)src->rect.min.y + (int64_t)r.min.y - (int64_t)sp.y,
+        (int64_t)src->rect.max.x + (int64_t)r.min.x - (int64_t)sp.x,
+        (int64_t)src->rect.max.y + (int64_t)r.min.y - (int64_t)sp.y);
     if (neverc_rect_empty(clip)) return;
 
     int dx0 = clip.min.x, dy0 = clip.min.y;
     int dx1 = clip.max.x, dy1 = clip.max.y;
-    int sx = sp.x + (dx0 - r.min.x);
-    int sy = sp.y + (dy0 - r.min.y);
+    int64_t sx = (int64_t)sp.x + (int64_t)dx0 - (int64_t)r.min.x;
+    int64_t sy = (int64_t)sp.y + (int64_t)dy0 - (int64_t)r.min.y;
 
     int w = dx1 - dx0;
     if (w <= 0) return;
@@ -51,8 +70,28 @@ void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
     size_t src_stride = (size_t)src->stride;
     uint8_t *dbase = dst->pix + (size_t)(dy0 - dst->rect.min.y) * dst_stride
                               + (size_t)(dx0 - dst->rect.min.x) * 4;
-    const uint8_t *sbase = src->pix + (size_t)(sy - src->rect.min.y) * src_stride
-                                    + (size_t)(sx - src->rect.min.x) * 4;
+    const uint8_t *sbase = src->pix
+        + (size_t)(sy - (int64_t)src->rect.min.y) * src_stride
+        + (size_t)(sx - (int64_t)src->rect.min.x) * 4;
+
+    /* Same-buffer SRC shifted down would otherwise copy top-to-bottom and
+     * reread rows already overwritten (classic overlapping blit). memmove
+     * already covers the horizontal case within a row. */
+    if (op == NEVERC_DRAW_SRC && dst->pix == src->pix &&
+        dst->stride == src->stride &&
+        (dy0 - dst->rect.min.y) > (int)(sy - (int64_t)src->rect.min.y)) {
+        size_t rows = (size_t)(dy1 - dy0);
+        if (rows > 0) {
+            dbase += (rows - 1U) * dst_stride;
+            sbase += (rows - 1U) * src_stride;
+            for (size_t n = rows; n > 0; n--) {
+                memmove(dbase, sbase, (size_t)w * 4);
+                dbase -= dst_stride;
+                sbase -= src_stride;
+            }
+        }
+        return;
+    }
 
     for (int y = dy0; y < dy1; y++) {
         uint8_t *drow = dbase;
@@ -137,12 +176,13 @@ void neverc_draw_gray_over(neverc_image_rgba_t *dst, neverc_rect_t r,
                            uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) {
     neverc_rect_t clip = neverc_rect_intersect(r, dst->rect);
     /* Clip against the mask bounds (translated into dst space) so the mrow[]
-     * reads stay inside mask->pix when the mask is smaller than r. */
-    neverc_rect_t mask_clip = {
-        { mask->rect.min.x + r.min.x - mp.x, mask->rect.min.y + r.min.y - mp.y },
-        { mask->rect.max.x + r.min.x - mp.x, mask->rect.max.y + r.min.y - mp.y }
-    };
-    clip = neverc_rect_intersect(clip, mask_clip);
+     * reads stay inside mask->pix when the mask is smaller than r. 64-bit
+     * translation, same overflow class as neverc_draw. */
+    clip = rect_intersect_i64(clip,
+        (int64_t)mask->rect.min.x + (int64_t)r.min.x - (int64_t)mp.x,
+        (int64_t)mask->rect.min.y + (int64_t)r.min.y - (int64_t)mp.y,
+        (int64_t)mask->rect.max.x + (int64_t)r.min.x - (int64_t)mp.x,
+        (int64_t)mask->rect.max.y + (int64_t)r.min.y - (int64_t)mp.y);
     if (neverc_rect_empty(clip)) return;
 
     int x0 = clip.min.x, y0 = clip.min.y;
@@ -150,15 +190,16 @@ void neverc_draw_gray_over(neverc_image_rgba_t *dst, neverc_rect_t r,
     int w = x1 - x0;
     if (w <= 0) return;
 
-    int mx = mp.x + (x0 - r.min.x);
-    int my = mp.y + (y0 - r.min.y);
+    int64_t mx = (int64_t)mp.x + (int64_t)x0 - (int64_t)r.min.x;
+    int64_t my = (int64_t)mp.y + (int64_t)y0 - (int64_t)r.min.y;
 
     size_t dst_stride = (size_t)dst->stride;
     size_t mask_stride = (size_t)mask->stride;
     uint8_t *dbase = dst->pix + (size_t)(y0 - dst->rect.min.y) * dst_stride
                               + (size_t)(x0 - dst->rect.min.x) * 4;
-    const uint8_t *mbase = mask->pix + (size_t)(my - mask->rect.min.y) * mask_stride
-                                     + (size_t)(mx - mask->rect.min.x);
+    const uint8_t *mbase = mask->pix
+        + (size_t)(my - (int64_t)mask->rect.min.y) * mask_stride
+        + (size_t)(mx - (int64_t)mask->rect.min.x);
 
     for (int y = y0; y < y1; y++) {
         uint8_t *drow = dbase;

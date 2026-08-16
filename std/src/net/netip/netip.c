@@ -121,7 +121,10 @@ static int parse_ipv4(const char *s, size_t len, uint8_t out[4]) {
     for (int i = 0; i <= (int)len && octet < 4; i++) {
         if (i == (int)len || s[i] == '.') {
             unsigned v;
-            if (parse_decimal(s + start, i - start, &v) != 0 || v > 255)
+            int octet_len = i - start;
+            if (octet_len > 1 && s[start] == '0')
+                return -1;
+            if (parse_decimal(s + start, octet_len, &v) != 0 || v > 255)
                 return -1;
             out[octet++] = (uint8_t)v;
             start = i + 1;

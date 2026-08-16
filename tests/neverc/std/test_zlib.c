@@ -79,6 +79,13 @@ static void test_invalid_headers_and_spans(void) {
                       junk_before_adler, valid_compressed_len + 1,
                       output, &output_len),
                   -1);
+
+    memcpy(invalid, compressed, valid_compressed_len);
+    invalid[valid_compressed_len - 1] ^= 1U;
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_zlib_decompress(
+                      invalid, valid_compressed_len, output, &output_len),
+                  -1);
 }
 
 int main(void) {

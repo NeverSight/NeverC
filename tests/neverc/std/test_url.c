@@ -104,6 +104,17 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:+80/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "1nvalid://host/api"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, ""), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http:"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "https:"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "a:"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http:/path"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://[::1]"), 0);
+    ASSERT_STR_EQ(u.host, "::1");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://[::1]:80"), 0);
+    ASSERT_STR_EQ(u.host, "::1");
+    ASSERT_STR_EQ(u.port, "80");
 
     char long_url[400];
     memcpy(long_url, "https://", 8);

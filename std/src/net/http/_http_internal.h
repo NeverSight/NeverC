@@ -44,6 +44,7 @@ struct neverc_http_response_writer {
     int         ntrailers;
     nc_buf_t    body;
     int         keep_alive;
+    int         initial_keep_alive;
     int         hijacked;
     http_conn_t *owner;
     size_t      request_consumed;

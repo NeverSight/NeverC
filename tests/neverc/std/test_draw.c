@@ -1,4 +1,5 @@
 #include "neverc/std/image/draw.h"
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -143,6 +144,64 @@ static void test_draw_gray_clip(void) {
     neverc_image_rgba_free(&dst);
 }
 
+/* Regression: translating src/mask by (r.min - origin) can overflow 32-bit
+ * int and wrap into dst, so a mapping that is actually off-image looks
+ * in-bounds and the row loops read off the source buffer. */
+static void test_draw_clip_int_overflow(void) {
+    printf("[draw_clip_int_overflow]\n");
+    neverc_image_rgba_t dst, src;
+    neverc_image_rgba_init(&dst, neverc_rect(0, 0, 8, 8));
+    neverc_image_rgba_init(&src, neverc_rect(INT_MIN, 0, INT_MIN + 4, 4));
+    for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 4; x++)
+            neverc_image_rgba_set(&src, INT_MIN + x, y, 9, 9, 9, 255);
+
+    neverc_draw(&dst, neverc_rect(0, 0, 8, 8), &src, neverc_pt(INT_MAX, 0),
+                NEVERC_DRAW_OVER);
+    uint8_t r, g, b, a;
+    neverc_image_rgba_at(&dst, 1, 0, &r, &g, &b, &a);
+    check("overflow_src_clip_noop", r == 0 && g == 0 && b == 0 && a == 0);
+
+    neverc_image_gray_t mask;
+    neverc_image_gray_init(&mask, neverc_rect(INT_MIN, 0, INT_MIN + 4, 4));
+    for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 4; x++)
+            neverc_image_gray_set(&mask, INT_MIN + x, y, 255);
+    neverc_draw_gray_over(&dst, neverc_rect(0, 0, 8, 8), &mask,
+                          neverc_pt(INT_MAX, 0), 200, 100, 50, 255);
+    neverc_image_rgba_at(&dst, 1, 0, &r, &g, &b, &a);
+    check("overflow_mask_clip_noop", r == 0 && g == 0 && b == 0 && a == 0);
+
+    neverc_image_gray_free(&mask);
+    neverc_image_rgba_free(&dst);
+    neverc_image_rgba_free(&src);
+}
+
+/* Same-image SRC shifted down must copy bottom-to-top; otherwise each row
+ * rereads a destination that was already overwritten. */
+static void test_draw_src_self_overlap(void) {
+    printf("[draw_src_self_overlap]\n");
+    neverc_image_rgba_t img;
+    neverc_image_rgba_init(&img, neverc_rect(0, 0, 4, 4));
+    for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 4; x++)
+            neverc_image_rgba_set(&img, x, y, (uint8_t)(y * 10), (uint8_t)x, 0, 255);
+
+    neverc_draw(&img, neverc_rect(0, 1, 4, 4), &img, neverc_pt(0, 0),
+                NEVERC_DRAW_SRC);
+    uint8_t r, g, b, a;
+    neverc_image_rgba_at(&img, 0, 1, &r, &g, &b, &a);
+    check("self_overlap_row1", r == 0);
+    neverc_image_rgba_at(&img, 0, 2, &r, &g, &b, &a);
+    check("self_overlap_row2", r == 10);
+    neverc_image_rgba_at(&img, 0, 3, &r, &g, &b, &a);
+    check("self_overlap_row3", r == 20);
+    neverc_image_rgba_at(&img, 0, 0, &r, &g, &b, &a);
+    check("self_overlap_row0_unchanged", r == 0);
+
+    neverc_image_rgba_free(&img);
+}
+
 int main(void) {
     test_draw_src();
     test_draw_uniform();
@@ -150,6 +209,8 @@ int main(void) {
     test_draw_clipping();
     test_draw_source_clip();
     test_draw_gray_clip();
+    test_draw_clip_int_overflow();
+    test_draw_src_self_overlap();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
 }

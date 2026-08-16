@@ -104,6 +104,24 @@ static void test_join(void) {
     neverc_errors_free(e1);
     neverc_errors_free(e2);
     neverc_errors_free(e3);
+
+    /* Join must keep wrap chains so errors_is can see a wrapped cause. */
+    neverc_error_t *cause = neverc_errors_new("file not found");
+    neverc_error_t *wrapped = neverc_errors_wrap("open config", cause);
+    neverc_error_t *extra = neverc_errors_new("timeout");
+    neverc_error_t *mixed[] = {wrapped, extra};
+    neverc_error_t *joined_wrap = neverc_errors_join(mixed, 2);
+    check_str("join wrap msg", neverc_errors_message(joined_wrap),
+              "open config: file not found\ntimeout");
+    check_bool("join is wrapped", neverc_errors_is(joined_wrap, wrapped), 1);
+    check_bool("join is cause", neverc_errors_is(joined_wrap, cause), 1);
+    check_bool("join is extra", neverc_errors_is(joined_wrap, extra), 1);
+    neverc_error_t *unrelated = neverc_errors_new("permission denied");
+    check_bool("join is unrelated", neverc_errors_is(joined_wrap, unrelated), 0);
+    neverc_errors_free(unrelated);
+    neverc_errors_free(joined_wrap);
+    neverc_errors_free(wrapped);
+    neverc_errors_free(extra);
 }
 
 int main(void) {

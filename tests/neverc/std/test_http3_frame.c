@@ -501,6 +501,36 @@ static void test_qpack_rejects_s_bit_with_zero_ric(void) {
     neverc_qpack_decoder_destroy(dec);
 }
 
+static void test_qpack_rejects_nul_and_crlf(void) {
+    neverc_qpack_encoder_t *enc = neverc_qpack_encoder_create(4096);
+    neverc_qpack_decoder_t *dec = neverc_qpack_decoder_create(4096);
+    neverc_qpack_header_t inject[] = {
+        { (char *)"x-custom", (char *)"a\r\nX-Injected: 1" },
+    };
+    uint8_t encoded[128];
+    size_t encoded_len = 0;
+    ASSERT_EQ(neverc_qpack_encode(enc, inject, 1, encoded, sizeof(encoded),
+                                  &encoded_len), -1);
+
+    /* Literal name "x" + value "a\0b" (RFC 9110 §5.5). */
+    static const uint8_t nul_block[] = {
+        0x00, 0x00, 0x21, 'x', 0x03, 'a', 0x00, 'b'
+    };
+    neverc_qpack_header_t decoded[4];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_qpack_decode(dec, nul_block, sizeof(nul_block),
+                                  decoded, 4, &nheaders), -1);
+
+    static const uint8_t crlf_block[] = {
+        0x00, 0x00, 0x21, 'x', 0x03, 'a', '\r', '\n'
+    };
+    ASSERT_EQ(neverc_qpack_decode(dec, crlf_block, sizeof(crlf_block),
+                                  decoded, 4, &nheaders), -1);
+
+    neverc_qpack_encoder_destroy(enc);
+    neverc_qpack_decoder_destroy(dec);
+}
+
 static void test_qpack_encoder_create_destroy(void) {
     neverc_qpack_encoder_t *enc = neverc_qpack_encoder_create(8192);
     ASSERT_NOT_NULL(enc);
@@ -545,6 +575,7 @@ int main(void) {
     test_qpack_empty_headers();
     test_qpack_literal_name_ref_never_index();
     test_qpack_rejects_s_bit_with_zero_ric();
+    test_qpack_rejects_nul_and_crlf();
     test_qpack_encoder_create_destroy();
 
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);

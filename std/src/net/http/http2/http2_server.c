@@ -987,6 +987,8 @@ static int h2_validate_request_headers(h2_conn_t *conn,
         !path || (path[0] != '/' && strcmp(path, "*") != 0) ||
         strchr(path, '#') != NULL)
         return -1;
+    if (authority && !*authority) authority = NULL;
+    if (host && !*host) host = NULL;
     if (!authority && !host)
         return -1;
     if (authority && host && !h2_ascii_ieq(authority, host))

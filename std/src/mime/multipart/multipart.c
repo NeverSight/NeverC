@@ -77,34 +77,29 @@ static const unsigned char *find_boundary_line(
         size_t suffix_offset = offset + marker_length;
         int line_start = offset == 0 || data[offset - 1] == '\n';
         if (line_start) {
-            size_t remaining = length - suffix_offset;
-            if (remaining >= 2 && data[suffix_offset] == '-' &&
-                data[suffix_offset + 1] == '-') {
-                size_t end = suffix_offset + 2;
-                if (end == length) {
-                    *closing = 1;
-                    *after = data + end;
-                    return candidate;
-                }
-                if (length - end >= 2 && data[end] == '\r' &&
-                    data[end + 1] == '\n') {
-                    *closing = 1;
-                    *after = data + end + 2;
-                    return candidate;
-                }
-                if (data[end] == '\n') {
-                    *closing = 1;
-                    *after = data + end + 1;
-                    return candidate;
-                }
-            } else if (remaining >= 2 && data[suffix_offset] == '\r' &&
-                       data[suffix_offset + 1] == '\n') {
-                *closing = 0;
-                *after = data + suffix_offset + 2;
+            /* RFC 2046: `--boundary` / `--boundary--` then optional LWSP
+             * (space / tab), then CRLF. Closing `--` may omit the final CRLF. */
+            size_t k = suffix_offset;
+            int is_close = (k + 1 < length && data[k] == '-' &&
+                            data[k + 1] == '-');
+            if (is_close) k += 2;
+            while (k < length && (data[k] == ' ' || data[k] == '\t'))
+                k++;
+            if (is_close && k == length) {
+                *closing = 1;
+                *after = data + k;
                 return candidate;
-            } else if (remaining >= 1 && data[suffix_offset] == '\n') {
-                *closing = 0;
-                *after = data + suffix_offset + 1;
+            }
+            if (k < length && data[k] == '\r') {
+                k++;
+                if (k < length && data[k] == '\n') k++;
+                *closing = is_close;
+                *after = data + k;
+                return candidate;
+            }
+            if (k < length && data[k] == '\n') {
+                *closing = is_close;
+                *after = data + k + 1;
                 return candidate;
             }
         }

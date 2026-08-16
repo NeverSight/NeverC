@@ -193,6 +193,18 @@ static void test_rejects_malformed_input(void) {
     inject.body_len = 11;
     ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
               -1);
+
+    const char *lwsp =
+        "--b \r\n"
+        "\r\n"
+        "hi\r\n"
+        "--b-- \t\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)lwsp, strlen(lwsp), "b", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_EQ((int)reader->parts[0].body_len, 2);
+    ASSERT_TRUE(memcmp(reader->parts[0].body, "hi", 2) == 0);
     free(reader);
 }
 

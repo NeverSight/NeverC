@@ -125,6 +125,10 @@ static void test_index_any(void) {
     check_int("index_any none", neverc_cstring_index_any("crwth", "aeiou"), -1);
     check_int("index_any empty chars", neverc_cstring_index_any("hello", ""), -1);
     check_int("index_any first", neverc_cstring_index_any("aardvark", "a"), 0);
+    check_int("index_any UTF-8 rune",
+              neverc_cstring_index_any("a\xe4\xb8\x96b", "\xe4\xb8\x96"), 1);
+    check_int("index_any does not match UTF-8 fragments",
+              neverc_cstring_index_any("\xc4\x96", "\xe4\xb8\x96"), -1);
 }
 
 static void test_last_index_any(void) {
@@ -132,6 +136,9 @@ static void test_last_index_any(void) {
     check_int("last_index_any vowels", neverc_cstring_last_index_any("chicken", "aeiou"), 5);
     check_int("last_index_any none", neverc_cstring_last_index_any("crwth", "aeiou"), -1);
     check_int("last_index_any empty", neverc_cstring_last_index_any("hello", ""), -1);
+    check_int("last_index_any UTF-8 rune",
+              neverc_cstring_last_index_any("a\xe4\xb8\x96b\xe4\xb8\x96",
+                                            "\xe4\xb8\x96"), 5);
 }
 
 static void test_contains(void) {
@@ -369,6 +376,14 @@ static void test_trim(void) {
     r = neverc_cstring_trim("", "abc");
     check_str("trim empty str", r, "");
     free(r);
+
+    r = neverc_cstring_trim("\xe4\xb8\x96hello\xe4\xb8\x96", "\xe4\xb8\x96");
+    check_str("trim Unicode cutset", r, "hello");
+    free(r);
+
+    r = neverc_cstring_trim("\xc4\x96", "\xe4\xb8\x96");
+    check_str("trim does not split UTF-8 runes", r, "\xc4\x96");
+    free(r);
 }
 
 static void test_trim_left(void) {
@@ -419,6 +434,10 @@ static void test_trim_space(void) {
 
     r = neverc_cstring_trim_space("");
     check_str("trim_space empty", r, "");
+    free(r);
+
+    r = neverc_cstring_trim_space("\xc2\xa0hello\xe3\x80\x80");
+    check_str("trim_space Unicode White_Space", r, "hello");
     free(r);
 }
 
@@ -498,8 +517,7 @@ static void test_split(void) {
     neverc_cstring_free_split(arr, count);
 
     arr = neverc_cstring_split("", "", &count);
-    check_size("split empty+empty count", count, 1);
-    if (count == 1) check_str("split empty+empty[0]", arr[0], "");
+    check_size("split empty+empty count", count, 0);
     neverc_cstring_free_split(arr, count);
 }
 
@@ -517,8 +535,7 @@ static void test_split_n(void) {
     neverc_cstring_free_split(arr, count);
 
     arr = neverc_cstring_split_n("", "", 1, &count);
-    check_size("split_n empty+empty count", count, 1);
-    if (count == 1) check_str("split_n empty+empty[0]", arr[0], "");
+    check_size("split_n empty+empty count", count, 0);
     neverc_cstring_free_split(arr, count);
 
     arr = neverc_cstring_split_n("a,b,c", ",", 10, &count);
@@ -569,6 +586,15 @@ static void test_fields(void) {
         check_str("fields tn[0]", arr[0], "one");
         check_str("fields tn[1]", arr[1], "two");
         check_str("fields tn[2]", arr[2], "three");
+    }
+    neverc_cstring_free_split(arr, count);
+
+    arr = neverc_cstring_fields("a\xc2\xa0b\xe3\x80\x80c", &count);
+    check_size("fields Unicode White_Space", count, 3);
+    if (count == 3) {
+        check_str("fields unicode[0]", arr[0], "a");
+        check_str("fields unicode[1]", arr[1], "b");
+        check_str("fields unicode[2]", arr[2], "c");
     }
     neverc_cstring_free_split(arr, count);
 }
@@ -707,7 +733,7 @@ static void test_edge_cases(void) {
     check_str("cut_last multi after", a, "");
     free(b); free(a);
 
-    /* Split empty separator = per-character split */
+    /* Split empty separator = per-UTF-8-sequence split */
     size_t cnt = 0;
     char **arr = neverc_cstring_split("abc", "", &cnt);
     check_size("split empty sep count", cnt, 3);
@@ -717,6 +743,22 @@ static void test_edge_cases(void) {
         check_str("split empty[2]", arr[2], "c");
     }
     neverc_cstring_free_split(arr, cnt);
+
+    arr = neverc_cstring_split("A\xe4\xb8\x96B", "", &cnt);
+    check_size("split empty sep UTF-8 count", cnt, 3);
+    if (cnt == 3) {
+        check_str("split empty utf8[0]", arr[0], "A");
+        check_str("split empty utf8[1]", arr[1], "\xe4\xb8\x96");
+        check_str("split empty utf8[2]", arr[2], "B");
+    }
+    neverc_cstring_free_split(arr, cnt);
+
+    check_int("count empty sep UTF-8",
+              neverc_cstring_count("A\xe4\xb8\x96B", ""), 4);
+
+    r = neverc_cstring_replace("A\xe4\xb8\x96B", "", "-", -1);
+    check_str("replace empty old UTF-8", r, "-A-\xe4\xb8\x96-B-");
+    free(r);
 }
 
 /* Brute-force references (NUL-terminated). */

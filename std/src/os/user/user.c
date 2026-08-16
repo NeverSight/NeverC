@@ -110,79 +110,153 @@ const char *neverc_user_config_dir(void) {
 #include <pwd.h>
 #include <grp.h>
 #include <sys/types.h>
+#include <errno.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+static void user_copy_gecos(char *dst, size_t cap, const char *gecos) {
+    size_t n = 0;
+    if (!gecos) gecos = "";
+    while (gecos[n] && gecos[n] != ',' && n + 1 < cap) {
+        dst[n] = gecos[n];
+        n++;
+    }
+    dst[n] = '\0';
+}
+
+static int user_fill_from_passwd(const struct passwd *pw, neverc_user_t *u) {
+    memset(u, 0, sizeof(*u));
+    snprintf(u->uid, sizeof(u->uid), "%u", (unsigned)pw->pw_uid);
+    snprintf(u->gid, sizeof(u->gid), "%u", (unsigned)pw->pw_gid);
+    snprintf(u->username, sizeof(u->username), "%s",
+             pw->pw_name ? pw->pw_name : "");
+    user_copy_gecos(u->name, sizeof(u->name), pw->pw_gecos);
+    snprintf(u->home_dir, sizeof(u->home_dir), "%s",
+             pw->pw_dir ? pw->pw_dir : "");
+    return 0;
+}
+
+static size_t user_pw_bufsize(void) {
+#ifdef _SC_GETPW_R_SIZE_MAX
+    long n = sysconf(_SC_GETPW_R_SIZE_MAX);
+    if (n > 0) return (size_t)n;
+#endif
+    return 4096;
+}
+
+static size_t user_gr_bufsize(void) {
+#ifdef _SC_GETGR_R_SIZE_MAX
+    long n = sysconf(_SC_GETGR_R_SIZE_MAX);
+    if (n > 0) return (size_t)n;
+#endif
+    return 4096;
+}
+
+static int user_lookup_uid(uid_t uid, neverc_user_t *u) {
+    struct passwd pwd;
+    struct passwd *res = NULL;
+    size_t bufsz = user_pw_bufsize();
+    char *buf = (char *)malloc(bufsz);
+    if (!buf) return -1;
+    int rc;
+    for (;;) {
+        rc = getpwuid_r(uid, &pwd, buf, bufsz, &res);
+        if (rc != ERANGE) break;
+        if (bufsz > SIZE_MAX / 2) { free(buf); return -1; }
+        bufsz *= 2;
+        char *grown = (char *)realloc(buf, bufsz);
+        if (!grown) { free(buf); return -1; }
+        buf = grown;
+    }
+    if (rc != 0 || !res) { free(buf); return -1; }
+    user_fill_from_passwd(res, u);
+    free(buf);
+    return 0;
+}
 
 int neverc_user_current(neverc_user_t *u) {
     if (!u) return -1;
-    memset(u, 0, sizeof(*u));
-
-    uid_t uid = getuid();
-    struct passwd *pw = getpwuid(uid);
-    if (!pw) return -1;
-
-    snprintf(u->uid, sizeof(u->uid), "%u", (unsigned)uid);
-    snprintf(u->gid, sizeof(u->gid), "%u", (unsigned)pw->pw_gid);
-    snprintf(u->username, sizeof(u->username), "%s", pw->pw_name ? pw->pw_name : "");
-    snprintf(u->name, sizeof(u->name), "%s", pw->pw_gecos ? pw->pw_gecos : "");
-    snprintf(u->home_dir, sizeof(u->home_dir), "%s", pw->pw_dir ? pw->pw_dir : "");
-
-    return 0;
+    return user_lookup_uid(getuid(), u);
 }
 
 int neverc_user_lookup(const char *username, neverc_user_t *u) {
     if (!username || !u) return -1;
-    memset(u, 0, sizeof(*u));
-
-    struct passwd *pw = getpwnam(username);
-    if (!pw) return -1;
-
-    snprintf(u->uid, sizeof(u->uid), "%u", (unsigned)pw->pw_uid);
-    snprintf(u->gid, sizeof(u->gid), "%u", (unsigned)pw->pw_gid);
-    snprintf(u->username, sizeof(u->username), "%s", pw->pw_name ? pw->pw_name : "");
-    snprintf(u->name, sizeof(u->name), "%s", pw->pw_gecos ? pw->pw_gecos : "");
-    snprintf(u->home_dir, sizeof(u->home_dir), "%s", pw->pw_dir ? pw->pw_dir : "");
-
+    struct passwd pwd;
+    struct passwd *res = NULL;
+    size_t bufsz = user_pw_bufsize();
+    char *buf = (char *)malloc(bufsz);
+    if (!buf) return -1;
+    int rc;
+    for (;;) {
+        rc = getpwnam_r(username, &pwd, buf, bufsz, &res);
+        if (rc != ERANGE) break;
+        if (bufsz > SIZE_MAX / 2) { free(buf); return -1; }
+        bufsz *= 2;
+        char *grown = (char *)realloc(buf, bufsz);
+        if (!grown) { free(buf); return -1; }
+        buf = grown;
+    }
+    if (rc != 0 || !res) { free(buf); return -1; }
+    user_fill_from_passwd(res, u);
+    free(buf);
     return 0;
 }
 
 int neverc_user_lookup_id(int uid, neverc_user_t *u) {
     if (!u) return -1;
-    memset(u, 0, sizeof(*u));
+    return user_lookup_uid((uid_t)uid, u);
+}
 
-    struct passwd *pw = getpwuid((uid_t)uid);
-    if (!pw) return -1;
-
-    snprintf(u->uid, sizeof(u->uid), "%u", (unsigned)pw->pw_uid);
-    snprintf(u->gid, sizeof(u->gid), "%u", (unsigned)pw->pw_gid);
-    snprintf(u->username, sizeof(u->username), "%s", pw->pw_name ? pw->pw_name : "");
-    snprintf(u->name, sizeof(u->name), "%s", pw->pw_gecos ? pw->pw_gecos : "");
-    snprintf(u->home_dir, sizeof(u->home_dir), "%s", pw->pw_dir ? pw->pw_dir : "");
-
+static int user_fill_group(const struct group *gr, neverc_group_t *g) {
+    memset(g, 0, sizeof(*g));
+    snprintf(g->gid, sizeof(g->gid), "%u", (unsigned)gr->gr_gid);
+    snprintf(g->name, sizeof(g->name), "%s", gr->gr_name ? gr->gr_name : "");
     return 0;
 }
 
 int neverc_user_lookup_group(const char *name, neverc_group_t *g) {
     if (!name || !g) return -1;
-    memset(g, 0, sizeof(*g));
-
-    struct group *gr = getgrnam(name);
-    if (!gr) return -1;
-
-    snprintf(g->gid, sizeof(g->gid), "%u", (unsigned)gr->gr_gid);
-    snprintf(g->name, sizeof(g->name), "%s", gr->gr_name ? gr->gr_name : "");
-
+    struct group grp;
+    struct group *res = NULL;
+    size_t bufsz = user_gr_bufsize();
+    char *buf = (char *)malloc(bufsz);
+    if (!buf) return -1;
+    int rc;
+    for (;;) {
+        rc = getgrnam_r(name, &grp, buf, bufsz, &res);
+        if (rc != ERANGE) break;
+        if (bufsz > SIZE_MAX / 2) { free(buf); return -1; }
+        bufsz *= 2;
+        char *grown = (char *)realloc(buf, bufsz);
+        if (!grown) { free(buf); return -1; }
+        buf = grown;
+    }
+    if (rc != 0 || !res) { free(buf); return -1; }
+    user_fill_group(res, g);
+    free(buf);
     return 0;
 }
 
 int neverc_user_lookup_group_id(int gid, neverc_group_t *g) {
     if (!g) return -1;
-    memset(g, 0, sizeof(*g));
-
-    struct group *gr = getgrgid((gid_t)gid);
-    if (!gr) return -1;
-
-    snprintf(g->gid, sizeof(g->gid), "%u", (unsigned)gr->gr_gid);
-    snprintf(g->name, sizeof(g->name), "%s", gr->gr_name ? gr->gr_name : "");
-
+    struct group grp;
+    struct group *res = NULL;
+    size_t bufsz = user_gr_bufsize();
+    char *buf = (char *)malloc(bufsz);
+    if (!buf) return -1;
+    int rc;
+    for (;;) {
+        rc = getgrgid_r((gid_t)gid, &grp, buf, bufsz, &res);
+        if (rc != ERANGE) break;
+        if (bufsz > SIZE_MAX / 2) { free(buf); return -1; }
+        bufsz *= 2;
+        char *grown = (char *)realloc(buf, bufsz);
+        if (!grown) { free(buf); return -1; }
+        buf = grown;
+    }
+    if (rc != 0 || !res) { free(buf); return -1; }
+    user_fill_group(res, g);
+    free(buf);
     return 0;
 }
 
@@ -190,8 +264,11 @@ const char *neverc_user_home_dir(void) {
     static char buf[1024];
     const char *h = getenv("HOME");
     if (h) { snprintf(buf, sizeof(buf), "%s", h); return buf; }
-    struct passwd *pw = getpwuid(getuid());
-    if (pw && pw->pw_dir) { snprintf(buf, sizeof(buf), "%s", pw->pw_dir); return buf; }
+    neverc_user_t u;
+    if (user_lookup_uid(getuid(), &u) == 0 && u.home_dir[0]) {
+        snprintf(buf, sizeof(buf), "%s", u.home_dir);
+        return buf;
+    }
     return "";
 }
 

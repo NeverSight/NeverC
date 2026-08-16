@@ -115,6 +115,16 @@ static void test_min_max_float64(void) {
     ASSERT_TRUE(neverc_cmp_isnan_float64(neverc_cmp_min_float64(NaN, 1.0)));
     ASSERT_TRUE(neverc_cmp_isnan_float64(neverc_cmp_min_float64(1.0, NaN)));
     ASSERT_TRUE(neverc_cmp_isnan_float64(neverc_cmp_max_float64(NaN, 1.0)));
+    /* Go min/max: prefer -0 for min and +0 for max when both are zero. */
+    double nzero = -0.0, pzero = 0.0;
+    double mn = neverc_cmp_min_float64(pzero, nzero);
+    double mx = neverc_cmp_max_float64(nzero, pzero);
+    ASSERT_TRUE(mn == 0.0 && 1.0 / mn < 0.0);
+    ASSERT_TRUE(mx == 0.0 && 1.0 / mx > 0.0);
+    float mnf = neverc_cmp_min_float32(0.0f, -0.0f);
+    float mxf = neverc_cmp_max_float32(-0.0f, 0.0f);
+    ASSERT_TRUE(mnf == 0.0f && 1.0f / mnf < 0.0f);
+    ASSERT_TRUE(mxf == 0.0f && 1.0f / mxf > 0.0f);
 }
 
 static void test_clamp(void) {

@@ -65,7 +65,8 @@ int neverc_slices_index(const void *slice, size_t len, const void *elem,
 }
 
 void neverc_slices_reverse(void *slice, size_t len, size_t elem_size) {
-    if (!slice || len <= 1 || elem_size == 0) return;
+    if (!slice || len <= 1 || elem_size == 0 || len > SIZE_MAX / elem_size)
+        return;
     char *p = (char *)slice;
     char stack_buf[256];
     char *tmp = elem_size <= sizeof(stack_buf) ? stack_buf : (char *)malloc(elem_size);
@@ -239,8 +240,8 @@ int neverc_slices_max_int(const int *slice, size_t len) {
 }
 
 int neverc_slices_is_sorted_ints(const int *slice, size_t len) {
-    if (!slice) return 0;
     if (len <= 1) return 1;
+    if (!slice) return 0;
     for (size_t i = 1; i < len; i++) {
         if (slice[i - 1] > slice[i]) return 0;
     }

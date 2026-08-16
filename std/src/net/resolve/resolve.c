@@ -68,7 +68,7 @@ int neverc_net_lookup_host(const char *host, neverc_net_addrs_t *out) {
 
 int neverc_net_lookup_ip(const char *network, const char *host,
                           neverc_net_addrs_t *out) {
-    if (!host || !out) return -1;
+    if (!host || !host[0] || !out) return -1;
     ensure_wsa_init();
     memset(out, 0, sizeof(*out));
 
@@ -92,13 +92,16 @@ int neverc_net_lookup_ip(const char *network, const char *host,
         char buf[64] = {0};
         if (rp->ai_family == AF_INET) {
             struct sockaddr_in *in = (struct sockaddr_in *)rp->ai_addr;
-            inet_ntop(AF_INET, &in->sin_addr, buf, sizeof(buf));
+            if (!inet_ntop(AF_INET, &in->sin_addr, buf, sizeof(buf)))
+                continue;
         } else if (rp->ai_family == AF_INET6) {
             struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)rp->ai_addr;
-            inet_ntop(AF_INET6, &in6->sin6_addr, buf, sizeof(buf));
+            if (!inet_ntop(AF_INET6, &in6->sin6_addr, buf, sizeof(buf)))
+                continue;
         } else {
             continue;
         }
+        if (!buf[0]) continue;
 
         /* deduplicate */
         int dup = 0;
@@ -181,7 +184,7 @@ int neverc_net_lookup_port(const char *network, const char *service) {
  * ====================================================================== */
 
 int neverc_net_lookup_addr(const char *addr, neverc_net_addrs_t *out) {
-    if (!addr || !out) return -1;
+    if (!addr || !addr[0] || !out) return -1;
     ensure_wsa_init();
     memset(out, 0, sizeof(*out));
 
@@ -211,7 +214,8 @@ int neverc_net_lookup_addr(const char *addr, neverc_net_addrs_t *out) {
                           host, sizeof(host), NULL, 0, NI_NAMEREQD);
     if (rc != 0) return -1;
 
-    copy_cstr_term(out->addrs[0], 64, host);
+    if (strlen(host) >= sizeof(out->addrs[0])) return -1;
+    copy_cstr_term(out->addrs[0], sizeof(out->addrs[0]), host);
     out->count = 1;
     return 0;
 }
@@ -221,7 +225,7 @@ int neverc_net_lookup_addr(const char *addr, neverc_net_addrs_t *out) {
  * ====================================================================== */
 
 int neverc_net_lookup_cname(const char *host, char *buf, size_t buflen) {
-    if (!host || !buf || buflen == 0) return -1;
+    if (!host || !host[0] || !buf || buflen == 0) return -1;
 
 #ifdef _WIN32
     DNS_RECORD *rec = NULL;
@@ -268,7 +272,7 @@ int neverc_net_lookup_cname(const char *host, char *buf, size_t buflen) {
  * ====================================================================== */
 
 int neverc_net_lookup_mx(const char *name, neverc_net_mx_list_t *out) {
-    if (!name || !out) return -1;
+    if (!name || !name[0] || !out) return -1;
     memset(out, 0, sizeof(*out));
 
 #ifdef _WIN32
@@ -322,7 +326,7 @@ int neverc_net_lookup_mx(const char *name, neverc_net_mx_list_t *out) {
  * ====================================================================== */
 
 int neverc_net_lookup_txt(const char *name, neverc_net_txt_list_t *out) {
-    if (!name || !out) return -1;
+    if (!name || !name[0] || !out) return -1;
     memset(out, 0, sizeof(*out));
 
 #ifdef _WIN32
@@ -395,7 +399,7 @@ int neverc_net_lookup_txt(const char *name, neverc_net_txt_list_t *out) {
  * ====================================================================== */
 
 int neverc_net_lookup_ns(const char *name, neverc_net_ns_list_t *out) {
-    if (!name || !out) return -1;
+    if (!name || !name[0] || !out) return -1;
     memset(out, 0, sizeof(*out));
 
 #ifdef _WIN32
@@ -444,7 +448,7 @@ int neverc_net_lookup_ns(const char *name, neverc_net_ns_list_t *out) {
 
 int neverc_net_lookup_srv(const char *service, const char *proto,
                             const char *name, neverc_net_srv_list_t *out) {
-    if (!name || !out) return -1;
+    if (!name || !name[0] || !out) return -1;
     memset(out, 0, sizeof(*out));
 
     char qname[512];
@@ -713,8 +717,9 @@ int neverc_net_pipe_read(neverc_net_pipe_t *p, void *buf, size_t len) {
 }
 
 int neverc_net_pipe_write(neverc_net_pipe_t *p, const void *data, size_t len) {
-    if (!p || (!data && len > 0) || len == 0 || len > (size_t)INT_MAX)
+    if (!p || (!data && len > 0) || len > (size_t)INT_MAX)
         return -1;
+    if (len == 0) return 0;
 
     pipe_ring_t *r = p->write_ring;
     size_t written = 0;

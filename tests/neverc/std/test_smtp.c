@@ -357,6 +357,17 @@ static void test_smtp_reject_injection(void) {
                    neverc_smtp_write_data(idle, "x", 1) == -1);
         check_true("data_close before DATA",
                    neverc_smtp_data_close(idle) == -1);
+        check_true("EHLO for null write",
+                   neverc_smtp_hello(idle, "test.client") == 0);
+        check_true("MAIL for null write",
+                   neverc_smtp_mail(idle, "sender@example.com") == 0);
+        check_true("RCPT for null write",
+                   neverc_smtp_rcpt(idle, "recipient@example.com") == 0);
+        check_true("DATA for null write", neverc_smtp_data(idle) == 0);
+        check_true("write_data null nonzero",
+                   neverc_smtp_write_data(idle, NULL, 4) == -1);
+        check_true("data_close after null write",
+                   neverc_smtp_data_close(idle) == 0);
         neverc_smtp_close(idle);
     }
 }

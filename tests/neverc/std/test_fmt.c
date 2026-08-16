@@ -68,6 +68,30 @@ static void test_integers(void) {
 
     r = neverc_fmt_sprintf("%lld", (long long)1234567890123LL);
     check_str("long long", r, "1234567890123"); free(r);
+
+    r = neverc_fmt_sprintf("%.5d", 42);
+    check_str("int precision", r, "00042"); free(r);
+
+    r = neverc_fmt_sprintf("%.0d", 0);
+    check_str("zero prec zero", r, ""); free(r);
+
+    r = neverc_fmt_sprintf("%+.0d", 0);
+    check_str("plus zero prec zero", r, "+"); free(r);
+
+    r = neverc_fmt_sprintf("%8.5d", 42);
+    check_str("width and precision", r, "   00042"); free(r);
+
+    r = neverc_fmt_sprintf("%08.5d", 42);
+    check_str("zero flag ignored with prec", r, "   00042"); free(r);
+
+    r = neverc_fmt_sprintf("%.5x", 42);
+    check_str("hex precision", r, "0002a"); free(r);
+
+    r = neverc_fmt_sprintf("%#.0x", 0);
+    check_str("alt hex zero prec", r, "0x"); free(r);
+
+    r = neverc_fmt_sprintf("%#.0o", 0);
+    check_str("alt octal zero prec", r, "0"); free(r);
 }
 
 static void test_strings(void) {
@@ -91,6 +115,18 @@ static void test_strings(void) {
 
     r = neverc_fmt_sprintf("%c", 'A');
     check_str("char", r, "A"); free(r);
+
+    r = neverc_fmt_sprintf("%c", 0x4e16);
+    check_str("rune utf-8", r, "\xe4\xb8\x96"); free(r);
+
+    r = neverc_fmt_sprintf("%5c", 0x4e16);
+    check_str("rune width", r, "    \xe4\xb8\x96"); free(r);
+
+    r = neverc_fmt_sprintf("%.1s", "\xe4\xb8\x96\xe7\x95\x8c");
+    check_str("string prec runes", r, "\xe4\xb8\x96"); free(r);
+
+    r = neverc_fmt_sprintf("%5s", "\xe4\xb8\x96");
+    check_str("string width runes", r, "    \xe4\xb8\x96"); free(r);
 }
 
 static void test_floats(void) {
@@ -114,6 +150,12 @@ static void test_floats(void) {
 
     r = neverc_fmt_sprintf("%f", 0.0);
     check_str("zero", r, "0.000000"); free(r);
+
+    r = neverc_fmt_sprintf("%g", 1.23456789);
+    check_str("g default prec", r, "1.23457"); free(r);
+
+    r = neverc_fmt_sprintf("%g", 1.0);
+    check_str("g one", r, "1"); free(r);
 }
 
 static void test_width_padding(void) {

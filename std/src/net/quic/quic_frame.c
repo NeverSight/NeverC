@@ -137,15 +137,20 @@ int neverc_quic_parse_stream_frame(const uint8_t *buf, size_t len,
                                     quic_frame_stream_t *out, size_t *consumed) {
     if (len < 1) return -1;
 
-    uint8_t type_byte = buf[0];
-    if ((type_byte & 0xF8) != QUIC_FRAME_STREAM_BASE) return -1;
+    /* RFC 9000 §12.4 / §16: STREAM type 0x08..0x0f is a varint. A
+     * non-minimal encoding (e.g. 0x40 0x0a) must still recover OFF/LEN/FIN
+     * from the decoded type, not the first wire byte. */
+    const uint8_t *p = buf;
+    size_t rem = len;
+    uint64_t ftype;
+    if (consume_varint(&p, &rem, &ftype) != 0) return -1;
+    if (ftype < QUIC_FRAME_STREAM_BASE ||
+        ftype > QUIC_FRAME_STREAM_BASE + 7U)
+        return -1;
 
-    int has_off = (type_byte & QUIC_STREAM_FLAG_OFF) != 0;
-    int has_len = (type_byte & QUIC_STREAM_FLAG_LEN) != 0;
-    out->fin = (type_byte & QUIC_STREAM_FLAG_FIN) != 0;
-
-    const uint8_t *p = buf + 1;
-    size_t rem = len - 1;
+    int has_off = (ftype & QUIC_STREAM_FLAG_OFF) != 0;
+    int has_len = (ftype & QUIC_STREAM_FLAG_LEN) != 0;
+    out->fin = (ftype & QUIC_STREAM_FLAG_FIN) != 0;
 
     /* Stream ID */
     if (consume_varint(&p, &rem, &out->stream_id) != 0) return -1;

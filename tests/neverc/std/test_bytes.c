@@ -1,4 +1,5 @@
 #include "neverc/std/bytes.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +45,10 @@ static void test_compare(void) {
     check_bool("compare lt", neverc_bytes_compare(B("abc"), B("abd")) < 0, 1);
     check_bool("compare gt", neverc_bytes_compare(B("abd"), B("abc")) > 0, 1);
     check_bool("compare shorter", neverc_bytes_compare(B("ab"), B("abc")) < 0, 1);
+    check_bool("compare invalid vs nonempty",
+               neverc_bytes_compare(NULL, 5, B("hello")) < 0, 1);
+    check_bool("compare nonempty vs invalid",
+               neverc_bytes_compare(B("hello"), NULL, 5) > 0, 1);
 
     check_bool("equalfold yes", neverc_bytes_equal_fold(B("Hello"), B("hELLO")), 1);
     check_bool("equalfold no", neverc_bytes_equal_fold(B("Hello"), B("world")), 0);
@@ -358,6 +363,10 @@ static void test_join(void) {
     check_bytes("join single", j1, outlen, "foo");
     free(j1);
 
+    uint8_t *j0 = neverc_bytes_join(NULL, NULL, 0, NULL, 5, &outlen);
+    check_size("join empty ignores invalid sep", outlen, 0);
+    free(j0);
+
     const uint8_t one = 1;
     const uint8_t *overflow_slices[] = {&one, &one};
     size_t overflow_lens[] = {SIZE_MAX, 1};
@@ -400,6 +409,15 @@ static void test_cut(void) {
     check_bool("cut empty nil span", found, 1);
     check_bool("cut empty nil before", before == NULL && blen == 0, 1);
     check_bool("cut empty nil after", after == NULL && alen == 0, 1);
+
+    before = (const uint8_t *)(uintptr_t)0x1;
+    after = (const uint8_t *)(uintptr_t)0x1;
+    blen = 99;
+    alen = 99;
+    found = neverc_bytes_cut(NULL, 5, B("x"), &before, &blen, &after, &alen);
+    check_bool("cut invalid span not found", found, 0);
+    check_bool("cut invalid span writes outputs",
+               before == NULL && blen == 0 && after == NULL && alen == 0, 1);
 }
 
 static void test_clone(void) {

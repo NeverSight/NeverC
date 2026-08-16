@@ -1,4 +1,5 @@
 #include "neverc/std/cstring.h"
+#include "neverc/std/bytes.h"
 #include "../bytes/strsearch.h"
 #include <stdlib.h>
 #include <string.h>
@@ -43,29 +44,64 @@ static char to_upper_ch(char c) {
     return (c >= 'a' && c <= 'z') ? (char)(c - ('a' - 'A')) : c;
 }
 
-static int is_space(char c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
-           c == '\f' || c == '\v';
-}
-
-static void build_ascii_set(const char *chars, uint32_t set[8]) {
-    memset(set, 0, 8 * sizeof(uint32_t));
-    for (const char *c = chars; *c; c++)
-        set[((unsigned char)*c) >> 5] |= 1u << (((unsigned char)*c) & 31);
-}
-
-#define ASCII_SET_HAS(set, c) ((set)[((unsigned char)(c)) >> 5] & (1u << (((unsigned char)(c)) & 31)))
-
-static int in_cutset(char c, const uint32_t set[8]) {
-    return ASCII_SET_HAS(set, c) != 0;
-}
-
 static int is_separator(char c) {
     if (c >= '0' && c <= '9') return 0;
     if (c >= 'a' && c <= 'z') return 0;
     if (c >= 'A' && c <= 'Z') return 0;
     if (c == '_') return 0;
     return 1;
+}
+
+static size_t utf8_decode(const uint8_t *p, size_t remaining, uint32_t *r) {
+    if (remaining == 0) { *r = 0; return 0; }
+    uint8_t b = p[0];
+    if (b < 0x80) { *r = b; return 1; }
+    if ((b & 0xE0) == 0xC0 && remaining >= 2 && (p[1] & 0xC0) == 0x80) {
+        *r = ((uint32_t)(b & 0x1F) << 6) | (p[1] & 0x3F);
+        return (*r >= 0x80) ? 2 : 0;
+    }
+    if ((b & 0xF0) == 0xE0 && remaining >= 3 && (p[1] & 0xC0) == 0x80 &&
+        (p[2] & 0xC0) == 0x80) {
+        *r = ((uint32_t)(b & 0x0F) << 12) | ((uint32_t)(p[1] & 0x3F) << 6) |
+             (p[2] & 0x3F);
+        if (*r >= 0x800 && (*r < 0xD800 || *r > 0xDFFF)) return 3;
+        return 0;
+    }
+    if ((b & 0xF8) == 0xF0 && remaining >= 4 && (p[1] & 0xC0) == 0x80 &&
+        (p[2] & 0xC0) == 0x80 && (p[3] & 0xC0) == 0x80) {
+        *r = ((uint32_t)(b & 0x07) << 18) | ((uint32_t)(p[1] & 0x3F) << 12) |
+             ((uint32_t)(p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+        if (*r >= 0x10000 && *r <= 0x10FFFF) return 4;
+        return 0;
+    }
+    *r = 0xFFFD;
+    return 0;
+}
+
+static size_t utf8_rune_width(const char *s, size_t remaining) {
+    uint32_t rune;
+    size_t width = utf8_decode((const uint8_t *)s, remaining, &rune);
+    return width == 0 ? 1 : width;
+}
+
+static size_t utf8_rune_count(const char *s, size_t slen) {
+    size_t count = 0, pos = 0;
+    while (pos < slen) {
+        pos += utf8_rune_width(s + pos, slen - pos);
+        if (count != SIZE_MAX) count++;
+    }
+    return count;
+}
+
+static char *cstr_from_bytes(uint8_t *r, size_t outlen) {
+    if (!r) return NULL;
+    char *out = nc_strdup((const char *)r, outlen);
+    free(r);
+    return out;
+}
+
+static int index_to_int(size_t r) {
+    return r == (size_t)-1 ? -1 : r > INT_MAX ? INT_MAX : (int)r;
 }
 
 static size_t find_substring(const char *s, size_t slen,
@@ -157,24 +193,13 @@ int neverc_cstring_last_index(const char *s, const char *substr) {
 }
 
 int neverc_cstring_index_any(const char *s, const char *chars) {
-    if (!chars[0]) return -1;
-    uint32_t set[8];
-    build_ascii_set(chars, set);
-    for (size_t i = 0; s[i]; i++)
-        if (ASCII_SET_HAS(set, s[i]))
-            return i > INT_MAX ? INT_MAX : (int)i;
-    return -1;
+    return index_to_int(neverc_bytes_index_any(
+        (const uint8_t *)s, strlen(s), chars));
 }
 
 int neverc_cstring_last_index_any(const char *s, const char *chars) {
-    if (!chars[0]) return -1;
-    uint32_t set[8];
-    build_ascii_set(chars, set);
-    size_t len = strlen(s);
-    for (size_t i = len; i > 0; i--)
-        if (ASCII_SET_HAS(set, s[i - 1]))
-            return i - 1 > INT_MAX ? INT_MAX : (int)(i - 1);
-    return -1;
+    return index_to_int(neverc_bytes_last_index_any(
+        (const uint8_t *)s, strlen(s), chars));
 }
 
 int neverc_cstring_contains(const char *s, const char *substr) {
@@ -192,8 +217,8 @@ int neverc_cstring_contains_char(const char *s, char c) {
 int neverc_cstring_count(const char *s, const char *substr) {
     size_t sublen = strlen(substr);
     if (sublen == 0) {
-        size_t len = strlen(s);
-        return len >= INT_MAX ? INT_MAX : (int)len + 1;
+        size_t runes = utf8_rune_count(s, strlen(s));
+        return runes >= INT_MAX ? INT_MAX : (int)runes + 1;
     }
     size_t slen = strlen(s);
     if (sublen > slen) return 0;
@@ -311,7 +336,7 @@ char *neverc_cstring_replace(const char *s, const char *old_s,
 
     if (oldlen == 0) {
         size_t max_reps;
-        if (!nc_size_add(slen, 1, &max_reps)) return NULL;
+        if (!nc_size_add(utf8_rune_count(s, slen), 1, &max_reps)) return NULL;
         size_t reps = n < 0 || (size_t)n > max_reps ? max_reps : (size_t)n;
         size_t inserted;
         size_t total;
@@ -322,13 +347,17 @@ char *neverc_cstring_replace(const char *s, const char *old_s,
         if (!r) return NULL;
         size_t w = 0;
         size_t done = 0;
-        for (size_t i = 0; i < slen; i++) {
+        size_t i = 0;
+        while (i < slen) {
             if (done < reps) {
                 memcpy(r + w, new_s, newlen);
                 w += newlen;
                 done++;
             }
-            r[w++] = s[i];
+            size_t width = utf8_rune_width(s + i, slen - i);
+            memcpy(r + w, s + i, width);
+            w += width;
+            i += width;
         }
         if (done < reps) {
             memcpy(r + w, new_s, newlen);
@@ -443,34 +472,27 @@ char *neverc_cstring_join(const char **strs, size_t count, const char *sep) {
  * ====================================================================== */
 
 char *neverc_cstring_trim_left(const char *s, const char *cutset) {
-    uint32_t set[8];
-    build_ascii_set(cutset, set);
-    while (*s && in_cutset(*s, set)) s++;
-    return nc_strdup(s, strlen(s));
+    size_t outlen = 0;
+    return cstr_from_bytes(neverc_bytes_trim_left(
+        (const uint8_t *)s, strlen(s), cutset, &outlen), outlen);
 }
 
 char *neverc_cstring_trim_right(const char *s, const char *cutset) {
-    uint32_t set[8];
-    build_ascii_set(cutset, set);
-    size_t len = strlen(s);
-    while (len > 0 && in_cutset(s[len - 1], set)) len--;
-    return nc_strdup(s, len);
+    size_t outlen = 0;
+    return cstr_from_bytes(neverc_bytes_trim_right(
+        (const uint8_t *)s, strlen(s), cutset, &outlen), outlen);
 }
 
 char *neverc_cstring_trim(const char *s, const char *cutset) {
-    uint32_t set[8];
-    build_ascii_set(cutset, set);
-    while (*s && in_cutset(*s, set)) s++;
-    size_t len = strlen(s);
-    while (len > 0 && in_cutset(s[len - 1], set)) len--;
-    return nc_strdup(s, len);
+    size_t outlen = 0;
+    return cstr_from_bytes(neverc_bytes_trim(
+        (const uint8_t *)s, strlen(s), cutset, &outlen), outlen);
 }
 
 char *neverc_cstring_trim_space(const char *s) {
-    while (*s && is_space(*s)) s++;
-    size_t len = strlen(s);
-    while (len > 0 && is_space(s[len - 1])) len--;
-    return nc_strdup(s, len);
+    size_t outlen = 0;
+    return cstr_from_bytes(neverc_bytes_trim_space(
+        (const uint8_t *)s, strlen(s), &outlen), outlen);
 }
 
 char *neverc_cstring_trim_prefix(const char *s, const char *prefix) {
@@ -514,20 +536,22 @@ static char **gen_split(const char *s, const char *sep,
     size_t seplen = strlen(sep);
 
     if (seplen == 0) {
-        size_t cnt = slen;
+        size_t cnt = utf8_rune_count(s, slen);
         if (n > 0 && cnt > (size_t)n) cnt = (size_t)n;
-        if (cnt == 0) cnt = 1;
+        if (cnt == 0) return NULL;
         char **arr = alloc_string_array(cnt);
         if (!arr) return NULL;
-        size_t made = 0;
+        size_t made = 0, pos = 0;
         for (; made + 1 < cnt; made++) {
-            arr[made] = nc_strdup(s + made, 1);
+            size_t width = utf8_rune_width(s + pos, slen - pos);
+            arr[made] = nc_strdup(s + pos, width);
             if (!arr[made]) {
                 free_string_array(arr, made);
                 return NULL;
             }
+            pos += width;
         }
-        arr[made] = nc_strdup(s + made, slen - made);
+        arr[made] = nc_strdup(s + pos, slen - pos);
         if (!arr[made]) {
             free_string_array(arr, made);
             return NULL;
@@ -612,38 +636,29 @@ char **neverc_cstring_fields(const char *s, size_t *count) {
     if (!count) return NULL;
     *count = 0;
     if (!s) return NULL;
-    /* Count fields first */
     size_t n = 0;
-    int in_field = 0;
-    for (const char *p = s; *p; p++) {
-        if (is_space(*p)) {
-            in_field = 0;
-        } else if (!in_field) {
-            in_field = 1;
-            if (n == SIZE_MAX) return NULL;
-            n++;
-        }
+    neverc_bytes_slice_t *parts = neverc_bytes_fields(
+        (const uint8_t *)s, strlen(s), &n);
+    if (!parts) return NULL;
+    if (n == 0) {
+        free(parts);
+        return NULL;
     }
-    if (n == 0) return NULL;
-
     char **arr = alloc_string_array(n);
-    if (!arr) return NULL;
-
-    size_t idx = 0;
-    const char *p = s;
-    while (*p) {
-        while (*p && is_space(*p)) p++;
-        if (!*p) break;
-        const char *start = p;
-        while (*p && !is_space(*p)) p++;
-        arr[idx] = nc_strdup(start, (size_t)(p - start));
-        if (!arr[idx]) {
-            free_string_array(arr, idx);
+    if (!arr) {
+        free(parts);
+        return NULL;
+    }
+    for (size_t i = 0; i < n; i++) {
+        arr[i] = nc_strdup((const char *)parts[i].data, parts[i].len);
+        if (!arr[i]) {
+            free_string_array(arr, i);
+            free(parts);
             return NULL;
         }
-        idx++;
     }
-    *count = idx;
+    free(parts);
+    *count = n;
     return arr;
 }
 

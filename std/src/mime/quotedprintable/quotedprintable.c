@@ -141,8 +141,13 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
          * an ordinary one-char literal. */
         int need_encode = 0;
         if (c == '\t' || c == ' ') {
-            /* Trailing whitespace before a line end must be encoded. */
+            /* Trailing whitespace before a line end must be encoded.
+             * Also encode WSP that would sit in the last column of a
+             * wrapped line: the next byte's soft break would otherwise
+             * leave ` \r\n`, which RFC 2045 decoders may strip. */
             if (i + 1 == src_len || src[i+1] == '\r' || src[i+1] == '\n')
+                need_encode = 1;
+            else if (wrap && line_len + 1 >= line_cap)
                 need_encode = 1;
         } else if (c == '\r' || c == '\n') {
             need_encode = 0; /* pass through line endings */
@@ -196,6 +201,11 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
                 }
                 size_t budget = line_cap - line_len;
                 size_t chunk = run < budget ? run : budget;
+                if (chunk > 0 && wrap && chunk == budget &&
+                    (src[i + chunk - 1] == ' ' || src[i + chunk - 1] == '\t'))
+                    chunk--;
+                if (chunk == 0)
+                    break;
                 if (di + chunk > out_cap) return -1;
                 if (chunk >= QP_BULK_MIN) {
                     memcpy(out + di, src + i, chunk);
@@ -223,5 +233,6 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
 }
 
 size_t neverc_qp_max_encoded_len(size_t src_len) {
-    return src_len * 3 + (src_len / 25) * 3 + 16;
+    if (src_len > (SIZE_MAX - 16U) / 4U) return SIZE_MAX;
+    return src_len * 3U + (src_len / 25U) * 3U + 16U;
 }

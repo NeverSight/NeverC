@@ -1,5 +1,6 @@
 #include "neverc/std/flag.h"
 #include "neverc/std/strconv.h"
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -124,21 +125,24 @@ static int set_entry_value(flag_entry_t *f, const char *value,
         *f->ptr.s = value;
         return 0;
     case FLAG_INT: {
-        int parsed;
-        if (neverc_strconv_atoi(value, &parsed) != NEVERC_STRCONV_OK) return -1;
-        *f->ptr.i = parsed;
+        long long parsed;
+        if (neverc_strconv_parse_int(value, 0, &parsed) != NEVERC_STRCONV_OK)
+            return -1;
+        if (parsed < (long long)INT_MIN || parsed > (long long)INT_MAX)
+            return -1;
+        *f->ptr.i = (int)parsed;
         return 0;
     }
     case FLAG_INT64: {
         long long parsed;
-        if (neverc_strconv_parse_int(value, 10, &parsed) != NEVERC_STRCONV_OK)
+        if (neverc_strconv_parse_int(value, 0, &parsed) != NEVERC_STRCONV_OK)
             return -1;
         *f->ptr.i64 = parsed;
         return 0;
     }
     case FLAG_UINT64: {
         unsigned long long parsed;
-        if (neverc_strconv_parse_uint(value, 10, &parsed) != NEVERC_STRCONV_OK)
+        if (neverc_strconv_parse_uint(value, 0, &parsed) != NEVERC_STRCONV_OK)
             return -1;
         *f->ptr.u64 = parsed;
         return 0;
@@ -164,13 +168,14 @@ int neverc_flag_parse(int argc, char **argv) {
     while (i < argc) {
         char *arg = argv[i];
         if (!arg) return -1;
-        if (arg[0] != '-') {
+        /* A lone "-" is a positional argument (stdin convention), matching Go. */
+        if (arg[0] != '-' || arg[1] == '\0') {
             remaining_args = argv + i;
             remaining_count = argc - i;
             return 0;
         }
 
-        if (arg[0] == '-' && arg[1] == '-' && arg[2] == '\0') {
+        if (arg[1] == '-' && arg[2] == '\0') {
             remaining_args = argv + i + 1;
             remaining_count = argc - i - 1;
             return 0;

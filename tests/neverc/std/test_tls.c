@@ -34,6 +34,7 @@ int neverc_tls_test_record_write_failure(void);
 int neverc_tls_test_reject_ccs_after_handshake(void);
 int neverc_tls_test_discard_ccs_before_handshake(void);
 int neverc_tls_test_encrypted_extensions_forbidden(void);
+int neverc_tls_test_certificate_request_schemes(void);
 int neverc_tls_test_did_resume(neverc_tls_conn_t *conn);
 int neverc_tls_test_corrupt_client_session(
     neverc_tls_config_t *cfg);
@@ -113,6 +114,8 @@ static void test_config(void) {
               neverc_tls_test_discard_ccs_before_handshake(), 0);
     check_int("reject_forbidden_encrypted_extensions",
               neverc_tls_test_encrypted_extensions_forbidden(), 0);
+    check_int("certificate_request_schemes",
+              neverc_tls_test_certificate_request_schemes(), 0);
     check_int("reject_oversized_test_fragment",
               neverc_tls_test_config_set_handshake_fragment_size(
                   cfg, 16385) != 0,

@@ -105,6 +105,38 @@ static void test_remaining_args(void) {
     check_str("arg1", neverc_flag_arg(1), "file2.txt");
 }
 
+static void test_lone_dash(void) {
+    printf("[lone dash]\n");
+    neverc_flag_reset();
+
+    int n = 0;
+    neverc_flag_int("n", 0, "count", &n);
+
+    char *argv[] = {"prog", "-", "file.txt"};
+    check_int("lone dash parse ok", neverc_flag_parse(3, argv), 0);
+    check_int("lone dash is positional", neverc_flag_narg(), 2);
+    check_str("lone dash arg0", neverc_flag_arg(0), "-");
+    check_str("lone dash arg1", neverc_flag_arg(1), "file.txt");
+}
+
+static void test_base_prefixes(void) {
+    printf("[base prefixes]\n");
+    neverc_flag_reset();
+
+    int port = 0;
+    long long big = 0;
+    unsigned long long ubig = 0;
+    neverc_flag_int("port", 0, "port", &port);
+    neverc_flag_int64("big", 0, "big", &big);
+    neverc_flag_uint64("ubig", 0, "ubig", &ubig);
+
+    char *argv[] = {"prog", "-port", "0x10", "-big", "0b1000", "-ubig", "0o17"};
+    check_int("base prefix parse ok", neverc_flag_parse(7, argv), 0);
+    check_int("hex int", port, 16);
+    check_int("bin int64", (int)big, 8);
+    check_int("oct uint64", (int)ubig, 15);
+}
+
 static void test_double_dash(void) {
     printf("[double dash]\n");
     neverc_flag_reset();
@@ -339,6 +371,8 @@ int main(void) {
     test_defaults();
     test_equals_syntax();
     test_remaining_args();
+    test_lone_dash();
+    test_base_prefixes();
     test_double_dash();
     test_value_cannot_be_terminator();
     test_int64_uint64();

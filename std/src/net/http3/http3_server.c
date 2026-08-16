@@ -63,6 +63,12 @@ extern int neverc_h3_write_goaway_frame(uint8_t *buffer, size_t capacity,
 #define H3_SHUTDOWN_ABSOLUTE_MAX_MS 30000U
 #define H3_QPACK_DECOMPRESSION_FAILED 0x0200U
 
+/* RFC 9114 §7.2 / §11.2.1: HTTP/2 frame types that were not redefined
+ * for HTTP/3 MUST be treated as H3_FRAME_UNEXPECTED. */
+static int h3_http2_reserved_frame(uint64_t type) {
+    return type == 0x02 || type == 0x06 || type == 0x08 || type == 0x09;
+}
+
 typedef struct h3_conn h3_conn_t;
 
 typedef struct {
@@ -523,6 +529,8 @@ static int h3_read_request(h3_conn_t *connection,
         if (status < 0) return -1;
         uint64_t length;
         if (h3_read_varint(stream, &length) != 1) return -1;
+        if (h3_http2_reserved_frame(type))
+            return -1;
         if (type == NC_H3_FRAME_HEADERS) {
             uint8_t *payload = NULL;
             if (h3_read_payload(stream, length, H3_MAX_HEADER_SECTION,
@@ -535,6 +543,12 @@ static int h3_read_request(h3_conn_t *connection,
                 if (parsed != 0) return -1;
                 initial_headers = 1;
             } else {
+                /* RFC 9114 §4.1: a second HEADERS is trailers; any further
+                 * HEADERS after that is a malformed request. */
+                if (trailers) {
+                    free(payload);
+                    return -1;
+                }
                 neverc_qpack_header_t decoded[64];
                 int count = 0;
                 nc_mutex_lock(&connection->lock);
@@ -574,7 +588,7 @@ static int h3_read_request(h3_conn_t *connection,
                    type == NC_H3_FRAME_CANCEL_PUSH ||
                    type == NC_H3_FRAME_PUSH_PROMISE) {
             return -1;
-        } else if (length > H3_MAX_HEADER_SECTION ||
+        } else if (trailers || length > H3_MAX_HEADER_SECTION ||
                    h3_skip_exact(stream, length) != 0) {
             return -1;
         }
@@ -941,7 +955,8 @@ static int h3_parse_control_buffer(h3_conn_t *connection) {
             h3_consume_control_buffer(connection, position + (size_t)length);
         } else if (type == NC_H3_FRAME_DATA ||
                    type == NC_H3_FRAME_HEADERS ||
-                   type == NC_H3_FRAME_PUSH_PROMISE) {
+                   type == NC_H3_FRAME_PUSH_PROMISE ||
+                   h3_http2_reserved_frame(type)) {
             goto invalid;
         } else {
             h3_consume_control_buffer(connection, position);
@@ -1591,11 +1606,17 @@ static int h3_client_read_response(h3_conn_t *connection,
         if (status < 0) return -1;
         uint64_t length;
         if (h3_read_varint(stream, &length) != 1) return -1;
+        if (h3_http2_reserved_frame(type))
+            return -1;
         if (type == NC_H3_FRAME_HEADERS) {
             uint8_t *payload = NULL;
             if (h3_read_payload(stream, length, H3_MAX_HEADER_SECTION,
                                 &payload) != 0)
                 return -1;
+            if (trailers) {
+                free(payload);
+                return -1;
+            }
             int parsed = h3_client_parse_header_block(
                 connection, payload, (size_t)length, final_headers,
                 response, &expected_content_length,
@@ -1634,7 +1655,7 @@ static int h3_client_read_response(h3_conn_t *connection,
                    type == NC_H3_FRAME_CANCEL_PUSH ||
                    type == NC_H3_FRAME_PUSH_PROMISE) {
             return -1;
-        } else if (length > H3_MAX_HEADER_SECTION ||
+        } else if (trailers || length > H3_MAX_HEADER_SECTION ||
                    h3_skip_exact(stream, length) != 0) {
             return -1;
         }

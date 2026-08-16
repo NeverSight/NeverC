@@ -39,6 +39,13 @@ static void test_parse_ipv4(void) {
 
     ASSERT_EQ(neverc_netip_parse_addr("256.0.0.0", &addr), -1);
     ASSERT_EQ(neverc_netip_parse_addr("1.2.3", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr(NULL, &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("192.168.1.1", NULL), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("127.0.0.01", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("01.2.3.4", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("192.168.1.1.", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("::ffff:192.168.001.1", &addr), -1);
 }
 
 static void test_parse_ipv6(void) {
@@ -221,6 +228,10 @@ static void test_addrport(void) {
     ASSERT_EQ(neverc_netip_parse_addrport("192.168.1.1:65536", &ap), -1);
     ASSERT_EQ(neverc_netip_parse_addrport("[::1]:65536", &ap), -1);
     ASSERT_EQ(neverc_netip_parse_addrport("192.168.1.1:", &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport("", &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport(NULL, &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport("[::1]", &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport("192.168.1.1", &ap), -1);
 }
 
 static void test_wellknown(void) {

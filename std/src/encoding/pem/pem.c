@@ -5,8 +5,10 @@
 #include <string.h>
 
 /*
- * PEM encoding/decoding — simplified C port of Go encoding/pem.
- * Uses neverc_base64_encode/decode for the payload.
+ * PEM encoding/decoding — C port of Go encoding/pem.
+ * Encode wraps neverc_base64_encode. Decode matches Go's armor rules:
+ * find the next END line, take the last line-start BEGIN before it, and
+ * skip a candidate whose type/trailer/headers/body are malformed.
  */
 
 #define PEM_LINE_LEN 64
@@ -112,9 +114,16 @@ static int pem_is_space(unsigned char c) {
  * RFC 1421 encapsulated headers are `Name: value` lines, terminated by a
  * blank line or by the first line that is not a header (the base64 body).
  * Standard base64 has no ':', so a body line is never mistaken for a header.
+ *
+ * Go rejects a block that has headers and then END with no blank line and
+ * no body (endIndex < 0 after consuming the header lines). *bare_headers
+ * reports that case so the caller can skip the candidate.
  */
-static const char *pem_skip_headers(const char *start, const char *end) {
+static const char *pem_skip_headers(const char *start, const char *end,
+                                    int *bare_headers) {
+    int had_header = 0;
     const char *p = start;
+    *bare_headers = 0;
     while (p < end) {
         const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
         const char *eol = nl ? nl : end;
@@ -135,9 +144,119 @@ static const char *pem_skip_headers(const char *start, const char *end) {
         }
         if (!has_colon)
             return p;
+        had_header = 1;
         p = nl ? nl + 1 : end;
     }
+    if (had_header)
+        *bare_headers = 1;
     return p;
+}
+
+/* Go searches for "\n-----END " and returns the '-----END ' that follows. */
+static const char *pem_find_end_prefix(const char *search, const char *end) {
+    const char *p = search;
+    while (p < end) {
+        const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
+        if (!nl)
+            return NULL;
+        const char *cand = nl + 1;
+        if ((size_t)(end - cand) >= 9 && memcmp(cand, END_PREFIX, 9) == 0)
+            return cand;
+        p = cand;
+    }
+    return NULL;
+}
+
+static const char *pem_find_last_begin(const char *search, const char *end_line) {
+    const char *found = NULL;
+    const char *p = search;
+    while ((p = pem_find_bounded(p, end_line, BEGIN_PREFIX, 11)) != NULL) {
+        if (p == search || p[-1] == '\n')
+            found = p;
+        ++p;
+    }
+    return found;
+}
+
+/*
+ * Decode the PEM base64 body. Returns 1 on success, 0 if the body is
+ * corrupt (caller skips this block), and -1 if the block is valid but
+ * out_cap is too small.
+ */
+static int pem_decode_body(uint8_t *out_buf, size_t out_cap,
+                           const char *body_start, const char *end,
+                           size_t *decoded_len) {
+    int quartet[4];
+    size_t quartet_len = 0;
+    size_t n = 0;
+    int saw_padding = 0;
+
+    for (const char *p = body_start; p < end; ++p) {
+        unsigned char c = (unsigned char)*p;
+        if (pem_is_space(c))
+            continue;
+        if (saw_padding)
+            return 0;
+
+        if (c == '=') {
+            quartet[quartet_len++] = -1;
+        } else {
+            int value = pem_base64_value(c);
+            if (value < 0)
+                return 0;
+            quartet[quartet_len++] = value;
+        }
+        if (quartet_len != 4)
+            continue;
+
+        if (quartet[0] < 0 || quartet[1] < 0 ||
+            (quartet[2] < 0 && quartet[3] >= 0))
+            return 0;
+        size_t emit = quartet[2] < 0 ? 1 :
+                      quartet[3] < 0 ? 2 : 3;
+        if ((emit == 1 && (quartet[1] & 0x0f) != 0) ||
+            (emit == 2 && (quartet[2] & 0x03) != 0))
+            return 0;
+        if (emit > out_cap - n)
+            return -1;
+
+        out_buf[n++] =
+            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
+        if (emit >= 2) {
+            out_buf[n++] =
+                (uint8_t)((quartet[1] << 4) | (quartet[2] >> 2));
+        }
+        if (emit == 3) {
+            out_buf[n++] =
+                (uint8_t)((quartet[2] << 6) | quartet[3]);
+        } else {
+            saw_padding = 1;
+        }
+        quartet_len = 0;
+    }
+    if (quartet_len == 2) {
+        if (quartet[0] < 0 || quartet[1] < 0 || (quartet[1] & 0x0f) != 0)
+            return 0;
+        if (1 > out_cap - n)
+            return -1;
+        out_buf[n++] =
+            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
+    } else if (quartet_len == 3) {
+        if (quartet[0] < 0 || quartet[1] < 0 || quartet[2] < 0 ||
+            (quartet[2] & 0x03) != 0)
+            return 0;
+        if (2 > out_cap - n)
+            return -1;
+        out_buf[n++] =
+            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
+        out_buf[n++] =
+            (uint8_t)((quartet[1] << 4) | (quartet[2] >> 2));
+    } else if (quartet_len != 0) {
+        return 0;
+    }
+
+    *decoded_len = n;
+    return 1;
 }
 
 int neverc_pem_decode(const char *pem_data, size_t pem_len,
@@ -153,141 +272,96 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
         return -1;
 
     const char *pem_end = pem_data + pem_len;
-    const char *begin = pem_data;
-    while ((begin = pem_find_bounded(
-                begin, pem_end, BEGIN_PREFIX, 11)) != NULL) {
-        if (begin == pem_data || begin[-1] == '\n')
-            break;
-        ++begin;
-    }
-    if (!begin)
-        return -1;
+    const char *search = pem_data;
+    size_t dash_len = 5;
 
-    const char *line_end =
-        (const char *)memchr(begin, '\n', (size_t)(pem_end - begin));
-    if (!line_end)
-        return -1;
-    const char *header_end = line_end;
-    if (header_end > begin && header_end[-1] == '\r')
-        --header_end;
-    while (header_end > begin &&
-           (header_end[-1] == ' ' || header_end[-1] == '\t'))
-        --header_end;
-
-    const char *type_start = begin + 11;
-    size_t dash_len = strlen(DASHES);
-    if ((size_t)(header_end - type_start) <= dash_len ||
-        memcmp(header_end - dash_len, DASHES, dash_len) != 0)
-        return -1;
-    const char *type_end = header_end - dash_len;
-    size_t type_len = (size_t)(type_end - type_start);
-    if (type_len == 0 || type_len >= type_cap)
-        return -1;
-    memcpy(type_buf, type_start, type_len);
-    type_buf[type_len] = '\0';
-
-    char end_marker[256];
-    size_t end_prefix_len = strlen(END_PREFIX);
-    size_t end_marker_len = end_prefix_len + type_len + dash_len;
-    if (end_marker_len >= sizeof(end_marker))
-        return -1;
-    memcpy(end_marker, END_PREFIX, end_prefix_len);
-    memcpy(end_marker + end_prefix_len, type_start, type_len);
-    memcpy(end_marker + end_prefix_len + type_len, DASHES, dash_len);
-
-    const char *body_start = line_end + 1;
-    const char *end = body_start;
     for (;;) {
-        end = pem_find_bounded(
-            end, pem_end, end_marker, end_marker_len);
-        if (!end)
+        const char *end_line = pem_find_end_prefix(search, pem_end);
+        if (!end_line)
             return -1;
-        if (end == body_start || end[-1] == '\n')
-            break;
-        ++end;
-    }
 
-    const char *after_end = end + end_marker_len;
-    while (after_end < pem_end &&
-           (*after_end == ' ' || *after_end == '\t'))
-        ++after_end;
-    if (after_end < pem_end && *after_end == '\r')
-        ++after_end;
-    if (after_end < pem_end) {
-        if (*after_end != '\n')
-            return -1;
-        ++after_end;
-    }
-
-    body_start = pem_skip_headers(body_start, end);
-
-    int quartet[4];
-    size_t quartet_len = 0;
-    size_t decoded_len = 0;
-    int saw_padding = 0;
-    for (const char *p = body_start; p < end; ++p) {
-        unsigned char c = (unsigned char)*p;
-        if (pem_is_space(c))
+        const char *begin = pem_find_last_begin(search, end_line);
+        if (!begin) {
+            search = end_line + 9;
             continue;
-        if (saw_padding)
-            return -1;
-
-        if (c == '=') {
-            quartet[quartet_len++] = -1;
-        } else {
-            int value = pem_base64_value(c);
-            if (value < 0)
-                return -1;
-            quartet[quartet_len++] = value;
         }
-        if (quartet_len != 4)
+
+        const char *line_end =
+            (const char *)memchr(begin, '\n', (size_t)(end_line - begin));
+        if (!line_end) {
+            search = end_line + 9;
             continue;
-
-        if (quartet[0] < 0 || quartet[1] < 0 ||
-            (quartet[2] < 0 && quartet[3] >= 0))
-            return -1;
-        size_t emit = quartet[2] < 0 ? 1 :
-                      quartet[3] < 0 ? 2 : 3;
-        if ((emit == 1 && (quartet[1] & 0x0f) != 0) ||
-            (emit == 2 && (quartet[2] & 0x03) != 0) ||
-            emit > out_cap - decoded_len)
-            return -1;
-
-        out_buf[decoded_len++] =
-            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
-        if (emit >= 2) {
-            out_buf[decoded_len++] =
-                (uint8_t)((quartet[1] << 4) | (quartet[2] >> 2));
         }
-        if (emit == 3) {
-            out_buf[decoded_len++] =
-                (uint8_t)((quartet[2] << 6) | quartet[3]);
-        } else {
-            saw_padding = 1;
-        }
-        quartet_len = 0;
-    }
-    if (quartet_len == 2) {
-        if (quartet[0] < 0 || quartet[1] < 0 || (quartet[1] & 0x0f) != 0 ||
-            1 > out_cap - decoded_len)
-            return -1;
-        out_buf[decoded_len++] =
-            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
-    } else if (quartet_len == 3) {
-        if (quartet[0] < 0 || quartet[1] < 0 || quartet[2] < 0 ||
-            (quartet[2] & 0x03) != 0 || 2 > out_cap - decoded_len)
-            return -1;
-        out_buf[decoded_len++] =
-            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
-        out_buf[decoded_len++] =
-            (uint8_t)((quartet[1] << 4) | (quartet[2] >> 2));
-    } else if (quartet_len != 0) {
-        return -1;
-    }
+        const char *header_end = line_end;
+        if (header_end > begin && header_end[-1] == '\r')
+            --header_end;
+        while (header_end > begin &&
+               (header_end[-1] == ' ' || header_end[-1] == '\t'))
+            --header_end;
 
-    if (bytes_written)
-        *bytes_written = decoded_len;
-    if (rest_offset)
-        *rest_offset = (size_t)(after_end - pem_data);
-    return 0;
+        const char *type_start = begin + 11;
+        if ((size_t)(header_end - type_start) <= dash_len ||
+            memcmp(header_end - dash_len, DASHES, dash_len) != 0) {
+            search = end_line + 9;
+            continue;
+        }
+        const char *type_end = header_end - dash_len;
+        size_t type_len = (size_t)(type_end - type_start);
+        if (type_len == 0) {
+            search = end_line + 9;
+            continue;
+        }
+
+        const char *end_type = end_line + 9;
+        if ((size_t)(pem_end - end_type) < type_len + dash_len ||
+            memcmp(end_type, type_start, type_len) != 0 ||
+            memcmp(end_type + type_len, DASHES, dash_len) != 0) {
+            search = end_line + 9;
+            continue;
+        }
+
+        /* Remainder of the END line must be only spaces/tabs, like Go getLine. */
+        const char *after_dashes = end_type + type_len + dash_len;
+        const char *eol = (const char *)memchr(
+            after_dashes, '\n', (size_t)(pem_end - after_dashes));
+        const char *content_end = eol ? eol : pem_end;
+        if (eol && content_end > after_dashes && content_end[-1] == '\r')
+            --content_end;
+        while (content_end > after_dashes &&
+               (content_end[-1] == ' ' || content_end[-1] == '\t'))
+            --content_end;
+        if (content_end != after_dashes) {
+            search = end_line + 9;
+            continue;
+        }
+        const char *after_end = eol ? eol + 1 : pem_end;
+
+        int bare_headers = 0;
+        const char *body_start =
+            pem_skip_headers(line_end + 1, end_line, &bare_headers);
+        if (bare_headers) {
+            search = end_line + 9;
+            continue;
+        }
+
+        size_t decoded_len = 0;
+        int body = pem_decode_body(
+            out_buf, out_cap, body_start, end_line, &decoded_len);
+        if (body == 0) {
+            search = end_line + 9;
+            continue;
+        }
+        if (body < 0)
+            return -1;
+        if (type_len >= type_cap)
+            return -1;
+
+        memcpy(type_buf, type_start, type_len);
+        type_buf[type_len] = '\0';
+        if (bytes_written)
+            *bytes_written = decoded_len;
+        if (rest_offset)
+            *rest_offset = (size_t)(after_end - pem_data);
+        return 0;
+    }
 }

@@ -296,10 +296,36 @@ static void test_set_dir(void) {
 }
 #endif
 
+static void test_argv_quoting(const char *executable) {
+    printf("[argv_quoting]\n");
+    const char *args[] = {"--print-argv", "foo\"bar", "a b"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command(executable, args, 3);
+    ASSERT_TRUE(cmd != NULL);
+    if (!cmd) return;
+
+    neverc_exec_output_t out = {0};
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_output(cmd, &out, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+    ASSERT_TRUE(memmem(out.data, out.len, "foo\"bar", 7) != NULL);
+    ASSERT_TRUE(memmem(out.data, out.len, "a b", 3) != NULL);
+
+    neverc_exec_output_free(&out);
+    neverc_exec_cmd_free(cmd);
+}
+
 int main(int argc, char **argv) {
     if (argc == 2 &&
         strcmp(argv[1], "--bidirectional-child") == 0)
         return run_bidirectional_child();
+    if (argc >= 2 && strcmp(argv[1], "--print-argv") == 0) {
+        int i;
+        for (i = 2; i < argc; i++) {
+            if (printf("%s\n", argv[i]) < 0)
+                return 1;
+        }
+        return 0;
+    }
 
     printf("=== NeverC os/exec Tests ===\n");
     ASSERT_TRUE(neverc_exec_command(NULL, NULL, 0) == NULL);
@@ -312,6 +338,7 @@ int main(int argc, char **argv) {
     test_command_stdin();
 #endif
     test_bidirectional_pipes(argv[0]);
+    test_argv_quoting(argv[0]);
     test_look_path();
     test_combined_output();
 #if !defined(_WIN32)

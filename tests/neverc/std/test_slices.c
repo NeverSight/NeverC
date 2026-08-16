@@ -63,6 +63,7 @@ static void test_is_sorted(void) {
     ASSERT_TRUE(!neverc_slices_is_sorted(unsorted, 3, sizeof(int), cmp_int));
     ASSERT_TRUE(neverc_slices_is_sorted_ints(sorted, 4));
     ASSERT_TRUE(!neverc_slices_is_sorted_ints(unsorted, 3));
+    ASSERT_TRUE(neverc_slices_is_sorted_ints(NULL, 0));
 }
 
 static void test_binary_search(void) {
@@ -104,6 +105,9 @@ static void test_size_overflow_rejected(void) {
     ASSERT_TRUE(!neverc_slices_equal(&a, overflowing_len, &b,
                                      overflowing_len, 2));
     ASSERT_TRUE(neverc_slices_clone(&a, overflowing_len, 2) == NULL);
+    unsigned char rev = 0x5a;
+    neverc_slices_reverse(&rev, overflowing_len, 2);
+    ASSERT_INT_EQ(rev, 0x5a);
 }
 
 static void test_min_max(void) {

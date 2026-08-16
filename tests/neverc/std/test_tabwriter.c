@@ -169,6 +169,14 @@ static void test_minwidth(neverc_tabwriter_t *w) {
     ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a....b\n");
 }
 
+static void test_space_pad_ignores_tabwidth(neverc_tabwriter_t *w) {
+    printf("[space_pad_ignores_tabwidth]\n");
+    neverc_tabwriter_init(w, 1, 8, 1, ' ', 0);
+    neverc_tabwriter_write(w, "a\tb\naa\tbb", 9);
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a  b\naa bb");
+}
+
 int main(void) {
     printf("=== NeverC text/tabwriter Tests ===\n");
     neverc_tabwriter_t *w =
@@ -196,6 +204,8 @@ int main(void) {
     test_many_cells(w);
     neverc_tabwriter_reset(w);
     test_minwidth(w);
+    neverc_tabwriter_reset(w);
+    test_space_pad_ignores_tabwidth(w);
     neverc_tabwriter_reset(w);
     free(w);
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);

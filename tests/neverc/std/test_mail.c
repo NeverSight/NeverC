@@ -60,6 +60,9 @@ static void test_parse_address_list(void) {
     ASSERT_STREQ(addrs[0].name, "Doe, John");
     ASSERT_STREQ(addrs[0].address, "john@example.com");
     ASSERT_STREQ(addrs[1].address, "other@example.com");
+
+    ASSERT_EQ(neverc_mail_parse_address_list(
+                  "ok@x.com, bad\r\nBcc: hidden@x.com", addrs, 8), -1);
 }
 
 static void test_format_address(void) {
@@ -107,6 +110,29 @@ static void test_parse_message(void) {
     ASSERT_STREQ(neverc_mail_header_get(&m, "content-type"), "text/plain");
     ASSERT_TRUE(m.body_len == 15);
     ASSERT_TRUE(memcmp(m.body, "Hello, World!\r\n", 15) == 0);
+
+    const char *empty_name = ": empty-name\r\n\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(empty_name, strlen(empty_name), &m),
+              -1);
+    const char *ctl_value = "From: a\x01b\r\n\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(ctl_value, strlen(ctl_value), &m), -1);
+    const char *no_colon = "NotAHeader\r\n\r\nbody";
+    ASSERT_EQ(neverc_mail_parse_message(no_colon, strlen(no_colon), &m), -1);
+
+    char long_key[160];
+    memset(long_key, 'A', 128);
+    memcpy(long_key + 128, ": v\r\n\r\n", 7);
+    ASSERT_EQ(neverc_mail_parse_message(long_key, 135, &m), -1);
+
+    char many[2048];
+    size_t n = 0;
+    for (int i = 0; i < NEVERC_MAIL_MAX_HEADERS + 1; i++) {
+        int wrote = snprintf(many + n, sizeof(many) - n, "X%d: y\r\n", i);
+        ASSERT_TRUE(wrote > 0);
+        n += (size_t)wrote;
+    }
+    n += (size_t)snprintf(many + n, sizeof(many) - n, "\r\n");
+    ASSERT_EQ(neverc_mail_parse_message(many, n, &m), -1);
 }
 
 static void test_parse_date(void) {

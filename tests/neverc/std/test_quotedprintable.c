@@ -83,6 +83,24 @@ static void test_encode_basic(void) {
     ASSERT_EQ(n, (int)sizeof(long_src));
     ASSERT_MEMEQ(out, long_src, sizeof(long_src));
     ASSERT_EQ(memchr(out, '=', (size_t)n) == NULL, 1);
+
+    /* 74 A's + space + 10 B's: the space would sit in the last column
+     * before a soft break if encoded as a literal. */
+    char wrap_src[84];
+    memset(wrap_src, 'A', 74);
+    wrap_src[74] = ' ';
+    memset(wrap_src + 75, 'B', 10);
+    n = neverc_qp_encode((const unsigned char *)wrap_src, sizeof(wrap_src),
+                         out, sizeof(out), 76);
+    ASSERT_EQ(n > 0, 1);
+    out[n] = '\0';
+    ASSERT_EQ(strstr(out, " =\r\n") == NULL, 1);
+    ASSERT_EQ(strstr(out, "=20") != NULL, 1);
+
+    unsigned char wrap_dec[128];
+    int dn = neverc_qp_decode(out, (size_t)n, wrap_dec, sizeof(wrap_dec));
+    ASSERT_EQ(dn, (int)sizeof(wrap_src));
+    ASSERT_MEMEQ(wrap_dec, wrap_src, sizeof(wrap_src));
 }
 
 static void test_roundtrip(void) {

@@ -175,11 +175,23 @@ neverc_cmplx_t neverc_cmplx_cos(neverc_cmplx_t z) {
 }
 
 neverc_cmplx_t neverc_cmplx_tan(neverc_cmplx_t z) {
+    double re = RE(z), im = IM(z);
+    /* Go math/cmplx.Tan: Inf imag saturates to ±i; 0+NaN i is unchanged.
+     * sin/cos overflow to Inf/Inf = NaN otherwise. */
+    if (neverc_math_isinf(im, 0)) {
+        if (neverc_math_isinf(re, 0) || neverc_math_isnan(re))
+            return MK(neverc_math_copysign(0.0, re), neverc_math_copysign(1.0, im));
+        return MK(neverc_math_copysign(0.0, neverc_math_sin(2.0 * re)),
+                  neverc_math_copysign(1.0, im));
+    }
+    if (re == 0.0 && neverc_math_isnan(im))
+        return z;
+
     neverc_cmplx_t sz = neverc_cmplx_sin(z);
     neverc_cmplx_t cz = neverc_cmplx_cos(z);
     double denom2 = RE(cz) * RE(cz) + IM(cz) * IM(cz);
     if (denom2 == 0.0)
-        return MK(neverc_math_nan(), neverc_math_nan());
+        return neverc_cmplx_inf_val();
     return MK(
         (RE(sz) * RE(cz) + IM(sz) * IM(cz)) / denom2,
         (IM(sz) * RE(cz) - RE(sz) * IM(cz)) / denom2
@@ -205,11 +217,22 @@ neverc_cmplx_t neverc_cmplx_cosh(neverc_cmplx_t z) {
 }
 
 neverc_cmplx_t neverc_cmplx_tanh(neverc_cmplx_t z) {
+    double re = RE(z), im = IM(z);
+    /* Go math/cmplx.Tanh: Inf real saturates to ±1; NaN+0i is unchanged. */
+    if (neverc_math_isinf(re, 0)) {
+        if (neverc_math_isinf(im, 0) || neverc_math_isnan(im))
+            return MK(neverc_math_copysign(1.0, re), neverc_math_copysign(0.0, im));
+        return MK(neverc_math_copysign(1.0, re),
+                  neverc_math_copysign(0.0, neverc_math_sin(2.0 * im)));
+    }
+    if (im == 0.0 && neverc_math_isnan(re))
+        return z;
+
     neverc_cmplx_t sh = neverc_cmplx_sinh(z);
     neverc_cmplx_t ch = neverc_cmplx_cosh(z);
     double denom2 = RE(ch) * RE(ch) + IM(ch) * IM(ch);
     if (denom2 == 0.0)
-        return MK(neverc_math_nan(), neverc_math_nan());
+        return neverc_cmplx_inf_val();
     return MK(
         (RE(sh) * RE(ch) + IM(sh) * IM(ch)) / denom2,
         (IM(sh) * RE(ch) - RE(sh) * IM(ch)) / denom2

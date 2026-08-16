@@ -286,6 +286,134 @@ static void test_invalid_pem(void) {
                             out_buf, sizeof(out_buf),
                             &bytes_written, NULL);
     check_int("header requires newline", rc, -1);
+
+    const char *end_junk =
+        "-----BEGIN FOO-----\n"
+        "dGVzdA==\n"
+        "-----END FOO----- .\n";
+    rc = neverc_pem_decode(end_junk, strlen(end_junk),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("END trailing non-whitespace", rc, -1);
+
+    const char *bare_headers =
+        "-----BEGIN INVALID HEADERS-----\n"
+        "Header: 1\n"
+        "-----END INVALID HEADERS-----\n";
+    rc = neverc_pem_decode(bare_headers, strlen(bare_headers),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("headers without blank or body", rc, -1);
+}
+
+static void test_go_armor(void) {
+    printf("[pem Go armor skip]\n");
+
+    char type_buf[64];
+    uint8_t out_buf[64];
+    size_t bytes_written = 0;
+    size_t rest_offset = 0;
+
+    const char *invalid_then_valid =
+        "-----BEGIN COMMENT-----\n"
+        "foo foo foo\n"
+        "-----END COMMENT-----\n"
+        "-----BEGIN TEST BLOCK-----\n"
+        "aGVsbG8=\n"
+        "-----END TEST BLOCK-----\n";
+    int rc = neverc_pem_decode(invalid_then_valid, strlen(invalid_then_valid),
+                                type_buf, sizeof(type_buf),
+                                out_buf, sizeof(out_buf),
+                                &bytes_written, &rest_offset);
+    check_int("skip invalid section", rc, 0);
+    check_str("skip invalid type", type_buf, "TEST BLOCK");
+    check_int("skip invalid len", (int)bytes_written, 5);
+    check_mem("skip invalid data", out_buf, (const uint8_t *)"hello", 5);
+    check_int("skip invalid rest at EOF",
+              (int)rest_offset, (int)strlen(invalid_then_valid));
+
+    const char *multi_begin =
+        "-----BEGIN TEST BLOCK-----\n"
+        "-----BEGIN TEST BLOCK-----\n"
+        "-----BEGIN TEST BLOCK-----\n"
+        "aGVsbG8=\n"
+        "-----END TEST BLOCK-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(multi_begin, strlen(multi_begin),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("multiple BEGIN", rc, 0);
+    check_str("multiple BEGIN type", type_buf, "TEST BLOCK");
+    check_int("multiple BEGIN len", (int)bytes_written, 5);
+    check_mem("multiple BEGIN data", out_buf, (const uint8_t *)"hello", 5);
+
+    const char *leading_malformed =
+        "-----BEGIN PUBLIC KEY\n"
+        "aGVsbG8=\n"
+        "-----END PUBLIC KEY-----\n"
+        "-----BEGIN TEST BLOCK-----\n"
+        "aGVsbG8=\n"
+        "-----END TEST BLOCK-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(leading_malformed, strlen(leading_malformed),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("leading malformed BEGIN", rc, 0);
+    check_str("leading malformed type", type_buf, "TEST BLOCK");
+    check_int("leading malformed len", (int)bytes_written, 5);
+    check_mem("leading malformed data", out_buf, (const uint8_t *)"hello", 5);
+
+    const char *openssl_preamble =
+        "verify return:0\n"
+        "-----BEGIN CERTIFICATE-----\n"
+        "sdlfkjskldfj\n"
+        " -----BEGIN CERTIFICATE-----\n"
+        "-----BEGIN CERTIFICATE-----\n"
+        "aGVsbG8=\n"
+        "-----END CERTIFICATE-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(openssl_preamble, strlen(openssl_preamble),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("openssl preamble", rc, 0);
+    check_str("openssl preamble type", type_buf, "CERTIFICATE");
+    check_int("openssl preamble len", (int)bytes_written, 5);
+    check_mem("openssl preamble data", out_buf, (const uint8_t *)"hello", 5);
+
+    const char *bare_then_valid =
+        "-----BEGIN INVALID HEADERS-----\n"
+        "Header: 1\n"
+        "-----END INVALID HEADERS-----\n"
+        "-----BEGIN TEST BLOCK-----\n"
+        "aGVsbG8=\n"
+        "-----END TEST BLOCK-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(bare_then_valid, strlen(bare_then_valid),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("skip bare headers", rc, 0);
+    check_str("skip bare headers type", type_buf, "TEST BLOCK");
+    check_int("skip bare headers len", (int)bytes_written, 5);
+
+    const char *leading_garbage =
+        "foo foo foo\n"
+        "-----BEGIN TEST BLOCK-----\n"
+        "aGVsbG8=\n"
+        "-----END TEST BLOCK-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(leading_garbage, strlen(leading_garbage),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("leading garbage", rc, 0);
+    check_str("leading garbage type", type_buf, "TEST BLOCK");
+    check_int("leading garbage len", (int)bytes_written, 5);
 }
 
 static void test_large_data(void) {
@@ -346,6 +474,7 @@ int main(void) {
     test_binary_data();
     test_rfc1421_headers();
     test_invalid_pem();
+    test_go_armor();
     test_large_data();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

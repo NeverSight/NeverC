@@ -71,12 +71,25 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
         } else {
             base = 10;
         }
+    } else if (p[0] == '0' && p[1] != '\0') {
+        /* Go ParseInt/ParseUint: explicit base 2/8/16 still accept 0b/0o/0x. */
+        if (base == 16 && (p[1] == 'x' || p[1] == 'X')) {
+            p += 2;
+            after_prefix = 1;
+        } else if (base == 2 && (p[1] == 'b' || p[1] == 'B')) {
+            p += 2;
+            after_prefix = 1;
+        } else if (base == 8 && (p[1] == 'o' || p[1] == 'O')) {
+            p += 2;
+            after_prefix = 1;
+        }
     }
 
     if (*p == '\0' && !saw_digit)
         return NEVERC_STRCONV_ERR_SYNTAX;
 
     unsigned long long val = 0;
+    int overflow = 0;
 
     if (base == 10) {
         /*
@@ -97,11 +110,11 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
                 }
                 return NEVERC_STRCONV_ERR_SYNTAX;
             }
-            if (val > cutoff || (val == cutoff && d > rem)) {
-                *result = NC_ULLONG_MAX;
-                return NEVERC_STRCONV_ERR_RANGE;
-            }
-            val = val * 10ULL + d;
+            if (!overflow &&
+                (val > cutoff || (val == cutoff && d > rem)))
+                overflow = 1;
+            if (!overflow)
+                val = val * 10ULL + d;
             saw_digit = 1;
             previous_underscore = 0;
             after_prefix = 0;
@@ -123,11 +136,11 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
             if (d >= (unsigned)base)
                 return NEVERC_STRCONV_ERR_SYNTAX;
 
-            if (val > cutoff || (val == cutoff && d > rem)) {
-                *result = NC_ULLONG_MAX;
-                return NEVERC_STRCONV_ERR_RANGE;
-            }
-            val = val * ubase + d;
+            if (!overflow &&
+                (val > cutoff || (val == cutoff && d > rem)))
+                overflow = 1;
+            if (!overflow)
+                val = val * ubase + d;
             saw_digit = 1;
             previous_underscore = 0;
             after_prefix = 0;
@@ -137,6 +150,10 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
     if (!saw_digit || previous_underscore)
         return NEVERC_STRCONV_ERR_SYNTAX;
 
+    if (overflow) {
+        *result = NC_ULLONG_MAX;
+        return NEVERC_STRCONV_ERR_RANGE;
+    }
     *result = val;
     return NEVERC_STRCONV_OK;
 }

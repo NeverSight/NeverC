@@ -153,6 +153,16 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
         xor_keystream(dst, src, ctx->buf + ctx->buf_used, n);
         ctx->buf_used += (int)n;
         off += n;
+        /*
+         * Increment-on-generate means leftover always belongs to counter-1.
+         * state[12] == 0 after a leftover block therefore means that block
+         * was the last valid counter (0xFFFFFFFF). Refuse further blocks
+         * once those leftover bytes are gone, but not before.
+         */
+        if (ctx->buf_used == 64 && ctx->state[12] == 0)
+            ctx->buf_used = -1;
+        if (ctx->buf_used < 0)
+            return;
     }
 
 #ifdef NCI_CHACHA_SIMD
@@ -188,13 +198,14 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
         }
     }
 
-    /* Final partial block: keep the unused keystream in ctx for next call. */
+    /* Final partial block: keep the unused keystream in ctx for next call.
+     * Even if the 32-bit counter wraps here, the rest of this block is still
+     * valid keystream (RFC 7539); wrap is enforced when leftover is consumed. */
     if (off < len) {
-        uint32_t before = ctx->state[12];
         neverc_chacha20_block(ctx->state, ctx->buf);
         ctx->state[12]++;
         size_t n = len - off;
         xor_keystream(dst + off, src + off, ctx->buf, n);
-        ctx->buf_used = (ctx->state[12] < before) ? -1 : (int)n;
+        ctx->buf_used = (int)n;
     }
 }

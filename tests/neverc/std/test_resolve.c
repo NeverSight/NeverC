@@ -87,6 +87,9 @@ static void test_split_host_port(void) {
     check_int("signed port rejected",
               neverc_net_split_host_port("localhost:+80", host, sizeof(host),
                                          port, sizeof(port)), -1);
+    check_int("empty hostport rejected",
+              neverc_net_split_host_port("", host, sizeof(host),
+                                         port, sizeof(port)), -1);
 }
 
 /* ===== JoinHostPort ===== */
@@ -114,6 +117,9 @@ static void test_lookup_host(void) {
     printf("[lookup_host]\n");
     neverc_net_addrs_t addrs;
 
+    check_int("empty host rejected", neverc_net_lookup_host("", &addrs), -1);
+    check_int("null host rejected", neverc_net_lookup_host(NULL, &addrs), -1);
+
     /* Resolve localhost — should always work */
     int rc = neverc_net_lookup_host("localhost", &addrs);
     check_int("lookup localhost", rc, 0);
@@ -135,6 +141,11 @@ static void test_lookup_host(void) {
 static void test_lookup_ip(void) {
     printf("[lookup_ip]\n");
     neverc_net_addrs_t addrs;
+
+    check_int("empty ip host rejected",
+              neverc_net_lookup_ip("ip4", "", &addrs), -1);
+    check_int("null ip host rejected",
+              neverc_net_lookup_ip("ip4", NULL, &addrs), -1);
 
     int rc = neverc_net_lookup_ip("ip4", "localhost", &addrs);
     check_int("lookup ip4 localhost", rc, 0);
@@ -167,6 +178,21 @@ static void test_lookup_port(void) {
     check_int("whitespace numeric rejected",
               neverc_net_lookup_port("tcp", " 80"), -1);
 
+    neverc_net_addrs_t rev;
+    check_int("empty reverse addr rejected",
+              neverc_net_lookup_addr("", &rev), -1);
+    check_int("null reverse addr rejected",
+              neverc_net_lookup_addr(NULL, &rev), -1);
+    neverc_net_mx_list_t mx;
+    check_int("empty mx name rejected", neverc_net_lookup_mx("", &mx), -1);
+    neverc_net_txt_list_t txt;
+    check_int("empty txt name rejected", neverc_net_lookup_txt("", &txt), -1);
+    neverc_net_ns_list_t ns;
+    check_int("empty ns name rejected", neverc_net_lookup_ns("", &ns), -1);
+    neverc_net_srv_list_t empty_srv;
+    check_int("empty srv name rejected",
+              neverc_net_lookup_srv("http", "tcp", "", &empty_srv), -1);
+
     neverc_net_srv_list_t srv;
     char long_name[600];
     memset(long_name, 'a', 599);
@@ -180,6 +206,11 @@ static void test_lookup_port(void) {
 static void test_lookup_cname(void) {
     printf("[lookup_cname]\n");
     char buf[256];
+
+    check_int("empty cname rejected",
+              neverc_net_lookup_cname("", buf, sizeof(buf)), -1);
+    check_int("null cname rejected",
+              neverc_net_lookup_cname(NULL, buf, sizeof(buf)), -1);
 
     int rc = neverc_net_lookup_cname("localhost", buf, sizeof(buf));
     check_int("cname localhost", rc, 0);
@@ -218,6 +249,8 @@ static void test_pipe(void) {
               neverc_net_pipe_read(end1, &byte, (size_t)INT_MAX + 1), -1);
     check_int("pipe zero-length read",
               neverc_net_pipe_read(end1, &byte, 0), 0);
+    check_int("pipe zero-length write",
+              neverc_net_pipe_write(end1, &byte, 0), 0);
 
     /* Test basic write+read */
     const char *msg = "Hello, Pipe!";

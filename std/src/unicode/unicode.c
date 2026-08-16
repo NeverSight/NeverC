@@ -68,6 +68,8 @@ int neverc_unicode_is_upper(uint32_t r) {
     if (r >= 0xC0 && r <= 0xD6) return 1;
     if (r >= 0xD8 && r <= 0xDE) return 1;
     if (unicode_is_latin_extended_upper(r)) return 1;
+    /* Titlecase triples (Ǆ/Ǉ/Ǌ/Ǳ): the Lu member of each */
+    if (r == 0x01C4 || r == 0x01C7 || r == 0x01CA || r == 0x01F1) return 1;
     /* Greek uppercase */
     if (r >= 0x391 && r <= 0x3A9 && r != 0x3A2) return 1;
     /* Cyrillic uppercase */
@@ -81,6 +83,8 @@ int neverc_unicode_is_lower(uint32_t r) {
     if (r >= 0xE0 && r <= 0xF6) return 1;
     if (r >= 0xF8 && r <= 0xFF) return 1;
     if (unicode_is_latin_extended_lower(r)) return 1;
+    /* Titlecase triples (ǆ/ǉ/ǌ/ǳ): the Ll member of each */
+    if (r == 0x01C6 || r == 0x01C9 || r == 0x01CC || r == 0x01F3) return 1;
     /* Greek lowercase */
     if (r >= 0x3B1 && r <= 0x3C9) return 1;
     /* Cyrillic lowercase */
@@ -189,6 +193,10 @@ uint32_t neverc_unicode_to_upper(uint32_t r) {
     if (r == 0x0131) return 0x0049;
     if (r == 0x03C2) return 0x03A3;
     if (r == 0x017F) return 0x0053;
+    if (r >= 0x01C4 && r <= 0x01C6) return 0x01C4;
+    if (r >= 0x01C7 && r <= 0x01C9) return 0x01C7;
+    if (r >= 0x01CA && r <= 0x01CC) return 0x01CA;
+    if (r >= 0x01F1 && r <= 0x01F3) return 0x01F1;
     if (r >= 'a' && r <= 'z') return r - 32;
     if (r >= 0xE0 && r <= 0xF6) return r - 32;
     if (r >= 0xF8 && r <= 0xFE) return r - 32;
@@ -206,6 +214,10 @@ uint32_t neverc_unicode_to_upper(uint32_t r) {
 uint32_t neverc_unicode_to_lower(uint32_t r) {
     if (r == 0x0130) return 0x0069;
     if (r == 0x0178) return 0x00FF;
+    if (r >= 0x01C4 && r <= 0x01C6) return 0x01C6;
+    if (r >= 0x01C7 && r <= 0x01C9) return 0x01C9;
+    if (r >= 0x01CA && r <= 0x01CC) return 0x01CC;
+    if (r >= 0x01F1 && r <= 0x01F3) return 0x01F3;
     if (r >= 'A' && r <= 'Z') return r + 32;
     if (r >= 0xC0 && r <= 0xD6) return r + 32;
     if (r >= 0xD8 && r <= 0xDE) return r + 32;
@@ -318,6 +330,18 @@ uint32_t neverc_unicode_simple_fold(uint32_t r) {
     if (r == 'S') return 's';
     if (r == 's') return 0x017F;
     if (r == 0x017F) return 'S';
+    if (r == 0x01C4) return 0x01C5;
+    if (r == 0x01C5) return 0x01C6;
+    if (r == 0x01C6) return 0x01C4;
+    if (r == 0x01C7) return 0x01C8;
+    if (r == 0x01C8) return 0x01C9;
+    if (r == 0x01C9) return 0x01C7;
+    if (r == 0x01CA) return 0x01CB;
+    if (r == 0x01CB) return 0x01CC;
+    if (r == 0x01CC) return 0x01CA;
+    if (r == 0x01F1) return 0x01F2;
+    if (r == 0x01F2) return 0x01F3;
+    if (r == 0x01F3) return 0x01F1;
     if (r >= 'A' && r <= 'Z') return r + 32;
     if (r >= 'a' && r <= 'z') return r - 32;
     uint32_t lo = neverc_unicode_to_lower(r);

@@ -169,6 +169,42 @@ static void test_verify_identity_public_key(void) {
     neverc_dsa_private_key_free(&key);
 }
 
+static void test_verify_rejects_order_two_key(void) {
+    printf("[order_two_key]\n");
+    neverc_dsa_private_key_t key;
+    neverc_dsa_private_key_init(&key);
+    setup_go_dsa_key(&key);
+
+    uint8_t hash[32];
+    neverc_sha256_sum((const uint8_t *)"order2", 6, hash);
+
+    neverc_dsa_signature_t sig;
+    neverc_dsa_signature_init(&sig);
+    neverc_bigint_set_int64(&sig.r, 1);
+    neverc_bigint_set_int64(&sig.s, 1);
+
+    neverc_bigint_t one, pm1, saved_y;
+    neverc_bigint_init(&one);
+    neverc_bigint_init(&pm1);
+    neverc_bigint_init(&saved_y);
+    neverc_bigint_set_int64(&one, 1);
+    neverc_bigint_sub(&pm1, &key.pub.p, &one);
+    neverc_bigint_set(&saved_y, &key.pub.y);
+
+    neverc_bigint_set(&key.pub.y, &pm1);
+    ASSERT_TRUE(neverc_dsa_verify(&key.pub, hash, 32, &sig) != 0);
+
+    neverc_bigint_set(&key.pub.y, &saved_y);
+    neverc_bigint_set(&key.pub.g, &pm1);
+    ASSERT_TRUE(neverc_dsa_verify(&key.pub, hash, 32, &sig) != 0);
+
+    neverc_bigint_free(&one);
+    neverc_bigint_free(&pm1);
+    neverc_bigint_free(&saved_y);
+    neverc_dsa_signature_free(&sig);
+    neverc_dsa_private_key_free(&key);
+}
+
 static void test_sign_rejects_weak_private_key(void) {
     printf("[weak_private_key]\n");
     neverc_dsa_private_key_t key;
@@ -226,6 +262,7 @@ int main(void) {
     test_verify_zero_sig();
     test_verify_negative_sig();
     test_verify_identity_public_key();
+    test_verify_rejects_order_two_key();
     test_sign_rejects_weak_private_key();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

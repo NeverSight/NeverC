@@ -72,6 +72,54 @@ static size_t my_strlen(const char *s) {
     return n;
 }
 
+/* Go measures %s width/precision in runes. Invalid bytes count as one rune. */
+static int utf8_rune_width(unsigned char c) {
+    if (c < 0x80) return 1;
+    if ((c & 0xE0) == 0xC0) return 2;
+    if ((c & 0xF0) == 0xE0) return 3;
+    if ((c & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+static size_t utf8_span_runes(const char *s, size_t slen, int max_runes,
+                              int *nrunes) {
+    size_t i = 0;
+    int nr = 0;
+    while (i < slen && (max_runes < 0 || nr < max_runes)) {
+        int w = utf8_rune_width((unsigned char)s[i]);
+        if (i + (size_t)w > slen) w = (int)(slen - i);
+        i += (size_t)w;
+        nr++;
+    }
+    if (nrunes) *nrunes = nr;
+    return i;
+}
+
+static int encode_rune(char *dst, uint32_t r) {
+    if (r <= 0x7F) {
+        dst[0] = (char)r;
+        return 1;
+    }
+    if (r <= 0x7FF) {
+        dst[0] = (char)(0xC0 | (r >> 6));
+        dst[1] = (char)(0x80 | (r & 0x3F));
+        return 2;
+    }
+    if ((r >= 0xD800 && r <= 0xDFFF) || r > 0x10FFFF)
+        r = 0xFFFD;
+    if (r <= 0xFFFF) {
+        dst[0] = (char)(0xE0 | (r >> 12));
+        dst[1] = (char)(0x80 | ((r >> 6) & 0x3F));
+        dst[2] = (char)(0x80 | (r & 0x3F));
+        return 3;
+    }
+    dst[0] = (char)(0xF0 | (r >> 18));
+    dst[1] = (char)(0x80 | ((r >> 12) & 0x3F));
+    dst[2] = (char)(0x80 | ((r >> 6) & 0x3F));
+    dst[3] = (char)(0x80 | (r & 0x3F));
+    return 4;
+}
+
 static int append_position(const char *buf, size_t cap, size_t *position) {
     if (!buf || cap == 0) return 0;
     size_t n = 0;
@@ -162,8 +210,9 @@ static int fmt_float_e(char *buf, size_t cap, double val, int prec, int uppercas
     return neverc_strconv_format_float(
         val, uppercase ? 'E' : 'e', prec, buf, cap);
 }
-/* prec < 0 => shortest round-trippable form (Go's %v / %g default). */
+/* Go %g/%G default precision is 6 significant digits (not shortest). */
 static int fmt_float_g(char *buf, size_t cap, double val, int prec, int uppercase) {
+    if (prec < 0) prec = 6;
     return neverc_strconv_format_float(
         val, uppercase ? 'G' : 'g', prec, buf, cap);
 }
@@ -307,18 +356,16 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             break;
         }
         case 'c': {
-            int ch = va_arg(args, int);
-            tmp[0] = (char)ch;
-            tlen = 1;
+            tlen = encode_rune(tmp, (uint32_t)va_arg(args, int));
             break;
         }
         case 's': {
             const char *s = va_arg(args, const char *);
             if (!s) s = "(null)";
             size_t slen = my_strlen(s);
-            if (prec >= 0 && (size_t)prec < slen) slen = (size_t)prec;
-            int pad = (has_width && width > 0 && (size_t)width > slen)
-                          ? width - (int)slen : 0;
+            int nrunes = 0;
+            slen = utf8_span_runes(s, slen, prec, &nrunes);
+            int pad = (has_width && width > nrunes) ? width - nrunes : 0;
             if (!flag_minus) buf_pad(&buf, ' ', pad);
             buf_puts(&buf, s, slen);
             if (flag_minus) buf_pad(&buf, ' ', pad);
@@ -356,6 +403,9 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
         int is_float_verb =
             verb == 'f' || verb == 'e' || verb == 'E' ||
             verb == 'g' || verb == 'G';
+        int is_int_verb =
+            verb == 'd' || verb == 'i' || verb == 'u' ||
+            verb == 'x' || verb == 'X' || verb == 'o' || verb == 'b';
         int is_signed_verb =
             verb == 'd' || verb == 'i' || is_float_verb;
         int formatted_has_sign =
@@ -372,23 +422,47 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
                 sign_prefix = ' ';
         }
         int body_len = tlen - body_offset;
+        if (is_int_verb && prec >= 0) {
+            int is_zero_body =
+                body_len == 1 && tmp[body_offset] == '0';
+            if (prec == 0 && is_zero_body) {
+                body_len = 0;
+            } else if (prec > body_len) {
+                int extra = prec - body_len;
+                if (tlen + extra >= (int)sizeof(tmp))
+                    goto format_fail;
+                memmove(tmp + body_offset + extra,
+                        tmp + body_offset, (size_t)body_len);
+                memset(tmp + body_offset, '0', (size_t)extra);
+                tlen += extra;
+                body_len += extra;
+            }
+        }
         int formatted_is_special =
             is_float_verb &&
             ((body_len == 3 &&
               memcmp(tmp + body_offset, "Inf", 3) == 0) ||
              (body_len == 3 &&
               memcmp(tmp + body_offset, "NaN", 3) == 0));
-        int is_zero = (tlen == 1 && tmp[0] == '0');
         const char *alt_prefix = NULL;
         int alt_len = 0;
         if (flag_hash && !is_float_verb) {
             if (verb == 'x') { alt_prefix = "0x"; alt_len = 2; }
             else if (verb == 'X') { alt_prefix = "0X"; alt_len = 2; }
             else if (verb == 'b') { alt_prefix = "0b"; alt_len = 2; }
-            else if (verb == 'o' && !is_zero) { alt_prefix = "0"; alt_len = 1; }
+            else if (verb == 'o' &&
+                     (body_len == 0 || tmp[body_offset] != '0')) {
+                alt_prefix = "0";
+                alt_len = 1;
+            }
         }
-        int use_zero_padding = flag_zero && !formatted_is_special;
-        int total = body_len + (sign_prefix ? 1 : 0) + alt_len;
+        /* Precision on integers suppresses the zero flag (Go/C99). */
+        int use_zero_padding =
+            flag_zero && !formatted_is_special &&
+            !(is_int_verb && prec >= 0);
+        /* %c is one rune; width is measured in runes, not UTF-8 bytes. */
+        int content_width = (verb == 'c') ? (tlen > 0 ? 1 : 0) : body_len;
+        int total = content_width + (sign_prefix ? 1 : 0) + alt_len;
         int pad = (has_width && width > total) ? width - total : 0;
 
         if (!flag_minus && !use_zero_padding) buf_pad(&buf, ' ', pad);

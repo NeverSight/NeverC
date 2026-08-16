@@ -144,11 +144,19 @@ int main(void) {
         ASSERT_INT_EQ(neverc_gzip_compress(
                           (const uint8_t *)"hello", 5, comp, &comp_len, 1),
                       0);
+        uint8_t crc_corrupt[256];
+        memcpy(crc_corrupt, comp, comp_len);
+        crc_corrupt[comp_len - 8] ^= 1U;
+        size_t output_len = sizeof(output);
+        ASSERT_INT_EQ(neverc_gzip_decompress(
+                          crc_corrupt, comp_len, output, &output_len),
+                      -1);
+
         comp[comp_len - 4] = 1;
         comp[comp_len - 3] = 0;
         comp[comp_len - 2] = 0;
         comp[comp_len - 1] = 0;
-        size_t output_len = sizeof(output);
+        output_len = sizeof(output);
         ASSERT_INT_EQ(neverc_gzip_decompress(
                           comp, comp_len, output, &output_len),
                       -1);

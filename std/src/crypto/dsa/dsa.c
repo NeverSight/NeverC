@@ -92,6 +92,22 @@ void neverc_dsa_signature_free(neverc_dsa_signature_t *sig) {
     neverc_bigint_free(&sig->r); neverc_bigint_free(&sig->s);
 }
 
+/* FIPS 186-4: g and y must satisfy elem^q ≡ 1 (mod p). This rejects
+ * order-2 elements (p-1) and any other value outside the q-subgroup. */
+static int dsa_in_order_q_subgroup(const neverc_bigint_t *elem,
+                                   const neverc_bigint_t *q,
+                                   const neverc_bigint_t *p) {
+    neverc_bigint_t result, one;
+    neverc_bigint_init(&result);
+    neverc_bigint_init(&one);
+    neverc_bigint_set_int64(&one, 1);
+    neverc_bigint_exp(&result, elem, q, p);
+    int ok = neverc_bigint_cmp(&result, &one) == 0;
+    neverc_bigint_free(&result);
+    neverc_bigint_free(&one);
+    return ok;
+}
+
 static int dsa_group_valid(const neverc_dsa_public_key_t *key) {
     if (!key || neverc_bigint_sign(&key->p) <= 0 ||
         neverc_bigint_sign(&key->q) <= 0 ||
@@ -110,7 +126,9 @@ static int dsa_group_valid(const neverc_dsa_public_key_t *key) {
     neverc_bigint_set_int64(&one, 1);
     int ok = neverc_bigint_cmp(&key->g, &one) > 0;
     neverc_bigint_free(&one);
-    return ok;
+    if (!ok)
+        return 0;
+    return dsa_in_order_q_subgroup(&key->g, &key->q, &key->p);
 }
 
 static int dsa_public_valid(const neverc_dsa_public_key_t *key) {
@@ -122,7 +140,9 @@ static int dsa_public_valid(const neverc_dsa_public_key_t *key) {
     neverc_bigint_set_int64(&one, 1);
     int ok = neverc_bigint_cmp(&key->y, &one) > 0;
     neverc_bigint_free(&one);
-    return ok;
+    if (!ok)
+        return 0;
+    return dsa_in_order_q_subgroup(&key->y, &key->q, &key->p);
 }
 
 static int hash_to_int_dsa(neverc_bigint_t *r, const unsigned char *hash,

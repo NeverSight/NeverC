@@ -145,12 +145,21 @@ fail:
     return -1;
 }
 
+/* The only scheme this implementation can sign, and the only scheme
+ * advertised in CertificateRequest. RFC 8446 §4.4.3 requires a client
+ * CertificateVerify to use one of the requested algorithms. */
+static int tls_client_certificate_verify_scheme_allowed(uint16_t scheme) {
+    return scheme == TLS_SIG_ECDSA_SHA256;
+}
+
 static int tls_parse_certificate_request(
     const uint8_t *message, size_t message_len,
-    uint8_t *alert) {
-    if (!message || !alert || message_len < 3)
+    int *supports_local_signature, uint8_t *alert) {
+    if (!message || !supports_local_signature || !alert ||
+        message_len < 3)
         return -1;
     *alert = TLS_ALERT_DECODE_ERROR;
+    *supports_local_signature = 0;
 
     size_t pos = 0;
     size_t request_context_len = message[pos++];
@@ -170,7 +179,6 @@ static int tls_parse_certificate_request(
     uint16_t seen_extensions[32];
     size_t seen_count = 0;
     int saw_signature_algorithms = 0;
-    int supports_ecdsa_p256_sha256 = 0;
     size_t extensions_end = pos + extensions_len;
     while (pos < extensions_end) {
         if (extensions_end - pos < 4 ||
@@ -198,9 +206,9 @@ static int tls_parse_certificate_request(
                 (algorithms_len & 1u) != 0)
                 return -1;
             for (size_t off = 0; off < algorithms_len; off += 2) {
-                if (tls_get_u16(message + pos + 2 + off) ==
-                    TLS_SIG_ECDSA_SHA256)
-                    supports_ecdsa_p256_sha256 = 1;
+                if (tls_client_certificate_verify_scheme_allowed(
+                        tls_get_u16(message + pos + 2 + off)))
+                    *supports_local_signature = 1;
             }
             saw_signature_algorithms = 1;
         }
@@ -211,10 +219,8 @@ static int tls_parse_certificate_request(
         *alert = TLS_ALERT_MISSING_EXTENSION;
         return -1;
     }
-    if (!supports_ecdsa_p256_sha256) {
-        *alert = TLS_ALERT_HANDSHAKE_FAILURE;
-        return -1;
-    }
+    /* RFC 8446 §4.4.2: if no requested algorithm is usable, send an empty
+     * Certificate rather than aborting the handshake. */
     return 0;
 }
 
@@ -713,6 +719,7 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
      * CertificateVerify, Finished) */
     int got_finished = 0;
     int certificate_requested = 0;
+    int client_signature_usable = 0;
     uint8_t expected_handshake_type = TLS_HS_ENCRYPTED_EXT;
     while (!got_finished) {
         const uint8_t *handshake_message = NULL;
@@ -773,7 +780,8 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
         if (is_certificate_request) {
             uint8_t request_alert = TLS_ALERT_DECODE_ERROR;
             if (tls_parse_certificate_request(
-                    message, msg_len, &request_alert) != 0)
+                    message, msg_len, &client_signature_usable,
+                    &request_alert) != 0)
                 return nci_tls_protocol_error(
                     conn, request_alert,
                     "malformed or unsupported CertificateRequest");
@@ -900,8 +908,10 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
 
     if (certificate_requested) {
         int sent_client_certificate = 0;
+        const neverc_tls_config_t *client_cert_cfg =
+            client_signature_usable ? cfg : NULL;
         if (tls_send_local_certificate(
-                conn, cfg, &transcript, 1,
+                conn, client_cert_cfg, &transcript, 1,
                 &sent_client_certificate) != 0)
             return nci_tls_error(
                 conn, "failed to send client Certificate message");
@@ -2258,6 +2268,10 @@ int nci_tls_server_handshake(neverc_tls_conn_t *conn,
             if (signature_len == 0 ||
                 signature_len != message_body_len - 4)
                 return nci_tls_fail(conn, TLS_ALERT_DECODE_ERROR);
+            if (!tls_client_certificate_verify_scheme_allowed(
+                    signature_scheme))
+                return nci_tls_fail(
+                    conn, TLS_ALERT_ILLEGAL_PARAMETER);
 
             uint8_t transcript_hash[32];
             neverc_sha256_ctx copy = transcript;
@@ -2859,6 +2873,10 @@ static int tls_async_process_client_flight(
             if (signature_len == 0 ||
                 signature_len != message_body_len - 4)
                 return nci_tls_fail(conn, TLS_ALERT_DECODE_ERROR);
+            if (!tls_client_certificate_verify_scheme_allowed(
+                    signature_scheme))
+                return nci_tls_fail(
+                    conn, TLS_ALERT_ILLEGAL_PARAMETER);
             uint8_t transcript_hash[32];
             neverc_sha256_ctx transcript_copy = async->transcript;
             neverc_sha256_final(&transcript_copy, transcript_hash);
@@ -3360,6 +3378,54 @@ int neverc_tls_test_encrypted_extensions_forbidden(void) {
     }
 
     neverc_tls_config_free(cfg);
+    return 0;
+}
+
+int neverc_tls_test_certificate_request_schemes(void) {
+    static const uint8_t ecdsa_request[] = {
+        0x00,
+        0x00, 0x08,
+        0x00, 0x0d, 0x00, 0x04,
+        0x00, 0x02, 0x04, 0x03
+    };
+    static const uint8_t rsa_pss_only_request[] = {
+        0x00,
+        0x00, 0x08,
+        0x00, 0x0d, 0x00, 0x04,
+        0x00, 0x02, 0x08, 0x04
+    };
+    static const uint8_t missing_algorithms_request[] = {
+        0x00, 0x00, 0x00
+    };
+    int supports_local = 0;
+    uint8_t alert = 0;
+    if (tls_parse_certificate_request(
+            ecdsa_request, sizeof(ecdsa_request),
+            &supports_local, &alert) != 0 ||
+        !supports_local)
+        return -1;
+    supports_local = 1;
+    alert = 0;
+    if (tls_parse_certificate_request(
+            rsa_pss_only_request, sizeof(rsa_pss_only_request),
+            &supports_local, &alert) != 0 ||
+        supports_local)
+        return -1;
+    supports_local = 1;
+    alert = 0;
+    if (tls_parse_certificate_request(
+            missing_algorithms_request,
+            sizeof(missing_algorithms_request),
+            &supports_local, &alert) == 0 ||
+        alert != TLS_ALERT_MISSING_EXTENSION)
+        return -1;
+    if (!tls_client_certificate_verify_scheme_allowed(
+            TLS_SIG_ECDSA_SHA256) ||
+        tls_client_certificate_verify_scheme_allowed(
+            TLS_SIG_RSA_PSS_SHA256) ||
+        tls_client_certificate_verify_scheme_allowed(
+            TLS_SIG_ED25519))
+        return -1;
     return 0;
 }
 #endif

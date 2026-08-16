@@ -142,6 +142,38 @@ static int add_escape_class(parser_t *p, neverc_regexp_syntax_node_t *n,
     }
 }
 
+#ifndef NCI_RE_MAX_RUNE
+#define NCI_RE_MAX_RUNE 0x10FFFF
+#endif
+
+static int is_perl_class_escape(int escape) {
+    int lower = escape | 0x20;
+    return lower == 'd' || lower == 'w' || lower == 's';
+}
+
+/* Complement of \d/\w/\s as range pairs, for use inside a character class.
+ * Standalone \D is a negated class; [\D] is a union of the non-digit ranges. */
+static int add_escape_class_complement(parser_t *p, neverc_regexp_syntax_node_t *n,
+                                       int escape) {
+    switch (escape | 0x20) {
+    case 'd':
+        return add_rune(p, n, 0) && add_rune(p, n, '0' - 1) &&
+               add_rune(p, n, '9' + 1) && add_rune(p, n, NCI_RE_MAX_RUNE);
+    case 'w':
+        return add_rune(p, n, 0) && add_rune(p, n, '0' - 1) &&
+               add_rune(p, n, '9' + 1) && add_rune(p, n, 'A' - 1) &&
+               add_rune(p, n, 'Z' + 1) && add_rune(p, n, '_' - 1) &&
+               add_rune(p, n, '_' + 1) && add_rune(p, n, 'a' - 1) &&
+               add_rune(p, n, 'z' + 1) && add_rune(p, n, NCI_RE_MAX_RUNE);
+    case 's':
+        return add_rune(p, n, 0) && add_rune(p, n, '\t' - 1) &&
+               add_rune(p, n, '\r' + 1) && add_rune(p, n, ' ' - 1) &&
+               add_rune(p, n, ' ' + 1) && add_rune(p, n, NCI_RE_MAX_RUNE);
+    default:
+        return 0;
+    }
+}
+
 /* ======================================================================
  * Parser
  * ====================================================================== */
@@ -235,6 +267,12 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
                     return NULL;
                 }
                 continue;
+            case 'D': case 'W': case 'S':
+                if (!add_escape_class_complement(p, n, esc)) {
+                    neverc_regexp_syntax_free(n);
+                    return NULL;
+                }
+                continue;
             case 'n': c = '\n'; break;
             case 't': c = '\t'; break;
             case 'r': c = '\r'; break;
@@ -252,6 +290,11 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
             if (peek(p) == '\\') {
                 next(p);
                 hi = next(p);
+                if (is_perl_class_escape(hi)) {
+                    p->err = "invalid character class range";
+                    neverc_regexp_syntax_free(n);
+                    return NULL;
+                }
                 if (hi == 'n') hi = '\n';
                 else if (hi == 't') hi = '\t';
                 else if (hi == 'r') hi = '\r';
@@ -395,7 +438,7 @@ static neverc_regexp_syntax_node_t *parse_atom(parser_t *p) {
         return parse_escape(p);
     case ')': case '|':
         return NULL;
-    case '*': case '+': case '?': case '{':
+    case '*': case '+': case '?':
         p->err = "unexpected repetition operator";
         return NULL;
     default:
@@ -418,6 +461,11 @@ static neverc_regexp_syntax_node_t *parse_repeat(parser_t *p) {
     case '+': next(p); rep = mk_node(p, NC_RE_OP_PLUS); break;
     case '?': next(p); rep = mk_node(p, NC_RE_OP_QUEST); break;
     case '{': {
+        /* Go/RE2: `{` is a quantifier only when a digit follows; otherwise
+         * it is a literal (so `a{}` and `{3}` parse as ordinary text). */
+        if (p->pos + 1 >= p->len ||
+            p->src[p->pos + 1] < '0' || p->src[p->pos + 1] > '9')
+            return atom;
         next(p);
         int min_val;
         if (!parse_int(p, &min_val)) {

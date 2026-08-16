@@ -163,6 +163,16 @@ static int decode_char_esc(char esc, int *out) {
     }
 }
 
+static int is_perl_class_escape(char esc) {
+    return esc == 'd' || esc == 'D' || esc == 'w' || esc == 'W' ||
+           esc == 's' || esc == 'S';
+}
+
+/* RE2/Go: $ matches at end of text, or immediately before a final newline. */
+static int anchor_end_at(const char *s, size_t slen, size_t pos) {
+    return pos == slen || (pos + 1 == slen && s[pos] == '\n');
+}
+
 static void cc_set_ws(charclass_t *cc) {
     cc_set(cc, ' ');
     cc_set(cc, '\t');
@@ -248,6 +258,10 @@ static frag_t parse_atom(parser_t *par) {
                 if (*par->p == '\\' && par->p[1]) {
                     par->p++;
                     char esc = *par->p++;
+                    if (is_perl_class_escape(esc)) {
+                        par->err = "invalid character class range";
+                        return frag(NULL, NULL);
+                    }
                     int decoded;
                     if (decode_char_esc(esc, &decoded)) hi = decoded;
                     else hi = (uint8_t)esc;
@@ -475,13 +489,17 @@ static frag_t parse_repeat(parser_t *par) {
                     hi = -1;                 /* {n,} -> n or more */
                 }
             }
-            if (*par->p != '}' || !have) {   /* not a valid repeat: treat { literally */
+            if (!have) {   /* `{` not followed by a digit: literal, like Go */
                 par->p = save + 1;
                 nfa_state_t *s = new_state(par->re, NFA_CHAR);
                 nfa_state_t *e = new_state(par->re, NFA_MATCH);
                 s->ch = '{'; s->out1 = e;
                 f = mk_concat(f, frag(s, e));
                 continue;
+            }
+            if (*par->p != '}') {            /* `{n` started a repeat: require `}` */
+                par->err = "bad repeat syntax";
+                return f;
             }
             par->p++;                        /* consume '}' */
             if (repeated) {
@@ -776,11 +794,15 @@ static int nfa_exec_ctx(nfa_ctx *ctx, neverc_regexp_t *re, const char *s,
     int gen = next_generation(&ctx->gen, visited, ctx->nstates);
     add_state(&cur, re->start, visited, gen);
 
-    /* Handle anchor-start states */
+    /* Handle zero-width anchors at the start position */
     for (int i = 0; i < cur.n; i++) {
         nfa_state_t *st = cur.states[i];
         if (st->type == NFA_ANCHOR_START) {
             if (start == 0)
+                add_state(&cur, st->out1, visited, gen);
+        }
+        if (st->type == NFA_ANCHOR_END) {
+            if (anchor_end_at(s, slen, start))
                 add_state(&cur, st->out1, visited, gen);
         }
     }
@@ -819,7 +841,7 @@ static int nfa_exec_ctx(nfa_ctx *ctx, neverc_regexp_t *re, const char *s,
         /* Handle anchor states in next */
         for (int j = 0; j < next.n; j++) {
             nfa_state_t *st = next.states[j];
-            if (st->type == NFA_ANCHOR_END && i + 1 == slen)
+            if (st->type == NFA_ANCHOR_END && anchor_end_at(s, slen, i + 1))
                 add_state(&next, st->out1, visited, gen);
             if (st->type == NFA_ANCHOR_START)
                 {}; /* Start anchor only at position 0 */
@@ -943,26 +965,28 @@ static void search_ctx_free(search_ctx *c) {
 
 /* Add state s (and its epsilon-closure) to tl, tagged with start offset. pos is
  * the current text offset, used to resolve anchors: ^ only crosses at offset 0,
- * $ only at offset slen. Dedup by state keeps the first (leftmost) thread. */
+ * $ at end of text or before a final newline. Dedup by state keeps the first
+ * (leftmost) thread. */
 static void search_add(tlist_t *tl, nfa_state_t *s, size_t start, size_t pos,
-                       size_t slen, int *visited, int gen) {
+                       const char *text, size_t slen, int *visited, int gen) {
     if (!s || visited[s->id] == gen) return;
     visited[s->id] = gen;
     if (s->type == NFA_SPLIT) {
-        search_add(tl, s->out1, start, pos, slen, visited, gen);
-        search_add(tl, s->out2, start, pos, slen, visited, gen);
+        search_add(tl, s->out1, start, pos, text, slen, visited, gen);
+        search_add(tl, s->out2, start, pos, text, slen, visited, gen);
         return;
     }
     if (s->type == NFA_MATCH && s->out1 != NULL) {       /* epsilon link */
-        search_add(tl, s->out1, start, pos, slen, visited, gen);
+        search_add(tl, s->out1, start, pos, text, slen, visited, gen);
         return;
     }
     if (s->type == NFA_ANCHOR_START) {
-        if (pos == 0) search_add(tl, s->out1, start, pos, slen, visited, gen);
+        if (pos == 0) search_add(tl, s->out1, start, pos, text, slen, visited, gen);
         return;
     }
     if (s->type == NFA_ANCHOR_END) {
-        if (pos == slen) search_add(tl, s->out1, start, pos, slen, visited, gen);
+        if (anchor_end_at(text, slen, pos))
+            search_add(tl, s->out1, start, pos, text, slen, visited, gen);
         return;
     }
     tl->st[tl->n] = s;                                   /* CHAR/ANY/CLASS/accept */
@@ -988,9 +1012,9 @@ static int nfa_search(search_ctx *ctx, neverc_regexp_t *re, const char *s,
     int gen = next_generation(&ctx->gen, visited, ctx->nstates);
     clist.n = 0;
     if (pos < slen && (!use_skip || fb_has(fb, (unsigned char)s[pos])))
-        search_add(&clist, re->start, pos, pos, slen, visited, gen);
+        search_add(&clist, re->start, pos, pos, s, slen, visited, gen);
     else if (!use_skip)                                  /* offset slen: anchors only */
-        search_add(&clist, re->start, pos, pos, slen, visited, gen);
+        search_add(&clist, re->start, pos, pos, s, slen, visited, gen);
 
     for (;;) {
         for (int j = 0; j < clist.n; j++) {              /* record accepts at pos */
@@ -1028,7 +1052,7 @@ static int nfa_search(search_ctx *ctx, neverc_regexp_t *re, const char *s,
             case NFA_CLASS: ok = cc_test(st->cls, ch); break;
             default: break;
             }
-            if (ok) search_add(&nlist, st->out1, clist.start[j], pos + 1, slen, visited, gen);
+            if (ok) search_add(&nlist, st->out1, clist.start[j], pos + 1, s, slen, visited, gen);
         }
 
         size_t npos = pos + 1;
@@ -1038,7 +1062,7 @@ static int nfa_search(search_ctx *ctx, neverc_regexp_t *re, const char *s,
                 gen = next_generation(&ctx->gen, visited, ctx->nstates);
             }
             if (npos < slen && (!use_skip || fb_has(fb, (unsigned char)s[npos])))
-                search_add(&nlist, re->start, npos, npos, slen, visited, gen);
+                search_add(&nlist, re->start, npos, npos, s, slen, visited, gen);
         }
 
         tlist_t tmp = clist; clist = nlist; nlist = tmp; /* swap, reuse buffers */

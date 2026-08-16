@@ -25,6 +25,7 @@ static void test_current(void) {
     ASSERT_TRUE(strlen(u.uid) > 0);
     ASSERT_TRUE(strlen(u.username) > 0);
     ASSERT_TRUE(strlen(u.home_dir) > 0);
+    ASSERT_TRUE(strchr(u.name, ',') == NULL);
     printf("  uid=%s gid=%s user=%s home=%s\n", u.uid, u.gid, u.username, u.home_dir);
 }
 

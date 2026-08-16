@@ -251,6 +251,18 @@ static void test_find_anchors(void) {
     re = neverc_regexp_compile("[0-9]+$", NULL);
     check_str("digits$ tail", find_str(re, "a1b22c333", buf), "333");
     neverc_regexp_free(re);
+
+    /* RE2/Go: $ also matches before a final trailing newline */
+    re = neverc_regexp_compile("a$", NULL);
+    check_str("a$ before final NL", find_str(re, "a\n", buf), "a");
+    check_bool("a$ not before mid NL",
+               neverc_regexp_find(re, "a\nb", &mlen) == NULL, 1);
+    neverc_regexp_free(re);
+
+    check_bool("$\\n matches NL", neverc_regexp_match_string("$\n", "\n"), 1);
+    check_bool("a$\\n matches aNL", neverc_regexp_match_string("a$\n", "a\n"), 1);
+    check_bool("a$ does not consume NL",
+               neverc_regexp_match_string("a$", "a\n"), 0);
 }
 
 /* Bounded repetition {n}, {n,}, {n,m}: previously parsed but silently ignored
@@ -305,8 +317,20 @@ static void test_repeat_braces(void) {
     check_bool("descending repeat rejected", re == NULL, 1);
     neverc_regexp_free(re);
 
-    /* an incomplete brace is a literal '{' (matches Go) */
+    /* `{` not followed by a digit is a literal '{' (matches Go) */
     check_bool("literal {", neverc_regexp_match_string("^a{$", "a{"), 1);
+    check_bool("a{} literal braces", neverc_regexp_match_string("^a{}$", "a{}"), 1);
+
+    /* `{n` that starts a repeat but never closes is an error (matches Go) */
+    err = NULL;
+    re = neverc_regexp_compile("a{3", &err);
+    check_bool("a{3 unclosed rejected", re == NULL, 1);
+    neverc_regexp_free(re);
+
+    err = NULL;
+    re = neverc_regexp_compile("[a-\\d]", &err);
+    check_bool("[a-\\d] range rejected", re == NULL, 1);
+    neverc_regexp_free(re);
 }
 
 static void test_invalid_inputs(void) {

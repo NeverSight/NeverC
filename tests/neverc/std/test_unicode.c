@@ -237,6 +237,25 @@ static void test_unicode_conformance_edges(void) {
     check_int("Devanagari avagraha is not mark",
               neverc_unicode_is_mark(0x093D), 0);
 
+    check_int("DZ capital is uppercase",
+              neverc_unicode_is_upper(0x01C4), 1);
+    check_int("dz small is lowercase",
+              neverc_unicode_is_lower(0x01C6), 1);
+    check_int("Dz title is not upper or lower",
+              !neverc_unicode_is_upper(0x01C5) &&
+              !neverc_unicode_is_lower(0x01C5) &&
+              neverc_unicode_is_title(0x01C5), 1);
+    check_u32("dz small uppercase",
+              neverc_unicode_to_upper(0x01C6), 0x01C4);
+    check_u32("DZ capital lowercase",
+              neverc_unicode_to_lower(0x01C4), 0x01C6);
+    check_u32("Dz title uppercase",
+              neverc_unicode_to_upper(0x01C5), 0x01C4);
+    check_u32("Dz title lowercase",
+              neverc_unicode_to_lower(0x01C5), 0x01C6);
+    check_u32("fold DZ to Dz", neverc_unicode_simple_fold(0x01C4), 0x01C5);
+    check_u32("fold Dz to dz", neverc_unicode_simple_fold(0x01C5), 0x01C6);
+    check_u32("fold dz to DZ", neverc_unicode_simple_fold(0x01C6), 0x01C4);
     check_u32("titlecase DZ capital",
               neverc_unicode_to_title(0x01C4), 0x01C5);
     check_u32("titlecase LJ capital",

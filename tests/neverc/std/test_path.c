@@ -70,6 +70,9 @@ static void test_dir(void) {
         check_int("dir overflow", neverc_path_dir(longpath, buf, sizeof(buf)), -1);
         free(longpath);
     }
+
+    neverc_path_dir("/foo/bar/../baz", buf, sizeof(buf));
+    check_str("dir cleans dotdot", buf, "/foo");
 }
 
 /* ===== Test: Ext ===== */
@@ -122,6 +125,18 @@ static void test_clean(void) {
 
     neverc_path_clean("a/b/c", buf, sizeof(buf));
     check_str("clean simple", buf, "a/b/c");
+
+    neverc_path_clean("abc/def/../..", buf, sizeof(buf));
+    check_str("clean to dot", buf, ".");
+
+    neverc_path_clean("/abc/def/../..", buf, sizeof(buf));
+    check_str("clean to root", buf, "/");
+
+    neverc_path_clean("abc/def/../../..", buf, sizeof(buf));
+    check_str("clean extra dotdot", buf, "..");
+
+    neverc_path_clean("foo/../..", buf, sizeof(buf));
+    check_str("clean above start", buf, "..");
 }
 
 /* ===== Test: Join ===== */
@@ -146,6 +161,12 @@ static void test_join(void) {
 
     neverc_path_join2("/foo", "bar/baz", buf, sizeof(buf));
     check_str("join abs", buf, "/foo/bar/baz");
+
+    neverc_path_join2("a/b", "../c", buf, sizeof(buf));
+    check_str("join dotdot", buf, "a/c");
+
+    neverc_path_join2("/a", "../..", buf, sizeof(buf));
+    check_str("join above root", buf, "/");
 }
 
 /* ===== Test: Split ===== */
@@ -187,6 +208,15 @@ static void test_match(void) {
               neverc_path_match("foo*", "foo/bar"), 0);
     check_int("star stops before literal slash",
               neverc_path_match("*/bar", "foo/bar"), 1);
+    check_int("escaped star", neverc_path_match("\\*", "*"), 1);
+    check_int("escaped star no", neverc_path_match("\\*", "a"), 0);
+    check_int("bad unclosed class", neverc_path_match("[abc", "a"), -1);
+    check_int("bad leftover class", neverc_path_match("x[", "y"), -1);
+    check_int("bad trailing escape", neverc_path_match("\\", "a"), -1);
+    check_int("bang is literal in class", neverc_path_match("[!a]", "!"), 1);
+    check_int("bang is not negation", neverc_path_match("[!a]", "b"), 0);
+    check_int("caret negation", neverc_path_match("[^a]", "b"), 1);
+    check_int("caret negation no", neverc_path_match("[^a]", "a"), 0);
 }
 
 int main(void) {

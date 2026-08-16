@@ -52,6 +52,25 @@ int neverc_errors_is(const neverc_error_t *err, const neverc_error_t *target) {
     return 0;
 }
 
+/* Copy an error and its wrap chain. Join must not take ownership of inputs. */
+static neverc_error_t *clone_error_chain(const neverc_error_t *err) {
+    if (!err || !err->msg) return NULL;
+    neverc_error_t *head = neverc_errors_new(err->msg);
+    if (!head) return NULL;
+    neverc_error_t *tail = head;
+    for (const neverc_error_t *src = err->wrapped; src; src = src->wrapped) {
+        if (!src->msg) break;
+        neverc_error_t *node = neverc_errors_new(src->msg);
+        if (!node) {
+            neverc_errors_free(head);
+            return NULL;
+        }
+        tail->wrapped = node;
+        tail = node;
+    }
+    return head;
+}
+
 neverc_error_t *neverc_errors_wrap(const char *text, neverc_error_t *cause) {
     if (!text) return NULL;
     neverc_error_t *e = (neverc_error_t *)malloc(sizeof(neverc_error_t));
@@ -116,7 +135,7 @@ neverc_error_t *neverc_errors_join(neverc_error_t **errs, size_t count) {
             for (size_t j = 0; j < mlen; j++) combined[pos++] = errs[i]->msg[j];
             first = 0;
 
-            neverc_error_t *node = neverc_errors_new(errs[i]->msg);
+            neverc_error_t *node = clone_error_chain(errs[i]);
             if (!node) {
                 neverc_errors_free(chain);
                 free(combined);
@@ -125,6 +144,7 @@ neverc_error_t *neverc_errors_join(neverc_error_t **errs, size_t count) {
             if (!chain) chain = node;
             else tail->wrapped = node;
             tail = node;
+            while (tail->wrapped) tail = tail->wrapped;
         }
     }
     combined[pos] = '\0';

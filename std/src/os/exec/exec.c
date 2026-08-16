@@ -204,40 +204,56 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
             !SetHandleInformation(hStdinWr, HANDLE_FLAG_INHERIT, 0)) goto setup_error;
     }
 
-    /* Build command line – only quote arguments that contain spaces or
-       special characters so that cmd.exe /C and similar switches are passed
-       unquoted and recognised correctly. */
+    /* CommandLineToArgvW quoting (Go syscall.EscapeArg): double slashes
+     * before embedded quotes and before the closing quote. */
     size_t cmdlen = 0;
     for (int i = 0; i < cmd->argc; i++) {
         size_t argument_length = strlen(cmd->argv[i]);
-        if (argument_length > SIZE_MAX - cmdlen - 3) goto setup_error;
-        cmdlen += argument_length + 3;
+        if (argument_length > (SIZE_MAX / 2) - 4) goto setup_error;
+        size_t quoted = argument_length * 2 + 3;
+        if (quoted > SIZE_MAX - cmdlen - 1) goto setup_error;
+        cmdlen += quoted;
     }
     char *cmdline = (char *)malloc(cmdlen + 1);
     if (!cmdline) goto setup_error;
-    /* Append with a running offset instead of strcat: each strcat re-scanned the
-     * whole accumulated string, making the build O(total_len^2). memcpy at the
-     * tracked end is O(total_len) and writes byte-identical output. The +3/arg
-     * reservation (leading space + two quotes) bounds every write below. */
     size_t pos = 0;
     for (int i = 0; i < cmd->argc; i++) {
         if (i > 0) cmdline[pos++] = ' ';
-        int needs_quote = 0;
-        for (const char *p = cmd->argv[i]; *p; p++) {
+        const char *arg = cmd->argv[i];
+        int needs_quote = (arg[0] == '\0');
+        for (const char *p = arg; *p && !needs_quote; p++) {
             if (*p == ' ' || *p == '\t' || *p == '"' || *p == '&' ||
-                *p == '|' || *p == '<' || *p == '>' || *p == '^') {
+                *p == '|' || *p == '<' || *p == '>' || *p == '^')
                 needs_quote = 1;
-                break;
+        }
+        if (!needs_quote) {
+            size_t alen = strlen(arg);
+            memcpy(cmdline + pos, arg, alen);
+            pos += alen;
+            continue;
+        }
+        cmdline[pos++] = '"';
+        size_t slashes = 0;
+        for (const char *p = arg; *p; p++) {
+            if (*p == '\\') {
+                slashes++;
+            } else if (*p == '"') {
+                size_t extra;
+                for (extra = 0; extra < slashes; extra++)
+                    cmdline[pos++] = '\\';
+                cmdline[pos++] = '\\';
+                slashes = 0;
+            } else {
+                slashes = 0;
             }
+            cmdline[pos++] = *p;
         }
-        size_t alen = strlen(cmd->argv[i]);
-        if (needs_quote || cmd->argv[i][0] == '\0') {
-            cmdline[pos++] = '"';
-            memcpy(cmdline + pos, cmd->argv[i], alen); pos += alen;
-            cmdline[pos++] = '"';
-        } else {
-            memcpy(cmdline + pos, cmd->argv[i], alen); pos += alen;
+        {
+            size_t extra;
+            for (extra = 0; extra < slashes; extra++)
+                cmdline[pos++] = '\\';
         }
+        cmdline[pos++] = '"';
     }
     cmdline[pos] = '\0';
 

@@ -165,8 +165,9 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
     const char *first_delimiter = strpbrk(p, "/?#");
     if (scheme_end && (!first_delimiter || scheme_end < first_delimiter)) {
         size_t scheme_length = (size_t)(scheme_end - p);
-        if (!valid_scheme(p, scheme_length) || scheme_end[1] != '/' ||
-            scheme_end[2] != '/' ||
+        if (!valid_scheme(p, scheme_length) ||
+            (size_t)(raw_end - scheme_end) < 3 ||
+            scheme_end[1] != '/' || scheme_end[2] != '/' ||
             copy_exact(u->scheme, sizeof(u->scheme), p,
                        scheme_length) != 0)
             return -1;

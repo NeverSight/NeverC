@@ -105,6 +105,12 @@ static void test_parse_int(void) {
               neverc_strconv_parse_int("-18446744073709551616", 10, &v),
               NEVERC_STRCONV_ERR_RANGE);
     check_ll("negative magnitude overflow clamp", v, LLONG_MIN);
+    check_int("explicit hex prefix signed",
+              neverc_strconv_parse_int("0x10", 16, &v), 0);
+    check_ll("explicit hex prefix signed val", v, 16);
+    check_int("overflow trailing junk signed is syntax",
+              neverc_strconv_parse_int("18446744073709551616x", 10, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
 }
 
 /* ===== ParseUint ===== */
@@ -136,6 +142,22 @@ static void test_parse_uint(void) {
     check_int("invalid implicit octal rejected",
               neverc_strconv_parse_uint("08", 0, &v),
               NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("explicit hex prefix",
+              neverc_strconv_parse_uint("0xff", 16, &v), 0);
+    check_ull("explicit hex prefix val", v, 255);
+    check_int("explicit bin prefix",
+              neverc_strconv_parse_uint("0b11111111", 2, &v), 0);
+    check_ull("explicit bin prefix val", v, 255);
+    check_int("explicit oct prefix",
+              neverc_strconv_parse_uint("0o377", 8, &v), 0);
+    check_ull("explicit oct prefix val", v, 255);
+    check_int("overflow trailing junk is syntax",
+              neverc_strconv_parse_uint("18446744073709551616x", 10, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("overflow still range without junk",
+              neverc_strconv_parse_uint("18446744073709551616", 10, &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_ull("overflow clamp", v, ULLONG_MAX);
 }
 
 /* ===== ParseFloat ===== */

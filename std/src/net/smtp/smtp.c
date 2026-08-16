@@ -360,7 +360,8 @@ static int smtp_write_data_stuffed(neverc_smtp_client_t *c,
 int neverc_smtp_write_data(neverc_smtp_client_t *c,
                              const void *data, size_t len) {
     if (!c || !c->in_data) return -1;
-    if (!data || len == 0) return 0;
+    if (len == 0) return 0;
+    if (!data) return -1;
     return smtp_write_data_stuffed(c, data, len);
 }
 

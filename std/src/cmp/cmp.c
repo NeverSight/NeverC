@@ -9,6 +9,18 @@
 static int isnan_f32(float x)  { return x != x; }
 static int isnan_f64(double x) { return x != x; }
 
+static int is_negzero_f32(float x) {
+    union { float f; uint32_t u; } v;
+    v.f = x;
+    return v.u == 0x80000000u;
+}
+
+static int is_negzero_f64(double x) {
+    union { double d; uint64_t u; } v;
+    v.d = x;
+    return v.u == UINT64_C(0x8000000000000000);
+}
+
 int neverc_cmp_compare_int(int x, int y) {
     if (x < y) return -1;
     if (x > y) return +1;
@@ -66,25 +78,33 @@ int64_t neverc_cmp_max_int64(int64_t x, int64_t y) { return x > y ? x : y; }
 float neverc_cmp_min_float32(float x, float y) {
     if (isnan_f32(x)) return x;
     if (isnan_f32(y)) return y;
-    return x < y ? x : y;
+    if (x < y) return x;
+    if (y < x) return y;
+    return (is_negzero_f32(y) && !is_negzero_f32(x)) ? y : x;
 }
 
 float neverc_cmp_max_float32(float x, float y) {
     if (isnan_f32(x)) return x;
     if (isnan_f32(y)) return y;
-    return x > y ? x : y;
+    if (x > y) return x;
+    if (y > x) return y;
+    return (is_negzero_f32(x) && !is_negzero_f32(y)) ? y : x;
 }
 
 double neverc_cmp_min_float64(double x, double y) {
     if (isnan_f64(x)) return x;
     if (isnan_f64(y)) return y;
-    return x < y ? x : y;
+    if (x < y) return x;
+    if (y < x) return y;
+    return (is_negzero_f64(y) && !is_negzero_f64(x)) ? y : x;
 }
 
 double neverc_cmp_max_float64(double x, double y) {
     if (isnan_f64(x)) return x;
     if (isnan_f64(y)) return y;
-    return x > y ? x : y;
+    if (x > y) return x;
+    if (y > x) return y;
+    return (is_negzero_f64(x) && !is_negzero_f64(y)) ? y : x;
 }
 
 int neverc_cmp_clamp_int(int x, int lo, int hi) {

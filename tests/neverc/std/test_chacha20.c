@@ -155,6 +155,35 @@ static void test_counter_wrap(void) {
     check_true("last block still emitted", memcmp(out, aa, 64) != 0);
 }
 
+static void test_counter_wrap_leftover(void) {
+    printf("[ChaCha20 last-block leftover]\n");
+    uint8_t key[32] = {0}, nonce[12] = {0}, in[64] = {0};
+    uint8_t one_shot[64], chunked[64], extra[16];
+    neverc_chacha20_ctx ctx;
+
+    neverc_chacha20_init(&ctx, key, nonce, 0xFFFFFFFFu);
+    neverc_chacha20_xor(&ctx, one_shot, in, 64);
+
+    neverc_chacha20_init(&ctx, key, nonce, 0xFFFFFFFFu);
+    neverc_chacha20_xor(&ctx, chunked, in, 32);
+    neverc_chacha20_xor(&ctx, chunked + 32, in + 32, 32);
+    check_true("32+32 leftover matches 64-byte last block",
+               memcmp(one_shot, chunked, 64) == 0);
+
+    memset(extra, 0xAA, sizeof(extra));
+    neverc_chacha20_xor(&ctx, extra, in, sizeof(extra));
+    uint8_t aa[16];
+    memset(aa, 0xAA, sizeof(aa));
+    check_true("no keystream after last-block leftover is consumed",
+               memcmp(extra, aa, sizeof(extra)) == 0);
+
+    neverc_chacha20_init(&ctx, key, nonce, 0xFFFFFFFFu);
+    neverc_chacha20_xor(&ctx, chunked, in, 1);
+    neverc_chacha20_xor(&ctx, chunked + 1, in + 1, 63);
+    check_true("1+63 leftover matches 64-byte last block",
+               memcmp(one_shot, chunked, 64) == 0);
+}
+
 int main(void) {
     printf("=== NeverC ChaCha20 Tests ===\n\n");
     test_rfc7539_block();
@@ -162,6 +191,7 @@ int main(void) {
     test_round_trip();
     test_incremental();
     test_counter_wrap();
+    test_counter_wrap_leftover();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
