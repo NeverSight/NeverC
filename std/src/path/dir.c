@@ -1,4 +1,5 @@
 #include "neverc/std/path.h"
+#include <stdlib.h>
 #include <string.h>
 
 int neverc_path_dir(const char *path, char *buf, size_t bufsize) {
@@ -8,21 +9,19 @@ int neverc_path_dir(const char *path, char *buf, size_t bufsize) {
     if (!path || *path == '\0')
         return neverc_path_clean("", buf, bufsize);
 
-    /* find last slash */
     size_t len = strlen(path);
     size_t i = len;
     while (i > 0 && path[i - 1] != '/')
         i--;
 
-    /* dir part is path[:i] */
-    char tmp[4096];
-    if (i == 0) {
-        tmp[0] = '\0';
-    } else {
-        if (i >= sizeof(tmp)) return -1;
+    char *tmp = (char *)malloc(i + 1);
+    if (!tmp)
+        return -1;
+    if (i > 0)
         memcpy(tmp, path, i);
-        tmp[i] = '\0';
-    }
+    tmp[i] = '\0';
 
-    return neverc_path_clean(tmp, buf, bufsize);
+    int n = neverc_path_clean(tmp, buf, bufsize);
+    free(tmp);
+    return n;
 }

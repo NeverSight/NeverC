@@ -1,5 +1,6 @@
 #include "neverc/std/encoding/protobuf.h"
 
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -109,10 +110,124 @@ static void test_malformed_inputs(void) {
     static const uint8_t oversized[] = {0x0aU, 0x05U, 1U, 2U, 3U, 4U, 5U};
     neverc_protobuf_reader_init(&reader, oversized, sizeof(oversized), 4U);
     CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
-    static const uint8_t invalid_wire[] = {0x0bU};
+    static const uint8_t invalid_wire[] = {0x0fU}; /* field 1, wire type 7 */
     neverc_protobuf_reader_init(&reader, invalid_wire, sizeof(invalid_wire),
                                 64U);
     CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+}
+
+static void test_skip_groups(void) {
+    neverc_protobuf_reader_t reader;
+    neverc_protobuf_field_t field;
+
+    /* field 1=1, empty group 2, field 3=7 */
+    static const uint8_t empty_group[] = {
+        0x08U, 0x01U, 0x13U, 0x14U, 0x18U, 0x07U};
+    neverc_protobuf_reader_init(&reader, empty_group, sizeof(empty_group), 64U);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == 1);
+    CHECK(field.number == 1U && field.value.varint == 1U);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == 1);
+    CHECK(field.number == 3U && field.value.varint == 7U);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == 0);
+
+    /* start-group 2, nested varint, end-group 2, then field 1 */
+    static const uint8_t nested[] = {
+        0x13U, 0x08U, 0x01U, 0x14U, 0x08U, 0x2aU};
+    neverc_protobuf_reader_init(&reader, nested, sizeof(nested), 64U);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == 1);
+    CHECK(field.number == 1U && field.value.varint == 42U);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == 0);
+
+    /* unmatched start-group */
+    static const uint8_t open_group[] = {0x0bU};
+    neverc_protobuf_reader_init(&reader, open_group, sizeof(open_group), 64U);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+
+    /* end-group without start */
+    static const uint8_t lone_end[] = {0x0cU};
+    neverc_protobuf_reader_init(&reader, lone_end, sizeof(lone_end), 64U);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+
+    /* start 2 / end 3 mismatch */
+    static const uint8_t mismatch[] = {0x13U, 0x1cU};
+    neverc_protobuf_reader_init(&reader, mismatch, sizeof(mismatch), 64U);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+}
+
+static void test_truncated_does_not_desync(void) {
+    neverc_protobuf_reader_t reader;
+    neverc_protobuf_field_t field;
+    /* Field 1 fixed64, only 2 payload bytes. After -1 the leftover 08 01
+     * must not be reparsed as a varint field. */
+    static const uint8_t truncated_fixed64[] = {0x09U, 0x08U, 0x01U};
+    neverc_protobuf_reader_init(&reader, truncated_fixed64,
+                                sizeof(truncated_fixed64), 64U);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+}
+
+static void test_zigzag(void) {
+    CHECK(neverc_protobuf_zigzag_encode32(0) == 0U);
+    CHECK(neverc_protobuf_zigzag_encode32(-1) == 1U);
+    CHECK(neverc_protobuf_zigzag_encode32(1) == 2U);
+    CHECK(neverc_protobuf_zigzag_encode32(-2) == 3U);
+    CHECK(neverc_protobuf_zigzag_decode32(1U) == -1);
+    CHECK(neverc_protobuf_zigzag_decode32(3U) == -2);
+    CHECK(neverc_protobuf_zigzag_encode32(INT32_MIN) == UINT32_MAX);
+    CHECK(neverc_protobuf_zigzag_decode32(UINT32_MAX) == INT32_MIN);
+    CHECK(neverc_protobuf_zigzag_encode64(INT64_MIN) == UINT64_MAX);
+    CHECK(neverc_protobuf_zigzag_decode64(UINT64_MAX) == INT64_MIN);
+}
+
+static void test_packed_and_wire_compat(void) {
+    typedef struct {
+        int32_t n;
+        int32_t delta;
+    } packed_msg_t;
+    static const neverc_protobuf_field_descriptor_t fields[] = {
+        {1U, NEVERC_PROTOBUF_TYPE_INT32,
+         offsetof(packed_msg_t, n), SIZE_MAX},
+        {2U, NEVERC_PROTOBUF_TYPE_SINT32,
+         offsetof(packed_msg_t, delta), SIZE_MAX},
+    };
+    static const neverc_protobuf_message_descriptor_t desc = {
+        sizeof(packed_msg_t), fields, 2U};
+    packed_msg_t msg;
+
+    /* Packed int32 [42, 43] — last value wins. */
+    static const uint8_t packed_int32[] = {0x0aU, 0x02U, 0x2aU, 0x2bU};
+    CHECK(neverc_protobuf_message_decode(&desc, packed_int32,
+                                         sizeof(packed_int32), 64U, &msg,
+                                         sizeof(msg)) == 0);
+    CHECK(msg.n == 43);
+
+    /* Packed sint32 zigzag(-2) = 3. */
+    static const uint8_t packed_sint32[] = {0x12U, 0x01U, 0x03U};
+    CHECK(neverc_protobuf_message_decode(&desc, packed_sint32,
+                                         sizeof(packed_sint32), 64U, &msg,
+                                         sizeof(msg)) == 0);
+    CHECK(msg.delta == -2);
+
+    /* Truncated packed varint is malformed. */
+    static const uint8_t truncated_packed[] = {0x0aU, 0x02U, 0x80U};
+    CHECK(neverc_protobuf_message_decode(&desc, truncated_packed,
+                                         sizeof(truncated_packed), 64U, &msg,
+                                         sizeof(msg)) == -1);
+
+    /* Unexpected fixed64 on int32 is skipped; later varint is kept. */
+    static const uint8_t skip_wire[] = {
+        0x09U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+        0x08U, 0x2aU};
+    CHECK(neverc_protobuf_message_decode(&desc, skip_wire, sizeof(skip_wire),
+                                         64U, &msg, sizeof(msg)) == 0);
+    CHECK(msg.n == 42);
+
+    /* Unknown group is skipped; following int32 is kept. */
+    static const uint8_t with_group[] = {
+        0x13U, 0x08U, 0x01U, 0x14U, 0x08U, 0x09U};
+    CHECK(neverc_protobuf_message_decode(&desc, with_group, sizeof(with_group),
+                                         64U, &msg, sizeof(msg)) == 0);
+    CHECK(msg.n == 9);
 }
 
 static void test_int32_range(void) {
@@ -151,6 +266,10 @@ int main(void) {
     test_wire_golden();
     test_descriptor_roundtrip();
     test_malformed_inputs();
+    test_skip_groups();
+    test_truncated_does_not_desync();
+    test_zigzag();
+    test_packed_and_wire_compat();
     test_int32_range();
     test_utf8_and_bounds();
     printf("protobuf: %d checks, %d failed\n", tests_run, tests_failed);

@@ -260,6 +260,45 @@ static void test_reject_unsafe_paths(void) {
     neverc_zip_writer_free(&w);
 }
 
+static void test_zip64_sentinels(void) {
+    printf("[zip64 sentinels]\n");
+    neverc_zip_writer_t writer;
+    neverc_zip_writer_init(&writer);
+    writer.nentries = UINT16_MAX - 1;
+    check_int("writer rejects zip64 entry count",
+              neverc_zip_writer_add(
+                  &writer, "x", (const uint8_t *)"x", 1), -1);
+    neverc_zip_writer_free(&writer);
+
+    uint8_t eocd[22];
+    memset(eocd, 0, sizeof(eocd));
+    eocd[0] = 0x50;
+    eocd[1] = 0x4b;
+    eocd[2] = 0x05;
+    eocd[3] = 0x06;
+    eocd[8] = 0xff;
+    eocd[9] = 0xff;
+    eocd[10] = 0xff;
+    eocd[11] = 0xff;
+    neverc_zip_reader_t reader;
+    check_int("reject zip64 eocd count",
+              neverc_zip_reader_init(&reader, eocd, sizeof(eocd)), -1);
+    neverc_zip_reader_free(&reader);
+
+    memset(eocd, 0, sizeof(eocd));
+    eocd[0] = 0x50;
+    eocd[1] = 0x4b;
+    eocd[2] = 0x05;
+    eocd[3] = 0x06;
+    eocd[16] = 0xff;
+    eocd[17] = 0xff;
+    eocd[18] = 0xff;
+    eocd[19] = 0xff;
+    check_int("reject zip64 eocd offset",
+              neverc_zip_reader_init(&reader, eocd, sizeof(eocd)), -1);
+    neverc_zip_reader_free(&reader);
+}
+
 int main(void) {
     printf("=== NeverC Archive/ZIP Module Tests ===\n\n");
     test_roundtrip();
@@ -268,6 +307,7 @@ int main(void) {
     test_central_directory_and_writer_state();
     test_invalid_args();
     test_reject_unsafe_paths();
+    test_zip64_sentinels();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

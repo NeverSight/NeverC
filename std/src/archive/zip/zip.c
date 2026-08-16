@@ -276,7 +276,8 @@ int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
                           const uint8_t *data, size_t len) {
     if (!w || !name || w->closed || w->failed ||
         (!data && len != 0) || len > UINT32_MAX ||
-        w->len > UINT32_MAX || w->nentries < 0 || w->nentries >= UINT16_MAX ||
+        w->len > UINT32_MAX || w->nentries < 0 ||
+        w->nentries >= UINT16_MAX - 1 ||
         !zip_path_is_safe(name))
         return -1;
     size_t name_size = strlen(name);
@@ -324,7 +325,7 @@ int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
 
 int neverc_zip_writer_close(neverc_zip_writer_t *w) {
     if (!w || w->failed || w->nentries < 0 ||
-        w->nentries > UINT16_MAX || w->nentries > w->entries_cap ||
+        w->nentries >= UINT16_MAX || w->nentries > w->entries_cap ||
         (w->nentries > 0 && (!w->entries || !w->offsets)) ||
         w->len > UINT32_MAX)
         return -1;

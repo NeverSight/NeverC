@@ -68,6 +68,14 @@ static void test_dir(void) {
         longpath[5001] = 'b';
         longpath[5002] = '\0';
         check_int("dir overflow", neverc_path_dir(longpath, buf, sizeof(buf)), -1);
+        {
+            char *out = (char *)malloc(5002);
+            int n = out ? neverc_path_dir(longpath, out, 5002) : -1;
+            check_int("dir long n", n, 5000);
+            check_int("dir long bytes",
+                      n == 5000 && out && out[0] == 'a' && out[4999] == 'a', 1);
+            free(out);
+        }
         free(longpath);
     }
 
@@ -167,6 +175,31 @@ static void test_join(void) {
 
     neverc_path_join2("/a", "../..", buf, sizeof(buf));
     check_str("join above root", buf, "/");
+
+    /* Longer than the old 4096-byte stack scratch. */
+    {
+        enum { N = 3000 };
+        char *a = (char *)malloc(N + 1);
+        char *b = (char *)malloc(N + 1);
+        char *out = (char *)malloc(2 * N + 2);
+        int n, i, ok;
+        if (!a || !b || !out) {
+            check_int("join long alloc", 0, 1);
+        } else {
+            memset(a, 'x', N); a[N] = '\0';
+            memset(b, 'y', N); b[N] = '\0';
+            n = neverc_path_join2(a, b, out, 2 * N + 2);
+            check_int("join long n", n, 2 * N + 1);
+            ok = (n == 2 * N + 1);
+            for (i = 0; ok && i < N; i++)
+                if (out[i] != 'x') ok = 0;
+            if (ok && out[N] != '/') ok = 0;
+            for (i = 0; ok && i < N; i++)
+                if (out[N + 1 + i] != 'y') ok = 0;
+            check_int("join long bytes", ok, 1);
+        }
+        free(a); free(b); free(out);
+    }
 }
 
 /* ===== Test: Split ===== */

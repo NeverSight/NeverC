@@ -438,6 +438,12 @@ static void test_reject_unsafe_paths(void) {
     unsafe.typeflag = NEVERC_TAR_REG;
     check_int("writer rejects dot name",
               neverc_tar_writer_write_header(&writer, &unsafe), -1);
+    memcpy(unsafe.name, "C:foo", 6);
+    check_int("writer rejects drive prefix",
+              neverc_tar_writer_write_header(&writer, &unsafe), -1);
+    memcpy(unsafe.name, "file:stream", 12);
+    check_int("writer rejects colon ads",
+              neverc_tar_writer_write_header(&writer, &unsafe), -1);
     neverc_tar_writer_free(&writer);
 
     memset(block, 0, sizeof(block));
@@ -453,6 +459,20 @@ static void test_reject_unsafe_paths(void) {
     test_finish_header(block);
     neverc_tar_reader_init(&reader, block, sizeof(block));
     check_int("reject dot name",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(block, 0, sizeof(block));
+    memcpy(block, "C:foo", 5);
+    test_finish_header(block);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject drive prefix",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(block, 0, sizeof(block));
+    memcpy(block, "file:stream", 11);
+    test_finish_header(block);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject colon ads",
               neverc_tar_reader_next(&reader, &header), -1);
 }
 

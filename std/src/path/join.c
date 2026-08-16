@@ -1,4 +1,5 @@
 #include "neverc/std/path.h"
+#include <stdlib.h>
 #include <string.h>
 
 int neverc_path_join2(const char *a, const char *b, char *buf, size_t bufsize) {
@@ -13,28 +14,31 @@ int neverc_path_join2(const char *a, const char *b, char *buf, size_t bufsize) {
         return 0;
     }
 
-    char tmp[4096];
-    size_t len = 0;
+    size_t alen = a_empty ? 0 : strlen(a);
+    size_t blen = b_empty ? 0 : strlen(b);
+    int need_slash = (!a_empty && !b_empty);
+    if (blen > SIZE_MAX - 2 || alen > SIZE_MAX - blen - (need_slash ? 2 : 1))
+        return -1;
+    size_t need = alen + (need_slash ? 1 : 0) + blen + 1;
 
+    char *tmp = (char *)malloc(need);
+    if (!tmp)
+        return -1;
+
+    size_t len = 0;
     if (!a_empty) {
-        size_t alen = strlen(a);
-        if (alen >= sizeof(tmp)) return -1;
         memcpy(tmp, a, alen);
         len = alen;
     }
-
-    if (!a_empty && !b_empty) {
-        if (len + 1 >= sizeof(tmp)) return -1;
+    if (need_slash)
         tmp[len++] = '/';
-    }
-
     if (!b_empty) {
-        size_t blen = strlen(b);
-        if (len + blen >= sizeof(tmp)) return -1;
         memcpy(tmp + len, b, blen);
         len += blen;
     }
-
     tmp[len] = '\0';
-    return neverc_path_clean(tmp, buf, bufsize);
+
+    int n = neverc_path_clean(tmp, buf, bufsize);
+    free(tmp);
+    return n;
 }

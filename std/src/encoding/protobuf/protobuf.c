@@ -3,6 +3,10 @@
 #include <limits.h>
 #include <string.h>
 
+#define PROTOBUF_WIRE_START_GROUP 3U
+#define PROTOBUF_WIRE_END_GROUP 4U
+#define PROTOBUF_MAX_GROUP_DEPTH 100
+
 static int protobuf_field_number_valid(uint32_t number) {
     return number > 0 && number <= NEVERC_PROTOBUF_MAX_FIELD_NUMBER;
 }
@@ -103,70 +107,148 @@ void neverc_protobuf_reader_init(neverc_protobuf_reader_t *reader,
         ? max_field_size : NEVERC_PROTOBUF_DEFAULT_MAX_FIELD_SIZE;
 }
 
+static int protobuf_skip_group(neverc_protobuf_reader_t *reader,
+                               uint32_t number, int depth);
+
+static int protobuf_skip_payload(neverc_protobuf_reader_t *reader,
+                                 uint8_t wire, uint32_t number, int depth) {
+    if (!reader || reader->offset > reader->length) return -1;
+    size_t remaining = reader->length - reader->offset;
+    size_t consumed = 0;
+    uint64_t value = 0;
+    switch (wire) {
+    case NEVERC_PROTOBUF_WIRE_VARINT:
+        if (protobuf_read_varint(reader->data + reader->offset, remaining,
+                                 &consumed, &value) != 0)
+            return -1;
+        reader->offset += consumed;
+        return 0;
+    case NEVERC_PROTOBUF_WIRE_FIXED64:
+        if (remaining < 8) return -1;
+        reader->offset += 8;
+        return 0;
+    case NEVERC_PROTOBUF_WIRE_LENGTH_DELIMITED:
+        if (protobuf_read_varint(reader->data + reader->offset, remaining,
+                                 &consumed, &value) != 0)
+            return -1;
+        reader->offset += consumed;
+        remaining = reader->length - reader->offset;
+        if (value > remaining || value > reader->max_field_size)
+            return -1;
+        reader->offset += (size_t)value;
+        return 0;
+    case PROTOBUF_WIRE_START_GROUP:
+        return protobuf_skip_group(reader, number, depth + 1);
+    case NEVERC_PROTOBUF_WIRE_FIXED32:
+        if (remaining < 4) return -1;
+        reader->offset += 4;
+        return 0;
+    default:
+        return -1;
+    }
+}
+
+static int protobuf_skip_group(neverc_protobuf_reader_t *reader,
+                               uint32_t number, int depth) {
+    if (!reader || depth > PROTOBUF_MAX_GROUP_DEPTH) return -1;
+    while (reader->offset < reader->length) {
+        size_t consumed = 0;
+        uint64_t tag = 0;
+        if (protobuf_read_varint(reader->data + reader->offset,
+                                 reader->length - reader->offset,
+                                 &consumed, &tag) != 0)
+            return -1;
+        reader->offset += consumed;
+        uint64_t nested = tag >> 3;
+        uint8_t wire = (uint8_t)(tag & 7U);
+        if (nested == 0 || nested > NEVERC_PROTOBUF_MAX_FIELD_NUMBER)
+            return -1;
+        if (wire == PROTOBUF_WIRE_END_GROUP)
+            return nested == number ? 0 : -1;
+        if (protobuf_skip_payload(reader, wire, (uint32_t)nested, depth) != 0)
+            return -1;
+    }
+    return -1;
+}
+
 int neverc_protobuf_reader_next(neverc_protobuf_reader_t *reader,
                                  neverc_protobuf_field_t *field) {
     if (!reader || !field || (!reader->data && reader->length > 0) ||
         reader->offset > reader->length)
         return -1;
     if (reader->offset == reader->length) return 0;
-    size_t consumed = 0;
-    uint64_t tag = 0;
-    if (protobuf_read_varint(reader->data + reader->offset,
-                             reader->length - reader->offset,
-                             &consumed, &tag) != 0)
-        return -1;
-    reader->offset += consumed;
-    uint64_t number = tag >> 3;
-    uint8_t wire = (uint8_t)(tag & 7U);
-    if (number == 0 || number > NEVERC_PROTOBUF_MAX_FIELD_NUMBER ||
-        (wire != NEVERC_PROTOBUF_WIRE_VARINT &&
-         wire != NEVERC_PROTOBUF_WIRE_FIXED64 &&
-         wire != NEVERC_PROTOBUF_WIRE_LENGTH_DELIMITED &&
-         wire != NEVERC_PROTOBUF_WIRE_FIXED32))
-        return -1;
-    memset(field, 0, sizeof(*field));
-    field->number = (uint32_t)number;
-    field->wire_type = (neverc_protobuf_wire_type_t)wire;
-    size_t remaining = reader->length - reader->offset;
-    switch (wire) {
-    case NEVERC_PROTOBUF_WIRE_VARINT:
-        if (protobuf_read_varint(reader->data + reader->offset, remaining,
-                                 &consumed, &field->value.varint) != 0)
-            return -1;
+    size_t start = reader->offset;
+    for (;;) {
+        if (reader->offset == reader->length) return 0;
+        size_t consumed = 0;
+        uint64_t tag = 0;
+        if (protobuf_read_varint(reader->data + reader->offset,
+                                 reader->length - reader->offset,
+                                 &consumed, &tag) != 0)
+            goto fail;
         reader->offset += consumed;
-        return 1;
-    case NEVERC_PROTOBUF_WIRE_FIXED64:
-        if (remaining < 8) return -1;
-        for (unsigned i = 0; i < 8; i++)
-            field->value.fixed64 |=
-                (uint64_t)reader->data[reader->offset + i] << (i * 8);
-        reader->offset += 8;
-        return 1;
-    case NEVERC_PROTOBUF_WIRE_LENGTH_DELIMITED: {
-        uint64_t encoded_length = 0;
-        if (protobuf_read_varint(reader->data + reader->offset, remaining,
-                                 &consumed, &encoded_length) != 0)
-            return -1;
-        reader->offset += consumed;
-        remaining = reader->length - reader->offset;
-        if (encoded_length > SIZE_MAX || encoded_length > remaining ||
-            encoded_length > reader->max_field_size)
-            return -1;
-        field->value.bytes.data = reader->data + reader->offset;
-        field->value.bytes.length = (size_t)encoded_length;
-        reader->offset += (size_t)encoded_length;
-        return 1;
+        uint64_t number = tag >> 3;
+        uint8_t wire = (uint8_t)(tag & 7U);
+        if (number == 0 || number > NEVERC_PROTOBUF_MAX_FIELD_NUMBER)
+            goto fail;
+        if (wire == PROTOBUF_WIRE_START_GROUP) {
+            if (protobuf_skip_group(reader, (uint32_t)number, 1) != 0)
+                goto fail;
+            continue;
+        }
+        if (wire == PROTOBUF_WIRE_END_GROUP ||
+            (wire != NEVERC_PROTOBUF_WIRE_VARINT &&
+             wire != NEVERC_PROTOBUF_WIRE_FIXED64 &&
+             wire != NEVERC_PROTOBUF_WIRE_LENGTH_DELIMITED &&
+             wire != NEVERC_PROTOBUF_WIRE_FIXED32))
+            goto fail;
+        memset(field, 0, sizeof(*field));
+        field->number = (uint32_t)number;
+        field->wire_type = (neverc_protobuf_wire_type_t)wire;
+        size_t remaining = reader->length - reader->offset;
+        switch (wire) {
+        case NEVERC_PROTOBUF_WIRE_VARINT:
+            if (protobuf_read_varint(reader->data + reader->offset, remaining,
+                                     &consumed, &field->value.varint) != 0)
+                goto fail;
+            reader->offset += consumed;
+            return 1;
+        case NEVERC_PROTOBUF_WIRE_FIXED64:
+            if (remaining < 8) goto fail;
+            for (unsigned i = 0; i < 8; i++)
+                field->value.fixed64 |=
+                    (uint64_t)reader->data[reader->offset + i] << (i * 8);
+            reader->offset += 8;
+            return 1;
+        case NEVERC_PROTOBUF_WIRE_LENGTH_DELIMITED: {
+            uint64_t encoded_length = 0;
+            if (protobuf_read_varint(reader->data + reader->offset, remaining,
+                                     &consumed, &encoded_length) != 0)
+                goto fail;
+            reader->offset += consumed;
+            remaining = reader->length - reader->offset;
+            if (encoded_length > SIZE_MAX || encoded_length > remaining ||
+                encoded_length > reader->max_field_size)
+                goto fail;
+            field->value.bytes.data = reader->data + reader->offset;
+            field->value.bytes.length = (size_t)encoded_length;
+            reader->offset += (size_t)encoded_length;
+            return 1;
+        }
+        case NEVERC_PROTOBUF_WIRE_FIXED32:
+            if (remaining < 4) goto fail;
+            for (unsigned i = 0; i < 4; i++)
+                field->value.fixed32 |=
+                    (uint32_t)reader->data[reader->offset + i] << (i * 8);
+            reader->offset += 4;
+            return 1;
+        default:
+            goto fail;
+        }
     }
-    case NEVERC_PROTOBUF_WIRE_FIXED32:
-        if (remaining < 4) return -1;
-        for (unsigned i = 0; i < 4; i++)
-            field->value.fixed32 |=
-                (uint32_t)reader->data[reader->offset + i] << (i * 8);
-        reader->offset += 4;
-        return 1;
-    default:
-        return -1;
-    }
+fail:
+    reader->offset = start;
+    return -1;
 }
 
 void neverc_protobuf_writer_init(neverc_protobuf_writer_t *writer,

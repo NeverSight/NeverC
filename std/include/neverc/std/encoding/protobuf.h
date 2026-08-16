@@ -142,7 +142,8 @@ int neverc_protobuf_message_encode(
     size_t *output_length);
 
 /* Decode zero-initializes output. bytes/string members are non-owning views
- * into input. Unknown fields are skipped. */
+ * into input. Unknown fields, groups, and unexpected wire types are skipped.
+ * Packed repeated scalars keep the last value. */
 int neverc_protobuf_message_decode(
     const neverc_protobuf_message_descriptor_t *descriptor,
     const void *input, size_t input_length, size_t max_field_size,

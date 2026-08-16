@@ -13,6 +13,7 @@ static int tar_path_is_safe(const char *name) {
     while (len > 0 && trimmed[len - 1] == '/')
         trimmed[--len] = '\0';
     if (len == 0 || strcmp(trimmed, ".") == 0) return 0;
+    if (strchr(trimmed, ':') != NULL) return 0;
     return neverc_fs_valid_path(trimmed);
 }
 

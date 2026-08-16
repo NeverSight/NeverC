@@ -282,6 +282,28 @@ static const neverc_protobuf_field_descriptor_t *protobuf_find_field(
     return NULL;
 }
 
+static int protobuf_read_varint(const uint8_t *data, size_t length,
+                                size_t *consumed, uint64_t *value) {
+    uint64_t result = 0;
+    for (size_t i = 0; i < 10; i++) {
+        if (i >= length) return -1;
+        uint8_t byte = data[i];
+        if (i == 9 && byte > 1) return -1;
+        result |= (uint64_t)(byte & 0x7fU) << (unsigned)(i * 7);
+        if ((byte & 0x80U) == 0) {
+            *consumed = i + 1;
+            *value = result;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int protobuf_type_packable(neverc_protobuf_scalar_type_t type) {
+    return type != NEVERC_PROTOBUF_TYPE_BYTES &&
+           type != NEVERC_PROTOBUF_TYPE_STRING;
+}
+
 static int protobuf_decode_field(
     const neverc_protobuf_field_descriptor_t *descriptor,
     const neverc_protobuf_field_t *field, uint8_t *message) {
@@ -370,6 +392,59 @@ static int protobuf_decode_field(
     return 0;
 }
 
+static int protobuf_decode_packed(
+    const neverc_protobuf_field_descriptor_t *descriptor,
+    const neverc_protobuf_bytes_t *bytes, uint8_t *message) {
+    if (!bytes || (bytes->length > 0 && !bytes->data)) return -1;
+    neverc_protobuf_wire_type_t elem_wire =
+        protobuf_scalar_wire(descriptor->type);
+    neverc_protobuf_field_t field;
+    memset(&field, 0, sizeof(field));
+    field.number = descriptor->number;
+    field.wire_type = elem_wire;
+    size_t offset = 0;
+    if (elem_wire == NEVERC_PROTOBUF_WIRE_VARINT) {
+        while (offset < bytes->length) {
+            size_t consumed = 0;
+            if (protobuf_read_varint(bytes->data + offset,
+                                     bytes->length - offset, &consumed,
+                                     &field.value.varint) != 0)
+                return -1;
+            offset += consumed;
+            if (protobuf_decode_field(descriptor, &field, message) != 0)
+                return -1;
+        }
+        return 0;
+    }
+    if (elem_wire == NEVERC_PROTOBUF_WIRE_FIXED32) {
+        if ((bytes->length & 3U) != 0) return -1;
+        while (offset < bytes->length) {
+            field.value.fixed32 = 0;
+            for (unsigned i = 0; i < 4; i++)
+                field.value.fixed32 |=
+                    (uint32_t)bytes->data[offset + i] << (i * 8);
+            offset += 4;
+            if (protobuf_decode_field(descriptor, &field, message) != 0)
+                return -1;
+        }
+        return 0;
+    }
+    if (elem_wire == NEVERC_PROTOBUF_WIRE_FIXED64) {
+        if ((bytes->length & 7U) != 0) return -1;
+        while (offset < bytes->length) {
+            field.value.fixed64 = 0;
+            for (unsigned i = 0; i < 8; i++)
+                field.value.fixed64 |=
+                    (uint64_t)bytes->data[offset + i] << (i * 8);
+            offset += 8;
+            if (protobuf_decode_field(descriptor, &field, message) != 0)
+                return -1;
+        }
+        return 0;
+    }
+    return -1;
+}
+
 int neverc_protobuf_message_decode(
     const neverc_protobuf_message_descriptor_t *descriptor,
     const void *input, size_t input_length, size_t max_field_size,
@@ -388,8 +463,17 @@ int neverc_protobuf_message_decode(
         if (result < 0) return -1;
         const neverc_protobuf_field_descriptor_t *known =
             protobuf_find_field(descriptor, field.number);
-        if (known && protobuf_decode_field(known, &field,
-                                           (uint8_t *)message) != 0)
-            return -1;
+        if (!known) continue;
+        neverc_protobuf_wire_type_t expected =
+            protobuf_scalar_wire(known->type);
+        if (field.wire_type == expected) {
+            if (protobuf_decode_field(known, &field, (uint8_t *)message) != 0)
+                return -1;
+        } else if (field.wire_type == NEVERC_PROTOBUF_WIRE_LENGTH_DELIMITED &&
+                   protobuf_type_packable(known->type)) {
+            if (protobuf_decode_packed(known, &field.value.bytes,
+                                       (uint8_t *)message) != 0)
+                return -1;
+        }
     }
 }

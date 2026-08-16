@@ -850,6 +850,16 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
 
     keys->seq++;
 
+    /* RFC 8446 §5.4: InnerPlaintext is content + type + padding and MUST
+     * not exceed 2^14 + 1. Check before stripping zeros; otherwise extra
+     * padding can hide a record_overflow. */
+    if (ct_body_len > TLS_MAX_PLAINTEXT + 1) {
+        nci_tls_secure_free(plaintext, rec_len - TLS_AEAD_TAG_SIZE);
+        return nci_tls_protocol_error(
+            conn, TLS_ALERT_RECORD_OVERFLOW,
+            "TLS inner plaintext exceeds the configured limit");
+    }
+
     /* Remove padding and find inner content type (last non-zero byte) */
     while (ct_body_len > 0 && plaintext[ct_body_len - 1] == 0)
         ct_body_len--;
@@ -858,14 +868,6 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
         return nci_tls_protocol_error(
             conn, TLS_ALERT_UNEXPECTED_MESSAGE,
             "TLS inner plaintext has no content type");
-    }
-
-    /* RFC 8446 §5.4: inner plaintext is content + content-type, so 2^14+1. */
-    if (ct_body_len > TLS_MAX_PLAINTEXT + 1) {
-        nci_tls_secure_free(plaintext, rec_len - TLS_AEAD_TAG_SIZE);
-        return nci_tls_protocol_error(
-            conn, TLS_ALERT_RECORD_OVERFLOW,
-            "TLS inner plaintext exceeds the configured limit");
     }
     *out_inner_type = plaintext[ct_body_len - 1];
     ct_body_len--;
