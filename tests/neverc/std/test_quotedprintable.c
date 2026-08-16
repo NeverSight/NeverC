@@ -86,7 +86,7 @@ static void test_encode_basic(void) {
 
     /* 74 A's + space + 10 B's: the space would sit in the last column
      * before a soft break if encoded as a literal. */
-    char wrap_src[84];
+    char wrap_src[85];
     memset(wrap_src, 'A', 74);
     wrap_src[74] = ' ';
     memset(wrap_src + 75, 'B', 10);
