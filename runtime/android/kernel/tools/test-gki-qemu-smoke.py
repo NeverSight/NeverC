@@ -90,6 +90,18 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("--mode functional", workflow)
         self.assertNotIn("gki-qemu-functional-module.c", workflow)
 
+    def test_release_asset_download_is_retried(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        download_step = workflow.split(
+            "      - name: Resolve and download pinned release asset", 1
+        )[1].split("      - name: Verify complete release evidence", 1)[0]
+        self.assertIn("for attempt in 1 2 3; do", download_step)
+        self.assertIn('rm -f "release/$asset"', download_step)
+        self.assertIn(
+            'release asset download failed after $attempt attempts',
+            download_step,
+        )
+
 
 class HarnessTests(unittest.TestCase):
     def setUp(self):

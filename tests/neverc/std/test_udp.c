@@ -410,6 +410,14 @@ static void test_batch_io(void) {
         return;
     }
 
+    int timeout_status = neverc_udp_set_read_timeout(receiver, 2000);
+    check_int("batch read timeout", timeout_status, 0);
+    if (timeout_status != 0) {
+        neverc_udp_close(sender);
+        neverc_udp_close(receiver);
+        return;
+    }
+
     neverc_udp_addr_t receiver_addr;
     neverc_udp_local_addr(receiver, &receiver_addr);
     const char *payloads[] = {"one", "two", "three", "four"};
@@ -430,7 +438,17 @@ static void test_batch_io(void) {
         incoming[i].data = storage[i];
         incoming[i].capacity = sizeof(storage[i]);
     }
-    int received = neverc_udp_read_batch(receiver, incoming, 4);
+    int received = 0;
+    int batch_received = 0;
+    while (received < 4) {
+        batch_received = neverc_udp_read_batch(
+            receiver, &incoming[received], (size_t)(4 - received));
+        if (batch_received <= 0) break;
+        received += batch_received;
+    }
+    if (received < 4)
+        printf("  batch receive stopped after %d packets (last result %d)\n",
+               received, batch_received);
     check_int("batch received", received, 4);
     for (int i = 0; i < received; ++i) {
         storage[i][incoming[i].len] = '\0';
