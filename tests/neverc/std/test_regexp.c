@@ -495,6 +495,27 @@ static void gen_pattern(char *out) {
     out[p] = '\0';
 }
 
+static void test_submatch_and_hex(void) {
+    printf("[submatch_and_hex]\n");
+    neverc_regexp_match_t m[3];
+    neverc_regexp_t *re = neverc_regexp_compile("(\\x41+)(\\x42+)", NULL);
+    int n = neverc_regexp_find_submatch(re, "xxAAABBByy", m, 3);
+    check_int("hex groups found", n, 1);
+    check_int("hex full len", (int)m[0].len, 6);
+    check_int("hex group1 A", (int)m[1].len, 3);
+    check_int("hex group2 B", (int)m[2].len, 3);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("(\\x{41})", NULL);
+    memset(m, 0, sizeof(m));
+    n = neverc_regexp_find_submatch(re, "A", m, 2);
+    check_int("brace hex group", n, 1);
+    check_int("brace hex len", (int)m[1].len, 1);
+    if (m[1].start)
+        check_int("brace hex A", m[1].start[0] == 'A', 1);
+    neverc_regexp_free(re);
+}
+
 static void test_find_differential(void) {
     printf("[find_differential]\n");
     rrng = 0x9e3779b97f4a7c15ULL;

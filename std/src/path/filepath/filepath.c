@@ -559,7 +559,15 @@ int neverc_filepath_match(const char *pattern, const char *name) {
                 continue;
         }
 
-        /* Go filepath.Match does not validate leftover pattern chunks. */
+        /* Leftover chunks can still be malformed (Go filepath.Match). */
+        pattern = rest_pat;
+        while (*pattern) {
+            rest_pat = filepath_scan_chunk(pattern, &star, &chunk, &clen);
+            const char *dummy = NULL;
+            if (filepath_match_chunk(chunk, clen, "", &dummy) < 0)
+                return -1;
+            pattern = rest_pat;
+        }
         return 0;
     }
     return *name == '\0' ? 1 : 0;
