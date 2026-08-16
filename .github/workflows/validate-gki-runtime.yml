@@ -321,10 +321,22 @@ jobs:
           asset=$(jq -r --arg profile "$PROFILE" '.profiles[$profile].asset' runtime/android/kernel/arm64/gki-release.json)
           [ -n "$asset" ] && [ "$asset" != "null" ]
           mkdir -p release logs
-          gh release download "$RELEASE_TAG" \
-            --repo "$RELEASE_REPOSITORY" \
-            --pattern "$asset" \
-            --dir release
+          for attempt in 1 2 3; do
+            rm -f "release/$asset"
+            if gh release download "$RELEASE_TAG" \
+              --repo "$RELEASE_REPOSITORY" \
+              --pattern "$asset" \
+              --dir release; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "release asset download failed after $attempt attempts" >&2
+              exit 1
+            fi
+            delay=$((attempt * 5))
+            echo "release asset download failed (attempt $attempt), retrying in ${delay}s..." >&2
+            sleep "$delay"
+          done
           test -f "release/$asset"
           echo "asset=$asset" >>"$GITHUB_OUTPUT"
 

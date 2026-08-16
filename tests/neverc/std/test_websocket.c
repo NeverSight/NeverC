@@ -526,7 +526,6 @@ static void test_ping_pong(void) {
                 ping, sizeof(ping), &plen), 0);
             check_int("ping opcode", opcode, NC_WS_OPCODE_PING);
             check_int("ping len", (int)plen, 4);
-            check_int("send pong", neverc_ws_send_pong(ws, ping, plen), 0);
             neverc_ws_conn_free(ws);
         } else {
             neverc_tcp_close(conn);
@@ -535,7 +534,8 @@ static void test_ping_pong(void) {
 
     int status;
     waitpid(pid, &status, 0);
-    check_int("client ok", WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+    check_int("automatic pong",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
 
     neverc_tcp_listener_close(ln);
 }

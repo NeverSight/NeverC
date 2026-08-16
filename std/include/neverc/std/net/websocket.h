@@ -91,9 +91,10 @@ int neverc_ws_set_read_limit(neverc_ws_conn_t *conn, size_t max_bytes);
 
 /* --- Frame I/O --- */
 
-/* Read next frame. Returns 0 on success, -1 on error. Only one concurrent
- * reader is supported; writes may safely run concurrently with that reader.
- * If fin is non-NULL, set to 1 when this is the final fragment. */
+/* Read next frame. Returns 0 on success, -1 on error. PING and CLOSE replies
+ * are sent automatically before the control frame is returned. Only one
+ * concurrent reader is supported; writes may safely run concurrently with
+ * that reader. If fin is non-NULL, set to 1 when this is the final fragment. */
 int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
                           void *buf, size_t buflen, size_t *out_len);
 
