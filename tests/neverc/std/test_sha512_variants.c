@@ -40,6 +40,14 @@ static void test_sha512_224(void) {
         check_digest("SHA-512/224(\"abc\")", digest, expected, 28);
     }
 
+    /* FIPS 180-4: SHA-512/224(896-bit / two-block message) */
+    {
+        const char *msg = "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+        hex_to_bytes("23fec5bb94d60b48015167c27221b42c7b84fd876ecb0b3f", expected, 28);
+        neverc_sha512_224_sum((const uint8_t *)msg, strlen(msg), digest);
+        check_digest("SHA-512/224(896-bit msg)", digest, expected, 28);
+    }
+
     /* Go golden vector: SHA-512/224("abcdefghij") */
     {
         hex_to_bytes("f809423cbb25e81a2a64aecee2cd5fdc7d91d5db583901fbf1db3116", expected, 28);
@@ -103,6 +111,31 @@ static void test_sha512_224(void) {
         if (memcmp(short_d, long_d, 28) != 0 && memcmp(long_d, zeros, 28) != 0)
             tests_passed++;
         else { tests_failed++; printf("  FAIL: SHA-512/224 2^61+3 length collided or fail-closed\n"); }
+    }
+
+    {
+        neverc_sha512_224_ctx ctx;
+        neverc_sha512_224_init(&ctx);
+        neverc_sha512_224_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha512_224_update(&ctx, NULL, 5);
+        neverc_sha512_224_final(&ctx, digest);
+        hex_to_bytes("4634270f707b6a54daae7530460842e20e37ed265ceee9a43e8924aa", expected, 28);
+        check_digest("SHA-512/224 invalid data span ignored", digest, expected, 28);
+    }
+
+    {
+        neverc_sha512_224_ctx ctx;
+        neverc_sha512_224_init(&ctx);
+        neverc_sha512_224_update(&ctx, (const uint8_t *)"abc", 3);
+        ctx.count = UINT64_MAX - 2;
+        neverc_sha512_224_update(&ctx, (const uint8_t *)"xxxxx", 5);
+        uint8_t overflowed[28];
+        memset(overflowed, 0xa5, sizeof(overflowed));
+        neverc_sha512_224_final(&ctx, overflowed);
+        uint8_t zeros[28] = {0};
+        tests_run++;
+        if (memcmp(overflowed, zeros, 28) == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-512/224 wrapped byte count must fail closed\n"); }
     }
 }
 
@@ -168,6 +201,46 @@ static void test_sha512_256(void) {
         if (memcmp(short_d, long_d, 32) != 0 && memcmp(long_d, zeros, 32) != 0)
             tests_passed++;
         else { tests_failed++; printf("  FAIL: SHA-512/256 2^61+3 length collided or fail-closed\n"); }
+    }
+
+    {
+        neverc_sha512_256_ctx ctx;
+        uint8_t d1[32], d2[32];
+        neverc_sha512_256_init(&ctx);
+        neverc_sha512_256_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha512_256_final(&ctx, d1);
+        neverc_sha512_256_update(&ctx, (const uint8_t *)"x", 1);
+        neverc_sha512_256_final(&ctx, d2);
+        hex_to_bytes("53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23", expected, 32);
+        check_digest("SHA-512/256 update after final ignored", d2, expected, 32);
+        tests_run++;
+        if (memcmp(d1, d2, 32) == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-512/256 post-final mismatch\n"); }
+    }
+
+    {
+        neverc_sha512_256_ctx ctx;
+        neverc_sha512_256_init(&ctx);
+        neverc_sha512_256_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha512_256_update(&ctx, NULL, 5);
+        neverc_sha512_256_final(&ctx, digest);
+        hex_to_bytes("53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23", expected, 32);
+        check_digest("SHA-512/256 invalid data span ignored", digest, expected, 32);
+    }
+
+    {
+        neverc_sha512_256_ctx ctx;
+        neverc_sha512_256_init(&ctx);
+        neverc_sha512_256_update(&ctx, (const uint8_t *)"abc", 3);
+        ctx.count = UINT64_MAX - 2;
+        neverc_sha512_256_update(&ctx, (const uint8_t *)"xxxxx", 5);
+        uint8_t overflowed[32];
+        memset(overflowed, 0xa5, sizeof(overflowed));
+        neverc_sha512_256_final(&ctx, overflowed);
+        uint8_t zeros[32] = {0};
+        tests_run++;
+        if (memcmp(overflowed, zeros, 32) == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-512/256 wrapped byte count must fail closed\n"); }
     }
 }
 

@@ -89,6 +89,8 @@ void neverc_sha1_init(neverc_sha1_ctx *ctx) {
 void neverc_sha1_update(neverc_sha1_ctx *ctx, const uint8_t *data, size_t len) {
     if (!ctx || ctx->finalized || len == 0) return;
     if (!data) return;
+    /* SHA-1's length field is 64 bits (max 2^64-1 bits = 2^61-1 bytes).
+     * Wrapping count*8 would make a huge message collide with a short one. */
     if (ctx->count > UINT64_MAX / 8 ||
         len > UINT64_MAX / 8 - ctx->count) {
         memset(ctx->state, 0, sizeof(ctx->state));

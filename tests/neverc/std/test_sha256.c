@@ -212,6 +212,26 @@ int main(void) {
         }
     }
 
+    printf("[update-path 64-bit wrap fails closed]\n");
+    {
+        tests_run++;
+        neverc_sha256_ctx ctx;
+        neverc_sha256_init(&ctx);
+        neverc_sha256_update(&ctx, (const uint8_t *)"abc", 3);
+        ctx.count = UINT64_MAX / 8 - 2;
+        neverc_sha256_update(&ctx, (const uint8_t *)"xxxxx", 5);
+        uint8_t digest[32];
+        memset(digest, 0xa5, sizeof(digest));
+        neverc_sha256_final(&ctx, digest);
+        uint8_t zeros[32] = {0};
+        if (memcmp(digest, zeros, 32) == 0)
+            tests_passed++;
+        else {
+            tests_failed++;
+            printf("  FAIL: update wrap must not collide with SHA-256(\"abc\")\n");
+        }
+    }
+
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

@@ -143,6 +143,31 @@ int main(void) {
         else { tests_failed++; printf("  FAIL: overflow must not collide with SHA-224(\"abc\")\n"); }
     }
 
+    {
+        neverc_sha224_ctx ctx;
+        neverc_sha224_init(&ctx);
+        neverc_sha224_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha224_update(&ctx, NULL, 5);
+        neverc_sha224_final(&ctx, digest);
+        hex_to_bytes("23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7", expected, 28);
+        check_digest("SHA-224 invalid data span ignored", digest, expected, 28);
+    }
+
+    {
+        neverc_sha224_ctx ctx;
+        neverc_sha224_init(&ctx);
+        neverc_sha224_update(&ctx, (const uint8_t *)"abc", 3);
+        ctx.count = UINT64_MAX / 8 - 2;
+        neverc_sha224_update(&ctx, (const uint8_t *)"xxxxx", 5);
+        uint8_t overflowed[28];
+        memset(overflowed, 0xa5, sizeof(overflowed));
+        neverc_sha224_final(&ctx, overflowed);
+        uint8_t zeros[28] = {0};
+        tests_run++;
+        if (memcmp(overflowed, zeros, 28) == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: update wrap must not collide with SHA-224(\"abc\")\n"); }
+    }
+
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

@@ -231,6 +231,23 @@ int main(void) {
         else { tests_failed++; printf("  FAIL: wrapped byte count must not collide with a short message\n"); }
     }
 
+    printf("[invalid data span ignored]\n");
+    {
+        tests_run++;
+        neverc_sha512_ctx ctx;
+        neverc_sha512_init(&ctx);
+        neverc_sha512_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha512_update(&ctx, NULL, 5);
+        uint8_t digest[64]; char got[129];
+        neverc_sha512_final(&ctx, digest);
+        hex_encode(digest, 64, got);
+        if (strcmp(got,
+            "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a"
+            "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f") == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: invalid span ignored\n    got: %s\n", got); }
+    }
+
     printf("[update after final ignored]\n");
     {
         tests_run++;

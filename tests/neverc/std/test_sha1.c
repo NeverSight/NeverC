@@ -101,6 +101,21 @@ int main(void) {
         else { tests_failed++; printf("  FAIL: update after final must not length-extend\n"); }
     }
 
+    printf("[invalid data span ignored]\n");
+    {
+        tests_run++;
+        neverc_sha1_ctx ctx;
+        neverc_sha1_init(&ctx);
+        neverc_sha1_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha1_update(&ctx, NULL, 5);
+        uint8_t digest[20]; char got[41];
+        neverc_sha1_final(&ctx, digest);
+        hex_encode(digest, 20, got);
+        if (strcmp(got, "a9993e364706816aba3e25717850c26c9cd0d89d") == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: invalid span ignored\n    got: %s\n", got); }
+    }
+
     printf("[counter overflow fails closed]\n");
     {
         tests_run++;
@@ -115,6 +130,23 @@ int main(void) {
         if (memcmp(digest, zeros, 20) == 0)
             tests_passed++;
         else { tests_failed++; printf("  FAIL: overflow must not collide with SHA-1(\"abc\")\n"); }
+    }
+
+    printf("[update-path 64-bit wrap fails closed]\n");
+    {
+        tests_run++;
+        neverc_sha1_ctx ctx;
+        neverc_sha1_init(&ctx);
+        neverc_sha1_update(&ctx, (const uint8_t *)"abc", 3);
+        ctx.count = UINT64_MAX / 8 - 2;
+        neverc_sha1_update(&ctx, (const uint8_t *)"xxxxx", 5);
+        uint8_t digest[20];
+        memset(digest, 0xa5, sizeof(digest));
+        neverc_sha1_final(&ctx, digest);
+        uint8_t zeros[20] = {0};
+        if (memcmp(digest, zeros, 20) == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: update wrap must not collide with SHA-1(\"abc\")\n"); }
     }
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

@@ -93,6 +93,8 @@ void neverc_sha512_init(neverc_sha512_ctx *ctx) {
 void neverc_sha512_update(neverc_sha512_ctx *ctx, const uint8_t *data, size_t len) {
     if (!ctx || ctx->finalized || len == 0) return;
     if (!data) return;
+    /* SHA-512's bit-length field is 128 bits, so count*8 cannot wrap it
+     * while count fits in uint64. Refuse wrapping the byte counter. */
     if (len > UINT64_MAX - ctx->count) {
         memset(ctx->state, 0, sizeof(ctx->state));
         ctx->finalized = 1;

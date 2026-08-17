@@ -138,6 +138,35 @@ static void test_128bit_length(void) {
                memcmp(long_d, zeros, 48) != 0);
 }
 
+static void test_byte_count_wrap(void) {
+    printf("[SHA-384 byte-count wrap fails closed]\n");
+    neverc_sha384_ctx ctx;
+    neverc_sha384_init(&ctx);
+    neverc_sha384_update(&ctx, (const uint8_t *)"abc", 3);
+    ctx.count = UINT64_MAX - 2;
+    neverc_sha384_update(&ctx, (const uint8_t *)"xxxxx", 5);
+    uint8_t digest[48];
+    memset(digest, 0xa5, sizeof(digest));
+    neverc_sha384_final(&ctx, digest);
+    uint8_t zeros[48] = {0};
+    check_true("wrapped byte count must not collide with a short message",
+               memcmp(digest, zeros, 48) == 0);
+}
+
+static void test_invalid_span(void) {
+    printf("[SHA-384 invalid data span ignored]\n");
+    neverc_sha384_ctx ctx;
+    uint8_t d1[48], d2[48];
+    neverc_sha384_init(&ctx);
+    neverc_sha384_update(&ctx, (const uint8_t *)"abc", 3);
+    neverc_sha384_final(&ctx, d1);
+    neverc_sha384_init(&ctx);
+    neverc_sha384_update(&ctx, (const uint8_t *)"abc", 3);
+    neverc_sha384_update(&ctx, NULL, 5);
+    neverc_sha384_final(&ctx, d2);
+    check_true("invalid span ignored", memcmp(d1, d2, 48) == 0);
+}
+
 int main(void) {
     printf("=== NeverC SHA-384 Tests ===\n\n");
     test_fips_vectors();
@@ -146,6 +175,8 @@ int main(void) {
     test_1m_a();
     test_final_lifecycle();
     test_128bit_length();
+    test_byte_count_wrap();
+    test_invalid_span();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
