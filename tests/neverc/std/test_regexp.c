@@ -5,24 +5,41 @@
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
+static void section(const char *title) {
+    printf("%s\n", title);
+    fflush(stdout);
+}
+
 static void check_bool(const char *name, int got, int expected) {
     tests_run++;
     if (got == expected) tests_passed++;
-    else { tests_failed++; printf("  FAIL: %s: got %d, expected %d\n", name, got, expected); }
+    else {
+        tests_failed++;
+        printf("  FAIL: %s: got %d, expected %d\n", name, got, expected);
+        fflush(stdout);
+    }
 }
 static void check_str(const char *name, const char *got, const char *expected) {
     tests_run++;
     if (got && expected && strcmp(got, expected) == 0) tests_passed++;
-    else { tests_failed++; printf("  FAIL: %s: got \"%s\", expected \"%s\"\n", name, got?got:"(null)", expected); }
+    else {
+        tests_failed++;
+        printf("  FAIL: %s: got \"%s\", expected \"%s\"\n", name, got?got:"(null)", expected);
+        fflush(stdout);
+    }
 }
 static void check_int(const char *name, int got, int expected) {
     tests_run++;
     if (got == expected) tests_passed++;
-    else { tests_failed++; printf("  FAIL: %s: got %d, expected %d\n", name, got, expected); }
+    else {
+        tests_failed++;
+        printf("  FAIL: %s: got %d, expected %d\n", name, got, expected);
+        fflush(stdout);
+    }
 }
 
 static void test_compile(void) {
-    printf("[compile]\n");
+    section("[compile]");
     const char *err;
     neverc_regexp_t *re = neverc_regexp_compile("hello", &err);
     check_bool("compile ok", re != NULL, 1);
@@ -38,7 +55,7 @@ static void test_compile(void) {
 }
 
 static void test_match(void) {
-    printf("[match]\n");
+    section("[match]");
     check_bool("literal match", neverc_regexp_match_string("hello", "hello"), 1);
     check_bool("literal no match", neverc_regexp_match_string("hello", "world"), 0);
     check_bool("dot match", neverc_regexp_match_string("h.llo", "hello"), 1);
@@ -57,7 +74,7 @@ static void test_match(void) {
 }
 
 static void test_character_classes(void) {
-    printf("[character classes]\n");
+    section("[character classes]");
     check_bool("[a-z]", neverc_regexp_match_string("[a-z]+", "hello"), 1);
     check_bool("[a-z] no", neverc_regexp_match_string("[a-z]+", "HELLO"), 0);
     check_bool("[A-Za-z]", neverc_regexp_match_string("[A-Za-z]+", "Hello"), 1);
@@ -91,6 +108,9 @@ static void test_character_classes(void) {
     /* NeverC C hex is greedy: "\x96B" is one value, so split the text literal. */
     check_bool("\\x96B", neverc_regexp_match_string("\\x96B", "\x96" "B"), 1);
     check_bool("\\x96 not whole", neverc_regexp_match_string("\\x96", "\x96" "B"), 0);
+    check_bool("\\x96 raw byte", neverc_regexp_match_string("\\x96", "\x96" ""), 1);
+    check_bool("\\x{96} is UTF-8", neverc_regexp_match_string("\\x{96}", "\xC2\x96"), 1);
+    check_bool("\\x{96} not raw", neverc_regexp_match_string("\\x{96}", "\x96" ""), 0);
     check_bool("\\x{41} is A", neverc_regexp_match_string("\\x{41}", "A"), 1);
     check_bool("[\\x41-\\x43] B", neverc_regexp_match_string("[\\x41-\\x43]", "B"), 1);
     check_bool("[\\x41-\\x43] D no", neverc_regexp_match_string("[\\x41-\\x43]", "D"), 0);
@@ -98,7 +118,7 @@ static void test_character_classes(void) {
 }
 
 static void test_find(void) {
-    printf("[find]\n");
+    section("[find]");
     neverc_regexp_t *re = neverc_regexp_compile("[0-9]+", NULL);
 
     size_t mlen;
@@ -106,6 +126,7 @@ static void test_find(void) {
     check_bool("find not null", m != NULL, 1);
     if (m) {
         char buf[32];
+        if (mlen > 31) mlen = 31;
         memcpy(buf, m, mlen); buf[mlen] = '\0';
         check_str("find match", buf, "123");
     }
@@ -117,7 +138,7 @@ static void test_find(void) {
 }
 
 static void test_find_submatch(void) {
-    printf("[find_submatch]\n");
+    section("[find_submatch]");
     neverc_regexp_match_t m[4];
     neverc_regexp_t *re = neverc_regexp_compile("(a+)(b+)", NULL);
     int n = neverc_regexp_find_submatch(re, "xxaaabbcyy", m, 3);
@@ -150,7 +171,7 @@ static void test_find_submatch(void) {
 }
 
 static void test_find_all(void) {
-    printf("[find_all]\n");
+    section("[find_all]");
     neverc_regexp_t *re = neverc_regexp_compile("[0-9]+", NULL);
 
     int count;
@@ -171,7 +192,7 @@ static void test_find_all(void) {
 }
 
 static void test_replace(void) {
-    printf("[replace]\n");
+    section("[replace]");
     neverc_regexp_t *re = neverc_regexp_compile("[aeiou]", NULL);
     size_t outlen;
     char *result = neverc_regexp_replace_all(re, "hello world", "*", &outlen);
@@ -187,7 +208,7 @@ static void test_replace(void) {
 }
 
 static void test_anchors(void) {
-    printf("[anchors]\n");
+    section("[anchors]");
     check_bool("^hello match", neverc_regexp_match_string("^hello", "hello"), 1);
     check_bool("world$ match", neverc_regexp_match_string("world$", "world"), 1);
     check_bool("^hello$ full", neverc_regexp_match_string("^hello$", "hello"), 1);
@@ -195,7 +216,7 @@ static void test_anchors(void) {
 }
 
 static void test_empty_and_edge_cases(void) {
-    printf("[edge cases]\n");
+    section("[edge cases]");
     check_bool("empty pattern", neverc_regexp_match_string("", ""), 1);
     check_bool("a*", neverc_regexp_match_string("a*", ""), 1);
     check_bool("a* aaa", neverc_regexp_match_string("a*", "aaa"), 1);
@@ -204,25 +225,25 @@ static void test_empty_and_edge_cases(void) {
 }
 
 static void test_quote_meta(void) {
-    printf("[quote_meta]\n");
+    section("[quote_meta]");
     char *q = neverc_regexp_quote_meta("hello");
-    check_bool("quote_meta plain", strcmp(q, "hello") == 0, 1);
+    check_bool("quote_meta plain", q && strcmp(q, "hello") == 0, 1);
     free(q);
 
     q = neverc_regexp_quote_meta("a.b+c*d?e");
-    check_bool("quote_meta special", strcmp(q, "a\\.b\\+c\\*d\\?e") == 0, 1);
+    check_bool("quote_meta special", q && strcmp(q, "a\\.b\\+c\\*d\\?e") == 0, 1);
     free(q);
 
     q = neverc_regexp_quote_meta("[foo](bar){baz}");
-    check_bool("quote_meta brackets", strcmp(q, "\\[foo\\]\\(bar\\)\\{baz\\}") == 0, 1);
+    check_bool("quote_meta brackets", q && strcmp(q, "\\[foo\\]\\(bar\\)\\{baz\\}") == 0, 1);
     free(q);
 
     q = neverc_regexp_quote_meta("^start|end$");
-    check_bool("quote_meta anchors", strcmp(q, "\\^start\\|end\\$") == 0, 1);
+    check_bool("quote_meta anchors", q && strcmp(q, "\\^start\\|end\\$") == 0, 1);
     free(q);
 
     q = neverc_regexp_quote_meta("");
-    check_bool("quote_meta empty", strcmp(q, "") == 0, 1);
+    check_bool("quote_meta empty", q && strcmp(q, "") == 0, 1);
     free(q);
 
     /* Verify quoted pattern matches literally */
@@ -242,12 +263,13 @@ static const char *find_str(neverc_regexp_t *re, const char *s, char *buf) {
     size_t mlen;
     const char *m = neverc_regexp_find(re, s, &mlen);
     if (!m) return NULL;
+    if (mlen > 63) mlen = 63;
     memcpy(buf, m, mlen); buf[mlen] = '\0';
     return buf;
 }
 
 static void test_find_anchors(void) {
-    printf("[find anchors]\n");
+    section("[find anchors]");
     char buf[64];
     size_t mlen;
 
@@ -312,7 +334,7 @@ static void test_find_anchors(void) {
 /* Bounded repetition {n}, {n,}, {n,m}: previously parsed but silently ignored
  * (a no-op), so these are all new behavior the engine must now honour. */
 static void test_repeat_braces(void) {
-    printf("[repeat braces]\n");
+    section("[repeat braces]");
     /* exact count */
     check_bool("a{3} aaa",  neverc_regexp_match_string("^a{3}$", "aaa"), 1);
     check_bool("a{3} aa",   neverc_regexp_match_string("^a{3}$", "aa"), 0);
@@ -393,7 +415,7 @@ static void test_repeat_braces(void) {
 }
 
 static void test_invalid_inputs(void) {
-    printf("[invalid inputs]\n");
+    section("[invalid inputs]");
     const char *err = NULL;
     neverc_regexp_t *re = neverc_regexp_compile(NULL, &err);
     check_bool("null pattern rejected", re == NULL && err != NULL, 1);
@@ -429,7 +451,7 @@ static void test_invalid_inputs(void) {
 }
 
 static void test_must_compile(void) {
-    printf("[must_compile]\n");
+    section("[must_compile]");
     neverc_regexp_t *re = neverc_regexp_must_compile("[a-z]+");
     check_bool("must_compile ok", re != NULL, 1);
     check_bool("must_compile match", neverc_regexp_match(re, "hello"), 1);
@@ -496,9 +518,10 @@ static void gen_pattern(char *out) {
 }
 
 static void test_submatch_and_hex(void) {
-    printf("[submatch_and_hex]\n");
+    section("[submatch_and_hex]");
     neverc_regexp_match_t m[3];
     neverc_regexp_t *re = neverc_regexp_compile("(\\x41+)(\\x42+)", NULL);
+    check_bool("hex groups compile", re != NULL, 1);
     int n = neverc_regexp_find_submatch(re, "xxAAABBByy", m, 3);
     check_int("hex groups found", n, 1);
     check_int("hex full len", (int)m[0].len, 6);
@@ -517,7 +540,7 @@ static void test_submatch_and_hex(void) {
 }
 
 static void test_find_differential(void) {
-    printf("[find_differential]\n");
+    section("[find_differential]");
     rrng = 0x9e3779b97f4a7c15ULL;
     int find_mis = 0, all_mis = 0, cases = 0;
 
@@ -558,7 +581,10 @@ static void test_find_differential(void) {
             if (!ref_find(re, text + pos, &s2, &l2)) break;
             /* reconstruct expected match string */
             memcpy(sub, text + pos + s2, l2); sub[l2] = '\0';
-            if (ri >= ncount || strcmp(got[ri], sub) != 0) { ok = 0; break; }
+            if (!got || ri >= ncount || !got[ri] || strcmp(got[ri], sub) != 0) {
+                ok = 0;
+                break;
+            }
             ri++;
             pos = pos + s2 + l2;
         }
@@ -574,6 +600,8 @@ static void test_find_differential(void) {
 }
 
 int main(void) {
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
     printf("=== NeverC Regexp Module Tests ===\n\n");
     test_compile();
     test_match();
