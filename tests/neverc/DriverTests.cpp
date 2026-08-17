@@ -319,6 +319,89 @@ unsigned long long zero_extend_wsp(void) {
   EXPECT_NE(Text.find(", wsp"), std::string::npos) << Text;
 }
 
+TEST_F(DriverTest, AArch64LseRmwBuiltinsEmitInstructions) {
+  const auto Source = tmpFile("aarch64-lse-rmw-builtins.c");
+  const auto Assembly = tmpFile("aarch64-lse-rmw-builtins.s");
+  writeFile(Source, R"(
+unsigned long long ldclral(unsigned long long value, void *address) {
+  return __builtin_arm_ldclr(value, address, 8, __ATOMIC_ACQ_REL);
+}
+unsigned long long ldeorb(unsigned long long value, void *address) {
+  return __builtin_arm_ldeor(value, address, 1, __ATOMIC_RELAXED);
+}
+unsigned long long ldseth(unsigned long long value, void *address) {
+  return __builtin_arm_ldset(value, address, 2, __ATOMIC_CONSUME);
+}
+unsigned long long ldsmaxa(unsigned long long value, void *address) {
+  return __builtin_arm_ldsmax(value, address, 4, __ATOMIC_ACQUIRE);
+}
+unsigned long long ldsminl(unsigned long long value, void *address) {
+  return __builtin_arm_ldsmin(value, address, 8, __ATOMIC_RELEASE);
+}
+unsigned long long ldumaxalb(unsigned long long value, void *address) {
+  return __builtin_arm_ldumax(value, address, 1, __ATOMIC_ACQ_REL);
+}
+unsigned long long lduminseqh(unsigned long long value, void *address) {
+  return __builtin_arm_ldumin(value, address, 2, __ATOMIC_SEQ_CST);
+}
+)");
+
+  auto Result = ncc({"-target", "aarch64-linux-gnu", "-march=armv8.1-a+lse",
+                     "-ffreestanding", "-O2", "-S", Source.string(), "-o",
+                     Assembly.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+
+  const std::string Text = readFile(Assembly);
+  EXPECT_NE(Text.find("ldclral\tx0, x0, [x1]"), std::string::npos) << Text;
+  EXPECT_NE(Text.find("ldeorb\t"), std::string::npos) << Text;
+  EXPECT_NE(Text.find("ldsetah\t"), std::string::npos) << Text;
+  EXPECT_NE(Text.find("ldsmaxa\t"), std::string::npos) << Text;
+  EXPECT_NE(Text.find("ldsminl\t"), std::string::npos) << Text;
+  EXPECT_NE(Text.find("ldumaxalb\t"), std::string::npos) << Text;
+  EXPECT_NE(Text.find("lduminalh\t"), std::string::npos) << Text;
+  EXPECT_EQ(Text.find("\tmvn\t"), std::string::npos) << Text;
+}
+
+TEST_F(DriverTest, AArch64LseRmwBuiltinsRejectInvalidContracts) {
+  const struct {
+    const char *Name;
+    const char *Call;
+    const char *Parameters;
+    const char *Error;
+    bool EnableLse;
+  } Cases[] = {
+      {"dynamic_width", "__builtin_arm_ldclr(v, p, width, 0)",
+       ", unsigned width", "must be a constant integer", true},
+      {"dynamic_order", "__builtin_arm_ldclr(v, p, 8, order)",
+       ", unsigned order", "must be a constant integer", true},
+      {"width_3", "__builtin_arm_ldclr(v, p, 3, 0)", "",
+       "outside the valid range [1, 2, 4, 8]", true},
+      {"width_16", "__builtin_arm_ldclr(v, p, 16, 0)", "",
+       "outside the valid range [1, 2, 4, 8]", true},
+      {"order_6", "__builtin_arm_ldclr(v, p, 8, 6)", "",
+       "outside the valid range [0, 5]", true},
+      {"missing_lse", "__builtin_arm_ldumin(v, p, 2, 5)", "",
+       "needs target feature lse", false},
+  };
+
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string(Case.Name) + ".c");
+    const auto Assembly = tmpFile(std::string(Case.Name) + ".s");
+    writeFile(Source, "unsigned long long f(unsigned long long v, void *p" +
+                          std::string(Case.Parameters) + ") { return " +
+                          Case.Call + "; }\n");
+    std::vector<std::string> Args = {"-target", "aarch64-linux-gnu"};
+    if (Case.EnableLse)
+      Args.insert(Args.end(), {"-march=armv8.1-a+lse"});
+    Args.insert(Args.end(), {"-ffreestanding", "-S", Source.string(), "-o",
+                             Assembly.string()});
+    auto Result = ncc(Args);
+    EXPECT_NE(Result.exitCode, 0) << Case.Name;
+    EXPECT_NE(Result.err.find(Case.Error), std::string::npos) << Result.err;
+  }
+}
+
 TEST_F(DriverTest, AArch64SVECountBuiltinEmitsInstruction) {
   const auto Source = tmpFile("aarch64-sve-count-builtin.c");
   const auto Assembly = tmpFile("aarch64-sve-count-builtin.s");

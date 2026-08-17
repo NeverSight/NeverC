@@ -21,6 +21,16 @@ BUILTIN(__builtin_arm_strex, "i.", "t")
 BUILTIN(__builtin_arm_stlex, "i.", "t")
 BUILTIN(__builtin_arm_clrex, "v", "")
 
+// Scalar FEAT_LSE read-modify-write operations.  Values use raw GPR bits;
+// byte width and GCC memory order are constant operands.
+TARGET_BUILTIN(__builtin_arm_ldclr, "WUiWUiv*IUiIUi", "n", "lse")
+TARGET_BUILTIN(__builtin_arm_ldeor, "WUiWUiv*IUiIUi", "n", "lse")
+TARGET_BUILTIN(__builtin_arm_ldset, "WUiWUiv*IUiIUi", "n", "lse")
+TARGET_BUILTIN(__builtin_arm_ldsmax, "WUiWUiv*IUiIUi", "n", "lse")
+TARGET_BUILTIN(__builtin_arm_ldsmin, "WUiWUiv*IUiIUi", "n", "lse")
+TARGET_BUILTIN(__builtin_arm_ldumax, "WUiWUiv*IUiIUi", "n", "lse")
+TARGET_BUILTIN(__builtin_arm_ldumin, "WUiWUiv*IUiIUi", "n", "lse")
+
 // Scalar fixed-point conversions between a GPR and FP16.  The value crosses
 // the C boundary as raw register bits; the last constant selects W (0) or X
 // (1), preserving the architectural register width in generated High-C.

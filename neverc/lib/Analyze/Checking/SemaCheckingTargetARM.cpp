@@ -459,6 +459,31 @@ bool Sema::CheckARMBuiltinExclusiveCall(unsigned BuiltinID, CallExpr *TheCall,
 bool Sema::CheckAArch64BuiltinFunctionCall(const TargetInfo &TI,
                                            unsigned BuiltinID,
                                            CallExpr *TheCall) {
+  if (BuiltinID == AArch64::BI__builtin_arm_ldclr ||
+      BuiltinID == AArch64::BI__builtin_arm_ldeor ||
+      BuiltinID == AArch64::BI__builtin_arm_ldset ||
+      BuiltinID == AArch64::BI__builtin_arm_ldsmax ||
+      BuiltinID == AArch64::BI__builtin_arm_ldsmin ||
+      BuiltinID == AArch64::BI__builtin_arm_ldumax ||
+      BuiltinID == AArch64::BI__builtin_arm_ldumin) {
+    llvm::APSInt Bytes;
+    if (SemaBuiltinConstantArg(TheCall, 2, Bytes))
+      return true;
+    switch (Bytes.getZExtValue()) {
+    case 1:
+    case 2:
+    case 4:
+    case 8:
+      break;
+    default: {
+      Expr *Arg = TheCall->getArg(2);
+      return Diag(Arg->getBeginLoc(), diag::err_argument_invalid_range)
+             << Bytes.getZExtValue() << "1, 2, 4" << 8 << Arg->getSourceRange();
+    }
+    }
+    return SemaBuiltinConstantArgRange(TheCall, 3, 0, 5);
+  }
+
   if (BuiltinID == AArch64::BI__builtin_arm_ldrex ||
       BuiltinID == AArch64::BI__builtin_arm_ldaex ||
       BuiltinID == AArch64::BI__builtin_arm_strex ||
