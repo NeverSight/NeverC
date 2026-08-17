@@ -137,6 +137,17 @@ static void test_recorder(void) {
     check_not_null("recorder", rec);
     check_int("default status", rec->status_code, 200);
 
+    neverc_http_response_writer_t *w = neverc_httptest_recorder_writer(rec);
+    check_not_null("recorder writer", w);
+    neverc_http_set_status(w, 201);
+    neverc_http_set_header(w, "X-Test", "yes");
+    neverc_http_write_string(w, "hello");
+    check_str("captured header",
+              neverc_httptest_recorder_header(rec, "X-Test"), "yes");
+    check_int("captured status", rec->status_code, 201);
+    check_str("captured body", rec->body, "hello");
+    check_int("captured body len", (int)rec->body_len, 5);
+
     neverc_httptest_recorder_free(rec);
 }
 

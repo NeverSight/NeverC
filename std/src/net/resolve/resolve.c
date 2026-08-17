@@ -57,6 +57,18 @@ static void copy_cstr_term(char *dst, size_t dstsz, const char *src) {
     dst[n] = '\0';
 }
 
+#ifndef _WIN32
+static pthread_mutex_t g_resolv_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static int posix_res_query(const char *name, int class, int type,
+                           unsigned char *answer, int anslen) {
+    pthread_mutex_lock(&g_resolv_lock);
+    int len = res_query(name, class, type, answer, anslen);
+    pthread_mutex_unlock(&g_resolv_lock);
+    return len;
+}
+#endif
+
 /* ======================================================================
  * DNS Lookup — LookupHost / LookupIP
  * Uses getaddrinfo for cross-platform portability.
@@ -239,7 +251,14 @@ int neverc_net_lookup_cname(const char *host, char *buf, size_t buflen) {
         buf[buflen - 1] = '\0';
         return 0;
     }
-    strncpy(buf, rec->Data.CNAME.pNameHost, buflen - 1);
+    const char *cname = NULL;
+    for (DNS_RECORD *r = rec; r; r = r->pNext) {
+        if (r->wType == DNS_TYPE_CNAME && r->Data.CNAME.pNameHost) {
+            cname = r->Data.CNAME.pNameHost;
+            break;
+        }
+    }
+    strncpy(buf, cname ? cname : host, buflen - 1);
     buf[buflen - 1] = '\0';
     DnsRecordListFree(rec, DnsFreeRecordList);
     return 0;
@@ -295,7 +314,7 @@ int neverc_net_lookup_mx(const char *name, neverc_net_mx_list_t *out) {
     return out->count > 0 ? 0 : -1;
 #else
     unsigned char answer[4096];
-    int len = res_query(name, C_IN, T_MX, answer, sizeof(answer));
+    int len = posix_res_query(name, C_IN, T_MX, answer, sizeof(answer));
     if (len < 0) return -1;
 
     ns_msg msg;
@@ -358,7 +377,7 @@ int neverc_net_lookup_txt(const char *name, neverc_net_txt_list_t *out) {
     return out->count > 0 ? 0 : -1;
 #else
     unsigned char answer[4096];
-    int len = res_query(name, C_IN, T_TXT, answer, sizeof(answer));
+    int len = posix_res_query(name, C_IN, T_TXT, answer, sizeof(answer));
     if (len < 0) return -1;
 
     ns_msg msg;
@@ -376,10 +395,13 @@ int neverc_net_lookup_txt(const char *name, neverc_net_txt_list_t *out) {
 
         size_t assembled = 0;
         int offset = 0;
+        int malformed = 0;
         while (offset < rdlen) {
             int chunk = rdata[offset];
-            if (offset + 1 + chunk > rdlen)
+            if (offset + 1 + chunk > rdlen) {
+                malformed = 1;
                 break;
+            }
             size_t room = 511 - assembled;
             size_t copy = (size_t)chunk < room ? (size_t)chunk : room;
             memcpy(out->records[out->count] + assembled,
@@ -389,6 +411,8 @@ int neverc_net_lookup_txt(const char *name, neverc_net_txt_list_t *out) {
             if (assembled >= 511)
                 break;
         }
+        if (malformed)
+            continue;
         out->records[out->count][assembled] = '\0';
         out->count++;
     }
@@ -421,7 +445,7 @@ int neverc_net_lookup_ns(const char *name, neverc_net_ns_list_t *out) {
     return out->count > 0 ? 0 : -1;
 #else
     unsigned char answer[4096];
-    int len = res_query(name, C_IN, T_NS, answer, sizeof(answer));
+    int len = posix_res_query(name, C_IN, T_NS, answer, sizeof(answer));
     if (len < 0) return -1;
 
     ns_msg msg;
@@ -481,7 +505,7 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
     return out->count > 0 ? 0 : -1;
 #else
     unsigned char answer[4096];
-    int len = res_query(qname, C_IN, T_SRV, answer, sizeof(answer));
+    int len = posix_res_query(qname, C_IN, T_SRV, answer, sizeof(answer));
     if (len < 0) return -1;
 
     ns_msg msg;

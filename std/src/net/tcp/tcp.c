@@ -53,8 +53,12 @@ static void addr_to_string(const struct sockaddr *sa, socklen_t salen,
         inet_ntop(AF_INET6, &in6->sin6_addr, out->addr + 1,
                   sizeof(out->addr) - 2);
         size_t len = strlen(out->addr);
-        snprintf(out->addr + len, sizeof(out->addr) - len, "]:%d",
-                 ntohs(in6->sin6_port));
+        if (in6->sin6_scope_id)
+            snprintf(out->addr + len, sizeof(out->addr) - len, "%%%u]:%d",
+                     in6->sin6_scope_id, ntohs(in6->sin6_port));
+        else
+            snprintf(out->addr + len, sizeof(out->addr) - len, "]:%d",
+                     ntohs(in6->sin6_port));
         out->port = ntohs(in6->sin6_port);
     }
 }

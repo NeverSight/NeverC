@@ -136,8 +136,12 @@ static void sa_to_udp_addr(const struct sockaddr *sa, socklen_t salen,
         inet_ntop(AF_INET6, &in6->sin6_addr, out->addr + 1,
                   sizeof(out->addr) - 2);
         size_t len = strlen(out->addr);
-        snprintf(out->addr + len, sizeof(out->addr) - len, "]:%d",
-                 ntohs(in6->sin6_port));
+        if (in6->sin6_scope_id)
+            snprintf(out->addr + len, sizeof(out->addr) - len, "%%%u]:%d",
+                     in6->sin6_scope_id, ntohs(in6->sin6_port));
+        else
+            snprintf(out->addr + len, sizeof(out->addr) - len, "]:%d",
+                     ntohs(in6->sin6_port));
         out->port = ntohs(in6->sin6_port);
     }
     if (salen <= (socklen_t)sizeof(out->_sa)) {
@@ -1473,6 +1477,7 @@ int neverc_udp_set_broadcast(neverc_udp_conn_t *conn, int enable) {
 
 int neverc_udp_resolve_addr(const char *addr_str, neverc_udp_addr_t *out) {
     if (!addr_str || !out) return -1;
+    if (nc_net_init() != 0) return -1;
 
     char host[256] = {0};
     uint16_t port = 0;

@@ -1,5 +1,6 @@
 #include "neverc/std/net/http/httptest.h"
 #include "neverc/std/net/tcp.h"
+#include "../_http_internal.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -7,13 +8,8 @@
 #ifndef _WIN32
 #include <pthread.h>
 #include <unistd.h>
-#include <strings.h>
 #else
 #include <windows.h>
-static int strcasecmp(const char *a, const char *b) { return _stricmp(a, b); }
-static int strncasecmp(const char *a, const char *b, size_t n) {
-    return _strnicmp(a, b, n);
-}
 #endif
 
 /* ======================================================================
@@ -488,22 +484,78 @@ void neverc_httptest_close(neverc_httptest_server_t *ts) {
  * Response Recorder
  * ====================================================================== */
 
+typedef struct {
+    neverc_httptest_recorder_t rec;
+    neverc_http_response_writer_t *writer;
+} httptest_recorder_box;
+
+static httptest_recorder_box *httptest_recorder_box_from(
+    neverc_httptest_recorder_t *rec) {
+    return (httptest_recorder_box *)rec;
+}
+
+static void httptest_recorder_clear_headers(neverc_httptest_recorder_t *rec) {
+    for (int i = 0; i < rec->nheaders; i++) {
+        free(rec->header_names[i]);
+        free(rec->header_values[i]);
+        rec->header_names[i] = NULL;
+        rec->header_values[i] = NULL;
+    }
+    rec->nheaders = 0;
+}
+
+static int httptest_recorder_capture(neverc_httptest_recorder_t *rec) {
+    httptest_recorder_box *box = httptest_recorder_box_from(rec);
+    neverc_http_response_writer_t *w = box->writer;
+    if (!w) return 0;
+    rec->status_code = w->status;
+    free(rec->body);
+    rec->body = NULL;
+    rec->body_len = 0;
+    if (w->body.len > 0) {
+        rec->body = (char *)malloc(w->body.len + 1U);
+        if (!rec->body) return -1;
+        memcpy(rec->body, w->body.data, w->body.len);
+        rec->body[w->body.len] = '\0';
+        rec->body_len = w->body.len;
+    }
+    httptest_recorder_clear_headers(rec);
+    for (int i = 0; i < w->nheaders && rec->nheaders < 64; i++) {
+        char *name = strdup(w->header_names[i]);
+        char *value = strdup(w->header_values[i]);
+        if (!name || !value) {
+            free(name);
+            free(value);
+            return -1;
+        }
+        rec->header_names[rec->nheaders] = name;
+        rec->header_values[rec->nheaders] = value;
+        rec->nheaders++;
+    }
+    return 0;
+}
+
 neverc_httptest_recorder_t *neverc_httptest_new_recorder(void) {
-    neverc_httptest_recorder_t *rec =
-        (neverc_httptest_recorder_t *)calloc(1, sizeof(*rec));
-    if (rec) rec->status_code = 200;
-    return rec;
+    httptest_recorder_box *box =
+        (httptest_recorder_box *)calloc(1, sizeof(*box));
+    if (!box) return NULL;
+    box->rec.status_code = 200;
+    return &box->rec;
 }
 
 neverc_http_response_writer_t *neverc_httptest_recorder_writer(
     neverc_httptest_recorder_t *rec) {
-    (void)rec;
-    return neverc_http_memory_writer_new();
+    if (!rec) return NULL;
+    httptest_recorder_box *box = httptest_recorder_box_from(rec);
+    if (!box->writer)
+        box->writer = neverc_http_memory_writer_new();
+    return box->writer;
 }
 
 const char *neverc_httptest_recorder_header(
     neverc_httptest_recorder_t *rec, const char *name) {
     if (!rec || !name) return NULL;
+    httptest_recorder_capture(rec);
     for (int i = 0; i < rec->nheaders; i++) {
         if (strcasecmp(rec->header_names[i], name) == 0)
             return rec->header_values[i];
@@ -513,10 +565,9 @@ const char *neverc_httptest_recorder_header(
 
 void neverc_httptest_recorder_free(neverc_httptest_recorder_t *rec) {
     if (!rec) return;
+    httptest_recorder_box *box = httptest_recorder_box_from(rec);
+    neverc_http_memory_writer_free(box->writer);
     free(rec->body);
-    for (int i = 0; i < rec->nheaders; i++) {
-        free(rec->header_names[i]);
-        free(rec->header_values[i]);
-    }
-    free(rec);
+    httptest_recorder_clear_headers(rec);
+    free(box);
 }
