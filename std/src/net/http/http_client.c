@@ -2873,7 +2873,7 @@ void neverc_http_strip_prefix(neverc_http_mux_t *mux, const char *prefix,
 }
 
 /* ======================================================================
- * Serve File — with Content-Type detection, Range, If-Modified-Since
+ * Serve File — Content-Type sniffing, extension override, Content-Length
  * ====================================================================== */
 
 void neverc_http_serve_file(neverc_http_response_writer_t *w,
@@ -2933,10 +2933,7 @@ void neverc_http_serve_file(neverc_http_response_writer_t *w,
 
     neverc_http_set_header(w, "Content-Type", ct);
     neverc_http_set_header(w, "Accept-Ranges", "bytes");
-
-    char cl_buf[32];
-    snprintf(cl_buf, sizeof(cl_buf), "%ld", fsize);
-    neverc_http_set_header(w, "Content-Length", cl_buf);
+    (void)neverc_http_set_content_length(w, (size_t)fsize);
 
     /* HEAD request: headers only */
     if (req && req->method && strcmp(req->method, "HEAD") == 0) {

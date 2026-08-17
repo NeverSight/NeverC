@@ -2726,6 +2726,13 @@ static void test_redirect_html_escape(void) {
 #ifndef _WIN32
 /* ===== ServeFile test ===== */
 
+static const char *g_serve_file_path;
+
+static void serve_file_live_handler(neverc_http_request_t *req,
+                                    neverc_http_response_writer_t *w) {
+    neverc_http_serve_file(w, req, g_serve_file_path);
+}
+
 static void test_serve_file(void) {
     printf("[serve_file]\n");
 
@@ -2738,6 +2745,7 @@ static void test_serve_file(void) {
     if (!f) { printf("  SKIP: cannot create temp file\n"); return; }
     fprintf(f, "Hello from served file!");
     fclose(f);
+    g_serve_file_path = tmppath;
 
     /* Memory writer test for ServeFile */
     neverc_http_response_writer_t *w = neverc_http_memory_writer_new();
@@ -2801,6 +2809,50 @@ static void test_serve_file(void) {
         neverc_http_memory_writer_free(w);
     }
 
+    /* neverc_http_set_header silently drops Content-Length; ServeFile must
+     * use set_content_length so GET/HEAD emit the file size. */
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "/file", serve_file_live_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    for (int i = 0; i < 100; i++) {
+        usleep(30000);
+        const char *err = NULL;
+        char addr[64];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_tcp_conn_t *c = neverc_tcp_dial(addr, &err);
+        if (c) { neverc_tcp_close(c); break; }
+    }
+
+    char buf[4096];
+    int n = do_http_request(port,
+        "GET /file HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("serve_file live resp", n > 0, 1);
+    check_int("serve_file live 200", strstr(buf, "200 OK") != NULL, 1);
+    check_int("serve_file live length",
+              strstr(buf, "Content-Length: 23") != NULL, 1);
+    check_int("serve_file live body",
+              strstr(buf, "Hello from served file!") != NULL, 1);
+    check_int("serve_file live ranges",
+              strstr(buf, "Accept-Ranges: bytes") != NULL, 1);
+
+    n = do_http_request(port,
+        "HEAD /file HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("serve_file HEAD resp", n > 0, 1);
+    check_int("serve_file HEAD 200", strstr(buf, "200 OK") != NULL, 1);
+    check_int("serve_file HEAD length",
+              strstr(buf, "Content-Length: 23") != NULL, 1);
+    check_int("serve_file HEAD no body",
+              strstr(buf, "Hello from served file!") == NULL, 1);
+
+    stop_test_server(pid);
     unlink(tmppath);
 }
 
