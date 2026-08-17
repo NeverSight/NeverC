@@ -2912,12 +2912,14 @@
         "neverc_syslog_notice": "src/log/syslog/syslog.c",
         "neverc_syslog_info": "src/log/syslog/syslog.c",
         "neverc_syslog_debug": "src/log/syslog/syslog.c",
-        "neverc_syslog_pri": "src/log/syslog/syslog.c"
+        "neverc_syslog_pri": "src/log/syslog/syslog.c",
+        "neverc_syslog_format": "src/log/syslog/syslog.c"
       },
       "dot_methods": {
         "open": "neverc_syslog_open",
         "close": "neverc_syslog_close",
         "write": "neverc_syslog_write",
+        "format": "neverc_syslog_format",
         "emerg": "neverc_syslog_emerg",
         "alert": "neverc_syslog_alert",
         "crit": "neverc_syslog_crit",
