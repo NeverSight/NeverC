@@ -239,6 +239,36 @@ static void test_template_url_and_script(void) {
     check_str("style tag uses css escape", out, "<style>\\21 B</style>");
     free(out);
 
+    neverc_html_template_data_set(&data, "X", "<script>alert(1)</script>");
+    out = neverc_html_template_render("<iframe srcdoc=\"{{.X}}\"></iframe>", &data);
+    check("srcdoc is double-escaped",
+          out && strstr(out, "&amp;lt;script") != NULL);
+    check("srcdoc does not contain a raw script tag",
+          out && strstr(out, "<script") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "onclick=alert(1)");
+    out = neverc_html_template_render("<div {{.X}}>", &data);
+    check("attr name context is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("attr name context is not raw",
+          out && strstr(out, "onclick=alert(1)") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", " x onclick=alert(1)");
+    out = neverc_html_template_render("<div class=pre{{.X}}>", &data);
+    check("unquoted prefix breakout is replaced",
+          out && strstr(out, "onclick") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "1;alert(1)");
+    out = neverc_html_template_render("<script>var x={{.X}}</script>", &data);
+    check("unquoted js expr is quoted",
+          out && strstr(out, "var x=\"") != NULL);
+    check("unquoted js expr does not run extra statements",
+          out && strstr(out, "var x=1;alert") == NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "Link", "script:alert(1)");
     out = neverc_html_template_render(
         "<div style=\"background:url(java{{.Link}})\">", &data);

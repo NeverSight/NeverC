@@ -476,6 +476,23 @@ static void test_reject_unsafe_paths(void) {
               neverc_tar_reader_next(&reader, &header), -1);
 }
 
+static void test_gnu_magic_ignores_prefix(void) {
+    printf("[gnu magic ignores prefix]\n");
+    uint8_t block[NEVERC_TAR_BLOCK_SIZE] = {0};
+    memcpy(block, "hello.txt", 9);
+    memcpy(block + 257, "ustar ", 6);
+    memcpy(block + 345, "evilprefix", 10);
+    test_finish_header(block);
+
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    neverc_tar_header_t header = {0};
+    int result = neverc_tar_reader_next(&reader, &header);
+    check_int("gnu header", result, 1);
+    if (result != 1) return;
+    check_str("gnu name ignores atime field", header.name, "hello.txt");
+}
+
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
@@ -486,6 +503,7 @@ int main(void) {
     test_ustar_metadata_and_long_name();
     test_malformed_headers();
     test_reject_unsafe_paths();
+    test_gnu_magic_ignores_prefix();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

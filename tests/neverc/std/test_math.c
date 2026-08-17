@@ -964,6 +964,7 @@ static void test_lgamma_precision(void) {
 
     /* Special cases */
     check_double("lgamma(+Inf)", neverc_math_lgamma(NC_INF), NC_INF);
+    check_double("lgamma(-Inf)", neverc_math_lgamma(-NC_INF), -NC_INF);
     check_double("lgamma(0)", neverc_math_lgamma(0.0), NC_INF);
     check_double("lgamma(NaN)", neverc_math_lgamma(NC_NAN), NC_NAN);
     check_double("lgamma(-1)", neverc_math_lgamma(-1.0), NC_INF);

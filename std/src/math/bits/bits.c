@@ -1,4 +1,5 @@
 #include "neverc/std/math/bits.h"
+#include <limits.h>
 
 /*
  * Bit manipulation functions — mirrors Go math/bits package.
@@ -399,6 +400,14 @@ void neverc_bits_mul64(uint64_t x, uint64_t y,
 
 void neverc_bits_div32(uint32_t hi, uint32_t lo, uint32_t y,
                        uint32_t *quo, uint32_t *rem) {
+    if (!quo || !rem) return;
+    /* y == 0 or a quotient that does not fit in 32 bits is UB in C and a
+     * panic in Go math/bits.Div32. Fail closed with an all-ones result. */
+    if (y == 0 || hi >= y) {
+        *quo = UINT32_MAX;
+        *rem = UINT32_MAX;
+        return;
+    }
     uint64_t n = ((uint64_t)hi << 32) | (uint64_t)lo;
     *quo = (uint32_t)(n / y);
     *rem = (uint32_t)(n % y);
@@ -406,6 +415,12 @@ void neverc_bits_div32(uint32_t hi, uint32_t lo, uint32_t y,
 
 void neverc_bits_div64(uint64_t hi, uint64_t lo, uint64_t y,
                        uint64_t *quo, uint64_t *rem) {
+    if (!quo || !rem) return;
+    if (y == 0 || hi >= y) {
+        *quo = UINT64_MAX;
+        *rem = UINT64_MAX;
+        return;
+    }
     if (hi == 0) {
         *quo = lo / y;
         *rem = lo % y;
@@ -418,8 +433,12 @@ void neverc_bits_div64(uint64_t hi, uint64_t lo, uint64_t y,
 #else
     uint64_t q = 0, r = hi;
     for (int i = 63; i >= 0; i--) {
+        int carry = (int)(r >> 63);
         r = (r << 1) | ((lo >> i) & 1);
-        if (r >= y) { r -= y; q |= (1ULL << i); }
+        if (carry || r >= y) {
+            r -= y;
+            q |= (1ULL << i);
+        }
     }
     *quo = q;
     *rem = r;

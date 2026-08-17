@@ -106,7 +106,7 @@ double neverc_math_lgamma_sign(double x, int *sign) {
     if (sign) *sign = 1;
 
     if (nc_isnan(x)) return x;
-    if (nc_isinf_any(x)) return nc_inf(1);
+    if (nc_isinf_any(x)) return x; /* Go Lgamma(±Inf) = ±Inf */
     if (x == 0.0) return nc_inf(1);
 
     int neg = 0;

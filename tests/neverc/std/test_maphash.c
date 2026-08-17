@@ -114,6 +114,11 @@ static void test_empty_data(void) {
     uint64_t h1 = neverc_maphash_bytes(42, "", 0);
     uint64_t h2 = neverc_maphash_bytes(42, "a", 1);
     ASSERT_U64_NE(h1, h2);
+
+    neverc_maphash_t h;
+    neverc_maphash_init(&h, 42);
+    neverc_maphash_write(&h, NULL, 0);
+    ASSERT_U64_EQ(neverc_maphash_sum64(&h), h1);
 }
 
 static void test_large_data(void) {

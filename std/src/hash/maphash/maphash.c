@@ -106,17 +106,29 @@ static uint64_t splitmix64(uint64_t *state) {
 }
 
 uint64_t neverc_maphash_make_seed(void) {
-    if (g_rng_state == 0) {
-        /* Bootstrap from address space layout randomization */
+    uint64_t state = __atomic_load_n(&g_rng_state, __ATOMIC_RELAXED);
+    if (state == 0) {
         uint64_t v = (uint64_t)(uintptr_t)&g_rng_state;
-        v ^= 0xdeadbeefcafebabe;
-        g_rng_state = v ? v : 1;
+        v ^= 0xdeadbeefcafebabeull;
+        if (v == 0) v = 1;
+        uint64_t expected = 0;
+        if (!__atomic_compare_exchange_n(&g_rng_state, &expected, v, 0,
+                                         __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+            state = expected;
+        else
+            state = v;
     }
     uint64_t s;
-    do {
-        s = splitmix64(&g_rng_state);
-    } while (s == 0);
-    return s;
+    for (;;) {
+        uint64_t cur = __atomic_load_n(&g_rng_state, __ATOMIC_RELAXED);
+        uint64_t next = cur;
+        s = splitmix64(&next);
+        if (__atomic_compare_exchange_n(&g_rng_state, &cur, next, 0,
+                                        __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+            if (s != 0)
+                return s;
+        }
+    }
 }
 
 /* ---- streaming API ---- */
@@ -145,6 +157,7 @@ void neverc_maphash_write_byte(neverc_maphash_t *h, uint8_t b) {
 
 void neverc_maphash_write(neverc_maphash_t *h, const void *data, size_t len) {
     const uint8_t *p = (const uint8_t *)data;
+    if (len == 0) return;
 
     if (h->n > 0) {
         size_t space = (size_t)(NEVERC_MAPHASH_BUF_SIZE - h->n);

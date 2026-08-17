@@ -391,6 +391,9 @@ int neverc_macho_symbols(const neverc_macho_file_t *f,
     const uint8_t *sym_data = f->data + f->symoff;
     const uint8_t *str_data = f->data + f->stroff;
 
+    if (!macho_allocation_fits(f->nsyms, sizeof(neverc_macho_symbol_t)))
+        return -1;
+
     *syms = (neverc_macho_symbol_t *)calloc(f->nsyms, sizeof(neverc_macho_symbol_t));
     if (!*syms) return -1;
     for (uint32_t i = 0; i < f->nsyms; i++) {

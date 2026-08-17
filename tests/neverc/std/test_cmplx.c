@@ -166,6 +166,7 @@ static void test_pow(void) {
     check_cmplx("pow(2,3)", neverc_cmplx_pow(C(2.0, 0.0), C(3.0, 0.0)), 8.0, 0.0);
     check_cmplx("pow(z,0)=1", neverc_cmplx_pow(C(3.0, 4.0), C(0.0, 0.0)), 1.0, 0.0);
     check_cmplx("pow(0,0)=1", neverc_cmplx_pow(C(0.0, 0.0), C(0.0, 0.0)), 1.0, 0.0);
+    check_cmplx("pow(0,0+i)=1", neverc_cmplx_pow(C(0.0, 0.0), C(0.0, 1.0)), 1.0, 0.0);
     check_cmplx("pow(0,-1)=+Inf", neverc_cmplx_pow(C(0.0, 0.0), C(-1.0, 0.0)), NC_INF, 0.0);
     check_cmplx("pow(0,-1+i)=Inf", neverc_cmplx_pow(C(0.0, 0.0), C(-1.0, 1.0)), NC_INF, NC_INF);
 

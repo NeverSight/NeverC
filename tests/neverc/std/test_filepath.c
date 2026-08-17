@@ -277,6 +277,11 @@ static void test_to_from_slash(void) {
 #else
     ASSERT_STR_EQ(neverc_filepath_from_slash("a/b/c", buf, sizeof(buf)), "a/b/c");
 #endif
+    ASSERT_TRUE(neverc_filepath_to_slash(NULL, buf, sizeof(buf)) == NULL);
+    ASSERT_TRUE(neverc_filepath_to_slash("a", NULL, 8) == NULL);
+    ASSERT_TRUE(neverc_filepath_to_slash("a", buf, 0) == NULL);
+    ASSERT_TRUE(neverc_filepath_from_slash(NULL, buf, sizeof(buf)) == NULL);
+    ASSERT_TRUE(neverc_filepath_from_slash("a", NULL, 8) == NULL);
 }
 
 int main(void) {

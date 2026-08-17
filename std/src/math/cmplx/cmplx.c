@@ -145,6 +145,8 @@ neverc_cmplx_t neverc_cmplx_pow(neverc_cmplx_t x, neverc_cmplx_t y) {
         double yr = RE(y), yi = IM(y);
         if (neverc_math_isnan(yr) || neverc_math_isnan(yi))
             return neverc_cmplx_nan_val();
+        if (yr == 0.0)
+            return MK(1.0, 0.0);
         if (yr < 0.0) {
             if (yi == 0.0)
                 return MK(neverc_math_inf(1), 0.0);

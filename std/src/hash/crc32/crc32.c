@@ -40,15 +40,21 @@ static void build_slicing8(uint32_t poly, uint32_t tab[8][256]) {
     }
 }
 
+static uint32_t crc32_load_le32(const uint8_t *p) {
+    return (uint32_t)p[0]
+         | ((uint32_t)p[1] << 8)
+         | ((uint32_t)p[2] << 16)
+         | ((uint32_t)p[3] << 24);
+}
+
 static uint32_t crc32_slicing8(uint32_t crc, const uint32_t tab[8][256],
                                 const void *data, size_t len) {
     const uint8_t *p = (const uint8_t *)data;
     crc = ~crc;
 
     while (len >= 8) {
-        uint32_t lo, hi;
-        memcpy(&lo, p, 4);
-        memcpy(&hi, p + 4, 4);
+        uint32_t lo = crc32_load_le32(p);
+        uint32_t hi = crc32_load_le32(p + 4);
         crc ^= lo;
         crc = tab[7][(crc      ) & 0xFF]
             ^ tab[6][(crc >>  8) & 0xFF]

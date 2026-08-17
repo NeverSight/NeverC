@@ -203,10 +203,14 @@ static void test_dst_offset(void) {
 
     const neverc_tzdata_zone_t *yyc = neverc_tzdata_lookup("America/Edmonton");
     check_int("Edmonton Jan (std)",
-              neverc_tzdata_offset_for_month(yyc, 1), -21600);
+              neverc_tzdata_offset_for_month(yyc, 1), -25200);
+    check_int("Edmonton Jul (dst)",
+              neverc_tzdata_offset_for_month(yyc, 7), -21600);
     const neverc_tzdata_zone_t *yvr = neverc_tzdata_lookup("America/Vancouver");
     check_int("Vancouver Jan (std)",
-              neverc_tzdata_offset_for_month(yvr, 1), -25200);
+              neverc_tzdata_offset_for_month(yvr, 1), -28800);
+    check_int("Vancouver Jul (dst)",
+              neverc_tzdata_offset_for_month(yvr, 7), -25200);
 }
 
 /* ===== Offsets correctness ===== */
@@ -269,12 +273,14 @@ static void test_offsets(void) {
     check_int("Casablanca no dst", z ? z->has_dst : -1, 0);
 
     z = neverc_tzdata_lookup("America/Edmonton");
-    check_int("Edmonton offset -6h", z ? z->utc_offset : 0, -21600);
-    check_int("Edmonton no dst", z ? z->has_dst : -1, 0);
+    check_int("Edmonton offset -7h", z ? z->utc_offset : 0, -25200);
+    check_int("Edmonton dst offset -6h", z ? z->dst_offset : 0, -21600);
+    check_int("Edmonton has dst", z ? z->has_dst : 0, 1);
 
     z = neverc_tzdata_lookup("America/Vancouver");
-    check_int("Vancouver offset -7h", z ? z->utc_offset : 0, -25200);
-    check_int("Vancouver no dst", z ? z->has_dst : -1, 0);
+    check_int("Vancouver offset -8h", z ? z->utc_offset : 0, -28800);
+    check_int("Vancouver dst offset -7h", z ? z->dst_offset : 0, -25200);
+    check_int("Vancouver has dst", z ? z->has_dst : 0, 1);
 }
 
 /* ===== Edge cases ===== */

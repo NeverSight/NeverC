@@ -86,6 +86,25 @@ static int check_oversized_geometry(void) {
     CHECK(neverc_gif_decode(
               oversized_frame, sizeof(oversized_frame), &image) == -1);
     CHECK(largest_request < TEST_ALLOCATION_LIMIT);
+    CHECK(image.width == 0);
+    CHECK(image.height == 0);
+
+    static const uint8_t oversized_lsd[] = {
+        'G', 'I', 'F', '8', '9', 'a',
+        0xff, 0xff, 0xff, 0xff,
+        0x00, 0, 0,
+        0x2c,
+        0, 0, 0, 0,
+        1, 0, 1, 0,
+        0
+    };
+    neverc_gif_image_t huge;
+    largest_request = 0;
+    CHECK(neverc_gif_decode(
+              oversized_lsd, sizeof(oversized_lsd), &huge) == -1);
+    CHECK(largest_request == 0);
+    CHECK(huge.width == 0);
+    CHECK(huge.height == 0);
     return 0;
 }
 

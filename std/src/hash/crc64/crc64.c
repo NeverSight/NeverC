@@ -29,13 +29,23 @@ static void build_slicing8_from_table(const neverc_crc64_table_t base,
     }
 }
 
+static uint64_t crc64_load_le64(const uint8_t *p) {
+    return (uint64_t)p[0]
+         | ((uint64_t)p[1] << 8)
+         | ((uint64_t)p[2] << 16)
+         | ((uint64_t)p[3] << 24)
+         | ((uint64_t)p[4] << 32)
+         | ((uint64_t)p[5] << 40)
+         | ((uint64_t)p[6] << 48)
+         | ((uint64_t)p[7] << 56);
+}
+
 static uint64_t crc64_slicing8(uint64_t crc, const uint64_t tab[8][256],
                                 const uint8_t *data, size_t len) {
     crc = ~crc;
 
     while (len >= 8) {
-        uint64_t w;
-        memcpy(&w, data, 8);
+        uint64_t w = crc64_load_le64(data);
         crc ^= w;
         crc = tab[7][(uint8_t)(crc      )]
             ^ tab[6][(uint8_t)(crc >>  8)]

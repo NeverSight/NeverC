@@ -306,11 +306,22 @@ static void test_division(void) {
     neverc_bits_div32(1, 0, 0xFFFFFFFF, &q32, &r32);
     check_int("div32(1<<32, max).q", (int)q32, 1);
 
+    neverc_bits_div32(0, 1, 0, &q32, &r32);
+    check_int("div32 by zero is all-ones q", (int)q32, -1);
+    check_int("div32 by zero is all-ones r", (int)r32, -1);
+    neverc_bits_div32(2, 0, 1, &q32, &r32);
+    check_int("div32 overflow is all-ones q", (int)q32, -1);
+
     check_int("rem32(0,100,7)", (int)neverc_bits_rem32(0, 100, 7), 2);
 
     neverc_bits_div64(0, 100, 7, &q64, &r64);
     check_u64("div64(100,7).q", q64, 14);
     check_u64("div64(100,7).r", r64, 2);
+
+    neverc_bits_div64(1, 0, 0, &q64, &r64);
+    check_u64("div64 by zero is all-ones q", q64, UINT64_MAX);
+    neverc_bits_div64(2, 0, 1, &q64, &r64);
+    check_u64("div64 overflow is all-ones q", q64, UINT64_MAX);
 
     check_u64("rem64(0,100,7)", neverc_bits_rem64(0, 100, 7), 2);
 }

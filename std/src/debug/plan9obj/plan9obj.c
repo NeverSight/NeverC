@@ -322,6 +322,8 @@ int neverc_plan9_symbols(neverc_plan9_file_t *f) {
     neverc_plan9_sym_t *parsed = NULL;
     char **filename_map = NULL;
     if (count != 0) {
+        if (count > SIZE_MAX / sizeof(neverc_plan9_sym_t))
+            return -1;
         parsed = (neverc_plan9_sym_t *)calloc(
             count, sizeof(neverc_plan9_sym_t));
         if (!parsed)

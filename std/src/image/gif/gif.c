@@ -300,12 +300,16 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
         return -1;
 
     size_t pos = 6;
-    img->width = (uint32_t)data[pos] | ((uint32_t)data[pos+1] << 8); pos += 2;
-    img->height = (uint32_t)data[pos] | ((uint32_t)data[pos+1] << 8); pos += 2;
+    uint32_t width = (uint32_t)data[pos] | ((uint32_t)data[pos+1] << 8); pos += 2;
+    uint32_t height = (uint32_t)data[pos] | ((uint32_t)data[pos+1] << 8); pos += 2;
     uint8_t packed = data[pos++];
     uint8_t bg_index = data[pos++];
     pos++; /* pixel aspect ratio */
-    if (img->width == 0 || img->height == 0) return -1;
+    if (width == 0 || height == 0 ||
+        (uint64_t)width * height > GIF_MAX_PIXELS)
+        return -1;
+    img->width = width;
+    img->height = height;
 
     int has_gct = (packed >> 7) & 1;
     int gct_size = has_gct ? (1 << ((packed & 7) + 1)) : 0;
@@ -676,6 +680,8 @@ void neverc_gif_free(neverc_gif_image_t *img) {
     free(img->frames);
     img->frames = NULL;
     img->num_frames = 0;
+    img->width = 0;
+    img->height = 0;
 }
 
 /* =========================================================================

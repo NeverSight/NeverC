@@ -162,7 +162,8 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
 
     size_t name_length = tar_field_length(block, 100);
     size_t prefix_length = 0;
-    if (memcmp(block + 257, "ustar", 5) == 0)
+    /* POSIX ustar is "ustar\0"; GNU is "ustar " and offset 345 is not prefix. */
+    if (memcmp(block + 257, "ustar", 5) == 0 && block[262] == '\0')
         prefix_length = tar_field_length(block + 345, 155);
     size_t full_length = name_length;
     if (prefix_length > 0) {

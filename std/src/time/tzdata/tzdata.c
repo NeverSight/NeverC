@@ -63,9 +63,9 @@ static const tz_entry_t tz_table[] = {
     {"America/Honolulu",        "HST",  NULL,   -36000, 0,      0},
     {"America/Phoenix",         "MST",  NULL,   -25200, 0,      0},
     {"America/Toronto",         "EST",  "EDT",  -18000, -14400, N},
-    {"America/Vancouver",       "MST",  NULL,   -25200, 0,      0},
+    {"America/Vancouver",       "PST",  "PDT",  -28800, -25200, N},
     {"America/Winnipeg",        "CST",  "CDT",  -21600, -18000, N},
-    {"America/Edmonton",        "CST",  NULL,   -21600, 0,      0},
+    {"America/Edmonton",        "MST",  "MDT",  -25200, -21600, N},
     {"America/Halifax",         "AST",  "ADT",  -14400, -10800, N},
     {"America/St_Johns",        "NST",  "NDT",  -12600, -9000,  N},
     {"America/Mexico_City",     "CST",  NULL,   -21600, 0,      0},
@@ -194,7 +194,14 @@ static neverc_tzdata_zone_t g_zones[sizeof(tz_table) / sizeof(tz_table[0])];
 static int g_zones_init = 0;
 
 static void init_zones(void) {
-    if (g_zones_init) return;
+    if (__atomic_load_n(&g_zones_init, __ATOMIC_ACQUIRE)) return;
+    int expected = 0;
+    if (!__atomic_compare_exchange_n(&g_zones_init, &expected, 1, 0,
+                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        while (__atomic_load_n(&g_zones_init, __ATOMIC_ACQUIRE) != 2) {
+        }
+        return;
+    }
     for (int i = 0; i < tz_count; i++) {
         g_zones[i].name = tz_table[i].name;
         g_zones[i].abbrev = tz_table[i].abbr;
@@ -203,7 +210,7 @@ static void init_zones(void) {
         g_zones[i].dst_offset = tz_table[i].off_dst;
         g_zones[i].has_dst = (tz_table[i].hemi != 0) ? 1 : 0;
     }
-    g_zones_init = 1;
+    __atomic_store_n(&g_zones_init, 2, __ATOMIC_RELEASE);
 }
 
 const neverc_tzdata_zone_t *neverc_tzdata_lookup(const char *name) {

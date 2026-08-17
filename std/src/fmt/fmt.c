@@ -430,14 +430,15 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             if (prec == 0 && is_zero_body) {
                 body_len = 0;
             } else if (prec > body_len) {
-                int extra = prec - body_len;
-                if (tlen + extra >= (int)sizeof(tmp))
+                size_t extra = (size_t)prec - (size_t)body_len;
+                if (tlen < 0 || extra >= sizeof(tmp) ||
+                    (size_t)tlen > sizeof(tmp) - extra)
                     goto format_fail;
-                memmove(tmp + body_offset + extra,
+                memmove(tmp + body_offset + (int)extra,
                         tmp + body_offset, (size_t)body_len);
-                memset(tmp + body_offset, '0', (size_t)extra);
-                tlen += extra;
-                body_len += extra;
+                memset(tmp + body_offset, '0', extra);
+                tlen += (int)extra;
+                body_len += (int)extra;
             }
         }
         int formatted_is_special =

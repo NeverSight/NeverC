@@ -574,6 +574,7 @@ int neverc_filepath_match(const char *pattern, const char *name) {
 }
 
 const char *neverc_filepath_to_slash(const char *path, char *buf, size_t buf_len) {
+    if (!path || !buf || buf_len == 0) return NULL;
     size_t len = strlen(path);
     if (len + 1 > buf_len) return NULL;
     for (size_t i = 0; i < len; i++)
@@ -583,6 +584,7 @@ const char *neverc_filepath_to_slash(const char *path, char *buf, size_t buf_len
 }
 
 const char *neverc_filepath_from_slash(const char *path, char *buf, size_t buf_len) {
+    if (!path || !buf || buf_len == 0) return NULL;
     size_t len = strlen(path);
     if (len + 1 > buf_len) return NULL;
     for (size_t i = 0; i < len; i++)

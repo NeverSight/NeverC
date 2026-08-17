@@ -833,6 +833,8 @@ static void nci_timsort(void *base_, size_t n, size_t es, nci_cmp_fn cmp) {
         /* PowerSort: resolve higher-power boundaries before pushing this run. */
         nci_tim_found_new_run(base, es, cmp, stack, &stack_size, aux,
                               run_len, n);
+        while (stack_size >= NCI_TIM_MAX_STACK)
+            nci_tim_merge_top2(base, es, cmp, stack, &stack_size, aux);
 
         stack[stack_size].start = lo;
         stack[stack_size].len = run_len;

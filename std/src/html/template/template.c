@@ -575,6 +575,57 @@ static int html_is_url_attr_name(const char *name, size_t nlen) {
     return 0;
 }
 
+static int html_in_open_tag(const char *buf, size_t len) {
+    size_t last_lt = (size_t)-1, last_gt = (size_t)-1;
+    for (size_t i = 0; i < len; i++) {
+        if (buf[i] == '<') last_lt = i;
+        else if (buf[i] == '>') last_gt = i;
+    }
+    return last_lt != (size_t)-1 &&
+           (last_gt == (size_t)-1 || last_lt > last_gt);
+}
+
+static int html_prev_non_ws_is_quote(const char *buf, size_t len) {
+    while (len > 0 && html_is_ascii_ws((unsigned char)buf[len - 1]))
+        len--;
+    if (len == 0) return 0;
+    return buf[len - 1] == '"' || buf[len - 1] == '\'';
+}
+
+static int html_unquoted_value_is_unsafe(const char *s) {
+    if (!s) return 0;
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c <= 0x20 || c == '"' || c == '\'' || c == '=' ||
+            c == '<' || c == '>' || c == '`')
+            return 1;
+    }
+    return 0;
+}
+
+static char *html_escape_srcdoc(const char *s) {
+    char *inner = neverc_html_escape(s);
+    if (!inner) return NULL;
+    char *outer = neverc_html_escape(inner);
+    free(inner);
+    return outer;
+}
+
+static char *html_js_expr(const char *s) {
+    char *js = neverc_html_js_escape(s);
+    if (!js) return NULL;
+    size_t n = strlen(js);
+    if (n > SIZE_MAX - 3U) { free(js); return NULL; }
+    char *lit = (char *)NC_HTML_TEMPLATE_MALLOC(n + 3U);
+    if (!lit) { free(js); return NULL; }
+    lit[0] = '"';
+    memcpy(lit + 1, js, n);
+    lit[n + 1] = '"';
+    lit[n + 2] = '\0';
+    free(js);
+    return lit;
+}
+
 static int html_parse_attr_name(const char *buf, size_t end,
                                 const char **name, size_t *nlen) {
     while (end > 0 && html_is_ascii_ws((unsigned char)buf[end - 1])) end--;
@@ -771,7 +822,11 @@ static int execute_nodes(const node_t *n,
                     html_ci_eq_n(aname, "on", 2);
                 int in_style_attr = in_attr &&
                     html_attr_name_eq(aname, nlen, "style");
+                int in_srcdoc = in_attr &&
+                    html_attr_name_eq(aname, nlen, "srcdoc");
                 int unquoted = in_attr && !quoted;
+                int in_script = html_in_script(*buf, *len);
+                int in_open_tag = html_in_open_tag(*buf, *len);
                 const char *dprefix = in_css_url ? uprefix :
                     (in_url ? aprefix : NULL);
                 size_t dplen = in_css_url ? uplen : (in_url ? aplen : 0);
@@ -782,10 +837,21 @@ static int execute_nodes(const node_t *n,
                     escaped = neverc_html_escape("#");
                 else if (in_event)
                     escaped = html_escape_event(val);
-                else if (html_in_script(*buf, *len))
-                    escaped = neverc_html_js_escape(val);
+                else if (in_srcdoc)
+                    escaped = html_escape_srcdoc(val);
+                else if (in_script && !in_attr)
+                    escaped = html_prev_non_ws_is_quote(*buf, *len)
+                        ? neverc_html_js_escape(val)
+                        : html_js_expr(val);
                 else if (html_in_style_tag(*buf, *len) || in_style_attr)
                     escaped = neverc_html_css_escape(val);
+                else if (!in_attr && in_open_tag)
+                    escaped = dup_cstr("ZgotmplZ");
+                else if (unquoted && aplen > 0 &&
+                         html_unquoted_value_is_unsafe(val))
+                    escaped = neverc_html_escape("ZgotmplZ");
+                else if (html_in_script(*buf, *len))
+                    escaped = neverc_html_js_escape(val);
                 else
                     escaped = neverc_html_escape(val);
                 if (!escaped) return -1;

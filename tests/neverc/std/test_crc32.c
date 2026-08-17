@@ -58,6 +58,14 @@ static void test_update(void) {
     check_u32("checksum(full)",
               neverc_crc32_checksum(table, "123456789", 9),
               0xCBF43926);
+
+    uint8_t long_data[80];
+    for (int i = 0; i < 80; i++)
+        long_data[i] = (uint8_t)i;
+    uint32_t full = neverc_crc32_checksum(table, long_data, 80);
+    uint32_t part = neverc_crc32_update(0, table, long_data, 40);
+    part = neverc_crc32_update(part, table, long_data + 40, 40);
+    check_u32("slicing8 80 vs 40+40", part, full);
 }
 
 static void test_castagnoli(void) {

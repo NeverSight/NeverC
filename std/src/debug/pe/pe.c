@@ -295,6 +295,10 @@ int neverc_pe_symbols(const neverc_pe_file_t *f,
         i += 1 + aux_count;
     }
 
+    if (real_count < 0 ||
+        (size_t)real_count > SIZE_MAX / sizeof(neverc_pe_symbol_t))
+        return -1;
+
     *syms = (neverc_pe_symbol_t *)calloc((size_t)real_count, sizeof(neverc_pe_symbol_t));
     if (!*syms) return -1;
 
