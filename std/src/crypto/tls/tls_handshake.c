@@ -3328,8 +3328,7 @@ int nci_tls_handle_peer_alert(
         conn->peer_closed = 1;
         return 1;
     }
-    if (data[1] == TLS_ALERT_USER_CANCELED && data[0] == 1)
-        return 0;
+    /* RFC 8446 §6.2: user_canceled is an error alert regardless of level. */
 
     conn->closed = 1;
     conn->failure_reason = "TLS peer sent a fatal alert";

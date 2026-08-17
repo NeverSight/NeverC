@@ -530,6 +530,10 @@ static void test_invalid_formats(void) {
     check_true("dynamic int precision overflow rejected", result == NULL);
     free(result);
 
+    result = neverc_fmt_sprintf("%z %s", "safe");
+    check_true("unknown verb fails safely", result == NULL);
+    free(result);
+
     check_int("scan null dest", neverc_fmt_scan(NULL), 0);
 
     result = neverc_fmt_sprintf("hello%");

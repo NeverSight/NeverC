@@ -206,6 +206,15 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "&#39;alert(1)&#39;") != NULL);
     free(out);
 
+    neverc_html_template_data_set(&data, "P", "+alert(1)//");
+    out = neverc_html_template_render("<img onclick=0{{.P}}>", &data);
+    check("unquoted event prefix is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("unquoted event prefix no alert concat",
+          out && strstr(out, "0'+alert") == NULL &&
+              strstr(out, "0&#39;+alert") == NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "Color", "!B");
     out = neverc_html_template_render("<div style=\"{{.Color}}\">", &data);
     check_str("style uses css escape", out, "<div style=\"\\21 B\">");
@@ -346,6 +355,15 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "var x=\"") != NULL);
     check("unquoted js expr does not run extra statements",
           out && strstr(out, "var x=1;alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "+alert(1)//");
+    out = neverc_html_template_render("<script>var x=0{{.X}}</script>", &data);
+    check("js numeric prefix is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("js numeric prefix no concat",
+          out && strstr(out, "0+alert") == NULL &&
+              strstr(out, "0\"+alert") == NULL);
     free(out);
 
     neverc_html_template_data_set(&data, "Link", "script:alert(1)");

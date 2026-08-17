@@ -861,6 +861,14 @@ static int html_prev_non_ws_is_quote(const char *buf, size_t len) {
     return buf[len - 1] == '"' || buf[len - 1] == '\'';
 }
 
+static int html_prev_non_ws_is_digit(const char *buf, size_t len) {
+    while (len > 0 && html_is_ascii_ws((unsigned char)buf[len - 1]))
+        len--;
+    if (len == 0) return 0;
+    unsigned char c = (unsigned char)buf[len - 1];
+    return c >= '0' && c <= '9';
+}
+
 static int html_unquoted_value_is_unsafe(const char *s) {
     if (!s) return 0;
     for (; *s; s++) {
@@ -1213,10 +1221,16 @@ static int execute_nodes(const node_t *n,
                 else if (in_url && html_url_parts_unsafe(
                              dprefix, dplen, val, dsuffix, dslen, is_srcset))
                     escaped = neverc_html_escape("#");
+                else if (in_event && unquoted && aplen > 0)
+                    escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_event)
                     escaped = html_escape_event(val);
                 else if (in_srcdoc)
                     escaped = html_escape_srcdoc(val);
+                else if (in_script && !in_attr &&
+                         !html_prev_non_ws_is_quote(*buf, *len) &&
+                         html_prev_non_ws_is_digit(*buf, *len))
+                    escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_script && !in_attr)
                     escaped = html_prev_non_ws_is_quote(*buf, *len)
                         ? neverc_html_js_escape(val)

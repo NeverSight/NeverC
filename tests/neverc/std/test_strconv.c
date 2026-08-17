@@ -281,6 +281,13 @@ static void test_parse_float(void) {
     check_int("hex zero huge exponent",
               neverc_strconv_parse_float("0x0p999", &v), 0);
     check_true("hex zero huge exponent val", v == 0.0);
+    check_int("hex underflow",
+              neverc_strconv_parse_float("0x1p-2000", &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_true("hex underflow is zero", v == 0.0);
+    check_int("hex signed underflow",
+              neverc_strconv_parse_float("-0x1p-2000", &v),
+              NEVERC_STRCONV_ERR_RANGE);
 }
 
 /* ===== Itoa ===== */

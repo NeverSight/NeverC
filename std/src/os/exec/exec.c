@@ -178,7 +178,10 @@ void neverc_exec_cmd_set_env(neverc_exec_cmd_t *cmd, const char **env, int env_c
         }
     }
     char **copy = exec_copy_strings(env, env_count);
-    if (!copy) return;
+    if (!copy) {
+        cmd->env_invalid = 1;
+        return;
+    }
     exec_free_strings(cmd->env, cmd->env_count);
     cmd->env = copy;
     cmd->env_count = env_count;

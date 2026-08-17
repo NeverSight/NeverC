@@ -33,21 +33,25 @@ static void win_mark_pending(int signum) {
 
 static BOOL WINAPI win_ctrl_handler(DWORD type) {
     switch (type) {
-        case CTRL_C_EVENT:
+        case CTRL_C_EVENT: {
+            neverc_signal_handler_t handler = g_win_handlers[NEVERC_SIGINT];
             win_mark_pending(NEVERC_SIGINT);
-            if (g_win_handlers[NEVERC_SIGINT]) {
-                g_win_handlers[NEVERC_SIGINT](NEVERC_SIGINT);
+            if (handler) {
+                handler(NEVERC_SIGINT);
                 return TRUE;
             }
             break;
+        }
         case CTRL_BREAK_EVENT:
-        case CTRL_CLOSE_EVENT:
+        case CTRL_CLOSE_EVENT: {
+            neverc_signal_handler_t handler = g_win_handlers[NEVERC_SIGTERM];
             win_mark_pending(NEVERC_SIGTERM);
-            if (g_win_handlers[NEVERC_SIGTERM]) {
-                g_win_handlers[NEVERC_SIGTERM](NEVERC_SIGTERM);
+            if (handler) {
+                handler(NEVERC_SIGTERM);
                 return TRUE;
             }
             break;
+        }
     }
     return FALSE;
 }
@@ -144,8 +148,11 @@ int neverc_signal_wait(const int *sigs, int nsigs) {
 static neverc_signal_handler_t g_handlers[64] = {0};
 
 static void posix_signal_handler(int signum) {
-    if (signum >= 0 && signum < 64 && g_handlers[signum])
-        g_handlers[signum](signum);
+    neverc_signal_handler_t handler = NULL;
+    if (signum >= 0 && signum < 64)
+        handler = g_handlers[signum];
+    if (handler)
+        handler(signum);
 }
 
 void neverc_signal_notify(int signum, neverc_signal_handler_t handler) {

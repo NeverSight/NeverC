@@ -250,6 +250,7 @@ static void dec_set(nc_decimal *d, const char *s, const char *end, int neg) {
  * a required decimal power of two. Rounding matches strconv.atofHex.
  * ------------------------------------------------------------------ */
 static int atof_hex(uint64_t mantissa, int exp, int neg, int trunc, double *out) {
+    int input_nonzero = (mantissa != 0 || trunc);
     const int mantbits = NC_MANT_BITS;
     const int expbits = NC_EXP_BITS;
     const int bias = NC_EXP_BIAS;
@@ -290,6 +291,8 @@ static int atof_hex(uint64_t mantissa, int exp, int neg, int trunc, double *out)
     if (exp > max_exp) {
         mantissa = (uint64_t)1 << mantbits;
         exp = max_exp + 1;
+        overflow = 1;
+    } else if (input_nonzero && (mantissa >> mantbits) == 0) {
         overflow = 1;
     }
 

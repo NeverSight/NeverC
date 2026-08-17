@@ -447,6 +447,19 @@ static void test_exp_mod(void) {
     neverc_bigint_exp(&result, &base, &exp, NULL);
     ASSERT_INT_EQ(neverc_bigint_int64(&result), 1);
 
+    neverc_bigint_set_int64(&base, 2);
+    neverc_bigint_set_int64(&exp, -1);
+    neverc_bigint_set_int64(&mod, 5);
+    neverc_bigint_set_int64(&result, 999);
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 3);
+    neverc_bigint_set_int64(&base, 2);
+    neverc_bigint_set_int64(&exp, -1);
+    neverc_bigint_set_int64(&mod, 4);
+    neverc_bigint_set_int64(&result, 999);
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 999);
+
     neverc_bigint_t x, m, z;
     neverc_bigint_init(&x); neverc_bigint_init(&m); neverc_bigint_init(&z);
     neverc_bigint_set_int64(&x, -7);

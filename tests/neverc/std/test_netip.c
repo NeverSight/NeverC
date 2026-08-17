@@ -255,6 +255,12 @@ static void test_prefix(void) {
     ASSERT_EQ(neverc_netip_parse_prefix("2001:db8::/32", &pfx), 0);
     neverc_netip_parse_addr("2001:db8::1%eth0", &addr);
     ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
+
+    ASSERT_EQ(neverc_netip_parse_prefix("192.168.1.0/24", &pfx), 0);
+    neverc_netip_parse_addr("::ffff:192.168.1.100", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("::ffff:192.168.2.1", &addr);
+    ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
 }
 
 static void test_addrport(void) {

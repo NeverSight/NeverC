@@ -1626,13 +1626,61 @@ static int exp_montgomery(neverc_bigint_t *z, const neverc_bigint_t *base,
     return 0;
 }
 
+static int bigint_modinv(neverc_bigint_t *r, const neverc_bigint_t *a,
+                         const neverc_bigint_t *m) {
+    neverc_bigint_t old_r, rr, old_s, s, q, tmp, prod;
+    neverc_bigint_init(&old_r); neverc_bigint_init(&rr);
+    neverc_bigint_init(&old_s); neverc_bigint_init(&s);
+    neverc_bigint_init(&q); neverc_bigint_init(&tmp);
+    neverc_bigint_init(&prod);
+
+    neverc_bigint_set(&old_r, a);
+    neverc_bigint_set(&rr, m);
+    neverc_bigint_set_int64(&old_s, 1);
+    neverc_bigint_set_int64(&s, 0);
+
+    while (!neverc_bigint_is_zero(&rr)) {
+        neverc_bigint_div(&q, &tmp, &old_r, &rr);
+        neverc_bigint_set(&old_r, &rr);
+        neverc_bigint_set(&rr, &tmp);
+        neverc_bigint_mul(&prod, &q, &s);
+        neverc_bigint_sub(&tmp, &old_s, &prod);
+        neverc_bigint_set(&old_s, &s);
+        neverc_bigint_set(&s, &tmp);
+    }
+
+    neverc_bigint_set_int64(&tmp, 1);
+    int invertible = (neverc_bigint_cmp(&old_r, &tmp) == 0);
+    if (invertible)
+        neverc_bigint_mod(r, &old_s, m);
+
+    neverc_bigint_free(&old_r); neverc_bigint_free(&rr);
+    neverc_bigint_free(&old_s); neverc_bigint_free(&s);
+    neverc_bigint_free(&q); neverc_bigint_free(&tmp);
+    neverc_bigint_free(&prod);
+    return invertible ? 0 : -1;
+}
+
 void neverc_bigint_exp(neverc_bigint_t *z, const neverc_bigint_t *base,
                        const neverc_bigint_t *exp, const neverc_bigint_t *m) {
-    /* Go Int.Exp: y < 0 and m == nil (or 0) yields 1, not x^|y|.
-     * y < 0 with a modulus needs a modular inverse; leave z unchanged. */
+    /* Go Int.Exp: y < 0 and m == nil (or 0) yields 1. With a modulus,
+     * compute (base^|y|)^-1 mod m; leave z unchanged if not invertible. */
     if (exp->neg) {
-        if (!m || m->len == 0)
+        if (!m || m->len == 0) {
             neverc_bigint_set_int64(z, 1);
+            return;
+        }
+        neverc_bigint_t mag, pow, inv;
+        neverc_bigint_init(&mag);
+        neverc_bigint_init(&pow);
+        neverc_bigint_init(&inv);
+        neverc_bigint_abs(&mag, exp);
+        neverc_bigint_exp(&pow, base, &mag, m);
+        if (bigint_modinv(&inv, &pow, m) == 0)
+            neverc_bigint_set(z, &inv);
+        neverc_bigint_free(&mag);
+        neverc_bigint_free(&pow);
+        neverc_bigint_free(&inv);
         return;
     }
     int base_neg = base->neg && base->len > 0;

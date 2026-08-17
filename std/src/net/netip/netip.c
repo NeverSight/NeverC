@@ -495,7 +495,14 @@ int neverc_netip_prefix_contains(const neverc_netip_prefix_t *pfx, const neverc_
     if (!pfx || !addr || !pfx->valid || !addr->valid) return 0;
     /* Go netip.Prefix.Contains is false when the address has a zone. */
     if (addr->zone[0]) return 0;
-    if (pfx->addr.is_v4 != addr->is_v4) return 0;
+    neverc_netip_addr_t unmapped;
+    const neverc_netip_addr_t *probe = addr;
+    if (pfx->addr.is_v4 && addr_is_4in6(addr)) {
+        if (neverc_netip_addr_unmap(addr, &unmapped) != 0) return 0;
+        probe = &unmapped;
+    } else if (pfx->addr.is_v4 != addr->is_v4) {
+        return 0;
+    }
 
     int start = pfx->addr.is_v4 ? 12 : 0;
     int bytes = pfx->addr.is_v4 ? 4 : 16;
@@ -503,11 +510,11 @@ int neverc_netip_prefix_contains(const neverc_netip_prefix_t *pfx, const neverc_
 
     for (int i = 0; i < bytes; i++) {
         if (bits >= 8) {
-            if (pfx->addr.addr[start+i] != addr->addr[start+i]) return 0;
+            if (pfx->addr.addr[start+i] != probe->addr[start+i]) return 0;
             bits -= 8;
         } else if (bits > 0) {
             uint8_t mask = (uint8_t)(0xff << (8 - bits));
-            if ((pfx->addr.addr[start+i] & mask) != (addr->addr[start+i] & mask)) return 0;
+            if ((pfx->addr.addr[start+i] & mask) != (probe->addr[start+i] & mask)) return 0;
             bits = 0;
         }
     }

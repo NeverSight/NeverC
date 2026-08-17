@@ -444,6 +444,15 @@ static void test_dump_apis(void) {
     request.raw_headers = NULL;
     CHECK("request dump rejects headers without storage",
           neverc_httputil_dump_request(&request, 0) == NULL);
+    request.path = "/x\r\nHost: evil";
+    request.nheaders = 0;
+    request.raw_headers = NULL;
+    CHECK("request dump rejects CRLF in path",
+          neverc_httputil_dump_request(&request, 0) == NULL);
+    request.path = "/";
+    CHECK("outbound dump rejects CRLF in URL",
+          neverc_httputil_dump_request_out(
+              "GET", "/x\r\nHost: evil", NULL, NULL, 0) == NULL);
     request.nheaders = 0;
 
     neverc_http_response_writer_t *writer =

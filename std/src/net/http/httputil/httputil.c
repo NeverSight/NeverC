@@ -58,6 +58,13 @@ static int httputil_dump_append_string(char **buf, size_t *length,
         buf, length, capacity, value, strlen(value)) : -1;
 }
 
+static int httputil_has_crlf(const char *s) {
+    if (!s) return 0;
+    for (; *s; s++)
+        if (*s == '\r' || *s == '\n') return 1;
+    return 0;
+}
+
 /* ======================================================================
  * Reverse Proxy
  * ====================================================================== */
@@ -1688,6 +1695,10 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
         (req->nheaders > 0 && !req->raw_headers) ||
         (req->body_len > 0 && !req->body))
         return NULL;
+    if (httputil_has_crlf(req->method) || httputil_has_crlf(req->path) ||
+        httputil_has_crlf(req->query) || httputil_has_crlf(req->http_version) ||
+        httputil_has_crlf(req->host))
+        return NULL;
 
     size_t cap = 256;
     size_t n = 0;
@@ -1732,6 +1743,8 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
             while (*p) p++;
             p++;
 
+            if (httputil_has_crlf(hname) || httputil_has_crlf(hval))
+                goto fail;
             if (req->host && strcasecmp(hname, "Host") == 0) continue;
             if (strcasecmp(hname, "Content-Length") == 0)
                 saw_content_length = 1;
@@ -1782,6 +1795,8 @@ char *neverc_httputil_dump_request_out(const char *method,
                                         const char *body,
                                         size_t body_len) {
     if (!body && body_len != 0)
+        return NULL;
+    if (httputil_has_crlf(method) || httputil_has_crlf(url))
         return NULL;
     size_t cap = 256;
     size_t n = 0;

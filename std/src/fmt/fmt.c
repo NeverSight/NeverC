@@ -443,9 +443,7 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             break;
         }
         default:
-            buf_putc(&buf, '%');
-            buf_putc(&buf, verb);
-            continue;
+            goto format_fail;
         }
         if (tlen < 0) goto format_fail;
         if (flag_hash &&
