@@ -140,6 +140,13 @@ static void test_write_quoting(void) {
     dst[n] = '\0';
     ASSERT_STR_EQ(dst, "\"\xc2\xa0x\"\n");
 
+    /* Formula prefixes must be quoted; a leading minus is a number, not a formula. */
+    const char *formula_fields[] = {"=1+1", "+cmd", "@SUM(A1)", "-1"};
+    n = neverc_csv_write_record(formula_fields, 4, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "\"=1+1\",\"+cmd\",\"@SUM(A1)\",-1\n");
+
     neverc_csv_reader_opts_t trim_opts = {
         .delimiter = ',', .trim_leading_space = 1
     };

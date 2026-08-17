@@ -172,6 +172,46 @@ int main(void) {
         "1234567890123456789012345678901234567890123456789012345678901234",
         "676491965ed3ec50cb7a63ee96315480a95c54426b0b72bca8a0d4ad1285ad55");
 
+    printf("[update after final ignored]\n");
+    {
+        tests_run++;
+        neverc_sha256_ctx ctx;
+        neverc_sha256_init(&ctx);
+        neverc_sha256_update(&ctx, (const uint8_t *)"abc", 3);
+        uint8_t d1[32], d2[32];
+        neverc_sha256_final(&ctx, d1);
+        neverc_sha256_update(&ctx, (const uint8_t *)"x", 1);
+        neverc_sha256_final(&ctx, d2);
+        char got_hex[65];
+        hex_encode(d1, 32, got_hex);
+        if (memcmp(d1, d2, 32) == 0 &&
+            strcmp(got_hex, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == 0)
+            tests_passed++;
+        else {
+            tests_failed++;
+            printf("  FAIL: update after final must not length-extend\n    got: %s\n", got_hex);
+        }
+    }
+
+    printf("[counter overflow fails closed]\n");
+    {
+        tests_run++;
+        neverc_sha256_ctx ctx;
+        neverc_sha256_init(&ctx);
+        neverc_sha256_update(&ctx, (const uint8_t *)"abc", 3);
+        ctx.count = (1ULL << 61) + 3;
+        uint8_t digest[32];
+        memset(digest, 0xa5, sizeof(digest));
+        neverc_sha256_final(&ctx, digest);
+        uint8_t zeros[32] = {0};
+        if (memcmp(digest, zeros, 32) == 0)
+            tests_passed++;
+        else {
+            tests_failed++;
+            printf("  FAIL: overflow must not collide with SHA-256(\"abc\")\n");
+        }
+    }
+
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

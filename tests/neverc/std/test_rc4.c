@@ -227,6 +227,25 @@ static void test_different_keys_different_output(void) {
                memcmp(ct1, ct2, len) != 0);
 }
 
+static void test_overlap(void) {
+    printf("[rc4 overlapping xor]\n");
+    const uint8_t key[] = "overlap";
+    uint8_t msg[64];
+    for (int i = 0; i < 64; i++)
+        msg[i] = (uint8_t)(i * 3 + 1);
+
+    uint8_t expected[64];
+    neverc_rc4_cipher_t c;
+    neverc_rc4_init(&c, key, sizeof(key) - 1);
+    neverc_rc4_xor_keystream(&c, expected, msg, 64);
+
+    uint8_t wide[68];
+    memcpy(wide, msg, 64);
+    neverc_rc4_init(&c, key, sizeof(key) - 1);
+    neverc_rc4_xor_keystream(&c, wide + 4, wide, 64);
+    check_bytes("dst=src+4 xor", wide + 4, expected, 64);
+}
+
 static void test_in_place(void) {
     printf("[rc4 in-place XOR]\n");
 
@@ -260,6 +279,7 @@ int main(void) {
     test_reset();
     test_different_keys_different_output();
     test_in_place();
+    test_overlap();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

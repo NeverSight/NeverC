@@ -30,22 +30,32 @@ static void wr_be32(uint8_t *p, uint32_t value) {
     p[3] = (uint8_t)value;
 }
 
+static uint8_t *insert_chunk(const uint8_t *png, size_t png_len, size_t offset,
+                             const char type[4], const uint8_t *payload,
+                             uint32_t payload_len, size_t *result_len) {
+    if (!png || !result_len || offset > png_len ||
+        (payload_len > 0 && !payload) ||
+        png_len > SIZE_MAX - 12U - payload_len)
+        return NULL;
+    size_t extra = 12U + payload_len;
+    uint8_t *result = (uint8_t *)malloc(png_len + extra);
+    if (!result) return NULL;
+    memcpy(result, png, offset);
+    wr_be32(result + offset, payload_len);
+    memcpy(result + offset + 4U, type, 4);
+    if (payload_len)
+        memcpy(result + offset + 8U, payload, payload_len);
+    wr_be32(result + offset + 8U + payload_len,
+            neverc_crc32_ieee(result + offset + 4U, 4U + payload_len));
+    memcpy(result + offset + extra, png + offset, png_len - offset);
+    *result_len = png_len + extra;
+    return result;
+}
+
 static uint8_t *insert_empty_chunk(const uint8_t *png, size_t png_len,
                                    size_t offset, const char type[4],
                                    size_t *result_len) {
-    if (!png || !result_len || offset > png_len ||
-        png_len > SIZE_MAX - 12U)
-        return NULL;
-    uint8_t *result = (uint8_t *)malloc(png_len + 12U);
-    if (!result) return NULL;
-    memcpy(result, png, offset);
-    memset(result + offset, 0, 4);
-    memcpy(result + offset + 4U, type, 4);
-    wr_be32(result + offset + 8U,
-            neverc_crc32_ieee(result + offset + 4U, 4));
-    memcpy(result + offset + 12U, png + offset, png_len - offset);
-    *result_len = png_len + 12U;
-    return result;
+    return insert_chunk(png, png_len, offset, type, NULL, 0, result_len);
 }
 
 static void test_encode_decode_rgba(void) {
@@ -204,6 +214,29 @@ static void test_pixel_at_bounds(void) {
     ASSERT_TRUE(neverc_png_pixel_at(NULL, 0, 0) == NULL);
 
     free(img.pixels);
+}
+
+static void test_pixel_offset_overflow(void) {
+    printf("[pixel_offset_overflow]\n");
+    uint8_t pix[8];
+    memset(pix, 0x5A, sizeof(pix));
+    neverc_png_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 2;
+    img.height = 3;
+    img.channels = 1;
+    img.stride = (SIZE_MAX / 2) + 1;
+    img.pixels = pix;
+
+    ASSERT_TRUE(neverc_png_pixel_at(&img, 0, 0) == pix);
+    /* y * stride wraps size_t; must not return a wild pointer. */
+    ASSERT_TRUE(neverc_png_pixel_at(&img, 0, 2) == NULL);
+    uint8_t src = 0x11;
+    neverc_png_pixel_set(&img, 0, 2, &src);
+    ASSERT_EQ(pix[0], 0x5A);
+
+    img.channels = 0;
+    ASSERT_TRUE(neverc_png_pixel_at(&img, 0, 0) == NULL);
 }
 
 static void test_invalid_data(void) {
@@ -577,6 +610,73 @@ static void test_rejects_truncated_stream(void) {
     free(img.pixels);
 }
 
+static void test_rejects_illegal_and_duplicate_plte(void) {
+    printf("[rejects_illegal_and_duplicate_plte]\n");
+    uint8_t gray_px = 128;
+    neverc_png_image_t gray;
+    memset(&gray, 0, sizeof(gray));
+    gray.width = 1;
+    gray.height = 1;
+    gray.bit_depth = 8;
+    gray.color_type = NEVERC_PNG_COLOR_GRAYSCALE;
+    gray.channels = 1;
+    gray.stride = 1;
+    gray.pixels = &gray_px;
+
+    uint8_t *png = NULL;
+    size_t png_len = 0;
+    ASSERT_EQ(neverc_png_encode(&gray, &png, &png_len), 0);
+    ASSERT_TRUE(png != NULL && png_len > 33);
+
+    uint8_t pal[3] = {10, 20, 30};
+    size_t with_plte_len = 0;
+    uint8_t *with_plte =
+        insert_chunk(png, png_len, 33, "PLTE", pal, 3, &with_plte_len);
+    ASSERT_TRUE(with_plte != NULL);
+    if (with_plte) {
+        neverc_png_image_t decoded;
+        ASSERT_EQ(neverc_png_decode(with_plte, with_plte_len, &decoded), -1);
+        free(with_plte);
+    }
+    free(png);
+
+    uint8_t rgb_px[3] = {255, 0, 0};
+    neverc_png_image_t rgb;
+    memset(&rgb, 0, sizeof(rgb));
+    rgb.width = 1;
+    rgb.height = 1;
+    rgb.bit_depth = 8;
+    rgb.color_type = NEVERC_PNG_COLOR_TRUECOLOR;
+    rgb.channels = 3;
+    rgb.stride = 3;
+    rgb.pixels = rgb_px;
+
+    png = NULL;
+    png_len = 0;
+    ASSERT_EQ(neverc_png_encode(&rgb, &png, &png_len), 0);
+    ASSERT_TRUE(png != NULL);
+
+    size_t once_len = 0;
+    uint8_t *once = insert_chunk(png, png_len, 33, "PLTE", pal, 3, &once_len);
+    ASSERT_TRUE(once != NULL);
+    if (once) {
+        neverc_png_image_t decoded;
+        ASSERT_EQ(neverc_png_decode(once, once_len, &decoded), 0);
+        neverc_png_free(&decoded);
+
+        size_t twice_len = 0;
+        uint8_t *twice =
+            insert_chunk(once, once_len, 33, "PLTE", pal, 3, &twice_len);
+        ASSERT_TRUE(twice != NULL);
+        if (twice) {
+            ASSERT_EQ(neverc_png_decode(twice, twice_len, &decoded), -1);
+            free(twice);
+        }
+        free(once);
+    }
+    free(png);
+}
+
 int main(void) {
     printf("NeverC image/png tests\n");
     test_encode_decode_rgba();
@@ -584,6 +684,7 @@ int main(void) {
     test_encode_decode_grayscale();
     test_encode_decode_grayscale_alpha();
     test_pixel_at_bounds();
+    test_pixel_offset_overflow();
     test_invalid_data();
     test_rejects_trailing_bytes();
     test_encode_rejects_unsafe_geometry();
@@ -593,6 +694,7 @@ int main(void) {
     test_zlib_fcheck_valid();
     test_rejects_huge_ihdr();
     test_rejects_truncated_stream();
+    test_rejects_illegal_and_duplicate_plte();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

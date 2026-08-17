@@ -298,79 +298,102 @@ static int xml_memieq(const char *s, size_t n, const char *lit) {
     return i == n;
 }
 
-/* Locate `key = "value"` / `key='value'` in PI data. `key` must be preceded
- * by the start of the buffer or whitespace so `notencoding=` is not a hit. */
-static int xml_pi_find(const char *data, size_t len, size_t from,
-                       const char *key, const char **value, size_t *value_len,
-                       size_t *next) {
+static int xml_decl_keyword(const char *data, size_t len, size_t i,
+                            const char *key) {
     size_t key_len = strlen(key);
-    size_t i = from;
-    while (i < len) {
-        if (i > 0 && !xml_ascii_ws((unsigned char)data[i - 1])) {
-            i++;
-            continue;
-        }
-        while (i < len && xml_ascii_ws((unsigned char)data[i]))
-            i++;
-        if (i + key_len > len)
-            return 0;
-        if (!xml_memieq(data + i, key_len, key)) {
-            i++;
-            continue;
-        }
-        size_t j = i + key_len;
-        if (j < len && !xml_ascii_ws((unsigned char)data[j]) && data[j] != '=') {
-            i++;
-            continue;
-        }
-        while (j < len && xml_ascii_ws((unsigned char)data[j]))
-            j++;
-        if (j >= len || data[j] != '=') {
-            i++;
-            continue;
-        }
-        j++;
-        while (j < len && xml_ascii_ws((unsigned char)data[j]))
-            j++;
-        if (j >= len || (data[j] != '"' && data[j] != '\''))
-            return -1;
-        char q = data[j++];
-        size_t vs = j;
-        while (j < len && data[j] != q)
-            j++;
-        if (j >= len)
-            return -1;
-        *value = data + vs;
-        *value_len = j - vs;
-        *next = j + 1;
-        return 1;
-    }
-    return 0;
+    if (i + key_len > len || memcmp(data + i, key, key_len) != 0)
+        return 0;
+    if (i + key_len < len &&
+        !xml_ascii_ws((unsigned char)data[i + key_len]) &&
+        data[i + key_len] != '=')
+        return 0;
+    return 1;
 }
 
-/* Go encoding/xml: only version 1.0, and only UTF-8 without CharsetReader.
- * Every encoding= value is checked so a second non-UTF-8 declaration cannot
- * sneak past the first. */
-static int xml_decl_ok(const char *data, size_t len) {
-    const char *val;
-    size_t vlen = 0, next = 0;
-    int found = xml_pi_find(data, len, 0, "version", &val, &vlen, &next);
-    if (found < 0)
+static int xml_decl_quoted(const char *data, size_t len, size_t *i,
+                           const char **val, size_t *vlen) {
+    while (*i < len && xml_ascii_ws((unsigned char)data[*i]))
+        (*i)++;
+    if (*i >= len || data[*i] != '=')
         return 0;
-    if (found && (vlen != 3 || memcmp(val, "1.0", 3) != 0))
+    (*i)++;
+    while (*i < len && xml_ascii_ws((unsigned char)data[*i]))
+        (*i)++;
+    if (*i >= len || (data[*i] != '"' && data[*i] != '\''))
         return 0;
+    char q = data[(*i)++];
+    size_t vs = *i;
+    while (*i < len && data[*i] != q)
+        (*i)++;
+    if (*i >= len)
+        return 0;
+    *val = data + vs;
+    *vlen = *i - vs;
+    (*i)++;
+    return 1;
+}
 
-    size_t from = 0;
-    for (;;) {
-        found = xml_pi_find(data, len, from, "encoding", &val, &vlen, &next);
-        if (found < 0)
+/* XML 1.0 XMLDecl / Go encoding/xml without CharsetReader: version is
+ * required and must be 1.0; encoding, if present, must be UTF-8. Attributes
+ * are parsed in order so a missing version, a cramped `encoding=` jammed
+ * against the previous quote, or a second non-UTF-8 encoding cannot slip
+ * through the earlier whitespace-delimited search. */
+static int xml_decl_ok(const char *data, size_t len) {
+    size_t i = 0;
+    while (i < len && !xml_ascii_ws((unsigned char)data[i]))
+        i++;
+
+    const char *val = NULL;
+    size_t vlen = 0;
+    int saw_version = 0, saw_encoding = 0, saw_standalone = 0;
+    int need_ws = 0;
+
+    while (i < len) {
+        size_t before = i;
+        while (i < len && xml_ascii_ws((unsigned char)data[i]))
+            i++;
+        if (i >= len)
+            break;
+        if (need_ws && i == before)
             return 0;
-        if (!found)
-            return 1;
-        if (vlen != 0 && !xml_memieq(val, vlen, "utf-8"))
-            return 0;
-        from = next;
+
+        if (xml_decl_keyword(data, len, i, "version")) {
+            if (saw_version)
+                return 0;
+            i += 7;
+            if (!xml_decl_quoted(data, len, &i, &val, &vlen) ||
+                vlen != 3 || memcmp(val, "1.0", 3) != 0)
+                return 0;
+            saw_version = 1;
+            need_ws = 1;
+            continue;
+        }
+        if (xml_decl_keyword(data, len, i, "encoding")) {
+            if (!saw_version || saw_encoding || saw_standalone)
+                return 0;
+            i += 8;
+            if (!xml_decl_quoted(data, len, &i, &val, &vlen) ||
+                vlen == 0 || !xml_memieq(val, vlen, "utf-8"))
+                return 0;
+            saw_encoding = 1;
+            need_ws = 1;
+            continue;
+        }
+        if (xml_decl_keyword(data, len, i, "standalone")) {
+            if (!saw_version || saw_standalone)
+                return 0;
+            i += 10;
+            if (!xml_decl_quoted(data, len, &i, &val, &vlen) ||
+                !((vlen == 3 && memcmp(val, "yes", 3) == 0) ||
+                  (vlen == 2 && memcmp(val, "no", 2) == 0)))
+                return 0;
+            saw_standalone = 1;
+            need_ws = 1;
+            continue;
+        }
+        return 0;
     }
+    return saw_version;
 }
 
 static void skip_ws(neverc_xml_decoder_t *d) {

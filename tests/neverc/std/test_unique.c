@@ -172,6 +172,43 @@ static void test_kind_isolation(void) {
     ASSERT_TRUE(!neverc_unique_handle_equal(i0, u0));
 }
 
+static void test_typed_accessors_reject_wrong_shape(void) {
+    printf("[typed_accessors]\n");
+    neverc_unique_destroy();
+    neverc_unique_init();
+
+    unsigned char blob[] = {0xDE, 0xAD, 0xBE, 0xEF};
+    neverc_unique_handle_t hb = neverc_unique_make_bytes(blob, 4);
+    ASSERT_TRUE(neverc_unique_handle_valid(hb));
+    ASSERT_TRUE(neverc_unique_string_value(hb) == NULL);
+    ASSERT_INT_EQ(neverc_unique_int64_value(hb), 0);
+    ASSERT_INT_EQ((long long)neverc_unique_uint64_value(hb), 0);
+
+    unsigned char one = 0x5a;
+    neverc_unique_handle_t h1 = neverc_unique_make_bytes(&one, 1);
+    ASSERT_TRUE(neverc_unique_handle_valid(h1));
+    ASSERT_TRUE(neverc_unique_string_value(h1) == NULL);
+    ASSERT_INT_EQ(neverc_unique_int64_value(h1), 0);
+
+    neverc_unique_handle_t empty = neverc_unique_make_bytes(NULL, 0);
+    ASSERT_TRUE(neverc_unique_handle_valid(empty));
+    ASSERT_TRUE(neverc_unique_string_value(empty) == NULL);
+    ASSERT_INT_EQ(neverc_unique_int64_value(empty), 0);
+    ASSERT_INT_EQ((long long)neverc_unique_uint64_value(empty), 0);
+
+    neverc_unique_handle_t hs = neverc_unique_make_string("hello");
+    ASSERT_STR_EQ(neverc_unique_string_value(hs), "hello");
+    neverc_unique_handle_t hi = neverc_unique_make_int64(42);
+    ASSERT_INT_EQ(neverc_unique_int64_value(hi), 42);
+    neverc_unique_handle_t hu = neverc_unique_make_uint64(7);
+    ASSERT_INT_EQ((long long)neverc_unique_uint64_value(hu), 7);
+
+    neverc_unique_handle_t invalid = {NULL};
+    ASSERT_TRUE(neverc_unique_string_value(invalid) == NULL);
+    ASSERT_INT_EQ(neverc_unique_int64_value(invalid), 0);
+    ASSERT_INT_EQ((long long)neverc_unique_uint64_value(invalid), 0);
+}
+
 static void test_count(void) {
     printf("[count]\n");
     neverc_unique_destroy();
@@ -216,6 +253,7 @@ int main(void) {
     test_bytes_stress();
     test_null_handling();
     test_kind_isolation();
+    test_typed_accessors_reject_wrong_shape();
     test_count();
     test_many_strings();
     neverc_unique_destroy();

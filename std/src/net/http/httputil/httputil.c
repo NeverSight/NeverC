@@ -66,6 +66,28 @@ static int httputil_has_crlf(const char *s) {
     return 0;
 }
 
+/* A dump header block may contain CRLF line breaks, but a blank line would
+ * terminate headers and smuggle a second request. Lone CR/LF is also rejected.
+ * A final line without CRLF is accepted; the dumper appends one. */
+static int httputil_header_block_valid(const char *headers, int *needs_crlf) {
+    if (needs_crlf) *needs_crlf = 0;
+    if (!headers || !*headers) return 1;
+    size_t line = 0;
+    for (const char *p = headers; *p; ) {
+        if (p[0] == '\r' && p[1] == '\n') {
+            if (line == 0) return 0;
+            p += 2;
+            line = 0;
+            continue;
+        }
+        if (*p == '\r' || *p == '\n') return 0;
+        line++;
+        p++;
+    }
+    if (needs_crlf) *needs_crlf = line > 0;
+    return 1;
+}
+
 /* RFC 9110 Host is uri-host; IPv6 literals must be bracketed. */
 static int httputil_host_needs_brackets(const char *host) {
     neverc_netip_addr_t addr;
@@ -614,11 +636,51 @@ static int proxy_is_forwarded_header(const char *name, size_t length) {
     return 1;
 }
 
+static int proxy_hex_nibble(unsigned char c) {
+    if (c >= '0' && c <= '9') return (int)(c - '0');
+    if (c >= 'A' && c <= 'F') return (int)(c - 'A' + 10);
+    if (c >= 'a' && c <= 'f') return (int)(c - 'a' + 10);
+    return -1;
+}
+
+/* Reject "." / ".." (including %2e) and encoded slashes so a target prefix
+ * such as /api cannot be escaped as /api/../admin. "//" is scheme-relative. */
+static int proxy_request_segment_unsafe(const char *seg, size_t len) {
+    char decoded[4];
+    size_t decoded_length = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)seg[i];
+        if (c == '%') {
+            if (i + 2 >= len) return 1;
+            int high = proxy_hex_nibble((unsigned char)seg[i + 1]);
+            int low = proxy_hex_nibble((unsigned char)seg[i + 2]);
+            if ((high | low) < 0) return 1;
+            c = (unsigned char)((high << 4) | low);
+            i += 2;
+        }
+        if (c <= 0x20 || c == 0x7f || c == '/' || c == '\\') return 1;
+        if (decoded_length < sizeof(decoded))
+            decoded[decoded_length] = (char)c;
+        decoded_length++;
+    }
+    return (decoded_length == 1 && decoded[0] == '.') ||
+           (decoded_length == 2 && decoded[0] == '.' && decoded[1] == '.');
+}
+
 static int proxy_valid_request_target(const char *value) {
-    if (!value || value[0] != '/') return 0;
+    if (!value || value[0] != '/' || value[1] == '/') return 0;
     for (const unsigned char *p = (const unsigned char *)value; *p; p++)
-        if (*p <= 0x20 || *p == 0x7f || *p == '#' || *p == '?')
+        if (*p <= 0x20 || *p == 0x7f || *p == '#' || *p == '?' ||
+            *p == '\\')
             return 0;
+    const char *seg = value + 1;
+    while (*seg) {
+        const char *slash = strchr(seg, '/');
+        size_t seg_len = slash ? (size_t)(slash - seg) : strlen(seg);
+        if (proxy_request_segment_unsafe(seg, seg_len)) return 0;
+        if (!slash) break;
+        seg = slash + 1;
+    }
     return 1;
 }
 
@@ -1836,7 +1898,9 @@ char *neverc_httputil_dump_request_out(const char *method,
                                         size_t body_len) {
     if (!body && body_len != 0)
         return NULL;
-    if (httputil_has_crlf(method) || httputil_has_crlf(url))
+    int needs_header_crlf = 0;
+    if (httputil_has_crlf(method) || httputil_has_crlf(url) ||
+        !httputil_header_block_valid(headers, &needs_header_crlf))
         return NULL;
     size_t cap = 256;
     size_t n = 0;
@@ -1855,6 +1919,9 @@ char *neverc_httputil_dump_request_out(const char *method,
 
     if (headers &&
         httputil_dump_append_string(&buf, &n, &cap, headers) != 0)
+        goto fail;
+    if (needs_header_crlf &&
+        httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0)
         goto fail;
 
     if (body_len > 0 && !httputil_headers_have_content_length(headers)) {

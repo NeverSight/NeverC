@@ -229,6 +229,31 @@ static void test_lookup_ip(void) {
               neverc_net_lookup_ip("ip6", "fe80::1%0", &bad), -1);
     check_int("lookup_ip ipv4 zone rejected",
               neverc_net_lookup_ip("ip4", "127.0.0.1%1", &bad), -1);
+
+    /* Dual-stack / mapped literals must print as IPv4 for ACL matching. */
+    neverc_net_addrs_t mapped;
+    check_int("lookup_ip mapped literal",
+              neverc_net_lookup_ip("ip", "::ffff:127.0.0.1", &mapped), 0);
+    if (mapped.count > 0) {
+        int unmapped = 0;
+        int has_ffff = 0;
+        for (int i = 0; i < mapped.count; i++) {
+            if (strcmp(mapped.addrs[i], "127.0.0.1") == 0) unmapped = 1;
+            if (strstr(mapped.addrs[i], "ffff")) has_ffff = 1;
+        }
+        check_true("lookup_ip unmaps ipv4-mapped", unmapped);
+        check_true("lookup_ip mapped has no ffff", !has_ffff);
+    }
+
+    neverc_net_addrs_t rev4, revm;
+    int r4 = neverc_net_lookup_addr("127.0.0.1", &rev4);
+    int rm = neverc_net_lookup_addr("::ffff:127.0.0.1", &revm);
+    if (r4 == 0 && rm == 0) {
+        check_str("lookup_addr mapped matches ipv4",
+                  revm.addrs[0], rev4.addrs[0]);
+    } else if (r4 == 0) {
+        check_int("lookup_addr mapped should succeed", rm, 0);
+    }
 }
 
 /* ===== LookupPort ===== */

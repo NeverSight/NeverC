@@ -334,6 +334,38 @@ static void test_sha3_vs_sha2(void) {
     check_true("SHA3-256 != SHA-256", memcmp(sha3_d, sha2_expected, 4) != 0);
 }
 
+static void test_sha3_domain_separation(void) {
+    printf("[SHA3 domain separation]\n");
+    uint8_t sha3[32], shake[32];
+
+    neverc_sha3_256_sum((const uint8_t *)"", 0, sha3);
+    {
+        neverc_sha3_ctx ctx;
+        neverc_shake256_init(&ctx);
+        neverc_shake256_update(&ctx, (const uint8_t *)"", 0);
+        neverc_shake256_squeeze(&ctx, shake, 32);
+    }
+    check_true("SHA3-256(\"\") != SHAKE256(\"\",32)", memcmp(sha3, shake, 32) != 0);
+
+    /* rate-1 leftover: suffix and the final pad bit share the last byte. */
+    uint8_t data[135];
+    memset(data, 'A', sizeof(data));
+    neverc_sha3_256_sum(data, sizeof(data), sha3);
+    check_digest("SHA3-256(135 'A') same-byte pad", sha3,
+        "fb26b42ffe085f98796486a734c0639a8935a7845268ac2be76b6655d86d1d65", 32);
+
+    {
+        neverc_sha3_ctx ctx;
+        neverc_shake256_init(&ctx);
+        neverc_shake256_update(&ctx, data, sizeof(data));
+        neverc_shake256_squeeze(&ctx, shake, 32);
+    }
+    check_digest("SHAKE256(135 'A',32)", shake,
+        "a9fa2cdfbc5f74e049c2111143e35c69152266c4d66a56fa5164ea640c34b5f2", 32);
+    check_true("SHA3-256(135 'A') != SHAKE256(135 'A',32)",
+               memcmp(sha3, shake, 32) != 0);
+}
+
 /* ===== Multi-block boundary test ===== */
 
 static void test_block_boundaries(void) {
@@ -418,6 +450,7 @@ int main(void) {
     test_shake256();
     test_sha3_256_1m();
     test_sha3_vs_sha2();
+    test_sha3_domain_separation();
     test_block_boundaries();
     test_sha3_lifecycle();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

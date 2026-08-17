@@ -1514,6 +1514,13 @@ static int h2_send_response_data(h2_conn_t *conn, h2_stream_t *stream,
         size_t chunk = length - offset;
         if (chunk > conn->peer_settings.max_frame_size)
             chunk = conn->peer_settings.max_frame_size;
+        /* A SETTINGS INITIAL_WINDOW_SIZE shrink can make send_window
+         * negative. Casting that to size_t would wrap and send past the
+         * advertised window. */
+        if (conn->conn_send_window <= 0 || stream->send_window <= 0) {
+            nc_mutex_unlock(&conn->state_lock);
+            continue;
+        }
         if (chunk > (size_t)conn->conn_send_window)
             chunk = (size_t)conn->conn_send_window;
         if (chunk > (size_t)stream->send_window)

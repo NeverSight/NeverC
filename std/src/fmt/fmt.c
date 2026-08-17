@@ -541,9 +541,11 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             alt_prefix = "0x";
             alt_len = 2;
         }
-        /* Precision on integers suppresses the zero flag (Go/C99). */
+        /* Zero-pad only numeric verbs. Precision on integers suppresses 0
+         * (Go/C99). %c is a rune: width is spaces, never '0'. */
         int use_zero_padding =
             flag_zero && !formatted_is_special &&
+            (is_int_verb || is_float_verb) &&
             !(is_int_verb && prec >= 0);
         /* %c is one rune; width is measured in runes, not UTF-8 bytes. */
         int content_width = (verb == 'c') ? (tlen > 0 ? 1 : 0) : body_len;

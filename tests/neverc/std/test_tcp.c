@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <signal.h>
 #include <pthread.h>
+#include <errno.h>
 #endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -654,6 +655,7 @@ static void test_independent_timeouts(void) {
     int n = neverc_tcp_read(a, buf, sizeof(buf));
     long long elapsed = test_now_ms() - started;
     check_int("read timed out", n, -1);
+    check_int("read timeout errno", errno == ETIMEDOUT, 1);
     check_int("read timeout bounded", elapsed >= 10 && elapsed < 1000, 1);
 
     started = test_now_ms();
@@ -662,6 +664,7 @@ static void test_independent_timeouts(void) {
     n = neverc_tcp_read(a, buf, sizeof(buf));
     elapsed = test_now_ms() - started;
     check_int("absolute read deadline fired", n, -1);
+    check_int("absolute deadline errno", errno == ETIMEDOUT, 1);
     check_int("absolute deadline bounded",
               elapsed >= 10 && elapsed < 1000, 1);
     check_int("set absolute write deadline",

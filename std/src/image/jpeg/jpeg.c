@@ -872,6 +872,7 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     memset(ac_tables, 0, sizeof(ac_tables));
 
     int scan_found = 0;
+    int sof_found = 0;
 
     while (br.pos < br.len - 1) {
         if (br.data[br.pos] != 0xFF) { br.pos++; continue; }
@@ -884,9 +885,11 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
 
         uint16_t seg_len = br_read_u16(&br);
         if (br.failed || seg_len < 2) goto fail; /* length counts itself */
-        size_t seg_start = br.pos;
-        size_t seg_end = seg_start + (size_t)(seg_len - 2);
-        if (seg_end > br.len) goto fail;
+        /* Remaining-length compare: `pos + (seg_len-2)` wraps size_t on a
+         * near-SIZE_MAX buffer and would jump the parser backwards. */
+        if (br.pos > br.len ||
+            (size_t)(seg_len - 2) > br.len - br.pos) goto fail;
+        size_t seg_end = br.pos + (size_t)(seg_len - 2);
 
         if (marker == 0xDB) { /* DQT */
             while (br.pos < seg_end) {
@@ -902,6 +905,8 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
                 quant_present[table_id] = 1;
             }
         } else if (marker == 0xC0) { /* SOF0 */
+            if (sof_found) goto fail;
+            sof_found = 1;
             if (seg_end - br.pos < 6) goto fail;
             if (br_read_byte_raw(&br) != 8) goto fail; /* precision */
             height = br_read_u16(&br);

@@ -215,6 +215,45 @@ static void test_invalid_key_and_spans(void) {
                 dst, unchanged, sizeof(dst));
 }
 
+static void test_overlap(void) {
+    printf("[overlapping src/dst]\n");
+    uint8_t key[16] = {0};
+    uint8_t iv[16], iv2[16];
+    uint8_t pt[64], expected[64], wide[72];
+    for (int i = 0; i < 64; i++)
+        pt[i] = (uint8_t)(i * 9 + 3);
+
+    memset(iv, 0x11, 16);
+    memcpy(iv2, iv, 16);
+    check_int("CTR disjoint",
+              neverc_cipher_ctr_checked(key, 16, iv, expected, pt, 64), 0);
+
+    memcpy(wide, pt, 64);
+    memcpy(iv, iv2, 16);
+    check_int("CTR dst=src+4",
+              neverc_cipher_ctr_checked(key, 16, iv, wide + 4, wide, 64), 0);
+    check_bytes("CTR dst=src+4 ciphertext", wide + 4, expected, 64);
+
+    memcpy(wide, pt, 64);
+    hex_to_bytes("000102030405060708090a0b0c0d0e0f", iv, 16);
+    hex_to_bytes("000102030405060708090a0b0c0d0e0f", iv2, 16);
+    check_int("CBC encrypt disjoint",
+              neverc_cipher_cbc_encrypt(key, 16, iv, expected, pt, 64), 0);
+    check_int("CBC encrypt dst=src+4",
+              neverc_cipher_cbc_encrypt(key, 16, iv2, wide + 4, wide, 64), 0);
+    check_bytes("CBC encrypt dst=src+4 ciphertext", wide + 4, expected, 64);
+
+    memcpy(wide, expected, 64);
+    hex_to_bytes("000102030405060708090a0b0c0d0e0f", iv, 16);
+    hex_to_bytes("000102030405060708090a0b0c0d0e0f", iv2, 16);
+    uint8_t dec[64];
+    check_int("CBC decrypt disjoint",
+              neverc_cipher_cbc_decrypt(key, 16, iv, dec, expected, 64), 0);
+    check_int("CBC decrypt dst=src+4",
+              neverc_cipher_cbc_decrypt(key, 16, iv2, wide + 4, wide, 64), 0);
+    check_bytes("CBC decrypt dst=src+4 plaintext", wide + 4, dec, 64);
+}
+
 static void test_ctr_low32_wrap_no_reuse(void) {
     printf("[CTR 32-bit counter wrap]\n");
     uint8_t key[16] = {0};
@@ -240,6 +279,7 @@ int main(void) {
     test_ctr_partial();
     test_cbc_invalid();
     test_invalid_key_and_spans();
+    test_overlap();
     test_ctr_low32_wrap_no_reuse();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

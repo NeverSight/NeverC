@@ -100,7 +100,8 @@ void neverc_mlkem1024_dk_encapsulation_key(const neverc_mlkem1024_dk_t *dk,
 /* Parse a canonical encapsulation key. On failure, ek is cleared. */
 int neverc_mlkem1024_new_ek(neverc_mlkem1024_ek_t *ek,
                             const uint8_t *encoded, size_t len);
-/* Outputs are securely cleared if validation or entropy acquisition fails. */
+/* Returns 0 on success or -1 for invalid input or entropy failure. Output
+ * buffers are securely cleared on failure. */
 int neverc_mlkem1024_encapsulate(const neverc_mlkem1024_ek_t *ek,
                                  uint8_t shared_key[32],
                                  uint8_t ciphertext[NEVERC_MLKEM1024_CT_SIZE]);

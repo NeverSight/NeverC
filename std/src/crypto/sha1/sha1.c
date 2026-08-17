@@ -83,11 +83,18 @@ void neverc_sha1_init(neverc_sha1_ctx *ctx) {
     ctx->state[3] = 0x10325476;
     ctx->state[4] = 0xC3D2E1F0;
     ctx->count = 0;
+    ctx->finalized = 0;
 }
 
 void neverc_sha1_update(neverc_sha1_ctx *ctx, const uint8_t *data, size_t len) {
-    if (!ctx || len == 0) return;
+    if (!ctx || ctx->finalized || len == 0) return;
     if (!data) return;
+    if (ctx->count > UINT64_MAX / 8 ||
+        len > UINT64_MAX / 8 - ctx->count) {
+        memset(ctx->state, 0, sizeof(ctx->state));
+        ctx->finalized = 1;
+        return;
+    }
     size_t buffered = (size_t)(ctx->count & 63);
     ctx->count += len;
     if (buffered > 0) {
@@ -103,7 +110,18 @@ void neverc_sha1_update(neverc_sha1_ctx *ctx, const uint8_t *data, size_t len) {
 
 void neverc_sha1_final(neverc_sha1_ctx *ctx, uint8_t digest[20]) {
     if (!ctx || !digest) return;
-    uint64_t bits = ctx->count * 8;
+    if (ctx->finalized) {
+        for (int i = 0; i < 5; i++)
+            put_be32(digest + 4 * i, ctx->state[i]);
+        return;
+    }
+    if (ctx->count > UINT64_MAX / 8) {
+        memset(ctx->state, 0, sizeof(ctx->state));
+        memset(digest, 0, 20);
+        ctx->finalized = 1;
+        return;
+    }
+    uint64_t bits = ctx->count << 3;
     size_t buffered = (size_t)(ctx->count & 63);
     ctx->buf[buffered++] = 0x80;
     if (buffered > 56) {
@@ -116,6 +134,7 @@ void neverc_sha1_final(neverc_sha1_ctx *ctx, uint8_t digest[20]) {
     sha1_block(ctx->state, ctx->buf);
     for (int i = 0; i < 5; i++)
         put_be32(digest + 4 * i, ctx->state[i]);
+    ctx->finalized = 1;
 }
 
 void neverc_sha1_sum(const uint8_t *data, size_t len, uint8_t digest[20]) {

@@ -329,6 +329,30 @@ static void test_empty_aad_known_answer(void) {
     check_bytes("1-byte AAD ciphertext+tag", out, expected, 32);
 }
 
+/* 256-byte plaintext hits ChaCha20's 4-block SIMD kernel (counter starts at 1). */
+static void test_simd_known_answer(void) {
+    printf("[256-byte SIMD known-answer]\n");
+    uint8_t key[32], nonce[12], pt[256], aad[3], expected_ct[16], expected_tag[16];
+    for (int i = 0; i < 32; i++) key[i] = (uint8_t)i;
+    for (int i = 0; i < 12; i++) nonce[i] = (uint8_t)i;
+    for (int i = 0; i < 256; i++) pt[i] = (uint8_t)(i * 7 + 3);
+    memcpy(aad, "abc", 3);
+    hex_to_bytes("8af11918363188748cc176a3cf436b0f", expected_ct, 16);
+    hex_to_bytes("b57287e4729efa41ebdd955d3cc7485b", expected_tag, 16);
+
+    uint8_t out[256 + 16];
+    size_t n = neverc_chacha20poly1305_seal(out, key, nonce, pt, 256, aad, 3);
+    check_int("256-byte seal length", (int)n, 272);
+    check_bytes("256-byte ciphertext prefix", out, expected_ct, 16);
+    check_bytes("256-byte tag", out + 256, expected_tag, 16);
+
+    uint8_t dec[256];
+    check_int("256-byte open",
+              neverc_chacha20poly1305_open(dec, key, nonce, out, 272, aad, 3),
+              256);
+    check_bytes("256-byte plaintext", dec, pt, 256);
+}
+
 static void test_inplace_and_aad_overlap(void) {
     printf("[in-place and AAD overlap]\n");
     uint8_t key[32] = {0};
@@ -384,6 +408,7 @@ int main(void) {
     test_large_message_roundtrip();
     test_invalid_inputs_and_limits();
     test_empty_aad_known_answer();
+    test_simd_known_answer();
     test_inplace_and_aad_overlap();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

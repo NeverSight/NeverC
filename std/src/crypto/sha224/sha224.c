@@ -13,6 +13,7 @@ void neverc_sha224_init(neverc_sha224_ctx *ctx) {
     ctx->state[4] = 0xffc00b31; ctx->state[5] = 0x68581511;
     ctx->state[6] = 0x64f98fa7; ctx->state[7] = 0xbefa4fa4;
     ctx->count = 0;
+    ctx->finalized = 0;
 }
 
 void neverc_sha224_update(neverc_sha224_ctx *ctx, const uint8_t *data, size_t len) {

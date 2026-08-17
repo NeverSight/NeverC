@@ -189,11 +189,11 @@ static void test_handshake_rejects(void) {
         "GET /ws HTTP/1.1\r\n"
         "Host: localhost\r\n"
         "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
+        "Connection: Upgrade , keep-alive\r\n"
         "Sec-WebSocket-Version: 13\r\n"
         "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
         "\r\n";
-    check_int("accept exact handshake",
+    check_int("accept Connection token list",
               neverc_ws_handshake_server(server, good, strlen(good),
                                          &consumed),
               0);
@@ -376,6 +376,60 @@ static void test_close_code_message_too_big(void) {
         uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
                                    close_hdr[3]);
         check_int("close code 1009", code, 1009);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
+static void test_close_invalid_utf8_reason_is_1007(void) {
+    printf("[close_invalid_utf8_reason]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("utf8-close listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("utf8-close client", client);
+    check_not_null("utf8-close server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("utf8-close server ws", ws);
+    if (ws) {
+        uint8_t payload[] = { 0x03, 0xe8, 0x80 }; /* 1000 + invalid UTF-8 */
+        check_int("write close with bad reason",
+                  ws_write_masked_frame(client, NC_WS_OPCODE_CLOSE,
+                                        payload, sizeof(payload)),
+                  0);
+        int opcode = 0;
+        char buf[32];
+        size_t n = 0;
+        check_int("reject invalid close reason",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  -1);
+        uint8_t close_hdr[4];
+        check_int("read close header",
+                  ws_tcp_read_exact(client, close_hdr, sizeof(close_hdr)),
+                  0);
+        check_int("close opcode", close_hdr[0], 0x88);
+        check_int("close unmasked len 2", close_hdr[1], 0x02);
+        uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
+                                   close_hdr[3]);
+        check_int("close code 1007", code, 1007);
         neverc_ws_conn_free(ws);
     } else {
         neverc_tcp_close(server);
@@ -876,6 +930,33 @@ static void test_http_ws_upgrade(void) {
     neverc_tcp_close(c);
 
     c = neverc_tcp_dial(addr, &err);
+    check_not_null("dial http connection list", c);
+    if (c) {
+        neverc_tcp_set_timeout(c, 5000);
+        const char *list_req =
+            "GET /ws HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade , keep-alive\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+            "\r\n";
+        neverc_tcp_write(c, list_req, strlen(list_req));
+        total = 0;
+        memset(resp, 0, sizeof(resp));
+        while (total < (int)sizeof(resp) - 1) {
+            int n = neverc_tcp_read(c, resp + total,
+                                    sizeof(resp) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+            resp[total] = '\0';
+            if (strstr(resp, "\r\n\r\n")) break;
+        }
+        check_int("101 resp connection list", strstr(resp, "101") != NULL, 1);
+        neverc_tcp_close(c);
+    }
+
+    c = neverc_tcp_dial(addr, &err);
     check_not_null("dial http reject", c);
     if (c) {
         neverc_tcp_set_timeout(c, 5000);
@@ -916,6 +997,7 @@ int main(void) {
     test_handshake_rejects();
     test_reject_unmasked_client_frame();
     test_close_code_message_too_big();
+    test_close_invalid_utf8_reason_is_1007();
     test_local_buffer_too_small_keeps_stream();
 #ifndef _WIN32
     test_client_dial_and_masking();

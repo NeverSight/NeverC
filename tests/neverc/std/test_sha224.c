@@ -109,6 +109,25 @@ int main(void) {
         else { tests_failed++; printf("  FAIL: SHA-224 == SHA-256 truncated\n"); }
     }
 
+    /* Re-init after final must start a new hash; update after final is ignored. */
+    {
+        neverc_sha224_ctx ctx;
+        uint8_t d1[28], d2[28], d3[28];
+        neverc_sha224_init(&ctx);
+        neverc_sha224_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha224_final(&ctx, d1);
+        neverc_sha224_update(&ctx, (const uint8_t *)"x", 1);
+        neverc_sha224_final(&ctx, d2);
+        check_digest("SHA-224 update after final ignored", d2, d1, 28);
+
+        neverc_sha224_init(&ctx);
+        neverc_sha224_update(&ctx, (const uint8_t *)"xyz", 3);
+        neverc_sha224_final(&ctx, d3);
+        tests_run++;
+        if (memcmp(d1, d3, 28) != 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-224 re-init reused old digest\n"); }
+    }
+
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

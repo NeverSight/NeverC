@@ -17,6 +17,21 @@ static void increment_counter(uint8_t ctr[16]) {
     }
 }
 
+/* dst after src with overlap: a later block would read source bytes that
+ * an earlier write already clobbered. Slide into dst, then treat as in-place. */
+static const uint8_t *src_for_overlapping_dst(uint8_t *dst, const uint8_t *src,
+                                              size_t len) {
+    if (len == 0)
+        return src;
+    uintptr_t d = (uintptr_t)dst;
+    uintptr_t s = (uintptr_t)src;
+    if (d > s && (d - s) < (uintptr_t)len) {
+        memmove(dst, src, len);
+        return dst;
+    }
+    return src;
+}
+
 int neverc_cipher_cbc_encrypt(
     const uint8_t *key, int key_len,
     uint8_t iv[16],
@@ -31,6 +46,8 @@ int neverc_cipher_cbc_encrypt(
         neverc_platform_secure_zero(&ctx, sizeof(ctx));
         return -1;
     }
+
+    src = src_for_overlapping_dst(dst, src, len);
 
     uint8_t block[16];
     for (size_t off = 0; off < len; off += 16) {
@@ -58,6 +75,8 @@ int neverc_cipher_cbc_decrypt(
         return -1;
     }
 
+    src = src_for_overlapping_dst(dst, src, len);
+
     uint8_t ciphertext_block[16], decrypted[16];
     for (size_t off = 0; off < len; off += 16) {
         /* Preserve the input block before writing so dst == src is safe. */
@@ -84,6 +103,8 @@ int neverc_cipher_ctr_checked(
         neverc_platform_secure_zero(&ctx, sizeof(ctx));
         return -1;
     }
+
+    src = src_for_overlapping_dst(dst, src, len);
 
     size_t off = 0;
     uint8_t keystream[16];

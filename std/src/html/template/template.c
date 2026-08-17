@@ -1178,11 +1178,14 @@ static int html_css_has_unsafe_url(const char *s) {
  * CSS hex-escaping is undone by the browser, so the raw value is what
  * matters. Reject @import / expression / -moz-binding, CSS escapes that
  * hide schemes, javascript:/data:/vbscript: anywhere, and unsafe url().
+ * `/*` / `*/` are comments: `java/* */script:` is a relative URL (the `/`
+ * trips the allowlist) and becomes `javascript:` after comment stripping.
  */
 static int html_css_is_unsafe(const char *s) {
     if (!s) return 0;
     size_t n = strlen(s);
     if (memchr(s, '\\', n)) return 1;
+    if (strstr(s, "/*") || strstr(s, "*/")) return 1;
     if (html_css_has_unsafe_url(s)) return 1;
     if (html_css_contains_ci(s, "@import")) return 1;
     if (html_css_contains_ci(s, "expression")) return 1;

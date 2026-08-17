@@ -646,6 +646,64 @@ static void test_qpack_rejects_uppercase_and_empty_name(void) {
     neverc_qpack_decoder_destroy(dec);
 }
 
+static void test_authority_rejects_host_list_and_userinfo(void) {
+    ASSERT_EQ(neverc_h3_authority_allowed("example.com"), 1);
+    ASSERT_EQ(neverc_h3_authority_allowed("localhost:8080"), 1);
+    ASSERT_EQ(neverc_h3_authority_allowed("[::1]"), 1);
+    ASSERT_EQ(neverc_h3_authority_allowed("[::1]:443"), 1);
+    ASSERT_EQ(neverc_h3_authority_allowed("example.com,evil.com"), 0);
+    ASSERT_EQ(neverc_h3_authority_allowed("user@example.com"), 0);
+    ASSERT_EQ(neverc_h3_authority_allowed("example.com/foo"), 0);
+    ASSERT_EQ(neverc_h3_authority_allowed("localhost:99999"), 0);
+    ASSERT_EQ(neverc_h3_authority_allowed("[::1"), 0);
+    ASSERT_EQ(neverc_h3_authority_allowed("::1"), 0);
+    ASSERT_EQ(neverc_h3_authority_allowed("[::1,evil.com]"), 0);
+    ASSERT_EQ(neverc_h3_authority_allowed("foo bar"), 0);
+    ASSERT_EQ(neverc_h3_authority_allowed(""), 0);
+    ASSERT_EQ(neverc_h3_authority_allowed(NULL), 0);
+}
+
+static void test_trailer_name_rejects_framing_fields(void) {
+    ASSERT_EQ(neverc_h3_trailer_name_allowed("x-ok"), 1);
+    ASSERT_EQ(neverc_h3_trailer_name_allowed("content-length"), 0);
+    ASSERT_EQ(neverc_h3_trailer_name_allowed("host"), 0);
+    ASSERT_EQ(neverc_h3_trailer_name_allowed("transfer-encoding"), 0);
+    ASSERT_EQ(neverc_h3_trailer_name_allowed("connection"), 0);
+    ASSERT_EQ(neverc_h3_trailer_name_allowed("te"), 0);
+    ASSERT_EQ(neverc_h3_trailer_name_allowed(":status"), 0);
+    ASSERT_EQ(neverc_h3_trailer_name_allowed(""), 0);
+    ASSERT_EQ(neverc_h3_trailer_name_allowed(NULL), 0);
+}
+
+static void test_response_body_forbidden_for_204_304(void) {
+    ASSERT_EQ(neverc_h3_response_body_allowed(200), 1);
+    ASSERT_EQ(neverc_h3_response_body_allowed(204), 0);
+    ASSERT_EQ(neverc_h3_response_body_allowed(304), 0);
+    ASSERT_EQ(neverc_h3_response_body_allowed(100), 0);
+    ASSERT_EQ(neverc_h3_response_body_allowed(101), 0);
+}
+
+static void test_apply_response_content_length(void) {
+    int present = 1;
+    ASSERT_EQ(neverc_h3_apply_response_content_length(200, &present), 0);
+    ASSERT_EQ(present, 1);
+
+    present = 1;
+    ASSERT_EQ(neverc_h3_apply_response_content_length(204, &present), -1);
+
+    /* 304 may carry Content-Length of the selected representation; it must
+     * not be compared to the empty message body. */
+    present = 1;
+    ASSERT_EQ(neverc_h3_apply_response_content_length(304, &present), 0);
+    ASSERT_EQ(present, 0);
+
+    present = 1;
+    ASSERT_EQ(neverc_h3_apply_response_content_length(100, &present), 0);
+    ASSERT_EQ(present, 0);
+
+    ASSERT_EQ(neverc_h3_apply_response_content_length(200, NULL), -1);
+}
+
 static void test_request_path_allows_options_asterisk(void) {
     ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/"), 1);
     ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/index"), 1);
@@ -758,6 +816,10 @@ int main(void) {
     test_qpack_rejects_nul_and_crlf();
     test_qpack_field_section_size();
     test_qpack_rejects_uppercase_and_empty_name();
+    test_authority_rejects_host_list_and_userinfo();
+    test_trailer_name_rejects_framing_fields();
+    test_response_body_forbidden_for_204_304();
+    test_apply_response_content_length();
     test_request_path_allows_options_asterisk();
     test_varint_payload_and_max_push_id();
     test_qpack_decoder_stream_instructions();

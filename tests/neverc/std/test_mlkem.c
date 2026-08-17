@@ -108,6 +108,21 @@ static void test_768_ek_encode_decode(void) {
            "reject malformed encapsulation key");
     ASSERT(all_zero(sk, sizeof(sk)) && all_zero(ct, sizeof(ct)),
            "malformed key clears encapsulation outputs");
+
+    memset(sk, 0x5A, sizeof(sk));
+    memset(ct, 0x5A, sizeof(ct));
+    ASSERT(neverc_mlkem768_encapsulate(NULL, sk, ct) == -1,
+           "NULL ek is invalid input");
+    ASSERT(all_zero(sk, sizeof(sk)) && all_zero(ct, sizeof(ct)),
+           "NULL ek clears encapsulation outputs");
+
+    neverc_mlkem1024_ek_t ek1024;
+    memset(&ek1024, 0x5A, sizeof(ek1024));
+    ASSERT(neverc_mlkem1024_new_ek(
+               &ek1024, encoded, NEVERC_MLKEM768_EK_SIZE) == -1,
+           "1024 parser rejects 768 encapsulation key");
+    ASSERT(all_zero(ek1024.ek, sizeof(ek1024.ek)),
+           "wrong parameter set clears 1024 ek");
     printf("ok\n");
 }
 
@@ -261,6 +276,31 @@ static void test_1024_seed_deterministic(void) {
     neverc_mlkem1024_ek_t ek3;
     ASSERT(neverc_mlkem1024_new_ek(&ek3, encoded, encoded_len) == 0, "parse ek");
     ASSERT(memcmp(ek1.ek, ek3.ek, NEVERC_MLKEM1024_EK_SIZE) == 0, "ek match");
+
+    encoded[0] = 0xFF;
+    encoded[1] = (uint8_t)((encoded[1] & 0xF0) | 0x0F);
+    memset(&ek3, 0x5A, sizeof(ek3));
+    ASSERT(neverc_mlkem1024_new_ek(
+               &ek3, encoded, sizeof(encoded)) == -1,
+           "1024 rejects non-canonical coefficient");
+    ASSERT(all_zero(ek3.ek, sizeof(ek3.ek)),
+           "failed 1024 key parse clears output");
+
+    neverc_mlkem768_ek_t ek768;
+    memset(&ek768, 0x5A, sizeof(ek768));
+    ASSERT(neverc_mlkem768_new_ek(
+               &ek768, ek1.ek, NEVERC_MLKEM1024_EK_SIZE) == -1,
+           "768 parser rejects 1024 encapsulation key");
+    ASSERT(all_zero(ek768.ek, sizeof(ek768.ek)),
+           "wrong parameter set clears 768 ek");
+
+    uint8_t sk1024[32], ct1024[NEVERC_MLKEM1024_CT_SIZE];
+    memset(sk1024, 0x5A, sizeof(sk1024));
+    memset(ct1024, 0x5A, sizeof(ct1024));
+    ASSERT(neverc_mlkem1024_encapsulate(NULL, sk1024, ct1024) == -1,
+           "NULL 1024 ek is invalid input");
+    ASSERT(all_zero(sk1024, sizeof(sk1024)) && all_zero(ct1024, sizeof(ct1024)),
+           "NULL 1024 ek clears encapsulation outputs");
     printf("ok\n");
 }
 

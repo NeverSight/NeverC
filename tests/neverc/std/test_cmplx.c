@@ -448,12 +448,14 @@ static void test_inv_hyp_cot(void) {
     check_double("atanh(0.5+0i).re", neverc_cmplx_atanh(C(0.5, 0.0)).re,
                  neverc_math_atanh(0.5));
     check_cmplx("atanh(1)", neverc_cmplx_atanh(C(1.0, 0.0)), NC_INF, 0.0);
-    /* Go: atanh(x) for real x > 1 is ½ln((x+1)/(x-1)) - iπ/2 (via -i atan(ix)). */
+    /* Go cmplx.Atanh: real |x|>1 has Im = +π/2 (atanh(2)=½ln3 + iπ/2).
+     * The -i atan(i z) path sees i*(x+0i) as -0+ix, so atan2 yields -π/2
+     * and the outer flip makes Im positive — same as Go, not -π/2. */
     {
         double half_ln3 = 0.5 * neverc_math_log(3.0);
         neverc_cmplx_t w = neverc_cmplx_atanh(C(2.0, 0.0));
-        check_cmplx("atanh(2+0i)", w, half_ln3, -NEVERC_MATH_PI / 2.0);
-        check_signbit("atanh(2+0i).im neg", w.im, 1);
+        check_cmplx("atanh(2+0i)", w, half_ln3, NEVERC_MATH_PI / 2.0);
+        check_signbit("atanh(2+0i).im pos", w.im, 0);
         w = neverc_cmplx_atanh(C(-2.0, 0.0));
         check_cmplx("atanh(-2+0i)", w, -half_ln3, NEVERC_MATH_PI / 2.0);
         check_signbit("atanh(-2+0i).im pos", w.im, 0);

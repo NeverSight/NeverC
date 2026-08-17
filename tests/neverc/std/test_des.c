@@ -134,6 +134,11 @@ static void test_3des_roundtrip_different_keys(void) {
 
     neverc_3des_decrypt_block(&c, decrypted, ct);
     check_bytes("3DES decrypt recovers pt", decrypted, pt, 8);
+
+    /* OpenSSL / NIST SP 800-67 Appendix B style three-key vector.
+     * Round-trip alone cannot catch a matching E/D swap. */
+    const uint8_t expected_ct[] = {0x1C,0xCF,0x23,0x86,0x9D,0x09,0x33,0x3E};
+    check_bytes("3DES three-key known answer", ct, expected_ct, 8);
 }
 
 static void test_3des_roundtrip(void) {

@@ -575,6 +575,10 @@ static int parse_response_framing(const char *headers, size_t header_length,
         cursor = line_end + 2;
     }
     if (framing->has_content_length && framing->is_chunked) return -1;
+    /* RFC 9112: Transfer-Encoding is not defined for HTTP/1.0. Treating a
+     * 1.0 response as chunked desynchronizes intermediaries that read the
+     * body as identity (the same hole the request parser already closes). */
+    if (is_http_10 && framing->is_chunked) return -1;
     return 0;
 }
 

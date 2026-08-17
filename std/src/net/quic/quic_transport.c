@@ -750,15 +750,7 @@ decrypt_complete:
             return 0;
         }
         conn->state = QUIC_CONN_ESTABLISHED;
-        conn->flow.max_data_peer = conn->peer_params.initial_max_data;
-        conn->peer_max_streams_bidi =
-            conn->peer_params.initial_max_streams_bidi;
-        conn->peer_max_streams_uni =
-            conn->peer_params.initial_max_streams_uni;
-        conn->idle_timeout_ms = neverc_quic_effective_idle_timeout_ms(
-            conn->idle_timeout_ms, conn->peer_params.max_idle_timeout);
-        conn->peer_disable_migration =
-            conn->peer_params.disable_active_migration;
+        neverc_quic_conn_apply_peer_transport_params(conn);
         const char *alpn = neverc_quic_tls_alpn(conn->tls);
         if (alpn) {
             size_t alpn_len = strlen(alpn);

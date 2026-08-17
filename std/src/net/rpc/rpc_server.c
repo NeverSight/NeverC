@@ -730,6 +730,14 @@ static int rpc_server_dispatch_request_frame(
         free(inbound);
         return 0;
     }
+    nc_mutex_lock(&stream->lock);
+    int receive_closed = stream->receive_closed;
+    nc_mutex_unlock(&stream->lock);
+    if (receive_closed && frame->header.type == NEVERC_RPC_FRAME_DATA) {
+        nc_mutex_unlock(&connection->streams_lock);
+        free(inbound);
+        return -1;
+    }
     if (frame->header.type == NEVERC_RPC_FRAME_CANCEL) {
         nc_mutex_lock(&stream->lock);
         stream->peer_cancelled = 1;

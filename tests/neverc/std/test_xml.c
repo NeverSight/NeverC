@@ -234,7 +234,11 @@ static void test_entities_cdata_and_well_formedness(void) {
         "<?xml version=\"1.0\" encoding=\"UTF-7\"?><root/>",
         "<?xml version=\"1.0\" encoding=\"windows-1252\"?><root/>",
         "<?xml version=\"1.0\" encoding = \"ISO-8859-1\"?><root/>",
-        "<?xml version=\"1.0\" encoding=\"UTF-8\" encoding=\"ISO-8859-1\"?><root/>"
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" encoding=\"ISO-8859-1\"?><root/>",
+        "<?xml?><root/>",
+        "<?xml encoding=\"UTF-8\"?><root/>",
+        "<?xml version=\"1.0\" encoding=\"\"?><root/>",
+        "<?xml version=\"1.0\"encoding=\"ISO-8859-1\"?><root/>"
     };
     for (size_t i = 0;
          i < sizeof(invalid_documents) / sizeof(invalid_documents[0]);

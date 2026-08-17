@@ -71,6 +71,21 @@ static void test_sha512_224(void) {
         hex_to_bytes("4634270f707b6a54daae7530460842e20e37ed265ceee9a43e8924aa", expected, 28);
         check_digest("SHA-512/224(\"abc\") incremental", digest, expected, 28);
     }
+
+    {
+        neverc_sha512_224_ctx ctx;
+        uint8_t d1[28], d2[28];
+        neverc_sha512_224_init(&ctx);
+        neverc_sha512_224_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha512_224_final(&ctx, d1);
+        neverc_sha512_224_update(&ctx, (const uint8_t *)"x", 1);
+        neverc_sha512_224_final(&ctx, d2);
+        hex_to_bytes("4634270f707b6a54daae7530460842e20e37ed265ceee9a43e8924aa", expected, 28);
+        check_digest("SHA-512/224 update after final ignored", d2, expected, 28);
+        tests_run++;
+        if (memcmp(d1, d2, 28) == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-512/224 post-final mismatch\n"); }
+    }
 }
 
 static void test_sha512_256(void) {

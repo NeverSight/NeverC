@@ -12,6 +12,7 @@
 #else
 #include <unistd.h>
 #include <sys/wait.h>
+#include <errno.h>
 #endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -86,6 +87,14 @@ static void test_resolve(void) {
     check_int("resolve IPv6 ok", rc, 0);
     check_int("resolve IPv6 port", addr.port, 23456);
     check_int("resolve IPv6 bracketed", addr.addr[0] == '[', 1);
+
+    rc = neverc_udp_resolve_addr("[::ffff:127.0.0.1]:12345", &addr);
+    check_int("resolve ipv4-mapped ok", rc, 0);
+    check_int("resolve ipv4-mapped port", addr.port, 12345);
+    check_int("resolve ipv4-mapped is ipv4 text",
+              strncmp(addr.addr, "127.0.0.1:", 10) == 0, 1);
+    check_int("resolve ipv4-mapped not ffff",
+              strstr(addr.addr, "ffff") == NULL, 1);
 }
 
 /* ===== invalid address ===== */
@@ -227,6 +236,68 @@ static void test_echo(void) {
     check_int("client exit 0", WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
 
     neverc_udp_close(server);
+}
+
+/* IPv4-mapped IPv6 must format as a.b.c.d:port (ACL). Dual-stack
+ * listen on [::]:0 must accept IPv4 and report the same. */
+static void test_ipv4_mapped_addr(void) {
+    printf("[ipv4_mapped_addr]\n");
+    const char *err = NULL;
+
+    neverc_udp_conn_t *server = neverc_udp_listen("[::]:0", &err);
+    if (!server) {
+        check_int("dual-stack listen unavailable", 1, 1);
+        return;
+    }
+
+    neverc_udp_addr_t saddr;
+    neverc_udp_local_addr(server, &saddr);
+    neverc_udp_set_timeout(server, 2000);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        char addr_str[64];
+        snprintf(addr_str, sizeof(addr_str), "127.0.0.1:%d", saddr.port);
+        neverc_udp_conn_t *client = neverc_udp_dial(addr_str, &err);
+        if (!client) _exit(1);
+        int n = neverc_udp_write(client, "v4", 2);
+        neverc_udp_close(client);
+        _exit(n == 2 ? 0 : 2);
+    }
+
+    neverc_udp_addr_t from;
+    char buf[8];
+    int n = neverc_udp_read_from(server, buf, sizeof(buf), &from);
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (n == 2) {
+        check_int("dual-stack ipv4 payload", memcmp(buf, "v4", 2) == 0, 1);
+        check_int("dual-stack peer is ipv4 text",
+                  strncmp(from.addr, "127.0.0.1:", 10) == 0, 1);
+        check_int("dual-stack peer not ffff",
+                  strstr(from.addr, "ffff") == NULL, 1);
+    } else if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
+        check_int("dual-stack ipv4 dial skipped", 1, 1);
+    } else {
+        check_int("dual-stack ipv4 datagram", 0, 1);
+    }
+    neverc_udp_close(server);
+}
+
+static void test_read_timeout_errno(void) {
+    printf("[read_timeout_errno]\n");
+    const char *err = NULL;
+    neverc_udp_conn_t *conn = neverc_udp_listen("127.0.0.1:0", &err);
+    check_not_null("timeout conn", conn);
+    if (!conn) return;
+    check_int("set short read timeout",
+              neverc_udp_set_read_timeout(conn, 50), 0);
+    char buf[8];
+    neverc_udp_addr_t from;
+    int n = neverc_udp_read_from(conn, buf, sizeof(buf), &from);
+    check_int("udp read timed out", n, -1);
+    check_int("udp timeout errno", errno == ETIMEDOUT, 1);
+    neverc_udp_close(conn);
 }
 
 /* ===== IPv6 datagram test ===== */
@@ -723,6 +794,8 @@ int main(void) {
     test_options();
 #ifndef _WIN32
     test_echo();
+    test_ipv4_mapped_addr();
+    test_read_timeout_errno();
     test_ipv6_datagram();
     test_multiple_datagrams();
     test_write_to_read_from();

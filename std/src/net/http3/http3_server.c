@@ -48,6 +48,10 @@ extern int neverc_h3_write_goaway_frame(uint8_t *buffer, size_t capacity,
                                         size_t *written);
 extern int neverc_h3_request_path_allowed(const char *method,
                                           const char *path);
+extern int neverc_h3_authority_allowed(const char *authority);
+extern int neverc_h3_trailer_name_allowed(const char *name);
+extern int neverc_h3_response_body_allowed(int status);
+extern int neverc_h3_apply_response_content_length(int status, int *present);
 extern int neverc_h3_parse_varint_payload(const uint8_t *payload,
                                           size_t length, uint64_t *value);
 extern int neverc_h3_max_push_id_accept(int have_previous,
@@ -548,6 +552,8 @@ static int h3_parse_request_headers(h3_conn_t *connection,
         strcmp(request->scheme, "https") != 0 ||
         !neverc_h3_request_path_allowed(request->method, request->path) ||
         strcmp(request->method, "CONNECT") == 0 ||
+        !neverc_h3_authority_allowed(request->authority) ||
+        (host && !neverc_h3_authority_allowed(host)) ||
         (host && !h3_ascii_ieq(request->authority, host)))
         goto cleanup;
     result = 0;
@@ -631,7 +637,8 @@ static int h3_read_request(h3_conn_t *connection,
                     parsed = -1;
                 for (int i = 0; i < count; i++) {
                     if (decoded[i].name[0] == ':' ||
-                        !h3_ascii_lower_name(decoded[i].name))
+                        !h3_ascii_lower_name(decoded[i].name) ||
+                        !neverc_h3_trailer_name_allowed(decoded[i].name))
                         parsed = -1;
                     free(decoded[i].name);
                     free(decoded[i].value);
@@ -742,6 +749,10 @@ static int h3_send_response(h3_conn_t *connection,
     if (writer->body.len > H3_MAX_RESPONSE_BODY) return -1;
     char status[4];
     if (writer->status < 100 || writer->status > 999) return -1;
+    int body_allowed = !writer->head_request &&
+                       neverc_h3_response_body_allowed(writer->status);
+    if (!body_allowed)
+        nc_buf_reset(&writer->body);
     snprintf(status, sizeof(status), "%03d", writer->status);
     int count = 0;
     int result = 0;
@@ -749,6 +760,9 @@ static int h3_send_response(h3_conn_t *connection,
     for (int i = 0; i < writer->nheaders; i++) {
         if (!h3_response_header_allowed(writer->header_names[i])) continue;
         if (strcasecmp(writer->header_names[i], "content-length") == 0) {
+            if (!neverc_h3_response_body_allowed(writer->status) &&
+                writer->status != 304)
+                continue;
             uint64_t content_length;
             if (h3_parse_content_length(writer->header_values[i],
                                         &content_length) != 0 ||
@@ -772,7 +786,7 @@ static int h3_send_response(h3_conn_t *connection,
         lower_names[i] = NULL;
     }
     if (result != 0) return -1;
-    if (!writer->head_request) {
+    if (body_allowed) {
         size_t position = 0;
         uint8_t *frame = (uint8_t *)malloc(H3_DATA_CHUNK + 16U);
         if (!frame) return -1;
@@ -1754,8 +1768,8 @@ static int h3_client_parse_header_block(h3_conn_t *connection,
         } else if (headers[i].name[0] == ':' ||
                    !h3_ascii_lower_name(headers[i].name) ||
                    !h3_response_header_allowed(headers[i].name) ||
-                   (trailers && strcmp(headers[i].name,
-                                        "content-length") == 0) ||
+                   (trailers &&
+                    !neverc_h3_trailer_name_allowed(headers[i].name)) ||
                    h3_append_header_line(text, &text_length,
                                          headers[i].name,
                                          headers[i].value) != 0) {
@@ -1779,6 +1793,10 @@ static int h3_client_parse_header_block(h3_conn_t *connection,
         free(headers[i].value);
     }
     if (!trailers && !status_seen) result = -1;
+    if (!trailers && result == 0 &&
+        neverc_h3_apply_response_content_length(
+            response->status_code, content_length_present) != 0)
+        result = -1;
     return result;
 }
 
@@ -1826,7 +1844,9 @@ static int h3_client_read_response(h3_conn_t *connection,
                 trailers = 1;
             }
         } else if (type == NC_H3_FRAME_DATA) {
-            if (!final_headers || trailers || length > H3_MAX_RESPONSE_BODY ||
+            if (!final_headers || trailers ||
+                !neverc_h3_response_body_allowed(response->status_code) ||
+                length > H3_MAX_RESPONSE_BODY ||
                 length > H3_MAX_RESPONSE_BODY - response->body_len)
                 return -1;
             uint8_t *payload = NULL;

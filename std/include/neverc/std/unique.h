@@ -32,6 +32,11 @@ neverc_unique_handle_t neverc_unique_make_int64(int64_t v);
 neverc_unique_handle_t neverc_unique_make_uint64(uint64_t v);
 neverc_unique_handle_t neverc_unique_make_bytes(const void *data, size_t len);
 
+/* string_value requires a NUL-terminated intern (make_string). Returns
+ * NULL if the handle is invalid or the interned bytes are not a C string.
+ * int64/uint64_value require an intern of exactly 8 bytes; otherwise 0.
+ * Handles do not store kind: an 8-byte blob can still be read as an
+ * integer, but shorter interns are never over-read. */
 const char    *neverc_unique_string_value(neverc_unique_handle_t h);
 int64_t        neverc_unique_int64_value(neverc_unique_handle_t h);
 uint64_t       neverc_unique_uint64_value(neverc_unique_handle_t h);

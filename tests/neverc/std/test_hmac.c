@@ -206,6 +206,19 @@ static void test_hmac_sha512_rfc4231(void) {
             "9758bf75c05a994a6d034f65f8f0e6fd"
             "caeab1a34d4a6b4b636e070a38bce737", 64);
     }
+
+    /* TC6: key longer than SHA-512 block size (128) must be hashed first. */
+    {
+        uint8_t key[131]; memset(key, 0xaa, 131);
+        const uint8_t *data = (const uint8_t *)
+            "Test Using Larger Than Block-Size Key - Hash Key First";
+        neverc_hmac_sha512(key, 131, data, 54, mac);
+        check_hex("TC6 sha512 (long key)", mac,
+            "80b24263c7c1a3ebb71493c1dd7be8b4"
+            "9b46d1f41b4aeec1121b013783f8f352"
+            "6b56d037e05f2598bd0fd2215d6a1e52"
+            "95e64f73f63f0aec8b915a985d786598", 64);
+    }
 }
 
 static void test_hmac_equal(void) {

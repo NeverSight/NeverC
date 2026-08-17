@@ -705,6 +705,8 @@ const char *neverc_quic_tls_error(const quic_tls_t *tls);
 
 struct neverc_quic_conn *neverc_quic_conn_create(quic_conn_side_t side,
                                                   int udp_fd);
+void neverc_quic_conn_apply_peer_transport_params(
+    struct neverc_quic_conn *conn);
 void neverc_quic_conn_destroy(struct neverc_quic_conn *conn);
 int neverc_quic_conn_configure(struct neverc_quic_conn *conn,
                                const neverc_quic_config_t *config,

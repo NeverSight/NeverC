@@ -129,6 +129,10 @@ static void test_pk_encode_decode(void) {
     neverc_mldsa44_pk_t pk2;
     ASSERT(neverc_mldsa44_new_pk(&pk2, encoded, encoded_len) == 0, "parse pk");
     ASSERT(memcmp(pk.pk, pk2.pk, NEVERC_MLDSA44_PK_SIZE) == 0, "pk match");
+    memset(&pk2, 0x5A, sizeof(pk2));
+    ASSERT(neverc_mldsa44_new_pk(
+               &pk2, encoded, NEVERC_MLDSA65_PK_SIZE) != 0,
+           "reject ML-DSA-65 public-key length");
     printf("ok\n");
 }
 
@@ -171,6 +175,21 @@ static void test_noncanonical_hint_rejected(void) {
     printf("ok\n");
 }
 
+static void test_empty_message(void) {
+    printf("  empty message ... ");
+    neverc_mldsa44_sk_t sk;
+    neverc_mldsa44_pk_t pk;
+    ASSERT(neverc_mldsa44_generate_key(&sk) == 0, "keygen");
+    neverc_mldsa44_sk_public_key(&sk, &pk);
+    uint8_t sig[NEVERC_MLDSA44_SIG_SIZE];
+    ASSERT(neverc_mldsa44_sign(&sk, NULL, 0, sig) == 0, "sign empty");
+    ASSERT(neverc_mldsa44_verify(&pk, NULL, 0, sig) == 0, "verify empty");
+    ASSERT(neverc_mldsa44_verify(
+               &pk, (const uint8_t *)"", 0, sig) == 0,
+           "verify empty pointer-or-empty");
+    printf("ok\n");
+}
+
 int main(void) {
     printf("crypto/mldsa tests:\n");
     test_keygen_sign_verify();
@@ -181,6 +200,7 @@ int main(void) {
     test_pk_encode_decode();
     test_tampered_signature();
     test_noncanonical_hint_rejected();
+    test_empty_message();
     printf("%d/%d passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
 }

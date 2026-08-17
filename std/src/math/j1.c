@@ -211,7 +211,8 @@ double neverc_math_j1(double x) {
     const double Two129 = 6.805647338418769269267492148635364229120e+38;
 
     if (nc_isnan(x))             return x;
-    if (nc_isinf_any(x) || x == 0.0) return 0.0;
+    /* J1 is odd: J1(±0)=±0 and J1(±Inf)=±0 (IEEE). Go returns +0. */
+    if (nc_isinf_any(x) || x == 0.0) return nc_copysign(0.0, x);
 
     int sign = 0;
     if (x < 0) {

@@ -555,13 +555,75 @@ TEST(hpack_unchanged_table_size_does_not_emit_update) {
     neverc_hpack_encoder_destroy(enc);
 }
 
+TEST(hpack_rejects_crlf_in_field_octets) {
+    neverc_hpack_encoder_t *enc = neverc_hpack_encoder_create(4096);
+    neverc_hpack_decoder_t *dec = neverc_hpack_decoder_create(4096);
+    neverc_hpack_header_t injected = {
+        .name = "x-foo\r\nx-injected", .value = "1"
+    };
+    uint8_t encoded[64];
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_hpack_encode(enc, &injected, 1, encoded,
+                                  sizeof(encoded), &encoded_length), -1);
+
+    neverc_hpack_header_t crlf_value = {
+        .name = "x-foo", .value = "1\r\nHost: evil"
+    };
+    ASSERT_EQ(neverc_hpack_encode(enc, &crlf_value, 1, encoded,
+                                  sizeof(encoded), &encoded_length), -1);
+
+    /* Literal name "x\r\ny" (3 octets) + value "1". */
+    uint8_t crlf_name[] = { 0x00, 0x03, 'x', '\r', '\n', 0x01, '1' };
+    neverc_hpack_header_t decoded[1];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_hpack_decode(dec, crlf_name, sizeof(crlf_name),
+                                  decoded, 1, &nheaders), -1);
+
+    uint8_t crlf_value_block[] = {
+        0x00, 0x05, 'x', '-', 'f', 'o', 'o', 0x03, 'a', '\r', '\n'
+    };
+    ASSERT_EQ(neverc_hpack_decode(dec, crlf_value_block,
+                                  sizeof(crlf_value_block), decoded, 1,
+                                  &nheaders), -1);
+
+    /* HTAB is legal in field values, not in names. Incremental indexing
+     * of a name containing HTAB would poison the dynamic table. */
+    neverc_hpack_header_t htab_name = {
+        .name = "x\tfoo", .value = "1"
+    };
+    ASSERT_EQ(neverc_hpack_encode(enc, &htab_name, 1, encoded,
+                                  sizeof(encoded), &encoded_length), -1);
+    uint8_t htab_name_block[] = {
+        0x00, 0x03, 'x', '\t', 'y', 0x01, '1'
+    };
+    ASSERT_EQ(neverc_hpack_decode(dec, htab_name_block,
+                                  sizeof(htab_name_block), decoded, 1,
+                                  &nheaders), -1);
+
+    uint8_t htab_value_block[] = {
+        0x00, 0x05, 'x', '-', 'f', 'o', 'o', 0x03, 'a', '\t', 'b'
+    };
+    ASSERT_EQ(neverc_hpack_decode(dec, htab_value_block,
+                                  sizeof(htab_value_block), decoded, 1,
+                                  &nheaders), 0);
+    ASSERT_EQ(nheaders, 1);
+    ASSERT_STREQ(decoded[0].name, "x-foo");
+    ASSERT_STREQ(decoded[0].value, "a\tb");
+    free(decoded[0].name);
+    free(decoded[0].value);
+    neverc_hpack_encoder_destroy(enc);
+    neverc_hpack_decoder_destroy(dec);
+}
+
 TEST(hpack_encode_falls_back_when_huffman_does_not_fit) {
     neverc_hpack_encoder_t *enc = neverc_hpack_encoder_create(4096);
     neverc_hpack_decoder_t *dec = neverc_hpack_decoder_create(4096);
     ASSERT_TRUE(enc != NULL && dec != NULL);
 
     char value[3001];
-    memset(value, 1, 3000);
+    /* obs-text (0x80) is a valid field octet that Huffman-expands, so the
+     * encoder must fall back to a raw literal. CTL 0x01 is no longer legal. */
+    memset(value, (char)0x80, 3000);
     value[3000] = '\0';
     neverc_hpack_header_t header = {
         .name = "x-bin", .value = value, .sensitive = 0,
@@ -1251,17 +1313,27 @@ TEST(h2c_rejects_header_name_crlf) {
     pid_t child = -1;
     ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
     int fd = neverc_tcp_conn_fd(client);
-    neverc_hpack_header_t headers[] = {
-        { .name = ":method", .value = "GET" },
-        { .name = ":path", .value = "/" },
-        { .name = ":scheme", .value = "http" },
-        { .name = ":authority", .value = "localhost" },
-        { .name = "x-foo\r\nx-injected", .value = "1" },
+    /* Encoder refuses CR/LF; send a raw literal so the decoder is tested. */
+    uint8_t block[] = {
+        0x82, 0x84, 0x86,
+        0x01, 0x09, 'l', 'o', 'c', 'a', 'l', 'h', 'o', 's', 't',
+        0x00, 0x11, 'x', '-', 'f', 'o', 'o', '\r', '\n',
+        'x', '-', 'i', 'n', 'j', 'e', 'c', 't', 'e', 'd',
+        0x01, '1'
     };
-    ASSERT_EQ(h2_send_headers(fd, headers, 5, 1), 0);
+    neverc_h2_frame_header_t frame = {
+        .length = (uint32_t)sizeof(block),
+        .type = NC_H2_FRAME_HEADERS,
+        .flags = (uint8_t)(NC_H2_FLAG_END_HEADERS | NC_H2_FLAG_END_STREAM),
+        .stream_id = 1
+    };
+    uint8_t header[9];
+    ASSERT_EQ(neverc_h2_frame_header_write(&frame, header), 0);
+    ASSERT_EQ(sock_write_all(fd, header, sizeof(header)), 0);
+    ASSERT_EQ(sock_write_all(fd, block, sizeof(block)), 0);
     uint32_t error_code = 0xffffffffU;
-    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
-    ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    ASSERT_EQ(h2_read_goaway(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_COMPRESSION_ERROR);
     neverc_tcp_close(client);
     int status = 0;
     ASSERT_EQ(waitpid(child, &status, 0), child);
@@ -2074,6 +2146,7 @@ int main(void) {
     run_test_hpack_rejects_overflowing_integer();
     run_test_hpack_encoder_emits_dynamic_table_size_update();
     run_test_hpack_unchanged_table_size_does_not_emit_update();
+    run_test_hpack_rejects_crlf_in_field_octets();
     run_test_hpack_encode_falls_back_when_huffman_does_not_fit();
     run_test_frame_types_and_flags();
     run_test_h2_client_rejects_zero_timeout();

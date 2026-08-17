@@ -145,6 +145,18 @@ static void test_decode_rejects_malformed_lengths(void) {
     check_int("reject noncanonical integer",
               neverc_asn1_decode_int64(&elem, &integer), -1);
 
+    /* Canonical 8-byte INTEGER 2^63. Fits in uint64_t, not int64_t. */
+    uint8_t uint64_min_out_of_range[] = {
+        0x02, 0x08, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+    check_int("decode 2^63 wrapper",
+              neverc_asn1_decode_element(uint64_min_out_of_range,
+                                         sizeof(uint64_min_out_of_range),
+                                         &elem),
+              (int)sizeof(uint64_min_out_of_range));
+    check_int("reject integer 2^63 as int64",
+              neverc_asn1_decode_int64(&elem, &integer), -1);
+
     uint8_t noncanonical_bool[] = {0x01, 0x01, 0x01};
     int boolean;
     check_int("decode noncanonical boolean wrapper",

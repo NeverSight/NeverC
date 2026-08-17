@@ -105,12 +105,26 @@ static void test_1m_a(void) {
             "07b8b3dc38ecc4ebae97ddd87f3d8985"));
 }
 
+static void test_final_lifecycle(void) {
+    printf("[SHA-384 final lifecycle]\n");
+    neverc_sha384_ctx ctx;
+    uint8_t d1[48], d2[48];
+
+    neverc_sha384_init(&ctx);
+    neverc_sha384_update(&ctx, (const uint8_t *)"abc", 3);
+    neverc_sha384_final(&ctx, d1);
+    neverc_sha384_update(&ctx, (const uint8_t *)"x", 1);
+    neverc_sha384_final(&ctx, d2);
+    check_true("update after final ignored", memcmp(d1, d2, 48) == 0);
+}
+
 int main(void) {
     printf("=== NeverC SHA-384 Tests ===\n\n");
     test_fips_vectors();
     test_empty();
     test_incremental();
     test_1m_a();
+    test_final_lifecycle();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

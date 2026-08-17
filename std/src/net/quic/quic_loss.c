@@ -216,9 +216,12 @@ static void detect_lost_packets(quic_loss_detector_t *ld, int space,
 
     uint64_t largest_acked = ls->largest_acked_packet;
 
-    /* Time threshold */
+    /* RFC 9002 §6.1.2: loss_delay = 9/8 * max(smoothed_rtt, latest_rtt). */
+    uint64_t rtt_ref = ld->rtt.smoothed_rtt;
+    if (ld->rtt.latest_rtt > rtt_ref)
+        rtt_ref = ld->rtt.latest_rtt;
     uint64_t time_threshold = quic_saturating_mul(
-        ld->rtt.smoothed_rtt, QUIC_TIME_THRESHOLD_FACTOR_NUM) /
+        rtt_ref, QUIC_TIME_THRESHOLD_FACTOR_NUM) /
             QUIC_TIME_THRESHOLD_FACTOR_DEN;
     if (time_threshold < QUIC_GRANULARITY_MS)
         time_threshold = QUIC_GRANULARITY_MS;

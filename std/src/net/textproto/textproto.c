@@ -73,6 +73,14 @@ static char *textproto_dup(const char *s) {
     return copy;
 }
 
+/* RFC 7230 OWS: trailing SP/HTAB on a field line is not part of the value.
+ * Folded continuations join with a single SP after each line is trimmed. */
+static size_t textproto_rtrim_wsp(char *s, size_t len) {
+    while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t')) len--;
+    s[len] = '\0';
+    return len;
+}
+
 static int textproto_is_mime_version(const char *s) {
     static const char want[] = "mime-version";
     size_t i = 0;
@@ -307,20 +315,24 @@ int neverc_textproto_read_mime_header(const char *data, size_t len,
                 if (consumed) *consumed = pos;
                 return -1;
             }
-            const char *cont = line;
+            char *cont = line;
             while (*cont == ' ' || *cont == '\t') cont++;
-            size_t used = strlen(value);
-            size_t add = strlen(cont);
-            if (used + 1 + add >= sizeof(value)) {
+            size_t add = textproto_rtrim_wsp(cont, strlen(cont));
+            size_t used = textproto_rtrim_wsp(value, strlen(value));
+            if (add == 0) continue;
+            size_t extra = used > 0 ? 1 : 0;
+            if (used + extra + add >= sizeof(value)) {
                 if (consumed) *consumed = pos;
                 return -1;
             }
-            value[used] = ' ';
-            memcpy(value + used + 1, cont, add + 1);
+            if (extra) value[used] = ' ';
+            memcpy(value + used + extra, cont, add);
+            value[used + extra + add] = '\0';
             continue;
         }
 
         if (have) {
+            (void)textproto_rtrim_wsp(value, strlen(value));
             if (mime_header_add_checked(h, name, value) != 0) {
                 if (consumed) *consumed = pos;
                 return -1;
@@ -346,8 +358,10 @@ int neverc_textproto_read_mime_header(const char *data, size_t len,
         }
         memcpy(name, line, strlen(line) + 1);
         memcpy(value, val, strlen(val) + 1);
+        (void)textproto_rtrim_wsp(value, strlen(value));
         have = 1;
     }
+    if (have) (void)textproto_rtrim_wsp(value, strlen(value));
     if (have && mime_header_add_checked(h, name, value) != 0) {
         if (consumed) *consumed = pos;
         return -1;

@@ -355,6 +355,28 @@ static void test_time_threshold_loss_expires_at_deadline(void) {
     neverc_quic_loss_destroy(&ld);
 }
 
+static void test_time_threshold_uses_max_of_srtt_and_latest_rtt(void) {
+    /* RFC 9002 §6.1.2: loss_delay = 9/8 * max(smoothed_rtt, latest_rtt). */
+    quic_loss_detector_t ld;
+    neverc_quic_loss_init(&ld);
+    ld.rtt.smoothed_rtt = 8;
+    ld.rtt.latest_rtt = 80;
+    neverc_quic_loss_on_sent(&ld, QUIC_PNS_APPLICATION, 0, 1000,
+                             1200, 1);
+    ld.spaces[QUIC_PNS_APPLICATION].has_largest_acked = 1;
+    ld.spaces[QUIC_PNS_APPLICATION].largest_acked_packet = 1;
+
+    detect_lost_packets(&ld, QUIC_PNS_APPLICATION, 1009);
+
+    ASSERT_TRUE(!ld.spaces[QUIC_PNS_APPLICATION].sent_packets->lost);
+    ASSERT_EQ(ld.spaces[QUIC_PNS_APPLICATION].loss_time, 1090);
+
+    detect_lost_packets(&ld, QUIC_PNS_APPLICATION, 1090);
+    ASSERT_TRUE(ld.spaces[QUIC_PNS_APPLICATION].sent_packets->lost);
+
+    neverc_quic_loss_destroy(&ld);
+}
+
 /* ======================================================================
  * main
  * ====================================================================== */
@@ -384,6 +406,7 @@ int main(void) {
     test_loss_timeout_skips_app_before_handshake_confirmation();
     test_loss_time_ignores_packets_newer_than_largest_acked();
     test_time_threshold_loss_expires_at_deadline();
+    test_time_threshold_uses_max_of_srtt_and_latest_rtt();
 
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);
     if (tests_failed == 0) puts("passed");

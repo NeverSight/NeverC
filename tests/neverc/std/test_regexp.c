@@ -455,7 +455,8 @@ static void test_invalid_inputs(void) {
 
     static const char *invalid[] = {
         "[abc", "[]", "[z-a]", "a)", "\\", "a**", "a+?",
-        "\\q", "\\1", "\\8", "(?P<>x)", "(?P<foo-bar>x)", "[[:foo:]]",
+        "\\q", "\\1", "\\8", "(?P<>x)", "(?P<foo-bar>x)", "(?Pname>x)",
+        "(?P foo>x)", "[[:foo:]]",
         "[\\q]", "[\\1]", "[\\A]", "[a-\\q]"
     };
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {

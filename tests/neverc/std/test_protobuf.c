@@ -134,6 +134,14 @@ static void test_malformed_inputs(void) {
     neverc_protobuf_reader_init(&reader, invalid_wire, sizeof(invalid_wire),
                                 64U);
     CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+
+    /* 10-byte varint whose 10th byte is > 1 overflows uint64. */
+    static const uint8_t overflow_varint[] = {
+        0x08U, 0x80U, 0x80U, 0x80U, 0x80U, 0x80U,
+        0x80U, 0x80U, 0x80U, 0x80U, 0x02U};
+    neverc_protobuf_reader_init(&reader, overflow_varint,
+                                sizeof(overflow_varint), 64U);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
 }
 
 static void test_skip_groups(void) {
@@ -248,6 +256,14 @@ static void test_packed_and_wire_compat(void) {
     CHECK(neverc_protobuf_message_decode(&desc, with_group, sizeof(with_group),
                                          64U, &msg, sizeof(msg)) == 0);
     CHECK(msg.n == 9);
+
+    /* Unknown field 15 (varint 99) is skipped; field 1 is kept. */
+    static const uint8_t unknown_field[] = {
+        0x78U, 0x63U, 0x08U, 0x2aU};
+    CHECK(neverc_protobuf_message_decode(&desc, unknown_field,
+                                         sizeof(unknown_field), 64U, &msg,
+                                         sizeof(msg)) == 0);
+    CHECK(msg.n == 42);
 }
 
 static void test_int32_range(void) {

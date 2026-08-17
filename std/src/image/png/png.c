@@ -125,6 +125,7 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
 
     size_t pos = 8;
     int ihdr_found = 0;
+    int plte_found = 0;
     int idat_seen = 0;
     int idat_ended = 0;
     int iend_found = 0;
@@ -189,11 +190,17 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
             }
             ihdr_found = 1;
         } else if (memcmp(chunk_type, "PLTE", 4) == 0) {
-            if (idat_seen || chunk_len == 0 || chunk_len > 768 ||
-                chunk_len % 3 != 0) {
+            /* PLTE is optional for truecolor / truecolor-alpha (suggested
+             * palette) and forbidden for grayscale / grayscale-alpha
+             * (ISO 15948 §11.2.3). At most one PLTE is allowed. */
+            if (plte_found || idat_seen || chunk_len == 0 || chunk_len > 768 ||
+                chunk_len % 3 != 0 ||
+                img->color_type == NEVERC_PNG_COLOR_GRAYSCALE ||
+                img->color_type == NEVERC_PNG_COLOR_GRAYSCALE_ALPHA) {
                 png_decode_fail(img, idat_buf, NULL);
                 return -1;
             }
+            plte_found = 1;
         } else if (memcmp(chunk_type, "IDAT", 4) == 0) {
             if (idat_ended) {
                 png_decode_fail(img, idat_buf, NULL);
@@ -514,13 +521,33 @@ void neverc_png_free(neverc_png_image_t *img) {
     memset(img, 0, sizeof(*img));
 }
 
+static int png_pixel_offset(const neverc_png_image_t *img, uint32_t x, uint32_t y,
+                            size_t *out_off) {
+    if (!img || !img->pixels || img->channels == 0 ||
+        x >= img->width || y >= img->height)
+        return -1;
+    if (x > SIZE_MAX / img->channels)
+        return -1;
+    size_t xoff = (size_t)x * img->channels;
+    if (img->stride == 0) {
+        if (y != 0) return -1;
+        *out_off = xoff;
+        return 0;
+    }
+    if (y > (SIZE_MAX - xoff) / img->stride)
+        return -1;
+    *out_off = (size_t)y * img->stride + xoff;
+    return 0;
+}
+
 const uint8_t *neverc_png_pixel_at(const neverc_png_image_t *img, uint32_t x, uint32_t y) {
-    if (!img || !img->pixels || x >= img->width || y >= img->height) return NULL;
-    return img->pixels + (size_t)y * img->stride + (size_t)x * img->channels;
+    size_t off;
+    if (png_pixel_offset(img, x, y, &off) != 0) return NULL;
+    return img->pixels + off;
 }
 
 void neverc_png_pixel_set(neverc_png_image_t *img, uint32_t x, uint32_t y, const uint8_t *src) {
-    if (!img || !img->pixels || !src || x >= img->width || y >= img->height) return;
-    memcpy(img->pixels + (size_t)y * img->stride + (size_t)x * img->channels,
-           src, img->channels);
+    size_t off;
+    if (!src || png_pixel_offset(img, x, y, &off) != 0) return;
+    memcpy(img->pixels + off, src, img->channels);
 }

@@ -871,6 +871,17 @@ static void http_stage5_client_security(void) {
     CHECK(resp != NULL && resp->error != NULL);
     neverc_http_response_free(resp);
 
+    /* HTTP/1.0 has no Transfer-Encoding. Accepting chunked here used to
+     * decode the body while a 1.0 hop treated the same bytes as identity. */
+    static const char http10_chunked[] =
+        "HTTP/1.0 200 OK\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "Connection: close\r\n\r\n"
+        "5\r\nhello\r\n0\r\n\r\n";
+    http_stage5_client_one_shot(http10_chunked, &resp);
+    CHECK(resp != NULL && resp->error != NULL);
+    neverc_http_response_free(resp);
+
     /* A bare LF in the status line used to swallow Transfer-Encoding into the
      * reason phrase, so Content-Length won and keep-alive framing desynced. */
     static const char lf_status[] =

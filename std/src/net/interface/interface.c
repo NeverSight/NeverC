@@ -28,6 +28,9 @@
         defined(__NetBSD__)
     #include <net/if_dl.h>
   #endif
+  #ifdef __APPLE__
+    #include <TargetConditionals.h>
+  #endif
 #endif
 
 static void format_mac(const unsigned char *hw, int hwlen,
@@ -200,7 +203,7 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
 #endif
 
             /* MTU */
-#if !defined(__APPLE__) || !defined(TARGET_OS_IPHONE)
+#if !defined(__APPLE__) || !TARGET_OS_IPHONE
             int sock = socket(AF_INET, SOCK_DGRAM, 0);
             if (sock >= 0) {
                 struct ifreq ifr;

@@ -68,7 +68,10 @@ uint8_t *neverc_io_read_all(neverc_io_reader_t *r, size_t *outlen) {
         }
         total += n;
         if (err == NEVERC_IO_EOF) break;
-        if (err != 0) break;
+        if (err != 0) {
+            free(buf);
+            return NULL;
+        }
         if (n == 0) {
             if (++empty_reads >= NCI_IO_MAX_EMPTY_READS) break;
             continue;

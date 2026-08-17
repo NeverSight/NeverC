@@ -124,6 +124,46 @@ int main(void) {
     check_md5("64 bytes", "1234567890123456789012345678901234567890123456789012345678901234",
         "eb6c4179c0a7c82cc2828c1e6338e165");
 
+    printf("[update after final ignored]\n");
+    {
+        tests_run++;
+        neverc_md5_ctx ctx;
+        neverc_md5_init(&ctx);
+        neverc_md5_update(&ctx, (const uint8_t *)"abc", 3);
+        uint8_t d1[16], d2[16];
+        neverc_md5_final(&ctx, d1);
+        neverc_md5_update(&ctx, (const uint8_t *)"x", 1);
+        neverc_md5_final(&ctx, d2);
+        char got[33];
+        hex_encode(d1, 16, got);
+        if (memcmp(d1, d2, 16) == 0 &&
+            strcmp(got, "900150983cd24fb0d6963f7d28e17f72") == 0)
+            tests_passed++;
+        else {
+            tests_failed++;
+            printf("  FAIL: update after final must not length-extend\n");
+        }
+    }
+
+    printf("[counter overflow fails closed]\n");
+    {
+        tests_run++;
+        neverc_md5_ctx ctx;
+        neverc_md5_init(&ctx);
+        neverc_md5_update(&ctx, (const uint8_t *)"abc", 3);
+        ctx.count = (1ULL << 61) + 3;
+        uint8_t digest[16];
+        memset(digest, 0xa5, sizeof(digest));
+        neverc_md5_final(&ctx, digest);
+        uint8_t zeros[16] = {0};
+        if (memcmp(digest, zeros, 16) == 0)
+            tests_passed++;
+        else {
+            tests_failed++;
+            printf("  FAIL: overflow must not collide with MD5(\"abc\")\n");
+        }
+    }
+
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

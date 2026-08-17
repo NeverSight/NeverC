@@ -185,17 +185,26 @@ int neverc_net_lookup_ip(const char *network, const char *host,
                 continue;
         } else if (rp->ai_family == AF_INET6) {
             struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)rp->ai_addr;
-            unsigned scope = in6->sin6_scope_id ? in6->sin6_scope_id
-                                                : host_scope;
-            if (format_resolved_ip(AF_INET6, &in6->sin6_addr, scope, buf,
-                                   sizeof(buf)) != 0)
-                continue;
-            if (host_zone && !strchr(buf, '%')) {
-                size_t used = strlen(buf);
-                int n = snprintf(buf + used, sizeof(buf) - used, "%%%s",
-                                 host_zone);
-                if (n <= 0 || (size_t)n >= sizeof(buf) - used)
+            /* IPv4-mapped AAAA / literals must print as IPv4 so an ACL
+             * that allows "127.0.0.1" is not bypassed by ::ffff:127.0.0.1. */
+            if (IN6_IS_ADDR_V4MAPPED(&in6->sin6_addr)) {
+                if (format_resolved_ip(AF_INET,
+                                       in6->sin6_addr.s6_addr + 12, 0, buf,
+                                       sizeof(buf)) != 0)
                     continue;
+            } else {
+                unsigned scope = in6->sin6_scope_id ? in6->sin6_scope_id
+                                                    : host_scope;
+                if (format_resolved_ip(AF_INET6, &in6->sin6_addr, scope, buf,
+                                       sizeof(buf)) != 0)
+                    continue;
+                if (host_zone && !strchr(buf, '%')) {
+                    size_t used = strlen(buf);
+                    int n = snprintf(buf + used, sizeof(buf) - used, "%%%s",
+                                     host_zone);
+                    if (n <= 0 || (size_t)n >= sizeof(buf) - used)
+                        continue;
+                }
             }
         } else {
             continue;
@@ -325,15 +334,30 @@ int neverc_net_lookup_addr(const char *addr, neverc_net_addrs_t *out) {
 #endif
         sslen = sizeof(struct sockaddr_in);
     } else if (inet_pton(AF_INET6, ip, &v6) == 1) {
-        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&ss;
-        sin6->sin6_family = AF_INET6;
-        sin6->sin6_addr = v6;
-        sin6->sin6_scope_id = scope_id;
+        if (IN6_IS_ADDR_V4MAPPED(&v6)) {
+            /* Reverse-lookup the embedded IPv4; ip6.arpa for mapped
+             * addresses is empty, so ::ffff:127.0.0.1 would fail. */
+            if (scope_id != 0)
+                return -1;
+            struct sockaddr_in *sin = (struct sockaddr_in *)&ss;
+            sin->sin_family = AF_INET;
+            memcpy(&sin->sin_addr, v6.s6_addr + 12, 4);
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
     defined(__NetBSD__)
-        sin6->sin6_len = sizeof(*sin6);
+            sin->sin_len = sizeof(*sin);
 #endif
-        sslen = sizeof(struct sockaddr_in6);
+            sslen = sizeof(struct sockaddr_in);
+        } else {
+            struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&ss;
+            sin6->sin6_family = AF_INET6;
+            sin6->sin6_addr = v6;
+            sin6->sin6_scope_id = scope_id;
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
+    defined(__NetBSD__)
+            sin6->sin6_len = sizeof(*sin6);
+#endif
+            sslen = sizeof(struct sockaddr_in6);
+        }
     } else {
         return -1;
     }

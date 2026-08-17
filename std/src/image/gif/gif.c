@@ -358,6 +358,8 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                 uint8_t trans_idx = data[pos++];
                 pending_transparent = (gce_packed & 1) ? trans_idx : -1;
                 pending_disposal = (gce_packed >> 2) & 7;
+                /* GIF89a: disposal 4-7 are reserved; treat as 0 (none). */
+                if (pending_disposal > 3) pending_disposal = 0;
                 if (data[pos++] != 0) goto decode_failed;
             } else {
                 int terminated = 0;

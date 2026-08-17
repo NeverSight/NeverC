@@ -212,6 +212,11 @@ static void grpc_test_frame_and_timeout(void) {
     uint8_t truncated[] = {0, 0, 0, 0, 5, 'h'};
     neverc_grpc_frame_reader_init(&reader, truncated, sizeof(truncated), 16U);
     CHECK(neverc_grpc_frame_reader_next(&reader, &message) == -1);
+    uint8_t leftover[] = {0, 0, 0, 0, 1, 'a', 0, 0, 0};
+    neverc_grpc_frame_reader_init(&reader, leftover, sizeof(leftover), 16U);
+    CHECK(neverc_grpc_frame_reader_next(&reader, &message) == 1);
+    CHECK(message.length == 1U && message.data[0] == 'a');
+    CHECK(neverc_grpc_frame_reader_next(&reader, &message) == -1);
     uint8_t oversize[] = {0, 0, 0, 0, 32, 'x'};
     neverc_grpc_frame_reader_init(&reader, oversize, sizeof(oversize), 16U);
     CHECK(neverc_grpc_frame_reader_next(&reader, &message) == -1);
@@ -469,6 +474,20 @@ static void grpc_test_unary_extra_frames(neverc_h2_client_t *client) {
     status = grpc_response_status(one);
     CHECK(status && strcmp(status, "0") == 0);
     neverc_h2_response_free(one);
+
+    uint8_t incomplete[64];
+    memcpy(incomplete, body, first);
+    incomplete[first] = 0;
+    incomplete[first + 1] = 0;
+    incomplete[first + 2] = 0;
+    neverc_h2_response_t *partial = neverc_h2_client_do_context(
+        client, NULL, "POST", "/test.Echo/UnaryEndEarly", headers, 2U,
+        incomplete, first + 3U);
+    CHECK(partial != NULL);
+    CHECK(partial && partial->error == NULL);
+    status = grpc_response_status(partial);
+    CHECK(status && strcmp(status, "3") == 0);
+    neverc_h2_response_free(partial);
 }
 
 static int grpc_test_register_methods(neverc_http_mux_t *mux) {
@@ -671,6 +690,13 @@ static void grpc_fake_h2_task(void *context) {
             .name = ":status", .value = "503"};
         headers[header_count++] = (neverc_hpack_header_t){
             .name = "content-type", .value = "application/grpc"};
+    } else if (test->kind == 4) {
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = ":status", .value = "200"};
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = "content-type", .value = "application/grpc"};
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = "grpc-status", .value = "0"};
     } else {
         headers[header_count++] = (neverc_hpack_header_t){
             .name = ":status", .value = "503"};
@@ -684,7 +710,7 @@ static void grpc_fake_h2_task(void *context) {
     int encoded = encoder && neverc_hpack_encode(
         encoder, headers, header_count, block, sizeof(block),
         &block_length) == 0 && block_length > 0 && block_length <= 0xffffffU;
-    if (encoded && test->kind == 3) {
+    if (encoded && (test->kind == 3 || test->kind == 4)) {
         neverc_hpack_header_t trailers[] = {
             {.name = "x-unused", .value = "1"}};
         encoded = neverc_hpack_encode(
@@ -713,7 +739,15 @@ static void grpc_fake_h2_task(void *context) {
             test->result = -1;
             return;
         }
-    } else if (test->kind == 3) {
+    } else if (test->kind == 3 || test->kind == 4) {
+        uint8_t grpc_ok[] = {0, 0, 0, 0, 2, 'o', 'k'};
+        if (test->kind == 4 &&
+            grpc_h2_write_frame(conn, NC_H2_FRAME_DATA, 0, 1U, grpc_ok,
+                                (uint32_t)sizeof(grpc_ok)) != 0) {
+            neverc_tcp_close(conn);
+            test->result = -1;
+            return;
+        }
         if (grpc_h2_write_frame(
                 conn, NC_H2_FRAME_HEADERS,
                 (uint8_t)(NC_H2_FLAG_END_HEADERS | NC_H2_FLAG_END_STREAM),
@@ -838,6 +872,13 @@ static void grpc_test_status_mapping(void) {
     CHECK(http_trailers && http_trailers->status == NEVERC_GRPC_UNAVAILABLE);
     neverc_grpc_result_free(http_trailers);
 
+    neverc_grpc_result_t *status_in_headers = grpc_call_fake_h2(4);
+    CHECK(status_in_headers != NULL);
+    CHECK(status_in_headers && status_in_headers->error != NULL);
+    CHECK(status_in_headers &&
+          status_in_headers->status != NEVERC_GRPC_OK);
+    neverc_grpc_result_free(status_in_headers);
+
     neverc_grpc_status_t stream_status = NEVERC_GRPC_UNKNOWN;
     const char *stream_error = "unset";
     CHECK(grpc_stream_fake_h2(0, &stream_status, &stream_error) == 0);
@@ -861,6 +902,11 @@ static void grpc_test_status_mapping(void) {
     CHECK(grpc_stream_fake_h2(3, &stream_status, &stream_error) == 0);
     CHECK(stream_status == NEVERC_GRPC_UNAVAILABLE);
     CHECK(stream_error == NULL);
+
+    stream_status = NEVERC_GRPC_UNKNOWN;
+    stream_error = "unset";
+    CHECK(grpc_stream_fake_h2(4, &stream_status, &stream_error) == -1);
+    CHECK(stream_error != NULL);
 }
 
 int main(void) {

@@ -13,12 +13,24 @@ struct neverc_syslog {
 #endif
 };
 
-/* RFC 3164 records are newline-delimited. Replace CR/LF so a tag or
- * message cannot inject a second "<PRI>..." line. */
+/* RFC 3164 records are newline-delimited. Replace CR/LF so a message
+ * cannot inject a second "<PRI>..." line. Leave ':'/'<'/'>' in the
+ * message body; those are tag delimiters, not record breaks. */
 static void replace_record_breaks(char *s) {
     for (; s && *s; s++) {
         if (*s == '\n' || *s == '\r')
             *s = ' ';
+    }
+}
+
+/* Format is "<PRI>tag: message". CR/LF would start a new record; ':'
+ * splits the TAG field from the message; '<' and '>' can forge a
+ * second PRI. */
+static void sanitize_tag(char *s) {
+    for (; s && *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '\n' || c == '\r' || c == ':' || c == '<' || c == '>')
+            *s = '_';
     }
 }
 
@@ -30,7 +42,7 @@ static void copy_tag(char *dst, size_t dstsz, const char *tag) {
         n = dstsz - 1;
     memcpy(dst, tag, n);
     dst[n] = '\0';
-    replace_record_breaks(dst);
+    sanitize_tag(dst);
     if (dst[0] == '\0')
         memcpy(dst, "neverc", 7);
 }

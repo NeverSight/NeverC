@@ -1336,10 +1336,19 @@ neverc_grpc_result_t *neverc_grpc_client_call(
         free(header_message);
         have_grpc_status = 1;
     } else if (from_headers == 1) {
-        result->status = header_status;
-        result->status_message = header_message;
-        free(trailer_message);
-        have_grpc_status = 1;
+        /* grpc-status in headers is Trailers-Only. A body or a later
+         * trailer block means the peer put status on Response-Headers. */
+        if (response->body_length > 0 || result->trailer_count > 0) {
+            result->error = "invalid or missing gRPC status";
+            result->status = NEVERC_GRPC_UNKNOWN;
+            free(trailer_message);
+            free(header_message);
+        } else {
+            result->status = header_status;
+            result->status_message = header_message;
+            free(trailer_message);
+            have_grpc_status = 1;
+        }
     } else if (response->status_code != 200) {
         result->status = grpc_status_from_http(response->status_code);
         free(trailer_message);

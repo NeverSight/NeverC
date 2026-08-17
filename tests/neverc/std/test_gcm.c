@@ -384,6 +384,27 @@ static void test_uninit_and_failed_reinit(void) {
                neverc_gcm_seal(&ctx, nonce, NULL, 0, NULL, 0, NULL, tag) == -1);
 }
 
+/* Empty plaintext, 20-byte AAD — GHASH of AAD || len(A)||len(C) only. */
+static void test_aad_only(void) {
+    printf("[AAD only, empty PT]\n");
+    uint8_t key[16], nonce[12], aad[20], tag[16];
+    memset(key, 0, 16);
+    memset(nonce, 0, 12);
+    for (int i = 0; i < 20; i++)
+        aad[i] = (uint8_t)i;
+
+    neverc_gcm_ctx ctx;
+    neverc_gcm_init(&ctx, key, 16);
+    check_true("aad-only seal",
+               neverc_gcm_seal(&ctx, nonce, NULL, 0, aad, 20, NULL, tag) == 0);
+    check_bytes("aad-only tag", tag, "6cb71d8230f1c75a6bbc9f23ad201c0b", 16);
+    check_true("aad-only open",
+               neverc_gcm_open(&ctx, nonce, NULL, 0, aad, 20, tag, NULL) == 0);
+    aad[0] ^= 1;
+    check_true("aad-only tampered AAD",
+               neverc_gcm_open(&ctx, nonce, NULL, 0, aad, 20, tag, NULL) == -1);
+}
+
 static void test_aad_overlap_with_output(void) {
     printf("[AAD overlapping ciphertext output]\n");
     uint8_t key[16] = {0x42};
@@ -432,6 +453,7 @@ int main(void) {
     test_nonce_reuse_leaks_xor();
     test_invalid_inputs_and_limits();
     test_uninit_and_failed_reinit();
+    test_aad_only();
     test_aad_overlap_with_output();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

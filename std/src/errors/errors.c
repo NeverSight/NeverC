@@ -235,9 +235,14 @@ void neverc_errors_free(neverc_error_t *err) {
     errors_break_cycle(err);
     while (err) {
         neverc_error_t *next = err->wrapped;
-        if (err->owned && err->msg)
-            free((void *)err->msg);
-        free(err);
+        /* owned=0 is a borrowed sentinel (static/stack). Its message and
+         * node are not ours; keep walking so a heap cause behind it is
+         * still released. */
+        if (err->owned) {
+            if (err->msg)
+                free((void *)err->msg);
+            free(err);
+        }
         err = next;
     }
 }

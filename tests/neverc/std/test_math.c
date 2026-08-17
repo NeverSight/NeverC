@@ -1743,6 +1743,21 @@ static void test_signed_zero_preservation(void) {
     check_signbit("atanh(-0) neg", neverc_math_atanh(neg_zero), 1);
     check_signbit("tanh(-0) neg", neverc_math_tanh(neg_zero), 1);
 
+    /* J1/Jn are odd for odd order: IEEE keeps the sign of ±0 and ±Inf. */
+    check_signbit("j1(-0) neg", neverc_math_j1(neg_zero), 1);
+    check_signbit("j1(+0) pos", neverc_math_j1(0.0), 0);
+    check_signbit("j1(-Inf) neg", neverc_math_j1(NC_NEGINF), 1);
+    check_signbit("j1(+Inf) pos", neverc_math_j1(NC_INF), 0);
+    check_signbit("jn(1,-0) neg", neverc_math_jn(1, neg_zero), 1);
+    check_signbit("jn(1,+0) pos", neverc_math_jn(1, 0.0), 0);
+    check_signbit("jn(3,-0) neg", neverc_math_jn(3, neg_zero), 1);
+    check_signbit("jn(2,-0) pos", neverc_math_jn(2, neg_zero), 0);
+    check_signbit("jn(-1,+0) neg", neverc_math_jn(-1, 0.0), 1);
+    check_signbit("jn(-1,-0) pos", neverc_math_jn(-1, neg_zero), 0);
+    check_signbit("jn(1,-Inf) neg", neverc_math_jn(1, NC_NEGINF), 1);
+    check_signbit("jn(-1,+Inf) neg", neverc_math_jn(-1, NC_INF), 1);
+    check_signbit("jn(-1,-Inf) pos", neverc_math_jn(-1, NC_NEGINF), 0);
+
     /* copysign preserves magnitude, takes sign from 2nd arg */
     check_signbit("copysign(1,-0) neg", neverc_math_copysign(1.0, neg_zero), 1);
     check_signbit("copysign(-1,+0) pos", neverc_math_copysign(-1.0, 0.0), 0);

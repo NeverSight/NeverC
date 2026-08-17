@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #ifndef _WIN32
 #include <pthread.h>
@@ -300,6 +301,105 @@ static int httptest_parse_request(const char *raw, size_t raw_length,
     return 0;
 }
 
+static int httptest_buf_append(char **buf, size_t *length, size_t *capacity,
+                               const void *data, size_t data_len) {
+    if (!buf || !length || !capacity || (!data && data_len != 0) ||
+        *length > SIZE_MAX - data_len - 1U)
+        return -1;
+    size_t required = *length + data_len + 1U;
+    if (required > *capacity) {
+        size_t next = *capacity < 256U ? 256U : *capacity;
+        while (next < required) {
+            if (next > SIZE_MAX / 2U) {
+                next = required;
+                break;
+            }
+            next *= 2U;
+        }
+        char *grown = (char *)realloc(*buf, next);
+        if (!grown) return -1;
+        *buf = grown;
+        *capacity = next;
+    }
+    if (data_len != 0)
+        memcpy(*buf + *length, data, data_len);
+    *length += data_len;
+    (*buf)[*length] = '\0';
+    return 0;
+}
+
+static int httptest_emit_response(neverc_tcp_conn_t *conn,
+                                  neverc_http_response_writer_t *w,
+                                  const char *body, size_t body_len) {
+    char *hdr = NULL;
+    size_t length = 0;
+    size_t capacity = 0;
+    char line[128];
+    int n = snprintf(line, sizeof(line), "HTTP/1.1 %d %s\r\n",
+                     w->status, neverc_http_status_text(w->status));
+    if (n < 0 || (size_t)n >= sizeof(line) ||
+        httptest_buf_append(&hdr, &length, &capacity, line, (size_t)n) != 0)
+        goto fail;
+
+    int has_content_type = 0;
+    for (int i = 0; i < w->nheaders; i++) {
+        if (strcasecmp(w->header_names[i], "Content-Length") == 0 ||
+            strcasecmp(w->header_names[i], "Transfer-Encoding") == 0 ||
+            strcasecmp(w->header_names[i], "Connection") == 0)
+            continue;
+        if (httptest_buf_append(&hdr, &length, &capacity,
+                                w->header_names[i],
+                                strlen(w->header_names[i])) != 0 ||
+            httptest_buf_append(&hdr, &length, &capacity, ": ", 2) != 0 ||
+            httptest_buf_append(&hdr, &length, &capacity,
+                                w->header_values[i],
+                                strlen(w->header_values[i])) != 0 ||
+            httptest_buf_append(&hdr, &length, &capacity, "\r\n", 2) != 0)
+            goto fail;
+        if (strcasecmp(w->header_names[i], "Content-Type") == 0)
+            has_content_type = 1;
+    }
+
+    static const char default_ct[] =
+        "Content-Type: text/plain; charset=utf-8\r\n";
+    if (!has_content_type &&
+        httptest_buf_append(&hdr, &length, &capacity, default_ct,
+                            sizeof(default_ct) - 1U) != 0)
+        goto fail;
+
+    int emit_content_length =
+        w->status >= 200 && w->status != 204 &&
+        (w->has_content_length_override || w->status != 304);
+    if (emit_content_length) {
+        size_t content_length = w->has_content_length_override
+            ? w->content_length_override : body_len;
+        n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n",
+                     content_length);
+        if (n < 0 || (size_t)n >= sizeof(line) ||
+            httptest_buf_append(&hdr, &length, &capacity, line,
+                                (size_t)n) != 0)
+            goto fail;
+    }
+
+    static const char close_end[] = "Connection: close\r\n\r\n";
+    if (httptest_buf_append(&hdr, &length, &capacity, close_end,
+                            sizeof(close_end) - 1U) != 0)
+        goto fail;
+
+    if (neverc_tcp_write(conn, hdr, length) < 0) goto fail;
+    int body_forbidden = w->status < 200 || w->status == 204 ||
+                         w->status == 304;
+    if (!body_forbidden && body && body_len > 0 &&
+        neverc_tcp_write(conn, body, body_len) < 0)
+        goto fail;
+    free(hdr);
+    return 0;
+
+fail:
+    free(hdr);
+    return -1;
+}
+
 static void httptest_write_error(neverc_tcp_conn_t *conn, int status,
                                  const char *text) {
     char header[128];
@@ -365,21 +465,8 @@ static void handle_test_conn(neverc_tcp_conn_t *conn,
     /* Extract response from memory writer */
     char *resp_body = NULL;
     size_t resp_body_len = 0;
-    int status = neverc_http_memory_writer_result(w, &resp_body, &resp_body_len);
-
-    /* Build raw HTTP response */
-    char resp_hdr[4096];
-    int rlen = snprintf(resp_hdr, sizeof(resp_hdr),
-        "HTTP/1.1 %d %s\r\n"
-        "Content-Type: text/plain; charset=utf-8\r\n"
-        "Content-Length: %zu\r\n"
-        "Connection: close\r\n"
-        "\r\n",
-        status, neverc_http_status_text(status), resp_body_len);
-
-    neverc_tcp_write(conn, resp_hdr, (size_t)rlen);
-    if (resp_body && resp_body_len > 0)
-        neverc_tcp_write(conn, resp_body, resp_body_len);
+    (void)neverc_http_memory_writer_result(w, &resp_body, &resp_body_len);
+    (void)httptest_emit_response(conn, w, resp_body, resp_body_len);
 
     free(resp_body);
     neverc_http_memory_writer_free(w);
@@ -435,8 +522,17 @@ neverc_httptest_server_t *neverc_httptest_new_server(
 
 #ifdef _WIN32
     ts->thread = CreateThread(NULL, 0, server_thread_func, ts, 0, NULL);
+    if (!ts->thread) {
+        neverc_tcp_listener_close(ln);
+        free(ts);
+        return NULL;
+    }
 #else
-    pthread_create(&ts->thread, NULL, server_thread_func, ts);
+    if (pthread_create(&ts->thread, NULL, server_thread_func, ts) != 0) {
+        neverc_tcp_listener_close(ln);
+        free(ts);
+        return NULL;
+    }
 #endif
 
 #ifdef _WIN32

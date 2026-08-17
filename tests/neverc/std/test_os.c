@@ -316,6 +316,26 @@ static void test_mkdir(void) {
     }
 #endif
     ASSERT_EQ(neverc_os_mkdir_all("", 0755), -1);
+
+    {
+        char filebuf[1024], childbuf[1100];
+        make_test_path(filebuf, sizeof(filebuf), "neverc_test_mkdir_all_file");
+        neverc_os_remove(filebuf);
+        ASSERT_EQ(neverc_os_write_file(filebuf, (const unsigned char *)"x", 1, 0600),
+                  0);
+        errno = 0;
+        ASSERT_EQ(neverc_os_mkdir_all(filebuf, 0755), -1);
+        ASSERT_EQ(errno, ENOTDIR);
+#if defined(_WIN32)
+        snprintf(childbuf, sizeof(childbuf), "%s\\child", filebuf);
+#else
+        snprintf(childbuf, sizeof(childbuf), "%s/child", filebuf);
+#endif
+        errno = 0;
+        ASSERT_EQ(neverc_os_mkdir_all(childbuf, 0755), -1);
+        ASSERT_EQ(errno, ENOTDIR);
+        neverc_os_remove(filebuf);
+    }
 }
 
 #if !defined(_WIN32)
@@ -404,6 +424,14 @@ static void test_temp(void) {
                                   sizeof(dir_path)), -1);
     ASSERT_EQ(neverc_os_mkdir_temp(tmpdir, "a\\b_", dir_path, sizeof(dir_path)),
               -1);
+
+#if defined(_WIN32)
+    ASSERT_EQ(neverc_os_mkdir_temp(tmpdir, "neverc_winsep_", dir_path,
+                                  sizeof(dir_path)), 0);
+    ASSERT_TRUE(neverc_os_is_dir(dir_path));
+    ASSERT_TRUE(strchr(dir_path, '/') == NULL);
+    ASSERT_EQ(neverc_os_remove_all(dir_path), 0);
+#endif
 
     char long_pattern[4096];
     memset(long_pattern, 'x', sizeof(long_pattern) - 1);

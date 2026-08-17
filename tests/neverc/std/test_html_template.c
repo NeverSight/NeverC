@@ -527,6 +527,45 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "avascript") == NULL);
     free(out);
 
+    neverc_html_template_data_set(&data, "Link", "java/* */script:alert(1)");
+    out = neverc_html_template_render(
+        "<div style=\"background:url({{.Link}})\">", &data);
+    check("css url() comment-hidden javascript neutralized",
+          out && strstr(out, "javascript") == NULL &&
+              strstr(out, "script:alert") == NULL);
+    check("css url() comment-hidden becomes hash",
+          out && strstr(out, "url(#)") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Color", "exp/* */ression(alert(1))");
+    out = neverc_html_template_render("<div style=\"{{.Color}}\">", &data);
+    check_str("style comment-hidden expression neutralized",
+              out, "<div style=\"#\">");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Color",
+                                  "@im/* */port url(https://evil.example/x.css)");
+    out = neverc_html_template_render("<style>{{.Color}}</style>", &data);
+    check_str("style tag comment-hidden import neutralized",
+              out, "<style>#</style>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Color", "*/body{color:blue}/*");
+    out = neverc_html_template_render(
+        "<style>/* {{.Color}} */ p{color:red}</style>", &data);
+    check_str("style comment closer cannot break out",
+              out, "<style>/* # */ p{color:red}</style>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "https://example.com/a.css");
+    out = neverc_html_template_render(
+        "<div style=\"background:url({{.Link}})\">", &data);
+    check("css url() https still interpolated",
+          out && strstr(out, "https") != NULL);
+    check("css url() https is not replaced with hash",
+          out && strstr(out, "url(#)") == NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", "</textarea><script>alert(1)</script>");
     out = neverc_html_template_render("<textarea>{{.X}}</textarea>", &data);
     check("textarea end tag is html-escaped",

@@ -31,18 +31,16 @@ static void test_rfc7914_vectors(void) {
             (const uint8_t *)salt, strlen(salt), 1);
 
         uint8_t expected[64];
+        /* Full 64-byte OKM. RFC 7914's printed second half is truncated;
+         * the complete T_1||T_2 value is the standard PBKDF2-HMAC-SHA-256
+         * result (OpenSSL / Python hashlib). */
         hex_to_bytes(
             "55ac046e56e3089fec1691c22544b605"
             "f94185216dde0465e68b9d57c20dacbc"
-            "49ca9cccf179b645991b7852b855"
-            "000000000000000000000000000000000000",
+            "49ca9cccf179b645991664b39d77ef31"
+            "7c71b845b1e30bd509112041d3a19783",
             expected, 64);
-        /* Only first 32 bytes are specified in the test vector */
-        hex_to_bytes(
-            "55ac046e56e3089fec1691c22544b605"
-            "f94185216dde0465e68b9d57c20dacbc",
-            expected, 32);
-        check_true("RFC7914 passwd/salt/1 (first 32)", memcmp(dk, expected, 32) == 0);
+        check_true("RFC7914 passwd/salt/1 (64 bytes)", memcmp(dk, expected, 64) == 0);
     }
 
     /* password="Password", salt="NaCl", c=80000 */

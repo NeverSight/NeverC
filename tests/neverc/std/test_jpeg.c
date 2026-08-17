@@ -599,6 +599,48 @@ static void test_eoi_fill_bytes_ok(void) {
     free(encoded);
 }
 
+static void test_rejects_duplicate_sof(void) {
+    printf("[rejects_duplicate_sof]\n");
+    uint8_t pixels[64];
+    memset(pixels, 128, sizeof(pixels));
+    neverc_jpeg_image_t source = {
+        .width = 8, .height = 8, .channels = 1,
+        .pixels = pixels, .stride = 8
+    };
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&source, 90, &encoded, &encoded_length), 0);
+    if (!encoded) return;
+
+    size_t sof = find_marker(encoded, encoded_length, 0xC0);
+    size_t sos = find_marker(encoded, encoded_length, 0xDA);
+    ASSERT_TRUE(sof != SIZE_MAX && sos != SIZE_MAX && sof + 4 <= encoded_length);
+    if (sof == SIZE_MAX || sos == SIZE_MAX || sof + 4 > encoded_length) {
+        free(encoded);
+        return;
+    }
+    size_t sof_len = 2 + ((size_t)encoded[sof + 2] << 8) + encoded[sof + 3];
+    ASSERT_TRUE(sof + sof_len <= encoded_length && sof_len >= 2);
+    if (sof + sof_len > encoded_length) {
+        free(encoded);
+        return;
+    }
+
+    uint8_t *dup = (uint8_t *)malloc(encoded_length + sof_len);
+    ASSERT_TRUE(dup != NULL);
+    if (dup) {
+        memcpy(dup, encoded, sos);
+        memcpy(dup + sos, encoded + sof, sof_len);
+        memcpy(dup + sos + sof_len, encoded + sos, encoded_length - sos);
+        neverc_jpeg_image_t decoded;
+        memset(&decoded, 0, sizeof(decoded));
+        ASSERT_EQ(neverc_jpeg_decode(dup, encoded_length + sof_len, &decoded), -1);
+        ASSERT_TRUE(decoded.pixels == NULL);
+        free(dup);
+    }
+    free(encoded);
+}
+
 int main(void) {
     printf("NeverC image/jpeg tests\n");
     test_encode_decode_rgb();
@@ -616,6 +658,7 @@ int main(void) {
     test_rejects_huge_sof();
     test_rejects_truncated_eoi();
     test_eoi_fill_bytes_ok();
+    test_rejects_duplicate_sof();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

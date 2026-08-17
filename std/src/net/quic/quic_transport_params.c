@@ -188,14 +188,22 @@ int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
         case QUIC_TP_ACTIVE_CONNECTION_ID_LIMIT: {
             uint64_t v;
             if (decode_tp_varint(val, vlen, &v) != 0) return -1;
-            if (v < 2 || v > 8) return -1;
+            /* RFC 9000 §18.2: values below 2 are invalid; no upper bound. */
+            if (v < 2) return -1;
             tp->active_connection_id_limit = v;
             break;
         }
-        case QUIC_TP_PREFERRED_ADDRESS:
-            /* Contents are unused; presence is still role-checked. */
+        case QUIC_TP_PREFERRED_ADDRESS: {
+            /* RFC 9000 §18.2: IPv4+port + IPv6+port + CID length 1..20 +
+             * CID + 16-byte stateless reset token. Presence is role-checked. */
+            if (vlen < 42 || vlen > 61) return -1;
+            uint8_t cid_len = val[24];
+            if (cid_len < 1 || cid_len > 20 ||
+                vlen != (size_t)41 + cid_len)
+                return -1;
             tp->has_preferred_address = 1;
             break;
+        }
         case QUIC_TP_DISABLE_ACTIVE_MIGRATION:
             if (vlen != 0) return -1;
             tp->disable_active_migration = 1;

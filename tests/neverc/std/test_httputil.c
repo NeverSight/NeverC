@@ -501,6 +501,21 @@ static void test_dump_apis(void) {
     CHECK("outbound dump rejects CRLF in URL",
           neverc_httputil_dump_request_out(
               "GET", "/x\r\nHost: evil", NULL, NULL, 0) == NULL);
+    CHECK("outbound dump rejects header smuggling",
+          neverc_httputil_dump_request_out(
+              "GET", "/", "X-A: 1\r\n\r\nGET /x HTTP/1.1\r\n",
+              NULL, 0) == NULL);
+    CHECK("outbound dump rejects bare LF in headers",
+          neverc_httputil_dump_request_out(
+              "GET", "/", "X-A: 1\nX-B: 2\r\n", NULL, 0) == NULL);
+    dump = neverc_httputil_dump_request_out(
+        "GET", "/", "Accept: */*", NULL, 0);
+    CHECK("outbound dump without trailing CRLF allocated", dump != NULL);
+    if (dump) {
+        check_contains("outbound dump terminates the last header line",
+                       dump, "Accept: */*\r\n\r\n");
+        free(dump);
+    }
     request.nheaders = 0;
 
     neverc_http_response_writer_t *writer =
@@ -793,6 +808,15 @@ static int rewrite_request(const neverc_http_request_t *input,
         output->method = "OPTIONS";
         output->path = "*";
         output->query = "forbidden=1";
+    } else if (input->path &&
+               strcmp(input->path, "/dotdot") == 0) {
+        output->path = "/../admin";
+    } else if (input->path &&
+               strcmp(input->path, "/dotdot-encoded") == 0) {
+        output->path = "/%2e%2e/admin";
+    } else if (input->path &&
+               strcmp(input->path, "/slash-slash") == 0) {
+        output->path = "//evil.example/";
     }
     return 0;
 }
@@ -1181,6 +1205,15 @@ static void test_live_reverse_proxy(void) {
     CHECK("injection route registered",
           neverc_httputil_proxy_register(
               proxy_mux, "/inject", proxy_a) == 0);
+    CHECK("dot-dot route registered",
+          neverc_httputil_proxy_register(
+              proxy_mux, "/dotdot", proxy_a) == 0);
+    CHECK("encoded dot-dot route registered",
+          neverc_httputil_proxy_register(
+              proxy_mux, "/dotdot-encoded", proxy_a) == 0);
+    CHECK("scheme-relative path route registered",
+          neverc_httputil_proxy_register(
+              proxy_mux, "/slash-slash", proxy_a) == 0);
     CHECK("chunked route registered",
           neverc_httputil_proxy_register(
               proxy_mux, "/chunked", proxy_a) == 0);
@@ -1320,6 +1353,48 @@ static void test_live_reverse_proxy(void) {
         check_contains("CRLF injection rejected via error handler",
                        response.data, "proxy-error:/inject:");
         CHECK("CRLF injection returned failure status",
+              strstr(response.data, "HTTP/1.1 598") != NULL);
+    }
+    raw_response_free(&response);
+
+    request_result = raw_http_request(
+        proxy_port,
+        "GET /dotdot HTTP/1.1\r\n"
+        "Host: client.example\r\nConnection: close\r\n\r\n",
+        256U * 1024U, &response);
+    CHECK("dot-dot rejection completed", request_result == 0);
+    if (request_result == 0) {
+        check_contains("dot-dot path rejected via error handler",
+                       response.data, "proxy-error:/dotdot:");
+        CHECK("dot-dot path returned failure status",
+              strstr(response.data, "HTTP/1.1 598") != NULL);
+    }
+    raw_response_free(&response);
+
+    request_result = raw_http_request(
+        proxy_port,
+        "GET /dotdot-encoded HTTP/1.1\r\n"
+        "Host: client.example\r\nConnection: close\r\n\r\n",
+        256U * 1024U, &response);
+    CHECK("encoded dot-dot rejection completed", request_result == 0);
+    if (request_result == 0) {
+        check_contains("encoded dot-dot path rejected",
+                       response.data, "proxy-error:/dotdot-encoded:");
+        CHECK("encoded dot-dot returned failure status",
+              strstr(response.data, "HTTP/1.1 598") != NULL);
+    }
+    raw_response_free(&response);
+
+    request_result = raw_http_request(
+        proxy_port,
+        "GET /slash-slash HTTP/1.1\r\n"
+        "Host: client.example\r\nConnection: close\r\n\r\n",
+        256U * 1024U, &response);
+    CHECK("scheme-relative path rejection completed", request_result == 0);
+    if (request_result == 0) {
+        check_contains("scheme-relative path rejected",
+                       response.data, "proxy-error:/slash-slash:");
+        CHECK("scheme-relative path returned failure status",
               strstr(response.data, "HTTP/1.1 598") != NULL);
     }
     raw_response_free(&response);

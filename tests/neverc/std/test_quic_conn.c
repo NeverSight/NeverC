@@ -569,6 +569,33 @@ static void test_effective_idle_timeout(void) {
     ASSERT_EQ(neverc_quic_effective_idle_timeout_ms(0, 0), 0);
 }
 
+static void test_apply_peer_transport_params_copies_max_ack_delay(void) {
+    /* RFC 9002: PTO and ACK-delay cap use the peer's advertised max_ack_delay. */
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    ASSERT_NOT_NULL(conn);
+    ASSERT_EQ(conn->loss.rtt.max_ack_delay, 25);
+
+    conn->peer_params.max_ack_delay = 100;
+    conn->peer_params.initial_max_data = 123;
+    conn->peer_params.initial_max_streams_bidi = 7;
+    conn->peer_params.initial_max_streams_uni = 3;
+    conn->peer_params.max_idle_timeout = 5000;
+    conn->peer_params.disable_active_migration = 1;
+    neverc_quic_conn_apply_peer_transport_params(conn);
+    ASSERT_EQ(conn->loss.rtt.max_ack_delay, 100);
+    ASSERT_EQ(conn->flow.max_data_peer, 123);
+    ASSERT_EQ(conn->peer_max_streams_bidi, 7);
+    ASSERT_EQ(conn->peer_max_streams_uni, 3);
+    ASSERT_EQ(conn->idle_timeout_ms, 5000);
+    ASSERT_EQ(conn->peer_disable_migration, 1);
+
+    conn->peer_params.max_ack_delay = 0;
+    neverc_quic_conn_apply_peer_transport_params(conn);
+    ASSERT_EQ(conn->loss.rtt.max_ack_delay, 0);
+    neverc_quic_conn_destroy(conn);
+}
+
 static void test_stream_receive_opens_lower_ids(void) {
     struct neverc_quic_conn *conn =
         neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
@@ -1157,6 +1184,7 @@ int main(void) {
     test_transport_params_absent_flow_control_is_zero();
     test_transport_params_partial_does_not_invent_limits();
     test_effective_idle_timeout();
+    test_apply_peer_transport_params_copies_max_ack_delay();
     test_stream_receive_opens_lower_ids();
     test_stream_receive_opens_lower_uni_ids();
     test_stream_receive_gap_respects_limit();

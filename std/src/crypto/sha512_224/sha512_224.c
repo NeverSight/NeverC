@@ -18,6 +18,7 @@ void neverc_sha512_224_init(neverc_sha512_224_ctx *ctx) {
     ctx->state[6] = 0x3F9D85A86A1D36C8ULL;
     ctx->state[7] = 0x1112E6AD91D692A1ULL;
     ctx->count = 0;
+    ctx->finalized = 0;
     memset(ctx->buf, 0, sizeof(ctx->buf));
 }
 

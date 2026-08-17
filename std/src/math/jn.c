@@ -16,10 +16,6 @@ double neverc_math_jn(int n, double x) {
     const double Two302 = 8.148143905337944345073782753637512644205e+90;
 
     if (nc_isnan(x)) return x;
-    if (nc_isinf_any(x)) return 0.0;
-
-    if (n == 0) return neverc_math_j0(x);
-    if (x == 0.0) return 0.0;
 
     if (n < 0) {
         /* -INT_MIN overflows; |n| is even and so large Jn underflows to 0. */
@@ -28,6 +24,11 @@ double neverc_math_jn(int n, double x) {
         n = -n;
         x = -x;
     }
+    if (n == 0) return neverc_math_j0(x);
+    /* After reflecting negative n (Jn(-n,x)=(-1)^n Jn(n,-x)), odd order is
+     * odd in x: Jn(±0)=±0 and Jn(±Inf)=±0. Even order stays +0. */
+    if (nc_isinf_any(x) || x == 0.0)
+        return (n & 1) ? nc_copysign(0.0, x) : 0.0;
     if (n == 1) return neverc_math_j1(x);
 
     int sign = 0;
@@ -74,7 +75,11 @@ double neverc_math_jn(int n, double x) {
                 b /= a;
             }
         } else {
-            double w = (double)(n + n) / x;
+            /* 2n in int overflows for n > INT_MAX/2; keep 2n in double/int64.
+             * n that cannot be doubled in int64 is past exact double anyway. */
+            if ((int64_t)n > NEVERC_MATH_MAX_INT64 / 4)
+                return sign ? -0.0 : 0.0;
+            double w = (2.0 * (double)n) / x;
             double h = 2.0 / x;
             double q0 = w;
             double z = w + h;
@@ -87,9 +92,9 @@ double neverc_math_jn(int n, double x) {
                 q1 = z * q1 - q0;
                 q0 = tmp;
             }
-            int m = n + n;
+            int64_t m = (int64_t)n * 2;
             double t = 0.0;
-            for (int i = 2 * (n + k); i >= m; i -= 2)
+            for (int64_t i = ((int64_t)n + k) * 2; i >= m; i -= 2)
                 t = 1.0 / ((double)i / x - t);
 
             double a = t;

@@ -106,6 +106,14 @@ neverc_weak_ref_t *neverc_weak_make(neverc_weak_strong_t s) {
     neverc_weak_ref_t *w = (neverc_weak_ref_t *)malloc(sizeof(*w));
     if (!w) return NULL;
     if (!retain_count(&cb->weak)) { free(w); return NULL; }
+    /* A bitwise copy of a released strong can still point at a live
+     * control block (kept alive by other weaks) after the payload is
+     * gone. Only a live strong may create a new weak. */
+    if (NEVERC_ATOMIC_LOAD32(&cb->strong) <= 0) {
+        ctrl_release_weak(cb);
+        free(w);
+        return NULL;
+    }
     w->cb = cb;
     w->refs = 1;
     return w;

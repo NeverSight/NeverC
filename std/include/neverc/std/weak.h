@@ -34,6 +34,8 @@ neverc_weak_strong_t neverc_weak_new_with_free(void *data, void (*free_fn)(void 
 neverc_weak_strong_t neverc_weak_strong_retain(neverc_weak_strong_t s);
 void                 neverc_weak_strong_release(neverc_weak_strong_t *s);
 
+/* Requires a live strong (strong count > 0). A bitwise copy of a
+ * released strong is not a live reference; use retain. */
 neverc_weak_ref_t *neverc_weak_make(neverc_weak_strong_t s);
 neverc_weak_ref_t *neverc_weak_ref_retain(neverc_weak_ref_t *w);
 void               neverc_weak_ref_release(neverc_weak_ref_t *w);

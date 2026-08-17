@@ -576,7 +576,8 @@ int neverc_hpke_seal(uint16_t kem_id, uint16_t kdf_id, uint16_t aead_id,
     if (output_len) *output_len = 0;
     if (!pubkey || (!info && info_len > 0) ||
         (!plaintext && pt_len > 0) || !output || !output_len ||
-        pt_len > (size_t)INT_MAX - 16U)
+        pt_len > (size_t)INT_MAX - 16U ||
+        aead_id == NEVERC_HPKE_AEAD_EXPORT_ONLY)
         return -1;
     neverc_hpke_sender_t s;
     uint8_t enc[NEVERC_HPKE_MAX_ENC_SIZE];
@@ -606,6 +607,7 @@ int neverc_hpke_open(uint16_t kem_id, uint16_t kdf_id, uint16_t aead_id,
     int enc_sz = kem_enc_size(kem_id);
     if (!privkey || (!info && info_len > 0) || !ciphertext ||
         !pt_len || enc_sz < 0 ||
+        aead_id == NEVERC_HPKE_AEAD_EXPORT_ONLY ||
         (!plaintext && ct_len > (size_t)enc_sz + 16U))
         return -1;
     if (ct_len < (size_t)enc_sz + 16U) return -1;

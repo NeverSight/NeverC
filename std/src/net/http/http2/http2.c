@@ -482,8 +482,19 @@ static int hpack_lookup(neverc_hpack_decoder_t *dec, int index,
     return dyn_table_get(&dec->dyn, index - 62, name, value);
 }
 
+static int hpack_field_octets_allowed(const uint8_t *bytes, size_t length,
+                                      int allow_htab) {
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = bytes[i];
+        if (c == '\t' && allow_htab) continue;
+        if (c < 0x20 || c == 0x7f) return 0;
+    }
+    return 1;
+}
+
 static int hpack_decode_string(const uint8_t *data, size_t len,
-                                 char **out_str, size_t *consumed) {
+                                 char **out_str, size_t *consumed,
+                                 int allow_htab) {
     if (len == 0) return -1;
     int huffman = !!(data[0] & 0x80);
     uint64_t slen;
@@ -504,7 +515,7 @@ static int hpack_decode_string(const uint8_t *data, size_t len,
             free(decoded);
             return -1;
         }
-        if (memchr(decoded, '\0', decoded_len) != NULL) {
+        if (!hpack_field_octets_allowed(decoded, decoded_len, allow_htab)) {
             free(decoded);
             return -1;
         }
@@ -514,7 +525,8 @@ static int hpack_decode_string(const uint8_t *data, size_t len,
         *out_str = (char *)malloc((size_t)slen + 1);
         if (!*out_str) return -1;
         memcpy(*out_str, data + hdr_consumed, (size_t)slen);
-        if (memchr(*out_str, '\0', (size_t)slen) != NULL) {
+        if (!hpack_field_octets_allowed((const uint8_t *)*out_str,
+                                        (size_t)slen, allow_htab)) {
             free(*out_str);
             *out_str = NULL;
             return -1;
@@ -579,11 +591,13 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
                 alloc_name = strdup(name);
                 if (!alloc_name) return -1;
             } else {
-                if (hpack_decode_string(data + pos, len - pos, &alloc_name, &consumed) != 0)
+                if (hpack_decode_string(data + pos, len - pos, &alloc_name,
+                                        &consumed, 0) != 0)
                     return -1;
                 pos += consumed;
             }
-            if (hpack_decode_string(data + pos, len - pos, &alloc_value, &consumed) != 0) {
+            if (hpack_decode_string(data + pos, len - pos, &alloc_value,
+                                    &consumed, 1) != 0) {
                 free(alloc_name);
                 return -1;
             }
@@ -611,11 +625,13 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
                 alloc_name = strdup(name);
                 if (!alloc_name) return -1;
             } else {
-                if (hpack_decode_string(data + pos, len - pos, &alloc_name, &consumed) != 0)
+                if (hpack_decode_string(data + pos, len - pos, &alloc_name,
+                                        &consumed, 0) != 0)
                     return -1;
                 pos += consumed;
             }
-            if (hpack_decode_string(data + pos, len - pos, &alloc_value, &consumed) != 0) {
+            if (hpack_decode_string(data + pos, len - pos, &alloc_value,
+                                    &consumed, 1) != 0) {
                 free(alloc_name);
                 return -1;
             }
@@ -757,7 +773,12 @@ int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
     for (int i = 0; i < nheaders; i++) {
         const char *name = headers[i].name;
         const char *value = headers[i].value;
-        if (!name || !value || !out) return -1;
+        if (!name || !name[0] || !value || !out) return -1;
+        if (!hpack_field_octets_allowed((const uint8_t *)name, strlen(name),
+                                        0) ||
+            !hpack_field_octets_allowed((const uint8_t *)value,
+                                        strlen(value), 1))
+            return -1;
 
         int idx = hpack_find_static(name, value);
         int sensitive = headers[i].sensitive != 0;

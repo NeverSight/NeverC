@@ -17,6 +17,8 @@ extern "C" {
 typedef struct neverc_error {
     const char           *msg;
     struct neverc_error  *wrapped;
+    /* 1 = heap node+message from new/wrap/join; 0 = borrowed sentinel.
+     * neverc_errors_free releases owned nodes only. */
     int                   owned;
 } neverc_error_t;
 

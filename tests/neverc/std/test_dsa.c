@@ -265,6 +265,62 @@ static void test_verify_rejects_q_not_dividing_p_minus_1(void) {
     neverc_dsa_public_key_free(&pub);
 }
 
+static void test_verify_rejects_composite_p_forgery(void) {
+    printf("[composite_p_forgery]\n");
+    /* p=91=7*13 is composite, q=3 is prime, 3 | 90, and g=y=9
+     * satisfy 9^3 ≡ 1 (mod 91) with gcd(9,91)=1. Then (r=1,s=1)
+     * verifies for hash=0x02 unless p itself is required to be prime. */
+    neverc_dsa_public_key_t pub;
+    neverc_dsa_public_key_init(&pub);
+    neverc_bigint_set_int64(&pub.p, 91);
+    neverc_bigint_set_int64(&pub.q, 3);
+    neverc_bigint_set_int64(&pub.g, 9);
+    neverc_bigint_set_int64(&pub.y, 9);
+
+    neverc_dsa_signature_t sig;
+    neverc_dsa_signature_init(&sig);
+    neverc_bigint_set_int64(&sig.r, 1);
+    neverc_bigint_set_int64(&sig.s, 1);
+
+    uint8_t hash[1] = {0x02};
+    ASSERT_TRUE(neverc_dsa_verify(&pub, hash, sizeof(hash), &sig) != 0);
+
+    neverc_dsa_signature_free(&sig);
+    neverc_dsa_public_key_free(&pub);
+}
+
+static void test_verify_rejects_oversized_q(void) {
+    printf("[oversized_q]\n");
+    /* 2^256+1 is odd and 257 bits (9 limbs), above the 256-bit q cap. */
+    neverc_dsa_public_key_t pub;
+    neverc_dsa_public_key_init(&pub);
+    ASSERT_INT_EQ(neverc_bigint_set_string(
+                      &pub.q,
+                      "10000000000000000000000000000000"
+                      "000000000000000000000000000000001",
+                      16),
+                  0);
+    ASSERT_TRUE(pub.q.len > 8);
+    neverc_bigint_t two;
+    neverc_bigint_init(&two);
+    neverc_bigint_set_int64(&two, 2);
+    neverc_bigint_add(&pub.p, &pub.q, &two);
+    neverc_bigint_free(&two);
+    neverc_bigint_set_int64(&pub.g, 2);
+    neverc_bigint_set_int64(&pub.y, 2);
+
+    neverc_dsa_signature_t sig;
+    neverc_dsa_signature_init(&sig);
+    neverc_bigint_set_int64(&sig.r, 1);
+    neverc_bigint_set_int64(&sig.s, 1);
+
+    uint8_t hash[1] = {0x01};
+    ASSERT_TRUE(neverc_dsa_verify(&pub, hash, sizeof(hash), &sig) != 0);
+
+    neverc_dsa_signature_free(&sig);
+    neverc_dsa_public_key_free(&pub);
+}
+
 static void test_verify_rejects_composite_q_forgery(void) {
     printf("[composite_q_forgery]\n");
     /* q=9 is composite and divides p-1=18. g=y=7 has order 3, not 9,
@@ -370,6 +426,8 @@ int main(void) {
     test_verify_identity_public_key();
     test_verify_rejects_order_two_key();
     test_verify_rejects_q_not_dividing_p_minus_1();
+    test_verify_rejects_composite_p_forgery();
+    test_verify_rejects_oversized_q();
     test_verify_rejects_composite_q_forgery();
     test_verify_rejects_noninvertible_s();
     test_sign_rejects_invalid_inputs();

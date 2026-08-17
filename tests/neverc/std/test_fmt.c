@@ -122,6 +122,14 @@ static void test_strings(void) {
     r = neverc_fmt_sprintf("%5c", 0x4e16);
     check_str("rune width", r, "    \xe4\xb8\x96"); free(r);
 
+    /* Zero flag applies to numeric verbs only (Go/C99). %c is space-padded. */
+    r = neverc_fmt_sprintf("%010c", 'A');
+    check_str("zero flag ignored for char", r, "         A"); free(r);
+    r = neverc_fmt_sprintf("%05c", 0x4e16);
+    check_str("zero flag ignored for rune", r, "    \xe4\xb8\x96"); free(r);
+    r = neverc_fmt_sprintf("%0*c", 4, 'Z');
+    check_str("zero flag ignored for star char", r, "   Z"); free(r);
+
     r = neverc_fmt_sprintf("%.1s", "\xe4\xb8\x96\xe7\x95\x8c");
     check_str("string prec runes", r, "\xe4\xb8\x96"); free(r);
 

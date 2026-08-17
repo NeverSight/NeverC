@@ -98,6 +98,7 @@ void neverc_signal_notify(int signum, neverc_signal_handler_t handler) {
 void neverc_signal_stop(int signum) {
     if (signum < 0 || signum >= 32) return;
     g_win_handlers[signum] = NULL;
+    InterlockedExchange(&g_win_pending[signum], 0);
     if (win_crt_supported(signum))
         signal(signum, SIG_DFL);
     if (!g_win_handlers[NEVERC_SIGINT] && !g_win_handlers[NEVERC_SIGTERM] &&
@@ -114,6 +115,7 @@ void neverc_signal_reset(int signum) {
 void neverc_signal_ignore(int signum) {
     if (signum < 0 || signum >= 32) return;
     g_win_handlers[signum] = NULL;
+    InterlockedExchange(&g_win_pending[signum], 0);
     if (win_crt_supported(signum))
         signal(signum, SIG_IGN);
 }
@@ -178,6 +180,7 @@ void neverc_signal_notify(int signum, neverc_signal_handler_t handler) {
 void neverc_signal_stop(int signum) {
     if (signum < 0 || signum >= 64) return;
     g_handlers[signum] = NULL;
+    g_pending[signum] = 0;
 
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
@@ -193,6 +196,7 @@ void neverc_signal_reset(int signum) {
 void neverc_signal_ignore(int signum) {
     if (signum < 0 || signum >= 64) return;
     g_handlers[signum] = NULL;
+    g_pending[signum] = 0;
 
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));

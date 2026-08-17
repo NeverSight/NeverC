@@ -270,6 +270,53 @@ static void test_overlap(void) {
     neverc_chacha20_init(&ctx, key, nonce, 0);
     neverc_chacha20_xor(&ctx, wide, wide + 8, 300);
     check_true("dst=src-8 xor", memcmp(wide, expected, 300) == 0);
+
+    /* Leftover keystream plus a later overlapping request. */
+    uint8_t scratch[20];
+    neverc_chacha20_init(&ctx, key, nonce, 0);
+    neverc_chacha20_xor(&ctx, scratch, msg, 20);
+    memcpy(wide, msg + 20, 280);
+    neverc_chacha20_xor(&ctx, wide + 4, wide, 280);
+    check_true("leftover then dst=src+4 xor",
+               memcmp(wide + 4, expected + 20, 280) == 0);
+}
+
+static void test_simd_matches_scalar(void) {
+    printf("[ChaCha20 SIMD vs scalar]\n");
+    uint8_t key[32] = {0}, nonce[12] = {0};
+    uint8_t msg[512], one_shot[512], chunked[512];
+    for (int i = 0; i < 512; i++)
+        msg[i] = (uint8_t)(i * 5 + 9);
+
+    /* 256- and 512-byte one-shots use the 4-block SIMD kernel; 64-byte
+     * steps stay on the scalar path. They must produce the same keystream. */
+    int sizes[] = {256, 300, 512};
+    for (int s = 0; s < 3; s++) {
+        int n = sizes[s];
+        neverc_chacha20_ctx ctx;
+        neverc_chacha20_init(&ctx, key, nonce, 0);
+        neverc_chacha20_xor(&ctx, one_shot, msg, (size_t)n);
+
+        neverc_chacha20_init(&ctx, key, nonce, 0);
+        for (int off = 0; off < n; off += 64) {
+            int chunk = n - off;
+            if (chunk > 64) chunk = 64;
+            neverc_chacha20_xor(&ctx, chunked + off, msg + off, (size_t)chunk);
+        }
+        char buf[64];
+        snprintf(buf, sizeof(buf), "SIMD one-shot == 64-byte steps n=%d", n);
+        check_true(buf, memcmp(one_shot, chunked, (size_t)n) == 0);
+    }
+
+    /* 4-block kernel at the last legal counter quartet (FC..FF). */
+    neverc_chacha20_ctx ctx;
+    neverc_chacha20_init(&ctx, key, nonce, 0xFFFFFFFCu);
+    neverc_chacha20_xor(&ctx, one_shot, msg, 256);
+    neverc_chacha20_init(&ctx, key, nonce, 0xFFFFFFFCu);
+    for (int off = 0; off < 256; off += 64)
+        neverc_chacha20_xor(&ctx, chunked + off, msg + off, 64);
+    check_true("SIMD wrap-boundary 0xFFFFFFFC == scalar",
+               memcmp(one_shot, chunked, 256) == 0);
 }
 
 int main(void) {
@@ -282,6 +329,7 @@ int main(void) {
     test_counter_wrap_leftover();
     test_null_inputs();
     test_overlap();
+    test_simd_matches_scalar();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

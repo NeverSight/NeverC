@@ -88,11 +88,20 @@ void neverc_sha256_init(neverc_sha256_ctx *ctx) {
     ctx->state[4] = 0x510e527f; ctx->state[5] = 0x9b05688c;
     ctx->state[6] = 0x1f83d9ab; ctx->state[7] = 0x5be0cd19;
     ctx->count = 0;
+    ctx->finalized = 0;
 }
 
 void neverc_sha256_update(neverc_sha256_ctx *ctx, const uint8_t *data, size_t len) {
-    if (!ctx || len == 0) return;
+    if (!ctx || ctx->finalized || len == 0) return;
     if (!data) return;
+    /* SHA-256's length field is 64 bits (max 2^64-1 bits = 2^61-1 bytes).
+     * Wrapping count*8 would make a huge message collide with a short one. */
+    if (ctx->count > UINT64_MAX / 8 ||
+        len > UINT64_MAX / 8 - ctx->count) {
+        memset(ctx->state, 0, sizeof(ctx->state));
+        ctx->finalized = 1;
+        return;
+    }
     size_t buffered = (size_t)(ctx->count & 63);
     ctx->count += len;
 
@@ -118,7 +127,18 @@ void neverc_sha256_update(neverc_sha256_ctx *ctx, const uint8_t *data, size_t le
 
 void neverc_sha256_final(neverc_sha256_ctx *ctx, uint8_t digest[32]) {
     if (!ctx || !digest) return;
-    uint64_t bits = ctx->count * 8;
+    if (ctx->finalized) {
+        for (int i = 0; i < 8; i++)
+            put_be32(digest + 4 * i, ctx->state[i]);
+        return;
+    }
+    if (ctx->count > UINT64_MAX / 8) {
+        memset(ctx->state, 0, sizeof(ctx->state));
+        memset(digest, 0, 32);
+        ctx->finalized = 1;
+        return;
+    }
+    uint64_t bits = ctx->count << 3;
     size_t buffered = (size_t)(ctx->count & 63);
 
     ctx->buf[buffered++] = 0x80;
@@ -133,6 +153,7 @@ void neverc_sha256_final(neverc_sha256_ctx *ctx, uint8_t digest[32]) {
 
     for (int i = 0; i < 8; i++)
         put_be32(digest + 4 * i, ctx->state[i]);
+    ctx->finalized = 1;
 }
 
 void neverc_sha256_sum(const uint8_t *data, size_t len, uint8_t digest[32]) {

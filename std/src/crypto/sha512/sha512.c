@@ -87,11 +87,17 @@ void neverc_sha512_init(neverc_sha512_ctx *ctx) {
     ctx->state[4] = 0x510e527fade682d1ULL; ctx->state[5] = 0x9b05688c2b3e6c1fULL;
     ctx->state[6] = 0x1f83d9abfb41bd6bULL; ctx->state[7] = 0x5be0cd19137e2179ULL;
     ctx->count = 0;
+    ctx->finalized = 0;
 }
 
 void neverc_sha512_update(neverc_sha512_ctx *ctx, const uint8_t *data, size_t len) {
-    if (!ctx || len == 0) return;
+    if (!ctx || ctx->finalized || len == 0) return;
     if (!data) return;
+    if (len > UINT64_MAX - ctx->count) {
+        memset(ctx->state, 0, sizeof(ctx->state));
+        ctx->finalized = 1;
+        return;
+    }
     size_t buffered = (size_t)(ctx->count & 127);
     ctx->count += len;
     if (buffered > 0) {
@@ -107,7 +113,15 @@ void neverc_sha512_update(neverc_sha512_ctx *ctx, const uint8_t *data, size_t le
 
 void neverc_sha512_final(neverc_sha512_ctx *ctx, uint8_t digest[64]) {
     if (!ctx || !digest) return;
-    uint64_t bits = ctx->count * 8;
+    if (ctx->finalized) {
+        for (int i = 0; i < 8; i++)
+            put_be64(digest + 8 * i, ctx->state[i]);
+        return;
+    }
+    /* FIPS 180-4: 128-bit bit-length. count is bytes; bits = count * 8
+     * may exceed 2^64, so the high word is count >> 61, not always zero. */
+    uint64_t bits_hi = ctx->count >> 61;
+    uint64_t bits_lo = ctx->count << 3;
     size_t buffered = (size_t)(ctx->count & 127);
     ctx->buf[buffered++] = 0x80;
     if (buffered > 112) {
@@ -115,12 +129,13 @@ void neverc_sha512_final(neverc_sha512_ctx *ctx, uint8_t digest[64]) {
         sha512_block(ctx->state, ctx->buf);
         buffered = 0;
     }
-    memset(ctx->buf + buffered, 0, 120 - buffered);
-    memset(ctx->buf + 112, 0, 8);
-    put_be64(ctx->buf + 120, bits);
+    memset(ctx->buf + buffered, 0, 112 - buffered);
+    put_be64(ctx->buf + 112, bits_hi);
+    put_be64(ctx->buf + 120, bits_lo);
     sha512_block(ctx->state, ctx->buf);
     for (int i = 0; i < 8; i++)
         put_be64(digest + 8 * i, ctx->state[i]);
+    ctx->finalized = 1;
 }
 
 void neverc_sha512_sum(const uint8_t *data, size_t len, uint8_t digest[64]) {

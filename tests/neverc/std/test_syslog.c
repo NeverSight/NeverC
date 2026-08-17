@@ -104,7 +104,33 @@ static void test_format_and_injection(void) {
     ASSERT_TRUE(strchr(buf, '\n') == NULL);
     ASSERT_TRUE(strchr(buf, '\r') == NULL);
     ASSERT_TRUE(strstr(buf, "hello <13>forged") != NULL);
+    /* Tag "app\n<0>root" must not keep a second PRI or a ':' split. */
+    {
+        const char *colon = strchr(buf + 4, ':');
+        int tag_ok = colon && colon[1] == ' ';
+        const char *p;
+        for (p = buf + 4; tag_ok && p < colon; p++) {
+            if (*p == '<' || *p == '>' || *p == ':')
+                tag_ok = 0;
+        }
+        ASSERT_TRUE(tag_ok);
+    }
     ASSERT_EQ(neverc_syslog_info(log, "hello\n<13>forged"), 0);
+
+    neverc_syslog_close(log);
+    log = neverc_syslog_open("foo: bar<0>", NEVERC_SYSLOG_USER,
+                             NEVERC_SYSLOG_DEBUG);
+    ASSERT_TRUE(log != NULL);
+    ASSERT_EQ(neverc_syslog_format(log, NEVERC_SYSLOG_INFO, "msg",
+                                   buf, sizeof(buf)), 0);
+    ASSERT_TRUE(strncmp(buf, "<14>", 4) == 0);
+    ASSERT_TRUE(strstr(buf, "<0>") == NULL);
+    {
+        const char *colon = strchr(buf + 4, ':');
+        ASSERT_TRUE(colon != NULL && colon[1] == ' ');
+        ASSERT_TRUE(strcmp(colon + 2, "msg") == 0);
+        ASSERT_TRUE(strchr(colon + 1, ':') == NULL);
+    }
 
     ASSERT_EQ(neverc_syslog_format(NULL, NEVERC_SYSLOG_INFO, "x",
                                    buf, sizeof(buf)), -1);

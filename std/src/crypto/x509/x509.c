@@ -95,11 +95,22 @@ static int valid_implicit_bit_string(const uint8_t *value, size_t len) {
            (value[len - 1] & ((1u << value[0]) - 1u)) == 0;
 }
 
-static void copy_string_value(char *dst, size_t dstsz,
-                                const uint8_t *src, size_t srclen) {
-    if (srclen >= dstsz) srclen = dstsz - 1;
-    memcpy(dst, src, srclen);
+static int copy_string_value(char *dst, size_t dstsz,
+                             const uint8_t *src, size_t srclen) {
+    if (!dst || dstsz == 0 || (!src && srclen != 0))
+        return -1;
+    /* Truncation or an embedded NUL would hide bytes from C-string
+     * consumers, including CN-as-DNS name constraint checks. */
+    if (srclen >= dstsz)
+        return -1;
+    for (size_t i = 0; i < srclen; ++i) {
+        if (src[i] == 0)
+            return -1;
+    }
+    if (srclen > 0)
+        memcpy(dst, src, srclen);
     dst[srclen] = '\0';
+    return 0;
 }
 
 /* ===== OID Matching ===== */
@@ -790,11 +801,15 @@ static int parse_name_constraints(neverc_x509_cert_t *cert,
 }
 
 static int parse_extensions(neverc_x509_cert_t *cert,
-                            const uint8_t *data, size_t len) {
+                            const uint8_t *data, size_t len,
+                            int *san_critical) {
+    if (san_critical)
+        *san_critical = 0;
     asn1_reader_t wrapper = {data, len, 0};
     asn1_reader_t extensions;
+    /* RFC 5280: Extensions ::= SEQUENCE SIZE (1..MAX) OF Extension */
     if (asn1_enter_sequence(&wrapper, &extensions) < 0 ||
-        wrapper.pos != wrapper.len)
+        wrapper.pos != wrapper.len || extensions.len == 0)
         return -1;
 
     int saw_basic_constraints = 0;
@@ -850,6 +865,8 @@ static int parse_extensions(neverc_x509_cert_t *cert,
                                        contents_len) != 0)
                 return -1;
             saw_subject_alt_name = 1;
+            if (san_critical && critical_flag)
+                *san_critical = 1;
         } else if (oid_equals(oid, oid_len, OID_KEY_USAGE,
                               sizeof(OID_KEY_USAGE))) {
             if (saw_key_usage ||
@@ -876,6 +893,11 @@ static int parse_extensions(neverc_x509_cert_t *cert,
         if (!handled && critical_flag)
             cert->has_unhandled_critical_extension = 1;
     }
+    /* RFC 5280 4.2.1.10: nameConstraints MUST be used only in a CA
+     * certificate. A critical leaf constraint is otherwise "handled"
+     * and never applied to a subsequent certificate. */
+    if (cert->name_constraints_present && !cert->is_ca)
+        return -1;
     return 0;
 }
 
@@ -918,31 +940,48 @@ static int parse_name(asn1_reader_t *r, neverc_x509_name_t *name) {
                 return -1;
             (void)str_tag;
 
-            if (oid_equals(oid_val, oid_len, OID_CN, sizeof(OID_CN)))
-                copy_string_value(name->common_name,
-                                  sizeof(name->common_name),
-                                  str_val, str_len);
-            else if (oid_equals(oid_val, oid_len, OID_C, sizeof(OID_C)))
-                copy_string_value(name->country, sizeof(name->country),
-                                  str_val, str_len);
-            else if (oid_equals(oid_val, oid_len, OID_O, sizeof(OID_O)))
-                copy_string_value(name->organization,
-                                  sizeof(name->organization),
-                                  str_val, str_len);
-            else if (oid_equals(oid_val, oid_len, OID_OU, sizeof(OID_OU)))
-                copy_string_value(name->organizational_unit,
-                                  sizeof(name->organizational_unit),
-                                  str_val, str_len);
-            else if (oid_equals(oid_val, oid_len, OID_L, sizeof(OID_L)))
-                copy_string_value(name->locality, sizeof(name->locality),
-                                  str_val, str_len);
-            else if (oid_equals(oid_val, oid_len, OID_ST, sizeof(OID_ST)))
-                copy_string_value(name->province, sizeof(name->province),
-                                  str_val, str_len);
-            else if (oid_equals(oid_val, oid_len, OID_SN, sizeof(OID_SN)))
-                copy_string_value(name->serial_number_str,
-                                  sizeof(name->serial_number_str),
-                                  str_val, str_len);
+            if (oid_equals(oid_val, oid_len, OID_CN, sizeof(OID_CN))) {
+                if (copy_string_value(name->common_name,
+                                      sizeof(name->common_name),
+                                      str_val, str_len) != 0)
+                    return -1;
+            } else if (oid_equals(oid_val, oid_len, OID_C,
+                                  sizeof(OID_C))) {
+                if (copy_string_value(name->country,
+                                      sizeof(name->country),
+                                      str_val, str_len) != 0)
+                    return -1;
+            } else if (oid_equals(oid_val, oid_len, OID_O,
+                                  sizeof(OID_O))) {
+                if (copy_string_value(name->organization,
+                                      sizeof(name->organization),
+                                      str_val, str_len) != 0)
+                    return -1;
+            } else if (oid_equals(oid_val, oid_len, OID_OU,
+                                  sizeof(OID_OU))) {
+                if (copy_string_value(name->organizational_unit,
+                                      sizeof(name->organizational_unit),
+                                      str_val, str_len) != 0)
+                    return -1;
+            } else if (oid_equals(oid_val, oid_len, OID_L,
+                                  sizeof(OID_L))) {
+                if (copy_string_value(name->locality,
+                                      sizeof(name->locality),
+                                      str_val, str_len) != 0)
+                    return -1;
+            } else if (oid_equals(oid_val, oid_len, OID_ST,
+                                  sizeof(OID_ST))) {
+                if (copy_string_value(name->province,
+                                      sizeof(name->province),
+                                      str_val, str_len) != 0)
+                    return -1;
+            } else if (oid_equals(oid_val, oid_len, OID_SN,
+                                  sizeof(OID_SN))) {
+                if (copy_string_value(name->serial_number_str,
+                                      sizeof(name->serial_number_str),
+                                      str_val, str_len) != 0)
+                    return -1;
+            }
         }
     }
     return 0;
@@ -1113,6 +1152,7 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
     }
 
     /* Subject */
+    int subject_empty = 0;
     {
         uint8_t tag;
         const uint8_t *val;
@@ -1123,6 +1163,7 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
             return -1;
         cert->raw_subject = tbs.data + name_start;
         cert->raw_subject_len = tbs.pos - name_start;
+        subject_empty = (vlen == 0);
         asn1_reader_t name_r = {val, vlen, 0};
         if (parse_name(&name_r, &cert->subject) != 0)
             return -1;
@@ -1156,6 +1197,7 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
     int saw_issuer_unique_id = 0;
     int saw_subject_unique_id = 0;
     int saw_extensions = 0;
+    int san_critical = 0;
     while (tbs.pos < tbs.len) {
         uint8_t next_tag = tbs.data[tbs.pos];
         if (next_tag == ASN1_TAG_CONTEXT_1_IMPLICIT ||
@@ -1190,7 +1232,7 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
             size_t vlen;
             if (asn1_read_tlv(&tbs, &tag, &val, &vlen) < 0 ||
                 tag != ASN1_TAG_CONTEXT_3 ||
-                parse_extensions(cert, val, vlen) != 0) {
+                parse_extensions(cert, val, vlen, &san_critical) != 0) {
                 neverc_x509_cert_free(cert);
                 return -1;
             }
@@ -1199,6 +1241,13 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
             neverc_x509_cert_free(cert);
             return -1;
         }
+    }
+
+    /* RFC 5280 4.1.2.6: an empty subject requires a critical
+     * subjectAltName. CA certificates MUST have a populated subject. */
+    if (subject_empty && (cert->is_ca || !san_critical)) {
+        neverc_x509_cert_free(cert);
+        return -1;
     }
 
     int outer_signature_algorithm = 0;

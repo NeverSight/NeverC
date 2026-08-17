@@ -261,6 +261,25 @@ static void test_parse_group(void) {
     check_null("empty named cap", n);
     n = neverc_regexp_syntax_parse("(?P<foo-bar>x)", 0, &err);
     check_null("invalid named cap chars", n);
+
+    /* Go: `(?P` is a named capture only when '<' follows. Skipping 3 bytes
+     * for any `(?P` accepted `(?Pname>x)` as a capture named "ame". */
+    n = neverc_regexp_syntax_parse("(?Pname>x)", 0, &err);
+    check_null("(?Pname>x) requires < after P", n);
+    n = neverc_regexp_syntax_parse("(?P foo>x)", 0, &err);
+    check_null("(?P space-name) rejected", n);
+    n = neverc_regexp_syntax_parse("(?Px)", 0, &err);
+    check_null("(?Px) rejected", n);
+
+    n = neverc_regexp_syntax_parse("(?<name>abc)", 0, &err);
+    check_not_null("(?<name>)", n);
+    check_str("(?<name>) name", n ? n->name : NULL, "name");
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("(?'name'abc)", 0, &err);
+    check_not_null("(?'name')", n);
+    check_str("(?'name') name", n ? n->name : NULL, "name");
+    neverc_regexp_syntax_free(n);
 }
 
 /* ===== Char class ===== */
@@ -540,6 +559,13 @@ static void test_errors(void) {
     n = neverc_regexp_syntax_parse("[z-a]", 0, &err);
     check_null("inverted class range", n);
     check_not_null("inverted class range err", (void *)(size_t)(err != NULL));
+
+    n = neverc_regexp_syntax_parse("(?Pname>x)", 0, &err);
+    check_null("(?P without <)", n);
+    check_not_null("(?P without <) err", (void *)(size_t)(err != NULL));
+
+    n = neverc_regexp_syntax_parse("(?=a)", 0, &err);
+    check_null("lookahead unsupported", n);
 
     char deep[902];
     for (int i = 0; i < 450; i++) deep[i] = '(';

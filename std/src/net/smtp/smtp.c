@@ -200,7 +200,11 @@ neverc_smtp_client_t *neverc_smtp_dial(const char *addr, const char **errp) {
         return NULL;
     }
 
-    neverc_tcp_set_timeout(conn, 30000);
+    if (neverc_tcp_set_timeout(conn, 30000) != 0) {
+        neverc_tcp_close(conn);
+        if (errp) *errp = "failed to set timeout";
+        return NULL;
+    }
 
     neverc_smtp_client_t *c =
         (neverc_smtp_client_t *)calloc(1, sizeof(*c));

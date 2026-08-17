@@ -132,17 +132,30 @@ static void sa_to_udp_addr(const struct sockaddr *sa, socklen_t salen,
         snprintf(out->addr + len, sizeof(out->addr) - len, ":%d", out->port);
     } else if (sa->sa_family == AF_INET6) {
         struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)sa;
-        out->addr[0] = '[';
-        inet_ntop(AF_INET6, &in6->sin6_addr, out->addr + 1,
-                  sizeof(out->addr) - 2);
-        size_t len = strlen(out->addr);
-        if (in6->sin6_scope_id)
-            snprintf(out->addr + len, sizeof(out->addr) - len, "%%%u]:%d",
-                     in6->sin6_scope_id, ntohs(in6->sin6_port));
-        else
-            snprintf(out->addr + len, sizeof(out->addr) - len, "]:%d",
-                     ntohs(in6->sin6_port));
-        out->port = ntohs(in6->sin6_port);
+        /* Dual-stack recvmsg reports IPv4 peers as ::ffff:a.b.c.d.
+         * Format them as IPv4 so ACLs matching "127.0.0.1" still work.
+         * Keep the original sockaddr in _sa so sendto() on an IPv6
+         * dual-stack socket still accepts the mapped peer. */
+        if (IN6_IS_ADDR_V4MAPPED(&in6->sin6_addr)) {
+            inet_ntop(AF_INET, in6->sin6_addr.s6_addr + 12, out->addr,
+                      sizeof(out->addr));
+            out->port = ntohs(in6->sin6_port);
+            size_t len = strlen(out->addr);
+            snprintf(out->addr + len, sizeof(out->addr) - len, ":%d",
+                     out->port);
+        } else {
+            out->addr[0] = '[';
+            inet_ntop(AF_INET6, &in6->sin6_addr, out->addr + 1,
+                      sizeof(out->addr) - 2);
+            size_t len = strlen(out->addr);
+            if (in6->sin6_scope_id)
+                snprintf(out->addr + len, sizeof(out->addr) - len, "%%%u]:%d",
+                         in6->sin6_scope_id, ntohs(in6->sin6_port));
+            else
+                snprintf(out->addr + len, sizeof(out->addr) - len, "]:%d",
+                         ntohs(in6->sin6_port));
+            out->port = ntohs(in6->sin6_port);
+        }
     }
     if (salen <= (socklen_t)sizeof(out->_sa)) {
         memcpy(out->_sa, sa, salen);
@@ -346,15 +359,20 @@ neverc_udp_conn_t *neverc_udp_listen(const char *addr, const char **errp) {
             continue;
         (void)nc_set_reuseaddr(fd);
         udp_enable_packet_info(fd, rp->ai_family);
-        if (rp->ai_family == AF_INET6 && host[0] == '\0') {
-            int v6only = 0;
+        if (rp->ai_family == AF_INET6) {
+            const struct sockaddr_in6 *a6 =
+                (const struct sockaddr_in6 *)rp->ai_addr;
+            /* Unspecified :: (including ":port" and "[::]:port") is dual-stack. */
+            if (IN6_IS_ADDR_UNSPECIFIED(&a6->sin6_addr)) {
+                int v6only = 0;
 #ifdef _WIN32
-            (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-                             (const char *)&v6only, sizeof(v6only));
+                (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+                                 (const char *)&v6only, sizeof(v6only));
 #else
-            (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-                             &v6only, sizeof(v6only));
+                (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+                                 &v6only, sizeof(v6only));
 #endif
+            }
         }
         if (bind(fd, rp->ai_addr, (int)rp->ai_addrlen) != NC_SOCK_ERR)
             break;
@@ -481,12 +499,31 @@ static int udp_error_would_block(int error) {
 #endif
 }
 
+static int udp_error_timeout_io(int error) {
+#ifdef _WIN32
+    return error == WSAETIMEDOUT || error == WSAEWOULDBLOCK;
+#else
+    return error == ETIMEDOUT || error == EAGAIN || error == EWOULDBLOCK;
+#endif
+}
+
 static void udp_set_last_error(int error) {
 #ifdef _WIN32
     WSASetLastError(error);
 #else
     errno = error;
 #endif
+}
+
+static void udp_note_blocking_timeout(neverc_udp_conn_t *conn, int write_side) {
+    if (nc_atomic_load(&conn->nonblocking)) return;
+    int armed = write_side
+                    ? (conn->write_timeout_ms > 0 ||
+                       conn->write_deadline_ms > 0)
+                    : (conn->read_timeout_ms > 0 ||
+                       conn->read_deadline_ms > 0);
+    if (armed && udp_error_timeout_io(nc_sock_errno))
+        udp_set_last_error(udp_timeout_error());
 }
 
 static int udp_ensure_nonblocking(neverc_udp_conn_t *conn) {
@@ -608,7 +645,10 @@ static int udp_read_packet_unlocked(
         if (peeked < 0) peek_error = WSAGetLastError();
     } while (peeked < 0 && peek_error == WSAEINTR);
     int oversized = peeked < 0 && peek_error == WSAEMSGSIZE;
-    if (peeked < 0 && !oversized) return -1;
+    if (peeked < 0 && !oversized) {
+        udp_note_blocking_timeout(conn, 0);
+        return -1;
+    }
     if (buflen == 0 && peeked > 0) oversized = 1;
 
     size_t receive_capacity = buflen;
@@ -653,6 +693,7 @@ static int udp_read_packet_unlocked(
                      (struct sockaddr *)&sa, &salen);
     }
     if (n < 0) {
+        udp_note_blocking_timeout(conn, 0);
         return -1;
     }
     size_t datagram_len = (size_t)n;
@@ -676,7 +717,10 @@ static int udp_read_packet_unlocked(
     do {
         peeked = recvmsg(conn->fd, &peek_msg, MSG_PEEK);
     } while (peeked < 0 && errno == EINTR);
-    if (peeked < 0) return -1;
+    if (peeked < 0) {
+        udp_note_blocking_timeout(conn, 0);
+        return -1;
+    }
     int oversized = (peek_msg.msg_flags & MSG_TRUNC) != 0 ||
                     (buflen == 0 && peeked > 0);
     if (oversized) {
@@ -719,6 +763,7 @@ static int udp_read_packet_unlocked(
     } while (n < 0 && errno == EINTR);
     salen = msg.msg_namelen;
     if (n < 0) {
+        udp_note_blocking_timeout(conn, 0);
         return -1;
     }
     size_t datagram_len = (size_t)n;
@@ -1205,13 +1250,16 @@ int neverc_udp_write_to(neverc_udp_conn_t *conn, const void *data, size_t len,
     }
     if (udp_refresh_write_deadline(conn) != 0) return -1;
 #ifdef _WIN32
-    return sendto(conn->fd, (const char *)data, (int)len, 0,
-                  (const struct sockaddr *)to->_sa, to->_sa_len);
+    int n = sendto(conn->fd, (const char *)data, (int)len, 0,
+                   (const struct sockaddr *)to->_sa, to->_sa_len);
 #else
-    return (int)sendto(conn->fd, data, len, 0,
+    int n = (int)sendto(conn->fd, data, len, 0,
                         (const struct sockaddr *)to->_sa,
                         (socklen_t)to->_sa_len);
 #endif
+    if (n < 0)
+        udp_note_blocking_timeout(conn, 1);
+    return n;
 }
 
 int neverc_udp_write(neverc_udp_conn_t *conn, const void *data, size_t len) {
@@ -1234,10 +1282,13 @@ int neverc_udp_write(neverc_udp_conn_t *conn, const void *data, size_t len) {
     }
     if (udp_refresh_write_deadline(conn) != 0) return -1;
 #ifdef _WIN32
-    return send(conn->fd, (const char *)data, (int)len, 0);
+    int n = send(conn->fd, (const char *)data, (int)len, 0);
 #else
-    return (int)send(conn->fd, data, len, 0);
+    int n = (int)send(conn->fd, data, len, 0);
 #endif
+    if (n < 0)
+        udp_note_blocking_timeout(conn, 1);
+    return n;
 }
 
 int neverc_udp_read(neverc_udp_conn_t *conn, void *buf, size_t buflen) {

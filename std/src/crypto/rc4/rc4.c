@@ -42,6 +42,14 @@ void neverc_rc4_xor_keystream(neverc_rc4_cipher_t *c,
      * that is the identity — refuse it. */
     if (c->s[0] == 0 && c->s[1] == 0)
         return;
+    if (len > 0) {
+        uintptr_t d = (uintptr_t)dst;
+        uintptr_t s = (uintptr_t)src;
+        if (d > s && (d - s) < (uintptr_t)len) {
+            memmove(dst, src, len);
+            src = dst;
+        }
+    }
     uint8_t i = c->i, j = c->j;
     for (size_t k = 0; k < len; k++) {
         i += 1;

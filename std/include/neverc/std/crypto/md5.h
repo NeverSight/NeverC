@@ -15,6 +15,7 @@ typedef struct {
     uint32_t state[4];
     uint64_t count;
     uint8_t  buf[64];
+    int      finalized;
 } neverc_md5_ctx;
 
 void neverc_md5_init(neverc_md5_ctx *ctx);

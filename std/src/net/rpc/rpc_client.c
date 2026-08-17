@@ -33,6 +33,7 @@ struct neverc_rpc_stream {
     nc_mutex_t lock;
     int send_closed;
     int ended;
+    int peer_end_queued;
     neverc_rpc_status_code_t status_code;
     char *status_message;
 };
@@ -311,9 +312,18 @@ static int rpc_dispatch_inbound(neverc_rpc_client_t *client,
     nc_mutex_lock(&client->streams_lock);
     neverc_rpc_stream_t *stream = rpc_find_stream_locked(
         client, frame->header.request_id);
+    if (stream && stream->peer_end_queued) {
+        nc_mutex_unlock(&client->streams_lock);
+        free(inbound);
+        return -1;
+    }
     int queued = stream ? neverc_thread_channel_try_send(
                               stream->receive_queue, inbound)
                         : NEVERC_THREAD_CLOSED;
+    if (stream && queued == NEVERC_THREAD_OK &&
+        (frame->header.type == NEVERC_RPC_FRAME_END ||
+         frame->header.type == NEVERC_RPC_FRAME_CANCEL))
+        stream->peer_end_queued = 1;
     if (stream && queued == NEVERC_THREAD_WOULD_BLOCK)
         rpc_stream_set_terminal(stream,
             NEVERC_RPC_STATUS_RESOURCE_EXHAUSTED,
@@ -1110,6 +1120,22 @@ int neverc_rpc_stream_recv(neverc_rpc_stream_t *stream,
     }
     if (inbound->header.type == NEVERC_RPC_FRAME_END ||
         inbound->header.type == NEVERC_RPC_FRAME_CANCEL) {
+        int extra_frame = 0;
+        for (;;) {
+            void *queued = NULL;
+            int drained = neverc_thread_channel_try_receive(
+                stream->receive_queue, &queued);
+            if (drained != NEVERC_THREAD_OK) break;
+            extra_frame = 1;
+            free(queued);
+        }
+        if (extra_frame) {
+            rpc_stream_set_terminal(
+                stream, NEVERC_RPC_STATUS_DATA_LOSS,
+                "RPC DATA after END");
+            free(inbound);
+            return NEVERC_RPC_IO_PROTOCOL;
+        }
         char *message = NULL;
         if (inbound->header.payload_length > 0) {
             message = (char *)malloc(

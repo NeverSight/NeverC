@@ -430,6 +430,14 @@ int neverc_os_mkdir_all(const char *path, uint32_t perm) {
     if (len >= sizeof(buf)) return -1;
     memcpy(buf, path, len + 1);
 
+    neverc_os_fileinfo_t info;
+    if (neverc_os_stat(path, &info) == 0) {
+        if (info.is_dir) return 0;
+        errno = ENOTDIR;
+        return -1;
+    }
+
+    int mkdir_err = 0;
     for (size_t i = 1; i <= len; i++) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
         int sep = (buf[i] == '/' || buf[i] == '\\' || buf[i] == '\0');
@@ -439,11 +447,25 @@ int neverc_os_mkdir_all(const char *path, uint32_t perm) {
         if (sep) {
             char saved = buf[i];
             buf[i] = '\0';
-            neverc_os_mkdir(buf, perm);
+            if (neverc_os_mkdir(buf, perm) != 0) {
+                mkdir_err = errno;
+                if (neverc_os_stat(buf, &info) == 0 && !info.is_dir) {
+                    errno = ENOTDIR;
+                    return -1;
+                }
+            } else {
+                mkdir_err = 0;
+            }
             buf[i] = saved;
         }
     }
-    return neverc_os_is_dir(path) ? 0 : -1;
+    if (neverc_os_is_dir(path)) return 0;
+    if (neverc_os_stat(path, &info) == 0) {
+        errno = ENOTDIR;
+        return -1;
+    }
+    if (mkdir_err != 0) errno = mkdir_err;
+    return -1;
 }
 
 int neverc_os_remove(const char *name) {
@@ -851,7 +873,11 @@ neverc_os_file_t *neverc_os_create_temp(const char *dir, const char *pattern) {
         }
         hex[16] = '\0';
 
+#if defined(NEVERC_PLATFORM_WINDOWS)
+        int n = snprintf(path, sizeof(path), "%s\\%s%s", dir, pattern, hex);
+#else
         int n = snprintf(path, sizeof(path), "%s/%s%s", dir, pattern, hex);
+#endif
         if (n < 0 || (size_t)n >= sizeof(path))
             return NULL;
         neverc_os_file_t *file = neverc_os_open(
@@ -1334,7 +1360,11 @@ int neverc_os_mkdir_temp(const char *dir, const char *pattern,
         }
         hex[16] = '\0';
 
+#if defined(NEVERC_PLATFORM_WINDOWS)
+        int n = snprintf(buf, cap, "%s\\%s%s", dir, pattern, hex);
+#else
         int n = snprintf(buf, cap, "%s/%s%s", dir, pattern, hex);
+#endif
         if (n < 0 || (size_t)n >= cap)
             return -1;
         if (neverc_os_mkdir(buf, 0700) == 0)

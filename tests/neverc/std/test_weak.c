@@ -118,6 +118,19 @@ static void test_custom_free(void) {
     ASSERT_INT_EQ(g_freed, 1);
 }
 
+static void test_make_requires_live_strong(void) {
+    printf("[make_requires_live_strong]\n");
+    int data = 7;
+    neverc_weak_strong_t s = neverc_weak_new(&data, sizeof(int));
+    neverc_weak_ref_t *keep = neverc_weak_make(s);
+    ASSERT_TRUE(keep != NULL);
+    neverc_weak_strong_t stale = s;
+    neverc_weak_strong_release(&s);
+    ASSERT_TRUE(neverc_weak_value(keep) == NULL);
+    ASSERT_TRUE(neverc_weak_make(stale) == NULL);
+    neverc_weak_ref_release(keep);
+}
+
 static void test_multiple_weak_refs(void) {
     printf("[multiple_weak_refs]\n");
     int data = 42;
@@ -148,6 +161,7 @@ int main(void) {
     test_upgrade();
     test_ref_equal();
     test_custom_free();
+    test_make_requires_live_strong();
     test_multiple_weak_refs();
     printf("\nweak: %d/%d passed", tests_passed, tests_run);
     if (tests_failed) printf(", %d FAILED", tests_failed);

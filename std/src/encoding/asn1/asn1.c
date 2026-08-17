@@ -88,11 +88,19 @@ int neverc_asn1_decode_int64(const neverc_asn1_element_t *elem, int64_t *val) {
     /* DER INTEGER is big-endian two's complement. Accumulate in uint64_t so the
      * shift is always well-defined — `(v << 8)` on a negative int64_t is UB. The
      * leading 0xFF... sign fill makes the final reinterpret reproduce the signed
-     * value on every two's-complement target (all of ours). */
-    uint64_t v = (elem->value[0] & 0x80) ? ~(uint64_t)0 : 0;
+     * value on every two's-complement target (all of ours).
+     *
+     * An 8-byte payload that starts with 0x00 0x80.. is a canonical encoding of
+     * 2^63..2^64-1, which does not fit in int64_t. The uint64→int64 conversion
+     * would wrap those into negatives (2^63 → INT64_MIN). Reject a sign change. */
+    int negative = (elem->value[0] & 0x80) != 0;
+    uint64_t v = negative ? ~(uint64_t)0 : 0;
     for (size_t i = 0; i < elem->value_len; i++)
         v = (v << 8) | elem->value[i];
-    *val = (int64_t)v;
+    int64_t decoded = (int64_t)v;
+    if (negative != (decoded < 0))
+        return -1;
+    *val = decoded;
     return 0;
 }
 

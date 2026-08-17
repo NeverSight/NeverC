@@ -141,6 +141,94 @@ int main(void) {
         else { tests_failed++; printf("  FAIL: digest size constants\n"); }
     }
 
+    printf("[padding boundaries 111/112/127/128]\n");
+    {
+        uint8_t buf[128];
+        memset(buf, 'a', sizeof(buf));
+        struct { size_t n; const char *hex; } cases[] = {
+            {111,
+             "fa9121c7b32b9e01733d034cfc78cbf67f926c7ed83e82200ef8681819692176"
+             "0b4beff48404df811b953828274461673c68d04e297b0eb7b2b4d60fc6b566a2"},
+            {112,
+             "c01d080efd492776a1c43bd23dd99d0a2e626d481e16782e75d54c2503b5dc32"
+             "bd05f0f1ba33e568b88fd2d970929b719ecbb152f58f130a407c8830604b70ca"},
+            {127,
+             "828613968b501dc00a97e08c73b118aa8876c26b8aac93df128502ab360f91ba"
+             "b50a51e088769a5c1eff4782ace147dce3642554199876374291f5d921629502"},
+            {128,
+             "b73d1929aa615934e61a871596b3f3b33359f42b8175602e89f7e06e5f658a24"
+             "3667807ed300314b95cacdd579f3e33abdfbe351909519a846d465c59582f321"},
+        };
+        for (int i = 0; i < 4; i++) {
+            tests_run++;
+            uint8_t digest[64];
+            char got[129];
+            neverc_sha512_sum(buf, cases[i].n, digest);
+            hex_encode(digest, 64, got);
+            if (strcmp(got, cases[i].hex) == 0)
+                tests_passed++;
+            else {
+                tests_failed++;
+                printf("  FAIL: %zu 'a'\n    got: %s\n", cases[i].n, got);
+            }
+        }
+    }
+
+    printf("[128-bit length field at 2^61 bytes]\n");
+    {
+        neverc_sha512_ctx ctx;
+        neverc_sha512_init(&ctx);
+        neverc_sha512_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha512_ctx long_ctx = ctx;
+        uint8_t short_d[64], long_d[64];
+        neverc_sha512_final(&ctx, short_d);
+        long_ctx.count = (1ULL << 61) + 3;
+        neverc_sha512_final(&long_ctx, long_d);
+
+        tests_run++;
+        char got[129];
+        hex_encode(short_d, 64, got);
+        if (strcmp(got,
+            "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a"
+            "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f") == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: short SHA-512(\"abc\")\n    got: %s\n", got); }
+
+        tests_run++;
+        hex_encode(long_d, 64, got);
+        if (strcmp(got,
+            "cc17042d5409a6e80bada6f9be28f5d624d29d776ac36999563d474c462d6ea0"
+            "bc92a0876385d4d839d99521ae2ba79f758d509b105af7881ec4d63434713b38") == 0)
+            tests_passed++;
+        else {
+            tests_failed++;
+            printf("  FAIL: SHA-512 length at 2^61+3 bytes\n    got: %s\n", got);
+        }
+
+        tests_run++;
+        if (memcmp(short_d, long_d, 64) != 0)
+            tests_passed++;
+        else {
+            tests_failed++;
+            printf("  FAIL: wrapped length collided with SHA-512(\"abc\")\n");
+        }
+    }
+
+    printf("[update after final ignored]\n");
+    {
+        tests_run++;
+        neverc_sha512_ctx ctx;
+        neverc_sha512_init(&ctx);
+        neverc_sha512_update(&ctx, (const uint8_t *)"abc", 3);
+        uint8_t d1[64], d2[64];
+        neverc_sha512_final(&ctx, d1);
+        neverc_sha512_update(&ctx, (const uint8_t *)"x", 1);
+        neverc_sha512_final(&ctx, d2);
+        if (memcmp(d1, d2, 64) == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: update after final must not length-extend\n"); }
+    }
+
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

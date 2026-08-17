@@ -110,6 +110,18 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "a:"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http:/path"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "file:///tmp/foo"), 0);
+    ASSERT_STR_EQ(u.scheme, "file");
+    ASSERT_STR_EQ(u.host, "");
+    ASSERT_STR_EQ(u.path, "/tmp/foo");
+    char file_url[32];
+    ASSERT_INT_EQ(neverc_url_string(&u, file_url, sizeof(file_url)),
+                  (int)strlen("file:///tmp/foo"));
+    ASSERT_STR_EQ(file_url, "file:///tmp/foo");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http:///foo"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "https:///foo"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "ws:///foo"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "file://"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[::1]"), 0);
     ASSERT_STR_EQ(u.host, "::1");
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[::1]:80"), 0);

@@ -606,6 +606,51 @@ static void test_from_rgba_full_palette_transparency(void) {
     free(rgba);
 }
 
+static void test_reserved_disposal_treated_as_none(void) {
+    printf("[reserved_disposal_treated_as_none]\n");
+    neverc_gif_frame_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.width = 2;
+    frame.height = 2;
+    frame.disposal_method = 2;
+    frame.palette_size = 2;
+    frame.palette[0] = (neverc_gif_color_t){0, 0, 0};
+    frame.palette[1] = (neverc_gif_color_t){255, 255, 255};
+    frame.indices = (uint8_t *)calloc(1, 4);
+    ASSERT_TRUE(frame.indices != NULL);
+
+    uint8_t *gif_data = NULL;
+    size_t gif_len = 0;
+    ASSERT_EQ(neverc_gif_encode(&frame, &gif_data, &gif_len), 0);
+    ASSERT_TRUE(gif_data != NULL);
+    if (!gif_data) {
+        free(frame.indices);
+        return;
+    }
+
+    size_t gce_pos = 0;
+    while (gce_pos + 3 < gif_len &&
+           !(gif_data[gce_pos] == 0x21 &&
+             gif_data[gce_pos + 1] == 0xf9 &&
+             gif_data[gce_pos + 2] == 0x04))
+        gce_pos++;
+    ASSERT_TRUE(gce_pos + 3 < gif_len);
+    if (gce_pos + 3 < gif_len) {
+        uint8_t packed = gif_data[gce_pos + 3];
+        ASSERT_EQ((packed >> 2) & 7, 2);
+        gif_data[gce_pos + 3] = (uint8_t)((packed & (uint8_t)~0x1C) | (4 << 2));
+        neverc_gif_image_t img;
+        ASSERT_EQ(neverc_gif_decode(gif_data, gif_len, &img), 0);
+        ASSERT_EQ(img.num_frames, 1);
+        if (img.num_frames == 1)
+            ASSERT_EQ(img.frames[0].disposal_method, 0);
+        neverc_gif_free(&img);
+    }
+
+    free(gif_data);
+    free(frame.indices);
+}
+
 int main(void) {
     printf("NeverC image/gif tests\n");
     test_encode_decode();
@@ -620,6 +665,7 @@ int main(void) {
     test_failed_decode_clears_geometry();
     test_frame_to_rgba_and_transparency();
     test_from_rgba_full_palette_transparency();
+    test_reserved_disposal_treated_as_none();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

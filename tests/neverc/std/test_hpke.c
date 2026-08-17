@@ -515,6 +515,292 @@ static void test_rfc9180_p256_aes128_vector(void) {
     printf("ok\n");
 }
 
+static void test_rfc9180_x25519_chacha_vector(void) {
+    printf("  RFC 9180 A.2.1 ChaCha20-Poly1305 ... ");
+    uint8_t sk[32], enc[32], info[20], aad[7], ciphertext[45];
+    uint8_t expected_plaintext[29], expected_key[32], expected_nonce[12];
+
+    ASSERT(decode_hex(
+               "8057991eef8f1f1af18f4a9491d16a1ce333f695d4db8e38da75975c4478e0fb",
+               sk, sizeof(sk)) == 0,
+           "decode ChaCha recipient key");
+    ASSERT(decode_hex(
+               "1afa08d3dec047a643885163f1180476fa7ddb54c6a8029ea33f95796bf2ac4a",
+               enc, sizeof(enc)) == 0,
+           "decode ChaCha encapsulation");
+    ASSERT(decode_hex(
+               "4f6465206f6e2061204772656369616e2055726e",
+               info, sizeof(info)) == 0,
+           "decode ChaCha info");
+    ASSERT(decode_hex("436f756e742d30", aad, sizeof(aad)) == 0,
+           "decode ChaCha aad");
+    ASSERT(decode_hex(
+               "1c5250d8034ec2b784ba2cfd69dbdb8af406cfe3ff938e131f0def8c8b60b4db"
+               "21993c62ce81883d2dd1b51a28",
+               ciphertext, sizeof(ciphertext)) == 0,
+           "decode ChaCha ciphertext");
+    ASSERT(decode_hex(
+               "4265617574792069732074727574682c20747275746820626561757479",
+               expected_plaintext, sizeof(expected_plaintext)) == 0,
+           "decode ChaCha plaintext");
+    ASSERT(decode_hex(
+               "ad2744de8e17f4ebba575b3f5f5a8fa1f69c2a07f6e7500bc60ca6e3e3ec1c91",
+               expected_key, sizeof(expected_key)) == 0,
+           "decode ChaCha key");
+    ASSERT(decode_hex("5c4d98150661b848853b547f",
+                      expected_nonce, sizeof(expected_nonce)) == 0,
+           "decode ChaCha nonce");
+
+    neverc_hpke_recipient_t recipient;
+    ASSERT(neverc_hpke_recipient_new(
+               &recipient, enc, sizeof(enc),
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_CHACHA20POLY1305,
+               sk, sizeof(sk), info, sizeof(info)) == 0,
+           "ChaCha RFC recipient setup");
+    ASSERT(recipient.ctx.key_len == (int)sizeof(expected_key) &&
+               memcmp(recipient.ctx.key, expected_key,
+                      sizeof(expected_key)) == 0,
+           "ChaCha RFC traffic key");
+    ASSERT(memcmp(recipient.ctx.base_nonce, expected_nonce,
+                  sizeof(expected_nonce)) == 0,
+           "ChaCha RFC base nonce");
+
+    uint8_t plaintext[sizeof(expected_plaintext)];
+    ASSERT(neverc_hpke_recipient_open(
+               &recipient, aad, sizeof(aad), ciphertext, sizeof(ciphertext),
+               plaintext) == (int)sizeof(plaintext),
+           "ChaCha RFC ciphertext opens");
+    ASSERT(memcmp(plaintext, expected_plaintext, sizeof(plaintext)) == 0,
+           "ChaCha RFC plaintext matches");
+    printf("ok\n");
+}
+
+static void test_rfc9180_p256_sha512_vector(void) {
+    printf("  RFC 9180 A.4.1 HKDF-SHA512 ... ");
+    uint8_t sk[32], enc[65], info[20], aad[7], ciphertext[45];
+    uint8_t expected_plaintext[29], expected_key[16], expected_nonce[12];
+
+    ASSERT(decode_hex(
+               "3ac8530ad1b01885960fab38cf3cdc4f7aef121eaa239f222623614b4079fb38",
+               sk, sizeof(sk)) == 0,
+           "decode SHA-512 recipient key");
+    ASSERT(decode_hex(
+               "0493ed86735bdfb978cc055c98b45695ad7ce61ce748f4dd63c525a3b8d53a1"
+               "5565c6897888070070c1579db1f86aaa56deb8297e64db7e8924e72866f9a472580",
+               enc, sizeof(enc)) == 0,
+           "decode SHA-512 encapsulation");
+    ASSERT(decode_hex(
+               "4f6465206f6e2061204772656369616e2055726e",
+               info, sizeof(info)) == 0,
+           "decode SHA-512 info");
+    ASSERT(decode_hex("436f756e742d30", aad, sizeof(aad)) == 0,
+           "decode SHA-512 aad");
+    ASSERT(decode_hex(
+               "d3cf4984931484a080f74c1bb2a6782700dc1fef9abe8442e44a6f09044c8890"
+               "7200b332003543754eb51917ba",
+               ciphertext, sizeof(ciphertext)) == 0,
+           "decode SHA-512 ciphertext");
+    ASSERT(decode_hex(
+               "4265617574792069732074727574682c20747275746820626561757479",
+               expected_plaintext, sizeof(expected_plaintext)) == 0,
+           "decode SHA-512 plaintext");
+    ASSERT(decode_hex("090ca96e5f8aa02b69fac360da50ddf9",
+                      expected_key, sizeof(expected_key)) == 0,
+           "decode SHA-512 key");
+    ASSERT(decode_hex("9c995e621bf9a20c5ca45546",
+                      expected_nonce, sizeof(expected_nonce)) == 0,
+           "decode SHA-512 nonce");
+
+    neverc_hpke_recipient_t recipient;
+    ASSERT(neverc_hpke_recipient_new(
+               &recipient, enc, sizeof(enc),
+               NEVERC_HPKE_KEM_P256_SHA256,
+               NEVERC_HPKE_KDF_SHA512,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               sk, sizeof(sk), info, sizeof(info)) == 0,
+           "SHA-512 RFC recipient setup");
+    ASSERT(memcmp(recipient.ctx.key, expected_key,
+                  sizeof(expected_key)) == 0,
+           "SHA-512 RFC traffic key");
+    ASSERT(memcmp(recipient.ctx.base_nonce, expected_nonce,
+                  sizeof(expected_nonce)) == 0,
+           "SHA-512 RFC base nonce");
+
+    uint8_t plaintext[sizeof(expected_plaintext)];
+    ASSERT(neverc_hpke_recipient_open(
+               &recipient, aad, sizeof(aad), ciphertext, sizeof(ciphertext),
+               plaintext) == (int)sizeof(plaintext),
+           "SHA-512 RFC ciphertext opens");
+    ASSERT(memcmp(plaintext, expected_plaintext, sizeof(plaintext)) == 0,
+           "SHA-512 RFC plaintext matches");
+    printf("ok\n");
+}
+
+static void test_rfc9180_export_only_vector(void) {
+    printf("  RFC 9180 A.7.1 export-only ... ");
+    uint8_t sk[32], enc[32], info[20], expected_export[32];
+
+    ASSERT(decode_hex(
+               "33d196c830a12f9ac65d6e565a590d80f04ee9b19c83c87f2c170d972a812848",
+               sk, sizeof(sk)) == 0,
+           "decode export-only recipient key");
+    ASSERT(decode_hex(
+               "e5e8f9bfff6c2f29791fc351d2c25ce1299aa5eaca78a757c0b4fb4bcd830918",
+               enc, sizeof(enc)) == 0,
+           "decode export-only encapsulation");
+    ASSERT(decode_hex(
+               "4f6465206f6e2061204772656369616e2055726e",
+               info, sizeof(info)) == 0,
+           "decode export-only info");
+    ASSERT(decode_hex(
+               "7a36221bd56d50fb51ee65edfd98d06a23c4dc87085aa5866cb7087244bd2a36",
+               expected_export, sizeof(expected_export)) == 0,
+           "decode export-only value");
+
+    neverc_hpke_recipient_t recipient;
+    ASSERT(neverc_hpke_recipient_new(
+               &recipient, enc, sizeof(enc),
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_EXPORT_ONLY,
+               sk, sizeof(sk), info, sizeof(info)) == 0,
+           "export-only RFC recipient setup");
+    ASSERT(recipient.ctx.key_len == 0 && recipient.ctx.nonce_len == 0,
+           "export-only has no AEAD key");
+
+    uint8_t dummy[16];
+    memset(dummy, 0xa5, sizeof(dummy));
+    ASSERT(neverc_hpke_recipient_open(
+               &recipient, NULL, 0, dummy, sizeof(dummy), dummy) == -1,
+           "export-only open is rejected");
+
+    uint8_t exported[sizeof(expected_export)];
+    ASSERT(neverc_hpke_recipient_export(
+               &recipient, NULL, 0, exported, sizeof(exported)) == 0,
+           "export-only export");
+    ASSERT(memcmp(exported, expected_export, sizeof(exported)) == 0,
+           "export-only RFC exported value");
+    printf("ok\n");
+}
+
+static void test_mode_mixups_and_length_checks(void) {
+    printf("  mode mixups and length checks ... ");
+    uint8_t priv[48], pub[97];
+    int priv_len, pub_len;
+    gen_keypair(
+        NEVERC_HPKE_KEM_X25519_SHA256,
+        priv, &priv_len, pub, &pub_len);
+
+    const uint8_t msg[] = "suite mixup";
+    uint8_t ct[256];
+    size_t ct_len = 99U;
+    ASSERT(neverc_hpke_seal(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_EXPORT_ONLY,
+               pub, (size_t)pub_len, NULL, 0,
+               msg, sizeof(msg) - 1, ct, &ct_len) == -1,
+           "one-shot export-only seal rejected");
+    ASSERT(ct_len == 0U, "export-only seal publishes no ciphertext");
+
+    size_t pt_len = 99U;
+    uint8_t pt[256];
+    ASSERT(neverc_hpke_open(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_EXPORT_ONLY,
+               priv, (size_t)priv_len, NULL, 0,
+               ct, 48U, pt, &pt_len) == -1,
+           "one-shot export-only open rejected");
+    ASSERT(pt_len == 0U, "export-only open publishes no plaintext");
+
+    ASSERT(neverc_hpke_seal(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               pub, (size_t)pub_len, NULL, 0,
+               msg, sizeof(msg) - 1, ct, &ct_len) == 0,
+           "AES-128 seal for mixup");
+    ASSERT(neverc_hpke_open(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_CHACHA20POLY1305,
+               priv, (size_t)priv_len, NULL, 0,
+               ct, ct_len, pt, &pt_len) != 0,
+           "AES ciphertext must not open as ChaCha20");
+    ASSERT(neverc_hpke_open(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA512,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               priv, (size_t)priv_len, NULL, 0,
+               ct, ct_len, pt, &pt_len) != 0,
+           "SHA-256 ciphertext must not open with SHA-512");
+
+    uint8_t tampered[256];
+    memcpy(tampered, ct, ct_len);
+    tampered[ct_len - 1U] ^= 0xFF;
+    ASSERT(neverc_hpke_open(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               priv, (size_t)priv_len, NULL, 0,
+               tampered, ct_len, pt, &pt_len) != 0,
+           "AES tag flip is rejected");
+
+    ASSERT(neverc_hpke_seal(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_CHACHA20POLY1305,
+               pub, (size_t)pub_len, NULL, 0,
+               msg, sizeof(msg) - 1, ct, &ct_len) == 0,
+           "ChaCha20 seal");
+    memcpy(tampered, ct, ct_len);
+    tampered[ct_len - 1U] ^= 0xFF;
+    ASSERT(neverc_hpke_open(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_CHACHA20POLY1305,
+               priv, (size_t)priv_len, NULL, 0,
+               tampered, ct_len, pt, &pt_len) != 0,
+           "ChaCha20 tag flip is rejected");
+
+    uint8_t low_order[32] = {1};
+    neverc_hpke_sender_t sender;
+    uint8_t enc[NEVERC_HPKE_MAX_ENC_SIZE];
+    size_t enc_len = sizeof(enc);
+    ASSERT(neverc_hpke_sender_new(
+               &sender, enc, &enc_len,
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               low_order, sizeof(low_order), NULL, 0) == -1,
+           "low-order X25519 public key rejected");
+    ASSERT(enc_len == 0U, "failed encapsulation publishes no enc");
+
+    enc_len = sizeof(enc);
+    ASSERT(neverc_hpke_sender_new(
+               &sender, enc, &enc_len,
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               pub, 31U, NULL, 0) == -1,
+           "truncated X25519 public key rejected");
+    ASSERT(enc_len == 0U, "wrong public-key length publishes no enc");
+
+    enc_len = sizeof(enc);
+    ASSERT(neverc_hpke_sender_new(
+               &sender, enc, &enc_len,
+               NEVERC_HPKE_KEM_P256_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               pub, (size_t)pub_len, NULL, 0) == -1,
+           "X25519 public key rejected as P-256");
+    ASSERT(enc_len == 0U, "KEM mixup publishes no enc");
+    printf("ok\n");
+}
+
 static void test_limits_and_invalid_inputs(void) {
     printf("  limits and invalid inputs ... ");
     uint8_t priv[48], pub[97];
@@ -618,6 +904,10 @@ int main(void) {
     test_aes256gcm();
     test_rfc9180_x25519_aes128_vector();
     test_rfc9180_p256_aes128_vector();
+    test_rfc9180_x25519_chacha_vector();
+    test_rfc9180_p256_sha512_vector();
+    test_rfc9180_export_only_vector();
+    test_mode_mixups_and_length_checks();
     test_limits_and_invalid_inputs();
     printf("%d/%d passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

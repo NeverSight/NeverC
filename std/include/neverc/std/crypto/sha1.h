@@ -15,6 +15,7 @@ typedef struct {
     uint32_t state[5];
     uint64_t count;
     uint8_t  buf[64];
+    int      finalized;
 } neverc_sha1_ctx;
 
 void neverc_sha1_init(neverc_sha1_ctx *ctx);

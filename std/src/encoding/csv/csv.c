@@ -55,6 +55,11 @@ static int needs_quoting(const char *s, char delim, int use_crlf) {
     uint32_t first;
     (void)use_crlf; /* \r and \n always force quoting regardless of line ending */
     if (!s || !s[0]) return 0;
+    /* Spreadsheet formula prefixes (OWASP CSV injection). Quoted so Excel /
+     * LibreOffice cannot treat a field as `=CMD()` when the file is opened.
+     * '-' is left unquoted: it is a common numeric sign, not a formula alone. */
+    if (s[0] == '=' || s[0] == '+' || s[0] == '@')
+        return 1;
     /* Postgres COPY terminator; quoted so it is not taken as end-of-data. */
     if (s[0] == '\\' && s[1] == '.' && s[2] == '\0')
         return 1;

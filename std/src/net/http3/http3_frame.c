@@ -272,6 +272,89 @@ int neverc_h3_request_path_allowed(const char *method, const char *path) {
     return 1;
 }
 
+static int h3_valid_port(const char *s, size_t length) {
+    if (!s || length == 0) return 0;
+    unsigned value = 0;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c < '0' || c > '9') return 0;
+        unsigned digit = (unsigned)(c - '0');
+        if (value > (65535U - digit) / 10U) return 0;
+        value = value * 10U + digit;
+    }
+    return value > 0;
+}
+
+/* Same Host/:authority rules as HTTP/1 and HTTP/2: reject userinfo, paths,
+ * commas, bad ports, and unbracketed / unclosed IPv6 so intermediaries
+ * cannot treat :authority as a Host list or override the origin. */
+int neverc_h3_authority_allowed(const char *value) {
+    if (!value || !value[0]) return 0;
+    size_t length = strlen(value);
+    if (value[0] == '[') {
+        const char *close = (const char *)memchr(value, ']', length);
+        if (!close || close == value + 1) return 0;
+        size_t inner = (size_t)(close - value - 1);
+        int has_colon = 0;
+        for (size_t i = 0; i < inner; i++) {
+            unsigned char c = (unsigned char)value[1 + i];
+            if (c == ':') has_colon = 1;
+            if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
+                c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
+                c == ',')
+                return 0;
+        }
+        if (!has_colon &&
+            !(inner > 2 && (value[1] == 'v' || value[1] == 'V')))
+            return 0;
+        size_t after = length - (size_t)(close - value) - 1;
+        if (after == 0) return 1;
+        return close[1] == ':' && h3_valid_port(close + 2, after - 1);
+    }
+
+    const char *colon = (const char *)memchr(value, ':', length);
+    size_t host_length = colon ? (size_t)(colon - value) : length;
+    if (host_length == 0) return 0;
+    for (size_t i = 0; i < host_length; i++) {
+        unsigned char c = (unsigned char)value[i];
+        if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
+            c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
+            c == ',' || c == ':')
+            return 0;
+    }
+    if (!colon) return 1;
+    if (memchr(colon + 1, ':', length - host_length - 1)) return 0;
+    return h3_valid_port(colon + 1, length - host_length - 1);
+}
+
+int neverc_h3_trailer_name_allowed(const char *name) {
+    if (!name || !name[0] || name[0] == ':') return 0;
+    return strcmp(name, "connection") != 0 &&
+           strcmp(name, "keep-alive") != 0 &&
+           strcmp(name, "proxy-connection") != 0 &&
+           strcmp(name, "transfer-encoding") != 0 &&
+           strcmp(name, "upgrade") != 0 &&
+           strcmp(name, "content-length") != 0 &&
+           strcmp(name, "host") != 0 &&
+           strcmp(name, "te") != 0;
+}
+
+int neverc_h3_response_body_allowed(int status) {
+    return status >= 200 && status != 204 && status != 304;
+}
+
+/* RFC 9110 §8.6: Content-Length on 304 is representation metadata, not the
+ * (empty) message-body length. 204 must not carry Content-Length at all.
+ * Returns 0 and, when the status forbids a body, clears *present so a later
+ * body-length check does not treat a valid 304 as incomplete. */
+int neverc_h3_apply_response_content_length(int status, int *present) {
+    if (!present) return -1;
+    if (status == 204 && *present) return -1;
+    if (!neverc_h3_response_body_allowed(status))
+        *present = 0;
+    return 0;
+}
+
 /* Single varint that must consume the entire payload (GOAWAY, CANCEL_PUSH,
  * MAX_PUSH_ID). */
 int neverc_h3_parse_varint_payload(const uint8_t *payload, size_t length,

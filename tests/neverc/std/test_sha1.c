@@ -83,6 +83,40 @@ int main(void) {
         else { tests_failed++; printf("  FAIL: 1M 'a'\n    got: %s\n", got); }
     }
 
+    printf("[update after final ignored]\n");
+    {
+        tests_run++;
+        neverc_sha1_ctx ctx;
+        neverc_sha1_init(&ctx);
+        neverc_sha1_update(&ctx, (const uint8_t *)"abc", 3);
+        uint8_t d1[20], d2[20];
+        neverc_sha1_final(&ctx, d1);
+        neverc_sha1_update(&ctx, (const uint8_t *)"x", 1);
+        neverc_sha1_final(&ctx, d2);
+        char got[41];
+        hex_encode(d1, 20, got);
+        if (memcmp(d1, d2, 20) == 0 &&
+            strcmp(got, "a9993e364706816aba3e25717850c26c9cd0d89d") == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: update after final must not length-extend\n"); }
+    }
+
+    printf("[counter overflow fails closed]\n");
+    {
+        tests_run++;
+        neverc_sha1_ctx ctx;
+        neverc_sha1_init(&ctx);
+        neverc_sha1_update(&ctx, (const uint8_t *)"abc", 3);
+        ctx.count = (1ULL << 61) + 3;
+        uint8_t digest[20];
+        memset(digest, 0xa5, sizeof(digest));
+        neverc_sha1_final(&ctx, digest);
+        uint8_t zeros[20] = {0};
+        if (memcmp(digest, zeros, 20) == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: overflow must not collide with SHA-1(\"abc\")\n"); }
+    }
+
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

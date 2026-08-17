@@ -176,6 +176,18 @@ struct neverc_quic_conn *neverc_quic_conn_create(quic_conn_side_t side,
     return conn;
 }
 
+void neverc_quic_conn_apply_peer_transport_params(
+    struct neverc_quic_conn *conn) {
+    if (!conn) return;
+    conn->flow.max_data_peer = conn->peer_params.initial_max_data;
+    conn->peer_max_streams_bidi = conn->peer_params.initial_max_streams_bidi;
+    conn->peer_max_streams_uni = conn->peer_params.initial_max_streams_uni;
+    conn->idle_timeout_ms = neverc_quic_effective_idle_timeout_ms(
+        conn->idle_timeout_ms, conn->peer_params.max_idle_timeout);
+    conn->peer_disable_migration = conn->peer_params.disable_active_migration;
+    conn->loss.rtt.max_ack_delay = conn->peer_params.max_ack_delay;
+}
+
 static void datagram_queue_destroy(quic_datagram_entry_t *entries,
                                    size_t capacity) {
     for (size_t i = 0; i < capacity; i++) {

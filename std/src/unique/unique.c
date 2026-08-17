@@ -272,17 +272,26 @@ neverc_unique_handle_t neverc_unique_make_bytes(const void *data, size_t len) {
 }
 
 const char *neverc_unique_string_value(neverc_unique_handle_t h) {
+    if (!h.ptr) return NULL;
+    size_t n = intern_len(h.ptr);
+    if (n == 0) return NULL;
+    const unsigned char *p = (const unsigned char *)h.ptr;
+    if (p[n - 1] != '\0') return NULL;
     return (const char *)h.ptr;
 }
 
 int64_t neverc_unique_int64_value(neverc_unique_handle_t h) {
-    if (!h.ptr) return 0;
-    int64_t v; memcpy(&v, h.ptr, sizeof(v)); return v;
+    int64_t v = 0;
+    if (!h.ptr || intern_len(h.ptr) != sizeof(v)) return 0;
+    memcpy(&v, h.ptr, sizeof(v));
+    return v;
 }
 
 uint64_t neverc_unique_uint64_value(neverc_unique_handle_t h) {
-    if (!h.ptr) return 0;
-    uint64_t v; memcpy(&v, h.ptr, sizeof(v)); return v;
+    uint64_t v = 0;
+    if (!h.ptr || intern_len(h.ptr) != sizeof(v)) return 0;
+    memcpy(&v, h.ptr, sizeof(v));
+    return v;
 }
 
 const void *neverc_unique_bytes_value(neverc_unique_handle_t h, size_t *len) {

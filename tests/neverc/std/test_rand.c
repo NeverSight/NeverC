@@ -547,6 +547,18 @@ static void test_zipf(void) {
         if (v > 50) { all_ok = 0; break; }
     }
     check_true("zipf(s=1.5,v=2,imax=50) in range", all_ok);
+
+    /* s→1+ makes Hormann h/hinv lose the [0, imax] support without a clamp. */
+    neverc_rand_zipf_t z_edge;
+    neverc_rand_seed(1);
+    check_true("zipf init s just above 1",
+               neverc_rand_zipf_init(&z_edge, 1.000000000000002, 1.0, 3) == 1);
+    int edge_ok = 1;
+    for (int i = 0; i < 2000; i++) {
+        uint64_t v = neverc_rand_zipf_uint64(&z_edge);
+        if (v > 3) { edge_ok = 0; break; }
+    }
+    check_true("zipf(s→1+, imax=3) stays in [0, imax]", edge_ok);
 }
 
 static void test_int_uint(void) {

@@ -1121,6 +1121,12 @@ static int h2_client_send_body(neverc_h2_client_t *client,
         size_t chunk = length - offset;
         if (chunk > client->peer_settings.max_frame_size)
             chunk = client->peer_settings.max_frame_size;
+        /* SETTINGS can shrink a stream window below zero. A size_t cast
+         * of that negative value would wrap and ignore flow control. */
+        if (client->conn_send_window <= 0 || stream->send_window <= 0) {
+            nc_mutex_unlock(&client->state_lock);
+            continue;
+        }
         if (chunk > (size_t)client->conn_send_window)
             chunk = (size_t)client->conn_send_window;
         if (chunk > (size_t)stream->send_window)

@@ -50,6 +50,25 @@ static void test_wrap_unwrap(void) {
     check_str("failed wrap preserves cause",
               neverc_errors_message(cause), "still owned");
     neverc_errors_free(cause);
+
+    /* A borrowed sentinel (owned=0) can be wrapped and matched. Freeing the
+     * wrap must not free the sentinel node — the same pattern as a static
+     * ErrNotFound that outlives every wrap. */
+    neverc_error_t sentinel = {"not found", NULL, 0};
+    neverc_error_t *around = neverc_errors_wrap("open config", &sentinel);
+    check_str("wrap borrowed msg", neverc_errors_message(around),
+              "open config: not found");
+    check_bool("wrap borrowed unwrap",
+               neverc_errors_unwrap(around) == &sentinel, 1);
+    check_bool("is borrowed sentinel", neverc_errors_is(around, &sentinel), 1);
+    neverc_error_t *as_sent = NULL;
+    check_bool("as borrowed sentinel",
+               neverc_errors_as(around, &sentinel, &as_sent), 1);
+    check_bool("as borrowed node", as_sent == &sentinel, 1);
+    neverc_errors_free(around);
+    check_str("borrowed sentinel survives free", sentinel.msg, "not found");
+    check_bool("borrowed sentinel still matches",
+               neverc_errors_is(&sentinel, &sentinel), 1);
 }
 
 static void test_is(void) {

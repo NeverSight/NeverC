@@ -507,13 +507,26 @@ static neverc_regexp_syntax_node_t *parse_group(parser_t *p) {
         goto done;
     }
 
-    if (p->pos + 2 < p->len && p->src[p->pos] == '?' &&
-        (p->src[p->pos + 1] == 'P' || p->src[p->pos + 1] == '<' || p->src[p->pos + 1] == '\'')) {
-        /* Named capture: (?P<name>...) or (?<name>...) */
-        int skip = (p->src[p->pos + 1] == 'P') ? 3 : 2;
+    /* Named capture: (?P<name>...) (?<name>...) (?'name'...). Go/RE2 require
+     * the '<' after ?P; skipping 3 bytes for any `(?P` turned `(?Pname>x)`
+     * into a capture named "ame" and `(?P name>x)` into "name". */
+    if (p->pos < p->len && p->src[p->pos] == '?') {
+        int skip = 0;
+        char close_ch = '>';
+        if (p->pos + 2 < p->len && p->src[p->pos + 1] == 'P' &&
+            p->src[p->pos + 2] == '<') {
+            skip = 3;
+        } else if (p->pos + 1 < p->len && p->src[p->pos + 1] == '<') {
+            skip = 2;
+        } else if (p->pos + 1 < p->len && p->src[p->pos + 1] == '\'') {
+            skip = 2;
+            close_ch = '\'';
+        } else {
+            p->err = "invalid or unsupported Perl syntax";
+            goto done;
+        }
         p->pos += skip;
         int name_start = p->pos;
-        char close_ch = (p->src[p->pos - 1] == '\'') ? '\'' : '>';
         while (p->pos < p->len && p->src[p->pos] != close_ch) p->pos++;
         if (p->pos >= p->len) {
             p->err = "unclosed capture name";

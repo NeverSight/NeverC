@@ -125,6 +125,46 @@ static void test_read_mime_header(void) {
     check_str("folded_value", neverc_mime_header_get(&h, "X-Long"), "part1 part2");
     neverc_mime_header_free(&h);
 
+    const char *fold_empty_first = "Subject:\r\n Hello\r\n\r\n";
+    neverc_mime_header_init(&h);
+    consumed = 0;
+    rc = neverc_textproto_read_mime_header(
+        fold_empty_first, strlen(fold_empty_first), &h, &consumed);
+    check("fold_empty_first_ok", rc == 0);
+    check_str("fold_empty_first_value",
+              neverc_mime_header_get(&h, "Subject"), "Hello");
+    neverc_mime_header_free(&h);
+
+    const char *fold_tab = "X-Long: part1\r\n\tpart2\r\n\r\n";
+    neverc_mime_header_init(&h);
+    consumed = 0;
+    rc = neverc_textproto_read_mime_header(fold_tab, strlen(fold_tab), &h,
+                                          &consumed);
+    check("fold_tab_ok", rc == 0);
+    check_str("fold_tab_value", neverc_mime_header_get(&h, "X-Long"),
+              "part1 part2");
+    neverc_mime_header_free(&h);
+
+    const char *trail_ows = "X-Name: bar \r\n\r\n";
+    neverc_mime_header_init(&h);
+    consumed = 0;
+    rc = neverc_textproto_read_mime_header(trail_ows, strlen(trail_ows), &h,
+                                          &consumed);
+    check("trailing_ows_ok", rc == 0);
+    check_str("trailing_ows_stripped", neverc_mime_header_get(&h, "X-Name"),
+              "bar");
+    neverc_mime_header_free(&h);
+
+    const char *fold_trail = "X-Long: part1 \r\n part2\r\n\r\n";
+    neverc_mime_header_init(&h);
+    consumed = 0;
+    rc = neverc_textproto_read_mime_header(fold_trail, strlen(fold_trail), &h,
+                                          &consumed);
+    check("fold_trailing_ows_ok", rc == 0);
+    check_str("fold_trailing_ows_value",
+              neverc_mime_header_get(&h, "X-Long"), "part1 part2");
+    neverc_mime_header_free(&h);
+
     const char *empty_name = ": nosuch\r\n\r\n";
     neverc_mime_header_init(&h);
     consumed = 0;

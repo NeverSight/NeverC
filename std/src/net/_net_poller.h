@@ -744,11 +744,15 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
         out[count].transferred = 0;
         out[count].error = 0;
         out[count].events = 0;
-        if (poller->pfds[i].revents & POLLIN)
+        /* POLLHUP after a clean peer close is readable EOF, not a hard
+         * error. Mapping it to NC_EV_ERROR made NC_FORCE_POLL treat a
+         * drained pipe shutdown as failure (kqueue maps EV_EOF on read
+         * to NC_EV_READ only). */
+        if (poller->pfds[i].revents & (POLLIN | POLLHUP))
             out[count].events |= NC_EV_READ;
         if (poller->pfds[i].revents & POLLOUT)
             out[count].events |= NC_EV_WRITE;
-        if (poller->pfds[i].revents & (POLLERR | POLLHUP | POLLNVAL))
+        if (poller->pfds[i].revents & (POLLERR | POLLNVAL))
             out[count].events |= NC_EV_ERROR;
         count++;
     }

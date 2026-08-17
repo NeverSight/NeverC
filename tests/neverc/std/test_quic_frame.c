@@ -499,8 +499,12 @@ static void test_transport_params_client_forbidden(void) {
     ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), 0);
     ASSERT_EQ(neverc_quic_transport_params_client_forbidden(&tp), -1);
 
-    uint8_t pref[1] = { 0 };
-    n = write_tp(buf, sizeof(buf), 0x0d, pref, 1);
+    uint8_t pref[42];
+    memset(pref, 0, sizeof(pref));
+    pref[24] = 1;
+    pref[25] = 0xAA;
+    memset(pref + 26, 0x5A, 16);
+    n = write_tp(buf, sizeof(buf), 0x0d, pref, sizeof(pref));
     ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), 0);
     ASSERT_EQ(tp.has_preferred_address, 1);
     ASSERT_EQ(neverc_quic_transport_params_client_forbidden(&tp), -1);
@@ -545,6 +549,52 @@ static void test_transport_params_defaults(void) {
     ASSERT_EQ(tp.active_connection_id_limit, 2);
     ASSERT_EQ(tp.initial_max_data, 10 * 1024 * 1024);
     ASSERT_EQ(tp.initial_max_streams_bidi, 100);
+}
+
+static void test_transport_params_active_cid_limit_rfc_bounds(void) {
+    /* RFC 9000 §18.2: values below 2 are invalid; there is no upper bound. */
+    quic_transport_params_t tp;
+    uint8_t buf[16];
+    uint8_t one[] = { 1 };
+    size_t n = write_tp(buf, sizeof(buf), 0x0e, one, sizeof(one));
+    ASSERT_TRUE(n > 0);
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), -1);
+
+    uint8_t sixteen[] = { 16 };
+    n = write_tp(buf, sizeof(buf), 0x0e, sixteen, sizeof(sixteen));
+    ASSERT_TRUE(n > 0);
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), 0);
+    ASSERT_EQ(tp.active_connection_id_limit, 16);
+}
+
+static void test_transport_params_preferred_address_layout(void) {
+    /* RFC 9000 §18.2: IPv4+port + IPv6+port + CID length 1..20 + CID + token. */
+    quic_transport_params_t tp;
+    uint8_t valid[42];
+    memset(valid, 0, sizeof(valid));
+    valid[24] = 1; /* connection ID length */
+    valid[25] = 0xAA;
+    memset(valid + 26, 0x5A, 16);
+    uint8_t buf[64];
+    size_t n = write_tp(buf, sizeof(buf), 0x0d, valid, sizeof(valid));
+    ASSERT_TRUE(n > 0);
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), 0);
+    ASSERT_EQ(tp.has_preferred_address, 1);
+
+    uint8_t truncated[41];
+    memset(truncated, 0, sizeof(truncated));
+    truncated[24] = 1;
+    n = write_tp(buf, sizeof(buf), 0x0d, truncated, sizeof(truncated));
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), -1);
+
+    uint8_t bad_cid_len[42];
+    memset(bad_cid_len, 0, sizeof(bad_cid_len));
+    bad_cid_len[24] = 0;
+    n = write_tp(buf, sizeof(buf), 0x0d, bad_cid_len, sizeof(bad_cid_len));
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), -1);
+
+    n = write_tp(buf, sizeof(buf), 0x0d, NULL, 0);
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), -1);
 }
 
 /* ======================================================================
@@ -708,6 +758,8 @@ int main(void) {
     test_transport_params_client_forbidden();
     test_new_token_rejects_empty();
     test_transport_params_defaults();
+    test_transport_params_active_cid_limit_rfc_bounds();
+    test_transport_params_preferred_address_layout();
     test_ping_frame();
     test_handshake_done_frame();
     test_new_conn_id_valid();

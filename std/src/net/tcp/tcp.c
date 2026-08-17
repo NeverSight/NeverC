@@ -506,12 +506,33 @@ static int tcp_error_closed(int error) {
 #endif
 }
 
+/* SO_RCVTIMEO / SO_SNDTIMEO on a blocking socket surfaces as EAGAIN
+ * (POSIX) rather than ETIMEDOUT. Callers checking ETIMEDOUT would
+ * treat a fired timeout as a generic I/O error. */
+static int tcp_error_timeout_io(int error) {
+#ifdef _WIN32
+    return error == WSAETIMEDOUT || error == WSAEWOULDBLOCK;
+#else
+    return error == ETIMEDOUT || error == EAGAIN || error == EWOULDBLOCK;
+#endif
+}
+
 static void tcp_set_last_error(int error) {
 #ifdef _WIN32
     WSASetLastError(error);
 #else
     errno = error;
 #endif
+}
+
+static void tcp_note_blocking_timeout(neverc_tcp_conn_t *conn, int write_side) {
+    int armed = write_side
+                    ? (conn->write_timeout_ms > 0 ||
+                       conn->write_deadline_ms > 0)
+                    : (conn->read_timeout_ms > 0 ||
+                       conn->read_deadline_ms > 0);
+    if (armed && tcp_error_timeout_io(nc_sock_errno))
+        tcp_set_last_error(tcp_timeout_error());
 }
 
 static int tcp_ensure_nonblocking(neverc_tcp_conn_t *conn) {
@@ -742,6 +763,7 @@ int neverc_tcp_write(neverc_tcp_conn_t *conn, const void *data, size_t len) {
 #else
         if (errno == EINTR) continue;
 #endif
+        tcp_note_blocking_timeout(conn, 1);
         if (total > 0) return (int)total;
         return -1;
     }
@@ -789,11 +811,13 @@ int neverc_tcp_read(neverc_tcp_conn_t *conn, void *buf, size_t buflen) {
         int n = recv(conn->fd, (char *)buf, (int)buflen, 0);
         if (n >= 0) return n;
         if (WSAGetLastError() == WSAEINTR) continue;
+        tcp_note_blocking_timeout(conn, 0);
         return -1;
 #else
         ssize_t n = recv(conn->fd, buf, buflen, 0);
         if (n >= 0) return (int)n;
         if (errno == EINTR) continue;
+        tcp_note_blocking_timeout(conn, 0);
         return -1;
 #endif
     }

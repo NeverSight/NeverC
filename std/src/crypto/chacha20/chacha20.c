@@ -177,6 +177,22 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
             return;
     }
 
+    /*
+     * dst after src with overlap: leftover / 256-byte SIMD / 64-byte chunks
+     * each call xor_keystream on a slice. A backward walk inside one slice
+     * cannot save source bytes that an earlier slice already overwrote
+     * (dst=src+4 and a 256-byte SIMD pass clobbers src[256..259]).
+     * Slide the input into dst first, then XOR in place.
+     */
+    if (len > 0) {
+        uintptr_t d = (uintptr_t)dst;
+        uintptr_t s = (uintptr_t)src;
+        if (d > s && (d - s) < (uintptr_t)len) {
+            memmove(dst, src, len);
+            src = dst;
+        }
+    }
+
     /* Consume any keystream left over from a previous partial block. */
     if (ctx->buf_used < 64) {
         size_t avail = 64 - (size_t)ctx->buf_used;

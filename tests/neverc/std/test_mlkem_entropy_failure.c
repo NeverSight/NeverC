@@ -67,6 +67,16 @@ int main(void) {
     CHECK(all_zero(shared768, sizeof(shared768)));
     CHECK(all_zero(ciphertext768, sizeof(ciphertext768)));
 
+    /* All-zero ek is rejected before RAND. A canonical non-zero ek must
+     * still fail closed when entropy acquisition returns -1. */
+    ek768.ek[0] = 1;
+    memset(shared768, 0x5a, sizeof(shared768));
+    memset(ciphertext768, 0x5a, sizeof(ciphertext768));
+    CHECK(neverc_mlkem768_encapsulate(
+              &ek768, shared768, ciphertext768) == -1);
+    CHECK(all_zero(shared768, sizeof(shared768)));
+    CHECK(all_zero(ciphertext768, sizeof(ciphertext768)));
+
     neverc_mlkem1024_ek_t ek1024 = {{0}};
     uint8_t shared1024[NEVERC_MLKEM_SHARED_KEY_SIZE];
     uint8_t ciphertext1024[NEVERC_MLKEM1024_CT_SIZE];
@@ -76,6 +86,20 @@ int main(void) {
               &ek1024, shared1024, ciphertext1024) == -1);
     CHECK(all_zero(shared1024, sizeof(shared1024)));
     CHECK(all_zero(ciphertext1024, sizeof(ciphertext1024)));
+
+    ek1024.ek[0] = 1;
+    memset(shared1024, 0x5a, sizeof(shared1024));
+    memset(ciphertext1024, 0x5a, sizeof(ciphertext1024));
+    CHECK(neverc_mlkem1024_encapsulate(
+              &ek1024, shared1024, ciphertext1024) == -1);
+    CHECK(all_zero(shared1024, sizeof(shared1024)));
+    CHECK(all_zero(ciphertext1024, sizeof(ciphertext1024)));
+
+    memset(shared768, 0x5a, sizeof(shared768));
+    memset(ciphertext768, 0x5a, sizeof(ciphertext768));
+    CHECK(neverc_mlkem768_encapsulate(NULL, shared768, ciphertext768) == -1);
+    CHECK(all_zero(shared768, sizeof(shared768)));
+    CHECK(all_zero(ciphertext768, sizeof(ciphertext768)));
 
     puts("passed");
     return 0;

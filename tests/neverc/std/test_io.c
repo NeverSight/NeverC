@@ -432,6 +432,13 @@ static void test_invalid_reader_counts(void) {
     neverc_io_reader_t error_reader = { &used, one_byte_error_read };
     check_int("read_full accepts enough data with terminal error",
               neverc_io_read_full(&error_reader, &byte, 1), 0);
+
+    used = 0;
+    len = 99;
+    all = neverc_io_read_all(&error_reader, &len);
+    check_int("read_all rejects terminal error", all == NULL, 1);
+    check_size("read_all clears length on error", len, 0);
+    free(all);
 }
 
 static void test_capacity_overflow_guards(void) {

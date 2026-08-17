@@ -55,6 +55,55 @@ static void test_rfc7539_aead_mac(void) {
     check_true("all-zero tag", memcmp(tag, expected, 16) == 0);
 }
 
+static void test_rfc7539_a3_r_zero(void) {
+    printf("[Poly1305 RFC 7539 A.3 #2 r=0]\n");
+    /* r is all zeros so clamp is a no-op; tag must be the pad s. */
+    uint8_t key[32];
+    hex_to_bytes(
+        "00000000000000000000000000000000"
+        "36e5f6b5c5e06070f0efca96227a863e", key, 32);
+    const char *msg =
+        "Any submission to the IETF intended by the Contributor for publication"
+        " as all or part of an IETF Internet-Draft or RFC and any statement made"
+        " within the context of an IETF activity is considered an \"IETF"
+        " Contribution\". Such statements include oral statements in IETF"
+        " sessions, as well as written and electronic communications made at"
+        " any time or place, which are addressed to";
+    uint8_t tag[16];
+    neverc_poly1305_auth(tag, (const uint8_t *)msg, strlen(msg), key);
+    uint8_t expected[16];
+    hex_to_bytes("36e5f6b5c5e06070f0efca96227a863e", expected, 16);
+    check_true("r=0 tag is the pad", memcmp(tag, expected, 16) == 0);
+}
+
+static void test_clamp_ignores_forbidden_bits(void) {
+    printf("[Poly1305 clamp]\n");
+    /* RFC 7539: r &= 0x0ffffffc0ffffffc0ffffffc0fffffff. Two keys that
+     * differ only in the cleared bits must authenticate identically. */
+    uint8_t key[32], key_unclamped[32];
+    hex_to_bytes(
+        "85d6be7857556d337f4452fe42d506a8"
+        "0103808afb0db2fd4abff6af4149f51b", key, 32);
+    memcpy(key_unclamped, key, 32);
+    key_unclamped[3]  |= 0xF0;
+    key_unclamped[4]  |= 0x03;
+    key_unclamped[7]  |= 0xF0;
+    key_unclamped[8]  |= 0x03;
+    key_unclamped[11] |= 0xF0;
+    key_unclamped[12] |= 0x03;
+    key_unclamped[15] |= 0xF0;
+
+    const char *msg = "Cryptographic Forum Research Group";
+    uint8_t tag[16], tag2[16];
+    neverc_poly1305_auth(tag, (const uint8_t *)msg, strlen(msg), key);
+    neverc_poly1305_auth(tag2, (const uint8_t *)msg, strlen(msg), key_unclamped);
+    check_true("clamp ignores forbidden r bits", memcmp(tag, tag2, 16) == 0);
+    uint8_t expected[16];
+    hex_to_bytes("a8061dc1305136c6c22b8baf0c0127a9", expected, 16);
+    check_true("clamped key still matches RFC 7539",
+               memcmp(tag, expected, 16) == 0);
+}
+
 static void test_verify_tamper(void) {
     printf("[Poly1305 tamper detection]\n");
 
@@ -151,6 +200,8 @@ int main(void) {
     printf("=== NeverC Poly1305 Tests ===\n\n");
     test_rfc7539();
     test_rfc7539_aead_mac();
+    test_rfc7539_a3_r_zero();
+    test_clamp_ignores_forbidden_bits();
     test_verify_tamper();
     test_empty();
     test_various_lengths();

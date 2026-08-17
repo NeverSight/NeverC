@@ -167,6 +167,22 @@ static void test_wait_after_raise(void) {
     neverc_signal_stop(SIGINT);
 }
 
+static void test_stop_clears_pending(void) {
+    printf("[stop_clears_pending]\n");
+    g_handler_called = 0;
+    neverc_signal_notify(SIGINT, test_handler);
+    neverc_signal_notify(SIGTERM, test_handler);
+    raise(SIGINT);
+    ASSERT_INT_EQ(g_handler_called, 1);
+    neverc_signal_stop(SIGINT);
+    g_handler_called = 0;
+    raise(SIGTERM);
+    ASSERT_INT_EQ(g_handler_called, 1);
+    int sigs[2] = { SIGINT, SIGTERM };
+    ASSERT_INT_EQ(neverc_signal_wait(sigs, 2), SIGTERM);
+    neverc_signal_stop(SIGTERM);
+}
+
 static void test_notify_twice_does_not_lose_handler(void) {
     printf("[notify_twice]\n");
     g_handler_called = 0;
@@ -226,6 +242,22 @@ static void test_wait_invalid_and_pending(void) {
     sigprocmask(SIG_SETMASK, &saved, NULL);
 }
 
+static void test_stop_clears_pending(void) {
+    printf("[stop_clears_pending]\n");
+    g_handler_called = 0;
+    neverc_signal_notify(SIGUSR1, test_handler);
+    neverc_signal_notify(SIGUSR2, test_handler);
+    raise(SIGUSR1);
+    ASSERT_INT_EQ(g_handler_called, 1);
+    neverc_signal_stop(SIGUSR1);
+    g_handler_called = 0;
+    raise(SIGUSR2);
+    ASSERT_INT_EQ(g_handler_called, 1);
+    int sigs[2] = { SIGUSR1, SIGUSR2 };
+    ASSERT_INT_EQ(neverc_signal_wait(sigs, 2), SIGUSR2);
+    neverc_signal_stop(SIGUSR2);
+}
+
 static void test_notify_null_clears_handler(void) {
     printf("[notify_null]\n");
     g_handler_called = 0;
@@ -250,11 +282,13 @@ int main(void) {
     test_wait_null();
 #if defined(_WIN32)
     test_wait_after_raise();
+    test_stop_clears_pending();
     test_notify_twice_does_not_lose_handler();
 #endif
 #if !defined(_WIN32)
     test_wait_after_raise();
     test_wait_invalid_and_pending();
+    test_stop_clears_pending();
     test_notify_null_clears_handler();
 #endif
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

@@ -123,10 +123,12 @@ static int dsa_in_order_q_subgroup(const neverc_bigint_t *elem,
     return ok;
 }
 
-/* Fixed-base Miller-Rabin. q is attacker-supplied, so this is a parameter
- * screen rather than a cryptographic proof; combined with q | (p-1) it
- * rejects the composite-q forgeries that g^q ≡ 1 alone would accept. */
-static int dsa_q_is_probable_prime(const neverc_bigint_t *q) {
+/* Fixed-base Miller-Rabin. p and q are attacker-supplied, so this is a
+ * parameter screen rather than a cryptographic proof; combined with
+ * q | (p-1) it rejects composite-q forgeries that g^q ≡ 1 alone would
+ * accept, and composite-p forgeries that pass the subgroup check with
+ * gcd(g, p) == 1 (e.g. p=91, q=3, g=9). */
+static int dsa_is_probable_prime(const neverc_bigint_t *q) {
     neverc_bigint_t one, nm1, d, a, x;
     neverc_bigint_init(&one);
     neverc_bigint_init(&nm1);
@@ -199,13 +201,15 @@ static int dsa_group_valid(const neverc_dsa_public_key_t *key) {
         neverc_bigint_sign(&key->q) <= 0 ||
         neverc_bigint_sign(&key->g) <= 0)
         return 0;
-    /* q must be an odd prime (>= 3); p must be a larger odd modulus.
+    /* q must be an odd prime (>= 3); p must be a larger odd prime.
      * g=1 makes every (r=1,s) verify when y=1. Composite q with g of
-     * smaller order, or q that does not divide p-1, makes verify a
-     * forgery oracle even when g^q ≡ 1 (mod p). */
+     * smaller order, q that does not divide p-1, or composite p with
+     * g^q ≡ 1 (mod p), makes verify a forgery oracle. Caps match RSA:
+     * p up to 16384 bits (512 limbs), q up to 256 bits (8 limbs). */
     if (neverc_bigint_bit_len(&key->q) < 2 ||
         neverc_bigint_bit(&key->q, 0) == 0 ||
         neverc_bigint_bit(&key->p, 0) == 0 ||
+        key->p.len > 512 || key->q.len > 8 ||
         neverc_bigint_cmp(&key->q, &key->p) >= 0 ||
         neverc_bigint_cmp(&key->g, &key->p) >= 0)
         return 0;
@@ -216,7 +220,9 @@ static int dsa_group_valid(const neverc_dsa_public_key_t *key) {
     neverc_bigint_free(&one);
     if (!ok)
         return 0;
-    if (!dsa_q_divides_p_minus_1(key) || !dsa_q_is_probable_prime(&key->q))
+    if (!dsa_q_divides_p_minus_1(key) ||
+        !dsa_is_probable_prime(&key->q) ||
+        !dsa_is_probable_prime(&key->p))
         return 0;
     return dsa_in_order_q_subgroup(&key->g, &key->q, &key->p);
 }

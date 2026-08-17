@@ -544,8 +544,16 @@ uint64_t neverc_rand_zipf_uint64(neverc_rand_zipf_t *z) {
         double ur = z->hxm + r * z->hx0minusHxm;
         double x = zipf_hinv(z, ur);
         k = neverc_math_floor(x + 0.5);
+        /* Hormann inversion is unstable as s→1+: k can leave [0, imax]
+         * or become NaN (comparisons fail and the loop never exits). */
+        if (!(k >= 0.0))
+            k = 0.0;
+        else if (k > z->imax)
+            k = z->imax;
         if (k - x <= z->s_param) break;
         if (ur >= zipf_h(z, k + 0.5) - neverc_math_exp(-neverc_math_log(k + z->v) * z->q))
+            break;
+        if (x != x || ur != ur)
             break;
     }
     return (uint64_t)k;

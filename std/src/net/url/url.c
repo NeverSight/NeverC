@@ -221,7 +221,17 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
 
     if (has_authority) {
         const char *authority_end = p + strcspn(p, "/?#");
-        if (authority_end == p) return -1;
+        if (authority_end == p) {
+            /* Hierarchical empty host: file:///tmp/foo. Reject it for
+             * special URLs so http:///evil is not an empty-host parse. */
+            if (!u->scheme[0] ||
+                (*p != '/' && *p != '?' && *p != '#') ||
+                strcmp(u->scheme, "http") == 0 ||
+                strcmp(u->scheme, "https") == 0 ||
+                strcmp(u->scheme, "ws") == 0 ||
+                strcmp(u->scheme, "wss") == 0)
+                return -1;
+        } else {
         /* WHATWG special-URLs treat '\' as '/'. Leaving it in userinfo lets
          * http://evil.com\@good.com/ parse as host good.com. */
         for (const char *c = p; c < authority_end; c++)
@@ -298,6 +308,7 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
             }
         }
         p = authority_end;
+        }
     }
 
     const char *fragment = memchr(p, '#', (size_t)(raw_end - p));

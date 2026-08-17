@@ -106,6 +106,11 @@ static void test_server_with_path(void) {
     check_not_null("response", resp);
     if (resp) {
         check_int("status", resp->status_code, 200);
+        char method[16];
+        check_str("echoed method header",
+                  neverc_http_response_header(
+                      resp, "X-Method", method, sizeof(method)),
+                  "GET");
         neverc_http_response_free(resp);
     }
 

@@ -764,18 +764,7 @@ static int ws_validate_http_upgrade(const neverc_http_request_t *req,
     if (!upgrade || strcasecmp(upgrade, "websocket") != 0) return -1;
 
     const char *conn_hdr = neverc_http_request_header(req, "Connection");
-    if (!conn_hdr) return -1;
-    int has_upgrade = 0;
-    for (size_t i = 0; conn_hdr[i]; ) {
-        while (conn_hdr[i] == ' ') i++;
-        size_t start = i;
-        while (conn_hdr[i] && conn_hdr[i] != ',') i++;
-        size_t toklen = i - start;
-        if (toklen == 7 && strcasecmp_n(conn_hdr + start, "upgrade", 7) == 0)
-            has_upgrade = 1;
-        if (conn_hdr[i] == ',') i++;
-    }
-    if (!has_upgrade) return -1;
+    if (!ws_value_has_token(conn_hdr, "upgrade")) return -1;
 
     const char *version = neverc_http_request_header(req, "Sec-WebSocket-Version");
     if (!version || strcmp(version, "13") != 0) return -1;
@@ -1551,12 +1540,15 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
 
     if (frame_opcode == NC_WS_OPCODE_CLOSE) {
         const uint8_t *close_payload = (const uint8_t *)payload_buf;
-        if (plen == 1 ||
-            (plen >= 2 &&
-             (!ws_valid_close_code((uint16_t)((close_payload[0] << 8) |
-                                               close_payload[1])) ||
-              !ws_valid_utf8(close_payload + 2, (size_t)plen - 2))))
+        if (plen == 1)
             return ws_fail_protocol(conn);
+        if (plen >= 2) {
+            if (!ws_valid_close_code((uint16_t)((close_payload[0] << 8) |
+                                               close_payload[1])))
+                return ws_fail_protocol(conn);
+            if (!ws_valid_utf8(close_payload + 2, (size_t)plen - 2))
+                return ws_fail_invalid_payload(conn);
+        }
         nc_atomic_store(&conn->close_received, 1);
         if (!nc_atomic_load(&conn->close_sent) &&
             write_frame(conn, NC_WS_OPCODE_CLOSE, 1, payload_buf,

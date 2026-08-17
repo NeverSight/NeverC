@@ -32,6 +32,13 @@ static void test_interfaces(void) {
     }
     check_true("has loopback", has_lo);
 
+    int has_mtu = 0;
+    for (int i = 0; i < list.count; i++) {
+        if (list.ifaces[i].mtu > 0)
+            has_mtu = 1;
+    }
+    check_true("reports interface MTU", has_mtu);
+
     /* Print for visibility */
     for (int i = 0; i < list.count; i++) {
         printf("  [%d] %s idx=%d mtu=%d flags=0x%x hw=%s addrs=%d\n",
