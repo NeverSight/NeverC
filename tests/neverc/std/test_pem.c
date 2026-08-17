@@ -239,36 +239,27 @@ static void test_invalid_pem(void) {
 
     const char *unpadded_one =
         "-----BEGIN FOO-----\nZg\n-----END FOO-----\n";
-    bytes_written = 0;
     rc = neverc_pem_decode(unpadded_one, strlen(unpadded_one),
                             type_buf, sizeof(type_buf),
                             out_buf, sizeof(out_buf),
                             &bytes_written, NULL);
-    check_int("unpadded 2-char decode", rc, 0);
-    check_int("unpadded 2-char len", (int)bytes_written, 1);
-    check_mem("unpadded 2-char", out_buf, (const uint8_t *)"f", 1);
+    check_int("unpadded 2-char rejected", rc, -1);
 
     const char *unpadded_two =
         "-----BEGIN FOO-----\nZm8\n-----END FOO-----\n";
-    bytes_written = 0;
     rc = neverc_pem_decode(unpadded_two, strlen(unpadded_two),
                             type_buf, sizeof(type_buf),
                             out_buf, sizeof(out_buf),
                             &bytes_written, NULL);
-    check_int("unpadded 3-char decode", rc, 0);
-    check_int("unpadded 3-char len", (int)bytes_written, 2);
-    check_mem("unpadded 3-char", out_buf, (const uint8_t *)"fo", 2);
+    check_int("unpadded 3-char rejected", rc, -1);
 
     const char *unpadded_mixed =
         "-----BEGIN FOO-----\nZm9vYg\n-----END FOO-----\n";
-    bytes_written = 0;
     rc = neverc_pem_decode(unpadded_mixed, strlen(unpadded_mixed),
                             type_buf, sizeof(type_buf),
                             out_buf, sizeof(out_buf),
                             &bytes_written, NULL);
-    check_int("unpadded 6-char decode", rc, 0);
-    check_int("unpadded 6-char len", (int)bytes_written, 4);
-    check_mem("unpadded 6-char", out_buf, (const uint8_t *)"foob", 4);
+    check_int("unpadded 6-char rejected", rc, -1);
 
     const char *incomplete_quad =
         "-----BEGIN FOO-----\nY\n-----END FOO-----\n";
@@ -578,6 +569,24 @@ static void test_go_armor(void) {
     check_int("truncated dashes then valid", rc, 0);
     check_str("truncated dashes type", type_buf, "TEST BLOCK");
     check_int("truncated dashes len", (int)bytes_written, 5);
+
+    /* Go StdEncoding rejects unpadded bodies, so the next valid block wins. */
+    const char *unpadded_then_valid =
+        "-----BEGIN FOO-----\n"
+        "Zg\n"
+        "-----END FOO-----\n"
+        "-----BEGIN BAR-----\n"
+        "YQ==\n"
+        "-----END BAR-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(unpadded_then_valid, strlen(unpadded_then_valid),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("unpadded then valid", rc, 0);
+    check_str("unpadded then valid type", type_buf, "BAR");
+    check_int("unpadded then valid len", (int)bytes_written, 1);
+    check_mem("unpadded then valid data", out_buf, (const uint8_t *)"a", 1);
 }
 
 static void test_utf8_bom(void) {

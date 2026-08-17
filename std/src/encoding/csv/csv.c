@@ -5,15 +5,67 @@
 
 #include "neverc/std/encoding/csv.h"
 #include <limits.h>
+#include <stdint.h>
 #include <string.h>
 
+static int csv_first_rune(const char *s, uint32_t *cp) {
+    const unsigned char *b = (const unsigned char *)s;
+    size_t n, i;
+    uint32_t value;
+    if (b[0] < 0x80) {
+        *cp = b[0];
+        return 0;
+    }
+    if (b[0] >= 0xc2 && b[0] <= 0xdf) {
+        value = b[0] & 0x1fU;
+        n = 2;
+    } else if (b[0] >= 0xe0 && b[0] <= 0xef) {
+        value = b[0] & 0x0fU;
+        n = 3;
+    } else if (b[0] >= 0xf0 && b[0] <= 0xf4) {
+        value = b[0] & 0x07U;
+        n = 4;
+    } else {
+        return -1;
+    }
+    for (i = 1; i < n; i++) {
+        if ((b[i] & 0xc0U) != 0x80U)
+            return -1;
+        value = (value << 6U) | (b[i] & 0x3fU);
+    }
+    if ((n == 3 && value < 0x800) || (n == 4 && value < 0x10000) ||
+        value > 0x10ffffU)
+        return -1;
+    *cp = value;
+    return 0;
+}
+
+static int csv_codepoint_is_space(uint32_t cp) {
+    switch (cp) {
+    case '\t': case '\n': case '\v': case '\f': case '\r': case ' ':
+    case 0x85: case 0xa0: case 0x1680:
+    case 0x2028: case 0x2029: case 0x202f: case 0x205f: case 0x3000:
+        return 1;
+    default:
+        return cp >= 0x2000 && cp <= 0x200a;
+    }
+}
+
 static int needs_quoting(const char *s, char delim, int use_crlf) {
+    uint32_t first;
     (void)use_crlf; /* \r and \n always force quoting regardless of line ending */
+    if (!s || !s[0]) return 0;
+    /* Postgres COPY terminator; quoted so it is not taken as end-of-data. */
+    if (s[0] == '\\' && s[1] == '.' && s[2] == '\0')
+        return 1;
     for (const char *p = s; *p; p++) {
         if (*p == delim || *p == '"' || *p == '\n' || *p == '\r')
             return 1;
     }
-    return 0;
+    /* Go encoding/csv quotes a field whose first rune is unicode.IsSpace
+     * so readers that trim unquoted leading space (including this package's
+     * trim_leading_space) cannot drop it. */
+    return csv_first_rune(s, &first) == 0 && csv_codepoint_is_space(first);
 }
 
 /* ---- Reader ---- */
@@ -38,9 +90,16 @@ int neverc_csv_read_line(const char *line, size_t line_len,
     size_t wpos = 0;
     size_t i = 0;
 
-    /* strip trailing newline */
-    while (line_len > 0 && (line[line_len - 1] == '\n' || line[line_len - 1] == '\r'))
+    /* Go encoding/csv readLine: drop one trailing LF, and the CR of a
+     * CRLF pair. A last line with no LF still drops one trailing CR.
+     * Extra CRs before that are field bytes, not extra terminators. */
+    if (line_len > 0 && line[line_len - 1] == '\n') {
         line_len--;
+        if (line_len > 0 && line[line_len - 1] == '\r')
+            line_len--;
+    } else if (line_len > 0 && line[line_len - 1] == '\r') {
+        line_len--;
+    }
 
     if (line_len == 0) return 0;
 
@@ -163,14 +222,23 @@ int neverc_csv_read_all(const char *data, size_t data_len,
 
     while (pos < data_len) {
         /* Comment and empty lines are physical lines; quotes inside comments
-         * have no CSV meaning and must not consume following records. */
-        if ((comment && data[pos] == comment) ||
-            data[pos] == '\r' || data[pos] == '\n') {
-            while (pos < data_len &&
-                   data[pos] != '\r' && data[pos] != '\n')
+         * have no CSV meaning and must not consume following records.
+         * Record separators match Go encoding/csv: LF or CRLF. A lone CR is
+         * a field byte, not a line break (RFC 4180 only names CRLF; Go splits
+         * on '\n' and strips CR only when it precedes LF or EOF). */
+        if (comment && data[pos] == comment) {
+            while (pos < data_len && data[pos] != '\n')
                 pos++;
-            if (pos < data_len && data[pos] == '\r') pos++;
             if (pos < data_len && data[pos] == '\n') pos++;
+            continue;
+        }
+        if (data[pos] == '\n') {
+            pos++;
+            continue;
+        }
+        if (data[pos] == '\r' && pos + 1 < data_len &&
+            data[pos + 1] == '\n') {
+            pos += 2;
             continue;
         }
 
@@ -188,15 +256,19 @@ int neverc_csv_read_all(const char *data, size_t data_len,
                     }
                     if (lazy && pos + 1 < data_len &&
                         data[pos + 1] != delim &&
-                        data[pos + 1] != '\r' &&
-                        data[pos + 1] != '\n') {
+                        data[pos + 1] != '\n' &&
+                        !(data[pos + 1] == '\r' && pos + 2 < data_len &&
+                          data[pos + 2] == '\n')) {
                         pos++;
                         continue;
                     }
                     in_quote = 0;
                 }
             } else {
-                if (byte == '\n' || byte == '\r') break;
+                if (byte == '\n') break;
+                if (byte == '\r' && pos + 1 < data_len &&
+                    data[pos + 1] == '\n')
+                    break;
                 if (field_start && trim && (byte == ' ' || byte == '\t')) {
                     pos++;
                     continue;
@@ -211,11 +283,12 @@ int neverc_csv_read_all(const char *data, size_t data_len,
             pos++;
         }
         if (in_quote && !lazy) return -1;
-        size_t line_len = pos - line_start;
 
-        /* skip newline(s) */
+        /* Include the record terminator so read_line can apply Go's
+         * single-CRLF / EOF-CR strip. Interior CRs stay in the field. */
         if (pos < data_len && data[pos] == '\r') pos++;
         if (pos < data_len && data[pos] == '\n') pos++;
+        size_t line_len = pos - line_start;
 
         if (nrecords >= max_records || !records[nrecords]) return -1;
 
@@ -224,6 +297,9 @@ int neverc_csv_read_all(const char *data, size_t data_len,
                                        NEVERC_CSV_MAX_FIELDS,
                                        work_buf, work_buf_len, opts);
         if (nf < 0) return -1;
+        /* A lone CR at EOF is stripped by read_line, leaving an empty
+         * physical line. Go encoding/csv skips those blank lines. */
+        if (nf == 0) continue;
 
         field_counts[nrecords] = nf;
         nrecords++;

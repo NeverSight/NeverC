@@ -49,6 +49,17 @@ static void addr_to_string(const struct sockaddr *sa, socklen_t salen,
         snprintf(out->addr + len, sizeof(out->addr) - len, ":%d", out->port);
     } else if (sa->sa_family == AF_INET6) {
         struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)sa;
+        /* Dual-stack accept() reports IPv4 peers as ::ffff:a.b.c.d.
+         * Format them as IPv4 so ACLs matching "127.0.0.1" still work. */
+        if (IN6_IS_ADDR_V4MAPPED(&in6->sin6_addr)) {
+            inet_ntop(AF_INET, in6->sin6_addr.s6_addr + 12, out->addr,
+                      sizeof(out->addr));
+            out->port = ntohs(in6->sin6_port);
+            size_t len = strlen(out->addr);
+            snprintf(out->addr + len, sizeof(out->addr) - len, ":%d",
+                     out->port);
+            return;
+        }
         out->addr[0] = '[';
         inet_ntop(AF_INET6, &in6->sin6_addr, out->addr + 1,
                   sizeof(out->addr) - 2);
@@ -175,15 +186,20 @@ neverc_tcp_listener_t *neverc_tcp_listen(const char *addr, const char **errp) {
             continue;
 
         (void)nc_set_reuseaddr(fd);
-        if (rp->ai_family == AF_INET6 && host[0] == '\0') {
-            int v6only = 0;
+        if (rp->ai_family == AF_INET6) {
+            const struct sockaddr_in6 *a6 =
+                (const struct sockaddr_in6 *)rp->ai_addr;
+            /* Unspecified :: (including ":port" and "[::]:port") is dual-stack. */
+            if (IN6_IS_ADDR_UNSPECIFIED(&a6->sin6_addr)) {
+                int v6only = 0;
 #ifdef _WIN32
-            (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-                             (const char *)&v6only, sizeof(v6only));
+                (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+                                 (const char *)&v6only, sizeof(v6only));
 #else
-            (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-                             &v6only, sizeof(v6only));
+                (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+                                 &v6only, sizeof(v6only));
 #endif
+            }
         }
 
         if (bind(fd, rp->ai_addr, (int)rp->ai_addrlen) != NC_SOCK_ERR &&

@@ -4,6 +4,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+static int user_copy_env_path(char *dst, size_t cap, const char *src) {
+    if (!dst || cap == 0 || !src || src[0] == '\0') return -1;
+    size_t n = strlen(src);
+    if (n >= cap) return -1;
+    memcpy(dst, src, n + 1);
+    return 0;
+}
+
 #if defined(NEVERC_PLATFORM_WINDOWS)
 #include <windows.h>
 #include <sddl.h>
@@ -91,9 +99,10 @@ done:
 int neverc_user_lookup(const char *username, neverc_user_t *u) {
     neverc_user_t current;
     SID_NAME_USE use = SidTypeUnknown;
+    int have_current;
     if (!username || username[0] == '\0' || !u) return -1;
-    if (neverc_user_current(&current) == 0 &&
-        _stricmp(current.username, username) == 0) {
+    have_current = neverc_user_current(&current) == 0;
+    if (have_current && _stricmp(current.username, username) == 0) {
         *u = current;
         return 0;
     }
@@ -104,6 +113,10 @@ int neverc_user_lookup(const char *username, neverc_user_t *u) {
         return -1;
     if (use != SidTypeUser && use != SidTypeDeletedAccount)
         return -1;
+    if (have_current && _stricmp(current.uid, u->uid) == 0) {
+        *u = current;
+        return 0;
+    }
     snprintf(u->name, sizeof(u->name), "%s", u->username);
     return 0;
 }
@@ -135,8 +148,8 @@ const char *neverc_user_home_dir(void) {
     static char buf[MAX_PATH];
     if (SHGetFolderPathA(NULL, CSIDL_PROFILE, NULL, 0, buf) == S_OK)
         return buf;
-    const char *h = getenv("USERPROFILE");
-    if (h) { snprintf(buf, sizeof(buf), "%s", h); return buf; }
+    if (user_copy_env_path(buf, sizeof(buf), getenv("USERPROFILE")) == 0)
+        return buf;
     return "";
 }
 
@@ -144,8 +157,8 @@ const char *neverc_user_cache_dir(void) {
     static char buf[MAX_PATH];
     if (SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, buf) == S_OK)
         return buf;
-    const char *h = getenv("LOCALAPPDATA");
-    if (h) { snprintf(buf, sizeof(buf), "%s", h); return buf; }
+    if (user_copy_env_path(buf, sizeof(buf), getenv("LOCALAPPDATA")) == 0)
+        return buf;
     return "";
 }
 
@@ -153,8 +166,8 @@ const char *neverc_user_config_dir(void) {
     static char buf[MAX_PATH];
     if (SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, buf) == S_OK)
         return buf;
-    const char *h = getenv("APPDATA");
-    if (h) { snprintf(buf, sizeof(buf), "%s", h); return buf; }
+    if (user_copy_env_path(buf, sizeof(buf), getenv("APPDATA")) == 0)
+        return buf;
     return "";
 }
 
@@ -314,15 +327,25 @@ int neverc_user_lookup_group_id(int gid, neverc_group_t *g) {
     return 0;
 }
 
+static int user_format_under(char *dst, size_t cap, const char *fmt, const char *a) {
+    if (!dst || cap == 0 || !a) return -1;
+    int n = snprintf(dst, cap, fmt, a);
+    if (n < 0 || (size_t)n >= cap) {
+        dst[0] = '\0';
+        return -1;
+    }
+    return 0;
+}
+
 const char *neverc_user_home_dir(void) {
     static char buf[1024];
     const char *h = getenv("HOME");
-    if (h && h[0]) { snprintf(buf, sizeof(buf), "%s", h); return buf; }
-    neverc_user_t u;
-    if (user_lookup_uid(getuid(), &u) == 0 && u.home_dir[0]) {
-        snprintf(buf, sizeof(buf), "%s", u.home_dir);
+    if (user_copy_env_path(buf, sizeof(buf), h) == 0)
         return buf;
-    }
+    neverc_user_t u;
+    if (user_lookup_uid(getuid(), &u) == 0 &&
+        user_copy_env_path(buf, sizeof(buf), u.home_dir) == 0)
+        return buf;
     return "";
 }
 
@@ -331,13 +354,16 @@ const char *neverc_user_cache_dir(void) {
 #if defined(NEVERC_PLATFORM_APPLE)
     const char *home = neverc_user_home_dir();
     if (!home || !home[0]) return "";
-    snprintf(buf, sizeof(buf), "%s/Library/Caches", home);
+    if (user_format_under(buf, sizeof(buf), "%s/Library/Caches", home) != 0)
+        return "";
 #else
     const char *xdg = getenv("XDG_CACHE_HOME");
-    if (xdg && xdg[0]) { snprintf(buf, sizeof(buf), "%s", xdg); return buf; }
+    if (user_copy_env_path(buf, sizeof(buf), xdg) == 0)
+        return buf;
     const char *home = neverc_user_home_dir();
     if (!home || !home[0]) return "";
-    snprintf(buf, sizeof(buf), "%s/.cache", home);
+    if (user_format_under(buf, sizeof(buf), "%s/.cache", home) != 0)
+        return "";
 #endif
     return buf;
 }
@@ -347,13 +373,17 @@ const char *neverc_user_config_dir(void) {
 #if defined(NEVERC_PLATFORM_APPLE)
     const char *home = neverc_user_home_dir();
     if (!home || !home[0]) return "";
-    snprintf(buf, sizeof(buf), "%s/Library/Application Support", home);
+    if (user_format_under(buf, sizeof(buf), "%s/Library/Application Support",
+                          home) != 0)
+        return "";
 #else
     const char *xdg = getenv("XDG_CONFIG_HOME");
-    if (xdg && xdg[0]) { snprintf(buf, sizeof(buf), "%s", xdg); return buf; }
+    if (user_copy_env_path(buf, sizeof(buf), xdg) == 0)
+        return buf;
     const char *home = neverc_user_home_dir();
     if (!home || !home[0]) return "";
-    snprintf(buf, sizeof(buf), "%s/.config", home);
+    if (user_format_under(buf, sizeof(buf), "%s/.config", home) != 0)
+        return "";
 #endif
     return buf;
 }

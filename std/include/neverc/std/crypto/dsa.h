@@ -48,7 +48,8 @@ int  neverc_dsa_sign(const neverc_dsa_private_key_t *key,
                      neverc_dsa_signature_t *sig);
 
 /* Rejects r,s outside (0,q), s not invertible mod q, degenerate keys
- * (g or y <= 1 or >= p), and g or y outside the order-q subgroup. */
+ * (g or y <= 1 or >= p), composite q, q that does not divide p-1,
+ * and g or y outside the order-q subgroup. */
 int  neverc_dsa_verify(const neverc_dsa_public_key_t *key,
                         const unsigned char *hash, size_t hash_len,
                         const neverc_dsa_signature_t *sig);

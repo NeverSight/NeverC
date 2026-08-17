@@ -78,14 +78,13 @@ static void test_fnv128(void) {
     neverc_fnv_128_t h0 = neverc_fnv_sum128("", 0);
     check_128("fnv128(empty)", h0, 0x6c62272e07bb0142ULL, 0x62b821756295c58dULL);
 
-    neverc_fnv_128_t ha = neverc_fnv_sum128("a", 1);
-    tests_run++;
-    if (ha.hi != h0.hi || ha.lo != h0.lo) tests_passed++;
-    else { tests_failed++; printf("  FAIL: fnv128(a) should differ from empty\n"); }
-
-    neverc_fnv_128_t h1 = neverc_fnv_sum128("test", 4);
-    neverc_fnv_128_t h2 = neverc_fnv_sum128("test", 4);
-    check_128("fnv128 deterministic", h2, h1.hi, h1.lo);
+    /* Go hash/fnv golden128 */
+    check_128("fnv128(a)", neverc_fnv_sum128("a", 1),
+              0xd228cb69101a8cafULL, 0x78912b704e4a141eULL);
+    check_128("fnv128(ab)", neverc_fnv_sum128("ab", 2),
+              0x0880945aeeab1be9ULL, 0x5aa073305526c088ULL);
+    check_128("fnv128(abc)", neverc_fnv_sum128("abc", 3),
+              0xa68bb2a4348b5822ULL, 0x836dbc78c6aee73bULL);
 }
 
 static void test_fnv128a(void) {
@@ -93,16 +92,15 @@ static void test_fnv128a(void) {
     neverc_fnv_128_t h0 = neverc_fnv_sum128a("", 0);
     check_128("fnv128a(empty)", h0, 0x6c62272e07bb0142ULL, 0x62b821756295c58dULL);
 
-    neverc_fnv_128_t ha = neverc_fnv_sum128a("a", 1);
-    tests_run++;
-    if (ha.hi != h0.hi || ha.lo != h0.lo) tests_passed++;
-    else { tests_failed++; printf("  FAIL: fnv128a(a) should differ from empty\n"); }
-
-    neverc_fnv_128_t h1_128 = neverc_fnv_sum128("abc", 3);
-    neverc_fnv_128_t h1a_128 = neverc_fnv_sum128a("abc", 3);
-    tests_run++;
-    if (h1_128.hi != h1a_128.hi || h1_128.lo != h1a_128.lo) tests_passed++;
-    else { tests_failed++; printf("  FAIL: fnv128 vs fnv128a should differ\n"); }
+    /* Go hash/fnv golden128a */
+    check_128("fnv128a(a)", neverc_fnv_sum128a("a", 1),
+              0xd228cb696f1a8cafULL, 0x78912b704e4a8964ULL);
+    check_128("fnv128a(ab)", neverc_fnv_sum128a("ab", 2),
+              0x08809544bbab1be9ULL, 0x5aa0733055b69a62ULL);
+    check_128("fnv128a(abc)", neverc_fnv_sum128a("abc", 3),
+              0xa68d622cec8b5822ULL, 0x836dbc7977af7f3bULL);
+    check_128("fnv128a(foobar)", neverc_fnv_sum128a("foobar", 6),
+              0x343e1662793c64bfULL, 0x6f0d3597ba446f18ULL);
 }
 
 static void test_consistency(void) {

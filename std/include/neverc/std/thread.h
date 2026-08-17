@@ -39,7 +39,10 @@ neverc_thread_executor_t *neverc_thread_executor_create(
     size_t worker_count, size_t queue_capacity);
 
 /* Submit blocks while the queue is full. The context-aware form returns
- * NEVERC_THREAD_CANCELLED if ctx is cancelled or its deadline expires. */
+ * NEVERC_THREAD_CANCELLED if ctx is cancelled or its deadline expires.
+ * Blocking submit from a worker returns NEVERC_THREAD_INVALID when the
+ * queue is full and every worker is already inside a task: that wait
+ * cannot make progress. */
 int neverc_thread_executor_submit(
     neverc_thread_executor_t *executor,
     neverc_thread_task_func_t function, void *arg);

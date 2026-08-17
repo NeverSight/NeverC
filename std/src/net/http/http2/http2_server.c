@@ -927,15 +927,72 @@ static int h2_value_valid(const char *value) {
     return 1;
 }
 
-/* Match HTTP/1 Host rules: spaces, userinfo, and path characters are not
- * a valid :authority / host. h2_value_valid() still allows SP. */
-static int h2_valid_authority(const char *value) {
-    if (!value || !*value) return 0;
-    for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
-        if (*p <= 0x20 || *p >= 0x7f || *p == '/' || *p == '\\' ||
-            *p == '?' || *p == '#' || *p == '@')
+static int h2_valid_port(const char *s, size_t length) {
+    if (!s || length == 0) return 0;
+    unsigned value = 0;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c < '0' || c > '9') return 0;
+        unsigned digit = (unsigned)(c - '0');
+        if (value > (65535U - digit) / 10U) return 0;
+        value = value * 10U + digit;
+    }
+    return value > 0;
+}
+
+/* Same rules as HTTP/1 Host: reject userinfo, paths, commas, bad ports,
+ * and unbracketed / unclosed IPv6 so intermediaries cannot desync. */
+static int h2_valid_host(const char *value, size_t length) {
+    if (!value || length == 0) return 0;
+    if (value[0] == '[') {
+        const char *close = (const char *)memchr(value, ']', length);
+        if (!close || close == value + 1) return 0;
+        size_t inner = (size_t)(close - value - 1);
+        int has_colon = 0;
+        for (size_t i = 0; i < inner; i++) {
+            unsigned char c = (unsigned char)value[1 + i];
+            if (c == ':') has_colon = 1;
+            if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
+                c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
+                c == ',')
+                return 0;
+        }
+        if (!has_colon &&
+            !(inner > 2 && (value[1] == 'v' || value[1] == 'V')))
+            return 0;
+        size_t after = length - (size_t)(close - value) - 1;
+        if (after == 0) return 1;
+        return close[1] == ':' && h2_valid_port(close + 2, after - 1);
+    }
+
+    const char *colon = (const char *)memchr(value, ':', length);
+    size_t host_length = colon ? (size_t)(colon - value) : length;
+    if (host_length == 0) return 0;
+    for (size_t i = 0; i < host_length; i++) {
+        unsigned char c = (unsigned char)value[i];
+        if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
+            c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
+            c == ',' || c == ':')
             return 0;
     }
+    if (!colon) return 1;
+    if (memchr(colon + 1, ':', length - host_length - 1)) return 0;
+    return h2_valid_port(colon + 1, length - host_length - 1);
+}
+
+static int h2_valid_authority(const char *value) {
+    if (!value || !*value) return 0;
+    return h2_valid_host(value, strlen(value));
+}
+
+static int h2_valid_path(const char *method, const char *path) {
+    if (!method || !path || !path[0]) return 0;
+    if (strcmp(path, "*") == 0)
+        return strcmp(method, "OPTIONS") == 0;
+    if (path[0] != '/') return 0;
+    for (const unsigned char *p = (const unsigned char *)path; *p; p++)
+        if (*p <= 0x20 || *p == 0x7f || *p == '#')
+            return 0;
     return 1;
 }
 
@@ -1025,8 +1082,7 @@ static int h2_validate_request_headers(h2_conn_t *conn,
         strcmp(method, "CONNECT") == 0 ||
         !scheme || (strcmp(scheme, "http") != 0 &&
                     strcmp(scheme, "https") != 0) ||
-        !path || (path[0] != '/' && strcmp(path, "*") != 0) ||
-        strchr(path, '#') != NULL)
+        !h2_valid_path(method, path))
         return -1;
     if (authority && !*authority) authority = NULL;
     if (host && !*host) host = NULL;
@@ -1327,6 +1383,23 @@ static void h2_remove_stream(h2_conn_t *conn, uint32_t id) {
         }
         pp = &(*pp)->next;
     }
+}
+
+/* Caller holds state_lock. Sends RST_STREAM, then releases the lock and
+ * removes the stream unless a handler is still running. */
+static void h2_abort_stream_locked(h2_conn_t *conn, h2_stream_t *stream,
+                                   uint32_t error_code) {
+    nc_atomic_store(&stream->reset, 1);
+    if (stream->cancel)
+        neverc_context_cancel_handle_cancel(stream->cancel);
+    if (stream->receive_queue)
+        (void)neverc_thread_channel_close(stream->receive_queue);
+    int handler_active = stream->handler_active;
+    uint32_t id = stream->id;
+    nc_mutex_unlock(&conn->state_lock);
+    (void)h2_conn_write_rst(conn, id, error_code);
+    if (!handler_active)
+        h2_remove_stream(conn, id);
 }
 
 static void h2_reap_completed_streams(h2_conn_t *conn) {
@@ -2256,11 +2329,26 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                                                NC_H2_PROTOCOL_ERROR);
                     free(payload);
                     goto cleanup;
-                } else {
-                    (void)h2_conn_write_rst(&conn, fhdr.stream_id,
-                                            NC_H2_PROTOCOL_ERROR);
+                }
+                nc_mutex_lock(&conn.state_lock);
+                h2_stream_t *zero_stream =
+                    h2_find_stream(&conn, fhdr.stream_id);
+                if (!zero_stream && fhdr.stream_id > conn.max_stream_id) {
+                    nc_mutex_unlock(&conn.state_lock);
+                    (void)h2_conn_write_goaway(&conn,
+                                               NC_H2_PROTOCOL_ERROR);
+                    free(payload);
+                    goto cleanup;
+                }
+                if (zero_stream) {
+                    h2_abort_stream_locked(&conn, zero_stream,
+                                           NC_H2_PROTOCOL_ERROR);
                     break;
                 }
+                nc_mutex_unlock(&conn.state_lock);
+                (void)h2_conn_write_rst(&conn, fhdr.stream_id,
+                                        NC_H2_PROTOCOL_ERROR);
+                break;
             }
             nc_mutex_lock(&conn.state_lock);
             if (fhdr.stream_id == 0) {
@@ -2285,10 +2373,10 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                     s->send_window += (int32_t)inc;
                 } else if (s) {
                     /* RFC 9113 §6.9.1: stream window overflow is RST_STREAM,
-                     * not a connection error. */
-                    nc_mutex_unlock(&conn.state_lock);
-                    (void)h2_conn_write_rst(&conn, fhdr.stream_id,
-                                            NC_H2_FLOW_CONTROL_ERROR);
+                     * not a connection error. The stream must still close so
+                     * later DATA cannot be dispatched as a successful request. */
+                    h2_abort_stream_locked(&conn, s,
+                                           NC_H2_FLOW_CONTROL_ERROR);
                     break;
                 }
             }
@@ -2333,10 +2421,25 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 ((uint32_t)payload[1] << 16) |
                 ((uint32_t)payload[2] << 8) |
                 (uint32_t)payload[3];
-            if (dependency == fhdr.stream_id) {
-                (void)h2_conn_write_rst(&conn, fhdr.stream_id,
-                                        NC_H2_PROTOCOL_ERROR);
+            if (dependency != fhdr.stream_id)
+                break;
+            /* RFC 9113 §6.3: self-dependency is a stream PROTOCOL_ERROR.
+             * RST alone is not enough — idle IDs must be consumed so a
+             * later HEADERS cannot succeed, and open streams must abort
+             * so later DATA cannot be dispatched. */
+            nc_mutex_lock(&conn.state_lock);
+            h2_stream_t *pri_stream =
+                h2_find_stream(&conn, fhdr.stream_id);
+            if (pri_stream) {
+                h2_abort_stream_locked(&conn, pri_stream,
+                                       NC_H2_PROTOCOL_ERROR);
+                break;
             }
+            if (fhdr.stream_id > conn.max_stream_id)
+                h2_consume_idle_stream_id(&conn, fhdr.stream_id);
+            nc_mutex_unlock(&conn.state_lock);
+            (void)h2_conn_write_rst(&conn, fhdr.stream_id,
+                                    NC_H2_PROTOCOL_ERROR);
             break;
         }
 

@@ -141,6 +141,10 @@ static void test_768_nist_acvp_keygen_vector(void) {
     neverc_mlkem768_dk_encapsulation_key(&dk, &ek);
     ASSERT(memcmp(ek.ek, expected_ek_prefix, sizeof(expected_ek_prefix)) == 0,
            "encapsulation key matches NIST ACVP tcId 26");
+    neverc_mlkem768_ek_t parsed;
+    ASSERT(neverc_mlkem768_new_ek(
+               &parsed, ek.ek, NEVERC_MLKEM768_EK_SIZE) == 0,
+           "ACVP ek coefficients are in Z_q");
     printf("ok\n");
 }
 

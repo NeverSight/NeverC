@@ -596,7 +596,8 @@ static int filepath_match_chunk(const char *chunk, size_t clen, const char *s,
                 failed = 1;
         } else if (chunk[i] == '?') {
             if (!failed) {
-                if (is_sep(*s))
+                /* Go filepath.Match: only os.PathSeparator, not every isSlash. */
+                if (*s == NEVERC_FILEPATH_SEP)
                     failed = 1;
                 uint32_t r;
                 int n;
@@ -637,7 +638,7 @@ int neverc_filepath_match(const char *pattern, const char *name) {
         const char *rest_pat = filepath_scan_chunk(pattern, &star, &chunk, &clen);
         if (star && clen == 0) {
             while (*name) {
-                if (is_sep(*name))
+                if (*name == NEVERC_FILEPATH_SEP)
                     return 0;
                 name++;
             }
@@ -658,7 +659,7 @@ int neverc_filepath_match(const char *pattern, const char *name) {
             int advanced = 0;
             const char *n;
             /* Go skips one byte at a time, not one rune. */
-            for (n = name; *n && !is_sep(*n); n++) {
+            for (n = name; *n && *n != NEVERC_FILEPATH_SEP; n++) {
                 ok = filepath_match_chunk(chunk, clen, n + 1, &t);
                 if (ok < 0)
                     return -1;

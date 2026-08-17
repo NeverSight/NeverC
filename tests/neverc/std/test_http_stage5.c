@@ -714,6 +714,283 @@ static void http_stage5_response_framing(void) {
     http_stage5_accept_304_transfer_encoding(1);
 }
 
+typedef struct {
+    neverc_tcp_listener_t *listener;
+    const char *response;
+    size_t response_len;
+    int max_accepts;
+    char request[2048];
+    int requests;
+    int result;
+} http_stage5_scripted_t;
+
+static int http_stage5_read_request(neverc_tcp_conn_t *connection,
+                                    char *buf, size_t capacity) {
+    if (!buf || capacity == 0) return -1;
+    size_t length = 0;
+    buf[0] = '\0';
+    while (length + 1U < capacity) {
+        int received = neverc_tcp_read(connection, buf + length, 1U);
+        if (received <= 0) break;
+        length += (size_t)received;
+        buf[length] = '\0';
+        if (strstr(buf, "\r\n\r\n")) return 0;
+    }
+    return -1;
+}
+
+static void http_stage5_scripted_task(void *context) {
+    http_stage5_scripted_t *server = (http_stage5_scripted_t *)context;
+    neverc_context_cancel_handle_t *cancel = NULL;
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *deadline = background
+        ? neverc_context_with_timeout_handle(background, 8000, &cancel)
+        : NULL;
+    int ok = 0;
+    for (int i = 0; i < server->max_accepts; i++) {
+        neverc_tcp_conn_t *connection = NULL;
+        neverc_net_result_t accepted = deadline
+            ? neverc_tcp_accept_context(server->listener, deadline, &connection)
+            : (neverc_net_result_t){NEVERC_NET_NOMEM, 0, "accept", 0U};
+        if (accepted.status != NEVERC_NET_OK || !connection)
+            break;
+        neverc_tcp_set_timeout(connection, 5000);
+        if (http_stage5_read_request(
+                connection, server->request, sizeof(server->request)) == 0)
+            server->requests++;
+        if (http_stage5_tcp_write_all(
+                connection, server->response, server->response_len) != 0) {
+            neverc_tcp_close(connection);
+            break;
+        }
+        neverc_tcp_close(connection);
+        ok = 1;
+    }
+    if (cancel) {
+        neverc_context_cancel_handle_cancel(cancel);
+        neverc_context_cancel_handle_free(cancel);
+    }
+    neverc_context_free(deadline);
+    neverc_context_free(background);
+    server->result = ok ? 0 : -1;
+}
+
+static neverc_tcp_listener_t *http_stage5_listen_port(int *port) {
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    if (!listener) return NULL;
+    neverc_tcp_addr_t address;
+    if (neverc_tcp_listener_addr(listener, &address) != 0) {
+        neverc_tcp_listener_close(listener);
+        return NULL;
+    }
+    *port = address.port;
+    return listener;
+}
+
+static neverc_http_client_t *http_stage5_security_client(int max_redirects) {
+    neverc_http_client_config_t config =
+        neverc_http_client_config_default();
+    config.timeout_ms = 5000;
+    config.max_idle_per_host = 0;
+    config.max_redirects = max_redirects;
+    return neverc_http_client_new(&config);
+}
+
+static neverc_thread_executor_t *http_stage5_start_scripted(
+    http_stage5_scripted_t *server) {
+    neverc_thread_executor_t *executor =
+        neverc_thread_executor_create(1U, 1U);
+    if (!executor) return NULL;
+    if (neverc_thread_executor_submit(
+            executor, http_stage5_scripted_task, server) != NEVERC_THREAD_OK) {
+        neverc_thread_executor_free(executor);
+        return NULL;
+    }
+    return executor;
+}
+
+static void http_stage5_stop_scripted(neverc_thread_executor_t *executor,
+                                      neverc_tcp_listener_t *listener) {
+    if (listener) neverc_tcp_listener_close(listener);
+    if (executor) {
+        CHECK(neverc_thread_executor_shutdown(executor) == NEVERC_THREAD_OK);
+        neverc_thread_executor_free(executor);
+    }
+}
+
+static void http_stage5_client_one_shot(const char *response,
+                                        neverc_http_response_t **out) {
+    *out = NULL;
+    int port = 0;
+    neverc_tcp_listener_t *listener = http_stage5_listen_port(&port);
+    CHECK(listener != NULL);
+    if (!listener) return;
+    http_stage5_scripted_t server;
+    memset(&server, 0, sizeof(server));
+    server.listener = listener;
+    server.response = response;
+    server.response_len = strlen(response);
+    server.max_accepts = 1;
+    neverc_thread_executor_t *executor = http_stage5_start_scripted(&server);
+    CHECK(executor != NULL);
+    neverc_http_client_t *client = http_stage5_security_client(0);
+    CHECK(client != NULL);
+    if (!executor || !client) {
+        neverc_http_client_free(client);
+        http_stage5_stop_scripted(executor, listener);
+        return;
+    }
+    char url[128];
+    (void)snprintf(url, sizeof(url), "http://127.0.0.1:%d/x", port);
+    *out = neverc_http_client_do(client, "GET", url, NULL, NULL, 0U);
+    neverc_http_client_free(client);
+    http_stage5_stop_scripted(executor, listener);
+}
+
+static void http_stage5_client_security(void) {
+    puts("[client security]");
+
+    neverc_http_response_t *resp =
+        neverc_http_get("http://127.0.0.1,example.com/");
+    CHECK(resp != NULL && resp->error != NULL);
+    neverc_http_response_free(resp);
+
+    resp = neverc_http_get("http://user@127.0.0.1/");
+    CHECK(resp != NULL && resp->error != NULL);
+    neverc_http_response_free(resp);
+
+    static const char both_framing[] =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: 5\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "Connection: close\r\n\r\n"
+        "hello";
+    http_stage5_client_one_shot(both_framing, &resp);
+    CHECK(resp != NULL && resp->error != NULL);
+    neverc_http_response_free(resp);
+
+    /* A bare LF in the status line used to swallow Transfer-Encoding into the
+     * reason phrase, so Content-Length won and keep-alive framing desynced. */
+    static const char lf_status[] =
+        "HTTP/1.1 200 OK\n"
+        "Transfer-Encoding: chunked\r\n"
+        "Content-Length: 5\r\n"
+        "Connection: close\r\n\r\n"
+        "hello";
+    http_stage5_client_one_shot(lf_status, &resp);
+    CHECK(resp != NULL && resp->error != NULL);
+    neverc_http_response_free(resp);
+
+    static const char smuggled_location[] =
+        "HTTP/1.1 302 Found\r\n"
+        "Location: /next\nHost: evil.example\r\n"
+        "Connection: close\r\n\r\n";
+    http_stage5_client_one_shot(smuggled_location, &resp);
+    CHECK(resp != NULL && resp->error != NULL);
+    neverc_http_response_free(resp);
+
+    int loop_port = 0;
+    neverc_tcp_listener_t *loop_listener =
+        http_stage5_listen_port(&loop_port);
+    CHECK(loop_listener != NULL);
+    if (loop_listener) {
+        static const char loop_response[] =
+            "HTTP/1.1 302 Found\r\n"
+            "Location: /loop\r\n"
+            "Connection: close\r\n\r\n";
+        http_stage5_scripted_t loop_server;
+        memset(&loop_server, 0, sizeof(loop_server));
+        loop_server.listener = loop_listener;
+        loop_server.response = loop_response;
+        loop_server.response_len = sizeof(loop_response) - 1U;
+        loop_server.max_accepts = 8;
+        neverc_thread_executor_t *loop_executor =
+            http_stage5_start_scripted(&loop_server);
+        CHECK(loop_executor != NULL);
+        neverc_http_client_t *client = http_stage5_security_client(2);
+        CHECK(client != NULL);
+        char url[128];
+        (void)snprintf(url, sizeof(url), "http://127.0.0.1:%d/loop",
+                       loop_port);
+        resp = client
+            ? neverc_http_client_do(client, "GET", url, NULL, NULL, 0U)
+            : NULL;
+        CHECK(resp != NULL && resp->error != NULL &&
+              strstr(resp->error, "too many redirects") != NULL);
+        neverc_http_response_free(resp);
+        neverc_http_client_free(client);
+        http_stage5_stop_scripted(loop_executor, loop_listener);
+    }
+
+    int first_port = 0;
+    int second_port = 0;
+    neverc_tcp_listener_t *first_listener =
+        http_stage5_listen_port(&first_port);
+    neverc_tcp_listener_t *second_listener =
+        http_stage5_listen_port(&second_port);
+    CHECK(first_listener != NULL && second_listener != NULL);
+    if (first_listener && second_listener) {
+        char location_response[256];
+        int location_len = snprintf(
+            location_response, sizeof(location_response),
+            "HTTP/1.1 302 Found\r\n"
+            "Location: http://127.0.0.1:%d/end\r\n"
+            "Set-Cookie: session=leaked\r\n"
+            "Connection: close\r\n\r\n",
+            second_port);
+        CHECK(location_len > 0 &&
+              (size_t)location_len < sizeof(location_response));
+        static const char final_response[] =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: 2\r\n"
+            "Connection: close\r\n\r\n"
+            "ok";
+        http_stage5_scripted_t first_server;
+        http_stage5_scripted_t second_server;
+        memset(&first_server, 0, sizeof(first_server));
+        memset(&second_server, 0, sizeof(second_server));
+        first_server.listener = first_listener;
+        first_server.response = location_response;
+        first_server.response_len = (size_t)location_len;
+        first_server.max_accepts = 1;
+        second_server.listener = second_listener;
+        second_server.response = final_response;
+        second_server.response_len = sizeof(final_response) - 1U;
+        second_server.max_accepts = 1;
+        neverc_thread_executor_t *first_executor =
+            http_stage5_start_scripted(&first_server);
+        neverc_thread_executor_t *second_executor =
+            http_stage5_start_scripted(&second_server);
+        CHECK(first_executor != NULL && second_executor != NULL);
+        neverc_http_client_t *client = http_stage5_security_client(5);
+        CHECK(client != NULL);
+        char url[128];
+        (void)snprintf(url, sizeof(url), "http://127.0.0.1:%d/start",
+                       first_port);
+        resp = client
+            ? neverc_http_client_do(client, "GET", url, NULL, NULL, 0U)
+            : NULL;
+        CHECK(resp != NULL && resp->error == NULL &&
+              resp->status_code == 200);
+        char expected_host[80];
+        (void)snprintf(expected_host, sizeof(expected_host),
+                       "Host: 127.0.0.1:%d\r\n", second_port);
+        char original_host[80];
+        (void)snprintf(original_host, sizeof(original_host),
+                       "Host: 127.0.0.1:%d\r\n", first_port);
+        CHECK(strstr(second_server.request, expected_host) != NULL);
+        CHECK(strstr(second_server.request, original_host) == NULL);
+        CHECK(strstr(second_server.request, "Cookie:") == NULL);
+        CHECK(strstr(second_server.request, "session=leaked") == NULL);
+        neverc_http_response_free(resp);
+        neverc_http_client_free(client);
+        http_stage5_stop_scripted(first_executor, first_listener);
+        http_stage5_stop_scripted(second_executor, second_listener);
+    }
+}
+
 static void http_stage5_tls_e2e(void) {
     neverc_network_test_files_t files;
     memset(&files, 0, sizeof(files));
@@ -819,6 +1096,7 @@ int main(void) {
     }
     http_stage5_plain_e2e();
     http_stage5_response_framing();
+    http_stage5_client_security();
     http_stage5_tls_e2e();
     http_stage5_remove_static_file();
     printf("http stage5: %d checks, %d failed\n", tests_run, tests_failed);

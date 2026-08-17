@@ -28,7 +28,12 @@ static int remaining_count = 0;
 
 static flag_entry_t *register_flag(const char *name, const char *usage,
                                    int type) {
-    if (!name || name[0] == '\0' || flag_count >= NEVERC_FLAG_MAX) return NULL;
+    /* Go flag.Var: names must not be empty, begin with '-', or contain '='.
+     * An '=' in the name is split as name=value at parse time, so the flag
+     * can never be addressed and can steal values from a shorter name. */
+    if (!name || name[0] == '\0' || name[0] == '-' || strchr(name, '=') ||
+        flag_count >= NEVERC_FLAG_MAX)
+        return NULL;
     for (int i = 0; i < flag_count; i++) {
         if (strcmp(flags[i].name, name) == 0) return NULL;
     }
@@ -185,6 +190,12 @@ int neverc_flag_parse(int argc, char **argv) {
 
         const char *name = arg + 1;
         if (name[0] == '-') name++;
+        /* Go flag: name must not be empty or start with '-' / '='. "---x"
+         * is bad syntax, not a flag named "-x". */
+        if (name[0] == '\0' || name[0] == '-' || name[0] == '=') {
+            fprintf(stderr, "bad flag syntax: %s\n", arg);
+            return -1;
+        }
 
         const char *eq = strchr(name, '=');
         const char *value = eq ? eq + 1 : NULL;

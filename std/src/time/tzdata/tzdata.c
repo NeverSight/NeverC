@@ -503,7 +503,8 @@ static const neverc_tzdata_zone_t *parse_posix_tz(const char *tz) {
     g_posix_zone.utc_offset = std_off;
     g_posix_zone.dst_offset = has_dst ? dst_off : 0;
     g_posix_zone.has_dst = has_dst;
-    g_posix_zone.dst_hemi = has_dst ? 1 : 0;
+    /* Wrap-around rules (Sep→Apr) are southern; otherwise northern / US default. */
+    g_posix_zone.dst_hemi = !has_dst ? 0 : (has_rules && start.month > end.month) ? 2 : 1;
     g_posix_has_rules = has_rules;
     g_posix_start = start;
     g_posix_end = end;
@@ -539,9 +540,15 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
     if (zone->dst_hemi == 2 || nz || cl) {
         int64_t start, end;
         if (nz) {
-            start = tz_unix_civil(year, 9, tz_last_wday(year, 9, 0), 2, 0, 0) -
+            /* Auckland 02:00/03:00; Chatham is 45 minutes ahead, so 02:45/03:45. */
+            int start_min = 0, end_min = 0;
+            if (nc_streq(zone->name, "Pacific/Chatham")) {
+                start_min = 45;
+                end_min = 45;
+            }
+            start = tz_unix_civil(year, 9, tz_last_wday(year, 9, 0), 2, start_min, 0) -
                     zone->utc_offset;
-            end = tz_unix_civil(year, 4, tz_nth_wday(year, 4, 0, 1), 3, 0, 0) -
+            end = tz_unix_civil(year, 4, tz_nth_wday(year, 4, 0, 1), 3, end_min, 0) -
                   zone->dst_offset;
         } else if (cl) {
             start = tz_unix_civil(year, 9, tz_nth_wday(year, 9, 6, 1), 0, 0, 0) -

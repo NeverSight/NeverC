@@ -154,6 +154,30 @@ static void test_cycle(void) {
     check_bool("as peer node", found == b, 1);
     neverc_errors_free(other);
     neverc_errors_free(a);
+
+    a = neverc_errors_new("a");
+    b = neverc_errors_new("b");
+    a->wrapped = b;
+    b->wrapped = a;
+    neverc_error_t *cyclic[] = {a};
+    neverc_error_t *joined = neverc_errors_join(cyclic, 1);
+    check_bool("join cyclic succeeds", joined != NULL, 1);
+    check_bool("join cyclic is a", neverc_errors_is(joined, a), 1);
+    neverc_error_t *unrelated = neverc_errors_new("z");
+    check_bool("join cyclic is not unrelated",
+               neverc_errors_is(joined, unrelated), 0);
+    neverc_errors_free(unrelated);
+    neverc_errors_free(joined);
+    neverc_errors_free(a);
+
+    neverc_error_t *c = neverc_errors_new("c");
+    neverc_error_t *d = neverc_errors_new("d");
+    c->wrapped = d;
+    d->wrapped = c;
+    neverc_error_t *outer = neverc_errors_wrap("outer", c);
+    check_bool("wrap cyclic succeeds", outer != NULL, 1);
+    check_bool("wrap cyclic is c", neverc_errors_is(outer, c), 1);
+    neverc_errors_free(outer);
 }
 
 int main(void) {
@@ -164,5 +188,6 @@ int main(void) {
     test_join();
     test_cycle();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

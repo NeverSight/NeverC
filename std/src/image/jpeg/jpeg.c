@@ -346,7 +346,7 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
         (img->height > 1 &&
          img->stride > (SIZE_MAX - row_size) / (img->height - 1))) return -1;
     uint64_t pixel_count = (uint64_t)img->width * img->height;
-    if (pixel_count > (1u << 28) || pixel_count > SIZE_MAX / 2) return -1;
+    if (pixel_count > (UINT64_C(1) << 28) || pixel_count > SIZE_MAX / 2) return -1;
 
     uint8_t lum_quant[64], chrom_quant[64];
     scale_quant_table(lum_quant, std_lum_quant, quality);
@@ -1013,12 +1013,14 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
      * real photo yet keeps every allocation < 4 GiB even on 32-bit. The product
      * is done in 64-bit so the check itself never overflows. (libjpeg/stb-image
      * apply equivalent caps.) */
-    if ((uint64_t)width * (uint64_t)height > (1u << 28)) goto fail;
+    if ((uint64_t)width * (uint64_t)height > (UINT64_C(1) << 28)) goto fail;
 
     img->width = width;
     img->height = height;
     img->channels = (ncomp == 1) ? 1 : 3;
+    if (width > SIZE_MAX / img->channels) goto fail;
     img->stride = (size_t)width * img->channels;
+    if (height > SIZE_MAX / img->stride) goto fail;
     img->pixels = (uint8_t *)calloc(1, img->stride * height);
     if (!img->pixels) goto fail;
 
@@ -1168,18 +1170,23 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
         }
     }
 
-    /* A complete baseline scan must end on a byte boundary followed by EOI.
-     * At most seven fill bits may remain in the bit buffer. Accept either fill
-     * bit value for compatibility, but never silently accept a truncated scan
-     * or unconsumed entropy bytes. */
+    /* A complete baseline scan must end on a byte boundary followed by EOI
+     * (FF D9). At most seven fill bits may remain in the bit buffer. Accept
+     * either fill-bit value for compatibility, but never silently accept a
+     * truncated scan, a bare 0xD9 without the 0xFF prefix (that is a truncated
+     * EOI), or unconsumed entropy bytes. Fill 0xFF bytes may precede the marker. */
     if (br.failed || br.bit_cnt < 0 || br.bit_cnt > 7)
         goto decode_fail;
     size_t marker_pos = br.pos;
-    while (marker_pos < br.len && br.data[marker_pos] == 0xFF)
+    while (marker_pos + 1 < br.len &&
+           br.data[marker_pos] == 0xFF &&
+           br.data[marker_pos + 1] == 0xFF)
         marker_pos++;
-    if (marker_pos >= br.len || br.data[marker_pos] != 0xD9)
+    if (marker_pos + 1 >= br.len ||
+        br.data[marker_pos] != 0xFF ||
+        br.data[marker_pos + 1] != 0xD9)
         goto decode_fail;
-    if (marker_pos + 1 != br.len)
+    if (marker_pos + 2 != br.len)
         goto decode_fail;
 
     /* Compose the output: box-upsample each component to full resolution (sample

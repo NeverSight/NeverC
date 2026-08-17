@@ -730,7 +730,16 @@ static int udp_read_packet_unlocked(
 #endif
 
     info->datagram_len = datagram_len;
+#if defined(__linux__)
     info->truncated = datagram_len > buflen;
+#elif defined(_WIN32)
+    info->truncated = datagram_len > buflen;
+#else
+    /* BSD recvmsg reports truncation in msg_flags; return value is the
+     * copied size, so datagram_len > buflen is not sufficient. */
+    info->truncated = ((msg.msg_flags & MSG_TRUNC) != 0) ||
+                      datagram_len > buflen;
+#endif
     sa_to_udp_addr((struct sockaddr *)&sa, salen, &info->source);
 #ifdef _WIN32
     if (info->destination._sa_len == 0)

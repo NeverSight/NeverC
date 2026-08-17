@@ -352,9 +352,12 @@ static int parse_http_url(const char *url, parsed_url_t *out) {
         authority_length >= sizeof(out->authority) ||
         memchr(p, '@', authority_length))
         return -1;
+    /* Comma is a Host-list separator in some intermediaries; a URL such as
+     * http://evil.example,victim.example/ would otherwise send
+     * Host: evil.example,victim.example and override the origin. */
     for (size_t i = 0; i < authority_length; i++) {
         unsigned char c = (unsigned char)p[i];
-        if (c <= 0x20 || c == 0x7f || c == '\\') return -1;
+        if (c <= 0x20 || c == 0x7f || c == '\\' || c == ',') return -1;
     }
     memcpy(out->authority, p, authority_length);
     out->authority[authority_length] = '\0';
@@ -519,6 +522,11 @@ static int parse_response_framing(const char *headers, size_t header_length,
     const char *header_end = headers + header_length;
     const char *line_end = client_find_crlf(headers, header_end + 2);
     if (!line_end || (size_t)(line_end - headers) < 12) return -1;
+    /* Bare CR/LF in the status line would swallow later fields, including
+     * Transfer-Encoding / Content-Length, and desynchronize keep-alive. */
+    if (memchr(headers, '\n', (size_t)(line_end - headers)) ||
+        memchr(headers, '\r', (size_t)(line_end - headers)))
+        return -1;
     int is_http_11 = memcmp(headers, "HTTP/1.1 ", 9) == 0;
     int is_http_10 = memcmp(headers, "HTTP/1.0 ", 9) == 0;
     if ((!is_http_11 && !is_http_10) || headers[9] < '0' ||

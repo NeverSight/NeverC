@@ -87,6 +87,19 @@ static void test_with_newline(void) {
     n = neverc_csv_read_line(line2, strlen(line2), fields, 10, work, sizeof(work), NULL);
     ASSERT_INT_EQ(n, 2);
     ASSERT_STR_EQ(fields[1], "y");
+
+    /* Extra CR before CRLF is field content (Go encoding/csv). */
+    static const char cr_content[] = {'a', '\r', '\r', '\n'};
+    n = neverc_csv_read_line(cr_content, sizeof(cr_content), fields, 10,
+                             work, sizeof(work), NULL);
+    ASSERT_INT_EQ(n, 1);
+    ASSERT_STR_EQ(fields[0], "a\r");
+
+    static const char eof_cr[] = {'a', '\r'};
+    n = neverc_csv_read_line(eof_cr, sizeof(eof_cr), fields, 10,
+                             work, sizeof(work), NULL);
+    ASSERT_INT_EQ(n, 1);
+    ASSERT_STR_EQ(fields[0], "a");
 }
 
 static void test_write_simple(void) {
@@ -113,6 +126,30 @@ static void test_write_quoting(void) {
     ASSERT_INT_EQ(n > 0, 1);
     dst[n] = '\0';
     ASSERT_STR_EQ(dst, "\"a\nb\",\"c\r\"\n");
+
+    /* Go encoding/csv quotes leading unicode.IsSpace and the Postgres `\.`. */
+    const char *lead_fields[] = {" a", "\tb", "\\."};
+    n = neverc_csv_write_record(lead_fields, 3, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "\" a\",\"\tb\",\"\\.\"\n");
+
+    const char *nbsp_fields[] = {"\xc2\xa0x"};
+    n = neverc_csv_write_record(nbsp_fields, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "\"\xc2\xa0x\"\n");
+
+    neverc_csv_reader_opts_t trim_opts = {
+        .delimiter = ',', .trim_leading_space = 1
+    };
+    const char *round_fields[10];
+    char work[256];
+    int nf = neverc_csv_read_line(
+        "\" a\",b\n", 7U, round_fields, 10, work, sizeof(work), &trim_opts);
+    ASSERT_INT_EQ(nf, 2);
+    ASSERT_STR_EQ(round_fields[0], " a");
+    ASSERT_STR_EQ(round_fields[1], "b");
 }
 
 static void test_write_crlf(void) {
@@ -208,6 +245,91 @@ static void test_read_all(void) {
                   1);
     ASSERT_STR_EQ(limited_records[0][0], "a\"b\nc");
     ASSERT_STR_EQ(limited_records[0][1], "d");
+
+    /* Lone CR is a field byte (Go encoding/csv). Only LF / CRLF end records. */
+    {
+        const char *cr_row[NEVERC_CSV_MAX_FIELDS];
+        const char **cr_records[] = {cr_row};
+        int cr_count[1] = {0};
+        static const char lone_cr[] = {'a', '\r', 'b'};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          lone_cr, sizeof(lone_cr),
+                          cr_records, cr_count, 1,
+                          work, sizeof(work), NULL),
+                      1);
+        ASSERT_INT_EQ(cr_count[0], 1);
+        ASSERT_STR_EQ(cr_records[0][0], "a\rb");
+    }
+    {
+        const char *crlf0[NEVERC_CSV_MAX_FIELDS];
+        const char *crlf1[NEVERC_CSV_MAX_FIELDS];
+        const char **crlf_records[] = {crlf0, crlf1};
+        int crlf_counts[2] = {0, 0};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          "a\r\nb\n", 5U,
+                          crlf_records, crlf_counts, 2,
+                          work, sizeof(work), NULL),
+                      2);
+        ASSERT_STR_EQ(crlf_records[0][0], "a");
+        ASSERT_STR_EQ(crlf_records[1][0], "b");
+    }
+    {
+        const char *cmt_row[NEVERC_CSV_MAX_FIELDS];
+        const char **cmt_records[] = {cmt_row};
+        int cmt_count[1] = {0};
+        neverc_csv_reader_opts_t cr_comment = {.comment = '#'};
+        static const char comment_cr[] = {
+            '#', 'x', '\r', 'k', 'e', 'p', 't'
+        };
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          comment_cr, sizeof(comment_cr),
+                          cmt_records, cmt_count, 1,
+                          work, sizeof(work), &cr_comment),
+                      0);
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          "#comment\r\nnext\n", 15U,
+                          cmt_records, cmt_count, 1,
+                          work, sizeof(work), &cr_comment),
+                      1);
+        ASSERT_STR_EQ(cmt_records[0][0], "next");
+    }
+    {
+        const char *eof_row[NEVERC_CSV_MAX_FIELDS];
+        const char **eof_records[] = {eof_row};
+        int eof_count[1] = {0};
+        static const char eof_cr[] = {'a', '\r'};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          eof_cr, sizeof(eof_cr),
+                          eof_records, eof_count, 1,
+                          work, sizeof(work), NULL),
+                      1);
+        ASSERT_STR_EQ(eof_records[0][0], "a");
+    }
+    {
+        const char *dbl0[NEVERC_CSV_MAX_FIELDS];
+        const char *dbl1[NEVERC_CSV_MAX_FIELDS];
+        const char **dbl_records[] = {dbl0, dbl1};
+        int dbl_counts[2] = {0, 0};
+        static const char cr_before_crlf[] = {'a', '\r', '\r', '\n', 'b'};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          cr_before_crlf, sizeof(cr_before_crlf),
+                          dbl_records, dbl_counts, 2,
+                          work, sizeof(work), NULL),
+                      2);
+        ASSERT_STR_EQ(dbl_records[0][0], "a\r");
+        ASSERT_STR_EQ(dbl_records[1][0], "b");
+    }
+    {
+        const char *qrow[NEVERC_CSV_MAX_FIELDS];
+        const char **qrecords[] = {qrow};
+        int qcount[1] = {0};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          "\"a\rb\"\n", 6U,
+                          qrecords, qcount, 1,
+                          work, sizeof(work), NULL),
+                      1);
+        ASSERT_STR_EQ(qrecords[0][0], "a\rb");
+    }
 }
 
 static void test_invalid_inputs(void) {

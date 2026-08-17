@@ -132,16 +132,27 @@ static void chacha20_4block(const uint32_t state[16], uint8_t out[256]) {
 }
 #endif
 
-/* dst[i] = src[i] ^ ks[i] for n bytes, 8 bytes at a time. */
+/* dst[i] = src[i] ^ ks[i] for n bytes, 8 bytes at a time.
+ * dst == src (in-place) and dst before src are safe with the forward path.
+ * dst after src with overlap must walk backwards so we do not clobber unread src. */
 static void xor_keystream(uint8_t *dst, const uint8_t *src,
                           const uint8_t *ks, size_t n) {
+    if (n == 0)
+        return;
+    uintptr_t d = (uintptr_t)dst;
+    uintptr_t s = (uintptr_t)src;
+    if (d > s && (d - s) < (uintptr_t)n) {
+        while (n-- > 0)
+            dst[n] = src[n] ^ ks[n];
+        return;
+    }
     size_t i = 0;
     for (; i + 8 <= n; i += 8) {
-        uint64_t s, k;
-        memcpy(&s, src + i, 8);
+        uint64_t s8, k;
+        memcpy(&s8, src + i, 8);
         memcpy(&k, ks + i, 8);
-        s ^= k;
-        memcpy(dst + i, &s, 8);
+        s8 ^= k;
+        memcpy(dst + i, &s8, 8);
     }
     for (; i < n; i++) dst[i] = src[i] ^ ks[i];
 }
@@ -162,10 +173,8 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
                 (uint64_t)(0xFFFFFFFFu - ctx->state[12]) + 1u;
             avail += blocks * 64u;
         }
-        if ((uint64_t)len > avail) {
-            ctx->buf_used = -1;
+        if ((uint64_t)len > avail)
             return;
-        }
     }
 
     /* Consume any keystream left over from a previous partial block. */

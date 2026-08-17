@@ -128,6 +128,23 @@ static void test_various_lengths(void) {
         snprintf(buf, sizeof(buf), "verify len=%d", len);
         check_true(buf, neverc_poly1305_verify(tag, msg, len, key));
     }
+
+    /* Partial last block after many full blocks. The old
+     * `off += msg_len` increment overflowed size_t when msg_len > SIZE_MAX/2. */
+    {
+        uint8_t long_msg[4097];
+        for (int i = 0; i < 4097; i++)
+            long_msg[i] = (uint8_t)(i * 13 + 1);
+        uint8_t tag[16];
+        neverc_poly1305_auth(tag, long_msg, 4097, key);
+        check_true("verify len=4097 partial tail",
+                   neverc_poly1305_verify(tag, long_msg, 4097, key));
+        uint8_t tampered[16];
+        memcpy(tampered, tag, 16);
+        tampered[15] ^= 1;
+        check_true("reject tampered len=4097 tag",
+                   !neverc_poly1305_verify(tampered, long_msg, 4097, key));
+    }
 }
 
 int main(void) {

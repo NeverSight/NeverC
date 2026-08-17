@@ -215,6 +215,22 @@ static void test_invalid_key_and_spans(void) {
                 dst, unchanged, sizeof(dst));
 }
 
+static void test_ctr_low32_wrap_no_reuse(void) {
+    printf("[CTR 32-bit counter wrap]\n");
+    uint8_t key[16] = {0};
+    uint8_t iv[16];
+    memset(iv, 0, 16);
+    iv[12] = iv[13] = iv[14] = iv[15] = 0xFF;
+
+    uint8_t pt[32], ct[32];
+    memset(pt, 0x5A, sizeof(pt));
+    check_int("CTR wrap-around encrypt",
+              neverc_cipher_ctr_checked(key, 16, iv, ct, pt, 32), 0);
+    /* 128-bit increment carries into the nonce; the two blocks must differ. */
+    check_int("wrapped counter does not reuse keystream",
+              memcmp(ct, ct + 16, 16) != 0, 1);
+}
+
 int main(void) {
     printf("=== NeverC Cipher Mode Tests ===\n");
     test_cbc_128();
@@ -224,6 +240,7 @@ int main(void) {
     test_ctr_partial();
     test_cbc_invalid();
     test_invalid_key_and_spans();
+    test_ctr_low32_wrap_no_reuse();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

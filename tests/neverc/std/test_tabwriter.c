@@ -319,6 +319,69 @@ static void test_filter_html_entity_width(neverc_tabwriter_t *w) {
     ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a&amp;...b\n");
 }
 
+static void test_full_buf_tab_ends_cell(neverc_tabwriter_t *w) {
+    printf("[full_buf_tab_ends_cell]\n");
+    /* A cell of exactly MAX_BUF bytes followed by a tab used to skip
+     * end_cell (append_run returned success on a full buffer). */
+    neverc_tabwriter_init(w, 1, 0, 1, '.', 0);
+    size_t n = (size_t)NEVERC_TABWRITER_MAX_BUF + 3U;
+    char *buf = (char *)malloc(n);
+    ASSERT_INT_EQ(buf != NULL, 1);
+    if (!buf) return;
+    memset(buf, 'x', (size_t)NEVERC_TABWRITER_MAX_BUF);
+    buf[NEVERC_TABWRITER_MAX_BUF] = '\t';
+    buf[NEVERC_TABWRITER_MAX_BUF + 1] = 'y';
+    buf[NEVERC_TABWRITER_MAX_BUF + 2] = '\n';
+    neverc_tabwriter_write(w, buf, n);
+    neverc_tabwriter_flush(w);
+    size_t len = 0;
+    const char *out = neverc_tabwriter_output(w, &len);
+    tests_run++;
+    if (out && len == n &&
+        out[NEVERC_TABWRITER_MAX_BUF] == '.' &&
+        out[NEVERC_TABWRITER_MAX_BUF + 1] == 'y' &&
+        out[NEVERC_TABWRITER_MAX_BUF + 2] == '\n')
+        tests_passed++;
+    else {
+        tests_failed++;
+        printf("  FAIL: exact-full cell + tab (out=%s len=%zu)\n",
+               out ? "non-null" : "(null)", len);
+    }
+    free(buf);
+    neverc_tabwriter_reset(w);
+}
+
+static void test_max_lines_sets_failed(neverc_tabwriter_t *w) {
+    printf("[max_lines_sets_failed]\n");
+    neverc_tabwriter_init(w, 1, 8, 1, ' ', 0);
+    size_t n = (size_t)NEVERC_TABWRITER_MAX_LINES + 1U;
+    char *buf = (char *)malloc(n);
+    ASSERT_INT_EQ(buf != NULL, 1);
+    if (!buf) return;
+    memset(buf, '\n', n);
+    neverc_tabwriter_write(w, buf, n);
+    neverc_tabwriter_flush(w);
+    ASSERT_INT_EQ(neverc_tabwriter_output(w, NULL) == NULL, 1);
+    free(buf);
+    neverc_tabwriter_reset(w);
+}
+
+static void test_max_cols_sets_failed(neverc_tabwriter_t *w) {
+    printf("[max_cols_sets_failed]\n");
+    neverc_tabwriter_init(w, 1, 0, 0, '.', 0);
+    /* 258 tabs → 258 cells; the last is not a column, so 257 columns. */
+    size_t n = (size_t)NEVERC_TABWRITER_MAX_COLS + 2U;
+    char *buf = (char *)malloc(n);
+    ASSERT_INT_EQ(buf != NULL, 1);
+    if (!buf) return;
+    memset(buf, '\t', n);
+    neverc_tabwriter_write(w, buf, n);
+    neverc_tabwriter_flush(w);
+    ASSERT_INT_EQ(neverc_tabwriter_output(w, NULL) == NULL, 1);
+    free(buf);
+    neverc_tabwriter_reset(w);
+}
+
 int main(void) {
     printf("=== NeverC text/tabwriter Tests ===\n");
     neverc_tabwriter_t *w =
@@ -377,7 +440,13 @@ int main(void) {
     neverc_tabwriter_reset(w);
     test_filter_html_entity_width(w);
     neverc_tabwriter_reset(w);
+    test_full_buf_tab_ends_cell(w);
+    neverc_tabwriter_reset(w);
+    test_max_lines_sets_failed(w);
+    neverc_tabwriter_reset(w);
+    test_max_cols_sets_failed(w);
     free(w);
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

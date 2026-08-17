@@ -74,6 +74,48 @@ static int multipart_header_value_valid(const unsigned char *s, size_t n) {
     return 1;
 }
 
+/* True when `--boundary` at suffix_offset is a whole delimiter line.
+ * extra_crlf: pretend a CRLF follows `data` (write appends `\r\n` after the
+ * body, so a body that is exactly `--bnd` / `--bnd--` / `--bnd` + LWSP would
+ * become a real delimiter on the wire). A prefix such as `--bndX` is not. */
+static int delimiter_after_marker(const unsigned char *data, size_t length,
+                                  size_t suffix_offset, int extra_crlf,
+                                  int *closing, const unsigned char **after) {
+    size_t k = suffix_offset;
+    int is_close = (k + 1 < length && data[k] == '-' && data[k + 1] == '-');
+    if (is_close)
+        k += 2;
+    while (k < length && (data[k] == ' ' || data[k] == '\t'))
+        k++;
+
+    if (k == length) {
+        if (is_close || extra_crlf) {
+            if (closing) *closing = is_close;
+            if (after) *after = data + k;
+            return 1;
+        }
+        return 0;
+    }
+    if (k + 1 < length && data[k] == '\r' && data[k + 1] == '\n') {
+        if (closing) *closing = is_close;
+        if (after) *after = data + k + 2;
+        return 1;
+    }
+    if (data[k] == '\n') {
+        if (closing) *closing = is_close;
+        if (after) *after = data + k + 1;
+        return 1;
+    }
+    /* Lone CR is a line ending only at EOF of the message, not when the
+     * writer will append another `\r\n` (`--bnd\r` + `\r\n` is `\r\r\n`). */
+    if (k + 1 == length && data[k] == '\r' && !extra_crlf) {
+        if (closing) *closing = is_close;
+        if (after) *after = data + k + 1;
+        return 1;
+    }
+    return 0;
+}
+
 static const unsigned char *find_boundary_line(
     const nci_ss_finder_t *finder, const unsigned char *data, size_t length,
     size_t marker_length, int *closing, const unsigned char **after) {
@@ -83,38 +125,30 @@ static const unsigned char *find_boundary_line(
             finder, data + search_offset, length - search_offset);
         if (!candidate) return NULL;
         size_t offset = (size_t)(candidate - data);
-        size_t suffix_offset = offset + marker_length;
         int line_start = offset == 0 || data[offset - 1] == '\n';
-        if (line_start) {
-            /* RFC 2046: `--boundary` / `--boundary--` then optional LWSP
-             * (space / tab), then CRLF. Closing `--` may omit the final CRLF. */
-            size_t k = suffix_offset;
-            int is_close = (k + 1 < length && data[k] == '-' &&
-                            data[k + 1] == '-');
-            if (is_close) k += 2;
-            while (k < length && (data[k] == ' ' || data[k] == '\t'))
-                k++;
-            if (is_close && k == length) {
-                *closing = 1;
-                *after = data + k;
-                return candidate;
-            }
-            if (k < length && data[k] == '\r') {
-                k++;
-                if (k < length && data[k] == '\n') k++;
-                *closing = is_close;
-                *after = data + k;
-                return candidate;
-            }
-            if (k < length && data[k] == '\n') {
-                *closing = is_close;
-                *after = data + k + 1;
-                return candidate;
-            }
-        }
+        if (line_start &&
+            delimiter_after_marker(data, length, offset + marker_length, 0,
+                                   closing, after))
+            return candidate;
         search_offset = offset + 1;
     }
     return NULL;
+}
+
+/* Body is written, then `\r\n` and the next dash-boundary. Reject only a
+ * real delimiter line (including one completed by that trailing CRLF), not
+ * a prefix such as `--bndX` or `--bnd\rnot-a-break`. */
+static int body_injects_boundary(const unsigned char *body, size_t body_len,
+                                 const unsigned char *delim, size_t dlen) {
+    if (!body || body_len < dlen)
+        return 0;
+    for (size_t i = 0; i + dlen <= body_len; i++) {
+        if ((i == 0 || body[i - 1] == '\n') &&
+            memcmp(body + i, delim, dlen) == 0 &&
+            delimiter_after_marker(body, body_len, i + dlen, 1, NULL, NULL))
+            return 1;
+    }
+    return 0;
 }
 
 static int parse_headers(const unsigned char *data, size_t len,
@@ -323,8 +357,8 @@ int neverc_multipart_write(const neverc_multipart_part_t *parts, int count,
         if (out_cap - pos <= 2) return -1;
         out[pos++] = '\r'; out[pos++] = '\n';
 
-        /* Write body. Reject a body that would inject a new boundary line
-         * after the header CRLF (start-of-body "--bnd" or "\n--bnd"). */
+        /* Write body. Reject a body that would inject a real delimiter line
+         * after the header CRLF (start-of-body `--bnd\r\n` or `\n--bnd`). */
         if (part->body_len > 0) {
             size_t blen = multipart_boundary_length(boundary);
             unsigned char delim[72];
@@ -332,14 +366,8 @@ int neverc_multipart_write(const neverc_multipart_part_t *parts, int count,
             delim[1] = '-';
             memcpy(delim + 2, boundary, blen);
             size_t dlen = blen + 2;
-            if (part->body_len >= dlen &&
-                memcmp(part->body, delim, dlen) == 0)
+            if (body_injects_boundary(part->body, part->body_len, delim, dlen))
                 return -1;
-            for (size_t bi = 0; bi + 1 + dlen <= part->body_len; bi++) {
-                if (part->body[bi] == '\n' &&
-                    memcmp(part->body + bi + 1, delim, dlen) == 0)
-                    return -1;
-            }
             if (part->body_len >= out_cap - pos) return -1;
             memcpy(out + pos, part->body, part->body_len);
             pos += part->body_len;

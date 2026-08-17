@@ -462,6 +462,14 @@ static void test_reject_unsafe_paths(void) {
     memcpy(unsafe.name, "/etc/passwd", 12);
     check_int("writer rejects absolute",
               neverc_tar_writer_write_header(&writer, &unsafe), -1);
+    memcpy(unsafe.name, "foo/../bar", 11);
+    memset(unsafe.linkname, 0, sizeof(unsafe.linkname));
+    unsafe.typeflag = NEVERC_TAR_REG;
+    check_int("writer rejects nested traversal",
+              neverc_tar_writer_write_header(&writer, &unsafe), -1);
+    memcpy(unsafe.name, "foo\\bar", 8);
+    check_int("writer rejects backslash",
+              neverc_tar_writer_write_header(&writer, &unsafe), -1);
     neverc_tar_writer_free(&writer);
 
     memset(block, 0, sizeof(block));
@@ -498,6 +506,29 @@ static void test_reject_unsafe_paths(void) {
     test_finish_header(block);
     neverc_tar_reader_init(&reader, block, sizeof(block));
     check_int("reject absolute path",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(block, 0, sizeof(block));
+    memcpy(block, "foo/../bar", 10);
+    test_finish_header(block);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject nested traversal",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(block, 0, sizeof(block));
+    memcpy(block, "foo\\..\\bar", 10);
+    test_finish_header(block);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject backslash traversal",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(block, 0, sizeof(block));
+    memcpy(block, "link", 4);
+    block[156] = NEVERC_TAR_SYM;
+    memcpy(block + 157, "../../etc/passwd", 16);
+    test_finish_header(block);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject symlink escape",
               neverc_tar_reader_next(&reader, &header), -1);
 }
 
@@ -737,5 +768,6 @@ int main(void) {
     test_gnu_magic_ignores_prefix();
     test_header_only_and_typeflags();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

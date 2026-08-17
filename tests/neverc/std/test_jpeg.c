@@ -535,6 +535,70 @@ static void test_rejects_huge_sof(void) {
     free(encoded);
 }
 
+static void test_rejects_truncated_eoi(void) {
+    printf("[rejects_truncated_eoi]\n");
+    uint8_t pixels[64];
+    memset(pixels, 128, sizeof(pixels));
+    neverc_jpeg_image_t source = {
+        .width = 8, .height = 8, .channels = 1,
+        .pixels = pixels, .stride = 8
+    };
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&source, 90, &encoded, &encoded_length), 0);
+    if (!encoded || encoded_length < 2) { free(encoded); return; }
+
+    neverc_jpeg_image_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length - 1, &decoded), -1);
+    ASSERT_TRUE(decoded.pixels == NULL);
+
+    /* A truncated EOI is FF D9 with the 0xFF dropped, leaving a bare 0xD9.
+     * That used to be accepted as success. */
+    size_t eoi = find_marker(encoded, encoded_length, 0xD9);
+    ASSERT_TRUE(eoi != SIZE_MAX && eoi + 1 < encoded_length);
+    if (eoi != SIZE_MAX && eoi + 1 < encoded_length && encoded[eoi] == 0xFF) {
+        memmove(encoded + eoi, encoded + eoi + 1, encoded_length - eoi - 1);
+        memset(&decoded, 0, sizeof(decoded));
+        ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length - 1, &decoded), -1);
+        ASSERT_TRUE(decoded.pixels == NULL);
+        ASSERT_EQ(decoded.width, 0);
+    }
+    free(encoded);
+}
+
+static void test_eoi_fill_bytes_ok(void) {
+    printf("[eoi_fill_bytes_ok]\n");
+    uint8_t pixels[64];
+    memset(pixels, 128, sizeof(pixels));
+    neverc_jpeg_image_t source = {
+        .width = 8, .height = 8, .channels = 1,
+        .pixels = pixels, .stride = 8
+    };
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&source, 90, &encoded, &encoded_length), 0);
+    if (!encoded) return;
+    size_t eoi = find_marker(encoded, encoded_length, 0xD9);
+    ASSERT_TRUE(eoi != SIZE_MAX);
+    if (eoi == SIZE_MAX) { free(encoded); return; }
+    uint8_t *filled = (uint8_t *)malloc(encoded_length + 1);
+    ASSERT_TRUE(filled != NULL);
+    if (filled) {
+        memcpy(filled, encoded, eoi);
+        filled[eoi] = 0xFF; /* extra fill byte before EOI */
+        memcpy(filled + eoi + 1, encoded + eoi, encoded_length - eoi);
+        neverc_jpeg_image_t decoded;
+        memset(&decoded, 0, sizeof(decoded));
+        ASSERT_EQ(neverc_jpeg_decode(filled, encoded_length + 1, &decoded), 0);
+        ASSERT_EQ(decoded.width, 8);
+        ASSERT_EQ(decoded.height, 8);
+        neverc_jpeg_free(&decoded);
+        free(filled);
+    }
+    free(encoded);
+}
+
 int main(void) {
     printf("NeverC image/jpeg tests\n");
     test_encode_decode_rgb();
@@ -550,6 +614,8 @@ int main(void) {
     test_restart_interval_required();
     test_restart_roundtrip();
     test_rejects_huge_sof();
+    test_rejects_truncated_eoi();
+    test_eoi_fill_bytes_ok();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

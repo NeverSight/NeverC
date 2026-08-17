@@ -294,6 +294,97 @@ static void test_ipv6_echo(void) {
     neverc_tcp_listener_close(ln);
 }
 
+/* IPv4-mapped IPv6 must format as a.b.c.d:port (ACL/SSRF). Dual-stack
+ * listen on [::]:0 must accept IPv4 and report the same. */
+static void test_ipv4_mapped_addr(void) {
+    printf("[ipv4_mapped_addr]\n");
+    const char *err = NULL;
+
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("mapped listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        char mapped[80];
+        snprintf(mapped, sizeof(mapped), "[::ffff:127.0.0.1]:%d", laddr.port);
+        neverc_tcp_conn_t *c = neverc_tcp_dial(mapped, &err);
+        if (!c) _exit(1);
+        neverc_tcp_addr_t remote;
+        int unmapped = neverc_tcp_remote_addr(c, &remote) == 0 &&
+                       strncmp(remote.addr, "127.0.0.1:", 10) == 0 &&
+                       strstr(remote.addr, "ffff") == NULL;
+        neverc_tcp_write(c, "x", 1);
+        neverc_tcp_close(c);
+        _exit(unmapped ? 0 : 3);
+    }
+
+    neverc_tcp_conn_t *accepted = NULL;
+    for (int i = 0; i < 100 && !accepted; i++) {
+        neverc_net_result_t r = neverc_tcp_try_accept(ln, &accepted);
+        if (r.status == NEVERC_NET_OK) break;
+        accepted = NULL;
+        usleep(10000);
+    }
+    if (accepted) {
+        char buf[4];
+        (void)neverc_tcp_read(accepted, buf, sizeof(buf));
+        neverc_tcp_close(accepted);
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
+        check_int("mapped dial unavailable", 1, 1);
+    } else {
+        check_int("mapped dial remote is ipv4",
+                  WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+    }
+    neverc_tcp_listener_close(ln);
+
+    ln = neverc_tcp_listen("[::]:0", &err);
+    if (!ln) return;
+    neverc_tcp_listener_addr(ln, &laddr);
+
+    pid = fork();
+    if (pid == 0) {
+        char addr[64];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", laddr.port);
+        neverc_tcp_conn_t *c = neverc_tcp_dial(addr, &err);
+        if (!c) _exit(1);
+        neverc_tcp_write(c, "x", 1);
+        neverc_tcp_close(c);
+        _exit(0);
+    }
+
+    accepted = NULL;
+    for (int i = 0; i < 100 && !accepted; i++) {
+        neverc_net_result_t r = neverc_tcp_try_accept(ln, &accepted);
+        if (r.status == NEVERC_NET_OK) break;
+        accepted = NULL;
+        usleep(10000);
+    }
+    waitpid(pid, &status, 0);
+    if (accepted) {
+        neverc_tcp_addr_t remote;
+        check_int("dual-stack accept",
+                  neverc_tcp_remote_addr(accepted, &remote), 0);
+        check_int("dual-stack peer is ipv4 text",
+                  strncmp(remote.addr, "127.0.0.1:", 10) == 0, 1);
+        check_int("dual-stack peer not ffff",
+                  strstr(remote.addr, "ffff") == NULL, 1);
+        neverc_tcp_close(accepted);
+    } else if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
+        check_int("dual-stack ipv4 dial skipped", 1, 1);
+    } else {
+        check_int("dual-stack ipv4 accept", 0, 1);
+    }
+    neverc_tcp_listener_close(ln);
+}
+
 /* ===== AF_UNSPEC address fallback ===== */
 
 static void test_dial_address_fallback(void) {
@@ -837,6 +928,7 @@ int main(void) {
 #ifndef _WIN32
     test_echo();
     test_ipv6_echo();
+    test_ipv4_mapped_addr();
     test_dial_address_fallback();
     test_multiple_clients();
     test_large_data();

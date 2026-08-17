@@ -258,6 +258,13 @@ static void test_rotate_edge_cases(void) {
     check_int("rot8(x,8)", (int)neverc_bits_rotate_left8(0xAB, 8), 0xAB);
     check_int("rot16(x,16)", (int)neverc_bits_rotate_left16(0xABCD, 16), (int)(uint16_t)0xABCD);
 
+    /* Negative k is rotate-right (Go math/bits): k mod width via unsigned wrap. */
+    check_u32("rot32(2,-1)", neverc_bits_rotate_left32(2, -1), 1);
+    check_u64("rot64(2,-1)", neverc_bits_rotate_left64(2, -1), 1);
+    check_int("rot8(2,-1)", (int)neverc_bits_rotate_left8(2, -1), 1);
+    check_int("rot16(2,-1)", (int)neverc_bits_rotate_left16(2, -1), 1);
+    check_u32("rot32(1,-1)", neverc_bits_rotate_left32(1, -1), 0x80000000U);
+
     unsigned int val = 0xDEADBEEFU;
     check_int("rotate(x,0) generic", (int)neverc_bits_rotate_left(val, 0), (int)val);
 
@@ -361,5 +368,6 @@ int main(void) {
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

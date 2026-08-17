@@ -292,7 +292,9 @@ static int atof_hex(uint64_t mantissa, int exp, int neg, int trunc, double *out)
         mantissa = (uint64_t)1 << mantbits;
         exp = max_exp + 1;
         overflow = 1;
-    } else if (input_nonzero && (mantissa >> mantbits) == 0) {
+    } else if (input_nonzero && mantissa == 0) {
+        /* Flush-to-zero is ErrRange (Go). A nonzero subnormal is in range:
+         * (mant >> mantbits) == 0 is true for every subnormal, not just zero. */
         overflow = 1;
     }
 

@@ -51,11 +51,33 @@ static int mail_address_safe(const char *s) {
     return 1;
 }
 
-/* RFC 5322 dot-atom: no empty, leading, trailing, or consecutive dots. */
+/* RFC 5322 atext: printable US-ASCII except specials. */
+static int mail_atext(unsigned char c) {
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+        (c >= '0' && c <= '9'))
+        return 1;
+    switch (c) {
+    case '!': case '#': case '$': case '%': case '&': case '\'':
+    case '*': case '+': case '-': case '/': case '=': case '?':
+    case '^': case '_': case '`': case '{': case '|': case '}':
+    case '~':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* RFC 5322 dot-atom: 1*atext *("." 1*atext). Rejecting ':' in the
+ * local-part stops "Bcc:hidden@x.com" from parsing as a mailbox. */
 static int mail_dot_atom_ok(const char *s, size_t n) {
     if (n == 0 || s[0] == '.' || s[n - 1] == '.') return 0;
-    for (size_t i = 0; i + 1 < n; i++) {
-        if (s[i] == '.' && s[i + 1] == '.') return 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '.') {
+            if (s[i + 1] == '.') return 0;
+            continue;
+        }
+        if (!mail_atext(c)) return 0;
     }
     return 1;
 }
@@ -77,6 +99,7 @@ static int mail_addr_spec_ok(const char *s) {
         memcpy(inner, dom + 1, ilen);
         inner[ilen] = '\0';
         const char *ip = inner;
+        int want_v6 = 0;
         if (ilen >= 5) {
             char prefix[5];
             size_t i;
@@ -85,11 +108,16 @@ static int mail_addr_spec_ok(const char *s) {
                 if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
                 prefix[i] = c;
             }
-            if (memcmp(prefix, "ipv6:", 5) == 0)
+            if (memcmp(prefix, "ipv6:", 5) == 0) {
                 ip = inner + 5;
+                want_v6 = 1;
+            }
         }
         neverc_netip_addr_t addr;
-        return neverc_netip_parse_addr(ip, &addr) == 0;
+        if (neverc_netip_parse_addr(ip, &addr) != 0) return 0;
+        /* RFC 5321: IPv6: must be followed by an IPv6 address, not IPv4. */
+        if (want_v6 && addr.is_v4) return 0;
+        return 1;
     }
     return mail_dot_atom_ok(dom, strlen(dom));
 }
@@ -219,8 +247,11 @@ int neverc_mail_format_address(const neverc_mail_address_t *addr, char *buf, siz
 
     int need_quote = 0;
     for (const unsigned char *p = (const unsigned char *)addr->name; *p; p++) {
+        /* RFC 5322 specials must be quoted so "Bcc:hidden" cannot become
+         * an unquoted display-name that looks like a new header field. */
         if (*p < 33 || *p == 127 || *p == '"' || *p == '\\' ||
-            *p == ',' || *p == '<' || *p == '>' || *p == '@' || *p == ';')
+            *p == ',' || *p == '<' || *p == '>' || *p == '@' || *p == ';' ||
+            *p == ':' || *p == '(' || *p == ')' || *p == '[' || *p == ']')
             need_quote = 1;
     }
     if (!need_quote)

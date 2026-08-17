@@ -258,6 +258,12 @@ static void test_reject_unsafe_paths(void) {
     check_int("writer rejects drive prefix",
               neverc_zip_writer_add(
                   &w, "C:foo", payload, sizeof(payload) - 1), -1);
+    check_int("writer rejects nested traversal",
+              neverc_zip_writer_add(
+                  &w, "foo/../bar", payload, sizeof(payload) - 1), -1);
+    check_int("writer rejects backslash",
+              neverc_zip_writer_add(
+                  &w, "foo\\..\\bar", payload, sizeof(payload) - 1), -1);
     neverc_zip_writer_free(&w);
 }
 
@@ -412,6 +418,26 @@ static void test_directory_extra_and_descriptor(void) {
         neverc_zip_reader_free(&reader);
     }
 
+    n = build_stored_zip(crafted, sizeof(crafted), "foo/../bar",
+                         payload, sizeof(payload) - 1U, 0, 0, 0);
+    check_int("nested traversal fixture", n > 0, 1);
+    if (n > 0) {
+        neverc_zip_reader_t reader;
+        check_int("reader rejects nested traversal",
+                  neverc_zip_reader_init(&reader, crafted, n), -1);
+        neverc_zip_reader_free(&reader);
+    }
+
+    n = build_stored_zip(crafted, sizeof(crafted), "/etc/passwd",
+                         payload, sizeof(payload) - 1U, 0, 0, 0);
+    check_int("absolute fixture", n > 0, 1);
+    if (n > 0) {
+        neverc_zip_reader_t reader;
+        check_int("reader rejects absolute name",
+                  neverc_zip_reader_init(&reader, crafted, n), -1);
+        neverc_zip_reader_free(&reader);
+    }
+
     n = build_stored_zip(crafted, sizeof(crafted), "abs.txt",
                          payload, sizeof(payload) - 1U, 0, 0, 0);
     check_int("zip64 size fixture", n > 0, 1);
@@ -428,6 +454,148 @@ static void test_directory_extra_and_descriptor(void) {
         neverc_zip_reader_t reader;
         check_int("reject zip64 file size",
                   neverc_zip_reader_init(&reader, mutated, n), -1);
+        neverc_zip_reader_free(&reader);
+    }
+}
+
+static size_t build_two_locals(uint8_t *out, size_t cap,
+                               uint32_t off0, const char *n0, size_t d0,
+                               uint32_t off1, const char *n1, size_t d1) {
+    size_t n0l = strlen(n0);
+    size_t n1l = strlen(n1);
+    if (n0l == 0 || n0l > 255U || n1l == 0 || n1l > 255U)
+        return 0;
+    uint64_t end0 = (uint64_t)off0 + 30U + n0l + d0;
+    uint64_t end1 = (uint64_t)off1 + 30U + n1l + d1;
+    uint64_t locals_end = end0 > end1 ? end0 : end1;
+    size_t cd_size = 46U + n0l + 46U + n1l;
+    if (locals_end > SIZE_MAX - cd_size - 22U || locals_end > UINT32_MAX)
+        return 0;
+    size_t need = (size_t)locals_end + cd_size + 22U;
+    if (need > cap)
+        return 0;
+    memset(out, 0, need);
+
+    uint8_t *p = out + off0;
+    put32(p, 0x04034b50U);
+    put16(p + 4, 20);
+    put16(p + 8, NEVERC_ZIP_STORED);
+    put32(p + 18, (uint32_t)d0);
+    put32(p + 22, (uint32_t)d0);
+    put16(p + 26, (uint16_t)n0l);
+    memcpy(p + 30, n0, n0l);
+
+    p = out + off1;
+    put32(p, 0x04034b50U);
+    put16(p + 4, 20);
+    put16(p + 8, NEVERC_ZIP_STORED);
+    put32(p + 18, (uint32_t)d1);
+    put32(p + 22, (uint32_t)d1);
+    put16(p + 26, (uint16_t)n1l);
+    memcpy(p + 30, n1, n1l);
+
+    uint32_t crc0 = neverc_crc32_ieee(out + off0 + 30U + n0l, d0);
+    uint32_t crc1 = neverc_crc32_ieee(out + off1 + 30U + n1l, d1);
+    put32(out + off0 + 14U, crc0);
+    put32(out + off1 + 14U, crc1);
+
+    uint32_t cd_off = (uint32_t)locals_end;
+    size_t pos = (size_t)locals_end;
+    p = out + pos;
+    put32(p, 0x02014b50U);
+    put16(p + 4, 20);
+    put16(p + 6, 20);
+    put16(p + 10, NEVERC_ZIP_STORED);
+    put32(p + 16, crc0);
+    put32(p + 20, (uint32_t)d0);
+    put32(p + 24, (uint32_t)d0);
+    put16(p + 28, (uint16_t)n0l);
+    put32(p + 42, off0);
+    memcpy(p + 46, n0, n0l);
+    pos += 46U + n0l;
+
+    p = out + pos;
+    put32(p, 0x02014b50U);
+    put16(p + 4, 20);
+    put16(p + 6, 20);
+    put16(p + 10, NEVERC_ZIP_STORED);
+    put32(p + 16, crc1);
+    put32(p + 20, (uint32_t)d1);
+    put32(p + 24, (uint32_t)d1);
+    put16(p + 28, (uint16_t)n1l);
+    put32(p + 42, off1);
+    memcpy(p + 46, n1, n1l);
+    pos += 46U + n1l;
+
+    p = out + pos;
+    put32(p, 0x06054b50U);
+    put16(p + 8, 2);
+    put16(p + 10, 2);
+    put32(p + 12, (uint32_t)(pos - cd_off));
+    put32(p + 16, cd_off);
+    return pos + 22U;
+}
+
+static void test_overlapping_entries(void) {
+    printf("[overlapping entries]\n");
+    neverc_zip_writer_t writer;
+    neverc_zip_writer_init(&writer);
+    const uint8_t payload[] = "overlap!";
+    int built = neverc_zip_writer_add(
+                    &writer, "a", payload, sizeof(payload) - 1U) == 0 &&
+                neverc_zip_writer_close(&writer) == 0;
+    check_int("shared-local fixture", built, 1);
+    if (built && writer.data && writer.len >= 22U) {
+        size_t eocd = writer.len - 22U;
+        uint32_t cd_off =
+            (uint32_t)writer.data[eocd + 16U] |
+            ((uint32_t)writer.data[eocd + 17U] << 8U) |
+            ((uint32_t)writer.data[eocd + 18U] << 16U) |
+            ((uint32_t)writer.data[eocd + 19U] << 24U);
+        uint32_t cd_size =
+            (uint32_t)writer.data[eocd + 12U] |
+            ((uint32_t)writer.data[eocd + 13U] << 8U) |
+            ((uint32_t)writer.data[eocd + 14U] << 16U) |
+            ((uint32_t)writer.data[eocd + 15U] << 24U);
+        size_t new_len = writer.len + cd_size;
+        uint8_t *dup = (uint8_t *)malloc(new_len);
+        if (!dup) {
+            check_int("shared-local allocation", 0, 1);
+        } else {
+            memcpy(dup, writer.data, cd_off + cd_size);
+            memcpy(dup + cd_off + cd_size, writer.data + cd_off, cd_size);
+            memcpy(dup + cd_off + 2U * cd_size, writer.data + eocd, 22U);
+            put16(dup + new_len - 22U + 8U, 2);
+            put16(dup + new_len - 22U + 10U, 2);
+            put32(dup + new_len - 22U + 12U, cd_size * 2U);
+            neverc_zip_reader_t reader;
+            check_int("reject shared local range",
+                      neverc_zip_reader_init(&reader, dup, new_len), -1);
+            neverc_zip_reader_free(&reader);
+            free(dup);
+        }
+    }
+    neverc_zip_writer_free(&writer);
+
+    uint8_t crafted[256];
+    size_t n = build_two_locals(crafted, sizeof(crafted),
+                                0, "a", 4, 35, "b", 4);
+    check_int("adjacent fixture", n > 0, 1);
+    if (n > 0) {
+        neverc_zip_reader_t reader;
+        check_int("accept adjacent locals",
+                  neverc_zip_reader_init(&reader, crafted, n), 0);
+        check_int("adjacent count", neverc_zip_reader_count(&reader), 2);
+        neverc_zip_reader_free(&reader);
+    }
+
+    n = build_two_locals(crafted, sizeof(crafted),
+                         0, "a", 40, 31, "b", 4);
+    check_int("partial-overlap fixture", n > 0, 1);
+    if (n > 0) {
+        neverc_zip_reader_t reader;
+        check_int("reject overlapping locals",
+                  neverc_zip_reader_init(&reader, crafted, n), -1);
         neverc_zip_reader_free(&reader);
     }
 }
@@ -480,7 +648,9 @@ int main(void) {
     test_invalid_args();
     test_reject_unsafe_paths();
     test_directory_extra_and_descriptor();
+    test_overlapping_entries();
     test_zip64_sentinels();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

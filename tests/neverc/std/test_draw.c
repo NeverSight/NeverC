@@ -245,6 +245,62 @@ static void test_draw_over_self_overlap(void) {
     neverc_image_rgba_free(&img);
 }
 
+/* OVER of (255,255,255,128) onto opaque white used to wrap: the unclamped
+ * Porter-Duff sum is 382, which truncated to uint8 126. */
+static void test_draw_over_src_exceeds_alpha(void) {
+    printf("[draw_over_src_exceeds_alpha]\n");
+    neverc_image_rgba_t dst;
+    neverc_image_rgba_init(&dst, neverc_rect(0, 0, 4, 4));
+    neverc_draw_uniform(&dst, neverc_rect(0, 0, 4, 4),
+                        255, 255, 255, 255, NEVERC_DRAW_SRC);
+    neverc_draw_uniform(&dst, neverc_rect(0, 0, 4, 4),
+                        255, 255, 255, 128, NEVERC_DRAW_OVER);
+    uint8_t r, g, b, a;
+    neverc_image_rgba_at(&dst, 1, 1, &r, &g, &b, &a);
+    check("over_white_no_wrap_r", r == 255);
+    check("over_white_no_wrap_g", g == 255);
+    check("over_white_no_wrap_b", b == 255);
+    check("over_white_no_wrap_a", a == 255);
+
+    neverc_image_rgba_t src;
+    neverc_image_rgba_init(&src, neverc_rect(0, 0, 4, 4));
+    for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 4; x++)
+            neverc_image_rgba_set(&src, x, y, 255, 255, 255, 128);
+    neverc_draw_uniform(&dst, neverc_rect(0, 0, 4, 4),
+                        255, 255, 255, 255, NEVERC_DRAW_SRC);
+    neverc_draw(&dst, neverc_rect(0, 0, 4, 4), &src, neverc_pt(0, 0),
+                NEVERC_DRAW_OVER);
+    neverc_image_rgba_at(&dst, 2, 2, &r, &g, &b, &a);
+    check("over_pixel_white_no_wrap", r == 255 && g == 255 && b == 255 && a == 255);
+
+    neverc_image_rgba_free(&src);
+    neverc_image_rgba_free(&dst);
+}
+
+/* ca=0 must not mutate dest even when the mask is fully opaque. */
+static void test_draw_gray_over_transparent(void) {
+    printf("[draw_gray_over_transparent]\n");
+    neverc_image_rgba_t dst;
+    neverc_image_gray_t mask;
+    neverc_image_rgba_init(&dst, neverc_rect(0, 0, 4, 4));
+    neverc_image_gray_init(&mask, neverc_rect(0, 0, 4, 4));
+    neverc_draw_uniform(&dst, neverc_rect(0, 0, 4, 4),
+                        10, 20, 30, 255, NEVERC_DRAW_SRC);
+    for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 4; x++)
+            neverc_image_gray_set(&mask, x, y, 255);
+
+    neverc_draw_gray_over(&dst, neverc_rect(0, 0, 4, 4), &mask, neverc_pt(0, 0),
+                          255, 255, 255, 0);
+    uint8_t r, g, b, a;
+    neverc_image_rgba_at(&dst, 1, 1, &r, &g, &b, &a);
+    check("gray_over_ca0_unchanged", r == 10 && g == 20 && b == 30 && a == 255);
+
+    neverc_image_gray_free(&mask);
+    neverc_image_rgba_free(&dst);
+}
+
 static void test_draw_null(void) {
     printf("[draw_null]\n");
     neverc_image_rgba_t dst;
@@ -271,6 +327,8 @@ int main(void) {
     test_draw_clip_int_overflow();
     test_draw_src_self_overlap();
     test_draw_over_self_overlap();
+    test_draw_over_src_exceeds_alpha();
+    test_draw_gray_over_transparent();
     test_draw_null();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

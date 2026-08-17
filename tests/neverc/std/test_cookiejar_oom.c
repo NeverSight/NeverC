@@ -31,6 +31,7 @@ static void controlled_free(void *ptr) {
     free(ptr);
 }
 
+#include "../../../std/src/net/netip/netip.c"
 #define malloc controlled_malloc
 #define calloc controlled_calloc
 #define free controlled_free

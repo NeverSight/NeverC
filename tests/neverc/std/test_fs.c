@@ -41,6 +41,9 @@ static void test_valid_path(void) {
     check("com0", neverc_fs_valid_path("COM0") == 0);
     check("conin$", neverc_fs_valid_path("CONIN$") == 0);
     check("conout$", neverc_fs_valid_path("CONOUT$") == 0);
+    check("invalid_utf8", neverc_fs_valid_path("\xff") == 0);
+    check("invalid_utf8_elem", neverc_fs_valid_path("ok/\x80") == 0);
+    check("utf8_ok", neverc_fs_valid_path("\xe4\xb8\x96.txt") == 1);
 #if defined(_WIN32)
     check("drive relative", neverc_fs_valid_path("C:../evil") == 0);
     check("drive prefix", neverc_fs_valid_path("C:foo") == 0);
@@ -211,6 +214,38 @@ static void test_glob(void) {
         remove(class_a);
         remove(class_b);
     }
+
+#if !defined(_WIN32)
+    {
+        /* 世 is one UTF-8 rune. Go path.Match "?" matches it; a byte
+         * matcher would consume one byte and miss the file. */
+        char utf8path[2048];
+        snprintf(utf8path, sizeof(utf8path),
+                 "%s/neverc_glob_\xe4\xb8\x96.txt", tmpdir);
+        FILE *fu = fopen(utf8path, "w");
+        if (fu) { fprintf(fu, "u"); fclose(fu); }
+        matches = NULL;
+        count = 0;
+        rc = neverc_fs_glob(tmpdir, "neverc_glob_?.txt", &matches, &count);
+        check("glob_utf8_question_ok", rc == 0);
+        check("glob_utf8_question_found", count >= 1);
+        neverc_fs_free_matches(matches, count);
+        matches = NULL;
+        count = 0;
+        rc = neverc_fs_glob(tmpdir, "neverc_glob_??.txt", &matches, &count);
+        check("glob_utf8_two_questions_ok", rc == 0);
+        {
+            size_t i, hit = 0;
+            for (i = 0; i < count; i++) {
+                if (matches[i] && strstr(matches[i], "\xe4\xb8\x96"))
+                    hit++;
+            }
+            check("glob_utf8_two_questions_no_rune", hit == 0);
+        }
+        neverc_fs_free_matches(matches, count);
+        remove(utf8path);
+    }
+#endif
 
     matches = (char **)1;
     count = 99;

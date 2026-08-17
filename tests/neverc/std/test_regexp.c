@@ -95,6 +95,8 @@ static void test_character_classes(void) {
                neverc_regexp_match_string("[\\t-\\n]", "\\"), 0);
     check_bool("\\n not letter n", neverc_regexp_match_string("\\n", "n"), 0);
     check_bool("[]] literal bracket", neverc_regexp_match_string("[]]", "]"), 1);
+    check_bool("[\\.] escaped dot in class", neverc_regexp_match_string("[\\.]", "."), 1);
+    check_bool("[\\.] not letter", neverc_regexp_match_string("[\\.]", "a"), 0);
     check_bool("[]a] a", neverc_regexp_match_string("[]a]", "a"), 1);
     check_bool("[]a] bracket", neverc_regexp_match_string("[]a]", "]"), 1);
     check_bool("[\\D] letter", neverc_regexp_match_string("[\\D]", "a"), 1);
@@ -453,7 +455,8 @@ static void test_invalid_inputs(void) {
 
     static const char *invalid[] = {
         "[abc", "[]", "[z-a]", "a)", "\\", "a**", "a+?",
-        "\\q", "\\1", "\\8", "(?P<>x)", "(?P<foo-bar>x)", "[[:foo:]]"
+        "\\q", "\\1", "\\8", "(?P<>x)", "(?P<foo-bar>x)", "[[:foo:]]",
+        "[\\q]", "[\\1]", "[\\A]", "[a-\\q]"
     };
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         err = NULL;
@@ -692,6 +695,55 @@ static void test_named_groups_and_replace_expand(void) {
     check_int("(a)|(b) on b", neverc_regexp_find_submatch(re, "b", m, 3), 1);
     check_int("(a)|(b) g1 unset", m[1].start == NULL, 1);
     check_int("(a)|(b) g2 len", (int)m[2].len, 1);
+    neverc_regexp_free(re);
+
+    /* Both sides of `|` match the same text and join to one accept. The
+     * left alternative must win: a LIFO epsilon walk used to keep the right
+     * branch and leave group 1 unmatched (or set a group that never fired). */
+    re = neverc_regexp_compile("(a)|a", NULL);
+    memset(m, 0, sizeof(m));
+    check_int("(a)|a found", neverc_regexp_find_submatch(re, "a", m, 2), 1);
+    check_int("(a)|a g1 set", m[1].start != NULL && (int)m[1].len == 1, 1);
+    if (m[1].start) check_int("(a)|a g1 a", m[1].start[0] == 'a', 1);
+    r = neverc_regexp_replace_all(re, "a", "[$1]", &outlen);
+    check_str("(a)|a replace $1", r, "[a]");
+    free(r);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("a|(a)", NULL);
+    memset(m, 0, sizeof(m));
+    check_int("a|(a) found", neverc_regexp_find_submatch(re, "a", m, 2), 1);
+    check_int("a|(a) g1 unset", m[1].start == NULL, 1);
+    r = neverc_regexp_replace_all(re, "a", "[$1]", &outlen);
+    check_str("a|(a) replace $1", r, "[]");
+    free(r);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("(a)|(a)", NULL);
+    memset(m, 0, sizeof(m));
+    check_int("(a)|(a) found", neverc_regexp_find_submatch(re, "a", m, 3), 1);
+    check_int("(a)|(a) g1 set", m[1].start != NULL && (int)m[1].len == 1, 1);
+    check_int("(a)|(a) g2 unset", m[2].start == NULL, 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("((a)|a)", NULL);
+    memset(m, 0, sizeof(m));
+    check_int("((a)|a) found", neverc_regexp_find_submatch(re, "a", m, 3), 1);
+    check_int("((a)|a) g1 set", m[1].start != NULL && (int)m[1].len == 1, 1);
+    check_int("((a)|a) g2 set", m[2].start != NULL && (int)m[2].len == 1, 1);
+    neverc_regexp_free(re);
+
+    /* Optional group outside vs inside: unmatched vs matched-empty. */
+    re = neverc_regexp_compile("(a)?b", NULL);
+    memset(m, 0, sizeof(m));
+    check_int("(a)?b on b", neverc_regexp_find_submatch(re, "b", m, 2), 1);
+    check_int("(a)?b g1 unmatched", m[1].start == NULL, 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("(a?)b", NULL);
+    memset(m, 0, sizeof(m));
+    check_int("(a?)b on b", neverc_regexp_find_submatch(re, "b", m, 2), 1);
+    check_int("(a?)b g1 empty", m[1].start != NULL && (int)m[1].len == 0, 1);
     neverc_regexp_free(re);
 }
 

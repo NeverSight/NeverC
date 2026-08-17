@@ -505,7 +505,7 @@ static int parse_subject_alt_name(neverc_x509_cert_t *cert,
     asn1_reader_t wrapper = {data, len, 0};
     asn1_reader_t names;
     if (asn1_enter_sequence(&wrapper, &names) < 0 ||
-        wrapper.pos != wrapper.len)
+        wrapper.pos != wrapper.len || names.len == 0)
         return -1;
 
     while (names.pos < names.len) {
@@ -644,10 +644,13 @@ static int parse_ext_key_usage(neverc_x509_cert_t *cert,
 
 static int append_constraint_dns(char ***names, size_t *count,
                                  const uint8_t *value, size_t len) {
-    if (!names || !count || len > X509_MAX_DNS_NAME_LEN ||
+    if (!names || !count || !value || len == 0 ||
+        len > X509_MAX_DNS_NAME_LEN ||
         *count >= X509_MAX_SAN_ENTRIES)
         return -1;
-    if (len > 0 && !value)
+    /* "." is a leading-dot constraint with an empty remainder and would
+     * otherwise match every DNS name. */
+    if (len == 1 && value[0] == '.')
         return -1;
     for (size_t i = 0; i < len; ++i) {
         if (value[i] == 0 || value[i] > 0x7f)
@@ -735,6 +738,11 @@ static int parse_general_subtrees(asn1_reader_t *trees,
                                      : &cert->permitted_ip_network_count;
             if (append_ip_network(networks, count, value, value_len) != 0)
                 return -1;
+        } else {
+            /* RFC 5280 4.2.1.10: unrecognized name forms must not be
+             * dropped. A critical nameConstraints with only rfc822Name
+             * or directoryName would otherwise present as unrestricted. */
+            return -1;
         }
     }
     return 0;

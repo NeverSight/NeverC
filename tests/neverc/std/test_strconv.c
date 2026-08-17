@@ -288,6 +288,15 @@ static void test_parse_float(void) {
     check_int("hex signed underflow",
               neverc_strconv_parse_float("-0x1p-2000", &v),
               NEVERC_STRCONV_ERR_RANGE);
+    /* Subnormals are in range; only flush-to-zero is ErrRange. */
+    check_int("hex min subnormal ok",
+              neverc_strconv_parse_float("0x1p-1074", &v), 0);
+    check_true("hex min subnormal nonzero", v != 0.0);
+    check_true("hex min subnormal is min", v / 2.0 == 0.0);
+    check_int("hex just-under min is RANGE",
+              neverc_strconv_parse_float("0x1p-1075", &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_true("hex just-under min is 0", v == 0.0);
 }
 
 /* ===== Itoa ===== */
@@ -752,6 +761,24 @@ static void test_complex(void) {
               neverc_strconv_parse_complex("1e+10i", &re, &im), 0);
     check_double_approx("1e+10i re", re, 0.0, 1e-15);
     check_double_approx("1e+10i im", im, 1e10, 1.0);
+
+    /* Hex-float p+/p- is an exponent, not a real/imag split. */
+    check_int("parse_complex hex real p+",
+              neverc_strconv_parse_complex("0x1p+1", &re, &im), 0);
+    check_double_approx("hex real p+ re", re, 2.0, 1e-15);
+    check_double_approx("hex real p+ im", im, 0.0, 1e-15);
+    check_int("parse_complex hex real p-",
+              neverc_strconv_parse_complex("0x1p-1", &re, &im), 0);
+    check_double_approx("hex real p- re", re, 0.5, 1e-15);
+    check_double_approx("hex real p- im", im, 0.0, 1e-15);
+    check_int("parse_complex hex imag p+",
+              neverc_strconv_parse_complex("0x1p+1i", &re, &im), 0);
+    check_double_approx("hex imag p+ re", re, 0.0, 1e-15);
+    check_double_approx("hex imag p+ im", im, 2.0, 1e-15);
+    check_int("parse_complex hex both",
+              neverc_strconv_parse_complex("0x1p+1+0x1p-1i", &re, &im), 0);
+    check_double_approx("hex both re", re, 2.0, 1e-15);
+    check_double_approx("hex both im", im, 0.5, 1e-15);
 
     /* 'f' of 1e100 is ~104 chars; the old 64-byte scratch buffers failed. */
     char large[512];

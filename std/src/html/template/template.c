@@ -560,7 +560,11 @@ static int html_is_url_attr_name(const char *name, size_t nlen) {
         "background", "data", "srcset", "imagesrcset", "ping", "xlink:href",
         "longdesc", "usemap", "icon", "manifest", "archive",
         "classid", "codebase", "profile",
-        "dynsrc", "lowsrc", "code", "pluginspage", NULL
+        "dynsrc", "lowsrc", "code", "pluginspage", "pluginurl",
+        /* SVG SMIL can animate href via to/from/values/by (html5sec #10/#11). */
+        "to", "from", "values", "by",
+        /* Go html/template: xmlns is a URL; xml:base local-name is "base". */
+        "xmlns", "base", NULL
     };
     for (int i = 0; urls[i]; i++)
         if (html_attr_name_eq(name, nlen, urls[i])) return 1;
@@ -1060,6 +1064,64 @@ static int html_is_srcset_attr(const char *name, size_t nlen) {
            html_attr_name_eq(name, nlen, "imagesrcset");
 }
 
+typedef enum {
+    HTML_ATTR_PLAIN,
+    HTML_ATTR_URL,
+    HTML_ATTR_SRCSET,
+    HTML_ATTR_STYLE,
+    HTML_ATTR_EVENT,
+    HTML_ATTR_SRCDOC,
+    HTML_ATTR_UNSAFE
+} html_attr_kind_t;
+
+/*
+ * Go html/template attrType: strip a data- prefix, or a namespace (xmlns:*
+ * is always a URL; otherwise use the local name). Then classify srcset,
+ * srcdoc, style, sandbox/http-equiv, on*, the URL allowlist, and names
+ * containing src/uri/url. srcdoc is checked before the src heuristic so it
+ * stays double-escaped HTML rather than a URL.
+ */
+static html_attr_kind_t html_attr_kind(const char *name, size_t nlen) {
+    if (!name || nlen == 0) return HTML_ATTR_PLAIN;
+
+    const char *n = name;
+    size_t len = nlen;
+    if (len >= 5 && html_ci_eq_n(n, "data-", 5)) {
+        n += 5;
+        len -= 5;
+    } else {
+        size_t i;
+        for (i = 0; i < len; i++)
+            if (n[i] == ':') break;
+        if (i < len) {
+            if (i == 5 && html_ci_eq_n(n, "xmlns", 5))
+                return HTML_ATTR_URL;
+            n += i + 1;
+            len -= i + 1;
+        }
+    }
+    if (len == 0) return HTML_ATTR_PLAIN;
+
+    if (html_is_srcset_attr(n, len))
+        return HTML_ATTR_SRCSET;
+    if (html_attr_name_eq(n, len, "srcdoc"))
+        return HTML_ATTR_SRCDOC;
+    if (html_attr_name_eq(n, len, "style"))
+        return HTML_ATTR_STYLE;
+    if (html_attr_name_eq(n, len, "sandbox") ||
+        html_attr_name_eq(n, len, "http-equiv"))
+        return HTML_ATTR_UNSAFE;
+    if (len > 2 && html_ci_eq_n(n, "on", 2))
+        return HTML_ATTR_EVENT;
+    if (html_is_url_attr_name(n, len))
+        return HTML_ATTR_URL;
+    if (html_contains_ci_n(n, len, "src") ||
+        html_contains_ci_n(n, len, "uri") ||
+        html_contains_ci_n(n, len, "url"))
+        return HTML_ATTR_URL;
+    return HTML_ATTR_PLAIN;
+}
+
 /* Assemble prefix + value + following static text and apply Go's URL
  * allowlist. Suffix catches `href="{{.X}}:alert(1)"` / `java{{.X}}cript:`. */
 static int html_url_parts_unsafe(const char *prefix, size_t plen,
@@ -1124,7 +1186,7 @@ static int html_css_is_unsafe(const char *s) {
     if (html_css_has_unsafe_url(s)) return 1;
     if (html_css_contains_ci(s, "@import")) return 1;
     if (html_css_contains_ci(s, "expression")) return 1;
-    if (html_css_contains_ci(s, "mozbinding")) return 1;
+    if (html_css_contains_ci(s, "moz-binding")) return 1;
     for (size_t i = 0; i < n; i++) {
         if (html_scheme_is_parts(NULL, 0, s + i, "javascript") ||
             html_scheme_is_parts(NULL, 0, s + i, "vbscript") ||
@@ -1189,15 +1251,16 @@ static int execute_nodes(const node_t *n,
                                          "http-equiv") &&
                       html_contains_ci_n(n->next->text, n->next->text_len,
                                          "refresh")));
+                html_attr_kind_t akind = in_attr
+                    ? html_attr_kind(aname, nlen) : HTML_ATTR_PLAIN;
                 int in_url = in_css_url ||
-                    (in_attr && html_is_url_attr_name(aname, nlen)) ||
+                    (in_attr && (akind == HTML_ATTR_URL ||
+                                 akind == HTML_ATTR_SRCSET)) ||
                     in_refresh_url;
-                int in_event = in_attr && nlen > 2 &&
-                    html_ci_eq_n(aname, "on", 2);
-                int in_style_attr = in_attr &&
-                    html_attr_name_eq(aname, nlen, "style");
-                int in_srcdoc = in_attr &&
-                    html_attr_name_eq(aname, nlen, "srcdoc");
+                int in_event = in_attr && akind == HTML_ATTR_EVENT;
+                int in_style_attr = in_attr && akind == HTML_ATTR_STYLE;
+                int in_srcdoc = in_attr && akind == HTML_ATTR_SRCDOC;
+                int in_unsafe_attr = in_attr && akind == HTML_ATTR_UNSAFE;
                 int unquoted = in_attr && !quoted;
                 const char *dprefix = in_css_url ? uprefix :
                     (in_url ? aprefix : NULL);
@@ -1210,13 +1273,15 @@ static int execute_nodes(const node_t *n,
                                                 n->next->text_len);
                 if (dslen) dsuffix = n->next->text;
                 int is_srcset = in_attr && !in_css_url &&
-                    html_is_srcset_attr(aname, nlen);
+                    akind == HTML_ATTR_SRCSET;
                 int in_query = in_attr && in_url && !in_css_url &&
                     html_url_is_query_or_frag(aprefix, aplen);
                 char *escaped;
                 /* URL context wins over <script src="..."> so javascript:/data:
                  * are neutralized instead of JS-escaped (a no-op for those). */
-                if (in_url && in_query)
+                if (in_unsafe_attr)
+                    escaped = neverc_html_escape("ZgotmplZ");
+                else if (in_url && in_query)
                     escaped = neverc_html_url_query_escape(val);
                 else if (in_url && html_url_parts_unsafe(
                              dprefix, dplen, val, dsuffix, dslen, is_srcset))

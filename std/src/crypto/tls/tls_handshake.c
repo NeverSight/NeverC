@@ -67,6 +67,81 @@ static int tls_parse_encrypted_extensions(
     const uint8_t *message, size_t message_len,
     uint8_t *alert);
 
+static int tls_is_recognized_extension(uint16_t type) {
+    switch (type) {
+    case TLS_EXT_SERVER_NAME:
+    case TLS_EXT_SUPPORTED_GROUPS:
+    case TLS_EXT_SIGNATURE_ALGORITHMS:
+    case TLS_EXT_ALPN:
+    case TLS_EXT_PRE_SHARED_KEY:
+    case TLS_EXT_EARLY_DATA:
+    case TLS_EXT_SUPPORTED_VERSIONS:
+    case TLS_EXT_PSK_KEY_EXCHANGE_MODES:
+    case TLS_EXT_KEY_SHARE:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* RFC 8446 §4.2: the extension list must be well-formed. A recognized
+ * type that is not legal for this message is illegal_parameter. */
+static int tls_extension_list_valid(
+    const uint8_t *data, size_t len,
+    int (*allowed)(uint16_t type),
+    uint8_t *alert) {
+    size_t pos = 0;
+    uint16_t seen[32];
+    size_t seen_count = 0;
+    if (len > 0 && !data)
+        return -1;
+    while (pos < len) {
+        if (len - pos < 4) {
+            if (alert)
+                *alert = TLS_ALERT_DECODE_ERROR;
+            return -1;
+        }
+        uint16_t type = tls_get_u16(data + pos);
+        size_t ext_len = tls_get_u16(data + pos + 2);
+        pos += 4;
+        if (ext_len > len - pos) {
+            if (alert)
+                *alert = TLS_ALERT_DECODE_ERROR;
+            return -1;
+        }
+        for (size_t i = 0; i < seen_count; ++i) {
+            if (seen[i] == type) {
+                if (alert)
+                    *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+                return -1;
+            }
+        }
+        if (seen_count >= sizeof(seen) / sizeof(seen[0])) {
+            if (alert)
+                *alert = TLS_ALERT_DECODE_ERROR;
+            return -1;
+        }
+        seen[seen_count++] = type;
+        if (tls_is_recognized_extension(type) &&
+            (!allowed || !allowed(type))) {
+            if (alert)
+                *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+            return -1;
+        }
+        pos += ext_len;
+    }
+    return 0;
+}
+
+static int tls_certificate_extension_allowed(uint16_t type) {
+    (void)type;
+    return 0;
+}
+
+static int tls_new_session_ticket_extension_allowed(uint16_t type) {
+    return type == TLS_EXT_EARLY_DATA;
+}
+
 /* Returns 0 for a non-empty chain, 1 for an allowed empty chain, and -1 for
  * malformed input or allocation failure. Initial-handshake request contexts
  * are required to be empty. */
@@ -130,6 +205,10 @@ static int tls_store_peer_certificate(neverc_tls_conn_t *conn,
         size_t extensions_len = tls_get_u16(message + pos);
         pos += 2;
         if (extensions_len > list_end - pos)
+            goto fail;
+        if (tls_extension_list_valid(
+                message + pos, extensions_len,
+                tls_certificate_extension_allowed, NULL) != 0)
             goto fail;
         pos += extensions_len;
     }
@@ -211,6 +290,11 @@ static int tls_parse_certificate_request(
                     *supports_local_signature = 1;
             }
             saw_signature_algorithms = 1;
+        } else if (tls_is_recognized_extension(extension_type)) {
+            /* RFC 8446 §4.2: recognized types other than
+             * signature_algorithms are not legal in CertificateRequest. */
+            *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+            return -1;
         }
         pos += extension_len;
     }
@@ -1371,9 +1455,16 @@ static int tls_parse_encrypted_extensions(
             selected_alpn = protocols[0].data;
             selected_alpn_len = protocols[0].len;
         } else if (extension_type == TLS_EXT_SERVER_NAME) {
-            /* RFC 6066: EncryptedExtensions server_name is empty. */
+            /* RFC 6066: EncryptedExtensions server_name is empty.
+             * RFC 8446 §4.2: a response is illegal unless the client
+             * offered the matching request (SNI, not an IP literal). */
             if (extension_data.len != 0) {
                 *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+                return -1;
+            }
+            if (!conn->server_name || !conn->server_name[0] ||
+                nci_tls_name_is_ip_literal(conn->server_name)) {
+                *alert = TLS_ALERT_UNSUPPORTED_EXTENSION;
                 return -1;
             }
         } else if (extension_type == TLS_EXT_SUPPORTED_GROUPS) {
@@ -3166,6 +3257,10 @@ int nci_tls_parse_new_session_ticket(
         return -1;
 
     size_t extensions_end = pos + extensions_len;
+    if (tls_extension_list_valid(
+            body + pos, extensions_len,
+            tls_new_session_ticket_extension_allowed, NULL) != 0)
+        return -1;
     int saw_early_data = 0;
     while (pos < extensions_end) {
         if (extensions_end - pos < 4)
@@ -3403,6 +3498,34 @@ int neverc_tls_test_encrypted_extensions_forbidden(void) {
         return -1;
     }
 
+    static const uint8_t empty_sni_ee[] = {
+        0x00, 0x04,
+        0x00, 0x00, 0x00, 0x00
+    };
+    alert = 0;
+    if (tls_parse_encrypted_extensions(
+            &conn, cfg, empty_sni_ee, sizeof(empty_sni_ee),
+            &alert) == 0 ||
+        alert != TLS_ALERT_UNSUPPORTED_EXTENSION) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    if (tls_set_owned_string(&conn.server_name, "example.com", 11) != 0) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+    alert = 0;
+    if (tls_parse_encrypted_extensions(
+            &conn, cfg, empty_sni_ee, sizeof(empty_sni_ee),
+            &alert) != 0) {
+        free(conn.server_name);
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+    free(conn.server_name);
+    conn.server_name = NULL;
+
     neverc_tls_config_free(cfg);
     return 0;
 }
@@ -3452,6 +3575,146 @@ int neverc_tls_test_certificate_request_schemes(void) {
         tls_client_certificate_verify_scheme_allowed(
             TLS_SIG_ED25519))
         return -1;
+
+    static const uint8_t key_share_request[] = {
+        0x00,
+        0x00, 0x10,
+        0x00, 0x0d, 0x00, 0x04,
+        0x00, 0x02, 0x04, 0x03,
+        0x00, 0x33, 0x00, 0x00
+    };
+    supports_local = 0;
+    alert = 0;
+    if (tls_parse_certificate_request(
+            key_share_request, sizeof(key_share_request),
+            &supports_local, &alert) == 0 ||
+        alert != TLS_ALERT_ILLEGAL_PARAMETER)
+        return -1;
+    return 0;
+}
+
+int neverc_tls_test_certificate_entry_extensions(void) {
+    neverc_tls_conn_t conn;
+    memset(&conn, 0, sizeof(conn));
+
+    static const uint8_t well_formed[] = {
+        0x00,
+        0x00, 0x00, 0x06,
+        0x00, 0x00, 0x01, 0x30,
+        0x00, 0x00
+    };
+    if (tls_store_peer_certificate(
+            &conn, well_formed, sizeof(well_formed), 0) != 0)
+        return -1;
+    free(conn.peer_cert);
+    neverc_x509_cert_pool_free(conn.peer_intermediates);
+    conn.peer_cert = NULL;
+    conn.peer_cert_len = 0;
+    conn.peer_intermediates = NULL;
+
+    static const uint8_t malformed_extensions[] = {
+        0x00,
+        0x00, 0x00, 0x07,
+        0x00, 0x00, 0x01, 0x30,
+        0x00, 0x01, 0x00
+    };
+    if (tls_store_peer_certificate(
+            &conn, malformed_extensions,
+            sizeof(malformed_extensions), 0) == 0)
+        return -1;
+
+    static const uint8_t key_share_extensions[] = {
+        0x00,
+        0x00, 0x00, 0x0a,
+        0x00, 0x00, 0x01, 0x30,
+        0x00, 0x04, 0x00, 0x33, 0x00, 0x00
+    };
+    if (tls_store_peer_certificate(
+            &conn, key_share_extensions,
+            sizeof(key_share_extensions), 0) == 0)
+        return -1;
+
+    static const uint8_t unknown_empty_extension[] = {
+        0x00,
+        0x00, 0x00, 0x0a,
+        0x00, 0x00, 0x01, 0x30,
+        0x00, 0x04, 0x00, 0x05, 0x00, 0x00
+    };
+    if (tls_store_peer_certificate(
+            &conn, unknown_empty_extension,
+            sizeof(unknown_empty_extension), 0) != 0)
+        return -1;
+    free(conn.peer_cert);
+    neverc_x509_cert_pool_free(conn.peer_intermediates);
+    return 0;
+}
+
+int neverc_tls_test_new_session_ticket_extensions(void) {
+    neverc_tls_config_t *cfg = neverc_tls_config_new();
+    if (!cfg)
+        return -1;
+    neverc_tls_config_set_server_name(cfg, "example.com");
+
+    neverc_tls_conn_t conn;
+    memset(&conn, 0, sizeof(conn));
+    conn.config = cfg;
+    conn.handshake_done = 1;
+    conn.application_keys_active = 1;
+
+    static const uint8_t well_formed[] = {
+        0x00, 0x00, 0x0e, 0x10,
+        0x00, 0x00, 0x00, 0x00,
+        0x00,
+        0x00, 0x01, 0xff,
+        0x00, 0x00
+    };
+    if (nci_tls_parse_new_session_ticket(
+            &conn, well_formed, sizeof(well_formed)) != 0) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    static const uint8_t malformed[] = {
+        0x00, 0x00, 0x0e, 0x10,
+        0x00, 0x00, 0x00, 0x00,
+        0x00,
+        0x00, 0x01, 0xff,
+        0x00, 0x01, 0x00
+    };
+    if (nci_tls_parse_new_session_ticket(
+            &conn, malformed, sizeof(malformed)) == 0) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    static const uint8_t key_share[] = {
+        0x00, 0x00, 0x0e, 0x10,
+        0x00, 0x00, 0x00, 0x00,
+        0x00,
+        0x00, 0x01, 0xff,
+        0x00, 0x04, 0x00, 0x33, 0x00, 0x00
+    };
+    if (nci_tls_parse_new_session_ticket(
+            &conn, key_share, sizeof(key_share)) == 0) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    static const uint8_t early_data[] = {
+        0x00, 0x00, 0x0e, 0x10,
+        0x00, 0x00, 0x00, 0x00,
+        0x00,
+        0x00, 0x01, 0xff,
+        0x00, 0x08, 0x00, 0x2a, 0x00, 0x04,
+        0x00, 0x00, 0x10, 0x00
+    };
+    if (nci_tls_parse_new_session_ticket(
+            &conn, early_data, sizeof(early_data)) != 0) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    neverc_tls_config_free(cfg);
     return 0;
 }
 

@@ -569,7 +569,10 @@ int neverc_strconv_parse_complex(const char *s, double *re, double *im) {
     for (const char *p = end; p > start; p--) {
         const char *q = p - 1;
         if (*q != '+' && *q != '-') continue;
-        if (q > start && (q[-1] == 'e' || q[-1] == 'E')) continue;
+        /* Decimal e/E and hex-float p/P exponents are not a real/imag split. */
+        if (q > start && (q[-1] == 'e' || q[-1] == 'E' ||
+                          q[-1] == 'p' || q[-1] == 'P'))
+            continue;
         /* A leading sign is not a real/imag split. */
         if (q == start) continue;
         split = q;

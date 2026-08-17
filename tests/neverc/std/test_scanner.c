@@ -347,6 +347,86 @@ static void test_mode_zero_digits_are_chars(void) {
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
 }
 
+static void test_eof_position(void) {
+    printf("[eof_position]\n");
+    neverc_scanner_t s;
+    neverc_scanner_init(&s, "", 0);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    neverc_scanner_pos_t p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.line, 1);
+    ASSERT_INT_EQ(p.column, 1);
+    ASSERT_INT_EQ(p.offset, 0);
+
+    const char *ws = "x\n";
+    neverc_scanner_init(&s, ws, 2);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.line, 2);
+    ASSERT_INT_EQ(p.column, 1);
+    ASSERT_INT_EQ(p.offset, 2);
+}
+
+static void test_escaped_newline_terminates_string(void) {
+    printf("[escaped_newline_terminates_string]\n");
+    neverc_scanner_t s;
+    /* Go: a source newline ends a string/char even after '\\'. */
+    const char src[] = "\"ab\\\ncd";
+    neverc_scanner_init(&s, src, sizeof(src) - 1);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"ab\\");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "cd");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+
+    const char chsrc[] = "'a\\\nb";
+    neverc_scanner_init(&s, chsrc, sizeof(chsrc) - 1);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_CHAR);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "'a\\");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "b");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+}
+
+static void test_peek_skips_comments(void) {
+    printf("[peek_skips_comments]\n");
+    neverc_scanner_t s;
+    const char *src = "a /* skip */ b // c\nd";
+    neverc_scanner_init(&s, src, strlen(src));
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "a");
+    ASSERT_INT_EQ(neverc_scanner_peek(&s), 'b');
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "b");
+    ASSERT_INT_EQ(neverc_scanner_peek(&s), 'd');
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "d");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+
+    /* Visible comments: peek must still see the comment's '/'. */
+    neverc_scanner_init(&s, "a /*c*/ b", 9);
+    neverc_scanner_set_mode(&s, NEVERC_SCAN_GO_TOKENS & ~NEVERC_SCAN_SKIP_COMMENTS);
+    neverc_scanner_scan(&s);
+    ASSERT_INT_EQ(neverc_scanner_peek(&s), '/');
+}
+
+static void test_leading_bom_is_discarded(void) {
+    printf("[leading_bom_is_discarded]\n");
+    neverc_scanner_t s;
+    const char src[] = "\xEF\xBB\xBFhello";
+    neverc_scanner_init(&s, src, sizeof(src) - 1);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "hello");
+    neverc_scanner_pos_t p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.line, 1);
+    ASSERT_INT_EQ(p.column, 1);
+    ASSERT_INT_EQ(p.offset, 3);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+}
+
 static void test_mixed(void) {
     printf("[mixed]\n");
     neverc_scanner_t s;
@@ -385,7 +465,12 @@ int main(void) {
     test_prefix_floats();
     test_null_source();
     test_mode_zero_digits_are_chars();
+    test_eof_position();
+    test_escaped_newline_terminates_string();
+    test_peek_skips_comments();
+    test_leading_bom_is_discarded();
     test_mixed();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

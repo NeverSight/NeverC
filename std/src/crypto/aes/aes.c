@@ -1,4 +1,5 @@
 #include "neverc/std/crypto/aes.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 #include "aes_tables.h"
 
@@ -84,13 +85,19 @@ static void put_u32be(uint8_t *p, uint32_t v) {
 }
 
 int neverc_aes_init(neverc_aes_ctx_t *ctx, const uint8_t *key, int key_len) {
-    if (!ctx || !key) return -1;
+    if (!ctx) return -1;
     int nk, nr;
     switch (key_len) {
     case 16: nk = 4; nr = 10; break;
     case 24: nk = 6; nr = 12; break;
     case 32: nk = 8; nr = 14; break;
-    default: return -1;
+    default:
+        neverc_platform_secure_zero(ctx, sizeof(*ctx));
+        return -1;
+    }
+    if (!key) {
+        neverc_platform_secure_zero(ctx, sizeof(*ctx));
+        return -1;
     }
     ctx->rounds = nr;
 
@@ -131,6 +138,9 @@ int neverc_aes_init(neverc_aes_ctx_t *ctx, const uint8_t *key, int key_len) {
 }
 
 void neverc_aes_encrypt_block(const neverc_aes_ctx_t *ctx, uint8_t dst[16], const uint8_t src[16]) {
+    if (!ctx || !dst || !src ||
+        (ctx->rounds != 10 && ctx->rounds != 12 && ctx->rounds != 14))
+        return;
     uint32_t s0 = get_u32be(src)      ^ ctx->enc_key[0];
     uint32_t s1 = get_u32be(src + 4)  ^ ctx->enc_key[1];
     uint32_t s2 = get_u32be(src + 8)  ^ ctx->enc_key[2];
@@ -177,6 +187,9 @@ void neverc_aes_decrypt_block(const neverc_aes_ctx_t *ctx, uint8_t dst[16], cons
      * forward cipher but with InvSubBytes + InvShiftRows + InvMixColumns fused
      * into the Td tables and the InvMixColumns-transformed dec_key schedule.
      */
+    if (!ctx || !dst || !src ||
+        (ctx->rounds != 10 && ctx->rounds != 12 && ctx->rounds != 14))
+        return;
     int nr = ctx->rounds;
     const uint32_t *rk = ctx->dec_key;
 

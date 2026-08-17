@@ -251,7 +251,7 @@ static int mod_inverse(neverc_bigint_t *r, const neverc_bigint_t *a, const never
 #endif
 
 int neverc_rsa_generate_key(neverc_rsa_private_key_t *key, int bits) {
-    if (!key || bits < 512) return -1;
+    if (!key || bits < 512 || bits > 16384) return -1;
     int half = bits / 2;
 
     rsa_bigint_secure_reset(&key->pub.n);
@@ -316,10 +316,13 @@ int neverc_rsa_key_size(const neverc_rsa_public_key_t *pub) {
 
 /* e=1 makes RSA the identity map: PKCS#1 verify then accepts the encoded
  * message as a "signature", and encrypt is a no-op. e=2 is even, which no
- * RSA standard allows. n must be odd and strictly larger than e. */
+ * RSA standard allows. n must be odd and strictly larger than e.
+ * n is capped at 16384 bits and e at 256 bits (FIPS 186-5). */
 static int rsa_public_ok(const neverc_rsa_public_key_t *pub) {
     if (!pub || neverc_bigint_sign(&pub->n) <= 0 ||
         neverc_bigint_sign(&pub->e) <= 0)
+        return 0;
+    if (pub->n.len > 512 || pub->e.len > 8)
         return 0;
     if (neverc_bigint_bit_len(&pub->e) < 2)
         return 0;
@@ -581,18 +584,22 @@ int neverc_rsa_decrypt_pkcs1v15(const neverc_rsa_private_key_t *priv,
     size_t separator = 0;
     unsigned int looking = 1;
     for (size_t i = 2; i < (size_t)k; i++) {
-        unsigned int is_zero = (em[i] == 0);
+        /* (x - 1) >> 31 is 1 iff x == 0, with no secret-dependent compare. */
+        unsigned int is_zero = ((uint32_t)em[i] - 1u) >> 31;
         unsigned int select = looking & is_zero;
         size_t mask = (size_t)0 - (size_t)select;
         separator = (separator & ~mask) | (i & mask);
         looking &= is_zero ^ 1U;
     }
     invalid |= looking;
-    invalid |= (separator < 10);
+    /* High bit of (separator - 10) is set iff separator < 10. */
+    invalid |= (unsigned int)((separator - (size_t)10) >>
+                              (sizeof(separator) * 8 - 1));
 
     size_t message_start = separator + 1U;
     size_t msg_len = (size_t)k - message_start;
-    if (invalid != 0 || msg_len > out_cap)
+    unsigned int too_big = msg_len > out_cap;
+    if ((invalid | too_big) != 0)
         goto fail_em;
 
     if (msg_len > 0)
@@ -820,6 +827,12 @@ static void mgf1(rsa_hash_kind_t hash_kind,
                  const unsigned char *seed, size_t seed_len,
                  unsigned char *mask, size_t mask_len) {
     size_t digest_len = rsa_hash_size(hash_kind);
+    if (!seed || !mask || digest_len == 0 ||
+        seed_len > NEVERC_SHA512_DIGEST_SIZE) {
+        if (mask && mask_len)
+            memset(mask, 0, mask_len);
+        return;
+    }
     uint32_t counter = 0;
     size_t offset = 0;
     while (offset < mask_len) {
@@ -892,23 +905,24 @@ static int rsa_verify_pss(const neverc_rsa_public_key_t *pub,
     if (bigint_to_bytes(&message, encoded, key_bytes) != 0)
         goto cleanup_encoded;
 
+    /* PKCS#1 verify in this file ORs every encoding byte into one flag.
+     * PSS used to return at the first bad trailer / unused-bit / PS byte,
+     * which leaked which check failed while the hash compare was already
+     * constant-time. Finish the whole encoding, then the hash. */
     size_t leading_len = (size_t)key_bytes - encoded_len;
-    for (size_t i = 0; i < leading_len; ++i) {
-        if (encoded[i] != 0)
-            goto cleanup_encoded;
-    }
+    unsigned int invalid = 0;
+    for (size_t i = 0; i < leading_len; ++i)
+        invalid |= encoded[i];
     unsigned char *encoded_message = encoded + leading_len;
     size_t database_len = encoded_len - digest_len - 1;
     unsigned char *encoded_hash = encoded_message + database_len;
-    if (encoded_message[encoded_len - 1] != 0xbc)
-        goto cleanup_encoded;
+    invalid |= (unsigned int)(encoded_message[encoded_len - 1] ^ 0xbcu);
 
     unsigned unused_bits = (unsigned)(encoded_len * 8 - encoded_bits);
     if (unused_bits > 0) {
         unsigned char forbidden =
             (unsigned char)(0xffu << (8 - unused_bits));
-        if ((encoded_message[0] & forbidden) != 0)
-            goto cleanup_encoded;
+        invalid |= (unsigned int)(encoded_message[0] & forbidden);
     }
 
     mgf1(hash_kind, encoded_hash, digest_len,
@@ -920,11 +934,9 @@ static int rsa_verify_pss(const neverc_rsa_public_key_t *pub,
             (unsigned char)(0xffu >> unused_bits);
 
     size_t padding_len = encoded_len - digest_len - salt_len - 2;
-    unsigned invalid_padding = encoded_message[padding_len] ^ 0x01u;
+    invalid |= (unsigned int)(encoded_message[padding_len] ^ 0x01u);
     for (size_t i = 0; i < padding_len; ++i)
-        invalid_padding |= encoded_message[i];
-    if (invalid_padding != 0)
-        goto cleanup_encoded;
+        invalid |= encoded_message[i];
 
     unsigned char message_prime[8 + NEVERC_SHA512_DIGEST_SIZE * 2] = {0};
     memcpy(message_prime + 8, hash, digest_len);
@@ -933,8 +945,9 @@ static int rsa_verify_pss(const neverc_rsa_public_key_t *pub,
     unsigned char expected_hash[NEVERC_SHA512_DIGEST_SIZE];
     rsa_hash_sum(hash_kind, message_prime,
                  8 + digest_len + salt_len, expected_hash);
-    if (constant_time_equal(
-            encoded_hash, expected_hash, digest_len))
+    int hash_ok = constant_time_equal(
+        encoded_hash, expected_hash, digest_len);
+    if (invalid == 0 && hash_ok)
         result = 0;
 
 cleanup_encoded:

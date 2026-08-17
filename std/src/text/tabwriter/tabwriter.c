@@ -123,26 +123,25 @@ static void end_escape(neverc_tabwriter_t *w) {
 
 static void end_cell(neverc_tabwriter_t *w, int htab) {
     if (w->failed) return;
-    if (w->ncells >= NEVERC_TABWRITER_MAX_CELLS) {
+    if (w->ncells >= NEVERC_TABWRITER_MAX_CELLS ||
+        w->nlines >= NEVERC_TABWRITER_MAX_LINES) {
         w->failed = 1;
         return;
     }
-    if (w->nlines < NEVERC_TABWRITER_MAX_LINES) {
-        neverc_tabwriter_cell_t *cell = &w->cells[w->ncells];
-        /* Cells partition w->buf contiguously, so the start of this cell is the
-         * sum of all previously carved cell sizes. Track that running total in
-         * buf_carved instead of re-summing every cell on each call. */
-        int start = w->buf_carved;
-        update_width(w);
-        cell->size = (int)w->buf_len - start;
-        cell->width = w->cell_width;
-        cell->htab = htab;
-        w->buf_carved += cell->size;
-        w->ncells++;
-        w->lines_ncells[w->nlines]++;
-        w->cell_width = 0;
-        w->width_pos = w->buf_len;
-    }
+    neverc_tabwriter_cell_t *cell = &w->cells[w->ncells];
+    /* Cells partition w->buf contiguously, so the start of this cell is the
+     * sum of all previously carved cell sizes. Track that running total in
+     * buf_carved instead of re-summing every cell on each call. */
+    int start = w->buf_carved;
+    update_width(w);
+    cell->size = (int)w->buf_len - start;
+    cell->width = w->cell_width;
+    cell->htab = htab;
+    w->buf_carved += cell->size;
+    w->ncells++;
+    w->lines_ncells[w->nlines]++;
+    w->cell_width = 0;
+    w->width_pos = w->buf_len;
 }
 
 static void reset_cells(neverc_tabwriter_t *w) {
@@ -262,7 +261,7 @@ static int format_block(neverc_tabwriter_t *w, size_t *buf_pos,
             width = 0;
 
         if (w->ncols >= NEVERC_TABWRITER_MAX_COLS)
-            return write_lines(w, buf_pos, line0, line1, n_lines);
+            return -1;
         w->col_widths[w->ncols++] = width;
         if (format_block(w, buf_pos, line0, this, n_lines) != 0)
             return -1;
@@ -326,7 +325,8 @@ static size_t find_special(const char *p, size_t n, unsigned flags, char *which)
 }
 
 static int append_run(neverc_tabwriter_t *w, const char *data, size_t run) {
-    if (!run) return 0;
+    if (!run) return w->failed ? -1 : 0;
+    if (w->failed) return -1;
     size_t space = (w->buf_len < NEVERC_TABWRITER_MAX_BUF)
                  ? (size_t)NEVERC_TABWRITER_MAX_BUF - w->buf_len : 0;
     size_t take = run < space ? run : space;
@@ -334,8 +334,10 @@ static int append_run(neverc_tabwriter_t *w, const char *data, size_t run) {
         memcpy(w->buf + w->buf_len, data, take);
         w->buf_len += take;
     }
-    if (take < run)
+    if (take < run) {
         w->failed = 1;
+        return -1;
+    }
     return 0;
 }
 
@@ -401,8 +403,7 @@ void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len)
 
         if (special == '\t' || special == '\v') {
             update_width(w);
-            if (w->buf_len < NEVERC_TABWRITER_MAX_BUF)
-                end_cell(w, special == '\t');
+            end_cell(w, special == '\t');
             if (w->failed) return;
         } else if (special == '\n' || special == '\f') {
             update_width(w);

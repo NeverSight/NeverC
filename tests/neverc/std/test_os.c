@@ -45,6 +45,12 @@ static void test_env(void) {
     ASSERT_TRUE(v != NULL && v[0] == '\0');
     neverc_os_unsetenv("NEVERC_EMPTY_VAR");
 #endif
+    ASSERT_TRUE(neverc_os_getenv("") == NULL);
+    ASSERT_TRUE(neverc_os_getenv("NOEQUALS=HERE") == NULL);
+    ASSERT_EQ(neverc_os_setenv("", "x"), -1);
+    ASSERT_EQ(neverc_os_setenv("FOO=BAR", "x"), -1);
+    ASSERT_EQ(neverc_os_unsetenv(""), -1);
+    ASSERT_EQ(neverc_os_unsetenv("FOO=BAR"), -1);
 }
 
 static void test_getwd(void) {
@@ -294,6 +300,22 @@ static void test_mkdir(void) {
 
     neverc_os_remove_all(dir);
     ASSERT_TRUE(!neverc_os_exists(dir));
+
+#if !defined(_WIN32)
+    {
+        char parent[1024], weird[1100], foo[1100];
+        make_test_path(parent, sizeof(parent), "neverc_test_os_bs");
+        neverc_os_remove_all(parent);
+        ASSERT_EQ(neverc_os_mkdir(parent, 0755), 0);
+        snprintf(weird, sizeof(weird), "%s/foo\\bar", parent);
+        snprintf(foo, sizeof(foo), "%s/foo", parent);
+        ASSERT_EQ(neverc_os_mkdir_all(weird, 0755), 0);
+        ASSERT_TRUE(neverc_os_is_dir(weird));
+        ASSERT_TRUE(!neverc_os_exists(foo));
+        neverc_os_remove_all(parent);
+    }
+#endif
+    ASSERT_EQ(neverc_os_mkdir_all("", 0755), -1);
 }
 
 #if !defined(_WIN32)
@@ -436,6 +458,10 @@ static void test_expand_env(void) {
     result = neverc_os_expand_env("cost $- and ${UNCLOSED");
     ASSERT_TRUE(result != NULL && strcmp(result, "cost $- and ${UNCLOSED") == 0);
     free(result);
+
+    result = neverc_os_expand_env("$$");
+    ASSERT_TRUE(result != NULL && strcmp(result, "$$") == 0);
+    free(result);
     neverc_os_unsetenv("NEVERC_EXPAND_VAR");
 }
 
@@ -452,6 +478,7 @@ static void test_read_dir(void) {
     free(entries);
 
     ASSERT_EQ(neverc_os_read_dir(NULL, &entries, &count), -1);
+    ASSERT_EQ(neverc_os_read_dir("", &entries, &count), -1);
     ASSERT_EQ(neverc_os_readlink("unused", (char *)&count, 0), -1);
 
     char filebuf[1024];

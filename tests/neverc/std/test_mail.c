@@ -54,6 +54,11 @@ static void test_parse_address(void) {
     ASSERT_EQ(neverc_mail_parse_address("x@[::1]", &addr), 0);
     ASSERT_STREQ(addr.address, "x@[::1]");
     ASSERT_EQ(neverc_mail_parse_address("x@[IPv6:::1]", &addr), 0);
+    ASSERT_EQ(neverc_mail_parse_address("x@[IPv6:::ffff:127.0.0.1]", &addr),
+              0);
+    ASSERT_EQ(neverc_mail_parse_address("x@[IPv6:127.0.0.1]", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("Bcc:hidden@x.com", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("user(comment)@x.com", &addr), -1);
 }
 
 static void test_parse_address_list(void) {
@@ -111,6 +116,20 @@ static void test_format_address(void) {
 
     strcpy(addr.name, "Eve");
     strcpy(addr.address, "eve@x.com\r\nBcc: hidden@x.com");
+    ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)), -1);
+
+    strcpy(addr.name, "Bcc:hidden");
+    strcpy(addr.address, "user@x.com");
+    ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)),
+              (int)strlen("\"Bcc:hidden\" <user@x.com>"));
+    ASSERT_STREQ(buf, "\"Bcc:hidden\" <user@x.com>");
+    neverc_mail_address_t roundtrip;
+    ASSERT_EQ(neverc_mail_parse_address(buf, &roundtrip), 0);
+    ASSERT_STREQ(roundtrip.name, "Bcc:hidden");
+    ASSERT_STREQ(roundtrip.address, "user@x.com");
+
+    strcpy(addr.name, "");
+    strcpy(addr.address, "Bcc:hidden@x.com");
     ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)), -1);
 
     strcpy(addr.name, "John");
@@ -235,5 +254,6 @@ int main(void) {
     test_parse_message();
     test_parse_date();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

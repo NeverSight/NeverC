@@ -91,6 +91,21 @@ int main(void) {
     fail_at = 0;
     neverc_zip_writer_free(&w);
 
+    reset_allocator(0);
+    neverc_zip_writer_init(&w);
+    CHECK(neverc_zip_writer_add(&w, "a", (const uint8_t *)"x", 1) == 0);
+    CHECK(neverc_zip_writer_add(&w, "b", (const uint8_t *)"y", 1) == 0);
+    CHECK(neverc_zip_writer_close(&w) == 0);
+    for (size_t failure = 1; failure <= 3; failure++) {
+        reset_allocator(failure);
+        neverc_zip_reader_t r;
+        CHECK(neverc_zip_reader_init(&r, w.data, w.len) == -1);
+        CHECK(allocation_count >= failure);
+        neverc_zip_reader_free(&r);
+    }
+    fail_at = 0;
+    neverc_zip_writer_free(&w);
+
     puts("passed");
     return 0;
 }

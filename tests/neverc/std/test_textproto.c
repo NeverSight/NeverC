@@ -73,6 +73,20 @@ static void test_mime_header(void) {
     check("del", neverc_mime_header_get(&h, "Accept") == NULL);
     check("len_1_after_del", neverc_mime_header_len(&h) == 1);
 
+    neverc_mime_header_add(&h, "X-Dup", "one");
+    neverc_mime_header_add(&h, "X-Dup", "two");
+    neverc_mime_header_add(&h, "X-Keep", "ok");
+    check("dup_len", neverc_mime_header_len(&h) == 4);
+    neverc_mime_header_set(&h, "x-dup", "only");
+    check_str("set_replaces_all", neverc_mime_header_get(&h, "X-Dup"), "only");
+    check("set_drops_extra_values", neverc_mime_header_len(&h) == 3);
+    neverc_mime_header_add(&h, "X-Dup", "again");
+    neverc_mime_header_del(&h, "X-DUP");
+    check("del_all_values", neverc_mime_header_get(&h, "X-Dup") == NULL);
+    check_str("del_leaves_other_keys", neverc_mime_header_get(&h, "X-Keep"),
+              "ok");
+    check("len_after_del_all", neverc_mime_header_len(&h) == 2);
+
     neverc_mime_header_add(&h, "MIME-Version", "1.0");
     check_str("get_mime_version", neverc_mime_header_get(&h, "mime-version"),
               "1.0");

@@ -33,7 +33,16 @@ int neverc_subtle_constant_time_eq(int32_t x, int32_t y) {
 }
 
 void neverc_subtle_constant_time_copy(int v, uint8_t *x, const uint8_t *y, size_t len) {
+    if (len > 0 && (!x || !y))
+        return;
     uint8_t mask = (uint8_t)(~((uint8_t)v - 1));
+    uintptr_t dx = (uintptr_t)x;
+    uintptr_t dy = (uintptr_t)y;
+    if (dx > dy && (dx - dy) < (uintptr_t)len) {
+        while (len-- > 0)
+            x[len] = x[len] ^ (mask & (x[len] ^ y[len]));
+        return;
+    }
     for (size_t i = 0; i < len; i++)
         x[i] = x[i] ^ (mask & (x[i] ^ y[i]));
 }

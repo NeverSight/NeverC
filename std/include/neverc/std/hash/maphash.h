@@ -28,6 +28,8 @@ typedef struct {
 
 uint64_t neverc_maphash_make_seed(void);
 
+/* seed 0 is valid and must match neverc_maphash_bytes(0, ...).
+ * Use neverc_maphash_make_seed() when a random seed is wanted. */
 void     neverc_maphash_init(neverc_maphash_t *h, uint64_t seed);
 void     neverc_maphash_reset(neverc_maphash_t *h);
 void     neverc_maphash_write(neverc_maphash_t *h, const void *data, size_t len);

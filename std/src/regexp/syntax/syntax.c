@@ -293,7 +293,14 @@ static neverc_regexp_syntax_node_t *parse_escape(parser_t *p) {
         if (!parse_hex_rune(p, &r)) return NULL;
         return literal_node(p, r);
     }
-    default: return literal_node(p, c);
+    default:
+        /* Go/RE2: unknown letter/digit escapes are errors (no backreferences). */
+        if ((c >= '0' && c <= '9') ||
+            (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+            p->err = "invalid escape sequence";
+            return NULL;
+        }
+        return literal_node(p, c);
     }
 }
 
@@ -412,7 +419,15 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
                     return NULL;
                 }
                 break;
-            default:  c = esc; break;
+            default:
+                if ((esc >= '0' && esc <= '9') ||
+                    (esc >= 'A' && esc <= 'Z') || (esc >= 'a' && esc <= 'z')) {
+                    p->err = "invalid escape sequence";
+                    neverc_regexp_syntax_free(n);
+                    return NULL;
+                }
+                c = esc;
+                break;
             }
         } else {
             c = next(p);
@@ -441,6 +456,13 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
                 else if (hi == 'r') hi = '\r';
                 else if (hi == 'f') hi = '\f';
                 else if (hi == 'v') hi = '\v';
+                else if ((hi >= '0' && hi <= '9') ||
+                         (hi >= 'A' && hi <= 'Z') || (hi >= 'a' && hi <= 'z')) {
+                    /* Go/RE2: `[a-\q]` is an unknown letter escape, not a-q. */
+                    p->err = "invalid escape sequence";
+                    neverc_regexp_syntax_free(n);
+                    return NULL;
+                }
             } else {
                 hi = next(p);
             }

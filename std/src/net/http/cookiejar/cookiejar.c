@@ -1,4 +1,6 @@
 #include "neverc/std/net/http/cookiejar.h"
+#include "neverc/std/net/netip.h"
+#include "neverc/std/net/url.h"
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -290,7 +292,8 @@ static int parse_cookie_date(cookie_span_t span, int64_t *result) {
     return 0;
 }
 
-/* Parse scheme, host, and path from a URL. */
+/* Parse scheme, host, and path from a URL. Host is unescaped so
+ * percent-encoded names match the decoded request-host (RFC 6265 §5.1.2). */
 static int parse_url_parts(const char *url, char *scheme, size_t slen,
                            char *host, size_t hlen,
                            char *path, size_t plen) {
@@ -299,61 +302,27 @@ static int parse_url_parts(const char *url, char *scheme, size_t slen,
         return -1;
     scheme[0] = host[0] = path[0] = '\0';
 
-    const char *scheme_end = strstr(url, "://");
-    if (!scheme_end || scheme_end == url) return -1;
-    size_t scheme_length = (size_t)(scheme_end - url);
+    neverc_url_t parsed;
+    if (neverc_url_parse(&parsed, url) != 0 || !parsed.scheme[0] ||
+        !parsed.host[0])
+        return -1;
+
+    size_t scheme_length = strlen(parsed.scheme);
     if (scheme_length >= slen) return -1;
-    memcpy(scheme, url, scheme_length);
-    scheme[scheme_length] = '\0';
+    memcpy(scheme, parsed.scheme, scheme_length + 1);
 
-    const char *authority = scheme_end + 3;
-    const char *authority_end = authority + strcspn(authority, "/?#");
-    if (authority_end == authority) return -1;
-
-    const char *host_start = authority;
-    for (const char *p = authority; p < authority_end; p++) {
-        if (*p == '@') host_start = p + 1;
-    }
-    if (host_start == authority_end) return -1;
-
-    const char *host_end = authority_end;
-    if (*host_start == '[') {
-        const char *close = memchr(host_start + 1, ']',
-                                   (size_t)(authority_end - host_start - 1));
-        if (!close || close == host_start + 1) return -1;
-        host_start++;
-        host_end = close;
-        if (close + 1 < authority_end) {
-            if (close[1] != ':' || close + 2 == authority_end) return -1;
-            for (const char *p = close + 2; p < authority_end; p++)
-                if (!isdigit((unsigned char)*p)) return -1;
-        }
-    } else {
-        const char *colon = NULL;
-        for (const char *p = host_start; p < authority_end; p++) {
-            if (*p != ':') continue;
-            if (colon) return -1;
-            colon = p;
-        }
-        if (colon) {
-            if (colon == host_start || colon + 1 == authority_end) return -1;
-            for (const char *p = colon + 1; p < authority_end; p++)
-                if (!isdigit((unsigned char)*p)) return -1;
-            host_end = colon;
-        }
-    }
-
-    size_t host_length = (size_t)(host_end - host_start);
+    size_t host_length = strlen(parsed.host);
     if (host_length == 0 || host_length >= hlen) return -1;
-    memcpy(host, host_start, host_length);
-    host[host_length] = '\0';
+    memcpy(host, parsed.host, host_length + 1);
 
-    if (*authority_end == '/') {
-        const char *path_end = authority_end + strcspn(authority_end, "?#");
-        size_t path_length = (size_t)(path_end - authority_end);
-        if (path_length >= plen) return -1;
-        memcpy(path, authority_end, path_length);
-        path[path_length] = '\0';
+    if (parsed.path[0]) {
+        char decoded[sizeof(parsed.path)];
+        int decoded_length = neverc_url_path_unescape(
+            parsed.path, decoded, sizeof(decoded));
+        if (decoded_length < 0 || (size_t)decoded_length >= plen ||
+            (size_t)decoded_length >= sizeof(decoded))
+            return -1;
+        memcpy(path, decoded, (size_t)decoded_length + 1);
     } else {
         path[0] = '/';
         path[1] = '\0';
@@ -367,23 +336,17 @@ static int parse_url_parts(const char *url, char *scheme, size_t slen,
 }
 
 static int host_is_ip_literal(const char *host) {
-    if (strchr(host, ':')) return 1;
-    int saw_dot = 0;
-    for (const unsigned char *p = (const unsigned char *)host; *p; p++) {
-        if (*p == '.') {
-            saw_dot = 1;
-        } else if (!isdigit(*p)) {
-            return 0;
-        }
-    }
-    return saw_dot;
+    neverc_netip_addr_t addr;
+    return host && neverc_netip_parse_addr(host, &addr) == 0;
 }
 
 /* RFC 6265 section 5.1.3 domain matching for normalized domains. */
 static int domain_match(const char *cookie_domain, const char *request_host) {
     if (!cookie_domain || !request_host) return 0;
     if (strcmp(cookie_domain, request_host) == 0) return 1;
-    if (host_is_ip_literal(request_host)) return 0;
+    /* RFC 6265 §5.1.3 suffix matching applies only to host names, not IPs. */
+    if (host_is_ip_literal(request_host) || host_is_ip_literal(cookie_domain))
+        return 0;
     size_t domain_length = strlen(cookie_domain);
     size_t host_length = strlen(request_host);
     return host_length > domain_length &&
@@ -395,11 +358,15 @@ static int normalize_cookie_domain(const char *input, char *domain,
                                    size_t capacity) {
     while (*input == '.') input++;
     size_t length = strlen(input);
+    if (length >= 2 && input[0] == '[' && input[length - 1] == ']') {
+        input++;
+        length -= 2;
+    }
     if (length == 0 || length >= capacity || input[length - 1] == '.')
         return -1;
     for (size_t i = 0; i < length; i++) {
         unsigned char c = (unsigned char)input[i];
-        if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' || c == ':')
+        if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\')
             return -1;
         domain[i] = (char)tolower(c);
     }

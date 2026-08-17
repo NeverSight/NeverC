@@ -90,6 +90,17 @@ static void test_hsl_conversion(void) {
     ASSERT_INT_EQ(clamped.r, 255);
     ASSERT_INT_EQ(clamped.g, 255);
     ASSERT_INT_EQ(clamped.b, 255);
+
+    neverc_color_rgba_t white_l = neverc_color_hsl_to_rgba(
+        (neverc_color_hsl_t){0.0f, 0.0f, 1.0f});
+    ASSERT_INT_EQ(white_l.r, 255);
+    ASSERT_INT_EQ(white_l.g, 255);
+    ASSERT_INT_EQ(white_l.b, 255);
+    neverc_color_rgba_t white_sat = neverc_color_hsl_to_rgba(
+        (neverc_color_hsl_t){0.3f, 1.0f, 1.0f});
+    ASSERT_INT_EQ(white_sat.r, 255);
+    ASSERT_INT_EQ(white_sat.g, 255);
+    ASSERT_INT_EQ(white_sat.b, 255);
 }
 
 static void test_hex_conversion(void) {
@@ -142,6 +153,14 @@ static void test_lerp(void) {
     ASSERT_TRUE(neverc_color_equal(below, a));
     neverc_color_rgba_t above = neverc_color_lerp(a, b, 2.0f);
     ASSERT_TRUE(neverc_color_equal(above, b));
+
+    /* +0.5 rounding of a 255 channel used to produce 255.5, which is
+     * undefined as uint8_t (and wrapped to 0 on some targets). */
+    neverc_color_rgba_t white = neverc_color_rgba(255, 255, 255, 255);
+    neverc_color_rgba_t same = neverc_color_lerp(white, white, 0.5f);
+    ASSERT_TRUE(neverc_color_equal(same, white));
+    neverc_color_rgba_t near = neverc_color_lerp(white, a, 0.001f);
+    ASSERT_TRUE(near.r > 250 && near.g > 250 && near.b > 250);
 }
 
 static void test_equal(void) {

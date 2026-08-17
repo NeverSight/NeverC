@@ -163,7 +163,21 @@ static void test_entities_cdata_and_well_formedness(void) {
         check_bool("ws entity attr present",
                    t.nattrs == 1 && t.attrs != NULL, 1);
         if (t.nattrs == 1 && t.attrs)
-            check_str("attr entity whitespace normalized",
+            check_str("attr entity whitespace kept",
+                      t.attrs[0].value, "x\ny\tz");
+        neverc_xml_token_free(&t);
+    }
+    {
+        const char *lit_ws = "<r a=\"x\ny\tz\"/>";
+        neverc_xml_decoder_t d;
+        neverc_xml_token_t t;
+        neverc_xml_decoder_init(&d, lit_ws, strlen(lit_ws));
+        check_int("lit ws start token",
+                  neverc_xml_decode_token(&d, &t), 1);
+        check_bool("lit ws attr present",
+                   t.nattrs == 1 && t.attrs != NULL, 1);
+        if (t.nattrs == 1 && t.attrs)
+            check_str("attr literal whitespace normalized",
                       t.attrs[0].value, "x y z");
         neverc_xml_token_free(&t);
     }
@@ -213,7 +227,14 @@ static void test_entities_cdata_and_well_formedness(void) {
         "<!DOCTYPE root><root/>",
         "<first/><second/>",
         "text<root/>",
-        "<root/><!-- bad--comment -->"
+        "<root/><!-- bad--comment -->",
+        "<?xml version=\"1.1\"?><root/>",
+        "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><root/>",
+        "<?xml version=\"1.0\" encoding=\"UTF-16\"?><root/>",
+        "<?xml version=\"1.0\" encoding=\"UTF-7\"?><root/>",
+        "<?xml version=\"1.0\" encoding=\"windows-1252\"?><root/>",
+        "<?xml version=\"1.0\" encoding = \"ISO-8859-1\"?><root/>",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" encoding=\"ISO-8859-1\"?><root/>"
     };
     for (size_t i = 0;
          i < sizeof(invalid_documents) / sizeof(invalid_documents[0]);
@@ -243,6 +264,32 @@ static void test_entities_cdata_and_well_formedness(void) {
                neverc_xml_parse("", 0) == NULL, 1);
     check_bool("reject trailing non-whitespace",
                neverc_xml_parse("<root/>extra", 12) == NULL, 1);
+
+    {
+        static const char *utf8_decls[] = {
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><root/>",
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?><root/>",
+            "<?xml version='1.0' encoding='Utf-8'?><root/>",
+            "<?xml version = \"1.0\" encoding = \"UTF-8\"?><root/>"
+        };
+        for (size_t i = 0;
+             i < sizeof(utf8_decls) / sizeof(utf8_decls[0]);
+             i++) {
+            tree = neverc_xml_parse(utf8_decls[i], strlen(utf8_decls[i]));
+            check_bool("accept UTF-8 XML declaration", tree != NULL, 1);
+            neverc_xml_node_free(tree);
+        }
+        neverc_xml_decoder_t d;
+        neverc_xml_token_t t;
+        const char *bad_enc =
+            "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><root/>";
+        neverc_xml_decoder_init(&d, bad_enc, strlen(bad_enc));
+        check_int("tokenizer rejects non-UTF-8 encoding",
+                  neverc_xml_decode_token(&d, &t), -1);
+        check_int("non-UTF-8 encoding is an error token",
+                  t.type, NEVERC_XML_ERROR);
+        neverc_xml_token_free(&t);
+    }
 
     {
         const int depth = 1001;

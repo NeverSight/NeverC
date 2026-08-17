@@ -271,6 +271,45 @@ static void test_template_url_and_script(void) {
     free(out);
 
     neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<embed pluginurl=\"{{.Link}}\">", &data);
+    check("pluginurl js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<svg><a><animate attributeName=\"href\" to=\"{{.Link}}\" /></a></svg>",
+        &data);
+    check("svg animate to js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<svg><a><set attributeName=\"href\" from=\"{{.Link}}\" /></a></svg>",
+        &data);
+    check("svg set from js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<svg><a><animate attributeName=\"href\" values=\"{{.Link}}\" /></a></svg>",
+        &data);
+    check("svg animate values js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<svg><a><animate attributeName=\"href\" by=\"{{.Link}}\" /></a></svg>",
+        &data);
+    check("svg animate by js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
     out = neverc_html_template_render("<img srcset=\"{{.Link}}\">", &data);
     check("srcset js url neutralized", out && strstr(out, "javascript:") == NULL);
     free(out);
@@ -476,6 +515,12 @@ static void test_template_url_and_script(void) {
     free(out);
 
     neverc_html_template_data_set(&data, "Color",
+                                  "-moz-binding:url(http://evil.example/x.xml)");
+    out = neverc_html_template_render("<div style=\"{{.Color}}\">", &data);
+    check_str("style moz-binding neutralized", out, "<div style=\"#\">");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Color",
                                   "\\6aavascript:alert(1)");
     out = neverc_html_template_render("<div style=\"{{.Color}}\">", &data);
     check("css escape bypass neutralized",
@@ -488,6 +533,60 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "&lt;/textarea&gt;") != NULL);
     check("textarea does not contain a raw script tag",
           out && strstr(out, "<script") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render("<svg xmlns=\"{{.Link}}\">", &data);
+    check("xmlns js url neutralized", out && strstr(out, "javascript:") == NULL);
+    check("xmlns js url becomes hash", out && strstr(out, "xmlns=\"#\"") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<svg xml:base=\"{{.Link}}\"><a href=\"x\">", &data);
+    check("xml:base js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check("xml:base js url becomes hash",
+          out && strstr(out, "xml:base=\"#\"") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render("<a svg:href=\"{{.Link}}\">x</a>", &data);
+    check("namespaced href js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<div data-href=\"{{.Link}}\">", &data);
+    check("data-href js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render("<b datasrc=\"{{.Link}}\">", &data);
+    check("datasrc js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "allow-scripts allow-same-origin");
+    out = neverc_html_template_render(
+        "<iframe sandbox=\"{{.X}}\" src=\"https://example.com\"></iframe>",
+        &data);
+    check("sandbox interpolation is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("sandbox flags are not passed through",
+          out && strstr(out, "allow-scripts") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "refresh");
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"{{.X}}\" content=\"0;url=javascript:alert(1)\">",
+        &data);
+    check("http-equiv interpolation is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("http-equiv cannot enable refresh",
+          out && strstr(out, "http-equiv=\"refresh\"") == NULL);
     free(out);
     neverc_html_template_data_free(&data);
 }

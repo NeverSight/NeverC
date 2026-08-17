@@ -256,26 +256,9 @@ static int pem_decode_body(uint8_t *out_buf, size_t out_cap,
         }
         quartet_len = 0;
     }
-    if (quartet_len == 2) {
-        if (quartet[0] < 0 || quartet[1] < 0 || (quartet[1] & 0x0f) != 0)
-            return 0;
-        if (1 > out_cap - n)
-            return -1;
-        out_buf[n++] =
-            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
-    } else if (quartet_len == 3) {
-        if (quartet[0] < 0 || quartet[1] < 0 || quartet[2] < 0 ||
-            (quartet[2] & 0x03) != 0)
-            return 0;
-        if (2 > out_cap - n)
-            return -1;
-        out_buf[n++] =
-            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
-        out_buf[n++] =
-            (uint8_t)((quartet[1] << 4) | (quartet[2] >> 2));
-    } else if (quartet_len != 0) {
+    /* StdEncoding requires a complete padded quartet; leftover data is corrupt. */
+    if (quartet_len != 0)
         return 0;
-    }
 
     *decoded_len = n;
     return 1;

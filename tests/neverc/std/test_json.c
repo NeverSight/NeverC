@@ -97,6 +97,12 @@ static void test_parse_number(void) {
     /* The DOM stores numbers as double, so values outside that finite range
      * must fail instead of silently becoming infinity and marshaling as null. */
     ASSERT_NULL(neverc_json_parse("1e9999", 6));
+    ASSERT_NULL(neverc_json_parse("1e309", 5));
+    ASSERT_NULL(neverc_json_parse("-1e309", 6));
+    ASSERT_NULL(neverc_json_parse("1e+309", 6));
+    v = neverc_json_parse("1e308", 5);
+    ASSERT_NOT_NULL(v);
+    neverc_json_free(v);
     /* Underflow is a legal JSON number and must become 0, not a parse error. */
     v = neverc_json_parse("1e-400", 6);
     ASSERT_NOT_NULL(v);
@@ -136,9 +142,13 @@ static void test_parse_string(void) {
 
     static const char raw_newline[] = {'"', 'a', '\n', 'b', '"'};
     static const char raw_nul[] = {'"', 'a', '\0', 'b', '"'};
+    static const char raw_tab[] = {'"', 'a', '\t', 'b', '"'};
     ASSERT_NULL(neverc_json_parse(raw_newline, sizeof(raw_newline)));
     ASSERT_NULL(neverc_json_parse(raw_nul, sizeof(raw_nul)));
+    ASSERT_NULL(neverc_json_parse(raw_tab, sizeof(raw_tab)));
     ASSERT_NULL(neverc_json_parse("\"\\uDC00\"", 8));
+    ASSERT_NULL(neverc_json_parse("\"\\uD800\"", 8));
+    ASSERT_NULL(neverc_json_parse("\"\\uD800\\uD800\"", 14));
 
     static const char overlong[] = {'"', (char)0xC0, (char)0xAF, '"'};
     static const char bad_cont[] = {
@@ -408,6 +418,10 @@ static void test_valid(void) {
     ASSERT_TRUE(neverc_json_valid("\"hello\"", 7));
     ASSERT_FALSE(neverc_json_valid("{", 1));
     ASSERT_FALSE(neverc_json_valid("[1,]", 4));
+    ASSERT_FALSE(neverc_json_valid("[1,2,]", 6));
+    ASSERT_FALSE(neverc_json_valid("[,]", 3));
+    ASSERT_FALSE(neverc_json_valid("{\"a\":1,}", 8));
+    ASSERT_FALSE(neverc_json_valid("{,}", 3));
     ASSERT_FALSE(neverc_json_valid("", 0));
     ASSERT_FALSE(neverc_json_valid("nul", 3));
     ASSERT_FALSE(neverc_json_valid("[][]", 4));
@@ -429,6 +443,10 @@ static void test_whitespace(void) {
     ASSERT_DBL_EQ(neverc_json_number(neverc_json_object_get(v, "a")), 1.0, 1e-10);
     ASSERT_DBL_EQ(neverc_json_number(neverc_json_object_get(v, "b")), 2.0, 1e-10);
     neverc_json_free(v);
+
+    /* RFC 8259 ws is only SP / HT / LF / CR — form feed is not whitespace. */
+    static const char ff[] = {'[', '\f', ']'};
+    ASSERT_NULL(neverc_json_parse(ff, sizeof(ff)));
 }
 
 static void test_escape_sequences(void) {
@@ -746,6 +764,66 @@ static void test_nesting_limit(void) {
     for (int i = 0; i < depth; i++) buf[i] = '[';
     for (int i = 0; i < depth; i++) buf[depth + i] = ']';
     ASSERT_NULL(neverc_json_parse(buf, (size_t)(depth * 2)));
+
+    /* Leaves must not consume a nesting slot: 1000-deep `[0]` is the same
+     * container depth as empty `[[[]]]` and must round-trip. */
+    {
+        char leaf[2012];
+        int d = 1000;
+        for (int i = 0; i < d; i++) leaf[i] = '[';
+        leaf[d] = '0';
+        for (int i = 0; i < d; i++) leaf[d + 1 + i] = ']';
+        size_t nlen = (size_t)d * 2U + 1U;
+        neverc_json_value_t *v2 = neverc_json_parse(leaf, nlen);
+        ASSERT_NOT_NULL(v2);
+        if (v2) {
+            char out[2012];
+            int n = neverc_json_marshal(v2, out, sizeof(out), NULL);
+            ASSERT_INT_EQ(n, (int)nlen);
+            if (n == (int)nlen)
+                ASSERT_INT_EQ(memcmp(out, leaf, nlen) == 0, 1);
+            neverc_json_free(v2);
+        }
+
+        d = 1001;
+        for (int i = 0; i < d; i++) leaf[i] = '[';
+        leaf[d] = '0';
+        for (int i = 0; i < d; i++) leaf[d + 1 + i] = ']';
+        ASSERT_NULL(neverc_json_parse(leaf, (size_t)d * 2U + 1U));
+    }
+
+    /* Same container-depth rule for objects: 1000-deep `{"a":null}` parses. */
+    {
+        int d = 1000;
+        size_t cap = (size_t)d * 6U + 8U;
+        char *ob = (char *)malloc(cap);
+        ASSERT_NOT_NULL(ob);
+        if (ob) {
+            size_t w = 0;
+            for (int i = 0; i < d; i++) {
+                memcpy(ob + w, "{\"a\":", 5);
+                w += 5;
+            }
+            memcpy(ob + w, "null", 4);
+            w += 4;
+            for (int i = 0; i < d; i++) ob[w++] = '}';
+            neverc_json_value_t *vo = neverc_json_parse(ob, w);
+            ASSERT_NOT_NULL(vo);
+            if (vo) {
+                char *out = (char *)malloc(cap);
+                ASSERT_NOT_NULL(out);
+                if (out) {
+                    int n = neverc_json_marshal(vo, out, cap, NULL);
+                    ASSERT_INT_EQ(n, (int)w);
+                    if (n == (int)w)
+                        ASSERT_INT_EQ(memcmp(out, ob, w) == 0, 1);
+                    free(out);
+                }
+                neverc_json_free(vo);
+            }
+            free(ob);
+        }
+    }
 }
 
 static void test_deep_constructor_free(void) {

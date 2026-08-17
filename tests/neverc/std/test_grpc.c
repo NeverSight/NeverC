@@ -93,6 +93,20 @@ static neverc_grpc_status_t grpc_test_client_streaming_handler(
     return NEVERC_GRPC_OK;
 }
 
+static neverc_grpc_status_t grpc_test_unary_end_early_handler(
+    neverc_grpc_server_stream_t *stream, void *context) {
+    (void)context;
+    neverc_grpc_message_t message;
+    if (neverc_grpc_server_stream_recv(stream, &message) != 1)
+        return NEVERC_GRPC_INVALID_ARGUMENT;
+    if (neverc_grpc_server_stream_send(stream, "ok", 2U) != 0)
+        return NEVERC_GRPC_INTERNAL;
+    /* End without draining leftover request frames. Extra unary messages
+     * must not be reported as OK. */
+    return neverc_grpc_server_stream_end(stream, NEVERC_GRPC_OK, NULL) == 0
+        ? NEVERC_GRPC_OK : NEVERC_GRPC_INTERNAL;
+}
+
 static const neverc_grpc_method_t grpc_test_unary_method = {
     "/test.Echo/Unary", NEVERC_GRPC_UNARY, 1024U, 1024U,
     grpc_test_unary_handler, NULL};
@@ -108,6 +122,10 @@ static const neverc_grpc_method_t grpc_test_server_streaming_method = {
 static const neverc_grpc_method_t grpc_test_client_streaming_method = {
     "/test.Echo/ClientStreaming", NEVERC_GRPC_CLIENT_STREAMING, 1024U,
     1024U, grpc_test_client_streaming_handler, NULL};
+
+static const neverc_grpc_method_t grpc_test_unary_end_early_method = {
+    "/test.Echo/UnaryEndEarly", NEVERC_GRPC_UNARY, 1024U, 1024U,
+    grpc_test_unary_end_early_handler, NULL};
 
 static void grpc_test_server_task(void *context) {
     grpc_test_server_t *test = (grpc_test_server_t *)context;
@@ -409,13 +427,59 @@ static void grpc_test_directional_streaming(neverc_h2_client_t *client) {
     neverc_context_free(background);
 }
 
+static const char *grpc_response_status(neverc_h2_response_t *response) {
+    if (!response) return NULL;
+    size_t i;
+    for (i = 0; i < response->trailer_count; i++)
+        if (response->trailers[i].name &&
+            strcmp(response->trailers[i].name, "grpc-status") == 0)
+            return response->trailers[i].value;
+    for (i = 0; i < response->header_count; i++)
+        if (response->headers[i].name &&
+            strcmp(response->headers[i].name, "grpc-status") == 0)
+            return response->headers[i].value;
+    return NULL;
+}
+
+static void grpc_test_unary_extra_frames(neverc_h2_client_t *client) {
+    uint8_t body[64];
+    size_t first = 0;
+    size_t second = 0;
+    CHECK(neverc_grpc_frame_encode("a", 1U, 0, body, sizeof(body),
+                                   &first) == 0);
+    CHECK(neverc_grpc_frame_encode("b", 1U, 0, body + first,
+                                   sizeof(body) - first, &second) == 0);
+    neverc_hpack_header_t headers[] = {
+        {.name = "content-type", .value = "application/grpc"},
+        {.name = "te", .value = "trailers"}};
+    neverc_h2_response_t *two = neverc_h2_client_do_context(
+        client, NULL, "POST", "/test.Echo/UnaryEndEarly", headers, 2U,
+        body, first + second);
+    CHECK(two != NULL);
+    CHECK(two && two->error == NULL);
+    const char *status = grpc_response_status(two);
+    CHECK(status && strcmp(status, "3") == 0);
+    neverc_h2_response_free(two);
+
+    neverc_h2_response_t *one = neverc_h2_client_do_context(
+        client, NULL, "POST", "/test.Echo/UnaryEndEarly", headers, 2U,
+        body, first);
+    CHECK(one != NULL);
+    CHECK(one && one->error == NULL);
+    status = grpc_response_status(one);
+    CHECK(status && strcmp(status, "0") == 0);
+    neverc_h2_response_free(one);
+}
+
 static int grpc_test_register_methods(neverc_http_mux_t *mux) {
     return neverc_grpc_server_register(mux, &grpc_test_unary_method) == 0 &&
            neverc_grpc_server_register(mux, &grpc_test_bidi_method) == 0 &&
            neverc_grpc_server_register(
                mux, &grpc_test_server_streaming_method) == 0 &&
            neverc_grpc_server_register(
-               mux, &grpc_test_client_streaming_method) == 0;
+               mux, &grpc_test_client_streaming_method) == 0 &&
+           neverc_grpc_server_register(
+               mux, &grpc_test_unary_end_early_method) == 0;
 }
 
 static void grpc_test_h2c_end_to_end(void) {
@@ -441,6 +505,7 @@ static void grpc_test_h2c_end_to_end(void) {
         grpc_test_unary(client);
         grpc_test_directional_streaming(client);
         grpc_test_bidi(client);
+        grpc_test_unary_extra_frames(client);
         neverc_h2_client_close(client);
         neverc_h2_client_free(client);
     }

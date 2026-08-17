@@ -306,14 +306,20 @@ static void test_dst_offset(void) {
 #define SYD_END_2024   1712419200LL
 /* 2024-10-05 16:00:00 UTC = Sydney spring-forward (first Sunday October 02:00 AEST). */
 #define SYD_START_2024 1728132000LL
+/* 2024-04-06 14:00:00 UTC = NZ/Chatham autumn-back (first Sunday April). */
+#define NZ_END_2024    1712412000LL
+/* 2024-09-28 14:00:00 UTC = NZ/Chatham spring-forward (last Sunday September). */
+#define NZ_START_2024  1727532000LL
 
 static void test_offset_at(void) {
     printf("[offset_at]\n");
     const neverc_tzdata_zone_t *ny = neverc_tzdata_lookup("America/New_York");
     const neverc_tzdata_zone_t *lon = neverc_tzdata_lookup("Europe/London");
     const neverc_tzdata_zone_t *syd = neverc_tzdata_lookup("Australia/Sydney");
+    const neverc_tzdata_zone_t *akl = neverc_tzdata_lookup("Pacific/Auckland");
+    const neverc_tzdata_zone_t *cht = neverc_tzdata_lookup("Pacific/Chatham");
     const neverc_tzdata_zone_t *utc = neverc_tzdata_utc();
-    if (!ny || !lon || !syd || !utc) {
+    if (!ny || !lon || !syd || !akl || !cht || !utc) {
         printf("  SKIP: required zone missing\n");
         return;
     }
@@ -348,6 +354,27 @@ static void test_offset_at(void) {
               neverc_tzdata_offset_at(syd, SYD_START_2024 - 1), 36000);
     check_int("Sydney at spring-forward AEDT",
               neverc_tzdata_offset_at(syd, SYD_START_2024), 39600);
+
+    check_int("Auckland before autumn-back NZDT",
+              neverc_tzdata_offset_at(akl, NZ_END_2024 - 1), 46800);
+    check_int("Auckland at autumn-back NZST",
+              neverc_tzdata_offset_at(akl, NZ_END_2024), 43200);
+    check_int("Auckland before spring-forward NZST",
+              neverc_tzdata_offset_at(akl, NZ_START_2024 - 1), 43200);
+    check_int("Auckland at spring-forward NZDT",
+              neverc_tzdata_offset_at(akl, NZ_START_2024), 46800);
+
+    /* Chatham is 45 minutes ahead of NZ, so the same UTC instants at 02:45/03:45. */
+    check_int("Chatham 45m before NZ start still CHAST",
+              neverc_tzdata_offset_at(cht, NZ_START_2024 - 2700), 45900);
+    check_int("Chatham before spring-forward CHAST",
+              neverc_tzdata_offset_at(cht, NZ_START_2024 - 1), 45900);
+    check_int("Chatham at spring-forward CHADT",
+              neverc_tzdata_offset_at(cht, NZ_START_2024), 49500);
+    check_int("Chatham before autumn-back CHADT",
+              neverc_tzdata_offset_at(cht, NZ_END_2024 - 1), 49500);
+    check_int("Chatham at autumn-back CHAST",
+              neverc_tzdata_offset_at(cht, NZ_END_2024), 45900);
 }
 
 /* ===== Offsets correctness ===== */
@@ -504,10 +531,26 @@ static void test_local_tz(void) {
     check_int("posix EST offset", z ? z->utc_offset : 0, -18000);
     check_int("posix EDT offset", z ? z->dst_offset : 0, -14400);
     check_int("posix has dst", z ? z->has_dst : 0, 1);
+    check_int("posix EST dst hemi north", z ? z->dst_hemi : 0, 1);
     check_int("posix spring-forward",
               neverc_tzdata_offset_at(z, NY_SPRING_2024), -14400);
     check_int("posix before spring-forward",
               neverc_tzdata_offset_at(z, NY_SPRING_2024 - 1), -18000);
+
+    tzdata_set_tz("NZST-12NZDT,M9.5.0,M4.1.0");
+    z = neverc_tzdata_local();
+    check_not_null("posix NZ", z);
+    check_int("posix NZ offset", z ? z->utc_offset : 0, 43200);
+    check_int("posix NZ dst offset", z ? z->dst_offset : 0, 46800);
+    check_int("posix NZ dst hemi south", z ? z->dst_hemi : 0, 2);
+    check_int("posix NZ July month std",
+              neverc_tzdata_offset_for_month(z, 7), 43200);
+    check_int("posix NZ January month dst",
+              neverc_tzdata_offset_for_month(z, 1), 46800);
+    check_int("posix NZ spring-forward",
+              neverc_tzdata_offset_at(z, NZ_START_2024), 46800);
+    check_int("posix NZ before spring-forward",
+              neverc_tzdata_offset_at(z, NZ_START_2024 - 1), 43200);
 
     tzdata_set_tz("UTC0");
     z = neverc_tzdata_local();

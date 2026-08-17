@@ -69,6 +69,33 @@ static void skip_whitespace(neverc_scanner_t *s) {
         next_ch(s);
 }
 
+/* True when Scan would treat the next bytes as a comment token. */
+static int at_comment(const neverc_scanner_t *s) {
+    if (s->pos >= s->src_len || (unsigned char)s->src[s->pos] != '/')
+        return 0;
+    if (s->pos + 1 >= s->src_len) return 0;
+    unsigned char n = (unsigned char)s->src[s->pos + 1];
+    return n == '/' || n == '*';
+}
+
+/* Advance past one // or /* comment without touching tok_buf. */
+static void skip_one_comment(neverc_scanner_t *s) {
+    next_ch(s); /* '/' */
+    int second = next_ch(s);
+    if (second == '/') {
+        while (peek_ch(s) != NEVERC_SCANNER_EOF && peek_ch(s) != '\n')
+            next_ch(s);
+    } else if (second == '*') {
+        while (s->pos < s->src_len) {
+            int ch = next_ch(s);
+            if (ch == '*' && peek_ch(s) == '/') {
+                next_ch(s);
+                break;
+            }
+        }
+    }
+}
+
 static int scan_identifier(neverc_scanner_t *s) {
     const char *src = s->src;
     size_t len = s->src_len;
@@ -162,9 +189,11 @@ static int scan_number(neverc_scanner_t *s, int first) {
     return is_float ? NEVERC_SCANNER_FLOAT : NEVERC_SCANNER_INT;
 }
 
-static void scan_escape(neverc_scanner_t *s, int quote) {
+/* Returns the byte after '\\'. A source newline is not part of the literal
+ * (Go: "literal not terminated") and must not be emitted into tok_buf. */
+static int scan_escape(neverc_scanner_t *s, int quote) {
     int ch = next_ch(s);
-    if (ch == NEVERC_SCANNER_EOF) return;
+    if (ch == NEVERC_SCANNER_EOF || ch == '\n') return ch;
     emit(s, ch);
     if (ch == 'x') {
         for (int i = 0; i < 2 && s->pos < s->src_len && is_hex_digit(peek_ch(s)); i++)
@@ -180,6 +209,7 @@ static void scan_escape(neverc_scanner_t *s, int quote) {
             emit(s, next_ch(s));
     }
     (void)quote;
+    return ch;
 }
 
 static int scan_string(neverc_scanner_t *s, int quote) {
@@ -187,7 +217,11 @@ static int scan_string(neverc_scanner_t *s, int quote) {
     while (s->pos < s->src_len) {
         int ch = next_ch(s);
         if (ch == quote) { emit(s, ch); break; }
-        if (ch == '\\') { emit(s, ch); scan_escape(s, quote); continue; }
+        if (ch == '\\') {
+            emit(s, ch);
+            if (scan_escape(s, quote) == '\n') break;
+            continue;
+        }
         if (ch == '\n') break;
         emit(s, ch);
     }
@@ -251,6 +285,12 @@ void neverc_scanner_init(neverc_scanner_t *s, const char *src, size_t len) {
     s->mode = NEVERC_SCAN_GO_TOKENS;
     s->line = 1;
     s->col = 1;
+    /* Go text/scanner: a leading UTF-8 BOM is discarded, not tokenized. */
+    if (len >= 3 &&
+        (unsigned char)src[0] == 0xEF &&
+        (unsigned char)src[1] == 0xBB &&
+        (unsigned char)src[2] == 0xBF)
+        s->pos = 3;
 }
 
 void neverc_scanner_set_mode(neverc_scanner_t *s, unsigned mode) {
@@ -266,6 +306,9 @@ again:
     skip_whitespace(s);
 
     if (s->pos >= s->src_len) {
+        s->tok_pos.line = s->line;
+        s->tok_pos.column = s->col;
+        s->tok_pos.offset = (int)s->pos;
         s->tok_type = NEVERC_SCANNER_EOF;
         s->tok_buf[0] = '\0';
         return NEVERC_SCANNER_EOF;
@@ -332,6 +375,13 @@ int neverc_scanner_peek(neverc_scanner_t *s) {
     size_t saved_pos = s->pos;
     int saved_line = s->line, saved_col = s->col;
     skip_whitespace(s);
+    /* Match Scan(): skipped comments are whitespace, not the next token. */
+    if ((s->mode & NEVERC_SCAN_COMMENTS) && (s->mode & NEVERC_SCAN_SKIP_COMMENTS)) {
+        while (at_comment(s)) {
+            skip_one_comment(s);
+            skip_whitespace(s);
+        }
+    }
     int ch = (s->pos < s->src_len) ? (unsigned char)s->src[s->pos] : NEVERC_SCANNER_EOF;
     s->pos = saved_pos;
     s->line = saved_line;

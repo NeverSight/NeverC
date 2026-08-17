@@ -241,6 +241,53 @@ static void test_sign_rejects_invalid_inputs(void) {
     neverc_dsa_private_key_free(&key);
 }
 
+static void test_verify_rejects_q_not_dividing_p_minus_1(void) {
+    printf("[q_not_dividing_p_minus_1]\n");
+    /* p=35=5*7 is composite, q=3 is prime, but 3 does not divide 34.
+     * g=y=16 satisfy 16^3 ≡ 1 (mod 35), so the subgroup check alone
+     * would accept the key. Then (r=1,s=2) verifies for hash=0x01. */
+    neverc_dsa_public_key_t pub;
+    neverc_dsa_public_key_init(&pub);
+    neverc_bigint_set_int64(&pub.p, 35);
+    neverc_bigint_set_int64(&pub.q, 3);
+    neverc_bigint_set_int64(&pub.g, 16);
+    neverc_bigint_set_int64(&pub.y, 16);
+
+    neverc_dsa_signature_t sig;
+    neverc_dsa_signature_init(&sig);
+    neverc_bigint_set_int64(&sig.r, 1);
+    neverc_bigint_set_int64(&sig.s, 2);
+
+    uint8_t hash[1] = {0x01};
+    ASSERT_TRUE(neverc_dsa_verify(&pub, hash, sizeof(hash), &sig) != 0);
+
+    neverc_dsa_signature_free(&sig);
+    neverc_dsa_public_key_free(&pub);
+}
+
+static void test_verify_rejects_composite_q_forgery(void) {
+    printf("[composite_q_forgery]\n");
+    /* q=9 is composite and divides p-1=18. g=y=7 has order 3, not 9,
+     * but 7^9 ≡ 1 (mod 19). (r=1,s=1) then verifies for hash=0x02. */
+    neverc_dsa_public_key_t pub;
+    neverc_dsa_public_key_init(&pub);
+    neverc_bigint_set_int64(&pub.p, 19);
+    neverc_bigint_set_int64(&pub.q, 9);
+    neverc_bigint_set_int64(&pub.g, 7);
+    neverc_bigint_set_int64(&pub.y, 7);
+
+    neverc_dsa_signature_t sig;
+    neverc_dsa_signature_init(&sig);
+    neverc_bigint_set_int64(&sig.r, 1);
+    neverc_bigint_set_int64(&sig.s, 1);
+
+    uint8_t hash[1] = {0x02};
+    ASSERT_TRUE(neverc_dsa_verify(&pub, hash, sizeof(hash), &sig) != 0);
+
+    neverc_dsa_signature_free(&sig);
+    neverc_dsa_public_key_free(&pub);
+}
+
 static void test_verify_rejects_noninvertible_s(void) {
     printf("[noninvertible_s]\n");
     /* q=9=3^2 is composite. s=3 is not invertible; Fermat then yields w=0
@@ -322,6 +369,8 @@ int main(void) {
     test_verify_negative_sig();
     test_verify_identity_public_key();
     test_verify_rejects_order_two_key();
+    test_verify_rejects_q_not_dividing_p_minus_1();
+    test_verify_rejects_composite_q_forgery();
     test_verify_rejects_noninvertible_s();
     test_sign_rejects_invalid_inputs();
     test_sign_rejects_weak_private_key();

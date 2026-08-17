@@ -545,6 +545,38 @@ static void test_rejects_huge_ihdr(void) {
     ASSERT_EQ(img.height, 0);
 }
 
+static void test_rejects_truncated_stream(void) {
+    printf("[rejects_truncated_stream]\n");
+    neverc_png_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 2;
+    img.height = 2;
+    img.bit_depth = 8;
+    img.color_type = NEVERC_PNG_COLOR_TRUECOLOR;
+    img.channels = 3;
+    img.stride = 6;
+    img.pixels = (uint8_t *)calloc(1, 12);
+    ASSERT_TRUE(img.pixels != NULL);
+
+    uint8_t *png = NULL;
+    size_t png_len = 0;
+    ASSERT_EQ(neverc_png_encode(&img, &png, &png_len), 0);
+    ASSERT_TRUE(png != NULL && png_len > 12);
+
+    neverc_png_image_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_png_decode(png, png_len - 1, &decoded), -1);
+    ASSERT_TRUE(decoded.pixels == NULL);
+    ASSERT_EQ(decoded.width, 0);
+
+    /* Drop the IEND CRC byte so the last chunk is truncated mid-header. */
+    ASSERT_EQ(neverc_png_decode(png, png_len - 5, &decoded), -1);
+    ASSERT_TRUE(decoded.pixels == NULL);
+
+    free(png);
+    free(img.pixels);
+}
+
 int main(void) {
     printf("NeverC image/png tests\n");
     test_encode_decode_rgba();
@@ -560,6 +592,7 @@ int main(void) {
     test_chunk_crc_valid();
     test_zlib_fcheck_valid();
     test_rejects_huge_ihdr();
+    test_rejects_truncated_stream();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

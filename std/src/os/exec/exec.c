@@ -17,6 +17,7 @@ struct neverc_exec_cmd {
     char **argv;
     int    argc;
     char  *dir;
+    int    dir_invalid;
     char **env;
     int    env_count;
     int    env_invalid;
@@ -159,9 +160,13 @@ neverc_exec_cmd_t *neverc_exec_command(const char *name, const char **args, int 
 void neverc_exec_cmd_set_dir(neverc_exec_cmd_t *cmd, const char *dir) {
     if (!cmd) return;
     char *copy = dir ? strdup(dir) : NULL;
-    if (dir && !copy) return;
+    if (dir && !copy) {
+        cmd->dir_invalid = 1;
+        return;
+    }
     free(cmd->dir);
     cmd->dir = copy;
+    cmd->dir_invalid = 0;
 }
 
 void neverc_exec_cmd_set_env(neverc_exec_cmd_t *cmd, const char **env, int env_count) {
@@ -216,7 +221,7 @@ static int exec_prepare(neverc_exec_cmd_t *cmd, int capture_stdout,
                         neverc_exec_exit_status_t *status) {
     if (!cmd || !cmd->name || !cmd->argv || cmd->started ||
         (capture_stdout && !out)) return -1;
-    if (cmd->env_invalid) return -1;
+    if (cmd->env_invalid || cmd->dir_invalid) return -1;
     if (exec_batch_args_unsafe(cmd)) return -1;
     if (out) {
         if (out->data || out->len != 0 || out->cap != 0) return -1;
@@ -377,6 +382,10 @@ static const char *exec_windows_resolve_app(const neverc_exec_cmd_t *cmd,
         (cmd->name[0] && cmd->name[1] == ':'))
         return cmd->name;
     path_env = exec_env_path(cmd->env, cmd->env_count);
+    /* Custom Env without PATH must not fall back to the process PATH
+     * (Go os/exec LookPath). CreateProcessA(NULL, ...) would also search. */
+    if (cmd->env && (!path_env || path_env[0] == '\0'))
+        return NULL;
     len = SearchPathA(path_env, cmd->name, ".exe", cap, buf, NULL);
     return (len > 0 && len < cap) ? buf : NULL;
 }
@@ -439,6 +448,11 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
     char resolved[32768];
     const char *app = exec_windows_resolve_app(cmd, resolved,
                                                (DWORD)sizeof(resolved));
+    if (!app) {
+        free(environment);
+        free(cmdline);
+        goto setup_error;
+    }
 
     STARTUPINFOA si = {sizeof(si)};
     si.dwFlags = STARTF_USESTDHANDLES;
@@ -561,6 +575,11 @@ int neverc_exec_cmd_start(neverc_exec_cmd_t *cmd) {
     environment = exec_windows_environment(cmd);
     if (cmd->env && !environment) { free(cmdline); goto setup_error; }
     app = exec_windows_resolve_app(cmd, resolved, (DWORD)sizeof(resolved));
+    if (!app) {
+        free(environment);
+        free(cmdline);
+        goto setup_error;
+    }
 
     si.dwFlags = STARTF_USESTDHANDLES;
     si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -713,7 +732,8 @@ static const char *exec_look_in_path(const char *file, const char *path_env,
         }
         return NULL;
     }
-    if (!path_env) return NULL;
+    /* PATH="" is no search list (Go SplitList("")). PATH=":" still means ".". */
+    if (!path_env || path_env[0] == '\0') return NULL;
 
     const char *p = path_env;
     size_t flen = strlen(file);
@@ -777,8 +797,8 @@ static void exec_posix_do_exec(neverc_exec_cmd_t *cmd) {
         } else {
             char resolved[4096];
             const char *path = exec_env_path(cmd->env, cmd->env_count);
-            if (!path) path = getenv("PATH");
-            if (exec_look_in_path(cmd->name, path, resolved, sizeof(resolved)))
+            if (path &&
+                exec_look_in_path(cmd->name, path, resolved, sizeof(resolved)))
                 execve(resolved, cmd->argv, cmd->env);
         }
     } else {

@@ -98,7 +98,7 @@ static void ghash_update(const neverc_gcm_ctx *ctx, uint8_t tag[16],
                          const uint8_t *data, size_t len) {
     uint8_t block[16];
     size_t i = 0;
-    while (i + 16 <= len) {
+    while (len - i >= 16) {
         xor_block(block, tag, data + i, 16);
         ghash_mul(ctx, tag, block);
         i += 16;
@@ -139,8 +139,17 @@ static void ghash_init_tables(neverc_gcm_ctx *ctx) {
         }
 }
 
+static int gcm_ctx_ready(const neverc_gcm_ctx *ctx) {
+    int nr = ctx->aes.rounds;
+    return nr == 10 || nr == 12 || nr == 14;
+}
+
 int neverc_gcm_init(neverc_gcm_ctx *ctx, const uint8_t *key, int key_len) {
-    if (!ctx || !key) return -1;
+    if (!ctx) return -1;
+    if (!key) {
+        neverc_platform_secure_zero(ctx, sizeof(*ctx));
+        return -1;
+    }
     memset(ctx, 0, sizeof(*ctx));
     if (neverc_aes_init(&ctx->aes, key, key_len) != 0) {
         neverc_platform_secure_zero(ctx, sizeof(*ctx));
@@ -152,20 +161,13 @@ int neverc_gcm_init(neverc_gcm_ctx *ctx, const uint8_t *key, int key_len) {
     return 0;
 }
 
-static void gcm_compute_tag(const neverc_gcm_ctx *ctx,
-                            const uint8_t nonce[12],
-                            const uint8_t *ciphertext, size_t ct_len,
-                            const uint8_t *aad, size_t aad_len,
-                            uint8_t tag[16]) {
-    uint8_t ghash_val[16];
-    memset(ghash_val, 0, 16);
-
-    if (aad_len > 0)
-        ghash_update(ctx, ghash_val, aad, aad_len);
-    if (ct_len > 0)
-        ghash_update(ctx, ghash_val, ciphertext, ct_len);
-
-    /* Append len(A) || len(C) in bits */
+/* Finish GHASH with the length block and XOR E(K, J0). ghash_val is the
+ * running GHASH of AAD || C. */
+static void gcm_finish_tag(const neverc_gcm_ctx *ctx,
+                           const uint8_t nonce[12],
+                           uint8_t ghash_val[16],
+                           size_t aad_len, size_t ct_len,
+                           uint8_t tag[16]) {
     uint8_t len_block[16];
     put_be64(len_block, (uint64_t)aad_len * 8);
     put_be64(len_block + 8, (uint64_t)ct_len * 8);
@@ -180,21 +182,47 @@ static void gcm_compute_tag(const neverc_gcm_ctx *ctx,
     uint8_t ej0[16];
     neverc_aes_encrypt_block(&ctx->aes, ej0, j0);
     xor_block(tag, ghash_val, ej0, 16);
-    neverc_platform_secure_zero(ghash_val, sizeof(ghash_val));
     neverc_platform_secure_zero(len_block, sizeof(len_block));
     neverc_platform_secure_zero(tmp, sizeof(tmp));
     neverc_platform_secure_zero(j0, sizeof(j0));
     neverc_platform_secure_zero(ej0, sizeof(ej0));
 }
 
-static void gcm_ctr_encrypt(const neverc_gcm_ctx *ctx,
+static void gcm_compute_tag(const neverc_gcm_ctx *ctx,
                             const uint8_t nonce[12],
-                            const uint8_t *in, size_t len, uint8_t *out) {
+                            const uint8_t *ciphertext, size_t ct_len,
+                            const uint8_t *aad, size_t aad_len,
+                            uint8_t tag[16]) {
+    uint8_t ghash_val[16];
+    memset(ghash_val, 0, 16);
+
+    if (aad_len > 0)
+        ghash_update(ctx, ghash_val, aad, aad_len);
+    if (ct_len > 0)
+        ghash_update(ctx, ghash_val, ciphertext, ct_len);
+    gcm_finish_tag(ctx, nonce, ghash_val, aad_len, ct_len, tag);
+    neverc_platform_secure_zero(ghash_val, sizeof(ghash_val));
+}
+
+static int gcm_ctr_encrypt(const neverc_gcm_ctx *ctx,
+                           const uint8_t nonce[12],
+                           const uint8_t *in, size_t len, uint8_t *out) {
+    /* Counters 2..2^32-1: at most 2^32-2 blocks. Check before writing so a
+     * wrap cannot leave a partial plaintext (open) or ciphertext (seal). */
+    uint64_t blocks = ((uint64_t)len + 15) / 16;
+    if (blocks > (UINT64_C(1) << 32) - 2)
+        return -1;
+
     uint8_t counter_block[16], keystream[16];
     memcpy(counter_block, nonce, 12);
     size_t offset = 0;
     uint32_t ctr = 2;
     while (offset < len) {
+        if (ctr < 2) {
+            neverc_platform_secure_zero(counter_block, sizeof(counter_block));
+            neverc_platform_secure_zero(keystream, sizeof(keystream));
+            return -1;
+        }
         put_be32(counter_block + 12, ctr);
         neverc_aes_encrypt_block(&ctx->aes, keystream, counter_block);
         size_t block_len = len - offset;
@@ -205,6 +233,7 @@ static void gcm_ctr_encrypt(const neverc_gcm_ctx *ctx,
     }
     neverc_platform_secure_zero(counter_block, sizeof(counter_block));
     neverc_platform_secure_zero(keystream, sizeof(keystream));
+    return 0;
 }
 
 int neverc_gcm_seal(const neverc_gcm_ctx *ctx,
@@ -213,15 +242,29 @@ int neverc_gcm_seal(const neverc_gcm_ctx *ctx,
                     const uint8_t *aad, size_t aad_len,
                     uint8_t *ciphertext,
                     uint8_t tag[16]) {
-    if (!ctx || !nonce || !tag ||
+    if (!ctx || !gcm_ctx_ready(ctx) || !nonce || !tag ||
         (!plaintext && pt_len != 0) || (!ciphertext && pt_len != 0) ||
         (!aad && aad_len != 0) ||
         (uint64_t)pt_len > NEVERC_GCM_MAX_TEXT_BYTES ||
         (uint64_t)aad_len > NEVERC_GCM_MAX_AAD_BYTES)
         return -1;
-    if (pt_len > 0)
-        gcm_ctr_encrypt(ctx, nonce, plaintext, pt_len, ciphertext);
-    gcm_compute_tag(ctx, nonce, ciphertext, pt_len, aad, aad_len, tag);
+
+    /* Hash AAD before writing ciphertext so an overlapping AAD/output
+     * layout cannot clobber the bytes that must be authenticated. */
+    uint8_t ghash_val[16];
+    memset(ghash_val, 0, 16);
+    if (aad_len > 0)
+        ghash_update(ctx, ghash_val, aad, aad_len);
+
+    if (pt_len > 0) {
+        if (gcm_ctr_encrypt(ctx, nonce, plaintext, pt_len, ciphertext) != 0) {
+            neverc_platform_secure_zero(ghash_val, sizeof(ghash_val));
+            return -1;
+        }
+        ghash_update(ctx, ghash_val, ciphertext, pt_len);
+    }
+    gcm_finish_tag(ctx, nonce, ghash_val, aad_len, pt_len, tag);
+    neverc_platform_secure_zero(ghash_val, sizeof(ghash_val));
     return 0;
 }
 
@@ -231,7 +274,7 @@ int neverc_gcm_open(const neverc_gcm_ctx *ctx,
                     const uint8_t *aad, size_t aad_len,
                     const uint8_t tag[16],
                     uint8_t *plaintext) {
-    if (!ctx || !nonce || !tag ||
+    if (!ctx || !gcm_ctx_ready(ctx) || !nonce || !tag ||
         (!ciphertext && ct_len != 0) || (!plaintext && ct_len != 0) ||
         (!aad && aad_len != 0) ||
         (uint64_t)ct_len > NEVERC_GCM_MAX_TEXT_BYTES ||
@@ -245,7 +288,8 @@ int neverc_gcm_open(const neverc_gcm_ctx *ctx,
     neverc_platform_secure_zero(computed_tag, sizeof(computed_tag));
     if (tag_ok != 1) return -1;
 
-    if (ct_len > 0)
-        gcm_ctr_encrypt(ctx, nonce, ciphertext, ct_len, plaintext);
+    if (ct_len > 0 &&
+        gcm_ctr_encrypt(ctx, nonce, ciphertext, ct_len, plaintext) != 0)
+        return -1;
     return 0;
 }

@@ -1277,6 +1277,12 @@ static void test_malformed_request(void) {
             "Connection: close\r\n\r\n",
             buf, sizeof(buf));
         check_int("host ipv6 ok", strstr(buf, "Hello, World!") != NULL, 1);
+        n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: [::1,evil]\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("host ipv6 comma 400",
+                  strstr(buf, "400 Bad Request") != NULL, 1);
     }
 
     /* Duplicate Host / Content-Length, CL+TE, and obs-fold are 400. */
@@ -1448,6 +1454,27 @@ static void test_post_http10_keepalive_no_cl(void) {
     check_int("http10 ka post resp", n > 0, 1);
     check_int("http10 ka post rejected",
               strstr(buf, "400 Bad Request") != NULL, 1);
+
+    n = do_http_request(port,
+        "POST /post HTTP/1.0\r\nHost: localhost\r\n"
+        "Connection: close\r\n\r\nhello",
+        buf, sizeof(buf));
+    check_int("http10 close post resp", n > 0, 1);
+    check_int("http10 close post rejected",
+              strstr(buf, "400 Bad Request") != NULL, 1);
+    check_int("http10 close post not silent empty body",
+              strstr(buf, "no body") == NULL &&
+              strstr(buf, "201") == NULL, 1);
+
+    n = do_http_request(port,
+        "POST /post HTTP/1.0\r\nHost: localhost\r\n\r\nhello",
+        buf, sizeof(buf));
+    check_int("http10 default close post resp", n > 0, 1);
+    check_int("http10 default close post rejected",
+              strstr(buf, "400 Bad Request") != NULL, 1);
+    check_int("http10 default close post not silent empty body",
+              strstr(buf, "no body") == NULL &&
+              strstr(buf, "201") == NULL, 1);
 
     stop_test_server(server_pid);
 }
@@ -1744,11 +1771,23 @@ static void chunked_handler(neverc_http_request_t *req,
     neverc_http_end_chunked(w);
 }
 
+static void host_trailer_handler(neverc_http_request_t *req,
+                                 neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_enable_chunked(w);
+    neverc_http_set_trailer(w, "Host", "evil.com");
+    neverc_http_set_trailer(w, "Connection", "close");
+    neverc_http_set_trailer(w, "X-Ok", "1");
+    neverc_http_write_string(w, "ok");
+    neverc_http_end_chunked(w);
+}
+
 static pid_t start_chunked_server(int port) {
     pid_t pid = fork();
     if (pid == 0) {
         neverc_http_mux_t *mux = neverc_http_new_mux();
         neverc_http_mux_handle(mux, "/chunked", chunked_handler);
+        neverc_http_mux_handle(mux, "/trailer-host", host_trailer_handler);
 
         char addr[32];
         snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
@@ -1776,6 +1815,20 @@ static void test_chunked_encoding(void) {
     check_int("chunked has chunk1", strstr(buf, "chunk1") != NULL, 1);
     check_int("chunked has chunk2", strstr(buf, "chunk2") != NULL, 1);
     check_int("chunked has chunk3", strstr(buf, "chunk3") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /trailer-host HTTP/1.1\r\nHost: localhost\r\n"
+        "Connection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("trailer-host resp", n > 0, 1);
+    check_int("trailer-host keeps x-ok",
+              n > 0 && strstr(buf, "X-Ok: 1") != NULL, 1);
+    check_int("trailer-host lists X-Ok",
+              n > 0 && strstr(buf, "Trailer: X-Ok") != NULL, 1);
+    check_int("trailer-host drops Host",
+              n > 0 && strstr(buf, "Host: evil.com") == NULL, 1);
+    check_int("trailer-host omits Host from Trailer",
+              n > 0 && strstr(buf, "Trailer: Host") == NULL, 1);
 
     stop_test_server(server_pid);
 }
@@ -1995,6 +2048,73 @@ static void test_client_many_tiny_chunks(void) {
     int status = 0;
     waitpid(server, &status, 0);
     check_int("tiny chunk server status",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+}
+
+static void test_client_rejects_bare_lf_status(void) {
+    printf("[client_rejects_bare_lf_status]\n");
+
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    check_not_null("lf status listener", listener);
+    if (!listener) return;
+
+    neverc_tcp_addr_t address;
+    if (neverc_tcp_listener_addr(listener, &address) != 0) {
+        neverc_tcp_listener_close(listener);
+        check_int("lf status listener address", 0, 1);
+        return;
+    }
+
+    pid_t server = fork();
+    if (server == 0) {
+        neverc_tcp_conn_t *connection = neverc_tcp_accept(listener, &error);
+        if (!connection) _exit(1);
+        char request[1024];
+        if (neverc_tcp_read(connection, request, sizeof(request)) <= 0)
+            _exit(1);
+        static const char response[] =
+            "HTTP/1.1 200 OK\nTransfer-Encoding: chunked\r\n"
+            "Content-Length: 5\r\n\r\nHELLO";
+        if (raw_write_all(connection, response, sizeof(response) - 1U) != 0)
+            _exit(1);
+        neverc_tcp_close(connection);
+        neverc_tcp_listener_close(listener);
+        _exit(0);
+    }
+    neverc_tcp_listener_close(listener);
+    if (server < 0) {
+        check_int("lf status server fork", 0, 1);
+        return;
+    }
+
+    neverc_http_client_config_t config =
+        neverc_http_client_config_default();
+    config.timeout_ms = 5000;
+    config.max_idle_per_host = 0;
+    neverc_http_client_t *client = neverc_http_client_new(&config);
+    check_not_null("lf status client", client);
+    if (!client) {
+        kill(server, SIGTERM);
+        waitpid(server, NULL, 0);
+        return;
+    }
+    char url[96];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/lf", address.port);
+    neverc_http_response_t *response =
+        neverc_http_client_do(client, "GET", url, NULL, NULL, 0U);
+    check_int("lf status framing rejected",
+              response != NULL && response->error != NULL, 1);
+    check_int("lf status did not take Content-Length body",
+              response == NULL || response->body == NULL ||
+              response->body_len != 5U, 1);
+
+    neverc_http_response_free(response);
+    neverc_http_client_free(client);
+    int status = 0;
+    waitpid(server, &status, 0);
+    check_int("lf status server status",
               WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
 }
 
@@ -3657,6 +3777,7 @@ int main(void) {
     test_config_apis();
     test_client_chunked_response();
     test_client_many_tiny_chunks();
+    test_client_rejects_bare_lf_status();
     test_connection_limit();
     test_max_body_size_buffered();
     test_server_lifecycle();

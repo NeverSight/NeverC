@@ -6,7 +6,8 @@
  *
  * Supports reading and writing single-disk ZIP archives in stored
  * (no-compression) mode. Readers validate the central directory, local
- * headers, bounds, and CRC32 before exposing file data.
+ * headers, bounds, CRC32, and non-overlapping local records before
+ * exposing file data.
  */
 
 #include <stddef.h>

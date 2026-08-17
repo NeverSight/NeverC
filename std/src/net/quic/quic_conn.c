@@ -277,10 +277,12 @@ int neverc_quic_conn_configure(struct neverc_quic_conn *conn,
     memcpy(conn->local_params.initial_scid, conn->local_cids[0].id,
            conn->local_cids[0].len);
     conn->local_params.initial_scid_len = conn->local_cids[0].len;
+    conn->local_params.has_initial_scid = 1;
     if (conn->side == QUIC_SIDE_SERVER) {
         memcpy(conn->local_params.original_dcid, initial_dcid->data,
                initial_dcid->len);
         conn->local_params.original_dcid_len = initial_dcid->len;
+        conn->local_params.has_original_dcid = 1;
         memcpy(conn->local_params.stateless_reset_token,
                conn->local_cids[0].stateless_reset_token, 16);
         conn->local_params.has_stateless_reset_token = 1;
@@ -447,7 +449,8 @@ static int quic_stream_read_impl(quic_stream_t *stream, void *buffer,
         nc_cond_wait(&stream->read_cond, &stream->lock);
     }
     if (stream->recv_len == 0) {
-        int result = stream->recv_fin ? 0 : -1;
+        int result = stream->state == QUIC_STREAM_RESET ? -1 :
+                     (stream->recv_fin ? 0 : -1);
         nc_mutex_unlock(&stream->lock);
         return result;
     }
@@ -619,7 +622,8 @@ static int fragment_drain(quic_stream_t *stream) {
         if (!*position || (*position)->offset > stream->recv_offset) break;
     }
     if (stream->recv_final_known &&
-        stream->recv_offset == stream->recv_final_size) {
+        stream->recv_offset == stream->recv_final_size &&
+        stream->state != QUIC_STREAM_RESET) {
         stream->recv_fin = 1;
         if (stream->state == QUIC_STREAM_OPEN)
             stream->state = QUIC_STREAM_HALF_CLOSED_REMOTE;
@@ -717,7 +721,8 @@ int neverc_quic_stream_receive_locked(struct neverc_quic_conn *conn,
     }
     if ((stream->recv_final_known && end > stream->recv_final_size) ||
         (frame->fin && stream->recv_final_known &&
-         end != stream->recv_final_size)) {
+         end != stream->recv_final_size) ||
+        (frame->fin && end < stream->recv_highest)) {
         nc_mutex_unlock(&stream->lock);
         neverc_quic_conn_close_locked(conn, QUIC_ERR_FINAL_SIZE_ERROR,
                                       "STREAM final size mismatch", 0);
@@ -740,6 +745,12 @@ int neverc_quic_stream_receive_locked(struct neverc_quic_conn *conn,
         return -1;
     }
     conn->flow.data_received += delta;
+    /* RFC 9000 §3.2: STREAM after RESET_STREAM MAY be ignored. Delivering
+     * the bytes would let fragment_drain turn a reset into a clean FIN. */
+    if (stream->state == QUIC_STREAM_RESET) {
+        nc_mutex_unlock(&stream->lock);
+        return 0;
+    }
     int result = fragment_insert(stream, frame->offset, frame->data,
                                  frame->data_len);
     if (result == 0) result = fragment_drain(stream);

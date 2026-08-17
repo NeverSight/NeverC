@@ -733,14 +733,16 @@ STD_TEST(http_bench, "src/net/http/http.c", "src/net/http/http_client.c", "src/n
 
 // ===== HTTP Util =====
 STD_TEST(httputil, "src/net/http/httputil/httputil.c",
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/net/netip/netip.c", TCP_DEPS, HTTP_TLS_DEPS)
 
 // ===== Cookie Jar =====
-STD_TEST(cookiejar, "src/net/http/cookiejar/cookiejar.c")
+STD_TEST(cookiejar, "src/net/http/cookiejar/cookiejar.c",
+         "src/net/netip/netip.c")
 #ifndef _WIN32
 TEST_F(StdLibTest, CookieJarConcurrency) {
   auto r = compileAndRunStdTest(
-      "cookiejar_concurrency", {"src/net/http/cookiejar/cookiejar.c"});
+      "cookiejar_concurrency", {"src/net/http/cookiejar/cookiejar.c",
+                                "src/net/netip/netip.c"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
@@ -855,7 +857,7 @@ STD_TEST(multipart, "src/mime/multipart/multipart.c")
 STD_TEST(multipart_entropy_failure)
 
 // ===== IO =====
-STD_TEST(fs, "src/io/fs/fs.c")
+STD_TEST(fs, "src/io/fs/fs.c", "src/path/match.c", "src/unicode/utf8/utf8.c")
 TEST_F(StdLibTest, FsAllocationFailure) {
   auto r = compileAndRunStdTest("fs_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;

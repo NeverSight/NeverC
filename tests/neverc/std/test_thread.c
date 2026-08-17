@@ -140,6 +140,24 @@ static void shutdown_task(void *opaque) {
     (void)neverc_thread_channel_send(arg->completed, arg);
 }
 
+typedef struct {
+    neverc_thread_executor_t *target;
+    neverc_thread_channel_t *started;
+    neverc_thread_channel_t *release;
+    neverc_thread_channel_t *completed;
+    int result;
+} self_submit_full_arg_t;
+
+static void self_submit_full_task(void *opaque) {
+    self_submit_full_arg_t *arg = (self_submit_full_arg_t *)opaque;
+    void *ignored = NULL;
+    (void)neverc_thread_channel_send(arg->started, arg);
+    (void)neverc_thread_channel_receive(arg->release, &ignored);
+    arg->result = neverc_thread_executor_submit(
+        arg->target, noop_task, NULL);
+    (void)neverc_thread_channel_send(arg->completed, arg);
+}
+
 static int test_channel_fifo_and_close(void) {
     neverc_thread_channel_t *channel = neverc_thread_channel_create(2);
     CHECK(channel != NULL);
@@ -458,6 +476,39 @@ static int test_executor_reentrancy_and_concurrent_shutdown(void) {
     return 0;
 }
 
+static int test_executor_self_submit_when_full(void) {
+    neverc_thread_executor_t *executor =
+        neverc_thread_executor_create(1, 1);
+    neverc_thread_channel_t *started = neverc_thread_channel_create(1);
+    neverc_thread_channel_t *release = neverc_thread_channel_create(1);
+    neverc_thread_channel_t *completed = neverc_thread_channel_create(1);
+    CHECK(executor != NULL);
+    CHECK(started != NULL);
+    CHECK(release != NULL);
+    CHECK(completed != NULL);
+
+    self_submit_full_arg_t arg = {
+        executor, started, release, completed, NEVERC_THREAD_SYSTEM};
+    CHECK(neverc_thread_executor_submit(
+              executor, self_submit_full_task, &arg) == NEVERC_THREAD_OK);
+    void *value = NULL;
+    CHECK(receive_with_timeout(started, &value) == NEVERC_THREAD_OK);
+    CHECK(value == &arg);
+    CHECK(neverc_thread_executor_submit(executor, noop_task, NULL) ==
+          NEVERC_THREAD_OK);
+    CHECK(neverc_thread_channel_send(release, executor) == NEVERC_THREAD_OK);
+    CHECK(receive_with_timeout(completed, &value) == NEVERC_THREAD_OK);
+    CHECK(value == &arg);
+    CHECK(arg.result == NEVERC_THREAD_INVALID);
+    CHECK(neverc_thread_executor_wait(executor) == NEVERC_THREAD_OK);
+
+    neverc_thread_channel_free(completed);
+    neverc_thread_channel_free(release);
+    neverc_thread_channel_free(started);
+    neverc_thread_executor_free(executor);
+    return 0;
+}
+
 int main(void) {
     CHECK(neverc_thread_channel_create(0) == NULL);
     CHECK(neverc_thread_channel_create(SIZE_MAX) == NULL);
@@ -471,6 +522,7 @@ int main(void) {
     CHECK(test_executor_backpressure() == 0);
     CHECK(test_executor_context_waits() == 0);
     CHECK(test_executor_reentrancy_and_concurrent_shutdown() == 0);
+    CHECK(test_executor_self_submit_when_full() == 0);
     puts("passed");
     return 0;
 }

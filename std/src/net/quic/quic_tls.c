@@ -565,7 +565,9 @@ static int qt_parse_client_hello(quic_tls_t *tls, const uint8_t *message,
         } else if (type == QT_EXT_QUIC_TRANSPORT_PARAMETERS) {
             if (neverc_quic_transport_params_decode(extension.data,
                                                      extension.len,
-                                                     tls->peer_params) != 0)
+                                                     tls->peer_params) != 0 ||
+                neverc_quic_transport_params_require_client(
+                    tls->peer_params) != 0)
                 return qt_fail(tls, "invalid client QUIC transport parameters");
             transport_parameters = 1;
         } else if (type == TLS_EXT_SERVER_NAME) {
@@ -966,7 +968,9 @@ static int qt_parse_encrypted_extensions(quic_tls_t *tls,
         } else if (type == QT_EXT_QUIC_TRANSPORT_PARAMETERS) {
             if (neverc_quic_transport_params_decode(extension.data,
                                                      extension.len,
-                                                     tls->peer_params) != 0)
+                                                     tls->peer_params) != 0 ||
+                neverc_quic_transport_params_require_server(
+                    tls->peer_params) != 0)
                 return qt_fail(tls, "invalid server QUIC transport parameters");
             params_seen = 1;
         } else {

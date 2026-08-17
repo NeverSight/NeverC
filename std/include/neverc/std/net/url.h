@@ -16,6 +16,9 @@ typedef struct {
     char path[1024];
     char raw_query[2048];
     char fragment[256];
+    /* Set when userinfo contained a colon, including an empty password
+     * (`user:@host`). Distinguishes that from `user@host` (no password). */
+    int  has_password;
 } neverc_url_t;
 
 /* Parse a hierarchical URL or relative reference. Components that exceed the

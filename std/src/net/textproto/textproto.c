@@ -190,16 +190,31 @@ void neverc_mime_header_set(neverc_mime_header_t *h, const char *key, const char
         !textproto_field_value_ok(value ? value : "") ||
         h->count > h->capacity ||
         (h->capacity > 0 && (!h->keys || !h->values))) return;
-    for (size_t i = 0; i < h->count; i++) {
-        if (canon_eq(h->keys[i], key)) {
+    int replaced = 0;
+    for (size_t i = 0; i < h->count; ) {
+        if (!canon_eq(h->keys[i], key)) {
+            i++;
+            continue;
+        }
+        if (!replaced) {
             char *value_copy = textproto_dup(value);
             if (!value_copy) return;
             free(h->values[i]);
             h->values[i] = value_copy;
-            return;
+            replaced = 1;
+            i++;
+            continue;
+        }
+        free(h->keys[i]);
+        free(h->values[i]);
+        h->count--;
+        if (i < h->count) {
+            h->keys[i] = h->keys[h->count];
+            h->values[i] = h->values[h->count];
         }
     }
-    neverc_mime_header_add(h, key, value);
+    if (!replaced)
+        neverc_mime_header_add(h, key, value);
 }
 
 const char *neverc_mime_header_get(const neverc_mime_header_t *h, const char *key) {
@@ -213,15 +228,17 @@ const char *neverc_mime_header_get(const neverc_mime_header_t *h, const char *ke
 void neverc_mime_header_del(neverc_mime_header_t *h, const char *key) {
     if (!h || !key || h->count > h->capacity ||
         (h->count > 0 && (!h->keys || !h->values))) return;
-    for (size_t i = 0; i < h->count; i++) {
-        if (canon_eq(h->keys[i], key)) {
-            free(h->keys[i]); free(h->values[i]);
-            h->count--;
-            if (i < h->count) {
-                h->keys[i]   = h->keys[h->count];
-                h->values[i] = h->values[h->count];
-            }
-            return;
+    for (size_t i = 0; i < h->count; ) {
+        if (!canon_eq(h->keys[i], key)) {
+            i++;
+            continue;
+        }
+        free(h->keys[i]);
+        free(h->values[i]);
+        h->count--;
+        if (i < h->count) {
+            h->keys[i] = h->keys[h->count];
+            h->values[i] = h->values[h->count];
         }
     }
 }

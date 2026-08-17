@@ -31,6 +31,23 @@ static void pad16(uint8_t *mac_input, size_t *pos, size_t data_len) {
     }
 }
 
+static size_t mac_append_padded(uint8_t *mac_input, size_t pos,
+                                const uint8_t *data, size_t data_len) {
+    if (data_len > 0)
+        memcpy(mac_input + pos, data, data_len);
+    pos += data_len;
+    pad16(mac_input, &pos, data_len);
+    return pos;
+}
+
+static void mac_append_lengths(uint8_t *mac_input, size_t *pos,
+                               size_t aad_len, size_t ct_len) {
+    put_le64(mac_input + *pos, (uint64_t)aad_len);
+    *pos += 8;
+    put_le64(mac_input + *pos, (uint64_t)ct_len);
+    *pos += 8;
+}
+
 /*
  * Construct the Poly1305 MAC input per RFC 8439 Section 2.8:
  *   AAD || pad(AAD) || ciphertext || pad(ct) || len(AAD) as LE64 || len(ct) as LE64
@@ -41,21 +58,9 @@ static void pad16(uint8_t *mac_input, size_t *pos, size_t data_len) {
 static size_t build_mac_data(uint8_t *mac_input,
                              const uint8_t *aad, size_t aad_len,
                              const uint8_t *ct, size_t ct_len) {
-    size_t pos = 0;
-    if (aad_len > 0) {
-        memcpy(mac_input + pos, aad, aad_len);
-        pos += aad_len;
-    }
-    pad16(mac_input, &pos, aad_len);
-    if (ct_len > 0) {
-        memcpy(mac_input + pos, ct, ct_len);
-        pos += ct_len;
-    }
-    pad16(mac_input, &pos, ct_len);
-    put_le64(mac_input + pos, (uint64_t)aad_len);
-    pos += 8;
-    put_le64(mac_input + pos, (uint64_t)ct_len);
-    pos += 8;
+    size_t pos = mac_append_padded(mac_input, 0, aad, aad_len);
+    pos = mac_append_padded(mac_input, pos, ct, ct_len);
+    mac_append_lengths(mac_input, &pos, aad_len, ct_len);
     return pos;
 }
 
@@ -109,15 +114,18 @@ size_t neverc_chacha20poly1305_seal(
     neverc_platform_secure_zero(block0, sizeof(block0));
     neverc_platform_secure_zero(&ctx, sizeof(ctx));
 
+    /* Snapshot AAD before encrypting so an overlapping AAD/dst layout cannot
+     * clobber the bytes that must be authenticated. */
+    size_t pos = mac_append_padded(mac_buf, 0, aad, aad_len);
+
     /* Encrypt plaintext using ChaCha20 starting at counter=1 */
     neverc_chacha20_init(&ctx, key, nonce, 1);
     neverc_chacha20_xor(&ctx, dst, plaintext, plaintext_len);
     neverc_platform_secure_zero(&ctx, sizeof(ctx));
 
-    /* Build MAC input and compute tag. */
-    size_t mac_len = build_mac_data(mac_buf, aad, aad_len,
-                                    dst, plaintext_len);
-    neverc_poly1305_auth(dst + plaintext_len, mac_buf, mac_len, poly_key);
+    pos = mac_append_padded(mac_buf, pos, dst, plaintext_len);
+    mac_append_lengths(mac_buf, &pos, aad_len, plaintext_len);
+    neverc_poly1305_auth(dst + plaintext_len, mac_buf, pos, poly_key);
     neverc_platform_secure_zero(poly_key, sizeof(poly_key));
     neverc_platform_secure_zero(mac_buf, mac_buf_size);
     if (mac_buf != mac_buf_stack)

@@ -268,29 +268,30 @@ static void *executor_worker(void *opaque) {
 #endif
 }
 
+static int executor_is_current_worker_locked(
+    neverc_thread_executor_t *executor) {
+    if (executor->shutdown_complete)
+        return 0;
+#if defined(_WIN32)
+    DWORD current = GetCurrentThreadId();
+    for (size_t i = 0; i < executor->worker_count; ++i) {
+        if (executor->thread_ids[i] == current)
+            return 1;
+    }
+#else
+    pthread_t current = pthread_self();
+    for (size_t i = 0; i < executor->worker_count; ++i) {
+        if (pthread_equal(executor->threads[i], current))
+            return 1;
+    }
+#endif
+    return 0;
+}
+
 static int executor_is_current_worker(
     neverc_thread_executor_t *executor) {
-    int is_worker = 0;
     thread_mutex_lock(&executor->mutex);
-    if (!executor->shutdown_complete) {
-#if defined(_WIN32)
-        DWORD current = GetCurrentThreadId();
-        for (size_t i = 0; i < executor->worker_count; ++i) {
-            if (executor->thread_ids[i] == current) {
-                is_worker = 1;
-                break;
-            }
-        }
-#else
-        pthread_t current = pthread_self();
-        for (size_t i = 0; i < executor->worker_count; ++i) {
-            if (pthread_equal(executor->threads[i], current)) {
-                is_worker = 1;
-                break;
-            }
-        }
-#endif
-    }
+    int is_worker = executor_is_current_worker_locked(executor);
     thread_mutex_unlock(&executor->mutex);
     return is_worker;
 }
@@ -405,6 +406,13 @@ static int executor_submit_impl(
         if (nonblocking) {
             thread_mutex_unlock(&executor->mutex);
             return NEVERC_THREAD_WOULD_BLOCK;
+        }
+        /* Every worker is inside a task. A blocking self-submit cannot
+         * make progress: no worker remains to drain the queue. */
+        if (executor->active_count == executor->worker_count &&
+            executor_is_current_worker_locked(executor)) {
+            thread_mutex_unlock(&executor->mutex);
+            return NEVERC_THREAD_INVALID;
         }
         if (context_is_done(ctx)) {
             thread_mutex_unlock(&executor->mutex);

@@ -281,6 +281,32 @@ int main(void) {
               chain, 2, &valid_time, "example",
               NEVERC_X509_EXT_KEY_USAGE_CODE_SIGNING) != 0);
 
+    neverc_x509_cert_t usage_leaf = leaf;
+    neverc_x509_cert_t usage_root = root;
+    usage_root.ext_key_usage_present = 0;
+    usage_leaf.ext_key_usage_present = 1;
+    usage_leaf.ext_key_usage = NEVERC_X509_EXT_KEY_USAGE_CODE_SIGNING;
+    usage_leaf.key_usage_present = 1;
+    usage_leaf.key_usage = NEVERC_X509_KEY_USAGE_KEY_ENCIPHERMENT;
+    const neverc_x509_cert_t *usage_chain[] = {
+        &usage_leaf, &usage_root
+    };
+    CHECK("code_signing_requires_digital_signature",
+          neverc_x509_verify_chain(
+              usage_chain, 2, &valid_time, NULL,
+              NEVERC_X509_EXT_KEY_USAGE_CODE_SIGNING) != 0);
+    usage_leaf.key_usage = NEVERC_X509_KEY_USAGE_DIGITAL_SIGNATURE;
+    CHECK("code_signing_accepts_digital_signature",
+          neverc_x509_verify_chain(
+              usage_chain, 2, &valid_time, NULL,
+              NEVERC_X509_EXT_KEY_USAGE_CODE_SIGNING) == 0);
+    usage_leaf.ext_key_usage = NEVERC_X509_EXT_KEY_USAGE_EMAIL_PROTECTION;
+    usage_leaf.key_usage = NEVERC_X509_KEY_USAGE_KEY_ENCIPHERMENT;
+    CHECK("email_protection_allows_key_encipherment",
+          neverc_x509_verify_chain(
+              usage_chain, 2, &valid_time, NULL,
+              NEVERC_X509_EXT_KEY_USAGE_EMAIL_PROTECTION) == 0);
+
     neverc_x509_cert_pool_t *roots = neverc_x509_cert_pool_new();
     neverc_x509_cert_pool_t *intermediates =
         neverc_x509_cert_pool_new();
@@ -607,6 +633,17 @@ int main(void) {
     CHECK("name_constraints_leading_dot_rejects_apex",
           neverc_x509_verify_chain(
               nc_chain, 2, &valid_time, NULL, 0) != 0);
+    char *empty_permitted[] = {""};
+    char *dot_only_permitted[] = {"."};
+    nc_root.permitted_dns_names = empty_permitted;
+    nc_leaf.dns_names = foreign_dns;
+    CHECK("name_constraints_empty_permitted_does_not_match_all",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    nc_root.permitted_dns_names = dot_only_permitted;
+    CHECK("name_constraints_dot_permitted_does_not_match_all",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
     nc_leaf.dns_names = matching_dns;
     nc_root.permitted_dns_names = NULL;
     nc_root.permitted_dns_name_count = 0;
@@ -617,6 +654,51 @@ int main(void) {
               nc_chain, 2, &valid_time, NULL, 0) != 0);
     nc_root.excluded_dns_names = NULL;
     nc_root.excluded_dns_name_count = 0;
+
+    /* CN-only identities must not evade DNS name constraints. */
+    nc_leaf.dns_names = NULL;
+    nc_leaf.dns_name_count = 0;
+    nc_root.permitted_dns_names = permitted_dns;
+    nc_root.permitted_dns_name_count = 1;
+    memset(nc_leaf.subject.common_name, 0,
+           sizeof(nc_leaf.subject.common_name));
+    memcpy(nc_leaf.subject.common_name, "evil.com",
+           sizeof("evil.com"));
+    CHECK("name_constraints_cn_without_san_rejected",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    memcpy(nc_leaf.subject.common_name, "www.example.com",
+           sizeof("www.example.com"));
+    CHECK("name_constraints_cn_without_san_match",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) == 0);
+    nc_root.permitted_dns_names = NULL;
+    nc_root.permitted_dns_name_count = 0;
+    nc_root.excluded_dns_names = excluded_dns;
+    nc_root.excluded_dns_name_count = 1;
+    CHECK("name_constraints_excluded_cn_without_san_rejected",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    nc_root.excluded_dns_names = NULL;
+    nc_root.excluded_dns_name_count = 0;
+    nc_root.permitted_dns_names = permitted_dns;
+    nc_root.permitted_dns_name_count = 1;
+    memcpy(nc_leaf.subject.common_name, "NeverC Test CA",
+           sizeof("NeverC Test CA"));
+    CHECK("name_constraints_human_cn_not_treated_as_dns",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) == 0);
+    nc_leaf.dns_names = matching_dns;
+    nc_leaf.dns_name_count = 1;
+    memcpy(nc_leaf.subject.common_name, "evil.com",
+           sizeof("evil.com"));
+    CHECK("name_constraints_san_present_ignores_cn",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) == 0);
+    memset(nc_leaf.subject.common_name, 0,
+           sizeof(nc_leaf.subject.common_name));
+    nc_root.permitted_dns_names = NULL;
+    nc_root.permitted_dns_name_count = 0;
 
     neverc_x509_ip_address_t matching_ip = {{10, 1, 2, 3}, 4};
     neverc_x509_ip_address_t foreign_ip = {{11, 0, 0, 1}, 4};

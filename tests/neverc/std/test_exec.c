@@ -194,6 +194,18 @@ static void test_look_path(void) {
     ASSERT_TRUE(p == NULL);
     ASSERT_TRUE(neverc_exec_look_path("", buf, sizeof(buf)) == NULL);
 
+#if defined(_WIN32)
+    {
+        const char *empty_path[] = { "PATH=" };
+        neverc_exec_cmd_t *empty_cmd = neverc_exec_command("cmd.exe", NULL, 0);
+        neverc_exec_exit_status_t empty_st = {0};
+        ASSERT_TRUE(empty_cmd != NULL);
+        neverc_exec_cmd_set_env(empty_cmd, empty_path, 1);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(empty_cmd, &empty_st), -1);
+        neverc_exec_cmd_free(empty_cmd);
+    }
+#endif
+
 #if !defined(_WIN32)
     p = neverc_exec_look_path("bin", buf, sizeof(buf));
     if (p) {
@@ -218,6 +230,18 @@ static void test_look_path(void) {
         fclose(sf);
     }
     chmod(script, 0755);
+    setenv("PATH", "", 1);
+    p = neverc_exec_look_path(name, buf, sizeof(buf));
+    ASSERT_TRUE(p == NULL);
+    {
+        const char *empty_path[] = { "PATH=" };
+        neverc_exec_cmd_t *empty_cmd = neverc_exec_command(name, NULL, 0);
+        neverc_exec_exit_status_t empty_st = {0};
+        ASSERT_TRUE(empty_cmd != NULL);
+        neverc_exec_cmd_set_env(empty_cmd, empty_path, 1);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(empty_cmd, &empty_st), -1);
+        neverc_exec_cmd_free(empty_cmd);
+    }
     setenv("PATH", ":", 1);
     p = neverc_exec_look_path(name, buf, sizeof(buf));
     ASSERT_TRUE(p != NULL && strcmp(p, "./") != 0);
@@ -351,6 +375,17 @@ static void test_env_still_searches_path(void) {
     neverc_exec_cmd_free(cmd);
 }
 
+static void test_env_without_path_does_not_use_parent_path(void) {
+    printf("[env_without_path]\n");
+    const char *env[] = { "HOME=/" };
+    neverc_exec_cmd_t *cmd = neverc_exec_command("true", NULL, 0);
+    ASSERT_TRUE(cmd != NULL);
+    neverc_exec_cmd_set_env(cmd, env, 1);
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+    neverc_exec_cmd_free(cmd);
+}
+
 static void test_set_dir(void) {
     printf("[set_dir]\n");
     const char *args[] = {"-c", "pwd"};
@@ -428,6 +463,40 @@ static void test_missing_executable(void) {
     neverc_exec_exit_status_t st = {0};
     ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
     ASSERT_INT_EQ(neverc_exec_cmd_start(cmd), -1);
+    neverc_exec_cmd_free(cmd);
+}
+
+static void test_empty_env_pathless_name_fails(void) {
+    printf("[empty_env_pathless]\n");
+#if defined(_WIN32)
+    const char *args[] = {"/C", "exit /B 0"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command("cmd.exe", args, 2);
+#else
+    neverc_exec_cmd_t *cmd = neverc_exec_command("true", NULL, 0);
+#endif
+    ASSERT_TRUE(cmd != NULL);
+    neverc_exec_cmd_set_env(cmd, NULL, 0);
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+    neverc_exec_cmd_free(cmd);
+
+    char buf[4096];
+#if defined(_WIN32)
+    const char *p = neverc_exec_look_path("cmd.exe", buf, sizeof(buf));
+#else
+    const char *p = neverc_exec_look_path("true", buf, sizeof(buf));
+#endif
+    ASSERT_TRUE(p != NULL);
+    if (!p) return;
+#if defined(_WIN32)
+    cmd = neverc_exec_command(p, args, 2);
+#else
+    cmd = neverc_exec_command(p, NULL, 0);
+#endif
+    ASSERT_TRUE(cmd != NULL);
+    neverc_exec_cmd_set_env(cmd, NULL, 0);
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
     neverc_exec_cmd_free(cmd);
 }
 
@@ -606,6 +675,7 @@ int main(int argc, char **argv) {
     test_look_path();
     test_combined_output();
     test_missing_executable();
+    test_empty_env_pathless_name_fails();
     test_invalid_env_rejected();
     test_batch_args_rejected();
     test_start_kill_wait(argv[0]);
@@ -615,6 +685,7 @@ int main(int argc, char **argv) {
     test_signaled_status();
     test_exec_resets_signal_mask(argv[0]);
     test_env_still_searches_path();
+    test_env_without_path_does_not_use_parent_path();
     test_set_dir();
 #endif
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

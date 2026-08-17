@@ -374,6 +374,15 @@ static int h2_client_value_valid(const char *value) {
     return 1;
 }
 
+static int h2_client_path_valid(const char *path) {
+    if (!path || path[0] != '/') return 0;
+    for (const unsigned char *cursor = (const unsigned char *)path;
+         *cursor; cursor++)
+        if (*cursor <= 0x20 || *cursor == 0x7f || *cursor == '#')
+            return 0;
+    return 1;
+}
+
 static int h2_client_parse_content_length(const char *value,
                                           uint64_t *output) {
     if (!value || !value[0] || !output) return -1;
@@ -735,6 +744,12 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
         } else {
             h2_client_stream_t *stream =
                 h2_client_find_stream(client, header->stream_id);
+            if (!stream &&
+                ((header->stream_id & 1U) == 0 ||
+                 header->stream_id >= client->next_stream_id)) {
+                nc_mutex_unlock(&client->state_lock);
+                return -1;
+            }
             if (stream) {
                 if ((int64_t)stream->send_window + increment > INT32_MAX) {
                     nc_mutex_unlock(&client->state_lock);
@@ -811,6 +826,15 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
         h2_client_stream_t *stream =
             h2_client_find_stream(client, header->stream_id);
         if (!stream) {
+            /* RFC 9113 §5.1: DATA on idle (or even/push) streams is a
+             * connection error. DATA on a stream we already released is
+             * treated as STREAM_CLOSED and ignored after refunding the
+             * connection window. */
+            if ((header->stream_id & 1U) == 0 ||
+                header->stream_id >= client->next_stream_id) {
+                nc_mutex_unlock(&client->state_lock);
+                return -1;
+            }
             client->conn_recv_window -= (int32_t)header->length;
             client->conn_recv_window += (int32_t)header->length;
             nc_mutex_unlock(&client->state_lock);
@@ -957,8 +981,16 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
         nc_mutex_unlock(&client->state_lock);
         return 0;
     }
-    case NC_H2_FRAME_PRIORITY:
-        return header->stream_id != 0 && header->length == 5 ? 0 : -1;
+    case NC_H2_FRAME_PRIORITY: {
+        if (header->stream_id == 0 || header->length != 5 || !payload)
+            return -1;
+        uint32_t dependency = ((uint32_t)(payload[0] & 0x7f) << 24) |
+                              ((uint32_t)payload[1] << 16) |
+                              ((uint32_t)payload[2] << 8) |
+                              (uint32_t)payload[3];
+        /* RFC 9113 §6.3: a stream cannot depend on itself. */
+        return dependency == header->stream_id ? -1 : 0;
+    }
     case NC_H2_FRAME_PUSH_PROMISE:
         return -1;
     default:
@@ -1133,7 +1165,7 @@ neverc_h2_client_stream_t *neverc_h2_client_stream_open(
     const neverc_hpack_header_t *extra_headers, size_t extra_count,
     int end_stream, const char **error) {
     if (error) *error = NULL;
-    if (!client || !method || !method[0] || !path || path[0] != '/' ||
+    if (!client || !method || !method[0] || !h2_client_path_valid(path) ||
         extra_count > 64 || (extra_count && !extra_headers) ||
         (end_stream != 0 && end_stream != 1)) {
         if (error) *error = "invalid HTTP/2 stream request";
@@ -1586,7 +1618,7 @@ neverc_h2_response_t *neverc_h2_client_do_context(
     const char *method, const char *path,
     const neverc_hpack_header_t *extra_headers, size_t extra_count,
     const void *body, size_t body_length) {
-    if (!client || !method || !method[0] || !path || path[0] != '/' ||
+    if (!client || !method || !method[0] || !h2_client_path_valid(path) ||
         (body_length > 0 && !body) || extra_count > 64 ||
         (extra_count > 0 && !extra_headers))
         return h2_client_error_response("invalid HTTP/2 request", 0);

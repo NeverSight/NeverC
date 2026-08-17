@@ -115,8 +115,7 @@ int neverc_h3_settings_encode(const h3_settings_t *s,
         if (neverc_quic_varint_encode(H3_SETTINGS_QPACK_MAX_TABLE_CAPACITY, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
         if (neverc_quic_varint_encode(s->qpack_max_table_capacity, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
     }
-    if (s->max_field_section_size > 0 &&
-        s->max_field_section_size < UINT64_MAX) {
+    if (s->max_field_section_size != UINT64_MAX) {
         if (neverc_quic_varint_encode(H3_SETTINGS_MAX_FIELD_SECTION_SIZE, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
         if (neverc_quic_varint_encode(s->max_field_section_size, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
     }
@@ -168,8 +167,9 @@ int neverc_h3_settings_decode(const uint8_t *payload, size_t len,
         case H3_SETTINGS_MAX_FIELD_SECTION_SIZE:
             if (seen & 2U) return -1;
             seen |= 2U;
-            /* RFC 9114 §7.2.4.1: a value of 0 means unlimited. */
-            s->max_field_section_size = val == 0 ? UINT64_MAX : val;
+            /* RFC 9114 §7.2.4.1: omitted means unlimited; an explicit 0
+             * is a limit of 0, not unlimited. */
+            s->max_field_section_size = val;
             break;
         case H3_SETTINGS_QPACK_BLOCKED_STREAMS:
             if (seen & 4U) return -1;
@@ -256,6 +256,38 @@ int neverc_h3_write_goaway_frame(uint8_t *buf, size_t cap,
     if (neverc_quic_varint_encode(stream_id, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
     *written = pos;
     return 0;
+}
+
+/* RFC 9114 §4.3.1: :path is an absolute path, or "*" for OPTIONS.
+ * Reject SP/CTL/'#' the same way HTTP/2 does so intermediaries cannot
+ * desync on a space or fragment in the pseudo-header. */
+int neverc_h3_request_path_allowed(const char *method, const char *path) {
+    if (!method || !path || !path[0]) return 0;
+    if (strcmp(path, "*") == 0)
+        return strcmp(method, "OPTIONS") == 0;
+    if (path[0] != '/') return 0;
+    for (const unsigned char *p = (const unsigned char *)path; *p; p++)
+        if (*p <= 0x20 || *p == 0x7f || *p == '#')
+            return 0;
+    return 1;
+}
+
+/* Single varint that must consume the entire payload (GOAWAY, CANCEL_PUSH,
+ * MAX_PUSH_ID). */
+int neverc_h3_parse_varint_payload(const uint8_t *payload, size_t length,
+                                   uint64_t *value) {
+    if (!payload || !value || length == 0 || length > 8) return -1;
+    size_t consumed = 0;
+    if (neverc_quic_varint_decode(payload, length, value, &consumed) != 0 ||
+        consumed != length)
+        return -1;
+    return 0;
+}
+
+/* RFC 9114 §7.2.7: MAX_PUSH_ID MUST NOT decrease. */
+int neverc_h3_max_push_id_accept(int have_previous, uint64_t previous,
+                                 uint64_t next) {
+    return have_previous && next < previous ? -1 : 0;
 }
 
 /* ======================================================================
@@ -789,4 +821,61 @@ int neverc_http3_qpack_decode(
 int neverc_http3_qpack_field_section_size(
     const neverc_qpack_header_t *headers, int nheaders, uint64_t *size) {
     return neverc_qpack_field_section_size(headers, nheaders, size);
+}
+
+/* RFC 9204 §4.4 decoder-stream instructions. Returns 1 if one complete
+ * valid instruction was consumed, 0 if more bytes are needed, -1 if the
+ * instruction is invalid for a static-only encoder (RIC always 0). */
+static int qpack_prefix_int(const uint8_t *buf, size_t len,
+                            uint8_t prefix_bits, uint64_t *value,
+                            size_t *consumed) {
+    if (!buf || !value || !consumed || len == 0 || prefix_bits == 0 ||
+        prefix_bits > 8)
+        return 0;
+    uint8_t max_first = (uint8_t)((1U << prefix_bits) - 1U);
+    *value = (uint64_t)(buf[0] & max_first);
+    size_t pos = 1;
+    if (*value < max_first) {
+        *consumed = 1;
+        return 1;
+    }
+    uint64_t shift = 0;
+    while (pos < len) {
+        uint8_t b = buf[pos++];
+        if (shift > 62) return -1;
+        uint64_t add = (uint64_t)(b & 0x7F) << shift;
+        if (*value > UINT64_MAX - add) return -1;
+        *value += add;
+        shift += 7;
+        if ((b & 0x80) == 0) {
+            *consumed = pos;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int neverc_qpack_decoder_stream_instruction(const uint8_t *data, size_t len,
+                                            size_t *consumed) {
+    if (!consumed) return -1;
+    *consumed = 0;
+    if (!data || len == 0) return 0;
+    uint64_t value = 0;
+    size_t n = 0;
+    int rc;
+    if (data[0] & 0x80U) {
+        /* Section Acknowledgement — forbidden when RIC is always 0. */
+        rc = qpack_prefix_int(data, len, 7, &value, &n);
+        return rc <= 0 ? rc : -1;
+    }
+    if (data[0] & 0x40U) {
+        /* Stream Cancellation is always legal. */
+        rc = qpack_prefix_int(data, len, 6, &value, &n);
+        if (rc <= 0) return rc;
+        *consumed = n;
+        return 1;
+    }
+    /* Insert Count Increment — any increment is invalid with zero inserts. */
+    rc = qpack_prefix_int(data, len, 6, &value, &n);
+    return rc <= 0 ? rc : -1;
 }

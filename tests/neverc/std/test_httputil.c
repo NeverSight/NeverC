@@ -408,6 +408,41 @@ static void test_dump_apis(void) {
     request.body = "payload";
     request.body_len = 7U;
 
+    request.path = "/";
+    request.query = NULL;
+    request.body = NULL;
+    request.body_len = 0;
+    request.host = "::1";
+    dump = neverc_httputil_dump_request(&request, 0);
+    CHECK("IPv6 request dump allocated", dump != NULL);
+    if (dump) {
+        check_contains("IPv6 Host is bracketed", dump, "Host: [::1]\r\n");
+        CHECK("IPv6 Host is not emitted unbracketed",
+              strstr(dump, "Host: ::1\r\n") == NULL);
+        free(dump);
+    }
+    request.host = "[::1]";
+    dump = neverc_httputil_dump_request(&request, 0);
+    CHECK("bracketed IPv6 dump allocated", dump != NULL);
+    if (dump) {
+        check_contains("already-bracketed IPv6 Host kept", dump,
+                       "Host: [::1]\r\n");
+        CHECK("already-bracketed IPv6 Host is not wrapped twice",
+              strstr(dump, "Host: [[::1]]") == NULL);
+        free(dump);
+    }
+    request.host = "192.168.1.1";
+    dump = neverc_httputil_dump_request(&request, 0);
+    CHECK("IPv4 request dump allocated", dump != NULL);
+    if (dump) {
+        check_contains("IPv4 Host is not bracketed", dump,
+                       "Host: 192.168.1.1\r\n");
+        free(dump);
+    }
+    request.host = "example.test";
+    request.body = "payload";
+    request.body_len = 7U;
+
     char *long_path = (char *)malloc(9002U);
     CHECK("long dump path allocated", long_path != NULL);
     if (long_path) {
@@ -434,6 +469,19 @@ static void test_dump_apis(void) {
         check_contains("outbound dump content length",
                        dump, "Content-Length: 5\r\n");
         check_contains("outbound dump body", dump, "hello");
+        CHECK("outbound dump synthesizes one Content-Length",
+              count_occurrences(dump, "Content-Length:") == 1);
+        free(dump);
+    }
+    dump = neverc_httputil_dump_request_out(
+        "POST", "/data", "Content-Length: 5\r\nAccept: */*\r\n",
+        "hello", 5U);
+    CHECK("outbound dump with existing length allocated", dump != NULL);
+    if (dump) {
+        CHECK("outbound dump does not duplicate Content-Length",
+              count_occurrences(dump, "Content-Length:") == 1);
+        check_contains("outbound dump keeps Accept", dump, "Accept: */*");
+        check_contains("outbound dump keeps body", dump, "hello");
         free(dump);
     }
     CHECK("outbound dump rejects missing body",

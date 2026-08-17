@@ -160,6 +160,34 @@ static void test_invalid_key(void) {
     check_int("key len=256 ok", neverc_rc4_init(&c, max_key, 256), 0);
 }
 
+static void test_failed_reinit_and_reset_no_identity(void) {
+    printf("[rc4 failed re-init / reset do not emit identity]\n");
+
+    const uint8_t key[] = "Key";
+    const uint8_t pt[] = "Plaintext";
+    uint8_t dst[9], aa[9], old_ct[9];
+    neverc_rc4_cipher_t c;
+
+    neverc_rc4_init(&c, key, 3);
+    neverc_rc4_xor_keystream(&c, old_ct, pt, 9);
+
+    check_int("re-init empty key fails", neverc_rc4_init(&c, key, 0), -1);
+    memset(dst, 0xAA, sizeof(dst));
+    memset(aa, 0xAA, sizeof(aa));
+    neverc_rc4_xor_keystream(&c, dst, pt, 9);
+    check_bytes("xor after failed re-init is a no-op", dst, aa, 9);
+    check_true("failed re-init does not keep the old keystream",
+               memcmp(dst, old_ct, 9) != 0);
+
+    neverc_rc4_init(&c, key, 3);
+    neverc_rc4_reset(&c);
+    memset(dst, 0xAA, sizeof(dst));
+    neverc_rc4_xor_keystream(&c, dst, pt, 9);
+    check_bytes("xor after reset is a no-op", dst, aa, 9);
+    check_true("reset does not emit plaintext as ciphertext",
+               memcmp(dst, pt, 9) != 0);
+}
+
 static void test_reset(void) {
     printf("[rc4 reset]\n");
 
@@ -228,6 +256,7 @@ int main(void) {
     test_streaming();
     test_byte_at_a_time();
     test_invalid_key();
+    test_failed_reinit_and_reset_no_identity();
     test_reset();
     test_different_keys_different_output();
     test_in_place();

@@ -457,6 +457,84 @@ static void test_transport_params_roundtrip(void) {
     ASSERT_TRUE(memcmp(decoded.initial_scid, "\x01\x02\x03\x04", 4) == 0);
 }
 
+static size_t write_tp(uint8_t *buf, size_t cap, uint64_t id,
+                       const uint8_t *val, size_t vlen) {
+    size_t pos = 0, w;
+    if (neverc_quic_varint_encode(id, buf + pos, cap - pos, &w) != 0)
+        return 0;
+    pos += w;
+    if (neverc_quic_varint_encode(vlen, buf + pos, cap - pos, &w) != 0)
+        return 0;
+    pos += w;
+    if (vlen) {
+        if (pos + vlen > cap) return 0;
+        memcpy(buf + pos, val, vlen);
+        pos += vlen;
+    }
+    return pos;
+}
+
+static void test_transport_params_client_forbidden(void) {
+    quic_transport_params_t tp;
+    uint8_t buf[64];
+    uint8_t scid[4] = { 1, 2, 3, 4 };
+    size_t n = write_tp(buf, sizeof(buf), 0x0f, scid, sizeof(scid));
+    ASSERT_TRUE(n > 0);
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), 0);
+    ASSERT_EQ(tp.has_initial_scid, 1);
+    ASSERT_EQ(neverc_quic_transport_params_require_client(&tp), 0);
+    ASSERT_EQ(neverc_quic_transport_params_require_server(&tp), -1);
+
+    /* Empty original_destination_connection_id is still present. */
+    n = write_tp(buf, sizeof(buf), 0x00, NULL, 0);
+    ASSERT_TRUE(n > 0);
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), 0);
+    ASSERT_EQ(tp.has_original_dcid, 1);
+    ASSERT_EQ(tp.original_dcid_len, 0);
+    ASSERT_EQ(neverc_quic_transport_params_client_forbidden(&tp), -1);
+
+    uint8_t token[16];
+    memset(token, 0xA5, sizeof(token));
+    n = write_tp(buf, sizeof(buf), 0x02, token, sizeof(token));
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), 0);
+    ASSERT_EQ(neverc_quic_transport_params_client_forbidden(&tp), -1);
+
+    uint8_t pref[1] = { 0 };
+    n = write_tp(buf, sizeof(buf), 0x0d, pref, 1);
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), 0);
+    ASSERT_EQ(tp.has_preferred_address, 1);
+    ASSERT_EQ(neverc_quic_transport_params_client_forbidden(&tp), -1);
+
+    uint8_t retry[8];
+    memset(retry, 0x11, sizeof(retry));
+    n = write_tp(buf, sizeof(buf), 0x10, retry, sizeof(retry));
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), 0);
+    ASSERT_EQ(tp.has_retry_scid, 1);
+    ASSERT_EQ(neverc_quic_transport_params_client_forbidden(&tp), -1);
+    ASSERT_EQ(neverc_quic_transport_params_require_server(&tp), -1);
+
+    /* Server params: original_dcid + initial_scid, no retry_scid. */
+    uint8_t server[64];
+    size_t a = write_tp(server, sizeof(server), 0x00, scid, sizeof(scid));
+    size_t b = write_tp(server + a, sizeof(server) - a, 0x0f, scid,
+                        sizeof(scid));
+    ASSERT_TRUE(a > 0 && b > 0);
+    ASSERT_EQ(neverc_quic_transport_params_decode(server, a + b, &tp), 0);
+    ASSERT_EQ(neverc_quic_transport_params_require_server(&tp), 0);
+    ASSERT_EQ(neverc_quic_transport_params_require_client(&tp), -1);
+}
+
+static void test_new_token_rejects_empty(void) {
+    uint8_t empty[] = { 0x07, 0x00 };
+    size_t consumed = 0;
+    ASSERT_EQ(neverc_quic_parse_new_token(empty, sizeof(empty), &consumed),
+              -1);
+
+    uint8_t ok[] = { 0x07, 0x01, 0xaa };
+    ASSERT_EQ(neverc_quic_parse_new_token(ok, sizeof(ok), &consumed), 0);
+    ASSERT_EQ(consumed, 3);
+}
+
 static void test_transport_params_defaults(void) {
     quic_transport_params_t tp;
     neverc_quic_transport_params_default(&tp);
@@ -627,6 +705,8 @@ int main(void) {
     test_connection_close_app();
     test_reset_stream_roundtrip();
     test_transport_params_roundtrip();
+    test_transport_params_client_forbidden();
+    test_new_token_rejects_empty();
     test_transport_params_defaults();
     test_ping_frame();
     test_handshake_done_frame();

@@ -101,6 +101,12 @@ static void test_split_host_port(void) {
     check_int("empty ipv6 zone rejected",
               neverc_net_split_host_port("[fe80::1%]:80", host, sizeof(host),
                                          port, sizeof(port)), -1);
+    check_int("split ipv4-mapped",
+              neverc_net_split_host_port("[::ffff:127.0.0.1]:80", host,
+                                         sizeof(host), port, sizeof(port)),
+              0);
+    check_str("ipv4-mapped host", host, "::ffff:127.0.0.1");
+    check_str("ipv4-mapped port", port, "80");
 }
 
 /* ===== JoinHostPort ===== */
@@ -135,6 +141,10 @@ static void test_join_host_port(void) {
     check_int("join rejects signed port",
               neverc_net_join_host_port("localhost", "+80", buf, sizeof(buf)),
               -1);
+    check_true("join ipv4-mapped",
+               neverc_net_join_host_port("::ffff:127.0.0.1", "80", buf,
+                                         sizeof(buf)) > 0);
+    check_str("ipv4-mapped join", buf, "[::ffff:127.0.0.1]:80");
 }
 
 /* ===== LookupHost ===== */
@@ -484,6 +494,7 @@ int main(void) {
 
     if (tests_failed == 0)
         printf("ALL PASSED (%d tests passed)\n", tests_passed);
+    if (tests_failed == 0) puts("passed");
 
     return tests_failed;
 }

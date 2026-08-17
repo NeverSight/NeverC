@@ -54,15 +54,27 @@ static int smtp_is_status_code(const char *line, size_t line_len) {
            line[2] >= '0' && line[2] <= '9';
 }
 
-/* RFC 5321 §4.2: the final reply-line is "DDD" or "DDD text". */
+static int smtp_reply_code(const char *line, size_t line_len) {
+    if (!smtp_is_status_code(line, line_len)) return -1;
+    return (line[0] - '0') * 100 + (line[1] - '0') * 10 + (line[2] - '0');
+}
+
+/* RFC 5321 §4.2: "DDD" / "DDD text" is final; "DDD-text" continues. */
 static int smtp_line_is_final(const char *line, size_t line_len) {
     if (!smtp_is_status_code(line, line_len)) return 0;
     return line_len == 3 || line[3] == ' ';
 }
 
+static int smtp_line_is_continuation(const char *line, size_t line_len) {
+    return smtp_is_status_code(line, line_len) && line_len > 3 &&
+           line[3] == '-';
+}
+
 /* Read a complete SMTP response (multi-line aware, RFC 5321 §4.2).
- * Bytes after the terminating final line stay in pending[] so a later
- * response that arrived in the same TCP read is not discarded. */
+ * Every reply-line must carry the same 3-digit code; a 250- prefix
+ * followed by 550 must not be reported as success. Bytes after the
+ * terminating final line stay in pending[] so a later response that
+ * arrived in the same TCP read is not discarded. */
 static int smtp_read_response(neverc_smtp_client_t *c) {
     size_t total = 0;
     if (c->pending_len > 0) {
@@ -75,13 +87,25 @@ static int smtp_read_response(neverc_smtp_client_t *c) {
     }
 
     size_t consumed = 0;
+    int reply_code = -1;
     for (;;) {
         int complete = 0;
+        int malformed = 0;
         const char *line_start = c->last_response;
+        reply_code = -1;
         while (1) {
             const char *crlf = strstr(line_start, "\r\n");
             if (!crlf) break;
             size_t line_len = (size_t)(crlf - line_start);
+            int code = smtp_reply_code(line_start, line_len);
+            if (code < 0 ||
+                (reply_code >= 0 && code != reply_code) ||
+                (!smtp_line_is_final(line_start, line_len) &&
+                 !smtp_line_is_continuation(line_start, line_len))) {
+                malformed = 1;
+                break;
+            }
+            if (reply_code < 0) reply_code = code;
             if (smtp_line_is_final(line_start, line_len)) {
                 complete = 1;
                 consumed = (size_t)(crlf + 2 - c->last_response);
@@ -89,6 +113,7 @@ static int smtp_read_response(neverc_smtp_client_t *c) {
             }
             line_start = crlf + 2;
         }
+        if (malformed) return -1;
         if (complete) break;
 
         if (total >= SMTP_BUF_SIZE - 1) return -1;
@@ -107,11 +132,7 @@ static int smtp_read_response(neverc_smtp_client_t *c) {
         c->pending_len = leftover;
     }
     c->last_response[consumed] = '\0';
-
-    if (!smtp_is_status_code(c->last_response, consumed)) return -1;
-    return (c->last_response[0] - '0') * 100 +
-           (c->last_response[1] - '0') * 10 +
-           (c->last_response[2] - '0');
+    return reply_code;
 }
 
 /* Reject SMTP atoms that could inject extra commands or break path syntax. */
@@ -216,14 +237,20 @@ neverc_smtp_client_t *neverc_smtp_dial(const char *addr, const char **errp) {
 void neverc_smtp_close(neverc_smtp_client_t *c) {
     if (!c) return;
     if (c->conn) {
-        neverc_smtp_quit(c);
+        /* QUIT during DATA would be written as message body. */
+        if (!c->in_data)
+            neverc_smtp_quit(c);
         neverc_tcp_close(c->conn);
     }
     free(c);
 }
 
+static int smtp_require_command_phase(neverc_smtp_client_t *c) {
+    return (!c || c->in_data) ? -1 : 0;
+}
+
 int neverc_smtp_hello(neverc_smtp_client_t *c, const char *local_name) {
-    if (!c) return -1;
+    if (smtp_require_command_phase(c) != 0) return -1;
     if (!local_name) local_name = "localhost";
     if (!smtp_safe_atom(local_name)) return -1;
 
@@ -268,7 +295,8 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
                       neverc_smtp_auth_method_t method,
                       const char *username,
                       const char *password) {
-    if (!c || !username || !password) return -1;
+    if (smtp_require_command_phase(c) != 0 || !username || !password)
+        return -1;
     if (ensure_hello(c) != 0) return -1;
 
     if (method == NEVERC_SMTP_AUTH_PLAIN) {
@@ -314,21 +342,23 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
 }
 
 int neverc_smtp_mail(neverc_smtp_client_t *c, const char *from) {
-    if (!c || !from || !smtp_safe_atom(from)) return -1;
+    if (smtp_require_command_phase(c) != 0 || !from || !smtp_safe_atom(from))
+        return -1;
     if (ensure_hello(c) != 0) return -1;
     int code = smtp_cmdf(c, "MAIL FROM:<%s>", from);
     return (code == 250) ? 0 : -1;
 }
 
 int neverc_smtp_rcpt(neverc_smtp_client_t *c, const char *to) {
-    if (!c || !to || !smtp_safe_atom(to)) return -1;
+    if (smtp_require_command_phase(c) != 0 || !to || !smtp_safe_atom(to))
+        return -1;
     if (ensure_hello(c) != 0) return -1;
     int code = smtp_cmdf(c, "RCPT TO:<%s>", to);
     return (code == 250) ? 0 : -1;
 }
 
 int neverc_smtp_data(neverc_smtp_client_t *c) {
-    if (!c) return -1;
+    if (smtp_require_command_phase(c) != 0) return -1;
     if (ensure_hello(c) != 0) return -1;
     int code = smtp_cmd(c, "DATA");
     if (code == 354) {
@@ -376,20 +406,19 @@ int neverc_smtp_data_close(neverc_smtp_client_t *c) {
 }
 
 int neverc_smtp_reset(neverc_smtp_client_t *c) {
-    if (!c) return -1;
-    c->in_data = 0;
+    if (smtp_require_command_phase(c) != 0) return -1;
     int code = smtp_cmd(c, "RSET");
     return (code == 250) ? 0 : -1;
 }
 
 int neverc_smtp_noop(neverc_smtp_client_t *c) {
-    if (!c) return -1;
+    if (smtp_require_command_phase(c) != 0) return -1;
     int code = smtp_cmd(c, "NOOP");
     return (code == 250) ? 0 : -1;
 }
 
 int neverc_smtp_quit(neverc_smtp_client_t *c) {
-    if (!c || !c->conn) return -1;
+    if (smtp_require_command_phase(c) != 0 || !c->conn) return -1;
     int code = smtp_cmd(c, "QUIT");
     return (code == 221) ? 0 : -1;
 }

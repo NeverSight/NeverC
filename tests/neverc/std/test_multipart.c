@@ -218,6 +218,71 @@ static void test_parse_empty_parts_and_preamble(void) {
     free(reader);
 }
 
+static void test_delimiter_requires_line_end(void) {
+    printf("[delimiter requires line end]\n");
+    neverc_multipart_reader_t *reader =
+        (neverc_multipart_reader_t *)calloc(1, sizeof(*reader));
+    ASSERT_TRUE(reader != NULL);
+    if (!reader) return;
+
+    /* RFC 2046: `--b\r` + more on the same line is body, not a delimiter. */
+    const char *cr_not_eol =
+        "--b\r\n"
+        "\r\n"
+        "hello\n"
+        "--b\rnot-a-break\n"
+        "world\r\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)cr_not_eol, strlen(cr_not_eol),
+                  "b", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_EQ((int)reader->parts[0].body_len,
+              (int)strlen("hello\n--b\rnot-a-break\nworld"));
+    ASSERT_TRUE(memcmp(reader->parts[0].body,
+                       "hello\n--b\rnot-a-break\nworld",
+                       reader->parts[0].body_len) == 0);
+
+    /* Fake close `--b--\r` + more on the same line must not end the message. */
+    const char *fake_close =
+        "--b\r\n"
+        "\r\n"
+        "one\r\n"
+        "--b--\rstill-the-body\r\n"
+        "--b\r\n"
+        "\r\n"
+        "two\r\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)fake_close, strlen(fake_close),
+                  "b", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 2);
+    ASSERT_EQ((int)reader->parts[0].body_len,
+              (int)strlen("one\r\n--b--\rstill-the-body"));
+    ASSERT_TRUE(memcmp(reader->parts[0].body, "one\r\n--b--\rstill-the-body",
+                       reader->parts[0].body_len) == 0);
+    ASSERT_EQ((int)reader->parts[1].body_len, 3);
+    ASSERT_TRUE(memcmp(reader->parts[1].body, "two", 3) == 0);
+
+    /* Closing delimiter may still end with a lone CR at EOF. */
+    const char *close_cr_eof =
+        "--b\r\n"
+        "\r\n"
+        "ok\r\n"
+        "--b--\r";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)close_cr_eof, strlen(close_cr_eof),
+                  "b", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_EQ((int)reader->parts[0].body_len, 2);
+    ASSERT_TRUE(memcmp(reader->parts[0].body, "ok", 2) == 0);
+
+    free(reader);
+}
+
 static void test_generate_boundary(void) {
     printf("[generate boundary]\n");
     char b1[64], b2[64];
@@ -339,6 +404,59 @@ static void test_rejects_malformed_input(void) {
     inject.body_len = 11;
     ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
               -1);
+    /* Exact `--inj` at EOF of the body becomes `--inj\r\n` on the wire. */
+    inject.body = (const unsigned char *)"--inj";
+    inject.body_len = 5;
+    ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
+              -1);
+    inject.body = (const unsigned char *)"ok\n--inj";
+    inject.body_len = 8;
+    ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
+              -1);
+    inject.body = (const unsigned char *)"--inj ";
+    inject.body_len = 6;
+    ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
+              -1);
+
+    /* A prefix of the delimiter is body text: write must accept it and
+     * parse must keep it (RFC 2046: `--b` is not `--bX`). */
+    {
+        neverc_multipart_part_t prefix_part;
+        memset(&prefix_part, 0, sizeof(prefix_part));
+        const char *prefix_body = "alpha\r\n--bX\r\nomega";
+        prefix_part.body = (const unsigned char *)prefix_body;
+        prefix_part.body_len = strlen(prefix_body);
+        int wn = neverc_multipart_write(&prefix_part, 1, "b", output,
+                                        sizeof(output));
+        ASSERT_TRUE(wn > 0);
+        ASSERT_EQ(neverc_multipart_parse(output, (size_t)wn, "b", reader), 0);
+        ASSERT_EQ(reader->part_count, 1);
+        ASSERT_EQ((int)reader->parts[0].body_len, (int)prefix_part.body_len);
+        ASSERT_TRUE(memcmp(reader->parts[0].body, prefix_body,
+                           prefix_part.body_len) == 0);
+
+        const char *cr_body = "hello\n--b\rnot-a-break\nworld";
+        prefix_part.body = (const unsigned char *)cr_body;
+        prefix_part.body_len = strlen(cr_body);
+        wn = neverc_multipart_write(&prefix_part, 1, "b", output,
+                                    sizeof(output));
+        ASSERT_TRUE(wn > 0);
+        ASSERT_EQ(neverc_multipart_parse(output, (size_t)wn, "b", reader), 0);
+        ASSERT_EQ(reader->part_count, 1);
+        ASSERT_EQ((int)reader->parts[0].body_len, (int)prefix_part.body_len);
+        ASSERT_TRUE(memcmp(reader->parts[0].body, cr_body,
+                           prefix_part.body_len) == 0);
+
+        const char *close_prefix = "--b--Xstill";
+        prefix_part.body = (const unsigned char *)close_prefix;
+        prefix_part.body_len = strlen(close_prefix);
+        wn = neverc_multipart_write(&prefix_part, 1, "b", output,
+                                    sizeof(output));
+        ASSERT_TRUE(wn > 0);
+        ASSERT_EQ(neverc_multipart_parse(output, (size_t)wn, "b", reader), 0);
+        ASSERT_EQ(reader->part_count, 1);
+        ASSERT_EQ((int)reader->parts[0].body_len, (int)prefix_part.body_len);
+    }
 
     const char *lwsp =
         "--b \r\n"
@@ -377,6 +495,7 @@ int main(void) {
     test_parse_basic();
     test_parse_multiple_headers();
     test_parse_empty_parts_and_preamble();
+    test_delimiter_requires_line_end();
     test_write_roundtrip();
     test_generate_boundary();
     test_rejects_malformed_input();

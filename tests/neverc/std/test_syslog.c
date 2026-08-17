@@ -89,6 +89,30 @@ static void test_null_safety(void) {
     neverc_syslog_close(log);
 }
 
+static void test_format_and_injection(void) {
+    printf("[format/injection]\n");
+    neverc_syslog_t *log = neverc_syslog_open("app\n<0>root",
+                                               NEVERC_SYSLOG_USER,
+                                               NEVERC_SYSLOG_DEBUG);
+    ASSERT_TRUE(log != NULL);
+
+    char buf[512];
+    ASSERT_EQ(neverc_syslog_format(log, NEVERC_SYSLOG_INFO,
+                                   "hello\n<13>forged", buf, sizeof(buf)), 0);
+    ASSERT_TRUE(strncmp(buf, "<14>", 4) == 0);
+    ASSERT_TRUE(strstr(buf, "[INFO]") == NULL);
+    ASSERT_TRUE(strchr(buf, '\n') == NULL);
+    ASSERT_TRUE(strchr(buf, '\r') == NULL);
+    ASSERT_TRUE(strstr(buf, "hello <13>forged") != NULL);
+    ASSERT_EQ(neverc_syslog_info(log, "hello\n<13>forged"), 0);
+
+    ASSERT_EQ(neverc_syslog_format(NULL, NEVERC_SYSLOG_INFO, "x",
+                                   buf, sizeof(buf)), -1);
+    ASSERT_EQ(neverc_syslog_format(log, NEVERC_SYSLOG_INFO, "x",
+                                   NULL, 8), -1);
+    neverc_syslog_close(log);
+}
+
 int main(void) {
     printf("=== NeverC log/syslog Tests ===\n");
     test_open_close();
@@ -97,6 +121,8 @@ int main(void) {
     test_pri_and_facilities();
     test_long_tag();
     test_null_safety();
+    test_format_and_injection();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

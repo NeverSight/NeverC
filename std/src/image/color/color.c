@@ -105,6 +105,15 @@ static float hue2rgb(float p, float q, float t) {
     return p;
 }
 
+/* Round to nearest 8-bit channel. Conversion of a float outside [0, 255]
+ * (or NaN) to uint8_t is undefined; l=1 and lerp(white, white, t) both
+ * produce 255.5 after the +0.5 rounding bias. */
+static uint8_t round_u8(float v) {
+    if (!(v >= 0.0f)) return 0;
+    if (!(v < 255.0f)) return 255;
+    return (uint8_t)(v + 0.5f);
+}
+
 neverc_color_rgba_t neverc_color_hsl_to_rgba(neverc_color_hsl_t c) {
     neverc_color_rgba_t out;
     float h = c.h, s = c.s, l = c.l;
@@ -115,16 +124,16 @@ neverc_color_rgba_t neverc_color_hsl_to_rgba(neverc_color_hsl_t c) {
     if (!(h > 0.0f)) h = 0.0f;
     if (h > 1.0f) h = 1.0f;
     if (s < 0.00001f) {
-        uint8_t v = (uint8_t)(l * 255.0f + 0.5f);
+        uint8_t v = round_u8(l * 255.0f);
         out.r = out.g = out.b = v;
         out.a = 255;
         return out;
     }
     float q = l < 0.5f ? l * (1.0f + s) : l + s - l * s;
     float p = 2.0f * l - q;
-    out.r = (uint8_t)(hue2rgb(p, q, h + 1.0f/3) * 255.0f + 0.5f);
-    out.g = (uint8_t)(hue2rgb(p, q, h) * 255.0f + 0.5f);
-    out.b = (uint8_t)(hue2rgb(p, q, h - 1.0f/3) * 255.0f + 0.5f);
+    out.r = round_u8(hue2rgb(p, q, h + 1.0f/3) * 255.0f);
+    out.g = round_u8(hue2rgb(p, q, h) * 255.0f);
+    out.b = round_u8(hue2rgb(p, q, h - 1.0f/3) * 255.0f);
     out.a = 255;
     return out;
 }
@@ -184,14 +193,13 @@ int neverc_color_parse_hex(const char *s, neverc_color_rgba_t *c) {
 }
 
 neverc_color_rgba_t neverc_color_lerp(neverc_color_rgba_t a, neverc_color_rgba_t b, float t) {
-    /* NaN and t <= 0 yield a; t >= 1 yields b. Keeps the float-to-uint8
-     * conversion inside [0, 255] so it is defined. */
+    /* NaN and t <= 0 yield a; t >= 1 yields b. */
     if (!(t > 0.0f)) return a;
     if (!(t < 1.0f)) return b;
     neverc_color_rgba_t out;
-    out.r = (uint8_t)(a.r + (float)(b.r - a.r) * t + 0.5f);
-    out.g = (uint8_t)(a.g + (float)(b.g - a.g) * t + 0.5f);
-    out.b = (uint8_t)(a.b + (float)(b.b - a.b) * t + 0.5f);
-    out.a = (uint8_t)(a.a + (float)(b.a - a.a) * t + 0.5f);
+    out.r = round_u8((float)a.r + (float)((int)b.r - (int)a.r) * t);
+    out.g = round_u8((float)a.g + (float)((int)b.g - (int)a.g) * t);
+    out.b = round_u8((float)a.b + (float)((int)b.b - (int)a.b) * t);
+    out.a = round_u8((float)a.a + (float)((int)b.a - (int)a.a) * t);
     return out;
 }

@@ -338,6 +338,10 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
     int pending_transparent = -1;
     int pending_disposal = 0;
     int saw_trailer = 0;
+    /* GIF 89a: omit the Netscape extension to play once. 0 is reserved for
+     * "loop forever" and must not be the no-extension default, or every
+     * ordinary GIF reports an infinite animation. */
+    int loop_count = -1;
 
     while (pos < len) {
         uint8_t block = data[pos++];
@@ -372,8 +376,8 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                         is_netscape = 1;
                     else if (is_netscape && app_idx >= 1 && bs >= 3 &&
                              data[pos] == 1)
-                        img->loop_count = (int)data[pos + 1] |
-                                          ((int)data[pos + 2] << 8);
+                        loop_count = (int)data[pos + 1] |
+                                     ((int)data[pos + 2] << 8);
                     pos += bs;
                     app_idx++;
                 }
@@ -531,12 +535,11 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                 }
 
                 /* Emit S(code) backwards directly into indices[], clamping each
-                 * byte to the palette and keeping only the leading run that fits
-                 * pixel_count — byte-for-byte what the old stack-then-forward-copy
-                 * produced. length[code] gives the precise span; code ==
-                 * next_code_d is the KwKwK case (entry not yet defined) = prev
-                 * string + prev's first byte. prefix[c] < c, so the walk strictly
-                 * decreases and is self-bounding. */
+                 * byte to the palette. A code longer than the remaining pixel
+                 * slots is rejected above. length[code] gives the precise span;
+                 * code == next_code_d is the KwKwK case (entry not yet defined)
+                 * = prev string + prev's first byte. prefix[c] < c, so the walk
+                 * strictly decreases and is self-bounding. */
                 size_t L;
                 int walk;
                 int is_kwkwk = 0;
@@ -553,7 +556,14 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                 }
 
                 size_t avail = pixel_count - pix_pos;
-                size_t emit = (L <= avail) ? L : avail;
+                /* A code that expands past the frame is malformed, not a
+                 * truncated-success: the old decoder clamped and then treated
+                 * pix_pos == pixel_count plus EOI as a valid image. */
+                if (L > avail) {
+                    lzw_error = 1;
+                    break;
+                }
+                size_t emit = L;
                 size_t w = pix_pos + L;
                 if (is_kwkwk) {
                     w--;
@@ -669,6 +679,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
     img->width = width;
     img->height = height;
     img->background = background;
+    img->loop_count = loop_count;
     return 0;
 
 decode_failed:

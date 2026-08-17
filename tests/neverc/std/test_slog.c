@@ -262,6 +262,26 @@ static void test_escaping_and_special_floats(void) {
     ASSERT_TRUE(strstr(buf, "msg=\"hello\\\"\\nforged\"") != NULL);
     ASSERT_TRUE(strstr(buf, " note=\"a b\\nnext\"") != NULL);
     ASSERT_TRUE(count_substring(buf, "\n") == 1);
+
+    memset(buf, 0, sizeof(buf));
+    f = tmpfile();
+    if (!f) {
+        ASSERT_TRUE(0);
+        return;
+    }
+    neverc_slog_init(&h, f, NEVERC_SLOG_DEBUG, NEVERC_SLOG_FORMAT_TEXT);
+    neverc_slog_attr_t injected[] = {
+        neverc_slog_string("k=eq", "v=eq"),
+        neverc_slog_string("k\"q", "v\"q")
+    };
+    neverc_slog_log(&h, NEVERC_SLOG_INFO, "ok", injected, 2);
+    rewind(f);
+    n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+    ASSERT_TRUE(strstr(buf, " \"k=eq\"=\"v=eq\"") != NULL);
+    ASSERT_TRUE(strstr(buf, " \"k\\\"q\"=\"v\\\"q\"") != NULL);
+    ASSERT_TRUE(strstr(buf, " k=eq=") == NULL);
 }
 
 enum { SLOG_THREADS = 8, SLOG_ROUNDS = 100 };
@@ -412,5 +432,6 @@ int main(void) {
     test_concurrent_records();
     test_null_safety();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

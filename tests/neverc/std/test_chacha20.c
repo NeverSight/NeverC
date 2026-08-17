@@ -159,6 +159,11 @@ static void test_counter_wrap(void) {
     neverc_chacha20_xor(&ctx, out, in, 128);
     check_true("oversize wrap request is all-or-nothing",
                memcmp(out, aa, 64) == 0 && memcmp(out + 64, aa, 64) == 0);
+
+    /* Refusing an oversize request must leave the last valid block usable. */
+    neverc_chacha20_xor(&ctx, out, in, 64);
+    check_true("oversize wrap leaves last block usable",
+               memcmp(out, aa, 64) != 0);
 }
 
 static void test_counter_wrap_leftover(void) {
@@ -174,6 +179,20 @@ static void test_counter_wrap_leftover(void) {
     neverc_chacha20_xor(&ctx, chunked, in, 32);
     neverc_chacha20_xor(&ctx, chunked + 32, in + 32, 32);
     check_true("32+32 leftover matches 64-byte last block",
+               memcmp(one_shot, chunked, 64) == 0);
+
+    neverc_chacha20_init(&ctx, key, nonce, 0xFFFFFFFFu);
+    neverc_chacha20_xor(&ctx, chunked, in, 32);
+    memset(extra, 0xAA, sizeof(extra));
+    neverc_chacha20_xor(&ctx, extra, in, 64);
+    {
+        uint8_t aa[16];
+        memset(aa, 0xAA, sizeof(aa));
+        check_true("oversize leftover request is a no-op",
+                   memcmp(extra, aa, sizeof(extra)) == 0);
+    }
+    neverc_chacha20_xor(&ctx, chunked + 32, in + 32, 32);
+    check_true("oversize leftover request preserves remaining keystream",
                memcmp(one_shot, chunked, 64) == 0);
 
     memset(extra, 0xAA, sizeof(extra));
@@ -222,6 +241,37 @@ static void test_null_inputs(void) {
                memcmp(leaked, secret, sizeof(secret)) != 0);
 }
 
+static void test_overlap(void) {
+    printf("[ChaCha20 overlapping xor]\n");
+    uint8_t key[32] = {0}, nonce[12] = {0};
+    uint8_t msg[300];
+    for (int i = 0; i < 300; i++)
+        msg[i] = (uint8_t)(i * 3 + 1);
+
+    uint8_t expected[300];
+    neverc_chacha20_ctx ctx;
+    neverc_chacha20_init(&ctx, key, nonce, 0);
+    neverc_chacha20_xor(&ctx, expected, msg, 300);
+
+    uint8_t in_place[300];
+    memcpy(in_place, msg, 300);
+    neverc_chacha20_init(&ctx, key, nonce, 0);
+    neverc_chacha20_xor(&ctx, in_place, in_place, 300);
+    check_true("in-place xor", memcmp(in_place, expected, 300) == 0);
+
+    /* dst = src+4 used to clobber unread source via 8-byte memcpy XOR. */
+    uint8_t wide[308];
+    memcpy(wide, msg, 300);
+    neverc_chacha20_init(&ctx, key, nonce, 0);
+    neverc_chacha20_xor(&ctx, wide + 4, wide, 300);
+    check_true("dst=src+4 xor", memcmp(wide + 4, expected, 300) == 0);
+
+    memcpy(wide + 8, msg, 300);
+    neverc_chacha20_init(&ctx, key, nonce, 0);
+    neverc_chacha20_xor(&ctx, wide, wide + 8, 300);
+    check_true("dst=src-8 xor", memcmp(wide, expected, 300) == 0);
+}
+
 int main(void) {
     printf("=== NeverC ChaCha20 Tests ===\n\n");
     test_rfc7539_block();
@@ -231,6 +281,7 @@ int main(void) {
     test_counter_wrap();
     test_counter_wrap_leftover();
     test_null_inputs();
+    test_overlap();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

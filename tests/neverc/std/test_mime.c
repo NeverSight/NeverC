@@ -147,6 +147,115 @@ static void test_parse_media_type(void) {
     ASSERT_STR_EQ(keys[0], "filename");
     ASSERT_STR_EQ(vals[0], "safe.txt");
     free_params(keys, vals, nparams);
+
+    /* Empty 2231 charset is US-ASCII (RFC 2231). */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; filename*=''hello.txt",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(keys[0], "filename");
+    ASSERT_STR_EQ(vals[0], "hello.txt");
+    free_params(keys, vals, nparams);
+
+    /* RFC 2231 continuations (Go parseMediaTypeTests / RFC 2231 p.3). */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "message/external-body; access-type=URL; "
+                      "URL*0=\"ftp://\";"
+                      "URL*1=\"cs.utk.edu/pub/moore/bulk-mailer/"
+                      "bulk-mailer.tar\"",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_STR_EQ(mt, "message/external-body");
+    ASSERT_INT_EQ(nparams, 2);
+    ASSERT_STR_EQ(keys[0], "access-type");
+    ASSERT_STR_EQ(vals[0], "URL");
+    ASSERT_STR_EQ(keys[1], "url");
+    ASSERT_STR_EQ(vals[1],
+                  "ftp://cs.utk.edu/pub/moore/bulk-mailer/bulk-mailer.tar");
+    free_params(keys, vals, nparams);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/x-stuff; "
+                      "title*0*=us-ascii'en'This%20is%20even%20more%20; "
+                      "title*1*=%2A%2A%2Afun%2A%2A%2A%20; "
+                      "title*2=\"isn't it!\"",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(keys[0], "title");
+    ASSERT_STR_EQ(vals[0], "This is even more ***fun*** isn't it!");
+    free_params(keys, vals, nparams);
+
+    /* name* single wins; leftover name*0 is not stitched. */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; filename*=utf-8''star.txt; "
+                      "filename*0=ignored",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(keys[0], "filename");
+    ASSERT_STR_EQ(vals[0], "star.txt");
+    free_params(keys, vals, nparams);
+
+    /* name*1 without name*0 is not a filename (Go #attfnconts1). */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; filename*1=\"foo.\"; filename*2=\"html\"",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 0);
+
+    /* Continuation overwrites a plain sibling. */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; filename=plain.txt; "
+                      "filename*0=\"foo.\"; filename*1=\"html\"",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(keys[0], "filename");
+    ASSERT_STR_EQ(vals[0], "foo.html");
+    free_params(keys, vals, nparams);
+
+    /* filename*01 is not filename*1 (Go #attfncontlz). */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; filename*0=\"foo\"; filename*01=\"bar\"",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(keys[0], "filename");
+    ASSERT_STR_EQ(vals[0], "foo");
+    free_params(keys, vals, nparams);
+
+    /* Unsupported 2231 charset on a continuation must not invent "". */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; "
+                      "filename*0*=iso-8859-1''hello.txt",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 0);
+
+    /* Failed first piece must not keep later pieces as a truncated name. */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; "
+                      "filename*0*=iso-8859-1''caf%E9; filename*1=\".txt\"",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 0);
+
+    /* CTL in a 2231 continuation is dropped, not stitched to "". */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; "
+                      "filename*0*=utf-8''x%0d%0a.txt",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 0);
+
+    /* Invalid percent in a later encoded piece drops the whole stitch. */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; "
+                      "filename*0*=utf-8''ok; filename*1*=%ZZ",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 0);
+
+    /* Failed continuation does not clobber a plain sibling. */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; filename=safe.txt; "
+                      "filename*0*=iso-8859-1''evil.txt",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(keys[0], "filename");
+    ASSERT_STR_EQ(vals[0], "safe.txt");
+    free_params(keys, vals, nparams);
 }
 
 static void test_parse_quoted_params(void) {
@@ -172,6 +281,24 @@ static void test_parse_quoted_params(void) {
     ASSERT_STR_EQ(vals[0], "a\";b\\c");
     ASSERT_STR_EQ(keys[1], "charset");
     ASSERT_STR_EQ(vals[1], "utf-8");
+    free_params(keys, vals, nparams);
+
+    /* MSIE intranet / Windows paths: `\` is literal unless the next
+     * byte is a tspecial (Go consumeValue). */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; "
+                      "filename=\"C:\\dev\\go\\robots.txt\"",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(keys[0], "filename");
+    ASSERT_STR_EQ(vals[0], "C:\\dev\\go\\robots.txt");
+    free_params(keys, vals, nparams);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; filename=\"f\\oo.html\"",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(vals[0], "f\\oo.html");
     free_params(keys, vals, nparams);
 }
 

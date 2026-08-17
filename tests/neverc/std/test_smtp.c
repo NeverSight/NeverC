@@ -128,6 +128,10 @@ static void *mock_smtp_server(void *arg) {
             } else if (strncmp(buf, "MAIL FROM:", 10) == 0) {
                 const char *resp = strstr(buf, "leftover@")
                     ? "250 OK\r\n500 leftover-injected\r\n"
+                    : strstr(buf, "mismatch@")
+                    /* RFC 5321: every reply-line must share the same code.
+                     * A 250- prefix plus a 550 final line is not success. */
+                    ? "250-looks-ok\r\n550 command rejected\r\n"
                     : "250 OK\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
             } else if (strncmp(buf, "RCPT TO:", 8) == 0) {
@@ -366,10 +370,37 @@ static void test_smtp_reject_injection(void) {
         check_true("DATA for null write", neverc_smtp_data(idle) == 0);
         check_true("write_data null nonzero",
                    neverc_smtp_write_data(idle, NULL, 4) == -1);
-        check_true("data_close after null write",
+        check_true("reset during DATA rejected",
+                   neverc_smtp_reset(idle) == -1);
+        check_true("noop during DATA rejected",
+                   neverc_smtp_noop(idle) == -1);
+        check_true("mail during DATA rejected",
+                   neverc_smtp_mail(idle, "other@example.com") == -1);
+        check_true("quit during DATA rejected",
+                   neverc_smtp_quit(idle) == -1);
+        check_true("write_data after rejected commands",
+                   neverc_smtp_write_data(idle, "ok\r\n", 4) == 0);
+        check_true("data_close after rejected commands",
                    neverc_smtp_data_close(idle) == 0);
         neverc_smtp_close(idle);
     }
+}
+
+static void test_smtp_multiline_code_mismatch(void) {
+    printf("[smtp_multiline_code_mismatch]\n");
+
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_smtp_port);
+    const char *err = NULL;
+    neverc_smtp_client_t *c = neverc_smtp_dial(addr, &err);
+    check_true("dial for multiline mismatch", c != NULL);
+    if (!c) return;
+
+    check_true("EHLO before mismatch",
+               neverc_smtp_hello(c, "test.client") == 0);
+    check_true("MAIL rejects 250- then 550",
+               neverc_smtp_mail(c, "mismatch@example.com") == -1);
+    neverc_smtp_close(c);
 }
 
 static void test_smtp_response_leftover(void) {
@@ -427,6 +458,7 @@ int main(void) {
     test_send_mail();
     test_dot_stuffing();
     test_smtp_reject_injection();
+    test_smtp_multiline_code_mismatch();
     test_smtp_response_leftover();
 
     g_smtp_running = 0;

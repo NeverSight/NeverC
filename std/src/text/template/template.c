@@ -81,14 +81,27 @@ static char *trim_ws(const char *s, size_t len) {
     return dup_str(s, len);
 }
 
-/* A data selector is exactly ".Key". Extra tokens and '|' pipelines are
- * invalid: "| html" must not be swallowed into the key (a silent no-op). */
+static int is_key_char(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_';
+}
+
+/* A data selector is ".Ident" or ".Ident.Ident...". Operators, pipelines,
+ * and call/index syntax must not be swallowed into the key (a silent no-op). */
 static char *parse_dot_key(const char *s) {
     if (!s || s[0] != '.') return NULL;
     s++;
-    if (*s == '\0' || is_action_ws(*s) || *s == '|') return NULL;
+    if (!is_key_char(*s)) return NULL;
     const char *start = s;
-    while (*s && !is_action_ws(*s) && *s != '|') s++;
+    for (;;) {
+        while (is_key_char(*s)) s++;
+        if (*s == '.') {
+            s++;
+            if (!is_key_char(*s)) return NULL;
+            continue;
+        }
+        break;
+    }
     if (*s != '\0') return NULL;
     return dup_str(start, (size_t)(s - start));
 }
@@ -116,14 +129,19 @@ static int parse_action(const char **p, const char *end,
     const char *close = strstr(start, "}}");
     if (!close || close + 2 > end) return -1;
 
+    /* Go: trim markers are "{{- " and " -}}" (dash plus ASCII space).
+     * A bare dash is part of the action ("{{-3}}", "{{.Name-}}"). */
     const char *inner = start + 2;
-    if (inner < close && *inner == '-') inner++;
+    if (inner + 1 < close && inner[0] == '-' && is_action_ws(inner[1]))
+        inner++;
     const char *action_end = close;
-    if (action_end > inner && action_end[-1] == '-') action_end--;
+    int right_trim = (action_end >= inner + 2 && action_end[-1] == '-' &&
+                      is_action_ws(action_end[-2]));
+    if (right_trim) action_end--;
     char *action = trim_ws(inner, (size_t)(action_end - inner));
     if (!action) return -1;
     *p = close + 2;
-    if (close > start + 2 && close[-1] == '-') {
+    if (right_trim) {
         while (*p < end && is_action_ws(**p)) (*p)++;
     }
 
@@ -288,7 +306,8 @@ static int parse_nodes(const char **p, const char *end,
         }
 
         *p = next;
-        if (next + 2 < end && next[2] == '-' && *count > 0) {
+        if (next + 3 < end && next[2] == '-' && is_action_ws(next[3]) &&
+            *count > 0) {
             tnode_t *prev = &(*nodes)[*count - 1];
             if (prev->type == NODE_TEXT && prev->text) {
                 while (prev->text_len > 0 &&

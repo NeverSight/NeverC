@@ -146,7 +146,7 @@ uint64_t neverc_maphash_make_seed(void) {
 
 void neverc_maphash_init(neverc_maphash_t *h, uint64_t seed) {
     if (!h) return;
-    h->seed = seed ? seed : neverc_maphash_make_seed();
+    h->seed = seed;
     h->state = h->seed;
     h->n = 0;
     h->used = 0;
@@ -154,7 +154,6 @@ void neverc_maphash_init(neverc_maphash_t *h, uint64_t seed) {
 
 void neverc_maphash_reset(neverc_maphash_t *h) {
     if (!h) return;
-    if (h->seed == 0) h->seed = neverc_maphash_make_seed();
     h->state = h->seed;
     h->n = 0;
     h->used = 0;

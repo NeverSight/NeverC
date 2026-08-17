@@ -233,6 +233,34 @@ static void test_null_inputs(void) {
     check_int("des null key", neverc_des_init(&des, NULL), -1);
     check_int("3des null cipher", neverc_3des_init(NULL, key24), -1);
     check_int("3des null key", neverc_3des_init(&tdes, NULL), -1);
+
+    neverc_des_init(&des, key8);
+    check_int("des null key after init fails", neverc_des_init(&des, NULL), -1);
+    {
+        int wiped = 1;
+        for (int i = 0; i < 16; i++)
+            if (des.subkeys[i] != 0) wiped = 0;
+        check_true("des null key wipes subkeys", wiped);
+    }
+
+    neverc_3des_init(&tdes, key24);
+    check_int("3des null key after init fails", neverc_3des_init(&tdes, NULL), -1);
+    {
+        int wiped = 1;
+        for (int i = 0; i < 16; i++)
+            if (tdes.c1.subkeys[i] || tdes.c2.subkeys[i] || tdes.c3.subkeys[i])
+                wiped = 0;
+        check_true("3des null key wipes subkeys", wiped);
+    }
+
+    {
+        uint8_t out[8];
+        memset(out, 0xAA, sizeof(out));
+        neverc_des_encrypt_block(&des, out, NULL);
+        check_true("des encrypt null src is a no-op", out[0] == 0xAA);
+        neverc_3des_encrypt_block(&tdes, out, NULL);
+        check_true("3des encrypt null src is a no-op", out[0] == 0xAA);
+    }
 }
 
 static void test_3des_two_key(void) {

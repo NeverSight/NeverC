@@ -264,6 +264,187 @@ static void test_reject_unmasked_client_frame(void) {
     neverc_tcp_listener_close(ln);
 }
 
+static int ws_write_masked_frame(neverc_tcp_conn_t *conn, int opcode,
+                                 const void *data, size_t len) {
+    if (!conn || len > 125 || (len > 0 && !data)) return -1;
+    uint8_t mask[4] = {0x37, 0xfa, 0x21, 0x3d};
+    uint8_t hdr[6];
+    hdr[0] = (uint8_t)(0x80 | (opcode & 0x0f));
+    hdr[1] = (uint8_t)(0x80 | len);
+    memcpy(hdr + 2, mask, 4);
+    if (neverc_tcp_write(conn, hdr, sizeof(hdr)) != (int)sizeof(hdr))
+        return -1;
+    if (len == 0) return 0;
+    uint8_t masked[125];
+    const uint8_t *bytes = (const uint8_t *)data;
+    size_t i;
+    for (i = 0; i < len; i++)
+        masked[i] = (uint8_t)(bytes[i] ^ mask[i % 4]);
+    return neverc_tcp_write(conn, masked, len) == (int)len ? 0 : -1;
+}
+
+static int ws_drain_http_response(neverc_tcp_conn_t *conn) {
+    char buf[1024];
+    size_t total = 0;
+    while (total < sizeof(buf) - 1) {
+        int n = neverc_tcp_read(conn, buf + total, 1);
+        if (n <= 0) return -1;
+        total += (size_t)n;
+        if (total >= 4 && memcmp(buf + total - 4, "\r\n\r\n", 4) == 0)
+            return 0;
+    }
+    return -1;
+}
+
+static int ws_tcp_read_exact(neverc_tcp_conn_t *conn, void *buf, size_t len) {
+    char *p = (char *)buf;
+    size_t total = 0;
+    while (total < len) {
+        int n = neverc_tcp_read(conn, p + total, len - total);
+        if (n <= 0) return -1;
+        total += (size_t)n;
+    }
+    return 0;
+}
+
+static neverc_ws_conn_t *ws_test_server_handshake(
+    neverc_tcp_conn_t *server, neverc_tcp_conn_t *client) {
+    neverc_tcp_set_timeout(server, 5000);
+    neverc_tcp_set_timeout(client, 5000);
+    const char *good =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    size_t consumed = 0;
+    if (neverc_ws_handshake_server(server, good, strlen(good),
+                                   &consumed) != 0)
+        return NULL;
+    if (ws_drain_http_response(client) != 0)
+        return NULL;
+    return neverc_ws_conn_new(server);
+}
+
+static void test_close_code_message_too_big(void) {
+    printf("[close_code_message_too_big]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("too-big listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("too-big client", client);
+    check_not_null("too-big server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("too-big server ws", ws);
+    if (ws) {
+        check_int("set read limit", neverc_ws_set_read_limit(ws, 8), 0);
+        char payload[20];
+        memset(payload, 'x', sizeof(payload));
+        check_int("write oversized frame",
+                  ws_write_masked_frame(client, NC_WS_OPCODE_BINARY,
+                                        payload, sizeof(payload)),
+                  0);
+        int opcode = 0;
+        char buf[32];
+        size_t n = 0;
+        check_int("reject oversized frame",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  -1);
+        uint8_t close_hdr[4];
+        check_int("read close header",
+                  ws_tcp_read_exact(client, close_hdr, sizeof(close_hdr)),
+                  0);
+        check_int("close opcode", close_hdr[0], 0x88);
+        check_int("close unmasked len 2", close_hdr[1], 0x02);
+        uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
+                                   close_hdr[3]);
+        check_int("close code 1009", code, 1009);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
+static void test_local_buffer_too_small_keeps_stream(void) {
+    printf("[local_buffer_too_small]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("small-buf listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("small-buf client", client);
+    check_not_null("small-buf server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("small-buf server ws", ws);
+    if (ws) {
+        char payload[20];
+        memset(payload, 'y', sizeof(payload));
+        check_int("write large data frame",
+                  ws_write_masked_frame(client, NC_WS_OPCODE_BINARY,
+                                        payload, sizeof(payload)),
+                  0);
+        int opcode = 0;
+        char tiny[4];
+        size_t n = 0;
+        check_int("local buffer too small",
+                  neverc_ws_read_frame(ws, &opcode, NULL, tiny, sizeof(tiny),
+                                       &n),
+                  -1);
+        check_int("write follow-up hello",
+                  ws_write_masked_frame(client, NC_WS_OPCODE_TEXT,
+                                        "hello", 5),
+                  0);
+        char buf[16];
+        n = 0;
+        opcode = 0;
+        check_int("next frame after drain",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  0);
+        check_int("follow-up opcode", opcode, NC_WS_OPCODE_TEXT);
+        check_int("follow-up length", (int)n, 5);
+        buf[n] = '\0';
+        check_str("follow-up payload", buf, "hello");
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
 #ifndef _WIN32
 
 static int tcp_read_exact(neverc_tcp_conn_t *conn, void *buf, size_t len) {
@@ -734,6 +915,8 @@ int main(void) {
     test_utf8_prefix_validation();
     test_handshake_rejects();
     test_reject_unmasked_client_frame();
+    test_close_code_message_too_big();
+    test_local_buffer_too_small_keeps_stream();
 #ifndef _WIN32
     test_client_dial_and_masking();
     test_handshake_and_echo();

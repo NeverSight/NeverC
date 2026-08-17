@@ -365,6 +365,22 @@ static void test_inv_trig(void) {
     /* C99/Go: atan(-i) is 0 - i∞, not NaN. */
     check_cmplx("atan(-i)", neverc_cmplx_atan(C(0.0, -1.0)), 0.0, -NC_INF);
 
+    /* Go math/cmplx.Atan branch cut: imag axis |y| > 1.
+     * atan(+0+2i) = +π/2 + i½ln3; the log-quotient form returned -π/2. */
+    {
+        double half_ln3 = 0.5 * neverc_math_log(3.0);
+        neverc_cmplx_t w = neverc_cmplx_atan(C(0.0, 2.0));
+        check_cmplx("atan(+0+2i)", w, NEVERC_MATH_PI / 2.0, half_ln3);
+        check_signbit("atan(+0+2i).re pos", w.re, 0);
+        w = neverc_cmplx_atan(C(0.0, -2.0));
+        check_cmplx("atan(+0-2i)", w, NEVERC_MATH_PI / 2.0, -half_ln3);
+        check_signbit("atan(+0-2i).re pos", w.re, 0);
+        double nz = neverc_math_copysign(0.0, -1.0);
+        w = neverc_cmplx_atan(C(nz, 2.0));
+        check_cmplx("atan(-0+2i)", w, -NEVERC_MATH_PI / 2.0, half_ln3);
+        check_signbit("atan(-0+2i).re neg", w.re, 1);
+    }
+
     /* Inf arguments: the algebraic forms do Inf*0 and used to return NaN. */
     check_cmplx("asin(+Inf)", neverc_cmplx_asin(C(NC_INF, 0.0)), NEVERC_MATH_PI / 2.0, NC_INF);
     check_cmplx("asin(-Inf)", neverc_cmplx_asin(C(-NC_INF, 0.0)), -NEVERC_MATH_PI / 2.0, NC_INF);
@@ -432,6 +448,16 @@ static void test_inv_hyp_cot(void) {
     check_double("atanh(0.5+0i).re", neverc_cmplx_atanh(C(0.5, 0.0)).re,
                  neverc_math_atanh(0.5));
     check_cmplx("atanh(1)", neverc_cmplx_atanh(C(1.0, 0.0)), NC_INF, 0.0);
+    /* Go: atanh(x) for real x > 1 is ½ln((x+1)/(x-1)) - iπ/2 (via -i atan(ix)). */
+    {
+        double half_ln3 = 0.5 * neverc_math_log(3.0);
+        neverc_cmplx_t w = neverc_cmplx_atanh(C(2.0, 0.0));
+        check_cmplx("atanh(2+0i)", w, half_ln3, -NEVERC_MATH_PI / 2.0);
+        check_signbit("atanh(2+0i).im neg", w.im, 1);
+        w = neverc_cmplx_atanh(C(-2.0, 0.0));
+        check_cmplx("atanh(-2+0i)", w, -half_ln3, NEVERC_MATH_PI / 2.0);
+        check_signbit("atanh(-2+0i).im pos", w.im, 0);
+    }
     {
         neverc_cmplx_t w = neverc_cmplx_atanh(C(0.2, 0.3));
         neverc_cmplx_t rt = neverc_cmplx_tanh(w);
@@ -490,6 +516,79 @@ static void test_special(void) {
         check_true("tan(1+40i) imag ~ 1", neverc_math_abs(t.im - 1.0) < 1e-10);
         check_true("tan(1+40i) real ~ 0", neverc_math_abs(t.re) < 1e-10);
     }
+
+    /* Near a real pole, cos(2x)+cosh(2y) cancels to 0 in float64.
+     * tan(π/2 + iy) = i coth(y) must stay finite. */
+    {
+        neverc_cmplx_t t = neverc_cmplx_tan(C(NEVERC_MATH_PI / 2.0, 1e-6));
+        check_true("tan(pi/2+1e-6i) finite",
+                   !neverc_cmplx_isinf(t) && !neverc_cmplx_isnan(t));
+        check_true("tan(pi/2+1e-6i) imag ~ 1e6",
+                   neverc_math_abs(t.im - 1e6) / 1e6 < 1e-6);
+        check_true("tan(pi/2+1e-6i) real ~ 0", neverc_math_abs(t.re) < 1.0);
+        neverc_cmplx_t c = neverc_cmplx_cot(C(0.0, 1e-6));
+        check_true("cot(1e-6i) finite",
+                   !neverc_cmplx_isinf(c) && !neverc_cmplx_isnan(c));
+        check_true("cot(1e-6i) imag ~ -1e6",
+                   neverc_math_abs(c.im + 1e6) / 1e6 < 1e-6);
+    }
+
+    /* Go math/cmplx Sin/Cos/Sinh/Cosh Inf/NaN (C99 G.6). Algebraic 0*Inf is NaN. */
+    check_cmplx("sin(0+i*Inf)", neverc_cmplx_sin(C(0.0, NC_INF)), 0.0, NC_INF);
+    check_cmplx("sin(0-i*Inf)", neverc_cmplx_sin(C(0.0, -NC_INF)), 0.0, -NC_INF);
+    check_cmplx("sin(0+i*NaN)", neverc_cmplx_sin(C(0.0, NC_NAN)), 0.0, NC_NAN);
+    check_cmplx("sin(+Inf+0i)", neverc_cmplx_sin(C(NC_INF, 0.0)), NC_NAN, 0.0);
+    check_cmplx("sin(-Inf+0i)", neverc_cmplx_sin(C(-NC_INF, 0.0)), NC_NAN, 0.0);
+    check_cmplx("sin(+Inf+i*Inf)", neverc_cmplx_sin(C(NC_INF, NC_INF)), NC_NAN, NC_INF);
+    check_cmplx("sin(NaN+0i)", neverc_cmplx_sin(C(NC_NAN, 0.0)), NC_NAN, 0.0);
+    {
+        double nz = neverc_math_copysign(0.0, -1.0);
+        neverc_cmplx_t w = neverc_cmplx_sin(C(nz, NC_INF));
+        check_cmplx("sin(-0+i*Inf)", w, 0.0, NC_INF);
+        check_signbit("sin(-0+i*Inf).re neg", w.re, 1);
+        w = neverc_cmplx_sin(C(NC_INF, nz));
+        check_cmplx("sin(+Inf-0i)", w, NC_NAN, 0.0);
+        check_signbit("sin(+Inf-0i).im neg", w.im, 1);
+    }
+
+    check_cmplx("cos(0+i*Inf)", neverc_cmplx_cos(C(0.0, NC_INF)), NC_INF, -0.0);
+    {
+        neverc_cmplx_t w = neverc_cmplx_cos(C(0.0, NC_INF));
+        check_signbit("cos(0+i*Inf).im neg", w.im, 1);
+        w = neverc_cmplx_cos(C(0.0, -NC_INF));
+        check_cmplx("cos(0-i*Inf)", w, NC_INF, 0.0);
+        check_signbit("cos(0-i*Inf).im pos", w.im, 0);
+    }
+    check_cmplx("cos(0+i*NaN)", neverc_cmplx_cos(C(0.0, NC_NAN)), NC_NAN, 0.0);
+    check_cmplx("cos(+Inf+0i)", neverc_cmplx_cos(C(NC_INF, 0.0)), NC_NAN, -0.0);
+    check_cmplx("cos(+Inf+i*Inf)", neverc_cmplx_cos(C(NC_INF, NC_INF)), NC_INF, NC_NAN);
+    check_cmplx("cos(NaN+0i)", neverc_cmplx_cos(C(NC_NAN, 0.0)), NC_NAN, -0.0);
+
+    check_cmplx("sinh(+Inf+0i)", neverc_cmplx_sinh(C(NC_INF, 0.0)), NC_INF, 0.0);
+    check_cmplx("sinh(-Inf+0i)", neverc_cmplx_sinh(C(-NC_INF, 0.0)), -NC_INF, 0.0);
+    check_cmplx("sinh(0+i*Inf)", neverc_cmplx_sinh(C(0.0, NC_INF)), 0.0, NC_NAN);
+    check_cmplx("sinh(0+i*NaN)", neverc_cmplx_sinh(C(0.0, NC_NAN)), 0.0, NC_NAN);
+    check_cmplx("sinh(+Inf+i*Inf)", neverc_cmplx_sinh(C(NC_INF, NC_INF)), NC_INF, NC_NAN);
+    check_cmplx("sinh(NaN+0i)", neverc_cmplx_sinh(C(NC_NAN, 0.0)), NC_NAN, 0.0);
+    {
+        double nz = neverc_math_copysign(0.0, -1.0);
+        neverc_cmplx_t w = neverc_cmplx_sinh(C(NC_INF, nz));
+        check_cmplx("sinh(+Inf-0i)", w, NC_INF, 0.0);
+        check_signbit("sinh(+Inf-0i).im neg", w.im, 1);
+    }
+
+    check_cmplx("cosh(+Inf+0i)", neverc_cmplx_cosh(C(NC_INF, 0.0)), NC_INF, 0.0);
+    check_cmplx("cosh(-Inf+0i)", neverc_cmplx_cosh(C(-NC_INF, 0.0)), NC_INF, -0.0);
+    {
+        neverc_cmplx_t w = neverc_cmplx_cosh(C(-NC_INF, 0.0));
+        check_signbit("cosh(-Inf+0i).im neg", w.im, 1);
+        w = neverc_cmplx_cosh(C(0.0, NC_INF));
+        check_cmplx("cosh(0+i*Inf)", w, NC_NAN, 0.0);
+        check_signbit("cosh(0+i*Inf).im pos", w.im, 0);
+    }
+    check_cmplx("cosh(0+i*NaN)", neverc_cmplx_cosh(C(0.0, NC_NAN)), NC_NAN, 0.0);
+    check_cmplx("cosh(+Inf+i*Inf)", neverc_cmplx_cosh(C(NC_INF, NC_INF)), NC_INF, NC_NAN);
+    check_cmplx("cosh(NaN+0i)", neverc_cmplx_cosh(C(NC_NAN, 0.0)), NC_NAN, 0.0);
 }
 
 /* ===== Known computed values ===== */
@@ -538,5 +637,6 @@ int main(void) {
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed;
 }

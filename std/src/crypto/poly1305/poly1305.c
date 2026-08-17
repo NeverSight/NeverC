@@ -77,7 +77,10 @@ void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
         h0 += c * 5; c = (h0 >> 44);           h0 = h0 & 0xfffffffffffULL;
         h1 += c;
 
-        off += (blen >= 16) ? 16 : msg_len;
+        if (blen >= 16)
+            off += 16;
+        else
+            break;
     }
 
     /* fully carry h */
@@ -195,7 +198,10 @@ void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
         c = (uint32_t)(d4 >> 26); h4 = (uint32_t)d4 & 0x3ffffff; h0 += c * 5;
         c = h0 >> 26;             h0 &= 0x3ffffff; h1 += c;
 
-        off += (blen >= 16) ? 16 : msg_len;
+        if (blen >= 16)
+            off += 16;
+        else
+            break;
     }
 
     /* Final reduction: fully carry h */

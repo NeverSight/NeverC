@@ -109,6 +109,37 @@ static void test_make_seed(void) {
     ASSERT_U64_NE(s1, s2);
 }
 
+static void test_seed_zero(void) {
+    printf("[seed_zero]\n");
+    uint64_t oneshot = neverc_maphash_bytes(0, "hello", 5);
+    ASSERT_U64_EQ(neverc_maphash_string(0, "hello"), oneshot);
+    ASSERT_U64_NE(oneshot, 0);
+
+    neverc_maphash_t h;
+    neverc_maphash_init(&h, 0);
+    ASSERT_U64_EQ(neverc_maphash_sum64(&h), neverc_maphash_bytes(0, "", 0));
+    neverc_maphash_write(&h, "hello", 5);
+    ASSERT_U64_EQ(neverc_maphash_sum64(&h), oneshot);
+
+    neverc_maphash_init(&h, 0);
+    const char *s = "hello";
+    for (int i = 0; s[i]; i++)
+        neverc_maphash_write_byte(&h, (uint8_t)s[i]);
+    ASSERT_U64_EQ(neverc_maphash_sum64(&h), oneshot);
+
+    neverc_maphash_reset(&h);
+    ASSERT_U64_EQ(neverc_maphash_sum64(&h), neverc_maphash_bytes(0, "", 0));
+    neverc_maphash_write_string(&h, "hello");
+    ASSERT_U64_EQ(neverc_maphash_sum64(&h), oneshot);
+
+    char buf[200];
+    memset(buf, 'Z', sizeof(buf));
+    uint64_t long_oneshot = neverc_maphash_bytes(0, buf, sizeof(buf));
+    neverc_maphash_init(&h, 0);
+    neverc_maphash_write(&h, buf, sizeof(buf));
+    ASSERT_U64_EQ(neverc_maphash_sum64(&h), long_oneshot);
+}
+
 static void test_empty_data(void) {
     printf("[empty_data]\n");
     uint64_t h1 = neverc_maphash_bytes(42, "", 0);
@@ -192,9 +223,12 @@ int main(void) {
     test_streaming();
     test_reset();
     test_make_seed();
+    test_seed_zero();
     test_empty_data();
     test_large_data();
     test_distribution();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0)
+        puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

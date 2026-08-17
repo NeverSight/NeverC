@@ -410,15 +410,16 @@ static int x509_dns_constraint_matches(const char *constraint,
         return 0;
     size_t constraint_len = x509_dns_stripped_len(constraint);
     size_t name_len = x509_dns_stripped_len(name);
+    /* An empty constraint (or ".") must not match every name. */
     if (constraint_len == 0)
-        return 1;
+        return 0;
 
     int subdomain_only = constraint[0] == '.';
     if (subdomain_only) {
         ++constraint;
         --constraint_len;
         if (constraint_len == 0)
-            return 1;
+            return 0;
     }
     if (name_len < constraint_len)
         return 0;
@@ -506,6 +507,50 @@ static int x509_ip_addresses_excluded(
     return 0;
 }
 
+/* CN is not a dNSName, but a SAN-less certificate still presents CN as its
+ * DNS identity. Skipping it lets CN-only leaves (and client certs verified
+ * with hostname=NULL) silently evade permitted/excluded DNS constraints. */
+static int x509_cn_looks_like_dns(const char *cn) {
+    if (!cn || !cn[0])
+        return 0;
+    size_t len = x509_dns_stripped_len(cn);
+    if (len == 0 || len > 253)
+        return 0;
+
+    int saw_dot = 0;
+    int all_numeric = 1;
+    int dots = 0;
+    size_t label_start = 0;
+    for (size_t i = 0; i <= len; ++i) {
+        if (i == len || cn[i] == '.') {
+            size_t label_len = i - label_start;
+            if (label_len == 0 || label_len > 63 ||
+                cn[label_start] == '-' || cn[i - 1] == '-')
+                return 0;
+            if (i < len) {
+                saw_dot = 1;
+                ++dots;
+            }
+            label_start = i + 1;
+            continue;
+        }
+        int ch = (unsigned char)cn[i];
+        if (ch >= 'A' && ch <= 'Z')
+            ch += 'a' - 'A';
+        if (!((ch >= 'a' && ch <= 'z') ||
+              (ch >= '0' && ch <= '9') || ch == '-'))
+            return 0;
+        if (ch < '0' || ch > '9')
+            all_numeric = 0;
+    }
+    if (!saw_dot)
+        return 0;
+    /* IPv4 literals are not dNSName identities. */
+    if (all_numeric && dots == 3)
+        return 0;
+    return 1;
+}
+
 static int x509_cert_satisfies_name_constraints(
     const neverc_x509_cert_t *subject, const neverc_x509_cert_t *issuer) {
     if (!subject || !issuer)
@@ -520,14 +565,28 @@ static int x509_cert_satisfies_name_constraints(
                                    issuer->excluded_ip_networks,
                                    issuer->excluded_ip_network_count))
         return 0;
-    return x509_dns_names_permitted(subject->dns_names,
-                                    subject->dns_name_count,
-                                    issuer->permitted_dns_names,
-                                    issuer->permitted_dns_name_count) &&
-           x509_ip_addresses_permitted(subject->ip_addresses,
-                                       subject->ip_address_count,
-                                       issuer->permitted_ip_networks,
-                                       issuer->permitted_ip_network_count);
+    if (!x509_dns_names_permitted(subject->dns_names,
+                                  subject->dns_name_count,
+                                  issuer->permitted_dns_names,
+                                  issuer->permitted_dns_name_count) ||
+        !x509_ip_addresses_permitted(subject->ip_addresses,
+                                     subject->ip_address_count,
+                                     issuer->permitted_ip_networks,
+                                     issuer->permitted_ip_network_count))
+        return 0;
+
+    if (subject->dns_name_count == 0 &&
+        x509_cn_looks_like_dns(subject->subject.common_name)) {
+        char *cn_name = (char *)subject->subject.common_name;
+        if (x509_dns_names_excluded(&cn_name, 1,
+                                    issuer->excluded_dns_names,
+                                    issuer->excluded_dns_name_count) ||
+            !x509_dns_names_permitted(&cn_name, 1,
+                                      issuer->permitted_dns_names,
+                                      issuer->permitted_dns_name_count))
+            return 0;
+    }
+    return 1;
 }
 
 int neverc_x509_verify_chain(const neverc_x509_cert_t *const *chain,
@@ -554,7 +613,10 @@ int neverc_x509_verify_chain(const neverc_x509_cert_t *const *chain,
     if (leaf->key_usage_present &&
         (required_ext_key_usage &
          (NEVERC_X509_EXT_KEY_USAGE_SERVER_AUTH |
-          NEVERC_X509_EXT_KEY_USAGE_CLIENT_AUTH)) != 0 &&
+          NEVERC_X509_EXT_KEY_USAGE_CLIENT_AUTH |
+          NEVERC_X509_EXT_KEY_USAGE_CODE_SIGNING |
+          NEVERC_X509_EXT_KEY_USAGE_TIME_STAMPING |
+          NEVERC_X509_EXT_KEY_USAGE_OCSP_SIGNING)) != 0 &&
         (leaf->key_usage &
          NEVERC_X509_KEY_USAGE_DIGITAL_SIGNATURE) == 0)
         return -1;

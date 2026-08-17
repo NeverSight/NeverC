@@ -837,30 +837,31 @@ static int parse_n_digits(const char *value, size_t vlen, size_t *vi, int n,
     return 0;
 }
 
+/* Go getnum(fixed=false): one digit, or two whenever the second char is a
+ * digit — even if the combined value is out of range. Range checks happen
+ * after the whole layout is consumed. Taking only one digit when the pair
+ * exceeds maxv made "12"="215" parse as February 15 instead of rejecting
+ * month 21. */
 static int parse_flex_digits(const char *value, size_t vlen, size_t *vi,
-                             int maxv, int *out) {
+                             int *out) {
     if (*vi >= vlen || value[*vi] < '0' || value[*vi] > '9') return -1;
     int v = value[(*vi)++] - '0';
     if (*vi < vlen && value[*vi] >= '0' && value[*vi] <= '9') {
-        int two = v * 10 + (value[*vi] - '0');
-        if (two <= maxv) {
-            v = two;
-            (*vi)++;
-        }
+        v = v * 10 + (value[*vi] - '0');
+        (*vi)++;
     }
     *out = v;
     return 0;
 }
 
+/* Go stdUnderDay: optional leading space, then getnum (1 or 2 digits). */
 static int parse_under_day(const char *value, size_t vlen, size_t *vi, int *out) {
     if (*vi >= vlen) return -1;
     if (value[*vi] == ' ') {
         (*vi)++;
         if (*vi >= vlen || value[*vi] < '0' || value[*vi] > '9') return -1;
-        *out = value[(*vi)++] - '0';
-        return 0;
     }
-    return parse_n_digits(value, vlen, vi, 2, out);
+    return parse_flex_digits(value, vlen, vi, out);
 }
 
 static int parse_named_zone(const char *value, size_t vlen, size_t *vi) {
@@ -917,16 +918,22 @@ static int parse_frac_sec(const char *value, size_t vlen, size_t *vi,
     if (*vi < vlen && value[*vi] == sep) {
         (*vi)++;
         int got = 0;
+        int stored = 0;
         int val = 0;
-        while (got < digits && *vi < vlen &&
-               value[*vi] >= '0' && value[*vi] <= '9') {
-            val = val * 10 + (value[(*vi)++] - '0');
+        while (*vi < vlen && value[*vi] >= '0' && value[*vi] <= '9') {
+            /* 0s require an exact width. 9s consume every digit, like Go. */
+            if (required && got >= digits) break;
+            int digit = value[(*vi)++] - '0';
             got++;
+            if (stored < 9) {
+                val = val * 10 + digit;
+                stored++;
+            }
         }
         if (got == 0 || (required && got != digits)) return -1;
-        while (got < 9) {
+        while (stored < 9) {
             val *= 10;
-            got++;
+            stored++;
         }
         *ns = val;
         return 0;
@@ -934,6 +941,22 @@ static int parse_frac_sec(const char *value, size_t vlen, size_t *vi,
     if (required) return -1;
     *ns = 0;
     return 0;
+}
+
+static int layout_at_frac(const char *layout, size_t llen, size_t li) {
+    return li < llen && (layout[li] == '.' || layout[li] == ',') &&
+           li + 1 < llen && (layout[li + 1] == '0' || layout[li + 1] == '9');
+}
+
+/* Go: a fraction is accepted after seconds even when the layout omits it. */
+static int parse_trailing_frac(const char *layout, size_t llen, size_t li,
+                               const char *value, size_t vlen, size_t *vi,
+                               int *ns) {
+    if (layout_at_frac(layout, llen, li)) return 0;
+    if (*vi >= vlen || (value[*vi] != '.' && value[*vi] != ',')) return 0;
+    if (*vi + 1 >= vlen || value[*vi + 1] < '0' || value[*vi + 1] > '9')
+        return 0;
+    return parse_frac_sec(value, vlen, vi, 9, 0, value[*vi], ns);
 }
 
 int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out) {
@@ -1043,6 +1066,8 @@ int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out)
         } else if (li + 2 <= llen && memcmp(layout + li, "05", 2) == 0) {
             if (parse_n_digits(value, vlen, &vi, 2, &sc) != 0) return -1;
             li += 2;
+            if (parse_trailing_frac(layout, llen, li, value, vlen, &vi, &ns) != 0)
+                return -1;
         } else if (li + 2 <= llen && memcmp(layout + li, "06", 2) == 0) {
             int yy;
             if (parse_n_digits(value, vlen, &vi, 2, &yy) != 0) return -1;
@@ -1065,20 +1090,22 @@ int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out)
                 return -1;
             li += 1 + (size_t)digits;
         } else if (layout[li] == '3') {
-            if (parse_flex_digits(value, vlen, &vi, 12, &hr) != 0) return -1;
+            if (parse_flex_digits(value, vlen, &vi, &hr) != 0) return -1;
             hour12 = 1;
             li += 1;
         } else if (layout[li] == '4') {
-            if (parse_flex_digits(value, vlen, &vi, 59, &mi) != 0) return -1;
+            if (parse_flex_digits(value, vlen, &vi, &mi) != 0) return -1;
             li += 1;
         } else if (layout[li] == '5') {
-            if (parse_flex_digits(value, vlen, &vi, 60, &sc) != 0) return -1;
+            if (parse_flex_digits(value, vlen, &vi, &sc) != 0) return -1;
             li += 1;
+            if (parse_trailing_frac(layout, llen, li, value, vlen, &vi, &ns) != 0)
+                return -1;
         } else if (layout[li] == '2') {
-            if (parse_flex_digits(value, vlen, &vi, 31, &dy) != 0) return -1;
+            if (parse_flex_digits(value, vlen, &vi, &dy) != 0) return -1;
             li += 1;
         } else if (layout[li] == '1') {
-            if (parse_flex_digits(value, vlen, &vi, 12, &mo) != 0) return -1;
+            if (parse_flex_digits(value, vlen, &vi, &mo) != 0) return -1;
             li += 1;
         } else {
             if (vi >= vlen || layout[li] != value[vi]) return -1;
@@ -1086,10 +1113,14 @@ int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out)
             vi++;
         }
     }
-    if (hour12) {
-        if (hr < 1 || hr > 12) return -1;
+    /* Go: AM/PM applies whenever the layout has PM/pm, including with "15".
+     * 12-hour fields accept 0 (00:30AM → 00:30). */
+    if (pm >= 0) {
+        if (hr < 0 || hr > 12) return -1;
         if (pm == 1) hr = (hr == 12) ? 12 : hr + 12;
-        else if (pm == 0) hr = (hr == 12) ? 0 : hr;
+        else hr = (hr == 12) ? 0 : hr;
+    } else if (hour12) {
+        if (hr < 0 || hr > 12) return -1;
     }
     if (sc == 60) sc = 59;
     if (vi != vlen || mo < 1 || mo > 12 || dy < 1 ||

@@ -5,14 +5,18 @@
 /*
  * Porter-Duff "over" for a single 8-bit channel, premultiply-free form:
  *   out = src + dst * (255 - srcAlpha)   (rounded /255)
- * The constant /255 is strength-reduced by the compiler into a multiply+shift,
- * so this stays branch- and divide-free in the emitted code.
+ * Valid premultiplied input has src <= srcAlpha, so the result is in
+ * [0, 255]. Clamp anyway: draw_uniform / draw_gray_over pass the caller's
+ * RGB and alpha independently, and src > alpha makes the unclamped sum
+ * 256..510, which wrapped through uint8_t (white OVER white with a=128
+ * became 126).
  */
 static inline uint8_t over_component(uint8_t dst, uint8_t src, uint8_t sa) {
     uint32_t s = src;
     uint32_t d = dst;
     uint32_t a = sa;
-    return (uint8_t)((s * 255 + d * (255 - a) + 127) / 255);
+    uint32_t v = (s * 255 + d * (255 - a) + 127) / 255;
+    return (uint8_t)(v > 255u ? 255u : v);
 }
 
 static inline void over_pixel(uint8_t *d, const uint8_t *s) {
@@ -223,6 +227,10 @@ void neverc_draw_gray_over(neverc_image_rgba_t *dst, neverc_rect_t r,
     int x1 = clip.max.x, y1 = clip.max.y;
     int w = x1 - x0;
     if (w <= 0) return;
+    /* Coverage is ca * mask; a fully transparent color is a no-op even
+     * when the mask is opaque. Without this, over_component(dst, src, 0)
+     * adds src into dst (and used to wrap). */
+    if (ca == 0) return;
 
     int64_t mx = (int64_t)mp.x + (int64_t)x0 - (int64_t)r.min.x;
     int64_t my = (int64_t)mp.y + (int64_t)y0 - (int64_t)r.min.y;

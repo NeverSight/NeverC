@@ -126,6 +126,8 @@ static void test_rgba_image(void) {
     check("out_of_bounds", r == 0 && g == 0 && b == 0 && a == 0);
 
     check("pixel_offset", neverc_image_rgba_pixel_offset(&img, 10, 20) == 20 * 400 + 10 * 4);
+    check("pixel_offset oob", neverc_image_rgba_pixel_offset(&img, -1, 0) == -1);
+    check("pixel_offset oob y", neverc_image_rgba_pixel_offset(&img, 0, 100) == -1);
 
     neverc_image_rgba_at(NULL, 0, 0, &r, &g, &b, &a);
     check("at null image", r == 0 && g == 0 && b == 0 && a == 0);
@@ -149,6 +151,8 @@ static void test_gray_image(void) {
     check("set_get", neverc_image_gray_at(&img, 10, 10) == 128);
     check("gray pixel_offset",
           neverc_image_gray_pixel_offset(&img, 10, 10) == 10 * 50 + 10);
+    check("gray pixel_offset oob",
+          neverc_image_gray_pixel_offset(&img, 50, 0) == -1);
     check("default_zero", neverc_image_gray_at(&img, 0, 0) == 0);
     check("out_of_bounds", neverc_image_gray_at(&img, -1, -1) == 0);
 

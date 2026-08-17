@@ -1,6 +1,7 @@
 #include "neverc/std/net/http/httputil.h"
 #include "neverc/std/crypto/tls.h"
 #include "neverc/std/net/http.h"
+#include "neverc/std/net/netip.h"
 #include "neverc/std/net/tcp.h"
 #include <limits.h>
 #include <stdatomic.h>
@@ -62,6 +63,40 @@ static int httputil_has_crlf(const char *s) {
     if (!s) return 0;
     for (; *s; s++)
         if (*s == '\r' || *s == '\n') return 1;
+    return 0;
+}
+
+/* RFC 9110 Host is uri-host; IPv6 literals must be bracketed. */
+static int httputil_host_needs_brackets(const char *host) {
+    neverc_netip_addr_t addr;
+    return host && host[0] && host[0] != '[' &&
+        neverc_netip_parse_addr(host, &addr) == 0 && !addr.is_v4;
+}
+
+static int httputil_headers_have_content_length(const char *headers) {
+    if (!headers) return 0;
+    const char *line = headers;
+    while (*line) {
+        const char *end = line;
+        while (*end && *end != '\n') end++;
+        size_t length = (size_t)(end - line);
+        if (length > 0 && line[length - 1] == '\r') length--;
+        if (length >= 15) {
+            static const char prefix[] = "content-length:";
+            int match = 1;
+            for (int i = 0; i < 15; i++) {
+                unsigned char c = (unsigned char)line[i];
+                if (c >= 'A' && c <= 'Z') c = (unsigned char)(c + 32);
+                if (c != (unsigned char)prefix[i]) {
+                    match = 0;
+                    break;
+                }
+            }
+            if (match) return 1;
+        }
+        if (*end == '\0') break;
+        line = end + 1;
+    }
     return 0;
 }
 
@@ -1725,12 +1760,17 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
         httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0)
         goto fail;
 
-    if (req->host &&
-        (httputil_dump_append_string(
-             &buf, &n, &cap, "Host: ") != 0 ||
-         httputil_dump_append_string(&buf, &n, &cap, req->host) != 0 ||
-         httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0))
-        goto fail;
+    if (req->host) {
+        int bracket_ipv6 = httputil_host_needs_brackets(req->host);
+        if (httputil_dump_append_string(&buf, &n, &cap, "Host: ") != 0 ||
+            (bracket_ipv6 &&
+             httputil_dump_append_string(&buf, &n, &cap, "[") != 0) ||
+            httputil_dump_append_string(&buf, &n, &cap, req->host) != 0 ||
+            (bracket_ipv6 &&
+             httputil_dump_append_string(&buf, &n, &cap, "]") != 0) ||
+            httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0)
+            goto fail;
+    }
 
     int saw_content_length = 0;
     if (req->raw_headers) {
@@ -1817,7 +1857,7 @@ char *neverc_httputil_dump_request_out(const char *method,
         httputil_dump_append_string(&buf, &n, &cap, headers) != 0)
         goto fail;
 
-    if (body_len > 0) {
+    if (body_len > 0 && !httputil_headers_have_content_length(headers)) {
         char content_length[64];
         int content_length_size = snprintf(
             content_length, sizeof(content_length),

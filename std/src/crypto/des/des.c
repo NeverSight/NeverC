@@ -1,4 +1,5 @@
 #include "neverc/std/crypto/des.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 
 /*
@@ -206,23 +207,33 @@ static void cryptBlock(const uint64_t subkeys[16], uint8_t dst[8],
 }
 
 int neverc_des_init(neverc_des_cipher_t *c, const uint8_t key[8]) {
-    if (!c || !key) return -1;
+    if (!c) return -1;
+    if (!key) {
+        neverc_platform_secure_zero(c, sizeof(*c));
+        return -1;
+    }
     generateSubkeys(c->subkeys, key);
     return 0;
 }
 
 void neverc_des_encrypt_block(const neverc_des_cipher_t *c,
                               uint8_t dst[8], const uint8_t src[8]) {
+    if (!c || !dst || !src) return;
     cryptBlock(c->subkeys, dst, src, 0);
 }
 
 void neverc_des_decrypt_block(const neverc_des_cipher_t *c,
                               uint8_t dst[8], const uint8_t src[8]) {
+    if (!c || !dst || !src) return;
     cryptBlock(c->subkeys, dst, src, 1);
 }
 
 int neverc_3des_init(neverc_3des_cipher_t *c, const uint8_t key[24]) {
-    if (!c || !key) return -1;
+    if (!c) return -1;
+    if (!key) {
+        neverc_platform_secure_zero(c, sizeof(*c));
+        return -1;
+    }
     generateSubkeys(c->c1.subkeys, key);
     generateSubkeys(c->c2.subkeys, key + 8);
     generateSubkeys(c->c3.subkeys, key + 16);
@@ -231,6 +242,7 @@ int neverc_3des_init(neverc_3des_cipher_t *c, const uint8_t key[24]) {
 
 void neverc_3des_encrypt_block(const neverc_3des_cipher_t *c,
                                uint8_t dst[8], const uint8_t src[8]) {
+    if (!c || !dst || !src) return;
     uint64_t b = beU64(src);
     b = permuteInitialBlock(b);
     uint32_t left = (uint32_t)(b >> 32);
@@ -255,6 +267,7 @@ void neverc_3des_encrypt_block(const neverc_3des_cipher_t *c,
 
 void neverc_3des_decrypt_block(const neverc_3des_cipher_t *c,
                                uint8_t dst[8], const uint8_t src[8]) {
+    if (!c || !dst || !src) return;
     uint64_t b = beU64(src);
     b = permuteInitialBlock(b);
     uint32_t left = (uint32_t)(b >> 32);

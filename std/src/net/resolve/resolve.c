@@ -475,15 +475,21 @@ int neverc_net_lookup_txt(const char *name, neverc_net_txt_list_t *out) {
         if (r->wType == DNS_TYPE_TEXT && r->Data.TXT.dwStringCount > 0) {
             size_t assembled = 0;
             DWORD nstr = r->Data.TXT.dwStringCount;
-            for (DWORD i = 0; i < nstr && assembled < 511; i++) {
+            int truncated = 0;
+            for (DWORD i = 0; i < nstr; i++) {
                 const char *chunk = r->Data.TXT.pStringArray[i];
                 if (!chunk) continue;
                 size_t clen = strlen(chunk);
                 size_t room = 511 - assembled;
-                size_t copy = clen < room ? clen : room;
-                memcpy(out->records[out->count] + assembled, chunk, copy);
-                assembled += copy;
+                if (clen > room) {
+                    truncated = 1;
+                    break;
+                }
+                memcpy(out->records[out->count] + assembled, chunk, clen);
+                assembled += clen;
             }
+            if (truncated)
+                continue;
             out->records[out->count][assembled] = '\0';
             out->count++;
         }
@@ -518,13 +524,16 @@ int neverc_net_lookup_txt(const char *name, neverc_net_txt_list_t *out) {
                 break;
             }
             size_t room = 511 - assembled;
-            size_t copy = (size_t)chunk < room ? (size_t)chunk : room;
-            memcpy(out->records[out->count] + assembled,
-                   rdata + offset + 1, copy);
-            assembled += copy;
-            offset += 1 + chunk;
-            if (assembled >= 511)
+            /* Silent truncation would return a prefix of SPF/DKIM as if it
+             * were complete. Skip the whole RR if it does not fit. */
+            if ((size_t)chunk > room) {
+                malformed = 1;
                 break;
+            }
+            memcpy(out->records[out->count] + assembled,
+                   rdata + offset + 1, (size_t)chunk);
+            assembled += (size_t)chunk;
+            offset += 1 + chunk;
         }
         if (malformed)
             continue;

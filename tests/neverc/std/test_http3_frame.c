@@ -169,21 +169,24 @@ static void test_settings_zero_values(void) {
 
     h3_frame_header_t hdr;
     neverc_h3_parse_frame_header(buf, written, &hdr);
-    /* Empty settings payload (all defaults or zero/unlimited) */
+    /* Omitted SETTINGS_MAX_FIELD_SECTION_SIZE still means unlimited. */
     ASSERT_EQ(hdr.length, 0);
 
-    /* Encoding 0 must also mean unlimited (omit the setting). */
+    /* RFC 9114 §7.2.4.1: an explicit 0 is a limit of 0, not unlimited. */
     h3_settings_t zero_limit = { 0, 0, 0 };
     rc = neverc_h3_settings_encode(&zero_limit, buf, sizeof(buf), &written);
     ASSERT_EQ(rc, 0);
     neverc_h3_parse_frame_header(buf, written, &hdr);
-    ASSERT_EQ(hdr.length, 0);
+    ASSERT_TRUE(hdr.length >= 2);
 
-    /* RFC 9114 §7.2.4.1: decode 0 as unlimited. */
-    uint8_t payload[] = { 0x06, 0x00 };
     h3_settings_t decoded;
+    ASSERT_EQ(neverc_h3_settings_decode(buf + hdr.header_size,
+                                        (size_t)hdr.length, &decoded), 0);
+    ASSERT_EQ(decoded.max_field_section_size, 0);
+
+    uint8_t payload[] = { 0x06, 0x00 };
     ASSERT_EQ(neverc_h3_settings_decode(payload, sizeof(payload), &decoded), 0);
-    ASSERT_EQ(decoded.max_field_section_size, UINT64_MAX);
+    ASSERT_EQ(decoded.max_field_section_size, 0);
 }
 
 /* ======================================================================
@@ -643,6 +646,67 @@ static void test_qpack_rejects_uppercase_and_empty_name(void) {
     neverc_qpack_decoder_destroy(dec);
 }
 
+static void test_request_path_allows_options_asterisk(void) {
+    ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/"), 1);
+    ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/index"), 1);
+    ASSERT_EQ(neverc_h3_request_path_allowed("OPTIONS", "*"), 1);
+    ASSERT_EQ(neverc_h3_request_path_allowed("OPTIONS", "/"), 1);
+    ASSERT_EQ(neverc_h3_request_path_allowed("GET", "*"), 0);
+    ASSERT_EQ(neverc_h3_request_path_allowed("POST", "*"), 0);
+    ASSERT_EQ(neverc_h3_request_path_allowed("OPTIONS", "**"), 0);
+    ASSERT_EQ(neverc_h3_request_path_allowed("GET", ""), 0);
+    ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/a b"), 0);
+    ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/a#b"), 0);
+    {
+        char delpath[] = {'/', 'a', 0x7f, '\0'};
+        ASSERT_EQ(neverc_h3_request_path_allowed("GET", delpath), 0);
+    }
+}
+
+static void test_varint_payload_and_max_push_id(void) {
+    uint64_t value = 99;
+    uint8_t one[] = { 0x05 };
+    ASSERT_EQ(neverc_h3_parse_varint_payload(one, sizeof(one), &value), 0);
+    ASSERT_EQ(value, 5);
+    ASSERT_EQ(neverc_h3_parse_varint_payload(one, 0, &value), -1);
+    uint8_t padded[] = { 0x05, 0x00 };
+    ASSERT_EQ(neverc_h3_parse_varint_payload(padded, sizeof(padded), &value),
+              -1);
+    ASSERT_EQ(neverc_h3_max_push_id_accept(0, 0, 10), 0);
+    ASSERT_EQ(neverc_h3_max_push_id_accept(1, 10, 10), 0);
+    ASSERT_EQ(neverc_h3_max_push_id_accept(1, 10, 11), 0);
+    ASSERT_EQ(neverc_h3_max_push_id_accept(1, 10, 9), -1);
+}
+
+static void test_qpack_decoder_stream_instructions(void) {
+    size_t consumed = 0;
+    uint8_t cancel[] = { 0x40 }; /* Stream Cancellation, id 0 */
+    ASSERT_EQ(neverc_qpack_decoder_stream_instruction(
+                  cancel, sizeof(cancel), &consumed),
+              1);
+    ASSERT_EQ(consumed, 1);
+
+    uint8_t ack[] = { 0x80 }; /* Section Acknowledgement */
+    ASSERT_EQ(neverc_qpack_decoder_stream_instruction(
+                  ack, sizeof(ack), &consumed),
+              -1);
+
+    uint8_t inc0[] = { 0x00 }; /* Insert Count Increment 0 */
+    ASSERT_EQ(neverc_qpack_decoder_stream_instruction(
+                  inc0, sizeof(inc0), &consumed),
+              -1);
+
+    uint8_t inc1[] = { 0x01 };
+    ASSERT_EQ(neverc_qpack_decoder_stream_instruction(
+                  inc1, sizeof(inc1), &consumed),
+              -1);
+
+    uint8_t truncated[] = { 0x7f }; /* increment, 6-bit prefix continues */
+    ASSERT_EQ(neverc_qpack_decoder_stream_instruction(
+                  truncated, sizeof(truncated), &consumed),
+              0);
+}
+
 static void test_qpack_encoder_create_destroy(void) {
     neverc_qpack_encoder_t *enc = neverc_qpack_encoder_create(8192);
     ASSERT_NOT_NULL(enc);
@@ -694,6 +758,9 @@ int main(void) {
     test_qpack_rejects_nul_and_crlf();
     test_qpack_field_section_size();
     test_qpack_rejects_uppercase_and_empty_name();
+    test_request_path_allows_options_asterisk();
+    test_varint_payload_and_max_push_id();
+    test_qpack_decoder_stream_instructions();
     test_qpack_encoder_create_destroy();
 
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);

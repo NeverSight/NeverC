@@ -440,6 +440,46 @@ static void test_parse_layout(void) {
     ok = neverc_time_parse("15:04:05,000", "12:30:45,123", &t);
     check_int("parse comma frac", ok, 0);
     check_int("parse comma frac nsec", neverc_time_nanosecond(t), 123000000);
+
+    ok = neverc_time_parse("15:04:05.999", "12:30:45.123456789", &t);
+    check_int("parse 9s extra frac digits", ok, 0);
+    check_int("parse 9s extra frac nsec", neverc_time_nanosecond(t), 123456789);
+
+    ok = neverc_time_parse("15:04:05.9", "12:30:45.123456789012", &t);
+    check_int("parse 9s truncates past ns", ok, 0);
+    check_int("parse 9s truncated nsec", neverc_time_nanosecond(t), 123456789);
+
+    ok = neverc_time_parse("15:04:05", "12:30:45.123", &t);
+    check_int("parse implied frac after seconds", ok, 0);
+    check_int("parse implied frac nsec", neverc_time_nanosecond(t), 123000000);
+
+    ok = neverc_time_parse("15:4:5", "12:5:7.5", &t);
+    check_int("parse implied frac unpadded sec", ok, 0);
+    check_int("parse implied frac unpadded nsec", neverc_time_nanosecond(t), 500000000);
+
+    /* Go stdUnderDay: a single digit day without a pad space is valid. */
+    ok = neverc_time_parse("Jan _2 06", "Jan 5 69", &t);
+    check_int("parse _2 single-digit day", ok, 0);
+    check_int("parse _2 single-digit year", neverc_time_year(t), 1969);
+    check_int("parse _2 single-digit month", neverc_time_month(t), 1);
+    check_int("parse _2 single-digit value", neverc_time_day(t), 5);
+
+    /* Go getnum always takes two digits when both are present. */
+    check_int("parse concatenated month-day rejects 21",
+              neverc_time_parse("12", "215", &t), -1);
+    check_int("parse concatenated min-sec rejects 60",
+              neverc_time_parse("45", "605", &t), -1);
+
+    ok = neverc_time_parse("03:04PM", "00:30AM", &t);
+    check_int("parse 00 AM", ok, 0);
+    check_int("parse 00 AM hour", neverc_time_hour(t), 0);
+    check_int("parse 00 AM min", neverc_time_minute(t), 30);
+
+    ok = neverc_time_parse("15:04PM", "02:30PM", &t);
+    check_int("parse 24h hour with PM", ok, 0);
+    check_int("parse 24h hour with PM hour", neverc_time_hour(t), 14);
+    check_int("parse 14:30PM with 15 is invalid",
+              neverc_time_parse("15:04PM", "14:30PM", &t), -1);
 }
 
 static void test_truncate_round(void) {

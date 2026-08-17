@@ -519,7 +519,12 @@ static double zipf_hinv(const neverc_rand_zipf_t *z, double x) {
 }
 
 int neverc_rand_zipf_init(neverc_rand_zipf_t *z, double s, double v, uint64_t imax) {
-    if (!z || s <= 1.0 || v < 1.0) return 0;
+    /* NaN comparisons are false, so `s <= 1` does not reject NaN; sampling
+     * then loops forever because every `<=` / `>=` test also fails. Inf is
+     * degenerate (1-s overflows). Require finite s>1, v>=1. */
+    if (!z || !(s > 1.0) || !(v >= 1.0)
+        || neverc_math_isinf(s, 0) || neverc_math_isinf(v, 0))
+        return 0;
     z->imax = (double)imax;
     z->v = v;
     z->q = s;

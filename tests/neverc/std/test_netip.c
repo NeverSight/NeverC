@@ -294,6 +294,7 @@ static void test_addrport(void) {
     ASSERT_EQ(neverc_netip_parse_addrport("[::ffff:192.168.1.1]:80", &ap), 0);
     neverc_netip_addrport_string(&ap, buf, sizeof(buf));
     ASSERT_STREQ(buf, "[::ffff:192.168.1.1]:80");
+    ASSERT_EQ(neverc_netip_parse_addrport("::ffff:192.168.1.1:80", &ap), -1);
 }
 
 static void test_wellknown(void) {
@@ -350,5 +351,6 @@ int main(void) {
     test_wellknown();
     test_as_bytes();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

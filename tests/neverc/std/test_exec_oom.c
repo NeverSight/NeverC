@@ -80,6 +80,16 @@ int main(void) {
     reset_allocator(1);
     neverc_exec_cmd_set_dir(cmd, "/new-dir");
     CHECK(cmd->dir != NULL && strcmp(cmd->dir, "/tmp") == 0);
+    CHECK(neverc_exec_cmd_run(cmd, NULL) == -1);
+    neverc_exec_cmd_free(cmd);
+
+    reset_allocator(0);
+    cmd = neverc_exec_command("echo", NULL, 0);
+    CHECK(cmd != NULL);
+    reset_allocator(1);
+    neverc_exec_cmd_set_dir(cmd, "/tmp");
+    CHECK(cmd->dir == NULL);
+    CHECK(neverc_exec_cmd_run(cmd, NULL) == -1);
     neverc_exec_cmd_free(cmd);
 
     const char *old_environment[] = {"OLD=1"};

@@ -120,6 +120,14 @@ neverc_os_file_t *neverc_os_stderr(void) { init_std(); return &g_stderr; }
 
 /* ---- Environment ---- */
 
+static int os_env_key_ok(const char *key) {
+    if (!key || key[0] == '\0') return 0;
+    for (const char *p = key; *p; p++) {
+        if (*p == '=') return 0;
+    }
+    return 1;
+}
+
 #if defined(NEVERC_PLATFORM_WINDOWS)
 /* getenv() reads a CRT snapshot; SetEnvironmentVariableA updates the process
    environment block directly.  Route all NeverC os env reads through Win32 so
@@ -128,7 +136,7 @@ static char neverc_os_getenv_buf[32768];
 #endif
 
 const char *neverc_os_getenv(const char *key) {
-    if (!key) return NULL;
+    if (!os_env_key_ok(key)) return NULL;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     SetLastError(ERROR_SUCCESS);
     DWORD n = GetEnvironmentVariableA(key, neverc_os_getenv_buf,
@@ -145,7 +153,7 @@ const char *neverc_os_getenv(const char *key) {
 }
 
 int neverc_os_setenv(const char *key, const char *value) {
-    if (!key || !value) return -1;
+    if (!os_env_key_ok(key) || !value) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     if (!SetEnvironmentVariableA(key, value))
         return os_win_fail();
@@ -156,7 +164,7 @@ int neverc_os_setenv(const char *key, const char *value) {
 }
 
 int neverc_os_unsetenv(const char *key) {
-    if (!key) return -1;
+    if (!os_env_key_ok(key)) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     if (!SetEnvironmentVariableA(key, NULL))
         return os_win_fail();
@@ -416,14 +424,19 @@ int neverc_os_mkdir(const char *name, uint32_t perm) {
 }
 
 int neverc_os_mkdir_all(const char *path, uint32_t perm) {
-    if (!path) return -1;
+    if (!path || path[0] == '\0') return -1;
     char buf[4096];
     size_t len = strlen(path);
     if (len >= sizeof(buf)) return -1;
     memcpy(buf, path, len + 1);
 
     for (size_t i = 1; i <= len; i++) {
-        if (buf[i] == '/' || buf[i] == '\\' || buf[i] == '\0') {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+        int sep = (buf[i] == '/' || buf[i] == '\\' || buf[i] == '\0');
+#else
+        int sep = (buf[i] == '/' || buf[i] == '\0');
+#endif
+        if (sep) {
             char saved = buf[i];
             buf[i] = '\0';
             neverc_os_mkdir(buf, perm);
@@ -1206,7 +1219,7 @@ int neverc_os_readlink(const char *name, char *buf, size_t cap) {
 
 int neverc_os_read_dir(const char *dirname, neverc_os_dir_entry_t **entries,
                        size_t *count) {
-    if (!dirname || !entries || !count) return -1;
+    if (!dirname || dirname[0] == '\0' || !entries || !count) return -1;
     *entries = NULL;
     *count = 0;
     size_t cap = 16;

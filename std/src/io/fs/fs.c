@@ -1,4 +1,6 @@
 #include "neverc/std/io/fs.h"
+#include "neverc/std/path.h"
+#include "neverc/std/unicode/utf8.h"
 #include "neverc/std/_platform.h"
 #include <string.h>
 #include <stdlib.h>
@@ -15,176 +17,6 @@
   #include <dirent.h>
   #include <unistd.h>
 #endif
-
-/* Go path.Match on a single name (io/fs.Glob). Returns 1, 0, or -1. */
-static const char *fs_scan_chunk(const char *pattern, int *star,
-                                 const char **chunk, size_t *clen) {
-    *star = 0;
-    while (*pattern == '*') {
-        pattern++;
-        *star = 1;
-    }
-    const char *start = pattern;
-    int inrange = 0;
-    const char *p = pattern;
-    for (; *p; p++) {
-        if (*p == '\\') {
-            if (p[1]) p++;
-            continue;
-        }
-        if (*p == '[') inrange = 1;
-        else if (*p == ']') inrange = 0;
-        else if (*p == '*' && !inrange) break;
-    }
-    *chunk = start;
-    *clen = (size_t)(p - start);
-    return p;
-}
-
-static int fs_get_esc(const char *chunk, size_t clen, size_t *i,
-                      unsigned char *out) {
-    if (*i >= clen || chunk[*i] == '-' || chunk[*i] == ']')
-        return -1;
-    if (chunk[*i] == '\\') {
-        (*i)++;
-        if (*i >= clen) return -1;
-    }
-    *out = (unsigned char)chunk[*i];
-    (*i)++;
-    if (*i >= clen) return -1;
-    return 0;
-}
-
-static int fs_match_chunk(const char *chunk, size_t clen, const char *s,
-                          const char **rest) {
-    int failed = 0;
-    size_t i = 0;
-    while (i < clen) {
-        if (!failed && *s == '\0')
-            failed = 1;
-        if (chunk[i] == '[') {
-            unsigned char c = 0;
-            if (!failed) {
-                c = (unsigned char)*s;
-                if (*s) s++;
-            }
-            i++;
-            int negated = 0;
-            if (i < clen && chunk[i] == '^') {
-                negated = 1;
-                i++;
-            }
-            int matched = 0;
-            int nrange = 0;
-            for (;;) {
-                if (i < clen && chunk[i] == ']' && nrange > 0) {
-                    i++;
-                    break;
-                }
-                unsigned char lo, hi;
-                if (fs_get_esc(chunk, clen, &i, &lo) != 0)
-                    return -1;
-                hi = lo;
-                if (chunk[i] == '-') {
-                    i++;
-                    if (fs_get_esc(chunk, clen, &i, &hi) != 0)
-                        return -1;
-                }
-                if (lo <= c && c <= hi)
-                    matched = 1;
-                nrange++;
-            }
-            if (matched == negated)
-                failed = 1;
-        } else if (chunk[i] == '?') {
-            if (!failed) {
-                if (*s == '/')
-                    failed = 1;
-                if (*s)
-                    s++;
-            }
-            i++;
-        } else {
-            if (chunk[i] == '\\') {
-                i++;
-                if (i >= clen)
-                    return -1;
-            }
-            if (!failed) {
-                if ((unsigned char)chunk[i] != (unsigned char)*s)
-                    failed = 1;
-                if (*s)
-                    s++;
-            }
-            i++;
-        }
-    }
-    if (failed)
-        return 0;
-    *rest = s;
-    return 1;
-}
-
-static int fs_glob_match(const char *pattern, const char *name) {
-    if (!pattern || !name)
-        return -1;
-
-    while (*pattern) {
-        int star = 0;
-        const char *chunk = NULL;
-        size_t clen = 0;
-        const char *rest_pat = fs_scan_chunk(pattern, &star, &chunk, &clen);
-        if (star && clen == 0) {
-            while (*name) {
-                if (*name == '/')
-                    return 0;
-                name++;
-            }
-            return 1;
-        }
-
-        const char *t = NULL;
-        int ok = fs_match_chunk(chunk, clen, name, &t);
-        if (ok < 0)
-            return -1;
-        if (ok && (*t == '\0' || *rest_pat != '\0')) {
-            name = t;
-            pattern = rest_pat;
-            continue;
-        }
-
-        if (star) {
-            int advanced = 0;
-            const char *n;
-            for (n = name; *n && *n != '/'; n++) {
-                ok = fs_match_chunk(chunk, clen, n + 1, &t);
-                if (ok < 0)
-                    return -1;
-                if (ok) {
-                    if (*rest_pat == '\0' && *t != '\0')
-                        continue;
-                    name = t;
-                    pattern = rest_pat;
-                    advanced = 1;
-                    break;
-                }
-            }
-            if (advanced)
-                continue;
-        }
-
-        pattern = rest_pat;
-        while (*pattern) {
-            rest_pat = fs_scan_chunk(pattern, &star, &chunk, &clen);
-            const char *dummy = NULL;
-            if (fs_match_chunk(chunk, clen, "", &dummy) < 0)
-                return -1;
-            pattern = rest_pat;
-        }
-        return 0;
-    }
-    return *name == '\0' ? 1 : 0;
-}
 
 static int fs_entries_reserve(neverc_fs_dir_entry_t **entries, size_t *cap,
                               size_t needed) {
@@ -436,6 +268,7 @@ int neverc_fs_valid_path(const char *name) {
     if (!name || name[0] == '\0') return 0;
     if (name[0] == '/') return 0;
     size_t len = strlen(name);
+    if (!neverc_utf8_valid((const uint8_t *)name, len)) return 0;
     if (name[len-1] == '/') return 0;
     if (strcmp(name, ".") == 0) return 1;
     if (strchr(name, '\\') != NULL) return 0;
@@ -640,7 +473,7 @@ int neverc_fs_glob(const char *dir, const char *pattern,
                    char ***matches, size_t *count) {
     if (!dir || !pattern || !matches || !count) return -1;
     *matches = NULL; *count = 0;
-    if (fs_glob_match(pattern, "") < 0) return -1;
+    if (neverc_path_match(pattern, "") < 0) return -1;
 
     neverc_fs_dir_entry_t *entries = NULL;
     size_t nentries = 0;
@@ -654,7 +487,7 @@ int neverc_fs_glob(const char *dir, const char *pattern,
     }
 
     for (size_t i = 0; i < nentries; i++) {
-        int matched = fs_glob_match(pattern, entries[i].name);
+        int matched = neverc_path_match(pattern, entries[i].name);
         if (matched < 0) goto glob_fail;
         if (matched) {
             if (!fs_matches_reserve(&result, &cap, *count + 1))

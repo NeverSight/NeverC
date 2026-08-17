@@ -29,6 +29,24 @@ static int all_zero(const void *value, size_t length) {
 }
 
 int main(void) {
+    /* FIPS 203: NTT product-sums must reduce into Z_q. These inputs make
+     * 24-bit Barrett underestimate floor(a/q) by 2, so a single subtract
+     * leaves a representative >= q. */
+    CHECK(fe_reduce(22097920u) == 18);
+    CHECK(fe_reduce(22154496u) == 1);
+    {
+        ntt_elem f, g, h;
+        memset(f, 0, sizeof(f));
+        memset(g, 0, sizeof(g));
+        f[0] = 3328;
+        f[1] = 3328;
+        g[0] = 3312;
+        g[1] = 3328;
+        ntt_mul(f, g, h);
+        CHECK(h[1] < Q);
+        CHECK(h[1] == 18);
+    }
+
     neverc_mlkem768_dk_t dk768;
     memset(&dk768, 0x5a, sizeof(dk768));
     CHECK(neverc_mlkem768_generate_key(&dk768) == -1);

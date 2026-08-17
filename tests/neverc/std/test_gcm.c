@@ -354,6 +354,70 @@ static void test_invalid_inputs_and_limits(void) {
 #endif
 }
 
+static void test_uninit_and_failed_reinit(void) {
+    printf("[uninitialized context and failed re-init]\n");
+    uint8_t key[16] = {0x11};
+    uint8_t nonce[12] = {0x22};
+    uint8_t tag[16];
+    neverc_gcm_ctx ctx;
+
+    memset(&ctx, 0, sizeof(ctx));
+    check_true("seal rejects zeroed context",
+               neverc_gcm_seal(&ctx, nonce, NULL, 0, NULL, 0, NULL, tag) == -1);
+    check_true("open rejects zeroed context",
+               neverc_gcm_open(&ctx, nonce, NULL, 0, NULL, 0, tag, NULL) == -1);
+
+    check_true("valid init", neverc_gcm_init(&ctx, key, 16) == 0);
+    check_true("seal after init",
+               neverc_gcm_seal(&ctx, nonce, NULL, 0, NULL, 0, NULL, tag) == 0);
+
+    check_true("re-init with null key fails",
+               neverc_gcm_init(&ctx, NULL, 16) == -1);
+    check_true("seal after failed re-init fails",
+               neverc_gcm_seal(&ctx, nonce, NULL, 0, NULL, 0, NULL, tag) == -1);
+    check_true("open after failed re-init fails",
+               neverc_gcm_open(&ctx, nonce, NULL, 0, NULL, 0, tag, NULL) == -1);
+
+    check_true("re-init with bad key length fails",
+               neverc_gcm_init(&ctx, key, 15) == -1);
+    check_true("seal after bad key length fails",
+               neverc_gcm_seal(&ctx, nonce, NULL, 0, NULL, 0, NULL, tag) == -1);
+}
+
+static void test_aad_overlap_with_output(void) {
+    printf("[AAD overlapping ciphertext output]\n");
+    uint8_t key[16] = {0x42};
+    uint8_t nonce[12] = {0x13};
+    uint8_t pt[32];
+    uint8_t aad[16];
+    for (int i = 0; i < 32; i++) pt[i] = (uint8_t)(i * 3 + 1);
+    for (int i = 0; i < 16; i++) aad[i] = (uint8_t)(0xA0 + i);
+
+    neverc_gcm_ctx ctx;
+    neverc_gcm_init(&ctx, key, 16);
+
+    uint8_t ct_ref[32], tag_ref[16];
+    neverc_gcm_seal(&ctx, nonce, pt, 32, aad, 16, ct_ref, tag_ref);
+
+    /* AAD lives in the output buffer and would be clobbered if GHASH ran
+     * after CTR encrypt. */
+    uint8_t buf[32], tag[16];
+    memcpy(buf, aad, 16);
+    neverc_gcm_seal(&ctx, nonce, pt, 32, buf, 16, buf, tag);
+    check_true("overlap ciphertext matches", memcmp(buf, ct_ref, 32) == 0);
+    check_true("overlap tag matches", memcmp(tag, tag_ref, 16) == 0);
+
+    /* In-place seal with AAD == plaintext. */
+    uint8_t inplace[16], tag_ip[16], ct_ip_ref[16], tag_ip_ref[16];
+    memcpy(inplace, pt, 16);
+    neverc_gcm_seal(&ctx, nonce, pt, 16, pt, 16, ct_ip_ref, tag_ip_ref);
+    neverc_gcm_seal(&ctx, nonce, inplace, 16, inplace, 16, inplace, tag_ip);
+    check_true("in-place AAD=PT ciphertext matches",
+               memcmp(inplace, ct_ip_ref, 16) == 0);
+    check_true("in-place AAD=PT tag matches",
+               memcmp(tag_ip, tag_ip_ref, 16) == 0);
+}
+
 int main(void) {
     printf("=== NeverC AES-GCM Tests ===\n\n");
     test_case_1();
@@ -367,6 +431,8 @@ int main(void) {
     test_roundtrip_sizes();
     test_nonce_reuse_leaks_xor();
     test_invalid_inputs_and_limits();
+    test_uninit_and_failed_reinit();
+    test_aad_overlap_with_output();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

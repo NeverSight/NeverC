@@ -17,6 +17,8 @@ static void *controlled_realloc(void *ptr, size_t size) {
     return allocation_fails() ? NULL : realloc(ptr, size);
 }
 
+#include "../../../std/src/unicode/utf8/utf8.c"
+#include "../../../std/src/path/match.c"
 #define malloc controlled_malloc
 #define realloc controlled_realloc
 #include "../../../std/src/io/fs/fs.c"

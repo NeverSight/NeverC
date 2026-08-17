@@ -381,7 +381,7 @@ static void test_netscape_loop_count(void) {
 
     neverc_gif_image_t plain;
     ASSERT_EQ(neverc_gif_decode(gif, glen, &plain), 0);
-    ASSERT_EQ(plain.loop_count, 0);
+    ASSERT_EQ(plain.loop_count, -1);
     neverc_gif_free(&plain);
 
     uint8_t packed = gif[10];
@@ -405,6 +405,87 @@ static void test_netscape_loop_count(void) {
         neverc_gif_free(&img);
         free(looped);
     }
+
+    static const uint8_t netscape_inf[] = {
+        0x21, 0xFF, 0x0B,
+        'N','E','T','S','C','A','P','E','2','.','0',
+        0x03, 0x01, 0x00, 0x00, 0x00
+    };
+    uint8_t *infinite = (uint8_t *)malloc(glen + sizeof(netscape_inf));
+    ASSERT_TRUE(infinite != NULL);
+    if (infinite) {
+        memcpy(infinite, gif, insert);
+        memcpy(infinite + insert, netscape_inf, sizeof(netscape_inf));
+        memcpy(infinite + insert + sizeof(netscape_inf), gif + insert,
+               glen - insert);
+        neverc_gif_image_t inf;
+        ASSERT_EQ(neverc_gif_decode(
+                      infinite, glen + sizeof(netscape_inf), &inf), 0);
+        ASSERT_EQ(inf.loop_count, 0);
+        neverc_gif_free(&inf);
+        free(infinite);
+    }
+
+    static const uint8_t animexts[] = {
+        0x21, 0xFF, 0x0B,
+        'A','N','I','M','E','X','T','S','1','.','0',
+        0x03, 0x01, 0x02, 0x00, 0x00
+    };
+    uint8_t *ext = (uint8_t *)malloc(glen + sizeof(animexts));
+    ASSERT_TRUE(ext != NULL);
+    if (ext) {
+        memcpy(ext, gif, insert);
+        memcpy(ext + insert, animexts, sizeof(animexts));
+        memcpy(ext + insert + sizeof(animexts), gif + insert, glen - insert);
+        neverc_gif_image_t img;
+        ASSERT_EQ(neverc_gif_decode(ext, glen + sizeof(animexts), &img), 0);
+        ASSERT_EQ(img.loop_count, 2);
+        neverc_gif_free(&img);
+        free(ext);
+    }
+    free(gif);
+    free(frame.indices);
+}
+
+static void test_rejects_truncated_and_oversize_lzw(void) {
+    printf("[rejects_truncated_and_oversize_lzw]\n");
+    neverc_gif_frame_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.width = 1;
+    frame.height = 2;
+    frame.palette_size = 2;
+    frame.palette[0] = (neverc_gif_color_t){0, 0, 0};
+    frame.palette[1] = (neverc_gif_color_t){255, 255, 255};
+    frame.indices = (uint8_t *)calloc(1, 2);
+    ASSERT_TRUE(frame.indices != NULL);
+    if (!frame.indices) return;
+    frame.indices[0] = 0;
+    frame.indices[1] = 1;
+
+    uint8_t *gif = NULL;
+    size_t glen = 0;
+    ASSERT_EQ(neverc_gif_encode(&frame, &gif, &glen), 0);
+    ASSERT_TRUE(gif != NULL && glen > 1);
+
+    neverc_gif_image_t truncated;
+    memset(&truncated, 0, sizeof(truncated));
+    ASSERT_EQ(neverc_gif_decode(gif, glen - 1, &truncated), -1);
+    ASSERT_TRUE(truncated.frames == NULL);
+
+    /* Image descriptor height 1 with a 2-pixel LZW payload used to clamp and
+     * succeed. The logical screen stays 1x2 so the 1-row frame still fits. */
+    size_t desc = 0;
+    while (desc + 10 < glen && gif[desc] != 0x2C) desc++;
+    ASSERT_TRUE(desc + 10 < glen && gif[desc] == 0x2C);
+    if (desc + 10 < glen) {
+        gif[desc + 7] = 1;
+        gif[desc + 8] = 0; /* frame height = 1 */
+        neverc_gif_image_t oversize;
+        memset(&oversize, 0, sizeof(oversize));
+        ASSERT_EQ(neverc_gif_decode(gif, glen, &oversize), -1);
+        ASSERT_TRUE(oversize.frames == NULL);
+    }
+
     free(gif);
     free(frame.indices);
 }
@@ -535,6 +616,7 @@ int main(void) {
     test_large_roundtrip();
     test_interlaced_decode();
     test_netscape_loop_count();
+    test_rejects_truncated_and_oversize_lzw();
     test_failed_decode_clears_geometry();
     test_frame_to_rgba_and_transparency();
     test_from_rgba_full_palette_transparency();

@@ -127,6 +127,14 @@ static void test_strings(void) {
 
     r = neverc_fmt_sprintf("%5s", "\xe4\xb8\x96");
     check_str("string width runes", r, "    \xe4\xb8\x96"); free(r);
+
+    /* Invalid leading bytes are one rune each and must not consume the next. */
+    r = neverc_fmt_sprintf("%.1s", "\xc0A");
+    check_str("string prec invalid utf8", r, "\xc0"); free(r);
+    r = neverc_fmt_sprintf("%5s", "\xc0A");
+    check_str("string width invalid utf8", r, "   \xc0A"); free(r);
+    r = neverc_fmt_sprintf("%.1s", "\xc0\x80");
+    check_str("string prec overlong utf8", r, "\xc0"); free(r);
 }
 
 static void test_floats(void) {
@@ -370,6 +378,39 @@ static void test_sscanf(void) {
     n = neverc_fmt_sscanf("infix", "%f", &special);
     check_int("sscanf malformed Inf rejected", n, 0);
     check_true("sscanf malformed Inf leaves output", special == 7.0);
+
+    special = 7.0;
+    n = neverc_fmt_sscanf("0x1p0", "%f", &special);
+    check_int("sscanf hex float", n, 1);
+    check_true("sscanf hex float value", special == 1.0);
+    n = neverc_fmt_sscanf("0x1.8p0", "%f", &special);
+    check_int("sscanf hex float frac", n, 1);
+    check_true("sscanf hex float frac value", special == 1.5);
+    n = neverc_fmt_sscanf("-0x1p+1", "%f", &special);
+    check_int("sscanf hex float signed exp", n, 1);
+    check_true("sscanf hex float signed exp value", special == -2.0);
+
+    /* Incomplete hex-float tokens must not silently succeed as 0. */
+    special = 7.0;
+    n = neverc_fmt_sscanf("0x", "%f", &special);
+    check_int("sscanf incomplete hex 0x rejected", n, 0);
+    check_true("sscanf incomplete hex 0x leaves output", special == 7.0);
+    special = 7.0;
+    n = neverc_fmt_sscanf("0x1", "%f", &special);
+    check_int("sscanf incomplete hex 0x1 rejected", n, 0);
+    check_true("sscanf incomplete hex 0x1 leaves output", special == 7.0);
+    special = 7.0;
+    n = neverc_fmt_sscanf("0x1p", "%f", &special);
+    check_int("sscanf incomplete hex 0x1p rejected", n, 0);
+    check_true("sscanf incomplete hex 0x1p leaves output", special == 7.0);
+    special = 7.0;
+    n = neverc_fmt_sscanf("+0X", "%f", &special);
+    check_int("sscanf incomplete hex +0X rejected", n, 0);
+    check_true("sscanf incomplete hex +0X leaves output", special == 7.0);
+    special = 7.0;
+    n = neverc_fmt_sscanf("0x.p0", "%f", &special);
+    check_int("sscanf incomplete hex 0x.p0 rejected", n, 0);
+    check_true("sscanf incomplete hex 0x.p0 leaves output", special == 7.0);
 
     a = 77;
     n = neverc_fmt_sscanf("2147483648", "%d", &a);

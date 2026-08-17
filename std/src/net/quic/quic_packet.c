@@ -174,6 +174,13 @@ static int quic_read_cid_at(const uint8_t *buf, size_t len, size_t *pos,
     return 0;
 }
 
+int neverc_quic_version_negotiation_dcid(const uint8_t *buf, size_t len,
+                                         quic_conn_id_t *dcid) {
+    if (!dcid || !neverc_quic_is_version_negotiation(buf, len)) return -1;
+    size_t pos = 5;
+    return quic_read_cid_at(buf, len, &pos, dcid);
+}
+
 int neverc_quic_version_negotiation_supports(const uint8_t *buf, size_t len,
                                              uint32_t version) {
     if (!neverc_quic_is_version_negotiation(buf, len)) return 0;
@@ -192,6 +199,187 @@ int neverc_quic_version_negotiation_supports(const uint8_t *buf, size_t len,
         if (listed == version) return 1;
         pos += 4U;
     }
+    return 0;
+}
+
+static int quic_decode_varint_at(const uint8_t *buf, size_t len, size_t *pos,
+                                 uint64_t *value) {
+    size_t consumed;
+    if (!buf || !pos || !value || *pos > len ||
+        neverc_quic_varint_decode(buf + *pos, len - *pos, value,
+                                  &consumed) != 0)
+        return -1;
+    *pos += consumed;
+    return 0;
+}
+
+int neverc_quic_unprotected_packet_length(const uint8_t *packet, size_t length,
+                                          uint8_t short_dcid_len,
+                                          size_t *packet_len) {
+    if (!packet || !packet_len || length < 1) return -1;
+    /* Short headers and Retry/VN have no Length; they occupy the rest of
+     * the datagram. Length itself is not header-protected (RFC 9001 §5.4). */
+    if ((packet[0] & 0x80U) == 0) {
+        if (short_dcid_len > QUIC_MAX_CID_LEN ||
+            length < 1U + short_dcid_len)
+            return -1;
+        *packet_len = length;
+        return 0;
+    }
+    if (length < 5) return -1;
+    uint32_t version = ((uint32_t)packet[1] << 24) |
+                       ((uint32_t)packet[2] << 16) |
+                       ((uint32_t)packet[3] << 8) | packet[4];
+    if (version == 0) {
+        *packet_len = length;
+        return 0;
+    }
+    quic_packet_type_t type =
+        quic_long_packet_type((packet[0] >> 4) & 3U, version);
+    size_t pos = 5;
+    if (pos >= length) return -1;
+    size_t dcid_len = packet[pos++];
+    if (dcid_len > QUIC_MAX_CID_LEN || dcid_len > length - pos) return -1;
+    pos += dcid_len;
+    if (pos >= length) return -1;
+    size_t scid_len = packet[pos++];
+    if (scid_len > QUIC_MAX_CID_LEN || scid_len > length - pos) return -1;
+    pos += scid_len;
+    if (type == QUIC_PKT_RETRY) {
+        *packet_len = length;
+        return 0;
+    }
+    if (type == QUIC_PKT_INITIAL) {
+        uint64_t token_len;
+        if (quic_decode_varint_at(packet, length, &pos, &token_len) != 0 ||
+            token_len > SIZE_MAX || (size_t)token_len > length - pos)
+            return -1;
+        pos += (size_t)token_len;
+    }
+    uint64_t payload_len;
+    if (quic_decode_varint_at(packet, length, &pos, &payload_len) != 0 ||
+        payload_len < 1 || payload_len > length - pos)
+        return -1;
+    *packet_len = pos + (size_t)payload_len;
+    return 0;
+}
+
+int neverc_quic_pn_already_received(const quic_pn_state_t *state,
+                                    uint64_t packet_number) {
+    if (!state || !state->has_recv) return 0;
+    if (packet_number > state->largest_recv) return 0;
+    uint64_t distance = state->largest_recv - packet_number;
+    if (distance < 64)
+        return (state->received_bitmap &
+                (UINT64_C(1) << (unsigned)distance)) != 0;
+    return state->has_extra_recv && state->extra_recv == packet_number;
+}
+
+int neverc_quic_pn_was_ack_eliciting(const quic_pn_state_t *state,
+                                     uint64_t packet_number) {
+    if (!state || !state->has_recv || packet_number > state->largest_recv)
+        return 0;
+    uint64_t distance = state->largest_recv - packet_number;
+    if (distance < 64)
+        return (state->ack_eliciting_bitmap &
+                (UINT64_C(1) << (unsigned)distance)) != 0;
+    return state->has_extra_recv && state->extra_recv == packet_number &&
+           state->extra_ack_eliciting;
+}
+
+int neverc_quic_pn_mark_received(quic_pn_state_t *state,
+                                 uint64_t packet_number, int ack_eliciting) {
+    if (!state) return -1;
+    if (!state->has_recv) {
+        state->has_recv = 1;
+        state->largest_recv = packet_number;
+        state->received_bitmap = 1;
+        state->ack_eliciting_bitmap = ack_eliciting ? 1 : 0;
+        return 1;
+    }
+    if (packet_number > state->largest_recv) {
+        uint64_t shift = packet_number - state->largest_recv;
+        if (shift >= 64) {
+            state->extra_recv = state->largest_recv;
+            state->has_extra_recv = 1;
+            state->extra_ack_eliciting =
+                (state->ack_eliciting_bitmap & 1U) != 0;
+            state->received_bitmap = 1;
+            state->ack_eliciting_bitmap = ack_eliciting ? 1 : 0;
+        } else {
+            unsigned fall_bit = 64U - (unsigned)shift;
+            for (unsigned bit = fall_bit; bit < 64; bit++) {
+                if (state->received_bitmap & (UINT64_C(1) << bit)) {
+                    state->extra_recv = state->largest_recv - bit;
+                    state->has_extra_recv = 1;
+                    state->extra_ack_eliciting =
+                        (state->ack_eliciting_bitmap &
+                         (UINT64_C(1) << bit)) != 0;
+                    break;
+                }
+            }
+            state->received_bitmap =
+                (state->received_bitmap << (unsigned)shift) | 1U;
+            state->ack_eliciting_bitmap =
+                (state->ack_eliciting_bitmap << (unsigned)shift) |
+                (ack_eliciting ? 1U : 0U);
+        }
+        state->largest_recv = packet_number;
+        return 1;
+    }
+    uint64_t distance = state->largest_recv - packet_number;
+    if (distance >= 64) {
+        if (state->has_extra_recv && state->extra_recv == packet_number)
+            return 0;
+        state->extra_recv = packet_number;
+        state->has_extra_recv = 1;
+        state->extra_ack_eliciting = ack_eliciting ? 1 : 0;
+        return 1;
+    }
+    uint64_t mask = UINT64_C(1) << (unsigned)distance;
+    if (state->received_bitmap & mask) return 0;
+    state->received_bitmap |= mask;
+    if (ack_eliciting) state->ack_eliciting_bitmap |= mask;
+    return 1;
+}
+
+int neverc_quic_pn_ack_ranges(const quic_pn_state_t *state,
+                              quic_ack_range_t *ranges, int max_ranges,
+                              int *nranges) {
+    if (!state || !state->has_recv || !ranges || !nranges || max_ranges < 1)
+        return -1;
+    int count = 0;
+    unsigned bit = 0;
+    while (bit < 64 && bit <= state->largest_recv) {
+        while (bit < 64 && bit <= state->largest_recv &&
+               (state->received_bitmap & (UINT64_C(1) << bit)) == 0)
+            bit++;
+        if (bit >= 64 || bit > state->largest_recv) break;
+        unsigned first = bit;
+        while (bit < 64 && bit <= state->largest_recv &&
+               (state->received_bitmap & (UINT64_C(1) << bit)) != 0)
+            bit++;
+        unsigned last = bit - 1U;
+        if (count >= max_ranges) return -1;
+        ranges[count].start = state->largest_recv - last;
+        ranges[count].end = state->largest_recv - first + 1U;
+        count++;
+    }
+    if (count == 0) return -1;
+    if (state->has_extra_recv &&
+        state->extra_recv < state->largest_recv &&
+        state->largest_recv - state->extra_recv >= 64) {
+        uint64_t extra = state->extra_recv;
+        if (ranges[count - 1].start == extra + 1) {
+            ranges[count - 1].start = extra;
+        } else if (ranges[count - 1].start > extra + 1) {
+            if (count >= max_ranges) return -1;
+            ranges[count].start = extra;
+            ranges[count].end = extra + 1;
+            count++;
+        }
+    }
+    *nranges = count;
     return 0;
 }
 

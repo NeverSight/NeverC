@@ -775,6 +775,22 @@ static void test_decomposition(void) {
         check_double(buf, back, vf[i]);
     }
 
+    /* Extreme exponents used to overflow int (INT_MIN + negative unbiased). */
+    check_double("ldexp(1, INT_MIN)=0",
+                 neverc_math_ldexp(1.0, NEVERC_MATH_MIN_INT), 0.0);
+    check_double("ldexp(1, INT_MAX)=+Inf",
+                 neverc_math_ldexp(1.0, NEVERC_MATH_MAX_INT), NC_INF);
+    check_double("ldexp(-1, INT_MAX)=-Inf",
+                 neverc_math_ldexp(-1.0, NEVERC_MATH_MAX_INT), NC_NEGINF);
+    {
+        double r = neverc_math_ldexp(-1.0, NEVERC_MATH_MIN_INT);
+        check_double("ldexp(-1, INT_MIN)=0", r, 0.0);
+        check_true("ldexp(-1, INT_MIN) is -0", neverc_math_signbit(r));
+    }
+    check_double("ldexp(tiny, INT_MIN)=0",
+                 neverc_math_ldexp(NEVERC_MATH_SMALLEST_NONZERO_FLOAT64,
+                                   NEVERC_MATH_MIN_INT), 0.0);
+
     /* nextafter */
     printf("[nextafter]\n");
     double na = neverc_math_nextafter(1.0, 2.0);
@@ -914,6 +930,10 @@ static void test_jn_yn(void) {
     check_double("yn(1,1)==y1(1)", neverc_math_yn(1, 1.0), neverc_math_y1(1.0));
     check_double("yn(n,-1)", neverc_math_yn(2, -1.0), NC_NAN);
     check_double("yn(0,0)", neverc_math_yn(0, 0.0), NC_NEGINF);
+    /* -n is signed-overflow UB when n == INT_MIN; |n| is huge so Jn/Yn → 0. */
+    check_double("jn(INT_MIN,1)=0", neverc_math_jn(NEVERC_MATH_MIN_INT, 1.0), 0.0);
+    check_double("yn(INT_MIN,1)=0", neverc_math_yn(NEVERC_MATH_MIN_INT, 1.0), 0.0);
+    check_double("jn(INT_MIN,NaN)", neverc_math_jn(NEVERC_MATH_MIN_INT, NC_NAN), NC_NAN);
 }
 
 /* ========== Constants test ========== */
@@ -2101,6 +2121,7 @@ int main(void) {
     if (tests_failed > 0)
         printf(", %d FAILED", tests_failed);
     printf(" ===\n");
+    if (tests_failed == 0) puts("passed");
 
     return tests_failed > 0 ? 1 : 0;
 }

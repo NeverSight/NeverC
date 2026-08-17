@@ -72,12 +72,38 @@ static size_t my_strlen(const char *s) {
     return n;
 }
 
-/* Go measures %s width/precision in runes. Invalid bytes count as one rune. */
-static int utf8_rune_width(unsigned char c) {
-    if (c < 0x80) return 1;
-    if ((c & 0xE0) == 0xC0) return 2;
-    if ((c & 0xF0) == 0xE0) return 3;
-    if ((c & 0xF8) == 0xF0) return 4;
+/* Go measures %s width/precision in runes. Invalid bytes count as one rune;
+ * a leading byte that is not a well-formed sequence must not swallow the
+ * following byte (e.g. 0xC0 'A' is two runes, not one). */
+static size_t utf8_rune_len(const char *s, size_t remaining) {
+    if (remaining == 0) return 0;
+    unsigned char b = (unsigned char)s[0];
+    if (b < 0x80) return 1;
+    if ((b & 0xE0) == 0xC0 && remaining >= 2 &&
+        ((unsigned char)s[1] & 0xC0) == 0x80) {
+        unsigned r = ((unsigned)(b & 0x1F) << 6) | ((unsigned char)s[1] & 0x3F);
+        return r >= 0x80 ? 2 : 1;
+    }
+    if ((b & 0xF0) == 0xE0 && remaining >= 3 &&
+        ((unsigned char)s[1] & 0xC0) == 0x80 &&
+        ((unsigned char)s[2] & 0xC0) == 0x80) {
+        unsigned r = ((unsigned)(b & 0x0F) << 12) |
+                     ((unsigned)((unsigned char)s[1] & 0x3F) << 6) |
+                     ((unsigned char)s[2] & 0x3F);
+        if (r >= 0x800 && (r < 0xD800 || r > 0xDFFF)) return 3;
+        return 1;
+    }
+    if ((b & 0xF8) == 0xF0 && remaining >= 4 &&
+        ((unsigned char)s[1] & 0xC0) == 0x80 &&
+        ((unsigned char)s[2] & 0xC0) == 0x80 &&
+        ((unsigned char)s[3] & 0xC0) == 0x80) {
+        unsigned r = ((unsigned)(b & 0x07) << 18) |
+                     ((unsigned)((unsigned char)s[1] & 0x3F) << 12) |
+                     ((unsigned)((unsigned char)s[2] & 0x3F) << 6) |
+                     ((unsigned char)s[3] & 0x3F);
+        if (r >= 0x10000 && r <= 0x10FFFF) return 4;
+        return 1;
+    }
     return 1;
 }
 
@@ -86,9 +112,9 @@ static size_t utf8_span_runes(const char *s, size_t slen, int max_runes,
     size_t i = 0;
     int nr = 0;
     while (i < slen && (max_runes < 0 || nr < max_runes)) {
-        int w = utf8_rune_width((unsigned char)s[i]);
-        if (i + (size_t)w > slen) w = (int)(slen - i);
-        i += (size_t)w;
+        size_t w = utf8_rune_len(s + i, slen - i);
+        if (w == 0) w = 1;
+        i += w;
         nr++;
     }
     if (nrunes) *nrunes = nr;
@@ -709,17 +735,56 @@ static int scan_float(const char **p, double *out) {
         }
 
         /* Delimit the numeric token, then hand it to strconv's correctly-rounded
-         * parser instead of accumulating in floating point. */
-        while (**p >= '0' && **p <= '9') (*p)++;
-        if (**p == '.') { (*p)++; while (**p >= '0' && **p <= '9') (*p)++; }
-        if (**p == 'e' || **p == 'E') {
-            const char *esave = *p;
-            (*p)++;
-            if (**p == '-' || **p == '+') (*p)++;
-            if (**p >= '0' && **p <= '9') {
-                while (**p >= '0' && **p <= '9') (*p)++;
-            } else {
-                *p = esave;        /* lone 'e' is not part of the number */
+         * parser instead of accumulating in floating point. A complete hex
+         * float (0x…p…) is one token; a bare 0x prefix is not, so "0x1p0"
+         * must not be scanned as 0. */
+        int took_hex = 0;
+        if (**p == '0' && ((*p)[1] == 'x' || (*p)[1] == 'X')) {
+            const char *q = *p + 2;
+            int saw_hex = 0;
+            while ((*q >= '0' && *q <= '9') ||
+                   (*q >= 'a' && *q <= 'f') ||
+                   (*q >= 'A' && *q <= 'F')) {
+                q++;
+                saw_hex = 1;
+            }
+            if (*q == '.') {
+                q++;
+                while ((*q >= '0' && *q <= '9') ||
+                       (*q >= 'a' && *q <= 'f') ||
+                       (*q >= 'A' && *q <= 'F')) {
+                    q++;
+                    saw_hex = 1;
+                }
+            }
+            if (saw_hex && (*q == 'p' || *q == 'P')) {
+                const char *r = q + 1;
+                if (*r == '+' || *r == '-') r++;
+                if (*r >= '0' && *r <= '9') {
+                    while (*r >= '0' && *r <= '9') r++;
+                    *p = r;
+                    took_hex = 1;
+                }
+            }
+            if (!took_hex) {
+                /* 0x/0X starts a hex-float token. A bare prefix must not
+                 * fall through to decimal and silently parse as 0. */
+                *p = start;
+                return 0;
+            }
+        }
+        if (!took_hex) {
+            while (**p >= '0' && **p <= '9') (*p)++;
+            if (**p == '.') { (*p)++; while (**p >= '0' && **p <= '9') (*p)++; }
+            if (**p == 'e' || **p == 'E') {
+                const char *esave = *p;
+                (*p)++;
+                if (**p == '-' || **p == '+') (*p)++;
+                if (**p >= '0' && **p <= '9') {
+                    while (**p >= '0' && **p <= '9') (*p)++;
+                } else {
+                    *p = esave;        /* lone 'e' is not part of the number */
+                }
             }
         }
     }

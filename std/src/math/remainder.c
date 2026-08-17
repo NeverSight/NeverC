@@ -10,9 +10,10 @@ double neverc_math_remainder(double x, double y) {
     if (nc_isinf_any(y))
         return x;
 
-    int sign = 0;
-    if (x < 0.0) { x = -x; sign = 1; }
-    if (y < 0.0) y = -y;
+    /* IEEE/Go: Remainder(±0, y) keeps the sign of x. `x < 0` is false for -0. */
+    int sign = neverc_math_signbit(x);
+    x = nc_abs(x);
+    y = nc_abs(y);
 
     if (x == y) return sign ? -0.0 : 0.0;
 

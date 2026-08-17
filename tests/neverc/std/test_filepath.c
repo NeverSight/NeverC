@@ -287,11 +287,24 @@ static void test_match(void) {
     ASSERT_TRUE(neverc_filepath_match("f?o", "foo"));
     ASSERT_FALSE(neverc_filepath_match("f?o", "fooo"));
     ASSERT_TRUE(neverc_filepath_match("*", "anything"));
-    ASSERT_FALSE(neverc_filepath_match("*", "foo/bar"));
-    ASSERT_FALSE(neverc_filepath_match("foo*", "foo/bar"));
     ASSERT_TRUE(neverc_filepath_match("hello", "hello"));
     ASSERT_FALSE(neverc_filepath_match("hello", "world"));
+#ifdef _WIN32
+    /* Go filepath.Match: only '\\' is Separator, so '*'/'?' may match '/'. */
+    ASSERT_TRUE(neverc_filepath_match("*", "foo/bar"));
+    ASSERT_TRUE(neverc_filepath_match("foo*", "foo/bar"));
+    ASSERT_FALSE(neverc_filepath_match("*", "foo\\bar"));
+    ASSERT_FALSE(neverc_filepath_match("foo*", "foo\\bar"));
+    ASSERT_TRUE(neverc_filepath_match("a*b", "a/b"));
+    ASSERT_FALSE(neverc_filepath_match("a*b", "a\\b"));
+    ASSERT_TRUE(neverc_filepath_match("*.txt", "dir/file.txt"));
+    ASSERT_FALSE(neverc_filepath_match("*.txt", "dir\\file.txt"));
+#else
+    ASSERT_FALSE(neverc_filepath_match("*", "foo/bar"));
+    ASSERT_FALSE(neverc_filepath_match("foo*", "foo/bar"));
+    ASSERT_FALSE(neverc_filepath_match("a*b", "a/b"));
     ASSERT_FALSE(neverc_filepath_match("*.txt", "dir/file.txt"));
+#endif
     ASSERT_TRUE(neverc_filepath_match("[abc]", "b"));
     ASSERT_FALSE(neverc_filepath_match("[abc]", "d"));
     ASSERT_INT_EQ(neverc_filepath_match("[abc", "a"), -1);
@@ -343,5 +356,6 @@ int main(void) {
     test_match();
     test_to_from_slash();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

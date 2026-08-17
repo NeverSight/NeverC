@@ -28,6 +28,11 @@ static void test_simple_var(void) {
     check_str("simple var", r, "Hello, World!");
     free(r);
 
+    neverc_template_data_set(&data, "Foo.Bar", "nested");
+    r = neverc_template_render("{{.Foo.Bar}}", &data, &outlen);
+    check_str("dotted key", r, "nested");
+    free(r);
+
     neverc_template_data_free(&data);
 }
 
@@ -223,6 +228,20 @@ static void test_trim_markers(void) {
     check_true("space before dash is not trim", r == NULL);
     free(r);
 
+    /* Go requires a space after "{{-" / before "-}}" so "{{-3}}" is a
+     * number and "{{.Name-}}" is not a right-trim of .Name. */
+    r = neverc_template_render("{{-.Name}}", &data, &outlen);
+    check_true("dash without space is not left trim", r == NULL);
+    free(r);
+
+    r = neverc_template_render("{{.Name-}}", &data, &outlen);
+    check_true("dash without space is not right trim", r == NULL);
+    free(r);
+
+    r = neverc_template_render("{{-end-}}", &data, &outlen);
+    check_true("end without trim spaces rejected", r == NULL);
+    free(r);
+
     neverc_template_data_free(&data);
 }
 
@@ -245,7 +264,17 @@ static void test_parse_errors(void) {
         "{{.Name .Other}}",
         "{{if .Show extra}}yes{{end}}",
         "{{if Show}}yes{{end}}",
-        "{{Name}}"
+        "{{Name}}",
+        "{{.Foo()}}",
+        "{{.Foo[0]}}",
+        "{{if .Show()}}yes{{end}}",
+        "{{-.Name}}",
+        "{{.Name-}}",
+        "{{-end-}}",
+        "{{.Name+.Other}}",
+        "{{.Name-.Other}}",
+        "{{.Foo.Bar.}}",
+        "{{.Foo..Bar}}"
     };
 
     for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
@@ -277,6 +306,11 @@ static void test_pipeline_rejected(void) {
 
     r = neverc_template_render("{{.Name}}", &data, &outlen);
     check_str("raw text substitution", r, "<script>alert(1)</script>");
+    free(r);
+
+    outlen = 99;
+    r = neverc_template_render("{{.Name()}}", &data, &outlen);
+    check_true("method-call selector rejected", r == NULL && outlen == 0);
     free(r);
     neverc_template_data_free(&data);
 }
@@ -324,5 +358,6 @@ int main(void) {
     test_pipeline_rejected();
     test_null_safety();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

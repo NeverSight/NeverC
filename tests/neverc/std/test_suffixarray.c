@@ -17,6 +17,8 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
     else { tests_failed++; printf("  FAIL: %s (line %d)\n", #expr, __LINE__); } \
 } while(0)
 
+static int cmp_i32(const void *a, const void *b);
+
 static void test_new_free(void) {
     printf("[new_free]\n");
     neverc_suffixarray_t idx;
@@ -32,6 +34,12 @@ static void test_empty(void) {
     neverc_suffixarray_t idx;
     ASSERT_INT_EQ(neverc_suffixarray_new(&idx, NULL, 0), 0);
     ASSERT_INT_EQ(neverc_suffixarray_count(&idx, (const unsigned char *)"a", 1), 0);
+    int32_t results[4];
+    size_t n = 99;
+    ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, (const unsigned char *)"a", 1,
+                                            results, 4, &n), 0);
+    ASSERT_INT_EQ(n, 0);
+    ASSERT_INT_EQ(neverc_suffixarray_at(&idx, 0), -1);
     neverc_suffixarray_free(&idx);
     neverc_suffixarray_free(NULL);
     ASSERT_INT_EQ(neverc_suffixarray_at(NULL, 0), -1);
@@ -122,6 +130,99 @@ static void test_single_char(void) {
     count = neverc_suffixarray_count(&idx, (const unsigned char *)"aaaa", 4);
     ASSERT_INT_EQ(count, 1);
 
+    neverc_suffixarray_free(&idx);
+}
+
+/* Overlapping hits must all be reported (aaaa / aa -> 0,1,2), not just
+ * non-overlapping 0 and 2. */
+static void test_overlapping_positions(void) {
+    printf("[overlapping_positions]\n");
+    neverc_suffixarray_t idx;
+    const char *text = "aaaa";
+    neverc_suffixarray_new(&idx, (const unsigned char *)text, 4);
+
+    int32_t results[8];
+    size_t n = 0;
+    ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, (const unsigned char *)"aa", 2,
+                                            results, 8, &n), 0);
+    ASSERT_INT_EQ(n, 3);
+    qsort(results, n, sizeof(int32_t), cmp_i32);
+    ASSERT_INT_EQ(results[0], 0);
+    ASSERT_INT_EQ(results[1], 1);
+    ASSERT_INT_EQ(results[2], 2);
+
+    n = 0;
+    ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, (const unsigned char *)"aaa", 3,
+                                            results, 8, &n), 0);
+    ASSERT_INT_EQ(n, 2);
+    qsort(results, n, sizeof(int32_t), cmp_i32);
+    ASSERT_INT_EQ(results[0], 0);
+    ASSERT_INT_EQ(results[1], 1);
+
+    neverc_suffixarray_free(&idx);
+}
+
+static void test_bounds_and_ends(void) {
+    printf("[bounds_and_ends]\n");
+    neverc_suffixarray_t idx;
+    const char *text = "xabcyabc";
+    neverc_suffixarray_new(&idx, (const unsigned char *)text, 8);
+
+    ASSERT_TRUE(neverc_suffixarray_at(&idx, 0) >= 0);
+    ASSERT_TRUE(neverc_suffixarray_at(&idx, idx.sa_len - 1) >= 0);
+    ASSERT_INT_EQ(neverc_suffixarray_at(&idx, idx.sa_len), -1);
+
+    ASSERT_INT_EQ(neverc_suffixarray_count(&idx, (const unsigned char *)"x", 1), 1);
+    ASSERT_INT_EQ(neverc_suffixarray_count(&idx, (const unsigned char *)"c", 1), 2);
+    ASSERT_INT_EQ(neverc_suffixarray_count(&idx, (const unsigned char *)"abc", 3), 2);
+    ASSERT_INT_EQ(neverc_suffixarray_count(&idx, (const unsigned char *)"xabcyabcd", 9), 0);
+
+    int32_t results[8];
+    size_t n = 99;
+    ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, (const unsigned char *)"", 0,
+                                            results, 8, &n), 0);
+    ASSERT_INT_EQ(n, 0);
+    ASSERT_INT_EQ(neverc_suffixarray_count(&idx, (const unsigned char *)"", 0), 0);
+
+    n = 99;
+    ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, (const unsigned char *)"abc", 3,
+                                            results, 0, &n), 0);
+    ASSERT_INT_EQ(n, 0);
+
+    neverc_suffixarray_free(&idx);
+}
+
+static void test_embedded_nul(void) {
+    printf("[embedded_nul]\n");
+    neverc_suffixarray_t idx;
+    const unsigned char data[] = { 'a', 0, 'a', 0, 'b' };
+    neverc_suffixarray_new(&idx, data, sizeof(data));
+
+    const unsigned char nul[] = { 0 };
+    ASSERT_INT_EQ(neverc_suffixarray_count(&idx, nul, 1), 2);
+
+    const unsigned char an[] = { 'a', 0 };
+    int32_t results[8];
+    size_t n = 0;
+    ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, an, 2, results, 8, &n), 0);
+    ASSERT_INT_EQ(n, 2);
+    qsort(results, n, sizeof(int32_t), cmp_i32);
+    ASSERT_INT_EQ(results[0], 0);
+    ASSERT_INT_EQ(results[1], 2);
+
+    neverc_suffixarray_free(&idx);
+}
+
+static void test_one_byte(void) {
+    printf("[one_byte]\n");
+    neverc_suffixarray_t idx;
+    unsigned char byte = 'z';
+    ASSERT_INT_EQ(neverc_suffixarray_new(&idx, &byte, 1), 0);
+    ASSERT_INT_EQ(idx.sa_len, 1);
+    ASSERT_INT_EQ(neverc_suffixarray_at(&idx, 0), 0);
+    ASSERT_INT_EQ(neverc_suffixarray_count(&idx, (const unsigned char *)"z", 1), 1);
+    ASSERT_INT_EQ(neverc_suffixarray_count(&idx, (const unsigned char *)"y", 1), 0);
+    ASSERT_INT_EQ(neverc_suffixarray_count(&idx, (const unsigned char *)"zz", 2), 0);
     neverc_suffixarray_free(&idx);
 }
 
@@ -333,11 +434,16 @@ int main(void) {
     test_lookup_null_results();
     test_lookup_positions();
     test_single_char();
+    test_overlapping_positions();
+    test_bounds_and_ends();
+    test_embedded_nul();
+    test_one_byte();
     test_suffix_order();
     test_max_results();
     test_at();
     test_random_oracle();
     test_sais_large();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

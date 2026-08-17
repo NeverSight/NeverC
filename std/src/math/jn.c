@@ -22,6 +22,9 @@ double neverc_math_jn(int n, double x) {
     if (x == 0.0) return 0.0;
 
     if (n < 0) {
+        /* -INT_MIN overflows; |n| is even and so large Jn underflows to 0. */
+        if (n == NEVERC_MATH_MIN_INT)
+            return 0.0;
         n = -n;
         x = -x;
     }
@@ -135,6 +138,9 @@ double neverc_math_yn(int n, double x) {
 
     int sign = 0;
     if (n < 0) {
+        /* -INT_MIN overflows; |n| is even and so large Yn underflows to 0. */
+        if (n == NEVERC_MATH_MIN_INT)
+            return 0.0;
         n = -n;
         if (n & 1) sign = 1;
     }

@@ -468,6 +468,10 @@ static void rpc_test_frame_codec(void) {
     CHECK(output.header.request_id == 17U);
     CHECK(output.header.flags == NEVERC_RPC_FLAG_END_STREAM);
     CHECK(memcmp(output.payload, payload, sizeof(payload)) == 0);
+    encoded[encoded_length] = 0xffU;
+    CHECK(neverc_rpc_frame_decode(encoded, encoded_length + 1U, 1024U,
+                                  &output, &consumed) == 1);
+    CHECK(consumed == encoded_length);
     CHECK(neverc_rpc_frame_decode(encoded, encoded_length - 1U, 1024U,
                                   &output, &consumed) == 0);
     CHECK(neverc_rpc_frame_decode(encoded, encoded_length, 3U, &output,
@@ -585,6 +589,9 @@ static void rpc_test_open_codec(void) {
     CHECK(neverc_rpc_open_decode(encoded, encoded_length, 0U, &decoded) == 0);
     CHECK(decoded.metadata_count == 0U);
     CHECK(decoded.codec == NEVERC_RPC_CODEC_JSON);
+    encoded[encoded_length] = 0xffU;
+    CHECK(neverc_rpc_open_decode(encoded, encoded_length + 1U, 1024U,
+                                 &decoded) == -1);
 
     encoded[13] = 1U;
     CHECK(neverc_rpc_open_decode(encoded, encoded_length, 1024U, &decoded) ==

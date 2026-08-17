@@ -35,8 +35,16 @@ static fe_t fe_reduce_once(uint16_t a) {
 }
 
 static fe_t fe_reduce(uint32_t a) {
+    /* n=24 Barrett can underestimate floor(a/q) by 2 on NTT product-sums
+     * (two unreduced multiplies, or zeta*(b-c+q)), leaving a remainder in
+     * [q, 3q). One conditional subtract is not enough for FIPS 203 Z_q. */
     uint32_t quotient = (uint32_t)(((uint64_t)a * BARRETT_MUL) >> BARRETT_SHF);
-    return fe_reduce_once((uint16_t)(a - quotient * Q));
+    uint32_t r = a - quotient * Q;
+    r -= Q;
+    r += (uint32_t)(-(int32_t)(r >> 31)) & Q;
+    r -= Q;
+    r += (uint32_t)(-(int32_t)(r >> 31)) & Q;
+    return (fe_t)r;
 }
 
 static fe_t fe_add(fe_t a, fe_t b) { return fe_reduce_once((uint16_t)(a + b)); }

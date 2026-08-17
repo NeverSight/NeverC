@@ -165,6 +165,9 @@ static void test_path_matching(void) {
     n = neverc_cookiejar_cookies(jar, "https://example.com/api/v1", out, 10);
     check_int("api path matches both", n, 2);
 
+    n = neverc_cookiejar_cookies(jar, "https://example.com/apifoo", out, 10);
+    check_int("path is not a string prefix of a sibling", n, 1);
+
     n = neverc_cookiejar_cookies(jar, "https://example.com/other", out, 10);
     check_int("other path root only", n, 1);
 
@@ -192,6 +195,48 @@ static void test_default_path(void) {
     neverc_cookiejar_free(jar);
 }
 
+static void test_percent_encoded_request_url(void) {
+    printf("[percent_encoded_request_url]\n");
+
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_entry_t cookie = {
+        .name = "session", .value = "1", .path = "/",
+    };
+    neverc_cookiejar_set_cookies(
+        jar, "https://ex%61mple.com/", &cookie, 1);
+
+    neverc_cookiejar_entry_t out[1];
+    int n = neverc_cookiejar_cookies(
+        jar, "https://example.com/", out, 1);
+    check_int("percent-decoded host matches example.com", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://ex%61mple.com/", out, 1);
+    check_int("encoded host still matches after decode", n, 1);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.path = NULL;
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/account%2Flogin", &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://example.com/account/profile", out, 1);
+    check_int("percent-decoded path uses default directory", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://example.com/other", out, 1);
+    check_int("percent-decoded default path excludes sibling", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.path = "/";
+    neverc_cookiejar_set_cookies(
+        jar, "http://[fe80::1%25eth0]/", &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "http://[fe80::1%eth0]/", out, 1);
+    check_int("IPv6 zone %25 matches bare zone delimiter", n, 1);
+
+    neverc_cookiejar_free(jar);
+}
+
 static void test_ipv4_mapped_isolation(void) {
     printf("[ipv4_mapped_isolation]\n");
 
@@ -214,6 +259,8 @@ static void test_ipv4_mapped_isolation(void) {
     neverc_cookiejar_set_cookies(jar, "http://192.168.1.1/", &cookie, 1);
     n = neverc_cookiejar_cookies(jar, "http://192.168.1.2/", out, 1);
     check_int("IPv4 Domain attribute is not a suffix", n, 0);
+    n = neverc_cookiejar_cookies(jar, "http://evil.192.168.1.1/", out, 1);
+    check_int("IPv4 Domain attribute does not match hostname suffix", n, 0);
 
     neverc_cookiejar_free(jar);
 }
@@ -235,6 +282,26 @@ static void test_ipv6_host_isolation(void) {
     n = neverc_cookiejar_cookies(
         jar, "http://[2001:db8::2]/", out, 1);
     check_int("different IPv6 host excluded", n, 0);
+
+    cookie.domain = "2001:db8::1";
+    neverc_cookiejar_set_cookies(
+        jar, "http://[2001:db8::1]/", &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "http://[2001:db8::1]/", out, 1);
+    check_int("IPv6 Domain attribute matches same host", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "http://[2001:db8::2]/", out, 1);
+    check_int("IPv6 Domain attribute is not a suffix", n, 0);
+
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "[2001:db8::1]";
+    neverc_cookiejar_set_cookies(
+        jar, "http://[2001:db8::1]/", &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "http://[2001:db8::1]/", out, 1);
+    check_int("bracketed IPv6 Domain attribute accepted", n, 1);
 
     neverc_cookiejar_free(jar);
 }
@@ -632,6 +699,7 @@ int main(void) {
     test_domain_security();
     test_path_matching();
     test_default_path();
+    test_percent_encoded_request_url();
     test_ipv4_mapped_isolation();
     test_ipv6_host_isolation();
     test_invalid_cookie_octets();

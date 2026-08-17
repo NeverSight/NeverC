@@ -385,6 +385,24 @@ int neverc_grpc_server_stream_end(neverc_grpc_server_stream_t *stream,
         return -1;
     if (neverc_context_done(stream->context))
         status = grpc_context_status(stream->context);
+    /* Unary/server-streaming must observe exactly one request. If the handler
+     * already ended with OK, extra frames would otherwise be reported after
+     * trailers were sent and the client would see silent success. */
+    if (status == NEVERC_GRPC_OK && stream->method &&
+        (stream->method->cardinality == NEVERC_GRPC_UNARY ||
+         stream->method->cardinality == NEVERC_GRPC_SERVER_STREAMING)) {
+        if (stream->received_count != 1) {
+            status = NEVERC_GRPC_INVALID_ARGUMENT;
+            message = "invalid request framing";
+        } else {
+            neverc_grpc_message_t ignored;
+            int next = grpc_server_stream_recv_internal(stream, &ignored);
+            if (next != 0) {
+                status = NEVERC_GRPC_INVALID_ARGUMENT;
+                message = "invalid request framing";
+            }
+        }
+    }
     char status_value[3];
     if (snprintf(status_value, sizeof(status_value), "%u",
                  (unsigned)status) <= 0)

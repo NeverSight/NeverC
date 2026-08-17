@@ -537,7 +537,9 @@ void neverc_http_set_trailer(neverc_http_response_writer_t *w,
         !http_valid_field_value(value, strlen(value)) ||
         strcasecmp(name, "Content-Length") == 0 ||
         strcasecmp(name, "Transfer-Encoding") == 0 ||
-        strcasecmp(name, "Trailer") == 0)
+        strcasecmp(name, "Trailer") == 0 ||
+        strcasecmp(name, "Host") == 0 ||
+        strcasecmp(name, "Connection") == 0)
         return;
     for (int i = 0; i < w->ntrailers; i++) {
         if (strcasecmp(w->trailer_names[i], name) == 0) {
@@ -1435,7 +1437,8 @@ static int http_valid_host(const char *value, size_t length) {
             unsigned char c = (unsigned char)value[1 + i];
             if (c == ':') has_colon = 1;
             if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
-                c == '?' || c == '#' || c == '@' || c == '[' || c == ']')
+                c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
+                c == ',')
                 return 0;
         }
         if (!has_colon &&
@@ -1822,7 +1825,7 @@ static int parse_request_mode(const char *raw, size_t raw_length,
         http_method_implies_body(request->method))
         goto invalid;
     if (is_http_10 && !content_length_seen && !transfer_encoding_seen &&
-        http_method_implies_body(request->method) && request->keep_alive)
+        http_method_implies_body(request->method))
         goto invalid;
 
     size_t header_size = (size_t)(header_end + 4 - raw);

@@ -294,6 +294,87 @@ static void test_invalid_inputs_and_limits(void) {
 #endif
 }
 
+static void test_empty_aad_known_answer(void) {
+    printf("[empty AAD known-answer]\n");
+
+    /* BoringSSL chacha20_poly1305_tests.txt: empty PT and empty AAD. */
+    uint8_t key[32], nonce[12], tag[16];
+    hex_to_bytes("9a97f65b9b4c721b960a672145fca8d4"
+                 "e32e67f9111ea979ce9c4826806aeee6", key, 32);
+    hex_to_bytes("000000003de9c0da2bd7f91e", nonce, 12);
+    hex_to_bytes("5a6e21f4ba6dbee57380e79e79c30def", tag, 16);
+
+    uint8_t sealed[16];
+    size_t n = neverc_chacha20poly1305_seal(
+        sealed, key, nonce, NULL, 0, NULL, 0);
+    check_int("empty AAD seal length", (int)n, 16);
+    check_bytes("empty AAD tag", sealed, tag, 16);
+    check_int("empty AAD open",
+              neverc_chacha20poly1305_open(
+                  NULL, key, nonce, sealed, 16, NULL, 0),
+              0);
+
+    /* 1-byte AAD (15 bytes of pad) from the same BoringSSL corpus. */
+    hex_to_bytes("808182838485868788898a8b8c8d8e8f"
+                 "909192939495969798999a9b9c9d9e9f", key, 32);
+    hex_to_bytes("070000004041424344454647", nonce, 12);
+    uint8_t pt[16], aad[1], expected[16 + 16];
+    memcpy(pt, "123456789abcdef0", 16);
+    aad[0] = '1';
+    hex_to_bytes("ae49da6934cb77822c83ed9852e46c9e", expected, 16);
+    hex_to_bytes("dac9c841c168379dcf8f2bb8e22d6da2", expected + 16, 16);
+    uint8_t out[32];
+    n = neverc_chacha20poly1305_seal(out, key, nonce, pt, 16, aad, 1);
+    check_int("1-byte AAD seal length", (int)n, 32);
+    check_bytes("1-byte AAD ciphertext+tag", out, expected, 32);
+}
+
+static void test_inplace_and_aad_overlap(void) {
+    printf("[in-place and AAD overlap]\n");
+    uint8_t key[32] = {0};
+    uint8_t nonce[12] = {0};
+    for (int i = 0; i < 32; i++) key[i] = (uint8_t)(i + 1);
+    for (int i = 0; i < 12; i++) nonce[i] = (uint8_t)(i + 50);
+
+    uint8_t pt[32];
+    for (int i = 0; i < 32; i++) pt[i] = (uint8_t)(i * 9 + 2);
+    uint8_t aad[12];
+    for (int i = 0; i < 12; i++) aad[i] = (uint8_t)(0xA0 + i);
+
+    uint8_t disjoint[32 + 16];
+    size_t n = neverc_chacha20poly1305_seal(
+        disjoint, key, nonce, pt, 32, aad, 12);
+    check_int("disjoint seal length", (int)n, 48);
+
+    uint8_t in_place[32 + 16];
+    memcpy(in_place, pt, 32);
+    n = neverc_chacha20poly1305_seal(
+        in_place, key, nonce, in_place, 32, aad, 12);
+    check_int("in-place seal length", (int)n, 48);
+    check_bytes("in-place matches disjoint", in_place, disjoint, 48);
+
+    uint8_t recovered[32];
+    int opened = neverc_chacha20poly1305_open(
+        recovered, key, nonce, in_place, 48, aad, 12);
+    check_int("in-place open length", opened, 32);
+    check_bytes("in-place open plaintext", recovered, pt, 32);
+
+    opened = neverc_chacha20poly1305_open(
+        in_place, key, nonce, in_place, 48, aad, 12);
+    check_int("in-place decrypt length", opened, 32);
+    check_bytes("in-place decrypt plaintext", in_place, pt, 32);
+
+    /* AAD lives at the front of the output buffer. Encrypting first used to
+     * overwrite AAD before the MAC was computed. */
+    uint8_t overlap[12 + 32 + 16];
+    memcpy(overlap, aad, 12);
+    memcpy(overlap + 12, pt, 32);
+    n = neverc_chacha20poly1305_seal(
+        overlap, key, nonce, overlap + 12, 32, overlap, 12);
+    check_int("AAD-overlap seal length", (int)n, 48);
+    check_bytes("AAD-overlap ciphertext+tag", overlap, disjoint, 48);
+}
+
 int main(void) {
     printf("=== NeverC ChaCha20-Poly1305 AEAD Tests ===\n");
     test_rfc8439();
@@ -302,6 +383,8 @@ int main(void) {
     test_nonce_reuse_leaks_xor();
     test_large_message_roundtrip();
     test_invalid_inputs_and_limits();
+    test_empty_aad_known_answer();
+    test_inplace_and_aad_overlap();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

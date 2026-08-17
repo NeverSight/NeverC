@@ -386,6 +386,19 @@ static void test_parse_escapes(void) {
     check_null("\\x4 invalid", n);
     n = neverc_regexp_syntax_parse("\\xGG", 0, &err);
     check_null("\\xGG invalid", n);
+
+    n = neverc_regexp_syntax_parse("\\q", 0, &err);
+    check_null("\\q unknown letter escape", n);
+    n = neverc_regexp_syntax_parse("\\1", 0, &err);
+    check_null("\\1 backreference rejected", n);
+    n = neverc_regexp_syntax_parse("\\8", 0, &err);
+    check_null("\\8 unknown digit escape", n);
+    n = neverc_regexp_syntax_parse("[\\q]", 0, &err);
+    check_null("[\\q] unknown class escape", n);
+    n = neverc_regexp_syntax_parse("[a-\\q]", 0, &err);
+    check_null("[a-\\q] unknown range-end escape", n);
+    n = neverc_regexp_syntax_parse("[\\A]", 0, &err);
+    check_null("[\\A] unknown class escape", n);
 }
 
 /* ===== String conversion ===== */

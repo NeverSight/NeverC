@@ -57,6 +57,31 @@ int main(void) {
         CHECK(keys[1] == NULL && values[1] == NULL);
     }
 
+    /* RFC 2231 decode mallocs the unescaped value. OOM there must fail
+     * the parse, not drop the parameter and return success. */
+    reset_allocator(0);
+    CHECK(neverc_mime_parse_media_type(
+              "application/octet-stream; filename*=utf-8''na%C3%AFve.txt",
+              media_type, sizeof(media_type), keys, values, 2, &count) == 0);
+    CHECK(count == 1);
+    size_t rfc2231_allocations = allocation_count;
+    mime_free_params(keys, values, count);
+
+    for (size_t i = 1; i <= rfc2231_allocations; i++) {
+        reset_allocator(i);
+        strcpy(media_type, "unchanged");
+        count = 99;
+        CHECK(neverc_mime_parse_media_type(
+                  "application/octet-stream; "
+                  "filename*=utf-8''na%C3%AFve.txt",
+                  media_type, sizeof(media_type), keys, values, 2,
+                  &count) == -1);
+        CHECK(media_type[0] == '\0');
+        CHECK(count == 0);
+        CHECK(keys[0] == NULL && values[0] == NULL);
+        CHECK(keys[1] == NULL && values[1] == NULL);
+    }
+
     puts("passed");
     return 0;
 }

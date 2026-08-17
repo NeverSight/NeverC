@@ -371,6 +371,54 @@ static void visit_counter(const char *name, const char *usage, void *ctx) {
     visit_count_ctx++;
 }
 
+static void test_bad_syntax(void) {
+    printf("[bad syntax]\n");
+    neverc_flag_reset();
+    int x = 7;
+    neverc_flag_int("x", 7, "x", &x);
+    char *triple[] = {"prog", "---x=1"};
+    check_int("triple dash is rejected", neverc_flag_parse(2, triple), -1);
+    check_int("triple dash preserves value", x, 7);
+    check_int("triple dash is not counted", neverc_flag_nflag(), 0);
+
+    neverc_flag_reset();
+    x = 7;
+    neverc_flag_int("x", 7, "x", &x);
+    char *eq_name[] = {"prog", "--=1"};
+    check_int("empty name after dashes is rejected",
+              neverc_flag_parse(2, eq_name), -1);
+    check_int("empty name preserves value", x, 7);
+
+    neverc_flag_reset();
+    int v = 0;
+    neverc_flag_bool("v", 0, "verbose", &v);
+    char *ok[] = {"prog", "--v"};
+    check_int("double dash still works", neverc_flag_parse(2, ok), 0);
+    check_int("double dash sets bool", v, 1);
+}
+
+static void test_name_injection(void) {
+    printf("[name injection]\n");
+    neverc_flag_reset();
+    const char *user = "none";
+    const char *evil = "unchanged";
+    neverc_flag_string("user", "none", "user", &user);
+    neverc_flag_string("user=admin", "x", "injected", &evil);
+    check_int("equals in name is not registered",
+              neverc_flag_lookup("user=admin", NULL), -1);
+    check_str("rejected name does not write default", evil, "unchanged");
+    char *argv[] = {"prog", "-user=admin"};
+    check_int("user=admin sets the user flag", neverc_flag_parse(2, argv), 0);
+    check_str("user value from equals form", user, "admin");
+
+    neverc_flag_reset();
+    int n = 9;
+    neverc_flag_int("-n", 0, "bad", &n);
+    check_int("leading dash name is not registered",
+              neverc_flag_lookup("-n", NULL), -1);
+    check_int("leading dash name does not write default", n, 9);
+}
+
 static void test_visit(void) {
     printf("[visit]\n");
     neverc_flag_reset();
@@ -408,8 +456,11 @@ int main(void) {
     test_long_names();
     test_parsed_nflag();
     test_set_lookup();
+    test_bad_syntax();
+    test_name_injection();
     test_visit();
     test_null_safety();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

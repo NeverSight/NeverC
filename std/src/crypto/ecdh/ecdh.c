@@ -248,13 +248,13 @@ static const neverc_elliptic_curve_t *get_nist_curve(neverc_ecdh_curve_t curve) 
     return curve == NEVERC_ECDH_CURVE_P256 ? neverc_elliptic_p256() : neverc_elliptic_p384();
 }
 
-static void bigint_to_bytes(const neverc_bigint_t *n, unsigned char *out, int len) {
+static int bigint_to_bytes(const neverc_bigint_t *n, unsigned char *out, int len) {
     char hexbuf[200];
     int ret = neverc_bigint_string(n, 16, hexbuf, sizeof(hexbuf));
     if (ret <= 0) {
         memset(out, 0, (size_t)len);
         neverc_platform_secure_zero(hexbuf, sizeof(hexbuf));
-        return;
+        return -1;
     }
     size_t hlen = strlen(hexbuf);
     memset(out, 0, (size_t)len);
@@ -266,6 +266,7 @@ static void bigint_to_bytes(const neverc_bigint_t *n, unsigned char *out, int le
         out[len - 1 - (int)(i / 2)] |= (unsigned char)(v << (4 * (i & 1)));
     }
     neverc_platform_secure_zero(hexbuf, sizeof(hexbuf));
+    return 0;
 }
 
 static void bytes_to_bigint(neverc_bigint_t *n, const unsigned char *data, int len) {
@@ -336,7 +337,11 @@ int neverc_ecdh_generate_key(neverc_ecdh_curve_t curve, neverc_ecdh_key_t *key) 
         return -1;
     }
 
-    bigint_to_bytes(&scalar, key->private_key, psize);
+    if (bigint_to_bytes(&scalar, key->private_key, psize) != 0) {
+        secure_bigint_free(&scalar);
+        neverc_platform_secure_zero(key, sizeof(*key));
+        return -1;
+    }
 
     neverc_elliptic_point_t pub;
     neverc_elliptic_point_init(&pub);
@@ -500,8 +505,17 @@ int neverc_ecdh_compute(const neverc_ecdh_key_t *local_private,
     neverc_elliptic_point_init(&result);
     neverc_elliptic_scalar_mult(ec, &result, &remote, &scalar);
 
-    bigint_to_bytes(&result.x, out, shared_size);
-    if (is_all_zero(out, (size_t)shared_size)) {
+    /* Infinity is the (0,0) sentinel. P-256/P-384 have affine points with
+     * x = 0; those are valid shared secrets (all-zero x), matching Go. */
+    if (neverc_bigint_is_zero(&result.x) &&
+        neverc_bigint_is_zero(&result.y)) {
+        neverc_elliptic_point_free(&result);
+        neverc_elliptic_point_free(&remote);
+        secure_bigint_free(&scalar);
+        neverc_platform_secure_zero(out, (size_t)shared_size);
+        return -1;
+    }
+    if (bigint_to_bytes(&result.x, out, shared_size) != 0) {
         neverc_elliptic_point_free(&result);
         neverc_elliptic_point_free(&remote);
         secure_bigint_free(&scalar);

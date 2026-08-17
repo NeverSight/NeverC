@@ -56,6 +56,13 @@ void neverc_syslog_close(neverc_syslog_t *log);
 int neverc_syslog_pri(neverc_syslog_facility_t facility,
                       neverc_syslog_priority_t priority);
 
+/* Format RFC 3164 "<PRI>tag: message" into buf (no trailing newline).
+ * CR/LF in the tag and message are replaced so one call cannot emit a
+ * second record. Returns 0 on success, -1 on error. */
+int neverc_syslog_format(neverc_syslog_t *log,
+                         neverc_syslog_priority_t priority,
+                         const char *msg, char *buf, size_t n);
+
 /* Write a message at the given priority. Returns 0 on success. */
 int neverc_syslog_write(neverc_syslog_t *log,
                         neverc_syslog_priority_t priority,

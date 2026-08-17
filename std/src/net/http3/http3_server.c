@@ -46,12 +46,21 @@ extern int neverc_h3_write_headers_frame(uint8_t *buffer, size_t capacity,
 extern int neverc_h3_write_goaway_frame(uint8_t *buffer, size_t capacity,
                                         uint64_t stream_id,
                                         size_t *written);
+extern int neverc_h3_request_path_allowed(const char *method,
+                                          const char *path);
+extern int neverc_h3_parse_varint_payload(const uint8_t *payload,
+                                          size_t length, uint64_t *value);
+extern int neverc_h3_max_push_id_accept(int have_previous,
+                                        uint64_t previous, uint64_t next);
+extern int neverc_qpack_decoder_stream_instruction(const uint8_t *data,
+                                                   size_t length,
+                                                   size_t *consumed);
 extern int neverc_qpack_field_section_size(
     const neverc_qpack_header_t *headers, int nheaders, uint64_t *size);
 
-/* RFC 9114 §7.2.4.1: 0 and UINT64_MAX both mean unlimited. */
+/* RFC 9114 §7.2.4.1: omitted / UINT64_MAX means unlimited; 0 is 0. */
 static int h3_field_section_over_limit(uint64_t size, uint64_t limit) {
-    return limit != 0 && size > limit;
+    return size > limit;
 }
 
 #define H3_STREAM_TYPE_CONTROL       0x00U
@@ -70,6 +79,8 @@ static int h3_field_section_over_limit(uint64_t size, uint64_t limit) {
 #define H3_SHUTDOWN_ABSOLUTE_MAX_MS 30000U
 #define H3_QPACK_DECOMPRESSION_FAILED 0x0200U
 #define H3_QPACK_ENCODER_STREAM_ERROR 0x0201U
+#define H3_QPACK_DECODER_STREAM_ERROR 0x0202U
+#define H3_QPACK_DECODER_LEFTOVER     16U
 
 /* RFC 9114 §7.2 / §11.2.1: HTTP/2 frame types that were not redefined
  * for HTTP/3 MUST be treated as H3_FRAME_UNEXPECTED. */
@@ -126,6 +137,10 @@ struct h3_conn {
     int goaway_sent;
     int goaway_received;
     uint64_t goaway_id;
+    uint64_t max_push_id;
+    int max_push_id_seen;
+    uint8_t qpack_decoder_leftover[H3_QPACK_DECODER_LEFTOVER];
+    size_t qpack_decoder_leftover_len;
     uint64_t last_request_stream_id;
     nc_mutex_t lock;
     nc_cond_t settings_cond;
@@ -530,7 +545,8 @@ static int h3_parse_request_headers(h3_conn_t *connection,
     }
     if (host && !*host) host = NULL;
     if (pseudo_seen != (1U | 2U | 4U | 8U) ||
-        strcmp(request->scheme, "https") != 0 || request->path[0] != '/' ||
+        strcmp(request->scheme, "https") != 0 ||
+        !neverc_h3_request_path_allowed(request->method, request->path) ||
         strcmp(request->method, "CONNECT") == 0 ||
         (host && !h3_ascii_ieq(request->authority, host)))
         goto cleanup;
@@ -1007,11 +1023,10 @@ static int h3_parse_control_buffer(h3_conn_t *connection) {
                 goto invalid;
             if (length > connection->control_buffer_length - position)
                 return 0;
-            size_t consumed = 0;
             uint64_t identifier;
-            if (neverc_quic_varint_decode(
+            if (neverc_h3_parse_varint_payload(
                     connection->control_buffer + position, (size_t)length,
-                    &identifier, &consumed) != 0 || consumed != length)
+                    &identifier) != 0)
                 goto invalid;
             nc_mutex_lock(&connection->lock);
             int increasing = connection->goaway_received &&
@@ -1024,6 +1039,41 @@ static int h3_parse_control_buffer(h3_conn_t *connection) {
                                   "GOAWAY identifier increased");
                 return -1;
             }
+            h3_consume_control_buffer(connection, position + (size_t)length);
+        } else if (type == NC_H3_FRAME_CANCEL_PUSH) {
+            /* This server never promises pushes; any CANCEL_PUSH is
+             * H3_ID_ERROR (RFC 9114 §7.2.3). Length 0 is H3_FRAME_ERROR. */
+            if (length == 0 || length > 8U)
+                goto invalid;
+            if (length > connection->control_buffer_length - position)
+                return 0;
+            uint64_t push_id;
+            if (neverc_h3_parse_varint_payload(
+                    connection->control_buffer + position, (size_t)length,
+                    &push_id) != 0)
+                goto invalid;
+            h3_protocol_error(connection, NC_H3_ID_ERROR,
+                              "CANCEL_PUSH for unpromised push");
+            return -1;
+        } else if (type == NC_H3_FRAME_MAX_PUSH_ID) {
+            if (length == 0 || length > 8U)
+                goto invalid;
+            if (length > connection->control_buffer_length - position)
+                return 0;
+            uint64_t push_id;
+            if (neverc_h3_parse_varint_payload(
+                    connection->control_buffer + position, (size_t)length,
+                    &push_id) != 0)
+                goto invalid;
+            if (neverc_h3_max_push_id_accept(connection->max_push_id_seen,
+                                             connection->max_push_id,
+                                             push_id) != 0) {
+                h3_protocol_error(connection, NC_H3_ID_ERROR,
+                                  "MAX_PUSH_ID decreased");
+                return -1;
+            }
+            connection->max_push_id = push_id;
+            connection->max_push_id_seen = 1;
             h3_consume_control_buffer(connection, position + (size_t)length);
         } else if (type == NC_H3_FRAME_DATA ||
                    type == NC_H3_FRAME_HEADERS ||
@@ -1070,6 +1120,43 @@ static int h3_poll_control_stream(h3_conn_t *connection, int *worked) {
     }
 }
 
+static int h3_feed_qpack_decoder(h3_conn_t *connection, const uint8_t *data,
+                                 size_t length) {
+    uint8_t tmp[H3_QPACK_DECODER_LEFTOVER + 4096U];
+    if (connection->qpack_decoder_leftover_len + length > sizeof(tmp))
+        return -1;
+    memcpy(tmp, connection->qpack_decoder_leftover,
+           connection->qpack_decoder_leftover_len);
+    if (length)
+        memcpy(tmp + connection->qpack_decoder_leftover_len, data, length);
+    size_t total = connection->qpack_decoder_leftover_len + length;
+    size_t pos = 0;
+    while (pos < total) {
+        size_t consumed = 0;
+        int rc = neverc_qpack_decoder_stream_instruction(
+            tmp + pos, total - pos, &consumed);
+        if (rc == 0) {
+            size_t rest = total - pos;
+            if (rest > H3_QPACK_DECODER_LEFTOVER) {
+                h3_protocol_error(connection, H3_QPACK_DECODER_STREAM_ERROR,
+                                  "oversized QPACK decoder instruction");
+                return -1;
+            }
+            memcpy(connection->qpack_decoder_leftover, tmp + pos, rest);
+            connection->qpack_decoder_leftover_len = rest;
+            return 0;
+        }
+        if (rc < 0) {
+            h3_protocol_error(connection, H3_QPACK_DECODER_STREAM_ERROR,
+                              "invalid QPACK decoder-stream instruction");
+            return -1;
+        }
+        pos += consumed;
+    }
+    connection->qpack_decoder_leftover_len = 0;
+    return 0;
+}
+
 static int h3_poll_qpack_stream(h3_conn_t *connection,
                                 neverc_quic_stream_t *stream, int *worked,
                                 int encoder_stream) {
@@ -1100,6 +1187,9 @@ static int h3_poll_qpack_stream(h3_conn_t *connection,
                               "QPACK encoder instruction with zero capacity");
             return -1;
         }
+        if (!encoder_stream &&
+            h3_feed_qpack_decoder(connection, scratch, (size_t)count) != 0)
+            return -1;
     }
 }
 

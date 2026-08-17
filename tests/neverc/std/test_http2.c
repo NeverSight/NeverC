@@ -918,6 +918,22 @@ static int h2_send_data(int fd, const void *data, size_t length) {
     return h2_send_data_end(fd, data, length, 0);
 }
 
+static int h2_send_priority_self(int fd, uint32_t stream_id) {
+    uint8_t frame[14] = {
+        0, 0, 5, NC_H2_FRAME_PRIORITY, 0,
+        (uint8_t)((stream_id >> 24) & 0x7f),
+        (uint8_t)(stream_id >> 16),
+        (uint8_t)(stream_id >> 8),
+        (uint8_t)stream_id,
+        (uint8_t)((stream_id >> 24) & 0x7f),
+        (uint8_t)(stream_id >> 16),
+        (uint8_t)(stream_id >> 8),
+        (uint8_t)stream_id,
+        0
+    };
+    return sock_write_all(fd, frame, sizeof(frame));
+}
+
 static int h2_read_rst_on(int fd, uint32_t expect_stream,
                           uint32_t *error_code) {
     for (;;) {
@@ -1049,6 +1065,77 @@ TEST(h2c_rejects_spaced_authority) {
     int status = 0;
     ASSERT_EQ(waitpid(child, &status, 0), child);
     ASSERT_TRUE(WIFEXITED(status));
+}
+
+static int h2c_expect_protocol_rst(neverc_hpack_header_t *headers, int count) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    if (h2_pipe_handshake(&client, &child, 0) != 0) return -1;
+    int fd = neverc_tcp_conn_fd(client);
+    uint32_t error_code = 0xffffffffU;
+    int ok = h2_send_headers(fd, headers, count, 1) == 0 &&
+             h2_read_rst(fd, &error_code) == 0 &&
+             error_code == NC_H2_PROTOCOL_ERROR;
+    neverc_tcp_close(client);
+    int status = 0;
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status))
+        return -1;
+    return ok ? 0 : -1;
+}
+
+TEST(h2c_rejects_invalid_authority) {
+    neverc_hpack_header_t port[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost:99999" },
+    };
+    neverc_hpack_header_t ipv6[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "[::1" },
+    };
+    neverc_hpack_header_t comma[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "example.com,evil.com" },
+    };
+    neverc_hpack_header_t bare_v6[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "::1" },
+    };
+    neverc_hpack_header_t v6_comma[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "[::1,evil.com]" },
+    };
+    ASSERT_EQ(h2c_expect_protocol_rst(port, 4), 0);
+    ASSERT_EQ(h2c_expect_protocol_rst(ipv6, 4), 0);
+    ASSERT_EQ(h2c_expect_protocol_rst(comma, 4), 0);
+    ASSERT_EQ(h2c_expect_protocol_rst(bare_v6, 4), 0);
+    ASSERT_EQ(h2c_expect_protocol_rst(v6_comma, 4), 0);
+}
+
+TEST(h2c_rejects_invalid_path) {
+    neverc_hpack_header_t spaced[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/foo bar" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    neverc_hpack_header_t star[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "*" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    ASSERT_EQ(h2c_expect_protocol_rst(spaced, 4), 0);
+    ASSERT_EQ(h2c_expect_protocol_rst(star, 4), 0);
 }
 
 TEST(h2c_rejects_empty_authority) {
@@ -1359,6 +1446,61 @@ TEST(h2c_stream_window_update_overflow_is_connection_error) {
     uint32_t error_code = 0xffffffffU;
     ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
     ASSERT_EQ(error_code, NC_H2_FLOW_CONTROL_ERROR);
+    ASSERT_EQ(h2_send_data_end(fd, "x", 1, 1), 0);
+    error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_STREAM_CLOSED);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
+TEST(h2c_priority_self_dependency_closes_idle_stream) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    ASSERT_EQ(h2_send_priority_self(fd, 1), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    ASSERT_EQ(h2_send_headers(fd, headers, 4, 1), 0);
+    error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_STREAM_CLOSED);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
+TEST(h2c_priority_self_dependency_aborts_open_stream) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    ASSERT_EQ(h2_send_headers(fd, headers, 4, 0), 0);
+    ASSERT_EQ(h2_send_priority_self(fd, 1), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    ASSERT_EQ(h2_send_data_end(fd, "x", 1, 1), 0);
+    error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_STREAM_CLOSED);
     neverc_tcp_close(client);
     int status = 0;
     ASSERT_EQ(waitpid(child, &status, 0), child);
@@ -1445,6 +1587,51 @@ static void h2_run_adversarial_response_child(
                            sizeof(large_table_settings)) != 0 ||
             sock_write_all(fd, table_size, sizeof(table_size)) != 0 ||
             sock_write_all(fd, settings_ack, sizeof(settings_ack)) != 0)
+            _exit(1);
+        if (write(notify_fd, "x", 1U) != 1)
+            _exit(1);
+        char drain[256];
+        while (read(fd, drain, sizeof(drain)) > 0) { }
+        neverc_tcp_close(connection);
+        neverc_tcp_listener_close(listener);
+        close(notify_fd);
+        _exit(0);
+    }
+
+    if (response_kind == 4) {
+        uint8_t server_settings[NC_H2_FRAME_HEADER_SIZE] = {
+            0, 0, 0, NC_H2_FRAME_SETTINGS, 0, 0, 0, 0, 0};
+        uint8_t settings_ack[NC_H2_FRAME_HEADER_SIZE] = {
+            0, 0, 0, NC_H2_FRAME_SETTINGS, NC_H2_FLAG_ACK, 0, 0, 0, 0};
+        uint8_t idle_data[10] = {
+            0, 0, 1, NC_H2_FRAME_DATA, 0, 0, 0, 0, 5, 'x'};
+        if (sock_write_all(fd, server_settings,
+                           sizeof(server_settings)) != 0 ||
+            sock_write_all(fd, settings_ack, sizeof(settings_ack)) != 0 ||
+            sock_write_all(fd, idle_data, sizeof(idle_data)) != 0)
+            _exit(1);
+        if (write(notify_fd, "x", 1U) != 1)
+            _exit(1);
+        char drain[256];
+        while (read(fd, drain, sizeof(drain)) > 0) { }
+        neverc_tcp_close(connection);
+        neverc_tcp_listener_close(listener);
+        close(notify_fd);
+        _exit(0);
+    }
+
+    if (response_kind == 5) {
+        uint8_t server_settings[NC_H2_FRAME_HEADER_SIZE] = {
+            0, 0, 0, NC_H2_FRAME_SETTINGS, 0, 0, 0, 0, 0};
+        uint8_t settings_ack[NC_H2_FRAME_HEADER_SIZE] = {
+            0, 0, 0, NC_H2_FRAME_SETTINGS, NC_H2_FLAG_ACK, 0, 0, 0, 0};
+        uint8_t self_priority[14] = {
+            0, 0, 5, NC_H2_FRAME_PRIORITY, 0, 0, 0, 0, 1,
+            0, 0, 0, 1, 0};
+        if (sock_write_all(fd, server_settings,
+                           sizeof(server_settings)) != 0 ||
+            sock_write_all(fd, settings_ack, sizeof(settings_ack)) != 0 ||
+            sock_write_all(fd, self_priority, sizeof(self_priority)) != 0)
             _exit(1);
         if (write(notify_fd, "x", 1U) != 1)
             _exit(1);
@@ -1745,6 +1932,123 @@ TEST(h2_client_accepts_large_header_table_size) {
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ASSERT_TRUE(accepted);
 }
+
+TEST(h2_client_rejects_idle_stream_data) {
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    ASSERT_TRUE(listener != NULL);
+    neverc_tcp_addr_t address;
+    ASSERT_EQ(neverc_tcp_listener_addr(listener, &address), 0);
+    int notified[2];
+    ASSERT_EQ(pipe(notified), 0);
+
+    pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0) {
+        close(notified[0]);
+        h2_run_adversarial_response_child(listener, 4, notified[1]);
+    }
+    close(notified[1]);
+    neverc_tcp_listener_close(listener);
+
+    char dial_address[64];
+    snprintf(dial_address, sizeof(dial_address), "127.0.0.1:%d",
+             address.port);
+    neverc_h2_client_config_t config = neverc_h2_client_config_default();
+    config.timeout_ms = 3000;
+    neverc_h2_client_t *client = neverc_h2_client_dial(
+        dial_address, "localhost", 0, &config, &error);
+    struct pollfd ready = {
+        .fd = notified[0],
+        .events = POLLIN,
+        .revents = 0,
+    };
+    int processed = poll(&ready, 1U, 3000) == 1;
+    char signal = 0;
+    if (processed)
+        processed = read(notified[0], &signal, 1U) == 1;
+    close(notified[0]);
+    neverc_h2_client_stream_t *stream = NULL;
+    if (client && processed)
+        stream = neverc_h2_client_stream_open(client, NULL, "GET", "/",
+                                              NULL, 0U, 1, &error);
+    int rejected = !client || stream == NULL;
+    if (stream) {
+        neverc_context_t *background = neverc_context_background();
+        neverc_context_t *context = background
+            ? neverc_context_with_timeout(background, 2000, NULL) : NULL;
+        neverc_h2_client_event_t *event = NULL;
+        int received = context
+            ? neverc_h2_client_stream_receive(stream, context, &event) : -1;
+        rejected = received != 1 ||
+            (event && event->type == NEVERC_H2_CLIENT_EVENT_ERROR);
+        neverc_h2_client_event_free(event);
+        neverc_context_free(context);
+        neverc_context_free(background);
+    }
+    if (!processed)
+        kill(child, SIGTERM);
+
+    neverc_h2_client_stream_free(stream);
+    neverc_h2_client_free(client);
+    int status = 0;
+    waitpid(child, &status, 0);
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    ASSERT_TRUE(rejected);
+}
+
+TEST(h2_client_rejects_priority_self_dependency) {
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    ASSERT_TRUE(listener != NULL);
+    neverc_tcp_addr_t address;
+    ASSERT_EQ(neverc_tcp_listener_addr(listener, &address), 0);
+    int notified[2];
+    ASSERT_EQ(pipe(notified), 0);
+
+    pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0) {
+        close(notified[0]);
+        h2_run_adversarial_response_child(listener, 5, notified[1]);
+    }
+    close(notified[1]);
+    neverc_tcp_listener_close(listener);
+
+    char dial_address[64];
+    snprintf(dial_address, sizeof(dial_address), "127.0.0.1:%d",
+             address.port);
+    neverc_h2_client_config_t config = neverc_h2_client_config_default();
+    config.timeout_ms = 3000;
+    neverc_h2_client_t *client = neverc_h2_client_dial(
+        dial_address, "localhost", 0, &config, &error);
+    struct pollfd ready = {
+        .fd = notified[0],
+        .events = POLLIN,
+        .revents = 0,
+    };
+    int processed = poll(&ready, 1U, 3000) == 1;
+    char signal = 0;
+    if (processed)
+        processed = read(notified[0], &signal, 1U) == 1;
+    close(notified[0]);
+    neverc_h2_client_stream_t *stream = NULL;
+    if (client && processed)
+        stream = neverc_h2_client_stream_open(client, NULL, "GET", "/",
+                                              NULL, 0U, 1, &error);
+    int rejected = !client || stream == NULL;
+    if (!processed)
+        kill(child, SIGTERM);
+
+    neverc_h2_client_stream_free(stream);
+    neverc_h2_client_free(client);
+    int status = 0;
+    waitpid(child, &status, 0);
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    ASSERT_TRUE(rejected);
+}
 #endif /* !_WIN32 */
 
 int main(void) {
@@ -1779,6 +2083,8 @@ int main(void) {
     run_test_h2c_rejects_missing_authority();
     run_test_h2c_rejects_empty_authority();
     run_test_h2c_rejects_spaced_authority();
+    run_test_h2c_rejects_invalid_authority();
+    run_test_h2c_rejects_invalid_path();
     run_test_h2c_rejects_empty_host();
     run_test_h2c_rejects_path_fragment();
     run_test_h2c_rejects_host_authority_mismatch();
@@ -1790,11 +2096,15 @@ int main(void) {
     run_test_h2c_window_update_overflow_is_connection_error();
     run_test_h2c_empty_data_does_not_send_zero_window_update();
     run_test_h2c_stream_window_update_overflow_is_connection_error();
+    run_test_h2c_priority_self_dependency_closes_idle_stream();
+    run_test_h2c_priority_self_dependency_aborts_open_stream();
     run_test_h2c_continuation_flood_is_connection_error();
     run_test_h2_client_invalid_trailer_emits_terminal_error();
     run_test_h2_client_queue_overflow_emits_terminal_error();
     run_test_h2_client_rejects_server_enable_push();
     run_test_h2_client_accepts_large_header_table_size();
+    run_test_h2_client_rejects_idle_stream_data();
+    run_test_h2_client_rejects_priority_self_dependency();
 #endif
 
     printf("\n%d passed, %d failed\n", tests_passed, tests_failed);

@@ -101,6 +101,16 @@ static int mime_is_token_char(unsigned char c) {
     return c > 32 && c < 127 && strchr(specials, (int)c) == NULL;
 }
 
+/* RFC 2045 tspecials. Go's consumeValue only treats `\` as an escape when
+ * the next byte is in this set, so `C:\dev\file` keeps the backslashes. */
+static int mime_is_tspecial(unsigned char c) {
+    return c > 32 && c < 127 && !mime_is_token_char(c);
+}
+
+static int mime_is_digit(unsigned char c) {
+    return c >= '0' && c <= '9';
+}
+
 static int mime_span_case_equal(const char *a, size_t alen,
                                 const char *b, size_t blen) {
     if (alen != blen) return 0;
@@ -162,7 +172,8 @@ static int mime_hex_digit(unsigned char c) {
     return -1;
 }
 
-static char *mime_percent_unescape(const char *s, size_t n) {
+static char *mime_percent_unescape(const char *s, size_t n, int *oom) {
+    if (oom) *oom = 0;
     size_t out_len = 0;
     for (size_t i = 0; i < n; ) {
         if (s[i] == '%') {
@@ -177,7 +188,10 @@ static char *mime_percent_unescape(const char *s, size_t n) {
         }
     }
     char *out = (char *)malloc(out_len + 1);
-    if (!out) return NULL;
+    if (!out) {
+        if (oom) *oom = 1;
+        return NULL;
+    }
     size_t j = 0;
     for (size_t i = 0; i < n; ) {
         if (s[i] == '%') {
@@ -205,13 +219,14 @@ static int mime_2231_charset_ok(const char *s, size_t n) {
            mime_span_case_equal(s, n, "utf-8", 5);
 }
 
-static char *mime_decode_2231_value(const char *v) {
+static char *mime_decode_2231_value(const char *v, int *oom) {
+    if (oom) *oom = 0;
     if (!v) return NULL;
     const char *q1 = strchr(v, '\'');
     if (!q1 || !mime_2231_charset_ok(v, (size_t)(q1 - v))) return NULL;
     const char *q2 = strchr(q1 + 1, '\'');
     if (!q2) return NULL;
-    return mime_percent_unescape(q2 + 1, strlen(q2 + 1));
+    return mime_percent_unescape(q2 + 1, strlen(q2 + 1), oom);
 }
 
 /* name* (single RFC 2231 / 5987 parameter), not name*0 continuations. */
@@ -222,29 +237,103 @@ static int mime_is_2231_single(const char *key, size_t *base_len) {
     return 1;
 }
 
+/* name*N or name*N*. N has no leading zero unless N is 0 (Go: *01 != *1). */
+static int mime_is_2231_cont(const char *key, size_t *base_len,
+                             int *idx, int *encoded) {
+    const char *star = strchr(key, '*');
+    if (!star || star == key || !mime_is_digit((unsigned char)star[1]))
+        return 0;
+    if (star[1] == '0' && mime_is_digit((unsigned char)star[2]))
+        return 0;
+    const char *p = star + 1;
+    int n = 0;
+    while (mime_is_digit((unsigned char)*p)) {
+        if (n > (INT_MAX - (*p - '0')) / 10) return 0;
+        n = n * 10 + (*p - '0');
+        p++;
+    }
+    if (*p == '*') {
+        if (p[1] != '\0') return 0;
+        *encoded = 1;
+    } else if (*p == '\0') {
+        *encoded = 0;
+    } else {
+        return 0;
+    }
+    *base_len = (size_t)(star - key);
+    *idx = n;
+    return 1;
+}
+
+static int mime_key_base_is(const char *key, const char *base, size_t blen) {
+    size_t slen = 0;
+    if (mime_is_2231_single(key, &slen))
+        return slen == blen && memcmp(key, base, blen) == 0;
+    return strlen(key) == blen && memcmp(key, base, blen) == 0;
+}
+
+static int mime_find_2231_cont(char *keys[], int n, const char *base,
+                               size_t blen, int want_idx, int *encoded) {
+    for (int j = 0; j < n; j++) {
+        if (!keys[j]) continue;
+        size_t jb = 0;
+        int jidx = 0, jenc = 0;
+        if (!mime_is_2231_cont(keys[j], &jb, &jidx, &jenc)) continue;
+        if (jb == blen && memcmp(keys[j], base, blen) == 0 &&
+            jidx == want_idx) {
+            if (encoded) *encoded = jenc;
+            return j;
+        }
+    }
+    return -1;
+}
+
+static int mime_apply_rfc2231_fail(char *keys[], char *vals[], int n,
+                                   int *nparams) {
+    mime_free_params(keys, vals, n);
+    *nparams = 0;
+    return -1;
+}
+
 static int mime_apply_rfc2231(char *keys[], char *vals[], int *nparams) {
     int n = *nparams;
     if (n <= 0) return 0;
 
-    /* Decode name*=charset''value (RFC 2231 / 5987). Continuations
-     * (name*0 / name*1) are left as raw keys — see remaining gaps. */
+    int any_star = 0;
+    for (int i = 0; i < n; i++) {
+        if (keys[i] && strchr(keys[i], '*')) {
+            any_star = 1;
+            break;
+        }
+    }
+    if (!any_star) return 0;
+
+    unsigned char *had_single = (unsigned char *)calloc((size_t)n, 1);
+    if (!had_single)
+        return mime_apply_rfc2231_fail(keys, vals, n, nparams);
+
+    /* Decode name*=charset''value. A failed decode drops that parameter
+     * after stitching (the raw name* key is kept until then so name*0
+     * pieces for the same base are not promoted). OOM fails the parse. */
     for (int i = 0; i < n; i++) {
         if (!keys[i]) continue;
         size_t blen = 0;
         if (!mime_is_2231_single(keys[i], &blen)) continue;
-        char *decoded = mime_decode_2231_value(vals[i]);
+        had_single[i] = 1;
+        int oom = 0;
+        char *decoded = mime_decode_2231_value(vals[i], &oom);
         if (!decoded) {
-            free(keys[i]);
-            free(vals[i]);
-            keys[i] = vals[i] = NULL;
+            if (oom) {
+                free(had_single);
+                return mime_apply_rfc2231_fail(keys, vals, n, nparams);
+            }
             continue;
         }
         char *newkey = (char *)malloc(blen + 1);
         if (!newkey) {
             free(decoded);
-            mime_free_params(keys, vals, n);
-            *nparams = 0;
-            return -1;
+            free(had_single);
+            return mime_apply_rfc2231_fail(keys, vals, n, nparams);
         }
         memcpy(newkey, keys[i], blen);
         newkey[blen] = '\0';
@@ -262,6 +351,142 @@ static int mime_apply_rfc2231(char *keys[], char *vals[], int *nparams) {
             }
         }
     }
+
+    /* name*0 / name*1 / name*0* continuations. A name* single, success or
+     * failure, suppresses stitching for that base (Go ParseMediaType). */
+    for (int i = 0; i < n; i++) {
+        if (!keys[i]) continue;
+        size_t blen = 0;
+        int idx = 0, encoded = 0;
+        if (!mime_is_2231_cont(keys[i], &blen, &idx, &encoded)) continue;
+
+        int skip = 0;
+        for (int j = 0; j < n; j++) {
+            if (!had_single[j] || !keys[j]) continue;
+            if (mime_key_base_is(keys[j], keys[i], blen)) {
+                skip = 1;
+                break;
+            }
+        }
+        if (skip) continue;
+
+        int enc0 = 0;
+        int p0 = mime_find_2231_cont(keys, n, keys[i], blen, 0, &enc0);
+        if (p0 < 0) continue;
+
+        int nidx = 0;
+        for (;; nidx++) {
+            if (mime_find_2231_cont(keys, n, keys[i], blen, nidx,
+                                    NULL) < 0)
+                break;
+        }
+
+        char **parts = (char **)calloc((size_t)nidx, sizeof(char *));
+        unsigned char *owned = (unsigned char *)calloc((size_t)nidx, 1);
+        if (!parts || !owned) {
+            free(parts);
+            free(owned);
+            free(had_single);
+            return mime_apply_rfc2231_fail(keys, vals, n, nparams);
+        }
+
+        size_t total = 0;
+        int failed = 0;
+        int stitch_ok = 1;
+        for (int k = 0; k < nidx && !failed && stitch_ok; k++) {
+            int enc = 0;
+            int found = mime_find_2231_cont(keys, n, keys[i], blen, k, &enc);
+            if (found < 0) {
+                failed = 1;
+                break;
+            }
+            if (enc && k == 0) {
+                int oom = 0;
+                parts[k] = mime_decode_2231_value(vals[found], &oom);
+                owned[k] = 1;
+                if (oom) failed = 1;
+                else if (!parts[k]) stitch_ok = 0;
+            } else if (enc) {
+                int oom = 0;
+                parts[k] = mime_percent_unescape(
+                    vals[found], strlen(vals[found]), &oom);
+                owned[k] = 1;
+                if (oom) failed = 1;
+                else if (!parts[k]) stitch_ok = 0;
+            } else {
+                parts[k] = vals[found];
+            }
+            if (parts[k]) total += strlen(parts[k]);
+        }
+        if (failed) {
+            for (int k = 0; k < nidx; k++)
+                if (owned[k]) free(parts[k]);
+            free(parts);
+            free(owned);
+            free(had_single);
+            return mime_apply_rfc2231_fail(keys, vals, n, nparams);
+        }
+        /* Bad charset, percent sequence, or CTL: drop the continuation
+         * (same as a failed name*) instead of succeeding with "" / a
+         * truncated stitch of the pieces that happened to decode. */
+        if (!stitch_ok) {
+            for (int k = 0; k < nidx; k++)
+                if (owned[k]) free(parts[k]);
+            free(parts);
+            free(owned);
+            continue;
+        }
+
+        char *combined = (char *)malloc(total + 1);
+        char *newkey = (char *)malloc(blen + 1);
+        if (!combined || !newkey) {
+            free(combined);
+            free(newkey);
+            for (int k = 0; k < nidx; k++)
+                if (owned[k]) free(parts[k]);
+            free(parts);
+            free(owned);
+            free(had_single);
+            return mime_apply_rfc2231_fail(keys, vals, n, nparams);
+        }
+        size_t pos = 0;
+        for (int k = 0; k < nidx; k++) {
+            if (parts[k]) {
+                size_t plen = strlen(parts[k]);
+                memcpy(combined + pos, parts[k], plen);
+                pos += plen;
+            }
+            if (owned[k]) free(parts[k]);
+        }
+        combined[pos] = '\0';
+        memcpy(newkey, keys[i], blen);
+        newkey[blen] = '\0';
+        free(parts);
+        free(owned);
+
+        for (int j = 0; j < n; j++) {
+            if (j == p0 || !keys[j]) continue;
+            if (strcmp(keys[j], newkey) == 0) {
+                free(keys[j]);
+                free(vals[j]);
+                keys[j] = vals[j] = NULL;
+            }
+        }
+        free(keys[p0]);
+        free(vals[p0]);
+        keys[p0] = newkey;
+        vals[p0] = combined;
+    }
+
+    /* Unused * keys (failed name*, leftover pieces, name*01) are dropped. */
+    for (int i = 0; i < n; i++) {
+        if (keys[i] && strchr(keys[i], '*')) {
+            free(keys[i]);
+            free(vals[i]);
+            keys[i] = vals[i] = NULL;
+        }
+    }
+    free(had_single);
 
     int w = 0;
     for (int i = 0; i < n; i++) {
@@ -330,12 +555,16 @@ int neverc_mime_parse_media_type(const char *v,
             quoted = 1;
             value_start = ++p;
             while (*p && *p != '"') {
-                unsigned char c = (unsigned char)*p++;
-                if (c == '\\') {
+                unsigned char c = (unsigned char)*p;
+                if (c == '\r' || c == '\n') goto fail;
+                if (c == '\\' && p[1] &&
+                    mime_is_tspecial((unsigned char)p[1])) {
+                    p++;
                     c = (unsigned char)*p++;
                     if (c == '\0' || c == '\r' || c == '\n') goto fail;
-                } else if ((c < 32 && c != '\t') || c == 127) {
-                    goto fail;
+                } else {
+                    p++;
+                    if ((c < 32 && c != '\t') || c == 127) goto fail;
                 }
                 if (value_len == SIZE_MAX) goto fail;
                 value_len++;
@@ -371,7 +600,9 @@ int neverc_mime_parse_media_type(const char *v,
             const char *from = value_start;
             size_t to = 0;
             while (from < value_end) {
-                if (*from == '\\') from++;
+                if (*from == '\\' && from + 1 < value_end &&
+                    mime_is_tspecial((unsigned char)from[1]))
+                    from++;
                 value[to++] = *from++;
             }
             value[to] = '\0';

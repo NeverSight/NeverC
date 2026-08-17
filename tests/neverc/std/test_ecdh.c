@@ -196,12 +196,47 @@ static void test_invalid_inputs(void) {
                   shared, sizeof(shared)), -1);
 }
 
+static void test_p256_x_zero_is_valid_shared_secret(void) {
+    printf("[P256 x=0 shared secret]\n");
+    /* (0, y) is on P-256. d=1 * that point has x-coordinate 0, which is a
+     * valid shared secret, not the identity. Scalar 1 keeps this off the
+     * slow full-width ladder. */
+    unsigned char priv_one[NEVERC_ECDH_P256_PRIVKEY_SIZE] = {0};
+    priv_one[NEVERC_ECDH_P256_PRIVKEY_SIZE - 1] = 1;
+    unsigned char remote[NEVERC_ECDH_P256_PUBKEY_SIZE] = {0x04};
+    static const unsigned char y[32] = {
+        0x66, 0x48, 0x5c, 0x78, 0x0e, 0x2f, 0x83, 0xd7,
+        0x24, 0x33, 0xbd, 0x5d, 0x84, 0xa0, 0x6b, 0xb6,
+        0x54, 0x1c, 0x2a, 0xf3, 0x1d, 0xae, 0x87, 0x17,
+        0x28, 0xbf, 0x85, 0x6a, 0x17, 0x4f, 0x93, 0xf4,
+    };
+    memcpy(remote + 1 + 32, y, sizeof(y));
+
+    neverc_ecdh_key_t pub, alice;
+    ASSERT_EQ(neverc_ecdh_new_public_key(
+                  NEVERC_ECDH_CURVE_P256, remote, sizeof(remote), &pub),
+              0);
+    ASSERT_EQ(neverc_ecdh_new_private_key(
+                  NEVERC_ECDH_CURVE_P256, priv_one, sizeof(priv_one),
+                  &alice),
+              0);
+
+    unsigned char shared[NEVERC_ECDH_P256_SHARED_SIZE];
+    memset(shared, 0xff, sizeof(shared));
+    ASSERT_EQ(neverc_ecdh_compute(
+                  &alice, remote, sizeof(remote), shared, sizeof(shared)),
+              NEVERC_ECDH_P256_SHARED_SIZE);
+    unsigned char zeros[NEVERC_ECDH_P256_SHARED_SIZE] = {0};
+    ASSERT_TRUE(memcmp(shared, zeros, sizeof(zeros)) == 0);
+}
+
 int main(void) {
     printf("=== NeverC crypto/ecdh Tests ===\n");
     test_x25519_keygen();
     test_x25519_ecdh();
     test_x25519_rfc7748_vector();
     test_invalid_inputs();
+    test_p256_x_zero_is_valid_shared_secret();
 #ifdef NEVERC_TEST_SLOW
     /* P-256/P-384 tests use bigint-based scalar multiplication which is slow.
        Run with -DNEVERC_TEST_SLOW to enable. */

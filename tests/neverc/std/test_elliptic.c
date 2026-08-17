@@ -232,6 +232,63 @@ static void test_invalid_affine_points(void) {
     neverc_elliptic_point_free(&point);
 }
 
+static void test_x_zero_affine_point(void) {
+    printf("[x_zero_affine_point]\n");
+    const neverc_elliptic_curve_t *c = neverc_elliptic_p256();
+    neverc_elliptic_point_t pt, decoded, scaled, neg, sum;
+    neverc_elliptic_point_init(&pt);
+    neverc_elliptic_point_init(&decoded);
+    neverc_elliptic_point_init(&scaled);
+    neverc_elliptic_point_init(&neg);
+    neverc_elliptic_point_init(&sum);
+
+    neverc_bigint_set_int64(&pt.x, 0);
+    ASSERT_INT_EQ(neverc_bigint_set_string(
+                      &pt.y,
+                      "66485c780e2f83d72433bd5d84a06bb6541c2af31dae871728bf"
+                      "856a174f93f4",
+                      16),
+                  0);
+    ASSERT_TRUE(neverc_elliptic_is_on_curve(c, &pt));
+
+    unsigned char encoded[65];
+    size_t length = 0;
+    ASSERT_INT_EQ(neverc_elliptic_marshal(
+                      c, &pt, encoded, sizeof(encoded), &length),
+                  0);
+    ASSERT_INT_EQ((int)length, 65);
+    ASSERT_INT_EQ(encoded[0], 0x04);
+    int x_zero = 1;
+    for (int i = 1; i < 33; i++)
+        if (encoded[i]) x_zero = 0;
+    ASSERT_TRUE(x_zero);
+
+    ASSERT_INT_EQ(neverc_elliptic_unmarshal(c, &decoded, encoded, length), 0);
+    ASSERT_TRUE(neverc_bigint_is_zero(&decoded.x));
+    ASSERT_TRUE(neverc_bigint_cmp(&decoded.y, &pt.y) == 0);
+
+    neverc_bigint_t one;
+    neverc_bigint_init(&one);
+    neverc_bigint_set_int64(&one, 1);
+    neverc_elliptic_scalar_mult(c, &scaled, &pt, &one);
+    ASSERT_TRUE(neverc_bigint_is_zero(&scaled.x));
+    ASSERT_TRUE(neverc_bigint_cmp(&scaled.y, &pt.y) == 0);
+
+    neverc_bigint_set_int64(&neg.x, 0);
+    neverc_bigint_sub(&neg.y, &c->p, &pt.y);
+    ASSERT_TRUE(neverc_elliptic_is_on_curve(c, &neg));
+    neverc_elliptic_add(c, &sum, &pt, &neg);
+    ASSERT_TRUE(neverc_bigint_is_zero(&sum.x));
+    ASSERT_TRUE(neverc_bigint_is_zero(&sum.y));
+
+    neverc_bigint_free(&one);
+    neverc_elliptic_point_free(&pt);
+    neverc_elliptic_point_free(&decoded);
+    neverc_elliptic_point_free(&scaled);
+    neverc_elliptic_point_free(&neg);
+    neverc_elliptic_point_free(&sum);
+}
+
 static void test_identity(void) {
     printf("[identity]\n");
     const neverc_elliptic_curve_t *c = neverc_elliptic_p256();
@@ -317,6 +374,7 @@ int main(void) {
     test_scalar_mult();
     test_marshal_unmarshal();
     test_invalid_affine_points();
+    test_x_zero_affine_point();
     test_identity();
     test_unreduced_coordinates();
     test_p384();

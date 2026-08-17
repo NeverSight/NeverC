@@ -130,6 +130,41 @@ static void test_parse_edges(void) {
     ASSERT_STR_EQ(u.path, "/x");
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://@host/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://user@"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://user%zz@host/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://user%00@host/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://user:p%zz@host/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://user%40name@host/"), 0);
+    ASSERT_STR_EQ(u.user, "user%40name");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://:secret@host/"), 0);
+    ASSERT_STR_EQ(u.user, "");
+    ASSERT_STR_EQ(u.password, "secret");
+    ASSERT_STR_EQ(u.host, "host");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://user:@host/x"), 0);
+    ASSERT_STR_EQ(u.user, "user");
+    ASSERT_STR_EQ(u.password, "");
+    ASSERT_INT_EQ(u.has_password, 1);
+    ASSERT_STR_EQ(u.host, "host");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://:@host/x"), 0);
+    ASSERT_STR_EQ(u.user, "");
+    ASSERT_STR_EQ(u.password, "");
+    ASSERT_INT_EQ(u.has_password, 1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://evil.com\\@good.com/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://evil.com\\@good.com/x"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "//evil.com\\@good.com/path"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "//example.com/path?q=1#frag"), 0);
+    ASSERT_STR_EQ(u.scheme, "");
+    ASSERT_STR_EQ(u.host, "example.com");
+    ASSERT_STR_EQ(u.path, "/path");
+    ASSERT_STR_EQ(u.raw_query, "q=1");
+    ASSERT_STR_EQ(u.fragment, "frag");
+    ASSERT_INT_EQ(neverc_url_parse(
+        &u, "//user:p%40ss@[fe80::1%eth0]:8080/x"), 0);
+    ASSERT_STR_EQ(u.user, "user");
+    ASSERT_STR_EQ(u.password, "p%40ss");
+    ASSERT_STR_EQ(u.host, "fe80::1%eth0");
+    ASSERT_STR_EQ(u.port, "8080");
+    ASSERT_STR_EQ(u.path, "/x");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "//"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://ex%61mple.com/"), 0);
     ASSERT_STR_EQ(u.host, "example.com");
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://host%3a80/"), -1);
@@ -160,6 +195,22 @@ static void test_string(void) {
         &u, "https://[2001:db8::1]:8443/path"), 0);
     neverc_url_string(&u, buf, sizeof(buf));
     ASSERT_STR_EQ(buf, "https://[2001:db8::1]:8443/path");
+
+    ASSERT_INT_EQ(neverc_url_parse(&u, "//example.com/path"), 0);
+    neverc_url_string(&u, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "//example.com/path");
+
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://:secret@host/x"), 0);
+    neverc_url_string(&u, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "http://:secret@host/x");
+
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://user:@host/x"), 0);
+    neverc_url_string(&u, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "http://user:@host/x");
+
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://:@host/x"), 0);
+    neverc_url_string(&u, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "http://:@host/x");
 }
 
 static void test_values(void) {
@@ -233,6 +284,9 @@ static void test_unescape(void) {
 
     neverc_url_query_unescape("hello+world", buf, sizeof(buf));
     ASSERT_STR_EQ(buf, "hello world");
+
+    neverc_url_query_unescape("%2B", buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "+");
 
     neverc_url_path_unescape("hello+world", buf, sizeof(buf));
     ASSERT_STR_EQ(buf, "hello+world");

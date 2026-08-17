@@ -42,6 +42,7 @@ static void test_lookup(void) {
     ASSERT_EQ_INT(rc, 0);
     ASSERT_TRUE(strcmp(looked_up.username, current.username) == 0);
     ASSERT_TRUE(strcmp(looked_up.uid, current.uid) == 0);
+    ASSERT_TRUE(strcmp(looked_up.home_dir, current.home_dir) == 0);
 }
 
 static void test_lookup_id(void) {
@@ -121,6 +122,32 @@ static void test_home_dir(void) {
         free(saved);
     } else {
         unsetenv("HOME");
+    }
+
+    {
+        const char *cur = getenv("HOME");
+        char *restore = cur ? strdup(cur) : NULL;
+        char longhome[2048];
+        memset(longhome, 'x', 2000);
+        longhome[0] = '/';
+        longhome[2000] = '\0';
+        setenv("HOME", longhome, 1);
+        home = neverc_user_home_dir();
+        ASSERT_TRUE(home != NULL);
+        /* Must not silently truncate into the 1024-byte static buffer. */
+        ASSERT_TRUE(!(home[0] == '/' && home[1] == 'x' && strlen(home) == 1023));
+        cache = neverc_user_cache_dir();
+        ASSERT_TRUE(cache != NULL);
+        ASSERT_TRUE(!(cache[0] == '/' && cache[1] == 'x'));
+        config = neverc_user_config_dir();
+        ASSERT_TRUE(config != NULL);
+        ASSERT_TRUE(!(config[0] == '/' && config[1] == 'x'));
+        if (restore) {
+            setenv("HOME", restore, 1);
+            free(restore);
+        } else {
+            unsetenv("HOME");
+        }
     }
 #endif
 }

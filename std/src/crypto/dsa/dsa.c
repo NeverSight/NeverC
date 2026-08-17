@@ -123,13 +123,86 @@ static int dsa_in_order_q_subgroup(const neverc_bigint_t *elem,
     return ok;
 }
 
+/* Fixed-base Miller-Rabin. q is attacker-supplied, so this is a parameter
+ * screen rather than a cryptographic proof; combined with q | (p-1) it
+ * rejects the composite-q forgeries that g^q ≡ 1 alone would accept. */
+static int dsa_q_is_probable_prime(const neverc_bigint_t *q) {
+    neverc_bigint_t one, nm1, d, a, x;
+    neverc_bigint_init(&one);
+    neverc_bigint_init(&nm1);
+    neverc_bigint_init(&d);
+    neverc_bigint_init(&a);
+    neverc_bigint_init(&x);
+
+    neverc_bigint_set_int64(&one, 1);
+    neverc_bigint_sub(&nm1, q, &one);
+    neverc_bigint_set(&d, &nm1);
+    int r = 0;
+    while (neverc_bigint_bit(&d, 0) == 0) {
+        neverc_bigint_rsh(&d, &d, 1);
+        r++;
+    }
+
+    int result = 1;
+    int witnesses[] = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37};
+    int nw = (int)(sizeof(witnesses) / sizeof(witnesses[0]));
+
+    for (int i = 0; i < nw && result; i++) {
+        neverc_bigint_set_int64(&a, witnesses[i]);
+        if (neverc_bigint_cmp(&a, &nm1) >= 0)
+            continue;
+
+        neverc_bigint_exp(&x, &a, &d, q);
+
+        if (neverc_bigint_cmp(&x, &one) == 0 ||
+            neverc_bigint_cmp(&x, &nm1) == 0)
+            continue;
+
+        int found = 0;
+        for (int j = 0; j < r - 1; j++) {
+            neverc_bigint_mul(&x, &x, &x);
+            neverc_bigint_mod(&x, &x, q);
+            if (neverc_bigint_cmp(&x, &nm1) == 0) {
+                found = 1;
+                break;
+            }
+        }
+        if (!found)
+            result = 0;
+    }
+
+    neverc_bigint_free(&one);
+    neverc_bigint_free(&nm1);
+    neverc_bigint_free(&d);
+    neverc_bigint_free(&a);
+    neverc_bigint_free(&x);
+    return result;
+}
+
+static int dsa_q_divides_p_minus_1(const neverc_dsa_public_key_t *key) {
+    neverc_bigint_t one, pm1, rem;
+    neverc_bigint_init(&one);
+    neverc_bigint_init(&pm1);
+    neverc_bigint_init(&rem);
+    neverc_bigint_set_int64(&one, 1);
+    neverc_bigint_sub(&pm1, &key->p, &one);
+    neverc_bigint_mod(&rem, &pm1, &key->q);
+    int ok = neverc_bigint_is_zero(&rem);
+    neverc_bigint_free(&one);
+    neverc_bigint_free(&pm1);
+    neverc_bigint_free(&rem);
+    return ok;
+}
+
 static int dsa_group_valid(const neverc_dsa_public_key_t *key) {
     if (!key || neverc_bigint_sign(&key->p) <= 0 ||
         neverc_bigint_sign(&key->q) <= 0 ||
         neverc_bigint_sign(&key->g) <= 0)
         return 0;
-    /* q must be an odd prime-sized modulus (>= 3); p must be a larger odd
-     * prime-sized modulus. g=1 makes every (r=1,s) verify when y=1. */
+    /* q must be an odd prime (>= 3); p must be a larger odd modulus.
+     * g=1 makes every (r=1,s) verify when y=1. Composite q with g of
+     * smaller order, or q that does not divide p-1, makes verify a
+     * forgery oracle even when g^q ≡ 1 (mod p). */
     if (neverc_bigint_bit_len(&key->q) < 2 ||
         neverc_bigint_bit(&key->q, 0) == 0 ||
         neverc_bigint_bit(&key->p, 0) == 0 ||
@@ -142,6 +215,8 @@ static int dsa_group_valid(const neverc_dsa_public_key_t *key) {
     int ok = neverc_bigint_cmp(&key->g, &one) > 0;
     neverc_bigint_free(&one);
     if (!ok)
+        return 0;
+    if (!dsa_q_divides_p_minus_1(key) || !dsa_q_is_probable_prime(&key->q))
         return 0;
     return dsa_in_order_q_subgroup(&key->g, &key->q, &key->p);
 }

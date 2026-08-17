@@ -83,6 +83,15 @@ static void test_encrypt_decrypt(void) {
     ASSERT_TRUE(pt_len == 0);
     ASSERT_TRUE(pt[0] == 0x5a);
 
+    ASSERT_INT_EQ(neverc_rsa_encrypt_pkcs1v15(&key.pub,
+        (const unsigned char *)msg, msg_len, ct, sizeof(ct), &ct_len), 0);
+    memset(pt, 0x5a, sizeof(pt));
+    pt_len = 99;
+    ASSERT_INT_EQ(neverc_rsa_decrypt_pkcs1v15(&key,
+        ct, ct_len, pt, msg_len - 1, &pt_len), -1);
+    ASSERT_TRUE(pt_len == 0);
+    ASSERT_TRUE(pt[0] == 0x5a);
+
     neverc_rsa_private_key_free(&key);
 }
 
@@ -392,6 +401,55 @@ static void test_reject_weak_public_exponent(void) {
     neverc_rsa_public_key_free(&pub);
 }
 
+static void test_generate_key_rejects_oversized_bits(void) {
+    printf("[generate_key_oversized_bits]\n");
+    neverc_rsa_private_key_t key;
+    neverc_rsa_private_key_init(&key);
+    ASSERT_INT_EQ(neverc_rsa_generate_key(&key, 511), -1);
+    ASSERT_INT_EQ(neverc_rsa_generate_key(&key, 16385), -1);
+    ASSERT_TRUE(neverc_bigint_is_zero(&key.pub.n));
+    neverc_rsa_private_key_free(&key);
+}
+
+static void test_reject_oversized_public_exponent(void) {
+    printf("[reject_oversized_public_exponent]\n");
+    /* 1024-bit n from the PSS vector; e = 2^256+1 is odd and < n but
+     * exceeds the 256-bit FIPS cap that rsa_public_ok now enforces. */
+    static const char modulus[] =
+        "E46058153C0023B64C659D555395C044D1DDCA1D823FB43047305775E3C8E5F1"
+        "A414F555E50EE5CD2DC1B21C5F3FBA992FBD4F6592981DFD2D08BE9E514496B"
+        "B16D8A6C4841561D3027780119E392601D7E662EBE2B60E2A8663E7A70BE4AE1"
+        "0DF3BF095200C86CD61BFF253627CC0A0EF20A91219A737A323FB3110B061BC4B";
+    neverc_rsa_public_key_t pub;
+    neverc_rsa_public_key_init(&pub);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&pub.n, modulus, 16), 0);
+    ASSERT_INT_EQ(
+        neverc_bigint_set_string(
+            &pub.e, "1"
+                    "00000000000000000000000000000000"
+                    "00000000000000000000000000000001",
+            16),
+        0);
+    ASSERT_TRUE(neverc_bigint_bit_len(&pub.e) == 257);
+
+    unsigned char hash[NEVERC_SHA256_DIGEST_SIZE];
+    neverc_sha256_sum((const unsigned char *)"e-too-wide", 10, hash);
+    unsigned char sig[128];
+    memset(sig, 0x03, sizeof(sig));
+    ASSERT_TRUE(neverc_rsa_verify_pkcs1v15_sha256(
+                    &pub, hash, sizeof(hash), sig, sizeof(sig)) != 0);
+    ASSERT_TRUE(neverc_rsa_verify_pss_sha256(
+                    &pub, hash, sizeof(hash), sig, sizeof(sig)) != 0);
+
+    unsigned char out[128];
+    size_t out_len = 99;
+    ASSERT_INT_EQ(neverc_rsa_encrypt_pkcs1v15(
+                      &pub, hash, 8, out, sizeof(out), &out_len), -1);
+    ASSERT_TRUE(out_len == 0);
+
+    neverc_rsa_public_key_free(&pub);
+}
+
 static void test_init_free(void) {
     printf("[init_free]\n");
     neverc_rsa_public_key_t pub;
@@ -414,6 +472,8 @@ int main(void) {
     test_verify_pss_sha256();
     test_verify_pss_sha384_sha512();
     test_reject_weak_public_exponent();
+    test_generate_key_rejects_oversized_bits();
+    test_reject_oversized_public_exponent();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

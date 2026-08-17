@@ -31,6 +31,22 @@ static int zip_reader_error(neverc_zip_reader_t *r) {
     return -1;
 }
 
+typedef struct {
+    uint64_t start;
+    uint64_t end;
+} zip_range_t;
+
+static int zip_range_cmp(const void *left, const void *right) {
+    uint64_t a = ((const zip_range_t *)left)->start;
+    uint64_t b = ((const zip_range_t *)right)->start;
+    return (a > b) - (a < b);
+}
+
+static int zip_reader_fail(neverc_zip_reader_t *r, zip_range_t *ranges) {
+    free(ranges);
+    return zip_reader_error(r);
+}
+
 static int find_eocd(const uint8_t *data, size_t len, size_t *offset) {
     if (len < 22U) return -1;
     size_t earliest = len > 22U + UINT16_MAX
@@ -75,6 +91,7 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         (uint64_t)total_entries * 46U > central_size)
         return -1;
 
+    zip_range_t *ranges = NULL;
     if (total_entries > 0) {
         r->files = (neverc_zip_file_header_t *)malloc(
             (size_t)total_entries * sizeof(*r->files));
@@ -82,14 +99,18 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
             (size_t)total_entries * sizeof(*r->file_data));
         if (!r->files || !r->file_data) return zip_reader_error(r);
     }
+    if (total_entries > 1) {
+        ranges = (zip_range_t *)malloc(
+            (size_t)total_entries * sizeof(*ranges));
+        if (!ranges) return zip_reader_error(r);
+    }
 
     size_t cursor = central_offset;
     size_t central_end = cursor + central_size;
-    size_t validated_bytes = 0;
     for (uint16_t i = 0; i < total_entries; i++) {
         if (central_end - cursor < 46U ||
             read32(data + cursor) != 0x02014b50U)
-            return zip_reader_error(r);
+            return zip_reader_fail(r, ranges);
         const uint8_t *central = data + cursor;
         uint16_t flags = read16(central + 8U);
         uint16_t method = read16(central + 10U);
@@ -114,11 +135,11 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
             compressed_size != uncompressed_size ||
             name_length > 255U || name_length == 0 ||
             memchr(central + 46U, '\0', name_length) != NULL)
-            return zip_reader_error(r);
+            return zip_reader_fail(r, ranges);
 
         if ((uint64_t)local_offset + 30U > central_offset ||
             read32(data + local_offset) != 0x04034b50U)
-            return zip_reader_error(r);
+            return zip_reader_fail(r, ranges);
         const uint8_t *local = data + local_offset;
         uint16_t local_flags = read16(local + 6U);
         uint16_t local_method = read16(local + 8U);
@@ -135,32 +156,29 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
             data_offset > central_offset ||
             compressed_size > central_offset - data_offset ||
             memcmp(local + 30U, central + 46U, name_length) != 0)
-            return zip_reader_error(r);
+            return zip_reader_fail(r, ranges);
         if ((flags & 0x0008U) == 0) {
             if (local_crc != crc ||
                 local_compressed != compressed_size ||
                 local_uncompressed != uncompressed_size)
-                return zip_reader_error(r);
+                return zip_reader_fail(r, ranges);
         } else if ((local_crc != 0 && local_crc != crc) ||
                    (local_compressed != 0 &&
                     local_compressed != compressed_size) ||
                    (local_uncompressed != 0 &&
                     local_uncompressed != uncompressed_size)) {
-            return zip_reader_error(r);
+            return zip_reader_fail(r, ranges);
         }
-        if (compressed_size > len - validated_bytes)
-            return zip_reader_error(r);
-        validated_bytes += compressed_size;
         const uint8_t *file_data = data + (size_t)data_offset;
         if (neverc_crc32_ieee(file_data, compressed_size) != crc)
-            return zip_reader_error(r);
+            return zip_reader_fail(r, ranges);
 
         neverc_zip_file_header_t *file = &r->files[i];
         memset(file, 0, sizeof(*file));
         memcpy(file->name, central + 46U, name_length);
         file->name[name_length] = '\0';
         if (!zip_path_is_safe(file->name))
-            return zip_reader_error(r);
+            return zip_reader_fail(r, ranges);
         file->method = method;
         file->crc32 = crc;
         file->compressed_size = compressed_size;
@@ -168,10 +186,22 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         file->mod_time = mod_time;
         file->mod_date = mod_date;
         r->file_data[i] = file_data;
+        if (ranges) {
+            ranges[i].start = local_offset;
+            ranges[i].end = data_offset + compressed_size;
+        }
         r->nfiles++;
         cursor += (size_t)central_record_size;
     }
-    if (cursor != central_end) return zip_reader_error(r);
+    if (cursor != central_end) return zip_reader_fail(r, ranges);
+    if (ranges) {
+        qsort(ranges, total_entries, sizeof(*ranges), zip_range_cmp);
+        for (uint16_t i = 1; i < total_entries; i++) {
+            if (ranges[i].start < ranges[i - 1U].end)
+                return zip_reader_fail(r, ranges);
+        }
+        free(ranges);
+    }
     return 0;
 }
 

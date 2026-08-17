@@ -1,4 +1,5 @@
 #include "neverc/std/math/rand.h"
+#include "neverc/std/math.h"
 #include <stdio.h>
 
 static int tests_run = 0;
@@ -27,6 +28,13 @@ static void test_seed_determinism(void) {
     neverc_rand_seed(99);
     uint64_t c1 = neverc_rand_uint64();
     check_true("diff seed diff output", c1 != a1);
+
+    neverc_rand_seed(0);
+    uint64_t z1 = neverc_rand_uint64();
+    uint64_t z2 = neverc_rand_uint64();
+    check_true("seed 0 is not the zero stream", z1 != 0 || z2 != 0);
+    neverc_rand_seed(0);
+    check_true("seed 0 is deterministic", neverc_rand_uint64() == z1);
 }
 
 static void test_seed_independence(void) {
@@ -504,6 +512,14 @@ static void test_zipf(void) {
 
     check_true("zipf init fails for s<=1", neverc_rand_zipf_init(&z, 0.5, 1.0, 100) == 0);
     check_true("zipf init fails for v<1", neverc_rand_zipf_init(&z, 2.0, 0.5, 100) == 0);
+    check_true("zipf init rejects NaN s",
+               neverc_rand_zipf_init(&z, neverc_math_nan(), 1.0, 100) == 0);
+    check_true("zipf init rejects NaN v",
+               neverc_rand_zipf_init(&z, 2.0, neverc_math_nan(), 100) == 0);
+    check_true("zipf init rejects +Inf s",
+               neverc_rand_zipf_init(&z, neverc_math_inf(1), 1.0, 100) == 0);
+    check_true("zipf init rejects +Inf v",
+               neverc_rand_zipf_init(&z, 2.0, neverc_math_inf(1), 100) == 0);
     check_true("zipf init rejects null output",
                neverc_rand_zipf_init(NULL, 2.0, 1.0, 100) == 0);
     check_true("zipf null generator is harmless",
@@ -605,6 +621,7 @@ int main(void) {
     if (tests_failed > 0)
         printf(", %d FAILED", tests_failed);
     printf(" ===\n");
+    if (tests_failed == 0) puts("passed");
 
     return tests_failed > 0 ? 1 : 0;
 }

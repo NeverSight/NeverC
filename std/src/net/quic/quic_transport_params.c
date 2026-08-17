@@ -106,11 +106,13 @@ int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
             if (vlen > 20) return -1;
             memcpy(tp->original_dcid, val, vlen);
             tp->original_dcid_len = (uint8_t)vlen;
+            tp->has_original_dcid = 1;
             break;
         case QUIC_TP_INITIAL_SCID:
             if (vlen > 20) return -1;
             memcpy(tp->initial_scid, val, vlen);
             tp->initial_scid_len = (uint8_t)vlen;
+            tp->has_initial_scid = 1;
             break;
         case QUIC_TP_RETRY_SCID:
             if (vlen > 20) return -1;
@@ -190,6 +192,10 @@ int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
             tp->active_connection_id_limit = v;
             break;
         }
+        case QUIC_TP_PREFERRED_ADDRESS:
+            /* Contents are unused; presence is still role-checked. */
+            tp->has_preferred_address = 1;
+            break;
         case QUIC_TP_DISABLE_ACTIVE_MIGRATION:
             if (vlen != 0) return -1;
             tp->disable_active_migration = 1;
@@ -214,6 +220,33 @@ int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
         rem -= vlen;
     }
 
+    return 0;
+}
+
+int neverc_quic_transport_params_client_forbidden(
+    const quic_transport_params_t *tp) {
+    if (!tp) return -1;
+    /* RFC 9000 §18.2: original_destination_connection_id, preferred_address,
+     * retry_source_connection_id, and stateless_reset_token are server-only. */
+    return tp->has_original_dcid || tp->has_preferred_address ||
+           tp->has_retry_scid || tp->has_stateless_reset_token ? -1 : 0;
+}
+
+int neverc_quic_transport_params_require_client(
+    const quic_transport_params_t *tp) {
+    /* RFC 9000 §7.3 / §18.2: clients MUST send initial_source_connection_id
+     * and MUST NOT send the server-only parameters. */
+    if (!tp || !tp->has_initial_scid) return -1;
+    return neverc_quic_transport_params_client_forbidden(tp);
+}
+
+int neverc_quic_transport_params_require_server(
+    const quic_transport_params_t *tp) {
+    /* This stack never issues Retry, so retry_source_connection_id is
+     * TRANSPORT_PARAMETER_ERROR from a server (RFC 9000 §18.2). */
+    if (!tp || !tp->has_original_dcid || !tp->has_initial_scid ||
+        tp->has_retry_scid)
+        return -1;
     return 0;
 }
 
@@ -268,11 +301,11 @@ int neverc_quic_transport_params_encode(const quic_transport_params_t *tp,
         return -1;
     size_t pos = 0;
 
-    if (tp->original_dcid_len > 0)
+    if (tp->has_original_dcid || tp->original_dcid_len > 0)
         if (write_tp_bytes(buf, cap, &pos, QUIC_TP_ORIGINAL_DCID,
                             tp->original_dcid, tp->original_dcid_len) != 0) return -1;
 
-    if (tp->initial_scid_len > 0)
+    if (tp->has_initial_scid || tp->initial_scid_len > 0)
         if (write_tp_bytes(buf, cap, &pos, QUIC_TP_INITIAL_SCID,
                             tp->initial_scid, tp->initial_scid_len) != 0) return -1;
 

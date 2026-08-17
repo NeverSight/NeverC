@@ -163,7 +163,11 @@ typedef struct {
     uint64_t largest_acked;
     uint64_t acked_floor;
     uint64_t received_bitmap;
+    uint64_t extra_recv;
+    uint64_t ack_eliciting_bitmap;
     int has_recv;
+    int has_extra_recv;
+    int extra_ack_eliciting;
     int ack_pending;
 } quic_pn_state_t;
 
@@ -325,11 +329,14 @@ typedef struct {
 typedef struct {
     uint8_t original_dcid[QUIC_MAX_CID_LEN];
     uint8_t original_dcid_len;
+    int has_original_dcid;
     uint8_t initial_scid[QUIC_MAX_CID_LEN];
     uint8_t initial_scid_len;
+    int has_initial_scid;
     uint8_t retry_scid[QUIC_MAX_CID_LEN];
     uint8_t retry_scid_len;
     int has_retry_scid;
+    int has_preferred_address;
     uint64_t max_idle_timeout;
     uint64_t max_udp_payload_size;
     uint64_t initial_max_data;
@@ -514,13 +521,27 @@ int neverc_quic_write_long_header(uint8_t *buf, size_t cap,
 int neverc_quic_is_version_negotiation(const uint8_t *buf, size_t len);
 int neverc_quic_version_negotiation_supports(const uint8_t *buf, size_t len,
                                              uint32_t version);
+int neverc_quic_version_negotiation_dcid(const uint8_t *buf, size_t len,
+                                         quic_conn_id_t *dcid);
 int neverc_quic_write_version_negotiation(
     uint8_t *buf, size_t cap, uint8_t first_byte,
     const quic_conn_id_t *destination, const quic_conn_id_t *source,
     const uint32_t *versions, size_t nversions, size_t *written);
+int neverc_quic_unprotected_packet_length(const uint8_t *packet, size_t length,
+                                          uint8_t short_dcid_len,
+                                          size_t *packet_len);
 uint64_t neverc_quic_decode_packet_number(uint64_t largest_received,
                                           uint64_t truncated,
                                           unsigned packet_number_bits);
+int neverc_quic_pn_already_received(const quic_pn_state_t *state,
+                                    uint64_t packet_number);
+int neverc_quic_pn_was_ack_eliciting(const quic_pn_state_t *state,
+                                     uint64_t packet_number);
+int neverc_quic_pn_mark_received(quic_pn_state_t *state,
+                                 uint64_t packet_number, int ack_eliciting);
+int neverc_quic_pn_ack_ranges(const quic_pn_state_t *state,
+                              quic_ack_range_t *ranges, int max_ranges,
+                              int *nranges);
 
 int neverc_quic_derive_initial_keys(const uint8_t *dcid, size_t dcid_len,
                                     uint32_t version,
@@ -563,6 +584,8 @@ int neverc_quic_parse_stop_sending(const uint8_t *buf, size_t len,
 int neverc_quic_parse_new_conn_id(const uint8_t *buf, size_t len,
                                   quic_frame_new_conn_id_t *output,
                                   size_t *consumed);
+int neverc_quic_parse_new_token(const uint8_t *buf, size_t len,
+                                size_t *consumed);
 int neverc_quic_parse_connection_close(
     const uint8_t *buf, size_t len,
     quic_frame_connection_close_t *output, size_t *consumed);
@@ -601,6 +624,13 @@ uint64_t neverc_quic_effective_idle_timeout_ms(uint64_t local_ms,
                                               uint64_t peer_ms);
 int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
                                         quic_transport_params_t *params);
+/* RFC 9000 §18.2: a server MUST reject these parameters from a client. */
+int neverc_quic_transport_params_client_forbidden(
+    const quic_transport_params_t *params);
+int neverc_quic_transport_params_require_client(
+    const quic_transport_params_t *params);
+int neverc_quic_transport_params_require_server(
+    const quic_transport_params_t *params);
 int neverc_quic_transport_params_encode(
     const quic_transport_params_t *params, uint8_t *buf, size_t cap,
     size_t *written);

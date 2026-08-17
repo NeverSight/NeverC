@@ -342,6 +342,9 @@ static neverc_json_value_t *parse_number(parser_t *p) {
             return neverc_json_new_number(val);
         return NULL;
     }
+    /* DOM stores numbers as finite double; overflow must not become Inf. */
+    if (!isfinite(val))
+        return NULL;
 
     return neverc_json_new_number(val);
 }
@@ -628,9 +631,15 @@ err:
 static neverc_json_value_t *parse_value(parser_t *p) {
     int c = peek(p);
     if (c < 0) return NULL;
-    /* Recursion guard: parse_array/parse_object re-enter parse_value, so capping
-     * it here bounds total nesting depth and prevents a stack-overflow DoS. */
-    if (++p->depth > NCI_JSON_MAX_DEPTH) { p->depth--; return NULL; }
+    /* Recursion guard: only arrays/objects re-enter parse_value. Scalars must
+     * not consume a nesting slot — otherwise 1000-deep `[0]` / `{"a":null}`
+     * (legal under the same cap as empty `[[[]]]`) fail, while marshal of a
+     * constructed tree of that depth succeeds. */
+    int nested = (c == '[' || c == '{');
+    if (nested && ++p->depth > NCI_JSON_MAX_DEPTH) {
+        p->depth--;
+        return NULL;
+    }
     neverc_json_value_t *v;
     switch (c) {
         case 'n': v = parse_null(p); break;
@@ -640,7 +649,7 @@ static neverc_json_value_t *parse_value(parser_t *p) {
         case '{': v = parse_object(p); break;
         default:  v = parse_number(p); break;
     }
-    p->depth--;
+    if (nested) p->depth--;
     return v;
 }
 

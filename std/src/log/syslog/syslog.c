@@ -13,6 +13,15 @@ struct neverc_syslog {
 #endif
 };
 
+/* RFC 3164 records are newline-delimited. Replace CR/LF so a tag or
+ * message cannot inject a second "<PRI>..." line. */
+static void replace_record_breaks(char *s) {
+    for (; s && *s; s++) {
+        if (*s == '\n' || *s == '\r')
+            *s = ' ';
+    }
+}
+
 static void copy_tag(char *dst, size_t dstsz, const char *tag) {
     if (!tag || !*tag)
         tag = "neverc";
@@ -21,6 +30,9 @@ static void copy_tag(char *dst, size_t dstsz, const char *tag) {
         n = dstsz - 1;
     memcpy(dst, tag, n);
     dst[n] = '\0';
+    replace_record_breaks(dst);
+    if (dst[0] == '\0')
+        memcpy(dst, "neverc", 7);
 }
 
 int neverc_syslog_pri(neverc_syslog_facility_t facility,
@@ -40,19 +52,40 @@ static int write_allowed(neverc_syslog_t *log,
     return 1;
 }
 
-static const char *priority_name(neverc_syslog_priority_t priority) {
-    static const char *pnames[] = {
-        "EMERG", "ALERT", "CRIT", "ERR", "WARN", "NOTICE", "INFO", "DEBUG"
-    };
-    return pnames[(int)priority];
+enum { SYSLOG_MSG_MAX = 2048 };
+
+static void sanitize_msg(char *dst, size_t dstsz, const char *msg) {
+    if (!dst || dstsz == 0) return;
+    size_t n = msg ? strlen(msg) : 0;
+    if (n >= dstsz) n = dstsz - 1;
+    if (n > 0 && msg) memcpy(dst, msg, n);
+    dst[n] = '\0';
+    replace_record_breaks(dst);
+}
+
+int neverc_syslog_format(neverc_syslog_t *log,
+                         neverc_syslog_priority_t priority,
+                         const char *msg, char *buf, size_t n) {
+    if (!write_allowed(log, priority, msg) || !buf || n == 0)
+        return -1;
+    char msgbuf[SYSLOG_MSG_MAX];
+    sanitize_msg(msgbuf, sizeof(msgbuf), msg);
+    /* RFC 3164 / Go log/syslog: "<PRI>tag: message" with no extra fields. */
+    int written = snprintf(buf, n, "<%d>%s: %s",
+                           neverc_syslog_pri(log->facility, priority),
+                           log->tag, msgbuf);
+    if (written < 0 || (size_t)written >= n)
+        return -1;
+    return 0;
 }
 
 static int write_pri_fallback(neverc_syslog_t *log,
                               neverc_syslog_priority_t priority,
                               const char *msg) {
-    fprintf(stderr, "<%d>%s: [%s] %s\n",
-            neverc_syslog_pri(log->facility, priority),
-            log->tag, priority_name(priority), msg);
+    char line[SYSLOG_MSG_MAX + 160];
+    if (neverc_syslog_format(log, priority, msg, line, sizeof(line)) != 0)
+        return -1;
+    fprintf(stderr, "%s\n", line);
     return 0;
 }
 
@@ -87,7 +120,9 @@ int neverc_syslog_write(neverc_syslog_t *log,
     WORD etype = EVENTLOG_INFORMATION_TYPE;
     if (priority <= NEVERC_SYSLOG_ERR) etype = EVENTLOG_ERROR_TYPE;
     else if (priority <= NEVERC_SYSLOG_WARNING) etype = EVENTLOG_WARNING_TYPE;
-    const char *msgs[1] = { msg };
+    char msgbuf[SYSLOG_MSG_MAX];
+    sanitize_msg(msgbuf, sizeof(msgbuf), msg);
+    const char *msgs[1] = { msgbuf };
     ReportEventA(log->event_log, etype, 0, 0, NULL, 1, 0, msgs, NULL);
     return 0;
 }
@@ -121,7 +156,9 @@ int neverc_syslog_write(neverc_syslog_t *log,
                         neverc_syslog_priority_t priority,
                         const char *msg) {
     if (!write_allowed(log, priority, msg)) return -1;
-    syslog(neverc_syslog_pri(log->facility, priority), "%s", msg);
+    char msgbuf[SYSLOG_MSG_MAX];
+    sanitize_msg(msgbuf, sizeof(msgbuf), msg);
+    syslog(neverc_syslog_pri(log->facility, priority), "%s", msgbuf);
     return 0;
 }
 

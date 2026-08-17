@@ -345,6 +345,14 @@ static int is_perl_class_escape(char esc) {
            esc == 's' || esc == 'S';
 }
 
+/* Go/RE2: letter and digit escapes that are not a known sequence are errors
+ * (no backreferences, no silent `\q` -> `q`). Metacharacters may still be
+ * escaped. */
+static int is_unknown_ident_escape(int esc) {
+    return (esc >= '0' && esc <= '9') ||
+           (esc >= 'A' && esc <= 'Z') || (esc >= 'a' && esc <= 'z');
+}
+
 /* RE2/Go: $ matches at end of text, or immediately before a final newline. */
 static int anchor_end_at(const char *s, size_t slen, size_t pos) {
     return pos == slen || (pos + 1 == slen && s[pos] == '\n');
@@ -645,7 +653,12 @@ static frag_t parse_atom(parser_t *par) {
                 } else {
                     int decoded;
                     if (decode_char_esc(esc, &decoded)) lo = decoded;
-                    else lo = (uint8_t)esc;
+                    else if (is_unknown_ident_escape((unsigned char)esc)) {
+                        par->err = "invalid escape sequence";
+                        goto class_fail;
+                    } else {
+                        lo = (uint8_t)esc;
+                    }
                 }
             }
             if (*par->p == '-' && par->p[1] && par->p[1] != ']') {
@@ -689,7 +702,12 @@ static frag_t parse_atom(parser_t *par) {
                     } else {
                         int decoded;
                         if (decode_char_esc(esc, &decoded)) hi = decoded;
-                        else hi = (uint8_t)esc;
+                        else if (is_unknown_ident_escape((unsigned char)esc)) {
+                            par->err = "invalid escape sequence";
+                            goto class_fail;
+                        } else {
+                            hi = (uint8_t)esc;
+                        }
                     }
                 } else {
                     hi = (uint8_t)*par->p++;
@@ -803,8 +821,7 @@ static frag_t parse_atom(parser_t *par) {
             }
             /* Metacharacters may be escaped; letter/digit unknowns are errors
              * (Go/RE2: no backreferences, no silent `\q` -> `q`). */
-            if ((esc >= '0' && esc <= '9') ||
-                (esc >= 'A' && esc <= 'Z') || (esc >= 'a' && esc <= 'z')) {
+            if (is_unknown_ident_escape((unsigned char)esc)) {
                 par->err = "invalid escape sequence";
                 return frag(NULL, NULL);
             }
@@ -1329,8 +1346,11 @@ static void search_add(search_ctx *ctx, tlist_t *tl, nfa_state_t *s,
     while (wn > 0) {
         s = wst[--wn];
         if (s->type == NFA_SPLIT) {
-            search_push(wst, &wn, visited, gen, nstates, s->out1);
+            /* Stack is LIFO: push out2 first so out1 (left alternative) is
+             * visited first. Dedup-by-state then keeps leftmost-first captures
+             * when both sides of `|` reach the same join. */
             search_push(wst, &wn, visited, gen, nstates, s->out2);
+            search_push(wst, &wn, visited, gen, nstates, s->out1);
             continue;
         }
         if (s->type == NFA_MATCH && s->out1 != NULL) {   /* epsilon link */
@@ -1556,8 +1576,10 @@ static void cap_closure(cap_env_t *e, nfa_state_t *start, const size_t *init,
         memcpy(e->scratch, e->wcap + (size_t)e->wn * (size_t)e->nslots,
                (size_t)e->nslots * sizeof(size_t));
         if (s->type == NFA_SPLIT) {
-            cap_push(e, s->out1, e->scratch);
+            /* Same LIFO as search_add: left alternative must reach a shared
+             * join first, or `(a)|a` / `a|(a)` record the wrong groups. */
             cap_push(e, s->out2, e->scratch);
+            cap_push(e, s->out1, e->scratch);
             continue;
         }
         if (s->type == NFA_MATCH && s->out1 != NULL) {
@@ -1656,11 +1678,14 @@ static int nfa_exec_caps(neverc_regexp_t *re, const char *s, size_t slen,
     size_t best_end = (size_t)-1;
     for (int i = 0; i < cur_n; i++) {
         if (cur_st[i]->type == NFA_MATCH && cur_st[i]->out1 == NULL) {
-            best_end = start;
-            memcpy(out_caps, cur_cap + (size_t)i * (size_t)nslots,
-                   (size_t)nslots * sizeof(size_t));
-            out_caps[0] = start;
-            out_caps[1] = start;
+            /* First accept at this length wins (left alternative). */
+            if (best_end == (size_t)-1) {
+                best_end = start;
+                memcpy(out_caps, cur_cap + (size_t)i * (size_t)nslots,
+                       (size_t)nslots * sizeof(size_t));
+                out_caps[0] = start;
+                out_caps[1] = start;
+            }
         }
     }
 
@@ -1696,11 +1721,17 @@ static int nfa_exec_caps(neverc_regexp_t *re, const char *s, size_t slen,
 
         for (int j = 0; j < cur_n; j++) {
             if (cur_st[j]->type == NFA_MATCH && cur_st[j]->out1 == NULL) {
-                best_end = i + 1;
-                memcpy(out_caps, cur_cap + (size_t)j * (size_t)nslots,
-                       (size_t)nslots * sizeof(size_t));
-                out_caps[0] = start;
-                out_caps[1] = best_end;
+                size_t end = i + 1;
+                /* Longer match wins; equal length keeps the first thread
+                 * (left alternative). Overwriting on `end == best_end` used
+                 * to swap `(a)|a` / `a|(a)` group slots. */
+                if (best_end == (size_t)-1 || end > best_end) {
+                    best_end = end;
+                    memcpy(out_caps, cur_cap + (size_t)j * (size_t)nslots,
+                           (size_t)nslots * sizeof(size_t));
+                    out_caps[0] = start;
+                    out_caps[1] = best_end;
+                }
             }
         }
         if (cur_n == 0) break;

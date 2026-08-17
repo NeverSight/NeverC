@@ -206,9 +206,7 @@ static char *xml_decode_text(const char *data, size_t length,
             }
             if (!xml_char_is_valid(codepoint))
                 goto invalid;
-            if (attribute && (codepoint == '\r' || codepoint == '\n' ||
-                              codepoint == '\t'))
-                codepoint = ' ';
+            /* Character references keep the referenced character (XML 1.0 §3.3.3). */
             char encoded[4];
             size_t encoded_length = xml_encode_utf8(codepoint, encoded);
             memcpy(decoded + output, encoded, encoded_length);
@@ -280,6 +278,99 @@ static char *xml_copy_valid_text(const char *data, size_t length,
     copy[output] = '\0';
     *copied_length = output;
     return copy;
+}
+
+static int xml_ascii_ws(unsigned char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+static unsigned char xml_ascii_lower(unsigned char c) {
+    return (c >= 'A' && c <= 'Z') ? (unsigned char)(c + 32) : c;
+}
+
+static int xml_memieq(const char *s, size_t n, const char *lit) {
+    size_t i;
+    for (i = 0; lit[i]; i++) {
+        if (i >= n || xml_ascii_lower((unsigned char)s[i]) !=
+                          xml_ascii_lower((unsigned char)lit[i]))
+            return 0;
+    }
+    return i == n;
+}
+
+/* Locate `key = "value"` / `key='value'` in PI data. `key` must be preceded
+ * by the start of the buffer or whitespace so `notencoding=` is not a hit. */
+static int xml_pi_find(const char *data, size_t len, size_t from,
+                       const char *key, const char **value, size_t *value_len,
+                       size_t *next) {
+    size_t key_len = strlen(key);
+    size_t i = from;
+    while (i < len) {
+        if (i > 0 && !xml_ascii_ws((unsigned char)data[i - 1])) {
+            i++;
+            continue;
+        }
+        while (i < len && xml_ascii_ws((unsigned char)data[i]))
+            i++;
+        if (i + key_len > len)
+            return 0;
+        if (!xml_memieq(data + i, key_len, key)) {
+            i++;
+            continue;
+        }
+        size_t j = i + key_len;
+        if (j < len && !xml_ascii_ws((unsigned char)data[j]) && data[j] != '=') {
+            i++;
+            continue;
+        }
+        while (j < len && xml_ascii_ws((unsigned char)data[j]))
+            j++;
+        if (j >= len || data[j] != '=') {
+            i++;
+            continue;
+        }
+        j++;
+        while (j < len && xml_ascii_ws((unsigned char)data[j]))
+            j++;
+        if (j >= len || (data[j] != '"' && data[j] != '\''))
+            return -1;
+        char q = data[j++];
+        size_t vs = j;
+        while (j < len && data[j] != q)
+            j++;
+        if (j >= len)
+            return -1;
+        *value = data + vs;
+        *value_len = j - vs;
+        *next = j + 1;
+        return 1;
+    }
+    return 0;
+}
+
+/* Go encoding/xml: only version 1.0, and only UTF-8 without CharsetReader.
+ * Every encoding= value is checked so a second non-UTF-8 declaration cannot
+ * sneak past the first. */
+static int xml_decl_ok(const char *data, size_t len) {
+    const char *val;
+    size_t vlen = 0, next = 0;
+    int found = xml_pi_find(data, len, 0, "version", &val, &vlen, &next);
+    if (found < 0)
+        return 0;
+    if (found && (vlen != 3 || memcmp(val, "1.0", 3) != 0))
+        return 0;
+
+    size_t from = 0;
+    for (;;) {
+        found = xml_pi_find(data, len, from, "encoding", &val, &vlen, &next);
+        if (found < 0)
+            return 0;
+        if (!found)
+            return 1;
+        if (vlen != 0 && !xml_memieq(val, vlen, "utf-8"))
+            return 0;
+        from = next;
+    }
 }
 
 static void skip_ws(neverc_xml_decoder_t *d) {
@@ -498,6 +589,10 @@ int neverc_xml_decode_token(neverc_xml_decoder_t *d, neverc_xml_token_t *tok) {
             d->src + ps, d->pos - ps, &tok->data_len);
         if (!tok->data) goto error;
         d->pos += 2;
+        if (target_length == 3 &&
+            xml_memieq(d->src + target_start, 3, "xml") &&
+            !xml_decl_ok(tok->data, tok->data_len))
+            goto error;
         return 1;
     }
 

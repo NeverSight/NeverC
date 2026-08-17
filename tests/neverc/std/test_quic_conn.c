@@ -794,6 +794,101 @@ static void test_configure_rejects_unknown_version(void) {
     neverc_quic_conn_destroy(conn);
 }
 
+static void test_stream_fin_smaller_than_highest_is_final_size_error(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    uint8_t data[10];
+    memset(data, 'A', sizeof(data));
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.data = data;
+    frame.data_len = sizeof(data);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+
+    frame.data_len = 0;
+    frame.fin = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), -1);
+    ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_FINAL_SIZE_ERROR);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_stream_after_reset_stays_reset(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    uint8_t data[5] = { 'h', 'e', 'l', 'l', 'o' };
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.data = data;
+    frame.data_len = sizeof(data);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+
+    quic_frame_reset_stream_t reset;
+    memset(&reset, 0, sizeof(reset));
+    reset.stream_id = 0;
+    reset.error_code = 0x01;
+    reset.final_size = sizeof(data);
+    ASSERT_EQ(neverc_quic_stream_receive_reset(conn, &reset), 0);
+
+    frame.fin = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, 0);
+    ASSERT_NOT_NULL(stream);
+    char buf[8] = {0};
+    ASSERT_EQ(neverc_quic_stream_read_data(stream, buf, sizeof(buf)), 5);
+    ASSERT_TRUE(memcmp(buf, "hello", 5) == 0);
+    ASSERT_EQ(neverc_quic_stream_read_data(stream, buf, sizeof(buf)), -1);
+    ASSERT_EQ(stream->state, QUIC_STREAM_RESET);
+    ASSERT_EQ(stream->recv_fin, 0);
+    neverc_quic_conn_destroy(conn);
+
+    conn = neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    memset(&reset, 0, sizeof(reset));
+    reset.stream_id = 0;
+    reset.final_size = sizeof(data);
+    ASSERT_EQ(neverc_quic_stream_receive_reset(conn, &reset), 0);
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.data = data;
+    frame.data_len = sizeof(data);
+    frame.fin = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    stream = neverc_quic_conn_find_stream(conn, 0);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_EQ(neverc_quic_stream_read_data(stream, buf, sizeof(buf)), -1);
+    ASSERT_EQ(stream->recv_fin, 0);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_reset_final_size_below_highest(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    uint8_t data[10];
+    memset(data, 'B', sizeof(data));
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.data = data;
+    frame.data_len = sizeof(data);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+
+    quic_frame_reset_stream_t reset;
+    memset(&reset, 0, sizeof(reset));
+    reset.stream_id = 0;
+    reset.final_size = 4;
+    ASSERT_EQ(neverc_quic_stream_receive_reset(conn, &reset), -1);
+    ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_FINAL_SIZE_ERROR);
+    neverc_quic_conn_destroy(conn);
+}
+
 static void test_stream_overlapping_data_must_match(void) {
     struct neverc_quic_conn *conn =
         neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
@@ -909,6 +1004,108 @@ static void test_version_negotiation_empty_cid(void) {
         buf, written, NEVERC_QUIC_VERSION_1));
 }
 
+static void test_version_negotiation_dcid_extract(void) {
+    quic_conn_id_t dcid;
+    quic_conn_id_t scid;
+    memset(&dcid, 0, sizeof(dcid));
+    memset(&scid, 0, sizeof(scid));
+    dcid.len = 8;
+    scid.len = 4;
+    memset(dcid.data, 0xaa, 8);
+    memset(scid.data, 0xbb, 4);
+    uint32_t version = NEVERC_QUIC_VERSION_1;
+    uint8_t buf[64];
+    size_t written = 0;
+    ASSERT_EQ(neverc_quic_write_version_negotiation(
+                  buf, sizeof(buf), 0x80, &dcid, &scid, &version, 1,
+                  &written),
+              0);
+    quic_conn_id_t got;
+    memset(&got, 0, sizeof(got));
+    ASSERT_EQ(neverc_quic_version_negotiation_dcid(buf, written, &got), 0);
+    ASSERT_EQ(got.len, 8);
+    ASSERT_TRUE(memcmp(got.data, dcid.data, 8) == 0);
+    ASSERT_EQ(neverc_quic_version_negotiation_dcid(buf, 4, &got), -1);
+}
+
+static void test_unprotected_packet_length_coalesced_and_truncated(void) {
+    uint8_t buf[64];
+    memset(buf, 0xcc, sizeof(buf));
+    buf[0] = 0xC0; /* long, fixed, Initial, 1-byte PN */
+    buf[1] = 0;
+    buf[2] = 0;
+    buf[3] = 0;
+    buf[4] = 1; /* v1 */
+    buf[5] = 0; /* DCID len */
+    buf[6] = 0; /* SCID len */
+    buf[7] = 0; /* token len */
+    buf[8] = 20; /* Length */
+    size_t packet_len = 0;
+    ASSERT_EQ(neverc_quic_unprotected_packet_length(buf, 40, 0, &packet_len),
+              0);
+    ASSERT_EQ(packet_len, 29);
+    ASSERT_EQ(neverc_quic_unprotected_packet_length(buf, 14, 0, &packet_len),
+              -1);
+
+    uint8_t short_hdr[20];
+    memset(short_hdr, 0x11, sizeof(short_hdr));
+    short_hdr[0] = 0x40;
+    ASSERT_EQ(neverc_quic_unprotected_packet_length(short_hdr,
+                                                    sizeof(short_hdr), 8,
+                                                    &packet_len),
+              0);
+    ASSERT_EQ(packet_len, sizeof(short_hdr));
+    ASSERT_EQ(neverc_quic_unprotected_packet_length(short_hdr, 5, 8,
+                                                    &packet_len),
+              -1);
+}
+
+static void test_pn_window_tracks_extra_and_reacks(void) {
+    quic_pn_state_t state;
+    memset(&state, 0, sizeof(state));
+    ASSERT_EQ(neverc_quic_pn_already_received(&state, 0), 0);
+    ASSERT_EQ(neverc_quic_pn_mark_received(&state, 0, 1), 1);
+    ASSERT_EQ(neverc_quic_pn_already_received(&state, 0), 1);
+    ASSERT_EQ(neverc_quic_pn_mark_received(&state, 0, 1), 0);
+    ASSERT_EQ(neverc_quic_pn_was_ack_eliciting(&state, 0), 1);
+
+    ASSERT_EQ(neverc_quic_pn_mark_received(&state, 100, 1), 1);
+    ASSERT_EQ(neverc_quic_pn_already_received(&state, 0), 1);
+    ASSERT_EQ(neverc_quic_pn_already_received(&state, 1), 0);
+    ASSERT_EQ(neverc_quic_pn_mark_received(&state, 0, 1), 0);
+    ASSERT_EQ(neverc_quic_pn_was_ack_eliciting(&state, 0), 1);
+
+    quic_ack_range_t ranges[8];
+    int nranges = 0;
+    ASSERT_EQ(neverc_quic_pn_ack_ranges(&state, ranges, 8, &nranges), 0);
+    ASSERT_EQ(nranges, 2);
+    ASSERT_EQ(ranges[0].start, 100);
+    ASSERT_EQ(ranges[0].end, 101);
+    ASSERT_EQ(ranges[1].start, 0);
+    ASSERT_EQ(ranges[1].end, 1);
+
+    quic_pn_state_t window;
+    memset(&window, 0, sizeof(window));
+    uint64_t pn;
+    for (pn = 0; pn < 64; pn++)
+        ASSERT_EQ(neverc_quic_pn_mark_received(&window, pn, 1), 1);
+    ASSERT_EQ(neverc_quic_pn_mark_received(&window, 64, 1), 1);
+    ASSERT_EQ(neverc_quic_pn_already_received(&window, 0), 1);
+    ASSERT_EQ(neverc_quic_pn_already_received(&window, 1), 1);
+    nranges = 0;
+    ASSERT_EQ(neverc_quic_pn_ack_ranges(&window, ranges, 8, &nranges), 0);
+    ASSERT_EQ(nranges, 1);
+    ASSERT_EQ(ranges[0].start, 0);
+    ASSERT_EQ(ranges[0].end, 65);
+
+    quic_pn_state_t ack_only;
+    memset(&ack_only, 0, sizeof(ack_only));
+    ASSERT_EQ(neverc_quic_pn_mark_received(&ack_only, 0, 0), 1);
+    ASSERT_EQ(neverc_quic_pn_mark_received(&ack_only, 100, 1), 1);
+    ASSERT_EQ(neverc_quic_pn_was_ack_eliciting(&ack_only, 0), 0);
+    ASSERT_EQ(neverc_quic_pn_already_received(&ack_only, 0), 1);
+}
+
 static void test_retired_local_cid_still_matches(void) {
     struct neverc_quic_conn *conn =
         neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
@@ -971,11 +1168,17 @@ int main(void) {
     test_conn_defaults_to_quic_v1();
     test_copy_peer_cid_allows_empty();
     test_configure_rejects_unknown_version();
+    test_stream_fin_smaller_than_highest_is_final_size_error();
+    test_stream_after_reset_stays_reset();
+    test_reset_final_size_below_highest();
     test_stream_overlapping_data_must_match();
     test_new_conn_id_retire_prior_to_marks_unsent();
     test_apply_max_data_raises_window();
     test_version_negotiation_roundtrip();
     test_version_negotiation_empty_cid();
+    test_version_negotiation_dcid_extract();
+    test_unprotected_packet_length_coalesced_and_truncated();
+    test_pn_window_tracks_extra_and_reacks();
     test_retired_local_cid_still_matches();
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);
     if (tests_failed == 0) puts("passed");

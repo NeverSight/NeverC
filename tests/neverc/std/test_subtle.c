@@ -120,6 +120,16 @@ static void test_constant_time_copy(void) {
     uint8_t w[1] = {0};
     neverc_subtle_constant_time_copy(1, z, w, 0);
     check_int("copy(1,len=0) unchanged", z[0], 99);
+
+    neverc_subtle_constant_time_copy(1, NULL, y, 0);
+    neverc_subtle_constant_time_copy(1, x, NULL, 5);
+    check_mem("copy null src leaves dest", x, y, 5);
+
+    /* dst = src+1 must not clobber unread source bytes. */
+    uint8_t overlap[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    neverc_subtle_constant_time_copy(1, overlap + 1, overlap, 5);
+    uint8_t overlap_exp[8] = {1, 1, 2, 3, 4, 5, 7, 8};
+    check_mem("copy overlapping dst=src+1", overlap, overlap_exp, 8);
 }
 
 static void test_constant_time_less_or_eq(void) {

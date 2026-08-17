@@ -300,6 +300,23 @@ int neverc_quic_parse_stop_sending(const uint8_t *buf, size_t len,
     return 0;
 }
 
+int neverc_quic_parse_new_token(const uint8_t *buf, size_t len,
+                                size_t *consumed) {
+    const uint8_t *p = buf;
+    size_t rem = len;
+    uint64_t ftype;
+    uint64_t token_len;
+
+    if (!buf || !consumed || consume_varint(&p, &rem, &ftype) != 0 ||
+        ftype != QUIC_FRAME_NEW_TOKEN ||
+        consume_varint(&p, &rem, &token_len) != 0 ||
+        token_len == 0 || token_len > rem)
+        return -1;
+    p += (size_t)token_len;
+    *consumed = (size_t)(p - buf);
+    return 0;
+}
+
 int neverc_quic_parse_new_conn_id(const uint8_t *buf, size_t len,
                                     quic_frame_new_conn_id_t *out,
                                     size_t *consumed) {

@@ -146,11 +146,14 @@ int neverc_signal_wait(const int *sigs, int nsigs) {
 #include <errno.h>
 
 static neverc_signal_handler_t g_handlers[64] = {0};
+static volatile sig_atomic_t g_pending[64] = {0};
 
 static void posix_signal_handler(int signum) {
     neverc_signal_handler_t handler = NULL;
-    if (signum >= 0 && signum < 64)
+    if (signum >= 0 && signum < 64) {
         handler = g_handlers[signum];
+        g_pending[signum] = 1;
+    }
     if (handler)
         handler(signum);
 }
@@ -210,8 +213,22 @@ int neverc_signal_wait(const int *sigs, int nsigs) {
     sigset_t old;
     if (sigprocmask(SIG_BLOCK, &set, &old) != 0) return -1;
 
+    /* Consume a signal already delivered to neverc_signal_notify's handler.
+     * sigwait only sees signals that arrive while blocked; notify+raise
+     * otherwise lost the wakeup (Windows records the same pending bit). */
+    for (int i = 0; i < nsigs; i++) {
+        int delivered = sigs[i];
+        if (delivered >= 0 && delivered < 64 && g_pending[delivered]) {
+            g_pending[delivered] = 0;
+            sigprocmask(SIG_SETMASK, &old, NULL);
+            return delivered;
+        }
+    }
+
     int sig = 0;
     int rc = sigwait(&set, &sig);
+    if (rc == 0 && sig >= 0 && sig < 64)
+        g_pending[sig] = 0;
 
     sigprocmask(SIG_SETMASK, &old, NULL);
     return rc == 0 ? sig : -1;

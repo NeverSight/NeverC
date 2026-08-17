@@ -136,6 +136,32 @@ static void test_invalid_key(void) {
     check_true("reject null key", neverc_aes_init(&ctx, NULL, 16) == -1);
 }
 
+static void test_failed_reinit_wipes_key(void) {
+    printf("[AES failed re-init wipes key]\n");
+    neverc_aes_ctx_t ctx;
+    uint8_t key[16], pt[16], ct[16], leftover[16], aa[16];
+    hex_to_bytes("2b7e151628aed2a6abf7158809cf4f3c", key, 16);
+    hex_to_bytes("3243f6a8885a308d313198a2e0370734", pt, 16);
+
+    check_true("init", neverc_aes_init(&ctx, key, 16) == 0);
+    neverc_aes_encrypt_block(&ctx, ct, pt);
+
+    check_true("re-init bad length fails", neverc_aes_init(&ctx, key, 15) == -1);
+    memset(leftover, 0xAA, 16);
+    memset(aa, 0xAA, 16);
+    neverc_aes_encrypt_block(&ctx, leftover, pt);
+    check_true("encrypt after failed re-init is a no-op",
+               memcmp(leftover, aa, 16) == 0);
+
+    check_true("re-init null key fails", neverc_aes_init(&ctx, NULL, 16) == -1);
+    memset(leftover, 0xAA, 16);
+    neverc_aes_encrypt_block(&ctx, leftover, pt);
+    check_true("encrypt after null-key re-init is a no-op",
+               memcmp(leftover, aa, 16) == 0);
+    check_true("failed re-init does not keep the old key",
+               memcmp(leftover, ct, 16) != 0);
+}
+
 static void test_round_trip(void) {
     printf("[AES round-trip]\n");
 
@@ -168,6 +194,7 @@ int main(void) {
     test_aes192();
     test_aes256();
     test_invalid_key();
+    test_failed_reinit_wipes_key();
     test_round_trip();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

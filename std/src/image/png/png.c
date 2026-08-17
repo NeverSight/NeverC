@@ -2,6 +2,7 @@
 #include "neverc/std/compress/flate.h"
 #include "neverc/std/hash/crc32.h"
 #include "neverc/std/hash/adler32.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -135,7 +136,10 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
         const uint8_t *chunk_type = data + pos + 4;
         const uint8_t *chunk_data = data + pos + 8;
 
-        if ((size_t)chunk_len > len - pos - 12) break;
+        if ((size_t)chunk_len > len - pos - 12) {
+            png_decode_fail(img, idat_buf, NULL);
+            return -1;
+        }
         if (read_u32be(chunk_data + chunk_len) !=
             png_chunk_crc(chunk_type, (size_t)chunk_len + 4U)) {
             png_decode_fail(img, idat_buf, NULL);
@@ -173,7 +177,16 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
                 png_decode_fail(img, idat_buf, NULL);
                 return -1;
             }
+            if (img->width > SIZE_MAX / img->channels) {
+                png_decode_fail(img, idat_buf, NULL);
+                return -1;
+            }
             img->stride = (size_t)img->width * img->channels;
+            if (img->stride > SIZE_MAX - 1U ||
+                img->height > SIZE_MAX / (img->stride + 1U)) {
+                png_decode_fail(img, idat_buf, NULL);
+                return -1;
+            }
             ihdr_found = 1;
         } else if (memcmp(chunk_type, "PLTE", 4) == 0) {
             if (idat_seen || chunk_len == 0 || chunk_len > 768 ||
@@ -259,6 +272,12 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
     uint32_t expected_adler = read_u32be(idat_buf + idat_len - 4U);
 
     /* Skip zlib header (2 bytes) and checksum (4 bytes at end). */
+    if (img->stride > SIZE_MAX - 1U ||
+        img->height > SIZE_MAX / (img->stride + 1U) ||
+        (img->stride != 0 && img->height > SIZE_MAX / img->stride)) {
+        png_decode_fail(img, idat_buf, NULL);
+        return -1;
+    }
     size_t raw_size = (img->stride + 1) * img->height;
     uint8_t *raw = (uint8_t *)malloc(raw_size);
     if (!raw) {

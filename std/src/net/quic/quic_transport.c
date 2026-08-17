@@ -113,50 +113,13 @@ static quic_enc_level_t qt_packet_level(quic_packet_type_t type) {
     return QUIC_ENC_APPLICATION;
 }
 
-static int qt_mark_received(quic_pn_state_t *state, uint64_t packet_number) {
-    if (!state) return -1;
-    if (!state->has_recv) {
-        state->has_recv = 1;
-        state->largest_recv = packet_number;
-        state->received_bitmap = 1;
-        return 1;
-    }
-    if (packet_number > state->largest_recv) {
-        uint64_t shift = packet_number - state->largest_recv;
-        state->received_bitmap = shift >= 64 ? 1 :
-            (state->received_bitmap << (unsigned)shift) | 1U;
-        state->largest_recv = packet_number;
-        return 1;
-    }
-    uint64_t distance = state->largest_recv - packet_number;
-    if (distance >= 64) return 0;
-    uint64_t mask = UINT64_C(1) << (unsigned)distance;
-    if (state->received_bitmap & mask) return 0;
-    state->received_bitmap |= mask;
-    return 1;
-}
-
 static int qt_write_ack(quic_pn_state_t *state, uint8_t *output,
                         size_t capacity, size_t *written) {
     if (!state || !state->has_recv || !output || !written) return -1;
-    quic_ack_range_t ranges[64];
+    quic_ack_range_t ranges[65];
     int range_count = 0;
-    unsigned bit = 0;
-    while (bit < 64 && bit <= state->largest_recv) {
-        while (bit < 64 && bit <= state->largest_recv &&
-               (state->received_bitmap & (UINT64_C(1) << bit)) == 0)
-            bit++;
-        if (bit >= 64 || bit > state->largest_recv) break;
-        unsigned first = bit;
-        while (bit < 64 && bit <= state->largest_recv &&
-               (state->received_bitmap & (UINT64_C(1) << bit)) != 0)
-            bit++;
-        unsigned last = bit - 1U;
-        ranges[range_count].start = state->largest_recv - last;
-        ranges[range_count].end = state->largest_recv - first + 1U;
-        range_count++;
-    }
-    if (range_count == 0) return -1;
+    if (neverc_quic_pn_ack_ranges(state, ranges, 65, &range_count) != 0)
+        return -1;
     quic_frame_ack_t ack;
     memset(&ack, 0, sizeof(ack));
     ack.largest_acked = state->largest_recv;
@@ -174,18 +137,6 @@ static int qt_ack_contains(const quic_frame_ack_t *ack,
             return 1;
     }
     return 0;
-}
-
-static int qt_already_received(const quic_pn_state_t *state,
-                               uint64_t packet_number) {
-    if (!state || !state->has_recv) return 0;
-    if (packet_number > state->largest_recv) return 0;
-    uint64_t distance = state->largest_recv - packet_number;
-    /* The 64-bit bitmap only covers [largest-63, largest]. Older packets
-     * are unknown, not duplicates — a jump of >=64 resets the window. */
-    if (distance >= 64) return 0;
-    return (state->received_bitmap &
-            (UINT64_C(1) << (unsigned)distance)) != 0;
 }
 
 static int qt_process_ack(struct neverc_quic_conn *conn, int space,
@@ -466,17 +417,14 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             consumed = cursor - position;
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_NEW_TOKEN) {
-            /* RFC 9000 §19.7: clients receive NEW_TOKEN; servers MUST NOT. */
+            /* RFC 9000 §19.7: clients receive NEW_TOKEN; servers MUST NOT.
+             * Token Length of 0 is FRAME_ENCODING_ERROR. */
             if (conn->side != QUIC_SIDE_CLIENT)
                 return -1;
-            size_t cursor = position + type_len;
-            uint64_t token_len;
-            if (qt_decode_varint_at(payload, payload_len, &cursor,
-                                    &token_len) != 0 ||
-                token_len > payload_len - cursor)
+            if (neverc_quic_parse_new_token(payload + position,
+                                            payload_len - position,
+                                            &consumed) != 0)
                 return -1;
-            cursor += (size_t)token_len;
-            consumed = cursor - position;
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_DATA_BLOCKED) {
             size_t cursor = position + type_len;
@@ -532,6 +480,14 @@ static void qt_start_path_validation(struct neverc_quic_conn *conn,
     conn->path_challenge_pending = 1;
 }
 
+static int qt_cid_matches_local(const struct neverc_quic_conn *conn,
+                                const quic_conn_id_t *cid) {
+    if (!conn || !cid || conn->n_local_cids < 1) return 0;
+    const quic_conn_id_entry_t *local = &conn->local_cids[0];
+    if (cid->len != local->len) return 0;
+    return cid->len == 0 || memcmp(cid->data, local->id, cid->len) == 0;
+}
+
 static int qt_handle_version_negotiation(struct neverc_quic_conn *conn,
                                          const uint8_t *packet, size_t length,
                                          size_t *consumed) {
@@ -539,6 +495,15 @@ static int qt_handle_version_negotiation(struct neverc_quic_conn *conn,
     /* Servers ignore Version Negotiation; clients abandon unless the
      * packet lists the version already in use (RFC 9000 §6.2). */
     if (!conn || conn->side != QUIC_SIDE_CLIENT) return 0;
+    /* RFC 9000 §6: discard VN after a valid Initial or Handshake packet. */
+    if (conn->pn[QUIC_PNS_INITIAL].has_recv ||
+        conn->pn[QUIC_PNS_HANDSHAKE].has_recv)
+        return 0;
+    /* RFC 9000 §17.2.1: DCID must equal the client's Source Connection ID. */
+    quic_conn_id_t dcid;
+    if (neverc_quic_version_negotiation_dcid(packet, length, &dcid) != 0 ||
+        !qt_cid_matches_local(conn, &dcid))
+        return 0;
     if (neverc_quic_version_negotiation_supports(packet, length,
                                                  conn->version))
         return 0;
@@ -561,32 +526,52 @@ static int qt_process_one_packet(struct neverc_quic_conn *conn,
                                  const neverc_udp_addr_t *source,
                                  size_t *consumed) {
     if (!conn || !packet || !source || !consumed || length < 1) return -1;
+    *consumed = 0;
     int is_long = (packet[0] & 0x80U) != 0;
     quic_packet_type_t protected_type = QUIC_PKT_1RTT;
+    uint8_t dcid_len = conn->local_cids[0].len;
     if (is_long) {
-        if (length < 5) return -1;
+        if (length < 5) {
+            *consumed = length;
+            return 0;
+        }
         uint32_t version = ((uint32_t)packet[1] << 24) |
                            ((uint32_t)packet[2] << 16) |
                            ((uint32_t)packet[3] << 8) | packet[4];
         if (version == 0)
             return qt_handle_version_negotiation(conn, packet, length,
                                                  consumed);
-        if (version != conn->version) return -1;
+        if (version != conn->version) {
+            *consumed = length;
+            return 0;
+        }
         protected_type = qt_long_type((packet[0] >> 4) & 3U, version);
-        if (protected_type == QUIC_PKT_RETRY) return -1;
+        if (protected_type == QUIC_PKT_RETRY) {
+            *consumed = length;
+            return 0;
+        }
     }
+    size_t packet_len = 0;
+    if (neverc_quic_unprotected_packet_length(packet, length, dcid_len,
+                                              &packet_len) != 0) {
+        *consumed = length;
+        return 0;
+    }
+    *consumed = packet_len;
+    /* RFC 9000 §17.2: packets with Fixed Bit 0 MUST be discarded. */
+    if ((packet[0] & 0x40U) == 0)
+        return 0;
     quic_enc_level_t level = qt_packet_level(protected_type);
     const quic_keys_t *keys = neverc_quic_tls_get_read_keys(conn->tls, level);
-    if (!keys) return -1;
+    if (!keys)
+        return 0;
     size_t pn_offset;
-    uint8_t dcid_len = conn->local_cids[0].len;
-    if (neverc_quic_packet_number_offset(packet, length, dcid_len,
+    if (neverc_quic_packet_number_offset(packet, packet_len, dcid_len,
                                          &pn_offset) != 0)
-        return -1;
+        return 0;
     quic_packet_header_t header;
     uint8_t *copy = NULL;
     uint8_t *plaintext = NULL;
-    size_t packet_len = 0;
     int space = 0;
     uint64_t packet_number = 0;
     quic_keys_t next_read_keys;
@@ -595,26 +580,29 @@ static int qt_process_one_packet(struct neverc_quic_conn *conn,
 decrypt_attempt:
     free(copy);
     free(plaintext);
-    copy = (uint8_t *)malloc(length);
+    copy = (uint8_t *)malloc(packet_len);
     plaintext = NULL;
     if (!copy) goto decrypt_failed;
-    memcpy(copy, packet, length);
-    if (neverc_quic_remove_header_protection(keys->hp, copy, length,
+    memcpy(copy, packet, packet_len);
+    if (neverc_quic_remove_header_protection(keys->hp, copy, packet_len,
                                              pn_offset) != 0)
         goto decrypt_retry;
-    if (neverc_quic_parse_packet_header(copy, length, &header,
+    if (neverc_quic_parse_packet_header(copy, packet_len, &header,
                                         dcid_len) != 0)
         goto decrypt_retry;
-    if (header.type != protected_type || header.header_len > length ||
-        header.payload_len > length - header.header_len)
+    if (header.type != protected_type || header.header_len > packet_len ||
+        header.payload_len > packet_len - header.header_len)
         goto decrypt_retry;
     if (!is_long && header.key_phase !=
             (uint8_t)(neverc_quic_tls_get_read_key_phase(conn->tls) ^
                       trying_next_keys))
         goto decrypt_retry;
-    packet_len = is_long ? header.header_len + header.payload_len : length;
-    if (packet_len > length || header.payload_len < 16)
+    size_t parsed_len = is_long ? header.header_len + header.payload_len
+                                : packet_len;
+    if (parsed_len > packet_len || header.payload_len < 16)
         goto decrypt_retry;
+    packet_len = parsed_len;
+    *consumed = packet_len;
     space = qt_packet_space(header.type);
     uint64_t largest = conn->pn[space].has_recv ?
         conn->pn[space].largest_recv : 0;
@@ -677,14 +665,15 @@ decrypt_failed:
     neverc_platform_secure_zero(&next_read_keys, sizeof(next_read_keys));
     free(plaintext);
     free(copy);
-    return -1;
+    return 0;
 
 decrypt_complete:
     if (conn->side == QUIC_SIDE_SERVER &&
         header.type == QUIC_PKT_HANDSHAKE)
         conn->address_validated = 1;
     if (!is_long) qt_start_path_validation(conn, source);
-    int duplicate = qt_already_received(&conn->pn[space], packet_number);
+    int duplicate = neverc_quic_pn_already_received(&conn->pn[space],
+                                                    packet_number);
     if (!duplicate) {
         int ack_eliciting = 0;
         size_t plaintext_len = header.payload_len - 16U;
@@ -710,12 +699,17 @@ decrypt_complete:
                     "invalid QUIC frame", 0);
             return -1;
         }
-        if (qt_mark_received(&conn->pn[space], packet_number) < 0) {
+        if (neverc_quic_pn_mark_received(&conn->pn[space], packet_number,
+                                         ack_eliciting) < 0) {
             free(plaintext);
             free(copy);
             return -1;
         }
         if (ack_eliciting) conn->pn[space].ack_pending = 1;
+    } else if (neverc_quic_pn_was_ack_eliciting(&conn->pn[space],
+                                                packet_number)) {
+        /* RFC 9000 §13.2.1: a duplicate often means the ACK was lost. */
+        conn->pn[space].ack_pending = 1;
     }
     /* RFC 9001 §4.9.1: drop Initial keys after a Handshake packet. */
     if (header.type == QUIC_PKT_HANDSHAKE) {
@@ -727,12 +721,14 @@ decrypt_complete:
         conn->state == QUIC_CONN_HANDSHAKING) {
         quic_conn_id_entry_t *peer = &conn->peer_cids[0];
         int transport_ids_valid =
+            conn->peer_params.has_initial_scid &&
             conn->peer_params.initial_scid_len == peer->len &&
             (peer->len == 0 ||
              memcmp(conn->peer_params.initial_scid, peer->id,
                     peer->len) == 0);
         if (conn->side == QUIC_SIDE_CLIENT) {
             transport_ids_valid = transport_ids_valid &&
+                conn->peer_params.has_original_dcid &&
                 conn->peer_params.original_dcid_len ==
                     conn->initial_dcid.len &&
                 memcmp(conn->peer_params.original_dcid,
@@ -800,9 +796,11 @@ int neverc_quic_conn_process_datagram(struct neverc_quic_conn *conn,
     }
     size_t position = 0;
     while (position < length) {
-        size_t consumed;
-        if (qt_process_one_packet(conn, packet + position, length - position,
-                                  source, &consumed) != 0 || consumed == 0) {
+        size_t consumed = 0;
+        int status = qt_process_one_packet(conn, packet + position,
+                                           length - position, source,
+                                           &consumed);
+        if (status != 0) {
             int send_close = conn->close_pending &&
                              conn->state != QUIC_CONN_CLOSED;
             nc_mutex_unlock(&conn->lock);
@@ -810,6 +808,8 @@ int neverc_quic_conn_process_datagram(struct neverc_quic_conn *conn,
                 (void)neverc_quic_conn_flush(conn);
             return -1;
         }
+        if (consumed == 0 || consumed > length - position)
+            break;
         position += consumed;
         if ((packet[position - consumed] & 0x80U) == 0) break;
     }

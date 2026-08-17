@@ -48,6 +48,22 @@ static int copy_exact(char *dst, size_t cap, const char *src, size_t len) {
 static int percent_decode(const char *s, char *buf, size_t cap,
                           int plus_as_space);
 
+/* Reject malformed %XX and encoded NUL. Userinfo is stored raw so
+ * neverc_url_string can round-trip, but RFC 3986 still forbids invalid
+ * percent sequences. */
+static int valid_pct_encoded(const char *s, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        if (s[i] != '%') continue;
+        if (i + 2 >= len) return 0;
+        int high = hex_val[(unsigned char)s[i + 1]];
+        int low = hex_val[(unsigned char)s[i + 2]];
+        if ((high | low) < 0) return 0;
+        if (((high << 4) | low) == 0) return 0;
+        i += 2;
+    }
+    return 1;
+}
+
 /* Unescape a host slice. IPv6 zone IDs may appear as `%eth0` (invalid %XX)
  * or `%25eth0`; the former is kept raw so netip can parse the zone. */
 static int copy_unescaped_host(char *dst, size_t cap, const char *src,
@@ -184,6 +200,7 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
     const char *raw_end = raw_url + raw_length;
     const char *scheme_end = strchr(p, ':');
     const char *first_delimiter = strpbrk(p, "/?#");
+    int has_authority = 0;
     if (scheme_end && (!first_delimiter || scheme_end < first_delimiter)) {
         size_t scheme_length = (size_t)(scheme_end - p);
         if (!valid_scheme(p, scheme_length) ||
@@ -195,9 +212,20 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
         for (size_t i = 0; u->scheme[i]; i++)
             u->scheme[i] = (char)nc_tolower((unsigned char)u->scheme[i]);
         p = scheme_end + 3;
+        has_authority = 1;
+    } else if (p[0] == '/' && p[1] == '/') {
+        /* RFC 3986 network-path reference: //host/path */
+        p += 2;
+        has_authority = 1;
+    }
 
+    if (has_authority) {
         const char *authority_end = p + strcspn(p, "/?#");
         if (authority_end == p) return -1;
+        /* WHATWG special-URLs treat '\' as '/'. Leaving it in userinfo lets
+         * http://evil.com\@good.com/ parse as host good.com. */
+        for (const char *c = p; c < authority_end; c++)
+            if (*c == '\\') return -1;
         const char *at = NULL;
         for (const char *c = p; c < authority_end; c++)
             if (*c == '@') at = c;
@@ -208,14 +236,19 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
                 if (*c == ':') { colon = c; break; }
             if (at == p) return -1;
             if (colon) {
-                if (copy_exact(u->user, sizeof(u->user), p,
-                               (size_t)(colon - p)) != 0 ||
+                size_t user_len = (size_t)(colon - p);
+                size_t pass_len = (size_t)(at - colon - 1);
+                if (!valid_pct_encoded(p, user_len) ||
+                    !valid_pct_encoded(colon + 1, pass_len) ||
+                    copy_exact(u->user, sizeof(u->user), p, user_len) != 0 ||
                     copy_exact(u->password, sizeof(u->password), colon + 1,
-                               (size_t)(at - colon - 1)) != 0)
+                               pass_len) != 0)
                     return -1;
+                u->has_password = 1;
             } else {
-                if (copy_exact(u->user, sizeof(u->user), p,
-                               (size_t)(at - p)) != 0)
+                size_t user_len = (size_t)(at - p);
+                if (!valid_pct_encoded(p, user_len) ||
+                    copy_exact(u->user, sizeof(u->user), p, user_len) != 0)
                     return -1;
             }
             p = at + 1;
@@ -291,10 +324,13 @@ int neverc_url_string(const neverc_url_t *u, char *buf, size_t cap) {
     if (u->scheme[0]) {
         builder_append_field(&builder, u->scheme, sizeof(u->scheme));
         builder_append_literal(&builder, "://");
+    } else if (u->host[0] || u->user[0] || u->has_password ||
+               u->password[0]) {
+        builder_append_literal(&builder, "//");
     }
-    if (u->user[0]) {
+    if (u->user[0] || u->has_password || u->password[0]) {
         builder_append_field(&builder, u->user, sizeof(u->user));
-        if (u->password[0]) {
+        if (u->has_password || u->password[0]) {
             builder_append_literal(&builder, ":");
             builder_append_field(&builder, u->password, sizeof(u->password));
         }

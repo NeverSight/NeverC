@@ -40,7 +40,9 @@ typedef struct {
 
 /* SAX-style tokenizer. Character data and attribute values decode predefined
  * and numeric entities; CDATA is emitted as character data. DTD/entity
- * declarations are rejected rather than externally resolved. */
+ * declarations are rejected rather than externally resolved. Processing
+ * instructions named xml that declare a version other than 1.0 or an
+ * encoding other than UTF-8 are rejected (this parser is UTF-8 only). */
 typedef struct {
     const char *src;
     size_t      len;

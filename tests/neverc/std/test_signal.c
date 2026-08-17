@@ -191,6 +191,17 @@ static void test_wait_null(void) {
 }
 
 #if !defined(_WIN32)
+static void test_wait_after_raise(void) {
+    printf("[wait_after_raise]\n");
+    g_handler_called = 0;
+    neverc_signal_notify(SIGUSR1, test_handler);
+    raise(SIGUSR1);
+    ASSERT_INT_EQ(g_handler_called, 1);
+    int sig = SIGUSR1;
+    ASSERT_INT_EQ(neverc_signal_wait(&sig, 1), SIGUSR1);
+    neverc_signal_stop(SIGUSR1);
+}
+
 static void test_wait_invalid_and_pending(void) {
     printf("[wait_invalid_and_pending]\n");
     int bad = 999999;
@@ -242,6 +253,7 @@ int main(void) {
     test_notify_twice_does_not_lose_handler();
 #endif
 #if !defined(_WIN32)
+    test_wait_after_raise();
     test_wait_invalid_and_pending();
     test_notify_null_clears_handler();
 #endif
