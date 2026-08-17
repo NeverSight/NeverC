@@ -96,21 +96,23 @@ jobs:
             fails=$((fails+1))
           fi
 
-          python - <<'PY' > /tmp/dot_syntax_srcs.txt
+          python - <<'PY'
           import importlib.util
           spec = importlib.util.spec_from_file_location(
               "check_test_deps", "utils/lint/check-test-deps.py")
           mod = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(mod)
           tests = mod.parse_tests(mod.TESTS_CPP.read_text())
-          for src in sorted(tests["dot_syntax"]):
-              print(src)
+          with open("/tmp/dot_syntax_srcs.txt", "w", newline="\n") as out:
+              for src in sorted(tests["dot_syntax"]):
+                  out.write(src + "\n")
           PY
 
           echo "=== OLD dot_syntax link (drop utf8/netip; expect undefined symbols) ==="
           OLD_SRCS=()
           HEAD_SRCS=()
           while IFS= read -r s; do
+            s=${s%$'\r'}
             [ -n "$s" ] || continue
             HEAD_SRCS+=("$(cygpath -m "$PWD/std/$s")")
             case "$s" in
