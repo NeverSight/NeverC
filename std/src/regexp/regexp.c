@@ -780,6 +780,7 @@ neverc_regexp_t *neverc_regexp_compile(const char *pattern, const char **errp) {
     neverc_regexp_t *re = (neverc_regexp_t *)NC_REGEXP_CALLOC(
         1, sizeof(neverc_regexp_t));
     if (!re) { if (errp) *errp = "out of memory"; return NULL; }
+    re->dummy.id = -1;                          /* never collide with state 0 */
 
     parser_t par = { pattern, re, NULL, 0 };
     frag_t f = parse_expr(&par);
@@ -1175,54 +1176,81 @@ const char *neverc_regexp_find(neverc_regexp_t *re, const char *s,
     return res;
 }
 
-/* Pike-style epsilon walk that copies capture slots on CAP_OPEN/CLOSE. */
-static void cap_add(nfa_state_t **st, size_t *capstore, int *n, int capn,
-                    int nslots, nfa_state_t *s, const size_t *caps,
-                    size_t pos, const char *text, size_t slen,
-                    int *visited, int gen) {
-    if (!s || s->id < 0 || s->id >= capn || visited[s->id] == gen) return;
-    visited[s->id] = gen;
-    if (s->type == NFA_SPLIT) {
-        cap_add(st, capstore, n, capn, nslots, s->out1, caps, pos, text, slen, visited, gen);
-        cap_add(st, capstore, n, capn, nslots, s->out2, caps, pos, text, slen, visited, gen);
+/* Iterative Pike-style epsilon walk. Capture slots live on an explicit work
+ * stack so the closure does not recurse through CAP/SPLIT cycles. */
+typedef struct {
+    nfa_state_t **st;
+    size_t       *capstore;
+    int          *n;
+    int           capn;
+    int           nslots;
+    const char   *text;
+    size_t        slen;
+    int          *visited;
+    int           gen;
+    nfa_state_t **wst;
+    size_t       *wcap;
+    int           wn;
+    size_t       *scratch;
+} cap_env_t;
+
+static void cap_push(cap_env_t *e, nfa_state_t *s, const size_t *caps) {
+    if (!s || s->id < 0 || s->id >= e->capn || e->visited[s->id] == e->gen)
         return;
-    }
-    if (s->type == NFA_MATCH && s->out1 != NULL) {
-        cap_add(st, capstore, n, capn, nslots, s->out1, caps, pos, text, slen, visited, gen);
-        return;
-    }
-    if (s->type == NFA_CAP_OPEN || s->type == NFA_CAP_CLOSE) {
-        size_t *tmp = (size_t *)NC_REGEXP_MALLOC((size_t)nslots * sizeof(size_t));
-        if (!tmp) return;
-        memcpy(tmp, caps, (size_t)nslots * sizeof(size_t));
-        int g = s->ch;
-        if (g > 0 && 2 * g + 1 < nslots) {
-            if (s->type == NFA_CAP_OPEN) {
-                tmp[2 * g] = pos;
-                tmp[2 * g + 1] = (size_t)-1;
-            } else {
-                tmp[2 * g + 1] = pos;
-            }
+    e->visited[s->id] = e->gen;
+    if (e->wn >= e->capn) return;
+    e->wst[e->wn] = s;
+    memcpy(e->wcap + (size_t)e->wn * (size_t)e->nslots, caps,
+           (size_t)e->nslots * sizeof(size_t));
+    e->wn++;
+}
+
+static void cap_closure(cap_env_t *e, nfa_state_t *start, const size_t *init,
+                        size_t pos) {
+    e->wn = 0;
+    cap_push(e, start, init);
+    while (e->wn > 0) {
+        e->wn--;
+        nfa_state_t *s = e->wst[e->wn];
+        memcpy(e->scratch, e->wcap + (size_t)e->wn * (size_t)e->nslots,
+               (size_t)e->nslots * sizeof(size_t));
+        if (s->type == NFA_SPLIT) {
+            cap_push(e, s->out1, e->scratch);
+            cap_push(e, s->out2, e->scratch);
+            continue;
         }
-        cap_add(st, capstore, n, capn, nslots, s->out1, tmp, pos, text, slen, visited, gen);
-        free(tmp);
-        return;
-    }
-    if (s->type == NFA_ANCHOR_START) {
-        if (pos == 0)
-            cap_add(st, capstore, n, capn, nslots, s->out1, caps, pos, text, slen, visited, gen);
-        return;
-    }
-    if (s->type == NFA_ANCHOR_END) {
-        if (anchor_end_at(text, slen, pos))
-            cap_add(st, capstore, n, capn, nslots, s->out1, caps, pos, text, slen, visited, gen);
-        return;
-    }
-    if (*n < capn) {
-        st[*n] = s;
-        memcpy(capstore + (size_t)(*n) * (size_t)nslots, caps,
-               (size_t)nslots * sizeof(size_t));
-        (*n)++;
+        if (s->type == NFA_MATCH && s->out1 != NULL) {
+            cap_push(e, s->out1, e->scratch);
+            continue;
+        }
+        if (s->type == NFA_CAP_OPEN || s->type == NFA_CAP_CLOSE) {
+            int g = s->ch;
+            if (g > 0 && g < e->nslots / 2) {
+                if (s->type == NFA_CAP_OPEN) {
+                    e->scratch[2 * g] = pos;
+                    e->scratch[2 * g + 1] = (size_t)-1;
+                } else {
+                    e->scratch[2 * g + 1] = pos;
+                }
+            }
+            cap_push(e, s->out1, e->scratch);
+            continue;
+        }
+        if (s->type == NFA_ANCHOR_START) {
+            if (pos == 0) cap_push(e, s->out1, e->scratch);
+            continue;
+        }
+        if (s->type == NFA_ANCHOR_END) {
+            if (anchor_end_at(e->text, e->slen, pos))
+                cap_push(e, s->out1, e->scratch);
+            continue;
+        }
+        if (*e->n < e->capn) {
+            e->st[*e->n] = s;
+            memcpy(e->capstore + (size_t)(*e->n) * (size_t)e->nslots, e->scratch,
+                   (size_t)e->nslots * sizeof(size_t));
+            (*e->n)++;
+        }
     }
 }
 
@@ -1230,6 +1258,7 @@ static void cap_add(nfa_state_t **st, size_t *capstore, int *n, int capn,
 static int nfa_exec_caps(neverc_regexp_t *re, const char *s, size_t slen,
                          size_t start, size_t *match_end,
                          size_t *out_caps, int nslots) {
+    if (!re || !s || !out_caps || nslots < 2) return 0;
     int nstates = re->nstates > 0 ? re->nstates : 1;
     nfa_state_t **cur_st = (nfa_state_t **)NC_REGEXP_MALLOC(
         (size_t)nstates * sizeof(*cur_st));
@@ -1241,17 +1270,37 @@ static int nfa_exec_caps(neverc_regexp_t *re, const char *s, size_t slen,
         (size_t)nstates * (size_t)nslots * sizeof(size_t));
     int *visited = (int *)NC_REGEXP_CALLOC((size_t)nstates, sizeof(int));
     size_t *init = (size_t *)NC_REGEXP_MALLOC((size_t)nslots * sizeof(size_t));
-    if (!cur_st || !next_st || !cur_cap || !next_cap || !visited || !init) {
+    nfa_state_t **wst = (nfa_state_t **)NC_REGEXP_MALLOC(
+        (size_t)nstates * sizeof(*wst));
+    size_t *wcap = (size_t *)NC_REGEXP_MALLOC(
+        (size_t)nstates * (size_t)nslots * sizeof(size_t));
+    size_t *scratch = (size_t *)NC_REGEXP_MALLOC((size_t)nslots * sizeof(size_t));
+    if (!cur_st || !next_st || !cur_cap || !next_cap || !visited || !init ||
+        !wst || !wcap || !scratch) {
         free(cur_st); free(next_st); free(cur_cap); free(next_cap);
-        free(visited); free(init);
+        free(visited); free(init); free(wst); free(wcap); free(scratch);
         return 0;
     }
     for (int i = 0; i < nslots; i++) init[i] = (size_t)-1;
     init[0] = start;
 
+    cap_env_t e;
+    memset(&e, 0, sizeof(e));
+    e.st = cur_st;
+    e.capstore = cur_cap;
+    e.capn = nstates;
+    e.nslots = nslots;
+    e.text = s;
+    e.slen = slen;
+    e.visited = visited;
+    e.wst = wst;
+    e.wcap = wcap;
+    e.scratch = scratch;
+
     int gen = 1, cur_n = 0;
-    cap_add(cur_st, cur_cap, &cur_n, nstates, nslots, re->start, init,
-            start, s, slen, visited, gen);
+    e.n = &cur_n;
+    e.gen = gen;
+    cap_closure(&e, re->start, init, start);
 
     size_t best_end = (size_t)-1;
     for (int i = 0; i < cur_n; i++) {
@@ -1273,6 +1322,10 @@ static int nfa_exec_caps(neverc_regexp_t *re, const char *s, size_t slen,
             gen++;
         }
         int next_n = 0;
+        e.st = next_st;
+        e.capstore = next_cap;
+        e.n = &next_n;
+        e.gen = gen;
         for (int j = 0; j < cur_n; j++) {
             nfa_state_t *st = cur_st[j];
             int ok = 0;
@@ -1283,9 +1336,8 @@ static int nfa_exec_caps(neverc_regexp_t *re, const char *s, size_t slen,
             default: break;
             }
             if (ok)
-                cap_add(next_st, next_cap, &next_n, nstates, nslots, st->out1,
-                        cur_cap + (size_t)j * (size_t)nslots, i + 1, s, slen,
-                        visited, gen);
+                cap_closure(&e, st->out1,
+                            cur_cap + (size_t)j * (size_t)nslots, i + 1);
         }
         nfa_state_t **tmp_st = cur_st; cur_st = next_st; next_st = tmp_st;
         size_t *tmp_cap = cur_cap; cur_cap = next_cap; next_cap = tmp_cap;
@@ -1303,14 +1355,12 @@ static int nfa_exec_caps(neverc_regexp_t *re, const char *s, size_t slen,
         if (cur_n == 0) break;
     }
 
+    free(cur_st); free(next_st); free(cur_cap); free(next_cap);
+    free(visited); free(init); free(wst); free(wcap); free(scratch);
     if (best_end != (size_t)-1) {
         if (match_end) *match_end = best_end;
-        free(cur_st); free(next_st); free(cur_cap); free(next_cap);
-        free(visited); free(init);
         return 1;
     }
-    free(cur_st); free(next_st); free(cur_cap); free(next_cap);
-    free(visited); free(init);
     return 0;
 }
 

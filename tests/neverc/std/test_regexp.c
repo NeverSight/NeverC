@@ -140,8 +140,19 @@ static void test_find(void) {
 static void test_find_submatch(void) {
     section("[find_submatch]");
     neverc_regexp_match_t m[4];
+    memset(m, 0, sizeof(m));
     neverc_regexp_t *re = neverc_regexp_compile("(a+)(b+)", NULL);
+    check_bool("(a+)(b+) compiles", re != NULL, 1);
+    printf("  find (a+)(b+)\n");
+    {
+        size_t flen = 0;
+        const char *f = re ? neverc_regexp_find(re, "xxaaabbcyy", &flen) : NULL;
+        printf("  find returned %s len=%zu\n", f ? "hit" : "null", flen);
+    }
+    printf("  submatch (a+)(b+)\n");
     int n = neverc_regexp_find_submatch(re, "xxaaabbcyy", m, 3);
+    printf("  submatch returned %d full=%zu g1=%zu g2=%zu\n",
+           n, m[0].len, m[1].len, m[2].len);
     check_int("submatch found", n, 1);
     check_int("submatch full len", (int)m[0].len, 5);
     check_int("group1 len", (int)m[1].len, 3);
@@ -152,19 +163,23 @@ static void test_find_submatch(void) {
         check_int("group2 b", m[2].start[0] == 'b' && m[2].start[1] == 'b', 1);
     neverc_regexp_free(re);
 
+    printf("  submatch (?:ab)(c)\n");
     re = neverc_regexp_compile("(?:ab)(c)", NULL);
     memset(m, 0, sizeof(m));
     n = neverc_regexp_find_submatch(re, "abc", m, 2);
+    printf("  noncap returned %d g1=%zu\n", n, m[1].len);
     check_int("noncap submatch", n, 1);
     check_int("noncap group1 len", (int)m[1].len, 1);
     if (m[1].start) check_int("noncap group1 c", m[1].start[0] == 'c', 1);
     neverc_regexp_free(re);
 
     /* Empty-width: ()* must not loop; find stays non-empty so no match. */
+    printf("  find_all ()*\n");
     re = neverc_regexp_compile("()*", NULL);
     check_bool("()* compiles", re != NULL, 1);
     int count = 0;
     char **all = neverc_regexp_find_all(re, "abc", -1, &count);
+    printf("  find_all ()* count=%d\n", count);
     check_int("empty-width find_all count", count, 0);
     neverc_regexp_free_strings(all, count);
     neverc_regexp_free(re);
