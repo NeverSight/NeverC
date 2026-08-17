@@ -667,7 +667,12 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
             out[i].events |= NC_EV_READ;
         if (events[i].filter == EVFILT_WRITE)
             out[i].events |= NC_EV_WRITE;
-        if (events[i].flags & (EV_ERROR | EV_EOF))
+        /* EV_EOF on a read filter is peer FIN, not an error. Mapping it to
+         * NC_EV_ERROR made macOS treat a clean shutdown as a hard failure. */
+        if (events[i].flags & EV_ERROR)
+            out[i].events |= NC_EV_ERROR;
+        else if ((events[i].flags & EV_EOF) &&
+                 events[i].filter != EVFILT_READ)
             out[i].events |= NC_EV_ERROR;
     }
     return count;

@@ -480,9 +480,23 @@ static void test_poller(void) {
         check_true("event preserves data", events[0].data == (void *)0x1234);
     }
 
+#ifdef __APPLE__
+    {
+        char drain;
+        (void)read(fds[0], &drain, 1);
+        close(fds[1]);
+        fds[1] = -1;
+        n = nc_poller_wait(p, events, 16, 100);
+        check_true("eof is readable", n >= 1 && (events[0].events & NC_EV_READ) != 0);
+        check_true("eof is not error",
+                   n >= 1 && (events[0].events & NC_EV_ERROR) == 0);
+    }
+#endif
+
     check_int("poller del", nc_poller_del(p, fds[0]), 0);
     close(fds[0]);
-    close(fds[1]);
+    if (fds[1] >= 0)
+        close(fds[1]);
     nc_poller_destroy(p);
 }
 #endif

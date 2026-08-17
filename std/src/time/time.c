@@ -787,6 +787,10 @@ char *neverc_time_format(neverc_time_t t, const char *layout) {
             i += 1 + (size_t)digits;
         } else if (layout[i] == '3') {
             write_int(buf, &out, h12, h12 >= 10 ? 2 : 1); i += 1;
+        } else if (layout[i] == '4') {
+            write_int(buf, &out, mi, mi >= 10 ? 2 : 1); i += 1;
+        } else if (layout[i] == '5') {
+            write_int(buf, &out, sc, sc >= 10 ? 2 : 1); i += 1;
         } else if (layout[i] == '2') {
             write_int(buf, &out, dy, dy >= 10 ? 2 : 1); i += 1;
         } else if (layout[i] == '1') {
@@ -1013,6 +1017,12 @@ int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out)
         } else if (layout[li] == '3') {
             if (parse_flex_digits(value, vlen, &vi, 12, &hr) != 0) return -1;
             hour12 = 1;
+            li += 1;
+        } else if (layout[li] == '4') {
+            if (parse_flex_digits(value, vlen, &vi, 59, &mi) != 0) return -1;
+            li += 1;
+        } else if (layout[li] == '5') {
+            if (parse_flex_digits(value, vlen, &vi, 60, &sc) != 0) return -1;
             li += 1;
         } else if (layout[li] == '2') {
             if (parse_flex_digits(value, vlen, &vi, 31, &dy) != 0) return -1;

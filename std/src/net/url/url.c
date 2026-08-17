@@ -45,6 +45,25 @@ static int copy_exact(char *dst, size_t cap, const char *src, size_t len) {
     return 0;
 }
 
+static int percent_decode(const char *s, char *buf, size_t cap,
+                          int plus_as_space);
+
+/* Unescape a host slice. IPv6 zone IDs may appear as `%eth0` (invalid %XX)
+ * or `%25eth0`; the former is kept raw so netip can parse the zone. */
+static int copy_unescaped_host(char *dst, size_t cap, const char *src,
+                               size_t len, int allow_invalid_pct) {
+    if (!dst || !src || cap == 0 || len >= 1024) return -1;
+    char encoded[1024];
+    memcpy(encoded, src, len);
+    encoded[len] = '\0';
+    int n = percent_decode(encoded, dst, cap, 0);
+    if (n >= 0)
+        return (size_t)n < cap ? 0 : -1;
+    if (!allow_invalid_pct)
+        return -1;
+    return copy_exact(dst, cap, src, len);
+}
+
 static size_t bounded_string_length(const char *s, size_t capacity) {
     size_t length = 0;
     while (length < capacity && s[length]) length++;
@@ -211,12 +230,12 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
             char hostbuf[256];
             neverc_netip_addr_t addr;
             /* Go net/url: only a valid IPv6 (including IPv4-mapped) literal
-             * may be enclosed in brackets. IPv4 and non-IP text are errors. */
-            if (hlen >= sizeof(hostbuf) ||
-                copy_exact(hostbuf, sizeof(hostbuf), p + 1, hlen) != 0 ||
+             * may be enclosed in brackets. IPv4 and non-IP text are errors.
+             * `%25` in a zone ID unescapes to `%`; bare `%eth0` is kept. */
+            if (copy_unescaped_host(hostbuf, sizeof(hostbuf), p + 1, hlen, 1) != 0 ||
                 neverc_netip_parse_addr(hostbuf, &addr) != 0 ||
                 addr.is_v4 ||
-                copy_exact(u->host, sizeof(u->host), p + 1, hlen) != 0)
+                copy_exact(u->host, sizeof(u->host), hostbuf, strlen(hostbuf)) != 0)
                 return -1;
             if (bracket + 1 < authority_end) {
                 if (bracket[1] != ':' ||
@@ -232,9 +251,11 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
                 colon = c;
             }
             const char *name_end = colon ? colon : host_end;
-            if (!valid_host_text(p, (size_t)(name_end - p)) ||
-                copy_exact(u->host, sizeof(u->host), p,
-                           (size_t)(name_end - p)) != 0)
+            char hostbuf[256];
+            size_t raw_len = (size_t)(name_end - p);
+            if (copy_unescaped_host(hostbuf, sizeof(hostbuf), p, raw_len, 0) != 0 ||
+                !valid_host_text(hostbuf, strlen(hostbuf)) ||
+                copy_exact(u->host, sizeof(u->host), hostbuf, strlen(hostbuf)) != 0)
                 return -1;
             if (colon) {
                 if (parse_port(colon + 1, host_end, u->port,

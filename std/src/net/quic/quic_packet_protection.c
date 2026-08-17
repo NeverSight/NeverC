@@ -97,10 +97,23 @@ int neverc_quic_derive_initial_keys(const uint8_t *dcid, size_t dcid_len,
                                      uint32_t version,
                                      quic_initial_keys_t *keys) {
     const uint8_t *salt;
-    if (version == 0x6b3343cf) /* QUIC v2 */
+    const char *key_label = "quic key";
+    const char *iv_label = "quic iv";
+    const char *hp_label = "quic hp";
+    size_t key_label_len = 8;
+    size_t iv_label_len = 7;
+    size_t hp_label_len = 7;
+    if (version == NEVERC_QUIC_VERSION_2) {
         salt = QUIC_V2_INITIAL_SALT;
-    else
+        key_label = "quicv2 key";
+        iv_label = "quicv2 iv";
+        hp_label = "quicv2 hp";
+        key_label_len = 10;
+        iv_label_len = 9;
+        hp_label_len = 9;
+    } else {
         salt = QUIC_V1_INITIAL_SALT;
+    }
 
     /* initial_secret = HKDF-Extract(salt, dcid) */
     uint8_t initial_secret[32];
@@ -122,19 +135,19 @@ int neverc_quic_derive_initial_keys(const uint8_t *dcid, size_t dcid_len,
         goto failed;
 
     /* Derive client keys */
-    if (hkdf_expand_label(client_secret, 32, "quic key", 8,
+    if (hkdf_expand_label(client_secret, 32, key_label, key_label_len,
                            NULL, 0, keys->client.key, 16) != 0) goto failed;
-    if (hkdf_expand_label(client_secret, 32, "quic iv", 7,
+    if (hkdf_expand_label(client_secret, 32, iv_label, iv_label_len,
                            NULL, 0, keys->client.iv, 12) != 0) goto failed;
-    if (hkdf_expand_label(client_secret, 32, "quic hp", 7,
+    if (hkdf_expand_label(client_secret, 32, hp_label, hp_label_len,
                            NULL, 0, keys->client.hp, 16) != 0) goto failed;
 
     /* Derive server keys */
-    if (hkdf_expand_label(server_secret, 32, "quic key", 8,
+    if (hkdf_expand_label(server_secret, 32, key_label, key_label_len,
                            NULL, 0, keys->server.key, 16) != 0) goto failed;
-    if (hkdf_expand_label(server_secret, 32, "quic iv", 7,
+    if (hkdf_expand_label(server_secret, 32, iv_label, iv_label_len,
                            NULL, 0, keys->server.iv, 12) != 0) goto failed;
-    if (hkdf_expand_label(server_secret, 32, "quic hp", 7,
+    if (hkdf_expand_label(server_secret, 32, hp_label, hp_label_len,
                            NULL, 0, keys->server.hp, 16) != 0) goto failed;
 
     /* Zero intermediate secrets */

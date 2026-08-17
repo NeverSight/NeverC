@@ -389,6 +389,18 @@ static char *h3_lowercase_header_name(const char *name) {
     return lower;
 }
 
+static int h3_ascii_ieq(const char *left, const char *right) {
+    if (!left || !right) return 0;
+    while (*left && *right) {
+        unsigned char a = (unsigned char)*left++;
+        unsigned char b = (unsigned char)*right++;
+        if (a >= 'A' && a <= 'Z') a = (unsigned char)(a + ('a' - 'A'));
+        if (b >= 'A' && b <= 'Z') b = (unsigned char)(b + ('a' - 'A'));
+        if (a != b) return 0;
+    }
+    return *left == *right;
+}
+
 static int h3_forbidden_request_header(const char *name, const char *value) {
     if (strcmp(name, "connection") == 0 || strcmp(name, "keep-alive") == 0 ||
         strcmp(name, "proxy-connection") == 0 ||
@@ -432,6 +444,7 @@ static int h3_parse_request_headers(h3_conn_t *connection,
     if (decoded != 0) return -1;
     int regular_seen = 0;
     unsigned pseudo_seen = 0;
+    const char *host = NULL;
     int result = -1;
     for (int i = 0; i < header_count; i++) {
         char *name = headers[i].name;
@@ -475,6 +488,10 @@ static int h3_parse_request_headers(h3_conn_t *connection,
                 request->content_length = parsed;
                 request->content_length_present = 1;
             }
+            if (strcmp(name, "host") == 0) {
+                if (host) goto cleanup;
+                host = value;
+            }
             request->header_names[request->nheaders] = name;
             request->header_values[request->nheaders] = value;
             request->nheaders++;
@@ -482,9 +499,11 @@ static int h3_parse_request_headers(h3_conn_t *connection,
             headers[i].value = NULL;
         }
     }
+    if (host && !*host) host = NULL;
     if (pseudo_seen != (1U | 2U | 4U | 8U) ||
         strcmp(request->scheme, "https") != 0 || request->path[0] != '/' ||
-        strcmp(request->method, "CONNECT") == 0)
+        strcmp(request->method, "CONNECT") == 0 ||
+        (host && !h3_ascii_ieq(request->authority, host)))
         goto cleanup;
     result = 0;
 

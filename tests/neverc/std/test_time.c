@@ -295,6 +295,10 @@ static void test_format_layout(void) {
     check_bool("format unpadded", strcmp(s, "1/5/2024") == 0, 1);
     free(s);
 
+    s = neverc_time_format(neverc_time_date(2024, 1, 5, 0, 5, 7, 0), "4:5");
+    check_bool("format unpadded min sec", strcmp(s, "5:7") == 0, 1);
+    free(s);
+
     s = neverc_time_format(fifth, "15:04:05.000");
     check_bool("format exact frac", strcmp(s, "00:00:00.123") == 0, 1);
     free(s);
@@ -367,6 +371,11 @@ static void test_parse_layout(void) {
     check_int("parse unpadded", ok, 0);
     check_int("parse unpadded month", neverc_time_month(t), 6);
     check_int("parse unpadded day", neverc_time_day(t), 5);
+
+    ok = neverc_time_parse("15:4:5", "12:5:7", &t);
+    check_int("parse unpadded min sec", ok, 0);
+    check_int("parse unpadded min", neverc_time_minute(t), 5);
+    check_int("parse unpadded sec", neverc_time_second(t), 7);
 
     ok = neverc_time_parse("15:04:05.000", "12:30:45.123", &t);
     check_int("parse exact frac", ok, 0);

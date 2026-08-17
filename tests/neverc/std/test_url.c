@@ -119,6 +119,10 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[192.168.1.1]/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%eth0]/"), 0);
     ASSERT_STR_EQ(u.host, "fe80::1%eth0");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%25eth0]/"), 0);
+    ASSERT_STR_EQ(u.host, "fe80::1%eth0");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://ex%61mple.com/"), 0);
+    ASSERT_STR_EQ(u.host, "example.com");
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[::ffff:192.168.1.1]/"), 0);
     ASSERT_STR_EQ(u.host, "::ffff:192.168.1.1");
 

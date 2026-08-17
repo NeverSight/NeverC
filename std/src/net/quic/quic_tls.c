@@ -90,6 +90,7 @@ struct quic_tls {
     int pending_read_secret_valid;
     int handshake_complete;
     char error_reason[256];
+    uint32_t version;
 };
 
 static void qt_put_u16(uint8_t *output, uint16_t value) {
@@ -265,16 +266,30 @@ static void qt_transcript_hash(const quic_tls_t *tls, uint8_t output[32]) {
     neverc_sha256_final(&copy, output);
 }
 
-static int qt_derive_packet_keys(const uint8_t secret[32],
+static int qt_derive_packet_keys(const quic_tls_t *tls, const uint8_t secret[32],
                                  quic_keys_t *keys) {
+    const char *key_label = "quic key";
+    const char *iv_label = "quic iv";
+    const char *hp_label = "quic hp";
+    size_t key_label_len = 8;
+    size_t iv_label_len = 7;
+    size_t hp_label_len = 7;
+    if (tls && tls->version == NEVERC_QUIC_VERSION_2) {
+        key_label = "quicv2 key";
+        iv_label = "quicv2 iv";
+        hp_label = "quicv2 hp";
+        key_label_len = 10;
+        iv_label_len = 9;
+        hp_label_len = 9;
+    }
     if (!secret || !keys ||
-        nci_tls_hkdf_expand_label(secret, 32, "quic key", 8,
+        nci_tls_hkdf_expand_label(secret, 32, key_label, key_label_len,
                                   NULL, 0, keys->key,
                                   sizeof(keys->key)) != 0 ||
-        nci_tls_hkdf_expand_label(secret, 32, "quic iv", 7,
+        nci_tls_hkdf_expand_label(secret, 32, iv_label, iv_label_len,
                                   NULL, 0, keys->iv,
                                   sizeof(keys->iv)) != 0 ||
-        nci_tls_hkdf_expand_label(secret, 32, "quic hp", 7,
+        nci_tls_hkdf_expand_label(secret, 32, hp_label, hp_label_len,
                                   NULL, 0, keys->hp,
                                   sizeof(keys->hp)) != 0)
         return -1;
@@ -286,8 +301,8 @@ static int qt_install_secret_pair(quic_tls_t *tls, quic_enc_level_t level,
                                   const uint8_t server_secret[32]) {
     quic_keys_t client_keys;
     quic_keys_t server_keys;
-    if (qt_derive_packet_keys(client_secret, &client_keys) != 0 ||
-        qt_derive_packet_keys(server_secret, &server_keys) != 0)
+    if (qt_derive_packet_keys(tls, client_secret, &client_keys) != 0 ||
+        qt_derive_packet_keys(tls, server_secret, &server_keys) != 0)
         return qt_fail(tls, "failed to derive QUIC packet keys");
     if (tls->is_server) {
         tls->levels[level].read = client_keys;
@@ -1197,6 +1212,7 @@ quic_tls_t *neverc_quic_tls_create(int is_server) {
     if (!tls) return NULL;
     tls->is_server = is_server != 0;
     tls->phase = QT_PHASE_IDLE;
+    tls->version = NEVERC_QUIC_VERSION_1;
     neverc_sha256_init(&tls->transcript);
     return tls;
 }
@@ -1231,6 +1247,7 @@ int neverc_quic_tls_set_initial_dcid(quic_tls_t *tls,
                                      size_t dcid_len, uint32_t version) {
     if (!tls || !dcid || dcid_len == 0 || dcid_len > QUIC_MAX_CID_LEN)
         return -1;
+    tls->version = version;
     quic_initial_keys_t keys;
     if (neverc_quic_derive_initial_keys(dcid, dcid_len, version, &keys) != 0)
         return qt_fail(tls, "failed to derive QUIC Initial keys");
@@ -1377,11 +1394,14 @@ int neverc_quic_tls_key_update(quic_tls_t *tls) {
     if (!tls || !tls->handshake_complete) return -1;
     uint8_t next_client[32];
     uint8_t next_server[32];
+    const char *ku_label = tls->version == NEVERC_QUIC_VERSION_2 ?
+        "quicv2 ku" : "quic ku";
+    size_t ku_label_len = tls->version == NEVERC_QUIC_VERSION_2 ? 9 : 7;
     if (nci_tls_hkdf_expand_label(tls->client_app_secret, 32,
-                                  "quic ku", 7, NULL, 0,
+                                  ku_label, ku_label_len, NULL, 0,
                                   next_client, sizeof(next_client)) != 0 ||
         nci_tls_hkdf_expand_label(tls->server_app_secret, 32,
-                                  "quic ku", 7, NULL, 0,
+                                  ku_label, ku_label_len, NULL, 0,
                                   next_server, sizeof(next_server)) != 0 ||
         qt_install_secret_pair(tls, QUIC_ENC_APPLICATION,
                                next_client, next_server) != 0)
@@ -1435,10 +1455,13 @@ int neverc_quic_tls_prepare_read_key_update(quic_tls_t *tls,
     neverc_platform_secure_zero(tls->pending_read_secret,
                                 sizeof(tls->pending_read_secret));
     tls->pending_read_secret_valid = 0;
-    if (nci_tls_hkdf_expand_label(current, 32, "quic ku", 7, NULL, 0,
+    const char *ku_label = tls->version == NEVERC_QUIC_VERSION_2 ?
+        "quicv2 ku" : "quic ku";
+    size_t ku_label_len = tls->version == NEVERC_QUIC_VERSION_2 ? 9 : 7;
+    if (nci_tls_hkdf_expand_label(current, 32, ku_label, ku_label_len, NULL, 0,
                                   tls->pending_read_secret,
                                   sizeof(tls->pending_read_secret)) != 0 ||
-        qt_derive_packet_keys(tls->pending_read_secret, next_keys) != 0) {
+        qt_derive_packet_keys(tls, tls->pending_read_secret, next_keys) != 0) {
         neverc_platform_secure_zero(tls->pending_read_secret,
                                     sizeof(tls->pending_read_secret));
         return -1;
