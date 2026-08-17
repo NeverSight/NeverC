@@ -636,8 +636,8 @@ static void test_error_classification_and_ownership(void) {
     make_test_path(path, sizeof(path), "neverc_missing_chown_target");
     neverc_os_remove(path);
 #if defined(_WIN32)
-    ASSERT_EQ(neverc_os_chown(path, 0, 0), 0);
-    ASSERT_EQ(neverc_os_lchown(path, 0, 0), 0);
+    ASSERT_EQ(neverc_os_chown(path, 0, 0), -1);
+    ASSERT_EQ(neverc_os_lchown(path, 0, 0), -1);
 #else
     ASSERT_EQ(neverc_os_chown(path, neverc_os_geteuid(),
                               neverc_os_getegid()), -1);

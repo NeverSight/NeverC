@@ -155,6 +155,15 @@ static void test_invalid_inputs(void) {
 
     unsigned char zero_priv[32] = {0};
     ASSERT_EQ(neverc_ecdh_new_private_key(NEVERC_ECDH_CURVE_P256, zero_priv, 32, &key), -1);
+    ASSERT_EQ(neverc_ecdh_new_private_key(NEVERC_ECDH_CURVE_X25519, zero_priv, 32, &key), -1);
+
+    unsigned char low_order[32] = {1};
+    ASSERT_EQ(neverc_ecdh_new_public_key(
+                  NEVERC_ECDH_CURVE_X25519, low_order, 32, &key), -1);
+    neverc_ecdh_key_t alice;
+    ASSERT_EQ(neverc_ecdh_generate_key(NEVERC_ECDH_CURVE_X25519, &alice), 0);
+    unsigned char low_shared[32];
+    ASSERT_EQ(neverc_ecdh_compute(&alice, low_order, 32, low_shared, 32), -1);
 
     unsigned char p256_infinity[NEVERC_ECDH_P256_PUBKEY_SIZE] = {0x04};
     ASSERT_EQ(neverc_ecdh_new_public_key(

@@ -47,6 +47,13 @@ static void test_parse_address(void) {
     ASSERT_EQ(neverc_mail_parse_address("user@.example.com", &addr), -1);
     ASSERT_EQ(neverc_mail_parse_address("user@example.com.", &addr), -1);
     ASSERT_EQ(neverc_mail_parse_address("John Doe", &addr), -1);
+
+    ASSERT_EQ(neverc_mail_parse_address("x@[garbage]", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("x@[192.168.1.1]", &addr), 0);
+    ASSERT_STREQ(addr.address, "x@[192.168.1.1]");
+    ASSERT_EQ(neverc_mail_parse_address("x@[::1]", &addr), 0);
+    ASSERT_STREQ(addr.address, "x@[::1]");
+    ASSERT_EQ(neverc_mail_parse_address("x@[IPv6:::1]", &addr), 0);
 }
 
 static void test_parse_address_list(void) {

@@ -37,7 +37,10 @@ static void test_valid_path(void) {
     check("trailing_dot", neverc_fs_valid_path("foo.") == 0);
     check("trailing_space", neverc_fs_valid_path("foo ") == 0);
     check("conlike", neverc_fs_valid_path("console.txt") == 1);
-    check("com10", neverc_fs_valid_path("COM10") == 1);
+    check("com10", neverc_fs_valid_path("COM10") == 0);
+    check("com0", neverc_fs_valid_path("COM0") == 0);
+    check("conin$", neverc_fs_valid_path("CONIN$") == 0);
+    check("conout$", neverc_fs_valid_path("CONOUT$") == 0);
 #if defined(_WIN32)
     check("drive relative", neverc_fs_valid_path("C:../evil") == 0);
     check("drive prefix", neverc_fs_valid_path("C:foo") == 0);

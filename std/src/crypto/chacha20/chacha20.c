@@ -59,7 +59,11 @@ void neverc_chacha20_init(neverc_chacha20_ctx *ctx,
                           const uint8_t key[32],
                           const uint8_t nonce[12],
                           uint32_t counter) {
-    if (!ctx || !key || !nonce) return;
+    if (!ctx) return;
+    if (!key || !nonce) {
+        ctx->buf_used = -1;
+        return;
+    }
     ctx->state[0]  = 0x61707865;
     ctx->state[1]  = 0x3320646e;
     ctx->state[2]  = 0x79622d32;

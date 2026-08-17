@@ -210,6 +210,16 @@ static void test_null_inputs(void) {
     memset(aa, 0xAA, sizeof(aa));
     check_true("null xor leaves output unmodified",
                memcmp(out, aa, sizeof(out)) == 0);
+
+    neverc_chacha20_ctx z;
+    memset(&z, 0, sizeof(z));
+    neverc_chacha20_init(&z, NULL, nonce, 0);
+    uint8_t secret[32], leaked[32];
+    memset(secret, 0x5a, sizeof(secret));
+    memset(leaked, 0, sizeof(leaked));
+    neverc_chacha20_xor(&z, leaked, secret, sizeof(secret));
+    check_true("failed init does not copy plaintext",
+               memcmp(leaked, secret, sizeof(secret)) != 0);
 }
 
 int main(void) {

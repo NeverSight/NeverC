@@ -163,6 +163,8 @@ int neverc_flag_parse(int argc, char **argv) {
     remaining_args = NULL;
     remaining_count = 0;
     if (argc < 0 || (argc > 0 && !argv)) return -1;
+    for (int fi = 0; fi < flag_count; fi++)
+        flags[fi].was_set = 0;
 
     int i = 1;
     while (i < argc) {

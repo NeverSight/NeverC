@@ -410,7 +410,7 @@ static int fs_ci_eq(const char *a, size_t alen, const char *b) {
 
 static int fs_win_reserved_component(const char *p, size_t elen) {
     static const char *const reserved[] = {
-        "con", "prn", "aux", "nul",
+        "con", "prn", "aux", "nul", "conin$", "conout$",
         "com0", "com1", "com2", "com3", "com4",
         "com5", "com6", "com7", "com8", "com9",
         "lpt0", "lpt1", "lpt2", "lpt3", "lpt4",
@@ -420,6 +420,14 @@ static int fs_win_reserved_component(const char *p, size_t elen) {
     while (stem < elen && p[stem] != '.') stem++;
     for (i = 0; i < sizeof(reserved) / sizeof(reserved[0]); i++) {
         if (fs_ci_eq(p, stem, reserved[i])) return 1;
+    }
+    if (stem >= 4 &&
+        (fs_ci_eq(p, 3, "com") || fs_ci_eq(p, 3, "lpt"))) {
+        for (i = 3; i < stem; i++) {
+            if (p[i] < '0' || p[i] > '9')
+                return 0;
+        }
+        return 1;
     }
     return 0;
 }

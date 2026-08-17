@@ -44,6 +44,7 @@ static inline uint64_t xxh_merge_round(uint64_t acc, uint64_t val) {
 }
 
 uint64_t neverc_xxhash64(const void *data, size_t len, uint64_t seed) {
+    if (!data) len = 0;
     const uint8_t *p = (const uint8_t *)data;
     size_t remaining = len;
     uint64_t h64;

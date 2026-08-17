@@ -342,6 +342,10 @@ static void test_parsed_nflag(void) {
 
     check_int("parsed after parse", neverc_flag_parsed(), 1);
     check_int("nflag", neverc_flag_nflag(), 1);
+
+    char *argv2[] = {"prog"};
+    neverc_flag_parse(1, argv2);
+    check_int("nflag after reparse", neverc_flag_nflag(), 0);
 }
 
 static void test_set_lookup(void) {

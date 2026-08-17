@@ -334,6 +334,8 @@ static int append_run(neverc_tabwriter_t *w, const char *data, size_t run) {
         memcpy(w->buf + w->buf_len, data, take);
         w->buf_len += take;
     }
+    if (take < run)
+        w->failed = 1;
     return 0;
 }
 

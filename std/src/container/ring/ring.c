@@ -44,10 +44,9 @@ neverc_ring_t *neverc_ring_new(int n) {
 
 void neverc_ring_free(neverc_ring_t *r) {
     if (!r) return;
-    if (!r->next) {
-        free(r);
+    /* Zero-value stack rings have next == NULL. Do not free them. */
+    if (!r->next)
         return;
-    }
     neverc_ring_t *p = r->next;
     while (p != r) {
         neverc_ring_t *next = p->next;

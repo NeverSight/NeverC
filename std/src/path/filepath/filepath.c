@@ -199,10 +199,15 @@ static int reserved_device_name(const char *name, size_t n) {
         (memcmp(base, "CON", 3) == 0 || memcmp(base, "PRN", 3) == 0 ||
          memcmp(base, "AUX", 3) == 0 || memcmp(base, "NUL", 3) == 0))
         return 1;
-    if (blen == 4 &&
-        (memcmp(base, "COM", 3) == 0 || memcmp(base, "LPT", 3) == 0) &&
-        base[3] >= '1' && base[3] <= '9')
+    if (blen >= 4 &&
+        (memcmp(base, "COM", 3) == 0 || memcmp(base, "LPT", 3) == 0)) {
+        size_t d;
+        for (d = 3; d < blen; d++) {
+            if (base[d] < '0' || base[d] > '9')
+                return 0;
+        }
         return 1;
+    }
     if (blen == 6 && memcmp(base, "CONIN$", 6) == 0)
         return 1;
     if (blen == 7 && memcmp(base, "CONOUT$", 7) == 0)

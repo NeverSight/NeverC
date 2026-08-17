@@ -136,6 +136,21 @@ static void test_invalid_input(neverc_tabwriter_t *w) {
     neverc_tabwriter_reset(w);
 }
 
+static void test_max_buf_sets_failed(neverc_tabwriter_t *w) {
+    printf("[max_buf_sets_failed]\n");
+    neverc_tabwriter_init(w, 8, 0, 1, ' ', 0);
+    size_t n = (size_t)NEVERC_TABWRITER_MAX_BUF + 2;
+    char *big = (char *)malloc(n);
+    ASSERT_INT_EQ(big != NULL, 1);
+    if (!big) return;
+    memset(big, 'a', n - 1);
+    big[n - 1] = '\n';
+    neverc_tabwriter_write(w, big, n);
+    neverc_tabwriter_flush(w);
+    ASSERT_INT_EQ(neverc_tabwriter_output(w, NULL) == NULL, 1);
+    free(big);
+}
+
 static void test_many_cells(neverc_tabwriter_t *w) {
     printf("[many_cells]\n");
     neverc_tabwriter_init(w, 1, 8, 1, ' ', 0);
@@ -327,6 +342,8 @@ int main(void) {
     test_multiple_lines(w);
     neverc_tabwriter_reset(w);
     test_invalid_input(w);
+    neverc_tabwriter_reset(w);
+    test_max_buf_sets_failed(w);
     neverc_tabwriter_reset(w);
     test_many_cells(w);
     neverc_tabwriter_reset(w);

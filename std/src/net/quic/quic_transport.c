@@ -181,7 +181,9 @@ static int qt_already_received(const quic_pn_state_t *state,
     if (!state || !state->has_recv) return 0;
     if (packet_number > state->largest_recv) return 0;
     uint64_t distance = state->largest_recv - packet_number;
-    if (distance >= 64) return 1;
+    /* The 64-bit bitmap only covers [largest-63, largest]. Older packets
+     * are unknown, not duplicates — a jump of >=64 resets the window. */
+    if (distance >= 64) return 0;
     return (state->received_bitmap &
             (UINT64_C(1) << (unsigned)distance)) != 0;
 }

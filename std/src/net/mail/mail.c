@@ -1,4 +1,5 @@
 #include "neverc/std/net/mail.h"
+#include "neverc/std/net/netip.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -69,7 +70,26 @@ static int mail_addr_spec_ok(const char *s) {
     const char *dom = at + 1;
     if (dom[0] == '[') {
         size_t n = strlen(dom);
-        return n >= 3 && dom[n - 1] == ']';
+        if (n < 3 || dom[n - 1] != ']') return 0;
+        char inner[128];
+        size_t ilen = n - 2;
+        if (ilen == 0 || ilen >= sizeof(inner)) return 0;
+        memcpy(inner, dom + 1, ilen);
+        inner[ilen] = '\0';
+        const char *ip = inner;
+        if (ilen >= 5) {
+            char prefix[5];
+            size_t i;
+            for (i = 0; i < 5; i++) {
+                char c = inner[i];
+                if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
+                prefix[i] = c;
+            }
+            if (memcmp(prefix, "ipv6:", 5) == 0)
+                ip = inner + 5;
+        }
+        neverc_netip_addr_t addr;
+        return neverc_netip_parse_addr(ip, &addr) == 0;
     }
     return mail_dot_atom_ok(dom, strlen(dom));
 }

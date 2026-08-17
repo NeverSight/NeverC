@@ -170,6 +170,9 @@ static void count_fn(void *value, void *ctx) {
 
 static void test_zero_value_and_null_input(void) {
     printf("[zero_value_and_null_input]\n");
+    neverc_ring_t raw = {0};
+    neverc_ring_free(&raw);
+
     neverc_ring_t zero = {0};
     ASSERT_INT_EQ(neverc_ring_len(&zero), 1);
     ASSERT_INT_EQ(neverc_ring_next(&zero) == &zero, 1);

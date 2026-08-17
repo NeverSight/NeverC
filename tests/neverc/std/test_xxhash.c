@@ -60,6 +60,9 @@ static void test_upstream_vectors(void) {
     check_u64("length 222, seeded",
               neverc_xxhash64(buffer, sizeof(buffer), XXH_TEST_PRIME32),
               UINT64_C(0x20cb8ab7ae10c14a));
+    check_u64("null data with nonzero len is empty",
+              neverc_xxhash64(NULL, 100, 0),
+              UINT64_C(0xef46db3751d8e999));
 }
 
 int main(void) {

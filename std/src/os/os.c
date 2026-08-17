@@ -1511,7 +1511,7 @@ int neverc_os_chown(const char *name, int uid, int gid) {
     if (!name) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     (void)uid; (void)gid;
-    return 0;
+    return -1;
 #else
     return chown(name, (uid_t)uid, (gid_t)gid) == 0 ? 0 : -1;
 #endif
@@ -1521,7 +1521,7 @@ int neverc_os_lchown(const char *name, int uid, int gid) {
     if (!name) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     (void)uid; (void)gid;
-    return 0;
+    return -1;
 #else
     return lchown(name, (uid_t)uid, (gid_t)gid) == 0 ? 0 : -1;
 #endif

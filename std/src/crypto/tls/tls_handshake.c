@@ -3328,7 +3328,7 @@ int nci_tls_handle_peer_alert(
         conn->peer_closed = 1;
         return 1;
     }
-    if (data[1] == TLS_ALERT_USER_CANCELED)
+    if (data[1] == TLS_ALERT_USER_CANCELED && data[0] == 1)
         return 0;
 
     conn->closed = 1;
