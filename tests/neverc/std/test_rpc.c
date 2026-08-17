@@ -476,6 +476,9 @@ static void rpc_test_frame_codec(void) {
     encoded[9] = 0xffU;
     encoded[10] = 0xffU;
     encoded[11] = 0xffU;
+    /* UINT32_MAX payload cannot overflow size_t on 64-bit hosts; the
+     * frame is incomplete, not a decoded success. On 32-bit the same
+     * length is rejected as an overflow. */
     CHECK(neverc_rpc_frame_decode(encoded, encoded_length, SIZE_MAX, &output,
                                   &consumed) != 1);
     encoded[8] = 0;

@@ -79,7 +79,7 @@ static int exec_ascii_ieq(const char *a, const char *b) {
 static int exec_is_windows_batch_name(const char *name) {
     const char *base, *dot, *p, *slash;
     char trimmed[16];
-    size_t n, i;
+    size_t n;
     if (!name || name[0] == '\0') return 0;
     slash = strrchr(name, '/');
     p = strrchr(name, '\\');

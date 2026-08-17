@@ -4912,6 +4912,7 @@
         "neverc_http3_qpack_encode": "src/net/http3/http3_frame.c",
         "neverc_http3_qpack_encoder_create": "src/net/http3/http3_frame.c",
         "neverc_http3_qpack_encoder_destroy": "src/net/http3/http3_frame.c",
+        "neverc_http3_qpack_field_section_size": "src/net/http3/http3_frame.c",
         "neverc_http3_server_create": "src/net/http3/http3_server.c",
         "neverc_http3_server_destroy": "src/net/http3/http3_server.c",
         "neverc_http3_server_is_running": "src/net/http3/http3_server.c",
@@ -4937,7 +4938,8 @@
         "neverc_qpack_decoder_destroy": "src/net/http3/http3_frame.c",
         "neverc_qpack_encode": "src/net/http3/http3_frame.c",
         "neverc_qpack_encoder_create": "src/net/http3/http3_frame.c",
-        "neverc_qpack_encoder_destroy": "src/net/http3/http3_frame.c"
+        "neverc_qpack_encoder_destroy": "src/net/http3/http3_frame.c",
+        "neverc_qpack_field_section_size": "src/net/http3/http3_frame.c"
       },
       "dot_methods": {
         "get": "neverc_http3_get",
@@ -4964,7 +4966,8 @@
         "qpack_decoder_destroy": "neverc_http3_qpack_decoder_destroy",
         "qpack_encode": "neverc_http3_qpack_encode",
         "qpack_encoder_create": "neverc_http3_qpack_encoder_create",
-        "qpack_encoder_destroy": "neverc_http3_qpack_encoder_destroy"
+        "qpack_encoder_destroy": "neverc_http3_qpack_encoder_destroy",
+        "qpack_field_section_size": "neverc_http3_qpack_field_section_size"
       }
     },
     "net/httptest": {

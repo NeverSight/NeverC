@@ -486,6 +486,15 @@ static void test_batch_args_rejected(void) {
     cmd = neverc_exec_command(script, unsafe, 1);
     ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
     neverc_exec_cmd_free(cmd);
+
+    /* Windows treats trailing spaces/dots as part of the extension, so
+     * "probe.bat." / "probe.cmd " must still be rejected. */
+    cmd = neverc_exec_command("probe.bat.", unsafe, 1);
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+    neverc_exec_cmd_free(cmd);
+    cmd = neverc_exec_command("probe.cmd ", unsafe, 1);
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+    neverc_exec_cmd_free(cmd);
 #if defined(_WIN32)
     DeleteFileA(script);
 #else

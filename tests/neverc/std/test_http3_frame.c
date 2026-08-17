@@ -591,6 +591,13 @@ static void test_qpack_field_section_size(void) {
     ASSERT_EQ(neverc_qpack_field_section_size(NULL, 1, &size), -1);
     ASSERT_EQ(neverc_qpack_field_section_size(headers, 0, &size), 0);
     ASSERT_EQ(size, 0);
+
+    uint64_t alias_size = 1;
+    ASSERT_EQ(neverc_http3_qpack_field_section_size(headers, 4, &alias_size),
+              0);
+    ASSERT_EQ(alias_size, (uint64_t)(7 + 3 + 32 + 7 + 5 + 32 + 10 + 11 + 32 +
+                                     5 + 1 + 32));
+    ASSERT_EQ(neverc_http3_qpack_field_section_size(NULL, 1, &alias_size), -1);
 }
 
 static void test_qpack_rejects_uppercase_and_empty_name(void) {

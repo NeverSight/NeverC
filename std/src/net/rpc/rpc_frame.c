@@ -151,9 +151,12 @@ int neverc_rpc_frame_decode(const void *input, size_t input_length,
     header.request_id = rpc_get_u64(bytes + 12);
     header.code = rpc_get_u32(bytes + 20);
     if (!rpc_frame_header_valid(&header) ||
-        header.payload_length > max_payload_size ||
-        header.payload_length > SIZE_MAX - NEVERC_RPC_FRAME_HEADER_SIZE)
+        header.payload_length > max_payload_size)
         return -1;
+#if SIZE_MAX <= UINT32_MAX
+    if (header.payload_length > SIZE_MAX - NEVERC_RPC_FRAME_HEADER_SIZE)
+        return -1;
+#endif
     size_t total = NEVERC_RPC_FRAME_HEADER_SIZE +
                    (size_t)header.payload_length;
     if (input_length < total) return 0;
