@@ -96,52 +96,69 @@ jobs:
             fails=$((fails+1))
           fi
 
-          python - <<'PY'
+          python - <<'PY' | tr -d '\r' > "$PWD/dot_syntax_srcs.txt"
           import importlib.util
           spec = importlib.util.spec_from_file_location(
               "check_test_deps", "utils/lint/check-test-deps.py")
           mod = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(mod)
           tests = mod.parse_tests(mod.TESTS_CPP.read_text())
-          with open("/tmp/dot_syntax_srcs.txt", "w", newline="\n") as out:
-              for src in sorted(tests["dot_syntax"]):
-                  out.write(src + "\n")
+          for src in sorted(tests["dot_syntax"]):
+              print(src)
           PY
+          echo "dot_syntax_src_count=$(wc -l < "$PWD/dot_syntax_srcs.txt")"
 
           echo "=== OLD dot_syntax link (drop utf8/netip; expect undefined symbols) ==="
-          OLD_SRCS=()
-          HEAD_SRCS=()
+          : > "$PWD/dot_syntax_old.rsp"
+          : > "$PWD/dot_syntax_head.rsp"
           while IFS= read -r s; do
             s=${s%$'\r'}
             [ -n "$s" ] || continue
-            HEAD_SRCS+=("$(cygpath -m "$PWD/std/$s")")
+            echo "$(cygpath -m "$PWD/std/$s")" >> "$PWD/dot_syntax_head.rsp"
             case "$s" in
               src/unicode/utf8/utf8.c|src/net/netip/netip.c) ;;
-              *) OLD_SRCS+=("$(cygpath -m "$PWD/std/$s")") ;;
+              *) echo "$(cygpath -m "$PWD/std/$s")" >> "$PWD/dot_syntax_old.rsp" ;;
             esac
-          done < /tmp/dot_syntax_srcs.txt
+          done < "$PWD/dot_syntax_srcs.txt"
           TESTC=$(cygpath -m "$PWD/tests/neverc/std/test_dot_syntax.c")
+          echo "dot_syntax_head_rsp_lines=$(wc -l < "$PWD/dot_syntax_head.rsp")"
+          echo "dot_syntax_old_rsp_lines=$(wc -l < "$PWD/dot_syntax_old.rsp")"
 
           echo "=== compile dot_syntax_old ==="
-          "$NCC" $FLAGS -o "$(cygpath -m "$PWD/dot_syntax_old.exe")" \
-            "$TESTC" "${OLD_SRCS[@]}" 2>/tmp/dot_old_err.txt
+          "$NCC" $FLAGS -ferror-limit=0 \
+            -o "$(cygpath -m "$PWD/dot_syntax_old.exe")" \
+            "$TESTC" @"$(cygpath -m "$PWD/dot_syntax_old.rsp")" \
+            >"$PWD/dot_old_out.txt" 2>"$PWD/dot_old_err.txt"
           old_link=$?
           echo "compile_dot_syntax_old_exit=$old_link (nonzero expected)"
-          cat /tmp/dot_old_err.txt
+          cat "$PWD/dot_old_err.txt"
           if [ "$old_link" -eq 0 ]; then
             echo "OLD dot_syntax unexpectedly linked"
             fails=$((fails+1))
           fi
-          if ! grep -q "neverc_utf8_decode_rune\|neverc_netip_parse_addr" /tmp/dot_old_err.txt; then
+          if ! grep -q "neverc_utf8_decode_rune\|neverc_netip_parse_addr" "$PWD/dot_old_err.txt"; then
             echo "OLD dot_syntax missing the expected undefined-symbol errors"
             fails=$((fails+1))
           fi
 
           echo "=== HEAD dot_syntax (must link and pass) ==="
-          compile_run dot_syntax_head "$TESTC" "${HEAD_SRCS[@]}"
-          if [ $? -ne 0 ]; then
-            echo "HEAD dot_syntax failed"
+          echo "=== compile dot_syntax_head ==="
+          "$NCC" $FLAGS -o "$(cygpath -m "$PWD/dot_syntax_head.exe")" \
+            "$TESTC" @"$(cygpath -m "$PWD/dot_syntax_head.rsp")"
+          head_link=$?
+          echo "compile_dot_syntax_head_exit=$head_link"
+          if [ "$head_link" -ne 0 ]; then
+            echo "HEAD dot_syntax failed to link"
             fails=$((fails+1))
+          else
+            echo "=== run dot_syntax_head ==="
+            "$PWD/dot_syntax_head.exe"
+            head_rc=$?
+            echo "run_dot_syntax_head_exit=$head_rc"
+            if [ "$head_rc" -ne 0 ]; then
+              echo "HEAD dot_syntax failed"
+              fails=$((fails+1))
+            fi
           fi
 
           echo "head_fails=$fails"
