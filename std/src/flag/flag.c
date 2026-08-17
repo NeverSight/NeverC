@@ -163,13 +163,20 @@ static int set_entry_value(flag_entry_t *f, const char *value,
     return -1;
 }
 
+static int is_help_name(const char *name, size_t name_len) {
+    return (name_len == 1 && name[0] == 'h') ||
+           (name_len == 4 && memcmp(name, "help", 4) == 0);
+}
+
 int neverc_flag_parse(int argc, char **argv) {
     flag_parsed = 1;
     remaining_args = NULL;
     remaining_count = 0;
-    if (argc < 0 || (argc > 0 && !argv)) return -1;
+    /* Reset visit/nflag state on every Parse, including the invalid-argv
+     * path, so a failed call cannot leave stale was_set from a prior Set. */
     for (int fi = 0; fi < flag_count; fi++)
         flags[fi].was_set = 0;
+    if (argc < 0 || (argc > 0 && !argv)) return -1;
 
     int i = 1;
     while (i < argc) {
@@ -198,10 +205,15 @@ int neverc_flag_parse(int argc, char **argv) {
         }
 
         const char *eq = strchr(name, '=');
+        size_t name_len = eq ? (size_t)(eq - name) : strlen(name);
         const char *value = eq ? eq + 1 : NULL;
-        flag_entry_t *f = eq ? find_flag_n(name, (size_t)(eq - name))
-                             : find_flag(name);
+        flag_entry_t *f = find_flag_n(name, name_len);
         if (!f) {
+            /* Go flag: undefined -h / -help prints defaults and fails. */
+            if (is_help_name(name, name_len)) {
+                neverc_flag_print_defaults();
+                return -1;
+            }
             fprintf(stderr, "unknown flag: %s\n", arg);
             return -1;
         }

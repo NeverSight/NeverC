@@ -446,6 +446,147 @@ static void test_visit(void) {
     check_int("visit_all count", visit_count_ctx, 2);
 }
 
+static void test_parse_edge_cases(void) {
+    printf("[parse edge cases]\n");
+
+    neverc_flag_reset();
+    int port = 9;
+    neverc_flag_int("port", 9, "port", &port);
+    char *help_short[] = {"prog", "-h"};
+    check_int("unregistered -h is help", neverc_flag_parse(2, help_short), -1);
+    check_int("unregistered -h preserves values", port, 9);
+    check_int("unregistered -h is not counted", neverc_flag_nflag(), 0);
+
+    neverc_flag_reset();
+    port = 9;
+    neverc_flag_int("port", 9, "port", &port);
+    char *help_long[] = {"prog", "--help"};
+    check_int("unregistered --help is help", neverc_flag_parse(2, help_long), -1);
+    check_int("unregistered --help preserves values", port, 9);
+
+    neverc_flag_reset();
+    port = 9;
+    neverc_flag_int("port", 9, "port", &port);
+    char *help_eq[] = {"prog", "-help=true"};
+    check_int("unregistered -help=value is help",
+              neverc_flag_parse(2, help_eq), -1);
+    check_int("unregistered -help=value preserves values", port, 9);
+
+    neverc_flag_reset();
+    port = 9;
+    neverc_flag_int("port", 9, "port", &port);
+    char *helper[] = {"prog", "-helper"};
+    check_int("helper is not help", neverc_flag_parse(2, helper), -1);
+    check_int("helper preserves values", port, 9);
+
+    neverc_flag_reset();
+    int h = 0;
+    neverc_flag_bool("h", 0, "registered h", &h);
+    char *reg_h[] = {"prog", "-h"};
+    check_int("registered -h parses as a flag", neverc_flag_parse(2, reg_h), 0);
+    check_int("registered -h sets bool", h, 1);
+    check_int("registered -h is counted", neverc_flag_nflag(), 1);
+
+    neverc_flag_reset();
+    const char *topic = "none";
+    neverc_flag_string("help", "none", "topic", &topic);
+    char *reg_help[] = {"prog", "-help=usage"};
+    check_int("registered -help parses as a flag",
+              neverc_flag_parse(2, reg_help), 0);
+    check_str("registered -help value", topic, "usage");
+
+    neverc_flag_reset();
+    int verbose = 0;
+    neverc_flag_bool("v", 0, "verbose", &verbose);
+    char *bool_next[] = {"prog", "-v", "true", "file.txt"};
+    check_int("bool does not consume next arg",
+              neverc_flag_parse(4, bool_next), 0);
+    check_int("bool implicit true", verbose, 1);
+    check_int("bool next arg is positional", neverc_flag_narg(), 2);
+    check_str("bool leftover true", neverc_flag_arg(0), "true");
+    check_str("bool leftover file", neverc_flag_arg(1), "file.txt");
+
+    neverc_flag_reset();
+    const char *name = "def";
+    neverc_flag_string("name", "def", "user", &name);
+    char *eq_term[] = {"prog", "-name=--"};
+    check_int("equals can pass terminator as value",
+              neverc_flag_parse(2, eq_term), 0);
+    check_str("equals terminator value", name, "--");
+
+    neverc_flag_reset();
+    int n = 7, name_n = 8;
+    neverc_flag_int("n", 7, "short", &n);
+    neverc_flag_int("name", 8, "long", &name_n);
+    char *prefix[] = {"prog", "-name=3", "-n=2"};
+    check_int("prefix names parse", neverc_flag_parse(3, prefix), 0);
+    check_int("short name is exact", n, 2);
+    check_int("long name is exact", name_n, 3);
+
+    neverc_flag_reset();
+    n = 7;
+    neverc_flag_int("n", 7, "count", &n);
+    char *empty_int[] = {"prog", "-n="};
+    check_int("empty int equals is rejected",
+              neverc_flag_parse(2, empty_int), -1);
+    check_int("empty int preserves value", n, 7);
+
+    neverc_flag_reset();
+    n = 0;
+    neverc_flag_int("n", 0, "count", &n);
+    char *plus_us[] = {"prog", "-n", "+1_024"};
+    check_int("plus and underscore parse", neverc_flag_parse(3, plus_us), 0);
+    check_int("plus and underscore value", n, 1024);
+
+    neverc_flag_reset();
+    long long signed_min = 1;
+    neverc_flag_int64("signed", 1, "signed", &signed_min);
+    char *min_argv[] = {"prog", "-signed=-9223372036854775808"};
+    check_int("int64 minimum parses", neverc_flag_parse(2, min_argv), 0);
+    check_int("int64 minimum value", signed_min == LLONG_MIN, 1);
+
+    neverc_flag_reset();
+    int enabled = 0;
+    neverc_flag_bool("enabled", 0, "enabled", &enabled);
+    check_int("set bool null is implicit true",
+              neverc_flag_set("enabled", NULL), 0);
+    check_int("set bool null value", enabled, 1);
+
+    neverc_flag_reset();
+    n = 0;
+    neverc_flag_int("n", 0, "count", &n);
+    char *end_term[] = {"prog", "-n", "4", "--"};
+    check_int("trailing terminator parse", neverc_flag_parse(4, end_term), 0);
+    check_int("trailing terminator n", n, 4);
+    check_int("trailing terminator narg", neverc_flag_narg(), 0);
+    check_int("trailing terminator arg0", neverc_flag_arg(0) == NULL, 1);
+
+    neverc_flag_reset();
+    n = 0;
+    neverc_flag_int("n", 0, "count", &n);
+    char *with_rest[] = {"prog", "-n", "1", "keep"};
+    check_int("first parse keeps remaining",
+              neverc_flag_parse(4, with_rest), 0);
+    check_int("first parse narg", neverc_flag_narg(), 1);
+    char *bad[] = {"prog", "-missing"};
+    check_int("failed parse after success", neverc_flag_parse(2, bad), -1);
+    check_int("failed parse clears remaining", neverc_flag_narg(), 0);
+    check_int("failed parse clears nflag", neverc_flag_nflag(), 0);
+
+    neverc_flag_reset();
+    n = 3;
+    neverc_flag_int("n", 3, "count", &n);
+    check_int("set before invalid argv", neverc_flag_set("n", "8"), 0);
+    check_int("invalid argv is rejected", neverc_flag_parse(2, NULL), -1);
+    check_int("invalid argv clears nflag", neverc_flag_nflag(), 0);
+    check_int("invalid argv preserves value", n, 8);
+
+    neverc_flag_reset();
+    check_int("argc zero parse ok", neverc_flag_parse(0, NULL), 0);
+    check_int("argc zero marks parsed", neverc_flag_parsed(), 1);
+    check_int("argc negative is rejected", neverc_flag_parse(-1, NULL), -1);
+}
+
 int main(void) {
     printf("=== NeverC Flag Module Tests ===\n\n");
     test_basic();
@@ -466,6 +607,7 @@ int main(void) {
     test_bad_syntax();
     test_name_injection();
     test_visit();
+    test_parse_edge_cases();
     test_null_safety();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
