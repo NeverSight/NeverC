@@ -528,6 +528,38 @@ static int tcp_wait_io(nc_sock_t fd, int write_ready, int timeout_ms) {
         if (rc != SOCKET_ERROR || WSAGetLastError() != WSAEINTR)
             return rc == SOCKET_ERROR ? -1 : rc;
     }
+#elif defined(NC_USE_KQUEUE)
+    /* Darwin poll() can miss a TCP FIN. kqueue EVFILT_READ reports EV_EOF. */
+    int kq = kqueue();
+    if (kq < 0) return -1;
+    struct kevent change;
+    EV_SET(&change, (uintptr_t)fd,
+           write_ready ? EVFILT_WRITE : EVFILT_READ,
+           EV_ADD | EV_ONESHOT, 0, 0, NULL);
+    struct timespec timeout;
+    struct timespec *timeout_ptr = NULL;
+    if (timeout_ms >= 0) {
+        timeout.tv_sec = timeout_ms / 1000;
+        timeout.tv_nsec = (long)(timeout_ms % 1000) * 1000000L;
+        timeout_ptr = &timeout;
+    }
+    struct kevent event;
+    int rc;
+    do {
+        rc = kevent(kq, &change, 1, &event, 1, timeout_ptr);
+    } while (rc < 0 && errno == EINTR);
+    int saved = errno;
+    close(kq);
+    if (rc < 0) {
+        errno = saved;
+        return -1;
+    }
+    if (rc == 0) return 0;
+    if (event.flags & EV_ERROR) {
+        errno = event.data ? (int)event.data : EIO;
+        return -1;
+    }
+    return rc;
 #else
     struct pollfd pfd;
     pfd.fd = fd;

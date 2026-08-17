@@ -763,6 +763,67 @@ static void test_socket_options(void) {
     check_int("writebuf null", neverc_tcp_set_write_buffer(NULL, 1024), -1);
 }
 
+/* After try_read switches the socket to non-blocking, a peer FIN must still
+ * surface as EOF. Darwin poll() can miss that; the waiter uses kqueue. */
+static void test_fin_after_try_read(void) {
+    printf("[fin_after_try_read]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("fin listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        char addr[64];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", laddr.port);
+        neverc_tcp_conn_t *c = neverc_tcp_dial(addr, &err);
+        if (!c) _exit(1);
+        if (neverc_tcp_write(c, "hi", 2) != 2) {
+            neverc_tcp_close(c);
+            _exit(2);
+        }
+        if (neverc_tcp_shutdown_write(c) != 0) {
+            neverc_tcp_close(c);
+            _exit(3);
+        }
+        usleep(200000);
+        neverc_tcp_close(c);
+        _exit(0);
+    }
+
+    neverc_tcp_conn_t *c = neverc_tcp_accept(ln, &err);
+    check_not_null("fin accept", c);
+    if (c) {
+        check_int("fin read timeout", neverc_tcp_set_read_timeout(c, 2000), 0);
+        char buf[8];
+        neverc_net_result_t result = neverc_tcp_try_read(c, buf, sizeof(buf));
+        if (result.status == NEVERC_NET_WOULD_BLOCK) {
+            int n = neverc_tcp_read(c, buf, sizeof(buf));
+            check_int("fin drained payload", n, 2);
+            result = neverc_tcp_try_read(c, buf, sizeof(buf));
+            if (result.status == NEVERC_NET_WOULD_BLOCK)
+                result.status = neverc_tcp_read(c, buf, sizeof(buf)) == 0
+                    ? NEVERC_NET_EOF : NEVERC_NET_SYSTEM;
+        } else if (result.status == NEVERC_NET_OK) {
+            check_int("fin first payload", (int)result.transferred, 2);
+            int n = neverc_tcp_read(c, buf, sizeof(buf));
+            result.status = n == 0 ? NEVERC_NET_EOF : NEVERC_NET_SYSTEM;
+        }
+        check_int("FIN after nonblocking read",
+                  result.status, NEVERC_NET_EOF);
+        neverc_tcp_close(c);
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    check_int("fin client ok",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+    neverc_tcp_listener_close(ln);
+}
+
 #endif /* _WIN32 */
 
 int main(void) {
@@ -784,10 +845,12 @@ int main(void) {
     test_independent_timeouts();
     test_controlled_io();
     test_socket_options();
+    test_fin_after_try_read();
 #endif
 
     printf("\n--- net/tcp: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ---\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

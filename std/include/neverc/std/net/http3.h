@@ -92,6 +92,11 @@ int neverc_qpack_decode(neverc_qpack_decoder_t *dec,
                           neverc_qpack_header_t *headers, int max_headers,
                           int *nheaders);
 
+/* Uncompressed field-section size (RFC 9113 §6.5.2 / RFC 9114 §4.2.2):
+ * sum of name length + value length + 32 per field. */
+int neverc_qpack_field_section_size(const neverc_qpack_header_t *headers,
+                                    int nheaders, uint64_t *size);
+
 /* HTTP/3 namespace aliases used by net.http3 dot syntax. */
 neverc_qpack_encoder_t *neverc_http3_qpack_encoder_create(
     uint32_t max_table_cap);
@@ -107,6 +112,8 @@ int neverc_http3_qpack_decode(
     neverc_qpack_decoder_t *decoder,
     const uint8_t *data, size_t length,
     neverc_qpack_header_t *headers, int max_headers, int *header_count);
+int neverc_http3_qpack_field_section_size(
+    const neverc_qpack_header_t *headers, int nheaders, uint64_t *size);
 
 /* ======================================================================
  * HTTP/3 Server

@@ -390,6 +390,22 @@ static void test_truncation_detection(void) {
               info.destination.port == receiver_addr.port, 1);
     check_int("packet interface recorded", info.interface_index > 0, 1);
 
+    check_int("send second oversized datagram",
+              neverc_udp_write_to(sender, payload, sizeof(payload),
+                                  &receiver_addr),
+              (int)sizeof(payload));
+    neverc_udp_addr_t from;
+    n = neverc_udp_read_from(receiver, small, sizeof(small), &from);
+    check_int("read_from copies prefix not error", n, (int)sizeof(small));
+    check_int("read_from source recorded", from.port > 0, 1);
+
+    check_int("send third oversized datagram",
+              neverc_udp_write_to(sender, payload, sizeof(payload),
+                                  &receiver_addr),
+              (int)sizeof(payload));
+    n = neverc_udp_read(receiver, small, sizeof(small));
+    check_int("read copies prefix not error", n, (int)sizeof(small));
+
     neverc_udp_close(sender);
     neverc_udp_close(receiver);
 }
@@ -721,5 +737,6 @@ int main(void) {
     printf("\n--- net/udp: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ---\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

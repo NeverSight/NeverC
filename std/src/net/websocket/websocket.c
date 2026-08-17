@@ -1505,21 +1505,7 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
             if (masked) {
                 uint8_t *p = (uint8_t *)buf;
                 size_t n = (size_t)plen;
-                /* Replicate the 4-byte key into a 64-bit word and unmask 8 bytes per
-                 * step. The chunk size (8) is a multiple of the key period (4) and
-                 * unmasking starts at offset 0, so the repeated key stays phase-
-                 * aligned with every chunk; the tail (< 8 bytes) finishes per byte. */
-                uint32_t k32;
-                memcpy(&k32, header.mask_key, 4);
-                uint64_t k64 = (uint64_t)k32 | ((uint64_t)k32 << 32);
-                size_t i = 0;
-                for (; i + 8 <= n; i += 8) {
-                    uint64_t w;
-                    memcpy(&w, p + i, 8);
-                    w ^= k64;
-                    memcpy(p + i, &w, 8);
-                }
-                for (; i < n; i++)
+                for (size_t i = 0; i < n; i++)
                     p[i] ^= header.mask_key[i % 4];
             }
         }

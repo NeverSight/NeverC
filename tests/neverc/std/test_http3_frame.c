@@ -87,6 +87,13 @@ static void test_frame_header_empty_buf(void) {
     ASSERT_EQ(rc, -1);
 }
 
+static void test_frame_header_truncated_varint(void) {
+    /* 2-byte QUIC varint prefix with only the first byte present. */
+    uint8_t buf[] = { 0x40 };
+    h3_frame_header_t hdr;
+    ASSERT_EQ(neverc_h3_parse_frame_header(buf, sizeof(buf), &hdr), -1);
+}
+
 /* ======================================================================
  * SETTINGS Frame
  * ====================================================================== */
@@ -133,6 +140,14 @@ static void test_settings_reserved_http2_ids_rejected(void) {
         ASSERT_EQ(neverc_h3_settings_decode(payload, sizeof(payload),
                                             &decoded), -1);
     }
+}
+
+static void test_settings_duplicate_ids_rejected(void) {
+    /* RFC 9114 §7.2.4: a setting identifier MUST NOT occur more than once. */
+    uint8_t payload[] = { 0x01, 0x00, 0x01, 0x20 };
+    h3_settings_t decoded;
+    ASSERT_EQ(neverc_h3_settings_decode(payload, sizeof(payload),
+                                        &decoded), -1);
 }
 
 static void test_settings_grease_ignored(void) {
@@ -548,6 +563,66 @@ static void test_qpack_rejects_nul_and_crlf(void) {
     neverc_qpack_decoder_destroy(dec);
 }
 
+static void test_qpack_field_section_size(void) {
+    /* RFC 9113 §6.5.2: size = name + value + 32 per field. */
+    neverc_qpack_header_t headers[] = {
+        { (char *)":method", (char *)"GET" },
+        { (char *)":scheme", (char *)"https" },
+        { (char *)":authority", (char *)"example.com" },
+        { (char *)":path", (char *)"/" },
+    };
+    uint64_t size = 0;
+    ASSERT_EQ(neverc_qpack_field_section_size(headers, 4, &size), 0);
+    ASSERT_EQ(size, (uint64_t)(7 + 3 + 32 + 7 + 5 + 32 + 10 + 11 + 32 +
+                               5 + 1 + 32));
+
+    neverc_qpack_encoder_t *enc = neverc_qpack_encoder_create(0);
+    uint8_t encoded[64];
+    size_t encoded_len = 0;
+    ASSERT_EQ(neverc_qpack_encode(enc, headers, 4, encoded, sizeof(encoded),
+                                  &encoded_len), 0);
+    /* Static-table QPACK is far smaller than the uncompressed section.
+     * Comparing encoded_len to SETTINGS_MAX_FIELD_SECTION_SIZE would
+     * wrongly accept a section the peer refused. */
+    ASSERT_TRUE(encoded_len < 50);
+    ASSERT_TRUE(size > 50);
+    neverc_qpack_encoder_destroy(enc);
+
+    ASSERT_EQ(neverc_qpack_field_section_size(NULL, 1, &size), -1);
+    ASSERT_EQ(neverc_qpack_field_section_size(headers, 0, &size), 0);
+    ASSERT_EQ(size, 0);
+}
+
+static void test_qpack_rejects_uppercase_and_empty_name(void) {
+    neverc_qpack_encoder_t *enc = neverc_qpack_encoder_create(4096);
+    neverc_qpack_decoder_t *dec = neverc_qpack_decoder_create(4096);
+    uint8_t encoded[128];
+    size_t encoded_len = 0;
+    neverc_qpack_header_t upper[] = {
+        { (char *)"Content-Type", (char *)"text/plain" },
+    };
+    ASSERT_EQ(neverc_qpack_encode(enc, upper, 1, encoded, sizeof(encoded),
+                                  &encoded_len), -1);
+
+    neverc_qpack_header_t empty_name[] = {
+        { (char *)"", (char *)"x" },
+    };
+    ASSERT_EQ(neverc_qpack_encode(enc, empty_name, 1, encoded, sizeof(encoded),
+                                  &encoded_len), -1);
+
+    /* Literal name "X" (uppercase) + value "a" must not be accepted. */
+    static const uint8_t upper_block[] = {
+        0x00, 0x00, 0x21, 'X', 0x01, 'a'
+    };
+    neverc_qpack_header_t decoded[4];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_qpack_decode(dec, upper_block, sizeof(upper_block),
+                                  decoded, 4, &nheaders), -1);
+
+    neverc_qpack_encoder_destroy(enc);
+    neverc_qpack_decoder_destroy(dec);
+}
+
 static void test_qpack_encoder_create_destroy(void) {
     neverc_qpack_encoder_t *enc = neverc_qpack_encoder_create(8192);
     ASSERT_NOT_NULL(enc);
@@ -570,9 +645,11 @@ int main(void) {
     test_frame_header_settings();
     test_frame_header_goaway();
     test_frame_header_empty_buf();
+    test_frame_header_truncated_varint();
     test_settings_default();
     test_settings_encode_decode_roundtrip();
     test_settings_reserved_http2_ids_rejected();
+    test_settings_duplicate_ids_rejected();
     test_settings_grease_ignored();
     test_settings_zero_values();
     test_data_frame_write();
@@ -595,6 +672,8 @@ int main(void) {
     test_qpack_literal_name_ref_never_index();
     test_qpack_rejects_s_bit_with_zero_ric();
     test_qpack_rejects_nul_and_crlf();
+    test_qpack_field_section_size();
+    test_qpack_rejects_uppercase_and_empty_name();
     test_qpack_encoder_create_destroy();
 
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);

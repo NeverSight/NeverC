@@ -438,20 +438,56 @@ static int qpack_find_static_name(const char *name) {
  *   - Literal:                   0 0 1 0 NameLen(3+) + Name + ValueLen(7+) + Value
  */
 
-/* RFC 9110 §5.5: CR, LF, and NUL in field names/values MUST NOT be consumed. */
+/* RFC 9110 §5.5: CR, LF, NUL, and other C0 controls except HTAB are invalid. */
 static int qpack_bytes_forbidden(const uint8_t *s, size_t len) {
     for (size_t i = 0; i < len; i++) {
         unsigned char c = s[i];
-        if (c == 0 || c == '\r' || c == '\n') return 1;
+        if (c == '\t') continue;
+        if (c < 0x20 || c == 0x7f) return 1;
     }
     return 0;
 }
 
-static int qpack_cstring_forbidden(const char *s) {
-    for (; *s; s++) {
-        unsigned char c = (unsigned char)*s;
-        if (c == '\r' || c == '\n') return 1;
+/* HTTP/3 field names are lowercase tokens, with an optional ':' for
+ * pseudo-headers (RFC 9114 §4.3 / RFC 9110 §5.1). */
+static int qpack_valid_field_name(const char *name) {
+    if (!name || !name[0]) return 0;
+    const unsigned char *cursor = (const unsigned char *)name;
+    if (*cursor == ':') cursor++;
+    if (!*cursor) return 0;
+    for (; *cursor; cursor++) {
+        unsigned char c = *cursor;
+        if (c >= 'A' && c <= 'Z') return 0;
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) continue;
+        if (strchr("!#$%&'*+-.^_`|~", (int)c) != NULL) continue;
+        return 0;
     }
+    return 1;
+}
+
+static int qpack_valid_field_value(const char *value) {
+    if (!value) return 0;
+    return !qpack_bytes_forbidden((const uint8_t *)value, strlen(value));
+}
+
+/* RFC 9114 §4.2.2 / RFC 9113 §6.5.2: SETTINGS_MAX_FIELD_SECTION_SIZE is
+ * the uncompressed list size — name + value + 32 octets per field. */
+int neverc_qpack_field_section_size(const neverc_qpack_header_t *headers,
+                                    int nheaders, uint64_t *size) {
+    if (!size || nheaders < 0 || (nheaders > 0 && !headers))
+        return -1;
+    uint64_t total = 0;
+    for (int i = 0; i < nheaders; i++) {
+        if (!headers[i].name || !headers[i].value) return -1;
+        uint64_t nlen = (uint64_t)strlen(headers[i].name);
+        uint64_t vlen = (uint64_t)strlen(headers[i].value);
+        if (nlen > UINT64_MAX - vlen ||
+            nlen + vlen > UINT64_MAX - 32U ||
+            total > UINT64_MAX - (nlen + vlen + 32U))
+            return -1;
+        total += nlen + vlen + 32U;
+    }
+    *size = total;
     return 0;
 }
 
@@ -497,8 +533,7 @@ int neverc_qpack_encode(neverc_qpack_encoder_t *enc,
     for (int i = 0; i < nheaders; i++) {
         const char *name = headers[i].name;
         const char *value = headers[i].value;
-        if (!name || !value ||
-            qpack_cstring_forbidden(name) || qpack_cstring_forbidden(value))
+        if (!qpack_valid_field_name(name) || !qpack_valid_field_value(value))
             return -1;
 
         int idx = qpack_find_static(name, value);
@@ -682,7 +717,9 @@ int neverc_qpack_decode(neverc_qpack_decoder_t *dec,
             /* Name: H(1) + length(3) + bytes (actually 3-bit prefix for length) */
             if (pos >= len) goto failed;
             headers[count].name = qpack_decode_string(data, len, &pos, 3);
-            if (!headers[count].name) goto failed;
+            if (!headers[count].name ||
+                !qpack_valid_field_name(headers[count].name))
+                goto failed;
             /* Value: H(1) + length(7) + bytes */
             if (pos >= len) goto failed;
             headers[count].value = qpack_decode_string(data, len, &pos, 7);
@@ -745,4 +782,9 @@ int neverc_http3_qpack_decode(
     neverc_qpack_header_t *headers, int max_headers, int *header_count) {
     return neverc_qpack_decode(decoder, data, length, headers, max_headers,
                                header_count);
+}
+
+int neverc_http3_qpack_field_section_size(
+    const neverc_qpack_header_t *headers, int nheaders, uint64_t *size) {
+    return neverc_qpack_field_section_size(headers, nheaders, size);
 }

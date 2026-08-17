@@ -203,6 +203,67 @@ static void test_handshake_rejects(void) {
     neverc_tcp_listener_close(ln);
 }
 
+static void test_reject_unmasked_client_frame(void) {
+    printf("[reject_unmasked_client_frame]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("unmasked listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("unmasked client", client);
+    check_not_null("unmasked server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    const char *good =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    size_t consumed = 0;
+    check_int("unmasked handshake",
+              neverc_ws_handshake_server(server, good, strlen(good),
+                                         &consumed),
+              0);
+
+    /* RFC 6455 §5.1: a server MUST close on an unmasked client frame. */
+    uint8_t unmasked[] = { 0x81, 0x05, 'h', 'e', 'l', 'l', 'o' };
+    check_int("write unmasked",
+              neverc_tcp_write(client, unmasked, sizeof(unmasked)) ==
+                  (int)sizeof(unmasked),
+              1);
+
+    neverc_ws_conn_t *ws = neverc_ws_conn_new(server);
+    check_not_null("unmasked server ws", ws);
+    if (ws) {
+        int opcode = 0;
+        char buf[16];
+        size_t n = 0;
+        check_int("reject unmasked client frame",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  -1);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
 #ifndef _WIN32
 
 static int tcp_read_exact(neverc_tcp_conn_t *conn, void *buf, size_t len) {
@@ -672,6 +733,7 @@ int main(void) {
     test_null_safety();
     test_utf8_prefix_validation();
     test_handshake_rejects();
+    test_reject_unmasked_client_frame();
 #ifndef _WIN32
     test_client_dial_and_masking();
     test_handshake_and_echo();
@@ -682,5 +744,6 @@ int main(void) {
     printf("\n%d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf("\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

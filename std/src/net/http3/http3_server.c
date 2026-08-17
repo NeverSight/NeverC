@@ -46,6 +46,8 @@ extern int neverc_h3_write_headers_frame(uint8_t *buffer, size_t capacity,
 extern int neverc_h3_write_goaway_frame(uint8_t *buffer, size_t capacity,
                                         uint64_t stream_id,
                                         size_t *written);
+extern int neverc_qpack_field_section_size(
+    const neverc_qpack_header_t *headers, int nheaders, uint64_t *size);
 
 #define H3_STREAM_TYPE_CONTROL       0x00U
 #define H3_STREAM_TYPE_PUSH          0x01U
@@ -62,6 +64,7 @@ extern int neverc_h3_write_goaway_frame(uint8_t *buffer, size_t capacity,
 #define H3_POST_DRAIN_GRACE_MS 3000U
 #define H3_SHUTDOWN_ABSOLUTE_MAX_MS 30000U
 #define H3_QPACK_DECOMPRESSION_FAILED 0x0200U
+#define H3_QPACK_ENCODER_STREAM_ERROR 0x0201U
 
 /* RFC 9114 §7.2 / §11.2.1: HTTP/2 frame types that were not redefined
  * for HTTP/3 MUST be treated as H3_FRAME_UNEXPECTED. */
@@ -269,6 +272,8 @@ static int h3_conn_init(h3_conn_t *connection,
     memset(connection, 0, sizeof(*connection));
     connection->server = server;
     connection->quic = quic;
+    nc_mutex_init(&connection->lock);
+    nc_cond_init(&connection->settings_cond);
     connection->encoder = neverc_qpack_encoder_create(0);
     connection->decoder = neverc_qpack_decoder_create(0);
     if (!connection->encoder || !connection->decoder) {
@@ -276,27 +281,40 @@ static int h3_conn_init(h3_conn_t *connection,
         neverc_qpack_decoder_destroy(connection->decoder);
         connection->encoder = NULL;
         connection->decoder = NULL;
+        nc_mutex_destroy(&connection->lock);
+        nc_cond_destroy(&connection->settings_cond);
         return -1;
     }
     neverc_h3_settings_default(&connection->local_settings);
-    nc_mutex_init(&connection->lock);
-    nc_cond_init(&connection->settings_cond);
     return 0;
 }
 
-static void h3_conn_cleanup(h3_conn_t *connection) {
-    if (!connection) return;
+static void h3_conn_teardown(h3_conn_t *connection) {
     neverc_quic_stream_free(connection->control_out);
     neverc_quic_stream_free(connection->qpack_encoder_out);
     neverc_quic_stream_free(connection->qpack_decoder_out);
     neverc_quic_stream_free(connection->control_in);
     neverc_quic_stream_free(connection->qpack_encoder_in);
     neverc_quic_stream_free(connection->qpack_decoder_in);
+    connection->control_out = NULL;
+    connection->qpack_encoder_out = NULL;
+    connection->qpack_decoder_out = NULL;
+    connection->control_in = NULL;
+    connection->qpack_encoder_in = NULL;
+    connection->qpack_decoder_in = NULL;
     neverc_qpack_encoder_destroy(connection->encoder);
     neverc_qpack_decoder_destroy(connection->decoder);
+    connection->encoder = NULL;
+    connection->decoder = NULL;
     free(connection->control_buffer);
+    connection->control_buffer = NULL;
     nc_mutex_destroy(&connection->lock);
     nc_cond_destroy(&connection->settings_cond);
+}
+
+static void h3_conn_cleanup(h3_conn_t *connection) {
+    if (!connection) return;
+    h3_conn_teardown(connection);
     neverc_quic_conn_free(connection->quic);
     free(connection);
 }
@@ -446,6 +464,11 @@ static int h3_parse_request_headers(h3_conn_t *connection,
     unsigned pseudo_seen = 0;
     const char *host = NULL;
     int result = -1;
+    uint64_t section_size = 0;
+    if (neverc_qpack_field_section_size(headers, header_count,
+                                        &section_size) != 0 ||
+        section_size > connection->local_settings.max_field_section_size)
+        goto cleanup;
     for (int i = 0; i < header_count; i++) {
         char *name = headers[i].name;
         char *value = headers[i].value;
@@ -577,6 +600,12 @@ static int h3_read_request(h3_conn_t *connection,
                 nc_mutex_unlock(&connection->lock);
                 free(payload);
                 if (parsed != 0) return -1;
+                uint64_t trailer_size = 0;
+                if (neverc_qpack_field_section_size(decoded, count,
+                                                    &trailer_size) != 0 ||
+                    trailer_size >
+                        connection->local_settings.max_field_section_size)
+                    parsed = -1;
                 for (int i = 0; i < count; i++) {
                     if (decoded[i].name[0] == ':' ||
                         !h3_ascii_lower_name(decoded[i].name))
@@ -653,6 +682,14 @@ static int h3_send_header_section(h3_conn_t *connection,
                                      &encoded_length);
     nc_mutex_unlock(&connection->lock);
     if (result != 0) {
+        free(encoded);
+        return -1;
+    }
+    uint64_t section_size = 0;
+    if (neverc_qpack_field_section_size(headers, header_count,
+                                        &section_size) != 0 ||
+        (connection->peer_settings_received &&
+         section_size > connection->peer_settings.max_field_section_size)) {
         free(encoded);
         return -1;
     }
@@ -973,7 +1010,11 @@ static int h3_parse_control_buffer(h3_conn_t *connection) {
             connection->goaway_received = 1;
             connection->goaway_id = identifier;
             nc_mutex_unlock(&connection->lock);
-            if (increasing) goto invalid;
+            if (increasing) {
+                h3_protocol_error(connection, NC_H3_ID_ERROR,
+                                  "GOAWAY identifier increased");
+                return -1;
+            }
             h3_consume_control_buffer(connection, position + (size_t)length);
         } else if (type == NC_H3_FRAME_DATA ||
                    type == NC_H3_FRAME_HEADERS ||
@@ -1021,7 +1062,8 @@ static int h3_poll_control_stream(h3_conn_t *connection, int *worked) {
 }
 
 static int h3_poll_qpack_stream(h3_conn_t *connection,
-                                neverc_quic_stream_t *stream, int *worked) {
+                                neverc_quic_stream_t *stream, int *worked,
+                                int encoder_stream) {
     if (!stream) return 0;
     uint8_t scratch[4096];
     for (;;) {
@@ -1041,8 +1083,14 @@ static int h3_poll_qpack_stream(h3_conn_t *connection,
         }
         if (count < 0) return -1;
         *worked = 1;
-        /* Dynamic QPACK instructions cannot affect static-only blocks because
-         * this endpoint advertises capacity and blocked streams as zero. */
+        /* RFC 9204 §3.2.3: capacity 0 forbids encoder inserts. This endpoint
+         * advertises capacity and blocked streams as zero, so any encoder
+         * instruction is QPACK_ENCODER_STREAM_ERROR. */
+        if (encoder_stream && count > 0) {
+            h3_protocol_error(connection, H3_QPACK_ENCODER_STREAM_ERROR,
+                              "QPACK encoder instruction with zero capacity");
+            return -1;
+        }
     }
 }
 
@@ -1153,9 +1201,9 @@ static void *h3_connection_worker(void *argument) {
         if (h3_poll_pending_uni(connection, &worked) != 0 ||
             h3_poll_control_stream(connection, &worked) != 0 ||
             h3_poll_qpack_stream(connection, connection->qpack_encoder_in,
-                                 &worked) != 0 ||
+                                 &worked, 1) != 0 ||
             h3_poll_qpack_stream(connection, connection->qpack_decoder_in,
-                                 &worked) != 0) {
+                                 &worked, 0) != 0) {
             if (neverc_quic_conn_is_alive(connection->quic))
                 h3_protocol_error(connection, NC_H3_GENERAL_PROTOCOL_ERROR,
                                   "critical stream processing failed");
@@ -1498,10 +1546,17 @@ static int h3_client_receive_settings(h3_conn_t *connection) {
     for (int i = 0; i < 16; i++) {
         neverc_quic_stream_t *stream =
             neverc_quic_accept_stream(connection->quic, NULL);
-        if (!stream || (neverc_quic_stream_id(stream) & 2U) == 0)
+        if (!stream)
             return -1;
+        if ((neverc_quic_stream_id(stream) & 2U) == 0) {
+            neverc_quic_stream_free(stream);
+            return -1;
+        }
         uint64_t stream_type;
-        if (h3_read_varint(stream, &stream_type) != 1) return -1;
+        if (h3_read_varint(stream, &stream_type) != 1) {
+            neverc_quic_stream_free(stream);
+            return -1;
+        }
         if (stream_type != H3_STREAM_TYPE_CONTROL) {
             neverc_quic_stream_free(stream);
             continue;
@@ -1510,11 +1565,15 @@ static int h3_client_receive_settings(h3_conn_t *connection) {
         uint64_t frame_length;
         if (h3_read_varint(stream, &frame_type) != 1 ||
             frame_type != NC_H3_FRAME_SETTINGS ||
-            h3_read_varint(stream, &frame_length) != 1)
+            h3_read_varint(stream, &frame_length) != 1) {
+            neverc_quic_stream_free(stream);
             return -1;
+        }
         uint8_t *payload = NULL;
-        if (h3_read_payload(stream, frame_length, 65536, &payload) != 0)
+        if (h3_read_payload(stream, frame_length, 65536, &payload) != 0) {
+            neverc_quic_stream_free(stream);
             return -1;
+        }
         int decoded = neverc_h3_settings_decode(payload,
                                                  (size_t)frame_length,
                                                  &connection->peer_settings);
@@ -1566,6 +1625,15 @@ static int h3_client_parse_header_block(h3_conn_t *connection,
     if (neverc_qpack_decode(connection->decoder, payload, payload_length,
                             headers, 64, &count) != 0)
         return -1;
+    uint64_t section_size = 0;
+    if (neverc_qpack_field_section_size(headers, count, &section_size) != 0 ||
+        section_size > connection->local_settings.max_field_section_size) {
+        for (int i = 0; i < count; i++) {
+            free(headers[i].name);
+            free(headers[i].value);
+        }
+        return -1;
+    }
     int status_seen = 0;
     int regular_seen = 0;
     size_t text_length = 0;
@@ -1749,15 +1817,13 @@ static neverc_http_response_t *h3_client_request(
         return h3_error_response("HTTP/3 peer did not negotiate h3");
     }
     h3_conn_t connection;
-    if (h3_conn_init(&connection, NULL, quic) != 0 ||
-        h3_setup_local_streams(&connection) != 0 ||
+    if (h3_conn_init(&connection, NULL, quic) != 0) {
+        neverc_quic_conn_free(quic);
+        return h3_error_response("HTTP/3 peer SETTINGS failed");
+    }
+    if (h3_setup_local_streams(&connection) != 0 ||
         h3_client_receive_settings(&connection) != 0) {
-        if (connection.encoder && connection.decoder) {
-            neverc_qpack_encoder_destroy(connection.encoder);
-            neverc_qpack_decoder_destroy(connection.decoder);
-            nc_mutex_destroy(&connection.lock);
-            nc_cond_destroy(&connection.settings_cond);
-        }
+        h3_conn_teardown(&connection);
         neverc_quic_conn_free(quic);
         return h3_error_response("HTTP/3 peer SETTINGS failed");
     }
@@ -1819,19 +1885,13 @@ static neverc_http_response_t *h3_client_request(
         goto client_failed;
     }
     neverc_quic_stream_free(stream);
-    neverc_qpack_encoder_destroy(connection.encoder);
-    neverc_qpack_decoder_destroy(connection.decoder);
-    nc_mutex_destroy(&connection.lock);
-    nc_cond_destroy(&connection.settings_cond);
+    h3_conn_teardown(&connection);
     neverc_quic_conn_free(quic);
     return response;
 
 client_failed:
     neverc_quic_stream_free(stream);
-    neverc_qpack_encoder_destroy(connection.encoder);
-    neverc_qpack_decoder_destroy(connection.decoder);
-    nc_mutex_destroy(&connection.lock);
-    nc_cond_destroy(&connection.settings_cond);
+    h3_conn_teardown(&connection);
     neverc_quic_conn_free(quic);
     return h3_error_response(request_error);
 }

@@ -556,28 +556,17 @@ static int udp_wait_conn(neverc_udp_conn_t *conn, int write_ready) {
     return ready < 0 ? -1 : 0;
 }
 
+static int udp_read_packet_unlocked(
+    neverc_udp_conn_t *conn, void *buf, size_t buflen,
+    neverc_udp_packet_info_t *info);
+
 static int udp_read_from_unlocked(neverc_udp_conn_t *conn, void *buf,
                                   size_t buflen,
                                   neverc_udp_addr_t *from) {
-    if (!conn || (!buf && buflen > 0) ||
-        buflen > NEVERC_UDP_MAX_DATAGRAM_SIZE)
-        return -1;
-    if (udp_refresh_read_deadline(conn) != 0) return -1;
-    struct sockaddr_storage sa;
-    socklen_t salen = sizeof(sa);
-    int n;
-#ifdef _WIN32
-    if (buflen > (size_t)INT_MAX) return -1;
-    n = recvfrom(conn->fd, (char *)buf, (int)buflen, 0,
-                 (struct sockaddr *)&sa, &salen);
-#else
-    do {
-        n = (int)recvfrom(conn->fd, buf, buflen, 0,
-                          (struct sockaddr *)&sa, &salen);
-    } while (n < 0 && errno == EINTR);
-#endif
+    neverc_udp_packet_info_t info;
+    int n = udp_read_packet_unlocked(conn, buf, buflen, &info);
     if (n >= 0 && from)
-        sa_to_udp_addr((struct sockaddr *)&sa, salen, from);
+        *from = info.source;
     return n;
 }
 
@@ -1243,30 +1232,8 @@ int neverc_udp_write(neverc_udp_conn_t *conn, const void *data, size_t len) {
 }
 
 int neverc_udp_read(neverc_udp_conn_t *conn, void *buf, size_t buflen) {
-    if (!conn || (!buf && buflen > 0) ||
-        buflen > NEVERC_UDP_MAX_DATAGRAM_SIZE)
-        return -1;
-    nc_mutex_lock(&conn->read_lock);
-    int result;
-    for (;;) {
-        if (udp_refresh_read_deadline(conn) != 0) {
-            result = -1;
-            break;
-        }
-#ifdef _WIN32
-        result = recv(conn->fd, (char *)buf, (int)buflen, 0);
-#else
-        do {
-            result = (int)recv(conn->fd, buf, buflen, 0);
-        } while (result < 0 && errno == EINTR);
-#endif
-        if (result >= 0 || !nc_atomic_load(&conn->nonblocking) ||
-            !udp_error_would_block(nc_sock_errno) ||
-            udp_wait_conn(conn, 0) != 0)
-            break;
-    }
-    nc_mutex_unlock(&conn->read_lock);
-    return result;
+    neverc_udp_packet_info_t info;
+    return neverc_udp_read_packet(conn, buf, buflen, &info);
 }
 
 void neverc_udp_close(neverc_udp_conn_t *conn) {
