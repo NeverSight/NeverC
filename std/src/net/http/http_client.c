@@ -2880,18 +2880,47 @@ static void strip_prefix_context_free(void *context) {
     free(ctx);
 }
 
+static int http_path_contains_dotdot(const char *path);
+
 static void strip_prefix_handler_fn(neverc_http_request_t *req,
                                     neverc_http_response_writer_t *w,
                                     void *context) {
     strip_prefix_ctx_t *ctx = (strip_prefix_ctx_t *)context;
-    if (req->path &&
-        strncmp(req->path, ctx->prefix, ctx->prefix_len) == 0) {
-        neverc_http_request_t stripped = *req;
-        stripped.path = req->path + ctx->prefix_len;
-        if (stripped.path[0] == '\0') stripped.path = "/";
-        ctx->inner(&stripped, w);
-        return;
+    if (!req->path ||
+        strncmp(req->path, ctx->prefix, ctx->prefix_len) != 0)
+        goto not_found;
+
+    const char *rest = req->path + ctx->prefix_len;
+    /* "/api" must not match "/apifoo": the cut has to fall on a slash
+     * or at end-of-path, unless the prefix itself ended with '/'. */
+    if (rest[0] != '\0' && rest[0] != '/' &&
+        (ctx->prefix_len == 0 ||
+         ctx->prefix[ctx->prefix_len - 1] != '/'))
+        goto not_found;
+
+    char *owned = NULL;
+    neverc_http_request_t stripped = *req;
+    if (rest[0] == '\0') {
+        stripped.path = "/";
+    } else if (rest[0] == '/') {
+        stripped.path = rest;
+    } else {
+        size_t rest_len = strlen(rest);
+        owned = (char *)malloc(rest_len + 2);
+        if (!owned) goto not_found;
+        owned[0] = '/';
+        memcpy(owned + 1, rest, rest_len + 1);
+        stripped.path = owned;
     }
+    if (http_path_contains_dotdot(stripped.path)) {
+        free(owned);
+        goto not_found;
+    }
+    ctx->inner(&stripped, w);
+    free(owned);
+    return;
+
+not_found:
     neverc_http_not_found(req, w);
 }
 
@@ -2924,17 +2953,42 @@ void neverc_http_strip_prefix(neverc_http_mux_t *mux, const char *prefix,
  * Serve File — Content-Type sniffing, Last-Modified, Range, If-Modified-Since
  * ====================================================================== */
 
+static int http_hex_nibble(unsigned char c) {
+    if (c >= '0' && c <= '9') return (int)(c - '0');
+    if (c >= 'a' && c <= 'f') return (int)(c - 'a' + 10);
+    if (c >= 'A' && c <= 'F') return (int)(c - 'A' + 10);
+    return -1;
+}
+
+/* True if any path segment is ".." after one percent-decode pass.
+ * Matches Go ServeFile: r.URL.Path is unescaped, then ".." elements are
+ * rejected. Literal and %2e/%2E forms must not leak past StripPrefix. */
 static int http_path_contains_dotdot(const char *path) {
     if (!path) return 0;
-    const char *s = path;
+    size_t seg_len = 0;
+    char seg[2];
+    const unsigned char *s = (const unsigned char *)path;
     while (*s) {
-        if (s[0] == '.' && s[1] == '.' &&
-            (s[2] == '/' || s[2] == '\\' || s[2] == '\0') &&
-            (s == path || s[-1] == '/' || s[-1] == '\\'))
-            return 1;
+        unsigned char c = *s;
+        if (c == '%') {
+            int high = http_hex_nibble(s[1]);
+            int low = http_hex_nibble(s[2]);
+            if ((high | low) >= 0) {
+                c = (unsigned char)((high << 4) | low);
+                s += 2;
+            }
+        }
+        if (c == '/' || c == '\\') {
+            if (seg_len == 2 && seg[0] == '.' && seg[1] == '.')
+                return 1;
+            seg_len = 0;
+        } else {
+            if (seg_len < 2) seg[seg_len] = (char)c;
+            seg_len++;
+        }
         s++;
     }
-    return 0;
+    return seg_len == 2 && seg[0] == '.' && seg[1] == '.';
 }
 
 static int http_parse_dec_u64(const char *start, const char *end,

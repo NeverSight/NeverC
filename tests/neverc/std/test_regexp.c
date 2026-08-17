@@ -590,15 +590,21 @@ static void test_word_bounds_and_text_anchors(void) {
     section("[word bounds / \\\\A \\\\z]");
     check_bool("\\bfoo in foo", neverc_regexp_match_string("\\bfoo\\b", "foo"), 1);
     check_bool("\\bfoo in xfoo", neverc_regexp_match_string("\\bfoo\\b", "xfoo"), 0);
-    check_bool("\\bfoo in foo!", neverc_regexp_match_string("\\bfoo\\b", "foo!"), 1);
-    check_bool("\\Boo in foo", neverc_regexp_match_string("\\Boo", "foo"), 1);
+    /* Matching APIs require the whole string; `foo!` is a find, not a match. */
+    check_bool("\\bfoo whole foo!", neverc_regexp_match_string("\\bfoo\\b", "foo!"), 0);
+    check_bool("\\Boo whole foo", neverc_regexp_match_string("\\Boo", "foo"), 0);
     check_bool("\\Bfoo no", neverc_regexp_match_string("\\Bfoo", "foo"), 0);
 
     neverc_regexp_t *re = neverc_regexp_compile("\\bfoo\\b", NULL);
     char buf[64];
+    check_str("\\bfoo find in foo!", find_str(re, "foo!", buf), "foo");
     check_str("\\bfoo find in bar foo baz", find_str(re, "bar foo baz", buf), "foo");
     size_t mlen = 99;
     check_bool("\\bfoo find in xfooy", neverc_regexp_find(re, "xfooy", &mlen) == NULL, 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("\\Boo", NULL);
+    check_str("\\Boo find in foo", find_str(re, "foo", buf), "oo");
     neverc_regexp_free(re);
 
     check_bool("\\Ahello", neverc_regexp_match_string("\\Ahello", "hello"), 1);
@@ -760,6 +766,11 @@ static void test_utf8_class_and_nfa_bound(void) {
     check_bool("(a+)+x compiles", re != NULL, 1);
     check_bool("(a+)+x no match", neverc_regexp_match(re, "aaaaaaaaaaaaaaaaaaaa"), 0);
     check_bool("(a+)+x match", neverc_regexp_match(re, "aaaaaaaaaaaaaaaaaaaax"), 1);
+    neverc_regexp_free(re);
+
+    const char *err = NULL;
+    re = neverc_regexp_compile("(a{1000}){1000}", &err);
+    check_bool("nested 1000x1000 rejected", re == NULL, 1);
     neverc_regexp_free(re);
 }
 

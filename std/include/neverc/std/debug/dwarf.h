@@ -212,7 +212,8 @@ typedef int (*neverc_dwarf_entry_cb)(const neverc_dwarf_entry_t *entry,
 int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
                                neverc_dwarf_entry_cb cb, void *user);
 
-/* Get string from .debug_str at offset. */
+/* Get string from .debug_str at offset. Returns NULL if the offset is out
+ * of range or the string is not NUL-terminated within the table. */
 const char *neverc_dwarf_get_string(const neverc_dwarf_data_t *d,
                                      uint64_t offset);
 

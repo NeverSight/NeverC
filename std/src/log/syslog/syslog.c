@@ -49,9 +49,13 @@ static void copy_tag(char *dst, size_t dstsz, const char *tag) {
 
 int neverc_syslog_pri(neverc_syslog_facility_t facility,
                       neverc_syslog_priority_t priority) {
-    if ((int)priority < 0 || (int)priority > NEVERC_SYSLOG_DEBUG)
+    int sev = (int)priority;
+    int fac = (int)facility;
+    if (sev < 0 || sev > NEVERC_SYSLOG_DEBUG)
         return -1;
-    return ((int)facility & ~7) | ((int)priority & 7);
+    if (fac < 0 || fac > (23 << 3) || (fac & 7) != 0)
+        return -1;
+    return fac | sev;
 }
 
 static int write_allowed(neverc_syslog_t *log,
@@ -97,7 +101,8 @@ static int write_pri_fallback(neverc_syslog_t *log,
     char line[SYSLOG_MSG_MAX + 160];
     if (neverc_syslog_format(log, priority, msg, line, sizeof(line)) != 0)
         return -1;
-    fprintf(stderr, "%s\n", line);
+    if (fprintf(stderr, "%s\n", line) < 0)
+        return -1;
     return 0;
 }
 
@@ -108,6 +113,8 @@ static int write_pri_fallback(neverc_syslog_t *log,
 neverc_syslog_t *neverc_syslog_open(const char *tag,
                                      neverc_syslog_facility_t facility,
                                      neverc_syslog_priority_t min_priority) {
+    if (neverc_syslog_pri(facility, min_priority) < 0)
+        return NULL;
     neverc_syslog_t *log = (neverc_syslog_t*)calloc(1, sizeof(*log));
     if (!log) return NULL;
     copy_tag(log->tag, sizeof(log->tag), tag);
@@ -135,7 +142,8 @@ int neverc_syslog_write(neverc_syslog_t *log,
     char msgbuf[SYSLOG_MSG_MAX];
     sanitize_msg(msgbuf, sizeof(msgbuf), msg);
     const char *msgs[1] = { msgbuf };
-    ReportEventA(log->event_log, etype, 0, 0, NULL, 1, 0, msgs, NULL);
+    if (!ReportEventA(log->event_log, etype, 0, 0, NULL, 1, 0, msgs, NULL))
+        return -1;
     return 0;
 }
 
@@ -147,6 +155,8 @@ int neverc_syslog_write(neverc_syslog_t *log,
 neverc_syslog_t *neverc_syslog_open(const char *tag,
                                      neverc_syslog_facility_t facility,
                                      neverc_syslog_priority_t min_priority) {
+    if (neverc_syslog_pri(facility, min_priority) < 0)
+        return NULL;
     neverc_syslog_t *log = (neverc_syslog_t*)calloc(1, sizeof(*log));
     if (!log) return NULL;
     copy_tag(log->tag, sizeof(log->tag), tag);
@@ -178,6 +188,8 @@ int neverc_syslog_write(neverc_syslog_t *log,
 neverc_syslog_t *neverc_syslog_open(const char *tag,
                                      neverc_syslog_facility_t facility,
                                      neverc_syslog_priority_t min_priority) {
+    if (neverc_syslog_pri(facility, min_priority) < 0)
+        return NULL;
     neverc_syslog_t *log = (neverc_syslog_t*)calloc(1, sizeof(*log));
     if (!log) return NULL;
     copy_tag(log->tag, sizeof(log->tag), tag);

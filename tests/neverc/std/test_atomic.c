@@ -32,7 +32,7 @@ static void test_load_store_int32(void) {
 
 static void test_load_store_int64(void) {
     printf("[load_store_int64]\n");
-    volatile int64_t v = 0;
+    _Alignas(8) volatile int64_t v = 0;
     neverc_atomic_store_int64(&v, 1234567890123LL);
     ASSERT_INT_EQ(neverc_atomic_load_int64(&v), 1234567890123LL);
 }
@@ -43,7 +43,7 @@ static void test_load_store_uint(void) {
     neverc_atomic_store_uint32(&u32, 7);
     ASSERT_INT_EQ(neverc_atomic_load_uint32(&u32), 7);
 
-    volatile uint64_t u64 = 0;
+    _Alignas(8) volatile uint64_t u64 = 0;
     neverc_atomic_store_uint64(&u64, 99);
     ASSERT_INT_EQ(neverc_atomic_load_uint64(&u64), 99);
 
@@ -53,14 +53,14 @@ static void test_load_store_uint(void) {
     ASSERT_TRUE(neverc_atomic_cas_uint32(&u32, 1, 4));
     ASSERT_INT_EQ(neverc_atomic_load_uint32(&u32), 4);
 
-    volatile int64_t i64add = 2;
+    _Alignas(8) volatile int64_t i64add = 2;
     ASSERT_INT_EQ(neverc_atomic_add_int64(&i64add, 3), 5);
-    volatile uint64_t s64 = 5;
+    _Alignas(8) volatile uint64_t s64 = 5;
     ASSERT_INT_EQ(neverc_atomic_swap_uint64(&s64, 8), 5);
     ASSERT_TRUE(neverc_atomic_cas_uint64(&s64, 8, 11));
     ASSERT_INT_EQ(neverc_atomic_load_uint64(&s64), 11);
 
-    volatile int64_t i64 = 20;
+    _Alignas(8) volatile int64_t i64 = 20;
     ASSERT_TRUE(neverc_atomic_cas_int64(&i64, 20, 30));
     ASSERT_INT_EQ(neverc_atomic_load_int64(&i64), 30);
 }
@@ -75,7 +75,7 @@ static void test_add(void) {
     result = neverc_atomic_add_int32(&v32, -20);
     ASSERT_INT_EQ(result, -5);
 
-    volatile uint64_t v64 = 100;
+    _Alignas(8) volatile uint64_t v64 = 100;
     uint64_t r64 = neverc_atomic_add_uint64(&v64, 50);
     ASSERT_INT_EQ(r64, 150);
 }
@@ -87,7 +87,7 @@ static void test_swap(void) {
     ASSERT_INT_EQ(old, 42);
     ASSERT_INT_EQ(neverc_atomic_load_int32(&v), 100);
 
-    volatile int64_t v64 = 999;
+    _Alignas(8) volatile int64_t v64 = 999;
     int64_t old64 = neverc_atomic_swap_int64(&v64, 0);
     ASSERT_INT_EQ(old64, 999);
     ASSERT_INT_EQ(neverc_atomic_load_int64(&v64), 0);
@@ -161,6 +161,46 @@ static void test_concurrent_add(void) {
     ASSERT_INT_EQ(neverc_atomic_load_int32(&shared_counter), NUM_THREADS * INCREMENTS);
 }
 
+static _Alignas(8) volatile int64_t shared_counter64 = 0;
+#define INCREMENTS64 50000
+
+#if defined(_WIN32)
+static DWORD WINAPI thread_increment64(LPVOID arg) {
+    (void)arg;
+    for (int i = 0; i < INCREMENTS64; i++)
+        neverc_atomic_add_int64(&shared_counter64, 1);
+    return 0;
+}
+#else
+static void *thread_increment64(void *arg) {
+    (void)arg;
+    for (int i = 0; i < INCREMENTS64; i++)
+        neverc_atomic_add_int64(&shared_counter64, 1);
+    return NULL;
+}
+#endif
+
+static void test_concurrent_add64(void) {
+    printf("[concurrent_add64]\n");
+    neverc_atomic_store_int64(&shared_counter64, 0);
+#if defined(_WIN32)
+    HANDLE threads[NUM_THREADS];
+    for (int i = 0; i < NUM_THREADS; i++)
+        threads[i] = CreateThread(NULL, 0, thread_increment64, NULL, 0, NULL);
+    WaitForMultipleObjects(NUM_THREADS, threads, TRUE, INFINITE);
+    for (int i = 0; i < NUM_THREADS; i++)
+        CloseHandle(threads[i]);
+#else
+    pthread_t threads[NUM_THREADS];
+    for (int i = 0; i < NUM_THREADS; i++)
+        pthread_create(&threads[i], NULL, thread_increment64, NULL);
+    for (int i = 0; i < NUM_THREADS; i++)
+        pthread_join(threads[i], NULL);
+#endif
+    ASSERT_INT_EQ(neverc_atomic_load_int64(&shared_counter64),
+                  (long long)NUM_THREADS * INCREMENTS64);
+}
+
 int main(void) {
     printf("=== NeverC sync/atomic Tests ===\n");
     test_load_store_int32();
@@ -171,6 +211,8 @@ int main(void) {
     test_cas();
     test_pointer();
     test_concurrent_add();
+    test_concurrent_add64();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

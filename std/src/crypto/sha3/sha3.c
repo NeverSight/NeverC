@@ -109,8 +109,17 @@ static void sha3_init(neverc_sha3_ctx *ctx, size_t capacity_bits, uint8_t suffix
     ctx->suffix = suffix;
 }
 
+/* rate==0 is a zeroed/uninitialized ctx: update would spin, pad would
+ * memset SIZE_MAX bytes. Refuse rather than corrupt memory. */
+static int sha3_rate_ok(const neverc_sha3_ctx *ctx) {
+    return ctx->rate > 0 && ctx->rate <= sizeof(ctx->buf) &&
+           ctx->buf_len < ctx->rate;
+}
+
 static void sha3_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) {
     if (!ctx || ctx->squeezed || ctx->finalized || (len > 0 && !data))
+        return;
+    if (!sha3_rate_ok(ctx))
         return;
     size_t i = 0;
     while (i < len) {
@@ -135,6 +144,10 @@ static void sha3_pad_and_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outl
     if (ctx->finalized) {
         if (out && outlen <= ctx->digest_len)
             memcpy(out, ctx->digest, outlen);
+        return;
+    }
+    if (!sha3_rate_ok(ctx)) {
+        memset(out, 0, outlen);
         return;
     }
     /* Apply domain separation suffix and multi-rate padding */
@@ -169,6 +182,12 @@ static void shake_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
     if (!ctx || (!out && outlen != 0)) return;
     if (ctx->finalized)
         return;
+    if (ctx->rate == 0 || ctx->rate > sizeof(ctx->buf) ||
+        (!ctx->squeezed && ctx->buf_len >= ctx->rate)) {
+        if (out && outlen)
+            memset(out, 0, outlen);
+        return;
+    }
     if (!ctx->squeezed) {
         ctx->buf[ctx->buf_len] = ctx->suffix;
         memset(

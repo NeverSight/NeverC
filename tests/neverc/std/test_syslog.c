@@ -63,6 +63,18 @@ static void test_pri_and_facilities(void) {
                                 (neverc_syslog_priority_t)(-1)), -1);
     ASSERT_EQ(neverc_syslog_pri(NEVERC_SYSLOG_USER,
                                 (neverc_syslog_priority_t)8), -1);
+    ASSERT_EQ(neverc_syslog_pri(NEVERC_SYSLOG_LOCAL7, NEVERC_SYSLOG_DEBUG),
+              (23 << 3) | 7);
+    ASSERT_EQ(neverc_syslog_pri((neverc_syslog_facility_t)(24 << 3),
+                                NEVERC_SYSLOG_INFO), -1);
+    ASSERT_EQ(neverc_syslog_pri((neverc_syslog_facility_t)1,
+                                NEVERC_SYSLOG_INFO), -1);
+    ASSERT_EQ(neverc_syslog_pri((neverc_syslog_facility_t)(-8),
+                                NEVERC_SYSLOG_INFO), -1);
+    ASSERT_TRUE(neverc_syslog_open("x", (neverc_syslog_facility_t)1,
+                                   NEVERC_SYSLOG_INFO) == NULL);
+    ASSERT_TRUE(neverc_syslog_open("x", NEVERC_SYSLOG_USER,
+                                   (neverc_syslog_priority_t)8) == NULL);
 }
 
 static void test_long_tag(void) {

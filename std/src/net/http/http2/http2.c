@@ -671,6 +671,11 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
 struct neverc_hpack_encoder {
     hpack_dyn_table_t dyn;
     int pending_size_update;
+    /* Smallest SETTINGS_HEADER_TABLE_SIZE applied since the last emitted
+     * size update. RFC 7541 §4.2 / RFC 9113 §6.5.2: if the max shrinks
+     * then grows before the next header block, both values MUST be
+     * signaled or the peer decoder keeps stale entries. */
+    uint32_t min_size_since_update;
 };
 
 neverc_hpack_encoder_t *neverc_hpack_encoder_create(uint32_t max_table_size) {
@@ -678,6 +683,7 @@ neverc_hpack_encoder_t *neverc_hpack_encoder_create(uint32_t max_table_size) {
     neverc_hpack_encoder_t *enc = (neverc_hpack_encoder_t *)calloc(1, sizeof(*enc));
     if (!enc) return NULL;
     dyn_table_init(&enc->dyn, max_table_size);
+    enc->min_size_since_update = UINT32_MAX;
     return enc;
 }
 
@@ -692,11 +698,17 @@ int neverc_hpack_encoder_set_max_table_size(neverc_hpack_encoder_t *enc,
     if (!enc || max_table_size > NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE)
         return -1;
     /* RFC 7541 §4.2 / RFC 9113 §6.5.2: a table-size change MUST be
-     * signaled at the start of the next header block. */
+     * signaled at the start of the next header block. Track the
+     * smallest size in the interval so a shrink-then-grow is not
+     * collapsed into a single (too large) update. */
+    if (max_table_size < enc->min_size_since_update)
+        enc->min_size_since_update = max_table_size;
     if (enc->dyn.max_size != max_table_size)
         enc->pending_size_update = 1;
     enc->dyn.max_size = max_table_size;
     dyn_table_evict(&enc->dyn);
+    if (enc->min_size_since_update < enc->dyn.max_size)
+        enc->pending_size_update = 1;
     return 0;
 }
 
@@ -764,6 +776,13 @@ int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
     if (enc->pending_size_update) {
         if (!out) return -1;
         size_t written;
+        if (enc->min_size_since_update < enc->dyn.max_size) {
+            if (hpack_encode_int(out + pos, out_cap - pos, 5,
+                                 enc->min_size_since_update, 0x20,
+                                 &written) != 0)
+                return -1;
+            pos += written;
+        }
         if (hpack_encode_int(out + pos, out_cap - pos, 5, enc->dyn.max_size,
                              0x20, &written) != 0)
             return -1;
@@ -820,5 +839,6 @@ int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
     }
     *out_len = pos;
     enc->pending_size_update = 0;
+    enc->min_size_since_update = UINT32_MAX;
     return 0;
 }

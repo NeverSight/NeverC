@@ -206,6 +206,14 @@ static void cryptBlock(const uint64_t subkeys[16], uint8_t dst[8],
     bePut64(dst, permuteFinalBlock(preOutput));
 }
 
+static int des_ready(const neverc_des_cipher_t *c) {
+    return c && c->ready;
+}
+
+static int tdes_ready(const neverc_3des_cipher_t *c) {
+    return c && c->c1.ready && c->c2.ready && c->c3.ready;
+}
+
 int neverc_des_init(neverc_des_cipher_t *c, const uint8_t key[8]) {
     if (!c) return -1;
     if (!key) {
@@ -213,18 +221,19 @@ int neverc_des_init(neverc_des_cipher_t *c, const uint8_t key[8]) {
         return -1;
     }
     generateSubkeys(c->subkeys, key);
+    c->ready = 1;
     return 0;
 }
 
 void neverc_des_encrypt_block(const neverc_des_cipher_t *c,
                               uint8_t dst[8], const uint8_t src[8]) {
-    if (!c || !dst || !src) return;
+    if (!des_ready(c) || !dst || !src) return;
     cryptBlock(c->subkeys, dst, src, 0);
 }
 
 void neverc_des_decrypt_block(const neverc_des_cipher_t *c,
                               uint8_t dst[8], const uint8_t src[8]) {
-    if (!c || !dst || !src) return;
+    if (!des_ready(c) || !dst || !src) return;
     cryptBlock(c->subkeys, dst, src, 1);
 }
 
@@ -237,12 +246,15 @@ int neverc_3des_init(neverc_3des_cipher_t *c, const uint8_t key[24]) {
     generateSubkeys(c->c1.subkeys, key);
     generateSubkeys(c->c2.subkeys, key + 8);
     generateSubkeys(c->c3.subkeys, key + 16);
+    c->c1.ready = 1;
+    c->c2.ready = 1;
+    c->c3.ready = 1;
     return 0;
 }
 
 void neverc_3des_encrypt_block(const neverc_3des_cipher_t *c,
                                uint8_t dst[8], const uint8_t src[8]) {
-    if (!c || !dst || !src) return;
+    if (!tdes_ready(c) || !dst || !src) return;
     uint64_t b = beU64(src);
     b = permuteInitialBlock(b);
     uint32_t left = (uint32_t)(b >> 32);
@@ -267,7 +279,7 @@ void neverc_3des_encrypt_block(const neverc_3des_cipher_t *c,
 
 void neverc_3des_decrypt_block(const neverc_3des_cipher_t *c,
                                uint8_t dst[8], const uint8_t src[8]) {
-    if (!c || !dst || !src) return;
+    if (!tdes_ready(c) || !dst || !src) return;
     uint64_t b = beU64(src);
     b = permuteInitialBlock(b);
     uint32_t left = (uint32_t)(b >> 32);

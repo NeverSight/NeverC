@@ -129,12 +129,17 @@ static void test_parse_edges(void) {
     ASSERT_STR_EQ(u.port, "80");
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[hello]/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[192.168.1.1]/"), -1);
-    ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%eth0]/"), 0);
-    ASSERT_STR_EQ(u.host, "fe80::1%eth0");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%eth0]/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%25eth0]/"), 0);
     ASSERT_STR_EQ(u.host, "fe80::1%eth0");
+    {
+        char zoned[64];
+        ASSERT_INT_EQ(neverc_url_string(&u, zoned, sizeof(zoned)),
+                      (int)strlen("http://[fe80::1%25eth0]/"));
+        ASSERT_STR_EQ(zoned, "http://[fe80::1%25eth0]/");
+    }
     ASSERT_INT_EQ(neverc_url_parse(
-        &u, "http://user:p%40ss@[fe80::1%eth0]:8080/x"), 0);
+        &u, "http://user:p%40ss@[fe80::1%25eth0]:8080/x"), 0);
     ASSERT_STR_EQ(u.user, "user");
     ASSERT_STR_EQ(u.password, "p%40ss");
     ASSERT_STR_EQ(u.host, "fe80::1%eth0");
@@ -170,15 +175,14 @@ static void test_parse_edges(void) {
     ASSERT_STR_EQ(u.raw_query, "q=1");
     ASSERT_STR_EQ(u.fragment, "frag");
     ASSERT_INT_EQ(neverc_url_parse(
-        &u, "//user:p%40ss@[fe80::1%eth0]:8080/x"), 0);
+        &u, "//user:p%40ss@[fe80::1%25eth0]:8080/x"), 0);
     ASSERT_STR_EQ(u.user, "user");
     ASSERT_STR_EQ(u.password, "p%40ss");
     ASSERT_STR_EQ(u.host, "fe80::1%eth0");
     ASSERT_STR_EQ(u.port, "8080");
     ASSERT_STR_EQ(u.path, "/x");
     ASSERT_INT_EQ(neverc_url_parse(&u, "//"), -1);
-    ASSERT_INT_EQ(neverc_url_parse(&u, "http://ex%61mple.com/"), 0);
-    ASSERT_STR_EQ(u.host, "example.com");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://ex%61mple.com/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://host%3a80/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://host%3A8080/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[::ffff:192.168.1.1]/"), 0);
@@ -187,6 +191,14 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_string(&u, mapped, sizeof(mapped)),
                   (int)strlen("http://[::ffff:192.168.1.1]/"));
     ASSERT_STR_EQ(mapped, "http://[::ffff:192.168.1.1]/");
+
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/%zz"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/ok#bad%zz"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/?q=%zz"), 0);
+    ASSERT_STR_EQ(u.raw_query, "q=%zz");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://b\xc3\xbc""cher.de/"), 0);
+    ASSERT_STR_EQ(u.host, "xn--bcher-kva.de");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://\xff.com/"), -1);
 
     char long_url[400];
     memcpy(long_url, "https://", 8);
@@ -305,6 +317,10 @@ static void test_unescape(void) {
 
     ASSERT_INT_EQ(neverc_url_query_unescape(
         "bad%escape", buf, sizeof(buf)), -1);
+    ASSERT_STR_EQ(buf, "");
+    ASSERT_INT_EQ(neverc_url_query_unescape("ok%", buf, sizeof(buf)), -1);
+    ASSERT_STR_EQ(buf, "");
+    ASSERT_INT_EQ(neverc_url_query_unescape("%00", buf, sizeof(buf)), -1);
 }
 
 static void test_request_uri(void) {
@@ -314,6 +330,21 @@ static void test_request_uri(void) {
     char buf[1024];
     neverc_url_request_uri(&u, buf, sizeof(buf));
     ASSERT_STR_EQ(buf, "/path?q=1");
+
+    ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "/path?q=1"), 0);
+    ASSERT_STR_EQ(u.path, "/path");
+    ASSERT_STR_EQ(u.raw_query, "q=1");
+    ASSERT_INT_EQ(neverc_url_parse_request_uri(
+        &u, "https://example.com/path?q=1"), 0);
+    ASSERT_STR_EQ(u.host, "example.com");
+    ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "*"), 0);
+    ASSERT_STR_EQ(u.path, "*");
+    ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "foo"), -1);
+    ASSERT_INT_EQ(neverc_url_parse_request_uri(
+        &u, "https://example.com/path#frag"), -1);
+    ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, ""), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "foo"), 0);
+    ASSERT_STR_EQ(u.path, "foo");
 }
 
 static void test_bounded_outputs(void) {
@@ -454,5 +485,6 @@ int main(void) {
     test_invalid_arguments();
     test_roundtrips();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

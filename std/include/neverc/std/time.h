@@ -70,6 +70,10 @@ double  neverc_time_duration_seconds(neverc_duration_t d);
 int64_t neverc_time_duration_milliseconds(neverc_duration_t d);
 int64_t neverc_time_duration_microseconds(neverc_duration_t d);
 int64_t neverc_time_duration_nanoseconds(neverc_duration_t d);
+/* Multiply a duration by a signed integer. Returns 0 and writes *out, or
+ * -1 on overflow and leaves *out unchanged. */
+int neverc_time_duration_mul(neverc_duration_t d, int64_t n,
+                             neverc_duration_t *out);
 
 /* Format (returns malloc'd string, caller frees) */
 char *neverc_time_format_rfc3339(neverc_time_t t);

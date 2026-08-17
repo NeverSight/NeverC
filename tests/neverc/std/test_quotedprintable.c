@@ -167,5 +167,6 @@ int main(void) {
     test_encode_basic();
     test_roundtrip();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

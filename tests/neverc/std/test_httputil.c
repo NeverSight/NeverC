@@ -1040,12 +1040,21 @@ static void test_live_reverse_proxy(void) {
     neverc_httputil_reverse_proxy_t *proxy_error = NULL;
     neverc_httputil_reverse_proxy_t *proxy_overflow = NULL;
     neverc_httputil_reverse_proxy_t *proxy_tls = NULL;
+    neverc_httputil_reverse_proxy_t *proxy_http10 = NULL;
+    neverc_httputil_reverse_proxy_t *proxy_hops = NULL;
+    neverc_httputil_reverse_proxy_t *proxy_dupcl = NULL;
     tls_probe_t error_probe;
     tls_probe_t overflow_probe;
     tls_probe_t tls_probe;
+    tls_probe_t http10_probe;
+    tls_probe_t hop_probe;
+    tls_probe_t dupcl_probe;
     memset(&error_probe, 0, sizeof(error_probe));
     memset(&overflow_probe, 0, sizeof(overflow_probe));
     memset(&tls_probe, 0, sizeof(tls_probe));
+    memset(&http10_probe, 0, sizeof(http10_probe));
+    memset(&hop_probe, 0, sizeof(hop_probe));
+    memset(&dupcl_probe, 0, sizeof(dupcl_probe));
     char *large_body = NULL;
 
     const size_t large_body_length = 131089U;
@@ -1110,6 +1119,52 @@ static void test_live_reverse_proxy(void) {
     proxy_error = neverc_httputil_new_single_host_reverse_proxy(
         error_target);
 
+    static const char http10_chunked_response[] =
+        "HTTP/1.0 200 OK\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "Connection: close\r\n\r\n"
+        "5\r\nhello\r\n0\r\n\r\n";
+    int http10_port =
+        tls_probe_start(&http10_probe, http10_chunked_response);
+    CHECK("HTTP/1.0 chunked peer started", http10_port > 0);
+    char http10_target[96];
+    (void)snprintf(http10_target, sizeof(http10_target),
+                   "http://127.0.0.1:%d", http10_port);
+    proxy_http10 = neverc_httputil_new_single_host_reverse_proxy(
+        http10_target);
+
+    static const char hop_response[] =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: 2\r\n"
+        "Connection: close, X-Hop\r\n"
+        "Keep-Alive: timeout=5\r\n"
+        "Proxy-Connection: keep-alive\r\n"
+        "X-Hop: secret\r\n"
+        "X-Keep: yes\r\n"
+        "\r\n"
+        "OK";
+    int hop_port = tls_probe_start(&hop_probe, hop_response);
+    CHECK("hop-by-hop peer started", hop_port > 0);
+    char hop_target[96];
+    (void)snprintf(hop_target, sizeof(hop_target),
+                   "http://127.0.0.1:%d", hop_port);
+    proxy_hops = neverc_httputil_new_single_host_reverse_proxy(
+        hop_target);
+
+    static const char dupcl_response[] =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: 2\r\n"
+        "Content-Length: 2\r\n"
+        "Connection: close\r\n\r\n"
+        "OK";
+    int dupcl_port = tls_probe_start(&dupcl_probe, dupcl_response);
+    CHECK("duplicate Content-Length peer started", dupcl_port > 0);
+    char dupcl_target[96];
+    (void)snprintf(dupcl_target, sizeof(dupcl_target),
+                   "http://127.0.0.1:%d", dupcl_port);
+    proxy_dupcl = neverc_httputil_new_single_host_reverse_proxy(
+        dupcl_target);
+
     char overflow_response[4096];
     int overflow_size = snprintf(
         overflow_response, sizeof(overflow_response),
@@ -1161,9 +1216,11 @@ static void test_live_reverse_proxy(void) {
     proxy_tls = neverc_httputil_new_single_host_reverse_proxy(tls_target);
     CHECK("all proxy instances allocated",
           proxy_a && proxy_b && proxy_base && proxy_error &&
-          proxy_overflow && proxy_tls);
+          proxy_overflow && proxy_tls && proxy_http10 && proxy_hops &&
+          proxy_dupcl);
     if (!proxy_a || !proxy_b || !proxy_base ||
-        !proxy_error || !proxy_overflow || !proxy_tls)
+        !proxy_error || !proxy_overflow || !proxy_tls ||
+        !proxy_http10 || !proxy_hops || !proxy_dupcl)
         goto cleanup;
 
     atomic_store_explicit(&rewrite_calls, 0, memory_order_relaxed);
@@ -1186,6 +1243,12 @@ static void test_live_reverse_proxy(void) {
         proxy_overflow, proxy_error_handler, &error_state);
     neverc_httputil_proxy_set_error_handler(
         proxy_tls, proxy_error_handler, &error_state);
+    neverc_httputil_proxy_set_error_handler(
+        proxy_http10, proxy_error_handler, &error_state);
+    neverc_httputil_proxy_set_error_handler(
+        proxy_hops, proxy_error_handler, &error_state);
+    neverc_httputil_proxy_set_error_handler(
+        proxy_dupcl, proxy_error_handler, &error_state);
 
     proxy_mux = neverc_http_new_mux();
     CHECK("proxy mux allocated", proxy_mux != NULL);
@@ -1250,6 +1313,15 @@ static void test_live_reverse_proxy(void) {
     CHECK("error route registered",
           neverc_httputil_proxy_register(
               proxy_mux, "/error", proxy_error) == 0);
+    CHECK("HTTP/1.0 chunked route registered",
+          neverc_httputil_proxy_register(
+              proxy_mux, "/http10-chunked", proxy_http10) == 0);
+    CHECK("hop-by-hop route registered",
+          neverc_httputil_proxy_register(
+              proxy_mux, "/hops", proxy_hops) == 0);
+    CHECK("duplicate Content-Length route registered",
+          neverc_httputil_proxy_register(
+              proxy_mux, "/dup-cl", proxy_dupcl) == 0);
     CHECK("TLS route registered",
           neverc_httputil_proxy_register(
               proxy_mux, "/tls", proxy_tls) == 0);
@@ -1625,6 +1697,58 @@ static void test_live_reverse_proxy(void) {
 
     request_result = raw_http_request(
         proxy_port,
+        "GET /http10-chunked HTTP/1.1\r\n"
+        "Host: client.example\r\nConnection: close\r\n\r\n",
+        256U * 1024U, &response);
+    CHECK("HTTP/1.0 chunked rejection completed", request_result == 0);
+    if (request_result == 0) {
+        check_contains("HTTP/1.0 chunked rejected via error handler",
+                       response.data, "HTTP/1.1 598");
+        CHECK("HTTP/1.0 chunked body was not forwarded",
+              strstr(response.data, "hello") == NULL);
+    }
+    raw_response_free(&response);
+    tls_probe_stop(&http10_probe);
+
+    request_result = raw_http_request(
+        proxy_port,
+        "GET /hops HTTP/1.1\r\n"
+        "Host: client.example\r\nConnection: close\r\n\r\n",
+        256U * 1024U, &response);
+    CHECK("hop-by-hop proxy request completed", request_result == 0);
+    if (request_result == 0) {
+        check_contains("hop-by-hop body forwarded",
+                       response.data, "OK");
+        check_contains("ordinary response header retained",
+                       response.data, "X-Keep: yes");
+        CHECK("Keep-Alive hop header stripped",
+              strstr(response.data, "Keep-Alive:") == NULL);
+        CHECK("Proxy-Connection hop header stripped",
+              strstr(response.data, "Proxy-Connection:") == NULL);
+        CHECK("Connection-nominated response header stripped",
+              strstr(response.data, "X-Hop:") == NULL);
+    }
+    raw_response_free(&response);
+    tls_probe_stop(&hop_probe);
+
+    request_result = raw_http_request(
+        proxy_port,
+        "GET /dup-cl HTTP/1.1\r\n"
+        "Host: client.example\r\nConnection: close\r\n\r\n",
+        256U * 1024U, &response);
+    CHECK("duplicate Content-Length rejection completed",
+          request_result == 0);
+    if (request_result == 0) {
+        check_contains("duplicate Content-Length rejected via error handler",
+                       response.data, "HTTP/1.1 598");
+        CHECK("duplicate Content-Length body was not forwarded",
+              strstr(response.data, "\r\n\r\nOK") == NULL);
+    }
+    raw_response_free(&response);
+    tls_probe_stop(&dupcl_probe);
+
+    request_result = raw_http_request(
+        proxy_port,
         "GET /tls HTTP/1.1\r\n"
         "Host: client.example\r\nConnection: close\r\n\r\n",
         256U * 1024U, &response);
@@ -1645,12 +1769,15 @@ static void test_live_reverse_proxy(void) {
           memcmp(tls_probe.first_bytes, "GET ", 4U) != 0);
     CHECK("error handler observed backend failures",
           atomic_load_explicit(
-              &error_state.calls, memory_order_relaxed) >= 3);
+              &error_state.calls, memory_order_relaxed) >= 5);
 
 cleanup:
     tls_probe_stop(&error_probe);
     tls_probe_stop(&overflow_probe);
     tls_probe_stop(&tls_probe);
+    tls_probe_stop(&http10_probe);
+    tls_probe_stop(&hop_probe);
+    tls_probe_stop(&dupcl_probe);
     test_server_stop(&proxy_server);
     if (proxy_mux) neverc_http_mux_free(proxy_mux);
     neverc_httputil_proxy_free(proxy_a);
@@ -1659,6 +1786,9 @@ cleanup:
     neverc_httputil_proxy_free(proxy_error);
     neverc_httputil_proxy_free(proxy_overflow);
     neverc_httputil_proxy_free(proxy_tls);
+    neverc_httputil_proxy_free(proxy_http10);
+    neverc_httputil_proxy_free(proxy_hops);
+    neverc_httputil_proxy_free(proxy_dupcl);
     test_server_stop(&backend_a_server);
     test_server_stop(&backend_b_server);
     if (backend_a_mux) neverc_http_mux_free(backend_a_mux);

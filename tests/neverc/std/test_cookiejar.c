@@ -101,6 +101,48 @@ static void test_domain_matching(void) {
     neverc_cookiejar_free(jar);
 }
 
+static void test_public_suffix_domain(void) {
+    printf("[public_suffix_domain]\n");
+
+    neverc_cookiejar_entry_t cookie = {
+        .name = "sid", .value = "x", .domain = "co.uk", .path = "/",
+    };
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.co.uk/", &cookie, 1);
+    check_int("reject Domain=co.uk from evil.co.uk",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://evil.co.uk/", "sid=x; Domain=co.uk; Path=/");
+    check_int("reject Set-Cookie Domain=co.uk",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "example.co.uk";
+    neverc_cookiejar_set_cookies(
+        jar, "https://www.example.co.uk/", &cookie, 1);
+    neverc_cookiejar_entry_t out[1];
+    int n = neverc_cookiejar_cookies(
+        jar, "https://www.example.co.uk/", out, 1);
+    check_int("Domain=example.co.uk is not a public suffix", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://other.co.uk/", out, 1);
+    check_int("example.co.uk cookie is not sent to other.co.uk", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/", &cookie, 1);
+    check_int("reject Domain=com from example.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+}
+
 static void test_domain_security(void) {
     printf("[domain_security]\n");
 
@@ -202,19 +244,9 @@ static void test_percent_encoded_request_url(void) {
     neverc_cookiejar_entry_t cookie = {
         .name = "session", .value = "1", .path = "/",
     };
-    neverc_cookiejar_set_cookies(
-        jar, "https://ex%61mple.com/", &cookie, 1);
-
     neverc_cookiejar_entry_t out[1];
-    int n = neverc_cookiejar_cookies(
-        jar, "https://example.com/", out, 1);
-    check_int("percent-decoded host matches example.com", n, 1);
-    n = neverc_cookiejar_cookies(
-        jar, "https://ex%61mple.com/", out, 1);
-    check_int("encoded host still matches after decode", n, 1);
-    neverc_cookiejar_free(jar);
+    int n;
 
-    jar = neverc_cookiejar_new();
     cookie.path = NULL;
     neverc_cookiejar_set_cookies(
         jar, "https://example.com/account%2Flogin", &cookie, 1);
@@ -231,8 +263,8 @@ static void test_percent_encoded_request_url(void) {
     neverc_cookiejar_set_cookies(
         jar, "http://[fe80::1%25eth0]/", &cookie, 1);
     n = neverc_cookiejar_cookies(
-        jar, "http://[fe80::1%eth0]/", out, 1);
-    check_int("IPv6 zone %25 matches bare zone delimiter", n, 1);
+        jar, "http://[fe80::1%25eth0]/", out, 1);
+    check_int("IPv6 zone %25 round-trips", n, 1);
 
     neverc_cookiejar_free(jar);
 }
@@ -310,14 +342,25 @@ static void test_invalid_cookie_octets(void) {
     printf("[invalid_cookie_octets]\n");
 
     neverc_cookiejar_t *jar = neverc_cookiejar_new();
-    neverc_cookiejar_entry_t invalid[3] = {
+    neverc_cookiejar_entry_t invalid[4] = {
         {.name = "bad\r\nX-Injected", .value = "1", .path = "/"},
         {.name = "bad-value", .value = "one\r\ntwo", .path = "/"},
         {.name = "bad-semicolon", .value = "one;two", .path = "/"},
+        {.name = "bad-path", .value = "1", .path = "/a\r\nb"},
     };
     neverc_cookiejar_set_cookies(
-        jar, "https://example.com/", invalid, 3);
+        jar, "https://example.com/", invalid, 4);
     check_int("reject unsafe cookie octets", neverc_cookiejar_count(jar), 0);
+
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/", "sid=1; Path=/a\r\nb");
+    check_int("reject Set-Cookie Path with CR/LF",
+              neverc_cookiejar_count(jar), 0);
+
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/", "sid=1; Path=/\xff");
+    check_int("reject Set-Cookie Path with non-ASCII",
+              neverc_cookiejar_count(jar), 0);
 
     neverc_cookiejar_free(jar);
 }
@@ -696,6 +739,7 @@ int main(void) {
 
     test_basic();
     test_domain_matching();
+    test_public_suffix_domain();
     test_domain_security();
     test_path_matching();
     test_default_path();

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <math.h>
+#include <stdint.h>
 
 static int tests_run = 0;
 static int tests_passed = 0;
@@ -297,6 +298,30 @@ static void test_parse_float(void) {
               neverc_strconv_parse_float("0x1p-1075", &v),
               NEVERC_STRCONV_ERR_RANGE);
     check_true("hex just-under min is 0", v == 0.0);
+
+    /* Correctly-rounded hard cases (same bits as IEEE-754 nearest-even). */
+    {
+        double libc, ours;
+        uint64_t b1, b2;
+        char *end = NULL;
+        const char *cases[] = {
+            "1e23",
+            "9007199254740993",
+            "7.2057594037927933e+16",
+            "1.0000000000000002",
+            "0.1",
+        };
+        size_t i;
+        for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            ours = 0;
+            check_int("rounding parse ok",
+                      neverc_strconv_parse_float(cases[i], &ours), 0);
+            libc = strtod(cases[i], &end);
+            memcpy(&b1, &ours, 8);
+            memcpy(&b2, &libc, 8);
+            check_true("rounding bits match libc", b1 == b2);
+        }
+    }
 }
 
 /* ===== Itoa ===== */
@@ -816,6 +841,7 @@ int main(void) {
     if (tests_failed > 0)
         printf(", %d FAILED", tests_failed);
     printf(" ===\n");
+    if (tests_failed == 0) puts("passed");
 
     return tests_failed > 0 ? 1 : 0;
 }

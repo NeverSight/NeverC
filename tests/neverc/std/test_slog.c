@@ -157,6 +157,46 @@ static void test_json_output(void) {
     ASSERT_TRUE(strstr(buf, "\"ok\":true") != NULL);
 }
 
+static void test_skipped_attrs(void) {
+    printf("[skipped_attrs]\n");
+    char buf[4096];
+    memset(buf, 0, sizeof(buf));
+#if defined(_WIN32)
+    FILE *f = tmpfile();
+#else
+    FILE *f = fmemopen(buf, sizeof(buf), "w");
+#endif
+    ASSERT_TRUE(f != NULL);
+    if (!f) return;
+    neverc_slog_handler_t h;
+    neverc_slog_init(&h, f, NEVERC_SLOG_DEBUG, NEVERC_SLOG_FORMAT_TEXT);
+
+    neverc_slog_attr_t attrs[] = {
+        neverc_slog_string("keep", "yes"),
+        neverc_slog_string("", "empty-key"),
+        neverc_slog_string(NULL, "null-key"),
+        { NULL, NEVERC_SLOG_ATTR_NONE, {0} },
+        neverc_slog_int64("n", 1)
+    };
+    attrs[3].key = "none";
+    attrs[3].kind = NEVERC_SLOG_ATTR_NONE;
+    neverc_slog_log(&h, NEVERC_SLOG_INFO, "skip", attrs, 5);
+#if defined(_WIN32)
+    fflush(f);
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+#endif
+    fclose(f);
+
+    ASSERT_TRUE(strstr(buf, "keep=yes") != NULL);
+    ASSERT_TRUE(strstr(buf, "n=1") != NULL);
+    ASSERT_TRUE(strstr(buf, "empty-key") == NULL);
+    ASSERT_TRUE(strstr(buf, "null-key") == NULL);
+    ASSERT_TRUE(strstr(buf, "none=") == NULL);
+    ASSERT_TRUE(strstr(buf, "\"\"=") == NULL);
+}
+
 static void test_default_handler(void) {
     printf("[default_handler]\n");
     neverc_slog_handler_t *def = neverc_slog_default();
@@ -425,6 +465,7 @@ int main(void) {
     test_level_filtering();
     test_text_output();
     test_json_output();
+    test_skipped_attrs();
     test_default_handler();
     test_default_level_wrappers();
     test_set_level();

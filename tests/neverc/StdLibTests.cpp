@@ -281,6 +281,10 @@ STD_TEST(sort, "src/sort/sort.c")
 // structural regressions like the Timsort merge-invariant overflow).
 STD_TEST(sortsearch_fuzz, "src/sort/sort.c", "src/bytes/bytes.c")
 STD_TEST(rand, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/math/frexp.c", "src/math/ldexp.c", "src/math/floor.c", "src/math/modf.c", "src/math/trunc.c", "src/math/sqrt.c")
+STD_TEST(rand_ubsan, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/math/frexp.c", "src/math/ldexp.c", "src/math/floor.c", "src/math/modf.c", "src/math/trunc.c", "src/math/sqrt.c")
+#ifndef _WIN32
+STD_TEST(rand_concurrency, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/math/frexp.c", "src/math/ldexp.c", "src/math/floor.c", "src/math/modf.c", "src/math/trunc.c", "src/math/sqrt.c")
+#endif
 STD_TEST(bits, "src/math/bits/bits.c")
 STD_TEST(cmplx, "src/math/cmplx/cmplx.c", "src/math/abs.c", "src/math/acos.c", "src/math/acosh.c", "src/math/asin.c", "src/math/asinh.c", "src/math/atan.c", "src/math/atan2.c", "src/math/atanh.c", "src/math/cbrt.c", "src/math/ceil.c", "src/math/copysign.c", "src/math/cos.c", "src/math/cosh.c", "src/math/dim.c", "src/math/erf.c", "src/math/erfc.c", "src/math/erfcinv.c", "src/math/erfinv.c", "src/math/exp.c", "src/math/exp2.c", "src/math/expm1.c", "src/math/float32bits.c", "src/math/float64bits.c", "src/math/floor.c", "src/math/fma.c", "src/math/fmod.c", "src/math/frexp.c", "src/math/gamma.c", "src/math/hypot.c", "src/math/ilogb.c", "src/math/inf.c", "src/math/isinf.c", "src/math/isnan.c", "src/math/j0.c", "src/math/j1.c", "src/math/jn.c", "src/math/ldexp.c", "src/math/lgamma.c", "src/math/log.c", "src/math/log10.c", "src/math/log1p.c", "src/math/log2.c", "src/math/logb.c", "src/math/max.c", "src/math/min.c", "src/math/modf.c", "src/math/nan.c", "src/math/nextafter.c", "src/math/nextafter32.c", "src/math/pow.c", "src/math/pow10.c", "src/math/remainder.c", "src/math/round.c", "src/math/roundtoeven.c", "src/math/signbit.c", "src/math/sin.c", "src/math/sincos.c", "src/math/sinh.c", "src/math/sqrt.c", "src/math/tan.c", "src/math/tanh.c", "src/math/trunc.c")
 STD_TEST(big, "src/math/big/big.c")
@@ -415,9 +419,17 @@ STD_TEST(hpke, "src/crypto/hpke/hpke.c", "src/crypto/ecdh/ecdh.c",
 STD_TEST(mlkem, "src/crypto/mlkem/mlkem.c", "src/crypto/sha3/sha3.c",
     "src/crypto/rand/rand.c")
 STD_TEST(mlkem_entropy_failure, "src/crypto/sha3/sha3.c")
+#ifndef _WIN32
+STD_TEST(mlkem_concurrency, "src/crypto/mlkem/mlkem.c", "src/crypto/sha3/sha3.c",
+    "src/crypto/rand/rand.c")
+#endif
 STD_TEST(mldsa, "src/crypto/mldsa/mldsa.c", "src/crypto/sha3/sha3.c",
     "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c")
 STD_TEST(mldsa_entropy_failure, "src/crypto/sha3/sha3.c", "src/crypto/subtle/subtle.c")
+#ifndef _WIN32
+STD_TEST(mldsa_concurrency, "src/crypto/mldsa/mldsa.c", "src/crypto/sha3/sha3.c",
+    "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c")
+#endif
 
 // ===== Unicode =====
 STD_TEST(unicode, "src/unicode/unicode.c")
@@ -715,6 +727,9 @@ STD_TEST(quic_loss)
 STD_TEST(quic_conn, "src/crypto/rand/rand.c")
 STD_TEST(http3_frame)
 STD_TEST(http3_server)
+STD_TEST(quic_e2e)
+STD_TEST(quic_network_sim)
+STD_TEST(http3_e2e)
 
 TEST_F(StdLibTest, EmbeddedNetworkDotSyntax) {
   auto r = compileAndRunStdTest("network_builtin", {}, {"-fbuiltin-std"});

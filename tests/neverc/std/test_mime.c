@@ -25,6 +25,11 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
            printf("  FAIL: %s = %d, expected %d (line %d)\n", #expr, _v, _e, __LINE__); } \
 } while(0)
 
+#define ASSERT_TRUE(expr) do { tests_run++; \
+    if (expr) { tests_passed++; } \
+    else { tests_failed++; printf("  FAIL: %s (line %d)\n", #expr, __LINE__); } \
+} while(0)
+
 static void free_params(char *keys[], char *vals[], int count) {
     for (int i = 0; i < count; i++) {
         free(keys[i]);
@@ -359,12 +364,19 @@ static void test_format_media_type(void) {
     ASSERT_STR_EQ(out, "text/html; charset=utf-8");
     ASSERT_INT_EQ(len, (int)strlen("text/html; charset=utf-8"));
 
-    const char *quoted_keys[] = {"boundary", "empty"};
+    const char *quoted_keys[] = {"name", "empty"};
     const char *quoted_vals[] = {"a\";b\\c", ""};
     len = neverc_mime_format_media_type("Text/Plain", quoted_keys,
                                         quoted_vals, 2, out, sizeof(out));
     ASSERT_STR_EQ(out,
-                  "text/plain; boundary=\"a\\\";b\\\\c\"; empty=\"\"");
+                  "text/plain; name=\"a\\\";b\\\\c\"; empty=\"\"");
+    ASSERT_INT_EQ(len, (int)strlen(out));
+
+    const char *bnd_keys[] = {"boundary"};
+    const char *bnd_ok[] = {"simple boundary"};
+    len = neverc_mime_format_media_type("multipart/mixed", bnd_keys, bnd_ok,
+                                        1, out, sizeof(out));
+    ASSERT_STR_EQ(out, "multipart/mixed; boundary=\"simple boundary\"");
     ASSERT_INT_EQ(len, (int)strlen(out));
 }
 
@@ -406,6 +418,31 @@ static void test_format_rejects_invalid_input(void) {
                       "text/plain", keys, vals, 1, tiny,
                       sizeof(tiny)), -1);
     ASSERT_STR_EQ(tiny, "");
+
+    const char *bnd_keys[] = {"boundary"};
+    const char *at_vals[] = {"foo@bar"};
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "multipart/mixed", bnd_keys, at_vals, 1, out,
+                      sizeof(out)), -1);
+    ASSERT_STR_EQ(out, "");
+
+    char long_b[72];
+    memset(long_b, 'x', 71);
+    long_b[71] = '\0';
+    const char *long_vals[] = {long_b};
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "multipart/mixed", bnd_keys, long_vals, 1, out,
+                      sizeof(out)), -1);
+    ASSERT_STR_EQ(out, "");
+
+    const char *trail_vals[] = {"abc "};
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "multipart/mixed", bnd_keys, trail_vals, 1, out,
+                      sizeof(out)), -1);
+    ASSERT_STR_EQ(out, "");
 }
 
 static void test_qp_decode(void) {
@@ -483,6 +520,22 @@ static void test_qp_encode(void) {
     ASSERT_INT_EQ(neverc_mime_qp_encode(NULL, 1, out,
                                         sizeof(out), &out_len), -1);
     ASSERT_INT_EQ(neverc_mime_qp_encode("x", 1, NULL, 1, &out_len), -1);
+
+    char longsrc[80];
+    memset(longsrc, 'A', sizeof(longsrc));
+    char wrap[256];
+    ASSERT_INT_EQ(neverc_mime_qp_encode(longsrc, sizeof(longsrc), wrap,
+                                        sizeof(wrap), &out_len), 0);
+    wrap[out_len] = '\0';
+    ASSERT_TRUE(strstr(wrap, "=\r\n") != NULL);
+    ASSERT_TRUE(out_len > sizeof(longsrc));
+
+    char decoded[128];
+    size_t dlen = 0;
+    ASSERT_INT_EQ(neverc_mime_qp_decode(wrap, out_len, decoded,
+                                        sizeof(decoded), &dlen), 0);
+    ASSERT_INT_EQ((int)dlen, (int)sizeof(longsrc));
+    ASSERT_TRUE(memcmp(decoded, longsrc, sizeof(longsrc)) == 0);
 }
 
 int main(void) {
@@ -499,5 +552,6 @@ int main(void) {
     test_qp_decode();
     test_qp_encode();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

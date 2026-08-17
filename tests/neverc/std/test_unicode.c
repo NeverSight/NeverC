@@ -369,6 +369,50 @@ static void test_unicode_conformance_edges(void) {
               neverc_unicode_is_letter(0x1E9E), 1);
 }
 
+static void test_unicode_go_tables(void) {
+    printf("[Go unicode tables]\n");
+
+    /* These were missing from the old heuristic tables. */
+    check_int("Latin b-stroke is lowercase letter",
+              neverc_unicode_is_lower(0x0180) &&
+              neverc_unicode_is_letter(0x0180), 1);
+    check_int("Latin B-stroke is uppercase letter",
+              neverc_unicode_is_upper(0x0181) &&
+              neverc_unicode_is_letter(0x0181), 1);
+    check_u32("a-ring-below uppercase",
+              neverc_unicode_to_upper(0x1E01), 0x1E00);
+    check_u32("A-ring-below lowercase",
+              neverc_unicode_to_lower(0x1E00), 0x1E01);
+    check_int("Myanmar zero is digit",
+              neverc_unicode_is_digit(0x1040), 1);
+    check_int("Roman numeral I is number not digit",
+              neverc_unicode_is_number(0x2160) &&
+              !neverc_unicode_is_digit(0x2160), 1);
+    check_int("grinning face is symbol and print",
+              neverc_unicode_is_symbol(0x1F600) &&
+              neverc_unicode_is_print(0x1F600) &&
+              !neverc_unicode_is_letter(0x1F600), 1);
+    check_int("CJK ideograph still letter",
+              neverc_unicode_is_letter(0x4E00), 1);
+    check_int("emoji is graphic",
+              neverc_unicode_is_graphic(0x1F600), 1);
+    check_int("ideographic space is graphic not print",
+              neverc_unicode_is_graphic(0x3000) &&
+              !neverc_unicode_is_print(0x3000) &&
+              neverc_unicode_is_space(0x3000), 1);
+    check_int("modifier letter prime is letter",
+              neverc_unicode_is_letter(0x02B9), 1);
+    check_u32("fold k still Kelvin",
+              neverc_unicode_simple_fold('k'), 0x212A);
+    check_u32("angstrom fold",
+              neverc_unicode_simple_fold(0x212B), 0x00C5);
+    check_int("unassigned plane-1 is not letter",
+              neverc_unicode_is_letter(0x1FFFE), 0);
+    check_int("surrogate is not letter or print",
+              !neverc_unicode_is_letter(0xD800) &&
+              !neverc_unicode_is_print(0xD800), 1);
+}
+
 int main(void) {
     printf("=== NeverC Unicode Library Tests ===\n\n");
     test_ascii_classification();
@@ -380,8 +424,10 @@ int main(void) {
     test_new_classification();
     test_simple_fold();
     test_unicode_conformance_edges();
+    test_unicode_go_tables();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

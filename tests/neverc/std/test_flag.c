@@ -86,6 +86,13 @@ static void test_equals_syntax(void) {
 
     check_str("eq name", name, "Charlie");
     check_int("eq port", port, 9090);
+
+    neverc_flag_reset();
+    const char *empty = "unset";
+    neverc_flag_string("name", "default", "user name", &empty);
+    char *empty_eq[] = {"prog", "-name="};
+    check_int("empty equals parse ok", neverc_flag_parse(2, empty_eq), 0);
+    check_str("empty equals value", empty, "");
 }
 
 static void test_remaining_args(void) {

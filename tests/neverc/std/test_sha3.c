@@ -420,6 +420,39 @@ static void test_sha3_lifecycle(void) {
     check_true("SHA3-256 NULL final is a no-op",
                memcmp(d1, d2, 32) == 0);
 
+    neverc_sha3_256_init(NULL);
+    neverc_sha3_256_update(NULL, (const uint8_t *)"abc", 3);
+    memset(d2, 0xa5, sizeof(d2));
+    neverc_sha3_256_final(NULL, d2);
+    {
+        uint8_t poison[32];
+        memset(poison, 0xa5, sizeof(poison));
+        check_true("SHA3-256 NULL ctx is a no-op",
+                   memcmp(d2, poison, 32) == 0);
+    }
+
+    /* Zeroed ctx: rate==0. Must not hang or memset SIZE_MAX. */
+    {
+        neverc_sha3_ctx raw;
+        uint8_t zeros[32] = {0};
+        memset(&raw, 0, sizeof(raw));
+        memset(d2, 0xa5, sizeof(d2));
+        neverc_sha3_256_update(&raw, (const uint8_t *)"abc", 3);
+        neverc_sha3_256_final(&raw, d2);
+        check_true("SHA3-256 zeroed ctx fails closed",
+                   memcmp(d2, zeros, 32) == 0);
+    }
+    {
+        neverc_sha3_ctx raw;
+        uint8_t zeros[32] = {0};
+        memset(&raw, 0, sizeof(raw));
+        memset(shake, 0xa5, sizeof(shake));
+        neverc_shake128_update(&raw, (const uint8_t *)"abc", 3);
+        neverc_shake128_squeeze(&raw, shake, 32);
+        check_true("SHAKE128 zeroed ctx fails closed",
+                   memcmp(shake, zeros, 32) == 0);
+    }
+
     {
         uint8_t expected[64];
         neverc_shake128_init(&ctx);

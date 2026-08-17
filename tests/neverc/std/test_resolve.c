@@ -229,6 +229,8 @@ static void test_lookup_ip(void) {
               neverc_net_lookup_ip("ip6", "fe80::1%0", &bad), -1);
     check_int("lookup_ip ipv4 zone rejected",
               neverc_net_lookup_ip("ip4", "127.0.0.1%1", &bad), -1);
+    check_int("lookup_ip invalid utf8 rejected",
+              neverc_net_lookup_ip("ip", "\xff\xfe.example", &bad), -1);
 
     /* Dual-stack / mapped literals must print as IPv4 for ACL matching. */
     neverc_net_addrs_t mapped;
@@ -325,6 +327,8 @@ static void test_lookup_cname(void) {
     int rc = neverc_net_lookup_cname("localhost", buf, sizeof(buf));
     check_int("cname localhost", rc, 0);
     check_true("cname has value", buf[0] != '\0');
+    check_int("cname invalid utf8 rejected",
+              neverc_net_lookup_cname("\xff\xfe", buf, sizeof(buf)), -1);
 }
 
 /* ===== Pipe ===== */

@@ -33,8 +33,9 @@ int neverc_mime_format_media_type(const char *media_type,
                                   int nparams,
                                   char *out, size_t out_cap);
 
-/* Quoted-printable helpers do not append a NUL byte. They return -1 and set
- * out_len to zero for invalid arguments or insufficient destination space. */
+/* Quoted-printable helpers do not append a NUL byte. Encode inserts RFC 2045
+ * soft line breaks so no output line exceeds 76 characters. They return -1
+ * and set out_len to zero for invalid arguments or insufficient space. */
 int neverc_mime_qp_decode(const char *src, size_t src_len,
                            char *dst, size_t dst_cap, size_t *out_len);
 int neverc_mime_qp_encode(const char *src, size_t src_len,

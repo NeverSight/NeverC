@@ -214,6 +214,23 @@ int main(void) {
         }
     }
 
+    printf("[byte-count wrap fails closed]\n");
+    {
+        tests_run++;
+        neverc_sha512_ctx ctx;
+        neverc_sha512_init(&ctx);
+        neverc_sha512_update(&ctx, (const uint8_t *)"abc", 3);
+        ctx.count = UINT64_MAX - 2;
+        neverc_sha512_update(&ctx, (const uint8_t *)"xxxxx", 5);
+        uint8_t digest[64];
+        memset(digest, 0xa5, sizeof(digest));
+        neverc_sha512_final(&ctx, digest);
+        uint8_t zeros[64] = {0};
+        if (memcmp(digest, zeros, 64) == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: wrapped byte count must not collide with a short message\n"); }
+    }
+
     printf("[update after final ignored]\n");
     {
         tests_run++;

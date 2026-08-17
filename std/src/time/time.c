@@ -21,6 +21,73 @@ static int64_t wrapping_scale_add(int64_t value, uint64_t scale,
     return wrapped_int64((uint64_t)value * scale + extra);
 }
 
+static int add_overflow_i64(int64_t a, int64_t b, int64_t *out) {
+    if (b > 0 && a > INT64_MAX - b) return -1;
+    if (b < 0 && a < INT64_MIN - b) return -1;
+    *out = a + b;
+    return 0;
+}
+
+static int mul_overflow_i64(int64_t a, int64_t b, int64_t *out) {
+    if (a == 0 || b == 0) {
+        *out = 0;
+        return 0;
+    }
+    if (a == 1) {
+        *out = b;
+        return 0;
+    }
+    if (b == 1) {
+        *out = a;
+        return 0;
+    }
+    if (a == -1) {
+        if (b == INT64_MIN) return -1;
+        *out = -b;
+        return 0;
+    }
+    if (b == -1) {
+        if (a == INT64_MIN) return -1;
+        *out = -a;
+        return 0;
+    }
+    if (a > 0 && b > 0) {
+        if (a > INT64_MAX / b) return -1;
+    } else if (a < 0 && b < 0) {
+        if (a < INT64_MAX / b) return -1;
+    } else if (a > 0 && b < 0) {
+        if (b < INT64_MIN / a) return -1;
+    } else {
+        if (a < INT64_MIN / b) return -1;
+    }
+    *out = a * b;
+    return 0;
+}
+
+int neverc_time_duration_mul(neverc_duration_t d, int64_t n,
+                             neverc_duration_t *out) {
+    if (!out) return -1;
+    int64_t prod;
+    if (mul_overflow_i64(d, n, &prod) != 0)
+        return -1;
+    *out = prod;
+    return 0;
+}
+
+static int unix_sec_from_parts(int64_t days, int hour, int min, int sec,
+                               int64_t tz_offset, int64_t *out) {
+    int64_t total;
+    if (mul_overflow_i64(days, 86400, &total) != 0)
+        return -1;
+    int64_t tod = (int64_t)hour * 3600 + (int64_t)min * 60 + (int64_t)sec;
+    if (add_overflow_i64(total, tod, &total) != 0)
+        return -1;
+    if (add_overflow_i64(total, -tz_offset, &total) != 0)
+        return -1;
+    *out = total;
+    return 0;
+}
+
 static neverc_time_t normalize_time(neverc_time_t t) {
     int64_t whole = (int64_t)t.nsec / NEVERC_TIME_SECOND;
     int64_t remainder = (int64_t)t.nsec % NEVERC_TIME_SECOND;
@@ -394,10 +461,11 @@ int neverc_time_parse_rfc3339(const char *s, neverc_time_t *out) {
     } else return -1;
     if (*p != '\0') return -1;
 
-    /* Convert to Unix timestamp */
+    /* Convert to Unix timestamp. Fail closed on overflow instead of wrapping. */
     int64_t days = days_from_civil(year, month, day);
-
-    int64_t total_sec = days * 86400 + hour * 3600 + min * 60 + sec - tz_offset;
+    int64_t total_sec;
+    if (unix_sec_from_parts(days, hour, min, sec, tz_offset, &total_sec) != 0)
+        return -1;
     neverc_time_t parsed = {total_sec, nsec};
     *out = parsed;
     return 0;
@@ -1131,9 +1199,13 @@ int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out)
     neverc_time_t local = neverc_time_date(yr, mo, dy, hr, mi, sc, ns);
     if (wd >= 0 && neverc_time_weekday(local) != wd)
         return -1;
-    if (tz_sec != 0)
-        local = neverc_time_add(local,
-            -(neverc_duration_t)tz_sec * NEVERC_TIME_SECOND);
+    if (tz_sec != 0) {
+        neverc_duration_t adj;
+        if (neverc_time_duration_mul(-(neverc_duration_t)tz_sec,
+                                     NEVERC_TIME_SECOND, &adj) != 0)
+            return -1;
+        local = neverc_time_add(local, adj);
+    }
     *out = local;
     return 0;
 }

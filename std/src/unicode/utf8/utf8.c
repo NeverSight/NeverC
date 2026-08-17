@@ -127,12 +127,14 @@ void neverc_utf8_decode_rune(const uint8_t *buf, size_t len,
     rr = (rr << 6) | (uint32_t)(b2 & MASKX);
 
     if (n == 3) {
+        if (rr >= SURROGATE_MIN && rr <= SURROGATE_MAX) goto bad;
         *r = rr; *size = 3; return;
     }
 
     uint8_t b3 = buf[3];
     if (b3 < 0x80 || b3 > 0xBF) goto bad;
     rr = (rr << 6) | (uint32_t)(b3 & MASKX);
+    if (rr > NEVERC_UTF8_MAX_RUNE) goto bad;
 
     *r = rr; *size = 4; return;
 

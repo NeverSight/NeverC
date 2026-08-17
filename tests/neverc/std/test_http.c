@@ -3240,6 +3240,27 @@ static void test_serve_file(void) {
         neverc_http_memory_writer_free(w);
     }
 
+    /* Go unescapes URL.Path before the ".." check; %2e%2e is the same hole. */
+    w = neverc_http_memory_writer_new();
+    if (w) {
+        neverc_http_request_t req;
+        memset(&req, 0, sizeof(req));
+        req.method = "GET";
+        req.path = "/foo/%2e%2e/secret.txt";
+
+        neverc_http_serve_file(w, &req, tmppath);
+
+        char *data = NULL;
+        size_t data_len = 0;
+        int status = neverc_http_memory_writer_result(w, &data, &data_len);
+        check_int("serve_file encoded dotdot status", status, 400);
+        check_int("serve_file encoded dotdot no leak",
+                  data == NULL || strstr(data, "Hello from served file!") == NULL,
+                  1);
+        free(data);
+        neverc_http_memory_writer_free(w);
+    }
+
     /* Test non-existent file */
     w = neverc_http_memory_writer_new();
     if (w) {
@@ -3410,6 +3431,10 @@ static void test_strip_prefix(void) {
                                   strip_inner_handler);
         neverc_http_strip_prefix(mux, "/api/v2", "/api/v2/",
                                  strip_version_handler);
+        /* Catch-all so "/apifoo" reaches the strip handler instead of
+         * dying as an unmatched mux prefix. */
+        neverc_http_strip_prefix(mux, "/api", "/",
+                                  strip_inner_handler);
         char addr[32];
         snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
         neverc_http_listen_and_serve(addr, mux);
@@ -3430,6 +3455,30 @@ static void test_strip_prefix(void) {
     check_int("overlapping strip resp", n > 0, 1);
     check_int("overlapping strip handler",
               strstr(buf, "version_path=/users") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /apifoo HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("strip prefix is a path-segment boundary",
+              n > 0 && strstr(buf, "404") != NULL, 1);
+    check_int("strip prefix does not leak sibling path",
+              strstr(buf, "stripped_path=") == NULL, 1);
+
+    n = do_http_request(port,
+        "GET /api/../secret HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("strip prefix rejects dot-dot remainder",
+              n > 0 && strstr(buf, "404") != NULL, 1);
+    check_int("strip prefix does not leak dot-dot path",
+              strstr(buf, "stripped_path=") == NULL, 1);
+
+    n = do_http_request(port,
+        "GET /api/%2e%2e/secret HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("strip prefix rejects encoded dot-dot remainder",
+              n > 0 && strstr(buf, "404") != NULL, 1);
+    check_int("strip prefix does not leak encoded dot-dot path",
+              strstr(buf, "stripped_path=") == NULL, 1);
 
     stop_test_server(pid);
 }

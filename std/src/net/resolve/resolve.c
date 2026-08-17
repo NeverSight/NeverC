@@ -1,4 +1,5 @@
 #include "neverc/std/net/resolve.h"
+#include "../idna_inc.h"
 #include <limits.h>
 #include <string.h>
 #include <stdio.h>
@@ -48,16 +49,24 @@
   static void ensure_wsa_init(void) { /* no-op on POSIX */ }
 #endif
 
-static void copy_cstr_term(char *dst, size_t dstsz, const char *src) {
-    if (!dst || dstsz == 0) return;
-    if (!src) {
-        dst[0] = '\0';
-        return;
-    }
+static int copy_dns_name(char *dst, size_t dstsz, const char *src) {
+    if (!dst || dstsz == 0 || !src || !src[0]) return -1;
     size_t n = strlen(src);
-    if (n >= dstsz) n = dstsz - 1;
-    memcpy(dst, src, n);
-    dst[n] = '\0';
+    if (n >= dstsz) return -1;
+    memcpy(dst, src, n + 1);
+    return 0;
+}
+
+static int idna_lookup_name(const char *host, char *out, size_t cap) {
+    if (!host || !host[0] || !out || cap == 0) return -1;
+    /* IPv6 literals (with or without zone) are not IDNA names. */
+    if (strchr(host, ':')) {
+        size_t n = strlen(host);
+        if (n >= cap) return -1;
+        memcpy(out, host, n + 1);
+        return 0;
+    }
+    return neverc_idna_to_ascii(host, out, cap);
 }
 
 #ifndef _WIN32
@@ -160,6 +169,14 @@ int neverc_net_lookup_ip(const char *network, const char *host,
         }
     }
 
+    char query_host[256];
+    const char *lookup = host;
+    if (!strchr(host, ':')) {
+        if (neverc_idna_to_ascii(host, query_host, sizeof(query_host)) != 0)
+            return -1;
+        lookup = query_host;
+    }
+
     struct addrinfo hints, *result, *rp;
     memset(&hints, 0, sizeof(hints));
     hints.ai_socktype = SOCK_STREAM;
@@ -173,7 +190,7 @@ int neverc_net_lookup_ip(const char *network, const char *host,
     else
         return -1;
 
-    int rc = getaddrinfo(host, NULL, &hints, &result);
+    int rc = getaddrinfo(lookup, NULL, &hints, &result);
     if (rc != 0) return -1;
 
     for (rp = result; rp && out->count < NEVERC_NET_MAX_ADDRS; rp = rp->ai_next) {
@@ -217,12 +234,16 @@ int neverc_net_lookup_ip(const char *network, const char *host,
             if (strcmp(out->addrs[i], buf) == 0) { dup = 1; break; }
         }
         if (!dup) {
-            copy_cstr_term(out->addrs[out->count], 64, buf);
+            if (copy_dns_name(out->addrs[out->count], 64, buf) != 0)
+                continue;
             out->count++;
         }
     }
 
+    int truncated = (rp != NULL);
     freeaddrinfo(result);
+    if (truncated)
+        return -1;
     return out->count > 0 ? 0 : -1;
 }
 
@@ -368,7 +389,8 @@ int neverc_net_lookup_addr(const char *addr, neverc_net_addrs_t *out) {
     if (rc != 0) return -1;
 
     if (strlen(host) >= sizeof(out->addrs[0])) return -1;
-    copy_cstr_term(out->addrs[0], sizeof(out->addrs[0]), host);
+    if (copy_dns_name(out->addrs[0], sizeof(out->addrs[0]), host) != 0)
+        return -1;
     out->count = 1;
     return 0;
 }
@@ -379,52 +401,26 @@ int neverc_net_lookup_addr(const char *addr, neverc_net_addrs_t *out) {
 
 int neverc_net_lookup_cname(const char *host, char *buf, size_t buflen) {
     if (!host || !host[0] || !buf || buflen == 0) return -1;
+    ensure_wsa_init();
 
-#ifdef _WIN32
-    DNS_RECORD *rec = NULL;
-    DNS_STATUS status = DnsQuery_A(host, DNS_TYPE_CNAME,
-                                    DNS_QUERY_STANDARD, NULL, &rec, NULL);
-    if (status != 0 || !rec) {
-        /* If no CNAME, return the host itself (like Go) */
-        strncpy(buf, host, buflen - 1);
-        buf[buflen - 1] = '\0';
-        return 0;
-    }
-    const char *cname = NULL;
-    for (DNS_RECORD *r = rec; r; r = r->pNext) {
-        if (r->wType == DNS_TYPE_CNAME && r->Data.CNAME.pNameHost) {
-            cname = r->Data.CNAME.pNameHost;
-            break;
-        }
-    }
-    strncpy(buf, cname ? cname : host, buflen - 1);
-    buf[buflen - 1] = '\0';
-    DnsRecordListFree(rec, DnsFreeRecordList);
-    return 0;
-#else
+    char lookup[256];
+    if (idna_lookup_name(host, lookup, sizeof(lookup)) != 0)
+        return -1;
+
     struct addrinfo hints, *result;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_flags = AI_CANONNAME;
     hints.ai_socktype = SOCK_STREAM;
 
-    int rc = getaddrinfo(host, NULL, &hints, &result);
-    if (rc != 0) {
-        strncpy(buf, host, buflen - 1);
-        buf[buflen - 1] = '\0';
-        return 0;
-    }
+    int rc = getaddrinfo(lookup, NULL, &hints, &result);
+    if (rc != 0) return -1;
 
-    if (result->ai_canonname) {
-        strncpy(buf, result->ai_canonname, buflen - 1);
-        buf[buflen - 1] = '\0';
-    } else {
-        strncpy(buf, host, buflen - 1);
-        buf[buflen - 1] = '\0';
-    }
+    const char *cname = (result && result->ai_canonname)
+        ? result->ai_canonname : lookup;
+    int ok = copy_dns_name(buf, buflen, cname) == 0;
     freeaddrinfo(result);
-    return 0;
-#endif
+    return ok ? 0 : -1;
 }
 
 /* ======================================================================
@@ -435,46 +431,59 @@ int neverc_net_lookup_mx(const char *name, neverc_net_mx_list_t *out) {
     if (!name || !name[0] || !out) return -1;
     memset(out, 0, sizeof(*out));
 
+    char lookup[256];
+    if (idna_lookup_name(name, lookup, sizeof(lookup)) != 0)
+        return -1;
+
 #ifdef _WIN32
     DNS_RECORD *rec = NULL;
-    DNS_STATUS status = DnsQuery_A(name, DNS_TYPE_MX,
+    DNS_STATUS status = DnsQuery_A(lookup, DNS_TYPE_MX,
                                     DNS_QUERY_STANDARD, NULL, &rec, NULL);
     if (status != 0) return -1;
 
-    for (DNS_RECORD *r = rec; r && out->count < NEVERC_NET_MAX_RECORDS; r = r->pNext) {
-        if (r->wType == DNS_TYPE_MX) {
-            copy_cstr_term(out->records[out->count].host, 256,
-                           r->Data.MX.pNameExchange);
-            out->records[out->count].pref = r->Data.MX.wPreference;
-            out->count++;
+    DNS_RECORD *r;
+    for (r = rec; r; r = r->pNext) {
+        if (r->wType != DNS_TYPE_MX) continue;
+        if (out->count >= NEVERC_NET_MAX_RECORDS) {
+            DnsRecordListFree(rec, DnsFreeRecordList);
+            return -1;
         }
+        if (copy_dns_name(out->records[out->count].host, 256,
+                          r->Data.MX.pNameExchange) != 0) {
+            DnsRecordListFree(rec, DnsFreeRecordList);
+            return -1;
+        }
+        out->records[out->count].pref = r->Data.MX.wPreference;
+        out->count++;
     }
     DnsRecordListFree(rec, DnsFreeRecordList);
     return out->count > 0 ? 0 : -1;
 #else
     unsigned char answer[4096];
-    int len = posix_res_query(name, C_IN, T_MX, answer, sizeof(answer));
+    int len = posix_res_query(lookup, C_IN, T_MX, answer, sizeof(answer));
     if (len < 0) return -1;
 
     ns_msg msg;
     if (ns_initparse(answer, len, &msg) < 0) return -1;
 
     int cnt = ns_msg_count(msg, ns_s_an);
-    for (int i = 0; i < cnt && out->count < NEVERC_NET_MAX_RECORDS; i++) {
+    for (int i = 0; i < cnt; i++) {
         ns_rr rr;
-        if (ns_parserr(&msg, ns_s_an, i, &rr) < 0) continue;
+        if (ns_parserr(&msg, ns_s_an, i, &rr) < 0) return -1;
         if (ns_rr_type(rr) != T_MX) continue;
+        if (out->count >= NEVERC_NET_MAX_RECORDS) return -1;
 
         const unsigned char *rdata = ns_rr_rdata(rr);
         int rdlen = ns_rr_rdlen(rr);
-        if (rdlen < 2) continue;
+        if (rdlen < 2) return -1;
         out->records[out->count].pref =
             (uint16_t)((rdata[0] << 8) | rdata[1]);
 
         char mxhost[256];
         if (dn_expand(answer, answer + len, rdata + 2, mxhost, sizeof(mxhost)) < 0)
-            continue;
-        copy_cstr_term(out->records[out->count].host, 256, mxhost);
+            return -1;
+        if (copy_dns_name(out->records[out->count].host, 256, mxhost) != 0)
+            return -1;
         out->count++;
     }
     return out->count > 0 ? 0 : -1;
@@ -489,78 +498,80 @@ int neverc_net_lookup_txt(const char *name, neverc_net_txt_list_t *out) {
     if (!name || !name[0] || !out) return -1;
     memset(out, 0, sizeof(*out));
 
+    char lookup[256];
+    if (idna_lookup_name(name, lookup, sizeof(lookup)) != 0)
+        return -1;
+
 #ifdef _WIN32
     DNS_RECORD *rec = NULL;
-    DNS_STATUS status = DnsQuery_A(name, DNS_TYPE_TEXT,
+    DNS_STATUS status = DnsQuery_A(lookup, DNS_TYPE_TEXT,
                                     DNS_QUERY_STANDARD, NULL, &rec, NULL);
     if (status != 0) return -1;
 
-    for (DNS_RECORD *r = rec; r && out->count < NEVERC_NET_MAX_RECORDS; r = r->pNext) {
-        if (r->wType == DNS_TYPE_TEXT && r->Data.TXT.dwStringCount > 0) {
-            size_t assembled = 0;
-            DWORD nstr = r->Data.TXT.dwStringCount;
-            int truncated = 0;
-            for (DWORD i = 0; i < nstr; i++) {
-                const char *chunk = r->Data.TXT.pStringArray[i];
-                if (!chunk) continue;
-                size_t clen = strlen(chunk);
-                size_t room = 511 - assembled;
-                if (clen > room) {
-                    truncated = 1;
-                    break;
-                }
-                memcpy(out->records[out->count] + assembled, chunk, clen);
-                assembled += clen;
-            }
-            if (truncated)
-                continue;
-            out->records[out->count][assembled] = '\0';
-            out->count++;
+    for (DNS_RECORD *r = rec; r; r = r->pNext) {
+        if (r->wType != DNS_TYPE_TEXT || r->Data.TXT.dwStringCount == 0)
+            continue;
+        if (out->count >= NEVERC_NET_MAX_RECORDS) {
+            DnsRecordListFree(rec, DnsFreeRecordList);
+            return -1;
         }
+        size_t assembled = 0;
+        DWORD nstr = r->Data.TXT.dwStringCount;
+        int truncated = 0;
+        for (DWORD i = 0; i < nstr; i++) {
+            const char *chunk = r->Data.TXT.pStringArray[i];
+            if (!chunk) continue;
+            size_t clen = strlen(chunk);
+            size_t room = 511 - assembled;
+            if (clen > room) {
+                truncated = 1;
+                break;
+            }
+            memcpy(out->records[out->count] + assembled, chunk, clen);
+            assembled += clen;
+        }
+        if (truncated) {
+            DnsRecordListFree(rec, DnsFreeRecordList);
+            return -1;
+        }
+        out->records[out->count][assembled] = '\0';
+        out->count++;
     }
     DnsRecordListFree(rec, DnsFreeRecordList);
     return out->count > 0 ? 0 : -1;
 #else
     unsigned char answer[4096];
-    int len = posix_res_query(name, C_IN, T_TXT, answer, sizeof(answer));
+    int len = posix_res_query(lookup, C_IN, T_TXT, answer, sizeof(answer));
     if (len < 0) return -1;
 
     ns_msg msg;
     if (ns_initparse(answer, len, &msg) < 0) return -1;
 
     int cnt = ns_msg_count(msg, ns_s_an);
-    for (int i = 0; i < cnt && out->count < NEVERC_NET_MAX_RECORDS; i++) {
+    for (int i = 0; i < cnt; i++) {
         ns_rr rr;
-        if (ns_parserr(&msg, ns_s_an, i, &rr) < 0) continue;
+        if (ns_parserr(&msg, ns_s_an, i, &rr) < 0) return -1;
         if (ns_rr_type(rr) != T_TXT) continue;
+        if (out->count >= NEVERC_NET_MAX_RECORDS) return -1;
 
         const unsigned char *rdata = ns_rr_rdata(rr);
         int rdlen = ns_rr_rdlen(rr);
-        if (rdlen < 1) continue;
+        if (rdlen < 1) return -1;
 
         size_t assembled = 0;
         int offset = 0;
-        int malformed = 0;
         while (offset < rdlen) {
             int chunk = rdata[offset];
-            if (offset + 1 + chunk > rdlen) {
-                malformed = 1;
-                break;
-            }
+            if (offset + 1 + chunk > rdlen)
+                return -1;
             size_t room = 511 - assembled;
-            /* Silent truncation would return a prefix of SPF/DKIM as if it
-             * were complete. Skip the whole RR if it does not fit. */
-            if ((size_t)chunk > room) {
-                malformed = 1;
-                break;
-            }
+            if ((size_t)chunk > room)
+                return -1;
             memcpy(out->records[out->count] + assembled,
                    rdata + offset + 1, (size_t)chunk);
             assembled += (size_t)chunk;
             offset += 1 + chunk;
         }
-        if (malformed)
-            continue;
         out->records[out->count][assembled] = '\0';
         out->count++;
     }
@@ -576,40 +587,52 @@ int neverc_net_lookup_ns(const char *name, neverc_net_ns_list_t *out) {
     if (!name || !name[0] || !out) return -1;
     memset(out, 0, sizeof(*out));
 
+    char lookup[256];
+    if (idna_lookup_name(name, lookup, sizeof(lookup)) != 0)
+        return -1;
+
 #ifdef _WIN32
     DNS_RECORD *rec = NULL;
-    DNS_STATUS status = DnsQuery_A(name, DNS_TYPE_NS,
+    DNS_STATUS status = DnsQuery_A(lookup, DNS_TYPE_NS,
                                     DNS_QUERY_STANDARD, NULL, &rec, NULL);
     if (status != 0) return -1;
 
-    for (DNS_RECORD *r = rec; r && out->count < NEVERC_NET_MAX_RECORDS; r = r->pNext) {
-        if (r->wType == DNS_TYPE_NS) {
-            copy_cstr_term(out->records[out->count], 256,
-                           r->Data.NS.pNameHost);
-            out->count++;
+    for (DNS_RECORD *r = rec; r; r = r->pNext) {
+        if (r->wType != DNS_TYPE_NS) continue;
+        if (out->count >= NEVERC_NET_MAX_RECORDS) {
+            DnsRecordListFree(rec, DnsFreeRecordList);
+            return -1;
         }
+        if (copy_dns_name(out->records[out->count], 256,
+                          r->Data.NS.pNameHost) != 0) {
+            DnsRecordListFree(rec, DnsFreeRecordList);
+            return -1;
+        }
+        out->count++;
     }
     DnsRecordListFree(rec, DnsFreeRecordList);
     return out->count > 0 ? 0 : -1;
 #else
     unsigned char answer[4096];
-    int len = posix_res_query(name, C_IN, T_NS, answer, sizeof(answer));
+    int len = posix_res_query(lookup, C_IN, T_NS, answer, sizeof(answer));
     if (len < 0) return -1;
 
     ns_msg msg;
     if (ns_initparse(answer, len, &msg) < 0) return -1;
 
     int cnt = ns_msg_count(msg, ns_s_an);
-    for (int i = 0; i < cnt && out->count < NEVERC_NET_MAX_RECORDS; i++) {
+    for (int i = 0; i < cnt; i++) {
         ns_rr rr;
-        if (ns_parserr(&msg, ns_s_an, i, &rr) < 0) continue;
+        if (ns_parserr(&msg, ns_s_an, i, &rr) < 0) return -1;
         if (ns_rr_type(rr) != T_NS) continue;
+        if (out->count >= NEVERC_NET_MAX_RECORDS) return -1;
 
         char nshost[256];
         if (dn_expand(answer, answer + len, ns_rr_rdata(rr),
                        nshost, sizeof(nshost)) < 0)
-            continue;
-        copy_cstr_term(out->records[out->count], 256, nshost);
+            return -1;
+        if (copy_dns_name(out->records[out->count], 256, nshost) != 0)
+            return -1;
         out->count++;
     }
     return out->count > 0 ? 0 : -1;
@@ -625,12 +648,17 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
     if (!name || !name[0] || !out) return -1;
     memset(out, 0, sizeof(*out));
 
+    char ascii_name[256];
+    if (idna_lookup_name(name, ascii_name, sizeof(ascii_name)) != 0)
+        return -1;
+
     char qname[512];
     int qn;
     if (service && proto)
-        qn = snprintf(qname, sizeof(qname), "_%s._%s.%s", service, proto, name);
+        qn = snprintf(qname, sizeof(qname), "_%s._%s.%s", service, proto,
+                      ascii_name);
     else
-        qn = snprintf(qname, sizeof(qname), "%s", name);
+        qn = snprintf(qname, sizeof(qname), "%s", ascii_name);
     if (qn < 0 || (size_t)qn >= sizeof(qname)) return -1;
 
 #ifdef _WIN32
@@ -639,15 +667,21 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
                                     DNS_QUERY_STANDARD, NULL, &rec, NULL);
     if (status != 0) return -1;
 
-    for (DNS_RECORD *r = rec; r && out->count < NEVERC_NET_MAX_RECORDS; r = r->pNext) {
-        if (r->wType == DNS_TYPE_SRV) {
-            copy_cstr_term(out->records[out->count].target, 256,
-                           r->Data.SRV.pNameTarget);
-            out->records[out->count].port = r->Data.SRV.wPort;
-            out->records[out->count].priority = r->Data.SRV.wPriority;
-            out->records[out->count].weight = r->Data.SRV.wWeight;
-            out->count++;
+    for (DNS_RECORD *r = rec; r; r = r->pNext) {
+        if (r->wType != DNS_TYPE_SRV) continue;
+        if (out->count >= NEVERC_NET_MAX_RECORDS) {
+            DnsRecordListFree(rec, DnsFreeRecordList);
+            return -1;
         }
+        if (copy_dns_name(out->records[out->count].target, 256,
+                          r->Data.SRV.pNameTarget) != 0) {
+            DnsRecordListFree(rec, DnsFreeRecordList);
+            return -1;
+        }
+        out->records[out->count].port = r->Data.SRV.wPort;
+        out->records[out->count].priority = r->Data.SRV.wPriority;
+        out->records[out->count].weight = r->Data.SRV.wWeight;
+        out->count++;
     }
     DnsRecordListFree(rec, DnsFreeRecordList);
     return out->count > 0 ? 0 : -1;
@@ -660,14 +694,15 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
     if (ns_initparse(answer, len, &msg) < 0) return -1;
 
     int cnt = ns_msg_count(msg, ns_s_an);
-    for (int i = 0; i < cnt && out->count < NEVERC_NET_MAX_RECORDS; i++) {
+    for (int i = 0; i < cnt; i++) {
         ns_rr rr;
-        if (ns_parserr(&msg, ns_s_an, i, &rr) < 0) continue;
+        if (ns_parserr(&msg, ns_s_an, i, &rr) < 0) return -1;
         if (ns_rr_type(rr) != T_SRV) continue;
+        if (out->count >= NEVERC_NET_MAX_RECORDS) return -1;
 
         const unsigned char *rdata = ns_rr_rdata(rr);
         int rdlen = ns_rr_rdlen(rr);
-        if (rdlen < 6) continue;
+        if (rdlen < 6) return -1;
         out->records[out->count].priority =
             (uint16_t)((rdata[0] << 8) | rdata[1]);
         out->records[out->count].weight =
@@ -678,8 +713,9 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
         char target[256];
         if (dn_expand(answer, answer + len, rdata + 6,
                        target, sizeof(target)) < 0)
-            continue;
-        copy_cstr_term(out->records[out->count].target, 256, target);
+            return -1;
+        if (copy_dns_name(out->records[out->count].target, 256, target) != 0)
+            return -1;
         out->count++;
     }
     return out->count > 0 ? 0 : -1;

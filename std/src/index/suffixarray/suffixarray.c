@@ -189,7 +189,14 @@ static void build_search_index(neverc_suffixarray_t *idx) {
         return;
     }
 
-    for (size_t i = 0; i < n; i++) rank[sa[i]] = (int32_t)i;
+    for (size_t i = 0; i < n; i++) {
+        int32_t s = sa[i];
+        if (s < 0 || (size_t)s >= n) {
+            free(rank); free(lcp); free(llcp); free(rlcp);
+            return;
+        }
+        rank[s] = (int32_t)i;
+    }
 
     /* Kasai: lcp[rank[i]] = lcp(suffix SA[rank[i]-1], suffix i). */
     size_t h = 0;
@@ -349,12 +356,18 @@ int neverc_suffixarray_lookup(const neverc_suffixarray_t *idx,
 
     int32_t lo = sa_bound(idx, pattern, pat_len, 0);
     int32_t hi = sa_bound(idx, pattern, pat_len, 1);
+    if (lo < 0) lo = 0;
+    if (hi < lo) hi = lo;
+    if ((size_t)hi > idx->sa_len) hi = (int32_t)idx->sa_len;
+    if ((size_t)lo > idx->sa_len) lo = (int32_t)idx->sa_len;
     size_t count = (size_t)(hi - lo);
     size_t copy = count < max_results ? count : max_results;
     if (copy > 0 && !results) return -1;
+    if ((size_t)lo + copy > idx->sa_len)
+        copy = idx->sa_len - (size_t)lo;
 
     for (size_t i = 0; i < copy; i++)
-        results[i] = idx->sa[lo + (int32_t)i];
+        results[i] = idx->sa[(size_t)lo + i];
 
     if (nresults) *nresults = copy;
     return 0;
@@ -366,6 +379,10 @@ size_t neverc_suffixarray_count(const neverc_suffixarray_t *idx,
         return 0;
     int32_t lo = sa_bound(idx, pattern, pat_len, 0);
     int32_t hi = sa_bound(idx, pattern, pat_len, 1);
+    if (lo < 0) lo = 0;
+    if (hi < lo) return 0;
+    if ((size_t)hi > idx->sa_len) hi = (int32_t)idx->sa_len;
+    if ((size_t)lo > (size_t)hi) return 0;
     return (size_t)(hi - lo);
 }
 

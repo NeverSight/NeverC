@@ -408,6 +408,51 @@ static void default_cookie_path(const char *request_path, char *path,
     path[length] = '\0';
 }
 
+/* RFC 6265 path-value: av-octet = %x20-3A / %x3C-7E, and must start with '/'. */
+static int valid_cookie_path(const char *path) {
+    if (!path || path[0] != '/') return 0;
+    for (const unsigned char *p = (const unsigned char *)path; *p; p++) {
+        if (*p < 0x20 || *p > 0x7e || *p == ';') return 0;
+    }
+    return 1;
+}
+
+static int cookie_label_is(const char *start, const char *end,
+                           const char *literal) {
+    size_t length = (size_t)(end - start);
+    size_t expected = strlen(literal);
+    if (length != expected) return 0;
+    for (size_t i = 0; i < length; i++) {
+        if (tolower((unsigned char)start[i]) !=
+            (unsigned char)literal[i])
+            return 0;
+    }
+    return 1;
+}
+
+/* RFC 6265 §5.3: Domain attributes that are a public suffix must not be
+ * stored (except host-only when Domain equals the request-host). A full
+ * PSL is not embedded; this covers single-label suffixes and the usual
+ * ccTLD second-level forms such as co.uk / com.au. */
+static int cookie_domain_is_public_suffix(const char *domain) {
+    if (!domain || !domain[0] || host_is_ip_literal(domain)) return 0;
+    const char *dot = strchr(domain, '.');
+    if (!dot) return 1;
+    if (strchr(dot + 1, '.')) return 0;
+    if (strlen(dot + 1) != 2 ||
+        !isalpha((unsigned char)dot[1]) ||
+        !isalpha((unsigned char)dot[2]))
+        return 0;
+    static const char *const slds[] = {
+        "ac", "biz", "co", "com", "ed", "edu", "firm", "gen", "go",
+        "gob", "gov", "govt", "info", "lg", "me", "mil", "ne", "net",
+        "or", "org", "priv", "sch", "school", "web",
+    };
+    for (size_t i = 0; i < sizeof(slds) / sizeof(slds[0]); i++)
+        if (cookie_label_is(domain, dot, slds[i])) return 1;
+    return 0;
+}
+
 /* RFC 6265 §5.1.4: path matching. */
 static int path_match(const char *cookie_path, const char *request_path) {
     if (!cookie_path || !request_path) return 1;
@@ -532,8 +577,8 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
                 !domain_match(domain, host))
                 continue;
             host_only = 0;
-            /* Reject obvious public-suffix attributes such as Domain=com. */
-            if (!host_is_ip_literal(host) && !strchr(domain, '.')) {
+            if (!host_is_ip_literal(host) &&
+                cookie_domain_is_public_suffix(domain)) {
                 if (strcmp(domain, host) != 0) continue;
                 host_only = 1;
             }
@@ -543,6 +588,7 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
 
         char cookie_path[1024];
         if (c->path && c->path[0] == '/') {
+            if (!valid_cookie_path(c->path)) continue;
             size_t path_length = strlen(c->path);
             if (path_length >= sizeof(cookie_path)) continue;
             memcpy(cookie_path, c->path, path_length + 1);

@@ -627,14 +627,27 @@ enum {
  * or `{{.X}}` in attribute-name position would be HTML-escaped instead of
  * replaced with ZgotmplZ.
  */
+static int html_js_is_line_term(const char *buf, size_t i, size_t len) {
+    unsigned char c = (unsigned char)buf[i];
+    if (c == '\n' || c == '\r') return 1;
+    /* U+2028 / U+2029 also terminate a JS line comment. */
+    return i + 2 < len && c == 0xE2 &&
+           (unsigned char)buf[i + 1] == 0x80 &&
+           ((unsigned char)buf[i + 2] == 0xA8 ||
+            (unsigned char)buf[i + 2] == 0xA9);
+}
+
 static void html_scan_doc(const char *buf, size_t len,
-                          int *in_script, int *in_style, int *in_open_tag,
+                          int *in_script, int *in_style,
+                          int *in_script_comment,
+                          int *in_open_tag,
                           int *in_attr, int *quoted,
                           const char **aname, size_t *nlen,
                           const char **aprefix, size_t *aplen,
                           int *in_meta, int *meta_refresh) {
     *in_script = 0;
     *in_style = 0;
+    *in_script_comment = 0;
     *in_open_tag = 0;
     *in_attr = 0;
     *quoted = 0;
@@ -647,6 +660,8 @@ static void html_scan_doc(const char *buf, size_t len,
     if (!buf || len == 0) return;
 
     int state = HS_TEXT;
+    enum { JS_CODE, JS_SQ, JS_DQ, JS_TPL, JS_LINE, JS_BLOCK, JS_HTML };
+    int js = JS_CODE;
     char tag[16];
     size_t tlen = 0;
     int is_end = 0;
@@ -709,6 +724,7 @@ static void html_scan_doc(const char *buf, size_t len,
         case HS_SCRIPT:
             if (html_raw_end_tag(buf, i, len, "</script", 8)) {
                 state = HS_TAG;
+                js = JS_CODE;
                 is_end = 1;
                 seen_name = 1;
                 memcpy(tag, "script", 6);
@@ -718,7 +734,65 @@ static void html_scan_doc(const char *buf, size_t len,
                 i += 8;
                 break;
             }
-            i++;
+            /* Track JS block comments and HTML <!-- ... --> inside script
+             * so interpolation cannot break out. Wrapping as a JS string is
+             * a no-op inside a comment: a closer in the value still ends it. */
+            switch (js) {
+            case JS_CODE:
+                if (c == '"') { js = JS_DQ; i++; break; }
+                if (c == '\'') { js = JS_SQ; i++; break; }
+                if (c == '`') { js = JS_TPL; i++; break; }
+                if (c == '/' && i + 1 < len && buf[i + 1] == '/') {
+                    js = JS_LINE;
+                    i += 2;
+                    break;
+                }
+                if (c == '/' && i + 1 < len && buf[i + 1] == '*') {
+                    js = JS_BLOCK;
+                    i += 2;
+                    break;
+                }
+                if (c == '<' && i + 3 < len &&
+                    buf[i + 1] == '!' && buf[i + 2] == '-' &&
+                    buf[i + 3] == '-') {
+                    js = JS_HTML;
+                    i += 4;
+                    break;
+                }
+                i++;
+                break;
+            case JS_SQ:
+            case JS_DQ:
+            case JS_TPL:
+                if (c == '\\' && i + 1 < len) { i += 2; break; }
+                if ((js == JS_SQ && c == '\'') ||
+                    (js == JS_DQ && c == '"') ||
+                    (js == JS_TPL && c == '`'))
+                    js = JS_CODE;
+                i++;
+                break;
+            case JS_LINE:
+                if (html_js_is_line_term(buf, i, len)) js = JS_CODE;
+                i++;
+                break;
+            case JS_BLOCK:
+                if (c == '*' && i + 1 < len && buf[i + 1] == '/') {
+                    js = JS_CODE;
+                    i += 2;
+                    break;
+                }
+                i++;
+                break;
+            case JS_HTML:
+                if (c == '-' && i + 2 < len &&
+                    buf[i + 1] == '-' && buf[i + 2] == '>') {
+                    js = JS_CODE;
+                    i += 3;
+                    break;
+                }
+                i++;
+                break;
+            }
             break;
 
         case HS_STYLE:
@@ -796,9 +870,10 @@ static void html_scan_doc(const char *buf, size_t len,
             if (c == '/') { i++; break; }
             if (c == '>') {
                 if (!is_end && tlen > 0 && tlen < sizeof(tag) &&
-                    html_tag_is(tag, tlen, "script"))
+                    html_tag_is(tag, tlen, "script")) {
                     state = HS_SCRIPT;
-                else if (!is_end && tlen > 0 && tlen < sizeof(tag) &&
+                    js = JS_CODE;
+                } else if (!is_end && tlen > 0 && tlen < sizeof(tag) &&
                          html_tag_is(tag, tlen, "style"))
                     state = HS_STYLE;
                 else
@@ -836,6 +911,8 @@ static void html_scan_doc(const char *buf, size_t len,
 
     *in_script = (state == HS_SCRIPT);
     *in_style = (state == HS_STYLE);
+    *in_script_comment = (state == HS_SCRIPT &&
+                          (js == JS_LINE || js == JS_BLOCK || js == JS_HTML));
     *in_open_tag = (state == HS_TAG || state == HS_ATTR_DQ ||
                     state == HS_ATTR_SQ || state == HS_ATTR_UQ ||
                     state == HS_MARKUP);
@@ -1178,8 +1255,9 @@ static int html_css_has_unsafe_url(const char *s) {
  * CSS hex-escaping is undone by the browser, so the raw value is what
  * matters. Reject @import / expression / -moz-binding, CSS escapes that
  * hide schemes, javascript:/data:/vbscript: anywhere, and unsafe url().
- * `/*` / `*/` are comments: `java/* */script:` is a relative URL (the `/`
- * trips the allowlist) and becomes `javascript:` after comment stripping.
+ * CSS slash-star comments hide schemes: java + comment + script: is a
+ * relative URL (the slash trips the allowlist) and becomes javascript:
+ * after the comment is stripped.
  */
 static int html_css_is_unsafe(const char *s) {
     if (!s) return 0;
@@ -1235,9 +1313,11 @@ static int execute_nodes(const node_t *n,
                 size_t nlen = 0;
                 const char *aprefix = NULL;
                 size_t aplen = 0;
-                int in_script = 0, in_style_tag = 0, in_open_tag = 0;
+                int in_script = 0, in_style_tag = 0, in_script_comment = 0;
+                int in_open_tag = 0;
                 int in_meta = 0, meta_refresh = 0;
                 html_scan_doc(*buf, *len, &in_script, &in_style_tag,
+                              &in_script_comment,
                               &in_open_tag, &in_attr, &quoted,
                               &aname, &nlen, &aprefix, &aplen,
                               &in_meta, &meta_refresh);
@@ -1295,6 +1375,8 @@ static int execute_nodes(const node_t *n,
                     escaped = html_escape_event(val);
                 else if (in_srcdoc)
                     escaped = html_escape_srcdoc(val);
+                else if (in_script && !in_attr && in_script_comment)
+                    escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_script && !in_attr &&
                          !html_prev_non_ws_is_quote(*buf, *len) &&
                          html_prev_non_ws_is_digit(*buf, *len))

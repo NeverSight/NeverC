@@ -128,6 +128,21 @@ int main(void) {
         else { tests_failed++; printf("  FAIL: SHA-224 re-init reused old digest\n"); }
     }
 
+    /* SHA-224 uses SHA-256's 64-bit bit-length; wrap must not collide. */
+    {
+        neverc_sha224_ctx ctx;
+        neverc_sha224_init(&ctx);
+        neverc_sha224_update(&ctx, (const uint8_t *)"abc", 3);
+        ctx.count = (1ULL << 61) + 3;
+        uint8_t overflowed[28];
+        memset(overflowed, 0xa5, sizeof(overflowed));
+        neverc_sha224_final(&ctx, overflowed);
+        uint8_t zeros[28] = {0};
+        tests_run++;
+        if (memcmp(overflowed, zeros, 28) == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: overflow must not collide with SHA-224(\"abc\")\n"); }
+    }
+
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

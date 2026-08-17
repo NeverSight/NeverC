@@ -309,11 +309,11 @@ int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
 
     const char *colon = NULL;
     if (s[0] == '[') {
-        const char *rb = strchr(s, ']');
+        const char *rb = strrchr(s, ']');
         if (!rb || rb[1] != ':') return -1;
         char addrbuf[256];
         size_t alen = (size_t)(rb - s - 1);
-        if (alen >= sizeof(addrbuf)) return -1;
+        if (alen == 0 || alen >= sizeof(addrbuf)) return -1;
         memcpy(addrbuf, s+1, alen);
         addrbuf[alen] = '\0';
         if (neverc_netip_parse_addr(addrbuf, &out->addr) != 0) return -1;
@@ -326,7 +326,7 @@ int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
         if (!colon) return -1;
         char addrbuf[256];
         size_t alen = (size_t)(colon - s);
-        if (alen >= sizeof(addrbuf)) return -1;
+        if (alen == 0 || alen >= sizeof(addrbuf)) return -1;
         memcpy(addrbuf, s, alen);
         addrbuf[alen] = '\0';
         if (neverc_netip_parse_addr(addrbuf, &out->addr) != 0) return -1;
@@ -335,14 +335,22 @@ int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
 
     const char *port_str = colon + 1;
     size_t plen = slen - (size_t)(port_str - s);
-    unsigned port;
-    if (parse_decimal(port_str, (int)plen, &port) != 0 || port > 65535) return -1;
+    if (plen == 0 || plen > 10) return -1;
+    unsigned port = 0;
+    for (size_t i = 0; i < plen; i++) {
+        if (port_str[i] < '0' || port_str[i] > '9') return -1;
+        if (port > 65535u / 10u ||
+            (port == 65535u / 10u && (unsigned)(port_str[i] - '0') > 65535u % 10u))
+            return -1;
+        port = port * 10u + (unsigned)(port_str[i] - '0');
+    }
+    if (port > 65535u) return -1;
     out->port = (uint16_t)port;
     return 0;
 }
 
 int neverc_netip_addrport_string(const neverc_netip_addrport_t *ap, char *buf, size_t cap) {
-    if (!ap || (cap > 0 && !buf)) return -1;
+    if (!ap || !ap->addr.valid || (cap > 0 && !buf)) return -1;
     char tmp[144];
     int pos = 0;
     if (ap->addr.is_v4) {
@@ -493,16 +501,10 @@ int neverc_netip_addr_equal(const neverc_netip_addr_t *a, const neverc_netip_add
 
 int neverc_netip_prefix_contains(const neverc_netip_prefix_t *pfx, const neverc_netip_addr_t *addr) {
     if (!pfx || !addr || !pfx->valid || !addr->valid) return 0;
-    /* Go netip.Prefix.Contains is false when the address has a zone. */
+    /* Go netip.Prefix.Contains: zones never match, and IPv4-mapped IPv6
+     * does not match an IPv4 prefix (families must be identical). */
     if (addr->zone[0]) return 0;
-    neverc_netip_addr_t unmapped;
-    const neverc_netip_addr_t *probe = addr;
-    if (pfx->addr.is_v4 && addr_is_4in6(addr)) {
-        if (neverc_netip_addr_unmap(addr, &unmapped) != 0) return 0;
-        probe = &unmapped;
-    } else if (pfx->addr.is_v4 != addr->is_v4) {
-        return 0;
-    }
+    if (pfx->addr.is_v4 != addr->is_v4) return 0;
 
     int start = pfx->addr.is_v4 ? 12 : 0;
     int bytes = pfx->addr.is_v4 ? 4 : 16;
@@ -510,11 +512,11 @@ int neverc_netip_prefix_contains(const neverc_netip_prefix_t *pfx, const neverc_
 
     for (int i = 0; i < bytes; i++) {
         if (bits >= 8) {
-            if (pfx->addr.addr[start+i] != probe->addr[start+i]) return 0;
+            if (pfx->addr.addr[start+i] != addr->addr[start+i]) return 0;
             bits -= 8;
         } else if (bits > 0) {
             uint8_t mask = (uint8_t)(0xff << (8 - bits));
-            if ((pfx->addr.addr[start+i] & mask) != (probe->addr[start+i] & mask)) return 0;
+            if ((pfx->addr.addr[start+i] & mask) != (addr->addr[start+i] & mask)) return 0;
             bits = 0;
         }
     }

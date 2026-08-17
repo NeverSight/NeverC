@@ -67,6 +67,10 @@ static int elf_borrow_string(const uint8_t *strtab, size_t strtab_len,
     return 0;
 }
 
+static int elf_strtab_terminated(const uint8_t *strtab, size_t strtab_len) {
+    return strtab != NULL && strtab_len > 0 && strtab[strtab_len - 1] == 0;
+}
+
 /* Resolve section names from e_shstrndx. SHN_UNDEF (0) means the file has no
  * name table — do not treat section 0 as one (its sh_size is a section count
  * when extended numbering is in use). A declared table must be SHT_STRTAB,
@@ -88,6 +92,8 @@ static int elf_load_section_names(neverc_elf_file_t *f, uint32_t shstrndx) {
 
     const uint8_t *strtab = f->data + (size_t)str->offset;
     size_t strtab_len = (size_t)str->size;
+    if (!elf_strtab_terminated(strtab, strtab_len))
+        return -1;
     for (uint32_t i = 0; i < f->section_count; i++) {
         uint64_t name_idx = f->sections[i].name_idx;
         if (name_idx >= strtab_len)
@@ -163,8 +169,11 @@ static int elf_resolve_layout(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
         return -1;
 
     const uint8_t *sh0 = d + (size_t)*shoff;
+    uint32_t sh_type = r32(sh0 + 4);
     uint64_t sh_size;
     uint32_t sh_link, sh_info;
+    if (sh_type != NEVERC_SHT_NULL)
+        return -1;
     if (is64) {
         sh_size = r64(sh0 + 32);
         sh_link = r32(sh0 + 40);
@@ -475,7 +484,7 @@ int neverc_elf_section_data(const neverc_elf_file_t *f,
     *out = NULL;
     *out_len = 0;
     if (!f) return -1;
-    if (!s || s->type == NEVERC_SHT_NOBITS) {
+    if (!s || s->type == NEVERC_SHT_NOBITS || s->type == NEVERC_SHT_NULL) {
         return 0;
     }
     if (s->offset > f->data_len || s->size > f->data_len - s->offset) return -1;
@@ -535,6 +544,8 @@ static int get_symbols_common(const neverc_elf_file_t *f, uint32_t sh_type,
         return -1;
     const uint8_t *str_data = f->data + (size_t)strtab->offset;
     size_t str_len = (size_t)strtab->size;
+    if (!elf_strtab_terminated(str_data, str_len))
+        return -1;
 
     /* Skip first null entry */
     *syms = (neverc_elf_symbol_t *)calloc((size_t)(sym_count - 1),
@@ -615,6 +626,8 @@ int neverc_elf_imported_libraries(const neverc_elf_file_t *f,
         return -1;
     const uint8_t *str_data = f->data + (size_t)strtab->offset;
     size_t str_len = (size_t)strtab->size;
+    if (!elf_strtab_terminated(str_data, str_len))
+        return -1;
     const uint8_t *dyn_data = f->data + (size_t)dyn->offset;
 
     int lib_count = 0;

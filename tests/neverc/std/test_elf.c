@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <stdint.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -299,6 +300,17 @@ static void test_elf_malformed_tables(void) {
           neverc_elf_open(&f, data, len) < 0);
     memcpy(data + 64, saved_shstr, sizeof(saved_shstr));
 
+    /* Keep in-range NULs for each name, but leave a trailing non-NUL so the
+     * string table itself is not terminated. */
+    uint8_t saved_sh_size = sh2[32];
+    uint8_t saved_pad = data[64 + 17];
+    sh2[32] = 18;
+    data[64 + 17] = 'X';
+    CHECK("reject string table without a terminating NUL",
+          neverc_elf_open(&f, data, len) < 0);
+    sh2[32] = saved_sh_size;
+    data[64 + 17] = saved_pad;
+
     data[40] = 0; data[41] = 0; data[42] = 0; data[43] = 0;
     CHECK("reject shnum without a section header offset",
           neverc_elf_open(&f, data, len) < 0);
@@ -341,6 +353,11 @@ static void put32be(uint8_t *p, uint32_t v) {
     p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
     p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v;
 }
+static void put64le(uint8_t *p, uint64_t v) {
+    int i;
+    for (i = 0; i < 8; i++)
+        p[i] = (uint8_t)(v >> (8 * i));
+}
 
 static void test_elf_extended_and_truncated(void) {
     size_t len = 0;
@@ -359,6 +376,14 @@ static void test_elf_extended_and_truncated(void) {
           neverc_elf_open(&f, data, len) == 0);
     CHECK("extended numbering keeps three sections",
           f.section_count == 3 && neverc_elf_section(&f, ".text") != NULL);
+    {
+        uint8_t *sec_data = (uint8_t *)1;
+        size_t sec_len = 99;
+        CHECK("SHT_NULL section 0 has no file bytes",
+              neverc_elf_section_data(&f, &f.sections[0], &sec_data,
+                                      &sec_len) == 0 &&
+                  sec_data == NULL && sec_len == 0);
+    }
     neverc_elf_close(&f);
     data[60] = 3;
     data[shdr_off + 32] = 0;
@@ -397,6 +422,23 @@ static void test_elf_extended_and_truncated(void) {
     CHECK("reject truncated non-NOBITS section",
           neverc_elf_open(&f, data, len) < 0);
     sh1[32] = saved_size; sh1[33] = 0;
+
+    uint8_t saved_off[16];
+    memcpy(saved_off, sh1 + 24, 16);
+    put64le(sh1 + 24, UINT64_MAX - 4);
+    put64le(sh1 + 32, 16);
+    CHECK("reject sh_offset plus size wrap",
+          neverc_elf_open(&f, data, len) < 0);
+    memcpy(sh1 + 24, saved_off, 16);
+
+    data[60] = 0; data[61] = 0;
+    data[shdr_off + 32] = 3;
+    data[shdr_off + 4] = NEVERC_SHT_PROGBITS;
+    CHECK("reject extended numbering when section 0 is not SHT_NULL",
+          neverc_elf_open(&f, data, len) < 0);
+    data[shdr_off + 4] = 0;
+    data[60] = 3;
+    data[shdr_off + 32] = 0;
 
     free(data);
 }

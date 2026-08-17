@@ -78,7 +78,7 @@ static int at_comment(const neverc_scanner_t *s) {
     return n == '/' || n == '*';
 }
 
-/* Advance past one // or /* comment without touching tok_buf. */
+/* Advance past one line (//) or block (slash-star) comment without touching tok_buf. */
 static void skip_one_comment(neverc_scanner_t *s) {
     next_ch(s); /* '/' */
     int second = next_ch(s);

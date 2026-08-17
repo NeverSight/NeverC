@@ -599,6 +599,60 @@ static void test_eoi_fill_bytes_ok(void) {
     free(encoded);
 }
 
+static void test_rejects_complete_huffman_table(void) {
+    printf("[rejects_complete_huffman_table]\n");
+    uint8_t pixels[64];
+    memset(pixels, 128, sizeof(pixels));
+    neverc_jpeg_image_t source = {
+        .width = 8, .height = 8, .channels = 1,
+        .pixels = pixels, .stride = 8
+    };
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&source, 90, &encoded, &encoded_length), 0);
+    if (!encoded) return;
+
+    size_t dht = find_marker(encoded, encoded_length, 0xC4);
+    ASSERT_TRUE(dht != SIZE_MAX && dht + 4 <= encoded_length);
+    if (dht == SIZE_MAX || dht + 4 > encoded_length) {
+        free(encoded);
+        return;
+    }
+    size_t dht_len = ((size_t)encoded[dht + 2] << 8) | encoded[dht + 3];
+    size_t dht_end = dht + 2 + dht_len;
+    ASSERT_TRUE(dht_end <= encoded_length && dht_len >= 2);
+    if (dht_end > encoded_length) {
+        free(encoded);
+        return;
+    }
+
+    /* Two length-1 codes occupy both 0 and 1, so the all-1s code is used.
+     * Annex C forbids that; the previous `code > 2^L` check accepted it. */
+    static const uint8_t complete_dht[] = {
+        0xFF, 0xC4,
+        0x00, 21,
+        0x00,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 1
+    };
+    size_t new_len = encoded_length - (dht_end - dht) + sizeof(complete_dht);
+    uint8_t *patched = (uint8_t *)malloc(new_len);
+    ASSERT_TRUE(patched != NULL);
+    if (patched) {
+        memcpy(patched, encoded, dht);
+        memcpy(patched + dht, complete_dht, sizeof(complete_dht));
+        memcpy(patched + dht + sizeof(complete_dht), encoded + dht_end,
+               encoded_length - dht_end);
+        neverc_jpeg_image_t decoded;
+        memset(&decoded, 0, sizeof(decoded));
+        ASSERT_EQ(neverc_jpeg_decode(patched, new_len, &decoded), -1);
+        ASSERT_TRUE(decoded.pixels == NULL);
+        ASSERT_EQ(decoded.width, 0);
+        free(patched);
+    }
+    free(encoded);
+}
+
 static void test_rejects_duplicate_sof(void) {
     printf("[rejects_duplicate_sof]\n");
     uint8_t pixels[64];
@@ -658,6 +712,7 @@ int main(void) {
     test_rejects_huge_sof();
     test_rejects_truncated_eoi();
     test_eoi_fill_bytes_ok();
+    test_rejects_complete_huffman_table();
     test_rejects_duplicate_sof();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

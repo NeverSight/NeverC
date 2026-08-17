@@ -2,6 +2,7 @@
 #include "neverc/std/_platform.h"
 #include <stddef.h>
 #include <string.h>
+#include <time.h>
 
 #ifndef NCI_UUID_RANDOM
 #define NCI_UUID_RANDOM neverc_platform_random
@@ -32,6 +33,51 @@ int neverc_uuid_generate(neverc_uuid_t *out) {
 neverc_uuid_t neverc_uuid_new(void) {
     neverc_uuid_t u = {{0}};
     (void)neverc_uuid_generate(&u);
+    return u;
+}
+
+static uint64_t uuid_unix_ms(void) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    uint64_t u = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+    const uint64_t epoch = 116444736000000000ULL;
+    if (u < epoch) return 0;
+    return (u - epoch) / 10000ULL;
+#else
+    struct timespec ts = {0, 0};
+    if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+        return 0;
+    if (ts.tv_sec < 0) return 0;
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000);
+#endif
+}
+
+int neverc_uuid_generate_v7(neverc_uuid_t *out) {
+    if (!out) return -1;
+    memset(out, 0, sizeof(*out));
+    uint8_t rnd[10];
+    if (NCI_UUID_RANDOM(rnd, sizeof(rnd)) != 0) {
+        memset(out, 0, sizeof(*out));
+        return -1;
+    }
+    uint64_t ms = uuid_unix_ms() & 0xffffffffffffULL;
+    out->bytes[0] = (uint8_t)(ms >> 40);
+    out->bytes[1] = (uint8_t)(ms >> 32);
+    out->bytes[2] = (uint8_t)(ms >> 24);
+    out->bytes[3] = (uint8_t)(ms >> 16);
+    out->bytes[4] = (uint8_t)(ms >> 8);
+    out->bytes[5] = (uint8_t)ms;
+    out->bytes[6] = (uint8_t)((rnd[0] & 0x0F) | 0x70);
+    out->bytes[7] = rnd[1];
+    out->bytes[8] = (uint8_t)((rnd[2] & 0x3F) | 0x80);
+    memcpy(out->bytes + 9, rnd + 3, 7);
+    return 0;
+}
+
+neverc_uuid_t neverc_uuid_new_v7(void) {
+    neverc_uuid_t u = {{0}};
+    (void)neverc_uuid_generate_v7(&u);
     return u;
 }
 

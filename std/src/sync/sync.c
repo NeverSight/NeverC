@@ -399,6 +399,10 @@ static int smap_grow(neverc_sync_map_t *m) {
     for (size_t i = 0; i < m->cap; i++) {
         if (m->buckets[i].occupied == SMAP_OCCUPIED) {
             smap_entry_t *slot = smap_find_slot(new_buckets, new_cap, m->buckets[i].key);
+            if (!slot) {
+                free(new_buckets);
+                return -1;
+            }
             *slot = m->buckets[i];
         }
     }

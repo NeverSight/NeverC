@@ -108,6 +108,39 @@ static void test_rune_len(void) {
     check_int("negative", neverc_utf16_rune_len(-1), -1);
 }
 
+static void test_encode_decode_seq(void) {
+    printf("[encode/decode sequences]\n");
+
+    int32_t runes[] = { 'A', 0x1F600, 0xD800, 0x10FFFF, -1 };
+    uint16_t enc[16];
+    size_t need = neverc_utf16_encode(runes, 5, NULL, 0);
+    check_int("encode need", (int)need, 6); /* A + pair + FFFD + pair + FFFD */
+    size_t got = neverc_utf16_encode(runes, 5, enc, 16);
+    check_int("encode wrote need", (int)got, 6);
+    check_i32("enc[0] A", enc[0], 'A');
+    check_i32("enc[1] high", enc[1], 0xD83D);
+    check_i32("enc[2] low", enc[2], 0xDE00);
+    check_i32("enc[3] lone surr -> FFFD", enc[3], NEVERC_UTF16_REPLACEMENT_CHAR);
+    check_i32("enc[4] max high", enc[4], 0xDBFF);
+    check_i32("enc[5] max low", enc[5], 0xDFFF);
+
+    /* Unpaired high, unpaired low, reversed pair, then a valid pair. */
+    uint16_t bad[] = { 0xD800, 0x0041, 0xDC00, 0xD800, 0xD800, 0xDC00 };
+    int32_t dec[16];
+    need = neverc_utf16_decode(bad, 6, NULL, 0);
+    check_int("decode unpaired need", (int)need, 5);
+    neverc_utf16_decode(bad, 6, dec, 16);
+    check_i32("unpaired high", dec[0], NEVERC_UTF16_REPLACEMENT_CHAR);
+    check_i32("BMP A", dec[1], 0x0041);
+    check_i32("unpaired low", dec[2], NEVERC_UTF16_REPLACEMENT_CHAR);
+    check_i32("unpaired high before pair", dec[3], NEVERC_UTF16_REPLACEMENT_CHAR);
+    check_i32("valid pair U+10000", dec[4], 0x10000);
+
+    neverc_utf16_encode_rune(0xD800, &dec[0], &dec[1]);
+    check_i32("EncodeRune(surrogate) r1", dec[0], NEVERC_UTF16_REPLACEMENT_CHAR);
+    check_i32("EncodeRune(surrogate) r2", dec[1], NEVERC_UTF16_REPLACEMENT_CHAR);
+}
+
 int main(void) {
     printf("=== NeverC UTF-16 Library Tests ===\n\n");
 
@@ -115,10 +148,12 @@ int main(void) {
     test_decode_rune();
     test_encode_rune();
     test_rune_len();
+    test_encode_decode_seq();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
+    if (tests_failed == 0) puts("passed");
 
     return tests_failed > 0 ? 1 : 0;
 }

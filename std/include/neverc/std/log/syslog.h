@@ -52,7 +52,9 @@ neverc_syslog_t *neverc_syslog_open(const char *tag,
 /* Close syslog connection. */
 void neverc_syslog_close(neverc_syslog_t *log);
 
-/* RFC 5424 PRI = facility | severity. Returns -1 if severity is out of range. */
+/* RFC 5424 PRI = facility | severity. Facility must be 0..23 inclusive,
+ * encoded as a multiple of 8 (0..184). Severity must be 0..7. PRI is at
+ * most 191. Returns -1 if either field is out of range. */
 int neverc_syslog_pri(neverc_syslog_facility_t facility,
                       neverc_syslog_priority_t priority);
 

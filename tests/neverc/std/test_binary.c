@@ -188,6 +188,14 @@ static void test_varint(void) {
     else { tests_failed++; printf("  FAIL: varint 1 value: got %lld\n", (long long)s); }
 
     check_int("truncated", neverc_binary_uvarint(buf, 0, &u), 0);
+    {
+        uint8_t cont[] = {0x80};
+        check_int("truncated continuation",
+                  neverc_binary_uvarint(cont, sizeof(cont), &u), 0);
+        uint8_t cont2[] = {0x80, 0x80};
+        check_int("truncated two continuations",
+                  neverc_binary_uvarint(cont2, sizeof(cont2), &u), 0);
+    }
     check_int("short buffer", neverc_binary_put_uvarint(buf, 1, 300), -1);
 
     uint8_t overflow[11];

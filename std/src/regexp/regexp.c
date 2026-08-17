@@ -46,6 +46,7 @@ typedef struct nfa_state {
  */
 #define NFA_BLK 512                 /* states (and classes) per block */
 #define NFA_MAX_REPEAT 1000         /* cap {n,m} expansion (matches Go's limit) */
+#define NFA_MAX_STATES 100000       /* cap compile size: (a{1000}){1000} */
 
 struct neverc_regexp {
     nfa_state_t  *start;
@@ -67,7 +68,10 @@ static nfa_state_t *state_at(neverc_regexp_t *re, int idx) {
 }
 
 static nfa_state_t *new_state(neverc_regexp_t *re, int type) {
-    if (re->nstates == INT_MAX) { re->oom = 1; return &re->dummy; }
+    if (re->nstates >= NFA_MAX_STATES || re->nstates == INT_MAX) {
+        re->oom = 1;
+        return &re->dummy;
+    }
     if (re->nstates % NFA_BLK == 0) {           /* current block full */
         if (re->nsblk == re->sblkcap) {
             if (re->sblkcap > INT_MAX / 2) { re->oom = 1; return &re->dummy; }
@@ -1013,6 +1017,15 @@ static frag_t parse_repeat(parser_t *par) {
             if (hi != -1 && hi < lo) {
                 par->err = "invalid repeat range";
                 return f;
+            }
+            {
+                int unit = par->re->nstates - atom_base;
+                int copies = (hi == -1) ? (lo == 0 ? 1 : lo + 1) : hi;
+                if (unit > 0 && copies > 0 &&
+                    copies > (NFA_MAX_STATES - par->re->nstates) / unit) {
+                    par->err = "pattern too large";
+                    return f;
+                }
             }
             f = expand_repeat(par->re, f, atom_base, par->re->nstates, lo, hi);
             if (par->re->oom) { par->err = "out of memory"; return f; }

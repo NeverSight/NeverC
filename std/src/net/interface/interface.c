@@ -97,7 +97,7 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
          a && out->count < NEVERC_NET_MAX_INTERFACES;
          a = a->Next) {
         neverc_net_interface_t *iface = &out->ifaces[out->count];
-        iface->index = (int)a->IfIndex;
+        iface->index = a->IfIndex ? (int)a->IfIndex : (int)a->Ipv6IfIndex;
         iface->mtu = (int)a->Mtu;
 
         if (WideCharToMultiByte(CP_UTF8, 0, a->FriendlyName, -1,
@@ -119,7 +119,14 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
             a->IfType == IF_TYPE_TUNNEL)
             iface->flags |= NEVERC_NET_FLAG_POINTTOPOINT;
         if (a->IfType == IF_TYPE_ETHERNET_CSMACD ||
-            a->IfType == IF_TYPE_IEEE80211)
+            a->IfType == IF_TYPE_IEEE80211
+#ifdef IF_TYPE_ISO88025_TOKENRING
+            || a->IfType == IF_TYPE_ISO88025_TOKENRING
+#endif
+#ifdef IF_TYPE_IEEE1394
+            || a->IfType == IF_TYPE_IEEE1394
+#endif
+            )
             iface->flags |= NEVERC_NET_FLAG_BROADCAST;
         if (a->Flags & IP_ADAPTER_NO_MULTICAST) { /* nothing */ }
         else iface->flags |= NEVERC_NET_FLAG_MULTICAST;
@@ -248,13 +255,17 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
             strncpy(iface->addrs[iface->naddrs].addr, buf, 63);
             iface->addrs[iface->naddrs].addr[63] = '\0';
 
-            /* Calculate prefix from netmask */
+            /* Calculate prefix from netmask; non-contiguous masks are unknown. */
             if (ifa->ifa_netmask && ifa->ifa_netmask->sa_family == AF_INET) {
                 struct sockaddr_in *nm = (struct sockaddr_in *)ifa->ifa_netmask;
                 uint32_t mask = ntohl(nm->sin_addr.s_addr);
                 int bits = 0;
-                while (mask & 0x80000000u) { bits++; mask <<= 1; }
-                iface->addrs[iface->naddrs].prefix_len = bits;
+                uint32_t rest = mask;
+                while (bits < 32 && (rest & 0x80000000u)) {
+                    bits++;
+                    rest <<= 1;
+                }
+                iface->addrs[iface->naddrs].prefix_len = (rest == 0) ? bits : -1;
             } else {
                 iface->addrs[iface->naddrs].prefix_len = -1;
             }
@@ -278,12 +289,21 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
                 struct sockaddr_in6 *nm6 =
                     (struct sockaddr_in6 *)ifa->ifa_netmask;
                 int bits = 0;
-                for (int j = 0; j < 16; j++) {
+                int seen_zero = 0;
+                int contiguous = 1;
+                for (int j = 0; j < 16 && contiguous; j++) {
                     uint8_t b = nm6->sin6_addr.s6_addr[j];
-                    while (b & 0x80) { bits++; b <<= 1; }
-                    if (b != 0) break;
+                    for (int k = 0; k < 8; k++) {
+                        int bit = (b & (uint8_t)(0x80 >> k)) != 0;
+                        if (bit) {
+                            if (seen_zero) { contiguous = 0; break; }
+                            bits++;
+                        } else {
+                            seen_zero = 1;
+                        }
+                    }
                 }
-                iface->addrs[iface->naddrs].prefix_len = bits;
+                iface->addrs[iface->naddrs].prefix_len = contiguous ? bits : -1;
             } else {
                 iface->addrs[iface->naddrs].prefix_len = -1;
             }

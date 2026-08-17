@@ -214,11 +214,11 @@ void neverc_dwarf_free(neverc_dwarf_data_t *d) {
 
 const char *neverc_dwarf_get_string(const neverc_dwarf_data_t *d,
                                      uint64_t offset) {
-    if (!d || !d->debug_str || offset >= d->debug_str_len) return "";
+    if (!d || !d->debug_str || offset >= d->debug_str_len) return NULL;
     /* debug_str is file data and may lack a NUL before its end; require one
      * within the table bounds so callers' strlen() cannot read past it. */
     if (memchr(d->debug_str + offset, 0, d->debug_str_len - (size_t)offset) == NULL)
-        return "";
+        return NULL;
     return (const char *)(d->debug_str + offset);
 }
 
@@ -659,6 +659,23 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
 
     size_t cu_offset = 0;
     while (cu_offset < d->debug_info_len) {
+        size_t remaining = d->debug_info_len - cu_offset;
+        if (remaining < 4) {
+            /* Trailing bytes shorter than a unit length are padding only if
+             * they are zero; anything else is a truncated header. */
+            for (size_t i = 0; i < remaining; i++) {
+                if (d->debug_info[cu_offset + i] != 0)
+                    return -1;
+            }
+            break;
+        }
+        uint32_t init_len = rd32(d->debug_info + cu_offset, d->big_endian);
+        if (init_len == 0) {
+            /* DWARF32 unit_length 0 is alignment padding, not a CU. */
+            cu_offset += 4;
+            continue;
+        }
+
         neverc_dwarf_comp_unit_header_ex_t hdr;
         if (neverc_dwarf_parse_comp_unit_ex(d, cu_offset, &hdr) < 0)
             return -1;

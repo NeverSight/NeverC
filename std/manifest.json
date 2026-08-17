@@ -792,13 +792,17 @@
         "neverc_utf16_is_surrogate": "src/unicode/utf16/utf16.c",
         "neverc_utf16_decode_rune": "src/unicode/utf16/utf16.c",
         "neverc_utf16_encode_rune": "src/unicode/utf16/utf16.c",
-        "neverc_utf16_rune_len": "src/unicode/utf16/utf16.c"
+        "neverc_utf16_rune_len": "src/unicode/utf16/utf16.c",
+        "neverc_utf16_encode": "src/unicode/utf16/utf16.c",
+        "neverc_utf16_decode": "src/unicode/utf16/utf16.c"
       },
       "dot_methods": {
         "is_surrogate": "neverc_utf16_is_surrogate",
         "decode_rune": "neverc_utf16_decode_rune",
         "encode_rune": "neverc_utf16_encode_rune",
-        "rune_len": "neverc_utf16_rune_len"
+        "rune_len": "neverc_utf16_rune_len",
+        "encode": "neverc_utf16_encode",
+        "decode": "neverc_utf16_decode"
       }
     },
     "encoding/pem": {
@@ -2017,6 +2021,7 @@
         "neverc_time_duration_milliseconds": "src/time/time.c",
         "neverc_time_duration_microseconds": "src/time/time.c",
         "neverc_time_duration_nanoseconds": "src/time/time.c",
+        "neverc_time_duration_mul": "src/time/time.c",
         "neverc_time_format": "src/time/time.c",
         "neverc_time_parse": "src/time/time.c",
         "neverc_time_round": "src/time/time.c",
@@ -2052,6 +2057,7 @@
         "duration_milliseconds": "neverc_time_duration_milliseconds",
         "duration_microseconds": "neverc_time_duration_microseconds",
         "duration_nanoseconds": "neverc_time_duration_nanoseconds",
+        "duration_mul": "neverc_time_duration_mul",
         "date": "neverc_time_date",
         "unix_micro": "neverc_time_unix_micro",
         "unix_micro_to_time": "neverc_time_unix_micro_to_time",
@@ -2067,6 +2073,8 @@
       "symbols": {
         "neverc_uuid_new": "src/uuid/uuid.c",
         "neverc_uuid_generate": "src/uuid/uuid.c",
+        "neverc_uuid_new_v7": "src/uuid/uuid.c",
+        "neverc_uuid_generate_v7": "src/uuid/uuid.c",
         "neverc_uuid_to_string": "src/uuid/uuid.c",
         "neverc_uuid_parse": "src/uuid/uuid.c",
         "neverc_uuid_equal": "src/uuid/uuid.c",
@@ -2078,6 +2086,8 @@
       "dot_methods": {
         "new": "neverc_uuid_new",
         "generate": "neverc_uuid_generate",
+        "new_v7": "neverc_uuid_new_v7",
+        "generate_v7": "neverc_uuid_generate_v7",
         "nil": "neverc_uuid_nil",
         "parse": "neverc_uuid_parse",
         "to_string": "neverc_uuid_to_string",
@@ -2336,6 +2346,7 @@
       "description": "URL parsing, query encoding/decoding, percent escaping (mirrors Go net/url package)",
       "symbols": {
         "neverc_url_parse": "src/net/url/url.c",
+        "neverc_url_parse_request_uri": "src/net/url/url.c",
         "neverc_url_string": "src/net/url/url.c",
         "neverc_url_hostname": "src/net/url/url.c",
         "neverc_url_request_uri": "src/net/url/url.c",
@@ -2351,6 +2362,7 @@
       },
       "dot_methods": {
         "parse": "neverc_url_parse",
+        "parse_request_uri": "neverc_url_parse_request_uri",
         "string": "neverc_url_string",
         "hostname": "neverc_url_hostname",
         "request_uri": "neverc_url_request_uri",

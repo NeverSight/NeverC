@@ -133,6 +133,20 @@ static void test_version_variant(void) {
     check_int("generate v4", neverc_uuid_generate(&generated), 0);
     check_int("generate version", neverc_uuid_version(generated), 4);
     check_int("generate variant", neverc_uuid_variant(generated), 1);
+
+    neverc_uuid_t v7;
+    check_int("generate v7", neverc_uuid_generate_v7(&v7), 0);
+    check_int("generate v7 version", neverc_uuid_version(v7), 7);
+    check_int("generate v7 variant", neverc_uuid_variant(v7), 1);
+    check_int("generate v7 not nil", neverc_uuid_is_nil(v7), 0);
+    check_int("v4 version bits are 0100", (generated.bytes[6] & 0xF0) == 0x40, 1);
+    check_int("v4 variant bits are 10", (generated.bytes[8] & 0xC0) == 0x80, 1);
+    check_int("v7 version bits are 0111", (v7.bytes[6] & 0xF0) == 0x70, 1);
+    check_int("v7 variant bits are 10", (v7.bytes[8] & 0xC0) == 0x80, 1);
+
+    neverc_uuid_t v7b = neverc_uuid_new_v7();
+    check_int("new v7 version", neverc_uuid_version(v7b), 7);
+    check_int("new v7 variant", neverc_uuid_variant(v7b), 1);
 }
 
 static void test_nil(void) {
@@ -169,5 +183,6 @@ int main(void) {
     test_nil();
     test_uniqueness();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

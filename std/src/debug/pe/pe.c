@@ -66,54 +66,65 @@ int neverc_pe_open(neverc_pe_file_t *f, const uint8_t *data, size_t len) {
      * gated only on its *declared* value; require the declared optional header
      * to actually lie within the file, or opt+N runs past the buffer. opt is at
      * file offset pe_off+24 (PE sig 4 + COFF header 20). */
-    if ((uint64_t)pe_off + 24 + opt_size > len || opt_size < 2)
+    if ((uint64_t)pe_off + 24 + opt_size > len)
         return pe_open_fail(f);
-    f->optional_header.magic = rd16(opt);
-    if (f->optional_header.magic == NEVERC_PE32P_MAGIC) {
-        f->is_64bit = 1;
-        if (opt_size < 112)
-            return pe_open_fail(f);
-        f->optional_header.image_base        = rd64(opt + 24);
-        f->optional_header.section_alignment  = rd32(opt + 32);
-        f->optional_header.file_alignment     = rd32(opt + 36);
-        f->optional_header.size_of_image      = rd32(opt + 56);
-        f->optional_header.size_of_headers    = rd32(opt + 60);
-        f->optional_header.subsystem          = rd16(opt + 68);
-        f->optional_header.number_of_rva_and_sizes = rd32(opt + 108);
-        const uint8_t *dd = opt + 112;
-        uint32_t ndd = f->optional_header.number_of_rva_and_sizes;
-        if ((uint64_t)ndd * 8U > opt_size - 112U)
-            return pe_open_fail(f);
-        uint32_t stored = ndd > 16 ? 16 : ndd;
-        for (uint32_t i = 0; i < stored; i++) {
-            f->optional_header.data_directory[i].virtual_address = rd32(dd + i*8);
-            f->optional_header.data_directory[i].size = rd32(dd + i*8 + 4);
-        }
-    } else if (f->optional_header.magic == NEVERC_PE32_MAGIC) {
-        if (opt_size < 96)
-            return pe_open_fail(f);
-        f->optional_header.image_base        = rd32(opt + 28);
-        f->optional_header.section_alignment  = rd32(opt + 32);
-        f->optional_header.file_alignment     = rd32(opt + 36);
-        f->optional_header.size_of_image      = rd32(opt + 56);
-        f->optional_header.size_of_headers    = rd32(opt + 60);
-        f->optional_header.subsystem          = rd16(opt + 68);
-        f->optional_header.number_of_rva_and_sizes = rd32(opt + 92);
-        const uint8_t *dd = opt + 96;
-        uint32_t ndd = f->optional_header.number_of_rva_and_sizes;
-        if ((uint64_t)ndd * 8U > opt_size - 96U)
-            return pe_open_fail(f);
-        uint32_t stored = ndd > 16 ? 16 : ndd;
-        for (uint32_t i = 0; i < stored; i++) {
-            f->optional_header.data_directory[i].virtual_address = rd32(dd + i*8);
-            f->optional_header.data_directory[i].size = rd32(dd + i*8 + 4);
-        }
+    if (opt_size == 0) {
+        /* COFF objects omit the optional header. Images must include a PE32
+         * or PE32+ header whose SizeOfOptionalHeader equals the standard
+         * prefix plus NumberOfRvaAndSizes * 8. */
+        f->is_64bit =
+            f->file_header.machine == NEVERC_IMAGE_FILE_MACHINE_AMD64 ||
+            f->file_header.machine == NEVERC_IMAGE_FILE_MACHINE_ARM64;
     } else {
-        return pe_open_fail(f);
-    }
+        if (opt_size < 2)
+            return pe_open_fail(f);
+        f->optional_header.magic = rd16(opt);
+        if (f->optional_header.magic == NEVERC_PE32P_MAGIC) {
+            f->is_64bit = 1;
+            if (opt_size < 112)
+                return pe_open_fail(f);
+            f->optional_header.image_base        = rd64(opt + 24);
+            f->optional_header.section_alignment  = rd32(opt + 32);
+            f->optional_header.file_alignment     = rd32(opt + 36);
+            f->optional_header.size_of_image      = rd32(opt + 56);
+            f->optional_header.size_of_headers    = rd32(opt + 60);
+            f->optional_header.subsystem          = rd16(opt + 68);
+            f->optional_header.number_of_rva_and_sizes = rd32(opt + 108);
+            const uint8_t *dd = opt + 112;
+            uint32_t ndd = f->optional_header.number_of_rva_and_sizes;
+            if ((uint64_t)ndd * 8U != (uint64_t)opt_size - 112U)
+                return pe_open_fail(f);
+            uint32_t stored = ndd > 16 ? 16 : ndd;
+            for (uint32_t i = 0; i < stored; i++) {
+                f->optional_header.data_directory[i].virtual_address = rd32(dd + i*8);
+                f->optional_header.data_directory[i].size = rd32(dd + i*8 + 4);
+            }
+        } else if (f->optional_header.magic == NEVERC_PE32_MAGIC) {
+            if (opt_size < 96)
+                return pe_open_fail(f);
+            f->optional_header.image_base        = rd32(opt + 28);
+            f->optional_header.section_alignment  = rd32(opt + 32);
+            f->optional_header.file_alignment     = rd32(opt + 36);
+            f->optional_header.size_of_image      = rd32(opt + 56);
+            f->optional_header.size_of_headers    = rd32(opt + 60);
+            f->optional_header.subsystem          = rd16(opt + 68);
+            f->optional_header.number_of_rva_and_sizes = rd32(opt + 92);
+            const uint8_t *dd = opt + 96;
+            uint32_t ndd = f->optional_header.number_of_rva_and_sizes;
+            if ((uint64_t)ndd * 8U != (uint64_t)opt_size - 96U)
+                return pe_open_fail(f);
+            uint32_t stored = ndd > 16 ? 16 : ndd;
+            for (uint32_t i = 0; i < stored; i++) {
+                f->optional_header.data_directory[i].virtual_address = rd32(dd + i*8);
+                f->optional_header.data_directory[i].size = rd32(dd + i*8 + 4);
+            }
+        } else {
+            return pe_open_fail(f);
+        }
 
-    if (f->optional_header.size_of_headers > len)
-        return pe_open_fail(f);
+        if (f->optional_header.size_of_headers > len)
+            return pe_open_fail(f);
+    }
 
     /* Parse sections */
     const uint8_t *sec_start = opt + opt_size;
@@ -168,6 +179,8 @@ int neverc_pe_open(neverc_pe_file_t *f, const uint8_t *data, size_t len) {
         if (strtab_size < 4 || strtab_size > len - (size_t)strtab_pos)
             return pe_open_fail(f);
         const uint8_t *strtab = data + (size_t)strtab_pos;
+        if (strtab_size > 4 && strtab[strtab_size - 1] != 0)
+            return pe_open_fail(f);
         for (uint16_t i = 0; i < nsec; i++) {
             if (f->sections[i].name[0] != '/')
                 continue;
@@ -287,6 +300,8 @@ int neverc_pe_symbols(const neverc_pe_file_t *f,
         return -1;
     uint32_t strtab_size = rd32(f->data + strtab_pos);
     if (strtab_size < 4 || strtab_size > f->data_len - strtab_pos)
+        return -1;
+    if (strtab_size > 4 && f->data[strtab_pos + strtab_size - 1] != 0)
         return -1;
 
     int real_count = 0;

@@ -173,6 +173,32 @@ static void test_valid(void) {
     /* Invalid: surrogate half (ED A0 80 = U+D800) */
     uint8_t inv4[] = { 0xED, 0xA0, 0x80 };
     check_int("invalid surrogate", neverc_utf8_valid(inv4, 3), 0);
+
+    /* RFC 3629 / W3C: more sequences that must not be accepted as valid. */
+    uint8_t inv5[] = { 0xED, 0xBF, 0xBF }; /* U+DFFF */
+    check_int("invalid low surrogate", neverc_utf8_valid(inv5, 3), 0);
+    uint8_t inv6[] = { 0xF4, 0x90, 0x80, 0x80 }; /* U+110000 */
+    check_int("invalid > U+10FFFF", neverc_utf8_valid(inv6, 4), 0);
+    uint8_t inv7[] = { 0xC0, 0xAF }; /* overlong slash */
+    check_int("invalid overlong slash", neverc_utf8_valid(inv7, 2), 0);
+    uint8_t inv8[] = { 0xE0, 0x80, 0x80 };
+    check_int("invalid overlong 3-byte NUL", neverc_utf8_valid(inv8, 3), 0);
+    uint8_t inv9[] = { 0xF0, 0x80, 0x80, 0x80 };
+    check_int("invalid overlong 4-byte NUL", neverc_utf8_valid(inv9, 4), 0);
+    uint8_t inv10[] = { 0xF8, 0x80, 0x80, 0x80, 0x80 };
+    check_int("invalid 5-byte lead", neverc_utf8_valid(inv10, 5), 0);
+    uint8_t mix[] = { 'A', 0xED, 0xA0, 0x80, 'Z' };
+    check_int("invalid surrogate mid-string", neverc_utf8_valid(mix, 5), 0);
+
+    {
+        uint32_t r; int sz;
+        neverc_utf8_decode_rune(inv4, 3, &r, &sz);
+        check_u32("decode surrogate is error", r, NEVERC_UTF8_RUNE_ERROR);
+        check_int("decode surrogate size 1", sz, 1);
+        neverc_utf8_decode_rune(inv6, 4, &r, &sz);
+        check_u32("decode >10FFFF is error", r, NEVERC_UTF8_RUNE_ERROR);
+        check_int("decode >10FFFF size 1", sz, 1);
+    }
 }
 
 /* Independent oracle: validate rune-by-rune through the (unchanged) public
@@ -304,5 +330,6 @@ int main(void) {
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

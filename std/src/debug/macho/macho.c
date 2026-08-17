@@ -312,7 +312,9 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
             if (!macho_range_in_file(
                     f->symoff, (uint64_t)f->nsyms * entry_size, len) ||
                 !macho_range_in_file(f->stroff, f->strsize, len) ||
-                (f->nsyms != 0 && f->strsize == 0))
+                (f->nsyms != 0 && f->strsize == 0) ||
+                (f->strsize != 0 &&
+                 f->data[f->stroff + (size_t)f->strsize - 1] != 0))
                 goto fail;
         } else if (cmd_type == NEVERC_LC_LOAD_DYLIB && cmd_size >= 24 && di < dylib_count) {
             uint32_t name_off = r32(cmd + 8);
@@ -451,7 +453,9 @@ int neverc_macho_symbols(const neverc_macho_file_t *f,
     if (!macho_range_in_file(f->symoff,
                              (uint64_t)f->nsyms * entry_size,
                              f->data_len) ||
-        !macho_range_in_file(f->stroff, f->strsize, f->data_len))
+        !macho_range_in_file(f->stroff, f->strsize, f->data_len) ||
+        (f->strsize != 0 &&
+         f->data[f->stroff + (size_t)f->strsize - 1] != 0))
         return -1;
 
     const uint8_t *sym_data = f->data + f->symoff;

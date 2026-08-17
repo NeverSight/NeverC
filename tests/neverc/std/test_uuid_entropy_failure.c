@@ -43,6 +43,22 @@ int main(void) {
     CHECK(!neverc_uuid_is_nil(generated));
     CHECK(neverc_uuid_version(generated) == 4);
     CHECK(neverc_uuid_variant(generated) == 1);
+
+    entropy_fails = 1;
+    memset(&checked, 0x5a, sizeof(checked));
+    CHECK(neverc_uuid_generate_v7(&checked) == -1);
+    CHECK(neverc_uuid_is_nil(checked));
+    neverc_uuid_t failed_v7 = neverc_uuid_new_v7();
+    CHECK(neverc_uuid_is_nil(failed_v7));
+
+    entropy_fails = 0;
+    CHECK(neverc_uuid_generate_v7(&checked) == 0);
+    CHECK(!neverc_uuid_is_nil(checked));
+    CHECK(neverc_uuid_version(checked) == 7);
+    CHECK(neverc_uuid_variant(checked) == 1);
+    CHECK((checked.bytes[6] & 0xF0) == 0x70);
+    CHECK((checked.bytes[8] & 0xC0) == 0x80);
+
     puts("passed");
     return 0;
 }

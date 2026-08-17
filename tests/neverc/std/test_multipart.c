@@ -215,6 +215,20 @@ static void test_parse_empty_parts_and_preamble(void) {
     ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "name"), "x");
     ASSERT_EQ((int)reader->parts[0].body_len, 0);
 
+    /* A CR-only line is not a delimiter line start (Go / RFC 2046 CRLF).
+     * The mid-line `--boundary` is ignored; the later close is a closer. */
+    const char *cr_preamble =
+        "preamble\r"
+        "--MyBoundary\r\n"
+        "\r\n"
+        "ok\r\n"
+        "--MyBoundary--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)cr_preamble,
+                  strlen(cr_preamble), "MyBoundary", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 0);
+
     free(reader);
 }
 
@@ -500,5 +514,6 @@ int main(void) {
     test_generate_boundary();
     test_rejects_malformed_input();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

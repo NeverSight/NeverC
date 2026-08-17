@@ -144,6 +144,10 @@ static void test_decode(void) {
               neverc_base64_decode(dst, "AAAA,AAA", 8), -1);
     check_int("reject excess padding",
               neverc_base64_decode(dst, "Zg===", 5), -1);
+    check_int("reject 1-char truncated group",
+              neverc_base64_decode(dst, "A", 1), -1);
+    check_int("reject 5-char truncated group",
+              neverc_base64_decode(dst, "AAAAA", 5), -1);
     check_int("reject incomplete padding",
               neverc_base64_decode(dst, "Zg=", 3), -1);
     check_int("reject interior padding",

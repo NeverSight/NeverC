@@ -350,6 +350,13 @@ static void test_sync_map_basic(void) {
     ASSERT_TRUE(!ok);
     ASSERT_TRUE(got == NULL);
 
+    int empty_val = 7;
+    neverc_sync_map_store(m, "", &empty_val);
+    ok = 0;
+    got = neverc_sync_map_load(m, "", &ok);
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(*(int *)got, 7);
+
     neverc_sync_map_free(m);
 }
 
@@ -758,5 +765,6 @@ int main(void) {
     test_sync_map_compare_and_swap();
     test_sync_map_compare_and_delete();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

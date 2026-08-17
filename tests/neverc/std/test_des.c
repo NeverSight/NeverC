@@ -246,6 +246,7 @@ static void test_null_inputs(void) {
         for (int i = 0; i < 16; i++)
             if (des.subkeys[i] != 0) wiped = 0;
         check_true("des null key wipes subkeys", wiped);
+        check_true("des null key clears ready", des.ready == 0);
     }
 
     neverc_3des_init(&tdes, key24);
@@ -256,15 +257,47 @@ static void test_null_inputs(void) {
             if (tdes.c1.subkeys[i] || tdes.c2.subkeys[i] || tdes.c3.subkeys[i])
                 wiped = 0;
         check_true("3des null key wipes subkeys", wiped);
+        check_true("3des null key clears ready",
+                   tdes.c1.ready == 0 && tdes.c2.ready == 0 &&
+                   tdes.c3.ready == 0);
     }
 
     {
-        uint8_t out[8];
+        uint8_t out[8], pt[8], aa[8];
         memset(out, 0xAA, sizeof(out));
+        memset(aa, 0xAA, sizeof(aa));
+        memset(pt, 0x5A, sizeof(pt));
         neverc_des_encrypt_block(&des, out, NULL);
         check_true("des encrypt null src is a no-op", out[0] == 0xAA);
         neverc_3des_encrypt_block(&tdes, out, NULL);
         check_true("3des encrypt null src is a no-op", out[0] == 0xAA);
+
+        /* All-zero subkeys are the valid schedule for the all-zero key, so a
+         * wipe cannot be distinguished from that key. Encrypt after failed
+         * init must still be a no-op rather than DES(0). */
+        neverc_des_encrypt_block(&des, out, pt);
+        check_bytes("des encrypt after failed re-init is a no-op", out, aa, 8);
+        neverc_des_decrypt_block(&des, out, pt);
+        check_bytes("des decrypt after failed re-init is a no-op", out, aa, 8);
+        neverc_3des_encrypt_block(&tdes, out, pt);
+        check_bytes("3des encrypt after failed re-init is a no-op", out, aa, 8);
+        neverc_3des_decrypt_block(&tdes, out, pt);
+        check_bytes("3des decrypt after failed re-init is a no-op", out, aa, 8);
+    }
+
+    {
+        neverc_des_cipher_t zdes;
+        neverc_3des_cipher_t ztdes;
+        uint8_t out[8], pt[8], aa[8];
+        memset(&zdes, 0, sizeof(zdes));
+        memset(&ztdes, 0, sizeof(ztdes));
+        memset(out, 0xAA, sizeof(out));
+        memset(aa, 0xAA, sizeof(aa));
+        memset(pt, 0x5A, sizeof(pt));
+        neverc_des_encrypt_block(&zdes, out, pt);
+        check_bytes("des encrypt before init is a no-op", out, aa, 8);
+        neverc_3des_encrypt_block(&ztdes, out, pt);
+        check_bytes("3des encrypt before init is a no-op", out, aa, 8);
     }
 }
 

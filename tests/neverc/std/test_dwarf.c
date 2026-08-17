@@ -234,6 +234,9 @@ static void test_dwarf_parse(void) {
     CHECK("string_7", strcmp(s, "main") == 0);
     s = neverc_dwarf_get_string(&d, 12);
     CHECK("string_12", strcmp(s, "/home/user") == 0);
+    CHECK("string past table is NULL", neverc_dwarf_get_string(&d, 99) == NULL);
+    CHECK("string on NULL data is NULL",
+          neverc_dwarf_get_string(NULL, 0) == NULL);
 
     /* Test walking entries */
     walk_ctx_t ctx;
@@ -511,6 +514,43 @@ static void test_dwarf_malformed(void) {
                             valid_abbrev, (size_t)valid_abbrev_len,
                             NULL, 0) == 0 &&
           neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+
+    uint8_t padded_info[520];
+    uint8_t str_buf[256];
+    int str_len = build_debug_str(str_buf);
+    memcpy(padded_info, info_buf, (size_t)info_len);
+    memset(padded_info + info_len, 0, 8);
+    CHECK("trailing zero CU padding accepted",
+          neverc_dwarf_init(&d, padded_info, (size_t)info_len + 8,
+                            valid_abbrev, (size_t)valid_abbrev_len,
+                            str_buf, (size_t)str_len) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) == 0);
+
+    uint8_t short_pad[520];
+    memcpy(short_pad, info_buf, (size_t)info_len);
+    short_pad[info_len] = 0;
+    short_pad[info_len + 1] = 0;
+    short_pad[info_len + 2] = 0;
+    CHECK("trailing 3-byte zero padding accepted",
+          neverc_dwarf_init(&d, short_pad, (size_t)info_len + 3,
+                            valid_abbrev, (size_t)valid_abbrev_len,
+                            str_buf, (size_t)str_len) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) == 0);
+
+    short_pad[info_len + 2] = 1;
+    CHECK("trailing truncated nonzero bytes rejected",
+          neverc_dwarf_init(&d, short_pad, (size_t)info_len + 3,
+                            valid_abbrev, (size_t)valid_abbrev_len,
+                            str_buf, (size_t)str_len) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+
+    static const uint8_t unterminated_str[] = {'a', 'b'};
+    CHECK("unterminated debug_str get_string is NULL",
+          neverc_dwarf_init(&d, info_buf, (size_t)info_len,
+                            valid_abbrev, (size_t)valid_abbrev_len,
+                            unterminated_str,
+                            sizeof(unterminated_str)) == 0 &&
+          neverc_dwarf_get_string(&d, 0) == NULL);
 }
 
 static void test_dwarf_v5_type_header(void) {

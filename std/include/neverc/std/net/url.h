@@ -25,6 +25,10 @@ typedef struct {
  * fixed fields are rejected rather than truncated. Returns 0 or -1. */
 int  neverc_url_parse(neverc_url_t *u, const char *raw_url);
 
+/* ParseRequestURI: absolute URI or absolute path only (Go url.ParseRequestURI).
+ * Rejects fragments and relative paths such as "foo". "*" is allowed. */
+int  neverc_url_parse_request_uri(neverc_url_t *u, const char *raw_url);
+
 /* Formatting functions follow snprintf length semantics: they return the full
  * byte length excluding NUL even when output is truncated. A zero capacity may
  * use a NULL buffer to query the length. Invalid arguments return -1. */

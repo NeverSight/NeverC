@@ -118,6 +118,26 @@ static void test_final_lifecycle(void) {
     check_true("update after final ignored", memcmp(d1, d2, 48) == 0);
 }
 
+static void test_128bit_length(void) {
+    printf("[SHA-384 128-bit length at 2^61 bytes]\n");
+    neverc_sha384_ctx ctx;
+    neverc_sha384_init(&ctx);
+    neverc_sha384_update(&ctx, (const uint8_t *)"abc", 3);
+    neverc_sha384_ctx long_ctx = ctx;
+    uint8_t short_d[48], long_d[48], zeros[48] = {0};
+    neverc_sha384_final(&ctx, short_d);
+    long_ctx.count = (1ULL << 61) + 3;
+    neverc_sha384_final(&long_ctx, long_d);
+    check_true("short SHA-384(\"abc\")",
+        digest_matches(short_d,
+            "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed"
+            "8086072ba1e7cc2358baeca134c825a7"));
+    check_true("2^61+3 length must not collide with SHA-384(\"abc\")",
+               memcmp(short_d, long_d, 48) != 0);
+    check_true("2^61+3 is a valid 128-bit length, not fail-closed",
+               memcmp(long_d, zeros, 48) != 0);
+}
+
 int main(void) {
     printf("=== NeverC SHA-384 Tests ===\n\n");
     test_fips_vectors();
@@ -125,6 +145,7 @@ int main(void) {
     test_incremental();
     test_1m_a();
     test_final_lifecycle();
+    test_128bit_length();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

@@ -651,12 +651,13 @@ typedef struct {
     uint8_t look_sym[1 << JPEG_HUFF_LOOKAHEAD];     /* decoded symbol */
 } huff_decode_table_t;
 
-/* Returns 0 on success, -1 if `bits` describes an invalid (over-subscribed)
- * Huffman table. Rejecting those is a safety requirement, not just hygiene: an
- * over-subscribed table pushes a code past its bit-width, so the lookahead fill
- * below (lookbits = codeword << (LOOKAHEAD-len)) would index past the 2^LOOKAHEAD
- * look_* arrays and corrupt memory on crafted JPEGs. A valid canonical table
- * obeys Kraft (codes through length L number <= 2^L), keeping lookbits < 2^LOOKAHEAD. */
+/* Returns 0 on success, -1 if `bits` describes an invalid Huffman table.
+ * Over-subscribed tables (more than 2^L codes of length L) are rejected
+ * because the lookahead fill (lookbits = codeword << (LOOKAHEAD-len)) would
+ * index past look_* and corrupt memory. ITU T.81 Annex C also reserves the
+ * all-1s code at every length, so we reject `code >= 2^L` rather than `>`:
+ * a complete table makes 1-bit padding decode as a symbol, and a truncated
+ * scan can then succeed. Annex K tables leave that code unused and still pass. */
 static int build_decode_table(huff_decode_table_t *t, const uint8_t *bits, const uint8_t *vals) {
     int total = 0;
     for (int i = 1; i <= 16; i++) total += bits[i];
@@ -677,7 +678,7 @@ static int build_decode_table(huff_decode_table_t *t, const uint8_t *bits, const
             t->mincode[len] = -1;
             t->maxcode[len] = -1;
         }
-        if (code > (int)(1u << len)) return -1;   /* over-subscribed → invalid table */
+        if (code >= (int)(1u << len)) return -1;
         idx += bits[len];
         code <<= 1;
     }

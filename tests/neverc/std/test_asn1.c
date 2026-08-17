@@ -121,6 +121,29 @@ static void test_decode_rejects_malformed_lengths(void) {
     check_int("failed decode clears element",
               memcmp(&elem, &empty_elem, sizeof(elem)) == 0, 1);
 
+    uint8_t indefinite_seq[] = {0x30, 0x80};
+    check_int("reject indefinite SEQUENCE",
+              neverc_asn1_decode_element(
+                  indefinite_seq, sizeof(indefinite_seq), &elem), -1);
+
+    /* High-tag form that overflows the int tag_number field (X.690 8.1.2.4). */
+    uint8_t high_tag_overflow[] = {
+        0x1f, 0xff, 0xff, 0xff, 0xff, 0x7f, 0x00
+    };
+    check_int("reject high-tag overflow",
+              neverc_asn1_decode_element(
+                  high_tag_overflow, sizeof(high_tag_overflow), &elem), -1);
+
+    uint8_t high_tag_trunc[] = {0x1f, 0xff};
+    check_int("reject truncated high-tag",
+              neverc_asn1_decode_element(
+                  high_tag_trunc, sizeof(high_tag_trunc), &elem), -1);
+
+    uint8_t high_tag_too_small[] = {0x1f, 0x05, 0x00};
+    check_int("reject high-tag for number < 31",
+              neverc_asn1_decode_element(
+                  high_tag_too_small, sizeof(high_tag_too_small), &elem), -1);
+
     uint8_t end_of_contents[] = {0x00, 0x00};
     check_int("reject BER end-of-contents marker",
               neverc_asn1_decode_element(
@@ -145,9 +168,10 @@ static void test_decode_rejects_malformed_lengths(void) {
     check_int("reject noncanonical integer",
               neverc_asn1_decode_int64(&elem, &integer), -1);
 
-    /* Canonical 8-byte INTEGER 2^63. Fits in uint64_t, not int64_t. */
+    /* 9-byte INTEGER 2^63. Fits in uint64_t, not int64_t; decode_int64
+     * only accepts payloads of at most 8 bytes. */
     uint8_t uint64_min_out_of_range[] = {
-        0x02, 0x08, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        0x02, 0x09, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     };
     check_int("decode 2^63 wrapper",
               neverc_asn1_decode_element(uint64_min_out_of_range,
@@ -388,7 +412,7 @@ static void test_oid_bit_string_and_text(void) {
 
     const uint8_t bits[] = {0x0a, 0x80};
     n = neverc_asn1_encode_bit_string(buf, sizeof(buf), bits, sizeof(bits), 1);
-    check_int("bit string len", n, 4);
+    check_int("bit string len", n, 5);
     check_int("bit string tag", buf[0], NEVERC_ASN1_BIT_STRING);
     neverc_asn1_decode_element(buf, (size_t)n, &elem);
     const uint8_t *payload = NULL;

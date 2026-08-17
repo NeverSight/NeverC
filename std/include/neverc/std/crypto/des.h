@@ -19,12 +19,16 @@ extern "C" {
 
 typedef struct {
     uint64_t subkeys[16];
+    int ready; /* 1 after a successful init; 0 after wipe / failed init */
 } neverc_des_cipher_t;
 
 typedef struct {
     neverc_des_cipher_t c1, c2, c3;
 } neverc_3des_cipher_t;
 
+/* NULL cipher/key returns -1 and wipes the cipher so a previous key cannot
+ * keep encrypting. Encrypt/decrypt are no-ops until a successful init.
+ * The all-zero DES key is valid and must still encrypt after init. */
 int  neverc_des_init(neverc_des_cipher_t *c, const uint8_t key[8]);
 void neverc_des_encrypt_block(const neverc_des_cipher_t *c,
                               uint8_t dst[8], const uint8_t src[8]);

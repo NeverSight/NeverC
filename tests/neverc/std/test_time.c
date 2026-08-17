@@ -647,6 +647,29 @@ static void test_duration_boundaries(void) {
     check_int("reject huge duration",
               neverc_time_parse_duration("999999999999999999999999999h", &d), -1);
 
+    {
+        neverc_duration_t out = 99;
+        check_int("duration mul by 0",
+                  neverc_time_duration_mul(INT64_MAX, 0, &out), 0);
+        check_int64("duration mul 0 value", out, 0);
+        out = 99;
+        check_int("duration mul by 1",
+                  neverc_time_duration_mul(123, 1, &out), 0);
+        check_int64("duration mul 1 value", out, 123);
+        check_int("duration mul by -1",
+                  neverc_time_duration_mul(123, -1, &out), 0);
+        check_int64("duration mul -1 value", out, -123);
+        out = 99;
+        check_int("duration mul overflow",
+                  neverc_time_duration_mul(INT64_MAX, 2, &out), -1);
+        check_int64("duration mul overflow is atomic", out, 99);
+        check_int("duration mul INT64_MIN * -1 overflow",
+                  neverc_time_duration_mul(INT64_MIN, -1, &out), -1);
+        check_int64("duration mul min overflow is atomic", out, 99);
+        check_int("duration mul null out",
+                  neverc_time_duration_mul(1, 1, NULL), -1);
+    }
+
     static const neverc_duration_t values[] = {
         INT64_MIN, INT64_MAX, -1234567890123456LL, -1001, -1,
         0, 1, 1001, 1234567890123456LL

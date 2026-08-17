@@ -298,5 +298,6 @@ int main(void) {
     test_concurrent_entries();
     test_null_safety();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

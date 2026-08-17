@@ -377,9 +377,9 @@ static void test_invalid_pem(void) {
     check_int("NUL type injection", rc, -1);
 
     static const char esc_type[] =
-        "-----BEGIN \x1bEVIL-----\n"
+        "-----BEGIN \x1b" "EVIL-----\n"
         "YQ==\n"
-        "-----END \x1bEVIL-----\n"
+        "-----END \x1b" "EVIL-----\n"
         "-----BEGIN TEST BLOCK-----\n"
         "aGVsbG8=\n"
         "-----END TEST BLOCK-----\n";

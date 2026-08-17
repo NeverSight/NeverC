@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifndef NEVERC_THREAD_CALLOC
 #define NEVERC_THREAD_CALLOC calloc
@@ -77,6 +78,10 @@ static int thread_cond_wait(neverc_thread_cond_t *cond,
 #include <errno.h>
 #include <pthread.h>
 #include <time.h>
+#if defined(__linux__)
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
 
 typedef pthread_mutex_t neverc_thread_mutex_t;
 typedef pthread_cond_t neverc_thread_cond_t;
@@ -140,11 +145,21 @@ typedef struct {
     void *arg;
 } neverc_thread_task_t;
 
+#if !defined(_WIN32)
+typedef struct {
+    struct neverc_thread_executor *executor;
+    size_t index;
+} worker_arg_t;
+#endif
+
 struct neverc_thread_executor {
     neverc_thread_task_t *queue;
     neverc_thread_handle_t *threads;
 #if defined(_WIN32)
     DWORD *thread_ids;
+#else
+    uint64_t *thread_ids;
+    worker_arg_t *worker_args;
 #endif
     size_t worker_count;
     size_t queue_capacity;
@@ -225,13 +240,31 @@ static void executor_fail_locked(neverc_thread_executor_t *executor) {
 
 #if defined(_WIN32)
 static DWORD WINAPI executor_worker(void *opaque) {
-#else
-static void *executor_worker(void *opaque) {
-#endif
     neverc_thread_executor_t *executor =
         (neverc_thread_executor_t *)opaque;
+#else
+static uint64_t thread_numeric_id(void) {
+#if defined(__APPLE__)
+    uint64_t tid = 0;
+    (void)pthread_threadid_np(NULL, &tid);
+    return tid;
+#elif defined(__linux__)
+    return (uint64_t)syscall(SYS_gettid);
+#else
+    return (uint64_t)(uintptr_t)pthread_self();
+#endif
+}
+
+static void *executor_worker(void *opaque) {
+    worker_arg_t *arg = (worker_arg_t *)opaque;
+    neverc_thread_executor_t *executor = arg->executor;
+    size_t index = arg->index;
+#endif
 
     thread_mutex_lock(&executor->mutex);
+#if !defined(_WIN32)
+    executor->thread_ids[index] = thread_numeric_id();
+#endif
     for (;;) {
         while (executor->queue_count == 0 && executor->accepting) {
             if (thread_cond_wait(&executor->not_empty, &executor->mutex,
@@ -279,9 +312,10 @@ static int executor_is_current_worker_locked(
             return 1;
     }
 #else
-    pthread_t current = pthread_self();
+    uint64_t current = thread_numeric_id();
     for (size_t i = 0; i < executor->worker_count; ++i) {
-        if (pthread_equal(executor->threads[i], current))
+        if (executor->thread_ids[i] != 0 &&
+            executor->thread_ids[i] == current)
             return 1;
     }
 #endif
@@ -319,15 +353,20 @@ neverc_thread_executor_t *neverc_thread_executor_create(
     executor->thread_ids =
         (DWORD *)NEVERC_THREAD_CALLOC(
             worker_count, sizeof(*executor->thread_ids));
+#else
+    {
+        size_t ids_bytes = worker_count * sizeof(*executor->thread_ids);
+        size_t args_bytes = worker_count * sizeof(*executor->worker_args);
+        unsigned char *block = (unsigned char *)NEVERC_THREAD_CALLOC(
+            1, ids_bytes + args_bytes);
+        if (block) {
+            executor->thread_ids = (uint64_t *)block;
+            executor->worker_args = (worker_arg_t *)(block + ids_bytes);
+        }
+    }
 #endif
-    if (!executor->queue || !executor->threads
-#if defined(_WIN32)
-        || !executor->thread_ids
-#endif
-    ) {
-#if defined(_WIN32)
+    if (!executor->queue || !executor->threads || !executor->thread_ids) {
         NEVERC_THREAD_FREE(executor->thread_ids);
-#endif
         NEVERC_THREAD_FREE(executor->threads);
         NEVERC_THREAD_FREE(executor->queue);
         NEVERC_THREAD_FREE(executor);
@@ -335,9 +374,7 @@ neverc_thread_executor_t *neverc_thread_executor_create(
     }
 
     if (executor_sync_init(executor) != 0) {
-#if defined(_WIN32)
         NEVERC_THREAD_FREE(executor->thread_ids);
-#endif
         NEVERC_THREAD_FREE(executor->threads);
         NEVERC_THREAD_FREE(executor->queue);
         NEVERC_THREAD_FREE(executor);
@@ -359,8 +396,11 @@ neverc_thread_executor_t *neverc_thread_executor_create(
         if (!executor->threads[created])
             break;
 #else
+        executor->worker_args[created].executor = executor;
+        executor->worker_args[created].index = created;
         if (pthread_create(&executor->threads[created], NULL,
-                           executor_worker, executor) != 0)
+                           executor_worker,
+                           &executor->worker_args[created]) != 0)
             break;
 #endif
     }
@@ -375,14 +415,17 @@ neverc_thread_executor_t *neverc_thread_executor_create(
 #if defined(_WIN32)
             (void)WaitForSingleObject(executor->threads[i], INFINITE);
             CloseHandle(executor->threads[i]);
+            executor->threads[i] = NULL;
+            executor->thread_ids[i] = 0;
 #else
-            (void)pthread_join(executor->threads[i], NULL);
+            pthread_t handle = executor->threads[i];
+            memset(&executor->threads[i], 0, sizeof(executor->threads[i]));
+            (void)pthread_join(handle, NULL);
+            executor->thread_ids[i] = 0;
 #endif
         }
         executor_sync_destroy(executor);
-#if defined(_WIN32)
         NEVERC_THREAD_FREE(executor->thread_ids);
-#endif
         NEVERC_THREAD_FREE(executor->threads);
         NEVERC_THREAD_FREE(executor->queue);
         NEVERC_THREAD_FREE(executor);
@@ -566,8 +609,11 @@ int neverc_thread_executor_shutdown(
             WAIT_OBJECT_0)
             join_failed = 1;
         CloseHandle(executor->threads[i]);
+        executor->threads[i] = NULL;
 #else
-        if (pthread_join(executor->threads[i], NULL) != 0)
+        pthread_t handle = executor->threads[i];
+        memset(&executor->threads[i], 0, sizeof(executor->threads[i]));
+        if (pthread_join(handle, NULL) != 0)
             join_failed = 1;
 #endif
     }
@@ -575,12 +621,8 @@ int neverc_thread_executor_shutdown(
     thread_mutex_lock(&executor->mutex);
     if (join_failed)
         executor->failed = 1;
-#if defined(_WIN32)
-    for (size_t i = 0; i < executor->worker_count; ++i) {
-        executor->threads[i] = NULL;
+    for (size_t i = 0; i < executor->worker_count; ++i)
         executor->thread_ids[i] = 0;
-    }
-#endif
     executor->shutdown_complete = 1;
     thread_cond_broadcast(&executor->stopped);
     thread_cond_broadcast(&executor->idle);
@@ -597,9 +639,7 @@ void neverc_thread_executor_free(
         return;
     (void)neverc_thread_executor_shutdown(executor);
     executor_sync_destroy(executor);
-#if defined(_WIN32)
     NEVERC_THREAD_FREE(executor->thread_ids);
-#endif
     NEVERC_THREAD_FREE(executor->threads);
     NEVERC_THREAD_FREE(executor->queue);
     NEVERC_THREAD_FREE(executor);

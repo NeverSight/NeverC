@@ -627,6 +627,40 @@ static void test_template_url_and_script(void) {
     check("http-equiv cannot enable refresh",
           out && strstr(out, "http-equiv=\"refresh\"") == NULL);
     free(out);
+
+    neverc_html_template_data_set(&data, "X", "*/alert(1)//");
+    out = neverc_html_template_render("<script>/*{{.X}}*/</script>", &data);
+    check("js block comment closer cannot break out",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("js block comment does not contain alert",
+          out && strstr(out, "alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "-->alert(1)//");
+    out = neverc_html_template_render(
+        "<script><!--{{.X}}--></script>", &data);
+    check("js html comment closer cannot break out",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("js html comment does not contain alert",
+          out && strstr(out, "alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)//");
+    out = neverc_html_template_render("<script>//{{.X}}</script>", &data);
+    check("js line comment interpolation is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("js line comment does not contain alert",
+          out && strstr(out, "alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "hello");
+    out = neverc_html_template_render(
+        "<script>/* done */var x = {{.X}};</script>", &data);
+    check("js after closed comment still interpolates",
+          out && strstr(out, "\"hello\"") != NULL);
+    check("js after closed comment is not replaced",
+          out && strstr(out, "ZgotmplZ") == NULL);
+    free(out);
     neverc_html_template_data_free(&data);
 }
 
@@ -780,5 +814,6 @@ int main(void) {
     test_template_parse_errors();
     test_data_operations();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_passed == tests_run) puts("passed");
     return tests_passed == tests_run ? 0 : 1;
 }

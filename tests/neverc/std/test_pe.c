@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -337,6 +338,31 @@ static void test_pe32_and_bounds(void) {
     CHECK("reject e_lfanew near UINT32_MAX",
           !neverc_pe_is_valid(wrap, sizeof(wrap)));
     free(data);
+
+    uint8_t obj[256];
+    memset(obj, 0, sizeof(obj));
+    obj[0] = 'M'; obj[1] = 'Z';
+    put32(obj + 60, 64);
+    obj[64] = 'P'; obj[65] = 'E';
+    put16(obj + 68, NEVERC_IMAGE_FILE_MACHINE_AMD64);
+    put16(obj + 70, 1);
+    put16(obj + 68 + 16, 0);
+    memcpy(obj + 88, ".text\0\0\0", 8);
+    put32(obj + 88 + 8, 4);
+    put32(obj + 88 + 16, 4);
+    put32(obj + 88 + 20, 128);
+    obj[128] = 0xC3;
+    CHECK("open PE with SizeOfOptionalHeader 0",
+          neverc_pe_open(&f, obj, sizeof(obj)) == 0);
+    CHECK("object file has no optional magic",
+          f.optional_header.magic == 0 && f.is_64bit == 1);
+    CHECK("object file still names .text",
+          neverc_pe_section(&f, ".text") != NULL);
+    neverc_pe_close(&f);
+
+    put16(obj + 68 + 16, 1);
+    CHECK("reject SizeOfOptionalHeader of 1",
+          neverc_pe_open(&f, obj, sizeof(obj)) == -1);
 }
 
 static void test_pe_invalid(void) {
@@ -370,6 +396,22 @@ static void test_pe_invalid(void) {
     put32(data + 328 + 20, (uint32_t)(len - 8));
     CHECK("reject section outside file", neverc_pe_open(&f, data, len) == -1);
     put32(data + 328 + 20, 512);
+
+    put16(data + 68 + 16, 248);
+    CHECK("reject SizeOfOptionalHeader past data directories",
+          neverc_pe_open(&f, data, len) == -1);
+    put16(data + 68 + 16, 240);
+
+    put32(data + 600, 20);
+    memcpy(data + 604, ".debug_info", 12);
+    memcpy(data + 328, "/4\0\0\0\0\0\0", 8);
+    put32(data + 68 + 8, 600);
+    put32(data + 68 + 12, 0);
+    memset(data + 616, 'X', 4);
+    CHECK("reject string table without a terminating NUL",
+          neverc_pe_open(&f, data, len) == -1);
+    memcpy(data + 328, ".text\0\0\0", 8);
+    put32(data + 68 + 8, 0);
 
     CHECK("open valid fixture for argument checks",
           neverc_pe_open(&f, data, len) == 0);

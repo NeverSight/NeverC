@@ -276,6 +276,10 @@ static void write_attr_text(FILE *f, const neverc_slog_attr_t *a) {
     }
 }
 
+static int slog_attr_emit(const neverc_slog_attr_t *a) {
+    return a && a->key && a->key[0] && a->kind != NEVERC_SLOG_ATTR_NONE;
+}
+
 static void write_attr_json(FILE *f, const neverc_slog_attr_t *a) {
     fputc(',', f);
     write_json_string(f, a->key);
@@ -316,15 +320,19 @@ void neverc_slog_log(neverc_slog_handler_t *h, neverc_slog_level_t level,
         fprintf(config.output, "{\"time\":\"%s\",\"level\":\"%s\",\"msg\":",
                 ts, neverc_slog_level_name(level));
         write_json_string(config.output, msg);
-        for (int i = 0; i < nattrs; i++)
+        for (int i = 0; i < nattrs; i++) {
+            if (!slog_attr_emit(&attrs[i])) continue;
             write_attr_json(config.output, &attrs[i]);
+        }
         fputs("}\n", config.output);
     } else {
         fprintf(config.output, "time=%s level=%s msg=",
                 ts, neverc_slog_level_name(level));
         write_json_string(config.output, msg);
-        for (int i = 0; i < nattrs; i++)
+        for (int i = 0; i < nattrs; i++) {
+            if (!slog_attr_emit(&attrs[i])) continue;
             write_attr_text(config.output, &attrs[i]);
+        }
         fputc('\n', config.output);
     }
     fflush(config.output);

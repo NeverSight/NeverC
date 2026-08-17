@@ -137,6 +137,9 @@ static void test_decode(void) {
     n = neverc_hex_decode(dst, "a", 1);
     check_int("decode(odd len)", n, -1);
 
+    n = neverc_hex_decode(dst, "abc", 3);
+    check_int("decode(odd len 3)", n, -1);
+
     n = neverc_hex_decode(dst, "zz", 2);
     check_int("decode(invalid)", n, -1);
 

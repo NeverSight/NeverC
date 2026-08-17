@@ -50,12 +50,7 @@ static void reset_failures(void) {
 }
 
 int main(void) {
-    const size_t executor_allocations =
-#if defined(_WIN32)
-        4;
-#else
-        3;
-#endif
+    const size_t executor_allocations = 4;
 
     for (size_t fail_at = 1; fail_at <= executor_allocations; fail_at++) {
         reset_failures();

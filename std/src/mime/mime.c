@@ -101,6 +101,25 @@ static int mime_is_token_char(unsigned char c) {
     return c > 32 && c < 127 && strchr(specials, (int)c) == NULL;
 }
 
+/* RFC 2046: 1..70 bchars, last must not be space. Used so format cannot
+ * emit a multipart boundary the reader would reject. */
+static int mime_is_rfc2046_boundary(const char *s) {
+    if (!s || *s == '\0') return 0;
+    size_t n = 0;
+    while (s[n] != '\0') {
+        unsigned char c = (unsigned char)s[n];
+        int valid = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') ||
+                    c == '\'' || c == '(' || c == ')' || c == '+' ||
+                    c == '_' || c == ',' || c == '-' || c == '.' ||
+                    c == '/' || c == ':' || c == '=' || c == '?' ||
+                    c == ' ';
+        if (!valid || n == 70) return 0;
+        n++;
+    }
+    return s[n - 1] != ' ';
+}
+
 /* RFC 2045 tspecials. Go's consumeValue only treats `\` as an escape when
  * the next byte is in this set, so `C:\dev\file` keeps the backslashes. */
 static int mime_is_tspecial(unsigned char c) {
@@ -682,6 +701,9 @@ int neverc_mime_format_media_type(const char *media_type,
         size_t key_len = 0;
         while (mime_is_token_char((unsigned char)key[key_len])) key_len++;
         if (key[key_len] != '\0') goto fail;
+        if (key_len == 8 && strcasecmp_local(key, "boundary") == 0 &&
+            !mime_is_rfc2046_boundary(value))
+            goto fail;
         for (int j = 0; j < i; j++) {
             if (strcasecmp_local(key, param_keys[j]) == 0) goto fail;
         }
@@ -826,41 +848,86 @@ int neverc_mime_qp_decode(const char *src, size_t src_len,
 
 static const char hex_chars[] = "0123456789ABCDEF";
 
+/* RFC 2045: encoded lines are at most 76 chars, not counting the CRLF.
+ * Soft break `=\r\n` uses the 76th column for `=`. */
+#define MIME_QP_MAX_LINE 76
+
+static size_t mime_qp_token_len(unsigned char c, int trailing_ws,
+                                int encode_wsp) {
+    if (c == '\r' || c == '\n') return 1;
+    if ((c >= 33 && c <= 126 && c != '=') ||
+        ((c == '\t' || c == ' ') && !trailing_ws && !encode_wsp))
+        return 1;
+    return 3;
+}
+
 int neverc_mime_qp_encode(const char *src, size_t src_len,
                            char *dst, size_t dst_cap, size_t *out_len) {
     if (out_len) *out_len = 0;
     if ((!src || !dst) && src_len != 0) return -1;
 
-    size_t required = 0;
+    const size_t line_cap = (size_t)(MIME_QP_MAX_LINE - 1);
+    size_t required = 0, line_len = 0;
     for (size_t i = 0; i < src_len; i++) {
         unsigned char c = (unsigned char)src[i];
+        if (c == '\r' || c == '\n') {
+            if (required == SIZE_MAX) return -1;
+            required++;
+            if (c == '\n') line_len = 0;
+            continue;
+        }
         int trailing_ws = (c == ' ' || c == '\t') &&
                           (i + 1 == src_len ||
                            src[i + 1] == '\r' || src[i + 1] == '\n');
-        size_t amount = ((c >= 33 && c <= 126 && c != '=') ||
-                         ((c == '\t' || c == ' ') && !trailing_ws) ||
-                         c == '\r' || c == '\n')
-                            ? 1U : 3U;
+        int encode_wsp = (c == ' ' || c == '\t') && !trailing_ws &&
+                         line_len + 1 >= line_cap;
+        size_t amount = mime_qp_token_len(c, trailing_ws, encode_wsp);
+        if (line_len + amount > line_cap) {
+            if (required > SIZE_MAX - 3U) return -1;
+            required += 3U;
+            line_len = 0;
+            encode_wsp = (c == ' ' || c == '\t') && !trailing_ws &&
+                         line_len + 1 >= line_cap;
+            amount = mime_qp_token_len(c, trailing_ws, encode_wsp);
+        }
         if (amount > SIZE_MAX - required) return -1;
         required += amount;
+        line_len += amount;
     }
     if (required > dst_cap) return -1;
 
     size_t di = 0;
+    line_len = 0;
     for (size_t si = 0; si < src_len; si++) {
         unsigned char c = (unsigned char)src[si];
+        if (c == '\r' || c == '\n') {
+            dst[di++] = (char)c;
+            if (c == '\n') line_len = 0;
+            continue;
+        }
         int trailing_ws = (c == ' ' || c == '\t') &&
                           (si + 1 == src_len ||
                            src[si + 1] == '\r' || src[si + 1] == '\n');
-        if ((c >= 33 && c <= 126 && c != '=') ||
-            ((c == '\t' || c == ' ') && !trailing_ws) ||
-            c == '\r' || c == '\n') {
+        int encode_wsp = (c == ' ' || c == '\t') && !trailing_ws &&
+                         line_len + 1 >= line_cap;
+        size_t amount = mime_qp_token_len(c, trailing_ws, encode_wsp);
+        if (line_len + amount > line_cap) {
+            dst[di++] = '=';
+            dst[di++] = '\r';
+            dst[di++] = '\n';
+            line_len = 0;
+            encode_wsp = (c == ' ' || c == '\t') && !trailing_ws &&
+                         line_len + 1 >= line_cap;
+            amount = mime_qp_token_len(c, trailing_ws, encode_wsp);
+        }
+        if (amount == 1) {
             dst[di++] = (char)c;
         } else {
             dst[di++] = '=';
             dst[di++] = hex_chars[c >> 4];
             dst[di++] = hex_chars[c & 0x0F];
         }
+        line_len += amount;
     }
     if (out_len) *out_len = di;
     return 0;

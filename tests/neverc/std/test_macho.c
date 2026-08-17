@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -200,6 +201,13 @@ static void test_metadata(void) {
     data[622] = '\0';
     neverc_macho_close(&f);
 
+    data[623] = 'X';
+    put32(data + 184 + 20, 8);
+    CHECK("reject string table without a terminating NUL",
+          neverc_macho_open(&f, data, len) == -1);
+    put32(data + 184 + 20, 7);
+    data[623] = 0;
+
     memset(data + 208 + 24, 'x', 24);
     CHECK("reject unterminated dylib name",
           neverc_macho_open(&f, data, len) == -1);
@@ -253,6 +261,18 @@ static void test_macho_invalid(void) {
     CHECK("reject missing declared command",
           neverc_macho_open(&f, data, len) == -1);
     put32(data + 16, 1);
+
+    put32(data + 16, 100);
+    CHECK("reject ncmds overflowing sizeofcmds",
+          neverc_macho_open(&f, data, len) == -1);
+    put32(data + 16, 1);
+
+    put64(data + 32 + 40, UINT64_MAX - 8);
+    put64(data + 32 + 48, 16);
+    CHECK("reject segment fileoff plus filesz wrap",
+          neverc_macho_open(&f, data, len) == -1);
+    put64(data + 32 + 40, 0);
+    put64(data + 32 + 48, len);
 
     put32(data + 32 + 64, 2);
     CHECK("reject truncated section array",

@@ -337,6 +337,33 @@ static void test_read_all(void) {
                       1);
         ASSERT_STR_EQ(qrecords[0][0], "a\rb");
     }
+    /* RFC 4180 quoted fields may contain CRLF; it is not a record break. */
+    {
+        const char *crlf_qrow[NEVERC_CSV_MAX_FIELDS];
+        const char **crlf_qrecords[] = {crlf_qrow};
+        int crlf_qcount[1] = {0};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          "\"a\r\nb\",c\n", 9U,
+                          crlf_qrecords, crlf_qcount, 1,
+                          work, sizeof(work), NULL),
+                      1);
+        ASSERT_INT_EQ(crlf_qcount[0], 2);
+        ASSERT_STR_EQ(crlf_qrecords[0][0], "a\r\nb");
+        ASSERT_STR_EQ(crlf_qrecords[0][1], "c");
+    }
+    /* Quoted newline at EOF without a trailing record terminator. */
+    {
+        const char *eof_qrow[NEVERC_CSV_MAX_FIELDS];
+        const char **eof_qrecords[] = {eof_qrow};
+        int eof_qcount[1] = {0};
+        static const char quoted_nl_eof[] = {'"', 'a', '\n', 'b', '"'};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          quoted_nl_eof, sizeof(quoted_nl_eof),
+                          eof_qrecords, eof_qcount, 1,
+                          work, sizeof(work), NULL),
+                      1);
+        ASSERT_STR_EQ(eof_qrecords[0][0], "a\nb");
+    }
 }
 
 static void test_invalid_inputs(void) {

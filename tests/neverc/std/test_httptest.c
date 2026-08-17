@@ -233,6 +233,22 @@ static void test_httptest_strict_parser(void) {
               n > 0 && strstr(buf, "400 Bad Request") != NULL, 1);
 
     n = httptest_raw(addr,
+        "GET / HTTP/1.1\r\nHost: [::1,evil]\r\n"
+        "Connection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("ipv6 comma host 400",
+              n > 0 && strstr(buf, "400 Bad Request") != NULL, 1);
+
+    n = httptest_raw(addr,
+        "POST / HTTP/1.1\r\nHost: localhost\r\n"
+        "Connection: close\r\n\r\nhello",
+        buf, sizeof(buf));
+    check_int("post without cl 400",
+              n > 0 && strstr(buf, "400 Bad Request") != NULL, 1);
+    check_int("post without cl not silent empty body",
+              n > 0 && strstr(buf, "no body") == NULL, 1);
+
+    n = httptest_raw(addr,
         "POST / HTTP/1.1\r\nHost: localhost\r\n"
         "Content-Length: 4\r\nConnection: close\r\n\r\n"
         "ABCDXXXX",

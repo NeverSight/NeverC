@@ -375,6 +375,14 @@ static void test_offset_at(void) {
               neverc_tzdata_offset_at(cht, NZ_END_2024 - 1), 49500);
     check_int("Chatham at autumn-back CHAST",
               neverc_tzdata_offset_at(cht, NZ_END_2024), 45900);
+
+    /* Extreme unix_sec must not overflow civil math. */
+    check_int("NY offset_at INT64_MAX",
+              neverc_tzdata_offset_at(ny, INT64_MAX) == -18000 ||
+              neverc_tzdata_offset_at(ny, INT64_MAX) == -14400, 1);
+    check_int("NY offset_at INT64_MIN",
+              neverc_tzdata_offset_at(ny, INT64_MIN) == -18000 ||
+              neverc_tzdata_offset_at(ny, INT64_MIN) == -14400, 1);
 }
 
 /* ===== Offsets correctness ===== */

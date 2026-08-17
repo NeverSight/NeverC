@@ -98,6 +98,13 @@ static void test_interface_by_name(void) {
     if (rc == 0) {
         check_true("loopback flag set", (iface.flags & NEVERC_NET_FLAG_LOOPBACK) != 0);
         check_true("loopback up", (iface.flags & NEVERC_NET_FLAG_UP) != 0);
+        check_true("loopback not p2p",
+                   (iface.flags & NEVERC_NET_FLAG_POINTTOPOINT) == 0);
+        uint32_t known = NEVERC_NET_FLAG_UP | NEVERC_NET_FLAG_BROADCAST |
+                         NEVERC_NET_FLAG_LOOPBACK | NEVERC_NET_FLAG_POINTTOPOINT |
+                         NEVERC_NET_FLAG_MULTICAST | NEVERC_NET_FLAG_RUNNING;
+        check_true("loopback flags are known bits",
+                   (iface.flags & ~known) == 0);
     }
 
     /* Non-existent */
@@ -160,6 +167,7 @@ int main(void) {
 
     if (tests_failed == 0)
         printf("ALL PASSED (%d tests passed)\n", tests_passed);
+    if (tests_failed == 0) puts("passed");
 
     return tests_failed;
 }

@@ -80,6 +80,7 @@ struct neverc_h2_client {
     int pending_active;
     int pending_end_stream;
     int pending_continuations;
+    uint32_t settings_ack_owed;
 };
 
 static int h2_client_transport_read_all(neverc_h2_client_t *client,
@@ -125,6 +126,10 @@ static int h2_client_write_frame_locked(neverc_h2_client_t *client,
                                         uint32_t stream_id,
                                         const void *payload,
                                         uint32_t payload_length) {
+    if (payload_length > 0x00ffffffu ||
+        (payload_length > 0 && !payload) ||
+        stream_id > 0x7fffffffu)
+        return -1;
     neverc_h2_frame_header_t header = {
         .length = payload_length,
         .type = type,
@@ -154,6 +159,12 @@ static int h2_client_write_frame(neverc_h2_client_t *client,
 
 static int h2_client_write_u32(neverc_h2_client_t *client, uint8_t type,
                                uint32_t stream_id, uint32_t value) {
+    if (type == NC_H2_FRAME_WINDOW_UPDATE) {
+        /* RFC 9113 §6.9: a WINDOW_UPDATE increment of 0 is a protocol error. */
+        if (value == 0) return 0;
+        if (value > 0x7fffffffu) return -1;
+        value &= 0x7fffffffu;
+    }
     uint8_t payload[4] = {
         (uint8_t)(value >> 24), (uint8_t)(value >> 16),
         (uint8_t)(value >> 8), (uint8_t)value};
@@ -185,8 +196,11 @@ static int h2_client_write_settings(neverc_h2_client_t *client) {
     H2_CLIENT_SETTING(NC_H2_SETTINGS_MAX_HEADER_LIST_SIZE,
                       client->local_settings.max_header_list_size);
 #undef H2_CLIENT_SETTING
-    return h2_client_write_frame(client, NC_H2_FRAME_SETTINGS, 0, 0,
-                                 payload, (uint32_t)offset);
+    if (h2_client_write_frame(client, NC_H2_FRAME_SETTINGS, 0, 0,
+                              payload, (uint32_t)offset) != 0)
+        return -1;
+    client->settings_ack_owed++;
+    return 0;
 }
 
 static h2_client_stream_t *h2_client_find_stream(
@@ -596,6 +610,9 @@ static int h2_client_decode_pending(neverc_h2_client_t *client,
 static int h2_client_header_fragment(
     const neverc_h2_frame_header_t *header, const uint8_t *payload,
     const uint8_t **fragment, size_t *fragment_length) {
+    if (!header || !fragment || !fragment_length ||
+        (header->length != 0 && !payload))
+        return -1;
     size_t offset = 0;
     size_t padding = 0;
     if (header->flags & NC_H2_FLAG_PADDED) {
@@ -604,10 +621,17 @@ static int h2_client_header_fragment(
     }
     if (header->flags & NC_H2_FLAG_PRIORITY) {
         if (header->length - offset < 5) return -1;
+        uint32_t dependency = ((uint32_t)(payload[offset] & 0x7f) << 24) |
+                              ((uint32_t)payload[offset + 1] << 16) |
+                              ((uint32_t)payload[offset + 2] << 8) |
+                              (uint32_t)payload[offset + 3];
+        /* RFC 9113 §6.2: a HEADERS priority that depends on itself is
+         * a connection error of type PROTOCOL_ERROR. */
+        if (dependency == header->stream_id) return -1;
         offset += 5;
     }
     if (padding > header->length - offset) return -1;
-    *fragment = payload + offset;
+    *fragment = payload ? payload + offset : NULL;
     *fragment_length = header->length - offset - padding;
     return 0;
 }
@@ -719,6 +743,10 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
                                       NC_H2_FLAG_ACK, 0, NULL, 0) != 0)
                 return -1;
             client->initial_settings_received = 1;
+        } else if (client->settings_ack_owed == 0) {
+            return -1;
+        } else {
+            client->settings_ack_owed--;
         }
         return 0;
     case NC_H2_FRAME_PING:
@@ -794,7 +822,10 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
         return result;
     }
     case NC_H2_FRAME_CONTINUATION: {
-        if (header->stream_id == 0 ||
+        /* RFC 9113 §6.10: CONTINUATION is only legal while a header block
+         * is open. A leftover stream id after END_HEADERS is not enough. */
+        if (!client->pending_active ||
+            header->stream_id == 0 ||
             header->stream_id != client->pending_stream_id)
             return -1;
         nc_mutex_lock(&client->state_lock);
@@ -819,7 +850,8 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
                                     &data_length) != 0)
             return -1;
         nc_mutex_lock(&client->state_lock);
-        if (header->length > (uint32_t)client->conn_recv_window) {
+        if (header->length > (uint32_t)client->conn_recv_window ||
+            client->conn_recv_window < 0) {
             nc_mutex_unlock(&client->state_lock);
             return -1;
         }
@@ -852,6 +884,7 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
                          : stream->content_length))
             length_invalid = 1;
         int invalid = stream->done || !stream->response_started ||
+            stream->recv_window < 0 ||
             header->length > (uint32_t)stream->recv_window ||
             data_length > client->config.max_response_body_size ||
             stream->received_body_size >
@@ -948,6 +981,14 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
         nc_mutex_lock(&client->state_lock);
         h2_client_stream_t *stream =
             h2_client_find_stream(client, header->stream_id);
+        /* RFC 9113 §6.4: RST_STREAM on an idle stream is a connection
+         * PROTOCOL_ERROR. Even identifiers are never client-owned. */
+        if (!stream &&
+            ((header->stream_id & 1U) == 0 ||
+             header->stream_id >= client->next_stream_id)) {
+            nc_mutex_unlock(&client->state_lock);
+            return -1;
+        }
         if (stream) {
             stream->error_code = code;
             stream->error = "HTTP/2 stream reset by peer";

@@ -86,6 +86,24 @@ static void test_sha512_224(void) {
         if (memcmp(d1, d2, 28) == 0) { tests_passed++; }
         else { tests_failed++; printf("  FAIL: SHA-512/224 post-final mismatch\n"); }
     }
+
+    /* 128-bit length: 2^61+3 bytes must not collide with the short message. */
+    {
+        neverc_sha512_224_ctx ctx;
+        neverc_sha512_224_init(&ctx);
+        neverc_sha512_224_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha512_224_ctx long_ctx = ctx;
+        uint8_t short_d[28], long_d[28], zeros[28] = {0};
+        neverc_sha512_224_final(&ctx, short_d);
+        long_ctx.count = (1ULL << 61) + 3;
+        neverc_sha512_224_final(&long_ctx, long_d);
+        hex_to_bytes("4634270f707b6a54daae7530460842e20e37ed265ceee9a43e8924aa", expected, 28);
+        check_digest("SHA-512/224(\"abc\") before length poke", short_d, expected, 28);
+        tests_run++;
+        if (memcmp(short_d, long_d, 28) != 0 && memcmp(long_d, zeros, 28) != 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: SHA-512/224 2^61+3 length collided or fail-closed\n"); }
+    }
 }
 
 static void test_sha512_256(void) {
@@ -133,6 +151,23 @@ static void test_sha512_256(void) {
         tests_run++;
         if (memcmp(digest, sha256_d, 32) != 0) { tests_passed++; }
         else { tests_failed++; printf("  FAIL: SHA-512/256 == SHA-256\n"); }
+    }
+
+    {
+        neverc_sha512_256_ctx ctx;
+        neverc_sha512_256_init(&ctx);
+        neverc_sha512_256_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha512_256_ctx long_ctx = ctx;
+        uint8_t short_d[32], long_d[32], zeros[32] = {0};
+        neverc_sha512_256_final(&ctx, short_d);
+        long_ctx.count = (1ULL << 61) + 3;
+        neverc_sha512_256_final(&long_ctx, long_d);
+        hex_to_bytes("53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23", expected, 32);
+        check_digest("SHA-512/256(\"abc\") before length poke", short_d, expected, 32);
+        tests_run++;
+        if (memcmp(short_d, long_d, 32) != 0 && memcmp(long_d, zeros, 32) != 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: SHA-512/256 2^61+3 length collided or fail-closed\n"); }
     }
 }
 

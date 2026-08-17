@@ -1061,36 +1061,14 @@ static const char *proxy_find_crlf(const char *start, const char *end) {
 
 static int proxy_parse_content_length_value(
     const char *value, size_t length, proxy_response_framing_t *framing) {
-    size_t offset = 0;
-    int count = 0;
-    while (offset < length) {
-        while (offset < length &&
-               (value[offset] == ' ' || value[offset] == '\t'))
-            offset++;
-        size_t start = offset;
-        while (offset < length &&
-               value[offset] >= '0' && value[offset] <= '9')
-            offset++;
-        size_t digits = offset - start;
-        if (digits == 0) return -1;
-        size_t parsed = 0;
-        if (proxy_parse_decimal(value + start, digits, &parsed) != 0)
-            return -1;
-        while (offset < length &&
-               (value[offset] == ' ' || value[offset] == '\t'))
-            offset++;
-        if (framing->has_content_length &&
-            framing->content_length != parsed)
-            return -1;
-        framing->has_content_length = 1;
-        framing->content_length = parsed;
-        count++;
-        if (offset == length) break;
-        if (value[offset] != ',') return -1;
-        offset++;
-        if (offset == length) return -1;
-    }
-    return count > 0 ? 0 : -1;
+    proxy_trim_ows(&value, &length);
+    size_t parsed = 0;
+    if (!value || length == 0 ||
+        proxy_parse_decimal(value, length, &parsed) != 0)
+        return -1;
+    framing->has_content_length = 1;
+    framing->content_length = parsed;
+    return 0;
 }
 
 static int proxy_parse_response_headers(
@@ -1120,6 +1098,7 @@ static int proxy_parse_response_headers(
                            (start[10] - '0') * 10 +
                            (start[11] - '0');
     if (framing->status_code < 100) return -1;
+    int is_http_10 = memcmp(start, "HTTP/1.0 ", 9) == 0;
 
     int field_count = 0;
     const char *cursor = line_end + 2;
@@ -1148,12 +1127,16 @@ static int proxy_parse_response_headers(
         if (!proxy_valid_field_value(value, value_length)) return -1;
 
         if (proxy_equal_ci_n(cursor, name_length, "Content-Length")) {
-            if (proxy_parse_content_length_value(
+            if (framing->has_content_length ||
+                proxy_parse_content_length_value(
                     value, value_length, framing) != 0)
                 return -1;
         } else if (proxy_equal_ci_n(
                        cursor, name_length, "Transfer-Encoding")) {
-            if (framing->is_chunked || value_length != 7 ||
+            /* RFC 9112: Transfer-Encoding is not defined for HTTP/1.0.
+             * Decoding a 1.0 chunked body desynchronizes hops that read
+             * identity until connection close. */
+            if (is_http_10 || framing->is_chunked || value_length != 7 ||
                 !proxy_equal_ci_n(value, value_length, "chunked"))
                 return -1;
             framing->is_chunked = 1;

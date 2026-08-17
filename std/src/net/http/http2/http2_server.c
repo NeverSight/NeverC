@@ -39,7 +39,7 @@
 
 int neverc_h2_frame_header_read(const uint8_t *data, size_t len,
                                   neverc_h2_frame_header_t *hdr) {
-    if (len < NC_H2_FRAME_HEADER_SIZE) return -1;
+    if (!data || !hdr || len < NC_H2_FRAME_HEADER_SIZE) return -1;
     hdr->length = ((uint32_t)data[0] << 16) |
                   ((uint32_t)data[1] << 8) |
                   (uint32_t)data[2];
@@ -54,6 +54,9 @@ int neverc_h2_frame_header_read(const uint8_t *data, size_t len,
 
 int neverc_h2_frame_header_write(const neverc_h2_frame_header_t *hdr,
                                    uint8_t *out) {
+    if (!hdr || !out || hdr->length > 0x00ffffffu ||
+        hdr->stream_id > 0x7fffffffu)
+        return -1;
     out[0] = (uint8_t)(hdr->length >> 16);
     out[1] = (uint8_t)(hdr->length >> 8);
     out[2] = (uint8_t)(hdr->length);
@@ -71,6 +74,7 @@ int neverc_h2_frame_header_write(const neverc_h2_frame_header_t *hdr,
  * ====================================================================== */
 
 void neverc_h2_settings_init(neverc_h2_settings_t *s) {
+    if (!s) return;
     s->header_table_size = NC_H2_DEFAULT_HEADER_TABLE_SIZE;
     s->enable_push = 1;
     s->max_concurrent_streams = NC_H2_DEFAULT_MAX_CONCURRENT;
@@ -292,8 +296,11 @@ struct h2_conn {
     size_t    pending_hdr_cap;
     uint32_t  pending_hdr_stream_id;
     int       pending_hdr_active;
+    int       pending_hdr_discard;
+    uint32_t  pending_hdr_rst_code;
     int       pending_end_stream;
     int       pending_hdr_continuations;
+    uint32_t  settings_ack_owed;
 };
 
 static void h2_io_init_socket(h2_io_t *io, nc_sock_t fd) {
@@ -466,12 +473,13 @@ static void h2_io_drain_after_error(h2_io_t *io) {
 
 static int h2_write_frame(h2_io_t *io, uint8_t type, uint8_t flags,
                             uint32_t stream_id, const void *payload, uint32_t len) {
+    if (len > 0 && !payload) return -1;
     neverc_h2_frame_header_t hdr = { .length = len, .type = type,
                                       .flags = flags, .stream_id = stream_id };
     uint8_t hbuf[NC_H2_FRAME_HEADER_SIZE];
-    neverc_h2_frame_header_write(&hdr, hbuf);
+    if (neverc_h2_frame_header_write(&hdr, hbuf) != 0) return -1;
     if (h2_io_write_all(io, hbuf, NC_H2_FRAME_HEADER_SIZE) != 0) return -1;
-    if (len > 0 && payload)
+    if (len > 0)
         return h2_io_write_all(io, payload, len);
     return 0;
 }
@@ -709,6 +717,10 @@ void neverc_h2_request_stream_cancel(void *protocol_stream,
                             error_code ? error_code : NC_H2_CANCEL);
 }
 
+static void h2_clear_pending_hdr(h2_conn_t *conn);
+static int h2_append_hdr_block(h2_conn_t *conn, const uint8_t *data,
+                               size_t len);
+
 static uint32_t h2_frame_header_error(const neverc_h2_frame_header_t *header) {
     switch (header->type) {
     case NC_H2_FRAME_DATA:
@@ -769,34 +781,30 @@ static int h2_header_fragment(const neverc_h2_frame_header_t *header,
         if (header->length == 0) return -1;
         padding = payload[offset++];
     }
+    int self_dep = 0;
     if ((header->flags & NC_H2_FLAG_PRIORITY) != 0) {
         if ((size_t)header->length - offset < 5) return -1;
         uint32_t dependency = ((uint32_t)(payload[offset] & 0x7f) << 24) |
                               ((uint32_t)payload[offset + 1] << 16) |
                               ((uint32_t)payload[offset + 2] << 8) |
                               (uint32_t)payload[offset + 3];
-        if (dependency == header->stream_id) return -1;
+        if (dependency == header->stream_id)
+            self_dep = 1;
         offset += 5;
     }
     if (padding > (size_t)header->length - offset) return -1;
     *fragment_length = (size_t)header->length - offset - padding;
     *fragment = payload ? payload + offset : NULL;
-    return 0;
+    return self_dep ? -2 : 0;
 }
 
-static int h2_discard_headers_block(h2_conn_t *conn,
-                                    const neverc_h2_frame_header_t *header,
-                                    const uint8_t *payload) {
-    const uint8_t *fragment = NULL;
-    size_t fragment_length = 0;
-    if (h2_header_fragment(header, payload, &fragment, &fragment_length) != 0)
-        return -1;
-    if ((header->flags & NC_H2_FLAG_END_HEADERS) == 0)
-        return -1;
+static int h2_decode_header_block_discard(h2_conn_t *conn,
+                                          const uint8_t *block,
+                                          size_t block_len) {
     neverc_hpack_header_t headers[64];
     memset(headers, 0, sizeof(headers));
     int count = 0;
-    int rc = neverc_hpack_decode(conn->hpack_dec, fragment, fragment_length,
+    int rc = neverc_hpack_decode(conn->hpack_dec, block, block_len,
                                  headers, 64, &count);
     for (int i = 0; i < count; i++) {
         free(headers[i].name);
@@ -805,11 +813,58 @@ static int h2_discard_headers_block(h2_conn_t *conn,
     return rc;
 }
 
+static int h2_finish_discarded_header_block(h2_conn_t *conn) {
+    int rc = h2_decode_header_block_discard(conn, conn->pending_hdr_block,
+                                            conn->pending_hdr_len);
+    uint32_t stream_id = conn->pending_hdr_stream_id;
+    uint32_t rst_code = conn->pending_hdr_rst_code;
+    h2_clear_pending_hdr(conn);
+    if (rc != 0) {
+        (void)h2_conn_write_goaway(conn, NC_H2_COMPRESSION_ERROR);
+        return -1;
+    }
+    /* rst_code 0 means RST_STREAM was already sent (e.g. self-dependency
+     * abort) while CONTINUATION still had to keep HPACK in sync. */
+    if (rst_code != 0)
+        (void)h2_conn_write_rst(conn, stream_id, rst_code);
+    return 0;
+}
+
 static int h2_reject_headers_keep_hpack(h2_conn_t *conn,
                                         const neverc_h2_frame_header_t *header,
                                         const uint8_t *payload,
                                         uint32_t rst_code) {
-    if (h2_discard_headers_block(conn, header, payload) != 0) {
+    const uint8_t *fragment = NULL;
+    size_t fragment_length = 0;
+    int fragment_rc = h2_header_fragment(header, payload, &fragment,
+                                         &fragment_length);
+    if (fragment_rc != 0 && fragment_rc != -2) {
+        (void)h2_conn_write_goaway(conn, NC_H2_PROTOCOL_ERROR);
+        return -1;
+    }
+    /* RFC 9113 §4.3: the header block is still decoded so HPACK stays in
+     * sync. Self-dependency (§6.2) is a stream PROTOCOL_ERROR. */
+    if (fragment_rc == -2)
+        rst_code = NC_H2_PROTOCOL_ERROR;
+    /* RFC 9113 §4.3: a refused or closed stream still consumes the header
+     * block so HPACK stays in sync. Split HEADERS+CONTINUATION must be
+     * buffered, not treated as COMPRESSION_ERROR. */
+    if ((header->flags & NC_H2_FLAG_END_HEADERS) == 0) {
+        conn->pending_hdr_stream_id = header->stream_id;
+        conn->pending_hdr_active = 1;
+        conn->pending_hdr_discard = 1;
+        conn->pending_hdr_rst_code = rst_code;
+        conn->pending_end_stream =
+            (header->flags & NC_H2_FLAG_END_STREAM) != 0;
+        conn->pending_hdr_continuations = 0;
+        if (h2_append_hdr_block(conn, fragment, fragment_length) != 0) {
+            h2_clear_pending_hdr(conn);
+            (void)h2_conn_write_goaway(conn, NC_H2_ENHANCE_YOUR_CALM);
+            return -1;
+        }
+        return 0;
+    }
+    if (h2_decode_header_block_discard(conn, fragment, fragment_length) != 0) {
         (void)h2_conn_write_goaway(conn, NC_H2_COMPRESSION_ERROR);
         return -1;
     }
@@ -842,6 +897,8 @@ static void h2_clear_pending_hdr(h2_conn_t *conn) {
     conn->pending_hdr_cap = 0;
     conn->pending_hdr_stream_id = 0;
     conn->pending_hdr_active = 0;
+    conn->pending_hdr_discard = 0;
+    conn->pending_hdr_rst_code = 0;
     conn->pending_end_stream = 0;
     conn->pending_hdr_continuations = 0;
 }
@@ -1929,8 +1986,11 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
     conn.srv = srv;
     conn.local_settings = srv->settings;
     neverc_h2_settings_init(&conn.peer_settings);
-    conn.conn_recv_window = (int32_t)conn.local_settings.initial_window_size;
-    conn.conn_send_window = (int32_t)conn.peer_settings.initial_window_size;
+    /* RFC 9113 §6.9.1: the connection window starts at 65,535. Stream
+     * windows use SETTINGS_INITIAL_WINDOW_SIZE; the connection window
+     * does not. */
+    conn.conn_recv_window = NC_H2_DEFAULT_INITIAL_WINDOW_SIZE;
+    conn.conn_send_window = NC_H2_DEFAULT_INITIAL_WINDOW_SIZE;
     if (h2_server_register_connection(srv, &conn) != 0)
         goto cleanup;
     registered = 1;
@@ -1952,6 +2012,7 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
 
     if (h2_write_settings(&conn.io, &conn.local_settings) != 0)
         goto cleanup;
+    conn.settings_ack_owed = 1;
 
     for (;;) {
         if (nc_atomic_load(&conn.goaway_sent) &&
@@ -1962,7 +2023,9 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
             break;
 
         neverc_h2_frame_header_t fhdr;
-        neverc_h2_frame_header_read(frame_hdr_buf, NC_H2_FRAME_HEADER_SIZE, &fhdr);
+        if (neverc_h2_frame_header_read(frame_hdr_buf, NC_H2_FRAME_HEADER_SIZE,
+                                        &fhdr) != 0)
+            break;
         h2_reap_completed_streams(&conn);
 
         if (fhdr.length > conn.local_settings.max_frame_size) {
@@ -2000,7 +2063,15 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
         switch (fhdr.type) {
         case NC_H2_FRAME_SETTINGS:
             if (fhdr.flags & NC_H2_FLAG_ACK) {
-                /* SETTINGS ACK */
+                /* RFC 9113 §6.5.3: ACK with a payload is already rejected
+                 * as FRAME_SIZE_ERROR. An ACK with no outstanding SETTINGS
+                 * is a PROTOCOL_ERROR. */
+                if (conn.settings_ack_owed == 0) {
+                    (void)h2_conn_write_goaway(&conn, NC_H2_PROTOCOL_ERROR);
+                    free(payload);
+                    goto cleanup;
+                }
+                conn.settings_ack_owed--;
             } else {
                 uint32_t settings_error = h2_process_settings(
                     &conn, payload, fhdr.length);
@@ -2109,8 +2180,43 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
 
             const uint8_t *fragment = NULL;
             size_t fragment_length = 0;
-            if (h2_header_fragment(&fhdr, payload, &fragment,
-                                   &fragment_length) != 0) {
+            int fragment_rc = h2_header_fragment(&fhdr, payload, &fragment,
+                                                 &fragment_length);
+            if (fragment_rc == -2) {
+                /* RFC 9113 §6.2: self-dependency is a stream PROTOCOL_ERROR.
+                 * Decode the block first (§4.3) so HPACK stays in sync, then
+                 * abort so a later DATA/HEADERS cannot succeed. */
+                int end_headers =
+                    (fhdr.flags & NC_H2_FLAG_END_HEADERS) != 0;
+                int end_stream =
+                    (fhdr.flags & NC_H2_FLAG_END_STREAM) != 0;
+                if (!end_headers) {
+                    conn.pending_hdr_stream_id = fhdr.stream_id;
+                    conn.pending_hdr_active = 1;
+                    conn.pending_hdr_discard = 1;
+                    conn.pending_hdr_rst_code = 0;
+                    conn.pending_end_stream = end_stream;
+                    conn.pending_hdr_continuations = 0;
+                    if (h2_append_hdr_block(&conn, fragment,
+                                            fragment_length) != 0) {
+                        h2_clear_pending_hdr(&conn);
+                        (void)h2_conn_write_goaway(
+                            &conn, NC_H2_ENHANCE_YOUR_CALM);
+                        free(payload);
+                        goto cleanup;
+                    }
+                } else if (h2_decode_header_block_discard(
+                               &conn, fragment, fragment_length) != 0) {
+                    (void)h2_conn_write_goaway(&conn,
+                                               NC_H2_COMPRESSION_ERROR);
+                    free(payload);
+                    goto cleanup;
+                }
+                nc_mutex_lock(&conn.state_lock);
+                h2_abort_stream_locked(&conn, stream, NC_H2_PROTOCOL_ERROR);
+                break;
+            }
+            if (fragment_rc != 0) {
                 (void)h2_conn_write_goaway(&conn, NC_H2_PROTOCOL_ERROR);
                 free(payload);
                 goto cleanup;
@@ -2187,7 +2293,8 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 break;
             }
             nc_mutex_lock(&conn.state_lock);
-            if (fhdr.length > (uint32_t)conn.conn_recv_window ||
+            if (conn.conn_recv_window < 0 || stream->recv_window < 0 ||
+                fhdr.length > (uint32_t)conn.conn_recv_window ||
                 fhdr.length > (uint32_t)stream->recv_window) {
                 nc_mutex_unlock(&conn.state_lock);
                 (void)h2_conn_write_goaway(&conn,
@@ -2204,7 +2311,7 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 conn.conn_recv_window += (int32_t)fhdr.length;
             } else if (conn.conn_recv_window < 16384) {
                 int32_t increment =
-                    (int32_t)conn.local_settings.initial_window_size -
+                    NC_H2_DEFAULT_INITIAL_WINDOW_SIZE -
                     conn.conn_recv_window;
                 if (increment > 0) {
                     (void)h2_conn_write_window_update(
@@ -2466,6 +2573,13 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 goto cleanup;
             }
             if (fhdr.flags & NC_H2_FLAG_END_HEADERS) {
+                if (conn.pending_hdr_discard) {
+                    if (h2_finish_discarded_header_block(&conn) != 0) {
+                        free(payload);
+                        goto cleanup;
+                    }
+                    break;
+                }
                 h2_stream_t *stream = h2_find_stream(&conn, fhdr.stream_id);
                 if (!stream) {
                     (void)h2_conn_write_goaway(&conn,

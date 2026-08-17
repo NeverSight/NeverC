@@ -50,7 +50,11 @@ struct neverc_context {
     neverc_context_t *parent;
     volatile int32_t refs;
     volatile int32_t cancelled;
-    volatile int64_t cancel_at; /* unix-ms; 0 = not explicitly canceled */
+#if defined(_MSC_VER) && !defined(__clang__)
+    __declspec(align(8)) volatile int64_t cancel_at;
+#else
+    _Alignas(8) volatile int64_t cancel_at;
+#endif
     int64_t deadline_ms;
     const char *key;
     const void *value;
@@ -85,9 +89,15 @@ static void ctx_cancel_impl(neverc_context_t *ctx) {
     int64_t ts = now_ms();
     if (ts < 1)
         ts = 1;
-    /* First explicit cancel wins; later calls stay idempotent. */
+    /* Publish cancel_at before cancelled so a reader that observes
+     * cancelled=1 always sees a non-zero timestamp. CAS64 is required on
+     * 32-bit hosts where a plain 64-bit store can tear. */
     if (NEVERC_ATOMIC_CAS64(&ctx->cancel_at, (int64_t)0, ts))
         NEVERC_ATOMIC_STORE32(&ctx->cancelled, 1);
+}
+
+static int64_t ctx_load_cancel_at(const neverc_context_t *ctx) {
+    return NEVERC_ATOMIC_LOAD64((int64_t *)&ctx->cancel_at);
 }
 
 /*
@@ -210,8 +220,16 @@ neverc_context_t *neverc_context_todo(void) {
 neverc_context_t *neverc_context_with_cancel_cause(neverc_context_t *parent,
                                                     neverc_cancel_func_t *cancel_out,
                                                     const char *cause) {
-    neverc_context_t *ctx = neverc_context_with_cancel(parent, cancel_out);
-    if (ctx) ctx->cause = cause;
+    neverc_context_t *ctx = ctx_create(CTX_CANCEL, parent);
+    if (!ctx) {
+        if (cancel_out) *cancel_out = NULL;
+        return NULL;
+    }
+    ctx->cause = cause;
+    if (bind_cancel_func(ctx, cancel_out) != 0) {
+        neverc_context_free(ctx);
+        return NULL;
+    }
     return ctx;
 }
 
@@ -312,8 +330,17 @@ neverc_context_t *neverc_context_with_timeout_cause(neverc_context_t *parent,
                                                      int64_t timeout_ms,
                                                      neverc_cancel_func_t *cancel_out,
                                                      const char *cause) {
-    neverc_context_t *ctx = neverc_context_with_timeout(parent, timeout_ms, cancel_out);
-    if (ctx) ctx->cause = cause;
+    neverc_context_t *ctx = ctx_create(CTX_TIMEOUT, parent);
+    if (!ctx) {
+        if (cancel_out) *cancel_out = NULL;
+        return NULL;
+    }
+    ctx->deadline_ms = deadline_after(timeout_ms);
+    ctx->cause = cause;
+    if (bind_cancel_func(ctx, cancel_out) != 0) {
+        neverc_context_free(ctx);
+        return NULL;
+    }
     return ctx;
 }
 
@@ -321,8 +348,17 @@ neverc_context_t *neverc_context_with_deadline_cause(neverc_context_t *parent,
                                                       int64_t deadline_ms,
                                                       neverc_cancel_func_t *cancel_out,
                                                       const char *cause) {
-    neverc_context_t *ctx = neverc_context_with_deadline(parent, deadline_ms, cancel_out);
-    if (ctx) ctx->cause = cause;
+    neverc_context_t *ctx = ctx_create(CTX_TIMEOUT, parent);
+    if (!ctx) {
+        if (cancel_out) *cancel_out = NULL;
+        return NULL;
+    }
+    ctx->deadline_ms = deadline_ms <= 0 ? 1 : deadline_ms;
+    ctx->cause = cause;
+    if (bind_cancel_func(ctx, cancel_out) != 0) {
+        neverc_context_free(ctx);
+        return NULL;
+    }
     return ctx;
 }
 
@@ -356,7 +392,7 @@ static const char *ctx_reason(const neverc_context_t *ctx, const char **cause_ou
         if (ctx->kind == CTX_WITHOUT_CANCEL)
             break;
 
-        int64_t cancel_at = NEVERC_ATOMIC_LOAD64((int64_t *)&ctx->cancel_at);
+        int64_t cancel_at = ctx_load_cancel_at(ctx);
         if (cancel_at > 0 && cancel_at < best) {
             best = cancel_at;
             err = "context canceled";

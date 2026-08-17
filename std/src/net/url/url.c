@@ -1,5 +1,6 @@
 #include "neverc/std/net/url.h"
 #include "neverc/std/net/netip.h"
+#include "../idna_inc.h"
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>
@@ -45,8 +46,27 @@ static int copy_exact(char *dst, size_t cap, const char *src, size_t len) {
     return 0;
 }
 
-static int percent_decode(const char *s, char *buf, size_t cap,
-                          int plus_as_space);
+#define PCT_PLUS 1
+#define PCT_HOST 2
+#define PCT_ZONE 4
+
+static int percent_decode(const char *s, char *buf, size_t cap, int flags);
+
+/* RFC 3986 reg-name octets that may appear unescaped. */
+static int host_ascii_ok(unsigned char c) {
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+        (c >= '0' && c <= '9'))
+        return 1;
+    switch (c) {
+    case '-': case '.': case '_': case '~':
+    case '!': case '$': case '&': case '\'':
+    case '(': case ')': case '*': case '+':
+    case ',': case ';': case '=':
+        return 1;
+    default:
+        return 0;
+    }
+}
 
 /* Reject malformed %XX and encoded NUL. Userinfo is stored raw so
  * neverc_url_string can round-trip, but RFC 3986 still forbids invalid
@@ -64,20 +84,49 @@ static int valid_pct_encoded(const char *s, size_t len) {
     return 1;
 }
 
-/* Unescape a host slice. IPv6 zone IDs may appear as `%eth0` (invalid %XX)
- * or `%25eth0`; the former is kept raw so netip can parse the zone. */
 static int copy_unescaped_host(char *dst, size_t cap, const char *src,
-                               size_t len, int allow_invalid_pct) {
+                               size_t len) {
     if (!dst || !src || cap == 0 || len >= 1024) return -1;
     char encoded[1024];
     memcpy(encoded, src, len);
     encoded[len] = '\0';
-    int n = percent_decode(encoded, dst, cap, 0);
-    if (n >= 0)
-        return (size_t)n < cap ? 0 : -1;
-    if (!allow_invalid_pct)
+    int n = percent_decode(encoded, dst, cap, PCT_HOST);
+    if (n < 0 || (size_t)n >= cap)
         return -1;
-    return copy_exact(dst, cap, src, len);
+    return 0;
+}
+
+/* RFC 6874: zone IDs are introduced by %25. Bare `%eth0` is invalid. */
+static int unescape_ipv6_literal(char *dst, size_t cap, const char *src,
+                                 size_t len) {
+    if (!dst || !src || cap == 0 || len >= 1024) return -1;
+    char encoded[1024];
+    memcpy(encoded, src, len);
+    encoded[len] = '\0';
+
+    char *zone = strstr(encoded, "%25");
+    if (!zone) {
+        int n = percent_decode(encoded, dst, cap, PCT_HOST);
+        return (n >= 0 && (size_t)n < cap) ? 0 : -1;
+    }
+
+    char hostpart[1024];
+    size_t hlen = (size_t)(zone - encoded);
+    if (copy_exact(hostpart, sizeof(hostpart), encoded, hlen) != 0)
+        return -1;
+
+    char hostbuf[256];
+    char zonebuf[256];
+    int hn = percent_decode(hostpart, hostbuf, sizeof(hostbuf), PCT_HOST);
+    int zn = percent_decode(zone, zonebuf, sizeof(zonebuf), PCT_ZONE);
+    if (hn < 0 || zn < 0)
+        return -1;
+    if ((size_t)hn + (size_t)zn >= cap)
+        return -1;
+    memcpy(dst, hostbuf, (size_t)hn);
+    memcpy(dst + hn, zonebuf, (size_t)zn);
+    dst[hn + zn] = '\0';
+    return 0;
 }
 
 static size_t bounded_string_length(const char *s, size_t capacity) {
@@ -185,7 +234,7 @@ static int valid_host_text(const char *host, size_t length) {
     return 1;
 }
 
-int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
+static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
     if (!u) return -1;
     memset(u, 0, sizeof(*u));
     if (!raw_url || !*raw_url) return -1;
@@ -195,6 +244,14 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
         unsigned char c = (unsigned char)raw_url[i];
         if (c <= 0x20 || c == 0x7f) return -1;
     }
+
+    if (via_request && raw_length == 1 && raw_url[0] == '*') {
+        u->path[0] = '*';
+        u->path[1] = '\0';
+        return 0;
+    }
+    if (via_request && memchr(raw_url, '#', raw_length))
+        return -1;
 
     const char *p = raw_url;
     const char *raw_end = raw_url + raw_length;
@@ -276,7 +333,7 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
             /* Go net/url: only a valid IPv6 (including IPv4-mapped) literal
              * may be enclosed in brackets. IPv4 and non-IP text are errors.
              * `%25` in a zone ID unescapes to `%`; bare `%eth0` is kept. */
-            if (copy_unescaped_host(hostbuf, sizeof(hostbuf), p + 1, hlen, 1) != 0 ||
+            if (unescape_ipv6_literal(hostbuf, sizeof(hostbuf), p + 1, hlen) != 0 ||
                 neverc_netip_parse_addr(hostbuf, &addr) != 0 ||
                 addr.is_v4 ||
                 copy_exact(u->host, sizeof(u->host), hostbuf, strlen(hostbuf)) != 0)
@@ -297,10 +354,16 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
             const char *name_end = colon ? colon : host_end;
             char hostbuf[256];
             size_t raw_len = (size_t)(name_end - p);
-            if (copy_unescaped_host(hostbuf, sizeof(hostbuf), p, raw_len, 0) != 0 ||
-                !valid_host_text(hostbuf, strlen(hostbuf)) ||
-                copy_exact(u->host, sizeof(u->host), hostbuf, strlen(hostbuf)) != 0)
+            if (copy_unescaped_host(hostbuf, sizeof(hostbuf), p, raw_len) != 0)
                 return -1;
+            {
+                char idna[256];
+                if (neverc_idna_to_ascii(hostbuf, idna, sizeof(idna)) != 0)
+                    return -1;
+                if (!valid_host_text(idna, strlen(idna)) ||
+                    copy_exact(u->host, sizeof(u->host), idna, strlen(idna)) != 0)
+                    return -1;
+            }
             if (colon) {
                 if (parse_port(colon + 1, host_end, u->port,
                                sizeof(u->port)) != 0)
@@ -315,17 +378,37 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
     const char *before_fragment = fragment ? fragment : raw_end;
     const char *query = memchr(p, '?', (size_t)(before_fragment - p));
     const char *path_end = query ? query : before_fragment;
-    if (copy_exact(u->path, sizeof(u->path), p,
-                   (size_t)(path_end - p)) != 0)
+    size_t path_len = (size_t)(path_end - p);
+    if (copy_exact(u->path, sizeof(u->path), p, path_len) != 0)
+        return -1;
+    if (!valid_pct_encoded(u->path, path_len))
         return -1;
     if (query && copy_exact(u->raw_query, sizeof(u->raw_query), query + 1,
                             (size_t)(before_fragment - query - 1)) != 0)
         return -1;
-    if (fragment && copy_exact(u->fragment, sizeof(u->fragment), fragment + 1,
-                               (size_t)(raw_end - fragment - 1)) != 0)
+    if (fragment) {
+        size_t frag_len = (size_t)(raw_end - fragment - 1);
+        if (copy_exact(u->fragment, sizeof(u->fragment), fragment + 1,
+                       frag_len) != 0)
+            return -1;
+        if (!valid_pct_encoded(u->fragment, frag_len))
+            return -1;
+    }
+
+    if (via_request && !u->scheme[0] && !u->host[0] &&
+        u->path[0] != '/' &&
+        !(u->path[0] == '*' && u->path[1] == '\0'))
         return -1;
 
     return 0;
+}
+
+int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
+    return parse_url(u, raw_url, 0);
+}
+
+int neverc_url_parse_request_uri(neverc_url_t *u, const char *raw_url) {
+    return parse_url(u, raw_url, 1);
 }
 
 int neverc_url_string(const neverc_url_t *u, char *buf, size_t cap) {
@@ -352,7 +435,16 @@ int neverc_url_string(const neverc_url_t *u, char *buf, size_t cap) {
         if (host_length == sizeof(u->host)) builder.failed = 1;
         int is_ipv6 = !builder.failed && memchr(u->host, ':', host_length);
         if (is_ipv6) builder_append_literal(&builder, "[");
-        builder_append(&builder, u->host, host_length);
+        if (is_ipv6) {
+            for (size_t i = 0; i < host_length; i++) {
+                if (u->host[i] == '%')
+                    builder_append_literal(&builder, "%25");
+                else
+                    builder_append(&builder, u->host + i, 1);
+            }
+        } else {
+            builder_append(&builder, u->host, host_length);
+        }
         if (is_ipv6) builder_append_literal(&builder, "]");
         if (u->port[0]) {
             builder_append_literal(&builder, ":");
@@ -593,8 +685,7 @@ static int percent_encode(const char *s, char *buf, size_t cap,
     return (int)output_length;
 }
 
-static int percent_decode(const char *s, char *buf, size_t cap,
-                          int plus_as_space) {
+static int percent_decode(const char *s, char *buf, size_t cap, int flags) {
     if (!s || (cap > 0 && !buf)) return -1;
     if (cap > 0) buf[0] = '\0';
 
@@ -608,10 +699,24 @@ static int percent_decode(const char *s, char *buf, size_t cap,
             int low = hex_val[(unsigned char)s[input_offset + 2]];
             if ((high | low) < 0) goto malformed;
             decoded = (unsigned char)((high << 4) | low);
+            int is_pct25 = (s[input_offset + 1] == '2' &&
+                            s[input_offset + 2] == '5');
+            /* RFC 3986: host %-encoding is only for non-ASCII, except
+             * RFC 6874 `%25` in IPv6 zone IDs. */
+            if ((flags & PCT_HOST) && decoded < 0x80 && !is_pct25)
+                goto malformed;
+            if ((flags & PCT_ZONE) && !is_pct25 && decoded != ' ' &&
+                (decoded < 0x80 && !host_ascii_ok(decoded)))
+                goto malformed;
             if (decoded == 0) goto malformed;
             input_offset += 3;
         } else {
-            if (plus_as_space && decoded == '+') decoded = ' ';
+            if ((flags & PCT_PLUS) && decoded == '+') decoded = ' ';
+            if ((flags & (PCT_HOST | PCT_ZONE)) && decoded < 0x80 &&
+                decoded != '%' && decoded != ':' && decoded != '[' &&
+                decoded != ']' && !host_ascii_ok(decoded) &&
+                !((flags & PCT_ZONE) && decoded == ' '))
+                goto malformed;
             input_offset++;
         }
         if (output_length == (size_t)INT_MAX) goto malformed;
@@ -628,11 +733,8 @@ static int percent_decode(const char *s, char *buf, size_t cap,
     return (int)output_length;
 
 malformed:
-    if (cap > 0) {
-        size_t terminator = output_length < cap
-            ? output_length : cap - 1;
-        buf[terminator] = '\0';
-    }
+    if (cap > 0 && buf)
+        buf[0] = '\0';
     return -1;
 }
 
@@ -649,5 +751,5 @@ int neverc_url_query_escape(const char *s, char *buf, size_t cap) {
 }
 
 int neverc_url_query_unescape(const char *s, char *buf, size_t cap) {
-    return percent_decode(s, buf, cap, 1);
+    return percent_decode(s, buf, cap, PCT_PLUS);
 }

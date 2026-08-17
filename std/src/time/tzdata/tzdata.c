@@ -1,10 +1,24 @@
 #include "neverc/std/time_tzdata.h"
+#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
 #include <sched.h>
 #include <unistd.h>
 #endif
+
+static void tz_yield(void) {
+#if defined(_WIN32)
+    Sleep(0);
+#else
+    sched_yield();
+#endif
+}
 
 /* ======================================================================
  * Internal helpers
@@ -201,11 +215,8 @@ static void init_zones(void) {
     int expected = 0;
     if (!__atomic_compare_exchange_n(&g_zones_init, &expected, 1, 0,
                                      __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-        while (__atomic_load_n(&g_zones_init, __ATOMIC_ACQUIRE) != 2) {
-#if !defined(_WIN32)
-            sched_yield();
-#endif
-        }
+        while (__atomic_load_n(&g_zones_init, __ATOMIC_ACQUIRE) != 2)
+            tz_yield();
         return;
     }
     for (int i = 0; i < tz_count; i++)
@@ -311,9 +322,23 @@ static void tz_civil_from_days(int64_t z, int64_t *y, int *m, int *d) {
     *d = day;
 }
 
+static int64_t tz_add_sat(int64_t a, int64_t b) {
+    if (b > 0 && a > INT64_MAX - b) return INT64_MAX;
+    if (b < 0 && a < INT64_MIN - b) return INT64_MIN;
+    return a + b;
+}
+
 static int64_t tz_unix_civil(int64_t y, int m, int d, int h, int mi, int s) {
-    return tz_days_from_civil(y, m, d) * 86400 +
-           (int64_t)h * 3600 + (int64_t)mi * 60 + s;
+    int64_t days = tz_days_from_civil(y, m, d);
+    int64_t sec;
+    if (days > 0 && days > INT64_MAX / 86400)
+        sec = INT64_MAX;
+    else if (days < 0 && days < INT64_MIN / 86400)
+        sec = INT64_MIN;
+    else
+        sec = days * 86400;
+    int64_t tod = (int64_t)h * 3600 + (int64_t)mi * 60 + s;
+    return tz_add_sat(sec, tod);
 }
 
 /* 0 = Sunday. 1970-01-01 was Thursday. */
@@ -354,6 +379,20 @@ static char g_posix_std[16];
 static char g_posix_dst[16];
 static posix_rule_t g_posix_start, g_posix_end;
 static int g_posix_has_rules;
+static volatile int32_t g_posix_lock;
+
+static void posix_lock(void) {
+    int expected = 0;
+    while (!__atomic_compare_exchange_n(&g_posix_lock, &expected, 1, 0,
+                                        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        expected = 0;
+        tz_yield();
+    }
+}
+
+static void posix_unlock(void) {
+    __atomic_store_n(&g_posix_lock, 0, __ATOMIC_RELEASE);
+}
 
 static int posix_uint(const char **p, int max_digits, int *out) {
     if (**p < '0' || **p > '9') return -1;
@@ -462,7 +501,8 @@ static void copy_cstr(char *dst, size_t cap, const char *src) {
 
 static int64_t posix_rule_unix(int64_t year, const posix_rule_t *r, int offset) {
     int dom = tz_nth_wday(year, r->month, r->wday, r->week);
-    return tz_unix_civil(year, r->month, dom, 0, 0, 0) + r->at_sec - offset;
+    int64_t base = tz_unix_civil(year, r->month, dom, 0, 0, 0);
+    return tz_add_sat(tz_add_sat(base, r->at_sec), -(int64_t)offset);
 }
 
 static const neverc_tzdata_zone_t *parse_posix_tz(const char *tz) {
@@ -494,6 +534,12 @@ static const neverc_tzdata_zone_t *parse_posix_tz(const char *tz) {
     }
     if (*p != '\0') return NULL;
 
+    posix_lock();
+    if (g_posix_tzstr[0] && nc_streq(g_posix_tzstr, tz)) {
+        posix_unlock();
+        return &g_posix_zone;
+    }
+
     copy_cstr(g_posix_tzstr, sizeof(g_posix_tzstr), tz);
     copy_cstr(g_posix_std, sizeof(g_posix_std), stdn);
     copy_cstr(g_posix_dst, sizeof(g_posix_dst), dstn);
@@ -508,6 +554,7 @@ static const neverc_tzdata_zone_t *parse_posix_tz(const char *tz) {
     g_posix_has_rules = has_rules;
     g_posix_start = start;
     g_posix_end = end;
+    posix_unlock();
     return &g_posix_zone;
 }
 
@@ -524,10 +571,22 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
     int month, day;
     tz_civil_from_days(days, &year, &month, &day);
 
-    if (zone == &g_posix_zone && g_posix_has_rules) {
-        int64_t start = posix_rule_unix(year, &g_posix_start, zone->utc_offset);
-        int64_t end = posix_rule_unix(year, &g_posix_end, zone->dst_offset);
-        return tz_in_span(unix_sec, start, end);
+    int posix_has_rules = 0;
+    posix_rule_t posix_start = {0, 0, 0, 0}, posix_end = {0, 0, 0, 0};
+    int utc_off = 0, dst_off = 0;
+    if (zone == &g_posix_zone) {
+        posix_lock();
+        posix_has_rules = g_posix_has_rules;
+        posix_start = g_posix_start;
+        posix_end = g_posix_end;
+        utc_off = g_posix_zone.utc_offset;
+        dst_off = g_posix_zone.dst_offset;
+        posix_unlock();
+        if (posix_has_rules) {
+            int64_t start = posix_rule_unix(year, &posix_start, utc_off);
+            int64_t end = posix_rule_unix(year, &posix_end, dst_off);
+            return tz_in_span(unix_sec, start, end);
+        }
     }
 
     /* POSIX without rules: glibc uses US DST. */

@@ -312,6 +312,13 @@ static void test_pipeline_rejected(void) {
     r = neverc_template_render("{{.Name()}}", &data, &outlen);
     check_true("method-call selector rejected", r == NULL && outlen == 0);
     free(r);
+
+    neverc_template_data_set(&data, "X", "{{.Secret}}");
+    neverc_template_data_set(&data, "Secret", "LEAK");
+    outlen = 99;
+    r = neverc_template_render("val={{.X}}", &data, &outlen);
+    check_str("value is not reparsed as an action", r, "val={{.Secret}}");
+    free(r);
     neverc_template_data_free(&data);
 }
 

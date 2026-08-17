@@ -108,17 +108,22 @@ static size_t utf8_rune_len(const char *s, size_t remaining) {
 }
 
 static size_t utf8_span_runes(const char *s, size_t slen, int max_runes,
-                              int *nrunes) {
+                              size_t *nrunes) {
     size_t i = 0;
-    int nr = 0;
-    while (i < slen && (max_runes < 0 || nr < max_runes)) {
+    size_t nr = 0;
+    while (i < slen && (max_runes < 0 || nr < (size_t)max_runes)) {
         size_t w = utf8_rune_len(s + i, slen - i);
         if (w == 0) w = 1;
         i += w;
+        if (nr == SIZE_MAX) break;
         nr++;
     }
     if (nrunes) *nrunes = nr;
     return i;
+}
+
+static int fmt_return_len(size_t len) {
+    return len > (size_t)INT_MAX ? -1 : (int)len;
 }
 
 static int encode_rune(char *dst, uint32_t r) {
@@ -438,9 +443,11 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             const char *s = va_arg(args, const char *);
             if (!s) s = "(null)";
             size_t slen = my_strlen(s);
-            int nrunes = 0;
+            size_t nrunes = 0;
             slen = utf8_span_runes(s, slen, prec, &nrunes);
-            int pad = (has_width && width > nrunes) ? width - nrunes : 0;
+            if (nrunes > (size_t)INT_MAX) goto format_fail;
+            int pad = (has_width && width > (int)nrunes)
+                          ? width - (int)nrunes : 0;
             if (!flag_minus) buf_pad(&buf, ' ', pad);
             buf_puts(&buf, s, slen);
             if (flag_minus) buf_pad(&buf, ' ', pad);
@@ -590,7 +597,7 @@ int neverc_fmt_fprintf(FILE *f, const char *format, ...) {
     size_t len = my_strlen(s);
     fwrite(s, 1, len, f);
     free(s);
-    return (int)len;
+    return fmt_return_len(len);
 }
 
 int neverc_fmt_printf(const char *format, ...) {
@@ -602,7 +609,7 @@ int neverc_fmt_printf(const char *format, ...) {
     size_t len = my_strlen(s);
     fwrite(s, 1, len, stdout);
     free(s);
-    return (int)len;
+    return fmt_return_len(len);
 }
 
 int neverc_fmt_println(const char *format, ...) {
@@ -615,6 +622,7 @@ int neverc_fmt_println(const char *format, ...) {
     fwrite(s, 1, len, stdout);
     fwrite("\n", 1, 1, stdout);
     free(s);
+    if (len >= (size_t)INT_MAX) return -1;
     return (int)len + 1;
 }
 
@@ -643,7 +651,7 @@ int neverc_fmt_fprint(FILE *f, const char *s) {
     if (!s || !f) return -1;
     size_t len = my_strlen(s);
     fwrite(s, 1, len, f);
-    return (int)len;
+    return fmt_return_len(len);
 }
 
 int neverc_fmt_fprintln(FILE *f, const char *s) {
@@ -651,6 +659,7 @@ int neverc_fmt_fprintln(FILE *f, const char *s) {
     size_t len = my_strlen(s);
     fwrite(s, 1, len, f);
     fwrite("\n", 1, 1, f);
+    if (len >= (size_t)INT_MAX) return -1;
     return (int)len + 1;
 }
 

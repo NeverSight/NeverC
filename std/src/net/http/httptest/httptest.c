@@ -77,7 +77,8 @@ static int httptest_valid_host(const char *value, size_t length) {
             unsigned char c = (unsigned char)value[1 + i];
             if (c == ':') has_colon = 1;
             if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
-                c == '?' || c == '#' || c == '@' || c == '[' || c == ']')
+                c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
+                c == ',')
                 return 0;
         }
         if (!has_colon &&
@@ -290,6 +291,14 @@ static int httptest_parse_request(const char *raw, size_t raw_length,
     if (content_length_seen && transfer_encoding_seen) return -2;
     if (is_http_10 && transfer_encoding_seen) return -2;
     if (transfer_encoding_seen) return -2;
+    /* Same fail-closed rule as the HTTP/1 server: POST/PUT/PATCH without
+     * Content-Length used to succeed with an empty body and ignore bytes
+     * that followed the header block. */
+    if (!content_length_seen &&
+        (strcmp(out->method, "POST") == 0 ||
+         strcmp(out->method, "PUT") == 0 ||
+         strcmp(out->method, "PATCH") == 0))
+        return -2;
 
     out->header_size = (size_t)(header_end + 4 - raw);
     out->need = out->header_size + content_length;

@@ -108,6 +108,19 @@ static void test_parse_number(void) {
     ASSERT_NOT_NULL(v);
     ASSERT_DBL_EQ(neverc_json_number(v), 0.0, 1e-10);
     neverc_json_free(v);
+
+    /* A 401-digit integer is a legal JSON number but exceeds finite double. */
+    {
+        char huge[402];
+        huge[0] = '1';
+        memset(huge + 1, '0', 400);
+        ASSERT_NULL(neverc_json_parse(huge, 401));
+    }
+    /* 16 digits skip the integer fast path and still parse. */
+    v = neverc_json_parse("1000000000000000", 16);
+    ASSERT_NOT_NULL(v);
+    ASSERT_DBL_EQ(neverc_json_number(v), 1e15, 1.0);
+    neverc_json_free(v);
 }
 
 static void test_parse_string(void) {
@@ -168,6 +181,40 @@ static void test_parse_string(void) {
     ASSERT_NULL(neverc_json_parse(utf8_surrogate, sizeof(utf8_surrogate)));
     ASSERT_NULL(neverc_json_parse(too_large, sizeof(too_large)));
     ASSERT_NULL(neverc_json_parse(truncated, sizeof(truncated)));
+
+    /* RFC 8259 strings and object keys are Unicode (UTF-8). */
+    {
+        static const char cafe_str[] = {
+            '"', 'c', 'a', 'f', (char)0xc3, (char)0xa9, '"'
+        };
+        v = neverc_json_parse(cafe_str, sizeof(cafe_str));
+        ASSERT_NOT_NULL(v);
+        if (v) {
+            ASSERT_INT_EQ((int)neverc_json_string_len(v), 5);
+            neverc_json_free(v);
+        }
+
+        static const char cafe_key[] = {
+            '{', '"', 'c', 'a', 'f', (char)0xc3, (char)0xa9, '"', ':', '1', '}'
+        };
+        v = neverc_json_parse(cafe_key, sizeof(cafe_key));
+        ASSERT_NOT_NULL(v);
+        if (v) {
+            static const char key[] = {
+                'c', 'a', 'f', (char)0xc3, (char)0xa9, '\0'
+            };
+            neverc_json_value_t *got = neverc_json_object_get(v, key);
+            ASSERT_NOT_NULL(got);
+            if (got)
+                ASSERT_DBL_EQ(neverc_json_number(got), 1.0, 1e-10);
+            neverc_json_free(v);
+        }
+
+        static const char trunc_utf8[] = {
+            '"', 'c', 'a', 'f', (char)0xc3, '"'
+        };
+        ASSERT_NULL(neverc_json_parse(trunc_utf8, sizeof(trunc_utf8)));
+    }
 }
 
 static void test_embedded_nul(void) {
@@ -417,6 +464,12 @@ static void test_valid(void) {
     ASSERT_TRUE(neverc_json_valid("42", 2));
     ASSERT_TRUE(neverc_json_valid("\"hello\"", 7));
     ASSERT_FALSE(neverc_json_valid("{", 1));
+    ASSERT_FALSE(neverc_json_valid("[", 1));
+    ASSERT_FALSE(neverc_json_valid("[1", 2));
+    ASSERT_FALSE(neverc_json_valid("{\"a\":", 5));
+    ASSERT_FALSE(neverc_json_valid("\"hello", 6));
+    ASSERT_FALSE(neverc_json_valid("1e", 2));
+    ASSERT_FALSE(neverc_json_valid("42x", 3));
     ASSERT_FALSE(neverc_json_valid("[1,]", 4));
     ASSERT_FALSE(neverc_json_valid("[1,2,]", 6));
     ASSERT_FALSE(neverc_json_valid("[,]", 3));

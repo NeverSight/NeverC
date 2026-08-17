@@ -258,9 +258,11 @@ static void test_prefix(void) {
 
     ASSERT_EQ(neverc_netip_parse_prefix("192.168.1.0/24", &pfx), 0);
     neverc_netip_parse_addr("::ffff:192.168.1.100", &addr);
-    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
     neverc_netip_parse_addr("::ffff:192.168.2.1", &addr);
     ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("192.168.1.100", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
 }
 
 static void test_addrport(void) {
@@ -295,6 +297,13 @@ static void test_addrport(void) {
     neverc_netip_addrport_string(&ap, buf, sizeof(buf));
     ASSERT_STREQ(buf, "[::ffff:192.168.1.1]:80");
     ASSERT_EQ(neverc_netip_parse_addrport("::ffff:192.168.1.1:80", &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport("192.168.1.1:00080", &ap), 0);
+    ASSERT_EQ(ap.port, 80);
+    ASSERT_EQ(neverc_netip_parse_addrport("[::1]:00080", &ap), 0);
+    ASSERT_EQ(ap.port, 80);
+    neverc_netip_addrport_t invalid;
+    memset(&invalid, 0, sizeof(invalid));
+    ASSERT_EQ(neverc_netip_addrport_string(&invalid, buf, sizeof(buf)), -1);
 }
 
 static void test_wellknown(void) {

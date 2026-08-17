@@ -137,10 +137,10 @@ static void test_strings(void) {
     check_str("string width runes", r, "    \xe4\xb8\x96"); free(r);
 
     /* Invalid leading bytes are one rune each and must not consume the next. */
-    r = neverc_fmt_sprintf("%.1s", "\xc0A");
+    r = neverc_fmt_sprintf("%.1s", "\xc0" "A");
     check_str("string prec invalid utf8", r, "\xc0"); free(r);
-    r = neverc_fmt_sprintf("%5s", "\xc0A");
-    check_str("string width invalid utf8", r, "   \xc0A"); free(r);
+    r = neverc_fmt_sprintf("%5s", "\xc0" "A");
+    check_str("string width invalid utf8", r, "   \xc0" "A"); free(r);
     r = neverc_fmt_sprintf("%.1s", "\xc0\x80");
     check_str("string prec overlong utf8", r, "\xc0"); free(r);
 }
@@ -583,6 +583,27 @@ static void test_invalid_formats(void) {
     check_true("unknown verb fails safely", result == NULL);
     free(result);
 
+    result = neverc_fmt_sprintf("%n", 0);
+    check_true("percent-n write gadget rejected", result == NULL);
+    free(result);
+
+    int written = 77;
+    check_int("sscanf percent-n rejected",
+              neverc_fmt_sscanf("hello", "%n", &written), 0);
+    check_int("sscanf percent-n leaves dest", written, 77);
+
+    char small[4] = "XXX";
+    check_int("sscanf s without width rejected",
+              neverc_fmt_sscanf("abcdef", "%s", small), 0);
+    check_true("sscanf s without width leaves dest",
+               small[0] == 'X' && small[1] == 'X' && small[2] == 'X');
+
+    char bounded[8];
+    memset(bounded, 'Q', sizeof(bounded));
+    check_int("sscanf bounded s",
+              neverc_fmt_sscanf("abcdef", "%7s", bounded), 1);
+    check_str("sscanf bounded s value", bounded, "abcdef");
+
     check_int("scan null dest", neverc_fmt_scan(NULL), 0);
 
     result = neverc_fmt_sprintf("hello%");
@@ -637,5 +658,6 @@ int main(void) {
     test_sscanln();
     test_stream_scan();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }
