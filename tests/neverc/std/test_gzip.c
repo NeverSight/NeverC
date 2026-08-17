@@ -152,6 +152,9 @@ int main(void) {
                           crc_corrupt, comp_len, output, &output_len),
                       -1);
 
+        /* ISIZE is size mod 2^32 and must not be used as the inflate cap.
+         * A wrong ISIZE is rejected after inflate, even when the destination
+         * is larger than the forged size. */
         comp[comp_len - 4] = 1;
         comp[comp_len - 3] = 0;
         comp[comp_len - 2] = 0;

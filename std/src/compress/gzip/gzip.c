@@ -104,8 +104,10 @@ int neverc_gzip_decompress(const uint8_t *src, size_t src_len,
                            | ((uint32_t)src[src_len - 1] << 24);
 
     size_t payload_len = src_len - pos - 8;
+    /* ISIZE is uncompressed length mod 2^32, not the inflate cap. A member
+     * whose real size is ≥ 2^32 still has to fit in *dst_len. */
     if ((size_t)expected_size > *dst_len) return -1;
-    size_t out_len = (size_t)expected_size;
+    size_t out_len = *dst_len;
     if (neverc_flate_decompress(src + pos, payload_len, dst, &out_len) < 0)
         return -1;
 
