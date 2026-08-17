@@ -1,6 +1,7 @@
 #include "neverc/std/net/resolve.h"
 #include "neverc/std/net/netip.h"
 #include "../idna_inc.h"
+#include "../_net_platform.h"
 #include <limits.h>
 #include <string.h>
 #include <stdio.h>
@@ -220,7 +221,7 @@ int neverc_net_lookup_ip(const char *network, const char *host,
             struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)rp->ai_addr;
             /* IPv4-mapped AAAA / literals must print as IPv4 so an ACL
              * that allows "127.0.0.1" is not bypassed by ::ffff:127.0.0.1. */
-            if (IN6_IS_ADDR_V4MAPPED(&in6->sin6_addr)) {
+            if (nc_in6_is_addr_v4mapped(&in6->sin6_addr)) {
                 if (format_resolved_ip(AF_INET,
                                        in6->sin6_addr.s6_addr + 12, 0, buf,
                                        sizeof(buf)) != 0)
@@ -374,7 +375,7 @@ int neverc_net_lookup_addr(const char *addr, neverc_net_addrs_t *out) {
 #endif
         sslen = sizeof(struct sockaddr_in);
     } else if (inet_pton(AF_INET6, ip, &v6) == 1) {
-        if (IN6_IS_ADDR_V4MAPPED(&v6)) {
+        if (nc_in6_is_addr_v4mapped(&v6)) {
             /* Reverse-lookup the embedded IPv4; ip6.arpa for mapped
              * addresses is empty, so ::ffff:127.0.0.1 would fail. */
             if (scope_id != 0)

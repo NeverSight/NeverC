@@ -10,6 +10,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_MSC_VER)
+#define NCI_JSON_NOINLINE __declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+#define NCI_JSON_NOINLINE __attribute__((noinline))
+#else
+#define NCI_JSON_NOINLINE
+#endif
+
 /* ---- internal helpers ---- */
 
 static neverc_json_value_t *alloc_val(neverc_json_type_t type) {
@@ -71,9 +79,9 @@ static int consume(parser_t *p, char expected) {
     return -1;
 }
 
-static neverc_json_value_t *parse_value(parser_t *p);
+static NCI_JSON_NOINLINE neverc_json_value_t *parse_value(parser_t *p);
 
-static neverc_json_value_t *parse_null(parser_t *p) {
+static NCI_JSON_NOINLINE neverc_json_value_t *parse_null(parser_t *p) {
     if (parser_has(p, 4) && memcmp(p->src + p->pos, "null", 4) == 0) {
         p->pos += 4;
         return neverc_json_new_null();
@@ -81,7 +89,7 @@ static neverc_json_value_t *parse_null(parser_t *p) {
     return NULL;
 }
 
-static neverc_json_value_t *parse_bool(parser_t *p) {
+static NCI_JSON_NOINLINE neverc_json_value_t *parse_bool(parser_t *p) {
     if (parser_has(p, 4) && memcmp(p->src + p->pos, "true", 4) == 0) {
         p->pos += 4;
         return neverc_json_new_bool(1);
@@ -192,7 +200,7 @@ static int sb_reserve(sbuf_t *b, size_t extra) {
 
 static void sb_free(sbuf_t *b) { if (b->p != b->stack) free(b->p); }
 
-static neverc_json_value_t *parse_string(parser_t *p) {
+static NCI_JSON_NOINLINE neverc_json_value_t *parse_string(parser_t *p) {
     if (p->pos >= p->len || p->src[p->pos] != '"') return NULL;
     p->pos++;
 
@@ -285,7 +293,7 @@ static neverc_json_value_t *parse_string(parser_t *p) {
     return v;
 }
 
-static neverc_json_value_t *parse_number(parser_t *p) {
+static NCI_JSON_NOINLINE neverc_json_value_t *parse_number(parser_t *p) {
     size_t start = p->pos;
     int neg = 0;
     if (p->pos < p->len && p->src[p->pos] == '-') { p->pos++; neg = 1; }
@@ -358,7 +366,7 @@ static neverc_json_value_t *parse_number(parser_t *p) {
     return neverc_json_new_number(val);
 }
 
-static neverc_json_value_t *parse_array(parser_t *p) {
+static NCI_JSON_NOINLINE neverc_json_value_t *parse_array(parser_t *p) {
     if (consume(p, '[') < 0) return NULL;
     neverc_json_value_t *arr = neverc_json_new_array();
     if (!arr) return NULL;
@@ -568,7 +576,7 @@ static int json_obj_append(neverc_json_value_t *obj, char *key_owned,
     return 0;
 }
 
-static neverc_json_value_t *parse_object(parser_t *p) {
+static NCI_JSON_NOINLINE neverc_json_value_t *parse_object(parser_t *p) {
     if (consume(p, '{') < 0) return NULL;
     neverc_json_value_t *obj = neverc_json_new_object();
     if (!obj) return NULL;
@@ -638,7 +646,7 @@ err:
     return NULL;
 }
 
-static neverc_json_value_t *parse_value(parser_t *p) {
+static NCI_JSON_NOINLINE neverc_json_value_t *parse_value(parser_t *p) {
     int c = peek(p);
     if (c < 0) return NULL;
     /* Recursion guard: only arrays/objects re-enter parse_value. Scalars must
@@ -824,7 +832,8 @@ static int marshal_number(marshal_t *m, double val) {
     return mw(m, tmp, (size_t)n);
 }
 
-static int marshal_value(marshal_t *m, const neverc_json_value_t *v) {
+static NCI_JSON_NOINLINE int marshal_value(
+    marshal_t *m, const neverc_json_value_t *v) {
     if (!v) return -1;
     switch (v->type) {
         case NEVERC_JSON_NULL:
@@ -1100,3 +1109,5 @@ int neverc_json_valid(const char *text, size_t len) {
     neverc_json_free(v);
     return 1;
 }
+
+#undef NCI_JSON_NOINLINE

@@ -136,7 +136,7 @@ static void sa_to_udp_addr(const struct sockaddr *sa, socklen_t salen,
          * Format them as IPv4 so ACLs matching "127.0.0.1" still work.
          * Keep the original sockaddr in _sa so sendto() on an IPv6
          * dual-stack socket still accepts the mapped peer. */
-        if (IN6_IS_ADDR_V4MAPPED(&in6->sin6_addr)) {
+        if (nc_in6_is_addr_v4mapped(&in6->sin6_addr)) {
             inet_ntop(AF_INET, in6->sin6_addr.s6_addr + 12, out->addr,
                       sizeof(out->addr));
             out->port = ntohs(in6->sin6_port);
@@ -150,7 +150,8 @@ static void sa_to_udp_addr(const struct sockaddr *sa, socklen_t salen,
             size_t len = strlen(out->addr);
             if (in6->sin6_scope_id)
                 snprintf(out->addr + len, sizeof(out->addr) - len, "%%%u]:%d",
-                         in6->sin6_scope_id, ntohs(in6->sin6_port));
+                         (unsigned)in6->sin6_scope_id,
+                         ntohs(in6->sin6_port));
             else
                 snprintf(out->addr + len, sizeof(out->addr) - len, "]:%d",
                          ntohs(in6->sin6_port));
@@ -363,7 +364,7 @@ neverc_udp_conn_t *neverc_udp_listen(const char *addr, const char **errp) {
             const struct sockaddr_in6 *a6 =
                 (const struct sockaddr_in6 *)rp->ai_addr;
             /* Unspecified :: (including ":port" and "[::]:port") is dual-stack. */
-            if (IN6_IS_ADDR_UNSPECIFIED(&a6->sin6_addr)) {
+            if (nc_in6_is_addr_unspecified(&a6->sin6_addr)) {
                 int v6only = 0;
 #ifdef _WIN32
                 (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,

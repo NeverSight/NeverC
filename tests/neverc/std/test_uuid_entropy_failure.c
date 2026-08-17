@@ -9,6 +9,10 @@ static int test_platform_random(unsigned char *buf, size_t len) {
     return entropy_fails ? -1 : 0;
 }
 
+#if defined(_WIN32)
+#include <windows.h>
+#define NEVERC_PLATFORM_WINDOWS 1
+#endif
 #define NEVERC_PLATFORM_H
 #define neverc_platform_random test_platform_random
 #include "../../../std/src/uuid/uuid.c"

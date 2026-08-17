@@ -449,7 +449,7 @@ static void test_name_injection(void) {
         if (tmp) {
             saved = dup(fileno(stderr));
             check_int("usage capture dup", saved >= 0, 1);
-            if (saved >= 0 && dup2(fileno(tmp), fileno(stderr)) == 0) {
+            if (saved >= 0 && dup2(fileno(tmp), fileno(stderr)) >= 0) {
                 neverc_flag_print_defaults();
                 fflush(stderr);
                 dup2(saved, fileno(stderr));

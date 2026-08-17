@@ -121,6 +121,23 @@
   }
 #endif
 
+/* The Windows SDK exposes IN6_IS_ADDR_* as out-of-line helpers in some
+ * configurations. Keep these checks header-only so cross-target objects do
+ * not acquire unresolved SDK helper references. */
+static inline int nc_in6_is_addr_v4mapped(const struct in6_addr *address) {
+    const uint8_t *bytes = address->s6_addr;
+    for (int i = 0; i < 10; i++)
+        if (bytes[i] != 0) return 0;
+    return bytes[10] == 0xff && bytes[11] == 0xff;
+}
+
+static inline int nc_in6_is_addr_unspecified(const struct in6_addr *address) {
+    const uint8_t *bytes = address->s6_addr;
+    for (int i = 0; i < 16; i++)
+        if (bytes[i] != 0) return 0;
+    return 1;
+}
+
 /* Sequentially consistent atomics shared by poller and connection modules. */
 #if defined(__GNUC__) || defined(__clang__)
   #define nc_atomic_inc(ptr) __atomic_add_fetch(ptr, 1, __ATOMIC_SEQ_CST)

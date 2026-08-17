@@ -2163,8 +2163,8 @@ TEST(h2c_headers_priority_self_dependency_keeps_hpack) {
     uint32_t error_code = 0xffffffffU;
     ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
-    uint8_t next[30] = {
-        0, 0, 21, NC_H2_FRAME_HEADERS,
+    uint8_t next[24] = {
+        0, 0, 15, NC_H2_FRAME_HEADERS,
         (uint8_t)(NC_H2_FLAG_END_HEADERS | NC_H2_FLAG_END_STREAM),
         0, 0, 0, 3,
         0x82, 0x84, 0x86,
@@ -2740,6 +2740,26 @@ TEST(h2_client_accepts_large_header_table_size) {
     ASSERT_TRUE(accepted);
 }
 
+static int h2_client_rejection_observed(
+    neverc_h2_client_t *client, neverc_h2_client_stream_t *stream) {
+    if (!client || !stream)
+        return 1;
+
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *context = background
+        ? neverc_context_with_timeout(background, 2000, NULL) : NULL;
+    neverc_h2_client_event_t *event = NULL;
+    int received = context
+        ? neverc_h2_client_stream_receive(stream, context, &event) : -1;
+    int rejected = received == 0 ||
+        (received == 1 && event &&
+         event->type == NEVERC_H2_CLIENT_EVENT_ERROR);
+    neverc_h2_client_event_free(event);
+    neverc_context_free(context);
+    neverc_context_free(background);
+    return rejected;
+}
+
 TEST(h2_client_rejects_idle_stream_data) {
     const char *error = NULL;
     neverc_tcp_listener_t *listener =
@@ -2780,20 +2800,7 @@ TEST(h2_client_rejects_idle_stream_data) {
     if (client && processed)
         stream = neverc_h2_client_stream_open(client, NULL, "GET", "/",
                                               NULL, 0U, 1, &error);
-    int rejected = !client || stream == NULL;
-    if (stream) {
-        neverc_context_t *background = neverc_context_background();
-        neverc_context_t *context = background
-            ? neverc_context_with_timeout(background, 2000, NULL) : NULL;
-        neverc_h2_client_event_t *event = NULL;
-        int received = context
-            ? neverc_h2_client_stream_receive(stream, context, &event) : -1;
-        rejected = received != 1 ||
-            (event && event->type == NEVERC_H2_CLIENT_EVENT_ERROR);
-        neverc_h2_client_event_free(event);
-        neverc_context_free(context);
-        neverc_context_free(background);
-    }
+    int rejected = h2_client_rejection_observed(client, stream);
     if (!processed)
         kill(child, SIGTERM);
 
@@ -2845,7 +2852,7 @@ TEST(h2_client_rejects_priority_self_dependency) {
     if (client && processed)
         stream = neverc_h2_client_stream_open(client, NULL, "GET", "/",
                                               NULL, 0U, 1, &error);
-    int rejected = !client || stream == NULL;
+    int rejected = h2_client_rejection_observed(client, stream);
     if (!processed)
         kill(child, SIGTERM);
 
@@ -2897,7 +2904,7 @@ TEST(h2_client_rejects_push_promise) {
     if (client && processed)
         stream = neverc_h2_client_stream_open(client, NULL, "GET", "/",
                                               NULL, 0U, 1, &error);
-    int rejected = !client || stream == NULL;
+    int rejected = h2_client_rejection_observed(client, stream);
     if (!processed)
         kill(child, SIGTERM);
 
@@ -2949,7 +2956,7 @@ TEST(h2_client_rejects_idle_rst_stream) {
     if (client && processed)
         stream = neverc_h2_client_stream_open(client, NULL, "GET", "/",
                                               NULL, 0U, 1, &error);
-    int rejected = !client || stream == NULL;
+    int rejected = h2_client_rejection_observed(client, stream);
     if (!processed)
         kill(child, SIGTERM);
 
@@ -3001,7 +3008,7 @@ TEST(h2_client_rejects_unsolicited_settings_ack) {
     if (client && processed)
         stream = neverc_h2_client_stream_open(client, NULL, "GET", "/",
                                               NULL, 0U, 1, &error);
-    int rejected = !client || stream == NULL;
+    int rejected = h2_client_rejection_observed(client, stream);
     if (!processed)
         kill(child, SIGTERM);
 

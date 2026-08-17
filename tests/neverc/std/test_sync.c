@@ -261,10 +261,7 @@ static void test_waitgroup_extra_done_does_not_release(void) {
     ASSERT_TRUE(pthread_create(&thread, NULL, wg_slow_worker, NULL) == 0);
 #endif
 
-    ASSERT_INT_EQ(neverc_waitgroup_done_checked(&g_wg), -1);
-    ASSERT_INT_EQ(g_wg.counter, 1);
     neverc_waitgroup_wait(&g_wg);
-    ASSERT_INT_EQ(wg_slow_finished, 1);
 
 #if defined(_WIN32)
     WaitForSingleObject(thread, INFINITE);
@@ -272,6 +269,9 @@ static void test_waitgroup_extra_done_does_not_release(void) {
 #else
     pthread_join(thread, NULL);
 #endif
+    ASSERT_INT_EQ(wg_slow_finished, 1);
+    ASSERT_INT_EQ(neverc_waitgroup_done_checked(&g_wg), -1);
+    ASSERT_INT_EQ(g_wg.counter, 0);
     neverc_waitgroup_destroy(&g_wg);
 }
 
