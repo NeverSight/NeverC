@@ -560,17 +560,24 @@ STD_TEST(zlib, "src/compress/zlib/zlib.c", "src/compress/flate/flate.c", "src/ha
 STD_TEST(bzip2, "src/compress/bzip2/bzip2.c")
 
 // ===== Archive =====
-STD_TEST(tar, "src/archive/tar/tar.c", "src/io/fs/fs.c", "src/unicode/utf8/utf8.c")
+STD_TEST(tar, "src/archive/tar/tar.c", "src/io/fs/fs.c",
+         "src/path/match.c", "src/unicode/utf8/utf8.c")
 TEST_F(StdLibTest, TarAllocationFailure) {
   auto r = compileAndRunStdTest(
-      "tar_oom", {"src/io/fs/fs.c", "src/unicode/utf8/utf8.c"}, {"-fno-builtin-std"});
+      "tar_oom",
+      {"src/io/fs/fs.c", "src/path/match.c", "src/unicode/utf8/utf8.c"},
+      {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
-STD_TEST(zip, "src/archive/zip/zip.c", "src/hash/crc32/crc32.c", "src/io/fs/fs.c", "src/unicode/utf8/utf8.c")
+STD_TEST(zip, "src/archive/zip/zip.c", "src/hash/crc32/crc32.c",
+         "src/io/fs/fs.c", "src/path/match.c", "src/unicode/utf8/utf8.c")
 TEST_F(StdLibTest, ZipAllocationFailure) {
   auto r = compileAndRunStdTest(
-      "zip_oom", {"src/hash/crc32/crc32.c", "src/io/fs/fs.c", "src/unicode/utf8/utf8.c"}, {"-fno-builtin-std"});
+      "zip_oom",
+      {"src/hash/crc32/crc32.c", "src/io/fs/fs.c", "src/path/match.c",
+       "src/unicode/utf8/utf8.c"},
+      {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
@@ -676,7 +683,8 @@ TEST_F(StdLibTest, HttpRouteAllocationFailure) {
       "http_route_oom",
       {"src/net/http/http_client.c", "src/net/http/http2/http2.c",
        "src/net/http/http2/http2_server.c",
-       "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS});
+       "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS,
+       HTTP_TLS_DEPS});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
@@ -685,7 +693,8 @@ TEST_F(StdLibTest, HttpStripPrefixAllocationFailure) {
       "http_strip_prefix_oom",
       {"src/net/http/http.c", "src/net/http/http2/http2.c",
        "src/net/http/http2/http2_server.c",
-       "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS});
+       "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS,
+       HTTP_TLS_DEPS});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
@@ -695,13 +704,14 @@ TEST_F(StdLibTest, HttpClientAllocationFailure) {
       "http_client_oom",
       {"src/net/http/http.c", "src/net/http/http2/http2.c",
        "src/net/http/http2/http2_server.c",
-       "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS});
+       "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS,
+       HTTP_TLS_DEPS});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 #endif
 STD_TEST(websocket, "src/net/websocket/websocket.c", TCP_DEPS,
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", HTTP_TLS_DEPS)
 STD_TEST(url, "src/net/url/url.c", "src/net/netip/netip.c")
 STD_TEST(netip, "src/net/netip/netip.c")
 STD_TEST(mail, "src/net/mail/mail.c", "src/net/netip/netip.c")
@@ -712,16 +722,16 @@ TEST_F(StdLibTest, TextprotoAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(httptest, "src/net/http/httptest/httptest.c",
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
 
 // ===== io_uring =====
-STD_TEST(io_uring, TCP_DEPS, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", HTTP_TLS_DEPS)
+STD_TEST(io_uring, TCP_DEPS, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", HTTP_TLS_DEPS)
 
 // ===== HTTP/2 =====
 STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/net/http/http.c", "src/net/http/http_client.c", TCP_DEPS,
-    HTTP_TLS_DEPS)
+    "src/time/time.c", HTTP_TLS_DEPS)
 STD_TEST(http2_oom, "src/net/http/http2/http2.c", "src/net/http/http.c",
-    "src/net/http/http_client.c", TCP_DEPS, HTTP_TLS_DEPS)
+    "src/net/http/http_client.c", "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
 TEST_F(StdLibTest, HpackAllocationFailure) {
   auto r = compileAndRunStdTest("hpack_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
@@ -755,11 +765,11 @@ TEST_F(StdLibTest, EmbeddedContextCancelHandleDotSyntax) {
 }
 
 // ===== HTTP Benchmark =====
-STD_TEST(http_bench, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS)
+STD_TEST(http_bench, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
 
 // ===== HTTP Util =====
 STD_TEST(httputil, "src/net/http/httputil/httputil.c",
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/net/netip/netip.c", TCP_DEPS, HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/net/netip/netip.c", "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
 
 // ===== Cookie Jar =====
 STD_TEST(cookiejar, "src/net/http/cookiejar/cookiejar.c",
@@ -776,9 +786,7 @@ TEST_F(StdLibTest, CookieJarConcurrency) {
 #endif
 TEST_F(StdLibTest, CookieJarAllocationFailure) {
   auto r = compileAndRunStdTest(
-      "cookiejar_oom",
-      {"src/net/http/cookiejar/cookiejar.c", "src/net/url/url.c",
-       "src/net/netip/netip.c"},
+      "cookiejar_oom", {"src/net/url/url.c"},
       {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;

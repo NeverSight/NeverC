@@ -822,7 +822,10 @@ static int marshal_string(marshal_t *m, const char *s, size_t len) {
     return mw_char(m, '"');
 }
 
-static int marshal_number(marshal_t *m, double val) {
+/* Keep the float formatter out of the recursive marshal frame.  Under full
+ * LTO its conversion scratch space otherwise gets inlined into marshal_value,
+ * making every nesting level consume about 1 KiB on Windows' 1 MiB stack. */
+static NCI_JSON_NOINLINE int marshal_number(marshal_t *m, double val) {
     if (!isfinite(val)) return -1;
 
     /* Shortest correctly-rounded form (round-trips, matches encoding/json). */

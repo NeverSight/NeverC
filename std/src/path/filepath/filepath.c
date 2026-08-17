@@ -247,14 +247,16 @@ int neverc_filepath_is_local(const char *path) {
         if (reserved_device_name(start, n))
             reserved = 1;
 #endif
-        if ((n == 1 && start[0] == '.') ||
-            (n == 2 && start[0] == '.' && start[1] == '.'))
+        int is_dot_component =
+            (n == 1 && start[0] == '.') ||
+            (n == 2 && start[0] == '.' && start[1] == '.');
+        if (is_dot_component)
             has_dots = 1;
 #ifdef _WIN32
-        {
+        if (!is_dot_component) {
             /* Win32 strips trailing spaces/dots: "foo\\.. \\x" escapes.
-             * Exact ".." is handled by Clean below; only the padded form
-             * is rejected here so "a/../b" stays local. */
+             * Exact "." and ".." are handled by Clean below; only padded
+             * forms are rejected here so "a/../b" stays local. */
             size_t stripped = n;
             while (stripped > 0 &&
                    (start[stripped - 1] == ' ' || start[stripped - 1] == '.'))

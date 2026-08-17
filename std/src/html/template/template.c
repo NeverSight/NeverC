@@ -1223,6 +1223,29 @@ static int html_url_parts_unsafe(const char *prefix, size_t plen,
                   : !html_is_safe_url_spans(sp, n, 0);
 }
 
+/* CSS comments and escapes can hide a forbidden URL scheme across literal /
+ * interpolation boundaries even when the raw URL allowlist sees a relative
+ * path. Detect those tokenization tricks before CSS-escaping the value. */
+static int html_css_url_parts_obfuscated(const char *prefix, size_t plen,
+                                         const char *val,
+                                         const char *suffix, size_t slen) {
+    const char *parts[3] = {prefix, val, suffix};
+    size_t lengths[3] = {plen, val ? strlen(val) : 0U, slen};
+    int previous = -1;
+    for (int part = 0; part < 3; part++) {
+        if (!parts[part]) continue;
+        for (size_t i = 0; i < lengths[part]; i++) {
+            unsigned char current = (unsigned char)parts[part][i];
+            if (current == '\\' ||
+                (previous == '/' && current == '*') ||
+                (previous == '*' && current == '/'))
+                return 1;
+            previous = current;
+        }
+    }
+    return 0;
+}
+
 static int html_css_contains_ci(const char *s, const char *needle) {
     size_t n = strlen(s), k = strlen(needle);
     if (k == 0 || k > n) return 0;
@@ -1390,6 +1413,11 @@ static int execute_nodes(const node_t *n,
                 else if (in_url && html_url_parts_unsafe(
                              dprefix, dplen, val, dsuffix, dslen, is_srcset))
                     escaped = neverc_html_escape("#");
+                else if (in_css_url && html_css_url_parts_obfuscated(
+                             dprefix, dplen, val, dsuffix, dslen))
+                    escaped = neverc_html_escape("#");
+                else if (in_css_url)
+                    escaped = neverc_html_css_escape(val);
                 else if (in_event && unquoted && aplen > 0)
                     escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_event)
