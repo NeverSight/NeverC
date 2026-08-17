@@ -378,6 +378,22 @@ static void test_repeat_braces(void) {
     check_bool("(a{2}){2} aaaa", neverc_regexp_match_string("^(a{2}){2}$", "aaaa"), 1);
     check_bool("(a{2}){2} aaa",  neverc_regexp_match_string("^(a{2}){2}$", "aaa"), 0);
 
+    /* Long optional chain: epsilon-closure used to recurse and SIGSEGV on
+     * linux-arm64 neverc frames. Must stay iterative. */
+    {
+        neverc_regexp_t *long_re = neverc_regexp_compile("(a?){400}", NULL);
+        check_bool("(a?){400} compiles", long_re != NULL, 1);
+        check_bool("(a?){400} match aaa", neverc_regexp_match(long_re, "aaa"), 1);
+        size_t flen = 0;
+        const char *fm = neverc_regexp_find(long_re, "xxaaayy", &flen);
+        check_bool("(a?){400} find", fm != NULL, 1);
+        neverc_regexp_match_t sm[2];
+        memset(sm, 0, sizeof(sm));
+        check_int("(a?){400} submatch",
+                  neverc_regexp_find_submatch(long_re, "xxaaayy", sm, 2), 1);
+        neverc_regexp_free(long_re);
+    }
+
     /* find returns the leftmost-longest bounded match */
     char buf[64];
     neverc_regexp_t *re = neverc_regexp_compile("a{2,3}", NULL);

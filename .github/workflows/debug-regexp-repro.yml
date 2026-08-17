@@ -1,0 +1,120 @@
+name: debug-regexp-repro
+
+# Manual only. Downloads a prebuilt linux-arm64 neverc and compiles just
+# StdLibTest.regexp — no toolchain rebuild, no full check-neverc matrix.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'linux-arm64-neverc-build run id to pull compiler from'
+        required: false
+        default: '31984102099'
+      iterations:
+        description: 'repeat count for the fixed binary'
+        required: false
+        default: '5'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  repro:
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install debug deps
+        run: sudo apt-get update && sudo apt-get install -y gcc libc6-dev gdb p7zip-full file
+
+      - name: Download prebuilt neverc (no rebuild)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          RID="${{ github.event.inputs.run_id }}"
+          [ -n "$RID" ] || RID=31984102099
+          gh run download "$RID" -n linux-arm64-neverc-compiler -D dl -R "${{ github.repository }}"
+          7z x dl/*.zip -o. >/dev/null
+          test -f install/bin/neverc
+          chmod +x install/bin/neverc
+          install/bin/neverc --version
+          file install/bin/neverc
+
+      - name: Reproduce + validate regexp
+        env:
+          ITERS: ${{ github.event.inputs.iterations }}
+        run: |
+          set +e
+          NCC=$PWD/install/bin/neverc
+          FLAGS="-I$PWD/std/include -I$PWD/std/src/net -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -O1 -fno-builtin-std"
+          ulimit -c unlimited
+          echo "$PWD/core.%e.%p" | sudo tee /proc/sys/kernel/core_pattern
+          mkdir -p cores
+
+          compile_one() {
+            local label=$1 src=$2 testc=$3 out=$4
+            echo "=== compile $label ==="
+            $NCC $FLAGS -o "$out" "$testc" "$src" -lm -lpthread -lresolv
+            echo "compile_${label}_exit=$?"
+            file "$out" || true
+          }
+
+          run_gdb() {
+            local label=$1 bin=$2
+            echo "=== gdb $label ==="
+            gdb -batch \
+              -ex 'set pagination off' \
+              -ex 'set confirm off' \
+              -ex run \
+              -ex 'bt full 40' \
+              -ex 'info registers' \
+              --args "$bin"
+            echo "gdb_${label}_done"
+            for c in core.* cores/core.*; do
+              [ -f "$c" ] || continue
+              echo "=== core $c ==="
+              gdb -batch -ex 'bt full 40' -ex 'info registers' "$bin" "$c" 2>&1 | head -80
+              rm -f "$c"
+            done
+          }
+
+          echo "nproc=$(nproc) ulimit_s=$(ulimit -s)"
+
+          # Known-bad sources from the SIGSEGV commit, compiled by the same neverc.
+          git show 2df8590dfd:std/src/regexp/regexp.c > /tmp/old_regexp.c
+          git show 2df8590dfd:tests/neverc/std/test_regexp.c > /tmp/old_test_regexp.c
+          compile_one old /tmp/old_regexp.c /tmp/old_test_regexp.c /tmp/test_regexp_old
+          run_gdb old /tmp/test_regexp_old
+          /tmp/test_regexp_old >/tmp/old_out.txt 2>/tmp/old_err.txt
+          echo "old_direct_exit=$? (128+11=SIGSEGV expected on the crashing commit)"
+          echo "--- old stdout (tail) ---"
+          tail -20 /tmp/old_out.txt
+          echo "--- old stderr ---"
+          cat /tmp/old_err.txt
+
+          # Current tree: must stay green.
+          compile_one head std/src/regexp/regexp.c tests/neverc/std/test_regexp.c /tmp/test_regexp
+          sha=$(sha256sum /tmp/test_regexp | awk '{print $1}')
+          echo "head_sha256=$sha"
+          fails=0
+          N="${ITERS:-5}"
+          for i in $(seq 1 "$N"); do
+            /tmp/test_regexp >/tmp/head_out.txt 2>/tmp/head_err.txt
+            rc=$?
+            echo "[#$i] head_exit=$rc"
+            if [ "$rc" -ne 0 ]; then
+              echo "--- head stdout (tail) ---"
+              tail -40 /tmp/head_out.txt
+              echo "--- head stderr ---"
+              cat /tmp/head_err.txt
+              run_gdb "head_$i" /tmp/test_regexp
+              fails=$((fails+1))
+            fi
+          done
+          echo "=== head last stdout (tail) ==="
+          tail -15 /tmp/head_out.txt
+          echo "head_fails=$fails"
+          [ "$fails" -eq 0 ] || exit 1
