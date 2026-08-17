@@ -150,7 +150,10 @@ typedef struct {
      * Permitted entries of a given type restrict that type; omitted types
      * remain unrestricted. Any excluded match is always forbidden. A
      * DNS-like Common Name is constrained when the certificate has no
-     * dNSName SAN; hostname verification still does not fall back to CN. */
+     * dNSName SAN; an IPv4-literal Common Name is constrained when there
+     * is no iPAddress SAN. Wildcard dNSNames are constrained against the
+     * hostnames they can match, not the literal "*.suffix" string.
+     * Hostname verification still does not fall back to CN. */
     int                         name_constraints_present;
     char                      **permitted_dns_names;
     size_t                      permitted_dns_name_count;

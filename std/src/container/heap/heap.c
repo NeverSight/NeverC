@@ -29,28 +29,31 @@ static void heap_up(neverc_heap_interface_t *h, int j) {
 }
 
 static int heap_down(neverc_heap_interface_t *h, int i0, int n) {
-    if (i0 < 0 || i0 >= n || i0 >= n / 2) return 0;
+    if (i0 < 0 || i0 >= n || n <= 1) return 0;
 
-    int leaf = i0;
-    while (leaf < n / 2) {
-        int j1 = 2 * leaf + 1;
-        int j = j1;
-        int j2 = j1 + 1;
-        if (j2 < n && h->less_fn(h->data, j2, j1))
+    unsigned int un = (unsigned int)n;
+    unsigned int leaf = (unsigned int)i0;
+    if (leaf >= un / 2u) return 0;
+
+    while (leaf < un / 2u) {
+        unsigned int j1 = 2u * leaf + 1u;
+        unsigned int j = j1;
+        unsigned int j2 = j1 + 1u;
+        if (j2 < un && h->less_fn(h->data, (int)j2, (int)j1))
             j = j2;
-        h->swap_fn(h->data, leaf, j);
+        h->swap_fn(h->data, (int)leaf, (int)j);
         leaf = j;
     }
 
-    while (leaf > i0) {
-        int parent = (leaf - 1) / 2;
-        if (!h->less_fn(h->data, leaf, parent))
+    while (leaf > (unsigned int)i0) {
+        unsigned int parent = (leaf - 1u) / 2u;
+        if (!h->less_fn(h->data, (int)leaf, (int)parent))
             break;
-        h->swap_fn(h->data, leaf, parent);
+        h->swap_fn(h->data, (int)leaf, (int)parent);
         leaf = parent;
     }
 
-    return leaf > i0;
+    return leaf > (unsigned int)i0;
 }
 
 void neverc_heap_init(neverc_heap_interface_t *h) {

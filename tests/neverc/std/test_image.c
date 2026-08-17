@@ -174,11 +174,19 @@ static void test_invalid_image_sizes(void) {
     check("rgba failure clears image",
           rgba.pix == NULL && rgba.stride == 0);
 
+    neverc_rect_t tall = {{0, INT_MIN}, {1, INT_MAX}};
+    check("rgba rejects overflowing height",
+          neverc_image_rgba_init(&rgba, tall) == -1);
+    check("rgba height failure clears image",
+          rgba.pix == NULL && rgba.stride == 0);
+
     neverc_image_gray_t gray;
     check("gray rejects overflowing width",
           neverc_image_gray_init(&gray, huge) == -1);
     check("gray failure clears image",
           gray.pix == NULL && gray.stride == 0);
+    check("gray rejects overflowing height",
+          neverc_image_gray_init(&gray, tall) == -1);
 }
 
 int main(void) {

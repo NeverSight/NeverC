@@ -96,6 +96,7 @@ static void test_null_empty(void) {
     check_u32("update(NULL,0)", neverc_crc32_update(0, table, NULL, 0), 0);
     check_u32("update(NULL table)", neverc_crc32_update(0xA5A5A5A5u, NULL, "x", 1),
               0xA5A5A5A5u);
+    neverc_crc32_make_table(NEVERC_CRC32_IEEE, NULL); /* must not crash */
 }
 
 /* Regression: reusing one table buffer for a different polynomial must not
@@ -116,6 +117,27 @@ static void test_table_buffer_reuse(void) {
     uint32_t want = neverc_crc32_checksum(fresh, data, sizeof data);
 
     check_u32("reuse buffer (castagnoli after ieee)", got, want);
+}
+
+static void test_slicing8_other_polys(void) {
+    printf("[slicing8 other polys]\n");
+    uint8_t data[128];
+    for (int i = 0; i < 128; i++) data[i] = (uint8_t)(i * 7 + 1);
+
+    neverc_crc32_table_t cast, koop;
+    neverc_crc32_make_table(NEVERC_CRC32_CASTAGNOLI, cast);
+    neverc_crc32_make_table(NEVERC_CRC32_KOOPMAN, koop);
+
+    /* 32-byte chunks stay on the byte path; 128 bytes hits slicing-8. */
+    uint32_t cast_ref = 0, koop_ref = 0;
+    for (size_t off = 0; off < sizeof data; off += 32) {
+        cast_ref = neverc_crc32_update(cast_ref, cast, data + off, 32);
+        koop_ref = neverc_crc32_update(koop_ref, koop, data + off, 32);
+    }
+    check_u32("castagnoli slicing8 vs chunks",
+              neverc_crc32_checksum(cast, data, sizeof data), cast_ref);
+    check_u32("koopman slicing8 vs chunks",
+              neverc_crc32_checksum(koop, data, sizeof data), koop_ref);
 }
 
 static void test_zero_data(void) {
@@ -141,12 +163,15 @@ int main(void) {
     test_koopman();
     test_null_empty();
     test_table_buffer_reuse();
+    test_slicing8_other_polys();
     test_zero_data();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0)
         printf(", %d FAILED", tests_failed);
     printf(" ===\n");
+    if (tests_failed == 0)
+        puts("passed");
 
     return tests_failed > 0 ? 1 : 0;
 }

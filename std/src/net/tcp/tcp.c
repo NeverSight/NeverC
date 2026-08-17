@@ -7,6 +7,13 @@
 #include <poll.h>
 #endif
 
+#ifndef NC_TCP_CALLOC
+#define NC_TCP_CALLOC calloc
+#endif
+#ifndef NC_TCP_MALLOC
+#define NC_TCP_MALLOC malloc
+#endif
+
 /* ======================================================================
  * Internal structures
  * ====================================================================== */
@@ -31,6 +38,8 @@ struct neverc_tcp_conn {
     int read_timeout_ms;
     int write_timeout_ms;
     volatile int nonblocking;
+    volatile int read_shutdown;
+    volatile int write_shutdown;
 };
 
 /* ======================================================================
@@ -128,15 +137,22 @@ static int tcp_listener_wait(nc_sock_t fd) {
 static neverc_tcp_conn_t *tcp_conn_from_accepted(
     nc_sock_t fd, const struct sockaddr_storage *remote,
     socklen_t remote_len, int nonblocking) {
-    neverc_tcp_conn_t *conn = (neverc_tcp_conn_t *)calloc(1, sizeof(*conn));
+    neverc_tcp_conn_t *conn = (neverc_tcp_conn_t *)NC_TCP_CALLOC(1, sizeof(*conn));
     if (!conn) return NULL;
     conn->fd = fd;
     conn->nonblocking = nonblocking;
-    conn->remote_len = remote_len;
-    memcpy(&conn->remote, remote, remote_len);
+    /* accept() may report a truncated address by returning addrlen larger
+     * than the buffer we passed; copying that size overflows conn. */
+    if (remote && remote_len > 0) {
+        if ((size_t)remote_len > sizeof(conn->remote))
+            remote_len = (socklen_t)sizeof(conn->remote);
+        conn->remote_len = remote_len;
+        memcpy(&conn->remote, remote, (size_t)remote_len);
+    }
     conn->local_len = sizeof(conn->local);
     if (getsockname(fd, (struct sockaddr *)&conn->local,
-                    &conn->local_len) != 0) {
+                    &conn->local_len) != 0 ||
+        (size_t)conn->local_len > sizeof(conn->local)) {
         memset(&conn->local, 0, sizeof(conn->local));
         conn->local_len = 0;
     }
@@ -219,7 +235,7 @@ neverc_tcp_listener_t *neverc_tcp_listen(const char *addr, const char **errp) {
     }
 
     neverc_tcp_listener_t *ln =
-        (neverc_tcp_listener_t *)calloc(1, sizeof(*ln));
+        (neverc_tcp_listener_t *)NC_TCP_CALLOC(1, sizeof(*ln));
     if (!ln) {
         nc_sock_close(fd);
         freeaddrinfo(result);
@@ -384,7 +400,7 @@ neverc_tcp_conn_t *neverc_tcp_dial(const char *addr, const char **errp) {
         return NULL;
     }
 
-    neverc_tcp_conn_t *conn = (neverc_tcp_conn_t *)calloc(1, sizeof(*conn));
+    neverc_tcp_conn_t *conn = (neverc_tcp_conn_t *)NC_TCP_CALLOC(1, sizeof(*conn));
     if (!conn) {
         nc_sock_close(fd);
         freeaddrinfo(result);
@@ -393,9 +409,16 @@ neverc_tcp_conn_t *neverc_tcp_dial(const char *addr, const char **errp) {
     }
     conn->fd = fd;
     conn->remote_len = remote_len;
-    memcpy(&conn->remote, &remote, remote_len);
+    if ((size_t)conn->remote_len > sizeof(conn->remote))
+        conn->remote_len = (socklen_t)sizeof(conn->remote);
+    memcpy(&conn->remote, &remote, conn->remote_len);
     conn->local_len = sizeof(conn->local);
-    getsockname(fd, (struct sockaddr *)&conn->local, &conn->local_len);
+    if (getsockname(fd, (struct sockaddr *)&conn->local,
+                    &conn->local_len) != 0 ||
+        (size_t)conn->local_len > sizeof(conn->local)) {
+        memset(&conn->local, 0, sizeof(conn->local));
+        conn->local_len = 0;
+    }
 
     freeaddrinfo(result);
     if (errp) *errp = NULL;
@@ -430,7 +453,7 @@ neverc_tcp_conn_t *neverc_tcp_adopt_handle(uintptr_t socket_handle,
         return NULL;
     }
 
-    neverc_tcp_conn_t *conn = (neverc_tcp_conn_t *)calloc(1, sizeof(*conn));
+    neverc_tcp_conn_t *conn = (neverc_tcp_conn_t *)NC_TCP_CALLOC(1, sizeof(*conn));
     if (!conn) {
         if (errp) *errp = "out of memory";
         return NULL;
@@ -438,19 +461,21 @@ neverc_tcp_conn_t *neverc_tcp_adopt_handle(uintptr_t socket_handle,
     conn->fd = fd;
     conn->remote_len = sizeof(conn->remote);
     if (getpeername(conn->fd, (struct sockaddr *)&conn->remote,
-                    &conn->remote_len) != 0) {
+                    &conn->remote_len) != 0 ||
+        (size_t)conn->remote_len > sizeof(conn->remote)) {
         memset(&conn->remote, 0, sizeof(conn->remote));
         conn->remote_len = 0;
     }
     conn->local_len = sizeof(conn->local);
     if (getsockname(conn->fd, (struct sockaddr *)&conn->local,
-                    &conn->local_len) != 0) {
+                    &conn->local_len) != 0 ||
+        (size_t)conn->local_len > sizeof(conn->local)) {
         memset(&conn->local, 0, sizeof(conn->local));
         conn->local_len = 0;
     }
 
     if (preload && preload_len > 0) {
-        conn->preload = (uint8_t *)malloc(preload_len);
+        conn->preload = (uint8_t *)NC_TCP_MALLOC(preload_len);
         if (!conn->preload) {
             free(conn);
             if (errp) *errp = "out of memory";
@@ -654,6 +679,8 @@ neverc_net_result_t neverc_tcp_try_read(neverc_tcp_conn_t *conn,
         }
         return tcp_result(NEVERC_NET_OK, 0, "read", n);
     }
+    if (nc_atomic_load(&conn->read_shutdown))
+        return tcp_result(NEVERC_NET_EOF, 0, "read", 0);
     if (tcp_deadline_expired(conn->read_deadline_ms))
         return tcp_result(NEVERC_NET_TIMEOUT, tcp_timeout_error(),
                           "read", 0);
@@ -691,6 +718,14 @@ neverc_net_result_t neverc_tcp_try_write(neverc_tcp_conn_t *conn,
         return tcp_result(NEVERC_NET_INVALID, 0, "write", 0);
     if (len == 0)
         return tcp_result(NEVERC_NET_OK, 0, "write", 0);
+    if (nc_atomic_load(&conn->write_shutdown)) {
+#ifdef _WIN32
+        int error = WSAESHUTDOWN;
+#else
+        int error = EPIPE;
+#endif
+        return tcp_result(NEVERC_NET_CLOSED, error, "write", 0);
+    }
     if (tcp_deadline_expired(conn->write_deadline_ms))
         return tcp_result(NEVERC_NET_TIMEOUT, tcp_timeout_error(),
                           "write", 0);
@@ -723,6 +758,14 @@ neverc_net_result_t neverc_tcp_try_write(neverc_tcp_conn_t *conn,
 int neverc_tcp_write(neverc_tcp_conn_t *conn, const void *data, size_t len) {
     if (!conn || (!data && len > 0) || len > (size_t)INT_MAX) return -1;
     if (len == 0) return 0;
+    if (nc_atomic_load(&conn->write_shutdown)) {
+#ifdef _WIN32
+        WSASetLastError(WSAESHUTDOWN);
+#else
+        errno = EPIPE;
+#endif
+        return -1;
+    }
     const char *p = (const char *)data;
     size_t total = 0;
     if (nc_atomic_load(&conn->nonblocking)) {
@@ -805,6 +848,8 @@ int neverc_tcp_read(neverc_tcp_conn_t *conn, void *buf, size_t buflen) {
         }
         return (int)n;
     }
+    if (nc_atomic_load(&conn->read_shutdown))
+        return 0;
     for (;;) {
         if (tcp_refresh_read_deadline(conn) != 0) return -1;
 #ifdef _WIN32
@@ -826,19 +871,25 @@ int neverc_tcp_read(neverc_tcp_conn_t *conn, void *buf, size_t buflen) {
 int neverc_tcp_shutdown_read(neverc_tcp_conn_t *conn) {
     if (!conn) return -1;
 #ifdef _WIN32
-    return shutdown(conn->fd, SD_RECEIVE) == 0 ? 0 : -1;
+    int rc = shutdown(conn->fd, SD_RECEIVE) == 0 ? 0 : -1;
 #else
-    return shutdown(conn->fd, SHUT_RD) == 0 ? 0 : -1;
+    int rc = shutdown(conn->fd, SHUT_RD) == 0 ? 0 : -1;
 #endif
+    if (rc == 0)
+        nc_atomic_store(&conn->read_shutdown, 1);
+    return rc;
 }
 
 int neverc_tcp_shutdown_write(neverc_tcp_conn_t *conn) {
     if (!conn) return -1;
 #ifdef _WIN32
-    return shutdown(conn->fd, SD_SEND) == 0 ? 0 : -1;
+    int rc = shutdown(conn->fd, SD_SEND) == 0 ? 0 : -1;
 #else
-    return shutdown(conn->fd, SHUT_WR) == 0 ? 0 : -1;
+    int rc = shutdown(conn->fd, SHUT_WR) == 0 ? 0 : -1;
 #endif
+    if (rc == 0)
+        nc_atomic_store(&conn->write_shutdown, 1);
+    return rc;
 }
 
 int neverc_tcp_conn_fd(neverc_tcp_conn_t *conn) {

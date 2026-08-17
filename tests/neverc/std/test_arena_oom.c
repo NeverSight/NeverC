@@ -70,6 +70,20 @@ int main(void) {
     fail_at = 0;
     neverc_arena_free(arena);
     CHECK(free_count == 2);
+
+    reset_allocator(0);
+    arena = neverc_arena_new();
+    CHECK(arena != NULL);
+    CHECK(neverc_arena_alloc(arena, 256U * 1024U) != NULL);
+    CHECK(neverc_arena_num_chunks(arena) >= 2);
+    reset_allocator(1);
+    neverc_arena_reset(arena);
+    CHECK(neverc_arena_num_chunks(arena) == 1);
+    CHECK(neverc_arena_bytes_allocated(arena) == 0);
+    fail_at = 0;
+    CHECK(neverc_arena_alloc(arena, 8) != NULL);
+    neverc_arena_free(arena);
+
     puts("passed");
     return 0;
 }

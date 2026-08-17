@@ -55,6 +55,18 @@ static void test_nrgba_conversion(void) {
         neverc_color_rgba(255, 0, 0, 1));
     ASSERT_INT_EQ(wrapped.r, 255);
     ASSERT_INT_EQ(wrapped.a, 1);
+
+    /* a=0 must not divide; channels stay 0 (no uint8 wrap of r*a). */
+    neverc_color_rgba_t clear = neverc_color_nrgba_to_rgba(
+        neverc_color_nrgba(255, 128, 64, 0));
+    ASSERT_INT_EQ(clear.r, 0);
+    ASSERT_INT_EQ(clear.g, 0);
+    ASSERT_INT_EQ(clear.b, 0);
+    ASSERT_INT_EQ(clear.a, 0);
+    neverc_color_nrgba_t from_clear = neverc_color_rgba_to_nrgba(
+        neverc_color_rgba(255, 128, 64, 0));
+    ASSERT_INT_EQ(from_clear.r, 0);
+    ASSERT_INT_EQ(from_clear.a, 0);
 }
 
 static void test_cmyk_conversion(void) {
@@ -70,6 +82,13 @@ static void test_cmyk_conversion(void) {
     ASSERT_INT_EQ(back.r, 255);
     ASSERT_INT_EQ(back.g, 0);
     ASSERT_INT_EQ(back.b, 0);
+
+    /* k=255, c=m=y=255: w=0, w*(255-c)/255 must stay 0 (no uint8 wrap). */
+    neverc_color_rgba_t black = neverc_color_cmyk_to_rgba(
+        (neverc_color_cmyk_t){255, 255, 255, 255});
+    ASSERT_INT_EQ(black.r, 0);
+    ASSERT_INT_EQ(black.g, 0);
+    ASSERT_INT_EQ(black.b, 0);
 }
 
 static void test_hsl_conversion(void) {
@@ -161,6 +180,10 @@ static void test_lerp(void) {
     ASSERT_TRUE(neverc_color_equal(same, white));
     neverc_color_rgba_t near = neverc_color_lerp(white, a, 0.001f);
     ASSERT_TRUE(near.r > 250 && near.g > 250 && near.b > 250);
+
+    /* NaN is treated as t=0 (return a), not a uint8 conversion of NaN. */
+    neverc_color_rgba_t nan_t = neverc_color_lerp(a, b, NAN);
+    ASSERT_TRUE(neverc_color_equal(nan_t, a));
 }
 
 static void test_equal(void) {

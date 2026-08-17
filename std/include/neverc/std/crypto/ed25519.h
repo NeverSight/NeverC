@@ -28,6 +28,17 @@ int  neverc_ed25519_verify(const unsigned char pub[32],
                             const unsigned char *msg, size_t msg_len,
                             const unsigned char sig[64]);
 
+/* RFC 8032 Ed25519ctx (phflag=0). context_len must be 0..255.
+ * Empty context is allowed and is not PureEdDSA. */
+int  neverc_ed25519_sign_ctx(const unsigned char priv[64],
+                              const unsigned char *msg, size_t msg_len,
+                              const unsigned char *context, size_t context_len,
+                              unsigned char sig[64]);
+int  neverc_ed25519_verify_ctx(const unsigned char pub[32],
+                                const unsigned char *msg, size_t msg_len,
+                                const unsigned char *context, size_t context_len,
+                                const unsigned char sig[64]);
+
 void neverc_ed25519_seed(const unsigned char priv[64], unsigned char seed[32]);
 
 #ifdef __cplusplus

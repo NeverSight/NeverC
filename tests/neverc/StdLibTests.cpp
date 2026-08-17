@@ -304,6 +304,14 @@ STD_TEST(protobuf, "src/encoding/protobuf/protobuf.c",
          "src/encoding/protobuf/protobuf_message.c")
 STD_TEST(pem, "src/encoding/pem/pem.c", "src/encoding/base64/base64.c")
 STD_TEST(json, "src/encoding/json/json.c", "src/strconv/format_float.c", "src/strconv/parse_float.c")
+TEST_F(StdLibTest, JsonAllocationFailure) {
+  auto r = compileAndRunStdTest(
+      "json_oom",
+      {"src/strconv/format_float.c", "src/strconv/parse_float.c"},
+      {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(csv, "src/encoding/csv/csv.c")
 STD_TEST(xml, "src/encoding/xml/xml.c")
 TEST_F(StdLibTest, XmlAllocationFailure) {
@@ -357,6 +365,7 @@ STD_TEST(hkdf, "src/crypto/hkdf/hkdf.c", "src/crypto/hmac/hmac.c", "src/crypto/s
 STD_TEST(pbkdf2, "src/crypto/pbkdf2/pbkdf2.c", "src/crypto/hmac/hmac.c", "src/crypto/sha256/sha256.c", "src/crypto/sha512/sha512.c", "src/crypto/sha1/sha1.c", "src/crypto/md5/md5.c", "src/crypto/subtle/subtle.c")
 STD_TEST(crypto_rand, "src/crypto/rand/rand.c")
 STD_TEST(crypto_rand_internal)
+STD_TEST(crypto_rand_entropy_failure)
 STD_TEST(elliptic, "src/crypto/elliptic/elliptic.c", "src/math/big/big.c")
 STD_TEST(rsa, "src/crypto/rsa/rsa.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c", "src/crypto/sha384/sha384.c", "src/crypto/sha512/sha512.c")
 STD_TEST(rsa_entropy_failure, "src/math/big/big.c",
@@ -385,6 +394,8 @@ TEST_F(StdLibTest, rsa_retry) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(ecdsa, "src/crypto/ecdsa/ecdsa.c", "src/crypto/elliptic/elliptic.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c")
+STD_TEST(ecdsa_entropy_failure, "src/crypto/elliptic/elliptic.c",
+    "src/math/big/big.c")
 STD_TEST(dsa, "src/crypto/dsa/dsa.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c")
 STD_TEST(dsa_entropy_failure, "src/math/big/big.c")
 STD_TEST(ed25519, "src/crypto/ed25519/ed25519.c", "src/crypto/sha512/sha512.c", "src/crypto/rand/rand.c", "src/math/big/big.c")

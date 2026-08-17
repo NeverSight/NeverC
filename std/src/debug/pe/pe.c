@@ -26,6 +26,11 @@ static int pe_open_fail(neverc_pe_file_t *f) {
     return -1;
 }
 
+/* Subtract, don't add: pointer+size as uint32 wraps for high PointerToRawData. */
+static int pe_range_in_file(size_t len, uint64_t offset, uint64_t size) {
+    return offset <= len && size <= (uint64_t)len - offset;
+}
+
 int neverc_pe_is_valid(const uint8_t *data, size_t len) {
     if (!data || len < 64) return 0;
     if (data[0] != 'M' || data[1] != 'Z') return 0;
@@ -149,12 +154,12 @@ int neverc_pe_open(neverc_pe_file_t *f, const uint8_t *data, size_t len) {
         f->sections[i].pointer_to_relocations = rd32(s + 24);
         f->sections[i].number_of_relocations  = rd16(s + 32);
         f->sections[i].characteristics      = rd32(s + 36);
-        if ((uint64_t)f->sections[i].pointer_to_raw_data +
-                f->sections[i].size_of_raw_data > len ||
+        if (!pe_range_in_file(len, f->sections[i].pointer_to_raw_data,
+                              f->sections[i].size_of_raw_data) ||
             (f->sections[i].number_of_relocations != 0 &&
-             (uint64_t)f->sections[i].pointer_to_relocations +
-                 (uint64_t)f->sections[i].number_of_relocations * 10U >
-                 len))
+             !pe_range_in_file(
+                 len, f->sections[i].pointer_to_relocations,
+                 (uint64_t)f->sections[i].number_of_relocations * 10U)))
             return pe_open_fail(f);
     }
 
@@ -271,7 +276,8 @@ int neverc_pe_section_data(const neverc_pe_file_t *f,
     if (!s || s->size_of_raw_data == 0) {
         return s ? 0 : -1;
     }
-    if ((uint64_t)s->pointer_to_raw_data + s->size_of_raw_data > f->data_len)
+    if (!pe_range_in_file(f->data_len, s->pointer_to_raw_data,
+                          s->size_of_raw_data))
         return -1;
     *out = (uint8_t *)malloc(s->size_of_raw_data);
     if (!*out) return -1;

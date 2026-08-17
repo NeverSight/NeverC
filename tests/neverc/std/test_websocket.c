@@ -264,12 +264,12 @@ static void test_reject_unmasked_client_frame(void) {
     neverc_tcp_listener_close(ln);
 }
 
-static int ws_write_masked_frame(neverc_tcp_conn_t *conn, int opcode,
-                                 const void *data, size_t len) {
+static int ws_write_masked_frame_ex(neverc_tcp_conn_t *conn, int opcode,
+                                    int fin, const void *data, size_t len) {
     if (!conn || len > 125 || (len > 0 && !data)) return -1;
     uint8_t mask[4] = {0x37, 0xfa, 0x21, 0x3d};
     uint8_t hdr[6];
-    hdr[0] = (uint8_t)(0x80 | (opcode & 0x0f));
+    hdr[0] = (uint8_t)((fin ? 0x80 : 0x00) | (opcode & 0x0f));
     hdr[1] = (uint8_t)(0x80 | len);
     memcpy(hdr + 2, mask, 4);
     if (neverc_tcp_write(conn, hdr, sizeof(hdr)) != (int)sizeof(hdr))
@@ -281,6 +281,11 @@ static int ws_write_masked_frame(neverc_tcp_conn_t *conn, int opcode,
     for (i = 0; i < len; i++)
         masked[i] = (uint8_t)(bytes[i] ^ mask[i % 4]);
     return neverc_tcp_write(conn, masked, len) == (int)len ? 0 : -1;
+}
+
+static int ws_write_masked_frame(neverc_tcp_conn_t *conn, int opcode,
+                                 const void *data, size_t len) {
+    return ws_write_masked_frame_ex(conn, opcode, 1, data, len);
 }
 
 static int ws_drain_http_response(neverc_tcp_conn_t *conn) {
@@ -499,6 +504,441 @@ static void test_local_buffer_too_small_keeps_stream(void) {
     neverc_tcp_listener_close(ln);
 }
 
+static void test_close_half_closes_write(void) {
+    printf("[close_half_closes_write]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("close-fin listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("close-fin client", client);
+    check_not_null("close-fin server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("close-fin server ws", ws);
+    if (ws) {
+        uint8_t payload[] = { 0x03, 0xe8 };
+        check_int("write close 1000",
+                  ws_write_masked_frame(client, NC_WS_OPCODE_CLOSE,
+                                        payload, sizeof(payload)),
+                  0);
+        int opcode = 0;
+        char buf[32];
+        size_t n = 0;
+        check_int("read close frame",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  0);
+        check_int("close opcode", opcode, NC_WS_OPCODE_CLOSE);
+        uint8_t close_hdr[4];
+        check_int("read close reply",
+                  ws_tcp_read_exact(client, close_hdr, sizeof(close_hdr)),
+                  0);
+        check_int("close reply opcode", close_hdr[0], 0x88);
+        check_int("close reply unmasked", (close_hdr[1] & 0x80) == 0, 1);
+        neverc_tcp_set_read_timeout(client, 2000);
+        char extra[8];
+        check_int("TCP FIN after WebSocket close",
+                  neverc_tcp_read(client, extra, sizeof(extra)), 0);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
+static void test_frame_length_overflow(void) {
+    printf("[frame_length_overflow]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("len-overflow listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("len-overflow client", client);
+    check_not_null("len-overflow server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("len-overflow server ws", ws);
+    if (ws) {
+        /* RFC 6455: 64-bit length most significant bit MUST be 0. */
+        uint8_t msb[14] = {
+            0x82, 0xff,
+            0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x37, 0xfa, 0x21, 0x3d
+        };
+        check_int("write 64-bit MSB length",
+                  neverc_tcp_write(client, msb, sizeof(msb)) ==
+                      (int)sizeof(msb),
+                  1);
+        int opcode = 0;
+        char buf[16];
+        size_t n = 0;
+        check_int("reject 64-bit MSB length",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  -1);
+        uint8_t close_hdr[4];
+        check_int("MSB close header",
+                  ws_tcp_read_exact(client, close_hdr, sizeof(close_hdr)),
+                  0);
+        check_int("MSB close opcode", close_hdr[0], 0x88);
+        uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
+                                   close_hdr[3]);
+        check_int("MSB close code 1002", code, 1002);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+
+    ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("nonminimal listen", ln);
+    if (!ln) return;
+    neverc_tcp_listener_addr(ln, &laddr);
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    client = neverc_tcp_dial(addr, &err);
+    server = neverc_tcp_accept(ln, &err);
+    check_not_null("nonminimal client", client);
+    check_not_null("nonminimal server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+    ws = ws_test_server_handshake(server, client);
+    check_not_null("nonminimal server ws", ws);
+    if (ws) {
+        /* 16-bit length encoding of 5 is non-minimal and must be rejected. */
+        uint8_t nonmin[8] = {
+            0x82, 0xfe, 0x00, 0x05, 0x37, 0xfa, 0x21, 0x3d
+        };
+        check_int("write non-minimal 16-bit length",
+                  neverc_tcp_write(client, nonmin, sizeof(nonmin)) ==
+                      (int)sizeof(nonmin),
+                  1);
+        int opcode = 0;
+        char buf[16];
+        size_t n = 0;
+        check_int("reject non-minimal 16-bit length",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  -1);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
+static void test_fragment_exceeds_read_limit(void) {
+    printf("[fragment_exceeds_read_limit]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("frag-limit listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("frag-limit client", client);
+    check_not_null("frag-limit server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("frag-limit server ws", ws);
+    if (ws) {
+        check_int("set fragment read limit",
+                  neverc_ws_set_read_limit(ws, 8), 0);
+        check_int("write first binary fragment",
+                  ws_write_masked_frame_ex(client, NC_WS_OPCODE_BINARY, 0,
+                                           "12345", 5),
+                  0);
+        int opcode = 0;
+        char buf[16];
+        size_t n = 0;
+        check_int("read first fragment",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  0);
+        check_int("first fragment len", (int)n, 5);
+        check_int("write overflowing continuation",
+                  ws_write_masked_frame_ex(client, NC_WS_OPCODE_CONTINUATION, 1,
+                                           "67890", 5),
+                  0);
+        check_int("reject assembled binary over limit",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  -1);
+        uint8_t close_hdr[4];
+        check_int("fragment close header",
+                  ws_tcp_read_exact(client, close_hdr, sizeof(close_hdr)),
+                  0);
+        uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
+                                   close_hdr[3]);
+        check_int("fragment close code 1009", code, 1009);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
+static void test_control_frame_short_copy(void) {
+    printf("[control_frame_short_copy]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("ctrl-copy listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("ctrl-copy client", client);
+    check_not_null("ctrl-copy server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("ctrl-copy server ws", ws);
+    if (ws) {
+        check_int("write 8-byte ping",
+                  ws_write_masked_frame(client, NC_WS_OPCODE_PING,
+                                        "pingping", 8),
+                  0);
+        int opcode = 0;
+        char tiny[2];
+        size_t n = 99;
+        check_int("read ping into small buffer",
+                  neverc_ws_read_frame(ws, &opcode, NULL, tiny, sizeof(tiny),
+                                       &n),
+                  0);
+        check_int("ping opcode", opcode, NC_WS_OPCODE_PING);
+        check_int("ping out_len capped to buffer", (int)n, 2);
+        uint8_t pong[10];
+        check_int("read auto pong header",
+                  ws_tcp_read_exact(client, pong, 2), 0);
+        check_int("pong opcode", pong[0] & 0x0f, NC_WS_OPCODE_PONG);
+        check_int("pong unmasked full payload", pong[1], 8);
+        check_int("read auto pong body",
+                  ws_tcp_read_exact(client, pong + 2, 8), 0);
+        check_int("pong payload", memcmp(pong + 2, "pingping", 8) == 0, 1);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
+static void test_reject_rsv_bits(void) {
+    printf("[reject_rsv_bits]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("rsv listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("rsv client", client);
+    check_not_null("rsv server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("rsv server ws", ws);
+    if (ws) {
+        /* RFC 6455 §5.2: RSV1-3 must be 0 unless an extension is negotiated. */
+        uint8_t rsv1[] = {
+            0xc1, 0x85, 0x37, 0xfa, 0x21, 0x3d,
+            (uint8_t)('h' ^ 0x37), (uint8_t)('e' ^ 0xfa),
+            (uint8_t)('l' ^ 0x21), (uint8_t)('l' ^ 0x3d),
+            (uint8_t)('o' ^ 0x37)
+        };
+        check_int("write RSV1 text",
+                  neverc_tcp_write(client, rsv1, sizeof(rsv1)) ==
+                      (int)sizeof(rsv1),
+                  1);
+        int opcode = 0;
+        char buf[16];
+        size_t n = 0;
+        check_int("reject RSV1",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  -1);
+        uint8_t close_hdr[4];
+        check_int("RSV close header",
+                  ws_tcp_read_exact(client, close_hdr, sizeof(close_hdr)),
+                  0);
+        check_int("RSV close opcode", close_hdr[0], 0x88);
+        uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
+                                   close_hdr[3]);
+        check_int("RSV close code 1002", code, 1002);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
+static void test_reject_fragmented_control(void) {
+    printf("[reject_fragmented_control]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("frag-ctrl listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("frag-ctrl client", client);
+    check_not_null("frag-ctrl server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("frag-ctrl server ws", ws);
+    if (ws) {
+        check_int("write fragmented ping",
+                  ws_write_masked_frame_ex(client, NC_WS_OPCODE_PING, 0,
+                                           "ping", 4),
+                  0);
+        int opcode = 0;
+        char buf[16];
+        size_t n = 0;
+        check_int("reject fragmented ping",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  -1);
+        uint8_t close_hdr[4];
+        check_int("frag-ctrl close header",
+                  ws_tcp_read_exact(client, close_hdr, sizeof(close_hdr)),
+                  0);
+        uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
+                                   close_hdr[3]);
+        check_int("frag-ctrl close code 1002", code, 1002);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
+static void test_reject_oversize_control(void) {
+    printf("[reject_oversize_control]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("oversize-ctrl listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("oversize-ctrl client", client);
+    check_not_null("oversize-ctrl server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("oversize-ctrl server ws", ws);
+    if (ws) {
+        /* 16-bit length 126 on a ping is both non-minimal and > 125. */
+        uint8_t hdr[8] = {
+            0x89, 0xfe, 0x00, 0x7e, 0x37, 0xfa, 0x21, 0x3d
+        };
+        check_int("write ping with 16-bit length 126",
+                  neverc_tcp_write(client, hdr, sizeof(hdr)) ==
+                      (int)sizeof(hdr),
+                  1);
+        int opcode = 0;
+        char buf[16];
+        size_t n = 0;
+        check_int("reject control payload 126",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  -1);
+        uint8_t close_hdr[4];
+        check_int("oversize-ctrl close header",
+                  ws_tcp_read_exact(client, close_hdr, sizeof(close_hdr)),
+                  0);
+        uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
+                                   close_hdr[3]);
+        check_int("oversize-ctrl close code 1002", code, 1002);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
 #ifndef _WIN32
 
 static int tcp_read_exact(neverc_tcp_conn_t *conn, void *buf, size_t len) {
@@ -602,6 +1042,66 @@ static void test_client_dial_and_masking(void) {
     neverc_tcp_listener_close(ln);
 }
 
+static void test_reject_masked_server_frame(void) {
+    printf("[reject_masked_server_frame]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("masked-server listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    pid_t pid = fork();
+    if (pid == 0) {
+        char url[128];
+        snprintf(url, sizeof(url), "ws://127.0.0.1:%u/ws",
+                 (unsigned)laddr.port);
+        neverc_ws_conn_t *ws = neverc_ws_dial(url, NULL, &err);
+        if (!ws) _exit(1);
+        if (neverc_ws_set_timeout(ws, 5000) != 0) {
+            neverc_ws_conn_free(ws);
+            _exit(2);
+        }
+        char msg[64];
+        size_t n = 0;
+        int rc = neverc_ws_read_message(ws, msg, sizeof(msg), &n);
+        neverc_ws_conn_free(ws);
+        _exit(rc == 0 ? 3 : 0);
+    }
+
+    neverc_tcp_conn_t *conn = neverc_tcp_accept(ln, &err);
+    check_not_null("masked-server accept", conn);
+    if (conn) {
+        neverc_tcp_set_timeout(conn, 5000);
+        char request[4096];
+        int total = 0;
+        while (total < (int)sizeof(request) - 1) {
+            int n = neverc_tcp_read(conn, request + total,
+                                    sizeof(request) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+            request[total] = '\0';
+            if (strstr(request, "\r\n\r\n")) break;
+        }
+        size_t consumed = 0;
+        check_int("masked-server handshake",
+                  neverc_ws_handshake_server(conn, request, (size_t)total,
+                                             &consumed),
+                  0);
+        /* RFC 6455 §5.1: a client MUST close on a masked server frame. */
+        check_int("write illegal masked server frame",
+                  ws_write_masked_frame(conn, NC_WS_OPCODE_TEXT, "hello", 5),
+                  0);
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    check_int("client rejected masked server frame",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+    if (conn) neverc_tcp_close(conn);
+    neverc_tcp_listener_close(ln);
+}
+
 static int ws_client_send_masked_text(neverc_tcp_conn_t *conn, const char *msg) {
     size_t len = strlen(msg);
     if (len > 125) return -1;
@@ -610,14 +1110,14 @@ static int ws_client_send_masked_text(neverc_tcp_conn_t *conn, const char *msg) 
     hdr[0] = 0x81;
     hdr[1] = (uint8_t)(0x80 | len);
     memcpy(hdr + 2, mask, 4);
-    if (neverc_tcp_write(conn, hdr, 6) < 0) return -1;
+    if (neverc_tcp_write(conn, hdr, 6) != 6) return -1;
     char *masked = (char *)malloc(len);
     if (!masked) return -1;
     for (size_t i = 0; i < len; i++)
         masked[i] = (char)(msg[i] ^ mask[i % 4]);
     int rc = neverc_tcp_write(conn, masked, len);
     free(masked);
-    return rc < 0 ? -1 : 0;
+    return rc == (int)len ? 0 : -1;
 }
 
 static void test_handshake_and_echo(void) {
@@ -665,10 +1165,10 @@ static void test_handshake_and_echo(void) {
         if (ws_client_send_masked_text(c, "hello ws") != 0) _exit(4);
 
         uint8_t fh[2];
-        if (neverc_tcp_read(c, fh, 2) != 2) _exit(4);
+        if (ws_tcp_read_exact(c, fh, 2) != 0) _exit(4);
         size_t plen = fh[1] & 0x7F;
         char body[64];
-        if (plen > 0 && neverc_tcp_read(c, body, plen) != (int)plen) _exit(5);
+        if (plen > 0 && ws_tcp_read_exact(c, body, plen) != 0) _exit(5);
         body[plen] = '\0';
 
         neverc_tcp_close(c);
@@ -728,7 +1228,7 @@ static int ws_client_send_masked_frame(neverc_tcp_conn_t *conn, int opcode,
     hdr[0] = (uint8_t)(0x80 | (opcode & 0x0F));
     hdr[1] = (uint8_t)(0x80 | len);
     memcpy(hdr + 2, mask, 4);
-    if (neverc_tcp_write(conn, hdr, 6) < 0) return -1;
+    if (neverc_tcp_write(conn, hdr, 6) != 6) return -1;
     const char *p = (const char *)payload;
     char *masked = (char *)malloc(len);
     if (!masked) return -1;
@@ -736,7 +1236,7 @@ static int ws_client_send_masked_frame(neverc_tcp_conn_t *conn, int opcode,
         masked[i] = (char)(p[i] ^ mask[i % 4]);
     int rc = neverc_tcp_write(conn, masked, len);
     free(masked);
-    return rc < 0 ? -1 : 0;
+    return rc == (int)len ? 0 : -1;
 }
 
 static void test_ping_pong(void) {
@@ -783,13 +1283,13 @@ static void test_ping_pong(void) {
             _exit(3);
 
         uint8_t fh[2];
-        if (neverc_tcp_read(c, fh, 2) != 2) _exit(4);
+        if (ws_tcp_read_exact(c, fh, 2) != 0) _exit(4);
         int opcode = fh[0] & 0x0F;
         size_t plen = fh[1] & 0x7F;
         if (opcode != NC_WS_OPCODE_PONG) _exit(5);
 
         char payload[16];
-        if (plen > 0 && neverc_tcp_read(c, payload, plen) != (int)plen) _exit(6);
+        if (plen > 0 && ws_tcp_read_exact(c, payload, plen) != 0) _exit(6);
 
         neverc_tcp_close(c);
         _exit(plen == 4 && memcmp(payload, "ping", 4) == 0 ? 0 : 7);
@@ -919,11 +1419,11 @@ static void test_http_ws_upgrade(void) {
     check_int("send ws text", ws_client_send_masked_text(c, "via-http") == 0, 1);
 
     uint8_t fh[2];
-    check_int("read frame hdr", neverc_tcp_read(c, fh, 2) == 2, 1);
+    check_int("read frame hdr", ws_tcp_read_exact(c, fh, 2) == 0, 1);
     size_t plen = fh[1] & 0x7F;
     char body[64];
     if (plen > 0)
-        check_int("read frame body", neverc_tcp_read(c, body, plen) == (int)plen, 1);
+        check_int("read frame body", ws_tcp_read_exact(c, body, plen) == 0, 1);
     body[plen] = '\0';
     check_str("echo body", body, "http+ws:via-http");
 
@@ -999,8 +1499,16 @@ int main(void) {
     test_close_code_message_too_big();
     test_close_invalid_utf8_reason_is_1007();
     test_local_buffer_too_small_keeps_stream();
+    test_close_half_closes_write();
+    test_frame_length_overflow();
+    test_fragment_exceeds_read_limit();
+    test_control_frame_short_copy();
+    test_reject_rsv_bits();
+    test_reject_fragmented_control();
+    test_reject_oversize_control();
 #ifndef _WIN32
     test_client_dial_and_masking();
+    test_reject_masked_server_frame();
     test_handshake_and_echo();
     test_ping_pong();
     test_http_ws_upgrade();

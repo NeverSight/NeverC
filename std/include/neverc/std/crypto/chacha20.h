@@ -24,6 +24,10 @@ void neverc_chacha20_init(neverc_chacha20_ctx *ctx,
                           uint32_t counter);
 void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
                          uint8_t *dst, const uint8_t *src, size_t len);
+/* Checked XOR. Returns 0 on success and -1 if the context is unusable,
+ * a span is invalid, or the request would wrap the 32-bit block counter. */
+int neverc_chacha20_xor_checked(neverc_chacha20_ctx *ctx,
+                                uint8_t *dst, const uint8_t *src, size_t len);
 void neverc_chacha20_block(const uint32_t state[16], uint8_t out[64]);
 
 #ifdef __cplusplus

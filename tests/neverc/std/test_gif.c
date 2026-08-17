@@ -1,5 +1,6 @@
 #include "neverc/std/image/gif.h"
 #include "neverc/std/compress/lzw.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -182,6 +183,12 @@ static void test_invalid_data(void) {
     frame.palette_size = 2;
     pixel = 2; /* index outside the 2-color palette */
     ASSERT_EQ(neverc_gif_encode(&frame, &output, &output_length), -1);
+
+    uint8_t rgba_px[4] = {0, 0, 0, 255};
+    neverc_gif_frame_t from;
+    memset(&from, 0xA5, sizeof(from));
+    ASSERT_EQ(neverc_gif_from_rgba(rgba_px, 65536, 1, &from), -1);
+    ASSERT_EQ(neverc_gif_from_rgba(rgba_px, UINT16_MAX, UINT16_MAX, &from), -1);
 }
 
 static void test_rejects_trailing_bytes(void) {

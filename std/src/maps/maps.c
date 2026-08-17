@@ -342,6 +342,10 @@ static map_callback_entry_t *map_callback_snapshot(const neverc_map_t *m,
     for (size_t i = 0; i < m->cap; i++) {
         if (!NCI_IS_FULL(m->ctrl[i])) continue;
         size_t len = m->slots[i].key_len;
+        if (len == SIZE_MAX) {
+            map_free_callback_snapshot(entries, k);
+            return NULL;
+        }
         entries[k].key = (char *)malloc(len + 1);
         if (!entries[k].key) {
             map_free_callback_snapshot(entries, k);
@@ -427,12 +431,14 @@ int neverc_maps_set(neverc_map_t *m, const char *key, void *value) {
     size_t target;
     int was_empty;
     if (m->len + m->tombstones >= map_max_load(m->cap)) {
-        /* Mostly tombstones with few live entries → reclaim in place; otherwise
-         * genuinely full → grow to 2x. */
+        /* Occupancy includes tombstones. If live keys still fit, drop them
+         * in place (or shrink) instead of growing — otherwise a handful of
+         * DELETED slots at high live-load forces a 2x table (and can OOM
+         * when a same-cap rehash would have succeeded). */
         size_t new_cap;
-        if (m->len <= map_max_load(m->cap) / 2)
-            new_cap = m->cap;
-        else if (m->cap > (SIZE_MAX >> 1)) {
+        if (m->len < map_max_load(m->cap)) {
+            new_cap = map_ideal_cap(m->len);
+        } else if (m->cap > (SIZE_MAX >> 1)) {
             free(dup);
             return -1;
         } else {
@@ -458,7 +464,7 @@ int neverc_maps_set(neverc_map_t *m, const char *key, void *value) {
     m->slots[target].hash = h;
     m->slots[target].key_len = klen;
     m->len++;
-    if (!was_empty) m->tombstones--;
+    if (!was_empty && m->tombstones > 0) m->tombstones--;
     return 0;
 }
 
@@ -510,10 +516,8 @@ int neverc_maps_delete(neverc_map_t *m, const char *key) {
      * reclaims the dead slots (so probes stay short) and returns memory after
      * bulk deletes — something Abseil/Go-style tables never do. The trigger is
      * geometric, so amortized delete cost stays O(1). */
-    if (m->tombstones > m->len) {
-        size_t ideal = map_ideal_cap(m->len);
-        if (ideal < m->cap) map_resize(m, ideal);
-    }
+    if (m->tombstones > m->len)
+        (void)map_resize(m, map_ideal_cap(m->len));
     return 0;
 }
 
@@ -579,6 +583,7 @@ neverc_map_t *neverc_maps_clone(const neverc_map_t *m) {
     for (size_t i = 0; i < m->cap; i++) {
         if (!NCI_IS_FULL(m->ctrl[i])) continue;
         size_t klen = m->slots[i].key_len;
+        if (klen == SIZE_MAX) { neverc_maps_free(c); return NULL; }
         char *dup = (char *)malloc(klen + 1);
         if (!dup) { neverc_maps_free(c); return NULL; }
         memcpy(dup, m->slots[i].key, klen + 1);
@@ -603,9 +608,13 @@ int neverc_maps_equal(const neverc_map_t *a, const neverc_map_t *b) {
     return 1;
 }
 
-void neverc_maps_copy(neverc_map_t *dst, const neverc_map_t *src) {
-    if (!dst || !src) return;
-    for (size_t i = 0; i < src->cap; i++)
-        if (NCI_IS_FULL(src->ctrl[i]))
-            neverc_maps_set(dst, src->slots[i].key, src->slots[i].value);
+int neverc_maps_copy(neverc_map_t *dst, const neverc_map_t *src) {
+    if (!dst || !src) return -1;
+    if (dst == src) return 0;
+    for (size_t i = 0; i < src->cap; i++) {
+        if (!NCI_IS_FULL(src->ctrl[i])) continue;
+        if (neverc_maps_set(dst, src->slots[i].key, src->slots[i].value) != 0)
+            return -1;
+    }
+    return 0;
 }

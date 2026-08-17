@@ -36,8 +36,12 @@ static void check_true(const char *name, int cond) {
 
 static void check_str(const char *name, const char *got, const char *expected) {
     tests_run++;
-    if (strcmp(got, expected) == 0) { tests_passed++; }
-    else { tests_failed++; printf("  FAIL: %s: got \"%s\", expected \"%s\"\n", name, got, expected); }
+    if (got && expected && strcmp(got, expected) == 0) { tests_passed++; }
+    else {
+        tests_failed++;
+        printf("  FAIL: %s: got \"%s\", expected \"%s\"\n", name,
+               got ? got : "(null)", expected ? expected : "(null)");
+    }
 }
 
 static void check_double_approx(const char *name, double got, double expected, double eps) {
@@ -80,6 +84,20 @@ static void test_atoi(void) {
               neverc_strconv_atoi("-18446744073709551616", &v),
               NEVERC_STRCONV_ERR_RANGE);
     check_int("atoi negative overflow clamp", v, INT_MIN);
+    /* Classic wrap: values that fit in int64 but not int32. */
+    check_int("atoi INT_MAX exact", neverc_strconv_atoi("2147483647", &v), 0);
+    check_int("atoi INT_MAX val", v, INT_MAX);
+    check_int("atoi INT_MAX+1 wrap",
+              neverc_strconv_atoi("2147483648", &v), NEVERC_STRCONV_ERR_RANGE);
+    check_int("atoi INT_MAX+1 clamp", v, INT_MAX);
+    check_int("atoi INT_MIN exact", neverc_strconv_atoi("-2147483648", &v), 0);
+    check_int("atoi INT_MIN val", v, INT_MIN);
+    check_int("atoi INT_MIN-1 wrap",
+              neverc_strconv_atoi("-2147483649", &v), NEVERC_STRCONV_ERR_RANGE);
+    check_int("atoi INT_MIN-1 clamp", v, INT_MIN);
+    check_int("atoi leading zeros overflow",
+              neverc_strconv_atoi("0002147483648", &v), NEVERC_STRCONV_ERR_RANGE);
+    check_int("atoi leading zeros overflow clamp", v, INT_MAX);
 
     long long ll = 0;
     check_int("atol 42", neverc_strconv_atol("42", &ll), 0);
@@ -229,9 +247,21 @@ static void test_parse_float(void) {
     check_int("float +Infinity",neverc_strconv_parse_float("+Infinity", &v), 0);
 
     /* Overflow / underflow must report RANGE (Go ParseFloat ErrRange). */
+    check_int("float 1e308 finite",
+              neverc_strconv_parse_float("1e308", &v), 0);
+    check_true("float 1e308 not Inf", v > 1e307 && v + v != v);
     check_int("float 1e309 overflow",
               neverc_strconv_parse_float("1e309", &v), NEVERC_STRCONV_ERR_RANGE);
     check_true("float 1e309 is +Inf", v > 1e308 && v == v && v + v == v);
+    check_int("float 2e308 overflow",
+              neverc_strconv_parse_float("2e308", &v), NEVERC_STRCONV_ERR_RANGE);
+    check_true("float 2e308 is +Inf", v > 1e308 && v == v && v + v == v);
+    check_int("float +1e309 overflow",
+              neverc_strconv_parse_float("+1e309", &v), NEVERC_STRCONV_ERR_RANGE);
+    check_true("float +1e309 is +Inf", v > 1e308 && v + v == v);
+    check_int("float 1.8e308 overflow",
+              neverc_strconv_parse_float("1.8e308", &v), NEVERC_STRCONV_ERR_RANGE);
+    check_true("float 1.8e308 is +Inf", v > 1e308 && v + v == v);
     check_int("float -1e309 overflow",
               neverc_strconv_parse_float("-1e309", &v), NEVERC_STRCONV_ERR_RANGE);
     check_true("float -1e309 is -Inf", v < -1e308 && v + v == v);
@@ -455,6 +485,38 @@ static void test_quote(void) {
     check_str("quote control", q, "\"\\x01\\x02\\x03\"");
     free(q);
 
+    q = neverc_strconv_quote("\xff");
+    check_str("quote invalid UTF-8 byte", q, "\"\\xff\"");
+    free(q);
+
+    q = neverc_strconv_quote("\xc0\x80");
+    check_str("quote overlong UTF-8", q, "\"\\xc0\\x80\"");
+    free(q);
+
+    q = neverc_strconv_quote("a\xfe" "b");
+    check_str("quote invalid UTF-8 mid-string", q, "\"a\\xfe" "b\"");
+    free(q);
+
+    q = neverc_strconv_quote("\xe4\xb8");
+    check_str("quote incomplete UTF-8", q, "\"\\xe4\\xb8\"");
+    free(q);
+
+    q = neverc_strconv_quote("\xed\xa0\x80");
+    check_str("quote UTF-8 surrogate bytes", q, "\"\\xed\\xa0\\x80\"");
+    free(q);
+
+    q = neverc_strconv_quote_to_ascii("\xff");
+    check_str("quote_to_ascii invalid UTF-8", q, "\"\\xff\"");
+    free(q);
+
+    q = neverc_strconv_quote(NULL);
+    check_true("quote null rejected", q == NULL);
+    free(q);
+
+    q = neverc_strconv_quote_rune(0xD800);
+    check_str("quote invalid rune surrogate", q, "'\xef\xbf\xbd'");
+    free(q);
+
     q = neverc_strconv_quote_to_graphic("hello world");
     check_str("quote graphic", q, "\"hello world\"");
     free(q);
@@ -616,6 +678,10 @@ static void test_can_backquote(void) {
     check_int("newline bad", neverc_strconv_can_backquote("hello\nworld"), 0);
     check_int("backtick bad", neverc_strconv_can_backquote("back`tick"), 0);
     check_int("control bad", neverc_strconv_can_backquote("\x01"), 0);
+    check_int("invalid UTF-8 rejected", neverc_strconv_can_backquote("\xff"), 0);
+    check_int("overlong UTF-8 rejected", neverc_strconv_can_backquote("\xc0\x80"), 0);
+    check_int("incomplete UTF-8 rejected", neverc_strconv_can_backquote("\xe4\xb8"), 0);
+    check_int("U+FFFD encoding allowed", neverc_strconv_can_backquote("\xef\xbf\xbd"), 1);
     check_int("empty ok", neverc_strconv_can_backquote(""), 1);
     check_int("null rejected", neverc_strconv_can_backquote(NULL), 0);
 }

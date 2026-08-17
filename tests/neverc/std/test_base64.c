@@ -128,6 +128,15 @@ static void test_decode(void) {
     check_mem("decode ignores CRLF value",
               dst, (const uint8_t *)"foobar", 6);
 
+    n = neverc_base64_decode(dst, "Zm9vYmFy\n", 9);
+    check_int("decode trailing newline length", n, 6);
+    check_mem("decode trailing newline value",
+              dst, (const uint8_t *)"foobar", 6);
+    check_int("strict: leftover alphabet after valid group",
+              neverc_base64_decode(dst, "Zm9vYmFy!!!!", 12), -1);
+    check_int("strict: leftover after newline-folded group",
+              neverc_base64_decode(dst, "Zm9vYmFy\n!!!!", 13), -1);
+
     n = neverc_base64_decode(dst, "Zg=\n=", 5);
     check_int("decode padding split by newline length", n, 1);
     check_mem("decode padding split by newline value",

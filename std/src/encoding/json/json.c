@@ -56,6 +56,12 @@ static int peek(parser_t *p) {
     return p->pos < p->len ? p->src[p->pos] : -1;
 }
 
+/* Subtraction form: `pos + n` wraps when pos is near SIZE_MAX and would
+ * treat an out-of-range read as in-bounds. */
+static int parser_has(const parser_t *p, size_t n) {
+    return p->pos <= p->len && n <= p->len - p->pos;
+}
+
 static int consume(parser_t *p, char expected) {
     skip_ws(p);
     if (p->pos < p->len && p->src[p->pos] == expected) {
@@ -68,7 +74,7 @@ static int consume(parser_t *p, char expected) {
 static neverc_json_value_t *parse_value(parser_t *p);
 
 static neverc_json_value_t *parse_null(parser_t *p) {
-    if (p->pos + 4 <= p->len && memcmp(p->src + p->pos, "null", 4) == 0) {
+    if (parser_has(p, 4) && memcmp(p->src + p->pos, "null", 4) == 0) {
         p->pos += 4;
         return neverc_json_new_null();
     }
@@ -76,11 +82,11 @@ static neverc_json_value_t *parse_null(parser_t *p) {
 }
 
 static neverc_json_value_t *parse_bool(parser_t *p) {
-    if (p->pos + 4 <= p->len && memcmp(p->src + p->pos, "true", 4) == 0) {
+    if (parser_has(p, 4) && memcmp(p->src + p->pos, "true", 4) == 0) {
         p->pos += 4;
         return neverc_json_new_bool(1);
     }
-    if (p->pos + 5 <= p->len && memcmp(p->src + p->pos, "false", 5) == 0) {
+    if (parser_has(p, 5) && memcmp(p->src + p->pos, "false", 5) == 0) {
         p->pos += 5;
         return neverc_json_new_bool(0);
     }
@@ -95,6 +101,8 @@ static int hex_digit(char c) {
 }
 
 static int encode_utf8(uint32_t cp, char *out) {
+    if (cp >= 0xD800U && cp <= 0xDFFFU)
+        return 0;
     if (cp < 0x80) {
         out[0] = (char)cp;
         return 1;
@@ -234,7 +242,7 @@ static neverc_json_value_t *parse_string(parser_t *p) {
             case 'r':  out[0] = '\r'; break;
             case 't':  out[0] = '\t'; break;
             case 'u': {
-                if (p->pos + 4 > p->len) { sb_free(&b); return NULL; }
+                if (!parser_has(p, 4)) { sb_free(&b); return NULL; }
                 uint32_t cp = 0;
                 for (int i = 0; i < 4; i++) {
                     int d = hex_digit(p->src[p->pos++]);
@@ -242,7 +250,7 @@ static neverc_json_value_t *parse_string(parser_t *p) {
                     cp = (cp << 4) | (uint32_t)d;
                 }
                 if (cp >= 0xD800 && cp <= 0xDBFF) {       /* high surrogate */
-                    if (p->pos + 6 > p->len) { sb_free(&b); return NULL; }
+                    if (!parser_has(p, 6)) { sb_free(&b); return NULL; }
                     if (p->src[p->pos] != '\\' || p->src[p->pos+1] != 'u') { sb_free(&b); return NULL; }
                     p->pos += 2;
                     uint32_t lo = 0;
@@ -258,6 +266,7 @@ static neverc_json_value_t *parse_string(parser_t *p) {
                     return NULL;
                 }
                 n = encode_utf8(cp, out);
+                if (n <= 0) { sb_free(&b); return NULL; }
                 break;
             }
             default: sb_free(&b); return NULL;
@@ -320,7 +329,7 @@ static neverc_json_value_t *parse_number(parser_t *p) {
      * fraction/exponent, or more digits (where rounding matters), falls back. */
     if (is_int && int_digits <= 15) {
         double val = 0.0;
-        for (size_t i = int_start; i < int_start + int_digits; i++)
+        for (size_t i = int_start; i < p->pos; i++)
             val = val * 10.0 + (double)(p->src[i] - '0');
         return neverc_json_new_number(neg ? -val : val);
     }
@@ -450,21 +459,22 @@ static uint32_t km_hash(const char *s, size_t len) {
             a = 0; b = 0;
         }
     } else if (len <= 48) {
+        /* len >= 17 here, so len-16 cannot wrap. */
         size_t i = 0;
-        for (; i + 16 <= len; i += 16)
+        for (; i <= len - 16; i += 16)
             seed = jkm_wymix(jkm_read8(p + i) ^ JKM_WY_S1, jkm_read8(p + i + 8) ^ seed);
         a = jkm_read8(p + len - 16);
         b = jkm_read8(p + len - 8);
     } else {
         uint64_t s1 = seed, s2 = seed;
         size_t i = 0;
-        for (; i + 48 <= len; i += 48) {
+        for (; i <= len - 48; i += 48) {
             seed = jkm_wymix(jkm_read8(p + i)      ^ JKM_WY_S0, jkm_read8(p + i + 8)  ^ seed);
             s1   = jkm_wymix(jkm_read8(p + i + 16) ^ JKM_WY_S1, jkm_read8(p + i + 24) ^ s1);
             s2   = jkm_wymix(jkm_read8(p + i + 32) ^ JKM_WY_S2, jkm_read8(p + i + 40) ^ s2);
         }
         seed ^= s1 ^ s2;
-        for (; i + 16 <= len; i += 16)
+        for (; i <= len - 16; i += 16)
             seed = jkm_wymix(jkm_read8(p + i) ^ JKM_WY_S1, jkm_read8(p + i + 8) ^ seed);
         a = jkm_read8(p + len - 16);
         b = jkm_read8(p + len - 8);
@@ -753,7 +763,10 @@ static int json_needs_escape(unsigned char c) {
 }
 
 static int json_line_separator(const char *p, const char *end) {
-    return (unsigned char)p[0] == 0xE2 && p + 2 < end &&
+    /* Subtraction form: `p + 2 < end` wraps when p is near the address-space
+     * end and would treat an out-of-range 3-byte read as in-bounds. */
+    return p < end && (size_t)(end - p) >= 3U &&
+           (unsigned char)p[0] == 0xE2 &&
            (unsigned char)p[1] == 0x80 &&
            ((unsigned char)p[2] == 0xA8 || (unsigned char)p[2] == 0xA9);
 }

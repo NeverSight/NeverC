@@ -1,5 +1,6 @@
 #include "neverc/std/math/bits.h"
 #include <stdio.h>
+#include <stddef.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -133,6 +134,11 @@ static void test_add_sub(void) {
     check_u64("add64(MAX,MAX,1).sum", sum, 0xFFFFFFFFFFFFFFFFULL);
     check_u64("add64(MAX,MAX,1).carry", carry, 1);
 
+    /* Carry 2 is Go-undefined; the bit formula reported 1 instead of 2. */
+    neverc_bits_add64(0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL, 2, &sum, &carry);
+    check_u64("add64(MAX,MAX,2).sum", sum, 0);
+    check_u64("add64(MAX,MAX,2).carry", carry, 2);
+
     uint64_t diff, borrow;
     neverc_bits_sub64(5, 3, 0, &diff, &borrow);
     check_u64("sub64(5,3,0).diff", diff, 2);
@@ -141,6 +147,19 @@ static void test_add_sub(void) {
     neverc_bits_sub64(0, 1, 0, &diff, &borrow);
     check_u64("sub64(0,1,0).diff", diff, 0xFFFFFFFFFFFFFFFFULL);
     check_u64("sub64(0,1,0).borrow", borrow, 1);
+
+    neverc_bits_sub64(0, 0, 2, &diff, &borrow);
+    check_u64("sub64(0,0,2).diff", diff, 0xFFFFFFFFFFFFFFFEULL);
+    check_u64("sub64(0,0,2).borrow", borrow, 1);
+
+    neverc_bits_sub64(0, 0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL, &diff, &borrow);
+    check_u64("sub64(0,MAX,MAX).diff", diff, 2);
+    check_u64("sub64(0,MAX,MAX).borrow", borrow, 2);
+
+    neverc_bits_add64(1, 1, 0, NULL, NULL);
+    neverc_bits_sub64(1, 1, 0, NULL, NULL);
+    neverc_bits_add64(3, 4, 0, &sum, &carry);
+    check_u64("add64 after NULL still works", sum, 7);
 }
 
 static void test_mul64(void) {
@@ -163,6 +182,15 @@ static void test_mul64(void) {
     neverc_bits_mul64(0xDEADBEEFCAFEBABEULL, 1, &hi, &lo);
     check_u64("mul64(x,1).hi", hi, 0);
     check_u64("mul64(x,1).lo", lo, 0xDEADBEEFCAFEBABEULL);
+
+    /* (2^64-1)^2 = 2^128 - 2^65 + 1 → hi = MAX-1, lo = 1. */
+    neverc_bits_mul64(0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL, &hi, &lo);
+    check_u64("mul64(MAX,MAX).hi", hi, 0xFFFFFFFFFFFFFFFEULL);
+    check_u64("mul64(MAX,MAX).lo", lo, 1);
+
+    neverc_bits_mul64(1, 2, NULL, NULL);
+    neverc_bits_mul64(3, 5, &hi, &lo);
+    check_u64("mul64 after NULL still works", lo, 15);
 }
 
 /* Exhaustive consistency: clz + ctz + popcount properties */
@@ -238,6 +266,18 @@ static void test_32_arithmetic(void) {
     check_int("sub32 underflow", (int)diff, (int)0xFFFFFFFF);
     check_int("sub32 borrow", (int)borrow, 1);
 
+    neverc_bits_add32(0xFFFFFFFFU, 0xFFFFFFFFU, 2, &sum, &carry);
+    check_u32("add32(MAX,MAX,2).sum", sum, 0);
+    check_u32("add32(MAX,MAX,2).carry", carry, 2);
+
+    neverc_bits_sub32(0, 0xFFFFFFFFU, 0xFFFFFFFFU, &diff, &borrow);
+    check_u32("sub32(0,MAX,MAX).diff", diff, 2);
+    check_u32("sub32(0,MAX,MAX).borrow", borrow, 2);
+
+    neverc_bits_add32(1, 1, 0, NULL, NULL);
+    neverc_bits_sub32(1, 1, 0, NULL, NULL);
+    neverc_bits_mul32(1, 1, NULL, NULL);
+
     neverc_bits_mul32(0xFFFF, 0xFFFF, &hi, &lo);
     check_int("mul32 hi", (int)hi, 0);
     check_int("mul32 lo", (int)lo, (int)((uint32_t)0xFFFF * (uint32_t)0xFFFF));
@@ -299,6 +339,12 @@ static void test_generic_versions(void) {
     neverc_bits_mul(6, 7, &hi, &lo);
     check_int("mul(6,7).lo", (int)lo, 42);
     check_int("mul(6,7).hi", (int)hi, 0);
+
+    neverc_bits_add(1, 1, 0, NULL, NULL);
+    neverc_bits_sub(1, 1, 0, NULL, NULL);
+    neverc_bits_mul(1, 1, NULL, NULL);
+    neverc_bits_add(x, y, 0, &sum, &carry);
+    check_int("add after NULL still works", (int)sum, 100);
 
     unsigned int quo, rem;
     neverc_bits_div(0, 100, 7, &quo, &rem);

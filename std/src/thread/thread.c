@@ -84,7 +84,10 @@ static int thread_cond_wait(neverc_thread_cond_t *cond,
 #endif
 
 typedef pthread_mutex_t neverc_thread_mutex_t;
-typedef pthread_cond_t neverc_thread_cond_t;
+typedef struct {
+    pthread_cond_t cv;
+    int clock_id;
+} neverc_thread_cond_t;
 typedef pthread_t neverc_thread_handle_t;
 
 static int thread_mutex_init(neverc_thread_mutex_t *mutex) {
@@ -104,29 +107,57 @@ static void thread_mutex_unlock(neverc_thread_mutex_t *mutex) {
 }
 
 static int thread_cond_init(neverc_thread_cond_t *cond) {
-    return pthread_cond_init(cond, NULL);
+    cond->clock_id = CLOCK_REALTIME;
+#if defined(__APPLE__)
+    /* timedwait uses pthread_cond_timedwait_relative_np, so the cond clock
+     * does not matter. */
+    return pthread_cond_init(&cond->cv, NULL);
+#elif defined(CLOCK_MONOTONIC)
+    pthread_condattr_t attr;
+    if (pthread_condattr_init(&attr) == 0) {
+        if (pthread_condattr_setclock(&attr, CLOCK_MONOTONIC) == 0 &&
+            pthread_cond_init(&cond->cv, &attr) == 0) {
+            pthread_condattr_destroy(&attr);
+            cond->clock_id = CLOCK_MONOTONIC;
+            return 0;
+        }
+        pthread_condattr_destroy(&attr);
+    }
+    return pthread_cond_init(&cond->cv, NULL);
+#else
+    return pthread_cond_init(&cond->cv, NULL);
+#endif
 }
 
 static void thread_cond_destroy(neverc_thread_cond_t *cond) {
-    (void)pthread_cond_destroy(cond);
+    (void)pthread_cond_destroy(&cond->cv);
 }
 
 static void thread_cond_signal(neverc_thread_cond_t *cond) {
-    (void)pthread_cond_signal(cond);
+    (void)pthread_cond_signal(&cond->cv);
 }
 
 static void thread_cond_broadcast(neverc_thread_cond_t *cond) {
-    (void)pthread_cond_broadcast(cond);
+    (void)pthread_cond_broadcast(&cond->cv);
 }
 
 static int thread_cond_wait(neverc_thread_cond_t *cond,
                             neverc_thread_mutex_t *mutex,
                             neverc_context_t *ctx) {
     if (!ctx)
-        return pthread_cond_wait(cond, mutex) == 0 ? 0 : -1;
+        return pthread_cond_wait(&cond->cv, mutex) == 0 ? 0 : -1;
 
+#if defined(__APPLE__)
+    /* Relative wait is immune to CLOCK_REALTIME steps (NTP, settimeofday),
+     * which otherwise delay context cancellation by the clock jump. */
+    struct timespec rel;
+    rel.tv_sec = 0;
+    rel.tv_nsec = NEVERC_THREAD_CONTEXT_POLL_MS * 1000000L;
+    int result = pthread_cond_timedwait_relative_np(&cond->cv, mutex, &rel);
+    return result == 0 || result == ETIMEDOUT ? 0 : -1;
+#else
     struct timespec deadline;
-    if (clock_gettime(CLOCK_REALTIME, &deadline) != 0)
+    if (clock_gettime(cond->clock_id, &deadline) != 0)
         return -1;
     deadline.tv_nsec += NEVERC_THREAD_CONTEXT_POLL_MS * 1000000L;
     if (deadline.tv_nsec >= 1000000000L) {
@@ -134,8 +165,9 @@ static int thread_cond_wait(neverc_thread_cond_t *cond,
         deadline.tv_nsec -= 1000000000L;
     }
 
-    int result = pthread_cond_timedwait(cond, mutex, &deadline);
+    int result = pthread_cond_timedwait(&cond->cv, mutex, &deadline);
     return result == 0 || result == ETIMEDOUT ? 0 : -1;
+#endif
 }
 
 #endif

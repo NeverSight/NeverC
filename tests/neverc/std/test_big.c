@@ -278,6 +278,29 @@ static void test_div(void) {
     ASSERT_INT_EQ(neverc_bigint_int64(&q), 14);
     ASSERT_INT_EQ(neverc_bigint_int64(&r), -2);
 
+    /* Untrimmed zero divisor (len>0, high limb 0) used to hit word/0 or hang
+     * Knuth D's normalize loop. Fail closed like a trimmed 0. */
+    neverc_bigint_set_int64(&a, 100);
+    neverc_bigint_set_uint64(&b, 0x100000000ULL);
+    ASSERT_TRUE(b.digits && b.len == 2);
+    b.digits[1] = 0;
+    neverc_bigint_div(&q, &r, &a, &b);
+    ASSERT_TRUE(neverc_bigint_is_zero(&q));
+    ASSERT_TRUE(neverc_bigint_is_zero(&r));
+
+    /* Untrimmed non-zero: 2^32+7 with the high limb cleared is 7. */
+    neverc_bigint_set_uint64(&b, 0x100000007ULL);
+    ASSERT_TRUE(b.digits && b.len == 2);
+    b.digits[1] = 0;
+    neverc_bigint_div(&q, &r, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_int64(&q), 14);
+    ASSERT_INT_EQ(neverc_bigint_int64(&r), 2);
+
+    neverc_bigint_set_int64(&a, 100);
+    neverc_bigint_set_int64(&b, 0);
+    neverc_bigint_mod(&q, &a, &b);
+    ASSERT_TRUE(neverc_bigint_is_zero(&q));
+
     neverc_bigint_free(&a); neverc_bigint_free(&b);
     neverc_bigint_free(&q); neverc_bigint_free(&r);
 }
@@ -548,6 +571,27 @@ static void test_exp_mod(void) {
     neverc_bigint_exp(&result, &base, &exp, &mod);
     ASSERT_INT_EQ(neverc_bigint_int64(&result), 999);
 
+    /* Go: m == 0 means no modulus, so 3^4 = 81 (not fail-closed 0). */
+    neverc_bigint_set_int64(&base, 3);
+    neverc_bigint_set_int64(&exp, 4);
+    neverc_bigint_set_int64(&mod, 0);
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 81);
+
+    /* Untrimmed zero modulus must match m == 0, not reduce through mod 0. */
+    neverc_bigint_set_uint64(&mod, 0x100000000ULL);
+    ASSERT_TRUE(mod.digits && mod.len == 2);
+    mod.digits[1] = 0;
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 81);
+
+    /* dest == modulus with a negative m: 3^4 mod |-5| = 1. */
+    neverc_bigint_set_int64(&base, 3);
+    neverc_bigint_set_int64(&exp, 4);
+    neverc_bigint_set_int64(&mod, -5);
+    neverc_bigint_exp(&mod, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&mod), 1);
+
     neverc_bigint_free(&x); neverc_bigint_free(&m); neverc_bigint_free(&z);
 
     neverc_bigint_free(&base); neverc_bigint_free(&exp);
@@ -590,6 +634,15 @@ static void test_gcd(void) {
     neverc_bigint_set_int64(&b, 0);
     neverc_bigint_gcd(&g, &a, &b);
     ASSERT_TRUE(neverc_bigint_is_zero(&g));
+
+    /* Leading zero limbs used to make len-based compare / Lehmer nlz32(0) lie. */
+    neverc_bigint_set_uint64(&a, 12ULL + (1ULL << 32));
+    neverc_bigint_set_uint64(&b, 8ULL + (1ULL << 32));
+    ASSERT_TRUE(a.digits && b.digits && a.len == 2 && b.len == 2);
+    a.digits[1] = 0;
+    b.digits[1] = 0;
+    neverc_bigint_gcd(&g, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_int64(&g), 4);
 
     neverc_bigint_free(&a); neverc_bigint_free(&b); neverc_bigint_free(&g);
 }

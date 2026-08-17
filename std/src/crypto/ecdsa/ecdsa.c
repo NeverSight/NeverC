@@ -52,13 +52,40 @@ static int random_mod_n(neverc_bigint_t *r, const neverc_bigint_t *n) {
     return result;
 }
 
-static void mod_inv_ec(neverc_bigint_t *r, const neverc_bigint_t *a, const neverc_bigint_t *p) {
-    neverc_bigint_t exp, two;
-    neverc_bigint_init(&exp); neverc_bigint_init(&two);
+/* Fermat inverse a^(m-2) mod m, then require r*a ≡ 1 (mod m). Without
+ * the product check, s=0 yields w=0 and (r=0,s=0) verifies because the
+ * point at infinity has x=0. */
+static int mod_inv_ec(neverc_bigint_t *r, const neverc_bigint_t *a,
+                      const neverc_bigint_t *m) {
+    neverc_bigint_t exp, two, prod, one;
+    neverc_bigint_init(&exp);
+    neverc_bigint_init(&two);
+    neverc_bigint_init(&prod);
+    neverc_bigint_init(&one);
     neverc_bigint_set_int64(&two, 2);
-    neverc_bigint_sub(&exp, p, &two);
-    neverc_bigint_exp(r, a, &exp, p);
-    neverc_bigint_free(&exp); neverc_bigint_free(&two);
+    neverc_bigint_set_int64(&one, 1);
+    neverc_bigint_sub(&exp, m, &two);
+    neverc_bigint_exp(r, a, &exp, m);
+    neverc_bigint_mul(&prod, r, a);
+    neverc_bigint_mod(&prod, &prod, m);
+    int ok = neverc_bigint_cmp(&prod, &one) == 0;
+    neverc_bigint_free(&exp);
+    neverc_bigint_free(&two);
+    neverc_bigint_free(&prod);
+    neverc_bigint_free(&one);
+    return ok ? 0 : -1;
+}
+
+static void ecdsa_clear_private(neverc_ecdsa_private_key_t *key) {
+    if (!key)
+        return;
+    key->pub.curve = NULL;
+    if (key->d.digits)
+        neverc_platform_secure_zero(
+            key->d.digits, key->d.cap * sizeof(*key->d.digits));
+    neverc_bigint_set_uint64(&key->d, 0);
+    neverc_bigint_set_int64(&key->pub.pub.x, 0);
+    neverc_bigint_set_int64(&key->pub.pub.y, 0);
 }
 
 void neverc_ecdsa_public_key_init(neverc_ecdsa_public_key_t *k) {
@@ -97,16 +124,19 @@ int neverc_ecdsa_generate_key(neverc_ecdsa_private_key_t *key,
         return -1;
     if (!curve || neverc_bigint_sign(&curve->n) <= 0)
         return -1;
+    ecdsa_clear_private(key);
     key->pub.curve = curve;
-    neverc_bigint_set_uint64(&key->d, 0);
-    if (random_mod_n(&key->d, &curve->n) != 0) {
-        key->pub.curve = NULL;
-        neverc_bigint_set_uint64(&key->d, 0);
-        neverc_bigint_set_int64(&key->pub.pub.x, 0);
-        neverc_bigint_set_int64(&key->pub.pub.y, 0);
+    if (random_mod_n(&key->d, &curve->n) != 0 ||
+        neverc_bigint_sign(&key->d) <= 0 ||
+        neverc_bigint_cmp(&key->d, &curve->n) >= 0) {
+        ecdsa_clear_private(key);
         return -1;
     }
     neverc_elliptic_scalar_base_mult(curve, &key->pub.pub, &key->d);
+    if (!neverc_elliptic_is_on_curve(curve, &key->pub.pub)) {
+        ecdsa_clear_private(key);
+        return -1;
+    }
     return 0;
 }
 
@@ -165,7 +195,8 @@ int neverc_ecdsa_sign(const neverc_ecdsa_private_key_t *key,
 
         if (neverc_bigint_is_zero(&sig->r)) continue;
 
-        mod_inv_ec(&kinv, &k, &curve->n);
+        if (mod_inv_ec(&kinv, &k, &curve->n) != 0)
+            continue;
 
         neverc_bigint_mul(&tmp, &key->d, &sig->r);
         neverc_bigint_add(&tmp, &e, &tmp);
@@ -207,12 +238,12 @@ int neverc_ecdsa_verify(const neverc_ecdsa_public_key_t *key,
     neverc_bigint_init(&e); neverc_bigint_init(&sinv);
     neverc_bigint_init(&u1); neverc_bigint_init(&u2);
 
-    if (hash_to_int(&e, hash, hash_len, &curve->n) != 0) {
+    if (hash_to_int(&e, hash, hash_len, &curve->n) != 0 ||
+        mod_inv_ec(&sinv, &sig->s, &curve->n) != 0) {
         neverc_bigint_free(&e); neverc_bigint_free(&sinv);
         neverc_bigint_free(&u1); neverc_bigint_free(&u2);
         return -1;
     }
-    mod_inv_ec(&sinv, &sig->s, &curve->n);
 
     neverc_bigint_mul(&u1, &e, &sinv);
     neverc_bigint_mod(&u1, &u1, &curve->n);

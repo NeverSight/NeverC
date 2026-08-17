@@ -219,6 +219,13 @@ static void cl_mismatch_handler(neverc_http_request_t *req,
     neverc_http_write_string(w, "abcdef");
 }
 
+static void cl_short_handler(neverc_http_request_t *req,
+                             neverc_http_response_writer_t *w) {
+    (void)req;
+    (void)neverc_http_set_content_length(w, 10U);
+    neverc_http_write_string(w, "ab");
+}
+
 static void redirect_relative_handler(neverc_http_request_t *req,
                                       neverc_http_response_writer_t *w) {
     (void)req;
@@ -341,6 +348,7 @@ static pid_t start_test_server(int port) {
         neverc_http_mux_handle(mux, "/query", query_handler);
         neverc_http_mux_handle(mux, "/header", header_handler);
         neverc_http_mux_handle(mux, "/cl-mismatch", cl_mismatch_handler);
+        neverc_http_mux_handle(mux, "/cl-short", cl_short_handler);
         neverc_http_mux_handle(mux, "/method", method_handler);
         neverc_http_mux_handle(mux, "/delete", delete_handler);
         neverc_http_mux_handle(mux, "/a/b/start", redirect_relative_handler);
@@ -1394,6 +1402,17 @@ static void test_malformed_request(void) {
             buf, sizeof(buf));
         check_int("cl mismatch no leak",
                   n >= 0 && strstr(buf, "abcdef") == NULL, 1);
+    }
+
+    /* Content-Length larger than the buffered body must not advertise a
+     * length a keep-alive peer would read into the next request. */
+    {
+        int n = do_http_request(port,
+            "GET /cl-short HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: keep-alive\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("cl short no advertised length",
+                  n >= 0 && strstr(buf, "Content-Length: 10") == NULL, 1);
     }
 
     stop_test_server(server_pid);

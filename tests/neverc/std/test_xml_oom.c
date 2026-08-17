@@ -79,6 +79,29 @@ int main(void) {
     outlen = 99;
     CHECK(neverc_xml_unescape("&amp;", 5, &outlen) == NULL);
     CHECK(outlen == 0);
+
+    {
+        char nested[512];
+        size_t nlen = 0;
+        int i;
+        for (i = 0; i < 40; i++)
+            nlen += (size_t)snprintf(nested + nlen, sizeof(nested) - nlen,
+                                     "<a>");
+        for (i = 0; i < 40; i++)
+            nlen += (size_t)snprintf(nested + nlen, sizeof(nested) - nlen,
+                                     "</a>");
+        reset_allocator(0);
+        tree = neverc_xml_parse(nested, nlen);
+        CHECK(tree != NULL);
+        parse_allocations = allocation_count;
+        neverc_xml_node_free(tree);
+        for (size_t failure = 1; failure <= parse_allocations; failure++) {
+            reset_allocator(failure);
+            tree = neverc_xml_parse(nested, nlen);
+            CHECK(tree == NULL);
+        }
+    }
+
     puts("passed");
     return 0;
 }

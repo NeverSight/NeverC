@@ -130,6 +130,31 @@ static void test_unlink_zero(void) {
     neverc_ring_free(r);
 }
 
+static void test_unlink_all_but_one(void) {
+    printf("[unlink_all_but_one]\n");
+    neverc_ring_t *r = neverc_ring_new(5);
+    for (int i = 0; i < 5; i++)
+        neverc_ring_move(r, i)->value = INT_VAL(i);
+
+    neverc_ring_t *removed = neverc_ring_unlink(r, 4);
+    ASSERT_NOT_NULL(removed);
+    ASSERT_INT_EQ(neverc_ring_len(r), 1);
+    ASSERT_INT_EQ(neverc_ring_len(removed), 4);
+    ASSERT_INT_EQ(TO_INT(r->value), 0);
+    ASSERT_INT_EQ(TO_INT(removed->value), 1);
+    ASSERT_INT_EQ(neverc_ring_next(r) == r, 1);
+
+    neverc_ring_free(r);
+    neverc_ring_free(removed);
+
+    r = neverc_ring_new(1);
+    r->value = INT_VAL(9);
+    ASSERT_NULL(neverc_ring_unlink(r, 1));
+    ASSERT_INT_EQ(neverc_ring_len(r), 1);
+    ASSERT_INT_EQ(TO_INT(r->value), 9);
+    neverc_ring_free(r);
+}
+
 static int do_sum;
 static void sum_fn(void *val, void *ctx) {
     (void)ctx;
@@ -221,6 +246,7 @@ int main(void) {
     test_link();
     test_unlink();
     test_unlink_zero();
+    test_unlink_all_but_one();
     test_do_simple();
     test_single_element();
     test_zero_value_and_null_input();

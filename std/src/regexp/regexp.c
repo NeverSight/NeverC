@@ -237,6 +237,68 @@ static int hex_digit(int c) {
 #define NCI_RE_MAX_RUNE 0x10FFFF
 #endif
 
+/* Go regexp/syntax nextRune: invalid UTF-8 in the pattern is ErrInvalidUTF8. */
+static int utf8_decode(const unsigned char *s, size_t n, int *rune) {
+    if (n < 1) return 0;
+    unsigned c = s[0];
+    if (c < 0x80) {
+        *rune = (int)c;
+        return 1;
+    }
+    if (c < 0xC2 || c >= 0xF5) return 0;
+    if (c < 0xE0) {
+        if (n < 2 || (s[1] & 0xC0) != 0x80) return 0;
+        *rune = ((c & 0x1F) << 6) | (s[1] & 0x3F);
+        return 2;
+    }
+    if (c < 0xF0) {
+        if (n < 3 || (s[1] & 0xC0) != 0x80 || (s[2] & 0xC0) != 0x80) return 0;
+        int r = ((c & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+        if (r < 0x800 || (r >= 0xD800 && r <= 0xDFFF)) return 0;
+        *rune = r;
+        return 3;
+    }
+    if (n < 4 || (s[1] & 0xC0) != 0x80 || (s[2] & 0xC0) != 0x80 ||
+        (s[3] & 0xC0) != 0x80)
+        return 0;
+    int r = ((c & 0x07) << 18) | ((s[1] & 0x3F) << 12) |
+            ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+    if (r < 0x10000 || r > NCI_RE_MAX_RUNE) return 0;
+    *rune = r;
+    return 4;
+}
+
+static int utf8_valid_cstr(const char *s) {
+    const unsigned char *p = (const unsigned char *)s;
+    size_t n = strlen(s), i = 0;
+    while (i < n) {
+        int r, k = utf8_decode(p + i, n - i, &r);
+        if (k < 1) return 0;
+        i += (size_t)k;
+    }
+    return 1;
+}
+
+/* Go parseInt: a leading zero followed by another digit is not an integer, so
+ * `{01}` / `{0,01}` are literals rather than repeats. */
+static int brace_repeat_leading_zeros(const char *s) {
+    if (!s || *s != '{') return 0;
+    s++;
+    if (*s == '0' && s[1] >= '0' && s[1] <= '9') return 1;
+    while (*s >= '0' && *s <= '9') s++;
+    if (*s == ',') {
+        s++;
+        if (*s == '0' && s[1] >= '0' && s[1] <= '9') return 1;
+    }
+    return 0;
+}
+
+static int cap_slot_count(int ngroups, int *nslots) {
+    if (ngroups < 0 || ngroups > (INT_MAX / 2) - 1) return 0;
+    *nslots = 2 * (ngroups + 1);
+    return 1;
+}
+
 /* After consuming `\x`. Go: `\xHH` is a raw byte; `\x{H+}` is a rune.
  * *braced is optional; set when the `{H+}` form was used. */
 static int parse_hex_escape(parser_t *par, int *out, int *braced) {
@@ -530,6 +592,10 @@ static frag_t parse_atom(parser_t *par) {
                 par->err = "invalid named capture";
                 return frag(NULL, NULL);
             }
+            if (par->re->ngroups == INT_MAX) {
+                par->err = "too many capturing groups";
+                return frag(NULL, NULL);
+            }
             cap = ++par->re->ngroups;
             if (!set_group_name(par->re, cap, ns, nlen)) {
                 par->err = "out of memory";
@@ -539,6 +605,10 @@ static frag_t parse_atom(parser_t *par) {
             par->err = "invalid or unsupported Perl syntax";
             return frag(NULL, NULL);
         } else if (capturing) {
+            if (par->re->ngroups == INT_MAX) {
+                par->err = "too many capturing groups";
+                return frag(NULL, NULL);
+            }
             cap = ++par->re->ngroups;
         }
         if (++par->depth > NCI_REGEXP_MAX_DEPTH) {
@@ -957,16 +1027,31 @@ static frag_t expand_repeat(neverc_regexp_t *re, frag_t f,
     return r;
 }
 
+static int frag_ok(parser_t *par, frag_t f) {
+    return f.start && f.start != &par->re->dummy && !par->err && !par->re->oom;
+}
+
 static frag_t parse_repeat(parser_t *par) {
     int atom_base = par->re->nstates;
     frag_t f = parse_atom(par);
-    if (!f.start || par->err) return f;
+    if (!frag_ok(par, f)) {
+        if (par->re->oom && !par->err) par->err = "out of memory";
+        return f;
+    }
 
     int repeated = 0;
     while (*par->p == '*' || *par->p == '+' || *par->p == '?' || *par->p == '{') {
         char op = *par->p;
         if (op == '{') {
             const char *save = par->p;
+            if (brace_repeat_leading_zeros(par->p)) {
+                par->p = save + 1;
+                nfa_state_t *s = new_state(par->re, NFA_CHAR);
+                nfa_state_t *e = new_state(par->re, NFA_MATCH);
+                s->ch = '{'; s->out1 = e;
+                f = mk_concat(f, frag(s, e));
+                continue;
+            }
             par->p++;
             int lo = 0, hi, have = 0, too_large = 0;
             while (*par->p >= '0' && *par->p <= '9') {
@@ -1065,7 +1150,7 @@ static frag_t parse_concat(parser_t *par) {
     frag_t result = { NULL, NULL };
     while (*par->p && *par->p != '|' && *par->p != ')' && !par->err) {
         frag_t f = parse_repeat(par);
-        if (!f.start) break;
+        if (!frag_ok(par, f)) break;
         if (!result.start) {
             result = f;
         } else {
@@ -1100,6 +1185,10 @@ static frag_t parse_expr(parser_t *par) {
 neverc_regexp_t *neverc_regexp_compile(const char *pattern, const char **errp) {
     if (!pattern) {
         if (errp) *errp = "invalid pattern";
+        return NULL;
+    }
+    if (!utf8_valid_cstr(pattern)) {
+        if (errp) *errp = "invalid UTF-8";
         return NULL;
     }
     neverc_regexp_t *re = (neverc_regexp_t *)NC_REGEXP_CALLOC(
@@ -1338,6 +1427,7 @@ static void search_ctx_free(search_ctx *c) {
 static void search_push(nfa_state_t **wst, int *wn, int *visited, int gen,
                         int nstates, nfa_state_t *s) {
     if (!s || s->id < 0 || s->id >= nstates || visited[s->id] == gen) return;
+    if (*wn >= nstates) return;
     visited[s->id] = gen;
     wst[(*wn)++] = s;
 }
@@ -1601,7 +1691,7 @@ static void cap_closure(cap_env_t *e, nfa_state_t *start, const size_t *init,
         }
         if (s->type == NFA_CAP_OPEN || s->type == NFA_CAP_CLOSE) {
             int g = s->ch;
-            if (g > 0 && g < e->nslots / 2) {
+            if (g > 0 && e->nslots / 2 > g && 2 * g + 1 < e->nslots) {
                 if (s->type == NFA_CAP_OPEN) {
                     e->scratch[2 * g] = pos;
                     e->scratch[2 * g + 1] = (size_t)-1;
@@ -1646,6 +1736,9 @@ static int nfa_exec_caps(neverc_regexp_t *re, const char *s, size_t slen,
                          size_t *out_caps, int nslots) {
     if (!re || !s || !out_caps || nslots < 2) return 0;
     int nstates = re->nstates > 0 ? re->nstates : 1;
+    if ((size_t)nslots > SIZE_MAX / sizeof(size_t) ||
+        (size_t)nstates > SIZE_MAX / sizeof(size_t) / (size_t)nslots)
+        return 0;
     nfa_state_t **cur_st = (nfa_state_t **)NC_REGEXP_MALLOC(
         (size_t)nstates * sizeof(*cur_st));
     nfa_state_t **next_st = (nfa_state_t **)NC_REGEXP_MALLOC(
@@ -1768,21 +1861,23 @@ int neverc_regexp_find_submatch(neverc_regexp_t *re, const char *s,
         matches[0].start = found;
         matches[0].len = match_len;
         int nfill = max_matches;
-        int ng = re->ngroups + 1;
+        int ng = 0;
+        if (re->ngroups >= 0 && re->ngroups < INT_MAX)
+            ng = re->ngroups + 1;
         if (nfill > ng) nfill = ng;
         for (int i = 1; i < max_matches; i++) {
             matches[i].start = NULL;
             matches[i].len = 0;
         }
-        if (re->ngroups > 0 && nfill > 1) {
-            int nslots = 2 * (re->ngroups + 1);
+        int nslots = 0;
+        if (re->ngroups > 0 && nfill > 1 && cap_slot_count(re->ngroups, &nslots)) {
             size_t *caps = (size_t *)NC_REGEXP_MALLOC((size_t)nslots * sizeof(size_t));
             if (caps) {
                 size_t slen = strlen(s);
                 size_t ms = (size_t)(found - s), end = 0;
                 if (nfa_exec_caps(re, s, slen, ms, &end, caps, nslots) &&
                     end == ms + match_len) {
-                    for (int g = 1; g < nfill; g++) {
+                    for (int g = 1; g < nfill && g < nslots / 2; g++) {
                         if (caps[2 * g] != (size_t)-1 &&
                             caps[2 * g + 1] != (size_t)-1 &&
                             caps[2 * g + 1] >= caps[2 * g]) {
@@ -1968,13 +2063,14 @@ static int fill_replace_caps(neverc_regexp_t *re, const char *src, size_t slen,
         m[i].len = 0;
     }
     if (re->ngroups <= 0 || nm <= 1) return 0;
-    int nslots = 2 * (re->ngroups + 1);
+    int nslots = 0;
+    if (!cap_slot_count(re->ngroups, &nslots)) return -1;
     size_t *caps = (size_t *)NC_REGEXP_MALLOC((size_t)nslots * sizeof(size_t));
     if (!caps) return -1;
     size_t end = 0;
     if (nfa_exec_caps(re, src, slen, ms, &end, caps, nslots) && end == me) {
         int nfill = nm < re->ngroups + 1 ? nm : re->ngroups + 1;
-        for (int g = 1; g < nfill; g++) {
+        for (int g = 1; g < nfill && g < nslots / 2; g++) {
             if (caps[2 * g] != (size_t)-1 &&
                 caps[2 * g + 1] != (size_t)-1 &&
                 caps[2 * g + 1] >= caps[2 * g]) {
@@ -1994,9 +2090,11 @@ char *neverc_regexp_replace_all(neverc_regexp_t *re, const char *src,
     size_t slen = strlen(src);
     size_t rlen = strlen(repl);
     int expand = (strchr(repl, '$') != NULL);
-    int nm = re->ngroups + 1;
+    int nm = 0;
     neverc_regexp_match_t *mslots = NULL;
     if (expand) {
+        if (re->ngroups < 0 || re->ngroups == INT_MAX) return NULL;
+        nm = re->ngroups + 1;
         mslots = (neverc_regexp_match_t *)NC_REGEXP_CALLOC((size_t)nm, sizeof(*mslots));
         if (!mslots) return NULL;
     }
@@ -2160,7 +2258,8 @@ int neverc_regexp_num_subexp(neverc_regexp_t *re) {
 }
 
 const char *neverc_regexp_subexp_name(neverc_regexp_t *re, int i) {
-    if (!re || i < 0 || i >= re->gnames_cap) return NULL;
+    if (!re || i < 0 || i > re->ngroups) return NULL;
+    if (!re->gnames || i >= re->gnames_cap) return NULL;
     return re->gnames[i];
 }
 

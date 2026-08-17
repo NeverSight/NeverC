@@ -94,7 +94,7 @@ void neverc_md5_update(neverc_md5_ctx *ctx, const uint8_t *data, size_t len) {
      * with a short message (count*8 overflowing uint64_t). */
     if (ctx->count > UINT64_MAX / 8 ||
         len > UINT64_MAX / 8 - ctx->count) {
-        memset(ctx->state, 0, sizeof(ctx->state));
+        memset(ctx, 0, sizeof(*ctx));
         ctx->finalized = 1;
         return;
     }
@@ -129,8 +129,8 @@ void neverc_md5_final(neverc_md5_ctx *ctx, uint8_t digest[16]) {
         return;
     }
     if (ctx->count > UINT64_MAX / 8) {
-        memset(ctx->state, 0, sizeof(ctx->state));
         memset(digest, 0, 16);
+        memset(ctx, 0, sizeof(*ctx));
         ctx->finalized = 1;
         return;
     }

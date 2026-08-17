@@ -1618,6 +1618,21 @@ static char *h2_lowercase_name(const char *name) {
     return lower;
 }
 
+static int h2_is_connection_specific_header(const char *name,
+                                            const char *value) {
+    if (!name) return 1;
+    if (strcasecmp(name, "connection") == 0 ||
+        strcasecmp(name, "keep-alive") == 0 ||
+        strcasecmp(name, "proxy-connection") == 0 ||
+        strcasecmp(name, "transfer-encoding") == 0 ||
+        strcasecmp(name, "upgrade") == 0)
+        return 1;
+    if (strcasecmp(name, "te") == 0 &&
+        (!value || strcasecmp(value, "trailers") != 0))
+        return 1;
+    return 0;
+}
+
 static int h2_response_flush(void *context,
                              neverc_http_response_writer_t *writer,
                              int end_stream) {
@@ -1649,9 +1664,8 @@ static int h2_response_flush(void *context,
         headers[count++] = (neverc_hpack_header_t){
             .name = ":status", .value = status, .sensitive = 0};
         for (int i = 0; i < writer->nheaders; i++) {
-            if (strcasecmp(writer->header_names[i], "connection") == 0 ||
-                strcasecmp(writer->header_names[i],
-                           "transfer-encoding") == 0)
+            if (h2_is_connection_specific_header(
+                    writer->header_names[i], writer->header_values[i]))
                 continue;
             lower_names[i] = h2_lowercase_name(writer->header_names[i]);
             if (!lower_names[i]) {
@@ -1662,18 +1676,28 @@ static int h2_response_flush(void *context,
                 .name = lower_names[i], .value = writer->header_values[i],
                 .sensitive = 0};
         }
+        /* RFC 9113 §8.1.1: if content-length is present, it MUST equal the
+         * sum of DATA payload lengths. HTTP/2 cannot paper over a short
+         * body by closing the connection. Chunked responses have no known
+         * length — do not advertise one. */
         if (result == 0 && writer->status >= 200 &&
-            writer->status != 204) {
+            writer->status != 204 && !writer->chunked) {
             size_t content_length_value = 0;
             int emit_content_length = 0;
             if (writer->has_content_length_override) {
-                content_length_value = writer->content_length_override;
-                emit_content_length = 1;
+                if (body_allowed &&
+                    writer->body.len != writer->content_length_override)
+                    result = -1;
+                else {
+                    content_length_value =
+                        writer->content_length_override;
+                    emit_content_length = 1;
+                }
             } else if (writer->head_request && writer->status != 304) {
                 content_length_value = representation_length;
                 emit_content_length = 1;
             }
-            if (emit_content_length) {
+            if (result == 0 && emit_content_length) {
                 int length = snprintf(
                     content_length, sizeof(content_length), "%zu",
                     content_length_value);
@@ -1716,6 +1740,9 @@ static int h2_response_flush(void *context,
         memset(lower_names, 0, sizeof(lower_names));
         int count = 0;
         for (int i = 0; i < writer->ntrailers; i++) {
+            if (h2_is_connection_specific_header(
+                    writer->trailer_names[i], writer->trailer_values[i]))
+                continue;
             lower_names[i] = h2_lowercase_name(writer->trailer_names[i]);
             if (!lower_names[i]) {
                 result = -1;
@@ -2037,8 +2064,10 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
         uint8_t *payload = NULL;
         if (fhdr.length > 0) {
             payload = (uint8_t *)malloc(fhdr.length);
-            if (!payload)
+            if (!payload) {
+                (void)h2_conn_write_goaway(&conn, NC_H2_INTERNAL_ERROR);
                 break;
+            }
             if (h2_io_read_all(&conn.io, payload, fhdr.length) != 0) {
                 free(payload);
                 break;

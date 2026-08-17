@@ -129,6 +129,85 @@ static void test_invalid_params(void) {
     ASSERT_TRUE(empty_out == 0);
 }
 
+static int lzw_lsb_emit(uint8_t *buf, size_t cap, size_t *pos,
+                        uint32_t *acc, unsigned *nbits,
+                        uint32_t code, unsigned width) {
+    *acc |= code << *nbits;
+    *nbits += width;
+    while (*nbits >= 8U) {
+        if (*pos >= cap) return -1;
+        buf[(*pos)++] = (uint8_t)*acc;
+        *acc >>= 8;
+        *nbits -= 8U;
+    }
+    return 0;
+}
+
+static int lzw_lsb_flush(uint8_t *buf, size_t cap, size_t *pos,
+                         uint32_t *acc, unsigned *nbits) {
+    if (*nbits == 0) return 0;
+    if (*pos >= cap) return -1;
+    buf[(*pos)++] = (uint8_t)*acc;
+    *acc = 0;
+    *nbits = 0;
+    return 0;
+}
+
+static void test_clear_code(void) {
+    printf("[clear_code]\n");
+    uint8_t stream[16];
+    uint8_t out[16];
+    size_t pos, out_len;
+    uint32_t acc;
+    unsigned nbits;
+
+    /* clear, 'A', 'B' defines code 258 as "AB". A second clear must drop it. */
+    memset(stream, 0, sizeof(stream));
+    pos = 0;
+    acc = 0;
+    nbits = 0;
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               256, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               65, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               66, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               256, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               258, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               257, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_flush(stream, sizeof(stream), &pos, &acc, &nbits), 0);
+    out_len = sizeof(out);
+    ASSERT_INT_EQ(neverc_lzw_decompress(stream, pos, out, &out_len,
+                                        NEVERC_LZW_LSB, 8), -1);
+
+    memset(stream, 0, sizeof(stream));
+    pos = 0;
+    acc = 0;
+    nbits = 0;
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               256, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               65, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               66, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               256, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               65, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               66, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_emit(stream, sizeof(stream), &pos, &acc, &nbits,
+                               257, 9), 0);
+    ASSERT_INT_EQ(lzw_lsb_flush(stream, sizeof(stream), &pos, &acc, &nbits), 0);
+    out_len = sizeof(out);
+    ASSERT_INT_EQ(neverc_lzw_decompress(stream, pos, out, &out_len,
+                                        NEVERC_LZW_LSB, 8), 0);
+    ASSERT_TRUE(out_len == 4 && memcmp(out, "ABAB", 4) == 0);
+}
+
 static void test_leftover_bytes(void) {
     printf("[leftover_bytes]\n");
     const uint8_t data[] = "Hello, World!";
@@ -145,6 +224,9 @@ static void test_leftover_bytes(void) {
         size_t decomp_len = sizeof(decomp);
         ASSERT_TRUE(neverc_lzw_decompress(junk, comp_len + 1, decomp,
                                           &decomp_len, orders[i], 8) != 0);
+        decomp_len = sizeof(decomp);
+        ASSERT_TRUE(neverc_lzw_decompress(comp, comp_len - 1, decomp,
+                                          &decomp_len, orders[i], 8) != 0);
     }
 }
 
@@ -157,6 +239,7 @@ int main(void) {
     test_lit_width();
     test_large();
     test_invalid_params();
+    test_clear_code();
     test_leftover_bytes();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

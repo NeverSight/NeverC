@@ -43,7 +43,9 @@ void neverc_smtp_close(neverc_smtp_client_t *c);
  * if not called explicitly. Returns 0 on success. */
 int neverc_smtp_hello(neverc_smtp_client_t *c, const char *local_name);
 
-/* Authenticate with the server. Returns 0 on success. */
+/* Authenticate with the server. The SASL mechanism must have been advertised
+ * in EHLO; AUTH is not attempted after HELO-only or an unadvertised method.
+ * Returns 0 on success. */
 int neverc_smtp_auth(neverc_smtp_client_t *c,
                       neverc_smtp_auth_method_t method,
                       const char *username,

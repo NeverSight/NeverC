@@ -59,8 +59,28 @@ const neverc_tzdata_zone_t *neverc_tzdata_local(void);
 int neverc_tzdata_offset_for_month(const neverc_tzdata_zone_t *zone, int month);
 
 /* Offset from UTC in seconds at unix_sec. Uses US/EU/AU/NZ transition
- * rules (not a full tzif database). */
+ * rules (not a full tzif database), or TZif transitions when the zone
+ * was loaded from zip/tzif. */
 int neverc_tzdata_offset_at(const neverc_tzdata_zone_t *zone, int64_t unix_sec);
+
+/* Extract uncompressed `name` from a zip blob (Go time/tzdata layout).
+ * Returns malloc'd bytes (caller frees) or NULL on corrupt/missing/OOM. */
+uint8_t *neverc_tzdata_zip_extract(const uint8_t *zip, size_t zip_len,
+                                   const char *name, size_t *out_len);
+
+/* Load a heap zone from TZif bytes. Caller frees with
+ * neverc_tzdata_zone_free. */
+neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
+                                              const uint8_t *data, size_t len);
+
+/* LoadLocation from an uncompressed zip of TZif files. */
+neverc_tzdata_zone_t *neverc_tzdata_load_from_zip(const uint8_t *zip,
+                                                  size_t zip_len,
+                                                  const char *name);
+
+/* Free a heap zone from fixed_zone / load_tzif / load_from_zip.
+ * No-op for built-in table or POSIX TZ slots. */
+void neverc_tzdata_zone_free(neverc_tzdata_zone_t *zone);
 
 #ifdef __cplusplus
 }

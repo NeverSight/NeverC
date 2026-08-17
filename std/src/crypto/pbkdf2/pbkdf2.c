@@ -65,7 +65,7 @@ int neverc_pbkdf2_sha256(uint8_t *dk, size_t dk_len,
     const uint64_t max_dk_len = (uint64_t)UINT32_MAX * 32U;
     if (!dk || (!password && password_len != 0) ||
         (!salt && salt_len != 0) || iterations < 1 || dk_len == 0 ||
-        (uint64_t)dk_len > max_dk_len)
+        (uint64_t)dk_len > max_dk_len || salt_len > SIZE_MAX - 4)
         return -1;
 
     hmac_sha256_pre pre;
@@ -74,14 +74,14 @@ int neverc_pbkdf2_sha256(uint8_t *dk, size_t dk_len,
     uint32_t block_num = 1;
     size_t off = 0;
     size_t sb_cap = salt_len + 4;
-    if (salt_len > SIZE_MAX - 4)
-        return -1;
     uint8_t salt_stack[260];
     uint8_t *salt_block = salt_len <= 256 ? salt_stack : NULL;
     if (!salt_block) {
         salt_block = (uint8_t *)malloc(sb_cap);
-        if (!salt_block)
+        if (!salt_block) {
+            neverc_platform_secure_zero(&pre, sizeof(pre));
             return -1;
+        }
     }
     if (salt_len > 0)
         memcpy(salt_block, salt, salt_len);

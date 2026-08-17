@@ -65,6 +65,9 @@ static void test_truncated(void) {
     uint8_t out[256];
     size_t out_len = sizeof(out);
     ASSERT_TRUE(neverc_bzip2_decompress(bz2_hello, 4, out, &out_len) != 0);
+    out_len = sizeof(out);
+    ASSERT_TRUE(neverc_bzip2_decompress(
+                    bz2_hello, sizeof(bz2_hello) - 1, out, &out_len) != 0);
 }
 
 static void test_bad_block_size(void) {
@@ -111,6 +114,18 @@ static void test_invalid_spans(void) {
                     NULL, sizeof(bz2_hello), out, &out_len) != 0);
 }
 
+static void test_randomized_block(void) {
+    printf("[randomized_block]\n");
+    uint8_t randomized[sizeof(bz2_hello)];
+    memcpy(randomized, bz2_hello, sizeof(randomized));
+    /* After BZh9 + 1AY&SY + 32-bit block CRC, the next bit is RAND. */
+    randomized[14] |= 0x80;
+    uint8_t out[256];
+    size_t out_len = sizeof(out);
+    ASSERT_TRUE(neverc_bzip2_decompress(
+                    randomized, sizeof(randomized), out, &out_len) != 0);
+}
+
 static void test_leftover_bytes(void) {
     printf("[leftover_bytes]\n");
     uint8_t extra[sizeof(bz2_hello) + 1];
@@ -130,6 +145,7 @@ int main(void) {
     test_bad_block_size();
     test_empty_output();
     test_crc_mismatch();
+    test_randomized_block();
     test_invalid_spans();
     test_leftover_bytes();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

@@ -120,6 +120,10 @@ int main(void) {
     check_md5("56 bytes", "12345678901234567890123456789012345678901234567890123456",
         "49f193adce178490e34d1b3a4ec0064c");
 
+    printf("[boundary: exactly 63 bytes]\n");
+    check_md5("63 bytes", "123456789012345678901234567890123456789012345678901234567890123",
+        "c3eb67ece68488bb394241d4f6a54244");
+
     printf("[boundary: exactly 64 bytes]\n");
     check_md5("64 bytes", "1234567890123456789012345678901234567890123456789012345678901234",
         "eb6c4179c0a7c82cc2828c1e6338e165");
@@ -161,6 +165,26 @@ int main(void) {
         else {
             tests_failed++;
             printf("  FAIL: overflow must not collide with MD5(\"abc\")\n");
+        }
+    }
+
+    printf("[update-path 64-bit wrap fails closed]\n");
+    {
+        tests_run++;
+        neverc_md5_ctx ctx;
+        neverc_md5_init(&ctx);
+        neverc_md5_update(&ctx, (const uint8_t *)"abc", 3);
+        ctx.count = UINT64_MAX / 8 - 2;
+        neverc_md5_update(&ctx, (const uint8_t *)"xxxxx", 5);
+        uint8_t digest[16];
+        memset(digest, 0xa5, sizeof(digest));
+        neverc_md5_final(&ctx, digest);
+        uint8_t zeros[16] = {0};
+        if (memcmp(digest, zeros, 16) == 0)
+            tests_passed++;
+        else {
+            tests_failed++;
+            printf("  FAIL: update wrap must not collide with MD5(\"abc\")\n");
         }
     }
 

@@ -4,7 +4,7 @@
 /*
  * NeverC uuid — UUID generation (mirrors Go uuid package).
  *
- * Supports UUID v4 (random), UUID v7 (Unix-ms + random), and parsing/formatting.
+ * Supports UUID v4 (random), UUID v7 (Unix-ms + monotonic counter), and parsing/formatting.
  */
 
 #include <stdint.h>
@@ -24,10 +24,11 @@ neverc_uuid_t neverc_uuid_new(void);
 /* Generate a UUID v4 with explicit error reporting. Clears out on failure. */
 int neverc_uuid_generate(neverc_uuid_t *out);
 
-/* Generate a UUID v7 (Unix milliseconds + random). Nil on CSPRNG failure. */
+/* Generate a UUID v7 (Unix milliseconds + monotonic counter). Nil on CSPRNG failure. */
 neverc_uuid_t neverc_uuid_new_v7(void);
 
-/* Generate a UUID v7 with explicit error reporting. Clears out on failure. */
+/* Generate a UUID v7 with explicit error reporting. Clears out on failure.
+ * Consecutive successes from this process are strictly byte-ordered. */
 int neverc_uuid_generate_v7(neverc_uuid_t *out);
 
 /* Format UUID to string (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).

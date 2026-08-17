@@ -35,10 +35,12 @@ int neverc_hex_decode(uint8_t *dst, const char *src, size_t src_len) {
         return -1;
 
     const uint8_t *s = (const uint8_t *)src;
-    size_t out = 0;
     size_t j = 0;
-
     size_t n8 = src_len & ~(size_t)7;
+
+    /* Validate the whole input before writing so an invalid pair after a
+     * valid prefix cannot clobber dst (unlike Go's hex.Decode, which
+     * returns a partial count). Odd length is already rejected above. */
     for (; j < n8; j += 8) {
         uint8_t a0 = reverse_hex[s[j  ]], b0 = reverse_hex[s[j+1]];
         uint8_t a1 = reverse_hex[s[j+2]], b1 = reverse_hex[s[j+3]];
@@ -46,19 +48,25 @@ int neverc_hex_decode(uint8_t *dst, const char *src, size_t src_len) {
         uint8_t a3 = reverse_hex[s[j+6]], b3 = reverse_hex[s[j+7]];
         if ((a0 | b0 | a1 | b1 | a2 | b2 | a3 | b3) & 0xF0)
             return -1;
+    }
+    for (; j < src_len; j += 2) {
+        if ((reverse_hex[s[j]] | reverse_hex[s[j + 1]]) & 0xF0)
+            return -1;
+    }
+
+    size_t out = 0;
+    for (j = 0; j < n8; j += 8) {
+        uint8_t a0 = reverse_hex[s[j  ]], b0 = reverse_hex[s[j+1]];
+        uint8_t a1 = reverse_hex[s[j+2]], b1 = reverse_hex[s[j+3]];
+        uint8_t a2 = reverse_hex[s[j+4]], b2 = reverse_hex[s[j+5]];
+        uint8_t a3 = reverse_hex[s[j+6]], b3 = reverse_hex[s[j+7]];
         dst[out  ] = (a0 << 4) | b0;
         dst[out+1] = (a1 << 4) | b1;
         dst[out+2] = (a2 << 4) | b2;
         dst[out+3] = (a3 << 4) | b3;
         out += 4;
     }
-
-    for (; j < src_len; j += 2) {
-        uint8_t a = reverse_hex[s[j]];
-        uint8_t b = reverse_hex[s[j+1]];
-        if ((a | b) & 0xF0)
-            return -1;
-        dst[out++] = (a << 4) | b;
-    }
+    for (; j < src_len; j += 2)
+        dst[out++] = (uint8_t)((reverse_hex[s[j]] << 4) | reverse_hex[s[j + 1]]);
     return (int)out;
 }

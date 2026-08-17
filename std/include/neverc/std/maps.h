@@ -38,7 +38,9 @@ void   neverc_maps_delete_func(neverc_map_t *m, neverc_maps_filter_func_t fn);
 neverc_map_t *neverc_maps_clone(const neverc_map_t *m);
 int           neverc_maps_equal(const neverc_map_t *a, const neverc_map_t *b);
 
-void          neverc_maps_copy(neverc_map_t *dst, const neverc_map_t *src);
+/* Copies src into dst. Returns 0 on success, -1 on NULL args or if an
+ * insertion fails (dst may then contain a prefix of src). */
+int           neverc_maps_copy(neverc_map_t *dst, const neverc_map_t *src);
 
 /* Backward-compat aliases */
 #define neverc_map_new         neverc_maps_new

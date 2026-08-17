@@ -1,4 +1,5 @@
 #include "neverc/std/path.h"
+#include <limits.h>
 #include <string.h>
 
 int neverc_path_clean(const char *path, char *buf, size_t bufsize) {
@@ -20,8 +21,10 @@ int neverc_path_clean(const char *path, char *buf, size_t bufsize) {
     size_t w = 0, dotdot = 0;
     size_t r = 0;
 
+#define CLEAN_FAIL() do { buf[0] = '\0'; return -1; } while (0)
+
     if (rooted) {
-        if (w + 1 >= bufsize) return -1;
+        if (w + 1 >= bufsize) CLEAN_FAIL();
         out[w++] = '/';
         r = 1;
         dotdot = 1;
@@ -41,33 +44,39 @@ int neverc_path_clean(const char *path, char *buf, size_t bufsize) {
                     w--;
             } else if (!rooted) {
                 if (w > 0) {
-                    if (w + 1 >= bufsize) return -1;
+                    if (w + 1 >= bufsize) CLEAN_FAIL();
                     out[w++] = '/';
                 }
-                if (w + 2 >= bufsize) return -1;
+                if (w + 2 >= bufsize) CLEAN_FAIL();
                 out[w++] = '.';
                 out[w++] = '.';
                 dotdot = w;
             }
         } else {
             if ((rooted && w != 1) || (!rooted && w != 0)) {
-                if (w + 1 >= bufsize) return -1;
+                if (w + 1 >= bufsize) CLEAN_FAIL();
                 out[w++] = '/';
             }
             for (; r < n && path[r] != '/'; r++) {
-                if (w + 1 >= bufsize) return -1;
+                if (w + 1 >= bufsize) CLEAN_FAIL();
                 out[w++] = path[r];
             }
         }
     }
 
+#undef CLEAN_FAIL
+
     if (w == 0) {
-        if (bufsize < 2) return -1;
+        if (bufsize < 2) {
+            buf[0] = '\0';
+            return -1;
+        }
         out[0] = '.';
         out[1] = '\0';
         return 1;
     }
 
     out[w] = '\0';
+    if (w > (size_t)INT_MAX) return -1;
     return (int)w;
 }

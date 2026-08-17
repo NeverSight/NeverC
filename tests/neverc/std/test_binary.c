@@ -202,6 +202,17 @@ static void test_varint(void) {
     for (int i = 0; i < 11; i++) overflow[i] = 0x80;
     overflow[9] = 0x02;
     check_int("overflow 10th byte", neverc_binary_uvarint(overflow, 10, &u), -10);
+
+    uint64_t sentinel = 0xdeadbeefULL;
+    uint8_t ten_cont[10];
+    for (int i = 0; i < 10; i++) ten_cont[i] = 0x80;
+    check_int("10 continuations are overflow not truncated",
+              neverc_binary_uvarint(ten_cont, 10, &sentinel), -10);
+    check_u64("overflow leaves out unchanged", sentinel, 0xdeadbeefULL);
+    uint8_t eleven[11];
+    for (int i = 0; i < 11; i++) eleven[i] = 0x80;
+    check_int("11 continuations overflow",
+              neverc_binary_uvarint(eleven, 11, &u), -10);
 }
 
 int main(void) {

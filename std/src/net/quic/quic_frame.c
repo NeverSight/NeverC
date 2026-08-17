@@ -93,6 +93,13 @@ int neverc_quic_frame_allowed(uint64_t frame_type, quic_enc_level_t level) {
     return 0;
 }
 
+/* RFC 9000 §12.4: PADDING is a single 0x00 byte, not a longer varint. */
+int neverc_quic_frame_type_encoding_ok(uint64_t frame_type, size_t encoded_len) {
+    if (encoded_len < 1) return -1;
+    if (frame_type == QUIC_FRAME_PADDING && encoded_len != 1) return -1;
+    return 0;
+}
+
 /* ======================================================================
  * Frame Parsing
  * ====================================================================== */
@@ -113,6 +120,7 @@ static int quic_end_offset_ok(uint64_t offset, uint64_t len) {
 
 int neverc_quic_parse_crypto_frame(const uint8_t *buf, size_t len,
                                     quic_frame_crypto_t *out, size_t *consumed) {
+    if (!buf || !out || !consumed) return -1;
     const uint8_t *p = buf;
     size_t rem = len;
 
@@ -131,7 +139,7 @@ int neverc_quic_parse_crypto_frame(const uint8_t *buf, size_t len,
 
     out->data = p;
     out->data_len = (size_t)dlen;
-    p += dlen;
+    p += (size_t)dlen;
     rem -= (size_t)dlen;
 
     *consumed = (size_t)(p - buf);
@@ -140,7 +148,7 @@ int neverc_quic_parse_crypto_frame(const uint8_t *buf, size_t len,
 
 int neverc_quic_parse_stream_frame(const uint8_t *buf, size_t len,
                                     quic_frame_stream_t *out, size_t *consumed) {
-    if (len < 1) return -1;
+    if (!buf || !out || !consumed || len < 1) return -1;
 
     /* RFC 9000 §12.4 / §16: STREAM type 0x08..0x0f is a varint. A
      * non-minimal encoding (e.g. 0x40 0x0a) must still recover OFF/LEN/FIN
@@ -174,7 +182,7 @@ int neverc_quic_parse_stream_frame(const uint8_t *buf, size_t len,
         if (dlen > rem || !quic_end_offset_ok(out->offset, dlen)) return -1;
         out->data = p;
         out->data_len = (size_t)dlen;
-        p += dlen;
+        p += (size_t)dlen;
     } else {
         if (!quic_end_offset_ok(out->offset, (uint64_t)rem)) return -1;
         out->data = p;
@@ -268,6 +276,7 @@ fail:
 int neverc_quic_parse_reset_stream(const uint8_t *buf, size_t len,
                                     quic_frame_reset_stream_t *out,
                                     size_t *consumed) {
+    if (!buf || !out || !consumed) return -1;
     const uint8_t *p = buf;
     size_t rem = len;
 
@@ -286,6 +295,7 @@ int neverc_quic_parse_reset_stream(const uint8_t *buf, size_t len,
 int neverc_quic_parse_stop_sending(const uint8_t *buf, size_t len,
                                     quic_frame_stop_sending_t *out,
                                     size_t *consumed) {
+    if (!buf || !out || !consumed) return -1;
     const uint8_t *p = buf;
     size_t rem = len;
 
@@ -320,6 +330,7 @@ int neverc_quic_parse_new_token(const uint8_t *buf, size_t len,
 int neverc_quic_parse_new_conn_id(const uint8_t *buf, size_t len,
                                     quic_frame_new_conn_id_t *out,
                                     size_t *consumed) {
+    if (!buf || !out || !consumed) return -1;
     const uint8_t *p = buf;
     size_t rem = len;
 
@@ -355,6 +366,7 @@ int neverc_quic_parse_new_conn_id(const uint8_t *buf, size_t len,
 int neverc_quic_parse_connection_close(const uint8_t *buf, size_t len,
                                         quic_frame_connection_close_t *out,
                                         size_t *consumed) {
+    if (!buf || !out || !consumed) return -1;
     const uint8_t *p = buf;
     size_t rem = len;
 
@@ -381,7 +393,7 @@ int neverc_quic_parse_connection_close(const uint8_t *buf, size_t len,
 
     out->reason = (const char *)p;
     out->reason_len = (size_t)reason_len;
-    p += reason_len;
+    p += (size_t)reason_len;
 
     *consumed = (size_t)(p - buf);
     return 0;
@@ -645,5 +657,24 @@ int neverc_quic_write_retire_conn_id(uint8_t *buf, size_t cap,
     neverc_quic_varint_encode(sequence, buf + pos, cap - pos, &w);
     pos += w;
     *written = pos;
+    return 0;
+}
+
+int neverc_quic_parse_stream_count_frame(const uint8_t *buf, size_t len,
+                                         uint64_t *maximum, size_t *consumed) {
+    const uint8_t *p = buf;
+    size_t rem = len;
+    uint64_t ftype;
+    if (!buf || !maximum || !consumed || consume_varint(&p, &rem, &ftype) != 0)
+        return -1;
+    if (ftype != QUIC_FRAME_MAX_STREAMS_BIDI &&
+        ftype != QUIC_FRAME_MAX_STREAMS_UNI &&
+        ftype != QUIC_FRAME_STREAMS_BLOCKED_BIDI &&
+        ftype != QUIC_FRAME_STREAMS_BLOCKED_UNI)
+        return -1;
+    if (consume_varint(&p, &rem, maximum) != 0 ||
+        *maximum > QUIC_MAX_STREAM_COUNT)
+        return -1;
+    *consumed = (size_t)(p - buf);
     return 0;
 }

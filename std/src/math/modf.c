@@ -2,6 +2,8 @@
 #include "_math_internal.h"
 
 double neverc_math_modf(double x, double *iptr) {
+    double dummy;
+    if (!iptr) iptr = &dummy;
     if (nc_isnan(x)) {
         *iptr = nc_nan();
         return nc_nan();

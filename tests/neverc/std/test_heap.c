@@ -280,6 +280,15 @@ static void test_large_leaf_index_does_not_overflow(void) {
     ASSERT_INT_EQ(heap.callback_count, 1);
 }
 
+static void test_last_parent_index_does_not_overflow(void) {
+    printf("[last_parent_index_does_not_overflow]\n");
+    guarded_heap_t heap = {.len = INT_MAX};
+    neverc_heap_interface_t iface = make_guarded_iface(&heap);
+
+    neverc_heap_fix(&iface, INT_MAX / 2 - 1);
+    ASSERT_INT_EQ(heap.invalid_index, 0);
+}
+
 static unsigned int random_state = 0x8f31a5c7U;
 
 static unsigned int next_random(void) {
@@ -362,6 +371,7 @@ int main(void) {
     test_reverse_input();
     test_invalid_operations_are_noops();
     test_large_leaf_index_does_not_overflow();
+    test_last_parent_index_does_not_overflow();
     test_randomized_operations();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

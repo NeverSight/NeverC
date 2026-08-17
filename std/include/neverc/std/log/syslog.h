@@ -60,9 +60,9 @@ int neverc_syslog_pri(neverc_syslog_facility_t facility,
 
 /* Format RFC 3164 "<PRI>tag: message" into buf (no trailing newline).
  * CR/LF in the message are replaced so one call cannot emit a second
- * record. Tag characters that would forge a PRI or split the TAG field
- * (CR/LF, ':', '<', '>') are replaced with '_'. Returns 0 on success,
- * -1 on error. */
+ * record. TAG is restricted to [A-Za-z0-9._-]; other characters
+ * (space, ':', '<', '>', controls) are replaced with '_'. Returns 0
+ * on success, -1 on error. */
 int neverc_syslog_format(neverc_syslog_t *log,
                          neverc_syslog_priority_t priority,
                          const char *msg, char *buf, size_t n);

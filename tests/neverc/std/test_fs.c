@@ -84,6 +84,10 @@ static void test_stat(void) {
     check("stat_nonexistent", rc != 0);
     rc = neverc_fs_lstat("/nonexistent_path_12345", &info);
     check("lstat_nonexistent", rc != 0);
+    check("stat_null_path", neverc_fs_stat(NULL, &info) != 0);
+    check("stat_null_info", neverc_fs_stat(tmpdir, NULL) != 0);
+    check("lstat_null_path", neverc_fs_lstat(NULL, &info) != 0);
+    check("lstat_null_info", neverc_fs_lstat(tmpdir, NULL) != 0);
 
     {
         neverc_fs_file_info_t linfo;
@@ -189,6 +193,24 @@ static void test_glob(void) {
     int rc = neverc_fs_glob(tmpdir, "neverc_glob_test_*.txt", &matches, &count);
     check("glob_ok", rc == 0);
     check("glob_found", count >= 1);
+    {
+        size_t i, ok = count >= 1;
+        size_t tlen = strlen(tmpdir);
+        for (i = 0; i < count; i++) {
+            const char *rest;
+            if (!matches[i] || strncmp(matches[i], tmpdir, tlen) != 0) {
+                ok = 0;
+                break;
+            }
+            rest = matches[i] + tlen;
+            if (*rest == '/' || *rest == '\\')
+                rest++;
+            if (rest[0] == '.' && rest[1] == '.' &&
+                (rest[2] == '\0' || rest[2] == '/' || rest[2] == '\\'))
+                ok = 0;
+        }
+        check("glob_stays_under_dir", ok);
+    }
     neverc_fs_free_matches(matches, count);
 
     {
@@ -253,6 +275,18 @@ static void test_glob(void) {
     check("glob_bad_pattern", rc != 0);
     check("glob_bad_clears", matches == NULL && count == 0);
 
+    matches = (char **)1;
+    count = 99;
+    rc = neverc_fs_glob(tmpdir, "../neverc_glob_test_*.txt", &matches, &count);
+    check("glob_rejects_slash_pattern", rc != 0);
+    check("glob_slash_clears", matches == NULL && count == 0);
+
+    matches = (char **)1;
+    count = 99;
+    rc = neverc_fs_glob(tmpdir, "neverc_glob_test_abc.txt/../x", &matches, &count);
+    check("glob_rejects_nested_pattern", rc != 0);
+    check("glob_nested_clears", matches == NULL && count == 0);
+
     {
         char slashed[1100];
         size_t tlen = strlen(tmpdir);
@@ -282,6 +316,9 @@ static int walk_root_is_dir;
 static int walk_saw_child;
 static int walk_skip_hidden;
 static int walk_skip_after;
+static int walk_saw_null_entry;
+static int walk_saw_zzz;
+static int walk_saw_aaa;
 
 static int walk_cb(const char *path, const neverc_fs_dir_entry_t *entry, void *ud) {
     (void)path; (void)ud;
@@ -329,6 +366,30 @@ static int walk_secret_cb(const char *path, const neverc_fs_dir_entry_t *entry, 
     return 0;
 }
 
+static int walk_null_cb(const char *path, const neverc_fs_dir_entry_t *entry, void *ud) {
+    (void)path; (void)ud;
+    walk_count++;
+    if (!entry) walk_saw_null_entry = 1;
+    return 0;
+}
+
+static int walk_null_skip_cb(const char *path, const neverc_fs_dir_entry_t *entry, void *ud) {
+    (void)path; (void)ud;
+    walk_count++;
+    if (!entry) return NEVERC_FS_SKIP_DIR;
+    return 0;
+}
+
+static int walk_skip_file_cb(const char *path, const neverc_fs_dir_entry_t *entry, void *ud) {
+    (void)ud;
+    walk_count++;
+    if (path && strstr(path, "aaa.txt")) walk_saw_aaa = 1;
+    if (path && strstr(path, "zzz.txt")) walk_saw_zzz = 1;
+    if (entry && strcmp(entry->name, "skipfile") == 0)
+        return NEVERC_FS_SKIP_DIR;
+    return 0;
+}
+
 static void test_walk_dir(void) {
     printf("[walk_dir]\n");
     char tmpdir[1024];
@@ -373,6 +434,18 @@ static void test_walk_dir(void) {
     check("walk_missing",
           neverc_fs_walk_dir("/nonexistent_path_12345", walk_cb, NULL) != 0);
 
+    walk_count = 0;
+    walk_saw_null_entry = 0;
+    rc = neverc_fs_walk_dir("/nonexistent_path_12345", walk_null_cb, NULL);
+    check("walk_missing_calls_fn", rc != 0);
+    check("walk_missing_null_entry", walk_saw_null_entry == 1);
+    check("walk_missing_once", walk_count == 1);
+
+    walk_count = 0;
+    rc = neverc_fs_walk_dir("/nonexistent_path_12345", walk_null_skip_cb, NULL);
+    check("walk_missing_skip_ok", rc == 0);
+    check("walk_missing_skip_once", walk_count == 1);
+
     check("walk_err", neverc_fs_walk_dir(walkdir, walk_err_cb, NULL) == -1);
 
     {
@@ -406,6 +479,37 @@ static void test_walk_dir(void) {
         rc = neverc_fs_walk_dir(walkdir, walk_skip_all_cb, NULL);
         check("walk_skip_all_ok", rc == 0);
         check("walk_skip_all_no_nested", walk_saw_child == 0);
+
+        {
+            char aaa[2048], skipfile[2048], zzz[2048];
+#if defined(_WIN32)
+            snprintf(aaa, sizeof(aaa), "%s\\aaa.txt", walkdir);
+            snprintf(skipfile, sizeof(skipfile), "%s\\skipfile", walkdir);
+            snprintf(zzz, sizeof(zzz), "%s\\zzz.txt", walkdir);
+#else
+            snprintf(aaa, sizeof(aaa), "%s/aaa.txt", walkdir);
+            snprintf(skipfile, sizeof(skipfile), "%s/skipfile", walkdir);
+            snprintf(zzz, sizeof(zzz), "%s/zzz.txt", walkdir);
+#endif
+            FILE *faaa = fopen(aaa, "w");
+            if (faaa) { fprintf(faaa, "a"); fclose(faaa); }
+            FILE *fsk = fopen(skipfile, "w");
+            if (fsk) { fprintf(fsk, "s"); fclose(fsk); }
+            FILE *fzzz = fopen(zzz, "w");
+            if (fzzz) { fprintf(fzzz, "z"); fclose(fzzz); }
+
+            walk_count = 0;
+            walk_saw_aaa = 0;
+            walk_saw_zzz = 0;
+            rc = neverc_fs_walk_dir(walkdir, walk_skip_file_cb, NULL);
+            check("walk_skip_file_ok", rc == 0);
+            check("walk_skip_file_saw_prior", walk_saw_aaa == 1);
+            check("walk_skip_file_hides_rest", walk_saw_zzz == 0);
+
+            remove(aaa);
+            remove(skipfile);
+            remove(zzz);
+        }
 
         remove(hidden);
         remove(after);

@@ -163,6 +163,14 @@ static void test_unicode_conformance_edges(void) {
               neverc_unicode_is_graphic(0x00AD), 0);
     check_int("feminine ordinal is letter",
               neverc_unicode_is_letter(0x00AA), 1);
+    check_int("feminine ordinal is not upper or lower",
+              !neverc_unicode_is_upper(0x00AA) &&
+              !neverc_unicode_is_lower(0x00AA), 1);
+    check_int("masculine ordinal is letter",
+              neverc_unicode_is_letter(0x00BA), 1);
+    check_int("masculine ordinal is not upper or lower",
+              !neverc_unicode_is_upper(0x00BA) &&
+              !neverc_unicode_is_lower(0x00BA), 1);
     check_int("Devanagari sign is not letter",
               neverc_unicode_is_letter(0x0900), 0);
     check_int("Devanagari sign is mark",
@@ -192,6 +200,13 @@ static void test_unicode_conformance_edges(void) {
               neverc_unicode_to_lower(0x0130), 0x0069);
     check_u32("dotless i uppercase",
               neverc_unicode_to_upper(0x0131), 0x0049);
+    /* Go unicode.ToUpper/ToLower are simple mappings, not TurkishCase. */
+    check_u32("ToUpper(i) is I not I-dot",
+              neverc_unicode_to_upper('i'), 'I');
+    check_u32("ToLower(I) is i not dotless",
+              neverc_unicode_to_lower('I'), 'i');
+    check_u32("sharp s simple uppercase is itself",
+              neverc_unicode_to_upper(0x00DF), 0x00DF);
     check_u32("final sigma uppercase",
               neverc_unicode_to_upper(0x03C2), 0x03A3);
 

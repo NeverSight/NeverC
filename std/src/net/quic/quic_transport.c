@@ -227,7 +227,8 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
                                       payload_len - position,
                                       &frame_type, &type_len) != 0)
             return -1;
-        if (!neverc_quic_frame_allowed(frame_type, level))
+        if (!neverc_quic_frame_allowed(frame_type, level) ||
+            neverc_quic_frame_type_encoding_ok(frame_type, type_len) != 0)
             return -1;
         size_t consumed = type_len;
         if (frame_type == QUIC_FRAME_PADDING) {
@@ -312,15 +313,14 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_MAX_STREAMS_BIDI ||
                    frame_type == QUIC_FRAME_MAX_STREAMS_UNI) {
-            size_t cursor = position + type_len;
             uint64_t maximum;
-            if (qt_decode_varint_at(payload, payload_len, &cursor,
-                                    &maximum) != 0 || maximum > (UINT64_C(1) << 60))
+            if (neverc_quic_parse_stream_count_frame(payload + position,
+                                                     payload_len - position,
+                                                     &maximum, &consumed) != 0)
                 return -1;
             uint64_t *current = frame_type == QUIC_FRAME_MAX_STREAMS_BIDI ?
                 &conn->peer_max_streams_bidi : &conn->peer_max_streams_uni;
             if (maximum > *current) *current = maximum;
-            consumed = cursor - position;
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_NEW_CONNECTION_ID) {
             quic_frame_new_conn_id_t new_cid;
@@ -446,12 +446,12 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_STREAMS_BLOCKED_BIDI ||
                    frame_type == QUIC_FRAME_STREAMS_BLOCKED_UNI) {
-            size_t cursor = position + type_len;
             uint64_t maximum;
-            if (qt_decode_varint_at(payload, payload_len, &cursor,
-                                    &maximum) != 0)
+            if (neverc_quic_parse_stream_count_frame(payload + position,
+                                                     payload_len - position,
+                                                     &maximum, &consumed) != 0)
                 return -1;
-            consumed = cursor - position;
+            (void)maximum;
             *ack_eliciting = 1;
         } else {
             return -1;

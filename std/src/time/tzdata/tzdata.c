@@ -2,6 +2,7 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -640,8 +641,65 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
     return tz_in_span(unix_sec, start, end);
 }
 
+typedef struct tzif_extra {
+    neverc_tzdata_zone_t zone;
+    int ntx;
+    int64_t *when;
+    int *off;
+    char *storage;
+    struct tzif_extra *next;
+} tzif_extra_t;
+
+static tzif_extra_t *g_tzif_list;
+static volatile int32_t g_tzif_lock;
+
+static void tzif_lock(void) {
+    int expected = 0;
+    while (!__atomic_compare_exchange_n(&g_tzif_lock, &expected, 1, 0,
+                                        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        expected = 0;
+        tz_yield();
+    }
+}
+
+static void tzif_unlock(void) {
+    __atomic_store_n(&g_tzif_lock, 0, __ATOMIC_RELEASE);
+}
+
+static tzif_extra_t *tzif_find(const neverc_tzdata_zone_t *zone) {
+    tzif_extra_t *e;
+    tzif_lock();
+    for (e = g_tzif_list; e; e = e->next) {
+        if (&e->zone == zone) {
+            tzif_unlock();
+            return e;
+        }
+    }
+    tzif_unlock();
+    return NULL;
+}
+
+static int tzif_offset_at(const tzif_extra_t *e, int64_t unix_sec) {
+    if (!e || e->ntx <= 0 || !e->when || !e->off)
+        return e ? e->zone.utc_offset : 0;
+    int lo = 0, hi = e->ntx;
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (e->when[mid] <= unix_sec)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    int i = lo - 1;
+    if (i < 0) i = 0;
+    return e->off[i];
+}
+
 int neverc_tzdata_offset_at(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
     if (!zone) return 0;
+    tzif_extra_t *e = tzif_find(zone);
+    if (e)
+        return tzif_offset_at(e, unix_sec);
     if (!zone->has_dst) return zone->utc_offset;
     return tz_dst_active(zone, unix_sec) ? zone->dst_offset : zone->utc_offset;
 }
@@ -737,4 +795,308 @@ const neverc_tzdata_zone_t *neverc_tzdata_local(void) {
     if (z) return z;
 #endif
     return neverc_tzdata_utc();
+}
+
+static uint32_t tz_le32(const uint8_t *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static uint16_t tz_le16(const uint8_t *p) {
+    return (uint16_t)((uint32_t)p[0] | ((uint32_t)p[1] << 8));
+}
+
+static uint32_t tz_be32(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+static int64_t tz_be64(const uint8_t *p) {
+    return (int64_t)(((uint64_t)tz_be32(p) << 32) | (uint64_t)tz_be32(p + 4));
+}
+
+uint8_t *neverc_tzdata_zip_extract(const uint8_t *zip, size_t zip_len,
+                                   const char *name, size_t *out_len) {
+    if (out_len) *out_len = 0;
+    if (!zip || !name || zip_len < 22) return NULL;
+
+    const uint8_t *eocd = zip + zip_len - 22;
+    if (tz_le32(eocd) != 0x06054b50u) return NULL;
+    uint32_t n = tz_le16(eocd + 10);
+    uint32_t cd_size = tz_le32(eocd + 12);
+    uint32_t cd_off = tz_le32(eocd + 16);
+    /* Zip64 sentinels: fail closed, matching Go's 32-bit zip reader. */
+    if (n == 0xFFFFu || cd_size == 0xFFFFFFFFu || cd_off == 0xFFFFFFFFu)
+        return NULL;
+    if ((size_t)cd_off > zip_len || (size_t)cd_size > zip_len - (size_t)cd_off)
+        return NULL;
+
+    const uint8_t *cd = zip + cd_off;
+    size_t remain = cd_size;
+    size_t want = nc_slen(name);
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        if (remain < 46) return NULL;
+        if (tz_le32(cd) != 0x02014b50u) return NULL;
+        uint32_t meth = tz_le16(cd + 10);
+        uint32_t uncsize = tz_le32(cd + 24);
+        uint32_t namelen = tz_le16(cd + 28);
+        uint32_t xlen = tz_le16(cd + 30);
+        uint32_t fclen = tz_le16(cd + 32);
+        uint32_t off = tz_le32(cd + 42);
+        if (namelen > remain - 46 || xlen > remain - 46 - namelen ||
+            fclen > remain - 46 - namelen - xlen)
+            return NULL;
+        const uint8_t *zname = cd + 46;
+        cd += 46 + namelen + xlen + fclen;
+        remain -= 46 + namelen + xlen + fclen;
+        if (namelen != want || memcmp(zname, name, namelen) != 0)
+            continue;
+        if (meth != 0) return NULL;
+        if ((size_t)off > zip_len || zip_len - (size_t)off < 30)
+            return NULL;
+        const uint8_t *lh = zip + off;
+        if (tz_le32(lh) != 0x04034b50u) return NULL;
+        if (tz_le16(lh + 8) != meth) return NULL;
+        uint32_t lname = tz_le16(lh + 26);
+        uint32_t lxlen = tz_le16(lh + 28);
+        if (lname != namelen) return NULL;
+        if (lname > zip_len - (size_t)off - 30 ||
+            lxlen > zip_len - (size_t)off - 30 - lname)
+            return NULL;
+        if (memcmp(lh + 30, name, namelen) != 0) return NULL;
+        size_t data_off = (size_t)off + 30 + lname + lxlen;
+        if (data_off > zip_len || (size_t)uncsize > zip_len - data_off)
+            return NULL;
+        uint8_t *buf = (uint8_t *)malloc(uncsize ? uncsize : 1);
+        if (!buf) return NULL;
+        if (uncsize)
+            memcpy(buf, zip + data_off, uncsize);
+        if (out_len) *out_len = uncsize;
+        return buf;
+    }
+    return NULL;
+}
+
+typedef struct {
+    const uint8_t *p;
+    size_t n;
+    int err;
+} tz_cur_t;
+
+static const uint8_t *tz_cur_read(tz_cur_t *c, size_t n) {
+    if (c->err || c->n < n) {
+        c->err = 1;
+        return NULL;
+    }
+    const uint8_t *p = c->p;
+    c->p += n;
+    c->n -= n;
+    return p;
+}
+
+static int tz_cur_counts(tz_cur_t *c, uint32_t n[6]) {
+    int i;
+    for (i = 0; i < 6; i++) {
+        const uint8_t *p = tz_cur_read(c, 4);
+        if (!p) return -1;
+        n[i] = tz_be32(p);
+    }
+    return 0;
+}
+
+neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
+                                              const uint8_t *data, size_t len) {
+    if (!data || len < 20) return NULL;
+    tz_cur_t c = {data, len, 0};
+    const uint8_t *magic = tz_cur_read(&c, 4);
+    if (!magic || memcmp(magic, "TZif", 4) != 0) return NULL;
+    const uint8_t *verpad = tz_cur_read(&c, 16);
+    if (!verpad) return NULL;
+    int version = 1;
+    if (verpad[0] == '2' || verpad[0] == '3') version = 2;
+    else if (verpad[0] != 0) return NULL;
+
+    uint32_t n[6];
+    if (tz_cur_counts(&c, n) != 0) return NULL;
+    /* NUTCLocal, NStdWall, NLeap, NTime, NZone, NChar */
+    uint32_t ntime = n[3], nzone = n[4], nchar = n[5];
+    uint32_t nleap = n[2], nstd = n[1], nutc = n[0];
+    if (nzone == 0 || ntime > (uint32_t)INT_MAX) return NULL;
+
+    if (version > 1) {
+        size_t skip = 20;
+        if (ntime > (SIZE_MAX - skip) / 5) return NULL;
+        skip += (size_t)ntime * 5;
+        if (nzone > (SIZE_MAX - skip) / 6) return NULL;
+        skip += (size_t)nzone * 6;
+        if (nleap > (SIZE_MAX - skip) / 8) return NULL;
+        skip += (size_t)nleap * 8;
+        if (nchar > SIZE_MAX - skip || nstd > SIZE_MAX - skip - nchar ||
+            nutc > SIZE_MAX - skip - nchar - nstd)
+            return NULL;
+        skip += (size_t)nchar + (size_t)nstd + (size_t)nutc;
+        if (!tz_cur_read(&c, skip)) return NULL;
+        if (tz_cur_counts(&c, n) != 0) return NULL;
+        ntime = n[3];
+        nzone = n[4];
+        nchar = n[5];
+        nleap = n[2];
+        nstd = n[1];
+        nutc = n[0];
+        if (nzone == 0 || ntime > (uint32_t)INT_MAX) return NULL;
+    }
+
+    int is64 = version > 1;
+    size_t tsize = is64 ? 8 : 4;
+    if (ntime > SIZE_MAX / tsize || nzone > SIZE_MAX / 6 ||
+        nleap > SIZE_MAX / (tsize + 4))
+        return NULL;
+
+    const uint8_t *times = tz_cur_read(&c, (size_t)ntime * tsize);
+    const uint8_t *txidx = tz_cur_read(&c, ntime);
+    const uint8_t *zdata = tz_cur_read(&c, (size_t)nzone * 6);
+    const uint8_t *abbrev = tz_cur_read(&c, nchar);
+    if (c.err) return NULL;
+    size_t leap_sz = (size_t)nleap * (tsize + 4);
+    tz_cur_read(&c, leap_sz);
+    tz_cur_read(&c, nstd);
+    tz_cur_read(&c, nutc);
+    if (c.err) return NULL;
+
+    int std_off = 0, dst_off = 0, has_dst = 0, got_std = 0, got_dst = 0;
+    const char *std_ab = "UTC", *dst_ab = NULL;
+    uint32_t zi;
+    for (zi = 0; zi < nzone; zi++) {
+        int off = (int)(int32_t)tz_be32(zdata + (size_t)zi * 6);
+        int isdst = zdata[(size_t)zi * 6 + 4] != 0;
+        uint8_t ab = zdata[(size_t)zi * 6 + 5];
+        if ((size_t)ab >= nchar) return NULL;
+        const char *an = (const char *)(abbrev + ab);
+        if (!isdst && !got_std) {
+            std_off = off;
+            std_ab = an;
+            got_std = 1;
+        } else if (isdst && !got_dst) {
+            dst_off = off;
+            dst_ab = an;
+            got_dst = 1;
+            has_dst = 1;
+        }
+    }
+    if (!got_std) {
+        std_off = (int)(int32_t)tz_be32(zdata);
+        uint8_t ab = zdata[5];
+        if ((size_t)ab >= nchar) return NULL;
+        std_ab = (const char *)(abbrev + ab);
+    }
+
+    tzif_extra_t *e = (tzif_extra_t *)calloc(1, sizeof(*e));
+    if (!e) return NULL;
+    if (ntime > 0) {
+        e->when = (int64_t *)malloc((size_t)ntime * sizeof(int64_t));
+        e->off = (int *)malloc((size_t)ntime * sizeof(int));
+        if (!e->when || !e->off) {
+            free(e->when);
+            free(e->off);
+            free(e);
+            return NULL;
+        }
+        uint32_t ti;
+        for (ti = 0; ti < ntime; ti++) {
+            int64_t when;
+            if (is64)
+                when = tz_be64(times + (size_t)ti * 8);
+            else
+                when = (int64_t)(int32_t)tz_be32(times + (size_t)ti * 4);
+            uint8_t idx = txidx[ti];
+            if ((uint32_t)idx >= nzone) {
+                free(e->when);
+                free(e->off);
+                free(e);
+                return NULL;
+            }
+            e->when[ti] = when;
+            e->off[ti] = (int)(int32_t)tz_be32(zdata + (size_t)idx * 6);
+        }
+        e->ntx = (int)ntime;
+    }
+
+    size_t nlen = name ? nc_slen(name) : 0;
+    size_t slen = nc_slen(std_ab);
+    size_t dlen = dst_ab ? nc_slen(dst_ab) : 0;
+    if (nlen > SIZE_MAX - slen - dlen - 3) {
+        free(e->when);
+        free(e->off);
+        free(e);
+        return NULL;
+    }
+    e->storage = (char *)malloc(nlen + slen + dlen + 3);
+    if (!e->storage) {
+        free(e->when);
+        free(e->off);
+        free(e);
+        return NULL;
+    }
+    char *p = e->storage;
+    if (name)
+        memcpy(p, name, nlen);
+    p[nlen] = '\0';
+    e->zone.name = p;
+    p += nlen + 1;
+    memcpy(p, std_ab, slen);
+    p[slen] = '\0';
+    e->zone.abbrev = p;
+    p += slen + 1;
+    if (dst_ab) {
+        memcpy(p, dst_ab, dlen);
+        p[dlen] = '\0';
+        e->zone.abbrev_dst = p;
+    }
+    e->zone.utc_offset = std_off;
+    e->zone.dst_offset = has_dst ? dst_off : 0;
+    e->zone.has_dst = has_dst;
+    e->zone.dst_hemi = has_dst ? 1 : 0;
+
+    tzif_lock();
+    e->next = g_tzif_list;
+    g_tzif_list = e;
+    tzif_unlock();
+    return &e->zone;
+}
+
+neverc_tzdata_zone_t *neverc_tzdata_load_from_zip(const uint8_t *zip,
+                                                  size_t zip_len,
+                                                  const char *name) {
+    size_t n = 0;
+    uint8_t *data = neverc_tzdata_zip_extract(zip, zip_len, name, &n);
+    if (!data) return NULL;
+    neverc_tzdata_zone_t *z = neverc_tzdata_load_tzif(name, data, n);
+    free(data);
+    return z;
+}
+
+void neverc_tzdata_zone_free(neverc_tzdata_zone_t *zone) {
+    if (!zone) return;
+    if (zone >= g_zones && zone < g_zones + tz_count) return;
+    if (zone == &g_posix_zone) return;
+
+    tzif_lock();
+    tzif_extra_t **pp = &g_tzif_list;
+    while (*pp) {
+        if (&(*pp)->zone == zone) {
+            tzif_extra_t *e = *pp;
+            *pp = e->next;
+            tzif_unlock();
+            free(e->when);
+            free(e->off);
+            free(e->storage);
+            free(e);
+            return;
+        }
+        pp = &(*pp)->next;
+    }
+    tzif_unlock();
+    free((void *)zone->name);
+    free(zone);
 }

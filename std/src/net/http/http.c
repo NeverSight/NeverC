@@ -301,9 +301,12 @@ static int rw_flush(neverc_http_response_writer_t *w) {
         !w->head_request && !status_forbids_body) {
         if (w->body.len > w->content_length_override)
             goto fail;
+        /* A non-empty short body with an advertised Content-Length would
+         * desynchronize a keep-alive peer. Empty body + override is left
+         * intact for sendfile, which writes the file after headers. */
         if (w->body.len > 0 &&
             w->body.len < w->content_length_override)
-            w->keep_alive = 0;
+            goto fail;
     }
 
     size_t sl_len = 0;
@@ -612,7 +615,13 @@ int neverc_http_writef(neverc_http_response_writer_t *w,
 }
 
 void neverc_http_enable_chunked(neverc_http_response_writer_t *w) {
-    if (w && !w->headers_sent) w->chunked = 1;
+    if (!w || w->headers_sent) return;
+    w->chunked = 1;
+    /* Chunked framing is mutually exclusive with Content-Length. HTTP/1
+     * already omits CL on the chunked path; drop the override so HTTP/2
+     * cannot advertise a length that later DATA will not match. */
+    w->has_content_length_override = 0;
+    w->content_length_override = 0;
 }
 
 static int rw_send_chunked_headers(neverc_http_response_writer_t *w) {

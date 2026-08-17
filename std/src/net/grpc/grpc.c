@@ -25,6 +25,7 @@ struct neverc_grpc_server_stream {
     size_t sent_count;
     uint8_t *received_message;
     int input_eof;
+    int recv_failed;
     int ended;
 };
 
@@ -281,8 +282,10 @@ static int grpc_h2_read_exact(neverc_grpc_server_stream_t *stream,
 
 static int grpc_server_stream_recv_internal(
     neverc_grpc_server_stream_t *stream, neverc_grpc_message_t *message) {
-    if (!stream || !message || neverc_context_done(stream->context))
+    if (!stream || !message || neverc_context_done(stream->context) ||
+        stream->recv_failed)
         return -1;
+    if (stream->input_eof) return 0;
     free(stream->received_message);
     stream->received_message = NULL;
     int result;
@@ -293,20 +296,31 @@ static int grpc_server_stream_recv_internal(
             stream->input_eof = 1;
             return 0;
         }
-        if (result < 0 || header[0] != 0) return -1;
+        if (result < 0 || header[0] != 0) {
+            stream->recv_failed = 1;
+            return -1;
+        }
         uint32_t length = ((uint32_t)header[1] << 24) |
                           ((uint32_t)header[2] << 16) |
                           ((uint32_t)header[3] << 8) | header[4];
         size_t max_message_size = stream->method->max_request_message_size
             ? stream->method->max_request_message_size
             : GRPC_DEFAULT_MAX_MESSAGE_SIZE;
-        if (length > max_message_size) return -1;
+        if (length > max_message_size) {
+            stream->recv_failed = 1;
+            return -1;
+        }
         stream->received_message = length
             ? (uint8_t *)malloc(length) : NULL;
-        if (length && !stream->received_message) return -1;
-        if (length && grpc_h2_read_exact(
-                stream, stream->received_message, length, 0) != 1)
+        if (length && !stream->received_message) {
+            stream->recv_failed = 1;
             return -1;
+        }
+        if (length && grpc_h2_read_exact(
+                stream, stream->received_message, length, 0) != 1) {
+            stream->recv_failed = 1;
+            return -1;
+        }
         message->data = stream->received_message;
         message->length = length;
         result = 1;
@@ -363,17 +377,30 @@ int neverc_grpc_server_stream_send(neverc_grpc_server_stream_t *stream,
     return result;
 }
 
+static int grpc_metadata_key_valid(const char *key) {
+    if (!key || !key[0] || key[0] == ':') return 0;
+    for (const unsigned char *cursor = (const unsigned char *)key;
+         *cursor; cursor++)
+        if (!((*cursor >= 'a' && *cursor <= 'z') ||
+              (*cursor >= '0' && *cursor <= '9')) &&
+            *cursor != '-' && *cursor != '_' && *cursor != '.')
+            return 0;
+    if (strncmp(key, "grpc-", 5) == 0) return 0;
+    return strcmp(key, "content-type") != 0 &&
+           strcmp(key, "te") != 0;
+}
+
 void neverc_grpc_server_stream_set_header(
     neverc_grpc_server_stream_t *stream, const char *name,
     const char *value) {
-    if (stream && !stream->ended)
+    if (stream && !stream->ended && value && grpc_metadata_key_valid(name))
         neverc_http_set_header(stream->writer, name, value);
 }
 
 void neverc_grpc_server_stream_set_trailer(
     neverc_grpc_server_stream_t *stream, const char *name,
     const char *value) {
-    if (stream && !stream->ended)
+    if (stream && !stream->ended && value && grpc_metadata_key_valid(name))
         neverc_http_set_trailer(stream->writer, name, value);
 }
 
@@ -530,7 +557,10 @@ static void grpc_server_dispatch(neverc_http_request_t *request,
             framing_valid = 0;
         if (!framing_valid) {
             status = NEVERC_GRPC_INVALID_ARGUMENT;
-            if (!stream.input_eof)
+            /* Oversized/corrupt frames set recv_failed and must still get a
+             * grpc-status trailer. RST only leftover unread DATA after a
+             * well-framed extra unary message. */
+            if (!stream.input_eof && !stream.recv_failed)
                 neverc_h2_request_stream_cancel(
                     request->protocol_stream, NC_H2_PROTOCOL_ERROR);
         }
@@ -561,19 +591,6 @@ int neverc_grpc_server_register(neverc_http_mux_t *mux,
         mux, pattern, grpc_server_dispatch, (void *)method);
     free(pattern);
     return result;
-}
-
-static int grpc_metadata_key_valid(const char *key) {
-    if (!key || !key[0] || key[0] == ':') return 0;
-    for (const unsigned char *cursor = (const unsigned char *)key;
-         *cursor; cursor++)
-        if (!((*cursor >= 'a' && *cursor <= 'z') ||
-              (*cursor >= '0' && *cursor <= '9')) &&
-            *cursor != '-' && *cursor != '_' && *cursor != '.')
-            return 0;
-    if (strncmp(key, "grpc-", 5) == 0) return 0;
-    return strcmp(key, "content-type") != 0 &&
-           strcmp(key, "te") != 0;
 }
 
 static int grpc_binary_key(const char *key) {

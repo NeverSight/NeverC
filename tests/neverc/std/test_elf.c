@@ -528,6 +528,104 @@ static void test_elf32_be_and_entsize(void) {
     free(symbols);
 }
 
+static void test_elf_tiny_malformed(void) {
+    neverc_elf_file_t f;
+
+    uint8_t ident16[16] = {
+        0x7f, 'E', 'L', 'F', NEVERC_ELFCLASS64, NEVERC_ELFDATA2LSB, 1
+    };
+    CHECK("reject 16-byte ELF64 ident",
+          neverc_elf_open(&f, ident16, sizeof(ident16)) < 0);
+
+    uint8_t elf32_trunc[51] = {0};
+    elf32_trunc[0] = 0x7f;
+    elf32_trunc[1] = 'E';
+    elf32_trunc[2] = 'L';
+    elf32_trunc[3] = 'F';
+    elf32_trunc[4] = NEVERC_ELFCLASS32;
+    elf32_trunc[5] = NEVERC_ELFDATA2LSB;
+    elf32_trunc[6] = 1;
+    CHECK("reject truncated ELF32 header",
+          neverc_elf_open(&f, elf32_trunc, sizeof(elf32_trunc)) < 0);
+
+    uint8_t phentsz[64];
+    memset(phentsz, 0, sizeof(phentsz));
+    phentsz[0] = 0x7f;
+    phentsz[1] = 'E';
+    phentsz[2] = 'L';
+    phentsz[3] = 'F';
+    phentsz[4] = NEVERC_ELFCLASS64;
+    phentsz[5] = NEVERC_ELFDATA2LSB;
+    phentsz[6] = 1;
+    phentsz[20] = 1;
+    phentsz[32] = 64;
+    phentsz[52] = 64;
+    phentsz[56] = 1; /* e_phnum=1, e_phentsize=0 */
+    CHECK("reject zero program header entry size",
+          neverc_elf_open(&f, phentsz, sizeof(phentsz)) < 0);
+
+    uint8_t trunc_phdr[74];
+    memset(trunc_phdr, 0, sizeof(trunc_phdr));
+    trunc_phdr[0] = 0x7f;
+    trunc_phdr[1] = 'E';
+    trunc_phdr[2] = 'L';
+    trunc_phdr[3] = 'F';
+    trunc_phdr[4] = NEVERC_ELFCLASS64;
+    trunc_phdr[5] = NEVERC_ELFDATA2LSB;
+    trunc_phdr[6] = 1;
+    trunc_phdr[20] = 1;
+    trunc_phdr[32] = 64;
+    trunc_phdr[52] = 64;
+    trunc_phdr[54] = 56;
+    trunc_phdr[56] = 1;
+    CHECK("reject truncated program header table",
+          neverc_elf_open(&f, trunc_phdr, sizeof(trunc_phdr)) < 0);
+
+    uint8_t phdr_wrap[64 + 56];
+    memset(phdr_wrap, 0, sizeof(phdr_wrap));
+    phdr_wrap[0] = 0x7f;
+    phdr_wrap[1] = 'E';
+    phdr_wrap[2] = 'L';
+    phdr_wrap[3] = 'F';
+    phdr_wrap[4] = NEVERC_ELFCLASS64;
+    phdr_wrap[5] = NEVERC_ELFDATA2LSB;
+    phdr_wrap[6] = 1;
+    phdr_wrap[20] = 1;
+    phdr_wrap[32] = 64;
+    phdr_wrap[52] = 64;
+    phdr_wrap[54] = 56;
+    phdr_wrap[56] = 1;
+    put64le(phdr_wrap + 64 + 8, UINT64_MAX - 4);
+    put64le(phdr_wrap + 64 + 32, 16);
+    CHECK("reject program header offset plus filesz wrap",
+          neverc_elf_open(&f, phdr_wrap, sizeof(phdr_wrap)) < 0);
+
+    uint8_t dynbuf[32];
+    memset(dynbuf, 0, sizeof(dynbuf));
+    dynbuf[0] = 1;  /* DT_NEEDED */
+    dynbuf[8] = 99; /* string offset past dynstr */
+    dynbuf[31] = 0;
+    neverc_elf_section_t secs[2];
+    memset(secs, 0, sizeof(secs));
+    secs[0].type = NEVERC_SHT_DYNAMIC;
+    secs[0].size = 32;
+    secs[0].entsize = 16;
+    secs[0].link = 1;
+    secs[1].type = NEVERC_SHT_STRTAB;
+    secs[1].offset = 31;
+    secs[1].size = 1;
+    memset(&f, 0, sizeof(f));
+    f.data = dynbuf;
+    f.data_len = sizeof(dynbuf);
+    f.header.class_ = NEVERC_ELFCLASS64;
+    f.header.data = NEVERC_ELFDATA2LSB;
+    f.sections = secs;
+    f.section_count = 2;
+    char *names[1] = {(char *)1};
+    CHECK("reject DT_NEEDED past string table",
+          neverc_elf_imported_libraries(&f, names, 1) < 0);
+}
+
 static void test_elf_self_binary(void) {
     /*
      * On macOS we're running a Mach-O binary, not ELF.
@@ -548,6 +646,7 @@ int main(void) {
     test_elf_malformed_tables();
     test_elf_extended_and_truncated();
     test_elf32_be_and_entsize();
+    test_elf_tiny_malformed();
     test_elf_self_binary();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);

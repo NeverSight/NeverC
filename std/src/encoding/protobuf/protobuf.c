@@ -107,11 +107,7 @@ void neverc_protobuf_reader_init(neverc_protobuf_reader_t *reader,
         ? max_field_size : NEVERC_PROTOBUF_DEFAULT_MAX_FIELD_SIZE;
 }
 
-static int protobuf_skip_group(neverc_protobuf_reader_t *reader,
-                               uint32_t number, int depth);
-
-static int protobuf_skip_payload(neverc_protobuf_reader_t *reader,
-                                 uint8_t wire, uint32_t number, int depth) {
+static int protobuf_skip_value(neverc_protobuf_reader_t *reader, uint8_t wire) {
     if (!reader || reader->offset > reader->length) return -1;
     size_t remaining = reader->length - reader->offset;
     size_t consumed = 0;
@@ -133,12 +129,11 @@ static int protobuf_skip_payload(neverc_protobuf_reader_t *reader,
             return -1;
         reader->offset += consumed;
         remaining = reader->length - reader->offset;
-        if (value > remaining || value > reader->max_field_size)
+        if (value > remaining || value > reader->max_field_size ||
+            value > (uint64_t)SIZE_MAX)
             return -1;
         reader->offset += (size_t)value;
         return 0;
-    case PROTOBUF_WIRE_START_GROUP:
-        return protobuf_skip_group(reader, number, depth + 1);
     case NEVERC_PROTOBUF_WIRE_FIXED32:
         if (remaining < 4) return -1;
         reader->offset += 4;
@@ -148,27 +143,43 @@ static int protobuf_skip_payload(neverc_protobuf_reader_t *reader,
     }
 }
 
+/* Iterative group skip: nested start-groups used to recurse and could blow
+ * the C stack before PROTOBUF_MAX_GROUP_DEPTH was reached on small threads. */
 static int protobuf_skip_group(neverc_protobuf_reader_t *reader,
-                               uint32_t number, int depth) {
-    if (!reader || depth > PROTOBUF_MAX_GROUP_DEPTH) return -1;
-    while (reader->offset < reader->length) {
+                               uint32_t number) {
+    uint32_t nest[PROTOBUF_MAX_GROUP_DEPTH];
+    int top = 0;
+    if (!reader) return -1;
+    nest[top++] = number;
+    while (top > 0) {
         size_t consumed = 0;
         uint64_t tag = 0;
+        uint64_t nested;
+        uint8_t wire;
+        if (reader->offset >= reader->length) return -1;
         if (protobuf_read_varint(reader->data + reader->offset,
                                  reader->length - reader->offset,
                                  &consumed, &tag) != 0)
             return -1;
         reader->offset += consumed;
-        uint64_t nested = tag >> 3;
-        uint8_t wire = (uint8_t)(tag & 7U);
+        nested = tag >> 3;
+        wire = (uint8_t)(tag & 7U);
         if (nested == 0 || nested > NEVERC_PROTOBUF_MAX_FIELD_NUMBER)
             return -1;
-        if (wire == PROTOBUF_WIRE_END_GROUP)
-            return nested == number ? 0 : -1;
-        if (protobuf_skip_payload(reader, wire, (uint32_t)nested, depth) != 0)
+        if (wire == PROTOBUF_WIRE_END_GROUP) {
+            if (nested != nest[top - 1]) return -1;
+            top--;
+            continue;
+        }
+        if (wire == PROTOBUF_WIRE_START_GROUP) {
+            if (top >= PROTOBUF_MAX_GROUP_DEPTH) return -1;
+            nest[top++] = (uint32_t)nested;
+            continue;
+        }
+        if (protobuf_skip_value(reader, wire) != 0)
             return -1;
     }
-    return -1;
+    return 0;
 }
 
 int neverc_protobuf_reader_next(neverc_protobuf_reader_t *reader,
@@ -192,7 +203,7 @@ int neverc_protobuf_reader_next(neverc_protobuf_reader_t *reader,
         if (number == 0 || number > NEVERC_PROTOBUF_MAX_FIELD_NUMBER)
             goto fail;
         if (wire == PROTOBUF_WIRE_START_GROUP) {
-            if (protobuf_skip_group(reader, (uint32_t)number, 1) != 0)
+            if (protobuf_skip_group(reader, (uint32_t)number) != 0)
                 goto fail;
             continue;
         }

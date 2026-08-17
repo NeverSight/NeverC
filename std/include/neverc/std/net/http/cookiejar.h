@@ -10,7 +10,9 @@
  *   n = neverc_cookiejar_cookies(jar, "https://example.com/path", out, max);
  *   neverc_cookiejar_free(jar);
  *
- * Thread-safe. Handles domain/path matching, expiration, Secure flag.
+ * Thread-safe. Handles domain/path matching, expiration, Secure/HttpOnly
+ * flags, RFC 6265bis cookie prefixes, and a conservative public-suffix
+ * check so Domain=com / co.uk / github.io cannot mint super-cookies.
  */
 
 #include <stddef.h>

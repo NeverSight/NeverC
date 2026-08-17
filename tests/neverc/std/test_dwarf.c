@@ -444,6 +444,19 @@ static void test_dwarf_malformed(void) {
                             NULL, 0) == 0 &&
           neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
 
+    uint8_t overflowing_sleb_abbrev[16] = {
+        1, NEVERC_DW_TAG_compile_unit, 0,
+        NEVERC_DW_AT_byte_size, NEVERC_DW_FORM_implicit_const
+    };
+    memset(overflowing_sleb_abbrev + 5, 0x80, 9);
+    overflowing_sleb_abbrev[14] = 0x02;
+    CHECK("overflowing tenth SLEB128 byte rejected",
+          neverc_dwarf_init(&d, v5_sleb_info, sizeof(v5_sleb_info),
+                            overflowing_sleb_abbrev,
+                            sizeof(overflowing_sleb_abbrev),
+                            NULL, 0) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+
     static const uint8_t strp_abbrev[] = {
         1, NEVERC_DW_TAG_compile_unit, 0,
         NEVERC_DW_AT_name, NEVERC_DW_FORM_strp,

@@ -108,6 +108,10 @@ static void test_size_overflow_rejected(void) {
     unsigned char rev = 0x5a;
     neverc_slices_reverse(&rev, overflowing_len, 2);
     ASSERT_INT_EQ(rev, 0x5a);
+    neverc_slices_sort(&rev, overflowing_len, 2, cmp_int);
+    ASSERT_INT_EQ(rev, 0x5a);
+    neverc_slices_sort_stable(&rev, overflowing_len, 2, cmp_int);
+    ASSERT_INT_EQ(rev, 0x5a);
 
     /* Read paths used to walk i*elem_size without a span check and would
      * compute an overflowing pointer from a 1-byte dummy buffer. */
@@ -221,6 +225,48 @@ static void test_concat_size_overflow_rejected(void) {
     free(result);
 }
 
+static void test_clip_and_grow(void) {
+    printf("[clip and grow]\n");
+    int *buf = (int *)malloc(10 * sizeof(int));
+    ASSERT_TRUE(buf != NULL);
+    if (!buf) return;
+    for (int i = 0; i < 10; i++) buf[i] = i + 1;
+
+    size_t cap = 0;
+    void *p = neverc_slices_grow(buf, 3, 10, 4, sizeof(int), &cap);
+    ASSERT_TRUE(p == buf);
+    ASSERT_INT_EQ((int)cap, 10);
+
+    size_t clipped = 99;
+    ASSERT_TRUE(neverc_slices_clip(3, 10, &clipped));
+    ASSERT_INT_EQ((int)clipped, 3);
+    ASSERT_TRUE(!neverc_slices_clip(3, 2, &clipped));
+    ASSERT_TRUE(!neverc_slices_clip(3, 10, NULL));
+
+    size_t grown = 123;
+    p = neverc_slices_grow(buf, 3, clipped, SIZE_MAX, sizeof(int), &grown);
+    ASSERT_TRUE(p == NULL);
+    ASSERT_INT_EQ((int)grown, 123);
+
+    p = neverc_slices_grow(buf, 3, clipped, SIZE_MAX - 2, sizeof(int), &grown);
+    ASSERT_TRUE(p == NULL);
+    ASSERT_INT_EQ((int)grown, 123);
+
+    p = neverc_slices_grow(buf, 3, clipped, 5, sizeof(int), &grown);
+    ASSERT_TRUE(p != NULL);
+    ASSERT_INT_EQ((int)grown, 8);
+    ASSERT_INT_EQ(((int *)p)[0], 1);
+    ASSERT_INT_EQ(((int *)p)[1], 2);
+    ASSERT_INT_EQ(((int *)p)[2], 3);
+    free(p);
+
+    cap = 0;
+    p = neverc_slices_grow(NULL, 0, 0, 4, sizeof(int), &cap);
+    ASSERT_TRUE(p != NULL);
+    ASSERT_INT_EQ((int)cap, 4);
+    free(p);
+}
+
 static int is_even(const void *elem) { return (*(const int *)elem) % 2 == 0; }
 
 static void test_func_ops(void) {
@@ -302,6 +348,7 @@ int main(void) {
     test_replace_overlapping_source();
     test_concat();
     test_concat_size_overflow_rejected();
+    test_clip_and_grow();
     test_func_ops();
     test_null_guards();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

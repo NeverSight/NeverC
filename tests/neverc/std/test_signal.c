@@ -270,6 +270,24 @@ static void test_notify_null_clears_handler(void) {
     ASSERT_INT_EQ(g_handler_called, 0);
     neverc_signal_reset(SIGCONT);
 }
+
+#if defined(SIGRTMAX)
+static void test_rtmax_notify(void) {
+    printf("[rtmax_notify]\n");
+    g_handler_called = 0;
+    g_received_sig = 0;
+    /* Default SIGRTMAX terminates. Ignore first so a silent notify no-op
+     * fails the assertion instead of killing the process. */
+    signal(SIGRTMAX, SIG_IGN);
+    neverc_signal_notify(SIGRTMAX, test_handler);
+    raise(SIGRTMAX);
+    ASSERT_INT_EQ(g_handler_called, 1);
+    ASSERT_INT_EQ(g_received_sig, SIGRTMAX);
+    int rt = SIGRTMAX;
+    ASSERT_INT_EQ(neverc_signal_wait(&rt, 1), SIGRTMAX);
+    neverc_signal_stop(SIGRTMAX);
+}
+#endif
 #endif
 
 int main(void) {
@@ -290,6 +308,9 @@ int main(void) {
     test_wait_invalid_and_pending();
     test_stop_clears_pending();
     test_notify_null_clears_handler();
+#if defined(SIGRTMAX)
+    test_rtmax_notify();
+#endif
 #endif
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

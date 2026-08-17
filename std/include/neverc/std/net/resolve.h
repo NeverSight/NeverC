@@ -112,6 +112,13 @@ int neverc_net_split_host_port(const char *hostport,
 int neverc_net_join_host_port(const char *host, const char *port,
                                 char *buf, size_t buflen);
 
+/* DNS-rebinding / SSRF helpers. An address is internal if it is
+ * loopback, private, link-local, unspecified, multicast, IPv4 broadcast,
+ * localhost, or an IPv4-mapped form of those. Unparseable text is
+ * treated as internal (fail closed). */
+int neverc_net_addr_is_internal(const char *addr);
+int neverc_net_addrs_any_internal(const neverc_net_addrs_t *addrs);
+
 /* --- Pipe (like Go net.Pipe) — in-memory full-duplex connection --- */
 
 typedef struct neverc_net_pipe neverc_net_pipe_t;

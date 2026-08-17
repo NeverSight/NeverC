@@ -67,8 +67,8 @@ static void test_streaming(void) {
     /* streaming in chunks */
     neverc_maphash_t h;
     neverc_maphash_init(&h, seed);
-    neverc_maphash_write(&h, "hello ", 6);
-    neverc_maphash_write(&h, "world", 5);
+    ASSERT_U64_EQ(neverc_maphash_write(&h, "hello ", 6), 6);
+    ASSERT_U64_EQ(neverc_maphash_write(&h, "world", 5), 5);
     uint64_t streamed = neverc_maphash_sum64(&h);
 
     /* streaming byte-by-byte */
@@ -185,6 +185,44 @@ static void test_large_data(void) {
     ASSERT_U64_EQ(h1, h3);
 }
 
+static void test_write_n(void) {
+    printf("[write_n]\n");
+    neverc_maphash_t h;
+    neverc_maphash_init(&h, 1);
+    ASSERT_U64_EQ(neverc_maphash_write(&h, "abc", 3), 3);
+    uint64_t after_abc = neverc_maphash_sum64(&h);
+    ASSERT_U64_EQ(neverc_maphash_write(&h, "abc", 0), 0);
+    ASSERT_U64_EQ(neverc_maphash_write(&h, NULL, 0), 0);
+    /* Error: NULL data with len>0 must not claim n==len, and must not
+     * consume bytes. */
+    ASSERT_U64_EQ(neverc_maphash_write(&h, NULL, 4), 0);
+    ASSERT_U64_EQ(neverc_maphash_sum64(&h), after_abc);
+    ASSERT_U64_EQ(after_abc, neverc_maphash_bytes(1, "abc", 3));
+    ASSERT_U64_EQ(neverc_maphash_write(NULL, "abc", 3), 0);
+    ASSERT_U64_EQ(neverc_maphash_write_byte(NULL, 'x'), 0);
+    ASSERT_U64_EQ(neverc_maphash_write_string(NULL, "abc"), 0);
+    ASSERT_U64_EQ(neverc_maphash_write_byte(&h, 'x'), 1);
+    ASSERT_U64_EQ(neverc_maphash_write_string(&h, "yz"), 2);
+}
+
+static void test_sum_reuse(void) {
+    printf("[sum_reuse]\n");
+    uint64_t seed = 7;
+    neverc_maphash_t h;
+    neverc_maphash_init(&h, seed);
+    neverc_maphash_write(&h, "hello", 5);
+    uint64_t s1 = neverc_maphash_sum64(&h);
+    uint64_t s1b = neverc_maphash_sum64(&h);
+    ASSERT_U64_EQ(s1, s1b);
+    ASSERT_U64_EQ(s1, neverc_maphash_bytes(seed, "hello", 5));
+
+    /* Sum must not freeze the hasher: Write after Sum continues the stream. */
+    neverc_maphash_write(&h, " world", 6);
+    uint64_t s2 = neverc_maphash_sum64(&h);
+    ASSERT_U64_EQ(s2, neverc_maphash_bytes(seed, "hello world", 11));
+    ASSERT_U64_NE(s1, s2);
+}
+
 static void test_distribution(void) {
     printf("[distribution]\n");
     /* Hash 1000 sequential integers and check that bits are well distributed */
@@ -226,6 +264,8 @@ int main(void) {
     test_seed_zero();
     test_empty_data();
     test_large_data();
+    test_write_n();
+    test_sum_reuse();
     test_distribution();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0)

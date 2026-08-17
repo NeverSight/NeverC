@@ -8,6 +8,7 @@
  */
 
 void neverc_crc64_make_table(uint64_t poly, neverc_crc64_table_t table) {
+    if (!table) return;
     for (int i = 0; i < 256; i++) {
         uint64_t crc = (uint64_t)i;
         for (int j = 0; j < 8; j++)
@@ -86,13 +87,12 @@ uint64_t neverc_crc64_update(uint64_t crc, const neverc_crc64_table_t table,
         return ~crc;
     }
 
-    /* Fast path: reuse the published shared table when its contents match.
-     * shared64_s8[0] is a copy of the source table, so the sentinels also catch
-     * a buffer that was refilled with a different polynomial. */
+    /* Fast path: reuse the published shared table when it is an exact copy
+     * of this source table. A full compare (not 3 sentinels) is required:
+     * distinct polynomials can collide on a handful of entries and would
+     * otherwise return a checksum for the wrong poly. */
     if (__atomic_load_n(&shared64_s8_ready, __ATOMIC_ACQUIRE) == 2 &&
-        shared64_s8[0][1]   == table[1]   &&
-        shared64_s8[0][128] == table[128] &&
-        shared64_s8[0][255] == table[255]) {
+        memcmp(shared64_s8[0], table, sizeof(neverc_crc64_table_t)) == 0) {
         return crc64_slicing8(crc, shared64_s8, data, len);
     }
 

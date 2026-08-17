@@ -874,7 +874,7 @@ static int rsa_verify_pss(const neverc_rsa_public_key_t *pub,
     int modulus_bits = neverc_bigint_bit_len(&pub->n);
     int key_bytes = neverc_rsa_key_size(pub);
     if (modulus_bits <= 1 || key_bytes <= 0 ||
-        key_bytes > 512 || sig_len != (size_t)key_bytes)
+        sig_len != (size_t)key_bytes)
         return -1;
 
     size_t encoded_bits = (size_t)modulus_bits - 1;

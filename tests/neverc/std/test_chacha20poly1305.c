@@ -280,6 +280,22 @@ static void test_invalid_inputs_and_limits(void) {
               neverc_chacha20poly1305_open(
                   &byte, key, nonce, sealed, sizeof(sealed), NULL, 1),
               -1);
+    check_int("seal rejects null nonce",
+              (int)neverc_chacha20poly1305_seal(
+                  sealed, key, NULL, NULL, 0, NULL, 0),
+              0);
+    check_int("seal rejects null key",
+              (int)neverc_chacha20poly1305_seal(
+                  sealed, NULL, nonce, NULL, 0, NULL, 0),
+              0);
+    check_int("open rejects null nonce",
+              neverc_chacha20poly1305_open(
+                  NULL, key, NULL, sealed, sizeof(sealed), NULL, 0),
+              -1);
+    check_int("open rejects null key",
+              neverc_chacha20poly1305_open(
+                  NULL, NULL, nonce, sealed, sizeof(sealed), NULL, 0),
+              -1);
 #if SIZE_MAX > UINT32_MAX
     check_int("seal rejects counter-wrap length",
               (int)neverc_chacha20poly1305_seal(

@@ -139,6 +139,22 @@ static void test_encode_decode_seq(void) {
     neverc_utf16_encode_rune(0xD800, &dec[0], &dec[1]);
     check_i32("EncodeRune(surrogate) r1", dec[0], NEVERC_UTF16_REPLACEMENT_CHAR);
     check_i32("EncodeRune(surrogate) r2", dec[1], NEVERC_UTF16_REPLACEMENT_CHAR);
+
+    /* Trailing unpaired high surrogate. */
+    uint16_t trail_high[] = { 'A', 0xD800 };
+    need = neverc_utf16_decode(trail_high, 2, NULL, 0);
+    check_int("trailing high need", (int)need, 2);
+    neverc_utf16_decode(trail_high, 2, dec, 16);
+    check_i32("trailing high BMP", dec[0], 'A');
+    check_i32("trailing high FFFD", dec[1], NEVERC_UTF16_REPLACEMENT_CHAR);
+
+    /* Do not emit a lone high surrogate when dst is one unit short. */
+    int32_t emoji[] = { 0x1F600 };
+    uint16_t tiny[1];
+    tiny[0] = 0;
+    need = neverc_utf16_encode(emoji, 1, tiny, 1);
+    check_int("emoji encode need", (int)need, 2);
+    check_i32("no lone high surrogate", tiny[0], 0);
 }
 
 int main(void) {

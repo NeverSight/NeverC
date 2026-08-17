@@ -45,6 +45,15 @@ int neverc_flate_decompress_consumed(const uint8_t *src, size_t src_len,
                                      uint8_t *dst, size_t *dst_len,
                                      size_t *src_consumed);
 
+/*
+ * Like neverc_flate_decompress_consumed, but rejects LZ77 distances greater
+ * than `window`. RFC 1950 CINFO uses window = 1<<(CINFO+8), in [256, 32768].
+ */
+int neverc_flate_decompress_consumed_window(const uint8_t *src, size_t src_len,
+                                            uint8_t *dst, size_t *dst_len,
+                                            size_t *src_consumed,
+                                            unsigned window);
+
 #ifdef __cplusplus
 }
 #endif

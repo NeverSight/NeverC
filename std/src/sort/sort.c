@@ -153,16 +153,9 @@ size_t neverc_sort_find(size_t n, int (*cmp)(size_t i), int *found) {
 
 void neverc_sort_reverse(void *base, size_t n, size_t elem_size) {
     if (!base || n <= 1 || elem_size == 0 || n > SIZE_MAX / elem_size) return;
-    uint8_t *b = (uint8_t *)base;
-    uint8_t tmp_buf[256];
-    uint8_t *tmp = elem_size <= sizeof(tmp_buf) ? tmp_buf : (uint8_t *)malloc(elem_size);
-    if (!tmp) return;
-    for (size_t i = 0, j = n - 1; i < j; i++, j--) {
-        memcpy(tmp, b + i * elem_size, elem_size);
-        memcpy(b + i * elem_size, b + j * elem_size, elem_size);
-        memcpy(b + j * elem_size, tmp, elem_size);
-    }
-    if (tmp != tmp_buf) free(tmp);
+    char *b = (char *)base;
+    for (size_t i = 0, j = n - 1; i < j; i++, j--)
+        nci_swap_chunked(b + i * elem_size, b + j * elem_size, elem_size);
 }
 
 void neverc_sort_slice(void *base, size_t n, size_t elem_size,

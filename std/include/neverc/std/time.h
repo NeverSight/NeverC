@@ -85,9 +85,28 @@ int neverc_time_parse_rfc3339(const char *s, neverc_time_t *out);
 /* Sleep (blocks current thread) */
 void neverc_time_sleep(neverc_duration_t d);
 
-/* Date constructor */
+/* Date constructor (UTC). */
 neverc_time_t neverc_time_date(int year, int month, int day,
                                 int hour, int min, int sec, int nsec);
+
+/*
+ * Location for ParseInLocation / DateInLocation (Go time.Location subset).
+ * offset_at(unix, ctx) returns the UTC offset in seconds at that instant.
+ * If offset_at is NULL, std_off is used as a fixed zone.
+ */
+typedef struct neverc_time_location {
+    int         std_off;
+    int         dst_off;
+    const char *std_abbr;
+    const char *dst_abbr;
+    int       (*offset_at)(int64_t unix_sec, void *ctx);
+    void       *ctx;
+} neverc_time_location_t;
+
+/* Date in a location. DST gap/overlap uses Go time.Date's lookup. */
+neverc_time_t neverc_time_date_in_location(int year, int month, int day,
+                                           int hour, int min, int sec, int nsec,
+                                           const neverc_time_location_t *loc);
 
 /* Unix from microseconds */
 int64_t neverc_time_unix_micro(neverc_time_t t);
@@ -106,8 +125,13 @@ neverc_time_t neverc_time_unix_milli_to_time(int64_t msec);
    Returns malloc'd string, caller frees. */
 char *neverc_time_format(neverc_time_t t, const char *layout);
 
-/* Parse: parse time string with layout. Returns 0 on success. */
+/* Parse: parse time string with layout (UTC if no zone). Returns 0 on success. */
 int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out);
+
+/* ParseInLocation: missing zone uses loc; named zones match loc abbrevs. */
+int neverc_time_parse_in_location(const char *layout, const char *value,
+                                  const neverc_time_location_t *loc,
+                                  neverc_time_t *out);
 
 /* Truncate / Round to duration boundary */
 neverc_time_t neverc_time_truncate(neverc_time_t t, neverc_duration_t d);

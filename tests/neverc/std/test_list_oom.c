@@ -58,7 +58,38 @@ int main(void) {
     CHECK(neverc_list_element_next(mark) == NULL);
     CHECK(neverc_list_element_prev(mark) == NULL);
 
+    neverc_list_t other = {0};
+    reset_allocator(0);
+    CHECK(neverc_list_push_back(&other, (void *)(intptr_t)10) != NULL);
+    CHECK(neverc_list_push_back(&other, (void *)(intptr_t)11) != NULL);
+    CHECK(neverc_list_len(&other) == 2);
+
+    reset_allocator(1);
+    CHECK(neverc_list_push_back_list(&list, &other) == -1);
+    CHECK(neverc_list_len(&list) == 1);
+    CHECK(neverc_list_front(&list) == mark);
+    CHECK(neverc_list_back(&list) == mark);
+
+    reset_allocator(2);
+    CHECK(neverc_list_push_back_list(&list, &other) == -1);
+    CHECK(neverc_list_len(&list) == 1);
+    CHECK(neverc_list_front(&list) == mark);
+    CHECK(neverc_list_back(&list) == mark);
+
+    reset_allocator(1);
+    CHECK(neverc_list_push_front_list(&list, &other) == -1);
+    CHECK(neverc_list_len(&list) == 1);
+    CHECK(neverc_list_front(&list) == mark);
+    CHECK(neverc_list_back(&list) == mark);
+
+    reset_allocator(2);
+    CHECK(neverc_list_push_front_list(&list, &other) == -1);
+    CHECK(neverc_list_len(&list) == 1);
+    CHECK(neverc_list_front(&list) == mark);
+    CHECK(neverc_list_back(&list) == mark);
+
     fail_at = 0;
+    neverc_list_free(&other);
     neverc_list_free(&list);
     puts("passed");
     return 0;

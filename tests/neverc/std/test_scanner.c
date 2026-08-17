@@ -1,5 +1,6 @@
 #include "neverc/std/text/scanner.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -427,6 +428,38 @@ static void test_leading_bom_is_discarded(void) {
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
 }
 
+static void test_token_overflow(void) {
+    printf("[token_overflow]\n");
+    neverc_scanner_t s;
+    enum { OVERFLOW_LEN = 5000 };
+    char *src = (char *)malloc(OVERFLOW_LEN);
+    ASSERT_INT_EQ(src != NULL, 1);
+    if (!src) return;
+    memset(src, 'a', OVERFLOW_LEN);
+    neverc_scanner_init(&s, src, OVERFLOW_LEN);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    size_t len = 0;
+    const char *text = neverc_scanner_token_text(&s, &len);
+    ASSERT_INT_EQ((int)len, 4095);
+    ASSERT_INT_EQ(text[0] == 'a' && text[4094] == 'a' && text[4095] == '\0', 1);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    free(src);
+
+    char str[4100];
+    str[0] = '"';
+    memset(str + 1, 'b', 4096);
+    str[4097] = '"';
+    neverc_scanner_init(&s, str, 4098);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    text = neverc_scanner_token_text(&s, &len);
+    ASSERT_INT_EQ((int)len, 4095);
+    ASSERT_INT_EQ(text[0] == '"', 1);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    ASSERT_INT_EQ(neverc_scanner_error_count(NULL), 0);
+}
+
 static void test_mixed(void) {
     printf("[mixed]\n");
     neverc_scanner_t s;
@@ -469,6 +502,7 @@ int main(void) {
     test_escaped_newline_terminates_string();
     test_peek_skips_comments();
     test_leading_bom_is_discarded();
+    test_token_overflow();
     test_mixed();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");

@@ -147,6 +147,40 @@ static void test_sign_clears_sig_on_failure(void) {
     neverc_ecdsa_private_key_free(&key);
 }
 
+static void test_verify_rejects_zero_signature(void) {
+    printf("[zero_signature]\n");
+    neverc_ecdsa_private_key_t key;
+    neverc_ecdsa_private_key_init(&key);
+    ASSERT_INT_EQ(neverc_ecdsa_generate_key(&key, neverc_elliptic_p256()), 0);
+
+    unsigned char hash[32] = {1};
+    neverc_ecdsa_signature_t sig;
+    neverc_ecdsa_signature_init(&sig);
+
+    neverc_bigint_set_int64(&sig.r, 0);
+    neverc_bigint_set_int64(&sig.s, 0);
+    ASSERT_TRUE(neverc_ecdsa_verify(&key.pub, hash, sizeof(hash), &sig) != 0);
+
+    neverc_bigint_set_int64(&sig.r, 0);
+    neverc_bigint_set_int64(&sig.s, 1);
+    ASSERT_TRUE(neverc_ecdsa_verify(&key.pub, hash, sizeof(hash), &sig) != 0);
+
+    neverc_bigint_set_int64(&sig.r, 1);
+    neverc_bigint_set_int64(&sig.s, 0);
+    ASSERT_TRUE(neverc_ecdsa_verify(&key.pub, hash, sizeof(hash), &sig) != 0);
+
+    neverc_bigint_set(&sig.r, &key.pub.curve->n);
+    neverc_bigint_set_int64(&sig.s, 1);
+    ASSERT_TRUE(neverc_ecdsa_verify(&key.pub, hash, sizeof(hash), &sig) != 0);
+
+    neverc_bigint_set_int64(&sig.r, 1);
+    neverc_bigint_set(&sig.s, &key.pub.curve->n);
+    ASSERT_TRUE(neverc_ecdsa_verify(&key.pub, hash, sizeof(hash), &sig) != 0);
+
+    neverc_ecdsa_signature_free(&sig);
+    neverc_ecdsa_private_key_free(&key);
+}
+
 static void test_verify_rejects_identity(void) {
     printf("[verify_rejects_identity]\n");
     neverc_ecdsa_private_key_t key;
@@ -174,6 +208,7 @@ int main(void) {
     test_different_messages();
     test_invalid_inputs();
     test_sign_clears_sig_on_failure();
+    test_verify_rejects_zero_signature();
     test_verify_rejects_identity();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

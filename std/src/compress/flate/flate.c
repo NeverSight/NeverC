@@ -927,6 +927,7 @@ static int build_huffman(huff_table_t *ht, const uint8_t *lens, int count,
  */
 static void copy_match(uint8_t *dst, size_t out_pos,
                        unsigned distance, unsigned length) {
+    if (distance == 0 || length == 0) return;
     uint8_t *out = dst + out_pos;
     const uint8_t *from = dst + (out_pos - distance);
 
@@ -980,9 +981,11 @@ static int huff_decode(huff_table_t *ht, flate_br_t *r, uint16_t *sym) {
 
 static int flate_inflate(const uint8_t *src, size_t src_len,
                          uint8_t *dst, size_t *dst_len,
-                         size_t *src_consumed) {
+                         size_t *src_consumed, unsigned max_distance) {
     if (!dst_len || (!src && src_len > 0) || (!dst && *dst_len > 0) ||
         !src_consumed)
+        return -1;
+    if (max_distance < 256 || max_distance > WINDOW_SIZE)
         return -1;
     flate_br_t br = { .buf = src, .len = src_len, .pos = 0, .bits = 0, .nbits = 0 };
     size_t out_pos = 0;
@@ -1135,7 +1138,13 @@ static int flate_inflate(const uint8_t *src, size_t src_len,
                         distance += extra;
                     }
 
-                    if (distance > out_pos ||
+                    /* Distance 0 is not a DEFLATE distance (bases start at 1).
+                     * copy_match's period-doubling loop never advances when
+                     * filled starts at 0, so this is also a decompression bomb.
+                     * Distance past the bytes already emitted, or past the
+                     * wrapper window (RFC 1950 CINFO), is too far. */
+                    if (distance == 0 || distance > out_pos ||
+                        distance > max_distance ||
                         (size_t)length > out_cap - out_pos)
                         goto err;
                     copy_match(dst, out_pos, distance, length);
@@ -1172,7 +1181,7 @@ err:
 int neverc_flate_decompress(const uint8_t *src, size_t src_len,
                             uint8_t *dst, size_t *dst_len) {
     size_t used = 0;
-    if (flate_inflate(src, src_len, dst, dst_len, &used) < 0)
+    if (flate_inflate(src, src_len, dst, dst_len, &used, WINDOW_SIZE) < 0)
         return -1;
     if (used != src_len)
         return -1;
@@ -1182,5 +1191,13 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
 int neverc_flate_decompress_consumed(const uint8_t *src, size_t src_len,
                                      uint8_t *dst, size_t *dst_len,
                                      size_t *src_consumed) {
-    return flate_inflate(src, src_len, dst, dst_len, src_consumed);
+    return flate_inflate(src, src_len, dst, dst_len, src_consumed,
+                         WINDOW_SIZE);
+}
+
+int neverc_flate_decompress_consumed_window(const uint8_t *src, size_t src_len,
+                                            uint8_t *dst, size_t *dst_len,
+                                            size_t *src_consumed,
+                                            unsigned window) {
+    return flate_inflate(src, src_len, dst, dst_len, src_consumed, window);
 }

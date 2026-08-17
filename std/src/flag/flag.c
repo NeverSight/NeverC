@@ -26,13 +26,24 @@ static int flag_parsed = 0;
 static char **remaining_args = NULL;
 static int remaining_count = 0;
 
-static flag_entry_t *register_flag(const char *name, const char *usage,
-                                   int type) {
+static int flag_name_ok(const char *name) {
     /* Go flag.Var: names must not be empty, begin with '-', or contain '='.
      * An '=' in the name is split as name=value at parse time, so the flag
-     * can never be addressed and can steal values from a shorter name. */
-    if (!name || name[0] == '\0' || name[0] == '-' || strchr(name, '=') ||
-        flag_count >= NEVERC_FLAG_MAX)
+     * can never be addressed and can steal values from a shorter name.
+     * Control characters (including CR/LF) would let print_defaults inject
+     * extra "  -flag" lines into help text. */
+    if (!name || name[0] == '\0' || name[0] == '-' || strchr(name, '='))
+        return 0;
+    for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
+        if (*p < 0x20U || *p == 0x7fU)
+            return 0;
+    }
+    return 1;
+}
+
+static flag_entry_t *register_flag(const char *name, const char *usage,
+                                   int type) {
+    if (!flag_name_ok(name) || flag_count >= NEVERC_FLAG_MAX)
         return NULL;
     for (int i = 0; i < flag_count; i++) {
         if (strcmp(flags[i].name, name) == 0) return NULL;
@@ -251,7 +262,16 @@ void neverc_flag_print_defaults(void) {
     for (int i = 0; i < flag_count; i++) {
         flag_entry_t *f = &flags[i];
         fprintf(stderr, "  -%s", f->name);
-        if (f->usage) fprintf(stderr, "\n    \t%s", f->usage);
+        if (f->usage) {
+            /* Names already reject CR/LF; usage is still programmer text
+             * and can contain them. Flatten controls so help cannot inject
+             * a second "  -flag" line. */
+            fputs("\n    \t", stderr);
+            for (const unsigned char *p = (const unsigned char *)f->usage;
+                 *p; p++) {
+                fputc((*p < 0x20U || *p == 0x7fU) ? ' ' : (int)*p, stderr);
+            }
+        }
         fprintf(stderr, "\n");
     }
 }

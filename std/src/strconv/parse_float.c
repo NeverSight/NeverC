@@ -43,6 +43,16 @@ static double nc_make_nan(int neg) {
     double f; memcpy(&f, &b, 8); return f;
 }
 static double nc_from_bits(uint64_t b) { double f; memcpy(&f, &b, 8); return f; }
+static int nc_is_inf(double f) {
+    uint64_t b; memcpy(&b, &f, 8);
+    return (b & 0x7FFFFFFFFFFFFFFFULL) == 0x7FF0000000000000ULL;
+}
+
+/* Fast paths must still report Go ErrRange when they round to Inf. */
+static int accept_parsed_float(double f, double *result) {
+    *result = f;
+    return nc_is_inf(f) ? NEVERC_STRCONV_ERR_RANGE : NEVERC_STRCONV_OK;
+}
 
 /* IEEE-754 binary64 parameters (NC_MANT_BITS/EXP_BITS/EXP_BIAS) come from
  * decimal.h. 10^19 - 1 < 2^64 bounds the fast-path mantissa. */
@@ -469,21 +479,22 @@ int neverc_strconv_parse_float(const char *s, double *result) {
     /* Layer 1: exact (only safe when no digits were dropped). */
     if (!trunc) {
         double f;
-        if (atof64exact(mantissa, exp10, neg, &f)) { *result = f; return NEVERC_STRCONV_OK; }
+        if (atof64exact(mantissa, exp10, neg, &f))
+            return accept_parsed_float(f, result);
     }
 
     /* Layer 2: Eisel-Lemire. */
     double f;
     int ok = eisel_lemire64(mantissa, exp10, neg, &f);
     if (ok) {
-        if (!trunc) { *result = f; return NEVERC_STRCONV_OK; }
+        if (!trunc) return accept_parsed_float(f, result);
         /* Truncated input: accept only if mantissa+1 agrees (so the dropped
          * digits cannot change the result). */
         double f2;
         if (eisel_lemire64(mantissa + 1, exp10, neg, &f2)) {
             uint64_t b1, b2;
             memcpy(&b1, &f, 8); memcpy(&b2, &f2, 8);
-            if (b1 == b2) { *result = f; return NEVERC_STRCONV_OK; }
+            if (b1 == b2) return accept_parsed_float(f, result);
         }
     }
 

@@ -37,6 +37,12 @@ int  neverc_url_hostname(const neverc_url_t *u, char *buf, size_t cap);
 int  neverc_url_request_uri(const neverc_url_t *u, char *buf, size_t cap);
 int  neverc_url_is_abs(const neverc_url_t *u);
 
+/* Open-redirect check. Returns 1 if raw_url is safe as a Location target:
+ * a same-origin relative path starting with `/` but not `//`, or an
+ * http(s) URL whose host equals allowed_host (case-insensitive, no
+ * userinfo). allowed_host may be NULL to allow relative targets only. */
+int  neverc_url_is_safe_redirect(const char *raw_url, const char *allowed_host);
+
 typedef struct {
     char keys[64][256];
     char vals[64][1024];

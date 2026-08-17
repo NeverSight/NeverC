@@ -23,10 +23,26 @@ static size_t scan_first2(const char *base, size_t n, char lead, char bound) {
     return lim;
 }
 
+/* First of three bytes in base[0,n), else n. Used so a field-name scan
+ * cannot walk past a bare CR to a later ':' and treat "From\rBcc:" as
+ * one name. */
+static size_t scan_earliest3(const char *base, size_t n, char a, char b, char c) {
+    const char *pa = (const char *)memchr(base, a, n);
+    size_t best = pa ? (size_t)(pa - base) : n;
+    const char *pb = (const char *)memchr(base, b, n);
+    if (pb && (size_t)(pb - base) < best) best = (size_t)(pb - base);
+    const char *pc = (const char *)memchr(base, c, n);
+    if (pc && (size_t)(pc - base) < best) best = (size_t)(pc - base);
+    return best;
+}
+
+/* RFC 5322 unstructured/WSP allows HTAB. Other C0 and DEL are not
+ * field-body text; CR/LF are only legal as folding, which is stripped
+ * before this check runs. */
 static int mail_field_has_ctl(const char *s, size_t len) {
     for (size_t i = 0; i < len; i++) {
         unsigned char c = (unsigned char)s[i];
-        if (c < 0x20 || c == 0x7f) return 1;
+        if ((c < 0x20 && c != '\t') || c == 0x7f) return 1;
     }
     return 0;
 }
@@ -65,6 +81,37 @@ static int mail_atext(unsigned char c) {
     default:
         return 0;
     }
+}
+
+/* Unquoted display-name is a phrase: atext, '.', and WSP. Unquoted
+ * specials such as ':' let "Bcc: hidden <a@b.com>" parse as a mailbox. */
+static int mail_unquoted_phrase_ok(const char *s, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == ' ' || c == '\t' || c == '.') continue;
+        if (!mail_atext(c)) return 0;
+    }
+    return 1;
+}
+
+/* Quoted-string interior: qtext / quoted-pair. An unescaped DQUOTE would
+ * let `"foo" <a@b.com> "bar" <evil@x.com>` look like one mailbox after a
+ * sloppy strip of matching outer quotes. */
+static int mail_quoted_content_ok(const char *s, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '\\') {
+            unsigned char nxt;
+            if (i + 1 >= n) return 0;
+            nxt = (unsigned char)s[++i];
+            if (!nxt || (nxt < 0x20 && nxt != '\t') || nxt == 0x7f)
+                return 0;
+            continue;
+        }
+        if (c == '"') return 0;
+        if ((c < 0x20 && c != '\t') || c == 0x7f) return 0;
+    }
+    return 1;
 }
 
 /* RFC 5322 dot-atom: 1*atext *("." 1*atext). Rejecting ':' in the
@@ -168,6 +215,9 @@ int neverc_mail_parse_address(const char *s, neverc_mail_address_t *out) {
         trim(start, name_len, &nstart, &nlen);
         if (nlen >= 2 && nstart[0] == '"' && nstart[nlen-1] == '"') {
             nstart++; nlen -= 2;
+            if (!mail_quoted_content_ok(nstart, nlen)) return -1;
+        } else if (!mail_unquoted_phrase_ok(nstart, nlen)) {
+            return -1;
         }
         if (mail_field_has_ctl(nstart, nlen)) return -1;
         if (nlen >= sizeof(out->name)) return -1;
@@ -287,8 +337,9 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
             return 0;
         }
 
-        /* Find colon (or the line's '\n', whichever comes first) */
-        size_t colon = i + scan_first2(data + i, len - i, ':', '\n');
+        /* Find colon, but do not walk past CR or LF to a later ':' —
+         * "From\rBcc: hidden" must not parse as one field-name. */
+        size_t colon = i + scan_earliest3(data + i, len - i, ':', '\r', '\n');
         if (colon >= len || data[colon] != ':') return -1;
 
         neverc_mail_header_t *h = &out->headers[out->header_count];
@@ -382,21 +433,53 @@ static int mail_is_alpha(unsigned char c) {
     return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 }
 
-/* Nested RFC 5322 comments so a comma inside "(We, st)" is not a day-of-week. */
+/* Nested RFC 5322 comments so a comma inside "(We, st)" is not a day-of-week.
+ * FWS may fold with CRLF/LF + WSP. Bare CR/LF is not CFWS: that would skip a
+ * new header line inside a Date comment such as "(...\r\nBcc: hidden)". */
+static int mail_skip_fws_break(const char **pp) {
+    const char *p = *pp;
+    if (*p == '\r') {
+        /* Bare CR is not FWS. "\r Bcc:" would otherwise skip a new line. */
+        if (p[1] != '\n') return -1;
+        p += 2;
+    } else if (*p == '\n') {
+        p++;
+    } else {
+        return -1;
+    }
+    if (*p != ' ' && *p != '\t') return -1;
+    *pp = p;
+    return 0;
+}
+
 static int mail_skip_cfws(const char **pp) {
     const char *p = *pp;
     for (;;) {
         while (*p == ' ' || *p == '\t') p++;
+        if (*p == '\r' || *p == '\n') {
+            if (mail_skip_fws_break(&p) != 0) return -1;
+            continue;
+        }
         if (*p != '(') break;
         int depth = 1;
         p++;
         while (*p && depth) {
-            if (*p == '\\' && p[1]) {
+            unsigned char c = (unsigned char)*p;
+            if (c == '\\') {
+                unsigned char n = (unsigned char)p[1];
+                /* quoted-pair is "\" (VCHAR / WSP). CR/LF/NUL/DEL cannot
+                 * hide a folded header inside a comment. */
+                if (!n || (n < 0x20 && n != '\t') || n == 0x7f) return -1;
                 p += 2;
                 continue;
             }
-            if (*p == '(') depth++;
-            else if (*p == ')') depth--;
+            if (c == '\r' || c == '\n') {
+                if (mail_skip_fws_break(&p) != 0) return -1;
+                continue;
+            }
+            if ((c < 0x20 && c != '\t') || c == 0x7f) return -1;
+            if (c == '(') depth++;
+            else if (c == ')') depth--;
             p++;
         }
         if (depth) return -1;

@@ -74,6 +74,7 @@ static void test_scalar_writers(void) {
     neverc_protobuf_writer_t writer;
     neverc_protobuf_writer_init(&writer, encoded, sizeof(encoded));
     CHECK(neverc_protobuf_write_bool(&writer, 1U, 1) == 0);
+    CHECK(neverc_protobuf_write_bool(&writer, 1U, 2) == -1);
     CHECK(neverc_protobuf_write_uint32(&writer, 2U, 7U) == 0);
     CHECK(neverc_protobuf_write_int32(&writer, 3U, -1) == 0);
     CHECK(neverc_protobuf_write_int64(&writer, 4U, -2) == 0);
@@ -142,6 +143,15 @@ static void test_malformed_inputs(void) {
     neverc_protobuf_reader_init(&reader, overflow_varint,
                                 sizeof(overflow_varint), 64U);
     CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+
+    /* 10-byte encoding of UINT64_MAX is in range (10th byte == 1). */
+    static const uint8_t max_varint[] = {
+        0x08U, 0xffU, 0xffU, 0xffU, 0xffU, 0xffU,
+        0xffU, 0xffU, 0xffU, 0xffU, 0x01U};
+    neverc_protobuf_reader_init(&reader, max_varint, sizeof(max_varint), 64U);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == 1);
+    CHECK(field.number == 1U && field.value.varint == UINT64_MAX);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == 0);
 }
 
 static void test_skip_groups(void) {
@@ -171,6 +181,29 @@ static void test_skip_groups(void) {
     neverc_protobuf_reader_init(&reader, open_group, sizeof(open_group), 64U);
     CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
 
+    /* 100 nested groups (the cap) then field 1=7. */
+    {
+        uint8_t deep[202];
+        int i;
+        for (i = 0; i < 100; i++) deep[i] = 0x0bU;
+        for (i = 0; i < 100; i++) deep[100 + i] = 0x0cU;
+        deep[200] = 0x08U;
+        deep[201] = 0x07U;
+        neverc_protobuf_reader_init(&reader, deep, sizeof(deep), 64U);
+        CHECK(neverc_protobuf_reader_next(&reader, &field) == 1);
+        CHECK(field.number == 1U && field.value.varint == 7U);
+        CHECK(neverc_protobuf_reader_next(&reader, &field) == 0);
+    }
+    /* 101 nested groups exceed PROTOBUF_MAX_GROUP_DEPTH. */
+    {
+        uint8_t too_deep[202];
+        int i;
+        for (i = 0; i < 101; i++) too_deep[i] = 0x0bU;
+        for (i = 0; i < 101; i++) too_deep[101 + i] = 0x0cU;
+        neverc_protobuf_reader_init(&reader, too_deep, sizeof(too_deep), 64U);
+        CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+    }
+
     /* end-group without start */
     static const uint8_t lone_end[] = {0x0cU};
     neverc_protobuf_reader_init(&reader, lone_end, sizeof(lone_end), 64U);
@@ -180,6 +213,39 @@ static void test_skip_groups(void) {
     static const uint8_t mismatch[] = {0x13U, 0x1cU};
     neverc_protobuf_reader_init(&reader, mismatch, sizeof(mismatch), 64U);
     CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+
+    /* Length-delimited payload inside a group must honor max_field_size. */
+    {
+        static const uint8_t group_oversize[] = {
+            0x0bU, 0x12U, 0x05U, 1U, 2U, 3U, 4U, 5U, 0x0cU};
+        neverc_protobuf_reader_init(&reader, group_oversize,
+                                    sizeof(group_oversize), 4U);
+        CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+    }
+    /* Truncated fixed32 inside a group must not skip past the end-group. */
+    {
+        static const uint8_t group_trunc[] = {0x0bU, 0x0dU, 0x01U, 0x02U};
+        neverc_protobuf_reader_init(&reader, group_trunc,
+                                    sizeof(group_trunc), 64U);
+        CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+        CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+    }
+    /* Unknown wire type inside a group is malformed, not skipped. */
+    {
+        static const uint8_t group_bad_wire[] = {0x0bU, 0x0fU};
+        neverc_protobuf_reader_init(&reader, group_bad_wire,
+                                    sizeof(group_bad_wire), 64U);
+        CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
+    }
+    /* Empty length-delimited field is valid. */
+    {
+        static const uint8_t empty_bytes[] = {0x0aU, 0x00U};
+        neverc_protobuf_reader_init(&reader, empty_bytes,
+                                    sizeof(empty_bytes), 64U);
+        CHECK(neverc_protobuf_reader_next(&reader, &field) == 1);
+        CHECK(field.number == 1U && field.value.bytes.length == 0U);
+        CHECK(neverc_protobuf_reader_next(&reader, &field) == 0);
+    }
 }
 
 static void test_truncated_does_not_desync(void) {
@@ -241,6 +307,15 @@ static void test_packed_and_wire_compat(void) {
     CHECK(neverc_protobuf_message_decode(&desc, truncated_packed,
                                          sizeof(truncated_packed), 64U, &msg,
                                          sizeof(msg)) == -1);
+
+    /* A valid field must not remain if a later field is truncated. */
+    memset(&msg, 0xff, sizeof(msg));
+    static const uint8_t good_then_truncated[] = {
+        0x08U, 0x2aU, 0x12U, 0x02U, 0x80U};
+    CHECK(neverc_protobuf_message_decode(&desc, good_then_truncated,
+                                         sizeof(good_then_truncated), 64U,
+                                         &msg, sizeof(msg)) == -1);
+    CHECK(msg.n == 0 && msg.delta == 0);
 
     /* Unexpected fixed64 on int32 is skipped; later varint is kept. */
     static const uint8_t skip_wire[] = {
@@ -365,8 +440,14 @@ static void test_bool_and_uint32_compat(void) {
 static void test_utf8_and_bounds(void) {
     static const uint8_t valid[] = {'h', 0xc3U, 0xa9U};
     static const uint8_t invalid[] = {0xc0U, 0xafU};
+    static const uint8_t overlong3[] = {0xe0U, 0x80U, 0x80U};
+    static const uint8_t surrogate[] = {0xedU, 0xa0U, 0x80U};
     CHECK(neverc_protobuf_utf8_valid(valid, sizeof(valid)) == 1);
     CHECK(neverc_protobuf_utf8_valid(invalid, sizeof(invalid)) == 0);
+    CHECK(neverc_protobuf_utf8_valid(overlong3, sizeof(overlong3)) == 0);
+    CHECK(neverc_protobuf_utf8_valid(surrogate, sizeof(surrogate)) == 0);
+    static const uint8_t too_large[] = {0xf4U, 0x90U, 0x80U, 0x80U};
+    CHECK(neverc_protobuf_utf8_valid(too_large, sizeof(too_large)) == 0);
     uint8_t one_byte[1];
     neverc_protobuf_writer_t writer;
     neverc_protobuf_writer_init(&writer, one_byte, sizeof(one_byte));

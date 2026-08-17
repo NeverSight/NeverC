@@ -77,6 +77,7 @@ static void test_different_polys(void) {
               neverc_crc64_update(0xA5A5A5A5A5A5A5A5ULL, NULL,
                                   (const uint8_t *)"x", 1),
               0xA5A5A5A5A5A5A5A5ULL);
+    neverc_crc64_make_table(NEVERC_CRC64_ECMA, NULL); /* must not crash */
 }
 
 /* Regression: reusing one table buffer for a different polynomial must not
@@ -99,6 +100,26 @@ static void test_table_buffer_reuse(void) {
     check_u64("reuse buffer (iso after ecma)", got, want);
 }
 
+static void test_slicing8_chunked(void) {
+    printf("[slicing8 chunked]\n");
+    uint8_t data[128];
+    for (int i = 0; i < 128; i++) data[i] = (uint8_t)(i * 7 + 1);
+
+    neverc_crc64_table_t iso, ecma;
+    neverc_crc64_make_table(NEVERC_CRC64_ISO, iso);
+    neverc_crc64_make_table(NEVERC_CRC64_ECMA, ecma);
+
+    uint64_t iso_ref = 0, ecma_ref = 0;
+    for (size_t off = 0; off < sizeof data; off += 32) {
+        iso_ref = neverc_crc64_update(iso_ref, iso, data + off, 32);
+        ecma_ref = neverc_crc64_update(ecma_ref, ecma, data + off, 32);
+    }
+    check_u64("iso slicing8 vs chunks",
+              neverc_crc64_checksum(iso, data, sizeof data), iso_ref);
+    check_u64("ecma slicing8 vs chunks",
+              neverc_crc64_checksum(ecma, data, sizeof data), ecma_ref);
+}
+
 int main(void) {
     printf("=== NeverC CRC-64 Library Tests ===\n\n");
     test_ecma_known();
@@ -106,8 +127,11 @@ int main(void) {
     test_incremental();
     test_different_polys();
     test_table_buffer_reuse();
+    test_slicing8_chunked();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
+    if (tests_failed == 0)
+        puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

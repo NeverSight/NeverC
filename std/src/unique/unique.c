@@ -1,5 +1,6 @@
 #include "neverc/std/unique.h"
 #include "neverc/std/_platform.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,6 +31,7 @@ typedef struct {
 static intern_entry_t *g_table = NULL;
 static size_t          g_cap   = 0;
 static size_t          g_count = 0;
+static uint64_t        g_epoch = 1;
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 #include <windows.h>
@@ -164,6 +166,8 @@ void neverc_unique_destroy(void) {
         g_cap = 0;
         g_count = 0;
     }
+    g_epoch++;
+    if (g_epoch == 0) g_epoch = 1;
     UNLOCK();
 }
 
@@ -193,8 +197,15 @@ static int entry_matches(const intern_entry_t *e, uk_kind_t kind, uint64_t hash,
            (len == 0 || memcmp(e->data, data, len) == 0);
 }
 
+static neverc_unique_handle_t intern_ok(const void *ptr) {
+    neverc_unique_handle_t h = {0};
+    h.ptr = ptr;
+    h.epoch = g_epoch;
+    return h;
+}
+
 static neverc_unique_handle_t intern(uk_kind_t kind, const void *data, size_t len) {
-    neverc_unique_handle_t h = {NULL};
+    neverc_unique_handle_t h = {0};
     if (!data && (kind != UK_BYTES || len != 0)) return h;
 
     uint64_t hash = intern_hash(data, len);
@@ -210,7 +221,7 @@ static neverc_unique_handle_t intern(uk_kind_t kind, const void *data, size_t le
     size_t idx = (size_t)(hash & mask);
     while (g_table[idx].kind != UK_EMPTY) {
         if (entry_matches(&g_table[idx], kind, hash, data, len)) {
-            h.ptr = g_table[idx].data;
+            h = intern_ok(g_table[idx].data);
             UNLOCK();
             return h;
         }
@@ -246,15 +257,15 @@ static neverc_unique_handle_t intern(uk_kind_t kind, const void *data, size_t le
     g_table[idx].len = len;
     g_count++;
 
-    h.ptr = copy;
+    h = intern_ok(copy);
     UNLOCK();
     return h;
 }
 
 neverc_unique_handle_t neverc_unique_make_string(const char *s) {
-    if (!s) { neverc_unique_handle_t h = {NULL}; return h; }
+    if (!s) { neverc_unique_handle_t h = {0}; return h; }
     size_t len = strlen(s);
-    if (len == SIZE_MAX) { neverc_unique_handle_t h = {NULL}; return h; }
+    if (len == SIZE_MAX) { neverc_unique_handle_t h = {0}; return h; }
     return intern(UK_STRING, s, len + 1);
 }
 
@@ -267,45 +278,69 @@ neverc_unique_handle_t neverc_unique_make_uint64(uint64_t v) {
 }
 
 neverc_unique_handle_t neverc_unique_make_bytes(const void *data, size_t len) {
-    if (!data && len != 0) { neverc_unique_handle_t h = {NULL}; return h; }
+    if (!data && len != 0) { neverc_unique_handle_t h = {0}; return h; }
     return intern(UK_BYTES, data, len);
 }
 
+static int intern_live(neverc_unique_handle_t h) {
+    return h.ptr && h.epoch == g_epoch && g_table != NULL;
+}
+
 const char *neverc_unique_string_value(neverc_unique_handle_t h) {
-    if (!h.ptr) return NULL;
-    size_t n = intern_len(h.ptr);
-    if (n == 0) return NULL;
-    const unsigned char *p = (const unsigned char *)h.ptr;
-    if (p[n - 1] != '\0') return NULL;
-    return (const char *)h.ptr;
+    const char *result = NULL;
+    LOCK();
+    if (intern_live(h)) {
+        size_t n = intern_len(h.ptr);
+        if (n > 0) {
+            const unsigned char *p = (const unsigned char *)h.ptr;
+            if (p[n - 1] == '\0')
+                result = (const char *)h.ptr;
+        }
+    }
+    UNLOCK();
+    return result;
 }
 
 int64_t neverc_unique_int64_value(neverc_unique_handle_t h) {
     int64_t v = 0;
-    if (!h.ptr || intern_len(h.ptr) != sizeof(v)) return 0;
-    memcpy(&v, h.ptr, sizeof(v));
+    LOCK();
+    if (intern_live(h) && intern_len(h.ptr) == sizeof(v))
+        memcpy(&v, h.ptr, sizeof(v));
+    UNLOCK();
     return v;
 }
 
 uint64_t neverc_unique_uint64_value(neverc_unique_handle_t h) {
     uint64_t v = 0;
-    if (!h.ptr || intern_len(h.ptr) != sizeof(v)) return 0;
-    memcpy(&v, h.ptr, sizeof(v));
+    LOCK();
+    if (intern_live(h) && intern_len(h.ptr) == sizeof(v))
+        memcpy(&v, h.ptr, sizeof(v));
+    UNLOCK();
     return v;
 }
 
 const void *neverc_unique_bytes_value(neverc_unique_handle_t h, size_t *len) {
-    if (!h.ptr) { if (len) *len = 0; return NULL; }
-    if (len) *len = intern_len(h.ptr);   /* O(1) header read, no table scan/lock */
-    return h.ptr;
+    const void *result = NULL;
+    size_t n = 0;
+    LOCK();
+    if (intern_live(h)) {
+        n = intern_len(h.ptr);
+        result = h.ptr;
+    }
+    UNLOCK();
+    if (len) *len = n;
+    return result;
 }
 
 int neverc_unique_handle_equal(neverc_unique_handle_t a, neverc_unique_handle_t b) {
-    return a.ptr == b.ptr;
+    return a.ptr == b.ptr && a.epoch == b.epoch;
 }
 
 int neverc_unique_handle_valid(neverc_unique_handle_t h) {
-    return h.ptr != NULL;
+    LOCK();
+    int ok = intern_live(h);
+    UNLOCK();
+    return ok;
 }
 
 size_t neverc_unique_count(void) {

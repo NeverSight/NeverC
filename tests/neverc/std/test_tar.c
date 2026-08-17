@@ -367,6 +367,41 @@ static void test_malformed_headers(void) {
               neverc_tar_reader_next(&reader, &decoded), -1);
 
     memcpy(archive, writer.data, sizeof(archive));
+    archive[500] = 0xFF; /* high byte: signed sum differs from unsigned */
+    memset(archive + 148, ' ', 8);
+    {
+        int signed_sum = 256;
+        for (int i = 0; i < 148; i++) signed_sum += (int8_t)archive[i];
+        for (int i = 156; i < 512; i++) signed_sum += (int8_t)archive[i];
+        unsigned int unsigned_sum = test_checksum(archive);
+        check_int("signed checksum positive", signed_sum > 0, 1);
+        check_int("signed checksum differs",
+                  signed_sum != (int)unsigned_sum, 1);
+        test_write_octal(archive + 148, 7, (uint64_t)signed_sum);
+        archive[155] = ' ';
+    }
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    check_int("accept historical signed checksum",
+              neverc_tar_reader_next(&reader, &decoded), 1);
+    check_str("signed checksum name", decoded.name, "valid");
+
+    memcpy(archive, writer.data, sizeof(archive));
+    archive[500] = 0xFF;
+    test_finish_header(archive);
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    check_int("accept posix unsigned checksum",
+              neverc_tar_reader_next(&reader, &decoded), 1);
+
+    memcpy(archive, writer.data, sizeof(archive));
+    archive[500] = 0xFF;
+    memset(archive + 148, ' ', 8);
+    test_write_octal(archive + 148, 7, 1);
+    archive[155] = ' ';
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    check_int("reject checksum matching neither sum",
+              neverc_tar_reader_next(&reader, &decoded), -1);
+
+    memcpy(archive, writer.data, sizeof(archive));
     archive[124] = '9';
     test_finish_header(archive);
     neverc_tar_reader_init(&reader, archive, sizeof(archive));

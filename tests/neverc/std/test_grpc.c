@@ -93,6 +93,21 @@ static neverc_grpc_status_t grpc_test_client_streaming_handler(
     return NEVERC_GRPC_OK;
 }
 
+static neverc_grpc_status_t grpc_test_reserved_metadata_handler(
+    neverc_grpc_server_stream_t *stream, void *context) {
+    (void)context;
+    neverc_grpc_message_t message;
+    neverc_grpc_server_stream_set_header(stream, "grpc-status", "0");
+    neverc_grpc_server_stream_set_header(stream, "grpc-message", "injected");
+    neverc_grpc_server_stream_set_header(stream, "content-type", "text/plain");
+    neverc_grpc_server_stream_set_trailer(stream, "grpc-status", "0");
+    neverc_grpc_server_stream_set_trailer(stream, "grpc-message", "injected");
+    neverc_grpc_server_stream_set_header(stream, "x-neverc", "reserved");
+    if (neverc_grpc_server_stream_recv(stream, &message) != 1)
+        return NEVERC_GRPC_INVALID_ARGUMENT;
+    return NEVERC_GRPC_INTERNAL;
+}
+
 static neverc_grpc_status_t grpc_test_unary_end_early_handler(
     neverc_grpc_server_stream_t *stream, void *context) {
     (void)context;
@@ -126,6 +141,10 @@ static const neverc_grpc_method_t grpc_test_client_streaming_method = {
 static const neverc_grpc_method_t grpc_test_unary_end_early_method = {
     "/test.Echo/UnaryEndEarly", NEVERC_GRPC_UNARY, 1024U, 1024U,
     grpc_test_unary_end_early_handler, NULL};
+
+static const neverc_grpc_method_t grpc_test_reserved_metadata_method = {
+    "/test.Echo/Reserved", NEVERC_GRPC_UNARY, 1024U, 1024U,
+    grpc_test_reserved_metadata_handler, NULL};
 
 static void grpc_test_server_task(void *context) {
     grpc_test_server_t *test = (grpc_test_server_t *)context;
@@ -490,6 +509,53 @@ static void grpc_test_unary_extra_frames(neverc_h2_client_t *client) {
     neverc_h2_response_free(partial);
 }
 
+static void grpc_test_reserved_metadata(neverc_h2_client_t *client) {
+    neverc_grpc_message_t request = {(const uint8_t *)"x", 1U};
+    neverc_grpc_result_t *result = neverc_grpc_client_call(
+        client, NULL, "/test.Echo/Reserved", NEVERC_GRPC_UNARY, NULL, 0U,
+        &request, 1U, 1024U);
+    CHECK(result != NULL);
+    CHECK(result && result->error == NULL);
+    CHECK(result && result->status == NEVERC_GRPC_INTERNAL);
+    CHECK(result && (result->status_message == NULL ||
+                     strcmp(result->status_message, "injected") != 0));
+    int grpc_status_in_headers = 0;
+    int content_type_ok = 0;
+    int custom_header = 0;
+    if (result) {
+        for (size_t i = 0; i < result->header_count; i++) {
+            if (strcmp(result->headers[i].name, "grpc-status") == 0)
+                grpc_status_in_headers = 1;
+            if (strcmp(result->headers[i].name, "content-type") == 0 &&
+                result->headers[i].value &&
+                strncmp(result->headers[i].value, "application/grpc", 16U) ==
+                    0)
+                content_type_ok = 1;
+            if (strcmp(result->headers[i].name, "x-neverc") == 0 &&
+                result->headers[i].value &&
+                strcmp(result->headers[i].value, "reserved") == 0)
+                custom_header = 1;
+        }
+    }
+    CHECK(!grpc_status_in_headers);
+    CHECK(content_type_ok);
+    CHECK(custom_header);
+    neverc_grpc_result_free(result);
+}
+
+static void grpc_test_max_request_message_size(neverc_h2_client_t *client) {
+    uint8_t oversized[1025];
+    memset(oversized, 'x', sizeof(oversized));
+    neverc_grpc_message_t request = {oversized, sizeof(oversized)};
+    neverc_grpc_result_t *result = neverc_grpc_client_call(
+        client, NULL, "/test.Echo/Unary", NEVERC_GRPC_UNARY, NULL, 0U,
+        &request, 1U, 4096U);
+    CHECK(result != NULL);
+    CHECK(result && result->error == NULL);
+    CHECK(result && result->status == NEVERC_GRPC_INVALID_ARGUMENT);
+    neverc_grpc_result_free(result);
+}
+
 static int grpc_test_register_methods(neverc_http_mux_t *mux) {
     return neverc_grpc_server_register(mux, &grpc_test_unary_method) == 0 &&
            neverc_grpc_server_register(mux, &grpc_test_bidi_method) == 0 &&
@@ -498,7 +564,9 @@ static int grpc_test_register_methods(neverc_http_mux_t *mux) {
            neverc_grpc_server_register(
                mux, &grpc_test_client_streaming_method) == 0 &&
            neverc_grpc_server_register(
-               mux, &grpc_test_unary_end_early_method) == 0;
+               mux, &grpc_test_unary_end_early_method) == 0 &&
+           neverc_grpc_server_register(
+               mux, &grpc_test_reserved_metadata_method) == 0;
 }
 
 static void grpc_test_h2c_end_to_end(void) {
@@ -525,6 +593,8 @@ static void grpc_test_h2c_end_to_end(void) {
         grpc_test_directional_streaming(client);
         grpc_test_bidi(client);
         grpc_test_unary_extra_frames(client);
+        grpc_test_reserved_metadata(client);
+        grpc_test_max_request_message_size(client);
         neverc_h2_client_close(client);
         neverc_h2_client_free(client);
     }

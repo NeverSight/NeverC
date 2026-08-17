@@ -42,6 +42,9 @@ static void test_compare(void) {
     check_int("compare empty", neverc_cstring_compare("", ""), 0);
     check_int("compare a vs empty", neverc_cstring_compare("a", "") > 0, 1);
     check_int("compare empty vs a", neverc_cstring_compare("", "a") < 0, 1);
+    check_int("compare nulls equal", neverc_cstring_compare(NULL, NULL), 0);
+    check_int("compare null vs empty", neverc_cstring_compare(NULL, ""), 0);
+    check_int("compare null vs a", neverc_cstring_compare(NULL, "a") < 0, 1);
 }
 
 static void test_equal_fold(void) {
@@ -90,6 +93,9 @@ static void test_index(void) {
     check_int("index substr longer", neverc_cstring_index("hi", "hello"), -1);
     check_int("index single char", neverc_cstring_index("hello", "l"), 2);
     check_int("index entire", neverc_cstring_index("hello", "hello"), 0);
+    check_int("index null haystack", neverc_cstring_index(NULL, "x"), -1);
+    check_int("index null empty needle", neverc_cstring_index(NULL, NULL), 0);
+    check_int("index null needle", neverc_cstring_index("hello", NULL), 0);
 }
 
 static void test_last_index(void) {
@@ -108,6 +114,8 @@ static void test_index_byte(void) {
     check_int("index_byte first", neverc_cstring_index_byte("hello", 'h'), 0);
     check_int("index_byte last", neverc_cstring_index_byte("hello", 'o'), 4);
     check_int("index_byte terminator", neverc_cstring_index_byte("hello", '\0'), -1);
+    check_int("index_byte null haystack", neverc_cstring_index_byte(NULL, 'a'), -1);
+    check_int("index_byte null empty needle", neverc_cstring_index_byte(NULL, '\0'), -1);
 }
 
 static void test_last_index_byte(void) {
@@ -117,6 +125,8 @@ static void test_last_index_byte(void) {
     check_int("last_index_byte first", neverc_cstring_last_index_byte("a", 'a'), 0);
     check_int("last_index_byte terminator",
               neverc_cstring_last_index_byte("hello", '\0'), -1);
+    check_int("last_index_byte null haystack",
+              neverc_cstring_last_index_byte(NULL, 'a'), -1);
 }
 
 static void test_index_any(void) {
@@ -292,6 +302,10 @@ static void test_replace(void) {
     r = neverc_cstring_replace("hello", "l", "", -1);
     check_str("replace delete", r, "heo");
     free(r);
+
+    r = neverc_cstring_replace(NULL, "x", "y", -1);
+    check_str("replace null haystack", r, "");
+    free(r);
 }
 
 static void test_replace_all(void) {
@@ -351,6 +365,11 @@ static void test_join(void) {
 
     r = neverc_cstring_join(NULL, 0, ",");
     check_str("join empty", r, "");
+    free(r);
+
+    const char *with_null[] = {"a", NULL, "c"};
+    r = neverc_cstring_join(with_null, 3, ",");
+    check_str("join null element as empty", r, "a,,c");
     free(r);
 }
 
@@ -708,6 +727,10 @@ static void test_clone(void) {
     r = neverc_cstring_clone("");
     check_str("clone empty", r, "");
     free(r);
+
+    r = neverc_cstring_clone(NULL);
+    check_str("clone null is empty", r, "");
+    free(r);
 }
 
 static void test_len(void) {
@@ -715,6 +738,7 @@ static void test_len(void) {
     check_size("len hello", neverc_cstring_len("hello"), 5);
     check_size("len empty", neverc_cstring_len(""), 0);
     check_size("len one", neverc_cstring_len("x"), 1);
+    check_size("len null", neverc_cstring_len(NULL), 0);
 }
 
 /* ===== Edge cases / Cross-platform ===== */

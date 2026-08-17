@@ -100,6 +100,25 @@ static void test_printf(void) {
     check_contains("printf content", buf, "count=42 name=Alice");
 }
 
+static void test_print_does_not_format(void) {
+    printf("[print does not format]\n");
+    char buf[512];
+    FILE *tmp = tmpfile();
+    neverc_log_logger_t l;
+    neverc_log_init(&l, tmp, "%s", 0);
+
+    neverc_log_print(&l, "%s%s%n crashed");
+    neverc_log_println(&l, "%d %s");
+    fflush(tmp);
+    rewind(tmp);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, tmp);
+    buf[n] = '\0';
+    fclose(tmp);
+
+    check_contains("prefix percent is literal", buf, "%s%s%s%n crashed");
+    check_contains("println percent is literal", buf, "%d %s\n");
+}
+
 static void test_msg_prefix(void) {
     printf("[msg prefix]\n");
     char buf[512];
@@ -293,6 +312,7 @@ int main(void) {
     test_prefix();
     test_date_time();
     test_printf();
+    test_print_does_not_format();
     test_msg_prefix();
     test_microseconds_and_accessors();
     test_concurrent_entries();

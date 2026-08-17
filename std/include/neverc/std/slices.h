@@ -55,6 +55,18 @@ size_t neverc_slices_replace(void *slice, size_t len, size_t elem_size,
 void *neverc_slices_concat(const void *s1, size_t len1, const void *s2, size_t len2,
                             size_t elem_size);
 
+/* Clip unused capacity like Go slices.Clip: *out_cap = len. Does not
+ * reallocate. Returns 0 if cap < len or out_cap is NULL. */
+int neverc_slices_clip(size_t len, size_t cap, size_t *out_cap);
+
+/* Grow like Go slices.Grow: guarantee cap >= len+n. slice must be NULL
+ * or malloc'd. Returns the (possibly moved) buffer and writes *out_cap.
+ * On overflow or OOM returns NULL, leaves slice valid, and does not
+ * write *out_cap. After Clip, leftover capacity is 0 so Grow(n) must
+ * allocate len+n without wrapping cap+n. */
+void *neverc_slices_grow(void *slice, size_t len, size_t cap, size_t n,
+                         size_t elem_size, size_t *out_cap);
+
 /* Func-based operations */
 typedef int (*neverc_slices_pred_func_t)(const void *elem);
 

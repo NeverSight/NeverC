@@ -499,6 +499,62 @@ static void test_poller(void) {
         close(fds[1]);
     nc_poller_destroy(p);
 }
+
+static void test_poller_stale_completion(void) {
+    printf("[poller_stale_completion]\n");
+
+    nc_poller_t *p = nc_poller_create();
+    check_true("poller created", p != NULL);
+    if (!p) return;
+
+    int fds[2];
+    check_int("pipe created", pipe(fds), 0);
+
+    char *tag = (char *)malloc(1);
+    check_true("tag allocated", tag != NULL);
+    if (!tag) {
+        close(fds[0]);
+        close(fds[1]);
+        nc_poller_destroy(p);
+        return;
+    }
+    *tag = 7;
+
+    check_int("poller add", nc_poller_add(p, fds[0], NC_EV_READ, tag), 0);
+    check_int("pipe write", (int)write(fds[1], "x", 1), 1);
+    check_int("poller del", nc_poller_del(p, fds[0]), 0);
+
+    void *freed = tag;
+    free(tag);
+
+    nc_event_t events[16];
+    int n = nc_poller_wait(p, events, 16, 0);
+    check_true("wait after del does not fail", n >= 0);
+    int stale = 0;
+    for (int i = 0; i < n; i++) {
+        if (events[i].data == freed || events[i].fd == fds[0])
+            stale = 1;
+    }
+    check_int("queued completion dropped after del", stale, 0);
+
+    int live = 99;
+    check_int("re-add after del",
+              nc_poller_add(p, fds[0], NC_EV_READ, &live), 0);
+    n = nc_poller_wait(p, events, 16, 100);
+    check_true("re-add delivers live data",
+               n >= 1 && events[0].data == &live && events[0].fd == fds[0]);
+    check_int("re-add del", nc_poller_del(p, fds[0]), 0);
+
+#if defined(NC_USE_EPOLL) || defined(NC_USE_KQUEUE) || \
+    (defined(NC_USE_IO_URING) && NC_USE_IO_URING)
+    check_int("fd table wrap rejected",
+              nc_poller_add(p, INT_MAX, NC_EV_READ, NULL), -1);
+#endif
+
+    close(fds[0]);
+    close(fds[1]);
+    nc_poller_destroy(p);
+}
 #endif
 
 /* ===== Event Loop Tests ===== */
@@ -697,6 +753,7 @@ int main(void) {
     test_reuseport();
     test_socket_helpers();
     test_poller();
+    test_poller_stale_completion();
 #endif
 
     printf("\n--- net/internals: %d/%d passed ---\n", tests_passed, tests_run);

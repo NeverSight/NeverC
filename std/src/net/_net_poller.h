@@ -38,6 +38,10 @@ typedef struct {
     int fd_cap;
 #elif defined(NC_USE_KQUEUE)
     int kqfd;
+    void **fd_data;
+    int *fd_events;
+    uint32_t *fd_generation;
+    int fd_cap;
 #elif defined(NC_USE_IOCP)
     HANDLE iocp;
     WSAPOLLFD *pfds;
@@ -126,6 +130,22 @@ static inline nc_poller_t *nc_poller_create(void) {
         free(poller);
         return NULL;
     }
+    poller->fd_cap = 64;
+    poller->fd_data = (void **)NC_POLLER_CALLOC(
+        (size_t)poller->fd_cap, sizeof(void *));
+    poller->fd_events = (int *)NC_POLLER_CALLOC(
+        (size_t)poller->fd_cap, sizeof(int));
+    poller->fd_generation = (uint32_t *)NC_POLLER_CALLOC(
+        (size_t)poller->fd_cap, sizeof(uint32_t));
+    if (!poller->fd_data || !poller->fd_events ||
+        !poller->fd_generation) {
+        free(poller->fd_data);
+        free(poller->fd_events);
+        free(poller->fd_generation);
+        close(poller->kqfd);
+        free(poller);
+        return NULL;
+    }
 #elif defined(NC_USE_IOCP)
     poller->iocp =
         CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
@@ -179,6 +199,9 @@ static inline void nc_poller_destroy(nc_poller_t *poller) {
     free(poller->fd_events);
 #elif defined(NC_USE_KQUEUE)
     close(poller->kqfd);
+    free(poller->fd_data);
+    free(poller->fd_events);
+    free(poller->fd_generation);
 #elif defined(NC_USE_IOCP)
     free(poller->pfds);
     free(poller->pdata);
@@ -193,11 +216,18 @@ static inline void nc_poller_destroy(nc_poller_t *poller) {
 #if !defined(NC_USE_IO_URING) && !defined(NC_USE_EPOLL) && \
     !defined(NC_USE_KQUEUE)
 static inline int nc_poller_reserve(nc_poller_t *poller, int capacity) {
-    if (capacity <= poller->cap_pfds) return 0;
+    if (!poller || capacity <= poller->cap_pfds) return 0;
+    if (capacity <= 0) return -1;
 #if defined(NC_USE_IOCP)
+    if ((size_t)capacity > SIZE_MAX / sizeof(WSAPOLLFD) ||
+        (size_t)capacity > SIZE_MAX / sizeof(void *))
+        return -1;
     WSAPOLLFD *pfds = (WSAPOLLFD *)NC_POLLER_CALLOC(
         (size_t)capacity, sizeof(*pfds));
 #else
+    if ((size_t)capacity > SIZE_MAX / sizeof(struct pollfd) ||
+        (size_t)capacity > SIZE_MAX / sizeof(void *))
+        return -1;
     struct pollfd *pfds = (struct pollfd *)NC_POLLER_CALLOC(
         (size_t)capacity, sizeof(struct pollfd));
 #endif
@@ -230,27 +260,52 @@ static inline uint64_t nc_poller_uring_token(nc_poller_t *poller, int fd) {
 }
 #endif
 
-#if defined(NC_USE_EPOLL)
-static inline int nc_poller_epoll_reserve(nc_poller_t *poller, int fd) {
+#if defined(NC_USE_EPOLL) || defined(NC_USE_KQUEUE)
+static inline int nc_poller_fd_table_reserve(nc_poller_t *poller, int fd) {
+    if (!poller || fd < 0) return -1;
     if (fd < poller->fd_cap) return 0;
     int capacity = poller->fd_cap;
     while (capacity <= fd) {
-        if (capacity > INT_MAX / 2) return -1;
+        if (capacity <= 0 || capacity > INT_MAX / 2) return -1;
         capacity *= 2;
     }
+    if ((size_t)capacity > SIZE_MAX / sizeof(void *) ||
+        (size_t)capacity > SIZE_MAX / sizeof(int)
+#if defined(NC_USE_KQUEUE)
+        || (size_t)capacity > SIZE_MAX / sizeof(uint32_t)
+#endif
+        )
+        return -1;
     void **fd_data = (void **)NC_POLLER_CALLOC(
         (size_t)capacity, sizeof(void *));
     int *fd_events = (int *)NC_POLLER_CALLOC(
         (size_t)capacity, sizeof(int));
+#if defined(NC_USE_KQUEUE)
+    uint32_t *fd_generation = (uint32_t *)NC_POLLER_CALLOC(
+        (size_t)capacity, sizeof(uint32_t));
+    if (!fd_data || !fd_events || !fd_generation) {
+        free(fd_data);
+        free(fd_events);
+        free(fd_generation);
+        return -1;
+    }
+#else
     if (!fd_data || !fd_events) {
         free(fd_data);
         free(fd_events);
         return -1;
     }
+#endif
     memcpy(fd_data, poller->fd_data,
            (size_t)poller->fd_cap * sizeof(void *));
     memcpy(fd_events, poller->fd_events,
            (size_t)poller->fd_cap * sizeof(int));
+#if defined(NC_USE_KQUEUE)
+    memcpy(fd_generation, poller->fd_generation,
+           (size_t)poller->fd_cap * sizeof(uint32_t));
+    free(poller->fd_generation);
+    poller->fd_generation = fd_generation;
+#endif
     free(poller->fd_data);
     free(poller->fd_events);
     poller->fd_data = fd_data;
@@ -308,7 +363,7 @@ static inline int nc_poller_add(nc_poller_t *poller, nc_sock_t fd,
     }
     return 0;
 #elif defined(NC_USE_EPOLL)
-    if (fd < 0 || nc_poller_epoll_reserve(poller, fd) != 0 ||
+    if (fd < 0 || nc_poller_fd_table_reserve(poller, fd) != 0 ||
         poller->fd_events[fd] != 0)
         return -1;
     struct epoll_event event;
@@ -324,17 +379,29 @@ static inline int nc_poller_add(nc_poller_t *poller, nc_sock_t fd,
     }
     return result;
 #elif defined(NC_USE_KQUEUE)
+    if (fd < 0 || nc_poller_fd_table_reserve(poller, (int)fd) != 0 ||
+        poller->fd_events[fd] != 0)
+        return -1;
+    poller->fd_generation[fd]++;
+    if (poller->fd_generation[fd] == 0)
+        poller->fd_generation[fd] = 1;
+    void *udata = (void *)(uintptr_t)poller->fd_generation[fd];
     struct kevent changes[2];
     int count = 0;
     if (events & NC_EV_READ) {
         EV_SET(&changes[count++], (uintptr_t)fd, EVFILT_READ,
-               EV_ADD | EV_CLEAR, 0, 0, data);
+               EV_ADD | EV_CLEAR, 0, 0, udata);
     }
     if (events & NC_EV_WRITE) {
         EV_SET(&changes[count++], (uintptr_t)fd, EVFILT_WRITE,
-               EV_ADD | EV_CLEAR, 0, 0, data);
+               EV_ADD | EV_CLEAR, 0, 0, udata);
     }
-    return kevent(poller->kqfd, changes, count, NULL, 0, NULL);
+    int result = kevent(poller->kqfd, changes, count, NULL, 0, NULL);
+    if (result == 0) {
+        poller->fd_data[fd] = data;
+        poller->fd_events[fd] = events;
+    }
+    return result;
 #elif defined(NC_USE_IOCP)
     for (int i = 0; i < poller->npfds; i++)
         if (poller->pfds[i].fd == fd) return -1;
@@ -408,15 +475,27 @@ static inline int nc_poller_mod(nc_poller_t *poller, nc_sock_t fd,
     }
     return result;
 #elif defined(NC_USE_KQUEUE)
+    if (fd < 0 || fd >= poller->fd_cap ||
+        poller->fd_events[fd] == 0)
+        return -1;
+    poller->fd_generation[fd]++;
+    if (poller->fd_generation[fd] == 0)
+        poller->fd_generation[fd] = 1;
+    void *udata = (void *)(uintptr_t)poller->fd_generation[fd];
     int result = nc_poller_kqueue_change(
         poller, fd, EVFILT_READ,
         (events & NC_EV_READ) ? (EV_ADD | EV_CLEAR) : EV_DELETE,
-        data, !(events & NC_EV_READ));
+        udata, !(events & NC_EV_READ));
     if (result != 0) return result;
-    return nc_poller_kqueue_change(
+    result = nc_poller_kqueue_change(
         poller, fd, EVFILT_WRITE,
         (events & NC_EV_WRITE) ? (EV_ADD | EV_CLEAR) : EV_DELETE,
-        data, !(events & NC_EV_WRITE));
+        udata, !(events & NC_EV_WRITE));
+    if (result == 0) {
+        poller->fd_data[fd] = data;
+        poller->fd_events[fd] = events;
+    }
+    return result;
 #elif defined(NC_USE_IOCP)
     for (int i = 0; i < poller->npfds; i++) {
         if (poller->pfds[i].fd != fd) continue;
@@ -458,6 +537,9 @@ static inline int nc_poller_del(nc_poller_t *poller, nc_sock_t fd) {
         sqe, nc_poller_uring_token(poller, fd));
     nc_uring_sq_advance(&poller->ring, 1);
     if (nc_uring_submit(&poller->ring) < 0) return -1;
+    poller->fd_generation[fd]++;
+    if (poller->fd_generation[fd] == 0)
+        poller->fd_generation[fd] = 1;
     poller->fd_data[fd] = NULL;
     poller->fd_events[fd] = 0;
     return 0;
@@ -472,6 +554,14 @@ static inline int nc_poller_del(nc_poller_t *poller, nc_sock_t fd) {
     }
     return result;
 #elif defined(NC_USE_KQUEUE)
+    if (fd < 0 || fd >= poller->fd_cap ||
+        poller->fd_events[fd] == 0)
+        return -1;
+    poller->fd_generation[fd]++;
+    if (poller->fd_generation[fd] == 0)
+        poller->fd_generation[fd] = 1;
+    poller->fd_data[fd] = NULL;
+    poller->fd_events[fd] = 0;
     int read_result = nc_poller_kqueue_change(
         poller, fd, EVFILT_READ, EV_DELETE, NULL, 1);
     int write_result = nc_poller_kqueue_change(
@@ -593,12 +683,13 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
         if (result < 0) {
             out[count].events = NC_EV_ERROR;
         } else {
-            if (result & POLLIN) out[count].events |= NC_EV_READ;
-            if (result & POLLOUT) out[count].events |= NC_EV_WRITE;
+            if ((result & POLLIN) && (poller->fd_events[fd] & NC_EV_READ))
+                out[count].events |= NC_EV_READ;
+            if ((result & POLLOUT) && (poller->fd_events[fd] & NC_EV_WRITE))
+                out[count].events |= NC_EV_WRITE;
             if (result & (POLLERR | POLLHUP | POLLNVAL))
                 out[count].events |= NC_EV_ERROR;
         }
-        count++;
 
         if (result >= 0 && poller->fd_events[fd] != 0 &&
             rearm_count < NC_POLLER_MAX_BATCH) {
@@ -608,6 +699,9 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
             rearms[rearm_count].fd = fd;
             rearms[rearm_count++].poll_mask = mask;
         }
+        if (out[count].events == 0)
+            continue;
+        count++;
     }
 
     for (int i = 0; i < rearm_count; i++) {
@@ -630,21 +724,31 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
     int count =
         epoll_wait(poller->epfd, events, max_events, timeout_ms);
     if (count <= 0) return count;
+    int delivered = 0;
     for (int i = 0; i < count; i++) {
         int fd = events[i].data.fd;
-        out[i].fd = fd;
-        out[i].data =
-            fd >= 0 && fd < poller->fd_cap ? poller->fd_data[fd] : NULL;
-        out[i].operation = NULL;
-        out[i].transferred = 0;
-        out[i].error = 0;
-        out[i].events = 0;
-        if (events[i].events & EPOLLIN) out[i].events |= NC_EV_READ;
-        if (events[i].events & EPOLLOUT) out[i].events |= NC_EV_WRITE;
+        if (fd < 0 || fd >= poller->fd_cap ||
+            poller->fd_events[fd] == 0)
+            continue;
+        out[delivered].fd = fd;
+        out[delivered].data = poller->fd_data[fd];
+        out[delivered].operation = NULL;
+        out[delivered].transferred = 0;
+        out[delivered].error = 0;
+        out[delivered].events = 0;
+        if ((events[i].events & EPOLLIN) &&
+            (poller->fd_events[fd] & NC_EV_READ))
+            out[delivered].events |= NC_EV_READ;
+        if ((events[i].events & EPOLLOUT) &&
+            (poller->fd_events[fd] & NC_EV_WRITE))
+            out[delivered].events |= NC_EV_WRITE;
         if (events[i].events & (EPOLLERR | EPOLLHUP))
-            out[i].events |= NC_EV_ERROR;
+            out[delivered].events |= NC_EV_ERROR;
+        if (out[delivered].events == 0)
+            continue;
+        delivered++;
     }
-    return count;
+    return delivered;
 #elif defined(NC_USE_KQUEUE)
     struct kevent events[NC_POLLER_MAX_BATCH];
     struct timespec timeout;
@@ -657,26 +761,44 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
     int count = kevent(poller->kqfd, NULL, 0, events, max_events,
                        timeout_ptr);
     if (count <= 0) return count;
+    int delivered = 0;
     for (int i = 0; i < count; i++) {
-        out[i].data = events[i].udata;
-        out[i].fd = (nc_sock_t)events[i].ident;
-        out[i].operation = NULL;
-        out[i].transferred = 0;
-        out[i].error = 0;
-        out[i].events = 0;
-        if (events[i].filter == EVFILT_READ)
-            out[i].events |= NC_EV_READ;
-        if (events[i].filter == EVFILT_WRITE)
-            out[i].events |= NC_EV_WRITE;
+        if (events[i].ident > (uintptr_t)INT_MAX)
+            continue;
+        int fd = (int)events[i].ident;
+        uint32_t generation = (uint32_t)(uintptr_t)events[i].udata;
+        if (fd < 0 || fd >= poller->fd_cap ||
+            poller->fd_events[fd] == 0 ||
+            poller->fd_generation[fd] != generation)
+            continue;
+        out[delivered].data = poller->fd_data[fd];
+        out[delivered].fd = fd;
+        out[delivered].operation = NULL;
+        out[delivered].transferred = 0;
+        out[delivered].error = 0;
+        out[delivered].events = 0;
+        if (events[i].filter == EVFILT_READ) {
+            if (!(poller->fd_events[fd] & NC_EV_READ))
+                continue;
+            out[delivered].events |= NC_EV_READ;
+        }
+        if (events[i].filter == EVFILT_WRITE) {
+            if (!(poller->fd_events[fd] & NC_EV_WRITE))
+                continue;
+            out[delivered].events |= NC_EV_WRITE;
+        }
         /* EV_EOF on a read filter is peer FIN, not an error. Mapping it to
          * NC_EV_ERROR made macOS treat a clean shutdown as a hard failure. */
         if (events[i].flags & EV_ERROR)
-            out[i].events |= NC_EV_ERROR;
+            out[delivered].events |= NC_EV_ERROR;
         else if ((events[i].flags & EV_EOF) &&
                  events[i].filter != EVFILT_READ)
-            out[i].events |= NC_EV_ERROR;
+            out[delivered].events |= NC_EV_ERROR;
+        if (out[delivered].events == 0)
+            continue;
+        delivered++;
     }
-    return count;
+    return delivered;
 #elif defined(NC_USE_IOCP)
     if (poller->npfds == 0) {
         DWORD timeout = timeout_ms >= 0 ? (DWORD)timeout_ms : INFINITE;

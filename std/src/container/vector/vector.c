@@ -246,6 +246,8 @@ bool neverc_vector_shrink_to_fit(neverc_vector_t *v) {
         v->capacity = 0;
         return true;
     }
+    if (v->elem_size == 0 || v->size > SIZE_MAX / v->elem_size)
+        return false;
     void *new_data = realloc(v->data, v->size * v->elem_size);
     if (!new_data)
         return false;
@@ -985,8 +987,14 @@ void neverc_vector_inplace_merge(neverc_vector_t *v, size_t mid,
     if (!v || !cmp || mid == 0 || mid >= v->size)
         return;
     size_t es = v->elem_size, n = v->size;
+    if (es == 0)
+        return;
     size_t len1 = mid, len2 = n - mid;
     size_t bufn = len1 < len2 ? len1 : len2;   /* gallop-merge buffers the smaller run */
+    if (bufn > SIZE_MAX / es) {
+        vec_merge_rotate(v, 0, mid, n, (nci_cmp_fn)cmp);
+        return;
+    }
 
     char stack_buf[256];
     char *aux = (bufn * es <= sizeof(stack_buf)) ? stack_buf
@@ -1488,6 +1496,8 @@ bool neverc_vector_equal(const neverc_vector_t *a, const neverc_vector_t *b,
         return false;
     if (a->size == 0)
         return true;
+    if (a->elem_size == 0 || a->size > SIZE_MAX / a->elem_size)
+        return false;
     if (!cmp)
         return a->data && b->data &&
                memcmp(a->data, b->data, a->size * a->elem_size) == 0;

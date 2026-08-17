@@ -584,6 +584,8 @@ static void test_special_nan_inf(void) {
     check_double("sqrt(-Inf)", neverc_math_sqrt(NC_NEGINF), NC_NAN);
     check_double("log2(+Inf)", neverc_math_log2(NC_INF), NC_INF);
     check_double("log2(0)", neverc_math_log2(0.0), NC_NEGINF);
+    check_double("log2(-Inf)", neverc_math_log2(NC_NEGINF), NC_NAN);
+    check_double("log2(NaN)", neverc_math_log2(NC_NAN), NC_NAN);
     check_double("log10(+Inf)", neverc_math_log10(NC_INF), NC_INF);
     check_double("cbrt(+Inf)", neverc_math_cbrt(NC_INF), NC_INF);
     check_double("cbrt(-Inf)", neverc_math_cbrt(NC_NEGINF), NC_NEGINF);
@@ -798,6 +800,18 @@ static void test_decomposition(void) {
     check_double("ldexp(tiny, INT_MIN)=0",
                  neverc_math_ldexp(NEVERC_MATH_SMALLEST_NONZERO_FLOAT64,
                                    NEVERC_MATH_MIN_INT), 0.0);
+
+    /* NULL out-params must not crash (same fail-closed style as bits.Div). */
+    check_double("modf(3.5,NULL).frac", neverc_math_modf(3.5, NULL), 0.5);
+    check_double("frexp(4,NULL).frac", neverc_math_frexp(4.0, NULL), 0.5);
+    {
+        double s = 99.0, c = 99.0;
+        neverc_math_sincos(0.0, &s, NULL);
+        check_double("sincos(0, NULL cos).sin", s, 0.0);
+        neverc_math_sincos(0.0, NULL, &c);
+        check_double("sincos(NULL sin, 0).cos", c, 1.0);
+        neverc_math_sincos(0.0, NULL, NULL);
+    }
 
     /* nextafter */
     printf("[nextafter]\n");
@@ -1769,6 +1783,10 @@ static void test_signed_zero_preservation(void) {
     /* copysign preserves magnitude, takes sign from 2nd arg */
     check_signbit("copysign(1,-0) neg", neverc_math_copysign(1.0, neg_zero), 1);
     check_signbit("copysign(-1,+0) pos", neverc_math_copysign(-1.0, 0.0), 0);
+
+    /* IEEE / Go: sqrt(-0) = -0. */
+    check_signbit("sqrt(-0) neg", neverc_math_sqrt(neg_zero), 1);
+    check_signbit("sqrt(+0) pos", neverc_math_sqrt(0.0), 0);
 }
 
 /* ========== atan2 comprehensive special cases (Go all_test.go vfatan2SC) ========== */
@@ -2018,6 +2036,11 @@ static void test_gamma_negative_precision(void) {
     check_double("gamma(-Inf)=NaN", neverc_math_gamma(NC_NEGINF), NC_NAN);
     check_double("gamma(NaN)=NaN", neverc_math_gamma(NC_NAN), NC_NAN);
     check_double("gamma(0)=+Inf", neverc_math_gamma(0.0), NC_INF);
+    {
+        double gz = neverc_math_gamma(neverc_math_copysign(0.0, -1.0));
+        check_double("gamma(-0)=-Inf", gz, NC_NEGINF);
+        check_signbit("gamma(-0) is neg Inf", gz, 1);
+    }
     check_double("gamma(-1)=NaN", neverc_math_gamma(-1.0), NC_NAN);
     check_double("gamma(-2)=NaN", neverc_math_gamma(-2.0), NC_NAN);
 

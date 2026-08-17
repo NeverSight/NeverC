@@ -12,6 +12,7 @@ static int errors_size_add(size_t left, size_t right, size_t *out) {
 static char *dup_string(const char *s) {
     if (!s) return NULL;
     size_t len = strlen(s);
+    if (len == SIZE_MAX) return NULL;
     char *d = (char *)malloc(len + 1);
     if (!d) return NULL;
     for (size_t i = 0; i <= len; i++) d[i] = s[i];
@@ -127,24 +128,26 @@ neverc_error_t *neverc_errors_wrap(const char *text, neverc_error_t *cause) {
         size_t tlen = strlen(text);
         size_t clen = strlen(cause->msg);
         size_t total;
-        char *combined = NULL;
-        if (errors_size_add(tlen, 3, &total) && errors_size_add(total, clen, &total))
-            combined = (char *)malloc(total);
-        if (combined) {
-            for (size_t i = 0; i < tlen; i++) combined[i] = text[i];
-            combined[tlen] = ':';
-            combined[tlen + 1] = ' ';
-            for (size_t i = 0; i <= clen; i++) combined[tlen + 2 + i] = cause->msg[i];
-            e->msg = combined;
-        } else {
-            e->msg = dup_string(text);
+        if (!errors_size_add(tlen, 3, &total) || !errors_size_add(total, clen, &total)) {
+            free(e);
+            return NULL;
         }
+        char *combined = (char *)malloc(total);
+        if (!combined) {
+            free(e);
+            return NULL;
+        }
+        for (size_t i = 0; i < tlen; i++) combined[i] = text[i];
+        combined[tlen] = ':';
+        combined[tlen + 1] = ' ';
+        for (size_t i = 0; i <= clen; i++) combined[tlen + 2 + i] = cause->msg[i];
+        e->msg = combined;
     } else {
         e->msg = dup_string(text);
-    }
-    if (!e->msg) {
-        free(e);
-        return NULL;
+        if (!e->msg) {
+            free(e);
+            return NULL;
+        }
     }
     e->wrapped = cause;
     e->owned = 1;

@@ -35,7 +35,14 @@ void neverc_des_encrypt_block(const neverc_des_cipher_t *c,
 void neverc_des_decrypt_block(const neverc_des_cipher_t *c,
                               uint8_t dst[8], const uint8_t src[8]);
 
+/* 1 if key is one of the 16 FIPS 46-3 weak/semi-weak keys (parity bits
+ * ignored), 0 if not, -1 if key is NULL. Init still accepts weak keys. */
+int  neverc_des_is_weak_key(const uint8_t key[8]);
+
 int  neverc_3des_init(neverc_3des_cipher_t *c, const uint8_t key[24]);
+/* 1 if any 8-byte component is weak/semi-weak, or if K1 equals K2 or
+ * K2 equals K3 (parity ignored). Two-key 3DES (K1==K3) is not weak. */
+int  neverc_3des_is_weak_key(const uint8_t key[24]);
 void neverc_3des_encrypt_block(const neverc_3des_cipher_t *c,
                                uint8_t dst[8], const uint8_t src[8]);
 void neverc_3des_decrypt_block(const neverc_3des_cipher_t *c,

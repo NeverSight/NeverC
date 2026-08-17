@@ -51,6 +51,10 @@ static void test_canonical_key(void) {
     k = neverc_textproto_canonical_mime_header_key("not:a-token");
     check_str("colon_unmodified", k, "not:a-token");
     free(k);
+    k = neverc_textproto_canonical_mime_header_key("X\r\nBcc: hidden");
+    check("crlf_key_rejected", k == NULL);
+    k = neverc_textproto_canonical_mime_header_key("X\nInjected");
+    check("lf_key_rejected", k == NULL);
 }
 
 static void test_mime_header(void) {
@@ -143,6 +147,59 @@ static void test_read_mime_header(void) {
     check("fold_tab_ok", rc == 0);
     check_str("fold_tab_value", neverc_mime_header_get(&h, "X-Long"),
               "part1 part2");
+    neverc_mime_header_free(&h);
+
+    const char *fold_bcc = "From: user@x.com\r\n Bcc: hidden@x.com\r\n\r\n";
+    neverc_mime_header_init(&h);
+    consumed = 0;
+    rc = neverc_textproto_read_mime_header(fold_bcc, strlen(fold_bcc), &h,
+                                          &consumed);
+    check("fold_bcc_ok", rc == 0);
+    check("fold_bcc_not_a_header", neverc_mime_header_get(&h, "Bcc") == NULL);
+    check_str("fold_bcc_from_value", neverc_mime_header_get(&h, "From"),
+              "user@x.com Bcc: hidden@x.com");
+    neverc_mime_header_free(&h);
+
+    const char *fold_tab_bcc =
+        "From: user@x.com\r\n\tBcc: hidden@x.com\r\nTo: vis@x.com\r\n\r\n";
+    neverc_mime_header_init(&h);
+    consumed = 0;
+    rc = neverc_textproto_read_mime_header(fold_tab_bcc, strlen(fold_tab_bcc),
+                                          &h, &consumed);
+    check("fold_tab_bcc_ok", rc == 0);
+    check("fold_tab_bcc_not_a_header",
+          neverc_mime_header_get(&h, "Bcc") == NULL);
+    check_str("fold_tab_bcc_from", neverc_mime_header_get(&h, "From"),
+              "user@x.com Bcc: hidden@x.com");
+    check_str("fold_tab_bcc_to", neverc_mime_header_get(&h, "To"), "vis@x.com");
+    neverc_mime_header_free(&h);
+
+    const char *empty_fold_then_bcc =
+        "From: user@x.com\r\n"
+        "\t \r\n"
+        "Bcc: hidden@x.com\r\n"
+        "\r\n";
+    neverc_mime_header_init(&h);
+    consumed = 0;
+    rc = neverc_textproto_read_mime_header(
+        empty_fold_then_bcc, strlen(empty_fold_then_bcc), &h, &consumed);
+    check("empty_fold_then_bcc_ok", rc == 0);
+    check_str("empty_fold_keeps_from", neverc_mime_header_get(&h, "From"),
+              "user@x.com");
+    check_str("bcc_after_empty_fold_is_header",
+              neverc_mime_header_get(&h, "Bcc"), "hidden@x.com");
+    neverc_mime_header_free(&h);
+
+    const char *same_line_bcc = "From: Bcc: hidden@x.com\r\n\r\n";
+    neverc_mime_header_init(&h);
+    consumed = 0;
+    rc = neverc_textproto_read_mime_header(same_line_bcc, strlen(same_line_bcc),
+                                          &h, &consumed);
+    check("same_line_bcc_ok", rc == 0);
+    check("same_line_bcc_not_a_header",
+          neverc_mime_header_get(&h, "Bcc") == NULL);
+    check_str("same_line_bcc_is_from_value",
+              neverc_mime_header_get(&h, "From"), "Bcc: hidden@x.com");
     neverc_mime_header_free(&h);
 
     const char *trail_ows = "X-Name: bar \r\n\r\n";
@@ -333,6 +390,11 @@ static void test_read_code_line(void) {
 
     rc = neverc_textproto_read_code_line("404 Not Found", &code, &msg);
     check("code_404", code == 404);
+
+    rc = neverc_textproto_read_code_line("220 foo\r\nBcc: hidden", &code, &msg);
+    check("code_crlf_rejected", rc == -1);
+    rc = neverc_textproto_read_code_line("220 foo\nInjected", &code, &msg);
+    check("code_lf_rejected", rc == -1);
 }
 
 static void test_dot_lines(void) {
@@ -361,6 +423,24 @@ static void test_dot_lines(void) {
     check("leading-dot destuff", rc == 0 && nlines == 1);
     if (nlines >= 1) check_str("destuffed .foo", lines[0], "foo");
     for (size_t i = 0; i < nlines; i++) free(lines[i]);
+
+    rc = neverc_textproto_read_dot_lines(
+        "a\r\nb\r\n.\r\n", strlen("a\r\nb\r\n.\r\n"),
+        lines, 2, &nlines, &consumed);
+    check("exact max_lines with terminator", rc == 0 && nlines == 2);
+    if (nlines >= 1) check_str("exact_line1", lines[0], "a");
+    if (nlines >= 2) check_str("exact_line2", lines[1], "b");
+    for (size_t i = 0; i < nlines; i++) free(lines[i]);
+
+    rc = neverc_textproto_read_dot_lines(
+        "a\r\nb\r\nc\r\n.\r\n", strlen("a\r\nb\r\nc\r\n.\r\n"),
+        lines, 2, &nlines, &consumed);
+    check("over max_lines rejected", rc == -1);
+    check("over max_lines clears", nlines == 0);
+
+    rc = neverc_textproto_read_dot_lines(
+        ".\r\n", strlen(".\r\n"), lines, 0, &nlines, &consumed);
+    check("empty dot block max_lines 0", rc == 0 && nlines == 0);
 }
 
 static void test_trim(void) {

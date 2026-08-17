@@ -16,6 +16,7 @@ static uint32_t ieee_s8[8][256];
 static int ieee_s8_ready;   /* 0 = unbuilt, 1 = building, 2 = published */
 
 void neverc_crc32_make_table(uint32_t poly, neverc_crc32_table_t table) {
+    if (!table) return;
     for (uint32_t i = 0; i < 256; i++) {
         uint32_t crc = i;
         for (int j = 0; j < 8; j++)
@@ -109,13 +110,12 @@ uint32_t neverc_crc32_update(uint32_t crc, const neverc_crc32_table_t table,
         return ~crc;
     }
 
-    /* Fast path: reuse the published shared table when its contents match.
-     * shared_s8[0] is a copy of the source table, so the sentinels also catch
-     * a buffer that was refilled with a different polynomial. */
+    /* Fast path: reuse the published shared table when it is an exact copy
+     * of this source table. A full compare (not 3 sentinels) is required:
+     * distinct polynomials can collide on a handful of entries and would
+     * otherwise return a checksum for the wrong poly. */
     if (__atomic_load_n(&shared_s8_ready, __ATOMIC_ACQUIRE) == 2 &&
-        shared_s8[0][1]   == table[1]   &&
-        shared_s8[0][128] == table[128] &&
-        shared_s8[0][255] == table[255]) {
+        memcmp(shared_s8[0], table, sizeof(neverc_crc32_table_t)) == 0) {
         return crc32_slicing8(crc, shared_s8, data, len);
     }
 

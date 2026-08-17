@@ -3,6 +3,7 @@
  * Pure C implementation.
  */
 #include "neverc/std/crypto/chacha20.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 
 static uint32_t get_u32le(const uint8_t *p) {
@@ -61,6 +62,7 @@ void neverc_chacha20_init(neverc_chacha20_ctx *ctx,
                           uint32_t counter) {
     if (!ctx) return;
     if (!key || !nonce) {
+        neverc_platform_secure_zero(ctx, sizeof(*ctx));
         ctx->buf_used = -1;
         return;
     }
@@ -157,11 +159,12 @@ static void xor_keystream(uint8_t *dst, const uint8_t *src,
     for (; i < n; i++) dst[i] = src[i] ^ ks[i];
 }
 
-void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
-                         uint8_t *dst, const uint8_t *src, size_t len) {
+int neverc_chacha20_xor_checked(neverc_chacha20_ctx *ctx,
+                                uint8_t *dst, const uint8_t *src, size_t len) {
     size_t off = 0;
-    if (!ctx || ctx->buf_used < 0) return;
-    if (len > 0 && (!dst || !src)) return;
+    if (!ctx || ctx->buf_used < 0) return -1;
+    if (len == 0) return 0;
+    if (!dst || !src) return -1;
 
     /* Refuse a request that cannot be fully satisfied without wrapping the
      * 32-bit block counter. A partial XOR would leave plaintext in dst. */
@@ -174,7 +177,7 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
             avail += blocks * 64u;
         }
         if ((uint64_t)len > avail)
-            return;
+            return -1;
     }
 
     /*
@@ -209,7 +212,7 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
         if (ctx->buf_used == 64 && ctx->state[12] == 0)
             ctx->buf_used = -1;
         if (ctx->buf_used < 0)
-            return;
+            return 0;
     }
 
 #ifdef NCI_CHACHA_SIMD
@@ -225,7 +228,7 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
         off += 256;
         if (ctx->state[12] < before) {
             ctx->buf_used = -1;
-            return;
+            return 0;
         }
     }
 #endif
@@ -241,7 +244,7 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
         off += 64;
         if (ctx->state[12] < before) {
             ctx->buf_used = -1;
-            return;
+            return 0;
         }
     }
 
@@ -255,4 +258,10 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
         xor_keystream(dst + off, src + off, ctx->buf, n);
         ctx->buf_used = (int)n;
     }
+    return 0;
+}
+
+void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
+                         uint8_t *dst, const uint8_t *src, size_t len) {
+    (void)neverc_chacha20_xor_checked(ctx, dst, src, len);
 }

@@ -159,6 +159,11 @@ static void test_decode_rejects_malformed_lengths(void) {
               neverc_asn1_decode_element(
                   oversized, sizeof(oversized), &elem), -1);
 
+    uint8_t five_byte_len[] = {0x04, 0x85, 0x01, 0x00, 0x00, 0x00, 0x00};
+    check_int("reject 5-byte length form",
+              neverc_asn1_decode_element(
+                  five_byte_len, sizeof(five_byte_len), &elem), -1);
+
     uint8_t noncanonical_int[] = {0x02, 0x02, 0x00, 0x01};
     int64_t integer;
     check_int("decode redundant integer wrapper",
@@ -310,6 +315,33 @@ static void test_helpers_and_invalid_api(void) {
     check_int("reject negative tag",
               neverc_asn1_encode_tag(
                   buf, sizeof(buf), NEVERC_ASN1_UNIVERSAL, 0, -1), -1);
+    {
+        uint8_t scratch[1] = {0xaa};
+        check_int("high tag short cap",
+                  neverc_asn1_encode_tag(
+                      scratch, 1, NEVERC_ASN1_UNIVERSAL, 0, 31), -1);
+        check_int("high tag short cap is fail-closed", scratch[0], 0xaa);
+    }
+    {
+        uint8_t scratch[1] = {0xaa};
+        check_int("int64 short cap",
+                  neverc_asn1_encode_int64(scratch, 1, 5), -1);
+        check_int("int64 short cap is fail-closed", scratch[0], 0xaa);
+    }
+    {
+        uint8_t scratch[1] = {0xaa};
+        const uint8_t payload[] = {1, 2, 3};
+        check_int("octet string short cap",
+                  neverc_asn1_encode_octet_string(
+                      scratch, 1, payload, sizeof(payload)), -1);
+        check_int("octet string short cap is fail-closed", scratch[0], 0xaa);
+    }
+    {
+        uint8_t scratch[1] = {0xaa};
+        check_int("oid short cap",
+                  neverc_asn1_encode_oid(scratch, 1, "1.2.3"), -1);
+        check_int("oid short cap is fail-closed", scratch[0], 0xaa);
+    }
     check_int("reject DER end-of-contents tag",
               neverc_asn1_encode_tag(
                   buf, sizeof(buf), NEVERC_ASN1_UNIVERSAL, 0, 0), -1);
@@ -460,6 +492,17 @@ static void test_oid_bit_string_and_text(void) {
     check_int("reject overlong utf8 encode",
               neverc_asn1_encode_utf8_string(buf, sizeof(buf), overlong, 2),
               -1);
+    {
+        uint8_t overlong_tlv[] = {0x0c, 0x02, 0xc0, 0xaf};
+        neverc_asn1_decode_element(overlong_tlv, sizeof(overlong_tlv), &elem);
+        check_int("reject overlong utf8 decode",
+                  neverc_asn1_decode_utf8_string(&elem, &text, &tlen), -1);
+        uint8_t surrogate_tlv[] = {0x0c, 0x03, 0xed, 0xa0, 0x80};
+        neverc_asn1_decode_element(surrogate_tlv, sizeof(surrogate_tlv),
+                                   &elem);
+        check_int("reject utf8 surrogate decode",
+                  neverc_asn1_decode_utf8_string(&elem, &text, &tlen), -1);
+    }
 
     n = neverc_asn1_encode_printable_string(buf, sizeof(buf),
                                             (const uint8_t *)"CN", 2);

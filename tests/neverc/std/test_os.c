@@ -229,6 +229,10 @@ static void test_stat(void) {
 
     ASSERT_EQ(neverc_os_stat("/nonexistent_neverc_os_stat_xyz", &info), -1);
     ASSERT_TRUE(neverc_os_is_not_exist(errno));
+    ASSERT_EQ(neverc_os_stat(NULL, &info), -1);
+    ASSERT_EQ(neverc_os_stat(path, NULL), -1);
+    ASSERT_EQ(neverc_os_lstat(NULL, &info), -1);
+    ASSERT_EQ(neverc_os_lstat(path, NULL), -1);
 
 #if !defined(_WIN32)
     {

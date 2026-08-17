@@ -313,6 +313,21 @@ static void test_encode_rejects_unsafe_geometry(void) {
     img.channels = 4;
     ASSERT_EQ(neverc_png_encode(&img, &out, &out_len), -1);
 
+    /* Valid 2x2 geometry but stride so large that y*stride wraps size_t. */
+    uint8_t pix[8];
+    memset(pix, 0, sizeof(pix));
+    img.width = 2;
+    img.height = 2;
+    img.channels = 1;
+    img.color_type = NEVERC_PNG_COLOR_GRAYSCALE;
+    img.stride = (SIZE_MAX / 2) + 1;
+    img.pixels = pix;
+    out = (uint8_t *)(uintptr_t)1;
+    out_len = 123;
+    ASSERT_EQ(neverc_png_encode(&img, &out, &out_len), -1);
+    ASSERT_TRUE(out == NULL);
+    ASSERT_TRUE(out_len == 0);
+
     out = (uint8_t *)(uintptr_t)1;
     out_len = 123;
     ASSERT_EQ(neverc_png_encode(NULL, &out, &out_len), -1);
@@ -610,6 +625,50 @@ static void test_rejects_truncated_stream(void) {
     free(img.pixels);
 }
 
+static void test_truncated_header_clears_geometry(void) {
+    printf("[truncated_header_clears_geometry]\n");
+    neverc_png_image_t img;
+    memset(&img, 0xA5, sizeof(img));
+    static const uint8_t trunc[] = {137, 80, 78, 71, 13, 10, 26};
+    ASSERT_EQ(neverc_png_decode(trunc, sizeof(trunc), &img), -1);
+    ASSERT_TRUE(img.pixels == NULL);
+    ASSERT_EQ(img.width, 0);
+    ASSERT_EQ(img.height, 0);
+
+    memset(&img, 0xA5, sizeof(img));
+    ASSERT_EQ(neverc_png_decode(NULL, 0, &img), -1);
+    ASSERT_TRUE(img.pixels == NULL);
+    ASSERT_EQ(img.width, 0);
+    ASSERT_EQ(img.height, 0);
+}
+
+static void test_rejects_iend_crc_corruption(void) {
+    printf("[rejects_iend_crc_corruption]\n");
+    neverc_png_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 1;
+    img.height = 1;
+    img.bit_depth = 8;
+    img.color_type = NEVERC_PNG_COLOR_GRAYSCALE;
+    img.channels = 1;
+    img.stride = 1;
+    uint8_t pixel = 128;
+    img.pixels = &pixel;
+
+    uint8_t *png = NULL;
+    size_t png_len = 0;
+    ASSERT_EQ(neverc_png_encode(&img, &png, &png_len), 0);
+    ASSERT_TRUE(png != NULL && png_len >= 12);
+
+    png[png_len - 1U] ^= 1U; /* corrupt IEND CRC */
+    neverc_png_image_t decoded;
+    memset(&decoded, 0xA5, sizeof(decoded));
+    ASSERT_EQ(neverc_png_decode(png, png_len, &decoded), -1);
+    ASSERT_TRUE(decoded.pixels == NULL);
+    ASSERT_EQ(decoded.width, 0);
+    free(png);
+}
+
 static void test_rejects_illegal_and_duplicate_plte(void) {
     printf("[rejects_illegal_and_duplicate_plte]\n");
     uint8_t gray_px = 128;
@@ -694,6 +753,8 @@ int main(void) {
     test_zlib_fcheck_valid();
     test_rejects_huge_ihdr();
     test_rejects_truncated_stream();
+    test_truncated_header_clears_geometry();
+    test_rejects_iend_crc_corruption();
     test_rejects_illegal_and_duplicate_plte();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

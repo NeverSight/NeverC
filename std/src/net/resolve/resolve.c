@@ -1,4 +1,5 @@
 #include "neverc/std/net/resolve.h"
+#include "neverc/std/net/netip.h"
 #include "../idna_inc.h"
 #include <limits.h>
 #include <string.h>
@@ -801,6 +802,55 @@ int neverc_net_join_host_port(const char *host, const char *port,
         n = snprintf(buf, buflen, "%s:%s", host, port);
 
     return (n > 0 && (size_t)n < buflen) ? n : -1;
+}
+
+static int ascii_ieq_n(const char *a, const char *b, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        unsigned char ca = (unsigned char)a[i];
+        unsigned char cb = (unsigned char)b[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (unsigned char)(ca + 32);
+        if (cb >= 'A' && cb <= 'Z') cb = (unsigned char)(cb + 32);
+        if (ca != cb) return 0;
+    }
+    return 1;
+}
+
+static int name_is_localhost(const char *s) {
+    size_t n = strlen(s);
+    if (n > 0 && s[n - 1] == '.')
+        n--;
+    if (n == 9 && ascii_ieq_n(s, "localhost", 9))
+        return 1;
+    /* RFC 6761: *.localhost is loopback. */
+    if (n > 10 && s[n - 10] == '.' &&
+        ascii_ieq_n(s + n - 9, "localhost", 9))
+        return 1;
+    return 0;
+}
+
+int neverc_net_addr_is_internal(const char *addr) {
+    neverc_netip_addr_t parsed, unmapped;
+    if (!addr || !addr[0])
+        return 1;
+    if (name_is_localhost(addr))
+        return 1;
+    if (neverc_netip_parse_addr(addr, &parsed) != 0)
+        return 1;
+    if (neverc_netip_addr_unmap(&parsed, &unmapped) != 0)
+        return 1;
+    return neverc_netip_addr_is_internal(&unmapped);
+}
+
+int neverc_net_addrs_any_internal(const neverc_net_addrs_t *addrs) {
+    if (!addrs || addrs->count <= 0)
+        return 1;
+    if (addrs->count > NEVERC_NET_MAX_ADDRS)
+        return 1;
+    for (int i = 0; i < addrs->count; i++) {
+        if (neverc_net_addr_is_internal(addrs->addrs[i]))
+            return 1;
+    }
+    return 0;
 }
 
 /* ======================================================================

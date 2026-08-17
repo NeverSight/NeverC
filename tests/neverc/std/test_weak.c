@@ -131,6 +131,20 @@ static void test_make_requires_live_strong(void) {
     neverc_weak_ref_release(keep);
 }
 
+static void test_stale_strong_without_weak(void) {
+    printf("[stale_strong_without_weak]\n");
+    int data = 11;
+    neverc_weak_strong_t s = neverc_weak_new(&data, sizeof(int));
+    neverc_weak_strong_t stale = s;
+    neverc_weak_strong_release(&s);
+    neverc_weak_strong_t retained = neverc_weak_strong_retain(stale);
+    ASSERT_TRUE(retained.ptr == NULL);
+    ASSERT_TRUE(retained._ctrl == NULL);
+    ASSERT_TRUE(neverc_weak_make(stale) == NULL);
+    ASSERT_INT_EQ(neverc_weak_strong_count(stale), 0);
+    neverc_weak_strong_release(&stale);
+}
+
 static void test_multiple_weak_refs(void) {
     printf("[multiple_weak_refs]\n");
     int data = 42;
@@ -162,6 +176,7 @@ int main(void) {
     test_ref_equal();
     test_custom_free();
     test_make_requires_live_strong();
+    test_stale_strong_without_weak();
     test_multiple_weak_refs();
     printf("\nweak: %d/%d passed", tests_passed, tests_run);
     if (tests_failed) printf(", %d FAILED", tests_failed);

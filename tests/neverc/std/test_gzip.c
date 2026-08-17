@@ -136,6 +136,9 @@ static void test_optional_headers_and_invalid_inputs(void) {
     output_len = sizeof(output);
     ASSERT_INT_EQ(neverc_gzip_decompress(base, 10, output, &output_len), -1);
     output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(base, base_len - 1U, output, &output_len),
+                  -1);
+    output_len = sizeof(output);
     ASSERT_INT_EQ(neverc_gzip_decompress(base, base_len - 4, output, &output_len),
                   -1);
 }
@@ -231,6 +234,18 @@ int main(void) {
         size_t output_len = sizeof(output);
         ASSERT_INT_EQ(neverc_gzip_decompress(
                           crc_corrupt, comp_len, output, &output_len),
+                      -1);
+
+        /* CRC 0 is a real checksum, not a skip / fail-open. */
+        uint8_t crc_zero[256];
+        memcpy(crc_zero, comp, comp_len);
+        crc_zero[comp_len - 8] = 0;
+        crc_zero[comp_len - 7] = 0;
+        crc_zero[comp_len - 6] = 0;
+        crc_zero[comp_len - 5] = 0;
+        output_len = sizeof(output);
+        ASSERT_INT_EQ(neverc_gzip_decompress(
+                          crc_zero, comp_len, output, &output_len),
                       -1);
 
         /* ISIZE is size mod 2^32 and must not be used as the inflate cap.

@@ -32,13 +32,14 @@ static void count_task(void *arg) {
 }
 
 int main(void) {
-#if defined(NC_USE_IO_URING) && NC_USE_IO_URING
+#if defined(NC_USE_IO_URING) && NC_USE_IO_URING && defined(__linux__)
     const int create_allocations = 7;
-#elif defined(NC_USE_EPOLL) || \
-      (!defined(NC_USE_KQUEUE) && !defined(NC_USE_IOCP))
+#elif defined(NC_USE_KQUEUE)
+    const int create_allocations = 7;
+#elif defined(NC_USE_EPOLL) || defined(NC_USE_IOCP)
     const int create_allocations = 6;
 #else
-    const int create_allocations = 4;
+    const int create_allocations = 6;
 #endif
     for (int fail_at = 1; fail_at <= create_allocations; fail_at++) {
         allocation_count = 0;
@@ -62,6 +63,26 @@ int main(void) {
     calloc_fail_at = 0;
     nc_evloop_t *loop = nc_evloop_create();
     if (!loop) return 6;
+
+    calloc_fail_at = allocation_count + 1;
+    int grow_rejected = 0;
+#if defined(NC_USE_KQUEUE) || defined(NC_USE_EPOLL)
+    grow_rejected = nc_poller_add(loop->poller, 64, NC_EV_READ, NULL) != 0;
+#elif !(defined(NC_USE_IO_URING) && NC_USE_IO_URING)
+    for (int fd = 32; fd < 256; fd++) {
+        if (nc_poller_add(loop->poller, fd, NC_EV_READ, NULL) != 0) {
+            grow_rejected = 1;
+            break;
+        }
+    }
+#else
+    grow_rejected = 1;
+#endif
+    calloc_fail_at = 0;
+    if (!grow_rejected) {
+        nc_evloop_destroy(loop);
+        return 10;
+    }
 
     task_count = 0;
     for (int i = 0; i < NC_EVLOOP_INITIAL_PENDING; i++) {

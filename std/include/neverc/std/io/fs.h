@@ -54,12 +54,16 @@ int neverc_fs_read_file(const char *path, uint8_t **data, size_t *size);
 int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
                        size_t *count);
 
+/* Match pattern against names in dir only. Patterns containing '/' are
+ * rejected so a caller-supplied pattern cannot select nested paths. */
 int neverc_fs_glob(const char *dir, const char *pattern,
                    char ***matches, size_t *count);
 
 /* Callback: 0 continue, NEVERC_FS_SKIP_DIR skip directory contents (or
  * remaining siblings if invoked on a non-directory), NEVERC_FS_SKIP_ALL
- * stop successfully, any other non-zero aborts and is returned. */
+ * stop successfully, any other non-zero aborts and is returned.
+ * entry is NULL when the root cannot be lstat'd; return 0 to surface the
+ * original failure, or a skip sentinel to treat it as success. */
 int neverc_fs_walk_dir(const char *root,
                        int (*fn)(const char *path,
                                  const neverc_fs_dir_entry_t *entry,

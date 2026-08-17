@@ -32,6 +32,12 @@ int         neverc_filepath_is_local(const char *path);
 const char *neverc_filepath_volume_name(const char *path, char *buf, size_t buf_len);
 const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len);
 const char *neverc_filepath_join(const char *a, const char *b, char *buf, size_t buf_len);
+/* Lexical relative path from base to targ (Go filepath.Rel). Returns NULL if
+ * targ cannot be made relative to base, if base still contains ".." after
+ * Clean, or on OOM. A leading ".." in a successful result means targ is
+ * outside base; callers that need a jail must also check IsLocal. */
+const char *neverc_filepath_rel(const char *basepath, const char *targpath,
+                                char *buf, size_t buf_len);
 void        neverc_filepath_split(const char *path, const char **dir, size_t *dir_len,
                                    const char **file);
 int         neverc_filepath_match(const char *pattern, const char *name);

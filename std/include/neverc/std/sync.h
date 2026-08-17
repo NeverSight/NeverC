@@ -14,7 +14,10 @@ extern "C" {
 #endif
 
 #if defined(_WIN32)
-typedef struct { SRWLOCK srw; } neverc_mutex_t;
+typedef struct {
+    SRWLOCK srw;
+    DWORD owner; /* 0 = unlocked; GetCurrentThreadId() while held */
+} neverc_mutex_t;
 #else
 typedef struct { pthread_mutex_t mu; } neverc_mutex_t;
 #endif
@@ -22,6 +25,7 @@ typedef struct { pthread_mutex_t mu; } neverc_mutex_t;
 void neverc_sync_mutex_init(neverc_mutex_t *m);
 void neverc_sync_mutex_destroy(neverc_mutex_t *m);
 void neverc_sync_mutex_lock(neverc_mutex_t *m);
+/* Unlocking a mutex that is not held by the caller is a no-op. */
 void neverc_sync_mutex_unlock(neverc_mutex_t *m);
 int  neverc_sync_mutex_trylock(neverc_mutex_t *m);
 
@@ -104,7 +108,7 @@ void neverc_sync_once_do(neverc_once_t *o, void (*f)(void));
 #define neverc_once_do      neverc_sync_once_do
 
 #if defined(_WIN32)
-typedef struct { CONDITION_VARIABLE cond; SRWLOCK *srw; } neverc_cond_t;
+typedef struct { CONDITION_VARIABLE cond; neverc_mutex_t *m; } neverc_cond_t;
 #else
 typedef struct { pthread_cond_t cond; pthread_mutex_t *mu; } neverc_cond_t;
 #endif

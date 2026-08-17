@@ -30,6 +30,11 @@ static void test_decode_basic(void) {
     n = neverc_qp_decode("line1\r\nline2", 12, out, sizeof(out));
     ASSERT_EQ(n, 12);
     ASSERT_MEMEQ(out, "line1\r\nline2", 12);
+
+    /* RFC 2047 Q-encoding maps '_' to space; body QP must not. */
+    n = neverc_qp_decode("hello_world", 11, out, sizeof(out));
+    ASSERT_EQ(n, 11);
+    ASSERT_MEMEQ(out, "hello_world", 11);
 }
 
 static void test_decode_soft_break(void) {
@@ -86,14 +91,18 @@ static void test_decode_soft_break(void) {
     ASSERT_EQ(n, 7);
     ASSERT_MEMEQ(out, "hello \n", 7);
 
-    /* Soft break may be CR-only; '=' plus trailing WSP at EOF is stripped. */
-    n = neverc_qp_decode("ab=\r cd", 7, out, sizeof(out));
-    ASSERT_EQ(n, 5);
-    ASSERT_MEMEQ(out, "ab cd", 5);
-
     n = neverc_qp_decode("ab= \t", 5, out, sizeof(out));
     ASSERT_EQ(n, 2);
     ASSERT_MEMEQ(out, "ab", 2);
+
+    /* A bare CR after '=' in the middle of a line is not a soft break. */
+    n = neverc_qp_decode("ab=\r cd", 7, out, sizeof(out));
+    ASSERT_EQ(n, -1);
+
+    /* WSP before a mid-line CR is not trailing line padding. */
+    n = neverc_qp_decode("hello  \rworld", 13, out, sizeof(out));
+    ASSERT_EQ(n, 13);
+    ASSERT_MEMEQ(out, "hello  \rworld", 13);
 }
 
 static void test_encode_basic(void) {

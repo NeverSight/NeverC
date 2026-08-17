@@ -24,14 +24,20 @@ static int ensure_capacity(uint8_t **data, size_t *cap, size_t required) {
     return 0;
 }
 
+static size_t copy_count_room(int64_t total) {
+    if (total < 0) total = 0;
+    uintmax_t room = (uintmax_t)(INT64_MAX - total);
+    return room > (uintmax_t)SIZE_MAX ? SIZE_MAX : (size_t)room;
+}
+
 static int add_copy_count(int64_t *total, size_t count) {
-    uintmax_t room = (uintmax_t)(INT64_MAX - *total);
-    if ((uintmax_t)count > room) {
+    size_t room = copy_count_room(*total);
+    if (count > room) {
         *total = INT64_MAX;
         return 1;
     }
     *total += (int64_t)count;
-    return 0;
+    return *total == INT64_MAX;
 }
 
 uint8_t *neverc_io_read_all(neverc_io_reader_t *r, size_t *outlen) {
@@ -121,12 +127,15 @@ int64_t neverc_io_copy(neverc_io_writer_t *dst, neverc_io_reader_t *src) {
         if (nr > sizeof(buf)) return total;
         if (nr > 0) {
             empty_reads = 0;
+            size_t to_write = copy_count_room(total);
+            if (to_write == 0) return total;
+            if (to_write > nr) to_write = nr;
             size_t nw = 0;
-            int werr = dst->write(dst->ctx, buf, nr, &nw);
-            if (nw > nr) return total;
+            int werr = dst->write(dst->ctx, buf, to_write, &nw);
+            if (nw > to_write) return total;
             if (add_copy_count(&total, nw)) return total;
             if (werr != 0) return total;
-            if (nw != nr) return total;
+            if (nw != to_write || to_write < nr) return total;
         }
         if (err == NEVERC_IO_EOF) break;
         if (err != 0) break;
@@ -152,11 +161,14 @@ int64_t neverc_io_copy_n(neverc_io_writer_t *dst, neverc_io_reader_t *src,
         if (nr > want) return total;
         if (nr > 0) {
             empty_reads = 0;
+            size_t to_write = copy_count_room(total);
+            if (to_write == 0) return total;
+            if (to_write > nr) to_write = nr;
             size_t nw = 0;
-            int werr = dst->write(dst->ctx, buf, nr, &nw);
-            if (nw > nr) return total;
+            int werr = dst->write(dst->ctx, buf, to_write, &nw);
+            if (nw > to_write) return total;
             if (add_copy_count(&total, nw)) return total;
-            if (werr != 0 || nw != nr) return total;
+            if (werr != 0 || nw != to_write || to_write < nr) return total;
         }
         if (err == NEVERC_IO_EOF) break;
         if (err != 0) break;
@@ -303,12 +315,15 @@ int64_t neverc_io_copy_buffer(neverc_io_writer_t *dst, neverc_io_reader_t *src,
         if (nr > buflen) return written;
         if (nr > 0) {
             empty_reads = 0;
+            size_t to_write = copy_count_room(written);
+            if (to_write == 0) return written;
+            if (to_write > nr) to_write = nr;
             size_t nw = 0;
-            int wc = dst->write(dst->ctx, buf, nr, &nw);
-            if (nw > nr) return written;
+            int wc = dst->write(dst->ctx, buf, to_write, &nw);
+            if (nw > to_write) return written;
             if (add_copy_count(&written, nw)) return written;
             if (wc != 0) return written;
-            if (nw != nr) return written;
+            if (nw != to_write || to_write < nr) return written;
         }
         if (rc == NEVERC_IO_EOF) break;
         if (rc != 0) return written;
@@ -329,11 +344,12 @@ static int limit_reader_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
     if ((uint64_t)lr->remaining < (uint64_t)len)
         len = (size_t)lr->remaining;
     int rc = lr->inner->read(lr->inner->ctx, buf, len, n);
-    if (*n > len) {
+    if (*n > len || (uint64_t)*n > (uint64_t)lr->remaining) {
         *n = 0;
         return NEVERC_IO_ERR_UNEXP;
     }
     lr->remaining -= (int64_t)*n;
+    if (lr->remaining < 0) lr->remaining = 0;
     return rc;
 }
 

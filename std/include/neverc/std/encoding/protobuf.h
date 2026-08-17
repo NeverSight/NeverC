@@ -141,10 +141,11 @@ int neverc_protobuf_message_encode(
     const void *message, void *output, size_t output_capacity,
     size_t *output_length);
 
-/* Decode zero-initializes output. bytes/string members are non-owning views
- * into input. Unknown fields, groups, and unexpected wire types are skipped.
- * Packed repeated scalars keep the last value. int32/uint32/enum/sint32
- * varints truncate to 32 bits; any nonzero bool varint is true. */
+/* Decode zero-initializes output. On failure the output is left zeroed.
+ * bytes/string members are non-owning views into input. Unknown fields,
+ * groups, and unexpected wire types are skipped. Packed repeated scalars
+ * keep the last value. int32/uint32/enum/sint32 varints truncate to 32
+ * bits; any nonzero bool varint is true. */
 int neverc_protobuf_message_decode(
     const neverc_protobuf_message_descriptor_t *descriptor,
     const void *input, size_t input_length, size_t max_field_size,

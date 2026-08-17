@@ -49,12 +49,14 @@ int neverc_mldsa44_new_sk(neverc_mldsa44_sk_t *sk, const uint8_t seed[32]);
 void neverc_mldsa44_sk_public_key(const neverc_mldsa44_sk_t *sk,
                                    neverc_mldsa44_pk_t *pk);
 
+/* Parse a public key. On failure, pk is cleared. */
 int neverc_mldsa44_new_pk(neverc_mldsa44_pk_t *pk,
                            const uint8_t *encoded, size_t len);
 
 /*
  * Generate a deterministic pure ML-DSA signature with an empty context, as
  * permitted by FIPS 204. The signature uses the standard 2420-byte encoding.
+ * On invalid arguments, sig is securely cleared.
  */
 int neverc_mldsa44_sign(const neverc_mldsa44_sk_t *sk,
                          const uint8_t *message, size_t msg_len,

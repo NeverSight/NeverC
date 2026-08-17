@@ -228,6 +228,57 @@ static void test_stable_many_runs(void) {
     check_true("many-runs stable", ok_stable);
 }
 
+/*
+ * n=64 is above NCI_TIM_MIN_MERGE, so this hits the merge engine rather than
+ * the small-array insertion path. 40+24 overlapping runs force merge-hi
+ * (left run longer than right).
+ */
+static void test_stable_merge_hi(void) {
+    printf("[stable_merge_hi]\n");
+    enum { N = 64, LEFT = 40 };
+    pair_t data[N];
+    for (int i = 0; i < LEFT; i++) {
+        data[i].key = 20 + i;
+        data[i].order = i;
+    }
+    for (int i = LEFT; i < N; i++) {
+        data[i].key = i - LEFT;
+        data[i].order = i;
+    }
+    neverc_sort_stable(data, N, sizeof(pair_t), cmp_pair);
+    int ok_sorted = 1, ok_stable = 1;
+    for (int i = 1; i < N; i++) {
+        if (data[i - 1].key > data[i].key) ok_sorted = 0;
+        if (data[i - 1].key == data[i].key &&
+            data[i - 1].order >= data[i].order)
+            ok_stable = 0;
+    }
+    check_true("merge-hi sorted", ok_sorted);
+    check_true("merge-hi stable", ok_stable);
+    check_int("merge-hi min", data[0].key, 0);
+    check_int("merge-hi max", data[N - 1].key, 20 + LEFT - 1);
+}
+
+static void test_stable_descending_equals(void) {
+    printf("[stable_descending_equals]\n");
+    enum { N = 64 };
+    pair_t data[N];
+    for (int i = 0; i < N; i++) {
+        data[i].key = (N - 1 - i) / 3;
+        data[i].order = i;
+    }
+    neverc_sort_stable(data, N, sizeof(pair_t), cmp_pair);
+    int ok_sorted = 1, ok_stable = 1;
+    for (int i = 1; i < N; i++) {
+        if (data[i - 1].key > data[i].key) ok_sorted = 0;
+        if (data[i - 1].key == data[i].key &&
+            data[i - 1].order >= data[i].order)
+            ok_stable = 0;
+    }
+    check_true("desc-equals sorted", ok_sorted);
+    check_true("desc-equals stable", ok_stable);
+}
+
 static void test_sort_strings(void) {
     printf("[sort_strings]\n");
     const char *strs[] = {"cherry", "apple", "banana", "date"};
@@ -253,6 +304,15 @@ static void test_reverse(void) {
     int one[] = {42};
     neverc_sort_reverse(one, 1, sizeof(int));
     check_int("reverse single", one[0], 42);
+
+    struct { char pad[300]; int id; } big[4];
+    memset(big, 0, sizeof(big));
+    big[0].id = 0; big[1].id = 1; big[2].id = 2; big[3].id = 3;
+    neverc_sort_reverse(big, 4, sizeof(big[0]));
+    check_int("reverse large[0]", big[0].id, 3);
+    check_int("reverse large[1]", big[1].id, 2);
+    check_int("reverse large[2]", big[2].id, 1);
+    check_int("reverse large[3]", big[3].id, 0);
 }
 
 static void test_ints_are_sorted(void) {
@@ -376,6 +436,8 @@ int main(void) {
     test_stable_sort();
     test_stable_sort_rejects_overflowing_span();
     test_stable_many_runs();
+    test_stable_merge_hi();
+    test_stable_descending_equals();
     test_sort_strings();
     test_reverse();
     test_ints_are_sorted();

@@ -319,6 +319,16 @@ static void test_macho_invalid(void) {
               section_data == NULL && section_len == 0);
     neverc_macho_close(&f);
     free(data);
+
+    uint8_t magic4[4];
+    put32(magic4, NEVERC_MH_MAGIC_64);
+    CHECK("reject truncated 64-bit Mach-O header",
+          neverc_macho_open(&f, magic4, sizeof(magic4)) == -1);
+
+    uint8_t hdr31[31] = {0};
+    put32(hdr31, NEVERC_MH_MAGIC_64);
+    CHECK("reject 31-byte 64-bit Mach-O header",
+          neverc_macho_open(&f, hdr31, sizeof(hdr31)) == -1);
 }
 
 static void test_fat(void) {
@@ -354,6 +364,25 @@ static void test_fat(void) {
 
     free(fat);
     free(thin);
+
+    uint8_t fat_narch[8] = {0xCA, 0xFE, 0xBA, 0xBE, 0x10, 0x00, 0x00, 0x00};
+    CHECK("reject fat narch overflowing arch table",
+          neverc_macho_open(&f, fat_narch, sizeof(fat_narch)) == -1);
+
+    uint8_t fat_trunc[8] = {0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x01};
+    CHECK("reject truncated fat arch table",
+          neverc_macho_open(&f, fat_trunc, sizeof(fat_trunc)) == -1);
+
+    uint8_t fat_wrap[28] = {0};
+    fat_wrap[0] = 0xCA;
+    fat_wrap[1] = 0xFE;
+    fat_wrap[2] = 0xBA;
+    fat_wrap[3] = 0xBE;
+    put32be(fat_wrap + 4, 1);
+    put32be(fat_wrap + 16, 0xFFFFFFF0u);
+    put32be(fat_wrap + 20, 0x20u);
+    CHECK("reject fat arch offset plus size wrap",
+          neverc_macho_open(&f, fat_wrap, sizeof(fat_wrap)) == -1);
 }
 
 #ifdef __APPLE__

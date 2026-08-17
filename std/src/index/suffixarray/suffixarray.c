@@ -66,21 +66,34 @@ static int sais_core(int32_t *T, int32_t *SA, int32_t n, int32_t K) {
     int32_t name = 0, prev = -1;
     for (int32_t i = 0; i < m; i++) {
         int32_t pos = SA[i];
+        if (pos < 0) {
+            free(st); free(bkt); free(cur);
+            return -1;
+        }
         int diff = 1;
         if (prev >= 0) {
             diff = 0;
-            for (int32_t d = 0; ; d++) {
-                if (pos + d >= n || prev + d >= n ||
-                    T[pos+d] != T[prev+d] || SAIS_TP(pos+d) != SAIS_TP(prev+d)) {
+            /* Unsigned indexes: signed pos+d is UB once d approaches INT32_MAX. */
+            size_t nn = (size_t)n, p = (size_t)pos, q = (size_t)prev;
+            for (size_t d = 0; ; d++) {
+                if (p + d >= nn || q + d >= nn ||
+                    T[p + d] != T[q + d] ||
+                    SAIS_TP(p + d) != SAIS_TP(q + d)) {
                     diff = 1; break;
                 }
-                if (d > 0 && (SAIS_LMS(pos+d) || SAIS_LMS(prev+d)))
+                if (d > 0 && (SAIS_LMS((int32_t)(p + d)) ||
+                              SAIS_LMS((int32_t)(q + d))))
                     break;
             }
         }
         if (diff) name++;
         prev = pos;
-        SA[m + (pos >> 1)] = name - 1;
+        size_t at = (size_t)m + ((size_t)pos >> 1);
+        if (at >= (size_t)n) {
+            free(st); free(bkt); free(cur);
+            return -1;
+        }
+        SA[at] = name - 1;
     }
     { int32_t j = n - 1;
       for (int32_t i = n - 1; i >= m; i--)
@@ -135,6 +148,9 @@ static int sais_core(int32_t *T, int32_t *SA, int32_t n, int32_t K) {
 static int build_suffix_array(const unsigned char *data, size_t n, int32_t *sa) {
     if (n == 0) return 0;
     if (n == 1) { sa[0] = 0; return 0; }
+    /* Sentinel string is n+1 ints; reject before (n+1)*sizeof overflows. */
+    if (n > (size_t)INT32_MAX - 1U || n >= SIZE_MAX / sizeof(int32_t))
+        return -1;
 
     int32_t n1 = (int32_t)(n + 1);
     int32_t *T  = (int32_t *)malloc((size_t)n1 * sizeof(int32_t));
@@ -162,7 +178,7 @@ static int build_suffix_array(const unsigned char *data, size_t n, int32_t *sa) 
  * Depth is O(log n) and total work is O(n) — one visit per interval midpoint. */
 static int32_t build_lcp_lr(const int32_t *lcp, int32_t lo, int32_t hi,
                             int32_t *llcp, int32_t *rlcp) {
-    if (lo + 1 == hi) return lcp[hi];
+    if (hi - lo == 1) return lcp[hi];
     int32_t mid = lo + (hi - lo) / 2;
     int32_t L = build_lcp_lr(lcp, lo, mid, llcp, rlcp);
     int32_t R = build_lcp_lr(lcp, mid, hi, llcp, rlcp);
@@ -203,7 +219,11 @@ static void build_search_index(neverc_suffixarray_t *idx) {
     for (size_t i = 0; i < n; i++) {
         if (rank[i] > 0) {
             size_t k = (size_t)sa[rank[i] - 1];
-            while (i + h < n && k + h < n && data[i + h] == data[k + h]) h++;
+            if (k >= n) {
+                free(rank); free(lcp); free(llcp); free(rlcp);
+                return;
+            }
+            while (h < n - i && h < n - k && data[i + h] == data[k + h]) h++;
             lcp[rank[i]] = (int32_t)h;
             if (h > 0) h--;
         } else {
@@ -223,8 +243,10 @@ int neverc_suffixarray_new(neverc_suffixarray_t *idx, const unsigned char *data,
     if (!idx) return -1;
     memset(idx, 0, sizeof(*idx));
     if (len == 0) return 0;
+    /* SA-IS indexes are int32_t and the sentinel string is n+1 longs, so
+     * len==SIZE_MAX/sizeof(int32_t) would overflow the T/SA allocations. */
     if (!data || len > (size_t)INT32_MAX - 1U ||
-        len > SIZE_MAX / sizeof(int32_t))
+        len >= SIZE_MAX / sizeof(int32_t))
         return -1;
 
     idx->data = data;
@@ -274,12 +296,17 @@ enum { SA_LESS = -1, SA_PREFIX = 0, SA_GREATER = 1 };
  * Returns the suffix's relation to P and writes the matched length to *ml. */
 static int sa_cmp(const unsigned char *data, size_t dlen, int32_t sa_pos,
                   const unsigned char *P, size_t m, size_t start, size_t *ml) {
+    if (sa_pos < 0) {
+        *ml = start;
+        return SA_LESS;
+    }
     size_t sp = (size_t)sa_pos;
+    size_t rem = sp < dlen ? dlen - sp : 0;
     size_t i = start;
-    while (i < m && sp + i < dlen && data[sp + i] == P[i]) i++;
+    while (i < m && i < rem && data[sp + i] == P[i]) i++;
     *ml = i;
-    if (i == m)        return SA_PREFIX;   /* P is a prefix of the suffix */
-    if (sp + i == dlen) return SA_LESS;    /* suffix ended first -> suffix < P */
+    if (i == m)   return SA_PREFIX;   /* P is a prefix of the suffix */
+    if (i == rem) return SA_LESS;     /* suffix ended first -> suffix < P */
     return data[sp + i] < P[i] ? SA_LESS : SA_GREATER;
 }
 
@@ -363,7 +390,9 @@ int neverc_suffixarray_lookup(const neverc_suffixarray_t *idx,
     size_t count = (size_t)(hi - lo);
     size_t copy = count < max_results ? count : max_results;
     if (copy > 0 && !results) return -1;
-    if ((size_t)lo + copy > idx->sa_len)
+    if ((size_t)lo > idx->sa_len)
+        copy = 0;
+    else if (copy > idx->sa_len - (size_t)lo)
         copy = idx->sa_len - (size_t)lo;
 
     for (size_t i = 0; i < copy; i++)

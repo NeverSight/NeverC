@@ -202,6 +202,9 @@ static void test_target_validation(void) {
         "http://2001:db8::1/",
         "http://[2001:::1]/",
         "http://host/\r\nInjected: yes",
+        "http://host/api/../admin",
+        "http://host/api/..;/admin",
+        "http://host/foo//bar",
     };
     for (size_t i = 0;
          i < sizeof(invalid_targets) / sizeof(invalid_targets[0]); i++) {
@@ -741,18 +744,27 @@ static void backend_handler(neverc_http_request_t *request,
             neverc_http_request_header(request, "X-Forwarded-For");
         const char *forwarded_host =
             neverc_http_request_header(request, "X-Forwarded-Host");
+        const char *real_ip =
+            neverc_http_request_header(request, "X-Real-IP");
+        const char *proxy_authorization =
+            neverc_http_request_header(request, "Proxy-Authorization");
+        const char *keep_alive =
+            neverc_http_request_header(request, "Keep-Alive");
         const char *drop =
             neverc_http_request_header(request, "X-Drop");
         const char *keep =
             neverc_http_request_header(request, "X-Keep");
         (void)neverc_http_writef(
             writer,
-            "%c cl=%d te=%d forwarded=%d xff=%d xdrop=%d "
+            "%c cl=%d te=%d forwarded=%d xff=%d xrealip=%d "
+            "proxyauth=%d keepalive=%d xdrop=%d "
             "xkeep=%d proto=%s xhost=%s body=%.*s",
             state->id,
             request_header_count(request, "Content-Length"),
             request_header_count(request, "Transfer-Encoding"),
-            forwarded != NULL, forwarded_for != NULL, drop != NULL,
+            forwarded != NULL, forwarded_for != NULL, real_ip != NULL,
+            proxy_authorization != NULL, keep_alive != NULL,
+            drop != NULL,
             keep != NULL, proto ? proto : "missing",
             forwarded_host ? forwarded_host : "missing",
             (int)request->body_len,
@@ -772,6 +784,10 @@ static const char rewritten_framing_headers[] =
     "Forwarded\0" "for=attacker\0"
     "X-Forwarded-Proto\0" "https\0"
     "X-Forwarded-For\0" "203.0.113.9\0"
+    "X-Real-IP\0" "198.51.100.7\0"
+    "Keep-Alive\0" "timeout=5\0"
+    "Proxy-Authorization\0" "Basic dXNlcjpwYXNz\0"
+    "TE\0" "trailers\0"
     "Connection\0" "X-Drop\0"
     "X-Drop\0" "secret\0"
     "X-Keep\0" "yes\0";
@@ -792,7 +808,7 @@ static int rewrite_request(const neverc_http_request_t *input,
     } else if (input->path &&
                strcmp(input->path, "/framing") == 0) {
         output->raw_headers = rewritten_framing_headers;
-        output->nheaders = 10;
+        output->nheaders = 14;
     } else if (input->path &&
                (strcmp(input->path, "/options-star") == 0 ||
                 strcmp(input->path, "/base-star") == 0)) {
@@ -817,6 +833,15 @@ static int rewrite_request(const neverc_http_request_t *input,
     } else if (input->path &&
                strcmp(input->path, "/slash-slash") == 0) {
         output->path = "//evil.example/";
+    } else if (input->path &&
+               strcmp(input->path, "/dotdot-semi") == 0) {
+        output->path = "/..;/admin";
+    } else if (input->path &&
+               strcmp(input->path, "/dotdot-pct3b") == 0) {
+        output->path = "/%2e%2e%3b/admin";
+    } else if (input->path &&
+               strcmp(input->path, "/mid-slash-slash") == 0) {
+        output->path = "/foo//bar";
     }
     return 0;
 }
@@ -1139,6 +1164,8 @@ static void test_live_reverse_proxy(void) {
         "Connection: close, X-Hop\r\n"
         "Keep-Alive: timeout=5\r\n"
         "Proxy-Connection: keep-alive\r\n"
+        "Proxy-Authenticate: Basic realm=\"backend\"\r\n"
+        "TE: trailers\r\n"
         "X-Hop: secret\r\n"
         "X-Keep: yes\r\n"
         "\r\n"
@@ -1277,6 +1304,15 @@ static void test_live_reverse_proxy(void) {
     CHECK("scheme-relative path route registered",
           neverc_httputil_proxy_register(
               proxy_mux, "/slash-slash", proxy_a) == 0);
+    CHECK("matrix-parameter traversal route registered",
+          neverc_httputil_proxy_register(
+              proxy_mux, "/dotdot-semi", proxy_a) == 0);
+    CHECK("encoded matrix-parameter traversal route registered",
+          neverc_httputil_proxy_register(
+              proxy_mux, "/dotdot-pct3b", proxy_a) == 0);
+    CHECK("middle double-slash route registered",
+          neverc_httputil_proxy_register(
+              proxy_mux, "/mid-slash-slash", proxy_a) == 0);
     CHECK("chunked route registered",
           neverc_httputil_proxy_register(
               proxy_mux, "/chunked", proxy_a) == 0);
@@ -1401,6 +1437,12 @@ static void test_live_reverse_proxy(void) {
                        response.data, "forwarded=0");
         check_contains("X-Forwarded-For input removed",
                        response.data, "xff=0");
+        check_contains("X-Real-IP spoof removed",
+                       response.data, "xrealip=0");
+        check_contains("Proxy-Authorization hop header removed",
+                       response.data, "proxyauth=0");
+        check_contains("Keep-Alive hop header removed",
+                       response.data, "keepalive=0");
         check_contains("Connection nominated header removed",
                        response.data, "xdrop=0");
         check_contains("ordinary header retained",
@@ -1467,6 +1509,50 @@ static void test_live_reverse_proxy(void) {
         check_contains("scheme-relative path rejected",
                        response.data, "proxy-error:/slash-slash:");
         CHECK("scheme-relative path returned failure status",
+              strstr(response.data, "HTTP/1.1 598") != NULL);
+    }
+    raw_response_free(&response);
+
+    request_result = raw_http_request(
+        proxy_port,
+        "GET /dotdot-semi HTTP/1.1\r\n"
+        "Host: client.example\r\nConnection: close\r\n\r\n",
+        256U * 1024U, &response);
+    CHECK("matrix-parameter traversal rejection completed",
+          request_result == 0);
+    if (request_result == 0) {
+        check_contains("matrix-parameter path rejected",
+                       response.data, "proxy-error:/dotdot-semi:");
+        CHECK("matrix-parameter path returned failure status",
+              strstr(response.data, "HTTP/1.1 598") != NULL);
+    }
+    raw_response_free(&response);
+
+    request_result = raw_http_request(
+        proxy_port,
+        "GET /dotdot-pct3b HTTP/1.1\r\n"
+        "Host: client.example\r\nConnection: close\r\n\r\n",
+        256U * 1024U, &response);
+    CHECK("encoded matrix-parameter rejection completed",
+          request_result == 0);
+    if (request_result == 0) {
+        check_contains("encoded matrix-parameter path rejected",
+                       response.data, "proxy-error:/dotdot-pct3b:");
+        CHECK("encoded matrix-parameter returned failure status",
+              strstr(response.data, "HTTP/1.1 598") != NULL);
+    }
+    raw_response_free(&response);
+
+    request_result = raw_http_request(
+        proxy_port,
+        "GET /mid-slash-slash HTTP/1.1\r\n"
+        "Host: client.example\r\nConnection: close\r\n\r\n",
+        256U * 1024U, &response);
+    CHECK("middle double-slash rejection completed", request_result == 0);
+    if (request_result == 0) {
+        check_contains("middle double-slash path rejected",
+                       response.data, "proxy-error:/mid-slash-slash:");
+        CHECK("middle double-slash returned failure status",
               strstr(response.data, "HTTP/1.1 598") != NULL);
     }
     raw_response_free(&response);
@@ -1725,6 +1811,10 @@ static void test_live_reverse_proxy(void) {
               strstr(response.data, "Keep-Alive:") == NULL);
         CHECK("Proxy-Connection hop header stripped",
               strstr(response.data, "Proxy-Connection:") == NULL);
+        CHECK("Proxy-Authenticate hop header stripped",
+              strstr(response.data, "Proxy-Authenticate:") == NULL);
+        CHECK("TE hop header stripped",
+              strstr(response.data, "TE:") == NULL);
         CHECK("Connection-nominated response header stripped",
               strstr(response.data, "X-Hop:") == NULL);
     }

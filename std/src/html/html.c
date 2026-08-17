@@ -76,15 +76,19 @@ static int html_is_name_char(unsigned char c) {
            (c >= '0' && c <= '9');
 }
 
-/* Consumed length including '&', or 0. A trailing ';' is optional when the
- * next byte is not alphanumeric, matching Go html.UnescapeString / HTML5. */
+/* Consumed length including '&', or 0.
+ * need_semi == 0: HTML4 names may omit ';' when the next byte is not
+ * alphanumeric (Go html.UnescapeString).
+ * need_semi != 0: HTML5-only names require a trailing ';'. Omitting it
+ * would turn "&apos onclick=..." into a quote breakout. */
 static int match_named_entity(const char *s, size_t slen, size_t i,
-                              const char *name, size_t nlen) {
+                              const char *name, size_t nlen, int need_semi) {
     if (i + 1 + nlen > slen) return 0;
     if (memcmp(s + i + 1, name, nlen) != 0) return 0;
     size_t after = i + 1 + nlen;
     if (after < slen && s[after] == ';')
         return (int)(nlen + 2);
+    if (need_semi) return 0;
     if (after < slen && html_is_name_char((unsigned char)s[after]))
         return 0;
     return (int)(nlen + 1);
@@ -98,7 +102,9 @@ static const uint32_t html_win1252[32] = {
     0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0xFFFD, 0x017E, 0x0178,
 };
 
-static void html_append_rune(char *r, size_t *wi, uint32_t val) {
+/* cap includes the trailing NUL. Returns -1 if the rune would not fit. */
+static int html_append_rune(char *r, size_t *wi, size_t cap, uint32_t val) {
+    size_t need;
     if (val >= 0x80 && val <= 0x9F)
         val = html_win1252[val - 0x80];
     /* Go html.UnescapeString: NUL, surrogates, and out-of-range become
@@ -106,59 +112,85 @@ static void html_append_rune(char *r, size_t *wi, uint32_t val) {
     if (val == 0 || val > 0x10FFFF ||
         (val >= 0xD800 && val <= 0xDFFF))
         val = 0xFFFD;
+    if (val <= 0x7F) need = 1;
+    else if (val <= 0x7FF) need = 2;
+    else if (val <= 0xFFFF) need = 3;
+    else need = 4;
+    /* Leave room for the terminating NUL at r[cap-1]. */
+    if (!r || cap == 0 || *wi >= cap || need > cap - *wi - 1)
+        return -1;
     if (val <= 0x7F) {
         r[(*wi)++] = (char)val;
-        return;
+        return 0;
     }
     if (val <= 0x7FF) {
         r[(*wi)++] = (char)(0xC0 | (val >> 6));
         r[(*wi)++] = (char)(0x80 | (val & 0x3F));
-        return;
+        return 0;
     }
     if (val <= 0xFFFF) {
         r[(*wi)++] = (char)(0xE0 | (val >> 12));
         r[(*wi)++] = (char)(0x80 | ((val >> 6) & 0x3F));
         r[(*wi)++] = (char)(0x80 | (val & 0x3F));
-        return;
+        return 0;
     }
     r[(*wi)++] = (char)(0xF0 | (val >> 18));
     r[(*wi)++] = (char)(0x80 | ((val >> 12) & 0x3F));
     r[(*wi)++] = (char)(0x80 | ((val >> 6) & 0x3F));
     r[(*wi)++] = (char)(0x80 | (val & 0x3F));
+    return 0;
 }
 
 typedef struct {
     const char *name;
     uint32_t    rune;
+    uint8_t     need_semi;
 } html_named_entity_t;
 
-/* Longer names first so &notin; is not consumed as &not;. */
+/* Longer names first so &notin; is not consumed as &not;.
+ * need_semi: 0 = HTML4 (semicolon optional), 1 = HTML5 (required). */
 static const html_named_entity_t html_named[] = {
-    {"notin", 0x2209},
-    {"nbsp",  0x00A0},
-    {"copy",  0x00A9},
-    {"COPY",  0x00A9},
-    {"euro",  0x20AC},
-    {"trade", 0x2122},
-    {"TRADE", 0x2122},
-    {"mdash", 0x2014},
-    {"ndash", 0x2013},
-    {"hellip",0x2026},
-    {"laquo", 0x00AB},
-    {"raquo", 0x00BB},
-    {"times", 0x00D7},
-    {"divide",0x00F7},
-    {"plusmn",0x00B1},
-    {"micro", 0x00B5},
-    {"para",  0x00B6},
-    {"sect",  0x00A7},
-    {"deg",   0x00B0},
-    {"cent",  0x00A2},
-    {"pound", 0x00A3},
-    {"yen",   0x00A5},
-    {"reg",   0x00AE},
-    {"REG",   0x00AE},
-    {"not",   0x00AC},
+    {"NewLine", 0x000A, 1},
+    {"notin",   0x2209, 1},
+    {"hellip",  0x2026, 1},
+    {"plusmn",  0x00B1, 0},
+    {"divide",  0x00F7, 0},
+    {"percnt",  0x0025, 1},
+    {"equals",  0x003D, 1},
+    {"dollar",  0x0024, 1},
+    {"mdash",   0x2014, 1},
+    {"ndash",   0x2013, 1},
+    {"trade",   0x2122, 1},
+    {"TRADE",   0x2122, 1},
+    {"laquo",   0x00AB, 0},
+    {"raquo",   0x00BB, 0},
+    {"times",   0x00D7, 0},
+    {"micro",   0x00B5, 0},
+    {"pound",   0x00A3, 0},
+    {"colon",   0x003A, 1},
+    {"grave",   0x0060, 1},
+    {"lpar",    0x0028, 1},
+    {"rpar",    0x0029, 1},
+    {"nbsp",    0x00A0, 0},
+    {"copy",    0x00A9, 0},
+    {"COPY",    0x00A9, 0},
+    {"euro",    0x20AC, 1},
+    {"para",    0x00B6, 0},
+    {"sect",    0x00A7, 0},
+    {"cent",    0x00A2, 0},
+    {"plus",    0x002B, 1},
+    {"semi",    0x003B, 1},
+    {"excl",    0x0021, 1},
+    {"bsol",    0x005C, 1},
+    {"deg",     0x00B0, 0},
+    {"yen",     0x00A5, 0},
+    {"reg",     0x00AE, 0},
+    {"REG",     0x00AE, 0},
+    {"Tab",     0x0009, 1},
+    {"sol",     0x002F, 1},
+    {"num",     0x0023, 1},
+    {"ast",     0x002A, 1},
+    {"not",     0x00AC, 0},
 };
 
 char *neverc_html_unescape_string(const char *s, size_t *outlen) {
@@ -167,7 +199,8 @@ char *neverc_html_unescape_string(const char *s, size_t *outlen) {
     if (!s) return NULL;
     size_t slen = strlen(s);
     if (slen == SIZE_MAX) return NULL;
-    char *r = (char *)malloc(slen + 1);
+    size_t cap = slen + 1;
+    char *r = (char *)malloc(cap);
     if (!r) return NULL;
 
     /* Entities only begin at '&'. Bulk-copy the clean prefix up to the first
@@ -189,23 +222,23 @@ char *neverc_html_unescape_string(const char *s, size_t *outlen) {
         if (s[i] == '&') {
             {
                 int n;
-                if ((n = match_named_entity(s, slen, i, "amp", 3)) ||
-                    (n = match_named_entity(s, slen, i, "AMP", 3))) {
+                if ((n = match_named_entity(s, slen, i, "amp", 3, 0)) ||
+                    (n = match_named_entity(s, slen, i, "AMP", 3, 0))) {
                     r[wi++] = '&'; i += (size_t)n; continue;
                 }
-                if ((n = match_named_entity(s, slen, i, "lt", 2)) ||
-                    (n = match_named_entity(s, slen, i, "LT", 2))) {
+                if ((n = match_named_entity(s, slen, i, "lt", 2, 0)) ||
+                    (n = match_named_entity(s, slen, i, "LT", 2, 0))) {
                     r[wi++] = '<'; i += (size_t)n; continue;
                 }
-                if ((n = match_named_entity(s, slen, i, "gt", 2)) ||
-                    (n = match_named_entity(s, slen, i, "GT", 2))) {
+                if ((n = match_named_entity(s, slen, i, "gt", 2, 0)) ||
+                    (n = match_named_entity(s, slen, i, "GT", 2, 0))) {
                     r[wi++] = '>'; i += (size_t)n; continue;
                 }
-                if ((n = match_named_entity(s, slen, i, "quot", 4)) ||
-                    (n = match_named_entity(s, slen, i, "QUOT", 4))) {
+                if ((n = match_named_entity(s, slen, i, "quot", 4, 0)) ||
+                    (n = match_named_entity(s, slen, i, "QUOT", 4, 0))) {
                     r[wi++] = '"'; i += (size_t)n; continue;
                 }
-                if ((n = match_named_entity(s, slen, i, "apos", 4))) {
+                if ((n = match_named_entity(s, slen, i, "apos", 4, 1))) {
                     r[wi++] = '\''; i += (size_t)n; continue;
                 }
                 if (starts_with(s + i, "&#34;"))  { r[wi++] = '"';  i += 5; continue; }
@@ -215,9 +248,13 @@ char *neverc_html_unescape_string(const char *s, size_t *outlen) {
                 for (size_t e = 0; e < sizeof(html_named) / sizeof(html_named[0]); e++) {
                     const char *name = html_named[e].name;
                     size_t nlen = strlen(name);
-                    n = match_named_entity(s, slen, i, name, nlen);
+                    n = match_named_entity(s, slen, i, name, nlen,
+                                           (int)html_named[e].need_semi);
                     if (n) {
-                        html_append_rune(r, &wi, html_named[e].rune);
+                        if (html_append_rune(r, &wi, cap, html_named[e].rune) != 0) {
+                            free(r);
+                            return NULL;
+                        }
                         i += (size_t)n;
                         named_hit = 1;
                         break;
@@ -261,10 +298,11 @@ char *neverc_html_unescape_string(const char *s, size_t *outlen) {
                     continue;
                 }
                 if (i < slen && s[i] == ';') i++;
-                if (overflow)
-                    html_append_rune(r, &wi, 0xFFFD);
-                else
-                    html_append_rune(r, &wi, (uint32_t)val);
+                if (html_append_rune(r, &wi, cap,
+                                     overflow ? 0xFFFD : (uint32_t)val) != 0) {
+                    free(r);
+                    return NULL;
+                }
                 continue;
             }
         }

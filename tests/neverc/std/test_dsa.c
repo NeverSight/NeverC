@@ -124,6 +124,14 @@ static void test_verify_zero_sig(void) {
     neverc_dsa_signature_init(&sig);
     ASSERT_TRUE(neverc_dsa_verify(&key.pub, hash, 32, &sig) != 0);
 
+    neverc_bigint_set_int64(&sig.r, 0);
+    neverc_bigint_set_int64(&sig.s, 1);
+    ASSERT_TRUE(neverc_dsa_verify(&key.pub, hash, 32, &sig) != 0);
+
+    neverc_bigint_set_int64(&sig.r, 1);
+    neverc_bigint_set_int64(&sig.s, 0);
+    ASSERT_TRUE(neverc_dsa_verify(&key.pub, hash, 32, &sig) != 0);
+
     neverc_dsa_signature_free(&sig);
     neverc_dsa_private_key_free(&key);
 }

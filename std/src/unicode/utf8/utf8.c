@@ -143,6 +143,68 @@ bad:
     *size = 1;
 }
 
+int neverc_utf8_full_rune(const uint8_t *buf, size_t len) {
+    if (len == 0) return 0;
+
+    uint8_t b0 = buf[0];
+    int n;
+    uint32_t accept_lo, accept_hi;
+
+    if (b0 < TX) return 1; /* ASCII */
+    if (b0 < T3) {
+        n = 2;
+        accept_lo = 0x80;
+        accept_hi = 0xBF;
+        if (b0 < 0xC2) return 1; /* invalid starter: width-1 error rune */
+    } else if (b0 < T4) {
+        n = 3;
+        accept_lo = (b0 == 0xE0) ? 0xA0 : 0x80;
+        accept_hi = (b0 == 0xED) ? 0x9F : 0xBF;
+    } else if (b0 < 0xF5) {
+        n = 4;
+        accept_lo = (b0 == 0xF0) ? 0x90 : 0x80;
+        accept_hi = (b0 == 0xF4) ? 0x8F : 0xBF;
+    } else {
+        return 1; /* invalid starter */
+    }
+
+    if (len >= (size_t)n) return 1;
+    /* Short buffer: still complete if the bytes present already fail. */
+    if (len > 1 && (buf[1] < accept_lo || buf[1] > accept_hi)) return 1;
+    if (len > 2 && (buf[2] < 0x80 || buf[2] > 0xBF)) return 1;
+    return 0;
+}
+
+void neverc_utf8_decode_last_rune(const uint8_t *buf, size_t len,
+                                  uint32_t *r, int *size) {
+    if (len == 0) {
+        *r = NEVERC_UTF8_RUNE_ERROR;
+        *size = 0;
+        return;
+    }
+    if (buf[len - 1] < TX) {
+        *r = (uint32_t)buf[len - 1];
+        *size = 1;
+        return;
+    }
+
+    /* Guard against O(n^2) on long invalid tails: only look back UTFMax bytes. */
+    size_t start = len - 1;
+    size_t lim = (len > (size_t)NEVERC_UTF8_UTF_MAX)
+                     ? len - (size_t)NEVERC_UTF8_UTF_MAX
+                     : 0;
+    while (start > lim) {
+        start--;
+        if (neverc_utf8_rune_start(buf[start])) break;
+    }
+
+    neverc_utf8_decode_rune(buf + start, len - start, r, size);
+    if (start + (size_t)(*size > 0 ? *size : 0) != len) {
+        *r = NEVERC_UTF8_RUNE_ERROR;
+        *size = 1;
+    }
+}
+
 /*
  * Word-at-a-time ASCII fast path for rune_count and valid.
  * Skips 8 pure-ASCII bytes per iteration (~8x faster on ASCII text).
@@ -159,7 +221,8 @@ size_t neverc_utf8_rune_count(const uint8_t *buf, size_t len) {
 
     while (i < len) {
         if (buf[i] < TX) {
-            while (i + 8 <= len) {
+            /* len - i, not i + 8: i + 8 wraps for i near SIZE_MAX. */
+            while (len - i >= 8) {
                 uint64_t w;
                 memcpy(&w, buf + i, 8);
                 if ((w & NCI_ASCII_MASK) != 0) break;
@@ -220,7 +283,7 @@ int neverc_utf8_valid(const uint8_t *buf, size_t len) {
     while (i < len) {
         /* Only resync to the ASCII fast path on a rune boundary. */
         if (state == NCI_UTF8_ACCEPT && buf[i] < TX) {
-            while (i + 8 <= len) {
+            while (len - i >= 8) {
                 uint64_t w;
                 memcpy(&w, buf + i, 8);
                 if ((w & NCI_ASCII_MASK) != 0) break;

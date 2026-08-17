@@ -3,10 +3,11 @@
 #include <stdlib.h>
 
 static int realloc_calls;
+static size_t last_realloc_size;
 
 static void *fail_realloc(void *ptr, size_t size) {
     (void)ptr;
-    (void)size;
+    last_realloc_size = size;
     realloc_calls++;
     return NULL;
 }
@@ -55,6 +56,18 @@ int main(void) {
 
     CHECK(nc_buf_append(&buf, NULL, 1) == -1);
     CHECK(realloc_calls == 0);
+
+    realloc_calls = 0;
+    last_realloc_size = 0;
+    buf.len = (SIZE_MAX / 2) + 8;
+    buf.cap = buf.len;
+    CHECK(nc_buf_append(&buf, &byte, 1) == -1);
+    CHECK(realloc_calls == 1);
+    CHECK(last_realloc_size == buf.len + 1 + 1);
+    CHECK(last_realloc_size > buf.cap);
+    CHECK(buf.data == original);
+    CHECK(buf.len == (SIZE_MAX / 2) + 8);
+    CHECK(buf.cap == (SIZE_MAX / 2) + 8);
 
     nc_buf_free(&buf);
     puts("passed");

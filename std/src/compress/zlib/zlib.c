@@ -61,6 +61,9 @@ int neverc_zlib_decompress(const uint8_t *src, size_t src_len,
     if ((cmf & 0x0F) != 8 || (cmf >> 4) > 7) return -1;
     if (((unsigned)cmf * 256 + (unsigned)flg) % 31 != 0) return -1;
     if (flg & 0x20) return -1; /* FDICT not supported */
+    /* CINFO is log2(window)-8. Distances past that window are invalid even
+     * when they would be legal in a 32 KiB raw DEFLATE stream. */
+    unsigned window = 1u << ((cmf >> 4) + 8);
 
     /* Adler-32 follows the DEFLATE stream immediately. Do not treat the last
      * 4 bytes of the caller's buffer as the checksum — that is the gzip ISIZE
@@ -68,11 +71,12 @@ int neverc_zlib_decompress(const uint8_t *src, size_t src_len,
      * marker when extra bytes may follow the payload. */
     size_t out_len = *dst_len;
     size_t used = 0;
-    if (neverc_flate_decompress_consumed(src + 2, src_len - 2, dst, &out_len,
-                                         &used) < 0)
+    if (neverc_flate_decompress_consumed_window(src + 2, src_len - 2, dst,
+                                                &out_len, &used, window) < 0)
         return -1;
     if (used > src_len - 2 || (src_len - 2) - used < 4) return -1;
     if (2 + used + 4 != src_len) return -1; /* trailing junk */
+    if (out_len > 0 && !dst) return -1;
 
     const uint8_t *adler = src + 2 + used;
     uint32_t expected = ((uint32_t)adler[0] << 24)

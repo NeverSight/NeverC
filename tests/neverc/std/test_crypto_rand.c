@@ -47,7 +47,9 @@ static void test_rand_int(void) {
     printf("[rand_int]\n");
     check_int("reject NULL rand_int output",
               neverc_crypto_rand_int(NULL, 100), -1);
-    uint64_t val;
+    uint64_t val = 0x5a5a5a5a5a5a5a5aULL;
+    check_int("reject max=0", neverc_crypto_rand_int(&val, 0), -1);
+    check_bool("max=0 wipes output", val == 0, 1);
     int err = neverc_crypto_rand_int(&val, 100);
     check_int("rand_int ok", err, 0);
     check_bool("in range", val < 100, 1);

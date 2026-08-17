@@ -91,6 +91,9 @@ int neverc_grpc_server_stream_recv(neverc_grpc_server_stream_t *stream,
 int neverc_grpc_server_stream_send(neverc_grpc_server_stream_t *stream,
                                     const void *message,
                                     size_t message_length);
+/* Application metadata only. Reserved names (grpc-*, content-type, te) are
+ * ignored so handlers cannot inject grpc-status onto Response-Headers or
+ * overwrite trailers. */
 void neverc_grpc_server_stream_set_header(
     neverc_grpc_server_stream_t *stream, const char *name,
     const char *value);

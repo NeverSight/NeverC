@@ -1,9 +1,11 @@
 #include "neverc/std/sync.h"
 #include <stdio.h>
+#include <stdint.h>
 #if defined(_WIN32)
 #include <windows.h>
 #else
 #include <pthread.h>
+#include <unistd.h>
 #endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -41,6 +43,20 @@ static void test_mutex_trylock(void) {
     ASSERT_TRUE(neverc_mutex_trylock(&m));
     neverc_mutex_unlock(&m);
 
+    neverc_mutex_destroy(&m);
+}
+
+static void test_mutex_unlock_unlocked(void) {
+    printf("[mutex_unlock_unlocked]\n");
+    neverc_mutex_t m;
+    neverc_mutex_init(&m);
+    neverc_mutex_unlock(&m);
+    neverc_mutex_unlock(&m);
+    ASSERT_TRUE(neverc_mutex_trylock(&m));
+    neverc_mutex_unlock(&m);
+    neverc_mutex_unlock(&m);
+    ASSERT_TRUE(neverc_mutex_trylock(&m));
+    neverc_mutex_unlock(&m);
     neverc_mutex_destroy(&m);
 }
 
@@ -209,6 +225,54 @@ static void test_waitgroup_rejects_invalid_counter(void) {
     neverc_waitgroup_done(&wg);
     neverc_waitgroup_wait(&wg);
     neverc_waitgroup_destroy(&wg);
+}
+
+static volatile int wg_slow_finished;
+
+#if defined(_WIN32)
+static DWORD WINAPI wg_slow_worker(LPVOID arg) {
+    (void)arg;
+    Sleep(40);
+    InterlockedExchange((volatile long *)&wg_slow_finished, 1);
+    neverc_waitgroup_done(&g_wg);
+    return 0;
+}
+#else
+static void *wg_slow_worker(void *arg) {
+    (void)arg;
+    usleep(40000);
+    __atomic_store_n(&wg_slow_finished, 1, __ATOMIC_SEQ_CST);
+    neverc_waitgroup_done(&g_wg);
+    return NULL;
+}
+#endif
+
+static void test_waitgroup_extra_done_does_not_release(void) {
+    printf("[waitgroup_extra_done]\n");
+    neverc_waitgroup_init(&g_wg);
+    wg_slow_finished = 0;
+    neverc_waitgroup_add(&g_wg, 1);
+
+#if defined(_WIN32)
+    HANDLE thread = CreateThread(NULL, 0, wg_slow_worker, NULL, 0, NULL);
+    ASSERT_TRUE(thread != NULL);
+#else
+    pthread_t thread;
+    ASSERT_TRUE(pthread_create(&thread, NULL, wg_slow_worker, NULL) == 0);
+#endif
+
+    ASSERT_INT_EQ(neverc_waitgroup_done_checked(&g_wg), -1);
+    ASSERT_INT_EQ(g_wg.counter, 1);
+    neverc_waitgroup_wait(&g_wg);
+    ASSERT_INT_EQ(wg_slow_finished, 1);
+
+#if defined(_WIN32)
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    neverc_waitgroup_destroy(&g_wg);
 }
 
 static int once_counter = 0;
@@ -736,15 +800,84 @@ static void test_sync_map_compare_and_delete(void) {
     neverc_sync_map_free(m);
 }
 
+static neverc_sync_map_t *g_conc_map;
+#define MAP_THREADS 4
+#define MAP_ITERS 100
+static int g_map_values[MAP_THREADS];
+
+#if defined(_WIN32)
+static DWORD WINAPI map_conc_worker(LPVOID arg) {
+    int id = (int)(intptr_t)arg;
+#else
+static void *map_conc_worker(void *arg) {
+    int id = (int)(intptr_t)arg;
+#endif
+    char key[32];
+    g_map_values[id] = id + 1;
+    for (int i = 0; i < MAP_ITERS; i++) {
+        snprintf(key, sizeof(key), "c%d-%d", id, i);
+        neverc_sync_map_store(g_conc_map, key, &g_map_values[id]);
+        int ok = 0;
+        (void)neverc_sync_map_load(g_conc_map, key, &ok);
+        if ((i % 2) == 0)
+            neverc_sync_map_delete(g_conc_map, key);
+    }
+#if defined(_WIN32)
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+static void test_sync_map_concurrent(void) {
+    printf("[sync_map_concurrent]\n");
+    g_conc_map = neverc_sync_map_new();
+    ASSERT_TRUE(g_conc_map != NULL);
+
+#if defined(_WIN32)
+    HANDLE threads[MAP_THREADS];
+    for (int i = 0; i < MAP_THREADS; i++)
+        threads[i] = CreateThread(NULL, 0, map_conc_worker,
+                                  (LPVOID)(intptr_t)i, 0, NULL);
+    WaitForMultipleObjects(MAP_THREADS, threads, TRUE, INFINITE);
+    for (int i = 0; i < MAP_THREADS; i++)
+        CloseHandle(threads[i]);
+#else
+    pthread_t threads[MAP_THREADS];
+    for (int i = 0; i < MAP_THREADS; i++)
+        pthread_create(&threads[i], NULL, map_conc_worker,
+                       (void *)(intptr_t)i);
+    for (int i = 0; i < MAP_THREADS; i++)
+        pthread_join(threads[i], NULL);
+#endif
+
+    int ok = 0;
+    char key[32];
+    for (int id = 0; id < MAP_THREADS; id++) {
+        for (int i = 0; i < MAP_ITERS; i++) {
+            snprintf(key, sizeof(key), "c%d-%d", id, i);
+            (void)neverc_sync_map_load(g_conc_map, key, &ok);
+            if ((i % 2) == 0)
+                ASSERT_TRUE(!ok);
+            else
+                ASSERT_TRUE(ok);
+        }
+    }
+    neverc_sync_map_free(g_conc_map);
+    g_conc_map = NULL;
+}
+
 int main(void) {
     printf("=== NeverC sync Tests ===\n");
     test_mutex_basic();
     test_mutex_trylock();
+    test_mutex_unlock_unlocked();
     test_mutex_concurrent();
     test_rwmutex();
     test_rwmutex_try();
     test_waitgroup();
     test_waitgroup_rejects_invalid_counter();
+    test_waitgroup_extra_done_does_not_release();
     test_once();
     test_once_null_guards();
     test_cond();
@@ -764,6 +897,7 @@ int main(void) {
     test_sync_map_swap();
     test_sync_map_compare_and_swap();
     test_sync_map_compare_and_delete();
+    test_sync_map_concurrent();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

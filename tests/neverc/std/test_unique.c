@@ -209,6 +209,31 @@ static void test_typed_accessors_reject_wrong_shape(void) {
     ASSERT_INT_EQ((long long)neverc_unique_uint64_value(invalid), 0);
 }
 
+static void test_stale_handle_after_destroy(void) {
+    printf("[stale_handle_after_destroy]\n");
+    neverc_unique_destroy();
+    neverc_unique_init();
+
+    neverc_unique_handle_t old = neverc_unique_make_string("hello");
+    ASSERT_TRUE(neverc_unique_handle_valid(old));
+    ASSERT_STR_EQ(neverc_unique_string_value(old), "hello");
+
+    neverc_unique_destroy();
+    ASSERT_TRUE(!neverc_unique_handle_valid(old));
+    ASSERT_TRUE(neverc_unique_string_value(old) == NULL);
+    ASSERT_INT_EQ(neverc_unique_int64_value(old), 0);
+    ASSERT_INT_EQ((long long)neverc_unique_uint64_value(old), 0);
+    size_t n = 99;
+    ASSERT_TRUE(neverc_unique_bytes_value(old, &n) == NULL);
+    ASSERT_INT_EQ((long long)n, 0);
+
+    neverc_unique_handle_t again = neverc_unique_make_string("hello");
+    ASSERT_TRUE(neverc_unique_handle_valid(again));
+    ASSERT_TRUE(!neverc_unique_handle_valid(old));
+    ASSERT_TRUE(!neverc_unique_handle_equal(old, again));
+    ASSERT_STR_EQ(neverc_unique_string_value(again), "hello");
+}
+
 static void test_count(void) {
     printf("[count]\n");
     neverc_unique_destroy();
@@ -254,6 +279,7 @@ int main(void) {
     test_null_handling();
     test_kind_isolation();
     test_typed_accessors_reject_wrong_shape();
+    test_stale_handle_after_destroy();
     test_count();
     test_many_strings();
     neverc_unique_destroy();

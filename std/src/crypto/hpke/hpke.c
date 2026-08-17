@@ -544,7 +544,8 @@ int neverc_hpke_recipient_open(neverc_hpke_recipient_t *r,
         r->ctx.aead_id == NEVERC_HPKE_AEAD_EXPORT_ONLY ||
         r->ctx.nonce_len < 8 ||
         r->ctx.nonce_len > NEVERC_HPKE_MAX_NONCE_SIZE ||
-        r->ctx.seq_num == UINT64_MAX)
+        r->ctx.seq_num == UINT64_MAX ||
+        ct_len < 16U)
         return -1;
     uint8_t nonce[12];
     compute_nonce(&r->ctx, nonce);

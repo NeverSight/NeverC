@@ -52,16 +52,32 @@ void neverc_arena_free(neverc_arena_t *a) {
 
 void neverc_arena_reset(neverc_arena_t *a) {
     if (!a) return;
-    arena_chunk_t *keep = a->head;
-    arena_chunk_t *c = keep ? keep->next : NULL;
-    while (c) {
-        arena_chunk_t *next = c->next;
-        free(c);
-        c = next;
+    /* Allocate a fresh chunk first so every previous pointer is released.
+     * Keeping the newest (often largest) chunk would leave recent allocations
+     * aliased after reset. If the fresh chunk cannot be allocated, rewind the
+     * existing head and drop extras so the arena stays usable. */
+    arena_chunk_t *fresh = chunk_new(ARENA_DEFAULT_CHUNK);
+    if (fresh) {
+        arena_chunk_t *c = a->head;
+        while (c) {
+            arena_chunk_t *next = c->next;
+            free(c);
+            c = next;
+        }
+        a->head = fresh;
+        a->num_chunks = 1;
+    } else {
+        arena_chunk_t *keep = a->head;
+        arena_chunk_t *c = keep ? keep->next : NULL;
+        while (c) {
+            arena_chunk_t *next = c->next;
+            free(c);
+            c = next;
+        }
+        if (keep) { keep->used = 0; keep->next = NULL; }
+        a->num_chunks = keep ? 1 : 0;
     }
-    if (keep) { keep->used = 0; keep->next = NULL; }
     a->total_alloc = 0;
-    a->num_chunks = keep ? 1 : 0;
 }
 
 static int aligned_offset(const char *base, size_t used, size_t al,

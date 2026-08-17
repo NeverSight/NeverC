@@ -23,13 +23,17 @@ static void replace_record_breaks(char *s) {
     }
 }
 
-/* Format is "<PRI>tag: message". CR/LF would start a new record; ':'
- * splits the TAG field from the message; '<' and '>' can forge a
- * second PRI. */
+/* RFC 3164 TAG is alphanumeric (plus common ident punctuation). Space
+ * would split the TAG field; ':' splits TAG from the message; '<' and
+ * '>' can forge a second PRI; other controls are replaced too. */
+static int tag_char_ok(unsigned char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+           (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.';
+}
+
 static void sanitize_tag(char *s) {
     for (; s && *s; s++) {
-        unsigned char c = (unsigned char)*s;
-        if (c == '\n' || c == '\r' || c == ':' || c == '<' || c == '>')
+        if (!tag_char_ok((unsigned char)*s))
             *s = '_';
     }
 }

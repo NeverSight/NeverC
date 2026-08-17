@@ -423,9 +423,8 @@ static void test_parse_layout(void) {
     check_int("parse missing exact frac",
               neverc_time_parse("15:04:05.000", "12:30:45", &t), -1);
 
-    ok = neverc_time_parse("15:04:05", "23:59:60", &t);
-    check_int("parse leap second", ok, 0);
-    check_int("parse leap second clamped", neverc_time_second(t), 59);
+    check_int("parse leap second rejected",
+              neverc_time_parse("15:04:05", "23:59:60", &t), -1);
 
     ok = neverc_time_parse("2006-01-02T15:04:05Z07:00:00",
                            "2024-06-15T12:00:00Z", &t);
@@ -573,7 +572,8 @@ static void test_strict_rfc3339(void) {
         "2024-01-15T12:30:45+08:60",
         "2024-01-15 12:30:45Z",
         "2024-01-15t12:30:45z",
-        "2024-01-15T12:30:61Z"
+        "2024-01-15T12:30:61Z",
+        "2024-01-15T12:30:60Z"
     };
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         neverc_time_t out = {123, 456};
@@ -602,9 +602,8 @@ static void test_strict_rfc3339(void) {
                    hour_only.sec == with_minutes.sec &&
                    hour_only.nsec == with_minutes.nsec, 1);
     }
-    check_int("accept leap second 60",
-              neverc_time_parse_rfc3339("2024-01-15T12:30:60Z", &out), 0);
-    check_int("leap second clamped", neverc_time_second(out), 59);
+    check_int("reject leap second 60",
+              neverc_time_parse_rfc3339("2024-01-15T12:30:60Z", &out), -1);
     check_int("reject -14:01",
               neverc_time_parse_rfc3339("2024-01-15T12:00:00-14:01", &out), -1);
     check_int("null rfc3339 input", neverc_time_parse_rfc3339(NULL, &out), -1);
@@ -768,6 +767,168 @@ static void test_randomized_arithmetic(void) {
     }
 }
 
+/* 2024-03-10 07:00:00 UTC = US spring-forward. */
+#define NY_SPRING_2024 1710054000LL
+/* 2024-11-03 06:00:00 UTC = US fall-back. */
+#define NY_FALL_2024   1730613600LL
+
+static int ny_offset_at(int64_t unix_sec, void *ctx) {
+    (void)ctx;
+    if (unix_sec >= NY_SPRING_2024 && unix_sec < NY_FALL_2024)
+        return -14400;
+    return -18000;
+}
+
+static void test_format_layout_go_tokens(void) {
+    printf("[format layout go tokens]\n");
+    neverc_time_t jan5 = neverc_time_date(2024, 1, 5, 0, 0, 0, 0);
+    char *s = neverc_time_format(jan5, "002");
+    check_str("format 002 yearday", s, "005");
+    free(s);
+
+    s = neverc_time_format(jan5, "__2");
+    check_str("format __2 yearday", s, "  5");
+    free(s);
+
+    neverc_time_t day100 = neverc_time_date(2024, 4, 9, 0, 0, 0, 0);
+    check_int("april 9 yearday", neverc_time_yearday(day100), 100);
+    s = neverc_time_format(day100, "002");
+    check_str("format 002 day 100", s, "100");
+    free(s);
+    s = neverc_time_format(day100, "__2");
+    check_str("format __2 day 100", s, "100");
+    free(s);
+
+    s = neverc_time_format(jan5, "_2006");
+    check_str("format _2006 is literal underscore year", s, "_2024");
+    free(s);
+
+    s = neverc_time_format(jan5, "Janitor");
+    check_str("format Janitor is literal", s, "Janitor");
+    free(s);
+
+    s = neverc_time_format(jan5, "Money");
+    check_str("format Money is literal", s, "Money");
+    free(s);
+
+    s = neverc_time_format(jan5, "Januaryish");
+    check_str("format Januaryish keeps suffix", s, "Januaryish");
+    free(s);
+}
+
+static void test_parse_layout_go_tokens(void) {
+    printf("[parse layout go tokens]\n");
+    neverc_time_t t;
+    int ok = neverc_time_parse("002 2006", "005 2024", &t);
+    check_int("parse 002 ok", ok, 0);
+    check_int("parse 002 month", neverc_time_month(t), 1);
+    check_int("parse 002 day", neverc_time_day(t), 5);
+
+    ok = neverc_time_parse("__2 2006", "  5 2024", &t);
+    check_int("parse __2 ok", ok, 0);
+    check_int("parse __2 day", neverc_time_day(t), 5);
+
+    ok = neverc_time_parse("002 2006", "167 2024", &t);
+    check_int("parse 002 june", ok, 0);
+    check_int("parse 002 june month", neverc_time_month(t), 6);
+    check_int("parse 002 june day", neverc_time_day(t), 15);
+
+    ok = neverc_time_parse("002 2006", "366 2024", &t);
+    check_int("parse 002 leap 366", ok, 0);
+    check_int("parse 002 leap month", neverc_time_month(t), 12);
+    check_int("parse 002 leap day", neverc_time_day(t), 31);
+
+    check_int("parse 002 non-leap 366",
+              neverc_time_parse("002 2006", "366 2023", &t), -1);
+    check_int("parse 002 yday 0",
+              neverc_time_parse("002 2006", "000 2024", &t), -1);
+
+    ok = neverc_time_parse("_2006", "_2024", &t);
+    check_int("parse _2006 ok", ok, 0);
+    check_int("parse _2006 year", neverc_time_year(t), 2024);
+
+    check_int("parse Janitor is literal",
+              neverc_time_parse("Janitor 2006", "Janitor 2024", &t), 0);
+    check_int("parse Janitor year", neverc_time_year(t), 2024);
+
+    ok = neverc_time_parse("MST", "GMT+8", &t);
+    check_int("parse GMT+8", ok, 0);
+    /* 0000-01-01 00:00 GMT+8 → previous day 16:00 UTC */
+    check_int("parse GMT+8 hour utc", neverc_time_hour(t), 16);
+
+    check_int("parse lowercase zone rejected",
+              neverc_time_parse("MST", "est", &t), -1);
+}
+
+static void test_parse_in_location_dst(void) {
+    printf("[parse in location dst]\n");
+    neverc_time_location_t ny = {
+        -18000, -14400, "EST", "EDT", ny_offset_at, NULL
+    };
+    neverc_time_t t;
+
+    int ok = neverc_time_parse_in_location("2006-01-02 15:04:05",
+                                           "2024-01-15 12:00:00", &ny, &t);
+    check_int("NY winter parse", ok, 0);
+    check_int64("NY winter utc", t.sec, 1705320000LL + 18000);
+
+    ok = neverc_time_parse_in_location("2006-01-02 15:04:05",
+                                       "2024-07-15 12:00:00", &ny, &t);
+    check_int("NY summer parse", ok, 0);
+    /* 2024-07-15 12:00 EDT = 16:00 UTC */
+    check_int("NY summer hour utc", neverc_time_hour(t), 16);
+
+    ok = neverc_time_parse_in_location("2006-01-02 15:04:05",
+                                       "2024-03-10 02:30:00", &ny, &t);
+    check_int("NY gap parse", ok, 0);
+    check_int64("NY gap uses later-zone offset", t.sec, 1710052200LL);
+
+    ok = neverc_time_parse_in_location("2006-01-02 15:04:05",
+                                       "2024-11-03 01:30:00", &ny, &t);
+    check_int("NY overlap parse", ok, 0);
+    check_int64("NY overlap prefers first (EDT)", t.sec, 1730611800LL);
+
+    ok = neverc_time_parse_in_location("2006-01-02 15:04:05 MST",
+                                       "2024-11-03 01:30:00 EST", &ny, &t);
+    check_int("NY overlap EST name", ok, 0);
+    check_int64("NY overlap EST instant", t.sec, 1730615400LL);
+
+    ok = neverc_time_parse_in_location("2006-01-02 15:04:05 MST",
+                                       "2024-11-03 01:30:00 EDT", &ny, &t);
+    check_int("NY overlap EDT name", ok, 0);
+    check_int64("NY overlap EDT instant", t.sec, 1730611800LL);
+
+    neverc_time_t d = neverc_time_date_in_location(2024, 3, 10, 2, 30, 0, 0, &ny);
+    check_int64("DateInLocation gap", d.sec, 1710052200LL);
+}
+
+static void test_negative_duration_ops(void) {
+    printf("[negative duration ops]\n");
+    neverc_time_t t = neverc_time_unix(1000, 0);
+    neverc_time_t back = neverc_time_add(t, -5 * NEVERC_TIME_SECOND);
+    check_int64("add negative", neverc_time_unix_sec(back), 995);
+    check_int64("sub negative", neverc_time_sub(back, t),
+                -5 * NEVERC_TIME_SECOND);
+
+    neverc_duration_t d;
+    check_int("parse -1h30m", neverc_time_parse_duration("-1h30m", &d), 0);
+    check_int64("parse -1h30m value", d,
+                -(NEVERC_TIME_HOUR + 30 * NEVERC_TIME_MINUTE));
+    char *s = neverc_time_format_duration(d);
+    check_str("format -1h30m", s, "-1h30m");
+    free(s);
+
+    neverc_time_t neg = neverc_time_unix(-2, 500000000);
+    neverc_time_t tr = neverc_time_truncate(neg, NEVERC_TIME_SECOND);
+    check_int64("truncate toward -inf sec", tr.sec, -2);
+    check_int("truncate toward -inf nsec", tr.nsec, 0);
+
+    neverc_time_t halfway = neverc_time_unix(0, -500000000);
+    neverc_time_t rnd = neverc_time_round(halfway, NEVERC_TIME_SECOND);
+    check_int64("round halfway up toward +inf", rnd.sec, 0);
+    check_int("round halfway nsec", rnd.nsec, 0);
+}
+
 int main(void) {
     printf("=== NeverC Time Module Tests ===\n\n");
     test_unix_epoch();
@@ -794,6 +955,10 @@ int main(void) {
     test_duration_boundaries();
     test_strict_layout_and_date_normalization();
     test_randomized_arithmetic();
+    test_format_layout_go_tokens();
+    test_parse_layout_go_tokens();
+    test_parse_in_location_dst();
+    test_negative_duration_ops();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

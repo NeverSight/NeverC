@@ -5,6 +5,8 @@
  * NeverC regexp/syntax — regex parse tree (mirrors Go regexp/syntax).
  *
  * Parses regular expression patterns into abstract syntax trees.
+ * Invalid UTF-8 in the pattern is an error (Go ErrInvalidUTF8).
+ * `{01}` is a literal, not a repeat (Go parseInt).
  * Supports: literal, char class, ., *, +, ?, {n,m}, |, (), (?:),
  *           anchors (^ $ \b \B \A \z), escapes (\d \w \s \D \W \S \xHH \x{H+}).
  */

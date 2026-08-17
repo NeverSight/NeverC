@@ -22,10 +22,22 @@ void neverc_atomic_store_uint32(volatile uint32_t *addr, uint32_t val) { _Interl
 void neverc_atomic_store_uint64(volatile uint64_t *addr, uint64_t val) { _InterlockedExchange64((volatile long long*)addr, (long long)val); }
 void neverc_atomic_store_pointer(void *volatile *addr, void *val) { _InterlockedExchangePointer(addr, val); }
 
-int32_t neverc_atomic_add_int32(volatile int32_t *addr, int32_t d) { return _InterlockedExchangeAdd((volatile long*)addr, d) + d; }
-int64_t neverc_atomic_add_int64(volatile int64_t *addr, int64_t d) { return _InterlockedExchangeAdd64((volatile long long*)addr, d) + d; }
-uint32_t neverc_atomic_add_uint32(volatile uint32_t *addr, uint32_t d) { return (uint32_t)(_InterlockedExchangeAdd((volatile long*)addr, (long)d) + (long)d); }
-uint64_t neverc_atomic_add_uint64(volatile uint64_t *addr, uint64_t d) { return (uint64_t)(_InterlockedExchangeAdd64((volatile long long*)addr, (long long)d) + (long long)d); }
+int32_t neverc_atomic_add_int32(volatile int32_t *addr, int32_t d) {
+    long old = _InterlockedExchangeAdd((volatile long *)addr, (long)d);
+    return (int32_t)((uint32_t)old + (uint32_t)d);
+}
+int64_t neverc_atomic_add_int64(volatile int64_t *addr, int64_t d) {
+    long long old = _InterlockedExchangeAdd64((volatile long long *)addr, (long long)d);
+    return (int64_t)((uint64_t)old + (uint64_t)d);
+}
+uint32_t neverc_atomic_add_uint32(volatile uint32_t *addr, uint32_t d) {
+    long old = _InterlockedExchangeAdd((volatile long *)addr, (long)d);
+    return (uint32_t)old + d;
+}
+uint64_t neverc_atomic_add_uint64(volatile uint64_t *addr, uint64_t d) {
+    long long old = _InterlockedExchangeAdd64((volatile long long *)addr, (long long)d);
+    return (uint64_t)old + d;
+}
 
 int32_t neverc_atomic_swap_int32(volatile int32_t *addr, int32_t v) { return _InterlockedExchange((volatile long*)addr, v); }
 int64_t neverc_atomic_swap_int64(volatile int64_t *addr, int64_t v) { return _InterlockedExchange64((volatile long long*)addr, v); }
@@ -62,10 +74,10 @@ void neverc_atomic_store_pointer(void *volatile *addr, void *val) {
 }
 
 int32_t neverc_atomic_add_int32(volatile int32_t *addr, int32_t delta) {
-    return __atomic_fetch_add(addr, delta, __ATOMIC_SEQ_CST) + delta;
+    return __atomic_add_fetch(addr, delta, __ATOMIC_SEQ_CST);
 }
 uint32_t neverc_atomic_add_uint32(volatile uint32_t *addr, uint32_t delta) {
-    return __atomic_fetch_add(addr, delta, __ATOMIC_SEQ_CST) + delta;
+    return __atomic_add_fetch(addr, delta, __ATOMIC_SEQ_CST);
 }
 
 int32_t neverc_atomic_swap_int32(volatile int32_t *addr, int32_t new_val) {
@@ -146,10 +158,10 @@ void neverc_atomic_store_uint64(volatile uint64_t *addr, uint64_t val) {
 
 int64_t neverc_atomic_add_int64(volatile int64_t *addr, int64_t delta) {
     neverc_a64_lock(addr);
-    int64_t value = neverc_a64_read(addr) + delta;
-    neverc_a64_write(addr, value);
+    uint64_t value = (uint64_t)neverc_a64_read(addr) + (uint64_t)delta;
+    neverc_a64_write(addr, (int64_t)value);
     neverc_a64_unlock(addr);
-    return value;
+    return (int64_t)value;
 }
 uint64_t neverc_atomic_add_uint64(volatile uint64_t *addr, uint64_t delta) {
     return (uint64_t)neverc_atomic_add_int64((volatile int64_t *)addr,
@@ -201,10 +213,10 @@ void neverc_atomic_store_uint64(volatile uint64_t *addr, uint64_t val) {
 }
 
 int64_t neverc_atomic_add_int64(volatile int64_t *addr, int64_t delta) {
-    return __atomic_fetch_add(addr, delta, __ATOMIC_SEQ_CST) + delta;
+    return __atomic_add_fetch(addr, delta, __ATOMIC_SEQ_CST);
 }
 uint64_t neverc_atomic_add_uint64(volatile uint64_t *addr, uint64_t delta) {
-    return __atomic_fetch_add(addr, delta, __ATOMIC_SEQ_CST) + delta;
+    return __atomic_add_fetch(addr, delta, __ATOMIC_SEQ_CST);
 }
 
 int64_t neverc_atomic_swap_int64(volatile int64_t *addr, int64_t new_val) {

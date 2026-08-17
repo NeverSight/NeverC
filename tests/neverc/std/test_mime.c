@@ -495,6 +495,21 @@ static void test_qp_decode(void) {
     out_len = 99;
     ASSERT_INT_EQ(neverc_mime_qp_decode("= \r\n", 4, out, 0, &out_len), 0);
     ASSERT_INT_EQ((int)out_len, 0);
+
+    out_len = 99;
+    ASSERT_INT_EQ(neverc_mime_qp_decode("ab=\r cd", 7, out, sizeof(out),
+                                        &out_len), -1);
+    ASSERT_INT_EQ((int)out_len, 0);
+
+    ASSERT_INT_EQ(neverc_mime_qp_decode("hello=\r", 7, out, sizeof(out),
+                                        &out_len), 0);
+    ASSERT_INT_EQ((int)out_len, 5);
+
+    ASSERT_INT_EQ(neverc_mime_qp_decode("hello  \rworld", 13, out,
+                                        sizeof(out), &out_len), 0);
+    ASSERT_INT_EQ((int)out_len, 13);
+    out[out_len] = '\0';
+    ASSERT_STR_EQ(out, "hello  \rworld");
 }
 
 static void test_qp_encode(void) {
@@ -538,6 +553,93 @@ static void test_qp_encode(void) {
     ASSERT_TRUE(memcmp(decoded, longsrc, sizeof(longsrc)) == 0);
 }
 
+static void test_rfc2047_decode_header(void) {
+    printf("[rfc2047_decode_header]\n");
+    char out[256];
+    size_t n = 0;
+    const char *qword = "=?utf-8?q?hello_world?=";
+    const char *bword = "=?utf-8?b?aGVsbG8=?=";
+    const char *adj = "=?utf-8?q?foo?= =?utf-8?q?bar?=";
+    const char *mixed = "=?utf-8?q?foo?= hello =?utf-8?q?bar?=";
+    const char *utf8q = "=?utf-8?q?caf=C3=A9?=";
+    const char *latin1 = "=?iso-8859-1?q?caf=E9?=";
+    const char *plain = "Subject: Hello";
+    const char *inject = "=?utf-8?q?=0D=0ABcc:_hidden?=";
+    const char *raw_crlf = "Hello\r\nBcc: hidden";
+    const char *bad_cs = "=?koi8-r?q?foo?=";
+    const char *folded = "=?utf-8?q?foo?=\r\n =?utf-8?q?bar?=";
+
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      qword, strlen(qword), out, sizeof(out), &n), 0);
+    out[n] = '\0';
+    ASSERT_STR_EQ(out, "hello world");
+
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      bword, strlen(bword), out, sizeof(out), &n), 0);
+    out[n] = '\0';
+    ASSERT_STR_EQ(out, "hello");
+
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      adj, strlen(adj), out, sizeof(out), &n), 0);
+    out[n] = '\0';
+    ASSERT_STR_EQ(out, "foobar");
+
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      mixed, strlen(mixed), out, sizeof(out), &n), 0);
+    out[n] = '\0';
+    ASSERT_STR_EQ(out, "foo hello bar");
+
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      utf8q, strlen(utf8q), out, sizeof(out), &n), 0);
+    ASSERT_INT_EQ((int)n, 5);
+    ASSERT_TRUE(memcmp(out, "caf\xC3\xA9", 5) == 0);
+
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      latin1, strlen(latin1), out, sizeof(out), &n), 0);
+    ASSERT_INT_EQ((int)n, 5);
+    ASSERT_TRUE(memcmp(out, "caf\xC3\xA9", 5) == 0);
+
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      plain, strlen(plain), out, sizeof(out), &n), 0);
+    out[n] = '\0';
+    ASSERT_STR_EQ(out, "Subject: Hello");
+
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      inject, strlen(inject), out, sizeof(out), &n), -1);
+    ASSERT_INT_EQ((int)n, 0);
+
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      raw_crlf, strlen(raw_crlf), out, sizeof(out), &n), -1);
+    ASSERT_INT_EQ((int)n, 0);
+
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      bad_cs, strlen(bad_cs), out, sizeof(out), &n), -1);
+    ASSERT_INT_EQ((int)n, 0);
+
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      folded, strlen(folded), out, sizeof(out), &n), 0);
+    out[n] = '\0';
+    ASSERT_STR_EQ(out, "foobar");
+
+    /* ParseMediaType leaves encoded-words in parameter values. */
+    char mt[64];
+    char *keys[2], *vals[2];
+    int nparams;
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; filename=\"=?utf-8?q?foo?=\"",
+                      mt, sizeof(mt), keys, vals, 2, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(vals[0], "=?utf-8?q?foo?=");
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      vals[0], strlen(vals[0]), out, sizeof(out), &n), 0);
+    out[n] = '\0';
+    ASSERT_STR_EQ(out, "foo");
+    free_params(keys, vals, nparams);
+}
+
 int main(void) {
     printf("=== NeverC mime Tests ===\n");
     test_type_by_extension();
@@ -551,6 +653,7 @@ int main(void) {
     test_format_rejects_invalid_input();
     test_qp_decode();
     test_qp_encode();
+    test_rfc2047_decode_header();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

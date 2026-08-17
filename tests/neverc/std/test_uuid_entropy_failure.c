@@ -32,6 +32,7 @@ int main(void) {
 
     neverc_uuid_t failed = neverc_uuid_new();
     CHECK(neverc_uuid_is_nil(failed));
+    CHECK(neverc_uuid_version(failed) == 0);
 
     entropy_fails = 0;
     CHECK(neverc_uuid_generate(&checked) == 0);
@@ -50,6 +51,7 @@ int main(void) {
     CHECK(neverc_uuid_is_nil(checked));
     neverc_uuid_t failed_v7 = neverc_uuid_new_v7();
     CHECK(neverc_uuid_is_nil(failed_v7));
+    CHECK(neverc_uuid_version(failed_v7) == 0);
 
     entropy_fails = 0;
     CHECK(neverc_uuid_generate_v7(&checked) == 0);

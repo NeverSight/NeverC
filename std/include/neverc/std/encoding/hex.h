@@ -19,6 +19,7 @@ extern "C" {
  * encoded_len and encode return SIZE_MAX when the result is not representable;
  * encode also returns SIZE_MAX for NULL non-empty input/output. On success,
  * encode writes exactly the returned payload bytes and does not append a NUL.
+ * decode is fail-closed: dst is not written unless the whole input is valid.
  */
 
 size_t neverc_hex_encoded_len(size_t n);

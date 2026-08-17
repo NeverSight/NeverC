@@ -166,6 +166,57 @@ static void test_unescape(void) {
     check_str("undefined win1252 is replacement", r24, "\xef\xbf\xbd");
     free(r24);
 
+    char *r25 = neverc_html_unescape_string("&apos;ok&apos", &outlen);
+    check_str("apos requires semicolon", r25, "'ok&apos");
+    free(r25);
+
+    char *r26 = neverc_html_unescape_string("&apos onclick=alert(1)", &outlen);
+    check_str("unterminated apos is not a quote breakout", r26,
+              "&apos onclick=alert(1)");
+    free(r26);
+
+    char *r27 = neverc_html_unescape_string("javascript&colon;alert(1)", &outlen);
+    check_str("colon named entity", r27, "javascript:alert(1)");
+    free(r27);
+
+    char *r28 = neverc_html_unescape_string("javascript&colon alert(1)", &outlen);
+    check_str("unterminated colon stays literal", r28,
+              "javascript&colon alert(1)");
+    free(r28);
+
+    char *r29 = neverc_html_unescape_string(
+        "java&Tab;script&NewLine;&lpar;1&rpar;&equals;&grave;x&sol;y&semi;",
+        &outlen);
+    check_str("xss whitespace and punctuation entities", r29,
+              "java\tscript\n(1)=`x/y;");
+    free(r29);
+
+    char *r30 = neverc_html_unescape_string("a&#x3c;&#60;&#x3C", &outlen);
+    check_str("numeric lt with and without semicolon", r30, "a<<<");
+    free(r30);
+
+    char *r31 = neverc_html_unescape_string("&notin", &outlen);
+    check_str("html5 notin without semicolon is html4 not", r31,
+              "\xc2\xac" "in");
+    free(r31);
+
+    char *r32 = neverc_html_unescape_string("&plus;&plusmn", &outlen);
+    check_str("plus requires semicolon, plusmn does not", r32,
+              "+\xc2\xb1");
+    free(r32);
+
+    char *r33 = neverc_html_unescape_string("&#0", &outlen);
+    check_str("unterminated numeric NUL is replacement", r33,
+              "\xef\xbf\xbd");
+    check_true("unterminated numeric NUL fills input length", outlen == 3);
+    free(r33);
+
+    char *r34 = neverc_html_unescape_string("&#0&#0", &outlen);
+    check_str("packed numeric NUL replacements", r34,
+              "\xef\xbf\xbd" "\xef\xbf\xbd");
+    check_true("packed numeric NUL length", outlen == 6);
+    free(r34);
+
     outlen = 123;
     check_true("unescape rejects NULL input",
                neverc_html_unescape_string(NULL, &outlen) == NULL);
@@ -205,5 +256,6 @@ int main(void) {
     test_unescape();
     test_roundtrip();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

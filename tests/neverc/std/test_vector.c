@@ -173,6 +173,16 @@ static void test_capacity(void) {
     ASSERT(neverc_vector_capacity(v) <= old_cap, "cap <= old_cap");
     (void)old_cap;
 
+    neverc_vector_t overflow = {
+        NULL, SIZE_MAX / 2U + 1U, SIZE_MAX / 2U + 2U, 2U
+    };
+    ASSERT(!neverc_vector_shrink_to_fit(&overflow),
+           "shrink byte-size overflow is rejected");
+    ASSERT(overflow.data == NULL, "overflow shrink leaves data");
+    ASSERT(overflow.size == SIZE_MAX / 2U + 1U, "overflow shrink leaves size");
+    ASSERT(overflow.capacity == SIZE_MAX / 2U + 2U,
+           "overflow shrink leaves capacity");
+
     neverc_vector_free(v);
 }
 
@@ -598,6 +608,16 @@ static void test_equal(void) {
     ASSERT(neverc_vector_equal(empty_a, empty_b, NULL),
            "empty memcmp equality does not read NULL data");
     ASSERT(!neverc_vector_equal(empty_a, va, NULL), "empty != non-empty");
+
+    unsigned char xa = 1, xb = 2;
+    neverc_vector_t overflow_a = {
+        &xa, SIZE_MAX / 2U + 1U, SIZE_MAX / 2U + 1U, 2U
+    };
+    neverc_vector_t overflow_b = {
+        &xb, SIZE_MAX / 2U + 1U, SIZE_MAX / 2U + 1U, 2U
+    };
+    ASSERT(!neverc_vector_equal(&overflow_a, &overflow_b, NULL),
+           "equal rejects overflowing byte size");
 
     neverc_vector_free(empty_a);
     neverc_vector_free(empty_b);

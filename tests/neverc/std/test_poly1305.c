@@ -196,6 +196,31 @@ static void test_various_lengths(void) {
     }
 }
 
+static void test_null_inputs_fail_closed(void) {
+    printf("[Poly1305 null inputs]\n");
+    uint8_t key[32];
+    for (int i = 0; i < 32; i++) key[i] = (uint8_t)(i + 1);
+    const uint8_t msg[] = "abc";
+    uint8_t tag[16], sentinel[16];
+    memset(sentinel, 0xAA, sizeof(sentinel));
+    memcpy(tag, sentinel, 16);
+
+    neverc_poly1305_auth(tag, msg, sizeof(msg) - 1, NULL);
+    check_true("null key leaves tag unmodified",
+               memcmp(tag, sentinel, 16) == 0);
+    neverc_poly1305_auth(NULL, msg, sizeof(msg) - 1, key);
+    neverc_poly1305_auth(tag, NULL, 4, key);
+    check_true("null msg leaves tag unmodified",
+               memcmp(tag, sentinel, 16) == 0);
+
+    check_true("verify null key",
+               !neverc_poly1305_verify(sentinel, msg, sizeof(msg) - 1, NULL));
+    check_true("verify null tag",
+               !neverc_poly1305_verify(NULL, msg, sizeof(msg) - 1, key));
+    check_true("verify null msg",
+               !neverc_poly1305_verify(sentinel, NULL, 4, key));
+}
+
 int main(void) {
     printf("=== NeverC Poly1305 Tests ===\n\n");
     test_rfc7539();
@@ -205,6 +230,7 @@ int main(void) {
     test_verify_tamper();
     test_empty();
     test_various_lengths();
+    test_null_inputs_fail_closed();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

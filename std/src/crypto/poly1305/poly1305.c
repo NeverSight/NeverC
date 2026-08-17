@@ -9,6 +9,7 @@
  */
 #include "neverc/std/crypto/poly1305.h"
 #include "neverc/std/crypto/subtle.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 
 #if defined(__SIZEOF_INT128__)
@@ -26,6 +27,8 @@ static uint64_t get_u64le(const uint8_t *p) {
 
 void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
                           const uint8_t key[32]) {
+    if (!tag || !key || (msg_len > 0 && !msg))
+        return;
     uint64_t t0 = get_u64le(key + 0);
     uint64_t t1 = get_u64le(key + 8);
 
@@ -138,6 +141,8 @@ static uint32_t get_u32le(const uint8_t *p) {
 
 void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
                           const uint8_t key[32]) {
+    if (!tag || !key || (msg_len > 0 && !msg))
+        return;
     /* Clamp r */
     uint32_t r0 = get_u32le(key + 0)  & 0x0FFFFFFF;
     uint32_t r1 = get_u32le(key + 4)  & 0x0FFFFFFC;
@@ -252,7 +257,11 @@ void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
 
 int neverc_poly1305_verify(const uint8_t tag[16], const uint8_t *msg, size_t msg_len,
                            const uint8_t key[32]) {
+    if (!tag || !key || (msg_len > 0 && !msg))
+        return 0;
     uint8_t computed[16];
     neverc_poly1305_auth(computed, msg, msg_len, key);
-    return neverc_subtle_constant_time_compare(computed, tag, 16);
+    int ok = neverc_subtle_constant_time_compare(computed, tag, 16);
+    neverc_platform_secure_zero(computed, sizeof(computed));
+    return ok;
 }

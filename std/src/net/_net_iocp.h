@@ -274,11 +274,23 @@ static inline int nc_iocp_cancel(nc_sock_t fd,
 
 static inline void nc_iocp_op_complete(nc_iocp_op_t *operation,
                                        DWORD queued_bytes) {
+    if (!operation) return;
+    if (InterlockedCompareExchange(&operation->state, NC_IOCP_OP_COMPLETED,
+                                   NC_IOCP_OP_PENDING) != NC_IOCP_OP_PENDING)
+        return;
+
     DWORD transferred = queued_bytes;
     DWORD flags = 0;
     int error = 0;
 
-    if (!WSAGetOverlappedResult(operation->fd, &operation->overlapped,
+    /*
+     * Dequeue already owns the completion packet.  Skip WSAGetOverlappedResult
+     * when the socket is gone so a recycled HANDLE cannot be touched.  A
+     * second complete is ignored by the CAS above, which also prevents a
+     * double-close of accepted_fd.
+     */
+    if (operation->fd != NC_INVALID_SOCK &&
+        !WSAGetOverlappedResult(operation->fd, &operation->overlapped,
                                 &transferred, FALSE, &flags))
         error = WSAGetLastError();
 
@@ -297,7 +309,6 @@ static inline void nc_iocp_op_complete(nc_iocp_op_t *operation,
     operation->transferred = transferred;
     operation->flags = flags;
     operation->error = error;
-    InterlockedExchange(&operation->state, NC_IOCP_OP_COMPLETED);
 }
 
 static inline nc_sock_t nc_iocp_accept_take(

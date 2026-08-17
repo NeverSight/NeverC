@@ -194,6 +194,28 @@ char *neverc_asn1_decode_oid(const neverc_asn1_element_t *elem) {
     return result;
 }
 
+static int asn1_encoded_length_size(size_t length) {
+    if (length > (size_t)INT_MAX) return -1;
+    if (length < 0x80) return 1;
+    int nbytes = 0;
+    size_t tmp = length;
+    while (tmp > 0) {
+        nbytes++;
+        tmp >>= 8;
+    }
+    return 1 + nbytes;
+}
+
+/* Universal tags used by the typed encoders are all < 31, so the tag is
+ * one byte. Reject before writing so a too-small cap cannot leave a
+ * truncated TLV prefix in buf. */
+static int asn1_tlv_fits(size_t cap, size_t payload) {
+    int llen = asn1_encoded_length_size(payload);
+    if (llen < 0) return 0;
+    size_t prefix = 1U + (size_t)llen;
+    return payload <= (size_t)INT_MAX - prefix && prefix + payload <= cap;
+}
+
 int neverc_asn1_encode_tag(uint8_t *buf, size_t cap, int tag_class,
                            int constructed, int tag_number) {
     if (!buf || cap < 1 || tag_number < 0 ||
@@ -203,20 +225,20 @@ int neverc_asn1_encode_tag(uint8_t *buf, size_t cap, int tag_class,
          tag_class != NEVERC_ASN1_CONTEXT &&
          tag_class != NEVERC_ASN1_PRIVATE))
         return -1;
+    uint8_t lead = (uint8_t)(tag_class | (constructed ? 0x20 : 0));
     if (tag_number < 0x1F) {
-        buf[0] = (uint8_t)(tag_class | (constructed ? 0x20 : 0) | tag_number);
+        buf[0] = (uint8_t)(lead | tag_number);
         return 1;
     }
-    buf[0] = (uint8_t)(tag_class | (constructed ? 0x20 : 0) | 0x1F);
-    int pos = 1;
     uint8_t tmp[8];
     int n = 0;
     unsigned int tn = (unsigned int)tag_number;
     while (tn > 0) { tmp[n++] = tn & 0x7F; tn >>= 7; }
-    for (int i = n - 1; i >= 0; i--) {
-        if ((size_t)pos >= cap) return -1;
+    if ((size_t)(1 + n) > cap) return -1;
+    buf[0] = (uint8_t)(lead | 0x1F);
+    int pos = 1;
+    for (int i = n - 1; i >= 0; i--)
         buf[pos++] = tmp[i] | (i > 0 ? 0x80 : 0);
-    }
     return pos;
 }
 
@@ -250,13 +272,14 @@ int neverc_asn1_encode_int64(uint8_t *buf, size_t cap, int64_t val) {
             (bytes[start] == 0xff && (bytes[start + 1] & 0x80U) != 0)))
         start++;
     int n = 8 - start;
+    /* INTEGER tag 2 is always one byte; n is 1..8 so the length is short. */
+    if ((size_t)(2 + n) > cap) return -1;
 
     int tlen = neverc_asn1_encode_tag(buf, cap, NEVERC_ASN1_UNIVERSAL, 0,
                                        NEVERC_ASN1_INTEGER);
     if (tlen < 0) return -1;
     int llen = neverc_asn1_encode_length(buf + tlen, cap - tlen, n);
     if (llen < 0) return -1;
-    if ((size_t)(tlen + llen + n) > cap) return -1;
     memcpy(buf + tlen + llen, bytes + start, (size_t)n);
     return tlen + llen + n;
 }
@@ -271,16 +294,14 @@ int neverc_asn1_encode_bool(uint8_t *buf, size_t cap, int val) {
 
 int neverc_asn1_encode_octet_string(uint8_t *buf, size_t cap,
                                     const uint8_t *data, size_t len) {
-    if (!buf || (!data && len != 0) || len > (size_t)INT_MAX) return -1;
+    if (!buf || (!data && len != 0) || !asn1_tlv_fits(cap, len)) return -1;
     int tlen = neverc_asn1_encode_tag(buf, cap, NEVERC_ASN1_UNIVERSAL, 0,
                                        NEVERC_ASN1_OCTET_STRING);
     if (tlen < 0) return -1;
     int llen = neverc_asn1_encode_length(buf + tlen, cap - tlen, len);
     if (llen < 0) return -1;
-    size_t prefix = (size_t)tlen + (size_t)llen;
-    if (len > (size_t)INT_MAX - prefix || len > cap - prefix) return -1;
     if (len != 0) memcpy(buf + tlen + llen, data, len);
-    return (int)(prefix + len);
+    return tlen + llen + (int)len;
 }
 
 int neverc_asn1_encode_null(uint8_t *buf, size_t cap) {
@@ -335,15 +356,13 @@ static int asn1_printable_char(unsigned char c) {
 
 static int asn1_encode_primitive(uint8_t *buf, size_t cap, int tag,
                                  const uint8_t *data, size_t len) {
-    if (!buf || (!data && len != 0) || len > (size_t)INT_MAX) return -1;
+    if (!buf || (!data && len != 0) || !asn1_tlv_fits(cap, len)) return -1;
     int tlen = neverc_asn1_encode_tag(buf, cap, NEVERC_ASN1_UNIVERSAL, 0, tag);
     if (tlen < 0) return -1;
     int llen = neverc_asn1_encode_length(buf + tlen, cap - (size_t)tlen, len);
     if (llen < 0) return -1;
-    size_t prefix = (size_t)tlen + (size_t)llen;
-    if (len > (size_t)INT_MAX - prefix || len > cap - prefix) return -1;
-    if (len != 0) memcpy(buf + prefix, data, len);
-    return (int)(prefix + len);
+    if (len != 0) memcpy(buf + tlen + llen, data, len);
+    return tlen + llen + (int)len;
 }
 
 static int asn1_decode_primitive_string(const neverc_asn1_element_t *elem,
@@ -390,16 +409,15 @@ int neverc_asn1_encode_bit_string(uint8_t *buf, size_t cap,
         (data[len - 1] & (uint8_t)((1U << (unsigned)unused_bits) - 1U)) != 0)
         return -1;
 
+    size_t value_len = len + 1U;
+    if (!asn1_tlv_fits(cap, value_len)) return -1;
     int tlen = neverc_asn1_encode_tag(buf, cap, NEVERC_ASN1_UNIVERSAL, 0,
                                        NEVERC_ASN1_BIT_STRING);
     if (tlen < 0) return -1;
-    size_t value_len = len + 1U;
     int llen = neverc_asn1_encode_length(
         buf + tlen, cap - (size_t)tlen, value_len);
     if (llen < 0) return -1;
     size_t prefix = (size_t)tlen + (size_t)llen;
-    if (value_len > (size_t)INT_MAX - prefix || value_len > cap - prefix)
-        return -1;
     buf[prefix] = (uint8_t)unused_bits;
     if (len != 0) memcpy(buf + prefix + 1U, data, len);
     return (int)(prefix + value_len);

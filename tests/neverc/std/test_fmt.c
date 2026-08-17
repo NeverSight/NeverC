@@ -113,6 +113,18 @@ static void test_strings(void) {
     r = neverc_fmt_sprintf("%s", (const char *)0);
     check_str("null string", r, "(null)"); free(r);
 
+    r = neverc_fmt_sprintf("%10s", (const char *)0);
+    check_str("null string width", r, "    (null)"); free(r);
+
+    r = neverc_fmt_sprintf("%-10s", (const char *)0);
+    check_str("null string left", r, "(null)    "); free(r);
+
+    r = neverc_fmt_sprintf("%.3s", (const char *)0);
+    check_str("null string prec", r, "(nu"); free(r);
+
+    r = neverc_fmt_sprintf("x%s", (const char *)0);
+    check_str("null string concat", r, "x(null)"); free(r);
+
     r = neverc_fmt_sprintf("%c", 'A');
     check_str("char", r, "A"); free(r);
 
@@ -510,8 +522,14 @@ static void test_sprint_family(void) {
     r = neverc_fmt_sprint("hello");
     check_str("sprint", r, "hello"); free(r);
 
+    r = neverc_fmt_sprint(NULL);
+    check_str("sprint null", r, ""); free(r);
+
     r = neverc_fmt_sprintln("hello");
     check_str("sprintln", r, "hello\n"); free(r);
+
+    r = neverc_fmt_sprintln(NULL);
+    check_str("sprintln null", r, "\n"); free(r);
 
     r = neverc_fmt_sprintfln("%d", 42);
     check_str("sprintfln", r, "42\n"); free(r);

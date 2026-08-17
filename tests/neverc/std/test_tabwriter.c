@@ -1,4 +1,5 @@
 #include "neverc/std/text/tabwriter.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -382,6 +383,15 @@ static void test_max_cols_sets_failed(neverc_tabwriter_t *w) {
     neverc_tabwriter_reset(w);
 }
 
+static void test_huge_padding_fails_closed(neverc_tabwriter_t *w) {
+    printf("[huge_padding_fails_closed]\n");
+    neverc_tabwriter_init(w, 1, 8, INT_MAX, ' ', 0);
+    neverc_tabwriter_write(w, "a\tb\n", 4);
+    neverc_tabwriter_flush(w);
+    ASSERT_INT_EQ(neverc_tabwriter_output(w, NULL) == NULL, 1);
+    neverc_tabwriter_reset(w);
+}
+
 int main(void) {
     printf("=== NeverC text/tabwriter Tests ===\n");
     neverc_tabwriter_t *w =
@@ -445,6 +455,8 @@ int main(void) {
     test_max_lines_sets_failed(w);
     neverc_tabwriter_reset(w);
     test_max_cols_sets_failed(w);
+    neverc_tabwriter_reset(w);
+    test_huge_padding_fails_closed(w);
     free(w);
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");

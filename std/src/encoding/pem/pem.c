@@ -374,6 +374,12 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
         }
         const char *after_end = eol ? eol + 1 : pem_end;
 
+        /* Caller buffer limits are not a reason to skip the block: report
+         * them as errors. Check type_cap before decoding so a too-small
+         * type buffer cannot clobber out_buf. */
+        if (type_len >= type_cap)
+            return -1;
+
         size_t decoded_len = 0;
         int body = pem_decode_body(
             out_buf, out_cap, body_start, end_line, &decoded_len);
@@ -382,8 +388,6 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
             continue;
         }
         if (body < 0)
-            return -1;
-        if (type_len >= type_cap)
             return -1;
 
         memcpy(type_buf, type_start, type_len);

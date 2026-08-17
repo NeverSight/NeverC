@@ -71,6 +71,11 @@ static void append_ipv6_zone(char *buf, size_t buflen, unsigned scope_id,
     }
 }
 
+static void iface_note_index(neverc_net_interface_t *iface, int index) {
+    if (iface && index > 0)
+        iface->index = index;
+}
+
 #ifdef _WIN32
 
 int neverc_net_interfaces(neverc_net_interface_list_t *out) {
@@ -97,7 +102,8 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
          a && out->count < NEVERC_NET_MAX_INTERFACES;
          a = a->Next) {
         neverc_net_interface_t *iface = &out->ifaces[out->count];
-        iface->index = a->IfIndex ? (int)a->IfIndex : (int)a->Ipv6IfIndex;
+        iface_note_index(iface,
+                         a->IfIndex ? (int)a->IfIndex : (int)a->Ipv6IfIndex);
         iface->mtu = (int)a->Mtu;
 
         if (WideCharToMultiByte(CP_UTF8, 0, a->FriendlyName, -1,
@@ -196,7 +202,7 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
         } else {
             iface = &out->ifaces[out->count];
             strncpy(iface->name, ifa->ifa_name, sizeof(iface->name) - 1);
-            iface->index = (int)if_nametoindex(ifa->ifa_name);
+            iface_note_index(iface, (int)if_nametoindex(ifa->ifa_name));
 
             if (ifa->ifa_flags & IFF_UP)        iface->flags |= NEVERC_NET_FLAG_UP;
             if (ifa->ifa_flags & IFF_BROADCAST)  iface->flags |= NEVERC_NET_FLAG_BROADCAST;
@@ -230,6 +236,7 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
 #if defined(__linux__) || defined(__ANDROID__)
         if (ifa->ifa_addr->sa_family == AF_PACKET) {
             struct sockaddr_ll *sll = (struct sockaddr_ll *)ifa->ifa_addr;
+            iface_note_index(iface, (int)sll->sll_ifindex);
             if (sll->sll_halen >= 6)
                 format_mac(sll->sll_addr, (int)sll->sll_halen,
                             iface->hw_addr, sizeof(iface->hw_addr));
@@ -238,6 +245,7 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
       defined(__NetBSD__)
         if (ifa->ifa_addr->sa_family == AF_LINK) {
             struct sockaddr_dl *sdl = (struct sockaddr_dl *)ifa->ifa_addr;
+            iface_note_index(iface, (int)sdl->sdl_index);
             if (sdl->sdl_alen >= 6)
                 format_mac((unsigned char *)LLADDR(sdl), (int)sdl->sdl_alen,
                             iface->hw_addr, sizeof(iface->hw_addr));
@@ -345,6 +353,12 @@ int neverc_net_interface_by_index(int index, neverc_net_interface_t *out) {
             return 0;
         }
     }
+#ifndef _WIN32
+    /* Kernel index is authoritative if the snapshot stored 0 or truncated. */
+    char name[IF_NAMESIZE];
+    if (if_indextoname((unsigned)index, name))
+        return neverc_net_interface_by_name(name, out);
+#endif
     return -1;
 }
 

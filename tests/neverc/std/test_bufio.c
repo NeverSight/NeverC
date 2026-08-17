@@ -570,6 +570,159 @@ static void test_scanner_missing_reader(void) {
     neverc_bufio_scanner_free(&sc);
 }
 
+static void test_scanner_token_too_long(void) {
+    printf("[scanner token too long]\n");
+
+    size_t n = (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE + 2;
+    uint8_t *data = (uint8_t *)malloc(n);
+    memset(data, 'x', n - 1);
+    data[n - 1] = '\n';
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, data, n);
+    neverc_io_reader_t r = { &mr, neverc_io_mem_reader_read };
+    neverc_bufio_scanner_t sc;
+    neverc_bufio_scanner_init(&sc, r);
+
+    check_int("too long scan fails closed",
+              neverc_bufio_scanner_scan(&sc), 0);
+    check_int("too long err", neverc_bufio_scanner_err(&sc),
+              NEVERC_BUFIO_ERR_TOO_LONG);
+    size_t len = 99;
+    check_int("too long token cleared",
+              neverc_bufio_scanner_bytes(&sc, &len) == NULL, 1);
+    check_size("too long token len", len, 0);
+    check_int("too long stays failed", neverc_bufio_scanner_scan(&sc), 0);
+    neverc_bufio_scanner_free(&sc);
+    free(data);
+
+    data = (uint8_t *)malloc((size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE);
+    memset(data, 'y', (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE);
+    neverc_io_mem_reader_init(&mr, data,
+                              (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE);
+    r.ctx = &mr;
+    neverc_bufio_scanner_init(&sc, r);
+    check_int("max token at eof is allowed",
+              neverc_bufio_scanner_scan(&sc), 1);
+    const uint8_t *token = neverc_bufio_scanner_bytes(&sc, &len);
+    check_size("max token length", len,
+               (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE);
+    check_int("max token first", token && token[0] == 'y', 1);
+    check_int("max token last", token && token[len - 1] == 'y', 1);
+    check_int("max token stops", neverc_bufio_scanner_scan(&sc), 0);
+    neverc_bufio_scanner_free(&sc);
+    free(data);
+}
+
+static int huge_token_split(const uint8_t *data, size_t data_len, int at_eof,
+                            size_t *advance, const uint8_t **token,
+                            size_t *token_len, int *err) {
+    (void)at_eof;
+    if (err) *err = 0;
+    if (advance) *advance = 0;
+    if (token) *token = NULL;
+    if (token_len) *token_len = 0;
+    if (data_len == 0) return 0;
+    *advance = 1;
+    *token = data;
+    *token_len = (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE + 1;
+    return 1;
+}
+
+static void test_scanner_split_func(void) {
+    printf("[scanner split func]\n");
+
+    const char *words = "  hello  world\tfoo\n";
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)words, strlen(words));
+    neverc_io_reader_t r = { &mr, neverc_io_mem_reader_read };
+    neverc_bufio_scanner_t sc;
+    neverc_bufio_scanner_init(&sc, r);
+    neverc_bufio_scanner_split(&sc, neverc_bufio_scan_words);
+
+    size_t len = 0;
+    check_int("words 1", neverc_bufio_scanner_scan(&sc), 1);
+    check_bytes("word hello", neverc_bufio_scanner_bytes(&sc, &len),
+                len, "hello");
+    check_int("words 2", neverc_bufio_scanner_scan(&sc), 1);
+    check_bytes("word world", neverc_bufio_scanner_bytes(&sc, &len),
+                len, "world");
+    check_int("words 3", neverc_bufio_scanner_scan(&sc), 1);
+    check_bytes("word foo", neverc_bufio_scanner_bytes(&sc, &len),
+                len, "foo");
+    check_int("words eof", neverc_bufio_scanner_scan(&sc), 0);
+    neverc_bufio_scanner_free(&sc);
+
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"ab", 2);
+    r.ctx = &mr;
+    neverc_bufio_scanner_init(&sc, r);
+    neverc_bufio_scanner_split(&sc, neverc_bufio_scan_bytes);
+    check_int("bytes 1", neverc_bufio_scanner_scan(&sc), 1);
+    check_bytes("byte a", neverc_bufio_scanner_bytes(&sc, &len), len, "a");
+    check_int("bytes 2", neverc_bufio_scanner_scan(&sc), 1);
+    check_bytes("byte b", neverc_bufio_scanner_bytes(&sc, &len), len, "b");
+    check_int("bytes eof", neverc_bufio_scanner_scan(&sc), 0);
+    neverc_bufio_scanner_free(&sc);
+
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"x", 1);
+    r.ctx = &mr;
+    neverc_bufio_scanner_init(&sc, r);
+    neverc_bufio_scanner_split(&sc, huge_token_split);
+    check_int("split oversized token fails closed",
+              neverc_bufio_scanner_scan(&sc), 0);
+    check_int("split oversized token err",
+              neverc_bufio_scanner_err(&sc), NEVERC_BUFIO_ERR_TOO_LONG);
+    neverc_bufio_scanner_free(&sc);
+}
+
+static void test_peek_after_unread(void) {
+    printf("[peek after unread]\n");
+
+    const char *input = "abcdef";
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)input, 6);
+    neverc_io_reader_t r = { &mr, neverc_io_mem_reader_read };
+    neverc_bufio_reader_t br;
+    neverc_bufio_reader_init_size(&br, r, 8);
+
+    uint8_t peeked[4] = {0};
+    check_int("peek before read",
+              neverc_bufio_reader_peek(&br, peeked, 3), 3);
+    check_int("peek does not consume",
+              memcmp(peeked, "abc", 3) == 0, 1);
+
+    uint8_t byte = 0;
+    check_int("read after peek",
+              neverc_bufio_reader_read_byte(&br, &byte), 0);
+    check_int("read after peek byte", byte, 'a');
+    check_int("unread last byte",
+              neverc_bufio_reader_unread_byte(&br), 0);
+
+    memset(peeked, 0, sizeof(peeked));
+    check_int("peek after unread",
+              neverc_bufio_reader_peek(&br, peeked, 3), 3);
+    check_int("peek after unread sees unread byte",
+              memcmp(peeked, "abc", 3) == 0, 1);
+
+    check_int("read after unread peek",
+              neverc_bufio_reader_read_byte(&br, &byte), 0);
+    check_int("read after unread peek byte", byte, 'a');
+
+    uint8_t rest[2];
+    size_t n = 0;
+    check_int("read rest after unread peek",
+              neverc_bufio_reader_read(&br, rest, 2, &n), 0);
+    check_size("read rest n", n, 2);
+    check_int("read rest content", memcmp(rest, "bc", 2) == 0, 1);
+
+    memset(peeked, 0, sizeof(peeked));
+    check_int("peek after later read",
+              neverc_bufio_reader_peek(&br, peeked, 1), 1);
+    check_int("peek after later read byte", peeked[0], 'd');
+    check_int("peek invalidates unread",
+              neverc_bufio_reader_unread_byte(&br), NEVERC_IO_ERR_UNEXP);
+    neverc_bufio_reader_free(&br);
+}
+
 static void test_invalid_arguments(void) {
     printf("[invalid arguments]\n");
 
@@ -615,6 +768,10 @@ static void test_invalid_arguments(void) {
     check_int("nil peek output",
               neverc_bufio_reader_peek(&br, NULL, 1),
               NEVERC_IO_ERR_UNEXP);
+    check_int("nil unread",
+              neverc_bufio_reader_unread_byte(NULL),
+              NEVERC_IO_ERR_UNEXP);
+    neverc_bufio_scanner_split(NULL, neverc_bufio_scan_words);
     neverc_bufio_reader_free(NULL);
 
     neverc_io_writer_t writer = {0};
@@ -657,6 +814,9 @@ int main(void) {
     test_reader_peek_larger_than_buffer();
     test_reader_rejects_invalid_count();
     test_scanner_missing_reader();
+    test_scanner_token_too_long();
+    test_scanner_split_func();
+    test_peek_after_unread();
     test_invalid_arguments();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

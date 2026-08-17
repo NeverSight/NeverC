@@ -504,6 +504,67 @@ static void test_rejects_malformed_input(void) {
     free(reader);
 }
 
+static void test_missing_close_and_epilogue(void) {
+    printf("[missing close / epilogue]\n");
+    neverc_multipart_reader_t *reader =
+        (neverc_multipart_reader_t *)calloc(1, sizeof(*reader));
+    ASSERT_TRUE(reader != NULL);
+    if (!reader) return;
+
+    /* A non-closing last delimiter is not a complete message. */
+    const char *no_close =
+        "--b\r\n"
+        "\r\n"
+        "body\r\n"
+        "--b\r\n";
+    memset(reader, 0xa5, sizeof(*reader));
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)no_close, strlen(no_close), "b",
+                  reader),
+              -1);
+    ASSERT_EQ(reader->part_count, 0);
+
+    /* Close delimiter ends the message; a following fake part is epilogue. */
+    const char *epilogue_part =
+        "--b\r\n"
+        "\r\n"
+        "ok\r\n"
+        "--b--\r\n"
+        "--b\r\n"
+        "\r\n"
+        "smuggled\r\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)epilogue_part, strlen(epilogue_part),
+                  "b", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_EQ((int)reader->parts[0].body_len, 2);
+    ASSERT_TRUE(memcmp(reader->parts[0].body, "ok", 2) == 0);
+
+    char longkey[200];
+    memset(longkey, 'A', sizeof(longkey) - 1);
+    longkey[sizeof(longkey) - 1] = '\0';
+    ASSERT_TRUE(neverc_multipart_part_header(&reader->parts[0], longkey) ==
+                NULL);
+    ASSERT_TRUE(neverc_multipart_part_header(&reader->parts[0],
+                                             "Content-TypeExtra") == NULL);
+
+    neverc_multipart_part_t inject;
+    unsigned char output[256];
+    memset(&inject, 0, sizeof(inject));
+    inject.body = (const unsigned char *)"--inj--";
+    inject.body_len = 7;
+    ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
+              -1);
+    inject.body = (const unsigned char *)"--inj--\r\nowned";
+    inject.body_len = 14;
+    ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
+              -1);
+
+    free(reader);
+}
+
 int main(void) {
     printf("=== NeverC mime/multipart Tests ===\n");
     test_parse_basic();
@@ -513,6 +574,7 @@ int main(void) {
     test_write_roundtrip();
     test_generate_boundary();
     test_rejects_malformed_input();
+    test_missing_close_and_epilogue();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

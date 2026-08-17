@@ -597,6 +597,213 @@ static void test_transport_params_preferred_address_layout(void) {
     ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), -1);
 }
 
+static void test_quic_varint_bounds_and_truncated(void) {
+    uint8_t buf[8];
+    size_t written = 0, consumed = 0;
+    uint64_t value = 0;
+
+    ASSERT_EQ(neverc_quic_varint_encode(63, buf, sizeof(buf), &written), 0);
+    ASSERT_EQ(written, 1);
+    ASSERT_EQ(neverc_quic_varint_decode(buf, written, &value, &consumed), 0);
+    ASSERT_EQ(value, 63);
+    ASSERT_EQ(consumed, 1);
+    ASSERT_EQ(neverc_quic_varint_len(63), 1);
+
+    ASSERT_EQ(neverc_quic_varint_encode(64, buf, sizeof(buf), &written), 0);
+    ASSERT_EQ(written, 2);
+    ASSERT_EQ(neverc_quic_varint_len(64), 2);
+
+    ASSERT_EQ(neverc_quic_varint_encode(QUIC_VARINT_MAX, buf, sizeof(buf),
+                                        &written), 0);
+    ASSERT_EQ(written, 8);
+    ASSERT_EQ(neverc_quic_varint_decode(buf, written, &value, &consumed), 0);
+    ASSERT_EQ(value, QUIC_VARINT_MAX);
+    ASSERT_EQ(neverc_quic_varint_len(QUIC_VARINT_MAX), 8);
+    ASSERT_EQ(neverc_quic_varint_len(QUIC_VARINT_MAX + 1U), 0);
+    ASSERT_EQ(neverc_quic_varint_encode(QUIC_VARINT_MAX + 1U, buf, sizeof(buf),
+                                        &written), -1);
+
+    uint8_t truncated2[] = { 0x40 };
+    ASSERT_EQ(neverc_quic_varint_decode(truncated2, sizeof(truncated2),
+                                        &value, &consumed), -1);
+    uint8_t truncated4[] = { 0x80, 0x00 };
+    ASSERT_EQ(neverc_quic_varint_decode(truncated4, sizeof(truncated4),
+                                        &value, &consumed), -1);
+    uint8_t truncated8[] = { 0xC0, 0x00, 0x00 };
+    ASSERT_EQ(neverc_quic_varint_decode(truncated8, sizeof(truncated8),
+                                        &value, &consumed), -1);
+    ASSERT_EQ(neverc_quic_varint_decode(NULL, 1, &value, &consumed), -1);
+}
+
+static void test_truncated_frames_rejected(void) {
+    quic_frame_crypto_t crypto;
+    quic_frame_stream_t stream;
+    quic_frame_ack_t ack;
+    quic_frame_reset_stream_t reset;
+    quic_frame_connection_close_t close_frame;
+    size_t consumed = 0;
+
+    uint8_t crypto_short[] = { 0x06, 0x00, 0x05, 'A' };
+    ASSERT_EQ(neverc_quic_parse_crypto_frame(crypto_short, sizeof(crypto_short),
+                                             &crypto, &consumed), -1);
+    uint8_t crypto_type[] = { 0x06 };
+    ASSERT_EQ(neverc_quic_parse_crypto_frame(crypto_type, sizeof(crypto_type),
+                                             &crypto, &consumed), -1);
+
+    uint8_t stream_short[] = { 0x0A, 0x00, 0x05, 'A' };
+    ASSERT_EQ(neverc_quic_parse_stream_frame(stream_short, sizeof(stream_short),
+                                             &stream, &consumed), -1);
+
+    uint8_t ack_short[] = { 0x02, 0x05, 0x00, 0x01 };
+    ASSERT_EQ(neverc_quic_parse_ack_frame(ack_short, sizeof(ack_short),
+                                          &ack, &consumed), -1);
+
+    uint8_t ack_missing_gap[] = { 0x02, 0x05, 0x00, 0x01, 0x05 };
+    ASSERT_EQ(neverc_quic_parse_ack_frame(ack_missing_gap,
+                                          sizeof(ack_missing_gap),
+                                          &ack, &consumed), -1);
+
+    uint8_t ack_ecn_short[] = {
+        0x03, 0x05, 0x00, 0x00, 0x05, 0x01, 0x02
+    };
+    ASSERT_EQ(neverc_quic_parse_ack_frame(ack_ecn_short, sizeof(ack_ecn_short),
+                                          &ack, &consumed), -1);
+
+    uint8_t reset_short[] = { 0x04, 0x08, 0x01 };
+    ASSERT_EQ(neverc_quic_parse_reset_stream(reset_short, sizeof(reset_short),
+                                             &reset, &consumed), -1);
+
+    uint8_t close_short[] = { 0x1c, 0x0a, 0x00, 0x05, 'x' };
+    ASSERT_EQ(neverc_quic_parse_connection_close(close_short,
+                                                 sizeof(close_short),
+                                                 &close_frame, &consumed), -1);
+
+    uint8_t token_short[] = { 0x07, 0x05, 0xaa };
+    ASSERT_EQ(neverc_quic_parse_new_token(token_short, sizeof(token_short),
+                                          &consumed), -1);
+}
+
+static void test_padding_rejects_nonminimal_type(void) {
+    ASSERT_EQ(neverc_quic_frame_type_encoding_ok(0, 1), 0);
+    ASSERT_EQ(neverc_quic_frame_type_encoding_ok(0, 2), -1);
+    ASSERT_EQ(neverc_quic_frame_type_encoding_ok(0, 0), -1);
+    ASSERT_EQ(neverc_quic_frame_type_encoding_ok(1, 2), 0);
+}
+
+static void test_stream_count_frame_bounds(void) {
+    uint8_t buf[16];
+    size_t pos = 0, w = 0, consumed = 0;
+    uint64_t maximum = 0;
+    ASSERT_EQ(neverc_quic_varint_encode(0x16, buf + pos, sizeof(buf) - pos,
+                                        &w), 0);
+    pos += w;
+    ASSERT_EQ(neverc_quic_varint_encode(QUIC_MAX_STREAM_COUNT, buf + pos,
+                                        sizeof(buf) - pos, &w), 0);
+    pos += w;
+    ASSERT_EQ(neverc_quic_parse_stream_count_frame(buf, pos, &maximum,
+                                                   &consumed), 0);
+    ASSERT_EQ(maximum, QUIC_MAX_STREAM_COUNT);
+    ASSERT_EQ(consumed, pos);
+
+    pos = 0;
+    ASSERT_EQ(neverc_quic_varint_encode(0x12, buf + pos, sizeof(buf) - pos,
+                                        &w), 0);
+    pos += w;
+    ASSERT_EQ(neverc_quic_varint_encode(QUIC_MAX_STREAM_COUNT + 1U, buf + pos,
+                                        sizeof(buf) - pos, &w), 0);
+    pos += w;
+    ASSERT_EQ(neverc_quic_parse_stream_count_frame(buf, pos, &maximum,
+                                                   &consumed), -1);
+
+    uint8_t truncated[] = { 0x13, 0x40 };
+    ASSERT_EQ(neverc_quic_parse_stream_count_frame(truncated,
+                                                   sizeof(truncated),
+                                                   &maximum, &consumed), -1);
+}
+
+static void test_transport_params_truncated_and_rfc_bounds(void) {
+    quic_transport_params_t tp;
+    uint8_t buf[32];
+
+    uint8_t truncated_id[] = { 0x40 };
+    ASSERT_EQ(neverc_quic_transport_params_decode(truncated_id,
+                                                  sizeof(truncated_id),
+                                                  &tp), -1);
+
+    uint8_t truncated_len[] = { 0x01 };
+    ASSERT_EQ(neverc_quic_transport_params_decode(truncated_len,
+                                                  sizeof(truncated_len),
+                                                  &tp), -1);
+
+    uint8_t truncated_len_varint[] = { 0x01, 0x40 };
+    ASSERT_EQ(neverc_quic_transport_params_decode(truncated_len_varint,
+                                                  sizeof(truncated_len_varint),
+                                                  &tp), -1);
+
+    uint8_t short_value[] = { 0x01, 0x05, 0x00, 0x00 };
+    ASSERT_EQ(neverc_quic_transport_params_decode(short_value,
+                                                  sizeof(short_value),
+                                                  &tp), -1);
+
+    uint8_t padded_idle[] = { 0x01, 0x02, 0x01, 0x00 };
+    ASSERT_EQ(neverc_quic_transport_params_decode(padded_idle,
+                                                  sizeof(padded_idle),
+                                                  &tp), -1);
+
+    uint8_t dup[16];
+    size_t a = write_tp(dup, sizeof(dup), 0x01, (const uint8_t *)"\x01", 1);
+    size_t b = write_tp(dup + a, sizeof(dup) - a, 0x01,
+                        (const uint8_t *)"\x02", 1);
+    ASSERT_TRUE(a > 0 && b > 0);
+    ASSERT_EQ(neverc_quic_transport_params_decode(dup, a + b, &tp), -1);
+
+    uint8_t udp[] = { 0x80, 0x00, 0x04, 0xAF }; /* 1199 as 4-byte varint */
+    size_t n = write_tp(buf, sizeof(buf), 0x03, udp, sizeof(udp));
+    ASSERT_TRUE(n > 0);
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), -1);
+
+    uint8_t exp[] = { 21 };
+    n = write_tp(buf, sizeof(buf), 0x0a, exp, sizeof(exp));
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), -1);
+
+    uint8_t delay[4];
+    size_t dw = 0;
+    ASSERT_EQ(neverc_quic_varint_encode(16384, delay, sizeof(delay), &dw), 0);
+    n = write_tp(buf, sizeof(buf), 0x0b, delay, dw);
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), -1);
+
+    uint8_t streams[8];
+    size_t sw = 0;
+    ASSERT_EQ(neverc_quic_varint_encode(QUIC_MAX_STREAM_COUNT + 1U, streams,
+                                        sizeof(streams), &sw), 0);
+    n = write_tp(buf, sizeof(buf), 0x08, streams, sw);
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), -1);
+
+    ASSERT_EQ(neverc_quic_varint_encode(QUIC_MAX_STREAM_COUNT, streams,
+                                        sizeof(streams), &sw), 0);
+    n = write_tp(buf, sizeof(buf), 0x08, streams, sw);
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), 0);
+    ASSERT_EQ(tp.initial_max_streams_bidi, QUIC_MAX_STREAM_COUNT);
+
+    quic_transport_params_t encoded;
+    neverc_quic_transport_params_default(&encoded);
+    encoded.initial_max_streams_bidi = QUIC_MAX_STREAM_COUNT + 1U;
+    uint8_t out[256];
+    size_t written = 0;
+    ASSERT_EQ(neverc_quic_transport_params_encode(&encoded, out, sizeof(out),
+                                                  &written), -1);
+
+    uint8_t migration[] = { 0x0c, 0x01, 0x00 };
+    ASSERT_EQ(neverc_quic_transport_params_decode(migration,
+                                                  sizeof(migration),
+                                                  &tp), -1);
+
+    uint8_t token15[15];
+    memset(token15, 0x11, sizeof(token15));
+    n = write_tp(buf, sizeof(buf), 0x02, token15, sizeof(token15));
+    ASSERT_EQ(neverc_quic_transport_params_decode(buf, n, &tp), -1);
+}
+
 /* ======================================================================
  * Ping / Handshake Done
  * ====================================================================== */
@@ -664,6 +871,9 @@ static void test_new_conn_id_valid(void) {
     ASSERT_EQ(out.conn_id_len, 8);
     ASSERT_TRUE(memcmp(out.conn_id, cid, 8) == 0);
     ASSERT_TRUE(memcmp(out.stateless_reset_token, token, 16) == 0);
+
+    ASSERT_EQ(neverc_quic_parse_new_conn_id(buf, written - 1, &out,
+                                            &consumed), -1);
 }
 
 static void test_new_conn_id_rejects_zero_length(void) {
@@ -740,6 +950,10 @@ int main(void) {
     test_crypto_frame_roundtrip();
     test_crypto_frame_with_offset();
     test_crypto_frame_rejects_offset_length_overflow();
+    test_quic_varint_bounds_and_truncated();
+    test_truncated_frames_rejected();
+    test_padding_rejects_nonminimal_type();
+    test_stream_count_frame_bounds();
     test_stream_frame_basic();
     test_stream_frame_with_offset_and_fin();
     test_stream_frame_large_id();
@@ -760,6 +974,7 @@ int main(void) {
     test_transport_params_defaults();
     test_transport_params_active_cid_limit_rfc_bounds();
     test_transport_params_preferred_address_layout();
+    test_transport_params_truncated_and_rfc_bounds();
     test_ping_frame();
     test_handshake_done_frame();
     test_new_conn_id_valid();

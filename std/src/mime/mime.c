@@ -760,6 +760,240 @@ fail:
     return -1;
 }
 
+/* ===== RFC 2047 encoded-words ============================================ */
+
+static int mime_room(size_t used, size_t need, size_t cap) {
+    return used <= cap && need <= cap - used;
+}
+
+static int mime_output_has_ctl(const char *s, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if ((c < 0x20 && c != '\t') || c == 0x7f)
+            return 1;
+    }
+    return 0;
+}
+
+static size_t mime_find(const char *s, size_t n, const char *needle, size_t nn) {
+    if (nn == 0 || n < nn) return SIZE_MAX;
+    for (size_t i = 0; i + nn <= n; i++) {
+        if (memcmp(s + i, needle, nn) == 0) return i;
+    }
+    return SIZE_MAX;
+}
+
+static int mime_2047_charset(const char *s, size_t n) {
+    if (mime_span_case_equal(s, n, "utf-8", 5)) return 1;
+    if (mime_span_case_equal(s, n, "us-ascii", 8)) return 2;
+    if (mime_span_case_equal(s, n, "iso-8859-1", 10)) return 3;
+    return 0;
+}
+
+static int mime_2047_has_non_wsp(const char *s, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n')
+            return 1;
+    }
+    return 0;
+}
+
+static int mime_2047_q_decode(const char *s, size_t n,
+                              unsigned char *out, size_t cap, size_t *olen) {
+    size_t di = 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '_') {
+            c = ' ';
+        } else if (c == '=') {
+            if (i + 2 >= n) return -1;
+            int hi = mime_hex_digit((unsigned char)s[i + 1]);
+            int lo = mime_hex_digit((unsigned char)s[i + 2]);
+            if (hi < 0 || lo < 0) return -1;
+            c = (unsigned char)((hi << 4) | lo);
+            i += 2;
+        } else if (c > 126 || (c < 32 && c != '\t')) {
+            return -1;
+        }
+        if (di >= cap) return -1;
+        out[di++] = c;
+    }
+    *olen = di;
+    return 0;
+}
+
+static int mime_2047_b64(unsigned char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+static int mime_2047_b_decode(const char *s, size_t n,
+                              unsigned char *out, size_t cap, size_t *olen) {
+    if (n % 4 != 0) return -1;
+    size_t di = 0;
+    for (size_t i = 0; i < n; i += 4) {
+        int last = (i + 4 >= n);
+        if (!last && (s[i + 2] == '=' || s[i + 3] == '=')) return -1;
+        if (s[i + 2] == '=' && s[i + 3] != '=') return -1;
+        int v0 = mime_2047_b64((unsigned char)s[i]);
+        int v1 = mime_2047_b64((unsigned char)s[i + 1]);
+        if (v0 < 0 || v1 < 0) return -1;
+        int v2 = 0, v3 = 0;
+        if (s[i + 2] != '=') {
+            v2 = mime_2047_b64((unsigned char)s[i + 2]);
+            if (v2 < 0) return -1;
+        }
+        if (s[i + 3] != '=') {
+            v3 = mime_2047_b64((unsigned char)s[i + 3]);
+            if (v3 < 0) return -1;
+        }
+        if (!mime_room(di, 1, cap)) return -1;
+        out[di++] = (unsigned char)((v0 << 2) | (v1 >> 4));
+        if (s[i + 2] != '=') {
+            if (!mime_room(di, 1, cap)) return -1;
+            out[di++] = (unsigned char)((v1 << 4) | (v2 >> 2));
+        }
+        if (s[i + 3] != '=') {
+            if (!mime_room(di, 1, cap)) return -1;
+            out[di++] = (unsigned char)((v2 << 6) | v3);
+        }
+    }
+    *olen = di;
+    return 0;
+}
+
+static int mime_2047_emit(int cs, const unsigned char *in, size_t n,
+                          char *out, size_t cap, size_t *di) {
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = in[i];
+        if (cs == 1) {
+            if (!mime_room(*di, 1, cap)) return -1;
+            out[(*di)++] = (char)c;
+        } else if (cs == 2) {
+            if (c >= 0x80) {
+                if (!mime_room(*di, 3, cap)) return -1;
+                out[(*di)++] = (char)0xEF;
+                out[(*di)++] = (char)0xBF;
+                out[(*di)++] = (char)0xBD;
+            } else {
+                if (!mime_room(*di, 1, cap)) return -1;
+                out[(*di)++] = (char)c;
+            }
+        } else {
+            if (c < 0x80) {
+                if (!mime_room(*di, 1, cap)) return -1;
+                out[(*di)++] = (char)c;
+            } else {
+                if (!mime_room(*di, 2, cap)) return -1;
+                out[(*di)++] = (char)(0xC0 | (c >> 6));
+                out[(*di)++] = (char)(0x80 | (c & 0x3F));
+            }
+        }
+    }
+    return 0;
+}
+
+int neverc_mime_decode_header(const char *src, size_t src_len,
+                              char *out, size_t out_cap, size_t *out_len) {
+    if (out_len) *out_len = 0;
+    if ((!src || !out) && src_len != 0) return -1;
+    if (src_len == 0) return 0;
+
+    size_t di = 0;
+    size_t mark = mime_find(src, src_len, "=?", 2);
+    if (mark == SIZE_MAX) {
+        if (mime_output_has_ctl(src, src_len)) return -1;
+        if (!mime_room(0, src_len, out_cap)) return -1;
+        if (src_len) memcpy(out, src, src_len);
+        if (out_len) *out_len = src_len;
+        return 0;
+    }
+
+    unsigned char decoded[128];
+    size_t pos = 0;
+    int between_words = 0;
+    while (pos < src_len) {
+        size_t start = mime_find(src + pos, src_len - pos, "=?", 2);
+        if (start == SIZE_MAX) break;
+        start += pos;
+        size_t cur = start + 2;
+        size_t q1 = mime_find(src + cur, src_len - cur, "?", 1);
+        if (q1 == SIZE_MAX) break;
+        const char *charset = src + cur;
+        size_t clen = q1;
+        cur += q1 + 1;
+        if (cur + 4 > src_len) break;
+        unsigned char enc = (unsigned char)src[cur];
+        cur++;
+        if (src[cur] != '?') break;
+        cur++;
+        size_t qe = mime_find(src + cur, src_len - cur, "?=", 2);
+        if (qe == SIZE_MAX) break;
+        const char *text = src + cur;
+        size_t tlen = qe;
+        size_t end = cur + qe + 2;
+
+        size_t dlen = 0;
+        int ok = 0;
+        if (enc == 'Q' || enc == 'q')
+            ok = mime_2047_q_decode(text, tlen, decoded, sizeof(decoded),
+                                    &dlen) == 0;
+        else if (enc == 'B' || enc == 'b')
+            ok = mime_2047_b_decode(text, tlen, decoded, sizeof(decoded),
+                                    &dlen) == 0;
+        if (!ok) {
+            size_t lit = end - pos;
+            if (!mime_room(di, lit, out_cap)) return -1;
+            memcpy(out + di, src + pos, lit);
+            di += lit;
+            pos = end;
+            between_words = 0;
+            continue;
+        }
+        int cs = mime_2047_charset(charset, clen);
+        if (!cs) return -1;
+        if (start > pos &&
+            (!between_words || mime_2047_has_non_wsp(src + pos, start - pos))) {
+            size_t lit = start - pos;
+            if (!mime_room(di, lit, out_cap)) return -1;
+            memcpy(out + di, src + pos, lit);
+            di += lit;
+        }
+        if (mime_2047_emit(cs, decoded, dlen, out, out_cap, &di) != 0)
+            return -1;
+        pos = end;
+        between_words = 1;
+    }
+    if (pos < src_len) {
+        size_t lit = src_len - pos;
+        if (!mime_room(di, lit, out_cap)) return -1;
+        memcpy(out + di, src + pos, lit);
+        di += lit;
+    }
+    if (mime_output_has_ctl(out, di)) return -1;
+    if (out_len) *out_len = di;
+    return 0;
+}
+
+/* RFC 2045 line ending for soft breaks / trailing WSP: LF, CRLF, or a
+ * CR only at EOF. A bare CR in the middle of a line is not a break. */
+static int mime_qp_is_line_end(const char *src, size_t src_len, size_t j) {
+    if (j >= src_len) return 1;
+    if (src[j] == '\n') return 1;
+    if (src[j] == '\r')
+        return j + 1 >= src_len || src[j + 1] == '\n';
+    return 0;
+}
+
+static int mime_qp_need(size_t di, size_t n, size_t cap) {
+    return di > cap || n > cap - di;
+}
+
 /* Hex value per byte, -1 for non-hex. A compile-time constant table: it is
  * immutable and shared, so the decoder is reentrant/thread-safe with no
  * lazy-init data race (a lazily built table can be observed half-initialized
@@ -803,10 +1037,12 @@ int neverc_mime_qp_decode(const char *src, size_t src_len,
                     continue;
                 }
             }
-            /* Soft break: '=' WSP* (CRLF | LF | CR | EOF) (RFC 2045 6.7). */
+            /* Soft break: '=' WSP* (CRLF | LF | CR-at-EOF | EOF). */
             size_t j = si + 1;
             while (j < src_len && (src[j] == ' ' || src[j] == '\t'))
                 j++;
+            if (!mime_qp_is_line_end(src, src_len, j))
+                return -1;
             if (j >= src_len) {
                 si = j;
                 continue;
@@ -815,24 +1051,21 @@ int neverc_mime_qp_decode(const char *src, size_t src_len,
                 si = j + 1;
                 continue;
             }
-            if (src[j] == '\r') {
-                si = j + 1;
-                if (si < src_len && src[si] == '\n')
-                    si++;
-                continue;
-            }
-            return -1;
+            si = j + 1;
+            if (si < src_len && src[si] == '\n')
+                si++;
+            continue;
         }
 
         if (c == ' ' || c == '\t') {
             size_t j = si;
             while (j < src_len && (src[j] == ' ' || src[j] == '\t'))
                 j++;
-            if (j >= src_len || src[j] == '\n' || src[j] == '\r') {
+            if (mime_qp_is_line_end(src, src_len, j)) {
                 si = j;
                 continue;
             }
-            if (j - si > dst_cap - di) return -1;
+            if (mime_qp_need(di, j - si, dst_cap)) return -1;
             memcpy(dst + di, src + si, j - si);
             di += j - si;
             si = j;
@@ -901,6 +1134,7 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
     for (size_t si = 0; si < src_len; si++) {
         unsigned char c = (unsigned char)src[si];
         if (c == '\r' || c == '\n') {
+            if (mime_qp_need(di, 1, dst_cap)) return -1;
             dst[di++] = (char)c;
             if (c == '\n') line_len = 0;
             continue;
@@ -912,6 +1146,7 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
                          line_len + 1 >= line_cap;
         size_t amount = mime_qp_token_len(c, trailing_ws, encode_wsp);
         if (line_len + amount > line_cap) {
+            if (mime_qp_need(di, 3, dst_cap)) return -1;
             dst[di++] = '=';
             dst[di++] = '\r';
             dst[di++] = '\n';
@@ -921,8 +1156,10 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
             amount = mime_qp_token_len(c, trailing_ws, encode_wsp);
         }
         if (amount == 1) {
+            if (mime_qp_need(di, 1, dst_cap)) return -1;
             dst[di++] = (char)c;
         } else {
+            if (mime_qp_need(di, 3, dst_cap)) return -1;
             dst[di++] = '=';
             dst[di++] = hex_chars[c >> 4];
             dst[di++] = hex_chars[c & 0x0F];

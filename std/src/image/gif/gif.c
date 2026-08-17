@@ -208,6 +208,7 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
         (int)frame->transparent_index >= frame->palette_size)
         return -1;
     if ((uint64_t)frame->width * frame->height > GIF_MAX_PIXELS) return -1;
+    if (frame->height > SIZE_MAX / frame->width) return -1;
     size_t pixel_count = (size_t)frame->width * frame->height;
     if (pixel_count > SIZE_MAX - 1024) return -1;
     /* Indices outside the palette encode as illegal LZW codes (or decode as
@@ -307,7 +308,8 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
     uint8_t bg_index = data[pos++];
     pos++; /* pixel aspect ratio */
     if (width == 0 || height == 0 ||
-        (uint64_t)width * height > GIF_MAX_PIXELS)
+        (uint64_t)width * height > GIF_MAX_PIXELS ||
+        height > SIZE_MAX / width)
         return -1;
 
     int has_gct = (packed >> 7) & 1;
@@ -997,7 +999,9 @@ int neverc_gif_from_rgba(const uint8_t *rgba, uint32_t width, uint32_t height,
                          neverc_gif_frame_t *frame) {
     if (!rgba || !frame || width == 0 || height == 0 ||
         width > UINT16_MAX || height > UINT16_MAX ||
-        (uint64_t)width * height > GIF_MAX_PIXELS)
+        (uint64_t)width * height > GIF_MAX_PIXELS ||
+        width > SIZE_MAX / 4 ||
+        height > SIZE_MAX / 4 / width)
         return -1;
     memset(frame, 0, sizeof(*frame));
     frame->width = width;

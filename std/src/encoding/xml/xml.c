@@ -1,4 +1,5 @@
 #include "neverc/std/encoding/xml.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -301,9 +302,11 @@ static int xml_memieq(const char *s, size_t n, const char *lit) {
 static int xml_decl_keyword(const char *data, size_t len, size_t i,
                             const char *key) {
     size_t key_len = strlen(key);
-    if (i + key_len > len || memcmp(data + i, key, key_len) != 0)
+    /* Subtraction form: `i + key_len` wraps when i is near SIZE_MAX and
+     * would treat an out-of-range memcmp as in-bounds. */
+    if (i > len || key_len > len - i || memcmp(data + i, key, key_len) != 0)
         return 0;
-    if (i + key_len < len &&
+    if (key_len < len - i &&
         !xml_ascii_ws((unsigned char)data[i + key_len]) &&
         data[i + key_len] != '=')
         return 0;
@@ -477,6 +480,11 @@ static neverc_xml_attr_t *parse_attrs(neverc_xml_decoder_t *d, int *count) {
                 goto error;
             }
             int next_cap = cap ? cap * 2 : 4;
+            if ((size_t)next_cap > SIZE_MAX / sizeof(*attrs)) {
+                free(name);
+                free(value);
+                goto error;
+            }
             neverc_xml_attr_t *grown = (neverc_xml_attr_t *)realloc(
                 attrs, (size_t)next_cap * sizeof(*attrs));
             if (!grown) {
@@ -684,6 +692,8 @@ static int add_child(neverc_xml_node_t *parent, neverc_xml_node_t *child) {
         if (parent->cap_children > INT32_MAX / 2) return 0;
         int next_cap = parent->cap_children < 4 ? 4
                                                 : parent->cap_children * 2;
+        if ((size_t)next_cap > SIZE_MAX / sizeof(*parent->children))
+            return 0;
         neverc_xml_node_t **grown = (neverc_xml_node_t **)realloc(
             parent->children, (size_t)next_cap * sizeof(*grown));
         if (!grown) return 0;
@@ -698,6 +708,9 @@ static int grow_parse_stacks(neverc_xml_node_t ***stack, size_t **tlen,
                              size_t **tcap, int *cap, int used) {
     if (*cap > INT32_MAX / 2 || used < 0) return 0;
     int next_cap = *cap * 2;
+    if ((size_t)next_cap > SIZE_MAX / sizeof(**stack) ||
+        (size_t)next_cap > SIZE_MAX / sizeof(**tlen))
+        return 0;
     neverc_xml_node_t **new_stack = (neverc_xml_node_t **)malloc(
         (size_t)next_cap * sizeof(*new_stack));
     size_t *new_tlen = (size_t *)malloc((size_t)next_cap * sizeof(*new_tlen));
@@ -721,10 +734,9 @@ static int grow_parse_stacks(neverc_xml_node_t ***stack, size_t **tlen,
     return 1;
 }
 
-/* Cap nesting depth. The tokenizer/builder loop is iterative (heap stack), but
- * neverc_xml_node_free recurses per child, so an unbounded-depth tree would
- * overflow the C stack when freed. 1000 is well beyond real documents and safe
- * on small (≈512 KiB) thread stacks. */
+/* Cap nesting depth. Parse is iterative (heap stack) and node_free is too, but
+ * unbounded depth is still a memory/DoS hazard. 1000 is well beyond real
+ * documents. */
 #define NCI_XML_MAX_DEPTH 1000
 
 neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
@@ -766,7 +778,7 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
                 failed = 1;
                 break;
             }
-            if (!tok.self_closing && stack_top >= NCI_XML_MAX_DEPTH) {
+            if (!tok.self_closing && stack_top > NCI_XML_MAX_DEPTH) {
                 failed = 1;
                 break;
             }
@@ -875,21 +887,66 @@ parse_fail:
     return NULL;
 }
 
-void neverc_xml_node_free(neverc_xml_node_t *node) {
-    if (!node) return;
+static void xml_node_release_self(neverc_xml_node_t *node) {
     free(node->tag);
     free(node->text);
-    if (node->attrs) {
-        for (int i = 0; i < node->nattrs; i++) {
-            free(node->attrs[i].name);
-            free(node->attrs[i].value);
-        }
-        free(node->attrs);
-    }
-    for (int i = 0; i < node->nchildren; i++)
-        neverc_xml_node_free(node->children[i]);
+    free_attrs(node->attrs, node->nattrs);
     free(node->children);
     free(node);
+}
+
+static void xml_node_free_recursive(neverc_xml_node_t *node) {
+    int i;
+    if (!node) return;
+    for (i = 0; i < node->nchildren; i++)
+        xml_node_free_recursive(node->children[i]);
+    xml_node_release_self(node);
+}
+
+/* Iterative free: a 1000-deep tree (the parse cap) plus sanitizer frames can
+ * overflow small thread stacks if this recurses per child. */
+void neverc_xml_node_free(neverc_xml_node_t *root) {
+    neverc_xml_node_t **stack;
+    int cap, top;
+    if (!root) return;
+    cap = 8;
+    stack = (neverc_xml_node_t **)malloc((size_t)cap * sizeof(*stack));
+    if (!stack) {
+        xml_node_free_recursive(root);
+        return;
+    }
+    top = 0;
+    stack[top++] = root;
+    while (top > 0) {
+        neverc_xml_node_t *node = stack[--top];
+        int i;
+        for (i = 0; i < node->nchildren; i++) {
+            neverc_xml_node_t *child = node->children[i];
+            if (!child) continue;
+            if (top >= cap) {
+                neverc_xml_node_t **grown;
+                int next_cap;
+                if (cap > INT32_MAX / 2 ||
+                    (size_t)cap * 2U > SIZE_MAX / sizeof(*stack)) {
+                    xml_node_free_recursive(child);
+                    continue;
+                }
+                next_cap = cap * 2;
+                grown = (neverc_xml_node_t **)realloc(
+                    stack, (size_t)next_cap * sizeof(*stack));
+                if (!grown) {
+                    xml_node_free_recursive(child);
+                    continue;
+                }
+                stack = grown;
+                cap = next_cap;
+            }
+            stack[top++] = child;
+        }
+        node->nchildren = 0;
+        xml_node_release_self(node);
+    }
+    free(stack);
 }
 
 const char *neverc_xml_node_attr(const neverc_xml_node_t *node, const char *name) {

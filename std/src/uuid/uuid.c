@@ -8,6 +8,10 @@
 #define NCI_UUID_RANDOM neverc_platform_random
 #endif
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif
+
 #if defined(__has_attribute)
 #  if __has_attribute(nonstring)
 #    define NEVERC_HEX_PAIR_ATTR __attribute__((nonstring))
@@ -53,25 +57,58 @@ static uint64_t uuid_unix_ms(void) {
 #endif
 }
 
+/*
+ * RFC 9562 §6.2: keep a packed (unix_ms << 12 | rand_a) counter so UUIDv7
+ * values from this generator are strictly monotonic even when the clock
+ * stalls, steps backward, or many IDs are minted in the same millisecond.
+ * 12-bit rand_a matches google/uuid; carry into the timestamp if we wrap.
+ */
+static uint64_t uuid_v7_last;
+
+static uint64_t uuid_v7_bump(uint64_t now) {
+#if defined(_MSC_VER) && !defined(__clang__)
+    for (;;) {
+        uint64_t last = (uint64_t)_InterlockedOr64(
+            (volatile long long *)&uuid_v7_last, 0);
+        uint64_t packed = now <= last ? last + 1 : now;
+        long long prev = _InterlockedCompareExchange64(
+            (volatile long long *)&uuid_v7_last,
+            (long long)packed, (long long)last);
+        if ((uint64_t)prev == last) return packed;
+    }
+#else
+    uint64_t last = __atomic_load_n(&uuid_v7_last, __ATOMIC_SEQ_CST);
+    for (;;) {
+        uint64_t packed = now <= last ? last + 1 : now;
+        if (__atomic_compare_exchange_n(&uuid_v7_last, &last, packed, 0,
+                                        __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+            return packed;
+    }
+#endif
+}
+
 int neverc_uuid_generate_v7(neverc_uuid_t *out) {
     if (!out) return -1;
     memset(out, 0, sizeof(*out));
-    uint8_t rnd[10];
+    uint8_t rnd[8];
     if (NCI_UUID_RANDOM(rnd, sizeof(rnd)) != 0) {
         memset(out, 0, sizeof(*out));
         return -1;
     }
     uint64_t ms = uuid_unix_ms() & 0xffffffffffffULL;
+    uint64_t packed = uuid_v7_bump(ms << 12);
+    ms = packed >> 12;
+    uint16_t seq = (uint16_t)(packed & 0x0fffU);
     out->bytes[0] = (uint8_t)(ms >> 40);
     out->bytes[1] = (uint8_t)(ms >> 32);
     out->bytes[2] = (uint8_t)(ms >> 24);
     out->bytes[3] = (uint8_t)(ms >> 16);
     out->bytes[4] = (uint8_t)(ms >> 8);
     out->bytes[5] = (uint8_t)ms;
-    out->bytes[6] = (uint8_t)((rnd[0] & 0x0F) | 0x70);
-    out->bytes[7] = rnd[1];
-    out->bytes[8] = (uint8_t)((rnd[2] & 0x3F) | 0x80);
-    memcpy(out->bytes + 9, rnd + 3, 7);
+    out->bytes[6] = (uint8_t)((seq >> 8) | 0x70);
+    out->bytes[7] = (uint8_t)seq;
+    out->bytes[8] = (uint8_t)((rnd[0] & 0x3F) | 0x80);
+    memcpy(out->bytes + 9, rnd + 1, 7);
     return 0;
 }
 

@@ -118,8 +118,9 @@ static int png_unfilter_row(uint8_t *dst, const uint8_t *src,
 }
 
 int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) {
-    if (!data || len < 8 || !img) return -1;
+    if (!img) return -1;
     memset(img, 0, sizeof(*img));
+    if (!data || len < 8) return -1;
 
     if (memcmp(data, PNG_SIGNATURE, 8) != 0) return -1;
 
@@ -137,7 +138,8 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
         const uint8_t *chunk_type = data + pos + 4;
         const uint8_t *chunk_data = data + pos + 8;
 
-        if ((size_t)chunk_len > len - pos - 12) {
+        if ((size_t)chunk_len > len - pos - 12 ||
+            (size_t)chunk_len > SIZE_MAX - 4U) {
             png_decode_fail(img, idat_buf, NULL);
             return -1;
         }
@@ -410,9 +412,13 @@ int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t 
         img->channels != (uint8_t)expected_channels ||
         (uint64_t)img->width * (uint64_t)img->height > PNG_MAX_PIXELS)
         return -1;
+    if (img->width > SIZE_MAX / img->channels)
+        return -1;
 
     size_t row_bytes = (size_t)img->width * img->channels;
     if (img->stride < row_bytes ||
+        (img->height > 1 &&
+         img->stride > (SIZE_MAX - row_bytes) / (img->height - 1)) ||
         (img->stride != 0 && img->height > SIZE_MAX / img->stride) ||
         row_bytes == SIZE_MAX ||
         img->height > SIZE_MAX / (row_bytes + 1U))
@@ -471,8 +477,9 @@ int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t 
     free(comp);
     write_u32be(zlib_data + 2 + comp_len, adler);
 
-    /* Assemble PNG file */
-    size_t total = 8 + (12 + 13) + (12 + zlib_len) + 12; /* sig + IHDR + IDAT + IEND */
+    /* Assemble PNG file. 8 (sig) + 25 (IHDR) + 12 (IDAT header/CRC) + 12 (IEND). */
+    if (zlib_len > SIZE_MAX - 57U) { free(zlib_data); return -1; }
+    size_t total = 8 + (12 + 13) + (12 + zlib_len) + 12;
     uint8_t *out = (uint8_t *)malloc(total);
     if (!out) { free(zlib_data); return -1; }
     size_t p = 0;

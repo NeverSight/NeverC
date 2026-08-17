@@ -8,35 +8,41 @@
 #include <stdint.h>
 #include <string.h>
 
-static int csv_first_rune(const char *s, uint32_t *cp) {
-    const unsigned char *b = (const unsigned char *)s;
-    size_t n, i;
+static int csv_decode_rune(const unsigned char *b, size_t n,
+                           uint32_t *cp, size_t *adv) {
+    size_t need, i;
     uint32_t value;
+    if (n == 0)
+        return -1;
     if (b[0] < 0x80) {
         *cp = b[0];
+        *adv = 1;
         return 0;
     }
     if (b[0] >= 0xc2 && b[0] <= 0xdf) {
         value = b[0] & 0x1fU;
-        n = 2;
+        need = 2;
     } else if (b[0] >= 0xe0 && b[0] <= 0xef) {
         value = b[0] & 0x0fU;
-        n = 3;
+        need = 3;
     } else if (b[0] >= 0xf0 && b[0] <= 0xf4) {
         value = b[0] & 0x07U;
-        n = 4;
+        need = 4;
     } else {
         return -1;
     }
-    for (i = 1; i < n; i++) {
+    if (need > n)
+        return -1;
+    for (i = 1; i < need; i++) {
         if ((b[i] & 0xc0U) != 0x80U)
             return -1;
         value = (value << 6U) | (b[i] & 0x3fU);
     }
-    if ((n == 3 && value < 0x800) || (n == 4 && value < 0x10000) ||
+    if ((need == 3 && value < 0x800) || (need == 4 && value < 0x10000) ||
         value > 0x10ffffU)
         return -1;
     *cp = value;
+    *adv = need;
     return 0;
 }
 
@@ -51,14 +57,35 @@ static int csv_codepoint_is_space(uint32_t cp) {
     }
 }
 
+static int csv_first_rune(const char *s, uint32_t *cp) {
+    size_t n = 0, adv;
+    while (n < 4 && s[n])
+        n++;
+    return csv_decode_rune((const unsigned char *)s, n, cp, &adv);
+}
+
+static size_t csv_skip_leading_space(const char *s, size_t n) {
+    size_t i = 0;
+    while (i < n) {
+        uint32_t cp;
+        size_t adv;
+        if (csv_decode_rune((const unsigned char *)s + i, n - i, &cp, &adv) != 0)
+            break;
+        if (!csv_codepoint_is_space(cp) || cp == '\n')
+            break;
+        i += adv;
+    }
+    return i;
+}
+
 static int needs_quoting(const char *s, char delim, int use_crlf) {
     uint32_t first;
     (void)use_crlf; /* \r and \n always force quoting regardless of line ending */
     if (!s || !s[0]) return 0;
-    /* Spreadsheet formula prefixes (OWASP CSV injection). Quoted so Excel /
-     * LibreOffice cannot treat a field as `=CMD()` when the file is opened.
-     * '-' is left unquoted: it is a common numeric sign, not a formula alone. */
-    if (s[0] == '=' || s[0] == '+' || s[0] == '@')
+    /* Spreadsheet formula prefixes (OWASP CSV Injection). Quoted so Excel /
+     * LibreOffice cannot treat a field as `=CMD()` / `-=CMD()` when opened.
+     * Tab and CR are already quoted: tab via unicode.IsSpace, CR in the loop. */
+    if (s[0] == '=' || s[0] == '+' || s[0] == '-' || s[0] == '@')
         return 1;
     /* Postgres COPY terminator; quoted so it is not taken as end-of-data. */
     if (s[0] == '\\' && s[1] == '.' && s[2] == '\0')
@@ -94,12 +121,14 @@ int neverc_csv_read_line(const char *line, size_t line_len,
     int nfields = 0;
     size_t wpos = 0;
     size_t i = 0;
+    int stripped_nl = 0;
 
     /* Go encoding/csv readLine: drop one trailing LF, and the CR of a
      * CRLF pair. A last line with no LF still drops one trailing CR.
      * Extra CRs before that are field bytes, not extra terminators. */
     if (line_len > 0 && line[line_len - 1] == '\n') {
         line_len--;
+        stripped_nl = 1;
         if (line_len > 0 && line[line_len - 1] == '\r')
             line_len--;
     } else if (line_len > 0 && line[line_len - 1] == '\r') {
@@ -111,17 +140,18 @@ int neverc_csv_read_line(const char *line, size_t line_len,
     for (;;) {
         if (nfields >= max_fields) return -1;
 
-        if (trim) {
-            while (i < line_len && (line[i] == ' ' || line[i] == '\t'))
-                i++;
-        }
+        if (trim)
+            i += csv_skip_leading_space(line + i, line_len - i);
 
         fields[nfields] = work_buf + wpos;
 
+        int field_unclosed = 0;
         if (i < line_len && line[i] == '"') {
             i++;
             int closed = 0;
-            /* Quoted field: '"' is the only special byte. */
+            /* Quoted field: '"' is the only special byte. Go encoding/csv
+             * readLine converts each physical CRLF to LF, including inside
+             * multiline quoted values (Issue 21201). */
             for (;;) {
                 if (i >= line_len) break;
                 if (line[i] == '"') {
@@ -142,14 +172,20 @@ int neverc_csv_read_line(const char *line, size_t line_len,
                     closed = 1;
                     break;                               /* closing quote */
                 }
-                /* Run of ordinary bytes up to the next quote. Copy a short window
-                 * inline (scan and copy fused in one pass, as the old code did),
-                 * so escape-dense fields pay no extra cost; only a run still
-                 * unbroken after the window escalates to memchr + memcpy, so a
-                 * long quoted cell moves at SIMD speed. */
+                if (line[i] == '\r' && i + 1 < line_len &&
+                    line[i + 1] == '\n') {
+                    if (wpos >= work_buf_len) return -1;
+                    work_buf[wpos++] = '\n';
+                    i += 2;
+                    continue;
+                }
+                /* Run of ordinary bytes up to the next quote or CRLF. */
                 size_t remain = line_len - i;
                 size_t k = 0;
                 while (k < 16 && k < remain && line[i + k] != '"') {
+                    if (line[i + k] == '\r' && i + k + 1 < line_len &&
+                        line[i + k + 1] == '\n')
+                        break;
                     if (wpos >= work_buf_len) return -1;
                     work_buf[wpos++] = line[i + k];
                     k++;
@@ -160,16 +196,29 @@ int neverc_csv_read_line(const char *line, size_t line_len,
                     size_t rem2 = line_len - i;
                     const char *q = (const char *)memchr(start, '"', rem2);
                     size_t run = q ? (size_t)(q - start) : rem2;
+                    const char *cr = (const char *)memchr(start, '\r', run);
+                    while (cr) {
+                        size_t off = (size_t)(cr - start);
+                        if (off + 1 < rem2 && cr[1] == '\n') {
+                            run = off;
+                            break;
+                        }
+                        if (off + 1 >= run)
+                            break;
+                        cr = (const char *)memchr(cr + 1, '\r', run - off - 1);
+                    }
                     if (run > work_buf_len - wpos) return -1;
                     memcpy(work_buf + wpos, start, run);
                     wpos += run;
                     i += run;
-                    if (!q) break;                       /* unterminated: end of line */
+                    if (!q && run == rem2) break;        /* unterminated: end of line */
                 } else if (k == remain) {
                     break;                               /* ran off the end */
                 }
             }
             if (!closed && !lazy) return -1;
+            if (!closed)
+                field_unclosed = 1;
             if (closed && i < line_len && line[i] != delim) return -1;
         } else {
             /* Unquoted field: jump to the delimiter with memchr (SIMD) and copy
@@ -185,6 +234,12 @@ int neverc_csv_read_line(const char *line, size_t line_len,
             i += flen;
         }
 
+        /* LazyQuotes unterminated field: Go copies the line's trailing \n
+         * into the field because the quote is still open. */
+        if (field_unclosed && stripped_nl) {
+            if (wpos >= work_buf_len) return -1;
+            work_buf[wpos++] = '\n';
+        }
         if (wpos >= work_buf_len) return -1;
         if ((size_t)((work_buf + wpos) - fields[nfields]) >
             NEVERC_CSV_MAX_FIELD_LEN)
@@ -274,9 +329,13 @@ int neverc_csv_read_all(const char *data, size_t data_len,
                 if (byte == '\r' && pos + 1 < data_len &&
                     data[pos + 1] == '\n')
                     break;
-                if (field_start && trim && (byte == ' ' || byte == '\t')) {
-                    pos++;
-                    continue;
+                if (field_start && trim) {
+                    size_t skip = csv_skip_leading_space(
+                        data + pos, data_len - pos);
+                    if (skip > 0) {
+                        pos += skip;
+                        continue;
+                    }
                 }
                 if (field_start && byte == '"') {
                     in_quote = 1;

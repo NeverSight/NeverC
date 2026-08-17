@@ -109,7 +109,14 @@ size_t neverc_chacha20poly1305_seal(
     neverc_chacha20_ctx ctx;
     neverc_chacha20_init(&ctx, key, nonce, 0);
     uint8_t block0[64] = {0};
-    neverc_chacha20_xor(&ctx, block0, block0, 64);
+    if (neverc_chacha20_xor_checked(&ctx, block0, block0, 64) != 0) {
+        neverc_platform_secure_zero(block0, sizeof(block0));
+        neverc_platform_secure_zero(&ctx, sizeof(ctx));
+        neverc_platform_secure_zero(mac_buf, mac_buf_size);
+        if (mac_buf != mac_buf_stack)
+            free(mac_buf);
+        return 0;
+    }
     memcpy(poly_key, block0, 32);
     neverc_platform_secure_zero(block0, sizeof(block0));
     neverc_platform_secure_zero(&ctx, sizeof(ctx));
@@ -120,7 +127,14 @@ size_t neverc_chacha20poly1305_seal(
 
     /* Encrypt plaintext using ChaCha20 starting at counter=1 */
     neverc_chacha20_init(&ctx, key, nonce, 1);
-    neverc_chacha20_xor(&ctx, dst, plaintext, plaintext_len);
+    if (neverc_chacha20_xor_checked(&ctx, dst, plaintext, plaintext_len) != 0) {
+        neverc_platform_secure_zero(&ctx, sizeof(ctx));
+        neverc_platform_secure_zero(poly_key, sizeof(poly_key));
+        neverc_platform_secure_zero(mac_buf, mac_buf_size);
+        if (mac_buf != mac_buf_stack)
+            free(mac_buf);
+        return 0;
+    }
     neverc_platform_secure_zero(&ctx, sizeof(ctx));
 
     pos = mac_append_padded(mac_buf, pos, dst, plaintext_len);
@@ -166,7 +180,14 @@ int neverc_chacha20poly1305_open(
     neverc_chacha20_ctx ctx;
     neverc_chacha20_init(&ctx, key, nonce, 0);
     uint8_t block0[64] = {0};
-    neverc_chacha20_xor(&ctx, block0, block0, 64);
+    if (neverc_chacha20_xor_checked(&ctx, block0, block0, 64) != 0) {
+        neverc_platform_secure_zero(block0, sizeof(block0));
+        neverc_platform_secure_zero(&ctx, sizeof(ctx));
+        neverc_platform_secure_zero(mac_buf, mac_buf_size);
+        if (mac_buf != mac_buf_stack)
+            free(mac_buf);
+        return -1;
+    }
     memcpy(poly_key, block0, 32);
     neverc_platform_secure_zero(block0, sizeof(block0));
     neverc_platform_secure_zero(&ctx, sizeof(ctx));
@@ -188,7 +209,12 @@ int neverc_chacha20poly1305_open(
 
     /* Decrypt */
     neverc_chacha20_init(&ctx, key, nonce, 1);
-    neverc_chacha20_xor(&ctx, dst, ciphertext, ct_len);
+    if (neverc_chacha20_xor_checked(&ctx, dst, ciphertext, ct_len) != 0) {
+        neverc_platform_secure_zero(&ctx, sizeof(ctx));
+        if (ct_len > 0)
+            neverc_platform_secure_zero(dst, ct_len);
+        return -1;
+    }
     neverc_platform_secure_zero(&ctx, sizeof(ctx));
 
     return (int)ct_len;

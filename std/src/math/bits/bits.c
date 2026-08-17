@@ -345,20 +345,51 @@ unsigned int neverc_bits_reverse_bytes(unsigned int x) {
 
 void neverc_bits_add64(uint64_t x, uint64_t y, uint64_t carry,
                        uint64_t *sum, uint64_t *carry_out) {
+    if (!sum || !carry_out) return;
+    /* Widen like Add32 so a carry of 2 (or more) is not silently lost.
+     * Go documents carry in {0,1}; the 64-bit bit-formula is wrong past that. */
+#ifdef __SIZEOF_INT128__
+    __uint128_t s = (__uint128_t)x + y + carry;
+    *sum = (uint64_t)s;
+    *carry_out = (uint64_t)(s >> 64);
+#elif NCI_HAS_BUILTINS
+    uint64_t s;
+    unsigned c = 0;
+    c += (unsigned)__builtin_add_overflow(x, y, &s);
+    c += (unsigned)__builtin_add_overflow(s, carry, &s);
+    *sum = s;
+    *carry_out = c;
+#else
     uint64_t s = x + y + carry;
     *sum = s;
     *carry_out = ((x & y) | ((x | y) & ~s)) >> 63;
+#endif
 }
 
 void neverc_bits_sub64(uint64_t x, uint64_t y, uint64_t borrow,
                        uint64_t *diff, uint64_t *borrow_out) {
+    if (!diff || !borrow_out) return;
+#ifdef __SIZEOF_INT128__
+    __uint128_t d = (__uint128_t)x - y - borrow;
+    *diff = (uint64_t)d;
+    *borrow_out = (~(uint64_t)(d >> 64)) + 1u; /* two's complement of the high word */
+#elif NCI_HAS_BUILTINS
+    uint64_t t, d;
+    unsigned b = 0;
+    b += (unsigned)__builtin_sub_overflow(x, y, &t);
+    b += (unsigned)__builtin_sub_overflow(t, borrow, &d);
+    *diff = d;
+    *borrow_out = b;
+#else
     uint64_t d = x - y - borrow;
     *diff = d;
     *borrow_out = ((~x & y) | (~(x ^ y) & d)) >> 63;
+#endif
 }
 
 void neverc_bits_add32(uint32_t x, uint32_t y, uint32_t carry,
                        uint32_t *sum, uint32_t *carry_out) {
+    if (!sum || !carry_out) return;
     uint64_t s = (uint64_t)x + (uint64_t)y + (uint64_t)carry;
     *sum = (uint32_t)s;
     *carry_out = (uint32_t)(s >> 32);
@@ -366,13 +397,16 @@ void neverc_bits_add32(uint32_t x, uint32_t y, uint32_t carry,
 
 void neverc_bits_sub32(uint32_t x, uint32_t y, uint32_t borrow,
                        uint32_t *diff, uint32_t *borrow_out) {
+    if (!diff || !borrow_out) return;
     uint64_t d = (uint64_t)x - (uint64_t)y - (uint64_t)borrow;
     *diff = (uint32_t)d;
-    *borrow_out = (uint32_t)((d >> 63) & 1);
+    /* Widen like Add32: borrow > 1 is not silently collapsed to 1. */
+    *borrow_out = (uint32_t)(~(uint32_t)(d >> 32) + 1u);
 }
 
 void neverc_bits_mul32(uint32_t x, uint32_t y,
                        uint32_t *hi, uint32_t *lo) {
+    if (!hi || !lo) return;
     uint64_t p = (uint64_t)x * (uint64_t)y;
     *hi = (uint32_t)(p >> 32);
     *lo = (uint32_t)p;
@@ -380,6 +414,7 @@ void neverc_bits_mul32(uint32_t x, uint32_t y,
 
 void neverc_bits_mul64(uint64_t x, uint64_t y,
                        uint64_t *hi, uint64_t *lo) {
+    if (!hi || !lo) return;
 #ifdef __SIZEOF_INT128__
     __uint128_t r = (__uint128_t)x * y;
     *hi = (uint64_t)(r >> 64);
@@ -395,7 +430,8 @@ void neverc_bits_mul64(uint64_t x, uint64_t y,
     uint64_t w2 = t >> 32;
     w1 += x0 * y1;
     *hi = x1 * y1 + w2 + (w1 >> 32);
-    *lo = x * y;
+    /* Low half from limbs — `x * y` wraps and trips unsigned-overflow sanitizers. */
+    *lo = (w0 & 0xFFFFFFFFULL) | (w1 << 32);
 #endif
 }
 
@@ -470,6 +506,7 @@ uint64_t neverc_bits_rem64(uint64_t hi, uint64_t lo, uint64_t y) {
 
 void neverc_bits_add(unsigned int x, unsigned int y, unsigned int carry,
                      unsigned int *sum, unsigned int *carry_out) {
+    if (!sum || !carry_out) return;
 #if NC_UINT_IS_64
     uint64_t s64, c64;
     neverc_bits_add64((uint64_t)x, (uint64_t)y, (uint64_t)carry, &s64, &c64);
@@ -483,6 +520,7 @@ void neverc_bits_add(unsigned int x, unsigned int y, unsigned int carry,
 
 void neverc_bits_sub(unsigned int x, unsigned int y, unsigned int borrow,
                      unsigned int *diff, unsigned int *borrow_out) {
+    if (!diff || !borrow_out) return;
 #if NC_UINT_IS_64
     uint64_t d64, b64;
     neverc_bits_sub64((uint64_t)x, (uint64_t)y, (uint64_t)borrow, &d64, &b64);
@@ -496,6 +534,7 @@ void neverc_bits_sub(unsigned int x, unsigned int y, unsigned int borrow,
 
 void neverc_bits_mul(unsigned int x, unsigned int y,
                      unsigned int *hi, unsigned int *lo) {
+    if (!hi || !lo) return;
 #if NC_UINT_IS_64
     uint64_t h64, l64;
     neverc_bits_mul64((uint64_t)x, (uint64_t)y, &h64, &l64);

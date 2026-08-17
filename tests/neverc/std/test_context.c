@@ -769,6 +769,44 @@ static void test_after_func_reuses_slots(void) {
     neverc_context_free(bg);
 }
 
+static neverc_context_t *g_nested_live;
+static volatile int32_t g_nested_registered;
+
+static void after_nested_register(void) {
+    neverc_context_stop_func_t nested =
+        neverc_context_after_func(g_nested_live, after_cb);
+    NEVERC_ATOMIC_STORE32(&g_nested_registered, nested != NULL ? 1 : 0);
+}
+
+static void test_after_func_nested_from_callback(void) {
+    printf("[after_func_nested_callback]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_cancel_func_t cancel = NULL;
+    neverc_context_t *ctx = neverc_context_with_cancel(bg, &cancel);
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_TRUE(cancel != NULL);
+
+    g_nested_live = bg;
+    NEVERC_ATOMIC_STORE32(&g_nested_registered, 0);
+    neverc_context_stop_func_t stop =
+        neverc_context_after_func(ctx, after_nested_register);
+    ASSERT_TRUE(stop != NULL);
+
+    cancel();
+    for (int i = 0; i < 1000 &&
+                    !NEVERC_ATOMIC_LOAD32(&g_nested_registered); i++) {
+#if defined(_WIN32)
+        Sleep(1);
+#else
+        usleep(1000);
+#endif
+    }
+    ASSERT_INT_EQ(NEVERC_ATOMIC_LOAD32(&g_nested_registered), 1);
+
+    neverc_context_free(ctx);
+    neverc_context_free(bg);
+}
+
 int main(void) {
     printf("=== NeverC context Tests ===\n");
     test_background();
@@ -800,6 +838,7 @@ int main(void) {
     test_after_func_stopped_before_context_free();
     test_after_func_can_free_own_context();
     test_after_func_reuses_slots();
+    test_after_func_nested_from_callback();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

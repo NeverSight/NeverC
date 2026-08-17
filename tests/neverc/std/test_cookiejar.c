@@ -141,6 +141,42 @@ static void test_public_suffix_domain(void) {
     check_int("reject Domain=com from example.com",
               neverc_cookiejar_count(jar), 0);
     neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "github.io";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.github.io/", &cookie, 1);
+    check_int("reject Domain=github.io from evil.github.io",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "evil.github.io";
+    neverc_cookiejar_set_cookies(
+        jar, "https://www.evil.github.io/", &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://www.evil.github.io/", out, 1);
+    check_int("Domain=evil.github.io is registrable", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://other.github.io/", out, 1);
+    check_int("github.io pages do not share that cookie", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "blogspot.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.blogspot.com/", &cookie, 1);
+    check_int("reject Domain=blogspot.com from evil.blogspot.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://evil.github.io/",
+        "sid=x; Domain=github.io; Path=/");
+    check_int("reject Set-Cookie Domain=github.io",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
 }
 
 static void test_domain_security(void) {
@@ -180,6 +216,114 @@ static void test_domain_security(void) {
         jar, "https://example.com/", "session=x; Domain=evil.com; Path=/");
     check_int("reject cross-domain Set-Cookie",
               neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+}
+
+static void test_http_schemes_only(void) {
+    printf("[http_schemes_only]\n");
+
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_entry_t cookie = {
+        .name = "sid", .value = "x", .path = "/",
+    };
+    neverc_cookiejar_set_cookies(jar, "ftp://example.com/", &cookie, 1);
+    check_int("reject ftp cookie URL", neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_set_cookies(jar, "file://example.com/", &cookie, 1);
+    check_int("reject file cookie URL", neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_set_cookies(jar, "ws://example.com/", &cookie, 1);
+    check_int("reject ws cookie URL", neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_set_cookie_header(
+        jar, "javascript://example.com/", "sid=x; Path=/");
+    check_int("reject javascript cookie URL", neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_set_cookies(jar, "https://example.com/", &cookie, 1);
+    check_int("accept https cookie URL", neverc_cookiejar_count(jar), 1);
+    neverc_cookiejar_free(jar);
+}
+
+static void test_cookie_prefixes(void) {
+    printf("[cookie_prefixes]\n");
+
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_entry_t cookie = {
+        .name = "__Host-session", .value = "secret", .path = "/",
+        .secure = 1,
+    };
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/", &cookie, 1);
+    neverc_cookiejar_entry_t out[2];
+    int n = neverc_cookiejar_cookies(
+        jar, "https://example.com/", out, 2);
+    check_int("accept __Host- with Secure Path=/ host-only", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://sub.example.com/", out, 2);
+    check_int("__Host- cookie is host-only", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "example.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/", &cookie, 1);
+    check_int("reject __Host- with Domain attribute",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = NULL;
+    cookie.path = "/admin";
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/admin", &cookie, 1);
+    check_int("reject __Host- without Path=/",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.path = "/";
+    cookie.secure = 0;
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/", &cookie, 1);
+    check_int("reject __Host- without Secure",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.name = "__Secure-token";
+    cookie.secure = 0;
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/", &cookie, 1);
+    check_int("reject __Secure- without Secure",
+              neverc_cookiejar_count(jar), 0);
+    cookie.secure = 1;
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/", &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://example.com/", out, 2);
+    check_int("accept __Secure- with Secure from HTTPS", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "http://example.com/", out, 2);
+    check_int("__Secure- is not sent over HTTP", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "http://example.com/",
+        "__Host-session=x; Path=/; Secure");
+    check_int("reject __Host- Set-Cookie from HTTP origin",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/",
+        "__Host-session=x; Path=/; Secure; HttpOnly");
+    n = neverc_cookiejar_cookies(
+        jar, "https://example.com/", out, 2);
+    check_int("accept __Host- Set-Cookie from HTTPS", n, 1);
+    if (n == 1) check_int("__Host- HttpOnly preserved", out[0].http_only, 1);
+    char *header = neverc_cookiejar_cookie_header(
+        jar, "https://example.com/");
+    check_not_null("HttpOnly cookie is sent on HTTP Cookie header", header);
+    if (header) {
+        check_int("Cookie header includes __Host- name",
+                  strstr(header, "__Host-session=x") != NULL, 1);
+        free(header);
+    }
     neverc_cookiejar_free(jar);
 }
 
@@ -741,6 +885,8 @@ int main(void) {
     test_domain_matching();
     test_public_suffix_domain();
     test_domain_security();
+    test_http_schemes_only();
+    test_cookie_prefixes();
     test_path_matching();
     test_default_path();
     test_percent_encoded_request_url();

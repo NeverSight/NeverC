@@ -330,6 +330,8 @@ static int parse_url_parts(const char *url, char *scheme, size_t slen,
 
     str_tolower(scheme);
     str_tolower(host);
+    if (strcmp(scheme, "http") != 0 && strcmp(scheme, "https") != 0)
+        return -1;
     if (!strchr(host, ':') && host_length > 1 && host[host_length - 1] == '.')
         host[host_length - 1] = '\0';
     return host[0] ? 0 : -1;
@@ -432,10 +434,35 @@ static int cookie_label_is(const char *start, const char *end,
 
 /* RFC 6265 §5.3: Domain attributes that are a public suffix must not be
  * stored (except host-only when Domain equals the request-host). A full
- * PSL is not embedded; this covers single-label suffixes and the usual
- * ccTLD second-level forms such as co.uk / com.au. */
+ * PSL is not embedded; this covers single-label suffixes, usual ccTLD
+ * second-level forms such as co.uk / com.au, and shared-hosting suffixes
+ * that are commonly abused for super-cookies. */
 static int cookie_domain_is_public_suffix(const char *domain) {
     if (!domain || !domain[0] || host_is_ip_literal(domain)) return 0;
+    static const char *const extra[] = {
+        "amazonaws.com",
+        "appspot.com",
+        "azurefd.net",
+        "azurewebsites.net",
+        "blogspot.com",
+        "cloudapp.net",
+        "cloudfront.net",
+        "firebaseapp.com",
+        "github.io",
+        "githubusercontent.com",
+        "gitlab.io",
+        "googleusercontent.com",
+        "herokuapp.com",
+        "netlify.app",
+        "pages.dev",
+        "s3.amazonaws.com",
+        "trafficmanager.net",
+        "vercel.app",
+        "web.app",
+        "workers.dev",
+    };
+    for (size_t i = 0; i < sizeof(extra) / sizeof(extra[0]); i++)
+        if (strcmp(domain, extra[i]) == 0) return 1;
     const char *dot = strchr(domain, '.');
     if (!dot) return 1;
     if (strchr(dot + 1, '.')) return 0;
@@ -569,6 +596,17 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
         if (!valid_cookie_name(c->name) || !valid_cookie_value(c->value))
             continue;
         if (c->secure && !source_is_secure) continue;
+
+        /* RFC 6265bis cookie prefixes: names are case-sensitive. */
+        int host_prefix = strncmp(c->name, "__Host-", 7) == 0;
+        int secure_prefix = strncmp(c->name, "__Secure-", 9) == 0;
+        if ((host_prefix || secure_prefix) &&
+            (!c->secure || !source_is_secure))
+            continue;
+        if (host_prefix &&
+            ((c->domain && c->domain[0]) ||
+             !c->path || strcmp(c->path, "/") != 0))
+            continue;
 
         char domain[256];
         int host_only = 1;

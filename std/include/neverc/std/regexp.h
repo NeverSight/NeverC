@@ -7,7 +7,8 @@
  * This is a deliberately small byte-oriented syntax subset, not a complete
  * implementation of Go regexp or RE2. Matching APIs require the whole string;
  * find/replace/split use leftmost-longest non-empty matches.
- * No backtracking is used.
+ * No backtracking is used. Invalid UTF-8 in the pattern is an error
+ * (Go regexp/syntax ErrInvalidUTF8). `{01}` is a literal, not a{1}.
  * Supported syntax: . * + ? | () (?:) (?P<name>) (?<name>) (?'name')
  *   [] [^] [[:posix:]] \d \D \w \W \s \S \n \t \r \f \v \a \b \B \A \z
  *   \xHH \x{H+} ^ $ {n} {n,m}

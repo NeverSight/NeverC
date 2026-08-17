@@ -152,12 +152,15 @@ static void test_copy(void) {
     neverc_map_set(src, "b", &v3);
     neverc_map_set(src, "c", &v4);
 
-    neverc_map_copy(dst, src);
+    ASSERT_INT_EQ(neverc_map_copy(dst, src), 0);
 
     ASSERT_INT_EQ((int)neverc_map_len(dst), 3);
     ASSERT_INT_EQ(*(int *)neverc_map_get(dst, "a"), 1);
     ASSERT_INT_EQ(*(int *)neverc_map_get(dst, "b"), 3);
     ASSERT_INT_EQ(*(int *)neverc_map_get(dst, "c"), 4);
+    ASSERT_INT_EQ(neverc_map_copy(dst, dst), 0);
+    ASSERT_INT_EQ(neverc_map_copy(NULL, src), -1);
+    ASSERT_INT_EQ(neverc_map_copy(dst, NULL), -1);
 
     neverc_map_free(dst);
     neverc_map_free(src);
@@ -346,6 +349,74 @@ static void test_delete_then_reinsert(void) {
     neverc_map_free(m);
 }
 
+static void test_tombstone_reclaim_mid_load(void) {
+    printf("[tombstone_reclaim_mid_load]\n");
+    neverc_map_t *m = neverc_map_new();
+    int vals[64];
+    char key[32];
+    /* 28 keys fill a 32-slot table to 7/8. Deleting a few leaves occupancy
+     * at the load limit via tombstones while live keys still fit — insert
+     * must reclaim, not treat the table as genuinely full. */
+    for (int i = 0; i < 28; i++) {
+        vals[i] = i;
+        snprintf(key, sizeof(key), "k%02d", i);
+        ASSERT_INT_EQ(neverc_map_set(m, key, &vals[i]), 0);
+    }
+    for (int i = 0; i < 3; i++) {
+        snprintf(key, sizeof(key), "k%02d", i);
+        ASSERT_INT_EQ(neverc_map_delete(m, key), 0);
+    }
+    int extra = 99;
+    ASSERT_INT_EQ(neverc_map_set(m, "extra", &extra), 0);
+    ASSERT_TRUE(neverc_map_has(m, "extra"));
+    ASSERT_INT_EQ(*(int *)neverc_map_get(m, "extra"), 99);
+    for (int i = 3; i < 28; i++) {
+        snprintf(key, sizeof(key), "k%02d", i);
+        ASSERT_TRUE(neverc_map_has(m, key));
+        ASSERT_INT_EQ(*(int *)neverc_map_get(m, key), i);
+    }
+    ASSERT_TRUE(!neverc_map_has(m, "k00"));
+    ASSERT_INT_EQ((int)neverc_map_len(m), 26);
+    neverc_map_free(m);
+}
+
+static void test_tombstone_every_other(void) {
+    printf("[tombstone_every_other]\n");
+    neverc_map_t *m = neverc_map_new();
+    int vals[200];
+    char key[32];
+    for (int i = 0; i < 200; i++) {
+        vals[i] = i + 1000;
+        snprintf(key, sizeof(key), "e%03d", i);
+        ASSERT_INT_EQ(neverc_map_set(m, key, &vals[i]), 0);
+    }
+    for (int i = 0; i < 200; i += 2) {
+        snprintf(key, sizeof(key), "e%03d", i);
+        ASSERT_INT_EQ(neverc_map_delete(m, key), 0);
+    }
+    ASSERT_INT_EQ((int)neverc_map_len(m), 100);
+    for (int i = 0; i < 200; i++) {
+        snprintf(key, sizeof(key), "e%03d", i);
+        if (i % 2 == 0) {
+            ASSERT_TRUE(!neverc_map_has(m, key));
+        } else {
+            ASSERT_TRUE(neverc_map_has(m, key));
+            ASSERT_INT_EQ(*(int *)neverc_map_get(m, key), i + 1000);
+        }
+    }
+    for (int i = 0; i < 200; i += 2) {
+        snprintf(key, sizeof(key), "e%03d", i);
+        ASSERT_INT_EQ(neverc_map_set(m, key, &vals[i]), 0);
+    }
+    ASSERT_INT_EQ((int)neverc_map_len(m), 200);
+    for (int i = 0; i < 200; i++) {
+        snprintf(key, sizeof(key), "e%03d", i);
+        ASSERT_TRUE(neverc_map_has(m, key));
+        ASSERT_INT_EQ(*(int *)neverc_map_get(m, key), i + 1000);
+    }
+    neverc_map_free(m);
+}
+
 int main(void) {
     printf("=== NeverC maps Tests ===\n");
     test_basic();
@@ -362,6 +433,8 @@ int main(void) {
     test_delete_func_callback_can_resize();
     test_tombstone_shrink_then_reinsert();
     test_delete_then_reinsert();
+    test_tombstone_reclaim_mid_load();
+    test_tombstone_every_other();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

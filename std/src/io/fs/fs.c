@@ -89,6 +89,49 @@ static void fs_fill_base_name(char *dst, size_t cap, const char *name) {
     dst[n] = '\0';
 }
 
+static int fs_dir_entry_cmp(const void *a, const void *b) {
+    return strcmp(((const neverc_fs_dir_entry_t *)a)->name,
+                  ((const neverc_fs_dir_entry_t *)b)->name);
+}
+
+static int fs_entry_name_ok(const char *name) {
+    if (!name || name[0] == '\0')
+        return 0;
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+        return 0;
+    if (strchr(name, '/') != NULL)
+        return 0;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    if (strchr(name, '\\') != NULL)
+        return 0;
+#endif
+    return 1;
+}
+
+static int glob_pattern_has_slash(const char *pattern) {
+    const char *p;
+    for (p = pattern; *p; p++) {
+        if (*p == '\\' && p[1] != '\0') {
+            p++;
+            continue;
+        }
+        if (*p == '/')
+            return 1;
+    }
+    return 0;
+}
+
+#if defined(NEVERC_PLATFORM_WINDOWS)
+static int fs_win_has_wildcards(const char *path) {
+    for (; *path; path++) {
+        char c = *path;
+        if (c == '*' || c == '?' || c == '<' || c == '>' || c == '"')
+            return 1;
+    }
+    return 0;
+}
+#endif
+
 static char *fs_join_path(const char *dir, const char *name) {
     size_t dlen = strlen(dir), nlen = strlen(name);
     while (dlen > 1 && fs_is_sep(dir[dlen - 1]))
@@ -355,6 +398,12 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
                        size_t *count) {
     if (!path || !entries || !count) return -1;
     *entries = NULL; *count = 0;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    if (fs_win_has_wildcards(path)) {
+        errno = EINVAL;
+        return -1;
+    }
+#endif
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
     char pattern[4096];
@@ -466,6 +515,8 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
     }
     *entries = result;
 #endif
+    if (*count > 1)
+        qsort(*entries, *count, sizeof(**entries), fs_dir_entry_cmp);
     return 0;
 }
 
@@ -473,6 +524,7 @@ int neverc_fs_glob(const char *dir, const char *pattern,
                    char ***matches, size_t *count) {
     if (!dir || !pattern || !matches || !count) return -1;
     *matches = NULL; *count = 0;
+    if (glob_pattern_has_slash(pattern)) return -1;
     if (neverc_path_match(pattern, "") < 0) return -1;
 
     neverc_fs_dir_entry_t *entries = NULL;
@@ -487,6 +539,8 @@ int neverc_fs_glob(const char *dir, const char *pattern,
     }
 
     for (size_t i = 0; i < nentries; i++) {
+        if (!fs_entry_name_ok(entries[i].name))
+            continue;
         int matched = neverc_path_match(pattern, entries[i].name);
         if (matched < 0) goto glob_fail;
         if (matched) {
@@ -532,6 +586,8 @@ static int walk_recursive(const char *path,
     if (neverc_fs_read_dir(path, &entries, &count) != 0) return -1;
 
     for (size_t i = 0; i < count; i++) {
+        if (!fs_entry_name_ok(entries[i].name))
+            continue;
         char *full = fs_join_path(path, entries[i].name);
         if (!full) {
             neverc_fs_free_entries(entries);
@@ -577,7 +633,12 @@ int neverc_fs_walk_dir(const char *root,
                        void *userdata) {
     if (!root || !fn) return -1;
     neverc_fs_file_info_t info;
-    if (neverc_fs_lstat(root, &info) != 0) return -1;
+    if (neverc_fs_lstat(root, &info) != 0) {
+        int rc = fn(root, NULL, userdata);
+        if (rc == NEVERC_FS_SKIP_DIR || rc == NEVERC_FS_SKIP_ALL) return 0;
+        if (rc != 0) return rc;
+        return -1;
+    }
     neverc_fs_dir_entry_t root_entry;
     memset(&root_entry, 0, sizeof(root_entry));
     memcpy(root_entry.name, info.name, sizeof(root_entry.name));

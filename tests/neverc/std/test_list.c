@@ -3,6 +3,7 @@
  * Tests doubly linked list operations — mirrors Go container/list test cases.
  */
 #include "neverc/std/container/list.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -283,6 +284,16 @@ static void test_push_list(void) {
 
     ASSERT_INT_EQ(neverc_list_push_back_list(NULL, b), -1);
     ASSERT_INT_EQ(neverc_list_push_front_list(a, NULL), -1);
+
+    int saved_len = neverc_list_len(a);
+    a->len = INT_MAX;
+    ASSERT_INT_EQ(neverc_list_push_back_list(a, b), -1);
+    ASSERT_INT_EQ(neverc_list_len(a), INT_MAX);
+    ASSERT_INT_EQ(neverc_list_push_front_list(a, b), -1);
+    ASSERT_INT_EQ(neverc_list_len(a), INT_MAX);
+    a->len = saved_len;
+    ASSERT_INT_EQ(neverc_list_len(a), saved_len);
+    ASSERT_INT_EQ(TO_INT(neverc_list_front(a)->value), 3);
 
     neverc_list_free(a);
     neverc_list_free(b);

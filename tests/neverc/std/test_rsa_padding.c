@@ -173,10 +173,51 @@ int main(void) {
 
     unsigned char hash[NEVERC_SHA256_DIGEST_SIZE];
     neverc_sha256_sum((const unsigned char *)"pss padding", 11, hash);
+
+    unsigned char pkcs1[128];
+    unsigned char signature[128];
+    memset(pkcs1, 0, sizeof(pkcs1));
+    pkcs1[1] = 0x01;
+    memset(pkcs1 + 2, 0xff, 74);
+    pkcs1[76] = 0x00;
+    memcpy(pkcs1 + 77, sha256_digest_info, sizeof(sha256_digest_info));
+    memcpy(pkcs1 + 96, hash, sizeof(hash));
+    CHECK(sign_encoded_message(&key, pkcs1, signature, key_size) == 0);
+    CHECK(neverc_rsa_verify_pkcs1v15_sha256(
+              &key.pub, hash, sizeof(hash), signature,
+              sizeof(signature)) == 0);
+
+    pkcs1[1] = 0x02; /* type 2 (encryption) must not verify as a signature */
+    CHECK(sign_encoded_message(&key, pkcs1, signature, key_size) == 0);
+    CHECK(neverc_rsa_verify_pkcs1v15_sha256(
+              &key.pub, hash, sizeof(hash), signature,
+              sizeof(signature)) != 0);
+
+    pkcs1[1] = 0x01;
+    pkcs1[10] = 0xfe; /* non-FF byte in PS */
+    CHECK(sign_encoded_message(&key, pkcs1, signature, key_size) == 0);
+    CHECK(neverc_rsa_verify_pkcs1v15_sha256(
+              &key.pub, hash, sizeof(hash), signature,
+              sizeof(signature)) != 0);
+    pkcs1[10] = 0xff;
+
+    pkcs1[76] = 0xff; /* missing 00 separator */
+    CHECK(sign_encoded_message(&key, pkcs1, signature, key_size) == 0);
+    CHECK(neverc_rsa_verify_pkcs1v15_sha256(
+              &key.pub, hash, sizeof(hash), signature,
+              sizeof(signature)) != 0);
+    pkcs1[76] = 0x00;
+
+    pkcs1[0] = 0x01; /* missing leading 00 */
+    CHECK(sign_encoded_message(&key, pkcs1, signature, key_size) == 0);
+    CHECK(neverc_rsa_verify_pkcs1v15_sha256(
+              &key.pub, hash, sizeof(hash), signature,
+              sizeof(signature)) != 0);
+    pkcs1[0] = 0x00;
+
     unsigned char salt[NEVERC_SHA256_DIGEST_SIZE];
     memset(salt, 0xa5, sizeof(salt));
     unsigned char em[128];
-    unsigned char signature[128];
     int modulus_bits = neverc_bigint_bit_len(&key.pub.n);
     CHECK(pss_encode_sha256(em, key_size, modulus_bits, hash, salt) == 0);
     CHECK(sign_encoded_message(&key, em, signature, key_size) == 0);
@@ -193,6 +234,11 @@ int main(void) {
     CHECK(pss_encode_sha256(em, key_size, modulus_bits, hash, salt) == 0);
     em[0] |= 0x80; /* unused high bit of maskedDB must be zero */
     CHECK(sign_encoded_message(&key, em, signature, key_size) == 0);
+    CHECK(neverc_rsa_verify_pss_sha256(
+              &key.pub, hash, sizeof(hash), signature,
+              sizeof(signature)) != 0);
+
+    memset(signature, 0, sizeof(signature));
     CHECK(neverc_rsa_verify_pss_sha256(
               &key.pub, hash, sizeof(hash), signature,
               sizeof(signature)) != 0);

@@ -116,6 +116,17 @@ static void test_parse_ipv6(void) {
     ASSERT_EQ(neverc_netip_parse_addr("1:2:3:4:5:6:7:8:", &addr), -1);
     ASSERT_EQ(neverc_netip_parse_addr("fe80::1%", &addr), -1);
 
+    ASSERT_EQ(neverc_netip_parse_addr("192.0.2.1%eth0", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("1.2.3.4%x", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%\neth0", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%\x7f", &addr), -1);
+
+    ASSERT_EQ(neverc_netip_parse_addr("::ffff:0.0.0.0", &addr), 0);
+    ASSERT_TRUE(neverc_netip_addr_is4in6(&addr));
+    ASSERT_TRUE(!neverc_netip_addr_is_unspecified(&addr));
+    ASSERT_TRUE(!neverc_netip_addr_is_global_unicast(&addr));
+    ASSERT_TRUE(neverc_netip_addr_is_internal(&addr));
+
     char long_zone[80];
     memcpy(long_zone, "fe80::1%", 8);
     memset(long_zone + 8, 'z', 64);
@@ -163,6 +174,11 @@ static void test_properties(void) {
 
     neverc_netip_parse_addr("8.8.8.8", &addr);
     ASSERT_TRUE(neverc_netip_addr_is_global_unicast(&addr));
+    ASSERT_TRUE(!neverc_netip_addr_is_internal(&addr));
+
+    neverc_netip_parse_addr("255.255.255.255", &addr);
+    ASSERT_TRUE(!neverc_netip_addr_is_global_unicast(&addr));
+    ASSERT_TRUE(neverc_netip_addr_is_internal(&addr));
 
     neverc_netip_parse_addr("::1", &addr);
     ASSERT_TRUE(neverc_netip_addr_is_loopback(&addr));
@@ -171,6 +187,7 @@ static void test_properties(void) {
     neverc_netip_parse_addr("::ffff:127.0.0.1", &addr);
     ASSERT_TRUE(neverc_netip_addr_is_loopback(&addr));
     ASSERT_TRUE(!neverc_netip_addr_is_global_unicast(&addr));
+    ASSERT_TRUE(neverc_netip_addr_is_internal(&addr));
     neverc_netip_parse_addr("::ffff:10.0.0.1", &addr);
     ASSERT_TRUE(neverc_netip_addr_is_private(&addr));
     ASSERT_TRUE(!neverc_netip_addr_is_global_unicast(&addr));

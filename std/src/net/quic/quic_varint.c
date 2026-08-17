@@ -15,7 +15,8 @@
 
 int neverc_quic_varint_decode(const uint8_t *buf, size_t len,
                                uint64_t *value, size_t *consumed) {
-    if (len < 1) return -1;
+    if (consumed) *consumed = 0;
+    if (!buf || !value || len < 1) return -1;
 
     uint8_t prefix = buf[0] >> 6;
     size_t need;
@@ -55,6 +56,8 @@ int neverc_quic_varint_decode(const uint8_t *buf, size_t len,
 
 int neverc_quic_varint_encode(uint64_t value, uint8_t *buf, size_t cap,
                                size_t *written) {
+    if (written) *written = 0;
+    if (!buf) return -1;
     size_t need;
     if (value <= 63) need = 1;
     else if (value <= 16383) need = 2;
@@ -93,5 +96,6 @@ size_t neverc_quic_varint_len(uint64_t value) {
     if (value <= 63) return 1;
     if (value <= 16383) return 2;
     if (value <= 1073741823) return 4;
-    return 8;
+    if (value <= 4611686018427387903ULL) return 8;
+    return 0;
 }

@@ -160,6 +160,19 @@ static void test_truncated_entry(void) {
     check_int("truncated archive rejected",
               neverc_zip_reader_init(&r, buf, sizeof(buf)), -1);
     neverc_zip_reader_free(&r);
+
+    neverc_zip_writer_t writer;
+    neverc_zip_writer_init(&writer);
+    int built = neverc_zip_writer_add(
+                    &writer, "t", (const uint8_t *)"xy", 2) == 0 &&
+                neverc_zip_writer_close(&writer) == 0;
+    check_int("truncation fixture", built, 1);
+    if (built && writer.len > 22U) {
+        check_int("reject truncated eocd",
+                  neverc_zip_reader_init(&r, writer.data, writer.len - 1U), -1);
+        neverc_zip_reader_free(&r);
+    }
+    neverc_zip_writer_free(&writer);
 }
 
 static void test_central_directory_and_writer_state(void) {
@@ -277,6 +290,13 @@ static void put32(uint8_t *p, uint32_t v) {
     p[1] = (uint8_t)(v >> 8);
     p[2] = (uint8_t)(v >> 16);
     p[3] = (uint8_t)(v >> 24);
+}
+
+static uint32_t get32(const uint8_t *p) {
+    return (uint32_t)p[0]
+         | ((uint32_t)p[1] << 8)
+         | ((uint32_t)p[2] << 16)
+         | ((uint32_t)p[3] << 24);
 }
 
 /* Stored zip: optional local extra, GP flag, and a data descriptor. */
@@ -406,6 +426,43 @@ static void test_directory_extra_and_descriptor(void) {
         if (file)
             check_str("descriptor name", file->name, "desc.txt");
         neverc_zip_reader_free(&reader);
+    }
+
+    n = build_stored_zip(crafted, sizeof(crafted), "nodesc.txt",
+                         payload, sizeof(payload) - 1U, 0x0008, 0, 0);
+    check_int("missing-descriptor fixture", n > 0, 1);
+    if (n > 0) {
+        neverc_zip_reader_t reader;
+        check_int("reject missing data descriptor",
+                  neverc_zip_reader_init(&reader, crafted, n), -1);
+        neverc_zip_reader_free(&reader);
+    }
+
+    n = build_stored_zip(crafted, sizeof(crafted), "desc.txt",
+                         payload, sizeof(payload) - 1U, 0x0008, 0, 1);
+    check_int("descriptor-crc fixture", n > 0, 1);
+    if (n > 0) {
+        uint8_t mutated[256];
+        memcpy(mutated, crafted, n);
+        size_t name_len = strlen("desc.txt");
+        size_t desc_crc = 30U + name_len + sizeof(payload) - 1U + 4U;
+        mutated[desc_crc] ^= 1U;
+        neverc_zip_reader_t reader;
+        check_int("reject data descriptor crc mismatch",
+                  neverc_zip_reader_init(&reader, mutated, n), -1);
+        neverc_zip_reader_free(&reader);
+
+        memcpy(mutated, crafted, n);
+        size_t eocd = n - 22U;
+        uint32_t central = get32(mutated + eocd + 16U);
+        if (central >= 8U) {
+            memmove(mutated + central - 8U, mutated + central, n - central);
+            n -= 8U;
+            put32(mutated + n - 22U + 16U, central - 8U);
+            check_int("reject truncated data descriptor",
+                      neverc_zip_reader_init(&reader, mutated, n), -1);
+            neverc_zip_reader_free(&reader);
+        }
     }
 
     n = build_stored_zip(crafted, sizeof(crafted), "../evil",

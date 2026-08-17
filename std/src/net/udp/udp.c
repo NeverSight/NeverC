@@ -950,8 +950,18 @@ neverc_net_result_t neverc_udp_try_write(
                 : send(conn->fd, data, len, MSG_DONTWAIT);
     } while (n < 0 && errno == EINTR);
 #endif
-    if (n >= 0)
+    if (n >= 0) {
+        if ((size_t)n != len) {
+#ifdef _WIN32
+            int short_error = WSAEMSGSIZE;
+#else
+            int short_error = EMSGSIZE;
+#endif
+            return udp_result(NEVERC_NET_SYSTEM, short_error, "write",
+                              (size_t)n);
+        }
         return udp_result(NEVERC_NET_OK, 0, "write", (size_t)n);
+    }
     int error = nc_sock_errno;
     if (udp_deadline_expired(conn->write_deadline_ms))
         return udp_result(NEVERC_NET_TIMEOUT, udp_timeout_error(),
@@ -1259,6 +1269,14 @@ int neverc_udp_write_to(neverc_udp_conn_t *conn, const void *data, size_t len,
 #endif
     if (n < 0)
         udp_note_blocking_timeout(conn, 1);
+    else if ((size_t)n != len) {
+#ifdef _WIN32
+        WSASetLastError(WSAEMSGSIZE);
+#else
+        errno = EMSGSIZE;
+#endif
+        return -1;
+    }
     return n;
 }
 
@@ -1288,6 +1306,14 @@ int neverc_udp_write(neverc_udp_conn_t *conn, const void *data, size_t len) {
 #endif
     if (n < 0)
         udp_note_blocking_timeout(conn, 1);
+    else if ((size_t)n != len) {
+#ifdef _WIN32
+        WSASetLastError(WSAEMSGSIZE);
+#else
+        errno = EMSGSIZE;
+#endif
+        return -1;
+    }
     return n;
 }
 

@@ -24,6 +24,13 @@ static void test_interfaces(void) {
     check_int("list interfaces", neverc_net_interfaces(&list), 0);
     check_true("has interfaces", list.count > 0);
 
+    int all_indexed = 1;
+    for (int i = 0; i < list.count; i++) {
+        if (list.ifaces[i].index <= 0)
+            all_indexed = 0;
+    }
+    check_true("interface indexes are positive", all_indexed);
+
     /* Should have at least loopback */
     int has_lo = 0;
     for (int i = 0; i < list.count; i++) {
@@ -126,6 +133,18 @@ static void test_interface_by_index(void) {
         int idx = list.ifaces[0].index;
         check_int("find by index", neverc_net_interface_by_index(idx, &found), 0);
         check_true("same name", strcmp(found.name, list.ifaces[0].name) == 0);
+        check_true("found index matches", found.index == idx);
+
+        int all_found = 1;
+        for (int i = 0; i < list.count; i++) {
+            neverc_net_interface_t one;
+            if (list.ifaces[i].index <= 0)
+                continue;
+            if (neverc_net_interface_by_index(list.ifaces[i].index, &one) != 0 ||
+                strcmp(one.name, list.ifaces[i].name) != 0)
+                all_found = 0;
+        }
+        check_true("every listed index is findable", all_found);
     }
 
     neverc_net_interface_t notfound;

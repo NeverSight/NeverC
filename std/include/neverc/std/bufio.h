@@ -20,6 +20,28 @@ extern "C" {
 #endif
 
 #define NEVERC_BUFIO_DEFAULT_SIZE 4096
+#define NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE (64 * 1024)
+#define NEVERC_BUFIO_ERR_TOO_LONG (-4)
+
+/* SplitFunc: 1 = token ready, 0 = need more data, -1 = error (*err set).
+ * On 1, *token/*token_len name a subslice of data and *advance is consumed.
+ * On 0, *advance may skip a prefix (ScanWords leading space). */
+typedef int (*neverc_bufio_split_func_t)(const uint8_t *data, size_t data_len,
+                                         int at_eof,
+                                         size_t *advance,
+                                         const uint8_t **token,
+                                         size_t *token_len,
+                                         int *err);
+
+int neverc_bufio_scan_lines(const uint8_t *data, size_t data_len, int at_eof,
+                            size_t *advance, const uint8_t **token,
+                            size_t *token_len, int *err);
+int neverc_bufio_scan_words(const uint8_t *data, size_t data_len, int at_eof,
+                            size_t *advance, const uint8_t **token,
+                            size_t *token_len, int *err);
+int neverc_bufio_scan_bytes(const uint8_t *data, size_t data_len, int at_eof,
+                            size_t *advance, const uint8_t **token,
+                            size_t *token_len, int *err);
 
 /* --- Scanner --- */
 typedef struct {
@@ -32,10 +54,13 @@ typedef struct {
     size_t              token_len;
     int                 done;
     int                 err;
+    neverc_bufio_split_func_t split;
 } neverc_bufio_scanner_t;
 
 void neverc_bufio_scanner_init(neverc_bufio_scanner_t *s,
                                neverc_io_reader_t reader);
+void neverc_bufio_scanner_split(neverc_bufio_scanner_t *s,
+                                neverc_bufio_split_func_t split);
 int  neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s);
 const uint8_t *neverc_bufio_scanner_bytes(const neverc_bufio_scanner_t *s,
                                           size_t *len);
@@ -51,6 +76,7 @@ typedef struct {
     size_t              r, w;
     int                 eof;
     int                 err;
+    int                 last_byte; /* -1 if UnreadByte is invalid */
 } neverc_bufio_reader_t;
 
 void    neverc_bufio_reader_init(neverc_bufio_reader_t *br,
@@ -58,6 +84,7 @@ void    neverc_bufio_reader_init(neverc_bufio_reader_t *br,
 void    neverc_bufio_reader_init_size(neverc_bufio_reader_t *br,
                                      neverc_io_reader_t reader, size_t size);
 int     neverc_bufio_reader_read_byte(neverc_bufio_reader_t *br, uint8_t *b);
+int     neverc_bufio_reader_unread_byte(neverc_bufio_reader_t *br);
 int     neverc_bufio_reader_read(neverc_bufio_reader_t *br,
                                  uint8_t *buf, size_t len, size_t *n);
 uint8_t *neverc_bufio_reader_read_line(neverc_bufio_reader_t *br, size_t *len);

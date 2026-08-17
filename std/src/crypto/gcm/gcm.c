@@ -5,6 +5,7 @@
 #include "neverc/std/crypto/gcm.h"
 #include "neverc/std/crypto/subtle.h"
 #include "neverc/std/_platform.h"
+#include <stdint.h>
 #include <string.h>
 
 #define NEVERC_GCM_MAX_TEXT_BYTES ((UINT64_C(1) << 36) - 32)
@@ -212,6 +213,17 @@ static int gcm_ctr_encrypt(const neverc_gcm_ctx *ctx,
     uint64_t blocks = ((uint64_t)len + 15) / 16;
     if (blocks > (UINT64_C(1) << 32) - 2)
         return -1;
+
+    /* dest-after-src: a later 16-byte XOR would read bytes an earlier write
+     * already replaced. Slide into out first, then treat as in-place. */
+    if (len > 0) {
+        uintptr_t d = (uintptr_t)out;
+        uintptr_t s = (uintptr_t)in;
+        if (d > s && (d - s) < (uintptr_t)len) {
+            memmove(out, in, len);
+            in = out;
+        }
+    }
 
     uint8_t counter_block[16], keystream[16];
     memcpy(counter_block, nonce, 12);

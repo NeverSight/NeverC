@@ -257,17 +257,133 @@ static void test_overlap(void) {
 static void test_ctr_low32_wrap_no_reuse(void) {
     printf("[CTR 32-bit counter wrap]\n");
     uint8_t key[16] = {0};
-    uint8_t iv[16];
+    uint8_t iv[16], iv_saved[16];
+    uint8_t pt[32], ct[32], sentinel[32];
+    memset(pt, 0x5A, sizeof(pt));
+    memset(ct, 0xA5, sizeof(ct));
+    memset(sentinel, 0xA5, sizeof(sentinel));
+
     memset(iv, 0, 16);
     iv[12] = iv[13] = iv[14] = iv[15] = 0xFF;
+    memcpy(iv_saved, iv, 16);
+    check_int("CTR wrap-around encrypt rejected",
+              neverc_cipher_ctr_checked(key, 16, iv, ct, pt, 32), -1);
+    check_bytes("CTR wrap leaves output unmodified", ct, sentinel, 32);
+    check_bytes("CTR wrap leaves IV unmodified", iv, iv_saved, 16);
 
-    uint8_t pt[32], ct[32];
-    memset(pt, 0x5A, sizeof(pt));
-    check_int("CTR wrap-around encrypt",
+    memset(iv, 0, 16);
+    iv[12] = iv[13] = iv[14] = iv[15] = 0xFF;
+    check_int("CTR last counter block allowed",
+              neverc_cipher_ctr_checked(key, 16, iv, ct, pt, 16), 0);
+
+    memset(iv, 0, 16);
+    iv[15] = 0xFE;
+    check_int("CTR two blocks before wrap allowed",
               neverc_cipher_ctr_checked(key, 16, iv, ct, pt, 32), 0);
-    /* 128-bit increment carries into the nonce; the two blocks must differ. */
-    check_int("wrapped counter does not reuse keystream",
+    check_int("adjacent counters do not reuse keystream",
               memcmp(ct, ct + 16, 16) != 0, 1);
+}
+
+static void test_pkcs7_pad_unpad(void) {
+    printf("[PKCS#7 pad/unpad]\n");
+    uint8_t dst[32], src[16], padded[32];
+    size_t n = 99;
+
+    memcpy(src, "hi", 2);
+    check_int("pad 2 bytes",
+              neverc_cipher_pkcs7_pad(dst, sizeof(dst), src, 2, &n), 0);
+    check_int("pad 2 length", (int)n, 16);
+    uint8_t exp2[16];
+    memcpy(exp2, "hi", 2);
+    memset(exp2 + 2, 0x0e, 14);
+    check_bytes("pad 2 known-answer", dst, exp2, 16);
+
+    memset(dst, 0xA5, sizeof(dst));
+    n = 99;
+    check_int("unpad 2 bytes",
+              neverc_cipher_pkcs7_unpad(dst, sizeof(dst), exp2, 16, &n), 0);
+    check_int("unpad 2 length", (int)n, 2);
+    check_bytes("unpad 2 known-answer", dst, src, 2);
+
+    /* Full-block padding: 16 bytes of 0x10. */
+    memset(src, 0x11, 16);
+    check_int("pad aligned block",
+              neverc_cipher_pkcs7_pad(padded, sizeof(padded), src, 16, &n), 0);
+    check_int("pad aligned length", (int)n, 32);
+    uint8_t exp16[16];
+    memset(exp16, 0x10, 16);
+    check_bytes("pad aligned suffix", padded + 16, exp16, 16);
+    check_int("unpad aligned block",
+              neverc_cipher_pkcs7_unpad(dst, sizeof(dst), padded, 32, &n), 0);
+    check_int("unpad aligned length", (int)n, 16);
+    check_bytes("unpad aligned payload", dst, src, 16);
+
+    uint8_t key[16] = {0}, iv[16] = {0}, iv2[16] = {0};
+    uint8_t pt[7] = {1, 2, 3, 4, 5, 6, 7};
+    uint8_t buf[32], ct[32], rec[32];
+    size_t padded_len = 0, rec_len = 0;
+    check_int("pad before CBC",
+              neverc_cipher_pkcs7_pad(buf, sizeof(buf), pt, sizeof(pt),
+                                      &padded_len), 0);
+    check_int("CBC encrypt padded",
+              neverc_cipher_cbc_encrypt(key, 16, iv, ct, buf, padded_len), 0);
+    check_int("CBC decrypt padded",
+              neverc_cipher_cbc_decrypt(key, 16, iv2, buf, ct, padded_len), 0);
+    check_int("unpad after CBC",
+              neverc_cipher_pkcs7_unpad(rec, sizeof(rec), buf, padded_len,
+                                        &rec_len), 0);
+    check_int("CBC+PKCS7 round-trip length", (int)rec_len, 7);
+    check_bytes("CBC+PKCS7 round-trip", rec, pt, 7);
+}
+
+static void test_pkcs7_unpad_fail_closed(void) {
+    printf("[PKCS#7 unpad fail-closed]\n");
+    uint8_t src[16], dst[16], sentinel[16];
+    size_t n;
+    memset(sentinel, 0xA5, sizeof(sentinel));
+
+    memset(src, 0x01, 15);
+    src[15] = 0x00; /* n=0 */
+    memcpy(dst, sentinel, 16);
+    n = 99;
+    check_int("n=0 rejected",
+              neverc_cipher_pkcs7_unpad(dst, sizeof(dst), src, 16, &n), -1);
+    check_int("n=0 reports zero length", (int)n, 0);
+    check_bytes("n=0 leaves dst", dst, sentinel, 16);
+
+    src[15] = 0x11; /* n=17 */
+    memcpy(dst, sentinel, 16);
+    n = 99;
+    check_int("n=17 rejected",
+              neverc_cipher_pkcs7_unpad(dst, sizeof(dst), src, 16, &n), -1);
+    check_int("n=17 reports zero length", (int)n, 0);
+    check_bytes("n=17 leaves dst", dst, sentinel, 16);
+
+    memset(src, 0x02, 16);
+    src[14] = 0x03; /* last byte 2, previous byte not 2 */
+    memcpy(dst, sentinel, 16);
+    n = 99;
+    check_int("mismatched pad rejected",
+              neverc_cipher_pkcs7_unpad(dst, sizeof(dst), src, 16, &n), -1);
+    check_int("mismatched pad reports zero length", (int)n, 0);
+    check_bytes("mismatched pad leaves dst", dst, sentinel, 16);
+
+    check_int("short input rejected",
+              neverc_cipher_pkcs7_unpad(dst, sizeof(dst), src, 15, &n), -1);
+    check_int("empty input rejected",
+              neverc_cipher_pkcs7_unpad(dst, sizeof(dst), src, 0, &n), -1);
+}
+
+static void test_cbc_does_not_inspect_padding(void) {
+    printf("[CBC decrypt does not inspect padding]\n");
+    uint8_t key[16] = {0}, iv[16] = {0}, iv2[16] = {0};
+    uint8_t ct[16], pt[16];
+    memset(ct, 0xFF, sizeof(ct));
+    check_int("CBC decrypt of unpadded block succeeds",
+              neverc_cipher_cbc_decrypt(key, 16, iv, pt, ct, 16), 0);
+    hex_to_bytes("000102030405060708090a0b0c0d0e0f", iv2, 16);
+    check_int("CBC decrypt does not reject last-byte 0",
+              neverc_cipher_cbc_decrypt(key, 16, iv2, pt, ct, 16), 0);
 }
 
 int main(void) {
@@ -281,6 +397,9 @@ int main(void) {
     test_invalid_key_and_spans();
     test_overlap();
     test_ctr_low32_wrap_no_reuse();
+    test_pkcs7_pad_unpad();
+    test_pkcs7_unpad_fail_closed();
+    test_cbc_does_not_inspect_padding();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

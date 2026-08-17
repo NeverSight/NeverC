@@ -695,6 +695,72 @@ int main(void) {
     CHECK("name_constraints_san_present_ignores_cn",
           neverc_x509_verify_chain(
               nc_chain, 2, &valid_time, NULL, 0) == 0);
+
+    /* Wildcard SANs assert every single-label child; excluded children
+     * and permitted trees that do not cover the whole wildcard must fail. */
+    char *wildcard_dns[] = {"*.example.com"};
+    nc_leaf.dns_names = wildcard_dns;
+    nc_leaf.dns_name_count = 1;
+    memset(nc_leaf.subject.common_name, 0,
+           sizeof(nc_leaf.subject.common_name));
+    nc_root.permitted_dns_names = permitted_dns;
+    nc_root.permitted_dns_name_count = 1;
+    CHECK("name_constraints_wildcard_permitted_under_parent",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) == 0);
+    char *www_only_permitted[] = {"www.example.com"};
+    nc_root.permitted_dns_names = www_only_permitted;
+    CHECK("name_constraints_wildcard_broader_than_permitted",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    nc_root.permitted_dns_names = NULL;
+    nc_root.permitted_dns_name_count = 0;
+    char *excluded_www[] = {"www.example.com"};
+    nc_root.excluded_dns_names = excluded_www;
+    nc_root.excluded_dns_name_count = 1;
+    CHECK("name_constraints_wildcard_covers_excluded_child",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    char *excluded_parent[] = {"example.com"};
+    nc_root.excluded_dns_names = excluded_parent;
+    CHECK("name_constraints_wildcard_covers_excluded_parent",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    char *excluded_deep[] = {"foo.www.example.com"};
+    nc_root.excluded_dns_names = excluded_deep;
+    CHECK("name_constraints_wildcard_unrelated_deep_excluded",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) == 0);
+    nc_root.excluded_dns_names = NULL;
+    nc_root.excluded_dns_name_count = 0;
+    nc_root.permitted_dns_names = NULL;
+    nc_root.permitted_dns_name_count = 0;
+
+    /* localhost and wildcard CNs are DNS identities without a SAN. */
+    nc_leaf.dns_names = NULL;
+    nc_leaf.dns_name_count = 0;
+    nc_root.permitted_dns_names = permitted_dns;
+    nc_root.permitted_dns_name_count = 1;
+    memcpy(nc_leaf.subject.common_name, "localhost",
+           sizeof("localhost"));
+    CHECK("name_constraints_localhost_cn_without_san_rejected",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    memcpy(nc_leaf.subject.common_name, "LOCALHOST.",
+           sizeof("LOCALHOST."));
+    CHECK("name_constraints_localhost_cn_case_and_dot_rejected",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    memcpy(nc_leaf.subject.common_name, "*.evil.com",
+           sizeof("*.evil.com"));
+    CHECK("name_constraints_wildcard_cn_without_san_rejected",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    memcpy(nc_leaf.subject.common_name, "*.example.com",
+           sizeof("*.example.com"));
+    CHECK("name_constraints_wildcard_cn_without_san_match",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) == 0);
     memset(nc_leaf.subject.common_name, 0,
            sizeof(nc_leaf.subject.common_name));
     nc_root.permitted_dns_names = NULL;
@@ -728,6 +794,42 @@ int main(void) {
     CHECK("name_constraints_excluded_ip_rejected",
           neverc_x509_verify_chain(
               nc_chain, 2, &valid_time, NULL, 0) != 0);
+
+    nc_leaf.ip_addresses = NULL;
+    nc_leaf.ip_address_count = 0;
+    nc_root.excluded_ip_networks = NULL;
+    nc_root.excluded_ip_network_count = 0;
+    nc_root.permitted_ip_networks = &permitted_net;
+    nc_root.permitted_ip_network_count = 1;
+    memcpy(nc_leaf.subject.common_name, "11.0.0.1",
+           sizeof("11.0.0.1"));
+    CHECK("name_constraints_ipv4_cn_without_san_rejected",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    memcpy(nc_leaf.subject.common_name, "10.1.2.3",
+           sizeof("10.1.2.3"));
+    CHECK("name_constraints_ipv4_cn_without_san_match",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) == 0);
+    memcpy(nc_leaf.subject.common_name, "10.1.2.3.",
+           sizeof("10.1.2.3."));
+    CHECK("name_constraints_ipv4_cn_trailing_dot_match",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) == 0);
+    memcpy(nc_leaf.subject.common_name, "010.1.2.3",
+           sizeof("010.1.2.3"));
+    CHECK("name_constraints_ipv4_cn_leading_zero_rejected",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    memcpy(nc_leaf.subject.common_name, "::1",
+           sizeof("::1"));
+    CHECK("name_constraints_ipv6_cn_under_ip_constraint_rejected",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    memset(nc_leaf.subject.common_name, 0,
+           sizeof(nc_leaf.subject.common_name));
+    nc_root.permitted_ip_networks = NULL;
+    nc_root.permitted_ip_network_count = 0;
 
     neverc_x509_time_t expired_time = {2030, 1, 1, 0, 0, 0};
     CHECK("expired_chain_rejected",

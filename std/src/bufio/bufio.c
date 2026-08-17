@@ -15,6 +15,99 @@ static void bufio_scanner_fail(neverc_bufio_scanner_t *s, int err) {
     s->token_len = 0;
 }
 
+static int bufio_is_space(uint8_t c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' ||
+           c == '\r' || c == 0x85 || c == 0xA0;
+}
+
+static void bufio_split_clear(size_t *advance, const uint8_t **token,
+                              size_t *token_len, int *err) {
+    if (advance) *advance = 0;
+    if (token) *token = NULL;
+    if (token_len) *token_len = 0;
+    if (err) *err = 0;
+}
+
+int neverc_bufio_scan_lines(const uint8_t *data, size_t data_len, int at_eof,
+                            size_t *advance, const uint8_t **token,
+                            size_t *token_len, int *err) {
+    bufio_split_clear(advance, token, token_len, err);
+    if (!advance || !token || !token_len) return -1;
+    if (data_len > 0 && !data) {
+        if (err) *err = NEVERC_IO_ERR_UNEXP;
+        return -1;
+    }
+    if (at_eof && data_len == 0) return 0;
+
+    const uint8_t *nl = data_len ? (const uint8_t *)memchr(data, '\n', data_len)
+                                 : NULL;
+    if (nl) {
+        size_t i = (size_t)(nl - data);
+        size_t tlen = i;
+        if (tlen > 0 && data[tlen - 1] == '\r') tlen--;
+        *advance = i + 1;
+        *token = data;
+        *token_len = tlen;
+        return 1;
+    }
+    if (at_eof) {
+        size_t tlen = data_len;
+        if (tlen > 0 && data[tlen - 1] == '\r') tlen--;
+        *advance = data_len;
+        *token = data;
+        *token_len = tlen;
+        return 1;
+    }
+    return 0;
+}
+
+int neverc_bufio_scan_words(const uint8_t *data, size_t data_len, int at_eof,
+                            size_t *advance, const uint8_t **token,
+                            size_t *token_len, int *err) {
+    bufio_split_clear(advance, token, token_len, err);
+    if (!advance || !token || !token_len) return -1;
+    if (data_len > 0 && !data) {
+        if (err) *err = NEVERC_IO_ERR_UNEXP;
+        return -1;
+    }
+
+    size_t start = 0;
+    while (start < data_len && bufio_is_space(data[start])) start++;
+    for (size_t i = start; i < data_len; i++) {
+        if (bufio_is_space(data[i])) {
+            *advance = i + 1;
+            *token = data + start;
+            *token_len = i - start;
+            return 1;
+        }
+    }
+    if (at_eof && start < data_len) {
+        *advance = data_len;
+        *token = data + start;
+        *token_len = data_len - start;
+        return 1;
+    }
+    *advance = start;
+    return 0;
+}
+
+int neverc_bufio_scan_bytes(const uint8_t *data, size_t data_len, int at_eof,
+                            size_t *advance, const uint8_t **token,
+                            size_t *token_len, int *err) {
+    bufio_split_clear(advance, token, token_len, err);
+    if (!advance || !token || !token_len) return -1;
+    (void)at_eof;
+    if (data_len == 0) return 0;
+    if (!data) {
+        if (err) *err = NEVERC_IO_ERR_UNEXP;
+        return -1;
+    }
+    *advance = 1;
+    *token = data;
+    *token_len = 1;
+    return 1;
+}
+
 void neverc_bufio_scanner_init(neverc_bufio_scanner_t *s,
                                neverc_io_reader_t reader) {
     if (!s) return;
@@ -27,6 +120,7 @@ void neverc_bufio_scanner_init(neverc_bufio_scanner_t *s,
     s->token_len = 0;
     s->done = 0;
     s->err = 0;
+    s->split = neverc_bufio_scan_lines;
     if (!s->buf) {
         s->buf_cap = 0;
         s->done = 1;
@@ -34,69 +128,101 @@ void neverc_bufio_scanner_init(neverc_bufio_scanner_t *s,
     }
 }
 
+void neverc_bufio_scanner_split(neverc_bufio_scanner_t *s,
+                                neverc_bufio_split_func_t split) {
+    if (!s) return;
+    s->split = split ? split : neverc_bufio_scan_lines;
+}
+
 int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
     if (!s) return 0;
     if (s->done && s->start >= s->buf_len) return 0;
-    if (!s->buf || s->buf_cap == 0 || !s->reader.read) {
+    if (!s->buf || s->buf_cap == 0 || !s->reader.read ||
+        s->start > s->buf_len || s->buf_len >= s->buf_cap) {
         bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
         return 0;
     }
 
-    /* `scan_pos` marks the first not-yet-examined byte. The previous code
-     * rescanned the whole [start, buf_len) window after every refill, turning a
-     * long line read in small chunks into O(n^2); tracking the scan frontier
-     * keeps each byte examined once (O(n)). memchr does the newline search with
-     * a single SIMD scan instead of a byte-at-a-time loop. */
-    size_t scan_pos = s->start;
+    neverc_bufio_split_func_t split =
+        s->split ? s->split : neverc_bufio_scan_lines;
     unsigned empty_reads = 0;
 
     for (;;) {
-        if (scan_pos < s->buf_len) {
-            const uint8_t *nl = (const uint8_t *)memchr(s->buf + scan_pos, '\n',
-                                                        s->buf_len - scan_pos);
-            if (nl) {
-                size_t i = (size_t)(nl - s->buf);
-                s->token = s->buf + s->start;
-                s->token_len = i - s->start;
-                if (s->token_len > 0 && s->token[s->token_len - 1] == '\r')
-                    s->token_len--;
-                s->buf[s->start + s->token_len] = '\0';
-                s->start = i + 1;
-                return 1;
+        size_t data_len = s->buf_len - s->start;
+        size_t advance = 0;
+        const uint8_t *token = NULL;
+        size_t token_len = 0;
+        int split_err = 0;
+        int split_rc = split(s->buf + s->start, data_len, s->done,
+                             &advance, &token, &token_len, &split_err);
+        if (split_rc < 0) {
+            bufio_scanner_fail(s, split_err != 0 ? split_err
+                                                 : NEVERC_IO_ERR_UNEXP);
+            return 0;
+        }
+        if (advance > data_len) {
+            bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
+            return 0;
+        }
+        if (split_rc > 0) {
+            const uint8_t *window = s->buf + s->start;
+            if (advance == 0 || !token || token < window ||
+                token > window + data_len ||
+                token_len > (size_t)(window + data_len - token) ||
+                token_len > (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE) {
+                bufio_scanner_fail(s, token_len >
+                                          (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE
+                                      ? NEVERC_BUFIO_ERR_TOO_LONG
+                                      : NEVERC_IO_ERR_UNEXP);
+                return 0;
             }
-            scan_pos = s->buf_len;
+            s->token = token;
+            s->token_len = token_len;
+            size_t token_end = (size_t)(token - s->buf) + token_len;
+            size_t consumed_end = s->start + advance;
+            if (token_end < consumed_end || token_end == s->buf_len)
+                s->buf[token_end] = '\0';
+            s->start += advance;
+            return 1;
         }
 
+        /* Need more data. Honor skip-advance (ScanWords leading space). */
+        s->start += advance;
+
+        if (s->done) return 0;
+
         if (s->start > 0) {
+            if (s->start > s->buf_len) {
+                bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
+                return 0;
+            }
             size_t remaining = s->buf_len - s->start;
             if (remaining > 0)
                 memmove(s->buf, s->buf + s->start, remaining);
             s->buf_len = remaining;
-            scan_pos = remaining;   /* already-scanned bytes now live at [0,remaining) */
             s->start = 0;
         }
 
-        if (s->done) {
-            if (s->buf_len > s->start) {
-                s->token = s->buf + s->start;
-                s->token_len = s->buf_len - s->start;
-                if (s->token_len > 0 && s->token[s->token_len - 1] == '\r')
-                    s->token_len--;
-                s->buf[s->start + s->token_len] = '\0';
-                s->start = s->buf_len;
-                return 1;
-            }
-            return 0;
-        }
-
         /* Keep one byte free so scanner_text() can always expose a
-         * NUL-terminated token, including data returned together with EOF. */
+         * NUL-terminated token, including data returned together with EOF.
+         * Cap growth at MaxScanTokenSize+1 (Go bufio.Scanner ErrTooLong).
+         * A SplitFunc that still wants more at the cap must fail closed. */
         if (s->buf_len >= s->buf_cap - 1) {
+            size_t max_cap = (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE + 1;
+            if (s->buf_cap >= max_cap) {
+                bufio_scanner_fail(s, NEVERC_BUFIO_ERR_TOO_LONG);
+                return 0;
+            }
             if (s->buf_cap > SIZE_MAX / 2) {
                 bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
                 return 0;
             }
             size_t new_cap = s->buf_cap * 2;
+            if (new_cap > max_cap) new_cap = max_cap;
+            if (new_cap <= s->buf_cap) {
+                bufio_scanner_fail(s, NEVERC_BUFIO_ERR_TOO_LONG);
+                return 0;
+            }
             uint8_t *new_buf = (uint8_t *)realloc(s->buf, new_cap);
             if (!new_buf) {
                 bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
@@ -113,7 +239,7 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
                                  available, &nr);
         if (nr > available) {
             bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
-            continue;
+            return 0;
         }
         s->buf_len += nr;
         if (err == NEVERC_IO_EOF) {
@@ -176,6 +302,7 @@ void neverc_bufio_reader_init_size(neverc_bufio_reader_t *br,
     br->r = br->w = 0;
     br->eof = br->buf ? 0 : 1;
     br->err = br->buf ? 0 : NEVERC_IO_ERR_UNEXP;
+    br->last_byte = -1;
 }
 
 static size_t bufio_fill(neverc_bufio_reader_t *br) {
@@ -229,6 +356,25 @@ int neverc_bufio_reader_read_byte(neverc_bufio_reader_t *br, uint8_t *b) {
         if (br->r >= br->w) return bufio_reader_terminal_error(br);
     }
     *b = br->buf[br->r++];
+    br->last_byte = *b;
+    return 0;
+}
+
+int neverc_bufio_reader_unread_byte(neverc_bufio_reader_t *br) {
+    if (!br || !br->buf || br->last_byte < 0 || br->r > br->w ||
+        br->w > br->buf_cap)
+        return NEVERC_IO_ERR_UNEXP;
+    if (br->r == 0 && br->w > 0) return NEVERC_IO_ERR_UNEXP;
+    if (br->r > 0) {
+        br->r--;
+        br->buf[br->r] = (uint8_t)br->last_byte;
+    } else {
+        if (br->buf_cap == 0) return NEVERC_IO_ERR_UNEXP;
+        br->buf[0] = (uint8_t)br->last_byte;
+        br->w = 1;
+        br->r = 0;
+    }
+    br->last_byte = -1;
     return 0;
 }
 
@@ -241,11 +387,21 @@ int neverc_bufio_reader_read(neverc_bufio_reader_t *br,
         return NEVERC_IO_ERR_UNEXP;
     while (*n < len) {
         if (br->r >= br->w) {
-            if (br->eof)
-                return *n > 0 ? 0 : bufio_reader_terminal_error(br);
+            if (br->eof) {
+                if (*n > 0) {
+                    br->last_byte = buf[*n - 1];
+                    return 0;
+                }
+                return bufio_reader_terminal_error(br);
+            }
             bufio_fill(br);
-            if (br->r >= br->w)
-                return *n > 0 ? 0 : bufio_reader_terminal_error(br);
+            if (br->r >= br->w) {
+                if (*n > 0) {
+                    br->last_byte = buf[*n - 1];
+                    return 0;
+                }
+                return bufio_reader_terminal_error(br);
+            }
         }
         size_t avail = br->w - br->r;
         size_t want = len - *n;
@@ -254,6 +410,7 @@ int neverc_bufio_reader_read(neverc_bufio_reader_t *br,
         br->r += copy;
         *n += copy;
     }
+    if (*n > 0) br->last_byte = buf[*n - 1];
     return 0;
 }
 
@@ -302,6 +459,7 @@ int neverc_bufio_reader_peek(neverc_bufio_reader_t *br,
                              uint8_t *buf, size_t n) {
     if (!br || (!buf && n > 0) || br->r > br->w || br->w > br->buf_cap)
         return NEVERC_IO_ERR_UNEXP;
+    br->last_byte = -1;
     if (n == 0) return 0;
     while (br->w - br->r < n && !br->eof)
         if (bufio_fill(br) == 0) break;
@@ -319,6 +477,7 @@ void neverc_bufio_reader_free(neverc_bufio_reader_t *br) {
     br->buf_cap = br->r = br->w = 0;
     br->eof = 1;
     br->err = NEVERC_IO_EOF;
+    br->last_byte = -1;
 }
 
 /* --- Buffered Writer --- */

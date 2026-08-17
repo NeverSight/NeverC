@@ -101,7 +101,10 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "https://[2001:db8::1/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:abc/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:65536/api"), -1);
-    ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:/api"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:/api"), 0);
+    ASSERT_STR_EQ(u.host, "host");
+    ASSERT_STR_EQ(u.port, "");
+    ASSERT_STR_EQ(u.path, "/api");
     ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:+80/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "1nvalid://host/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, ""), -1);
@@ -127,6 +130,9 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[::1]:80"), 0);
     ASSERT_STR_EQ(u.host, "::1");
     ASSERT_STR_EQ(u.port, "80");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://[::1]:"), 0);
+    ASSERT_STR_EQ(u.host, "::1");
+    ASSERT_STR_EQ(u.port, "");
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[hello]/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[192.168.1.1]/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%eth0]/"), -1);
@@ -168,6 +174,14 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://evil.com\\@good.com/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://evil.com\\@good.com/x"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "//evil.com\\@good.com/path"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "/\\evil.com"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/foo\\bar"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://user{name}@host/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://user[name@host/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com:80@evil.com/"), 0);
+    ASSERT_STR_EQ(u.user, "example.com");
+    ASSERT_STR_EQ(u.password, "80");
+    ASSERT_STR_EQ(u.host, "evil.com");
     ASSERT_INT_EQ(neverc_url_parse(&u, "//example.com/path?q=1#frag"), 0);
     ASSERT_STR_EQ(u.scheme, "");
     ASSERT_STR_EQ(u.host, "example.com");
@@ -340,11 +354,42 @@ static void test_request_uri(void) {
     ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "*"), 0);
     ASSERT_STR_EQ(u.path, "*");
     ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "foo"), -1);
+    ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "//evil.com/phish"), -1);
     ASSERT_INT_EQ(neverc_url_parse_request_uri(
         &u, "https://example.com/path#frag"), -1);
     ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, ""), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "foo"), 0);
     ASSERT_STR_EQ(u.path, "foo");
+
+    ASSERT_INT_EQ(neverc_url_parse(&u, "https://example.com//evil.com"), 0);
+    neverc_url_request_uri(&u, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "/.//evil.com");
+}
+
+static void test_safe_redirect(void) {
+    printf("[safe_redirect]\n");
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/next", NULL), 1);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/next?q=1", NULL), 1);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("//evil.com/", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("//evil.com/", "good.com"), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/\\evil.com", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("foo", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect(
+        "https://good.com/x", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect(
+        "https://good.com/x", "good.com"), 1);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect(
+        "https://GOOD.COM/x", "good.com"), 1);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect(
+        "https://evil.com/x", "good.com"), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect(
+        "https://user@good.com/", "good.com"), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect(
+        "https://good.com:80@evil.com/", "good.com"), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect(
+        "javascript:alert(1)", "good.com"), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect(
+        "https://[::ffff:127.0.0.1]/", "good.com"), 0);
 }
 
 static void test_bounded_outputs(void) {
@@ -481,6 +526,7 @@ int main(void) {
     test_escape();
     test_unescape();
     test_request_uri();
+    test_safe_redirect();
     test_bounded_outputs();
     test_invalid_arguments();
     test_roundtrips();

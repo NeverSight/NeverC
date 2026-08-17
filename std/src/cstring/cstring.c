@@ -22,6 +22,10 @@ static int nc_size_mul(size_t left, size_t right, size_t *result) {
     return 1;
 }
 
+static const char *nc_s(const char *s) {
+    return s ? s : "";
+}
+
 static char *nc_alloc_string(size_t len) {
     if (len == SIZE_MAX) return NULL;
     return (char *)malloc(len + 1);
@@ -121,11 +125,13 @@ static size_t find_substring(const char *s, size_t slen,
  * ====================================================================== */
 
 int neverc_cstring_compare(const char *a, const char *b) {
-    int r = strcmp(a, b);
+    int r = strcmp(nc_s(a), nc_s(b));
     return r < 0 ? -1 : r > 0 ? 1 : 0;
 }
 
 int neverc_cstring_equal_fold(const char *s, const char *t) {
+    s = nc_s(s);
+    t = nc_s(t);
     size_t slen = strlen(s);
     size_t tlen = strlen(t);
     if (slen != tlen) return 0;
@@ -164,6 +170,7 @@ int neverc_cstring_equal_fold(const char *s, const char *t) {
 
 int neverc_cstring_index_byte(const char *s, char c) {
     if (c == '\0') return -1;
+    s = nc_s(s);
     const char *p = strchr(s, c);
     if (!p) return -1;
     size_t index = (size_t)(p - s);
@@ -172,6 +179,7 @@ int neverc_cstring_index_byte(const char *s, char c) {
 
 int neverc_cstring_last_index_byte(const char *s, char c) {
     if (c == '\0') return -1;
+    s = nc_s(s);
     const char *p = strrchr(s, c);
     if (!p) return -1;
     size_t index = (size_t)(p - s);
@@ -179,6 +187,8 @@ int neverc_cstring_last_index_byte(const char *s, char c) {
 }
 
 int neverc_cstring_index(const char *s, const char *substr) {
+    s = nc_s(s);
+    substr = nc_s(substr);
     size_t slen = strlen(s);
     size_t sublen = strlen(substr);
     size_t r = find_substring(s, slen, substr, sublen, 0);
@@ -186,6 +196,8 @@ int neverc_cstring_index(const char *s, const char *substr) {
 }
 
 int neverc_cstring_last_index(const char *s, const char *substr) {
+    s = nc_s(s);
+    substr = nc_s(substr);
     size_t slen = strlen(s);
     size_t sublen = strlen(substr);
     size_t r = find_substring(s, slen, substr, sublen, 1);
@@ -193,13 +205,15 @@ int neverc_cstring_last_index(const char *s, const char *substr) {
 }
 
 int neverc_cstring_index_any(const char *s, const char *chars) {
+    s = nc_s(s);
     return index_to_int(neverc_bytes_index_any(
-        (const uint8_t *)s, strlen(s), chars));
+        (const uint8_t *)s, strlen(s), nc_s(chars)));
 }
 
 int neverc_cstring_last_index_any(const char *s, const char *chars) {
+    s = nc_s(s);
     return index_to_int(neverc_bytes_last_index_any(
-        (const uint8_t *)s, strlen(s), chars));
+        (const uint8_t *)s, strlen(s), nc_s(chars)));
 }
 
 int neverc_cstring_contains(const char *s, const char *substr) {
@@ -215,6 +229,8 @@ int neverc_cstring_contains_char(const char *s, char c) {
 }
 
 int neverc_cstring_count(const char *s, const char *substr) {
+    s = nc_s(s);
+    substr = nc_s(substr);
     size_t sublen = strlen(substr);
     if (sublen == 0) {
         size_t runes = utf8_rune_count(s, strlen(s));
@@ -254,6 +270,8 @@ int neverc_cstring_count(const char *s, const char *substr) {
  * ====================================================================== */
 
 int neverc_cstring_has_prefix(const char *s, const char *prefix) {
+    s = nc_s(s);
+    prefix = nc_s(prefix);
     size_t plen = strlen(prefix);
     if (plen == 0) return 1;
     size_t slen = strlen(s);
@@ -262,6 +280,8 @@ int neverc_cstring_has_prefix(const char *s, const char *prefix) {
 }
 
 int neverc_cstring_has_suffix(const char *s, const char *suffix) {
+    s = nc_s(s);
+    suffix = nc_s(suffix);
     size_t sfxlen = strlen(suffix);
     if (sfxlen == 0) return 1;
     size_t slen = strlen(s);
@@ -274,6 +294,7 @@ int neverc_cstring_has_suffix(const char *s, const char *suffix) {
  * ====================================================================== */
 
 char *neverc_cstring_to_upper(const char *s) {
+    s = nc_s(s);
     size_t len = strlen(s);
     char *r = nc_alloc_string(len);
     if (!r) return NULL;
@@ -283,6 +304,7 @@ char *neverc_cstring_to_upper(const char *s) {
 }
 
 char *neverc_cstring_to_lower(const char *s) {
+    s = nc_s(s);
     size_t len = strlen(s);
     char *r = nc_alloc_string(len);
     if (!r) return NULL;
@@ -292,6 +314,7 @@ char *neverc_cstring_to_lower(const char *s) {
 }
 
 char *neverc_cstring_to_title(const char *s) {
+    s = nc_s(s);
     size_t len = strlen(s);
     char *r = nc_alloc_string(len);
     if (!r) return NULL;
@@ -309,6 +332,7 @@ char *neverc_cstring_to_title(const char *s) {
 
 char *neverc_cstring_repeat(const char *s, int count) {
     if (count < 0) return NULL;
+    s = nc_s(s);
     if (count == 0) return nc_strdup("", 0);
     size_t len = strlen(s);
     if (len == 0) return nc_strdup("", 0);
@@ -329,6 +353,9 @@ char *neverc_cstring_repeat(const char *s, int count) {
 
 char *neverc_cstring_replace(const char *s, const char *old_s,
                               const char *new_s, int n) {
+    s = nc_s(s);
+    old_s = nc_s(old_s);
+    new_s = nc_s(new_s);
     if (n == 0) return nc_strdup(s, strlen(s));
 
     size_t slen = strlen(s);
@@ -428,6 +455,7 @@ char *neverc_cstring_replace_all(const char *s, const char *old_s,
 
 char *neverc_cstring_map(char (*mapping)(char), const char *s) {
     if (!mapping) return NULL;
+    s = nc_s(s);
     size_t len = strlen(s);
     char *r = nc_alloc_string(len);
     if (!r) return NULL;
@@ -447,7 +475,7 @@ char *neverc_cstring_join(const char **strs, size_t count, const char *sep) {
 
     size_t total = 0;
     for (size_t i = 0; i < count; i++) {
-        if (!strs[i] || !nc_size_add(total, strlen(strs[i]), &total) ||
+        if (!nc_size_add(total, strlen(nc_s(strs[i])), &total) ||
             (i > 0 && !nc_size_add(total, seplen, &total)))
             return NULL;
     }
@@ -460,8 +488,9 @@ char *neverc_cstring_join(const char **strs, size_t count, const char *sep) {
             memcpy(r + w, sep, seplen);
             w += seplen;
         }
-        size_t elen = strlen(strs[i]);
-        memcpy(r + w, strs[i], elen);
+        const char *part = nc_s(strs[i]);
+        size_t elen = strlen(part);
+        memcpy(r + w, part, elen);
         w += elen;
     }
     r[w] = '\0';
@@ -474,29 +503,38 @@ char *neverc_cstring_join(const char **strs, size_t count, const char *sep) {
 
 char *neverc_cstring_trim_left(const char *s, const char *cutset) {
     size_t outlen = 0;
+    s = nc_s(s);
+    cutset = nc_s(cutset);
     return cstr_from_bytes(neverc_bytes_trim_left(
         (const uint8_t *)s, strlen(s), cutset, &outlen), outlen);
 }
 
 char *neverc_cstring_trim_right(const char *s, const char *cutset) {
     size_t outlen = 0;
+    s = nc_s(s);
+    cutset = nc_s(cutset);
     return cstr_from_bytes(neverc_bytes_trim_right(
         (const uint8_t *)s, strlen(s), cutset, &outlen), outlen);
 }
 
 char *neverc_cstring_trim(const char *s, const char *cutset) {
     size_t outlen = 0;
+    s = nc_s(s);
+    cutset = nc_s(cutset);
     return cstr_from_bytes(neverc_bytes_trim(
         (const uint8_t *)s, strlen(s), cutset, &outlen), outlen);
 }
 
 char *neverc_cstring_trim_space(const char *s) {
     size_t outlen = 0;
+    s = nc_s(s);
     return cstr_from_bytes(neverc_bytes_trim_space(
         (const uint8_t *)s, strlen(s), &outlen), outlen);
 }
 
 char *neverc_cstring_trim_prefix(const char *s, const char *prefix) {
+    s = nc_s(s);
+    prefix = nc_s(prefix);
     if (neverc_cstring_has_prefix(s, prefix)) {
         size_t plen = strlen(prefix);
         return nc_strdup(s + plen, strlen(s) - plen);
@@ -505,6 +543,8 @@ char *neverc_cstring_trim_prefix(const char *s, const char *prefix) {
 }
 
 char *neverc_cstring_trim_suffix(const char *s, const char *suffix) {
+    s = nc_s(s);
+    suffix = nc_s(suffix);
     size_t slen = strlen(s);
     size_t sfxlen = strlen(suffix);
     if (sfxlen <= slen && memcmp(s + slen - sfxlen, suffix, sfxlen) == 0)
@@ -747,9 +787,10 @@ int neverc_cstring_cut_last(const char *s, const char *sep,
  * ====================================================================== */
 
 char *neverc_cstring_clone(const char *s) {
+    s = nc_s(s);
     return nc_strdup(s, strlen(s));
 }
 
 size_t neverc_cstring_len(const char *s) {
-    return strlen(s);
+    return strlen(nc_s(s));
 }

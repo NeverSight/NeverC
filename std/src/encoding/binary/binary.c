@@ -104,7 +104,7 @@ int neverc_binary_uvarint(const uint8_t *buf, size_t n, uint64_t *out) {
     uint64_t x = 0;
     unsigned s = 0;
     for (size_t i = 0; i < n; i++) {
-        if (i >= NEVERC_BINARY_MAX_VARINT_LEN64)
+        if (i == NEVERC_BINARY_MAX_VARINT_LEN64)
             return -(int)(i + 1);
         uint8_t b = buf[i];
         if (b < 0x80) {
@@ -113,6 +113,10 @@ int neverc_binary_uvarint(const uint8_t *buf, size_t n, uint64_t *out) {
             if (out) *out = x | ((uint64_t)b << s);
             return (int)(i + 1);
         }
+        /* 10th byte still a continuation: the value cannot fit in uint64
+         * (Go encoding/binary.ReadUvarint overflow). */
+        if (i == NEVERC_BINARY_MAX_VARINT_LEN64 - 1)
+            return -(int)(i + 1);
         x |= (uint64_t)(b & 0x7f) << s;
         s += 7;
     }

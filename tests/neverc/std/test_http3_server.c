@@ -32,6 +32,15 @@ static void test_server_lifecycle(void) {
     neverc_http3_server_destroy(NULL);
 }
 
+static void test_public_error_codes(void) {
+    CHECK(NC_H3_QPACK_DECOMPRESSION_FAILED == 0x0200);
+    CHECK(NC_H3_QPACK_ENCODER_STREAM_ERROR == 0x0201);
+    CHECK(NC_H3_QPACK_DECODER_STREAM_ERROR == 0x0202);
+    CHECK(NC_H3_STREAM_CREATION_ERROR == 0x0103);
+    CHECK(NC_H3_FRAME_UNEXPECTED == 0x0105);
+    CHECK(NC_H3_EXCESSIVE_LOAD == 0x0107);
+}
+
 static void test_invalid_server_inputs(void) {
     neverc_http3_server_t *server = neverc_http3_server_create(NULL);
     CHECK(server != NULL);
@@ -62,6 +71,7 @@ static void test_invalid_client_inputs(void) {
 int main(void) {
     printf("HTTP/3 public server test suite:\n");
     test_server_lifecycle();
+    test_public_error_codes();
     test_invalid_server_inputs();
     test_invalid_client_inputs();
     printf("http3-server: %d checks, %d failed\n", tests_run, tests_failed);

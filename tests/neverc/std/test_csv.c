@@ -140,12 +140,18 @@ static void test_write_quoting(void) {
     dst[n] = '\0';
     ASSERT_STR_EQ(dst, "\"\xc2\xa0x\"\n");
 
-    /* Formula prefixes must be quoted; a leading minus is a number, not a formula. */
-    const char *formula_fields[] = {"=1+1", "+cmd", "@SUM(A1)", "-1"};
-    n = neverc_csv_write_record(formula_fields, 4, dst, sizeof(dst), NULL);
+    /* Formula prefixes must be quoted, including a leading minus (OWASP). */
+    const char *formula_fields[] = {"=1+1", "+cmd", "@SUM(A1)", "-1", "-=cmd"};
+    n = neverc_csv_write_record(formula_fields, 5, dst, sizeof(dst), NULL);
     ASSERT_INT_EQ(n > 0, 1);
     dst[n] = '\0';
-    ASSERT_STR_EQ(dst, "\"=1+1\",\"+cmd\",\"@SUM(A1)\",-1\n");
+    ASSERT_STR_EQ(dst, "\"=1+1\",\"+cmd\",\"@SUM(A1)\",\"-1\",\"-=cmd\"\n");
+
+    const char *tab_formula[] = {"\t=CMD()"};
+    n = neverc_csv_write_record(tab_formula, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "\"\t=CMD()\"\n");
 
     neverc_csv_reader_opts_t trim_opts = {
         .delimiter = ',', .trim_leading_space = 1
@@ -197,6 +203,13 @@ static void test_trim_space(void) {
     ASSERT_STR_EQ(fields[0], "a ");
     ASSERT_STR_EQ(fields[1], "b  ");
     ASSERT_STR_EQ(fields[2], "c  ");
+
+    /* Go TrimLeadingSpace uses unicode.IsSpace, including VT and NBSP. */
+    n = neverc_csv_read_line("\va,\xc2\xa0b", 6U, fields, 10, work, sizeof(work),
+                             &opts);
+    ASSERT_INT_EQ(n, 2);
+    ASSERT_STR_EQ(fields[0], "a");
+    ASSERT_STR_EQ(fields[1], "b");
 }
 
 static void test_read_all(void) {
@@ -337,7 +350,7 @@ static void test_read_all(void) {
                       1);
         ASSERT_STR_EQ(qrecords[0][0], "a\rb");
     }
-    /* RFC 4180 quoted fields may contain CRLF; it is not a record break. */
+    /* Go encoding/csv Issue 21201: CRLF in a quoted field becomes LF. */
     {
         const char *crlf_qrow[NEVERC_CSV_MAX_FIELDS];
         const char **crlf_qrecords[] = {crlf_qrow};
@@ -348,8 +361,22 @@ static void test_read_all(void) {
                           work, sizeof(work), NULL),
                       1);
         ASSERT_INT_EQ(crlf_qcount[0], 2);
-        ASSERT_STR_EQ(crlf_qrecords[0][0], "a\r\nb");
+        ASSERT_STR_EQ(crlf_qrecords[0][0], "a\nb");
         ASSERT_STR_EQ(crlf_qrecords[0][1], "c");
+    }
+    {
+        const char *go_crlf[NEVERC_CSV_MAX_FIELDS];
+        const char **go_records[] = {go_crlf};
+        int go_count[1] = {0};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          "A,\"Hello\r\nHi\",B\r\n", 17U,
+                          go_records, go_count, 1,
+                          work, sizeof(work), NULL),
+                      1);
+        ASSERT_INT_EQ(go_count[0], 3);
+        ASSERT_STR_EQ(go_records[0][0], "A");
+        ASSERT_STR_EQ(go_records[0][1], "Hello\nHi");
+        ASSERT_STR_EQ(go_records[0][2], "B");
     }
     /* Quoted newline at EOF without a trailing record terminator. */
     {
@@ -411,6 +438,52 @@ static void test_invalid_inputs(void) {
                       work, sizeof(work), &lazy),
                   1);
     ASSERT_STR_EQ(fields[0], "unterminated");
+
+    /* Go encoding/csv reader_test.go LazyQuotes / BareQuotes. */
+    {
+        const char *lazy_fields[10];
+        const char *lazy_line = "a \"word\",\"1\"2\",a\",\"b";
+        ASSERT_INT_EQ(neverc_csv_read_line(
+                          lazy_line, strlen(lazy_line), lazy_fields, 10,
+                          work, sizeof(work), &lazy),
+                      4);
+        ASSERT_STR_EQ(lazy_fields[0], "a \"word\"");
+        ASSERT_STR_EQ(lazy_fields[1], "1\"2");
+        ASSERT_STR_EQ(lazy_fields[2], "a\"");
+        ASSERT_STR_EQ(lazy_fields[3], "b");
+    }
+    /* Go LazyQuoteWithTrailingCRLF. */
+    {
+        const char *row[NEVERC_CSV_MAX_FIELDS];
+        const char **records[] = {row};
+        int count[1] = {0};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          "\"foo\"bar\"\r\n", 11U,
+                          records, count, 1, work, sizeof(work), &lazy),
+                      1);
+        ASSERT_STR_EQ(records[0][0], "foo\"bar");
+    }
+    /* Go OddQuotes vs LazyOddQuotes. */
+    ASSERT_INT_EQ(neverc_csv_read_line(
+                      "\"\"\"\"\"\"\"", 7U, fields, 2,
+                      work, sizeof(work), NULL),
+                  -1);
+    ASSERT_INT_EQ(neverc_csv_read_line(
+                      "\"\"\"\"\"\"\"", 7U, fields, 2,
+                      work, sizeof(work), &lazy),
+                  1);
+    ASSERT_STR_EQ(fields[0], "\"\"\"");
+    /* Unclosed lazy field keeps the record's trailing LF (Go copies it). */
+    {
+        const char *row[NEVERC_CSV_MAX_FIELDS];
+        const char **records[] = {row};
+        int count[1] = {0};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          "\"foo\" \n", 7U,
+                          records, count, 1, work, sizeof(work), &lazy),
+                      1);
+        ASSERT_STR_EQ(records[0][0], "foo\" \n");
+    }
 
     const char *null_field[] = {"a", NULL};
     char dst[32];

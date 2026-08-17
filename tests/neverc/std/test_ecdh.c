@@ -126,6 +126,50 @@ static void test_x25519_rfc7748_vector(void) {
     ASSERT_TRUE(memcmp(shared_a, expected_shared, 32) == 0);
 }
 
+static void test_x25519_clamp(void) {
+    printf("[X25519 clamp]\n");
+    /* RFC 7748 decodeScalar25519: k[0] &= 248, k[31] &= 127, k[31] |= 64.
+     * Keys that differ only in those bits must be equivalent. */
+    unsigned char base[32] = {
+        0x77, 0x07, 0x6d, 0x0a, 0x73, 0x18, 0xa5, 0x7d,
+        0x3c, 0x16, 0xc1, 0x72, 0x51, 0xb2, 0x66, 0x45,
+        0xdf, 0x4c, 0x2f, 0x87, 0xeb, 0xc0, 0x99, 0x2a,
+        0xb1, 0x77, 0xfb, 0xa5, 0x1d, 0xb9, 0x2c, 0x2a,
+    };
+    unsigned char tweaked[32];
+    memcpy(tweaked, base, 32);
+    tweaked[0] |= 0x07;
+    tweaked[31] |= 0x80;
+    tweaked[31] &= (unsigned char)~0x40;
+
+    neverc_ecdh_key_t k1, k2;
+    ASSERT_EQ(neverc_ecdh_new_private_key(
+                  NEVERC_ECDH_CURVE_X25519, base, 32, &k1),
+              0);
+    ASSERT_EQ(neverc_ecdh_new_private_key(
+                  NEVERC_ECDH_CURVE_X25519, tweaked, 32, &k2),
+              0);
+    ASSERT_TRUE(memcmp(k1.public_key, k2.public_key, 32) == 0);
+
+    unsigned char peer[32] = {9};
+    unsigned char shared1[32], shared2[32];
+    ASSERT_EQ(neverc_ecdh_compute(&k1, peer, 32, shared1, 32), 32);
+    ASSERT_EQ(neverc_ecdh_compute(&k2, peer, 32, shared2, 32), 32);
+    ASSERT_TRUE(memcmp(shared1, shared2, 32) == 0);
+    ASSERT_TRUE(memcmp(shared1, k1.public_key, 32) == 0);
+
+    /* All-zero input is valid: clamp forces bit 254, so the scalar is 2^254. */
+    unsigned char zero[32] = {0};
+    neverc_ecdh_key_t kz;
+    ASSERT_EQ(neverc_ecdh_new_private_key(
+                  NEVERC_ECDH_CURVE_X25519, zero, 32, &kz),
+              0);
+    int pub_nonzero = 0;
+    for (int i = 0; i < 32; i++)
+        if (kz.public_key[i]) pub_nonzero = 1;
+    ASSERT_TRUE(pub_nonzero);
+}
+
 static void test_import_export(void) {
     printf("[import/export keys]\n");
     neverc_ecdh_key_t key;
@@ -155,15 +199,60 @@ static void test_invalid_inputs(void) {
 
     unsigned char zero_priv[32] = {0};
     ASSERT_EQ(neverc_ecdh_new_private_key(NEVERC_ECDH_CURVE_P256, zero_priv, 32, &key), -1);
-    ASSERT_EQ(neverc_ecdh_new_private_key(NEVERC_ECDH_CURVE_X25519, zero_priv, 32, &key), -1);
 
-    unsigned char low_order[32] = {1};
+    static const unsigned char p256_n[32] = {
+        0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xBC, 0xE6, 0xFA, 0xAD, 0xA7, 0x17, 0x9E, 0x84,
+        0xF3, 0xB9, 0xCA, 0xC2, 0xFC, 0x63, 0x25, 0x51,
+    };
+    ASSERT_EQ(neverc_ecdh_new_private_key(
+                  NEVERC_ECDH_CURVE_P256, p256_n, sizeof(p256_n), &key),
+              -1);
+
+    unsigned char off_curve[NEVERC_ECDH_P256_PUBKEY_SIZE] = {0x04};
+    off_curve[32] = 1;
+    off_curve[64] = 1;
     ASSERT_EQ(neverc_ecdh_new_public_key(
-                  NEVERC_ECDH_CURVE_X25519, low_order, 32, &key), -1);
+                  NEVERC_ECDH_CURVE_P256, off_curve, sizeof(off_curve), &key),
+              -1);
+
+    static const unsigned char x25519_low_order[][32] = {
+        {0},
+        {1},
+        {0xe0, 0xeb, 0x7a, 0x7c, 0x3b, 0x41, 0xb8, 0xae, 0x16, 0x56, 0xe3,
+         0xfa, 0xf1, 0x9f, 0xc4, 0x6a, 0xda, 0x09, 0x8d, 0xeb, 0x9c, 0x32,
+         0xb1, 0xfd, 0x86, 0x62, 0x05, 0x16, 0x5f, 0x49, 0xb8, 0x00},
+        {0x5f, 0x9c, 0x95, 0xbc, 0xa3, 0x50, 0x8c, 0x24, 0xb1, 0xd0, 0xb1,
+         0x55, 0x9c, 0x83, 0xef, 0x5b, 0x04, 0x44, 0x5c, 0xc4, 0x58, 0x1c,
+         0x8e, 0x86, 0xd8, 0x22, 0x4e, 0xdd, 0xd0, 0x9f, 0x11, 0x57},
+        {0xec, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f},
+        {0xed, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f},
+        {0xee, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f},
+    };
     neverc_ecdh_key_t alice;
     ASSERT_EQ(neverc_ecdh_generate_key(NEVERC_ECDH_CURVE_X25519, &alice), 0);
-    unsigned char low_shared[32];
-    ASSERT_EQ(neverc_ecdh_compute(&alice, low_order, 32, low_shared, 32), -1);
+    for (size_t i = 0; i < sizeof(x25519_low_order) / sizeof(x25519_low_order[0]);
+         i++) {
+        ASSERT_EQ(neverc_ecdh_new_public_key(
+                      NEVERC_ECDH_CURVE_X25519, x25519_low_order[i], 32, &key),
+                  -1);
+        unsigned char low_shared[32];
+        ASSERT_EQ(neverc_ecdh_compute(
+                      &alice, x25519_low_order[i], 32, low_shared, 32),
+                  -1);
+    }
+    unsigned char high_bit_low_order[32] = {1};
+    high_bit_low_order[31] = 0x80;
+    ASSERT_EQ(neverc_ecdh_new_public_key(
+                  NEVERC_ECDH_CURVE_X25519, high_bit_low_order, 32, &key),
+              -1);
 
     unsigned char p256_infinity[NEVERC_ECDH_P256_PUBKEY_SIZE] = {0x04};
     ASSERT_EQ(neverc_ecdh_new_public_key(
@@ -235,6 +324,7 @@ int main(void) {
     test_x25519_keygen();
     test_x25519_ecdh();
     test_x25519_rfc7748_vector();
+    test_x25519_clamp();
     test_invalid_inputs();
     test_p256_x_zero_is_valid_shared_secret();
 #ifdef NEVERC_TEST_SLOW

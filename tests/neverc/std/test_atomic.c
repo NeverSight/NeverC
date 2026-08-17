@@ -1,5 +1,6 @@
 #include "neverc/std/sync/atomic.h"
 #include <stdio.h>
+#include <stdint.h>
 #if defined(_WIN32)
 #include <windows.h>
 #else
@@ -201,6 +202,28 @@ static void test_concurrent_add64(void) {
                   (long long)NUM_THREADS * INCREMENTS64);
 }
 
+static void test_add_wraps_without_ub(void) {
+    printf("[add_wrap]\n");
+    volatile int32_t v32 = INT32_MAX;
+    ASSERT_INT_EQ(neverc_atomic_add_int32(&v32, 1), (long long)INT32_MIN);
+    ASSERT_INT_EQ(neverc_atomic_load_int32(&v32), (long long)INT32_MIN);
+    ASSERT_INT_EQ(neverc_atomic_add_int32(&v32, -1), (long long)INT32_MAX);
+    ASSERT_INT_EQ(neverc_atomic_load_int32(&v32), (long long)INT32_MAX);
+
+    volatile uint32_t u32 = UINT32_MAX;
+    ASSERT_INT_EQ(neverc_atomic_add_uint32(&u32, 1u), 0);
+    ASSERT_INT_EQ(neverc_atomic_load_uint32(&u32), 0);
+
+    _Alignas(8) volatile int64_t v64 = INT64_MAX;
+    ASSERT_INT_EQ(neverc_atomic_add_int64(&v64, 1), (long long)INT64_MIN);
+    ASSERT_INT_EQ(neverc_atomic_load_int64(&v64), (long long)INT64_MIN);
+    ASSERT_INT_EQ(neverc_atomic_add_int64(&v64, -1), (long long)INT64_MAX);
+
+    _Alignas(8) volatile uint64_t u64 = UINT64_MAX;
+    ASSERT_INT_EQ(neverc_atomic_add_uint64(&u64, 1ull), 0);
+    ASSERT_INT_EQ(neverc_atomic_load_uint64(&u64), 0);
+}
+
 int main(void) {
     printf("=== NeverC sync/atomic Tests ===\n");
     test_load_store_int32();
@@ -212,6 +235,7 @@ int main(void) {
     test_pointer();
     test_concurrent_add();
     test_concurrent_add64();
+    test_add_wraps_without_ub();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

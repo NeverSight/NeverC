@@ -160,7 +160,9 @@ static char *quote_with(const char *s, char quote, int ascii_only, int graphic_o
         uint32_t r;
         int width;
         neverc_utf8_decode_rune((const uint8_t *)s + i, slen - i, &r, &width);
-        if (width == 1 && r == NEVERC_UTF8_RUNE_ERROR) {
+        /* Invalid UTF-8 is quoted per-byte as \xHH, matching Go strconv.Quote.
+         * width < 1 is treated the same so a decoder miss cannot stall. */
+        if (width < 1 || (width == 1 && r == NEVERC_UTF8_RUNE_ERROR)) {
             buf_puts(&b, "\\x", 2);
             buf_putc(&b, lowerhex[((uint8_t)s[i] >> 4) & 0xF]);
             buf_putc(&b, lowerhex[(uint8_t)s[i] & 0xF]);
@@ -217,12 +219,13 @@ int neverc_strconv_can_backquote(const char *s) {
         uint32_t r;
         int width;
         neverc_utf8_decode_rune((const uint8_t *)s + i, slen - i, &r, &width);
+        /* Invalid UTF-8 is width 1 + RuneError. U+FFFD encoded as 3 bytes is valid. */
+        if (width < 1 || (width == 1 && r == NEVERC_UTF8_RUNE_ERROR)) return 0;
         if (width > 1) {
             if (r == 0xFEFF) return 0;
             i += (size_t)width;
             continue;
         }
-        if (r == NEVERC_UTF8_RUNE_ERROR) return 0;
         if ((r < ' ' && r != '\t') || r == '`' || r == 0x7F)
             return 0;
         i++;
@@ -504,7 +507,8 @@ int neverc_strconv_quoted_prefix(const char *s, size_t *prefix_len) {
             uint32_t r;
             int width;
             neverc_utf8_decode_rune((const uint8_t *)s + i, slen - i, &r, &width);
-            if (width == 1 && r == NEVERC_UTF8_RUNE_ERROR) return -1;
+            if (width < 1 || (width == 1 && r == NEVERC_UTF8_RUNE_ERROR))
+                return -1;
             i += (size_t)width;
         }
         rune_count++;

@@ -3,11 +3,27 @@
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 
-void neverc_mutex_init(neverc_mutex_t *m) { InitializeSRWLock(&m->srw); }
+void neverc_mutex_init(neverc_mutex_t *m) {
+    InitializeSRWLock(&m->srw);
+    m->owner = 0;
+}
 void neverc_mutex_destroy(neverc_mutex_t *m) { (void)m; }
-void neverc_mutex_lock(neverc_mutex_t *m) { AcquireSRWLockExclusive(&m->srw); }
-void neverc_mutex_unlock(neverc_mutex_t *m) { ReleaseSRWLockExclusive(&m->srw); }
-int  neverc_mutex_trylock(neverc_mutex_t *m) { return TryAcquireSRWLockExclusive(&m->srw); }
+void neverc_mutex_lock(neverc_mutex_t *m) {
+    AcquireSRWLockExclusive(&m->srw);
+    m->owner = GetCurrentThreadId();
+}
+void neverc_mutex_unlock(neverc_mutex_t *m) {
+    if (!m || m->owner != GetCurrentThreadId())
+        return;
+    m->owner = 0;
+    ReleaseSRWLockExclusive(&m->srw);
+}
+int neverc_mutex_trylock(neverc_mutex_t *m) {
+    if (!TryAcquireSRWLockExclusive(&m->srw))
+        return 0;
+    m->owner = GetCurrentThreadId();
+    return 1;
+}
 
 void neverc_rwmutex_init(neverc_rwmutex_t *rw) { InitializeSRWLock(&rw->rw); }
 void neverc_rwmutex_destroy(neverc_rwmutex_t *rw) { (void)rw; }
@@ -67,16 +83,30 @@ void neverc_once_do(neverc_once_t *o, void (*f)(void)) {
 }
 
 void neverc_cond_init(neverc_cond_t *c, neverc_mutex_t *m) {
-    InitializeConditionVariable(&c->cond); c->srw = &m->srw;
+    InitializeConditionVariable(&c->cond); c->m = m;
 }
 void neverc_cond_destroy(neverc_cond_t *c) { (void)c; }
-void neverc_cond_wait(neverc_cond_t *c) { SleepConditionVariableSRW(&c->cond, c->srw, INFINITE, 0); }
+void neverc_cond_wait(neverc_cond_t *c) {
+    DWORD self = c->m->owner;
+    c->m->owner = 0;
+    SleepConditionVariableSRW(&c->cond, &c->m->srw, INFINITE, 0);
+    c->m->owner = self;
+}
 void neverc_cond_signal(neverc_cond_t *c) { WakeConditionVariable(&c->cond); }
 void neverc_cond_broadcast(neverc_cond_t *c) { WakeAllConditionVariable(&c->cond); }
 
 #else /* POSIX */
 
 void neverc_mutex_init(neverc_mutex_t *m) {
+    pthread_mutexattr_t attr;
+    if (pthread_mutexattr_init(&attr) == 0) {
+        (void)pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK);
+        if (pthread_mutex_init(&m->mu, &attr) == 0) {
+            pthread_mutexattr_destroy(&attr);
+            return;
+        }
+        pthread_mutexattr_destroy(&attr);
+    }
     pthread_mutex_init(&m->mu, NULL);
 }
 void neverc_mutex_destroy(neverc_mutex_t *m) {
@@ -86,7 +116,10 @@ void neverc_mutex_lock(neverc_mutex_t *m) {
     pthread_mutex_lock(&m->mu);
 }
 void neverc_mutex_unlock(neverc_mutex_t *m) {
-    pthread_mutex_unlock(&m->mu);
+    if (!m)
+        return;
+    /* ERRORCHECK mutex: unlocking an unheld mutex returns EPERM instead of UB. */
+    (void)pthread_mutex_unlock(&m->mu);
 }
 int neverc_mutex_trylock(neverc_mutex_t *m) {
     return pthread_mutex_trylock(&m->mu) == 0;
@@ -129,7 +162,8 @@ void neverc_waitgroup_destroy(neverc_waitgroup_t *wg) {
 }
 int neverc_waitgroup_add_checked(neverc_waitgroup_t *wg, int delta) {
     if (!wg) return -1;
-    pthread_mutex_lock(&wg->mu);
+    if (pthread_mutex_lock(&wg->mu) != 0)
+        return -1;
     int64_t next = (int64_t)wg->counter + (int64_t)delta;
     int result = 0;
     if (next < 0 || next > INT32_MAX) {
@@ -153,7 +187,8 @@ void neverc_waitgroup_done(neverc_waitgroup_t *wg) {
 }
 void neverc_waitgroup_wait(neverc_waitgroup_t *wg) {
     if (!wg) return;
-    pthread_mutex_lock(&wg->mu);
+    if (pthread_mutex_lock(&wg->mu) != 0)
+        return;
     while (wg->counter > 0)
         pthread_cond_wait(&wg->cond, &wg->mu);
     pthread_mutex_unlock(&wg->mu);
@@ -171,7 +206,10 @@ void neverc_once_do(neverc_once_t *o, void (*f)(void)) {
         return;
     if (NEVERC_ATOMIC_LOAD32(&o->done))
         return;
-    pthread_mutex_lock(&o->mu);
+    /* Do not mark done or run f() without the lock: that would fail-open
+     * (callers skip initialization that never ran under exclusion). */
+    if (pthread_mutex_lock(&o->mu) != 0)
+        return;
     if (!NEVERC_ATOMIC_LOAD32(&o->done)) {
         f();
         NEVERC_ATOMIC_STORE32(&o->done, 1);
@@ -261,7 +299,6 @@ void *neverc_sync_pool_get(neverc_sync_pool_t *p) {
  * ================================================================ */
 
 #define SMAP_INIT_CAP 16
-#define SMAP_LOAD_FACTOR 0.75
 
 typedef struct smap_entry {
     char *key;
@@ -439,12 +476,17 @@ void neverc_sync_map_store(neverc_sync_map_t *m, const char *key, void *value) {
         return;
     }
 
-    if ((double)(m->count + 1) / (double)m->cap > SMAP_LOAD_FACTOR) {
+    if (!slot || m->count >= m->cap - m->cap / 4) {
         if (smap_grow(m) < 0) {
             neverc_rwmutex_unlock(&m->rw);
             return;
         }
         slot = smap_find_slot(m->buckets, m->cap, key);
+        if (slot && slot->occupied == SMAP_OCCUPIED) {
+            slot->value = value;
+            neverc_rwmutex_unlock(&m->rw);
+            return;
+        }
     }
     if (slot && smap_insert(slot, key, value) == 0)
         m->count++;
@@ -479,14 +521,20 @@ void *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void 
         actual = slot->value;
         was_loaded = 1;
     } else {
-        if ((double)(m->count + 1) / (double)m->cap >
-            SMAP_LOAD_FACTOR) {
+        if (!slot || m->count >= m->cap - m->cap / 4) {
             if (smap_grow(m) != 0) {
                 neverc_rwmutex_unlock(&m->rw);
                 if (loaded) *loaded = 0;
                 return NULL;
             }
             slot = smap_find_slot(m->buckets, m->cap, key);
+            if (slot && slot->occupied == SMAP_OCCUPIED) {
+                actual = slot->value;
+                was_loaded = 1;
+                neverc_rwmutex_unlock(&m->rw);
+                if (loaded) *loaded = was_loaded;
+                return actual;
+            }
         }
         if (slot && smap_insert(slot, key, value) == 0) {
             actual = value;
@@ -609,14 +657,21 @@ void *neverc_sync_map_swap(neverc_sync_map_t *m, const char *key, void *value, i
         slot->value = value;
         was_loaded = 1;
     } else {
-        if ((double)(m->count + 1) / (double)m->cap >
-            SMAP_LOAD_FACTOR) {
+        if (!slot || m->count >= m->cap - m->cap / 4) {
             if (smap_grow(m) != 0) {
                 neverc_rwmutex_unlock(&m->rw);
                 if (loaded) *loaded = 0;
                 return NULL;
             }
             slot = smap_find_slot(m->buckets, m->cap, key);
+            if (slot && slot->occupied == SMAP_OCCUPIED) {
+                previous = slot->value;
+                slot->value = value;
+                was_loaded = 1;
+                neverc_rwmutex_unlock(&m->rw);
+                if (loaded) *loaded = was_loaded;
+                return previous;
+            }
         }
         if (slot && smap_insert(slot, key, value) == 0)
             m->count++;

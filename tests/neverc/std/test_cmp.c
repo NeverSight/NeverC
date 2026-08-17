@@ -171,6 +171,9 @@ static void test_or(void) {
 
     ASSERT_DBL_EQ(neverc_cmp_or_float64(0.0, 3.14), 3.14);
     ASSERT_DBL_EQ(neverc_cmp_or_float64(2.71, 3.14), 2.71);
+    /* IEEE -0.0 == 0.0, so Or treats it as the zero value. */
+    ASSERT_DBL_EQ(neverc_cmp_or_float64(-0.0, 3.14), 3.14);
+    ASSERT_TRUE(neverc_cmp_isnan_float64(neverc_cmp_or_float64(NaN, 1.0)));
 }
 
 int main(void) {

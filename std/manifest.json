@@ -651,12 +651,16 @@
         "neverc_utf8_rune_count": "src/unicode/utf8/utf8.c",
         "neverc_utf8_valid": "src/unicode/utf8/utf8.c",
         "neverc_utf8_rune_start": "src/unicode/utf8/utf8.c",
-        "neverc_utf8_valid_rune": "src/unicode/utf8/utf8.c"
+        "neverc_utf8_valid_rune": "src/unicode/utf8/utf8.c",
+        "neverc_utf8_decode_last_rune": "src/unicode/utf8/utf8.c",
+        "neverc_utf8_full_rune": "src/unicode/utf8/utf8.c"
       },
       "dot_methods": {
         "rune_len": "neverc_utf8_rune_len",
         "encode_rune": "neverc_utf8_encode_rune",
         "decode_rune": "neverc_utf8_decode_rune",
+        "decode_last_rune": "neverc_utf8_decode_last_rune",
+        "full_rune": "neverc_utf8_full_rune",
         "rune_count": "neverc_utf8_rune_count",
         "valid": "neverc_utf8_valid",
         "rune_start": "neverc_utf8_rune_start",
@@ -885,11 +889,13 @@
       "symbols": {
         "neverc_chacha20_init": "src/crypto/chacha20/chacha20.c",
         "neverc_chacha20_xor": "src/crypto/chacha20/chacha20.c",
+        "neverc_chacha20_xor_checked": "src/crypto/chacha20/chacha20.c",
         "neverc_chacha20_block": "src/crypto/chacha20/chacha20.c"
       },
       "dot_methods": {
         "init": "neverc_chacha20_init",
         "xor": "neverc_chacha20_xor",
+        "xor_checked": "neverc_chacha20_xor_checked",
         "block": "neverc_chacha20_block"
       }
     },
@@ -988,13 +994,17 @@
         "neverc_cipher_cbc_encrypt": "src/crypto/cipher/cipher.c",
         "neverc_cipher_cbc_decrypt": "src/crypto/cipher/cipher.c",
         "neverc_cipher_ctr": "src/crypto/cipher/cipher.c",
-        "neverc_cipher_ctr_checked": "src/crypto/cipher/cipher.c"
+        "neverc_cipher_ctr_checked": "src/crypto/cipher/cipher.c",
+        "neverc_cipher_pkcs7_pad": "src/crypto/cipher/cipher.c",
+        "neverc_cipher_pkcs7_unpad": "src/crypto/cipher/cipher.c"
       },
       "dot_methods": {
         "cbc_encrypt": "neverc_cipher_cbc_encrypt",
         "cbc_decrypt": "neverc_cipher_cbc_decrypt",
         "ctr": "neverc_cipher_ctr",
-        "ctr_checked": "neverc_cipher_ctr_checked"
+        "ctr_checked": "neverc_cipher_ctr_checked",
+        "pkcs7_pad": "neverc_cipher_pkcs7_pad",
+        "pkcs7_unpad": "neverc_cipher_pkcs7_unpad"
       }
     },
     "math/cmplx": {
@@ -1186,17 +1196,21 @@
         "neverc_des_init": "src/crypto/des/des.c",
         "neverc_des_encrypt_block": "src/crypto/des/des.c",
         "neverc_des_decrypt_block": "src/crypto/des/des.c",
+        "neverc_des_is_weak_key": "src/crypto/des/des.c",
         "neverc_3des_init": "src/crypto/des/des.c",
         "neverc_3des_encrypt_block": "src/crypto/des/des.c",
-        "neverc_3des_decrypt_block": "src/crypto/des/des.c"
+        "neverc_3des_decrypt_block": "src/crypto/des/des.c",
+        "neverc_3des_is_weak_key": "src/crypto/des/des.c"
       },
       "dot_methods": {
         "init": "neverc_des_init",
         "encrypt_block": "neverc_des_encrypt_block",
         "decrypt_block": "neverc_des_decrypt_block",
+        "is_weak_key": "neverc_des_is_weak_key",
         "triple_init": "neverc_3des_init",
         "triple_encrypt_block": "neverc_3des_encrypt_block",
-        "triple_decrypt_block": "neverc_3des_decrypt_block"
+        "triple_decrypt_block": "neverc_3des_decrypt_block",
+        "triple_is_weak_key": "neverc_3des_is_weak_key"
       }
     },
     "crypto/rc4": {
@@ -1398,12 +1412,14 @@
       "symbols": {
         "neverc_flate_compress": "src/compress/flate/flate.c",
         "neverc_flate_decompress": "src/compress/flate/flate.c",
-        "neverc_flate_decompress_consumed": "src/compress/flate/flate.c"
+        "neverc_flate_decompress_consumed": "src/compress/flate/flate.c",
+        "neverc_flate_decompress_consumed_window": "src/compress/flate/flate.c"
       },
       "dot_methods": {
         "compress": "neverc_flate_compress",
         "decompress": "neverc_flate_decompress",
-        "decompress_consumed": "neverc_flate_decompress_consumed"
+        "decompress_consumed": "neverc_flate_decompress_consumed",
+        "decompress_consumed_window": "neverc_flate_decompress_consumed_window"
       }
     },
     "compress/gzip": {
@@ -1512,7 +1528,8 @@
         "neverc_filepath_to_slash": "src/path/filepath/filepath.c",
         "neverc_filepath_from_slash": "src/path/filepath/filepath.c",
         "neverc_filepath_is_local": "src/path/filepath/filepath.c",
-        "neverc_filepath_volume_name": "src/path/filepath/filepath.c"
+        "neverc_filepath_volume_name": "src/path/filepath/filepath.c",
+        "neverc_filepath_rel": "src/path/filepath/filepath.c"
       },
       "dot_methods": {
         "base": "neverc_filepath_base",
@@ -1526,7 +1543,8 @@
         "to_slash": "neverc_filepath_to_slash",
         "from_slash": "neverc_filepath_from_slash",
         "is_local": "neverc_filepath_is_local",
-        "volume_name": "neverc_filepath_volume_name"
+        "volume_name": "neverc_filepath_volume_name",
+        "rel": "neverc_filepath_rel"
       }
     },
     "encoding/csv": {
@@ -1882,16 +1900,26 @@
         "neverc_bufio_writer_write_byte": "src/bufio/bufio.c",
         "neverc_bufio_writer_free": "src/bufio/bufio.c",
         "neverc_bufio_scanner_bytes": "src/bufio/bufio.c",
-        "neverc_bufio_scanner_text": "src/bufio/bufio.c"
+        "neverc_bufio_scanner_text": "src/bufio/bufio.c",
+        "neverc_bufio_scanner_split": "src/bufio/bufio.c",
+        "neverc_bufio_scan_lines": "src/bufio/bufio.c",
+        "neverc_bufio_scan_words": "src/bufio/bufio.c",
+        "neverc_bufio_scan_bytes": "src/bufio/bufio.c",
+        "neverc_bufio_reader_unread_byte": "src/bufio/bufio.c"
       },
       "dot_methods": {
         "scanner_init": "neverc_bufio_scanner_init",
         "scanner_scan": "neverc_bufio_scanner_scan",
         "scanner_err": "neverc_bufio_scanner_err",
         "scanner_free": "neverc_bufio_scanner_free",
+        "scanner_split": "neverc_bufio_scanner_split",
+        "scan_lines": "neverc_bufio_scan_lines",
+        "scan_words": "neverc_bufio_scan_words",
+        "scan_bytes": "neverc_bufio_scan_bytes",
         "reader_init": "neverc_bufio_reader_init",
         "reader_init_size": "neverc_bufio_reader_init_size",
         "reader_read_byte": "neverc_bufio_reader_read_byte",
+        "reader_unread_byte": "neverc_bufio_reader_unread_byte",
         "reader_read": "neverc_bufio_reader_read",
         "reader_peek": "neverc_bufio_reader_peek",
         "reader_free": "neverc_bufio_reader_free",
@@ -2024,6 +2052,8 @@
         "neverc_time_duration_mul": "src/time/time.c",
         "neverc_time_format": "src/time/time.c",
         "neverc_time_parse": "src/time/time.c",
+        "neverc_time_parse_in_location": "src/time/time.c",
+        "neverc_time_date_in_location": "src/time/time.c",
         "neverc_time_round": "src/time/time.c",
         "neverc_time_truncate": "src/time/time.c",
         "neverc_time_unix_milli_to_time": "src/time/time.c"
@@ -2059,6 +2089,8 @@
         "duration_nanoseconds": "neverc_time_duration_nanoseconds",
         "duration_mul": "neverc_time_duration_mul",
         "date": "neverc_time_date",
+        "date_in_location": "neverc_time_date_in_location",
+        "parse_in_location": "neverc_time_parse_in_location",
         "unix_micro": "neverc_time_unix_micro",
         "unix_micro_to_time": "neverc_time_unix_micro_to_time",
         "parse_duration": "neverc_time_parse_duration",
@@ -2358,7 +2390,8 @@
         "neverc_url_path_escape": "src/net/url/url.c",
         "neverc_url_path_unescape": "src/net/url/url.c",
         "neverc_url_query_escape": "src/net/url/url.c",
-        "neverc_url_query_unescape": "src/net/url/url.c"
+        "neverc_url_query_unescape": "src/net/url/url.c",
+        "neverc_url_is_safe_redirect": "src/net/url/url.c"
       },
       "dot_methods": {
         "parse": "neverc_url_parse",
@@ -2374,7 +2407,8 @@
         "path_escape": "neverc_url_path_escape",
         "path_unescape": "neverc_url_path_unescape",
         "query_escape": "neverc_url_query_escape",
-        "query_unescape": "neverc_url_query_unescape"
+        "query_unescape": "neverc_url_query_unescape",
+        "is_safe_redirect": "neverc_url_is_safe_redirect"
       }
     },
     "image/color": {
@@ -2423,6 +2457,8 @@
         "neverc_ed25519_new_key_from_seed": "src/crypto/ed25519/ed25519.c",
         "neverc_ed25519_sign": "src/crypto/ed25519/ed25519.c",
         "neverc_ed25519_verify": "src/crypto/ed25519/ed25519.c",
+        "neverc_ed25519_sign_ctx": "src/crypto/ed25519/ed25519.c",
+        "neverc_ed25519_verify_ctx": "src/crypto/ed25519/ed25519.c",
         "neverc_ed25519_seed": "src/crypto/ed25519/ed25519.c"
       },
       "dot_methods": {
@@ -2430,6 +2466,8 @@
         "new_key_from_seed": "neverc_ed25519_new_key_from_seed",
         "sign": "neverc_ed25519_sign",
         "verify": "neverc_ed25519_verify",
+        "sign_ctx": "neverc_ed25519_sign_ctx",
+        "verify_ctx": "neverc_ed25519_verify_ctx",
         "seed": "neverc_ed25519_seed"
       }
     },
@@ -2443,7 +2481,8 @@
         "neverc_scanner_token_text": "src/text/scanner/scanner.c",
         "neverc_scanner_position": "src/text/scanner/scanner.c",
         "neverc_scanner_peek": "src/text/scanner/scanner.c",
-        "neverc_scanner_token_name": "src/text/scanner/scanner.c"
+        "neverc_scanner_token_name": "src/text/scanner/scanner.c",
+        "neverc_scanner_error_count": "src/text/scanner/scanner.c"
       },
       "dot_methods": {
         "init": "neverc_scanner_init",
@@ -2452,7 +2491,8 @@
         "token_text": "neverc_scanner_token_text",
         "position": "neverc_scanner_position",
         "peek": "neverc_scanner_peek",
-        "token_name": "neverc_scanner_token_name"
+        "token_name": "neverc_scanner_token_name",
+        "error_count": "neverc_scanner_error_count"
       }
     },
     "text/tabwriter": {
@@ -2538,7 +2578,8 @@
         "neverc_mime_parse_media_type": "src/mime/mime.c",
         "neverc_mime_format_media_type": "src/mime/mime.c",
         "neverc_mime_qp_decode": "src/mime/mime.c",
-        "neverc_mime_qp_encode": "src/mime/mime.c"
+        "neverc_mime_qp_encode": "src/mime/mime.c",
+        "neverc_mime_decode_header": "src/mime/mime.c"
       },
       "dot_methods": {
         "type_by_extension": "neverc_mime_type_by_extension",
@@ -2546,7 +2587,8 @@
         "parse_media_type": "neverc_mime_parse_media_type",
         "format_media_type": "neverc_mime_format_media_type",
         "qp_decode": "neverc_mime_qp_decode",
-        "qp_encode": "neverc_mime_qp_encode"
+        "qp_encode": "neverc_mime_qp_encode",
+        "decode_header": "neverc_mime_decode_header"
       }
     },
     "math/big": {
@@ -2819,7 +2861,8 @@
         "neverc_netip_addr_ipv6_loopback": "src/net/netip/netip.c",
         "neverc_netip_addr_ipv6_unspecified": "src/net/netip/netip.c",
         "neverc_netip_addr_is4in6": "src/net/netip/netip.c",
-        "neverc_netip_addr_unmap": "src/net/netip/netip.c"
+        "neverc_netip_addr_unmap": "src/net/netip/netip.c",
+        "neverc_netip_addr_is_internal": "src/net/netip/netip.c"
       },
       "dot_methods": {
         "parse_addr": "neverc_netip_parse_addr",
@@ -2856,7 +2899,8 @@
         "addr_ipv6_loopback": "neverc_netip_addr_ipv6_loopback",
         "addr_ipv6_unspecified": "neverc_netip_addr_ipv6_unspecified",
         "addr_is4in6": "neverc_netip_addr_is4in6",
-        "addr_unmap": "neverc_netip_addr_unmap"
+        "addr_unmap": "neverc_netip_addr_unmap",
+        "addr_is_internal": "neverc_netip_addr_is_internal"
       }
     },
     "mime/quotedprintable": {
@@ -3253,7 +3297,9 @@
         "neverc_slices_replace": "src/slices/slices.c",
         "neverc_slices_reverse_ints": "src/slices/slices.c",
         "neverc_slices_sort_ints": "src/slices/slices.c",
-        "neverc_slices_sort_stable": "src/slices/slices.c"
+        "neverc_slices_sort_stable": "src/slices/slices.c",
+        "neverc_slices_clip": "src/slices/slices.c",
+        "neverc_slices_grow": "src/slices/slices.c"
       },
       "dot_methods": {
         "equal": "neverc_slices_equal",
@@ -3267,7 +3313,9 @@
         "compact": "neverc_slices_compact",
         "clone": "neverc_slices_clone",
         "min": "neverc_slices_min",
-        "max": "neverc_slices_max"
+        "max": "neverc_slices_max",
+        "clip": "neverc_slices_clip",
+        "grow": "neverc_slices_grow"
       }
     },
     "maps": {
@@ -3838,7 +3886,11 @@
         "neverc_tzdata_utc": "src/time/tzdata/tzdata.c",
         "neverc_tzdata_local": "src/time/tzdata/tzdata.c",
         "neverc_tzdata_offset_for_month": "src/time/tzdata/tzdata.c",
-        "neverc_tzdata_offset_at": "src/time/tzdata/tzdata.c"
+        "neverc_tzdata_offset_at": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_load_tzif": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_load_from_zip": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_zip_extract": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_zone_free": "src/time/tzdata/tzdata.c"
       },
       "dot_methods": {
         "lookup": "neverc_tzdata_lookup",
@@ -3850,7 +3902,11 @@
         "utc": "neverc_tzdata_utc",
         "local": "neverc_tzdata_local",
         "offset_for_month": "neverc_tzdata_offset_for_month",
-        "offset_at": "neverc_tzdata_offset_at"
+        "offset_at": "neverc_tzdata_offset_at",
+        "load_tzif": "neverc_tzdata_load_tzif",
+        "load_from_zip": "neverc_tzdata_load_from_zip",
+        "zip_extract": "neverc_tzdata_zip_extract",
+        "zone_free": "neverc_tzdata_zone_free"
       }
     },
     "http": {
@@ -4540,7 +4596,9 @@
         "neverc_net_pipe_close": "src/net/resolve/resolve.c",
         "neverc_net_pipe_read": "src/net/resolve/resolve.c",
         "neverc_net_pipe_write": "src/net/resolve/resolve.c",
-        "neverc_net_split_host_port": "src/net/resolve/resolve.c"
+        "neverc_net_split_host_port": "src/net/resolve/resolve.c",
+        "neverc_net_addr_is_internal": "src/net/resolve/resolve.c",
+        "neverc_net_addrs_any_internal": "src/net/resolve/resolve.c"
       },
       "dot_methods": {
         "join_host_port": "neverc_net_join_host_port",
@@ -4557,7 +4615,9 @@
         "pipe_close": "neverc_net_pipe_close",
         "pipe_read": "neverc_net_pipe_read",
         "pipe_write": "neverc_net_pipe_write",
-        "split_host_port": "neverc_net_split_host_port"
+        "split_host_port": "neverc_net_split_host_port",
+        "addr_is_internal": "neverc_net_addr_is_internal",
+        "addrs_any_internal": "neverc_net_addrs_any_internal"
       }
     },
     "net/interface": {

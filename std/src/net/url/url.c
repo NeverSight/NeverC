@@ -211,7 +211,12 @@ static int valid_scheme(const char *scheme, size_t length) {
 static int parse_port(const char *start, const char *end,
                       char *port, size_t capacity) {
     size_t length = (size_t)(end - start);
-    if (length == 0 || length >= capacity) return -1;
+    /* RFC 3986 / Go validOptionalPort: empty port after ':' is allowed. */
+    if (length >= capacity) return -1;
+    if (length == 0) {
+        port[0] = '\0';
+        return 0;
+    }
     unsigned value = 0;
     for (const char *p = start; p < end; p++) {
         unsigned char c = (unsigned char)*p;
@@ -220,6 +225,27 @@ static int parse_port(const char *start, const char *end,
         if (value > 65535U) return -1;
     }
     return copy_exact(port, capacity, start, length);
+}
+
+/* RFC 3986 userinfo = *( unreserved / pct-encoded / sub-delims / ":" ).
+ * Go also permits '@' inside userinfo (last '@' still splits host). */
+static int valid_userinfo(const char *s, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9'))
+            continue;
+        switch (c) {
+        case '-': case '.': case '_': case ':': case '~':
+        case '!': case '$': case '&': case '\'':
+        case '(': case ')': case '*': case '+': case ',':
+        case ';': case '=': case '%': case '@':
+            continue;
+        default:
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static int valid_host_text(const char *host, size_t length) {
@@ -271,7 +297,11 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
         p = scheme_end + 3;
         has_authority = 1;
     } else if (p[0] == '/' && p[1] == '/') {
-        /* RFC 3986 network-path reference: //host/path */
+        /* RFC 3986 network-path reference: //host/path.
+         * ParseRequestURI only accepts absolute URIs or origin-form
+         * paths; `GET //evil.com` is not a valid request-target. */
+        if (via_request)
+            return -1;
         p += 2;
         has_authority = 1;
     }
@@ -302,6 +332,8 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
             for (const char *c = p; c < at; c++)
                 if (*c == ':') { colon = c; break; }
             if (at == p) return -1;
+            if (!valid_userinfo(p, (size_t)(at - p)))
+                return -1;
             if (colon) {
                 size_t user_len = (size_t)(colon - p);
                 size_t pass_len = (size_t)(at - colon - 1);
@@ -380,6 +412,10 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
     const char *path_end = query ? query : before_fragment;
     size_t path_len = (size_t)(path_end - p);
     if (copy_exact(u->path, sizeof(u->path), p, path_len) != 0)
+        return -1;
+    /* WHATWG special-URLs treat '\' as '/'. `/\evil.com` as a Location
+     * becomes protocol-relative `//evil.com`. */
+    if (memchr(u->path, '\\', path_len))
         return -1;
     if (!valid_pct_encoded(u->path, path_len))
         return -1;
@@ -475,9 +511,13 @@ int neverc_url_request_uri(const neverc_url_t *u, char *buf, size_t cap) {
     if (!u) return -1;
     url_builder_t builder;
     builder_init(&builder, buf, cap);
-    if (u->path[0])
+    if (u->path[0]) {
+        /* origin-form `//host` is protocol-relative. Prefix so a
+         * Request-URI cannot retarget a different authority. */
+        if (u->path[0] == '/' && u->path[1] == '/')
+            builder_append_literal(&builder, "/.");
         builder_append_field(&builder, u->path, sizeof(u->path));
-    else
+    } else
         builder_append_literal(&builder, "/");
     if (u->raw_query[0]) {
         builder_append_literal(&builder, "?");
@@ -488,6 +528,44 @@ int neverc_url_request_uri(const neverc_url_t *u, char *buf, size_t cap) {
 
 int neverc_url_is_abs(const neverc_url_t *u) {
     return u && u->scheme[0] != '\0';
+}
+
+static int ascii_host_equal(const char *a, const char *b) {
+    if (!a || !b) return 0;
+    while (*a && *b) {
+        unsigned char ca = (unsigned char)*a++;
+        unsigned char cb = (unsigned char)*b++;
+        if (ca >= 'A' && ca <= 'Z') ca = (unsigned char)(ca + 32);
+        if (cb >= 'A' && cb <= 'Z') cb = (unsigned char)(cb + 32);
+        if (ca != cb) return 0;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+int neverc_url_is_safe_redirect(const char *raw_url, const char *allowed_host) {
+    neverc_url_t u;
+    if (neverc_url_parse(&u, raw_url) != 0)
+        return 0;
+    if (u.user[0] || u.has_password || u.password[0])
+        return 0;
+    if (strchr(raw_url, '\\'))
+        return 0;
+
+    if (u.scheme[0]) {
+        if (strcmp(u.scheme, "http") != 0 && strcmp(u.scheme, "https") != 0)
+            return 0;
+        if (!u.host[0] || !allowed_host || !allowed_host[0])
+            return 0;
+        return ascii_host_equal(u.host, allowed_host);
+    }
+    /* Protocol-relative `//evil.com` has a host and no scheme. */
+    if (u.host[0])
+        return 0;
+    if (u.path[0] == '/' && u.path[1] == '/')
+        return 0;
+    if (u.path[0] && u.path[0] != '/')
+        return 0;
+    return 1;
 }
 
 int neverc_url_values_parse(neverc_url_values_t *v, const char *query) {

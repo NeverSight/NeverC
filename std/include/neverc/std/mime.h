@@ -41,6 +41,14 @@ int neverc_mime_qp_decode(const char *src, size_t src_len,
 int neverc_mime_qp_encode(const char *src, size_t src_len,
                            char *dst, size_t dst_cap, size_t *out_len);
 
+/* Decode RFC 2047 encoded-words in an unstructured header. Adjacent
+ * encoded-words have intervening WSP removed. Q-encoding maps '_' to
+ * space. utf-8, us-ascii, and iso-8859-1 are supported. Decoded CTL
+ * (including CR/LF, except TAB) is rejected so an encoded-word cannot
+ * inject headers. Returns 0, or -1 with *out_len zero. */
+int neverc_mime_decode_header(const char *src, size_t src_len,
+                              char *out, size_t out_cap, size_t *out_len);
+
 #ifdef __cplusplus
 }
 #endif

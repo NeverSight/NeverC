@@ -135,6 +135,10 @@ static void test_escape(void) {
     check_bool("unescape rejects unknown entity",
                neverc_xml_unescape("&unknown;", 9, &outlen) == NULL, 1);
     check_int("invalid unescape clears length", (int)outlen, 0);
+    outlen = 99;
+    r = neverc_xml_unescape("&amp;lt;", 8, &outlen);
+    check_str("no recursive entity expansion", r, "&lt;");
+    free(r);
 }
 
 static void test_entities_cdata_and_well_formedness(void) {
@@ -238,7 +242,10 @@ static void test_entities_cdata_and_well_formedness(void) {
         "<?xml?><root/>",
         "<?xml encoding=\"UTF-8\"?><root/>",
         "<?xml version=\"1.0\" encoding=\"\"?><root/>",
-        "<?xml version=\"1.0\"encoding=\"ISO-8859-1\"?><root/>"
+        "<?xml version=\"1.0\"encoding=\"ISO-8859-1\"?><root/>",
+        "<root>&#0;</root>",
+        "<root>&#x0;</root>",
+        "<root>\v</root>"
     };
     for (size_t i = 0;
          i < sizeof(invalid_documents) / sizeof(invalid_documents[0]);
@@ -253,6 +260,19 @@ static void test_entities_cdata_and_well_formedness(void) {
     check_bool("reject invalid UTF-8",
                neverc_xml_parse(
                    invalid_utf8, sizeof(invalid_utf8) - 1) == NULL,
+               1);
+    static const char overlong3[] = "<root>\xe0\x80\x80</root>";
+    check_bool("reject overlong 3-byte UTF-8",
+               neverc_xml_parse(overlong3, sizeof(overlong3) - 1) == NULL,
+               1);
+    static const char utf8_surrogate[] = "<root>\xed\xa0\x80</root>";
+    check_bool("reject UTF-8 surrogate",
+               neverc_xml_parse(utf8_surrogate, sizeof(utf8_surrogate) - 1)
+                   == NULL,
+               1);
+    static const char too_large[] = "<root>\xf4\x90\x80\x80</root>";
+    check_bool("reject UTF-8 above U+10FFFF",
+               neverc_xml_parse(too_large, sizeof(too_large) - 1) == NULL,
                1);
     static const char noncharacter[] = "<root>\xef\xb7\x90</root>"; /* U+FDD0 */
     check_bool("reject XML noncharacter U+FDD0",
@@ -274,7 +294,9 @@ static void test_entities_cdata_and_well_formedness(void) {
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?><root/>",
             "<?xml version=\"1.0\" encoding=\"utf-8\"?><root/>",
             "<?xml version='1.0' encoding='Utf-8'?><root/>",
-            "<?xml version = \"1.0\" encoding = \"UTF-8\"?><root/>"
+            "<?xml version = \"1.0\" encoding = \"UTF-8\"?><root/>",
+            "<?xml version=\"1.0\" standalone=\"yes\"?><root/>",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><root/>"
         };
         for (size_t i = 0;
              i < sizeof(utf8_decls) / sizeof(utf8_decls[0]);
@@ -308,6 +330,16 @@ static void test_entities_cdata_and_well_formedness(void) {
                 len += (size_t)snprintf(nested + len, cap - len, "</a>");
             check_bool("reject over-deep nesting",
                        neverc_xml_parse(nested, len) == NULL, 1);
+            /* 1000 is the cap: parse must succeed and free without overflowing
+             * the C stack (node_free is iterative). */
+            len = 0;
+            for (int i = 0; i < 1000; i++)
+                len += (size_t)snprintf(nested + len, cap - len, "<a>");
+            for (int i = 0; i < 1000; i++)
+                len += (size_t)snprintf(nested + len, cap - len, "</a>");
+            tree = neverc_xml_parse(nested, len);
+            check_bool("accept depth-1000 nesting", tree != NULL, 1);
+            neverc_xml_node_free(tree);
             free(nested);
         }
     }

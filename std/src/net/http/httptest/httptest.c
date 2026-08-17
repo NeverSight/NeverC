@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdatomic.h>
 
 #ifndef _WIN32
 #include <pthread.h>
@@ -22,7 +23,8 @@ struct neverc_httptest_server {
     neverc_http_handler_func_t  handler;
     char                        url[128];
     char                        addr[64];
-    volatile int                running;
+    uint16_t                    port;
+    atomic_int                  running;
 #ifdef _WIN32
     HANDLE                      thread;
 #else
@@ -488,12 +490,19 @@ static void *server_thread_func(void *arg) {
 #endif
     neverc_httptest_server_t *ts = (neverc_httptest_server_t *)arg;
 
-    while (ts->running) {
+    while (atomic_load_explicit(&ts->running, memory_order_seq_cst)) {
         const char *err = NULL;
         neverc_tcp_conn_t *conn = neverc_tcp_accept(ts->listener, &err);
         if (!conn) {
-            if (!ts->running) break;
+            if (!atomic_load_explicit(&ts->running, memory_order_seq_cst))
+                break;
             continue;
+        }
+        /* Close() sets running=0 then dials a wakeup connection. Do not run
+         * the user handler or wait out the request timeout on that socket. */
+        if (!atomic_load_explicit(&ts->running, memory_order_seq_cst)) {
+            neverc_tcp_close(conn);
+            break;
         }
         handle_test_conn(conn, ts->handler);
         neverc_tcp_close(conn);
@@ -515,7 +524,11 @@ neverc_httptest_server_t *neverc_httptest_new_server(
     if (!ln) return NULL;
 
     neverc_tcp_addr_t addr;
-    neverc_tcp_listener_addr(ln, &addr);
+    if (neverc_tcp_listener_addr(ln, &addr) != 0 || addr.port == 0 ||
+        addr.addr[0] == '\0') {
+        neverc_tcp_listener_close(ln);
+        return NULL;
+    }
 
     neverc_httptest_server_t *ts =
         (neverc_httptest_server_t *)calloc(1, sizeof(*ts));
@@ -525,7 +538,8 @@ neverc_httptest_server_t *neverc_httptest_new_server(
     }
     ts->listener = ln;
     ts->handler = handler;
-    ts->running = 1;
+    ts->port = addr.port;
+    atomic_init(&ts->running, 1);
     snprintf(ts->url, sizeof(ts->url), "http://%s", addr.addr);
     snprintf(ts->addr, sizeof(ts->addr), "%s", addr.addr);
 
@@ -563,19 +577,27 @@ const char *neverc_httptest_addr(neverc_httptest_server_t *ts) {
 
 void neverc_httptest_close(neverc_httptest_server_t *ts) {
     if (!ts) return;
-    ts->running = 0;
+    atomic_store_explicit(&ts->running, 0, memory_order_seq_cst);
 
     /* Wake the server thread's blocking accept() by making a dummy
        connection.  On Linux, close() on a listener fd does NOT reliably
        unblock another thread's accept() — this is undefined behavior in
        POSIX.  A dummy connect always works and avoids a use-after-free
        (the old code freed the listener before the thread could exit). */
+    char wakeup[64];
     const char *err = NULL;
-    neverc_tcp_conn_t *dummy = neverc_tcp_dial(ts->addr, &err);
+    neverc_tcp_conn_t *dummy = NULL;
+    int wakeup_len = snprintf(wakeup, sizeof(wakeup), "127.0.0.1:%u",
+                              (unsigned)ts->port);
+    if (wakeup_len > 0 && (size_t)wakeup_len < sizeof(wakeup))
+        dummy = neverc_tcp_dial(wakeup, &err);
+    if (!dummy && ts->addr[0])
+        dummy = neverc_tcp_dial(ts->addr, &err);
     if (dummy) neverc_tcp_close(dummy);
 
 #ifdef _WIN32
-    WaitForSingleObject(ts->thread, 3000);
+    /* A bounded wait used to free the server while the thread still ran. */
+    WaitForSingleObject(ts->thread, INFINITE);
     CloseHandle(ts->thread);
 #else
     pthread_join(ts->thread, NULL);

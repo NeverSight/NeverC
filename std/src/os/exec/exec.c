@@ -9,6 +9,7 @@
 #include "neverc/std/os/exec.h"
 #include "neverc/std/_platform.h"
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <limits.h>
 
@@ -134,7 +135,9 @@ static const char *exec_env_path(char **env, int env_count) {
 }
 
 neverc_exec_cmd_t *neverc_exec_command(const char *name, const char **args, int argc) {
-    if (!name || argc < 0 || argc == INT_MAX || (argc > 0 && !args)) return NULL;
+    if (!name || name[0] == '\0' || argc < 0 || argc == INT_MAX ||
+        (argc > 0 && !args))
+        return NULL;
     neverc_exec_cmd_t *cmd = (neverc_exec_cmd_t *)calloc(1, sizeof(*cmd));
     if (!cmd) return NULL;
     cmd->name = strdup(name);
@@ -375,18 +378,30 @@ static char *exec_windows_cmdline(const neverc_exec_cmd_t *cmd) {
 
 static const char *exec_windows_resolve_app(const neverc_exec_cmd_t *cmd,
                                             char *buf, DWORD cap) {
+    const char *name;
     const char *path_env;
     DWORD len;
-    if (!cmd->name || cmd->name[0] == '\0') return NULL;
-    if (strchr(cmd->name, '\\') || strchr(cmd->name, '/') ||
-        (cmd->name[0] && cmd->name[1] == ':'))
-        return cmd->name;
+    if (!cmd->name || cmd->name[0] == '\0' || !buf || cap == 0) return NULL;
+    name = cmd->name;
+    /* Relative Path with a separator is evaluated against Dir (Go Cmd.Start).
+     * argv[0] stays the original name. */
+    if (cmd->dir && cmd->dir[0] != '\0' &&
+        name[0] != '\\' && name[0] != '/' &&
+        !(name[0] && name[1] == ':') &&
+        (strchr(name, '\\') || strchr(name, '/'))) {
+        int n = snprintf(buf, cap, "%s\\%s", cmd->dir, name);
+        if (n < 0 || (DWORD)n >= cap) return NULL;
+        name = buf;
+    }
+    if (strchr(name, '\\') || strchr(name, '/') ||
+        (name[0] && name[1] == ':'))
+        return name;
     path_env = exec_env_path(cmd->env, cmd->env_count);
     /* Custom Env without PATH must not fall back to the process PATH
      * (Go os/exec LookPath). CreateProcessA(NULL, ...) would also search. */
     if (cmd->env && (!path_env || path_env[0] == '\0'))
         return NULL;
-    len = SearchPathA(path_env, cmd->name, ".exe", cap, buf, NULL);
+    len = SearchPathA(path_env, name, ".exe", cap, buf, NULL);
     return (len > 0 && len < cap) ? buf : NULL;
 }
 
@@ -902,14 +917,21 @@ static pid_t exec_fork_stdin_writer(neverc_exec_cmd_t *cmd, int stdin_wr,
 
 static int exec_read_exec_error(int err_rd) {
     int exec_err = 0;
-    ssize_t n;
-    do {
-        n = read(err_rd, &exec_err, sizeof(exec_err));
-    } while (n < 0 && errno == EINTR);
+    size_t got = 0;
+    while (got < sizeof(exec_err)) {
+        ssize_t n = read(err_rd, (char *)&exec_err + got,
+                         sizeof(exec_err) - got);
+        if (n < 0 && errno == EINTR) continue;
+        if (n < 0) {
+            close(err_rd);
+            return -1;
+        }
+        if (n == 0) break;
+        got += (size_t)n;
+    }
     close(err_rd);
-    if (n == (ssize_t)sizeof(exec_err)) return -1;
-    if (n < 0) return -1;
-    return 0;
+    if (got == 0) return 0;
+    return -1;
 }
 
 static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int capture_stderr,

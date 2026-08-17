@@ -304,6 +304,47 @@ static void test_1024_seed_deterministic(void) {
     printf("ok\n");
 }
 
+static void test_768_seed_is_decaps_source_of_truth(void) {
+    printf("  768 seed-based dk ignores tampered ek cache ... ");
+    uint8_t seed[NEVERC_MLKEM_SEED_SIZE];
+    for (int i = 0; i < NEVERC_MLKEM_SEED_SIZE; i++)
+        seed[i] = (uint8_t)(i * 11 + 5);
+    neverc_mlkem768_dk_t dk;
+    ASSERT(neverc_mlkem768_new_dk(&dk, seed) == 0, "new_dk");
+    neverc_mlkem768_ek_t ek;
+    neverc_mlkem768_dk_encapsulation_key(&dk, &ek);
+
+    uint8_t shared_key[32], ciphertext[NEVERC_MLKEM768_CT_SIZE];
+    ASSERT(neverc_mlkem768_encapsulate(&ek, shared_key, ciphertext) == 0,
+           "encaps");
+
+    dk.ek[0] ^= 1U;
+    uint8_t recovered[32];
+    ASSERT(neverc_mlkem768_decapsulate(&dk, ciphertext, recovered) == 0,
+           "decaps with tampered cached ek");
+    ASSERT(memcmp(shared_key, recovered, 32) == 0,
+           "seed regeneration recovers the shared key");
+    printf("ok\n");
+}
+
+static void test_decaps_clears_on_null(void) {
+    printf("  decapsulate clears shared key on NULL ... ");
+    uint8_t ct768[NEVERC_MLKEM768_CT_SIZE];
+    uint8_t ct1024[NEVERC_MLKEM1024_CT_SIZE];
+    uint8_t shared[32];
+    memset(ct768, 0x5A, sizeof(ct768));
+    memset(ct1024, 0x5A, sizeof(ct1024));
+    memset(shared, 0x5A, sizeof(shared));
+    ASSERT(neverc_mlkem768_decapsulate(NULL, ct768, shared) == -1,
+           "NULL 768 dk rejected");
+    ASSERT(all_zero(shared, sizeof(shared)), "NULL 768 dk clears shared key");
+    memset(shared, 0x5A, sizeof(shared));
+    ASSERT(neverc_mlkem1024_decapsulate(NULL, ct1024, shared) == -1,
+           "NULL 1024 dk rejected");
+    ASSERT(all_zero(shared, sizeof(shared)), "NULL 1024 dk clears shared key");
+    printf("ok\n");
+}
+
 int main(void) {
     printf("crypto/mlkem tests:\n");
     test_768_roundtrip();
@@ -315,6 +356,8 @@ int main(void) {
     test_768_multiple_encaps();
     test_1024_roundtrip();
     test_1024_seed_deterministic();
+    test_768_seed_is_decaps_source_of_truth();
+    test_decaps_clears_on_null();
     printf("%d/%d passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
 }

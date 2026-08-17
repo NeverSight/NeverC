@@ -13,6 +13,7 @@ extern "C" {
 
 void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
                           const uint8_t key[32]);
+/* Returns 1 if the tag matches, 0 on mismatch or invalid input. */
 int  neverc_poly1305_verify(const uint8_t tag[16], const uint8_t *msg, size_t msg_len,
                             const uint8_t key[32]);
 

@@ -13,16 +13,21 @@ extern "C" {
  * C adaptation of Go's unique package.
  *
  * Provides a global intern table so that equal values share a single
- * canonical copy.  Handles are trivially comparable (pointer equality)
+ * canonical copy.  Handles are comparable by intern pointer and epoch
  * and carry no ownership—freeing happens when the table is destroyed.
  *
  * Thread-safe: table operations use internal locking and interned values are
- * immutable.  Destroy invalidates every handle and must not run concurrently
- * with handle/value access.  An empty byte slice may be interned with a NULL
+ * immutable.  Destroy bumps the table epoch so stale handles compare unequal
+ * and accessors return NULL/0 without reading freed intern storage.  A pointer
+ * already returned by a value accessor is invalidated by destroy and must not
+ * be used afterwards.  An empty byte slice may be interned with a NULL
  * pointer and length 0; a non-zero length still requires a non-NULL buffer.
  */
 
-typedef struct { const void *ptr; } neverc_unique_handle_t;
+typedef struct {
+    const void *ptr;
+    uint64_t epoch;
+} neverc_unique_handle_t;
 
 void  neverc_unique_init(void);
 void  neverc_unique_destroy(void);

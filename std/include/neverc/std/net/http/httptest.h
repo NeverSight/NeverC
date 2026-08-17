@@ -33,7 +33,8 @@ const char *neverc_httptest_url(neverc_httptest_server_t *ts);
 /* Get the server's listener address (e.g., "127.0.0.1:12345"). */
 const char *neverc_httptest_addr(neverc_httptest_server_t *ts);
 
-/* Close the test server and free resources. */
+/* Close the test server, join the accept thread, and free resources.
+ * Safe to call with NULL. */
 void neverc_httptest_close(neverc_httptest_server_t *ts);
 
 /* --- Response Recorder (like Go httptest.ResponseRecorder) --- */

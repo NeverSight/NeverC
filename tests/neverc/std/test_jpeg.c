@@ -144,11 +144,26 @@ static void test_gradient(void) {
     free(img.pixels);
 }
 
+static void assert_jpeg_rejected(const uint8_t *data, size_t len) {
+    neverc_jpeg_image_t img;
+    memset(&img, 0xA5, sizeof(img));
+    ASSERT_EQ(neverc_jpeg_decode(data, len, &img), -1);
+    ASSERT_TRUE(img.pixels == NULL);
+    ASSERT_EQ(img.width, 0);
+    ASSERT_EQ(img.height, 0);
+}
+
 static void test_invalid_data(void) {
     printf("[invalid_data]\n");
     neverc_jpeg_image_t img;
+    memset(&img, 0xA5, sizeof(img));
     ASSERT_EQ(neverc_jpeg_decode(NULL, 0, &img), -1);
+    ASSERT_TRUE(img.pixels == NULL);
+    ASSERT_EQ(img.width, 0);
+    memset(&img, 0xA5, sizeof(img));
     ASSERT_EQ(neverc_jpeg_decode((const uint8_t *)"xx", 2, &img), -1);
+    ASSERT_TRUE(img.pixels == NULL);
+    ASSERT_EQ(img.width, 0);
     ASSERT_EQ(neverc_jpeg_encode(NULL, 90, NULL, NULL), -1);
     uint8_t pixel[3] = {0};
     neverc_jpeg_image_t too_wide = {
@@ -653,6 +668,120 @@ static void test_rejects_complete_huffman_table(void) {
     free(encoded);
 }
 
+static void test_tiny_malformed_jpeg(void) {
+    printf("[tiny_malformed_jpeg]\n");
+
+    /* Truncated SOI — used to leave a poisoned img untouched. */
+    static const uint8_t trunc_soi[] = {0xFF, 0xD8};
+    assert_jpeg_rejected(trunc_soi, sizeof(trunc_soi));
+    assert_jpeg_rejected(NULL, 0);
+
+    /* SOF0 65535x65535 grayscale. Must fail at the header, not after a
+     * multi-GB allocation. */
+    static const uint8_t huge_sof[] = {
+        0xFF, 0xD8,
+        0xFF, 0xC0, 0x00, 0x0B, 0x08, 0xFF, 0xFF, 0xFF, 0xFF,
+        0x01, 0x01, 0x11, 0x00,
+        0xFF, 0xD9
+    };
+    assert_jpeg_rejected(huge_sof, sizeof(huge_sof));
+
+    /* Progressive SOF2. Skipping this as "unknown" would hide it. */
+    static const uint8_t sof2[] = {
+        0xFF, 0xD8,
+        0xFF, 0xC2, 0x00, 0x0B, 0x08, 0x00, 0x08, 0x00, 0x08,
+        0x01, 0x01, 0x11, 0x00,
+        0xFF, 0xD9
+    };
+    assert_jpeg_rejected(sof2, sizeof(sof2));
+
+    /* Extended sequential SOF1 and arithmetic DAC (0xCC). */
+    static const uint8_t sof1[] = {
+        0xFF, 0xD8,
+        0xFF, 0xC1, 0x00, 0x0B, 0x08, 0x00, 0x08, 0x00, 0x08,
+        0x01, 0x01, 0x11, 0x00,
+        0xFF, 0xD9
+    };
+    assert_jpeg_rejected(sof1, sizeof(sof1));
+    static const uint8_t dac[] = {
+        0xFF, 0xD8, 0xFF, 0xCC, 0x00, 0x04, 0x00, 0x00, 0xFF, 0xD9
+    };
+    assert_jpeg_rejected(dac, sizeof(dac));
+
+    /* Over-subscribed DC table: 3 codes of length 1 (only 2 slots).
+     * The lookahead fill would write past look_nbits[256]. */
+    static const uint8_t oversub_dht[] = {
+        0xFF, 0xD8,
+        0xFF, 0xC4, 0x00, 0x16, 0x00,
+        3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 1, 2,
+        0xFF, 0xD9
+    };
+    assert_jpeg_rejected(oversub_dht, sizeof(oversub_dht));
+
+    /* Complete length-1 table (codes 0 and 1). Annex C forbids this. */
+    static const uint8_t complete_dht[] = {
+        0xFF, 0xD8,
+        0xFF, 0xC4, 0x00, 0x15, 0x00,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 1,
+        0xFF, 0xD9
+    };
+    assert_jpeg_rejected(complete_dht, sizeof(complete_dht));
+
+    /* DRI declared with no interval payload. */
+    static const uint8_t short_dri[] = {
+        0xFF, 0xD8, 0xFF, 0xDD, 0x00, 0x02, 0xFF, 0xD9
+    };
+    assert_jpeg_rejected(short_dri, sizeof(short_dri));
+
+    /* SOS without SOF — truncated / incomplete baseline stream. */
+    static const uint8_t sos_only[] = {
+        0xFF, 0xD8,
+        0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00,
+        0xFF, 0xD9
+    };
+    assert_jpeg_rejected(sos_only, sizeof(sos_only));
+
+    /* SOF0 then EOI: no scan. A truncated JPEG must not succeed. */
+    static const uint8_t sof_no_scan[] = {
+        0xFF, 0xD8,
+        0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x08, 0x00, 0x08,
+        0x01, 0x01, 0x11, 0x00,
+        0xFF, 0xD9
+    };
+    assert_jpeg_rejected(sof_no_scan, sizeof(sof_no_scan));
+
+    /* SOF2 in front of a valid baseline stream must not be skipped. */
+    uint8_t pixels[64];
+    memset(pixels, 128, sizeof(pixels));
+    neverc_jpeg_image_t source = {
+        .width = 8, .height = 8, .channels = 1,
+        .pixels = pixels, .stride = 8
+    };
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&source, 90, &encoded, &encoded_length), 0);
+    if (encoded && encoded_length >= 2) {
+        static const uint8_t sof2_seg[] = {
+            0xFF, 0xC2, 0x00, 0x0B, 0x08, 0x00, 0x08, 0x00, 0x08,
+            0x01, 0x01, 0x11, 0x00
+        };
+        size_t n = encoded_length + sizeof(sof2_seg);
+        uint8_t *mixed = (uint8_t *)malloc(n);
+        ASSERT_TRUE(mixed != NULL);
+        if (mixed) {
+            memcpy(mixed, encoded, 2); /* SOI */
+            memcpy(mixed + 2, sof2_seg, sizeof(sof2_seg));
+            memcpy(mixed + 2 + sizeof(sof2_seg), encoded + 2,
+                   encoded_length - 2);
+            assert_jpeg_rejected(mixed, n);
+            free(mixed);
+        }
+        free(encoded);
+    }
+}
+
 static void test_rejects_duplicate_sof(void) {
     printf("[rejects_duplicate_sof]\n");
     uint8_t pixels[64];
@@ -713,6 +842,7 @@ int main(void) {
     test_rejects_truncated_eoi();
     test_eoi_fill_bytes_ok();
     test_rejects_complete_huffman_table();
+    test_tiny_malformed_jpeg();
     test_rejects_duplicate_sof();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

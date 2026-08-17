@@ -187,6 +187,13 @@ int neverc_netip_parse_addr(const char *s, neverc_netip_addr_t *out) {
             break;
         }
     }
+    /* Go netip.ParseAddr: IPv4 cannot carry a zone (the '.' branch
+     * never splits on '%'). `1.2.3.4%eth0` must not parse as IPv6. */
+    if (zone_start) {
+        uint8_t v4z[4];
+        if (parse_ipv4(s, iplen, v4z) == 0)
+            return -1;
+    }
 
     uint16_t groups[8] = {0};
     int ngroups = 0, dcolon_pos = -1;
@@ -251,6 +258,13 @@ done_parse:
     if (zone_start) {
         size_t zlen = slen - (size_t)(zone_start - s);
         if (zlen == 0 || zlen >= sizeof(out->zone)) return -1;
+        for (size_t zi = 0; zi < zlen; zi++) {
+            unsigned char c = (unsigned char)zone_start[zi];
+            /* Zone IDs are interface names or decimal indices. CTL in a
+             * zone interpolates into URL/log lines as header injection. */
+            if (c <= 0x20 || c == 0x7f)
+                return -1;
+        }
         memcpy(out->zone, zone_start, zlen);
         out->zone[zlen] = '\0';
     }
@@ -468,6 +482,14 @@ int neverc_netip_addr_is_link_local_multicast(const neverc_netip_addr_t *addr) {
 
 int neverc_netip_addr_is_global_unicast(const neverc_netip_addr_t *addr) {
     if (!addr || !addr->valid) return 0;
+    uint8_t v4[4];
+    if (addr_v4_octets(addr, v4)) {
+        /* Go: IPv4 unspecified and limited broadcast are not global.
+         * IPv4-mapped ::ffff:0.0.0.0 is unspecified after Unmap. */
+        if ((v4[0] == 0 && v4[1] == 0 && v4[2] == 0 && v4[3] == 0) ||
+            (v4[0] == 255 && v4[1] == 255 && v4[2] == 255 && v4[3] == 255))
+            return 0;
+    }
     return !neverc_netip_addr_is_loopback(addr) &&
            !neverc_netip_addr_is_multicast(addr) &&
            !neverc_netip_addr_is_link_local_unicast(addr) &&
@@ -477,11 +499,31 @@ int neverc_netip_addr_is_global_unicast(const neverc_netip_addr_t *addr) {
 
 int neverc_netip_addr_is_unspecified(const neverc_netip_addr_t *addr) {
     if (!addr || !addr->valid) return 0;
-    uint8_t v4[4];
-    if (addr_v4_octets(addr, v4))
-        return v4[0] == 0 && v4[1] == 0 && v4[2] == 0 && v4[3] == 0;
+    /* Go netip.Addr.IsUnspecified: only 0.0.0.0 and ::, not ::ffff:0.0.0.0. */
+    if (addr->is_v4)
+        return addr->addr[12] == 0 && addr->addr[13] == 0 &&
+               addr->addr[14] == 0 && addr->addr[15] == 0;
+    if (addr_is_4in6(addr))
+        return 0;
     for (int i = 0; i < 16; i++) if (addr->addr[i] != 0) return 0;
     return 1;
+}
+
+int neverc_netip_addr_is_internal(const neverc_netip_addr_t *addr) {
+    neverc_netip_addr_t unmapped;
+    if (!addr || !addr->valid) return 1;
+    if (neverc_netip_addr_unmap(addr, &unmapped) != 0) return 1;
+    if (neverc_netip_addr_is_loopback(&unmapped) ||
+        neverc_netip_addr_is_private(&unmapped) ||
+        neverc_netip_addr_is_link_local_unicast(&unmapped) ||
+        neverc_netip_addr_is_multicast(&unmapped) ||
+        neverc_netip_addr_is_unspecified(&unmapped))
+        return 1;
+    uint8_t v4[4];
+    if (neverc_netip_addr_as4(&unmapped, v4) == 4 &&
+        v4[0] == 255 && v4[1] == 255 && v4[2] == 255 && v4[3] == 255)
+        return 1;
+    return 0;
 }
 
 int neverc_netip_addr_compare(const neverc_netip_addr_t *a, const neverc_netip_addr_t *b) {

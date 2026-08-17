@@ -64,7 +64,10 @@ int neverc_mlkem768_encapsulate(const neverc_mlkem768_ek_t *ek,
                                 uint8_t shared_key[32],
                                 uint8_t ciphertext[NEVERC_MLKEM768_CT_SIZE]);
 
-/* Decapsulate: recover shared key from ciphertext. Returns 0 on success. */
+/* Decapsulate: recover shared key from ciphertext. Returns 0 on success
+ * or -1 if an argument is invalid. On failure, shared_key is securely
+ * cleared. Ciphertexts that are not the ML-KEM-768 encoding length are
+ * rejected rather than implicitly rejected. */
 int neverc_mlkem768_decapsulate(const neverc_mlkem768_dk_t *dk,
                                 const uint8_t ciphertext[NEVERC_MLKEM768_CT_SIZE],
                                 uint8_t shared_key[32]);
@@ -105,6 +108,8 @@ int neverc_mlkem1024_new_ek(neverc_mlkem1024_ek_t *ek,
 int neverc_mlkem1024_encapsulate(const neverc_mlkem1024_ek_t *ek,
                                  uint8_t shared_key[32],
                                  uint8_t ciphertext[NEVERC_MLKEM1024_CT_SIZE]);
+/* Returns 0 on success or -1 if an argument is invalid. On failure,
+ * shared_key is securely cleared. */
 int neverc_mlkem1024_decapsulate(const neverc_mlkem1024_dk_t *dk,
                                  const uint8_t ciphertext[NEVERC_MLKEM1024_CT_SIZE],
                                  uint8_t shared_key[32]);

@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 
 #define X509_ASN1_INTEGER  0x02
 #define X509_ASN1_SEQUENCE 0x30
@@ -45,8 +46,11 @@ static int x509_der_read_length(x509_der_reader_t *reader, size_t *length) {
         return -1;
 
     size_t result = 0;
-    for (unsigned i = 0; i < count; ++i)
+    for (unsigned i = 0; i < count; ++i) {
+        if (result > (SIZE_MAX >> 8))
+            return -1;
         result = (result << 8) | reader->data[reader->pos++];
+    }
     if (result < 0x80)
         return -1;
     *length = result;
@@ -445,20 +449,128 @@ static int x509_ip_constraint_matches(
     return 1;
 }
 
+#define X509_DNS_PROBE_MAX 256
+
+/* `*.suffix` SAN/CN identities assert every single-label child of suffix.
+ * Constraints must be applied to that set, not the literal "*.suffix" string. */
+static int x509_wildcard_dns_suffix(const char *name, const char **suffix,
+                                    size_t *suffix_len) {
+    if (!name || !suffix || !suffix_len)
+        return 0;
+    size_t len = x509_dns_stripped_len(name);
+    if (len < 5 || name[0] != '*' || name[1] != '.')
+        return 0;
+    *suffix = name + 2;
+    *suffix_len = len - 2;
+    if (*suffix_len == 0 || *suffix_len > 253)
+        return 0;
+    int saw_dot = 0;
+    for (size_t i = 0; i < *suffix_len; ++i) {
+        if ((*suffix)[i] == '.')
+            saw_dot = 1;
+    }
+    return saw_dot;
+}
+
+static int x509_wildcard_probes(const char *suffix, size_t suffix_len,
+                                char *probe0, char *probe1) {
+    if (!suffix || suffix_len == 0 || suffix_len > X509_DNS_PROBE_MAX - 3)
+        return 0;
+    probe0[0] = '0';
+    probe0[1] = '.';
+    memcpy(probe0 + 2, suffix, suffix_len);
+    probe0[2 + suffix_len] = '\0';
+    probe1[0] = '1';
+    probe1[1] = '.';
+    memcpy(probe1 + 2, suffix, suffix_len);
+    probe1[2 + suffix_len] = '\0';
+    return 1;
+}
+
+static int x509_wildcard_covers_hostname(const char *suffix, size_t suffix_len,
+                                         const char *hostname) {
+    if (!suffix || !hostname || suffix_len == 0)
+        return 0;
+    size_t name_len = x509_dns_stripped_len(hostname);
+    if (name_len <= suffix_len + 1)
+        return 0;
+    if (hostname[name_len - suffix_len - 1] != '.')
+        return 0;
+    if (!x509_ascii_equal(hostname + name_len - suffix_len, suffix,
+                          suffix_len))
+        return 0;
+    size_t label_len = name_len - suffix_len - 1;
+    for (size_t i = 0; i < label_len; ++i) {
+        if (hostname[i] == '.')
+            return 0;
+    }
+    return 1;
+}
+
+static int x509_dns_name_permitted(const char *name, char *const *permitted,
+                                   size_t permitted_count) {
+    if (permitted_count == 0)
+        return 1;
+    if (!name)
+        return 0;
+    const char *suffix;
+    size_t suffix_len;
+    if (x509_wildcard_dns_suffix(name, &suffix, &suffix_len)) {
+        char probe0[X509_DNS_PROBE_MAX];
+        char probe1[X509_DNS_PROBE_MAX];
+        if (!x509_wildcard_probes(suffix, suffix_len, probe0, probe1))
+            return 0;
+        for (size_t j = 0; j < permitted_count; ++j) {
+            if (x509_dns_constraint_matches(permitted[j], probe0) &&
+                x509_dns_constraint_matches(permitted[j], probe1))
+                return 1;
+        }
+        return 0;
+    }
+    for (size_t j = 0; j < permitted_count; ++j) {
+        if (x509_dns_constraint_matches(permitted[j], name))
+            return 1;
+    }
+    return 0;
+}
+
+static int x509_dns_name_excluded(const char *name, char *const *excluded,
+                                  size_t excluded_count) {
+    if (!name || excluded_count == 0)
+        return 0;
+    const char *suffix;
+    size_t suffix_len;
+    int wildcard = x509_wildcard_dns_suffix(name, &suffix, &suffix_len);
+    char probe0[X509_DNS_PROBE_MAX];
+    char probe1[X509_DNS_PROBE_MAX];
+    if (wildcard &&
+        !x509_wildcard_probes(suffix, suffix_len, probe0, probe1))
+        return 1;
+    for (size_t j = 0; j < excluded_count; ++j) {
+        if (!excluded[j])
+            continue;
+        if (wildcard) {
+            if (x509_dns_constraint_matches(excluded[j], probe0) ||
+                x509_dns_constraint_matches(excluded[j], probe1))
+                return 1;
+            if (excluded[j][0] != '.' &&
+                x509_wildcard_covers_hostname(
+                    suffix, suffix_len, excluded[j]))
+                return 1;
+        } else if (x509_dns_constraint_matches(excluded[j], name)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int x509_dns_names_permitted(char *const *names, size_t name_count,
                                     char *const *permitted,
                                     size_t permitted_count) {
     if (permitted_count == 0)
         return 1;
     for (size_t i = 0; i < name_count; ++i) {
-        int matched = 0;
-        for (size_t j = 0; j < permitted_count; ++j) {
-            if (x509_dns_constraint_matches(permitted[j], names[i])) {
-                matched = 1;
-                break;
-            }
-        }
-        if (!matched)
+        if (!x509_dns_name_permitted(names[i], permitted, permitted_count))
             return 0;
     }
     return 1;
@@ -468,10 +580,8 @@ static int x509_dns_names_excluded(char *const *names, size_t name_count,
                                    char *const *excluded,
                                    size_t excluded_count) {
     for (size_t i = 0; i < name_count; ++i) {
-        for (size_t j = 0; j < excluded_count; ++j) {
-            if (x509_dns_constraint_matches(excluded[j], names[i]))
-                return 1;
-        }
+        if (x509_dns_name_excluded(names[i], excluded, excluded_count))
+            return 1;
     }
     return 0;
 }
@@ -517,11 +627,15 @@ static int x509_cn_looks_like_dns(const char *cn) {
     if (len == 0 || len > 253)
         return 0;
 
+    size_t start = 0;
+    if (len >= 5 && cn[0] == '*' && cn[1] == '.')
+        start = 2;
+
     int saw_dot = 0;
     int all_numeric = 1;
     int dots = 0;
-    size_t label_start = 0;
-    for (size_t i = 0; i <= len; ++i) {
+    size_t label_start = start;
+    for (size_t i = start; i <= len; ++i) {
         if (i == len || cn[i] == '.') {
             size_t label_len = i - label_start;
             if (label_len == 0 || label_len > 63 ||
@@ -544,10 +658,83 @@ static int x509_cn_looks_like_dns(const char *cn) {
             all_numeric = 0;
     }
     if (!saw_dot)
-        return 0;
+        return start == 0 && len == 9 &&
+               x509_ascii_equal(cn, "localhost", 9);
     /* IPv4 literals are not dNSName identities. */
-    if (all_numeric && dots == 3)
+    if (start == 0 && all_numeric && dots == 3)
         return 0;
+    return 1;
+}
+
+static int x509_parse_ipv4_literal(const char *text, size_t len,
+                                   uint8_t out[4]) {
+    size_t pos = 0;
+    for (int part = 0; part < 4; ++part) {
+        if (pos >= len)
+            return 0;
+        size_t start = pos;
+        unsigned value = 0;
+        while (pos < len && text[pos] >= '0' && text[pos] <= '9') {
+            if (value > 25 ||
+                (value == 25 && (unsigned)(text[pos] - '0') > 5))
+                return 0;
+            value = value * 10 + (unsigned)(text[pos] - '0');
+            ++pos;
+        }
+        if (pos == start || pos - start > 3 ||
+            (pos - start > 1 && text[start] == '0'))
+            return 0;
+        out[part] = (uint8_t)value;
+        if (part == 3)
+            return pos == len;
+        if (pos >= len || text[pos] != '.')
+            return 0;
+        ++pos;
+    }
+    return 0;
+}
+
+static int x509_cn_looks_like_ipv4(const char *cn) {
+    if (!cn || !cn[0])
+        return 0;
+    size_t len = x509_dns_stripped_len(cn);
+    int dots = 0;
+    if (len == 0)
+        return 0;
+    for (size_t i = 0; i < len; ++i) {
+        if (cn[i] == '.')
+            ++dots;
+        else if (cn[i] < '0' || cn[i] > '9')
+            return 0;
+    }
+    return dots == 3;
+}
+
+static int x509_cn_looks_like_ipv6(const char *cn) {
+    if (!cn || !cn[0])
+        return 0;
+    size_t len = x509_dns_stripped_len(cn);
+    int colons = 0;
+    if (len == 0)
+        return 0;
+    for (size_t i = 0; i < len; ++i) {
+        int ch = x509_ascii_lower((unsigned char)cn[i]);
+        if (ch == ':')
+            ++colons;
+        else if (!((ch >= '0' && ch <= '9') ||
+                   (ch >= 'a' && ch <= 'f') || ch == '.'))
+            return 0;
+    }
+    return colons >= 2;
+}
+
+static int x509_cn_parse_ipv4(const char *cn, neverc_x509_ip_address_t *out) {
+    if (!cn || !out)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    if (!x509_parse_ipv4_literal(cn, x509_dns_stripped_len(cn), out->bytes))
+        return 0;
+    out->len = 4;
     return 1;
 }
 
@@ -585,6 +772,27 @@ static int x509_cert_satisfies_name_constraints(
                                       issuer->permitted_dns_names,
                                       issuer->permitted_dns_name_count))
             return 0;
+    }
+
+    /* Same CN-as-identity hole for iPAddress constraints: a SAN-less
+     * IPv4 CN would otherwise evade permitted/excluded IP trees. */
+    if (subject->ip_address_count == 0 &&
+        subject->subject.common_name[0]) {
+        neverc_x509_ip_address_t cn_ip;
+        if (x509_cn_parse_ipv4(subject->subject.common_name, &cn_ip)) {
+            if (x509_ip_addresses_excluded(
+                    &cn_ip, 1, issuer->excluded_ip_networks,
+                    issuer->excluded_ip_network_count) ||
+                !x509_ip_addresses_permitted(
+                    &cn_ip, 1, issuer->permitted_ip_networks,
+                    issuer->permitted_ip_network_count))
+                return 0;
+        } else if ((x509_cn_looks_like_ipv4(subject->subject.common_name) ||
+                    x509_cn_looks_like_ipv6(subject->subject.common_name)) &&
+                   (issuer->permitted_ip_network_count > 0 ||
+                    issuer->excluded_ip_network_count > 0)) {
+            return 0;
+        }
     }
     return 1;
 }

@@ -57,10 +57,11 @@ size_t neverc_utf16_encode(const int32_t *src, size_t nsrc,
         if (n == 1) {
             dst[o++] = (uint16_t)src[i];
         } else if (n == 2) {
+            if (ndst - o < 2) break; /* do not emit a lone high surrogate */
             int32_t r1, r2;
             neverc_utf16_encode_rune(src[i], &r1, &r2);
             dst[o++] = (uint16_t)r1;
-            if (o < ndst) dst[o++] = (uint16_t)r2;
+            dst[o++] = (uint16_t)r2;
         } else {
             dst[o++] = (uint16_t)NEVERC_UTF16_REPLACEMENT_CHAR;
         }

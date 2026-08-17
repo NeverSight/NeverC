@@ -23,6 +23,7 @@
 #define QUIC_DEFAULT_MAX_PACKET_SIZE 1200
 #define QUIC_MAX_PACKET_SIZE 65527
 #define QUIC_VARINT_MAX ((UINT64_C(1) << 62) - 1)
+#define QUIC_MAX_STREAM_COUNT (UINT64_C(1) << 60)
 
 #define QUIC_FRAME_PADDING              0x00
 #define QUIC_FRAME_PING                 0x01
@@ -565,6 +566,7 @@ int neverc_quic_remove_header_protection(const uint8_t *hp_key,
 
 /* RFC 9000 §12.4: which frames may appear at each encryption level. */
 int neverc_quic_frame_allowed(uint64_t frame_type, quic_enc_level_t level);
+int neverc_quic_frame_type_encoding_ok(uint64_t frame_type, size_t encoded_len);
 
 int neverc_quic_parse_crypto_frame(const uint8_t *buf, size_t len,
                                    quic_frame_crypto_t *output,
@@ -616,6 +618,8 @@ int neverc_quic_write_handshake_done(uint8_t *buf, size_t cap,
 int neverc_quic_parse_retire_conn_id(const uint8_t *buf, size_t len,
                                      quic_frame_retire_conn_id_t *output,
                                      size_t *consumed);
+int neverc_quic_parse_stream_count_frame(const uint8_t *buf, size_t len,
+                                         uint64_t *maximum, size_t *consumed);
 int neverc_quic_write_retire_conn_id(uint8_t *buf, size_t cap,
                                      uint64_t sequence, size_t *written);
 

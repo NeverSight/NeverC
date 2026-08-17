@@ -1,5 +1,6 @@
 #include "neverc/std/image/image.h"
 #include <limits.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -182,6 +183,9 @@ static int image_layout(neverc_rect_t r, int bytes_per_pixel,
 
     int row_stride = (int)width * bytes_per_pixel;
     if (height > INT_MAX / row_stride) return -1;
+    if ((size_t)row_stride > 0 &&
+        (size_t)height > SIZE_MAX / (size_t)row_stride)
+        return -1;
 
     *stride = row_stride;
     *size = (size_t)row_stride * (size_t)height;

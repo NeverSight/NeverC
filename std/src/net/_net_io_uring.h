@@ -130,7 +130,8 @@ typedef struct {
 static inline int nc_uring_init(nc_uring_t *ring, unsigned entries) {
     memset(ring, 0, sizeof(*ring));
     ring->ring_fd = -1;
-    if (entries == 0 || entries > UINT_MAX / 4)
+    if (entries == 0 || entries > UINT_MAX / 4 ||
+        (size_t)entries > SIZE_MAX / sizeof(struct io_uring_sqe))
         return -1;
 
     struct io_uring_params params;
@@ -141,15 +142,30 @@ static inline int nc_uring_init(nc_uring_t *ring, unsigned entries) {
     ring->ring_fd = nc_io_uring_setup(entries, &params);
     if (ring->ring_fd < 0) return -1;
 
+    if (params.sq_entries == 0 || params.cq_entries == 0 ||
+        params.sq_entries > SIZE_MAX / sizeof(struct io_uring_sqe) ||
+        params.cq_entries > SIZE_MAX / sizeof(struct io_uring_cqe) ||
+        params.sq_entries > SIZE_MAX / sizeof(unsigned)) {
+        close(ring->ring_fd);
+        ring->ring_fd = -1;
+        return -1;
+    }
+
     ring->sq_ring_entries = params.sq_entries;
     ring->cq_ring_entries = params.cq_entries;
     ring->single_mmap = !!(params.features & IORING_FEAT_SINGLE_MMAP);
 
-    size_t sq_ring_sz =
-        params.sq_off.array + params.sq_entries * sizeof(unsigned);
-    size_t cq_ring_sz =
-        params.cq_off.cqes +
-        params.cq_entries * sizeof(struct io_uring_cqe);
+    size_t sq_array_bytes = (size_t)params.sq_entries * sizeof(unsigned);
+    size_t cqes_bytes =
+        (size_t)params.cq_entries * sizeof(struct io_uring_cqe);
+    if (params.sq_off.array > SIZE_MAX - sq_array_bytes ||
+        params.cq_off.cqes > SIZE_MAX - cqes_bytes) {
+        close(ring->ring_fd);
+        ring->ring_fd = -1;
+        return -1;
+    }
+    size_t sq_ring_sz = (size_t)params.sq_off.array + sq_array_bytes;
+    size_t cq_ring_sz = (size_t)params.cq_off.cqes + cqes_bytes;
     if (ring->single_mmap && cq_ring_sz > sq_ring_sz)
         sq_ring_sz = cq_ring_sz;
     ring->sq_ring_sz = sq_ring_sz;
@@ -533,7 +549,14 @@ static inline int nc_uring_engine_poll(nc_uring_engine_t *engine,
             nc_uring_send_ctx_t *send_ctx =
                 (nc_uring_send_ctx_t *)ptr;
             if (completion > 0) {
-                send_ctx->sent += (size_t)completion;
+                size_t n = (size_t)completion;
+                if (send_ctx->sent > send_ctx->len ||
+                    n > send_ctx->len - send_ctx->sent) {
+                    if (send_ctx->on_send)
+                        send_ctx->on_send(send_ctx->user_ctx, -1);
+                    break;
+                }
+                send_ctx->sent += n;
                 if (send_ctx->sent < send_ctx->len) {
                     nc_uring_engine_send(engine, send_ctx);
                     break;

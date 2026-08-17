@@ -1,17 +1,34 @@
 #include "neverc/std/crypto/rand.h"
 #include "neverc/std/_platform.h"
 
+#ifndef NCI_CRYPTO_RAND_RANDOM
+#define NCI_CRYPTO_RAND_RANDOM neverc_platform_random
+#endif
+
 int neverc_crypto_rand_read(uint8_t *buf, size_t len) {
-    return neverc_platform_random(buf, len);
+    if (!buf && len != 0) return -1;
+    if (len == 0) return 0;
+    int rc = NCI_CRYPTO_RAND_RANDOM(buf, len);
+    if (rc != 0) {
+        neverc_platform_secure_zero(buf, len);
+        return -1;
+    }
+    return 0;
 }
 
 int neverc_crypto_rand_int(uint64_t *out, uint64_t max) {
-    if (!out || max == 0) return -1;
+    if (!out) return -1;
+    if (max == 0) {
+        *out = 0;
+        return -1;
+    }
     uint64_t threshold = -max % max;
     for (;;) {
         uint64_t val;
-        if (neverc_crypto_rand_read((uint8_t *)&val, sizeof(val)) != 0)
+        if (neverc_crypto_rand_read((uint8_t *)&val, sizeof(val)) != 0) {
+            *out = 0;
             return -1;
+        }
         if (val >= threshold) {
             *out = val % max;
             return 0;
@@ -88,6 +105,7 @@ int neverc_crypto_rand_prime(uint8_t *out, size_t bits) {
         if (neverc_crypto_rand_read(random_bytes, bytes) != 0) {
             neverc_platform_secure_zero(
                 random_bytes, sizeof(random_bytes));
+            neverc_platform_secure_zero(out, bytes);
             return -1;
         }
         for (size_t i = 0; i < bytes; i++)
@@ -106,5 +124,6 @@ int neverc_crypto_rand_prime(uint8_t *out, size_t bits) {
         }
         neverc_platform_secure_zero(&val, sizeof(val));
     }
+    neverc_platform_secure_zero(out, bytes);
     return -1;
 }

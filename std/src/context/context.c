@@ -475,6 +475,7 @@ typedef struct {
     void (*f)(void);
     volatile int32_t state;
     volatile int32_t thread_finished;
+    volatile int32_t ready;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     DWORD thread_id;
 #else
@@ -492,8 +493,9 @@ enum {
 #if defined(NEVERC_PLATFORM_WINDOWS)
 static DWORD WINAPI after_func_thread(LPVOID arg) {
     after_func_state_t *s = (after_func_state_t *)arg;
-    while (!neverc_context_done(s->ctx) &&
-           NEVERC_ATOMIC_LOAD32(&s->state) == AFTER_FUNC_WAITING)
+    while (NEVERC_ATOMIC_LOAD32(&s->state) == AFTER_FUNC_WAITING &&
+           (!NEVERC_ATOMIC_LOAD32(&s->ready) ||
+            !neverc_context_done(s->ctx)))
         Sleep(1);
     s->thread_id = GetCurrentThreadId();
     if (NEVERC_ATOMIC_CAS32(&s->state, AFTER_FUNC_WAITING,
@@ -508,8 +510,9 @@ static DWORD WINAPI after_func_thread(LPVOID arg) {
 #include <unistd.h>
 static void *after_func_thread(void *arg) {
     after_func_state_t *s = (after_func_state_t *)arg;
-    while (!neverc_context_done(s->ctx) &&
-           NEVERC_ATOMIC_LOAD32(&s->state) == AFTER_FUNC_WAITING)
+    while (NEVERC_ATOMIC_LOAD32(&s->state) == AFTER_FUNC_WAITING &&
+           (!NEVERC_ATOMIC_LOAD32(&s->ready) ||
+            !neverc_context_done(s->ctx)))
         usleep(1000);
     s->thread_id = pthread_self();
     if (NEVERC_ATOMIC_CAS32(&s->state, AFTER_FUNC_WAITING,
@@ -540,6 +543,7 @@ static void after_func_states_unlock(void) {
 static int after_func_slot_reclaimable(after_func_state_t *s) {
     return s &&
            NEVERC_ATOMIC_LOAD32(&s->thread_finished) &&
+           NEVERC_ATOMIC_LOAD32(&s->ready) &&
            s->ctx == NULL &&
            NEVERC_ATOMIC_LOAD32(&s->state) != AFTER_FUNC_RUNNING;
 }
@@ -674,5 +678,8 @@ neverc_context_stop_func_t neverc_context_after_func(neverc_context_t *ctx,
     pthread_detach(th);
 #endif
     after_func_states_unlock();
+    /* Publish after dropping the slot lock so f() (and nested AfterFunc /
+     * context_free) cannot deadlock on g_after_func_lock. */
+    NEVERC_ATOMIC_STORE32(&s->ready, 1);
     return g_stop_fns[idx];
 }

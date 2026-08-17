@@ -344,6 +344,13 @@ static void test_null_safety(void) {
     r = neverc_template_render("ok", &data, NULL);
     check_str("optional output length", r, "ok");
     free(r);
+
+    neverc_template_data_set(&data, "Name", "Ada");
+    data.nvars = data.cap + 5;
+    check_true("oversize nvars is not an OOB read",
+               neverc_template_data_get(&data, "Name") == NULL);
+    data.nvars = 1;
+    check_str("restored nvars", neverc_template_data_get(&data, "Name"), "Ada");
     neverc_template_data_free(&data);
 }
 

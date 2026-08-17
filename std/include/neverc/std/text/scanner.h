@@ -54,6 +54,8 @@ typedef struct {
 
     int line;
     int col;
+    int errors;       /* tokens truncated to tok_buf (Go ErrorCount) */
+    int tok_overflow; /* set while the current token exceeds tok_buf */
 } neverc_scanner_t;
 
 void neverc_scanner_init(neverc_scanner_t *s, const char *src, size_t len);
@@ -63,6 +65,7 @@ const char *neverc_scanner_token_text(const neverc_scanner_t *s, size_t *len);
 neverc_scanner_pos_t neverc_scanner_position(const neverc_scanner_t *s);
 int  neverc_scanner_peek(neverc_scanner_t *s);
 const char *neverc_scanner_token_name(int tok);
+int  neverc_scanner_error_count(const neverc_scanner_t *s);
 
 #ifdef __cplusplus
 }

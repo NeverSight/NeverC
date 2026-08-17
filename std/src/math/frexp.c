@@ -2,6 +2,8 @@
 #include "_math_internal.h"
 
 double neverc_math_frexp(double f, int *exp) {
+    int dummy;
+    if (!exp) exp = &dummy;
     if (f == 0.0) { *exp = 0; return f; }
     if (nc_isinf_any(f) || nc_isnan(f)) { *exp = 0; return f; }
 

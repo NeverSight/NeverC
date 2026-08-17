@@ -156,7 +156,8 @@ static void test_counter_wrap(void) {
 
     memset(out, 0xAA, sizeof(out));
     neverc_chacha20_init(&ctx, key, nonce, 0xFFFFFFFFu);
-    neverc_chacha20_xor(&ctx, out, in, 128);
+    check_true("oversize wrap request returns error",
+               neverc_chacha20_xor_checked(&ctx, out, in, 128) == -1);
     check_true("oversize wrap request is all-or-nothing",
                memcmp(out, aa, 64) == 0 && memcmp(out + 64, aa, 64) == 0);
 
@@ -216,9 +217,11 @@ static void test_null_inputs(void) {
     memset(&ctx, 0xAA, sizeof(ctx));
     neverc_chacha20_init(NULL, key, nonce, 0);
     neverc_chacha20_init(&ctx, NULL, nonce, 0);
+    check_true("null key wipes state", ctx.state[0] == 0);
+    check_true("null key disables xor", ctx.buf_used < 0);
     neverc_chacha20_init(&ctx, key, NULL, 0);
-    check_true("null init leaves context unmodified",
-               ctx.state[0] == 0xAAAAAAAAu);
+    check_true("null nonce wipes state", ctx.state[0] == 0);
+    check_true("null nonce disables xor", ctx.buf_used < 0);
 
     neverc_chacha20_init(&ctx, key, nonce, 0);
     uint8_t out[16];
@@ -235,10 +238,27 @@ static void test_null_inputs(void) {
     neverc_chacha20_init(&z, NULL, nonce, 0);
     uint8_t secret[32], leaked[32];
     memset(secret, 0x5a, sizeof(secret));
-    memset(leaked, 0, sizeof(leaked));
+    memset(leaked, 0xAA, sizeof(leaked));
     neverc_chacha20_xor(&z, leaked, secret, sizeof(secret));
     check_true("failed init does not copy plaintext",
                memcmp(leaked, secret, sizeof(secret)) != 0);
+    neverc_chacha20_init(&ctx, key, nonce, 0);
+    uint8_t encrypted[32];
+    neverc_chacha20_xor(&ctx, encrypted, secret, sizeof(secret));
+
+    neverc_chacha20_init(&ctx, key, nonce, 0);
+    neverc_chacha20_init(&ctx, NULL, nonce, 0);
+    memset(leaked, 0xAA, sizeof(leaked));
+    check_true("failed re-init xor is a no-op",
+               neverc_chacha20_xor_checked(&ctx, leaked, secret, sizeof(secret)) == -1);
+    uint8_t aa32[32];
+    memset(aa32, 0xAA, sizeof(aa32));
+    check_true("failed re-init does not copy plaintext",
+               memcmp(leaked, secret, sizeof(secret)) != 0);
+    check_true("failed re-init does not keep the old keystream",
+               memcmp(leaked, encrypted, sizeof(encrypted)) != 0);
+    check_true("failed re-init leaves output unmodified",
+               memcmp(leaked, aa32, sizeof(aa32)) == 0);
 }
 
 static void test_overlap(void) {

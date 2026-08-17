@@ -115,6 +115,9 @@ int main(void) {
     if (wait_for_operation(poller, &accept_op, &accept_tag, NC_EV_READ,
                            0, 0) != 0)
         goto done;
+    nc_iocp_op_complete(&accept_op, 0);
+    if (nc_iocp_op_state(&accept_op) != NC_IOCP_OP_COMPLETED)
+        goto done;
     accepted = nc_iocp_accept_take(&accept_op);
     if (accepted == NC_INVALID_SOCK ||
         nc_iocp_accept_take(&accept_op) != NC_INVALID_SOCK ||
@@ -133,6 +136,10 @@ int main(void) {
                            4, 0) != 0 ||
         nc_iocp_op_state(&recv_op) != NC_IOCP_OP_COMPLETED ||
         memcmp(input, "ping", 4) != 0)
+        goto done;
+    nc_iocp_op_complete(&recv_op, 4);
+    if (nc_iocp_op_state(&recv_op) != NC_IOCP_OP_COMPLETED ||
+        recv_op.accepted_fd != NC_INVALID_SOCK)
         goto done;
 
     nc_iocp_op_init(&send_op);

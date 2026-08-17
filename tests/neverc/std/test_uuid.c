@@ -149,6 +149,31 @@ static void test_version_variant(void) {
     check_int("new v7 variant", neverc_uuid_variant(v7b), 1);
 }
 
+static void test_v7_monotonic(void) {
+    printf("[v7 monotonic]\n");
+    neverc_uuid_t prev;
+    check_int("first v7", neverc_uuid_generate_v7(&prev), 0);
+    check_int("first v7 version", neverc_uuid_version(prev), 7);
+    check_int("first v7 variant", neverc_uuid_variant(prev), 1);
+
+    int ordered = 1;
+    for (int i = 0; i < 512; i++) {
+        neverc_uuid_t cur;
+        if (neverc_uuid_generate_v7(&cur) != 0) {
+            ordered = 0;
+            break;
+        }
+        if (memcmp(cur.bytes, prev.bytes, 16) <= 0)
+            ordered = 0;
+        prev = cur;
+    }
+    check_int("512 strictly increasing", ordered, 1);
+
+    neverc_uuid_t a = neverc_uuid_new_v7();
+    neverc_uuid_t b = neverc_uuid_new_v7();
+    check_int("new_v7 ordered", memcmp(a.bytes, b.bytes, 16) < 0, 1);
+}
+
 static void test_nil(void) {
     printf("[nil]\n");
     neverc_uuid_t nil = neverc_uuid_nil();
@@ -180,6 +205,7 @@ int main(void) {
     test_string_roundtrip();
     test_parse();
     test_version_variant();
+    test_v7_monotonic();
     test_nil();
     test_uniqueness();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);

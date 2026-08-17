@@ -484,6 +484,163 @@ const char *neverc_filepath_join(const char *a, const char *b, char *buf, size_t
     return result;
 }
 
+static int same_word_n(const char *a, size_t alen, const char *b, size_t blen) {
+    if (alen != blen)
+        return 0;
+#ifdef _WIN32
+    {
+        size_t i;
+        for (i = 0; i < alen; i++) {
+            if (ascii_upper(a[i]) != ascii_upper(b[i]))
+                return 0;
+        }
+        return 1;
+    }
+#else
+    return memcmp(a, b, alen) == 0;
+#endif
+}
+
+static int same_word(const char *a, const char *b) {
+    return same_word_n(a, strlen(a), b, strlen(b));
+}
+
+const char *neverc_filepath_rel(const char *basepath, const char *targpath,
+                                char *buf, size_t buf_len) {
+    char *base = NULL, *targ = NULL, *built = NULL;
+    const char *ret = NULL;
+    char unc_base[2];
+    size_t bcap, tcap, bvol, tvol, bl, tl, b0, bi, t0, ti;
+    const char *b, *t;
+    int bslash, tslash;
+
+    if (!buf || buf_len == 0 || !basepath || !targpath)
+        return NULL;
+
+    bcap = strlen(basepath) + 8;
+    tcap = strlen(targpath) + 8;
+    base = (char *)malloc(bcap);
+    targ = (char *)malloc(tcap);
+    if (!base || !targ)
+        goto done;
+    if (neverc_filepath_clean(basepath, base, bcap) != base)
+        goto done;
+    if (neverc_filepath_clean(targpath, targ, tcap) != targ)
+        goto done;
+
+    if (same_word(base, targ)) {
+        if (buf_len < 2)
+            goto done;
+        buf[0] = '.';
+        buf[1] = '\0';
+        ret = buf;
+        goto done;
+    }
+
+    bvol = volume_name_len(base);
+    tvol = volume_name_len(targ);
+    if (!same_word_n(base, bvol, targ, tvol))
+        goto done;
+
+    b = base + bvol;
+    t = targ + tvol;
+    unc_base[0] = NEVERC_FILEPATH_SEP;
+    unc_base[1] = '\0';
+    if (b[0] == '.' && b[1] == '\0')
+        b = "";
+    else if (b[0] == '\0' && bvol > 2 && is_sep(base[0]))
+        b = unc_base;
+
+    bslash = b[0] == NEVERC_FILEPATH_SEP;
+    tslash = t[0] == NEVERC_FILEPATH_SEP;
+    if (bslash != tslash)
+        goto done;
+
+    bl = strlen(b);
+    tl = strlen(t);
+    b0 = bi = t0 = ti = 0;
+    for (;;) {
+        while (bi < bl && b[bi] != NEVERC_FILEPATH_SEP)
+            bi++;
+        while (ti < tl && t[ti] != NEVERC_FILEPATH_SEP)
+            ti++;
+        if (!same_word_n(b + b0, bi - b0, t + t0, ti - t0))
+            break;
+        if (bi < bl)
+            bi++;
+        if (ti < tl)
+            ti++;
+        if (bi == bl && ti == tl) {
+            if (buf_len < 2)
+                goto done;
+            buf[0] = '.';
+            buf[1] = '\0';
+            ret = buf;
+            goto done;
+        }
+        b0 = bi;
+        t0 = ti;
+    }
+
+    /* Go: remaining base element ".." cannot be made relative. */
+    if (bi - b0 == 2 && b[b0] == '.' && b[b0 + 1] == '.')
+        goto done;
+
+    if (b0 != bl) {
+        size_t seps = 0, i, rest, size, n;
+        for (i = b0; i < bl; i++) {
+            if (b[i] == NEVERC_FILEPATH_SEP)
+                seps++;
+        }
+        rest = (t0 < tl) ? (tl - t0) : 0;
+        if (seps > (SIZE_MAX - 3) / 3)
+            goto done;
+        size = 2 + seps * 3;
+        if (rest) {
+            if (rest > SIZE_MAX - size - 1)
+                goto done;
+            size += 1 + rest;
+        }
+        built = (char *)malloc(size + 1);
+        if (!built)
+            goto done;
+        n = 0;
+        built[n++] = '.';
+        built[n++] = '.';
+        for (i = 0; i < seps; i++) {
+            built[n++] = NEVERC_FILEPATH_SEP;
+            built[n++] = '.';
+            built[n++] = '.';
+        }
+        if (t0 != tl) {
+            built[n++] = NEVERC_FILEPATH_SEP;
+            memcpy(built + n, t + t0, tl - t0);
+            n += tl - t0;
+        }
+        built[n] = '\0';
+        if (neverc_filepath_clean(built, buf, buf_len) != buf)
+            goto done;
+    } else if (t0 >= tl) {
+        if (buf_len < 2)
+            goto done;
+        buf[0] = '.';
+        buf[1] = '\0';
+    } else if (neverc_filepath_clean(t + t0, buf, buf_len) != buf) {
+        goto done;
+    }
+
+    /* Rel must stay relative; an absolute result would be an escape. */
+    if (neverc_filepath_isabs(buf) || buf[0] == '\0')
+        goto done;
+    ret = buf;
+
+done:
+    free(base);
+    free(targ);
+    free(built);
+    return ret;
+}
+
 void neverc_filepath_split(const char *path, const char **dir, size_t *dir_len,
                             const char **file) {
     if (!path) {

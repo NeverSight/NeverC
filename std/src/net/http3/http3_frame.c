@@ -69,7 +69,8 @@ int neverc_h3_parse_frame_header(const uint8_t *buf, size_t len,
 
     if (neverc_quic_varint_decode(p, rem, &hdr->length, &consumed) != 0)
         return -1;
-    p += consumed;
+    p += consumed; rem -= consumed;
+    if (hdr->length > rem) return -1;
 
     hdr->header_size = (size_t)(p - buf);
     return 0;
@@ -258,6 +259,26 @@ int neverc_h3_write_goaway_frame(uint8_t *buf, size_t cap,
     return 0;
 }
 
+static int h3_is_tchar(unsigned char character) {
+    if ((character >= 'a' && character <= 'z') ||
+        (character >= 'A' && character <= 'Z') ||
+        (character >= '0' && character <= '9'))
+        return 1;
+    return strchr("!#$%&'*+-.^_`|~", (int)character) != NULL;
+}
+
+/* RFC 9114 §4.3.1 / RFC 9110 §9: :method is a token, never CONNECT here. */
+int neverc_h3_method_allowed(const char *method) {
+    if (!method || !method[0] || strcmp(method, "CONNECT") == 0)
+        return 0;
+    for (const unsigned char *cursor = (const unsigned char *)method;
+         *cursor; cursor++) {
+        if (!h3_is_tchar(*cursor))
+            return 0;
+    }
+    return 1;
+}
+
 /* RFC 9114 §4.3.1: :path is an absolute path, or "*" for OPTIONS.
  * Reject SP/CTL/'#' the same way HTTP/2 does so intermediaries cannot
  * desync on a space or fragment in the pseudo-header. */
@@ -371,6 +392,43 @@ int neverc_h3_parse_varint_payload(const uint8_t *payload, size_t length,
 int neverc_h3_max_push_id_accept(int have_previous, uint64_t previous,
                                  uint64_t next) {
     return have_previous && next < previous ? -1 : 0;
+}
+
+/* RFC 9114 §7.2.6: a later GOAWAY identifier MUST NOT increase. */
+int neverc_h3_goaway_id_accept(int have_previous, uint64_t previous,
+                               uint64_t next) {
+    return have_previous && next > previous ? -1 : 0;
+}
+
+/* Largest client-initiated bidirectional QUIC stream ID (type bits 00). */
+uint64_t neverc_h3_graceful_goaway_id(void) {
+    return (UINT64_C(1) << 62) - 4U;
+}
+
+int neverc_h3_server_goaway_id_valid(uint64_t stream_id) {
+    return (stream_id & 3U) == 0 &&
+           stream_id <= neverc_h3_graceful_goaway_id();
+}
+
+/* 1 if this request stream is above the advertised GOAWAY identifier. */
+int neverc_h3_request_stream_after_goaway(uint64_t goaway_id,
+                                          uint64_t stream_id) {
+    return stream_id > goaway_id;
+}
+
+/* RFC 9114 §6.2: 0 = control/encoder/decoder, 1 = ignore unknown/GREASE,
+ * -1 = client-initiated push (H3_STREAM_CREATION_ERROR). */
+int neverc_h3_uni_stream_type_class(uint64_t type) {
+    if (type == 0x00 || type == 0x02 || type == 0x03)
+        return 0;
+    if (type == 0x01)
+        return -1;
+    return 1;
+}
+
+/* RFC 9114 §7.2.4.1: omitted / UINT64_MAX means unlimited; 0 is 0. */
+int neverc_h3_field_section_over_limit(uint64_t size, uint64_t limit) {
+    return size > limit;
 }
 
 /* ======================================================================
@@ -706,7 +764,7 @@ static int qpack_decode_integer(const uint8_t *buf, size_t len, size_t *pos,
     if (!buf || !pos || !value || prefix_bits == 0 || prefix_bits > 8 ||
         *pos >= len)
         return -1;
-    uint8_t max_first = (uint8_t)((1 << prefix_bits) - 1);
+    uint8_t max_first = (uint8_t)((1U << prefix_bits) - 1U);
     *value = buf[*pos] & max_first;
     (*pos)++;
 
@@ -718,11 +776,11 @@ static int qpack_decode_integer(const uint8_t *buf, size_t len, size_t *pos,
         if (*pos >= len) return -1;
         b = buf[*pos];
         (*pos)++;
+        if (m > 62) return -1;
         uint64_t add = (uint64_t)(b & 0x7F) << m;
         if (*value > UINT64_MAX - add) return -1;
         *value += add;
         m += 7;
-        if (m > 62) return -1;
     } while (b & 0x80);
 
     return 0;
@@ -784,6 +842,7 @@ int neverc_qpack_decode(neverc_qpack_decoder_t *dec,
     if (!dec || !data || len < 2 || !headers || !nheaders ||
         max_headers <= 0)
         return -1;
+    *nheaders = 0;
     memset(headers, 0, (size_t)max_headers * sizeof(*headers));
     size_t pos = 0;
     int count = 0;

@@ -55,8 +55,15 @@ static void test_frame_header_data(void) {
 }
 
 static void test_frame_header_headers(void) {
-    uint8_t buf[] = { 0x01, 0x0A };
+    uint8_t truncated[] = { 0x01, 0x0A };
     h3_frame_header_t hdr;
+    ASSERT_EQ(neverc_h3_parse_frame_header(truncated, sizeof(truncated),
+                                           &hdr), -1);
+
+    uint8_t buf[12];
+    buf[0] = 0x01;
+    buf[1] = 0x0A;
+    memset(buf + 2, 'h', 10);
     int rc = neverc_h3_parse_frame_header(buf, sizeof(buf), &hdr);
     ASSERT_EQ(rc, 0);
     ASSERT_EQ(hdr.type, H3_FRAME_HEADERS);
@@ -64,8 +71,15 @@ static void test_frame_header_headers(void) {
 }
 
 static void test_frame_header_settings(void) {
-    uint8_t buf[] = { 0x04, 0x08 };
+    uint8_t truncated[] = { 0x04, 0x08 };
     h3_frame_header_t hdr;
+    ASSERT_EQ(neverc_h3_parse_frame_header(truncated, sizeof(truncated),
+                                           &hdr), -1);
+
+    uint8_t buf[10];
+    buf[0] = 0x04;
+    buf[1] = 0x08;
+    memset(buf + 2, 0, 8);
     int rc = neverc_h3_parse_frame_header(buf, sizeof(buf), &hdr);
     ASSERT_EQ(rc, 0);
     ASSERT_EQ(hdr.type, H3_FRAME_SETTINGS);
@@ -92,6 +106,18 @@ static void test_frame_header_truncated_varint(void) {
     uint8_t buf[] = { 0x40 };
     h3_frame_header_t hdr;
     ASSERT_EQ(neverc_h3_parse_frame_header(buf, sizeof(buf), &hdr), -1);
+
+    uint8_t truncated_len[] = { 0x00, 0x40 };
+    ASSERT_EQ(neverc_h3_parse_frame_header(truncated_len,
+                                           sizeof(truncated_len), &hdr), -1);
+
+    uint8_t truncated_4[] = { 0x80, 0x00 };
+    ASSERT_EQ(neverc_h3_parse_frame_header(truncated_4, sizeof(truncated_4),
+                                           &hdr), -1);
+
+    uint8_t truncated_8[] = { 0xC0, 0x00, 0x00 };
+    ASSERT_EQ(neverc_h3_parse_frame_header(truncated_8, sizeof(truncated_8),
+                                           &hdr), -1);
 }
 
 /* ======================================================================
@@ -158,6 +184,18 @@ static void test_settings_grease_ignored(void) {
                                         &decoded), 0);
     ASSERT_EQ(decoded.qpack_max_table_capacity, 0);
     ASSERT_EQ(decoded.qpack_blocked_streams, 0);
+}
+
+static void test_settings_truncated_pair_rejected(void) {
+    h3_settings_t decoded;
+    uint8_t id_only[] = { 0x01 };
+    ASSERT_EQ(neverc_h3_settings_decode(id_only, sizeof(id_only),
+                                        &decoded), -1);
+
+    uint8_t truncated_value[] = { 0x01, 0x40 };
+    ASSERT_EQ(neverc_h3_settings_decode(truncated_value,
+                                        sizeof(truncated_value),
+                                        &decoded), -1);
 }
 
 static void test_settings_zero_values(void) {
@@ -721,6 +759,61 @@ static void test_request_path_allows_options_asterisk(void) {
     }
 }
 
+static void test_method_rejects_non_token(void) {
+    /* RFC 9114 §4.3.1 / RFC 9110 §9: :method is a token. A space would
+     * fail-open as request-target smuggling on an HTTP/1 hop. */
+    ASSERT_EQ(neverc_h3_method_allowed("GET"), 1);
+    ASSERT_EQ(neverc_h3_method_allowed("POST"), 1);
+    ASSERT_EQ(neverc_h3_method_allowed("PATCH"), 1);
+    ASSERT_EQ(neverc_h3_method_allowed("OPTIONS"), 1);
+    ASSERT_EQ(neverc_h3_method_allowed("CONNECT"), 0);
+    ASSERT_EQ(neverc_h3_method_allowed("GET /admin"), 0);
+    ASSERT_EQ(neverc_h3_method_allowed("GET\t/admin"), 0);
+    ASSERT_EQ(neverc_h3_method_allowed(""), 0);
+    ASSERT_EQ(neverc_h3_method_allowed(NULL), 0);
+    ASSERT_EQ(neverc_h3_method_allowed("GET/1"), 0);
+}
+
+static void test_field_section_over_limit(void) {
+    ASSERT_EQ(neverc_h3_field_section_over_limit(0, 0), 0);
+    ASSERT_EQ(neverc_h3_field_section_over_limit(1, 0), 1);
+    ASSERT_EQ(neverc_h3_field_section_over_limit(100, 100), 0);
+    ASSERT_EQ(neverc_h3_field_section_over_limit(101, 100), 1);
+    ASSERT_EQ(neverc_h3_field_section_over_limit(1, UINT64_MAX), 0);
+}
+
+static void test_goaway_and_stream_type_helpers(void) {
+    ASSERT_EQ(neverc_h3_goaway_id_accept(0, 0, 10), 0);
+    ASSERT_EQ(neverc_h3_goaway_id_accept(1, 10, 10), 0);
+    ASSERT_EQ(neverc_h3_goaway_id_accept(1, 10, 9), 0);
+    ASSERT_EQ(neverc_h3_goaway_id_accept(1, 10, 11), -1);
+
+    uint64_t max_bidi = neverc_h3_graceful_goaway_id();
+    ASSERT_EQ(neverc_h3_server_goaway_id_valid(0), 1);
+    ASSERT_EQ(neverc_h3_server_goaway_id_valid(4), 1);
+    ASSERT_EQ(neverc_h3_server_goaway_id_valid(max_bidi), 1);
+    ASSERT_EQ(neverc_h3_server_goaway_id_valid(1), 0); /* server bidi */
+    ASSERT_EQ(neverc_h3_server_goaway_id_valid(2), 0); /* client uni */
+    ASSERT_EQ(neverc_h3_request_stream_after_goaway(4, 8), 1);
+    ASSERT_EQ(neverc_h3_request_stream_after_goaway(8, 4), 0);
+    ASSERT_EQ(neverc_h3_request_stream_after_goaway(max_bidi, 8), 0);
+
+    uint8_t buf[32];
+    size_t written = 0;
+    ASSERT_EQ(neverc_h3_write_goaway_frame(buf, sizeof(buf), max_bidi,
+                                           &written), 0);
+    h3_frame_header_t hdr;
+    ASSERT_EQ(neverc_h3_parse_frame_header(buf, written, &hdr), 0);
+    ASSERT_EQ(hdr.type, H3_FRAME_GOAWAY);
+
+    ASSERT_EQ(neverc_h3_uni_stream_type_class(0x00), 0); /* control */
+    ASSERT_EQ(neverc_h3_uni_stream_type_class(0x02), 0); /* encoder */
+    ASSERT_EQ(neverc_h3_uni_stream_type_class(0x03), 0); /* decoder */
+    ASSERT_EQ(neverc_h3_uni_stream_type_class(0x01), -1); /* client push */
+    ASSERT_EQ(neverc_h3_uni_stream_type_class(0x21), 1); /* GREASE */
+    ASSERT_EQ(neverc_h3_uni_stream_type_class(0x40), 1);
+}
+
 static void test_varint_payload_and_max_push_id(void) {
     uint64_t value = 99;
     uint8_t one[] = { 0x05 };
@@ -730,6 +823,9 @@ static void test_varint_payload_and_max_push_id(void) {
     uint8_t padded[] = { 0x05, 0x00 };
     ASSERT_EQ(neverc_h3_parse_varint_payload(padded, sizeof(padded), &value),
               -1);
+    uint8_t truncated[] = { 0x40 };
+    ASSERT_EQ(neverc_h3_parse_varint_payload(truncated, sizeof(truncated),
+                                             &value), -1);
     ASSERT_EQ(neverc_h3_max_push_id_accept(0, 0, 10), 0);
     ASSERT_EQ(neverc_h3_max_push_id_accept(1, 10, 10), 0);
     ASSERT_EQ(neverc_h3_max_push_id_accept(1, 10, 11), 0);
@@ -765,6 +861,58 @@ static void test_qpack_decoder_stream_instructions(void) {
               0);
 }
 
+static void test_qpack_rejects_truncated_prefix_integer(void) {
+    neverc_qpack_decoder_t *dec = neverc_qpack_decoder_create(4096);
+    /* Indexed static, 6-bit prefix saturated, continuation truncated. */
+    static const uint8_t block[] = { 0x00, 0x00, 0xFF, 0x80 };
+    neverc_qpack_header_t decoded[4];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_qpack_decode(dec, block, sizeof(block),
+                                  decoded, 4, &nheaders), -1);
+    ASSERT_EQ(nheaders, 0);
+    neverc_qpack_decoder_destroy(dec);
+}
+
+static void test_qpack_rejects_dynamic_and_post_base(void) {
+    neverc_qpack_decoder_t *dec = neverc_qpack_decoder_create(0);
+    neverc_qpack_header_t decoded[4];
+    int nheaders = 99;
+
+    /* Indexed Field Line, T=0 (dynamic table) index 0. */
+    static const uint8_t dynamic_indexed[] = { 0x00, 0x00, 0x80 };
+    ASSERT_EQ(neverc_qpack_decode(dec, dynamic_indexed,
+                                  sizeof(dynamic_indexed), decoded, 4,
+                                  &nheaders), -1);
+    ASSERT_EQ(nheaders, 0);
+
+    /* Indexed Field Line With Post-Base Index. */
+    static const uint8_t post_base[] = { 0x00, 0x00, 0x10 };
+    ASSERT_EQ(neverc_qpack_decode(dec, post_base, sizeof(post_base),
+                                  decoded, 4, &nheaders), -1);
+    ASSERT_EQ(nheaders, 0);
+
+    /* Literal with dynamic name reference (T=0). */
+    static const uint8_t dyn_name[] = { 0x00, 0x00, 0x40, 0x01, 'x' };
+    ASSERT_EQ(neverc_qpack_decode(dec, dyn_name, sizeof(dyn_name),
+                                  decoded, 4, &nheaders), -1);
+    ASSERT_EQ(nheaders, 0);
+    neverc_qpack_decoder_destroy(dec);
+}
+
+static void test_qpack_rejects_truncated_header_list(void) {
+    /* Two indexed static lines (:method GET, :method POST). Decoding with
+     * max_headers=1 must not fail-open by silently dropping the rest. */
+    neverc_qpack_decoder_t *dec = neverc_qpack_decoder_create(0);
+    static const uint8_t block[] = { 0x00, 0x00, (uint8_t)(0xC0 | 17),
+                                     (uint8_t)(0xC0 | 20) };
+    neverc_qpack_header_t decoded[4];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_qpack_decode(dec, block, sizeof(block), decoded, 1,
+                                  &nheaders), -1);
+    ASSERT_EQ(nheaders, 0);
+    neverc_qpack_decoder_destroy(dec);
+}
+
 static void test_qpack_encoder_create_destroy(void) {
     neverc_qpack_encoder_t *enc = neverc_qpack_encoder_create(8192);
     ASSERT_NOT_NULL(enc);
@@ -793,6 +941,7 @@ int main(void) {
     test_settings_reserved_http2_ids_rejected();
     test_settings_duplicate_ids_rejected();
     test_settings_grease_ignored();
+    test_settings_truncated_pair_rejected();
     test_settings_zero_values();
     test_data_frame_write();
     test_data_frame_rejects_undersized_buffer();
@@ -821,8 +970,14 @@ int main(void) {
     test_response_body_forbidden_for_204_304();
     test_apply_response_content_length();
     test_request_path_allows_options_asterisk();
+    test_method_rejects_non_token();
+    test_field_section_over_limit();
+    test_goaway_and_stream_type_helpers();
     test_varint_payload_and_max_push_id();
     test_qpack_decoder_stream_instructions();
+    test_qpack_rejects_truncated_prefix_integer();
+    test_qpack_rejects_dynamic_and_post_base();
+    test_qpack_rejects_truncated_header_list();
     test_qpack_encoder_create_destroy();
 
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);

@@ -98,7 +98,7 @@ void neverc_sha256_update(neverc_sha256_ctx *ctx, const uint8_t *data, size_t le
      * Wrapping count*8 would make a huge message collide with a short one. */
     if (ctx->count > UINT64_MAX / 8 ||
         len > UINT64_MAX / 8 - ctx->count) {
-        memset(ctx->state, 0, sizeof(ctx->state));
+        memset(ctx, 0, sizeof(*ctx));
         ctx->finalized = 1;
         return;
     }
@@ -133,8 +133,8 @@ void neverc_sha256_final(neverc_sha256_ctx *ctx, uint8_t digest[32]) {
         return;
     }
     if (ctx->count > UINT64_MAX / 8) {
-        memset(ctx->state, 0, sizeof(ctx->state));
         memset(digest, 0, 32);
+        memset(ctx, 0, sizeof(*ctx));
         ctx->finalized = 1;
         return;
     }

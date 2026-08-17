@@ -232,6 +232,7 @@ static void test_hmac_equal(void) {
     check_int("different macs", neverc_hmac_equal(a, c, 4), 0);
     check_int("zero-length equal", neverc_hmac_equal(a, c, 0), 1);
     check_int("null zero-length equal", neverc_hmac_equal(NULL, NULL, 0), 1);
+    check_int("null pointer non-zero length", neverc_hmac_equal(a, NULL, 4), 0);
 }
 
 static void test_hmac_not_length_extendable(void) {
@@ -249,6 +250,17 @@ static void test_hmac_not_length_extendable(void) {
     neverc_sha256_update(&ctx, data, 7);
     neverc_sha256_final(&ctx, naive);
     check_int("HMAC-SHA256 != SHA256(key||msg)", memcmp(mac, naive, 32) != 0, 1);
+
+    /* Inner hash H((K^ipad)||m) is length-extendable; HMAC must apply the outer hash. */
+    uint8_t kpad[64];
+    memset(kpad, 0, sizeof(kpad));
+    memcpy(kpad, key, 6);
+    for (int i = 0; i < 64; i++) kpad[i] ^= 0x36;
+    neverc_sha256_init(&ctx);
+    neverc_sha256_update(&ctx, kpad, 64);
+    neverc_sha256_update(&ctx, data, 7);
+    neverc_sha256_final(&ctx, naive);
+    check_int("HMAC-SHA256 != inner hash", memcmp(mac, naive, 32) != 0, 1);
 
     neverc_hmac_sha256(NULL, 0, NULL, 0, mac);
     check_hex("HMAC-SHA256 empty key and data", mac,

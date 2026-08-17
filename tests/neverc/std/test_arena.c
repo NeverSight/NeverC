@@ -107,6 +107,25 @@ static void test_reset(void) {
     neverc_arena_free(a);
 }
 
+static void test_reset_after_large_chunk(void) {
+    printf("[reset_after_large_chunk]\n");
+    neverc_arena_t *a = neverc_arena_new();
+    ASSERT_TRUE(a != NULL);
+    char *big = (char *)neverc_arena_alloc(a, 256U * 1024U);
+    ASSERT_TRUE(big != NULL);
+    ASSERT_TRUE(neverc_arena_num_chunks(a) >= 2);
+
+    neverc_arena_reset(a);
+    ASSERT_INT_EQ((long long)neverc_arena_bytes_allocated(a), 0);
+    ASSERT_INT_EQ((long long)neverc_arena_num_chunks(a), 1);
+
+    int *p = (int *)neverc_arena_alloc(a, sizeof(int));
+    ASSERT_TRUE(p != NULL);
+    *p = 7;
+    ASSERT_INT_EQ(*p, 7);
+    neverc_arena_free(a);
+}
+
 static void test_aligned_alloc(void) {
     printf("[aligned_alloc]\n");
     neverc_arena_t *a = neverc_arena_new();
@@ -179,6 +198,7 @@ int main(void) {
     test_large_alloc();
     test_many_small_allocs();
     test_reset();
+    test_reset_after_large_chunk();
     test_aligned_alloc();
     test_default_max_alignment();
     test_invalid_and_overflow_requests();

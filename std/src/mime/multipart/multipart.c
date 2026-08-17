@@ -9,17 +9,6 @@
 #define NCI_MULTIPART_RANDOM neverc_platform_random
 #endif
 
-static int ci_strncmp(const char *a, const char *b, size_t n) {
-    for (size_t i = 0; i < n; i++) {
-        char ca = a[i], cb = b[i];
-        if (ca >= 'A' && ca <= 'Z') ca += 32;
-        if (cb >= 'A' && cb <= 'Z') cb += 32;
-        if (ca != cb) return (unsigned char)ca - (unsigned char)cb;
-        if (ca == '\0') return 0;
-    }
-    return 0;
-}
-
 /* Locate `marker` inside `data` via the shared substring engine: memchr to the
  * first byte then Boyer-Moore-Horspool (with a Two-Way guard for adversarial
  * inputs). Replaces a naive O(len*marker_len) scan that re-compared the whole
@@ -181,7 +170,8 @@ static int parse_headers(const unsigned char *data, size_t len,
             size_t add = line_end - vstart;
             size_t cur = strlen(prev->value);
             if (add > 0) {
-                if (cur + 1 + add >= sizeof(prev->value) ||
+                if (cur >= sizeof(prev->value) - 1 ||
+                    add > sizeof(prev->value) - 2 - cur ||
                     !multipart_header_value_valid(data + vstart, add))
                     return -1;
                 prev->value[cur] = ' ';
@@ -288,12 +278,24 @@ fail:
     return -1;
 }
 
+static int ci_str_equal_key(const char *key, size_t key_cap, const char *want) {
+    const char *kend = key + key_cap;
+    while (key < kend && *key && *want) {
+        unsigned char ca = (unsigned char)*key++;
+        unsigned char cb = (unsigned char)*want++;
+        if (ca >= 'A' && ca <= 'Z') ca = (unsigned char)(ca + 32);
+        if (cb >= 'A' && cb <= 'Z') cb = (unsigned char)(cb + 32);
+        if (ca != cb) return 0;
+    }
+    return key < kend && *key == '\0' && *want == '\0';
+}
+
 const char *neverc_multipart_part_header(const neverc_multipart_part_t *part,
                                          const char *key) {
     if (!part || !key) return NULL;
-    size_t klen = strlen(key);
     for (int i = 0; i < part->header_count; i++) {
-        if (ci_strncmp(part->headers[i].key, key, klen + 1) == 0)
+        if (ci_str_equal_key(part->headers[i].key,
+                             sizeof(part->headers[i].key), key))
             return part->headers[i].value;
     }
     return NULL;

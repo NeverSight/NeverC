@@ -56,6 +56,10 @@ int main(void) {
     check_sha256("448-bit message",
         "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
         "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+    check_sha256("896-bit message",
+        "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmno"
+        "ijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu",
+        "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1");
 
     printf("[Go crypto/sha256 test vectors]\n");
     check_sha256("a", "a",
@@ -166,6 +170,11 @@ int main(void) {
     check_sha256("56 bytes (boundary)",
         "12345678901234567890123456789012345678901234567890123456",
         "0be66ce72c2467e793202906000672306661791622e0ca9adf4a8955b2ed189c");
+
+    printf("[boundary: exactly 63 bytes (0x80 is last byte of the block)]\n");
+    check_sha256("63 bytes",
+        "123456789012345678901234567890123456789012345678901234567890123",
+        "b97f6a278ef6a159ba660dc99fc5426ae3c1e4e08c471827d660bf36cfb236e7");
 
     printf("[boundary: exactly 64 bytes (one full block)]\n");
     check_sha256("64 bytes",

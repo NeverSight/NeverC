@@ -133,7 +133,11 @@ int neverc_gzip_decompress(const uint8_t *src, size_t src_len,
                                | ((uint32_t)tr[6] << 16)
                                | ((uint32_t)tr[7] << 24);
 
-        uint32_t actual_crc = neverc_crc32_ieee(dst ? dst + out_pos : NULL,
+        /* CRC 0 is a real checksum (empty members), not a skip. Hashing a
+         * NULL buffer would collapse to the empty CRC and fail open. */
+        if (produced > 0 && !dst) return -1;
+        uint32_t actual_crc = neverc_crc32_ieee(dst ? dst + out_pos
+                                                    : (const uint8_t *)"",
                                                produced);
         if (actual_crc != expected_crc) return -1;
         if ((uint32_t)(produced & 0xFFFFFFFF) != expected_size) return -1;

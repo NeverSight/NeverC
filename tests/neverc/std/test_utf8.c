@@ -145,6 +145,17 @@ static void test_rune_count(void) {
     uint8_t mixed[] = { 'H','e','l','l','o',',',' ',
                         0xE4,0xB8,0x96, 0xE7,0x95,0x8C, '!' };
     check_size("count mixed", neverc_utf8_rune_count(mixed, 14), 10);
+
+    /* Go RuneCount: invalid/short encodings are width-1 error runes. */
+    uint8_t overlong[] = { 0xC0, 0x80 };
+    check_size("count overlong NUL", neverc_utf8_rune_count(overlong, 2), 2);
+    uint8_t trunc[] = { 0xE4, 0xB8 };
+    check_size("count truncated 3-byte", neverc_utf8_rune_count(trunc, 2), 2);
+    uint8_t surr[] = { 0xED, 0xA0, 0x80 };
+    check_size("count UTF-8 surrogate", neverc_utf8_rune_count(surr, 3), 3);
+    uint8_t ascii8_u0080[] = { 'a','a','a','a','a','a','a','a', 0xC2, 0x80 };
+    check_size("count 8 ASCII + U+0080",
+               neverc_utf8_rune_count(ascii8_u0080, 10), 9);
 }
 
 static void test_valid(void) {
@@ -198,7 +209,26 @@ static void test_valid(void) {
         neverc_utf8_decode_rune(inv6, 4, &r, &sz);
         check_u32("decode >10FFFF is error", r, NEVERC_UTF8_RUNE_ERROR);
         check_int("decode >10FFFF size 1", sz, 1);
+        neverc_utf8_decode_rune(inv2, 2, &r, &sz);
+        check_u32("decode overlong is error", r, NEVERC_UTF8_RUNE_ERROR);
+        check_int("decode overlong size 1", sz, 1);
     }
+
+    /* RFC 3629 boundaries that Valid must accept (false-negative traps). */
+    uint8_t min2[] = { 0xC2, 0x80 };           /* U+0080 */
+    uint8_t min3[] = { 0xE0, 0xA0, 0x80 };     /* U+0800 */
+    uint8_t pre_surr[] = { 0xED, 0x9F, 0xBF }; /* U+D7FF */
+    uint8_t post_surr[] = { 0xEE, 0x80, 0x80 };/* U+E000 */
+    uint8_t min4[] = { 0xF0, 0x90, 0x80, 0x80 }; /* U+10000 */
+    uint8_t max4[] = { 0xF4, 0x8F, 0xBF, 0xBF }; /* U+10FFFF */
+    check_int("valid U+0080", neverc_utf8_valid(min2, 2), 1);
+    check_int("valid U+0800", neverc_utf8_valid(min3, 3), 1);
+    check_int("valid U+D7FF", neverc_utf8_valid(pre_surr, 3), 1);
+    check_int("valid U+E000", neverc_utf8_valid(post_surr, 3), 1);
+    check_int("valid U+10000", neverc_utf8_valid(min4, 4), 1);
+    check_int("valid U+10FFFF", neverc_utf8_valid(max4, 4), 1);
+    uint8_t ascii8_u0080[] = { 'a','a','a','a','a','a','a','a', 0xC2, 0x80 };
+    check_int("valid 8 ASCII + U+0080", neverc_utf8_valid(ascii8_u0080, 10), 1);
 }
 
 /* Independent oracle: validate rune-by-rune through the (unchanged) public
@@ -314,6 +344,87 @@ static void test_encode_surrogate(void) {
     check_u32("encode surrogate -> RuneError", r, NEVERC_UTF8_RUNE_ERROR);
 }
 
+static void test_full_rune(void) {
+    printf("[full_rune]\n");
+    check_int("full empty", neverc_utf8_full_rune((const uint8_t *)"", 0), 0);
+    check_int("full ASCII", neverc_utf8_full_rune((const uint8_t *)"a", 1), 1);
+    uint8_t cont[] = { 0x80 };
+    check_int("full invalid continuation", neverc_utf8_full_rune(cont, 1), 1);
+    uint8_t bad_lead[] = { 0xC0 };
+    check_int("full invalid C0 starter", neverc_utf8_full_rune(bad_lead, 1), 1);
+    uint8_t trunc2[] = { 0xC2 };
+    check_int("not full truncated 2-byte", neverc_utf8_full_rune(trunc2, 1), 0);
+    uint8_t ok2[] = { 0xC2, 0x80 };
+    check_int("full U+0080", neverc_utf8_full_rune(ok2, 2), 1);
+    uint8_t trunc3[] = { 0xE0, 0xA0 };
+    check_int("not full truncated 3-byte", neverc_utf8_full_rune(trunc3, 2), 0);
+    uint8_t bad2[] = { 0xE0, 0x80 };
+    check_int("full overlong E0 80 (already invalid)",
+              neverc_utf8_full_rune(bad2, 2), 1);
+    uint8_t trunc4[] = { 0xF0, 0x90, 0x80 };
+    check_int("not full truncated 4-byte", neverc_utf8_full_rune(trunc4, 3), 0);
+}
+
+static void test_decode_last_rune(void) {
+    printf("[decode_last_rune]\n");
+
+    {
+        uint32_t r; int sz;
+        neverc_utf8_decode_last_rune((const uint8_t *)"", 0, &r, &sz);
+        check_u32("last empty rune", r, NEVERC_UTF8_RUNE_ERROR);
+        check_int("last empty size", sz, 0);
+    }
+    {
+        uint8_t b[] = { 'A', 'B' };
+        uint32_t r; int sz;
+        neverc_utf8_decode_last_rune(b, 2, &r, &sz);
+        check_u32("last ASCII", r, 'B');
+        check_int("last ASCII size", sz, 1);
+    }
+    {
+        uint8_t b[] = { 'x', 0xE4, 0xB8, 0x96 }; /* x世 */
+        uint32_t r; int sz;
+        neverc_utf8_decode_last_rune(b, 4, &r, &sz);
+        check_u32("last U+4E16", r, 0x4E16);
+        check_int("last U+4E16 size", sz, 3);
+    }
+    {
+        uint8_t b[] = { 0xF0, 0x9F, 0x98, 0x80 };
+        uint32_t r; int sz;
+        neverc_utf8_decode_last_rune(b, 4, &r, &sz);
+        check_u32("last emoji", r, 0x1F600);
+        check_int("last emoji size", sz, 4);
+    }
+    {
+        uint8_t b[] = { 0xE4, 0xB8 }; /* truncated 世 */
+        uint32_t r; int sz;
+        neverc_utf8_decode_last_rune(b, 2, &r, &sz);
+        check_u32("last truncated", r, NEVERC_UTF8_RUNE_ERROR);
+        check_int("last truncated size 1", sz, 1);
+    }
+    {
+        uint8_t b[] = { 0xED, 0xA0, 0x80 }; /* U+D800 in UTF-8 */
+        uint32_t r; int sz;
+        neverc_utf8_decode_last_rune(b, 3, &r, &sz);
+        check_u32("last surrogate", r, NEVERC_UTF8_RUNE_ERROR);
+        check_int("last surrogate size 1", sz, 1);
+    }
+    {
+        uint8_t b[] = { 'A', 0x80 };
+        uint32_t r; int sz;
+        neverc_utf8_decode_last_rune(b, 2, &r, &sz);
+        check_u32("last lone continuation", r, NEVERC_UTF8_RUNE_ERROR);
+        check_int("last lone continuation size", sz, 1);
+    }
+    {
+        uint8_t b[] = { 0xC0, 0x80 };
+        uint32_t r; int sz;
+        neverc_utf8_decode_last_rune(b, 2, &r, &sz);
+        check_u32("last overlong", r, NEVERC_UTF8_RUNE_ERROR);
+        check_int("last overlong size 1", sz, 1);
+    }
+}
+
 int main(void) {
     printf("=== NeverC UTF-8 Library Tests ===\n\n");
 
@@ -326,6 +437,8 @@ int main(void) {
     test_rune_start();
     test_valid_rune();
     test_encode_surrogate();
+    test_full_rune();
+    test_decode_last_rune();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

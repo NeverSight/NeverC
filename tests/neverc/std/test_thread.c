@@ -416,10 +416,26 @@ static int test_executor_context_waits(void) {
     CHECK(neverc_thread_executor_wait_context(target, wait_ctx) ==
           NEVERC_THREAD_CANCELLED);
 
+    /* A second cancelled wait must still return promptly (monotonic /
+     * relative timedwait, not CLOCK_REALTIME which can stall across NTP). */
+    neverc_context_t *wait_background2 = neverc_context_background();
+    neverc_context_cancel_handle_t *wait_cancel2 = NULL;
+    neverc_context_t *wait_ctx2 =
+        neverc_context_with_timeout_handle(
+            wait_background2, 40, &wait_cancel2);
+    CHECK(wait_background2 != NULL);
+    CHECK(wait_ctx2 != NULL);
+    CHECK(wait_cancel2 != NULL);
+    CHECK(neverc_thread_executor_wait_context(target, wait_ctx2) ==
+          NEVERC_THREAD_CANCELLED);
+
     CHECK(neverc_thread_channel_send(release, target) == NEVERC_THREAD_OK);
     CHECK(neverc_thread_executor_wait(target) == NEVERC_THREAD_OK);
     CHECK(neverc_thread_executor_wait(control) == NEVERC_THREAD_OK);
 
+    neverc_context_cancel_handle_free(wait_cancel2);
+    neverc_context_free(wait_ctx2);
+    neverc_context_free(wait_background2);
     neverc_context_cancel_handle_free(wait_cancel);
     neverc_context_free(wait_ctx);
     neverc_context_free(wait_background);

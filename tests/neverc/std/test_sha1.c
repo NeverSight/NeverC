@@ -32,6 +32,21 @@ int main(void) {
     check("abc", "abc", "a9993e364706816aba3e25717850c26c9cd0d89d");
     check("448-bit", "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
         "84983e441c3bd26ebaae4aa1f95129e5e54670f1");
+    check("896-bit",
+        "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmno"
+        "ijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu",
+        "a49b2446a02c645bf419f995b67091253a04a259");
+
+    printf("[padding boundaries 55/63/64]\n");
+    check("55 bytes",
+        "1234567890123456789012345678901234567890123456789012345",
+        "827a683fdfdbef225a2421078b7789b134c7eafa");
+    check("63 bytes",
+        "123456789012345678901234567890123456789012345678901234567890123",
+        "98b4b1764ea88d6c3fa63b70799dbd0c03372d1a");
+    check("64 bytes",
+        "1234567890123456789012345678901234567890123456789012345678901234",
+        "c71490fc24aa3d19e11282da77032dd9cdb33103");
 
     printf("[common strings]\n");
     check("hello world", "hello world", "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");

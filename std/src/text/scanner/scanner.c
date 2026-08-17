@@ -1,4 +1,5 @@
 #include "neverc/std/text/scanner.h"
+#include <limits.h>
 #include <string.h>
 
 static int is_letter(int ch) {
@@ -42,6 +43,19 @@ static const unsigned char nci_ident_char[256] = {
     /* 0xF0 */ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
 };
 
+static int pos_offset(size_t pos) {
+    return pos > (size_t)INT_MAX ? INT_MAX : (int)pos;
+}
+
+static void add_col(neverc_scanner_t *s, size_t n) {
+    if (n == 0) return;
+    if (s->col < 1) s->col = 1;
+    if (n > (size_t)INT_MAX || s->col > INT_MAX - (int)n)
+        s->col = INT_MAX;
+    else
+        s->col += (int)n;
+}
+
 static int peek_ch(neverc_scanner_t *s) {
     if (s->pos >= s->src_len) return NEVERC_SCANNER_EOF;
     return (unsigned char)s->src[s->pos];
@@ -50,14 +64,20 @@ static int peek_ch(neverc_scanner_t *s) {
 static int next_ch(neverc_scanner_t *s) {
     if (s->pos >= s->src_len) return NEVERC_SCANNER_EOF;
     int ch = (unsigned char)s->src[s->pos++];
-    if (ch == '\n') { s->line++; s->col = 1; }
-    else { s->col++; }
+    if (ch == '\n') {
+        if (s->line < INT_MAX) s->line++;
+        s->col = 1;
+    } else {
+        add_col(s, 1);
+    }
     return ch;
 }
 
 static void emit(neverc_scanner_t *s, int ch) {
     if (s->tok_len < sizeof(s->tok_buf) - 1)
         s->tok_buf[s->tok_len++] = (char)ch;
+    else
+        s->tok_overflow = 1;
 }
 
 static int is_whitespace(int ch) {
@@ -107,15 +127,18 @@ static int scan_identifier(neverc_scanner_t *s) {
     size_t run = i - start;
     /* Bulk-copy the run, preserving the per-byte emit() cap (sizeof-1). */
     size_t cap = sizeof(s->tok_buf) - 1;
+    size_t ncopy = 0;
     if (s->tok_len < cap) {
         size_t space = cap - s->tok_len;
-        size_t ncopy = run < space ? run : space;
+        ncopy = run < space ? run : space;
         memcpy(s->tok_buf + s->tok_len, src + start, ncopy);
         s->tok_len += ncopy;
     }
+    if (ncopy < run)
+        s->tok_overflow = 1;
     /* Identifier bytes never include '\n', so only the column advances. */
     s->pos = i;
-    s->col += (int)run;
+    add_col(s, run);
     return NEVERC_SCANNER_IDENT;
 }
 
@@ -251,14 +274,17 @@ static int scan_comment(neverc_scanner_t *s, int second) {
         size_t end = nl ? (size_t)(nl - src) : len;
         size_t run = end - cur;
         size_t cap = sizeof(s->tok_buf) - 1;
+        size_t ncopy = 0;
         if (s->tok_len < cap) {
             size_t space = cap - s->tok_len;
-            size_t ncopy = run < space ? run : space;
+            ncopy = run < space ? run : space;
             memcpy(s->tok_buf + s->tok_len, src + cur, ncopy);
             s->tok_len += ncopy;
         }
+        if (ncopy < run)
+            s->tok_overflow = 1;
         s->pos = end;
-        s->col += (int)run;
+        add_col(s, run);
     } else {
         /* C/Go block comments are not nested: the first * / ends the comment. */
         while (s->pos < s->src_len) {
@@ -301,6 +327,7 @@ void neverc_scanner_set_mode(neverc_scanner_t *s, unsigned mode) {
 int neverc_scanner_scan(neverc_scanner_t *s) {
     if (!s) return NEVERC_SCANNER_EOF;
     s->tok_len = 0;
+    s->tok_overflow = 0;
 
 again:
     skip_whitespace(s);
@@ -308,7 +335,7 @@ again:
     if (s->pos >= s->src_len) {
         s->tok_pos.line = s->line;
         s->tok_pos.column = s->col;
-        s->tok_pos.offset = (int)s->pos;
+        s->tok_pos.offset = pos_offset(s->pos);
         s->tok_type = NEVERC_SCANNER_EOF;
         s->tok_buf[0] = '\0';
         return NEVERC_SCANNER_EOF;
@@ -316,7 +343,7 @@ again:
 
     s->tok_pos.line = s->line;
     s->tok_pos.column = s->col;
-    s->tok_pos.offset = (int)s->pos;
+    s->tok_pos.offset = pos_offset(s->pos);
 
     int ch = next_ch(s);
 
@@ -340,7 +367,10 @@ again:
             next_ch(s);
             s->tok_type = scan_comment(s, nxt);
             if (s->mode & NEVERC_SCAN_SKIP_COMMENTS) {
+                if (s->tok_overflow && s->errors < INT_MAX)
+                    s->errors++;
                 s->tok_len = 0;
+                s->tok_overflow = 0;
                 goto again;
             }
         } else {
@@ -353,6 +383,8 @@ again:
     }
 
     s->tok_buf[s->tok_len] = '\0';
+    if (s->tok_overflow && s->errors < INT_MAX)
+        s->errors++;
     return s->tok_type;
 }
 
@@ -368,6 +400,10 @@ const char *neverc_scanner_token_text(const neverc_scanner_t *s, size_t *len) {
 neverc_scanner_pos_t neverc_scanner_position(const neverc_scanner_t *s) {
     neverc_scanner_pos_t empty = {0, 0, 0};
     return s ? s->tok_pos : empty;
+}
+
+int neverc_scanner_error_count(const neverc_scanner_t *s) {
+    return s ? s->errors : 0;
 }
 
 int neverc_scanner_peek(neverc_scanner_t *s) {

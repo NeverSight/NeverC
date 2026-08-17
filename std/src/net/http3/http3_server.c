@@ -46,6 +46,7 @@ extern int neverc_h3_write_headers_frame(uint8_t *buffer, size_t capacity,
 extern int neverc_h3_write_goaway_frame(uint8_t *buffer, size_t capacity,
                                         uint64_t stream_id,
                                         size_t *written);
+extern int neverc_h3_method_allowed(const char *method);
 extern int neverc_h3_request_path_allowed(const char *method,
                                           const char *path);
 extern int neverc_h3_authority_allowed(const char *authority);
@@ -56,16 +57,19 @@ extern int neverc_h3_parse_varint_payload(const uint8_t *payload,
                                           size_t length, uint64_t *value);
 extern int neverc_h3_max_push_id_accept(int have_previous,
                                         uint64_t previous, uint64_t next);
+extern int neverc_h3_goaway_id_accept(int have_previous, uint64_t previous,
+                                      uint64_t next);
+extern uint64_t neverc_h3_graceful_goaway_id(void);
+extern int neverc_h3_server_goaway_id_valid(uint64_t stream_id);
+extern int neverc_h3_request_stream_after_goaway(uint64_t goaway_id,
+                                                 uint64_t stream_id);
+extern int neverc_h3_uni_stream_type_class(uint64_t type);
+extern int neverc_h3_field_section_over_limit(uint64_t size, uint64_t limit);
 extern int neverc_qpack_decoder_stream_instruction(const uint8_t *data,
                                                    size_t length,
                                                    size_t *consumed);
 extern int neverc_qpack_field_section_size(
     const neverc_qpack_header_t *headers, int nheaders, uint64_t *size);
-
-/* RFC 9114 §7.2.4.1: omitted / UINT64_MAX means unlimited; 0 is 0. */
-static int h3_field_section_over_limit(uint64_t size, uint64_t limit) {
-    return size > limit;
-}
 
 #define H3_STREAM_TYPE_CONTROL       0x00U
 #define H3_STREAM_TYPE_PUSH          0x01U
@@ -81,9 +85,6 @@ static int h3_field_section_over_limit(uint64_t size, uint64_t limit) {
 #define H3_GRACEFUL_SHUTDOWN_MS 5000U
 #define H3_POST_DRAIN_GRACE_MS 3000U
 #define H3_SHUTDOWN_ABSOLUTE_MAX_MS 30000U
-#define H3_QPACK_DECOMPRESSION_FAILED 0x0200U
-#define H3_QPACK_ENCODER_STREAM_ERROR 0x0201U
-#define H3_QPACK_DECODER_STREAM_ERROR 0x0202U
 #define H3_QPACK_DECODER_LEFTOVER     16U
 
 /* RFC 9114 §7.2 / §11.2.1: HTTP/2 frame types that were not redefined
@@ -141,6 +142,7 @@ struct h3_conn {
     int goaway_sent;
     int goaway_received;
     uint64_t goaway_id;
+    uint64_t goaway_sent_id;
     uint64_t max_push_id;
     int max_push_id_seen;
     uint8_t qpack_decoder_leftover[H3_QPACK_DECODER_LEFTOVER];
@@ -483,7 +485,7 @@ static int h3_parse_request_headers(h3_conn_t *connection,
     int decoded = neverc_qpack_decode(connection->decoder, encoded, length,
                                       headers, 64, &header_count);
     nc_mutex_unlock(&connection->lock);
-    if (decoded != 0) return -1;
+    if (decoded != 0) return -2;
     int regular_seen = 0;
     unsigned pseudo_seen = 0;
     const char *host = NULL;
@@ -491,9 +493,11 @@ static int h3_parse_request_headers(h3_conn_t *connection,
     uint64_t section_size = 0;
     if (neverc_qpack_field_section_size(headers, header_count,
                                         &section_size) != 0 ||
-        h3_field_section_over_limit(
-            section_size, connection->local_settings.max_field_section_size))
+        neverc_h3_field_section_over_limit(
+            section_size, connection->local_settings.max_field_section_size)) {
+        result = -3;
         goto cleanup;
+    }
     for (int i = 0; i < header_count; i++) {
         char *name = headers[i].name;
         char *value = headers[i].value;
@@ -550,8 +554,8 @@ static int h3_parse_request_headers(h3_conn_t *connection,
     if (host && !*host) host = NULL;
     if (pseudo_seen != (1U | 2U | 4U | 8U) ||
         strcmp(request->scheme, "https") != 0 ||
+        !neverc_h3_method_allowed(request->method) ||
         !neverc_h3_request_path_allowed(request->method, request->path) ||
-        strcmp(request->method, "CONNECT") == 0 ||
         !neverc_h3_authority_allowed(request->authority) ||
         (host && !neverc_h3_authority_allowed(host)) ||
         (host && !h3_ascii_ieq(request->authority, host)))
@@ -600,7 +604,7 @@ static int h3_read_request(h3_conn_t *connection,
         uint64_t length;
         if (h3_read_varint(stream, &length) != 1) return -1;
         if (h3_http2_reserved_frame(type))
-            return -1;
+            return -4;
         if (type == NC_H3_FRAME_HEADERS) {
             uint8_t *payload = NULL;
             if (h3_read_payload(stream, length, H3_MAX_HEADER_SECTION,
@@ -610,7 +614,7 @@ static int h3_read_request(h3_conn_t *connection,
                 int parsed = h3_parse_request_headers(
                     connection, payload, (size_t)length, request);
                 free(payload);
-                if (parsed != 0) return -1;
+                if (parsed != 0) return parsed;
                 initial_headers = 1;
             } else {
                 /* RFC 9114 §4.1: a second HEADERS is trailers; any further
@@ -627,23 +631,25 @@ static int h3_read_request(h3_conn_t *connection,
                     decoded, 64, &count);
                 nc_mutex_unlock(&connection->lock);
                 free(payload);
-                if (parsed != 0) return -1;
+                if (parsed != 0) return -2;
                 uint64_t trailer_size = 0;
+                int trailer_error = 0;
                 if (neverc_qpack_field_section_size(decoded, count,
                                                     &trailer_size) != 0 ||
-                    h3_field_section_over_limit(
+                    neverc_h3_field_section_over_limit(
                         trailer_size,
                         connection->local_settings.max_field_section_size))
-                    parsed = -1;
+                    trailer_error = -3;
                 for (int i = 0; i < count; i++) {
                     if (decoded[i].name[0] == ':' ||
                         !h3_ascii_lower_name(decoded[i].name) ||
-                        !neverc_h3_trailer_name_allowed(decoded[i].name))
-                        parsed = -1;
+                        !neverc_h3_trailer_name_allowed(decoded[i].name)) {
+                        if (trailer_error == 0) trailer_error = -1;
+                    }
                     free(decoded[i].name);
                     free(decoded[i].value);
                 }
-                if (parsed != 0) return -1;
+                if (trailer_error != 0) return trailer_error;
                 trailers = 1;
             }
         } else if (type == NC_H3_FRAME_DATA) {
@@ -665,7 +671,7 @@ static int h3_read_request(h3_conn_t *connection,
                    type == NC_H3_FRAME_MAX_PUSH_ID ||
                    type == NC_H3_FRAME_CANCEL_PUSH ||
                    type == NC_H3_FRAME_PUSH_PROMISE) {
-            return -1;
+            return -4;
         } else if (length > H3_MAX_HEADER_SECTION ||
                    h3_skip_exact(stream, length) != 0) {
             /* RFC 9114 §9: unknown types, including GREASE, MUST be ignored
@@ -719,7 +725,7 @@ static int h3_send_header_section(h3_conn_t *connection,
     if (neverc_qpack_field_section_size(headers, header_count,
                                         &section_size) != 0 ||
         (connection->peer_settings_received &&
-         h3_field_section_over_limit(
+         neverc_h3_field_section_over_limit(
              section_size,
              connection->peer_settings.max_field_section_size))) {
         free(encoded);
@@ -860,11 +866,23 @@ static void h3_request_task(h3_stream_task_t *task) {
     neverc_quic_stream_t *stream = task->stream;
     h3_request_t parsed;
     memset(&parsed, 0, sizeof(parsed));
-    if (h3_wait_for_settings(connection) != 0 ||
-        h3_read_request(connection, stream, &parsed) != 0) {
+    int read_status = h3_wait_for_settings(connection) != 0 ?
+        -1 : h3_read_request(connection, stream, &parsed);
+    if (read_status != 0) {
         h3_request_cleanup(&parsed);
-        h3_protocol_error(connection, NC_H3_MESSAGE_ERROR,
-                          "invalid HTTP/3 request");
+        uint64_t error_code = NC_H3_MESSAGE_ERROR;
+        const char *reason = "invalid HTTP/3 request";
+        if (read_status == -2) {
+            error_code = NC_H3_QPACK_DECOMPRESSION_FAILED;
+            reason = "QPACK decompression failed";
+        } else if (read_status == -3) {
+            error_code = NC_H3_EXCESSIVE_LOAD;
+            reason = "HTTP/3 field section too large";
+        } else if (read_status == -4) {
+            error_code = NC_H3_FRAME_UNEXPECTED;
+            reason = "unexpected HTTP/3 frame on request stream";
+        }
+        h3_protocol_error(connection, error_code, reason);
         neverc_quic_stream_free(stream);
         return;
     }
@@ -1043,8 +1061,9 @@ static int h3_parse_control_buffer(h3_conn_t *connection) {
                     &identifier) != 0)
                 goto invalid;
             nc_mutex_lock(&connection->lock);
-            int increasing = connection->goaway_received &&
-                             identifier > connection->goaway_id;
+            int increasing = neverc_h3_goaway_id_accept(
+                                 connection->goaway_received,
+                                 connection->goaway_id, identifier) != 0;
             connection->goaway_received = 1;
             connection->goaway_id = identifier;
             nc_mutex_unlock(&connection->lock);
@@ -1152,7 +1171,7 @@ static int h3_feed_qpack_decoder(h3_conn_t *connection, const uint8_t *data,
         if (rc == 0) {
             size_t rest = total - pos;
             if (rest > H3_QPACK_DECODER_LEFTOVER) {
-                h3_protocol_error(connection, H3_QPACK_DECODER_STREAM_ERROR,
+                h3_protocol_error(connection, NC_H3_QPACK_DECODER_STREAM_ERROR,
                                   "oversized QPACK decoder instruction");
                 return -1;
             }
@@ -1161,7 +1180,7 @@ static int h3_feed_qpack_decoder(h3_conn_t *connection, const uint8_t *data,
             return 0;
         }
         if (rc < 0) {
-            h3_protocol_error(connection, H3_QPACK_DECODER_STREAM_ERROR,
+            h3_protocol_error(connection, NC_H3_QPACK_DECODER_STREAM_ERROR,
                               "invalid QPACK decoder-stream instruction");
             return -1;
         }
@@ -1197,7 +1216,7 @@ static int h3_poll_qpack_stream(h3_conn_t *connection,
          * advertises capacity and blocked streams as zero, so any encoder
          * instruction is QPACK_ENCODER_STREAM_ERROR. */
         if (encoder_stream && count > 0) {
-            h3_protocol_error(connection, H3_QPACK_ENCODER_STREAM_ERROR,
+            h3_protocol_error(connection, NC_H3_QPACK_ENCODER_STREAM_ERROR,
                               "QPACK encoder instruction with zero capacity");
             return -1;
         }
@@ -1210,20 +1229,28 @@ static int h3_poll_qpack_stream(h3_conn_t *connection,
 static int h3_install_peer_stream(h3_conn_t *connection,
                                   neverc_quic_stream_t *stream,
                                   uint64_t stream_type) {
-    if (h3_claim_peer_stream_type(connection, stream_type) != 0)
+    int class = neverc_h3_uni_stream_type_class(stream_type);
+    if (class < 0) {
+        h3_protocol_error(connection, NC_H3_STREAM_CREATION_ERROR,
+                          "client-initiated HTTP/3 push stream");
         return -1;
+    }
+    if (class > 0) {
+        (void)neverc_quic_stream_stop_sending(stream, NC_H3_NO_ERROR);
+        neverc_quic_stream_free(stream);
+        return 0;
+    }
+    if (h3_claim_peer_stream_type(connection, stream_type) != 0) {
+        h3_protocol_error(connection, NC_H3_STREAM_CREATION_ERROR,
+                          "duplicate HTTP/3 unidirectional stream type");
+        return -1;
+    }
     if (stream_type == H3_STREAM_TYPE_CONTROL)
         connection->control_in = stream;
     else if (stream_type == H3_STREAM_TYPE_QPACK_ENCODER)
         connection->qpack_encoder_in = stream;
-    else if (stream_type == H3_STREAM_TYPE_QPACK_DECODER)
+    else
         connection->qpack_decoder_in = stream;
-    else if (stream_type == H3_STREAM_TYPE_PUSH)
-        return -1;
-    else {
-        (void)neverc_quic_stream_stop_sending(stream, NC_H3_STREAM_CREATION_ERROR);
-        neverc_quic_stream_free(stream);
-    }
     return 0;
 }
 
@@ -1240,7 +1267,11 @@ static int h3_poll_pending_uni(h3_conn_t *connection, int *worked) {
             index++;
             continue;
         }
-        if (count <= 0) return -1;
+        if (count <= 0) {
+            h3_protocol_error(connection, NC_H3_STREAM_CREATION_ERROR,
+                              "unidirectional stream closed before type");
+            return -1;
+        }
         *worked = 1;
         pending->encoded_length += (size_t)count;
         if (pending->encoded_length == 1)
@@ -1255,8 +1286,12 @@ static int h3_poll_pending_uni(h3_conn_t *connection, int *worked) {
         if (neverc_quic_varint_decode(pending->encoded_type,
                                       pending->encoded_needed,
                                       &stream_type, &consumed) != 0 ||
-            consumed != pending->encoded_needed ||
-            h3_install_peer_stream(connection, pending->stream,
+            consumed != pending->encoded_needed) {
+            h3_protocol_error(connection, NC_H3_STREAM_CREATION_ERROR,
+                              "invalid HTTP/3 stream type");
+            return -1;
+        }
+        if (h3_install_peer_stream(connection, pending->stream,
                                    stream_type) != 0)
             return -1;
         connection->pending_uni[index] =
@@ -1268,10 +1303,13 @@ static int h3_poll_pending_uni(h3_conn_t *connection, int *worked) {
 
 static int h3_dispatch_request_stream(h3_conn_t *connection,
                                       neverc_quic_stream_t *stream) {
+    uint64_t stream_id = neverc_quic_stream_id(stream);
     nc_mutex_lock(&connection->lock);
-    if (connection->goaway_sent ||
-        !atomic_load_explicit(&connection->server->running,
-                              memory_order_acquire)) {
+    /* RFC 9114 §5.2: after GOAWAY, reject only streams above the advertised
+     * identifier. In-flight requests at or below it MUST still be processed. */
+    if (connection->goaway_sent &&
+        neverc_h3_request_stream_after_goaway(connection->goaway_sent_id,
+                                              stream_id)) {
         nc_mutex_unlock(&connection->lock);
         (void)neverc_quic_stream_reset(stream, NC_H3_REQUEST_REJECTED);
         neverc_quic_stream_free(stream);
@@ -1288,7 +1326,6 @@ static int h3_dispatch_request_stream(h3_conn_t *connection,
         neverc_quic_stream_free(stream);
         return active > connection->server->max_concurrent_streams ? 0 : -1;
     }
-    uint64_t stream_id = neverc_quic_stream_id(stream);
     if (stream_id > connection->last_request_stream_id)
         connection->last_request_stream_id = stream_id;
     nc_mutex_unlock(&connection->lock);
@@ -1306,8 +1343,8 @@ static int h3_connection_needs_worker(h3_conn_t *connection) {
 static void *h3_connection_worker(void *argument) {
     h3_conn_t *connection = (h3_conn_t *)argument;
     while (neverc_quic_conn_is_alive(connection->quic)) {
-        if (!atomic_load_explicit(&connection->server->running,
-                                  memory_order_acquire) &&
+        if (atomic_load_explicit(&connection->closing,
+                                 memory_order_acquire) &&
             !h3_connection_needs_worker(connection))
             break;
         int worked = 0;
@@ -1398,15 +1435,18 @@ static void h3_server_reap_connections(neverc_http3_server_t *server) {
     }
 }
 
-static void h3_server_send_goaway(h3_conn_t *connection) {
+static void h3_server_send_goaway(h3_conn_t *connection, uint64_t identifier) {
+    if (!neverc_h3_server_goaway_id_valid(identifier))
+        identifier = 0;
     nc_mutex_lock(&connection->lock);
-    if (connection->goaway_sent || !connection->control_out) {
+    if (!connection->control_out ||
+        (connection->goaway_sent &&
+         identifier >= connection->goaway_sent_id)) {
         nc_mutex_unlock(&connection->lock);
         return;
     }
-    /* RFC 9114 §7.2.6: last processed client bidi stream, or 0 if none. */
-    uint64_t identifier = connection->last_request_stream_id;
     connection->goaway_sent = 1;
+    connection->goaway_sent_id = identifier;
     nc_mutex_unlock(&connection->lock);
     uint8_t frame[32];
     size_t length = 0;
@@ -1417,6 +1457,13 @@ static void h3_server_send_goaway(h3_conn_t *connection) {
 
 static void h3_server_close_connections(neverc_http3_server_t *server) {
     nc_mutex_lock(&server->lock);
+
+    /* RFC 9114 §5.2: send GOAWAY with the largest client bidi ID first so
+     * in-flight requests are still accepted, then drain, then advertise the
+     * last processed stream. */
+    for (size_t i = 0; i < server->connection_count; i++)
+        h3_server_send_goaway(server->connections[i],
+                              neverc_h3_graceful_goaway_id());
 
     for (unsigned waited = 0; waited < H3_SHUTDOWN_ABSOLUTE_MAX_MS;
          waited += 2U) {
@@ -1436,8 +1483,13 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
         h3_sleep_ms(2);
     }
 
-    for (size_t i = 0; i < server->connection_count; i++)
-        h3_server_send_goaway(server->connections[i]);
+    for (size_t i = 0; i < server->connection_count; i++) {
+        h3_conn_t *connection = server->connections[i];
+        nc_mutex_lock(&connection->lock);
+        uint64_t last = connection->last_request_stream_id;
+        nc_mutex_unlock(&connection->lock);
+        h3_server_send_goaway(connection, last);
+    }
 
     unsigned drained_for_ms = 0;
     for (unsigned waited = 0; waited < H3_SHUTDOWN_ABSOLUTE_MAX_MS;
@@ -1740,7 +1792,7 @@ static int h3_client_parse_header_block(h3_conn_t *connection,
         return -1;
     uint64_t section_size = 0;
     if (neverc_qpack_field_section_size(headers, count, &section_size) != 0 ||
-        h3_field_section_over_limit(
+        neverc_h3_field_section_over_limit(
             section_size, connection->local_settings.max_field_section_size)) {
         for (int i = 0; i < count; i++) {
             free(headers[i].name);

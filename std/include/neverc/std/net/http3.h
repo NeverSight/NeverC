@@ -67,6 +67,11 @@ extern "C" {
 #define NC_H3_CONNECT_ERROR             0x010F
 #define NC_H3_VERSION_FALLBACK          0x0110
 
+/* QPACK Error Codes (RFC 9204 §6) */
+#define NC_H3_QPACK_DECOMPRESSION_FAILED 0x0200
+#define NC_H3_QPACK_ENCODER_STREAM_ERROR 0x0201
+#define NC_H3_QPACK_DECODER_STREAM_ERROR 0x0202
+
 /* ======================================================================
  * QPACK Header Compression (RFC 9204)
  * ====================================================================== */

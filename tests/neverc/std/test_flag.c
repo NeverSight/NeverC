@@ -2,6 +2,9 @@
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -424,6 +427,45 @@ static void test_name_injection(void) {
     check_int("leading dash name is not registered",
               neverc_flag_lookup("-n", NULL), -1);
     check_int("leading dash name does not write default", n, 9);
+
+    neverc_flag_reset();
+    n = 9;
+    neverc_flag_int("h\n  -evil", 0, "injected", &n);
+    check_int("newline in name is not registered",
+              neverc_flag_lookup("h\n  -evil", NULL), -1);
+    check_int("newline in name does not write default", n, 9);
+
+    neverc_flag_reset();
+    n = 9;
+    neverc_flag_int("ok", 0, "desc\n  -evil", &n);
+    check_int("newline in usage is still registered",
+              neverc_flag_lookup("ok", NULL), 0);
+#ifndef _WIN32
+    {
+        FILE *tmp = tmpfile();
+        char buf[256];
+        int saved;
+        check_int("usage capture tmpfile", tmp != NULL, 1);
+        if (tmp) {
+            saved = dup(fileno(stderr));
+            check_int("usage capture dup", saved >= 0, 1);
+            if (saved >= 0 && dup2(fileno(tmp), fileno(stderr)) == 0) {
+                neverc_flag_print_defaults();
+                fflush(stderr);
+                dup2(saved, fileno(stderr));
+                close(saved);
+                rewind(tmp);
+                buf[fread(buf, 1, sizeof(buf) - 1, tmp)] = '\0';
+                check_int("usage newline does not inject a flag line",
+                          strstr(buf, "\n  -evil") == NULL, 1);
+            } else if (saved >= 0) {
+                close(saved);
+                check_int("usage capture dup2", 0, 1);
+            }
+            fclose(tmp);
+        }
+    }
+#endif
 }
 
 static void test_visit(void) {
@@ -494,6 +536,22 @@ static void test_parse_edge_cases(void) {
     check_int("registered -help parses as a flag",
               neverc_flag_parse(2, reg_help), 0);
     check_str("registered -help value", topic, "usage");
+
+    neverc_flag_reset();
+    h = 0;
+    neverc_flag_bool("h", 0, "registered h", &h);
+    char *reg_h_help[] = {"prog", "--help"};
+    check_int("registered -h leaves --help as help",
+              neverc_flag_parse(2, reg_h_help), -1);
+    check_int("registered -h is unchanged by --help", h, 0);
+
+    neverc_flag_reset();
+    topic = "none";
+    neverc_flag_string("help", "none", "topic", &topic);
+    char *reg_help_h[] = {"prog", "-h"};
+    check_int("registered -help leaves -h as help",
+              neverc_flag_parse(2, reg_help_h), -1);
+    check_str("registered -help is unchanged by -h", topic, "none");
 
     neverc_flag_reset();
     int verbose = 0;

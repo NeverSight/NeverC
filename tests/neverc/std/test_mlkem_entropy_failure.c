@@ -101,6 +101,55 @@ int main(void) {
     CHECK(all_zero(shared768, sizeof(shared768)));
     CHECK(all_zero(ciphertext768, sizeof(ciphertext768)));
 
+    /* Truncated ciphertext must be rejected, not treated as a FO match
+     * because a prefix compare of length 0 is vacuously equal. */
+    {
+        uint8_t seed[NEVERC_MLKEM_SEED_SIZE];
+        memset(seed, 1, sizeof(seed));
+        neverc_mlkem768_dk_t dk;
+        CHECK(neverc_mlkem768_new_dk(&dk, seed) == 0);
+
+        uint8_t ct[NEVERC_MLKEM768_CT_SIZE];
+        uint8_t shared[NEVERC_MLKEM_SHARED_KEY_SIZE];
+        memset(ct, 0x5a, sizeof(ct));
+
+        memset(shared, 0x5a, sizeof(shared));
+        mlkem_lock();
+        int rc = mlkem_decaps(3, dk.seed, dk.ek, NEVERC_MLKEM768_EK_SIZE,
+                              ct, 0, shared);
+        wipe_mlkem_scratch();
+        mlkem_unlock();
+        CHECK(rc == -1);
+        CHECK(all_zero(shared, sizeof(shared)));
+
+        memset(shared, 0x5a, sizeof(shared));
+        mlkem_lock();
+        rc = mlkem_decaps(3, dk.seed, dk.ek, NEVERC_MLKEM768_EK_SIZE,
+                          ct, NEVERC_MLKEM768_CT_SIZE - 1, shared);
+        wipe_mlkem_scratch();
+        mlkem_unlock();
+        CHECK(rc == -1);
+        CHECK(all_zero(shared, sizeof(shared)));
+    }
+    {
+        uint8_t seed[NEVERC_MLKEM_SEED_SIZE];
+        memset(seed, 2, sizeof(seed));
+        neverc_mlkem1024_dk_t dk;
+        CHECK(neverc_mlkem1024_new_dk(&dk, seed) == 0);
+
+        uint8_t ct[NEVERC_MLKEM1024_CT_SIZE];
+        uint8_t shared[NEVERC_MLKEM_SHARED_KEY_SIZE];
+        memset(ct, 0x5a, sizeof(ct));
+        memset(shared, 0x5a, sizeof(shared));
+        mlkem_lock();
+        int rc = mlkem_decaps(4, dk.seed, dk.ek, NEVERC_MLKEM1024_EK_SIZE,
+                              ct, NEVERC_MLKEM1024_CT_SIZE - 1, shared);
+        wipe_mlkem_scratch();
+        mlkem_unlock();
+        CHECK(rc == -1);
+        CHECK(all_zero(shared, sizeof(shared)));
+    }
+
     puts("passed");
     return 0;
 }

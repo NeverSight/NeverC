@@ -63,11 +63,20 @@ static void test_search(void) {
     check_size("index found", neverc_bytes_index(B("hello world"), B("world")), 6);
     check_size("index not found", neverc_bytes_index(B("hello"), B("xyz")), NOT_FOUND);
     check_size("index empty sep", neverc_bytes_index(B("hello"), B("")), 0);
+    check_size("index empty both", neverc_bytes_index(NULL, 0, NULL, 0), 0);
+    check_size("index needle longer", neverc_bytes_index(B("ab"), B("abcd")), NOT_FOUND);
+    check_size("index prefix at last byte", neverc_bytes_index(B("abc"), B("cX")), NOT_FOUND);
+    check_size("index invalid haystack", neverc_bytes_index(NULL, 5, B("x")), NOT_FOUND);
+    check_size("index invalid needle", neverc_bytes_index(B("hello"), NULL, 5), NOT_FOUND);
     check_size("index byte", neverc_bytes_index_byte(B("hello"), 'l'), 2);
     check_size("index byte none", neverc_bytes_index_byte(B("hello"), 'z'), NOT_FOUND);
 
     check_size("last index", neverc_bytes_last_index(B("go gopher"), B("go")), 3);
     check_size("last index empty sep", neverc_bytes_last_index(B("hello"), B("")), 5);
+    check_size("last index needle longer",
+               neverc_bytes_last_index(B("ab"), B("abcd")), NOT_FOUND);
+    check_size("last index invalid haystack",
+               neverc_bytes_last_index(NULL, 5, B("x")), NOT_FOUND);
     check_size("last index byte", neverc_bytes_last_index_byte(B("hello"), 'l'), 3);
     check_size("last index none", neverc_bytes_last_index(B("hello"), B("xyz")), NOT_FOUND);
 
@@ -187,6 +196,22 @@ static void test_transform(void) {
                                             &outlen);
     check_bool("repeat overflow rejected", overflow == NULL, 1);
     check_size("repeat overflow length", outlen, 0);
+    free(overflow);
+
+    uint8_t dummy = 'x';
+    uint8_t aa[] = {'a', 'a'};
+    outlen = 99;
+    overflow = neverc_bytes_replace(aa, sizeof(aa), aa, 1,
+                                    &dummy, SIZE_MAX / 2 + 1, -1, &outlen);
+    check_bool("replace grow overflow rejected", overflow == NULL, 1);
+    check_size("replace grow overflow length", outlen, 0);
+    free(overflow);
+
+    outlen = 99;
+    overflow = neverc_bytes_replace(aa, 1, NULL, 0,
+                                    &dummy, SIZE_MAX, -1, &outlen);
+    check_bool("replace empty-old overflow rejected", overflow == NULL, 1);
+    check_size("replace empty-old overflow length", outlen, 0);
     free(overflow);
 }
 

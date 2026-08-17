@@ -56,6 +56,10 @@ int  neverc_netip_addr_is_link_local_unicast(const neverc_netip_addr_t *addr);
 int  neverc_netip_addr_is_link_local_multicast(const neverc_netip_addr_t *addr);
 int  neverc_netip_addr_is_global_unicast(const neverc_netip_addr_t *addr);
 int  neverc_netip_addr_is_unspecified(const neverc_netip_addr_t *addr);
+/* True for loopback, private, link-local, unspecified, multicast, IPv4
+ * broadcast, or IPv4-mapped forms of those. Unmaps mapped addresses
+ * before classifying. For SSRF / DNS-rebinding checks. */
+int  neverc_netip_addr_is_internal(const neverc_netip_addr_t *addr);
 int  neverc_netip_addr_bit_len(const neverc_netip_addr_t *addr);
 
 /* Comparison */

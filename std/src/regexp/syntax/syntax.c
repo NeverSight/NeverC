@@ -1,6 +1,7 @@
 #include "neverc/std/regexp_syntax.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 #include <limits.h>
 
 /* ======================================================================
@@ -150,6 +151,65 @@ static int add_escape_class(parser_t *p, neverc_regexp_syntax_node_t *n,
 #define NCI_RE_MAX_REPEAT 1000
 #endif
 
+/* Go regexp/syntax nextRune: invalid UTF-8 in the pattern is ErrInvalidUTF8. */
+static int utf8_decode(const unsigned char *s, size_t n, int *rune) {
+    if (n < 1) return 0;
+    unsigned c = s[0];
+    if (c < 0x80) {
+        *rune = (int)c;
+        return 1;
+    }
+    if (c < 0xC2 || c >= 0xF5) return 0;
+    if (c < 0xE0) {
+        if (n < 2 || (s[1] & 0xC0) != 0x80) return 0;
+        *rune = ((c & 0x1F) << 6) | (s[1] & 0x3F);
+        return 2;
+    }
+    if (c < 0xF0) {
+        if (n < 3 || (s[1] & 0xC0) != 0x80 || (s[2] & 0xC0) != 0x80) return 0;
+        int r = ((c & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+        if (r < 0x800 || (r >= 0xD800 && r <= 0xDFFF)) return 0;
+        *rune = r;
+        return 3;
+    }
+    if (n < 4 || (s[1] & 0xC0) != 0x80 || (s[2] & 0xC0) != 0x80 ||
+        (s[3] & 0xC0) != 0x80)
+        return 0;
+    int r = ((c & 0x07) << 18) | ((s[1] & 0x3F) << 12) |
+            ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+    if (r < 0x10000 || r > NCI_RE_MAX_RUNE) return 0;
+    *rune = r;
+    return 4;
+}
+
+static int utf8_valid(const char *s, size_t n) {
+    const unsigned char *p = (const unsigned char *)s;
+    size_t i = 0;
+    while (i < n) {
+        int r, k = utf8_decode(p + i, n - i, &r);
+        if (k < 1) return 0;
+        i += (size_t)k;
+    }
+    return 1;
+}
+
+/* Go parseInt: a leading zero followed by another digit is not an integer. */
+static int brace_repeat_leading_zeros(const char *s, int pos, int len) {
+    if (pos >= len || s[pos] != '{') return 0;
+    pos++;
+    if (pos < len && s[pos] == '0' && pos + 1 < len &&
+        s[pos + 1] >= '0' && s[pos + 1] <= '9')
+        return 1;
+    while (pos < len && s[pos] >= '0' && s[pos] <= '9') pos++;
+    if (pos < len && s[pos] == ',') {
+        pos++;
+        if (pos < len && s[pos] == '0' && pos + 1 < len &&
+            s[pos + 1] >= '0' && s[pos + 1] <= '9')
+            return 1;
+    }
+    return 0;
+}
+
 static int peek(parser_t *p);
 static int next(parser_t *p);
 
@@ -240,6 +300,18 @@ static int peek(parser_t *p) {
 static int next(parser_t *p) {
     if (p->pos >= p->len) return -1;
     return (unsigned char)p->src[p->pos++];
+}
+
+static int next_rune(parser_t *p, int *rune) {
+    if (p->pos >= p->len) return 0;
+    int n = utf8_decode((const unsigned char *)p->src + p->pos,
+                        (size_t)(p->len - p->pos), rune);
+    if (n < 1) {
+        p->err = "invalid UTF-8";
+        return 0;
+    }
+    p->pos += n;
+    return 1;
 }
 
 static int parse_int(parser_t *p, int *value) {
@@ -430,7 +502,10 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
                 break;
             }
         } else {
-            c = next(p);
+            if (!next_rune(p, &c)) {
+                neverc_regexp_syntax_free(n);
+                return NULL;
+            }
         }
 
         if (p->pos + 1 < p->len && p->src[p->pos] == '-' && p->src[p->pos + 1] != ']') {
@@ -464,7 +539,10 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
                     return NULL;
                 }
             } else {
-                hi = next(p);
+                if (!next_rune(p, &hi)) {
+                    neverc_regexp_syntax_free(n);
+                    return NULL;
+                }
             }
             if (hi < 0 || hi < c) {
                 p->err = "invalid character class range";
@@ -549,6 +627,11 @@ static neverc_regexp_syntax_node_t *parse_group(parser_t *p) {
 
         neverc_regexp_syntax_node_t *cap = mk_node(p, NC_RE_OP_CAPTURE);
         if (!cap) goto done;
+        if (p->ncap == INT_MAX) {
+            p->err = "too many capturing groups";
+            neverc_regexp_syntax_free(cap);
+            goto done;
+        }
         cap->cap = ++p->ncap;
         cap->name = (char *)malloc((size_t)name_len + 1);
         if (!cap->name) {
@@ -578,6 +661,11 @@ static neverc_regexp_syntax_node_t *parse_group(parser_t *p) {
     /* Regular capturing group */
     neverc_regexp_syntax_node_t *cap = mk_node(p, NC_RE_OP_CAPTURE);
     if (!cap) goto done;
+    if (p->ncap == INT_MAX) {
+        p->err = "too many capturing groups";
+        neverc_regexp_syntax_free(cap);
+        goto done;
+    }
     cap->cap = ++p->ncap;
     neverc_regexp_syntax_node_t *inner = parse_alternation(p);
     if (!inner) { neverc_regexp_syntax_free(cap); goto done; }
@@ -636,11 +724,11 @@ static neverc_regexp_syntax_node_t *parse_atom(parser_t *p) {
     case '*': case '+': case '?':
         p->err = "unexpected repetition operator";
         return NULL;
-    default:
-        next(p);
-        {
-            return literal_node(p, c);
-        }
+    default: {
+        int r;
+        if (!next_rune(p, &r)) return NULL;
+        return literal_node(p, r);
+    }
     }
 }
 
@@ -657,9 +745,11 @@ static neverc_regexp_syntax_node_t *parse_repeat(parser_t *p) {
     case '?': next(p); rep = mk_node(p, NC_RE_OP_QUEST); break;
     case '{': {
         /* Go/RE2: `{` is a quantifier only when a digit follows; otherwise
-         * it is a literal (so `a{}` and `{3}` parse as ordinary text). */
+         * it is a literal (so `a{}` and `{3}` parse as ordinary text).
+         * Leading zeros (`{01}`, `{0,01}`) also make `{` a literal (Go parseInt). */
         if (p->pos + 1 >= p->len ||
-            p->src[p->pos + 1] < '0' || p->src[p->pos + 1] > '9')
+            p->src[p->pos + 1] < '0' || p->src[p->pos + 1] > '9' ||
+            brace_repeat_leading_zeros(p->src, p->pos, p->len))
             return atom;
         next(p);
         int min_val;
@@ -818,6 +908,10 @@ neverc_regexp_syntax_node_t *neverc_regexp_syntax_parse(
     size_t pattern_len = nc_slen(pattern);
     if (pattern_len > INT_MAX) {
         if (errp) *errp = "pattern too long";
+        return NULL;
+    }
+    if (!utf8_valid(pattern, pattern_len)) {
+        if (errp) *errp = "invalid UTF-8";
         return NULL;
     }
     parser_t p;

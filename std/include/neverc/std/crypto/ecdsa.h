@@ -30,6 +30,10 @@ void neverc_ecdsa_private_key_free(neverc_ecdsa_private_key_t *k);
 void neverc_ecdsa_signature_init(neverc_ecdsa_signature_t *sig);
 void neverc_ecdsa_signature_free(neverc_ecdsa_signature_t *sig);
 
+/*
+ * Generate a key. Returns -1 for invalid input or entropy-source failure;
+ * d and the public point are securely cleared on failure.
+ */
 int  neverc_ecdsa_generate_key(neverc_ecdsa_private_key_t *key,
                                 const neverc_elliptic_curve_t *curve);
 
@@ -38,6 +42,8 @@ int  neverc_ecdsa_sign(const neverc_ecdsa_private_key_t *key,
                         const unsigned char *hash, size_t hash_len,
                         neverc_ecdsa_signature_t *sig);
 
+/* Rejects r,s outside (0,n), s not invertible mod n, and the identity
+ * public point. (r,s)=(0,0) is never a valid signature. */
 int  neverc_ecdsa_verify(const neverc_ecdsa_public_key_t *key,
                           const unsigned char *hash, size_t hash_len,
                           const neverc_ecdsa_signature_t *sig);

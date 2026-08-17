@@ -68,8 +68,9 @@ void neverc_httputil_proxy_set_error_handler(
     neverc_httputil_error_handler_t handler,
     void *user_data);
 
-/* Remove untrusted Forwarded/X-Forwarded-* input and add the trusted
- * X-Forwarded metadata available to the proxy (default: enabled). */
+/* Remove untrusted Forwarded/X-Forwarded-* / X-Real-IP (and similar
+ * client-IP spoof headers) and add the trusted X-Forwarded metadata
+ * available to the proxy (default: enabled). */
 void neverc_httputil_proxy_set_forwarded_headers(
     neverc_httputil_reverse_proxy_t *rp, int enable);
 

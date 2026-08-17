@@ -7,8 +7,16 @@ static void *failing_malloc(size_t size) {
     return NULL;
 }
 
+static void *failing_realloc(void *ptr, size_t size) {
+    (void)ptr;
+    (void)size;
+    return NULL;
+}
+
 #define malloc failing_malloc
+#define realloc failing_realloc
 #include "../../../std/src/slices/slices.c"
+#undef realloc
 #undef malloc
 
 #define CHECK(condition)                                                     \
@@ -36,6 +44,13 @@ int main(void) {
     CHECK(len == 5);
     CHECK(memcmp(replace_values, replace_original,
                  sizeof(replace_original)) == 0);
+
+    int grow_values[4] = {1, 2, 3, 4};
+    size_t grow_cap = 0;
+    CHECK(neverc_slices_grow(grow_values, 4, 4, 8, sizeof(int),
+                             &grow_cap) == NULL);
+    CHECK(grow_cap == 0);
+    CHECK(grow_values[0] == 1);
     puts("passed");
     return 0;
 }

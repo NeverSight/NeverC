@@ -27,13 +27,17 @@ static inline void nc_buf_free(nc_buf_t *b) {
 }
 
 static inline int nc_buf_grow(nc_buf_t *b, size_t need) {
+    if (!b) return -1;
     if (b->cap >= need) return 0;
     size_t nc = b->cap < 256 ? 256 : b->cap;
     while (nc < need) {
-        size_t next = nc * 2;
-        if (next <= nc) { nc = need; break; }
-        nc = next;
+        if (nc > SIZE_MAX / 2) {
+            nc = need;
+            break;
+        }
+        nc *= 2;
     }
+    if (nc < need) return -1;
     char *nd = (char *)NC_NET_REALLOC(b->data, nc);
     if (!nd) return -1;
     b->data = nd;

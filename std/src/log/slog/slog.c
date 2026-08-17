@@ -137,27 +137,28 @@ static int is_utf8_continuation(unsigned char c) {
     return (c & 0xc0U) == 0x80U;
 }
 
-static size_t valid_utf8_sequence(const unsigned char *p) {
+static size_t valid_utf8_sequence(const unsigned char *p, size_t n) {
+    if (n == 0) return 0;
     unsigned char c = p[0];
     if (c < 0x80U) return 1;
-    if (c >= 0xc2U && c <= 0xdfU && is_utf8_continuation(p[1]))
+    if (n >= 2 && c >= 0xc2U && c <= 0xdfU && is_utf8_continuation(p[1]))
         return 2;
-    if (c == 0xe0U && p[1] >= 0xa0U && p[1] <= 0xbfU &&
+    if (n >= 3 && c == 0xe0U && p[1] >= 0xa0U && p[1] <= 0xbfU &&
         is_utf8_continuation(p[2]))
         return 3;
-    if (((c >= 0xe1U && c <= 0xecU) || (c >= 0xeeU && c <= 0xefU)) &&
+    if (n >= 3 && ((c >= 0xe1U && c <= 0xecU) || (c >= 0xeeU && c <= 0xefU)) &&
         is_utf8_continuation(p[1]) && is_utf8_continuation(p[2]))
         return 3;
-    if (c == 0xedU && p[1] >= 0x80U && p[1] <= 0x9fU &&
+    if (n >= 3 && c == 0xedU && p[1] >= 0x80U && p[1] <= 0x9fU &&
         is_utf8_continuation(p[2]))
         return 3;
-    if (c == 0xf0U && p[1] >= 0x90U && p[1] <= 0xbfU &&
+    if (n >= 4 && c == 0xf0U && p[1] >= 0x90U && p[1] <= 0xbfU &&
         is_utf8_continuation(p[2]) && is_utf8_continuation(p[3]))
         return 4;
-    if (c >= 0xf1U && c <= 0xf3U && is_utf8_continuation(p[1]) &&
+    if (n >= 4 && c >= 0xf1U && c <= 0xf3U && is_utf8_continuation(p[1]) &&
         is_utf8_continuation(p[2]) && is_utf8_continuation(p[3]))
         return 4;
-    if (c == 0xf4U && p[1] >= 0x80U && p[1] <= 0x8fU &&
+    if (n >= 4 && c == 0xf4U && p[1] >= 0x80U && p[1] <= 0x8fU &&
         is_utf8_continuation(p[2]) && is_utf8_continuation(p[3]))
         return 4;
     return 0;
@@ -167,29 +168,41 @@ static void write_json_string(FILE *f, const char *s) {
     fputc('"', f);
     if (s) {
         const unsigned char *p = (const unsigned char *)s;
-        while (*p) {
-            switch (*p) {
-            case '"':  fputs("\\\"", f); p++; break;
-            case '\\': fputs("\\\\", f); p++; break;
-            case '\b': fputs("\\b", f);  p++; break;
-            case '\f': fputs("\\f", f);  p++; break;
-            case '\n': fputs("\\n", f);  p++; break;
-            case '\r': fputs("\\r", f);  p++; break;
-            case '\t': fputs("\\t", f);  p++; break;
+        size_t n = strlen(s);
+        size_t i = 0;
+        while (i < n) {
+            unsigned char c = p[i];
+            switch (c) {
+            case '"':  fputs("\\\"", f); i++; break;
+            case '\\': fputs("\\\\", f); i++; break;
+            case '\b': fputs("\\b", f);  i++; break;
+            case '\f': fputs("\\f", f);  i++; break;
+            case '\n': fputs("\\n", f);  i++; break;
+            case '\r': fputs("\\r", f);  i++; break;
+            case '\t': fputs("\\t", f);  i++; break;
+            /* Go encoding/json HTMLEscape: keep JSON safe inside <script>. */
+            case '<':  fputs("\\u003c", f); i++; break;
+            case '>':  fputs("\\u003e", f); i++; break;
+            case '&':  fputs("\\u0026", f); i++; break;
             default:
-                if (*p < 0x20U) {
-                    fprintf(f, "\\u%04x", (unsigned)*p);
-                    p++;
-                } else if (*p < 0x80U) {
-                    fputc(*p++, f);
+                if (c < 0x20U) {
+                    fprintf(f, "\\u%04x", (unsigned)c);
+                    i++;
+                } else if (c < 0x80U) {
+                    fputc((int)c, f);
+                    i++;
                 } else {
-                    size_t length = valid_utf8_sequence(p);
-                    if (length == 0) {
+                    size_t length = valid_utf8_sequence(p + i, n - i);
+                    if (length == 3 && p[i] == 0xe2U && p[i + 1] == 0x80U &&
+                        (p[i + 2] == 0xa8U || p[i + 2] == 0xa9U)) {
+                        fputs(p[i + 2] == 0xa8U ? "\\u2028" : "\\u2029", f);
+                        i += 3;
+                    } else if (length == 0) {
                         fputs("\\ufffd", f);
-                        p++;
+                        i++;
                     } else {
-                        fwrite(p, 1, length, f);
-                        p += length;
+                        fwrite(p + i, 1, length, f);
+                        i += length;
                     }
                 }
             }
@@ -316,11 +329,12 @@ void neverc_slog_log(neverc_slog_handler_t *h, neverc_slog_level_t level,
     get_timestamp(ts, sizeof(ts));
     output_lock(config.output);
 
+    size_t n = (size_t)nattrs;
     if (config.format == NEVERC_SLOG_FORMAT_JSON) {
         fprintf(config.output, "{\"time\":\"%s\",\"level\":\"%s\",\"msg\":",
                 ts, neverc_slog_level_name(level));
         write_json_string(config.output, msg);
-        for (int i = 0; i < nattrs; i++) {
+        for (size_t i = 0; i < n; i++) {
             if (!slog_attr_emit(&attrs[i])) continue;
             write_attr_json(config.output, &attrs[i]);
         }
@@ -329,7 +343,7 @@ void neverc_slog_log(neverc_slog_handler_t *h, neverc_slog_level_t level,
         fprintf(config.output, "time=%s level=%s msg=",
                 ts, neverc_slog_level_name(level));
         write_json_string(config.output, msg);
-        for (int i = 0; i < nattrs; i++) {
+        for (size_t i = 0; i < n; i++) {
             if (!slog_attr_emit(&attrs[i])) continue;
             write_attr_text(config.output, &attrs[i]);
         }

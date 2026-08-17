@@ -26,6 +26,21 @@ static const signed char qp_hex_val[256] = {
     -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
 };
 
+/* RFC 2045 line ending for soft breaks / trailing WSP: LF, CRLF, or a
+ * CR only at EOF. A bare CR in the middle of a line is not a break, so
+ * `=\rX` is not a soft line break (Go quotedprintable: issue 13219). */
+static int qp_is_line_end(const char *src, size_t src_len, size_t j) {
+    if (j >= src_len) return 1;
+    if (src[j] == '\n') return 1;
+    if (src[j] == '\r')
+        return j + 1 >= src_len || src[j + 1] == '\n';
+    return 0;
+}
+
+static int qp_need(size_t di, size_t n, size_t cap) {
+    return di > cap || n > cap - di;
+}
+
 int neverc_qp_decode(const char *src, size_t src_len,
                      unsigned char *out, size_t out_cap) {
     if (!src || !out) return -1;
@@ -45,11 +60,13 @@ int neverc_qp_decode(const char *src, size_t src_len,
                     continue;
                 }
             }
-            /* Soft break: '=' WSP* (CRLF | LF | CR | EOF). Transport may
-             * insert spaces between '=' and the line ending (RFC 2045 6.7). */
+            /* Soft break: '=' WSP* (CRLF | LF | CR-at-EOF | EOF). Transport
+             * may insert spaces between '=' and the line ending (RFC 2045 6.7). */
             size_t j = si + 1;
             while (j < src_len && (src[j] == ' ' || src[j] == '\t'))
                 j++;
+            if (!qp_is_line_end(src, src_len, j))
+                return -1;
             if (j >= src_len) {
                 si = j;
                 continue;
@@ -58,13 +75,10 @@ int neverc_qp_decode(const char *src, size_t src_len,
                 si = j + 1;
                 continue;
             }
-            if (src[j] == '\r') {
-                si = j + 1;
-                if (si < src_len && src[si] == '\n')
-                    si++;
-                continue;
-            }
-            return -1;
+            si = j + 1;
+            if (si < src_len && src[si] == '\n')
+                si++;
+            continue;
         }
 
         if (c == ' ' || c == '\t') {
@@ -72,11 +86,11 @@ int neverc_qp_decode(const char *src, size_t src_len,
             while (j < src_len && (src[j] == ' ' || src[j] == '\t'))
                 j++;
             /* Trailing WSP on a line is transport padding and must be dropped. */
-            if (j >= src_len || src[j] == '\n' || src[j] == '\r') {
+            if (qp_is_line_end(src, src_len, j)) {
                 si = j;
                 continue;
             }
-            if (j - si > out_cap - di) return -1;
+            if (qp_need(di, j - si, out_cap)) return -1;
             memcpy(out + di, src + si, j - si);
             di += j - si;
             si = j;
@@ -91,7 +105,7 @@ int neverc_qp_decode(const char *src, size_t src_len,
                     break;
                 j++;
             }
-            if (j - si > out_cap - di) return -1;
+            if (qp_need(di, j - si, out_cap)) return -1;
             memcpy(out + di, src + si, j - si);
             di += j - si;
             si = j;
@@ -173,11 +187,11 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
 
         if (need_encode) {                 /* c is never '\r'/'\n' here */
             if (wrap && (int)(line_len + 3) > max_line - 1) {
-                if (di + 3 > out_cap) return -1;
+                if (qp_need(di, 3, out_cap)) return -1;
                 out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
                 line_len = 0;
             }
-            if (di + 3 > out_cap) return -1;
+            if (qp_need(di, 3, out_cap)) return -1;
             out[di++] = '=';
             out[di++] = hex_chars[c >> 4];
             out[di++] = hex_chars[c & 0x0f];
@@ -187,7 +201,7 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
         }
 
         if (c == '\r' || c == '\n') {      /* passed through, no wrapping */
-            if (di + 1 > out_cap) return -1;
+            if (qp_need(di, 1, out_cap)) return -1;
             out[di++] = (char)c;
             if (c == '\n') line_len = 0;
             i++;
@@ -211,7 +225,7 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
             size_t run = end - i;                 /* >= 1: src[i] is literal */
             while (run > 0) {
                 if (wrap && line_len >= line_cap) { /* full line -> soft break */
-                    if (di + 3 > out_cap) return -1;
+                    if (qp_need(di, 3, out_cap)) return -1;
                     out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
                     line_len = 0;
                 }
@@ -229,7 +243,7 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
                         break;
                     chunk--;
                 }
-                if (di + chunk > out_cap) return -1;
+                if (qp_need(di, chunk, out_cap)) return -1;
                 if (chunk >= QP_BULK_MIN) {
                     memcpy(out + di, src + i, chunk);
                 } else {
@@ -243,11 +257,11 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
 
         /* Single literal byte. */
         if (wrap && (int)(line_len + 1) > max_line - 1) {
-            if (di + 3 > out_cap) return -1;
+            if (qp_need(di, 3, out_cap)) return -1;
             out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
             line_len = 0;
         }
-        if (di + 1 > out_cap) return -1;
+        if (qp_need(di, 1, out_cap)) return -1;
         out[di++] = (char)c;
         line_len++;
         i++;

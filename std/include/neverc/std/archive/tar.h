@@ -4,7 +4,9 @@
 /*
  * NeverC archive/tar — POSIX tar format (mirrors Go archive/tar).
  *
- * Supports reading and writing POSIX (ustar) tar archives.
+ * Supports reading and writing POSIX (ustar) tar archives. Readers accept
+ * the POSIX unsigned header checksum and the historical signed checksum,
+ * and reject a stored value that matches neither.
  */
 
 #include <stddef.h>

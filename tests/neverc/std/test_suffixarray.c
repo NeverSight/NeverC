@@ -1,6 +1,7 @@
 #include "neverc/std/index/suffixarray.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -53,6 +54,8 @@ static void test_invalid_input(void) {
     ASSERT_INT_EQ(neverc_suffixarray_new(&idx, NULL, 1), -1);
     ASSERT_TRUE(idx.sa == NULL);
     ASSERT_INT_EQ(neverc_suffixarray_new(&idx, &byte, (size_t)INT32_MAX), -1);
+    ASSERT_TRUE(idx.sa == NULL);
+    ASSERT_INT_EQ(neverc_suffixarray_new(&idx, &byte, SIZE_MAX), -1);
     ASSERT_TRUE(idx.sa == NULL);
 }
 

@@ -175,6 +175,9 @@ static void test_clean(void) {
 #else
     ASSERT_STR_EQ(neverc_filepath_clean("abc/def/../..", buf, sizeof(buf)), ".");
     ASSERT_STR_EQ(neverc_filepath_clean("/abc/def/../../..", buf, sizeof(buf)), "/");
+    /* POSIX Clean treats '\\' as a byte, not a separator (Go filepath). */
+    ASSERT_STR_EQ(neverc_filepath_clean("foo\\bar\\..\\baz", buf, sizeof(buf)),
+                  "foo\\bar\\..\\baz");
 #endif
 }
 
@@ -253,6 +256,44 @@ static void test_join(void) {
     ASSERT_STR_EQ(neverc_filepath_join("C:", "\\a", buf, sizeof(buf)), "C:\\a");
     ASSERT_STR_EQ(neverc_filepath_join("\\", "??\\a", buf, sizeof(buf)), "\\.\\??\\a");
 #endif
+}
+
+static void test_rel(void) {
+    printf("[rel]\n");
+    char buf[256];
+#ifdef _WIN32
+    ASSERT_STR_EQ(neverc_filepath_rel("C:\\a\\b", "C:\\a\\b\\c", buf, sizeof(buf)),
+                  "c");
+    ASSERT_STR_EQ(neverc_filepath_rel("C:\\a\\b", "C:\\a\\c", buf, sizeof(buf)),
+                  "..\\c");
+    ASSERT_TRUE(neverc_filepath_rel("C:\\a", "D:\\b", buf, sizeof(buf)) == NULL);
+    ASSERT_TRUE(neverc_filepath_rel("..\\a", "b", buf, sizeof(buf)) == NULL);
+#else
+    char joined[256];
+    ASSERT_STR_EQ(neverc_filepath_rel("/a/b", "/a/b/c", buf, sizeof(buf)), "c");
+    ASSERT_STR_EQ(neverc_filepath_rel("/a/b", "/a/b", buf, sizeof(buf)), ".");
+    ASSERT_STR_EQ(neverc_filepath_rel("/a/b", "/a", buf, sizeof(buf)), "..");
+    ASSERT_STR_EQ(neverc_filepath_rel("/a/b", "/a/c", buf, sizeof(buf)), "../c");
+    ASSERT_STR_EQ(neverc_filepath_rel("/a/b", "/c", buf, sizeof(buf)), "../../c");
+    ASSERT_STR_EQ(neverc_filepath_rel("a/b", "a/b/c", buf, sizeof(buf)), "c");
+    ASSERT_STR_EQ(neverc_filepath_rel(".", "foo", buf, sizeof(buf)), "foo");
+    ASSERT_TRUE(neverc_filepath_rel("/a", "b", buf, sizeof(buf)) == NULL);
+    ASSERT_TRUE(neverc_filepath_rel("a", "/b", buf, sizeof(buf)) == NULL);
+    /* Base that still contains ".." after Clean cannot be made relative. */
+    ASSERT_TRUE(neverc_filepath_rel("../a", "b", buf, sizeof(buf)) == NULL);
+    ASSERT_TRUE(neverc_filepath_rel("a/../..", "a", buf, sizeof(buf)) == NULL);
+    /* Lexical Rel may walk above base; that is not a jail. */
+    ASSERT_STR_EQ(neverc_filepath_rel("/safe", "/safe/../etc/passwd", buf, sizeof(buf)),
+                  "../etc/passwd");
+    ASSERT_FALSE(neverc_filepath_is_local("../etc/passwd"));
+    ASSERT_STR_EQ(neverc_filepath_rel("/a/b", "/a/c", buf, sizeof(buf)), "../c");
+    ASSERT_TRUE(neverc_filepath_join("/a/b", buf, joined, sizeof(joined)) == joined);
+    ASSERT_STR_EQ(joined, "/a/c");
+    ASSERT_TRUE(neverc_filepath_isabs(buf) == 0);
+#endif
+    ASSERT_TRUE(neverc_filepath_rel(NULL, "a", buf, sizeof(buf)) == NULL);
+    ASSERT_TRUE(neverc_filepath_rel("a", NULL, buf, sizeof(buf)) == NULL);
+    ASSERT_TRUE(neverc_filepath_rel("a", "a", NULL, 8) == NULL);
 }
 
 static void test_split(void) {
@@ -352,6 +393,7 @@ int main(void) {
     test_clean();
     test_long_and_invalid_paths();
     test_join();
+    test_rel();
     test_split();
     test_match();
     test_to_from_slash();

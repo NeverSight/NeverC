@@ -9,9 +9,17 @@ static void *controlled_malloc(size_t size) {
     return fail_at != 0 && allocation_count == fail_at ? NULL : malloc(size);
 }
 
+static void *controlled_calloc(size_t n, size_t sz) {
+    allocation_count++;
+    return fail_at != 0 && allocation_count == fail_at ? NULL : calloc(n, sz);
+}
+
 #define malloc controlled_malloc
+#define calloc controlled_calloc
 #include "../../../std/src/time/time.c"
+#include "../../../std/src/time/tzdata/tzdata.c"
 #undef malloc
+#undef calloc
 
 #define CHECK(condition)                                                     \
     do {                                                                     \
@@ -41,6 +49,16 @@ int main(void) {
 
     fail_first_allocation();
     CHECK(neverc_time_format(epoch, "2006-01-02") == NULL);
+
+    fail_first_allocation();
+    CHECK(neverc_time_format(epoch, "002 __2 _2006") == NULL);
+
+    fail_first_allocation();
+    CHECK(neverc_tzdata_fixed_zone("UTC+8", 28800) == NULL);
+
+    allocation_count = 0;
+    fail_at = 2;
+    CHECK(neverc_tzdata_fixed_zone("UTC+8", 28800) == NULL);
 
     fail_at = 0;
     char *formatted = neverc_time_format_rfc3339(epoch);

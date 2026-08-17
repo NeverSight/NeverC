@@ -420,9 +420,8 @@ int neverc_time_parse_rfc3339(const char *s, neverc_time_t *out) {
     if (*p++ != 'T') return -1;
     int hour = parse_digits(&p, 2); if (hour < 0 || hour > 23 || *p++ != ':') return -1;
     int min = parse_digits(&p, 2);  if (min < 0 || min > 59 || *p++ != ':') return -1;
-    int sec = parse_digits(&p, 2);  if (sec < 0 || sec > 60) return -1;
-    /* RFC 3339 / Go: leap second 60 is accepted and clamped to 59. */
-    if (sec == 60) sec = 59;
+    int sec = parse_digits(&p, 2);  if (sec < 0 || sec > 59) return -1;
+    /* Go time.Parse rejects leap second 60 (unrepresentable). */
 
     int32_t nsec = 0;
     if (*p == '.') {
@@ -762,6 +761,66 @@ static void time_write_name(char *buf, size_t *pos, const char *name) {
     while (*name) buf[(*pos)++] = *name++;
 }
 
+/* Go nextStdChunk: "January"/"Monday" match even with a lowercase tail
+ * ("Januaryish"); "Jan"/"Mon" do not ("Janitor", "Money"). */
+static int layout_match_word(const char *layout, size_t llen, size_t i,
+                             const char *word, size_t wlen, int long_form) {
+    if (i + wlen > llen || memcmp(layout + i, word, wlen) != 0)
+        return 0;
+    if (!long_form && i + wlen < llen &&
+        layout[i + wlen] >= 'a' && layout[i + wlen] <= 'z')
+        return 0;
+    return 1;
+}
+
+static const int days_before_month[] = {
+    0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365
+};
+
+static int yday_to_month_day(int year, int yday, int *month, int *day) {
+    int y = yday;
+    if (is_leap(year)) {
+        if (y == 31 + 29) {
+            *month = 2;
+            *day = 29;
+            return 0;
+        }
+        if (y > 31 + 29)
+            y--;
+    }
+    if (y < 1 || y > 365)
+        return -1;
+    int m = (y - 1) / 31 + 1;
+    if (m < 12 && days_before_month[m] < y)
+        m++;
+    *month = m;
+    *day = y - days_before_month[m - 1];
+    return 0;
+}
+
+static int loc_offset_at(const neverc_time_location_t *loc, int64_t unix_sec) {
+    if (!loc) return 0;
+    if (loc->offset_at) return loc->offset_at(unix_sec, loc->ctx);
+    return loc->std_off;
+}
+
+neverc_time_t neverc_time_date_in_location(int year, int month, int day,
+                                           int hour, int min, int sec, int nsec,
+                                           const neverc_time_location_t *loc) {
+    neverc_time_t wall = neverc_time_date(year, month, day, hour, min, sec, nsec);
+    if (!loc) return wall;
+    int64_t unix_sec = wall.sec;
+    int offset = loc_offset_at(loc, unix_sec);
+    if (offset != 0) {
+        int64_t utc = wrapping_add(unix_sec, -(int64_t)offset);
+        int offset2 = loc_offset_at(loc, utc);
+        if (offset2 != offset)
+            offset = offset2;
+        unix_sec = wrapping_add(unix_sec, -(int64_t)offset);
+    }
+    return neverc_time_unix(unix_sec, wall.nsec);
+}
+
 static void write_frac_sec(char *buf, size_t *pos, int ns, int digits, int trim,
                            char sep) {
     int scale = 1;
@@ -798,6 +857,7 @@ char *neverc_time_format(neverc_time_t t, const char *layout) {
     int mi = m.tm_min;
     int sc = m.tm_sec;
     int wd = m.tm_wday;
+    int yday = m.tm_yday + 1;
     int ns = t.nsec;
 
     size_t llen = strlen(layout);
@@ -811,13 +871,13 @@ char *neverc_time_format(neverc_time_t t, const char *layout) {
     for (size_t i = 0; i < llen;) {
         if (i + 4 <= llen && memcmp(layout + i, "2006", 4) == 0) {
             write_int(buf, &out, yr, 4); i += 4;
-        } else if (i + 7 <= llen && memcmp(layout + i, "January", 7) == 0) {
+        } else if (layout_match_word(layout, llen, i, "January", 7, 1)) {
             time_write_name(buf, &out, time_month_full[mo - 1]); i += 7;
-        } else if (i + 3 <= llen && memcmp(layout + i, "Jan", 3) == 0) {
+        } else if (layout_match_word(layout, llen, i, "Jan", 3, 0)) {
             time_write_name(buf, &out, time_month_abbr[mo - 1]); i += 3;
-        } else if (i + 6 <= llen && memcmp(layout + i, "Monday", 6) == 0) {
+        } else if (layout_match_word(layout, llen, i, "Monday", 6, 1)) {
             time_write_name(buf, &out, time_wday_full[wd]); i += 6;
-        } else if (i + 3 <= llen && memcmp(layout + i, "Mon", 3) == 0) {
+        } else if (layout_match_word(layout, llen, i, "Mon", 3, 0)) {
             time_write_name(buf, &out, time_wday_abbr[wd]); i += 3;
         } else if (i + 3 <= llen && memcmp(layout + i, "MST", 3) == 0) {
             buf[out++] = 'U'; buf[out++] = 'T'; buf[out++] = 'C'; i += 3;
@@ -859,6 +919,17 @@ char *neverc_time_format(neverc_time_t t, const char *layout) {
             write_int(buf, &out, sc, 2); i += 2;
         } else if (i + 2 <= llen && memcmp(layout + i, "06", 2) == 0) {
             write_int(buf, &out, yr % 100, 2); i += 2;
+        } else if (i + 3 <= llen && memcmp(layout + i, "002", 3) == 0) {
+            write_int(buf, &out, yday, 3); i += 3;
+        } else if (i + 3 <= llen && memcmp(layout + i, "__2", 3) == 0) {
+            if (yday < 100) buf[out++] = ' ';
+            if (yday < 10) buf[out++] = ' ';
+            write_int(buf, &out, yday, 1);
+            i += 3;
+        } else if (i + 5 <= llen && memcmp(layout + i, "_2006", 5) == 0) {
+            buf[out++] = '_';
+            write_int(buf, &out, yr, 4);
+            i += 5;
         } else if (i + 2 <= llen && memcmp(layout + i, "_2", 2) == 0) {
             if (dy < 10) buf[out++] = ' ';
             else buf[out++] = (char)('0' + dy / 10);
@@ -932,16 +1003,111 @@ static int parse_under_day(const char *value, size_t vlen, size_t *vi, int *out)
     return parse_flex_digits(value, vlen, vi, out);
 }
 
-static int parse_named_zone(const char *value, size_t vlen, size_t *vi) {
+/* Go parseSignedOffset: +HH / -HH with hour in 0..23. */
+static int parse_signed_hour_offset(const char *value, size_t vlen, size_t *vi,
+                                    int *off) {
+    if (*vi >= vlen || (value[*vi] != '+' && value[*vi] != '-')) return -1;
+    int sign = value[*vi] == '-' ? -1 : 1;
+    size_t start = *vi;
+    (*vi)++;
+    if (*vi >= vlen || value[*vi] < '0' || value[*vi] > '9') {
+        *vi = start;
+        return -1;
+    }
+    int hours = 0;
+    while (*vi < vlen && value[*vi] >= '0' && value[*vi] <= '9') {
+        hours = hours * 10 + (value[(*vi)++] - '0');
+        if (hours > 23) {
+            *vi = start;
+            return -1;
+        }
+    }
+    *off = sign * hours * 3600;
+    return 0;
+}
+
+/* Go parseTimeZone: uppercase 3-5, ChST/MeST, GMT±HH, ±HH. */
+static int parse_time_zone(const char *value, size_t vlen, size_t *vi,
+                           char *name, size_t ncap, int *gmt_off,
+                           int *has_gmt_off) {
+    *has_gmt_off = 0;
+    *gmt_off = 0;
+    if (name && ncap) name[0] = '\0';
+    if (*vi >= vlen) return -1;
+    const char *s = value + *vi;
+    size_t rem = vlen - *vi;
+
+    if (rem >= 4 && (memcmp(s, "ChST", 4) == 0 || memcmp(s, "MeST", 4) == 0)) {
+        if (name && ncap > 4) {
+            memcpy(name, s, 4);
+            name[4] = '\0';
+        }
+        *vi += 4;
+        return 0;
+    }
+    if (rem >= 3 && memcmp(s, "GMT", 3) == 0) {
+        if (name && ncap > 3) {
+            memcpy(name, "GMT", 3);
+            name[3] = '\0';
+        }
+        *vi += 3;
+        if (*vi < vlen && (value[*vi] == '+' || value[*vi] == '-')) {
+            int off;
+            if (parse_signed_hour_offset(value, vlen, vi, &off) == 0) {
+                *gmt_off = off;
+                *has_gmt_off = 1;
+            }
+        }
+        return 0;
+    }
+    if (s[0] == '+' || s[0] == '-') {
+        if (parse_signed_hour_offset(value, vlen, vi, gmt_off) != 0)
+            return -1;
+        *has_gmt_off = 1;
+        return 0;
+    }
+
     size_t n = 0;
-    while (*vi + n < vlen) {
+    while (n < 6 && *vi + n < vlen) {
         unsigned char c = (unsigned char)value[*vi + n];
-        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))) break;
+        if (c < 'A' || c > 'Z') break;
         n++;
     }
     if (n < 3 || n > 5) return -1;
+    if (n == 5 && value[*vi + 4] != 'T') return -1;
+    if (n == 4 && value[*vi + 3] != 'T' &&
+        memcmp(value + *vi, "WITA", 4) != 0)
+        return -1;
+    if (name && ncap) {
+        size_t copy = n < ncap - 1 ? n : ncap - 1;
+        memcpy(name, value + *vi, copy);
+        name[copy] = '\0';
+    }
     *vi += n;
     return 0;
+}
+
+static int parse_upto_digits(const char *value, size_t vlen, size_t *vi,
+                             int max_digits, int *out) {
+    if (*vi >= vlen || value[*vi] < '0' || value[*vi] > '9') return -1;
+    int v = 0, n = 0;
+    while (n < max_digits && *vi < vlen &&
+           value[*vi] >= '0' && value[*vi] <= '9') {
+        v = v * 10 + (value[(*vi)++] - '0');
+        n++;
+    }
+    *out = v;
+    return 0;
+}
+
+static int parse_under_year_day(const char *value, size_t vlen, size_t *vi,
+                                int *out) {
+    int i;
+    for (i = 0; i < 2; i++) {
+        if (*vi < vlen && value[*vi] == ' ')
+            (*vi)++;
+    }
+    return parse_upto_digits(value, vlen, vi, 3, out);
 }
 
 static int parse_num_zone(const char *value, size_t vlen, size_t *vi,
@@ -1027,10 +1193,15 @@ static int parse_trailing_frac(const char *layout, size_t llen, size_t li,
     return parse_frac_sec(value, vlen, vi, 9, 0, value[*vi], ns);
 }
 
-int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out) {
+int neverc_time_parse_in_location(const char *layout, const char *value,
+                                  const neverc_time_location_t *loc,
+                                  neverc_time_t *out) {
     if (!layout || !value || !out) return -1;
     int yr = 0, mo = 1, dy = 1, hr = 0, mi = 0, sc = 0, ns = 0, wd = -1;
     int hour12 = 0, pm = -1, tz_sec = 0;
+    int yday = -1, saw_month = 0, saw_day = 0;
+    int has_numeric_tz = 0, has_named_zone = 0, has_gmt_off = 0, gmt_off = 0;
+    char zone_name[8] = {0};
     size_t li = 0, vi = 0;
     size_t llen = strlen(layout), vlen = strlen(value);
 
@@ -1038,74 +1209,91 @@ int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out)
         if (li + 4 <= llen && memcmp(layout + li, "2006", 4) == 0) {
             if (parse_n_digits(value, vlen, &vi, 4, &yr) != 0) return -1;
             li += 4;
-        } else if (li + 7 <= llen && memcmp(layout + li, "January", 7) == 0) {
+        } else if (layout_match_word(layout, llen, li, "January", 7, 1)) {
             int idx;
             if (time_match_name(value, vlen, &vi, time_month_full, 12, &idx) != 0)
                 return -1;
             mo = idx + 1;
+            saw_month = 1;
             li += 7;
-        } else if (li + 3 <= llen && memcmp(layout + li, "Jan", 3) == 0) {
+        } else if (layout_match_word(layout, llen, li, "Jan", 3, 0)) {
             int idx;
             if (time_match_name(value, vlen, &vi, time_month_abbr, 12, &idx) != 0)
                 return -1;
             mo = idx + 1;
+            saw_month = 1;
             li += 3;
-        } else if (li + 6 <= llen && memcmp(layout + li, "Monday", 6) == 0) {
+        } else if (layout_match_word(layout, llen, li, "Monday", 6, 1)) {
             if (time_match_name(value, vlen, &vi, time_wday_full, 7, &wd) != 0)
                 return -1;
             li += 6;
-        } else if (li + 3 <= llen && memcmp(layout + li, "Mon", 3) == 0) {
+        } else if (layout_match_word(layout, llen, li, "Mon", 3, 0)) {
             if (time_match_name(value, vlen, &vi, time_wday_abbr, 7, &wd) != 0)
                 return -1;
             li += 3;
         } else if (li + 3 <= llen && memcmp(layout + li, "MST", 3) == 0) {
-            if (parse_named_zone(value, vlen, &vi) != 0) return -1;
+            if (parse_time_zone(value, vlen, &vi, zone_name, sizeof(zone_name),
+                                &gmt_off, &has_gmt_off) != 0)
+                return -1;
+            has_named_zone = 1;
             li += 3;
         } else if (li + 9 <= llen && memcmp(layout + li, "Z07:00:00", 9) == 0) {
             if (parse_num_zone(value, vlen, &vi, 1, 1, 1, 1, &tz_sec) != 0)
                 return -1;
+            has_numeric_tz = 1;
             li += 9;
         } else if (li + 9 <= llen && memcmp(layout + li, "-07:00:00", 9) == 0) {
             if (parse_num_zone(value, vlen, &vi, 0, 1, 1, 1, &tz_sec) != 0)
                 return -1;
+            has_numeric_tz = 1;
             li += 9;
         } else if (li + 7 <= llen && memcmp(layout + li, "Z070000", 7) == 0) {
             if (parse_num_zone(value, vlen, &vi, 1, 0, 1, 1, &tz_sec) != 0)
                 return -1;
+            has_numeric_tz = 1;
             li += 7;
         } else if (li + 7 <= llen && memcmp(layout + li, "-070000", 7) == 0) {
             if (parse_num_zone(value, vlen, &vi, 0, 0, 1, 1, &tz_sec) != 0)
                 return -1;
+            has_numeric_tz = 1;
             li += 7;
         } else if (li + 6 <= llen && memcmp(layout + li, "Z07:00", 6) == 0) {
             if (parse_num_zone(value, vlen, &vi, 1, 1, 1, 0, &tz_sec) != 0)
                 return -1;
+            has_numeric_tz = 1;
             li += 6;
         } else if (li + 5 <= llen && memcmp(layout + li, "Z0700", 5) == 0) {
             if (parse_num_zone(value, vlen, &vi, 1, 0, 1, 0, &tz_sec) != 0)
                 return -1;
+            has_numeric_tz = 1;
             li += 5;
         } else if (li + 6 <= llen && memcmp(layout + li, "-07:00", 6) == 0) {
             if (parse_num_zone(value, vlen, &vi, 0, 1, 1, 0, &tz_sec) != 0)
                 return -1;
+            has_numeric_tz = 1;
             li += 6;
         } else if (li + 5 <= llen && memcmp(layout + li, "-0700", 5) == 0) {
             if (parse_num_zone(value, vlen, &vi, 0, 0, 1, 0, &tz_sec) != 0)
                 return -1;
+            has_numeric_tz = 1;
             li += 5;
         } else if (li + 3 <= llen && memcmp(layout + li, "Z07", 3) == 0) {
             if (parse_num_zone(value, vlen, &vi, 1, 0, 0, 0, &tz_sec) != 0)
                 return -1;
+            has_numeric_tz = 1;
             li += 3;
         } else if (li + 3 <= llen && memcmp(layout + li, "-07", 3) == 0) {
             if (parse_num_zone(value, vlen, &vi, 0, 0, 0, 0, &tz_sec) != 0)
                 return -1;
+            has_numeric_tz = 1;
             li += 3;
         } else if (li + 2 <= llen && memcmp(layout + li, "01", 2) == 0) {
             if (parse_n_digits(value, vlen, &vi, 2, &mo) != 0) return -1;
+            saw_month = 1;
             li += 2;
         } else if (li + 2 <= llen && memcmp(layout + li, "02", 2) == 0) {
             if (parse_n_digits(value, vlen, &vi, 2, &dy) != 0) return -1;
+            saw_day = 1;
             li += 2;
         } else if (li + 2 <= llen && memcmp(layout + li, "15", 2) == 0) {
             if (parse_n_digits(value, vlen, &vi, 2, &hr) != 0) return -1;
@@ -1142,8 +1330,20 @@ int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out)
             yr = 1900 + yy;
             if (yr < 1969) yr += 100;
             li += 2;
+        } else if (li + 3 <= llen && memcmp(layout + li, "002", 3) == 0) {
+            if (parse_n_digits(value, vlen, &vi, 3, &yday) != 0) return -1;
+            li += 3;
+        } else if (li + 3 <= llen && memcmp(layout + li, "__2", 3) == 0) {
+            if (parse_under_year_day(value, vlen, &vi, &yday) != 0) return -1;
+            li += 3;
+        } else if (li + 5 <= llen && memcmp(layout + li, "_2006", 5) == 0) {
+            if (vi >= vlen || value[vi] != '_') return -1;
+            vi++;
+            if (parse_n_digits(value, vlen, &vi, 4, &yr) != 0) return -1;
+            li += 5;
         } else if (li + 2 <= llen && memcmp(layout + li, "_2", 2) == 0) {
             if (parse_under_day(value, vlen, &vi, &dy) != 0) return -1;
+            saw_day = 1;
             li += 2;
         } else if ((layout[li] == '.' || layout[li] == ',') && li + 1 < llen &&
                    (layout[li + 1] == '0' || layout[li + 1] == '9')) {
@@ -1171,9 +1371,11 @@ int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out)
                 return -1;
         } else if (layout[li] == '2') {
             if (parse_flex_digits(value, vlen, &vi, &dy) != 0) return -1;
+            saw_day = 1;
             li += 1;
         } else if (layout[li] == '1') {
             if (parse_flex_digits(value, vlen, &vi, &mo) != 0) return -1;
+            saw_month = 1;
             li += 1;
         } else {
             if (vi >= vlen || layout[li] != value[vi]) return -1;
@@ -1190,24 +1392,66 @@ int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out)
     } else if (hour12) {
         if (hr < 0 || hr > 12) return -1;
     }
-    if (sc == 60) sc = 59;
+    if (yday >= 0) {
+        int ym, yd;
+        if (yday_to_month_day(yr, yday, &ym, &yd) != 0) return -1;
+        if (saw_month && mo != ym) return -1;
+        if (saw_day && dy != yd) return -1;
+        mo = ym;
+        dy = yd;
+    }
+    /* Go rejects leap second 60 — it cannot be represented. */
     if (vi != vlen || mo < 1 || mo > 12 || dy < 1 ||
         dy > days_in_month(yr, mo) || hr < 0 || hr > 23 ||
         mi < 0 || mi > 59 || sc < 0 || sc > 59 ||
         ns < 0 || ns > 999999999)
         return -1;
-    neverc_time_t local = neverc_time_date(yr, mo, dy, hr, mi, sc, ns);
-    if (wd >= 0 && neverc_time_weekday(local) != wd)
+    neverc_time_t wall = neverc_time_date(yr, mo, dy, hr, mi, sc, ns);
+    if (wd >= 0 && neverc_time_weekday(wall) != wd)
         return -1;
-    if (tz_sec != 0) {
-        neverc_duration_t adj;
-        if (neverc_time_duration_mul(-(neverc_duration_t)tz_sec,
-                                     NEVERC_TIME_SECOND, &adj) != 0)
-            return -1;
-        local = neverc_time_add(local, adj);
+
+    int apply_off = 0;
+    int use_fixed_off = 0;
+    if (has_numeric_tz) {
+        apply_off = tz_sec;
+        use_fixed_off = 1;
+    } else if (has_named_zone) {
+        use_fixed_off = 1;
+        if (has_gmt_off) {
+            apply_off = gmt_off;
+        } else if (zone_name[0] &&
+                   (strcmp(zone_name, "UTC") == 0 ||
+                    strcmp(zone_name, "GMT") == 0)) {
+            apply_off = 0;
+        } else if (loc && loc->std_abbr &&
+                   strcmp(zone_name, loc->std_abbr) == 0) {
+            apply_off = loc->std_off;
+        } else if (loc && loc->dst_abbr &&
+                   strcmp(zone_name, loc->dst_abbr) == 0) {
+            apply_off = loc->dst_off;
+        } else {
+            apply_off = 0;
+        }
     }
-    *out = local;
+
+    if (use_fixed_off) {
+        if (apply_off != 0) {
+            neverc_duration_t adj;
+            if (neverc_time_duration_mul(-(neverc_duration_t)apply_off,
+                                         NEVERC_TIME_SECOND, &adj) != 0)
+                return -1;
+            wall = neverc_time_add(wall, adj);
+        }
+        *out = wall;
+        return 0;
+    }
+
+    *out = neverc_time_date_in_location(yr, mo, dy, hr, mi, sc, ns, loc);
     return 0;
+}
+
+int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out) {
+    return neverc_time_parse_in_location(layout, value, NULL, out);
 }
 
 static uint64_t add_mod(uint64_t a, uint64_t b, uint64_t modulus) {

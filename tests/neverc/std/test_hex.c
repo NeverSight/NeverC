@@ -140,6 +140,33 @@ static void test_decode(void) {
     n = neverc_hex_decode(dst, "abc", 3);
     check_int("decode(odd len 3)", n, -1);
 
+    {
+        uint8_t sentinel[4] = {0xaa, 0xbb, 0xcc, 0xdd};
+        check_int("odd length is fail-closed",
+                  neverc_hex_decode(sentinel, "abc", 3), -1);
+        check_int("odd length writes nothing", sentinel[0], 0xaa);
+        check_int("odd length leaves rest", sentinel[1], 0xbb);
+    }
+    {
+        uint8_t sentinel[4] = {0xaa, 0xbb, 0xcc, 0xdd};
+        check_int("invalid after valid pair is fail-closed",
+                  neverc_hex_decode(sentinel, "00zz", 4), -1);
+        check_int("invalid after valid pair writes nothing", sentinel[0], 0xaa);
+        check_int("invalid after valid pair leaves rest", sentinel[1], 0xbb);
+    }
+    {
+        uint8_t sentinel[8] = {0xaa, 0xbb, 0xcc, 0xdd,
+                               0xee, 0xff, 0x11, 0x22};
+        check_int("invalid after 8-char group is fail-closed",
+                  neverc_hex_decode(sentinel, "00000000zz", 10), -1);
+        check_int("invalid after 8-char group writes nothing",
+                  sentinel[0], 0xaa);
+        check_int("invalid after 8-char group leaves rest",
+                  sentinel[1], 0xbb);
+    }
+    check_int("even length rejects newline (strict, unlike base64)",
+              neverc_hex_decode(dst, "ab\ncdxy", 8), -1);
+
     n = neverc_hex_decode(dst, "zz", 2);
     check_int("decode(invalid)", n, -1);
 

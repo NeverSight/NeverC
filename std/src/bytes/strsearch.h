@@ -300,7 +300,7 @@ static size_t nci_ss_brute_rev(const uint8_t *h, size_t hlen,
 static size_t nci_ss_index(const uint8_t *h, size_t hlen,
                            const uint8_t *n, size_t nlen) {
     if (nlen == 0) return 0;
-    if (nlen > hlen) return SIZE_MAX;
+    if (nlen > hlen || !h || !n) return SIZE_MAX;
     if (nlen == 1) {
         const uint8_t *p = (const uint8_t *)memchr(h, n[0], hlen);
         return p ? (size_t)(p - h) : SIZE_MAX;
@@ -318,7 +318,7 @@ static size_t nci_ss_index(const uint8_t *h, size_t hlen,
 static size_t nci_ss_last_index(const uint8_t *h, size_t hlen,
                                 const uint8_t *n, size_t nlen) {
     if (nlen == 0) return hlen;
-    if (nlen > hlen) return SIZE_MAX;
+    if (nlen > hlen || !h || !n) return SIZE_MAX;
     if (nlen == 1) {
         size_t i = hlen;
         while (i > 0) { i--; if (h[i] == n[0]) return i; }
@@ -362,7 +362,7 @@ static size_t nci_ss_finder_next(const nci_ss_finder_t *f,
                                  const uint8_t *h, size_t hlen) {
     size_t nlen = f->nlen;
     if (nlen == 0) return 0;
-    if (nlen > hlen) return SIZE_MAX;
+    if (nlen > hlen || !h || !f->needle) return SIZE_MAX;
     if (nlen == 1) {
         const uint8_t *p = (const uint8_t *)memchr(h, f->needle[0], hlen);
         return p ? (size_t)(p - h) : SIZE_MAX;

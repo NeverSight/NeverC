@@ -253,9 +253,17 @@ static void test_tamper(void) {
     }
     ct[0] ^= 0xFF;
 
-    /* Tamper tag */
+    /* Tamper tag — in-place open must not decrypt on auth failure */
     tag[15] ^= 1;
     check_true("tamper tag", neverc_gcm_open(&ctx, nonce, ct, len, NULL, 0, tag, dec) == -1);
+    {
+        uint8_t inplace[16];
+        memcpy(inplace, ct, len);
+        check_true("in-place tamper tag",
+                   neverc_gcm_open(&ctx, nonce, inplace, len, NULL, 0, tag, inplace) == -1);
+        check_true("in-place auth failure leaves ciphertext",
+                   memcmp(inplace, ct, len) == 0);
+    }
     tag[15] ^= 1;
 
     /* Tamper AAD */
@@ -437,6 +445,34 @@ static void test_aad_overlap_with_output(void) {
                memcmp(inplace, ct_ip_ref, 16) == 0);
     check_true("in-place AAD=PT tag matches",
                memcmp(tag_ip, tag_ip_ref, 16) == 0);
+
+    uint8_t overlap_pt[48], ct_noaad[32], tag_noaad[16];
+    neverc_gcm_seal(&ctx, nonce, pt, 32, NULL, 0, ct_noaad, tag_noaad);
+    memcpy(overlap_pt, pt, 32);
+    neverc_gcm_seal(&ctx, nonce, overlap_pt, 32, NULL, 0,
+                    overlap_pt + 4, tag);
+    check_true("dest=src+4 ciphertext matches",
+               memcmp(overlap_pt + 4, ct_noaad, 32) == 0);
+}
+
+static void test_null_nonce_rejected(void) {
+    printf("[null nonce rejected]\n");
+    uint8_t key[16] = {0};
+    uint8_t tag[16] = {0};
+    uint8_t byte = 0;
+    neverc_gcm_ctx ctx;
+    check_true("init", neverc_gcm_init(&ctx, key, 16) == 0);
+    check_true("seal rejects null nonce",
+               neverc_gcm_seal(&ctx, NULL, NULL, 0, NULL, 0, NULL, tag) == -1);
+    check_true("open rejects null nonce",
+               neverc_gcm_open(&ctx, NULL, NULL, 0, NULL, 0, tag, NULL) == -1);
+    check_true("open rejects null tag",
+               neverc_gcm_open(&ctx, (const uint8_t *)"0123456789ab",
+                               NULL, 0, NULL, 0, NULL, NULL) == -1);
+    memset(tag, 0xAA, sizeof(tag));
+    check_true("null-nonce seal does not write a tag",
+               neverc_gcm_seal(&ctx, NULL, &byte, 1, NULL, 0, &byte, tag) == -1);
+    check_true("null-nonce seal leaves tag unmodified", tag[0] == 0xAA);
 }
 
 int main(void) {
@@ -455,6 +491,7 @@ int main(void) {
     test_uninit_and_failed_reinit();
     test_aad_only();
     test_aad_overlap_with_output();
+    test_null_nonce_rejected();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

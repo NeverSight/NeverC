@@ -173,6 +173,30 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         if (neverc_crc32_ieee(file_data, compressed_size) != crc)
             return zip_reader_fail(r, ranges);
 
+        /* Bit 3: CRC/sizes live in a data descriptor immediately after the
+         * file data (APPNOTE 4.3.9). Local CRC may be zero, so the descriptor
+         * is the remaining CRC field; omitting it or storing a different CRC
+         * used to be accepted. Include it in the local range so the next
+         * header cannot overlap a truncated descriptor. */
+        uint64_t record_end = data_offset + compressed_size;
+        if (flags & 0x0008U) {
+            if (record_end > central_offset ||
+                central_offset - record_end < 12U)
+                return zip_reader_fail(r, ranges);
+            size_t desc = (size_t)record_end;
+            uint64_t desc_len = 12U;
+            if (central_offset - record_end >= 16U &&
+                read32(data + desc) == 0x08074b50U) {
+                desc += 4U;
+                desc_len = 16U;
+            }
+            if (read32(data + desc) != crc ||
+                read32(data + desc + 4U) != compressed_size ||
+                read32(data + desc + 8U) != uncompressed_size)
+                return zip_reader_fail(r, ranges);
+            record_end += desc_len;
+        }
+
         neverc_zip_file_header_t *file = &r->files[i];
         memset(file, 0, sizeof(*file));
         memcpy(file->name, central + 46U, name_length);
@@ -188,7 +212,7 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         r->file_data[i] = file_data;
         if (ranges) {
             ranges[i].start = local_offset;
-            ranges[i].end = data_offset + compressed_size;
+            ranges[i].end = record_end;
         }
         r->nfiles++;
         cursor += (size_t)central_record_size;

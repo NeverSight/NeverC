@@ -301,6 +301,68 @@ static void test_draw_gray_over_transparent(void) {
     neverc_image_rgba_free(&dst);
 }
 
+static void test_draw_zero_stride_noop(void) {
+    printf("[draw_zero_stride_noop]\n");
+    uint8_t dst_pix[16];
+    uint8_t src_pix[16];
+    memset(dst_pix, 0, sizeof(dst_pix));
+    memset(src_pix, 9, sizeof(src_pix));
+    neverc_image_rgba_t dst = {
+        .pix = dst_pix, .stride = 0, .rect = {{0, 0}, {2, 2}}
+    };
+    neverc_image_rgba_t src = {
+        .pix = src_pix, .stride = 8, .rect = {{0, 0}, {2, 2}}
+    };
+    neverc_draw(&dst, neverc_rect(0, 0, 2, 2), &src, neverc_pt(0, 0),
+                NEVERC_DRAW_SRC);
+    check("zero dst stride is a no-op", dst_pix[0] == 0);
+
+    dst.stride = 8;
+    src.stride = 0;
+    neverc_draw(&dst, neverc_rect(0, 0, 2, 2), &src, neverc_pt(0, 0),
+                NEVERC_DRAW_OVER);
+    check("zero src stride is a no-op", dst_pix[0] == 0);
+
+    neverc_draw_uniform(&dst, neverc_rect(0, 0, 2, 2),
+                        1, 2, 3, 255, NEVERC_DRAW_SRC);
+    check("uniform wrote with valid stride", dst_pix[0] == 1);
+    dst.stride = 0;
+    neverc_draw_uniform(&dst, neverc_rect(0, 0, 2, 2),
+                        9, 9, 9, 255, NEVERC_DRAW_SRC);
+    check("uniform zero stride is a no-op", dst_pix[0] == 1);
+}
+
+static void test_draw_clip_wider_than_stride(void) {
+    printf("[draw_clip_wider_than_stride]\n");
+    uint8_t dst_pix[16];
+    uint8_t src_pix[16];
+    memset(dst_pix, 0, sizeof(dst_pix));
+    memset(src_pix, 9, sizeof(src_pix));
+    /* INT_MAX-INT_MIN pixels * 4 bytes exceeds stride 8, so a row copy
+     * would walk off pix if the stride check were missing. */
+    neverc_image_rgba_t dst = {
+        .pix = dst_pix, .stride = 8,
+        .rect = {{INT_MIN, 0}, {INT_MAX, 1}}
+    };
+    neverc_image_rgba_t src = {
+        .pix = src_pix, .stride = 8,
+        .rect = {{INT_MIN, 0}, {INT_MAX, 1}}
+    };
+    neverc_draw(&dst, dst.rect, &src, neverc_pt(INT_MIN, 0), NEVERC_DRAW_SRC);
+    check("wide src blit is a no-op", dst_pix[0] == 0);
+
+    neverc_draw_uniform(&dst, dst.rect, 9, 9, 9, 255, NEVERC_DRAW_SRC);
+    check("wide uniform is a no-op", dst_pix[0] == 0);
+
+    neverc_image_gray_t mask = {
+        .pix = src_pix, .stride = 1,
+        .rect = {{INT_MIN, 0}, {INT_MAX, 1}}
+    };
+    neverc_draw_gray_over(&dst, dst.rect, &mask, neverc_pt(INT_MIN, 0),
+                          9, 9, 9, 255);
+    check("wide gray-over is a no-op", dst_pix[0] == 0);
+}
+
 static void test_draw_null(void) {
     printf("[draw_null]\n");
     neverc_image_rgba_t dst;
@@ -329,6 +391,8 @@ int main(void) {
     test_draw_over_self_overlap();
     test_draw_over_src_exceeds_alpha();
     test_draw_gray_over_transparent();
+    test_draw_zero_stride_noop();
+    test_draw_clip_wider_than_stride();
     test_draw_null();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

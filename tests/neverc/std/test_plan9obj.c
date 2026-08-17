@@ -222,6 +222,11 @@ static void test_parse_invalid(void) {
     uint8_t short_buf[4] = {0};
     CHECK("parse_short_fails", neverc_plan9_parse(&f, short_buf, 4) != 0);
 
+    uint8_t trunc31[31] = {0};
+    put32be(trunc31, NEVERC_PLAN9_MAGIC386);
+    CHECK("reject truncated 386 header",
+          neverc_plan9_parse(&f, trunc31, sizeof(trunc31)) != 0);
+
     /* Bad magic */
     uint8_t bad[32];
     memset(bad, 0, 32);
@@ -244,6 +249,13 @@ static void test_parse_invalid(void) {
     put32be(buf + 4, UINT32_MAX);
     CHECK("reject section sizes beyond file",
           neverc_plan9_parse(&f, buf, len) == -1);
+
+    uint8_t wrap[40] = {0};
+    put32be(wrap, NEVERC_PLAN9_MAGIC386);
+    put32be(wrap + 4, 0xFFFFFFF0u);
+    put32be(wrap + 8, 0x20u);
+    CHECK("reject text plus data past EOF without wrap",
+          neverc_plan9_parse(&f, wrap, sizeof(wrap)) == -1);
 
     uint8_t trunc64[32] = {0};
     put32be(trunc64, NEVERC_PLAN9_MAGICAMD64);

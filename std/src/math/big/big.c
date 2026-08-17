@@ -26,6 +26,21 @@ static void trim(neverc_bigint_t *z) {
     if (z->len == 0) z->neg = 0;
 }
 
+/* Borrowed view with leading zero words dropped. Untrimmed zeros used to
+ * hit word / 0 (UB) or Knuth D's `while (!(t & 0x80000000)) t <<= 1`
+ * spinning forever when the top limb was 0. */
+static void mag_view(neverc_bigint_t *v, const neverc_bigint_t *x) {
+    *v = *x;
+    if (!v->digits) {
+        v->len = 0;
+        v->neg = 0;
+        return;
+    }
+    while (v->len > 0 && v->digits[v->len - 1] == 0)
+        v->len--;
+    if (v->len == 0) v->neg = 0;
+}
+
 static int abs_cmp(const neverc_bigint_t *x, const neverc_bigint_t *y) {
     if (x->len != y->len)
         return x->len < y->len ? -1 : 1;
@@ -870,11 +885,16 @@ void neverc_bigint_mul(neverc_bigint_t *z, const neverc_bigint_t *x, const never
 static void nat_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
                        const neverc_bigint_t *x, const neverc_bigint_t *y) {
     size_t n = y->len;
+    /* Top limb 0: shifting it left never sets the high bit (infinite loop). */
+    if (n < 2 || x->len < n || !y->digits || y->digits[n - 1] == 0)
+        return;
     size_t m = x->len - n;
 
     /* D1: normalize so the divisor's top word has its high bit set. */
     unsigned s = 0;
-    { uint32_t t = y->digits[n - 1]; while (!(t & 0x80000000u)) { t <<= 1; s++; } }
+    { uint32_t t = y->digits[n - 1]; while (s < 32 && !(t & 0x80000000u)) { t <<= 1; s++; } }
+    if (s == 32)
+        return;
 
     uint32_t *v  = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t *u  = (uint32_t *)malloc((m + n + 2) * sizeof(uint32_t));
@@ -1001,6 +1021,16 @@ static void bn_shl_words(neverc_bigint_t *z, size_t words) {
  * No BZ recursion — Knuth / single-word only. Handles x < y and x == y. */
 static void mag_divmod_basic(neverc_bigint_t *q, neverc_bigint_t *r,
                              const neverc_bigint_t *x, const neverc_bigint_t *y) {
+    neverc_bigint_t xv, yv;
+    mag_view(&xv, x);
+    mag_view(&yv, y);
+    x = &xv;
+    y = &yv;
+    if (y->len == 0) {                         /* fail-closed:  q = r = 0 */
+        if (q) { q->len = 0; q->neg = 0; }
+        if (r) { r->len = 0; r->neg = 0; }
+        return;
+    }
     int c = abs_cmp(x, y);
     if (c < 0) {                                   /* x < y: q = 0, r = x */
         if (q) { q->len = 0; q->neg = 0; }
@@ -1014,9 +1044,17 @@ static void mag_divmod_basic(neverc_bigint_t *q, neverc_bigint_t *r,
     }
     if (y->len == 1) {                             /* single-word divisor */
         uint32_t d = y->digits[0];
+        if (d == 0) {                              /* untrimmed 0 */
+            if (q) { q->len = 0; q->neg = 0; }
+            if (r) { r->len = 0; r->neg = 0; }
+            return;
+        }
         neverc_bigint_t quot;
         neverc_bigint_init(&quot);
-        if (!ensure_cap(&quot, x->len)) return;
+        if (!ensure_cap(&quot, x->len)) {
+            neverc_bigint_free(&quot);
+            return;
+        }
         quot.len = x->len;
         uint64_t rem = 0;
         for (size_t i = x->len; i > 0; i--) {
@@ -1181,14 +1219,18 @@ static void bz_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
 
 void neverc_bigint_div(neverc_bigint_t *q, neverc_bigint_t *r,
                        const neverc_bigint_t *x, const neverc_bigint_t *y) {
-    neverc_bigint_t quot, rem;
+    neverc_bigint_t quot, rem, xv, yv;
     neverc_bigint_init(&quot);
     neverc_bigint_init(&rem);
+    mag_view(&xv, x);
+    mag_view(&yv, y);
+    x = &xv;
+    y = &yv;
     int xneg = x->neg;
     int yneg = y->neg;
 
     if (y->len == 0) {
-        /* both stay zero */
+        /* Go panics; fail closed with q = r = 0. */
     } else {
         int c = abs_cmp(x, y);
         if (c < 0) {
@@ -1198,22 +1240,25 @@ void neverc_bigint_div(neverc_bigint_t *q, neverc_bigint_t *r,
             quot.neg = (xneg != yneg);
         } else if (y->len == 1) {
             uint32_t d = y->digits[0];
-            if (!ensure_cap(&quot, x->len)) {
+            if (d == 0) {
+                /* untrimmed zero: leave q = r = 0 */
+            } else if (!ensure_cap(&quot, x->len)) {
                 neverc_bigint_free(&quot);
                 neverc_bigint_free(&rem);
                 return;
+            } else {
+                quot.len = x->len;
+                uint64_t remv = 0;
+                for (size_t i = x->len; i > 0; i--) {
+                    uint64_t cur = (remv << 32) | x->digits[i - 1];
+                    quot.digits[i - 1] = (uint32_t)(cur / d);
+                    remv = cur % d;
+                }
+                trim(&quot);
+                quot.neg = (xneg != yneg) && quot.len > 0;
+                neverc_bigint_set_uint64(&rem, remv);
+                rem.neg = xneg && remv > 0;
             }
-            quot.len = x->len;
-            uint64_t remv = 0;
-            for (size_t i = x->len; i > 0; i--) {
-                uint64_t cur = (remv << 32) | x->digits[i - 1];
-                quot.digits[i - 1] = (uint32_t)(cur / d);
-                remv = cur % d;
-            }
-            trim(&quot);
-            quot.neg = (xneg != yneg) && quot.len > 0;
-            neverc_bigint_set_uint64(&rem, remv);
-            rem.neg = xneg && remv > 0;
         } else {
             if (y->len >= NCI_BZ_DIV_MIN)
                 bz_divmod(&quot, &rem, x, y);
@@ -1239,8 +1284,15 @@ void neverc_bigint_div(neverc_bigint_t *q, neverc_bigint_t *r,
 }
 
 void neverc_bigint_mod(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *m) {
-    neverc_bigint_t rem, modulus;
+    neverc_bigint_t rem, modulus, mv;
     neverc_bigint_init(&rem);
+    mag_view(&mv, m);
+    if (mv.len == 0) {
+        /* Go panics on mod 0; fail closed with 0. */
+        neverc_bigint_free(z);
+        *z = rem;
+        return;
+    }
     neverc_bigint_init(&modulus);
     neverc_bigint_set(&modulus, m);
     neverc_bigint_div(NULL, &rem, x, &modulus);
@@ -1676,6 +1728,13 @@ static int bigint_modinv(neverc_bigint_t *r, const neverc_bigint_t *a,
 
 void neverc_bigint_exp(neverc_bigint_t *z, const neverc_bigint_t *base,
                        const neverc_bigint_t *exp, const neverc_bigint_t *m) {
+    /* Leading zero limbs made m look nonzero (window reduced mod 0 → 0
+     * instead of x**y) and inflated Montgomery's word count. */
+    neverc_bigint_t mv;
+    if (m) {
+        mag_view(&mv, m);
+        m = &mv;
+    }
     /* Go Int.Exp: y < 0 and m == nil (or 0) yields 1. With a modulus,
      * compute (base^|y|)^-1 mod m; leave z unchanged if not invertible. */
     if (exp->neg) {
@@ -1737,6 +1796,7 @@ static void bigint_swap(neverc_bigint_t *a, neverc_bigint_t *b) {
 
 /* Single-word remainder: a mod w (a nonneg magnitude). */
 static uint32_t nat_mod_word(const neverc_bigint_t *a, uint32_t w) {
+    if (w == 0) return 0;
     uint64_t rem = 0;
     for (size_t i = a->len; i-- > 0; )
         rem = ((rem << 32) | a->digits[i]) % w;
@@ -1803,6 +1863,8 @@ void neverc_bigint_gcd(neverc_bigint_t *z, const neverc_bigint_t *x,
     neverc_bigint_init(&b);
     neverc_bigint_abs(&a, x);
     neverc_bigint_abs(&b, y);
+    trim(&a);
+    trim(&b);
     if (abs_cmp(&a, &b) < 0) bigint_swap(&a, &b);   /* a >= b */
 
     while (b.len > 1) {

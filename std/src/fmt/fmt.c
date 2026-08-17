@@ -629,6 +629,7 @@ int neverc_fmt_println(const char *format, ...) {
 char *neverc_fmt_sprint(const char *s) {
     if (!s) s = "";
     size_t len = my_strlen(s);
+    if (len == SIZE_MAX) return NULL;
     char *out = (char *)malloc(len + 1);
     if (!out) return NULL;
     for (size_t i = 0; i < len; i++) out[i] = s[i];
@@ -639,6 +640,7 @@ char *neverc_fmt_sprint(const char *s) {
 char *neverc_fmt_sprintln(const char *s) {
     if (!s) s = "";
     size_t len = my_strlen(s);
+    if (len > SIZE_MAX - 2) return NULL;
     char *out = (char *)malloc(len + 2);
     if (!out) return NULL;
     for (size_t i = 0; i < len; i++) out[i] = s[i];
@@ -1094,6 +1096,10 @@ int neverc_fmt_fscanf(FILE *f, const char *format, ...) {
     return matched;
 }
 
+static int fmt_copied_len(size_t copy) {
+    return copy > (size_t)INT_MAX ? INT_MAX : (int)copy;
+}
+
 int neverc_fmt_appendf(char *buf, size_t cap, const char *format, ...) {
     size_t existing;
     if (!format || !append_position(buf, cap, &existing)) return 0;
@@ -1109,7 +1115,7 @@ int neverc_fmt_appendf(char *buf, size_t cap, const char *format, ...) {
     for (size_t i = 0; i < copy; i++) buf[existing + i] = s[i];
     buf[existing + copy] = '\0';
     free(s);
-    return (int)copy;
+    return fmt_copied_len(copy);
 }
 
 int neverc_fmt_append(char *buf, size_t cap, const char *s) {
@@ -1120,7 +1126,7 @@ int neverc_fmt_append(char *buf, size_t cap, const char *s) {
     size_t copy = slen < space ? slen : space;
     for (size_t i = 0; i < copy; i++) buf[existing + i] = s[i];
     buf[existing + copy] = '\0';
-    return (int)copy;
+    return fmt_copied_len(copy);
 }
 
 int neverc_fmt_appendln(char *buf, size_t cap, const char *s) {
@@ -1128,13 +1134,14 @@ int neverc_fmt_appendln(char *buf, size_t cap, const char *s) {
     if (!s || !append_position(buf, cap, &existing)) return 0;
     size_t slen = my_strlen(s);
     size_t space = cap - existing - 1;
+    if (slen == SIZE_MAX) return 0;
     size_t need = slen + 1;
     size_t copy = need < space ? need : space;
     size_t scopy = copy > 0 ? (copy > slen ? slen : copy) : 0;
     for (size_t i = 0; i < scopy; i++) buf[existing + i] = s[i];
     if (scopy < copy) buf[existing + scopy] = '\n';
     buf[existing + copy] = '\0';
-    return (int)copy;
+    return fmt_copied_len(copy);
 }
 
 char *neverc_fmt_sprintfln(const char *format, ...) {
@@ -1144,6 +1151,7 @@ char *neverc_fmt_sprintfln(const char *format, ...) {
     va_end(args);
     if (!s) return NULL;
     size_t len = my_strlen(s);
+    if (len > SIZE_MAX - 2) { free(s); return NULL; }
     char *out = (char *)realloc(s, len + 2);
     if (!out) { free(s); return NULL; }
     out[len] = '\n';

@@ -100,6 +100,7 @@ static void test_parse_number(void) {
     ASSERT_NULL(neverc_json_parse("1e309", 5));
     ASSERT_NULL(neverc_json_parse("-1e309", 6));
     ASSERT_NULL(neverc_json_parse("1e+309", 6));
+    ASSERT_NULL(neverc_json_parse("2e308", 5));
     v = neverc_json_parse("1e308", 5);
     ASSERT_NOT_NULL(v);
     neverc_json_free(v);
@@ -162,8 +163,13 @@ static void test_parse_string(void) {
     ASSERT_NULL(neverc_json_parse("\"\\uDC00\"", 8));
     ASSERT_NULL(neverc_json_parse("\"\\uD800\"", 8));
     ASSERT_NULL(neverc_json_parse("\"\\uD800\\uD800\"", 14));
+    ASSERT_NULL(neverc_json_parse("\"\\u12\"", 6));
+    ASSERT_NULL(neverc_json_parse("\"\\uD800\\uDC0\"", 13));
 
     static const char overlong[] = {'"', (char)0xC0, (char)0xAF, '"'};
+    static const char overlong3[] = {
+        '"', (char)0xE0, (char)0x80, (char)0x80, '"'
+    };
     static const char bad_cont[] = {
         '"', (char)0xE2, (char)0x28, (char)0xA1, '"'
     };
@@ -176,11 +182,16 @@ static void test_parse_string(void) {
     static const char truncated[] = {
         '"', (char)0xF0, (char)0x9F, (char)0x98, '"'
     };
+    static const char five_byte[] = {
+        '"', (char)0xF5, (char)0x80, (char)0x80, (char)0x80, '"'
+    };
     ASSERT_NULL(neverc_json_parse(overlong, sizeof(overlong)));
+    ASSERT_NULL(neverc_json_parse(overlong3, sizeof(overlong3)));
     ASSERT_NULL(neverc_json_parse(bad_cont, sizeof(bad_cont)));
     ASSERT_NULL(neverc_json_parse(utf8_surrogate, sizeof(utf8_surrogate)));
     ASSERT_NULL(neverc_json_parse(too_large, sizeof(too_large)));
     ASSERT_NULL(neverc_json_parse(truncated, sizeof(truncated)));
+    ASSERT_NULL(neverc_json_parse(five_byte, sizeof(five_byte)));
 
     /* RFC 8259 strings and object keys are Unicode (UTF-8). */
     {
@@ -424,6 +435,12 @@ static void test_marshal_escapes(void) {
     static const char invalid_utf8[] = {(char)0xC2, 'x'};
     ASSERT_NULL(neverc_json_new_string_n(
         invalid_utf8, sizeof(invalid_utf8)));
+    static const char ctor_surrogate[] = {(char)0xED, (char)0xA0, (char)0x80};
+    ASSERT_NULL(neverc_json_new_string_n(
+        ctor_surrogate, sizeof(ctor_surrogate)));
+    static const char ctor_overlong[] = {(char)0xE0, (char)0x80, (char)0x80};
+    ASSERT_NULL(neverc_json_new_string_n(
+        ctor_overlong, sizeof(ctor_overlong)));
 
     /* Roundtrip a string containing every escapeworthy + ordinary byte. */
     char all[256]; int k = 0;
@@ -725,6 +742,11 @@ static void test_invalid_api_inputs(void) {
                       nonfinite, out, sizeof(out), NULL), -1);
     neverc_json_free(nonfinite);
 
+    neverc_json_value_t *nan = neverc_json_new_number(NAN);
+    ASSERT_NOT_NULL(nan);
+    ASSERT_INT_EQ(neverc_json_marshal(nan, out, sizeof(out), NULL), -1);
+    neverc_json_free(nan);
+
     neverc_json_value_t *array = neverc_json_new_array();
     ASSERT_NOT_NULL(array);
     ASSERT_INT_EQ(neverc_json_array_append(array, NULL), -1);
@@ -794,6 +816,7 @@ static void test_utf8_bom(void) {
     ASSERT_NOT_NULL(v);
     ASSERT_INT_EQ(v->type, NEVERC_JSON_OBJECT);
     neverc_json_free(v);
+    ASSERT_NULL(neverc_json_parse("\xEF\xBB\xBF", 3));
 }
 
 static void test_nesting_limit(void) {
@@ -874,6 +897,26 @@ static void test_nesting_limit(void) {
                 }
                 neverc_json_free(vo);
             }
+            free(ob);
+        }
+    }
+
+    /* 1001-deep objects exceed the container cap even with a scalar leaf. */
+    {
+        int d = 1001;
+        size_t cap = (size_t)d * 6U + 8U;
+        char *ob = (char *)malloc(cap);
+        ASSERT_NOT_NULL(ob);
+        if (ob) {
+            size_t w = 0;
+            for (int i = 0; i < d; i++) {
+                memcpy(ob + w, "{\"a\":", 5);
+                w += 5;
+            }
+            memcpy(ob + w, "null", 4);
+            w += 4;
+            for (int i = 0; i < d; i++) ob[w++] = '}';
+            ASSERT_NULL(neverc_json_parse(ob, w));
             free(ob);
         }
     }

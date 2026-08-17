@@ -31,6 +31,7 @@ int neverc_gcm_init(neverc_gcm_ctx *ctx, const uint8_t *key, int key_len);
  * Plaintext is limited to 2^36-32 bytes by SP 800-38D.
  * Requires a context from a successful neverc_gcm_init.
  * AAD is hashed before ciphertext is written, so AAD may overlap the output.
+ * dest-after-src plaintext/ciphertext overlap is slid before CTR XOR.
  * Returns 0 on success, -1 on error.
  */
 int neverc_gcm_seal(const neverc_gcm_ctx *ctx,

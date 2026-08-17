@@ -349,14 +349,29 @@ static ring_elem g_enc_e2;
 static ring_elem g_enc_u[4];
 static ring_elem g_enc_v;
 
+static size_t mlkem_ek_size(int k) {
+    if (k == 3) return NEVERC_MLKEM768_EK_SIZE;
+    if (k == 4) return NEVERC_MLKEM1024_EK_SIZE;
+    return 0;
+}
+
+static size_t mlkem_ct_size(int k) {
+    if (k == 3) return NEVERC_MLKEM768_CT_SIZE;
+    if (k == 4) return NEVERC_MLKEM1024_CT_SIZE;
+    return 0;
+}
+
 /* K-PKE.Encrypt (FIPS 203, Algorithm 14) */
-static void kpke_encrypt(int k,
+static int kpke_encrypt(int k,
                           const uint8_t *ek,
                           const uint8_t m[32],
                           const uint8_t *r, size_t r_len,
                           uint8_t *ct_out) {
+    if (!ek || !m || !r || !ct_out)
+        return -1;
     for (int i = 0; i < k; i++)
-        poly_byte_decode12(g_enc_t_hat[i], ek + i * ENC12);
+        if (poly_byte_decode12(g_enc_t_hat[i], ek + i * ENC12) != 0)
+            return -1;
     const uint8_t *rho = ek + k * ENC12;
 
     for (int i = 0; i < k; i++)
@@ -429,6 +444,7 @@ static void kpke_encrypt(int k,
         }
     }
     neverc_platform_secure_zero(m_poly, sizeof(m_poly));
+    return 0;
 }
 
 /* Static arrays for decrypt */
@@ -436,10 +452,12 @@ static ring_elem g_dec_u[4];
 static ring_elem g_dec_v;
 
 /* K-PKE.Decrypt (FIPS 203, Algorithm 15) */
-static void kpke_decrypt(int k,
+static int kpke_decrypt(int k,
                           const ntt_elem s_hat[],
                           const uint8_t *ct, size_t ct_len,
                           uint8_t m[32]) {
+    if (!s_hat || !ct || !m || ct_len != mlkem_ct_size(k))
+        return -1;
     int du = (k == 3) ? 10 : 11;
     int dv = (k == 3) ? 4 : 5;
     int u_enc_size = (k == 3) ? 320 : 352;
@@ -490,7 +508,7 @@ static void kpke_decrypt(int k,
     ntt_inverse(g_acc, g_tmp_ring);
     poly_sub(g_dec_v, g_tmp_ring, g_tmp_ring);
     ring_compress_encode1(m, g_tmp_ring);
-    (void)ct_len;
+    return 0;
 }
 
 /* ── ML-KEM full scheme (FIPS 203, Algorithms 16–18) ──────── */
@@ -520,8 +538,13 @@ static int mlkem_encaps(int k, const uint8_t *ek, size_t ek_size,
     neverc_sha3_512_update(&g, ek_hash, 32);
     neverc_sha3_512_final(&g, kr);
 
+    if (kpke_encrypt(k, ek, m, kr + 32, 32, ct_out) != 0) {
+        neverc_platform_secure_zero(m, sizeof(m));
+        neverc_platform_secure_zero(kr, sizeof(kr));
+        neverc_platform_secure_zero(&g, sizeof(g));
+        return -1;
+    }
     memcpy(shared_key, kr, 32);
-    kpke_encrypt(k, ek, m, kr + 32, 32, ct_out);
     neverc_platform_secure_zero(m, sizeof(m));
     neverc_platform_secure_zero(kr, sizeof(kr));
     neverc_platform_secure_zero(&g, sizeof(g));
@@ -566,16 +589,30 @@ static int mlkem_decaps(int k, const uint8_t *seed,
                         const uint8_t *ek, size_t ek_size,
                         const uint8_t *ct, size_t ct_size,
                         uint8_t shared_key[32]) {
+    size_t expected_ek = mlkem_ek_size(k);
+    size_t expected_ct = mlkem_ct_size(k);
+    (void)ek;
+    if (!shared_key)
+        return -1;
+    if (!seed || ek_size != expected_ek || !ct || ct_size != expected_ct) {
+        neverc_platform_secure_zero(shared_key, 32);
+        return -1;
+    }
     const uint8_t *d = seed;
     const uint8_t *z = seed + 32;
 
+    /* Regenerated ek is the source of truth for the seed-based dk. */
     kpke_keygen(k, d, g_ek_regen, g_s_hat);
 
     uint8_t m_prime[32];
-    kpke_decrypt(k, g_s_hat, ct, ct_size, m_prime);
+    if (kpke_decrypt(k, g_s_hat, ct, ct_size, m_prime) != 0) {
+        neverc_platform_secure_zero(m_prime, sizeof(m_prime));
+        neverc_platform_secure_zero(shared_key, 32);
+        return -1;
+    }
 
     uint8_t ek_hash[32];
-    neverc_sha3_256_sum(ek, ek_size, ek_hash);
+    neverc_sha3_256_sum(g_ek_regen, ek_size, ek_hash);
 
     uint8_t kr[64];
     neverc_sha3_ctx g;
@@ -584,11 +621,12 @@ static int mlkem_decaps(int k, const uint8_t *seed,
     neverc_sha3_512_update(&g, ek_hash, 32);
     neverc_sha3_512_final(&g, kr);
 
-    kpke_encrypt(k, ek, m_prime, kr + 32, 32, g_ct_prime);
-
-    uint8_t difference = 0;
-    for (size_t i = 0; i < ct_size; i++)
-        difference |= ct[i] ^ g_ct_prime[i];
+    uint8_t difference = 0xff;
+    if (kpke_encrypt(k, g_ek_regen, m_prime, kr + 32, 32, g_ct_prime) == 0) {
+        difference = 0;
+        for (size_t i = 0; i < ct_size; i++)
+            difference |= ct[i] ^ g_ct_prime[i];
+    }
 
     uint8_t rejection_key[32];
     neverc_sha3_ctx j;
@@ -706,12 +744,18 @@ int neverc_mlkem768_encapsulate(const neverc_mlkem768_ek_t *ek,
 int neverc_mlkem768_decapsulate(const neverc_mlkem768_dk_t *dk,
                                 const uint8_t ciphertext[NEVERC_MLKEM768_CT_SIZE],
                                 uint8_t shared_key[32]) {
-    if (!dk || !ciphertext || !shared_key) return -1;
+    if (!shared_key) return -1;
+    if (!dk || !ciphertext) {
+        neverc_platform_secure_zero(shared_key, 32);
+        return -1;
+    }
     mlkem_lock();
     int result = mlkem_decaps(3, dk->seed, dk->ek, NEVERC_MLKEM768_EK_SIZE,
                               ciphertext, NEVERC_MLKEM768_CT_SIZE, shared_key);
     wipe_mlkem_scratch();
     mlkem_unlock();
+    if (result != 0)
+        neverc_platform_secure_zero(shared_key, 32);
     return result;
 }
 
@@ -796,12 +840,18 @@ int neverc_mlkem1024_encapsulate(const neverc_mlkem1024_ek_t *ek,
 int neverc_mlkem1024_decapsulate(const neverc_mlkem1024_dk_t *dk,
                                  const uint8_t ciphertext[NEVERC_MLKEM1024_CT_SIZE],
                                  uint8_t shared_key[32]) {
-    if (!dk || !ciphertext || !shared_key) return -1;
+    if (!shared_key) return -1;
+    if (!dk || !ciphertext) {
+        neverc_platform_secure_zero(shared_key, 32);
+        return -1;
+    }
     mlkem_lock();
     int result = mlkem_decaps(4, dk->seed, dk->ek, NEVERC_MLKEM1024_EK_SIZE,
                               ciphertext, NEVERC_MLKEM1024_CT_SIZE, shared_key);
     wipe_mlkem_scratch();
     mlkem_unlock();
+    if (result != 0)
+        neverc_platform_secure_zero(shared_key, 32);
     return result;
 }
 

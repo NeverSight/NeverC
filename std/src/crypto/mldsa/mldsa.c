@@ -826,15 +826,23 @@ void neverc_mldsa44_sk_public_key(const neverc_mldsa44_sk_t *sk,
 
 int neverc_mldsa44_new_pk(neverc_mldsa44_pk_t *pk,
                            const uint8_t *encoded, size_t len) {
-    if (!pk || !encoded || len != NEVERC_MLDSA44_PK_SIZE) return -1;
-    memcpy(pk->pk, encoded, len);
+    if (!pk) return -1;
+    if (!encoded || len != NEVERC_MLDSA44_PK_SIZE) {
+        memset(pk, 0, sizeof(*pk));
+        return -1;
+    }
+    memmove(pk->pk, encoded, len);
     return 0;
 }
 
 int neverc_mldsa44_sign(const neverc_mldsa44_sk_t *sk,
                          const uint8_t *message, size_t msg_len,
                          uint8_t sig[NEVERC_MLDSA44_SIG_SIZE]) {
-    if (!sk || (!message && msg_len != 0) || !sig) return -1;
+    if (!sig) return -1;
+    if (!sk || (!message && msg_len != 0)) {
+        neverc_platform_secure_zero(sig, NEVERC_MLDSA44_SIG_SIZE);
+        return -1;
+    }
     mldsa_lock();
     int result = mldsa44_sign_internal(
         sk->seed, sk->pk, NEVERC_MLDSA44_PK_SIZE, message, msg_len, sig);

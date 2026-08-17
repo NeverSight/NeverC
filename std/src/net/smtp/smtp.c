@@ -263,6 +263,55 @@ static int smtp_require_command_phase(neverc_smtp_client_t *c) {
     return (!c || c->in_data) ? -1 : 0;
 }
 
+static int smtp_token_eq(const char *s, size_t n, const char *tok) {
+    size_t i;
+    if (!s || !tok) return 0;
+    for (i = 0; tok[i]; i++) {
+        unsigned char a;
+        unsigned char b;
+        if (i >= n) return 0;
+        a = (unsigned char)s[i];
+        b = (unsigned char)tok[i];
+        if (a >= 'a' && a <= 'z') a = (unsigned char)(a - 'a' + 'A');
+        if (b >= 'a' && b <= 'z') b = (unsigned char)(b - 'a' + 'A');
+        if (a != b) return 0;
+    }
+    return i == n;
+}
+
+/* RFC 5321 / 4954: keyword is the first token after "DDD" / "DDD-". AUTH
+ * mechanisms are that line's parameters only — never the rest of the EHLO
+ * blob, and never parameters of HELP/XFORWARD/etc. */
+static void smtp_parse_ehlo_line(neverc_smtp_client_t *c,
+                                 const char *line, size_t line_len) {
+    size_t pos;
+    size_t kw_end;
+    if (line_len < 4 || !smtp_is_status_code(line, line_len)) return;
+    pos = 4;
+    kw_end = pos;
+    while (kw_end < line_len && line[kw_end] != ' ' && line[kw_end] != '=')
+        kw_end++;
+    if (smtp_token_eq(line + pos, kw_end - pos, "8BITMIME"))
+        c->supports_8bitmime = 1;
+    if (smtp_token_eq(line + pos, kw_end - pos, "STARTTLS"))
+        c->supports_starttls = 1;
+    if (!smtp_token_eq(line + pos, kw_end - pos, "AUTH")) return;
+    pos = kw_end;
+    if (pos < line_len && (line[pos] == ' ' || line[pos] == '='))
+        pos++;
+    while (pos < line_len) {
+        size_t start;
+        while (pos < line_len && line[pos] == ' ') pos++;
+        start = pos;
+        while (pos < line_len && line[pos] != ' ') pos++;
+        if (start == pos) break;
+        if (smtp_token_eq(line + start, pos - start, "PLAIN"))
+            c->supports_auth_plain = 1;
+        if (smtp_token_eq(line + start, pos - start, "LOGIN"))
+            c->supports_auth_login = 1;
+    }
+}
+
 int neverc_smtp_hello(neverc_smtp_client_t *c, const char *local_name) {
     if (smtp_require_command_phase(c) != 0) return -1;
     if (!local_name) local_name = "localhost";
@@ -272,28 +321,30 @@ int neverc_smtp_hello(neverc_smtp_client_t *c, const char *local_name) {
     int code = smtp_cmdf(c, "EHLO %s", local_name);
     if (code == 250) {
         c->did_hello = 1;
-        /* Parse EHLO extensions */
-        char *line = c->last_response;
+        c->supports_auth_plain = 0;
+        c->supports_auth_login = 0;
+        c->supports_8bitmime = 0;
+        c->supports_starttls = 0;
+        const char *line = c->last_response;
         while (line && *line) {
-            char *nl = strstr(line, "\r\n");
-            if (strstr(line, "AUTH") && (strstr(line, "PLAIN") || strstr(line, "plain")))
-                c->supports_auth_plain = 1;
-            if (strstr(line, "AUTH") && (strstr(line, "LOGIN") || strstr(line, "login")))
-                c->supports_auth_login = 1;
-            if (strstr(line, "8BITMIME"))
-                c->supports_8bitmime = 1;
-            if (strstr(line, "STARTTLS"))
-                c->supports_starttls = 1;
+            const char *nl = strstr(line, "\r\n");
+            size_t line_len = nl ? (size_t)(nl - line) : strlen(line);
+            smtp_parse_ehlo_line(c, line, line_len);
             if (nl) line = nl + 2;
             else break;
         }
         return 0;
     }
 
-    /* Fall back to HELO */
+    /* Fall back to HELO. AUTH is an ESMTP extension, so HELO leaves
+     * supports_auth_* cleared and neverc_smtp_auth must fail closed. */
     code = smtp_cmdf(c, "HELO %s", local_name);
     if (code == 250) {
         c->did_hello = 1;
+        c->supports_auth_plain = 0;
+        c->supports_auth_login = 0;
+        c->supports_8bitmime = 0;
+        c->supports_starttls = 0;
         return 0;
     }
 
@@ -314,6 +365,7 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
     if (ensure_hello(c) != 0) return -1;
 
     if (method == NEVERC_SMTP_AUTH_PLAIN) {
+        if (!c->supports_auth_plain) return -1;
         /* AUTH PLAIN: base64("\0username\0password") */
         size_t ulen = strlen(username);
         size_t pwlen = strlen(password);
@@ -335,6 +387,7 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
     }
 
     if (method == NEVERC_SMTP_AUTH_LOGIN) {
+        if (!c->supports_auth_login) return -1;
         char encoded[512];
         if (smtp_b64_encode(username, strlen(username), encoded,
                             sizeof(encoded)) != 0 ||

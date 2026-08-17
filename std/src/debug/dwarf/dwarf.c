@@ -217,9 +217,10 @@ const char *neverc_dwarf_get_string(const neverc_dwarf_data_t *d,
     if (!d || !d->debug_str || offset >= d->debug_str_len) return NULL;
     /* debug_str is file data and may lack a NUL before its end; require one
      * within the table bounds so callers' strlen() cannot read past it. */
-    if (memchr(d->debug_str + offset, 0, d->debug_str_len - (size_t)offset) == NULL)
+    if (memchr(d->debug_str + (size_t)offset, 0,
+               d->debug_str_len - (size_t)offset) == NULL)
         return NULL;
-    return (const char *)(d->debug_str + offset);
+    return (const char *)(d->debug_str + (size_t)offset);
 }
 
 int neverc_dwarf_parse_comp_unit_ex(

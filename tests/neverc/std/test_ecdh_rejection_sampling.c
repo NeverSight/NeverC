@@ -6,11 +6,12 @@ static int random_calls;
 
 static int controlled_crypto_rand_read(uint8_t *buffer, size_t length) {
     random_calls++;
-    memset(buffer, 0xff, length);
-    if ((random_calls & 1) == 0) {
-        memset(buffer, 0, length);
-        buffer[length - 1] = 1;
-    }
+    memset(buffer, 0, length);
+    if (random_calls % 3 == 1)
+        memset(buffer, 0xff, length); /* >= n */
+    else if (random_calls % 3 == 0)
+        buffer[length - 1] = 1; /* accepted in [1, n-1] */
+    /* % 3 == 2: all-zero, rejected */
     return 0;
 }
 
@@ -39,11 +40,11 @@ int main(void) {
     neverc_ecdh_key_t key;
 
     CHECK(neverc_ecdh_generate_key(NEVERC_ECDH_CURVE_P256, &key) == 0);
-    CHECK(random_calls == 2);
+    CHECK(random_calls == 3);
     CHECK(private_key_is_one(&key));
 
     CHECK(neverc_ecdh_generate_key(NEVERC_ECDH_CURVE_P384, &key) == 0);
-    CHECK(random_calls == 4);
+    CHECK(random_calls == 6);
     CHECK(private_key_is_one(&key));
 
     puts("passed");

@@ -182,16 +182,40 @@ neverc_list_element_t *neverc_list_element_prev(const neverc_list_element_t *e) 
     return NULL;
 }
 
+static void rollback_after(neverc_list_t *l, neverc_list_element_t *stop) {
+    neverc_list_element_t *e = stop->next;
+    while (e != &l->root) {
+        neverc_list_element_t *next = e->next;
+        remove_elem(l, e);
+        free(e);
+        e = next;
+    }
+}
+
+static void rollback_before(neverc_list_t *l, neverc_list_element_t *orig_front) {
+    neverc_list_element_t *e = l->root.next;
+    while (e != orig_front && e != &l->root) {
+        neverc_list_element_t *next = e->next;
+        remove_elem(l, e);
+        free(e);
+        e = next;
+    }
+}
+
 int neverc_list_push_back_list(neverc_list_t *l, const neverc_list_t *other) {
     if (!l || !other) return -1;
     lazy_init(l);
     int n = other->len;
     if (n <= 0) return 0;
+    if (l->len < 0 || n > INT_MAX - l->len) return -1;
+    neverc_list_element_t *stop = l->root.prev;
     neverc_list_element_t *e = neverc_list_front(other);
     int added = 0;
     for (int i = 0; i < n && e; i++) {
-        if (!insert_value(l, e->value, l->root.prev))
-            return added > 0 ? added : -1;
+        if (!insert_value(l, e->value, l->root.prev)) {
+            rollback_after(l, stop);
+            return -1;
+        }
         added++;
         e = neverc_list_element_next(e);
     }
@@ -203,11 +227,15 @@ int neverc_list_push_front_list(neverc_list_t *l, const neverc_list_t *other) {
     lazy_init(l);
     int n = other->len;
     if (n <= 0) return 0;
+    if (l->len < 0 || n > INT_MAX - l->len) return -1;
+    neverc_list_element_t *orig_front = l->root.next;
     neverc_list_element_t *e = neverc_list_back(other);
     int added = 0;
     for (int i = 0; i < n && e; i++) {
-        if (!insert_value(l, e->value, &l->root))
-            return added > 0 ? added : -1;
+        if (!insert_value(l, e->value, &l->root)) {
+            rollback_before(l, orig_front);
+            return -1;
+        }
         added++;
         e = neverc_list_element_prev(e);
     }

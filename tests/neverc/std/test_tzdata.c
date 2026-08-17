@@ -570,6 +570,223 @@ static void test_local_tz(void) {
     else tzdata_set_tz(NULL);
 }
 
+static void append_bytes(uint8_t *buf, size_t *n, size_t cap,
+                         const void *p, size_t len) {
+    if (*n + len > cap) return;
+    memcpy(buf + *n, p, len);
+    *n += len;
+}
+
+static void append_be32(uint8_t *buf, size_t *n, size_t cap, uint32_t v) {
+    uint8_t b[4] = {(uint8_t)(v >> 24), (uint8_t)(v >> 16),
+                    (uint8_t)(v >> 8), (uint8_t)v};
+    append_bytes(buf, n, cap, b, 4);
+}
+
+static void append_be64(uint8_t *buf, size_t *n, size_t cap, uint64_t v) {
+    append_be32(buf, n, cap, (uint32_t)(v >> 32));
+    append_be32(buf, n, cap, (uint32_t)v);
+}
+
+static void append_le16(uint8_t *buf, size_t *n, size_t cap, uint16_t v) {
+    uint8_t b[2] = {(uint8_t)v, (uint8_t)(v >> 8)};
+    append_bytes(buf, n, cap, b, 2);
+}
+
+static void append_le32(uint8_t *buf, size_t *n, size_t cap, uint32_t v) {
+    uint8_t b[4] = {(uint8_t)v, (uint8_t)(v >> 8),
+                    (uint8_t)(v >> 16), (uint8_t)(v >> 24)};
+    append_bytes(buf, n, cap, b, 4);
+}
+
+static void tzif_header(uint8_t *buf, size_t *n, size_t cap) {
+    append_bytes(buf, n, cap, "TZif2", 5);
+    uint8_t pad[15] = {0};
+    append_bytes(buf, n, cap, pad, 15);
+}
+
+static void tzif_counts(uint8_t *buf, size_t *n, size_t cap,
+                        uint32_t ntime, uint32_t nzone, uint32_t nchar) {
+    append_be32(buf, n, cap, 0);
+    append_be32(buf, n, cap, 0);
+    append_be32(buf, n, cap, 0);
+    append_be32(buf, n, cap, ntime);
+    append_be32(buf, n, cap, nzone);
+    append_be32(buf, n, cap, nchar);
+}
+
+static size_t build_tzif_utc(uint8_t *buf, size_t cap) {
+    size_t n = 0;
+    uint8_t zmeta[2] = {0, 0};
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 0, 1, 4);
+    append_be32(buf, &n, cap, 0);
+    append_bytes(buf, &n, cap, zmeta, 2);
+    append_bytes(buf, &n, cap, "UTC\0", 4);
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 0, 1, 4);
+    append_be32(buf, &n, cap, 0);
+    append_bytes(buf, &n, cap, zmeta, 2);
+    append_bytes(buf, &n, cap, "UTC\0", 4);
+    return n;
+}
+
+static size_t build_tzif_ny(uint8_t *buf, size_t cap) {
+    size_t n = 0;
+    uint8_t zmeta[2] = {0, 0};
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 0, 1, 4);
+    append_be32(buf, &n, cap, 0);
+    append_bytes(buf, &n, cap, zmeta, 2);
+    append_bytes(buf, &n, cap, "UTC\0", 4);
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 3, 2, 8);
+    append_be64(buf, &n, cap, 0);
+    append_be64(buf, &n, cap, (uint64_t)NY_SPRING_2024);
+    append_be64(buf, &n, cap, (uint64_t)NY_FALL_2024);
+    uint8_t idx[3] = {0, 1, 0};
+    append_bytes(buf, &n, cap, idx, 3);
+    append_be32(buf, &n, cap, (uint32_t)-18000);
+    uint8_t est[2] = {0, 0};
+    append_bytes(buf, &n, cap, est, 2);
+    append_be32(buf, &n, cap, (uint32_t)-14400);
+    uint8_t edt[2] = {1, 4};
+    append_bytes(buf, &n, cap, edt, 2);
+    append_bytes(buf, &n, cap, "EST\0EDT\0", 8);
+    return n;
+}
+
+static size_t build_stored_zip(uint8_t *out, size_t cap, const char *name,
+                               const uint8_t *data, size_t dlen) {
+    size_t n = 0;
+    size_t namelen = strlen(name);
+    append_le32(out, &n, cap, 0x04034b50u);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le32(out, &n, cap, 0);
+    append_le32(out, &n, cap, (uint32_t)dlen);
+    append_le32(out, &n, cap, (uint32_t)dlen);
+    append_le16(out, &n, cap, (uint16_t)namelen);
+    append_le16(out, &n, cap, 0);
+    append_bytes(out, &n, cap, name, namelen);
+    append_bytes(out, &n, cap, data, dlen);
+    size_t cd_off = n;
+    append_le32(out, &n, cap, 0x02014b50u);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le32(out, &n, cap, 0);
+    append_le32(out, &n, cap, (uint32_t)dlen);
+    append_le32(out, &n, cap, (uint32_t)dlen);
+    append_le16(out, &n, cap, (uint16_t)namelen);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le32(out, &n, cap, 0);
+    append_le32(out, &n, cap, 0);
+    append_bytes(out, &n, cap, name, namelen);
+    size_t cd_size = n - cd_off;
+    append_le32(out, &n, cap, 0x06054b50u);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 0);
+    append_le16(out, &n, cap, 1);
+    append_le16(out, &n, cap, 1);
+    append_le32(out, &n, cap, (uint32_t)cd_size);
+    append_le32(out, &n, cap, (uint32_t)cd_off);
+    append_le16(out, &n, cap, 0);
+    return n;
+}
+
+static void test_zip_tzif(void) {
+    printf("[zip/tzif]\n");
+    uint8_t tzif[256];
+    size_t tlen = build_tzif_utc(tzif, sizeof(tzif));
+    check_int("utc tzif built", tlen > 0, 1);
+
+    neverc_tzdata_zone_t *z = neverc_tzdata_load_tzif("UTC", tzif, tlen);
+    check_not_null("load utc tzif", z);
+    check_str("tzif utc name", z ? z->name : NULL, "UTC");
+    check_int("tzif utc offset", z ? z->utc_offset : -1, 0);
+    check_int("tzif utc no dst", z ? z->has_dst : -1, 0);
+    neverc_tzdata_zone_free(z);
+
+    uint8_t ny[512];
+    size_t nlen = build_tzif_ny(ny, sizeof(ny));
+    z = neverc_tzdata_load_tzif("America/New_York", ny, nlen);
+    check_not_null("load ny tzif", z);
+    check_int("ny tzif std", z ? z->utc_offset : 0, -18000);
+    check_int("ny tzif dst", z ? z->dst_offset : 0, -14400);
+    check_int("ny tzif has dst", z ? z->has_dst : 0, 1);
+    check_int("ny tzif before spring",
+              neverc_tzdata_offset_at(z, NY_SPRING_2024 - 1), -18000);
+    check_int("ny tzif at spring",
+              neverc_tzdata_offset_at(z, NY_SPRING_2024), -14400);
+    check_int("ny tzif at fall",
+              neverc_tzdata_offset_at(z, NY_FALL_2024), -18000);
+    neverc_tzdata_zone_free(z);
+
+    uint8_t zip[1024];
+    size_t zlen = build_stored_zip(zip, sizeof(zip), "America/New_York", ny, nlen);
+    check_int("zip built", zlen > 22, 1);
+    size_t extracted_len = 0;
+    uint8_t *extracted = neverc_tzdata_zip_extract(zip, zlen, "America/New_York",
+                                                   &extracted_len);
+    check_not_null("zip extract", extracted);
+    check_int("zip extract size", (int)extracted_len, (int)nlen);
+    free(extracted);
+
+    check_null("zip missing name",
+               neverc_tzdata_zip_extract(zip, zlen, "Europe/Paris", NULL));
+    check_null("zip truncated",
+               neverc_tzdata_zip_extract(zip, zlen > 0 ? zlen - 1 : 0,
+                                         "America/New_York", NULL));
+    check_null("zip null", neverc_tzdata_zip_extract(NULL, zlen, "x", NULL));
+
+    uint8_t zip64[1024];
+    memcpy(zip64, zip, zlen);
+    /* EOCD number-of-entries zip64 sentinel. */
+    zip64[zlen - 12] = 0xFF;
+    zip64[zlen - 11] = 0xFF;
+    check_null("zip64 rejected",
+               neverc_tzdata_zip_extract(zip64, zlen, "America/New_York", NULL));
+
+    uint8_t compressed[1024];
+    memcpy(compressed, zip, zlen);
+    /* local method at offset 8, central method at cd+10. */
+    compressed[8] = 8;
+    compressed[8 + 1] = 0;
+    /* central dir starts after local header 30 + namelen + data */
+    size_t namelen = strlen("America/New_York");
+    size_t cd = 30 + namelen + nlen;
+    compressed[cd + 10] = 8;
+    check_null("compressed zip rejected",
+               neverc_tzdata_zip_extract(compressed, zlen, "America/New_York",
+                                         NULL));
+
+    z = neverc_tzdata_load_from_zip(zip, zlen, "America/New_York");
+    check_not_null("load from zip", z);
+    check_int("zip-loaded spring",
+              neverc_tzdata_offset_at(z, NY_SPRING_2024), -14400);
+    neverc_tzdata_zone_free(z);
+
+    uint8_t bad[] = "not-tzif-data-at-all";
+    check_null("bad tzif magic",
+               neverc_tzdata_load_tzif("x", bad, sizeof(bad)));
+    check_null("empty tzif", neverc_tzdata_load_tzif("x", bad, 0));
+
+    neverc_tzdata_zone_t *fixed = neverc_tzdata_fixed_zone("UTC+8", 28800);
+    neverc_tzdata_zone_free(fixed);
+    check_int("zone_free fixed does not crash", 1, 1);
+    neverc_tzdata_zone_free(NULL);
+}
+
 /* ===== Main ===== */
 
 int main(void) {
@@ -586,6 +803,7 @@ int main(void) {
     test_offsets();
     test_edge_cases();
     test_local_tz();
+    test_zip_tzif();
 
     printf("\n--- time/tzdata: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

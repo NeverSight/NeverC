@@ -112,15 +112,21 @@ static void sha3_init(neverc_sha3_ctx *ctx, size_t capacity_bits, uint8_t suffix
 /* rate==0 is a zeroed/uninitialized ctx: update would spin, pad would
  * memset SIZE_MAX bytes. Refuse rather than corrupt memory. */
 static int sha3_rate_ok(const neverc_sha3_ctx *ctx) {
+    /* Rate is always a lane multiple (72/104/136/144/168). A garbage
+     * rate that is not a multiple of 8 would drop the last rate%8 bytes,
+     * including the 0x80 pad bit, and hash the wrong sponge input. */
     return ctx->rate > 0 && ctx->rate <= sizeof(ctx->buf) &&
+           (ctx->rate % 8) == 0 &&
            ctx->buf_len < ctx->rate;
 }
 
 static void sha3_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) {
     if (!ctx || ctx->squeezed || ctx->finalized || (len > 0 && !data))
         return;
-    if (!sha3_rate_ok(ctx))
+    if (!sha3_rate_ok(ctx)) {
+        ctx->finalized = 1;
         return;
+    }
     size_t i = 0;
     while (i < len) {
         size_t room = ctx->rate - ctx->buf_len;
@@ -138,16 +144,36 @@ static void sha3_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) {
     }
 }
 
+static void sha3_fail_closed(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
+    if (out && outlen)
+        memset(out, 0, outlen);
+    if (outlen <= sizeof(ctx->digest)) {
+        memset(ctx->digest, 0, outlen);
+        ctx->digest_len = outlen;
+    } else {
+        memset(ctx->digest, 0, sizeof(ctx->digest));
+        ctx->digest_len = 0;
+    }
+    ctx->finalized = 1;
+}
+
 static void sha3_pad_and_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
-    if (!ctx || ctx->squeezed || !out)
+    if (!ctx || !out)
         return;
+    /* SHAKE already padded this sponge; do not emit a SHA-3 digest from it. */
+    if (ctx->squeezed) {
+        sha3_fail_closed(ctx, out, outlen);
+        return;
+    }
     if (ctx->finalized) {
-        if (out && outlen <= ctx->digest_len)
+        if (outlen <= ctx->digest_len)
             memcpy(out, ctx->digest, outlen);
+        else
+            memset(out, 0, outlen);
         return;
     }
     if (!sha3_rate_ok(ctx)) {
-        memset(out, 0, outlen);
+        sha3_fail_closed(ctx, out, outlen);
         return;
     }
     /* Apply domain separation suffix and multi-rate padding */
@@ -180,12 +206,18 @@ static void sha3_pad_and_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outl
 
 static void shake_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
     if (!ctx || (!out && outlen != 0)) return;
-    if (ctx->finalized)
-        return;
-    if (ctx->rate == 0 || ctx->rate > sizeof(ctx->buf) ||
-        (!ctx->squeezed && ctx->buf_len >= ctx->rate)) {
+    if (ctx->finalized) {
         if (out && outlen)
             memset(out, 0, outlen);
+        return;
+    }
+    if (ctx->rate == 0 || ctx->rate > sizeof(ctx->buf) ||
+        (ctx->rate % 8) != 0 ||
+        (!ctx->squeezed && ctx->buf_len >= ctx->rate) ||
+        (ctx->squeezed && ctx->squeeze_pos > ctx->rate)) {
+        if (out && outlen)
+            memset(out, 0, outlen);
+        ctx->finalized = 1;
         return;
     }
     if (!ctx->squeezed) {

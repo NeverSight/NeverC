@@ -401,6 +401,26 @@ static void test_invalid_pem(void) {
                             out_buf, sizeof(out_buf),
                             &bytes_written, NULL);
     check_int("CR in type rejected", rc, -1);
+
+    const char *ok_block =
+        "-----BEGIN FOO-----\n"
+        "YQ==\n"
+        "-----END FOO-----\n";
+    {
+        char tiny_type[2];
+        uint8_t sentinel[8] = {0xaa, 0xbb, 0xcc, 0xdd,
+                               0xee, 0xff, 0x11, 0x22};
+        bytes_written = 99;
+        rc = neverc_pem_decode(ok_block, strlen(ok_block),
+                                tiny_type, sizeof(tiny_type),
+                                sentinel, sizeof(sentinel),
+                                &bytes_written, NULL);
+        check_int("type cap too small", rc, -1);
+        check_int("type cap failure leaves bytes_written 0",
+                  (int)bytes_written, 0);
+        check_int("type cap failure does not write body", sentinel[0], 0xaa);
+        check_int("type cap failure leaves rest", sentinel[1], 0xbb);
+    }
 }
 
 static void test_go_armor(void) {
@@ -428,6 +448,60 @@ static void test_go_armor(void) {
     check_mem("skip invalid data", out_buf, (const uint8_t *)"hello", 5);
     check_int("skip invalid rest at EOF",
               (int)rest_offset, (int)strlen(invalid_then_valid));
+
+    const char *two_blocks =
+        "-----BEGIN A-----\n"
+        "YQ==\n"
+        "-----END A-----\n"
+        "-----BEGIN B-----\n"
+        "Yg==\n"
+        "-----END B-----\n";
+    bytes_written = 0;
+    rest_offset = 0;
+    rc = neverc_pem_decode(two_blocks, strlen(two_blocks),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, &rest_offset);
+    check_int("first of two blocks", rc, 0);
+    check_str("first block type", type_buf, "A");
+    check_int("first block len", (int)bytes_written, 1);
+    check_mem("first block data", out_buf, (const uint8_t *)"a", 1);
+    {
+        const char *second = strstr(two_blocks, "-----BEGIN B-----");
+        check_int("rest_offset at second block",
+                  second != NULL && rest_offset == (size_t)(second - two_blocks), 1);
+    }
+    bytes_written = 0;
+    rc = neverc_pem_decode(two_blocks + rest_offset,
+                            strlen(two_blocks) - rest_offset,
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("second of two blocks", rc, 0);
+    check_str("second block type", type_buf, "B");
+    check_int("second block len", (int)bytes_written, 1);
+    check_mem("second block data", out_buf, (const uint8_t *)"b", 1);
+
+    const char *trailing_extra =
+        "-----BEGIN FOO-----\n"
+        "YQ==\n"
+        "-----END FOO-----\n"
+        "not-pem-trailing";
+    bytes_written = 0;
+    rest_offset = 0;
+    rc = neverc_pem_decode(trailing_extra, strlen(trailing_extra),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, &rest_offset);
+    check_int("block with trailing extra", rc, 0);
+    check_str("trailing extra type", type_buf, "FOO");
+    check_int("trailing extra payload", (int)bytes_written, 1);
+    {
+        const char *extra = strstr(trailing_extra, "not-pem-trailing");
+        check_int("rest_offset at extra data",
+                  extra != NULL &&
+                      rest_offset == (size_t)(extra - trailing_extra), 1);
+    }
 
     const char *multi_begin =
         "-----BEGIN TEST BLOCK-----\n"

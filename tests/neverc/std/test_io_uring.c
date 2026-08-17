@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+#include <stdint.h>
 
 #if defined(__linux__)
 #define NC_USE_IO_URING 1
@@ -102,6 +104,15 @@ TEST(uring_ring_init_destroy) {
 
     nc_uring_destroy(&ring);
     ASSERT_EQ(ring.ring_fd, -1);
+#endif
+}
+
+TEST(uring_init_rejects_overflow) {
+#if defined(NC_USE_IO_URING) && NC_USE_IO_URING && defined(__linux__)
+    nc_uring_t ring;
+    ASSERT_EQ(nc_uring_init(&ring, 0), -1);
+    ASSERT_EQ(nc_uring_init(&ring, UINT_MAX), -1);
+    ASSERT_EQ(nc_uring_init(&ring, (UINT_MAX / 4) + 1), -1);
 #endif
 }
 
@@ -428,6 +439,47 @@ TEST(uring_poller_mod) {
 #endif
 }
 
+TEST(poller_drops_stale_after_del) {
+#if defined(NC_USE_IO_URING) && NC_USE_IO_URING && defined(__linux__)
+    nc_poller_t *poller = nc_poller_create();
+    if (!poller) { printf("(skipped) "); return; }
+
+    int pipefd[2];
+    ASSERT_EQ(pipe(pipefd), 0);
+
+    int *tag = (int *)malloc(sizeof(int));
+    ASSERT_TRUE(tag != NULL);
+    *tag = 7;
+    ASSERT_EQ(nc_poller_add(poller, pipefd[0], NC_EV_READ, tag), 0);
+
+    char c = 'D';
+    ASSERT_EQ(write(pipefd[1], &c, 1), 1);
+    ASSERT_EQ(nc_poller_del(poller, pipefd[0]), 0);
+
+    void *freed = tag;
+    free(tag);
+
+    nc_event_t events[16];
+    int n = nc_poller_wait(poller, events, 16, 0);
+    ASSERT_GE(n, 0);
+    for (int i = 0; i < n; i++) {
+        ASSERT_TRUE(events[i].data != freed);
+        ASSERT_TRUE(events[i].fd != pipefd[0]);
+    }
+
+    int live = 99;
+    ASSERT_EQ(nc_poller_add(poller, pipefd[0], NC_EV_READ, &live), 0);
+    n = nc_poller_wait(poller, events, 16, 1000);
+    ASSERT_GE(n, 1);
+    ASSERT_EQ(events[0].data, &live);
+
+    nc_poller_del(poller, pipefd[0]);
+    close(pipefd[0]);
+    close(pipefd[1]);
+    nc_poller_destroy(poller);
+#endif
+}
+
 /* ===== Test 13: Ring capacity — fill and drain ===== */
 TEST(uring_ring_capacity) {
 #if defined(NC_USE_IO_URING) && NC_USE_IO_URING && defined(__linux__)
@@ -475,6 +527,7 @@ int main(void) {
 
     run_test_io_uring_syscall_available();
     run_test_uring_ring_init_destroy();
+    run_test_uring_init_rejects_overflow();
     run_test_uring_sqe_get_advance();
     run_test_uring_nop_submit_complete();
     run_test_uring_batch_nops();
@@ -485,6 +538,7 @@ int main(void) {
     run_test_uring_tcp_echo_via_poller();
     run_test_uring_multi_fd_poll();
     run_test_uring_poller_mod();
+    run_test_poller_drops_stale_after_del();
     run_test_uring_ring_capacity();
 
     printf("\n%d passed, %d failed\n", tests_passed, tests_failed);

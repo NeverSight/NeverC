@@ -801,6 +801,96 @@ static void test_mode_mixups_and_length_checks(void) {
     printf("ok\n");
 }
 
+static void test_truncated_ciphertext(void) {
+    printf("  truncated ciphertext rejected ... ");
+    uint8_t priv[48], pub[97];
+    int priv_len, pub_len;
+    gen_keypair(
+        NEVERC_HPKE_KEM_X25519_SHA256,
+        priv, &priv_len, pub, &pub_len);
+
+    neverc_hpke_sender_t sender;
+    uint8_t enc[NEVERC_HPKE_MAX_ENC_SIZE];
+    size_t enc_len = 0;
+    ASSERT(neverc_hpke_sender_new(
+               &sender, enc, &enc_len,
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               pub, (size_t)pub_len, NULL, 0) == 0,
+           "sender setup for truncated ct");
+
+    neverc_hpke_recipient_t recipient;
+    ASSERT(neverc_hpke_recipient_new(
+               &recipient, enc, enc_len - 1U,
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               priv, (size_t)priv_len, NULL, 0) == -1,
+           "truncated encapsulated key rejected");
+
+    const uint8_t msg[] = "truncate me";
+    uint8_t ct[256];
+    int ct_len = neverc_hpke_sender_seal(
+        &sender, NULL, 0, msg, sizeof(msg) - 1, ct);
+    ASSERT(ct_len == (int)sizeof(msg) - 1 + 16, "seal for truncated ct");
+
+    neverc_hpke_recipient_t opener;
+    ASSERT(neverc_hpke_recipient_new(
+               &opener, enc, enc_len,
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               priv, (size_t)priv_len, NULL, 0) == 0,
+           "recipient setup for truncated ct");
+
+    uint8_t pt[256];
+    memset(pt, 0xa5, sizeof(pt));
+    ASSERT(neverc_hpke_recipient_open(
+               &opener, NULL, 0, ct, 15U, pt) == -1,
+           "tag-truncated open rejected");
+    ASSERT(pt[0] == 0xa5, "tag-truncated open writes nothing");
+    ASSERT(neverc_hpke_recipient_open(
+               &opener, NULL, 0, ct, (size_t)ct_len - 1U, pt) == -1,
+           "one-byte-truncated open rejected");
+    ASSERT(opener.ctx.seq_num == 0,
+           "failed truncated open does not consume the sequence");
+    ASSERT(neverc_hpke_recipient_open(
+               &opener, NULL, 0, ct, (size_t)ct_len, pt) ==
+               (int)sizeof(msg) - 1,
+           "full ciphertext still opens after truncated attempts");
+    ASSERT(memcmp(pt, msg, sizeof(msg) - 1) == 0,
+           "plaintext matches after truncated attempts");
+
+    uint8_t oneshot[256];
+    size_t oneshot_len = 0;
+    ASSERT(neverc_hpke_seal(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               pub, (size_t)pub_len, NULL, 0,
+               msg, sizeof(msg) - 1, oneshot, &oneshot_len) == 0,
+           "one-shot seal for truncated open");
+    size_t pt_len = 99U;
+    memset(pt, 0xa5, sizeof(pt));
+    ASSERT(neverc_hpke_open(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               priv, (size_t)priv_len, NULL, 0,
+               oneshot, 32U + 15U, pt, &pt_len) == -1,
+           "one-shot tag-truncated ciphertext rejected");
+    ASSERT(pt_len == 0U, "one-shot truncated open publishes no length");
+    ASSERT(neverc_hpke_open(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_CHACHA20POLY1305,
+               priv, (size_t)priv_len, NULL, 0,
+               oneshot, oneshot_len - 1U, pt, &pt_len) == -1,
+           "one-shot one-byte-truncated ciphertext rejected");
+    printf("ok\n");
+}
+
 static void test_limits_and_invalid_inputs(void) {
     printf("  limits and invalid inputs ... ");
     uint8_t priv[48], pub[97];
@@ -908,6 +998,7 @@ int main(void) {
     test_rfc9180_p256_sha512_vector();
     test_rfc9180_export_only_vector();
     test_mode_mixups_and_length_checks();
+    test_truncated_ciphertext();
     test_limits_and_invalid_inputs();
     printf("%d/%d passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

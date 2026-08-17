@@ -95,9 +95,13 @@ char *neverc_textproto_canonical_mime_header_key(const char *key) {
     if (!key) return NULL;
     size_t len = strlen(key);
     if (len == SIZE_MAX) return NULL;
-    /* Go: invalid field names (space, CTL, ...) are returned unmodified. */
-    if (!textproto_field_name_ok(key))
+    if (!textproto_field_name_ok(key)) {
+        /* Go returns invalid keys unmodified, but a CR/LF key would
+         * re-serialize as two headers. */
+        if (strchr(key, '\r') || strchr(key, '\n'))
+            return NULL;
         return textproto_dup(key);
+    }
     char *out = (char *)NC_TEXTPROTO_MALLOC(len + 1U);
     if (!out) return NULL;
     int upper = 1;
@@ -380,9 +384,11 @@ int neverc_textproto_read_dot_lines(const char *data, size_t len,
     char line[4096];
     int saw_dot = 0;
 
-    while (pos < len && *nlines < max_lines) {
+    while (pos < len) {
         size_t ate = 0;
         if (neverc_textproto_read_line(data + pos, len - pos, line, sizeof(line), &ate) != 0) {
+            for (size_t i = 0; i < *nlines; i++) free(lines[i]);
+            *nlines = 0;
             if (consumed) *consumed = pos;
             return -1;
         }
@@ -390,6 +396,12 @@ int neverc_textproto_read_dot_lines(const char *data, size_t len,
         if (strcmp(line, ".") == 0) {
             saw_dot = 1;
             break;
+        }
+        if (*nlines >= max_lines) {
+            for (size_t i = 0; i < *nlines; i++) free(lines[i]);
+            *nlines = 0;
+            if (consumed) *consumed = pos;
+            return -1;
         }
         const char *src = line;
         if (src[0] == '.') src++;
@@ -418,6 +430,9 @@ int neverc_textproto_read_code_line(const char *line, int *code,
         !nc_isdigit((unsigned char)line[2])) return -1;
     *code = (line[0] - '0') * 100 + (line[1] - '0') * 10 + (line[2] - '0');
     if (line[3] == ' ' || line[3] == '-') {
+        for (const unsigned char *p = (const unsigned char *)line + 4; *p; p++) {
+            if (*p == '\r' || *p == '\n') return -1;
+        }
         if (msg) *msg = line + 4;
     } else if (line[3] == '\0') {
         if (msg) *msg = "";

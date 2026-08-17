@@ -207,6 +207,51 @@ static void test_des_weak_keys(void) {
     neverc_des_encrypt_block(&c, double_enc, ct);
 
     check_bytes("weak key: E(E(pt)) == pt (involution)", double_enc, pt, 8);
+
+    check_int("null key is not weak", neverc_des_is_weak_key(NULL), -1);
+    check_int("01010101.. is weak", neverc_des_is_weak_key(weak_key), 1);
+
+    const uint8_t zeros[8] = {0};
+    check_int("all-zero is weak (parity-stripped 01..01)",
+              neverc_des_is_weak_key(zeros), 1);
+
+    const uint8_t nist[] = {0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF};
+    check_int("NIST test key is not weak", neverc_des_is_weak_key(nist), 0);
+
+    const uint8_t semi[] = {0x01,0xFE,0x01,0xFE,0x01,0xFE,0x01,0xFE};
+    check_int("semi-weak 01FE.. is weak", neverc_des_is_weak_key(semi), 1);
+    const uint8_t semi_parity[] = {0x00,0xFF,0x00,0xFF,0x00,0xFF,0x00,0xFF};
+    check_int("semi-weak with flipped parity bits",
+              neverc_des_is_weak_key(semi_parity), 1);
+
+    check_int("null 3DES key", neverc_3des_is_weak_key(NULL), -1);
+    const uint8_t tdes_ok[24] = {
+        0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,
+        0xFE,0xDC,0xBA,0x98,0x76,0x54,0x32,0x10,
+        0x45,0x67,0x89,0xAB,0xCD,0xEF,0x01,0x23,
+    };
+    check_int("independent 3DES keys are not weak",
+              neverc_3des_is_weak_key(tdes_ok), 0);
+
+    const uint8_t tdes_k1k2[24] = {
+        0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,
+        0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,
+        0x45,0x67,0x89,0xAB,0xCD,0xEF,0x01,0x23,
+    };
+    check_int("3DES K1==K2 is degenerate", neverc_3des_is_weak_key(tdes_k1k2), 1);
+
+    const uint8_t tdes_two_key[24] = {
+        0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,
+        0xFE,0xDC,0xBA,0x98,0x76,0x54,0x32,0x10,
+        0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,
+    };
+    check_int("two-key 3DES (K1==K3) is not flagged weak",
+              neverc_3des_is_weak_key(tdes_two_key), 0);
+
+    uint8_t tdes_weak_k2[24];
+    memcpy(tdes_weak_k2, tdes_ok, 24);
+    memcpy(tdes_weak_k2 + 8, weak_key, 8);
+    check_int("3DES with weak K2", neverc_3des_is_weak_key(tdes_weak_k2), 1);
 }
 
 static void test_des_different_keys(void) {

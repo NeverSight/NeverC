@@ -363,6 +363,43 @@ static void test_pe32_and_bounds(void) {
     put16(obj + 68 + 16, 1);
     CHECK("reject SizeOfOptionalHeader of 1",
           neverc_pe_open(&f, obj, sizeof(obj)) == -1);
+
+    uint8_t trunc_coff[68];
+    memset(trunc_coff, 0, sizeof(trunc_coff));
+    trunc_coff[0] = 'M';
+    trunc_coff[1] = 'Z';
+    put32(trunc_coff + 60, 64);
+    trunc_coff[64] = 'P';
+    trunc_coff[65] = 'E';
+    CHECK("truncated COFF is valid PE magic",
+          neverc_pe_is_valid(trunc_coff, sizeof(trunc_coff)));
+    CHECK("reject truncated COFF header",
+          neverc_pe_open(&f, trunc_coff, sizeof(trunc_coff)) == -1);
+
+    uint8_t opt_eof[88];
+    memset(opt_eof, 0, sizeof(opt_eof));
+    opt_eof[0] = 'M';
+    opt_eof[1] = 'Z';
+    put32(opt_eof + 60, 64);
+    opt_eof[64] = 'P';
+    opt_eof[65] = 'E';
+    put16(opt_eof + 68, NEVERC_IMAGE_FILE_MACHINE_AMD64);
+    put16(opt_eof + 68 + 16, 240);
+    CHECK("reject SizeOfOptionalHeader past EOF",
+          neverc_pe_open(&f, opt_eof, sizeof(opt_eof)) == -1);
+
+    uint8_t pe32p_lie[88 + 96];
+    memset(pe32p_lie, 0, sizeof(pe32p_lie));
+    pe32p_lie[0] = 'M';
+    pe32p_lie[1] = 'Z';
+    put32(pe32p_lie + 60, 64);
+    pe32p_lie[64] = 'P';
+    pe32p_lie[65] = 'E';
+    put16(pe32p_lie + 68, NEVERC_IMAGE_FILE_MACHINE_AMD64);
+    put16(pe32p_lie + 68 + 16, 96);
+    put16(pe32p_lie + 88, NEVERC_PE32P_MAGIC);
+    CHECK("reject PE32+ SizeOfOptionalHeader of 96",
+          neverc_pe_open(&f, pe32p_lie, sizeof(pe32p_lie)) == -1);
 }
 
 static void test_pe_invalid(void) {
@@ -396,6 +433,13 @@ static void test_pe_invalid(void) {
     put32(data + 328 + 20, (uint32_t)(len - 8));
     CHECK("reject section outside file", neverc_pe_open(&f, data, len) == -1);
     put32(data + 328 + 20, 512);
+
+    put32(data + 328 + 20, 0xFFFFFFF0u);
+    put32(data + 328 + 16, 0x20u);
+    CHECK("reject section pointer plus size wrap",
+          neverc_pe_open(&f, data, len) == -1);
+    put32(data + 328 + 20, 512);
+    put32(data + 328 + 16, 16);
 
     put16(data + 68 + 16, 248);
     CHECK("reject SizeOfOptionalHeader past data directories",

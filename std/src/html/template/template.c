@@ -611,7 +611,12 @@ static int html_raw_end_tag(const char *buf, size_t i, size_t len,
                             const char *close, size_t clen) {
     if (i + clen > len || !html_ci_eq_n(buf + i, close, clen)) return 0;
     if (i + clen == len) return 1;
-    return !nc_isalnum((unsigned char)buf[i + clen]);
+    unsigned char n = (unsigned char)buf[i + clen];
+    /* HTML5: a script/style end tag name is followed by whitespace, '/',
+     * or '>'. A hyphen keeps `</script-foo>` inside the raw text element,
+     * so interpolation after it must stay JS/CSS-escaped. */
+    return n == ' ' || n == '\t' || n == '\n' || n == '\r' || n == '\f' ||
+           n == '/' || n == '>';
 }
 
 enum {

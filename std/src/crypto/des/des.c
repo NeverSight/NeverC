@@ -39,7 +39,35 @@ static const uint8_t permutedChoice2[48] = {
 static const uint8_t ksRotations[16] = {1,1,2,2,2,2,2,2,1,2,2,2,2,2,2,1};
 
 static uint32_t feistelBox[8][64];
-static int feistelBoxInit = 0;
+static int feistelBoxInit = 0; /* 0 = uninit, 1 = initializing, 2 = ready */
+
+/* FIPS 46-3 weak (4) and semi-weak (12) keys. Parity bits are ignored
+ * when comparing, so 00..00 matches 01..01. */
+static const uint8_t des_weak_keys[][8] = {
+    {0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01},
+    {0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE},
+    {0x1F,0x1F,0x1F,0x1F,0x0E,0x0E,0x0E,0x0E},
+    {0xE0,0xE0,0xE0,0xE0,0xF1,0xF1,0xF1,0xF1},
+    {0x01,0xFE,0x01,0xFE,0x01,0xFE,0x01,0xFE},
+    {0xFE,0x01,0xFE,0x01,0xFE,0x01,0xFE,0x01},
+    {0x1F,0xE0,0x1F,0xE0,0x0E,0xF1,0x0E,0xF1},
+    {0xE0,0x1F,0xE0,0x1F,0xF1,0x0E,0xF1,0x0E},
+    {0x01,0xE0,0x01,0xE0,0x01,0xF1,0x01,0xF1},
+    {0xE0,0x01,0xE0,0x01,0xF1,0x01,0xF1,0x01},
+    {0x1F,0xFE,0x1F,0xFE,0x0E,0xFE,0x0E,0xFE},
+    {0xFE,0x1F,0xFE,0x1F,0xFE,0x0E,0xFE,0x0E},
+    {0x01,0x1F,0x01,0x1F,0x01,0x0E,0x01,0x0E},
+    {0x1F,0x01,0x1F,0x01,0x0E,0x01,0x0E,0x01},
+    {0xE0,0xFE,0xE0,0xFE,0xF1,0xFE,0xF1,0xFE},
+    {0xFE,0xE0,0xFE,0xE0,0xFE,0xF1,0xFE,0xF1},
+};
+
+static int des_keys_equal_ignore_parity(const uint8_t a[8], const uint8_t b[8]) {
+    int diff = 0;
+    for (int i = 0; i < 8; i++)
+        diff |= (a[i] ^ b[i]) & 0xFE;
+    return diff == 0;
+}
 
 static uint64_t permuteBlock(uint64_t src, const uint8_t *perm, int n) {
     uint64_t block = 0;
@@ -95,21 +123,27 @@ static uint64_t permuteFinalBlock(uint64_t block) {
 }
 
 static void initFeistelBox(void) {
-    if (feistelBoxInit) return;
-    for (int s = 0; s < 8; s++) {
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 16; j++) {
-                uint64_t f = (uint64_t)sBoxes[s][i][j] << (4 * (7 - s));
-                f = permuteBlock(f, permutationFunction, 32);
-                uint8_t row = (uint8_t)(((i & 2) << 4) | (i & 1));
-                uint8_t col = (uint8_t)(j << 1);
-                uint8_t t = row | col;
-                f = (f << 1) | (f >> 31);
-                feistelBox[s][t] = (uint32_t)f;
+    if (NEVERC_ATOMIC_LOAD32(&feistelBoxInit) == 2)
+        return;
+    if (NEVERC_ATOMIC_CAS32(&feistelBoxInit, 0, 1)) {
+        for (int s = 0; s < 8; s++) {
+            for (int i = 0; i < 4; i++) {
+                for (int j = 0; j < 16; j++) {
+                    uint64_t f = (uint64_t)sBoxes[s][i][j] << (4 * (7 - s));
+                    f = permuteBlock(f, permutationFunction, 32);
+                    uint8_t row = (uint8_t)(((i & 2) << 4) | (i & 1));
+                    uint8_t col = (uint8_t)(j << 1);
+                    uint8_t t = row | col;
+                    f = (f << 1) | (f >> 31);
+                    feistelBox[s][t] = (uint32_t)f;
+                }
             }
         }
+        NEVERC_ATOMIC_STORE32(&feistelBoxInit, 2);
+        return;
     }
-    feistelBoxInit = 1;
+    while (NEVERC_ATOMIC_LOAD32(&feistelBoxInit) != 2) {
+    }
 }
 
 static void feistel(uint32_t l, uint32_t r, uint64_t k0, uint64_t k1,
@@ -212,6 +246,28 @@ static int des_ready(const neverc_des_cipher_t *c) {
 
 static int tdes_ready(const neverc_3des_cipher_t *c) {
     return c && c->c1.ready && c->c2.ready && c->c3.ready;
+}
+
+int neverc_des_is_weak_key(const uint8_t key[8]) {
+    if (!key) return -1;
+    for (size_t i = 0; i < sizeof(des_weak_keys) / sizeof(des_weak_keys[0]); i++) {
+        if (des_keys_equal_ignore_parity(key, des_weak_keys[i]))
+            return 1;
+    }
+    return 0;
+}
+
+int neverc_3des_is_weak_key(const uint8_t key[24]) {
+    if (!key) return -1;
+    if (neverc_des_is_weak_key(key) == 1 ||
+        neverc_des_is_weak_key(key + 8) == 1 ||
+        neverc_des_is_weak_key(key + 16) == 1)
+        return 1;
+    /* K1==K2 or K2==K3 collapses 3DES to single DES. K1==K3 is two-key 3DES. */
+    if (des_keys_equal_ignore_parity(key, key + 8) ||
+        des_keys_equal_ignore_parity(key + 8, key + 16))
+        return 1;
+    return 0;
 }
 
 int neverc_des_init(neverc_des_cipher_t *c, const uint8_t key[8]) {

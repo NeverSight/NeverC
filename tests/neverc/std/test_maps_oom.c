@@ -122,6 +122,16 @@ int main(void) {
     }
 
     reset_allocator(0);
+    neverc_map_t *copy_dst = neverc_maps_new();
+    CHECK(copy_dst != NULL);
+    reset_allocator(1);
+    CHECK(neverc_maps_copy(copy_dst, m) == -1);
+    CHECK(neverc_maps_len(copy_dst) == 0);
+    CHECK(!neverc_maps_has(copy_dst, "present"));
+    CHECK(neverc_maps_len(m) == 14);
+
+    reset_allocator(0);
+    neverc_maps_free(copy_dst);
     neverc_maps_free(m);
     puts("passed");
     return 0;

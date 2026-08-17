@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -175,6 +176,23 @@ static void test_find_submatch(void) {
     if (m[1].start) check_int("noncap group1 c", m[1].start[0] == 'c', 1);
     neverc_regexp_free(re);
 
+    /* Capture index: max_matches=1 must not write past the caller's array. */
+    re = neverc_regexp_compile("(a)(b)", NULL);
+    {
+        neverc_regexp_match_t slot[2];
+        const char *sent = "SENTINEL";
+        slot[1].start = sent;
+        slot[1].len = 99;
+        n = neverc_regexp_find_submatch(re, "ab", slot, 1);
+        check_int("max_matches=1 found", n, 1);
+        check_bool("max_matches=1 leaves [1]", slot[1].start == sent && slot[1].len == 99, 1);
+        memset(slot, 0xAA, sizeof(slot));
+        n = neverc_regexp_find_submatch(re, "ab", slot, 2);
+        check_int("max_matches=2 found", n, 1);
+        check_int("max_matches=2 g1", (int)slot[1].len, 1);
+    }
+    neverc_regexp_free(re);
+
     /* Empty-width: ()* must not loop; find stays non-empty so no match. */
     printf("  find_all ()*\n");
     re = neverc_regexp_compile("()*", NULL);
@@ -183,6 +201,37 @@ static void test_find_submatch(void) {
     char **all = neverc_regexp_find_all(re, "abc", -1, &count);
     printf("  find_all ()* count=%d\n", count);
     check_int("empty-width find_all count", count, 0);
+    neverc_regexp_free_strings(all, count);
+
+    all = neverc_regexp_find_all(re, "\xFF\xFF", -1, &count);
+    check_int("empty-width on invalid UTF-8 text", count, 0);
+    neverc_regexp_free_strings(all, count);
+    neverc_regexp_free(re);
+
+    /* Classic empty-width loop in backtracking engines: (a|)* */
+    re = neverc_regexp_compile("(a|)*", NULL);
+    check_bool("(a|)* compiles", re != NULL, 1);
+    check_bool("(a|)* empty", neverc_regexp_match(re, ""), 1);
+    check_bool("(a|)* aaa", neverc_regexp_match(re, "aaa"), 1);
+    check_bool("(a|)* bbb no full", neverc_regexp_match(re, "bbb"), 0);
+    all = neverc_regexp_find_all(re, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", -1, &count);
+    check_int("(a|)* find_all non-empty", count, 0);
+    neverc_regexp_free_strings(all, count);
+    size_t outlen = 0;
+    char *rep = neverc_regexp_replace_all(re, "xyz", "Z", &outlen);
+    check_str("(a|)* replace no empty inserts", rep, "xyz");
+    free(rep);
+    int scount = 0;
+    char **parts = neverc_regexp_split(re, "xyz", -1, &scount);
+    check_int("(a|)* split count", scount, 1);
+    if (scount >= 1) check_str("(a|)* split[0]", parts[0], "xyz");
+    neverc_regexp_free_strings(parts, scount);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("()+", NULL);
+    check_bool("()+ compiles", re != NULL, 1);
+    all = neverc_regexp_find_all(re, "abc", -1, &count);
+    check_int("()+ find_all", count, 0);
     neverc_regexp_free_strings(all, count);
     neverc_regexp_free(re);
 }
@@ -466,6 +515,34 @@ static void test_invalid_inputs(void) {
         neverc_regexp_free(re);
     }
 
+    /* Go regexp/syntax: invalid UTF-8 in the pattern is ErrInvalidUTF8. */
+    {
+        char raw_ff[] = { 'a', (char)0xFF, 'b', 0 };
+        err = NULL;
+        re = neverc_regexp_compile(raw_ff, &err);
+        check_bool("raw 0xFF pattern rejected", re == NULL && err != NULL, 1);
+        neverc_regexp_free(re);
+
+        char trunc[] = { (char)0xC3, 0 };
+        err = NULL;
+        re = neverc_regexp_compile(trunc, &err);
+        check_bool("truncated UTF-8 pattern rejected", re == NULL && err != NULL, 1);
+        neverc_regexp_free(re);
+
+        char overlong[] = { (char)0xC0, (char)0x80, 0 };
+        err = NULL;
+        re = neverc_regexp_compile(overlong, &err);
+        check_bool("overlong UTF-8 pattern rejected", re == NULL && err != NULL, 1);
+        neverc_regexp_free(re);
+    }
+
+    /* Go parseInt: leading zeros make `{` a literal, not a{1}. */
+    check_bool("a{01} matches literal", neverc_regexp_match_string("a{01}", "a{01}"), 1);
+    check_bool("a{01} is not a{1}", neverc_regexp_match_string("a{01}", "a"), 0);
+    check_bool("a{00} matches literal", neverc_regexp_match_string("a{00}", "a{00}"), 1);
+    check_bool("a{0} still empty", neverc_regexp_match_string("^a{0}$", ""), 1);
+    check_bool("a{0,01} is literal", neverc_regexp_match_string("a{0,01}", "a{0,01}"), 1);
+
     size_t match_len = 99;
     check_bool("match null regexp", neverc_regexp_match(NULL, "x"), 0);
     re = neverc_regexp_compile("x", NULL);
@@ -654,6 +731,9 @@ static void test_named_groups_and_replace_expand(void) {
     check_int("index as", neverc_regexp_subexp_index(re, "as"), 1);
     check_int("index bs", neverc_regexp_subexp_index(re, "bs"), 2);
     check_int("index missing", neverc_regexp_subexp_index(re, "nope"), -1);
+    check_bool("name -1", neverc_regexp_subexp_name(re, -1) == NULL, 1);
+    check_bool("name past ngroups", neverc_regexp_subexp_name(re, 100) == NULL, 1);
+    check_bool("name INT_MAX", neverc_regexp_subexp_name(re, INT_MAX) == NULL, 1);
     memset(m, 0, sizeof(m));
     check_int("named submatch", neverc_regexp_find_submatch(re, "xxaaabbcyy", m, 3), 1);
     check_int("named g1", (int)m[1].len, 3);
@@ -767,6 +847,22 @@ static void test_utf8_class_and_nfa_bound(void) {
     check_bool("(a+)+x no match", neverc_regexp_match(re, "aaaaaaaaaaaaaaaaaaaa"), 0);
     check_bool("(a+)+x match", neverc_regexp_match(re, "aaaaaaaaaaaaaaaaaaaax"), 1);
     neverc_regexp_free(re);
+
+    /* Longer run: still linear, not exponential backtracking. */
+    {
+        char as[41];
+        memset(as, 'a', 40);
+        as[40] = '\0';
+        re = neverc_regexp_compile("(a+)+b", NULL);
+        check_bool("(a+)+b compiles", re != NULL, 1);
+        check_bool("(a+)+b 40 a's no match", neverc_regexp_match(re, as), 0);
+        neverc_regexp_free(re);
+    }
+
+    /* Invalid UTF-8 in the *text* is a byte; `.` matches it (no hang). */
+    check_bool(". matches invalid UTF-8 byte", neverc_regexp_match_string(".", "\xFF"), 1);
+    check_bool("utf8 literal e-acute",
+               neverc_regexp_match_string("\xC3\xA9", "\xC3\xA9"), 1);
 
     const char *err = NULL;
     re = neverc_regexp_compile("(a{1000}){1000}", &err);

@@ -163,6 +163,20 @@ static void test_template_url_and_script(void) {
     check("unquoted js url neutralized", out && strstr(out, "javascript:") == NULL);
     free(out);
 
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render("<form action=\"{{.Link}}\">", &data);
+    check("form action js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check("form action becomes hash", out && strstr(out, "action=\"#\"") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<button formaction=\"{{.Link}}\">go</button>", &data);
+    check("formaction js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "Name", "');alert(1);//");
     out = neverc_html_template_render("<img onclick=\"{{.Name}}\">", &data);
     check("onclick is js string", out && strstr(out, "&#39;") != NULL);
@@ -660,6 +674,25 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "\"hello\"") != NULL);
     check("js after closed comment is not replaced",
           out && strstr(out, "ZgotmplZ") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<script></script-foo>{{.X}}</script>", &data);
+    check("hyphenated script closer stays in js context",
+          out && strstr(out, "\"alert(1)\"") != NULL);
+    check("hyphenated script closer is not a raw call",
+          out && strstr(out, "</script-foo>alert(1)") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X",
+                                  "body{background:url(javascript:alert(1))}");
+    out = neverc_html_template_render(
+        "<style></style-foo>{{.X}}</style>", &data);
+    check("hyphenated style closer stays in css context",
+          out && strstr(out, "javascript") == NULL);
+    check("hyphenated style closer is neutralized",
+          out && strstr(out, "</style-foo>#</style>") != NULL);
     free(out);
     neverc_html_template_data_free(&data);
 }

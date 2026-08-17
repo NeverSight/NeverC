@@ -69,12 +69,22 @@ static void *mock_smtp_server(void *arg) {
             buf[n] = '\0';
 
             if (strncmp(buf, "EHLO", 4) == 0) {
-                /* Final line is "250" with no SP-text (RFC 5321 §4.2). */
+                /* Final line is "250" with no SP-text (RFC 5321 §4.2).
+                 * noauth.local advertises no AUTH; HELP text names PLAIN so a
+                 * cross-line strstr would fail-open. plainonly.local omits LOGIN. */
                 const char *resp =
-                    "250-mock.smtp.test\r\n"
-                    "250-8BITMIME\r\n"
-                    "250-AUTH PLAIN LOGIN\r\n"
-                    "250\r\n";
+                    strstr(buf, "noauth.local")
+                    ? "250-mock.smtp.test\r\n"
+                      "250-8BITMIME\r\n"
+                      "250 HELP AUTH PLAIN LOGIN is documented\r\n"
+                    : strstr(buf, "plainonly.local")
+                    ? "250-mock.smtp.test\r\n"
+                      "250-AUTH PLAIN\r\n"
+                      "250 8BITMIME\r\n"
+                    : "250-mock.smtp.test\r\n"
+                      "250-8BITMIME\r\n"
+                      "250-AUTH PLAIN LOGIN\r\n"
+                      "250\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
             } else if (strncmp(buf, "HELO", 4) == 0) {
                 const char *resp = "250 Hello\r\n";
@@ -399,6 +409,38 @@ static void test_smtp_reject_injection(void) {
     }
 }
 
+static void test_smtp_auth_requires_advertised(void) {
+    printf("[smtp_auth_requires_advertised]\n");
+
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_smtp_port);
+    const char *err = NULL;
+    neverc_smtp_client_t *c = neverc_smtp_dial(addr, &err);
+    check_true("dial for auth advertisement", c != NULL);
+    if (!c) return;
+
+    check_true("EHLO without AUTH",
+               neverc_smtp_hello(c, "noauth.local") == 0);
+    check_true("AUTH PLAIN rejected when unadvertised",
+               neverc_smtp_auth(c, NEVERC_SMTP_AUTH_PLAIN, "user", "pass") == -1);
+    check_true("AUTH LOGIN rejected when unadvertised",
+               neverc_smtp_auth(c, NEVERC_SMTP_AUTH_LOGIN, "user", "pass") == -1);
+    check_true("MAIL FROM after rejected AUTH",
+               neverc_smtp_mail(c, "sender@example.com") == 0);
+    neverc_smtp_close(c);
+
+    c = neverc_smtp_dial(addr, &err);
+    check_true("dial for PLAIN-only AUTH", c != NULL);
+    if (!c) return;
+    check_true("EHLO PLAIN only",
+               neverc_smtp_hello(c, "plainonly.local") == 0);
+    check_true("AUTH LOGIN rejected when only PLAIN advertised",
+               neverc_smtp_auth(c, NEVERC_SMTP_AUTH_LOGIN, "user", "pass") == -1);
+    check_true("AUTH PLAIN allowed when advertised",
+               neverc_smtp_auth(c, NEVERC_SMTP_AUTH_PLAIN, "user", "pass") == 0);
+    neverc_smtp_close(c);
+}
+
 static void test_smtp_multiline_code_mismatch(void) {
     printf("[smtp_multiline_code_mismatch]\n");
 
@@ -471,6 +513,7 @@ int main(void) {
     test_send_mail();
     test_dot_stuffing();
     test_smtp_reject_injection();
+    test_smtp_auth_requires_advertised();
     test_smtp_multiline_code_mismatch();
     test_smtp_response_leftover();
 

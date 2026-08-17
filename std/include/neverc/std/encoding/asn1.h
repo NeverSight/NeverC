@@ -71,7 +71,8 @@ int neverc_asn1_decode_printable_string(const neverc_asn1_element_t *elem,
 int neverc_asn1_decode_ia5_string(const neverc_asn1_element_t *elem,
                                   const uint8_t **text, size_t *len);
 
-/* Encode helpers (write DER into buffer, return bytes written) */
+/* Encode helpers (write DER into buffer, return bytes written).
+ * On failure the buffer is left unchanged. */
 int neverc_asn1_encode_int64(uint8_t *buf, size_t cap, int64_t val);
 int neverc_asn1_encode_bool(uint8_t *buf, size_t cap, int val);
 int neverc_asn1_encode_octet_string(uint8_t *buf, size_t cap,

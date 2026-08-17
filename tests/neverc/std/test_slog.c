@@ -322,6 +322,26 @@ static void test_escaping_and_special_floats(void) {
     ASSERT_TRUE(strstr(buf, " \"k=eq\"=\"v=eq\"") != NULL);
     ASSERT_TRUE(strstr(buf, " \"k\\\"q\"=\"v\\\"q\"") != NULL);
     ASSERT_TRUE(strstr(buf, " k=eq=") == NULL);
+
+    memset(buf, 0, sizeof(buf));
+    f = tmpfile();
+    if (!f) {
+        ASSERT_TRUE(0);
+        return;
+    }
+    neverc_slog_init(&h, f, NEVERC_SLOG_DEBUG, NEVERC_SLOG_FORMAT_JSON);
+    const char cutover[] = {'<', '/', 's', 'c', 'r', 'i', 'p', 't', '>',
+                            (char)0xf0, '\0'};
+    neverc_slog_attr_t html = neverc_slog_string("html", cutover);
+    neverc_slog_log(&h, NEVERC_SLOG_INFO, cutover, &html, 1);
+    rewind(f);
+    n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+    ASSERT_TRUE(strstr(buf, "\\u003c/script\\u003e") != NULL);
+    ASSERT_TRUE(strstr(buf, "</script>") == NULL);
+    ASSERT_TRUE(strstr(buf, "\\ufffd") != NULL);
+    ASSERT_TRUE(memchr(buf, 0xf0, n) == NULL);
 }
 
 enum { SLOG_THREADS = 8, SLOG_ROUNDS = 100 };

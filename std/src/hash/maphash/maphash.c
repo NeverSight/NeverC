@@ -164,42 +164,46 @@ static void maphash_flush(neverc_maphash_t *h) {
     h->n = 0;
 }
 
-void neverc_maphash_write_byte(neverc_maphash_t *h, uint8_t b) {
-    if (!h) return;
+size_t neverc_maphash_write_byte(neverc_maphash_t *h, uint8_t b) {
+    if (!h) return 0;
     if (h->n == NEVERC_MAPHASH_BUF_SIZE) maphash_flush(h);
     h->buf[h->n++] = b;
     h->used = 1;
+    return 1;
 }
 
-void neverc_maphash_write(neverc_maphash_t *h, const void *data, size_t len) {
-    if (!h || len == 0) return;
-    if (!data) return;
+size_t neverc_maphash_write(neverc_maphash_t *h, const void *data, size_t len) {
+    if (!h) return 0;
+    if (len == 0) return 0;
+    if (!data) return 0;
     const uint8_t *p = (const uint8_t *)data;
+    size_t remaining = len;
     h->used = 1;
 
     if (h->n > 0) {
         size_t space = (size_t)(NEVERC_MAPHASH_BUF_SIZE - h->n);
-        size_t k = len < space ? len : space;
+        size_t k = remaining < space ? remaining : space;
         memcpy(h->buf + h->n, p, k);
         h->n += (int)k;
-        if (h->n < NEVERC_MAPHASH_BUF_SIZE) return;
+        if (h->n < NEVERC_MAPHASH_BUF_SIZE) return len;
         p += k;
-        len -= k;
+        remaining -= k;
         maphash_flush(h);
     }
 
-    while (len > NEVERC_MAPHASH_BUF_SIZE) {
+    while (remaining > NEVERC_MAPHASH_BUF_SIZE) {
         h->state = wyhash(p, NEVERC_MAPHASH_BUF_SIZE, h->state);
         p += NEVERC_MAPHASH_BUF_SIZE;
-        len -= NEVERC_MAPHASH_BUF_SIZE;
+        remaining -= NEVERC_MAPHASH_BUF_SIZE;
     }
-    memcpy(h->buf, p, len);
-    h->n = (int)len;
+    memcpy(h->buf, p, remaining);
+    h->n = (int)remaining;
+    return len;
 }
 
-void neverc_maphash_write_string(neverc_maphash_t *h, const char *s) {
-    if (!s) return;
-    neverc_maphash_write(h, s, strlen(s));
+size_t neverc_maphash_write_string(neverc_maphash_t *h, const char *s) {
+    if (!s) return 0;
+    return neverc_maphash_write(h, s, strlen(s));
 }
 
 uint64_t neverc_maphash_sum64(const neverc_maphash_t *h) {

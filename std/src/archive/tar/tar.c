@@ -1,6 +1,7 @@
 #include "neverc/std/archive/tar.h"
 #include "neverc/std/io/fs.h"
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -54,6 +55,26 @@ static unsigned int tar_checksum(const uint8_t *block) {
     for (int i = 0; i < 148; i++) sum += block[i];
     for (int i = 156; i < 512; i++) sum += block[i];
     return sum;
+}
+
+/* POSIX sums unsigned bytes; historical Sun tar summed signed bytes.
+ * Accept either so a valid header is not rejected, and still reject a
+ * stored value that matches neither (the CRC-mismatch case for tar). */
+static int tar_checksum_matches(const uint8_t *block, uint64_t stored) {
+    unsigned int unsigned_sum = 256;
+    int signed_sum = 256;
+    for (int i = 0; i < 148; i++) {
+        int byte = (int)block[i];
+        unsigned_sum += (unsigned int)byte;
+        signed_sum += byte < 128 ? byte : byte - 256;
+    }
+    for (int i = 156; i < 512; i++) {
+        int byte = (int)block[i];
+        unsigned_sum += (unsigned int)byte;
+        signed_sum += byte < 128 ? byte : byte - 256;
+    }
+    if (stored == unsigned_sum) return 1;
+    return signed_sum >= 0 && stored == (uint64_t)signed_sum;
 }
 
 static size_t tar_field_length(const uint8_t *field, size_t width) {
@@ -172,7 +193,7 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
     uint64_t stored_checksum = 0;
     uint64_t mode = 0, uid = 0, gid = 0, size = 0, mtime = 0;
     if (parse_octal(block + 148, 8, &stored_checksum) != 0 ||
-        stored_checksum != tar_checksum(block) ||
+        !tar_checksum_matches(block, stored_checksum) ||
         parse_octal(block + 100, 8, &mode) != 0 ||
         parse_octal(block + 108, 8, &uid) != 0 ||
         parse_octal(block + 116, 8, &gid) != 0 ||

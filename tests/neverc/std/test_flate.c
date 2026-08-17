@@ -134,6 +134,54 @@ static void put_bits(uint8_t *buffer, size_t *bit_offset,
     }
 }
 
+static uint32_t bit_reverse(uint32_t code, unsigned nbits) {
+    uint32_t rev = 0;
+    for (unsigned i = 0; i < nbits; i++)
+        rev |= ((code >> i) & 1U) << (nbits - 1U - i);
+    return rev;
+}
+
+static void put_fixed_litlen(uint8_t *buffer, size_t *bit_offset, unsigned sym) {
+    uint32_t code;
+    unsigned nbits;
+    if (sym <= 143U) {
+        code = sym + 0x30U;
+        nbits = 8;
+    } else if (sym <= 255U) {
+        code = sym - 144U + 0x190U;
+        nbits = 9;
+    } else if (sym <= 279U) {
+        code = sym - 256U;
+        nbits = 7;
+    } else {
+        code = sym - 280U + 0xC0U;
+        nbits = 8;
+    }
+    put_bits(buffer, bit_offset, bit_reverse(code, nbits), nbits);
+}
+
+static void put_fixed_dist_sym(uint8_t *buffer, size_t *bit_offset,
+                               unsigned sym) {
+    put_bits(buffer, bit_offset, bit_reverse(sym, 5U), 5U);
+}
+
+static void put_fixed_distance(uint8_t *buffer, size_t *bit_offset,
+                               unsigned distance) {
+    static const uint16_t base[30] = {
+        1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,
+        1025,1537,2049,3073,4097,6145,8193,12289,16385,24577
+    };
+    static const uint8_t extra[30] = {
+        0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13
+    };
+    unsigned dsym = 0;
+    while (dsym + 1U < 30U && base[dsym + 1U] <= distance)
+        dsym++;
+    put_fixed_dist_sym(buffer, bit_offset, dsym);
+    if (extra[dsym] > 0)
+        put_bits(buffer, bit_offset, distance - base[dsym], extra[dsym]);
+}
+
 static void test_invalid_streams(void) {
     printf("[invalid_streams]\n");
 
@@ -249,6 +297,11 @@ static void test_invalid_streams(void) {
                       padded, stored_len + 1U, output, &output_len),
                   -1);
 
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      stored, stored_len - 1U, output, &output_len),
+                  -1);
+
     size_t used = 0;
     output_len = sizeof(output);
     ASSERT_INT_EQ(neverc_flate_decompress_consumed(
@@ -258,6 +311,80 @@ static void test_invalid_streams(void) {
     ASSERT_TRUE(output_len == 3 && memcmp(output, "abc", 3) == 0);
     ASSERT_INT_EQ(neverc_flate_decompress_consumed(
                       stored, stored_len, output, &output_len, NULL),
+                  -1);
+}
+
+static void test_distance_too_far(void) {
+    printf("[distance_too_far]\n");
+    uint8_t stream[16] = {0};
+    size_t bit_offset = 0;
+    put_bits(stream, &bit_offset, 1U, 1U); /* BFINAL */
+    put_bits(stream, &bit_offset, 1U, 2U); /* fixed Huffman */
+    put_fixed_litlen(stream, &bit_offset, 257U); /* length 3 */
+    put_fixed_dist_sym(stream, &bit_offset, 0U); /* distance 1 */
+    put_fixed_litlen(stream, &bit_offset, 256U); /* EOB */
+    uint8_t output[16];
+    size_t output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      stream, (bit_offset + 7U) / 8U, output, &output_len),
+                  -1);
+
+    /* One literal, then a match that steps before the start of output. */
+    memset(stream, 0, sizeof(stream));
+    bit_offset = 0;
+    put_bits(stream, &bit_offset, 1U, 1U);
+    put_bits(stream, &bit_offset, 1U, 2U);
+    put_fixed_litlen(stream, &bit_offset, (unsigned)'A');
+    put_fixed_litlen(stream, &bit_offset, 257U);
+    put_fixed_dist_sym(stream, &bit_offset, 1U); /* distance 2 */
+    put_fixed_litlen(stream, &bit_offset, 256U);
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      stream, (bit_offset + 7U) / 8U, output, &output_len),
+                  -1);
+
+    /* Distance == out_pos is legal (copy from the first emitted byte). */
+    memset(stream, 0, sizeof(stream));
+    bit_offset = 0;
+    put_bits(stream, &bit_offset, 1U, 1U);
+    put_bits(stream, &bit_offset, 1U, 2U);
+    put_fixed_litlen(stream, &bit_offset, (unsigned)'A');
+    put_fixed_litlen(stream, &bit_offset, 257U);
+    put_fixed_dist_sym(stream, &bit_offset, 0U); /* distance 1 */
+    put_fixed_litlen(stream, &bit_offset, 256U);
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      stream, (bit_offset + 7U) / 8U, output, &output_len),
+                  0);
+    ASSERT_TRUE(output_len == 4 && output[0] == 'A' &&
+                output[1] == 'A' && output[2] == 'A' && output[3] == 'A');
+
+    /* 257 literals + distance 257 is legal at 32 KiB, not at a 256-byte window. */
+    uint8_t long_stream[512] = {0};
+    bit_offset = 0;
+    put_bits(long_stream, &bit_offset, 1U, 1U);
+    put_bits(long_stream, &bit_offset, 1U, 2U);
+    for (unsigned i = 0; i < 257U; i++)
+        put_fixed_litlen(long_stream, &bit_offset, i & 0xFFU);
+    put_fixed_litlen(long_stream, &bit_offset, 257U);
+    put_fixed_distance(long_stream, &bit_offset, 257U);
+    put_fixed_litlen(long_stream, &bit_offset, 256U);
+    size_t long_len = (bit_offset + 7U) / 8U;
+    uint8_t long_out[300];
+    size_t used = 0;
+    output_len = sizeof(long_out);
+    ASSERT_INT_EQ(neverc_flate_decompress_consumed_window(
+                      long_stream, long_len, long_out, &output_len, &used, 256U),
+                  -1);
+    output_len = sizeof(long_out);
+    used = 0;
+    ASSERT_INT_EQ(neverc_flate_decompress_consumed_window(
+                      long_stream, long_len, long_out, &output_len, &used, 512U),
+                  0);
+    ASSERT_TRUE(output_len == 260);
+    output_len = sizeof(long_out);
+    ASSERT_INT_EQ(neverc_flate_decompress_consumed_window(
+                      long_stream, long_len, long_out, &output_len, &used, 255U),
                   -1);
 }
 
@@ -271,6 +398,7 @@ int main(void) {
     test_overlap_copy();
     test_stored_blocks();
     test_invalid_streams();
+    test_distance_too_far();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

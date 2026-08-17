@@ -158,6 +158,18 @@ static void test_null_safety(void) {
     check_int("set_nodelay null", neverc_tcp_set_nodelay(NULL, 1), -1);
     check_int("set_reuseaddr null", neverc_tcp_set_reuseaddr(NULL, 1), -1);
     check_int("accept null", neverc_tcp_accept(NULL, NULL) == NULL, 1);
+    {
+        neverc_tcp_conn_t *accepted = (neverc_tcp_conn_t *)(void *)1;
+        neverc_net_result_t accept_rc =
+            neverc_tcp_try_accept(NULL, &accepted);
+        check_int("try accept null listener",
+                  accept_rc.status, NEVERC_NET_INVALID);
+        check_int("try accept null listener clears out",
+                  accepted == NULL, 1);
+        accept_rc = neverc_tcp_try_accept(NULL, NULL);
+        check_int("try accept null out",
+                  accept_rc.status, NEVERC_NET_INVALID);
+    }
     check_int("listener_addr null", neverc_tcp_listener_addr(NULL, NULL), -1);
     check_int("listener handle null",
               neverc_tcp_listener_handle(NULL) ==
@@ -606,6 +618,12 @@ static void test_pipe(void) {
         const char *msg = "hello pipe!";
         neverc_tcp_write(a, msg, strlen(msg));
         check_int("pipe shutdown write", neverc_tcp_shutdown_write(a), 0);
+        check_int("pipe write after shutdown write",
+                  neverc_tcp_write(a, "x", 1), -1);
+        neverc_net_result_t shut_write =
+            neverc_tcp_try_write(a, "x", 1);
+        check_int("pipe try write after shutdown write",
+                  shut_write.status, NEVERC_NET_CLOSED);
 
         char buf[64];
         int n = neverc_tcp_read(b, buf, sizeof(buf));
@@ -622,6 +640,12 @@ static void test_pipe(void) {
         buf[n] = '\0';
         check_str("pipe reply data", buf, "pong");
         check_int("pipe shutdown read", neverc_tcp_shutdown_read(a), 0);
+        check_int("pipe read after shutdown read",
+                  neverc_tcp_read(a, buf, sizeof(buf)), 0);
+        neverc_net_result_t shut_read =
+            neverc_tcp_try_read(a, buf, sizeof(buf));
+        check_int("pipe try read after shutdown read",
+                  shut_read.status, NEVERC_NET_EOF);
 
         neverc_tcp_close(a);
         neverc_tcp_close(b);

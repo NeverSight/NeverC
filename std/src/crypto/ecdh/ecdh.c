@@ -369,7 +369,10 @@ int neverc_ecdh_new_private_key(neverc_ecdh_curve_t curve,
     key->curve = curve;
 
     if (curve == NEVERC_ECDH_CURVE_X25519) {
-        if (len != 32 || is_all_zero(privkey, 32)) return -1;
+        /* RFC 7748 clamps inside X25519, so every 32-byte string is valid
+         * (all-zero becomes 2^254). Rejecting zeros here would disagree
+         * with keys that are non-zero only in bits the clamp clears. */
+        if (len != 32) return -1;
         key->privkey_len = 32;
         key->pubkey_len = 32;
         memcpy(key->private_key, privkey, 32);

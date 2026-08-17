@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -40,6 +41,14 @@ int main(void) {
     reset_allocator(2, 1);
     CHECK(neverc_errors_wrap("context", &cause) == NULL);
     CHECK(cause.msg != NULL);
+
+    reset_allocator(2, 0);
+    CHECK(neverc_errors_wrap("context", &cause) == NULL);
+    CHECK(cause.msg != NULL);
+
+    CHECK(dup_string(NULL) == NULL);
+    size_t sum = 0;
+    CHECK(!errors_size_add(SIZE_MAX, 1, &sum));
 
     puts("passed");
     return 0;

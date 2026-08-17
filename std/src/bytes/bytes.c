@@ -493,7 +493,9 @@ uint8_t *neverc_bytes_replace(const uint8_t *s, size_t slen,
         if (replacements > (SIZE_MAX - slen) / growth) return NULL;
         result_len = slen + replacements * growth;
     } else {
-        result_len = slen - replacements * (oldlen - newlen);
+        size_t shrink = oldlen - newlen;
+        if (shrink != 0 && replacements > slen / shrink) return NULL;
+        result_len = slen - replacements * shrink;
     }
     uint8_t *r = bytes_alloc(result_len);
     if (!r) return NULL;

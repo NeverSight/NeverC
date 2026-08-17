@@ -19,6 +19,8 @@
 #define WS_MAX_TARGET_SIZE 2048
 #define WS_KEEPALIVE_TICK_MS 25
 #define WS_KEEPALIVE_WRITE_TIMEOUT_MS 1000
+#define WS_MAX_DISCARD (16u * 1024u * 1024u)
+#define WS_LENGTH_MSB ((uint64_t)1 << 63)
 
 struct neverc_ws_conn {
     neverc_tcp_conn_t *tcp;
@@ -43,6 +45,7 @@ struct neverc_ws_conn {
     uint8_t ping_token[8];
     int data_fragment_active;
     int data_message_opcode;
+    size_t data_message_bytes;
     nc_buf_t text_utf8_acc;
 };
 
@@ -326,7 +329,10 @@ static int tcp_write_all(neverc_tcp_conn_t *conn, const void *data, size_t len) 
     const char *p = (const char *)data;
     size_t sent = 0;
     while (sent < len) {
-        int n = neverc_tcp_write(conn, p + sent, len - sent);
+        size_t remaining = len - sent;
+        size_t chunk = remaining > (size_t)INT_MAX
+                           ? (size_t)INT_MAX : remaining;
+        int n = neverc_tcp_write(conn, p + sent, chunk);
         if (n <= 0) return -1;
         sent += (size_t)n;
     }
@@ -920,7 +926,10 @@ static void *ws_keepalive_main(void *arg) {
         uint64_t now = nc_monotonic_ms();
 
         nc_mutex_lock(&conn->keepalive_lock);
-        if (conn->keepalive_stop) {
+        if (conn->keepalive_stop ||
+            nc_atomic_load(&conn->failed) ||
+            nc_atomic_load(&conn->close_sent) ||
+            nc_atomic_load(&conn->close_received)) {
             nc_mutex_unlock(&conn->keepalive_lock);
             break;
         }
@@ -951,7 +960,9 @@ static void *ws_keepalive_main(void *arg) {
                 write_budget = WS_KEEPALIVE_WRITE_TIMEOUT_MS;
             if (write_frame_timeout(conn, NC_WS_OPCODE_PING, token,
                                     sizeof(token), 1, write_budget) != 0) {
-                ws_keepalive_shutdown(conn);
+                if (!nc_atomic_load(&conn->close_sent) &&
+                    !nc_atomic_load(&conn->close_received))
+                    ws_keepalive_shutdown(conn);
                 break;
             }
         }
@@ -1024,9 +1035,12 @@ static int read_exact(neverc_ws_conn_t *conn, void *buf, size_t len) {
     char *p = (char *)buf;
     size_t got = 0;
     while (got < len) {
+        size_t remaining = len - got;
+        size_t chunk = remaining > (size_t)INT_MAX
+                           ? (size_t)INT_MAX : remaining;
         int n = conn->tls
-            ? neverc_tls_read(conn->tls, p + got, len - got)
-            : neverc_tcp_read(conn->tcp, p + got, len - got);
+            ? neverc_tls_read(conn->tls, p + got, chunk)
+            : neverc_tcp_read(conn->tcp, p + got, chunk);
         if (n <= 0) return -1;
         got += (size_t)n;
     }
@@ -1192,6 +1206,7 @@ static int ws_data_frame_begin(neverc_ws_conn_t *conn, int opcode, int fin) {
         if (conn->data_fragment_active)
             return ws_fail_protocol(conn);
         conn->data_message_opcode = opcode;
+        conn->data_message_bytes = 0;
         if (!fin) conn->data_fragment_active = 1;
         nc_buf_reset(&conn->text_utf8_acc);
     } else if (opcode == NC_WS_OPCODE_CONTINUATION) {
@@ -1200,6 +1215,19 @@ static int ws_data_frame_begin(neverc_ws_conn_t *conn, int opcode, int fin) {
     } else {
         return ws_fail_protocol(conn);
     }
+    return 0;
+}
+
+static int ws_data_message_account(neverc_ws_conn_t *conn, uint64_t plen) {
+    size_t add = (size_t)plen;
+    if (conn->read_limit) {
+        if (conn->data_message_bytes > conn->read_limit ||
+            add > conn->read_limit - conn->data_message_bytes)
+            return ws_fail_too_big(conn);
+    } else if (add > SIZE_MAX - conn->data_message_bytes) {
+        return ws_fail_too_big(conn);
+    }
+    conn->data_message_bytes += add;
     return 0;
 }
 
@@ -1226,6 +1254,7 @@ static int ws_data_frame_end(neverc_ws_conn_t *conn, int fin) {
                            conn->text_utf8_acc.len))
             return ws_fail_invalid_payload(conn);
         conn->data_fragment_active = 0;
+        conn->data_message_bytes = 0;
         nc_buf_reset(&conn->text_utf8_acc);
     }
     return 0;
@@ -1236,13 +1265,17 @@ static int ws_read_payload(neverc_ws_conn_t *conn, void *buf, size_t plen,
     uint8_t *p = (uint8_t *)buf;
     size_t total = 0;
     while (total < plen) {
+        size_t remaining = plen - total;
+        size_t chunk = remaining > (size_t)INT_MAX
+                           ? (size_t)INT_MAX : remaining;
         int n = conn->tls
-            ? neverc_tls_read(conn->tls, p + total, plen - total)
-            : neverc_tcp_read(conn->tcp, p + total, plen - total);
+            ? neverc_tls_read(conn->tls, p + total, chunk)
+            : neverc_tcp_read(conn->tcp, p + total, chunk);
         if (n <= 0) return ws_fail(conn);
         if (masked) {
-            for (int i = 0; i < n; i++)
-                p[total + (size_t)i] ^= mask_key[(total + (size_t)i) % 4];
+            size_t i;
+            for (i = 0; i < (size_t)n; i++)
+                p[total + i] ^= mask_key[(total + i) % 4];
         }
         if (track_text &&
             ws_data_frame_chunk(conn, p + total, (size_t)n) != 0)
@@ -1352,6 +1385,14 @@ static int ws_frame_write_all(neverc_ws_conn_t *conn, neverc_context_t *ctx,
         conn->tcp, conn->tls, ctx, data, len);
 }
 
+static int ws_shutdown_write(neverc_ws_conn_t *conn) {
+    if (conn->tls)
+        return neverc_tls_shutdown_write(conn->tls);
+    if (conn->tcp)
+        return neverc_tcp_shutdown_write(conn->tcp);
+    return -1;
+}
+
 static int write_frame_timeout(neverc_ws_conn_t *conn, int opcode,
                                const void *payload, size_t len, int fin,
                                int timeout_override_ms) {
@@ -1361,7 +1402,8 @@ static int write_frame_timeout(neverc_ws_conn_t *conn, int opcode,
         nc_atomic_load(&conn->close_sent) ||
         !ws_valid_opcode(opcode) ||
         (len > 0 && !payload) ||
-        (ws_control_opcode(opcode) && len > 125)) {
+        (ws_control_opcode(opcode) && (!fin || len > 125)) ||
+        ((uint64_t)len & WS_LENGTH_MSB) != 0) {
         nc_mutex_unlock(&conn->write_lock);
         return -1;
     }
@@ -1426,27 +1468,24 @@ static int write_frame_timeout(neverc_ws_conn_t *conn, int opcode,
             ws_fail(conn);
             goto done;
         }
-        if (ctx) neverc_context_cancel_handle_cancel(cancel);
-        if (ctx) neverc_context_free(ctx);
-        if (cancel) neverc_context_cancel_handle_free(cancel);
-        nc_mutex_unlock(&conn->write_lock);
-        return 0;
-    }
-
-    const uint8_t *input = (const uint8_t *)payload;
-    uint8_t masked[4096];
-    size_t offset = 0;
-    while (offset < len) {
-        size_t chunk = len - offset;
-        if (chunk > sizeof(masked)) chunk = sizeof(masked);
-        for (size_t i = 0; i < chunk; i++)
-            masked[i] = input[offset + i] ^ mask_key[(offset + i) % 4];
-        if (ws_frame_write_all(conn, ctx, masked, chunk) != 0) {
-            ws_fail(conn);
-            goto done;
+    } else {
+        const uint8_t *input = (const uint8_t *)payload;
+        uint8_t masked[4096];
+        size_t offset = 0;
+        while (offset < len) {
+            size_t chunk = len - offset;
+            if (chunk > sizeof(masked)) chunk = sizeof(masked);
+            for (size_t i = 0; i < chunk; i++)
+                masked[i] = input[offset + i] ^ mask_key[(offset + i) % 4];
+            if (ws_frame_write_all(conn, ctx, masked, chunk) != 0) {
+                ws_fail(conn);
+                goto done;
+            }
+            offset += chunk;
         }
-        offset += chunk;
     }
+    if (opcode == NC_WS_OPCODE_CLOSE)
+        (void)ws_shutdown_write(conn);
     if (ctx) neverc_context_cancel_handle_cancel(cancel);
     if (ctx) neverc_context_free(ctx);
     if (cancel) neverc_context_cancel_handle_free(cancel);
@@ -1490,9 +1529,8 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
     int frame_fin = header.fin;
     int masked = header.masked;
     uint64_t plen = header.payload_length;
-    if (conn->read_limit && plen > conn->read_limit) {
-        if (ws_discard_payload(conn, plen) != 0)
-            return ws_fail(conn);
+    if ((conn->read_limit && plen > conn->read_limit) ||
+        (!conn->read_limit && plen > WS_MAX_DISCARD && plen > buflen)) {
         return ws_fail_too_big(conn);
     }
 
@@ -1501,6 +1539,8 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
     if (ws_control_opcode(frame_opcode) && plen > buflen) {
         payload_buf = control_storage;
     } else if (plen > buflen) {
+        if (plen > WS_MAX_DISCARD)
+            return ws_fail_too_big(conn);
         if (ws_discard_payload(conn, plen) != 0)
             return ws_fail(conn);
         return -1;
@@ -1512,6 +1552,8 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
     int track_text = 0;
     if (track_data) {
         if (ws_data_frame_begin(conn, frame_opcode, frame_fin) != 0)
+            return -1;
+        if (ws_data_message_account(conn, plen) != 0)
             return -1;
         track_text = conn->data_message_opcode == NC_WS_OPCODE_TEXT;
     }
@@ -1571,13 +1613,17 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
         nc_mutex_unlock(&conn->keepalive_lock);
     }
 
-    if (payload_buf != buf && plen > 0 && buflen > 0) {
-        size_t copy = (size_t)plen < buflen ? (size_t)plen : buflen;
-        memcpy(buf, payload_buf, copy);
+    size_t copied = (size_t)plen;
+    if (payload_buf != buf) {
+        copied = 0;
+        if (plen > 0 && buflen > 0) {
+            copied = (size_t)plen < buflen ? (size_t)plen : buflen;
+            memcpy(buf, payload_buf, copied);
+        }
     }
     *opcode = frame_opcode;
     if (fin) *fin = frame_fin;
-    *out_len = (size_t)plen;
+    *out_len = copied;
     return 0;
 }
 

@@ -846,8 +846,12 @@ static void idct_block(const float *input, int *output) {
 }
 
 int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img) {
-    if (!data || len < 4 || !img) return -1;
+    if (!img) return -1;
+    /* Always clear the out-param first. Returning -1 with a poisoned/stale
+     * img (width, pixels) used to look like a successful decode to callers
+     * that only inspect geometry after a truncated header. */
     memset(img, 0, sizeof(*img));
+    if (!data || len < 4) return -1;
 
     if (data[0] != 0xFF || data[1] != 0xD8) return -1;
 
@@ -884,6 +888,12 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
         if (marker == 0xD9) break; /* EOI */
         if (marker == 0x00 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) continue;
 
+        /* SOF1–SOF15 (except SOF0 / DHT 0xC4) and DAC: progressive, lossless,
+         * hierarchical, or arithmetic. Skipping them as unknown would let a
+         * SOF2 sit in front of a baseline SOF0 and still decode. */
+        if (marker >= 0xC1 && marker <= 0xCF && marker != 0xC4)
+            goto fail;
+
         uint16_t seg_len = br_read_u16(&br);
         if (br.failed || seg_len < 2) goto fail; /* length counts itself */
         /* Remaining-length compare: `pos + (seg_len-2)` wraps size_t on a
@@ -912,6 +922,14 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
             if (br_read_byte_raw(&br) != 8) goto fail; /* precision */
             height = br_read_u16(&br);
             width = br_read_u16(&br);
+            /* Reject empty or implausibly large geometry at SOF, before DHT/SOS
+             * parsing or any allocation. A 16-bit SOF can claim 65535x65535;
+             * honoring that from an 18-byte header overflows size_t plane math
+             * on 32-bit and is a multi-GB DoS. 2^28 px matches the later
+             * pre-alloc cap (libjpeg/stb-image apply equivalent limits). */
+            if (width == 0 || height == 0) goto fail;
+            if ((uint64_t)width * (uint64_t)height > (UINT64_C(1) << 28))
+                goto fail;
             ncomp = br_read_byte_raw(&br);
             if (ncomp != 1 && ncomp != 3) goto fail;
             if (seg_end - br.pos != (size_t)ncomp * 3U) goto fail;
@@ -1010,7 +1028,7 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
         if (br.failed || br.pos != seg_end) goto fail;
     }
 
-    if (!scan_found || width == 0 || height == 0) goto fail;
+    if (!scan_found || !sof_found || width == 0 || height == 0) goto fail;
     /* Reject implausibly large geometry before allocating. A 16-bit SOF can
      * claim up to 65535x65535 (~4 gigapixels); honoring that from a tiny
      * malformed header would (a) overflow the size_t buffer/plane arithmetic on

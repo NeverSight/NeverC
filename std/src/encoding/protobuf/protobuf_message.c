@@ -456,7 +456,7 @@ int neverc_protobuf_message_decode(
         neverc_protobuf_field_t field;
         int result = neverc_protobuf_reader_next(&reader, &field);
         if (result == 0) return 0;
-        if (result < 0) return -1;
+        if (result < 0) goto fail;
         const neverc_protobuf_field_descriptor_t *known =
             protobuf_find_field(descriptor, field.number);
         if (!known) continue;
@@ -464,12 +464,17 @@ int neverc_protobuf_message_decode(
             protobuf_scalar_wire(known->type);
         if (field.wire_type == expected) {
             if (protobuf_decode_field(known, &field, (uint8_t *)message) != 0)
-                return -1;
+                goto fail;
         } else if (field.wire_type == NEVERC_PROTOBUF_WIRE_LENGTH_DELIMITED &&
                    protobuf_type_packable(known->type)) {
             if (protobuf_decode_packed(known, &field.value.bytes,
                                        (uint8_t *)message) != 0)
-                return -1;
+                goto fail;
         }
     }
+fail:
+    /* A later malformed field (or truncated packed payload) must not leave
+     * earlier fields in the caller's struct. */
+    memset(message, 0, descriptor->struct_size);
+    return -1;
 }

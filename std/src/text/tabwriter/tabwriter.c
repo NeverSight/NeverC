@@ -1,4 +1,5 @@
 #include "neverc/std/text/tabwriter.h"
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -181,6 +182,7 @@ static int write_padding(neverc_tabwriter_t *w, int textw, int cellw, int use_ta
         }
         int n = cellw - textw;
         if (n < 0) n = 0;
+        if (n > INT_MAX - (tw - 1)) return -1;
         int ntabs = (n + tw - 1) / tw;
         return out_pad(w, (size_t)ntabs, '\t');
     }
@@ -252,6 +254,8 @@ static int format_block(neverc_tabwriter_t *w, size_t *buf_pos,
                 break;
             neverc_tabwriter_cell_t *c =
                 &w->cells[line_start(w, this) + column];
+            if (pad > 0 && c->width > INT_MAX - pad)
+                return -1;
             int ww = c->width + pad;
             if (ww > width) width = ww;
             if (c->width > 0 || c->htab)

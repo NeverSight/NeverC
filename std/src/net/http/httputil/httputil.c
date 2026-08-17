@@ -627,9 +627,24 @@ static int proxy_is_hop_header(const char *name, size_t length) {
 
 static int proxy_is_forwarded_header(const char *name, size_t length) {
     static const char prefix[] = "X-Forwarded-";
-    if (proxy_equal_ci_n(name, length, "Forwarded")) return 1;
+    static const char *const spoofed_client_ip[] = {
+        "Forwarded",
+        "X-ForwardedFor",
+        "X-Real-IP",
+        "X-Client-IP",
+        "X-Cluster-Client-IP",
+        "X-Original-Forwarded-For",
+        "True-Client-IP",
+        "CF-Connecting-IP",
+        "Fastly-Client-IP",
+    };
+    size_t i;
+    for (i = 0; i < sizeof(spoofed_client_ip) / sizeof(spoofed_client_ip[0]);
+         i++)
+        if (proxy_equal_ci_n(name, length, spoofed_client_ip[i]))
+            return 1;
     if (length < sizeof(prefix) - 1U) return 0;
-    for (size_t i = 0; i < sizeof(prefix) - 1U; i++)
+    for (i = 0; i < sizeof(prefix) - 1U; i++)
         if (proxy_ascii_lower((unsigned char)name[i]) !=
             proxy_ascii_lower((unsigned char)prefix[i]))
             return 0;
@@ -643,8 +658,9 @@ static int proxy_hex_nibble(unsigned char c) {
     return -1;
 }
 
-/* Reject "." / ".." (including %2e) and encoded slashes so a target prefix
- * such as /api cannot be escaped as /api/../admin. "//" is scheme-relative. */
+/* Reject "." / ".." (including %2e), encoded slashes, and matrix-parameter
+ * separators so a target prefix such as /api cannot be escaped as
+ * /api/../admin or /api/..;/admin. "//" is scheme-relative. */
 static int proxy_request_segment_unsafe(const char *seg, size_t len) {
     char decoded[4];
     size_t decoded_length = 0;
@@ -658,7 +674,11 @@ static int proxy_request_segment_unsafe(const char *seg, size_t len) {
             c = (unsigned char)((high << 4) | low);
             i += 2;
         }
-        if (c <= 0x20 || c == 0x7f || c == '/' || c == '\\') return 1;
+        /* ';' is a path-parameter separator on several backends (Tomcat
+         * matrix params). Decoded '?' / '#' would also split the target. */
+        if (c <= 0x20 || c == 0x7f || c == '/' || c == '\\' ||
+            c == ';' || c == '?' || c == '#')
+            return 1;
         if (decoded_length < sizeof(decoded))
             decoded[decoded_length] = (char)c;
         decoded_length++;
@@ -671,12 +691,18 @@ static int proxy_valid_request_target(const char *value) {
     if (!value || value[0] != '/' || value[1] == '/') return 0;
     for (const unsigned char *p = (const unsigned char *)value; *p; p++)
         if (*p <= 0x20 || *p == 0x7f || *p == '#' || *p == '?' ||
-            *p == '\\')
+            *p == '\\' || *p == ';')
             return 0;
     const char *seg = value + 1;
     while (*seg) {
         const char *slash = strchr(seg, '/');
         size_t seg_len = slash ? (size_t)(slash - seg) : strlen(seg);
+        if (seg_len == 0) {
+            /* Trailing slash is a normal empty last segment; "//" in the
+             * middle is collapsed or treated as a host by some backends. */
+            if (slash) return 0;
+            break;
+        }
         if (proxy_request_segment_unsafe(seg, seg_len)) return 0;
         if (!slash) break;
         seg = slash + 1;
@@ -1546,7 +1572,9 @@ neverc_httputil_reverse_proxy_t *neverc_httputil_new_single_host_reverse_proxy(
                           &rp->target_port,
                           rp->target_path, sizeof(rp->target_path),
                           &rp->use_tls,
-                          &rp->target_is_ipv6) != 0) {
+                          &rp->target_is_ipv6) != 0 ||
+        (rp->target_path[0] &&
+         !proxy_valid_request_target(rp->target_path))) {
         free(rp);
         return NULL;
     }

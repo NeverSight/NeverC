@@ -425,7 +425,8 @@ void neverc_template_data_set(neverc_template_data_t *d,
 
 const char *neverc_template_data_get(const neverc_template_data_t *d,
                                      const char *key) {
-    if (!d || !key || d->nvars < 0 || (d->nvars > 0 && !d->vars)) return NULL;
+    if (!d || !key || d->nvars < 0 || d->cap < 0 || d->nvars > d->cap ||
+        (d->nvars > 0 && !d->vars)) return NULL;
     for (int i = 0; i < d->nvars; i++)
         if (strcmp(d->vars[i].key, key) == 0)
             return d->vars[i].value;
@@ -456,7 +457,8 @@ static int out_init(outbuf_t *b, size_t hint) {
     return b->data ? 0 : -1;
 }
 static int out_puts(outbuf_t *b, const char *s, size_t n) {
-    if ((!s && n > 0) || b->len > SIZE_MAX - n - 1U) return -1;
+    if ((!s && n > 0) || n > SIZE_MAX - 1U || b->len > SIZE_MAX - n - 1U)
+        return -1;
     size_t required = b->len + n + 1U;
     if (required > b->cap) {
         size_t new_cap = b->cap;

@@ -143,6 +143,26 @@ static void test_format_and_injection(void) {
         ASSERT_TRUE(strcmp(colon + 2, "msg") == 0);
         ASSERT_TRUE(strchr(colon + 1, ':') == NULL);
     }
+    neverc_syslog_close(log);
+
+    log = neverc_syslog_open("my app", NEVERC_SYSLOG_USER,
+                             NEVERC_SYSLOG_DEBUG);
+    ASSERT_TRUE(log != NULL);
+    ASSERT_EQ(neverc_syslog_format(log, NEVERC_SYSLOG_INFO, "hello",
+                                   buf, sizeof(buf)), 0);
+    ASSERT_TRUE(strncmp(buf, "<14>", 4) == 0);
+    {
+        const char *colon = strchr(buf + 4, ':');
+        ASSERT_TRUE(colon != NULL && colon[1] == ' ');
+        ASSERT_TRUE(strncmp(buf + 4, "my_app", (size_t)(colon - (buf + 4))) == 0);
+        ASSERT_TRUE(strcmp(colon + 2, "hello") == 0);
+    }
+    neverc_syslog_close(log);
+
+    log = neverc_syslog_open("ok", NEVERC_SYSLOG_USER, NEVERC_SYSLOG_DEBUG);
+    ASSERT_TRUE(log != NULL);
+    ASSERT_EQ(neverc_syslog_format(log, NEVERC_SYSLOG_INFO, "x",
+                                   buf, 4), -1);
 
     ASSERT_EQ(neverc_syslog_format(NULL, NEVERC_SYSLOG_INFO, "x",
                                    buf, sizeof(buf)), -1);

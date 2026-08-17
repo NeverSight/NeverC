@@ -58,7 +58,15 @@ static void test_parse_address(void) {
               0);
     ASSERT_EQ(neverc_mail_parse_address("x@[IPv6:127.0.0.1]", &addr), -1);
     ASSERT_EQ(neverc_mail_parse_address("Bcc:hidden@x.com", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("Bcc: hidden <user@x.com>", &addr),
+              -1);
+    ASSERT_EQ(neverc_mail_parse_address("Doe, John <j@x.com>", &addr), -1);
     ASSERT_EQ(neverc_mail_parse_address("user(comment)@x.com", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("\"foo\"bar\" <j@x.com>", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("\"Bcc: hidden\" <user@x.com>", &addr),
+              0);
+    ASSERT_STREQ(addr.name, "Bcc: hidden");
+    ASSERT_STREQ(addr.address, "user@x.com");
 }
 
 static void test_parse_address_list(void) {
@@ -216,6 +224,62 @@ static void test_parse_message(void) {
         "\r\n";
     ASSERT_EQ(neverc_mail_parse_message(fold_first, strlen(fold_first), &m), 0);
     ASSERT_STREQ(neverc_mail_header_get(&m, "Subject"), "Hello");
+
+    /* Folded "Bcc:" is continuation of From, not a new field. */
+    const char *fold_bcc =
+        "From: user@x.com\r\n"
+        " Bcc: hidden@x.com\r\n"
+        "To: visible@x.com\r\n"
+        "\r\n"
+        "body";
+    ASSERT_EQ(neverc_mail_parse_message(fold_bcc, strlen(fold_bcc), &m), 0);
+    ASSERT_TRUE(neverc_mail_header_get(&m, "Bcc") == NULL);
+    ASSERT_STREQ(neverc_mail_header_get(&m, "From"),
+                 "user@x.com Bcc: hidden@x.com");
+    ASSERT_STREQ(neverc_mail_header_get(&m, "To"), "visible@x.com");
+
+    const char *fold_tab_bcc =
+        "From: user@x.com\r\n"
+        "\tBcc: hidden@x.com\r\n"
+        "\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(fold_tab_bcc, strlen(fold_tab_bcc), &m),
+              0);
+    ASSERT_TRUE(neverc_mail_header_get(&m, "Bcc") == NULL);
+    ASSERT_STREQ(neverc_mail_header_get(&m, "From"),
+                 "user@x.com Bcc: hidden@x.com");
+
+    /* A Bcc line that does not start with WSP is a real field, not a fold. */
+    const char *real_bcc =
+        "From: user@x.com\r\n"
+        "Bcc: hidden@x.com\r\n"
+        "\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(real_bcc, strlen(real_bcc), &m), 0);
+    ASSERT_STREQ(neverc_mail_header_get(&m, "Bcc"), "hidden@x.com");
+
+    /* After the blank line, "Bcc:" is body, not a header. */
+    const char *bcc_in_body =
+        "From: user@x.com\r\n"
+        "\r\n"
+        "Bcc: hidden@x.com\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(bcc_in_body, strlen(bcc_in_body), &m),
+              0);
+    ASSERT_TRUE(neverc_mail_header_get(&m, "Bcc") == NULL);
+    ASSERT_TRUE(m.body_len >= 4 && memcmp(m.body, "Bcc:", 4) == 0);
+
+    const char *tab_value = "Subject: Hello\tWorld\r\n\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(tab_value, strlen(tab_value), &m), 0);
+    ASSERT_STREQ(neverc_mail_header_get(&m, "Subject"), "Hello\tWorld");
+
+    const char *lead_ws = " From: user@x.com\r\n\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(lead_ws, strlen(lead_ws), &m), -1);
+
+    const char *cr_before_colon = "From\rBcc: hidden@x.com\r\n\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(cr_before_colon, strlen(cr_before_colon),
+                                       &m),
+              -1);
+
+    char nul_hdr[] = "From: a@b.com\0Bcc: hidden@x.com\r\n\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(nul_hdr, sizeof(nul_hdr) - 1, &m), -1);
 }
 
 static void test_parse_date(void) {
@@ -244,6 +308,20 @@ static void test_parse_date(void) {
     ASSERT_TRUE(neverc_mail_parse_date("Xxx, 01 Jan 1970 00:00:00 +0000") ==
                 -1);
     ASSERT_TRUE(neverc_mail_parse_date("") == -1);
+
+    /* RFC 5322 FWS: CRLF must be followed by WSP. Bare CRLF is a new line. */
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970\r\n 00:00:00 +0000") == 0);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970\n 00:00:00 +0000") == 0);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970\r\n00:00:00 +0000") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970\r 00:00:00 +0000") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date(
+                    "01 Jan 1970 00:00:00 +0000\r\nBcc: hidden@x.com") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date(
+                    "01 Jan 1970 00:00:00 +0000 (\r\nBcc: hidden)") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date(
+                    "01 Jan 1970 00:00:00 +0000 (\r comment)") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date(
+                    "01 Jan 1970 00:00:00 +0000 (\r\n comment)") == 0);
 }
 
 int main(void) {

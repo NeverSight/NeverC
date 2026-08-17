@@ -14,6 +14,12 @@ static int tests_passed = 0;
     tests_passed++;                                           \
 } while(0)
 
+static int all_zero(const uint8_t *bytes, size_t length) {
+    uint8_t combined = 0;
+    for (size_t i = 0; i < length; i++) combined |= bytes[i];
+    return combined == 0;
+}
+
 static void test_keygen_sign_verify(void) {
     printf("  keygen + sign + verify ... ");
     neverc_mldsa44_sk_t sk;
@@ -29,6 +35,13 @@ static void test_keygen_sign_verify(void) {
     ASSERT(memcmp(&sk, &original_sk, sizeof(sk)) == 0,
            "sign leaves const secret key unchanged");
     ASSERT(neverc_mldsa44_verify(&pk, msg, sizeof(msg)-1, sig) == 0, "verify");
+
+    uint8_t cleared_sig[NEVERC_MLDSA44_SIG_SIZE];
+    memset(cleared_sig, 0x5A, sizeof(cleared_sig));
+    ASSERT(neverc_mldsa44_sign(NULL, msg, sizeof(msg) - 1, cleared_sig) == -1,
+           "NULL sk rejected");
+    ASSERT(all_zero(cleared_sig, sizeof(cleared_sig)),
+           "NULL sk clears signature");
     printf("ok\n");
 }
 
@@ -133,6 +146,14 @@ static void test_pk_encode_decode(void) {
     ASSERT(neverc_mldsa44_new_pk(
                &pk2, encoded, NEVERC_MLDSA65_PK_SIZE) != 0,
            "reject ML-DSA-65 public-key length");
+    ASSERT(all_zero(pk2.pk, sizeof(pk2.pk)),
+           "wrong public-key length clears pk");
+    memset(&pk2, 0x5A, sizeof(pk2));
+    ASSERT(neverc_mldsa44_new_pk(
+               &pk2, encoded, NEVERC_MLDSA44_PK_SIZE - 1) != 0,
+           "reject truncated public key");
+    ASSERT(all_zero(pk2.pk, sizeof(pk2.pk)),
+           "truncated public key clears pk");
     printf("ok\n");
 }
 

@@ -60,8 +60,23 @@ static void test_lookup_id(void) {
 static void test_lookup_nonexistent(void) {
     printf("[lookup_nonexistent]\n");
     neverc_user_t u;
+    memset(&u, 0xAA, sizeof(u));
     int rc = neverc_user_lookup("__neverc_nonexistent_user_12345__", &u);
     ASSERT_EQ_INT(rc, -1);
+    ASSERT_TRUE(u.uid[0] == '\0');
+    ASSERT_TRUE(u.username[0] == '\0');
+    ASSERT_TRUE(u.home_dir[0] == '\0');
+
+    memset(&u, 0xAA, sizeof(u));
+    ASSERT_EQ_INT(neverc_user_lookup("", &u), -1);
+    ASSERT_TRUE(u.username[0] == '\0');
+
+    neverc_group_t g;
+    memset(&g, 0xAA, sizeof(g));
+    ASSERT_EQ_INT(neverc_user_lookup_group("__neverc_nonexistent_group_12345__",
+                                          &g), -1);
+    ASSERT_TRUE(g.name[0] == '\0');
+    ASSERT_TRUE(g.gid[0] == '\0');
 }
 
 static void test_lookup_group(void) {
@@ -178,10 +193,16 @@ static void test_null_args(void) {
 
     neverc_user_t u;
     neverc_group_t g;
+    memset(&u, 0xAA, sizeof(u));
+    memset(&g, 0xAA, sizeof(g));
     ASSERT_EQ_INT(neverc_user_lookup("", &u), -1);
+    ASSERT_TRUE(u.username[0] == '\0');
     ASSERT_EQ_INT(neverc_user_lookup_id(-1, &u), -1);
+    ASSERT_TRUE(u.uid[0] == '\0');
     ASSERT_EQ_INT(neverc_user_lookup_group("", &g), -1);
+    ASSERT_TRUE(g.name[0] == '\0');
     ASSERT_EQ_INT(neverc_user_lookup_group_id(-1, &g), -1);
+    ASSERT_TRUE(g.gid[0] == '\0');
 }
 
 int main(void) {

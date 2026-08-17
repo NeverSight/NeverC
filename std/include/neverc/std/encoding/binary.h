@@ -27,7 +27,8 @@ void     neverc_binary_little_endian_put_uint64(uint8_t *b, uint64_t v);
 /* Protobuf-style varints (mirrors Go encoding/binary).
  * put_* returns bytes written, or -1 if buf is too small.
  * *varint returns bytes consumed, 0 if the input is truncated, or a
- * negative count if the encoding overflows uint64. */
+ * negative count if the encoding overflows uint64. A 10th continuation
+ * byte is overflow (Go ReadUvarint), not truncated. */
 #define NEVERC_BINARY_MAX_VARINT_LEN16 3
 #define NEVERC_BINARY_MAX_VARINT_LEN32 5
 #define NEVERC_BINARY_MAX_VARINT_LEN64 10

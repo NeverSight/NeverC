@@ -490,6 +490,148 @@ static int rejecting_write(void *ctx, const uint8_t *buf, size_t len,
     return NEVERC_IO_ERR_UNEXP;
 }
 
+typedef struct {
+    const uint8_t *data;
+    size_t len;
+    int used;
+} eof_chunk_reader_t;
+
+static int eof_chunk_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
+    eof_chunk_reader_t *reader = (eof_chunk_reader_t *)ctx;
+    if (reader->used) {
+        *n = 0;
+        return NEVERC_IO_EOF;
+    }
+    size_t take = reader->len < len ? reader->len : len;
+    if (take > 0) memcpy(buf, reader->data, take);
+    reader->used = 1;
+    *n = take;
+    return NEVERC_IO_EOF;
+}
+
+static int limit_overreport_read(void *ctx, uint8_t *buf, size_t len,
+                                 size_t *n) {
+    (void)ctx;
+    (void)buf;
+    *n = len + 10;
+    return 0;
+}
+
+static void test_multi_reader_eof_then_next(void) {
+    printf("[multi_reader eof then next]\n");
+
+    eof_chunk_reader_t first = { (const uint8_t *)"ab", 2, 0 };
+    neverc_io_mem_reader_t second;
+    neverc_io_mem_reader_init(&second, (const uint8_t *)"cd", 2);
+    neverc_io_reader_t readers[2] = {
+        { &first, eof_chunk_read },
+        { &second, neverc_io_mem_reader_read }
+    };
+    neverc_io_multi_reader_t multi;
+    neverc_io_multi_reader_init(&multi, readers, 2);
+
+    size_t olen = 0;
+    uint8_t *data = neverc_io_read_all(&multi.reader, &olen);
+    check_size("multi data+eof then next len", olen, 4);
+    check_int("multi data+eof then next content",
+              data && memcmp(data, "abcd", 4) == 0, 1);
+    free(data);
+
+    neverc_io_mem_reader_t empty;
+    neverc_io_mem_reader_init(&empty, (const uint8_t *)"", 0);
+    neverc_io_mem_reader_t tail;
+    neverc_io_mem_reader_init(&tail, (const uint8_t *)"z", 1);
+    neverc_io_reader_t prefix[2] = {
+        { &empty, neverc_io_mem_reader_read },
+        { &tail, neverc_io_mem_reader_read }
+    };
+    neverc_io_multi_reader_init(&multi, prefix, 2);
+    uint8_t byte = 0;
+    size_t n = 99;
+    check_int("multi empty prefix then data",
+              neverc_io_multi_reader_read(&multi, &byte, 1, &n), 0);
+    check_size("multi empty prefix n", n, 1);
+    check_int("multi empty prefix byte", byte, 'z');
+    n = 99;
+    check_int("multi exhausted is eof",
+              neverc_io_multi_reader_read(&multi, &byte, 1, &n),
+              NEVERC_IO_EOF);
+    check_size("multi exhausted n", n, 0);
+}
+
+static void test_limit_reader_wrap(void) {
+    printf("[limit_reader wrap]\n");
+
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"abcdef", 6);
+    neverc_io_reader_t inner = { &mr, neverc_io_mem_reader_read };
+    neverc_io_limit_reader_t lr;
+    neverc_io_limit_reader_init(&lr, &inner, -7);
+    uint8_t buf[8];
+    size_t n = 99;
+    check_int("negative limit is eof",
+              lr.reader.read(lr.reader.ctx, buf, sizeof(buf), &n),
+              NEVERC_IO_EOF);
+    check_size("negative limit writes nothing", n, 0);
+    check_int("negative limit remaining stays non-negative",
+              lr.remaining >= 0, 1);
+
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"abcdef", 6);
+    neverc_io_limit_reader_init(&lr, &inner, 3);
+    neverc_io_mem_writer_t mw;
+    neverc_io_mem_writer_init(&mw);
+    neverc_io_writer_t w = { &mw, neverc_io_mem_writer_write };
+    check_size("copy honors limit",
+               (size_t)neverc_io_copy(&w, &lr.reader), 3);
+    check_bytes("copy limit content", mw.data, mw.len, "abc");
+    neverc_io_mem_writer_free(&mw);
+
+    neverc_io_reader_t over = { NULL, limit_overreport_read };
+    neverc_io_limit_reader_init(&lr, &over, 5);
+    n = 99;
+    check_int("over-report does not wrap remaining",
+              lr.reader.read(lr.reader.ctx, buf, sizeof(buf), &n),
+              NEVERC_IO_ERR_UNEXP);
+    check_size("over-report n cleared", n, 0);
+    check_int("remaining unchanged after over-report", lr.remaining == 5, 1);
+}
+
+static void test_tee_reader_success(void) {
+    printf("[tee_reader success]\n");
+
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"hello", 5);
+    neverc_io_reader_t inner = { &mr, neverc_io_mem_reader_read };
+    neverc_io_mem_writer_t tee_w;
+    neverc_io_mem_writer_init(&tee_w);
+    neverc_io_writer_t w = { &tee_w, neverc_io_mem_writer_write };
+    neverc_io_tee_reader_t tee;
+    neverc_io_tee_reader_init(&tee, &inner, &w);
+
+    size_t olen = 0;
+    uint8_t *data = neverc_io_read_all(&tee.reader, &olen);
+    check_size("tee read len", olen, 5);
+    check_int("tee read content", data && memcmp(data, "hello", 5) == 0, 1);
+    check_bytes("tee writer content", tee_w.data, tee_w.len, "hello");
+    free(data);
+    neverc_io_mem_writer_free(&tee_w);
+
+    eof_chunk_reader_t chunk = { (const uint8_t *)"xy", 2, 0 };
+    neverc_io_reader_t eof_inner = { &chunk, eof_chunk_read };
+    neverc_io_mem_writer_init(&tee_w);
+    w.ctx = &tee_w;
+    neverc_io_tee_reader_init(&tee, &eof_inner, &w);
+    uint8_t buf[4];
+    size_t n = 99;
+    check_int("tee data+eof rc",
+              tee.reader.read(tee.reader.ctx, buf, sizeof(buf), &n),
+              NEVERC_IO_EOF);
+    check_size("tee data+eof n", n, 2);
+    check_int("tee data+eof bytes", memcmp(buf, "xy", 2) == 0, 1);
+    check_bytes("tee data+eof writer", tee_w.data, tee_w.len, "xy");
+    neverc_io_mem_writer_free(&tee_w);
+}
+
 static void test_partial_writer_propagation(void) {
     printf("[partial writer propagation]\n");
 
@@ -536,6 +678,9 @@ int main(void) {
     test_copy_count_saturation();
     test_capacity_overflow_guards();
     test_invalid_reader_counts();
+    test_multi_reader_eof_then_next();
+    test_limit_reader_wrap();
+    test_tee_reader_success();
     test_partial_writer_propagation();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

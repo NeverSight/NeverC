@@ -23,6 +23,8 @@ typedef struct neverc_arena neverc_arena_t;
 
 neverc_arena_t *neverc_arena_new(void);
 void            neverc_arena_free(neverc_arena_t *a);
+/* Reset releases every allocation from this arena. Pointers obtained
+ * before reset must not be used. */
 void            neverc_arena_reset(neverc_arena_t *a);
 
 void *neverc_arena_alloc(neverc_arena_t *a, size_t size);

@@ -229,6 +229,33 @@ static void test_invalid_affine_points(void) {
     neverc_bigint_set(&point.x, &c->p);
     neverc_bigint_set_int64(&point.y, 1);
     ASSERT_TRUE(!neverc_elliptic_is_on_curve(c, &point));
+
+    unsigned char p_encoded[65] = {0x04};
+    static const unsigned char p256_p[32] = {
+        0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    };
+    memcpy(p_encoded + 1, p256_p, 32);
+    p_encoded[64] = 1;
+    neverc_bigint_set(&point.x, &c->gx);
+    neverc_bigint_set(&point.y, &c->gy);
+    ASSERT_INT_EQ(neverc_elliptic_unmarshal(
+                      c, &point, p_encoded, sizeof(p_encoded)),
+                  -1);
+    ASSERT_TRUE(neverc_bigint_cmp(&point.x, &c->gx) == 0);
+    ASSERT_TRUE(neverc_bigint_cmp(&point.y, &c->gy) == 0);
+
+    unsigned char one_one[65] = {0x04};
+    one_one[32] = 1;
+    one_one[64] = 1;
+    ASSERT_INT_EQ(neverc_elliptic_unmarshal(
+                      c, &point, one_one, sizeof(one_one)),
+                  -1);
+    ASSERT_TRUE(neverc_bigint_cmp(&point.x, &c->gx) == 0);
+    ASSERT_TRUE(neverc_bigint_cmp(&point.y, &c->gy) == 0);
+
     neverc_elliptic_point_free(&point);
 }
 

@@ -161,6 +161,17 @@ static void test_clean(void) {
 
     neverc_path_clean("foo/../..", buf, sizeof(buf));
     check_str("clean above start", buf, "..");
+
+    neverc_path_clean("foo\\bar\\..\\baz", buf, sizeof(buf));
+    check_str("clean backslash is not a separator", buf, "foo\\bar\\..\\baz");
+
+    {
+        char tiny[2];
+        tiny[0] = 'x';
+        tiny[1] = 'y';
+        check_int("clean overflow", neverc_path_clean("/abc/def", tiny, sizeof(tiny)), -1);
+        check_int("clean overflow nul", tiny[0] == '\0', 1);
+    }
 }
 
 /* ===== Test: Join ===== */

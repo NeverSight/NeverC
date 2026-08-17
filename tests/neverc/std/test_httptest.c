@@ -135,6 +135,26 @@ static void test_server_status_code(void) {
     neverc_httptest_close(ts);
 }
 
+static void test_close_without_request(void) {
+    printf("[close_without_request]\n");
+
+    neverc_httptest_server_t *ts = neverc_httptest_new_server(hello_handler);
+    check_not_null("idle server created", ts);
+    check_not_null("idle url", neverc_httptest_url(ts));
+    check_not_null("idle addr", neverc_httptest_addr(ts));
+    neverc_httptest_close(ts);
+    neverc_httptest_close(NULL);
+
+    ts = neverc_httptest_new_server(hello_handler);
+    check_not_null("second idle server created", ts);
+    if (ts) {
+        neverc_http_response_t *resp = neverc_http_get(neverc_httptest_url(ts));
+        check_not_null("request before close", resp);
+        if (resp) neverc_http_response_free(resp);
+        neverc_httptest_close(ts);
+    }
+}
+
 static void test_recorder(void) {
     printf("[recorder]\n");
 
@@ -264,6 +284,7 @@ int main(void) {
     printf("=== NeverC httptest Tests ===\n");
 
     test_recorder();
+    test_close_without_request();
     test_new_server();
     test_server_with_path();
     test_server_status_code();

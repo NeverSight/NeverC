@@ -160,14 +160,14 @@ int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
         case QUIC_TP_INITIAL_MAX_STREAMS_BIDI: {
             uint64_t v;
             if (decode_tp_varint(val, vlen, &v) != 0 ||
-                v > (UINT64_C(1) << 60)) return -1;
+                v > QUIC_MAX_STREAM_COUNT) return -1;
             tp->initial_max_streams_bidi = v;
             break;
         }
         case QUIC_TP_INITIAL_MAX_STREAMS_UNI: {
             uint64_t v;
             if (decode_tp_varint(val, vlen, &v) != 0 ||
-                v > (UINT64_C(1) << 60)) return -1;
+                v > QUIC_MAX_STREAM_COUNT) return -1;
             tp->initial_max_streams_uni = v;
             break;
         }
@@ -301,8 +301,8 @@ int neverc_quic_transport_params_encode(const quic_transport_params_t *tp,
         tp->initial_scid_len > 20 || tp->retry_scid_len > 20 ||
         tp->max_udp_payload_size < 1200 ||
         tp->max_udp_payload_size > 65527 ||
-        tp->initial_max_streams_bidi > (UINT64_C(1) << 60) ||
-        tp->initial_max_streams_uni > (UINT64_C(1) << 60) ||
+        tp->initial_max_streams_bidi > QUIC_MAX_STREAM_COUNT ||
+        tp->initial_max_streams_uni > QUIC_MAX_STREAM_COUNT ||
         tp->ack_delay_exponent > 20 || tp->max_ack_delay >= 16384 ||
         tp->active_connection_id_limit < 2 ||
         tp->active_connection_id_limit > 8)

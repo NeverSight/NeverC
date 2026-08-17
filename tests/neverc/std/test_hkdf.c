@@ -102,6 +102,19 @@ static void test_rfc5869_case3(void) {
     uint8_t okm[42];
     neverc_hkdf_sha256(okm, 42, ikm, 22, NULL, 0, NULL, 0);
     check_true("TC3 full HKDF (no salt, no info)", memcmp(okm, expected_okm, 42) == 0);
+
+    uint8_t empty = 0;
+    uint8_t zeros[32];
+    memset(zeros, 0, sizeof(zeros));
+    uint8_t prk_empty[32], prk_zeros[32];
+    neverc_hkdf_extract_sha256(prk_empty, &empty, 0, ikm, 22);
+    neverc_hkdf_extract_sha256(prk_zeros, zeros, sizeof(zeros), ikm, 22);
+    check_true("NULL salt == empty salt", memcmp(prk, prk_empty, 32) == 0);
+    check_true("empty salt == HashLen zeros", memcmp(prk_empty, prk_zeros, 32) == 0);
+
+    uint8_t okm_empty[42];
+    neverc_hkdf_expand_sha256(okm_empty, 42, prk, &empty, 0);
+    check_true("NULL info == empty info", memcmp(okm, okm_empty, 42) == 0);
 }
 
 static void test_deterministic(void) {

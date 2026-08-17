@@ -85,7 +85,9 @@ void neverc_slices_reverse(void *slice, size_t len, size_t elem_size) {
 }
 
 void neverc_slices_sort(void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
-    if (!slice || len <= 1 || elem_size == 0 || !cmp) return;
+    if (!slice || len <= 1 || elem_size == 0 || !cmp ||
+        len > SIZE_MAX / elem_size)
+        return;
     nci_pdqsort(slice, len, elem_size, (nci_cmp_fn)cmp);
 }
 
@@ -260,7 +262,9 @@ int neverc_slices_is_sorted_ints(const int *slice, size_t len) {
 }
 
 void neverc_slices_sort_stable(void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
-    if (!slice || len <= 1 || elem_size == 0 || !cmp) return;
+    if (!slice || len <= 1 || elem_size == 0 || !cmp ||
+        len > SIZE_MAX / elem_size)
+        return;
     nci_timsort(slice, len, elem_size, (nci_cmp_fn)cmp);
 }
 
@@ -349,6 +353,36 @@ void *neverc_slices_concat(const void *s1, size_t len1, const void *s2, size_t l
     if (!out) return NULL;
     if (len1 > 0) memcpy(out, s1, len1 * elem_size);
     if (len2 > 0) memcpy((char *)out + len1 * elem_size, s2, len2 * elem_size);
+    return out;
+}
+
+int neverc_slices_clip(size_t len, size_t cap, size_t *out_cap) {
+    if (!out_cap || cap < len) return 0;
+    *out_cap = len;
+    return 1;
+}
+
+void *neverc_slices_grow(void *slice, size_t len, size_t cap, size_t n,
+                         size_t elem_size, size_t *out_cap) {
+    if (!out_cap || elem_size == 0 || cap < len)
+        return NULL;
+    if ((len > 0 || cap > 0) && !slice)
+        return NULL;
+    /* leftover = cap - len; after Clip, leftover is 0 so n extra elements
+     * require a new allocation of exactly len+n, not a wrapping cap+n. */
+    if (n <= cap - len) {
+        *out_cap = cap;
+        return slice;
+    }
+    if (n > SIZE_MAX - len)
+        return NULL;
+    size_t new_cap = len + n;
+    if (new_cap > SIZE_MAX / elem_size)
+        return NULL;
+    void *out = realloc(slice, new_cap * elem_size);
+    if (!out)
+        return NULL;
+    *out_cap = new_cap;
     return out;
 }
 

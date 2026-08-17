@@ -147,6 +147,46 @@ static void test_join_host_port(void) {
     check_str("ipv4-mapped join", buf, "[::ffff:127.0.0.1]:80");
 }
 
+static void test_addr_internal(void) {
+    printf("[addr_internal]\n");
+    neverc_net_addrs_t addrs;
+
+    check_int("loopback ipv4 internal",
+              neverc_net_addr_is_internal("127.0.0.1"), 1);
+    check_int("loopback ipv6 internal",
+              neverc_net_addr_is_internal("::1"), 1);
+    check_int("mapped loopback internal",
+              neverc_net_addr_is_internal("::ffff:127.0.0.1"), 1);
+    check_int("private ipv4 internal",
+              neverc_net_addr_is_internal("10.0.0.1"), 1);
+    check_int("link-local internal",
+              neverc_net_addr_is_internal("169.254.1.1"), 1);
+    check_int("localhost name internal",
+              neverc_net_addr_is_internal("localhost"), 1);
+    check_int("localhost suffix internal",
+              neverc_net_addr_is_internal("foo.localhost"), 1);
+    check_int("public ipv4 not internal",
+              neverc_net_addr_is_internal("8.8.8.8"), 0);
+    check_int("mapped public not internal",
+              neverc_net_addr_is_internal("::ffff:8.8.8.8"), 0);
+    check_int("empty addr fail-closed",
+              neverc_net_addr_is_internal(""), 1);
+    check_int("garbage addr fail-closed",
+              neverc_net_addr_is_internal("not-an-ip"), 1);
+
+    memset(&addrs, 0, sizeof(addrs));
+    check_int("empty addrs fail-closed",
+              neverc_net_addrs_any_internal(&addrs), 1);
+    strcpy(addrs.addrs[0], "8.8.8.8");
+    addrs.count = 1;
+    check_int("public only not internal",
+              neverc_net_addrs_any_internal(&addrs), 0);
+    strcpy(addrs.addrs[1], "::ffff:127.0.0.1");
+    addrs.count = 2;
+    check_int("mapped loopback in set",
+              neverc_net_addrs_any_internal(&addrs), 1);
+}
+
 /* ===== LookupHost ===== */
 
 static void test_lookup_host(void) {
@@ -508,6 +548,7 @@ int main(void) {
 
     test_split_host_port();
     test_join_host_port();
+    test_addr_internal();
     test_lookup_host();
     test_lookup_ip();
     test_lookup_port();

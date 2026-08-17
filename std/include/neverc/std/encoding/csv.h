@@ -3,7 +3,7 @@
 
 /*
  * NeverC encoding/csv — CSV reading and writing (mirrors Go encoding/csv).
- * RFC 4180 compliant with configurable delimiters.
+ * RFC 4180 with Go's CRLF-to-LF normalization inside quoted fields.
  */
 
 #include <stddef.h>

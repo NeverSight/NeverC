@@ -147,12 +147,25 @@ int neverc_signal_wait(const int *sigs, int nsigs) {
 #include <string.h>
 #include <errno.h>
 
-static neverc_signal_handler_t g_handlers[64] = {0};
-static volatile sig_atomic_t g_pending[64] = {0};
+/* Linux NSIG is 65 (signals 1..64, including SIGRTMAX). A table of 64
+ * silently dropped notify/stop/ignore for signal 64 while sigwait still
+ * accepted it — raise(SIGRTMAX) then used the default terminate action. */
+#if defined(NSIG) && NSIG > 0
+#define NEVERC_SIGNAL_NSIG NSIG
+#else
+#define NEVERC_SIGNAL_NSIG 65
+#endif
+
+static neverc_signal_handler_t g_handlers[NEVERC_SIGNAL_NSIG] = {0};
+static volatile sig_atomic_t g_pending[NEVERC_SIGNAL_NSIG] = {0};
+
+static int posix_signal_in_range(int signum) {
+    return signum >= 0 && signum < NEVERC_SIGNAL_NSIG;
+}
 
 static void posix_signal_handler(int signum) {
     neverc_signal_handler_t handler = NULL;
-    if (signum >= 0 && signum < 64) {
+    if (posix_signal_in_range(signum)) {
         handler = g_handlers[signum];
         g_pending[signum] = 1;
     }
@@ -161,7 +174,7 @@ static void posix_signal_handler(int signum) {
 }
 
 void neverc_signal_notify(int signum, neverc_signal_handler_t handler) {
-    if (signum < 0 || signum >= 64) return;
+    if (!posix_signal_in_range(signum)) return;
     if (!handler) {
         neverc_signal_stop(signum);
         return;
@@ -178,7 +191,7 @@ void neverc_signal_notify(int signum, neverc_signal_handler_t handler) {
 }
 
 void neverc_signal_stop(int signum) {
-    if (signum < 0 || signum >= 64) return;
+    if (!posix_signal_in_range(signum)) return;
     g_handlers[signum] = NULL;
     g_pending[signum] = 0;
 
@@ -194,7 +207,7 @@ void neverc_signal_reset(int signum) {
 }
 
 void neverc_signal_ignore(int signum) {
-    if (signum < 0 || signum >= 64) return;
+    if (!posix_signal_in_range(signum)) return;
     g_handlers[signum] = NULL;
     g_pending[signum] = 0;
 
@@ -206,7 +219,7 @@ void neverc_signal_ignore(int signum) {
 }
 
 int neverc_signal_wait(const int *sigs, int nsigs) {
-    if (!sigs || nsigs <= 0 || nsigs > 64) return -1;
+    if (!sigs || nsigs <= 0 || nsigs > NEVERC_SIGNAL_NSIG) return -1;
     sigset_t set;
     sigemptyset(&set);
     for (int i = 0; i < nsigs; i++) {
@@ -222,7 +235,7 @@ int neverc_signal_wait(const int *sigs, int nsigs) {
      * otherwise lost the wakeup (Windows records the same pending bit). */
     for (int i = 0; i < nsigs; i++) {
         int delivered = sigs[i];
-        if (delivered >= 0 && delivered < 64 && g_pending[delivered]) {
+        if (posix_signal_in_range(delivered) && g_pending[delivered]) {
             g_pending[delivered] = 0;
             sigprocmask(SIG_SETMASK, &old, NULL);
             return delivered;
@@ -231,7 +244,7 @@ int neverc_signal_wait(const int *sigs, int nsigs) {
 
     int sig = 0;
     int rc = sigwait(&set, &sig);
-    if (rc == 0 && sig >= 0 && sig < 64)
+    if (rc == 0 && posix_signal_in_range(sig))
         g_pending[sig] = 0;
 
     sigprocmask(SIG_SETMASK, &old, NULL);

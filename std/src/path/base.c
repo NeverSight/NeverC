@@ -1,4 +1,5 @@
 #include "neverc/std/path.h"
+#include <limits.h>
 #include <string.h>
 
 int neverc_path_base(const char *path, char *buf, size_t bufsize) {
@@ -31,7 +32,7 @@ int neverc_path_base(const char *path, char *buf, size_t bufsize) {
         i--;
 
     size_t result_len = len - i;
-    if (result_len + 1 > bufsize)
+    if (result_len + 1 > bufsize || result_len > (size_t)INT_MAX)
         return -1;
 
     memcpy(buf, path + i, result_len);

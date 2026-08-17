@@ -214,6 +214,18 @@ static void test_parse_repeat(void) {
     check_not_null("{3} literals", n);
     check_op("{3} op", n, NC_RE_OP_CONCAT);
     neverc_regexp_syntax_free(n);
+
+    /* Go parseInt: leading zeros are not a repeat count. */
+    n = neverc_regexp_syntax_parse("a{01}", 0, &err);
+    check_not_null("a{01} literals", n);
+    check_op("a{01} op", n, NC_RE_OP_CONCAT);
+    check_int("a{01} nsubs", n ? n->nsubs : 0, 5);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("a{0,01}", 0, &err);
+    check_not_null("a{0,01} literals", n);
+    check_op("a{0,01} op", n, NC_RE_OP_CONCAT);
+    neverc_regexp_syntax_free(n);
 }
 
 /* ===== Alternation / Groups ===== */
@@ -555,6 +567,38 @@ static void test_errors(void) {
 
     n = neverc_regexp_syntax_parse("a{1001}", 0, &err);
     check_null("repeat over 1000", n);
+
+    n = neverc_regexp_syntax_parse("a{2147483648}", 0, &err);
+    check_null("repeat INT_MAX+1 overflow", n);
+    check_not_null("repeat overflow err", (void *)(size_t)(err != NULL));
+
+    n = neverc_regexp_syntax_parse("a{99999999999999999999}", 0, &err);
+    check_null("repeat huge overflow", n);
+
+    {
+        char bad[] = { 'a', (char)0xFF, 'b', 0 };
+        err = NULL;
+        n = neverc_regexp_syntax_parse(bad, 0, &err);
+        check_null("invalid UTF-8 pattern", n);
+        check_not_null("invalid UTF-8 err", (void *)(size_t)(err != NULL));
+
+        char trunc[] = { (char)0xC3, 0 };
+        err = NULL;
+        n = neverc_regexp_syntax_parse(trunc, 0, &err);
+        check_null("truncated UTF-8 pattern", n);
+
+        char overlong[] = { (char)0xC0, (char)0x80, 0 };
+        err = NULL;
+        n = neverc_regexp_syntax_parse(overlong, 0, &err);
+        check_null("overlong UTF-8 pattern", n);
+    }
+
+    n = neverc_regexp_syntax_parse("\xC3\xA9", 0, &err);
+    check_not_null("utf8 e-acute", n);
+    check_op("utf8 e-acute op", n, NC_RE_OP_LITERAL);
+    check_int("utf8 e-acute nrunes", n ? n->nrunes : 0, 1);
+    check_int("utf8 e-acute rune", (n && n->nrunes > 0) ? n->runes[0] : 0, 0xE9);
+    neverc_regexp_syntax_free(n);
 
     n = neverc_regexp_syntax_parse("[z-a]", 0, &err);
     check_null("inverted class range", n);
