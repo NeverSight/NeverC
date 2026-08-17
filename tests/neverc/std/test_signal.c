@@ -154,6 +154,34 @@ static void test_constants(void) {
 
 #endif
 
+#if defined(_WIN32)
+
+static void test_wait_after_raise(void) {
+    printf("[wait_after_raise]\n");
+    g_handler_called = 0;
+    neverc_signal_notify(SIGINT, test_handler);
+    raise(SIGINT);
+    ASSERT_INT_EQ(g_handler_called, 1);
+    int sig = SIGINT;
+    ASSERT_INT_EQ(neverc_signal_wait(&sig, 1), SIGINT);
+    neverc_signal_stop(SIGINT);
+}
+
+static void test_notify_twice_does_not_lose_handler(void) {
+    printf("[notify_twice]\n");
+    g_handler_called = 0;
+    neverc_signal_notify(SIGINT, test_handler);
+    neverc_signal_notify(SIGINT, test_handler);
+    raise(SIGINT);
+    ASSERT_INT_EQ(g_handler_called, 1);
+    g_handler_called = 0;
+    raise(SIGINT);
+    ASSERT_INT_EQ(g_handler_called, 1);
+    neverc_signal_stop(SIGINT);
+}
+
+#endif
+
 static void test_wait_null(void) {
     printf("[wait_null]\n");
     ASSERT_INT_EQ(neverc_signal_wait(NULL, 1), -1);
@@ -169,6 +197,8 @@ static void test_wait_invalid_and_pending(void) {
     ASSERT_INT_EQ(neverc_signal_wait(&bad, 1), -1);
     int kill_sig = SIGKILL;
     ASSERT_INT_EQ(neverc_signal_wait(&kill_sig, 1), -1);
+    int stop_sig = SIGSTOP;
+    ASSERT_INT_EQ(neverc_signal_wait(&stop_sig, 1), -1);
 
     sigset_t block, saved, before_wait, after, empty;
     sigemptyset(&block);
@@ -184,6 +214,19 @@ static void test_wait_invalid_and_pending(void) {
                 sigismember(&before_wait, SIGUSR1));
     sigprocmask(SIG_SETMASK, &saved, NULL);
 }
+
+static void test_notify_null_clears_handler(void) {
+    printf("[notify_null]\n");
+    g_handler_called = 0;
+    neverc_signal_notify(SIGCONT, test_handler);
+    raise(SIGCONT);
+    ASSERT_INT_EQ(g_handler_called, 1);
+    g_handler_called = 0;
+    neverc_signal_notify(SIGCONT, NULL);
+    raise(SIGCONT);
+    ASSERT_INT_EQ(g_handler_called, 0);
+    neverc_signal_reset(SIGCONT);
+}
 #endif
 
 int main(void) {
@@ -194,11 +237,17 @@ int main(void) {
     test_multiple_signals();
     test_constants();
     test_wait_null();
+#if defined(_WIN32)
+    test_wait_after_raise();
+    test_notify_twice_does_not_lose_handler();
+#endif
 #if !defined(_WIN32)
     test_wait_invalid_and_pending();
+    test_notify_null_clears_handler();
 #endif
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

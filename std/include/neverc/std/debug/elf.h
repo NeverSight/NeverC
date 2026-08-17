@@ -97,8 +97,13 @@ extern "C" {
 
 /* Special section indices */
 #define NEVERC_SHN_UNDEF  0
+#define NEVERC_SHN_LORESERVE 0xFF00
 #define NEVERC_SHN_ABS    0xFFF1
 #define NEVERC_SHN_COMMON 0xFFF2
+#define NEVERC_SHN_XINDEX 0xFFFF
+
+/* e_phnum sentinel: real count is sh_info of section 0 */
+#define NEVERC_PN_XNUM 0xFFFF
 
 /* ===== Types ===== */
 

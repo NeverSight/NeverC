@@ -3,9 +3,11 @@
  * Same compression as SHA-512, different IV, output truncated to 48 bytes.
  */
 #include "neverc/std/crypto/sha384.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 
 void neverc_sha384_init(neverc_sha384_ctx *ctx) {
+    if (!ctx) return;
     ctx->state[0] = 0xcbbb9d5dc1059ed8ULL;
     ctx->state[1] = 0x629a292a367cd507ULL;
     ctx->state[2] = 0x9159015a3070dd17ULL;
@@ -23,9 +25,11 @@ void neverc_sha384_update(neverc_sha384_ctx *ctx, const uint8_t *data, size_t le
 }
 
 void neverc_sha384_final(neverc_sha384_ctx *ctx, uint8_t digest[48]) {
+    if (!ctx || !digest) return;
     uint8_t full[64];
     neverc_sha512_final(ctx, full);
     memcpy(digest, full, 48);
+    neverc_platform_secure_zero(full, sizeof(full));
 }
 
 void neverc_sha384_sum(const uint8_t *data, size_t len, uint8_t digest[48]) {

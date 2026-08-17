@@ -22,3 +22,7 @@ double neverc_math_fmod(double x, double y) {
         r = -r;
     return r;
 }
+
+double neverc_math_mod(double x, double y) {
+    return neverc_math_fmod(x, y);
+}

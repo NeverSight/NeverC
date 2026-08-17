@@ -78,6 +78,26 @@ static void test_castagnoli(void) {
               0xE3069283);
 }
 
+static void test_koopman(void) {
+    printf("[koopman]\n");
+    neverc_crc32_table_t table;
+    neverc_crc32_make_table(NEVERC_CRC32_KOOPMAN, table);
+
+    check_u32("koopman(123456789)",
+              neverc_crc32_checksum(table, "123456789", 9),
+              0x2D3DD0AE);
+}
+
+static void test_null_empty(void) {
+    printf("[null_empty]\n");
+    neverc_crc32_table_t table;
+    neverc_crc32_make_table(NEVERC_CRC32_IEEE, table);
+    check_u32("ieee(NULL,0)", neverc_crc32_ieee(NULL, 0), 0);
+    check_u32("update(NULL,0)", neverc_crc32_update(0, table, NULL, 0), 0);
+    check_u32("update(NULL table)", neverc_crc32_update(0xA5A5A5A5u, NULL, "x", 1),
+              0xA5A5A5A5u);
+}
+
 /* Regression: reusing one table buffer for a different polynomial must not
  * return a stale slicing-8 result for len >= 64. */
 static void test_table_buffer_reuse(void) {
@@ -118,6 +138,8 @@ int main(void) {
     test_make_table();
     test_update();
     test_castagnoli();
+    test_koopman();
+    test_null_empty();
     test_table_buffer_reuse();
     test_zero_data();
 

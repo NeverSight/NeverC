@@ -280,8 +280,23 @@ int neverc_netip_addr_from16(const uint8_t addr[16], neverc_netip_addr_t *out) {
     return 0;
 }
 
+int neverc_netip_addr_is4in6(const neverc_netip_addr_t *addr) {
+    return addr && addr->valid && addr_is_4in6(addr);
+}
+
+int neverc_netip_addr_unmap(const neverc_netip_addr_t *addr,
+                            neverc_netip_addr_t *out) {
+    if (!addr || !out || !addr->valid) return -1;
+    *out = *addr;
+    if (addr_is_4in6(addr)) {
+        out->is_v4 = 1;
+        out->zone[0] = '\0';
+    }
+    return 0;
+}
+
 int neverc_netip_addr_string(const neverc_netip_addr_t *addr, char *buf, size_t cap) {
-    if (!addr || !buf || !addr->valid) return -1;
+    if (!addr || !addr->valid || (cap > 0 && !buf)) return -1;
     char tmp[120];
     int len = format_addr_raw(addr, tmp);
     return emit_str(buf, cap, tmp, len);
@@ -327,7 +342,7 @@ int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
 }
 
 int neverc_netip_addrport_string(const neverc_netip_addrport_t *ap, char *buf, size_t cap) {
-    if (!ap || !buf) return -1;
+    if (!ap || (cap > 0 && !buf)) return -1;
     char tmp[144];
     int pos = 0;
     if (ap->addr.is_v4) {
@@ -372,7 +387,7 @@ int neverc_netip_parse_prefix(const char *s, neverc_netip_prefix_t *out) {
 }
 
 int neverc_netip_prefix_string(const neverc_netip_prefix_t *pfx, char *buf, size_t cap) {
-    if (!pfx || !buf || !pfx->valid) return -1;
+    if (!pfx || !pfx->valid || (cap > 0 && !buf)) return -1;
     char tmp[144];
     int pos = format_addr_raw(&pfx->addr, tmp);
     tmp[pos++] = '/';

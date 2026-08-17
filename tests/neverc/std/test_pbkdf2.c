@@ -128,6 +128,22 @@ static void test_invalid_inputs(void) {
                neverc_pbkdf2_sha256(
                    dk, sizeof(dk), NULL, 0, NULL, 0, 1) == 0);
     {
+        uint8_t sentinel[32];
+        memset(sentinel, 0xAA, sizeof(sentinel));
+        memcpy(dk, sentinel, sizeof(dk));
+        check_true("RFC 8018 rejects iterations=0",
+                   neverc_pbkdf2_sha256(
+                       dk, sizeof(dk), &byte, 1, &byte, 1, 0) == -1);
+        check_true("iterations=0 leaves derived key unmodified",
+                   memcmp(dk, sentinel, sizeof(dk)) == 0);
+        check_true("rejects negative iterations",
+                   neverc_pbkdf2_sha256(
+                       dk, sizeof(dk), &byte, 1, &byte, 1, -1) == -1);
+        check_true("rejects zero derived-key length",
+                   neverc_pbkdf2_sha256(
+                       dk, 0, &byte, 1, &byte, 1, 1) == -1);
+    }
+    {
         uint8_t long_salt[300];
         uint8_t dk_long[32];
         for (size_t i = 0; i < sizeof(long_salt); i++)

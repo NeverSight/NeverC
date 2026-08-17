@@ -40,6 +40,13 @@ static void test_parse_address(void) {
               -1);
     ASSERT_EQ(neverc_mail_parse_address("John <a@b.com> trailing", &addr), -1);
     ASSERT_EQ(neverc_mail_parse_address("<>", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("nodomain", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("user@", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("@example.com", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("user@@example.com", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("user@.example.com", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("user@example.com.", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("John Doe", &addr), -1);
 }
 
 static void test_parse_address_list(void) {
@@ -63,6 +70,15 @@ static void test_parse_address_list(void) {
 
     ASSERT_EQ(neverc_mail_parse_address_list(
                   "ok@x.com, bad\r\nBcc: hidden@x.com", addrs, 8), -1);
+
+    neverc_mail_address_t one[1];
+    ASSERT_EQ(neverc_mail_parse_address_list("a@x.com, b@y.com", one, 1), -1);
+    ASSERT_EQ(neverc_mail_parse_address_list("a@x.com", one, 1), 1);
+    ASSERT_EQ(neverc_mail_parse_address_list("", one, 1), -1);
+    ASSERT_EQ(neverc_mail_parse_address_list("   ", one, 1), -1);
+    ASSERT_EQ(neverc_mail_parse_address_list("a@x.com,", one, 1), -1);
+    ASSERT_EQ(neverc_mail_parse_address_list("Doe, John <j@x.com>", addrs, 8),
+              -1);
 }
 
 static void test_format_address(void) {
@@ -88,6 +104,13 @@ static void test_format_address(void) {
 
     strcpy(addr.name, "Eve");
     strcpy(addr.address, "eve@x.com\r\nBcc: hidden@x.com");
+    ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)), -1);
+
+    strcpy(addr.name, "John");
+    strcpy(addr.address, "john@example.com");
+    ASSERT_EQ(neverc_mail_format_address(&addr, buf, 8), -1);
+    strcpy(addr.name, "");
+    strcpy(addr.address, "not-an-addr");
     ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)), -1);
 }
 
@@ -147,6 +170,26 @@ static void test_parse_message(void) {
     ASSERT_STREQ(neverc_mail_header_get(&m, "To"), "c@d.com");
     ASSERT_TRUE(m.body_len == 4);
     ASSERT_TRUE(memcmp(m.body, "body", 4) == 0);
+
+    const char *folded =
+        "Subject: Hello\r\n"
+        " World\r\n"
+        "\tAgain\r\n"
+        "From: a@b.com\r\n"
+        "\r\n"
+        "ok";
+    ASSERT_EQ(neverc_mail_parse_message(folded, strlen(folded), &m), 0);
+    ASSERT_STREQ(neverc_mail_header_get(&m, "Subject"), "Hello World Again");
+    ASSERT_STREQ(neverc_mail_header_get(&m, "From"), "a@b.com");
+    ASSERT_TRUE(m.body_len == 2);
+    ASSERT_TRUE(memcmp(m.body, "ok", 2) == 0);
+
+    const char *fold_first =
+        "Subject:\r\n"
+        " Hello\r\n"
+        "\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(fold_first, strlen(fold_first), &m), 0);
+    ASSERT_STREQ(neverc_mail_header_get(&m, "Subject"), "Hello");
 }
 
 static void test_parse_date(void) {
@@ -160,6 +203,21 @@ static void test_parse_date(void) {
 
     ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 25:00:00 +0000") == -1);
     ASSERT_TRUE(neverc_mail_parse_date("31 Feb 2024 00:00:00 +0000") == -1);
+
+    /* RFC 5322: seconds are optional; zone is required. */
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00 +0000") == 0);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00 -0700") == 25200LL);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00:00") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date("02 January 2006 15:04:05 -0700") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date("02 Jan 2006 15:04:05 -0700 extra") ==
+                -1);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 70 00:00:00 +0000") == 0);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00:00 EST") == 18000LL);
+    ASSERT_TRUE(neverc_mail_parse_date(
+                    "01 Jan 1970 00:00:00 -0700 (MST)") == 25200LL);
+    ASSERT_TRUE(neverc_mail_parse_date("Xxx, 01 Jan 1970 00:00:00 +0000") ==
+                -1);
+    ASSERT_TRUE(neverc_mail_parse_date("") == -1);
 }
 
 int main(void) {

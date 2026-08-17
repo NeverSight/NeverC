@@ -72,16 +72,18 @@ int main(void) {
     {
         uint8_t buf[55];
         memset(buf, 'a', 55);
+        hex_to_bytes("fb0bd626a70c28541dfa781bb5cc4d7d7f56622a58f01a0b1ddd646f", expected, 28);
         neverc_sha224_sum(buf, 55, digest);
-        tests_run++; tests_passed++;
+        check_digest("SHA-224(55 'a')", digest, expected, 28);
     }
 
     /* Boundary: 56 bytes (pad needs extra block) */
     {
         uint8_t buf[56];
         memset(buf, 'a', 56);
+        hex_to_bytes("d40854fc9caf172067136f2e29e1380b14626bf6f0dd06779f820dcd", expected, 28);
         neverc_sha224_sum(buf, 56, digest);
-        tests_run++; tests_passed++;
+        check_digest("SHA-224(56 'a')", digest, expected, 28);
     }
 
     /* 1 million 'a' characters — FIPS 180-4 */

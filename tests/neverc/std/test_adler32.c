@@ -93,6 +93,13 @@ static void test_all_zeros(void) {
         (100U << 16) | 1U);
 }
 
+static void test_null_empty(void) {
+    printf("[null empty]\n");
+    check_u32("update(NULL,0)",
+              neverc_adler32_update(NEVERC_ADLER32_INIT, NULL, 0),
+              NEVERC_ADLER32_INIT);
+}
+
 int main(void) {
     printf("=== NeverC Adler-32 Library Tests ===\n\n");
 
@@ -100,6 +107,7 @@ int main(void) {
     test_incremental();
     test_large_data();
     test_all_zeros();
+    test_null_empty();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

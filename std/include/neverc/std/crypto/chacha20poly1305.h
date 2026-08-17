@@ -24,6 +24,8 @@ extern "C" {
  *   ciphertext_len includes the 16-byte tag (minimum 16).
  *   dst receives the decrypted plaintext (ciphertext_len - 16 bytes).
  *   Messages are limited to 2^38-64 bytes by RFC 8439.
+ *   Nonces must be unique per key; reuse of (key, nonce) discloses
+ *   plaintext XOR. Open compares the tag in constant time.
  *   Returns plaintext length on success, -1 on authentication failure.
  */
 size_t neverc_chacha20poly1305_seal(

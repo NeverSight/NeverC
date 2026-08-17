@@ -14,6 +14,18 @@ size_t neverc_base64_encoded_len(size_t n) {
     return groups * 4;
 }
 
+size_t neverc_base64_raw_encoded_len(size_t n) {
+    size_t full = n / 3;
+    if (full > SIZE_MAX / 4)
+        return SIZE_MAX;
+    size_t len = full * 4;
+    size_t rem = n % 3;
+    size_t extra = rem == 0 ? 0 : rem + 1;
+    if (len > SIZE_MAX - extra)
+        return SIZE_MAX;
+    return len + extra;
+}
+
 size_t neverc_base64_decoded_len(size_t n) {
     /* Upper bound on bytes the decoder may write for n input chars. The decoder
      * accepts unpadded input (RawStd/RawURL, as in JWTs), where a trailing group
@@ -28,10 +40,12 @@ size_t neverc_base64_decoded_len(size_t n) {
 }
 
 static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,
-                                const char *table) {
+                                const char *table, int pad) {
     if (src_len == 0)
         return 0;
-    if (!dst || !src || neverc_base64_encoded_len(src_len) == SIZE_MAX)
+    size_t need = pad ? neverc_base64_encoded_len(src_len)
+                      : neverc_base64_raw_encoded_len(src_len);
+    if (!dst || !src || need == SIZE_MAX)
         return SIZE_MAX;
 
     size_t di = 0;
@@ -75,17 +89,25 @@ static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,
         uint32_t val = (uint32_t)src[si] << 16;
         dst[di]   = table[(val >> 18) & 0x3f];
         dst[di+1] = table[(val >> 12) & 0x3f];
-        dst[di+2] = '=';
-        dst[di+3] = '=';
-        di += 4;
+        if (pad) {
+            dst[di+2] = '=';
+            dst[di+3] = '=';
+            di += 4;
+        } else {
+            di += 2;
+        }
     } else if (remain == 2) {
         uint32_t val = ((uint32_t)src[si] << 16) |
                        ((uint32_t)src[si+1] << 8);
         dst[di]   = table[(val >> 18) & 0x3f];
         dst[di+1] = table[(val >> 12) & 0x3f];
         dst[di+2] = table[(val >> 6)  & 0x3f];
-        dst[di+3] = '=';
-        di += 4;
+        if (pad) {
+            dst[di+3] = '=';
+            di += 4;
+        } else {
+            di += 3;
+        }
     }
 
     return di;
@@ -205,7 +227,11 @@ static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
 }
 
 size_t neverc_base64_encode(char *dst, const uint8_t *src, size_t src_len) {
-    return encode_with_table(dst, src, src_len, std_table);
+    return encode_with_table(dst, src, src_len, std_table, 1);
+}
+
+size_t neverc_base64_raw_encode(char *dst, const uint8_t *src, size_t src_len) {
+    return encode_with_table(dst, src, src_len, std_table, 0);
 }
 
 int neverc_base64_decode(uint8_t *dst, const char *src, size_t src_len) {
@@ -213,7 +239,11 @@ int neverc_base64_decode(uint8_t *dst, const char *src, size_t src_len) {
 }
 
 size_t neverc_base64_url_encode(char *dst, const uint8_t *src, size_t src_len) {
-    return encode_with_table(dst, src, src_len, url_table);
+    return encode_with_table(dst, src, src_len, url_table, 1);
+}
+
+size_t neverc_base64_url_raw_encode(char *dst, const uint8_t *src, size_t src_len) {
+    return encode_with_table(dst, src, src_len, url_table, 0);
 }
 
 int neverc_base64_url_decode(uint8_t *dst, const char *src, size_t src_len) {

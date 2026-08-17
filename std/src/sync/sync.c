@@ -47,6 +47,7 @@ void neverc_waitgroup_done(neverc_waitgroup_t *wg) {
     (void)neverc_waitgroup_done_checked(wg);
 }
 void neverc_waitgroup_wait(neverc_waitgroup_t *wg) {
+    if (!wg) return;
     EnterCriticalSection(&wg->mu);
     while (wg->counter > 0) SleepConditionVariableCS(&wg->cond, &wg->mu, INFINITE);
     LeaveCriticalSection(&wg->mu);
@@ -55,9 +56,13 @@ void neverc_waitgroup_wait(neverc_waitgroup_t *wg) {
 void neverc_once_init(neverc_once_t *o) { o->done = 0; InitializeCriticalSection(&o->mu); }
 void neverc_once_destroy(neverc_once_t *o) { DeleteCriticalSection(&o->mu); }
 void neverc_once_do(neverc_once_t *o, void (*f)(void)) {
+    if (!o || !f) return;
     if (InterlockedCompareExchange((volatile long*)&o->done, 0, 0)) return;
     EnterCriticalSection(&o->mu);
-    if (!o->done) { f(); InterlockedExchange((volatile long*)&o->done, 1); }
+    if (!InterlockedCompareExchange((volatile long*)&o->done, 0, 0)) {
+        f();
+        InterlockedExchange((volatile long*)&o->done, 1);
+    }
     LeaveCriticalSection(&o->mu);
 }
 
@@ -147,6 +152,7 @@ void neverc_waitgroup_done(neverc_waitgroup_t *wg) {
     (void)neverc_waitgroup_done_checked(wg);
 }
 void neverc_waitgroup_wait(neverc_waitgroup_t *wg) {
+    if (!wg) return;
     pthread_mutex_lock(&wg->mu);
     while (wg->counter > 0)
         pthread_cond_wait(&wg->cond, &wg->mu);
@@ -161,10 +167,12 @@ void neverc_once_destroy(neverc_once_t *o) {
     pthread_mutex_destroy(&o->mu);
 }
 void neverc_once_do(neverc_once_t *o, void (*f)(void)) {
+    if (!o || !f)
+        return;
     if (NEVERC_ATOMIC_LOAD32(&o->done))
         return;
     pthread_mutex_lock(&o->mu);
-    if (!o->done) {
+    if (!NEVERC_ATOMIC_LOAD32(&o->done)) {
         f();
         NEVERC_ATOMIC_STORE32(&o->done, 1);
     }
@@ -320,20 +328,20 @@ static uint64_t smap_hash(const char *key) {
         b = (smap_read4(p + len - 4) << 32) | smap_read4(p + len - 4 - ((len >> 3) << 2));
     } else if (len <= 48) {
         size_t i = 0;
-        for (; i + 16 <= len; i += 16)
+        for (; len - i >= 16; i += 16)
             seed = smap_wymix(smap_read8(p + i) ^ SMAP_WY_S1, smap_read8(p + i + 8) ^ seed);
         a = smap_read8(p + len - 16);
         b = smap_read8(p + len - 8);
     } else {
         uint64_t s1 = seed, s2 = seed;
         size_t i = 0;
-        for (; i + 48 <= len; i += 48) {
+        for (; len - i >= 48; i += 48) {
             seed = smap_wymix(smap_read8(p + i)      ^ SMAP_WY_S0, smap_read8(p + i + 8)  ^ seed);
             s1   = smap_wymix(smap_read8(p + i + 16) ^ SMAP_WY_S1, smap_read8(p + i + 24) ^ s1);
             s2   = smap_wymix(smap_read8(p + i + 32) ^ SMAP_WY_S2, smap_read8(p + i + 40) ^ s2);
         }
         seed ^= s1 ^ s2;
-        for (; i + 16 <= len; i += 16)
+        for (; len - i >= 16; i += 16)
             seed = smap_wymix(smap_read8(p + i) ^ SMAP_WY_S1, smap_read8(p + i + 8) ^ seed);
         a = smap_read8(p + len - 16);
         b = smap_read8(p + len - 8);

@@ -8,7 +8,9 @@
 extern "C" {
 #endif
 
-/* NULL password/salt pointers are accepted only for zero-length spans. */
+/* NULL password/salt pointers are accepted only for zero-length spans.
+ * iterations must be >= 1 (RFC 8018); zero or negative counts return -1.
+ * dk_len must be in 1 .. (2^32-1)*32. */
 int neverc_pbkdf2_sha256(uint8_t *dk, size_t dk_len,
                          const uint8_t *password, size_t password_len,
                          const uint8_t *salt, size_t salt_len,

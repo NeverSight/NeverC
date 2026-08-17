@@ -6,6 +6,7 @@
 #if !defined(_WIN32)
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -89,6 +90,11 @@ static void test_file_ops(void) {
     n = neverc_os_read(f, readbuf, sizeof(readbuf));
     ASSERT_EQ(n, (int)strlen(data));
     ASSERT_TRUE(memcmp(readbuf, data, (size_t)n) == 0);
+    ASSERT_EQ((int)neverc_os_seek(f, 0, NEVERC_OS_SEEK_SET), 0);
+    n = neverc_os_read(f, readbuf, 5);
+    ASSERT_EQ(n, 5);
+    ASSERT_EQ((int)neverc_os_seek(f, 0, NEVERC_OS_SEEK_END), (int)strlen(data));
+    ASSERT_EQ((int)neverc_os_seek(f, -1, NEVERC_OS_SEEK_CUR), (int)strlen(data) - 1);
     neverc_os_close(f);
 
     neverc_os_remove(path);
@@ -163,6 +169,19 @@ static void test_read_write_file(void) {
     free(out);
 
     neverc_os_remove(path);
+
+    {
+        char dirbuf[1024];
+        make_test_path(dirbuf, sizeof(dirbuf), "neverc_test_os_read_dir");
+        neverc_os_remove_all(dirbuf);
+        ASSERT_EQ(neverc_os_mkdir(dirbuf, 0755), 0);
+        unsigned char *dir_out = (unsigned char *)1;
+        size_t dir_len = 99;
+        ASSERT_EQ(neverc_os_read_file(dirbuf, &dir_out, &dir_len), -1);
+        ASSERT_TRUE(dir_out == NULL && dir_len == 0);
+        neverc_os_remove_all(dirbuf);
+    }
+
     ASSERT_EQ(neverc_os_write_file(path, NULL, 0, 0600), 0);
     ASSERT_TRUE(neverc_os_exists(path));
     neverc_os_remove(path);
@@ -196,12 +215,62 @@ static void test_stat(void) {
 #endif
     ASSERT_EQ(neverc_os_stat(slashbuf, &info), 0);
     ASSERT_TRUE(info.is_dir);
+    ASSERT_TRUE((info.mode & NEVERC_OS_MODE_DIR) != 0);
     ASSERT_TRUE(strcmp(info.name, "neverc_test_os_stat_dir") == 0);
-#if !defined(_WIN32)
     ASSERT_EQ(neverc_os_lstat(slashbuf, &info), 0);
     ASSERT_TRUE(strcmp(info.name, "neverc_test_os_stat_dir") == 0);
-#endif
     neverc_os_remove_all(dirbuf);
+
+    ASSERT_EQ(neverc_os_stat("/nonexistent_neverc_os_stat_xyz", &info), -1);
+    ASSERT_TRUE(neverc_os_is_not_exist(errno));
+
+#if !defined(_WIN32)
+    {
+        char target[1024], linkp[1024];
+        make_test_path(target, sizeof(target), "neverc_test_os_stat_tgt");
+        make_test_path(linkp, sizeof(linkp), "neverc_test_os_stat_lnk");
+        neverc_os_remove(target);
+        neverc_os_remove(linkp);
+        ASSERT_EQ(neverc_os_write_file(target, (const unsigned char *)"hello", 5, 0644),
+                  0);
+        ASSERT_EQ(neverc_os_symlink(target, linkp), 0);
+
+        ASSERT_EQ(neverc_os_stat(linkp, &info), 0);
+        ASSERT_EQ((int)info.size, 5);
+        ASSERT_TRUE((info.mode & NEVERC_OS_MODE_SYMLINK) == 0);
+        ASSERT_TRUE(!info.is_dir);
+
+        ASSERT_EQ(neverc_os_lstat(linkp, &info), 0);
+        ASSERT_TRUE((info.mode & NEVERC_OS_MODE_SYMLINK) != 0);
+        ASSERT_TRUE(!info.is_dir);
+
+        neverc_os_remove(target);
+        ASSERT_EQ(neverc_os_stat(linkp, &info), -1);
+        ASSERT_TRUE(neverc_os_is_not_exist(errno));
+        ASSERT_EQ(neverc_os_lstat(linkp, &info), 0);
+        ASSERT_TRUE((info.mode & NEVERC_OS_MODE_SYMLINK) != 0);
+        ASSERT_TRUE(neverc_os_exists(linkp));
+        neverc_os_remove(linkp);
+
+        char fifopath[1024];
+        make_test_path(fifopath, sizeof(fifopath), "neverc_test_os_fifo");
+        neverc_os_remove(fifopath);
+        ASSERT_EQ(mkfifo(fifopath, 0644), 0);
+        ASSERT_EQ(neverc_os_lstat(fifopath, &info), 0);
+        ASSERT_TRUE((info.mode & NEVERC_OS_MODE_NAMEDPIPE) != 0);
+        neverc_os_remove(fifopath);
+
+        char setuidpath[1024];
+        make_test_path(setuidpath, sizeof(setuidpath), "neverc_test_os_setuid");
+        ASSERT_EQ(neverc_os_write_file(setuidpath, (const unsigned char *)"u", 1, 0644),
+                  0);
+        ASSERT_EQ(neverc_os_chmod(setuidpath, 04755), 0);
+        ASSERT_EQ(neverc_os_stat(setuidpath, &info), 0);
+        ASSERT_TRUE((info.mode & NEVERC_OS_MODE_SETUID) != 0);
+        ASSERT_TRUE((info.mode & NEVERC_OS_MODE_PERM) == 0755);
+        neverc_os_remove(setuidpath);
+    }
+#endif
 }
 
 static void test_mkdir(void) {
@@ -397,6 +466,32 @@ static void test_read_dir(void) {
     neverc_os_remove(filebuf);
 
 #if !defined(_WIN32)
+    {
+        char parent[1024], realdir[1024], linkp[1024];
+        make_test_path(parent, sizeof(parent), "neverc_os_readdir_parent");
+        neverc_os_remove_all(parent);
+        ASSERT_EQ(neverc_os_mkdir(parent, 0755), 0);
+        snprintf(realdir, sizeof(realdir), "%s/realdir", parent);
+        snprintf(linkp, sizeof(linkp), "%s/dirlink", parent);
+        ASSERT_EQ(neverc_os_mkdir(realdir, 0755), 0);
+        ASSERT_EQ(neverc_os_symlink(realdir, linkp), 0);
+        entries = NULL;
+        count = 0;
+        ASSERT_EQ(neverc_os_read_dir(parent, &entries, &count), 0);
+        int saw_link = 0;
+        for (size_t i = 0; i < count; i++) {
+            if (strcmp(entries[i].name, "dirlink") == 0) {
+                saw_link = 1;
+                ASSERT_EQ(entries[i].is_dir, 0);
+            }
+        }
+        ASSERT_TRUE(saw_link);
+        free(entries);
+        neverc_os_remove_all(parent);
+    }
+#endif
+
+#if !defined(_WIN32)
     char target[80], linkpath[1024], small[8], big[128];
     memset(target, 't', 70);
     target[70] = '\0';
@@ -578,5 +673,6 @@ int main(void) {
     test_pipe();
     test_error_classification_and_ownership();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

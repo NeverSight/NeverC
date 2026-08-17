@@ -880,8 +880,7 @@ void neverc_cookiejar_clear_domain(neverc_cookiejar_t *jar,
     jar_entry_t **pp = &jar->entries;
     while (*pp) {
         jar_entry_t *e = *pp;
-        if (domain_match(e->domain, lower_domain) ||
-            strcmp(e->domain, lower_domain) == 0) {
+        if (domains_overlap(e->domain, lower_domain)) {
             *pp = e->next;
             entry_free(e);
             jar->count--;

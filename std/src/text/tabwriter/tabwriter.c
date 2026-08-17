@@ -90,6 +90,37 @@ static void begin_line(neverc_tabwriter_t *w) {
     }
 }
 
+static void update_width(neverc_tabwriter_t *w) {
+    if (w->width_pos < w->buf_len) {
+        w->cell_width += rune_width(w->buf + w->width_pos,
+                                    w->buf_len - w->width_pos);
+        w->width_pos = w->buf_len;
+    }
+}
+
+static void end_escape(neverc_tabwriter_t *w) {
+    switch (w->end_char) {
+    case (unsigned char)NEVERC_TABWRITER_ESCAPE:
+        update_width(w);
+        /* Escape bytes are in the buffer unless StripEscape; never count them. */
+        if ((w->flags & NEVERC_TABWRITER_STRIP_ESCAPE) == 0) {
+            w->cell_width -= 2;
+            if (w->cell_width < 0) w->cell_width = 0;
+        }
+        break;
+    case '>':
+        w->width_pos = w->buf_len;
+        break;
+    case ';':
+        w->cell_width += 1;
+        w->width_pos = w->buf_len;
+        break;
+    default:
+        break;
+    }
+    w->end_char = 0;
+}
+
 static void end_cell(neverc_tabwriter_t *w, int htab) {
     if (w->failed) return;
     if (w->ncells >= NEVERC_TABWRITER_MAX_CELLS) {
@@ -102,12 +133,15 @@ static void end_cell(neverc_tabwriter_t *w, int htab) {
          * sum of all previously carved cell sizes. Track that running total in
          * buf_carved instead of re-summing every cell on each call. */
         int start = w->buf_carved;
+        update_width(w);
         cell->size = (int)w->buf_len - start;
-        cell->width = rune_width(w->buf + start, (size_t)cell->size);
+        cell->width = w->cell_width;
         cell->htab = htab;
         w->buf_carved += cell->size;
         w->ncells++;
         w->lines_ncells[w->nlines]++;
+        w->cell_width = 0;
+        w->width_pos = w->buf_len;
     }
 }
 
@@ -117,6 +151,9 @@ static void reset_cells(neverc_tabwriter_t *w) {
     w->ncells = 0;
     w->nlines = 0;
     w->ncols = 0;
+    w->cell_width = 0;
+    w->width_pos = 0;
+    w->end_char = 0;
     begin_line(w);
 }
 
@@ -265,17 +302,25 @@ void neverc_tabwriter_init(neverc_tabwriter_t *w, int minwidth, int tabwidth,
     begin_line(w);
 }
 
-static size_t find_delim(const char *p, size_t n, char *which) {
+static size_t find_special(const char *p, size_t n, unsigned flags, char *which) {
+    const char *best = NULL;
+    char ch = 0;
     const char *t = (const char *)memchr(p, '\t', n);
     const char *v = (const char *)memchr(p, '\v', n);
     const char *nl = (const char *)memchr(p, '\n', n);
     const char *f = (const char *)memchr(p, '\f', n);
-    const char *best = NULL;
-    char ch = 0;
+    const char *esc = (const char *)memchr(p, (char)NEVERC_TABWRITER_ESCAPE, n);
+    const char *lt = (flags & NEVERC_TABWRITER_FILTER_HTML)
+        ? (const char *)memchr(p, '<', n) : NULL;
+    const char *amp = (flags & NEVERC_TABWRITER_FILTER_HTML)
+        ? (const char *)memchr(p, '&', n) : NULL;
     if (t && (!best || t < best)) { best = t; ch = '\t'; }
     if (v && (!best || v < best)) { best = v; ch = '\v'; }
     if (nl && (!best || nl < best)) { best = nl; ch = '\n'; }
     if (f && (!best || f < best)) { best = f; ch = '\f'; }
+    if (esc && (!best || esc < best)) { best = esc; ch = NEVERC_TABWRITER_ESCAPE; }
+    if (lt && (!best || lt < best)) { best = lt; ch = '<'; }
+    if (amp && (!best || amp < best)) { best = amp; ch = '&'; }
     *which = ch;
     return best ? (size_t)(best - p) : n;
 }
@@ -292,45 +337,90 @@ static int append_run(neverc_tabwriter_t *w, const char *data, size_t run) {
     return 0;
 }
 
+static void finish_line(neverc_tabwriter_t *w, char delim) {
+    end_cell(w, 0);
+    if (w->failed) return;
+    w->nlines++;
+    if (w->nlines < NEVERC_TABWRITER_MAX_LINES)
+        begin_line(w);
+    if (delim != '\f') return;
+    if (flush_lines(w) != 0) {
+        w->failed = 1;
+        return;
+    }
+    if ((w->flags & NEVERC_TABWRITER_DEBUG) &&
+        out_append(w, "---\n", 4) != 0) {
+        w->failed = 1;
+        return;
+    }
+    if (out_terminate(w) != 0) return;
+    reset_cells(w);
+}
+
 void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len) {
     if (!w) return;
     if ((!data && len != 0) || w->failed) {
         w->failed = 1;
         return;
     }
-    /* Go treats '\t' as a hard tab, '\v' as a soft tab, and both '\n' and
-     * '\f' as line breaks. '\f' also flushes the current column block. */
+    /* Go: '\t' hard tab, '\v' soft tab, '\n'/'\f' line breaks. '\f' flushes.
+     * Escape (\xff) and, with FilterHTML, <tags> / &entities; hide delimiters. */
     size_t i = 0;
     while (i < len) {
-        char delim = 0;
-        size_t rel = find_delim(data + i, len - i, &delim);
+        char special = 0;
+        size_t rel;
+        if (w->end_char) {
+            const char *hit = (const char *)memchr(
+                data + i, (char)w->end_char, len - i);
+            rel = hit ? (size_t)(hit - (data + i)) : (len - i);
+            special = hit ? (char)w->end_char : 0;
+        } else {
+            rel = find_special(data + i, len - i, w->flags, &special);
+        }
+
+        if (w->end_char) {
+            size_t take = rel;
+            if (special) {
+                if (!(special == NEVERC_TABWRITER_ESCAPE &&
+                      (w->flags & NEVERC_TABWRITER_STRIP_ESCAPE)))
+                    take++;
+            }
+            if (append_run(w, data + i, take) != 0) return;
+            i += rel;
+            if (!special) break;
+            end_escape(w);
+            i++;
+            continue;
+        }
+
         if (append_run(w, data + i, rel) != 0) return;
         i += rel;
-        if (!delim) break;
+        if (!special) break;
 
-        if (delim == '\t' || delim == '\v') {
+        if (special == '\t' || special == '\v') {
+            update_width(w);
             if (w->buf_len < NEVERC_TABWRITER_MAX_BUF)
-                end_cell(w, delim == '\t');
+                end_cell(w, special == '\t');
             if (w->failed) return;
+        } else if (special == '\n' || special == '\f') {
+            update_width(w);
+            finish_line(w, special);
+            if (w->failed) return;
+        } else if (special == NEVERC_TABWRITER_ESCAPE) {
+            update_width(w);
+            /* Consume the opener here. Searching from it would treat it as
+             * the closer. Keep the byte unless StripEscape. */
+            if ((w->flags & NEVERC_TABWRITER_STRIP_ESCAPE) == 0 &&
+                append_run(w, data + i, 1) != 0)
+                return;
+            i++;
+            w->end_char = (unsigned char)NEVERC_TABWRITER_ESCAPE;
+            continue;
         } else {
-            end_cell(w, 0);
-            if (w->failed) return;
-            w->nlines++;
-            if (w->nlines < NEVERC_TABWRITER_MAX_LINES)
-                begin_line(w);
-            if (delim == '\f') {
-                if (flush_lines(w) != 0) {
-                    w->failed = 1;
-                    return;
-                }
-                if ((w->flags & NEVERC_TABWRITER_DEBUG) &&
-                    out_append(w, "---\n", 4) != 0) {
-                    w->failed = 1;
-                    return;
-                }
-                if (out_terminate(w) != 0) return;
-                reset_cells(w);
-            }
+            update_width(w);
+            w->end_char = (special == '<') ? (unsigned char)'>'
+                                           : (unsigned char)';';
+            continue;
         }
         i++;
     }
@@ -338,6 +428,8 @@ void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len)
 
 void neverc_tabwriter_flush(neverc_tabwriter_t *w) {
     if (!w || w->failed) return;
+    if (w->end_char)
+        end_escape(w);
     /* Go flush: only terminate the incomplete cell when it has bytes.
      * A trailing htab must remain the last cell of the line (not a column). */
     if (w->buf_len > (size_t)w->buf_carved)

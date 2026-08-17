@@ -184,6 +184,28 @@ static void test_counter_wrap_leftover(void) {
                memcmp(one_shot, chunked, 64) == 0);
 }
 
+static void test_null_inputs(void) {
+    printf("[ChaCha20 null inputs]\n");
+    uint8_t key[32] = {0}, nonce[12] = {0};
+    neverc_chacha20_ctx ctx;
+    memset(&ctx, 0xAA, sizeof(ctx));
+    neverc_chacha20_init(NULL, key, nonce, 0);
+    neverc_chacha20_init(&ctx, NULL, nonce, 0);
+    neverc_chacha20_init(&ctx, key, NULL, 0);
+    check_true("null init leaves context unmodified",
+               ctx.state[0] == 0xAAAAAAAAu);
+
+    neverc_chacha20_init(&ctx, key, nonce, 0);
+    uint8_t out[16];
+    memset(out, 0xAA, sizeof(out));
+    neverc_chacha20_xor(&ctx, NULL, out, sizeof(out));
+    neverc_chacha20_xor(&ctx, out, NULL, sizeof(out));
+    uint8_t aa[16];
+    memset(aa, 0xAA, sizeof(aa));
+    check_true("null xor leaves output unmodified",
+               memcmp(out, aa, sizeof(out)) == 0);
+}
+
 int main(void) {
     printf("=== NeverC ChaCha20 Tests ===\n\n");
     test_rfc7539_block();
@@ -192,6 +214,7 @@ int main(void) {
     test_incremental();
     test_counter_wrap();
     test_counter_wrap_leftover();
+    test_null_inputs();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

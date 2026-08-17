@@ -61,7 +61,8 @@ int neverc_bits_len16(uint16_t x) {
 }
 
 int neverc_bits_len32(uint32_t x) {
-    return x == 0 ? 0 : 32 - __builtin_clz(x);
+    /* Zero-extend into unsigned so this is correct when unsigned is 64-bit. */
+    return x == 0 ? 0 : (int)(sizeof(unsigned) * 8) - __builtin_clz((unsigned)x);
 }
 
 int neverc_bits_len64(uint64_t x) {
@@ -109,10 +110,10 @@ int neverc_bits_leading_zeros8(uint8_t x) {
     return x == 0 ? 8 : __builtin_clz((unsigned)x) - (int)(sizeof(unsigned) * 8 - 8);
 }
 int neverc_bits_leading_zeros16(uint16_t x) {
-    return x == 0 ? 16 : __builtin_clz((unsigned)x) - (int)(sizeof(int) * 8 - 16);
+    return x == 0 ? 16 : __builtin_clz((unsigned)x) - (int)(sizeof(unsigned) * 8 - 16);
 }
 int neverc_bits_leading_zeros32(uint32_t x) {
-    return x == 0 ? 32 : __builtin_clz(x);
+    return x == 0 ? 32 : __builtin_clz((unsigned)x) - (int)(sizeof(unsigned) * 8 - 32);
 }
 int neverc_bits_leading_zeros64(uint64_t x) {
     return x == 0 ? 64 : __builtin_clzll(x);

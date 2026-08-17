@@ -151,7 +151,8 @@ int neverc_rpc_frame_decode(const void *input, size_t input_length,
     header.request_id = rpc_get_u64(bytes + 12);
     header.code = rpc_get_u32(bytes + 20);
     if (!rpc_frame_header_valid(&header) ||
-        header.payload_length > max_payload_size)
+        header.payload_length > max_payload_size ||
+        header.payload_length > SIZE_MAX - NEVERC_RPC_FRAME_HEADER_SIZE)
         return -1;
     size_t total = NEVERC_RPC_FRAME_HEADER_SIZE +
                    (size_t)header.payload_length;
@@ -254,10 +255,7 @@ int neverc_rpc_open_encode(const neverc_rpc_open_t *open,
 int neverc_rpc_open_decode(const void *input, size_t input_length,
                            size_t max_metadata_size,
                            neverc_rpc_open_t *open) {
-    if (!input || !open || input_length < NEVERC_RPC_OPEN_HEADER_SIZE ||
-        max_metadata_size == 0 ||
-        !open->metadata ||
-        open->metadata_capacity == 0)
+    if (!input || !open || input_length < NEVERC_RPC_OPEN_HEADER_SIZE)
         return -1;
     const uint8_t *bytes = (const uint8_t *)input;
     uint64_t deadline = rpc_get_u64(bytes);
@@ -266,7 +264,9 @@ int neverc_rpc_open_decode(const void *input, size_t input_length,
     uint16_t metadata_count = rpc_get_u16(bytes + 10);
     neverc_rpc_codec_t codec = (neverc_rpc_codec_t)bytes[12];
     if (metadata_count > NEVERC_RPC_DEFAULT_MAX_METADATA_COUNT ||
-        metadata_count > open->metadata_capacity ||
+        (metadata_count > 0 &&
+         (!open->metadata || metadata_count > open->metadata_capacity ||
+          max_metadata_size == 0)) ||
         !rpc_codec_valid(codec) || bytes[13] != 0 || bytes[14] != 0 ||
         bytes[15] != 0 || method_length == 0 ||
         (size_t)method_length >

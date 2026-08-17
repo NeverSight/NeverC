@@ -2,6 +2,9 @@
  * SHA-512 test suite — vectors from FIPS 180-4.
  */
 #include "neverc/std/crypto/sha512.h"
+#include "neverc/std/crypto/sha512_224.h"
+#include "neverc/std/crypto/sha512_256.h"
+#include "neverc/std/crypto/sha256.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -98,6 +101,44 @@ int main(void) {
             "de0ff244877ea60a4cb0432ce577c31beb009c5c2c49aa2e4eadb217ad8cc09b") == 0)
             tests_passed++;
         else { tests_failed++; printf("  FAIL: 1M 'a'\n    got: %s\n", got); }
+    }
+
+    printf("[SHA-512/224 and SHA-512/256 digest sizes]\n");
+    {
+        uint8_t d224[28], d256[32], d512[64], sha256[32];
+        neverc_sha512_224_sum((const uint8_t *)"abc", 3, d224);
+        neverc_sha512_256_sum((const uint8_t *)"abc", 3, d256);
+        neverc_sha512_sum((const uint8_t *)"abc", 3, d512);
+        neverc_sha256_sum((const uint8_t *)"abc", 3, sha256);
+
+        tests_run++;
+        char got[57];
+        hex_encode(d224, 28, got);
+        if (strcmp(got, "4634270f707b6a54daae7530460842e20e37ed265ceee9a43e8924aa") == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: SHA-512/224(\"abc\")\n    got: %s\n", got); }
+
+        tests_run++;
+        char got256[65];
+        hex_encode(d256, 32, got256);
+        if (strcmp(got256, "53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23") == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: SHA-512/256(\"abc\")\n    got: %s\n", got256); }
+
+        tests_run++;
+        if (memcmp(d224, d512, 28) != 0) tests_passed++;
+        else { tests_failed++; printf("  FAIL: SHA-512/224 == truncated SHA-512\n"); }
+
+        tests_run++;
+        if (memcmp(d256, sha256, 32) != 0) tests_passed++;
+        else { tests_failed++; printf("  FAIL: SHA-512/256 == SHA-256\n"); }
+
+        tests_run++;
+        if (NEVERC_SHA512_224_DIGEST_SIZE == 28 &&
+            NEVERC_SHA512_256_DIGEST_SIZE == 32 &&
+            NEVERC_SHA512_DIGEST_SIZE == 64)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: digest size constants\n"); }
     }
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

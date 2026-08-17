@@ -23,9 +23,14 @@ neverc_color_rgba_t neverc_color_nrgba_to_rgba(neverc_color_nrgba_t c) {
 neverc_color_nrgba_t neverc_color_rgba_to_nrgba(neverc_color_rgba_t c) {
     neverc_color_nrgba_t out;
     if (c.a == 0) { out.r = out.g = out.b = out.a = 0; return out; }
-    out.r = (uint8_t)((uint16_t)c.r * 255 / c.a);
-    out.g = (uint8_t)((uint16_t)c.g * 255 / c.a);
-    out.b = (uint8_t)((uint16_t)c.b * 255 / c.a);
+    /* Valid premultiplied input has channel <= alpha; clamp so a
+     * non-premultiplied (r > a) value cannot wrap the uint8_t cast. */
+    int ur = (int)c.r * 255 / c.a;
+    int ug = (int)c.g * 255 / c.a;
+    int ub = (int)c.b * 255 / c.a;
+    out.r = (uint8_t)(ur > 255 ? 255 : ur);
+    out.g = (uint8_t)(ug > 255 ? 255 : ug);
+    out.b = (uint8_t)(ub > 255 ? 255 : ub);
     out.a = c.a;
     return out;
 }
@@ -102,17 +107,24 @@ static float hue2rgb(float p, float q, float t) {
 
 neverc_color_rgba_t neverc_color_hsl_to_rgba(neverc_color_hsl_t c) {
     neverc_color_rgba_t out;
-    if (c.s < 0.00001f) {
-        uint8_t v = (uint8_t)(c.l * 255.0f);
+    float h = c.h, s = c.s, l = c.l;
+    if (!(s > 0.0f)) s = 0.0f;
+    if (s > 1.0f) s = 1.0f;
+    if (!(l > 0.0f)) l = 0.0f;
+    if (l > 1.0f) l = 1.0f;
+    if (!(h > 0.0f)) h = 0.0f;
+    if (h > 1.0f) h = 1.0f;
+    if (s < 0.00001f) {
+        uint8_t v = (uint8_t)(l * 255.0f + 0.5f);
         out.r = out.g = out.b = v;
         out.a = 255;
         return out;
     }
-    float q = c.l < 0.5f ? c.l * (1.0f + c.s) : c.l + c.s - c.l * c.s;
-    float p = 2.0f * c.l - q;
-    out.r = (uint8_t)(hue2rgb(p, q, c.h + 1.0f/3) * 255.0f + 0.5f);
-    out.g = (uint8_t)(hue2rgb(p, q, c.h) * 255.0f + 0.5f);
-    out.b = (uint8_t)(hue2rgb(p, q, c.h - 1.0f/3) * 255.0f + 0.5f);
+    float q = l < 0.5f ? l * (1.0f + s) : l + s - l * s;
+    float p = 2.0f * l - q;
+    out.r = (uint8_t)(hue2rgb(p, q, h + 1.0f/3) * 255.0f + 0.5f);
+    out.g = (uint8_t)(hue2rgb(p, q, h) * 255.0f + 0.5f);
+    out.b = (uint8_t)(hue2rgb(p, q, h - 1.0f/3) * 255.0f + 0.5f);
     out.a = 255;
     return out;
 }
@@ -172,6 +184,10 @@ int neverc_color_parse_hex(const char *s, neverc_color_rgba_t *c) {
 }
 
 neverc_color_rgba_t neverc_color_lerp(neverc_color_rgba_t a, neverc_color_rgba_t b, float t) {
+    /* NaN and t <= 0 yield a; t >= 1 yields b. Keeps the float-to-uint8
+     * conversion inside [0, 255] so it is defined. */
+    if (!(t > 0.0f)) return a;
+    if (!(t < 1.0f)) return b;
     neverc_color_rgba_t out;
     out.r = (uint8_t)(a.r + (float)(b.r - a.r) * t + 0.5f);
     out.g = (uint8_t)(a.g + (float)(b.g - a.g) * t + 0.5f);

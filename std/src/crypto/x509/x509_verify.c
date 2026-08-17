@@ -383,6 +383,153 @@ static int x509_allows_ext_key_usage(const neverc_x509_cert_t *cert,
            (cert->ext_key_usage & required) == required;
 }
 
+static int x509_ascii_lower(int ch) {
+    return ch >= 'A' && ch <= 'Z' ? ch + ('a' - 'A') : ch;
+}
+
+static int x509_ascii_equal(const char *a, const char *b, size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+        if (x509_ascii_lower((unsigned char)a[i]) !=
+            x509_ascii_lower((unsigned char)b[i]))
+            return 0;
+    }
+    return 1;
+}
+
+static size_t x509_dns_stripped_len(const char *name) {
+    size_t len = strlen(name);
+    if (len > 0 && name[len - 1] == '.')
+        --len;
+    return len;
+}
+
+/* RFC 5280 4.2.1.10 plus the common leading-dot subdomain-only form. */
+static int x509_dns_constraint_matches(const char *constraint,
+                                       const char *name) {
+    if (!constraint || !name)
+        return 0;
+    size_t constraint_len = x509_dns_stripped_len(constraint);
+    size_t name_len = x509_dns_stripped_len(name);
+    if (constraint_len == 0)
+        return 1;
+
+    int subdomain_only = constraint[0] == '.';
+    if (subdomain_only) {
+        ++constraint;
+        --constraint_len;
+        if (constraint_len == 0)
+            return 1;
+    }
+    if (name_len < constraint_len)
+        return 0;
+    if (name_len == constraint_len)
+        return !subdomain_only &&
+               x509_ascii_equal(constraint, name, constraint_len);
+    if (name[name_len - constraint_len - 1] != '.')
+        return 0;
+    return x509_ascii_equal(
+        name + name_len - constraint_len, constraint, constraint_len);
+}
+
+static int x509_ip_constraint_matches(
+    const neverc_x509_ip_network_t *network,
+    const neverc_x509_ip_address_t *address) {
+    if (!network || !address || network->len != address->len)
+        return 0;
+    for (uint8_t i = 0; i < network->len; ++i) {
+        if ((address->bytes[i] & network->mask[i]) !=
+            (network->bytes[i] & network->mask[i]))
+            return 0;
+    }
+    return 1;
+}
+
+static int x509_dns_names_permitted(char *const *names, size_t name_count,
+                                    char *const *permitted,
+                                    size_t permitted_count) {
+    if (permitted_count == 0)
+        return 1;
+    for (size_t i = 0; i < name_count; ++i) {
+        int matched = 0;
+        for (size_t j = 0; j < permitted_count; ++j) {
+            if (x509_dns_constraint_matches(permitted[j], names[i])) {
+                matched = 1;
+                break;
+            }
+        }
+        if (!matched)
+            return 0;
+    }
+    return 1;
+}
+
+static int x509_dns_names_excluded(char *const *names, size_t name_count,
+                                   char *const *excluded,
+                                   size_t excluded_count) {
+    for (size_t i = 0; i < name_count; ++i) {
+        for (size_t j = 0; j < excluded_count; ++j) {
+            if (x509_dns_constraint_matches(excluded[j], names[i]))
+                return 1;
+        }
+    }
+    return 0;
+}
+
+static int x509_ip_addresses_permitted(
+    const neverc_x509_ip_address_t *addresses, size_t address_count,
+    const neverc_x509_ip_network_t *permitted, size_t permitted_count) {
+    if (permitted_count == 0)
+        return 1;
+    for (size_t i = 0; i < address_count; ++i) {
+        int matched = 0;
+        for (size_t j = 0; j < permitted_count; ++j) {
+            if (x509_ip_constraint_matches(&permitted[j], &addresses[i])) {
+                matched = 1;
+                break;
+            }
+        }
+        if (!matched)
+            return 0;
+    }
+    return 1;
+}
+
+static int x509_ip_addresses_excluded(
+    const neverc_x509_ip_address_t *addresses, size_t address_count,
+    const neverc_x509_ip_network_t *excluded, size_t excluded_count) {
+    for (size_t i = 0; i < address_count; ++i) {
+        for (size_t j = 0; j < excluded_count; ++j) {
+            if (x509_ip_constraint_matches(&excluded[j], &addresses[i]))
+                return 1;
+        }
+    }
+    return 0;
+}
+
+static int x509_cert_satisfies_name_constraints(
+    const neverc_x509_cert_t *subject, const neverc_x509_cert_t *issuer) {
+    if (!subject || !issuer)
+        return 0;
+    if (!issuer->name_constraints_present)
+        return 1;
+    if (x509_dns_names_excluded(subject->dns_names, subject->dns_name_count,
+                                issuer->excluded_dns_names,
+                                issuer->excluded_dns_name_count) ||
+        x509_ip_addresses_excluded(subject->ip_addresses,
+                                   subject->ip_address_count,
+                                   issuer->excluded_ip_networks,
+                                   issuer->excluded_ip_network_count))
+        return 0;
+    return x509_dns_names_permitted(subject->dns_names,
+                                    subject->dns_name_count,
+                                    issuer->permitted_dns_names,
+                                    issuer->permitted_dns_name_count) &&
+           x509_ip_addresses_permitted(subject->ip_addresses,
+                                       subject->ip_address_count,
+                                       issuer->permitted_ip_networks,
+                                       issuer->permitted_ip_network_count);
+}
+
 int neverc_x509_verify_chain(const neverc_x509_cert_t *const *chain,
                              size_t chain_len,
                              const neverc_x509_time_t *moment,
@@ -426,6 +573,11 @@ int neverc_x509_verify_chain(const neverc_x509_cert_t *const *chain,
             return -1;
         if (neverc_x509_check_signature_from(child, parent) != 0)
             return -1;
+
+        for (size_t j = 0; j <= i; ++j) {
+            if (!x509_cert_satisfies_name_constraints(chain[j], parent))
+                return -1;
+        }
 
         if (i > 0 && child->is_ca &&
             !x509_names_equal(

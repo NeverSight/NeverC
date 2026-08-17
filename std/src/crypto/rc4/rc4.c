@@ -12,7 +12,7 @@
  */
 
 int neverc_rc4_init(neverc_rc4_cipher_t *c, const uint8_t *key, size_t key_len) {
-    if (key_len < 1 || key_len > 256) return -1;
+    if (!c || !key || key_len < 1 || key_len > 256) return -1;
 
     for (int i = 0; i < 256; i++)
         c->s[i] = (uint32_t)i;
@@ -31,6 +31,7 @@ int neverc_rc4_init(neverc_rc4_cipher_t *c, const uint8_t *key, size_t key_len) 
 
 void neverc_rc4_xor_keystream(neverc_rc4_cipher_t *c,
                               uint8_t *dst, const uint8_t *src, size_t len) {
+    if (!c || (len > 0 && (!dst || !src))) return;
     uint8_t i = c->i, j = c->j;
     for (size_t k = 0; k < len; k++) {
         i += 1;
@@ -46,5 +47,6 @@ void neverc_rc4_xor_keystream(neverc_rc4_cipher_t *c,
 }
 
 void neverc_rc4_reset(neverc_rc4_cipher_t *c) {
+    if (!c) return;
     memset(c, 0, sizeof(*c));
 }

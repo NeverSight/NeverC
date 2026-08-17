@@ -809,9 +809,14 @@ static void test_round_mod(void) {
     check_double("fmod(5,3)", neverc_math_fmod(5.0, 3.0), 2.0);
     check_double("fmod(7,2)", neverc_math_fmod(7.0, 2.0), 1.0);
     check_double("fmod(-5,3)", neverc_math_fmod(-5.0, 3.0), -2.0);
+    check_double("mod==fmod", neverc_math_mod(5.0, 3.0), neverc_math_fmod(5.0, 3.0));
+    check_double("mod(7,2)", neverc_math_mod(7.0, 2.0), 1.0);
+    check_double("fmod(1,+Inf)=1", neverc_math_fmod(1.0, NC_INF), 1.0);
+    check_double("fmod(-2,-Inf)=-2", neverc_math_fmod(-2.0, NC_NEGINF), -2.0);
 
     check_double("rem(5,3)", neverc_math_remainder(5.0, 3.0), -1.0);
     check_double("rem(7,2)", neverc_math_remainder(7.0, 2.0), -1.0);
+    check_double("rem(1,+Inf)=1", neverc_math_remainder(1.0, NC_INF), 1.0);
 }
 
 /* ========== Bit-level helper tests ========== */
@@ -927,6 +932,11 @@ static void test_constants(void) {
     check_true("MAX_INT8", NEVERC_MATH_MAX_INT8 == 127);
     check_true("MIN_INT8", NEVERC_MATH_MIN_INT8 == -128);
     check_true("MAX_UINT8", NEVERC_MATH_MAX_UINT8 == 255U);
+    check_true("MAX_INT == platform int max",
+               NEVERC_MATH_MAX_INT == (int)(((unsigned int)-1) >> 1));
+    check_true("MIN_INT == platform int min",
+               NEVERC_MATH_MIN_INT == -NEVERC_MATH_MAX_INT - 1);
+    check_true("MAX_UINT == ~0u", NEVERC_MATH_MAX_UINT == (unsigned int)-1);
 }
 
 /* ========== lgamma precision test (regression for overflow bug) ========== */
@@ -1406,6 +1416,9 @@ static void test_max_min_signed_zero(void) {
     check_double("max(+Inf,5)=+Inf", neverc_math_max(NC_INF, 5.0), NC_INF);
     check_double("max(5,NaN)=NaN", neverc_math_max(5.0, NC_NAN), NC_NAN);
     check_double("max(NaN,5)=NaN", neverc_math_max(NC_NAN, 5.0), NC_NAN);
+    /* Go math.Max: Inf wins over NaN (unlike the language built-in max). */
+    check_double("max(+Inf,NaN)=+Inf", neverc_math_max(NC_INF, NC_NAN), NC_INF);
+    check_double("max(NaN,+Inf)=+Inf", neverc_math_max(NC_NAN, NC_INF), NC_INF);
 
     /* Min(-0, +0) = -0; Min(+0, -0) = -0; Min(+0, +0) = +0 */
     {
@@ -1429,6 +1442,9 @@ static void test_max_min_signed_zero(void) {
     check_double("min(-Inf,5)=-Inf", neverc_math_min(NC_NEGINF, 5.0), NC_NEGINF);
     check_double("min(5,NaN)=NaN", neverc_math_min(5.0, NC_NAN), NC_NAN);
     check_double("min(NaN,5)=NaN", neverc_math_min(NC_NAN, 5.0), NC_NAN);
+    /* Go math.Min: -Inf wins over NaN (unlike the language built-in min). */
+    check_double("min(-Inf,NaN)=-Inf", neverc_math_min(NC_NEGINF, NC_NAN), NC_NEGINF);
+    check_double("min(NaN,-Inf)=-Inf", neverc_math_min(NC_NAN, NC_NEGINF), NC_NEGINF);
 }
 
 /* ========== Nextafter32 tests ========== */

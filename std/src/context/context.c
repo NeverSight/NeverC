@@ -486,8 +486,9 @@ static void *after_func_thread(void *arg) {
 }
 #endif
 
-static after_func_state_t *g_after_func_states[4];
-static int g_after_func_count = 0;
+#define NEVERC_AFTER_FUNC_SLOTS 4
+
+static after_func_state_t *g_after_func_states[NEVERC_AFTER_FUNC_SLOTS];
 static volatile int32_t g_after_func_lock;
 
 static void after_func_states_lock(void) {
@@ -500,11 +501,20 @@ static void after_func_states_unlock(void) {
     NEVERC_ATOMIC_STORE32(&g_after_func_lock, 0);
 }
 
-static int after_func_stop_impl(after_func_state_t *s) {
-    if (!s)
-        return 0;
-    return NEVERC_ATOMIC_CAS32(&s->state, AFTER_FUNC_WAITING,
-                               AFTER_FUNC_STOPPED) ? 1 : 0;
+static int after_func_slot_reclaimable(after_func_state_t *s) {
+    return s &&
+           NEVERC_ATOMIC_LOAD32(&s->thread_finished) &&
+           s->ctx == NULL &&
+           NEVERC_ATOMIC_LOAD32(&s->state) != AFTER_FUNC_RUNNING;
+}
+
+static int after_func_stop_slot(int idx) {
+    after_func_states_lock();
+    after_func_state_t *s = g_after_func_states[idx];
+    int stopped = s && NEVERC_ATOMIC_CAS32(&s->state, AFTER_FUNC_WAITING,
+                                           AFTER_FUNC_STOPPED);
+    after_func_states_unlock();
+    return stopped ? 1 : 0;
 }
 
 static int after_func_runs_on_current_thread(after_func_state_t *s) {
@@ -517,26 +527,45 @@ static int after_func_runs_on_current_thread(after_func_state_t *s) {
 #endif
 }
 
-static int stop_fn_0(void)  { return after_func_stop_impl(g_after_func_states[0]); }
-static int stop_fn_1(void)  { return after_func_stop_impl(g_after_func_states[1]); }
-static int stop_fn_2(void)  { return after_func_stop_impl(g_after_func_states[2]); }
-static int stop_fn_3(void)  { return after_func_stop_impl(g_after_func_states[3]); }
+static int stop_fn_0(void)  { return after_func_stop_slot(0); }
+static int stop_fn_1(void)  { return after_func_stop_slot(1); }
+static int stop_fn_2(void)  { return after_func_stop_slot(2); }
+static int stop_fn_3(void)  { return after_func_stop_slot(3); }
 
 static neverc_context_stop_func_t g_stop_fns[] = {
     stop_fn_0, stop_fn_1, stop_fn_2, stop_fn_3
 };
 
+static int after_func_take_slot_locked(after_func_state_t *s) {
+    for (int i = 0; i < NEVERC_AFTER_FUNC_SLOTS; i++) {
+        after_func_state_t *old = g_after_func_states[i];
+        if (after_func_slot_reclaimable(old)) {
+            g_after_func_states[i] = NULL;
+            free(old);
+            old = NULL;
+        }
+        if (!old) {
+            g_after_func_states[i] = s;
+            return i;
+        }
+    }
+    return -1;
+}
+
 static void ctx_stop_after_funcs(neverc_context_t *ctx) {
-    after_func_state_t *states[4];
+    after_func_state_t *states[NEVERC_AFTER_FUNC_SLOTS];
+    int idxs[NEVERC_AFTER_FUNC_SLOTS];
     int count = 0;
 
     after_func_states_lock();
-    for (int i = 0; i < g_after_func_count; i++) {
+    for (int i = 0; i < NEVERC_AFTER_FUNC_SLOTS; i++) {
         after_func_state_t *s = g_after_func_states[i];
         if (s && s->ctx == ctx) {
             (void)NEVERC_ATOMIC_CAS32(&s->state, AFTER_FUNC_WAITING,
                                       AFTER_FUNC_STOPPED);
-            states[count++] = s;
+            states[count] = s;
+            idxs[count] = i;
+            count++;
         }
     }
     after_func_states_unlock();
@@ -558,8 +587,14 @@ static void ctx_stop_after_funcs(neverc_context_t *ctx) {
 
     after_func_states_lock();
     for (int i = 0; i < count; i++) {
-        if (states[i]->ctx == ctx)
-            states[i]->ctx = NULL;
+        after_func_state_t *s = g_after_func_states[idxs[i]];
+        if (s != states[i])
+            continue;
+        s->ctx = NULL;
+        if (after_func_slot_reclaimable(s)) {
+            g_after_func_states[idxs[i]] = NULL;
+            free(s);
+        }
     }
     after_func_states_unlock();
 }
@@ -576,14 +611,12 @@ neverc_context_stop_func_t neverc_context_after_func(neverc_context_t *ctx,
     s->f = f;
 
     after_func_states_lock();
-    if (g_after_func_count >= 4) {
+    int idx = after_func_take_slot_locked(s);
+    if (idx < 0) {
         after_func_states_unlock();
         free(s);
         return NULL;
     }
-
-    int idx = g_after_func_count;
-    g_after_func_states[idx] = s;
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
     HANDLE thread = CreateThread(NULL, 0, after_func_thread, s, 0, NULL);
@@ -604,7 +637,6 @@ neverc_context_stop_func_t neverc_context_after_func(neverc_context_t *ctx,
     }
     pthread_detach(th);
 #endif
-    g_after_func_count++;
     after_func_states_unlock();
     return g_stop_fns[idx];
 }

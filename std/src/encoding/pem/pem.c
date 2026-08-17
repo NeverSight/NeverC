@@ -295,6 +295,11 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
 
     const char *pem_end = pem_data + pem_len;
     const char *search = pem_data;
+    if (pem_len >= 3U &&
+        (unsigned char)pem_data[0] == 0xEF &&
+        (unsigned char)pem_data[1] == 0xBB &&
+        (unsigned char)pem_data[2] == 0xBF)
+        search = pem_data + 3;
     size_t dash_len = 5;
 
     for (;;) {
@@ -346,8 +351,18 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
             search = end_line + 9;
             continue;
         }
-        /* C type is a NUL-terminated string; skip a type that would truncate. */
-        if (memchr(type_start, '\0', type_len) != NULL) {
+        /* C type is a NUL-terminated string. Skip types that would truncate
+         * or that contain controls/non-ASCII (encode rejects the same set;
+         * ESC/CR in a type is terminal/log injection if printed). */
+        int type_ok = 1;
+        for (size_t i = 0; i < type_len; ++i) {
+            unsigned char c = (unsigned char)type_start[i];
+            if (c < 0x20 || c > 0x7e) {
+                type_ok = 0;
+                break;
+            }
+        }
+        if (!type_ok) {
             search = end_line + 9;
             continue;
         }

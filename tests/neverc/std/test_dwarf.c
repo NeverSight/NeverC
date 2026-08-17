@@ -552,6 +552,56 @@ static void test_dwarf_v5_type_header(void) {
           legacy.canary == UINT64_C(0xa5a5a5a5a5a5a5a5));
 }
 
+static void put16be(uint8_t *p, uint16_t v) {
+    p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v;
+}
+static void put32be(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v;
+}
+static void put64be(uint8_t *p, uint64_t v) {
+    put32be(p, (uint32_t)(v >> 32));
+    put32be(p + 4, (uint32_t)v);
+}
+
+static void test_dwarf_big_endian(void) {
+    printf("[big_endian]\n");
+    static const uint8_t abbrev[] = {
+        1, NEVERC_DW_TAG_compile_unit, 0,
+        NEVERC_DW_AT_name, NEVERC_DW_FORM_strp,
+        NEVERC_DW_AT_low_pc, NEVERC_DW_FORM_addr,
+        0, 0, 0
+    };
+    static const uint8_t str[] = "be.c";
+    uint8_t info[24] = {0};
+    put32be(info, 20);
+    put16be(info + 4, 4);
+    info[10] = 8;
+    info[11] = 1;
+    put64be(info + 16, 0x401000);
+
+    neverc_dwarf_data_t d;
+    neverc_dwarf_comp_unit_header_t hdr;
+    CHECK("BE init",
+          neverc_dwarf_init(&d, info, sizeof(info),
+                            abbrev, sizeof(abbrev), str, sizeof(str)) == 0);
+    CHECK("LE parse rejects BE header",
+          neverc_dwarf_parse_comp_unit(&d, 0, &hdr) < 0);
+
+    d.big_endian = 1;
+    CHECK("BE header parse",
+          neverc_dwarf_parse_comp_unit(&d, 0, &hdr) == 0);
+    CHECK("BE version and addr size",
+          hdr.version == 4 && hdr.address_size == 8 && !hdr.is_64bit);
+
+    walk_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    CHECK("BE walk", neverc_dwarf_walk_entries(&d, walk_cb, &ctx) == 0);
+    CHECK("BE name", ctx.cu_name && strcmp(ctx.cu_name, "be.c") == 0);
+    CHECK("BE low_pc", ctx.cu_low_pc == 0x401000);
+    neverc_dwarf_free(&d);
+}
+
 int main(void) {
     printf("=== NeverC debug/dwarf Tests ===\n\n");
 
@@ -561,6 +611,7 @@ int main(void) {
     test_dwarf_line_string();
     test_dwarf_malformed();
     test_dwarf_v5_type_header();
+    test_dwarf_big_endian();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);
     if (tests_failed > 0)

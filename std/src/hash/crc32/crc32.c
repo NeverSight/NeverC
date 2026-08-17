@@ -99,6 +99,8 @@ static int shared_s8_ready;   /* 0 = unbuilt, 1 = building, 2 = published */
 
 uint32_t neverc_crc32_update(uint32_t crc, const neverc_crc32_table_t table,
                              const void *data, size_t len) {
+    if (!table) return crc;
+    if (!data) len = 0;
     if (len < 64) {
         const uint8_t *p = (const uint8_t *)data;
         crc = ~crc;
@@ -140,6 +142,7 @@ uint32_t neverc_crc32_checksum(const neverc_crc32_table_t table,
 }
 
 uint32_t neverc_crc32_ieee(const void *data, size_t len) {
+    if (!data) len = 0;
     if (__atomic_load_n(&ieee_s8_ready, __ATOMIC_ACQUIRE) == 2)
         return crc32_slicing8(0, ieee_s8, data, len);
 

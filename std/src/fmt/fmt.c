@@ -217,6 +217,55 @@ static int fmt_float_g(char *buf, size_t cap, double val, int prec, int uppercas
         val, uppercase ? 'G' : 'g', prec, buf, cap);
 }
 
+/* Go fmt.fmtFloat sharp: force a decimal point, and for g/G keep trailing zeros
+ * up to the requested significant-digit count. */
+static int apply_float_sharp(char *num, int tlen, size_t cap, char verb, int prec) {
+    if (!num || tlen <= 0 || (size_t)tlen >= cap) return -1;
+    int start = (num[0] == '-' || num[0] == '+') ? 1 : 0;
+    if (start >= tlen) return tlen;
+    if (num[start] == 'I' || num[start] == 'N') return tlen;
+
+    int digits = 0;
+    if (verb == 'g' || verb == 'G')
+        digits = prec < 0 ? 6 : prec;
+
+    int exp_at = -1;
+    for (int i = start; i < tlen; i++) {
+        if (num[i] == 'e' || num[i] == 'E') {
+            exp_at = i;
+            break;
+        }
+    }
+    int body_end = exp_at >= 0 ? exp_at : tlen;
+    int tail_len = tlen - body_end;
+
+    int has_dot = 0, saw_nz = 0;
+    for (int i = start; i < body_end; i++) {
+        if (num[i] == '.') {
+            has_dot = 1;
+            continue;
+        }
+        if (num[i] != '0') saw_nz = 1;
+        if (saw_nz) digits--;
+    }
+
+    int extra_dot = !has_dot;
+    if (!has_dot && body_end - start == 1 && num[start] == '0')
+        digits--;
+    int zeros = digits > 0 ? digits : 0;
+    size_t extra = (size_t)extra_dot + (size_t)zeros;
+    if ((size_t)tlen + extra >= cap) return -1;
+
+    if (tail_len > 0 && extra > 0)
+        memmove(num + body_end + extra, num + body_end, (size_t)tail_len);
+    int w = body_end;
+    if (extra_dot) num[w++] = '.';
+    for (int z = 0; z < zeros; z++) num[w++] = '0';
+    int nlen = tlen + (int)extra;
+    num[nlen] = '\0';
+    return nlen;
+}
+
 /* Core formatting engine */
 char *neverc_fmt_vsprintf(const char *format, va_list args) {
     if (!format) return NULL;
@@ -399,6 +448,12 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             continue;
         }
         if (tlen < 0) goto format_fail;
+        if (flag_hash &&
+            (verb == 'f' || verb == 'e' || verb == 'E' ||
+             verb == 'g' || verb == 'G')) {
+            tlen = apply_float_sharp(tmp, tlen, sizeof tmp, verb, prec);
+            if (tlen < 0) goto format_fail;
+        }
 
         /* Apply width/padding */
         int is_float_verb =

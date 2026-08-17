@@ -193,6 +193,7 @@ static void test_8_16_variants(void) {
     check_int("clz8(1)", neverc_bits_leading_zeros8(1), 7);
     check_int("clz8(0)", neverc_bits_leading_zeros8(0), 8);
     check_int("clz16(1)", neverc_bits_leading_zeros16(1), 15);
+    check_int("clz16(0)", neverc_bits_leading_zeros16(0), 16);
     check_int("clz16(0x8000)", neverc_bits_leading_zeros16(0x8000), 0);
 
     check_int("ctz8(1)", neverc_bits_trailing_zeros8(1), 0);
@@ -259,6 +260,18 @@ static void test_rotate_edge_cases(void) {
 
     unsigned int val = 0xDEADBEEFU;
     check_int("rotate(x,0) generic", (int)neverc_bits_rotate_left(val, 0), (int)val);
+
+    check_int("clz generic 1", neverc_bits_leading_zeros(1u),
+              (int)(sizeof(unsigned int) * 8 - 1));
+    check_int("clz generic 0", neverc_bits_leading_zeros(0u),
+              NEVERC_BITS_UINT_SIZE);
+    check_int("ctz generic 8", neverc_bits_trailing_zeros(8u), 3);
+    check_int("pop generic 0xF", neverc_bits_ones_count(0xFu), 4);
+    check_int("len generic 8", neverc_bits_len(8u), 4);
+    check_int("UintSize", NEVERC_BITS_UINT_SIZE, (int)(sizeof(unsigned int) * 8));
+    check_int("clz32(0) is width", neverc_bits_leading_zeros32(0), 32);
+    check_int("clz32+len32=32 for 0x100",
+              neverc_bits_leading_zeros32(0x100u) + neverc_bits_len32(0x100u), 32);
 }
 
 static void test_generic_versions(void) {

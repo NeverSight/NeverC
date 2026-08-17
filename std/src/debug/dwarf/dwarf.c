@@ -58,15 +58,22 @@ static int read_sleb128(const uint8_t **p, const uint8_t *end,
     return -1;
 }
 
-static uint16_t rd16(const uint8_t *p) {
+static uint16_t rd16(const uint8_t *p, int be) {
+    if (be)
+        return ((uint16_t)p[0] << 8) | (uint16_t)p[1];
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
 }
-static uint32_t rd32(const uint8_t *p) {
+static uint32_t rd32(const uint8_t *p, int be) {
+    if (be)
+        return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+               ((uint32_t)p[2] << 8) | (uint32_t)p[3];
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
-static uint64_t rd64(const uint8_t *p) {
-    return (uint64_t)rd32(p) | ((uint64_t)rd32(p+4) << 32);
+static uint64_t rd64(const uint8_t *p, int be) {
+    if (be)
+        return ((uint64_t)rd32(p, 1) << 32) | (uint64_t)rd32(p + 4, 1);
+    return (uint64_t)rd32(p, 0) | ((uint64_t)rd32(p + 4, 0) << 32);
 }
 
 /* ===== Abbreviation Table Parsing ===== */
@@ -226,12 +233,13 @@ int neverc_dwarf_parse_comp_unit_ex(
 
     const uint8_t *p = d->debug_info + offset;
     const uint8_t *end = d->debug_info + d->debug_info_len;
+    int be = d->big_endian;
 
-    uint32_t init_len = rd32(p);
+    uint32_t init_len = rd32(p, be);
     if (init_len == 0xFFFFFFFF) {
         if (!has_bytes(p, end, 12)) return -1;
         hdr->is_64bit = 1;
-        hdr->unit_length = rd64(p + 4);
+        hdr->unit_length = rd64(p + 4, be);
         p += 12;
     } else {
         /* 0xfffffff0 through 0xfffffffe are reserved initial lengths. */
@@ -244,7 +252,7 @@ int neverc_dwarf_parse_comp_unit_ex(
     const uint8_t *unit_end = p + (size_t)hdr->unit_length;
     if (!has_bytes(p, unit_end, 2)) return -1;
 
-    hdr->version = rd16(p); p += 2;
+    hdr->version = rd16(p, be); p += 2;
     if (hdr->version < 2 || hdr->version > 5) return -1;
 
     if (hdr->version >= 5) {
@@ -254,10 +262,10 @@ int neverc_dwarf_parse_comp_unit_ex(
         hdr->unit_type = *p++;
         hdr->address_size = *p++;
         if (hdr->is_64bit) {
-            hdr->abbrev_offset = rd64(p);
+            hdr->abbrev_offset = rd64(p, be);
             p += 8;
         } else {
-            hdr->abbrev_offset = rd32(p);
+            hdr->abbrev_offset = rd32(p, be);
             p += 4;
         }
 
@@ -268,19 +276,19 @@ int neverc_dwarf_parse_comp_unit_ex(
         case NEVERC_DW_UT_skeleton:
         case NEVERC_DW_UT_split_compile:
             if (!has_bytes(p, unit_end, 8)) return -1;
-            hdr->dwo_id = rd64(p);
+            hdr->dwo_id = rd64(p, be);
             p += 8;
             break;
         case NEVERC_DW_UT_type:
         case NEVERC_DW_UT_split_type:
             if (!has_bytes(p, unit_end, 8 + offset_size)) return -1;
-            hdr->type_signature = rd64(p);
+            hdr->type_signature = rd64(p, be);
             p += 8;
             if (hdr->is_64bit) {
-                hdr->type_offset = rd64(p);
+                hdr->type_offset = rd64(p, be);
                 p += 8;
             } else {
-                hdr->type_offset = rd32(p);
+                hdr->type_offset = rd32(p, be);
                 p += 4;
             }
             break;
@@ -291,9 +299,9 @@ int neverc_dwarf_parse_comp_unit_ex(
         size_t offset_size = hdr->is_64bit ? 8 : 4;
         if (!has_bytes(p, unit_end, offset_size + 1)) return -1;
         if (hdr->is_64bit) {
-            hdr->abbrev_offset = rd64(p); p += 8;
+            hdr->abbrev_offset = rd64(p, be); p += 8;
         } else {
-            hdr->abbrev_offset = rd32(p); p += 4;
+            hdr->abbrev_offset = rd32(p, be); p += 4;
         }
         hdr->address_size = *p++;
     }
@@ -324,12 +332,17 @@ int neverc_dwarf_parse_comp_unit(const neverc_dwarf_data_t *d,
     return 0;
 }
 
-static int read_uint_le(const uint8_t **p, const uint8_t *end, size_t size,
-                        uint64_t *value) {
+static int read_uint(const uint8_t **p, const uint8_t *end, size_t size,
+                     int be, uint64_t *value) {
     if (size == 0 || size > 8 || !has_bytes(*p, end, size)) return -1;
     uint64_t result = 0;
-    for (size_t i = 0; i < size; i++)
-        result |= (uint64_t)(*p)[i] << (i * 8);
+    if (be) {
+        for (size_t i = 0; i < size; i++)
+            result = (result << 8) | (*p)[i];
+    } else {
+        for (size_t i = 0; i < size; i++)
+            result |= (uint64_t)(*p)[i] << (i * 8);
+    }
     *p += size;
     *value = result;
     return 0;
@@ -340,7 +353,7 @@ static size_t ref_addr_size(uint16_t version, uint8_t addr_size, int dwarf64) {
 }
 
 static int skip_form_depth(uint16_t form, uint8_t addr_size, int dwarf64,
-                           uint16_t version, const uint8_t **p,
+                           uint16_t version, int be, const uint8_t **p,
                            const uint8_t *end, unsigned depth) {
     if (depth > 8) return 0;
 
@@ -405,11 +418,11 @@ static int skip_form_depth(uint16_t form, uint8_t addr_size, int dwarf64,
     case NEVERC_DW_FORM_exprloc: {
         uint64_t size;
         if (form == NEVERC_DW_FORM_block1) {
-            if (read_uint_le(p, end, 1, &size) < 0) return 0;
+            if (read_uint(p, end, 1, be, &size) < 0) return 0;
         } else if (form == NEVERC_DW_FORM_block2) {
-            if (read_uint_le(p, end, 2, &size) < 0) return 0;
+            if (read_uint(p, end, 2, be, &size) < 0) return 0;
         } else if (form == NEVERC_DW_FORM_block4) {
-            if (read_uint_le(p, end, 4, &size) < 0) return 0;
+            if (read_uint(p, end, 4, be, &size) < 0) return 0;
         } else if (read_uleb128(p, end, &size) < 0) {
             return 0;
         }
@@ -423,7 +436,7 @@ static int skip_form_depth(uint16_t form, uint8_t addr_size, int dwarf64,
             actual == 0 || actual > UINT16_MAX)
             return 0;
         return skip_form_depth((uint16_t)actual, addr_size, dwarf64,
-                               version, p, end, depth + 1);
+                               version, be, p, end, depth + 1);
     }
     case NEVERC_DW_FORM_flag_present:
     case NEVERC_DW_FORM_implicit_const:
@@ -436,13 +449,13 @@ static int skip_form_depth(uint16_t form, uint8_t addr_size, int dwarf64,
 }
 
 static int skip_form(uint16_t form, uint8_t addr_size, int dwarf64,
-                     uint16_t version, const uint8_t **p,
+                     uint16_t version, int be, const uint8_t **p,
                      const uint8_t *end) {
-    return skip_form_depth(form, addr_size, dwarf64, version, p, end, 0);
+    return skip_form_depth(form, addr_size, dwarf64, version, be, p, end, 0);
 }
 
 static int read_form_uint_depth(uint16_t form, uint8_t addr_size, int dwarf64,
-                                uint16_t version, const uint8_t **p,
+                                uint16_t version, int be, const uint8_t **p,
                                 const uint8_t *end, uint64_t *value,
                                 uint16_t *resolved_form, unsigned depth) {
     if (depth > 8) return -1;
@@ -511,22 +524,22 @@ static int read_form_uint_depth(uint16_t form, uint8_t addr_size, int dwarf64,
             actual == 0 || actual > UINT16_MAX)
             return -1;
         return read_form_uint_depth(
-            (uint16_t)actual, addr_size, dwarf64, version, p, end,
+            (uint16_t)actual, addr_size, dwarf64, version, be, p, end,
             value, resolved_form, depth + 1);
     }
     default:
         return 0;
     }
-    if (read_uint_le(p, end, size, value) < 0) return -1;
+    if (read_uint(p, end, size, be, value) < 0) return -1;
     *resolved_form = form;
     return 1;
 }
 
 static int read_form_uint(uint16_t form, uint8_t addr_size, int dwarf64,
-                          uint16_t version, const uint8_t **p,
+                          uint16_t version, int be, const uint8_t **p,
                           const uint8_t *end, uint64_t *value,
                           uint16_t *resolved_form) {
-    return read_form_uint_depth(form, addr_size, dwarf64, version, p, end,
+    return read_form_uint_depth(form, addr_size, dwarf64, version, be, p, end,
                                 value, resolved_form, 0);
 }
 
@@ -557,8 +570,8 @@ static int read_form_string_depth(uint16_t form,
     case NEVERC_DW_FORM_strx4: {
         uint64_t off;
         uint16_t resolved_form = form;
-        int rc = read_form_uint(form, addr_size, dwarf64, version, p, end,
-                                &off, &resolved_form);
+        int rc = read_form_uint(form, addr_size, dwarf64, version,
+                                d->big_endian, p, end, &off, &resolved_form);
         if (rc <= 0) return rc;
         if (resolved_form == NEVERC_DW_FORM_strp) {
             if (!d->debug_str || off >= d->debug_str_len ||
@@ -742,7 +755,7 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
                 uint16_t resolved_form = form;
                 int rc = read_form_uint(
                     form, hdr.address_size, hdr.is_64bit, hdr.version,
-                    &p, end, &val, &resolved_form);
+                    d->big_endian, &p, end, &val, &resolved_form);
                 if (rc < 0) {
                     free_abbrevs(&local);
                     return -1;
@@ -753,7 +766,7 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
                 } else {
                     p = before;
                     if (!skip_form(form, hdr.address_size, hdr.is_64bit,
-                                   hdr.version, &p, end)) {
+                                   hdr.version, d->big_endian, &p, end)) {
                         free_abbrevs(&local);
                         return -1;
                     }

@@ -116,6 +116,17 @@ static void test_sha3_224(void) {
         56, d);
     check_digest("SHA3-224(448-bit)", d,
         "8a24108b154ada21c9fd5574494479ba5c7e7ab76ef264ead0fcce33", 28);
+
+    {
+        neverc_sha3_ctx ctx;
+        neverc_sha3_224_init(&ctx);
+        neverc_sha3_224_update(&ctx, (const uint8_t *)"a", 1);
+        neverc_sha3_224_update(&ctx, (const uint8_t *)"bc", 2);
+        uint8_t d2[28];
+        neverc_sha3_224_final(&ctx, d2);
+        neverc_sha3_224_sum((const uint8_t *)"abc", 3, d);
+        check_true("SHA3-224 incremental", memcmp(d, d2, 28) == 0);
+    }
 }
 
 /* ===== SHA3-384 Tests ===== */
@@ -140,6 +151,17 @@ static void test_sha3_384(void) {
     check_digest("SHA3-384(448-bit)", d,
         "991c665755eb3a4b6bbdfb75c78a492e8c56a22c5c4d7e429bfdbc32b9d4ad5a"
         "a04a1f076e62fea19eef51acd0657c22", 48);
+
+    {
+        neverc_sha3_ctx ctx;
+        neverc_sha3_384_init(&ctx);
+        neverc_sha3_384_update(&ctx, (const uint8_t *)"a", 1);
+        neverc_sha3_384_update(&ctx, (const uint8_t *)"bc", 2);
+        uint8_t d2[48];
+        neverc_sha3_384_final(&ctx, d2);
+        neverc_sha3_384_sum((const uint8_t *)"abc", 3, d);
+        check_true("SHA3-384 incremental", memcmp(d, d2, 48) == 0);
+    }
 }
 
 /* ===== SHA3-512 Tests ===== */
@@ -350,6 +372,13 @@ static void test_sha3_lifecycle(void) {
     neverc_sha3_256_update(&ctx, (const uint8_t *)"x", 1);
     neverc_sha3_256_final(&ctx, d2);
     check_true("SHA3-256 update after final ignored",
+               memcmp(d1, d2, 32) == 0);
+
+    neverc_sha3_256_init(&ctx);
+    neverc_sha3_256_update(&ctx, (const uint8_t *)"abc", 3);
+    neverc_sha3_256_update(&ctx, NULL, 5);
+    neverc_sha3_256_final(&ctx, d2);
+    check_true("SHA3-256 invalid data span ignored",
                memcmp(d1, d2, 32) == 0);
 
     {

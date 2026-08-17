@@ -264,6 +264,9 @@ static void test_repeat(void) {
     r = neverc_cstring_repeat("-", 10);
     check_str("repeat dash", r, "----------");
     free(r);
+
+    r = neverc_cstring_repeat("ab", -1);
+    check_str("repeat negative", r, NULL);
 }
 
 static void test_replace(void) {
@@ -535,8 +538,12 @@ static void test_split_n(void) {
     neverc_cstring_free_split(arr, count);
 
     arr = neverc_cstring_split_n("", "", 1, &count);
-    check_size("split_n empty+empty count", count, 1);
-    if (count == 1) check_str("split_n empty+empty", arr[0], "");
+    check_size("split_n empty+empty count", count, 0);
+    neverc_cstring_free_split(arr, count);
+
+    arr = neverc_cstring_split_n("abc", "", 1, &count);
+    check_size("split_n empty sep n=1 count", count, 1);
+    if (count == 1) check_str("split_n empty sep n=1", arr[0], "abc");
     neverc_cstring_free_split(arr, count);
 
     arr = neverc_cstring_split_n("a,b,c", ",", 10, &count);
@@ -555,6 +562,18 @@ static void test_split_after(void) {
         check_str("split_after[0]", arr[0], "a,");
         check_str("split_after[1]", arr[1], "b,");
         check_str("split_after[2]", arr[2], "c");
+    }
+    neverc_cstring_free_split(arr, count);
+}
+
+static void test_split_after_n(void) {
+    printf("[split_after_n]\n");
+    size_t count = 0;
+    char **arr = neverc_cstring_split_after_n("a,b,c,d", ",", 2, &count);
+    check_size("split_after_n count", count, 2);
+    if (count == 2) {
+        check_str("split_after_n[0]", arr[0], "a,");
+        check_str("split_after_n[1]", arr[1], "b,c,d");
     }
     neverc_cstring_free_split(arr, count);
 }
@@ -860,6 +879,7 @@ int main(void) {
     test_split();
     test_split_n();
     test_split_after();
+    test_split_after_n();
     test_fields();
     test_cut();
     test_cut_prefix();

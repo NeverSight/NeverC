@@ -264,6 +264,67 @@ static void test_ack_frame_single_range(void) {
     free(out.ranges);
 }
 
+static void test_ack_rejects_first_range_past_largest(void) {
+    /* First ACK Range larger than Largest Acknowledged is invalid. */
+    uint8_t buf[] = {
+        0x02, /* ACK */
+        0x05, /* largest = 5 */
+        0x00, /* delay */
+        0x00, /* range count */
+        0x06, /* first range = 6 > 5 */
+    };
+    quic_frame_ack_t out;
+    size_t consumed;
+    ASSERT_EQ(neverc_quic_parse_ack_frame(buf, sizeof(buf), &out, &consumed),
+              -1);
+}
+
+static void test_retire_conn_id_roundtrip(void) {
+    uint8_t buf[16];
+    size_t written;
+    ASSERT_EQ(neverc_quic_write_retire_conn_id(buf, sizeof(buf), 7,
+                                               &written), 0);
+    quic_frame_retire_conn_id_t out;
+    size_t consumed;
+    ASSERT_EQ(neverc_quic_parse_retire_conn_id(buf, written, &out,
+                                               &consumed), 0);
+    ASSERT_EQ(consumed, written);
+    ASSERT_EQ(out.sequence, 7);
+}
+
+static void test_ack_ecn_counts(void) {
+    uint8_t buf[] = {
+        0x03, /* ACK_ECN */
+        0x05, /* largest = 5 */
+        0x00, /* delay */
+        0x00, /* range count */
+        0x05, /* first range = 5 */
+        0x01, 0x02, 0x03, /* ect0, ect1, ce */
+    };
+    quic_frame_ack_t out;
+    size_t consumed;
+    ASSERT_EQ(neverc_quic_parse_ack_frame(buf, sizeof(buf), &out, &consumed),
+              0);
+    ASSERT_EQ(consumed, sizeof(buf));
+    ASSERT_EQ(out.largest_acked, 5);
+    ASSERT_EQ(out.ect0, 1);
+    ASSERT_EQ(out.ect1, 2);
+    ASSERT_EQ(out.ecn_ce, 3);
+    free(out.ranges);
+}
+
+static void test_connection_close_rejects_oversize_reason(void) {
+    quic_frame_connection_close_t cc;
+    memset(&cc, 0, sizeof(cc));
+    cc.error_code = 0x0a;
+    cc.reason = "x";
+    cc.reason_len = (size_t)QUIC_VARINT_MAX + 1U;
+    uint8_t buf[32];
+    size_t written;
+    ASSERT_EQ(neverc_quic_write_connection_close(buf, sizeof(buf), &cc,
+                                                 &written), -1);
+}
+
 static void test_ack_frame_multiple_ranges(void) {
     /* Ack ranges: [95,101), [80,86), [50,61) */
     quic_ack_range_t ranges[3] = {
@@ -512,6 +573,8 @@ static void test_frame_allowed_encryption_levels(void) {
     ASSERT_EQ(neverc_quic_frame_allowed(0x10, QUIC_ENC_APPLICATION), 1);
     ASSERT_EQ(neverc_quic_frame_allowed(0x18, QUIC_ENC_INITIAL), 0);
     ASSERT_EQ(neverc_quic_frame_allowed(0x18, QUIC_ENC_APPLICATION), 1);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x19, QUIC_ENC_INITIAL), 0);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x19, QUIC_ENC_APPLICATION), 1);
     ASSERT_EQ(neverc_quic_frame_allowed(0x04, QUIC_ENC_INITIAL), 0);
     ASSERT_EQ(neverc_quic_frame_allowed(0x06, QUIC_ENC_INITIAL), 1);
     ASSERT_EQ(neverc_quic_frame_allowed(0x06, QUIC_ENC_EARLY_DATA), 0);
@@ -556,6 +619,10 @@ int main(void) {
     test_stream_frame_nonminimal_type();
     test_ack_frame_single_range();
     test_ack_frame_multiple_ranges();
+    test_ack_rejects_first_range_past_largest();
+    test_retire_conn_id_roundtrip();
+    test_ack_ecn_counts();
+    test_connection_close_rejects_oversize_reason();
     test_connection_close_transport();
     test_connection_close_app();
     test_reset_stream_roundtrip();
@@ -570,5 +637,6 @@ int main(void) {
     test_max_data_frame();
 
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

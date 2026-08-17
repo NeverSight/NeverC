@@ -22,6 +22,15 @@ static void test_background(void) {
     neverc_context_free(ctx);
 }
 
+static void test_todo(void) {
+    printf("[todo]\n");
+    neverc_context_t *ctx = neverc_context_todo();
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_INT_EQ(neverc_context_done(ctx), 0);
+    ASSERT_TRUE(neverc_context_err(ctx) == NULL);
+    neverc_context_free(ctx);
+}
+
 static void test_with_value(void) {
     printf("[with_value]\n");
     neverc_context_t *bg = neverc_context_background();
@@ -708,9 +717,62 @@ static void test_after_func_can_free_own_context(void) {
     neverc_context_free(bg);
 }
 
+static void test_after_func_reuses_slots(void) {
+    printf("[after_func_reuses_slots]\n");
+    /* Let any prior AfterFunc worker publish thread_finished so its slot
+     * can be reclaimed before we occupy all four. */
+#if defined(_WIN32)
+    Sleep(20);
+#else
+    usleep(20000);
+#endif
+    neverc_context_t *bg = neverc_context_background();
+    neverc_cancel_func_t cancels[4] = {0};
+    neverc_context_t *ctxs[4] = {0};
+    neverc_context_stop_func_t stops[4] = {0};
+
+    for (int i = 0; i < 4; i++) {
+        ctxs[i] = neverc_context_with_cancel(bg, &cancels[i]);
+        ASSERT_TRUE(ctxs[i] != NULL);
+        stops[i] = neverc_context_after_func(ctxs[i], after_cb);
+        ASSERT_TRUE(stops[i] != NULL);
+    }
+
+    neverc_cancel_func_t extra_cancel = NULL;
+    neverc_context_t *extra =
+        neverc_context_with_cancel(bg, &extra_cancel);
+    ASSERT_TRUE(extra != NULL);
+    ASSERT_TRUE(neverc_context_after_func(extra, after_cb) == NULL);
+
+    for (int i = 0; i < 4; i++) {
+        ASSERT_INT_EQ(stops[i](), 1);
+        neverc_context_free(ctxs[i]);
+    }
+
+    NEVERC_ATOMIC_STORE32(&g_after_called, 0);
+    neverc_context_stop_func_t reused =
+        neverc_context_after_func(extra, after_cb);
+    ASSERT_TRUE(reused != NULL);
+    extra_cancel();
+    for (int i = 0; i < 1000 &&
+                    !NEVERC_ATOMIC_LOAD32(&g_after_called); i++) {
+#if defined(_WIN32)
+        Sleep(1);
+#else
+        usleep(1000);
+#endif
+    }
+    ASSERT_INT_EQ(NEVERC_ATOMIC_LOAD32(&g_after_called), 1);
+    ASSERT_INT_EQ(reused(), 0);
+
+    neverc_context_free(extra);
+    neverc_context_free(bg);
+}
+
 int main(void) {
     printf("=== NeverC context Tests ===\n");
     test_background();
+    test_todo();
     test_with_value();
     test_with_timeout();
     test_timeout_bounds_and_deadline_precedence();
@@ -737,6 +799,7 @@ int main(void) {
     test_after_func_stop();
     test_after_func_stopped_before_context_free();
     test_after_func_can_free_own_context();
+    test_after_func_reuses_slots();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

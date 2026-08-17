@@ -1931,6 +1931,7 @@ struct http_conn {
     int                requests_served;
     uint64_t           last_active;
     uint64_t           request_started;
+    int                continue_sent;
     int                idle_timeout_ms;
     int                read_header_timeout_ms;
     int                read_timeout_ms;
@@ -2053,6 +2054,7 @@ static http_conn_t *http_conn_new(nc_sock_t fd, nc_evloop_t *loop,
     hc->write_started = 0;
     hc->last_active = nc_monotonic_ms();
     hc->request_started = hc->last_active;
+    hc->continue_sent = 0;
     hc->next = hc->prev = NULL;
     return hc;
 }
@@ -2658,6 +2660,22 @@ static void http_conn_process(http_conn_t *hc) {
                 }
                 return;
             }
+            /* RFC 9110: send 100 Continue after headers, before the body.
+             * The buffered parser otherwise waits for the full body first,
+             * which deadlocks clients that withhold the body until 100. */
+            if (stream_headers.expect_continue && !hc->continue_sent &&
+                (stream_headers.content_length > 0 ||
+                 stream_headers.is_chunked)) {
+                const char *cont = "HTTP/1.1 100 Continue\r\n\r\n";
+                if (http_conn_transport_write(
+                        hc, cont, strlen(cont), hc->write_timeout_ms) != 0 ||
+                    http_conn_drain_output(hc) != 0) {
+                    parsed_request_free(&stream_headers);
+                    hc->state = HC_STATE_CLOSING;
+                    return;
+                }
+                hc->continue_sent = 1;
+            }
             parsed_request_free(&stream_headers);
         }
 
@@ -2691,17 +2709,6 @@ static void http_conn_process(http_conn_t *hc) {
             parsed_request_free(&pr);
             hc->state = HC_STATE_CLOSING;
             return;
-        }
-
-        /* Send 100 Continue if client expects it */
-        if (pr.expect_continue) {
-            const char *cont = "HTTP/1.1 100 Continue\r\n\r\n";
-            if (http_conn_transport_write(
-                    hc, cont, strlen(cont), hc->write_timeout_ms) != 0) {
-                parsed_request_free(&pr);
-                hc->state = HC_STATE_CLOSING;
-                return;
-            }
         }
 
         neverc_http_request_t req;
@@ -2833,6 +2840,7 @@ static void http_conn_process(http_conn_t *hc) {
         hc->requests_served++;
         hc->last_active = nc_monotonic_ms();
         hc->request_started = hc->read_buf.len > 0 ? hc->last_active : 0;
+        hc->continue_sent = 0;
 
         if (should_close) {
             hc->state = HC_STATE_CLOSING;

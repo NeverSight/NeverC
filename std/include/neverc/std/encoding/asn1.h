@@ -57,11 +57,35 @@ int neverc_asn1_decode_bool(const neverc_asn1_element_t *elem, int *val);
 /* Decode OID to dot-notation string (malloc'd) */
 char *neverc_asn1_decode_oid(const neverc_asn1_element_t *elem);
 
+/* BIT STRING: payload is a non-owning view of elem->value after the unused-bits
+ * prefix. DER requires unused_bits in 0..7 and trailing unused bits to be 0. */
+int neverc_asn1_decode_bit_string(const neverc_asn1_element_t *elem,
+                                  const uint8_t **bytes, size_t *byte_len,
+                                  int *unused_bits);
+
+/* UTF8String / PrintableString / IA5String: non-owning views of elem->value. */
+int neverc_asn1_decode_utf8_string(const neverc_asn1_element_t *elem,
+                                   const uint8_t **text, size_t *len);
+int neverc_asn1_decode_printable_string(const neverc_asn1_element_t *elem,
+                                        const uint8_t **text, size_t *len);
+int neverc_asn1_decode_ia5_string(const neverc_asn1_element_t *elem,
+                                  const uint8_t **text, size_t *len);
+
 /* Encode helpers (write DER into buffer, return bytes written) */
 int neverc_asn1_encode_int64(uint8_t *buf, size_t cap, int64_t val);
 int neverc_asn1_encode_bool(uint8_t *buf, size_t cap, int val);
 int neverc_asn1_encode_octet_string(uint8_t *buf, size_t cap,
                                     const uint8_t *data, size_t len);
+int neverc_asn1_encode_bit_string(uint8_t *buf, size_t cap,
+                                  const uint8_t *data, size_t len,
+                                  int unused_bits);
+int neverc_asn1_encode_oid(uint8_t *buf, size_t cap, const char *oid);
+int neverc_asn1_encode_utf8_string(uint8_t *buf, size_t cap,
+                                   const uint8_t *text, size_t len);
+int neverc_asn1_encode_printable_string(uint8_t *buf, size_t cap,
+                                        const uint8_t *text, size_t len);
+int neverc_asn1_encode_ia5_string(uint8_t *buf, size_t cap,
+                                  const uint8_t *text, size_t len);
 int neverc_asn1_encode_null(uint8_t *buf, size_t cap);
 int neverc_asn1_encode_length(uint8_t *buf, size_t cap, size_t length);
 int neverc_asn1_encode_tag(uint8_t *buf, size_t cap, int tag_class,

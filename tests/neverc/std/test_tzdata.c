@@ -1,7 +1,13 @@
 #include "neverc/std/time_tzdata.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -34,6 +40,73 @@ static void check_null(const char *name, const void *ptr) {
     tests_run++;
     if (!ptr) tests_passed++;
     else { tests_failed++; printf("  FAIL: %s: expected NULL\n", name); }
+}
+
+/* ===== Concurrent first-use init ===== */
+
+#define TZ_RACE_THREADS 8
+#define TZ_RACE_ITERS   200
+
+static int tz_race_body(void) {
+    static const char *names[] = {
+        "UTC", "America/New_York", "Europe/London", "Asia/Tokyo",
+        "Australia/Sydney", "Pacific/Auckland", "Africa/Cairo", "GMT"
+    };
+    const int nnames = (int)(sizeof(names) / sizeof(names[0]));
+    for (int i = 0; i < TZ_RACE_ITERS; i++) {
+        const neverc_tzdata_zone_t *z = neverc_tzdata_lookup(names[i % nnames]);
+        if (!z || !z->name || !z->abbrev) return 1;
+        if (!neverc_tzdata_lookup_abbrev(z->abbrev)) return 1;
+        (void)neverc_tzdata_offset_for_month(z, (i % 12) + 1);
+        if (!neverc_tzdata_at(i % neverc_tzdata_count())) return 1;
+        if (!neverc_tzdata_utc()) return 1;
+    }
+    return 0;
+}
+
+#if defined(_WIN32)
+static DWORD WINAPI tz_race_worker(LPVOID arg) {
+    (void)arg;
+    return (DWORD)tz_race_body();
+}
+#else
+static void *tz_race_worker(void *arg) {
+    (void)arg;
+    return (void *)(intptr_t)tz_race_body();
+}
+#endif
+
+static void test_concurrent_init(void) {
+    printf("[concurrent_init]\n");
+    int failed = 0;
+#if defined(_WIN32)
+    HANDLE threads[TZ_RACE_THREADS];
+    for (int i = 0; i < TZ_RACE_THREADS; i++)
+        threads[i] = CreateThread(NULL, 0, tz_race_worker, NULL, 0, NULL);
+    WaitForMultipleObjects(TZ_RACE_THREADS, threads, TRUE, INFINITE);
+    for (int i = 0; i < TZ_RACE_THREADS; i++) {
+        DWORD code = 1;
+        if (!threads[i] || !GetExitCodeThread(threads[i], &code) || code != 0)
+            failed = 1;
+        if (threads[i]) CloseHandle(threads[i]);
+    }
+#else
+    pthread_t threads[TZ_RACE_THREADS];
+    int started = 0;
+    for (int i = 0; i < TZ_RACE_THREADS; i++) {
+        if (pthread_create(&threads[i], NULL, tz_race_worker, NULL) != 0) {
+            failed = 1;
+            break;
+        }
+        started++;
+    }
+    for (int i = 0; i < started; i++) {
+        void *ret = (void *)(intptr_t)1;
+        pthread_join(threads[i], &ret);
+        if (ret) failed = 1;
+    }
+#endif
+    check_int("concurrent lookup during init", failed, 0);
 }
 
 /* ===== Lookup ===== */
@@ -71,6 +144,14 @@ static void test_lookup(void) {
     check_str("London abbrev", z ? z->abbrev : NULL, "GMT");
     check_str("London dst", z ? z->abbrev_dst : NULL, "BST");
     check_int("London has dst", z ? z->has_dst : 0, 1);
+
+    z = neverc_tzdata_lookup("Europe/Kyiv");
+    check_not_null("Kyiv", z);
+    check_int("Kyiv offset", z ? z->utc_offset : 0, 7200);
+    check_int("Kyiv dst hemi north", z ? z->dst_hemi : 0, 1);
+
+    z = neverc_tzdata_lookup("Europe/Kiev");
+    check_not_null("Kiev alias", z);
 
     z = neverc_tzdata_lookup("Australia/Sydney");
     check_not_null("Sydney", z);
@@ -213,6 +294,62 @@ static void test_dst_offset(void) {
               neverc_tzdata_offset_for_month(yvr, 7), -25200);
 }
 
+/* 2024-03-10 07:00:00 UTC = US spring-forward instant (2nd Sunday, 02:00 EST). */
+#define NY_SPRING_2024 1710054000LL
+/* 2024-11-03 06:00:00 UTC = US fall-back instant (1st Sunday, 02:00 EDT). */
+#define NY_FALL_2024   1730613600LL
+/* 2024-03-31 01:00:00 UTC = EU spring-forward. */
+#define EU_SPRING_2024 1711846800LL
+/* 2024-10-27 01:00:00 UTC = EU fall-back. */
+#define EU_FALL_2024   1729990800LL
+/* 2024-04-06 16:00:00 UTC = Sydney autumn-back (first Sunday April 03:00 AEDT). */
+#define SYD_END_2024   1712419200LL
+/* 2024-10-05 16:00:00 UTC = Sydney spring-forward (first Sunday October 02:00 AEST). */
+#define SYD_START_2024 1728132000LL
+
+static void test_offset_at(void) {
+    printf("[offset_at]\n");
+    const neverc_tzdata_zone_t *ny = neverc_tzdata_lookup("America/New_York");
+    const neverc_tzdata_zone_t *lon = neverc_tzdata_lookup("Europe/London");
+    const neverc_tzdata_zone_t *syd = neverc_tzdata_lookup("Australia/Sydney");
+    const neverc_tzdata_zone_t *utc = neverc_tzdata_utc();
+    if (!ny || !lon || !syd || !utc) {
+        printf("  SKIP: required zone missing\n");
+        return;
+    }
+
+    check_int("offset_at NULL", neverc_tzdata_offset_at(NULL, 0), 0);
+    check_int("UTC offset_at winter", neverc_tzdata_offset_at(utc, NY_SPRING_2024), 0);
+    check_int("UTC offset_at summer", neverc_tzdata_offset_at(utc, NY_FALL_2024), 0);
+
+    check_int("NY before spring-forward EST",
+              neverc_tzdata_offset_at(ny, NY_SPRING_2024 - 1), -18000);
+    check_int("NY at spring-forward EDT",
+              neverc_tzdata_offset_at(ny, NY_SPRING_2024), -14400);
+    check_int("NY before fall-back EDT",
+              neverc_tzdata_offset_at(ny, NY_FALL_2024 - 1), -14400);
+    check_int("NY at fall-back EST",
+              neverc_tzdata_offset_at(ny, NY_FALL_2024), -18000);
+
+    check_int("London before EU start GMT",
+              neverc_tzdata_offset_at(lon, EU_SPRING_2024 - 1), 0);
+    check_int("London at EU start BST",
+              neverc_tzdata_offset_at(lon, EU_SPRING_2024), 3600);
+    check_int("London before EU end BST",
+              neverc_tzdata_offset_at(lon, EU_FALL_2024 - 1), 3600);
+    check_int("London at EU end GMT",
+              neverc_tzdata_offset_at(lon, EU_FALL_2024), 0);
+
+    check_int("Sydney before autumn-back AEDT",
+              neverc_tzdata_offset_at(syd, SYD_END_2024 - 1), 39600);
+    check_int("Sydney at autumn-back AEST",
+              neverc_tzdata_offset_at(syd, SYD_END_2024), 36000);
+    check_int("Sydney before spring-forward AEST",
+              neverc_tzdata_offset_at(syd, SYD_START_2024 - 1), 36000);
+    check_int("Sydney at spring-forward AEDT",
+              neverc_tzdata_offset_at(syd, SYD_START_2024), 39600);
+}
+
 /* ===== Offsets correctness ===== */
 
 static void test_offsets(void) {
@@ -351,6 +488,33 @@ static void test_local_tz(void) {
     check_not_null("zoneinfo path TZ", z);
     check_str("zoneinfo path name", z ? z->name : NULL, "Asia/Tokyo");
 
+    tzdata_set_tz("");
+    z = neverc_tzdata_local();
+    check_not_null("empty TZ", z);
+    check_str("empty TZ is UTC", z ? z->name : NULL, "UTC");
+
+    tzdata_set_tz("NotAReal/Zone");
+    z = neverc_tzdata_local();
+    check_not_null("unknown TZ", z);
+    check_str("unknown TZ is UTC", z ? z->name : NULL, "UTC");
+
+    tzdata_set_tz("EST5EDT,M3.2.0,M11.1.0");
+    z = neverc_tzdata_local();
+    check_not_null("posix TZ", z);
+    check_int("posix EST offset", z ? z->utc_offset : 0, -18000);
+    check_int("posix EDT offset", z ? z->dst_offset : 0, -14400);
+    check_int("posix has dst", z ? z->has_dst : 0, 1);
+    check_int("posix spring-forward",
+              neverc_tzdata_offset_at(z, NY_SPRING_2024), -14400);
+    check_int("posix before spring-forward",
+              neverc_tzdata_offset_at(z, NY_SPRING_2024 - 1), -18000);
+
+    tzdata_set_tz("UTC0");
+    z = neverc_tzdata_local();
+    check_not_null("posix UTC0", z);
+    check_int("posix UTC0 offset", z ? z->utc_offset : -1, 0);
+    check_int("posix UTC0 no dst", z ? z->has_dst : -1, 0);
+
     if (had) tzdata_set_tz(saved);
     else tzdata_set_tz(NULL);
 }
@@ -358,6 +522,8 @@ static void test_local_tz(void) {
 /* ===== Main ===== */
 
 int main(void) {
+    /* Run before any other lookup so the first-use init race is live. */
+    test_concurrent_init();
     test_lookup();
     test_lookup_abbrev();
     test_count();
@@ -365,6 +531,7 @@ int main(void) {
     test_utc();
     test_fixed_zone();
     test_dst_offset();
+    test_offset_at();
     test_offsets();
     test_edge_cases();
     test_local_tz();
@@ -372,5 +539,6 @@ int main(void) {
     printf("\n--- time/tzdata: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ---\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

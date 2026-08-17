@@ -86,6 +86,23 @@ static void test_invalid_headers_and_spans(void) {
     ASSERT_INT_EQ(neverc_zlib_decompress(
                       invalid, valid_compressed_len, output, &output_len),
                   -1);
+
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_zlib_decompress(
+                      compressed, valid_compressed_len - 1U, output, &output_len),
+                  -1);
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_zlib_decompress(
+                      compressed, 2U, output, &output_len),
+                  -1);
+
+    uint8_t extra_after[256];
+    memcpy(extra_after, compressed, valid_compressed_len);
+    extra_after[valid_compressed_len] = 0;
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_zlib_decompress(
+                      extra_after, valid_compressed_len + 1U, output, &output_len),
+                  -1);
 }
 
 int main(void) {
@@ -103,5 +120,6 @@ int main(void) {
     test_invalid_headers_and_spans();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

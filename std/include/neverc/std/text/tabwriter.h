@@ -14,6 +14,10 @@ extern "C" {
 #define NEVERC_TABWRITER_TAB_INDENT         (1 << 4)
 #define NEVERC_TABWRITER_DEBUG              (1 << 5)
 
+/* Bracket a segment so tabs/newlines inside are literal (Go tabwriter.Escape).
+ * Width never counts the Escape bytes; STRIP_ESCAPE omits them from output. */
+#define NEVERC_TABWRITER_ESCAPE             ((char)0xff)
+
 #define NEVERC_TABWRITER_MAX_COLS 256
 #define NEVERC_TABWRITER_MAX_CELLS 4096
 #define NEVERC_TABWRITER_MAX_LINES 4096
@@ -50,6 +54,10 @@ typedef struct {
     int     lines_ncells[NEVERC_TABWRITER_MAX_LINES];
     int     nlines;
     int     failed;       /* sticky allocation/input error; output() returns NULL */
+
+    unsigned char end_char; /* 0, ESCAPE, '>', or ';' while inside a segment */
+    int     cell_width;   /* rune width of the incomplete cell */
+    size_t  width_pos;    /* buf index already counted in cell_width */
 } neverc_tabwriter_t;
 
 void neverc_tabwriter_init(neverc_tabwriter_t *w, int minwidth, int tabwidth,

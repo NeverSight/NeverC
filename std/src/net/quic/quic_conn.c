@@ -220,14 +220,17 @@ void neverc_quic_conn_destroy(struct neverc_quic_conn *conn) {
 
 static int quic_copy_peer_cid(struct neverc_quic_conn *conn,
                               const quic_conn_id_t *peer_cid) {
-    if (!conn || !peer_cid || peer_cid->len == 0 ||
-        peer_cid->len > QUIC_MAX_CID_LEN)
+    /* RFC 9000 §5.1: a peer Source CID may be zero-length. */
+    if (!conn || !peer_cid || peer_cid->len > QUIC_MAX_CID_LEN)
         return -1;
     quic_conn_id_entry_t *entry = &conn->peer_cids[0];
-    memcpy(entry->id, peer_cid->data, peer_cid->len);
+    memset(entry, 0, sizeof(*entry));
+    if (peer_cid->len)
+        memcpy(entry->id, peer_cid->data, peer_cid->len);
     entry->len = peer_cid->len;
     entry->sequence = 0;
     conn->n_peer_cids = 1;
+    conn->active_peer_cid_idx = 0;
     return 0;
 }
 
@@ -241,6 +244,8 @@ int neverc_quic_conn_configure(struct neverc_quic_conn *conn,
                                const char *server_name) {
     if (!conn || !config || !udp || !peer || !initial_dcid ||
         initial_dcid->len == 0 || initial_dcid->len > QUIC_MAX_CID_LEN ||
+        (conn->version != NEVERC_QUIC_VERSION_1 &&
+         conn->version != NEVERC_QUIC_VERSION_2) ||
         quic_copy_peer_cid(conn, peer_cid) != 0)
         return -1;
     conn->udp = udp;
@@ -506,11 +511,48 @@ int neverc_quic_stream_close_write_side(quic_stream_t *stream) {
     return 0;
 }
 
+static int stream_overlap_matches(quic_stream_t *stream, uint64_t offset,
+                                  const uint8_t *data, size_t length) {
+    uint64_t end;
+    if (!stream || (!data && length != 0) ||
+        quic_add_u64(offset, (uint64_t)length, &end) != 0)
+        return -1;
+    if (stream->recv_len > 0 && stream->recv_offset >= stream->recv_len) {
+        uint64_t buf_start = stream->recv_offset - stream->recv_len;
+        uint64_t start = offset > buf_start ? offset : buf_start;
+        uint64_t stop = end < stream->recv_offset ? end : stream->recv_offset;
+        if (start < stop) {
+            if (memcmp(stream->recv_buf + (size_t)(start - buf_start),
+                       data + (size_t)(start - offset),
+                       (size_t)(stop - start)) != 0)
+                return -1;
+        }
+    }
+    for (quic_fragment_t *fragment = stream->recv_fragments; fragment;
+         fragment = fragment->next) {
+        uint64_t fragment_end;
+        if (quic_add_u64(fragment->offset, (uint64_t)fragment->len,
+                         &fragment_end) != 0)
+            return -1;
+        uint64_t start = offset > fragment->offset ? offset : fragment->offset;
+        uint64_t stop = end < fragment_end ? end : fragment_end;
+        if (start < stop) {
+            if (memcmp(fragment->data + (size_t)(start - fragment->offset),
+                       data + (size_t)(start - offset),
+                       (size_t)(stop - start)) != 0)
+                return -1;
+        }
+    }
+    return 0;
+}
+
 static int fragment_insert(quic_stream_t *stream, uint64_t offset,
                            const uint8_t *data, size_t length) {
     if (length == 0) return 0;
     uint64_t end;
     if (quic_add_u64(offset, (uint64_t)length, &end) != 0) return -1;
+    if (stream_overlap_matches(stream, offset, data, length) != 0)
+        return -1;
     if (end <= stream->recv_offset) return 0;
     if (offset < stream->recv_offset) {
         size_t skip = (size_t)(stream->recv_offset - offset);
@@ -639,19 +681,46 @@ int neverc_quic_stream_receive_locked(struct neverc_quic_conn *conn,
     if (quic_add_u64(frame->offset, (uint64_t)frame->data_len, &end) != 0 ||
         end > QUIC_VARINT_MAX)
         return -1;
+    if (!neverc_quic_conn_find_stream(conn, frame->stream_id)) {
+        if (stream_is_local(conn, frame->stream_id)) {
+            neverc_quic_conn_close_locked(conn, QUIC_ERR_STREAM_STATE_ERROR,
+                                          "STREAM on unopened local stream",
+                                          0);
+            return -1;
+        }
+        uint64_t ordinal = stream_ordinal(frame->stream_id);
+        uint64_t limit = stream_is_uni(frame->stream_id) ?
+            conn->local_params.initial_max_streams_uni :
+            conn->local_params.initial_max_streams_bidi;
+        if (ordinal > limit) {
+            neverc_quic_conn_close_locked(conn, QUIC_ERR_STREAM_LIMIT_ERROR,
+                                          "stream limit exceeded", 0);
+            return -1;
+        }
+    }
     quic_stream_t *stream =
         get_or_create_receive_stream_locked(conn, frame->stream_id);
     if (!stream || (stream_is_uni(stream->id) &&
                     stream_is_local(conn, stream->id))) {
+        neverc_quic_conn_close_locked(conn, QUIC_ERR_STREAM_STATE_ERROR,
+                                      "STREAM not permitted on this stream",
+                                      0);
         return -1;
     }
     nc_mutex_lock(&stream->lock);
     uint64_t previous_highest = stream->recv_highest;
-    if (end > stream->recv_max_data ||
-        (stream->recv_final_known && end > stream->recv_final_size) ||
+    if (end > stream->recv_max_data) {
+        nc_mutex_unlock(&stream->lock);
+        neverc_quic_conn_close_locked(conn, QUIC_ERR_FLOW_CONTROL_ERROR,
+                                      "stream flow control exceeded", 0);
+        return -1;
+    }
+    if ((stream->recv_final_known && end > stream->recv_final_size) ||
         (frame->fin && stream->recv_final_known &&
          end != stream->recv_final_size)) {
         nc_mutex_unlock(&stream->lock);
+        neverc_quic_conn_close_locked(conn, QUIC_ERR_FINAL_SIZE_ERROR,
+                                      "STREAM final size mismatch", 0);
         return -1;
     }
     if (frame->fin) {
@@ -664,7 +733,10 @@ int neverc_quic_stream_receive_locked(struct neverc_quic_conn *conn,
                     (conn->flow.data_received > conn->flow.max_data_local ?
                          conn->flow.max_data_local :
                          conn->flow.data_received)) {
+        stream->recv_highest = previous_highest;
         nc_mutex_unlock(&stream->lock);
+        neverc_quic_conn_close_locked(conn, QUIC_ERR_FLOW_CONTROL_ERROR,
+                                      "connection flow control exceeded", 0);
         return -1;
     }
     conn->flow.data_received += delta;
@@ -673,6 +745,9 @@ int neverc_quic_stream_receive_locked(struct neverc_quic_conn *conn,
     if (result == 0) result = fragment_drain(stream);
     if (result == 0) nc_cond_broadcast(&stream->read_cond);
     nc_mutex_unlock(&stream->lock);
+    if (result != 0)
+        neverc_quic_conn_close_locked(conn, QUIC_ERR_PROTOCOL_VIOLATION,
+                                      "conflicting STREAM data", 0);
     return result;
 }
 
@@ -692,18 +767,45 @@ int neverc_quic_stream_receive_reset_locked(
         frame->error_code > QUIC_VARINT_MAX ||
         frame->final_size > QUIC_VARINT_MAX)
         return -1;
+    if (!neverc_quic_conn_find_stream(conn, frame->stream_id)) {
+        if (stream_is_local(conn, frame->stream_id)) {
+            neverc_quic_conn_close_locked(conn, QUIC_ERR_STREAM_STATE_ERROR,
+                                          "RESET_STREAM on unopened local stream",
+                                          0);
+            return -1;
+        }
+        uint64_t ordinal = stream_ordinal(frame->stream_id);
+        uint64_t limit = stream_is_uni(frame->stream_id) ?
+            conn->local_params.initial_max_streams_uni :
+            conn->local_params.initial_max_streams_bidi;
+        if (ordinal > limit) {
+            neverc_quic_conn_close_locked(conn, QUIC_ERR_STREAM_LIMIT_ERROR,
+                                          "RESET_STREAM stream limit exceeded",
+                                          0);
+            return -1;
+        }
+    }
     quic_stream_t *stream =
         get_or_create_receive_stream_locked(conn, frame->stream_id);
     if (!stream || (stream_is_uni(stream->id) &&
                     stream_is_local(conn, stream->id))) {
+        neverc_quic_conn_close_locked(conn, QUIC_ERR_STREAM_STATE_ERROR,
+                                      "RESET_STREAM not permitted", 0);
         return -1;
     }
     nc_mutex_lock(&stream->lock);
     if ((stream->recv_final_known &&
          stream->recv_final_size != frame->final_size) ||
-        frame->final_size < stream->recv_highest ||
-        frame->final_size > stream->recv_max_data) {
+        frame->final_size < stream->recv_highest) {
         nc_mutex_unlock(&stream->lock);
+        neverc_quic_conn_close_locked(conn, QUIC_ERR_FINAL_SIZE_ERROR,
+                                      "RESET_STREAM final size mismatch", 0);
+        return -1;
+    }
+    if (frame->final_size > stream->recv_max_data) {
+        nc_mutex_unlock(&stream->lock);
+        neverc_quic_conn_close_locked(conn, QUIC_ERR_FLOW_CONTROL_ERROR,
+                                      "RESET_STREAM exceeds stream limit", 0);
         return -1;
     }
     uint64_t delta = frame->final_size - stream->recv_highest;
@@ -712,6 +814,9 @@ int neverc_quic_stream_receive_reset_locked(
         ? conn->flow.max_data_local - conn->flow.data_received : 0;
     if (delta > connection_remaining) {
         nc_mutex_unlock(&stream->lock);
+        neverc_quic_conn_close_locked(conn, QUIC_ERR_FLOW_CONTROL_ERROR,
+                                      "RESET_STREAM exceeds connection limit",
+                                      0);
         return -1;
     }
     conn->flow.data_received += delta;
@@ -792,6 +897,103 @@ int neverc_quic_stream_apply_stop_sending(
         conn, stream_id, error_code);
     nc_mutex_unlock(&conn->lock);
     return result;
+}
+
+int neverc_quic_conn_apply_max_data_locked(struct neverc_quic_conn *conn,
+                                           uint64_t maximum) {
+    if (!conn || maximum > QUIC_VARINT_MAX) return -1;
+    if (maximum > conn->flow.max_data_peer)
+        conn->flow.max_data_peer = maximum;
+    for (int i = 0; i < conn->n_streams; i++) {
+        quic_stream_t *stream = conn->streams[i];
+        if (!stream) continue;
+        nc_mutex_lock(&stream->lock);
+        nc_cond_broadcast(&stream->write_cond);
+        nc_mutex_unlock(&stream->lock);
+    }
+    return 0;
+}
+
+int neverc_quic_conn_add_peer_cid(struct neverc_quic_conn *conn,
+                                  const quic_frame_new_conn_id_t *frame) {
+    if (!conn || !frame || frame->conn_id_len == 0 ||
+        frame->conn_id_len > QUIC_MAX_CID_LEN ||
+        frame->retire_prior_to > frame->sequence)
+        return -1;
+    for (int i = 0; i < conn->n_peer_cids; i++) {
+        quic_conn_id_entry_t *entry = &conn->peer_cids[i];
+        if (entry->sequence == frame->sequence) {
+            if (entry->len != frame->conn_id_len ||
+                memcmp(entry->id, frame->conn_id, entry->len) != 0 ||
+                memcmp(entry->stateless_reset_token,
+                       frame->stateless_reset_token, 16) != 0)
+                return -1;
+            goto apply_retire;
+        }
+    }
+    /* RFC 9000 §5.1.1 / §19.15: the limit is on active (unretired) IDs
+     * after Retire Prior To is applied, not on the raw slot count. */
+    int active = 1;
+    for (int i = 0; i < conn->n_peer_cids; i++) {
+        if (!conn->peer_cids[i].retired &&
+            conn->peer_cids[i].sequence >= frame->retire_prior_to)
+            active++;
+    }
+    if (active > QUIC_MAX_PEER_CONN_IDS ||
+        (uint64_t)active > conn->local_params.active_connection_id_limit)
+        return -1;
+    quic_conn_id_entry_t *entry = NULL;
+    if (conn->n_peer_cids < QUIC_MAX_PEER_CONN_IDS) {
+        entry = &conn->peer_cids[conn->n_peer_cids++];
+    } else {
+        for (int i = 0; i < conn->n_peer_cids; i++) {
+            if (conn->peer_cids[i].retired &&
+                conn->peer_cids[i].sequence < frame->retire_prior_to) {
+                entry = &conn->peer_cids[i];
+                break;
+            }
+        }
+        if (!entry) return -1;
+    }
+    memset(entry, 0, sizeof(*entry));
+    memcpy(entry->id, frame->conn_id, frame->conn_id_len);
+    entry->len = frame->conn_id_len;
+    entry->sequence = frame->sequence;
+    memcpy(entry->stateless_reset_token, frame->stateless_reset_token, 16);
+apply_retire:
+    for (int i = 0; i < conn->n_peer_cids; i++) {
+        if (conn->peer_cids[i].sequence < frame->retire_prior_to &&
+            !conn->peer_cids[i].retired) {
+            conn->peer_cids[i].retired = 1;
+            conn->peer_cids[i].retire_unsent = 1;
+        }
+    }
+    if (conn->n_peer_cids > 0 &&
+        conn->active_peer_cid_idx >= 0 &&
+        conn->active_peer_cid_idx < conn->n_peer_cids &&
+        conn->peer_cids[conn->active_peer_cid_idx].retired) {
+        for (int i = 0; i < conn->n_peer_cids; i++) {
+            if (!conn->peer_cids[i].retired) {
+                conn->active_peer_cid_idx = i;
+                break;
+            }
+        }
+    }
+    return 0;
+}
+
+int neverc_quic_conn_retire_local_cid_locked(struct neverc_quic_conn *conn,
+                                             uint64_t sequence) {
+    if (!conn) return -1;
+    for (int i = 0; i < conn->n_local_cids; i++) {
+        if (conn->local_cids[i].sequence != sequence) continue;
+        if (!conn->local_cids[i].retired) {
+            conn->local_cids[i].retired = 1;
+            conn->new_cid_pending = 1;
+        }
+        return 0;
+    }
+    return -1;
 }
 
 void neverc_quic_conn_on_packet_acked(struct neverc_quic_conn *conn,
@@ -900,6 +1102,13 @@ void neverc_quic_conn_on_packet_lost(struct neverc_quic_conn *conn,
                 }
                 break;
             }
+            case QUIC_FRAME_RETIRE_CONNECTION_ID:
+                for (int i = 0; i < conn->n_peer_cids; i++) {
+                    if (conn->peer_cids[i].sequence == record->stream_id &&
+                        conn->peer_cids[i].retired)
+                        conn->peer_cids[i].retire_unsent = 1;
+                }
+                break;
             default:
                 break;
             }
@@ -1088,9 +1297,10 @@ int neverc_quic_conn_id_matches(const struct neverc_quic_conn *conn,
         conn->initial_dcid.len == cid_len &&
         memcmp(conn->initial_dcid.data, cid, cid_len) == 0)
         return 1;
+    /* RFC 9000 §5.1.2: packets using a retired CID can still arrive. */
     for (int i = 0; i < conn->n_local_cids; i++) {
         const quic_conn_id_entry_t *entry = &conn->local_cids[i];
-        if (!entry->retired && entry->len == cid_len &&
+        if (entry->len == cid_len &&
             memcmp(entry->id, cid, cid_len) == 0)
             return 1;
     }

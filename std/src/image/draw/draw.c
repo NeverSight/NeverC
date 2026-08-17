@@ -58,6 +58,7 @@ static neverc_rect_t rect_intersect_i64(neverc_rect_t a,
 void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
                  const neverc_image_rgba_t *src, neverc_point_t sp,
                  neverc_draw_op_t op) {
+    if (!dst || !dst->pix || !src || !src->pix) return;
     neverc_rect_t clip = neverc_rect_intersect(r, dst->rect);
     /* Also clip against the source bounds, translated into dst space, so the row
      * copies below never read past src->pix. A dst pixel (x,y) samples src at
@@ -157,6 +158,7 @@ void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
 void neverc_draw_uniform(neverc_image_rgba_t *dst, neverc_rect_t r,
                          uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca,
                          neverc_draw_op_t op) {
+    if (!dst || !dst->pix) return;
     neverc_rect_t clip = neverc_rect_intersect(r, dst->rect);
     if (neverc_rect_empty(clip)) return;
 
@@ -205,6 +207,7 @@ void neverc_draw_uniform(neverc_image_rgba_t *dst, neverc_rect_t r,
 void neverc_draw_gray_over(neverc_image_rgba_t *dst, neverc_rect_t r,
                            const neverc_image_gray_t *mask, neverc_point_t mp,
                            uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) {
+    if (!dst || !dst->pix || !mask || !mask->pix) return;
     neverc_rect_t clip = neverc_rect_intersect(r, dst->rect);
     /* Clip against the mask bounds (translated into dst space) so the mrow[]
      * reads stay inside mask->pix when the mask is smaller than r. 64-bit

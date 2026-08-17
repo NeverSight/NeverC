@@ -47,6 +47,22 @@ int main(void) {
     neverc_bigint_free(&x);
     neverc_bigint_free(&y);
     neverc_bigint_free(&destination);
+
+    neverc_bigint_t parsed;
+    neverc_bigint_init(&parsed);
+    fail_realloc = 0;
+    neverc_bigint_set_uint64(&parsed, 42);
+    fail_realloc = 1;
+    CHECK(neverc_bigint_set_string(&parsed, "0x", 0) == -1);
+    CHECK(neverc_bigint_uint64(&parsed) == 42);
+    neverc_bigint_t empty_parse;
+    neverc_bigint_init(&empty_parse);
+    CHECK(neverc_bigint_set_string(&empty_parse, "1", 10) == -1);
+    CHECK(empty_parse.digits == NULL);
+    CHECK(empty_parse.len == 0);
+    neverc_bigint_free(&parsed);
+    neverc_bigint_free(&empty_parse);
+
     puts("passed");
     return 0;
 }

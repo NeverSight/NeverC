@@ -190,12 +190,12 @@ static int grow_table(void) {
 static int entry_matches(const intern_entry_t *e, uk_kind_t kind, uint64_t hash,
                           const void *data, size_t len) {
     return e->kind == kind && e->hash == hash && e->len == len &&
-           memcmp(e->data, data, len) == 0;
+           (len == 0 || memcmp(e->data, data, len) == 0);
 }
 
 static neverc_unique_handle_t intern(uk_kind_t kind, const void *data, size_t len) {
     neverc_unique_handle_t h = {NULL};
-    if (!data && kind != UK_BYTES) return h;
+    if (!data && (kind != UK_BYTES || len != 0)) return h;
 
     uint64_t hash = intern_hash(data, len);
 
@@ -267,7 +267,7 @@ neverc_unique_handle_t neverc_unique_make_uint64(uint64_t v) {
 }
 
 neverc_unique_handle_t neverc_unique_make_bytes(const void *data, size_t len) {
-    if (!data) { neverc_unique_handle_t h = {NULL}; return h; }
+    if (!data && len != 0) { neverc_unique_handle_t h = {NULL}; return h; }
     return intern(UK_BYTES, data, len);
 }
 

@@ -121,10 +121,25 @@ static void test_parse_edges(void) {
     ASSERT_STR_EQ(u.host, "fe80::1%eth0");
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%25eth0]/"), 0);
     ASSERT_STR_EQ(u.host, "fe80::1%eth0");
+    ASSERT_INT_EQ(neverc_url_parse(
+        &u, "http://user:p%40ss@[fe80::1%eth0]:8080/x"), 0);
+    ASSERT_STR_EQ(u.user, "user");
+    ASSERT_STR_EQ(u.password, "p%40ss");
+    ASSERT_STR_EQ(u.host, "fe80::1%eth0");
+    ASSERT_STR_EQ(u.port, "8080");
+    ASSERT_STR_EQ(u.path, "/x");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://@host/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://user@"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://ex%61mple.com/"), 0);
     ASSERT_STR_EQ(u.host, "example.com");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://host%3a80/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://host%3A8080/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[::ffff:192.168.1.1]/"), 0);
     ASSERT_STR_EQ(u.host, "::ffff:192.168.1.1");
+    char mapped[64];
+    ASSERT_INT_EQ(neverc_url_string(&u, mapped, sizeof(mapped)),
+                  (int)strlen("http://[::ffff:192.168.1.1]/"));
+    ASSERT_STR_EQ(mapped, "http://[::ffff:192.168.1.1]/");
 
     char long_url[400];
     memcpy(long_url, "https://", 8);
@@ -156,6 +171,12 @@ static void test_values(void) {
     ASSERT_STR_EQ(neverc_url_values_get(&v, "age"), "30");
     ASSERT_STR_EQ(neverc_url_values_get(&v, "city"), "NY");
     ASSERT_TRUE(neverc_url_values_get(&v, "missing") == NULL);
+
+    neverc_url_values_set(&v, "age", "31");
+    ASSERT_STR_EQ(neverc_url_values_get(&v, "age"), "31");
+    neverc_url_values_set(&v, "country", "US");
+    ASSERT_STR_EQ(neverc_url_values_get(&v, "country"), "US");
+    ASSERT_INT_EQ(v.count, 4);
 }
 
 static void test_values_encoded(void) {

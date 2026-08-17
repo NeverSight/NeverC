@@ -38,6 +38,17 @@ static void check_true(const char *name, int cond) {
     else { tests_failed++; printf("  FAIL: %s\n", name); }
 }
 
+static void check_signbit(const char *name, double got, int expect_neg) {
+    tests_run++;
+    int got_neg = neverc_math_signbit(got);
+    if (got_neg == expect_neg) tests_passed++;
+    else {
+        tests_failed++;
+        printf("  FAIL: %s: got signbit=%d, expected %d (value=%.17g)\n",
+               name, got_neg, expect_neg, got);
+    }
+}
+
 #define C(r,i) neverc_cmplx(r,i)
 #define NC_NAN neverc_math_nan()
 #define NC_INF neverc_math_inf(1)
@@ -115,6 +126,14 @@ static void test_exp(void) {
     z = neverc_cmplx_log(C(-1.0, 0.0));
     check_double("log(-1).re", z.re, 0.0);
     check_double("log(-1).im", z.im, NEVERC_MATH_PI);
+    check_signbit("log(-1+0i).im pos", z.im, 0);
+    {
+        double nz = neverc_math_copysign(0.0, -1.0);
+        z = neverc_cmplx_log(C(-1.0, nz));
+        check_double("log(-1-0i).re", z.re, 0.0);
+        check_double("log(-1-0i).im", z.im, -NEVERC_MATH_PI);
+        check_signbit("log(-1-0i).im neg", z.im, 1);
+    }
 
     /* log10(10+0i) = 1+0i */
     check_cmplx("log10(10+0i)", neverc_cmplx_log10(C(10.0, 0.0)), 1.0, 0.0);
@@ -141,6 +160,19 @@ static void test_sqrt(void) {
     z = neverc_cmplx_sqrt(C(-4.0, 0.0));
     check_double("sqrt(-4).re", z.re, 0.0);
     check_double("sqrt(-4).im", neverc_math_abs(z.im), 2.0);
+
+    /* Go branch cut: imag(sqrt(x)) has the sign of imag(x) for real x < 0. */
+    {
+        double nz = neverc_math_copysign(0.0, -1.0);
+        z = neverc_cmplx_sqrt(C(-1.0, 0.0));
+        check_double("sqrt(-1+0i).re", z.re, 0.0);
+        check_double("sqrt(-1+0i).im", z.im, 1.0);
+        check_signbit("sqrt(-1+0i).im pos", z.im, 0);
+        z = neverc_cmplx_sqrt(C(-1.0, nz));
+        check_double("sqrt(-1-0i).re", z.re, 0.0);
+        check_double("sqrt(-1-0i).im", z.im, -1.0);
+        check_signbit("sqrt(-1-0i).im neg", z.im, 1);
+    }
 
     /* sqrt(z)^2 = z roundtrip */
     neverc_cmplx_t test_vals[] = { C(3.0, 4.0), C(-2.0, 1.0), C(0.0, 5.0), C(-7.0, -3.0) };
@@ -350,6 +382,76 @@ static void test_inv_trig(void) {
     check_double("asin(0.5+0i).re", as_real, neverc_math_asin(0.5));
 }
 
+/* ===== Inverse hyperbolic + cotangent (Go math/cmplx) ===== */
+
+static void test_inv_hyp_cot(void) {
+    printf("[asinh/acosh/atanh/cot]\n");
+
+    check_cmplx("asinh(0)", neverc_cmplx_asinh(C(0.0, 0.0)), 0.0, 0.0);
+    check_double("asinh(0.5+0i).re", neverc_cmplx_asinh(C(0.5, 0.0)).re,
+                 neverc_math_asinh(0.5));
+    check_double("asinh(i).im", neverc_cmplx_asinh(C(0.0, 1.0)).im,
+                 NEVERC_MATH_PI / 2.0);
+
+    /* sinh(asinh(z)) = z */
+    neverc_cmplx_t zvecs[] = { C(0.5, 0.3), C(-0.2, 0.8), C(0.0, 0.5) };
+    for (int i = 0; i < 3; i++) {
+        char buf[128];
+        neverc_cmplx_t w = neverc_cmplx_asinh(zvecs[i]);
+        snprintf(buf, sizeof(buf), "sinh(asinh(z))=z (%d)", i);
+        check_cmplx(buf, neverc_cmplx_sinh(w), zvecs[i].re, zvecs[i].im);
+    }
+
+    /* Go Asinh Inf/NaN */
+    check_cmplx("asinh(+Inf)", neverc_cmplx_asinh(C(NC_INF, 0.0)), NC_INF, 0.0);
+    check_cmplx("asinh(-Inf)", neverc_cmplx_asinh(C(-NC_INF, 0.0)), -NC_INF, 0.0);
+    check_cmplx("asinh(Inf+i*Inf)", neverc_cmplx_asinh(C(NC_INF, NC_INF)),
+                NC_INF, NEVERC_MATH_PI / 4.0);
+    check_cmplx("asinh(i*Inf)", neverc_cmplx_asinh(C(0.0, NC_INF)),
+                NC_INF, NEVERC_MATH_PI / 2.0);
+    check_cmplx("asinh(NaN+0i)", neverc_cmplx_asinh(C(NC_NAN, 0.0)), NC_NAN, 0.0);
+
+    check_cmplx("acosh(1)", neverc_cmplx_acosh(C(1.0, 0.0)), 0.0, 0.0);
+    check_cmplx("acosh(0)", neverc_cmplx_acosh(C(0.0, 0.0)), 0.0, NEVERC_MATH_PI / 2.0);
+    {
+        double nz = neverc_math_copysign(0.0, -1.0);
+        neverc_cmplx_t w = neverc_cmplx_acosh(C(0.0, nz));
+        check_double("acosh(0-0i).re", w.re, 0.0);
+        check_double("acosh(0-0i).im", w.im, -NEVERC_MATH_PI / 2.0);
+        check_signbit("acosh(0-0i).im neg", w.im, 1);
+    }
+    /* acosh real part is ≥ 0 */
+    {
+        neverc_cmplx_t w = neverc_cmplx_acosh(C(0.5, 0.3));
+        check_true("acosh re >= 0", w.re >= 0.0);
+        neverc_cmplx_t rt = neverc_cmplx_cosh(w);
+        check_cmplx("cosh(acosh(0.5+0.3i))", rt, 0.5, 0.3);
+    }
+
+    check_cmplx("atanh(0)", neverc_cmplx_atanh(C(0.0, 0.0)), 0.0, 0.0);
+    check_double("atanh(0.5+0i).re", neverc_cmplx_atanh(C(0.5, 0.0)).re,
+                 neverc_math_atanh(0.5));
+    check_cmplx("atanh(1)", neverc_cmplx_atanh(C(1.0, 0.0)), NC_INF, 0.0);
+    {
+        neverc_cmplx_t w = neverc_cmplx_atanh(C(0.2, 0.3));
+        neverc_cmplx_t rt = neverc_cmplx_tanh(w);
+        check_cmplx("tanh(atanh(0.2+0.3i))", rt, 0.2, 0.3);
+    }
+
+    /* cot(z)*tan(z) = 1 */
+    {
+        neverc_cmplx_t z = C(0.7, 0.4);
+        neverc_cmplx_t t = neverc_cmplx_tan(z);
+        neverc_cmplx_t c = neverc_cmplx_cot(z);
+        neverc_cmplx_t prod = C(
+            (c.re * t.re - c.im * t.im),
+            (c.re * t.im + c.im * t.re)
+        );
+        check_cmplx("cot*tan=1", prod, 1.0, 0.0);
+    }
+    check_cmplx("cot(pi/4)", neverc_cmplx_cot(C(NEVERC_MATH_PI / 4.0, 0.0)), 1.0, 0.0);
+}
+
 /* ===== Special values ===== */
 
 static void test_special(void) {
@@ -366,6 +468,11 @@ static void test_special(void) {
     check_true("!isinf(1+2i)", !neverc_cmplx_isinf(C(1.0, 2.0)));
     check_true("!isinf(NaN+0i)", !neverc_cmplx_isinf(C(NC_NAN, 0.0)));
 
+    neverc_cmplx_t nv = neverc_cmplx_nan_val();
+    check_true("nan_val is nan", neverc_cmplx_isnan(nv));
+    neverc_cmplx_t iv = neverc_cmplx_inf_val();
+    check_true("inf_val is inf", neverc_cmplx_isinf(iv));
+
     /* Go math/cmplx: Inf imag saturates tan to ±i; Inf real saturates tanh to ±1.
      * The sin/cos (sinh/cosh) ratio overflows to NaN without these cases. */
     check_cmplx("tan(1+i*Inf)", neverc_cmplx_tan(C(1.0, NC_INF)), 0.0, 1.0);
@@ -376,6 +483,13 @@ static void test_special(void) {
     check_cmplx("tanh(-Inf+i)", neverc_cmplx_tanh(C(-NC_INF, 1.0)), -1.0, 0.0);
     check_cmplx("tanh(Inf+i*Inf)", neverc_cmplx_tanh(C(NC_INF, NC_INF)), 1.0, 0.0);
     check_cmplx("tanh(NaN+0i)", neverc_cmplx_tanh(C(NC_NAN, 0.0)), NC_NAN, 0.0);
+
+    /* Double-angle tan stays on the ±i attractor for large (but finite) imag. */
+    {
+        neverc_cmplx_t t = neverc_cmplx_tan(C(1.0, 40.0));
+        check_true("tan(1+40i) imag ~ 1", neverc_math_abs(t.im - 1.0) < 1e-10);
+        check_true("tan(1+40i) real ~ 0", neverc_math_abs(t.re) < 1e-10);
+    }
 }
 
 /* ===== Known computed values ===== */
@@ -417,6 +531,7 @@ int main(void) {
     test_trig();
     test_hyp();
     test_inv_trig();
+    test_inv_hyp_cot();
     test_special();
     test_known_values();
 

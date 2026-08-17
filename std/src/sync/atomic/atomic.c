@@ -8,7 +8,12 @@ int32_t neverc_atomic_load_int32(const volatile int32_t *addr) { return _Interlo
 int64_t neverc_atomic_load_int64(const volatile int64_t *addr) { return _InterlockedOr64((volatile long long*)addr, 0); }
 uint32_t neverc_atomic_load_uint32(const volatile uint32_t *addr) { return (uint32_t)_InterlockedOr((volatile long*)addr, 0); }
 uint64_t neverc_atomic_load_uint64(const volatile uint64_t *addr) { return (uint64_t)_InterlockedOr64((volatile long long*)addr, 0); }
-void *neverc_atomic_load_pointer(void *const volatile *addr) { return (void*)_InterlockedOr64((volatile long long*)addr, 0); }
+void *neverc_atomic_load_pointer(void *const volatile *addr) {
+    /* InterlockedOr64 is 64-bit-only; CompareExchangePointer is a no-op
+     * load on both 32- and 64-bit Windows (NULL/NULL succeeds only when the
+     * pointer is already NULL, otherwise it returns the current value). */
+    return _InterlockedCompareExchangePointer((void *volatile *)addr, NULL, NULL);
+}
 
 void neverc_atomic_store_int32(volatile int32_t *addr, int32_t val) { _InterlockedExchange((volatile long*)addr, val); }
 void neverc_atomic_store_int64(volatile int64_t *addr, int64_t val) { _InterlockedExchange64((volatile long long*)addr, val); }

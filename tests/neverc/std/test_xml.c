@@ -241,6 +241,25 @@ static void test_entities_cdata_and_well_formedness(void) {
     neverc_xml_node_free(tree);
     check_bool("reject empty document",
                neverc_xml_parse("", 0) == NULL, 1);
+    check_bool("reject trailing non-whitespace",
+               neverc_xml_parse("<root/>extra", 12) == NULL, 1);
+
+    {
+        const int depth = 1001;
+        size_t cap = (size_t)depth * 8U + 8U;
+        char *nested = (char *)malloc(cap);
+        size_t len = 0;
+        check_bool("depth buffer", nested != NULL, 1);
+        if (nested) {
+            for (int i = 0; i < depth; i++)
+                len += (size_t)snprintf(nested + len, cap - len, "<a>");
+            for (int i = 0; i < depth; i++)
+                len += (size_t)snprintf(nested + len, cap - len, "</a>");
+            check_bool("reject over-deep nesting",
+                       neverc_xml_parse(nested, len) == NULL, 1);
+            free(nested);
+        }
+    }
 }
 
 static void test_nested(void) {

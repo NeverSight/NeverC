@@ -86,6 +86,33 @@ static int tar_size_fits(uint64_t value) {
 #endif
 }
 
+static int tar_type_supported(int typeflag) {
+    return typeflag == NEVERC_TAR_REG ||
+           typeflag == NEVERC_TAR_LINK ||
+           typeflag == NEVERC_TAR_SYM ||
+           typeflag == NEVERC_TAR_DIR;
+}
+
+/* POSIX typeflags 1, 2, and 5 carry no file body even when size is set. */
+static int tar_type_header_only(int typeflag) {
+    return typeflag == NEVERC_TAR_LINK ||
+           typeflag == NEVERC_TAR_SYM ||
+           typeflag == NEVERC_TAR_DIR;
+}
+
+static int tar_name_has_slash_suffix(const char *name) {
+    size_t length = strlen(name);
+    return length > 0 && name[length - 1U] == '/';
+}
+
+/* TypeRegA (NUL) is REG, or DIR when the final name ends in '/'. POSIX also
+ * treats REGTYPE + trailing slash as a directory; both must be header-only. */
+static int tar_resolve_typeflag(int typeflag, const char *name) {
+    if (typeflag != 0 && typeflag != NEVERC_TAR_REG)
+        return typeflag;
+    return tar_name_has_slash_suffix(name) ? NEVERC_TAR_DIR : NEVERC_TAR_REG;
+}
+
 void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t len) {
     if (!r) return;
     memset(r, 0, sizeof(*r));
@@ -155,11 +182,6 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
         mtime > INT64_MAX)
         return -1;
 
-    size_t padded = 0;
-    if (tar_padded_size((size_t)size, &padded) != 0 ||
-        padded > r->len - r->pos - NEVERC_TAR_BLOCK_SIZE)
-        return -1;
-
     size_t name_length = tar_field_length(block, 100);
     size_t prefix_length = 0;
     /* POSIX ustar is "ustar\0"; GNU is "ustar " and offset 345 is not prefix. */
@@ -183,10 +205,20 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
     hdr->name[full_length] = '\0';
     if (!tar_path_is_safe(hdr->name))
         return -1;
+
+    int typeflag = tar_resolve_typeflag((int)block[156], hdr->name);
+    if (!tar_type_supported(typeflag))
+        return -1;
+    uint64_t payload = tar_type_header_only(typeflag) ? 0 : size;
+    size_t padded = 0;
+    if (tar_padded_size((size_t)payload, &padded) != 0 ||
+        padded > r->len - r->pos - NEVERC_TAR_BLOCK_SIZE)
+        return -1;
+
     hdr->mode = (uint32_t)mode;
-    hdr->size = (int64_t)size;
+    hdr->size = (int64_t)payload;
     hdr->mtime = (int64_t)mtime;
-    hdr->typeflag = block[156] ? block[156] : NEVERC_TAR_REG;
+    hdr->typeflag = typeflag;
     copy_tar_field(hdr->linkname, sizeof(hdr->linkname),
                    block + 157, 100);
     if ((hdr->typeflag == NEVERC_TAR_SYM ||
@@ -198,9 +230,9 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
     copy_tar_field(hdr->gname, sizeof(hdr->gname), block + 297, 32);
 
     r->pos += NEVERC_TAR_BLOCK_SIZE;
-    r->entry_size = (size_t)size;
+    r->entry_size = (size_t)payload;
     r->entry_read = 0;
-    r->entry_active = size > 0;
+    r->entry_active = payload > 0;
     return 1;
 }
 
@@ -314,7 +346,11 @@ int neverc_tar_writer_write_header(neverc_tar_writer_t *w,
         return -1;
     if (!tar_path_is_safe(hdr->name))
         return -1;
-    if ((hdr->typeflag == NEVERC_TAR_SYM || hdr->typeflag == NEVERC_TAR_LINK) &&
+    int typeflag = tar_resolve_typeflag(hdr->typeflag, hdr->name);
+    if (!tar_type_supported(typeflag) ||
+        (tar_type_header_only(typeflag) && hdr->size != 0))
+        return -1;
+    if ((typeflag == NEVERC_TAR_SYM || typeflag == NEVERC_TAR_LINK) &&
         (link_length == 0 || !tar_path_is_safe(hdr->linkname)))
         return -1;
 
@@ -328,8 +364,7 @@ int neverc_tar_writer_write_header(neverc_tar_writer_t *w,
         write_octal(block + 136, 12, (uint64_t)hdr->mtime) != 0)
         return -1;
 
-    block[156] = (uint8_t)(hdr->typeflag
-        ? hdr->typeflag : NEVERC_TAR_REG);
+    block[156] = (uint8_t)typeflag;
     memcpy(block + 157, hdr->linkname, link_length);
     memcpy(block + 257, "ustar", 5);
     block[263] = '0';

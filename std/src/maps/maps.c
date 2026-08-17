@@ -100,20 +100,20 @@ static uint64_t hash_string(const char *key) {
         b = (nci_read4(p + len - 4) << 32) | nci_read4(p + len - 4 - ((len >> 3) << 2));
     } else if (len <= 48) {
         size_t i = 0;
-        for (; i + 16 <= len; i += 16)
+        for (; len - i >= 16; i += 16)
             seed = nci_wymix(nci_read8(p + i) ^ NCI_WY_S1, nci_read8(p + i + 8) ^ seed);
         a = nci_read8(p + len - 16);
         b = nci_read8(p + len - 8);
     } else {
         uint64_t s1 = seed, s2 = seed;
         size_t i = 0;
-        for (; i + 48 <= len; i += 48) {
+        for (; len - i >= 48; i += 48) {
             seed = nci_wymix(nci_read8(p + i)      ^ NCI_WY_S0, nci_read8(p + i + 8)  ^ seed);
             s1   = nci_wymix(nci_read8(p + i + 16) ^ NCI_WY_S1, nci_read8(p + i + 24) ^ s1);
             s2   = nci_wymix(nci_read8(p + i + 32) ^ NCI_WY_S2, nci_read8(p + i + 40) ^ s2);
         }
         seed ^= s1 ^ s2;
-        for (; i + 16 <= len; i += 16)
+        for (; len - i >= 16; i += 16)
             seed = nci_wymix(nci_read8(p + i) ^ NCI_WY_S1, nci_read8(p + i + 8) ^ seed);
         a = nci_read8(p + len - 16);
         b = nci_read8(p + len - 8);
@@ -388,6 +388,7 @@ void neverc_maps_clear(neverc_map_t *m) {
 int neverc_maps_set(neverc_map_t *m, const char *key, void *value) {
     if (!m || !key) return -1;
     size_t klen = strlen(key);
+    if (klen == SIZE_MAX) return -1;
     uint64_t h = hash_string(key);
     uint8_t h2 = (uint8_t)(h & 0x7F);
 
@@ -442,8 +443,14 @@ int neverc_maps_set(neverc_map_t *m, const char *key, void *value) {
         was_empty = 1;
     } else {
         target = first_eod;
-        was_empty = (m->ctrl[target] == NCI_EMPTY);
+        was_empty = 0;
     }
+    if (target == (size_t)-1) {
+        free(dup);
+        return -1;
+    }
+    if (!was_empty)
+        was_empty = (m->ctrl[target] == NCI_EMPTY);
 
     nci_set_ctrl(m->ctrl, m->cap, target, h2);
     m->slots[target].key = dup;

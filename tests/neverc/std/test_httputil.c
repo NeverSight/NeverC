@@ -379,9 +379,34 @@ static void test_dump_apis(void) {
                        "POST /api/users?page=1 HTTP/1.1");
         check_contains("request dump host", dump,
                        "Host: example.test");
+        check_contains("request dump content length", dump,
+                       "Content-Length: 7\r\n");
         check_contains("request dump body", dump, "payload");
+        CHECK("request dump has one Content-Length",
+              count_occurrences(dump, "Content-Length:") == 1);
         free(dump);
     }
+
+    static const char raw_host_headers[] =
+        "Host\0only.example\0Accept\0*/*\0";
+    request.host = NULL;
+    request.raw_headers = raw_host_headers;
+    request.nheaders = 2;
+    request.body = NULL;
+    request.body_len = 0;
+    dump = neverc_httputil_dump_request(&request, 0);
+    CHECK("raw-header Host dump allocated", dump != NULL);
+    if (dump) {
+        check_contains("Host taken from raw headers", dump,
+                       "Host: only.example");
+        check_contains("ordinary raw header kept", dump, "Accept: */*");
+        free(dump);
+    }
+    request.host = "example.test";
+    request.raw_headers = NULL;
+    request.nheaders = 0;
+    request.body = "payload";
+    request.body_len = 7U;
 
     char *long_path = (char *)malloc(9002U);
     CHECK("long dump path allocated", long_path != NULL);
@@ -414,6 +439,12 @@ static void test_dump_apis(void) {
     CHECK("outbound dump rejects missing body",
           neverc_httputil_dump_request_out(
               "POST", "/", NULL, NULL, 1U) == NULL);
+    request.path = "/";
+    request.nheaders = 1;
+    request.raw_headers = NULL;
+    CHECK("request dump rejects headers without storage",
+          neverc_httputil_dump_request(&request, 0) == NULL);
+    request.nheaders = 0;
 
     neverc_http_response_writer_t *writer =
         neverc_http_memory_writer_new();

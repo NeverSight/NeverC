@@ -139,10 +139,16 @@ static void test_auth_failure(void) {
     neverc_chacha20poly1305_seal(ct, key, nonce, pt, 11, (void *)0, 0);
 
     /* Tamper with ciphertext */
+    memset(dec, 0xAA, sizeof(dec));
     ct[5] ^= 0xFF;
     int ret = neverc_chacha20poly1305_open(
         dec, key, nonce, ct, 11 + 16, (void *)0, 0);
     check_int("tampered ct rejected", ret, -1);
+    {
+        uint8_t aa[11];
+        memset(aa, 0xAA, sizeof(aa));
+        check_bytes("auth failure leaves plaintext unmodified", dec, aa, 11);
+    }
 
     /* Restore ct, tamper with tag */
     ct[5] ^= 0xFF;
@@ -168,6 +174,25 @@ static void test_auth_failure(void) {
         dec, key, nonce, ct, 11 + 16, (void *)0, 0);
     check_int("correct open succeeds", ret, 11);
     check_bytes("correct plaintext", dec, pt, 11);
+}
+
+static void test_nonce_reuse_leaks_xor(void) {
+    printf("[nonce reuse]\n");
+    uint8_t key[32] = {1};
+    uint8_t nonce[12] = {2};
+    uint8_t pt1[32], pt2[32], ct1[32 + 16], ct2[32 + 16];
+    for (int i = 0; i < 32; i++) {
+        pt1[i] = (uint8_t)i;
+        pt2[i] = (uint8_t)(0x80 + i);
+    }
+    neverc_chacha20poly1305_seal(ct1, key, nonce, pt1, 32, NULL, 0);
+    neverc_chacha20poly1305_seal(ct2, key, nonce, pt2, 32, NULL, 0);
+    int xor_leaks = 1;
+    for (int i = 0; i < 32; i++) {
+        if ((uint8_t)(ct1[i] ^ ct2[i]) != (uint8_t)(pt1[i] ^ pt2[i]))
+            xor_leaks = 0;
+    }
+    check_int("reused nonce leaks plaintext XOR", xor_leaks, 1);
 }
 
 static void test_large_message_roundtrip(void) {
@@ -268,6 +293,7 @@ int main(void) {
     test_rfc8439();
     test_roundtrip();
     test_auth_failure();
+    test_nonce_reuse_leaks_xor();
     test_large_message_roundtrip();
     test_invalid_inputs_and_limits();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

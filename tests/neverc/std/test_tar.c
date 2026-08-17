@@ -43,6 +43,21 @@ static void test_finish_header(uint8_t *block) {
     block[155] = ' ';
 }
 
+static void test_fill_header(uint8_t *block, const char *name, int typeflag,
+                             uint64_t size, const char *linkname) {
+    memset(block, 0, NEVERC_TAR_BLOCK_SIZE);
+    memcpy(block, name, strlen(name));
+    test_write_octal(block + 100, 8, 0644);
+    test_write_octal(block + 124, 12, size);
+    block[156] = (uint8_t)typeflag;
+    if (linkname)
+        memcpy(block + 157, linkname, strlen(linkname));
+    memcpy(block + 257, "ustar", 5);
+    block[263] = '0';
+    block[264] = '0';
+    test_finish_header(block);
+}
+
 static void test_write_read_roundtrip(void) {
     printf("[write/read roundtrip]\n");
 
@@ -444,6 +459,9 @@ static void test_reject_unsafe_paths(void) {
     memcpy(unsafe.name, "file:stream", 12);
     check_int("writer rejects colon ads",
               neverc_tar_writer_write_header(&writer, &unsafe), -1);
+    memcpy(unsafe.name, "/etc/passwd", 12);
+    check_int("writer rejects absolute",
+              neverc_tar_writer_write_header(&writer, &unsafe), -1);
     neverc_tar_writer_free(&writer);
 
     memset(block, 0, sizeof(block));
@@ -474,6 +492,13 @@ static void test_reject_unsafe_paths(void) {
     neverc_tar_reader_init(&reader, block, sizeof(block));
     check_int("reject colon ads",
               neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(block, 0, sizeof(block));
+    memcpy(block, "/etc/passwd", 11);
+    test_finish_header(block);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject absolute path",
+              neverc_tar_reader_next(&reader, &header), -1);
 }
 
 static void test_gnu_magic_ignores_prefix(void) {
@@ -493,6 +518,212 @@ static void test_gnu_magic_ignores_prefix(void) {
     check_str("gnu name ignores atime field", header.name, "hello.txt");
 }
 
+static void test_header_only_does_not_swallow(const char *label, const char *name,
+                                              int typeflag, const char *linkname) {
+    uint8_t archive[NEVERC_TAR_BLOCK_SIZE * 4U];
+    memset(archive, 0, sizeof(archive));
+    test_fill_header(archive, name, typeflag, 512, linkname);
+    test_fill_header(archive + NEVERC_TAR_BLOCK_SIZE, "visible.txt",
+                     NEVERC_TAR_REG, 0, NULL);
+
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    neverc_tar_header_t header = {0};
+    int result = neverc_tar_reader_next(&reader, &header);
+    check_int(label, result, 1);
+    if (result != 1) return;
+    check_str("header-only name", header.name, name);
+    check_int("header-only size ignored", (int)header.size, 0);
+    check_int("header-only type", header.typeflag, typeflag);
+    result = neverc_tar_reader_next(&reader, &header);
+    check_int("following member still visible", result, 1);
+    if (result != 1) return;
+    check_str("visible name", header.name, "visible.txt");
+    check_int("header-only archive end",
+              neverc_tar_reader_next(&reader, &header), 0);
+}
+
+static void test_header_only_and_typeflags(void) {
+    printf("[header-only members and typeflags]\n");
+    test_header_only_does_not_swallow(
+        "symlink does not swallow next", "link", NEVERC_TAR_SYM, "target.txt");
+    test_header_only_does_not_swallow(
+        "hardlink does not swallow next", "alias", NEVERC_TAR_LINK, "target.txt");
+    test_header_only_does_not_swallow(
+        "directory does not swallow next", "dir", NEVERC_TAR_DIR, NULL);
+
+    uint8_t short_archive[NEVERC_TAR_BLOCK_SIZE * 3U];
+    memset(short_archive, 0, sizeof(short_archive));
+    test_fill_header(short_archive, "link", NEVERC_TAR_SYM, 11, "target.txt");
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, short_archive, sizeof(short_archive));
+    neverc_tar_header_t header = {0};
+    int result = neverc_tar_reader_next(&reader, &header);
+    check_int("gnu-style symlink size ignored", result, 1);
+    if (result == 1) {
+        check_int("gnu-style symlink payload", (int)header.size, 0);
+        check_int("gnu-style symlink end",
+                  neverc_tar_reader_next(&reader, &header), 0);
+    }
+
+    uint8_t block[NEVERC_TAR_BLOCK_SIZE];
+    test_fill_header(block, "PaxHeaders.0/a", 'x', 0, NULL);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject pax extended header",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    test_fill_header(block, "longname", 'L', 0, NULL);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject gnu long name",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    test_fill_header(block, "dev", '3', 0, NULL);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject device typeflag",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    test_fill_header(block, "longlink", 'K', 0, NULL);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject gnu long link",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    test_fill_header(block, "PaxHeaders.0/g", 'g', 0, NULL);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject pax global header",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    test_fill_header(block, "file.txt", 0, 0, NULL);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("typeflag NUL file",
+              neverc_tar_reader_next(&reader, &header), 1);
+    check_int("typeflag NUL becomes reg", header.typeflag, NEVERC_TAR_REG);
+
+    uint8_t slash_archive[NEVERC_TAR_BLOCK_SIZE * 4U];
+    memset(slash_archive, 0, sizeof(slash_archive));
+    test_fill_header(slash_archive, "legacy-dir/", 0, 512, NULL);
+    test_fill_header(slash_archive + NEVERC_TAR_BLOCK_SIZE, "visible.txt",
+                     NEVERC_TAR_REG, 0, NULL);
+    neverc_tar_reader_init(&reader, slash_archive, sizeof(slash_archive));
+    result = neverc_tar_reader_next(&reader, &header);
+    check_int("NUL slash directory", result, 1);
+    if (result == 1) {
+        check_int("NUL slash type", header.typeflag, NEVERC_TAR_DIR);
+        check_int("NUL slash size", (int)header.size, 0);
+        check_int("NUL slash next visible",
+                  neverc_tar_reader_next(&reader, &header), 1);
+        check_str("NUL slash visible", header.name, "visible.txt");
+    }
+
+    memset(slash_archive, 0, sizeof(slash_archive));
+    test_fill_header(slash_archive, "posix-dir/", NEVERC_TAR_REG, 512, NULL);
+    test_fill_header(slash_archive + NEVERC_TAR_BLOCK_SIZE, "visible.txt",
+                     NEVERC_TAR_REG, 0, NULL);
+    neverc_tar_reader_init(&reader, slash_archive, sizeof(slash_archive));
+    result = neverc_tar_reader_next(&reader, &header);
+    check_int("reg slash directory", result, 1);
+    if (result == 1) {
+        check_int("reg slash type", header.typeflag, NEVERC_TAR_DIR);
+        check_int("reg slash size", (int)header.size, 0);
+        check_int("reg slash next visible",
+                  neverc_tar_reader_next(&reader, &header), 1);
+        check_str("reg slash visible", header.name, "visible.txt");
+    }
+
+    uint8_t prefixed[NEVERC_TAR_BLOCK_SIZE * 4U];
+    memset(prefixed, 0, sizeof(prefixed));
+    test_fill_header(prefixed, "bar/", 0, 512, NULL);
+    memcpy(prefixed + 345, "prefix", 6);
+    test_finish_header(prefixed);
+    test_fill_header(prefixed + NEVERC_TAR_BLOCK_SIZE, "visible.txt",
+                     NEVERC_TAR_REG, 0, NULL);
+    neverc_tar_reader_init(&reader, prefixed, sizeof(prefixed));
+    memset(&header, 0, sizeof(header));
+    result = neverc_tar_reader_next(&reader, &header);
+    check_int("ustar prefix typeflag NUL", result, 1);
+    if (result == 1) {
+        check_str("ustar prefix dir name", header.name, "prefix/bar/");
+        check_int("ustar prefix dir type", header.typeflag, NEVERC_TAR_DIR);
+        check_int("ustar prefix dir size", (int)header.size, 0);
+        check_int("ustar prefix next visible",
+                  neverc_tar_reader_next(&reader, &header), 1);
+        check_str("ustar prefix visible name", header.name, "visible.txt");
+    }
+
+    neverc_tar_writer_t writer;
+    neverc_tar_writer_init(&writer);
+    memset(&header, 0, sizeof(header));
+    strcpy(header.name, "pax");
+    header.typeflag = 'x';
+    check_int("writer rejects pax typeflag",
+              neverc_tar_writer_write_header(&writer, &header), -1);
+    strcpy(header.name, "link");
+    strcpy(header.linkname, "target.txt");
+    header.typeflag = NEVERC_TAR_SYM;
+    header.size = 5;
+    check_int("writer rejects symlink payload",
+              neverc_tar_writer_write_header(&writer, &header), -1);
+    header.size = 0;
+    header.typeflag = NEVERC_TAR_LINK;
+    check_int("writer accepts hardlink",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+    check_int("writer hardlink close", neverc_tar_writer_close(&writer), 0);
+    neverc_tar_reader_init(&reader, writer.data, writer.len);
+    memset(&header, 0, sizeof(header));
+    check_int("hardlink roundtrip", neverc_tar_reader_next(&reader, &header), 1);
+    check_str("hardlink name", header.name, "link");
+    check_str("hardlink target", header.linkname, "target.txt");
+    check_int("hardlink type", header.typeflag, NEVERC_TAR_LINK);
+    neverc_tar_writer_free(&writer);
+
+    neverc_tar_writer_init(&writer);
+    memset(&header, 0, sizeof(header));
+    strcpy(header.name, "legacy-dir/");
+    header.mode = 0755;
+    check_int("writer promotes NUL typeflag dir",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+    check_int("writer NUL dir close", neverc_tar_writer_close(&writer), 0);
+    neverc_tar_reader_init(&reader, writer.data, writer.len);
+    memset(&header, 0, sizeof(header));
+    check_int("writer NUL dir read",
+              neverc_tar_reader_next(&reader, &header), 1);
+    check_str("writer NUL dir name", header.name, "legacy-dir/");
+    check_int("writer NUL dir type", header.typeflag, NEVERC_TAR_DIR);
+    neverc_tar_writer_free(&writer);
+
+    neverc_tar_writer_init(&writer);
+    memset(&header, 0, sizeof(header));
+    strcpy(header.name, "file.txt");
+    header.mode = 0644;
+    check_int("writer promotes NUL typeflag file",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+    check_int("writer NUL file close", neverc_tar_writer_close(&writer), 0);
+    neverc_tar_reader_init(&reader, writer.data, writer.len);
+    memset(&header, 0, sizeof(header));
+    check_int("writer NUL file read",
+              neverc_tar_reader_next(&reader, &header), 1);
+    check_str("writer NUL file name", header.name, "file.txt");
+    check_int("writer NUL file type", header.typeflag, NEVERC_TAR_REG);
+    neverc_tar_writer_free(&writer);
+
+    neverc_tar_writer_init(&writer);
+    memset(&header, 0, sizeof(header));
+    strcpy(header.name, "file/");
+    header.typeflag = NEVERC_TAR_REG;
+    header.size = 5;
+    check_int("writer rejects reg slash payload",
+              neverc_tar_writer_write_header(&writer, &header), -1);
+    header.size = 0;
+    check_int("writer promotes reg slash to dir",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+    check_int("writer reg slash close", neverc_tar_writer_close(&writer), 0);
+    neverc_tar_reader_init(&reader, writer.data, writer.len);
+    memset(&header, 0, sizeof(header));
+    check_int("writer reg slash read",
+              neverc_tar_reader_next(&reader, &header), 1);
+    check_int("writer reg slash type", header.typeflag, NEVERC_TAR_DIR);
+    neverc_tar_writer_free(&writer);
+}
+
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
@@ -504,6 +735,7 @@ int main(void) {
     test_malformed_headers();
     test_reject_unsafe_paths();
     test_gnu_magic_ignores_prefix();
+    test_header_only_and_typeflags();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

@@ -7,20 +7,28 @@
  */
 
 #include "neverc/std/hash/maphash.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 
 /* ---- wyhash core ---- */
 
+/* Little-endian loads so hashes match across host endianness. */
 static uint64_t wy_read8(const uint8_t *p) {
-    uint64_t v;
-    memcpy(&v, p, 8);
-    return v;
+    return (uint64_t)p[0]
+         | ((uint64_t)p[1] << 8)
+         | ((uint64_t)p[2] << 16)
+         | ((uint64_t)p[3] << 24)
+         | ((uint64_t)p[4] << 32)
+         | ((uint64_t)p[5] << 40)
+         | ((uint64_t)p[6] << 48)
+         | ((uint64_t)p[7] << 56);
 }
 
 static uint64_t wy_read4(const uint8_t *p) {
-    uint32_t v;
-    memcpy(&v, p, 4);
-    return v;
+    return (uint64_t)p[0]
+         | ((uint64_t)p[1] << 8)
+         | ((uint64_t)p[2] << 16)
+         | ((uint64_t)p[3] << 24);
 }
 
 static uint64_t wy_mum(uint64_t a, uint64_t b) {
@@ -108,9 +116,12 @@ static uint64_t splitmix64(uint64_t *state) {
 uint64_t neverc_maphash_make_seed(void) {
     uint64_t state = __atomic_load_n(&g_rng_state, __ATOMIC_RELAXED);
     if (state == 0) {
-        uint64_t v = (uint64_t)(uintptr_t)&g_rng_state;
-        v ^= 0xdeadbeefcafebabeull;
-        if (v == 0) v = 1;
+        uint64_t v = 0;
+        if (neverc_platform_random((unsigned char *)&v, sizeof(v)) != 0 || v == 0) {
+            v = (uint64_t)(uintptr_t)&g_rng_state;
+            v ^= 0xdeadbeefcafebabeull;
+            if (v == 0) v = 1;
+        }
         uint64_t expected = 0;
         if (!__atomic_compare_exchange_n(&g_rng_state, &expected, v, 0,
                                          __ATOMIC_RELAXED, __ATOMIC_RELAXED))
@@ -134,15 +145,19 @@ uint64_t neverc_maphash_make_seed(void) {
 /* ---- streaming API ---- */
 
 void neverc_maphash_init(neverc_maphash_t *h, uint64_t seed) {
+    if (!h) return;
     h->seed = seed ? seed : neverc_maphash_make_seed();
     h->state = h->seed;
     h->n = 0;
+    h->used = 0;
 }
 
 void neverc_maphash_reset(neverc_maphash_t *h) {
+    if (!h) return;
     if (h->seed == 0) h->seed = neverc_maphash_make_seed();
     h->state = h->seed;
     h->n = 0;
+    h->used = 0;
 }
 
 static void maphash_flush(neverc_maphash_t *h) {
@@ -151,13 +166,17 @@ static void maphash_flush(neverc_maphash_t *h) {
 }
 
 void neverc_maphash_write_byte(neverc_maphash_t *h, uint8_t b) {
+    if (!h) return;
     if (h->n == NEVERC_MAPHASH_BUF_SIZE) maphash_flush(h);
     h->buf[h->n++] = b;
+    h->used = 1;
 }
 
 void neverc_maphash_write(neverc_maphash_t *h, const void *data, size_t len) {
+    if (!h || len == 0) return;
+    if (!data) return;
     const uint8_t *p = (const uint8_t *)data;
-    if (len == 0) return;
+    h->used = 1;
 
     if (h->n > 0) {
         size_t space = (size_t)(NEVERC_MAPHASH_BUF_SIZE - h->n);
@@ -180,10 +199,16 @@ void neverc_maphash_write(neverc_maphash_t *h, const void *data, size_t len) {
 }
 
 void neverc_maphash_write_string(neverc_maphash_t *h, const char *s) {
+    if (!s) return;
     neverc_maphash_write(h, s, strlen(s));
 }
 
 uint64_t neverc_maphash_sum64(const neverc_maphash_t *h) {
+    if (!h) return 0;
+    /* Empty input still mixes the seed so the digest does not leak it.
+     * After a full-buffer flush, n==0 but used==1: state already holds the mix. */
+    if (!h->used)
+        return wyhash(NULL, 0, h->seed);
     if (h->n == 0) return h->state;
     return wyhash(h->buf, (size_t)h->n, h->state);
 }
@@ -191,6 +216,7 @@ uint64_t neverc_maphash_sum64(const neverc_maphash_t *h) {
 /* ---- one-shot convenience ---- */
 
 uint64_t neverc_maphash_bytes(uint64_t seed, const void *data, size_t len) {
+    if (!data) len = 0;
     const uint8_t *p = (const uint8_t *)data;
     uint64_t state = seed;
     while (len > NEVERC_MAPHASH_BUF_SIZE) {
@@ -198,10 +224,9 @@ uint64_t neverc_maphash_bytes(uint64_t seed, const void *data, size_t len) {
         p += NEVERC_MAPHASH_BUF_SIZE;
         len -= NEVERC_MAPHASH_BUF_SIZE;
     }
-    if (len == 0) return state;
     return wyhash(p, len, state);
 }
 
 uint64_t neverc_maphash_string(uint64_t seed, const char *s) {
-    return neverc_maphash_bytes(seed, s, strlen(s));
+    return neverc_maphash_bytes(seed, s, s ? strlen(s) : 0);
 }

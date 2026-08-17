@@ -136,6 +136,12 @@ static void test_now(void) {
     neverc_time_t t = neverc_time_now();
     check_bool("now not zero", !neverc_time_is_zero(t), 1);
     check_bool("year >= 2024", neverc_time_year(t) >= 2024, 1);
+
+    neverc_time_t past = neverc_time_unix(1, 0);
+    check_bool("since past > 0", neverc_time_since(past) > 0, 1);
+    neverc_time_t future = neverc_time_add(neverc_time_now(), NEVERC_TIME_HOUR);
+    check_bool("until future > 0", neverc_time_until(future) > 0, 1);
+    check_bool("since future < 0", neverc_time_since(future) < 0, 1);
 }
 
 static void test_roundtrip(void) {
@@ -251,6 +257,10 @@ static void test_format_unix_date(void) {
     s = neverc_time_format_unix_date(t);
     check_str("unix date two-digit day", s, "Mon Jan 15 12:30:45 UTC 2024");
     free(s);
+
+    s = neverc_time_format_unix_date(neverc_time_date(10000, 1, 1, 0, 0, 0, 0));
+    check_bool("unix date rejects year 10000", s == NULL, 1);
+    free(s);
 }
 
 static void test_format_layout(void) {
@@ -315,6 +325,20 @@ static void test_format_layout(void) {
     s = neverc_time_format(t, "2006-01-02T15:04:05Z07:00");
     check_bool("format rfc3339 layout",
                strcmp(s, "2024-03-15T14:30:45Z") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(t, "2006-01-02T15:04:05Z07:00:00");
+    check_bool("format Z07:00:00 is Z not Z:00",
+               strcmp(s, "2024-03-15T14:30:45Z") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(t, "2006-01-02T15:04:05Z07");
+    check_bool("format Z07", strcmp(s, "2024-03-15T14:30:45Z") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(neverc_time_date(2024, 1, 5, 0, 0, 0, 123000000),
+                           "15:04:05,000");
+    check_bool("format comma frac", strcmp(s, "00:00:00,123") == 0, 1);
     free(s);
 
     s = neverc_time_format(neverc_time_date(2024, 6, 15, 12, 0, 0, 0),
@@ -398,6 +422,24 @@ static void test_parse_layout(void) {
 
     check_int("parse missing exact frac",
               neverc_time_parse("15:04:05.000", "12:30:45", &t), -1);
+
+    ok = neverc_time_parse("15:04:05", "23:59:60", &t);
+    check_int("parse leap second", ok, 0);
+    check_int("parse leap second clamped", neverc_time_second(t), 59);
+
+    ok = neverc_time_parse("2006-01-02T15:04:05Z07:00:00",
+                           "2024-06-15T12:00:00Z", &t);
+    check_int("parse Z07:00:00 with Z", ok, 0);
+    check_int("parse Z07:00:00 Z hour", neverc_time_hour(t), 12);
+
+    ok = neverc_time_parse("2006-01-02T15:04:05Z07:00:00",
+                           "2024-06-15T12:00:00+08:00:00", &t);
+    check_int("parse offset with seconds", ok, 0);
+    check_int("parse offset-seconds hour utc", neverc_time_hour(t), 4);
+
+    ok = neverc_time_parse("15:04:05,000", "12:30:45,123", &t);
+    check_int("parse comma frac", ok, 0);
+    check_int("parse comma frac nsec", neverc_time_nanosecond(t), 123000000);
 }
 
 static void test_truncate_round(void) {
@@ -485,13 +527,13 @@ static void test_strict_rfc3339(void) {
         "2024-01-15T12:30:45",
         "2024-01-15T12:30:45Zjunk",
         "2024-01-15T12:30:45.Z",
-        "2024-01-15T12:30:60Z",
         "2024-01-15T12:30:45+24:00",
         "2024-01-15T12:30:45+23:59",
         "2024-01-15T12:30:45+14:01",
         "2024-01-15T12:30:45+08:60",
         "2024-01-15 12:30:45Z",
-        "2024-01-15t12:30:45z"
+        "2024-01-15t12:30:45z",
+        "2024-01-15T12:30:61Z"
     };
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         neverc_time_t out = {123, 456};
@@ -508,6 +550,9 @@ static void test_strict_rfc3339(void) {
               neverc_time_parse_rfc3339("2024-01-15T12:00:00-14:00", &out), 0);
     check_int("accept compact +0800",
               neverc_time_parse_rfc3339("2024-01-15T12:30:45+0800", &out), 0);
+    check_int("accept leap second 60",
+              neverc_time_parse_rfc3339("2024-01-15T12:30:60Z", &out), 0);
+    check_int("leap second clamped", neverc_time_second(out), 59);
     check_int("reject -14:01",
               neverc_time_parse_rfc3339("2024-01-15T12:00:00-14:01", &out), -1);
     check_int("null rfc3339 input", neverc_time_parse_rfc3339(NULL, &out), -1);
@@ -675,5 +720,6 @@ int main(void) {
     test_strict_layout_and_date_normalization();
     test_randomized_arithmetic();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

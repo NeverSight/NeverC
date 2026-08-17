@@ -10,6 +10,9 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <signal.h>
+#include <fcntl.h>
+#else
+#include <windows.h>
 #endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -382,8 +385,8 @@ static void test_set_dir(void) {
 
 static void test_argv_quoting(const char *executable) {
     printf("[argv_quoting]\n");
-    const char *args[] = {"--print-argv", "foo\"bar", "a b"};
-    neverc_exec_cmd_t *cmd = neverc_exec_command(executable, args, 3);
+    const char *args[] = {"--print-argv", "foo\"bar", "a b", "$(whoami)", ";id", "a|b"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command(executable, args, 6);
     ASSERT_TRUE(cmd != NULL);
     if (!cmd) return;
 
@@ -393,18 +396,183 @@ static void test_argv_quoting(const char *executable) {
     ASSERT_INT_EQ(st.exit_code, 0);
     ASSERT_TRUE(memmem(out.data, out.len, "foo\"bar", 7) != NULL);
     ASSERT_TRUE(memmem(out.data, out.len, "a b", 3) != NULL);
+    ASSERT_TRUE(memmem(out.data, out.len, "$(whoami)", 9) != NULL);
+    ASSERT_TRUE(memmem(out.data, out.len, ";id", 3) != NULL);
+    ASSERT_TRUE(memmem(out.data, out.len, "a|b", 3) != NULL);
 
     neverc_exec_output_free(&out);
     neverc_exec_cmd_free(cmd);
 }
 
+static int run_pause_child(void) {
+#if defined(_WIN32)
+    Sleep(INFINITE);
+#else
+    pause();
+#endif
+    return 0;
+}
+
+#if !defined(_WIN32)
+static int run_check_extra_fd(int fd) {
+    int open_now = fcntl(fd, F_GETFD) >= 0;
+    return printf("%d\n", open_now) < 0 ? 1 : 0;
+}
+#endif
+
+static void test_missing_executable(void) {
+    printf("[missing_executable]\n");
+    neverc_exec_cmd_t *cmd =
+        neverc_exec_command("neverc_no_such_cmd_xyz_12345", NULL, 0);
+    ASSERT_TRUE(cmd != NULL);
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+    ASSERT_INT_EQ(neverc_exec_cmd_start(cmd), -1);
+    neverc_exec_cmd_free(cmd);
+}
+
+static void test_invalid_env_rejected(void) {
+    printf("[invalid_env]\n");
+#if defined(_WIN32)
+    const char *args[] = {"/C", "exit /B 0"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command("cmd.exe", args, 2);
+#else
+    neverc_exec_cmd_t *cmd = neverc_exec_command("true", NULL, 0);
+#endif
+    ASSERT_TRUE(cmd != NULL);
+    const char *bad[] = {"NOT_AN_ASSIGNMENT"};
+    neverc_exec_cmd_set_env(cmd, bad, 1);
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+    neverc_exec_cmd_free(cmd);
+}
+
+static void test_batch_args_rejected(void) {
+    printf("[batch_args_rejected]\n");
+    char script[1200];
+#if defined(_WIN32)
+    char tmp[MAX_PATH];
+    DWORD n = GetTempPathA((DWORD)sizeof(tmp), tmp);
+    ASSERT_TRUE(n > 0 && n < sizeof(tmp));
+    snprintf(script, sizeof(script), "%sneverc_probe_%lu.bat", tmp,
+             (unsigned long)GetCurrentProcessId());
+#else
+    char cwd[1024];
+    ASSERT_TRUE(getcwd(cwd, sizeof(cwd)) != NULL);
+    snprintf(script, sizeof(script), "%s/neverc_probe_%d.bat", cwd, (int)getpid());
+#endif
+    FILE *sf = fopen(script, "w");
+    ASSERT_TRUE(sf != NULL);
+    if (sf) {
+#if defined(_WIN32)
+        fputs("@echo off\r\nexit /B 0\r\n", sf);
+#else
+        fputs("#!/bin/sh\nexit 0\n", sf);
+#endif
+        fclose(sf);
+    }
+#if !defined(_WIN32)
+    chmod(script, 0755);
+#endif
+    const char *safe[] = {"ok"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command(script, safe, 1);
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+    neverc_exec_cmd_free(cmd);
+
+    const char *unsafe[] = {"&calc"};
+    cmd = neverc_exec_command(script, unsafe, 1);
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+    neverc_exec_cmd_free(cmd);
+#if defined(_WIN32)
+    DeleteFileA(script);
+#else
+    unlink(script);
+#endif
+}
+
+static void test_start_kill_wait(const char *executable) {
+    printf("[start_kill_wait]\n");
+    ASSERT_INT_EQ(neverc_exec_cmd_kill(NULL, 15), -1);
+    ASSERT_INT_EQ(neverc_exec_cmd_wait(NULL, NULL), -1);
+    ASSERT_INT_EQ(neverc_exec_cmd_pid(NULL), -1);
+
+#if defined(_WIN32)
+    const char *true_args[] = {"/C", "exit /B 0"};
+    neverc_exec_cmd_t *idle = neverc_exec_command("cmd.exe", true_args, 2);
+#else
+    neverc_exec_cmd_t *idle = neverc_exec_command("true", NULL, 0);
+#endif
+    ASSERT_TRUE(idle != NULL);
+    ASSERT_INT_EQ(neverc_exec_cmd_kill(idle, 15), -1);
+    ASSERT_INT_EQ(neverc_exec_cmd_wait(idle, NULL), -1);
+    ASSERT_INT_EQ(neverc_exec_cmd_pid(idle), -1);
+    neverc_exec_cmd_free(idle);
+
+#if !defined(_WIN32)
+    void (*old_term)(int) = signal(SIGTERM, SIG_IGN);
+#endif
+    const char *args[] = {"--pause"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command(executable, args, 1);
+    ASSERT_TRUE(cmd != NULL);
+    ASSERT_INT_EQ(neverc_exec_cmd_start(cmd), 0);
+    ASSERT_TRUE(neverc_exec_cmd_pid(cmd) > 0);
+    ASSERT_INT_EQ(neverc_exec_cmd_start(cmd), -1);
+#if defined(_WIN32)
+    ASSERT_INT_EQ(neverc_exec_cmd_kill(cmd, 15), 0);
+#else
+    ASSERT_INT_EQ(neverc_exec_cmd_kill(cmd, SIGTERM), 0);
+#endif
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_wait(cmd, &st), 0);
+#if defined(_WIN32)
+    ASSERT_TRUE(st.exit_code != 0 || st.signaled);
+#else
+    ASSERT_INT_EQ(st.signaled, 1);
+    ASSERT_INT_EQ(st.signal_num, SIGTERM);
+#endif
+    ASSERT_INT_EQ(neverc_exec_cmd_pid(cmd), -1);
+    neverc_exec_cmd_free(cmd);
+#if !defined(_WIN32)
+    signal(SIGTERM, old_term);
+#endif
+}
+
+#if !defined(_WIN32)
+static void test_child_cloexec(const char *executable) {
+    printf("[child_cloexec]\n");
+    int fds[2];
+    ASSERT_INT_EQ(pipe(fds), 0);
+    char fdstr[16];
+    snprintf(fdstr, sizeof(fdstr), "%d", fds[0]);
+    const char *args[] = {"--check-extra-fd", fdstr};
+    neverc_exec_cmd_t *cmd = neverc_exec_command(executable, args, 2);
+    ASSERT_TRUE(cmd != NULL);
+    neverc_exec_output_t out = {0};
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_output(cmd, &out, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+    ASSERT_TRUE(out.len >= 1 && out.data[0] == '0');
+    neverc_exec_output_free(&out);
+    neverc_exec_cmd_free(cmd);
+    close(fds[0]);
+    close(fds[1]);
+}
+#endif
+
 int main(int argc, char **argv) {
     if (argc == 2 &&
         strcmp(argv[1], "--bidirectional-child") == 0)
         return run_bidirectional_child();
+    if (argc == 2 && strcmp(argv[1], "--pause") == 0)
+        return run_pause_child();
 #if !defined(_WIN32)
     if (argc == 2 && strcmp(argv[1], "--print-blocked-usr1") == 0)
         return run_print_blocked_usr1();
+    if (argc == 3 && strcmp(argv[1], "--check-extra-fd") == 0)
+        return run_check_extra_fd(atoi(argv[2]));
 #endif
     if (argc >= 2 && strcmp(argv[1], "--print-argv") == 0) {
         int i;
@@ -429,7 +597,12 @@ int main(int argc, char **argv) {
     test_argv_quoting(argv[0]);
     test_look_path();
     test_combined_output();
+    test_missing_executable();
+    test_invalid_env_rejected();
+    test_batch_args_rejected();
+    test_start_kill_wait(argv[0]);
 #if !defined(_WIN32)
+    test_child_cloexec(argv[0]);
     test_unread_stdin_is_not_failure();
     test_signaled_status();
     test_exec_resets_signal_mask(argv[0]);
@@ -439,5 +612,6 @@ int main(int argc, char **argv) {
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

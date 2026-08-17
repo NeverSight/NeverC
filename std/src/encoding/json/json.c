@@ -663,33 +663,42 @@ neverc_json_value_t *neverc_json_parse(const char *text, size_t len) {
     return v;
 }
 
-static void json_free_owned(neverc_json_value_t *v) {
-    if (!v) return;
-    switch (v->type) {
-        case NEVERC_JSON_STRING:
-            free(v->u.str_val);
-            break;
-        case NEVERC_JSON_ARRAY:
-            for (int i = 0; i < v->u.arr.len; i++) {
-                if (v->u.arr.items[i])
-                    v->u.arr.items[i]->parent = NULL;
-                json_free_owned(v->u.arr.items[i]);
+/* Iterative free: constructors can build trees deeper than NCI_JSON_MAX_DEPTH,
+ * and a recursive walk would overflow the C stack on release. */
+static void json_free_owned(neverc_json_value_t *root) {
+    neverc_json_value_t *cur = root;
+    while (cur) {
+        if (cur->type == NEVERC_JSON_ARRAY && cur->u.arr.len > 0) {
+            neverc_json_value_t *child = cur->u.arr.items[--cur->u.arr.len];
+            if (child) {
+                child->parent = cur;
+                cur = child;
             }
-            free(v->u.arr.items);
-            break;
-        case NEVERC_JSON_OBJECT:
-            for (int i = 0; i < v->u.obj.len; i++) {
-                free(v->u.obj.pairs[i].key);
-                if (v->u.obj.pairs[i].value)
-                    v->u.obj.pairs[i].value->parent = NULL;
-                json_free_owned(v->u.obj.pairs[i].value);
+            continue;
+        }
+        if (cur->type == NEVERC_JSON_OBJECT && cur->u.obj.len > 0) {
+            neverc_json_pair_t *pair = &cur->u.obj.pairs[--cur->u.obj.len];
+            free(pair->key);
+            pair->key = NULL;
+            neverc_json_value_t *child = pair->value;
+            pair->value = NULL;
+            if (child) {
+                child->parent = cur;
+                cur = child;
             }
-            free(v->u.obj.pairs);
-            break;
-        default:
-            break;
+            continue;
+        }
+
+        neverc_json_value_t *parent = (cur == root) ? NULL : cur->parent;
+        if (cur->type == NEVERC_JSON_STRING)
+            free(cur->u.str_val);
+        else if (cur->type == NEVERC_JSON_ARRAY)
+            free(cur->u.arr.items);
+        else if (cur->type == NEVERC_JSON_OBJECT)
+            free(cur->u.obj.pairs);
+        free(cur);
+        cur = parent;
     }
-    free(v);
 }
 
 void neverc_json_free(neverc_json_value_t *v) {
@@ -725,12 +734,19 @@ static int mw_indent(marshal_t *m) {
     return 0;
 }
 
-/* A byte needs escaping iff it is '"', '\\', or a control char (< 0x20). All
- * other bytes — including UTF-8 lead/continuation bytes (>= 0x80) — are copied
- * verbatim. Used to bulk-copy the escape-free runs that dominate real strings,
- * instead of the old bounds-checked store per byte. */
+/* A byte needs escaping iff it is '"', '\\', a control char, or HTML/JS
+ * metacharacters. Go encoding/json.Marshal HTML-escapes <, >, & so inlined
+ * JSON cannot close a <script> tag or inject markup; U+2028/U+2029 are
+ * JavaScript line terminators and are escaped the same way. */
 static int json_needs_escape(unsigned char c) {
-    return c < 0x20 || c == '"' || c == '\\';
+    return c < 0x20 || c == '"' || c == '\\' ||
+           c == '<' || c == '>' || c == '&';
+}
+
+static int json_line_separator(const char *p, const char *end) {
+    return (unsigned char)p[0] == 0xE2 && p + 2 < end &&
+           (unsigned char)p[1] == 0x80 &&
+           ((unsigned char)p[2] == 0xA8 || (unsigned char)p[2] == 0xA9);
 }
 
 static int marshal_string(marshal_t *m, const char *s, size_t len) {
@@ -740,13 +756,25 @@ static int marshal_string(marshal_t *m, const char *s, size_t len) {
     const char *end = s + len;
     while (p < end) {
         const char *run = p;
-        while (p < end && !json_needs_escape((unsigned char)*p)) p++;
+        while (p < end && !json_needs_escape((unsigned char)*p) &&
+               !json_line_separator(p, end))
+            p++;
         if (p > run && mw(m, run, (size_t)(p - run)) < 0) return -1;
         if (p == end) break;
+        if (json_line_separator(p, end)) {
+            if (mw(m, (unsigned char)p[2] == 0xA8 ? "\\u2028" : "\\u2029",
+                   6) < 0)
+                return -1;
+            p += 3;
+            continue;
+        }
         unsigned char c = (unsigned char)*p++;
         switch (c) {
             case '"':  if (mw(m, "\\\"", 2) < 0) return -1; break;
             case '\\': if (mw(m, "\\\\", 2) < 0) return -1; break;
+            case '<':  if (mw(m, "\\u003c", 6) < 0) return -1; break;
+            case '>':  if (mw(m, "\\u003e", 6) < 0) return -1; break;
+            case '&':  if (mw(m, "\\u0026", 6) < 0) return -1; break;
             case '\b': if (mw(m, "\\b", 2) < 0) return -1; break;
             case '\f': if (mw(m, "\\f", 2) < 0) return -1; break;
             case '\n': if (mw(m, "\\n", 2) < 0) return -1; break;

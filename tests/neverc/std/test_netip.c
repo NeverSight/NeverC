@@ -83,6 +83,29 @@ static void test_parse_ipv6(void) {
     ASSERT_EQ(neverc_netip_parse_addr("::ffff:192.168.1.1%eth0", &addr), 0);
     neverc_netip_addr_string(&addr, buf, sizeof(buf));
     ASSERT_STREQ(buf, "::ffff:192.168.1.1%eth0");
+    ASSERT_TRUE(neverc_netip_addr_is4in6(&addr));
+    ASSERT_TRUE(!neverc_netip_addr_is4(&addr));
+    ASSERT_EQ(neverc_netip_addr_string(&addr, NULL, 0),
+              (int)strlen("::ffff:192.168.1.1%eth0"));
+
+    neverc_netip_addr_t unmapped;
+    ASSERT_EQ(neverc_netip_addr_unmap(&addr, &unmapped), 0);
+    ASSERT_TRUE(neverc_netip_addr_is4(&unmapped));
+    ASSERT_TRUE(!neverc_netip_addr_is4in6(&unmapped));
+    ASSERT_STREQ(unmapped.zone, "");
+    neverc_netip_addr_string(&unmapped, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "192.168.1.1");
+    uint8_t v4[4];
+    ASSERT_EQ(neverc_netip_addr_as4(&unmapped, v4), 4);
+    ASSERT_EQ(v4[0], 192); ASSERT_EQ(v4[1], 168);
+    ASSERT_EQ(v4[2], 1); ASSERT_EQ(v4[3], 1);
+    ASSERT_EQ(neverc_netip_addr_as4(&addr, v4), -1);
+
+    neverc_netip_parse_addr("::1", &addr);
+    ASSERT_TRUE(!neverc_netip_addr_is4in6(&addr));
+    ASSERT_EQ(neverc_netip_addr_unmap(&addr, &unmapped), 0);
+    ASSERT_TRUE(neverc_netip_addr_is6(&unmapped));
+    ASSERT_TRUE(!neverc_netip_addr_is4in6(&unmapped));
 
     ASSERT_EQ(neverc_netip_parse_addr("ff02::1", &addr), 0);
     neverc_netip_addr_string(&addr, buf, sizeof(buf));
@@ -202,6 +225,11 @@ static void test_prefix(void) {
     neverc_netip_parse_addr("192.168.1.100", &addr);
     ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
 
+    neverc_netip_addr_t masked;
+    ASSERT_EQ(neverc_netip_prefix_masked(&pfx, &masked), 0);
+    neverc_netip_addr_string(&masked, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "192.168.1.0");
+
     neverc_netip_parse_addr("192.168.2.1", &addr);
     ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
 
@@ -275,6 +303,14 @@ static void test_wellknown(void) {
     neverc_netip_addr_string(&addr, buf, sizeof(buf));
     ASSERT_STREQ(buf, "::1");
     ASSERT_TRUE(neverc_netip_addr_is_loopback(&addr));
+    ASSERT_TRUE(neverc_netip_addr_is6(&addr));
+    ASSERT_TRUE(neverc_netip_addr_is_valid(&addr));
+
+    neverc_netip_addr_ipv6_unspecified(&addr);
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "::");
+    ASSERT_TRUE(neverc_netip_addr_is6(&addr));
+    ASSERT_TRUE(neverc_netip_addr_is_unspecified(&addr));
 }
 
 static void test_as_bytes(void) {
@@ -288,6 +324,12 @@ static void test_as_bytes(void) {
     uint8_t v16[16];
     ASSERT_EQ(neverc_netip_addr_as16(&addr, v16), 16);
     ASSERT_EQ(v16[12], 10); ASSERT_EQ(v16[13], 20);
+
+    uint8_t raw16[16] = {0};
+    raw16[15] = 1;
+    ASSERT_EQ(neverc_netip_addr_from16(raw16, &addr), 0);
+    ASSERT_TRUE(neverc_netip_addr_is6(&addr));
+    ASSERT_TRUE(neverc_netip_addr_is_loopback(&addr));
 }
 
 int main(void) {

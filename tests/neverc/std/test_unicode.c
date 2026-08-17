@@ -333,6 +333,40 @@ static void test_unicode_conformance_edges(void) {
               neverc_unicode_is_print(0x2308) &&
               neverc_unicode_is_print(0x2768) &&
               neverc_unicode_is_print(0x2776), 1);
+
+    check_int("Cyrillic Yo is uppercase letter",
+              neverc_unicode_is_upper(0x0401) &&
+              neverc_unicode_is_letter(0x0401), 1);
+    check_int("Cyrillic yo is lowercase letter",
+              neverc_unicode_is_lower(0x0451) &&
+              neverc_unicode_is_letter(0x0451), 1);
+    check_u32("Cyrillic Yo lowercase",
+              neverc_unicode_to_lower(0x0401), 0x0451);
+    check_u32("Cyrillic yo uppercase",
+              neverc_unicode_to_upper(0x0451), 0x0401);
+    check_int("fullwidth A is uppercase letter",
+              neverc_unicode_is_upper(0xFF21) &&
+              neverc_unicode_is_letter(0xFF21), 1);
+    check_int("fullwidth a is lowercase letter",
+              neverc_unicode_is_lower(0xFF41) &&
+              neverc_unicode_is_letter(0xFF41), 1);
+    check_u32("fullwidth a uppercase",
+              neverc_unicode_to_upper(0xFF41), 0xFF21);
+    check_u32("fullwidth A lowercase",
+              neverc_unicode_to_lower(0xFF21), 0xFF41);
+    check_int("Hangul choseong KIYEOK is letter",
+              neverc_unicode_is_letter(0x1100), 1);
+    check_int("Hangul compatibility KIYEOK is letter",
+              neverc_unicode_is_letter(0x3131), 1);
+    check_u32("fold sharp s to capital sharp s",
+              neverc_unicode_simple_fold(0x00DF), 0x1E9E);
+    check_u32("fold capital sharp s to sharp s",
+              neverc_unicode_simple_fold(0x1E9E), 0x00DF);
+    check_u32("capital sharp s lowercase is sharp s",
+              neverc_unicode_to_lower(0x1E9E), 0x00DF);
+    check_int("capital sharp s is uppercase letter",
+              neverc_unicode_is_upper(0x1E9E) &&
+              neverc_unicode_is_letter(0x1E9E), 1);
 }
 
 int main(void) {

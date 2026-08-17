@@ -70,6 +70,13 @@ static void test_different_polys(void) {
     check_true("ISO != ECMA", c_iso != c_ecma);
     check_true("ISO != 0", c_iso != 0);
     check_true("ECMA != 0", c_ecma != 0);
+
+    check_u64("update(NULL,0)",
+              neverc_crc64_update(0, tab_ecma, NULL, 0), 0);
+    check_u64("update(NULL table)",
+              neverc_crc64_update(0xA5A5A5A5A5A5A5A5ULL, NULL,
+                                  (const uint8_t *)"x", 1),
+              0xA5A5A5A5A5A5A5A5ULL);
 }
 
 /* Regression: reusing one table buffer for a different polynomial must not

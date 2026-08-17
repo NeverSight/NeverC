@@ -349,6 +349,29 @@ const char *neverc_scanner_token_name(int tok) {
     case NEVERC_SCANNER_STRING:    return "String";
     case NEVERC_SCANNER_RAWSTRING: return "RawString";
     case NEVERC_SCANNER_COMMENT:   return "Comment";
-    default: return "?";
+    default: {
+        if (tok >= 33 && tok <= 126) {
+#define R(c) [c] = { (char)c, 0 }
+            static const char ascii[127][2] = {
+                R('!'), R('"'), R('#'), R('$'), R('%'), R('&'), R('\''),
+                R('('), R(')'), R('*'), R('+'), R(','), R('-'), R('.'),
+                R('/'), R('0'), R('1'), R('2'), R('3'), R('4'), R('5'),
+                R('6'), R('7'), R('8'), R('9'), R(':'), R(';'), R('<'),
+                R('='), R('>'), R('?'), R('@'), R('A'), R('B'), R('C'),
+                R('D'), R('E'), R('F'), R('G'), R('H'), R('I'), R('J'),
+                R('K'), R('L'), R('M'), R('N'), R('O'), R('P'), R('Q'),
+                R('R'), R('S'), R('T'), R('U'), R('V'), R('W'), R('X'),
+                R('Y'), R('Z'), R('['), R('\\'), R(']'), R('^'), R('_'),
+                R('`'), R('a'), R('b'), R('c'), R('d'), R('e'), R('f'),
+                R('g'), R('h'), R('i'), R('j'), R('k'), R('l'), R('m'),
+                R('n'), R('o'), R('p'), R('q'), R('r'), R('s'), R('t'),
+                R('u'), R('v'), R('w'), R('x'), R('y'), R('z'), R('{'),
+                R('|'), R('}'), R('~')
+            };
+#undef R
+            return ascii[tok];
+        }
+        return "?";
+    }
     }
 }

@@ -256,6 +256,40 @@ static void test_remove_foreign_list(void) {
     neverc_list_free(b);
 }
 
+static void test_push_list(void) {
+    printf("[push_list]\n");
+    neverc_list_t *a = neverc_list_new();
+    neverc_list_t *b = neverc_list_new();
+    neverc_list_push_back(a, INT_VAL(1));
+    neverc_list_push_back(a, INT_VAL(2));
+    neverc_list_push_back(b, INT_VAL(3));
+    neverc_list_push_back(b, INT_VAL(4));
+
+    ASSERT_INT_EQ(neverc_list_push_back_list(a, b), 2);
+    ASSERT_INT_EQ(neverc_list_len(a), 4);
+    ASSERT_INT_EQ(TO_INT(neverc_list_front(a)->value), 1);
+    ASSERT_INT_EQ(TO_INT(neverc_list_back(a)->value), 4);
+    ASSERT_INT_EQ(neverc_list_len(b), 2);
+
+    ASSERT_INT_EQ(neverc_list_push_front_list(a, b), 2);
+    ASSERT_INT_EQ(neverc_list_len(a), 6);
+    ASSERT_INT_EQ(TO_INT(neverc_list_front(a)->value), 3);
+
+    /* Self-append copies the snapshot length, like Go. */
+    ASSERT_INT_EQ(neverc_list_push_back_list(b, b), 2);
+    ASSERT_INT_EQ(neverc_list_len(b), 4);
+    ASSERT_INT_EQ(TO_INT(neverc_list_front(b)->value), 3);
+    ASSERT_INT_EQ(TO_INT(neverc_list_back(b)->value), 4);
+
+    ASSERT_INT_EQ(neverc_list_push_back_list(NULL, b), -1);
+    ASSERT_INT_EQ(neverc_list_push_front_list(a, NULL), -1);
+
+    neverc_list_free(a);
+    neverc_list_free(b);
+    free(a);
+    free(b);
+}
+
 int main(void) {
     printf("=== NeverC container/list Tests ===\n");
     test_basic();
@@ -268,6 +302,7 @@ int main(void) {
     test_remove_all();
     test_zero_value_and_invalid_input();
     test_remove_foreign_list();
+    test_push_list();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

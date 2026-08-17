@@ -15,15 +15,19 @@ extern "C" {
  * encode also returns SIZE_MAX for NULL non-empty input/output. On success,
  * encode writes exactly the returned payload bytes and does not append a NUL.
  * Decoders accept padded and unpadded canonical encodings and ignore CR/LF.
+ * raw_*_encode omit '=' padding (RawStd / RawHex).
  */
 
 size_t neverc_base32_encoded_len(size_t n);
+size_t neverc_base32_raw_encoded_len(size_t n);
 size_t neverc_base32_decoded_len(size_t n);
 
 size_t neverc_base32_encode(char *dst, const uint8_t *src, size_t src_len);
+size_t neverc_base32_raw_encode(char *dst, const uint8_t *src, size_t src_len);
 int    neverc_base32_decode(uint8_t *dst, const char *src, size_t src_len);
 
 size_t neverc_base32_hex_encode(char *dst, const uint8_t *src, size_t src_len);
+size_t neverc_base32_hex_raw_encode(char *dst, const uint8_t *src, size_t src_len);
 int    neverc_base32_hex_decode(uint8_t *dst, const char *src, size_t src_len);
 
 #ifdef __cplusplus

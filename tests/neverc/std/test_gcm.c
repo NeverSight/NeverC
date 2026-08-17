@@ -135,6 +135,11 @@ static void test_case_4(void) {
         "21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091",
         60);
     check_bytes("tag", tag, "5bc94fbc3221a5db94fae95ae7121a47", 16);
+
+    uint8_t dec[60];
+    int rc = neverc_gcm_open(&ctx, nonce, ct, 60, aad, 20, tag, dec);
+    check_true("open OK", rc == 0);
+    check_true("roundtrip", memcmp(dec, pt, 60) == 0);
 }
 
 /* AES-256-GCM: NIST Test Case 13 */
@@ -150,6 +155,72 @@ static void test_aes256_gcm(void) {
     uint8_t tag[16];
     neverc_gcm_seal(&ctx, nonce, NULL, 0, NULL, 0, NULL, tag);
     check_bytes("AES-256-GCM tag", tag, "530f8afbc74536b9a963b4f1c4cb738b", 16);
+
+    /* NIST SP 800-38D Test Case 14: 16-byte zero plaintext */
+    uint8_t pt[16], ct[16];
+    memset(pt, 0, 16);
+    neverc_gcm_seal(&ctx, nonce, pt, 16, NULL, 0, ct, tag);
+    check_bytes("AES-256-GCM ciphertext", ct,
+        "cea7403d4d606b6e074ec5d3baf39d18", 16);
+    check_bytes("AES-256-GCM 16B tag", tag,
+        "d0d1c8a799996bf0265b98b5d48ab919", 16);
+    uint8_t dec[16];
+    check_true("AES-256-GCM open",
+               neverc_gcm_open(&ctx, nonce, ct, 16, NULL, 0, tag, dec) == 0);
+    check_true("AES-256-GCM roundtrip", memcmp(dec, pt, 16) == 0);
+}
+
+/* NIST SP 800-38D Test Case 7/8: AES-192-GCM */
+static void test_aes192_gcm(void) {
+    printf("[AES-192-GCM]\n");
+    uint8_t key[24], nonce[12];
+    memset(key, 0, 24);
+    memset(nonce, 0, 12);
+
+    neverc_gcm_ctx ctx;
+    check_true("init-192", neverc_gcm_init(&ctx, key, 24) == 0);
+
+    uint8_t tag[16];
+    neverc_gcm_seal(&ctx, nonce, NULL, 0, NULL, 0, NULL, tag);
+    check_bytes("AES-192-GCM empty tag", tag, "cd33b28ac773f74ba00ed1f312572435", 16);
+
+    uint8_t pt[16], ct[16], dec[16];
+    memset(pt, 0, 16);
+    neverc_gcm_seal(&ctx, nonce, pt, 16, NULL, 0, ct, tag);
+    check_bytes("AES-192-GCM ciphertext", ct,
+        "98e7247c07f0fe411c267e4384b0f600", 16);
+    check_bytes("AES-192-GCM 16B tag", tag, "2ff58d80033927ab8ef4d4587514f0fb", 16);
+    check_true("AES-192-GCM open",
+               neverc_gcm_open(&ctx, nonce, ct, 16, NULL, 0, tag, dec) == 0);
+    check_true("AES-192-GCM roundtrip", memcmp(dec, pt, 16) == 0);
+}
+
+/* NIST SP 800-38D Test Case 16: AES-256-GCM with AAD */
+static void test_aes256_gcm_aad(void) {
+    printf("[AES-256-GCM AAD]\n");
+    uint8_t key[32], nonce[12], pt[60], aad[20];
+    hex_to_bytes("feffe9928665731c6d6a8f9467308308"
+                 "feffe9928665731c6d6a8f9467308308", key, 32);
+    hex_to_bytes("cafebabefacedbaddecaf888", nonce, 12);
+    hex_to_bytes(
+        "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a72"
+        "1c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39",
+        pt, 60);
+    hex_to_bytes("feedfacedeadbeeffeedfacedeadbeefabaddad2", aad, 20);
+
+    neverc_gcm_ctx ctx;
+    neverc_gcm_init(&ctx, key, 32);
+
+    uint8_t ct[60], tag[16], dec[60];
+    neverc_gcm_seal(&ctx, nonce, pt, 60, aad, 20, ct, tag);
+    check_bytes("ciphertext", ct,
+        "522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa"
+        "8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662",
+        60);
+    check_bytes("tag", tag, "76fc6ece0f4e1768cddf8853bb2d551b", 16);
+    check_true("open OK",
+               neverc_gcm_open(&ctx, nonce, ct, 60, aad, 20, tag, dec) == 0);
+    check_true("roundtrip", memcmp(dec, pt, 60) == 0);
 }
 
 /* Tamper detection */
@@ -170,9 +241,16 @@ static void test_tamper(void) {
     check_true("open valid", neverc_gcm_open(&ctx, nonce, ct, len, NULL, 0, tag, dec) == 0);
     check_true("decrypt match", memcmp(dec, msg, len) == 0);
 
-    /* Tamper ciphertext */
+    /* Tamper ciphertext — output buffer must stay untouched on auth failure */
+    memset(dec, 0xAA, sizeof(dec));
     ct[0] ^= 0xFF;
     check_true("tamper ct", neverc_gcm_open(&ctx, nonce, ct, len, NULL, 0, tag, dec) == -1);
+    {
+        uint8_t aa[16];
+        memset(aa, 0xAA, sizeof(aa));
+        check_true("auth failure leaves plaintext unmodified",
+                   memcmp(dec, aa, sizeof(aa)) == 0);
+    }
     ct[0] ^= 0xFF;
 
     /* Tamper tag */
@@ -208,6 +286,31 @@ static void test_roundtrip_sizes(void) {
         snprintf(name, sizeof(name), "roundtrip %d bytes", sz);
         check_true(name, rc == 0 && (sz == 0 || memcmp(dec, pt, (size_t)sz) == 0));
     }
+}
+
+static void test_nonce_reuse_leaks_xor(void) {
+    printf("[nonce reuse]\n");
+    uint8_t key[16] = {0x11};
+    uint8_t nonce[12] = {0x22};
+    uint8_t pt1[16], pt2[16], ct1[16], ct2[16], tag1[16], tag2[16];
+    for (int i = 0; i < 16; i++) {
+        pt1[i] = (uint8_t)i;
+        pt2[i] = (uint8_t)(0xA0 + i);
+    }
+
+    neverc_gcm_ctx ctx;
+    neverc_gcm_init(&ctx, key, 16);
+    neverc_gcm_seal(&ctx, nonce, pt1, 16, NULL, 0, ct1, tag1);
+    neverc_gcm_seal(&ctx, nonce, pt2, 16, NULL, 0, ct2, tag2);
+
+    int xor_leaks = 1;
+    for (int i = 0; i < 16; i++) {
+        if ((uint8_t)(ct1[i] ^ ct2[i]) != (uint8_t)(pt1[i] ^ pt2[i]))
+            xor_leaks = 0;
+    }
+    check_true("reused nonce leaks plaintext XOR", xor_leaks);
+    check_true("reused nonce produces distinct tags",
+               memcmp(tag1, tag2, 16) != 0);
 }
 
 static void test_invalid_inputs_and_limits(void) {
@@ -258,8 +361,11 @@ int main(void) {
     test_case_3();
     test_case_4();
     test_aes256_gcm();
+    test_aes192_gcm();
+    test_aes256_gcm_aad();
     test_tamper();
     test_roundtrip_sizes();
+    test_nonce_reuse_leaks_xor();
     test_invalid_inputs_and_limits();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

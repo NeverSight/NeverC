@@ -334,6 +334,158 @@ static void test_elf_malformed_tables(void) {
     free(data);
 }
 
+static void put16be(uint8_t *p, uint16_t v) {
+    p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v;
+}
+static void put32be(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v;
+}
+
+static void test_elf_extended_and_truncated(void) {
+    size_t len = 0;
+    uint8_t *data = build_minimal_elf64(&len);
+    CHECK("build extended ELF fixture", data != NULL);
+    if (!data) return;
+
+    neverc_elf_file_t f;
+    size_t shdr_off = (size_t)data[40] | ((size_t)data[41] << 8) |
+                      ((size_t)data[42] << 16) | ((size_t)data[43] << 24);
+
+    /* e_shnum == 0 with a real table: count lives in section 0 sh_size. */
+    data[60] = 0; data[61] = 0;
+    data[shdr_off + 32] = 3;
+    CHECK("extended e_shnum from section 0",
+          neverc_elf_open(&f, data, len) == 0);
+    CHECK("extended numbering keeps three sections",
+          f.section_count == 3 && neverc_elf_section(&f, ".text") != NULL);
+    neverc_elf_close(&f);
+    data[60] = 3;
+    data[shdr_off + 32] = 0;
+
+    data[62] = 0xFF; data[63] = 0xFF;
+    data[shdr_off + 40] = 2; /* sh_link holds the real shstrndx */
+    CHECK("SHN_XINDEX resolved from section 0",
+          neverc_elf_open(&f, data, len) == 0);
+    CHECK("SHN_XINDEX still names .text",
+          neverc_elf_section(&f, ".text") != NULL);
+    neverc_elf_close(&f);
+    data[62] = 2; data[63] = 0;
+    data[shdr_off + 40] = 0;
+
+    /* PN_XNUM with no section table cannot be resolved. */
+    data[56] = 0xFF; data[57] = 0xFF;
+    data[40] = 0; data[41] = 0; data[42] = 0; data[43] = 0;
+    data[60] = 0; data[61] = 0;
+    CHECK("PN_XNUM without section 0 rejected",
+          neverc_elf_open(&f, data, len) < 0);
+    data[56] = 0; data[57] = 0;
+    data[40] = (uint8_t)shdr_off;
+    data[41] = (uint8_t)(shdr_off >> 8);
+    data[42] = (uint8_t)(shdr_off >> 16);
+    data[43] = (uint8_t)(shdr_off >> 24);
+    data[60] = 3;
+
+    data[58] = 8; /* e_shentsize too small for Elf64_Shdr */
+    CHECK("reject undersized section header entries",
+          neverc_elf_open(&f, data, len) < 0);
+    data[58] = 64;
+
+    uint8_t *sh1 = data + shdr_off + 64;
+    uint8_t saved_size = sh1[32];
+    sh1[32] = 0xFF; sh1[33] = 0xFF;
+    CHECK("reject truncated non-NOBITS section",
+          neverc_elf_open(&f, data, len) < 0);
+    sh1[32] = saved_size; sh1[33] = 0;
+
+    free(data);
+}
+
+static uint8_t *build_minimal_elf32_be(size_t *out_len) {
+    const char shstrtab[] = "\0.text\0.shstrtab\0";
+    size_t shstrtab_len = sizeof(shstrtab) - 1;
+    size_t ehdr = 52, shdr = 40;
+    size_t shstrtab_off = ehdr;
+    size_t shdr_off = shstrtab_off + shstrtab_len;
+    size_t total = shdr_off + 3 * shdr;
+    uint8_t *buf = (uint8_t *)calloc(total, 1);
+    if (!buf) return NULL;
+
+    buf[0] = 0x7f; buf[1] = 'E'; buf[2] = 'L'; buf[3] = 'F';
+    buf[4] = NEVERC_ELFCLASS32;
+    buf[5] = NEVERC_ELFDATA2MSB;
+    buf[6] = 1;
+    put16be(buf + 16, NEVERC_ET_REL);
+    put16be(buf + 18, NEVERC_EM_PPC);
+    put32be(buf + 20, 1);
+    put32be(buf + 32, (uint32_t)shdr_off);
+    put16be(buf + 40, 52);
+    put16be(buf + 46, 40);
+    put16be(buf + 48, 3);
+    put16be(buf + 50, 2);
+    memcpy(buf + shstrtab_off, shstrtab, shstrtab_len);
+
+    uint8_t *sh1 = buf + shdr_off + shdr;
+    put32be(sh1 + 0, 1);
+    put32be(sh1 + 4, NEVERC_SHT_NOBITS);
+    put32be(sh1 + 20, 16);
+
+    uint8_t *sh2 = buf + shdr_off + 2 * shdr;
+    put32be(sh2 + 0, 7);
+    put32be(sh2 + 4, NEVERC_SHT_STRTAB);
+    put32be(sh2 + 16, (uint32_t)shstrtab_off);
+    put32be(sh2 + 20, (uint32_t)shstrtab_len);
+
+    *out_len = total;
+    return buf;
+}
+
+static void test_elf32_be_and_entsize(void) {
+    size_t len = 0;
+    uint8_t *data = build_minimal_elf32_be(&len);
+    CHECK("build ELF32 BE fixture", data != NULL);
+    if (!data) return;
+
+    neverc_elf_file_t f;
+    CHECK("open ELF32 big-endian", neverc_elf_open(&f, data, len) == 0);
+    CHECK("ELF32 BE class and encoding",
+          f.header.class_ == NEVERC_ELFCLASS32 &&
+              f.header.data == NEVERC_ELFDATA2MSB);
+    CHECK("ELF32 BE machine", f.header.machine == NEVERC_EM_PPC);
+    CHECK("ELF32 BE .text is NOBITS",
+          neverc_elf_section(&f, ".text") != NULL &&
+              neverc_elf_section(&f, ".text")->type == NEVERC_SHT_NOBITS);
+    neverc_elf_close(&f);
+    free(data);
+
+    uint8_t buf[49];
+    memset(buf, 0, sizeof(buf));
+    neverc_elf_section_t sections[2];
+    memset(sections, 0, sizeof(sections));
+    sections[0].type = NEVERC_SHT_SYMTAB;
+    sections[0].link = 1;
+    sections[0].size = 48;
+    sections[0].entsize = 0;
+    sections[1].type = NEVERC_SHT_STRTAB;
+    sections[1].offset = 48;
+    sections[1].size = 1;
+
+    memset(&f, 0, sizeof(f));
+    f.data = buf;
+    f.data_len = sizeof(buf);
+    f.header.class_ = NEVERC_ELFCLASS64;
+    f.header.data = NEVERC_ELFDATA2LSB;
+    f.sections = sections;
+    f.section_count = 2;
+
+    neverc_elf_symbol_t *symbols = (neverc_elf_symbol_t *)1;
+    int count = 99;
+    CHECK("zero entsize uses class symbol size",
+          neverc_elf_symbols(&f, &symbols, &count) == 0 &&
+              count == 1 && symbols != NULL);
+    free(symbols);
+}
+
 static void test_elf_self_binary(void) {
     /*
      * On macOS we're running a Mach-O binary, not ELF.
@@ -352,6 +504,8 @@ int main(void) {
     test_elf_invalid();
     test_elf_symbol_count_overflow();
     test_elf_malformed_tables();
+    test_elf_extended_and_truncated();
+    test_elf32_be_and_entsize();
     test_elf_self_binary();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);

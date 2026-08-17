@@ -129,9 +129,11 @@ static void test_aes256(void) {
 static void test_invalid_key(void) {
     printf("[AES invalid key]\n");
     neverc_aes_ctx_t ctx;
-    uint8_t key[15] = {0};
+    uint8_t key[16] = {0};
     check_true("reject 15-byte key", neverc_aes_init(&ctx, key, 15) == -1);
     check_true("reject 0-byte key",  neverc_aes_init(&ctx, key, 0) == -1);
+    check_true("reject null context", neverc_aes_init(NULL, key, 16) == -1);
+    check_true("reject null key", neverc_aes_init(&ctx, NULL, 16) == -1);
 }
 
 static void test_round_trip(void) {

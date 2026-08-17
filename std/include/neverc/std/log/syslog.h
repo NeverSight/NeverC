@@ -24,6 +24,13 @@ typedef enum {
     NEVERC_SYSLOG_MAIL     = 2 << 3,
     NEVERC_SYSLOG_DAEMON   = 3 << 3,
     NEVERC_SYSLOG_AUTH     = 4 << 3,
+    NEVERC_SYSLOG_SYSLOG   = 5 << 3,
+    NEVERC_SYSLOG_LPR      = 6 << 3,
+    NEVERC_SYSLOG_NEWS     = 7 << 3,
+    NEVERC_SYSLOG_UUCP     = 8 << 3,
+    NEVERC_SYSLOG_CRON     = 9 << 3,
+    NEVERC_SYSLOG_AUTHPRIV = 10 << 3,
+    NEVERC_SYSLOG_FTP      = 11 << 3,
     NEVERC_SYSLOG_LOCAL0   = 16 << 3,
     NEVERC_SYSLOG_LOCAL1   = 17 << 3,
     NEVERC_SYSLOG_LOCAL2   = 18 << 3,
@@ -44,6 +51,10 @@ neverc_syslog_t *neverc_syslog_open(const char *tag,
 
 /* Close syslog connection. */
 void neverc_syslog_close(neverc_syslog_t *log);
+
+/* RFC 5424 PRI = facility | severity. Returns -1 if severity is out of range. */
+int neverc_syslog_pri(neverc_syslog_facility_t facility,
+                      neverc_syslog_priority_t priority);
 
 /* Write a message at the given priority. Returns 0 on success. */
 int neverc_syslog_write(neverc_syslog_t *log,

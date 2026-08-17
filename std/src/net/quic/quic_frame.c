@@ -190,6 +190,9 @@ int neverc_quic_parse_ack_frame(const uint8_t *buf, size_t len,
                                  quic_frame_ack_t *out, size_t *consumed) {
     const uint8_t *p = buf;
     size_t rem = len;
+    if (!buf || !out || !consumed) return -1;
+    out->ranges = NULL;
+    out->nranges = 0;
 
     uint64_t ftype;
     if (consume_varint(&p, &rem, &ftype) != 0) return -1;
@@ -595,5 +598,35 @@ int neverc_quic_write_handshake_done(uint8_t *buf, size_t cap, size_t *written) 
     if (!buf || !written || cap < 1) return -1;
     buf[0] = QUIC_FRAME_HANDSHAKE_DONE;
     *written = 1;
+    return 0;
+}
+
+int neverc_quic_parse_retire_conn_id(const uint8_t *buf, size_t len,
+                                     quic_frame_retire_conn_id_t *out,
+                                     size_t *consumed) {
+    const uint8_t *p = buf;
+    size_t rem = len;
+    uint64_t ftype;
+    if (!buf || !out || !consumed || consume_varint(&p, &rem, &ftype) != 0 ||
+        ftype != QUIC_FRAME_RETIRE_CONNECTION_ID)
+        return -1;
+    if (consume_varint(&p, &rem, &out->sequence) != 0) return -1;
+    *consumed = (size_t)(p - buf);
+    return 0;
+}
+
+int neverc_quic_write_retire_conn_id(uint8_t *buf, size_t cap,
+                                     uint64_t sequence, size_t *written) {
+    if (written) *written = 0;
+    if (!buf || !written || sequence > QUIC_VARINT_MAX ||
+        cap < 1 + neverc_quic_varint_len(sequence))
+        return -1;
+    size_t pos = 0, w;
+    neverc_quic_varint_encode(QUIC_FRAME_RETIRE_CONNECTION_ID, buf + pos,
+                              cap - pos, &w);
+    pos += w;
+    neverc_quic_varint_encode(sequence, buf + pos, cap - pos, &w);
+    pos += w;
+    *written = pos;
     return 0;
 }

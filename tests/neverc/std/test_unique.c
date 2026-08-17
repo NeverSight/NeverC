@@ -130,7 +130,10 @@ static void test_null_handling(void) {
     neverc_unique_handle_t h = neverc_unique_make_string(NULL);
     ASSERT_TRUE(!neverc_unique_handle_valid(h));
     h = neverc_unique_make_bytes(NULL, 0);
-    ASSERT_TRUE(!neverc_unique_handle_valid(h));
+    ASSERT_TRUE(neverc_unique_handle_valid(h));
+    size_t null_empty_len = 99;
+    ASSERT_TRUE(neverc_unique_bytes_value(h, &null_empty_len) != NULL);
+    ASSERT_INT_EQ((long long)null_empty_len, 0);
     h = neverc_unique_make_bytes(NULL, 4);
     ASSERT_TRUE(!neverc_unique_handle_valid(h));
 
@@ -143,6 +146,30 @@ static void test_null_handling(void) {
     ASSERT_INT_EQ((long long)empty_len, 0);
     neverc_unique_handle_t empty2 = neverc_unique_make_bytes(&empty_mark, 0);
     ASSERT_TRUE(neverc_unique_handle_equal(empty, empty2));
+    neverc_unique_handle_t empty_null = neverc_unique_make_bytes(NULL, 0);
+    ASSERT_TRUE(neverc_unique_handle_equal(empty, empty_null));
+}
+
+static void test_kind_isolation(void) {
+    printf("[kind_isolation]\n");
+    neverc_unique_destroy();
+    neverc_unique_init();
+
+    neverc_unique_handle_t empty_str = neverc_unique_make_string("");
+    ASSERT_TRUE(neverc_unique_handle_valid(empty_str));
+    ASSERT_STR_EQ(neverc_unique_string_value(empty_str), "");
+
+    neverc_unique_handle_t as_string = neverc_unique_make_string("ab");
+    unsigned char with_nul[] = {'a', 'b', 0};
+    neverc_unique_handle_t as_bytes =
+        neverc_unique_make_bytes(with_nul, sizeof(with_nul));
+    ASSERT_TRUE(neverc_unique_handle_valid(as_string));
+    ASSERT_TRUE(neverc_unique_handle_valid(as_bytes));
+    ASSERT_TRUE(!neverc_unique_handle_equal(as_string, as_bytes));
+
+    neverc_unique_handle_t i0 = neverc_unique_make_int64(0);
+    neverc_unique_handle_t u0 = neverc_unique_make_uint64(0);
+    ASSERT_TRUE(!neverc_unique_handle_equal(i0, u0));
 }
 
 static void test_count(void) {
@@ -188,6 +215,7 @@ int main(void) {
     test_bytes_length();
     test_bytes_stress();
     test_null_handling();
+    test_kind_isolation();
     test_count();
     test_many_strings();
     neverc_unique_destroy();

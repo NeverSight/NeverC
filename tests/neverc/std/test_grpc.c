@@ -7,6 +7,8 @@
 #include "neverc/std/time.h"
 #include "network_test_support.h"
 
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -171,8 +173,33 @@ static void grpc_test_frame_and_timeout(void) {
     CHECK(neverc_grpc_frame_reader_next(&reader, &message) == 1);
     CHECK(message.length == 5U && memcmp(message.data, "hello", 5U) == 0);
     CHECK(neverc_grpc_frame_reader_next(&reader, &message) == 0);
-    encoded[0] = 1U;
+    CHECK(neverc_grpc_frame_encode("hello", 5U, 1, encoded,
+                                   sizeof(encoded), &encoded_length) == 0);
     neverc_grpc_frame_reader_init(&reader, encoded, encoded_length, 16U);
+    CHECK(neverc_grpc_frame_reader_next(&reader, &message) == -1);
+    CHECK(neverc_grpc_frame_encode("hello", 5U, 2, encoded,
+                                   sizeof(encoded), &encoded_length) == -1);
+    CHECK(neverc_grpc_frame_encode("hello", 5U, 0, encoded, 4U,
+                                   &encoded_length) == -1);
+    uint8_t empty_message[] = {0, 0, 0, 0, 0};
+    neverc_grpc_frame_reader_init(&reader, empty_message,
+                                  sizeof(empty_message), 16U);
+    CHECK(neverc_grpc_frame_reader_next(&reader, &message) == 1);
+    CHECK(message.length == 0U);
+    CHECK(neverc_grpc_frame_reader_next(&reader, &message) == 0);
+    uint8_t reserved_flag[] = {2, 0, 0, 0, 0};
+    neverc_grpc_frame_reader_init(&reader, reserved_flag,
+                                  sizeof(reserved_flag), 16U);
+    CHECK(neverc_grpc_frame_reader_next(&reader, &message) == -1);
+    uint8_t truncated[] = {0, 0, 0, 0, 5, 'h'};
+    neverc_grpc_frame_reader_init(&reader, truncated, sizeof(truncated), 16U);
+    CHECK(neverc_grpc_frame_reader_next(&reader, &message) == -1);
+    uint8_t oversize[] = {0, 0, 0, 0, 32, 'x'};
+    neverc_grpc_frame_reader_init(&reader, oversize, sizeof(oversize), 16U);
+    CHECK(neverc_grpc_frame_reader_next(&reader, &message) == -1);
+    uint8_t huge_length[] = {0, 0xff, 0xff, 0xff, 0xff};
+    neverc_grpc_frame_reader_init(&reader, huge_length, sizeof(huge_length),
+                                  SIZE_MAX);
     CHECK(neverc_grpc_frame_reader_next(&reader, &message) == -1);
 
     char timeout[10];
@@ -185,8 +212,15 @@ static void grpc_test_frame_and_timeout(void) {
     CHECK(neverc_grpc_timeout_decode("0n", &timeout_ms) == 0);
     CHECK(timeout_ms == 0);
     CHECK(neverc_grpc_timeout_decode("99999999999S", &timeout_ms) == -1);
+    CHECK(neverc_grpc_timeout_decode("1", &timeout_ms) == -1);
+    CHECK(neverc_grpc_timeout_decode("1x", &timeout_ms) == -1);
+    CHECK(neverc_grpc_timeout_decode("5124096H", &timeout_ms) == -1);
+    CHECK(neverc_grpc_status_valid(NEVERC_GRPC_OK));
+    CHECK(!neverc_grpc_status_valid(17U));
     CHECK(strcmp(neverc_grpc_status_name(NEVERC_GRPC_UNAUTHENTICATED),
                  "UNAUTHENTICATED") == 0);
+    CHECK(strcmp(neverc_grpc_status_name((neverc_grpc_status_t)99),
+                 "UNKNOWN") == 0);
 
     neverc_h2_client_config_t config = neverc_h2_client_config_default();
     const char *error = NULL;
@@ -469,10 +503,306 @@ static void grpc_test_tls_end_to_end(void) {
     neverc_network_test_remove_certs(&files);
 }
 
+static int grpc_tcp_write_all(neverc_tcp_conn_t *conn, const void *data,
+                              size_t length) {
+    const uint8_t *cursor = (const uint8_t *)data;
+    size_t offset = 0;
+    while (offset < length) {
+        int count = neverc_tcp_write(conn, cursor + offset, length - offset);
+        if (count <= 0) return -1;
+        offset += (size_t)count;
+    }
+    return 0;
+}
+
+static int grpc_tcp_read_all(neverc_tcp_conn_t *conn, void *data,
+                             size_t length) {
+    uint8_t *cursor = (uint8_t *)data;
+    size_t offset = 0;
+    while (offset < length) {
+        int count = neverc_tcp_read(conn, cursor + offset, length - offset);
+        if (count <= 0) return -1;
+        offset += (size_t)count;
+    }
+    return 0;
+}
+
+static int grpc_h2_write_frame(neverc_tcp_conn_t *conn, uint8_t type,
+                               uint8_t flags, uint32_t stream_id,
+                               const void *payload, uint32_t length) {
+    neverc_h2_frame_header_t header = {
+        .length = length, .type = type, .flags = flags,
+        .stream_id = stream_id};
+    uint8_t encoded[NC_H2_FRAME_HEADER_SIZE];
+    if (neverc_h2_frame_header_write(&header, encoded) != 0) return -1;
+    if (grpc_tcp_write_all(conn, encoded, sizeof(encoded)) != 0) return -1;
+    return length == 0
+        ? 0 : grpc_tcp_write_all(conn, payload, length);
+}
+
+static int grpc_h2_read_frame(neverc_tcp_conn_t *conn,
+                              neverc_h2_frame_header_t *header,
+                              uint8_t *payload, size_t capacity) {
+    uint8_t encoded[NC_H2_FRAME_HEADER_SIZE];
+    if (grpc_tcp_read_all(conn, encoded, sizeof(encoded)) != 0) return -1;
+    if (neverc_h2_frame_header_read(encoded, sizeof(encoded), header) != 0)
+        return -1;
+    if (header->length > capacity) return -1;
+    return header->length == 0
+        ? 0 : grpc_tcp_read_all(conn, payload, header->length);
+}
+
+typedef struct {
+    neverc_tcp_listener_t *listener;
+    int kind;
+    int result;
+} grpc_fake_h2_t;
+
+static void grpc_fake_h2_task(void *context) {
+    grpc_fake_h2_t *test = (grpc_fake_h2_t *)context;
+    const char *error = NULL;
+    neverc_tcp_conn_t *conn = neverc_tcp_accept(test->listener, &error);
+    if (!conn) {
+        test->result = -1;
+        return;
+    }
+    char preface[NC_H2_CLIENT_PREFACE_LEN];
+    neverc_h2_frame_header_t header;
+    uint8_t payload[4096];
+    if (grpc_tcp_read_all(conn, preface, sizeof(preface)) != 0 ||
+        memcmp(preface, NC_H2_CLIENT_PREFACE, sizeof(preface)) != 0 ||
+        grpc_h2_read_frame(conn, &header, payload, sizeof(payload)) != 0 ||
+        header.type != NC_H2_FRAME_SETTINGS ||
+        grpc_h2_write_frame(conn, NC_H2_FRAME_SETTINGS, 0, 0, NULL, 0) != 0 ||
+        grpc_h2_write_frame(conn, NC_H2_FRAME_SETTINGS, NC_H2_FLAG_ACK,
+                            0, NULL, 0) != 0) {
+        neverc_tcp_close(conn);
+        test->result = -1;
+        return;
+    }
+    for (;;) {
+        if (grpc_h2_read_frame(conn, &header, payload, sizeof(payload)) != 0) {
+            neverc_tcp_close(conn);
+            test->result = -1;
+            return;
+        }
+        if (header.type == NC_H2_FRAME_HEADERS && header.stream_id == 1U)
+            break;
+    }
+    neverc_hpack_encoder_t *encoder = neverc_hpack_encoder_create(4096);
+    neverc_hpack_header_t headers[4];
+    int header_count = 0;
+    if (test->kind == 0) {
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = ":status", .value = "200"};
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = "content-type", .value = "application/grpc"};
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = "grpc-status", .value = "5"};
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = "grpc-message", .value = "missing"};
+    } else if (test->kind == 2) {
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = ":status", .value = "503"};
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = "content-type", .value = "application/grpc"};
+    } else {
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = ":status", .value = "503"};
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = "content-type", .value = "text/plain"};
+    }
+    uint8_t block[256];
+    size_t block_length = 0;
+    uint8_t trailer_block[256];
+    size_t trailer_length = 0;
+    int encoded = encoder && neverc_hpack_encode(
+        encoder, headers, header_count, block, sizeof(block),
+        &block_length) == 0 && block_length > 0 && block_length <= 0xffffffU;
+    if (encoded && test->kind == 3) {
+        neverc_hpack_header_t trailers[] = {
+            {.name = "x-unused", .value = "1"}};
+        encoded = neverc_hpack_encode(
+            encoder, trailers, 1, trailer_block, sizeof(trailer_block),
+            &trailer_length) == 0 && trailer_length > 0 &&
+            trailer_length <= 0xffffffU;
+    }
+    neverc_hpack_encoder_destroy(encoder);
+    uint8_t header_flags = NC_H2_FLAG_END_HEADERS;
+    if (test->kind == 0 || test->kind == 1)
+        header_flags = (uint8_t)(header_flags | NC_H2_FLAG_END_STREAM);
+    if (!encoded ||
+        grpc_h2_write_frame(
+            conn, NC_H2_FRAME_HEADERS, header_flags,
+            1U, block, (uint32_t)block_length) != 0) {
+        neverc_tcp_close(conn);
+        test->result = -1;
+        return;
+    }
+    if (test->kind == 2) {
+        uint8_t garbage[] = {0, 0, 0, 0, 50, 'x'};
+        if (grpc_h2_write_frame(
+                conn, NC_H2_FRAME_DATA, NC_H2_FLAG_END_STREAM, 1U,
+                garbage, (uint32_t)sizeof(garbage)) != 0) {
+            neverc_tcp_close(conn);
+            test->result = -1;
+            return;
+        }
+    } else if (test->kind == 3) {
+        if (grpc_h2_write_frame(
+                conn, NC_H2_FRAME_HEADERS,
+                (uint8_t)(NC_H2_FLAG_END_HEADERS | NC_H2_FLAG_END_STREAM),
+                1U, trailer_block, (uint32_t)trailer_length) != 0) {
+            neverc_tcp_close(conn);
+            test->result = -1;
+            return;
+        }
+    }
+    while (grpc_h2_read_frame(conn, &header, payload, sizeof(payload)) == 0) {
+    }
+    neverc_tcp_close(conn);
+    test->result = 0;
+}
+
+static neverc_h2_client_t *grpc_start_fake_h2(
+    grpc_fake_h2_t *fake, neverc_thread_executor_t **executor, int kind) {
+    if (executor) *executor = NULL;
+    if (fake) memset(fake, 0, sizeof(*fake));
+    if (!fake || !executor) return NULL;
+    int port = grpc_test_free_port();
+    if (port <= 0) return NULL;
+    char address[64];
+    (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
+    const char *error = NULL;
+    fake->kind = kind;
+    fake->result = -1;
+    fake->listener = neverc_tcp_listen(address, &error);
+    if (!fake->listener) return NULL;
+    *executor = neverc_thread_executor_create(1U, 1U);
+    if (!*executor ||
+        neverc_thread_executor_submit(*executor, grpc_fake_h2_task,
+                                      fake) != NEVERC_THREAD_OK) {
+        neverc_thread_executor_free(*executor);
+        *executor = NULL;
+        neverc_tcp_listener_close(fake->listener);
+        fake->listener = NULL;
+        return NULL;
+    }
+    return grpc_test_dial(address);
+}
+
+static void grpc_stop_fake_h2(grpc_fake_h2_t *fake,
+                              neverc_thread_executor_t *executor,
+                              neverc_h2_client_t *client) {
+    if (client) {
+        neverc_h2_client_close(client);
+        neverc_h2_client_free(client);
+    }
+    if (fake && fake->listener) neverc_tcp_listener_close(fake->listener);
+    if (executor) {
+        (void)neverc_thread_executor_shutdown(executor);
+        neverc_thread_executor_free(executor);
+    }
+}
+
+static neverc_grpc_result_t *grpc_call_fake_h2(int kind) {
+    grpc_fake_h2_t fake;
+    neverc_thread_executor_t *executor = NULL;
+    neverc_h2_client_t *client = grpc_start_fake_h2(&fake, &executor, kind);
+    neverc_grpc_message_t request = {(const uint8_t *)"x", 1U};
+    neverc_grpc_result_t *result = client
+        ? neverc_grpc_client_call(
+              client, NULL, "/test.Echo/Unary", NEVERC_GRPC_UNARY,
+              NULL, 0U, &request, 1U, 1024U)
+        : NULL;
+    grpc_stop_fake_h2(&fake, executor, client);
+    return result;
+}
+
+static int grpc_stream_fake_h2(int kind, neverc_grpc_status_t *status,
+                               const char **error_out) {
+    if (status) *status = NEVERC_GRPC_UNKNOWN;
+    if (error_out) *error_out = "fake h2 stream failed";
+    grpc_fake_h2_t fake;
+    neverc_thread_executor_t *executor = NULL;
+    neverc_h2_client_t *client = grpc_start_fake_h2(&fake, &executor, kind);
+    const char *error = NULL;
+    neverc_grpc_client_stream_t *stream = client
+        ? neverc_grpc_client_stream_open(
+              client, NULL, "/test.Echo/Unary", NEVERC_GRPC_UNARY,
+              NULL, 0U, 1024U, &error)
+        : NULL;
+    int receive = -1;
+    if (stream &&
+        neverc_grpc_client_stream_send(stream, NULL, "x", 1U) == 0 &&
+        neverc_grpc_client_stream_close_send(stream, NULL) == 0) {
+        neverc_grpc_message_t message;
+        receive = neverc_grpc_client_stream_receive(stream, NULL, &message);
+        if (status) *status = neverc_grpc_client_stream_status(stream);
+        if (error_out) *error_out = neverc_grpc_client_stream_error(stream);
+    }
+    neverc_grpc_client_stream_free(stream);
+    grpc_stop_fake_h2(&fake, executor, client);
+    return receive;
+}
+
+static void grpc_test_status_mapping(void) {
+    neverc_grpc_result_t *trailers_only = grpc_call_fake_h2(0);
+    CHECK(trailers_only != NULL);
+    CHECK(trailers_only && trailers_only->error == NULL);
+    CHECK(trailers_only && trailers_only->status == NEVERC_GRPC_NOT_FOUND);
+    CHECK(trailers_only && trailers_only->status_message &&
+          strcmp(trailers_only->status_message, "missing") == 0);
+    neverc_grpc_result_free(trailers_only);
+
+    neverc_grpc_result_t *http_error = grpc_call_fake_h2(1);
+    CHECK(http_error != NULL);
+    CHECK(http_error && http_error->error == NULL);
+    CHECK(http_error && http_error->status == NEVERC_GRPC_UNAVAILABLE);
+    neverc_grpc_result_free(http_error);
+
+    neverc_grpc_result_t *http_framing = grpc_call_fake_h2(2);
+    CHECK(http_framing != NULL);
+    CHECK(http_framing && http_framing->error == NULL);
+    CHECK(http_framing && http_framing->status == NEVERC_GRPC_UNAVAILABLE);
+    neverc_grpc_result_free(http_framing);
+
+    neverc_grpc_result_t *http_trailers = grpc_call_fake_h2(3);
+    CHECK(http_trailers != NULL);
+    CHECK(http_trailers && http_trailers->error == NULL);
+    CHECK(http_trailers && http_trailers->status == NEVERC_GRPC_UNAVAILABLE);
+    neverc_grpc_result_free(http_trailers);
+
+    neverc_grpc_status_t stream_status = NEVERC_GRPC_UNKNOWN;
+    const char *stream_error = "unset";
+    CHECK(grpc_stream_fake_h2(0, &stream_status, &stream_error) == 0);
+    CHECK(stream_status == NEVERC_GRPC_NOT_FOUND);
+    CHECK(stream_error == NULL);
+
+    stream_status = NEVERC_GRPC_UNKNOWN;
+    stream_error = "unset";
+    CHECK(grpc_stream_fake_h2(1, &stream_status, &stream_error) == 0);
+    CHECK(stream_status == NEVERC_GRPC_UNAVAILABLE);
+    CHECK(stream_error == NULL);
+
+    stream_status = NEVERC_GRPC_UNKNOWN;
+    stream_error = "unset";
+    CHECK(grpc_stream_fake_h2(2, &stream_status, &stream_error) == 0);
+    CHECK(stream_status == NEVERC_GRPC_UNAVAILABLE);
+    CHECK(stream_error == NULL);
+
+    stream_status = NEVERC_GRPC_UNKNOWN;
+    stream_error = "unset";
+    CHECK(grpc_stream_fake_h2(3, &stream_status, &stream_error) == 0);
+    CHECK(stream_status == NEVERC_GRPC_UNAVAILABLE);
+    CHECK(stream_error == NULL);
+}
+
 int main(void) {
     printf("gRPC test suite:\n");
     grpc_test_frame_and_timeout();
     grpc_test_metadata_limits();
+    grpc_test_status_mapping();
     grpc_test_h2c_end_to_end();
     grpc_test_tls_end_to_end();
     printf("grpc: %d checks, %d failed\n", tests_run, tests_failed);

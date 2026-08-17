@@ -9,9 +9,20 @@ extern "C" {
 #endif
 
 /* File mode bits (mirrors Go os.FileMode) */
-#define NEVERC_OS_MODE_DIR     (1U << 31)
-#define NEVERC_OS_MODE_SYMLINK (1U << 27)
-#define NEVERC_OS_MODE_PERM    0777
+#define NEVERC_OS_MODE_DIR        (1U << 31)
+#define NEVERC_OS_MODE_APPEND     (1U << 30)
+#define NEVERC_OS_MODE_EXCL       (1U << 29)
+#define NEVERC_OS_MODE_TEMPORARY  (1U << 28)
+#define NEVERC_OS_MODE_SYMLINK    (1U << 27)
+#define NEVERC_OS_MODE_DEVICE     (1U << 26)
+#define NEVERC_OS_MODE_NAMEDPIPE  (1U << 25)
+#define NEVERC_OS_MODE_SOCKET     (1U << 24)
+#define NEVERC_OS_MODE_SETUID     (1U << 23)
+#define NEVERC_OS_MODE_SETGID     (1U << 22)
+#define NEVERC_OS_MODE_CHARDEVICE (1U << 21)
+#define NEVERC_OS_MODE_STICKY     (1U << 20)
+#define NEVERC_OS_MODE_IRREGULAR  (1U << 19)
+#define NEVERC_OS_MODE_PERM       0777
 
 /* Open flags */
 #define NEVERC_OS_O_RDONLY  0x0000

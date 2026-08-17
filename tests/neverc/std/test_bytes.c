@@ -67,6 +67,7 @@ static void test_search(void) {
     check_size("index byte none", neverc_bytes_index_byte(B("hello"), 'z'), NOT_FOUND);
 
     check_size("last index", neverc_bytes_last_index(B("go gopher"), B("go")), 3);
+    check_size("last index empty sep", neverc_bytes_last_index(B("hello"), B("")), 5);
     check_size("last index byte", neverc_bytes_last_index_byte(B("hello"), 'l'), 3);
     check_size("last index none", neverc_bytes_last_index(B("hello"), B("xyz")), NOT_FOUND);
 
@@ -170,6 +171,10 @@ static void test_transform(void) {
                                                 100, &outlen);
     check_bytes("replace count exceeds matches", repl_excess, outlen, "a::b");
     free(repl_excess);
+
+    uint8_t *repl0 = neverc_bytes_replace(B("abc"), B("a"), B("x"), 0, &outlen);
+    check_bytes("replace n=0", repl0, outlen, "abc");
+    free(repl0);
 
     uint8_t *repl_empty = neverc_bytes_replace_all(B("ab"), B(""), B("-"),
                                                    &outlen);

@@ -53,10 +53,17 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
 void neverc_gif_free(neverc_gif_image_t *img);
 
 /* Convert an RGBA image to a paletted GIF frame, choosing up to 256 palette
- * colors from the image with Wu's variance-minimizing quantizer. Dimensions
- * must fit GIF's 16-bit fields and the implementation's pixel safety limit. */
+ * colors from the image with Wu's variance-minimizing quantizer. Pixels with
+ * alpha 0 become a transparent GIF index. Dimensions must fit GIF's 16-bit
+ * fields and the implementation's pixel safety limit. */
 int neverc_gif_from_rgba(const uint8_t *rgba, uint32_t width, uint32_t height,
                          neverc_gif_frame_t *frame);
+
+/* Convert a paletted frame to tightly packed RGBA (4 bytes/pixel).
+ * Transparent index becomes alpha 0 (RGB kept). *out_rgba is
+ * heap-allocated; caller must free(). On error, *out_rgba is NULL. */
+int neverc_gif_frame_to_rgba(const neverc_gif_frame_t *frame,
+                             uint8_t **out_rgba, size_t *out_len);
 
 #ifdef __cplusplus
 }

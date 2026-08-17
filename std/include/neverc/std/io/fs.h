@@ -40,9 +40,14 @@ typedef struct {
     uint32_t mode;
 } neverc_fs_dir_entry_t;
 
+/* Walk callback sentinels (not errors). neverc_fs_walk_dir returns 0. */
+#define NEVERC_FS_SKIP_DIR  (-2)
+#define NEVERC_FS_SKIP_ALL  (-3)
+
 int neverc_fs_valid_path(const char *name);
 
 int neverc_fs_stat(const char *path, neverc_fs_file_info_t *info);
+int neverc_fs_lstat(const char *path, neverc_fs_file_info_t *info);
 
 int neverc_fs_read_file(const char *path, uint8_t **data, size_t *size);
 
@@ -52,6 +57,9 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
 int neverc_fs_glob(const char *dir, const char *pattern,
                    char ***matches, size_t *count);
 
+/* Callback: 0 continue, NEVERC_FS_SKIP_DIR skip directory contents (or
+ * remaining siblings if invoked on a non-directory), NEVERC_FS_SKIP_ALL
+ * stop successfully, any other non-zero aborts and is returned. */
 int neverc_fs_walk_dir(const char *root,
                        int (*fn)(const char *path,
                                  const neverc_fs_dir_entry_t *entry,

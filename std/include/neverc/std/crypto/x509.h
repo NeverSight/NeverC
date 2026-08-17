@@ -83,6 +83,13 @@ typedef struct {
     uint8_t len; /* 4 for IPv4, 16 for IPv6 */
 } neverc_x509_ip_address_t;
 
+/* iPAddress name constraint: address and mask, RFC 5280 4.2.1.10. */
+typedef struct {
+    uint8_t bytes[16];
+    uint8_t mask[16];
+    uint8_t len; /* 4 for IPv4, 16 for IPv6 */
+} neverc_x509_ip_network_t;
+
 typedef struct {
     /* Version (0 = v1, 1 = v2, 2 = v3) */
     int version;
@@ -138,6 +145,19 @@ typedef struct {
     size_t                      dns_name_count;
     neverc_x509_ip_address_t   *ip_addresses;
     size_t                      ip_address_count;
+
+    /* RFC 5280 nameConstraints. Absent when name_constraints_present is 0.
+     * Permitted entries of a given type restrict that type; omitted types
+     * remain unrestricted. Any excluded match is always forbidden. */
+    int                         name_constraints_present;
+    char                      **permitted_dns_names;
+    size_t                      permitted_dns_name_count;
+    char                      **excluded_dns_names;
+    size_t                      excluded_dns_name_count;
+    neverc_x509_ip_network_t   *permitted_ip_networks;
+    size_t                      permitted_ip_network_count;
+    neverc_x509_ip_network_t   *excluded_ip_networks;
+    size_t                      excluded_ip_network_count;
 
     /* Raw DER bytes (not owned by this struct) */
     const uint8_t *raw;

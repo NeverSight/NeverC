@@ -45,6 +45,21 @@ static void test_interfaces(void) {
                    list.ifaces[i].addrs[j].prefix_len);
         }
     }
+
+    int saw_link_local = 0;
+    int link_local_zoned = 1;
+    for (int i = 0; i < list.count; i++) {
+        for (int j = 0; j < list.ifaces[i].naddrs; j++) {
+            const char *a = list.ifaces[i].addrs[j].addr;
+            if (strncmp(a, "fe80:", 5) == 0) {
+                saw_link_local = 1;
+                if (!strchr(a, '%'))
+                    link_local_zoned = 0;
+            }
+        }
+    }
+    if (saw_link_local)
+        check_true("link-local addrs include zone", link_local_zoned);
 }
 
 /* ===== InterfaceByName ===== */
@@ -81,6 +96,7 @@ static void test_interface_by_name(void) {
     /* Non-existent */
     check_int("nonexistent iface", neverc_net_interface_by_name("xyz999", &iface), -1);
     check_int("null name", neverc_net_interface_by_name(NULL, &iface), -1);
+    check_int("empty name", neverc_net_interface_by_name("", &iface), -1);
     check_int("null list", neverc_net_interfaces(NULL), -1);
 }
 
@@ -100,6 +116,10 @@ static void test_interface_by_index(void) {
 
     neverc_net_interface_t notfound;
     check_int("invalid index", neverc_net_interface_by_index(99999, &notfound), -1);
+    check_int("index zero rejected", neverc_net_interface_by_index(0, &notfound),
+              -1);
+    check_int("negative index rejected",
+              neverc_net_interface_by_index(-1, &notfound), -1);
 }
 
 /* ===== InterfaceAddrs ===== */

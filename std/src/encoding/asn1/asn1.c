@@ -281,3 +281,234 @@ int neverc_asn1_encode_null(uint8_t *buf, size_t cap) {
     buf[1] = 0;
     return 2;
 }
+
+static int asn1_utf8_valid(const uint8_t *data, size_t length) {
+    if (!data && length > 0) return 0;
+    size_t i = 0;
+    while (i < length) {
+        uint8_t first = data[i++];
+        if (first <= 0x7f) continue;
+        unsigned continuation;
+        uint32_t codepoint;
+        if (first >= 0xc2 && first <= 0xdf) {
+            continuation = 1;
+            codepoint = first & 0x1fU;
+        } else if (first >= 0xe0 && first <= 0xef) {
+            continuation = 2;
+            codepoint = first & 0x0fU;
+        } else if (first >= 0xf0 && first <= 0xf4) {
+            continuation = 3;
+            codepoint = first & 0x07U;
+        } else {
+            return 0;
+        }
+        if (continuation > length - i) return 0;
+        for (unsigned j = 0; j < continuation; j++) {
+            uint8_t byte = data[i++];
+            if ((byte & 0xc0U) != 0x80U) return 0;
+            codepoint = (codepoint << 6) | (byte & 0x3fU);
+        }
+        if ((continuation == 2 && codepoint < 0x800) ||
+            (continuation == 3 && codepoint < 0x10000) ||
+            (codepoint >= 0xd800 && codepoint <= 0xdfff) ||
+            codepoint > 0x10ffff)
+            return 0;
+    }
+    return 1;
+}
+
+static int asn1_printable_char(unsigned char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+           (c >= '0' && c <= '9') || c == ' ' || c == '\'' ||
+           c == '(' || c == ')' || c == '+' || c == ',' ||
+           c == '-' || c == '.' || c == '/' || c == ':' ||
+           c == '=' || c == '?';
+}
+
+static int asn1_encode_primitive(uint8_t *buf, size_t cap, int tag,
+                                 const uint8_t *data, size_t len) {
+    if (!buf || (!data && len != 0) || len > (size_t)INT_MAX) return -1;
+    int tlen = neverc_asn1_encode_tag(buf, cap, NEVERC_ASN1_UNIVERSAL, 0, tag);
+    if (tlen < 0) return -1;
+    int llen = neverc_asn1_encode_length(buf + tlen, cap - (size_t)tlen, len);
+    if (llen < 0) return -1;
+    size_t prefix = (size_t)tlen + (size_t)llen;
+    if (len > (size_t)INT_MAX - prefix || len > cap - prefix) return -1;
+    if (len != 0) memcpy(buf + prefix, data, len);
+    return (int)(prefix + len);
+}
+
+static int asn1_decode_primitive_string(const neverc_asn1_element_t *elem,
+                                        int tag, const uint8_t **text,
+                                        size_t *len) {
+    if (!elem || !text || !len || elem->tag_class != NEVERC_ASN1_UNIVERSAL ||
+        elem->constructed || elem->tag_number != tag ||
+        (elem->value_len > 0 && !elem->value))
+        return -1;
+    *text = elem->value;
+    *len = elem->value_len;
+    return 0;
+}
+
+int neverc_asn1_decode_bit_string(const neverc_asn1_element_t *elem,
+                                  const uint8_t **bytes, size_t *byte_len,
+                                  int *unused_bits) {
+    if (!elem || !bytes || !byte_len || !unused_bits ||
+        elem->tag_class != NEVERC_ASN1_UNIVERSAL || elem->constructed ||
+        elem->tag_number != NEVERC_ASN1_BIT_STRING || !elem->value ||
+        elem->value_len == 0)
+        return -1;
+    unsigned unused = elem->value[0];
+    if (unused > 7U || (elem->value_len == 1 && unused != 0))
+        return -1;
+    if (unused != 0 &&
+        (elem->value[elem->value_len - 1] &
+         (uint8_t)((1U << unused) - 1U)) != 0)
+        return -1;
+    *unused_bits = (int)unused;
+    *bytes = elem->value + 1;
+    *byte_len = elem->value_len - 1;
+    return 0;
+}
+
+int neverc_asn1_encode_bit_string(uint8_t *buf, size_t cap,
+                                  const uint8_t *data, size_t len,
+                                  int unused_bits) {
+    if (!buf || unused_bits < 0 || unused_bits > 7 ||
+        (!data && len != 0) || (len == 0 && unused_bits != 0) ||
+        len > (size_t)INT_MAX - 1U)
+        return -1;
+    if (len > 0 && unused_bits > 0 &&
+        (data[len - 1] & (uint8_t)((1U << (unsigned)unused_bits) - 1U)) != 0)
+        return -1;
+
+    int tlen = neverc_asn1_encode_tag(buf, cap, NEVERC_ASN1_UNIVERSAL, 0,
+                                       NEVERC_ASN1_BIT_STRING);
+    if (tlen < 0) return -1;
+    size_t value_len = len + 1U;
+    int llen = neverc_asn1_encode_length(
+        buf + tlen, cap - (size_t)tlen, value_len);
+    if (llen < 0) return -1;
+    size_t prefix = (size_t)tlen + (size_t)llen;
+    if (value_len > (size_t)INT_MAX - prefix || value_len > cap - prefix)
+        return -1;
+    buf[prefix] = (uint8_t)unused_bits;
+    if (len != 0) memcpy(buf + prefix + 1U, data, len);
+    return (int)(prefix + value_len);
+}
+
+static int oid_write_subidentifier(uint8_t *out, size_t cap, size_t *len,
+                                   uint64_t value) {
+    uint8_t tmp[10];
+    int n = 0;
+    do {
+        tmp[n++] = (uint8_t)(value & 0x7fU);
+        value >>= 7;
+    } while (value != 0);
+    if (*len > cap || (size_t)n > cap - *len) return -1;
+    for (int i = n - 1; i >= 0; i--)
+        out[(*len)++] = (uint8_t)(tmp[i] | (i > 0 ? 0x80U : 0U));
+    return 0;
+}
+
+static int oid_parse_arc(const char *oid, size_t *offset, uint64_t *arc) {
+    size_t i = *offset;
+    if (oid[i] < '0' || oid[i] > '9') return -1;
+    if (oid[i] == '0' && oid[i + 1] >= '0' && oid[i + 1] <= '9')
+        return -1;
+    uint64_t value = 0;
+    while (oid[i] >= '0' && oid[i] <= '9') {
+        uint64_t digit = (uint64_t)(oid[i] - '0');
+        if (value > (UINT64_MAX - digit) / 10U) return -1;
+        value = value * 10U + digit;
+        i++;
+    }
+    *offset = i;
+    *arc = value;
+    return 0;
+}
+
+int neverc_asn1_encode_oid(uint8_t *buf, size_t cap, const char *oid) {
+    if (!buf || !oid || oid[0] == '\0') return -1;
+
+    uint8_t payload[1280];
+    size_t payload_len = 0;
+    size_t offset = 0;
+    uint64_t first = 0, second = 0;
+    if (oid_parse_arc(oid, &offset, &first) != 0 || oid[offset] != '.' ||
+        first > 2U)
+        return -1;
+    offset++;
+    if (oid_parse_arc(oid, &offset, &second) != 0)
+        return -1;
+    if ((first < 2U && second > 39U) ||
+        (first == 2U && second > UINT64_MAX - 80U))
+        return -1;
+    if (oid_write_subidentifier(payload, sizeof(payload), &payload_len,
+                                first * 40U + second) != 0)
+        return -1;
+
+    while (oid[offset] == '.') {
+        offset++;
+        uint64_t arc = 0;
+        if (oid_parse_arc(oid, &offset, &arc) != 0 ||
+            oid_write_subidentifier(payload, sizeof(payload), &payload_len,
+                                    arc) != 0)
+            return -1;
+    }
+    if (oid[offset] != '\0') return -1;
+    return asn1_encode_primitive(buf, cap, NEVERC_ASN1_OID,
+                                 payload, payload_len);
+}
+
+int neverc_asn1_decode_utf8_string(const neverc_asn1_element_t *elem,
+                                   const uint8_t **text, size_t *len) {
+    if (asn1_decode_primitive_string(elem, NEVERC_ASN1_UTF8_STRING,
+                                     text, len) != 0)
+        return -1;
+    if (!asn1_utf8_valid(*text, *len)) return -1;
+    return 0;
+}
+
+int neverc_asn1_encode_utf8_string(uint8_t *buf, size_t cap,
+                                   const uint8_t *text, size_t len) {
+    if (!asn1_utf8_valid(text, len)) return -1;
+    return asn1_encode_primitive(buf, cap, NEVERC_ASN1_UTF8_STRING, text, len);
+}
+
+int neverc_asn1_decode_printable_string(const neverc_asn1_element_t *elem,
+                                        const uint8_t **text, size_t *len) {
+    if (asn1_decode_primitive_string(elem, NEVERC_ASN1_PRINTABLE_STR,
+                                     text, len) != 0)
+        return -1;
+    for (size_t i = 0; i < *len; i++)
+        if (!asn1_printable_char((*text)[i])) return -1;
+    return 0;
+}
+
+int neverc_asn1_encode_printable_string(uint8_t *buf, size_t cap,
+                                        const uint8_t *text, size_t len) {
+    if ((!text && len != 0)) return -1;
+    for (size_t i = 0; i < len; i++)
+        if (!asn1_printable_char(text[i])) return -1;
+    return asn1_encode_primitive(buf, cap, NEVERC_ASN1_PRINTABLE_STR,
+                                 text, len);
+}
+
+int neverc_asn1_decode_ia5_string(const neverc_asn1_element_t *elem,
+                                  const uint8_t **text, size_t *len) {
+    if (asn1_decode_primitive_string(elem, NEVERC_ASN1_IA5_STRING,
+                                     text, len) != 0)
+        return -1;
+    for (size_t i = 0; i < *len; i++)
+        if ((*text)[i] > 0x7f) return -1;
+    return 0;
+}
+
+int neverc_asn1_encode_ia5_string(uint8_t *buf, size_t cap,
+                                  const uint8_t *text, size_t len) {
+    if ((!text && len != 0)) return -1;
+    for (size_t i = 0; i < len; i++)
+        if (text[i] > 0x7f) return -1;
+    return asn1_encode_primitive(buf, cap, NEVERC_ASN1_IA5_STRING, text, len);
+}

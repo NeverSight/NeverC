@@ -43,6 +43,7 @@
         "neverc_math_round": "src/math/round.c",
         "neverc_math_roundtoeven": "src/math/roundtoeven.c",
         "neverc_math_fmod": "src/math/fmod.c",
+        "neverc_math_mod": "src/math/fmod.c",
         "neverc_math_remainder": "src/math/remainder.c",
         "neverc_math_modf": "src/math/modf.c",
         "neverc_math_frexp": "src/math/frexp.c",
@@ -113,6 +114,7 @@
         "round": "neverc_math_round",
         "roundtoeven": "neverc_math_roundtoeven",
         "fmod": "neverc_math_fmod",
+        "mod": "neverc_math_mod",
         "remainder": "neverc_math_remainder",
         "modf": "neverc_math_modf",
         "frexp": "neverc_math_frexp",
@@ -260,18 +262,24 @@
       "description": "Base64 encoding/decoding with standard and URL-safe alphabets (mirrors Go encoding/base64 package)",
       "symbols": {
         "neverc_base64_encoded_len": "src/encoding/base64/base64.c",
+        "neverc_base64_raw_encoded_len": "src/encoding/base64/base64.c",
         "neverc_base64_decoded_len": "src/encoding/base64/base64.c",
         "neverc_base64_encode": "src/encoding/base64/base64.c",
+        "neverc_base64_raw_encode": "src/encoding/base64/base64.c",
         "neverc_base64_decode": "src/encoding/base64/base64.c",
         "neverc_base64_url_encode": "src/encoding/base64/base64.c",
+        "neverc_base64_url_raw_encode": "src/encoding/base64/base64.c",
         "neverc_base64_url_decode": "src/encoding/base64/base64.c"
       },
       "dot_methods": {
         "encoded_len": "neverc_base64_encoded_len",
+        "raw_encoded_len": "neverc_base64_raw_encoded_len",
         "decoded_len": "neverc_base64_decoded_len",
         "encode": "neverc_base64_encode",
+        "raw_encode": "neverc_base64_raw_encode",
         "decode": "neverc_base64_decode",
         "url_encode": "neverc_base64_url_encode",
+        "url_raw_encode": "neverc_base64_url_raw_encode",
         "url_decode": "neverc_base64_url_decode"
       }
     },
@@ -440,7 +448,11 @@
         "neverc_binary_little_endian_uint64": "src/encoding/binary/binary.c",
         "neverc_binary_little_endian_put_uint16": "src/encoding/binary/binary.c",
         "neverc_binary_little_endian_put_uint32": "src/encoding/binary/binary.c",
-        "neverc_binary_little_endian_put_uint64": "src/encoding/binary/binary.c"
+        "neverc_binary_little_endian_put_uint64": "src/encoding/binary/binary.c",
+        "neverc_binary_put_uvarint": "src/encoding/binary/binary.c",
+        "neverc_binary_uvarint": "src/encoding/binary/binary.c",
+        "neverc_binary_put_varint": "src/encoding/binary/binary.c",
+        "neverc_binary_varint": "src/encoding/binary/binary.c"
       },
       "dot_methods": {
         "big_endian_uint16": "neverc_binary_big_endian_uint16",
@@ -454,7 +466,11 @@
         "little_endian_uint64": "neverc_binary_little_endian_uint64",
         "little_endian_put_uint16": "neverc_binary_little_endian_put_uint16",
         "little_endian_put_uint32": "neverc_binary_little_endian_put_uint32",
-        "little_endian_put_uint64": "neverc_binary_little_endian_put_uint64"
+        "little_endian_put_uint64": "neverc_binary_little_endian_put_uint64",
+        "put_uvarint": "neverc_binary_put_uvarint",
+        "uvarint": "neverc_binary_uvarint",
+        "put_varint": "neverc_binary_put_varint",
+        "varint": "neverc_binary_varint"
       }
     },
     "encoding/protobuf": {
@@ -667,6 +683,7 @@
         "neverc_path_dir": "src/path/dir.c",
         "neverc_path_ext": "src/path/ext.c",
         "neverc_path_isabs": "src/path/isabs.c",
+        "neverc_path_is_local": "src/path/isabs.c",
         "neverc_path_clean": "src/path/clean.c",
         "neverc_path_join2": "src/path/join.c",
         "neverc_path_split": "src/path/split.c",
@@ -677,6 +694,7 @@
         "dir": "neverc_path_dir",
         "ext": "neverc_path_ext",
         "isabs": "neverc_path_isabs",
+        "is_local": "neverc_path_is_local",
         "clean": "neverc_path_clean",
         "join2": "neverc_path_join2",
         "split": "neverc_path_split",
@@ -998,6 +1016,10 @@
         "neverc_cmplx_asin": "src/math/cmplx/cmplx.c",
         "neverc_cmplx_acos": "src/math/cmplx/cmplx.c",
         "neverc_cmplx_atan": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_asinh": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_acosh": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_atanh": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_cot": "src/math/cmplx/cmplx.c",
         "neverc_cmplx_isnan": "src/math/cmplx/cmplx.c",
         "neverc_cmplx_isinf": "src/math/cmplx/cmplx.c",
         "neverc_cmplx_nan_val": "src/math/cmplx/cmplx.c",
@@ -1023,6 +1045,10 @@
         "asin": "neverc_cmplx_asin",
         "acos": "neverc_cmplx_acos",
         "atan": "neverc_cmplx_atan",
+        "asinh": "neverc_cmplx_asinh",
+        "acosh": "neverc_cmplx_acosh",
+        "atanh": "neverc_cmplx_atanh",
+        "cot": "neverc_cmplx_cot",
         "isnan": "neverc_cmplx_isnan",
         "isinf": "neverc_cmplx_isinf",
         "nan_val": "neverc_cmplx_nan_val",
@@ -1128,18 +1154,24 @@
       "description": "Base32 encoding/decoding \u2014 RFC 4648, standard and hex alphabets",
       "symbols": {
         "neverc_base32_encoded_len": "src/encoding/base32/base32.c",
+        "neverc_base32_raw_encoded_len": "src/encoding/base32/base32.c",
         "neverc_base32_decoded_len": "src/encoding/base32/base32.c",
         "neverc_base32_encode": "src/encoding/base32/base32.c",
+        "neverc_base32_raw_encode": "src/encoding/base32/base32.c",
         "neverc_base32_decode": "src/encoding/base32/base32.c",
         "neverc_base32_hex_encode": "src/encoding/base32/base32.c",
+        "neverc_base32_hex_raw_encode": "src/encoding/base32/base32.c",
         "neverc_base32_hex_decode": "src/encoding/base32/base32.c"
       },
       "dot_methods": {
         "encoded_len": "neverc_base32_encoded_len",
+        "raw_encoded_len": "neverc_base32_raw_encoded_len",
         "decoded_len": "neverc_base32_decoded_len",
         "encode": "neverc_base32_encode",
+        "raw_encode": "neverc_base32_raw_encode",
         "decode": "neverc_base32_decode",
         "hex_encode": "neverc_base32_hex_encode",
+        "hex_raw_encode": "neverc_base32_hex_raw_encode",
         "hex_decode": "neverc_base32_hex_decode"
       }
     },
@@ -1266,7 +1298,9 @@
         "neverc_list_move_before": "src/container/list/list.c",
         "neverc_list_move_after": "src/container/list/list.c",
         "neverc_list_element_next": "src/container/list/list.c",
-        "neverc_list_element_prev": "src/container/list/list.c"
+        "neverc_list_element_prev": "src/container/list/list.c",
+        "neverc_list_push_back_list": "src/container/list/list.c",
+        "neverc_list_push_front_list": "src/container/list/list.c"
       },
       "dot_methods": {
         "new": "neverc_list_new",
@@ -1285,7 +1319,9 @@
         "move_before": "neverc_list_move_before",
         "move_after": "neverc_list_move_after",
         "element_next": "neverc_list_element_next",
-        "element_prev": "neverc_list_element_prev"
+        "element_prev": "neverc_list_element_prev",
+        "push_back_list": "neverc_list_push_back_list",
+        "push_front_list": "neverc_list_push_front_list"
       }
     },
     "container/ring": {
@@ -1357,11 +1393,13 @@
       "description": "DEFLATE compression (RFC 1951, mirrors Go compress/flate package)",
       "symbols": {
         "neverc_flate_compress": "src/compress/flate/flate.c",
-        "neverc_flate_decompress": "src/compress/flate/flate.c"
+        "neverc_flate_decompress": "src/compress/flate/flate.c",
+        "neverc_flate_decompress_consumed": "src/compress/flate/flate.c"
       },
       "dot_methods": {
         "compress": "neverc_flate_compress",
-        "decompress": "neverc_flate_decompress"
+        "decompress": "neverc_flate_decompress",
+        "decompress_consumed": "neverc_flate_decompress_consumed"
       }
     },
     "compress/gzip": {
@@ -1468,7 +1506,9 @@
         "neverc_filepath_split": "src/path/filepath/filepath.c",
         "neverc_filepath_match": "src/path/filepath/filepath.c",
         "neverc_filepath_to_slash": "src/path/filepath/filepath.c",
-        "neverc_filepath_from_slash": "src/path/filepath/filepath.c"
+        "neverc_filepath_from_slash": "src/path/filepath/filepath.c",
+        "neverc_filepath_is_local": "src/path/filepath/filepath.c",
+        "neverc_filepath_volume_name": "src/path/filepath/filepath.c"
       },
       "dot_methods": {
         "base": "neverc_filepath_base",
@@ -1480,7 +1520,9 @@
         "split": "neverc_filepath_split",
         "match": "neverc_filepath_match",
         "to_slash": "neverc_filepath_to_slash",
-        "from_slash": "neverc_filepath_from_slash"
+        "from_slash": "neverc_filepath_from_slash",
+        "is_local": "neverc_filepath_is_local",
+        "volume_name": "neverc_filepath_volume_name"
       }
     },
     "encoding/csv": {
@@ -1538,7 +1580,16 @@
         "neverc_asn1_encode_octet_string": "src/encoding/asn1/asn1.c",
         "neverc_asn1_encode_null": "src/encoding/asn1/asn1.c",
         "neverc_asn1_encode_length": "src/encoding/asn1/asn1.c",
-        "neverc_asn1_encode_tag": "src/encoding/asn1/asn1.c"
+        "neverc_asn1_encode_tag": "src/encoding/asn1/asn1.c",
+        "neverc_asn1_decode_bit_string": "src/encoding/asn1/asn1.c",
+        "neverc_asn1_decode_utf8_string": "src/encoding/asn1/asn1.c",
+        "neverc_asn1_decode_printable_string": "src/encoding/asn1/asn1.c",
+        "neverc_asn1_decode_ia5_string": "src/encoding/asn1/asn1.c",
+        "neverc_asn1_encode_bit_string": "src/encoding/asn1/asn1.c",
+        "neverc_asn1_encode_oid": "src/encoding/asn1/asn1.c",
+        "neverc_asn1_encode_utf8_string": "src/encoding/asn1/asn1.c",
+        "neverc_asn1_encode_printable_string": "src/encoding/asn1/asn1.c",
+        "neverc_asn1_encode_ia5_string": "src/encoding/asn1/asn1.c"
       },
       "dot_methods": {
         "decode_element": "neverc_asn1_decode_element",
@@ -1550,7 +1601,16 @@
         "encode_null": "neverc_asn1_encode_null",
         "encode_length": "neverc_asn1_encode_length",
         "encode_tag": "neverc_asn1_encode_tag",
-        "decode_oid": "neverc_asn1_decode_oid"
+        "decode_oid": "neverc_asn1_decode_oid",
+        "decode_bit_string": "neverc_asn1_decode_bit_string",
+        "decode_utf8_string": "neverc_asn1_decode_utf8_string",
+        "decode_printable_string": "neverc_asn1_decode_printable_string",
+        "decode_ia5_string": "neverc_asn1_decode_ia5_string",
+        "encode_bit_string": "neverc_asn1_encode_bit_string",
+        "encode_oid": "neverc_asn1_encode_oid",
+        "encode_utf8_string": "neverc_asn1_encode_utf8_string",
+        "encode_printable_string": "neverc_asn1_encode_printable_string",
+        "encode_ia5_string": "neverc_asn1_encode_ia5_string"
       }
     },
     "bytes": {
@@ -1668,6 +1728,7 @@
         "neverc_errors_message": "src/errors/errors.c",
         "neverc_errors_unwrap": "src/errors/errors.c",
         "neverc_errors_is": "src/errors/errors.c",
+        "neverc_errors_as": "src/errors/errors.c",
         "neverc_errors_wrap": "src/errors/errors.c",
         "neverc_errors_join": "src/errors/errors.c",
         "neverc_errors_free": "src/errors/errors.c"
@@ -1677,6 +1738,7 @@
         "wrap": "neverc_errors_wrap",
         "unwrap": "neverc_errors_unwrap",
         "is": "neverc_errors_is",
+        "as": "neverc_errors_as",
         "message": "neverc_errors_message",
         "join": "neverc_errors_join",
         "free": "neverc_errors_free"
@@ -2042,7 +2104,10 @@
         "neverc_regexp_find_submatch": "src/regexp/regexp.c",
         "neverc_regexp_free_strings": "src/regexp/regexp.c",
         "neverc_regexp_compile_posix": "src/regexp/regexp.c",
-        "neverc_regexp_must_compile_posix": "src/regexp/regexp.c"
+        "neverc_regexp_must_compile_posix": "src/regexp/regexp.c",
+        "neverc_regexp_num_subexp": "src/regexp/regexp.c",
+        "neverc_regexp_subexp_name": "src/regexp/regexp.c",
+        "neverc_regexp_subexp_index": "src/regexp/regexp.c"
       },
       "dot_methods": {
         "compile": "neverc_regexp_compile",
@@ -2058,7 +2123,10 @@
         "quote_meta": "neverc_regexp_quote_meta",
         "must_compile": "neverc_regexp_must_compile",
         "compile_posix": "neverc_regexp_compile_posix",
-        "must_compile_posix": "neverc_regexp_must_compile_posix"
+        "must_compile_posix": "neverc_regexp_must_compile_posix",
+        "num_subexp": "neverc_regexp_num_subexp",
+        "subexp_name": "neverc_regexp_subexp_name",
+        "subexp_index": "neverc_regexp_subexp_index"
       }
     },
     "archive/tar": {
@@ -2737,7 +2805,9 @@
         "neverc_netip_addr_as16": "src/net/netip/netip.c",
         "neverc_netip_addr_ipv4_unspecified": "src/net/netip/netip.c",
         "neverc_netip_addr_ipv6_loopback": "src/net/netip/netip.c",
-        "neverc_netip_addr_ipv6_unspecified": "src/net/netip/netip.c"
+        "neverc_netip_addr_ipv6_unspecified": "src/net/netip/netip.c",
+        "neverc_netip_addr_is4in6": "src/net/netip/netip.c",
+        "neverc_netip_addr_unmap": "src/net/netip/netip.c"
       },
       "dot_methods": {
         "parse_addr": "neverc_netip_parse_addr",
@@ -2772,7 +2842,9 @@
         "addr_as16": "neverc_netip_addr_as16",
         "addr_ipv4_unspecified": "neverc_netip_addr_ipv4_unspecified",
         "addr_ipv6_loopback": "neverc_netip_addr_ipv6_loopback",
-        "addr_ipv6_unspecified": "neverc_netip_addr_ipv6_unspecified"
+        "addr_ipv6_unspecified": "neverc_netip_addr_ipv6_unspecified",
+        "addr_is4in6": "neverc_netip_addr_is4in6",
+        "addr_unmap": "neverc_netip_addr_unmap"
       }
     },
     "mime/quotedprintable": {
@@ -2839,7 +2911,8 @@
         "neverc_syslog_warning": "src/log/syslog/syslog.c",
         "neverc_syslog_notice": "src/log/syslog/syslog.c",
         "neverc_syslog_info": "src/log/syslog/syslog.c",
-        "neverc_syslog_debug": "src/log/syslog/syslog.c"
+        "neverc_syslog_debug": "src/log/syslog/syslog.c",
+        "neverc_syslog_pri": "src/log/syslog/syslog.c"
       },
       "dot_methods": {
         "open": "neverc_syslog_open",
@@ -2852,7 +2925,8 @@
         "warning": "neverc_syslog_warning",
         "notice": "neverc_syslog_notice",
         "info": "neverc_syslog_info",
-        "debug": "neverc_syslog_debug"
+        "debug": "neverc_syslog_debug",
+        "pri": "neverc_syslog_pri"
       }
     },
     "os": {
@@ -2984,7 +3058,11 @@
         "neverc_exec_cmd_combined_output": "src/os/exec/exec.c",
         "neverc_exec_cmd_free": "src/os/exec/exec.c",
         "neverc_exec_output_free": "src/os/exec/exec.c",
-        "neverc_exec_look_path": "src/os/exec/exec.c"
+        "neverc_exec_look_path": "src/os/exec/exec.c",
+        "neverc_exec_cmd_start": "src/os/exec/exec.c",
+        "neverc_exec_cmd_wait": "src/os/exec/exec.c",
+        "neverc_exec_cmd_kill": "src/os/exec/exec.c",
+        "neverc_exec_cmd_pid": "src/os/exec/exec.c"
       },
       "dot_methods": {
         "command": "neverc_exec_command",
@@ -2999,7 +3077,11 @@
         "cmd_output": "neverc_exec_cmd_output",
         "cmd_combined_output": "neverc_exec_cmd_combined_output",
         "cmd_free": "neverc_exec_cmd_free",
-        "output_free": "neverc_exec_output_free"
+        "output_free": "neverc_exec_output_free",
+        "cmd_start": "neverc_exec_cmd_start",
+        "cmd_wait": "neverc_exec_cmd_wait",
+        "cmd_kill": "neverc_exec_cmd_kill",
+        "cmd_pid": "neverc_exec_cmd_pid"
       }
     },
     "os/signal": {
@@ -3308,7 +3390,8 @@
         "neverc_fs_glob": "src/io/fs/fs.c",
         "neverc_fs_walk_dir": "src/io/fs/fs.c",
         "neverc_fs_free_entries": "src/io/fs/fs.c",
-        "neverc_fs_free_matches": "src/io/fs/fs.c"
+        "neverc_fs_free_matches": "src/io/fs/fs.c",
+        "neverc_fs_lstat": "src/io/fs/fs.c"
       },
       "dot_methods": {
         "valid_path": "neverc_fs_valid_path",
@@ -3316,7 +3399,8 @@
         "read_file": "neverc_fs_read_file",
         "read_dir": "neverc_fs_read_dir",
         "glob": "neverc_fs_glob",
-        "walk_dir": "neverc_fs_walk_dir"
+        "walk_dir": "neverc_fs_walk_dir",
+        "lstat": "neverc_fs_lstat"
       }
     },
     "html/template": {
@@ -3448,13 +3532,15 @@
         "neverc_gif_decode": "src/image/gif/gif.c",
         "neverc_gif_encode": "src/image/gif/gif.c",
         "neverc_gif_free": "src/image/gif/gif.c",
-        "neverc_gif_from_rgba": "src/image/gif/gif.c"
+        "neverc_gif_from_rgba": "src/image/gif/gif.c",
+        "neverc_gif_frame_to_rgba": "src/image/gif/gif.c"
       },
       "dot_methods": {
         "decode": "neverc_gif_decode",
         "encode": "neverc_gif_encode",
         "free": "neverc_gif_free",
-        "from_rgba": "neverc_gif_from_rgba"
+        "from_rgba": "neverc_gif_from_rgba",
+        "frame_to_rgba": "neverc_gif_frame_to_rgba"
       }
     },
     "debug/elf": {
@@ -3530,7 +3616,8 @@
         "neverc_macho_symbols": "src/debug/macho/macho.c",
         "neverc_macho_is_valid": "src/debug/macho/macho.c",
         "neverc_macho_cpu_string": "src/debug/macho/macho.c",
-        "neverc_macho_type_string": "src/debug/macho/macho.c"
+        "neverc_macho_type_string": "src/debug/macho/macho.c",
+        "neverc_macho_is_fat": "src/debug/macho/macho.c"
       },
       "dot_methods": {
         "open": "neverc_macho_open",
@@ -3542,7 +3629,8 @@
         "symbols": "neverc_macho_symbols",
         "is_valid": "neverc_macho_is_valid",
         "cpu_string": "neverc_macho_cpu_string",
-        "type_string": "neverc_macho_type_string"
+        "type_string": "neverc_macho_type_string",
+        "is_fat": "neverc_macho_is_fat"
       }
     },
     "debug/dwarf": {
@@ -3735,7 +3823,8 @@
         "neverc_tzdata_list": "src/time/tzdata/tzdata.c",
         "neverc_tzdata_utc": "src/time/tzdata/tzdata.c",
         "neverc_tzdata_local": "src/time/tzdata/tzdata.c",
-        "neverc_tzdata_offset_for_month": "src/time/tzdata/tzdata.c"
+        "neverc_tzdata_offset_for_month": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_offset_at": "src/time/tzdata/tzdata.c"
       },
       "dot_methods": {
         "lookup": "neverc_tzdata_lookup",
@@ -3746,7 +3835,8 @@
         "list": "neverc_tzdata_list",
         "utc": "neverc_tzdata_utc",
         "local": "neverc_tzdata_local",
-        "offset_for_month": "neverc_tzdata_offset_for_month"
+        "offset_for_month": "neverc_tzdata_offset_for_month",
+        "offset_at": "neverc_tzdata_offset_at"
       }
     },
     "http": {
@@ -4889,7 +4979,8 @@
         "neverc_httptest_recorder_free": "src/net/http/httptest/httptest.c",
         "neverc_httptest_recorder_header": "src/net/http/httptest/httptest.c",
         "neverc_httptest_recorder_writer": "src/net/http/httptest/httptest.c",
-        "neverc_httptest_url": "src/net/http/httptest/httptest.c"
+        "neverc_httptest_url": "src/net/http/httptest/httptest.c",
+        "neverc_httptest_recorder_flush": "src/net/http/httptest/httptest.c"
       },
       "dot_methods": {
         "addr": "neverc_httptest_addr",
@@ -4899,7 +4990,8 @@
         "recorder_free": "neverc_httptest_recorder_free",
         "recorder_header": "neverc_httptest_recorder_header",
         "recorder_writer": "neverc_httptest_recorder_writer",
-        "url": "neverc_httptest_url"
+        "url": "neverc_httptest_url",
+        "recorder_flush": "neverc_httptest_recorder_flush"
       }
     },
     "net/cookiejar": {

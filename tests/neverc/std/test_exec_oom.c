@@ -97,6 +97,22 @@ int main(void) {
         neverc_exec_cmd_free(cmd);
     }
 
+    const char *invalid_environment[] = {"NOEQUALS"};
+    reset_allocator(0);
+    cmd = neverc_exec_command("echo", NULL, 0);
+    CHECK(cmd != NULL);
+    neverc_exec_cmd_set_env(cmd, invalid_environment, 1);
+    CHECK(cmd->env == NULL);
+    neverc_exec_cmd_free(cmd);
+
+    const char *empty_name[] = {"=VALUE"};
+    reset_allocator(0);
+    cmd = neverc_exec_command("echo", NULL, 0);
+    CHECK(cmd != NULL);
+    neverc_exec_cmd_set_env(cmd, empty_name, 1);
+    CHECK(cmd->env == NULL);
+    neverc_exec_cmd_free(cmd);
+
 #if !defined(_WIN32)
     const char *large_output_args[] = {
         "-c", "dd if=/dev/zero bs=8192 count=1 2>/dev/null"

@@ -50,6 +50,36 @@ static int mail_address_safe(const char *s) {
     return 1;
 }
 
+/* RFC 5322 dot-atom: no empty, leading, trailing, or consecutive dots. */
+static int mail_dot_atom_ok(const char *s, size_t n) {
+    if (n == 0 || s[0] == '.' || s[n - 1] == '.') return 0;
+    for (size_t i = 0; i + 1 < n; i++) {
+        if (s[i] == '.' && s[i + 1] == '.') return 0;
+    }
+    return 1;
+}
+
+/* addr-spec is local-part "@" domain. Quoted local-parts are rejected
+ * (mail_address_safe already forbids '"'). Domain-literals [ ... ] are ok. */
+static int mail_addr_spec_ok(const char *s) {
+    if (!mail_address_safe(s)) return 0;
+    const char *at = strchr(s, '@');
+    if (!at || at == s || !at[1] || strchr(at + 1, '@')) return 0;
+    if (!mail_dot_atom_ok(s, (size_t)(at - s))) return 0;
+    const char *dom = at + 1;
+    if (dom[0] == '[') {
+        size_t n = strlen(dom);
+        return n >= 3 && dom[n - 1] == ']';
+    }
+    return mail_dot_atom_ok(dom, strlen(dom));
+}
+
+static int mail_put(char *buf, size_t cap, const char *fmt, const char *a,
+                    const char *b) {
+    int n = b ? snprintf(buf, cap, fmt, a, b) : snprintf(buf, cap, fmt, a);
+    return (n > 0 && (size_t)n < cap) ? n : -1;
+}
+
 int neverc_mail_parse_address(const char *s, neverc_mail_address_t *out) {
     if (!s || !out) return -1;
     memset(out, 0, sizeof(*out));
@@ -82,7 +112,7 @@ int neverc_mail_parse_address(const char *s, neverc_mail_address_t *out) {
         if (addr_len == 0 || addr_len >= sizeof(out->address)) return -1;
         memcpy(out->address, lt + 1, addr_len);
         out->address[addr_len] = '\0';
-        if (!mail_address_safe(out->address)) return -1;
+        if (!mail_addr_spec_ok(out->address)) return -1;
 
         size_t name_len = (size_t)(lt - start);
         const char *nstart;
@@ -99,7 +129,7 @@ int neverc_mail_parse_address(const char *s, neverc_mail_address_t *out) {
         if (slen >= sizeof(out->address)) return -1;
         memcpy(out->address, start, slen);
         out->address[slen] = '\0';
-        if (!mail_address_safe(out->address)) return -1;
+        if (!mail_addr_spec_ok(out->address)) return -1;
     }
     return 0;
 }
@@ -146,17 +176,26 @@ int neverc_mail_parse_address_list(const char *s,
             return -1;
         count++;
 
-        if (*p == ',') p++;
+        if (*p == ',') {
+            p++;
+            while (*p == ' ' || *p == '\t') p++;
+            /* Trailing comma is an empty mailbox (Go ParseAddressList). */
+            if (!*p) return -1;
+        }
     }
+    while (*p == ' ' || *p == '\t') p++;
+    /* A max_out cap must not silently drop remaining recipients. */
+    if (*p) return -1;
+    if (count == 0) return -1;
     return count;
 }
 
 int neverc_mail_format_address(const neverc_mail_address_t *addr, char *buf, size_t cap) {
-    if (!addr || !buf || cap == 0 || !mail_address_safe(addr->address))
+    if (!addr || !buf || cap == 0 || !mail_addr_spec_ok(addr->address))
         return -1;
     if (mail_field_has_ctl(addr->name, strlen(addr->name))) return -1;
     if (!addr->name[0])
-        return snprintf(buf, cap, "%s", addr->address);
+        return mail_put(buf, cap, "%s", addr->address, NULL);
 
     int need_quote = 0;
     for (const unsigned char *p = (const unsigned char *)addr->name; *p; p++) {
@@ -165,7 +204,7 @@ int neverc_mail_format_address(const neverc_mail_address_t *addr, char *buf, siz
             need_quote = 1;
     }
     if (!need_quote)
-        return snprintf(buf, cap, "%s <%s>", addr->name, addr->address);
+        return mail_put(buf, cap, "%s <%s>", addr->name, addr->address);
 
     char quoted[sizeof(addr->name) * 2 + 3];
     size_t qi = 0;
@@ -176,7 +215,7 @@ int neverc_mail_format_address(const neverc_mail_address_t *addr, char *buf, siz
     }
     quoted[qi++] = '"';
     quoted[qi] = '\0';
-    return snprintf(buf, cap, "%s <%s>", quoted, addr->address);
+    return mail_put(buf, cap, "%s <%s>", quoted, addr->address);
 }
 
 int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_t *out) {
@@ -288,37 +327,173 @@ const char *neverc_mail_header_get(const neverc_mail_message_t *msg, const char 
     return NULL;
 }
 
-long long neverc_mail_parse_date(const char *s) {
-    /* Simplified RFC 5322 date parser */
-    if (!s) return -1;
+static int mail_is_alpha(unsigned char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+}
 
-    /* Skip day-of-week if present */
-    const char *p = s;
-    const char *comma = strchr(p, ',');
-    if (comma) p = comma + 1;
-    while (*p == ' ') p++;
+/* Nested RFC 5322 comments so a comma inside "(We, st)" is not a day-of-week. */
+static int mail_skip_cfws(const char **pp) {
+    const char *p = *pp;
+    for (;;) {
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p != '(') break;
+        int depth = 1;
+        p++;
+        while (*p && depth) {
+            if (*p == '\\' && p[1]) {
+                p += 2;
+                continue;
+            }
+            if (*p == '(') depth++;
+            else if (*p == ')') depth--;
+            p++;
+        }
+        if (depth) return -1;
+    }
+    *pp = p;
+    return 0;
+}
 
-    int day = 0, year = 0, hour = 0, min = 0, sec = 0;
-    char month_str[16] = {0};
-    char zone[8] = {0};
+static int mail_parse_uint(const char **pp, int min_digits, int max_digits,
+                           int *out) {
+    const char *p = *pp;
+    if (*p < '0' || *p > '9') return -1;
+    int v = 0, d = 0;
+    while (*p >= '0' && *p <= '9') {
+        if (d >= max_digits) return -1;
+        v = v * 10 + (*p - '0');
+        p++;
+        d++;
+    }
+    if (d < min_digits) return -1;
+    *out = v;
+    *pp = p;
+    return 0;
+}
 
-    int fields = sscanf(p, "%d %15s %d %d:%d:%d %7s", &day, month_str,
-                        &year, &hour, &min, &sec, zone);
-    if (fields < 5)
-        return -1;
-
+static int mail_month_index(const char *p) {
     static const char *months[] = {
         "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"
     };
-    int month = -1;
     for (int i = 0; i < 12; i++) {
-        if (month_str[0] == months[i][0] && month_str[1] == months[i][1] && month_str[2] == months[i][2]) {
-            month = i; break;
+        if (p[0] == months[i][0] && p[1] == months[i][1] &&
+            p[2] == months[i][2])
+            return i;
+    }
+    return -1;
+}
+
+static int mail_dow_ok(const char *p) {
+    static const char *dows[] = {
+        "Mon","Tue","Wed","Thu","Fri","Sat","Sun"
+    };
+    for (int i = 0; i < 7; i++) {
+        if (p[0] == dows[i][0] && p[1] == dows[i][1] && p[2] == dows[i][2])
+            return 1;
+    }
+    return 0;
+}
+
+/* RFC 5322 obs-zone plus UT/UTC/GMT. Military 1-letter zones are -0000. */
+static int mail_named_zone(const char *p, size_t n, int *offset) {
+    static const struct { const char *name; int off; } zones[] = {
+        {"UT", 0}, {"UTC", 0}, {"GMT", 0},
+        {"EST", -5 * 3600}, {"EDT", -4 * 3600},
+        {"CST", -6 * 3600}, {"CDT", -5 * 3600},
+        {"MST", -7 * 3600}, {"MDT", -6 * 3600},
+        {"PST", -8 * 3600}, {"PDT", -7 * 3600},
+    };
+    for (size_t i = 0; i < sizeof(zones) / sizeof(zones[0]); i++) {
+        if (strlen(zones[i].name) == n && memcmp(p, zones[i].name, n) == 0) {
+            *offset = zones[i].off;
+            return 0;
         }
     }
-    if (month < 0) return -1;
+    if (n == 1 && mail_is_alpha((unsigned char)p[0])) {
+        *offset = 0;
+        return 0;
+    }
+    return -1;
+}
 
-    if (year < 100) year += (year < 50) ? 2000 : 1900;
+long long neverc_mail_parse_date(const char *s) {
+    if (!s || !s[0]) return -1;
+
+    const char *p = s;
+    if (mail_skip_cfws(&p) != 0) return -1;
+
+    /* Optional day-of-week "," — only if the token is 3 letters and a comma
+     * follows. A leading month is left for the date production. */
+    if (mail_is_alpha((unsigned char)p[0]) &&
+        mail_is_alpha((unsigned char)p[1]) &&
+        mail_is_alpha((unsigned char)p[2]) &&
+        !mail_is_alpha((unsigned char)p[3])) {
+        const char *q = p + 3;
+        if (mail_skip_cfws(&q) != 0) return -1;
+        if (*q == ',') {
+            if (!mail_dow_ok(p)) return -1;
+            p = q + 1;
+            if (mail_skip_cfws(&p) != 0) return -1;
+        }
+    }
+
+    int day = 0;
+    if (mail_parse_uint(&p, 1, 2, &day) != 0) return -1;
+    if (mail_skip_cfws(&p) != 0) return -1;
+
+    /* Month is exactly 3 ALPHA (reject "January"). */
+    if (!mail_is_alpha((unsigned char)p[0]) ||
+        !mail_is_alpha((unsigned char)p[1]) ||
+        !mail_is_alpha((unsigned char)p[2]) ||
+        mail_is_alpha((unsigned char)p[3]))
+        return -1;
+    int month = mail_month_index(p);
+    if (month < 0) return -1;
+    p += 3;
+    if (mail_skip_cfws(&p) != 0) return -1;
+
+    int year = 0;
+    const char *y0 = p;
+    if (mail_parse_uint(&p, 2, 4, &year) != 0) return -1;
+    int ydigits = (int)(p - y0);
+    if (ydigits == 3) return -1;
+    if (ydigits == 2) year += (year < 50) ? 2000 : 1900;
+    if (year < 1 || year > 9999) return -1;
+    if (mail_skip_cfws(&p) != 0) return -1;
+
+    int hour = 0, min = 0, sec = 0;
+    if (mail_parse_uint(&p, 1, 2, &hour) != 0 || *p != ':') return -1;
+    p++;
+    if (mail_parse_uint(&p, 1, 2, &min) != 0) return -1;
+    if (*p == ':') {
+        p++;
+        if (mail_parse_uint(&p, 1, 2, &sec) != 0) return -1;
+    }
+    if (mail_skip_cfws(&p) != 0) return -1;
+
+    /* zone is required (RFC 5322 time = time-of-day zone). */
+    int zone_offset = 0;
+    if (*p == '+' || *p == '-') {
+        char sign = *p++;
+        int zh = 0, zm = 0;
+        if (p[0] < '0' || p[0] > '9' || p[1] < '0' || p[1] > '9' ||
+            p[2] < '0' || p[2] > '9' || p[3] < '0' || p[3] > '9')
+            return -1;
+        zh = (p[0] - '0') * 10 + (p[1] - '0');
+        zm = (p[2] - '0') * 10 + (p[3] - '0');
+        p += 4;
+        if (zh > 23 || zm > 59) return -1;
+        zone_offset = zh * 3600 + zm * 60;
+        if (sign == '-') zone_offset = -zone_offset;
+    } else {
+        const char *z0 = p;
+        while (mail_is_alpha((unsigned char)*p)) p++;
+        if (mail_named_zone(z0, (size_t)(p - z0), &zone_offset) != 0)
+            return -1;
+    }
+
+    if (mail_skip_cfws(&p) != 0 || *p) return -1;
+
     int leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
     static const int month_days[] = {
         31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
@@ -327,25 +502,6 @@ long long neverc_mail_parse_date(const char *s) {
     if (day < 1 || day > max_day || hour < 0 || hour > 23 ||
         min < 0 || min > 59 || sec < 0 || sec > 60)
         return -1;
-
-    int zone_offset = 0;
-    if (fields >= 7) {
-        size_t zone_len = strlen(zone);
-        if (zone_len == 5 && (zone[0] == '+' || zone[0] == '-') &&
-            zone[1] >= '0' && zone[1] <= '9' &&
-            zone[2] >= '0' && zone[2] <= '9' &&
-            zone[3] >= '0' && zone[3] <= '9' &&
-            zone[4] >= '0' && zone[4] <= '9') {
-            int zone_hour = (zone[1] - '0') * 10 + zone[2] - '0';
-            int zone_minute = (zone[3] - '0') * 10 + zone[4] - '0';
-            if (zone_hour > 23 || zone_minute > 59) return -1;
-            zone_offset = zone_hour * 3600 + zone_minute * 60;
-            if (zone[0] == '-') zone_offset = -zone_offset;
-        } else if (strcmp(zone, "UT") != 0 && strcmp(zone, "UTC") != 0 &&
-                   strcmp(zone, "GMT") != 0) {
-            return -1;
-        }
-    }
 
     /* Days since the Unix epoch via Howard Hinnant's O(1) days_from_civil (the
      * same closed form time.c uses). Replaces a naive O(year-1970) leap-day loop

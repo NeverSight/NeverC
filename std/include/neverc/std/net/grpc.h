@@ -132,7 +132,8 @@ int neverc_grpc_client_stream_send(
 int neverc_grpc_client_stream_close_send(
     neverc_grpc_client_stream_t *stream, neverc_context_t *context);
 /* Return 1 for an owned-by-stream message view (valid until next receive),
- * 0 after valid grpc-status trailers, and -1 on protocol/transport error. */
+ * 0 after a terminal status (trailers, trailers-only headers, or mapped
+ * HTTP status), and -1 on protocol/transport error. */
 int neverc_grpc_client_stream_receive(
     neverc_grpc_client_stream_t *stream, neverc_context_t *context,
     neverc_grpc_message_t *message);

@@ -69,6 +69,26 @@ static void test_wire_golden(void) {
     CHECK(neverc_protobuf_reader_next(&reader, &field) == 0);
 }
 
+static void test_scalar_writers(void) {
+    uint8_t encoded[256];
+    neverc_protobuf_writer_t writer;
+    neverc_protobuf_writer_init(&writer, encoded, sizeof(encoded));
+    CHECK(neverc_protobuf_write_bool(&writer, 1U, 1) == 0);
+    CHECK(neverc_protobuf_write_uint32(&writer, 2U, 7U) == 0);
+    CHECK(neverc_protobuf_write_int32(&writer, 3U, -1) == 0);
+    CHECK(neverc_protobuf_write_int64(&writer, 4U, -2) == 0);
+    CHECK(neverc_protobuf_write_sint64(&writer, 5U, -3) == 0);
+    CHECK(neverc_protobuf_write_fixed32(&writer, 6U, 1U) == 0);
+    CHECK(neverc_protobuf_write_fixed64(&writer, 7U, 2U) == 0);
+    CHECK(neverc_protobuf_write_sfixed32(&writer, 8U, -4) == 0);
+    CHECK(neverc_protobuf_write_sfixed64(&writer, 9U, -5) == 0);
+    CHECK(neverc_protobuf_write_enum(&writer, 10U, 3) == 0);
+    CHECK(neverc_protobuf_write_float(&writer, 11U, 1.0f) == 0);
+    CHECK(neverc_protobuf_write_double(&writer, 12U, 2.0) == 0);
+    CHECK(neverc_protobuf_write_bytes(&writer, 13U, "hi", 2U) == 0);
+    CHECK(neverc_protobuf_writer_length(&writer) > 0U);
+}
+
 static void test_descriptor_roundtrip(void) {
     protobuf_test_message_t input;
     memset(&input, 0, sizeof(input));
@@ -239,14 +259,73 @@ static void test_int32_range(void) {
     static const neverc_protobuf_message_descriptor_t desc = {
         sizeof(int32_msg_t), fields, 1U};
     int32_msg_t msg;
-    static const uint8_t overflow[] = {
-        0x08U, 0x80U, 0x80U, 0x80U, 0x80U, 0x10U}; /* 4294967296 */
-    CHECK(neverc_protobuf_message_decode(&desc, overflow, sizeof(overflow),
-                                         64U, &msg, sizeof(msg)) == -1);
+
+    /* 5-byte 0xFFFFFFFF is a valid int32 encoding of -1 (low 32 bits). */
+    static const uint8_t truncated_neg[] = {
+        0x08U, 0xffU, 0xffU, 0xffU, 0xffU, 0x0fU};
+    CHECK(neverc_protobuf_message_decode(&desc, truncated_neg,
+                                         sizeof(truncated_neg), 64U, &msg,
+                                         sizeof(msg)) == 0);
+    CHECK(msg.n == -1);
+
+    /* 2^32 truncates to 0, matching proto2/proto3 wire compatibility. */
+    static const uint8_t two_pow_32[] = {
+        0x08U, 0x80U, 0x80U, 0x80U, 0x80U, 0x10U};
+    CHECK(neverc_protobuf_message_decode(&desc, two_pow_32,
+                                         sizeof(two_pow_32), 64U, &msg,
+                                         sizeof(msg)) == 0);
+    CHECK(msg.n == 0);
+
+    /* Sign-extended 10-byte int32(-1) still round-trips. */
+    uint8_t encoded[16];
+    neverc_protobuf_writer_t writer;
+    neverc_protobuf_writer_init(&writer, encoded, sizeof(encoded));
+    CHECK(neverc_protobuf_write_int32(&writer, 1U, -1) == 0);
+    CHECK(neverc_protobuf_message_decode(&desc, encoded,
+                                         neverc_protobuf_writer_length(&writer),
+                                         64U, &msg, sizeof(msg)) == 0);
+    CHECK(msg.n == -1);
+
     static const uint8_t ok[] = {0x08U, 0x2aU}; /* 42 */
     CHECK(neverc_protobuf_message_decode(&desc, ok, sizeof(ok),
                                          64U, &msg, sizeof(msg)) == 0);
     CHECK(msg.n == 42);
+}
+
+static void test_bool_and_uint32_compat(void) {
+    typedef struct {
+        int flag;
+        uint32_t u;
+    } compat_msg_t;
+    static const neverc_protobuf_field_descriptor_t fields[] = {
+        {1U, NEVERC_PROTOBUF_TYPE_BOOL,
+         offsetof(compat_msg_t, flag), SIZE_MAX},
+        {2U, NEVERC_PROTOBUF_TYPE_UINT32,
+         offsetof(compat_msg_t, u), SIZE_MAX},
+    };
+    static const neverc_protobuf_message_descriptor_t desc = {
+        sizeof(compat_msg_t), fields, 2U};
+    compat_msg_t msg;
+
+    /* Nonzero bool varint is true. */
+    static const uint8_t bool_two[] = {0x08U, 0x02U};
+    CHECK(neverc_protobuf_message_decode(&desc, bool_two, sizeof(bool_two),
+                                         64U, &msg, sizeof(msg)) == 0);
+    CHECK(msg.flag == 1);
+
+    /* uint32 2^32+1 truncates to 1. */
+    static const uint8_t u32[] = {
+        0x10U, 0x81U, 0x80U, 0x80U, 0x80U, 0x10U};
+    CHECK(neverc_protobuf_message_decode(&desc, u32, sizeof(u32),
+                                         64U, &msg, sizeof(msg)) == 0);
+    CHECK(msg.u == 1U);
+
+    /* Packed bool last-wins, including a nonzero-not-one value. */
+    static const uint8_t packed_bool[] = {0x0aU, 0x02U, 0x00U, 0x07U};
+    CHECK(neverc_protobuf_message_decode(&desc, packed_bool,
+                                         sizeof(packed_bool), 64U, &msg,
+                                         sizeof(msg)) == 0);
+    CHECK(msg.flag == 1);
 }
 
 static void test_utf8_and_bounds(void) {
@@ -259,11 +338,24 @@ static void test_utf8_and_bounds(void) {
     neverc_protobuf_writer_init(&writer, one_byte, sizeof(one_byte));
     CHECK(neverc_protobuf_write_string(&writer, 1U, "too-long", 8U) == -1);
     CHECK(neverc_protobuf_writer_length(&writer) == 0U);
+
+    typedef struct { neverc_protobuf_bytes_t s; } str_msg_t;
+    static const neverc_protobuf_field_descriptor_t str_fields[] = {
+        {1U, NEVERC_PROTOBUF_TYPE_STRING,
+         offsetof(str_msg_t, s), SIZE_MAX},
+    };
+    static const neverc_protobuf_message_descriptor_t str_desc = {
+        sizeof(str_msg_t), str_fields, 1U};
+    str_msg_t str_msg;
+    static const uint8_t bad_str[] = {0x0aU, 0x02U, 0xc0U, 0xafU};
+    CHECK(neverc_protobuf_message_decode(&str_desc, bad_str, sizeof(bad_str),
+                                         64U, &str_msg, sizeof(str_msg)) == -1);
 }
 
 int main(void) {
     printf("Protobuf test suite:\n");
     test_wire_golden();
+    test_scalar_writers();
     test_descriptor_roundtrip();
     test_malformed_inputs();
     test_skip_groups();
@@ -271,6 +363,7 @@ int main(void) {
     test_zigzag();
     test_packed_and_wire_compat();
     test_int32_range();
+    test_bool_and_uint32_compat();
     test_utf8_and_bounds();
     printf("protobuf: %d checks, %d failed\n", tests_run, tests_failed);
     if (tests_failed == 0) puts("passed");

@@ -122,6 +122,86 @@ static void test_optional_headers_and_invalid_inputs(void) {
     ASSERT_INT_EQ(neverc_gzip_decompress(
                       junk_before_trailer, base_len + 1, output, &output_len),
                   -1);
+
+    uint8_t missing_comment_terminator[18] = {
+        0x1f, 0x8b, 0x08, 0x10, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1
+    };
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(
+                      missing_comment_terminator,
+                      sizeof(missing_comment_terminator), output, &output_len),
+                  -1);
+
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(base, 10, output, &output_len), -1);
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(base, base_len - 4, output, &output_len),
+                  -1);
+}
+
+static void test_concatenated_members(void) {
+    printf("[gzip concatenated members]\n");
+    uint8_t first[256], second[256], cat[512], output[64];
+    size_t first_len = sizeof(first);
+    size_t second_len = sizeof(second);
+    ASSERT_INT_EQ(neverc_gzip_compress(
+                      (const uint8_t *)"hello", 5, first, &first_len, 1),
+                  0);
+    ASSERT_INT_EQ(neverc_gzip_compress(
+                      (const uint8_t *)" world", 6, second, &second_len, 1),
+                  0);
+    memcpy(cat, first, first_len);
+    memcpy(cat + first_len, second, second_len);
+    size_t cat_len = first_len + second_len;
+
+    /* RFC 1952 files are a series of members. The last member's ISIZE (6)
+     * must not be used as the inflate cap for the concatenated payload. */
+    size_t output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(cat, cat_len, output, &output_len), 0);
+    ASSERT_TRUE(output_len == 11 && memcmp(output, "hello world", 11) == 0);
+
+    output_len = 5; /* enough for the first member only */
+    ASSERT_INT_EQ(neverc_gzip_decompress(cat, cat_len, output, &output_len),
+                  -1);
+
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(cat, first_len + 4, output, &output_len),
+                  -1);
+
+    uint8_t empty_comp[256];
+    size_t empty_len = sizeof(empty_comp);
+    ASSERT_INT_EQ(neverc_gzip_compress(
+                      (const uint8_t *)"", 0, empty_comp, &empty_len, 1),
+                  0);
+    memcpy(cat, empty_comp, empty_len);
+    memcpy(cat + empty_len, first, first_len);
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(
+                      cat, empty_len + first_len, output, &output_len),
+                  0);
+    ASSERT_TRUE(output_len == 5 && memcmp(output, "hello", 5) == 0);
+
+    /* Second member carries FNAME+FHCRC; header CRC is relative to that member. */
+    uint8_t extended[320];
+    memcpy(extended, first, 10);
+    extended[3] = 0x0a; /* FNAME | FHCRC */
+    size_t pos = 10;
+    extended[pos++] = 'n';
+    extended[pos++] = '\0';
+    uint16_t header_crc =
+        (uint16_t)(neverc_crc32_ieee(extended, pos) & UINT32_C(0xffff));
+    extended[pos++] = (uint8_t)header_crc;
+    extended[pos++] = (uint8_t)(header_crc >> 8);
+    memcpy(extended + pos, first + 10, first_len - 10);
+    size_t extended_len = pos + first_len - 10;
+    memcpy(cat, second, second_len);
+    memcpy(cat + second_len, extended, extended_len);
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(
+                      cat, second_len + extended_len, output, &output_len),
+                  0);
+    ASSERT_TRUE(output_len == 11 && memcmp(output, " worldhello", 11) == 0);
 }
 
 int main(void) {
@@ -137,6 +217,7 @@ int main(void) {
     for (int i = 0; i < 4096; i++) data[i] = (uint8_t)(i & 0xFF);
     test_roundtrip("mixed", data, sizeof(data), 1);
     test_optional_headers_and_invalid_inputs();
+    test_concatenated_members();
 
     {
         uint8_t comp[256], output[4096];
@@ -163,8 +244,22 @@ int main(void) {
         ASSERT_INT_EQ(neverc_gzip_decompress(
                           comp, comp_len, output, &output_len),
                       -1);
+
+        /* Forged ISIZE larger than the destination still must not be treated
+         * as the inflate cap (the overflow direction of the same bug). */
+        uint8_t large_isize[256];
+        memcpy(large_isize, comp, comp_len);
+        large_isize[comp_len - 4] = 0xff;
+        large_isize[comp_len - 3] = 0xff;
+        large_isize[comp_len - 2] = 0xff;
+        large_isize[comp_len - 1] = 0xff;
+        output_len = 16; /* bigger than the real 5-byte payload, far below ISIZE */
+        ASSERT_INT_EQ(neverc_gzip_decompress(
+                          large_isize, comp_len, output, &output_len),
+                      -1);
     }
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

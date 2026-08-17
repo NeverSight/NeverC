@@ -34,6 +34,23 @@ static void test_canonical_key(void) {
     k = neverc_textproto_canonical_mime_header_key("Accept");
     check_str("already_canon", k, "Accept");
     free(k);
+
+    k = neverc_textproto_canonical_mime_header_key("MIME-Version");
+    check_str("mime_version", k, "MIME-Version");
+    free(k);
+    k = neverc_textproto_canonical_mime_header_key("mime-version");
+    check_str("mime_version_lower", k, "MIME-Version");
+    free(k);
+    k = neverc_textproto_canonical_mime_header_key("MIME-VERSION");
+    check_str("mime_version_upper", k, "MIME-Version");
+    free(k);
+
+    k = neverc_textproto_canonical_mime_header_key("X Name");
+    check_str("invalid_unmodified", k, "X Name");
+    free(k);
+    k = neverc_textproto_canonical_mime_header_key("not:a-token");
+    check_str("colon_unmodified", k, "not:a-token");
+    free(k);
 }
 
 static void test_mime_header(void) {
@@ -55,6 +72,13 @@ static void test_mime_header(void) {
     neverc_mime_header_del(&h, "Accept");
     check("del", neverc_mime_header_get(&h, "Accept") == NULL);
     check("len_1_after_del", neverc_mime_header_len(&h) == 1);
+
+    neverc_mime_header_add(&h, "MIME-Version", "1.0");
+    check_str("get_mime_version", neverc_mime_header_get(&h, "mime-version"),
+              "1.0");
+    check("stored_mime_version",
+          h.count >= 1 && h.keys[h.count - 1] &&
+              strcmp(h.keys[h.count - 1], "MIME-Version") == 0);
 
     neverc_mime_header_free(&h);
 }
@@ -171,6 +195,18 @@ static void test_read_mime_header(void) {
                                           &consumed);
     check("tab in value ok", rc == 0);
     check_str("tab value", neverc_mime_header_get(&h, "X-Name"), "a\tb");
+    neverc_mime_header_free(&h);
+
+    const char *mv = "MIME-Version: 1.0\r\n\r\n";
+    neverc_mime_header_init(&h);
+    consumed = 0;
+    rc = neverc_textproto_read_mime_header(mv, strlen(mv), &h, &consumed);
+    check("mime_version_header_ok", rc == 0);
+    check_str("mime_version_value",
+              neverc_mime_header_get(&h, "MIME-Version"), "1.0");
+    check("mime_version_stored",
+          h.count == 1 && h.keys[0] &&
+              strcmp(h.keys[0], "MIME-Version") == 0);
     neverc_mime_header_free(&h);
 
     neverc_mime_header_init(&h);

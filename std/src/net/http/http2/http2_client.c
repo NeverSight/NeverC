@@ -15,6 +15,7 @@
 
 #define H2_CLIENT_MAX_DECODED_HEADERS 128
 #define H2_CLIENT_CONTEXT_POLL_MS 25
+#define H2_MAX_CONTINUATION_FRAMES 128
 
 struct neverc_h2_client_stream {
     neverc_h2_client_t *client;
@@ -78,6 +79,7 @@ struct neverc_h2_client {
     uint32_t pending_stream_id;
     int pending_active;
     int pending_end_stream;
+    int pending_continuations;
 };
 
 static int h2_client_transport_read_all(neverc_h2_client_t *client,
@@ -344,6 +346,7 @@ static void h2_client_clear_pending(neverc_h2_client_t *client) {
     client->pending_stream_id = 0;
     client->pending_active = 0;
     client->pending_end_stream = 0;
+    client->pending_continuations = 0;
 }
 
 static int h2_client_name_valid(const char *name) {
@@ -663,7 +666,8 @@ static int h2_client_apply_settings(neverc_h2_client_t *client,
             client->peer_settings.max_concurrent_streams = value;
         } else if (id == NC_H2_SETTINGS_HEADER_TABLE_SIZE) {
             client->peer_settings.header_table_size = value;
-            encoder_table_size = value;
+            encoder_table_size = value > NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE
+                ? NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE : value;
             encoder_table_changed = 1;
         } else if (id == NC_H2_SETTINGS_MAX_HEADER_LIST_SIZE) {
             client->peer_settings.max_header_list_size = value;
@@ -766,6 +770,7 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
             (header->flags & NC_H2_FLAG_END_HEADERS) == 0;
         client->pending_end_stream =
             (header->flags & NC_H2_FLAG_END_STREAM) != 0;
+        client->pending_continuations = 0;
         int result = 0;
         if (!client->pending_active)
             result = h2_client_decode_pending(
@@ -779,7 +784,8 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
             return -1;
         nc_mutex_lock(&client->state_lock);
         if (h2_client_append_pending(client, payload,
-                                     header->length) != 0) {
+                                     header->length) != 0 ||
+            ++client->pending_continuations > H2_MAX_CONTINUATION_FRAMES) {
             nc_mutex_unlock(&client->state_lock);
             return -1;
         }

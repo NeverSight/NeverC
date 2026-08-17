@@ -31,6 +31,12 @@ static void test_basic(void) {
 
     ASSERT_TRUE(neverc_map_get(m, "missing") == NULL);
 
+    int empty_val = 7;
+    ASSERT_INT_EQ(neverc_map_set(m, "", &empty_val), 0);
+    ASSERT_TRUE(neverc_map_has(m, ""));
+    ASSERT_INT_EQ(*(int *)neverc_map_get(m, ""), 7);
+    ASSERT_INT_EQ((int)neverc_map_len(m), 3);
+
     neverc_map_free(m);
 }
 

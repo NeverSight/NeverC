@@ -112,6 +112,9 @@ int neverc_pe_open(neverc_pe_file_t *f, const uint8_t *data, size_t len) {
         return pe_open_fail(f);
     }
 
+    if (f->optional_header.size_of_headers > len)
+        return pe_open_fail(f);
+
     /* Parse sections */
     const uint8_t *sec_start = opt + opt_size;
     uint16_t nsec = f->file_header.number_of_sections;
@@ -289,7 +292,8 @@ int neverc_pe_symbols(const neverc_pe_file_t *f,
     int real_count = 0;
     for (uint32_t i = 0; i < nsym; ) {
         real_count++;
-        uint8_t aux_count = sym_data[i * 18 + 17];
+        const uint8_t *rec = sym_data + (size_t)((uint64_t)i * 18U);
+        uint8_t aux_count = rec[17];
         if ((uint32_t)aux_count > nsym - i - 1U)
             return -1;
         i += 1 + aux_count;
@@ -304,7 +308,7 @@ int neverc_pe_symbols(const neverc_pe_file_t *f,
 
     int idx = 0;
     for (uint32_t i = 0; i < nsym && idx < real_count; ) {
-        const uint8_t *e = sym_data + i * 18;
+        const uint8_t *e = sym_data + (size_t)((uint64_t)i * 18U);
         neverc_pe_symbol_t *s = &(*syms)[idx];
 
         if (e[0] || e[1] || e[2] || e[3]) {
@@ -355,7 +359,9 @@ static int pe_rva_to_file_offset(const neverc_pe_file_t *f, uint32_t rva,
         return -1;
 
     uint64_t header_size = f->optional_header.size_of_headers;
-    if ((uint64_t)rva < header_size && (size_t)rva <= f->data_len) {
+    if (header_size > f->data_len)
+        header_size = f->data_len;
+    if ((uint64_t)rva < header_size) {
         uint64_t header_available = header_size - rva;
         size_t file_available = f->data_len - (size_t)rva;
         size_t n = header_available < file_available

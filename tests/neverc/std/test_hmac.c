@@ -1,4 +1,5 @@
 #include "neverc/std/crypto/hmac.h"
+#include "neverc/std/crypto/sha256.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -72,6 +73,16 @@ static void test_hmac_sha256_rfc4231(void) {
         check_hex("TC4 sha256", mac,
             "82558a389a443c0ea4cc819899f2083a"
             "85f0faa3e578f8077a2e3ff46729665b", 32);
+    }
+
+    /* Test Case 5: truncation vector, full 256-bit MAC */
+    {
+        uint8_t key[20]; memset(key, 0x0c, 20);
+        const uint8_t *data = (const uint8_t *)"Test With Truncation";
+        neverc_hmac_sha256(key, 20, data, 20, mac);
+        check_hex("TC5 sha256", mac,
+            "a3b6167473100ee06e0c796c2955552b"
+            "fa6f7c0a6a8aef8b93f860aab0cd20c5", 32);
     }
 
     /* Test Case 6: key > block_size (131 bytes) */
@@ -210,6 +221,28 @@ static void test_hmac_equal(void) {
     check_int("null zero-length equal", neverc_hmac_equal(NULL, NULL, 0), 1);
 }
 
+static void test_hmac_not_length_extendable(void) {
+    printf("[hmac resists length extension]\n");
+
+    /* HMAC(K, m) must not be H(K||m); the latter is length-extendable. */
+    const uint8_t key[] = "secret";
+    const uint8_t data[] = "message";
+    uint8_t mac[32], naive[32];
+    neverc_hmac_sha256(key, 6, data, 7, mac);
+
+    neverc_sha256_ctx ctx;
+    neverc_sha256_init(&ctx);
+    neverc_sha256_update(&ctx, key, 6);
+    neverc_sha256_update(&ctx, data, 7);
+    neverc_sha256_final(&ctx, naive);
+    check_int("HMAC-SHA256 != SHA256(key||msg)", memcmp(mac, naive, 32) != 0, 1);
+
+    neverc_hmac_sha256(NULL, 0, NULL, 0, mac);
+    check_hex("HMAC-SHA256 empty key and data", mac,
+        "b613679a0814d9ec772f95d778c35fc5"
+        "ff1697c493715653c6c712144292c5ad", 32);
+}
+
 static void test_empty_and_invalid_inputs(void) {
     printf("[empty and invalid inputs]\n");
     uint8_t byte = 0;
@@ -253,6 +286,7 @@ int main(void) {
     test_hmac_sha1_rfc2202();
     test_hmac_sha512_rfc4231();
     test_hmac_equal();
+    test_hmac_not_length_extendable();
     test_empty_and_invalid_inputs();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

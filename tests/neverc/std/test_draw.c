@@ -245,6 +245,22 @@ static void test_draw_over_self_overlap(void) {
     neverc_image_rgba_free(&img);
 }
 
+static void test_draw_null(void) {
+    printf("[draw_null]\n");
+    neverc_image_rgba_t dst;
+    neverc_image_rgba_init(&dst, neverc_rect(0, 0, 2, 2));
+    neverc_draw(NULL, neverc_rect(0, 0, 2, 2), &dst, neverc_pt(0, 0),
+                NEVERC_DRAW_SRC);
+    neverc_draw(&dst, neverc_rect(0, 0, 2, 2), NULL, neverc_pt(0, 0),
+                NEVERC_DRAW_SRC);
+    neverc_draw_uniform(NULL, neverc_rect(0, 0, 2, 2), 1, 2, 3, 4,
+                        NEVERC_DRAW_SRC);
+    neverc_draw_gray_over(NULL, neverc_rect(0, 0, 2, 2), NULL, neverc_pt(0, 0),
+                          1, 2, 3, 4);
+    check("null draw is a no-op", 1);
+    neverc_image_rgba_free(&dst);
+}
+
 int main(void) {
     test_draw_src();
     test_draw_uniform();
@@ -255,6 +271,7 @@ int main(void) {
     test_draw_clip_int_overflow();
     test_draw_src_self_overlap();
     test_draw_over_self_overlap();
+    test_draw_null();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
 }

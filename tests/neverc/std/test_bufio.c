@@ -100,6 +100,33 @@ static void test_scanner_crlf(void) {
     neverc_bufio_scanner_free(&sc);
 }
 
+static void test_scanner_empty_lines(void) {
+    printf("[scanner empty lines]\n");
+    const char *data = "a\n\nb";
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)data, strlen(data));
+    neverc_io_reader_t r = { &mr, neverc_io_mem_reader_read };
+
+    neverc_bufio_scanner_t sc;
+    neverc_bufio_scanner_init(&sc, r);
+
+    check_int("empty lines 1", neverc_bufio_scanner_scan(&sc), 1);
+    size_t len;
+    const uint8_t *line = neverc_bufio_scanner_bytes(&sc, &len);
+    check_bytes("empty lines first", line, len, "a");
+
+    check_int("empty lines 2", neverc_bufio_scanner_scan(&sc), 1);
+    line = neverc_bufio_scanner_bytes(&sc, &len);
+    check_bytes("empty lines blank", line, len, "");
+
+    check_int("empty lines 3", neverc_bufio_scanner_scan(&sc), 1);
+    line = neverc_bufio_scanner_bytes(&sc, &len);
+    check_bytes("empty lines last", line, len, "b");
+
+    check_int("empty lines eof", neverc_bufio_scanner_scan(&sc), 0);
+    neverc_bufio_scanner_free(&sc);
+}
+
 typedef struct {
     size_t remaining;
 } final_eof_reader_t;
@@ -296,6 +323,26 @@ static void test_buffered_writer(void) {
     neverc_bufio_writer_write_byte(&bw, '!');
     neverc_bufio_writer_flush(&bw);
     check_bytes("byte added", mw.data, mw.len, "Hello!");
+
+    neverc_bufio_writer_free(&bw);
+    neverc_io_mem_writer_free(&mw);
+}
+
+static void test_buffered_writer_default_size(void) {
+    printf("[buffered writer default size]\n");
+    neverc_io_mem_writer_t mw;
+    neverc_io_mem_writer_init(&mw);
+    neverc_io_writer_t w = { &mw, neverc_io_mem_writer_write };
+
+    neverc_bufio_writer_t bw;
+    neverc_bufio_writer_init(&bw, w);
+    check_size("default cap", bw.buf_cap, NEVERC_BUFIO_DEFAULT_SIZE);
+
+    size_t n;
+    neverc_bufio_writer_write(&bw, (const uint8_t *)"ok", 2, &n);
+    check_size("default write n", n, 2);
+    neverc_bufio_writer_flush(&bw);
+    check_bytes("default flushed", mw.data, mw.len, "ok");
 
     neverc_bufio_writer_free(&bw);
     neverc_io_mem_writer_free(&mw);
@@ -594,12 +641,14 @@ int main(void) {
     test_scanner();
     test_scanner_no_trailing_newline();
     test_scanner_crlf();
+    test_scanner_empty_lines();
     test_scanner_full_buffer_with_eof();
     test_scanner_data_with_terminal_error();
     test_buffered_reader();
     test_buffered_reader_preserves_terminal_error();
     test_buffered_reader_readline();
     test_buffered_writer();
+    test_buffered_writer_default_size();
     test_partial_write_error();
     test_partial_write_without_error();
     test_zero_size_buffers();

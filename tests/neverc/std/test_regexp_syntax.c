@@ -94,6 +94,7 @@ static void test_parse_anchors(void) {
     printf("[parse_anchors]\n");
     const char *err = NULL;
     neverc_regexp_syntax_node_t *n;
+    char *s;
 
     n = neverc_regexp_syntax_parse("^", 0, &err);
     check_not_null("caret", n);
@@ -108,6 +109,19 @@ static void test_parse_anchors(void) {
     n = neverc_regexp_syntax_parse("$", 0, &err);
     check_not_null("dollar", n);
     check_op("dollar op", n, NC_RE_OP_END_TEXT);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("^", 0, &err);
+    s = neverc_regexp_syntax_string(n);
+    check_str("string ^", s, "^");
+    free(s);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("\\A", 0, &err);
+    check_op("\\A op", n, NC_RE_OP_BEGIN_TEXT);
+    s = neverc_regexp_syntax_string(n);
+    check_str("string \\A", s, "\\A");
+    free(s);
     neverc_regexp_syntax_free(n);
 }
 
@@ -242,6 +256,11 @@ static void test_parse_group(void) {
     check_op("named cap op", n, NC_RE_OP_CAPTURE);
     check_str("named cap name", n ? n->name : NULL, "name");
     neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("(?P<>abc)", 0, &err);
+    check_null("empty named cap", n);
+    n = neverc_regexp_syntax_parse("(?P<foo-bar>x)", 0, &err);
+    check_null("invalid named cap chars", n);
 }
 
 /* ===== Char class ===== */
@@ -282,6 +301,28 @@ static void test_parse_charclass(void) {
 
     n = neverc_regexp_syntax_parse("[a-\\d]", 0, &err);
     check_null("[a-\\d] class as range end", n);
+
+    n = neverc_regexp_syntax_parse("[\\a]", 0, &err);
+    check_not_null("[\\a]", n);
+    check_int("[\\a] lo", (n && n->nrunes >= 1) ? n->runes[0] : -1, '\a');
+    check_int("[\\a] hi", (n && n->nrunes >= 2) ? n->runes[1] : -1, '\a');
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[\\b]", 0, &err);
+    check_not_null("[\\b]", n);
+    check_int("[\\b] lo", (n && n->nrunes >= 1) ? n->runes[0] : -1, '\b');
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[[:digit:]]", 0, &err);
+    check_not_null("[[:digit:]]", n);
+    check_op("[[:digit:]] op", n, NC_RE_OP_CHAR_CLASS);
+    check_int("[[:digit:]] nrunes", n ? n->nrunes : 0, 2);
+    check_int("[[:digit:]] lo", (n && n->nrunes >= 2) ? n->runes[0] : -1, '0');
+    check_int("[[:digit:]] hi", (n && n->nrunes >= 2) ? n->runes[1] : -1, '9');
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[[:foo:]]", 0, &err);
+    check_null("[[:foo:]] unknown", n);
 }
 
 /* ===== Escapes ===== */
@@ -388,6 +429,12 @@ static void test_string(void) {
     n = neverc_regexp_syntax_parse("a{2,5}", 0, &err);
     s = neverc_regexp_syntax_string(n);
     check_str("string a{2,5}", s, "a{2,5}");
+    free(s);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("\\x{96}", 0, &err);
+    s = neverc_regexp_syntax_string(n);
+    check_str("string \\x{96}", s, "\\x{96}");
     free(s);
     neverc_regexp_syntax_free(n);
 }
@@ -545,5 +592,6 @@ int main(void) {
     printf("\n--- regexp/syntax: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ---\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

@@ -199,37 +199,34 @@ static void quic_send_version_negotiation(neverc_quic_endpoint_t *endpoint,
                                           const quic_conn_id_t *dcid,
                                           const quic_conn_id_t *scid) {
     uint8_t packet[64];
-    size_t position = 0;
-    uint8_t random_byte = 0;
-    if (neverc_crypto_rand_read(&random_byte, 1) != 0) return;
-    packet[position++] = (uint8_t)(0x80U | (random_byte & 0x7fU));
-    memset(packet + position, 0, 4);
-    position += 4;
-    packet[position++] = scid->len;
-    memcpy(packet + position, scid->data, scid->len);
-    position += scid->len;
-    packet[position++] = dcid->len;
-    memcpy(packet + position, dcid->data, dcid->len);
-    position += dcid->len;
-    packet[position++] = 0;
-    packet[position++] = 0;
-    packet[position++] = 0;
-    packet[position++] = 1;
-    packet[position++] = 0x6b;
-    packet[position++] = 0x33;
-    packet[position++] = 0x43;
-    packet[position++] = 0xcf;
-    (void)neverc_udp_try_write(endpoint->udp, packet, position, peer);
+    uint8_t first = 0;
+    if (neverc_crypto_rand_read(&first, 1) != 0) return;
+    /* RFC 8999: Version Negotiation SHOULD appear to have the Fixed Bit. */
+    first = (uint8_t)(0xC0U | (first & 0x3fU));
+    uint32_t versions[2] = { NEVERC_QUIC_VERSION_1, NEVERC_QUIC_VERSION_2 };
+    size_t written = 0;
+    /* Wire DCID is the client's SCID; wire SCID is the client's DCID. */
+    if (neverc_quic_write_version_negotiation(packet, sizeof(packet), first,
+                                              scid, dcid, versions, 2,
+                                              &written) != 0)
+        return;
+    (void)neverc_udp_try_write(endpoint->udp, packet, written, peer);
 }
 
 static neverc_quic_conn_t *quic_endpoint_create_connection(
     neverc_quic_endpoint_t *endpoint, const quic_conn_id_t *dcid,
-    const quic_conn_id_t *scid, const neverc_udp_addr_t *peer) {
+    const quic_conn_id_t *scid, const neverc_udp_addr_t *peer,
+    uint32_t version) {
     if (!endpoint || endpoint->connection_count == QUIC_MAX_CONNECTIONS ||
-        scid->len == 0)
+        (version != NEVERC_QUIC_VERSION_1 &&
+         version != NEVERC_QUIC_VERSION_2))
         return NULL;
     neverc_quic_conn_t *conn = neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
     if (!conn) return NULL;
+    /* RFC 9369: v2 Initials use a different salt, HKDF labels, and
+     * long-header type map. create() defaults to v1; stamp the wire
+     * version before configure() derives Initial keys. */
+    conn->version = version;
     if (neverc_quic_conn_configure(conn, &endpoint->config, endpoint->udp, 0,
                                     peer, endpoint, dcid, scid, NULL) != 0) {
         neverc_quic_conn_destroy(conn);
@@ -291,7 +288,7 @@ static void *quic_endpoint_io(void *argument) {
                                                        &dcid, &scid);
                     } else {
                         conn = quic_endpoint_create_connection(
-                            endpoint, &dcid, &scid, &info.source);
+                            endpoint, &dcid, &scid, &info.source, version);
                     }
                 }
                 if (conn && neverc_quic_conn_process_datagram(

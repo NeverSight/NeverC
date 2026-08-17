@@ -142,12 +142,38 @@ static void test_recorder(void) {
     neverc_http_set_status(w, 201);
     neverc_http_set_header(w, "X-Test", "yes");
     neverc_http_write_string(w, "hello");
-    check_str("captured header",
-              neverc_httptest_recorder_header(rec, "X-Test"), "yes");
+    neverc_httptest_recorder_flush(rec);
     check_int("captured status", rec->status_code, 201);
     check_str("captured body", rec->body, "hello");
     check_int("captured body len", (int)rec->body_len, 5);
+    check_str("captured header",
+              neverc_httptest_recorder_header(rec, "X-Test"), "yes");
+    check_str("inferred Content-Length",
+              neverc_httptest_recorder_header(rec, "Content-Length"), "5");
 
+    neverc_httptest_recorder_free(rec);
+
+    rec = neverc_httptest_new_recorder();
+    check_not_null("length recorder", rec);
+    w = neverc_httptest_recorder_writer(rec);
+    check_not_null("length writer", w);
+    neverc_http_set_status(w, 304);
+    check_int("explicit Content-Length accepted",
+              neverc_http_set_content_length(w, 1234U), 0);
+    check_str("override Content-Length",
+              neverc_httptest_recorder_header(rec, "Content-Length"), "1234");
+    neverc_httptest_recorder_free(rec);
+
+    rec = neverc_httptest_new_recorder();
+    check_not_null("204 recorder", rec);
+    w = neverc_httptest_recorder_writer(rec);
+    check_not_null("204 writer", w);
+    neverc_http_set_status(w, 204);
+    check_int("204 Content-Length metadata accepted",
+              neverc_http_set_content_length(w, 99U), 0);
+    neverc_httptest_recorder_flush(rec);
+    check_true("204 omits Content-Length",
+               neverc_httptest_recorder_header(rec, "Content-Length") == NULL);
     neverc_httptest_recorder_free(rec);
 }
 

@@ -87,6 +87,8 @@ static void test_copy_n(void) {
     int64_t n = neverc_io_copy_n(&w, &r, 5);
     check_size("copy_n len", (size_t)n, 5);
     check_bytes("copy_n content", mw.data, mw.len, "hello");
+    check_size("copy_n zero", (size_t)neverc_io_copy_n(&w, &r, 0), 0);
+    check_size("copy_n negative", (size_t)neverc_io_copy_n(&w, &r, -3), 0);
     neverc_io_mem_writer_free(&mw);
 }
 
@@ -158,6 +160,46 @@ static void test_multi_writer(void) {
     check_size("multi_writer w2 len", mw2.len, 4);
     check_int("multi_writer w1 data", memcmp(mw1.data, "test", 4) == 0, 1);
     check_int("multi_writer w2 data", memcmp(mw2.data, "test", 4) == 0, 1);
+    neverc_io_mem_writer_free(&mw1);
+    neverc_io_mem_writer_free(&mw2);
+}
+
+static void test_limit_reader_and_named_multi_write(void) {
+    printf("[limit_reader / named multi_writer_write]\n");
+    const char *data = "abcdef";
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)data, 6);
+    neverc_io_reader_t inner = { &mr, neverc_io_mem_reader_read };
+
+    neverc_io_limit_reader_t lr;
+    neverc_io_limit_reader_init(&lr, &inner, 3);
+    uint8_t buf[8];
+    size_t n = 0;
+    check_int("limit read rc",
+              lr.reader.read(lr.reader.ctx, buf, sizeof(buf), &n), 0);
+    check_size("limit read n", n, 3);
+    check_int("limit data", memcmp(buf, "abc", 3) == 0, 1);
+    n = 99;
+    check_int("limit eof",
+              lr.reader.read(lr.reader.ctx, buf, sizeof(buf), &n),
+              NEVERC_IO_EOF);
+
+    neverc_io_mem_writer_t mw1, mw2;
+    neverc_io_mem_writer_init(&mw1);
+    neverc_io_mem_writer_init(&mw2);
+    neverc_io_writer_t writers[2] = {
+        { &mw1, neverc_io_mem_writer_write },
+        { &mw2, neverc_io_mem_writer_write }
+    };
+    neverc_io_multi_writer_t multi;
+    neverc_io_multi_writer_init(&multi, writers, 2);
+    n = 0;
+    check_int("named multi write",
+              neverc_io_multi_writer_write(&multi, (const uint8_t *)"xy", 2, &n),
+              0);
+    check_size("named multi n", n, 2);
+    check_int("named multi w1", memcmp(mw1.data, "xy", 2) == 0, 1);
+    check_int("named multi w2", memcmp(mw2.data, "xy", 2) == 0, 1);
     neverc_io_mem_writer_free(&mw1);
     neverc_io_mem_writer_free(&mw2);
 }
@@ -480,6 +522,7 @@ int main(void) {
     test_discard();
     test_multi_reader();
     test_multi_writer();
+    test_limit_reader_and_named_multi_write();
     test_pipe();
     test_nop_closer();
     test_no_progress_guards();

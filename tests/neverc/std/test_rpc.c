@@ -5,6 +5,7 @@
 #include "network_test_support.h"
 
 #include <stdatomic.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -471,6 +472,16 @@ static void rpc_test_frame_codec(void) {
                                   &output, &consumed) == 0);
     CHECK(neverc_rpc_frame_decode(encoded, encoded_length, 3U, &output,
                                   &consumed) == -1);
+    encoded[8] = 0xffU;
+    encoded[9] = 0xffU;
+    encoded[10] = 0xffU;
+    encoded[11] = 0xffU;
+    CHECK(neverc_rpc_frame_decode(encoded, encoded_length, SIZE_MAX, &output,
+                                  &consumed) != 1);
+    encoded[8] = 0;
+    encoded[9] = 0;
+    encoded[10] = 0;
+    encoded[11] = (uint8_t)sizeof(payload);
     encoded[4] = NEVERC_RPC_VERSION_1 + 1U;
     CHECK(neverc_rpc_frame_decode(encoded, encoded_length, 1024U, &output,
                                   &consumed) == -1);
@@ -478,6 +489,131 @@ static void rpc_test_frame_codec(void) {
     encoded[5] = 0xffU;
     CHECK(neverc_rpc_frame_decode(encoded, encoded_length, 1024U, &output,
                                   &consumed) == -1);
+
+    neverc_rpc_frame_t cancel;
+    memset(&cancel, 0, sizeof(cancel));
+    cancel.header.version = NEVERC_RPC_VERSION_1;
+    cancel.header.type = NEVERC_RPC_FRAME_CANCEL;
+    cancel.header.request_id = 1U;
+    CHECK(neverc_rpc_frame_encode(&cancel, encoded, sizeof(encoded),
+                                  &encoded_length) == -1);
+    cancel.header.code = NEVERC_RPC_STATUS_CANCELLED;
+    CHECK(neverc_rpc_frame_encode(&cancel, encoded, sizeof(encoded),
+                                  &encoded_length) == 0);
+
+    neverc_rpc_frame_t end;
+    memset(&end, 0, sizeof(end));
+    end.header.version = NEVERC_RPC_VERSION_1;
+    end.header.type = NEVERC_RPC_FRAME_END;
+    end.header.flags = NEVERC_RPC_FLAG_RESPONSE;
+    end.header.request_id = 1U;
+    CHECK(neverc_rpc_frame_encode(&end, encoded, sizeof(encoded),
+                                  &encoded_length) == -1);
+    end.header.flags = NEVERC_RPC_FLAG_END_STREAM | NEVERC_RPC_FLAG_RESPONSE;
+    CHECK(neverc_rpc_frame_encode(&end, encoded, sizeof(encoded),
+                                  &encoded_length) == 0);
+
+    neverc_rpc_frame_t ping;
+    memset(&ping, 0, sizeof(ping));
+    ping.header.version = NEVERC_RPC_VERSION_1;
+    ping.header.type = NEVERC_RPC_FRAME_PING;
+    ping.header.request_id = 1U;
+    CHECK(neverc_rpc_frame_encode(&ping, encoded, sizeof(encoded),
+                                  &encoded_length) == -1);
+    ping.header.request_id = 0;
+    ping.header.payload_length = 126U;
+    ping.payload = payload;
+    CHECK(neverc_rpc_frame_encode(&ping, encoded, sizeof(encoded),
+                                  &encoded_length) == -1);
+
+    neverc_rpc_frame_t goaway;
+    memset(&goaway, 0, sizeof(goaway));
+    goaway.header.version = NEVERC_RPC_VERSION_1;
+    goaway.header.type = NEVERC_RPC_FRAME_GOAWAY;
+    goaway.header.code = NEVERC_RPC_STATUS_UNAVAILABLE;
+    CHECK(neverc_rpc_frame_encode(&goaway, encoded, sizeof(encoded),
+                                  &encoded_length) == 0);
+    goaway.header.request_id = 1U;
+    CHECK(neverc_rpc_frame_encode(&goaway, encoded, sizeof(encoded),
+                                  &encoded_length) == -1);
+}
+
+static void rpc_test_open_codec(void) {
+    static const uint8_t trace[] = "abc";
+    neverc_rpc_metadata_t metadata = {
+        "trace-id", 8U, trace, sizeof(trace) - 1U};
+    neverc_rpc_open_t open;
+    memset(&open, 0, sizeof(open));
+    open.method = "game.Session/Join";
+    open.method_length = strlen(open.method);
+    open.deadline_ms = 1700000000000;
+    open.codec = NEVERC_RPC_CODEC_JSON;
+    open.metadata = &metadata;
+    open.metadata_count = 1U;
+    uint8_t encoded[128];
+    size_t encoded_length = 0;
+    CHECK(neverc_rpc_open_encode(&open, encoded, sizeof(encoded),
+                                 &encoded_length) == 0);
+    CHECK(encoded_length > NEVERC_RPC_OPEN_HEADER_SIZE);
+
+    neverc_rpc_metadata_t decoded_metadata[4];
+    neverc_rpc_open_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    decoded.metadata = decoded_metadata;
+    decoded.metadata_capacity = 4U;
+    CHECK(neverc_rpc_open_decode(encoded, encoded_length, 1024U, &decoded) ==
+          0);
+    CHECK(decoded.method_length == open.method_length &&
+          memcmp(decoded.method, open.method, open.method_length) == 0);
+    CHECK(decoded.deadline_ms == open.deadline_ms);
+    CHECK(decoded.codec == NEVERC_RPC_CODEC_JSON);
+    CHECK(decoded.metadata_count == 1U);
+    CHECK(decoded.metadata[0].key_length == 8U &&
+          memcmp(decoded.metadata[0].key, "trace-id", 8U) == 0);
+    CHECK(decoded.metadata[0].value_length == 3U &&
+          memcmp(decoded.metadata[0].value, "abc", 3U) == 0);
+    CHECK(neverc_rpc_open_decode(encoded, encoded_length, 1U, &decoded) == -1);
+
+    open.metadata = NULL;
+    open.metadata_count = 0;
+    CHECK(neverc_rpc_open_encode(&open, encoded, sizeof(encoded),
+                                 &encoded_length) == 0);
+    memset(&decoded, 0, sizeof(decoded));
+    CHECK(neverc_rpc_open_decode(encoded, encoded_length, 0U, &decoded) == 0);
+    CHECK(decoded.metadata_count == 0U);
+    CHECK(decoded.codec == NEVERC_RPC_CODEC_JSON);
+
+    encoded[13] = 1U;
+    CHECK(neverc_rpc_open_decode(encoded, encoded_length, 1024U, &decoded) ==
+          -1);
+    encoded[13] = 0;
+
+    open.method = "/game.Session/Join";
+    open.method_length = strlen(open.method);
+    CHECK(neverc_rpc_open_encode(&open, encoded, sizeof(encoded),
+                                 &encoded_length) == -1);
+    open.method = "game.Session/Join/";
+    open.method_length = strlen(open.method);
+    CHECK(neverc_rpc_open_encode(&open, encoded, sizeof(encoded),
+                                 &encoded_length) == -1);
+    open.method = "game.Session/Join";
+    open.method_length = strlen(open.method);
+    open.deadline_ms = -1;
+    CHECK(neverc_rpc_open_encode(&open, encoded, sizeof(encoded),
+                                 &encoded_length) == -1);
+    open.deadline_ms = 0;
+    metadata.key = "Trace-Id";
+    metadata.key_length = 8U;
+    open.metadata = &metadata;
+    open.metadata_count = 1U;
+    CHECK(neverc_rpc_open_encode(&open, encoded, sizeof(encoded),
+                                 &encoded_length) == -1);
+
+    CHECK(neverc_rpc_status_code_valid(NEVERC_RPC_STATUS_OK));
+    CHECK(!neverc_rpc_status_code_valid(17U));
+    CHECK(strcmp(neverc_rpc_status_name(NEVERC_RPC_STATUS_UNAUTHENTICATED),
+                 "UNAUTHENTICATED") == 0);
+    CHECK(strcmp(neverc_rpc_status_name(99U), "INVALID_STATUS") == 0);
 }
 
 static void rpc_test_receive_backpressure(void) {
@@ -747,6 +883,7 @@ static void rpc_test_reconnect_roundtrip(void) {
 int main(void) {
     printf("NRPC test suite:\n");
     rpc_test_frame_codec();
+    rpc_test_open_codec();
     rpc_test_invalid_mtls_config();
     rpc_test_receive_backpressure();
     rpc_test_tenant_rate_limit();

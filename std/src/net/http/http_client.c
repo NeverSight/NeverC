@@ -4,9 +4,16 @@
  */
 #include "_http_internal.h"
 #include "neverc/std/crypto/tls.h"
+#include "neverc/std/time.h"
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#ifndef S_ISREG
+#define S_ISREG(mode) (((mode) & S_IFMT) == S_IFREG)
+#endif
 
 #define sock_write_all nc_http_sock_write_all
 #define strndup_safe nc_strndup_safe
@@ -331,11 +338,13 @@ static int parse_http_url(const char *url, parsed_url_t *out) {
         return -1;
     }
 
-    const char *fragment = strchr(p, '#');
-    if (fragment) return -1;
-    const char *slash = strchr(p, '/');
-    const char *question = strchr(p, '?');
-    const char *authority_end = p + strlen(p);
+    /* Fragments are client-side only: strip '#' and everything after it. */
+    const char *url_end = p + strlen(p);
+    const char *fragment = memchr(p, '#', (size_t)(url_end - p));
+    if (fragment) url_end = fragment;
+    const char *slash = memchr(p, '/', (size_t)(url_end - p));
+    const char *question = memchr(p, '?', (size_t)(url_end - p));
+    const char *authority_end = url_end;
     if (slash && slash < authority_end) authority_end = slash;
     if (question && question < authority_end) authority_end = question;
     size_t authority_length = (size_t)(authority_end - p);
@@ -379,15 +388,17 @@ static int parse_http_url(const char *url, parsed_url_t *out) {
     }
 
     const char *target = authority_end;
-    size_t target_length = strlen(target);
-    if (*target == '?') {
+    size_t target_length = (size_t)(url_end - target);
+    if (target_length > 0 && *target == '?') {
         if (target_length + 1 >= sizeof(out->path)) return -1;
         out->path[0] = '/';
-        memcpy(out->path + 1, target, target_length + 1);
-    } else if (*target == '/') {
+        memcpy(out->path + 1, target, target_length);
+        out->path[target_length + 1] = '\0';
+    } else if (target_length > 0 && *target == '/') {
         if (target_length >= sizeof(out->path)) return -1;
-        memcpy(out->path, target, target_length + 1);
-    } else if (*target == '\0') {
+        memcpy(out->path, target, target_length);
+        out->path[target_length] = '\0';
+    } else if (target_length == 0) {
         strcpy(out->path, "/");
     } else {
         return -1;
@@ -966,8 +977,9 @@ static neverc_http_response_t *do_request(neverc_http_client_t *client,
     int wr = client_connection_write_all(conn, context, req.data, req.len);
     nc_buf_free(&req);
 
-    /* If write failed on a pooled connection (stale), retry with new conn */
-    if (wr == -1 && from_pool && !url->is_https) {
+    /* If write failed on a pooled connection (stale), retry with a new conn.
+     * HTTP and HTTPS both do this: an idle peer may have already closed. */
+    if (wr == -1 && from_pool) {
         client_connection_close(conn);
         const char *dial_error = NULL;
         conn = client_connection_dial(client, url, connect_addr, context,
@@ -2149,14 +2161,8 @@ void neverc_http_set_cookie(neverc_http_response_writer_t *w,
     nc_buf_free(&value);
 }
 
-const char *neverc_http_get_cookie(const neverc_http_request_t *req,
-                                     const char *name,
-                                     char *buf, size_t buflen) {
-    if (!req || !name || !buf || buflen == 0) return NULL;
-
-    const char *cookie_hdr = neverc_http_request_header(req, "Cookie");
-    if (!cookie_hdr) return NULL;
-
+static const char *http_cookie_lookup(const char *cookie_hdr, const char *name,
+                                      char *buf, size_t buflen) {
     size_t nlen = strlen(name);
     const char *p = cookie_hdr;
 
@@ -2171,11 +2177,41 @@ const char *neverc_http_get_cookie(const neverc_http_request_t *req,
                 buf[i] = val[i];
                 i++;
             }
+            /* RFC 6265 §5.2: unwrap a matching DQUOTE pair. */
+            if (i >= 2 && buf[0] == '"' && buf[i - 1] == '"') {
+                size_t inner = i - 2;
+                for (size_t j = 0; j < inner; j++)
+                    buf[j] = buf[j + 1];
+                i = inner;
+            }
             buf[i] = '\0';
             return buf;
         }
 
         while (*p && *p != ';') p++;
+    }
+    return NULL;
+}
+
+const char *neverc_http_get_cookie(const neverc_http_request_t *req,
+                                     const char *name,
+                                     char *buf, size_t buflen) {
+    if (!req || !req->raw_headers || !name || !name[0] || !buf || buflen == 0)
+        return NULL;
+
+    /* Cookie is a well-known exception to combined-header rules: walk every
+     * Cookie field rather than stopping at the first. */
+    const char *p = req->raw_headers;
+    for (int i = 0; i < req->nheaders; i++) {
+        const char *hname = p;
+        while (*p) p++;
+        p++;
+        const char *hval = p;
+        while (*p) p++;
+        p++;
+        if (strcasecmp(hname, "Cookie") != 0) continue;
+        const char *found = http_cookie_lookup(hval, name, buf, buflen);
+        if (found) return found;
     }
     return NULL;
 }
@@ -2873,13 +2909,147 @@ void neverc_http_strip_prefix(neverc_http_mux_t *mux, const char *prefix,
 }
 
 /* ======================================================================
- * Serve File — Content-Type sniffing, extension override, Content-Length
+ * Serve File — Content-Type sniffing, Last-Modified, Range, If-Modified-Since
  * ====================================================================== */
+
+static int http_path_contains_dotdot(const char *path) {
+    if (!path) return 0;
+    const char *s = path;
+    while (*s) {
+        if (s[0] == '.' && s[1] == '.' &&
+            (s[2] == '/' || s[2] == '\\' || s[2] == '\0') &&
+            (s == path || s[-1] == '/' || s[-1] == '\\'))
+            return 1;
+        s++;
+    }
+    return 0;
+}
+
+static int http_parse_dec_u64(const char *start, const char *end,
+                              uint64_t *value) {
+    if (!start || start >= end || !value) return -1;
+    uint64_t parsed = 0;
+    for (const char *p = start; p < end; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (c < '0' || c > '9') return -1;
+        uint64_t digit = (uint64_t)(c - '0');
+        if (parsed > (UINT64_MAX - digit) / 10U) return -1;
+        parsed = parsed * 10U + digit;
+    }
+    *value = parsed;
+    return 0;
+}
+
+/* 0 = ignore Range (send 200), 1 = satisfiable range, -1 = 416. */
+static int http_parse_bytes_range(const char *header, size_t size,
+                                  size_t *out_start, size_t *out_length) {
+    if (!header || !out_start || !out_length) return 0;
+    while (*header == ' ' || *header == '\t') header++;
+    if (strncasecmp(header, "bytes=", 6) != 0) return 0;
+    header += 6;
+    if (strchr(header, ',')) return 0;
+
+    size_t length = strlen(header);
+    while (length > 0 &&
+           (header[length - 1] == ' ' || header[length - 1] == '\t'))
+        length--;
+    if (length == 0) return 0;
+
+    const char *dash = (const char *)memchr(header, '-', length);
+    if (!dash) return 0;
+
+    int has_first = dash > header;
+    int has_last = (header + length) > dash + 1;
+    if (!has_first && !has_last) return 0;
+
+    uint64_t first = 0;
+    uint64_t last = 0;
+    if (has_first && http_parse_dec_u64(header, dash, &first) != 0)
+        return 0;
+    if (has_last && http_parse_dec_u64(dash + 1, header + length, &last) != 0)
+        return 0;
+
+    uint64_t start;
+    uint64_t end;
+    if (!has_first) {
+        if (last == 0 || size == 0) return -1;
+        start = last >= (uint64_t)size ? 0 : (uint64_t)size - last;
+        end = (uint64_t)size - 1;
+    } else {
+        if (first >= (uint64_t)size) return -1;
+        start = first;
+        if (has_last) {
+            if (last < first) return -1;
+            end = last;
+            if (end >= (uint64_t)size) end = (uint64_t)size - 1;
+        } else {
+            end = (uint64_t)size - 1;
+        }
+    }
+    *out_start = (size_t)start;
+    *out_length = (size_t)(end - start + 1);
+    return 1;
+}
+
+static int http_parse_http_date(const char *value, neverc_time_t *out) {
+    static const char *layouts[] = {
+        "Mon, 02 Jan 2006 15:04:05 GMT",
+        "Monday, 02-Jan-06 15:04:05 GMT",
+        "Mon Jan _2 15:04:05 2006",
+    };
+    if (!value || !out) return -1;
+    for (size_t i = 0; i < sizeof(layouts) / sizeof(layouts[0]); i++) {
+        if (neverc_time_parse(layouts[i], value, out) == 0)
+            return 0;
+    }
+    return -1;
+}
+
+static int http_serve_file_copy(neverc_http_response_writer_t *w, FILE *f,
+                                size_t offset, size_t length) {
+    if (length == 0) return 0;
+    if (offset > (size_t)LONG_MAX) return -1;
+    if (fseek(f, (long)offset, SEEK_SET) != 0) return -1;
+    char buf[8192];
+    size_t remaining = length;
+    while (remaining > 0) {
+        size_t chunk = remaining < sizeof(buf) ? remaining : sizeof(buf);
+        size_t n = fread(buf, 1, chunk, f);
+        if (n == 0) return -1;
+        if (neverc_http_write(w, buf, n) < 0) return -1;
+        remaining -= n;
+        if (n < chunk) return remaining == 0 ? 0 : -1;
+    }
+    return 0;
+}
 
 void neverc_http_serve_file(neverc_http_response_writer_t *w,
                               neverc_http_request_t *req,
                               const char *filepath) {
     if (!w || !filepath) return;
+
+    /* Match Go ServeFile: reject ".." in the request path even when the
+     * caller-supplied filepath is already a safe absolute file. */
+    if (req && http_path_contains_dotdot(req->path)) {
+        neverc_http_set_status(w, 400);
+        neverc_http_write_string(w, "invalid URL path\n");
+        return;
+    }
+
+    struct stat st;
+    if (stat(filepath, &st) != 0) {
+        neverc_http_set_status(w, 404);
+        neverc_http_write_string(w, "404 page not found\n");
+        return;
+    }
+    if (!S_ISREG(st.st_mode) || st.st_size < 0 ||
+        (uint64_t)st.st_size > (uint64_t)LONG_MAX ||
+        (uint64_t)st.st_size > (uint64_t)SIZE_MAX) {
+        neverc_http_set_status(w, 500);
+        neverc_http_write_string(w, "internal error\n");
+        return;
+    }
+    size_t fsize = (size_t)st.st_size;
 
     FILE *f = fopen(filepath, "rb");
     if (!f) {
@@ -2888,24 +3058,8 @@ void neverc_http_serve_file(neverc_http_response_writer_t *w,
         return;
     }
 
-    if (fseek(f, 0, SEEK_END) != 0) {
-        fclose(f);
-        neverc_http_set_status(w, 500);
-        neverc_http_write_string(w, "internal error\n");
-        return;
-    }
-    long fsize = ftell(f);
-    if (fsize < 0 || fseek(f, 0, SEEK_SET) != 0) {
-        fclose(f);
-        neverc_http_set_status(w, 500);
-        neverc_http_write_string(w, "internal error\n");
-        return;
-    }
-
-    /* Detect content type from first 512 bytes */
     unsigned char sniff_buf[512];
-    size_t sniff_size = (size_t)fsize < sizeof(sniff_buf)
-        ? (size_t)fsize : sizeof(sniff_buf);
+    size_t sniff_size = fsize < sizeof(sniff_buf) ? fsize : sizeof(sniff_buf);
     size_t sniff_n = fread(sniff_buf, 1, sniff_size, f);
     if (ferror(f)) {
         fclose(f);
@@ -2913,11 +3067,9 @@ void neverc_http_serve_file(neverc_http_response_writer_t *w,
         neverc_http_write_string(w, "internal error\n");
         return;
     }
-    if (sniff_n < sniff_size) fsize = (long)sniff_n;
+    if (sniff_n < sniff_size) fsize = sniff_n;
 
     const char *ct = neverc_http_detect_content_type(sniff_buf, sniff_n);
-
-    /* Also try file extension for common types */
     const char *ext = strrchr(filepath, '.');
     if (ext) {
         if (strcasecmp(ext, ".html") == 0 || strcasecmp(ext, ".htm") == 0)
@@ -2933,30 +3085,76 @@ void neverc_http_serve_file(neverc_http_response_writer_t *w,
 
     neverc_http_set_header(w, "Content-Type", ct);
     neverc_http_set_header(w, "Accept-Ranges", "bytes");
-    (void)neverc_http_set_content_length(w, (size_t)fsize);
 
-    /* HEAD request: headers only */
-    if (req && req->method && strcmp(req->method, "HEAD") == 0) {
+    neverc_time_t modtime = neverc_time_unix((int64_t)st.st_mtime, 0);
+    char *last_modified = neverc_time_format(
+        modtime, "Mon, 02 Jan 2006 15:04:05 GMT");
+    if (last_modified) {
+        neverc_http_set_header(w, "Last-Modified", last_modified);
+        free(last_modified);
+    }
+
+    int is_head = req && req->method && strcmp(req->method, "HEAD") == 0;
+    int is_get = !req || !req->method || strcmp(req->method, "GET") == 0;
+    if (is_head) w->head_request = 1;
+
+    if ((is_get || is_head) && req) {
+        const char *ims = neverc_http_request_header(req, "If-Modified-Since");
+        neverc_time_t since;
+        if (ims && http_parse_http_date(ims, &since) == 0 &&
+            neverc_time_before(modtime,
+                               neverc_time_add(since, NEVERC_TIME_SECOND))) {
+            fclose(f);
+            neverc_http_set_status(w, 304);
+            return;
+        }
+    }
+
+    size_t range_start = 0;
+    size_t range_length = fsize;
+    int ranged = 0;
+    if ((is_get || is_head) && req) {
+        const char *range = neverc_http_request_header(req, "Range");
+        if (range) {
+            int range_result = http_parse_bytes_range(
+                range, fsize, &range_start, &range_length);
+            if (range_result < 0) {
+                char content_range[64];
+                int n = snprintf(content_range, sizeof(content_range),
+                                 "bytes */%zu", fsize);
+                fclose(f);
+                neverc_http_set_status(w, 416);
+                if (n > 0 && (size_t)n < sizeof(content_range))
+                    neverc_http_set_header(w, "Content-Range", content_range);
+                return;
+            }
+            if (range_result > 0) ranged = 1;
+        }
+    }
+
+    if (ranged) {
+        char content_range[80];
+        size_t range_end = range_start + range_length - 1;
+        int n = snprintf(content_range, sizeof(content_range),
+                         "bytes %zu-%zu/%zu", range_start, range_end, fsize);
+        if (n > 0 && (size_t)n < sizeof(content_range))
+            neverc_http_set_header(w, "Content-Range", content_range);
+        neverc_http_set_status(w, 206);
+    }
+    (void)neverc_http_set_content_length(w, range_length);
+
+    if (is_head) {
         fclose(f);
         return;
     }
 
-    /* Read and write the file */
-    char buf[8192];
-    size_t total = sniff_n;
-    if (sniff_n != 0) neverc_http_write(w, sniff_buf, sniff_n);
-    while (total < (size_t)fsize) {
-        size_t to_read = sizeof(buf);
-        if (total + to_read > (size_t)fsize)
-            to_read = (size_t)fsize - total;
-        size_t n = fread(buf, 1, to_read, f);
-        if (n == 0) break;
-        neverc_http_write(w, buf, n);
-        total += n;
-        if (n < to_read) break;
-    }
-
+    int copied = http_serve_file_copy(w, f, range_start, range_length);
     fclose(f);
+    if (copied != 0 && !w->headers_sent) {
+        (void)neverc_http_reset_response(w);
+        neverc_http_set_status(w, 500);
+        neverc_http_write_string(w, "internal error\n");
+    }
 }
 
 /* ======================================================================

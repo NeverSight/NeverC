@@ -156,6 +156,24 @@ static void test_floats(void) {
 
     r = neverc_fmt_sprintf("%g", 1.0);
     check_str("g one", r, "1"); free(r);
+
+    r = neverc_fmt_sprintf("%#.0f", 1.0);
+    check_str("sharp f forces point", r, "1."); free(r);
+
+    r = neverc_fmt_sprintf("%#g", 1.0);
+    check_str("sharp g keeps zeros", r, "1.00000"); free(r);
+
+    r = neverc_fmt_sprintf("%#g", 0.1);
+    check_str("sharp g fraction zeros", r, "0.100000"); free(r);
+
+    r = neverc_fmt_sprintf("%#g", 1e10);
+    check_str("sharp g exponent zeros", r, "1.00000e+10"); free(r);
+
+    r = neverc_fmt_sprintf("%#f", 1.0);
+    check_str("sharp f default unchanged", r, "1.000000"); free(r);
+
+    r = neverc_fmt_sprintf("%#.0e", 1.0);
+    check_str("sharp e forces point", r, "1.e+00"); free(r);
 }
 
 static void test_width_padding(void) {

@@ -1137,11 +1137,20 @@ static int tls_hostname_is_valid(
     const uint8_t *name, size_t len) {
     if (!name || len == 0 || len > TLS_MAX_SERVER_NAME)
         return 0;
+    /* RFC 6066: HostName is ASCII without a trailing dot, and literal
+     * IPv4/IPv6 addresses are not permitted. */
+    if (name[len - 1] == '.')
+        return 0;
     for (size_t i = 0; i < len; ++i) {
         uint8_t c = name[i];
-        if (c == 0 || c < 0x20 || c == 0x7f)
+        if (c < 0x21 || c > 0x7e)
             return 0;
     }
+    char copy[TLS_MAX_SERVER_NAME + 1];
+    memcpy(copy, name, len);
+    copy[len] = '\0';
+    if (nci_tls_name_is_ip_literal(copy))
+        return 0;
     return 1;
 }
 
@@ -1217,6 +1226,11 @@ static int tls_parse_alpn_extension(
                 &protocol_list, &protocol) != 0 ||
             protocol.len == 0)
             return -1;
+        /* The public ALPN getter is a C string; reject embedded NULs. */
+        for (size_t i = 0; i < protocol.len; ++i) {
+            if (protocol.data[i] == 0)
+                return -1;
+        }
         if (*protocol_count >= max_protocols) {
             *alert = TLS_ALERT_ILLEGAL_PARAMETER;
             return -1;
@@ -1432,11 +1446,9 @@ static int tls_parse_server_hello(
     if (tls_cursor_read_u16(&body, &legacy_version) != 0 ||
         tls_cursor_read_bytes(&body, 32, &random) != 0)
         return -1;
-    if (legacy_version != TLS_LEGACY_VERSION) {
-        *alert = TLS_ALERT_ILLEGAL_PARAMETER;
-        return -1;
-    }
-    /* RFC 8446 §4.1.3: this random means HelloRetryRequest, not ServerHello. */
+    (void)legacy_version;
+    /* RFC 8446 §4.1.3: clients MUST ignore legacy_version and use
+     * supported_versions. This random means HelloRetryRequest. */
     static const uint8_t hello_retry_request_random[32] = {
         0xCF, 0x21, 0xAD, 0x74, 0xE5, 0x9A, 0x61, 0x11,
         0xBE, 0x1D, 0x8C, 0x02, 0x1E, 0x65, 0xB8, 0x91,
@@ -1481,8 +1493,10 @@ static int tls_parse_server_hello(
     }
 
     tls_cursor_t extensions;
-    if (tls_cursor_read_u16_vector(&body, &extensions) != 0 ||
-        body.pos != body.len)
+    memset(&extensions, 0, sizeof(extensions));
+    if (body.pos < body.len &&
+        (tls_cursor_read_u16_vector(&body, &extensions) != 0 ||
+         body.pos != body.len))
         return -1;
 
     uint8_t seen_extensions[8192] = {0};
@@ -1552,7 +1566,11 @@ static int tls_parse_server_hello(
         }
     }
 
-    if (!saw_supported_version || !saw_key_share) {
+    if (!saw_supported_version) {
+        *alert = TLS_ALERT_PROTOCOL_VERSION;
+        return -1;
+    }
+    if (!saw_key_share) {
         *alert = TLS_ALERT_MISSING_EXTENSION;
         return -1;
     }
@@ -1577,10 +1595,10 @@ static int tls_parse_client_hello(
         tls_cursor_read_bytes(&body, 32, &random) != 0)
         return -1;
     (void)random;
-    if (legacy_version != TLS_LEGACY_VERSION) {
-        *alert = TLS_ALERT_ILLEGAL_PARAMETER;
-        return -1;
-    }
+    (void)legacy_version;
+    /* RFC 8446 §4.1.2: servers MUST ignore ClientHello.legacy_version
+     * (including 0x0301/0x0302 compatibility values) and negotiate from
+     * supported_versions. */
 
     tls_cursor_t session_id;
     if (tls_cursor_read_u8_vector(&body, &session_id) != 0 ||
@@ -1618,8 +1636,10 @@ static int tls_parse_client_hello(
     }
 
     tls_cursor_t extensions;
-    if (tls_cursor_read_u16_vector(&body, &extensions) != 0 ||
-        body.pos != body.len)
+    memset(&extensions, 0, sizeof(extensions));
+    if (body.pos < body.len &&
+        (tls_cursor_read_u16_vector(&body, &extensions) != 0 ||
+         body.pos != body.len))
         return -1;
 
     uint8_t seen_extensions[8192] = {0};
@@ -1816,17 +1836,13 @@ static int tls_parse_client_hello(
         }
     }
 
-    if (!saw_supported_versions ||
-        !saw_supported_groups ||
-        !saw_signature_algorithms) {
-        *alert = TLS_ALERT_MISSING_EXTENSION;
-        return -1;
-    }
-    if (!supports_tls13) {
+    if (!saw_supported_versions || !supports_tls13) {
         *alert = TLS_ALERT_PROTOCOL_VERSION;
         return -1;
     }
-    if (!saw_key_share) {
+    if (!saw_supported_groups ||
+        !saw_signature_algorithms ||
+        !saw_key_share) {
         *alert = TLS_ALERT_MISSING_EXTENSION;
         return -1;
     }
@@ -2043,8 +2059,8 @@ int nci_tls_server_handshake(neverc_tls_conn_t *conn,
     /* Send Change Cipher Spec (compatibility) */
     {
         uint8_t ccs = 1;
-        if (nci_tls_send_record(
-                conn->tcp, TLS_CT_CHANGE_CIPHER_SPEC, &ccs, 1) != 0)
+        if (nci_tls_send_plain_record(
+                conn, TLS_CT_CHANGE_CIPHER_SPEC, &ccs, 1) != 0)
             return -1;
     }
 
@@ -3436,6 +3452,302 @@ int neverc_tls_test_certificate_request_schemes(void) {
             TLS_SIG_RSA_PSS_SHA256) ||
         tls_client_certificate_verify_scheme_allowed(
             TLS_SIG_ED25519))
+        return -1;
+    return 0;
+}
+
+static int tls_test_put(
+    uint8_t *out, size_t cap, size_t *len,
+    const void *data, size_t data_len) {
+    if (!out || !len || *len > cap || data_len > cap - *len)
+        return -1;
+    if (data_len > 0)
+        memcpy(out + *len, data, data_len);
+    *len += data_len;
+    return 0;
+}
+
+static int tls_test_put_u8(
+    uint8_t *out, size_t cap, size_t *len, uint8_t value) {
+    return tls_test_put(out, cap, len, &value, 1);
+}
+
+static int tls_test_put_u16(
+    uint8_t *out, size_t cap, size_t *len, uint16_t value) {
+    uint8_t encoded[2];
+    tls_put_u16(encoded, value);
+    return tls_test_put(out, cap, len, encoded, 2);
+}
+
+static int tls_test_make_client_hello(
+    uint8_t *out, size_t cap, size_t *out_len,
+    uint16_t legacy_version,
+    int include_supported_versions,
+    uint16_t offered_version,
+    int include_tls13_core,
+    const uint8_t *sni, size_t sni_len,
+    const uint8_t *alpn, size_t alpn_len) {
+    if (!out || !out_len)
+        return -1;
+    size_t len = 4;
+    uint8_t random[32];
+    uint8_t public_key[32];
+    memset(random, 0x11, sizeof(random));
+    memset(public_key, 0x22, sizeof(public_key));
+    out[0] = TLS_HS_CLIENT_HELLO;
+    if (tls_test_put_u16(out, cap, &len, legacy_version) != 0 ||
+        tls_test_put(out, cap, &len, random, sizeof(random)) != 0 ||
+        tls_test_put_u8(out, cap, &len, 0) != 0 ||
+        tls_test_put_u16(out, cap, &len, 2) != 0 ||
+        tls_test_put_u16(
+            out, cap, &len, NEVERC_TLS_AES_128_GCM_SHA256) != 0 ||
+        tls_test_put_u8(out, cap, &len, 1) != 0 ||
+        tls_test_put_u8(out, cap, &len, 0) != 0)
+        return -1;
+
+    size_t extensions_len_pos = len;
+    if (tls_test_put_u16(out, cap, &len, 0) != 0)
+        return -1;
+    size_t extensions_start = len;
+
+    if (include_supported_versions) {
+        if (tls_test_put_u16(
+                out, cap, &len, TLS_EXT_SUPPORTED_VERSIONS) != 0 ||
+            tls_test_put_u16(out, cap, &len, 3) != 0 ||
+            tls_test_put_u8(out, cap, &len, 2) != 0 ||
+            tls_test_put_u16(out, cap, &len, offered_version) != 0)
+            return -1;
+    }
+    if (include_tls13_core) {
+        if (tls_test_put_u16(
+                out, cap, &len, TLS_EXT_SUPPORTED_GROUPS) != 0 ||
+            tls_test_put_u16(out, cap, &len, 4) != 0 ||
+            tls_test_put_u16(out, cap, &len, 2) != 0 ||
+            tls_test_put_u16(
+                out, cap, &len, NEVERC_TLS_GROUP_X25519) != 0 ||
+            tls_test_put_u16(
+                out, cap, &len, TLS_EXT_SIGNATURE_ALGORITHMS) != 0 ||
+            tls_test_put_u16(out, cap, &len, 4) != 0 ||
+            tls_test_put_u16(out, cap, &len, 2) != 0 ||
+            tls_test_put_u16(out, cap, &len, TLS_SIG_ECDSA_SHA256) != 0 ||
+            tls_test_put_u16(out, cap, &len, TLS_EXT_KEY_SHARE) != 0 ||
+            tls_test_put_u16(out, cap, &len, 38) != 0 ||
+            tls_test_put_u16(out, cap, &len, 36) != 0 ||
+            tls_test_put_u16(
+                out, cap, &len, NEVERC_TLS_GROUP_X25519) != 0 ||
+            tls_test_put_u16(out, cap, &len, 32) != 0 ||
+            tls_test_put(out, cap, &len, public_key,
+                         sizeof(public_key)) != 0)
+            return -1;
+    }
+    if (sni && sni_len > 0) {
+        if (sni_len > 255 ||
+            tls_test_put_u16(out, cap, &len, TLS_EXT_SERVER_NAME) != 0 ||
+            tls_test_put_u16(
+                out, cap, &len, (uint16_t)(sni_len + 5)) != 0 ||
+            tls_test_put_u16(
+                out, cap, &len, (uint16_t)(sni_len + 3)) != 0 ||
+            tls_test_put_u8(out, cap, &len, 0) != 0 ||
+            tls_test_put_u16(out, cap, &len, (uint16_t)sni_len) != 0 ||
+            tls_test_put(out, cap, &len, sni, sni_len) != 0)
+            return -1;
+    }
+    if (alpn && alpn_len > 0) {
+        if (alpn_len > 255 ||
+            tls_test_put_u16(out, cap, &len, TLS_EXT_ALPN) != 0 ||
+            tls_test_put_u16(
+                out, cap, &len, (uint16_t)(3 + alpn_len)) != 0 ||
+            tls_test_put_u16(
+                out, cap, &len, (uint16_t)(1 + alpn_len)) != 0 ||
+            tls_test_put_u8(out, cap, &len, (uint8_t)alpn_len) != 0 ||
+            tls_test_put(out, cap, &len, alpn, alpn_len) != 0)
+            return -1;
+    }
+
+    if (len == extensions_start) {
+        /* TLS 1.2 ClientHello with no extensions vector at all. */
+        len = extensions_len_pos;
+    } else {
+        tls_put_u16(out + extensions_len_pos,
+                    (uint16_t)(len - extensions_start));
+    }
+    tls_put_u24(out + 1, (uint32_t)(len - 4));
+    *out_len = len;
+    return 0;
+}
+
+static int tls_test_make_server_hello(
+    uint8_t *out, size_t cap, size_t *out_len,
+    uint16_t legacy_version,
+    int include_tls13_extensions) {
+    if (!out || !out_len)
+        return -1;
+    size_t len = 4;
+    uint8_t random[32];
+    uint8_t public_key[32];
+    memset(random, 0x33, sizeof(random));
+    memset(public_key, 0x44, sizeof(public_key));
+    out[0] = TLS_HS_SERVER_HELLO;
+    if (tls_test_put_u16(out, cap, &len, legacy_version) != 0 ||
+        tls_test_put(out, cap, &len, random, sizeof(random)) != 0 ||
+        tls_test_put_u8(out, cap, &len, 0) != 0 ||
+        tls_test_put_u16(
+            out, cap, &len, NEVERC_TLS_AES_128_GCM_SHA256) != 0 ||
+        tls_test_put_u8(out, cap, &len, 0) != 0)
+        return -1;
+    if (include_tls13_extensions) {
+        size_t extensions_len_pos = len;
+        if (tls_test_put_u16(out, cap, &len, 0) != 0 ||
+            tls_test_put_u16(
+                out, cap, &len, TLS_EXT_SUPPORTED_VERSIONS) != 0 ||
+            tls_test_put_u16(out, cap, &len, 2) != 0 ||
+            tls_test_put_u16(out, cap, &len, NEVERC_TLS_VERSION_13) != 0 ||
+            tls_test_put_u16(out, cap, &len, TLS_EXT_KEY_SHARE) != 0 ||
+            tls_test_put_u16(out, cap, &len, 36) != 0 ||
+            tls_test_put_u16(
+                out, cap, &len, NEVERC_TLS_GROUP_X25519) != 0 ||
+            tls_test_put_u16(out, cap, &len, 32) != 0 ||
+            tls_test_put(out, cap, &len, public_key,
+                         sizeof(public_key)) != 0)
+            return -1;
+        tls_put_u16(out + extensions_len_pos,
+                    (uint16_t)(len - extensions_len_pos - 2));
+    }
+    tls_put_u24(out + 1, (uint32_t)(len - 4));
+    *out_len = len;
+    return 0;
+}
+
+int neverc_tls_test_hello_protocol_rules(void) {
+    uint8_t message[512];
+    size_t message_len = 0;
+    tls_client_hello_info_t client_hello;
+    tls_server_hello_info_t server_hello;
+    uint8_t alert = 0;
+    static const uint8_t empty_session_id[1] = {0};
+
+    memset(message, 0, sizeof(message));
+    if (tls_test_make_client_hello(
+            message, sizeof(message), &message_len,
+            TLS_LEGACY_VERSION, 0, 0, 0, NULL, 0, NULL, 0) != 0 ||
+        tls_parse_client_hello(
+            message, message_len, &client_hello, &alert) == 0 ||
+        alert != TLS_ALERT_PROTOCOL_VERSION)
+        return -1;
+
+    alert = 0;
+    if (tls_test_make_client_hello(
+            message, sizeof(message), &message_len,
+            TLS_LEGACY_VERSION, 0, 0, 1, NULL, 0, NULL, 0) != 0 ||
+        tls_parse_client_hello(
+            message, message_len, &client_hello, &alert) == 0 ||
+        alert != TLS_ALERT_PROTOCOL_VERSION)
+        return -1;
+
+    alert = 0;
+    if (tls_test_make_client_hello(
+            message, sizeof(message), &message_len,
+            TLS_LEGACY_VERSION, 1, TLS_LEGACY_VERSION, 1,
+            NULL, 0, NULL, 0) != 0 ||
+        tls_parse_client_hello(
+            message, message_len, &client_hello, &alert) == 0 ||
+        alert != TLS_ALERT_PROTOCOL_VERSION)
+        return -1;
+
+    alert = 0;
+    if (tls_test_make_client_hello(
+            message, sizeof(message), &message_len,
+            0x0301, 1, NEVERC_TLS_VERSION_13, 1,
+            NULL, 0, NULL, 0) != 0 ||
+        tls_parse_client_hello(
+            message, message_len, &client_hello, &alert) != 0)
+        return -1;
+
+    static const uint8_t sni_ip[] = "127.0.0.1";
+    alert = 0;
+    if (tls_test_make_client_hello(
+            message, sizeof(message), &message_len,
+            TLS_LEGACY_VERSION, 1, NEVERC_TLS_VERSION_13, 1,
+            sni_ip, sizeof(sni_ip) - 1, NULL, 0) != 0 ||
+        tls_parse_client_hello(
+            message, message_len, &client_hello, &alert) == 0 ||
+        alert != TLS_ALERT_ILLEGAL_PARAMETER)
+        return -1;
+
+    static const uint8_t sni_ipv6[] = "::1";
+    alert = 0;
+    if (tls_test_make_client_hello(
+            message, sizeof(message), &message_len,
+            TLS_LEGACY_VERSION, 1, NEVERC_TLS_VERSION_13, 1,
+            sni_ipv6, sizeof(sni_ipv6) - 1, NULL, 0) != 0 ||
+        tls_parse_client_hello(
+            message, message_len, &client_hello, &alert) == 0 ||
+        alert != TLS_ALERT_ILLEGAL_PARAMETER)
+        return -1;
+
+    static const uint8_t sni_trailing_dot[] = "example.com.";
+    alert = 0;
+    if (tls_test_make_client_hello(
+            message, sizeof(message), &message_len,
+            TLS_LEGACY_VERSION, 1, NEVERC_TLS_VERSION_13, 1,
+            sni_trailing_dot, sizeof(sni_trailing_dot) - 1,
+            NULL, 0) != 0 ||
+        tls_parse_client_hello(
+            message, message_len, &client_hello, &alert) == 0 ||
+        alert != TLS_ALERT_ILLEGAL_PARAMETER)
+        return -1;
+
+    static const uint8_t sni_non_ascii[] = { 'e', 'x', 0x80, 'm' };
+    alert = 0;
+    if (tls_test_make_client_hello(
+            message, sizeof(message), &message_len,
+            TLS_LEGACY_VERSION, 1, NEVERC_TLS_VERSION_13, 1,
+            sni_non_ascii, sizeof(sni_non_ascii), NULL, 0) != 0 ||
+        tls_parse_client_hello(
+            message, message_len, &client_hello, &alert) == 0 ||
+        alert != TLS_ALERT_ILLEGAL_PARAMETER)
+        return -1;
+
+    static const uint8_t sni_host[] = "example.com";
+    alert = 0;
+    if (tls_test_make_client_hello(
+            message, sizeof(message), &message_len,
+            TLS_LEGACY_VERSION, 1, NEVERC_TLS_VERSION_13, 1,
+            sni_host, sizeof(sni_host) - 1, NULL, 0) != 0 ||
+        tls_parse_client_hello(
+            message, message_len, &client_hello, &alert) != 0 ||
+        client_hello.server_name_len != sizeof(sni_host) - 1 ||
+        memcmp(client_hello.server_name, sni_host,
+               sizeof(sni_host) - 1) != 0)
+        return -1;
+
+    static const uint8_t alpn_with_nul[] = { 'h', 0, '2' };
+    alert = 0;
+    if (tls_test_make_client_hello(
+            message, sizeof(message), &message_len,
+            TLS_LEGACY_VERSION, 1, NEVERC_TLS_VERSION_13, 1,
+            NULL, 0, alpn_with_nul, sizeof(alpn_with_nul)) != 0 ||
+        tls_parse_client_hello(
+            message, message_len, &client_hello, &alert) == 0)
+        return -1;
+
+    alert = 0;
+    if (tls_test_make_server_hello(
+            message, sizeof(message), &message_len,
+            TLS_LEGACY_VERSION, 0) != 0 ||
+        tls_parse_server_hello(
+            message, message_len, empty_session_id, 0,
+            &server_hello, &alert) == 0 ||
+        alert != TLS_ALERT_PROTOCOL_VERSION)
+        return -1;
+
+    alert = 0;
+    if (tls_test_make_server_hello(
+            message, sizeof(message), &message_len,
+            0x0301, 1) != 0 ||
+        tls_parse_server_hello(
+            message, message_len, empty_session_id, 0,
+            &server_hello, &alert) != 0)
         return -1;
     return 0;
 }

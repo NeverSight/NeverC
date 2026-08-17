@@ -25,6 +25,11 @@ const char *neverc_filepath_base(const char *path, char *buf, size_t buf_len);
 const char *neverc_filepath_dir(const char *path, char *buf, size_t buf_len);
 const char *neverc_filepath_ext(const char *path);
 int         neverc_filepath_isabs(const char *path);
+/* Reports whether path stays inside a join base (Go filepath.IsLocal).
+ * Empty, absolute, reserved Windows device names, and cleaned paths that
+ * begin with ".." are not local. */
+int         neverc_filepath_is_local(const char *path);
+const char *neverc_filepath_volume_name(const char *path, char *buf, size_t buf_len);
 const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len);
 const char *neverc_filepath_join(const char *a, const char *b, char *buf, size_t buf_len);
 void        neverc_filepath_split(const char *path, const char **dir, size_t *dir_len,

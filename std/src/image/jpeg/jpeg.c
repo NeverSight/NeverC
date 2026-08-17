@@ -264,7 +264,18 @@ static void encode_block(bitwriter_t *bw, int *block, const double *recip,
     int quantized[64];
     for (int i = 0; i < 64; i++) {
         double val = (double)fdata[jpeg_natural_order[i]] * recip[i];
-        quantized[i] = (int)(val > 0 ? val + 0.5 : val - 0.5);
+        int q = (int)(val > 0 ? val + 0.5 : val - 0.5);
+        /* Baseline Huffman tables only encode DC category 0-11 and AC
+         * size 1-10. Unclamped AAN output at quality 100 can exceed that
+         * and emit a zero-length code (undecodable stream). */
+        if (i == 0) {
+            if (q < -1024) q = -1024;
+            if (q > 1023) q = 1023;
+        } else {
+            if (q < -1023) q = -1023;
+            if (q > 1023) q = 1023;
+        }
+        quantized[i] = q;
     }
 
     /* DC coefficient */
@@ -1209,13 +1220,12 @@ decode_fail:
 fail:
     for (int i = 0; i < 4; i++) { free(dc_tables[i].vals); free(ac_tables[i].vals); }
     free(img->pixels);
-    img->pixels = NULL;
+    memset(img, 0, sizeof(*img));
     return -1;
 }
 
 void neverc_jpeg_free(neverc_jpeg_image_t *img) {
-    if (img && img->pixels) {
-        free(img->pixels);
-        img->pixels = NULL;
-    }
+    if (!img) return;
+    free(img->pixels);
+    memset(img, 0, sizeof(*img));
 }

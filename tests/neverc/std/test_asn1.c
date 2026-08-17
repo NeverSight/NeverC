@@ -345,6 +345,111 @@ static void test_helpers_and_invalid_api(void) {
               neverc_asn1_decode_oid(&elem) == NULL, 1);
 }
 
+static void test_oid_bit_string_and_text(void) {
+    printf("[oid/bit string/text]\n");
+    uint8_t buf[64];
+    neverc_asn1_element_t elem;
+
+    int n = neverc_asn1_encode_oid(buf, sizeof(buf), "1.2.840.113549.1.1.1");
+    check_int("encode rsa OID len", n, 11);
+    check_int("encode rsa OID tag", buf[0], 0x06);
+    neverc_asn1_decode_element(buf, (size_t)n, &elem);
+    char *oid = neverc_asn1_decode_oid(&elem);
+    check_str("encode/decode rsa OID", oid, "1.2.840.113549.1.1.1");
+    free(oid);
+
+    n = neverc_asn1_encode_oid(buf, sizeof(buf), "2.999.3");
+    check_int("encode 2.999.3", n > 0, 1);
+    neverc_asn1_decode_element(buf, (size_t)n, &elem);
+    oid = neverc_asn1_decode_oid(&elem);
+    check_str("roundtrip 2.999.3", oid, "2.999.3");
+    free(oid);
+
+    check_int("reject leading-zero OID arc",
+              neverc_asn1_encode_oid(buf, sizeof(buf), "01.2"), -1);
+    check_int("reject first arc 3",
+              neverc_asn1_encode_oid(buf, sizeof(buf), "3.0"), -1);
+    check_int("reject first arc 0 with second 40",
+              neverc_asn1_encode_oid(buf, sizeof(buf), "0.40"), -1);
+    check_int("reject trailing dot",
+              neverc_asn1_encode_oid(buf, sizeof(buf), "1.2."), -1);
+
+    const uint8_t bits[] = {0x0a, 0x80};
+    n = neverc_asn1_encode_bit_string(buf, sizeof(buf), bits, sizeof(bits), 1);
+    check_int("bit string len", n, 4);
+    check_int("bit string tag", buf[0], NEVERC_ASN1_BIT_STRING);
+    neverc_asn1_decode_element(buf, (size_t)n, &elem);
+    const uint8_t *payload = NULL;
+    size_t payload_len = 0;
+    int unused = -1;
+    check_int("decode bit string",
+              neverc_asn1_decode_bit_string(&elem, &payload, &payload_len,
+                                            &unused),
+              0);
+    check_int("bit string unused", unused, 1);
+    check_int("bit string bytes", (int)payload_len, 2);
+
+    uint8_t dirty[] = {0x03, 0x02, 0x01, 0x01}; /* unused bit not zero */
+    neverc_asn1_decode_element(dirty, sizeof(dirty), &elem);
+    check_int("reject non-zero unused bits",
+              neverc_asn1_decode_bit_string(&elem, &payload, &payload_len,
+                                            &unused),
+              -1);
+    {
+        const uint8_t bad[] = {0x01};
+        check_int("reject dirty unused on encode",
+                  neverc_asn1_encode_bit_string(buf, sizeof(buf), bad, 1, 1),
+                  -1);
+    }
+
+    uint8_t constructed_bits[] = {0x23, 0x03, 0x00, 0x0a, 0x80};
+    neverc_asn1_decode_element(constructed_bits, sizeof(constructed_bits),
+                               &elem);
+    check_int("reject constructed BIT STRING",
+              neverc_asn1_decode_bit_string(&elem, &payload, &payload_len,
+                                            &unused),
+              -1);
+
+    const uint8_t hello[] = "hello";
+    n = neverc_asn1_encode_utf8_string(buf, sizeof(buf), hello, 5);
+    check_int("utf8 tag", buf[0], NEVERC_ASN1_UTF8_STRING);
+    neverc_asn1_decode_element(buf, (size_t)n, &elem);
+    const uint8_t *text = NULL;
+    size_t tlen = 0;
+    check_int("decode utf8",
+              neverc_asn1_decode_utf8_string(&elem, &text, &tlen), 0);
+    check_int("utf8 len", (int)tlen, 5);
+
+    static const uint8_t overlong[] = {0xc0, 0xaf};
+    check_int("reject overlong utf8 encode",
+              neverc_asn1_encode_utf8_string(buf, sizeof(buf), overlong, 2),
+              -1);
+
+    n = neverc_asn1_encode_printable_string(buf, sizeof(buf),
+                                            (const uint8_t *)"CN", 2);
+    neverc_asn1_decode_element(buf, (size_t)n, &elem);
+    check_int("decode printable",
+              neverc_asn1_decode_printable_string(&elem, &text, &tlen), 0);
+    check_int("reject star in printable",
+              neverc_asn1_encode_printable_string(
+                  buf, sizeof(buf), (const uint8_t *)"*", 1),
+              -1);
+
+    n = neverc_asn1_encode_ia5_string(buf, sizeof(buf),
+                                      (const uint8_t *)"user@host", 9);
+    neverc_asn1_decode_element(buf, (size_t)n, &elem);
+    check_int("decode ia5",
+              neverc_asn1_decode_ia5_string(&elem, &text, &tlen), 0);
+    static const uint8_t hi_bit[] = {0x80};
+    check_int("reject 8-bit ia5",
+              neverc_asn1_encode_ia5_string(buf, sizeof(buf), hi_bit, 1),
+              -1);
+
+    uint8_t trailing[] = {0x02, 0x01, 0x05, 0x00};
+    n = neverc_asn1_decode_element(trailing, sizeof(trailing), &elem);
+    check_int("element stops before trailing data", n, 3);
+}
+
 int main(void) {
     printf("=== NeverC Encoding/ASN1 Module Tests ===\n\n");
     test_decode_integer();
@@ -356,6 +461,7 @@ int main(void) {
     test_encode_octet_string();
     test_encode_null();
     test_helpers_and_invalid_api();
+    test_oid_bit_string_and_text();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

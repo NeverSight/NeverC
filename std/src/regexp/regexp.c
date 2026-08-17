@@ -14,10 +14,12 @@
 #define NC_REGEXP_REALLOC realloc
 #endif
 
-/* NFA state types. CAP_OPEN/CLOSE are epsilon edges that record a group. */
+/* NFA state types. CAP_OPEN/CLOSE are epsilon edges that record a group.
+ * ANCHOR_END: ch==0 is `$` (end or before a final newline); ch==1 is `\z`. */
 enum {
     NFA_MATCH, NFA_CHAR, NFA_ANY, NFA_SPLIT, NFA_CLASS,
-    NFA_ANCHOR_START, NFA_ANCHOR_END, NFA_CAP_OPEN, NFA_CAP_CLOSE
+    NFA_ANCHOR_START, NFA_ANCHOR_END, NFA_CAP_OPEN, NFA_CAP_CLOSE,
+    NFA_WORD_BOUND, NFA_NO_WORD_BOUND
 };
 
 typedef struct {
@@ -52,6 +54,8 @@ struct neverc_regexp {
     charclass_t **cblk;             /* class blocks */
     int           ncblk, cblkcap, nclasses;
     int           ngroups;
+    char        **gnames;           /* [i] name of group i, or NULL; may be short */
+    int           gnames_cap;
     int           posix;
     int           oom;              /* sticky: a block allocation failed */
     nfa_state_t   dummy;            /* returned on OOM so callers never deref NULL */
@@ -159,6 +163,7 @@ static int is_meta(char c) {
 static int decode_char_esc(char esc, int *out) {
     switch (esc) {
     case 'a': *out = '\a'; return 1;
+    case 'b': *out = '\b'; return 1;   /* backspace; `\b` outside a class is a bound */
     case 'n': *out = '\n'; return 1;
     case 't': *out = '\t'; return 1;
     case 'r': *out = '\r'; return 1;
@@ -166,6 +171,55 @@ static int decode_char_esc(char esc, int *out) {
     case 'v': *out = '\v'; return 1;
     default: return 0;
     }
+}
+
+static int is_word_byte(int ch) {
+    return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+           (ch >= '0' && ch <= '9') || ch == '_';
+}
+
+static int word_bound_at(const char *s, size_t slen, size_t pos) {
+    int prev = (pos > 0) && is_word_byte((unsigned char)s[pos - 1]);
+    int cur = (pos < slen) && is_word_byte((unsigned char)s[pos]);
+    return prev != cur;
+}
+
+static int valid_cap_name(const char *s, int nlen) {
+    if (!s || nlen < 1) return 0;
+    for (int i = 0; i < nlen; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+              (c >= '0' && c <= '9') || c == '_'))
+            return 0;
+    }
+    return 1;
+}
+
+static int set_group_name(neverc_regexp_t *re, int cap, const char *name, int nlen) {
+    if (!re || cap <= 0) return 1;
+    if (re->gnames_cap <= cap) {
+        if (re->gnames_cap > INT_MAX / 2) { re->oom = 1; return 0; }
+        int nc = re->gnames_cap ? re->gnames_cap * 2 : 4;
+        while (nc <= cap) {
+            if (nc > INT_MAX / 2) { re->oom = 1; return 0; }
+            nc *= 2;
+        }
+        if ((size_t)nc > SIZE_MAX / sizeof(*re->gnames)) { re->oom = 1; return 0; }
+        char **nb = (char **)NC_REGEXP_REALLOC(re->gnames, (size_t)nc * sizeof(*nb));
+        if (!nb) { re->oom = 1; return 0; }
+        for (int i = re->gnames_cap; i < nc; i++) nb[i] = NULL;
+        re->gnames = nb;
+        re->gnames_cap = nc;
+    }
+    if (nlen > 0) {
+        char *copy = (char *)NC_REGEXP_MALLOC((size_t)nlen + 1U);
+        if (!copy) { re->oom = 1; return 0; }
+        memcpy(copy, name, (size_t)nlen);
+        copy[nlen] = '\0';
+        free(re->gnames[cap]);
+        re->gnames[cap] = copy;
+    }
+    return 1;
 }
 
 static int hex_digit(int c) {
@@ -312,6 +366,125 @@ static void cc_set_word(charclass_t *cc) {
     cc_set(cc, '_');
 }
 
+static int cc_set_posix(charclass_t *cc, const char *name, int nlen) {
+    if (!cc || !name || nlen <= 0) return 0;
+#define NCI_RE_POSIX(s) (nlen == (int)(sizeof(s) - 1) && memcmp(name, s, (size_t)nlen) == 0)
+    if (NCI_RE_POSIX("alnum")) {
+        for (int i = '0'; i <= '9'; i++) cc_set(cc, i);
+        for (int i = 'A'; i <= 'Z'; i++) cc_set(cc, i);
+        for (int i = 'a'; i <= 'z'; i++) cc_set(cc, i);
+        return 1;
+    }
+    if (NCI_RE_POSIX("alpha")) {
+        for (int i = 'A'; i <= 'Z'; i++) cc_set(cc, i);
+        for (int i = 'a'; i <= 'z'; i++) cc_set(cc, i);
+        return 1;
+    }
+    if (NCI_RE_POSIX("ascii")) {
+        for (int i = 0; i < 128; i++) cc_set(cc, i);
+        return 1;
+    }
+    if (NCI_RE_POSIX("blank")) {
+        cc_set(cc, ' ');
+        cc_set(cc, '\t');
+        return 1;
+    }
+    if (NCI_RE_POSIX("cntrl")) {
+        for (int i = 0; i < 32; i++) cc_set(cc, i);
+        cc_set(cc, 127);
+        return 1;
+    }
+    if (NCI_RE_POSIX("digit")) {
+        for (int i = '0'; i <= '9'; i++) cc_set(cc, i);
+        return 1;
+    }
+    if (NCI_RE_POSIX("graph")) {
+        for (int i = 0x21; i <= 0x7E; i++) cc_set(cc, i);
+        return 1;
+    }
+    if (NCI_RE_POSIX("lower")) {
+        for (int i = 'a'; i <= 'z'; i++) cc_set(cc, i);
+        return 1;
+    }
+    if (NCI_RE_POSIX("print")) {
+        for (int i = 0x20; i <= 0x7E; i++) cc_set(cc, i);
+        return 1;
+    }
+    if (NCI_RE_POSIX("punct")) {
+        const char *p = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+        while (*p) cc_set(cc, (unsigned char)*p++);
+        return 1;
+    }
+    if (NCI_RE_POSIX("space")) {
+        cc_set_ws(cc);
+        return 1;
+    }
+    if (NCI_RE_POSIX("upper")) {
+        for (int i = 'A'; i <= 'Z'; i++) cc_set(cc, i);
+        return 1;
+    }
+    if (NCI_RE_POSIX("word")) {
+        cc_set_word(cc);
+        return 1;
+    }
+    if (NCI_RE_POSIX("xdigit")) {
+        for (int i = '0'; i <= '9'; i++) cc_set(cc, i);
+        for (int i = 'A'; i <= 'F'; i++) cc_set(cc, i);
+        for (int i = 'a'; i <= 'f'; i++) cc_set(cc, i);
+        return 1;
+    }
+#undef NCI_RE_POSIX
+    return 0;
+}
+
+static int cc_bitmap_empty(const charclass_t *cc) {
+    if (!cc) return 1;
+    for (int i = 0; i < 32; i++)
+        if (cc->bitmap[i]) return 0;
+    return 1;
+}
+
+static frag_t mk_alt(neverc_regexp_t *re, frag_t a, frag_t b) {
+    if (!a.start) return b;
+    if (!b.start) return a;
+    nfa_state_t *split = new_state(re, NFA_SPLIT);
+    nfa_state_t *end = new_state(re, NFA_MATCH);
+    split->out1 = a.start;
+    split->out2 = b.start;
+    if (a.end) a.end->out1 = end;
+    if (b.end) b.end->out1 = end;
+    return frag(split, end);
+}
+
+#define NCI_RE_CLASS_RUNE_CAP 256
+
+static int class_add_rune(parser_t *par, frag_t **extras, int *nextras,
+                          int *extras_cap, int r) {
+    if (*nextras >= NCI_RE_CLASS_RUNE_CAP) {
+        par->err = "character class too large";
+        return 0;
+    }
+    if (*nextras == *extras_cap) {
+        int nc = *extras_cap ? *extras_cap * 2 : 8;
+        if (nc > NCI_RE_CLASS_RUNE_CAP) nc = NCI_RE_CLASS_RUNE_CAP;
+        frag_t *nb = (frag_t *)NC_REGEXP_REALLOC(*extras, (size_t)nc * sizeof(*nb));
+        if (!nb) {
+            par->err = "out of memory";
+            par->re->oom = 1;
+            return 0;
+        }
+        *extras = nb;
+        *extras_cap = nc;
+    }
+    frag_t rf = frag_rune(par->re, r);
+    if (!rf.start) {
+        par->err = "invalid escape sequence";
+        return 0;
+    }
+    (*extras)[(*nextras)++] = rf;
+    return 1;
+}
+
 static frag_t parse_atom(parser_t *par) {
     if (par->err) return frag(NULL, NULL);
     char c = *par->p;
@@ -319,31 +492,43 @@ static frag_t parse_atom(parser_t *par) {
     if (c == '(') {
         par->p++;
         int capturing = 1;
+        int cap = 0;
         if (par->p[0] == '?' && par->p[1] == ':') {
             par->p += 2;
             capturing = 0;
-        } else if (par->p[0] == '?' && par->p[1] == 'P' && par->p[2] == '<') {
-            par->p += 3;
-            while (*par->p && *par->p != '>') par->p++;
-            if (*par->p != '>') {
+        } else if ((par->p[0] == '?' && par->p[1] == 'P' && par->p[2] == '<') ||
+                   (par->p[0] == '?' && par->p[1] == '<') ||
+                   (par->p[0] == '?' && par->p[1] == '\'')) {
+            char close_ch = '>';
+            if (par->p[0] == '?' && par->p[1] == 'P' && par->p[2] == '<')
+                par->p += 3;
+            else {
+                close_ch = (par->p[1] == '\'') ? '\'' : '>';
+                par->p += 2;
+            }
+            const char *ns = par->p;
+            while (*par->p && *par->p != close_ch) par->p++;
+            if (*par->p != close_ch) {
                 par->err = "invalid named capture";
                 return frag(NULL, NULL);
             }
+            int nlen = (int)(par->p - ns);
             par->p++;
-        } else if (par->p[0] == '?' && par->p[1] == '<') {
-            par->p += 2;
-            while (*par->p && *par->p != '>') par->p++;
-            if (*par->p != '>') {
+            if (!valid_cap_name(ns, nlen)) {
                 par->err = "invalid named capture";
                 return frag(NULL, NULL);
             }
-            par->p++;
+            cap = ++par->re->ngroups;
+            if (!set_group_name(par->re, cap, ns, nlen)) {
+                par->err = "out of memory";
+                return frag(NULL, NULL);
+            }
         } else if (par->p[0] == '?') {
             par->err = "invalid or unsupported Perl syntax";
             return frag(NULL, NULL);
+        } else if (capturing) {
+            cap = ++par->re->ngroups;
         }
-        int cap = 0;
-        if (capturing) cap = ++par->re->ngroups;
         if (++par->depth > NCI_REGEXP_MAX_DEPTH) {
             par->err = "expression nested too deeply";
             par->depth--;
@@ -363,11 +548,27 @@ static frag_t parse_atom(parser_t *par) {
         if (*par->p == '^') { cc->negated = 1; par->p++; }
         int entries = 0;
         int first = 1;
+        int nextras = 0, extras_cap = 0;
+        frag_t *extras = NULL;
+        frag_t f = { NULL, NULL };
         /* ']' is literal as the first class byte (or first after '^'), matching
          * POSIX/Go: []] and [^]] are valid. */
         while (*par->p && (*par->p != ']' || first)) {
             first = 0;
+            if (*par->p == '[' && par->p[1] == ':') {
+                const char *ns = par->p + 2;
+                const char *q = ns;
+                while (*q && !(*q == ':' && q[1] == ']')) q++;
+                if (!*q || !cc_set_posix(cc, ns, (int)(q - ns))) {
+                    par->err = "invalid POSIX class";
+                    goto class_fail;
+                }
+                par->p = q + 2;
+                entries++;
+                continue;
+            }
             int lo = (uint8_t)*par->p++;
+            int lo_braced = 0;
             if (lo == '\\' && *par->p) {
                 char esc = *par->p++;
                 if (esc == 'd') {
@@ -398,10 +599,48 @@ static frag_t parse_atom(parser_t *par) {
                     entries++; continue;
                 }
                 if (esc == 'x') {
-                    if (!parse_hex_escape(par, &lo, NULL)) return frag(NULL, NULL);
+                    if (!parse_hex_escape(par, &lo, &lo_braced)) goto class_fail;
+                    if (lo_braced && lo > 127) {
+                        if (cc->negated) {
+                            par->err = "invalid escape sequence";
+                            goto class_fail;
+                        }
+                        if (*par->p == '-' && par->p[1] && par->p[1] != ']') {
+                            par->p++;
+                            int hi, hi_braced = 0;
+                            if (*par->p == '\\' && par->p[1] == 'x') {
+                                par->p += 2;
+                                if (!parse_hex_escape(par, &hi, &hi_braced))
+                                    goto class_fail;
+                            } else {
+                                par->err = "invalid character class range";
+                                goto class_fail;
+                            }
+                            if (hi < lo) {
+                                par->err = "invalid character class range";
+                                goto class_fail;
+                            }
+                            if (hi - lo >= NCI_RE_CLASS_RUNE_CAP - nextras) {
+                                par->err = "character class too large";
+                                goto class_fail;
+                            }
+                            for (int r = lo; r <= hi; r++) {
+                                if (r < 128) cc_set(cc, r);
+                                else if (!class_add_rune(par, &extras, &nextras,
+                                                         &extras_cap, r))
+                                    goto class_fail;
+                            }
+                            entries++;
+                            continue;
+                        }
+                        if (!class_add_rune(par, &extras, &nextras, &extras_cap, lo))
+                            goto class_fail;
+                        entries++;
+                        continue;
+                    }
                     if (lo < 0 || lo > 255) {
                         par->err = "invalid escape sequence";
-                        return frag(NULL, NULL);
+                        goto class_fail;
                     }
                 } else {
                     int decoded;
@@ -411,19 +650,41 @@ static frag_t parse_atom(parser_t *par) {
             }
             if (*par->p == '-' && par->p[1] && par->p[1] != ']') {
                 par->p++;
-                int hi;
+                int hi, hi_braced = 0;
                 if (*par->p == '\\' && par->p[1]) {
                     par->p++;
                     char esc = *par->p++;
                     if (is_perl_class_escape(esc)) {
                         par->err = "invalid character class range";
-                        return frag(NULL, NULL);
+                        goto class_fail;
                     }
                     if (esc == 'x') {
-                        if (!parse_hex_escape(par, &hi, NULL)) return frag(NULL, NULL);
+                        if (!parse_hex_escape(par, &hi, &hi_braced)) goto class_fail;
+                        if (hi_braced && hi > 127) {
+                            if (cc->negated) {
+                                par->err = "invalid escape sequence";
+                                goto class_fail;
+                            }
+                            if (hi < lo) {
+                                par->err = "invalid character class range";
+                                goto class_fail;
+                            }
+                            if (hi - lo >= NCI_RE_CLASS_RUNE_CAP - nextras) {
+                                par->err = "character class too large";
+                                goto class_fail;
+                            }
+                            for (int r = lo; r <= hi; r++) {
+                                if (r < 128) cc_set(cc, r);
+                                else if (!class_add_rune(par, &extras, &nextras,
+                                                         &extras_cap, r))
+                                    goto class_fail;
+                            }
+                            entries++;
+                            continue;
+                        }
                         if (hi < 0 || hi > 255) {
                             par->err = "invalid escape sequence";
-                            return frag(NULL, NULL);
+                            goto class_fail;
                         }
                     } else {
                         int decoded;
@@ -435,7 +696,7 @@ static frag_t parse_atom(parser_t *par) {
                 }
                 if (hi < lo) {
                     par->err = "invalid character class range";
-                    return frag(NULL, NULL);
+                    goto class_fail;
                 }
                 for (int i = lo; i <= hi; i++) cc_set(cc, i);
             } else {
@@ -445,18 +706,27 @@ static frag_t parse_atom(parser_t *par) {
         }
         if (*par->p != ']') {
             par->err = "missing ]";
-            return frag(NULL, NULL);
+            goto class_fail;
         }
         par->p++;
         if (entries == 0) {
             par->err = "empty character class";
-            return frag(NULL, NULL);
+            goto class_fail;
         }
-        nfa_state_t *s = new_state(par->re, NFA_CLASS);
-        s->cls = cc;
-        nfa_state_t *e = new_state(par->re, NFA_MATCH);
-        s->out1 = e;
-        return frag(s, e);
+        if (!cc_bitmap_empty(cc) || cc->negated || nextras == 0) {
+            nfa_state_t *s = new_state(par->re, NFA_CLASS);
+            s->cls = cc;
+            nfa_state_t *e = new_state(par->re, NFA_MATCH);
+            s->out1 = e;
+            f = frag(s, e);
+        }
+        for (int i = 0; i < nextras; i++)
+            f = mk_alt(par->re, f, extras[i]);
+        free(extras);
+        return f;
+    class_fail:
+        free(extras);
+        return frag(NULL, NULL);
     }
 
     if (c == '.') {
@@ -504,6 +774,17 @@ static frag_t parse_atom(parser_t *par) {
             s->out1 = e;
             return frag(s, e);
         }
+        if (esc == 'b' || esc == 'B' || esc == 'A' || esc == 'z') {
+            int type = NFA_ANCHOR_START;
+            if (esc == 'b') type = NFA_WORD_BOUND;
+            else if (esc == 'B') type = NFA_NO_WORD_BOUND;
+            else if (esc == 'z') type = NFA_ANCHOR_END;
+            nfa_state_t *s = new_state(par->re, type);
+            nfa_state_t *e = new_state(par->re, NFA_MATCH);
+            if (esc == 'z') s->ch = 1;          /* `\z`: end of text only */
+            s->out1 = e;
+            return frag(s, e);
+        }
         charclass_t *cc = new_class(par->re);
         if (esc == 'd') { for (int i = '0'; i <= '9'; i++) cc_set(cc, i); }
         else if (esc == 'D') { for (int i = '0'; i <= '9'; i++) cc_set(cc, i); cc->negated = 1; }
@@ -513,8 +794,22 @@ static frag_t parse_atom(parser_t *par) {
         else if (esc == 'S') { cc_set_ws(cc); cc->negated = 1; }
         else {
             int decoded;
+            if (decode_char_esc(esc, &decoded)) {
+                nfa_state_t *s = new_state(par->re, NFA_CHAR);
+                s->ch = decoded;
+                nfa_state_t *e = new_state(par->re, NFA_MATCH);
+                s->out1 = e;
+                return frag(s, e);
+            }
+            /* Metacharacters may be escaped; letter/digit unknowns are errors
+             * (Go/RE2: no backreferences, no silent `\q` -> `q`). */
+            if ((esc >= '0' && esc <= '9') ||
+                (esc >= 'A' && esc <= 'Z') || (esc >= 'a' && esc <= 'z')) {
+                par->err = "invalid escape sequence";
+                return frag(NULL, NULL);
+            }
             nfa_state_t *s = new_state(par->re, NFA_CHAR);
-            s->ch = decode_char_esc(esc, &decoded) ? decoded : (uint8_t)esc;
+            s->ch = (uint8_t)esc;
             nfa_state_t *e = new_state(par->re, NFA_MATCH);
             s->out1 = e;
             return frag(s, e);
@@ -812,6 +1107,10 @@ void neverc_regexp_free(neverc_regexp_t *re) {
     free(re->sblk);
     for (int i = 0; i < re->ncblk; i++) free(re->cblk[i]);
     free(re->cblk);
+    if (re->gnames) {
+        for (int i = 0; i < re->gnames_cap; i++) free(re->gnames[i]);
+        free(re->gnames);
+    }
     free(re);
 }
 
@@ -856,6 +1155,8 @@ static void fb_walk(nfa_state_t *s, int *vis, int gen, uint8_t fb[32],
             break;
         case NFA_CAP_OPEN:
         case NFA_CAP_CLOSE:
+        case NFA_WORD_BOUND:
+        case NFA_NO_WORD_BOUND:
             search_push(wst, &wn, vis, gen, nstates, s->out1);
             break;
         case NFA_ANCHOR_START:
@@ -1046,7 +1347,18 @@ static void search_add(search_ctx *ctx, tlist_t *tl, nfa_state_t *s,
             continue;
         }
         if (s->type == NFA_ANCHOR_END) {
-            if (anchor_end_at(text, slen, pos))
+            int ok = s->ch ? (pos == slen) : anchor_end_at(text, slen, pos);
+            if (ok)
+                search_push(wst, &wn, visited, gen, nstates, s->out1);
+            continue;
+        }
+        if (s->type == NFA_WORD_BOUND) {
+            if (word_bound_at(text, slen, pos))
+                search_push(wst, &wn, visited, gen, nstates, s->out1);
+            continue;
+        }
+        if (s->type == NFA_NO_WORD_BOUND) {
+            if (!word_bound_at(text, slen, pos))
                 search_push(wst, &wn, visited, gen, nstates, s->out1);
             continue;
         }
@@ -1270,7 +1582,17 @@ static void cap_closure(cap_env_t *e, nfa_state_t *start, const size_t *init,
             continue;
         }
         if (s->type == NFA_ANCHOR_END) {
-            if (anchor_end_at(e->text, e->slen, pos))
+            int ok = s->ch ? (pos == e->slen) : anchor_end_at(e->text, e->slen, pos);
+            if (ok) cap_push(e, s->out1, e->scratch);
+            continue;
+        }
+        if (s->type == NFA_WORD_BOUND) {
+            if (word_bound_at(e->text, e->slen, pos))
+                cap_push(e, s->out1, e->scratch);
+            continue;
+        }
+        if (s->type == NFA_NO_WORD_BOUND) {
+            if (!word_bound_at(e->text, e->slen, pos))
                 cap_push(e, s->out1, e->scratch);
             continue;
         }
@@ -1515,20 +1837,134 @@ static int regexp_append(char **buffer, size_t *length, size_t *capacity,
     return 0;
 }
 
+/* Go/RE2 Expand: $0 $1 ${name} $$ ; unknown `$` is emitted literally. */
+static int regexp_append_expand(char **buffer, size_t *length, size_t *capacity,
+                                const char *repl,
+                                const neverc_regexp_match_t *m, int nm,
+                                neverc_regexp_t *re) {
+    const char *p = repl;
+    while (*p) {
+        if (*p != '$') {
+            const char *start = p;
+            while (*p && *p != '$') p++;
+            if (regexp_append(buffer, length, capacity, start, (size_t)(p - start)) != 0)
+                return -1;
+            continue;
+        }
+        p++;
+        if (*p == '$') {
+            if (regexp_append(buffer, length, capacity, "$", 1) != 0) return -1;
+            p++;
+            continue;
+        }
+        int braced = 0;
+        if (*p == '{') { braced = 1; p++; }
+        const char *ns = p;
+        if (*p >= '0' && *p <= '9') {
+            while (*p >= '0' && *p <= '9') p++;
+        } else if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || *p == '_') {
+            while ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+                   (*p >= '0' && *p <= '9') || *p == '_')
+                p++;
+        } else {
+            if (regexp_append(buffer, length, capacity, "$", 1) != 0) return -1;
+            continue;
+        }
+        int nlen = (int)(p - ns);
+        if (braced) {
+            if (*p != '}') {
+                if (regexp_append(buffer, length, capacity, "$", 1) != 0) return -1;
+                p = ns;
+                continue;
+            }
+            p++;
+        }
+        if (nlen <= 0) {
+            if (regexp_append(buffer, length, capacity, "$", 1) != 0) return -1;
+            continue;
+        }
+        int gi = -1, digits = 1;
+        for (int k = 0; k < nlen; k++)
+            if (ns[k] < '0' || ns[k] > '9') { digits = 0; break; }
+        if (digits) {
+            int v = 0;
+            for (int k = 0; k < nlen; k++) {
+                if (v > (INT_MAX - (ns[k] - '0')) / 10) { v = -1; break; }
+                v = v * 10 + (ns[k] - '0');
+            }
+            gi = v;
+        } else {
+            char name[64];
+            if (nlen >= (int)sizeof(name)) {
+                char *tmp = (char *)NC_REGEXP_MALLOC((size_t)nlen + 1U);
+                if (!tmp) return -1;
+                memcpy(tmp, ns, (size_t)nlen);
+                tmp[nlen] = '\0';
+                gi = neverc_regexp_subexp_index(re, tmp);
+                free(tmp);
+            } else {
+                memcpy(name, ns, (size_t)nlen);
+                name[nlen] = '\0';
+                gi = neverc_regexp_subexp_index(re, name);
+            }
+        }
+        if (gi >= 0 && gi < nm && m[gi].start)
+            if (regexp_append(buffer, length, capacity, m[gi].start, m[gi].len) != 0)
+                return -1;
+    }
+    return 0;
+}
+
+static int fill_replace_caps(neverc_regexp_t *re, const char *src, size_t slen,
+                             size_t ms, size_t me, neverc_regexp_match_t *m, int nm) {
+    m[0].start = src + ms;
+    m[0].len = me - ms;
+    for (int i = 1; i < nm; i++) {
+        m[i].start = NULL;
+        m[i].len = 0;
+    }
+    if (re->ngroups <= 0 || nm <= 1) return 0;
+    int nslots = 2 * (re->ngroups + 1);
+    size_t *caps = (size_t *)NC_REGEXP_MALLOC((size_t)nslots * sizeof(size_t));
+    if (!caps) return -1;
+    size_t end = 0;
+    if (nfa_exec_caps(re, src, slen, ms, &end, caps, nslots) && end == me) {
+        int nfill = nm < re->ngroups + 1 ? nm : re->ngroups + 1;
+        for (int g = 1; g < nfill; g++) {
+            if (caps[2 * g] != (size_t)-1 &&
+                caps[2 * g + 1] != (size_t)-1 &&
+                caps[2 * g + 1] >= caps[2 * g]) {
+                m[g].start = src + caps[2 * g];
+                m[g].len = caps[2 * g + 1] - caps[2 * g];
+            }
+        }
+    }
+    free(caps);
+    return 0;
+}
+
 char *neverc_regexp_replace_all(neverc_regexp_t *re, const char *src,
                                 const char *repl, size_t *outlen) {
     if (outlen) *outlen = 0;
     if (!re || !src || !repl) return NULL;
     size_t slen = strlen(src);
     size_t rlen = strlen(repl);
+    int expand = (strchr(repl, '$') != NULL);
+    int nm = re->ngroups + 1;
+    neverc_regexp_match_t *mslots = NULL;
+    if (expand) {
+        mslots = (neverc_regexp_match_t *)NC_REGEXP_CALLOC((size_t)nm, sizeof(*mslots));
+        if (!mslots) return NULL;
+    }
     size_t cap = 64;
     char *result = (char *)NC_REGEXP_MALLOC(cap);
-    if (!result) return NULL;
+    if (!result) { free(mslots); return NULL; }
     size_t wi = 0, pos = 0;
 
     search_ctx ctx;
     if (search_ctx_init(&ctx, re->nstates) != 0) {
         free(result);
+        free(mslots);
         return NULL;
     }
     uint8_t fb[32];
@@ -1542,8 +1978,13 @@ char *neverc_regexp_replace_all(neverc_regexp_t *re, const char *src,
         size_t before = i - pos;
         if (regexp_append(&result, &wi, &cap, src + pos, before) != 0)
             goto oom;
-        /* Copy replacement */
-        if (regexp_append(&result, &wi, &cap, repl, rlen) != 0) goto oom;
+        if (expand) {
+            if (fill_replace_caps(re, src, slen, i, end, mslots, nm) != 0) goto oom;
+            if (regexp_append_expand(&result, &wi, &cap, repl, mslots, nm, re) != 0)
+                goto oom;
+        } else if (regexp_append(&result, &wi, &cap, repl, rlen) != 0) {
+            goto oom;
+        }
         pos = (end > pos) ? end : pos + 1;      /* empty-width: advance one byte */
     }
 
@@ -1556,10 +1997,12 @@ char *neverc_regexp_replace_all(neverc_regexp_t *re, const char *src,
     result[wi] = '\0';
     if (outlen) *outlen = wi;
     search_ctx_free(&ctx);
+    free(mslots);
     return result;
 
 oom:
     search_ctx_free(&ctx);
+    free(mslots);
     free(result);
     return NULL;
 }
@@ -1666,6 +2109,25 @@ char *neverc_regexp_quote_meta(const char *s) {
     }
     result[j] = '\0';
     return result;
+}
+
+int neverc_regexp_num_subexp(neverc_regexp_t *re) {
+    return re ? re->ngroups : 0;
+}
+
+const char *neverc_regexp_subexp_name(neverc_regexp_t *re, int i) {
+    if (!re || i < 0 || i >= re->gnames_cap) return NULL;
+    return re->gnames[i];
+}
+
+int neverc_regexp_subexp_index(neverc_regexp_t *re, const char *name) {
+    if (!re || !name || !re->gnames) return -1;
+    int last = re->ngroups < re->gnames_cap ? re->ngroups : re->gnames_cap - 1;
+    for (int i = 1; i <= last; i++) {
+        if (re->gnames[i] && strcmp(re->gnames[i], name) == 0)
+            return i;
+    }
+    return -1;
 }
 
 neverc_regexp_t *neverc_regexp_compile_posix(const char *pattern, const char **errp) {

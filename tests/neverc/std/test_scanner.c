@@ -185,6 +185,9 @@ static void test_token_name(void) {
     ASSERT_STR_EQ(neverc_scanner_token_name(NEVERC_SCANNER_INT), "Int");
     ASSERT_STR_EQ(neverc_scanner_token_name(NEVERC_SCANNER_FLOAT), "Float");
     ASSERT_STR_EQ(neverc_scanner_token_name(NEVERC_SCANNER_STRING), "String");
+    ASSERT_STR_EQ(neverc_scanner_token_name('+'), "+");
+    ASSERT_STR_EQ(neverc_scanner_token_name('='), "=");
+    ASSERT_STR_EQ(neverc_scanner_token_name('{'), "{");
 }
 
 static void test_raw_strings(void) {
@@ -332,6 +335,18 @@ static void test_prefix_floats(void) {
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
 }
 
+static void test_mode_zero_digits_are_chars(void) {
+    printf("[mode_zero_digits_are_chars]\n");
+    neverc_scanner_t s;
+    const char *src = "42";
+    neverc_scanner_init(&s, src, strlen(src));
+    neverc_scanner_set_mode(&s, 0);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), '4');
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), '2');
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+}
+
 static void test_mixed(void) {
     printf("[mixed]\n");
     neverc_scanner_t s;
@@ -369,6 +384,7 @@ int main(void) {
     test_number_separators_and_prefixes();
     test_prefix_floats();
     test_null_source();
+    test_mode_zero_digits_are_chars();
     test_mixed();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

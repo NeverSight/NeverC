@@ -252,6 +252,7 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
         line_len++;
         i++;
     }
+    if (di > (size_t)INT_MAX) return -1;
     return (int)di;
 }
 

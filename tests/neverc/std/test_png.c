@@ -488,11 +488,69 @@ static void test_zlib_fcheck_valid(void) {
     free(img.pixels);
 }
 
+static void test_encode_decode_grayscale_alpha(void) {
+    printf("[encode_decode_grayscale_alpha]\n");
+    neverc_png_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 2;
+    img.height = 1;
+    img.bit_depth = 8;
+    img.color_type = NEVERC_PNG_COLOR_GRAYSCALE_ALPHA;
+    img.channels = 2;
+    img.stride = 4;
+    img.pixels = (uint8_t *)calloc(1, 4);
+    ASSERT_TRUE(img.pixels != NULL);
+    img.pixels[0] = 64; img.pixels[1] = 255;
+    img.pixels[2] = 192; img.pixels[3] = 128;
+
+    uint8_t *png = NULL;
+    size_t png_len = 0;
+    ASSERT_EQ(neverc_png_encode(&img, &png, &png_len), 0);
+    neverc_png_image_t decoded;
+    ASSERT_EQ(neverc_png_decode(png, png_len, &decoded), 0);
+    ASSERT_EQ(decoded.channels, 2);
+    ASSERT_EQ(*neverc_png_pixel_at(&decoded, 0, 0), 64);
+    ASSERT_EQ(neverc_png_pixel_at(&decoded, 0, 0)[1], 255);
+    ASSERT_EQ(*neverc_png_pixel_at(&decoded, 1, 0), 192);
+    ASSERT_EQ(neverc_png_pixel_at(&decoded, 1, 0)[1], 128);
+    neverc_png_free(&decoded);
+    free(png);
+    free(img.pixels);
+}
+
+static void test_rejects_huge_ihdr(void) {
+    printf("[rejects_huge_ihdr]\n");
+    uint8_t png[45];
+    static const uint8_t sig[8] = {137, 80, 78, 71, 13, 10, 26, 10};
+    memcpy(png, sig, 8);
+    wr_be32(png + 8, 13);
+    memcpy(png + 12, "IHDR", 4);
+    wr_be32(png + 16, 65535);
+    wr_be32(png + 20, 65535);
+    png[24] = 8;
+    png[25] = NEVERC_PNG_COLOR_TRUECOLOR;
+    png[26] = 0;
+    png[27] = 0;
+    png[28] = 0;
+    wr_be32(png + 29, neverc_crc32_ieee(png + 12, 17));
+    wr_be32(png + 33, 0);
+    memcpy(png + 37, "IEND", 4);
+    wr_be32(png + 41, 0xAE426082u);
+
+    neverc_png_image_t img;
+    memset(&img, 0xA5, sizeof(img));
+    ASSERT_EQ(neverc_png_decode(png, sizeof(png), &img), -1);
+    ASSERT_TRUE(img.pixels == NULL);
+    ASSERT_EQ(img.width, 0);
+    ASSERT_EQ(img.height, 0);
+}
+
 int main(void) {
     printf("NeverC image/png tests\n");
     test_encode_decode_rgba();
     test_encode_decode_rgb();
     test_encode_decode_grayscale();
+    test_encode_decode_grayscale_alpha();
     test_pixel_at_bounds();
     test_invalid_data();
     test_rejects_trailing_bytes();
@@ -501,6 +559,7 @@ int main(void) {
     test_large_image();
     test_chunk_crc_valid();
     test_zlib_fcheck_valid();
+    test_rejects_huge_ihdr();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

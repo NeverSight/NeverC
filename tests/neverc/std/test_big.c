@@ -100,6 +100,39 @@ static void test_set_string(void) {
     ASSERT_INT_EQ(neverc_bigint_int64(&a), 1000);
     ASSERT_INT_EQ(neverc_bigint_set_string(&a, "1_000", 10), -1);
 
+    /* Failed parses must not clobber a previous value. */
+    neverc_bigint_set_int64(&a, 42);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, NULL, 10), -1);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "", 10), -1);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "0x", 0), -1);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "08", 0), -1);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "99", 1), -1);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "99", 37), -1);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "1_000", 10), -1);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "0xG", 0), -1);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "0x10", 16), -1);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
+
+    /* base 0: leading 0 is octal (Go SetString); 0o/0b prefixes too. */
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "010", 0), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 8);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "0o10", 0), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 8);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "0B1010", 0), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 10);
+
+    neverc_bigint_set_int64(&a, 42);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "0", 0), 0);
+    ASSERT_TRUE(neverc_bigint_is_zero(&a));
+
     neverc_bigint_set_string(&a, "999999999999999999", 10);
     neverc_bigint_string(&a, 10, buf, sizeof(buf));
     ASSERT_STR_EQ(buf, "999999999999999999");
@@ -137,6 +170,10 @@ static void test_add(void) {
     neverc_bigint_add(&c, &a, &b);
     ASSERT_TRUE(neverc_bigint_is_zero(&c));
 
+    neverc_bigint_set_int64(&a, 5);
+    neverc_bigint_add(&a, &a, &a);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 10);
+
     neverc_bigint_free(&a); neverc_bigint_free(&b); neverc_bigint_free(&c);
 }
 
@@ -154,6 +191,12 @@ static void test_sub(void) {
     neverc_bigint_set_int64(&b, 100);
     neverc_bigint_sub(&c, &a, &b);
     ASSERT_INT_EQ(neverc_bigint_int64(&c), -70);
+
+    neverc_bigint_set_int64(&a, 42);
+    neverc_bigint_neg(&c, &a);
+    ASSERT_INT_EQ(neverc_bigint_int64(&c), -42);
+    neverc_bigint_neg(&c, &c);
+    ASSERT_INT_EQ(neverc_bigint_int64(&c), 42);
 
     neverc_bigint_free(&a); neverc_bigint_free(&b); neverc_bigint_free(&c);
 }
@@ -218,6 +261,23 @@ static void test_div(void) {
     ASSERT_TRUE(neverc_bigint_is_zero(&q));
     ASSERT_TRUE(neverc_bigint_is_zero(&r));
 
+    /* Truncated division: sign(q) = xor of signs, rem follows the dividend. */
+    neverc_bigint_set_int64(&a, -100);
+    neverc_bigint_set_int64(&b, 7);
+    neverc_bigint_div(&q, &r, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_int64(&q), -14);
+    ASSERT_INT_EQ(neverc_bigint_int64(&r), -2);
+    neverc_bigint_set_int64(&a, 100);
+    neverc_bigint_set_int64(&b, -7);
+    neverc_bigint_div(&q, &r, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_int64(&q), -14);
+    ASSERT_INT_EQ(neverc_bigint_int64(&r), 2);
+    neverc_bigint_set_int64(&a, -100);
+    neverc_bigint_set_int64(&b, -7);
+    neverc_bigint_div(&q, &r, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_int64(&q), 14);
+    ASSERT_INT_EQ(neverc_bigint_int64(&r), -2);
+
     neverc_bigint_free(&a); neverc_bigint_free(&b);
     neverc_bigint_free(&q); neverc_bigint_free(&r);
 }
@@ -242,6 +302,22 @@ static void test_cmp(void) {
     neverc_bigint_set_int64(&a, -10);
     neverc_bigint_set_int64(&b, 10);
     ASSERT_INT_EQ(neverc_bigint_cmp(&a, &b), -1);
+
+    neverc_bigint_set_int64(&a, -20);
+    neverc_bigint_set_int64(&b, -10);
+    ASSERT_INT_EQ(neverc_bigint_cmp(&a, &b), -1);
+    neverc_bigint_set_int64(&a, -10);
+    neverc_bigint_set_int64(&b, -10);
+    ASSERT_INT_EQ(neverc_bigint_cmp(&a, &b), 0);
+    neverc_bigint_set_int64(&a, -10);
+    neverc_bigint_set_int64(&b, -20);
+    ASSERT_INT_EQ(neverc_bigint_cmp(&a, &b), 1);
+    neverc_bigint_set_int64(&a, -7);
+    neverc_bigint_set_int64(&b, 0);
+    ASSERT_INT_EQ(neverc_bigint_cmp(&a, &b), -1);
+    neverc_bigint_set_int64(&a, 0);
+    neverc_bigint_set_int64(&b, -7);
+    ASSERT_INT_EQ(neverc_bigint_cmp(&a, &b), 1);
 
     neverc_bigint_free(&a); neverc_bigint_free(&b);
 }
@@ -291,6 +367,36 @@ static void test_bit_ops(void) {
     ASSERT_INT_EQ(neverc_bigint_bit(&a, 1), 0);
     ASSERT_INT_EQ(neverc_bigint_bit(&a, 2), 1);
 
+    /* In-place or/xor must survive dest aliasing the shorter operand: that
+     * path reallocs and used to read freed digits. */
+    neverc_bigint_t expect;
+    neverc_bigint_init(&expect);
+    neverc_bigint_set_int64(&b, 1);
+    neverc_bigint_lsh(&b, &b, 32 * 8);
+
+    neverc_bigint_free(&a); neverc_bigint_init(&a);
+    neverc_bigint_set_int64(&a, 0xF);
+    neverc_bigint_or(&expect, &a, &b);
+    neverc_bigint_or(&a, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_cmp(&a, &expect), 0);
+
+    neverc_bigint_free(&a); neverc_bigint_init(&a);
+    neverc_bigint_set_int64(&a, 0xF);
+    neverc_bigint_or(&a, &b, &a);
+    ASSERT_INT_EQ(neverc_bigint_cmp(&a, &expect), 0);
+
+    neverc_bigint_free(&a); neverc_bigint_init(&a);
+    neverc_bigint_set_int64(&a, 0xF);
+    neverc_bigint_xor(&expect, &a, &b);
+    neverc_bigint_xor(&a, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_cmp(&a, &expect), 0);
+
+    neverc_bigint_free(&a); neverc_bigint_init(&a);
+    neverc_bigint_set_int64(&a, 0xF);
+    neverc_bigint_xor(&a, &b, &a);
+    ASSERT_INT_EQ(neverc_bigint_cmp(&a, &expect), 0);
+
+    neverc_bigint_free(&expect);
     neverc_bigint_free(&a); neverc_bigint_free(&b); neverc_bigint_free(&c);
 }
 
@@ -375,6 +481,34 @@ static void test_exp_mod(void) {
     neverc_bigint_exp(&result, &base, &exp, &mod);
     ASSERT_INT_EQ(neverc_bigint_int64(&result), 2);
 
+    /* dest == modulus must not clobber |m| before the negative-base fixup. */
+    neverc_bigint_set_int64(&base, -2);
+    neverc_bigint_set_int64(&exp, 1);
+    neverc_bigint_set_int64(&mod, 5);
+    neverc_bigint_exp(&mod, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&mod), 3);
+    neverc_bigint_set_int64(&base, -3);
+    neverc_bigint_set_int64(&exp, 1);
+    neverc_bigint_set_int64(&mod, 10);
+    neverc_bigint_exp(&mod, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&mod), 7);
+
+    neverc_bigint_set_int64(&base, -2);
+    neverc_bigint_set_int64(&exp, 3);
+    neverc_bigint_exp(&base, &base, &exp, NULL);
+    ASSERT_INT_EQ(neverc_bigint_int64(&base), -8);
+
+    neverc_bigint_set_int64(&base, 5);
+    neverc_bigint_set_int64(&exp, 0);
+    neverc_bigint_exp(&result, &base, &exp, NULL);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 1);
+    neverc_bigint_set_int64(&mod, 1);
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_TRUE(neverc_bigint_is_zero(&result));
+    neverc_bigint_set_int64(&base, 0);
+    neverc_bigint_exp(&result, &base, &exp, NULL);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 1);
+
     neverc_bigint_free(&x); neverc_bigint_free(&m); neverc_bigint_free(&z);
 
     neverc_bigint_free(&base); neverc_bigint_free(&exp);
@@ -400,6 +534,23 @@ static void test_gcd(void) {
     neverc_bigint_set_int64(&b, 75);
     neverc_bigint_gcd(&g, &a, &b);
     ASSERT_INT_EQ(neverc_bigint_int64(&g), 25);
+
+    neverc_bigint_set_int64(&a, -12);
+    neverc_bigint_set_int64(&b, 8);
+    neverc_bigint_gcd(&g, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_int64(&g), 4);
+    neverc_bigint_set_int64(&a, -12);
+    neverc_bigint_set_int64(&b, -8);
+    neverc_bigint_gcd(&g, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_int64(&g), 4);
+    neverc_bigint_set_int64(&a, 0);
+    neverc_bigint_set_int64(&b, 15);
+    neverc_bigint_gcd(&g, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_int64(&g), 15);
+    neverc_bigint_set_int64(&a, 0);
+    neverc_bigint_set_int64(&b, 0);
+    neverc_bigint_gcd(&g, &a, &b);
+    ASSERT_TRUE(neverc_bigint_is_zero(&g));
 
     neverc_bigint_free(&a); neverc_bigint_free(&b); neverc_bigint_free(&g);
 }
@@ -863,5 +1014,6 @@ int main(void) {
     test_mul_sqr_large_random();
     test_string_huge_roundtrip();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

@@ -114,10 +114,18 @@ static void test_empty_data(void) {
     uint64_t h1 = neverc_maphash_bytes(42, "", 0);
     uint64_t h2 = neverc_maphash_bytes(42, "a", 1);
     ASSERT_U64_NE(h1, h2);
+    /* Empty input must still mix the seed; returning the seed leaks it. */
+    ASSERT_U64_NE(h1, 42);
+    ASSERT_U64_EQ(neverc_maphash_bytes(42, NULL, 0), h1);
+    ASSERT_U64_EQ(neverc_maphash_string(42, NULL), h1);
 
     neverc_maphash_t h;
     neverc_maphash_init(&h, 42);
     neverc_maphash_write(&h, NULL, 0);
+    ASSERT_U64_EQ(neverc_maphash_sum64(&h), h1);
+
+    neverc_maphash_init(&h, 42);
+    neverc_maphash_write_string(&h, NULL);
     ASSERT_U64_EQ(neverc_maphash_sum64(&h), h1);
 }
 

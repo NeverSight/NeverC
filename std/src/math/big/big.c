@@ -158,7 +158,7 @@ static void nat_chunks_combine(neverc_bigint_t *out, const uint32_t *limb,
 }
 
 int neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base) {
-    z->len = 0; z->neg = 0;
+    /* Validate first: a failed parse must leave z unchanged (Go SetString). */
     if (!s || !*s) return -1;
     const char *p = s;
     int neg = 0;
@@ -217,14 +217,15 @@ int neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base) {
     }
     if (prev_us) return -1;
 
-    if (!ensure_cap(z, 1)) return -1;
-    z->len = 0;
     if (ndigits == 0) {
-        if (zero_is_digit) { z->neg = 0; return 0; }
+        if (zero_is_digit) { z->len = 0; z->neg = 0; return 0; }
         return -1;
     }
 
     if (k <= 0) return -1;
+    if (!ensure_cap(z, 1)) return -1;
+    z->len = 0;
+    z->neg = 0;
     size_t m = (ndigits - 1U) / (size_t)k + 1U; /* word-chunks */
 
     if (m >= (size_t)NCI_BASECONV_THRESHOLD) {
@@ -1327,8 +1328,21 @@ void neverc_bigint_and(neverc_bigint_t *z, const neverc_bigint_t *x, const never
 }
 
 void neverc_bigint_or(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
+    /* or/xor grow to max(len). If z aliases the shorter operand, ensure_cap
+     * may realloc and leave x/y->digits dangling — snapshot first, as add(). */
+    neverc_bigint_t tx, ty;
+    neverc_bigint_init(&tx); neverc_bigint_init(&ty);
+    if (z == x) {
+        if (!bigint_set_checked(&tx, x)) goto done;
+        x = &tx;
+    }
+    if (z == y) {
+        if (!bigint_set_checked(&ty, y)) goto done;
+        y = &ty;
+    }
+
     size_t m = x->len > y->len ? x->len : y->len;
-    if (!ensure_cap(z, m)) return;
+    if (!ensure_cap(z, m)) goto done;
     for (size_t i = 0; i < m; i++) {
         uint32_t a = i < x->len ? x->digits[i] : 0;
         uint32_t b = i < y->len ? y->digits[i] : 0;
@@ -1337,11 +1351,24 @@ void neverc_bigint_or(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc
     z->len = m;
     z->neg = 0;
     trim(z);
+done:
+    neverc_bigint_free(&tx); neverc_bigint_free(&ty);
 }
 
 void neverc_bigint_xor(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
+    neverc_bigint_t tx, ty;
+    neverc_bigint_init(&tx); neverc_bigint_init(&ty);
+    if (z == x) {
+        if (!bigint_set_checked(&tx, x)) goto done;
+        x = &tx;
+    }
+    if (z == y) {
+        if (!bigint_set_checked(&ty, y)) goto done;
+        y = &ty;
+    }
+
     size_t m = x->len > y->len ? x->len : y->len;
-    if (!ensure_cap(z, m)) return;
+    if (!ensure_cap(z, m)) goto done;
     for (size_t i = 0; i < m; i++) {
         uint32_t a = i < x->len ? x->digits[i] : 0;
         uint32_t b = i < y->len ? y->digits[i] : 0;
@@ -1350,6 +1377,8 @@ void neverc_bigint_xor(neverc_bigint_t *z, const neverc_bigint_t *x, const never
     z->len = m;
     z->neg = 0;
     trim(z);
+done:
+    neverc_bigint_free(&tx); neverc_bigint_free(&ty);
 }
 
 int neverc_bigint_bit(const neverc_bigint_t *x, unsigned i) {
@@ -1377,7 +1406,11 @@ static void exp_window(neverc_bigint_t *z, const neverc_bigint_t *base,
     neverc_bigint_set(&b, base);
     b.neg = 0;
     neverc_bigint_set(&e, exp);
-    if (domod) neverc_bigint_mod(&b, &b, m);
+    if (domod) {
+        neverc_bigint_mod(&b, &b, m);
+        /* x^0 ≡ 1 (mod m) must still land in [0,|m|): 1 mod 1 == 0. */
+        neverc_bigint_mod(&result, &result, m);
+    }
 
     int bits = neverc_bigint_bit_len(&e);
 
@@ -1604,27 +1637,35 @@ void neverc_bigint_exp(neverc_bigint_t *z, const neverc_bigint_t *base,
     }
     int base_neg = base->neg && base->len > 0;
     int exp_odd = exp->len > 0 && (exp->digits[0] & 1u);
+
+    /* Compute into a local so dest==modulus (or dest==base) cannot clobber
+     * inputs used for the negative-base adjustment, or the modulus itself. */
+    neverc_bigint_t result;
+    neverc_bigint_init(&result);
+
     /* Odd modulus -> Montgomery (division-free); otherwise window method. */
     if (m && m->len > 0 && (m->digits[0] & 1u)) {
-        if (exp_montgomery(z, base, exp, m) != 0)
-            exp_window(z, base, exp, m);
+        if (exp_montgomery(&result, base, exp, m) != 0)
+            exp_window(&result, base, exp, m);
     } else {
-        exp_window(z, base, exp, m);
+        exp_window(&result, base, exp, m);
     }
-    if (!(base_neg && exp_odd))
-        return;
-    if (m && m->len > 0) {
-        if (z->len > 0) {
-            neverc_bigint_t mm;
-            neverc_bigint_init(&mm);
-            neverc_bigint_set(&mm, m);
-            mm.neg = 0;
-            neverc_bigint_sub(z, &mm, z);
-            neverc_bigint_free(&mm);
+    if (base_neg && exp_odd) {
+        if (m && m->len > 0) {
+            if (result.len > 0) {
+                neverc_bigint_t mm;
+                neverc_bigint_init(&mm);
+                neverc_bigint_set(&mm, m);
+                mm.neg = 0;
+                neverc_bigint_sub(&result, &mm, &result);
+                neverc_bigint_free(&mm);
+            }
+        } else if (result.len > 0) {
+            result.neg = 1;
         }
-    } else if (z->len > 0) {
-        z->neg = 1;
     }
+    neverc_bigint_free(z);
+    *z = result;
 }
 
 static int nlz32(uint32_t x) { return x ? __builtin_clz(x) : 32; }

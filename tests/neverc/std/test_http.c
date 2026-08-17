@@ -49,6 +49,7 @@ static void test_status_text(void) {
     check_str("201", neverc_http_status_text(201), "Created");
     check_str("202", neverc_http_status_text(202), "Accepted");
     check_str("204", neverc_http_status_text(204), "No Content");
+    check_str("206", neverc_http_status_text(206), "Partial Content");
     check_str("301", neverc_http_status_text(301), "Moved Permanently");
     check_str("302", neverc_http_status_text(302), "Found");
     check_str("304", neverc_http_status_text(304), "Not Modified");
@@ -60,6 +61,7 @@ static void test_status_text(void) {
     check_str("405", neverc_http_status_text(405), "Method Not Allowed");
     check_str("408", neverc_http_status_text(408), "Request Timeout");
     check_str("409", neverc_http_status_text(409), "Conflict");
+    check_str("416", neverc_http_status_text(416), "Range Not Satisfiable");
     check_str("422", neverc_http_status_text(422), "Unprocessable Entity");
     check_str("429", neverc_http_status_text(429), "Too Many Requests");
     check_str("500", neverc_http_status_text(500), "Internal Server Error");
@@ -525,6 +527,23 @@ static void test_http_client(void) {
             check_int("client get status", resp->status_code, 200);
             check_int("client get body",
                        resp->body && strstr(resp->body, "Hello, World!") != NULL, 1);
+            neverc_http_response_free(resp);
+        }
+    }
+
+    /* Fragments must be stripped, not rejected: they are never sent. */
+    {
+        char url[80];
+        snprintf(url, sizeof(url),
+                 "http://127.0.0.1:%d/hello#ignored", port);
+        neverc_http_response_t *resp = neverc_http_get(url);
+        check_not_null("client fragment resp", resp);
+        if (resp) {
+            check_int("client fragment status",
+                      resp->error == NULL && resp->status_code == 200, 1);
+            check_int("client fragment body",
+                      resp->body && strstr(resp->body, "Hello, World!") != NULL,
+                      1);
             neverc_http_response_free(resp);
         }
     }
@@ -1392,6 +1411,88 @@ static void test_post_http10_keepalive_no_cl(void) {
     check_int("http10 ka post rejected",
               strstr(buf, "400 Bad Request") != NULL, 1);
 
+    stop_test_server(server_pid);
+}
+
+/* RFC 9110: 100 Continue must be sent after headers, before the body. */
+static void test_expect_continue(void) {
+    printf("[expect_continue]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+    const char *err = NULL;
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+    check_not_null("expect dial", conn);
+    if (!conn) {
+        stop_test_server(server_pid);
+        return;
+    }
+    neverc_tcp_set_timeout(conn, 2000);
+
+    const char *headers =
+        "POST /post HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Content-Length: 4\r\n"
+        "Expect: 100-continue\r\n"
+        "\r\n";
+    neverc_tcp_write(conn, headers, strlen(headers));
+
+    char buf[4096];
+    int total = 0;
+    int saw_100 = 0;
+    buf[0] = '\0';
+    while (total < (int)sizeof(buf) - 1) {
+        int n = neverc_tcp_read(conn, buf + total,
+                                sizeof(buf) - 1 - (size_t)total);
+        if (n <= 0) break;
+        total += n;
+        buf[total] = '\0';
+        if (strstr(buf, "HTTP/1.1 100 Continue") != NULL) {
+            saw_100 = 1;
+            break;
+        }
+        if (strstr(buf, "HTTP/1.1 201") != NULL)
+            break;
+    }
+    check_int("expect 100 continue", saw_100, 1);
+
+    if (saw_100) {
+        neverc_tcp_write(conn, "data", 4);
+        while (total < (int)sizeof(buf) - 1) {
+            int n = neverc_tcp_read(conn, buf + total,
+                                    sizeof(buf) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+            buf[total] = '\0';
+            if (strstr(buf, "HTTP/1.1 201") != NULL)
+                break;
+        }
+    }
+    check_int("expect 201 after body", strstr(buf, "HTTP/1.1 201") != NULL, 1);
+    check_int("expect body received",
+              strstr(buf, "received 4 bytes") != NULL, 1);
+
+    /* Keep-alive: continue_sent must not leak onto the next request. */
+    const char *get =
+        "GET /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+    neverc_tcp_write(conn, get, strlen(get));
+    while (total < (int)sizeof(buf) - 1) {
+        int n = neverc_tcp_read(conn, buf + total,
+                                sizeof(buf) - 1 - (size_t)total);
+        if (n <= 0) break;
+        total += n;
+        buf[total] = '\0';
+        if (strstr(buf, "Hello, World!") != NULL)
+            break;
+    }
+    check_int("expect keepalive get",
+              strstr(buf, "Hello, World!") != NULL, 1);
+
+    neverc_tcp_close(conn);
     stop_test_server(server_pid);
 }
 
@@ -2288,6 +2389,55 @@ static void test_cookies(void) {
     v = neverc_http_get_cookie(&req, "nonexistent", buf, sizeof(buf));
     check_int("nonexistent cookie", v == NULL, 1);
 
+    /* RFC 6265: Cookie values may be DQUOTE-wrapped. */
+    {
+        neverc_http_request_t quoted;
+        memset(&quoted, 0, sizeof(quoted));
+        char quoted_hdr[256];
+        const char *qhname = "Cookie";
+        const char *qhval = "session=\"abc123\"; empty=\"\"; bare=xyz";
+        size_t qpos = 0;
+        memcpy(quoted_hdr + qpos, qhname, strlen(qhname) + 1);
+        qpos += strlen(qhname) + 1;
+        memcpy(quoted_hdr + qpos, qhval, strlen(qhval) + 1);
+        quoted.raw_headers = quoted_hdr;
+        quoted.nheaders = 1;
+
+        v = neverc_http_get_cookie(&quoted, "session", buf, sizeof(buf));
+        check_not_null("quoted session cookie", v);
+        if (v) check_str("quoted session value", v, "abc123");
+
+        v = neverc_http_get_cookie(&quoted, "empty", buf, sizeof(buf));
+        check_not_null("quoted empty cookie", v);
+        if (v) check_str("quoted empty value", v, "");
+
+        v = neverc_http_get_cookie(&quoted, "bare", buf, sizeof(buf));
+        check_not_null("bare cookie after quoted", v);
+        if (v) check_str("bare cookie value", v, "xyz");
+    }
+
+    /* Multiple Cookie headers must all be searched (RFC 6265 / Go r.Cookie). */
+    {
+        neverc_http_request_t multi;
+        memset(&multi, 0, sizeof(multi));
+        char multi_hdr[256];
+        size_t mpos = 0;
+        memcpy(multi_hdr + mpos, "Cookie", 7); mpos += 7;
+        memcpy(multi_hdr + mpos, "first=a", 8); mpos += 8;
+        memcpy(multi_hdr + mpos, "Cookie", 7); mpos += 7;
+        memcpy(multi_hdr + mpos, "second=b", 9);
+        multi.raw_headers = multi_hdr;
+        multi.nheaders = 2;
+
+        v = neverc_http_get_cookie(&multi, "second", buf, sizeof(buf));
+        check_not_null("second cookie header", v);
+        if (v) check_str("second cookie value", v, "b");
+
+        v = neverc_http_get_cookie(&multi, "first", buf, sizeof(buf));
+        check_not_null("first cookie header", v);
+        if (v) check_str("first cookie value", v, "a");
+    }
+
     /* Test Set-Cookie via real server */
     int port = get_free_port();
     if (port < 0) { printf("  SKIP: no free port\n"); return; }
@@ -2770,6 +2920,105 @@ static void test_serve_file(void) {
         neverc_http_memory_writer_free(w);
     }
 
+    /* Range: bytes=0-4 → 206 and the first five bytes. */
+    w = neverc_http_memory_writer_new();
+    if (w) {
+        neverc_http_request_t req;
+        memset(&req, 0, sizeof(req));
+        req.method = "GET";
+        req.path = "/test.txt";
+        char range_hdr[64];
+        size_t rpos = 0;
+        memcpy(range_hdr + rpos, "Range", 6); rpos += 6;
+        memcpy(range_hdr + rpos, "bytes=0-4", 10);
+        req.raw_headers = range_hdr;
+        req.nheaders = 1;
+
+        neverc_http_serve_file(w, &req, tmppath);
+
+        char *data = NULL;
+        size_t data_len = 0;
+        int status = neverc_http_memory_writer_result(w, &data, &data_len);
+        check_int("serve_file range status", status, 206);
+        check_int("serve_file range length", (int)data_len, 5);
+        check_int("serve_file range body",
+                  data && memcmp(data, "Hello", 5) == 0, 1);
+        free(data);
+        neverc_http_memory_writer_free(w);
+    }
+
+    /* Unsatisfiable Range → 416. */
+    w = neverc_http_memory_writer_new();
+    if (w) {
+        neverc_http_request_t req;
+        memset(&req, 0, sizeof(req));
+        req.method = "GET";
+        req.path = "/test.txt";
+        char range_hdr[64];
+        size_t rpos = 0;
+        memcpy(range_hdr + rpos, "Range", 6); rpos += 6;
+        memcpy(range_hdr + rpos, "bytes=100-200", 14);
+        req.raw_headers = range_hdr;
+        req.nheaders = 1;
+
+        neverc_http_serve_file(w, &req, tmppath);
+
+        char *data = NULL;
+        size_t data_len = 0;
+        int status = neverc_http_memory_writer_result(w, &data, &data_len);
+        check_int("serve_file unsatisfiable range", status, 416);
+        check_int("serve_file 416 has no file body",
+                  data == NULL || strstr(data, "Hello") == NULL, 1);
+        free(data);
+        neverc_http_memory_writer_free(w);
+    }
+
+    /* If-Modified-Since in the future → 304. */
+    w = neverc_http_memory_writer_new();
+    if (w) {
+        neverc_http_request_t req;
+        memset(&req, 0, sizeof(req));
+        req.method = "GET";
+        req.path = "/test.txt";
+        char ims_hdr[80];
+        size_t ipos = 0;
+        memcpy(ims_hdr + ipos, "If-Modified-Since", 18); ipos += 18;
+        memcpy(ims_hdr + ipos, "Thu, 01 Jan 2099 00:00:00 GMT", 30);
+        req.raw_headers = ims_hdr;
+        req.nheaders = 1;
+
+        neverc_http_serve_file(w, &req, tmppath);
+
+        char *data = NULL;
+        size_t data_len = 0;
+        int status = neverc_http_memory_writer_result(w, &data, &data_len);
+        check_int("serve_file IMS 304 status", status, 304);
+        check_int("serve_file IMS 304 no body", data == NULL || data_len == 0, 1);
+        free(data);
+        neverc_http_memory_writer_free(w);
+    }
+
+    /* Go ServeFile rejects ".." in the request path even for a safe file. */
+    w = neverc_http_memory_writer_new();
+    if (w) {
+        neverc_http_request_t req;
+        memset(&req, 0, sizeof(req));
+        req.method = "GET";
+        req.path = "/foo/../secret.txt";
+
+        neverc_http_serve_file(w, &req, tmppath);
+
+        char *data = NULL;
+        size_t data_len = 0;
+        int status = neverc_http_memory_writer_result(w, &data, &data_len);
+        check_int("serve_file dotdot status", status, 400);
+        check_int("serve_file dotdot no leak",
+                  data == NULL || strstr(data, "Hello from served file!") == NULL,
+                  1);
+        free(data);
+        neverc_http_memory_writer_free(w);
+    }
+
     /* Test non-existent file */
     w = neverc_http_memory_writer_new();
     if (w) {
@@ -2841,6 +3090,54 @@ static void test_serve_file(void) {
               strstr(buf, "Hello from served file!") != NULL, 1);
     check_int("serve_file live ranges",
               strstr(buf, "Accept-Ranges: bytes") != NULL, 1);
+    check_int("serve_file live last-modified",
+              strstr(buf, "Last-Modified: ") != NULL, 1);
+
+    {
+        const char *lm = strstr(buf, "Last-Modified: ");
+        if (lm) {
+            lm += 15;
+            const char *lm_end = strstr(lm, "\r\n");
+            size_t lmlen = lm_end ? (size_t)(lm_end - lm) : 0;
+            check_int("serve_file last-modified value",
+                      lmlen > 0 && lmlen < 80, 1);
+            if (lmlen > 0 && lmlen < 80) {
+                char ims[80];
+                char ims_req[512];
+                memcpy(ims, lm, lmlen);
+                ims[lmlen] = '\0';
+                snprintf(ims_req, sizeof(ims_req),
+                         "GET /file HTTP/1.1\r\nHost: localhost\r\n"
+                         "If-Modified-Since: %s\r\n"
+                         "Connection: close\r\n\r\n", ims);
+                n = do_http_request(port, ims_req, buf, sizeof(buf));
+                check_int("serve_file live IMS 304",
+                          strstr(buf, "304 Not Modified") != NULL, 1);
+                check_int("serve_file live IMS no body",
+                          strstr(buf, "Hello from served file!") == NULL, 1);
+            }
+        }
+    }
+
+    n = do_http_request(port,
+        "GET /file HTTP/1.1\r\nHost: localhost\r\n"
+        "Range: bytes=0-4\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("serve_file live 206", strstr(buf, "206 Partial Content") != NULL, 1);
+    check_int("serve_file live content-range",
+              strstr(buf, "Content-Range: bytes 0-4/23") != NULL, 1);
+    check_int("serve_file live range length",
+              strstr(buf, "Content-Length: 5\r\n") != NULL, 1);
+    check_int("serve_file live range body", strstr(buf, "Hello") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /file HTTP/1.1\r\nHost: localhost\r\n"
+        "Range: bytes=100-200\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("serve_file live 416",
+              strstr(buf, "416 Range Not Satisfiable") != NULL, 1);
+    check_int("serve_file live 416 content-range",
+              strstr(buf, "Content-Range: bytes */23") != NULL, 1);
 
     n = do_http_request(port,
         "HEAD /file HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
@@ -2851,6 +3148,17 @@ static void test_serve_file(void) {
               strstr(buf, "Content-Length: 23") != NULL, 1);
     check_int("serve_file HEAD no body",
               strstr(buf, "Hello from served file!") == NULL, 1);
+
+    n = do_http_request(port,
+        "HEAD /file HTTP/1.1\r\nHost: localhost\r\n"
+        "Range: bytes=0-4\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("serve_file HEAD range 206",
+              strstr(buf, "206 Partial Content") != NULL, 1);
+    check_int("serve_file HEAD range length",
+              strstr(buf, "Content-Length: 5\r\n") != NULL, 1);
+    check_int("serve_file HEAD range no body",
+              strstr(buf, "Hello") == NULL, 1);
 
     stop_test_server(pid);
     unlink(tmppath);
@@ -3238,6 +3546,7 @@ int main(void) {
     test_post_no_content_length();
     test_post_no_content_length_keepalive();
     test_post_http10_keepalive_no_cl();
+    test_expect_continue();
     test_duplicate_headers();
     test_heavy_stress();
     test_pipelining();

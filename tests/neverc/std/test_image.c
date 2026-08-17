@@ -27,6 +27,12 @@ static void test_point(void) {
     check("div by zero", q.x == 10 && q.y == 6);
     q = neverc_point_div(neverc_pt(INT_MIN, INT_MIN), -1);
     check("div INT_MIN / -1", q.x == INT_MIN && q.y == INT_MIN);
+    q = neverc_point_mul(neverc_pt(INT_MIN, 2), -1);
+    check("mul INT_MIN * -1 saturates", q.x == INT_MAX && q.y == -2);
+    q = neverc_point_add(neverc_pt(INT_MAX, INT_MIN), neverc_pt(1, -1));
+    check("add saturates", q.x == INT_MAX && q.y == INT_MIN);
+    q = neverc_point_sub(neverc_pt(INT_MIN, INT_MAX), neverc_pt(1, -1));
+    check("sub saturates", q.x == INT_MIN && q.y == INT_MAX);
     check("eq_true", neverc_point_eq(neverc_pt(1,2), neverc_pt(1,2)));
     check("eq_false", !neverc_point_eq(neverc_pt(1,2), neverc_pt(1,3)));
     check("in_true", neverc_point_in(neverc_pt(5,5), neverc_rect(0,0,10,10)));
@@ -52,6 +58,10 @@ static void test_rect(void) {
     neverc_rect_t moved = neverc_rect_add(r, neverc_pt(5, 5));
     check("add", moved.min.x == 6 && moved.min.y == 7 &&
                  moved.max.x == 16 && moved.max.y == 17);
+
+    neverc_rect_t back = neverc_rect_sub(moved, neverc_pt(5, 5));
+    check("sub", back.min.x == 1 && back.min.y == 2 &&
+                 back.max.x == 11 && back.max.y == 12);
 
     neverc_rect_t inset = neverc_rect_inset(neverc_rect(0,0,20,20), 5);
     check("inset", inset.min.x == 5 && inset.max.x == 15);
@@ -80,6 +90,16 @@ static void test_rect(void) {
 
     neverc_rect_t no_overlap = neverc_rect_intersect(neverc_rect(0,0,5,5), neverc_rect(10,10,20,20));
     check("intersect_empty", neverc_rect_empty(no_overlap));
+
+    neverc_rect_t overflowed = neverc_rect_add(neverc_rect(INT_MAX - 2, 0, INT_MAX, 4),
+                                              neverc_pt(8, 0));
+    check("rect add saturates",
+          overflowed.min.x == INT_MAX && overflowed.max.x == INT_MAX);
+    neverc_rect_t collapsed = neverc_rect_inset(neverc_rect(0, 0, 10, 10), 100);
+    check("inset collapse is empty", neverc_rect_empty(collapsed));
+    neverc_rect_t outset = neverc_rect_inset(neverc_rect(0, 0, 10, 10), INT_MIN);
+    check("inset INT_MIN does not wrap",
+          outset.min.x == INT_MIN && outset.max.x == INT_MAX);
 }
 
 static void test_rgba_image(void) {
@@ -106,6 +126,12 @@ static void test_rgba_image(void) {
     check("out_of_bounds", r == 0 && g == 0 && b == 0 && a == 0);
 
     check("pixel_offset", neverc_image_rgba_pixel_offset(&img, 10, 20) == 20 * 400 + 10 * 4);
+
+    neverc_image_rgba_at(NULL, 0, 0, &r, &g, &b, &a);
+    check("at null image", r == 0 && g == 0 && b == 0 && a == 0);
+    neverc_image_rgba_set(NULL, 0, 0, 1, 2, 3, 4);
+    check("set null image", 1);
+    check("null bounds empty", neverc_rect_empty(neverc_image_rgba_bounds(NULL)));
 
     neverc_image_rgba_free(&img);
     check("free", img.pix == NULL);

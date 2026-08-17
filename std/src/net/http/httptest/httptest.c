@@ -504,6 +504,49 @@ static void httptest_recorder_clear_headers(neverc_httptest_recorder_t *rec) {
     rec->nheaders = 0;
 }
 
+static int httptest_recorder_add_header(neverc_httptest_recorder_t *rec,
+                                        const char *name, const char *value) {
+    if (rec->nheaders >= 64) return -1;
+    char *header_name = strdup(name);
+    char *header_value = strdup(value);
+    if (!header_name || !header_value) {
+        free(header_name);
+        free(header_value);
+        return -1;
+    }
+    rec->header_names[rec->nheaders] = header_name;
+    rec->header_values[rec->nheaders] = header_value;
+    rec->nheaders++;
+    return 0;
+}
+
+static int httptest_recorder_has_header(const neverc_httptest_recorder_t *rec,
+                                        const char *name) {
+    for (int i = 0; i < rec->nheaders; i++)
+        if (strcasecmp(rec->header_names[i], name) == 0)
+            return 1;
+    return 0;
+}
+
+/* Content-Length is writer-managed and never stored in header_names. Mirror
+ * the HTTP/1 emit rule so recorder lookups see the length a client would. */
+static int httptest_recorder_capture_content_length(
+    neverc_httptest_recorder_t *rec, const neverc_http_response_writer_t *w) {
+    if (w->chunked ||
+        httptest_recorder_has_header(rec, "Content-Length"))
+        return 0;
+    if (w->status < 200 || w->status == 204 ||
+        (!w->has_content_length_override && w->status == 304))
+        return 0;
+    size_t content_length = w->has_content_length_override
+        ? w->content_length_override : w->body.len;
+    char value[32];
+    int length = snprintf(value, sizeof(value), "%zu", content_length);
+    if (length < 0 || (size_t)length >= sizeof(value))
+        return -1;
+    return httptest_recorder_add_header(rec, "Content-Length", value);
+}
+
 static int httptest_recorder_capture(neverc_httptest_recorder_t *rec) {
     httptest_recorder_box *box = httptest_recorder_box_from(rec);
     neverc_http_response_writer_t *w = box->writer;
@@ -521,18 +564,11 @@ static int httptest_recorder_capture(neverc_httptest_recorder_t *rec) {
     }
     httptest_recorder_clear_headers(rec);
     for (int i = 0; i < w->nheaders && rec->nheaders < 64; i++) {
-        char *name = strdup(w->header_names[i]);
-        char *value = strdup(w->header_values[i]);
-        if (!name || !value) {
-            free(name);
-            free(value);
+        if (httptest_recorder_add_header(
+                rec, w->header_names[i], w->header_values[i]) != 0)
             return -1;
-        }
-        rec->header_names[rec->nheaders] = name;
-        rec->header_values[rec->nheaders] = value;
-        rec->nheaders++;
     }
-    return 0;
+    return httptest_recorder_capture_content_length(rec, w);
 }
 
 neverc_httptest_recorder_t *neverc_httptest_new_recorder(void) {
@@ -552,10 +588,14 @@ neverc_http_response_writer_t *neverc_httptest_recorder_writer(
     return box->writer;
 }
 
+void neverc_httptest_recorder_flush(neverc_httptest_recorder_t *rec) {
+    if (rec) httptest_recorder_capture(rec);
+}
+
 const char *neverc_httptest_recorder_header(
     neverc_httptest_recorder_t *rec, const char *name) {
     if (!rec || !name) return NULL;
-    httptest_recorder_capture(rec);
+    neverc_httptest_recorder_flush(rec);
     for (int i = 0; i < rec->nheaders; i++) {
         if (strcasecmp(rec->header_names[i], name) == 0)
             return rec->header_values[i];

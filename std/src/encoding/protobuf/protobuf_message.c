@@ -1,6 +1,5 @@
 #include "neverc/std/encoding/protobuf.h"
 
-#include <limits.h>
 #include <string.h>
 
 static size_t protobuf_scalar_size(neverc_protobuf_scalar_type_t type) {
@@ -311,7 +310,7 @@ static int protobuf_decode_field(
     void *value = message + descriptor->value_offset;
     switch (descriptor->type) {
     case NEVERC_PROTOBUF_TYPE_UINT32: {
-        if (field->value.varint > UINT32_MAX) return -1;
+        /* proto2/proto3 truncate oversized varints to 32 bits. */
         uint32_t uint32_value = (uint32_t)field->value.varint;
         memcpy(value, &uint32_value, sizeof(uint32_value));
         break;
@@ -326,16 +325,13 @@ static int protobuf_decode_field(
     }
     case NEVERC_PROTOBUF_TYPE_INT32:
     case NEVERC_PROTOBUF_TYPE_ENUM: {
-        int64_t wide = (int64_t)field->value.varint;
-        if (wide < INT32_MIN || wide > INT32_MAX) return -1;
-        int32_t scalar = (int32_t)wide;
+        int32_t scalar = (int32_t)(uint32_t)field->value.varint;
         memcpy(value, &scalar, sizeof(scalar));
         break;
     }
     case NEVERC_PROTOBUF_TYPE_SINT32: {
-        if (field->value.varint > UINT32_MAX) return -1;
-        int32_t scalar = neverc_protobuf_zigzag_decode32(
-            (uint32_t)field->value.varint);
+        int32_t scalar = (int32_t)neverc_protobuf_zigzag_decode64(
+            field->value.varint);
         memcpy(value, &scalar, sizeof(scalar));
         break;
     }
@@ -345,8 +341,8 @@ static int protobuf_decode_field(
         break;
     }
     case NEVERC_PROTOBUF_TYPE_BOOL: {
-        if (field->value.varint > 1) return -1;
-        int boolean = (int)field->value.varint;
+        /* Wire format: 0 is false; any other varint is true. */
+        int boolean = field->value.varint != 0;
         memcpy(value, &boolean, sizeof(boolean));
         break;
     }

@@ -1,7 +1,26 @@
 #include "neverc/std/image/image.h"
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int sat_from_i64(int64_t v) {
+    if (v > INT_MAX) return INT_MAX;
+    if (v < INT_MIN) return INT_MIN;
+    return (int)v;
+}
+
+static int sat_add(int a, int b) {
+    return sat_from_i64((int64_t)a + (int64_t)b);
+}
+
+static int sat_sub(int a, int b) {
+    return sat_from_i64((int64_t)a - (int64_t)b);
+}
+
+static int sat_mul(int a, int b) {
+    return sat_from_i64((int64_t)a * (int64_t)b);
+}
 
 /* --- Point --- */
 
@@ -10,15 +29,15 @@ neverc_point_t neverc_pt(int x, int y) {
 }
 
 neverc_point_t neverc_point_add(neverc_point_t p, neverc_point_t q) {
-    return (neverc_point_t){p.x + q.x, p.y + q.y};
+    return (neverc_point_t){sat_add(p.x, q.x), sat_add(p.y, q.y)};
 }
 
 neverc_point_t neverc_point_sub(neverc_point_t p, neverc_point_t q) {
-    return (neverc_point_t){p.x - q.x, p.y - q.y};
+    return (neverc_point_t){sat_sub(p.x, q.x), sat_sub(p.y, q.y)};
 }
 
 neverc_point_t neverc_point_mul(neverc_point_t p, int k) {
-    return (neverc_point_t){p.x * k, p.y * k};
+    return (neverc_point_t){sat_mul(p.x, k), sat_mul(p.y, k)};
 }
 
 neverc_point_t neverc_point_div(neverc_point_t p, int k) {
@@ -75,24 +94,29 @@ int neverc_rect_dy(neverc_rect_t r) { return rect_delta(r.min.y, r.max.y); }
 
 neverc_rect_t neverc_rect_add(neverc_rect_t r, neverc_point_t p) {
     return (neverc_rect_t){
-        {r.min.x + p.x, r.min.y + p.y},
-        {r.max.x + p.x, r.max.y + p.y}
+        {sat_add(r.min.x, p.x), sat_add(r.min.y, p.y)},
+        {sat_add(r.max.x, p.x), sat_add(r.max.y, p.y)}
     };
 }
 
 neverc_rect_t neverc_rect_sub(neverc_rect_t r, neverc_point_t p) {
     return (neverc_rect_t){
-        {r.min.x - p.x, r.min.y - p.y},
-        {r.max.x - p.x, r.max.y - p.y}
+        {sat_sub(r.min.x, p.x), sat_sub(r.min.y, p.y)},
+        {sat_sub(r.max.x, p.x), sat_sub(r.max.y, p.y)}
     };
 }
 
 neverc_rect_t neverc_rect_inset(neverc_rect_t r, int n) {
-    r.min.x += n; r.min.y += n;
-    r.max.x -= n; r.max.y -= n;
-    if (r.min.x > r.max.x || r.min.y > r.max.y)
-        return (neverc_rect_t){{0,0},{0,0}};
-    return r;
+    int64_t minx = (int64_t)r.min.x + n;
+    int64_t miny = (int64_t)r.min.y + n;
+    int64_t maxx = (int64_t)r.max.x - n;
+    int64_t maxy = (int64_t)r.max.y - n;
+    if (minx > maxx || miny > maxy)
+        return (neverc_rect_t){{0, 0}, {0, 0}};
+    return (neverc_rect_t){
+        {sat_from_i64(minx), sat_from_i64(miny)},
+        {sat_from_i64(maxx), sat_from_i64(maxy)}
+    };
 }
 
 static int nc_max(int a, int b) { return a > b ? a : b; }
@@ -184,12 +208,14 @@ void neverc_image_rgba_free(neverc_image_rgba_t *img) {
 }
 
 int neverc_image_rgba_pixel_offset(const neverc_image_rgba_t *img, int x, int y) {
+    if (!img) return -1;
     return (y - img->rect.min.y) * img->stride + (x - img->rect.min.x) * 4;
 }
 
 void neverc_image_rgba_set(neverc_image_rgba_t *img, int x, int y,
                            uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-    if (!neverc_point_in(neverc_pt(x, y), img->rect)) return;
+    if (!img || !img->pix || !neverc_point_in(neverc_pt(x, y), img->rect))
+        return;
     int off = neverc_image_rgba_pixel_offset(img, x, y);
     img->pix[off]   = r;
     img->pix[off+1] = g;
@@ -199,7 +225,8 @@ void neverc_image_rgba_set(neverc_image_rgba_t *img, int x, int y,
 
 void neverc_image_rgba_at(const neverc_image_rgba_t *img, int x, int y,
                           uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *a) {
-    if (!neverc_point_in(neverc_pt(x, y), img->rect)) {
+    if (!r || !g || !b || !a) return;
+    if (!img || !img->pix || !neverc_point_in(neverc_pt(x, y), img->rect)) {
         *r = *g = *b = *a = 0; return;
     }
     int off = neverc_image_rgba_pixel_offset(img, x, y);
@@ -208,6 +235,7 @@ void neverc_image_rgba_at(const neverc_image_rgba_t *img, int x, int y,
 }
 
 neverc_rect_t neverc_image_rgba_bounds(const neverc_image_rgba_t *img) {
+    if (!img) return (neverc_rect_t){{0, 0}, {0, 0}};
     return img->rect;
 }
 
@@ -233,19 +261,23 @@ void neverc_image_gray_free(neverc_image_gray_t *img) {
 }
 
 int neverc_image_gray_pixel_offset(const neverc_image_gray_t *img, int x, int y) {
+    if (!img) return -1;
     return (y - img->rect.min.y) * img->stride + (x - img->rect.min.x);
 }
 
 void neverc_image_gray_set(neverc_image_gray_t *img, int x, int y, uint8_t v) {
-    if (!neverc_point_in(neverc_pt(x, y), img->rect)) return;
+    if (!img || !img->pix || !neverc_point_in(neverc_pt(x, y), img->rect))
+        return;
     img->pix[neverc_image_gray_pixel_offset(img, x, y)] = v;
 }
 
 uint8_t neverc_image_gray_at(const neverc_image_gray_t *img, int x, int y) {
-    if (!neverc_point_in(neverc_pt(x, y), img->rect)) return 0;
+    if (!img || !img->pix || !neverc_point_in(neverc_pt(x, y), img->rect))
+        return 0;
     return img->pix[neverc_image_gray_pixel_offset(img, x, y)];
 }
 
 neverc_rect_t neverc_image_gray_bounds(const neverc_image_gray_t *img) {
+    if (!img) return (neverc_rect_t){{0, 0}, {0, 0}};
     return img->rect;
 }

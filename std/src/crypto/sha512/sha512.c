@@ -81,6 +81,7 @@ static void sha512_block(uint64_t state[8], const uint8_t block[128]) {
 }
 
 void neverc_sha512_init(neverc_sha512_ctx *ctx) {
+    if (!ctx) return;
     ctx->state[0] = 0x6a09e667f3bcc908ULL; ctx->state[1] = 0xbb67ae8584caa73bULL;
     ctx->state[2] = 0x3c6ef372fe94f82bULL; ctx->state[3] = 0xa54ff53a5f1d36f1ULL;
     ctx->state[4] = 0x510e527fade682d1ULL; ctx->state[5] = 0x9b05688c2b3e6c1fULL;
@@ -89,7 +90,8 @@ void neverc_sha512_init(neverc_sha512_ctx *ctx) {
 }
 
 void neverc_sha512_update(neverc_sha512_ctx *ctx, const uint8_t *data, size_t len) {
-    if (len == 0) return;
+    if (!ctx || len == 0) return;
+    if (!data) return;
     size_t buffered = (size_t)(ctx->count & 127);
     ctx->count += len;
     if (buffered > 0) {
@@ -104,6 +106,7 @@ void neverc_sha512_update(neverc_sha512_ctx *ctx, const uint8_t *data, size_t le
 }
 
 void neverc_sha512_final(neverc_sha512_ctx *ctx, uint8_t digest[64]) {
+    if (!ctx || !digest) return;
     uint64_t bits = ctx->count * 8;
     size_t buffered = (size_t)(ctx->count & 127);
     ctx->buf[buffered++] = 0x80;

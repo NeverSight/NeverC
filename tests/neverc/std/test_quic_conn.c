@@ -337,7 +337,16 @@ static void test_stream_zero_flow_control_limit(void) {
     frame.data = &byte;
     frame.data_len = 1;
     ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), -1);
+    ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_FLOW_CONTROL_ERROR);
+    neverc_quic_conn_destroy(conn);
 
+    conn = neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    conn->peer_params.initial_max_stream_data_bidi_remote = 0;
+    conn->local_params.initial_max_stream_data_bidi_local = 0;
+    stream = neverc_quic_conn_open_stream(conn);
+    ASSERT_NOT_NULL(stream);
     frame.data_len = 0;
     frame.fin = 1;
     ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
@@ -615,6 +624,8 @@ static void test_stream_receive_gap_respects_limit(void) {
     frame.data_len = 1;
     ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), -1);
     ASSERT_EQ(conn->n_streams, 0);
+    ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_STREAM_LIMIT_ERROR);
 
     neverc_quic_conn_destroy(conn);
 }
@@ -661,6 +672,261 @@ static void test_decode_packet_number_wrap_and_limit(void) {
     ASSERT_TRUE(decoded > ((UINT64_C(1) << 62) - 1));
 }
 
+static int write_parseable_long_header(uint32_t version,
+                                       quic_packet_type_t type,
+                                       uint8_t *buf, size_t cap,
+                                       size_t *packet_len) {
+    quic_packet_header_t header;
+    memset(&header, 0, sizeof(header));
+    header.type = type;
+    header.version = version;
+    header.dcid.len = 8;
+    memset(header.dcid.data, 0x11, 8);
+    header.scid.len = 8;
+    memset(header.scid.data, 0x22, 8);
+    header.pkt_number = 1;
+    header.pkt_number_len = 1;
+    header.payload_len = 20;
+    size_t header_len = 0;
+    if (neverc_quic_write_long_header(buf, cap, &header, &header_len) != 0)
+        return -1;
+    if (header_len + 20 > cap) return -1;
+    memset(buf + header_len, 0, 20);
+    *packet_len = header_len + 20;
+    return 0;
+}
+
+static void test_v1_long_header_type_bits(void) {
+    uint8_t buf[128];
+    size_t packet_len = 0;
+    ASSERT_EQ(write_parseable_long_header(NEVERC_QUIC_VERSION_1,
+                                          QUIC_PKT_INITIAL, buf,
+                                          sizeof(buf), &packet_len), 0);
+    /* RFC 9000: Initial long-header type bits are 0b00. */
+    ASSERT_EQ((buf[0] >> 4) & 3, 0);
+
+    quic_packet_header_t parsed;
+    ASSERT_EQ(neverc_quic_parse_packet_header(buf, packet_len, &parsed, 8),
+              0);
+    ASSERT_EQ(parsed.type, QUIC_PKT_INITIAL);
+    ASSERT_EQ(parsed.version, NEVERC_QUIC_VERSION_1);
+}
+
+static void test_v2_long_header_type_bits(void) {
+    /* RFC 9369 §3.2: v2 remaps long-header types so v1 Initial bits
+     * (0b00) are Retry and v2 Initial is 0b01. */
+    static const struct {
+        quic_packet_type_t type;
+        unsigned bits;
+    } cases[] = {
+        { QUIC_PKT_RETRY, 0 },
+        { QUIC_PKT_INITIAL, 1 },
+        { QUIC_PKT_0RTT, 2 },
+        { QUIC_PKT_HANDSHAKE, 3 },
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        uint8_t buf[128];
+        size_t packet_len = 0;
+        if (cases[i].type == QUIC_PKT_RETRY) {
+            quic_packet_header_t header;
+            memset(&header, 0, sizeof(header));
+            header.type = QUIC_PKT_RETRY;
+            header.version = NEVERC_QUIC_VERSION_2;
+            header.dcid.len = 8;
+            memset(header.dcid.data, 0x11, 8);
+            header.scid.len = 8;
+            memset(header.scid.data, 0x22, 8);
+            header.pkt_number_len = 1;
+            size_t written = 0;
+            ASSERT_EQ(neverc_quic_write_long_header(buf, sizeof(buf),
+                                                    &header, &written), 0);
+            ASSERT_EQ((buf[0] >> 4) & 3, cases[i].bits);
+            continue;
+        }
+        ASSERT_EQ(write_parseable_long_header(NEVERC_QUIC_VERSION_2,
+                                              cases[i].type, buf,
+                                              sizeof(buf), &packet_len),
+                  0);
+        ASSERT_EQ((buf[0] >> 4) & 3, cases[i].bits);
+
+        quic_packet_header_t parsed;
+        ASSERT_EQ(neverc_quic_parse_packet_header(buf, packet_len,
+                                                  &parsed, 8), 0);
+        ASSERT_EQ(parsed.type, cases[i].type);
+        ASSERT_EQ(parsed.version, NEVERC_QUIC_VERSION_2);
+    }
+}
+
+static void test_conn_defaults_to_quic_v1(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    ASSERT_NOT_NULL(conn);
+    ASSERT_EQ(conn->version, NEVERC_QUIC_VERSION_1);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_copy_peer_cid_allows_empty(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    quic_conn_id_t empty;
+    memset(&empty, 0, sizeof(empty));
+    ASSERT_EQ(quic_copy_peer_cid(conn, &empty), 0);
+    ASSERT_EQ(conn->n_peer_cids, 1);
+    ASSERT_EQ(conn->peer_cids[0].len, 0);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_configure_rejects_unknown_version(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->version = 0xdeadbeefU;
+    neverc_quic_config_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    neverc_udp_addr_t peer;
+    memset(&peer, 0, sizeof(peer));
+    quic_conn_id_t cid;
+    memset(&cid, 0, sizeof(cid));
+    cid.len = 8;
+    ASSERT_EQ(neverc_quic_conn_configure(
+                  conn, &cfg, (neverc_udp_conn_t *)(uintptr_t)1, 0, &peer,
+                  NULL, &cid, &cid, NULL),
+              -1);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_stream_overlapping_data_must_match(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    uint8_t first[] = { 'H', 'E', 'L', 'L', 'O' };
+    uint8_t overlap_ok[] = { 'L', 'L', 'O', '!', '!' };
+    uint8_t overlap_bad[] = { 'X', 'X', 'X' };
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.data = first;
+    frame.data_len = sizeof(first);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+
+    frame.offset = 2;
+    frame.data = overlap_ok;
+    frame.data_len = sizeof(overlap_ok);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, 0);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_EQ(stream->recv_len, 7);
+    ASSERT_TRUE(memcmp(stream->recv_buf, "HELLO!!", 7) == 0);
+
+    frame.offset = 0;
+    frame.data = overlap_bad;
+    frame.data_len = sizeof(overlap_bad);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), -1);
+    ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_PROTOCOL_VIOLATION);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_new_conn_id_retire_prior_to_marks_unsent(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    quic_conn_id_t peer;
+    memset(&peer, 0, sizeof(peer));
+    peer.len = 8;
+    memset(peer.data, 0x11, 8);
+    ASSERT_EQ(quic_copy_peer_cid(conn, &peer), 0);
+
+    quic_frame_new_conn_id_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.sequence = 1;
+    frame.retire_prior_to = 1;
+    frame.conn_id_len = 8;
+    memset(frame.conn_id, 0x22, 8);
+    memset(frame.stateless_reset_token, 0x33, 16);
+    ASSERT_EQ(neverc_quic_conn_add_peer_cid(conn, &frame), 0);
+    ASSERT_EQ(conn->n_peer_cids, 2);
+    ASSERT_EQ(conn->peer_cids[0].retired, 1);
+    ASSERT_EQ(conn->peer_cids[0].retire_unsent, 1);
+    ASSERT_EQ(conn->peer_cids[1].retired, 0);
+    ASSERT_EQ(conn->active_peer_cid_idx, 1);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_apply_max_data_raises_window(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    conn->flow.max_data_peer = 100;
+    ASSERT_EQ(neverc_quic_conn_apply_max_data_locked(conn, 50), 0);
+    ASSERT_EQ(conn->flow.max_data_peer, 100);
+    ASSERT_EQ(neverc_quic_conn_apply_max_data_locked(conn, 4096), 0);
+    ASSERT_EQ(conn->flow.max_data_peer, 4096);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_version_negotiation_roundtrip(void) {
+    quic_conn_id_t dcid;
+    quic_conn_id_t scid;
+    memset(&dcid, 0, sizeof(dcid));
+    memset(&scid, 0, sizeof(scid));
+    dcid.len = 8;
+    scid.len = 4;
+    memset(dcid.data, 0xaa, 8);
+    memset(scid.data, 0xbb, 4);
+    uint32_t versions[2] = { NEVERC_QUIC_VERSION_1, NEVERC_QUIC_VERSION_2 };
+    uint8_t buf[64];
+    size_t written = 0;
+    ASSERT_EQ(neverc_quic_write_version_negotiation(
+                  buf, sizeof(buf), 0xC0, &dcid, &scid, versions, 2,
+                  &written),
+              0);
+    ASSERT_TRUE(written >= 5);
+    ASSERT_TRUE(neverc_quic_is_version_negotiation(buf, written));
+    ASSERT_TRUE(neverc_quic_version_negotiation_supports(
+        buf, written, NEVERC_QUIC_VERSION_1));
+    ASSERT_TRUE(neverc_quic_version_negotiation_supports(
+        buf, written, NEVERC_QUIC_VERSION_2));
+    ASSERT_TRUE(!neverc_quic_version_negotiation_supports(
+        buf, written, 0x12345678U));
+    ASSERT_EQ(buf[5], 8);
+    ASSERT_EQ(buf[5 + 1 + 8], 4);
+}
+
+static void test_version_negotiation_empty_cid(void) {
+    quic_conn_id_t empty;
+    quic_conn_id_t scid;
+    memset(&empty, 0, sizeof(empty));
+    memset(&scid, 0, sizeof(scid));
+    scid.len = 8;
+    memset(scid.data, 0xcc, 8);
+    uint32_t version = NEVERC_QUIC_VERSION_1;
+    uint8_t buf[32];
+    size_t written = 0;
+    ASSERT_EQ(neverc_quic_write_version_negotiation(
+                  buf, sizeof(buf), 0x80, &empty, &scid, &version, 1,
+                  &written),
+              0);
+    ASSERT_TRUE(neverc_quic_is_version_negotiation(buf, written));
+    ASSERT_TRUE(neverc_quic_version_negotiation_supports(
+        buf, written, NEVERC_QUIC_VERSION_1));
+}
+
+static void test_retired_local_cid_still_matches(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    ASSERT_NOT_NULL(conn);
+    ASSERT_EQ(conn->n_local_cids, 1);
+    uint8_t cid[QUIC_MAX_CID_LEN];
+    uint8_t len = conn->local_cids[0].len;
+    memcpy(cid, conn->local_cids[0].id, len);
+    ASSERT_TRUE(neverc_quic_conn_id_matches(conn, cid, len));
+    ASSERT_EQ(neverc_quic_conn_retire_local_cid_locked(conn, 0), 0);
+    ASSERT_EQ(conn->local_cids[0].retired, 1);
+    ASSERT_EQ(conn->new_cid_pending, 1);
+    ASSERT_TRUE(neverc_quic_conn_id_matches(conn, cid, len));
+    ASSERT_EQ(neverc_quic_conn_retire_local_cid_locked(conn, 0), 0);
+    ASSERT_EQ(neverc_quic_conn_retire_local_cid_locked(conn, 99), -1);
+    neverc_quic_conn_destroy(conn);
+}
+
 /* ======================================================================
  * main
  * ====================================================================== */
@@ -700,6 +966,17 @@ int main(void) {
     test_max_stream_data_creates_peer_bidi();
     test_stop_sending_creates_peer_bidi();
     test_decode_packet_number_wrap_and_limit();
+    test_v1_long_header_type_bits();
+    test_v2_long_header_type_bits();
+    test_conn_defaults_to_quic_v1();
+    test_copy_peer_cid_allows_empty();
+    test_configure_rejects_unknown_version();
+    test_stream_overlapping_data_must_match();
+    test_new_conn_id_retire_prior_to_marks_unsent();
+    test_apply_max_data_raises_window();
+    test_version_negotiation_roundtrip();
+    test_version_negotiation_empty_cid();
+    test_retired_local_cid_still_matches();
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

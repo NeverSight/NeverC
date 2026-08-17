@@ -304,6 +304,10 @@ static void test_marshal(void) {
     neverc_json_object_set(obj, "x", neverc_json_new_number(42));
     neverc_json_object_set(obj, "y", neverc_json_new_string("hi"));
     neverc_json_object_set(obj, "z", neverc_json_new_bool(1));
+    ASSERT_INT_EQ(neverc_json_object_set_n(obj, "abcdef", 3,
+                                          neverc_json_new_number(9)), 0);
+    ASSERT_DBL_EQ(neverc_json_number(neverc_json_object_get(obj, "abc")),
+                  9.0, 1e-10);
 
     char buf[256];
     int n = neverc_json_marshal(obj, buf, sizeof(buf), NULL);
@@ -334,7 +338,25 @@ static void test_marshal_escapes(void) {
     ASSERT_STR_EQ(buf, "\"a\\\"b\\\\c\\n\\t\\r\\b\\f\\u0001end\"");
     neverc_json_free(s);
 
-    /* High (UTF-8) bytes pass through verbatim; only quote/backslash escape. */
+    /* HTML/JS-safe marshal (Go encoding/json.Marshal default). */
+    neverc_json_value_t *html = neverc_json_new_string("<script>&");
+    n = neverc_json_marshal(html, buf, sizeof(buf), NULL);
+    ASSERT_TRUE(n > 0);
+    if (n > 0) buf[n] = '\0';
+    ASSERT_STR_EQ(buf, "\"\\u003cscript\\u003e\\u0026\"");
+    neverc_json_free(html);
+
+    static const char line_sep[] = {'a', (char)0xE2, (char)0x80, (char)0xA8,
+                                    'b', (char)0xE2, (char)0x80, (char)0xA9,
+                                    'c'};
+    neverc_json_value_t *ls = neverc_json_new_string_n(line_sep, sizeof(line_sep));
+    n = neverc_json_marshal(ls, buf, sizeof(buf), NULL);
+    ASSERT_TRUE(n > 0);
+    if (n > 0) buf[n] = '\0';
+    ASSERT_STR_EQ(buf, "\"a\\u2028b\\u2029c\"");
+    neverc_json_free(ls);
+
+    /* High (UTF-8) bytes pass through verbatim; only quote/backslash/HTML escape. */
     neverc_json_value_t *u = neverc_json_new_string("\xE4\xBD\xA0\xE5\xA5\xBD");
     n = neverc_json_marshal(u, buf, sizeof(buf), NULL);
     ASSERT_TRUE(n > 0);
@@ -388,6 +410,15 @@ static void test_valid(void) {
     ASSERT_FALSE(neverc_json_valid("[1,]", 4));
     ASSERT_FALSE(neverc_json_valid("", 0));
     ASSERT_FALSE(neverc_json_valid("nul", 3));
+    ASSERT_FALSE(neverc_json_valid("[][]", 4));
+    ASSERT_FALSE(neverc_json_valid("{}{}", 4));
+    ASSERT_FALSE(neverc_json_valid("01", 2));
+    ASSERT_FALSE(neverc_json_valid("+1", 2));
+    ASSERT_FALSE(neverc_json_valid(".5", 2));
+    ASSERT_FALSE(neverc_json_valid("1.", 2));
+    ASSERT_FALSE(neverc_json_valid("nullx", 5));
+    ASSERT_TRUE(neverc_json_valid("0e1", 3));
+    ASSERT_TRUE(neverc_json_valid("1e+10", 5));
 }
 
 static void test_whitespace(void) {
@@ -694,6 +725,41 @@ static void test_utf8_bom(void) {
     neverc_json_free(v);
 }
 
+static void test_nesting_limit(void) {
+    printf("[nesting_limit]\n");
+    char buf[2010];
+    int depth = 1000;
+    for (int i = 0; i < depth; i++) buf[i] = '[';
+    for (int i = 0; i < depth; i++) buf[depth + i] = ']';
+    neverc_json_value_t *v = neverc_json_parse(buf, (size_t)(depth * 2));
+    ASSERT_NOT_NULL(v);
+    neverc_json_free(v);
+
+    depth = 1001;
+    for (int i = 0; i < depth; i++) buf[i] = '[';
+    for (int i = 0; i < depth; i++) buf[depth + i] = ']';
+    ASSERT_NULL(neverc_json_parse(buf, (size_t)(depth * 2)));
+}
+
+static void test_deep_constructor_free(void) {
+    printf("[deep_constructor_free]\n");
+    neverc_json_value_t *root = neverc_json_new_array();
+    neverc_json_value_t *cur = root;
+    ASSERT_NOT_NULL(root);
+    int ok = root != NULL;
+    for (int i = 0; ok && i < 5000; i++) {
+        neverc_json_value_t *inner = neverc_json_new_array();
+        if (!inner || neverc_json_array_append(cur, inner) != 0) {
+            neverc_json_free(inner);
+            ok = 0;
+            break;
+        }
+        cur = inner;
+    }
+    ASSERT_TRUE(ok);
+    neverc_json_free(root);
+}
+
 int main(void) {
     printf("=== NeverC encoding/json Tests ===\n");
     test_parse_null();
@@ -717,6 +783,8 @@ int main(void) {
     test_invalid_api_inputs();
     test_tree_ownership();
     test_utf8_bom();
+    test_nesting_limit();
+    test_deep_constructor_free();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

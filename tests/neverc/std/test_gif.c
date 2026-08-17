@@ -409,6 +409,74 @@ static void test_netscape_loop_count(void) {
     free(frame.indices);
 }
 
+static void test_failed_decode_clears_geometry(void) {
+    printf("[failed_decode_clears_geometry]\n");
+    /* GCT flag set (2 entries) but only 3 of 6 color bytes are present. */
+    static const uint8_t truncated_gct[] = {
+        'G', 'I', 'F', '8', '9', 'a',
+        2, 0, 2, 0,
+        0x80, 0, 0,
+        0, 0, 0
+    };
+    neverc_gif_image_t img;
+    memset(&img, 0xA5, sizeof(img));
+    ASSERT_EQ(neverc_gif_decode(
+                  truncated_gct, sizeof(truncated_gct), &img), -1);
+    ASSERT_EQ(img.width, 0);
+    ASSERT_EQ(img.height, 0);
+    ASSERT_TRUE(img.frames == NULL);
+}
+
+static void test_frame_to_rgba_and_transparency(void) {
+    printf("[frame_to_rgba_and_transparency]\n");
+    uint8_t rgba[4 * 4 * 4];
+    memset(rgba, 0, sizeof(rgba));
+    /* Opaque red, opaque green, fully transparent, opaque blue */
+    rgba[0] = 255; rgba[1] = 0; rgba[2] = 0; rgba[3] = 255;
+    rgba[4] = 0; rgba[5] = 255; rgba[6] = 0; rgba[7] = 255;
+    rgba[8] = 10; rgba[9] = 20; rgba[10] = 30; rgba[11] = 0;
+    rgba[12] = 0; rgba[13] = 0; rgba[14] = 255; rgba[15] = 255;
+
+    neverc_gif_frame_t frame;
+    ASSERT_EQ(neverc_gif_from_rgba(rgba, 4, 1, &frame), 0);
+    ASSERT_EQ(frame.has_transparency, 1);
+    ASSERT_TRUE(frame.indices[2] == frame.transparent_index);
+
+    uint8_t *out = NULL;
+    size_t out_len = 0;
+    ASSERT_EQ(neverc_gif_frame_to_rgba(&frame, &out, &out_len), 0);
+    ASSERT_TRUE(out != NULL);
+    ASSERT_EQ(out_len, 16);
+    ASSERT_EQ(out[11], 0); /* transparent pixel alpha */
+    ASSERT_EQ(out[3], 255);
+    ASSERT_EQ(out[7], 255);
+    ASSERT_EQ(out[15], 255);
+
+    uint8_t *gif = NULL;
+    size_t glen = 0;
+    ASSERT_EQ(neverc_gif_encode(&frame, &gif, &glen), 0);
+    neverc_gif_image_t img;
+    ASSERT_EQ(neverc_gif_decode(gif, glen, &img), 0);
+    ASSERT_EQ(img.num_frames, 1);
+    ASSERT_EQ(img.frames[0].has_transparency, 1);
+    ASSERT_EQ(img.width, 4);
+    ASSERT_EQ(img.height, 1);
+
+    uint8_t *again = NULL;
+    size_t again_len = 0;
+    ASSERT_EQ(neverc_gif_frame_to_rgba(&img.frames[0], &again, &again_len), 0);
+    ASSERT_EQ(again[11], 0);
+
+    free(again);
+    neverc_gif_free(&img);
+    free(gif);
+    free(out);
+    free(frame.indices);
+
+    ASSERT_EQ(neverc_gif_frame_to_rgba(NULL, &out, &out_len), -1);
+    ASSERT_TRUE(out == NULL);
+}
+
 int main(void) {
     printf("NeverC image/gif tests\n");
     test_encode_decode();
@@ -419,6 +487,8 @@ int main(void) {
     test_large_roundtrip();
     test_interlaced_decode();
     test_netscape_loop_count();
+    test_failed_decode_clears_geometry();
+    test_frame_to_rgba_and_transparency();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

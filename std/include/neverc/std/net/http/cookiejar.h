@@ -66,7 +66,7 @@ void neverc_cookiejar_set_cookie_header(neverc_cookiejar_t *jar,
 char *neverc_cookiejar_cookie_header(neverc_cookiejar_t *jar,
                                       const char *url);
 
-/* Remove all cookies for a domain. */
+/* Remove cookies whose domain is this host, a parent, or a subdomain. */
 void neverc_cookiejar_clear_domain(neverc_cookiejar_t *jar,
                                      const char *domain);
 

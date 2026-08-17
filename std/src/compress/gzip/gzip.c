@@ -6,7 +6,6 @@
 #include "neverc/std/compress/gzip.h"
 #include "neverc/std/compress/flate.h"
 #include "neverc/std/hash/crc32.h"
-#include <string.h>
 
 int neverc_gzip_compress(const uint8_t *src, size_t src_len,
                          uint8_t *dst, size_t *dst_len, int level) {
@@ -50,40 +49,37 @@ int neverc_gzip_compress(const uint8_t *src, size_t src_len,
     return 0;
 }
 
-int neverc_gzip_decompress(const uint8_t *src, size_t src_len,
-                           uint8_t *dst, size_t *dst_len) {
-    if (!dst_len || (!src && src_len != 0) ||
-        (!dst && *dst_len != 0))
-        return -1;
-    if (src_len < 18) return -1;
+/* Parse one gzip member header at src[0..len). On success, *payload_off is
+ * the offset of the DEFLATE payload. Header CRC (FHCRC) is computed from
+ * this member's start, not from an outer buffer. */
+static int gzip_parse_header(const uint8_t *src, size_t len, size_t *payload_off) {
+    if (len < 10) return -1;
     if (src[0] != 0x1F || src[1] != 0x8B) return -1;
     if (src[2] != 0x08) return -1;
 
     uint8_t flg = src[3];
     if (flg & 0xE0) return -1; /* Reserved flags must be zero. */
     size_t pos = 10;
-    size_t header_limit = src_len - 8;
 
-    /* skip optional header fields */
     if (flg & 0x04) { /* FEXTRA */
-        if (header_limit - pos < 2) return -1;
-        uint16_t xlen = (uint16_t)src[pos] | ((uint16_t)src[pos+1] << 8);
+        if (len - pos < 2) return -1;
+        uint16_t xlen = (uint16_t)src[pos] | ((uint16_t)src[pos + 1] << 8);
         pos += 2;
-        if ((size_t)xlen > header_limit - pos) return -1;
+        if ((size_t)xlen > len - pos) return -1;
         pos += xlen;
     }
     if (flg & 0x08) { /* FNAME */
-        while (pos < header_limit && src[pos] != 0) pos++;
-        if (pos == header_limit) return -1;
+        while (pos < len && src[pos] != 0) pos++;
+        if (pos == len) return -1;
         pos++;
     }
     if (flg & 0x10) { /* FCOMMENT */
-        while (pos < header_limit && src[pos] != 0) pos++;
-        if (pos == header_limit) return -1;
+        while (pos < len && src[pos] != 0) pos++;
+        if (pos == len) return -1;
         pos++;
     }
     if (flg & 0x02) { /* FHCRC */
-        if (header_limit - pos < 2) return -1;
+        if (len - pos < 2) return -1;
         uint16_t expected_header_crc =
             (uint16_t)src[pos] | ((uint16_t)src[pos + 1] << 8);
         uint16_t actual_header_crc =
@@ -91,31 +87,63 @@ int neverc_gzip_decompress(const uint8_t *src, size_t src_len,
         if (actual_header_crc != expected_header_crc) return -1;
         pos += 2;
     }
-    if (pos >= header_limit) return -1;
+    /* Trailer is 8 bytes after the DEFLATE stream, not at the end of the
+     * caller's buffer (which may hold further gzip members). */
+    if (len - pos < 8) return -1;
+    *payload_off = pos;
+    return 0;
+}
 
-    /* trailer at the end */
-    uint32_t expected_crc = (uint32_t)src[src_len - 8]
-                          | ((uint32_t)src[src_len - 7] << 8)
-                          | ((uint32_t)src[src_len - 6] << 16)
-                          | ((uint32_t)src[src_len - 5] << 24);
-    uint32_t expected_size = (uint32_t)src[src_len - 4]
-                           | ((uint32_t)src[src_len - 3] << 8)
-                           | ((uint32_t)src[src_len - 2] << 16)
-                           | ((uint32_t)src[src_len - 1] << 24);
-
-    size_t payload_len = src_len - pos - 8;
-    /* ISIZE is uncompressed length mod 2^32, not the inflate cap. A member
-     * whose real size is ≥ 2^32 still has to fit in *dst_len. */
-    if ((size_t)expected_size > *dst_len) return -1;
-    size_t out_len = *dst_len;
-    if (neverc_flate_decompress(src + pos, payload_len, dst, &out_len) < 0)
+int neverc_gzip_decompress(const uint8_t *src, size_t src_len,
+                           uint8_t *dst, size_t *dst_len) {
+    if (!dst_len || (!src && src_len != 0) ||
+        (!dst && *dst_len != 0))
         return -1;
 
-    uint32_t actual_crc = neverc_crc32_ieee(dst, out_len);
+    size_t in = 0;
+    size_t out_pos = 0;
+    size_t out_cap = *dst_len;
+    int saw_member = 0;
 
-    if (actual_crc != expected_crc) return -1;
-    if ((uint32_t)(out_len & 0xFFFFFFFF) != expected_size) return -1;
+    while (in < src_len) {
+        size_t payload_off;
+        if (gzip_parse_header(src + in, src_len - in, &payload_off) < 0)
+            return -1;
 
-    *dst_len = out_len;
+        size_t remain_src = src_len - in - payload_off;
+        size_t remain_dst = out_cap - out_pos;
+        size_t produced = remain_dst;
+        size_t used = 0;
+        /* ISIZE is uncompressed length mod 2^32, not the inflate cap. Inflate
+         * into the remaining caller buffer, then check this member's trailer. */
+        if (neverc_flate_decompress_consumed(src + in + payload_off, remain_src,
+                                             dst ? dst + out_pos : NULL,
+                                             &produced, &used) < 0)
+            return -1;
+        if (used > remain_src || remain_src - used < 8)
+            return -1;
+
+        const uint8_t *tr = src + in + payload_off + used;
+        uint32_t expected_crc = (uint32_t)tr[0]
+                              | ((uint32_t)tr[1] << 8)
+                              | ((uint32_t)tr[2] << 16)
+                              | ((uint32_t)tr[3] << 24);
+        uint32_t expected_size = (uint32_t)tr[4]
+                               | ((uint32_t)tr[5] << 8)
+                               | ((uint32_t)tr[6] << 16)
+                               | ((uint32_t)tr[7] << 24);
+
+        uint32_t actual_crc = neverc_crc32_ieee(dst ? dst + out_pos : NULL,
+                                               produced);
+        if (actual_crc != expected_crc) return -1;
+        if ((uint32_t)(produced & 0xFFFFFFFF) != expected_size) return -1;
+
+        out_pos += produced;
+        in += payload_off + used + 8;
+        saw_member = 1;
+    }
+    if (!saw_member) return -1;
+
+    *dst_len = out_pos;
     return 0;
 }

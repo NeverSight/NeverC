@@ -348,6 +348,8 @@ int neverc_plan9_symbols(neverc_plan9_file_t *f) {
             parsed[index].name = plan9_copy_symbol_name(&raw);
         if (!parsed[index].name)
             goto fail;
+        if (raw.type == 'f' && raw.value > 0xFFFFU)
+            goto fail;
         if (filename_map && raw.type == 'f')
             filename_map[(uint16_t)raw.value] = parsed[index].name;
         index++;

@@ -257,6 +257,53 @@ static void test_discard_empty_soft_columns(neverc_tabwriter_t *w) {
     ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a...b");
 }
 
+static void test_escape_hides_tab(neverc_tabwriter_t *w) {
+    printf("[escape_hides_tab]\n");
+    neverc_tabwriter_init(w, 8, 0, 1, '.', 0);
+    const char in[] = { 'a', NEVERC_TABWRITER_ESCAPE, '\t', 'b',
+                        NEVERC_TABWRITER_ESCAPE, '\t', 'c' };
+    neverc_tabwriter_write(w, in, sizeof(in));
+    neverc_tabwriter_flush(w);
+    /* Escape pair width is 3 (a, tab, b); column minwidth 8 → 5 dots. */
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL),
+                  "a" "\xff" "\t" "b" "\xff" ".....c");
+}
+
+static void test_strip_escape(neverc_tabwriter_t *w) {
+    printf("[strip_escape]\n");
+    neverc_tabwriter_init(w, 8, 0, 1, '.', NEVERC_TABWRITER_STRIP_ESCAPE);
+    const char in[] = { 'a', NEVERC_TABWRITER_ESCAPE, '\t', 'b',
+                        NEVERC_TABWRITER_ESCAPE, '\t', 'c' };
+    neverc_tabwriter_write(w, in, sizeof(in));
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a\tb.....c");
+}
+
+static void test_filter_html_tag_width(neverc_tabwriter_t *w) {
+    printf("[filter_html_tag_width]\n");
+    neverc_tabwriter_init(w, 5, 0, 0, '.', NEVERC_TABWRITER_FILTER_HTML);
+    neverc_tabwriter_write(w, "a<foo>\tb\n", 9);
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a<foo>....b\n");
+}
+
+static void test_filter_html_tab_inside_tag(neverc_tabwriter_t *w) {
+    printf("[filter_html_tab_inside_tag]\n");
+    neverc_tabwriter_init(w, 1, 0, 1, '.', NEVERC_TABWRITER_FILTER_HTML);
+    neverc_tabwriter_write(w, "a<b\tc>d\te", 9);
+    neverc_tabwriter_flush(w);
+    /* <b\tc> is one tag (width 0); first cell is a + tag + d, width 2. */
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a<b\tc>d.e");
+}
+
+static void test_filter_html_entity_width(neverc_tabwriter_t *w) {
+    printf("[filter_html_entity_width]\n");
+    neverc_tabwriter_init(w, 5, 0, 0, '.', NEVERC_TABWRITER_FILTER_HTML);
+    neverc_tabwriter_write(w, "a&amp;\tb\n", 9);
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a&amp;...b\n");
+}
+
 int main(void) {
     printf("=== NeverC text/tabwriter Tests ===\n");
     neverc_tabwriter_t *w =
@@ -302,6 +349,16 @@ int main(void) {
     test_elastic_tabstops_ragged(w);
     neverc_tabwriter_reset(w);
     test_discard_empty_soft_columns(w);
+    neverc_tabwriter_reset(w);
+    test_escape_hides_tab(w);
+    neverc_tabwriter_reset(w);
+    test_strip_escape(w);
+    neverc_tabwriter_reset(w);
+    test_filter_html_tag_width(w);
+    neverc_tabwriter_reset(w);
+    test_filter_html_tab_inside_tag(w);
+    neverc_tabwriter_reset(w);
+    test_filter_html_entity_width(w);
     neverc_tabwriter_reset(w);
     free(w);
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);

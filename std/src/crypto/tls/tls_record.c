@@ -518,6 +518,93 @@ int neverc_tls_test_discard_ccs_before_handshake(void) {
     return valid ? 0 : -1;
 }
 
+int neverc_tls_test_reject_ccs_before_client_hello(void) {
+    neverc_tcp_conn_t *reader = NULL;
+    neverc_tcp_conn_t *writer = NULL;
+    if (neverc_tcp_pipe(&reader, &writer) != 0 || !reader || !writer) {
+        neverc_tcp_close(reader);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    neverc_tls_conn_t *conn = nci_tls_conn_new(reader, 1);
+    if (!conn) {
+        neverc_tcp_close(reader);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+    conn->is_server = 1;
+
+    static const uint8_t ccs_then_hello[] = {
+        TLS_CT_CHANGE_CIPHER_SPEC, 0x03, 0x03, 0x00, 0x01, 0x01,
+        TLS_CT_HANDSHAKE, 0x03, 0x03, 0x00, 0x06,
+        TLS_HS_CLIENT_HELLO, 0, 0, 2, 0, 0
+    };
+    if (neverc_tcp_write(writer, ccs_then_hello,
+                         sizeof(ccs_then_hello)) !=
+        (int)sizeof(ccs_then_hello)) {
+        neverc_tls_close(conn);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    const uint8_t *message = NULL;
+    size_t message_len = 0;
+    int result = nci_tls_recv_plain_handshake_message(
+        conn, TLS_HS_CLIENT_HELLO, &message, &message_len);
+    const char *reason = conn->failure_reason;
+    neverc_tls_close(conn);
+    neverc_tcp_close(writer);
+    if (result == 0)
+        return -1;
+    if (!reason ||
+        strstr(reason, "change_cipher_spec before ClientHello") == NULL)
+        return -1;
+    return 0;
+}
+
+int neverc_tls_test_discard_ccs_after_client_hello(void) {
+    neverc_tcp_conn_t *reader = NULL;
+    neverc_tcp_conn_t *writer = NULL;
+    if (neverc_tcp_pipe(&reader, &writer) != 0 || !reader || !writer) {
+        neverc_tcp_close(reader);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    neverc_tls_conn_t *conn = nci_tls_conn_new(reader, 1);
+    if (!conn) {
+        neverc_tcp_close(reader);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+    conn->is_server = 1;
+    conn->received_handshake_record = 1;
+
+    static const uint8_t ccs_then_handshake[] = {
+        TLS_CT_CHANGE_CIPHER_SPEC, 0x03, 0x03, 0x00, 0x01, 0x01,
+        TLS_CT_HANDSHAKE, 0x03, 0x03, 0x00, 0x06,
+        TLS_HS_ENCRYPTED_EXT, 0, 0, 2, 0, 0
+    };
+    if (neverc_tcp_write(writer, ccs_then_handshake,
+                         sizeof(ccs_then_handshake)) !=
+        (int)sizeof(ccs_then_handshake)) {
+        neverc_tls_close(conn);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    const uint8_t *message = NULL;
+    size_t message_len = 0;
+    int result = nci_tls_recv_plain_handshake_message(
+        conn, TLS_HS_ENCRYPTED_EXT, &message, &message_len);
+    int valid = result == 0 && message_len == 6 && message &&
+                message[0] == TLS_HS_ENCRYPTED_EXT;
+    neverc_tls_close(conn);
+    neverc_tcp_close(writer);
+    return valid ? 0 : -1;
+}
+
 int neverc_tls_test_handshake_reassembly(void) {
     static const uint8_t messages[] = {
         TLS_HS_ENCRYPTED_EXT, 0, 0, 2, 0, 0,
@@ -670,6 +757,31 @@ int nci_tls_protocol_error(
     return nci_tls_error(conn, reason);
 }
 
+/* RFC 8446 D.4: a 1-byte 0x01 CCS is a middlebox dummy after ClientHello
+ * and before the peer Finished. Before the first ClientHello (server) or
+ * after application keys it is unexpected_message. */
+static int nci_tls_handle_ccs(
+    neverc_tls_conn_t *conn, const uint8_t *data, size_t data_len) {
+    if (!conn || !data || data_len != 1 || data[0] != 1)
+        return nci_tls_protocol_error(
+            conn, TLS_ALERT_DECODE_ERROR,
+            "malformed TLS change_cipher_spec record");
+    if (conn->application_keys_active)
+        return nci_tls_protocol_error(
+            conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+            "TLS change_cipher_spec after handshake completion");
+    if (conn->is_server && !conn->received_handshake_record)
+        return nci_tls_protocol_error(
+            conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+            "TLS change_cipher_spec before ClientHello");
+    if (++conn->non_advancing_records >
+        TLS_MAX_NON_ADVANCING_RECORDS)
+        return nci_tls_protocol_error(
+            conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+            "too many non-advancing TLS records");
+    return 0;
+}
+
 static int nci_tls_read_record_bytes(neverc_tls_conn_t *conn,
                                      uint8_t *output, size_t capacity) {
     if (conn->nonblocking_io) {
@@ -768,21 +880,8 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
         if (record_result != 0) return record_result;
         if (rec_type != TLS_CT_CHANGE_CIPHER_SPEC)
             break;
-        if (rec_len != 1 || rec_data[0] != 1)
-            return nci_tls_protocol_error(
-                conn, TLS_ALERT_DECODE_ERROR,
-                "malformed TLS change_cipher_spec record");
-        /* RFC 8446 D.4: CCS is only a middlebox dummy before application
-         * traffic keys. After that point it is unexpected_message. */
-        if (conn->application_keys_active)
-            return nci_tls_protocol_error(
-                conn, TLS_ALERT_UNEXPECTED_MESSAGE,
-                "TLS change_cipher_spec after handshake completion");
-        if (++conn->non_advancing_records >
-            TLS_MAX_NON_ADVANCING_RECORDS)
-            return nci_tls_protocol_error(
-                conn, TLS_ALERT_UNEXPECTED_MESSAGE,
-                "too many non-advancing TLS records");
+        if (nci_tls_handle_ccs(conn, rec_data, rec_len) != 0)
+            return -1;
     }
 
     if (rec_type != TLS_CT_APPLICATION_DATA)
@@ -917,21 +1016,8 @@ int nci_tls_recv_plain_handshake_message(
             return nci_tls_fail_handshake_alert(
                 conn, record_data, record_len);
         if (record_type == TLS_CT_CHANGE_CIPHER_SPEC) {
-            /* RFC 8446 D.4: a 1-byte 0x01 CCS MUST be discarded after the
-             * first ClientHello and before the peer Finished. */
-            if (record_len != 1 || record_data[0] != 1)
-                return nci_tls_protocol_error(
-                    conn, TLS_ALERT_DECODE_ERROR,
-                    "malformed TLS change_cipher_spec record");
-            if (conn->application_keys_active)
-                return nci_tls_protocol_error(
-                    conn, TLS_ALERT_UNEXPECTED_MESSAGE,
-                    "TLS change_cipher_spec after handshake completion");
-            if (++conn->non_advancing_records >
-                TLS_MAX_NON_ADVANCING_RECORDS)
-                return nci_tls_protocol_error(
-                    conn, TLS_ALERT_UNEXPECTED_MESSAGE,
-                    "too many non-advancing TLS records");
+            if (nci_tls_handle_ccs(conn, record_data, record_len) != 0)
+                return -1;
             continue;
         }
         if (record_type != TLS_CT_HANDSHAKE)
@@ -942,6 +1028,7 @@ int nci_tls_recv_plain_handshake_message(
             return nci_tls_protocol_error(
                 conn, TLS_ALERT_DECODE_ERROR,
                 "peer sent an empty TLS handshake record");
+        conn->received_handshake_record = 1;
         if (record_len >
             TLS_MAX_HANDSHAKE - conn->handshake_len)
             return nci_tls_protocol_error(

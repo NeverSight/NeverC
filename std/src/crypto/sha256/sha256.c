@@ -82,6 +82,7 @@ static void sha256_block(uint32_t state[8], const uint8_t block[64]) {
 }
 
 void neverc_sha256_init(neverc_sha256_ctx *ctx) {
+    if (!ctx) return;
     ctx->state[0] = 0x6a09e667; ctx->state[1] = 0xbb67ae85;
     ctx->state[2] = 0x3c6ef372; ctx->state[3] = 0xa54ff53a;
     ctx->state[4] = 0x510e527f; ctx->state[5] = 0x9b05688c;
@@ -90,7 +91,8 @@ void neverc_sha256_init(neverc_sha256_ctx *ctx) {
 }
 
 void neverc_sha256_update(neverc_sha256_ctx *ctx, const uint8_t *data, size_t len) {
-    if (len == 0) return;
+    if (!ctx || len == 0) return;
+    if (!data) return;
     size_t buffered = (size_t)(ctx->count & 63);
     ctx->count += len;
 
@@ -115,6 +117,7 @@ void neverc_sha256_update(neverc_sha256_ctx *ctx, const uint8_t *data, size_t le
 }
 
 void neverc_sha256_final(neverc_sha256_ctx *ctx, uint8_t digest[32]) {
+    if (!ctx || !digest) return;
     uint64_t bits = ctx->count * 8;
     size_t buffered = (size_t)(ctx->count & 63);
 

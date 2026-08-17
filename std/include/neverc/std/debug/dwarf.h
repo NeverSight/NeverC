@@ -181,6 +181,10 @@ typedef struct {
 
     neverc_dwarf_abbrev_t *abbrevs;
     int                    abbrev_count;
+
+    /* 0 = little-endian (default after init), 1 = big-endian. DWARF follows
+     * the object file's EI_DATA / equivalent; LEB128 is still little-endian. */
+    int big_endian;
 } neverc_dwarf_data_t;
 
 /* ===== Functions ===== */

@@ -18,6 +18,7 @@ typedef struct {
     uint8_t i, j;
 } neverc_rc4_cipher_t;
 
+/* key_len must be 1..256. NULL cipher/key returns -1. */
 int  neverc_rc4_init(neverc_rc4_cipher_t *c, const uint8_t *key, size_t key_len);
 void neverc_rc4_xor_keystream(neverc_rc4_cipher_t *c,
                               uint8_t *dst, const uint8_t *src, size_t len);

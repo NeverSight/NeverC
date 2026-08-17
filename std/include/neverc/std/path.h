@@ -19,6 +19,9 @@ int neverc_path_split(const char *path, char *dir, size_t dirsize,
 
 const char *neverc_path_ext(const char *path);
 int         neverc_path_isabs(const char *path);
+/* Reports whether path stays inside a join base (Go filepath.IsLocal, slash paths).
+ * Empty, absolute, and cleaned paths that begin with ".." are not local. */
+int         neverc_path_is_local(const char *path);
 
 /* Match: glob-style pattern matching (mirrors Go path.Match).
  * Pattern: * matches any non-/ sequence, ? matches any single non-/ char,

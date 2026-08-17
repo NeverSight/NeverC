@@ -978,9 +978,11 @@ static int huff_decode(huff_table_t *ht, flate_br_t *r, uint16_t *sym) {
 
 /* ---- Decompress ---- */
 
-int neverc_flate_decompress(const uint8_t *src, size_t src_len,
-                            uint8_t *dst, size_t *dst_len) {
-    if (!dst_len || (!src && src_len > 0) || (!dst && *dst_len > 0))
+static int flate_inflate(const uint8_t *src, size_t src_len,
+                         uint8_t *dst, size_t *dst_len,
+                         size_t *src_consumed) {
+    if (!dst_len || (!src && src_len > 0) || (!dst && *dst_len > 0) ||
+        !src_consumed)
         return -1;
     flate_br_t br = { .buf = src, .len = src_len, .pos = 0, .bits = 0, .nbits = 0 };
     size_t out_pos = 0;
@@ -1147,14 +1149,14 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
         if (bfinal) break;
     }
 
-    /* Rewind unused prefetched bytes, then require the stream to end at
-     * src_len. Leftover bits in the last used byte are padding; extra
-     * whole bytes after that are junk (e.g. before a gzip/zlib trailer). */
+    /* Rewind unused prefetched bytes. Leftover bits in the last used byte
+     * are padding; extra whole bytes after that belong to a wrapper
+     * (gzip/zlib trailer, the next gzip member) and are reported via
+     * *src_consumed rather than treated as part of this stream. */
     if ((br.nbits >> 3) > br.pos)
         goto err;
     fbr_align(&br);
-    if (br.pos != src_len)
-        goto err;
+    *src_consumed = br.pos;
 
     free(lit_ht);
     free(dist_ht);
@@ -1165,4 +1167,20 @@ err:
     free(lit_ht);
     free(dist_ht);
     return -1;
+}
+
+int neverc_flate_decompress(const uint8_t *src, size_t src_len,
+                            uint8_t *dst, size_t *dst_len) {
+    size_t used = 0;
+    if (flate_inflate(src, src_len, dst, dst_len, &used) < 0)
+        return -1;
+    if (used != src_len)
+        return -1;
+    return 0;
+}
+
+int neverc_flate_decompress_consumed(const uint8_t *src, size_t src_len,
+                                     uint8_t *dst, size_t *dst_len,
+                                     size_t *src_consumed) {
+    return flate_inflate(src, src_len, dst, dst_len, src_consumed);
 }

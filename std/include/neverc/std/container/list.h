@@ -60,6 +60,11 @@ void neverc_list_move_after(neverc_list_t *l, neverc_list_element_t *e,
 neverc_list_element_t *neverc_list_element_next(const neverc_list_element_t *e);
 neverc_list_element_t *neverc_list_element_prev(const neverc_list_element_t *e);
 
+/* Copy values from other onto l (Go PushBackList / PushFrontList).
+ * other may be l. Returns the number of values copied, or -1 on bad args. */
+int neverc_list_push_back_list(neverc_list_t *l, const neverc_list_t *other);
+int neverc_list_push_front_list(neverc_list_t *l, const neverc_list_t *other);
+
 #ifdef __cplusplus
 }
 #endif

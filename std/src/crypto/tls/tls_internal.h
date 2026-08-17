@@ -264,6 +264,9 @@ struct neverc_tls_conn {
     int                 did_resume;
     int                 application_keys_active;
     int                 write_keys_active;
+    /* Set when the first plaintext handshake record is received. RFC 8446
+     * D.4 forbids ChangeCipherSpec before that ClientHello on the server. */
+    int                 received_handshake_record;
     int                 alert_sent;
     int                 peer_closed;
     int                 write_closed;

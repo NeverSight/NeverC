@@ -79,6 +79,13 @@ static void test_atoi(void) {
               neverc_strconv_atoi("-18446744073709551616", &v),
               NEVERC_STRCONV_ERR_RANGE);
     check_int("atoi negative overflow clamp", v, INT_MIN);
+
+    long long ll = 0;
+    check_int("atol 42", neverc_strconv_atol("42", &ll), 0);
+    check_ll("atol val", ll, 42LL);
+    check_int("atol -99", neverc_strconv_atol("-99", &ll), 0);
+    check_ll("atol neg", ll, -99LL);
+    check_int("atol bad", neverc_strconv_atol("xyz", &ll), NEVERC_STRCONV_ERR_SYNTAX);
 }
 
 /* ===== ParseInt ===== */
@@ -118,6 +125,9 @@ static void test_parse_int(void) {
               neverc_strconv_parse_int("-9223372036854775809", 10, &v),
               NEVERC_STRCONV_ERR_RANGE);
     check_ll("min int64 minus one clamp", v, LLONG_MIN);
+    check_int("min int64 hex",
+              neverc_strconv_parse_int("-0x8000000000000000", 0, &v), 0);
+    check_ll("min int64 hex val", v, LLONG_MIN);
     check_int("sign after prefix is syntax",
               neverc_strconv_parse_int("0x+f", 0, &v),
               NEVERC_STRCONV_ERR_SYNTAX);
@@ -177,6 +187,9 @@ static void test_parse_uint(void) {
               neverc_strconv_parse_uint("18446744073709551616", 10, &v),
               NEVERC_STRCONV_ERR_RANGE);
     check_ull("overflow clamp", v, ULLONG_MAX);
+    check_int("uint max exact",
+              neverc_strconv_parse_uint("18446744073709551615", 10, &v), 0);
+    check_ull("uint max exact val", v, ULLONG_MAX);
 }
 
 /* ===== ParseFloat ===== */
@@ -236,6 +249,38 @@ static void test_parse_float(void) {
     check_int("float min subnormal ok",
               neverc_strconv_parse_float("4.9406564584124654e-324", &v), 0);
     check_true("float min subnormal nonzero", v != 0.0);
+
+    /* Go ParseFloat rejects surrounding whitespace (ParseInt/ParseBool too). */
+    check_int("float leading space",
+              neverc_strconv_parse_float(" 1.0", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("float trailing space",
+              neverc_strconv_parse_float("1.0 ", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("float inf trailing space",
+              neverc_strconv_parse_float("inf ", &v), NEVERC_STRCONV_ERR_SYNTAX);
+
+    /* Go hex floats: 0x mantissa + required p/P power-of-two exponent. */
+    check_int("hex 0x1p0", neverc_strconv_parse_float("0x1p0", &v), 0);
+    check_true("hex 0x1p0 val", v == 1.0);
+    check_int("hex 0x1.8p0", neverc_strconv_parse_float("0x1.8p0", &v), 0);
+    check_true("hex 0x1.8p0 val", v == 1.5);
+    check_int("hex 0x.8p0", neverc_strconv_parse_float("0x.8p0", &v), 0);
+    check_true("hex 0x.8p0 val", v == 0.5);
+    check_int("hex 0x1p4", neverc_strconv_parse_float("0x1p4", &v), 0);
+    check_true("hex 0x1p4 val", v == 16.0);
+    check_int("hex 0x10p0", neverc_strconv_parse_float("0x10p0", &v), 0);
+    check_true("hex 0x10p0 val", v == 16.0);
+    check_int("hex 0X1P0", neverc_strconv_parse_float("0X1P0", &v), 0);
+    check_true("hex 0X1P0 val", v == 1.0);
+    check_int("hex -0x1p0", neverc_strconv_parse_float("-0x1p0", &v), 0);
+    check_true("hex -0x1p0 val", v == -1.0);
+    check_int("hex missing exponent",
+              neverc_strconv_parse_float("0x1", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("hex overflow",
+              neverc_strconv_parse_float("0x1p1024", &v), NEVERC_STRCONV_ERR_RANGE);
+    check_true("hex overflow is +Inf", v > 1e308 && v == v && v + v == v);
+    check_int("hex zero huge exponent",
+              neverc_strconv_parse_float("0x0p999", &v), 0);
+    check_true("hex zero huge exponent val", v == 0.0);
 }
 
 /* ===== Itoa ===== */
@@ -245,6 +290,8 @@ static void test_itoa(void) {
     check_int("itoa 42",   neverc_strconv_itoa(42, buf, sizeof(buf)), 2);    check_str("val", buf, "42");
     check_int("itoa -42",  neverc_strconv_itoa(-42, buf, sizeof(buf)), 3);   check_str("val", buf, "-42");
     check_int("itoa 0",    neverc_strconv_itoa(0, buf, sizeof(buf)), 1);     check_str("val", buf, "0");
+    check_int("ltoa 42",   neverc_strconv_ltoa(42LL, buf, sizeof(buf)), 2);  check_str("ltoa val", buf, "42");
+    check_int("ltoa -7",   neverc_strconv_ltoa(-7LL, buf, sizeof(buf)), 2);  check_str("ltoa neg", buf, "-7");
 }
 
 /* ===== FormatInt ===== */
@@ -310,6 +357,17 @@ static void test_format_float(void) {
     check_int("huge exponent precision rejected",
               neverc_strconv_format_float(
                   1.0, 'e', INT_MAX, buf, sizeof(buf)), -1);
+
+    neverc_strconv_format_float(0.1, 'g', -1, buf, sizeof(buf));
+    check_str("g shortest 0.1", buf, "0.1");
+
+    neverc_strconv_format_float(2.5, 'f', 0, buf, sizeof(buf));
+    check_str("f round even 2.5", buf, "2");
+    neverc_strconv_format_float(3.5, 'f', 0, buf, sizeof(buf));
+    check_str("f round even 3.5", buf, "4");
+
+    neverc_strconv_format_float(-0.0, 'f', 1, buf, sizeof(buf));
+    check_str("f signed zero", buf, "-0.0");
 }
 
 /* ===== FormatBool ===== */
@@ -410,6 +468,17 @@ static void test_unquote(void) {
     printf("[unquote]\n");
     char buf[256];
     int n;
+    uint32_t rune = 0;
+    int multibyte = 0;
+
+    n = neverc_strconv_unquote_char("A", 1, '"', &rune, &multibyte);
+    check_int("unquote_char A len", n, 1);
+    check_int("unquote_char A rune", (int)rune, 'A');
+    check_int("unquote_char A multibyte", multibyte, 0);
+
+    n = neverc_strconv_unquote_char("\\n", 2, '"', &rune, &multibyte);
+    check_int("unquote_char nl len", n, 2);
+    check_int("unquote_char nl rune", (int)rune, '\n');
 
     n = neverc_strconv_unquote("\"hello\"", buf, sizeof(buf));
     check_int("unquote hello len", n, 5);
@@ -488,6 +557,14 @@ static void test_unquote(void) {
     n = neverc_strconv_unquote(raw_nl_backtick, buf, sizeof(buf));
     check_int("raw string keeps newline len", n, 3);
     check_str("raw string keeps newline", buf, "a\nb");
+
+    n = neverc_strconv_unquote("\"\"", buf, sizeof(buf));
+    check_int("unquote empty len", n, 0);
+    check_str("unquote empty val", buf, "");
+    check_int("reject surrogate escape",
+              neverc_strconv_unquote("\"\\uD800\"", buf, sizeof(buf)), -1);
+    check_int("reject out-of-range U escape",
+              neverc_strconv_unquote("\"\\U00110000\"", buf, sizeof(buf)), -1);
 }
 
 /* ===== CanBackquote ===== */

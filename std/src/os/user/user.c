@@ -2,6 +2,7 @@
 #include "neverc/std/_platform.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 #include <windows.h>
@@ -57,9 +58,54 @@ int neverc_user_current(neverc_user_t *u) {
     return (u->username[0] && u->uid[0]) ? 0 : -1;
 }
 
+static int user_windows_lookup_account(const char *account, char *sid_buf,
+                                       size_t sid_cap, char *name_buf,
+                                       size_t name_cap, SID_NAME_USE *use_out) {
+    DWORD sid_sz = 0, domain_sz = 0;
+    SID_NAME_USE use = SidTypeUnknown;
+    PSID sid = NULL;
+    char *domain = NULL;
+    char *sid_str = NULL;
+    int rc = -1;
+    if (!account || !account[0] || !sid_buf || sid_cap == 0) return -1;
+    LookupAccountNameA(NULL, account, NULL, &sid_sz, NULL, &domain_sz, &use);
+    if (sid_sz == 0) return -1;
+    sid = (PSID)malloc(sid_sz);
+    domain = (char *)malloc(domain_sz ? domain_sz : 1);
+    if (!sid || !domain) goto done;
+    if (!LookupAccountNameA(NULL, account, sid, &sid_sz, domain, &domain_sz, &use))
+        goto done;
+    if (!ConvertSidToStringSidA(sid, &sid_str)) goto done;
+    snprintf(sid_buf, sid_cap, "%s", sid_str);
+    LocalFree(sid_str);
+    if (name_buf && name_cap)
+        snprintf(name_buf, name_cap, "%s", account);
+    if (use_out) *use_out = use;
+    rc = sid_buf[0] ? 0 : -1;
+done:
+    free(sid);
+    free(domain);
+    return rc;
+}
+
 int neverc_user_lookup(const char *username, neverc_user_t *u) {
-    (void)username; (void)u;
-    return -1;  /* Not easily supported on Windows without NetUserGetInfo */
+    neverc_user_t current;
+    SID_NAME_USE use = SidTypeUnknown;
+    if (!username || username[0] == '\0' || !u) return -1;
+    if (neverc_user_current(&current) == 0 &&
+        _stricmp(current.username, username) == 0) {
+        *u = current;
+        return 0;
+    }
+    memset(u, 0, sizeof(*u));
+    if (user_windows_lookup_account(username, u->uid, sizeof(u->uid),
+                                    u->username, sizeof(u->username),
+                                    &use) != 0)
+        return -1;
+    if (use != SidTypeUser && use != SidTypeDeletedAccount)
+        return -1;
+    snprintf(u->name, sizeof(u->name), "%s", u->username);
+    return 0;
 }
 
 int neverc_user_lookup_id(int uid, neverc_user_t *u) {
@@ -68,8 +114,16 @@ int neverc_user_lookup_id(int uid, neverc_user_t *u) {
 }
 
 int neverc_user_lookup_group(const char *name, neverc_group_t *g) {
-    (void)name; (void)g;
-    return -1;
+    SID_NAME_USE use = SidTypeUnknown;
+    if (!name || name[0] == '\0' || !g) return -1;
+    memset(g, 0, sizeof(*g));
+    if (user_windows_lookup_account(name, g->gid, sizeof(g->gid),
+                                    g->name, sizeof(g->name), &use) != 0)
+        return -1;
+    if (use != SidTypeGroup && use != SidTypeWellKnownGroup &&
+        use != SidTypeAlias && use != SidTypeLabel)
+        return -1;
+    return 0;
 }
 
 int neverc_user_lookup_group_id(int gid, neverc_group_t *g) {

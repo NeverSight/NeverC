@@ -15,15 +15,19 @@ extern "C" {
  * encode also returns SIZE_MAX for NULL non-empty input/output. On success,
  * encode writes exactly the returned payload bytes and does not append a NUL.
  * Decoders accept canonical padded or unpadded input and ignore CR and LF.
+ * raw_*_encode omit '=' padding (RawStd / RawURL, as used by JWTs).
  */
 
 size_t neverc_base64_encoded_len(size_t n);
+size_t neverc_base64_raw_encoded_len(size_t n);
 size_t neverc_base64_decoded_len(size_t n);
 
 size_t neverc_base64_encode(char *dst, const uint8_t *src, size_t src_len);
+size_t neverc_base64_raw_encode(char *dst, const uint8_t *src, size_t src_len);
 int    neverc_base64_decode(uint8_t *dst, const char *src, size_t src_len);
 
 size_t neverc_base64_url_encode(char *dst, const uint8_t *src, size_t src_len);
+size_t neverc_base64_url_raw_encode(char *dst, const uint8_t *src, size_t src_len);
 int    neverc_base64_url_decode(uint8_t *dst, const char *src, size_t src_len);
 
 #ifdef __cplusplus

@@ -8,8 +8,13 @@
  * implementation of Go regexp or RE2. Matching APIs require the whole string;
  * find/replace/split use leftmost-longest non-empty matches.
  * No backtracking is used.
- * Supported syntax: . * + ? | () (?:) [] [^] \d \D \w \W \s \S \n \t \r \f \v \a \xHH \x{H+} ^ $ {n} {n,m}
- * Character classes: [a-z] [^abc] []] \d \D \w \W \s \S \xHH; \s includes VT/FF.
+ * Supported syntax: . * + ? | () (?:) (?P<name>) (?<name>) (?'name')
+ *   [] [^] [[:posix:]] \d \D \w \W \s \S \n \t \r \f \v \a \b \B \A \z
+ *   \xHH \x{H+} ^ $ {n} {n,m}
+ * Character classes: [a-z] [^abc] []] [[:name:]] \d \D \w \W \s \S \xHH \x{H+};
+ *   \s includes VT/FF; [\b] is backspace. \x{H+} in a class matches the UTF-8 rune.
+ * ReplaceAll expands $0 $1 ${name} $$ (Go/RE2 Expand). Unknown letter/digit
+ * escapes are errors (no backreferences).
  */
 
 #include <stddef.h>
@@ -45,6 +50,11 @@ char *neverc_regexp_replace_all(neverc_regexp_t *re, const char *src,
 
 char **neverc_regexp_split(neverc_regexp_t *re, const char *s,
                            int n, int *count);
+
+/* NumSubexp / SubexpNames / SubexpIndex (Go). Index 0 is the whole match. */
+int         neverc_regexp_num_subexp(neverc_regexp_t *re);
+const char *neverc_regexp_subexp_name(neverc_regexp_t *re, int i);
+int         neverc_regexp_subexp_index(neverc_regexp_t *re, const char *name);
 
 void neverc_regexp_free_strings(char **strs, int count);
 

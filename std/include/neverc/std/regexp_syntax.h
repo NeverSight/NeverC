@@ -45,7 +45,8 @@ typedef enum {
     NC_RE_FLAG_MULTI_LINE  = 1 << 3,
     NC_RE_FLAG_PERL        = 1 << 4,
     NC_RE_FLAG_POSIX       = 1 << 5,
-    NC_RE_FLAG_WAS_DOLLAR  = 1 << 6
+    NC_RE_FLAG_WAS_DOLLAR  = 1 << 6,
+    NC_RE_FLAG_WAS_CARET   = 1 << 7
 } neverc_regexp_flags_t;
 
 typedef struct neverc_regexp_syntax_node {

@@ -123,6 +123,16 @@ static void test_version_variant(void) {
     check_int("parse reserved",
               neverc_uuid_parse("00000000-0000-0000-e000-000000000000", &u), 0);
     check_int("reserved variant", neverc_uuid_variant(u), 3);
+
+    check_int("parse v7",
+              neverc_uuid_parse("017f22e2-79b0-7cc3-98c4-dc0c0c07398f", &u), 0);
+    check_int("v7 version", neverc_uuid_version(u), 7);
+    check_int("v7 variant", neverc_uuid_variant(u), 1);
+
+    neverc_uuid_t generated;
+    check_int("generate v4", neverc_uuid_generate(&generated), 0);
+    check_int("generate version", neverc_uuid_version(generated), 4);
+    check_int("generate variant", neverc_uuid_variant(generated), 1);
 }
 
 static void test_nil(void) {

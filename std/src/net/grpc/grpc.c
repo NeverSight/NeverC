@@ -73,12 +73,14 @@ int neverc_grpc_frame_reader_next(neverc_grpc_frame_reader_t *reader,
     uint32_t length = ((uint32_t)header[1] << 24) |
                       ((uint32_t)header[2] << 16) |
                       ((uint32_t)header[3] << 8) | header[4];
-    if (length > reader->max_message_size ||
-        length > reader->length - reader->offset - 5)
+    size_t remaining = reader->length - reader->offset - 5;
+    if ((size_t)length > reader->max_message_size ||
+        (size_t)length > remaining)
         return -1;
     message->data = header + 5;
-    message->length = length;
-    reader->offset += 5 + length;
+    message->length = (size_t)length;
+    reader->offset += 5;
+    reader->offset += (size_t)length;
     return 1;
 }
 
@@ -566,6 +568,7 @@ static const char *grpc_find_header(neverc_hpack_header_t *headers,
                                     size_t *matches) {
     const char *value = NULL;
     *matches = 0;
+    if (!headers || !name) return NULL;
     for (size_t i = 0; i < count; i++) {
         if (strcmp(headers[i].name, name) == 0) {
             value = headers[i].value;
@@ -588,6 +591,43 @@ static int grpc_parse_status(const char *value,
     if (!neverc_grpc_status_valid(number)) return -1;
     *status = (neverc_grpc_status_t)number;
     return 0;
+}
+
+static neverc_grpc_status_t grpc_status_from_http(int status_code) {
+    switch (status_code) {
+    case 400: return NEVERC_GRPC_INTERNAL;
+    case 401: return NEVERC_GRPC_UNAUTHENTICATED;
+    case 403: return NEVERC_GRPC_PERMISSION_DENIED;
+    case 404: return NEVERC_GRPC_UNIMPLEMENTED;
+    case 429:
+    case 502:
+    case 503:
+    case 504: return NEVERC_GRPC_UNAVAILABLE;
+    default: return NEVERC_GRPC_UNKNOWN;
+    }
+}
+
+/* 1 = valid grpc-status present, 0 = absent, -1 = malformed. */
+static int grpc_extract_status(neverc_hpack_header_t *headers, size_t count,
+                               neverc_grpc_status_t *status,
+                               char **status_message) {
+    if (status_message) *status_message = NULL;
+    size_t status_matches = 0;
+    const char *status_value = grpc_find_header(
+        headers, count, "grpc-status", &status_matches);
+    if (status_matches == 0) return 0;
+    if (status_matches != 1 ||
+        grpc_parse_status(status_value, status) != 0)
+        return -1;
+    size_t message_matches = 0;
+    const char *message = grpc_find_header(
+        headers, count, "grpc-message", &message_matches);
+    if (message_matches > 1) return -1;
+    if (message_matches == 1 && status_message) {
+        *status_message = grpc_percent_decode(message);
+        if (!*status_message) return -1;
+    }
+    return 1;
 }
 
 static int grpc_parse_messages(const uint8_t *body, size_t body_length,
@@ -649,6 +689,7 @@ struct neverc_grpc_client_stream {
     size_t header_count;
     neverc_hpack_header_t *trailers;
     size_t trailer_count;
+    int http_status;
     int headers_received;
     int trailers_received;
     int send_closed;
@@ -872,17 +913,19 @@ static int grpc_client_stream_next_buffered(
     uint32_t length = ((uint32_t)header[1] << 24) |
                       ((uint32_t)header[2] << 16) |
                       ((uint32_t)header[3] << 8) | header[4];
-    if (length > stream->max_response_message_size) return -1;
-    if (available - 5 < length) return 0;
+    size_t payload_length = (size_t)length;
+    if (payload_length > stream->max_response_message_size) return -1;
+    if (available - 5 < payload_length) return 0;
     free(stream->received_message);
-    stream->received_message = length
-        ? (uint8_t *)malloc(length) : NULL;
-    if (length && !stream->received_message) return -1;
-    if (length)
-        memcpy(stream->received_message, header + 5, length);
-    stream->buffer_offset += length + 5;
+    stream->received_message = payload_length
+        ? (uint8_t *)malloc(payload_length) : NULL;
+    if (payload_length && !stream->received_message) return -1;
+    if (payload_length)
+        memcpy(stream->received_message, header + 5, payload_length);
+    stream->buffer_offset += 5;
+    stream->buffer_offset += payload_length;
     message->data = stream->received_message;
-    message->length = length;
+    message->length = payload_length;
     stream->received_count++;
     if ((stream->cardinality == NEVERC_GRPC_UNARY ||
          stream->cardinality == NEVERC_GRPC_CLIENT_STREAMING) &&
@@ -893,23 +936,25 @@ static int grpc_client_stream_next_buffered(
 
 static int grpc_client_stream_parse_trailers(
     neverc_grpc_client_stream_t *stream,
-    neverc_h2_client_event_t *event) {
-    size_t status_matches = 0;
-    const char *status_value = grpc_find_header(
-        event->headers, event->header_count,
-        "grpc-status", &status_matches);
-    if (status_matches != 1 ||
-        grpc_parse_status(status_value, &stream->status) != 0)
+    neverc_hpack_header_t *headers, size_t header_count) {
+    neverc_grpc_status_t status;
+    char *message = NULL;
+    int extracted = grpc_extract_status(
+        headers, header_count, &status, &message);
+    if (extracted < 0) {
+        free(message);
         return -1;
-    size_t message_matches = 0;
-    const char *message = grpc_find_header(
-        event->headers, event->header_count,
-        "grpc-message", &message_matches);
-    if (message_matches > 1) return -1;
-    if (message_matches == 1) {
-        stream->status_message = grpc_percent_decode(message);
-        if (!stream->status_message) return -1;
     }
+    if (extracted == 0) {
+        if (stream->http_status == 200 || stream->http_status == 0)
+            return -1;
+        stream->status = grpc_status_from_http(stream->http_status);
+        stream->trailers_received = 1;
+        return 0;
+    }
+    free(stream->status_message);
+    stream->status = status;
+    stream->status_message = message;
     stream->trailers_received = 1;
     return 0;
 }
@@ -943,27 +988,48 @@ int neverc_grpc_client_stream_receive(
             const char *content_type = grpc_find_header(
                 event->headers, event->header_count,
                 "content-type", &matches);
-            if (stream->headers_received || event->status_code != 200 ||
-                matches != 1 || !grpc_content_type_valid(content_type)) {
+            int grpc_content_type = matches == 1 &&
+                grpc_content_type_valid(content_type);
+            if (stream->headers_received ||
+                (event->status_code == 200 && !grpc_content_type)) {
                 stream->error = "invalid gRPC response headers";
                 result = -1;
             } else {
+                stream->http_status = event->status_code;
                 stream->headers_received = 1;
                 stream->headers = event->headers;
                 stream->header_count = event->header_count;
                 event->headers = NULL;
                 event->header_count = 0;
+                neverc_grpc_status_t header_status = NEVERC_GRPC_UNKNOWN;
+                char *header_message = NULL;
+                int extracted = grpc_extract_status(
+                    stream->headers, stream->header_count,
+                    &header_status, &header_message);
+                if (extracted < 0) {
+                    free(header_message);
+                    stream->error = "invalid gRPC response headers";
+                    result = -1;
+                } else if (extracted == 1) {
+                    stream->status = header_status;
+                    stream->status_message = header_message;
+                    stream->trailers_received = 1;
+                }
             }
         } else if (event->type == NEVERC_H2_CLIENT_EVENT_DATA) {
-            if (!stream->headers_received || stream->trailers_received ||
-                grpc_client_stream_append(
-                    stream, event->data, event->data_length) != 0) {
+            if (!stream->headers_received || stream->trailers_received) {
+                stream->error = "invalid or oversized gRPC response DATA";
+                result = -1;
+            } else if (stream->http_status == 200 &&
+                       grpc_client_stream_append(
+                           stream, event->data, event->data_length) != 0) {
                 stream->error = "invalid or oversized gRPC response DATA";
                 result = -1;
             }
         } else if (event->type == NEVERC_H2_CLIENT_EVENT_TRAILERS) {
             if (!stream->headers_received || stream->trailers_received ||
-                grpc_client_stream_parse_trailers(stream, event) != 0) {
+                grpc_client_stream_parse_trailers(
+                    stream, event->headers, event->header_count) != 0) {
                 stream->error = "invalid gRPC response trailers";
                 result = -1;
             } else {
@@ -977,6 +1043,11 @@ int neverc_grpc_client_stream_receive(
                 ? event->error : "HTTP/2 stream failed";
             result = -1;
         } else if (event->type == NEVERC_H2_CLIENT_EVENT_END) {
+            if (!stream->trailers_received && stream->http_status != 200 &&
+                stream->http_status != 0) {
+                stream->status = grpc_status_from_http(stream->http_status);
+                stream->trailers_received = 1;
+            }
             size_t remaining = stream->buffer_length -
                                stream->buffer_offset;
             if (!stream->trailers_received || remaining != 0 ||
@@ -1218,31 +1289,60 @@ neverc_grpc_result_t *neverc_grpc_client_call(
     response->trailers = NULL;
     response->trailer_count = 0;
 
-    size_t status_matches = 0;
-    const char *status_value = grpc_find_header(
+    neverc_grpc_status_t trailer_status = NEVERC_GRPC_UNKNOWN;
+    neverc_grpc_status_t header_status = NEVERC_GRPC_UNKNOWN;
+    char *trailer_message = NULL;
+    char *header_message = NULL;
+    int from_trailers = grpc_extract_status(
         result->trailers, result->trailer_count,
-        "grpc-status", &status_matches);
+        &trailer_status, &trailer_message);
+    int from_headers = grpc_extract_status(
+        result->headers, result->header_count,
+        &header_status, &header_message);
     size_t content_type_matches = 0;
     const char *content_type = grpc_find_header(
         result->headers, result->header_count,
         "content-type", &content_type_matches);
-    if (response->status_code != 200 || content_type_matches != 1 ||
-        !grpc_content_type_valid(content_type) || status_matches != 1 ||
-        grpc_parse_status(status_value, &result->status) != 0) {
+    int grpc_content_type = content_type_matches == 1 &&
+        grpc_content_type_valid(content_type);
+    int have_grpc_status = 0;
+    if (from_trailers < 0 || from_headers < 0 ||
+        (from_trailers == 1 && from_headers == 1)) {
         result->error = "invalid or missing gRPC status";
         result->status = NEVERC_GRPC_UNKNOWN;
+        free(trailer_message);
+        free(header_message);
+    } else if (from_trailers == 1) {
+        result->status = trailer_status;
+        result->status_message = trailer_message;
+        free(header_message);
+        have_grpc_status = 1;
+    } else if (from_headers == 1) {
+        result->status = header_status;
+        result->status_message = header_message;
+        free(trailer_message);
+        have_grpc_status = 1;
+    } else if (response->status_code != 200) {
+        result->status = grpc_status_from_http(response->status_code);
+        free(trailer_message);
+        free(header_message);
+    } else {
+        result->error = "invalid or missing gRPC status";
+        result->status = NEVERC_GRPC_UNKNOWN;
+        free(trailer_message);
+        free(header_message);
     }
-    size_t message_matches = 0;
-    const char *message_value = grpc_find_header(
-        result->trailers, result->trailer_count,
-        "grpc-message", &message_matches);
-    if (message_matches == 1)
-        result->status_message = grpc_percent_decode(message_value);
-    if (grpc_parse_messages(
-            response->body, response->body_length,
-            max_response_message_size, result) != 0) {
-        result->error = "malformed gRPC response framing";
-        result->status = NEVERC_GRPC_DATA_LOSS;
+    if (grpc_content_type) {
+        if (grpc_parse_messages(
+                response->body, response->body_length,
+                max_response_message_size, result) != 0 &&
+            (response->status_code == 200 || have_grpc_status)) {
+            result->error = "malformed gRPC response framing";
+            result->status = NEVERC_GRPC_DATA_LOSS;
+        }
+    } else if (response->status_code == 200 && !result->error) {
+        result->error = "invalid or missing gRPC status";
+        result->status = NEVERC_GRPC_UNKNOWN;
     }
     if ((cardinality == NEVERC_GRPC_UNARY ||
          cardinality == NEVERC_GRPC_CLIENT_STREAMING) &&

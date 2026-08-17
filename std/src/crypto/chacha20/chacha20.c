@@ -59,6 +59,7 @@ void neverc_chacha20_init(neverc_chacha20_ctx *ctx,
                           const uint8_t key[32],
                           const uint8_t nonce[12],
                           uint32_t counter) {
+    if (!ctx || !key || !nonce) return;
     ctx->state[0]  = 0x61707865;
     ctx->state[1]  = 0x3320646e;
     ctx->state[2]  = 0x79622d32;
@@ -145,6 +146,7 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
                          uint8_t *dst, const uint8_t *src, size_t len) {
     size_t off = 0;
     if (!ctx || ctx->buf_used < 0) return;
+    if (len > 0 && (!dst || !src)) return;
 
     /* Consume any keystream left over from a previous partial block. */
     if (ctx->buf_used < 64) {

@@ -40,13 +40,39 @@ neverc_error_t *neverc_errors_unwrap(const neverc_error_t *err) {
     return err ? err->wrapped : NULL;
 }
 
+static int error_matches(const neverc_error_t *cur, const neverc_error_t *target) {
+    if (cur == target) return 1;
+    if (cur && target && cur->msg && target->msg &&
+        strcmp(cur->msg, target->msg) == 0)
+        return 1;
+    return 0;
+}
+
 int neverc_errors_is(const neverc_error_t *err, const neverc_error_t *target) {
     if (!target) return err == NULL;
     const neverc_error_t *cur = err;
     while (cur) {
-        if (cur == target) return 1;
-        if (cur->msg && target->msg && strcmp(cur->msg, target->msg) == 0)
+        if (error_matches(cur, target)) return 1;
+        cur = cur->wrapped;
+    }
+    return 0;
+}
+
+int neverc_errors_as(const neverc_error_t *err, const neverc_error_t *target,
+                     neverc_error_t **out) {
+    if (!target) {
+        if (err == NULL) {
+            if (out) *out = NULL;
             return 1;
+        }
+        return 0;
+    }
+    const neverc_error_t *cur = err;
+    while (cur) {
+        if (error_matches(cur, target)) {
+            if (out) *out = (neverc_error_t *)cur;
+            return 1;
+        }
         cur = cur->wrapped;
     }
     return 0;

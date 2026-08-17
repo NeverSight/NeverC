@@ -46,6 +46,7 @@ int  neverc_cstring_has_suffix(const char *s, const char *suffix);
 char *neverc_cstring_to_upper(const char *s);
 char *neverc_cstring_to_lower(const char *s);
 char *neverc_cstring_to_title(const char *s);
+/* A negative count is invalid and returns NULL. */
 char *neverc_cstring_repeat(const char *s, int count);
 char *neverc_cstring_replace(const char *s, const char *old_s,
                               const char *new_s, int n);

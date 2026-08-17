@@ -1,4 +1,5 @@
 #include "neverc/std/crypto/sha384.h"
+#include "neverc/std/crypto/sha512.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -34,6 +35,16 @@ static void test_fips_vectors(void) {
         digest_matches(digest,
             "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed"
             "8086072ba1e7cc2358baeca134c825a7"));
+
+    {
+        uint8_t sha512[64];
+        neverc_sha512_sum((const uint8_t *)"abc", 3, sha512);
+        check_true("SHA-384 is 48 bytes and not truncated SHA-512",
+                   memcmp(digest, sha512, 48) != 0);
+        check_true("SHA-384 digest size constant",
+                   NEVERC_SHA384_DIGEST_SIZE == 48 &&
+                   NEVERC_SHA512_DIGEST_SIZE == 64);
+    }
 
     /* FIPS 180-4 B.2: two-block message */
     const char *msg2 = "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmn"

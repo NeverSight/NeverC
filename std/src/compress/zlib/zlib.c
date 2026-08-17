@@ -62,16 +62,23 @@ int neverc_zlib_decompress(const uint8_t *src, size_t src_len,
     if (((unsigned)cmf * 256 + (unsigned)flg) % 31 != 0) return -1;
     if (flg & 0x20) return -1; /* FDICT not supported */
 
-    /* expected Adler-32 (big-endian, last 4 bytes) */
-    uint32_t expected = ((uint32_t)src[src_len - 4] << 24)
-                      | ((uint32_t)src[src_len - 3] << 16)
-                      | ((uint32_t)src[src_len - 2] << 8)
-                      | (uint32_t)src[src_len - 1];
-
-    size_t payload_len = src_len - 6;
+    /* Adler-32 follows the DEFLATE stream immediately. Do not treat the last
+     * 4 bytes of the caller's buffer as the checksum — that is the gzip ISIZE
+     * mistake: a wrapper trailer is not an inflate cap or an end-of-buffer
+     * marker when extra bytes may follow the payload. */
     size_t out_len = *dst_len;
-    if (neverc_flate_decompress(src + 2, payload_len, dst, &out_len) < 0)
+    size_t used = 0;
+    if (neverc_flate_decompress_consumed(src + 2, src_len - 2, dst, &out_len,
+                                         &used) < 0)
         return -1;
+    if (used > src_len - 2 || (src_len - 2) - used < 4) return -1;
+    if (2 + used + 4 != src_len) return -1; /* trailing junk */
+
+    const uint8_t *adler = src + 2 + used;
+    uint32_t expected = ((uint32_t)adler[0] << 24)
+                      | ((uint32_t)adler[1] << 16)
+                      | ((uint32_t)adler[2] << 8)
+                      | (uint32_t)adler[3];
 
     uint32_t actual = neverc_adler32_checksum(dst, out_len);
     if (actual != expected) return -1;

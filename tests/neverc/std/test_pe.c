@@ -272,6 +272,73 @@ static void test_long_section_names(void) {
     free(data);
 }
 
+static uint8_t *build_minimal_pe32(size_t *out_len) {
+    size_t total = 1024;
+    uint8_t *buf = (uint8_t *)calloc(total, 1);
+    if (!buf) return NULL;
+
+    buf[0] = 'M'; buf[1] = 'Z';
+    put32(buf + 60, 64);
+    buf[64] = 'P'; buf[65] = 'E';
+
+    uint8_t *coff = buf + 68;
+    put16(coff + 0, 0x14c);
+    put16(coff + 2, 1);
+    put16(coff + 16, 224);
+    put16(coff + 18, 0x0102);
+
+    uint8_t *opt = buf + 88;
+    put16(opt + 0, NEVERC_PE32_MAGIC);
+    put32(opt + 28, 0x00400000);
+    put32(opt + 32, 0x1000);
+    put32(opt + 36, 0x200);
+    put32(opt + 56, 0x2000);
+    put32(opt + 60, 0x200);
+    put16(opt + 68, 3);
+    put32(opt + 92, 16);
+
+    uint8_t *sec = buf + 312;
+    memcpy(sec, ".text\0\0\0", 8);
+    put32(sec + 8, 16);
+    put32(sec + 12, 0x1000);
+    put32(sec + 16, 16);
+    put32(sec + 20, 512);
+    put32(sec + 36, 0x60000020);
+    buf[512] = 0xC3;
+
+    *out_len = total;
+    return buf;
+}
+
+static void test_pe32_and_bounds(void) {
+    size_t len = 0;
+    uint8_t *data = build_minimal_pe32(&len);
+    CHECK("build PE32 fixture", data != NULL);
+    if (!data) return;
+
+    neverc_pe_file_t f;
+    CHECK("open PE32", neverc_pe_open(&f, data, len) == 0);
+    CHECK("PE32 is 32-bit", f.is_64bit == 0);
+    CHECK("PE32 image base", f.optional_header.image_base == 0x00400000);
+    CHECK("PE32 .text", neverc_pe_section(&f, ".text") != NULL);
+    neverc_pe_close(&f);
+    free(data);
+
+    data = build_minimal_pe64(&len);
+    CHECK("build PE32+ bound fixture", data != NULL);
+    if (!data) return;
+    put32(data + 88 + 60, (uint32_t)(len + 1));
+    CHECK("reject SizeOfHeaders past EOF", neverc_pe_open(&f, data, len) == -1);
+
+    uint8_t wrap[64];
+    memset(wrap, 0, sizeof(wrap));
+    wrap[0] = 'M'; wrap[1] = 'Z';
+    put32(wrap + 60, 0xFFFFFFFEu);
+    CHECK("reject e_lfanew near UINT32_MAX",
+          !neverc_pe_is_valid(wrap, sizeof(wrap)));
+    free(data);
+}
+
 static void test_pe_invalid(void) {
     uint8_t garbage[] = {0x00, 0x01, 0x02, 0x03};
     CHECK("invalid_too_short", !neverc_pe_is_valid(garbage, sizeof(garbage)));
@@ -327,6 +394,7 @@ int main(void) {
     test_imports();
     test_symbols();
     test_long_section_names();
+    test_pe32_and_bounds();
     test_pe_invalid();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);

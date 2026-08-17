@@ -1489,6 +1489,12 @@ void neverc_quic_tls_discard_read_key_update(quic_tls_t *tls) {
     tls->pending_read_secret_valid = 0;
 }
 
+void neverc_quic_tls_discard_keys(quic_tls_t *tls, quic_enc_level_t level) {
+    if (!tls || level >= QUIC_ENC_LEVEL_COUNT) return;
+    neverc_platform_secure_zero(&tls->levels[level],
+                                sizeof(tls->levels[level]));
+}
+
 const quic_keys_t *neverc_quic_tls_get_read_keys(
     const quic_tls_t *tls, quic_enc_level_t level) {
     if (!tls || level >= QUIC_ENC_LEVEL_COUNT ||

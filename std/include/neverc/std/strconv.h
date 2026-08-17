@@ -24,6 +24,8 @@ int neverc_strconv_atol(const char *s, long long *result);
  * reject underscores. */
 int neverc_strconv_parse_int(const char *s, int base, long long *result);
 int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *result);
+/* Decimal, Inf/NaN, and Go hex floats (0x1p0). Surrounding whitespace is
+ * a syntax error, matching ParseInt/ParseBool. */
 int neverc_strconv_parse_float(const char *s, double *result);
 int neverc_strconv_parse_bool(const char *s, int *result);
 
@@ -64,7 +66,7 @@ int neverc_strconv_can_backquote(const char *s);
 int neverc_strconv_is_print(uint32_t r);
 int neverc_strconv_is_graphic(uint32_t r);
 
-/* Append variants: format into caller-provided buffer at offset *pos.
+/* Append variants: format into the start of a caller-provided buffer.
    Returns bytes written (excluding NUL), or -1 if too small. */
 int neverc_strconv_append_bool(char *buf, size_t cap, int b);
 int neverc_strconv_append_int(char *buf, size_t cap, long long n, int base);

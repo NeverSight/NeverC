@@ -257,6 +257,28 @@ static void test_invalid_values(void) {
     check_int("invalid set is not counted", neverc_flag_nflag(), 0);
 }
 
+static void test_negative_and_bool_values(void) {
+    printf("[negative/bool values]\n");
+    neverc_flag_reset();
+    int n = 0;
+    int enabled = 1;
+    neverc_flag_int("n", 0, "count", &n);
+    neverc_flag_bool("enabled", 1, "enabled", &enabled);
+
+    char *argv[] = {"prog", "-n", "-5", "-enabled=0"};
+    check_int("negative int value parse ok", neverc_flag_parse(4, argv), 0);
+    check_int("negative int as next arg", n, -5);
+    check_int("bool equals false", enabled, 0);
+
+    neverc_flag_reset();
+    unsigned long long ubig = 9;
+    neverc_flag_uint64("ubig", 9, "unsigned", &ubig);
+    char *neg_uint[] = {"prog", "-ubig", "-1"};
+    check_int("negative uint64 is rejected",
+              neverc_flag_parse(2, neg_uint), -1);
+    check_int("negative uint64 preserves value", (int)ubig, 9);
+}
+
 static void test_long_names(void) {
     printf("[long names]\n");
     neverc_flag_reset();
@@ -378,6 +400,7 @@ int main(void) {
     test_int64_uint64();
     test_numeric_limits();
     test_invalid_values();
+    test_negative_and_bool_values();
     test_long_names();
     test_parsed_nflag();
     test_set_lookup();

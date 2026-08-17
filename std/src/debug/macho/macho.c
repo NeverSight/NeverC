@@ -46,11 +46,49 @@ static int macho_section_has_file_data(uint32_t flags) {
     return type != 0x01U && type != 0x0cU && type != 0x12U;
 }
 
+int neverc_macho_is_fat(const uint8_t *data, size_t len) {
+    if (!data || len < 4) return 0;
+    uint32_t magic = rd32le(data);
+    return magic == NEVERC_FAT_MAGIC || magic == NEVERC_FAT_CIGAM;
+}
+
+static int macho_is_thin_magic(uint32_t magic) {
+    return magic == NEVERC_MH_MAGIC || magic == NEVERC_MH_MAGIC_64 ||
+           magic == NEVERC_MH_CIGAM || magic == NEVERC_MH_CIGAM_64;
+}
+
 int neverc_macho_is_valid(const uint8_t *data, size_t len) {
     if (!data || len < 4) return 0;
     uint32_t magic = rd32le(data);
-    return magic == NEVERC_MH_MAGIC || magic == NEVERC_MH_MAGIC_64 ||
-           magic == NEVERC_MH_CIGAM || magic == NEVERC_MH_CIGAM_64;
+    return macho_is_thin_magic(magic) ||
+           magic == NEVERC_FAT_MAGIC || magic == NEVERC_FAT_CIGAM;
+}
+
+static int macho_fat_first_slice(const uint8_t *data, size_t len,
+                                 const uint8_t **thin, size_t *thin_len) {
+    if (len < 8) return -1;
+    uint32_t magic = rd32le(data);
+    rd32_fn r32 = (magic == NEVERC_FAT_MAGIC) ? rd32le : rd32be;
+    uint32_t narch = r32(data + 4);
+    if (narch == 0 || (uint64_t)narch * 20U > len - 8)
+        return -1;
+
+    for (uint32_t i = 0; i < narch; i++) {
+        const uint8_t *arch = data + 8 + (size_t)i * 20U;
+        uint32_t offset = r32(arch + 8);
+        uint32_t size = r32(arch + 12);
+        if (!macho_range_in_file(offset, size, len) || size < 4)
+            return -1;
+        uint32_t inner = rd32le(data + offset);
+        if (inner == NEVERC_FAT_MAGIC || inner == NEVERC_FAT_CIGAM)
+            return -1;
+        if (macho_is_thin_magic(inner)) {
+            *thin = data + offset;
+            *thin_len = size;
+            return 0;
+        }
+    }
+    return -1;
 }
 
 static void copy_name(char *dst, size_t dstsz, const uint8_t *src, size_t srcsz) {
@@ -64,7 +102,18 @@ static void copy_name(char *dst, size_t dstsz, const uint8_t *src, size_t srcsz)
 int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
     if (!f) return -1;
     memset(f, 0, sizeof(*f));
-    if (!neverc_macho_is_valid(data, len)) return -1;
+    if (!data || len < 4)
+        return -1;
+    if (neverc_macho_is_fat(data, len)) {
+        const uint8_t *thin = NULL;
+        size_t thin_len = 0;
+        if (macho_fat_first_slice(data, len, &thin, &thin_len) < 0)
+            return -1;
+        data = thin;
+        len = thin_len;
+    } else if (!macho_is_thin_magic(rd32le(data))) {
+        return -1;
+    }
 
     f->data = data;
     f->data_len = len;
@@ -175,11 +224,14 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
     cmd = data + hdr_size;
     uint32_t si = 0, sci = 0, di = 0;
     for (uint32_t i = 0; i < f->header.ncmds; i++) {
-        if ((size_t)(cmd - data) + 8 > len) break;
+        size_t cmd_offset = (size_t)(cmd - data);
+        if (cmd_offset > commands_end || commands_end - cmd_offset < 8)
+            goto fail;
         uint32_t cmd_type = r32(cmd);
         uint32_t cmd_size = r32(cmd + 4);
-        if (cmd_size < 8 || (size_t)(cmd - data) + cmd_size > len) break;
-        size_t cmd_end = (size_t)(cmd - data) + cmd_size;
+        if (cmd_size < 8 || cmd_size > commands_end - cmd_offset)
+            goto fail;
+        size_t cmd_end = cmd_offset + cmd_size;
 
         if (cmd_type == NEVERC_LC_SEGMENT && cmd_size >= 56 && si < seg_count) {
             neverc_macho_segment_t *seg = &f->segments[si++];
@@ -319,6 +371,20 @@ int neverc_macho_open_file(neverc_macho_file_t *f, const char *path) {
     fclose(fp);
     int rc = neverc_macho_open(f, buf, (size_t)sz);
     if (rc < 0) { free(buf); return -1; }
+    /* Fat files are parsed from a subslice of buf. Copy that slice so Close
+     * can free a single owned block instead of the middle of the allocation. */
+    if (f->data != buf) {
+        uint8_t *thin = (uint8_t *)malloc(f->data_len);
+        if (!thin) {
+            f->owns_data = 0;
+            neverc_macho_close(f);
+            free(buf);
+            return -1;
+        }
+        memcpy(thin, f->data, f->data_len);
+        f->data = thin;
+        free(buf);
+    }
     f->owns_data = 1;
     return 0;
 }
@@ -397,7 +463,7 @@ int neverc_macho_symbols(const neverc_macho_file_t *f,
     *syms = (neverc_macho_symbol_t *)calloc(f->nsyms, sizeof(neverc_macho_symbol_t));
     if (!*syms) return -1;
     for (uint32_t i = 0; i < f->nsyms; i++) {
-        const uint8_t *e = sym_data + i * entry_size;
+        const uint8_t *e = sym_data + (size_t)((uint64_t)i * entry_size);
         neverc_macho_symbol_t *s = &(*syms)[i];
 
         uint32_t strx = r32(e);

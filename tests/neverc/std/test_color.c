@@ -49,6 +49,12 @@ static void test_nrgba_conversion(void) {
     ASSERT_INT_EQ(nr.r, 100);
     ASSERT_INT_EQ(nr.g, 200);
     ASSERT_INT_EQ(nr.a, 255);
+
+    /* Non-premultiplied (r > a) must clamp, not wrap the uint8_t cast. */
+    neverc_color_nrgba_t wrapped = neverc_color_rgba_to_nrgba(
+        neverc_color_rgba(255, 0, 0, 1));
+    ASSERT_INT_EQ(wrapped.r, 255);
+    ASSERT_INT_EQ(wrapped.a, 1);
 }
 
 static void test_cmyk_conversion(void) {
@@ -78,6 +84,12 @@ static void test_hsl_conversion(void) {
     ASSERT_TRUE(back.r > 250);
     ASSERT_TRUE(back.g < 5);
     ASSERT_TRUE(back.b < 5);
+
+    neverc_color_rgba_t clamped = neverc_color_hsl_to_rgba(
+        (neverc_color_hsl_t){2.0f, 2.0f, 2.0f});
+    ASSERT_INT_EQ(clamped.r, 255);
+    ASSERT_INT_EQ(clamped.g, 255);
+    ASSERT_INT_EQ(clamped.b, 255);
 }
 
 static void test_hex_conversion(void) {
@@ -125,6 +137,11 @@ static void test_lerp(void) {
     neverc_color_rgba_t mid = neverc_color_lerp(a, b, 0.5f);
     ASSERT_TRUE(mid.r > 125 && mid.r < 130);
     ASSERT_TRUE(mid.g > 125 && mid.g < 130);
+
+    neverc_color_rgba_t below = neverc_color_lerp(a, b, -1.0f);
+    ASSERT_TRUE(neverc_color_equal(below, a));
+    neverc_color_rgba_t above = neverc_color_lerp(a, b, 2.0f);
+    ASSERT_TRUE(neverc_color_equal(above, b));
 }
 
 static void test_equal(void) {

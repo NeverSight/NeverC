@@ -223,6 +223,18 @@ static void test_des_different_keys(void) {
                memcmp(ct1, ct2, 8) != 0);
 }
 
+static void test_null_inputs(void) {
+    printf("[DES null inputs]\n");
+    neverc_des_cipher_t des;
+    neverc_3des_cipher_t tdes;
+    const uint8_t key8[8] = {0};
+    const uint8_t key24[24] = {0};
+    check_int("des null cipher", neverc_des_init(NULL, key8), -1);
+    check_int("des null key", neverc_des_init(&des, NULL), -1);
+    check_int("3des null cipher", neverc_3des_init(NULL, key24), -1);
+    check_int("3des null key", neverc_3des_init(&tdes, NULL), -1);
+}
+
 static void test_3des_two_key(void) {
     printf("[3DES two-key (K1=K3)]\n");
 
@@ -252,6 +264,7 @@ int main(void) {
     test_des_all_zeros();
     test_des_weak_keys();
     test_des_different_keys();
+    test_null_inputs();
     test_3des_two_key();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

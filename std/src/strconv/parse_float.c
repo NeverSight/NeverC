@@ -25,8 +25,13 @@
  * scaling, which mis-rounded ~51% of round-trippable doubles (up to 6 ULP).
  */
 
-static int is_space(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
 static int is_digit(char c) { return c >= '0' && c <= '9'; }
+static int hex_digit(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
 
 static double nc_make_inf(int neg) {
     uint64_t b = neg ? 0xFFF0000000000000ULL : 0x7FF0000000000000ULL;
@@ -241,13 +246,125 @@ static void dec_set(nc_decimal *d, const char *s, const char *end, int neg) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Hexadecimal float: Go ParseFloat / C99 0x1.8p+0 form. The exponent is
+ * a required decimal power of two. Rounding matches strconv.atofHex.
+ * ------------------------------------------------------------------ */
+static int atof_hex(uint64_t mantissa, int exp, int neg, int trunc, double *out) {
+    const int mantbits = NC_MANT_BITS;
+    const int expbits = NC_EXP_BITS;
+    const int bias = NC_EXP_BIAS;
+    int max_exp = (1 << expbits) + bias - 2;
+    int min_exp = bias + 1;
+    exp += mantbits;
+
+    while (mantissa != 0 && (mantissa >> (mantbits + 2)) == 0) {
+        mantissa <<= 1;
+        exp--;
+    }
+    if (trunc)
+        mantissa |= 1;
+    while ((mantissa >> (1 + mantbits + 2)) != 0) {
+        mantissa = (mantissa >> 1) | (mantissa & 1);
+        exp++;
+    }
+    while (mantissa > 1 && exp < min_exp - 2) {
+        mantissa = (mantissa >> 1) | (mantissa & 1);
+        exp++;
+    }
+
+    unsigned round = (unsigned)(mantissa & 3);
+    mantissa >>= 2;
+    round |= (unsigned)(mantissa & 1);
+    exp += 2;
+    if (round == 3) {
+        mantissa++;
+        if (mantissa == ((uint64_t)1 << (1 + mantbits))) {
+            mantissa >>= 1;
+            exp++;
+        }
+    }
+
+    int overflow = 0;
+    if ((mantissa >> mantbits) == 0)
+        exp = bias;
+    if (exp > max_exp) {
+        mantissa = (uint64_t)1 << mantbits;
+        exp = max_exp + 1;
+        overflow = 1;
+    }
+
+    uint64_t bits = mantissa & (((uint64_t)1 << mantbits) - 1);
+    bits |= (uint64_t)((exp - bias) & ((1 << expbits) - 1)) << mantbits;
+    if (neg) bits |= (uint64_t)1 << (mantbits + expbits);
+    *out = nc_from_bits(bits);
+    return overflow ? NEVERC_STRCONV_ERR_RANGE : NEVERC_STRCONV_OK;
+}
+
+static int parse_hex_float(const char *s, int neg, double *result) {
+    s += 2; /* skip 0x / 0X */
+    uint64_t mantissa = 0;
+    int nd = 0, nd_mant = 0, dp = 0;
+    int trunc = 0, sawdot = 0, sawdigits = 0;
+
+    for (;; s++) {
+        char c = *s;
+        if (c == '.') {
+            if (sawdot) break;
+            sawdot = 1;
+            dp = nd;
+            continue;
+        }
+        int d = hex_digit(c);
+        if (d < 0) break;
+        sawdigits = 1;
+        if (c == '0' && nd == 0) {
+            dp--;
+            continue;
+        }
+        nd++;
+        if (nd_mant < 16) {
+            mantissa = (mantissa << 4) | (uint64_t)d;
+            nd_mant++;
+        } else if (d != 0) {
+            trunc = 1;
+        }
+    }
+    if (!sawdigits)
+        return NEVERC_STRCONV_ERR_SYNTAX;
+    if (!sawdot) dp = nd;
+    dp *= 4;
+    nd_mant *= 4;
+
+    if (*s != 'p' && *s != 'P')
+        return NEVERC_STRCONV_ERR_SYNTAX;
+    s++;
+    int exp_sign = 1;
+    if (*s == '+') s++;
+    else if (*s == '-') { exp_sign = -1; s++; }
+    if (!is_digit(*s))
+        return NEVERC_STRCONV_ERR_SYNTAX;
+    int exp_val = 0;
+    while (is_digit(*s)) {
+        if (exp_val < 100000) exp_val = exp_val * 10 + (*s - '0');
+        s++;
+    }
+    dp += exp_sign * exp_val;
+    if (*s != '\0')
+        return NEVERC_STRCONV_ERR_SYNTAX;
+
+    int exp10 = 0;
+    if (mantissa != 0)
+        exp10 = dp - nd_mant;
+    return atof_hex(mantissa, exp10, neg, trunc, result);
+}
+
+/* ------------------------------------------------------------------ *
  * Public entry point
  * ------------------------------------------------------------------ */
 int neverc_strconv_parse_float(const char *s, double *result) {
     if (!s || !result)
         return NEVERC_STRCONV_ERR_SYNTAX;
 
-    while (is_space(*s)) s++;
     if (*s == '\0')
         return NEVERC_STRCONV_ERR_SYNTAX;
 
@@ -265,7 +382,6 @@ int neverc_strconv_parse_float(const char *s, double *result) {
             (s[3] == 't' || s[3] == 'T') &&
             (s[4] == 'y' || s[4] == 'Y'))
             s += 5;
-        while (is_space(*s)) s++;
         if (*s != '\0') return NEVERC_STRCONV_ERR_SYNTAX;
         *result = nc_make_inf(sign < 0);
         return NEVERC_STRCONV_OK;
@@ -274,11 +390,13 @@ int neverc_strconv_parse_float(const char *s, double *result) {
         (s[1] == 'a' || s[1] == 'A') &&
         (s[2] == 'n' || s[2] == 'N')) {
         s += 3;
-        while (is_space(*s)) s++;
         if (*s != '\0') return NEVERC_STRCONV_ERR_SYNTAX;
         *result = nc_make_nan(sign < 0);
         return NEVERC_STRCONV_OK;
     }
+
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
+        return parse_hex_float(s, sign < 0, result);
 
     if (!is_digit(*s) && *s != '.')
         return NEVERC_STRCONV_ERR_SYNTAX;
@@ -331,7 +449,6 @@ int neverc_strconv_parse_float(const char *s, double *result) {
 
     const char *lit_end = s;      /* one past the numeric literal */
 
-    while (is_space(*s)) s++;
     if (*s != '\0')
         return NEVERC_STRCONV_ERR_SYNTAX;
 

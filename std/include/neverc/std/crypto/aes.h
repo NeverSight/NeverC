@@ -18,6 +18,7 @@ typedef struct {
     int      rounds;
 } neverc_aes_ctx_t;
 
+/* key_len must be 16, 24, or 32. NULL ctx/key returns -1. */
 int  neverc_aes_init(neverc_aes_ctx_t *ctx, const uint8_t *key, int key_len);
 void neverc_aes_encrypt_block(const neverc_aes_ctx_t *ctx, uint8_t dst[16], const uint8_t src[16]);
 void neverc_aes_decrypt_block(const neverc_aes_ctx_t *ctx, uint8_t dst[16], const uint8_t src[16]);

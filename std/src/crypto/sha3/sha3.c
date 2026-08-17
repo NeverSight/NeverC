@@ -103,13 +103,14 @@ static void keccak_f1600(uint64_t a[25]) {
 }
 
 static void sha3_init(neverc_sha3_ctx *ctx, size_t capacity_bits, uint8_t suffix) {
+    if (!ctx) return;
     memset(ctx, 0, sizeof(*ctx));
     ctx->rate = 200 - capacity_bits / 8;
     ctx->suffix = suffix;
 }
 
 static void sha3_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) {
-    if (!ctx || ctx->squeezed || ctx->finalized)
+    if (!ctx || ctx->squeezed || ctx->finalized || (len > 0 && !data))
         return;
     size_t i = 0;
     while (i < len) {

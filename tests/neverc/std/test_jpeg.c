@@ -372,6 +372,169 @@ static void test_sof_grayscale_ignores_sampling(void) {
     free(encoded);
 }
 
+static void test_quality100_checkerboard(void) {
+    printf("[quality100_checkerboard]\n");
+    uint8_t pixels[64];
+    for (int i = 0; i < 64; i++)
+        pixels[i] = (uint8_t)(((i & 1) ^ ((i / 8) & 1)) ? 255 : 0);
+    neverc_jpeg_image_t source = {
+        .width = 8, .height = 8, .channels = 1,
+        .pixels = pixels, .stride = 8
+    };
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&source, 100, &encoded, &encoded_length), 0);
+    neverc_jpeg_image_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length, &decoded), 0);
+    ASSERT_EQ(decoded.width, 8);
+    ASSERT_EQ(decoded.height, 8);
+    neverc_jpeg_free(&decoded);
+    free(encoded);
+}
+
+static int insert_dri(const uint8_t *src, size_t src_len, uint16_t interval,
+                      uint8_t **out, size_t *out_len) {
+    size_t sos = find_marker(src, src_len, 0xDA);
+    if (sos == SIZE_MAX || sos > src_len) return -1;
+    uint8_t *dst = (uint8_t *)malloc(src_len + 6);
+    if (!dst) return -1;
+    memcpy(dst, src, sos);
+    dst[sos + 0] = 0xFF;
+    dst[sos + 1] = 0xDD;
+    dst[sos + 2] = 0x00;
+    dst[sos + 3] = 0x04;
+    dst[sos + 4] = (uint8_t)(interval >> 8);
+    dst[sos + 5] = (uint8_t)interval;
+    memcpy(dst + sos + 6, src + sos, src_len - sos);
+    *out = dst;
+    *out_len = src_len + 6;
+    return 0;
+}
+
+static void test_restart_interval_required(void) {
+    printf("[restart_interval_required]\n");
+    uint8_t pixels[16 * 8];
+    memset(pixels, 128, sizeof(pixels));
+    neverc_jpeg_image_t source = {
+        .width = 16, .height = 8, .channels = 1,
+        .pixels = pixels, .stride = 16
+    };
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&source, 90, &encoded, &encoded_length), 0);
+    if (!encoded) return;
+
+    uint8_t *with_dri = NULL;
+    size_t with_dri_len = 0;
+    ASSERT_EQ(insert_dri(encoded, encoded_length, 1, &with_dri, &with_dri_len), 0);
+    neverc_jpeg_image_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    /* DRI=1 with no RST markers must fail — proves restart is not ignored. */
+    ASSERT_EQ(neverc_jpeg_decode(with_dri, with_dri_len, &decoded), -1);
+    ASSERT_TRUE(decoded.pixels == NULL);
+    ASSERT_EQ(decoded.width, 0);
+    free(with_dri);
+    free(encoded);
+}
+
+static void test_restart_roundtrip(void) {
+    printf("[restart_roundtrip]\n");
+    uint8_t left_pix[64], right_pix[64];
+    memset(left_pix, 40, sizeof(left_pix));
+    memset(right_pix, 200, sizeof(right_pix));
+    neverc_jpeg_image_t left = {
+        .width = 8, .height = 8, .channels = 1,
+        .pixels = left_pix, .stride = 8
+    };
+    neverc_jpeg_image_t right = {
+        .width = 8, .height = 8, .channels = 1,
+        .pixels = right_pix, .stride = 8
+    };
+    uint8_t *left_j = NULL, *right_j = NULL;
+    size_t left_n = 0, right_n = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&left, 95, &left_j, &left_n), 0);
+    ASSERT_EQ(neverc_jpeg_encode(&right, 95, &right_j, &right_n), 0);
+    if (!left_j || !right_j) { free(left_j); free(right_j); return; }
+
+    size_t sof = find_marker(left_j, left_n, 0xC0);
+    size_t sos = find_marker(left_j, left_n, 0xDA);
+    size_t eoi_l = find_marker(left_j, left_n, 0xD9);
+    size_t sos_r = find_marker(right_j, right_n, 0xDA);
+    size_t eoi_r = find_marker(right_j, right_n, 0xD9);
+    ASSERT_TRUE(sof != SIZE_MAX && sos != SIZE_MAX && eoi_l != SIZE_MAX);
+    ASSERT_TRUE(sos_r != SIZE_MAX && eoi_r != SIZE_MAX);
+    if (sof == SIZE_MAX || sos == SIZE_MAX || eoi_l == SIZE_MAX ||
+        sos_r == SIZE_MAX || eoi_r == SIZE_MAX) {
+        free(left_j); free(right_j); return;
+    }
+    size_t sos_len = ((size_t)left_j[sos + 2] << 8) | left_j[sos + 3];
+    size_t ent0 = sos + 2 + sos_len;
+    size_t sos_len_r = ((size_t)right_j[sos_r + 2] << 8) | right_j[sos_r + 3];
+    size_t ent1 = sos_r + 2 + sos_len_r;
+    ASSERT_TRUE(ent0 <= eoi_l && ent1 <= eoi_r);
+
+    size_t out_n = sos + 6 + (2 + sos_len) + (eoi_l - ent0) + 2 +
+                   (eoi_r - ent1) + 2;
+    uint8_t *out = (uint8_t *)malloc(out_n);
+    ASSERT_TRUE(out != NULL);
+    if (!out) { free(left_j); free(right_j); return; }
+
+    size_t p = 0;
+    memcpy(out + p, left_j, sos); p += sos;
+    out[sof + 7] = 0;
+    out[sof + 8] = 16; /* SOF width 16 */
+    out[p++] = 0xFF; out[p++] = 0xDD; out[p++] = 0x00; out[p++] = 0x04;
+    out[p++] = 0x00; out[p++] = 0x01; /* DRI interval 1 */
+    memcpy(out + p, left_j + sos, 2 + sos_len); p += 2 + sos_len;
+    memcpy(out + p, left_j + ent0, eoi_l - ent0); p += eoi_l - ent0;
+    out[p++] = 0xFF; out[p++] = 0xD0; /* RST0 */
+    memcpy(out + p, right_j + ent1, eoi_r - ent1); p += eoi_r - ent1;
+    out[p++] = 0xFF; out[p++] = 0xD9;
+
+    neverc_jpeg_image_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_jpeg_decode(out, p, &decoded), 0);
+    ASSERT_EQ(decoded.width, 16);
+    ASSERT_EQ(decoded.height, 8);
+    ASSERT_EQ(decoded.channels, 1);
+    ASSERT_NEAR(decoded.pixels[4 * 16 + 4], 40, 20);
+    ASSERT_NEAR(decoded.pixels[4 * 16 + 12], 200, 20);
+    neverc_jpeg_free(&decoded);
+    free(out);
+    free(left_j);
+    free(right_j);
+}
+
+static void test_rejects_huge_sof(void) {
+    printf("[rejects_huge_sof]\n");
+    uint8_t pixels[64];
+    memset(pixels, 128, sizeof(pixels));
+    neverc_jpeg_image_t source = {
+        .width = 8, .height = 8, .channels = 1,
+        .pixels = pixels, .stride = 8
+    };
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&source, 90, &encoded, &encoded_length), 0);
+    if (!encoded) return;
+    size_t sof = find_marker(encoded, encoded_length, 0xC0);
+    ASSERT_TRUE(sof != SIZE_MAX && sof + 9 < encoded_length);
+    if (sof != SIZE_MAX && sof + 9 < encoded_length) {
+        encoded[sof + 5] = 0xFF;
+        encoded[sof + 6] = 0xFF;
+        encoded[sof + 7] = 0xFF;
+        encoded[sof + 8] = 0xFF;
+        neverc_jpeg_image_t decoded;
+        memset(&decoded, 0, sizeof(decoded));
+        ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length, &decoded), -1);
+        ASSERT_TRUE(decoded.pixels == NULL);
+        ASSERT_EQ(decoded.width, 0);
+        ASSERT_EQ(decoded.height, 0);
+    }
+    free(encoded);
+}
+
 int main(void) {
     printf("NeverC image/jpeg tests\n");
     test_encode_decode_rgb();
@@ -383,6 +546,10 @@ int main(void) {
     test_quality_levels();
     test_sof_chroma_420();
     test_sof_grayscale_ignores_sampling();
+    test_quality100_checkerboard();
+    test_restart_interval_required();
+    test_restart_roundtrip();
+    test_rejects_huge_sof();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

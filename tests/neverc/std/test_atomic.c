@@ -37,6 +37,34 @@ static void test_load_store_int64(void) {
     ASSERT_INT_EQ(neverc_atomic_load_int64(&v), 1234567890123LL);
 }
 
+static void test_load_store_uint(void) {
+    printf("[load_store_uint]\n");
+    volatile uint32_t u32 = 0;
+    neverc_atomic_store_uint32(&u32, 7);
+    ASSERT_INT_EQ(neverc_atomic_load_uint32(&u32), 7);
+
+    volatile uint64_t u64 = 0;
+    neverc_atomic_store_uint64(&u64, 99);
+    ASSERT_INT_EQ(neverc_atomic_load_uint64(&u64), 99);
+
+    ASSERT_INT_EQ(neverc_atomic_add_uint32(&u32, 3), 10);
+    ASSERT_INT_EQ(neverc_atomic_swap_uint32(&u32, 1), 10);
+    ASSERT_INT_EQ(neverc_atomic_load_uint32(&u32), 1);
+    ASSERT_TRUE(neverc_atomic_cas_uint32(&u32, 1, 4));
+    ASSERT_INT_EQ(neverc_atomic_load_uint32(&u32), 4);
+
+    volatile int64_t i64add = 2;
+    ASSERT_INT_EQ(neverc_atomic_add_int64(&i64add, 3), 5);
+    volatile uint64_t s64 = 5;
+    ASSERT_INT_EQ(neverc_atomic_swap_uint64(&s64, 8), 5);
+    ASSERT_TRUE(neverc_atomic_cas_uint64(&s64, 8, 11));
+    ASSERT_INT_EQ(neverc_atomic_load_uint64(&s64), 11);
+
+    volatile int64_t i64 = 20;
+    ASSERT_TRUE(neverc_atomic_cas_int64(&i64, 20, 30));
+    ASSERT_INT_EQ(neverc_atomic_load_int64(&i64), 30);
+}
+
 static void test_add(void) {
     printf("[add]\n");
     volatile int32_t v32 = 10;
@@ -79,8 +107,8 @@ static void test_pointer(void) {
     printf("[pointer]\n");
     int x = 1, y = 2;
     void *volatile p = &x;
-    void *loaded = neverc_atomic_load_pointer(&p);
-    ASSERT_TRUE(loaded == &x);
+    ASSERT_TRUE(neverc_atomic_load_pointer(&p) == &x);
+    ASSERT_TRUE(p == &x);
 
     neverc_atomic_store_pointer(&p, &y);
     ASSERT_TRUE(neverc_atomic_load_pointer(&p) == &y);
@@ -137,6 +165,7 @@ int main(void) {
     printf("=== NeverC sync/atomic Tests ===\n");
     test_load_store_int32();
     test_load_store_int64();
+    test_load_store_uint();
     test_add();
     test_swap();
     test_cas();

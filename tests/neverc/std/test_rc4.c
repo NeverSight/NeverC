@@ -146,6 +146,8 @@ static void test_invalid_key(void) {
 
     neverc_rc4_cipher_t c;
     check_int("key too short (0)", neverc_rc4_init(&c, (const uint8_t *)"", 0), -1);
+    check_int("null cipher rejected", neverc_rc4_init(NULL, (const uint8_t *)"A", 1), -1);
+    check_int("null key rejected", neverc_rc4_init(&c, NULL, 1), -1);
 
     uint8_t big_key[257];
     memset(big_key, 'A', 257);

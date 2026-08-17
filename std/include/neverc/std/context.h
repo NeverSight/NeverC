@@ -83,8 +83,10 @@ int64_t     neverc_context_deadline(const neverc_context_t *ctx);
 void neverc_context_free(neverc_context_t *ctx);
 
 typedef int (*neverc_context_stop_func_t)(void);
-/* Experimental compatibility API. The current callback trampoline pool
- * supports at most four registrations per process. */
+/* Experimental compatibility API. At most four AfterFunc registrations may
+ * be in flight at once. A slot is released once its worker has finished and
+ * the associated context has been freed; the stop callback is then invalid,
+ * matching the legacy cancel trampoline. */
 neverc_context_stop_func_t neverc_context_after_func(neverc_context_t *ctx,
                                                       void (*f)(void));
 

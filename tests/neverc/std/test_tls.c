@@ -33,7 +33,10 @@ int neverc_tls_test_key_schedule_failures(void);
 int neverc_tls_test_record_write_failure(void);
 int neverc_tls_test_reject_ccs_after_handshake(void);
 int neverc_tls_test_discard_ccs_before_handshake(void);
+int neverc_tls_test_reject_ccs_before_client_hello(void);
+int neverc_tls_test_discard_ccs_after_client_hello(void);
 int neverc_tls_test_encrypted_extensions_forbidden(void);
+int neverc_tls_test_hello_protocol_rules(void);
 int neverc_tls_test_certificate_request_schemes(void);
 int neverc_tls_test_did_resume(neverc_tls_conn_t *conn);
 int neverc_tls_test_corrupt_client_session(
@@ -121,6 +124,12 @@ static void test_config(void) {
               neverc_tls_test_reject_ccs_after_handshake(), 0);
     check_int("discard_ccs_before_handshake",
               neverc_tls_test_discard_ccs_before_handshake(), 0);
+    check_int("reject_ccs_before_client_hello",
+              neverc_tls_test_reject_ccs_before_client_hello(), 0);
+    check_int("discard_ccs_after_client_hello",
+              neverc_tls_test_discard_ccs_after_client_hello(), 0);
+    check_int("hello_protocol_rules",
+              neverc_tls_test_hello_protocol_rules(), 0);
     check_int("reject_forbidden_encrypted_extensions",
               neverc_tls_test_encrypted_extensions_forbidden(), 0);
     check_int("certificate_request_schemes",
@@ -1400,6 +1409,90 @@ static void test_malformed_client_hello_alert(void) {
     pthread_join(thread, NULL);
 #endif
     check_int("server_reject_malformed_client_hello",
+              ctx.handshake_ok, 0);
+    neverc_tls_config_free(config);
+}
+
+static void test_tls12_client_hello_alert(void) {
+    printf("[tls12_client_hello_alert]\n");
+    neverc_tls_config_t *config = neverc_tls_config_new();
+    check_not_null("tls12_client_config", config);
+    if (!config)
+        return;
+    check_int("tls12_client_load_certificate",
+              neverc_tls_config_load_cert_mem(
+                  config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_tls12_client_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(config);
+        return;
+    }
+
+    server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.config = config;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, tls_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, tls_server_thread, &ctx) == 0;
+#endif
+    check_int("start_tls12_client_thread", thread_started, 1);
+    if (!thread_started) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(config);
+        return;
+    }
+
+    /* TLS 1.2 ClientHello with no extensions and a TLS 1.0 record version.
+     * RFC 8446 §4.1.2: a TLS 1.3-only server answers protocol_version. */
+    static const uint8_t tls12_client_hello[] = {
+        22, 0x03, 0x01, 0x00, 45,
+        1, 0x00, 0x00, 41,
+        0x03, 0x03,
+        0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+        0x00,
+        0x00, 0x02,
+        0x00, 0x2f,
+        0x01, 0x00
+    };
+    check_int("send_tls12_client_hello",
+              neverc_tcp_write(
+                  client_tcp, tls12_client_hello,
+                  sizeof(tls12_client_hello)) ==
+                  (int)sizeof(tls12_client_hello),
+              1);
+
+    uint8_t header[5];
+    uint8_t alert[2];
+    int received_protocol_version =
+        tcp_read_exact(client_tcp, header, sizeof(header)) == 0 &&
+        header[0] == 21 && header[3] == 0 && header[4] == 2 &&
+        tcp_read_exact(client_tcp, alert, sizeof(alert)) == 0 &&
+        alert[0] == 2 && alert[1] == 70;
+    check_int("server_send_protocol_version_alert",
+              received_protocol_version, 1);
+    neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    check_int("server_reject_tls12_client_hello",
               ctx.handshake_ok, 0);
     neverc_tls_config_free(config);
 }
@@ -2756,6 +2849,7 @@ int main(void) {
     test_hello_retry_request_alert();
     test_oversized_server_handshake_alert();
     test_malformed_client_hello_alert();
+    test_tls12_client_hello_alert();
     test_oversized_client_handshake_alert();
     test_malformed_handshake_alert();
     test_application_io_before_handshake();

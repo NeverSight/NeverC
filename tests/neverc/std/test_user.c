@@ -66,21 +66,35 @@ static void test_lookup_nonexistent(void) {
 static void test_lookup_group(void) {
     printf("[lookup_group]\n");
     neverc_group_t g;
-#if defined(__APPLE__) || defined(__linux__)
-    int rc = neverc_user_lookup_group("staff", &g);
-    if (rc != 0) {
+    int rc = -1;
+#if defined(_WIN32)
+    rc = neverc_user_lookup_group("Administrators", &g);
+    if (rc != 0)
+        rc = neverc_user_lookup_group("Users", &g);
+#elif defined(__APPLE__) || defined(__linux__)
+    rc = neverc_user_lookup_group("staff", &g);
+    if (rc != 0)
         rc = neverc_user_lookup_group("users", &g);
-    }
-    if (rc != 0) {
+    if (rc != 0)
         rc = neverc_user_lookup_group("root", &g);
-    }
+#endif
     if (rc == 0) {
         ASSERT_TRUE(strlen(g.name) > 0);
         ASSERT_TRUE(strlen(g.gid) > 0);
+    } else {
+        (void)g;
+        tests_run++;
+        tests_passed++;
+    }
+#if !defined(_WIN32)
+    {
+        neverc_group_t zero;
+        int zrc = neverc_user_lookup_group_id(0, &zero);
+        ASSERT_EQ_INT(zrc, 0);
+        ASSERT_TRUE(strlen(zero.name) > 0);
+        ASSERT_TRUE(strlen(zero.gid) > 0);
     }
 #endif
-    (void)g;
-    tests_run++; tests_passed++;
 }
 
 static void test_home_dir(void) {
@@ -146,13 +160,11 @@ static void test_null_args(void) {
 int main(void) {
     printf("NeverC os/user tests\n");
     test_current();
-#if !defined(_WIN32)
     test_lookup();
+#if !defined(_WIN32)
     test_lookup_id();
 #else
-    printf("[lookup] SKIP on Windows (not supported)\n");
-    tests_run++; tests_passed++;
-    printf("[lookup_id] SKIP on Windows (not supported)\n");
+    printf("[lookup_id] SKIP on Windows (SID is not an int)\n");
     tests_run++; tests_passed++;
 #endif
     test_lookup_nonexistent();
@@ -162,5 +174,6 @@ int main(void) {
     test_config_dir();
     test_null_args();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

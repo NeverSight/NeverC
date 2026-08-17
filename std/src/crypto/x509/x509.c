@@ -31,7 +31,9 @@ typedef struct {
 #define ASN1_TAG_SEQUENCE      0x30
 #define ASN1_TAG_SET           0x31
 #define ASN1_TAG_CONTEXT_0     0xA0
+#define ASN1_TAG_CONTEXT_1     0xA1
 #define ASN1_TAG_CONTEXT_1_IMPLICIT 0x81
+#define ASN1_TAG_CONTEXT_2     0xA2
 #define ASN1_TAG_CONTEXT_2_IMPLICIT 0x82
 #define ASN1_TAG_CONTEXT_3     0xA3
 
@@ -136,6 +138,19 @@ static const uint8_t OID_ECDSA_SHA256[] = {0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0
 static const uint8_t OID_ECDSA_SHA384[] = {0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x03};
 /* ed25519: 1.3.101.112 */
 static const uint8_t OID_ED25519[] = {0x2B, 0x65, 0x70};
+/* rsassa-pss: 1.2.840.113549.1.1.10 */
+static const uint8_t OID_RSA_PSS[] =
+    {0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x0A};
+/* id-mgf1: 1.2.840.113549.1.1.8 */
+static const uint8_t OID_MGF1[] =
+    {0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x08};
+/* SHA-256/384/512: 2.16.840.1.101.3.4.2.{1,2,3} */
+static const uint8_t OID_SHA256[] =
+    {0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01};
+static const uint8_t OID_SHA384[] =
+    {0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02};
+static const uint8_t OID_SHA512[] =
+    {0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03};
 
 /* rsaEncryption: 1.2.840.113549.1.1.1 */
 static const uint8_t OID_RSA[] = {0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01};
@@ -155,6 +170,8 @@ static const uint8_t OID_SUBJECT_ALT_NAME[] = {0x55, 0x1D, 0x11};
 static const uint8_t OID_KEY_USAGE[] = {0x55, 0x1D, 0x0F};
 /* extKeyUsage: 2.5.29.37 */
 static const uint8_t OID_EXT_KEY_USAGE[] = {0x55, 0x1D, 0x25};
+/* nameConstraints: 2.5.29.30 */
+static const uint8_t OID_NAME_CONSTRAINTS[] = {0x55, 0x1D, 0x1E};
 /* id-kp-serverAuth/clientAuth/codeSigning/emailProtection/timeStamping/OCSP */
 static const uint8_t OID_EKU_SERVER_AUTH[] =
     {0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01};
@@ -186,6 +203,134 @@ static int identify_sig_algorithm(const uint8_t *oid, size_t len) {
         return NEVERC_X509_SIG_ECDSA_SHA384;
     if (oid_equals(oid, len, OID_ED25519, sizeof(OID_ED25519)))
         return NEVERC_X509_SIG_ED25519;
+    return 0;
+}
+
+static int parse_digest_algorithm(asn1_reader_t *reader) {
+    asn1_reader_t sequence;
+    if (asn1_enter_sequence(reader, &sequence) != 0)
+        return 0;
+
+    uint8_t tag;
+    const uint8_t *oid;
+    size_t oid_len;
+    if (asn1_read_tlv(&sequence, &tag, &oid, &oid_len) != 0 ||
+        tag != ASN1_TAG_OID)
+        return 0;
+
+    int hash = 0;
+    if (oid_equals(oid, oid_len, OID_SHA256, sizeof(OID_SHA256)))
+        hash = 256;
+    else if (oid_equals(oid, oid_len, OID_SHA384, sizeof(OID_SHA384)))
+        hash = 384;
+    else if (oid_equals(oid, oid_len, OID_SHA512, sizeof(OID_SHA512)))
+        hash = 512;
+    else
+        return 0;
+
+    if (sequence.pos < sequence.len) {
+        const uint8_t *parameters;
+        size_t parameters_len;
+        if (asn1_read_tlv(&sequence, &tag, &parameters,
+                          &parameters_len) != 0 ||
+            tag != ASN1_TAG_NULL || parameters_len != 0)
+            return 0;
+        (void)parameters;
+    }
+    return sequence.pos == sequence.len ? hash : 0;
+}
+
+static int parse_der_uint(const uint8_t *value, size_t value_len,
+                          int *out) {
+    if (!value || !out || value_len == 0 || value_len > sizeof(int) ||
+        (value[0] & 0x80) != 0 ||
+        (value_len > 1 && value[0] == 0 && (value[1] & 0x80) == 0))
+        return -1;
+    unsigned result = 0;
+    for (size_t i = 0; i < value_len; ++i)
+        result = (result << 8) | value[i];
+    if (result > (unsigned)INT_MAX)
+        return -1;
+    *out = (int)result;
+    return 0;
+}
+
+/* RFC 4055 RSASSA-PSS-params. SHA-1 defaults are rejected. Salt length
+ * must equal the hash length so it matches neverc_rsa_verify_pss_sha*. */
+static int parse_pss_parameters(const uint8_t *data, size_t len) {
+    if (!data || len == 0)
+        return 0;
+
+    asn1_reader_t params = {data, len, 0};
+    int hash = 0;
+    int mgf_hash = 0;
+    int salt_len = 20;
+    int trailer = 1;
+    uint8_t last_tag = 0;
+
+    while (params.pos < params.len) {
+        uint8_t tag;
+        const uint8_t *value;
+        size_t value_len;
+        if (asn1_read_tlv(&params, &tag, &value, &value_len) != 0 ||
+            tag <= last_tag)
+            return 0;
+        last_tag = tag;
+        asn1_reader_t inner = {value, value_len, 0};
+
+        if (tag == ASN1_TAG_CONTEXT_0) {
+            hash = parse_digest_algorithm(&inner);
+            if (hash == 0 || inner.pos != inner.len)
+                return 0;
+        } else if (tag == ASN1_TAG_CONTEXT_1) {
+            asn1_reader_t mgf;
+            uint8_t mgf_tag;
+            const uint8_t *mgf_oid;
+            size_t mgf_oid_len;
+            if (asn1_enter_sequence(&inner, &mgf) != 0 ||
+                asn1_read_tlv(&mgf, &mgf_tag, &mgf_oid,
+                              &mgf_oid_len) != 0 ||
+                mgf_tag != ASN1_TAG_OID ||
+                !oid_equals(mgf_oid, mgf_oid_len, OID_MGF1,
+                            sizeof(OID_MGF1)))
+                return 0;
+            mgf_hash = parse_digest_algorithm(&mgf);
+            if (mgf_hash == 0 || mgf.pos != mgf.len ||
+                inner.pos != inner.len)
+                return 0;
+        } else if (tag == ASN1_TAG_CONTEXT_2) {
+            uint8_t integer_tag;
+            const uint8_t *integer;
+            size_t integer_len;
+            if (asn1_read_tlv(&inner, &integer_tag, &integer,
+                              &integer_len) != 0 ||
+                integer_tag != ASN1_TAG_INTEGER ||
+                parse_der_uint(integer, integer_len, &salt_len) != 0 ||
+                inner.pos != inner.len)
+                return 0;
+        } else if (tag == ASN1_TAG_CONTEXT_3) {
+            uint8_t integer_tag;
+            const uint8_t *integer;
+            size_t integer_len;
+            if (asn1_read_tlv(&inner, &integer_tag, &integer,
+                              &integer_len) != 0 ||
+                integer_tag != ASN1_TAG_INTEGER ||
+                parse_der_uint(integer, integer_len, &trailer) != 0 ||
+                trailer != 1 || inner.pos != inner.len)
+                return 0;
+        } else {
+            return 0;
+        }
+    }
+
+    if (hash == 0 || mgf_hash == 0 || mgf_hash != hash || trailer != 1)
+        return 0;
+    if (hash == 256 && salt_len == 32)
+        return NEVERC_X509_SIG_RSA_PSS_SHA256;
+    if (hash == 384 && salt_len == 48)
+        return NEVERC_X509_SIG_RSA_PSS_SHA384;
+    if (hash == 512 && salt_len == 64)
+        return NEVERC_X509_SIG_RSA_PSS_SHA512;
     return 0;
 }
 
@@ -254,23 +399,38 @@ static int parse_signature_algorithm(asn1_reader_t *reader, int *algorithm,
     if (asn1_read_tlv(&sequence, &tag, &oid, &oid_len) < 0 ||
         tag != ASN1_TAG_OID)
         return -1;
-    int identified = identify_sig_algorithm(oid, oid_len);
-    if (identified == 0) return -1;
 
-    if (sequence.pos < sequence.len) {
-        int rsa_algorithm =
-            identified == NEVERC_X509_SIG_SHA1_RSA ||
-            identified == NEVERC_X509_SIG_SHA256_RSA ||
-            identified == NEVERC_X509_SIG_SHA384_RSA ||
-            identified == NEVERC_X509_SIG_SHA512_RSA;
+    int identified = 0;
+    if (oid_equals(oid, oid_len, OID_RSA_PSS, sizeof(OID_RSA_PSS))) {
         const uint8_t *parameters;
         size_t parameters_len;
-        if (!rsa_algorithm ||
+        if (sequence.pos >= sequence.len ||
             asn1_read_tlv(&sequence, &tag, &parameters,
                           &parameters_len) < 0 ||
-            tag != ASN1_TAG_NULL || parameters_len != 0)
+            tag != ASN1_TAG_SEQUENCE)
             return -1;
-        (void)parameters;
+        identified = parse_pss_parameters(parameters, parameters_len);
+        if (identified == 0)
+            return -1;
+    } else {
+        identified = identify_sig_algorithm(oid, oid_len);
+        if (identified == 0) return -1;
+
+        if (sequence.pos < sequence.len) {
+            int rsa_algorithm =
+                identified == NEVERC_X509_SIG_SHA1_RSA ||
+                identified == NEVERC_X509_SIG_SHA256_RSA ||
+                identified == NEVERC_X509_SIG_SHA384_RSA ||
+                identified == NEVERC_X509_SIG_SHA512_RSA;
+            const uint8_t *parameters;
+            size_t parameters_len;
+            if (!rsa_algorithm ||
+                asn1_read_tlv(&sequence, &tag, &parameters,
+                              &parameters_len) < 0 ||
+                tag != ASN1_TAG_NULL || parameters_len != 0)
+                return -1;
+            (void)parameters;
+        }
     }
     if (sequence.pos != sequence.len) return -1;
     *algorithm = identified;
@@ -482,6 +642,145 @@ static int parse_ext_key_usage(neverc_x509_cert_t *cert,
     return 0;
 }
 
+static int append_constraint_dns(char ***names, size_t *count,
+                                 const uint8_t *value, size_t len) {
+    if (!names || !count || len > X509_MAX_DNS_NAME_LEN ||
+        *count >= X509_MAX_SAN_ENTRIES)
+        return -1;
+    if (len > 0 && !value)
+        return -1;
+    for (size_t i = 0; i < len; ++i) {
+        if (value[i] == 0 || value[i] > 0x7f)
+            return -1;
+    }
+    if (*count == SIZE_MAX / sizeof(**names))
+        return -1;
+
+    char *name = (char *)malloc(len + 1);
+    if (!name) return -1;
+    if (len > 0)
+        memcpy(name, value, len);
+    name[len] = '\0';
+
+    size_t next = *count + 1;
+    char **resized = (char **)realloc(*names, next * sizeof(*resized));
+    if (!resized) {
+        free(name);
+        return -1;
+    }
+    *names = resized;
+    (*names)[*count] = name;
+    *count = next;
+    return 0;
+}
+
+static int append_ip_network(neverc_x509_ip_network_t **networks,
+                             size_t *count, const uint8_t *value,
+                             size_t len) {
+    if (!networks || !count || !value || (len != 8 && len != 32) ||
+        *count >= X509_MAX_SAN_ENTRIES ||
+        *count == SIZE_MAX / sizeof(**networks))
+        return -1;
+
+    size_t next = *count + 1;
+    neverc_x509_ip_network_t *resized =
+        (neverc_x509_ip_network_t *)realloc(
+            *networks, next * sizeof(*resized));
+    if (!resized) return -1;
+    *networks = resized;
+
+    neverc_x509_ip_network_t *network = &(*networks)[*count];
+    memset(network, 0, sizeof(*network));
+    size_t addr_len = len / 2;
+    memcpy(network->bytes, value, addr_len);
+    memcpy(network->mask, value + addr_len, addr_len);
+    network->len = (uint8_t)addr_len;
+    *count = next;
+    return 0;
+}
+
+static int parse_general_subtrees(asn1_reader_t *trees,
+                                  neverc_x509_cert_t *cert,
+                                  int excluded) {
+    if (!trees || trees->len == 0)
+        return -1;
+
+    while (trees->pos < trees->len) {
+        asn1_reader_t subtree;
+        if (asn1_enter_sequence(trees, &subtree) != 0)
+            return -1;
+
+        uint8_t tag;
+        const uint8_t *value;
+        size_t value_len;
+        if (asn1_read_tlv(&subtree, &tag, &value, &value_len) != 0)
+            return -1;
+        /* RFC 5280 minimum DEFAULT 0 / maximum OPTIONAL: reject both so
+         * a non-zero minimum cannot silently widen a constraint. */
+        if (subtree.pos != subtree.len)
+            return -1;
+
+        if (tag == 0x82) {
+            char ***names = excluded ? &cert->excluded_dns_names
+                                     : &cert->permitted_dns_names;
+            size_t *count = excluded ? &cert->excluded_dns_name_count
+                                     : &cert->permitted_dns_name_count;
+            if (append_constraint_dns(names, count, value, value_len) != 0)
+                return -1;
+        } else if (tag == 0x87) {
+            neverc_x509_ip_network_t **networks =
+                excluded ? &cert->excluded_ip_networks
+                         : &cert->permitted_ip_networks;
+            size_t *count = excluded ? &cert->excluded_ip_network_count
+                                     : &cert->permitted_ip_network_count;
+            if (append_ip_network(networks, count, value, value_len) != 0)
+                return -1;
+        }
+    }
+    return 0;
+}
+
+static int parse_name_constraints(neverc_x509_cert_t *cert,
+                                  const uint8_t *data, size_t len) {
+    asn1_reader_t wrapper = {data, len, 0};
+    asn1_reader_t constraints;
+    if (asn1_enter_sequence(&wrapper, &constraints) != 0 ||
+        wrapper.pos != wrapper.len || constraints.len == 0)
+        return -1;
+
+    int saw_permitted = 0;
+    int saw_excluded = 0;
+    while (constraints.pos < constraints.len) {
+        uint8_t tag;
+        const uint8_t *value;
+        size_t value_len;
+        if (asn1_read_tlv(&constraints, &tag, &value, &value_len) != 0)
+            return -1;
+        asn1_reader_t trees = {value, value_len, 0};
+        if (tag == ASN1_TAG_CONTEXT_0) {
+            if (saw_permitted || saw_excluded)
+                return -1;
+            saw_permitted = 1;
+            if (parse_general_subtrees(&trees, cert, 0) != 0 ||
+                trees.pos != trees.len)
+                return -1;
+        } else if (tag == ASN1_TAG_CONTEXT_1) {
+            if (saw_excluded)
+                return -1;
+            saw_excluded = 1;
+            if (parse_general_subtrees(&trees, cert, 1) != 0 ||
+                trees.pos != trees.len)
+                return -1;
+        } else {
+            return -1;
+        }
+    }
+    if (!saw_permitted && !saw_excluded)
+        return -1;
+    cert->name_constraints_present = 1;
+    return 0;
+}
+
 static int parse_extensions(neverc_x509_cert_t *cert,
                             const uint8_t *data, size_t len) {
     asn1_reader_t wrapper = {data, len, 0};
@@ -494,6 +793,7 @@ static int parse_extensions(neverc_x509_cert_t *cert,
     int saw_subject_alt_name = 0;
     int saw_key_usage = 0;
     int saw_ext_key_usage = 0;
+    int saw_name_constraints = 0;
     while (extensions.pos < extensions.len) {
         asn1_reader_t extension;
         if (asn1_enter_sequence(&extensions, &extension) < 0)
@@ -555,6 +855,13 @@ static int parse_extensions(neverc_x509_cert_t *cert,
                                     contents_len) != 0)
                 return -1;
             saw_ext_key_usage = 1;
+        } else if (oid_equals(oid, oid_len, OID_NAME_CONSTRAINTS,
+                              sizeof(OID_NAME_CONSTRAINTS))) {
+            if (saw_name_constraints ||
+                parse_name_constraints(cert, contents,
+                                       contents_len) != 0)
+                return -1;
+            saw_name_constraints = 1;
         } else {
             handled = 0;
         }
@@ -931,6 +1238,23 @@ void neverc_x509_cert_free(neverc_x509_cert_t *cert) {
     free(cert->ip_addresses);
     cert->ip_addresses = NULL;
     cert->ip_address_count = 0;
+    for (size_t i = 0; i < cert->permitted_dns_name_count; ++i)
+        free(cert->permitted_dns_names[i]);
+    free(cert->permitted_dns_names);
+    cert->permitted_dns_names = NULL;
+    cert->permitted_dns_name_count = 0;
+    for (size_t i = 0; i < cert->excluded_dns_name_count; ++i)
+        free(cert->excluded_dns_names[i]);
+    free(cert->excluded_dns_names);
+    cert->excluded_dns_names = NULL;
+    cert->excluded_dns_name_count = 0;
+    free(cert->permitted_ip_networks);
+    cert->permitted_ip_networks = NULL;
+    cert->permitted_ip_network_count = 0;
+    free(cert->excluded_ip_networks);
+    cert->excluded_ip_networks = NULL;
+    cert->excluded_ip_network_count = 0;
+    cert->name_constraints_present = 0;
     cert->raw_tbs = NULL;
     cert->raw_tbs_len = 0;
     cert->signature = NULL;

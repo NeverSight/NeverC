@@ -386,5 +386,6 @@ int main(void) {
     test_time_threshold_loss_expires_at_deadline();
 
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

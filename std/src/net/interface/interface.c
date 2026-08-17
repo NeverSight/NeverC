@@ -40,6 +40,34 @@ static void format_mac(const unsigned char *hw, int hwlen,
     }
 }
 
+/* Link-local unicast/multicast and any address with a kernel scope must
+ * keep a zone so the result can be dialed (Go net.Interface.Addrs). */
+static int ipv6_addr_needs_zone(const unsigned char *bytes, unsigned scope_id) {
+    if (scope_id) return 1;
+    if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) return 1;
+    /* Interface-local (ff01) and link-local (ff02) multicast need a zone. */
+    if (bytes[0] == 0xff &&
+        ((bytes[1] & 0x0f) == 0x01 || (bytes[1] & 0x0f) == 0x02))
+        return 1;
+    return 0;
+}
+
+static void append_ipv6_zone(char *buf, size_t buflen, unsigned scope_id,
+                             const char *ifname) {
+    if (!buf[0]) return;
+    size_t used = strlen(buf);
+    if (ifname && ifname[0]) {
+        int n = snprintf(buf + used, buflen - used, "%%%s", ifname);
+        if (n > 0 && (size_t)n < buflen - used) return;
+        buf[used] = '\0';
+    }
+    if (scope_id) {
+        int n = snprintf(buf + used, buflen - used, "%%%u", scope_id);
+        if (n > 0 && (size_t)n < buflen - used) return;
+        buf[used] = '\0';
+    }
+}
+
 #ifdef _WIN32
 
 int neverc_net_interfaces(neverc_net_interface_list_t *out) {
@@ -79,8 +107,17 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
             format_mac(a->PhysicalAddress, (int)a->PhysicalAddressLength,
                         iface->hw_addr, sizeof(iface->hw_addr));
 
-        if (a->OperStatus == IfOperStatusUp) iface->flags |= NEVERC_NET_FLAG_UP;
-        if (a->IfType == IF_TYPE_SOFTWARE_LOOPBACK) iface->flags |= NEVERC_NET_FLAG_LOOPBACK;
+        if (a->OperStatus == IfOperStatusUp) {
+            iface->flags |= NEVERC_NET_FLAG_UP | NEVERC_NET_FLAG_RUNNING;
+        }
+        if (a->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
+            iface->flags |= NEVERC_NET_FLAG_LOOPBACK;
+        if (a->IfType == IF_TYPE_PPP || a->IfType == IF_TYPE_SLIP ||
+            a->IfType == IF_TYPE_TUNNEL)
+            iface->flags |= NEVERC_NET_FLAG_POINTTOPOINT;
+        if (a->IfType == IF_TYPE_ETHERNET_CSMACD ||
+            a->IfType == IF_TYPE_IEEE80211)
+            iface->flags |= NEVERC_NET_FLAG_BROADCAST;
         if (a->Flags & IP_ADAPTER_NO_MULTICAST) { /* nothing */ }
         else iface->flags |= NEVERC_NET_FLAG_MULTICAST;
 
@@ -97,11 +134,20 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
             } else if (sa->sa_family == AF_INET6) {
                 struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)sa;
                 inet_ntop(AF_INET6, &in6->sin6_addr, buf, sizeof(buf));
+                unsigned scope = in6->sin6_scope_id;
+                if (!scope)
+                    scope = a->Ipv6IfIndex ? a->Ipv6IfIndex : a->IfIndex;
+                unsigned char raw[16];
+                memcpy(raw, &in6->sin6_addr, sizeof(raw));
+                if (ipv6_addr_needs_zone(raw, scope))
+                    /* Numeric zone: FriendlyName can contain spaces. */
+                    append_ipv6_zone(buf, sizeof(buf), scope, NULL);
                 iface->addrs[iface->naddrs].prefix_len =
                     (int)ua->OnLinkPrefixLength;
             }
             if (buf[0]) {
                 strncpy(iface->addrs[iface->naddrs].addr, buf, 63);
+                iface->addrs[iface->naddrs].addr[63] = '\0';
                 iface->naddrs++;
             }
         }
@@ -192,9 +238,12 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
         if (ifa->ifa_addr->sa_family == AF_INET &&
             iface->naddrs < NEVERC_NET_MAX_IF_ADDRS) {
             struct sockaddr_in *in = (struct sockaddr_in *)ifa->ifa_addr;
-            char buf[64];
-            inet_ntop(AF_INET, &in->sin_addr, buf, sizeof(buf));
+            char buf[64] = {0};
+            if (!inet_ntop(AF_INET, &in->sin_addr, buf, sizeof(buf)) ||
+                !buf[0])
+                continue;
             strncpy(iface->addrs[iface->naddrs].addr, buf, 63);
+            iface->addrs[iface->naddrs].addr[63] = '\0';
 
             /* Calculate prefix from netmask */
             if (ifa->ifa_netmask && ifa->ifa_netmask->sa_family == AF_INET) {
@@ -210,9 +259,17 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
         } else if (ifa->ifa_addr->sa_family == AF_INET6 &&
                    iface->naddrs < NEVERC_NET_MAX_IF_ADDRS) {
             struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)ifa->ifa_addr;
-            char buf[64];
-            inet_ntop(AF_INET6, &in6->sin6_addr, buf, sizeof(buf));
+            char buf[64] = {0};
+            if (!inet_ntop(AF_INET6, &in6->sin6_addr, buf, sizeof(buf)) ||
+                !buf[0])
+                continue;
+            unsigned char raw[16];
+            memcpy(raw, &in6->sin6_addr, sizeof(raw));
+            if (ipv6_addr_needs_zone(raw, in6->sin6_scope_id))
+                append_ipv6_zone(buf, sizeof(buf), in6->sin6_scope_id,
+                                 iface->name);
             strncpy(iface->addrs[iface->naddrs].addr, buf, 63);
+            iface->addrs[iface->naddrs].addr[63] = '\0';
 
             if (ifa->ifa_netmask && ifa->ifa_netmask->sa_family == AF_INET6) {
                 struct sockaddr_in6 *nm6 =
@@ -239,7 +296,7 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
 
 int neverc_net_interface_by_name(const char *name,
                                   neverc_net_interface_t *out) {
-    if (!name || !out) return -1;
+    if (!name || !name[0] || !out) return -1;
 
     neverc_net_interface_list_t list;
     if (neverc_net_interfaces(&list) != 0) return -1;
@@ -254,7 +311,7 @@ int neverc_net_interface_by_name(const char *name,
 }
 
 int neverc_net_interface_by_index(int index, neverc_net_interface_t *out) {
-    if (!out) return -1;
+    if (!out || index <= 0) return -1;
 
     neverc_net_interface_list_t list;
     if (neverc_net_interfaces(&list) != 0) return -1;

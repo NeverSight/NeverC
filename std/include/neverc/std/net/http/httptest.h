@@ -54,6 +54,10 @@ neverc_httptest_recorder_t *neverc_httptest_new_recorder(void);
 neverc_http_response_writer_t *neverc_httptest_recorder_writer(
     neverc_httptest_recorder_t *rec);
 
+/* Snapshot status, body, headers, and writer-managed Content-Length
+ * from the recorder writer. Header lookups flush automatically. */
+void neverc_httptest_recorder_flush(neverc_httptest_recorder_t *rec);
+
 /* Get a response header value from the recorder. */
 const char *neverc_httptest_recorder_header(
     neverc_httptest_recorder_t *rec, const char *name);

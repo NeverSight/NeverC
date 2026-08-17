@@ -9,10 +9,10 @@ extern "C" {
 #endif
 
 typedef struct {
-    char uid[64];
-    char gid[64];
-    char username[256];
-    char name[256];
+    char uid[256];
+    char gid[256];
+    char username[260];
+    char name[260];
     char home_dir[1024];
 } neverc_user_t;
 

@@ -183,6 +183,117 @@ int neverc_filepath_isabs(const char *path) {
 #endif
 }
 
+#ifdef _WIN32
+static int reserved_device_name(const char *name, size_t n) {
+    char base[16];
+    size_t i, blen = 0;
+    for (i = 0; i < n && blen < sizeof(base) - 1; i++) {
+        if (name[i] == '.' || name[i] == ':')
+            break;
+        base[blen++] = ascii_upper(name[i]);
+    }
+    while (blen > 0 && base[blen - 1] == ' ')
+        blen--;
+    base[blen] = '\0';
+    if (blen == 3 &&
+        (memcmp(base, "CON", 3) == 0 || memcmp(base, "PRN", 3) == 0 ||
+         memcmp(base, "AUX", 3) == 0 || memcmp(base, "NUL", 3) == 0))
+        return 1;
+    if (blen == 4 &&
+        (memcmp(base, "COM", 3) == 0 || memcmp(base, "LPT", 3) == 0) &&
+        base[3] >= '1' && base[3] <= '9')
+        return 1;
+    if (blen == 6 && memcmp(base, "CONIN$", 6) == 0)
+        return 1;
+    if (blen == 7 && memcmp(base, "CONOUT$", 7) == 0)
+        return 1;
+    return 0;
+}
+#endif
+
+int neverc_filepath_is_local(const char *path) {
+    if (!path || *path == '\0')
+        return 0;
+#ifdef _WIN32
+    if (is_sep(path[0]))
+        return 0;
+    {
+        const char *c;
+        for (c = path; *c; c++) {
+            if (*c == ':')
+                return 0;
+        }
+    }
+#endif
+    if (neverc_filepath_isabs(path))
+        return 0;
+
+    int has_dots = 0;
+#ifdef _WIN32
+    int reserved = 0;
+#endif
+    const char *p = path;
+    while (*p) {
+        const char *start = p;
+        while (*p && !is_sep(*p))
+            p++;
+        size_t n = (size_t)(p - start);
+#ifdef _WIN32
+        if (reserved_device_name(start, n))
+            reserved = 1;
+#endif
+        if ((n == 1 && start[0] == '.') ||
+            (n == 2 && start[0] == '.' && start[1] == '.'))
+            has_dots = 1;
+        if (*p)
+            p++;
+    }
+#ifdef _WIN32
+    if (reserved)
+        return 0;
+#endif
+    if (!has_dots)
+        return 1;
+
+    size_t cap = strlen(path) + 8;
+    char *buf = (char *)malloc(cap);
+    if (!buf)
+        return 0;
+    int ok = 0;
+    if (neverc_filepath_clean(path, buf, cap) == buf) {
+#ifdef _WIN32
+        if (strcmp(buf, "..") != 0 && strncmp(buf, "..\\", 3) != 0)
+            ok = 1;
+#else
+        if (strcmp(buf, "..") != 0 && strncmp(buf, "../", 3) != 0)
+            ok = 1;
+#endif
+    }
+    free(buf);
+    return ok;
+}
+
+const char *neverc_filepath_volume_name(const char *path, char *buf, size_t buf_len) {
+    if (!buf || buf_len == 0)
+        return NULL;
+    if (!path)
+        path = "";
+    size_t vol = volume_name_len(path);
+    if (vol + 1 > buf_len)
+        return NULL;
+#ifdef _WIN32
+    {
+        size_t i;
+        for (i = 0; i < vol; i++)
+            buf[i] = (path[i] == '/') ? '\\' : path[i];
+    }
+#else
+    (void)path;
+#endif
+    buf[vol] = '\0';
+    return buf;
+}
+
 const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
     if (!buf || buf_len == 0) return NULL;
     if (!path || *path == '\0') {

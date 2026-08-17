@@ -181,7 +181,7 @@ neverc_cmplx_t neverc_cmplx_cos(neverc_cmplx_t z) {
 neverc_cmplx_t neverc_cmplx_tan(neverc_cmplx_t z) {
     double re = RE(z), im = IM(z);
     /* Go math/cmplx.Tan: Inf imag saturates to ±i; 0+NaN i is unchanged.
-     * sin/cos overflow to Inf/Inf = NaN otherwise. */
+     * Double-angle form avoids Inf/Inf = NaN from the sin/cos ratio. */
     if (neverc_math_isinf(im, 0)) {
         if (neverc_math_isinf(re, 0) || neverc_math_isnan(re))
             return MK(neverc_math_copysign(0.0, re), neverc_math_copysign(1.0, im));
@@ -191,15 +191,10 @@ neverc_cmplx_t neverc_cmplx_tan(neverc_cmplx_t z) {
     if (re == 0.0 && neverc_math_isnan(im))
         return z;
 
-    neverc_cmplx_t sz = neverc_cmplx_sin(z);
-    neverc_cmplx_t cz = neverc_cmplx_cos(z);
-    double denom2 = RE(cz) * RE(cz) + IM(cz) * IM(cz);
-    if (denom2 == 0.0)
+    double d = neverc_math_cos(2.0 * re) + neverc_math_cosh(2.0 * im);
+    if (d == 0.0)
         return neverc_cmplx_inf_val();
-    return MK(
-        (RE(sz) * RE(cz) + IM(sz) * IM(cz)) / denom2,
-        (IM(sz) * RE(cz) - RE(sz) * IM(cz)) / denom2
-    );
+    return MK(neverc_math_sin(2.0 * re) / d, neverc_math_sinh(2.0 * im) / d);
 }
 
 /* ===== Hyperbolic ===== */
@@ -232,15 +227,10 @@ neverc_cmplx_t neverc_cmplx_tanh(neverc_cmplx_t z) {
     if (im == 0.0 && neverc_math_isnan(re))
         return z;
 
-    neverc_cmplx_t sh = neverc_cmplx_sinh(z);
-    neverc_cmplx_t ch = neverc_cmplx_cosh(z);
-    double denom2 = RE(ch) * RE(ch) + IM(ch) * IM(ch);
-    if (denom2 == 0.0)
+    double d = neverc_math_cosh(2.0 * re) + neverc_math_cos(2.0 * im);
+    if (d == 0.0)
         return neverc_cmplx_inf_val();
-    return MK(
-        (RE(sh) * RE(ch) + IM(sh) * IM(ch)) / denom2,
-        (IM(sh) * RE(ch) - RE(sh) * IM(ch)) / denom2
-    );
+    return MK(neverc_math_sinh(2.0 * re) / d, neverc_math_sin(2.0 * im) / d);
 }
 
 /* ===== Inverse Trigonometric ===== */
@@ -314,4 +304,60 @@ neverc_cmplx_t neverc_cmplx_atan(neverc_cmplx_t z) {
     );
     neverc_cmplx_t w = neverc_cmplx_log(quot);
     return MK(0.5 * IM(w), -0.5 * RE(w));
+}
+
+neverc_cmplx_t neverc_cmplx_asinh(neverc_cmplx_t z) {
+    /* asinh(z) = log(z + sqrt(1 + z*z)); special cases from Go math/cmplx.Asinh. */
+    double a = RE(z), b = IM(z);
+    if (b == 0.0 && neverc_math_abs(a) <= 1.0)
+        return MK(neverc_math_asinh(a), b);
+    if (a == 0.0 && neverc_math_abs(b) <= 1.0)
+        return MK(a, neverc_math_asin(b));
+    if (neverc_math_isinf(a, 0)) {
+        if (neverc_math_isinf(b, 0))
+            return MK(a, neverc_math_copysign(NEVERC_MATH_PI / 4.0, b));
+        if (neverc_math_isnan(b))
+            return z;
+        return MK(a, neverc_math_copysign(0.0, b));
+    }
+    if (neverc_math_isnan(a)) {
+        if (b == 0.0)
+            return z;
+        if (neverc_math_isinf(b, 0))
+            return MK(b, a);
+        return neverc_cmplx_nan_val();
+    }
+    if (neverc_math_isinf(b, 0))
+        return MK(neverc_math_copysign(b, a),
+                  neverc_math_copysign(NEVERC_MATH_PI / 2.0, b));
+
+    neverc_cmplx_t z2 = MK(a * a - b * b, 2.0 * a * b);
+    neverc_cmplx_t one_plus_z2 = MK(1.0 + RE(z2), IM(z2));
+    neverc_cmplx_t sq = neverc_cmplx_sqrt(one_plus_z2);
+    return neverc_cmplx_log(MK(a + RE(sq), b + IM(sq)));
+}
+
+neverc_cmplx_t neverc_cmplx_acosh(neverc_cmplx_t z) {
+    /* acosh(z) = ±i * acos(z) with real part ≥ 0. Go math/cmplx.Acosh. */
+    double a = RE(z), b = IM(z);
+    if (a == 0.0 && b == 0.0)
+        return MK(0.0, neverc_math_copysign(NEVERC_MATH_PI / 2.0, b));
+    neverc_cmplx_t w = neverc_cmplx_acos(z);
+    if (IM(w) <= 0.0)
+        return MK(-IM(w), RE(w));
+    return MK(IM(w), -RE(w));
+}
+
+neverc_cmplx_t neverc_cmplx_atanh(neverc_cmplx_t z) {
+    /* atanh(z) = -i * atan(i*z) */
+    neverc_cmplx_t w = neverc_cmplx_atan(MK(-IM(z), RE(z)));
+    return MK(IM(w), -RE(w));
+}
+
+neverc_cmplx_t neverc_cmplx_cot(neverc_cmplx_t z) {
+    /* Go math/cmplx.Cot: (sin 2x - i sinh 2y) / (cosh 2y - cos 2x) */
+    double d = neverc_math_cosh(2.0 * IM(z)) - neverc_math_cos(2.0 * RE(z));
+    if (d == 0.0)
+        return neverc_cmplx_inf_val();
+    return MK(neverc_math_sin(2.0 * RE(z)) / d, -neverc_math_sinh(2.0 * IM(z)) / d);
 }

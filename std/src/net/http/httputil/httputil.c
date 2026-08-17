@@ -1684,7 +1684,10 @@ void neverc_httputil_proxy_free(neverc_httputil_reverse_proxy_t *rp) {
 
 char *neverc_httputil_dump_request(const neverc_http_request_t *req,
                                     int include_body) {
-    if (!req) return NULL;
+    if (!req || req->nheaders < 0 ||
+        (req->nheaders > 0 && !req->raw_headers) ||
+        (req->body_len > 0 && !req->body))
+        return NULL;
 
     size_t cap = 256;
     size_t n = 0;
@@ -1718,6 +1721,7 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
          httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0))
         goto fail;
 
+    int saw_content_length = 0;
     if (req->raw_headers) {
         const char *p = req->raw_headers;
         for (int i = 0; i < req->nheaders; i++) {
@@ -1728,7 +1732,9 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
             while (*p) p++;
             p++;
 
-            if (strcasecmp(hname, "Host") == 0) continue;
+            if (req->host && strcasecmp(hname, "Host") == 0) continue;
+            if (strcasecmp(hname, "Content-Length") == 0)
+                saw_content_length = 1;
             if (httputil_dump_append_string(
                     &buf, &n, &cap, hname) != 0 ||
                 httputil_dump_append_string(
@@ -1741,10 +1747,23 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
         }
     }
 
+    if (include_body && req->body_len > 0 && !saw_content_length) {
+        char content_length[64];
+        int content_length_size = snprintf(
+            content_length, sizeof(content_length),
+            "Content-Length: %zu\r\n", req->body_len);
+        if (content_length_size < 0 ||
+            (size_t)content_length_size >= sizeof(content_length) ||
+            httputil_dump_append(
+                &buf, &n, &cap, content_length,
+                (size_t)content_length_size) != 0)
+            goto fail;
+    }
+
     if (httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0)
         goto fail;
 
-    if (include_body && req->body && req->body_len > 0) {
+    if (include_body && req->body_len > 0) {
         if (httputil_dump_append(
                 &buf, &n, &cap, req->body, req->body_len) != 0)
             goto fail;

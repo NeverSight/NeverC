@@ -114,8 +114,9 @@ static void test_decode(void) {
     printf("[decode]\n");
     uint8_t dst[64];
 
-    int n = neverc_hex_decode(dst, "", 0);
+    int     n = neverc_hex_decode(dst, "", 0);
     check_int("decode(empty)", n, 0);
+    check_int("decode(NULL,0)", neverc_hex_decode(NULL, NULL, 0), 0);
 
     n = neverc_hex_decode(dst, "ab", 2);
     check_int("decode(ab).len", n, 1);

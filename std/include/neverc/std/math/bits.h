@@ -7,6 +7,9 @@
 extern "C" {
 #endif
 
+/* Go math/bits.UintSize — 32 or 64 depending on unsigned int width. */
+#define NEVERC_BITS_UINT_SIZE ((int)(sizeof(unsigned int) * 8))
+
 /* --- Leading Zeros (CLZ) --- */
 int neverc_bits_leading_zeros(unsigned int x);
 int neverc_bits_leading_zeros8(uint8_t x);

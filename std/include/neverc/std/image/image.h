@@ -24,6 +24,7 @@ typedef struct {
 } neverc_image_gray_t;
 
 neverc_point_t neverc_pt(int x, int y);
+/* Add/sub/mul saturate at INT_MAX/INT_MIN (INT_MIN * -1 -> INT_MAX). */
 neverc_point_t neverc_point_add(neverc_point_t p, neverc_point_t q);
 neverc_point_t neverc_point_sub(neverc_point_t p, neverc_point_t q);
 neverc_point_t neverc_point_mul(neverc_point_t p, int k);
@@ -38,8 +39,11 @@ neverc_rect_t neverc_rect(int x0, int y0, int x1, int y1);
 /* Saturates at INT_MAX/INT_MIN if max-min does not fit in int. */
 int           neverc_rect_dx(neverc_rect_t r);
 int           neverc_rect_dy(neverc_rect_t r);
+/* Corner translation saturates at INT_MAX/INT_MIN. */
 neverc_rect_t neverc_rect_add(neverc_rect_t r, neverc_point_t p);
 neverc_rect_t neverc_rect_sub(neverc_rect_t r, neverc_point_t p);
+/* n > 0 shrinks; n < 0 expands. Overflowing coordinates saturate;
+ * a collapsed result is the empty rect {{0,0},{0,0}}. */
 neverc_rect_t neverc_rect_inset(neverc_rect_t r, int n);
 neverc_rect_t neverc_rect_intersect(neverc_rect_t r, neverc_rect_t s);
 neverc_rect_t neverc_rect_union(neverc_rect_t r, neverc_rect_t s);

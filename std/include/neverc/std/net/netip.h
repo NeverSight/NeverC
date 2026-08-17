@@ -33,7 +33,9 @@ int  neverc_netip_addr_from16(const uint8_t addr[16], neverc_netip_addr_t *out);
 int  neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out);
 int  neverc_netip_parse_prefix(const char *s, neverc_netip_prefix_t *out);
 
-/* Format to string (returns length written, -1 on error) */
+/* Format to string with snprintf length semantics: full length excluding NUL
+ * even when truncated. A zero capacity may use a NULL buffer. Returns -1
+ * on invalid arguments. */
 int  neverc_netip_addr_string(const neverc_netip_addr_t *addr, char *buf, size_t cap);
 int  neverc_netip_addrport_string(const neverc_netip_addrport_t *ap, char *buf, size_t cap);
 int  neverc_netip_prefix_string(const neverc_netip_prefix_t *pfx, char *buf, size_t cap);
@@ -42,6 +44,11 @@ int  neverc_netip_prefix_string(const neverc_netip_prefix_t *pfx, char *buf, siz
 int  neverc_netip_addr_is_valid(const neverc_netip_addr_t *addr);
 int  neverc_netip_addr_is4(const neverc_netip_addr_t *addr);
 int  neverc_netip_addr_is6(const neverc_netip_addr_t *addr);
+/* IPv4-mapped IPv6 (::ffff:0:0/96). Unmap copies addr and, when mapped,
+ * returns the IPv4 form with the zone cleared. */
+int  neverc_netip_addr_is4in6(const neverc_netip_addr_t *addr);
+int  neverc_netip_addr_unmap(const neverc_netip_addr_t *addr,
+                             neverc_netip_addr_t *out);
 int  neverc_netip_addr_is_loopback(const neverc_netip_addr_t *addr);
 int  neverc_netip_addr_is_multicast(const neverc_netip_addr_t *addr);
 int  neverc_netip_addr_is_private(const neverc_netip_addr_t *addr);

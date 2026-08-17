@@ -84,6 +84,7 @@ static void put_u32be(uint8_t *p, uint32_t v) {
 }
 
 int neverc_aes_init(neverc_aes_ctx_t *ctx, const uint8_t *key, int key_len) {
+    if (!ctx || !key) return -1;
     int nk, nr;
     switch (key_len) {
     case 16: nk = 4; nr = 10; break;

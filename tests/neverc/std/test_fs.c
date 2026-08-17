@@ -76,6 +76,16 @@ static void test_stat(void) {
 
     rc = neverc_fs_stat("/nonexistent_path_12345", &info);
     check("stat_nonexistent", rc != 0);
+    rc = neverc_fs_lstat("/nonexistent_path_12345", &info);
+    check("lstat_nonexistent", rc != 0);
+
+    {
+        neverc_fs_file_info_t linfo;
+        rc = neverc_fs_lstat(tmpdir, &linfo);
+        check("lstat_tmp", rc == 0);
+        check("lstat_tmp_is_dir", linfo.is_dir == 1);
+        check("lstat_tmp_name_match", strcmp(linfo.name, tmp_name) == 0);
+    }
 
     {
         char slashed[1100];
@@ -176,6 +186,36 @@ static void test_glob(void) {
     neverc_fs_free_matches(matches, count);
 
     {
+        char class_a[2048], class_b[2048];
+#if defined(_WIN32)
+        snprintf(class_a, sizeof(class_a), "%s\\neverc_glob_class_a.txt", tmpdir);
+        snprintf(class_b, sizeof(class_b), "%s\\neverc_glob_class_b.txt", tmpdir);
+#else
+        snprintf(class_a, sizeof(class_a), "%s/neverc_glob_class_a.txt", tmpdir);
+        snprintf(class_b, sizeof(class_b), "%s/neverc_glob_class_b.txt", tmpdir);
+#endif
+        FILE *fa = fopen(class_a, "w");
+        if (fa) { fprintf(fa, "a"); fclose(fa); }
+        FILE *fb = fopen(class_b, "w");
+        if (fb) { fprintf(fb, "b"); fclose(fb); }
+        matches = NULL;
+        count = 0;
+        rc = neverc_fs_glob(tmpdir, "neverc_glob_class_[ab].txt",
+                            &matches, &count);
+        check("glob_class_ok", rc == 0);
+        check("glob_class_found", count >= 2);
+        neverc_fs_free_matches(matches, count);
+        remove(class_a);
+        remove(class_b);
+    }
+
+    matches = (char **)1;
+    count = 99;
+    rc = neverc_fs_glob(tmpdir, "neverc_glob_[", &matches, &count);
+    check("glob_bad_pattern", rc != 0);
+    check("glob_bad_clears", matches == NULL && count == 0);
+
+    {
         char slashed[1100];
         size_t tlen = strlen(tmpdir);
         if (tlen > 0 && tlen + 2 < sizeof(slashed)) {
@@ -201,11 +241,47 @@ static void test_glob(void) {
 static int walk_count;
 static int walk_saw_secret;
 static int walk_root_is_dir;
+static int walk_saw_child;
+static int walk_skip_hidden;
+static int walk_skip_after;
+
 static int walk_cb(const char *path, const neverc_fs_dir_entry_t *entry, void *ud) {
     (void)path; (void)ud;
     if (walk_count == 0)
         walk_root_is_dir = entry ? entry->is_dir : -1;
     walk_count++;
+    return 0;
+}
+
+static int walk_err_cb(const char *path, const neverc_fs_dir_entry_t *entry, void *ud) {
+    (void)path; (void)entry; (void)ud;
+    return -1;
+}
+
+static int walk_skip_dir_cb(const char *path, const neverc_fs_dir_entry_t *entry, void *ud) {
+    (void)ud;
+    walk_count++;
+    if (path && strstr(path, "hidden.txt")) walk_skip_hidden = 1;
+    if (path && strstr(path, "after.txt")) walk_skip_after = 1;
+    if (entry && strcmp(entry->name, "skipme") == 0)
+        return NEVERC_FS_SKIP_DIR;
+    return 0;
+}
+
+static int walk_skip_all_cb(const char *path, const neverc_fs_dir_entry_t *entry, void *ud) {
+    (void)ud;
+    walk_count++;
+    if (path && strstr(path, "b.txt")) walk_saw_child = 1;
+    if (entry && strcmp(entry->name, "sub") == 0)
+        return NEVERC_FS_SKIP_ALL;
+    return 0;
+}
+
+static int walk_child_cb(const char *path, const neverc_fs_dir_entry_t *entry, void *ud) {
+    (void)entry; (void)ud;
+    walk_count++;
+    if (path && (strstr(path, "a.txt") || strstr(path, "b.txt")))
+        walk_saw_child = 1;
     return 0;
 }
 
@@ -259,6 +335,49 @@ static void test_walk_dir(void) {
     check("walk_missing",
           neverc_fs_walk_dir("/nonexistent_path_12345", walk_cb, NULL) != 0);
 
+    check("walk_err", neverc_fs_walk_dir(walkdir, walk_err_cb, NULL) == -1);
+
+    {
+        char skipdir[2048], hidden[2048], after[2048];
+#if defined(_WIN32)
+        snprintf(skipdir, sizeof(skipdir), "%s\\skipme", walkdir);
+        snprintf(hidden, sizeof(hidden), "%s\\hidden.txt", skipdir);
+        snprintf(after, sizeof(after), "%s\\after.txt", walkdir);
+        CreateDirectoryA(skipdir, NULL);
+#else
+        snprintf(skipdir, sizeof(skipdir), "%s/skipme", walkdir);
+        snprintf(hidden, sizeof(hidden), "%s/hidden.txt", skipdir);
+        snprintf(after, sizeof(after), "%s/after.txt", walkdir);
+        mkdir(skipdir, 0755);
+#endif
+        FILE *fh = fopen(hidden, "w");
+        if (fh) { fprintf(fh, "h"); fclose(fh); }
+        FILE *faf = fopen(after, "w");
+        if (faf) { fprintf(faf, "a"); fclose(faf); }
+
+        walk_count = 0;
+        walk_skip_hidden = 0;
+        walk_skip_after = 0;
+        rc = neverc_fs_walk_dir(walkdir, walk_skip_dir_cb, NULL);
+        check("walk_skip_dir_ok", rc == 0);
+        check("walk_skip_dir_hides_child", walk_skip_hidden == 0);
+        check("walk_skip_dir_keeps_sibling", walk_skip_after == 1);
+
+        walk_count = 0;
+        walk_saw_child = 0;
+        rc = neverc_fs_walk_dir(walkdir, walk_skip_all_cb, NULL);
+        check("walk_skip_all_ok", rc == 0);
+        check("walk_skip_all_no_nested", walk_saw_child == 0);
+
+        remove(hidden);
+        remove(after);
+#if defined(_WIN32)
+        RemoveDirectoryA(skipdir);
+#else
+        rmdir(skipdir);
+#endif
+    }
+
     remove(file_b);
     remove(file_a);
 #if defined(_WIN32)
@@ -290,6 +409,59 @@ static void test_walk_dir(void) {
         rmdir(outside);
         rmdir(walkdir);
     }
+    {
+        char target[2048], linkroot[2048];
+        snprintf(walkdir, sizeof(walkdir), "%s/neverc_walk_real", tmpdir);
+        snprintf(subdir, sizeof(subdir), "%s/sub", walkdir);
+        snprintf(file_a, sizeof(file_a), "%s/a.txt", walkdir);
+        snprintf(file_b, sizeof(file_b), "%s/b.txt", subdir);
+        snprintf(linkroot, sizeof(linkroot), "%s/neverc_walk_rootlink", tmpdir);
+        mkdir(walkdir, 0755);
+        mkdir(subdir, 0755);
+        FILE *fa2 = fopen(file_a, "w");
+        if (fa2) { fprintf(fa2, "a"); fclose(fa2); }
+        FILE *fb2 = fopen(file_b, "w");
+        if (fb2) { fprintf(fb2, "b"); fclose(fb2); }
+        symlink(walkdir, linkroot);
+
+        neverc_fs_file_info_t sinfo, linfo;
+        check("stat_follows_link", neverc_fs_stat(linkroot, &sinfo) == 0);
+        check("stat_link_is_dir", sinfo.is_dir == 1);
+        check("stat_link_not_mode_link", (sinfo.mode & NEVERC_FS_MODE_LINK) == 0);
+        check("lstat_is_link", neverc_fs_lstat(linkroot, &linfo) == 0);
+        check("lstat_mode_link", (linfo.mode & NEVERC_FS_MODE_LINK) != 0);
+        check("lstat_not_dir", linfo.is_dir == 0);
+
+        walk_count = 0;
+        walk_saw_child = 0;
+        rc = neverc_fs_walk_dir(linkroot, walk_child_cb, NULL);
+        check("walk_root_symlink_ok", rc == 0);
+        check("walk_root_symlink_once", walk_count == 1);
+        check("walk_root_symlink_no_follow", walk_saw_child == 0);
+
+        snprintf(target, sizeof(target), "%s/neverc_fs_setuid", tmpdir);
+        FILE *fu = fopen(target, "w");
+        if (fu) { fprintf(fu, "u"); fclose(fu); }
+        chmod(target, 04755);
+        check("setuid_stat", neverc_fs_stat(target, &sinfo) == 0);
+        check("setuid_bit", (sinfo.mode & NEVERC_FS_MODE_SETUID) != 0);
+        check("setuid_perm", (sinfo.mode & NEVERC_FS_PERM_MASK) == 0755);
+        remove(target);
+
+        snprintf(target, sizeof(target), "%s/neverc_fs_fifo", tmpdir);
+        unlink(target);
+        if (mkfifo(target, 0644) == 0) {
+            check("fifo_lstat", neverc_fs_lstat(target, &linfo) == 0);
+            check("fifo_mode", (linfo.mode & NEVERC_FS_MODE_PIPE) != 0);
+            unlink(target);
+        }
+
+        remove(file_b);
+        remove(file_a);
+        unlink(linkroot);
+        rmdir(subdir);
+        rmdir(walkdir);
+    }
 #endif
 }
 
@@ -301,5 +473,6 @@ int main(void) {
     test_glob();
     test_walk_dir();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_passed == tests_run) puts("passed");
     return tests_passed == tests_run ? 0 : 1;
 }

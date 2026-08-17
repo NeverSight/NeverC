@@ -78,6 +78,7 @@ static void md5_block(uint32_t state[4], const uint8_t block[64]) {
 }
 
 void neverc_md5_init(neverc_md5_ctx *ctx) {
+    if (!ctx) return;
     ctx->state[0] = 0x67452301;
     ctx->state[1] = 0xefcdab89;
     ctx->state[2] = 0x98badcfe;
@@ -86,7 +87,8 @@ void neverc_md5_init(neverc_md5_ctx *ctx) {
 }
 
 void neverc_md5_update(neverc_md5_ctx *ctx, const uint8_t *data, size_t len) {
-    if (len == 0) return;
+    if (!ctx || len == 0) return;
+    if (!data) return;
     size_t buffered = (size_t)(ctx->count & 63);
     ctx->count += len;
 
@@ -111,6 +113,7 @@ void neverc_md5_update(neverc_md5_ctx *ctx, const uint8_t *data, size_t len) {
 }
 
 void neverc_md5_final(neverc_md5_ctx *ctx, uint8_t digest[16]) {
+    if (!ctx || !digest) return;
     uint64_t bits = ctx->count * 8;
     size_t buffered = (size_t)(ctx->count & 63);
 

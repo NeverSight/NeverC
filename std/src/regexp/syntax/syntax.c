@@ -1,5 +1,6 @@
 #include "neverc/std/regexp_syntax.h"
 #include <stdlib.h>
+#include <string.h>
 #include <limits.h>
 
 /* ======================================================================
@@ -296,6 +297,56 @@ static neverc_regexp_syntax_node_t *parse_escape(parser_t *p) {
     }
 }
 
+static int add_posix_class(parser_t *p, neverc_regexp_syntax_node_t *n,
+                           const char *name, int nlen) {
+    if (!name || nlen <= 0) return 0;
+#define NCI_SY_EQ(s) (nlen == (int)(sizeof(s) - 1) && \
+                      memcmp(name, s, (size_t)nlen) == 0)
+    if (NCI_SY_EQ("alnum"))
+        return add_rune(p, n, '0') && add_rune(p, n, '9') &&
+               add_rune(p, n, 'A') && add_rune(p, n, 'Z') &&
+               add_rune(p, n, 'a') && add_rune(p, n, 'z');
+    if (NCI_SY_EQ("alpha"))
+        return add_rune(p, n, 'A') && add_rune(p, n, 'Z') &&
+               add_rune(p, n, 'a') && add_rune(p, n, 'z');
+    if (NCI_SY_EQ("ascii"))
+        return add_rune(p, n, 0) && add_rune(p, n, 0x7F);
+    if (NCI_SY_EQ("blank"))
+        return add_rune(p, n, '\t') && add_rune(p, n, '\t') &&
+               add_rune(p, n, ' ') && add_rune(p, n, ' ');
+    if (NCI_SY_EQ("cntrl"))
+        return add_rune(p, n, 0) && add_rune(p, n, 0x1F) &&
+               add_rune(p, n, 0x7F) && add_rune(p, n, 0x7F);
+    if (NCI_SY_EQ("digit"))
+        return add_rune(p, n, '0') && add_rune(p, n, '9');
+    if (NCI_SY_EQ("graph"))
+        return add_rune(p, n, 0x21) && add_rune(p, n, 0x7E);
+    if (NCI_SY_EQ("lower"))
+        return add_rune(p, n, 'a') && add_rune(p, n, 'z');
+    if (NCI_SY_EQ("print"))
+        return add_rune(p, n, 0x20) && add_rune(p, n, 0x7E);
+    if (NCI_SY_EQ("punct")) {
+        static const char punct[] = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+        for (int i = 0; punct[i]; i++)
+            if (!add_rune(p, n, (unsigned char)punct[i]) ||
+                !add_rune(p, n, (unsigned char)punct[i]))
+                return 0;
+        return 1;
+    }
+    if (NCI_SY_EQ("space"))
+        return add_escape_class(p, n, 's');
+    if (NCI_SY_EQ("upper"))
+        return add_rune(p, n, 'A') && add_rune(p, n, 'Z');
+    if (NCI_SY_EQ("word"))
+        return add_escape_class(p, n, 'w');
+    if (NCI_SY_EQ("xdigit"))
+        return add_rune(p, n, '0') && add_rune(p, n, '9') &&
+               add_rune(p, n, 'A') && add_rune(p, n, 'F') &&
+               add_rune(p, n, 'a') && add_rune(p, n, 'f');
+#undef NCI_SY_EQ
+    return 0;
+}
+
 static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
     neverc_regexp_syntax_node_t *n = mk_node(p, NC_RE_OP_CHAR_CLASS);
     if (!n) return NULL;
@@ -308,6 +359,28 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
         int c = peek(p);
         if (c == ']' && !first) { next(p); return n; }
         first = 0;
+
+        if (c == '[' && p->pos + 1 < p->len && p->src[p->pos + 1] == ':') {
+            next(p); next(p);
+            int ns = p->pos;
+            while (p->pos < p->len &&
+                   !(peek(p) == ':' && p->pos + 1 < p->len &&
+                     p->src[p->pos + 1] == ']'))
+                next(p);
+            if (p->pos >= p->len) {
+                p->err = "invalid POSIX class";
+                neverc_regexp_syntax_free(n);
+                return NULL;
+            }
+            int nlen = p->pos - ns;
+            next(p); next(p);
+            if (!add_posix_class(p, n, p->src + ns, nlen)) {
+                if (!p->err) p->err = "invalid POSIX class";
+                neverc_regexp_syntax_free(n);
+                return NULL;
+            }
+            continue;
+        }
 
         if (c == '\\') {
             next(p);
@@ -326,6 +399,8 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
                     return NULL;
                 }
                 continue;
+            case 'a': c = '\a'; break;
+            case 'b': c = '\b'; break;
             case 'n': c = '\n'; break;
             case 't': c = '\t'; break;
             case 'r': c = '\r'; break;
@@ -359,7 +434,9 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
                         neverc_regexp_syntax_free(n);
                         return NULL;
                     }
-                } else if (hi == 'n') hi = '\n';
+                } else if (hi == 'a') hi = '\a';
+                else if (hi == 'b') hi = '\b';
+                else if (hi == 'n') hi = '\n';
                 else if (hi == 't') hi = '\t';
                 else if (hi == 'r') hi = '\r';
                 else if (hi == 'f') hi = '\f';
@@ -422,6 +499,18 @@ static neverc_regexp_syntax_node_t *parse_group(parser_t *p) {
         }
         int name_len = p->pos - name_start;
         p->pos++; /* skip > or ' */
+        if (name_len < 1) {
+            p->err = "invalid named capture";
+            goto done;
+        }
+        for (int i = 0; i < name_len; i++) {
+            unsigned char ch = (unsigned char)p->src[name_start + i];
+            if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+                  (ch >= '0' && ch <= '9') || ch == '_')) {
+                p->err = "invalid named capture";
+                goto done;
+            }
+        }
 
         neverc_regexp_syntax_node_t *cap = mk_node(p, NC_RE_OP_CAPTURE);
         if (!cap) goto done;
@@ -486,8 +575,15 @@ static neverc_regexp_syntax_node_t *parse_atom(parser_t *p) {
                            NC_RE_OP_ANY_CHAR : NC_RE_OP_ANY_CHAR_NOT_NL);
     case '^':
         next(p);
-        return mk_node(p, (p->flags & NC_RE_FLAG_MULTI_LINE) ?
-                           NC_RE_OP_BEGIN_LINE : NC_RE_OP_BEGIN_TEXT);
+        {
+            neverc_regexp_syntax_node_t *n = mk_node(p,
+                (p->flags & NC_RE_FLAG_MULTI_LINE) ?
+                    NC_RE_OP_BEGIN_LINE : NC_RE_OP_BEGIN_TEXT);
+            if (!n) return NULL;
+            if (!(p->flags & NC_RE_FLAG_MULTI_LINE))
+                n->flags |= NC_RE_FLAG_WAS_CARET;
+            return n;
+        }
     case '$':
         next(p);
         {
@@ -784,6 +880,34 @@ static void sb_putint(strbuf_t *sb, int v) {
     while (i > 0) sb_putc(sb, tmp[--i]);
 }
 
+static int is_meta(int c);
+
+static void sb_puthex(strbuf_t *sb, unsigned v) {
+    static const char hex[] = "0123456789abcdef";
+    char tmp[8];
+    int i = 0;
+    if (v == 0) { sb_putc(sb, '0'); return; }
+    while (v > 0 && i < 8) { tmp[i++] = hex[v & 15]; v >>= 4; }
+    while (i > 0) sb_putc(sb, tmp[--i]);
+}
+
+static void sb_putrune(strbuf_t *sb, int r, int in_class) {
+    if (r < 0) return;
+    if (r >= 32 && r < 127) {
+        if (in_class) {
+            if (r == ']' || r == '\\' || r == '-' || r == '^')
+                sb_putc(sb, '\\');
+        } else if (is_meta(r)) {
+            sb_putc(sb, '\\');
+        }
+        sb_putc(sb, (char)r);
+        return;
+    }
+    sb_puts(sb, "\\x{");
+    sb_puthex(sb, (unsigned)r);
+    sb_putc(sb, '}');
+}
+
 static char *sb_finish(strbuf_t *sb) {
     if (!sb_grow(sb, 0)) {
         free(sb->buf);
@@ -807,11 +931,8 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
     case NC_RE_OP_NO_MATCH: sb_puts(sb, "[^\\x00-\\x{10FFFF}]"); break;
     case NC_RE_OP_EMPTY_MATCH: break;
     case NC_RE_OP_LITERAL:
-        for (int i = 0; i < n->nrunes; i++) {
-            int r = n->runes[i];
-            if (is_meta(r)) sb_putc(sb, '\\');
-            sb_putc(sb, (char)r);
-        }
+        for (int i = 0; i < n->nrunes; i++)
+            sb_putrune(sb, n->runes[i], 0);
         break;
     case NC_RE_OP_CHAR_CLASS: {
         int negate = (n->flags & NC_RE_FLAG_FOLD_CASE) != 0;
@@ -820,13 +941,11 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
         for (int i = 0; i + 1 < n->nrunes; i += 2) {
             int lo = n->runes[i], hi = n->runes[i + 1];
             if (lo == hi) {
-                if (lo == ']' || lo == '\\' || lo == '-' || lo == '^')
-                    sb_putc(sb, '\\');
-                sb_putc(sb, (char)lo);
+                sb_putrune(sb, lo, 1);
             } else {
-                sb_putc(sb, (char)lo);
+                sb_putrune(sb, lo, 1);
                 sb_putc(sb, '-');
-                sb_putc(sb, (char)hi);
+                sb_putrune(sb, hi, 1);
             }
         }
         sb_putc(sb, ']');
@@ -836,7 +955,9 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
     case NC_RE_OP_ANY_CHAR: sb_puts(sb, "(?s:.)"); break;
     case NC_RE_OP_BEGIN_LINE: sb_putc(sb, '^'); break;
     case NC_RE_OP_END_LINE: sb_putc(sb, '$'); break;
-    case NC_RE_OP_BEGIN_TEXT: sb_puts(sb, "\\A"); break;
+    case NC_RE_OP_BEGIN_TEXT:
+        sb_puts(sb, (n->flags & NC_RE_FLAG_WAS_CARET) ? "^" : "\\A");
+        break;
     case NC_RE_OP_END_TEXT:
         sb_puts(sb, (n->flags & NC_RE_FLAG_WAS_DOLLAR) ? "$" : "\\z");
         break;
@@ -941,6 +1062,8 @@ int neverc_regexp_syntax_equal(const neverc_regexp_syntax_node_t *a,
             if (a->runes[i] != b->runes[i]) return 0;
         if ((a->flags & NC_RE_FLAG_FOLD_CASE) != (b->flags & NC_RE_FLAG_FOLD_CASE)) return 0;
         return 1;
+    case NC_RE_OP_BEGIN_TEXT:
+        return (a->flags & NC_RE_FLAG_WAS_CARET) == (b->flags & NC_RE_FLAG_WAS_CARET);
     case NC_RE_OP_END_TEXT:
         return (a->flags & NC_RE_FLAG_WAS_DOLLAR) == (b->flags & NC_RE_FLAG_WAS_DOLLAR);
     case NC_RE_OP_STAR: case NC_RE_OP_PLUS: case NC_RE_OP_QUEST:

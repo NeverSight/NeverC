@@ -71,10 +71,13 @@ int neverc_unicode_is_upper(uint32_t r) {
     /* Titlecase triples (Ǆ/Ǉ/Ǌ/Ǳ): the Lu member of each */
     if (r == 0x01C4 || r == 0x01C7 || r == 0x01CA || r == 0x01F1) return 1;
     if (r == 0x212A) return 1; /* Kelvin sign */
+    if (r == 0x1E9E) return 1; /* ẞ */
     /* Greek uppercase */
     if (r >= 0x391 && r <= 0x3A9 && r != 0x3A2) return 1;
-    /* Cyrillic uppercase */
-    if (r >= 0x410 && r <= 0x42F) return 1;
+    /* Cyrillic uppercase: Ѐ-Я including Ё (U+0401) */
+    if (r >= 0x400 && r <= 0x42F) return 1;
+    /* Fullwidth Latin capitals Ａ-Ｚ */
+    if (r >= 0xFF21 && r <= 0xFF3A) return 1;
     return 0;
 }
 
@@ -88,8 +91,10 @@ int neverc_unicode_is_lower(uint32_t r) {
     if (r == 0x01C6 || r == 0x01C9 || r == 0x01CC || r == 0x01F3) return 1;
     /* Greek lowercase */
     if (r >= 0x3B1 && r <= 0x3C9) return 1;
-    /* Cyrillic lowercase */
-    if (r >= 0x430 && r <= 0x44F) return 1;
+    /* Cyrillic lowercase: ѐ-я including ё (U+0451) */
+    if (r >= 0x430 && r <= 0x45F) return 1;
+    /* Fullwidth Latin small ａ-ｚ */
+    if (r >= 0xFF41 && r <= 0xFF5A) return 1;
     /* Special: ß (0xDF), µ (0xB5) */
     if (r == 0xDF || r == 0xB5) return 1;
     return 0;
@@ -117,6 +122,12 @@ int neverc_unicode_is_letter(uint32_t r) {
         (r >= 0x30FC && r <= 0x30FF)) return 1;
     /* Hangul Syllables (assigned through U+D7A3; U+D7A4..U+D7AF are Cn) */
     if (r >= 0xAC00 && r <= 0xD7A3) return 1;
+    /* Hangul Jamo and compatibility jamo */
+    if (r >= 0x1100 && r <= 0x11FF) return 1;
+    if (r >= 0x3131 && r <= 0x318E) return 1;
+    if (r >= 0xA960 && r <= 0xA97C) return 1;
+    if ((r >= 0xD7B0 && r <= 0xD7C6) ||
+        (r >= 0xD7CB && r <= 0xD7FB)) return 1;
     /* Latin Extended Additional */
     if (r >= 0x1E00 && r <= 0x1EFF) return 1;
     /* Arabic letters */
@@ -212,6 +223,9 @@ uint32_t neverc_unicode_to_upper(uint32_t r) {
     if (r >= 0x3B1 && r <= 0x3C9) return r - 32;
     /* Cyrillic lowercase → uppercase */
     if (r >= 0x430 && r <= 0x44F) return r - 32;
+    if (r >= 0x450 && r <= 0x45F) return r - 0x50;
+    /* Fullwidth Latin small → capital */
+    if (r >= 0xFF41 && r <= 0xFF5A) return r - 0x20;
     if (r >= 0x0101 && r <= 0x0137 && (r & 1U)) return r - 1;
     if (r >= 0x013A && r <= 0x0148 && !(r & 1U)) return r - 1;
     if (r >= 0x014B && r <= 0x0177 && (r & 1U)) return r - 1;
@@ -233,7 +247,11 @@ uint32_t neverc_unicode_to_lower(uint32_t r) {
     /* Greek uppercase → lowercase */
     if (r >= 0x391 && r <= 0x3A9 && r != 0x3A2) return r + 32;
     /* Cyrillic uppercase → lowercase */
+    if (r >= 0x400 && r <= 0x40F) return r + 0x50;
     if (r >= 0x410 && r <= 0x42F) return r + 32;
+    if (r == 0x1E9E) return 0x00DF; /* ẞ → ß */
+    /* Fullwidth Latin capital → small */
+    if (r >= 0xFF21 && r <= 0xFF3A) return r + 0x20;
     if (r >= 0x0100 && r <= 0x0136 && !(r & 1U)) return r + 1;
     if (r >= 0x0139 && r <= 0x0147 && (r & 1U)) return r + 1;
     if (r >= 0x014A && r <= 0x0176 && !(r & 1U)) return r + 1;
@@ -340,6 +358,8 @@ uint32_t neverc_unicode_simple_fold(uint32_t r) {
     if (r == 0x03C2) return 0x03C3;
     if (r == 0x03C3) return 0x03A3;
     if (r == 0x0130 || r == 0x0131) return r;
+    if (r == 0x00DF) return 0x1E9E; /* ß → ẞ */
+    if (r == 0x1E9E) return 0x00DF;
     if (r == 'K') return 'k';
     if (r == 'k') return 0x212A;
     if (r == 0x212A) return 'K';

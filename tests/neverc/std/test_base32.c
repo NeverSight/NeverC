@@ -217,6 +217,23 @@ static void test_invalid_input(void) {
     n = neverc_base32_decode(dec, "MY", 2);
     check_int("decode canonical raw length", n, 1);
     check_int("decode canonical raw value", dec[0], 'f');
+
+    char raw[16];
+    size_t rn = neverc_base32_raw_encode(raw, (const uint8_t *)"f", 1);
+    check_int("raw_encoded_len(1)", (int)neverc_base32_raw_encoded_len(1), 2);
+    check_int("raw_encode(f) len", (int)rn, 2);
+    check_true("raw_encode(f)", memcmp(raw, "MY", 2) == 0);
+    n = neverc_base32_decode(dec, raw, rn);
+    check_int("decode raw_encode(f)", n, 1);
+    check_int("decode raw_encode(f) val", dec[0], 'f');
+
+    rn = neverc_base32_raw_encode(raw, (const uint8_t *)"fo", 2);
+    check_int("raw_encode(fo) len", (int)rn, 4);
+    check_true("raw_encode(fo)", memcmp(raw, "MZXQ", 4) == 0);
+
+    rn = neverc_base32_hex_raw_encode(raw, (const uint8_t *)"f", 1);
+    check_int("hex_raw_encode(f) len", (int)rn, 2);
+    check_true("hex_raw_encode(f)", memcmp(raw, "CO", 2) == 0);
     n = neverc_base32_hex_decode(dec, "CO", 2);
     check_int("hex decode canonical raw length", n, 1);
     check_int("hex decode canonical raw value", dec[0], 'f');

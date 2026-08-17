@@ -452,7 +452,8 @@ static void test_invalid_inputs(void) {
     check_bool("null pattern rejected", re == NULL && err != NULL, 1);
 
     static const char *invalid[] = {
-        "[abc", "[]", "[z-a]", "a)", "\\", "a**", "a+?"
+        "[abc", "[]", "[z-a]", "a)", "\\", "a**", "a+?",
+        "\\q", "\\1", "\\8", "(?P<>x)", "(?P<foo-bar>x)", "[[:foo:]]"
     };
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         err = NULL;
@@ -486,6 +487,17 @@ static void test_must_compile(void) {
     neverc_regexp_t *re = neverc_regexp_must_compile("[a-z]+");
     check_bool("must_compile ok", re != NULL, 1);
     check_bool("must_compile match", neverc_regexp_match(re, "hello"), 1);
+    neverc_regexp_free(re);
+
+    const char *err = NULL;
+    re = neverc_regexp_compile_posix("[a-z]+", &err);
+    check_bool("compile_posix ok", re != NULL, 1);
+    check_bool("compile_posix match", neverc_regexp_match(re, "hello"), 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_must_compile_posix("[0-9]+");
+    check_bool("must_compile_posix ok", re != NULL, 1);
+    check_bool("must_compile_posix match", neverc_regexp_match(re, "123"), 1);
     neverc_regexp_free(re);
 }
 
@@ -570,6 +582,134 @@ static void test_submatch_and_hex(void) {
     neverc_regexp_free(re);
 }
 
+static void test_word_bounds_and_text_anchors(void) {
+    section("[word bounds / \\\\A \\\\z]");
+    check_bool("\\bfoo in foo", neverc_regexp_match_string("\\bfoo\\b", "foo"), 1);
+    check_bool("\\bfoo in xfoo", neverc_regexp_match_string("\\bfoo\\b", "xfoo"), 0);
+    check_bool("\\bfoo in foo!", neverc_regexp_match_string("\\bfoo\\b", "foo!"), 1);
+    check_bool("\\Boo in foo", neverc_regexp_match_string("\\Boo", "foo"), 1);
+    check_bool("\\Bfoo no", neverc_regexp_match_string("\\Bfoo", "foo"), 0);
+
+    neverc_regexp_t *re = neverc_regexp_compile("\\bfoo\\b", NULL);
+    char buf[64];
+    check_str("\\bfoo find in bar foo baz", find_str(re, "bar foo baz", buf), "foo");
+    size_t mlen = 99;
+    check_bool("\\bfoo find in xfooy", neverc_regexp_find(re, "xfooy", &mlen) == NULL, 1);
+    neverc_regexp_free(re);
+
+    check_bool("\\Ahello", neverc_regexp_match_string("\\Ahello", "hello"), 1);
+    re = neverc_regexp_compile("\\Aabc", NULL);
+    check_bool("\\Aabc in xabc", neverc_regexp_find(re, "xabc", &mlen) == NULL, 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("a\\z", NULL);
+    check_str("a\\z exact", find_str(re, "a", buf), "a");
+    check_bool("a\\z not before final NL",
+               neverc_regexp_find(re, "a\n", &mlen) == NULL, 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("a$", NULL);
+    check_str("a$ still before final NL", find_str(re, "a\n", buf), "a");
+    neverc_regexp_free(re);
+
+    check_bool("[\\b] backspace", neverc_regexp_match_string("[\\b]", "\b"), 1);
+    check_bool("[\\b] not letter b", neverc_regexp_match_string("[\\b]", "b"), 0);
+}
+
+static void test_posix_classes(void) {
+    section("[posix classes]");
+    check_bool("[[:digit:]] 5", neverc_regexp_match_string("[[:digit:]]", "5"), 1);
+    check_bool("[[:digit:]] a no", neverc_regexp_match_string("[[:digit:]]", "a"), 0);
+    check_bool("[[:digit:]] not colon-bracket",
+               neverc_regexp_match_string("[[:digit:]]", ":]"), 0);
+    check_bool("[[:alpha:]] Q", neverc_regexp_match_string("[[:alpha:]]", "Q"), 1);
+    check_bool("[[:alpha:]] 9 no", neverc_regexp_match_string("[[:alpha:]]", "9"), 0);
+    check_bool("[[:space:]] formfeed", neverc_regexp_match_string("[[:space:]]", "\f"), 1);
+    check_bool("[[:word:]] _", neverc_regexp_match_string("[[:word:]]", "_"), 1);
+    check_bool("[^[:digit:]] a", neverc_regexp_match_string("[^[:digit:]]", "a"), 1);
+    check_bool("[^[:digit:]] 3 no", neverc_regexp_match_string("[^[:digit:]]", "3"), 0);
+    check_bool("[[:xdigit:]] f", neverc_regexp_match_string("[[:xdigit:]]", "f"), 1);
+    check_bool("[[:alnum:]_]+ ident",
+               neverc_regexp_match_string("^[[:alnum:]_]+$", "foo_1"), 1);
+}
+
+static void test_named_groups_and_replace_expand(void) {
+    section("[named groups / replace $n]");
+    neverc_regexp_match_t m[4];
+    neverc_regexp_t *re = neverc_regexp_compile("(?P<as>a+)(?P<bs>b+)", NULL);
+    check_bool("named compile", re != NULL, 1);
+    check_int("num_subexp", neverc_regexp_num_subexp(re), 2);
+    check_str("name 1", neverc_regexp_subexp_name(re, 1), "as");
+    check_str("name 2", neverc_regexp_subexp_name(re, 2), "bs");
+    check_int("index as", neverc_regexp_subexp_index(re, "as"), 1);
+    check_int("index bs", neverc_regexp_subexp_index(re, "bs"), 2);
+    check_int("index missing", neverc_regexp_subexp_index(re, "nope"), -1);
+    memset(m, 0, sizeof(m));
+    check_int("named submatch", neverc_regexp_find_submatch(re, "xxaaabbcyy", m, 3), 1);
+    check_int("named g1", (int)m[1].len, 3);
+    check_int("named g2", (int)m[2].len, 2);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("(?<n>\\d+)", NULL);
+    check_bool("?<n> compile", re != NULL, 1);
+    check_int("?<n> index", neverc_regexp_subexp_index(re, "n"), 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("(?'n'\\d+)", NULL);
+    check_bool("?'n' compile", re != NULL, 1);
+    check_int("?'n' index", neverc_regexp_subexp_index(re, "n"), 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("(\\d+)", NULL);
+    size_t outlen;
+    char *r = neverc_regexp_replace_all(re, "a12b34", "[$1]", &outlen);
+    check_str("replace $1", r, "a[12]b[34]");
+    free(r);
+    r = neverc_regexp_replace_all(re, "a12b34", "$$", &outlen);
+    check_str("replace $$", r, "a$b$");
+    free(r);
+    r = neverc_regexp_replace_all(re, "a12", "[$0]", &outlen);
+    check_str("replace $0", r, "a[12]");
+    free(r);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("(?P<n>\\d+)", NULL);
+    r = neverc_regexp_replace_all(re, "a12b34", "<${n}>", &outlen);
+    check_str("replace ${n}", r, "a<12>b<34>");
+    free(r);
+    neverc_regexp_free(re);
+
+    /* Last iteration of a repeated group; unset alternative. */
+    re = neverc_regexp_compile("(a)+", NULL);
+    memset(m, 0, sizeof(m));
+    check_int("(a)+ found", neverc_regexp_find_submatch(re, "xaaay", m, 2), 1);
+    check_int("(a)+ last cap len", (int)m[1].len, 1);
+    if (m[1].start) check_int("(a)+ last cap a", m[1].start[0] == 'a', 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("(a)|(b)", NULL);
+    memset(m, 0, sizeof(m));
+    check_int("(a)|(b) on b", neverc_regexp_find_submatch(re, "b", m, 3), 1);
+    check_int("(a)|(b) g1 unset", m[1].start == NULL, 1);
+    check_int("(a)|(b) g2 len", (int)m[2].len, 1);
+    neverc_regexp_free(re);
+}
+
+static void test_utf8_class_and_nfa_bound(void) {
+    section("[utf8 class / nfa bound]");
+    check_bool("[\\x{96}] utf8", neverc_regexp_match_string("[\\x{96}]", "\xC2\x96"), 1);
+    check_bool("[\\x{96}] not raw", neverc_regexp_match_string("[\\x{96}]", "\x96" ""), 0);
+    check_bool("[a\\x{96}] a", neverc_regexp_match_string("[a\\x{96}]", "a"), 1);
+    check_bool("[\\x{41}] A", neverc_regexp_match_string("[\\x{41}]", "A"), 1);
+
+    /* Thompson NFA: (a+)+x on a long run of 'a's must not explode. */
+    neverc_regexp_t *re = neverc_regexp_compile("(a+)+x", NULL);
+    check_bool("(a+)+x compiles", re != NULL, 1);
+    check_bool("(a+)+x no match", neverc_regexp_match(re, "aaaaaaaaaaaaaaaaaaaa"), 0);
+    check_bool("(a+)+x match", neverc_regexp_match(re, "aaaaaaaaaaaaaaaaaaaax"), 1);
+    neverc_regexp_free(re);
+}
+
 static void test_find_differential(void) {
     section("[find_differential]");
     rrng = 0x9e3779b97f4a7c15ULL;
@@ -649,7 +789,12 @@ int main(void) {
     test_quote_meta();
     test_must_compile();
     test_submatch_and_hex();
+    test_word_bounds_and_text_anchors();
+    test_posix_classes();
+    test_named_groups_and_replace_expand();
+    test_utf8_class_and_nfa_bound();
     test_find_differential();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

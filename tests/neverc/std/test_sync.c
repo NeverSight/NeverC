@@ -204,6 +204,10 @@ static void test_waitgroup_rejects_invalid_counter(void) {
     ASSERT_INT_EQ(neverc_waitgroup_add_checked(&wg, -INT32_MAX), 0);
 
     neverc_waitgroup_wait(&wg);
+    neverc_waitgroup_wait(NULL);
+    neverc_waitgroup_add(&wg, 1);
+    neverc_waitgroup_done(&wg);
+    neverc_waitgroup_wait(&wg);
     neverc_waitgroup_destroy(&wg);
 }
 
@@ -248,6 +252,21 @@ static void test_once(void) {
 
     ASSERT_INT_EQ(once_counter, 1);
     neverc_once_destroy(&g_once);
+}
+
+static void test_once_null_guards(void) {
+    printf("[once_null_guards]\n");
+    neverc_once_t o;
+    neverc_once_init(&o);
+    once_counter = 0;
+    neverc_once_do(&o, NULL);
+    neverc_once_do(NULL, once_func);
+    ASSERT_INT_EQ(once_counter, 0);
+    neverc_once_do(&o, once_func);
+    ASSERT_INT_EQ(once_counter, 1);
+    neverc_once_do(&o, once_func);
+    ASSERT_INT_EQ(once_counter, 1);
+    neverc_once_destroy(&o);
 }
 
 static void test_cond(void) {
@@ -720,6 +739,7 @@ int main(void) {
     test_waitgroup();
     test_waitgroup_rejects_invalid_counter();
     test_once();
+    test_once_null_guards();
     test_cond();
     test_pool_basic();
     test_pool_no_new_func();

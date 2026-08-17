@@ -46,6 +46,8 @@ typedef struct {
     FILE                *output;
     neverc_slog_level_t  level;
     neverc_slog_format_t format;
+    /* Reserved for Go slog.HandlerOptions.AddSource compatibility. The C ABI
+     * does not carry call-site metadata, so this flag currently emits nothing. */
     int                  add_source;
     /* Internal synchronization state; initialize handlers with neverc_slog_init. */
     int                  state_lock;

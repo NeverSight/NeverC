@@ -17,6 +17,9 @@
 #define NC_H2_REALLOC realloc
 #endif
 
+/* RFC 9113 §10.5.1: bound CONTINUATION frames per header block. */
+#define H2_MAX_CONTINUATION_FRAMES 128
+
 #ifdef _WIN32
   #include <winsock2.h>
   #include <ws2tcpip.h>
@@ -290,6 +293,7 @@ struct h2_conn {
     uint32_t  pending_hdr_stream_id;
     int       pending_hdr_active;
     int       pending_end_stream;
+    int       pending_hdr_continuations;
 };
 
 static void h2_io_init_socket(h2_io_t *io, nc_sock_t fd) {
@@ -530,6 +534,9 @@ static int h2_write_rst_stream(h2_io_t *io, uint32_t stream_id, uint32_t error_c
 }
 
 static int h2_write_window_update(h2_io_t *io, uint32_t stream_id, uint32_t increment) {
+    /* RFC 9113 §6.9: a WINDOW_UPDATE increment of 0 is a protocol error. */
+    if (increment == 0) return 0;
+    if (increment > 0x7fffffffu) return -1;
     uint8_t payload[4];
     payload[0] = (uint8_t)((increment >> 24) & 0x7f);
     payload[1] = (uint8_t)(increment >> 16);
@@ -836,6 +843,7 @@ static void h2_clear_pending_hdr(h2_conn_t *conn) {
     conn->pending_hdr_stream_id = 0;
     conn->pending_hdr_active = 0;
     conn->pending_end_stream = 0;
+    conn->pending_hdr_continuations = 0;
 }
 
 static int h2_buffer_append(uint8_t **buffer, size_t *length,
@@ -1743,15 +1751,21 @@ static uint32_t h2_process_settings(h2_conn_t *conn, const uint8_t *payload,
                        ((uint32_t)payload[i + 4] << 8) |
                        (uint32_t)payload[i + 5];
         switch (id) {
-        case NC_H2_SETTINGS_HEADER_TABLE_SIZE:
+        case NC_H2_SETTINGS_HEADER_TABLE_SIZE: {
             conn->peer_settings.header_table_size = val;
+            uint32_t encoder_table_size =
+                val > NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE
+                    ? NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE : val;
             nc_mutex_lock(&conn->write_lock);
-            (void)neverc_hpack_encoder_set_max_table_size(
-                conn->hpack_enc,
-                val < conn->local_settings.header_table_size
-                    ? val : conn->local_settings.header_table_size);
+            int table_result = neverc_hpack_encoder_set_max_table_size(
+                conn->hpack_enc, encoder_table_size);
             nc_mutex_unlock(&conn->write_lock);
+            if (table_result != 0) {
+                error = NC_H2_COMPRESSION_ERROR;
+                goto done;
+            }
             break;
+        }
         case NC_H2_SETTINGS_ENABLE_PUSH:
             if (val > 1) {
                 error = NC_H2_PROTOCOL_ERROR;
@@ -2016,7 +2030,7 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 if (h2_append_hdr_block(&conn, fragment,
                                         fragment_length) != 0) {
                     (void)h2_conn_write_goaway(&conn,
-                                               NC_H2_INTERNAL_ERROR);
+                                               NC_H2_ENHANCE_YOUR_CALM);
                     free(payload);
                     goto cleanup;
                 }
@@ -2028,7 +2042,7 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 if (h2_append_hdr_block(&conn, fragment,
                                         fragment_length) != 0) {
                     (void)h2_conn_write_goaway(&conn,
-                                               NC_H2_INTERNAL_ERROR);
+                                               NC_H2_ENHANCE_YOUR_CALM);
                     free(payload);
                     goto cleanup;
                 }
@@ -2096,9 +2110,11 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 int32_t increment =
                     (int32_t)conn.local_settings.initial_window_size -
                     conn.conn_recv_window;
-                (void)h2_conn_write_window_update(
-                    &conn, 0, (uint32_t)increment);
-                conn.conn_recv_window += increment;
+                if (increment > 0) {
+                    (void)h2_conn_write_window_update(
+                        &conn, 0, (uint32_t)increment);
+                    conn.conn_recv_window += increment;
+                }
             }
             if (data_length > 0) {
                 int length_error = stream->content_length >= 0 &&
@@ -2174,9 +2190,11 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
             } else if (stream->recv_window < 16384) {
                 int32_t inc = (int32_t)conn.local_settings.initial_window_size -
                               stream->recv_window;
-                (void)h2_conn_write_window_update(&conn, stream->id,
-                                                  (uint32_t)inc);
-                stream->recv_window += inc;
+                if (inc > 0) {
+                    (void)h2_conn_write_window_update(&conn, stream->id,
+                                                      (uint32_t)inc);
+                    stream->recv_window += inc;
+                }
             }
             if (fhdr.flags & NC_H2_FLAG_END_STREAM) {
                 if (stream->content_length >= 0 &&
@@ -2250,12 +2268,11 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                            (int64_t)s->send_window + inc <= INT32_MAX) {
                     s->send_window += (int32_t)inc;
                 } else if (s) {
-                    nc_atomic_store(&s->reset, 1);
-                    neverc_context_cancel_handle_cancel(s->cancel);
                     nc_mutex_unlock(&conn.state_lock);
-                    (void)h2_conn_write_rst(
-                        &conn, fhdr.stream_id, NC_H2_FLOW_CONTROL_ERROR);
-                    break;
+                    (void)h2_conn_write_goaway(
+                        &conn, NC_H2_FLOW_CONTROL_ERROR);
+                    free(payload);
+                    goto cleanup;
                 }
             }
             nc_cond_broadcast(&conn.window_changed);
@@ -2314,8 +2331,10 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 free(payload);
                 goto cleanup;
             }
-            if (h2_append_hdr_block(&conn, payload, fhdr.length) != 0) {
-                (void)h2_conn_write_goaway(&conn, NC_H2_INTERNAL_ERROR);
+            if (h2_append_hdr_block(&conn, payload, fhdr.length) != 0 ||
+                ++conn.pending_hdr_continuations >
+                    H2_MAX_CONTINUATION_FRAMES) {
+                (void)h2_conn_write_goaway(&conn, NC_H2_ENHANCE_YOUR_CALM);
                 free(payload);
                 goto cleanup;
             }

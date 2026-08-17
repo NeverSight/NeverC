@@ -37,6 +37,7 @@ neverc_color_rgba_t neverc_color_hex_to_rgba(uint32_t hex);
 
 int neverc_color_parse_hex(const char *s, neverc_color_rgba_t *c);
 
+/* t is clamped to [0, 1]; NaN is treated as 0. */
 neverc_color_rgba_t neverc_color_lerp(neverc_color_rgba_t a, neverc_color_rgba_t b, float t);
 
 #ifdef __cplusplus

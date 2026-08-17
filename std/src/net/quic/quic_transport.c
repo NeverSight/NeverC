@@ -176,16 +176,31 @@ static int qt_ack_contains(const quic_frame_ack_t *ack,
     return 0;
 }
 
+static int qt_already_received(const quic_pn_state_t *state,
+                               uint64_t packet_number) {
+    if (!state || !state->has_recv) return 0;
+    if (packet_number > state->largest_recv) return 0;
+    uint64_t distance = state->largest_recv - packet_number;
+    if (distance >= 64) return 1;
+    return (state->received_bitmap &
+            (UINT64_C(1) << (unsigned)distance)) != 0;
+}
+
 static int qt_process_ack(struct neverc_quic_conn *conn, int space,
                           quic_frame_ack_t *ack, uint64_t now_ms) {
     if (!conn || !ack || space < 0 || space >= QUIC_PNS_COUNT) return -1;
     if (ack->largest_acked >= conn->pn[space].next_pn) return -1;
     uint64_t encoded_delay = ack->ack_delay;
-    uint64_t exponent = conn->peer_params.ack_delay_exponent;
+    /* RFC 9000 §19.3: Initial/Handshake ACK Delay uses exponent 3. */
+    uint64_t exponent = space == QUIC_PNS_APPLICATION ?
+        conn->peer_params.ack_delay_exponent : 3;
     uint64_t delay_us = exponent >= 63 ||
                         encoded_delay > (UINT64_MAX >> exponent) ?
                             UINT64_MAX : encoded_delay << exponent;
     uint64_t delay_ms = delay_us == UINT64_MAX ? UINT64_MAX : delay_us / 1000U;
+    /* RFC 9002 §5.3: do not subtract ACK delay until handshake confirmed. */
+    if (space != QUIC_PNS_APPLICATION || !conn->handshake_confirmed)
+        delay_ms = 0;
     int acknowledged_sent_packet = 0;
     for (size_t i = 0; i < QUIC_TX_RECORD_CAPACITY; i++) {
         quic_tx_record_t *record = &conn->tx_records[i];
@@ -219,7 +234,7 @@ static int qt_process_ack(struct neverc_quic_conn *conn, int space,
 static int qt_queue_received_datagram(struct neverc_quic_conn *conn,
                                       const uint8_t *data, size_t length) {
     if (!conn || (!data && length != 0) ||
-        conn->peer_params.max_datagram_frame_size == 0 ||
+        conn->local_params.max_datagram_frame_size == 0 ||
         length > conn->local_params.max_datagram_frame_size ||
         conn->recv_datagram_count == QUIC_DATAGRAM_QUEUE_CAPACITY)
         return -1;
@@ -237,47 +252,6 @@ static int qt_queue_received_datagram(struct neverc_quic_conn *conn,
         (conn->recv_datagram_tail + 1U) % QUIC_DATAGRAM_QUEUE_CAPACITY;
     conn->recv_datagram_count++;
     nc_cond_broadcast(&conn->datagram_cond);
-    return 0;
-}
-
-static int qt_add_peer_cid(struct neverc_quic_conn *conn,
-                           const quic_frame_new_conn_id_t *frame) {
-    if (!conn || !frame || frame->conn_id_len == 0 ||
-        frame->retire_prior_to > frame->sequence)
-        return -1;
-    for (int i = 0; i < conn->n_peer_cids; i++) {
-        quic_conn_id_entry_t *entry = &conn->peer_cids[i];
-        if (entry->sequence == frame->sequence) {
-            if (entry->len != frame->conn_id_len ||
-                memcmp(entry->id, frame->conn_id, entry->len) != 0 ||
-                memcmp(entry->stateless_reset_token,
-                       frame->stateless_reset_token, 16) != 0)
-                return -1;
-            return 0;
-        }
-    }
-    if (conn->n_peer_cids >= QUIC_MAX_PEER_CONN_IDS ||
-        (uint64_t)conn->n_peer_cids >=
-            conn->local_params.active_connection_id_limit)
-        return -1;
-    quic_conn_id_entry_t *entry = &conn->peer_cids[conn->n_peer_cids++];
-    memset(entry, 0, sizeof(*entry));
-    memcpy(entry->id, frame->conn_id, frame->conn_id_len);
-    entry->len = frame->conn_id_len;
-    entry->sequence = frame->sequence;
-    memcpy(entry->stateless_reset_token, frame->stateless_reset_token, 16);
-    for (int i = 0; i < conn->n_peer_cids; i++) {
-        if (conn->peer_cids[i].sequence < frame->retire_prior_to)
-            conn->peer_cids[i].retired = 1;
-    }
-    if (conn->peer_cids[conn->active_peer_cid_idx].retired) {
-        for (int i = 0; i < conn->n_peer_cids; i++) {
-            if (!conn->peer_cids[i].retired) {
-                conn->active_peer_cid_idx = i;
-                break;
-            }
-        }
-    }
     return 0;
 }
 
@@ -365,8 +339,8 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             if (qt_decode_varint_at(payload, payload_len, &cursor,
                                     &maximum) != 0)
                 return -1;
-            if (maximum > conn->flow.max_data_peer)
-                conn->flow.max_data_peer = maximum;
+            if (neverc_quic_conn_apply_max_data_locked(conn, maximum) != 0)
+                return -1;
             consumed = cursor - position;
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_MAX_STREAM_DATA) {
@@ -400,7 +374,7 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             if (neverc_quic_parse_new_conn_id(payload + position,
                                               payload_len - position,
                                               &new_cid, &consumed) != 0 ||
-                qt_add_peer_cid(conn, &new_cid) != 0)
+                neverc_quic_conn_add_peer_cid(conn, &new_cid) != 0)
                 return -1;
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_RETIRE_CONNECTION_ID) {
@@ -409,17 +383,12 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             if (qt_decode_varint_at(payload, payload_len, &cursor,
                                     &sequence) != 0)
                 return -1;
-            int found = 0;
-            for (int i = 0; i < conn->n_local_cids; i++) {
-                if (conn->local_cids[i].sequence == sequence &&
-                    !conn->local_cids[i].retired) {
-                    conn->local_cids[i].retired = 1;
-                    conn->new_cid_pending = 1;
-                    found = 1;
-                    break;
-                }
+            if (neverc_quic_conn_retire_local_cid_locked(conn, sequence) != 0) {
+                (void)neverc_quic_conn_close_locked(
+                    conn, QUIC_ERR_PROTOCOL_VIOLATION,
+                    "RETIRE_CONNECTION_ID for unused sequence", 0);
+                return -1;
             }
-            if (!found) return -1;
             consumed = cursor - position;
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_PATH_CHALLENGE) {
@@ -561,6 +530,30 @@ static void qt_start_path_validation(struct neverc_quic_conn *conn,
     conn->path_challenge_pending = 1;
 }
 
+static int qt_handle_version_negotiation(struct neverc_quic_conn *conn,
+                                         const uint8_t *packet, size_t length,
+                                         size_t *consumed) {
+    *consumed = length;
+    /* Servers ignore Version Negotiation; clients abandon unless the
+     * packet lists the version already in use (RFC 9000 §6.2). */
+    if (!conn || conn->side != QUIC_SIDE_CLIENT) return 0;
+    if (neverc_quic_version_negotiation_supports(packet, length,
+                                                 conn->version))
+        return 0;
+    conn->state = QUIC_CONN_CLOSED;
+    conn->io_running = 0;
+    conn->close_pending = 0;
+    conn->close_is_app = 0;
+    conn->close_error_code = QUIC_ERR_CONNECTION_REFUSED;
+    memcpy(conn->close_reason, "peer rejected QUIC version", 27);
+    conn->close_reason[26] = '\0';
+    quic_conn_finalize_streams(conn);
+    nc_cond_broadcast(&conn->state_cond);
+    nc_cond_broadcast(&conn->stream_avail_cond);
+    nc_cond_broadcast(&conn->datagram_cond);
+    return 0;
+}
+
 static int qt_process_one_packet(struct neverc_quic_conn *conn,
                                  const uint8_t *packet, size_t length,
                                  const neverc_udp_addr_t *source,
@@ -573,6 +566,10 @@ static int qt_process_one_packet(struct neverc_quic_conn *conn,
         uint32_t version = ((uint32_t)packet[1] << 24) |
                            ((uint32_t)packet[2] << 16) |
                            ((uint32_t)packet[3] << 8) | packet[4];
+        if (version == 0)
+            return qt_handle_version_negotiation(conn, packet, length,
+                                                 consumed);
+        if (version != conn->version) return -1;
         protected_type = qt_long_type((packet[0] >> 4) & 3U, version);
         if (protected_type == QUIC_PKT_RETRY) return -1;
     }
@@ -602,9 +599,6 @@ decrypt_attempt:
     memcpy(copy, packet, length);
     if (neverc_quic_remove_header_protection(keys->hp, copy, length,
                                              pn_offset) != 0)
-        goto decrypt_retry;
-    if ((is_long && (copy[0] & 0x0cU) != 0) ||
-        (!is_long && (copy[0] & 0x18U) != 0))
         goto decrypt_retry;
     if (neverc_quic_parse_packet_header(copy, length, &header,
                                         dcid_len) != 0)
@@ -638,16 +632,30 @@ decrypt_attempt:
                                                 &next_read_keys) != 0)
         goto decrypt_failed;
     neverc_platform_secure_zero(&next_read_keys, sizeof(next_read_keys));
+    if ((is_long && (copy[0] & 0x0cU) != 0) ||
+        (!is_long && (copy[0] & 0x18U) != 0)) {
+        free(plaintext);
+        free(copy);
+        (void)neverc_quic_conn_close_locked(
+            conn, QUIC_ERR_PROTOCOL_VIOLATION,
+            "reserved bits must be zero", 0);
+        return -1;
+    }
     if (conn->side == QUIC_SIDE_CLIENT && is_long &&
-        header.type == QUIC_PKT_INITIAL && header.scid.len != 0) {
+        header.type == QUIC_PKT_INITIAL) {
         quic_conn_id_entry_t *peer = &conn->peer_cids[0];
-        if (peer->len == conn->initial_dcid.len &&
-            memcmp(peer->id, conn->initial_dcid.data, peer->len) == 0) {
+        int still_initial_dcid =
+            peer->len == conn->initial_dcid.len &&
+            (peer->len == 0 ||
+             memcmp(peer->id, conn->initial_dcid.data, peer->len) == 0);
+        if (still_initial_dcid) {
             memset(peer, 0, sizeof(*peer));
-            memcpy(peer->id, header.scid.data, header.scid.len);
+            if (header.scid.len)
+                memcpy(peer->id, header.scid.data, header.scid.len);
             peer->len = header.scid.len;
         } else if (peer->len != header.scid.len ||
-                   memcmp(peer->id, header.scid.data, peer->len) != 0) {
+                   (peer->len != 0 &&
+                    memcmp(peer->id, header.scid.data, peer->len) != 0)) {
             goto decrypt_failed;
         }
     }
@@ -674,22 +682,43 @@ decrypt_complete:
         header.type == QUIC_PKT_HANDSHAKE)
         conn->address_validated = 1;
     if (!is_long) qt_start_path_validation(conn, source);
-    int fresh = qt_mark_received(&conn->pn[space], packet_number);
-    if (fresh < 0) {
-        free(plaintext);
-        free(copy);
-        return -1;
-    }
-    if (fresh) {
+    int duplicate = qt_already_received(&conn->pn[space], packet_number);
+    if (!duplicate) {
         int ack_eliciting = 0;
+        size_t plaintext_len = header.payload_len - 16U;
+        if (plaintext_len == 0) {
+            free(plaintext);
+            free(copy);
+            if (conn->state != QUIC_CONN_DRAINING &&
+                conn->state != QUIC_CONN_CLOSED)
+                (void)neverc_quic_conn_close_locked(
+                    conn, QUIC_ERR_PROTOCOL_VIOLATION,
+                    "packet contained no frames", 0);
+            return -1;
+        }
         if (qt_handle_frames(conn, level, space, plaintext,
-                             header.payload_len - 16U, source,
+                             plaintext_len, source,
                              &ack_eliciting) != 0) {
+            free(plaintext);
+            free(copy);
+            if (conn->state != QUIC_CONN_DRAINING &&
+                conn->state != QUIC_CONN_CLOSED)
+                (void)neverc_quic_conn_close_locked(
+                    conn, QUIC_ERR_FRAME_ENCODING_ERROR,
+                    "invalid QUIC frame", 0);
+            return -1;
+        }
+        if (qt_mark_received(&conn->pn[space], packet_number) < 0) {
             free(plaintext);
             free(copy);
             return -1;
         }
         if (ack_eliciting) conn->pn[space].ack_pending = 1;
+    }
+    /* RFC 9001 §4.9.1: drop Initial keys after a Handshake packet. */
+    if (header.type == QUIC_PKT_HANDSHAKE) {
+        neverc_quic_tls_discard_keys(conn->tls, QUIC_ENC_INITIAL);
+        conn->pn[QUIC_PNS_INITIAL].ack_pending = 0;
     }
     conn->last_activity_ms = nc_monotonic_ms();
     if (neverc_quic_tls_is_established(conn->tls) &&
@@ -697,8 +726,9 @@ decrypt_complete:
         quic_conn_id_entry_t *peer = &conn->peer_cids[0];
         int transport_ids_valid =
             conn->peer_params.initial_scid_len == peer->len &&
-            memcmp(conn->peer_params.initial_scid, peer->id,
-                   peer->len) == 0;
+            (peer->len == 0 ||
+             memcmp(conn->peer_params.initial_scid, peer->id,
+                    peer->len) == 0);
         if (conn->side == QUIC_SIDE_CLIENT) {
             transport_ids_valid = transport_ids_valid &&
                 conn->peer_params.original_dcid_len ==
@@ -771,13 +801,19 @@ int neverc_quic_conn_process_datagram(struct neverc_quic_conn *conn,
         size_t consumed;
         if (qt_process_one_packet(conn, packet + position, length - position,
                                   source, &consumed) != 0 || consumed == 0) {
+            int send_close = conn->close_pending &&
+                             conn->state != QUIC_CONN_CLOSED;
             nc_mutex_unlock(&conn->lock);
+            if (send_close)
+                (void)neverc_quic_conn_flush(conn);
             return -1;
         }
         position += consumed;
         if ((packet[position - consumed] & 0x80U) == 0) break;
     }
+    int closed = conn->state == QUIC_CONN_CLOSED;
     nc_mutex_unlock(&conn->lock);
+    if (closed) return 0;
     return neverc_quic_conn_flush(conn);
 }
 
@@ -826,6 +862,14 @@ static int qt_write_new_cid(struct neverc_quic_conn *conn, uint8_t *output,
     return 0;
 }
 
+static quic_enc_level_t qt_close_level(struct neverc_quic_conn *conn) {
+    if (neverc_quic_tls_get_write_keys(conn->tls, QUIC_ENC_APPLICATION))
+        return QUIC_ENC_APPLICATION;
+    if (neverc_quic_tls_get_write_keys(conn->tls, QUIC_ENC_HANDSHAKE))
+        return QUIC_ENC_HANDSHAKE;
+    return QUIC_ENC_INITIAL;
+}
+
 static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
                             size_t capacity, quic_send_meta_t *meta,
                             size_t *written) {
@@ -833,15 +877,22 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
     if (conn->close_pending) {
         quic_frame_connection_close_t close_frame;
         memset(&close_frame, 0, sizeof(close_frame));
-        close_frame.error_code = conn->close_error_code;
+        int have_app = neverc_quic_tls_get_write_keys(
+                           conn->tls, QUIC_ENC_APPLICATION) != NULL;
+        /* RFC 9000 §12.4: 0x1d is 0-RTT/1-RTT only. Handshake closes use
+         * 0x1c; an application close without 1-RTT keys is APPLICATION_ERROR. */
+        close_frame.is_app = conn->close_is_app && have_app;
+        close_frame.error_code = close_frame.is_app ? conn->close_error_code :
+            (conn->close_is_app ? QUIC_ERR_APPLICATION_ERROR :
+                                  conn->close_error_code);
         close_frame.reason = conn->close_reason;
         close_frame.reason_len = strlen(conn->close_reason);
-        close_frame.is_app = conn->close_is_app;
         if (neverc_quic_write_connection_close(output, capacity,
                                                &close_frame,
                                                &position) != 0)
             return -1;
         meta->control_type = QUIC_FRAME_CONNECTION_CLOSE;
+        meta->level = qt_close_level(conn);
     } else if (conn->path_response_pending) {
         if (capacity < 9) return -1;
         output[position++] = QUIC_FRAME_PATH_RESPONSE;
@@ -885,6 +936,18 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
         meta->stream_id = (uint64_t)conn->new_cid_retransmit_index;
         meta->control_type = QUIC_FRAME_NEW_CONNECTION_ID;
     } else {
+        for (int i = 0; i < conn->n_peer_cids; i++) {
+            if (!conn->peer_cids[i].retire_unsent) continue;
+            if (neverc_quic_write_retire_conn_id(
+                    output, capacity, conn->peer_cids[i].sequence,
+                    &position) != 0)
+                return -1;
+            meta->stream_id = conn->peer_cids[i].sequence;
+            meta->control_type = QUIC_FRAME_RETIRE_CONNECTION_ID;
+            break;
+        }
+    }
+    if (position == 0) {
         for (int i = 0; i < conn->n_streams; i++) {
             quic_stream_t *stream = conn->streams[i];
             if (!stream) continue;
@@ -920,7 +983,8 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
     }
     if (position == 0) return 0;
     meta->kind = QUIC_TX_CONTROL;
-    meta->level = QUIC_ENC_APPLICATION;
+    if (meta->control_type != QUIC_FRAME_CONNECTION_CLOSE)
+        meta->level = QUIC_ENC_APPLICATION;
     meta->length = position;
     *written = position;
     return 1;
@@ -1037,8 +1101,10 @@ static int qt_build_pto_probe(struct neverc_quic_conn *conn,
                               quic_send_meta_t *meta, size_t *written) {
     if (conn->pto_probe_pending <= 0) return 0;
     if (!neverc_quic_tls_get_write_keys(conn->tls,
-                                        conn->pto_probe_level))
-        return -1;
+                                        conn->pto_probe_level)) {
+        conn->pto_probe_pending = 0;
+        return 0;
+    }
     if (neverc_quic_write_ping(output, capacity, written) != 0)
         return -1;
     meta->kind = QUIC_TX_CONTROL;
@@ -1053,6 +1119,10 @@ static int qt_build_item(struct neverc_quic_conn *conn, uint8_t *output,
                          size_t *written) {
     memset(meta, 0, sizeof(*meta));
     meta->destination = &conn->peer_addr;
+    if (conn->state == QUIC_CONN_DRAINING && !conn->close_pending)
+        return 0;
+    if (conn->close_pending)
+        return qt_build_control(conn, output, capacity, meta, written);
     int result = qt_build_pto_probe(conn, output, capacity, meta, written);
     if (result != 0) return result;
     result = qt_build_crypto(conn, QUIC_ENC_INITIAL, output, capacity,
@@ -1176,6 +1246,12 @@ static void qt_commit_control(struct neverc_quic_conn *conn,
         }
         break;
     }
+    case QUIC_FRAME_RETIRE_CONNECTION_ID:
+        for (int i = 0; i < conn->n_peer_cids; i++) {
+            if (conn->peer_cids[i].sequence == meta->stream_id)
+                conn->peer_cids[i].retire_unsent = 0;
+        }
+        break;
     case QUIC_FRAME_DATAGRAM_LEN: {
         if (conn->send_datagram_count) {
             quic_datagram_entry_t *entry =
@@ -1410,7 +1486,17 @@ int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
         int congestion_blocked =
             conn->loss.cc.bytes_in_flight >= conn->loss.cc.congestion_window;
         int built;
-        if (congestion_blocked && conn->pto_probe_pending > 0) {
+        if (conn->state == QUIC_CONN_DRAINING && !conn->close_pending) {
+            free(payload);
+            break;
+        }
+        if (conn->close_pending) {
+            memset(&meta, 0, sizeof(meta));
+            meta.destination = &conn->peer_addr;
+            built = qt_build_control(conn, payload,
+                                     maximum - QUIC_PACKET_OVERHEAD_RESERVE,
+                                     &meta, &payload_len);
+        } else if (congestion_blocked && conn->pto_probe_pending > 0) {
             memset(&meta, 0, sizeof(meta));
             meta.destination = &conn->peer_addr;
             built = qt_build_pto_probe(conn, payload,
@@ -1470,6 +1556,7 @@ void neverc_quic_conn_tick(struct neverc_quic_conn *conn, uint64_t now_ms) {
         return;
     }
     if (conn->state == QUIC_CONN_DRAINING) {
+        int send_close = conn->close_pending;
         uint64_t pto = conn->loss.rtt.has_sample ?
             conn->loss.rtt.smoothed_rtt + 4U * conn->loss.rtt.rttvar +
                 conn->loss.rtt.max_ack_delay : 1000U;
@@ -1478,10 +1565,13 @@ void neverc_quic_conn_tick(struct neverc_quic_conn *conn, uint64_t now_ms) {
             now_ms - conn->draining_started_ms >= 3U * pto) {
             conn->state = QUIC_CONN_CLOSED;
             conn->io_running = 0;
+            send_close = 0;
             quic_conn_finalize_streams(conn);
             nc_cond_broadcast(&conn->state_cond);
         }
         nc_mutex_unlock(&conn->lock);
+        if (send_close)
+            (void)neverc_quic_conn_flush(conn);
         return;
     }
     if (conn->idle_timeout_ms != 0 &&
@@ -1527,13 +1617,23 @@ void neverc_quic_conn_tick(struct neverc_quic_conn *conn, uint64_t now_ms) {
                 if (neverc_quic_tls_get_write_keys(
                         conn->tls, QUIC_ENC_HANDSHAKE))
                     conn->pto_probe_level = QUIC_ENC_HANDSHAKE;
+                else if (!neverc_quic_tls_get_write_keys(
+                             conn->tls, QUIC_ENC_INITIAL))
+                    conn->pto_probe_pending = 0;
             } else {
+                conn->pto_probe_pending = 0;
                 for (int space = QUIC_PNS_APPLICATION;
                      space >= QUIC_PNS_INITIAL; space--) {
                     if (!conn->loss.spaces[space].sent_packets) continue;
-                    conn->pto_probe_level = space == QUIC_PNS_APPLICATION ?
-                        QUIC_ENC_APPLICATION : space == QUIC_PNS_HANDSHAKE ?
-                        QUIC_ENC_HANDSHAKE : QUIC_ENC_INITIAL;
+                    quic_enc_level_t level =
+                        space == QUIC_PNS_APPLICATION ?
+                            QUIC_ENC_APPLICATION :
+                        space == QUIC_PNS_HANDSHAKE ?
+                            QUIC_ENC_HANDSHAKE : QUIC_ENC_INITIAL;
+                    if (!neverc_quic_tls_get_write_keys(conn->tls, level))
+                        continue;
+                    conn->pto_probe_level = level;
+                    conn->pto_probe_pending = 2;
                     break;
                 }
             }

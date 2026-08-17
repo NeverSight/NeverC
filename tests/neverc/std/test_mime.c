@@ -95,6 +95,44 @@ static void test_parse_media_type(void) {
                                  keys, vals, 8, &nparams);
     ASSERT_STR_EQ(mt, "application/json");
     ASSERT_INT_EQ(nparams, 0);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; charset=utf-8;",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_STR_EQ(mt, "text/plain");
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(keys[0], "charset");
+    ASSERT_STR_EQ(vals[0], "utf-8");
+    free_params(keys, vals, nparams);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/html;", mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_STR_EQ(mt, "text/html");
+    ASSERT_INT_EQ(nparams, 0);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; charset=utf-8; CHARSET=utf-8",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(vals[0], "utf-8");
+    free_params(keys, vals, nparams);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; filename*=utf-8''na%C3%AFve.txt",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_STR_EQ(mt, "application/octet-stream");
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(keys[0], "filename");
+    ASSERT_STR_EQ(vals[0], "na\xC3\xAFve.txt");
+    free_params(keys, vals, nparams);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; filename=plain.txt; filename*=utf-8''star.txt",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(keys[0], "filename");
+    ASSERT_STR_EQ(vals[0], "star.txt");
+    free_params(keys, vals, nparams);
 }
 
 static void test_parse_quoted_params(void) {

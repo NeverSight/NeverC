@@ -103,7 +103,9 @@ void neverc_httputil_proxy_free(neverc_httputil_reverse_proxy_t *rp);
  * ====================================================================== */
 
 /* Dump an HTTP request to a string (for debugging).
- * If body is non-zero, the request body is included.
+ * If body is non-zero, the request body is included and Content-Length is
+ * synthesized when the raw headers do not already carry one. Host is taken
+ * from req->host when set, otherwise from raw headers.
  * Caller must free the returned string. Returns NULL on error. */
 char *neverc_httputil_dump_request(const neverc_http_request_t *req,
                                     int include_body);

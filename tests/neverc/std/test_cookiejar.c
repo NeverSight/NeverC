@@ -192,6 +192,32 @@ static void test_default_path(void) {
     neverc_cookiejar_free(jar);
 }
 
+static void test_ipv4_mapped_isolation(void) {
+    printf("[ipv4_mapped_isolation]\n");
+
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_entry_t cookie = {
+        .name = "site", .value = "v4", .path = "/",
+    };
+    neverc_cookiejar_set_cookies(jar, "http://192.168.1.1/", &cookie, 1);
+
+    neverc_cookiejar_entry_t out[1];
+    int n = neverc_cookiejar_cookies(jar, "http://192.168.1.1/", out, 1);
+    check_int("IPv4 host matches", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "http://[::ffff:192.168.1.1]/", out, 1);
+    check_int("IPv4-mapped IPv6 is a different host", n, 0);
+    n = neverc_cookiejar_cookies(jar, "http://192.168.1.2/", out, 1);
+    check_int("IPv4 domain suffix does not match", n, 0);
+
+    cookie.domain = "192.168.1.1";
+    neverc_cookiejar_set_cookies(jar, "http://192.168.1.1/", &cookie, 1);
+    n = neverc_cookiejar_cookies(jar, "http://192.168.1.2/", out, 1);
+    check_int("IPv4 Domain attribute is not a suffix", n, 0);
+
+    neverc_cookiejar_free(jar);
+}
+
 static void test_ipv6_host_isolation(void) {
     printf("[ipv6_host_isolation]\n");
 
@@ -473,6 +499,25 @@ static void test_clear(void) {
     neverc_cookiejar_clear_domain(jar, ".EXAMPLE.COM");
     check_int("clear normalized domain", neverc_cookiejar_count(jar), 2);
 
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://www.example.com/",
+        "parent=1; Domain=example.com; Path=/");
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://www.example.com/",
+        "child=1; Domain=www.example.com; Path=/");
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://other.test/", "keep=1; Path=/");
+    check_int("overlap cookies added", neverc_cookiejar_count(jar), 5);
+    neverc_cookiejar_clear_domain(jar, "www.example.com");
+    check_int("clear host removes parent and child domains",
+              neverc_cookiejar_count(jar), 3);
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://www.example.com/",
+        "child=1; Domain=www.example.com; Path=/");
+    neverc_cookiejar_clear_domain(jar, "example.com");
+    check_int("clear parent removes subdomain cookies",
+              neverc_cookiejar_count(jar), 3);
+
     neverc_cookiejar_clear_all(jar);
     check_int("after clear all", neverc_cookiejar_count(jar), 0);
 
@@ -587,6 +632,7 @@ int main(void) {
     test_domain_security();
     test_path_matching();
     test_default_path();
+    test_ipv4_mapped_isolation();
     test_ipv6_host_isolation();
     test_invalid_cookie_octets();
     test_secure();

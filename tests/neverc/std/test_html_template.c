@@ -34,6 +34,25 @@ static void test_html_escape(void) {
     e = neverc_html_escape("");
     check_str("empty", e, "");
     free(e);
+
+    e = neverc_html_escape(NULL);
+    check_str("null", e, "");
+    free(e);
+}
+
+static void test_attr_escape(void) {
+    printf("[attr_escape]\n");
+    char *e = neverc_html_attr_escape("a & b < c > d \"e\"");
+    check_str("attr mixed", e, "a &amp; b &lt; c &gt; d &#34;e&#34;");
+    free(e);
+
+    e = neverc_html_attr_escape("safe");
+    check_str("attr safe", e, "safe");
+    free(e);
+
+    e = neverc_html_attr_escape(NULL);
+    check_str("attr null", e, "");
+    free(e);
 }
 
 static void test_js_escape(void) {
@@ -61,6 +80,10 @@ static void test_js_escape(void) {
     e = neverc_html_js_escape("\xe2\x80\xa8" "x");
     check_str("line separator", e, "\\u2028x");
     free(e);
+
+    e = neverc_html_js_escape(NULL);
+    check_str("js null", e, "");
+    free(e);
 }
 
 static void test_css_escape(void) {
@@ -76,12 +99,20 @@ static void test_css_escape(void) {
     e = neverc_html_css_escape("!G");
     check_str("non-hex continuation needs no separator", e, "\\21G");
     free(e);
+
+    e = neverc_html_css_escape(NULL);
+    check_str("css null", e, "");
+    free(e);
 }
 
 static void test_url_escape(void) {
     printf("[url_escape]\n");
     char *e = neverc_html_url_query_escape("hello world&foo=bar");
     check_str("url", e, "hello%20world%26foo%3Dbar");
+    free(e);
+
+    e = neverc_html_url_query_escape(NULL);
+    check_str("url null", e, "");
     free(e);
 }
 
@@ -275,6 +306,123 @@ static void test_template_url_and_script(void) {
     check("css url() split scheme neutralized",
           out && strstr(out, "javascript:") == NULL);
     free(out);
+
+    neverc_html_template_data_set(&data, "X", "\" onmouseover=alert(1) x=\"");
+    out = neverc_html_template_render(
+        "<div data-code=\"<script>\" class=\"{{.X}}\">", &data);
+    check_str("script text in attr uses html escape", out,
+              "<div data-code=\"<script>\" class=\"&#34; onmouseover=alert(1) x=&#34;\">");
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "onclick=alert(1)");
+    out = neverc_html_template_render("<div title=\"a > b\" {{.X}}>", &data);
+    check("quoted gt does not end the tag",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("quoted gt no raw onclick attr",
+          out && strstr(out, "onclick=alert(1)") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "<img>");
+    out = neverc_html_template_render("<!-- <script> -->{{.X}}", &data);
+    check_str("comment does not start script context", out,
+              "<!-- <script> -->&lt;img&gt;");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "https://example.com/a.js");
+    out = neverc_html_template_render(
+        "<script src=\"{{.Link}}\"></script>", &data);
+    check_str("safe script src is not js-escaped", out,
+              "<script src=\"https://example.com/a.js\"></script>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Color",
+                                  "background:url(javascript:alert(1))");
+    out = neverc_html_template_render("<div style=\"{{.Color}}\">", &data);
+    check_str("style value js url neutralized", out, "<div style=\"#\">");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Color",
+                                  "background:url(javascript:alert(1))");
+    out = neverc_html_template_render("<style>{{.Color}}</style>", &data);
+    check_str("style tag js url neutralized", out, "<style>#</style>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "script");
+    out = neverc_html_template_render("<{{.X}}>alert(1)</{{.X}}>", &data);
+    check("tag name is replaced", out && strstr(out, "ZgotmplZ") != NULL);
+    check("tag name is not a script element",
+          out && strstr(out, "<script>") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "javascript");
+    out = neverc_html_template_render("<a href=\"{{.X}}:alert(1)\">x</a>",
+                                      &data);
+    check("scheme then static colon neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check("scheme then static colon becomes hash",
+          out && strstr(out, "href=\"#") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "s");
+    out = neverc_html_template_render(
+        "<a href=\"java{{.X}}cript:alert(1)\">x</a>", &data);
+    check("split scheme around interpolation neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "ftp://files.example.com/a");
+    out = neverc_html_template_render("<a href=\"{{.Link}}\">x</a>", &data);
+    check("unknown scheme neutralized",
+          out && strstr(out, "ftp:") == NULL);
+    check("unknown scheme becomes hash",
+          out && strstr(out, "href=\"#\"") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "mailto:user@example.com");
+    out = neverc_html_template_render("<a href=\"{{.Link}}\">x</a>", &data);
+    check_str("mailto url allowed", out,
+              "<a href=\"mailto:user@example.com\">x</a>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<img srcset=\"https://example.com/a.jpg 1x, {{.X}}\">", &data);
+    check("srcset later url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Q", "a&b=c");
+    out = neverc_html_template_render(
+        "<a href=\"/search?q={{.Q}}\">x</a>", &data);
+    check_str("url query is percent-encoded", out,
+              "<a href=\"/search?q=a%26b%3Dc\">x</a>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Color",
+                                  "@import url(https://evil.example/x.css)");
+    out = neverc_html_template_render("<style>{{.Color}}</style>", &data);
+    check_str("style tag import neutralized", out, "<style>#</style>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Color", "expression(alert(1))");
+    out = neverc_html_template_render("<div style=\"{{.Color}}\">", &data);
+    check_str("style expression neutralized", out, "<div style=\"#\">");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Color",
+                                  "\\6aavascript:alert(1)");
+    out = neverc_html_template_render("<div style=\"{{.Color}}\">", &data);
+    check("css escape bypass neutralized",
+          out && strstr(out, "avascript") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "</textarea><script>alert(1)</script>");
+    out = neverc_html_template_render("<textarea>{{.X}}</textarea>", &data);
+    check("textarea end tag is html-escaped",
+          out && strstr(out, "&lt;/textarea&gt;") != NULL);
+    check("textarea does not contain a raw script tag",
+          out && strstr(out, "<script") == NULL);
+    free(out);
     neverc_html_template_data_free(&data);
 }
 
@@ -304,6 +452,11 @@ static void test_template_if(void) {
     check_str("if_false", out, "");
     free(out);
 
+    out = neverc_html_template_render(
+        "{{if .Missing}}visible{{else}}hidden{{end}}", &data);
+    check_str("if_missing", out, "hidden");
+    free(out);
+
     neverc_html_template_data_free(&data);
 }
 
@@ -323,6 +476,20 @@ static void test_template_if_else(void) {
         "{{if .Show}}yes{{else}}no{{end}}", &data);
     check_str("if_else_false", out, "no");
     free(out);
+
+    neverc_html_template_data_set(&data, "A", "1");
+    neverc_html_template_data_set(&data, "B", "0");
+    out = neverc_html_template_render(
+        "{{if .A}}{{if .B}}ab{{else}}a{{end}}{{else}}no{{end}}", &data);
+    check_str("nested_if_else", out, "a");
+    free(out);
+
+    neverc_html_template_data_set(&data, "A", "0");
+    out = neverc_html_template_render(
+        "{{if .A}}{{if .B}}ab{{else}}a{{end}}{{else}}no{{end}}", &data);
+    check_str("nested_if_outer_false", out, "no");
+    free(out);
+
     neverc_html_template_data_free(&data);
 }
 
@@ -341,6 +508,13 @@ static void test_template_range_subset(void) {
         "A{{range .Items}}B{{end}}C", &data);
     check_str("range_present_once", out, "ABC");
     free(out);
+
+    neverc_html_template_data_set(&data, "Show", "1");
+    neverc_html_template_data_set(&data, "Items", "present");
+    out = neverc_html_template_render(
+        "{{if .Show}}A{{range .Items}}B{{end}}C{{else}}no{{end}}", &data);
+    check_str("range_inside_if", out, "ABC");
+    free(out);
     neverc_html_template_data_free(&data);
 }
 
@@ -348,7 +522,8 @@ static void test_template_parse_errors(void) {
     printf("[template_parse_errors]\n");
     const char *bad[] = {
         "{{.Name", "{{if .Show}}open", "{{else}}", "{{end}}",
-        "{{if}}", "{{range}}"
+        "{{if}}", "{{range}}", "{{if .A}}{{if .B}}x{{end}}",
+        "{{range .X}}{{else}}{{end}}", "{{if .A}}{{else}}{{else}}{{end}}"
     };
     for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
         neverc_html_template_t *t = neverc_html_template_parse(bad[i]);
@@ -357,6 +532,15 @@ static void test_template_parse_errors(void) {
     }
     check("NULL template rejected", neverc_html_template_parse(NULL) == NULL);
     check("NULL render rejected", neverc_html_template_render(NULL, NULL) == NULL);
+    check("NULL execute rejected",
+          neverc_html_template_execute(NULL, NULL) == NULL);
+
+    neverc_html_template_t *ok = neverc_html_template_parse("Hi {{.Name}}");
+    check("parse ok", ok != NULL);
+    char *out = neverc_html_template_execute(ok, NULL);
+    check_str("NULL data execute", out, "Hi ");
+    free(out);
+    neverc_html_template_free(ok);
 }
 
 static void test_data_operations(void) {
@@ -376,6 +560,7 @@ static void test_data_operations(void) {
 
 int main(void) {
     test_html_escape();
+    test_attr_escape();
     test_js_escape();
     test_css_escape();
     test_url_escape();

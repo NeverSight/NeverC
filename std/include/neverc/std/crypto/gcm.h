@@ -12,6 +12,8 @@ extern "C" {
 /*
  * AES-GCM authenticated encryption — NIST SP 800-38D.
  * Supports AES-128/192/256-GCM with 12-byte nonces and 16-byte tags.
+ * Nonces must be unique per key; reuse of (key, nonce) discloses plaintext
+ * XOR and forges tags. Open compares the tag in constant time.
  */
 
 typedef struct {

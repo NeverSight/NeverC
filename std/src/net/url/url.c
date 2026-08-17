@@ -162,7 +162,8 @@ static int valid_host_text(const char *host, size_t length) {
     for (size_t i = 0; i < length; i++) {
         unsigned char c = (unsigned char)host[i];
         if (c <= 0x20 || c == 0x7f || c == '/' || c == '\\' ||
-            c == '?' || c == '#' || c == '@' || c == '[' || c == ']')
+            c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
+            c == ':')
             return 0;
     }
     return 1;

@@ -96,6 +96,42 @@ static void test_isabs(void) {
 #endif
 }
 
+static void test_is_local_and_volume(void) {
+    printf("[is_local/volume]\n");
+    char buf[256];
+    ASSERT_TRUE(neverc_filepath_is_local("foo"));
+    ASSERT_TRUE(neverc_filepath_is_local("a/b"));
+    ASSERT_TRUE(neverc_filepath_is_local("."));
+    ASSERT_TRUE(neverc_filepath_is_local("a/../b"));
+    ASSERT_FALSE(neverc_filepath_is_local(""));
+    ASSERT_FALSE(neverc_filepath_is_local(NULL));
+    ASSERT_FALSE(neverc_filepath_is_local(".."));
+#ifdef _WIN32
+    ASSERT_FALSE(neverc_filepath_is_local("C:\\Windows"));
+    ASSERT_FALSE(neverc_filepath_is_local("C:foo"));
+    ASSERT_FALSE(neverc_filepath_is_local("\\\\server\\share"));
+    ASSERT_FALSE(neverc_filepath_is_local("NUL"));
+    ASSERT_FALSE(neverc_filepath_is_local("con"));
+    ASSERT_FALSE(neverc_filepath_is_local("foo\\..\\..\\bar"));
+    ASSERT_TRUE(neverc_filepath_is_local("foo\\bar"));
+    ASSERT_STR_EQ(neverc_filepath_volume_name("C:\\foo\\bar", buf, sizeof(buf)),
+                  "C:");
+    ASSERT_STR_EQ(neverc_filepath_volume_name("\\\\host\\share\\x", buf, sizeof(buf)),
+                  "\\\\host\\share");
+    ASSERT_STR_EQ(neverc_filepath_volume_name("//host/share/x", buf, sizeof(buf)),
+                  "\\\\host\\share");
+#else
+    ASSERT_FALSE(neverc_filepath_is_local("/etc/passwd"));
+    ASSERT_FALSE(neverc_filepath_is_local("../x"));
+    ASSERT_FALSE(neverc_filepath_is_local("a/../.."));
+    ASSERT_FALSE(neverc_filepath_is_local("../../../etc/passwd"));
+    ASSERT_STR_EQ(neverc_filepath_volume_name("/foo/bar", buf, sizeof(buf)), "");
+    ASSERT_STR_EQ(neverc_filepath_volume_name("C:\\foo", buf, sizeof(buf)), "");
+#endif
+    ASSERT_TRUE(neverc_filepath_volume_name("x", NULL, 8) == NULL);
+    ASSERT_TRUE(neverc_filepath_volume_name("x", buf, 0) == NULL);
+}
+
 static void test_clean(void) {
     printf("[clean]\n");
     char buf[256];
@@ -192,10 +228,14 @@ static void test_join(void) {
     ASSERT_STR_EQ(neverc_filepath_join("safe", "C:\\Windows", buf, sizeof(buf)), "safe\\C:\\Windows");
     ASSERT_STR_EQ(neverc_filepath_join("C:\\foo", "\\bar", buf, sizeof(buf)), "C:\\foo\\bar");
     ASSERT_STR_EQ(neverc_filepath_join("a", "C:b", buf, sizeof(buf)), "a\\C:b");
+    ASSERT_STR_EQ(neverc_filepath_join("safe", "..\\..\\Windows", buf, sizeof(buf)),
+                  "..\\Windows");
 #else
     ASSERT_STR_EQ(neverc_filepath_join("/foo", "bar", buf, sizeof(buf)), "/foo/bar");
     ASSERT_STR_EQ(neverc_filepath_join("a", "b/c", buf, sizeof(buf)), "a/b/c");
     ASSERT_STR_EQ(neverc_filepath_join("safe", "/etc/passwd", buf, sizeof(buf)), "safe/etc/passwd");
+    ASSERT_STR_EQ(neverc_filepath_join("/safe", "../../../etc/passwd", buf, sizeof(buf)),
+                  "/etc/passwd");
     ASSERT_STR_EQ(neverc_filepath_join("/foo", "/bar", buf, sizeof(buf)), "/foo/bar");
     ASSERT_STR_EQ(neverc_filepath_join("a", "/b", buf, sizeof(buf)), "a/b");
     ASSERT_STR_EQ(neverc_filepath_join("//", "a", buf, sizeof(buf)), "/a");
@@ -290,6 +330,7 @@ int main(void) {
     test_dir();
     test_ext();
     test_isabs();
+    test_is_local_and_volume();
     test_clean();
     test_long_and_invalid_paths();
     test_join();

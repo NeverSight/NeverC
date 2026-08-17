@@ -248,6 +248,17 @@ static void test_invalid_streams(void) {
     ASSERT_INT_EQ(neverc_flate_decompress(
                       padded, stored_len + 1U, output, &output_len),
                   -1);
+
+    size_t used = 0;
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress_consumed(
+                      padded, stored_len + 1U, output, &output_len, &used),
+                  0);
+    ASSERT_TRUE(used == stored_len);
+    ASSERT_TRUE(output_len == 3 && memcmp(output, "abc", 3) == 0);
+    ASSERT_INT_EQ(neverc_flate_decompress_consumed(
+                      stored, stored_len, output, &output_len, NULL),
+                  -1);
 }
 
 int main(void) {
@@ -261,5 +272,6 @@ int main(void) {
     test_stored_blocks();
     test_invalid_streams();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

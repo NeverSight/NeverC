@@ -245,6 +245,18 @@ static void test_1024_seed_deterministic(void) {
     neverc_mlkem1024_dk_encapsulation_key(&dk2, &ek2);
     ASSERT(memcmp(ek1.ek, ek2.ek, NEVERC_MLKEM1024_EK_SIZE) == 0,
            "same seed → same ek");
+
+    uint8_t seed_out[64];
+    neverc_mlkem1024_dk_bytes(&dk1, seed_out);
+    ASSERT(memcmp(seed, seed_out, 64) == 0, "dk_bytes round-trip");
+
+    uint8_t encoded[NEVERC_MLKEM1024_EK_SIZE];
+    size_t encoded_len = 0;
+    neverc_mlkem1024_ek_bytes(&ek1, encoded, &encoded_len);
+    ASSERT(encoded_len == NEVERC_MLKEM1024_EK_SIZE, "ek size");
+    neverc_mlkem1024_ek_t ek3;
+    ASSERT(neverc_mlkem1024_new_ek(&ek3, encoded, encoded_len) == 0, "parse ek");
+    ASSERT(memcmp(ek1.ek, ek3.ek, NEVERC_MLKEM1024_EK_SIZE) == 0, "ek match");
     printf("ok\n");
 }
 

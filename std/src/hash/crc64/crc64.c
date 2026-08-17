@@ -77,6 +77,8 @@ static int shared64_s8_ready;   /* 0 = unbuilt, 1 = building, 2 = published */
 
 uint64_t neverc_crc64_update(uint64_t crc, const neverc_crc64_table_t table,
                               const uint8_t *data, size_t len) {
+    if (!table) return crc;
+    if (!data) len = 0;
     if (len < 64) {
         crc = ~crc;
         for (size_t i = 0; i < len; i++)

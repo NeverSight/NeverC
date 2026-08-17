@@ -95,7 +95,9 @@ static size_t nci_ss_crit_fact(const uint8_t *x, size_t m, size_t *period) {
 static void nci_ss_pp_init(nci_ss_pp_t *pp, const uint8_t *n, size_t nlen) {
     size_t period;
     size_t suffix = nci_ss_crit_fact(n, nlen, &period);
-    pp->periodic = (memcmp(n, n + period, suffix) == 0);
+    pp->periodic = (suffix == 0) ||
+        (period <= nlen && suffix <= nlen - period &&
+         memcmp(n, n + period, suffix) == 0);
     if (!pp->periodic) {
         size_t tail = nlen - suffix;
         period = (suffix > tail ? suffix : tail) + 1;

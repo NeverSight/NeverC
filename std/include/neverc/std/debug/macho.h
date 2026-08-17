@@ -137,6 +137,7 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len);
 void neverc_macho_close(neverc_macho_file_t *f);
 int neverc_macho_open_file(neverc_macho_file_t *f, const char *path);
 int neverc_macho_is_valid(const uint8_t *data, size_t len);
+int neverc_macho_is_fat(const uint8_t *data, size_t len);
 
 const neverc_macho_section_t *neverc_macho_section(const neverc_macho_file_t *f,
                                                      const char *name);

@@ -102,6 +102,22 @@ static void test_isabs(void) {
     check_int("isabs /",     neverc_path_isabs("/"), 1);
 }
 
+static void test_is_local(void) {
+    printf("[is_local]\n");
+    check_int("local foo", neverc_path_is_local("foo"), 1);
+    check_int("local a/b", neverc_path_is_local("a/b"), 1);
+    check_int("local dot", neverc_path_is_local("."), 1);
+    check_int("local a/../b", neverc_path_is_local("a/../b"), 1);
+    check_int("not local empty", neverc_path_is_local(""), 0);
+    check_int("not local null", neverc_path_is_local(NULL), 0);
+    check_int("not local abs", neverc_path_is_local("/etc/passwd"), 0);
+    check_int("not local parent", neverc_path_is_local(".."), 0);
+    check_int("not local ../x", neverc_path_is_local("../x"), 0);
+    check_int("not local a/../..", neverc_path_is_local("a/../.."), 0);
+    check_int("not local traversal",
+              neverc_path_is_local("../../../etc/passwd"), 0);
+}
+
 /* ===== Test: Clean ===== */
 static void test_clean(void) {
     printf("[clean]\n");
@@ -175,6 +191,17 @@ static void test_join(void) {
 
     neverc_path_join2("/a", "../..", buf, sizeof(buf));
     check_str("join above root", buf, "/");
+
+    /* Join+Clean is lexical, not a sandbox: ".." can leave the first element. */
+    neverc_path_join2("/safe", "../../../etc/passwd", buf, sizeof(buf));
+    check_str("join rooted traversal", buf, "/etc/passwd");
+
+    neverc_path_join2("safe", "../../../etc/passwd", buf, sizeof(buf));
+    check_str("join relative traversal", buf, "../../etc/passwd");
+
+    neverc_path_join2("/safe", "/etc/passwd", buf, sizeof(buf));
+    check_str("join keeps first when second is absolute-looking",
+              buf, "/safe/etc/passwd");
 
     /* Longer than the old 4096-byte stack scratch. */
     {
@@ -282,6 +309,7 @@ int main(void) {
     test_dir();
     test_ext();
     test_isabs();
+    test_is_local();
     test_clean();
     test_join();
     test_split();

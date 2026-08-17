@@ -162,20 +162,21 @@ void neverc_log_println(neverc_log_logger_t *l, const char *msg) {
 }
 
 void neverc_log_fatal(neverc_log_logger_t *l, const char *msg) {
-    print_message(l, msg, 1, 1);
+    print_message(l, msg, 0, 1);
     exit(1);
 }
 
 void neverc_log_fatalf(neverc_log_logger_t *l, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    vprint_message(l, fmt, args, 1, 1);
+    vprint_message(l, fmt, args, 0, 1);
     va_end(args);
     exit(1);
 }
 
 void neverc_log_fatalln(neverc_log_logger_t *l, const char *msg) {
-    neverc_log_fatal(l, msg);
+    print_message(l, msg, 1, 1);
+    exit(1);
 }
 
 void neverc_log_panic(neverc_log_logger_t *l, const char *msg) {
@@ -186,7 +187,7 @@ void neverc_log_panic(neverc_log_logger_t *l, const char *msg) {
 void neverc_log_panicf(neverc_log_logger_t *l, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    vprint_message(l, fmt, args, 1, 1);
+    vprint_message(l, fmt, args, 0, 1);
     va_end(args);
     abort();
 }
@@ -251,7 +252,7 @@ void neverc_log_default_fatal(const char *msg) {
 void neverc_log_default_fatalf(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    vprint_message(get_default(), fmt, args, 1, 1);
+    vprint_message(get_default(), fmt, args, 0, 1);
     va_end(args);
     exit(1);
 }
@@ -263,7 +264,7 @@ void neverc_log_default_panic(const char *msg) {
 void neverc_log_default_panicf(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    vprint_message(get_default(), fmt, args, 1, 1);
+    vprint_message(get_default(), fmt, args, 0, 1);
     va_end(args);
     abort();
 }

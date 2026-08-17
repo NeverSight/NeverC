@@ -61,6 +61,8 @@
 #define QUIC_ERR_TRANSPORT_PARAMETER_ERROR    0x08U
 #define QUIC_ERR_CONNECTION_ID_LIMIT_ERROR    0x09U
 #define QUIC_ERR_PROTOCOL_VIOLATION           0x0aU
+#define QUIC_ERR_INVALID_TOKEN                0x0bU
+#define QUIC_ERR_APPLICATION_ERROR            0x0cU
 #define QUIC_ERR_NO_VIABLE_PATH               0x10U
 
 typedef enum {
@@ -145,6 +147,7 @@ typedef struct {
     uint64_t sequence;
     uint8_t stateless_reset_token[16];
     int retired;
+    int retire_unsent;
 } quic_conn_id_entry_t;
 
 typedef struct quic_fragment {
@@ -508,6 +511,13 @@ int neverc_quic_parse_packet_header(const uint8_t *buf, size_t len,
 int neverc_quic_write_long_header(uint8_t *buf, size_t cap,
                                   const quic_packet_header_t *header,
                                   size_t *written);
+int neverc_quic_is_version_negotiation(const uint8_t *buf, size_t len);
+int neverc_quic_version_negotiation_supports(const uint8_t *buf, size_t len,
+                                             uint32_t version);
+int neverc_quic_write_version_negotiation(
+    uint8_t *buf, size_t cap, uint8_t first_byte,
+    const quic_conn_id_t *destination, const quic_conn_id_t *source,
+    const uint32_t *versions, size_t nversions, size_t *written);
 uint64_t neverc_quic_decode_packet_number(uint64_t largest_received,
                                           uint64_t truncated,
                                           unsigned packet_number_bits);
@@ -580,6 +590,11 @@ int neverc_quic_write_reset_stream(uint8_t *buf, size_t cap,
 int neverc_quic_write_ping(uint8_t *buf, size_t cap, size_t *written);
 int neverc_quic_write_handshake_done(uint8_t *buf, size_t cap,
                                      size_t *written);
+int neverc_quic_parse_retire_conn_id(const uint8_t *buf, size_t len,
+                                     quic_frame_retire_conn_id_t *output,
+                                     size_t *consumed);
+int neverc_quic_write_retire_conn_id(uint8_t *buf, size_t cap,
+                                     uint64_t sequence, size_t *written);
 
 void neverc_quic_transport_params_default(quic_transport_params_t *params);
 uint64_t neverc_quic_effective_idle_timeout_ms(uint64_t local_ms,
@@ -651,6 +666,7 @@ int neverc_quic_tls_prepare_read_key_update(quic_tls_t *tls,
 int neverc_quic_tls_commit_read_key_update(quic_tls_t *tls,
                                             const quic_keys_t *next_keys);
 void neverc_quic_tls_discard_read_key_update(quic_tls_t *tls);
+void neverc_quic_tls_discard_keys(quic_tls_t *tls, quic_enc_level_t level);
 const quic_keys_t *neverc_quic_tls_get_read_keys(
     const quic_tls_t *tls, quic_enc_level_t level);
 const quic_keys_t *neverc_quic_tls_get_write_keys(
@@ -717,6 +733,12 @@ int neverc_quic_stream_apply_stop_sending(
     struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t error_code);
 int neverc_quic_stream_apply_stop_sending_locked(
     struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t error_code);
+int neverc_quic_conn_apply_max_data_locked(struct neverc_quic_conn *conn,
+                                           uint64_t maximum);
+int neverc_quic_conn_add_peer_cid(struct neverc_quic_conn *conn,
+                                  const quic_frame_new_conn_id_t *frame);
+int neverc_quic_conn_retire_local_cid_locked(struct neverc_quic_conn *conn,
+                                             uint64_t sequence);
 int neverc_quic_stream_receive_reset_locked(
     struct neverc_quic_conn *conn,
     const quic_frame_reset_stream_t *frame);

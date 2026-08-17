@@ -16,6 +16,7 @@
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 #include <windows.h>
+#include <winioctl.h>
 #include <direct.h>
 #include <fcntl.h>
 #include <io.h>
@@ -25,6 +26,7 @@
 #else
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -37,6 +39,66 @@ struct neverc_os_file {
 };
 
 static neverc_os_file_t *file_from_descriptor(int fd, const char *mode);
+
+#if defined(NEVERC_PLATFORM_WINDOWS)
+static void os_win_set_errno(void) {
+    DWORD e = GetLastError();
+    switch (e) {
+    case ERROR_FILE_NOT_FOUND:
+    case ERROR_PATH_NOT_FOUND:
+    case ERROR_INVALID_DRIVE:
+    case ERROR_BAD_NETPATH:
+        errno = ENOENT;
+        break;
+    case ERROR_ACCESS_DENIED:
+    case ERROR_SHARING_VIOLATION:
+    case ERROR_LOCK_VIOLATION:
+        errno = EACCES;
+        break;
+    case ERROR_PRIVILEGE_NOT_HELD:
+        errno = EPERM;
+        break;
+    case ERROR_FILE_EXISTS:
+    case ERROR_ALREADY_EXISTS:
+        errno = EEXIST;
+        break;
+    case ERROR_NOT_SAME_DEVICE:
+        errno = EXDEV;
+        break;
+    case ERROR_DIR_NOT_EMPTY:
+        errno = ENOTEMPTY;
+        break;
+    case ERROR_FILENAME_EXCED_RANGE:
+        errno = ENAMETOOLONG;
+        break;
+    case ERROR_DISK_FULL:
+        errno = ENOSPC;
+        break;
+    case ERROR_INVALID_PARAMETER:
+    case ERROR_INVALID_NAME:
+    case ERROR_BAD_PATHNAME:
+        errno = EINVAL;
+        break;
+    default:
+        errno = EINVAL;
+        break;
+    }
+}
+
+static int os_win_fail(void) {
+    os_win_set_errno();
+    return -1;
+}
+
+static int64_t os_filetime_unix(FILETIME ft) {
+    ULARGE_INTEGER ull;
+    ull.LowPart = ft.dwLowDateTime;
+    ull.HighPart = ft.dwHighDateTime;
+    if (ull.QuadPart < 116444736000000000ULL)
+        return 0;
+    return (int64_t)((ull.QuadPart - 116444736000000000ULL) / 10000000ULL);
+}
+#endif
 
 static neverc_os_file_t g_stdin  = { NULL, 0, 1 };
 static neverc_os_file_t g_stdout = { NULL, 1, 1 };
@@ -85,7 +147,9 @@ const char *neverc_os_getenv(const char *key) {
 int neverc_os_setenv(const char *key, const char *value) {
     if (!key || !value) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    return SetEnvironmentVariableA(key, value) ? 0 : -1;
+    if (!SetEnvironmentVariableA(key, value))
+        return os_win_fail();
+    return 0;
 #else
     return setenv(key, value, 1);
 #endif
@@ -94,7 +158,9 @@ int neverc_os_setenv(const char *key, const char *value) {
 int neverc_os_unsetenv(const char *key) {
     if (!key) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    return SetEnvironmentVariableA(key, NULL) ? 0 : -1;
+    if (!SetEnvironmentVariableA(key, NULL))
+        return os_win_fail();
+    return 0;
 #else
     return unsetenv(key);
 #endif
@@ -104,7 +170,9 @@ int neverc_os_hostname(char *buf, size_t cap) {
     if (!buf || cap == 0) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     DWORD sz = (DWORD)cap;
-    return GetComputerNameA(buf, &sz) ? 0 : -1;
+    if (!GetComputerNameA(buf, &sz))
+        return os_win_fail();
+    return 0;
 #else
     char tmp[256];
     if (gethostname(tmp, sizeof(tmp)) != 0) return -1;
@@ -121,6 +189,7 @@ int neverc_os_hostname(char *buf, size_t cap) {
 int neverc_os_getwd(char *buf, size_t cap) {
     if (!buf || cap == 0) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
+    if (cap > (size_t)INT_MAX) return -1;
     return _getcwd(buf, (int)cap) ? 0 : -1;
 #else
     return getcwd(buf, cap) ? 0 : -1;
@@ -209,8 +278,11 @@ int64_t neverc_os_seek(neverc_os_file_t *f, int64_t offset, int whence) {
     if (_fseeki64(f->fp, offset, whence) != 0) return -1;
     return (int64_t)_ftelli64(f->fp);
 #else
-    if (fseek(f->fp, (long)offset, whence) != 0) return -1;
-    return (int64_t)ftell(f->fp);
+    if ((off_t)offset != offset) return -1;
+    if (fseeko(f->fp, (off_t)offset, whence) != 0) return -1;
+    off_t pos = ftello(f->fp);
+    if (pos < 0) return -1;
+    return (int64_t)pos;
 #endif
 }
 
@@ -230,18 +302,66 @@ int neverc_os_sync(neverc_os_file_t *f) {
 
 /* ---- Convenience File Operations ---- */
 
+static int os_file_size64(FILE *fp, uint64_t *size) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    if (_fseeki64(fp, 0, SEEK_END) != 0) return -1;
+    __int64 sz = _ftelli64(fp);
+    if (sz < 0) return -1;
+    if (_fseeki64(fp, 0, SEEK_SET) != 0) return -1;
+    *size = (uint64_t)sz;
+#else
+    if (fseek(fp, 0, SEEK_END) != 0) return -1;
+    long sz = ftell(fp);
+    if (sz < 0) return -1;
+    if (fseek(fp, 0, SEEK_SET) != 0) return -1;
+    *size = (uint64_t)sz;
+#endif
+    return 0;
+}
+
 int neverc_os_read_file(const char *name, unsigned char **out, size_t *out_len) {
     if (!name || !out || !out_len) return -1;
     *out = NULL;
     *out_len = 0;
     FILE *fp = fopen(name, "rb");
     if (!fp) return -1;
-    if (fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return -1; }
-    long sz = ftell(fp);
-    if (sz < 0) { fclose(fp); return -1; }
-    if ((uint64_t)sz > (uint64_t)(SIZE_MAX - 1)) { fclose(fp); return -1; }
-    if (fseek(fp, 0, SEEK_SET) != 0) { fclose(fp); return -1; }
-    unsigned char *buf = (unsigned char*)malloc((size_t)sz + 1);
+
+    uint64_t sz = 0;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    struct _stat64 st;
+    if (_fstat64(_fileno(fp), &st) != 0) {
+        fclose(fp);
+        return -1;
+    }
+    if (st.st_mode & _S_IFDIR) {
+        fclose(fp);
+        return -1;
+    }
+    if ((st.st_mode & _S_IFREG) && st.st_size >= 0) {
+        sz = (uint64_t)st.st_size;
+    } else if (os_file_size64(fp, &sz) != 0) {
+        fclose(fp);
+        return -1;
+    }
+#else
+    struct stat st;
+    if (fstat(fileno(fp), &st) != 0) {
+        fclose(fp);
+        return -1;
+    }
+    if (S_ISDIR(st.st_mode)) {
+        fclose(fp);
+        return -1;
+    }
+    if (S_ISREG(st.st_mode) && st.st_size >= 0) {
+        sz = (uint64_t)st.st_size;
+    } else if (os_file_size64(fp, &sz) != 0) {
+        fclose(fp);
+        return -1;
+    }
+#endif
+    if (sz > (uint64_t)SIZE_MAX - 1U) { fclose(fp); return -1; }
+    unsigned char *buf = (unsigned char *)malloc((size_t)sz + 1U);
     if (!buf) { fclose(fp); return -1; }
     size_t n = fread(buf, 1, (size_t)sz, fp);
     if (n != (size_t)sz && ferror(fp)) {
@@ -533,6 +653,32 @@ static void os_fill_base_name(char *dst, size_t cap, const char *name) {
     dst[n] = '\0';
 }
 
+#if !defined(NEVERC_PLATFORM_WINDOWS)
+static void os_fill_from_st(neverc_os_fileinfo_t *info, const char *name,
+                            const struct stat *st) {
+    info->size = (int64_t)st->st_size;
+    info->mode = (uint32_t)st->st_mode & NEVERC_OS_MODE_PERM;
+    info->mod_time = (int64_t)st->st_mtime;
+    info->is_dir = S_ISDIR(st->st_mode);
+    if (info->is_dir) info->mode |= NEVERC_OS_MODE_DIR;
+    if (S_ISLNK(st->st_mode)) info->mode |= NEVERC_OS_MODE_SYMLINK;
+    if (S_ISFIFO(st->st_mode)) info->mode |= NEVERC_OS_MODE_NAMEDPIPE;
+    if (S_ISSOCK(st->st_mode)) info->mode |= NEVERC_OS_MODE_SOCKET;
+    if (S_ISCHR(st->st_mode))
+        info->mode |= NEVERC_OS_MODE_DEVICE | NEVERC_OS_MODE_CHARDEVICE;
+    else if (S_ISBLK(st->st_mode))
+        info->mode |= NEVERC_OS_MODE_DEVICE;
+    if (st->st_mode & S_ISUID) info->mode |= NEVERC_OS_MODE_SETUID;
+    if (st->st_mode & S_ISGID) info->mode |= NEVERC_OS_MODE_SETGID;
+    if (st->st_mode & S_ISVTX) info->mode |= NEVERC_OS_MODE_STICKY;
+    if (!S_ISREG(st->st_mode) && !S_ISDIR(st->st_mode) && !S_ISLNK(st->st_mode) &&
+        !S_ISFIFO(st->st_mode) && !S_ISSOCK(st->st_mode) &&
+        !S_ISCHR(st->st_mode) && !S_ISBLK(st->st_mode))
+        info->mode |= NEVERC_OS_MODE_IRREGULAR;
+    os_fill_base_name(info->name, sizeof(info->name), name);
+}
+#endif
+
 int neverc_os_stat(const char *name, neverc_os_fileinfo_t *info) {
     if (!name || !info) return -1;
     memset(info, 0, sizeof(*info));
@@ -541,40 +687,51 @@ int neverc_os_stat(const char *name, neverc_os_fileinfo_t *info) {
     struct _stat64 st;
     if (_stat64(name, &st) != 0) return -1;
     info->size = st.st_size;
-    info->mode = (uint32_t)(st.st_mode & 0777);
+    info->mode = (uint32_t)(st.st_mode & NEVERC_OS_MODE_PERM);
     info->mod_time = (int64_t)st.st_mtime;
     info->is_dir = (st.st_mode & _S_IFDIR) != 0;
     if (info->is_dir) info->mode |= NEVERC_OS_MODE_DIR;
+#ifdef _S_IFIFO
+    if ((st.st_mode & _S_IFMT) == _S_IFIFO)
+        info->mode |= NEVERC_OS_MODE_NAMEDPIPE;
+#endif
+#ifdef _S_IFCHR
+    if ((st.st_mode & _S_IFMT) == _S_IFCHR)
+        info->mode |= NEVERC_OS_MODE_DEVICE | NEVERC_OS_MODE_CHARDEVICE;
+#endif
+    os_fill_base_name(info->name, sizeof(info->name), name);
+    return 0;
 #else
     struct stat st;
     if (stat(name, &st) != 0) return -1;
-    info->size = (int64_t)st.st_size;
-    info->mode = (uint32_t)st.st_mode & 0777;
-    if (S_ISDIR(st.st_mode)) info->mode |= NEVERC_OS_MODE_DIR;
-    info->mod_time = (int64_t)st.st_mtime;
-    info->is_dir = S_ISDIR(st.st_mode);
-#endif
-
-    os_fill_base_name(info->name, sizeof(info->name), name);
+    os_fill_from_st(info, name, &st);
     return 0;
+#endif
 }
 
 int neverc_os_lstat(const char *name, neverc_os_fileinfo_t *info) {
     if (!name || !info) return -1;
-#if defined(NEVERC_PLATFORM_WINDOWS)
-    return neverc_os_stat(name, info);
-#else
     memset(info, 0, sizeof(*info));
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    WIN32_FILE_ATTRIBUTE_DATA attr;
+    if (!GetFileAttributesExA(name, GetFileExInfoStandard, &attr))
+        return os_win_fail();
+    LARGE_INTEGER sz;
+    sz.HighPart = (LONG)attr.nFileSizeHigh;
+    sz.LowPart = attr.nFileSizeLow;
+    info->size = sz.QuadPart;
+    info->mod_time = os_filetime_unix(attr.ftLastWriteTime);
+    int reparse = (attr.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+    info->is_dir = !reparse &&
+                   (attr.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    info->mode = info->is_dir ? (NEVERC_OS_MODE_DIR | 0755U) : 0644U;
+    if (reparse) info->mode |= NEVERC_OS_MODE_SYMLINK;
+    os_fill_base_name(info->name, sizeof(info->name), name);
+    return 0;
+#else
     struct stat st;
     if (lstat(name, &st) != 0) return -1;
-    info->size = (int64_t)st.st_size;
-    info->mode = (uint32_t)st.st_mode & 0777;
-    if (S_ISDIR(st.st_mode)) info->mode |= NEVERC_OS_MODE_DIR;
-    if (S_ISLNK(st.st_mode)) info->mode |= NEVERC_OS_MODE_SYMLINK;
-    info->mod_time = (int64_t)st.st_mtime;
-    info->is_dir = S_ISDIR(st.st_mode);
-
-    os_fill_base_name(info->name, sizeof(info->name), name);
+    os_fill_from_st(info, name, &st);
     return 0;
 #endif
 }
@@ -585,7 +742,7 @@ int neverc_os_exists(const char *name) {
     return GetFileAttributesA(name) != INVALID_FILE_ATTRIBUTES;
 #else
     struct stat st;
-    return stat(name, &st) == 0;
+    return lstat(name, &st) == 0;
 #endif
 }
 
@@ -913,15 +1070,17 @@ int neverc_os_truncate(const char *name, int64_t size) {
     if (!name || size < 0) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     HANDLE h = CreateFileA(name, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-    if (h == INVALID_HANDLE_VALUE) return -1;
+    if (h == INVALID_HANDLE_VALUE) return os_win_fail();
     LARGE_INTEGER li; li.QuadPart = size;
     if (!SetFilePointerEx(h, li, NULL, FILE_BEGIN) || !SetEndOfFile(h)) {
+        os_win_set_errno();
         CloseHandle(h);
         return -1;
     }
     CloseHandle(h);
     return 0;
 #else
+    if ((off_t)size != size) return -1;
     return truncate(name, (off_t)size) == 0 ? 0 : -1;
 #endif
 }
@@ -929,7 +1088,7 @@ int neverc_os_truncate(const char *name, int64_t size) {
 int neverc_os_link(const char *oldname, const char *newname) {
     if (!oldname || !newname) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    return CreateHardLinkA(newname, oldname, NULL) ? 0 : -1;
+    return CreateHardLinkA(newname, oldname, NULL) ? 0 : os_win_fail();
 #else
     return link(oldname, newname) == 0 ? 0 : -1;
 #endif
@@ -942,7 +1101,7 @@ int neverc_os_symlink(const char *oldname, const char *newname) {
     DWORD attr = GetFileAttributesA(oldname);
     if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
         flags |= SYMBOLIC_LINK_FLAG_DIRECTORY;
-    return CreateSymbolicLinkA(newname, oldname, flags) ? 0 : -1;
+    return CreateSymbolicLinkA(newname, oldname, flags) ? 0 : os_win_fail();
 #else
     return symlink(oldname, newname) == 0 ? 0 : -1;
 #endif
@@ -951,8 +1110,92 @@ int neverc_os_symlink(const char *oldname, const char *newname) {
 int neverc_os_readlink(const char *name, char *buf, size_t cap) {
     if (!name || !buf || cap == 0) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    (void)name; (void)buf; (void)cap;
-    return -1;
+#ifndef IO_REPARSE_TAG_SYMLINK
+#define IO_REPARSE_TAG_SYMLINK (0xA000000CL)
+#endif
+#ifndef IO_REPARSE_TAG_MOUNT_POINT
+#define IO_REPARSE_TAG_MOUNT_POINT (0xA0000003L)
+#endif
+    HANDLE h = CreateFileA(name, FILE_READ_ATTRIBUTES,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           NULL, OPEN_EXISTING,
+                           FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                           NULL);
+    if (h == INVALID_HANDLE_VALUE) return os_win_fail();
+    BYTE data[16384];
+    DWORD returned = 0;
+    if (!DeviceIoControl(h, FSCTL_GET_REPARSE_POINT, NULL, 0, data, sizeof(data),
+                         &returned, NULL)) {
+        CloseHandle(h);
+        return os_win_fail();
+    }
+    CloseHandle(h);
+
+    typedef struct {
+        ULONG ReparseTag;
+        USHORT ReparseDataLength;
+        USHORT Reserved;
+        union {
+            struct {
+                USHORT SubstituteNameOffset;
+                USHORT SubstituteNameLength;
+                USHORT PrintNameOffset;
+                USHORT PrintNameLength;
+                ULONG Flags;
+                WCHAR PathBuffer[1];
+            } SymbolicLinkReparseBuffer;
+            struct {
+                USHORT SubstituteNameOffset;
+                USHORT SubstituteNameLength;
+                USHORT PrintNameOffset;
+                USHORT PrintNameLength;
+                WCHAR PathBuffer[1];
+            } MountPointReparseBuffer;
+        };
+    } os_reparse_data_t;
+
+    os_reparse_data_t *rp = (os_reparse_data_t *)data;
+    const WCHAR *wsrc = NULL;
+    size_t wlen = 0;
+    if (rp->ReparseTag == IO_REPARSE_TAG_SYMLINK) {
+        USHORT off = rp->SymbolicLinkReparseBuffer.PrintNameOffset;
+        USHORT len = rp->SymbolicLinkReparseBuffer.PrintNameLength;
+        if (len == 0) {
+            off = rp->SymbolicLinkReparseBuffer.SubstituteNameOffset;
+            len = rp->SymbolicLinkReparseBuffer.SubstituteNameLength;
+        }
+        wsrc = (const WCHAR *)((const BYTE *)rp->SymbolicLinkReparseBuffer.PathBuffer + off);
+        wlen = (size_t)len / sizeof(WCHAR);
+    } else if (rp->ReparseTag == IO_REPARSE_TAG_MOUNT_POINT) {
+        USHORT off = rp->MountPointReparseBuffer.PrintNameOffset;
+        USHORT len = rp->MountPointReparseBuffer.PrintNameLength;
+        if (len == 0) {
+            off = rp->MountPointReparseBuffer.SubstituteNameOffset;
+            len = rp->MountPointReparseBuffer.SubstituteNameLength;
+        }
+        wsrc = (const WCHAR *)((const BYTE *)rp->MountPointReparseBuffer.PathBuffer + off);
+        wlen = (size_t)len / sizeof(WCHAR);
+    } else {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!wsrc || wlen == 0 || wlen > INT_MAX) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (cap > INT_MAX) cap = INT_MAX;
+    int n = WideCharToMultiByte(CP_ACP, 0, wsrc, (int)wlen, buf, (int)cap - 1,
+                                NULL, NULL);
+    if (n <= 0 || (size_t)n >= cap) return os_win_fail();
+    buf[n] = '\0';
+    if (strncmp(buf, "\\??\\UNC\\", 8) == 0) {
+        buf[0] = '\\';
+        buf[1] = '\\';
+        memmove(buf + 2, buf + 8, strlen(buf + 8) + 1);
+    } else if (strncmp(buf, "\\??\\", 4) == 0 || strncmp(buf, "\\\\?\\", 4) == 0) {
+        memmove(buf, buf + 4, strlen(buf + 4) + 1);
+    }
+    return 0;
 #else
     ssize_t n = readlink(name, buf, cap);
     if (n < 0 || (size_t)n >= cap) return -1;
@@ -980,7 +1223,7 @@ int neverc_os_read_dir(const char *dirname, neverc_os_dir_entry_t **entries,
     }
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA(pattern, &fd);
-    if (h == INVALID_HANDLE_VALUE) { free(arr); return -1; }
+    if (h == INVALID_HANDLE_VALUE) { free(arr); return os_win_fail(); }
     do {
         if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
         if (length >= cap) {
@@ -996,12 +1239,20 @@ int neverc_os_read_dir(const char *dirname, neverc_os_dir_entry_t **entries,
         }
         memset(&arr[length], 0, sizeof(arr[length]));
         strncpy(arr[length].name, fd.cFileName, sizeof(arr[length].name) - 1);
-        arr[length].is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
+        {
+            int reparse = (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+            arr[length].is_dir = !reparse &&
+                (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        }
         length++;
     } while (FindNextFileA(h, &fd));
     DWORD err = GetLastError();
     FindClose(h);
-    if (err != ERROR_NO_MORE_FILES) { free(arr); return -1; }
+    if (err != ERROR_NO_MORE_FILES) {
+        free(arr);
+        SetLastError(err);
+        return os_win_fail();
+    }
 #else
     DIR *d = opendir(dirname);
     if (!d) { free(arr); return -1; }

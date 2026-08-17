@@ -138,6 +138,25 @@ int main(void) {
     check_sha256_bytes("zero-length", (const uint8_t *)"", 0,
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 
+    printf("[invalid data span ignored]\n");
+    {
+        tests_run++;
+        neverc_sha256_ctx ctx;
+        neverc_sha256_init(&ctx);
+        neverc_sha256_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha256_update(&ctx, NULL, 5);
+        uint8_t digest[32];
+        neverc_sha256_final(&ctx, digest);
+        char got_hex[65];
+        hex_encode(digest, 32, got_hex);
+        if (strcmp(got_hex, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == 0)
+            tests_passed++;
+        else {
+            tests_failed++;
+            printf("  FAIL: invalid span ignored\n    got: %s\n", got_hex);
+        }
+    }
+
     printf("[boundary: exactly 55 bytes (fits in one block with padding)]\n");
     check_sha256("55 bytes",
         "1234567890123456789012345678901234567890123456789012345",

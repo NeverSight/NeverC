@@ -6,6 +6,7 @@
  */
 
 #include "neverc/std/container/list.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <stddef.h>
 
@@ -28,6 +29,7 @@ static neverc_list_element_t *insert_elem(neverc_list_t *l,
 
 static neverc_list_element_t *insert_value(neverc_list_t *l, void *v,
                                             neverc_list_element_t *at) {
+    if (l->len == INT_MAX) return NULL;
     neverc_list_element_t *e =
         (neverc_list_element_t *)malloc(sizeof(neverc_list_element_t));
     if (!e) return NULL;
@@ -178,4 +180,36 @@ neverc_list_element_t *neverc_list_element_prev(const neverc_list_element_t *e) 
     if (p && p != &e->list->root)
         return p;
     return NULL;
+}
+
+int neverc_list_push_back_list(neverc_list_t *l, const neverc_list_t *other) {
+    if (!l || !other) return -1;
+    lazy_init(l);
+    int n = other->len;
+    if (n <= 0) return 0;
+    neverc_list_element_t *e = neverc_list_front(other);
+    int added = 0;
+    for (int i = 0; i < n && e; i++) {
+        if (!insert_value(l, e->value, l->root.prev))
+            return added > 0 ? added : -1;
+        added++;
+        e = neverc_list_element_next(e);
+    }
+    return added;
+}
+
+int neverc_list_push_front_list(neverc_list_t *l, const neverc_list_t *other) {
+    if (!l || !other) return -1;
+    lazy_init(l);
+    int n = other->len;
+    if (n <= 0) return 0;
+    neverc_list_element_t *e = neverc_list_back(other);
+    int added = 0;
+    for (int i = 0; i < n && e; i++) {
+        if (!insert_value(l, e->value, &l->root))
+            return added > 0 ? added : -1;
+        added++;
+        e = neverc_list_element_prev(e);
+    }
+    return added;
 }

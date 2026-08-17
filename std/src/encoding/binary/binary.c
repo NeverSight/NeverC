@@ -86,3 +86,53 @@ void neverc_binary_little_endian_put_uint64(uint8_t *b, uint64_t v) {
     b[6] = (uint8_t)(v >> 48);
     b[7] = (uint8_t)(v >> 56);
 }
+
+int neverc_binary_put_uvarint(uint8_t *buf, size_t buf_len, uint64_t x) {
+    size_t i = 0;
+    while (x >= 0x80) {
+        if (!buf || i >= buf_len) return -1;
+        buf[i++] = (uint8_t)(x | 0x80);
+        x >>= 7;
+    }
+    if (!buf || i >= buf_len) return -1;
+    buf[i++] = (uint8_t)x;
+    return (int)i;
+}
+
+int neverc_binary_uvarint(const uint8_t *buf, size_t n, uint64_t *out) {
+    if (!buf && n != 0) return -1;
+    uint64_t x = 0;
+    unsigned s = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (i >= NEVERC_BINARY_MAX_VARINT_LEN64)
+            return -(int)(i + 1);
+        uint8_t b = buf[i];
+        if (b < 0x80) {
+            if (i == NEVERC_BINARY_MAX_VARINT_LEN64 - 1 && b > 1)
+                return -(int)(i + 1);
+            if (out) *out = x | ((uint64_t)b << s);
+            return (int)(i + 1);
+        }
+        x |= (uint64_t)(b & 0x7f) << s;
+        s += 7;
+    }
+    return 0;
+}
+
+int neverc_binary_put_varint(uint8_t *buf, size_t buf_len, int64_t x) {
+    uint64_t ux = ((uint64_t)x) << 1;
+    if (x < 0)
+        ux = ~ux;
+    return neverc_binary_put_uvarint(buf, buf_len, ux);
+}
+
+int neverc_binary_varint(const uint8_t *buf, size_t n, int64_t *out) {
+    uint64_t ux = 0;
+    int nread = neverc_binary_uvarint(buf, n, &ux);
+    if (nread <= 0) return nread;
+    int64_t x = (int64_t)(ux >> 1);
+    if (ux & 1)
+        x = ~x;
+    if (out) *out = x;
+    return nread;
+}

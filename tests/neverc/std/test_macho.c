@@ -301,6 +301,41 @@ static void test_macho_invalid(void) {
     free(data);
 }
 
+static void test_fat(void) {
+    size_t thin_len = 0;
+    uint8_t *thin = build_minimal_macho64(&thin_len);
+    CHECK("build thin for fat", thin != NULL);
+    if (!thin) return;
+
+    size_t offset = 32;
+    size_t total = offset + thin_len;
+    uint8_t *fat = (uint8_t *)calloc(total, 1);
+    CHECK("build fat container", fat != NULL);
+    if (!fat) { free(thin); return; }
+
+    fat[0] = 0xCA; fat[1] = 0xFE; fat[2] = 0xBA; fat[3] = 0xBE;
+    put32be(fat + 4, 1);
+    put32be(fat + 8, (uint32_t)NEVERC_CPU_TYPE_ARM64);
+    put32be(fat + 16, (uint32_t)offset);
+    put32be(fat + 20, (uint32_t)thin_len);
+    memcpy(fat + offset, thin, thin_len);
+
+    CHECK("fat magic is valid Mach-O", neverc_macho_is_valid(fat, total));
+    CHECK("fat magic detected", neverc_macho_is_fat(fat, total));
+
+    neverc_macho_file_t f;
+    CHECK("open fat as first thin slice", neverc_macho_open(&f, fat, total) == 0);
+    CHECK("fat slice is 64-bit", f.is_64bit == 1);
+    CHECK("fat slice has __text", neverc_macho_section(&f, "__text") != NULL);
+    neverc_macho_close(&f);
+
+    put32be(fat + 16, (uint32_t)(total + 8));
+    CHECK("reject fat arch past EOF", neverc_macho_open(&f, fat, total) == -1);
+
+    free(fat);
+    free(thin);
+}
+
 #ifdef __APPLE__
 static void test_macho_self_binary(void) {
     /* On macOS, parse our own binary */
@@ -310,7 +345,6 @@ static void test_macho_self_binary(void) {
 
     neverc_macho_file_t f;
     int rc = neverc_macho_open_file(&f, self);
-    /* May fail on universal binaries (FAT), that's OK */
     if (rc == 0) {
         CHECK("self_is_64bit", f.is_64bit == 1);
         CHECK("self_has_sections", f.section_count > 0);
@@ -327,6 +361,7 @@ int main(void) {
     test_metadata();
     test_header_variants();
     test_macho_invalid();
+    test_fat();
 #ifdef __APPLE__
     test_macho_self_binary();
 #endif

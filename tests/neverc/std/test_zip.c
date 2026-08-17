@@ -1,4 +1,5 @@
 #include "neverc/std/archive/zip.h"
+#include "neverc/std/hash/crc32.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -260,6 +261,177 @@ static void test_reject_unsafe_paths(void) {
     neverc_zip_writer_free(&w);
 }
 
+static void put16(uint8_t *p, uint16_t v) {
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+}
+
+static void put32(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
+}
+
+/* Stored zip: optional local extra, GP flag, and a data descriptor. */
+static size_t build_stored_zip(uint8_t *out, size_t cap, const char *name,
+                               const uint8_t *data, size_t len,
+                               uint16_t flags, uint16_t local_extra,
+                               int with_descriptor) {
+    size_t name_len = strlen(name);
+    if (name_len == 0 || name_len > 255U ||
+        (local_extra > 0 && local_extra < 4U))
+        return 0;
+    uint32_t crc = neverc_crc32_ieee(data, len);
+    size_t local_hdr = 30U + name_len + local_extra;
+    size_t desc = with_descriptor ? 16U : 0U;
+    size_t central = 46U + name_len;
+    size_t need = local_hdr + len + desc + central + 22U;
+    if (need > cap)
+        return 0;
+
+    memset(out, 0, need);
+    put32(out, 0x04034b50U);
+    put16(out + 4, 20);
+    put16(out + 6, flags);
+    put16(out + 8, NEVERC_ZIP_STORED);
+    if ((flags & 0x0008U) == 0) {
+        put32(out + 14, crc);
+        put32(out + 18, (uint32_t)len);
+        put32(out + 22, (uint32_t)len);
+    }
+    put16(out + 26, (uint16_t)name_len);
+    put16(out + 28, local_extra);
+    memcpy(out + 30, name, name_len);
+    if (local_extra >= 4U) {
+        put16(out + 30 + name_len, 0x0000);
+        put16(out + 32 + name_len, (uint16_t)(local_extra - 4U));
+    }
+    if (len > 0) memcpy(out + local_hdr, data, len);
+    size_t pos = local_hdr + len;
+    if (with_descriptor) {
+        put32(out + pos, 0x08074b50U);
+        put32(out + pos + 4, crc);
+        put32(out + pos + 8, (uint32_t)len);
+        put32(out + pos + 12, (uint32_t)len);
+        pos += 16U;
+    }
+    uint32_t central_offset = (uint32_t)pos;
+    put32(out + pos, 0x02014b50U);
+    put16(out + pos + 4, 20);
+    put16(out + pos + 6, 20);
+    put16(out + pos + 8, flags);
+    put16(out + pos + 10, NEVERC_ZIP_STORED);
+    put32(out + pos + 16, crc);
+    put32(out + pos + 20, (uint32_t)len);
+    put32(out + pos + 24, (uint32_t)len);
+    put16(out + pos + 28, (uint16_t)name_len);
+    memcpy(out + pos + 46, name, name_len);
+    pos += central;
+    put32(out + pos, 0x06054b50U);
+    put16(out + pos + 8, 1);
+    put16(out + pos + 10, 1);
+    put32(out + pos + 12, (uint32_t)central);
+    put32(out + pos + 16, central_offset);
+    return pos + 22U;
+}
+
+static void test_directory_extra_and_descriptor(void) {
+    printf("[directory extra and descriptor]\n");
+    neverc_zip_writer_t writer;
+    neverc_zip_writer_init(&writer);
+    int ok = neverc_zip_writer_add(&writer, "dir/", NULL, 0) == 0 &&
+             neverc_zip_writer_add(
+                 &writer, "dir/file.txt", (const uint8_t *)"ab", 2) == 0 &&
+             neverc_zip_writer_close(&writer) == 0;
+    check_int("directory writer", ok, 1);
+    if (ok) {
+        neverc_zip_reader_t reader;
+        check_int("directory reader",
+                  neverc_zip_reader_init(&reader, writer.data, writer.len), 0);
+        check_int("directory count", neverc_zip_reader_count(&reader), 2);
+        const neverc_zip_file_header_t *dir = neverc_zip_reader_file(&reader, 0);
+        const neverc_zip_file_header_t *file = neverc_zip_reader_file(&reader, 1);
+        check_int("directory header", dir != NULL, 1);
+        check_int("directory file header", file != NULL, 1);
+        if (dir) {
+            check_str("directory name", dir->name, "dir/");
+            check_size("directory size", (size_t)dir->uncompressed_size, 0);
+        }
+        if (file)
+            check_str("nested file name", file->name, "dir/file.txt");
+        neverc_zip_reader_free(&reader);
+    }
+    neverc_zip_writer_free(&writer);
+
+    uint8_t crafted[256];
+    const uint8_t payload[] = "xyz";
+    size_t n = build_stored_zip(crafted, sizeof(crafted), "extra.txt",
+                                payload, sizeof(payload) - 1U, 0, 4, 0);
+    check_int("extra fixture", n > 0, 1);
+    if (n > 0) {
+        neverc_zip_reader_t reader;
+        check_int("accept local extra field",
+                  neverc_zip_reader_init(&reader, crafted, n), 0);
+        const neverc_zip_file_header_t *file =
+            neverc_zip_reader_file(&reader, 0);
+        check_int("extra file", file != NULL, 1);
+        if (file) {
+            check_str("extra name", file->name, "extra.txt");
+            check_size("extra size", (size_t)file->uncompressed_size, 3);
+        }
+        size_t dlen = 0;
+        const uint8_t *data = neverc_zip_reader_file_data(&reader, 0, &dlen);
+        check_int("extra data",
+                  data != NULL && dlen == 3 && memcmp(data, "xyz", 3) == 0, 1);
+        neverc_zip_reader_free(&reader);
+    }
+
+    n = build_stored_zip(crafted, sizeof(crafted), "desc.txt",
+                         payload, sizeof(payload) - 1U, 0x0008, 0, 1);
+    check_int("descriptor fixture", n > 0, 1);
+    if (n > 0) {
+        neverc_zip_reader_t reader;
+        check_int("accept data descriptor flag",
+                  neverc_zip_reader_init(&reader, crafted, n), 0);
+        const neverc_zip_file_header_t *file =
+            neverc_zip_reader_file(&reader, 0);
+        check_int("descriptor file", file != NULL, 1);
+        if (file)
+            check_str("descriptor name", file->name, "desc.txt");
+        neverc_zip_reader_free(&reader);
+    }
+
+    n = build_stored_zip(crafted, sizeof(crafted), "../evil",
+                         payload, sizeof(payload) - 1U, 0, 0, 0);
+    check_int("traversal fixture", n > 0, 1);
+    if (n > 0) {
+        neverc_zip_reader_t reader;
+        check_int("reader rejects traversal name",
+                  neverc_zip_reader_init(&reader, crafted, n), -1);
+        neverc_zip_reader_free(&reader);
+    }
+
+    n = build_stored_zip(crafted, sizeof(crafted), "abs.txt",
+                         payload, sizeof(payload) - 1U, 0, 0, 0);
+    check_int("zip64 size fixture", n > 0, 1);
+    if (n > 0) {
+        uint8_t mutated[256];
+        memcpy(mutated, crafted, n);
+        size_t eocd = n - 22U;
+        uint32_t central =
+            (uint32_t)mutated[eocd + 16U] |
+            ((uint32_t)mutated[eocd + 17U] << 8U) |
+            ((uint32_t)mutated[eocd + 18U] << 16U) |
+            ((uint32_t)mutated[eocd + 19U] << 24U);
+        put32(mutated + central + 20U, UINT32_MAX);
+        neverc_zip_reader_t reader;
+        check_int("reject zip64 file size",
+                  neverc_zip_reader_init(&reader, mutated, n), -1);
+        neverc_zip_reader_free(&reader);
+    }
+}
+
 static void test_zip64_sentinels(void) {
     printf("[zip64 sentinels]\n");
     neverc_zip_writer_t writer;
@@ -307,6 +479,7 @@ int main(void) {
     test_central_directory_and_writer_state();
     test_invalid_args();
     test_reject_unsafe_paths();
+    test_directory_extra_and_descriptor();
     test_zip64_sentinels();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

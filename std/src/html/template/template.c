@@ -533,31 +533,6 @@ static int html_is_ascii_ws(unsigned char c) {
            c == '\f' || c == '\v';
 }
 
-static int html_in_named_tag(const char *buf, size_t len,
-                             const char *open, size_t open_len,
-                             const char *close, size_t close_len) {
-    if (!buf || len == 0) return 0;
-    int in = 0;
-    for (size_t i = 0; i < len; i++) {
-        if (buf[i] != '<') continue;
-        if (i + close_len <= len && html_ci_eq_n(buf + i, close, close_len))
-            in = 0;
-        else if (i + open_len <= len && html_ci_eq_n(buf + i, open, open_len) &&
-                 (i + open_len == len ||
-                  !nc_isalnum((unsigned char)buf[i + open_len])))
-            in = 1;
-    }
-    return in;
-}
-
-static int html_in_script(const char *buf, size_t len) {
-    return html_in_named_tag(buf, len, "<script", 7, "</script", 8);
-}
-
-static int html_in_style_tag(const char *buf, size_t len) {
-    return html_in_named_tag(buf, len, "<style", 6, "</style", 7);
-}
-
 static int html_attr_name_eq(const char *name, size_t nlen, const char *want) {
     size_t wlen = strlen(want);
     return nlen == wlen && html_ci_eq_n(name, want, nlen);
@@ -566,7 +541,7 @@ static int html_attr_name_eq(const char *name, size_t nlen, const char *want) {
 static int html_is_url_attr_name(const char *name, size_t nlen) {
     static const char *urls[] = {
         "href", "src", "action", "formaction", "cite", "poster",
-        "background", "data", "srcset", "ping", "xlink:href",
+        "background", "data", "srcset", "imagesrcset", "ping", "xlink:href",
         "longdesc", "usemap", "icon", "manifest", "archive",
         "classid", "codebase", "profile", NULL
     };
@@ -575,14 +550,233 @@ static int html_is_url_attr_name(const char *name, size_t nlen) {
     return 0;
 }
 
-static int html_in_open_tag(const char *buf, size_t len) {
-    size_t last_lt = (size_t)-1, last_gt = (size_t)-1;
-    for (size_t i = 0; i < len; i++) {
-        if (buf[i] == '<') last_lt = i;
-        else if (buf[i] == '>') last_gt = i;
+/* Tag names stop at the first character that cannot appear in an HTML
+ * name. Hyphens keep `<script-foo>` from being treated as `<script`. */
+static int html_is_tag_name_char(unsigned char c) {
+    return nc_isalnum(c) || c == '-' || c == ':';
+}
+
+static int html_tag_is(const char *tag, size_t tlen, const char *want) {
+    size_t wlen = strlen(want);
+    return tlen == wlen && html_ci_eq_n(tag, want, tlen);
+}
+
+static int html_raw_end_tag(const char *buf, size_t i, size_t len,
+                            const char *close, size_t clen) {
+    if (i + clen > len || !html_ci_eq_n(buf + i, close, clen)) return 0;
+    if (i + clen == len) return 1;
+    return !nc_isalnum((unsigned char)buf[i + clen]);
+}
+
+enum {
+    HS_TEXT, HS_TAG, HS_ATTR_DQ, HS_ATTR_SQ, HS_ATTR_UQ,
+    HS_COMMENT, HS_SCRIPT, HS_STYLE, HS_MARKUP
+};
+
+/*
+ * Quote- and comment-aware scan of the already-emitted HTML. `<script>` /
+ * `<style>` inside an attribute or comment must not switch the interpolation
+ * into JS/CSS escaping (JS escaping leaves `"` as `\"`, which closes an HTML
+ * attribute). `>` inside a quoted attribute must not look like the tag ended,
+ * or `{{.X}}` in attribute-name position would be HTML-escaped instead of
+ * replaced with ZgotmplZ.
+ */
+static void html_scan_doc(const char *buf, size_t len,
+                          int *in_script, int *in_style, int *in_open_tag,
+                          int *in_attr, int *quoted,
+                          const char **aname, size_t *nlen,
+                          const char **aprefix, size_t *aplen) {
+    *in_script = 0;
+    *in_style = 0;
+    *in_open_tag = 0;
+    *in_attr = 0;
+    *quoted = 0;
+    *aname = NULL;
+    *nlen = 0;
+    *aprefix = NULL;
+    *aplen = 0;
+    if (!buf || len == 0) return;
+
+    int state = HS_TEXT;
+    char tag[16];
+    size_t tlen = 0;
+    int is_end = 0;
+    int seen_name = 0;
+    const char *attr = NULL;
+    size_t alen = 0;
+    size_t value_start = 0;
+    size_t i = 0;
+
+    while (i < len) {
+        unsigned char c = (unsigned char)buf[i];
+        switch (state) {
+        case HS_TEXT:
+            if (c != '<') { i++; break; }
+            if (i + 3 < len && buf[i + 1] == '!' &&
+                buf[i + 2] == '-' && buf[i + 3] == '-') {
+                state = HS_COMMENT;
+                i += 4;
+                break;
+            }
+            if (i + 1 < len && (buf[i + 1] == '!' || buf[i + 1] == '?')) {
+                state = HS_MARKUP;
+                i += 2;
+                break;
+            }
+            if (i + 1 >= len ||
+                buf[i + 1] == '/' ||
+                html_is_tag_name_char((unsigned char)buf[i + 1])) {
+                /* `<` at EOF is an incomplete tag: `<{{.X}}>` interpolates
+                 * the tag name and must not HTML-escape into `<script>`. */
+                state = HS_TAG;
+                tlen = 0;
+                is_end = 0;
+                seen_name = 0;
+                attr = NULL;
+                alen = 0;
+                i++;
+                break;
+            }
+            i++;
+            break;
+
+        case HS_COMMENT:
+            if (c == '-' && i + 2 < len &&
+                buf[i + 1] == '-' && buf[i + 2] == '>') {
+                state = HS_TEXT;
+                i += 3;
+                break;
+            }
+            i++;
+            break;
+
+        case HS_MARKUP:
+            if (c == '>') state = HS_TEXT;
+            i++;
+            break;
+
+        case HS_SCRIPT:
+            if (html_raw_end_tag(buf, i, len, "</script", 8)) {
+                state = HS_TAG;
+                is_end = 1;
+                seen_name = 1;
+                memcpy(tag, "script", 6);
+                tlen = 6;
+                attr = NULL;
+                alen = 0;
+                i += 8;
+                break;
+            }
+            i++;
+            break;
+
+        case HS_STYLE:
+            if (html_raw_end_tag(buf, i, len, "</style", 7)) {
+                state = HS_TAG;
+                is_end = 1;
+                seen_name = 1;
+                memcpy(tag, "style", 5);
+                tlen = 5;
+                attr = NULL;
+                alen = 0;
+                i += 7;
+                break;
+            }
+            i++;
+            break;
+
+        case HS_ATTR_DQ:
+            if (c == '"') { state = HS_TAG; attr = NULL; alen = 0; }
+            i++;
+            break;
+
+        case HS_ATTR_SQ:
+            if (c == '\'') { state = HS_TAG; attr = NULL; alen = 0; }
+            i++;
+            break;
+
+        case HS_ATTR_UQ:
+            if (html_is_ascii_ws(c)) {
+                state = HS_TAG;
+                attr = NULL;
+                alen = 0;
+                i++;
+                break;
+            }
+            if (c == '>') { state = HS_TAG; attr = NULL; alen = 0; break; }
+            i++;
+            break;
+
+        case HS_TAG:
+            if (!seen_name) {
+                if (tlen == 0 && html_is_ascii_ws(c)) { i++; break; }
+                if (tlen == 0 && c == '/') { is_end = 1; i++; break; }
+                if (html_is_tag_name_char(c)) {
+                    if (tlen < sizeof(tag) - 1U) tag[tlen++] = (char)c;
+                    else tlen = sizeof(tag);
+                    i++;
+                    break;
+                }
+                seen_name = 1;
+                break;
+            }
+            if (html_is_ascii_ws(c)) { i++; break; }
+            if (c == '/') { i++; break; }
+            if (c == '>') {
+                if (!is_end && tlen > 0 && tlen < sizeof(tag) &&
+                    html_tag_is(tag, tlen, "script"))
+                    state = HS_SCRIPT;
+                else if (!is_end && tlen > 0 && tlen < sizeof(tag) &&
+                         html_tag_is(tag, tlen, "style"))
+                    state = HS_STYLE;
+                else
+                    state = HS_TEXT;
+                attr = NULL;
+                alen = 0;
+                i++;
+                break;
+            }
+            if (c == '"') { state = HS_ATTR_DQ; value_start = i + 1; i++; break; }
+            if (c == '\'') { state = HS_ATTR_SQ; value_start = i + 1; i++; break; }
+            if (c == '=') {
+                size_t e = i;
+                while (e > 0 && html_is_ascii_ws((unsigned char)buf[e - 1]))
+                    e--;
+                size_t b = e;
+                while (b > 0 && (nc_isalnum((unsigned char)buf[b - 1]) ||
+                                 buf[b - 1] == '-' || buf[b - 1] == ':'))
+                    b--;
+                if (e > b) { attr = buf + b; alen = e - b; }
+                i++;
+                while (i < len && html_is_ascii_ws((unsigned char)buf[i])) i++;
+                if (i >= len) { state = HS_ATTR_UQ; value_start = i; break; }
+                c = (unsigned char)buf[i];
+                if (c == '"') { state = HS_ATTR_DQ; i++; value_start = i; break; }
+                if (c == '\'') { state = HS_ATTR_SQ; i++; value_start = i; break; }
+                state = HS_ATTR_UQ;
+                value_start = i;
+                break;
+            }
+            i++;
+            break;
+        }
     }
-    return last_lt != (size_t)-1 &&
-           (last_gt == (size_t)-1 || last_lt > last_gt);
+
+    *in_script = (state == HS_SCRIPT);
+    *in_style = (state == HS_STYLE);
+    *in_open_tag = (state == HS_TAG || state == HS_ATTR_DQ ||
+                    state == HS_ATTR_SQ || state == HS_ATTR_UQ ||
+                    state == HS_MARKUP);
+    if (state == HS_ATTR_DQ || state == HS_ATTR_SQ || state == HS_ATTR_UQ) {
+        *in_attr = 1;
+        *quoted = (state != HS_ATTR_UQ);
+        *aname = attr;
+        *nlen = alen;
+        if (value_start <= len) {
+            *aprefix = buf + value_start;
+            *aplen = len - value_start;
+        }
+    }
 }
 
 static int html_prev_non_ws_is_quote(const char *buf, size_t len) {
@@ -626,67 +820,6 @@ static char *html_js_expr(const char *s) {
     return lit;
 }
 
-static int html_parse_attr_name(const char *buf, size_t end,
-                                const char **name, size_t *nlen) {
-    while (end > 0 && html_is_ascii_ws((unsigned char)buf[end - 1])) end--;
-    if (end == 0 || buf[end - 1] != '=') return 0;
-    end--;
-    while (end > 0 && html_is_ascii_ws((unsigned char)buf[end - 1])) end--;
-    size_t i = end;
-    while (i > 0 && (nc_isalnum((unsigned char)buf[i - 1]) ||
-                     buf[i - 1] == '-' || buf[i - 1] == ':'))
-        i--;
-    if (i == end) return 0;
-    *name = buf + i;
-    *nlen = end - i;
-    return 1;
-}
-
-/*
- * Locate `name=` / `name="` / `name='` even with whitespace around '=' or
- * after the opening quote (`href=" {{.X}}"`), and when the interpolation
- * continues an already-started value (`href="java{{.X}}"`).
- */
-static int html_trailing_attr(const char *buf, size_t len, int *quoted,
-                              const char **name, size_t *nlen,
-                              const char **prefix, size_t *plen) {
-    *quoted = 0;
-    *prefix = NULL;
-    *plen = 0;
-    if (!buf || len == 0) return 0;
-
-    size_t end = len;
-    while (end > 0 && html_is_ascii_ws((unsigned char)buf[end - 1])) end--;
-    if (end == 0) return 0;
-
-    if (buf[end - 1] == '"' || buf[end - 1] == '\'') {
-        *quoted = 1;
-        return html_parse_attr_name(buf, end - 1, name, nlen);
-    }
-
-    size_t i = end;
-    while (i > 0) {
-        char c = buf[i - 1];
-        if (c == '"' || c == '\'' || c == '=' || c == '<' || c == '>')
-            break;
-        i--;
-    }
-    if (i == 0) return 0;
-    if (buf[i - 1] == '"' || buf[i - 1] == '\'') {
-        *quoted = 1;
-        *prefix = buf + i;
-        *plen = end - i;
-        return html_parse_attr_name(buf, i - 1, name, nlen);
-    }
-    if (buf[i - 1] == '=') {
-        *quoted = 0;
-        *prefix = buf + i;
-        *plen = end - i;
-        return html_parse_attr_name(buf, i, name, nlen);
-    }
-    return 0;
-}
-
 /* `url({{.X}})`, `url("{{.X}}")`, and the same with a value prefix. */
 static int html_in_css_url(const char *buf, size_t len,
                            const char **prefix, size_t *plen) {
@@ -722,54 +855,197 @@ typedef struct {
     size_t i;
 } html_span_t;
 
-static int html_span_done(const html_span_t *a, const html_span_t *b) {
-    return a->i >= a->n && b->i >= b->n;
+static int html_spans_done(const html_span_t *sp, int n) {
+    for (int i = 0; i < n; i++)
+        if (sp[i].i < sp[i].n) return 0;
+    return 1;
 }
 
-static unsigned char html_span_peek(const html_span_t *a, const html_span_t *b) {
-    if (a->i < a->n) return (unsigned char)a->s[a->i];
-    if (b->i < b->n) return (unsigned char)b->s[b->i];
+static unsigned char html_spans_peek(const html_span_t *sp, int n) {
+    for (int i = 0; i < n; i++)
+        if (sp[i].i < sp[i].n) return (unsigned char)sp[i].s[sp[i].i];
     return 0;
 }
 
-static void html_span_next(html_span_t *a, html_span_t *b) {
-    if (a->i < a->n) a->i++;
-    else if (b->i < b->n) b->i++;
+static void html_spans_next(html_span_t *sp, int n) {
+    for (int i = 0; i < n; i++) {
+        if (sp[i].i < sp[i].n) { sp[i].i++; return; }
+    }
 }
 
-static void html_span_skip_ws(html_span_t *a, html_span_t *b) {
-    while (!html_span_done(a, b) && html_is_ascii_ws(html_span_peek(a, b)))
-        html_span_next(a, b);
+static void html_spans_skip_ws(html_span_t *sp, int n) {
+    while (!html_spans_done(sp, n) && html_is_ascii_ws(html_spans_peek(sp, n)))
+        html_spans_next(sp, n);
 }
 
-/* Match a scheme across a static prefix plus the interpolated value, even
- * when ASCII whitespace is sprinkled through it (`java\tscript:`). */
+/* Match a scheme in one string, even when ASCII whitespace is sprinkled
+ * through it (`java\tscript:`). Used for CSS, where `color:red` must not
+ * be treated as a URL. */
 static int html_scheme_is_parts(const char *prefix, size_t plen,
                                 const char *s, const char *scheme) {
     if (!scheme) return 0;
-    html_span_t a = { prefix ? prefix : "", plen, 0 };
-    html_span_t b = { s ? s : "", s ? strlen(s) : 0, 0 };
-    html_span_skip_ws(&a, &b);
+    html_span_t sp[2];
+    int n = 0;
+    if (prefix && plen) { sp[n].s = prefix; sp[n].n = plen; sp[n].i = 0; n++; }
+    sp[n].s = s ? s : "";
+    sp[n].n = s ? strlen(s) : 0;
+    sp[n].i = 0;
+    n++;
+    html_spans_skip_ws(sp, n);
     while (*scheme) {
-        html_span_skip_ws(&a, &b);
-        if (html_span_done(&a, &b)) return 0;
-        char ch = (char)html_span_peek(&a, &b);
-        html_span_next(&a, &b);
+        html_spans_skip_ws(sp, n);
+        if (html_spans_done(sp, n)) return 0;
+        char ch = (char)html_spans_peek(sp, n);
+        html_spans_next(sp, n);
         char want = *scheme++;
         if (ch >= 'A' && ch <= 'Z') ch = (char)(ch + 32);
         if (want >= 'A' && want <= 'Z') want = (char)(want + 32);
         if (ch != want) return 0;
     }
-    html_span_skip_ws(&a, &b);
-    return !html_span_done(&a, &b) && html_span_peek(&a, &b) == ':';
+    html_spans_skip_ws(sp, n);
+    return !html_spans_done(sp, n) && html_spans_peek(sp, n) == ':';
 }
 
-static int html_dangerous_url_parts(const char *prefix, size_t plen,
-                                    const char *s) {
-    static const char *schemes[] = { "javascript", "vbscript", "data", NULL };
-    for (int i = 0; schemes[i]; i++) {
-        if (html_scheme_is_parts(NULL, 0, s, schemes[i])) return 1;
-        if (plen > 0 && html_scheme_is_parts(prefix, plen, s, schemes[i]))
+/*
+ * Go html/template isSafeURL: relative (no ':' before '/') or scheme in
+ * {http, https, mailto}. Copies internally so the caller can keep walking.
+ * stop_at_comma ends the URL at `,` (srcset elements).
+ */
+static int html_is_safe_url_spans(const html_span_t *in, int n,
+                                  int stop_at_comma) {
+    html_span_t sp[3];
+    if (n <= 0) return 1;
+    if (n > 3) n = 3;
+    memcpy(sp, in, (size_t)n * sizeof(sp[0]));
+    char proto[16];
+    size_t pn = 0;
+    int saw_colon = 0, saw_slash = 0;
+    while (!html_spans_done(sp, n)) {
+        unsigned char c = html_spans_peek(sp, n);
+        html_spans_next(sp, n);
+        if (stop_at_comma && c == ',') break;
+        if (c == ':') { saw_colon = 1; break; }
+        if (c == '/') { saw_slash = 1; break; }
+        if (pn < sizeof(proto) - 1U) proto[pn++] = (char)c;
+        else pn = sizeof(proto);
+    }
+    if (!saw_colon || saw_slash) return 1;
+    if (pn == 0 || pn >= sizeof(proto)) return 0;
+    proto[pn] = '\0';
+    return html_tag_is(proto, pn, "http") ||
+           html_tag_is(proto, pn, "https") ||
+           html_tag_is(proto, pn, "mailto");
+}
+
+static int html_is_safe_srcset_spans(const html_span_t *in, int n) {
+    html_span_t sp[3];
+    if (n <= 0) return 1;
+    if (n > 3) n = 3;
+    memcpy(sp, in, (size_t)n * sizeof(sp[0]));
+    while (!html_spans_done(sp, n)) {
+        html_spans_skip_ws(sp, n);
+        if (html_spans_done(sp, n)) return 1;
+        if (!html_is_safe_url_spans(sp, n, 1)) return 0;
+        while (!html_spans_done(sp, n) && html_spans_peek(sp, n) != ',')
+            html_spans_next(sp, n);
+        if (!html_spans_done(sp, n)) html_spans_next(sp, n);
+    }
+    return 1;
+}
+
+static size_t html_url_follow_len(const char *s, size_t n) {
+    size_t i = 0;
+    while (i < n && html_is_ascii_ws((unsigned char)s[i])) i++;
+    for (; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '"' || c == '\'' || c == '>' || c == '<' ||
+            html_is_ascii_ws(c))
+            break;
+    }
+    return i;
+}
+
+static int html_url_is_query_or_frag(const char *p, size_t n) {
+    if (!p) return 0;
+    for (size_t i = 0; i < n; i++)
+        if (p[i] == '?' || p[i] == '#') return 1;
+    return 0;
+}
+
+static int html_is_srcset_attr(const char *name, size_t nlen) {
+    return html_attr_name_eq(name, nlen, "srcset") ||
+           html_attr_name_eq(name, nlen, "imagesrcset");
+}
+
+/* Assemble prefix + value + following static text and apply Go's URL
+ * allowlist. Suffix catches `href="{{.X}}:alert(1)"` / `java{{.X}}cript:`. */
+static int html_url_parts_unsafe(const char *prefix, size_t plen,
+                                 const char *val,
+                                 const char *suffix, size_t slen,
+                                 int srcset) {
+    html_span_t sp[3];
+    int n = 0;
+    if (prefix && plen) { sp[n].s = prefix; sp[n].n = plen; sp[n].i = 0; n++; }
+    if (val && val[0]) {
+        sp[n].s = val;
+        sp[n].n = strlen(val);
+        sp[n].i = 0;
+        n++;
+    }
+    if (suffix && slen) { sp[n].s = suffix; sp[n].n = slen; sp[n].i = 0; n++; }
+    if (n == 0) return 0;
+    return srcset ? !html_is_safe_srcset_spans(sp, n)
+                  : !html_is_safe_url_spans(sp, n, 0);
+}
+
+static int html_css_contains_ci(const char *s, const char *needle) {
+    size_t n = strlen(s), k = strlen(needle);
+    if (k == 0 || k > n) return 0;
+    for (size_t i = 0; i + k <= n; i++)
+        if (html_ci_eq_n(s + i, needle, k)) return 1;
+    return 0;
+}
+
+/* url() argument: allowlist like href, stopped at ) / quotes / ';'. */
+static int html_css_url_arg_unsafe(const char *p) {
+    size_t n = 0;
+    while (p[n] && p[n] != ')' && p[n] != '"' && p[n] != '\'' &&
+           p[n] != ';')
+        n++;
+    html_span_t sp = { p, n, 0 };
+    return !html_is_safe_url_spans(&sp, 1, 0);
+}
+
+static int html_css_has_unsafe_url(const char *s) {
+    if (!s) return 0;
+    size_t n = strlen(s);
+    for (size_t i = 0; i + 4 <= n; i++) {
+        if (!html_ci_eq_n(s + i, "url(", 4)) continue;
+        const char *p = s + i + 4;
+        while (*p && html_is_ascii_ws((unsigned char)*p)) p++;
+        if (*p == '"' || *p == '\'') p++;
+        if (html_css_url_arg_unsafe(p)) return 1;
+    }
+    return 0;
+}
+
+/*
+ * CSS hex-escaping is undone by the browser, so the raw value is what
+ * matters. Reject @import / expression / -moz-binding, CSS escapes that
+ * hide schemes, javascript:/data:/vbscript: anywhere, and unsafe url().
+ */
+static int html_css_is_unsafe(const char *s) {
+    if (!s) return 0;
+    size_t n = strlen(s);
+    if (memchr(s, '\\', n)) return 1;
+    if (html_css_has_unsafe_url(s)) return 1;
+    if (html_css_contains_ci(s, "@import")) return 1;
+    if (html_css_contains_ci(s, "expression")) return 1;
+    if (html_css_contains_ci(s, "mozbinding")) return 1;
+    for (size_t i = 0; i < n; i++) {
+        if (html_scheme_is_parts(NULL, 0, s + i, "javascript") ||
+            html_scheme_is_parts(NULL, 0, s + i, "vbscript") ||
+            html_scheme_is_parts(NULL, 0, s + i, "data"))
             return 1;
     }
     return 0;
@@ -806,13 +1082,15 @@ static int execute_nodes(const node_t *n,
         case NODE_VAR: {
             const char *val = neverc_html_template_data_get(data, n->text);
             if (val) {
-                int quoted = 0;
+                int quoted = 0, in_attr = 0;
                 const char *aname = NULL;
                 size_t nlen = 0;
                 const char *aprefix = NULL;
                 size_t aplen = 0;
-                int in_attr = html_trailing_attr(
-                    *buf, *len, &quoted, &aname, &nlen, &aprefix, &aplen);
+                int in_script = 0, in_style_tag = 0, in_open_tag = 0;
+                html_scan_doc(*buf, *len, &in_script, &in_style_tag,
+                              &in_open_tag, &in_attr, &quoted,
+                              &aname, &nlen, &aprefix, &aplen);
                 const char *uprefix = NULL;
                 size_t uplen = 0;
                 int in_css_url = html_in_css_url(*buf, *len, &uprefix, &uplen);
@@ -825,15 +1103,27 @@ static int execute_nodes(const node_t *n,
                 int in_srcdoc = in_attr &&
                     html_attr_name_eq(aname, nlen, "srcdoc");
                 int unquoted = in_attr && !quoted;
-                int in_script = html_in_script(*buf, *len);
-                int in_open_tag = html_in_open_tag(*buf, *len);
                 const char *dprefix = in_css_url ? uprefix :
                     (in_url ? aprefix : NULL);
                 size_t dplen = in_css_url ? uplen : (in_url ? aplen : 0);
+                const char *dsuffix = NULL;
+                size_t dslen = 0;
+                if (in_url && n->next && n->next->type == NODE_TEXT &&
+                    n->next->text)
+                    dslen = html_url_follow_len(n->next->text,
+                                                n->next->text_len);
+                if (dslen) dsuffix = n->next->text;
+                int is_srcset = in_attr && !in_css_url &&
+                    html_is_srcset_attr(aname, nlen);
+                int in_query = in_attr && in_url && !in_css_url &&
+                    html_url_is_query_or_frag(aprefix, aplen);
                 char *escaped;
                 /* URL context wins over <script src="..."> so javascript:/data:
                  * are neutralized instead of JS-escaped (a no-op for those). */
-                if (in_url && html_dangerous_url_parts(dprefix, dplen, val))
+                if (in_url && in_query)
+                    escaped = neverc_html_url_query_escape(val);
+                else if (in_url && html_url_parts_unsafe(
+                             dprefix, dplen, val, dsuffix, dslen, is_srcset))
                     escaped = neverc_html_escape("#");
                 else if (in_event)
                     escaped = html_escape_event(val);
@@ -843,15 +1133,15 @@ static int execute_nodes(const node_t *n,
                     escaped = html_prev_non_ws_is_quote(*buf, *len)
                         ? neverc_html_js_escape(val)
                         : html_js_expr(val);
-                else if (html_in_style_tag(*buf, *len) || in_style_attr)
-                    escaped = neverc_html_css_escape(val);
+                else if (in_style_tag || in_style_attr)
+                    escaped = html_css_is_unsafe(val)
+                        ? neverc_html_escape("#")
+                        : neverc_html_css_escape(val);
                 else if (!in_attr && in_open_tag)
                     escaped = dup_cstr("ZgotmplZ");
                 else if (unquoted && aplen > 0 &&
                          html_unquoted_value_is_unsafe(val))
                     escaped = neverc_html_escape("ZgotmplZ");
-                else if (html_in_script(*buf, *len))
-                    escaped = neverc_html_js_escape(val);
                 else
                     escaped = neverc_html_escape(val);
                 if (!escaped) return -1;

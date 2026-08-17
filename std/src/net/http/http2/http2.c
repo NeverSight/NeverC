@@ -654,6 +654,7 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
 
 struct neverc_hpack_encoder {
     hpack_dyn_table_t dyn;
+    int pending_size_update;
 };
 
 neverc_hpack_encoder_t *neverc_hpack_encoder_create(uint32_t max_table_size) {
@@ -674,6 +675,10 @@ int neverc_hpack_encoder_set_max_table_size(neverc_hpack_encoder_t *enc,
                                              uint32_t max_table_size) {
     if (!enc || max_table_size > NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE)
         return -1;
+    /* RFC 7541 §4.2 / RFC 9113 §6.5.2: a table-size change MUST be
+     * signaled at the start of the next header block. */
+    if (enc->dyn.max_size != max_table_size)
+        enc->pending_size_update = 1;
     enc->dyn.max_size = max_table_size;
     dyn_table_evict(&enc->dyn);
     return 0;
@@ -697,31 +702,38 @@ static int hpack_find_static(const char *name, const char *value) {
     return 0;
 }
 
+static int hpack_encode_string_raw(uint8_t *out, size_t cap, const char *str,
+                                    size_t slen, size_t *written) {
+    size_t hdr_len;
+    if (hpack_encode_int(out, cap, 7, slen, 0x00, &hdr_len) != 0)
+        return -1;
+    if (hdr_len > cap || slen > cap - hdr_len) return -1;
+    memcpy(out + hdr_len, str, slen);
+    *written = hdr_len + slen;
+    return 0;
+}
+
 static int hpack_encode_string(uint8_t *out, size_t cap, const char *str,
                                  int use_huffman, size_t *written) {
     size_t slen = strlen(str);
-    if (!use_huffman) {
+    uint8_t huf_buf[8192];
+    size_t huf_len = 0;
+    /* Huffman is optional. Fall back to raw octets when the fixed
+     * scratch buffer cannot hold the encoded form, or when Huffman
+     * does not shrink the string. */
+    if (use_huffman && slen <= sizeof(huf_buf) &&
+        neverc_hpack_huffman_encode((const uint8_t *)str, slen, huf_buf,
+                                    sizeof(huf_buf), &huf_len) == 0 &&
+        huf_len < slen) {
         size_t hdr_len;
-        if (hpack_encode_int(out, cap, 7, slen, 0x00, &hdr_len) != 0)
+        if (hpack_encode_int(out, cap, 7, huf_len, 0x80, &hdr_len) != 0)
             return -1;
-        if (hdr_len > cap || slen > cap - hdr_len) return -1;
-        memcpy(out + hdr_len, str, slen);
-        *written = hdr_len + slen;
+        if (hdr_len > cap || huf_len > cap - hdr_len) return -1;
+        memcpy(out + hdr_len, huf_buf, huf_len);
+        *written = hdr_len + huf_len;
         return 0;
     }
-    /* Huffman encode */
-    uint8_t huf_buf[8192];
-    size_t huf_len;
-    if (neverc_hpack_huffman_encode((const uint8_t *)str, slen,
-                                     huf_buf, sizeof(huf_buf), &huf_len) != 0)
-        return -1;
-    size_t hdr_len;
-    if (hpack_encode_int(out, cap, 7, huf_len, 0x80, &hdr_len) != 0)
-        return -1;
-    if (hdr_len > cap || huf_len > cap - hdr_len) return -1;
-    memcpy(out + hdr_len, huf_buf, huf_len);
-    *written = hdr_len + huf_len;
-    return 0;
+    return hpack_encode_string_raw(out, cap, str, slen, written);
 }
 
 int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
@@ -732,6 +744,15 @@ int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
         return -1;
     *out_len = 0;
     size_t pos = 0;
+
+    if (enc->pending_size_update) {
+        if (!out) return -1;
+        size_t written;
+        if (hpack_encode_int(out + pos, out_cap - pos, 5, enc->dyn.max_size,
+                             0x20, &written) != 0)
+            return -1;
+        pos += written;
+    }
 
     for (int i = 0; i < nheaders; i++) {
         const char *name = headers[i].name;
@@ -777,5 +798,6 @@ int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
         }
     }
     *out_len = pos;
+    enc->pending_size_update = 0;
     return 0;
 }

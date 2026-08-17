@@ -155,6 +155,118 @@ static void mime_free_params(char *keys[], char *vals[], int count) {
     }
 }
 
+static int mime_hex_digit(unsigned char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static char *mime_percent_unescape(const char *s, size_t n) {
+    size_t out_len = 0;
+    for (size_t i = 0; i < n; ) {
+        if (s[i] == '%') {
+            if (i + 2 >= n || mime_hex_digit((unsigned char)s[i + 1]) < 0 ||
+                mime_hex_digit((unsigned char)s[i + 2]) < 0)
+                return NULL;
+            i += 3;
+            out_len++;
+        } else {
+            i++;
+            out_len++;
+        }
+    }
+    char *out = (char *)malloc(out_len + 1);
+    if (!out) return NULL;
+    size_t j = 0;
+    for (size_t i = 0; i < n; ) {
+        if (s[i] == '%') {
+            out[j++] = (char)((mime_hex_digit((unsigned char)s[i + 1]) << 4) |
+                              mime_hex_digit((unsigned char)s[i + 2]));
+            i += 3;
+        } else {
+            out[j++] = s[i++];
+        }
+    }
+    out[j] = '\0';
+    return out;
+}
+
+static int mime_2231_charset_ok(const char *s, size_t n) {
+    return n == 0 ||
+           mime_span_case_equal(s, n, "us-ascii", 8) ||
+           mime_span_case_equal(s, n, "utf-8", 5);
+}
+
+static char *mime_decode_2231_value(const char *v) {
+    if (!v) return NULL;
+    const char *q1 = strchr(v, '\'');
+    if (!q1 || !mime_2231_charset_ok(v, (size_t)(q1 - v))) return NULL;
+    const char *q2 = strchr(q1 + 1, '\'');
+    if (!q2) return NULL;
+    return mime_percent_unescape(q2 + 1, strlen(q2 + 1));
+}
+
+/* name* (single RFC 2231 / 5987 parameter), not name*0 continuations. */
+static int mime_is_2231_single(const char *key, size_t *base_len) {
+    const char *star = strchr(key, '*');
+    if (!star || star == key || star[1] != '\0') return 0;
+    *base_len = (size_t)(star - key);
+    return 1;
+}
+
+static int mime_apply_rfc2231(char *keys[], char *vals[], int *nparams) {
+    int n = *nparams;
+    if (n <= 0) return 0;
+
+    /* Decode name*=charset''value (RFC 2231 / 5987). Continuations
+     * (name*0 / name*1) are left as raw keys — see remaining gaps. */
+    for (int i = 0; i < n; i++) {
+        if (!keys[i]) continue;
+        size_t blen = 0;
+        if (!mime_is_2231_single(keys[i], &blen)) continue;
+        char *decoded = mime_decode_2231_value(vals[i]);
+        if (!decoded) {
+            free(keys[i]);
+            free(vals[i]);
+            keys[i] = vals[i] = NULL;
+            continue;
+        }
+        char *newkey = (char *)malloc(blen + 1);
+        if (!newkey) {
+            free(decoded);
+            mime_free_params(keys, vals, n);
+            *nparams = 0;
+            return -1;
+        }
+        memcpy(newkey, keys[i], blen);
+        newkey[blen] = '\0';
+        free(keys[i]);
+        free(vals[i]);
+        keys[i] = newkey;
+        vals[i] = decoded;
+
+        for (int j = 0; j < n; j++) {
+            if (j == i || !keys[j]) continue;
+            if (strcmp(keys[j], newkey) == 0) {
+                free(keys[j]);
+                free(vals[j]);
+                keys[j] = vals[j] = NULL;
+            }
+        }
+    }
+
+    int w = 0;
+    for (int i = 0; i < n; i++) {
+        if (!keys[i]) continue;
+        keys[w] = keys[i];
+        vals[w] = vals[i];
+        w++;
+    }
+    *nparams = w;
+    return 0;
+}
+
 int neverc_mime_parse_media_type(const char *v,
                                  char *media_type, size_t mt_cap,
                                  char *params_keys[], char *params_vals[],
@@ -191,7 +303,8 @@ int neverc_mime_parse_media_type(const char *v,
     while (*p == ';') {
         p++;
         while (mime_is_ows((unsigned char)*p)) p++;
-        if (!*p) goto fail;
+        /* Go mime.ParseMediaType ignores a trailing semicolon. */
+        if (!*p) break;
 
         const char *key_start = p;
         while (mime_is_token_char((unsigned char)*p)) p++;
@@ -235,11 +348,6 @@ int neverc_mime_parse_media_type(const char *v,
         if (count >= max_params) goto fail;
 
         size_t key_len = (size_t)(key_end - key_start);
-        for (int i = 0; i < count; i++) {
-            if (mime_span_case_equal(params_keys[i], strlen(params_keys[i]),
-                                     key_start, key_len))
-                goto fail;
-        }
         if (key_len == SIZE_MAX || value_len == SIZE_MAX) goto fail;
         char *key = (char *)malloc(key_len + 1);
         if (!key) goto fail;
@@ -264,12 +372,32 @@ int neverc_mime_parse_media_type(const char *v,
             memcpy(value, value_start, value_len);
             value[value_len] = '\0';
         }
+        int dup = -1;
+        for (int i = 0; i < count; i++) {
+            if (strcmp(params_keys[i], key) == 0) {
+                dup = i;
+                break;
+            }
+        }
+        if (dup >= 0) {
+            /* Go allows a repeated parameter when the values are identical. */
+            int same = strcmp(params_vals[dup], value) == 0;
+            free(key);
+            free(value);
+            if (!same) goto fail;
+            continue;
+        }
         params_keys[count] = key;
         params_vals[count] = value;
         count++;
     }
 
     if (*p != '\0') goto fail;
+    if (mime_apply_rfc2231(params_keys, params_vals, &count) != 0) {
+        media_type[0] = '\0';
+        *nparams = 0;
+        return -1;
+    }
     memmove(media_type, mt_start, mt_len);
     for (size_t i = 0; i < mt_len; i++)
         media_type[i] = (char)nc_tolower((unsigned char)media_type[i]);

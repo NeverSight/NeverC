@@ -88,6 +88,16 @@ static void test_less_float64(void) {
     ASSERT_FALSE(neverc_cmp_less_float64(NaN, NaN));
 }
 
+static void test_less_float32(void) {
+    printf("[less_float32]\n");
+    ASSERT_TRUE(neverc_cmp_less_float32(1.0f, 2.0f));
+    ASSERT_FALSE(neverc_cmp_less_float32(2.0f, 1.0f));
+    ASSERT_FALSE(neverc_cmp_less_float32(1.0f, 1.0f));
+    ASSERT_TRUE(neverc_cmp_less_float32((float)NaN, 1.0f));
+    ASSERT_FALSE(neverc_cmp_less_float32(1.0f, (float)NaN));
+    ASSERT_FALSE(neverc_cmp_less_float32((float)NaN, (float)NaN));
+}
+
 static void test_isnan(void) {
     printf("[isnan]\n");
     ASSERT_TRUE(neverc_cmp_isnan_float64(NaN));
@@ -105,6 +115,11 @@ static void test_min_max_int(void) {
     ASSERT_INT_EQ(neverc_cmp_max_int(-1, 1), 1);
     ASSERT_INT_EQ(neverc_cmp_min_int(7, 7), 7);
     ASSERT_INT_EQ(neverc_cmp_max_int(7, 7), 7);
+
+    ASSERT_INT_EQ((int)neverc_cmp_min_int64(3LL, 5LL), 3);
+    ASSERT_INT_EQ((int)neverc_cmp_max_int64(3LL, 5LL), 5);
+    ASSERT_INT_EQ((int)neverc_cmp_min_int64(-1LL, 1LL), -1);
+    ASSERT_INT_EQ((int)neverc_cmp_max_int64(-1LL, 1LL), 1);
 }
 
 static void test_min_max_float64(void) {
@@ -133,6 +148,9 @@ static void test_clamp(void) {
     ASSERT_INT_EQ(neverc_cmp_clamp_int(-5, 1, 10), 1);
     ASSERT_INT_EQ(neverc_cmp_clamp_int(15, 1, 10), 10);
     ASSERT_INT_EQ(neverc_cmp_clamp_int(1, 1, 1), 1);
+    ASSERT_INT_EQ((int)neverc_cmp_clamp_int64(5LL, 1LL, 10LL), 5);
+    ASSERT_INT_EQ((int)neverc_cmp_clamp_int64(-5LL, 1LL, 10LL), 1);
+    ASSERT_INT_EQ((int)neverc_cmp_clamp_int64(15LL, 1LL, 10LL), 10);
 
     ASSERT_DBL_EQ(neverc_cmp_clamp_float64(5.0, 1.0, 10.0), 5.0);
     ASSERT_DBL_EQ(neverc_cmp_clamp_float64(-5.0, 1.0, 10.0), 1.0);
@@ -163,6 +181,7 @@ int main(void) {
     test_compare_float64();
     test_compare_float32();
     test_less_float64();
+    test_less_float32();
     test_isnan();
     test_min_max_int();
     test_min_max_float64();

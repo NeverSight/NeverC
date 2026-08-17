@@ -70,6 +70,16 @@ static void test_is(void) {
     check_bool("non-null is not nil", neverc_errors_is(top, NULL), 0);
     check_bool("nil is nil", neverc_errors_is(NULL, NULL), 1);
 
+    neverc_error_t *found = NULL;
+    check_bool("as base", neverc_errors_as(top, base, &found), 1);
+    check_bool("as base node", found == base, 1);
+    check_bool("as same msg", neverc_errors_as(top, same_msg, &found), 1);
+    check_str("as same msg node", neverc_errors_message(found), "not found");
+    check_bool("as other", neverc_errors_as(top, other, &found), 0);
+    check_bool("as nil target", neverc_errors_as(top, NULL, &found), 0);
+    check_bool("nil as nil", neverc_errors_as(NULL, NULL, &found), 1);
+    check_bool("nil as nil out", found == NULL, 1);
+
     neverc_errors_free(top);
     neverc_errors_free(other);
     neverc_errors_free(same_msg);
@@ -116,6 +126,11 @@ static void test_join(void) {
     check_bool("join is wrapped", neverc_errors_is(joined_wrap, wrapped), 1);
     check_bool("join is cause", neverc_errors_is(joined_wrap, cause), 1);
     check_bool("join is extra", neverc_errors_is(joined_wrap, extra), 1);
+    neverc_error_t *as_cause = NULL;
+    check_bool("join as cause", neverc_errors_as(joined_wrap, cause, &as_cause), 1);
+    check_str("join as cause msg", neverc_errors_message(as_cause),
+              "file not found");
+    check_bool("join as cause is clone", as_cause != cause, 1);
     neverc_error_t *unrelated = neverc_errors_new("permission denied");
     check_bool("join is unrelated", neverc_errors_is(joined_wrap, unrelated), 0);
     neverc_errors_free(unrelated);

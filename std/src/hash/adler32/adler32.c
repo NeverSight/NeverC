@@ -16,6 +16,7 @@
 #define NMAX 5552U
 
 uint32_t neverc_adler32_update(uint32_t adler, const uint8_t *data, size_t len) {
+    if (!data) len = 0;
     uint32_t s1 = adler & 0xFFFF;
     uint32_t s2 = (adler >> 16) & 0xFFFF;
 

@@ -572,6 +572,81 @@ int main(void) {
               constrained_chain, 3, &valid_time, "example",
               NEVERC_X509_EXT_KEY_USAGE_SERVER_AUTH) == 0);
 
+    neverc_x509_cert_t nc_leaf = leaf;
+    neverc_x509_cert_t nc_root = root;
+    char *permitted_dns[] = {"example.com"};
+    char *matching_dns[] = {"www.example.com"};
+    char *foreign_dns[] = {"evil.com"};
+    char *excluded_dns[] = {"www.example.com"};
+    nc_root.name_constraints_present = 1;
+    nc_root.permitted_dns_names = permitted_dns;
+    nc_root.permitted_dns_name_count = 1;
+    nc_leaf.dns_names = matching_dns;
+    nc_leaf.dns_name_count = 1;
+    const neverc_x509_cert_t *nc_chain[] = {&nc_leaf, &nc_root};
+    CHECK("name_constraints_permitted_dns_match",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) == 0);
+    nc_leaf.dns_names = foreign_dns;
+    CHECK("name_constraints_permitted_dns_mismatch",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    char *suffix_collision_dns[] = {"anotherexample.com"};
+    nc_leaf.dns_names = suffix_collision_dns;
+    CHECK("name_constraints_dns_requires_label_boundary",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    char *dot_permitted[] = {".example.com"};
+    char *apex_dns[] = {"example.com"};
+    nc_root.permitted_dns_names = dot_permitted;
+    nc_leaf.dns_names = matching_dns;
+    CHECK("name_constraints_leading_dot_allows_subdomain",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) == 0);
+    nc_leaf.dns_names = apex_dns;
+    CHECK("name_constraints_leading_dot_rejects_apex",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    nc_leaf.dns_names = matching_dns;
+    nc_root.permitted_dns_names = NULL;
+    nc_root.permitted_dns_name_count = 0;
+    nc_root.excluded_dns_names = excluded_dns;
+    nc_root.excluded_dns_name_count = 1;
+    CHECK("name_constraints_excluded_dns_rejected",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    nc_root.excluded_dns_names = NULL;
+    nc_root.excluded_dns_name_count = 0;
+
+    neverc_x509_ip_address_t matching_ip = {{10, 1, 2, 3}, 4};
+    neverc_x509_ip_address_t foreign_ip = {{11, 0, 0, 1}, 4};
+    neverc_x509_ip_network_t permitted_net;
+    memset(&permitted_net, 0, sizeof(permitted_net));
+    permitted_net.bytes[0] = 10;
+    permitted_net.mask[0] = 0xff;
+    permitted_net.len = 4;
+    nc_leaf.dns_names = NULL;
+    nc_leaf.dns_name_count = 0;
+    nc_leaf.ip_addresses = &matching_ip;
+    nc_leaf.ip_address_count = 1;
+    nc_root.permitted_ip_networks = &permitted_net;
+    nc_root.permitted_ip_network_count = 1;
+    CHECK("name_constraints_permitted_ip_match",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) == 0);
+    nc_leaf.ip_addresses = &foreign_ip;
+    CHECK("name_constraints_permitted_ip_mismatch",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+    nc_leaf.ip_addresses = &matching_ip;
+    nc_root.permitted_ip_networks = NULL;
+    nc_root.permitted_ip_network_count = 0;
+    nc_root.excluded_ip_networks = &permitted_net;
+    nc_root.excluded_ip_network_count = 1;
+    CHECK("name_constraints_excluded_ip_rejected",
+          neverc_x509_verify_chain(
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
+
     neverc_x509_time_t expired_time = {2030, 1, 1, 0, 0, 0};
     CHECK("expired_chain_rejected",
           neverc_x509_verify_chain(

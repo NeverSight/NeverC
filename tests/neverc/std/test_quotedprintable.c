@@ -85,12 +85,24 @@ static void test_decode_soft_break(void) {
     n = neverc_qp_decode("hello=20  \n", 11, out, sizeof(out));
     ASSERT_EQ(n, 7);
     ASSERT_MEMEQ(out, "hello \n", 7);
+
+    /* Soft break may be CR-only; '=' plus trailing WSP at EOF is stripped. */
+    n = neverc_qp_decode("ab=\r cd", 7, out, sizeof(out));
+    ASSERT_EQ(n, 5);
+    ASSERT_MEMEQ(out, "ab cd", 5);
+
+    n = neverc_qp_decode("ab= \t", 5, out, sizeof(out));
+    ASSERT_EQ(n, 2);
+    ASSERT_MEMEQ(out, "ab", 2);
 }
 
 static void test_encode_basic(void) {
     printf("[encode basic]\n");
     char out[1024];
     int n;
+
+    ASSERT_EQ(neverc_qp_max_encoded_len(11) >= 11, 1);
+    ASSERT_EQ(neverc_qp_max_encoded_len(0) >= 16, 1);
 
     n = neverc_qp_encode((const unsigned char*)"Hello World", 11, out, sizeof(out), 76);
     ASSERT_EQ(n > 0, 1);

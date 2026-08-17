@@ -557,6 +557,9 @@ int neverc_elliptic_unmarshal(const neverc_elliptic_curve_t *curve,
     size_t expected = 1 + (size_t)byte_len * 2;
     if (data_len != expected || data[0] != 0x04) return -1;
 
+    neverc_elliptic_point_t parsed;
+    neverc_elliptic_point_init(&parsed);
+
     char hex[256];
     int pos = 0;
     for (int i = 0; i < byte_len; i++) {
@@ -564,7 +567,10 @@ int neverc_elliptic_unmarshal(const neverc_elliptic_curve_t *curve,
         hex[pos++] = "0123456789abcdef"[data[1 + i] & 0x0F];
     }
     hex[pos] = '\0';
-    neverc_bigint_set_string(&pt->x, hex, 16);
+    if (neverc_bigint_set_string(&parsed.x, hex, 16) != 0) {
+        neverc_elliptic_point_free(&parsed);
+        return -1;
+    }
 
     pos = 0;
     for (int i = 0; i < byte_len; i++) {
@@ -572,7 +578,17 @@ int neverc_elliptic_unmarshal(const neverc_elliptic_curve_t *curve,
         hex[pos++] = "0123456789abcdef"[data[1 + byte_len + i] & 0x0F];
     }
     hex[pos] = '\0';
-    neverc_bigint_set_string(&pt->y, hex, 16);
+    if (neverc_bigint_set_string(&parsed.y, hex, 16) != 0) {
+        neverc_elliptic_point_free(&parsed);
+        return -1;
+    }
 
-    return neverc_elliptic_is_on_curve(curve, pt) ? 0 : -1;
+    if (!neverc_elliptic_is_on_curve(curve, &parsed)) {
+        neverc_elliptic_point_free(&parsed);
+        return -1;
+    }
+    neverc_bigint_set(&pt->x, &parsed.x);
+    neverc_bigint_set(&pt->y, &parsed.y);
+    neverc_elliptic_point_free(&parsed);
+    return 0;
 }

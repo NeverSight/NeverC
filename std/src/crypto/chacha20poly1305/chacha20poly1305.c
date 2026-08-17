@@ -5,6 +5,7 @@
 #include "neverc/std/crypto/chacha20poly1305.h"
 #include "neverc/std/crypto/chacha20.h"
 #include "neverc/std/crypto/poly1305.h"
+#include "neverc/std/crypto/subtle.h"
 #include "neverc/std/_platform.h"
 #include <limits.h>
 #include <stdlib.h>
@@ -171,14 +172,10 @@ int neverc_chacha20poly1305_open(
     if (mac_buf != mac_buf_stack)
         free(mac_buf);
 
-    /* Constant-time comparison */
-    uint8_t diff = 0;
-    for (int i = 0; i < 16; i++)
-        diff |= computed_tag[i] ^ tag[i];
+    int tag_ok = neverc_subtle_constant_time_compare(computed_tag, tag, 16);
     neverc_platform_secure_zero(computed_tag, sizeof(computed_tag));
-    if (diff != 0) {
+    if (tag_ok != 1)
         return -1;
-    }
 
     /* Decrypt */
     neverc_chacha20_init(&ctx, key, nonce, 1);

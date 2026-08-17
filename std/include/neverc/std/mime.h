@@ -11,10 +11,11 @@ const char *neverc_mime_type_by_extension(const char *ext);
 const char *neverc_mime_extension_by_type(const char *mime_type);
 
 /* Parses type/subtype and at most max_params parameters. Parameter names and
- * the media type are lower-cased; quoted values are unescaped. The caller owns
- * every returned key/value and must free them. On failure, returns -1, frees
- * all partial results, writes an empty media type when mt_cap is nonzero, and
- * sets *nparams to zero. */
+ * the media type are lower-cased; quoted values are unescaped. RFC 2231
+ * `name*=charset''value` is decoded into `name` (utf-8 / us-ascii). A trailing
+ * semicolon is ignored. The caller owns every returned key/value and must free
+ * them. On failure, returns -1, frees all partial results, writes an empty
+ * media type when mt_cap is nonzero, and sets *nparams to zero. */
 int neverc_mime_parse_media_type(const char *v,
                                  char *media_type, size_t mt_cap,
                                  char *params_keys[], char *params_vals[],

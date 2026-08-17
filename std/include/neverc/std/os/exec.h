@@ -43,6 +43,15 @@ int  neverc_exec_cmd_output(neverc_exec_cmd_t *cmd, neverc_exec_output_t *out,
 int  neverc_exec_cmd_combined_output(neverc_exec_cmd_t *cmd, neverc_exec_output_t *out,
                                       neverc_exec_exit_status_t *st);
 
+/* Start/Wait/Kill mirror Go's Cmd.Start, Cmd.Wait, and Process.Kill.
+ * start() does not capture output; the child inherits stdio except for
+ * configured stdin. kill(signum) is POSIX kill(2); on Windows, SIGTERM /
+ * SIGINT / SIGKILL terminate the process. pid() is -1 if not running. */
+int  neverc_exec_cmd_start(neverc_exec_cmd_t *cmd);
+int  neverc_exec_cmd_wait(neverc_exec_cmd_t *cmd, neverc_exec_exit_status_t *st);
+int  neverc_exec_cmd_kill(neverc_exec_cmd_t *cmd, int signum);
+int  neverc_exec_cmd_pid(const neverc_exec_cmd_t *cmd);
+
 void neverc_exec_cmd_free(neverc_exec_cmd_t *cmd);
 void neverc_exec_output_free(neverc_exec_output_t *out);
 

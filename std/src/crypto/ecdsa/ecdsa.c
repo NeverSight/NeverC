@@ -3,7 +3,9 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define ecdsa_random neverc_platform_random
+#ifndef NCI_ECDSA_RANDOM
+#define NCI_ECDSA_RANDOM neverc_platform_random
+#endif
 
 static void bigint_secure_free(neverc_bigint_t *value) {
     if (!value)
@@ -29,7 +31,7 @@ static int random_mod_n(neverc_bigint_t *r, const neverc_bigint_t *n) {
 
     int result = -1;
     for (int attempt = 0; attempt < 128; ++attempt) {
-        if (ecdsa_random(buf, (size_t)bytes) != 0)
+        if (NCI_ECDSA_RANDOM(buf, (size_t)bytes) != 0)
             break;
         int pos = 0;
         for (int i = 0; i < bytes && pos < (int)sizeof(hex) - 2; i++) {

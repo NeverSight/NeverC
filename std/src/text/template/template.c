@@ -114,13 +114,18 @@ static int parse_action(const char **p, const char *end,
                         tnode_t **nodes, int *count, int *cap, int depth) {
     const char *start = *p;
     const char *close = strstr(start, "}}");
-    if (!close) return -1;
+    if (!close || close + 2 > end) return -1;
 
     const char *inner = start + 2;
-    size_t ilen = close - inner;
-    char *action = trim_ws(inner, ilen);
+    if (inner < close && *inner == '-') inner++;
+    const char *action_end = close;
+    if (action_end > inner && action_end[-1] == '-') action_end--;
+    char *action = trim_ws(inner, (size_t)(action_end - inner));
     if (!action) return -1;
     *p = close + 2;
+    if (close > start + 2 && close[-1] == '-') {
+        while (*p < end && is_action_ws(**p)) (*p)++;
+    }
 
     if (action[0] == '\0') {
         free(action);
@@ -283,6 +288,14 @@ static int parse_nodes(const char **p, const char *end,
         }
 
         *p = next;
+        if (next + 2 < end && next[2] == '-' && *count > 0) {
+            tnode_t *prev = &(*nodes)[*count - 1];
+            if (prev->type == NODE_TEXT && prev->text) {
+                while (prev->text_len > 0 &&
+                       is_action_ws(prev->text[prev->text_len - 1]))
+                    prev->text[--prev->text_len] = '\0';
+            }
+        }
         const char *close = strstr(*p + 2, "}}");
         if (!close) return -1;
 

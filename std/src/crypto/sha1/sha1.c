@@ -76,6 +76,7 @@ static void sha1_block(uint32_t state[5], const uint8_t block[64]) {
 }
 
 void neverc_sha1_init(neverc_sha1_ctx *ctx) {
+    if (!ctx) return;
     ctx->state[0] = 0x67452301;
     ctx->state[1] = 0xEFCDAB89;
     ctx->state[2] = 0x98BADCFE;
@@ -85,7 +86,8 @@ void neverc_sha1_init(neverc_sha1_ctx *ctx) {
 }
 
 void neverc_sha1_update(neverc_sha1_ctx *ctx, const uint8_t *data, size_t len) {
-    if (len == 0) return;
+    if (!ctx || len == 0) return;
+    if (!data) return;
     size_t buffered = (size_t)(ctx->count & 63);
     ctx->count += len;
     if (buffered > 0) {
@@ -100,6 +102,7 @@ void neverc_sha1_update(neverc_sha1_ctx *ctx, const uint8_t *data, size_t len) {
 }
 
 void neverc_sha1_final(neverc_sha1_ctx *ctx, uint8_t digest[20]) {
+    if (!ctx || !digest) return;
     uint64_t bits = ctx->count * 8;
     size_t buffered = (size_t)(ctx->count & 63);
     ctx->buf[buffered++] = 0x80;

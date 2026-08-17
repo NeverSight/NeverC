@@ -1,4 +1,5 @@
 #include "neverc/std/image/gif.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -308,8 +309,6 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
     if (width == 0 || height == 0 ||
         (uint64_t)width * height > GIF_MAX_PIXELS)
         return -1;
-    img->width = width;
-    img->height = height;
 
     int has_gct = (packed >> 7) & 1;
     int gct_size = has_gct ? (1 << ((packed & 7) + 1)) : 0;
@@ -324,8 +323,9 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             gct[i].b = data[pos++];
         }
     }
+    neverc_gif_color_t background = {0, 0, 0};
     if (bg_index < gct_size)
-        img->background = gct[bg_index];
+        background = gct[bg_index];
 
     /* Parse blocks */
     int frame_cap = 4;
@@ -389,8 +389,8 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             uint16_t fw   = (uint16_t)data[pos] | ((uint16_t)data[pos+1] << 8); pos += 2;
             uint16_t fh   = (uint16_t)data[pos] | ((uint16_t)data[pos+1] << 8); pos += 2;
             uint8_t img_packed = data[pos++];
-            if ((uint64_t)left + fw > img->width ||
-                (uint64_t)top + fh > img->height)
+            if ((uint64_t)left + fw > width ||
+                (uint64_t)top + fh > height)
                 goto decode_failed;
 
             int has_lct = (img_packed >> 7) & 1;
@@ -666,6 +666,9 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
     if (!saw_trailer || img->num_frames == 0) goto decode_failed;
     if (pos != len) goto decode_failed;
 
+    img->width = width;
+    img->height = height;
+    img->background = background;
     return 0;
 
 decode_failed:
@@ -678,10 +681,42 @@ void neverc_gif_free(neverc_gif_image_t *img) {
     for (int i = 0; i < img->num_frames; i++)
         free(img->frames[i].indices);
     free(img->frames);
-    img->frames = NULL;
-    img->num_frames = 0;
-    img->width = 0;
-    img->height = 0;
+    memset(img, 0, sizeof(*img));
+}
+
+int neverc_gif_frame_to_rgba(const neverc_gif_frame_t *frame,
+                             uint8_t **out_rgba, size_t *out_len) {
+    if (out_rgba) *out_rgba = NULL;
+    if (out_len) *out_len = 0;
+    if (!frame || !frame->indices || !out_rgba || !out_len) return -1;
+    if (frame->width == 0 || frame->height == 0) return -1;
+    if (frame->palette_size < 1 || frame->palette_size > NEVERC_GIF_MAX_PALETTE)
+        return -1;
+    if (frame->has_transparency &&
+        (int)frame->transparent_index >= frame->palette_size)
+        return -1;
+    if ((uint64_t)frame->width * frame->height > GIF_MAX_PIXELS) return -1;
+    if (frame->height > SIZE_MAX / 4 / frame->width) return -1;
+
+    size_t npixels = (size_t)frame->width * frame->height;
+    size_t nbytes = npixels * 4u;
+    uint8_t *rgba = (uint8_t *)malloc(nbytes);
+    if (!rgba) return -1;
+
+    for (size_t i = 0; i < npixels; i++) {
+        int idx = frame->indices[i];
+        if (idx >= frame->palette_size) idx = 0;
+        uint8_t *p = rgba + i * 4u;
+        p[0] = frame->palette[idx].r;
+        p[1] = frame->palette[idx].g;
+        p[2] = frame->palette[idx].b;
+        p[3] = (frame->has_transparency &&
+                idx == (int)frame->transparent_index) ? 0 : 255;
+    }
+
+    *out_rgba = rgba;
+    *out_len = nbytes;
+    return 0;
 }
 
 /* =========================================================================
@@ -891,6 +926,34 @@ static int gif_quantize_uniform(const uint8_t *rgba, size_t npixels,
     return 0;
 }
 
+/* Mark alpha-0 source pixels as a GIF transparent index. Adds a palette
+ * slot when one is free; otherwise reuses the last entry. */
+static void gif_apply_rgba_transparency(const uint8_t *rgba, size_t npixels,
+                                        neverc_gif_frame_t *frame) {
+    int saw_trans = 0;
+    for (size_t i = 0; i < npixels; i++) {
+        if (rgba[i * 4u + 3u] == 0) { saw_trans = 1; break; }
+    }
+    if (!saw_trans) return;
+
+    int tidx;
+    if (frame->palette_size < NEVERC_GIF_MAX_PALETTE) {
+        tidx = frame->palette_size;
+        frame->palette[tidx].r = 0;
+        frame->palette[tidx].g = 0;
+        frame->palette[tidx].b = 0;
+        frame->palette_size++;
+    } else {
+        tidx = NEVERC_GIF_MAX_PALETTE - 1;
+    }
+    frame->has_transparency = 1;
+    frame->transparent_index = (uint8_t)tidx;
+    for (size_t i = 0; i < npixels; i++) {
+        if (rgba[i * 4u + 3u] == 0)
+            frame->indices[i] = (uint8_t)tidx;
+    }
+}
+
 int neverc_gif_from_rgba(const uint8_t *rgba, uint32_t width, uint32_t height,
                          neverc_gif_frame_t *frame) {
     if (!rgba || !frame || width == 0 || height == 0 ||
@@ -913,7 +976,9 @@ int neverc_gif_from_rgba(const uint8_t *rgba, uint32_t width, uint32_t height,
     unsigned char *tag = (unsigned char *)malloc(cells);
     if (!m.wt || !m.mr || !m.mg || !m.mb || !m.m2 || !tag) {
         free(m.wt); free(m.mr); free(m.mg); free(m.mb); free(m.m2); free(tag);
-        return gif_quantize_uniform(rgba, npixels, frame);
+        if (gif_quantize_uniform(rgba, npixels, frame) != 0) return -1;
+        gif_apply_rgba_transparency(rgba, npixels, frame);
+        return 0;
     }
 
     /* 3D histogram at 5-bit precision; cells are 1-indexed (0 = moment base). */
@@ -984,5 +1049,6 @@ int neverc_gif_from_rgba(const uint8_t *rgba, uint32_t width, uint32_t height,
     }
 
     free(m.wt); free(m.mr); free(m.mg); free(m.mb); free(m.m2); free(tag);
+    gif_apply_rgba_transparency(rgba, npixels, frame);
     return 0;
 }

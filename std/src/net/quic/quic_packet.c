@@ -157,6 +157,80 @@ int neverc_quic_parse_packet_header(const uint8_t *buf, size_t len,
         return parse_short_header(buf, len, hdr, expected_dcid_len);
 }
 
+int neverc_quic_is_version_negotiation(const uint8_t *buf, size_t len) {
+    if (!buf || len < 5 || (buf[0] & 0x80U) == 0) return 0;
+    uint32_t version = ((uint32_t)buf[1] << 24) | ((uint32_t)buf[2] << 16) |
+                       ((uint32_t)buf[3] << 8) | (uint32_t)buf[4];
+    return version == 0;
+}
+
+static int quic_read_cid_at(const uint8_t *buf, size_t len, size_t *pos,
+                            quic_conn_id_t *cid) {
+    if (!buf || !pos || !cid || *pos >= len) return -1;
+    cid->len = buf[(*pos)++];
+    if (cid->len > QUIC_MAX_CID_LEN || cid->len > len - *pos) return -1;
+    memcpy(cid->data, buf + *pos, cid->len);
+    *pos += cid->len;
+    return 0;
+}
+
+int neverc_quic_version_negotiation_supports(const uint8_t *buf, size_t len,
+                                             uint32_t version) {
+    if (!neverc_quic_is_version_negotiation(buf, len)) return 0;
+    size_t pos = 5;
+    quic_conn_id_t dcid;
+    quic_conn_id_t scid;
+    if (quic_read_cid_at(buf, len, &pos, &dcid) != 0 ||
+        quic_read_cid_at(buf, len, &pos, &scid) != 0)
+        return 0;
+    if ((len - pos) % 4U != 0 || pos == len) return 0;
+    while (pos + 4U <= len) {
+        uint32_t listed = ((uint32_t)buf[pos] << 24) |
+                          ((uint32_t)buf[pos + 1U] << 16) |
+                          ((uint32_t)buf[pos + 2U] << 8) |
+                          (uint32_t)buf[pos + 3U];
+        if (listed == version) return 1;
+        pos += 4U;
+    }
+    return 0;
+}
+
+int neverc_quic_write_version_negotiation(
+    uint8_t *buf, size_t cap, uint8_t first_byte,
+    const quic_conn_id_t *destination, const quic_conn_id_t *source,
+    const uint32_t *versions, size_t nversions, size_t *written) {
+    if (written) *written = 0;
+    if (!buf || !destination || !source || !written ||
+        (nversions > 0 && !versions) || nversions == 0 ||
+        destination->len > QUIC_MAX_CID_LEN ||
+        source->len > QUIC_MAX_CID_LEN || (first_byte & 0x80U) == 0)
+        return -1;
+    size_t need = 5U + 1U + destination->len + 1U + source->len;
+    if (nversions > (SIZE_MAX - need) / 4U) return -1;
+    need += nversions * 4U;
+    if (cap < need) return -1;
+    size_t pos = 0;
+    buf[pos++] = first_byte;
+    buf[pos++] = 0;
+    buf[pos++] = 0;
+    buf[pos++] = 0;
+    buf[pos++] = 0;
+    buf[pos++] = destination->len;
+    memcpy(buf + pos, destination->data, destination->len);
+    pos += destination->len;
+    buf[pos++] = source->len;
+    memcpy(buf + pos, source->data, source->len);
+    pos += source->len;
+    for (size_t i = 0; i < nversions; i++) {
+        buf[pos++] = (uint8_t)(versions[i] >> 24);
+        buf[pos++] = (uint8_t)(versions[i] >> 16);
+        buf[pos++] = (uint8_t)(versions[i] >> 8);
+        buf[pos++] = (uint8_t)versions[i];
+    }
+    *written = pos;
+    return 0;
+}
+
 int neverc_quic_write_long_header(uint8_t *buf, size_t cap,
                                     const quic_packet_header_t *hdr,
                                     size_t *written) {

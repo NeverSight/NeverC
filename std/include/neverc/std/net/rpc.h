@@ -86,7 +86,7 @@ typedef struct {
 typedef enum {
     NEVERC_RPC_CODEC_RAW = 0,
     NEVERC_RPC_CODEC_JSON = 1,
-    NEVERC_RPC_CODEC_PROTOBUF = 2 /* implemented in stage 7 */
+    NEVERC_RPC_CODEC_PROTOBUF = 2
 } neverc_rpc_codec_t;
 
 typedef struct {
@@ -110,7 +110,9 @@ int neverc_rpc_frame_decode(const void *input, size_t input_length,
 
 /* Encode/decode an OPEN payload. Method names use slash-separated token
  * segments (for example "game.Session/Join"). Metadata keys are lowercase
- * HTTP-token-like identifiers. Decode returns non-owning views into input. */
+ * HTTP-token-like identifiers. Decode returns non-owning views into input.
+ * A payload with no metadata may be decoded with metadata == NULL and
+ * metadata_capacity == 0. */
 int neverc_rpc_open_encode(const neverc_rpc_open_t *open,
                            void *output, size_t output_capacity,
                            size_t *output_length);

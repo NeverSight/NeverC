@@ -40,6 +40,15 @@ static uint8_t paeth_predictor(uint8_t a, uint8_t b, uint8_t c) {
     return c;
 }
 
+static void png_decode_fail(neverc_png_image_t *img, uint8_t *idat_buf, uint8_t *raw) {
+    free(idat_buf);
+    free(raw);
+    if (img) {
+        free(img->pixels);
+        memset(img, 0, sizeof(*img));
+    }
+}
+
 static int channels_for_color_type(uint8_t ct) {
     switch (ct) {
         case 0: return 1;
@@ -129,11 +138,11 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
         if ((size_t)chunk_len > len - pos - 12) break;
         if (read_u32be(chunk_data + chunk_len) !=
             png_chunk_crc(chunk_type, (size_t)chunk_len + 4U)) {
-            free(idat_buf);
+            png_decode_fail(img, idat_buf, NULL);
             return -1;
         }
         if (!ihdr_found && memcmp(chunk_type, "IHDR", 4) != 0) {
-            free(idat_buf);
+            png_decode_fail(img, idat_buf, NULL);
             return -1;
         }
 
@@ -141,24 +150,27 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
             if (ihdr_found || chunk_len != 13 ||
                 chunk_data[10] != 0 || chunk_data[11] != 0 ||
                 chunk_data[12] != 0) {
-                free(idat_buf);
+                png_decode_fail(img, idat_buf, NULL);
                 return -1;
             }
             img->width = read_u32be(chunk_data);
             img->height = read_u32be(chunk_data + 4);
             img->bit_depth = chunk_data[8];
             img->color_type = chunk_data[9];
-            if (img->bit_depth != 8) { free(idat_buf); return -1; }
+            if (img->bit_depth != 8) {
+                png_decode_fail(img, idat_buf, NULL);
+                return -1;
+            }
             img->channels = (uint8_t)channels_for_color_type(img->color_type);
             if (img->channels == 0 ||
                 img->color_type == NEVERC_PNG_COLOR_INDEXED) {
-                free(idat_buf);
+                png_decode_fail(img, idat_buf, NULL);
                 return -1;
             }
             if (img->width == 0 || img->height == 0 ||
                 (uint64_t)img->width * (uint64_t)img->height >
                     PNG_MAX_PIXELS) {
-                free(idat_buf);
+                png_decode_fail(img, idat_buf, NULL);
                 return -1;
             }
             img->stride = (size_t)img->width * img->channels;
@@ -166,18 +178,21 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
         } else if (memcmp(chunk_type, "PLTE", 4) == 0) {
             if (idat_seen || chunk_len == 0 || chunk_len > 768 ||
                 chunk_len % 3 != 0) {
-                free(idat_buf);
+                png_decode_fail(img, idat_buf, NULL);
                 return -1;
             }
         } else if (memcmp(chunk_type, "IDAT", 4) == 0) {
-            if (idat_ended) { free(idat_buf); return -1; }
+            if (idat_ended) {
+                png_decode_fail(img, idat_buf, NULL);
+                return -1;
+            }
             idat_seen = 1;
             /* Skip empty IDAT chunks: a zero-length chunk is legal, but with no
              * data accumulated yet idat_buf is still NULL and `idat_buf + 0`
              * (and the zero-length memcpy onto it) is undefined behavior. */
             if (chunk_len) {
                 if ((size_t)chunk_len > SIZE_MAX - idat_len) {
-                    free(idat_buf);
+                    png_decode_fail(img, idat_buf, NULL);
                     return -1;
                 }
                 size_t need = idat_len + chunk_len;
@@ -185,14 +200,17 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
                     ((uint64_t)img->stride + 1u) * (uint64_t)img->height;
                 uint64_t idat_limit = raw_need * 2u + 64u;
                 if (need > idat_limit) {
-                    free(idat_buf);
+                    png_decode_fail(img, idat_buf, NULL);
                     return -1;
                 }
                 if (need > idat_cap) {
                     size_t new_cap =
                         need > SIZE_MAX / 2 ? need : need * 2;
                     uint8_t *nb = (uint8_t *)realloc(idat_buf, new_cap);
-                    if (!nb) { free(idat_buf); return -1; }
+                    if (!nb) {
+                        png_decode_fail(img, idat_buf, NULL);
+                        return -1;
+                    }
                     idat_buf = nb;
                     idat_cap = new_cap;
                 }
@@ -200,14 +218,20 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
                 idat_len += chunk_len;
             }
         } else if (memcmp(chunk_type, "IEND", 4) == 0) {
-            if (chunk_len != 0) { free(idat_buf); return -1; }
+            if (chunk_len != 0) {
+                png_decode_fail(img, idat_buf, NULL);
+                return -1;
+            }
             iend_found = 1;
             pos += 12U;
-            if (pos != len) { free(idat_buf); return -1; }
+            if (pos != len) {
+                png_decode_fail(img, idat_buf, NULL);
+                return -1;
+            }
             break;
         } else {
             if ((chunk_type[0] & 0x20U) == 0) {
-                free(idat_buf);
+                png_decode_fail(img, idat_buf, NULL);
                 return -1;
             }
             if (idat_seen) idat_ended = 1;
@@ -217,7 +241,7 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
     }
 
     if (!ihdr_found || !idat_seen || !iend_found || idat_len < 6) {
-        free(idat_buf);
+        png_decode_fail(img, idat_buf, NULL);
         return -1;
     }
 
@@ -229,7 +253,7 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
     if ((cmf & 0x0fU) != 8U || (cmf >> 4) > 7U ||
         (((unsigned)cmf << 8) | flg) % 31U != 0U ||
         (flg & 0x20U) != 0U) {
-        free(idat_buf);
+        png_decode_fail(img, idat_buf, NULL);
         return -1;
     }
     uint32_t expected_adler = read_u32be(idat_buf + idat_len - 4U);
@@ -237,21 +261,28 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
     /* Skip zlib header (2 bytes) and checksum (4 bytes at end). */
     size_t raw_size = (img->stride + 1) * img->height;
     uint8_t *raw = (uint8_t *)malloc(raw_size);
-    if (!raw) { free(idat_buf); return -1; }
+    if (!raw) {
+        png_decode_fail(img, idat_buf, NULL);
+        return -1;
+    }
 
     size_t decompressed_len = raw_size;
     int rc = neverc_flate_decompress(idat_buf + 2, idat_len - 6, raw, &decompressed_len);
     free(idat_buf);
+    idat_buf = NULL;
 
     if (rc != 0 || decompressed_len != raw_size ||
         neverc_adler32_checksum(raw, raw_size) != expected_adler) {
-        free(raw);
+        png_decode_fail(img, NULL, raw);
         return -1;
     }
 
     /* Reverse filters */
     img->pixels = (uint8_t *)calloc(1, img->height * img->stride);
-    if (!img->pixels) { free(raw); return -1; }
+    if (!img->pixels) {
+        png_decode_fail(img, NULL, raw);
+        return -1;
+    }
 
     size_t bpp = img->channels;
     for (uint32_t y = 0; y < img->height; y++) {
@@ -262,7 +293,8 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
         uint8_t *prev = (y > 0) ? img->pixels + (y - 1) * img->stride : NULL;
 
         if (png_unfilter_row(dst, src, prev, img->stride, bpp, filter_type) != 0) {
-            free(raw); free(img->pixels); img->pixels = NULL; return -1;
+            png_decode_fail(img, NULL, raw);
+            return -1;
         }
     }
 
@@ -458,10 +490,9 @@ int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t 
 }
 
 void neverc_png_free(neverc_png_image_t *img) {
-    if (img && img->pixels) {
-        free(img->pixels);
-        img->pixels = NULL;
-    }
+    if (!img) return;
+    free(img->pixels);
+    memset(img, 0, sizeof(*img));
 }
 
 const uint8_t *neverc_png_pixel_at(const neverc_png_image_t *img, uint32_t x, uint32_t y) {

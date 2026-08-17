@@ -56,6 +56,12 @@ static void test_split_host_port(void) {
     check_str("ipv6 full host", host, "2001:db8::1");
     check_str("ipv6 full port", port, "8080");
 
+    check_int("split [fe80::1%eth0]:80",
+              neverc_net_split_host_port("[fe80::1%eth0]:80", host,
+                                         sizeof(host), port, sizeof(port)), 0);
+    check_str("ipv6 zone host", host, "fe80::1%eth0");
+    check_str("ipv6 zone port", port, "80");
+
     /* Error cases */
     check_int("no port", neverc_net_split_host_port("localhost", host, sizeof(host), port, sizeof(port)), -1);
     check_int("null input", neverc_net_split_host_port(NULL, host, sizeof(host), port, sizeof(port)), -1);
@@ -92,6 +98,9 @@ static void test_split_host_port(void) {
     check_int("empty hostport rejected",
               neverc_net_split_host_port("", host, sizeof(host),
                                          port, sizeof(port)), -1);
+    check_int("empty ipv6 zone rejected",
+              neverc_net_split_host_port("[fe80::1%]:80", host, sizeof(host),
+                                         port, sizeof(port)), -1);
 }
 
 /* ===== JoinHostPort ===== */
@@ -111,6 +120,21 @@ static void test_join_host_port(void) {
 
     check_true("join ipv6 full", neverc_net_join_host_port("2001:db8::1", "8080", buf, sizeof(buf)) > 0);
     check_str("ipv6 full result", buf, "[2001:db8::1]:8080");
+
+    check_true("join ipv6 zone",
+               neverc_net_join_host_port("fe80::1%eth0", "80", buf,
+                                         sizeof(buf)) > 0);
+    check_str("ipv6 zone result", buf, "[fe80::1%eth0]:80");
+
+    check_int("join rejects empty port",
+              neverc_net_join_host_port("localhost", "", buf, sizeof(buf)),
+              -1);
+    check_int("join rejects overflow port",
+              neverc_net_join_host_port("localhost", "65536", buf,
+                                        sizeof(buf)), -1);
+    check_int("join rejects signed port",
+              neverc_net_join_host_port("localhost", "+80", buf, sizeof(buf)),
+              -1);
 }
 
 /* ===== LookupHost ===== */
@@ -163,6 +187,27 @@ static void test_lookup_ip(void) {
               neverc_net_lookup_ip("tcp", "localhost", &addrs), -1);
     check_int("invalid ip network rejected",
               neverc_net_lookup_ip("ipx", "localhost", &addrs), -1);
+
+    /* inet_ntop drops sin6_scope_id; a zoned literal must keep the zone. */
+    const char *zoned_hosts[] = {
+        "fe80::1%lo0", "fe80::1%lo", "fe80::1%1", NULL
+    };
+    int kept_zone = 0;
+    int tried_zoned = 0;
+    for (int i = 0; zoned_hosts[i]; i++) {
+        neverc_net_addrs_t zoned;
+        if (neverc_net_lookup_ip("ip6", zoned_hosts[i], &zoned) != 0)
+            continue;
+        tried_zoned = 1;
+        for (int j = 0; j < zoned.count; j++) {
+            if (strncmp(zoned.addrs[j], "fe80:", 5) == 0 &&
+                strchr(zoned.addrs[j], '%'))
+                kept_zone = 1;
+        }
+        if (kept_zone) break;
+    }
+    if (tried_zoned)
+        check_true("lookup_ip keeps ipv6 zone", kept_zone);
 }
 
 /* ===== LookupPort ===== */
@@ -194,6 +239,14 @@ static void test_lookup_port(void) {
               neverc_net_lookup_addr("", &rev), -1);
     check_int("null reverse addr rejected",
               neverc_net_lookup_addr(NULL, &rev), -1);
+    check_int("zoned ipv6 unknown iface rejected",
+              neverc_net_lookup_addr("fe80::1%no_such_iface_zzz", &rev), -1);
+    check_int("zoned ipv6 empty zone rejected",
+              neverc_net_lookup_addr("fe80::1%", &rev), -1);
+    check_int("ipv4 with zone rejected",
+              neverc_net_lookup_addr("127.0.0.1%1", &rev), -1);
+    check_int("zoned ipv6 zero zone rejected",
+              neverc_net_lookup_addr("fe80::1%0", &rev), -1);
     neverc_net_mx_list_t mx;
     check_int("empty mx name rejected", neverc_net_lookup_mx("", &mx), -1);
     neverc_net_txt_list_t txt;

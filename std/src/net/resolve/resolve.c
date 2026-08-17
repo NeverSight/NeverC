@@ -11,9 +11,11 @@
   #include <winsock2.h>
   #include <ws2tcpip.h>
   #include <windns.h>
+  #include <iphlpapi.h>
   #include <windows.h>
   #pragma comment(lib, "ws2_32.lib")
   #pragma comment(lib, "dnsapi.lib")
+  #pragma comment(lib, "iphlpapi.lib")
 
   static void ensure_wsa_init(void) {
       static volatile LONG inited = 0;
@@ -38,6 +40,7 @@
   #include <pthread.h>
   #include <arpa/nameser.h>
   #include <resolv.h>
+  #include <net/if.h>
   #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
     #include <arpa/nameser_compat.h>
   #endif
@@ -60,14 +63,72 @@ static void copy_cstr_term(char *dst, size_t dstsz, const char *src) {
 #ifndef _WIN32
 static pthread_mutex_t g_resolv_lock = PTHREAD_MUTEX_INITIALIZER;
 
+/* res_query may return a size larger than anslen (only anslen bytes written)
+ * or a UDP answer with the TC bit set. Either case is an incomplete RRset;
+ * passing an oversized length to ns_initparse / dn_expand over-reads. */
 static int posix_res_query(const char *name, int class, int type,
                            unsigned char *answer, int anslen) {
     pthread_mutex_lock(&g_resolv_lock);
     int len = res_query(name, class, type, answer, anslen);
     pthread_mutex_unlock(&g_resolv_lock);
+    if (len < 0 || len > anslen)
+        return -1;
+    /* DNS header flags: QR Opcode AA TC RD in byte 2; TC is 0x02. */
+    if (len >= 12 && (answer[2] & 0x02))
+        return -1;
     return len;
 }
 #endif
+
+static int format_resolved_ip(int family, const void *bin, unsigned scope_id,
+                              char *buf, size_t buflen) {
+    if (!inet_ntop(family, bin, buf, (socklen_t)buflen))
+        return -1;
+    if (family != AF_INET6 || scope_id == 0)
+        return 0;
+    size_t used = strlen(buf);
+    if (used >= buflen)
+        return -1;
+#ifndef _WIN32
+    char ifname[IF_NAMESIZE];
+    if (if_indextoname(scope_id, ifname)) {
+        int n = snprintf(buf + used, buflen - used, "%%%s", ifname);
+        if (n > 0 && (size_t)n < buflen - used)
+            return 0;
+        buf[used] = '\0';
+    }
+#endif
+    int n = snprintf(buf + used, buflen - used, "%%%u", scope_id);
+    return (n > 0 && (size_t)n < buflen - used) ? 0 : -1;
+}
+
+static int parse_ipv6_zone(const char *zone, unsigned *scope_id) {
+    if (!zone || !zone[0] || !scope_id)
+        return -1;
+    unsigned value = 0;
+    int digits = 1;
+    for (const unsigned char *p = (const unsigned char *)zone; *p; p++) {
+        if (*p < '0' || *p > '9') {
+            digits = 0;
+            break;
+        }
+        unsigned digit = (unsigned)(*p - '0');
+        if (value > (0xFFFFFFFFu - digit) / 10u)
+            return -1;
+        value = value * 10u + digit;
+    }
+    if (digits) {
+        if (value == 0)
+            return -1;
+        *scope_id = value;
+        return 0;
+    }
+    unsigned idx = if_nametoindex(zone);
+    if (idx == 0)
+        return -1;
+    *scope_id = idx;
+    return 0;
+}
 
 /* ======================================================================
  * DNS Lookup — LookupHost / LookupIP
@@ -83,6 +144,18 @@ int neverc_net_lookup_ip(const char *network, const char *host,
     if (!host || !host[0] || !out) return -1;
     ensure_wsa_init();
     memset(out, 0, sizeof(*out));
+
+    /* getaddrinfo / inet_ntop often drop the zone; keep the input zone text
+     * so a literal like fe80::1%lo0 still round-trips. */
+    const char *host_zone = NULL;
+    unsigned host_scope = 0;
+    if (strchr(host, ':')) {
+        const char *pct = strchr(host, '%');
+        if (pct && pct[1]) {
+            host_zone = pct + 1;
+            (void)parse_ipv6_zone(host_zone, &host_scope);
+        }
+    }
 
     struct addrinfo hints, *result, *rp;
     memset(&hints, 0, sizeof(hints));
@@ -104,12 +177,23 @@ int neverc_net_lookup_ip(const char *network, const char *host,
         char buf[64] = {0};
         if (rp->ai_family == AF_INET) {
             struct sockaddr_in *in = (struct sockaddr_in *)rp->ai_addr;
-            if (!inet_ntop(AF_INET, &in->sin_addr, buf, sizeof(buf)))
+            if (format_resolved_ip(AF_INET, &in->sin_addr, 0, buf,
+                                   sizeof(buf)) != 0)
                 continue;
         } else if (rp->ai_family == AF_INET6) {
             struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)rp->ai_addr;
-            if (!inet_ntop(AF_INET6, &in6->sin6_addr, buf, sizeof(buf)))
+            unsigned scope = in6->sin6_scope_id ? in6->sin6_scope_id
+                                                : host_scope;
+            if (format_resolved_ip(AF_INET6, &in6->sin6_addr, scope, buf,
+                                   sizeof(buf)) != 0)
                 continue;
+            if (host_zone && !strchr(buf, '%')) {
+                size_t used = strlen(buf);
+                int n = snprintf(buf + used, sizeof(buf) - used, "%%%s",
+                                 host_zone);
+                if (n <= 0 || (size_t)n >= sizeof(buf) - used)
+                    continue;
+            }
         } else {
             continue;
         }
@@ -208,16 +292,44 @@ int neverc_net_lookup_addr(const char *addr, neverc_net_addrs_t *out) {
 
     struct in_addr v4;
     struct in6_addr v6;
+    char iponly[128];
+    const char *ip = addr;
+    unsigned scope_id = 0;
 
-    if (inet_pton(AF_INET, addr, &v4) == 1) {
+    /* inet_pton rejects IPv6 zone IDs; strip `%name` / `%index` first. */
+    if (strchr(addr, ':')) {
+        const char *pct = strchr(addr, '%');
+        if (pct) {
+            size_t n = (size_t)(pct - addr);
+            if (n == 0 || n >= sizeof(iponly) ||
+                parse_ipv6_zone(pct + 1, &scope_id) != 0)
+                return -1;
+            memcpy(iponly, addr, n);
+            iponly[n] = '\0';
+            ip = iponly;
+        }
+    }
+
+    if (inet_pton(AF_INET, ip, &v4) == 1) {
+        if (scope_id != 0)
+            return -1;
         struct sockaddr_in *sin = (struct sockaddr_in *)&ss;
         sin->sin_family = AF_INET;
         sin->sin_addr = v4;
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
+    defined(__NetBSD__)
+        sin->sin_len = sizeof(*sin);
+#endif
         sslen = sizeof(struct sockaddr_in);
-    } else if (inet_pton(AF_INET6, addr, &v6) == 1) {
+    } else if (inet_pton(AF_INET6, ip, &v6) == 1) {
         struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&ss;
         sin6->sin6_family = AF_INET6;
         sin6->sin6_addr = v6;
+        sin6->sin6_scope_id = scope_id;
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
+    defined(__NetBSD__)
+        sin6->sin6_len = sizeof(*sin6);
+#endif
         sslen = sizeof(struct sockaddr_in6);
     } else {
         return -1;
@@ -562,6 +674,9 @@ int neverc_net_split_host_port(const char *hostport,
         if (hlen >= hostlen) return -1;
         memcpy(host, s + 1, hlen);
         host[hlen] = '\0';
+        /* RFC 4007 zone-id after '%' must be non-empty. */
+        const char *zone = strchr(host, '%');
+        if (zone && !zone[1]) return -1;
 
         if (end[1] != ':') return -1;
         size_t plen = strlen(end + 2);
@@ -603,6 +718,7 @@ int neverc_net_split_host_port(const char *hostport,
 int neverc_net_join_host_port(const char *host, const char *port,
                                 char *buf, size_t buflen) {
     if (!host || !port || !buf || buflen == 0) return -1;
+    if (!port_text_valid(port)) return -1;
 
     int need_brackets = (strchr(host, ':') != NULL);
 

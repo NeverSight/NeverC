@@ -48,6 +48,14 @@ neverc_cmplx_t  neverc_cmplx_asin(neverc_cmplx_t z);
 neverc_cmplx_t  neverc_cmplx_acos(neverc_cmplx_t z);
 neverc_cmplx_t  neverc_cmplx_atan(neverc_cmplx_t z);
 
+/* Inverse hyperbolic (Go math/cmplx.Asinh/Acosh/Atanh) */
+neverc_cmplx_t  neverc_cmplx_asinh(neverc_cmplx_t z);
+neverc_cmplx_t  neverc_cmplx_acosh(neverc_cmplx_t z);
+neverc_cmplx_t  neverc_cmplx_atanh(neverc_cmplx_t z);
+
+/* Cotangent (Go math/cmplx.Cot) */
+neverc_cmplx_t  neverc_cmplx_cot(neverc_cmplx_t z);
+
 /* Special values */
 int             neverc_cmplx_isnan(neverc_cmplx_t z);
 int             neverc_cmplx_isinf(neverc_cmplx_t z);

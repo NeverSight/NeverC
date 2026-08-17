@@ -107,6 +107,12 @@ static void test_write_quoting(void) {
     ASSERT_INT_EQ(n > 0, 1);
     dst[n] = '\0';
     ASSERT_STR_EQ(dst, "\"hello, world\",\"he said \"\"hi\"\"\",plain\n");
+
+    const char *nl_fields[] = {"a\nb", "c\r"};
+    n = neverc_csv_write_record(nl_fields, 2, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "\"a\nb\",\"c\r\"\n");
 }
 
 static void test_write_crlf(void) {
@@ -220,6 +226,12 @@ static void test_invalid_inputs(void) {
                   -1);
     ASSERT_INT_EQ(neverc_csv_read_line(
                       "a\"b,c", 5U, fields, 2, work, sizeof(work), NULL),
+                  -1);
+    ASSERT_INT_EQ(neverc_csv_read_line(
+                      "\"foo\"bar", 8U, fields, 2, work, sizeof(work), NULL),
+                  -1);
+    ASSERT_INT_EQ(neverc_csv_read_line(
+                      "\"a\" ,b", 6U, fields, 2, work, sizeof(work), NULL),
                   -1);
     {
         static const char embedded_nul[] = {'a', '\0', 'b', ',', 'c'};

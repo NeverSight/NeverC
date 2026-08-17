@@ -217,6 +217,15 @@ static void test_invalid_affine_points(void) {
                       c, &point, encoded, sizeof(encoded)),
                   -1);
 
+    neverc_bigint_set(&point.x, &c->gx);
+    neverc_bigint_set(&point.y, &c->gy);
+    unsigned char off_curve[65] = {0x04};
+    ASSERT_INT_EQ(neverc_elliptic_unmarshal(
+                      c, &point, off_curve, sizeof(off_curve)),
+                  -1);
+    ASSERT_TRUE(neverc_bigint_cmp(&point.x, &c->gx) == 0);
+    ASSERT_TRUE(neverc_bigint_cmp(&point.y, &c->gy) == 0);
+
     neverc_bigint_set(&point.x, &c->p);
     neverc_bigint_set_int64(&point.y, 1);
     ASSERT_TRUE(!neverc_elliptic_is_on_curve(c, &point));

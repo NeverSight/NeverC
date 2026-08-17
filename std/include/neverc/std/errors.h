@@ -25,6 +25,11 @@ const char     *neverc_errors_message(const neverc_error_t *err);
 neverc_error_t *neverc_errors_unwrap(const neverc_error_t *err);
 int             neverc_errors_is(const neverc_error_t *err,
                                  const neverc_error_t *target);
+/* Walk the wrap chain with the same match rules as neverc_errors_is.
+ * On success, writes the matching chain node to *out when out is non-NULL. */
+int             neverc_errors_as(const neverc_error_t *err,
+                                 const neverc_error_t *target,
+                                 neverc_error_t **out);
 neverc_error_t *neverc_errors_wrap(const char *text, neverc_error_t *cause);
 neverc_error_t *neverc_errors_join(neverc_error_t **errs, size_t count);
 void            neverc_errors_free(neverc_error_t *err);

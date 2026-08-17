@@ -157,6 +157,25 @@ static void test_decode(void) {
     check_mem("decode canonical raw value",
               dst, (const uint8_t *)"f", 1);
 
+    char raw[8];
+    size_t rn = neverc_base64_raw_encode(raw, (const uint8_t *)"f", 1);
+    check_size("raw_encoded_len(1)", neverc_base64_raw_encoded_len(1), 2);
+    check_size("raw_encode(f) len", rn, 2);
+    check_mem("raw_encode(f)", (const uint8_t *)raw, (const uint8_t *)"Zg", 2);
+    n = neverc_base64_decode(dst, raw, rn);
+    check_int("decode raw_encode(f)", n, 1);
+    check_mem("decode raw_encode(f) val", dst, (const uint8_t *)"f", 1);
+
+    rn = neverc_base64_raw_encode(raw, (const uint8_t *)"fo", 2);
+    check_size("raw_encode(fo) len", rn, 3);
+    check_mem("raw_encode(fo)", (const uint8_t *)raw, (const uint8_t *)"Zm8", 3);
+
+    uint8_t url_bytes[] = {0xfb, 0xff, 0xfe};
+    rn = neverc_base64_url_raw_encode(raw, url_bytes, 3);
+    check_size("url_raw_encode full group", rn, 4);
+    check_mem("url_raw_encode alphabet", (const uint8_t *)raw,
+              (const uint8_t *)"-__-", 4);
+
     size_t max_encoded_for_int =
         ((size_t)INT_MAX / 3 + ((size_t)INT_MAX % 3 != 0)) * 4;
     check_int("decode rejects result larger than int",

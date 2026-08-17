@@ -244,6 +244,23 @@ static void test_parse_invalid(void) {
     put32be(buf + 4, UINT32_MAX);
     CHECK("reject section sizes beyond file",
           neverc_plan9_parse(&f, buf, len) == -1);
+
+    uint8_t trunc64[32] = {0};
+    put32be(trunc64, NEVERC_PLAN9_MAGICAMD64);
+    CHECK("reject truncated AMD64 header",
+          neverc_plan9_parse(&f, trunc64, sizeof(trunc64)) == -1);
+
+    uint8_t fval[32 + 7] = {0};
+    put32be(fval, NEVERC_PLAN9_MAGIC386);
+    put32be(fval + 16, 7);
+    put32be(fval + 32, 0x10000);
+    fval[36] = 'f';
+    memcpy(fval + 37, "x", 2);
+    CHECK("parse oversized filename index header",
+          neverc_plan9_parse(&f, fval, sizeof(fval)) == 0);
+    CHECK("reject filename index above 16 bits",
+          neverc_plan9_symbols(&f) == -1);
+    neverc_plan9_close(&f);
     free(buf);
 }
 

@@ -43,6 +43,11 @@ extern "C" {
 #define NEVERC_MATH_MAX_UINT32  4294967295U
 #define NEVERC_MATH_MAX_UINT64  18446744073709551615ULL
 
+/* Platform-width integer limits (Go math.MaxInt / MinInt / MaxUint) */
+#define NEVERC_MATH_MAX_UINT    ((unsigned int)-1)
+#define NEVERC_MATH_MAX_INT     ((int)(NEVERC_MATH_MAX_UINT >> 1))
+#define NEVERC_MATH_MIN_INT     (-NEVERC_MATH_MAX_INT - 1)
+
 /* ===== Basic Arithmetic ===== */
 
 double neverc_math_abs(double x);
@@ -101,6 +106,8 @@ double neverc_math_trunc(double x);
 double neverc_math_round(double x);
 double neverc_math_roundtoeven(double x);
 double neverc_math_fmod(double x, double y);
+/* Go math.Mod — same IEEE remainder as fmod; math.mod → neverc_math_mod. */
+double neverc_math_mod(double x, double y);
 double neverc_math_remainder(double x, double y);
 
 /* ===== Decomposition ===== */

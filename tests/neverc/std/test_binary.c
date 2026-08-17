@@ -137,6 +137,65 @@ static void test_zero_max(void) {
     check_u64("be u64 max", neverc_binary_big_endian_uint64(buf), 0xFFFFFFFFFFFFFFFFULL);
 }
 
+static void check_int(const char *name, int got, int expected) {
+    tests_run++;
+    if (got == expected) { tests_passed++; }
+    else { tests_failed++; printf("  FAIL: %s: got %d, expected %d\n", name, got, expected); }
+}
+
+static void test_varint(void) {
+    printf("[varint]\n");
+    uint8_t buf[NEVERC_BINARY_MAX_VARINT_LEN64];
+    uint64_t u = 0;
+    int64_t s = 0;
+
+    check_int("put uvarint 1", neverc_binary_put_uvarint(buf, sizeof(buf), 1), 1);
+    check_int("uvarint 1 byte", buf[0], 0x01);
+    check_int("get uvarint 1", neverc_binary_uvarint(buf, 1, &u), 1);
+    check_u64("uvarint 1 value", u, 1);
+
+    check_int("put uvarint 127", neverc_binary_put_uvarint(buf, sizeof(buf), 127), 1);
+    check_int("get uvarint 127", neverc_binary_uvarint(buf, 1, &u), 1);
+    check_u64("uvarint 127 value", u, 127);
+
+    check_int("put uvarint 128", neverc_binary_put_uvarint(buf, sizeof(buf), 128), 2);
+    check_int("uvarint 128 b0", buf[0], 0x80);
+    check_int("uvarint 128 b1", buf[1], 0x01);
+    check_int("get uvarint 128", neverc_binary_uvarint(buf, 2, &u), 2);
+    check_u64("uvarint 128 value", u, 128);
+
+    check_int("put uvarint 300", neverc_binary_put_uvarint(buf, sizeof(buf), 300), 2);
+    check_int("get uvarint 300", neverc_binary_uvarint(buf, 2, &u), 2);
+    check_u64("uvarint 300 value", u, 300);
+
+    uint64_t maxu = 0xFFFFFFFFFFFFFFFFULL;
+    int n = neverc_binary_put_uvarint(buf, sizeof(buf), maxu);
+    check_int("put uvarint max", n, 10);
+    check_int("get uvarint max", neverc_binary_uvarint(buf, (size_t)n, &u), 10);
+    check_u64("uvarint max value", u, maxu);
+
+    check_int("put varint -1", neverc_binary_put_varint(buf, sizeof(buf), -1), 1);
+    check_int("varint -1 byte", buf[0], 0x01);
+    check_int("get varint -1", neverc_binary_varint(buf, 1, &s), 1);
+    tests_run++;
+    if (s == -1) tests_passed++;
+    else { tests_failed++; printf("  FAIL: varint -1 value: got %lld\n", (long long)s); }
+
+    check_int("put varint 1", neverc_binary_put_varint(buf, sizeof(buf), 1), 1);
+    check_int("get varint 1", neverc_binary_varint(buf, 1, &s), 1);
+    tests_run++;
+    if (s == 1) tests_passed++;
+    else { tests_failed++; printf("  FAIL: varint 1 value: got %lld\n", (long long)s); }
+
+    check_int("truncated", neverc_binary_uvarint(buf, 0, &u), 0);
+    check_int("short buffer", neverc_binary_put_uvarint(buf, 1, 300), -1);
+
+    uint8_t overflow[11];
+    for (int i = 0; i < 11; i++) overflow[i] = 0x80;
+    overflow[9] = 0x02;
+    check_int("overflow 10th byte", neverc_binary_uvarint(overflow, 10, &u), -10);
+}
+
 int main(void) {
     printf("=== NeverC Binary Library Tests ===\n\n");
     test_big_endian_read();
@@ -145,6 +204,7 @@ int main(void) {
     test_little_endian_write();
     test_roundtrip();
     test_zero_max();
+    test_varint();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

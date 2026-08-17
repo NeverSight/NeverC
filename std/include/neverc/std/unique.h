@@ -18,7 +18,8 @@ extern "C" {
  *
  * Thread-safe: table operations use internal locking and interned values are
  * immutable.  Destroy invalidates every handle and must not run concurrently
- * with handle/value access.
+ * with handle/value access.  An empty byte slice may be interned with a NULL
+ * pointer and length 0; a non-zero length still requires a non-NULL buffer.
  */
 
 typedef struct { const void *ptr; } neverc_unique_handle_t;

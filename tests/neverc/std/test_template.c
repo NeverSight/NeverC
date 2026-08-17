@@ -203,6 +203,29 @@ static void test_action_whitespace(void) {
     neverc_template_data_free(&data);
 }
 
+static void test_trim_markers(void) {
+    printf("[trim markers]\n");
+    neverc_template_data_t data;
+    neverc_template_data_init(&data);
+    neverc_template_data_set(&data, "Name", "Ada");
+    size_t outlen = 0;
+
+    char *r = neverc_template_render("Hello, {{- .Name -}} !", &data, &outlen);
+    check_str("trim both", r, "Hello,Ada!");
+    free(r);
+
+    r = neverc_template_render("A\n{{- if .Name -}}\nX\n{{- end -}}\nB",
+                               &data, &outlen);
+    check_str("trim if block", r, "AXB");
+    free(r);
+
+    r = neverc_template_render("{{ - .Name }}", &data, &outlen);
+    check_true("space before dash is not trim", r == NULL);
+    free(r);
+
+    neverc_template_data_free(&data);
+}
+
 static void test_parse_errors(void) {
     printf("[parse errors]\n");
     const char *bad[] = {
@@ -221,7 +244,8 @@ static void test_parse_errors(void) {
         "{{html .Name}}",
         "{{.Name .Other}}",
         "{{if .Show extra}}yes{{end}}",
-        "{{if Show}}yes{{end}}"
+        "{{if Show}}yes{{end}}",
+        "{{Name}}"
     };
 
     for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
@@ -295,6 +319,7 @@ int main(void) {
     test_falsy_values();
     test_range_subset();
     test_action_whitespace();
+    test_trim_markers();
     test_parse_errors();
     test_pipeline_rejected();
     test_null_safety();

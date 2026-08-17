@@ -73,21 +73,26 @@ static void test_handler_init(void) {
 
 static void test_level_filtering(void) {
     printf("[level_filtering]\n");
+    char buf[4096];
+    memset(buf, 0, sizeof(buf));
+    FILE *f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    if (!f) return;
     neverc_slog_handler_t h;
-#if defined(_WIN32)
-    FILE *f = fopen("NUL", "w");
-#else
-    FILE *f = fopen("/dev/null", "w");
-#endif
     neverc_slog_init(&h, f, NEVERC_SLOG_WARN, NEVERC_SLOG_FORMAT_TEXT);
 
-    neverc_slog_log(&h, NEVERC_SLOG_INFO, "should not appear", NULL, 0);
-    neverc_slog_log(&h, NEVERC_SLOG_WARN, "should appear", NULL, 0);
-    neverc_slog_log(&h, NEVERC_SLOG_ERROR, "should appear", NULL, 0);
-
-    tests_run++;
-    tests_passed++;
+    neverc_slog_log(&h, NEVERC_SLOG_INFO, "should-not-appear", NULL, 0);
+    neverc_slog_log(&h, NEVERC_SLOG_WARN, "should-appear", NULL, 0);
+    neverc_slog_log(&h, NEVERC_SLOG_ERROR, "should-also-appear", NULL, 0);
+    fflush(f);
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
     fclose(f);
+
+    ASSERT_TRUE(strstr(buf, "should-not-appear") == NULL);
+    ASSERT_TRUE(strstr(buf, "should-appear") != NULL);
+    ASSERT_TRUE(strstr(buf, "should-also-appear") != NULL);
 }
 
 static void test_text_output(void) {
@@ -164,6 +169,27 @@ static void test_default_handler(void) {
     neverc_slog_handler_t *def2 = neverc_slog_default();
     ASSERT_TRUE(def2->level == NEVERC_SLOG_WARN);
     ASSERT_TRUE(def2->format == NEVERC_SLOG_FORMAT_JSON);
+}
+
+static void test_default_level_wrappers(void) {
+    printf("[default_level_wrappers]\n");
+#if defined(_WIN32)
+    FILE *f = fopen("NUL", "w");
+#else
+    FILE *f = fopen("/dev/null", "w");
+#endif
+    ASSERT_TRUE(f != NULL);
+    if (!f) return;
+    neverc_slog_handler_t h;
+    neverc_slog_init(&h, f, NEVERC_SLOG_DEBUG, NEVERC_SLOG_FORMAT_TEXT);
+    neverc_slog_set_default(&h);
+    neverc_slog_debug("d", NULL, 0);
+    neverc_slog_info("i", NULL, 0);
+    neverc_slog_warn("w", NULL, 0);
+    neverc_slog_error("e", NULL, 0);
+    fclose(f);
+    neverc_slog_init(&h, stderr, NEVERC_SLOG_INFO, NEVERC_SLOG_FORMAT_TEXT);
+    neverc_slog_set_default(&h);
 }
 
 static void test_set_level(void) {
@@ -380,6 +406,7 @@ int main(void) {
     test_text_output();
     test_json_output();
     test_default_handler();
+    test_default_level_wrappers();
     test_set_level();
     test_escaping_and_special_floats();
     test_concurrent_records();

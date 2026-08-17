@@ -63,10 +63,33 @@ void neverc_mime_header_free(neverc_mime_header_t *h) {
     memset(h, 0, sizeof(*h));
 }
 
+static char *textproto_dup(const char *s) {
+    if (!s) s = "";
+    size_t len = strlen(s);
+    if (len == SIZE_MAX) return NULL;
+    char *copy = (char *)NC_TEXTPROTO_MALLOC(len + 1U);
+    if (!copy) return NULL;
+    memcpy(copy, s, len + 1U);
+    return copy;
+}
+
+static int textproto_is_mime_version(const char *s) {
+    static const char want[] = "mime-version";
+    size_t i = 0;
+    for (; s[i] && want[i]; i++) {
+        if (nc_tolower((unsigned char)s[i]) != (int)want[i])
+            return 0;
+    }
+    return s[i] == '\0' && want[i] == '\0';
+}
+
 char *neverc_textproto_canonical_mime_header_key(const char *key) {
     if (!key) return NULL;
     size_t len = strlen(key);
     if (len == SIZE_MAX) return NULL;
+    /* Go: invalid field names (space, CTL, ...) are returned unmodified. */
+    if (!textproto_field_name_ok(key))
+        return textproto_dup(key);
     char *out = (char *)NC_TEXTPROTO_MALLOC(len + 1U);
     if (!out) return NULL;
     int upper = 1;
@@ -82,6 +105,9 @@ char *neverc_textproto_canonical_mime_header_key(const char *key) {
         }
     }
     out[len] = '\0';
+    /* RFC 2045 writes MIME-Version, not the title-case Mime-Version. */
+    if (len == 12 && memcmp(out, "Mime-Version", 12) == 0)
+        memcpy(out, "MIME-Version", 12);
     return out;
 }
 
@@ -96,6 +122,9 @@ char *neverc_textproto_canonical_mime_header_key(const char *key) {
  */
 static int canon_eq(const char *canonical, const char *key) {
     if (!canonical || !key) return 0;
+    if (textproto_is_mime_version(canonical) &&
+        textproto_is_mime_version(key))
+        return 1;
     int upper = 1;
     size_t i = 0;
     for (; key[i]; i++) {
@@ -106,16 +135,6 @@ static int canon_eq(const char *canonical, const char *key) {
         if (canonical[i] != c) return 0;
     }
     return canonical[i] == '\0';
-}
-
-static char *textproto_dup(const char *s) {
-    if (!s) s = "";
-    size_t len = strlen(s);
-    if (len == SIZE_MAX) return NULL;
-    char *copy = (char *)NC_TEXTPROTO_MALLOC(len + 1U);
-    if (!copy) return NULL;
-    memcpy(copy, s, len + 1U);
-    return copy;
 }
 
 static int mime_header_grow(neverc_mime_header_t *h) {

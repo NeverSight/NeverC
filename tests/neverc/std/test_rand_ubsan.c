@@ -29,5 +29,6 @@ int main(void) {
         }
     }
 
+    puts("passed");
     return 0;
 }

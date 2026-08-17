@@ -15,32 +15,92 @@
 #include <signal.h>
 
 static neverc_signal_handler_t g_win_handlers[32] = {0};
+static volatile LONG g_win_pending[32] = {0};
+static HANDLE g_win_event = NULL;
+static int g_win_ctrl_registered = 0;
+
+static void win_ensure_event(void) {
+    if (!g_win_event)
+        g_win_event = CreateEventA(NULL, TRUE, FALSE, NULL);
+}
+
+static void win_mark_pending(int signum) {
+    if (signum < 0 || signum >= 32) return;
+    InterlockedExchange(&g_win_pending[signum], 1);
+    win_ensure_event();
+    if (g_win_event) SetEvent(g_win_event);
+}
 
 static BOOL WINAPI win_ctrl_handler(DWORD type) {
     switch (type) {
         case CTRL_C_EVENT:
-            if (g_win_handlers[NEVERC_SIGINT]) { g_win_handlers[NEVERC_SIGINT](NEVERC_SIGINT); return TRUE; }
+            win_mark_pending(NEVERC_SIGINT);
+            if (g_win_handlers[NEVERC_SIGINT]) {
+                g_win_handlers[NEVERC_SIGINT](NEVERC_SIGINT);
+                return TRUE;
+            }
             break;
         case CTRL_BREAK_EVENT:
         case CTRL_CLOSE_EVENT:
-            if (g_win_handlers[NEVERC_SIGTERM]) { g_win_handlers[NEVERC_SIGTERM](NEVERC_SIGTERM); return TRUE; }
+            win_mark_pending(NEVERC_SIGTERM);
+            if (g_win_handlers[NEVERC_SIGTERM]) {
+                g_win_handlers[NEVERC_SIGTERM](NEVERC_SIGTERM);
+                return TRUE;
+            }
             break;
     }
     return FALSE;
 }
 
+static void win_crt_handler(int signum) {
+    neverc_signal_handler_t handler = NULL;
+    if (signum >= 0 && signum < 32)
+        handler = g_win_handlers[signum];
+    win_mark_pending(signum);
+    /* MSVCRT resets to SIG_DFL after delivery; re-arm the wrapper. */
+    signal(signum, win_crt_handler);
+    if (handler) handler(signum);
+}
+
+static int win_crt_supported(int signum) {
+    return signum == NEVERC_SIGINT || signum == NEVERC_SIGTERM ||
+           signum == SIGINT || signum == SIGTERM ||
+#ifdef SIGBREAK
+           signum == SIGBREAK ||
+#endif
+#ifdef SIGABRT
+           signum == SIGABRT ||
+#endif
+           0;
+}
+
 void neverc_signal_notify(int signum, neverc_signal_handler_t handler) {
     if (signum < 0 || signum >= 32) return;
+    if (!handler) {
+        neverc_signal_stop(signum);
+        return;
+    }
     g_win_handlers[signum] = handler;
-    if (signum == NEVERC_SIGINT || signum == NEVERC_SIGTERM)
-        SetConsoleCtrlHandler(win_ctrl_handler, TRUE);
-    signal(signum, handler);
+    win_ensure_event();
+    if ((signum == NEVERC_SIGINT || signum == NEVERC_SIGTERM) &&
+        !g_win_ctrl_registered) {
+        if (SetConsoleCtrlHandler(win_ctrl_handler, TRUE))
+            g_win_ctrl_registered = 1;
+    }
+    if (win_crt_supported(signum))
+        signal(signum, win_crt_handler);
 }
 
 void neverc_signal_stop(int signum) {
     if (signum < 0 || signum >= 32) return;
     g_win_handlers[signum] = NULL;
-    signal(signum, SIG_DFL);
+    if (win_crt_supported(signum))
+        signal(signum, SIG_DFL);
+    if (!g_win_handlers[NEVERC_SIGINT] && !g_win_handlers[NEVERC_SIGTERM] &&
+        g_win_ctrl_registered) {
+        SetConsoleCtrlHandler(win_ctrl_handler, FALSE);
+        g_win_ctrl_registered = 0;
+    }
 }
 
 void neverc_signal_reset(int signum) {
@@ -50,14 +110,28 @@ void neverc_signal_reset(int signum) {
 void neverc_signal_ignore(int signum) {
     if (signum < 0 || signum >= 32) return;
     g_win_handlers[signum] = NULL;
-    signal(signum, SIG_IGN);
+    if (win_crt_supported(signum))
+        signal(signum, SIG_IGN);
 }
 
 int neverc_signal_wait(const int *sigs, int nsigs) {
-    if (!sigs || nsigs <= 0) return -1;
-    (void)sigs; (void)nsigs;
-    SleepEx(INFINITE, TRUE);
-    return 0;
+    int i;
+    if (!sigs || nsigs <= 0 || nsigs > 32) return -1;
+    for (i = 0; i < nsigs; i++) {
+        if (sigs[i] < 0 || sigs[i] >= 32) return -1;
+        if (sigs[i] == NEVERC_SIGKILL || sigs[i] == NEVERC_SIGSTOP) return -1;
+    }
+    win_ensure_event();
+    if (!g_win_event) return -1;
+    for (;;) {
+        for (i = 0; i < nsigs; i++) {
+            if (InterlockedCompareExchange(&g_win_pending[sigs[i]], 0, 1) == 1)
+                return sigs[i];
+        }
+        if (WaitForSingleObject(g_win_event, INFINITE) != WAIT_OBJECT_0)
+            return -1;
+        ResetEvent(g_win_event);
+    }
 }
 
 #else /* POSIX */
@@ -76,6 +150,10 @@ static void posix_signal_handler(int signum) {
 
 void neverc_signal_notify(int signum, neverc_signal_handler_t handler) {
     if (signum < 0 || signum >= 64) return;
+    if (!handler) {
+        neverc_signal_stop(signum);
+        return;
+    }
     g_handlers[signum] = handler;
 
     struct sigaction sa;
@@ -114,7 +192,7 @@ void neverc_signal_ignore(int signum) {
 }
 
 int neverc_signal_wait(const int *sigs, int nsigs) {
-    if (!sigs || nsigs <= 0) return -1;
+    if (!sigs || nsigs <= 0 || nsigs > 64) return -1;
     sigset_t set;
     sigemptyset(&set);
     for (int i = 0; i < nsigs; i++) {

@@ -29,10 +29,21 @@ int neverc_flate_compress(const uint8_t *src, size_t src_len,
 
 /*
  * DEFLATE decompress (inflate) `src` into `dst`.
- * Returns 0 on success, -1 on error.
+ * The input must be exactly one DEFLATE stream: leftover whole bytes after
+ * the final block are an error. Returns 0 on success, -1 on error.
  */
 int neverc_flate_decompress(const uint8_t *src, size_t src_len,
                             uint8_t *dst, size_t *dst_len);
+
+/*
+ * Like neverc_flate_decompress, but stops at the end of the DEFLATE stream
+ * and writes how many source bytes were consumed to *src_consumed. Trailing
+ * bytes (gzip/zlib trailer, the next gzip member) are left unconsumed.
+ * *src_consumed must be non-NULL.
+ */
+int neverc_flate_decompress_consumed(const uint8_t *src, size_t src_len,
+                                     uint8_t *dst, size_t *dst_len,
+                                     size_t *src_consumed);
 
 #ifdef __cplusplus
 }

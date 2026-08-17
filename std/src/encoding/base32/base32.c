@@ -70,6 +70,18 @@ size_t neverc_base32_encoded_len(size_t n) {
     return groups * 8;
 }
 
+size_t neverc_base32_raw_encoded_len(size_t n) {
+    static const unsigned char extra[5] = {0, 2, 4, 5, 7};
+    size_t full = n / 5;
+    if (full > SIZE_MAX / 8)
+        return SIZE_MAX;
+    size_t len = full * 8;
+    size_t add = extra[n % 5];
+    if (len > SIZE_MAX - add)
+        return SIZE_MAX;
+    return len + add;
+}
+
 size_t neverc_base32_decoded_len(size_t n) {
     /* Upper bound on bytes the decoder may write for n input chars. The decoder
      * strips trailing '=' then a leftover group of 2/4/5/7 chars yields 1/2/3/4
@@ -83,10 +95,12 @@ size_t neverc_base32_decoded_len(size_t n) {
 }
 
 static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,
-                                const char *table) {
+                                const char *table, int pad) {
     if (src_len == 0)
         return 0;
-    if (!dst || !src || neverc_base32_encoded_len(src_len) == SIZE_MAX)
+    size_t need = pad ? neverc_base32_encoded_len(src_len)
+                      : neverc_base32_raw_encoded_len(src_len);
+    if (!dst || !src || need == SIZE_MAX)
         return SIZE_MAX;
 
     size_t di = 0;
@@ -132,9 +146,13 @@ static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,
         if (out_chars > 4) dst[di+4] = table[(val >> 15) & 0x1f];
         if (out_chars > 5) dst[di+5] = table[(val >> 10) & 0x1f];
         if (out_chars > 6) dst[di+6] = table[(val >> 5)  & 0x1f];
-        for (int k = out_chars; k < 8; k++)
-            dst[di + k] = '=';
-        di += 8;
+        if (pad) {
+            for (int k = out_chars; k < 8; k++)
+                dst[di + k] = '=';
+            di += 8;
+        } else {
+            di += (size_t)out_chars;
+        }
     }
 
     return di;
@@ -270,7 +288,11 @@ static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
 }
 
 size_t neverc_base32_encode(char *dst, const uint8_t *src, size_t src_len) {
-    return encode_with_table(dst, src, src_len, std_table);
+    return encode_with_table(dst, src, src_len, std_table, 1);
+}
+
+size_t neverc_base32_raw_encode(char *dst, const uint8_t *src, size_t src_len) {
+    return encode_with_table(dst, src, src_len, std_table, 0);
 }
 
 int neverc_base32_decode(uint8_t *dst, const char *src, size_t src_len) {
@@ -278,7 +300,11 @@ int neverc_base32_decode(uint8_t *dst, const char *src, size_t src_len) {
 }
 
 size_t neverc_base32_hex_encode(char *dst, const uint8_t *src, size_t src_len) {
-    return encode_with_table(dst, src, src_len, hex_table);
+    return encode_with_table(dst, src, src_len, hex_table, 1);
+}
+
+size_t neverc_base32_hex_raw_encode(char *dst, const uint8_t *src, size_t src_len) {
+    return encode_with_table(dst, src, src_len, hex_table, 0);
 }
 
 int neverc_base32_hex_decode(uint8_t *dst, const char *src, size_t src_len) {

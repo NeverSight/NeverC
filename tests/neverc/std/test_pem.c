@@ -384,6 +384,32 @@ static void test_invalid_pem(void) {
                             out_buf, sizeof(out_buf),
                             &bytes_written, NULL);
     check_int("NUL type injection", rc, -1);
+
+    static const char esc_type[] =
+        "-----BEGIN \x1bEVIL-----\n"
+        "YQ==\n"
+        "-----END \x1bEVIL-----\n"
+        "-----BEGIN TEST BLOCK-----\n"
+        "aGVsbG8=\n"
+        "-----END TEST BLOCK-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(esc_type, sizeof(esc_type) - 1,
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("skip ESC type then valid", rc, 0);
+    check_str("skip ESC type", type_buf, "TEST BLOCK");
+    check_int("skip ESC type len", (int)bytes_written, 5);
+
+    static const char cr_type_only[] =
+        "-----BEGIN FOO\rBAR-----\n"
+        "YQ==\n"
+        "-----END FOO\rBAR-----\n";
+    rc = neverc_pem_decode(cr_type_only, sizeof(cr_type_only) - 1,
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("CR in type rejected", rc, -1);
 }
 
 static void test_go_armor(void) {
@@ -554,6 +580,32 @@ static void test_go_armor(void) {
     check_int("truncated dashes len", (int)bytes_written, 5);
 }
 
+static void test_utf8_bom(void) {
+    printf("[pem UTF-8 BOM]\n");
+
+    const char *block =
+        "-----BEGIN FOO-----\n"
+        "YQ==\n"
+        "-----END FOO-----\n";
+    char pem[128];
+    pem[0] = (char)0xEF;
+    pem[1] = (char)0xBB;
+    pem[2] = (char)0xBF;
+    memcpy(pem + 3, block, strlen(block) + 1);
+
+    char type_buf[64];
+    uint8_t out_buf[16];
+    size_t bytes_written = 0;
+    int rc = neverc_pem_decode(pem, 3 + strlen(block),
+                                type_buf, sizeof(type_buf),
+                                out_buf, sizeof(out_buf),
+                                &bytes_written, NULL);
+    check_int("BOM decode", rc, 0);
+    check_str("BOM type", type_buf, "FOO");
+    check_int("BOM len", (int)bytes_written, 1);
+    check_mem("BOM data", out_buf, (const uint8_t *)"a", 1);
+}
+
 static void test_large_data(void) {
     printf("[pem large data]\n");
 
@@ -613,6 +665,7 @@ int main(void) {
     test_rfc1421_headers();
     test_invalid_pem();
     test_go_armor();
+    test_utf8_bom();
     test_large_data();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
