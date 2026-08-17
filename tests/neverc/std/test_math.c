@@ -581,6 +581,14 @@ static void test_special_nan_inf(void) {
     check_double("sqrt(-1)", neverc_math_sqrt(-1.0), NC_NAN);
     check_double("sqrt(NaN)", neverc_math_sqrt(NC_NAN), NC_NAN);
     check_double("sqrt(+Inf)", neverc_math_sqrt(NC_INF), NC_INF);
+    check_double("sqrt(-Inf)", neverc_math_sqrt(NC_NEGINF), NC_NAN);
+    check_double("log2(+Inf)", neverc_math_log2(NC_INF), NC_INF);
+    check_double("log2(0)", neverc_math_log2(0.0), NC_NEGINF);
+    check_double("log10(+Inf)", neverc_math_log10(NC_INF), NC_INF);
+    check_double("cbrt(+Inf)", neverc_math_cbrt(NC_INF), NC_INF);
+    check_double("cbrt(-Inf)", neverc_math_cbrt(NC_NEGINF), NC_NEGINF);
+    check_double("acosh(+Inf)", neverc_math_acosh(NC_INF), NC_INF);
+    check_double("atanh(+Inf)", neverc_math_atanh(NC_INF), NC_NAN);
 
     check_double("asin(2)", neverc_math_asin(2.0), NC_NAN);
     check_double("acos(-2)", neverc_math_acos(-2.0), NC_NAN);

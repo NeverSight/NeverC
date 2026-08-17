@@ -447,15 +447,21 @@ void neverc_bits_div64(uint64_t hi, uint64_t lo, uint64_t y,
 }
 
 uint32_t neverc_bits_rem32(uint32_t hi, uint32_t lo, uint32_t y) {
-    uint32_t q, r;
-    neverc_bits_div32(hi, lo, y, &q, &r);
-    (void)q;
-    return r;
+    /* Go math/bits.Rem32: y == 0 is undefined (panic). Quotient overflow
+     * (hi >= y) is allowed — the remainder of the 64-bit dividend still exists. */
+    if (y == 0)
+        return UINT32_MAX;
+    uint64_t n = ((uint64_t)hi << 32) | (uint64_t)lo;
+    return (uint32_t)(n % y);
 }
 
 uint64_t neverc_bits_rem64(uint64_t hi, uint64_t lo, uint64_t y) {
+    /* Go math/bits.Rem64: reduce hi so the 128-bit quotient fits, then Div64.
+     * y == 0 is fail-closed; unlike Div64, hi >= y is not an error. */
+    if (y == 0)
+        return UINT64_MAX;
     uint64_t q, r;
-    neverc_bits_div64(hi, lo, y, &q, &r);
+    neverc_bits_div64(hi % y, lo, y, &q, &r);
     (void)q;
     return r;
 }
@@ -503,6 +509,7 @@ void neverc_bits_mul(unsigned int x, unsigned int y,
 
 void neverc_bits_div(unsigned int hi, unsigned int lo, unsigned int y,
                      unsigned int *quo, unsigned int *rem) {
+    if (!quo || !rem) return;
 #if NC_UINT_IS_64
     uint64_t q64, r64;
     neverc_bits_div64((uint64_t)hi, (uint64_t)lo, (uint64_t)y, &q64, &r64);
@@ -515,8 +522,9 @@ void neverc_bits_div(unsigned int hi, unsigned int lo, unsigned int y,
 }
 
 unsigned int neverc_bits_rem(unsigned int hi, unsigned int lo, unsigned int y) {
-    unsigned int q, r;
-    neverc_bits_div(hi, lo, y, &q, &r);
-    (void)q;
-    return r;
+#if NC_UINT_IS_64
+    return (unsigned int)neverc_bits_rem64((uint64_t)hi, (uint64_t)lo, (uint64_t)y);
+#else
+    return (unsigned int)neverc_bits_rem32((uint32_t)hi, (uint32_t)lo, (uint32_t)y);
+#endif
 }

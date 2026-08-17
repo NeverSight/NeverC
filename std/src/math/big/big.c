@@ -1542,6 +1542,9 @@ static void mont_mul(uint32_t *out, const uint32_t *a, const uint32_t *b,
 static int exp_montgomery(neverc_bigint_t *z, const neverc_bigint_t *base,
                           const neverc_bigint_t *exp, const neverc_bigint_t *m) {
     size_t n = m->len;
+    /* R² = 2^(64n); the shift count is unsigned, so huge moduli fall back. */
+    if (n == 0 || n > (size_t)0xFFFFFFFFu / 64u)
+        return -1;
     const uint32_t *M = m->digits;
     uint32_t n0inv = mont_n0inv(M[0]);
 
@@ -1628,32 +1631,42 @@ static int exp_montgomery(neverc_bigint_t *z, const neverc_bigint_t *base,
 
 static int bigint_modinv(neverc_bigint_t *r, const neverc_bigint_t *a,
                          const neverc_bigint_t *m) {
-    neverc_bigint_t old_r, rr, old_s, s, q, tmp, prod;
+    /* Go Int.Exp / ModInverse ignore the sign of m (and of a). Running
+     * extended Euclid on a negative modulus yields gcd = -1, so 2^-1 mod -5
+     * was reported non-invertible even though 2*3 ≡ 1 (mod 5). */
+    neverc_bigint_t aa, mm, old_r, rr, old_s, s, q, tmp, prod;
+    neverc_bigint_init(&aa); neverc_bigint_init(&mm);
     neverc_bigint_init(&old_r); neverc_bigint_init(&rr);
     neverc_bigint_init(&old_s); neverc_bigint_init(&s);
     neverc_bigint_init(&q); neverc_bigint_init(&tmp);
     neverc_bigint_init(&prod);
 
-    neverc_bigint_set(&old_r, a);
-    neverc_bigint_set(&rr, m);
-    neverc_bigint_set_int64(&old_s, 1);
-    neverc_bigint_set_int64(&s, 0);
+    neverc_bigint_abs(&aa, a);
+    neverc_bigint_abs(&mm, m);
+    int invertible = 0;
+    if (mm.len > 0) {
+        neverc_bigint_set(&old_r, &aa);
+        neverc_bigint_set(&rr, &mm);
+        neverc_bigint_set_int64(&old_s, 1);
+        neverc_bigint_set_int64(&s, 0);
 
-    while (!neverc_bigint_is_zero(&rr)) {
-        neverc_bigint_div(&q, &tmp, &old_r, &rr);
-        neverc_bigint_set(&old_r, &rr);
-        neverc_bigint_set(&rr, &tmp);
-        neverc_bigint_mul(&prod, &q, &s);
-        neverc_bigint_sub(&tmp, &old_s, &prod);
-        neverc_bigint_set(&old_s, &s);
-        neverc_bigint_set(&s, &tmp);
+        while (!neverc_bigint_is_zero(&rr)) {
+            neverc_bigint_div(&q, &tmp, &old_r, &rr);
+            neverc_bigint_set(&old_r, &rr);
+            neverc_bigint_set(&rr, &tmp);
+            neverc_bigint_mul(&prod, &q, &s);
+            neverc_bigint_sub(&tmp, &old_s, &prod);
+            neverc_bigint_set(&old_s, &s);
+            neverc_bigint_set(&s, &tmp);
+        }
+
+        neverc_bigint_set_int64(&tmp, 1);
+        invertible = (neverc_bigint_cmp(&old_r, &tmp) == 0);
+        if (invertible)
+            neverc_bigint_mod(r, &old_s, &mm);
     }
 
-    neverc_bigint_set_int64(&tmp, 1);
-    int invertible = (neverc_bigint_cmp(&old_r, &tmp) == 0);
-    if (invertible)
-        neverc_bigint_mod(r, &old_s, m);
-
+    neverc_bigint_free(&aa); neverc_bigint_free(&mm);
     neverc_bigint_free(&old_r); neverc_bigint_free(&rr);
     neverc_bigint_free(&old_s); neverc_bigint_free(&s);
     neverc_bigint_free(&q); neverc_bigint_free(&tmp);

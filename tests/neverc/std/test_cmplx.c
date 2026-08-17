@@ -140,6 +140,10 @@ static void test_exp(void) {
 
     /* log10(100+0i) = 2+0i */
     check_cmplx("log10(100+0i)", neverc_cmplx_log10(C(100.0, 0.0)), 2.0, 0.0);
+
+    check_cmplx("log(0)=-Inf", neverc_cmplx_log(C(0.0, 0.0)), -NC_INF, 0.0);
+    check_cmplx("exp(+Inf)", neverc_cmplx_exp(C(NC_INF, 0.0)), NC_INF, 0.0);
+    check_cmplx("exp(-Inf)", neverc_cmplx_exp(C(-NC_INF, 0.0)), 0.0, 0.0);
 }
 
 /* ===== Sqrt ===== */
@@ -188,6 +192,11 @@ static void test_sqrt(void) {
     z = neverc_cmplx_sqrt(C(0.0, 2.0));
     check_double("sqrt(0+2i).re", z.re, 1.0);
     check_double("sqrt(0+2i).im", z.im, 1.0);
+
+    /* C99 G.6.4.2 / Go: Inf imag saturates; ±Inf real stays on the branch cut. */
+    check_cmplx("sqrt(+Inf+0i)", neverc_cmplx_sqrt(C(NC_INF, 0.0)), NC_INF, 0.0);
+    check_cmplx("sqrt(-Inf+0i)", neverc_cmplx_sqrt(C(-NC_INF, 0.0)), 0.0, NC_INF);
+    check_cmplx("sqrt(1+i*Inf)", neverc_cmplx_sqrt(C(1.0, NC_INF)), NC_INF, NC_INF);
 }
 
 /* ===== Pow ===== */
@@ -201,6 +210,8 @@ static void test_pow(void) {
     check_cmplx("pow(0,0+i)=1", neverc_cmplx_pow(C(0.0, 0.0), C(0.0, 1.0)), 1.0, 0.0);
     check_cmplx("pow(0,-1)=+Inf", neverc_cmplx_pow(C(0.0, 0.0), C(-1.0, 0.0)), NC_INF, 0.0);
     check_cmplx("pow(0,-1+i)=Inf", neverc_cmplx_pow(C(0.0, 0.0), C(-1.0, 1.0)), NC_INF, NC_INF);
+    check_cmplx("pow(0,+Inf)=0", neverc_cmplx_pow(C(0.0, 0.0), C(NC_INF, 0.0)), 0.0, 0.0);
+    check_cmplx("pow(0,NaN)=NaN", neverc_cmplx_pow(C(0.0, 0.0), C(NC_NAN, 0.0)), NC_NAN, NC_NAN);
 
     /* pow(i, 2) = -1 */
     neverc_cmplx_t z = neverc_cmplx_pow(C(0.0, 1.0), C(2.0, 0.0));

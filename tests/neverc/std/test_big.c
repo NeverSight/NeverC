@@ -522,6 +522,32 @@ static void test_exp_mod(void) {
     neverc_bigint_exp(&result, &base, &exp, NULL);
     ASSERT_INT_EQ(neverc_bigint_int64(&result), 1);
 
+    /* Go Int.Exp ignores the sign of m. 2^-1 mod 5 = 3; a negative modulus
+     * used to make extended Euclid report gcd = -1 and leave z unchanged. */
+    neverc_bigint_set_int64(&base, 2);
+    neverc_bigint_set_int64(&exp, -1);
+    neverc_bigint_set_int64(&mod, -5);
+    neverc_bigint_set_int64(&result, 999);
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 3);
+    neverc_bigint_set_int64(&base, 3);
+    neverc_bigint_set_int64(&exp, 4);
+    neverc_bigint_set_int64(&mod, -5);
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 1);
+    neverc_bigint_set_int64(&base, 3);
+    neverc_bigint_set_int64(&exp, -1);
+    neverc_bigint_set_int64(&mod, -10);
+    neverc_bigint_set_int64(&result, 999);
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 7);
+    neverc_bigint_set_int64(&base, 2);
+    neverc_bigint_set_int64(&exp, -1);
+    neverc_bigint_set_int64(&mod, -4);
+    neverc_bigint_set_int64(&result, 999);
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 999);
+
     neverc_bigint_free(&x); neverc_bigint_free(&m); neverc_bigint_free(&z);
 
     neverc_bigint_free(&base); neverc_bigint_free(&exp);

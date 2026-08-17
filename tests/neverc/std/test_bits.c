@@ -333,6 +333,11 @@ static void test_division(void) {
     check_int("div32 overflow is all-ones q", (int)q32, -1);
 
     check_int("rem32(0,100,7)", (int)neverc_bits_rem32(0, 100, 7), 2);
+    check_int("rem32 by zero is all-ones", (int)neverc_bits_rem32(1, 0, 0), -1);
+    /* Go Rem32: hi >= y is not overflow. (2·2^32) mod 1 = 0, not all-ones. */
+    check_int("rem32(2<<32, 1)=0", (int)neverc_bits_rem32(2, 0, 1), 0);
+    check_int("rem32(1<<32, 2)=0", (int)neverc_bits_rem32(1, 0, 2), 0);
+    check_int("rem32((1<<32)+1, 3)=2", (int)neverc_bits_rem32(1, 1, 3), 2);
 
     neverc_bits_div64(0, 100, 7, &q64, &r64);
     check_u64("div64(100,7).q", q64, 14);
@@ -344,6 +349,12 @@ static void test_division(void) {
     check_u64("div64 overflow is all-ones q", q64, UINT64_MAX);
 
     check_u64("rem64(0,100,7)", neverc_bits_rem64(0, 100, 7), 2);
+    check_u64("rem64 by zero is all-ones", neverc_bits_rem64(1, 0, 0), UINT64_MAX);
+    check_u64("rem64(2<<64, 1)=0", neverc_bits_rem64(2, 0, 1), 0);
+    /* 2·2^64 ≡ 2 (mod 3) because 2^64 ≡ 1 (mod 3). */
+    check_u64("rem64(2<<64, 3)=2", neverc_bits_rem64(2, 0, 3), 2);
+
+    check_int("rem overflow generic (2,0,1)", (int)neverc_bits_rem(2, 0, 1), 0);
 }
 
 int main(void) {
