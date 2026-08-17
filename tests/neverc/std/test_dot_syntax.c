@@ -905,11 +905,19 @@ static void test_ring_dot_syntax(void) {
 
 static void test_filepath_dot_syntax(void) {
     char buf[256];
+#ifdef _WIN32
+    const char *b = path.filepath.base("C:\\usr\\local\\bin\\neverc", buf, sizeof(buf));
+    CHECK("path.filepath.base", strcmp(b, "neverc") == 0);
+
+    const char *d = path.filepath.dir("C:\\usr\\local\\bin\\neverc", buf, sizeof(buf));
+    CHECK("path.filepath.dir", strcmp(d, "C:\\usr\\local\\bin") == 0);
+#else
     const char *b = path.filepath.base("/usr/local/bin/neverc", buf, sizeof(buf));
     CHECK("path.filepath.base", strcmp(b, "neverc") == 0);
 
     const char *d = path.filepath.dir("/usr/local/bin/neverc", buf, sizeof(buf));
     CHECK("path.filepath.dir", strcmp(d, "/usr/local/bin") == 0);
+#endif
 
     const char *e = path.filepath.ext("hello.tar.gz");
     CHECK("path.filepath.ext", strcmp(e, ".gz") == 0);
