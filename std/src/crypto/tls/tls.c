@@ -94,6 +94,38 @@ neverc_tls_conn_t *nci_tls_start_handshake(
 }
 #endif
 
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+static int tls_split_dial_host(const char *addr, char *host, size_t hostlen) {
+    if (!addr || !host || hostlen == 0)
+        return -1;
+    host[0] = '\0';
+    if (addr[0] == '[') {
+        const char *end = strchr(addr, ']');
+        if (!end || end == addr + 1)
+            return -1;
+        size_t n = (size_t)(end - addr - 1);
+        if (n >= hostlen)
+            return -1;
+        memcpy(host, addr + 1, n);
+        host[n] = '\0';
+        return 0;
+    }
+    const char *colon = strrchr(addr, ':');
+    if (!colon || colon == addr)
+        return -1;
+    for (const char *p = addr; p < colon; p++) {
+        if (*p == ':')
+            return -1;
+    }
+    size_t n = (size_t)(colon - addr);
+    if (n == 0 || n >= hostlen)
+        return -1;
+    memcpy(host, addr, n);
+    host[n] = '\0';
+    return 0;
+}
+#endif
+
 neverc_tls_conn_t *neverc_tls_dial(const char *addr,
                                     neverc_tls_config_t *cfg,
                                     const char **errp) {
@@ -102,6 +134,12 @@ neverc_tls_conn_t *neverc_tls_dial(const char *addr,
         if (errp)
             *errp = k_tls_invalid_argument;
         return NULL;
+    }
+    if (!cfg->server_name || cfg->server_name[0] == '\0') {
+        char host[TLS_MAX_SERVER_NAME + 1];
+        if (tls_split_dial_host(addr, host, sizeof(host)) == 0 &&
+            host[0] != '\0')
+            neverc_tls_config_set_server_name(cfg, host);
     }
     const char *tcp_error = NULL;
     neverc_tcp_conn_t *tcp = neverc_tcp_dial(addr, &tcp_error);

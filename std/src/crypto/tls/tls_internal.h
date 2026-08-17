@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
+#include <string.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -84,6 +85,32 @@ typedef pthread_mutex_t tls_mutex_t;
 #define TLS_MAX_ALPN_PROTOCOLS     32
 #define TLS_MAX_ALPN_LIST        2048
 #define TLS_MAX_SERVER_NAME       255
+
+/* RFC 6066 HostName is a DNS name. IP literals are kept for certificate
+ * identity but must not be sent as SNI. */
+static inline int nci_tls_name_is_ip_literal(const char *name) {
+    if (!name || !name[0])
+        return 0;
+    if (strchr(name, ':'))
+        return 1;
+    int dots = 0;
+    int group = 0;
+    for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
+        if (*p == '.') {
+            if (group == 0 || dots >= 3)
+                return 0;
+            dots++;
+            group = 0;
+        } else if (*p >= '0' && *p <= '9') {
+            group++;
+            if (group > 3)
+                return 0;
+        } else {
+            return 0;
+        }
+    }
+    return dots == 3 && group > 0;
+}
 
 #define TLS_SIG_ECDSA_SHA256 \
     NEVERC_TLS_SIGNATURE_ECDSA_SECP256R1_SHA256

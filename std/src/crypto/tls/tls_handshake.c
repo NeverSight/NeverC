@@ -450,12 +450,14 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
             nci_tls_clear_client_psk_offer(&psk_offer);
             return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
         }
-        tls_put_u16(ch + ch_len, TLS_EXT_SERVER_NAME); ch_len += 2;
-        tls_put_u16(ch + ch_len, (uint16_t)(sni_len + 5)); ch_len += 2;
-        tls_put_u16(ch + ch_len, (uint16_t)(sni_len + 3)); ch_len += 2;
-        ch[ch_len++] = 0; /* host_name type */
-        tls_put_u16(ch + ch_len, (uint16_t)sni_len); ch_len += 2;
-        memcpy(ch + ch_len, cfg->server_name, sni_len); ch_len += sni_len;
+        if (!nci_tls_name_is_ip_literal(cfg->server_name)) {
+            tls_put_u16(ch + ch_len, TLS_EXT_SERVER_NAME); ch_len += 2;
+            tls_put_u16(ch + ch_len, (uint16_t)(sni_len + 5)); ch_len += 2;
+            tls_put_u16(ch + ch_len, (uint16_t)(sni_len + 3)); ch_len += 2;
+            ch[ch_len++] = 0; /* host_name type */
+            tls_put_u16(ch + ch_len, (uint16_t)sni_len); ch_len += 2;
+            memcpy(ch + ch_len, cfg->server_name, sni_len); ch_len += sni_len;
+        }
     }
 
     /* Extension: ALPN (must precede pre_shared_key). */

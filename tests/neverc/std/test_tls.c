@@ -60,6 +60,15 @@ static void check_not_null(const char *name, const void *ptr) {
     else { tests_failed++; printf("  FAIL: %s: got NULL\n", name); }
 }
 
+static void check_str(const char *name, const char *got, const char *expected) {
+    tests_run++;
+    if (got == NULL && expected == NULL) { tests_passed++; return; }
+    if (got && expected && strcmp(got, expected) == 0) { tests_passed++; return; }
+    tests_failed++;
+    printf("  FAIL: %s: got \"%s\", expected \"%s\"\n", name,
+           got ? got : "NULL", expected ? expected : "NULL");
+}
+
 static void check_null(const char *name, const void *ptr) {
     tests_run++;
     if (!ptr) tests_passed++;
@@ -2524,6 +2533,147 @@ static void test_mutual_tls(void) {
 #endif
 }
 
+/* ===== Dial infers SNI from the address host ===== */
+
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+typedef struct {
+    neverc_tcp_listener_t *ln;
+    neverc_tls_config_t *config;
+    char requested_server_name[256];
+    int handshake_ok;
+} dial_sni_server_t;
+
+#ifdef _WIN32
+static DWORD WINAPI dial_sni_server_thread(LPVOID arg) {
+#else
+static void *dial_sni_server_thread(void *arg) {
+#endif
+    dial_sni_server_t *ctx = (dial_sni_server_t *)arg;
+    const char *err = NULL;
+    neverc_tcp_conn_t *tcp = neverc_tcp_accept(ctx->ln, &err);
+    if (!tcp)
+        return 0;
+    neverc_tls_conn_t *conn = neverc_tls_server(tcp, ctx->config, &err);
+    if (conn) {
+        ctx->handshake_ok = 1;
+        const char *sni = neverc_tls_server_name(conn);
+        if (sni)
+            snprintf(ctx->requested_server_name,
+                     sizeof(ctx->requested_server_name), "%s", sni);
+        neverc_tls_close(conn);
+    }
+    neverc_tcp_close(tcp);
+    return 0;
+}
+
+static int dial_sni_roundtrip(const char *explicit_sni,
+                              char *client_name, size_t client_name_len,
+                              char *server_name, size_t server_name_len) {
+    neverc_tls_config_t *server_config = neverc_tls_config_new();
+    neverc_tls_config_t *client_config = neverc_tls_config_new();
+    if (!server_config || !client_config) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return 0;
+    }
+    if (neverc_tls_config_load_cert_mem(
+            server_config, TEST_CERT_PEM, TEST_KEY_PEM) != 0) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return 0;
+    }
+    neverc_tls_config_insecure_skip_verify(client_config);
+    if (explicit_sni)
+        neverc_tls_config_set_server_name(client_config, explicit_sni);
+
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    if (!ln) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return 0;
+    }
+    neverc_tcp_addr_t local;
+    if (neverc_tcp_listener_addr(ln, &local) != 0) {
+        neverc_tcp_listener_close(ln);
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return 0;
+    }
+
+    dial_sni_server_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.ln = ln;
+    ctx.config = server_config;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, dial_sni_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, dial_sni_server_thread, &ctx) == 0;
+#endif
+    if (!thread_started) {
+        neverc_tcp_listener_close(ln);
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return 0;
+    }
+
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)local.port);
+    neverc_tls_conn_t *client = neverc_tls_dial(addr, client_config, &err);
+    if (client) {
+        const char *name = neverc_tls_server_name(client);
+        if (name && client_name && client_name_len > 0)
+            snprintf(client_name, client_name_len, "%s", name);
+        neverc_tls_close(client);
+    }
+    neverc_tcp_listener_close(ln);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    if (server_name && server_name_len > 0)
+        snprintf(server_name, server_name_len, "%s",
+                 ctx.requested_server_name);
+    int ok = client != NULL && ctx.handshake_ok;
+    neverc_tls_config_free(server_config);
+    neverc_tls_config_free(client_config);
+    return ok;
+}
+
+static void test_dial_infers_sni(void) {
+    printf("[dial_infers_sni]\n");
+
+    char client_name[256];
+    char server_name[256];
+
+    client_name[0] = '\0';
+    server_name[0] = '\0';
+    check_int("dial infers host",
+              dial_sni_roundtrip(NULL, client_name, sizeof(client_name),
+                                 server_name, sizeof(server_name)),
+              1);
+    check_str("dial fills client identity from address",
+              client_name, "127.0.0.1");
+    check_int("dial omits IP from SNI extension", server_name[0] == '\0', 1);
+
+    client_name[0] = '\0';
+    server_name[0] = '\0';
+    check_int("dial keeps explicit SNI",
+              dial_sni_roundtrip("sni.example", client_name,
+                                 sizeof(client_name), server_name,
+                                 sizeof(server_name)),
+              1);
+    check_str("explicit SNI on client", client_name, "sni.example");
+    check_str("explicit SNI on server", server_name, "sni.example");
+}
+#endif
+
 /* ===== Dial error test ===== */
 
 static void test_dial_errors(void) {
@@ -2599,6 +2749,7 @@ int main(void) {
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
     test_concurrent_record_io();
     test_mutual_tls();
+    test_dial_infers_sni();
     test_unexpected_server_record_alert();
     test_malformed_server_hello_alert();
     test_plaintext_record_version_ignored();
