@@ -2284,11 +2284,12 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                            (int64_t)s->send_window + inc <= INT32_MAX) {
                     s->send_window += (int32_t)inc;
                 } else if (s) {
+                    /* RFC 9113 §6.9.1: stream window overflow is RST_STREAM,
+                     * not a connection error. */
                     nc_mutex_unlock(&conn.state_lock);
-                    (void)h2_conn_write_goaway(
-                        &conn, NC_H2_FLOW_CONTROL_ERROR);
-                    free(payload);
-                    goto cleanup;
+                    (void)h2_conn_write_rst(&conn, fhdr.stream_id,
+                                            NC_H2_FLOW_CONTROL_ERROR);
+                    break;
                 }
             }
             nc_cond_broadcast(&conn.window_changed);

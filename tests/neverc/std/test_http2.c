@@ -1357,7 +1357,7 @@ TEST(h2c_stream_window_update_overflow_is_connection_error) {
         0x7f, 0xff, 0xff, 0xff};
     ASSERT_EQ(sock_write_all(fd, window_update, sizeof(window_update)), 0);
     uint32_t error_code = 0xffffffffU;
-    ASSERT_EQ(h2_read_goaway(fd, &error_code), 0);
+    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
     ASSERT_EQ(error_code, NC_H2_FLOW_CONTROL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
