@@ -2,6 +2,7 @@
  * ChaCha20-Poly1305 AEAD tests — RFC 8439 Section 2.8.2 official vectors.
  */
 #include "neverc/std/crypto/chacha20poly1305.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -284,6 +285,11 @@ static void test_invalid_inputs_and_limits(void) {
               (int)neverc_chacha20poly1305_seal(
                   sealed, key, nonce, &byte,
                   ((size_t)1 << 38) - 63, NULL, 0),
+              0);
+    check_int("seal rejects lengths open cannot return",
+              (int)neverc_chacha20poly1305_seal(
+                  sealed, key, nonce, &byte,
+                  (size_t)INT_MAX + 1u, NULL, 0),
               0);
 #endif
 }

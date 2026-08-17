@@ -733,6 +733,13 @@ static void test_nesting_limit(void) {
     for (int i = 0; i < depth; i++) buf[depth + i] = ']';
     neverc_json_value_t *v = neverc_json_parse(buf, (size_t)(depth * 2));
     ASSERT_NOT_NULL(v);
+    {
+        char out[2010];
+        int n = neverc_json_marshal(v, out, sizeof(out), NULL);
+        ASSERT_INT_EQ(n, depth * 2);
+        if (n == depth * 2)
+            ASSERT_INT_EQ(memcmp(out, buf, (size_t)n) == 0, 1);
+    }
     neverc_json_free(v);
 
     depth = 1001;

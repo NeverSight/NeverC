@@ -1030,6 +1030,27 @@ TEST(h2c_rejects_missing_authority) {
     ASSERT_TRUE(WIFEXITED(status));
 }
 
+TEST(h2c_rejects_spaced_authority) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "foo bar" },
+    };
+    ASSERT_EQ(h2_send_headers(fd, headers, 4, 1), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
 TEST(h2c_rejects_empty_authority) {
     neverc_tcp_conn_t *client = NULL;
     pid_t child = -1;
@@ -1757,6 +1778,7 @@ int main(void) {
     run_test_h2c_continuation_headers();
     run_test_h2c_rejects_missing_authority();
     run_test_h2c_rejects_empty_authority();
+    run_test_h2c_rejects_spaced_authority();
     run_test_h2c_rejects_empty_host();
     run_test_h2c_rejects_path_fragment();
     run_test_h2c_rejects_host_authority_mismatch();

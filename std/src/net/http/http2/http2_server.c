@@ -927,6 +927,18 @@ static int h2_value_valid(const char *value) {
     return 1;
 }
 
+/* Match HTTP/1 Host rules: spaces, userinfo, and path characters are not
+ * a valid :authority / host. h2_value_valid() still allows SP. */
+static int h2_valid_authority(const char *value) {
+    if (!value || !*value) return 0;
+    for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
+        if (*p <= 0x20 || *p >= 0x7f || *p == '/' || *p == '\\' ||
+            *p == '?' || *p == '#' || *p == '@')
+            return 0;
+    }
+    return 1;
+}
+
 static int h2_ascii_ieq(const char *left, const char *right) {
     if (!left || !right) return 0;
     while (*left && *right) {
@@ -1019,6 +1031,10 @@ static int h2_validate_request_headers(h2_conn_t *conn,
     if (authority && !*authority) authority = NULL;
     if (host && !*host) host = NULL;
     if (!authority && !host)
+        return -1;
+    if (authority && !h2_valid_authority(authority))
+        return -1;
+    if (host && !h2_valid_authority(host))
         return -1;
     if (authority && host && !h2_ascii_ieq(authority, host))
         return -1;

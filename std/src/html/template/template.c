@@ -372,6 +372,18 @@ static node_t *new_key_node(node_type_t type, const char *start,
     while (end > start && is_template_ws(end[-1])) end--;
     if (start < end && *start == '.') start++;
     if (start >= end) { *error = 1; return NULL; }
+    const char *p = start;
+    if (!nc_isalnum((unsigned char)*p) && *p != '_') {
+        *error = 1;
+        return NULL;
+    }
+    while (p < end && (nc_isalnum((unsigned char)*p) || *p == '_' ||
+                       *p == '-'))
+        p++;
+    if (p != end) {
+        *error = 1;
+        return NULL;
+    }
     node_t *node = new_node(type, start, (size_t)(end - start));
     if (!node) *error = 1;
     return node;
@@ -389,7 +401,11 @@ static node_t *parse_tag(const char *inner, size_t len, int *error) {
         *error = 1;
         return NULL;
     }
-    if (trimlen == 4 && memcmp(start, "else", 4) == 0) {
+    if (trimlen >= 4 && memcmp(start, "else", 4) == 0) {
+        if (trimlen != 4) {
+            *error = 1;
+            return NULL;
+        }
         node_t *node = new_node(NODE_ELSE, NULL, 0);
         if (!node) *error = 1;
         return node;
@@ -543,7 +559,8 @@ static int html_is_url_attr_name(const char *name, size_t nlen) {
         "href", "src", "action", "formaction", "cite", "poster",
         "background", "data", "srcset", "imagesrcset", "ping", "xlink:href",
         "longdesc", "usemap", "icon", "manifest", "archive",
-        "classid", "codebase", "profile", NULL
+        "classid", "codebase", "profile",
+        "dynsrc", "lowsrc", "code", "pluginspage", NULL
     };
     for (int i = 0; urls[i]; i++)
         if (html_attr_name_eq(name, nlen, urls[i])) return 1;

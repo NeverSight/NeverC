@@ -85,6 +85,7 @@ size_t neverc_chacha20poly1305_seal(
 {
     if (!dst || !key || !nonce ||
         (!plaintext && plaintext_len != 0) || (!aad && aad_len != 0) ||
+        plaintext_len > (size_t)INT_MAX ||
         (uint64_t)plaintext_len > NEVERC_CHACHA20POLY1305_MAX_TEXT)
         return 0;
     uint8_t mac_buf_stack[512];

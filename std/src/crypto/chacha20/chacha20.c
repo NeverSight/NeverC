@@ -148,6 +148,22 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
     if (!ctx || ctx->buf_used < 0) return;
     if (len > 0 && (!dst || !src)) return;
 
+    /* Refuse a request that cannot be fully satisfied without wrapping the
+     * 32-bit block counter. A partial XOR would leave plaintext in dst. */
+    {
+        int leftover = ctx->buf_used < 64;
+        uint64_t avail = leftover ? (64u - (size_t)ctx->buf_used) : 0;
+        if (!(leftover && ctx->state[12] == 0)) {
+            uint64_t blocks =
+                (uint64_t)(0xFFFFFFFFu - ctx->state[12]) + 1u;
+            avail += blocks * 64u;
+        }
+        if ((uint64_t)len > avail) {
+            ctx->buf_used = -1;
+            return;
+        }
+    }
+
     /* Consume any keystream left over from a previous partial block. */
     if (ctx->buf_used < 64) {
         size_t avail = 64 - (size_t)ctx->buf_used;

@@ -153,6 +153,12 @@ static void test_counter_wrap(void) {
     memset(aa, 0xAA, sizeof(aa));
     check_true("wrap does not reuse keystream", memcmp(out + 64, aa, 64) == 0);
     check_true("last block still emitted", memcmp(out, aa, 64) != 0);
+
+    memset(out, 0xAA, sizeof(out));
+    neverc_chacha20_init(&ctx, key, nonce, 0xFFFFFFFFu);
+    neverc_chacha20_xor(&ctx, out, in, 128);
+    check_true("oversize wrap request is all-or-nothing",
+               memcmp(out, aa, 64) == 0 && memcmp(out + 64, aa, 64) == 0);
 }
 
 static void test_counter_wrap_leftover(void) {

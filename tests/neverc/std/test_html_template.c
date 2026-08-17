@@ -239,6 +239,29 @@ static void test_template_url_and_script(void) {
     }
 
     neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render("<img dynsrc=\"{{.Link}}\">", &data);
+    check("dynsrc js url neutralized", out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render("<img lowsrc=\"{{.Link}}\">", &data);
+    check("lowsrc js url neutralized", out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render("<applet code=\"{{.Link}}\">", &data);
+    check("applet code js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<embed pluginspage=\"{{.Link}}\">", &data);
+    check("pluginspage js url neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
     out = neverc_html_template_render("<img srcset=\"{{.Link}}\">", &data);
     check("srcset js url neutralized", out && strstr(out, "javascript:") == NULL);
     free(out);
@@ -548,7 +571,9 @@ static void test_template_parse_errors(void) {
     const char *bad[] = {
         "{{.Name", "{{if .Show}}open", "{{else}}", "{{end}}",
         "{{if}}", "{{range}}", "{{if .A}}{{if .B}}x{{end}}",
-        "{{range .X}}{{else}}{{end}}", "{{if .A}}{{else}}{{else}}{{end}}"
+        "{{range .X}}{{else}}{{end}}", "{{if .A}}{{else}}{{else}}{{end}}",
+        "{{if .A}}a{{else if .B}}b{{end}}", "{{.A | html}}",
+        "{{if .Show extra}}yes{{end}}"
     };
     for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
         neverc_html_template_t *t = neverc_html_template_parse(bad[i]);
