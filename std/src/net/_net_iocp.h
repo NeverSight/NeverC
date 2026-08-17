@@ -272,6 +272,27 @@ static inline int nc_iocp_cancel(nc_sock_t fd,
     return -1;
 }
 
+static inline int nc_iocp_ntstatus_error(ULONG_PTR status) {
+    LONG nt = (LONG)status;
+    if (nt >= 0) return 0;
+    switch ((unsigned long)nt) {
+    case 0xC0000120UL: /* STATUS_CANCELLED */
+        return WSA_OPERATION_ABORTED;
+    case 0xC0000008UL: /* STATUS_INVALID_HANDLE */
+        return WSAENOTSOCK;
+    case 0xC000020DUL: /* STATUS_CONNECTION_RESET */
+    case 0xC000013CUL: /* STATUS_REMOTE_DISCONNECT */
+    case 0xC0000241UL: /* STATUS_CONNECTION_DISCONNECTED */
+        return WSAECONNRESET;
+    case 0xC000013BUL: /* STATUS_LOCAL_DISCONNECT */
+        return WSAECONNABORTED;
+    case 0xC00000B5UL: /* STATUS_IO_TIMEOUT */
+        return WSAETIMEDOUT;
+    default:
+        return WSAECONNRESET;
+    }
+}
+
 static inline void nc_iocp_op_complete(nc_iocp_op_t *operation,
                                        DWORD queued_bytes) {
     if (!operation) return;
@@ -281,20 +302,20 @@ static inline void nc_iocp_op_complete(nc_iocp_op_t *operation,
 
     DWORD transferred = queued_bytes;
     DWORD flags = 0;
-    int error = 0;
+    int error = nc_iocp_ntstatus_error(
+        (ULONG_PTR)operation->overlapped.Internal);
 
     /*
-     * Dequeue already owns the completion packet.  Skip WSAGetOverlappedResult
-     * when the socket is gone so a recycled HANDLE cannot be touched.  A
-     * second complete is ignored by the CAS above, which also prevents a
-     * double-close of accepted_fd.
+     * GQCSEx already owns the completion packet.  Do not call
+     * WSAGetOverlappedResult: the socket HANDLE may have been closed and
+     * recycled, which would touch a different object.  A second complete is
+     * ignored by the CAS above, which also prevents a double-close of
+     * accepted_fd.
      */
-    if (operation->fd != NC_INVALID_SOCK &&
-        !WSAGetOverlappedResult(operation->fd, &operation->overlapped,
-                                &transferred, FALSE, &flags))
-        error = WSAGetLastError();
 
     if (error == 0 && operation->kind == NC_IOCP_OP_ACCEPT &&
+        operation->accepted_fd != NC_INVALID_SOCK &&
+        operation->fd != NC_INVALID_SOCK &&
         setsockopt(operation->accepted_fd, SOL_SOCKET,
                    SO_UPDATE_ACCEPT_CONTEXT, (const char *)&operation->fd,
                    sizeof(operation->fd)) != 0)

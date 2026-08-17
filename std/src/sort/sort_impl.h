@@ -188,9 +188,10 @@ static void nci_binary_insertion_sort(char *base, size_t lo, size_t hi,
 
 static void nci_sift_down(char *base, size_t n, size_t es,
                            nci_cmp_fn cmp, char *tmp, size_t node) {
-    while (1) {
+    /* Overflow-safe form of `2*node+1 < n`: wrapping 2*node+1 on
+     * n > SIZE_MAX/2 treated a wrapped index as a live child. */
+    while (node < n / 2) {
         size_t child = 2 * node + 1;
-        if (child >= n) break;
         if (child + 1 < n &&
             cmp(NCI_ELEM(base, child, es), NCI_ELEM(base, child + 1, es)) < 0)
             child++;
@@ -873,9 +874,8 @@ static void NAME##_isort_(TYPE *a, size_t n) {                               \
     }                                                                        \
 }                                                                            \
 static void NAME##_sift_(TYPE *a, size_t n, size_t node) {                   \
-    while (1) {                                                              \
+    while (node < n / 2) {                                                   \
         size_t c = 2*node+1;                                                 \
-        if (c >= n) break;                                                   \
         if (c+1 < n && LESS(a[c], a[c+1])) c++;                             \
         if (!LESS(a[node], a[c])) break;                                     \
         TYPE t = a[node]; a[node] = a[c]; a[c] = t;                         \

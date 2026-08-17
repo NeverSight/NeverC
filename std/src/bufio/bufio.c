@@ -7,7 +7,15 @@
 
 /* --- Scanner --- */
 
+static void bufio_scanner_restore_text(neverc_bufio_scanner_t *s) {
+    if (!s->text_saved) return;
+    if (s->buf && s->text_saved_at < s->buf_cap)
+        s->buf[s->text_saved_at] = s->text_saved_byte;
+    s->text_saved = 0;
+}
+
 static void bufio_scanner_fail(neverc_bufio_scanner_t *s, int err) {
+    bufio_scanner_restore_text(s);
     s->err = err;
     s->done = 1;
     s->start = s->buf_len;
@@ -121,6 +129,9 @@ void neverc_bufio_scanner_init(neverc_bufio_scanner_t *s,
     s->done = 0;
     s->err = 0;
     s->split = neverc_bufio_scan_lines;
+    s->text_saved = 0;
+    s->text_saved_byte = 0;
+    s->text_saved_at = 0;
     if (!s->buf) {
         s->buf_cap = 0;
         s->done = 1;
@@ -136,6 +147,7 @@ void neverc_bufio_scanner_split(neverc_bufio_scanner_t *s,
 
 int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
     if (!s) return 0;
+    bufio_scanner_restore_text(s);
     if (s->done && s->start >= s->buf_len) return 0;
     if (!s->buf || s->buf_cap == 0 || !s->reader.read ||
         s->start > s->buf_len || s->buf_len >= s->buf_cap) {
@@ -179,9 +191,12 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
             s->token = token;
             s->token_len = token_len;
             size_t token_end = (size_t)(token - s->buf) + token_len;
-            size_t consumed_end = s->start + advance;
-            if (token_end < consumed_end || token_end == s->buf_len)
+            if (token_end < s->buf_cap) {
+                s->text_saved_byte = s->buf[token_end];
+                s->text_saved_at = token_end;
+                s->text_saved = 1;
                 s->buf[token_end] = '\0';
+            }
             s->start += advance;
             return 1;
         }
@@ -277,6 +292,7 @@ int neverc_bufio_scanner_err(const neverc_bufio_scanner_t *s) {
 
 void neverc_bufio_scanner_free(neverc_bufio_scanner_t *s) {
     if (!s) return;
+    s->text_saved = 0;
     free(s->buf);
     s->buf = NULL;
     s->buf_len = s->buf_cap = s->start = 0;
@@ -451,6 +467,21 @@ uint8_t *neverc_bufio_reader_read_line(neverc_bufio_reader_t *br, size_t *len) {
         }
         line[wlen++] = b;
     }
+    if (wlen >= cap) {
+        if (cap > SIZE_MAX / 2) {
+            free(line);
+            *len = 0;
+            return NULL;
+        }
+        uint8_t *new_line = (uint8_t *)realloc(line, cap * 2);
+        if (!new_line) {
+            free(line);
+            *len = 0;
+            return NULL;
+        }
+        line = new_line;
+    }
+    line[wlen] = '\0';
     *len = wlen;
     return line;
 }

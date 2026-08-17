@@ -196,6 +196,23 @@ static void test_look_path(void) {
 
 #if defined(_WIN32)
     {
+        char planted[MAX_PATH];
+        FILE *pf;
+        snprintf(planted, sizeof(planted), "neverc_cwd_only_hijack.exe");
+        pf = fopen(planted, "wb");
+        ASSERT_TRUE(pf != NULL);
+        if (pf) {
+            fputs("MZ", pf);
+            fclose(pf);
+        }
+        p = neverc_exec_look_path("neverc_cwd_only_hijack.exe", buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+        DeleteFileA(planted);
+    }
+#endif
+
+#if defined(_WIN32)
+    {
         const char *empty_path[] = { "PATH=" };
         neverc_exec_cmd_t *empty_cmd = neverc_exec_command("cmd.exe", NULL, 0);
         neverc_exec_exit_status_t empty_st = {0};
@@ -563,6 +580,46 @@ static void test_batch_args_rejected(void) {
     cmd = neverc_exec_command("probe.cmd ", unsafe, 1);
     ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
     neverc_exec_cmd_free(cmd);
+
+    /* Names longer than the old 15-byte prefix copy must still be
+     * classified as batch (BatBadBut). */
+    {
+        char long_script[1200];
+#if defined(_WIN32)
+        snprintf(long_script, sizeof(long_script),
+                 "%sneverc_long_batch_name.bat", tmp);
+#else
+        snprintf(long_script, sizeof(long_script),
+                 "%s/neverc_long_batch_name.bat", cwd);
+#endif
+        sf = fopen(long_script, "w");
+        ASSERT_TRUE(sf != NULL);
+        if (sf) {
+#if defined(_WIN32)
+            fputs("@echo off\r\nexit /B 0\r\n", sf);
+#else
+            fputs("#!/bin/sh\nexit 0\n", sf);
+#endif
+            fclose(sf);
+        }
+#if !defined(_WIN32)
+        chmod(long_script, 0755);
+#endif
+        cmd = neverc_exec_command(long_script, safe, 1);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
+        neverc_exec_cmd_free(cmd);
+        cmd = neverc_exec_command(long_script, unsafe, 1);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+        neverc_exec_cmd_free(cmd);
+        cmd = neverc_exec_command("neverc_long_batch_name.bat", unsafe, 1);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+        neverc_exec_cmd_free(cmd);
+#if defined(_WIN32)
+        DeleteFileA(long_script);
+#else
+        unlink(long_script);
+#endif
+    }
 #if defined(_WIN32)
     DeleteFileA(script);
 #else

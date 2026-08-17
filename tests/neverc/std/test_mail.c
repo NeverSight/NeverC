@@ -67,6 +67,21 @@ static void test_parse_address(void) {
               0);
     ASSERT_STREQ(addr.name, "Bcc: hidden");
     ASSERT_STREQ(addr.address, "user@x.com");
+
+    ASSERT_EQ(neverc_mail_parse_address(
+                  "=?utf-8?q?=0D=0ABcc:_hidden?= <user@x.com>", &addr),
+              -1);
+    ASSERT_EQ(neverc_mail_parse_address(
+                  "=?utf-8?b?DQpCY2M6IGhpZGRlbg==?= <user@x.com>", &addr),
+              -1);
+    ASSERT_EQ(neverc_mail_parse_address(
+                  "=?utf-8?q?=0D=0ABcc:_x?=@x.com", &addr),
+              -1);
+    ASSERT_EQ(neverc_mail_parse_address(
+                  "=?utf-8?q?Hello?= <user@x.com>", &addr),
+              0);
+    ASSERT_STREQ(addr.name, "=?utf-8?q?Hello?=");
+    ASSERT_STREQ(addr.address, "user@x.com");
 }
 
 static void test_parse_address_list(void) {
@@ -146,6 +161,19 @@ static void test_format_address(void) {
     strcpy(addr.name, "");
     strcpy(addr.address, "not-an-addr");
     ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)), -1);
+
+    strcpy(addr.name, "=?utf-8?q?=0D=0ABcc:_hidden?=");
+    strcpy(addr.address, "user@x.com");
+    ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)), -1);
+    strcpy(addr.name, "");
+    strcpy(addr.address, "=?utf-8?q?=0D=0ABcc:_x?=@x.com");
+    ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)), -1);
+
+    strcpy(addr.name, "=?utf-8?q?Hello?=");
+    strcpy(addr.address, "user@x.com");
+    ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)),
+              (int)strlen("=?utf-8?q?Hello?= <user@x.com>"));
+    ASSERT_STREQ(buf, "=?utf-8?q?Hello?= <user@x.com>");
 }
 
 static void test_parse_message(void) {
@@ -280,6 +308,11 @@ static void test_parse_message(void) {
 
     char nul_hdr[] = "From: a@b.com\0Bcc: hidden@x.com\r\n\r\n";
     ASSERT_EQ(neverc_mail_parse_message(nul_hdr, sizeof(nul_hdr) - 1, &m), -1);
+
+    const char *ew_inject =
+        "From: =?utf-8?q?=0D=0ABcc:_hidden@x.com?=\r\n"
+        "\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(ew_inject, strlen(ew_inject), &m), -1);
 }
 
 static void test_parse_date(void) {

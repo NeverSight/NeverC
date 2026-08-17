@@ -55,11 +55,20 @@ int main(void) {
     fail_realloc = 1;
     CHECK(neverc_bigint_set_string(&parsed, "0x", 0) == -1);
     CHECK(neverc_bigint_uint64(&parsed) == 42);
+    /* Valid input + dest that already has capacity: ensure_cap(z, 1) used
+     * to succeed, zero z, then return 0 after a failed mul/add (Go SetString
+     * leaves z unchanged on failure). */
+    CHECK(neverc_bigint_set_string(&parsed,
+        "999999999999999999999999999999", 10) == -1);
+    CHECK(neverc_bigint_uint64(&parsed) == 42);
     neverc_bigint_t empty_parse;
     neverc_bigint_init(&empty_parse);
     CHECK(neverc_bigint_set_string(&empty_parse, "1", 10) == -1);
     CHECK(empty_parse.digits == NULL);
     CHECK(empty_parse.len == 0);
+    fail_realloc = 0;
+    CHECK(neverc_bigint_set_string(&parsed, "123", 10) == 0);
+    CHECK(neverc_bigint_uint64(&parsed) == 123);
     neverc_bigint_free(&parsed);
     neverc_bigint_free(&empty_parse);
 

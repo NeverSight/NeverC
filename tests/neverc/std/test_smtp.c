@@ -344,6 +344,12 @@ static void test_smtp_reject_injection(void) {
                neverc_smtp_mail(c, "a@b.com>") == -1);
     check_true("mail source route rejected",
                neverc_smtp_mail(c, "@evil.com:user@x.com") == -1);
+    check_true("mail colon source route rejected",
+               neverc_smtp_mail(c, "user@x.com:relay") == -1);
+    check_true("mail extra at-sign rejected",
+               neverc_smtp_mail(c, "a@b@c.com") == -1);
+    check_true("hello unclosed ipv6 literal rejected",
+               neverc_smtp_hello(c, "[2001:db8::1") == -1);
     check_true("mail recipient list rejected",
                neverc_smtp_mail(c, "a@b.com,c@d.com") == -1);
     check_true("rcpt crlf rejected",
@@ -372,6 +378,42 @@ static void test_smtp_reject_injection(void) {
         check_true("AUTH LOGIN rejects oversized username",
                    neverc_smtp_auth(auth, NEVERC_SMTP_AUTH_LOGIN, huge, "pw") == -1);
         neverc_smtp_close(auth);
+    }
+
+    neverc_smtp_client_t *login_empty = neverc_smtp_dial(addr, &err);
+    check_true("dial for empty AUTH LOGIN password", login_empty != NULL);
+    if (login_empty) {
+        /* smtp_cmd rejects empty commands, but AUTH LOGIN continuations
+         * are blank CRLF when the credential is empty. Failing to write
+         * that line leaves the server in AUTH and the next MAIL FROM is
+         * consumed as the password. */
+        check_true("AUTH LOGIN empty password rejected",
+                   neverc_smtp_auth(login_empty, NEVERC_SMTP_AUTH_LOGIN,
+                                    "user", "") == -1);
+        check_true("MAIL FROM after empty AUTH LOGIN password",
+                   neverc_smtp_mail(login_empty, "sender@example.com") == 0);
+        neverc_smtp_close(login_empty);
+    }
+
+    login_empty = neverc_smtp_dial(addr, &err);
+    check_true("dial for empty AUTH LOGIN username", login_empty != NULL);
+    if (login_empty) {
+        check_true("AUTH LOGIN empty username rejected",
+                   neverc_smtp_auth(login_empty, NEVERC_SMTP_AUTH_LOGIN,
+                                    "", "pass") == -1);
+        check_true("MAIL FROM after empty AUTH LOGIN username",
+                   neverc_smtp_mail(login_empty, "sender@example.com") == 0);
+        neverc_smtp_close(login_empty);
+    }
+
+    neverc_smtp_client_t *v6 = neverc_smtp_dial(addr, &err);
+    check_true("dial for ipv6 literals", v6 != NULL);
+    if (v6) {
+        check_true("EHLO IPv6 literal",
+                   neverc_smtp_hello(v6, "[2001:db8::1]") == 0);
+        check_true("MAIL FROM IPv6 address-literal",
+                   neverc_smtp_mail(v6, "user@[IPv6:2001:db8::1]") == 0);
+        neverc_smtp_close(v6);
     }
 
     check_true("write_data null client",

@@ -645,6 +645,7 @@ static int html_js_is_line_term(const char *buf, size_t i, size_t len) {
 static void html_scan_doc(const char *buf, size_t len,
                           int *in_script, int *in_style,
                           int *in_script_comment,
+                          int *in_js_quoted,
                           int *in_open_tag,
                           int *in_attr, int *quoted,
                           const char **aname, size_t *nlen,
@@ -653,6 +654,7 @@ static void html_scan_doc(const char *buf, size_t len,
     *in_script = 0;
     *in_style = 0;
     *in_script_comment = 0;
+    *in_js_quoted = 0;
     *in_open_tag = 0;
     *in_attr = 0;
     *quoted = 0;
@@ -918,6 +920,9 @@ static void html_scan_doc(const char *buf, size_t len,
     *in_style = (state == HS_STYLE);
     *in_script_comment = (state == HS_SCRIPT &&
                           (js == JS_LINE || js == JS_BLOCK || js == JS_HTML));
+    /* Single/double-quoted JS strings only. Template literals keep wrapping
+     * so `${ {{.X}} }` cannot run X as code (the scanner does not track `${`). */
+    *in_js_quoted = (state == HS_SCRIPT && (js == JS_SQ || js == JS_DQ));
     *in_open_tag = (state == HS_TAG || state == HS_ATTR_DQ ||
                     state == HS_ATTR_SQ || state == HS_ATTR_UQ ||
                     state == HS_MARKUP);
@@ -938,13 +943,6 @@ static void html_scan_doc(const char *buf, size_t len,
             *meta_refresh = saw_refresh;
         }
     }
-}
-
-static int html_prev_non_ws_is_quote(const char *buf, size_t len) {
-    while (len > 0 && html_is_ascii_ws((unsigned char)buf[len - 1]))
-        len--;
-    if (len == 0) return 0;
-    return buf[len - 1] == '"' || buf[len - 1] == '\'';
 }
 
 static int html_prev_non_ws_is_digit(const char *buf, size_t len) {
@@ -1258,8 +1256,10 @@ static int html_css_has_unsafe_url(const char *s) {
 
 /*
  * CSS hex-escaping is undone by the browser, so the raw value is what
- * matters. Reject @import / expression / -moz-binding, CSS escapes that
- * hide schemes, javascript:/data:/vbscript: anywhere, and unsafe url().
+ * matters. Go cssValueFilter rejects bytes that restart parsing (quotes,
+ * brackets, ';', '@', ...) so `red;}body{...}` cannot break out of a
+ * property. Also reject @import / expression / -moz-binding, CSS escapes
+ * that hide schemes, javascript:/data:/vbscript: anywhere, and unsafe url().
  * CSS slash-star comments hide schemes: java + comment + script: is a
  * relative URL (the slash trips the allowlist) and becomes javascript:
  * after the comment is stripped.
@@ -1269,6 +1269,21 @@ static int html_css_is_unsafe(const char *s) {
     size_t n = strlen(s);
     if (memchr(s, '\\', n)) return 1;
     if (strstr(s, "/*") || strstr(s, "*/")) return 1;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        switch (c) {
+        case '"': case '\'': case '(': case ')': case '/':
+        case ';': case '@': case '[': case ']': case '`':
+        case '{': case '}': case '<': case '>':
+            return 1;
+        case '-':
+            /* Custom properties (`--x`) and IE `expression` obfuscations. */
+            if (i > 0 && s[i - 1] == '-') return 1;
+            break;
+        default:
+            break;
+        }
+    }
     if (html_css_has_unsafe_url(s)) return 1;
     if (html_css_contains_ci(s, "@import")) return 1;
     if (html_css_contains_ci(s, "expression")) return 1;
@@ -1319,10 +1334,11 @@ static int execute_nodes(const node_t *n,
                 const char *aprefix = NULL;
                 size_t aplen = 0;
                 int in_script = 0, in_style_tag = 0, in_script_comment = 0;
+                int in_js_quoted = 0;
                 int in_open_tag = 0;
                 int in_meta = 0, meta_refresh = 0;
                 html_scan_doc(*buf, *len, &in_script, &in_style_tag,
-                              &in_script_comment,
+                              &in_script_comment, &in_js_quoted,
                               &in_open_tag, &in_attr, &quoted,
                               &aname, &nlen, &aprefix, &aplen,
                               &in_meta, &meta_refresh);
@@ -1382,14 +1398,13 @@ static int execute_nodes(const node_t *n,
                     escaped = html_escape_srcdoc(val);
                 else if (in_script && !in_attr && in_script_comment)
                     escaped = neverc_html_escape("ZgotmplZ");
+                else if (in_script && !in_attr && in_js_quoted)
+                    escaped = neverc_html_js_escape(val);
                 else if (in_script && !in_attr &&
-                         !html_prev_non_ws_is_quote(*buf, *len) &&
                          html_prev_non_ws_is_digit(*buf, *len))
                     escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_script && !in_attr)
-                    escaped = html_prev_non_ws_is_quote(*buf, *len)
-                        ? neverc_html_js_escape(val)
-                        : html_js_expr(val);
+                    escaped = html_js_expr(val);
                 else if (in_style_tag || in_style_attr)
                     escaped = html_css_is_unsafe(val)
                         ? neverc_html_escape("#")

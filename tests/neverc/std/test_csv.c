@@ -205,7 +205,7 @@ static void test_trim_space(void) {
     ASSERT_STR_EQ(fields[2], "c  ");
 
     /* Go TrimLeadingSpace uses unicode.IsSpace, including VT and NBSP. */
-    n = neverc_csv_read_line("\va,\xc2\xa0b", 6U, fields, 10, work, sizeof(work),
+    n = neverc_csv_read_line("\va,\xc2\xa0" "b", 6U, fields, 10, work, sizeof(work),
                              &opts);
     ASSERT_INT_EQ(n, 2);
     ASSERT_STR_EQ(fields[0], "a");

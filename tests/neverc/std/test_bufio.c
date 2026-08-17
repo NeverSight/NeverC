@@ -658,8 +658,14 @@ static void test_scanner_split_func(void) {
     neverc_bufio_scanner_split(&sc, neverc_bufio_scan_bytes);
     check_int("bytes 1", neverc_bufio_scanner_scan(&sc), 1);
     check_bytes("byte a", neverc_bufio_scanner_bytes(&sc, &len), len, "a");
+    check_int("byte a text terminated",
+              neverc_bufio_scanner_text(&sc) &&
+                  strcmp(neverc_bufio_scanner_text(&sc), "a") == 0, 1);
     check_int("bytes 2", neverc_bufio_scanner_scan(&sc), 1);
     check_bytes("byte b", neverc_bufio_scanner_bytes(&sc, &len), len, "b");
+    check_int("byte b text terminated",
+              neverc_bufio_scanner_text(&sc) &&
+                  strcmp(neverc_bufio_scanner_text(&sc), "b") == 0, 1);
     check_int("bytes eof", neverc_bufio_scanner_scan(&sc), 0);
     neverc_bufio_scanner_free(&sc);
 

@@ -364,6 +364,16 @@ static void test_request_uri(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "https://example.com//evil.com"), 0);
     neverc_url_request_uri(&u, buf, sizeof(buf));
     ASSERT_STR_EQ(buf, "/.//evil.com");
+
+    ASSERT_INT_EQ(neverc_url_parse(&u, "https://example.com/%2f/evil.com"), 0);
+    neverc_url_request_uri(&u, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "/./%2f/evil.com");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "https://example.com/%2fevil.com"), 0);
+    neverc_url_request_uri(&u, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "/./%2fevil.com");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "https://example.com/%5cevil.com"), 0);
+    neverc_url_request_uri(&u, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "/./%5cevil.com");
 }
 
 static void test_safe_redirect(void) {
@@ -390,6 +400,14 @@ static void test_safe_redirect(void) {
         "javascript:alert(1)", "good.com"), 0);
     ASSERT_INT_EQ(neverc_url_is_safe_redirect(
         "https://[::ffff:127.0.0.1]/", "good.com"), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%2f/evil.com", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%2F%2Fevil.com", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%2fevil.com", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%5cevil.com", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%5Cevil.com", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/foo%2fbar", NULL), 1);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect(
+        "https://good.com/%2fevil.com", "good.com"), 1);
 }
 
 static void test_bounded_outputs(void) {

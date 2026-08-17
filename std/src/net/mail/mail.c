@@ -1,5 +1,6 @@
 #include "neverc/std/net/mail.h"
 #include "neverc/std/net/netip.h"
+#include "neverc/std/mime/rfc2047_safe.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -182,7 +183,9 @@ int neverc_mail_parse_address(const char *s, neverc_mail_address_t *out) {
     const char *start = NULL;
     size_t slen = 0;
     trim(s, strlen(s), &start, &slen);
-    if (slen == 0 || mail_field_has_ctl(start, slen)) return -1;
+    if (slen == 0 || mail_field_has_ctl(start, slen) ||
+        !nci_rfc2047_header_safe(start, slen))
+        return -1;
 
     const char *lt = NULL, *gt = NULL;
     for (size_t i = 0; i < slen; i++) {
@@ -292,8 +295,15 @@ int neverc_mail_format_address(const neverc_mail_address_t *addr, char *buf, siz
     if (!addr || !buf || cap == 0 || !mail_addr_spec_ok(addr->address))
         return -1;
     if (mail_field_has_ctl(addr->name, strlen(addr->name))) return -1;
-    if (!addr->name[0])
-        return mail_put(buf, cap, "%s", addr->address, NULL);
+    if (!addr->name[0]) {
+        int n = mail_put(buf, cap, "%s", addr->address, NULL);
+        if (n < 0) return -1;
+        if (!nci_rfc2047_header_safe(buf, (size_t)n)) {
+            buf[0] = '\0';
+            return -1;
+        }
+        return n;
+    }
 
     int need_quote = 0;
     for (const unsigned char *p = (const unsigned char *)addr->name; *p; p++) {
@@ -304,19 +314,27 @@ int neverc_mail_format_address(const neverc_mail_address_t *addr, char *buf, siz
             *p == ':' || *p == '(' || *p == ')' || *p == '[' || *p == ']')
             need_quote = 1;
     }
+    int n;
     if (!need_quote)
-        return mail_put(buf, cap, "%s <%s>", addr->name, addr->address);
-
-    char quoted[sizeof(addr->name) * 2 + 3];
-    size_t qi = 0;
-    quoted[qi++] = '"';
-    for (const char *p = addr->name; *p && qi + 2 < sizeof(quoted); p++) {
-        if (*p == '"' || *p == '\\') quoted[qi++] = '\\';
-        quoted[qi++] = *p;
+        n = mail_put(buf, cap, "%s <%s>", addr->name, addr->address);
+    else {
+        char quoted[sizeof(addr->name) * 2 + 3];
+        size_t qi = 0;
+        quoted[qi++] = '"';
+        for (const char *p = addr->name; *p && qi + 2 < sizeof(quoted); p++) {
+            if (*p == '"' || *p == '\\') quoted[qi++] = '\\';
+            quoted[qi++] = *p;
+        }
+        quoted[qi++] = '"';
+        quoted[qi] = '\0';
+        n = mail_put(buf, cap, "%s <%s>", quoted, addr->address);
     }
-    quoted[qi++] = '"';
-    quoted[qi] = '\0';
-    return mail_put(buf, cap, "%s <%s>", quoted, addr->address);
+    if (n < 0) return -1;
+    if (!nci_rfc2047_header_safe(buf, (size_t)n)) {
+        buf[0] = '\0';
+        return -1;
+    }
+    return n;
 }
 
 int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_t *out) {
@@ -386,7 +404,9 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
                 break;
             }
         }
-        if (mail_field_has_ctl(h->value, vpos)) return -1;
+        if (mail_field_has_ctl(h->value, vpos) ||
+            !nci_rfc2047_header_safe(h->value, vpos))
+            return -1;
         h->value[vpos] = '\0';
         out->header_count++;
         i = pos;

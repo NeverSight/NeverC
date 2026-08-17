@@ -77,8 +77,8 @@ static int html_is_name_char(unsigned char c) {
 }
 
 /* Consumed length including '&', or 0.
- * need_semi == 0: HTML4 names may omit ';' when the next byte is not
- * alphanumeric (Go html.UnescapeString).
+ * need_semi == 0: HTML4 names may omit ';' even when the next byte is
+ * alphanumeric (Go: `&notin` is `&not` + `in`).
  * need_semi != 0: HTML5-only names require a trailing ';'. Omitting it
  * would turn "&apos onclick=..." into a quote breakout. */
 static int match_named_entity(const char *s, size_t slen, size_t i,
@@ -89,9 +89,20 @@ static int match_named_entity(const char *s, size_t slen, size_t i,
     if (after < slen && s[after] == ';')
         return (int)(nlen + 2);
     if (need_semi) return 0;
-    if (after < slen && html_is_name_char((unsigned char)s[after]))
-        return 0;
     return (int)(nlen + 1);
+}
+
+/* `&amp` / `&AMP` without ';' stay literal when a name character follows
+ * (`&AMPfoo`), matching Go html.UnescapeString. Other HTML4 names do not. */
+static int match_amp_entity(const char *s, size_t slen, size_t i) {
+    int n = match_named_entity(s, slen, i, "amp", 3, 0);
+    if (!n) n = match_named_entity(s, slen, i, "AMP", 3, 0);
+    if (!n) return 0;
+    if (s[i + (size_t)n - 1] != ';' &&
+        i + (size_t)n < slen &&
+        html_is_name_char((unsigned char)s[i + (size_t)n]))
+        return 0;
+    return n;
 }
 
 /* HTML numeric references 0x80..0x9F are decoded as Windows-1252, like Go. */
@@ -222,8 +233,7 @@ char *neverc_html_unescape_string(const char *s, size_t *outlen) {
         if (s[i] == '&') {
             {
                 int n;
-                if ((n = match_named_entity(s, slen, i, "amp", 3, 0)) ||
-                    (n = match_named_entity(s, slen, i, "AMP", 3, 0))) {
+                if ((n = match_amp_entity(s, slen, i))) {
                     r[wi++] = '&'; i += (size_t)n; continue;
                 }
                 if ((n = match_named_entity(s, slen, i, "lt", 2, 0)) ||

@@ -363,6 +363,60 @@ static void test_draw_clip_wider_than_stride(void) {
     check("wide gray-over is a no-op", dst_pix[0] == 0);
 }
 
+/* stride < clip_width catches a full-span blit, but a *narrow* clip at a
+ * large x of a rect wider than stride/4 used to pass, then write at
+ * pix+(x-min.x)*4 past the pitch (and off a stride*height buffer). */
+static void test_draw_clip_past_stride(void) {
+    printf("[draw_clip_past_stride]\n");
+    uint8_t dst_pix[64];
+    uint8_t src_pix[16];
+    memset(dst_pix, 0xAA, sizeof(dst_pix));
+    memset(src_pix, 0x09, sizeof(src_pix));
+
+    neverc_image_rgba_t dst = {
+        .pix = dst_pix, .stride = 16, .rect = {{0, 0}, {8, 1}}
+    };
+    neverc_draw_uniform(&dst, neverc_rect(4, 0, 6, 1),
+                        1, 2, 3, 255, NEVERC_DRAW_SRC);
+    check("uniform past pitch is a no-op", dst_pix[0] == 0xAA);
+    check("uniform did not write past pitch", dst_pix[16] == 0xAA);
+
+    neverc_draw_uniform(&dst, neverc_rect(2, 0, 4, 1),
+                        1, 2, 3, 255, NEVERC_DRAW_SRC);
+    check("uniform within pitch writes", dst_pix[8] == 1 && dst_pix[11] == 255);
+    check("uniform within pitch leaves canary", dst_pix[16] == 0xAA);
+
+    memset(dst_pix, 0xAA, sizeof(dst_pix));
+    neverc_image_rgba_t src = {
+        .pix = src_pix, .stride = 16, .rect = {{0, 0}, {8, 1}}
+    };
+    neverc_draw(&dst, neverc_rect(4, 0, 6, 1), &src, neverc_pt(4, 0),
+                NEVERC_DRAW_SRC);
+    check("src blit past pitch is a no-op", dst_pix[0] == 0xAA);
+    check("src blit did not write past pitch", dst_pix[16] == 0xAA);
+
+    neverc_image_gray_t mask = {
+        .pix = src_pix, .stride = 4, .rect = {{0, 0}, {8, 1}}
+    };
+    neverc_draw_gray_over(&dst, neverc_rect(4, 0, 6, 1), &mask,
+                          neverc_pt(4, 0), 9, 9, 9, 255);
+    check("gray-over past pitch is a no-op", dst_pix[0] == 0xAA);
+    check("gray-over did not write past pitch", dst_pix[16] == 0xAA);
+
+    /* Far-right 1-pixel clip of INT_MIN..INT_MAX with a tiny stride: column
+     * offset is ~2^32 pixels, which used to look like an in-pitch write. */
+    memset(dst_pix, 0xAA, sizeof(dst_pix));
+    dst.stride = 8;
+    dst.rect = (neverc_rect_t){{INT_MIN, 0}, {INT_MAX, 1}};
+    neverc_draw_uniform(&dst, neverc_rect(INT_MAX - 1, 0, INT_MAX, 1),
+                        9, 9, 9, 255, NEVERC_DRAW_SRC);
+    check("far clip of huge rect is a no-op", dst_pix[0] == 0xAA);
+    int far_clean = 1;
+    for (int i = 0; i < 64; i++)
+        if (dst_pix[i] != 0xAA) far_clean = 0;
+    check("far clip did not mutate buffer", far_clean);
+}
+
 static void test_draw_null(void) {
     printf("[draw_null]\n");
     neverc_image_rgba_t dst;
@@ -393,6 +447,7 @@ int main(void) {
     test_draw_gray_over_transparent();
     test_draw_zero_stride_noop();
     test_draw_clip_wider_than_stride();
+    test_draw_clip_past_stride();
     test_draw_null();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

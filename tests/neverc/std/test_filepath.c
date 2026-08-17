@@ -119,6 +119,9 @@ static void test_is_local_and_volume(void) {
     ASSERT_FALSE(neverc_filepath_is_local("CONOUT$"));
     ASSERT_FALSE(neverc_filepath_is_local("foo\\..\\..\\bar"));
     ASSERT_TRUE(neverc_filepath_is_local("foo\\bar"));
+    ASSERT_FALSE(neverc_filepath_is_local("foo\\.. \\bar"));
+    ASSERT_FALSE(neverc_filepath_is_local("foo/.. /bar"));
+    ASSERT_FALSE(neverc_filepath_is_local(".. "));
     ASSERT_STR_EQ(neverc_filepath_volume_name("C:\\foo\\bar", buf, sizeof(buf)),
                   "C:");
     ASSERT_STR_EQ(neverc_filepath_volume_name("\\\\host\\share\\x", buf, sizeof(buf)),

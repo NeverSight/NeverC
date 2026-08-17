@@ -595,6 +595,9 @@ static inline int nc_poller_iocp_dequeue(nc_poller_t *poller,
                                          DWORD timeout) {
     OVERLAPPED_ENTRY entries[NC_POLLER_MAX_BATCH];
     ULONG removed = 0;
+    if (max_events > NC_POLLER_MAX_BATCH)
+        max_events = NC_POLLER_MAX_BATCH;
+    if (max_events <= 0) return -1;
     BOOL ok = GetQueuedCompletionStatusEx(
         poller->iocp, entries, (ULONG)max_events, &removed, timeout, FALSE);
     if (!ok) {

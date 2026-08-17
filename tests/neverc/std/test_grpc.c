@@ -955,6 +955,7 @@ static void grpc_test_status_mapping(void) {
     CHECK(status_in_headers && status_in_headers->error != NULL);
     CHECK(status_in_headers &&
           status_in_headers->status != NEVERC_GRPC_OK);
+    CHECK(status_in_headers && status_in_headers->message_count == 0U);
     neverc_grpc_result_free(status_in_headers);
 
     neverc_grpc_result_t *status_then_trailers = grpc_call_fake_h2(5);

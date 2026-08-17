@@ -193,8 +193,13 @@ static void test_lookup_host(void) {
     printf("[lookup_host]\n");
     neverc_net_addrs_t addrs;
 
+    memset(&addrs, 0x41, sizeof(addrs));
+    addrs.count = 7;
     check_int("empty host rejected", neverc_net_lookup_host("", &addrs), -1);
+    check_int("empty host clears leftover addrs", addrs.count, 0);
+    addrs.count = 7;
     check_int("null host rejected", neverc_net_lookup_host(NULL, &addrs), -1);
+    check_int("null host clears leftover addrs", addrs.count, 0);
 
     /* Resolve localhost — should always work */
     int rc = neverc_net_lookup_host("localhost", &addrs);
@@ -218,10 +223,14 @@ static void test_lookup_ip(void) {
     printf("[lookup_ip]\n");
     neverc_net_addrs_t addrs;
 
+    addrs.count = 7;
     check_int("empty ip host rejected",
               neverc_net_lookup_ip("ip4", "", &addrs), -1);
+    check_int("empty ip host clears leftover", addrs.count, 0);
+    addrs.count = 7;
     check_int("null ip host rejected",
               neverc_net_lookup_ip("ip4", NULL, &addrs), -1);
+    check_int("null ip host clears leftover", addrs.count, 0);
 
     int rc = neverc_net_lookup_ip("ip4", "localhost", &addrs);
     check_int("lookup ip4 localhost", rc, 0);
@@ -323,10 +332,14 @@ static void test_lookup_port(void) {
               neverc_net_lookup_port("bogus", "8080"), -1);
 
     neverc_net_addrs_t rev;
+    rev.count = 4;
     check_int("empty reverse addr rejected",
               neverc_net_lookup_addr("", &rev), -1);
+    check_int("empty reverse clears leftover", rev.count, 0);
+    rev.count = 4;
     check_int("null reverse addr rejected",
               neverc_net_lookup_addr(NULL, &rev), -1);
+    check_int("null reverse clears leftover", rev.count, 0);
     check_int("zoned ipv6 unknown iface rejected",
               neverc_net_lookup_addr("fe80::1%no_such_iface_zzz", &rev), -1);
     check_int("zoned ipv6 empty zone rejected",
@@ -336,21 +349,31 @@ static void test_lookup_port(void) {
     check_int("zoned ipv6 zero zone rejected",
               neverc_net_lookup_addr("fe80::1%0", &rev), -1);
     neverc_net_mx_list_t mx;
+    mx.count = 3;
     check_int("empty mx name rejected", neverc_net_lookup_mx("", &mx), -1);
+    check_int("empty mx clears leftover", mx.count, 0);
     neverc_net_txt_list_t txt;
+    txt.count = 3;
     check_int("empty txt name rejected", neverc_net_lookup_txt("", &txt), -1);
+    check_int("empty txt clears leftover", txt.count, 0);
     neverc_net_ns_list_t ns;
+    ns.count = 3;
     check_int("empty ns name rejected", neverc_net_lookup_ns("", &ns), -1);
+    check_int("empty ns clears leftover", ns.count, 0);
     neverc_net_srv_list_t empty_srv;
+    empty_srv.count = 3;
     check_int("empty srv name rejected",
               neverc_net_lookup_srv("http", "tcp", "", &empty_srv), -1);
+    check_int("empty srv clears leftover", empty_srv.count, 0);
 
     neverc_net_srv_list_t srv;
     char long_name[600];
     memset(long_name, 'a', 599);
     long_name[599] = '\0';
+    srv.count = 99;
     check_int("srv qname overflow",
               neverc_net_lookup_srv("xmpp-client", "tcp", long_name, &srv), -1);
+    check_int("srv overflow clears leftover", srv.count, 0);
 }
 
 /* ===== LookupCNAME ===== */
@@ -359,10 +382,16 @@ static void test_lookup_cname(void) {
     printf("[lookup_cname]\n");
     char buf[256];
 
+    memset(buf, 'A', sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
     check_int("empty cname rejected",
               neverc_net_lookup_cname("", buf, sizeof(buf)), -1);
+    check_true("empty cname clears leftover", buf[0] == '\0');
+    memset(buf, 'A', sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
     check_int("null cname rejected",
               neverc_net_lookup_cname(NULL, buf, sizeof(buf)), -1);
+    check_true("null cname clears leftover", buf[0] == '\0');
 
     int rc = neverc_net_lookup_cname("localhost", buf, sizeof(buf));
     check_int("cname localhost", rc, 0);

@@ -1404,7 +1404,10 @@ neverc_grpc_result_t *neverc_grpc_client_call(
         free(header_message);
     }
     if (grpc_content_type) {
-        if (grpc_parse_messages(
+        /* grpc-status on Response-Headers is Trailers-Only: do not
+         * materialize a DATA payload after rejecting that race. */
+        if (from_headers != 1 &&
+            grpc_parse_messages(
                 response->body, response->body_length,
                 max_response_message_size, result) != 0 &&
             (response->status_code == 200 || have_grpc_status)) {

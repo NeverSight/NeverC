@@ -117,6 +117,15 @@ static void test_sha3_224(void) {
     check_digest("SHA3-224(448-bit)", d,
         "8a24108b154ada21c9fd5574494479ba5c7e7ab76ef264ead0fcce33", 28);
 
+    /* rate-1 leftover: suffix and the final pad bit share the last byte. */
+    {
+        uint8_t data[143];
+        memset(data, 'A', sizeof(data));
+        neverc_sha3_224_sum(data, 143, d);
+        check_digest("SHA3-224(143 'A') same-byte pad", d,
+            "dfe44c31a9ad9daa2f6556392ea339a7c33f1c5db31d7535cf46617a", 28);
+    }
+
     {
         neverc_sha3_ctx ctx;
         neverc_sha3_224_init(&ctx);
@@ -151,6 +160,15 @@ static void test_sha3_384(void) {
     check_digest("SHA3-384(448-bit)", d,
         "991c665755eb3a4b6bbdfb75c78a492e8c56a22c5c4d7e429bfdbc32b9d4ad5a"
         "a04a1f076e62fea19eef51acd0657c22", 48);
+
+    {
+        uint8_t data[103];
+        memset(data, 'A', sizeof(data));
+        neverc_sha3_384_sum(data, 103, d);
+        check_digest("SHA3-384(103 'A') same-byte pad", d,
+            "92113006f00608fb715f594bb342743bf45aa27683d03b5f88ef94b033c86f08"
+            "9936d0244a96eaff36d00a01c3c82646", 48);
+    }
 
     {
         neverc_sha3_ctx ctx;
@@ -443,10 +461,28 @@ static void test_sha3_lifecycle(void) {
     memset(d2, 0xa5, sizeof(d2));
     neverc_sha3_256_final(NULL, d2);
     {
-        uint8_t poison[32];
-        memset(poison, 0xa5, sizeof(poison));
-        check_true("SHA3-256 NULL ctx is a no-op",
-                   memcmp(d2, poison, 32) == 0);
+        uint8_t zeros[32] = {0};
+        check_true("SHA3-256 NULL ctx final fails closed",
+                   memcmp(d2, zeros, 32) == 0);
+    }
+
+    {
+        uint8_t zeros[32] = {0};
+        memset(shake, 0xa5, sizeof(shake));
+        neverc_shake128_squeeze(NULL, shake, 32);
+        check_true("SHAKE128 NULL ctx squeeze fails closed",
+                   memcmp(shake, zeros, 32) == 0);
+    }
+
+    {
+        uint8_t zeros[32] = {0};
+        memset(d2, 0xa5, sizeof(d2));
+        neverc_sha3_256_sum(NULL, 5, d2);
+        check_true("SHA3-256 sum(NULL, n) fails closed",
+                   memcmp(d2, zeros, 32) == 0);
+        neverc_sha3_256_sum((const uint8_t *)"", 0, d1);
+        check_true("SHA3-256 sum(NULL, n) != empty hash",
+                   memcmp(d2, d1, 32) != 0);
     }
 
     /* Zeroed ctx: rate==0. Must not hang or memset SIZE_MAX. */
@@ -535,6 +571,86 @@ static void test_sha3_lifecycle(void) {
         neverc_shake128_squeeze(&raw, shake, 32);
         check_true("SHAKE squeeze_pos past rate fails closed",
                    memcmp(shake, zeros, 32) == 0);
+    }
+
+    /* SHAKE ctx finalized as SHA-3 before any squeeze used to emit SHAKE output. */
+    {
+        neverc_sha3_ctx mix;
+        uint8_t zeros[32] = {0};
+        uint8_t digest[32];
+        neverc_shake128_init(&mix);
+        neverc_shake128_update(&mix, (const uint8_t *)"abc", 3);
+        memset(digest, 0xa5, sizeof(digest));
+        neverc_sha3_256_final(&mix, digest);
+        check_true("SHA3-256 final on unsqueezed SHAKE fails closed",
+                   memcmp(digest, zeros, 32) == 0);
+    }
+
+    /* SHA3-256 and SHAKE256 share rate 136; suffix is the only separator. */
+    {
+        neverc_sha3_ctx mix;
+        uint8_t zeros[32] = {0};
+        uint8_t out[32];
+        neverc_sha3_256_init(&mix);
+        neverc_sha3_256_update(&mix, (const uint8_t *)"abc", 3);
+        memset(out, 0xa5, sizeof(out));
+        neverc_shake256_squeeze(&mix, out, 32);
+        check_true("SHAKE256 squeeze on SHA3-256 ctx fails closed",
+                   memcmp(out, zeros, 32) == 0);
+    }
+
+    {
+        neverc_sha3_ctx mix;
+        uint8_t zeros[28] = {0};
+        uint8_t d224[28];
+        neverc_sha3_256_init(&mix);
+        neverc_sha3_256_update(&mix, (const uint8_t *)"abc", 3);
+        memset(d224, 0xa5, sizeof(d224));
+        neverc_sha3_224_final(&mix, d224);
+        check_true("SHA3-224 final on SHA3-256 ctx fails closed",
+                   memcmp(d224, zeros, 28) == 0);
+    }
+
+    {
+        neverc_sha3_ctx ctx, clone;
+        uint8_t d1[32], d2[32];
+        neverc_sha3_256_init(&ctx);
+        neverc_sha3_256_update(&ctx, (const uint8_t *)"ab", 2);
+        clone = ctx;
+        neverc_sha3_256_update(&ctx, (const uint8_t *)"c", 1);
+        neverc_sha3_256_update(&clone, (const uint8_t *)"c", 1);
+        neverc_sha3_256_final(&ctx, d1);
+        neverc_sha3_256_final(&clone, d2);
+        neverc_sha3_256_sum((const uint8_t *)"abc", 3, shake);
+        check_true("SHA3-256 clone after update",
+                   memcmp(d1, d2, 32) == 0 && memcmp(d1, shake, 32) == 0);
+    }
+
+    {
+        uint8_t one_shot[64], from_clone[32];
+        neverc_sha3_ctx ctx, clone;
+        neverc_shake128_init(&ctx);
+        neverc_shake128_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_shake128_squeeze(&ctx, one_shot, 64);
+        neverc_shake128_init(&ctx);
+        neverc_shake128_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_shake128_squeeze(&ctx, shake, 32);
+        clone = ctx;
+        neverc_shake128_squeeze(&clone, from_clone, 32);
+        check_true("SHAKE128 clone after squeeze",
+                   memcmp(from_clone, one_shot + 32, 32) == 0);
+    }
+
+    {
+        neverc_sha3_ctx ctx;
+        uint8_t empty[32], after[32];
+        neverc_sha3_256_sum((const uint8_t *)"", 0, empty);
+        neverc_sha3_256_init(&ctx);
+        neverc_sha3_256_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_sha3_256_init(&ctx);
+        neverc_sha3_256_final(&ctx, after);
+        check_true("SHA3-256 re-init resets to empty hash",
+                   memcmp(empty, after, 32) == 0);
     }
 }
 

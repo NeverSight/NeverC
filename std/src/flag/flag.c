@@ -179,6 +179,17 @@ static int is_help_name(const char *name, size_t name_len) {
            (name_len == 4 && memcmp(name, "help", 4) == 0);
 }
 
+/* Failed Parse must not leave nflag/visit reporting flags that were written
+ * before the error (unknown name, bad value, missing value, or -h/-help).
+ * Values already stored stay; only the was_set leftover is cleared. */
+static int flag_parse_fail(void) {
+    remaining_args = NULL;
+    remaining_count = 0;
+    for (int fi = 0; fi < flag_count; fi++)
+        flags[fi].was_set = 0;
+    return -1;
+}
+
 int neverc_flag_parse(int argc, char **argv) {
     flag_parsed = 1;
     remaining_args = NULL;
@@ -192,7 +203,7 @@ int neverc_flag_parse(int argc, char **argv) {
     int i = 1;
     while (i < argc) {
         char *arg = argv[i];
-        if (!arg) return -1;
+        if (!arg) return flag_parse_fail();
         /* A lone "-" is a positional argument (stdin convention), matching Go. */
         if (arg[0] != '-' || arg[1] == '\0') {
             remaining_args = argv + i;
@@ -212,7 +223,7 @@ int neverc_flag_parse(int argc, char **argv) {
          * is bad syntax, not a flag named "-x". */
         if (name[0] == '\0' || name[0] == '-' || name[0] == '=') {
             fprintf(stderr, "bad flag syntax: %s\n", arg);
-            return -1;
+            return flag_parse_fail();
         }
 
         const char *eq = strchr(name, '=');
@@ -223,27 +234,27 @@ int neverc_flag_parse(int argc, char **argv) {
             /* Go flag: undefined -h / -help prints defaults and fails. */
             if (is_help_name(name, name_len)) {
                 neverc_flag_print_defaults();
-                return -1;
+                return flag_parse_fail();
             }
             fprintf(stderr, "unknown flag: %s\n", arg);
-            return -1;
+            return flag_parse_fail();
         }
 
         int implicit_bool = f->type == FLAG_BOOL && !value;
         if (f->type != FLAG_BOOL && !value) {
             if (++i >= argc || !argv[i]) {
                 fprintf(stderr, "flag -%s needs value\n", f->name);
-                return -1;
+                return flag_parse_fail();
             }
             if (strcmp(argv[i], "--") == 0) {
                 fprintf(stderr, "flag -%s needs value\n", f->name);
-                return -1;
+                return flag_parse_fail();
             }
             value = argv[i];
         }
         if (set_entry_value(f, value, implicit_bool) != 0) {
             fprintf(stderr, "invalid value for flag -%s\n", f->name);
-            return -1;
+            return flag_parse_fail();
         }
         f->was_set = 1;
         i++;

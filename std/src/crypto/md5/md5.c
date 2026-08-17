@@ -79,12 +79,11 @@ static void md5_block(uint32_t state[4], const uint8_t block[64]) {
 
 void neverc_md5_init(neverc_md5_ctx *ctx) {
     if (!ctx) return;
+    memset(ctx, 0, sizeof(*ctx));
     ctx->state[0] = 0x67452301;
     ctx->state[1] = 0xefcdab89;
     ctx->state[2] = 0x98badcfe;
     ctx->state[3] = 0x10325476;
-    ctx->count = 0;
-    ctx->finalized = 0;
 }
 
 void neverc_md5_update(neverc_md5_ctx *ctx, const uint8_t *data, size_t len) {
@@ -122,7 +121,11 @@ void neverc_md5_update(neverc_md5_ctx *ctx, const uint8_t *data, size_t len) {
 }
 
 void neverc_md5_final(neverc_md5_ctx *ctx, uint8_t digest[16]) {
-    if (!ctx || !digest) return;
+    if (!digest) return;
+    if (!ctx) {
+        memset(digest, 0, 16);
+        return;
+    }
     if (ctx->finalized) {
         for (int i = 0; i < 4; i++)
             put_le32(digest + 4 * i, ctx->state[i]);
@@ -153,6 +156,11 @@ void neverc_md5_final(neverc_md5_ctx *ctx, uint8_t digest[16]) {
 }
 
 void neverc_md5_sum(const uint8_t *data, size_t len, uint8_t digest[16]) {
+    if (!digest) return;
+    if (len > 0 && !data) {
+        memset(digest, 0, 16);
+        return;
+    }
     neverc_md5_ctx ctx;
     neverc_md5_init(&ctx);
     neverc_md5_update(&ctx, data, len);

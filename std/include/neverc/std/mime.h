@@ -15,7 +15,8 @@ const char *neverc_mime_extension_by_type(const char *mime_type);
  * a quoted value is an escape only before a tspecial (Go/MSIE), so Windows
  * paths such as `C:\dev\file.txt` are preserved. RFC 2231
  * `name*=charset''value` and `name*0` / `name*1` continuations are decoded
- * into `name` (utf-8 / us-ascii). A trailing semicolon is ignored. The caller
+ * into `name` (utf-8 / us-ascii). A trailing semicolon is ignored. Parameter
+ * values that 2047-decode to CTL or invalid UTF-8 are rejected. The caller
  * owns every returned key/value and must free them. On failure, returns -1,
  * frees all partial results, writes an empty media type when mt_cap is
  * nonzero, and sets *nparams to zero. */
@@ -45,7 +46,10 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
  * encoded-words have intervening WSP removed. Q-encoding maps '_' to
  * space. utf-8, us-ascii, and iso-8859-1 are supported. Decoded CTL
  * (including CR/LF, except TAB) is rejected so an encoded-word cannot
- * inject headers. Returns 0, or -1 with *out_len zero. */
+ * inject headers. A utf-8 encoded-word must be well-formed UTF-8
+ * (overlong CR/LF and surrogate halves are rejected). A well-formed
+ * word that does not fit the decode buffer is rejected rather than
+ * copied through as a literal. Returns 0, or -1 with *out_len zero. */
 int neverc_mime_decode_header(const char *src, size_t src_len,
                               char *out, size_t out_cap, size_t *out_len);
 

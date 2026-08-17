@@ -289,8 +289,17 @@ static void write_attr_text(FILE *f, const neverc_slog_attr_t *a) {
     }
 }
 
+static int slog_reserved_key(const char *key) {
+    /* Built-in fields are written first. Duplicate keys are legal JSON, but
+     * last-key-wins parsers (Go encoding/json, most log pipelines) would let
+     * an attr overwrite time/level/msg. */
+    return strcmp(key, "time") == 0 || strcmp(key, "level") == 0 ||
+           strcmp(key, "msg") == 0;
+}
+
 static int slog_attr_emit(const neverc_slog_attr_t *a) {
-    return a && a->key && a->key[0] && a->kind != NEVERC_SLOG_ATTR_NONE;
+    return a && a->key && a->key[0] && a->kind != NEVERC_SLOG_ATTR_NONE &&
+           !slog_reserved_key(a->key);
 }
 
 static void write_attr_json(FILE *f, const neverc_slog_attr_t *a) {

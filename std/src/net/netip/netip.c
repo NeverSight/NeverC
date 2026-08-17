@@ -391,18 +391,23 @@ int neverc_netip_parse_prefix(const char *s, neverc_netip_prefix_t *out) {
     if (alen >= sizeof(addrbuf)) return -1;
     memcpy(addrbuf, s, alen);
     addrbuf[alen] = '\0';
-    if (neverc_netip_parse_addr(addrbuf, &out->addr) != 0) return -1;
+    neverc_netip_addr_t addr;
+    if (neverc_netip_parse_addr(addrbuf, &addr) != 0) return -1;
     /* Go netip.ParsePrefix rejects IPv6 zones (go.dev/issue/51899). */
-    if (!out->addr.is_v4 && out->addr.zone[0]) return -1;
+    if (!addr.is_v4 && addr.zone[0]) return -1;
 
     const char *bits_str = slash + 1;
     size_t blen = strlen(bits_str);
-    /* strconv.Atoi allows leading zeros; Go ParsePrefix does not. */
+    /* strconv.Atoi allows leading zeros; Go ParsePrefix does not.
+     * Cap length before the int cast so a huge digit string cannot
+     * truncate to a small prefix (CIDR overflow). */
+    if (blen == 0 || blen > 5) return -1;
     if (blen > 1 && (bits_str[0] < '1' || bits_str[0] > '9')) return -1;
     unsigned bits;
     if (parse_decimal(bits_str, (int)blen, &bits) != 0) return -1;
-    int maxbits = out->addr.is_v4 ? 32 : 128;
+    int maxbits = addr.is_v4 ? 32 : 128;
     if ((int)bits > maxbits) return -1;
+    out->addr = addr;
     out->bits = (uint8_t)bits;
     out->valid = 1;
     return 0;

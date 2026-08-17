@@ -280,10 +280,10 @@ STD_TEST(sort, "src/sort/sort.c")
 // Differential fuzz over the shared sort + substring-search engines (catches
 // structural regressions like the Timsort merge-invariant overflow).
 STD_TEST(sortsearch_fuzz, "src/sort/sort.c", "src/bytes/bytes.c")
-STD_TEST(rand, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/math/frexp.c", "src/math/ldexp.c", "src/math/floor.c", "src/math/modf.c", "src/math/trunc.c", "src/math/sqrt.c")
-STD_TEST(rand_ubsan, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/math/frexp.c", "src/math/ldexp.c", "src/math/floor.c", "src/math/modf.c", "src/math/trunc.c", "src/math/sqrt.c")
+STD_TEST(rand, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/math/frexp.c", "src/math/ldexp.c", "src/math/floor.c", "src/math/modf.c", "src/math/trunc.c", "src/math/sqrt.c", "src/math/nan.c", "src/math/inf.c", "src/math/isinf.c")
+STD_TEST(rand_ubsan, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/math/frexp.c", "src/math/ldexp.c", "src/math/floor.c", "src/math/modf.c", "src/math/trunc.c", "src/math/sqrt.c", "src/math/nan.c", "src/math/inf.c", "src/math/isinf.c")
 #ifndef _WIN32
-STD_TEST(rand_concurrency, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/math/frexp.c", "src/math/ldexp.c", "src/math/floor.c", "src/math/modf.c", "src/math/trunc.c", "src/math/sqrt.c")
+STD_TEST(rand_concurrency, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/math/frexp.c", "src/math/ldexp.c", "src/math/floor.c", "src/math/modf.c", "src/math/trunc.c", "src/math/sqrt.c", "src/math/nan.c", "src/math/inf.c", "src/math/isinf.c")
 #endif
 STD_TEST(bits, "src/math/bits/bits.c")
 STD_TEST(cmplx, "src/math/cmplx/cmplx.c", "src/math/abs.c", "src/math/acos.c", "src/math/acosh.c", "src/math/asin.c", "src/math/asinh.c", "src/math/atan.c", "src/math/atan2.c", "src/math/atanh.c", "src/math/cbrt.c", "src/math/ceil.c", "src/math/copysign.c", "src/math/cos.c", "src/math/cosh.c", "src/math/dim.c", "src/math/erf.c", "src/math/erfc.c", "src/math/erfcinv.c", "src/math/erfinv.c", "src/math/exp.c", "src/math/exp2.c", "src/math/expm1.c", "src/math/float32bits.c", "src/math/float64bits.c", "src/math/floor.c", "src/math/fma.c", "src/math/fmod.c", "src/math/frexp.c", "src/math/gamma.c", "src/math/hypot.c", "src/math/ilogb.c", "src/math/inf.c", "src/math/isinf.c", "src/math/isnan.c", "src/math/j0.c", "src/math/j1.c", "src/math/jn.c", "src/math/ldexp.c", "src/math/lgamma.c", "src/math/log.c", "src/math/log10.c", "src/math/log1p.c", "src/math/log2.c", "src/math/logb.c", "src/math/max.c", "src/math/min.c", "src/math/modf.c", "src/math/nan.c", "src/math/nextafter.c", "src/math/nextafter32.c", "src/math/pow.c", "src/math/pow10.c", "src/math/remainder.c", "src/math/round.c", "src/math/roundtoeven.c", "src/math/signbit.c", "src/math/sin.c", "src/math/sincos.c", "src/math/sinh.c", "src/math/sqrt.c", "src/math/tan.c", "src/math/tanh.c", "src/math/trunc.c")
@@ -345,7 +345,7 @@ STD_TEST(maphash, "src/hash/maphash/maphash.c")
 // ===== Crypto =====
 STD_TEST(sha256, "src/crypto/sha256/sha256.c")
 STD_TEST(sha1, "src/crypto/sha1/sha1.c")
-STD_TEST(sha512, "src/crypto/sha512/sha512.c")
+STD_TEST(sha512, "src/crypto/sha512/sha512.c", "src/crypto/sha512_224/sha512_224.c", "src/crypto/sha512_256/sha512_256.c", "src/crypto/sha256/sha256.c")
 STD_TEST(sha384, "src/crypto/sha384/sha384.c", "src/crypto/sha512/sha512.c")
 STD_TEST(sha224, "src/crypto/sha224/sha224.c", "src/crypto/sha256/sha256.c")
 STD_TEST(sha3, "src/crypto/sha3/sha3.c")
@@ -357,8 +357,8 @@ STD_TEST(rc4, "src/crypto/rc4/rc4.c")
 STD_TEST(chacha20, "src/crypto/chacha20/chacha20.c")
 STD_TEST(poly1305, "src/crypto/poly1305/poly1305.c", "src/crypto/subtle/subtle.c")
 STD_TEST(chacha20poly1305, "src/crypto/chacha20poly1305/chacha20poly1305.c", "src/crypto/chacha20/chacha20.c", "src/crypto/poly1305/poly1305.c", "src/crypto/subtle/subtle.c")
-STD_TEST(gcm, "src/crypto/gcm/gcm.c", "src/crypto/aes/aes.c")
-STD_TEST(cipher, "src/crypto/cipher/cipher.c", "src/crypto/aes/aes.c")
+STD_TEST(gcm, "src/crypto/gcm/gcm.c", "src/crypto/aes/aes.c", "src/crypto/subtle/subtle.c")
+STD_TEST(cipher, "src/crypto/cipher/cipher.c", "src/crypto/aes/aes.c", "src/crypto/subtle/subtle.c")
 STD_TEST(hmac, "src/crypto/hmac/hmac.c", "src/crypto/sha256/sha256.c", "src/crypto/sha512/sha512.c", "src/crypto/sha1/sha1.c", "src/crypto/md5/md5.c", "src/crypto/subtle/subtle.c")
 STD_TEST(subtle, "src/crypto/subtle/subtle.c")
 STD_TEST(hkdf, "src/crypto/hkdf/hkdf.c", "src/crypto/hmac/hmac.c", "src/crypto/sha256/sha256.c", "src/crypto/sha512/sha512.c", "src/crypto/sha1/sha1.c", "src/crypto/md5/md5.c", "src/crypto/subtle/subtle.c")
@@ -560,17 +560,17 @@ STD_TEST(zlib, "src/compress/zlib/zlib.c", "src/compress/flate/flate.c", "src/ha
 STD_TEST(bzip2, "src/compress/bzip2/bzip2.c")
 
 // ===== Archive =====
-STD_TEST(tar, "src/archive/tar/tar.c", "src/io/fs/fs.c")
+STD_TEST(tar, "src/archive/tar/tar.c", "src/io/fs/fs.c", "src/unicode/utf8/utf8.c")
 TEST_F(StdLibTest, TarAllocationFailure) {
   auto r = compileAndRunStdTest(
-      "tar_oom", {"src/io/fs/fs.c"}, {"-fno-builtin-std"});
+      "tar_oom", {"src/io/fs/fs.c", "src/unicode/utf8/utf8.c"}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
-STD_TEST(zip, "src/archive/zip/zip.c", "src/hash/crc32/crc32.c", "src/io/fs/fs.c")
+STD_TEST(zip, "src/archive/zip/zip.c", "src/hash/crc32/crc32.c", "src/io/fs/fs.c", "src/unicode/utf8/utf8.c")
 TEST_F(StdLibTest, ZipAllocationFailure) {
   auto r = compileAndRunStdTest(
-      "zip_oom", {"src/hash/crc32/crc32.c", "src/io/fs/fs.c"}, {"-fno-builtin-std"});
+      "zip_oom", {"src/hash/crc32/crc32.c", "src/io/fs/fs.c", "src/unicode/utf8/utf8.c"}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
@@ -664,7 +664,7 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
     "src/math/big/big.c", "src/encoding/base64/base64.c", \
     "src/encoding/pem/pem.c"
 
-STD_TEST(http, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS)
+STD_TEST(http, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
 STD_TEST(http_stage5,
          "src/net/http/http.c", "src/net/http/http_client.c",
          "src/net/http/http2/http2.c",
@@ -704,7 +704,7 @@ STD_TEST(websocket, "src/net/websocket/websocket.c", TCP_DEPS,
     "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", HTTP_TLS_DEPS)
 STD_TEST(url, "src/net/url/url.c", "src/net/netip/netip.c")
 STD_TEST(netip, "src/net/netip/netip.c")
-STD_TEST(mail, "src/net/mail/mail.c")
+STD_TEST(mail, "src/net/mail/mail.c", "src/net/netip/netip.c")
 STD_TEST(textproto, "src/net/textproto/textproto.c")
 TEST_F(StdLibTest, TextprotoAllocationFailure) {
   auto r = compileAndRunStdTest("textproto_oom", {}, {"-fno-builtin-std"});
@@ -763,18 +763,23 @@ STD_TEST(httputil, "src/net/http/httputil/httputil.c",
 
 // ===== Cookie Jar =====
 STD_TEST(cookiejar, "src/net/http/cookiejar/cookiejar.c",
-         "src/net/netip/netip.c")
+         "src/net/url/url.c", "src/net/netip/netip.c")
 #ifndef _WIN32
 TEST_F(StdLibTest, CookieJarConcurrency) {
   auto r = compileAndRunStdTest(
       "cookiejar_concurrency", {"src/net/http/cookiejar/cookiejar.c",
+                                "src/net/url/url.c",
                                 "src/net/netip/netip.c"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 #endif
 TEST_F(StdLibTest, CookieJarAllocationFailure) {
-  auto r = compileAndRunStdTest("cookiejar_oom", {}, {"-fno-builtin-std"});
+  auto r = compileAndRunStdTest(
+      "cookiejar_oom",
+      {"src/net/http/cookiejar/cookiejar.c", "src/net/url/url.c",
+       "src/net/netip/netip.c"},
+      {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
@@ -783,7 +788,7 @@ TEST_F(StdLibTest, CookieJarAllocationFailure) {
 STD_TEST(smtp, "src/net/smtp/smtp.c", "src/encoding/base64/base64.c", TCP_DEPS)
 
 // ===== Net Core (DNS, Pipe, SplitHostPort) =====
-STD_TEST(resolve, "src/net/resolve/resolve.c")
+STD_TEST(resolve, "src/net/resolve/resolve.c", "src/net/netip/netip.c")
 STD_TEST(net_interface, "src/net/interface/interface.c")
 
 // ===== Net Internals (Timer Wheel, Buffer Pool, Poller, Event Loop) =====

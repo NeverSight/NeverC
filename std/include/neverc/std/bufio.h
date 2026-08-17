@@ -24,7 +24,7 @@ extern "C" {
 #define NEVERC_BUFIO_ERR_TOO_LONG (-4)
 
 /* SplitFunc: 1 = token ready, 0 = need more data, -1 = error (*err set).
- * On 1, *token/*token_len name a subslice of data and *advance is consumed.
+ * On 1, *token / *token_len name a subslice of data and *advance is consumed.
  * On 0, *advance may skip a prefix (ScanWords leading space). */
 typedef int (*neverc_bufio_split_func_t)(const uint8_t *data, size_t data_len,
                                          int at_eof,
@@ -55,6 +55,10 @@ typedef struct {
     int                 done;
     int                 err;
     neverc_bufio_split_func_t split;
+    /* In-place NUL for scanner_text(); restored on the next scan. */
+    int                 text_saved;
+    uint8_t             text_saved_byte;
+    size_t              text_saved_at;
 } neverc_bufio_scanner_t;
 
 void neverc_bufio_scanner_init(neverc_bufio_scanner_t *s,

@@ -73,6 +73,11 @@ static int cmp_int_fn(const void *a, const void *b) {
     return (*(const int *)a > *(const int *)b) - (*(const int *)a < *(const int *)b);
 }
 
+static int cmp_u8(const void *a, const void *b) {
+    unsigned char x = *(const unsigned char *)a, y = *(const unsigned char *)b;
+    return (x > y) - (x < y);
+}
+
 static void test_is_sorted(void) {
     printf("[is_sorted]\n");
     int sorted[] = {1, 2, 3, 4, 5};
@@ -291,6 +296,14 @@ static void test_sort_strings(void) {
 
     check_int("search banana", neverc_sort_search_strings(strs, 4, "banana"), 1);
     check_int("search miss", neverc_sort_search_strings(strs, 4, "elderberry"), -1);
+    check_int("search null target", neverc_sort_search_strings(strs, 4, NULL), -1);
+    {
+        const char *with_hole[] = {"apple", NULL, "cherry"};
+        check_int("search null hole fails closed",
+                  neverc_sort_search_strings(with_hole, 3, "cherry"), -1);
+        check_int("search null array",
+                  neverc_sort_search_strings(NULL, 3, "a"), -1);
+    }
 }
 
 static void test_reverse(void) {
@@ -406,6 +419,19 @@ static void test_partition_patterns(void) {
     }
     check_true("stable reverse-key sorted", ok_sorted);
     check_true("stable reverse-key order", ok_stable);
+
+    /* Generic engine, 1-byte elements: exercises heapsort sift-down index
+     * math (2*node+1) on the same path that wraps when n > SIZE_MAX/2. */
+    unsigned char bytes[128];
+    for (int i = 0; i < 128; i++)
+        bytes[i] = (unsigned char)(127 - i);
+    neverc_sort_custom(bytes, 128, 1, cmp_u8);
+    int bytes_ok = 1;
+    for (int i = 1; i < 128; i++)
+        if (bytes[i - 1] > bytes[i]) bytes_ok = 0;
+    check_true("byte reverse-sorted", bytes_ok);
+    check_int("byte min", bytes[0], 0);
+    check_int("byte max", bytes[127], 127);
 }
 
 static void test_slice_aliases(void) {

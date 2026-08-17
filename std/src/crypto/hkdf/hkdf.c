@@ -12,7 +12,29 @@
 #include "neverc/std/crypto/sha256.h"
 #include "neverc/std/crypto/sha512.h"
 #include "neverc/std/_platform.h"
+#include <stdint.h>
 #include <string.h>
+
+/* Inner HMAC absorbs a block-sized ipad first. A wrapping info/IKM length
+ * would make SHA wipe the midstate and finalize to a PRK/OKM that no longer
+ * depends on the input — fail-open key derivation. */
+static int hkdf_sha256_hmac_len_ok(size_t key_len, size_t data_len) {
+    const uint64_t max_bytes = UINT64_MAX / 8;
+    if ((uint64_t)key_len > max_bytes)
+        return 0;
+    return max_bytes >= 64 && (uint64_t)data_len <= max_bytes - 64;
+}
+
+static int hkdf_sha256_expand_info_ok(size_t info_len) {
+    /* Worst expand block: 64-byte ipad + 32-byte T + info + 1-byte counter. */
+    const uint64_t max_bytes = UINT64_MAX / 8;
+    return max_bytes >= 97 && (uint64_t)info_len <= max_bytes - 97;
+}
+
+static int hkdf_sha512_expand_info_ok(size_t info_len) {
+    /* Worst expand block: 128-byte ipad + 64-byte T + info + 1-byte counter. */
+    return (uint64_t)info_len <= UINT64_MAX - 193;
+}
 
 /* ---- HMAC-SHA256 with precomputed key midstates ---- */
 
@@ -123,6 +145,10 @@ int neverc_hkdf_extract_sha256(uint8_t prk[32],
         salt = default_salt;
         salt_len = 32;
     }
+    if (!hkdf_sha256_hmac_len_ok(salt_len, ikm_len)) {
+        neverc_platform_secure_zero(default_salt, sizeof(default_salt));
+        return -1;
+    }
     neverc_hmac_sha256(salt, salt_len, ikm, ikm_len, prk);
     neverc_platform_secure_zero(default_salt, sizeof(default_salt));
     return 0;
@@ -132,7 +158,7 @@ int neverc_hkdf_expand_sha256(uint8_t *okm, size_t okm_len,
                               const uint8_t prk[32],
                               const uint8_t *info, size_t info_len) {
     if (!prk || (!okm && okm_len != 0) || (!info && info_len != 0) ||
-        okm_len > 255 * 32)
+        okm_len > 255 * 32 || !hkdf_sha256_expand_info_ok(info_len))
         return -1;
 
     hmac256_pre pre;
@@ -186,6 +212,10 @@ int neverc_hkdf_extract_sha512(uint8_t prk[64],
         salt = default_salt;
         salt_len = 64;
     }
+    if ((uint64_t)ikm_len > UINT64_MAX - 128) {
+        neverc_platform_secure_zero(default_salt, sizeof(default_salt));
+        return -1;
+    }
     neverc_hmac_sha512(salt, salt_len, ikm, ikm_len, prk);
     neverc_platform_secure_zero(default_salt, sizeof(default_salt));
     return 0;
@@ -195,7 +225,7 @@ int neverc_hkdf_expand_sha512(uint8_t *okm, size_t okm_len,
                               const uint8_t prk[64],
                               const uint8_t *info, size_t info_len) {
     if (!prk || (!okm && okm_len != 0) || (!info && info_len != 0) ||
-        okm_len > 255 * 64)
+        okm_len > 255 * 64 || !hkdf_sha512_expand_info_ok(info_len))
         return -1;
 
     hmac512_pre pre;

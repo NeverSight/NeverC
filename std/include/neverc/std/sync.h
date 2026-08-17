@@ -22,7 +22,8 @@ typedef struct {
 typedef struct { pthread_mutex_t mu; } neverc_mutex_t;
 #endif
 
-void neverc_sync_mutex_init(neverc_mutex_t *m);
+/* Returns 0 on success, -1 if the mutex cannot be created. */
+int  neverc_sync_mutex_init(neverc_mutex_t *m);
 void neverc_sync_mutex_destroy(neverc_mutex_t *m);
 void neverc_sync_mutex_lock(neverc_mutex_t *m);
 /* Unlocking a mutex that is not held by the caller is a no-op. */
@@ -41,7 +42,8 @@ typedef struct { SRWLOCK rw; } neverc_rwmutex_t;
 typedef struct { pthread_rwlock_t rw; } neverc_rwmutex_t;
 #endif
 
-void neverc_sync_rwmutex_init(neverc_rwmutex_t *rw);
+/* Returns 0 on success, -1 if the rwmutex cannot be created. */
+int  neverc_sync_rwmutex_init(neverc_rwmutex_t *rw);
 void neverc_sync_rwmutex_destroy(neverc_rwmutex_t *rw);
 void neverc_sync_rwmutex_rlock(neverc_rwmutex_t *rw);
 int  neverc_sync_rwmutex_tryrlock(neverc_rwmutex_t *rw);
@@ -75,7 +77,8 @@ typedef struct {
 } neverc_waitgroup_t;
 #endif
 
-void neverc_sync_waitgroup_init(neverc_waitgroup_t *wg);
+/* Returns 0 on success, -1 if the waitgroup cannot be created. */
+int  neverc_sync_waitgroup_init(neverc_waitgroup_t *wg);
 void neverc_sync_waitgroup_destroy(neverc_waitgroup_t *wg);
 /* Legacy Add/Done calls leave the counter unchanged on invalid input. */
 void neverc_sync_waitgroup_add(neverc_waitgroup_t *wg, int delta);
@@ -99,7 +102,8 @@ typedef struct { volatile int32_t done; CRITICAL_SECTION mu; } neverc_once_t;
 typedef struct { volatile int32_t done; pthread_mutex_t mu; } neverc_once_t;
 #endif
 
-void neverc_sync_once_init(neverc_once_t *o);
+/* Returns 0 on success, -1 if the once cannot be created. */
+int  neverc_sync_once_init(neverc_once_t *o);
 void neverc_sync_once_destroy(neverc_once_t *o);
 void neverc_sync_once_do(neverc_once_t *o, void (*f)(void));
 
@@ -113,7 +117,8 @@ typedef struct { CONDITION_VARIABLE cond; neverc_mutex_t *m; } neverc_cond_t;
 typedef struct { pthread_cond_t cond; pthread_mutex_t *mu; } neverc_cond_t;
 #endif
 
-void neverc_sync_cond_init(neverc_cond_t *c, neverc_mutex_t *m);
+/* Returns 0 on success, -1 if the cond cannot be created. */
+int  neverc_sync_cond_init(neverc_cond_t *c, neverc_mutex_t *m);
 void neverc_sync_cond_destroy(neverc_cond_t *c);
 void neverc_sync_cond_wait(neverc_cond_t *c);
 void neverc_sync_cond_signal(neverc_cond_t *c);
@@ -144,7 +149,8 @@ typedef struct neverc_sync_map neverc_sync_map_t;
 
 neverc_sync_map_t *neverc_sync_map_new(void);
 void   neverc_sync_map_free(neverc_sync_map_t *m);
-void   neverc_sync_map_store(neverc_sync_map_t *m, const char *key, void *value);
+/* Returns 0 on success, -1 if the key cannot be stored (OOM / invalid). */
+int    neverc_sync_map_store(neverc_sync_map_t *m, const char *key, void *value);
 void  *neverc_sync_map_load(neverc_sync_map_t *m, const char *key, int *ok);
 void  *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void *value, int *loaded);
 void  *neverc_sync_map_load_and_delete(neverc_sync_map_t *m, const char *key, int *loaded);

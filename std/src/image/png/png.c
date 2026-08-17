@@ -180,13 +180,13 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
                 png_decode_fail(img, idat_buf, NULL);
                 return -1;
             }
-            if (img->width > SIZE_MAX / img->channels) {
+            if ((size_t)img->width > SIZE_MAX / (size_t)img->channels) {
                 png_decode_fail(img, idat_buf, NULL);
                 return -1;
             }
             img->stride = (size_t)img->width * img->channels;
             if (img->stride > SIZE_MAX - 1U ||
-                img->height > SIZE_MAX / (img->stride + 1U)) {
+                (size_t)img->height > SIZE_MAX / (img->stride + 1U)) {
                 png_decode_fail(img, idat_buf, NULL);
                 return -1;
             }
@@ -282,8 +282,9 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
 
     /* Skip zlib header (2 bytes) and checksum (4 bytes at end). */
     if (img->stride > SIZE_MAX - 1U ||
-        img->height > SIZE_MAX / (img->stride + 1U) ||
-        (img->stride != 0 && img->height > SIZE_MAX / img->stride)) {
+        (size_t)img->height > SIZE_MAX / (img->stride + 1U) ||
+        (img->stride != 0 &&
+         (size_t)img->height > SIZE_MAX / img->stride)) {
         png_decode_fail(img, idat_buf, NULL);
         return -1;
     }
@@ -412,16 +413,17 @@ int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t 
         img->channels != (uint8_t)expected_channels ||
         (uint64_t)img->width * (uint64_t)img->height > PNG_MAX_PIXELS)
         return -1;
-    if (img->width > SIZE_MAX / img->channels)
+    if ((size_t)img->width > SIZE_MAX / (size_t)img->channels)
         return -1;
 
     size_t row_bytes = (size_t)img->width * img->channels;
     if (img->stride < row_bytes ||
         (img->height > 1 &&
          img->stride > (SIZE_MAX - row_bytes) / (img->height - 1)) ||
-        (img->stride != 0 && img->height > SIZE_MAX / img->stride) ||
+        (img->stride != 0 &&
+         (size_t)img->height > SIZE_MAX / img->stride) ||
         row_bytes == SIZE_MAX ||
-        img->height > SIZE_MAX / (row_bytes + 1U))
+        (size_t)img->height > SIZE_MAX / (row_bytes + 1U))
         return -1;
 
     size_t raw_size = (row_bytes + 1U) * img->height;
@@ -533,7 +535,7 @@ static int png_pixel_offset(const neverc_png_image_t *img, uint32_t x, uint32_t 
     if (!img || !img->pixels || img->channels == 0 ||
         x >= img->width || y >= img->height)
         return -1;
-    if (x > SIZE_MAX / img->channels)
+    if ((size_t)x > SIZE_MAX / (size_t)img->channels)
         return -1;
     size_t xoff = (size_t)x * img->channels;
     if (img->stride == 0) {
@@ -541,7 +543,7 @@ static int png_pixel_offset(const neverc_png_image_t *img, uint32_t x, uint32_t 
         *out_off = xoff;
         return 0;
     }
-    if (y > (SIZE_MAX - xoff) / img->stride)
+    if ((size_t)y > (SIZE_MAX - xoff) / img->stride)
         return -1;
     *out_off = (size_t)y * img->stride + xoff;
     return 0;

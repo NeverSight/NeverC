@@ -80,9 +80,9 @@ static int exec_ascii_ieq(const char *a, const char *b) {
 }
 
 static int exec_is_windows_batch_name(const char *name) {
-    const char *base, *dot, *p, *slash;
-    char trimmed[16];
-    size_t n;
+    const char *base, *p, *slash;
+    size_t n, i;
+    char ext[8];
     if (!name || name[0] == '\0') return 0;
     slash = strrchr(name, '/');
     p = strrchr(name, '\\');
@@ -90,22 +90,23 @@ static int exec_is_windows_batch_name(const char *name) {
     base = slash ? slash + 1 : name;
     n = strlen(base);
     while (n > 0 && (base[n - 1] == ' ' || base[n - 1] == '.')) n--;
-    if (n >= sizeof(trimmed)) n = sizeof(trimmed) - 1;
-    memcpy(trimmed, base, n);
-    trimmed[n] = '\0';
-    dot = strrchr(trimmed, '.');
-    if (!dot || dot == trimmed) return 0;
-    return exec_ascii_ieq(dot, ".bat") || exec_ascii_ieq(dot, ".cmd");
+    /* Do not prefix-truncate: "neverc_long_name.bat" must still match. */
+    if (n < 5) return 0;
+    i = n;
+    while (i > 0 && base[i - 1] != '.') i--;
+    if (i <= 1) return 0;
+    if (n - i + 1 >= sizeof(ext)) return 0;
+    ext[0] = '.';
+    memcpy(ext + 1, base + i, n - i);
+    ext[n - i + 1] = '\0';
+    return exec_ascii_ieq(ext, ".bat") || exec_ascii_ieq(ext, ".cmd");
 }
 
 /* BatBadBut: CreateProcess of .bat/.cmd invokes cmd.exe, whose metacharacters
  * are not covered by CommandLineToArgvW quoting. Reject unsafe extra args. */
-static int exec_batch_args_unsafe(const neverc_exec_cmd_t *cmd) {
+static int exec_batch_args_have_metachars(const neverc_exec_cmd_t *cmd) {
     int i;
-    if (!cmd || !cmd->name) return 0;
-    if (!exec_is_windows_batch_name(cmd->name) &&
-        !(cmd->argv && cmd->argv[0] && exec_is_windows_batch_name(cmd->argv[0])))
-        return 0;
+    if (!cmd) return 1;
     for (i = 1; i < cmd->argc; i++) {
         const char *a = cmd->argv[i];
         if (!a) return 1;
@@ -116,6 +117,14 @@ static int exec_batch_args_unsafe(const neverc_exec_cmd_t *cmd) {
         }
     }
     return 0;
+}
+
+static int exec_batch_args_unsafe(const neverc_exec_cmd_t *cmd) {
+    if (!cmd || !cmd->name) return 0;
+    if (!exec_is_windows_batch_name(cmd->name) &&
+        !(cmd->argv && cmd->argv[0] && exec_is_windows_batch_name(cmd->argv[0])))
+        return 0;
+    return exec_batch_args_have_metachars(cmd);
 }
 
 static const char *exec_env_path(char **env, int env_count) {
@@ -376,11 +385,77 @@ static char *exec_windows_cmdline(const neverc_exec_cmd_t *cmd) {
     return cmdline;
 }
 
+static int exec_win_is_file(const char *path) {
+    DWORD attr = GetFileAttributesA(path);
+    return attr != INVALID_FILE_ATTRIBUTES &&
+           (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+static int exec_win_has_ext(const char *name) {
+    const char *dot = strrchr(name, '.');
+    const char *slash = strrchr(name, '\\');
+    const char *fwd = strrchr(name, '/');
+    if (fwd && (!slash || fwd > slash)) slash = fwd;
+    return dot && dot[1] != '\0' && (!slash || dot > slash);
+}
+
+static int exec_win_skip_path_dir(const char *dir, size_t dlen) {
+    if (dlen == 0) return 1;
+    if (dlen == 1 && dir[0] == '.') return 1;
+    if (dlen == 2 && dir[0] == '.' &&
+        (dir[1] == '.' || dir[1] == '\\' || dir[1] == '/'))
+        return 1;
+    return 0;
+}
+
+/* Search PATH only. SearchPathA(NULL) also tries the application directory
+ * and the current directory — cwd exe hijacking (Go 1.19+ LookPath). */
+static const char *exec_look_in_win_path(const char *file, const char *path_env,
+                                         char *buf, DWORD cap) {
+    const char *p;
+    int has_ext;
+    if (!file || file[0] == '\0' || !buf || cap == 0 || !path_env ||
+        path_env[0] == '\0')
+        return NULL;
+    has_ext = exec_win_has_ext(file);
+    p = path_env;
+    for (;;) {
+        const char *semi = strchr(p, ';');
+        size_t dlen = semi ? (size_t)(semi - p) : strlen(p);
+        const char *dir = p;
+        int n;
+        if (dlen >= 2 && dir[0] == '"' && dir[dlen - 1] == '"') {
+            dir++;
+            dlen -= 2;
+        }
+        if (dlen > 0 && dlen <= (size_t)INT_MAX &&
+            !exec_win_skip_path_dir(dir, dlen)) {
+            int trailing = dir[dlen - 1] == '\\' || dir[dlen - 1] == '/';
+            n = trailing
+                    ? snprintf(buf, cap, "%.*s%s", (int)dlen, dir, file)
+                    : snprintf(buf, cap, "%.*s\\%s", (int)dlen, dir, file);
+            if (n > 0 && (DWORD)n < cap && exec_win_is_file(buf))
+                return buf;
+            if (!has_ext) {
+                n = trailing
+                        ? snprintf(buf, cap, "%.*s%s.exe", (int)dlen, dir, file)
+                        : snprintf(buf, cap, "%.*s\\%s.exe", (int)dlen, dir,
+                                   file);
+                if (n > 0 && (DWORD)n < cap && exec_win_is_file(buf))
+                    return buf;
+            }
+        }
+        if (!semi) break;
+        p = semi + 1;
+    }
+    return NULL;
+}
+
 static const char *exec_windows_resolve_app(const neverc_exec_cmd_t *cmd,
                                             char *buf, DWORD cap) {
     const char *name;
     const char *path_env;
-    DWORD len;
+    char path_storage[32768];
     if (!cmd->name || cmd->name[0] == '\0' || !buf || cap == 0) return NULL;
     name = cmd->name;
     /* Relative Path with a separator is evaluated against Dir (Go Cmd.Start).
@@ -401,8 +476,13 @@ static const char *exec_windows_resolve_app(const neverc_exec_cmd_t *cmd,
      * (Go os/exec LookPath). CreateProcessA(NULL, ...) would also search. */
     if (cmd->env && (!path_env || path_env[0] == '\0'))
         return NULL;
-    len = SearchPathA(path_env, name, ".exe", cap, buf, NULL);
-    return (len > 0 && len < cap) ? buf : NULL;
+    if (!cmd->env) {
+        DWORD n = GetEnvironmentVariableA("PATH", path_storage,
+                                          (DWORD)sizeof(path_storage));
+        if (n == 0 || n >= sizeof(path_storage)) return NULL;
+        path_env = path_storage;
+    }
+    return exec_look_in_win_path(name, path_env, buf, cap);
 }
 
 typedef struct {
@@ -464,6 +544,11 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
     const char *app = exec_windows_resolve_app(cmd, resolved,
                                                (DWORD)sizeof(resolved));
     if (!app) {
+        free(environment);
+        free(cmdline);
+        goto setup_error;
+    }
+    if (exec_is_windows_batch_name(app) && exec_batch_args_have_metachars(cmd)) {
         free(environment);
         free(cmdline);
         goto setup_error;
@@ -595,6 +680,11 @@ int neverc_exec_cmd_start(neverc_exec_cmd_t *cmd) {
         free(cmdline);
         goto setup_error;
     }
+    if (exec_is_windows_batch_name(app) && exec_batch_args_have_metachars(cmd)) {
+        free(environment);
+        free(cmdline);
+        goto setup_error;
+    }
 
     si.dwFlags = STARTF_USESTDHANDLES;
     si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -697,10 +787,22 @@ int neverc_exec_cmd_pid(const neverc_exec_cmd_t *cmd) {
 }
 
 const char *neverc_exec_look_path(const char *file, char *buf, size_t cap) {
+    char path_storage[32768];
+    DWORD n;
     if (!file || file[0] == '\0' || !buf || cap == 0 || cap > MAXDWORD)
         return NULL;
-    DWORD len = SearchPathA(NULL, file, ".exe", (DWORD)cap, buf, NULL);
-    return len > 0 && len < cap ? buf : NULL;
+    if (strchr(file, '\\') || strchr(file, '/') ||
+        (file[0] && file[1] == ':')) {
+        size_t flen;
+        if (!exec_win_is_file(file)) return NULL;
+        flen = strlen(file);
+        if (flen >= cap) return NULL;
+        memcpy(buf, file, flen + 1);
+        return buf;
+    }
+    n = GetEnvironmentVariableA("PATH", path_storage, (DWORD)sizeof(path_storage));
+    if (n == 0 || n >= sizeof(path_storage)) return NULL;
+    return exec_look_in_win_path(file, path_storage, buf, (DWORD)cap);
 }
 
 #else /* POSIX */

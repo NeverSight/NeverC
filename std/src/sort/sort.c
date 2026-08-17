@@ -1,5 +1,6 @@
 #include "neverc/std/sort.h"
 #include "sort_impl.h"
+#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,6 +57,7 @@ int neverc_sort_search_ints(const int *arr, size_t n, int target) {
         if (arr[mid] < target) lo = mid + 1;
         else hi = mid;
     }
+    if (lo > (size_t)INT_MAX) return -1;
     if (lo < n && arr[lo] == target) return (int)lo;
     return -1;
 }
@@ -68,6 +70,7 @@ int neverc_sort_search_doubles(const double *arr, size_t n, double target) {
         if (nci_double_less(arr[mid], target)) lo = mid + 1;
         else hi = mid;
     }
+    if (lo > (size_t)INT_MAX) return -1;
     if (lo < n && !nci_double_less(arr[lo], target) &&
         !nci_double_less(target, arr[lo]))
         return (int)lo;
@@ -101,10 +104,12 @@ int neverc_sort_search_strings(const char **arr, size_t n, const char *target) {
     size_t lo = 0, hi = n;
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
+        if (!arr[mid]) return -1;
         if (strcmp(arr[mid], target) < 0) lo = mid + 1;
         else hi = mid;
     }
-    if (lo < n && strcmp(arr[lo], target) == 0) return (int)lo;
+    if (lo > (size_t)INT_MAX) return -1;
+    if (lo < n && arr[lo] && strcmp(arr[lo], target) == 0) return (int)lo;
     return -1;
 }
 

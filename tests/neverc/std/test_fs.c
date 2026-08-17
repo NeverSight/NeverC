@@ -552,6 +552,30 @@ static void test_walk_dir(void) {
         rmdir(walkdir);
     }
     {
+        /* A directory entry named ".. " is a regular name on POSIX, not
+         * parent. Walk must visit it without leaving the root. */
+        char stay[2048], odd[2048], outside2[2048], secret2[2048];
+        snprintf(stay, sizeof(stay), "%s/neverc_walk_dotspace", tmpdir);
+        snprintf(odd, sizeof(odd), "%s/.. ", stay);
+        snprintf(outside2, sizeof(outside2), "%s/neverc_walk_dotspace_out",
+                 tmpdir);
+        snprintf(secret2, sizeof(secret2), "%s/outside_secret", outside2);
+        mkdir(stay, 0755);
+        mkdir(outside2, 0755);
+        FILE *fo = fopen(odd, "w");
+        if (fo) { fprintf(fo, "o"); fclose(fo); }
+        FILE *fs2 = fopen(secret2, "w");
+        if (fs2) { fprintf(fs2, "s"); fclose(fs2); }
+        walk_saw_secret = 0;
+        rc = neverc_fs_walk_dir(stay, walk_secret_cb, NULL);
+        check("walk_dotspace_ok", rc == 0);
+        check("walk_dotspace_no_escape", walk_saw_secret == 0);
+        unlink(odd);
+        unlink(secret2);
+        rmdir(outside2);
+        rmdir(stay);
+    }
+    {
         char target[2048], linkroot[2048];
         snprintf(walkdir, sizeof(walkdir), "%s/neverc_walk_real", tmpdir);
         snprintf(subdir, sizeof(subdir), "%s/sub", walkdir);

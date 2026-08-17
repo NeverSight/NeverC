@@ -266,6 +266,7 @@ static void test_rfc8032_empty_message(void) {
     unsigned char pub[32], priv[64], sig[64];
     ASSERT_INT_EQ(neverc_ed25519_new_key_from_seed(seed, pub, priv), 0);
     ASSERT_TRUE(memcmp(pub, expected_pub, 32) == 0);
+    ASSERT_INT_EQ(neverc_ed25519_verify(pub, NULL, 0, expected_sig), 0);
     ASSERT_INT_EQ(neverc_ed25519_sign(priv, NULL, 0, sig), 0);
     ASSERT_TRUE(memcmp(sig, expected_sig, 64) == 0);
     ASSERT_INT_EQ(neverc_ed25519_verify(pub, NULL, 0, sig), 0);
@@ -305,6 +306,10 @@ static void test_rfc8032_ctx(void) {
     unsigned char empty = 0, too_long[256];
     ASSERT_INT_EQ(neverc_ed25519_new_key_from_seed(seed, pub, priv), 0);
     ASSERT_TRUE(memcmp(pub, expected_pub, 32) == 0);
+    ASSERT_INT_EQ(
+        neverc_ed25519_verify_ctx(
+            pub, msg, sizeof(msg), ctx_foo, 3, expected_foo),
+        0);
     ASSERT_INT_EQ(
         neverc_ed25519_sign_ctx(priv, msg, sizeof(msg), ctx_foo, 3, sig), 0);
     ASSERT_TRUE(memcmp(sig, expected_foo, 64) == 0);

@@ -102,11 +102,13 @@ static void keccak_f1600(uint64_t a[25]) {
     }
 }
 
-static void sha3_init(neverc_sha3_ctx *ctx, size_t capacity_bits, uint8_t suffix) {
+static void sha3_init(neverc_sha3_ctx *ctx, size_t capacity_bits, uint8_t suffix,
+                      size_t digest_len) {
     if (!ctx) return;
     memset(ctx, 0, sizeof(*ctx));
     ctx->rate = 200 - capacity_bits / 8;
     ctx->suffix = suffix;
+    ctx->digest_len = digest_len;
 }
 
 /* rate==0 is a zeroed/uninitialized ctx: update would spin, pad would
@@ -158,21 +160,26 @@ static void sha3_fail_closed(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) 
 }
 
 static void sha3_pad_and_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
-    if (!ctx || !out)
+    if (!out)
         return;
-    /* SHAKE already padded this sponge; do not emit a SHA-3 digest from it. */
-    if (ctx->squeezed) {
+    if (!ctx) {
+        if (outlen)
+            memset(out, 0, outlen);
+        return;
+    }
+    /* SHAKE sponge, or a SHA-3 ctx initialized for a different digest size. */
+    if (ctx->squeezed || ctx->suffix != 0x06 || ctx->digest_len == 0) {
         sha3_fail_closed(ctx, out, outlen);
         return;
     }
     if (ctx->finalized) {
-        if (outlen <= ctx->digest_len)
+        if (outlen == ctx->digest_len)
             memcpy(out, ctx->digest, outlen);
         else
             memset(out, 0, outlen);
         return;
     }
-    if (!sha3_rate_ok(ctx)) {
+    if (!sha3_rate_ok(ctx) || outlen != ctx->digest_len) {
         sha3_fail_closed(ctx, out, outlen);
         return;
     }
@@ -205,13 +212,20 @@ static void sha3_pad_and_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outl
 }
 
 static void shake_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
-    if (!ctx || (!out && outlen != 0)) return;
+    if (!out && outlen != 0) return;
+    if (!ctx) {
+        if (out && outlen)
+            memset(out, 0, outlen);
+        return;
+    }
     if (ctx->finalized) {
         if (out && outlen)
             memset(out, 0, outlen);
         return;
     }
-    if (ctx->rate == 0 || ctx->rate > sizeof(ctx->buf) ||
+    /* SHA-3 suffix 0x06 must not be squeezed as SHAKE (0x1F). */
+    if (ctx->suffix != 0x1F ||
+        ctx->rate == 0 || ctx->rate > sizeof(ctx->buf) ||
         (ctx->rate % 8) != 0 ||
         (!ctx->squeezed && ctx->buf_len >= ctx->rate) ||
         (ctx->squeezed && ctx->squeeze_pos > ctx->rate)) {
@@ -255,10 +269,12 @@ static void shake_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
 
 /* ===== SHA3-224 ===== */
 
-void neverc_sha3_224_init(neverc_sha3_ctx *ctx)  { sha3_init(ctx, 448, 0x06); }
+void neverc_sha3_224_init(neverc_sha3_ctx *ctx)  { sha3_init(ctx, 448, 0x06, 28); }
 void neverc_sha3_224_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) { sha3_update(ctx, data, len); }
 void neverc_sha3_224_final(neverc_sha3_ctx *ctx, uint8_t digest[28])  { sha3_pad_and_squeeze(ctx, digest, 28); }
 void neverc_sha3_224_sum(const uint8_t *data, size_t len, uint8_t digest[28]) {
+    if (!digest) return;
+    if (len > 0 && !data) { memset(digest, 0, 28); return; }
     neverc_sha3_ctx ctx; neverc_sha3_224_init(&ctx);
     neverc_sha3_224_update(&ctx, data, len);
     neverc_sha3_224_final(&ctx, digest);
@@ -266,10 +282,12 @@ void neverc_sha3_224_sum(const uint8_t *data, size_t len, uint8_t digest[28]) {
 
 /* ===== SHA3-256 ===== */
 
-void neverc_sha3_256_init(neverc_sha3_ctx *ctx)  { sha3_init(ctx, 512, 0x06); }
+void neverc_sha3_256_init(neverc_sha3_ctx *ctx)  { sha3_init(ctx, 512, 0x06, 32); }
 void neverc_sha3_256_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) { sha3_update(ctx, data, len); }
 void neverc_sha3_256_final(neverc_sha3_ctx *ctx, uint8_t digest[32])  { sha3_pad_and_squeeze(ctx, digest, 32); }
 void neverc_sha3_256_sum(const uint8_t *data, size_t len, uint8_t digest[32]) {
+    if (!digest) return;
+    if (len > 0 && !data) { memset(digest, 0, 32); return; }
     neverc_sha3_ctx ctx; neverc_sha3_256_init(&ctx);
     neverc_sha3_256_update(&ctx, data, len);
     neverc_sha3_256_final(&ctx, digest);
@@ -277,10 +295,12 @@ void neverc_sha3_256_sum(const uint8_t *data, size_t len, uint8_t digest[32]) {
 
 /* ===== SHA3-384 ===== */
 
-void neverc_sha3_384_init(neverc_sha3_ctx *ctx)  { sha3_init(ctx, 768, 0x06); }
+void neverc_sha3_384_init(neverc_sha3_ctx *ctx)  { sha3_init(ctx, 768, 0x06, 48); }
 void neverc_sha3_384_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) { sha3_update(ctx, data, len); }
 void neverc_sha3_384_final(neverc_sha3_ctx *ctx, uint8_t digest[48])  { sha3_pad_and_squeeze(ctx, digest, 48); }
 void neverc_sha3_384_sum(const uint8_t *data, size_t len, uint8_t digest[48]) {
+    if (!digest) return;
+    if (len > 0 && !data) { memset(digest, 0, 48); return; }
     neverc_sha3_ctx ctx; neverc_sha3_384_init(&ctx);
     neverc_sha3_384_update(&ctx, data, len);
     neverc_sha3_384_final(&ctx, digest);
@@ -288,10 +308,12 @@ void neverc_sha3_384_sum(const uint8_t *data, size_t len, uint8_t digest[48]) {
 
 /* ===== SHA3-512 ===== */
 
-void neverc_sha3_512_init(neverc_sha3_ctx *ctx)  { sha3_init(ctx, 1024, 0x06); }
+void neverc_sha3_512_init(neverc_sha3_ctx *ctx)  { sha3_init(ctx, 1024, 0x06, 64); }
 void neverc_sha3_512_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) { sha3_update(ctx, data, len); }
 void neverc_sha3_512_final(neverc_sha3_ctx *ctx, uint8_t digest[64])  { sha3_pad_and_squeeze(ctx, digest, 64); }
 void neverc_sha3_512_sum(const uint8_t *data, size_t len, uint8_t digest[64]) {
+    if (!digest) return;
+    if (len > 0 && !data) { memset(digest, 0, 64); return; }
     neverc_sha3_ctx ctx; neverc_sha3_512_init(&ctx);
     neverc_sha3_512_update(&ctx, data, len);
     neverc_sha3_512_final(&ctx, digest);
@@ -299,7 +321,7 @@ void neverc_sha3_512_sum(const uint8_t *data, size_t len, uint8_t digest[64]) {
 
 /* ===== SHAKE128 ===== */
 
-void neverc_shake128_init(neverc_sha3_ctx *ctx)   { sha3_init(ctx, 256, 0x1F); }
+void neverc_shake128_init(neverc_sha3_ctx *ctx)   { sha3_init(ctx, 256, 0x1F, 0); }
 void neverc_shake128_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) { sha3_update(ctx, data, len); }
 void neverc_shake128_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
     shake_squeeze(ctx, out, outlen);
@@ -307,7 +329,7 @@ void neverc_shake128_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) 
 
 /* ===== SHAKE256 ===== */
 
-void neverc_shake256_init(neverc_sha3_ctx *ctx)   { sha3_init(ctx, 512, 0x1F); }
+void neverc_shake256_init(neverc_sha3_ctx *ctx)   { sha3_init(ctx, 512, 0x1F, 0); }
 void neverc_shake256_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) { sha3_update(ctx, data, len); }
 void neverc_shake256_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
     shake_squeeze(ctx, out, outlen);

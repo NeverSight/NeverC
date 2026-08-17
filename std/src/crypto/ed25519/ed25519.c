@@ -201,34 +201,61 @@ static void scalar_mult_ed(edpt *r, const unsigned char scalar[32], const edpt *
     edpt_free(&acc); edpt_free(&tmp); edpt_free(&sum);
 }
 
-static void edpt_encode(unsigned char s[32], const edpt *p) {
+/* Little-endian bytes → bigint via 32-bit limbs. Avoids hex/set_string. */
+static void bigint_set_le(neverc_bigint_t *z, const unsigned char *p, size_t n) {
+    neverc_bigint_t acc, limb;
+    neverc_bigint_init(&acc);
+    neverc_bigint_init(&limb);
+    neverc_bigint_set_int64(&acc, 0);
+    if (n > 0) {
+        size_t nlimbs = (n + 3) / 4;
+        for (size_t i = nlimbs; i-- > 0; ) {
+            uint32_t w = 0;
+            for (size_t j = 0; j < 4; j++) {
+                size_t idx = i * 4 + j;
+                if (idx < n)
+                    w |= (uint32_t)p[idx] << (8 * (unsigned)j);
+            }
+            neverc_bigint_lsh(&acc, &acc, 32);
+            neverc_bigint_set_uint64(&limb, w);
+            neverc_bigint_add(&acc, &acc, &limb);
+        }
+    }
+    neverc_bigint_set(z, &acc);
+    neverc_bigint_free(&acc);
+    neverc_bigint_free(&limb);
+}
+
+static int bigint_get_le(const neverc_bigint_t *z, unsigned char *p, size_t n) {
+    memset(p, 0, n);
+    if (!z || z->neg)
+        return -1;
+    if (neverc_bigint_bit_len(z) > (int)n * 8)
+        return -1;
+    if (!z->digits)
+        return 0;
+    for (size_t i = 0; i < z->len && i * 4 < n; i++) {
+        uint32_t w = z->digits[i];
+        for (size_t j = 0; j < 4 && i * 4 + j < n; j++)
+            p[i * 4 + j] = (unsigned char)(w >> (8 * (unsigned)j));
+    }
+    return 0;
+}
+
+static int edpt_encode(unsigned char s[32], const edpt *p) {
     neverc_bigint_t zinv, x, y;
     neverc_bigint_init(&zinv); neverc_bigint_init(&x); neverc_bigint_init(&y);
     finv(&zinv, &p->z);
     fmul(&x, &p->x, &zinv);
     fmul(&y, &p->y, &zinv);
 
-    char hex[128];
-    neverc_bigint_string(&y, 16, hex, sizeof(hex));
-    size_t hlen = strlen(hex);
-    memset(s, 0, 32);
-    for (size_t i = 0; i < hlen && (int)(i/2) < 32; i++) {
-        int d;
-        char c = hex[hlen - 1 - i];
-        if (c >= '0' && c <= '9') d = c - '0';
-        else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
-        else d = c - 'A' + 10;
-        s[i / 2] |= (unsigned char)(d << ((i % 2) * 4));
-    }
-
-    neverc_bigint_t two, rem;
-    neverc_bigint_init(&two); neverc_bigint_init(&rem);
-    neverc_bigint_set_int64(&two, 2);
-    neverc_bigint_mod(&rem, &x, &two);
-    if (!neverc_bigint_is_zero(&rem))
+    int ok = bigint_get_le(&y, s, 32) == 0;
+    if (ok && neverc_bigint_bit(&x, 0))
         s[31] |= 0x80;
-    neverc_bigint_free(&two); neverc_bigint_free(&rem);
+    if (!ok)
+        memset(s, 0, 32);
     neverc_bigint_free(&zinv); neverc_bigint_free(&x); neverc_bigint_free(&y);
+    return ok ? 0 : -1;
 }
 
 static int edpt_encoding_is_canonical(const unsigned char encoded[32]) {
@@ -259,14 +286,7 @@ static int edpt_decode(edpt *r, const unsigned char s[32]) {
     int x_sign = (scopy[31] >> 7) & 1;
     scopy[31] &= 0x7F;
 
-    char hex[128];
-    int pos = 0;
-    for (int i = 31; i >= 0; i--) {
-        hex[pos++] = "0123456789abcdef"[scopy[i] >> 4];
-        hex[pos++] = "0123456789abcdef"[scopy[i] & 0x0F];
-    }
-    hex[pos] = '\0';
-    neverc_bigint_set_string(&r->y, hex, 16);
+    bigint_set_le(&r->y, scopy, 32);
 
     neverc_bigint_t y2, u, v, vinv, x2, x, two, rem;
     neverc_bigint_init(&y2); neverc_bigint_init(&u);
@@ -402,66 +422,49 @@ static void ed_bigint_secure_free(neverc_bigint_t *value) {
     neverc_bigint_free(value);
 }
 
-static void bytes_to_scalar_le(neverc_bigint_t *r, const unsigned char *data, size_t len) {
-    char hex[256];
-    int pos = 0;
-    for (int i = (int)len - 1; i >= 0 && pos < (int)sizeof(hex) - 2; i--) {
-        hex[pos++] = "0123456789abcdef"[data[i] >> 4];
-        hex[pos++] = "0123456789abcdef"[data[i] & 0x0F];
-    }
-    hex[pos] = '\0';
-    neverc_bigint_set_string(r, hex, 16);
-    neverc_platform_secure_zero(hex, sizeof(hex));
-}
-
-static void scalar_to_bytes_le(const neverc_bigint_t *v, unsigned char *out, int len) {
-    char hex[256];
-    neverc_bigint_string(v, 16, hex, sizeof(hex));
-    size_t hlen = strlen(hex);
-    memset(out, 0, (size_t)len);
-    for (size_t i = 0; i < hlen && (int)(i/2) < len; i++) {
-        int d;
-        char c = hex[hlen - 1 - i];
-        if (c >= '0' && c <= '9') d = c - '0';
-        else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
-        else d = c - 'A' + 10;
-        out[i / 2] |= (unsigned char)(d << ((i % 2) * 4));
-    }
-    neverc_platform_secure_zero(hex, sizeof(hex));
-}
-
-static void sc_reduce64(unsigned char out[32], const unsigned char in[64]) {
+/* RFC 8032 5.1.3: interpret 64 little-endian bytes as an integer and
+ * reduce mod L. Do not go through hex/set_string: a 128-digit parse is
+ * the only 512-bit load in this file, and a failed or truncated parse
+ * yields nonce=0 (R = identity). That still verifies against itself
+ * but does not match RFC 8032 signatures. */
+static int sc_reduce64(unsigned char out[32], const unsigned char in[64]) {
     neverc_bigint_t val, r;
     neverc_bigint_init(&val); neverc_bigint_init(&r);
-    bytes_to_scalar_le(&val, in, 64);
+    bigint_set_le(&val, in, 64);
     neverc_bigint_mod(&r, &val, &g_L);
-    scalar_to_bytes_le(&r, out, 32);
+    int ok = bigint_get_le(&r, out, 32) == 0;
+    if (!ok)
+        memset(out, 0, 32);
     ed_bigint_secure_free(&val);
     ed_bigint_secure_free(&r);
+    return ok ? 0 : -1;
 }
 
-static void sc_muladd(unsigned char s[32], const unsigned char a[32],
+static int sc_muladd(unsigned char s[32], const unsigned char a[32],
                        const unsigned char b[32], const unsigned char c[32]) {
     neverc_bigint_t av, bv, cv, prod, result;
     neverc_bigint_init(&av); neverc_bigint_init(&bv);
     neverc_bigint_init(&cv); neverc_bigint_init(&prod);
     neverc_bigint_init(&result);
 
-    bytes_to_scalar_le(&av, a, 32);
-    bytes_to_scalar_le(&bv, b, 32);
-    bytes_to_scalar_le(&cv, c, 32);
+    bigint_set_le(&av, a, 32);
+    bigint_set_le(&bv, b, 32);
+    bigint_set_le(&cv, c, 32);
 
     neverc_bigint_mul(&prod, &av, &bv);
     neverc_bigint_add(&prod, &prod, &cv);
     neverc_bigint_mod(&result, &prod, &g_L);
 
-    scalar_to_bytes_le(&result, s, 32);
+    int ok = bigint_get_le(&result, s, 32) == 0;
+    if (!ok)
+        memset(s, 0, 32);
 
     ed_bigint_secure_free(&av);
     ed_bigint_secure_free(&bv);
     ed_bigint_secure_free(&cv);
     ed_bigint_secure_free(&prod);
     ed_bigint_secure_free(&result);
+    return ok ? 0 : -1;
 }
 
 /* RFC 8032: "SigEd25519 no Ed25519 collisions" || octet(phflag) ||
@@ -499,13 +502,17 @@ int neverc_ed25519_new_key_from_seed(const unsigned char seed[32],
     edpt_init(&B); edpt_init(&A);
     get_basepoint(&B);
     scalar_mult_ed(&A, h, &B);
-    edpt_encode(pub, &A);
-
-    memcpy(priv, seed, 32);
-    memcpy(priv + 32, pub, 32);
+    int result = edpt_encode(pub, &A);
+    if (result == 0) {
+        memcpy(priv, seed, 32);
+        memcpy(priv + 32, pub, 32);
+    } else {
+        memset(pub, 0, 32);
+        memset(priv, 0, 64);
+    }
     edpt_free(&B); edpt_free(&A);
     neverc_platform_secure_zero(h, sizeof(h));
-    return 0;
+    return result;
 }
 
 int neverc_ed25519_generate_key(unsigned char pub[32], unsigned char priv[64]) {
@@ -560,13 +567,21 @@ static int ed25519_sign_ex(const unsigned char priv[64],
     unsigned char nonce_hash[64];
     neverc_sha512_final(&ctx, nonce_hash);
     unsigned char nonce[32];
-    sc_reduce64(nonce, nonce_hash);
+    int result = -1;
+    if (sc_reduce64(nonce, nonce_hash) != 0) {
+        memset(sig, 0, 64);
+        goto sign_cleanup;
+    }
 
     edpt B, R;
     edpt_init(&B); edpt_init(&R);
     get_basepoint(&B);
     scalar_mult_ed(&R, nonce, &B);
-    edpt_encode(sig, &R);
+    if (edpt_encode(sig, &R) != 0) {
+        edpt_free(&B); edpt_free(&R);
+        memset(sig, 0, 64);
+        goto sign_cleanup;
+    }
     edpt_free(&B); edpt_free(&R);
 
     neverc_sha512_init(&ctx);
@@ -578,17 +593,24 @@ static int ed25519_sign_ex(const unsigned char priv[64],
     unsigned char hram[64];
     neverc_sha512_final(&ctx, hram);
     unsigned char hram_reduced[32];
-    sc_reduce64(hram_reduced, hram);
+    if (sc_reduce64(hram_reduced, hram) != 0 ||
+        sc_muladd(sig + 32, hram_reduced, a, nonce) != 0) {
+        memset(sig, 0, 64);
+        neverc_platform_secure_zero(hram, sizeof(hram));
+        neverc_platform_secure_zero(hram_reduced, sizeof(hram_reduced));
+        goto sign_cleanup;
+    }
+    neverc_platform_secure_zero(hram, sizeof(hram));
+    neverc_platform_secure_zero(hram_reduced, sizeof(hram_reduced));
+    result = 0;
 
-    sc_muladd(sig + 32, hram_reduced, a, nonce);
+sign_cleanup:
     neverc_platform_secure_zero(h, sizeof(h));
     neverc_platform_secure_zero(a, sizeof(a));
     neverc_platform_secure_zero(nonce_hash, sizeof(nonce_hash));
     neverc_platform_secure_zero(nonce, sizeof(nonce));
-    neverc_platform_secure_zero(hram, sizeof(hram));
-    neverc_platform_secure_zero(hram_reduced, sizeof(hram_reduced));
     neverc_platform_secure_zero(&ctx, sizeof(ctx));
-    return 0;
+    return result;
 }
 
 int neverc_ed25519_sign(const unsigned char priv[64],
@@ -651,7 +673,10 @@ static int ed25519_verify_ex(const unsigned char pub[32],
     unsigned char hram[64];
     neverc_sha512_final(&ctx, hram);
     unsigned char h_scalar[32];
-    sc_reduce64(h_scalar, hram);
+    if (sc_reduce64(h_scalar, hram) != 0) {
+        edpt_free(&A);
+        return -1;
+    }
 
     edpt B, sB;
     edpt_init(&B); edpt_init(&sB);
@@ -669,7 +694,7 @@ static int ed25519_verify_ex(const unsigned char pub[32],
     edpt_add(&check, &sB, &hA);
 
     unsigned char check_bytes[32];
-    edpt_encode(check_bytes, &check);
+    int encoded = edpt_encode(check_bytes, &check);
 
     int diff = 0;
     for (int i = 0; i < 32; i++)
@@ -677,7 +702,7 @@ static int ed25519_verify_ex(const unsigned char pub[32],
 
     edpt_free(&A); edpt_free(&B); edpt_free(&sB);
     edpt_free(&hA); edpt_free(&check);
-    return diff == 0 ? 0 : -1;
+    return (encoded == 0 && diff == 0) ? 0 : -1;
 }
 
 int neverc_ed25519_verify(const unsigned char pub[32],

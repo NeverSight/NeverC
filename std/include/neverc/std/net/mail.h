@@ -27,14 +27,16 @@ typedef struct {
     size_t                body_len;
 } neverc_mail_message_t;
 
-/* Parse a single email address like "Name <addr>" or "addr". Returns 0 on success. */
+/* Parse a single email address like "Name <addr>" or "addr". Returns 0 on
+ * success. RFC 2047 encoded-words that decode to CTL are rejected. */
 int neverc_mail_parse_address(const char *s, neverc_mail_address_t *out);
 
 /* Parse a comma-separated address list. Returns count, or -1 on error. */
 int neverc_mail_parse_address_list(const char *s,
                                    neverc_mail_address_t *out, int max_out);
 
-/* Format an address to "Name <addr>" or just "addr". Returns length. */
+/* Format an address to "Name <addr>" or just "addr". Returns length.
+ * Rejects names/addresses whose 2047 decoding contains CTL. */
 int neverc_mail_format_address(const neverc_mail_address_t *addr, char *buf, size_t cap);
 
 /* Parse an RFC 5322 message (headers + body). Returns 0 on success. */

@@ -145,6 +145,11 @@ int neverc_syslog_write(neverc_syslog_t *log,
     else if (priority <= NEVERC_SYSLOG_WARNING) etype = EVENTLOG_WARNING_TYPE;
     char msgbuf[SYSLOG_MSG_MAX];
     sanitize_msg(msgbuf, sizeof(msgbuf), msg);
+    /* RegisterEventSource without a message-table registration still treats
+     * insertion specs (%1, %n, %%) in the payload. Neutralize them. */
+    for (char *p = msgbuf; *p; p++)
+        if (*p == '%')
+            *p = '_';
     const char *msgs[1] = { msgbuf };
     if (!ReportEventA(log->event_log, etype, 0, 0, NULL, 1, 0, msgs, NULL))
         return -1;

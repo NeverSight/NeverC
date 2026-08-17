@@ -164,6 +164,12 @@ static void test_format_and_injection(void) {
     ASSERT_EQ(neverc_syslog_format(log, NEVERC_SYSLOG_INFO, "x",
                                    buf, 4), -1);
 
+    /* Message is an operand of %s, not a format string. A leftover
+     * syslog(pri, msg) / "%s: [%s] %s" registration would expand this. */
+    ASSERT_EQ(neverc_syslog_format(log, NEVERC_SYSLOG_INFO, "100% done %s %n",
+                                   buf, sizeof(buf)), 0);
+    ASSERT_TRUE(strstr(buf, "100% done %s %n") != NULL);
+
     ASSERT_EQ(neverc_syslog_format(NULL, NEVERC_SYSLOG_INFO, "x",
                                    buf, sizeof(buf)), -1);
     ASSERT_EQ(neverc_syslog_format(log, NEVERC_SYSLOG_INFO, "x",

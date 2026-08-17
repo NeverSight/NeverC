@@ -1,4 +1,5 @@
 #include "neverc/std/mime/multipart.h"
+#include "neverc/std/mime/rfc2047_safe.h"
 #include "neverc/std/_platform.h"
 #include "../../bytes/strsearch.h"
 #include <limits.h>
@@ -177,6 +178,8 @@ static int parse_headers(const unsigned char *data, size_t len,
                 prev->value[cur] = ' ';
                 memcpy(prev->value + cur + 1, data + vstart, add);
                 prev->value[cur + 1 + add] = '\0';
+                if (!nci_rfc2047_header_safe(prev->value, cur + 1 + add))
+                    return -1;
             }
             i = line_feed + 1;
             continue;
@@ -208,6 +211,8 @@ static int parse_headers(const unsigned char *data, size_t len,
             return -1;
         memcpy(h->value, data + vstart, vlen);
         h->value[vlen] = '\0';
+        if (!nci_rfc2047_header_safe(h->value, vlen))
+            return -1;
         part->header_count++;
         i = line_feed + 1;
     }
@@ -347,7 +352,8 @@ int neverc_multipart_write(const neverc_multipart_part_t *parts, int count,
             if (!memchr(key, '\0', sizeof(part->headers[h].key)) ||
                 !memchr(value, '\0', sizeof(part->headers[h].value)) ||
                 !multipart_header_name_valid(key) || strchr(value, '\r') ||
-                strchr(value, '\n'))
+                strchr(value, '\n') ||
+                !nci_rfc2047_header_safe(value, strlen(value)))
                 return -1;
             n = snprintf((char*)out + pos, out_cap - pos, "%s: %s\r\n",
                          key, value);

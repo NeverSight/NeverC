@@ -1102,6 +1102,80 @@ static void test_reject_masked_server_frame(void) {
     neverc_tcp_listener_close(ln);
 }
 
+static void test_reject_server_extensions(void) {
+    printf("[reject_server_extensions]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("extensions listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    pid_t pid = fork();
+    if (pid == 0) {
+        char url[128];
+        snprintf(url, sizeof(url), "ws://127.0.0.1:%u/ws",
+                 (unsigned)laddr.port);
+        neverc_ws_conn_t *ws = neverc_ws_dial(url, NULL, &err);
+        if (ws) {
+            neverc_ws_conn_free(ws);
+            _exit(1);
+        }
+        _exit(0);
+    }
+
+    neverc_tcp_conn_t *conn = neverc_tcp_accept(ln, &err);
+    check_not_null("extensions accept", conn);
+    if (conn) {
+        neverc_tcp_set_timeout(conn, 5000);
+        char request[4096];
+        int total = 0;
+        while (total < (int)sizeof(request) - 1) {
+            int n = neverc_tcp_read(conn, request + total,
+                                    sizeof(request) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+            request[total] = '\0';
+            if (strstr(request, "\r\n\r\n")) break;
+        }
+        const char *key_line = strstr(request, "Sec-WebSocket-Key: ");
+        char accept[64];
+        int have_accept = 0;
+        if (key_line) {
+            const char *key = key_line + 19;
+            if ((size_t)(request + total - key) >= 24) {
+                char key_buf[25];
+                memcpy(key_buf, key, 24);
+                key_buf[24] = '\0';
+                have_accept = neverc_ws_compute_accept(
+                    key_buf, accept, sizeof(accept)) == 0;
+            }
+        }
+        check_int("extensions client key", have_accept, 1);
+        if (have_accept) {
+            char response[512];
+            int n = snprintf(
+                response, sizeof(response),
+                "HTTP/1.1 101 Switching Protocols\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                "Sec-WebSocket-Accept: %s\r\n"
+                "Sec-WebSocket-Extensions: permessage-deflate\r\n"
+                "\r\n",
+                accept);
+            if (n > 0)
+                neverc_tcp_write(conn, response, (size_t)n);
+        }
+        neverc_tcp_close(conn);
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    check_int("client rejected server extensions",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+    neverc_tcp_listener_close(ln);
+}
+
 static int ws_client_send_masked_text(neverc_tcp_conn_t *conn, const char *msg) {
     size_t len = strlen(msg);
     if (len > 125) return -1;
@@ -1509,6 +1583,7 @@ int main(void) {
 #ifndef _WIN32
     test_client_dial_and_masking();
     test_reject_masked_server_frame();
+    test_reject_server_extensions();
     test_handshake_and_echo();
     test_ping_pong();
     test_http_ws_upgrade();

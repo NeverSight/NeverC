@@ -1,9 +1,20 @@
 #include "neverc/std/math/big.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
+/* Set while a public operation must fail closed on OOM (SetString). Scratch
+ * fallbacks (Karatsuba→schoolbook) do not use ensure_cap, so they cannot
+ * false-trigger this. */
+static int *bigint_oom;
+
+static void note_oom(void) {
+    if (bigint_oom) *bigint_oom = 1;
+}
+
 static int ensure_cap(neverc_bigint_t *z, size_t need) {
-    if (!z || need > SIZE_MAX / sizeof(uint32_t)) return 0;
+    if (!z) return 0;
+    if (need > SIZE_MAX / sizeof(uint32_t)) { note_oom(); return 0; }
     if (need <= z->cap) return 1;
     size_t maxcap = SIZE_MAX / sizeof(uint32_t);
     size_t newcap = z->cap ? z->cap * 2 : 4;
@@ -13,7 +24,7 @@ static int ensure_cap(neverc_bigint_t *z, size_t need) {
         newcap *= 2;
     }
     uint32_t *nd = (uint32_t *)realloc(z->digits, newcap * sizeof(uint32_t));
-    if (!nd) return 0;
+    if (!nd) { note_oom(); return 0; }
     memset(nd + z->cap, 0, (newcap - z->cap) * sizeof(uint32_t));
     z->digits = nd;
     z->cap = newcap;
@@ -238,12 +249,18 @@ int neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base) {
     }
 
     if (k <= 0) return -1;
-    if (!ensure_cap(z, 1)) return -1;
-    z->len = 0;
-    z->neg = 0;
+
+    /* Parse into a temp. Zeroing z first, then returning 0 after a failed
+     * mul/add, reported success with a clobbered or truncated value. */
+    int oom = 0;
+    bigint_oom = &oom;
+
+    neverc_bigint_t tmp;
+    neverc_bigint_init(&tmp);
     size_t m = (ndigits - 1U) / (size_t)k + 1U; /* word-chunks */
 
-    if (m >= (size_t)NCI_BASECONV_THRESHOLD) {
+    if (m >= (size_t)NCI_BASECONV_THRESHOLD &&
+        m <= SIZE_MAX / sizeof(uint32_t)) {
         uint32_t *limb = (uint32_t *)malloc(m * sizeof(uint32_t));
         if (limb) {
             size_t lead = ndigits % (size_t)k;          /* digits in the top limb */
@@ -265,18 +282,22 @@ int neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base) {
             neverc_bigint_init(&pw2[0]);
             neverc_bigint_set_uint64(&pw2[0], chunk_base);
             np = 1;
-            while (np < 63 && ((size_t)1 << np) < m) {
+            while (!oom && np < 63 && ((size_t)1 << np) < m) {
                 neverc_bigint_init(&pw2[np]);
                 neverc_bigint_mul(&pw2[np], &pw2[np - 1], &pw2[np - 1]);
                 np++;
             }
 
-            nat_chunks_combine(z, limb, 0, m, pw2);
+            if (!oom)
+                nat_chunks_combine(&tmp, limb, 0, m, pw2);
 
             for (int i = 0; i < np; i++) neverc_bigint_free(&pw2[i]);
             free(limb);
-            z->neg = neg && z->len > 0;
-            return 0;
+            if (!oom)
+                goto commit;
+            neverc_bigint_free(&tmp);
+            bigint_oom = NULL;
+            return -1;
         }
         /* malloc failed: fall through to the linear-space simple fold */
     }
@@ -289,34 +310,50 @@ int neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base) {
 
     uint32_t acc = 0, pmul = 1;
     int cnt = 0;
-    for (; *p; p++) {
+    for (; *p && !oom; p++) {
         int d;
         if (*p >= '0' && *p <= '9') d = *p - '0';
         else if (*p >= 'a' && *p <= 'z') d = *p - 'a' + 10;
         else if (*p >= 'A' && *p <= 'Z') d = *p - 'A' + 10;
         else if (*p == '_') continue;
-        else { neverc_bigint_free(&bk); neverc_bigint_free(&digit); return -1; }
-        if (d >= base) { neverc_bigint_free(&bk); neverc_bigint_free(&digit); return -1; }
+        else {
+            neverc_bigint_free(&bk); neverc_bigint_free(&digit);
+            neverc_bigint_free(&tmp); bigint_oom = NULL; return -1;
+        }
+        if (d >= base) {
+            neverc_bigint_free(&bk); neverc_bigint_free(&digit);
+            neverc_bigint_free(&tmp); bigint_oom = NULL; return -1;
+        }
 
         acc = acc * (uint32_t)base + (uint32_t)d;
         pmul *= (uint32_t)base;
         if (++cnt == k) {
-            neverc_bigint_mul(z, z, &bk);
+            neverc_bigint_mul(&tmp, &tmp, &bk);
             neverc_bigint_set_uint64(&digit, acc);
-            neverc_bigint_add(z, z, &digit);
+            neverc_bigint_add(&tmp, &tmp, &digit);
             acc = 0; pmul = 1; cnt = 0;
         }
     }
-    if (cnt > 0) {                       /* fold the final partial chunk */
+    if (!oom && cnt > 0) {               /* fold the final partial chunk */
         neverc_bigint_set_uint64(&digit, pmul);
-        neverc_bigint_mul(z, z, &digit);
+        neverc_bigint_mul(&tmp, &tmp, &digit);
         neverc_bigint_set_uint64(&digit, acc);
-        neverc_bigint_add(z, z, &digit);
+        neverc_bigint_add(&tmp, &tmp, &digit);
     }
 
-    z->neg = neg && z->len > 0;
     neverc_bigint_free(&bk);
     neverc_bigint_free(&digit);
+    if (oom) {
+        neverc_bigint_free(&tmp);
+        bigint_oom = NULL;
+        return -1;
+    }
+
+commit:
+    bigint_oom = NULL;
+    tmp.neg = neg && tmp.len > 0;
+    neverc_bigint_free(z);
+    *z = tmp;
     return 0;
 }
 
@@ -356,9 +393,17 @@ int neverc_bigint_is_zero(const neverc_bigint_t *x) {
 
 int neverc_bigint_bit_len(const neverc_bigint_t *x) {
     if (x->len == 0) return 0;
+    /* (len-1)*32 as int overflows for a few-hundred-MB integer (UB), then
+     * string() under-allocates and writes off the end of tmp. */
+    if (x->len - 1 > (size_t)INT_MAX / 32)
+        return INT_MAX;
     uint32_t top = x->digits[x->len - 1];
     int bits = (int)(x->len - 1) * 32;
-    while (top) { bits++; top >>= 1; }
+    while (top) {
+        if (bits == INT_MAX) return INT_MAX;
+        bits++;
+        top >>= 1;
+    }
     return bits;
 }
 
@@ -506,9 +551,17 @@ static void nat_mul(uint32_t *rd, const uint32_t *x, size_t xn,
     const uint32_t *xl = x, *xh = x + k; size_t xln = k, xhn = xn - k;
     const uint32_t *yl = y, *yh = y + k; size_t yln = k, yhn = yn - k;
 
+    if (xln > SIZE_MAX - yln || xhn > SIZE_MAX - yhn) {
+        nat_mul_basic(rd, x, xn, y, yn);
+        return;
+    }
     size_t z0n = xln + yln, z2n = xhn + yhn;
     size_t sxn = (xhn > xln ? xhn : xln) + 1;
     size_t syn = (yhn > yln ? yhn : yln) + 1;
+    if (sxn == 0 || syn == 0 || sxn > SIZE_MAX - syn) {
+        nat_mul_basic(rd, x, xn, y, yn);
+        return;
+    }
     size_t z1n = sxn + syn;
 
     uint32_t *z0 = (uint32_t *)calloc(z0n, 4);
@@ -598,8 +651,16 @@ static void nat_sqr(uint32_t *rd, const uint32_t *x, size_t n) {
     const uint32_t *xl = x, *xh = x + k;
     size_t xln = k, xhn = n - k;
 
+    if (xln > SIZE_MAX / 2 || xhn > SIZE_MAX / 2) {
+        nat_sqr_basic(rd, x, n);
+        return;
+    }
     size_t z0n = 2 * xln, z2n = 2 * xhn;
     size_t sn = (xhn > xln ? xhn : xln) + 1;
+    if (sn == 0 || sn > SIZE_MAX / 2) {
+        nat_sqr_basic(rd, x, n);
+        return;
+    }
     size_t z1n = 2 * sn;
 
     uint32_t *z0 = (uint32_t *)calloc(z0n, 4);
@@ -766,7 +827,10 @@ static void nat_toom3(uint32_t *rd, const uint32_t *x, size_t xn,
     /* One zeroed scratch block, carved into the working buffers: a single
      * allocation per node (instead of ~15) keeps Toom-3's constant factor low
      * enough to beat Karatsuba near the crossover. */
-    uint32_t *buf = (uint32_t *)calloc(7 * ek + 8 * pn, 4);
+    uint32_t *buf = NULL;
+    if (ek <= SIZE_MAX / 7 && pn <= SIZE_MAX / 8 &&
+        7 * ek <= SIZE_MAX - 8 * pn)
+        buf = (uint32_t *)calloc(7 * ek + 8 * pn, 4);
     /* Must not call nat_mul: the caller already chose Toom-3, so that
      * re-enters this function and recurses until the stack dies. */
     if (!buf) { nat_mul_basic(rd, x, xn, y, yn); return; }
@@ -817,7 +881,10 @@ static void nat_toom3_sqr(uint32_t *rd, const uint32_t *x, size_t n, size_t k) {
     size_t ek = k + 2;
     size_t pn = 2 * k + 4;
 
-    uint32_t *buf = (uint32_t *)calloc(4 * ek + 8 * pn, 4);
+    uint32_t *buf = NULL;
+    if (ek <= SIZE_MAX / 4 && pn <= SIZE_MAX / 8 &&
+        4 * ek <= SIZE_MAX - 8 * pn)
+        buf = (uint32_t *)calloc(4 * ek + 8 * pn, 4);
     /* Must not call nat_sqr: that re-enters Toom-3-sqr on the same n. */
     if (!buf) { nat_sqr_basic(rd, x, n); return; }
     uint32_t *ex1 = buf, *ex2 = ex1 + ek, *exm = ex2 + ek, *tmp = exm + ek;
@@ -896,6 +963,11 @@ static void nat_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
     if (s == 32)
         return;
 
+    if (n > SIZE_MAX / sizeof(uint32_t) ||
+        m > SIZE_MAX - n - 2 ||
+        m + n + 2 > SIZE_MAX / sizeof(uint32_t) ||
+        m > SIZE_MAX / sizeof(uint32_t) - 1)
+        return;
     uint32_t *v  = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t *u  = (uint32_t *)malloc((m + n + 2) * sizeof(uint32_t));
     uint32_t *qd = (uint32_t *)calloc(m + 1, sizeof(uint32_t));
@@ -1011,10 +1083,17 @@ static void bn_block(neverc_bigint_t *out, const neverc_bigint_t *src,
     trim(out);
 }
 
-/* z <<= words * 32 bits (whole-word left shift). */
+/* z <<= words * 32 bits (whole-word left shift).
+ * Do not go through neverc_bigint_lsh: that takes an unsigned bit count, so
+ * words >= 2^27 silently wraps the shift on 32-bit unsigned. */
 static void bn_shl_words(neverc_bigint_t *z, size_t words) {
     if (z->len == 0 || words == 0) return;
-    neverc_bigint_lsh(z, z, (unsigned)(words * 32));
+    if (words > SIZE_MAX - z->len) return;
+    size_t newlen = z->len + words;
+    if (!ensure_cap(z, newlen)) return;
+    memmove(z->digits + words, z->digits, z->len * sizeof(uint32_t));
+    memset(z->digits, 0, words * sizeof(uint32_t));
+    z->len = newlen;
 }
 
 /* q = floor(x / y), r = x mod y for nonnegative magnitudes (y != 0).
@@ -1173,9 +1252,16 @@ static void bz_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
      * so n >= s and n is even (lets the recursion split). */
     size_t q0 = s / (size_t)NCI_BZ_THRESHOLD;
     size_t m = 1;
-    while (m <= q0) m <<= 1;
+    while (m <= q0) {
+        if (m > SIZE_MAX / 2) return; /* next shift would wrap to 0 and spin */
+        m <<= 1;
+    }
+    if (m > 0 && s > SIZE_MAX - (m - 1)) return;
     size_t j = (s + m - 1) / m;
+    if (m > 0 && j > SIZE_MAX / m) return;
     size_t n = j * m;
+    if (n > SIZE_MAX / 32)
+        return;
     size_t n32 = n * 32;
 
     size_t ybits = (size_t)neverc_bigint_bit_len(y);
@@ -1620,6 +1706,11 @@ static int exp_montgomery(neverc_bigint_t *z, const neverc_bigint_t *base,
     else                   w = 1;
     int tbl = 1 << w;
 
+    if (n > SIZE_MAX / sizeof(uint32_t) - 2 ||
+        (n > 0 && (size_t)tbl > SIZE_MAX / n)) {
+        neverc_bigint_free(&R2); neverc_bigint_free(&bmod);
+        return -1;
+    }
     uint32_t *t     = (uint32_t *)malloc((n + 2) * sizeof(uint32_t));
     uint32_t *R2w   = (uint32_t *)calloc(n, sizeof(uint32_t));
     uint32_t *basew = (uint32_t *)calloc(n, sizeof(uint32_t));
@@ -2006,7 +2097,8 @@ int neverc_bigint_string(const neverc_bigint_t *x, int base, char *buf, size_t c
             np++;
         }
 
-        char *dc = (char *)malloc(M * (size_t)k);
+        char *dc = (k > 0 && M <= SIZE_MAX / (size_t)k)
+                   ? (char *)malloc(M * (size_t)k) : NULL;
         if (dc) {
             neverc_bigint_t v2;
             neverc_bigint_init(&v2);
@@ -2037,7 +2129,9 @@ int neverc_bigint_string(const neverc_bigint_t *x, int base, char *buf, size_t c
         /* malloc failed: fall through to the simple single-word loop */
     }
 
-    size_t tmpcap = (size_t)neverc_bigint_bit_len(x) + 2 * (size_t)k + 8;
+    /* Bound by word count, not bit_len(): that API saturates at INT_MAX. */
+    if (x->len > (SIZE_MAX - 2 * (size_t)k - 8) / 32) return -1;
+    size_t tmpcap = x->len * 32 + 2 * (size_t)k + 8;
     char *tmp = (char *)malloc(tmpcap);
     if (!tmp) return -1;
     size_t pos = 0;

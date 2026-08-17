@@ -318,6 +318,43 @@ static void test_once(void) {
     neverc_once_destroy(&g_once);
 }
 
+static void test_init_propagates_failure(void) {
+    printf("[init_propagates_failure]\n");
+    ASSERT_INT_EQ(neverc_mutex_init(NULL), -1);
+    ASSERT_INT_EQ(neverc_rwmutex_init(NULL), -1);
+    ASSERT_INT_EQ(neverc_waitgroup_init(NULL), -1);
+    ASSERT_INT_EQ(neverc_once_init(NULL), -1);
+    ASSERT_INT_EQ(neverc_cond_init(NULL, NULL), -1);
+
+    neverc_mutex_t m;
+    ASSERT_INT_EQ(neverc_mutex_init(&m), 0);
+    neverc_cond_t c;
+    ASSERT_INT_EQ(neverc_cond_init(&c, NULL), -1);
+    ASSERT_INT_EQ(neverc_cond_init(NULL, &m), -1);
+    ASSERT_INT_EQ(neverc_cond_init(&c, &m), 0);
+    neverc_cond_destroy(&c);
+    neverc_mutex_destroy(&m);
+
+    neverc_rwmutex_t rw;
+    ASSERT_INT_EQ(neverc_rwmutex_init(&rw), 0);
+    neverc_rwmutex_destroy(&rw);
+
+    neverc_waitgroup_t wg;
+    ASSERT_INT_EQ(neverc_waitgroup_init(&wg), 0);
+    neverc_waitgroup_destroy(&wg);
+
+    neverc_once_t o;
+    ASSERT_INT_EQ(neverc_once_init(&o), 0);
+    neverc_once_destroy(&o);
+
+    ASSERT_INT_EQ(neverc_sync_map_store(NULL, "k", &m), -1);
+    neverc_sync_map_t *map = neverc_sync_map_new();
+    ASSERT_TRUE(map != NULL);
+    ASSERT_INT_EQ(neverc_sync_map_store(map, NULL, &m), -1);
+    ASSERT_INT_EQ(neverc_sync_map_store(map, "k", &m), 0);
+    neverc_sync_map_free(map);
+}
+
 static void test_once_null_guards(void) {
     printf("[once_null_guards]\n");
     neverc_once_t o;
@@ -880,6 +917,7 @@ int main(void) {
     test_waitgroup_extra_done_does_not_release();
     test_once();
     test_once_null_guards();
+    test_init_propagates_failure();
     test_cond();
     test_pool_basic();
     test_pool_no_new_func();

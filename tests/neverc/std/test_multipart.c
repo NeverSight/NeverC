@@ -562,6 +562,32 @@ static void test_missing_close_and_epilogue(void) {
     ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
               -1);
 
+    neverc_multipart_part_t ew;
+    memset(&ew, 0, sizeof(ew));
+    strcpy(ew.headers[0].key, "X-Name");
+    strcpy(ew.headers[0].value, "=?utf-8?q?=0D=0AXed:_hidden?=");
+    ew.header_count = 1;
+    ASSERT_EQ(neverc_multipart_write(&ew, 1, "b", output, sizeof(output)), -1);
+
+    const char *ew_part =
+        "--b\r\n"
+        "X-Name: =?utf-8?q?=0D=0AXed:_hidden?=\r\n"
+        "\r\n"
+        "hi\r\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)ew_part, strlen(ew_part), "b",
+                  reader),
+              -1);
+
+    strcpy(ew.headers[0].value, "=?utf-8?q?ok?=");
+    int ewn = neverc_multipart_write(&ew, 1, "b", output, sizeof(output));
+    ASSERT_TRUE(ewn > 0);
+    ASSERT_EQ(neverc_multipart_parse(output, (size_t)ewn, "b", reader), 0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "X-Name"),
+                 "=?utf-8?q?ok?=");
+
     free(reader);
 }
 

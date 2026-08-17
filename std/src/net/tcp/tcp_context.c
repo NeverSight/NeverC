@@ -317,6 +317,18 @@ neverc_net_result_t neverc_tcp_dial_context(const char *addr,
             neverc_tcp_conn_t *conn = neverc_tcp_adopt_handle(
                 (uintptr_t)fd, NULL, 0, &adopt_error);
             if (conn) {
+                /*
+                 * adopt_handle takes ownership of fd. Re-check cancellation
+                 * after the gap, matching accept_context: do not return a
+                 * live connection that completed after the deadline.
+                 */
+                context_status = tcp_context_status(ctx);
+                if (context_status != NEVERC_NET_OK) {
+                    neverc_tcp_close(conn);
+                    freeaddrinfo(result);
+                    return tcp_context_result(
+                        context_status, 0, "dial", 0);
+                }
                 *conn_out = conn;
                 freeaddrinfo(result);
                 return tcp_context_result(NEVERC_NET_OK, 0, "dial", 0);

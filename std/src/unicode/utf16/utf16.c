@@ -33,11 +33,15 @@ void neverc_utf16_encode_rune(int32_t r, int32_t *r1, int32_t *r2) {
 }
 
 int neverc_utf16_rune_len(int32_t r) {
-    if ((0 <= r && r < SURR1) || (SURR3 <= r && r < NEVERC_UTF16_SURR_SELF))
-        return 1;
-    if (NEVERC_UTF16_SURR_SELF <= r && r <= NEVERC_UTF16_MAX_RUNE)
+    /* Reject before the supplementary check: a negative rune must not
+     * promote to a huge unsigned value and look like a pair. */
+    if (r < 0 || r > NEVERC_UTF16_MAX_RUNE)
+        return -1;
+    if (r >= SURR1 && r < SURR3)
+        return -1;
+    if (r >= NEVERC_UTF16_SURR_SELF)
         return 2;
-    return -1;
+    return 1;
 }
 
 size_t neverc_utf16_encode(const int32_t *src, size_t nsrc,

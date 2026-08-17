@@ -1,4 +1,5 @@
 #include "neverc/std/mime.h"
+#include "neverc/std/mime/rfc2047_safe.h"
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>
@@ -655,6 +656,10 @@ int neverc_mime_parse_media_type(const char *v,
         *nparams = 0;
         return -1;
     }
+    for (int i = 0; i < count; i++) {
+        if (!nci_rfc2047_header_safe(params_vals[i], strlen(params_vals[i])))
+            goto fail;
+    }
     memmove(media_type, mt_start, mt_len);
     for (size_t i = 0; i < mt_len; i++)
         media_type[i] = (char)nc_tolower((unsigned char)media_type[i]);
@@ -703,6 +708,8 @@ int neverc_mime_format_media_type(const char *media_type,
         if (key[key_len] != '\0') goto fail;
         if (key_len == 8 && strcasecmp_local(key, "boundary") == 0 &&
             !mime_is_rfc2046_boundary(value))
+            goto fail;
+        if (!nci_rfc2047_header_safe(value, strlen(value)))
             goto fail;
         for (int j = 0; j < i; j++) {
             if (strcasecmp_local(key, param_keys[j]) == 0) goto fail;
@@ -816,7 +823,7 @@ static int mime_2047_q_decode(const char *s, size_t n,
         } else if (c > 126 || (c < 32 && c != '\t')) {
             return -1;
         }
-        if (di >= cap) return -1;
+        if (di >= cap) return -2;
         out[di++] = c;
     }
     *olen = di;
@@ -852,14 +859,14 @@ static int mime_2047_b_decode(const char *s, size_t n,
             v3 = mime_2047_b64((unsigned char)s[i + 3]);
             if (v3 < 0) return -1;
         }
-        if (!mime_room(di, 1, cap)) return -1;
+        if (!mime_room(di, 1, cap)) return -2;
         out[di++] = (unsigned char)((v0 << 2) | (v1 >> 4));
         if (s[i + 2] != '=') {
-            if (!mime_room(di, 1, cap)) return -1;
+            if (!mime_room(di, 1, cap)) return -2;
             out[di++] = (unsigned char)((v1 << 4) | (v2 >> 2));
         }
         if (s[i + 3] != '=') {
-            if (!mime_room(di, 1, cap)) return -1;
+            if (!mime_room(di, 1, cap)) return -2;
             out[di++] = (unsigned char)((v2 << 6) | v3);
         }
     }
@@ -914,7 +921,7 @@ int neverc_mime_decode_header(const char *src, size_t src_len,
         return 0;
     }
 
-    unsigned char decoded[128];
+    unsigned char stack_dec[128];
     size_t pos = 0;
     int between_words = 0;
     while (pos < src_len) {
@@ -938,15 +945,29 @@ int neverc_mime_decode_header(const char *src, size_t src_len,
         size_t tlen = qe;
         size_t end = cur + qe + 2;
 
+        unsigned char *decoded = stack_dec;
+        unsigned char *heap_dec = NULL;
+        size_t dec_cap = sizeof(stack_dec);
+        if (tlen > dec_cap) {
+            if (tlen == SIZE_MAX) return -1;
+            heap_dec = (unsigned char *)malloc(tlen + 1);
+            if (!heap_dec) return -1;
+            decoded = heap_dec;
+            dec_cap = tlen + 1;
+        }
+
         size_t dlen = 0;
-        int ok = 0;
+        int dec_rc = 1;
         if (enc == 'Q' || enc == 'q')
-            ok = mime_2047_q_decode(text, tlen, decoded, sizeof(decoded),
-                                    &dlen) == 0;
+            dec_rc = mime_2047_q_decode(text, tlen, decoded, dec_cap, &dlen);
         else if (enc == 'B' || enc == 'b')
-            ok = mime_2047_b_decode(text, tlen, decoded, sizeof(decoded),
-                                    &dlen) == 0;
-        if (!ok) {
+            dec_rc = mime_2047_b_decode(text, tlen, decoded, dec_cap, &dlen);
+        if (dec_rc == -2) {
+            free(heap_dec);
+            return -1;
+        }
+        if (dec_rc != 0) {
+            free(heap_dec);
             size_t lit = end - pos;
             if (!mime_room(di, lit, out_cap)) return -1;
             memcpy(out + di, src + pos, lit);
@@ -956,16 +977,25 @@ int neverc_mime_decode_header(const char *src, size_t src_len,
             continue;
         }
         int cs = mime_2047_charset(charset, clen);
-        if (!cs) return -1;
+        if (!cs || (cs == 1 && !nci_2047_utf8_ok(decoded, dlen))) {
+            free(heap_dec);
+            return -1;
+        }
         if (start > pos &&
             (!between_words || mime_2047_has_non_wsp(src + pos, start - pos))) {
             size_t lit = start - pos;
-            if (!mime_room(di, lit, out_cap)) return -1;
+            if (!mime_room(di, lit, out_cap)) {
+                free(heap_dec);
+                return -1;
+            }
             memcpy(out + di, src + pos, lit);
             di += lit;
         }
-        if (mime_2047_emit(cs, decoded, dlen, out, out_cap, &di) != 0)
+        if (mime_2047_emit(cs, decoded, dlen, out, out_cap, &di) != 0) {
+            free(heap_dec);
             return -1;
+        }
+        free(heap_dec);
         pos = end;
         between_words = 1;
     }

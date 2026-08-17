@@ -99,6 +99,21 @@ static int os_win_has_wildcards(const char *path) {
     return 0;
 }
 
+/* Win32 strips trailing spaces/dots, so ".. " is the parent directory. */
+static int os_win_entry_name_ok(const char *name) {
+    size_t n;
+    if (!name || name[0] == '\0') return 0;
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return 0;
+    if (strchr(name, '/') || strchr(name, '\\')) return 0;
+    n = strlen(name);
+    while (n > 0 && (name[n - 1] == ' ' || name[n - 1] == '.'))
+        n--;
+    if (n == 0) return 0;
+    if (n == 1 && name[0] == '.') return 0;
+    if (n == 2 && name[0] == '.' && name[1] == '.') return 0;
+    return 1;
+}
+
 static int64_t os_filetime_unix(FILETIME ft) {
     ULARGE_INTEGER ull;
     ull.LowPart = ft.dwLowDateTime;
@@ -597,7 +612,7 @@ int neverc_os_remove_all(const char *path) {
     if (h == INVALID_HANDLE_VALUE) return -1;
     int result = 0;
     do {
-        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+        if (!os_win_entry_name_ok(fd.cFileName)) continue;
         char child[4096];
         int child_len = snprintf(
             child, sizeof(child), "%s\\%s", path, fd.cFileName);
@@ -1217,28 +1232,50 @@ int neverc_os_readlink(const char *name, char *buf, size_t cap) {
     os_reparse_data_t *rp = (os_reparse_data_t *)data;
     const WCHAR *wsrc = NULL;
     size_t wlen = 0;
+    const BYTE *base = data;
+    const BYTE *pathbuf = NULL;
+    USHORT off = 0, nlen = 0;
+    if (returned < 8) {
+        errno = EINVAL;
+        return -1;
+    }
     if (rp->ReparseTag == IO_REPARSE_TAG_SYMLINK) {
-        USHORT off = rp->SymbolicLinkReparseBuffer.PrintNameOffset;
-        USHORT len = rp->SymbolicLinkReparseBuffer.PrintNameLength;
-        if (len == 0) {
+        off = rp->SymbolicLinkReparseBuffer.PrintNameOffset;
+        nlen = rp->SymbolicLinkReparseBuffer.PrintNameLength;
+        if (nlen == 0) {
             off = rp->SymbolicLinkReparseBuffer.SubstituteNameOffset;
-            len = rp->SymbolicLinkReparseBuffer.SubstituteNameLength;
+            nlen = rp->SymbolicLinkReparseBuffer.SubstituteNameLength;
         }
-        wsrc = (const WCHAR *)((const BYTE *)rp->SymbolicLinkReparseBuffer.PathBuffer + off);
-        wlen = (size_t)len / sizeof(WCHAR);
+        pathbuf = (const BYTE *)rp->SymbolicLinkReparseBuffer.PathBuffer;
     } else if (rp->ReparseTag == IO_REPARSE_TAG_MOUNT_POINT) {
-        USHORT off = rp->MountPointReparseBuffer.PrintNameOffset;
-        USHORT len = rp->MountPointReparseBuffer.PrintNameLength;
-        if (len == 0) {
+        off = rp->MountPointReparseBuffer.PrintNameOffset;
+        nlen = rp->MountPointReparseBuffer.PrintNameLength;
+        if (nlen == 0) {
             off = rp->MountPointReparseBuffer.SubstituteNameOffset;
-            len = rp->MountPointReparseBuffer.SubstituteNameLength;
+            nlen = rp->MountPointReparseBuffer.SubstituteNameLength;
         }
-        wsrc = (const WCHAR *)((const BYTE *)rp->MountPointReparseBuffer.PathBuffer + off);
-        wlen = (size_t)len / sizeof(WCHAR);
+        pathbuf = (const BYTE *)rp->MountPointReparseBuffer.PathBuffer;
     } else {
         errno = EINVAL;
         return -1;
     }
+    if (!pathbuf || pathbuf < base || pathbuf > base + returned) {
+        errno = EINVAL;
+        return -1;
+    }
+    {
+        size_t room = (size_t)(base + returned - pathbuf);
+        if ((size_t)off > room || (size_t)nlen > room - (size_t)off) {
+            errno = EINVAL;
+            return -1;
+        }
+    }
+    if (nlen == 0 || (nlen % sizeof(WCHAR)) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    wsrc = (const WCHAR *)(pathbuf + off);
+    wlen = (size_t)nlen / sizeof(WCHAR);
     if (!wsrc || wlen == 0 || wlen > INT_MAX) {
         errno = EINVAL;
         return -1;
@@ -1291,7 +1328,7 @@ int neverc_os_read_dir(const char *dirname, neverc_os_dir_entry_t **entries,
     HANDLE h = FindFirstFileA(pattern, &fd);
     if (h == INVALID_HANDLE_VALUE) { free(arr); return os_win_fail(); }
     do {
-        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+        if (!os_win_entry_name_ok(fd.cFileName)) continue;
         if (length >= cap) {
             if (cap > SIZE_MAX / 2 || cap * 2 > SIZE_MAX / sizeof(*arr)) {
                 FindClose(h); free(arr); return -1;

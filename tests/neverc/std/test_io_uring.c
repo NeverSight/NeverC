@@ -140,6 +140,62 @@ TEST(uring_sqe_get_advance) {
 #endif
 }
 
+TEST(uring_sqe_reserve_prevents_overflow) {
+#if defined(NC_USE_IO_URING) && NC_USE_IO_URING && defined(__linux__)
+    nc_uring_t ring;
+    if (nc_uring_init(&ring, 8) < 0) {
+        printf("(skipped) ");
+        return;
+    }
+
+    unsigned entries = ring.sq_ring_entries;
+    struct io_uring_sqe *first = NULL;
+    struct io_uring_sqe *second = NULL;
+    unsigned got = 0;
+    while (got < entries) {
+        struct io_uring_sqe *sqe = nc_uring_get_sqe(&ring);
+        if (!sqe) break;
+        if (got == 0) first = sqe;
+        else if (got == 1) second = sqe;
+        sqe->opcode = IORING_OP_NOP;
+        sqe->user_data = 2000 + got;
+        got++;
+    }
+    ASSERT_GE((int)got, 8);
+    ASSERT_TRUE(first != NULL && second != NULL && first != second);
+    ASSERT_TRUE(nc_uring_get_sqe(&ring) == NULL);
+
+    /* Over-advance must publish only reserved SQEs, not wrap the SQ. */
+    nc_uring_sq_advance(&ring, entries + 32);
+    ASSERT_TRUE(nc_uring_get_sqe(&ring) == NULL);
+
+    int rc = nc_uring_submit_and_wait(&ring, got);
+    ASSERT_GE(rc, 0);
+
+    unsigned drained = 0;
+    unsigned spins = 0;
+    while (drained < got && spins < 64) {
+        struct io_uring_cqe *cqe = nc_uring_peek_cqe(&ring);
+        if (!cqe) {
+            nc_uring_submit_and_wait(&ring, 1);
+            spins++;
+            continue;
+        }
+        ASSERT_EQ(cqe->res, 0);
+        nc_uring_cq_advance(&ring, 1);
+        drained++;
+    }
+    ASSERT_EQ(drained, got);
+    ASSERT_TRUE(nc_uring_peek_cqe(&ring) == NULL);
+
+    nc_uring_sq_advance(&ring, 64);
+    ASSERT_EQ(nc_uring_submit(&ring), 0);
+    ASSERT_TRUE(nc_uring_peek_cqe(&ring) == NULL);
+
+    nc_uring_destroy(&ring);
+#endif
+}
+
 /* ===== Test 4: NOP submit and complete ===== */
 TEST(uring_nop_submit_complete) {
 #if defined(NC_USE_IO_URING) && NC_USE_IO_URING && defined(__linux__)
@@ -529,6 +585,7 @@ int main(void) {
     run_test_uring_ring_init_destroy();
     run_test_uring_init_rejects_overflow();
     run_test_uring_sqe_get_advance();
+    run_test_uring_sqe_reserve_prevents_overflow();
     run_test_uring_nop_submit_complete();
     run_test_uring_batch_nops();
     run_test_uring_poll_add_pipe();

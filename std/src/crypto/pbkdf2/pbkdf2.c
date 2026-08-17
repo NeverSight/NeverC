@@ -12,6 +12,7 @@
 #include "neverc/std/crypto/pbkdf2.h"
 #include "neverc/std/crypto/sha256.h"
 #include "neverc/std/_platform.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -63,9 +64,12 @@ int neverc_pbkdf2_sha256(uint8_t *dk, size_t dk_len,
                          const uint8_t *salt, size_t salt_len,
                          int iterations) {
     const uint64_t max_dk_len = (uint64_t)UINT32_MAX * 32U;
+    const uint64_t max_hash_bytes = UINT64_MAX / 8;
     if (!dk || (!password && password_len != 0) ||
         (!salt && salt_len != 0) || iterations < 1 || dk_len == 0 ||
-        (uint64_t)dk_len > max_dk_len || salt_len > SIZE_MAX - 4)
+        (uint64_t)dk_len > max_dk_len || salt_len > SIZE_MAX - 4 ||
+        (uint64_t)password_len > max_hash_bytes ||
+        max_hash_bytes < 68 || (uint64_t)salt_len > max_hash_bytes - 68)
         return -1;
 
     hmac_sha256_pre pre;

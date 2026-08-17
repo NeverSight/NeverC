@@ -765,6 +765,11 @@ static void test_controlled_io(void) {
         result = neverc_tcp_read_context(a, ctx, buf, sizeof(buf));
         check_int("explicit cancel status",
                   result.status, NEVERC_NET_CANCELLED);
+        result = neverc_tcp_write_context(b, ctx, "no", 2);
+        check_int("cancelled write status",
+                  result.status, NEVERC_NET_CANCELLED);
+        check_int("cancelled write transferred",
+                  (int)result.transferred, 0);
     }
     neverc_context_cancel_handle_free(cancel);
     neverc_context_free(ctx);

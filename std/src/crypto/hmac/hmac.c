@@ -5,7 +5,24 @@
 #include "neverc/std/crypto/md5.h"
 #include "neverc/std/crypto/subtle.h"
 #include "neverc/std/_platform.h"
+#include <stdint.h>
 #include <string.h>
+
+/* SHA-256/SHA-1/MD5 length fields are 64 bits (max 2^61-1 bytes). The inner
+ * hash already absorbed the 64-byte ipad, so a wrapping data_len would make
+ * SHA zero the midstate and finalize to a message-independent digest. */
+static int hmac_sha256_family_len_ok(size_t key_len, size_t data_len) {
+    const uint64_t max_bytes = UINT64_MAX / 8;
+    if ((uint64_t)key_len > max_bytes)
+        return 0;
+    return max_bytes >= 64 && (uint64_t)data_len <= max_bytes - 64;
+}
+
+/* SHA-512's implementation refuses a wrapping 64-bit byte counter. After the
+ * 128-byte ipad, data_len > UINT64_MAX-128 would wipe the midstate. */
+static int hmac_sha512_len_ok(size_t data_len) {
+    return (uint64_t)data_len <= UINT64_MAX - 128;
+}
 
 /*
  * HMAC(K, m) = H((K' ^ opad) || H((K' ^ ipad) || m))
@@ -21,7 +38,8 @@ void neverc_hmac_sha256(const uint8_t *key, size_t key_len,
                         uint8_t out[32])
 {
     if (!out) return;
-    if ((!key && key_len != 0) || (!data && data_len != 0)) {
+    if ((!key && key_len != 0) || (!data && data_len != 0) ||
+        !hmac_sha256_family_len_ok(key_len, data_len)) {
         memset(out, 0, 32);
         return;
     }
@@ -67,7 +85,8 @@ void neverc_hmac_sha512(const uint8_t *key, size_t key_len,
                         uint8_t out[64])
 {
     if (!out) return;
-    if ((!key && key_len != 0) || (!data && data_len != 0)) {
+    if ((!key && key_len != 0) || (!data && data_len != 0) ||
+        !hmac_sha512_len_ok(data_len)) {
         memset(out, 0, 64);
         return;
     }
@@ -113,7 +132,8 @@ void neverc_hmac_sha1(const uint8_t *key, size_t key_len,
                       uint8_t out[20])
 {
     if (!out) return;
-    if ((!key && key_len != 0) || (!data && data_len != 0)) {
+    if ((!key && key_len != 0) || (!data && data_len != 0) ||
+        !hmac_sha256_family_len_ok(key_len, data_len)) {
         memset(out, 0, 20);
         return;
     }
@@ -159,7 +179,8 @@ void neverc_hmac_md5(const uint8_t *key, size_t key_len,
                      uint8_t out[16])
 {
     if (!out) return;
-    if ((!key && key_len != 0) || (!data && data_len != 0)) {
+    if ((!key && key_len != 0) || (!data && data_len != 0) ||
+        !hmac_sha256_family_len_ok(key_len, data_len)) {
         memset(out, 0, 16);
         return;
     }

@@ -238,6 +238,11 @@ static void test_parse_media_type(void) {
                       mt, sizeof(mt), keys, vals, 8, &nparams), 0);
     ASSERT_INT_EQ(nparams, 0);
 
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; filename=\"=?utf-8?q?=0D=0ABcc:_x?=\"",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), -1);
+    ASSERT_INT_EQ(nparams, 0);
+
     /* CTL in a 2231 continuation is dropped, not stitched to "". */
     ASSERT_INT_EQ(neverc_mime_parse_media_type(
                       "application/octet-stream; "
@@ -443,6 +448,20 @@ static void test_format_rejects_invalid_input(void) {
                       "multipart/mixed", bnd_keys, trail_vals, 1, out,
                       sizeof(out)), -1);
     ASSERT_STR_EQ(out, "");
+
+    const char *ew_keys[] = {"filename"};
+    const char *ew_vals[] = {"=?utf-8?q?=0D=0ABcc:_hidden?="};
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", ew_keys, ew_vals, 1, out, sizeof(out)),
+                  -1);
+    ASSERT_STR_EQ(out, "");
+
+    const char *ew_ok[] = {"=?utf-8?q?foo?="};
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", ew_keys, ew_ok, 1, out, sizeof(out)),
+                  (int)strlen("text/plain; filename=\"=?utf-8?q?foo?=\""));
+    ASSERT_STR_EQ(out, "text/plain; filename=\"=?utf-8?q?foo?=\"");
 }
 
 static void test_qp_decode(void) {
@@ -638,6 +657,66 @@ static void test_rfc2047_decode_header(void) {
     out[n] = '\0';
     ASSERT_STR_EQ(out, "foo");
     free_params(keys, vals, nparams);
+
+    /* A well-formed word longer than the old 128-byte stack buffer that
+     * decodes to CR/LF must not be copied through as a literal. */
+    {
+        char long_q[256];
+        size_t lp = 0;
+        memcpy(long_q, "=?utf-8?q?=0D=0A", 16);
+        lp = 16;
+        memset(long_q + lp, 'A', 127);
+        lp += 127;
+        memcpy(long_q + lp, "?=", 2);
+        lp += 2;
+        long_q[lp] = '\0';
+        n = 99;
+        ASSERT_INT_EQ(neverc_mime_decode_header(
+                          long_q, lp, out, sizeof(out), &n), -1);
+        ASSERT_INT_EQ((int)n, 0);
+    }
+
+    /* Same length, no CTL: must decode, not fail-open-as-literal. */
+    {
+        char long_ok[256];
+        size_t lp = 0;
+        memcpy(long_ok, "=?utf-8?q?", 10);
+        lp = 10;
+        memset(long_ok + lp, 'A', 130);
+        lp += 130;
+        memcpy(long_ok + lp, "?=", 2);
+        lp += 2;
+        char big[256];
+        n = 0;
+        ASSERT_INT_EQ(neverc_mime_decode_header(
+                          long_ok, lp, big, sizeof(big), &n), 0);
+        ASSERT_INT_EQ((int)n, 130);
+        {
+            char expect[130];
+            memset(expect, 'A', 130);
+            ASSERT_TRUE(memcmp(big, expect, 130) == 0);
+        }
+    }
+
+    /* utf-8 encoded-word must not accept overlong LF or a surrogate half. */
+    const char *overlong_lf = "=?utf-8?q?=C0=8D?=";
+    const char *surr_word = "=?utf-8?q?=ED=A0=80?=";
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      overlong_lf, strlen(overlong_lf), out, sizeof(out),
+                      &n), -1);
+    ASSERT_INT_EQ((int)n, 0);
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      surr_word, strlen(surr_word), out, sizeof(out), &n),
+                  -1);
+    ASSERT_INT_EQ((int)n, 0);
+
+    const char *b64_crlf = "=?utf-8?b?DQo=?=";
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      b64_crlf, strlen(b64_crlf), out, sizeof(out), &n), -1);
+    ASSERT_INT_EQ((int)n, 0);
 }
 
 int main(void) {

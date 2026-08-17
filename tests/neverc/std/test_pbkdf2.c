@@ -1,4 +1,5 @@
 #include "neverc/std/crypto/pbkdf2.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -157,6 +158,15 @@ static void test_invalid_inputs(void) {
                neverc_pbkdf2_sha256(
                    dk, (size_t)UINT32_MAX * 32U + 1U,
                    &byte, 1, &byte, 1, 1) == -1);
+#endif
+#if SIZE_MAX > (UINT64_MAX / 8)
+    check_true("wrapping password rejected",
+               neverc_pbkdf2_sha256(
+                   dk, sizeof(dk), &byte, SIZE_MAX, &byte, 1, 1) == -1);
+    check_true("wrapping salt rejected",
+               neverc_pbkdf2_sha256(
+                   dk, sizeof(dk), &byte, 1, &byte,
+                   (size_t)(UINT64_MAX / 8) - 67, 1) == -1);
 #endif
 }
 

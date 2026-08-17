@@ -125,6 +125,8 @@ typedef struct {
 
     unsigned sq_ring_entries;
     unsigned cq_ring_entries;
+    /* SQEs returned by nc_uring_get_sqe and not yet published via advance. */
+    unsigned sqe_reserved;
 } nc_uring_t;
 
 static inline int nc_uring_init(nc_uring_t *ring, unsigned entries) {
@@ -257,13 +259,22 @@ static inline void nc_uring_destroy(nc_uring_t *ring) {
 static inline struct io_uring_sqe *nc_uring_get_sqe(nc_uring_t *ring) {
     unsigned tail = *ring->sq_tail;
     unsigned head = nc_io_smp_load_acquire(ring->sq_head);
-    if (tail - head >= ring->sq_ring_entries) return NULL;
-    struct io_uring_sqe *sqe = &ring->sqes[tail & *ring->sq_mask];
+    unsigned used = tail - head;
+    if (ring->sqe_reserved >= ring->sq_ring_entries ||
+        used >= ring->sq_ring_entries - ring->sqe_reserved)
+        return NULL;
+    struct io_uring_sqe *sqe =
+        &ring->sqes[(tail + ring->sqe_reserved) & *ring->sq_mask];
     memset(sqe, 0, sizeof(*sqe));
+    ring->sqe_reserved++;
     return sqe;
 }
 
 static inline void nc_uring_sq_advance(nc_uring_t *ring, unsigned count) {
+    if (!ring || count == 0) return;
+    if (count > ring->sqe_reserved)
+        count = ring->sqe_reserved;
+    ring->sqe_reserved -= count;
     unsigned tail = *ring->sq_tail;
     nc_io_smp_store_release(ring->sq_tail, tail + count);
 }

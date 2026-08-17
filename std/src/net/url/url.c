@@ -52,6 +52,19 @@ static int copy_exact(char *dst, size_t cap, const char *src, size_t len) {
 
 static int percent_decode(const char *s, char *buf, size_t cap, int flags);
 
+/* True if path is `//...` or `/\...`, including after percent-decode.
+ * `/%2f/evil.com` and `/%5cevil.com` must not look like a same-origin path. */
+static int path_is_protocol_relative(const char *path) {
+    if (!path || path[0] != '/')
+        return 0;
+    if (path[1] == '/' || path[1] == '\\')
+        return 1;
+    char decoded[sizeof(((neverc_url_t *)0)->path)];
+    if (percent_decode(path, decoded, sizeof(decoded), 0) < 0)
+        return 0;
+    return decoded[0] == '/' && (decoded[1] == '/' || decoded[1] == '\\');
+}
+
 /* RFC 3986 reg-name octets that may appear unescaped. */
 static int host_ascii_ok(unsigned char c) {
     if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
@@ -513,8 +526,9 @@ int neverc_url_request_uri(const neverc_url_t *u, char *buf, size_t cap) {
     builder_init(&builder, buf, cap);
     if (u->path[0]) {
         /* origin-form `//host` is protocol-relative. Prefix so a
-         * Request-URI cannot retarget a different authority. */
-        if (u->path[0] == '/' && u->path[1] == '/')
+         * Request-URI cannot retarget a different authority. Encoded
+         * `/%2f...` / `/%5c...` decode to the same form. */
+        if (path_is_protocol_relative(u->path))
             builder_append_literal(&builder, "/.");
         builder_append_field(&builder, u->path, sizeof(u->path));
     } else
@@ -558,10 +572,11 @@ int neverc_url_is_safe_redirect(const char *raw_url, const char *allowed_host) {
             return 0;
         return ascii_host_equal(u.host, allowed_host);
     }
-    /* Protocol-relative `//evil.com` has a host and no scheme. */
+    /* Protocol-relative `//evil.com` has a host and no scheme.
+     * Encoded `/%2f/evil.com` / `/%5cevil.com` decode to the same. */
     if (u.host[0])
         return 0;
-    if (u.path[0] == '/' && u.path[1] == '/')
+    if (path_is_protocol_relative(u.path))
         return 0;
     if (u.path[0] && u.path[0] != '/')
         return 0;

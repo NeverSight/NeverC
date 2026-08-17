@@ -44,6 +44,49 @@ static int wait_for_readiness(nc_poller_t *poller, nc_sock_t fd,
     return -1;
 }
 
+static int wait_for_failed_operation(nc_poller_t *poller,
+                                     nc_iocp_op_t *operation, void *data) {
+    uint64_t deadline = nc_monotonic_ms() + 2000U;
+    while (nc_monotonic_ms() < deadline) {
+        nc_event_t completed[4];
+        int count = nc_poller_wait(poller, completed, 4, 50);
+        if (count < 0) return -1;
+        for (int i = 0; i < count; i++) {
+            if (completed[i].operation != operation) continue;
+            if (completed[i].data != data) return -1;
+            /* Completing a closed-socket recv must not fail-open as success. */
+            if (completed[i].error == 0) return -1;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int complete_without_live_handle(void) {
+    nc_iocp_op_t cancelled;
+    nc_iocp_op_init(&cancelled);
+    InterlockedExchange(&cancelled.state, NC_IOCP_OP_PENDING);
+    cancelled.kind = NC_IOCP_OP_RECV;
+    cancelled.fd = NC_INVALID_SOCK;
+    cancelled.overlapped.Internal = 0xC0000120; /* STATUS_CANCELLED */
+    nc_iocp_op_complete(&cancelled, 0);
+    if (nc_iocp_op_state(&cancelled) != NC_IOCP_OP_COMPLETED ||
+        cancelled.error != WSA_OPERATION_ABORTED)
+        return -1;
+
+    nc_iocp_op_t ok_op;
+    nc_iocp_op_init(&ok_op);
+    InterlockedExchange(&ok_op.state, NC_IOCP_OP_PENDING);
+    ok_op.kind = NC_IOCP_OP_RECV;
+    ok_op.fd = NC_INVALID_SOCK;
+    ok_op.overlapped.Internal = 0;
+    nc_iocp_op_complete(&ok_op, 4);
+    if (nc_iocp_op_state(&ok_op) != NC_IOCP_OP_COMPLETED ||
+        ok_op.error != 0 || ok_op.transferred != 4)
+        return -1;
+    return 0;
+}
+
 static int bind_listener(nc_sock_t *listener, struct sockaddr_in *bound) {
     *listener = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
                            WSA_FLAG_OVERLAPPED);
@@ -75,6 +118,7 @@ int main(void) {
     if (!nc_poller_supports_completions() ||
         !nc_poller_supports_readiness())
         return 2;
+    if (complete_without_live_handle() != 0) return 11;
 
     nc_sock_t listener = NC_INVALID_SOCK;
     nc_sock_t client = NC_INVALID_SOCK;
@@ -85,10 +129,12 @@ int main(void) {
     nc_iocp_op_t recv_op;
     nc_iocp_op_t send_op;
     nc_iocp_op_t cancel_op;
+    nc_iocp_op_t closed_op;
     int accept_tag;
     int recv_tag;
     int send_tag;
     int cancel_tag;
+    int closed_tag;
     int result = 3;
 
     struct sockaddr_in bound;
@@ -172,10 +218,22 @@ int main(void) {
                            WSA_OPERATION_ABORTED) != 0)
         goto done;
 
+    char closed_buffer[1];
+    nc_iocp_op_init(&closed_op);
+    if (nc_iocp_recv_start(accepted, &closed_op, closed_buffer,
+                           sizeof(closed_buffer), &closed_tag) != 0 ||
+        nc_poller_del(poller, accepted) != 0)
+        goto done;
+    nc_sock_close(accepted);
+    accepted = NC_INVALID_SOCK;
+    if (wait_for_failed_operation(poller, &closed_op, &closed_tag) != 0)
+        goto done;
+
     if (nc_iocp_op_cleanup(&accept_op) != 0 ||
         nc_iocp_op_cleanup(&recv_op) != 0 ||
         nc_iocp_op_cleanup(&send_op) != 0 ||
-        nc_iocp_op_cleanup(&cancel_op) != 0)
+        nc_iocp_op_cleanup(&cancel_op) != 0 ||
+        nc_iocp_op_cleanup(&closed_op) != 0)
         goto done;
 
     result = 0;

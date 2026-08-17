@@ -83,12 +83,11 @@ static void sha256_block(uint32_t state[8], const uint8_t block[64]) {
 
 void neverc_sha256_init(neverc_sha256_ctx *ctx) {
     if (!ctx) return;
+    memset(ctx, 0, sizeof(*ctx));
     ctx->state[0] = 0x6a09e667; ctx->state[1] = 0xbb67ae85;
     ctx->state[2] = 0x3c6ef372; ctx->state[3] = 0xa54ff53a;
     ctx->state[4] = 0x510e527f; ctx->state[5] = 0x9b05688c;
     ctx->state[6] = 0x1f83d9ab; ctx->state[7] = 0x5be0cd19;
-    ctx->count = 0;
-    ctx->finalized = 0;
 }
 
 void neverc_sha256_update(neverc_sha256_ctx *ctx, const uint8_t *data, size_t len) {
@@ -126,7 +125,11 @@ void neverc_sha256_update(neverc_sha256_ctx *ctx, const uint8_t *data, size_t le
 }
 
 void neverc_sha256_final(neverc_sha256_ctx *ctx, uint8_t digest[32]) {
-    if (!ctx || !digest) return;
+    if (!digest) return;
+    if (!ctx) {
+        memset(digest, 0, 32);
+        return;
+    }
     if (ctx->finalized) {
         for (int i = 0; i < 8; i++)
             put_be32(digest + 4 * i, ctx->state[i]);
@@ -157,6 +160,11 @@ void neverc_sha256_final(neverc_sha256_ctx *ctx, uint8_t digest[32]) {
 }
 
 void neverc_sha256_sum(const uint8_t *data, size_t len, uint8_t digest[32]) {
+    if (!digest) return;
+    if (len > 0 && !data) {
+        memset(digest, 0, 32);
+        return;
+    }
     neverc_sha256_ctx ctx;
     neverc_sha256_init(&ctx);
     neverc_sha256_update(&ctx, data, len);

@@ -79,14 +79,21 @@ static int blit_row_ok(size_t rows, size_t stride, size_t row_bytes) {
     return 1;
 }
 
-/* 32-bit `dy - rect.min.y` is undefined when min.y is INT_MIN. */
+/* 32-bit `dy - rect.min.y` is undefined when min.y is INT_MIN.
+ * `span_bytes` is the horizontal blit length: the span must fit in the
+ * row pitch starting at `col`. `stride < row_bytes` only catches a clip
+ * that is itself wider than the pitch (left-aligned). A 1-pixel clip at
+ * a large x of a rect that is wider than stride/bpp used to pass that
+ * check, then write at pix+(x-min.x)*bpp — past the row and off a
+ * correctly-sized stride*height buffer. */
 static int blit_ptr_ok(int64_t row, int64_t col, size_t stride,
-                       size_t pixel_bytes, size_t *off) {
-    if (row < 0 || col < 0) return 0;
+                       size_t pixel_bytes, size_t span_bytes, size_t *off) {
+    if (row < 0 || col < 0 || span_bytes == 0) return 0;
     if (pixel_bytes != 0 && (uint64_t)col > SIZE_MAX / pixel_bytes) return 0;
+    size_t col_off = (size_t)col * pixel_bytes;
+    if (col_off > stride || stride - col_off < span_bytes) return 0;
     if (stride != 0 && (uint64_t)row > SIZE_MAX / stride) return 0;
     size_t row_off = (size_t)row * stride;
-    size_t col_off = (size_t)col * pixel_bytes;
     if (row_off > SIZE_MAX - col_off) return 0;
     *off = row_off + col_off;
     return 1;
@@ -147,8 +154,8 @@ void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
     int64_t dcol = (int64_t)dx0 - (int64_t)dst->rect.min.x;
     int64_t scol = sx - (int64_t)src->rect.min.x;
     size_t doff, soff;
-    if (!blit_ptr_ok(drow, dcol, dst_stride, 4, &doff) ||
-        !blit_ptr_ok(srow, scol, src_stride, 4, &soff))
+    if (!blit_ptr_ok(drow, dcol, dst_stride, 4, row_bytes, &doff) ||
+        !blit_ptr_ok(srow, scol, src_stride, 4, row_bytes, &soff))
         return;
     uint8_t *dbase = dst->pix + doff;
     const uint8_t *sbase = src->pix + soff;
@@ -230,7 +237,7 @@ void neverc_draw_uniform(neverc_image_rgba_t *dst, neverc_rect_t r,
     int64_t drow = (int64_t)y0 - (int64_t)dst->rect.min.y;
     int64_t dcol = (int64_t)x0 - (int64_t)dst->rect.min.x;
     size_t doff;
-    if (!blit_ptr_ok(drow, dcol, dst_stride, 4, &doff)) return;
+    if (!blit_ptr_ok(drow, dcol, dst_stride, 4, row_bytes, &doff)) return;
     uint8_t *dbase = dst->pix + doff;
 
     if (opaque_fill) {
@@ -304,8 +311,8 @@ void neverc_draw_gray_over(neverc_image_rgba_t *dst, neverc_rect_t r,
     int64_t mrow0 = my - (int64_t)mask->rect.min.y;
     int64_t mcol = mx - (int64_t)mask->rect.min.x;
     size_t doff, moff;
-    if (!blit_ptr_ok(drow, dcol, dst_stride, 4, &doff) ||
-        !blit_ptr_ok(mrow0, mcol, mask_stride, 1, &moff))
+    if (!blit_ptr_ok(drow, dcol, dst_stride, 4, row_bytes, &doff) ||
+        !blit_ptr_ok(mrow0, mcol, mask_stride, 1, w, &moff))
         return;
     uint8_t *dbase = dst->pix + doff;
     const uint8_t *mbase = mask->pix + moff;

@@ -1,5 +1,6 @@
 #include "neverc/std/crypto/hmac.h"
 #include "neverc/std/crypto/sha256.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -302,6 +303,57 @@ static void test_empty_and_invalid_inputs(void) {
     check_int("null output is ignored", 1, 1);
 }
 
+/* SHA update refuses a wrapping length without reading the buffer, then
+ * finalize of the wiped ctx would emit a message-independent digest. HMAC
+ * must clear `out` instead of returning that MAC. Dummy pointers are safe. */
+static void test_hmac_wrapping_lengths(void) {
+    printf("[wrapping hash lengths]\n");
+
+#if SIZE_MAX > (UINT64_MAX / 8)
+    {
+        uint8_t key = 0x0b;
+        uint8_t dummy = 0xaa;
+        uint8_t mac[32];
+        uint8_t zeros[32] = {0};
+
+        memset(mac, 0xa5, sizeof(mac));
+        neverc_hmac_sha256(&key, 1, &dummy, SIZE_MAX, mac);
+        check_int("sha256 wrapping data_len clears output",
+                  memcmp(mac, zeros, 32) == 0, 1);
+
+        uint8_t mac20[20];
+        memset(mac20, 0xa5, sizeof(mac20));
+        neverc_hmac_sha1(&key, 1, &dummy, SIZE_MAX, mac20);
+        check_int("sha1 wrapping data_len clears output",
+                  memcmp(mac20, zeros, 20) == 0, 1);
+
+        uint8_t mac16[16];
+        memset(mac16, 0xa5, sizeof(mac16));
+        neverc_hmac_md5(&key, 1, &dummy, SIZE_MAX, mac16);
+        check_int("md5 wrapping data_len clears output",
+                  memcmp(mac16, zeros, 16) == 0, 1);
+
+        memset(mac, 0xa5, sizeof(mac));
+        neverc_hmac_sha256(&dummy, (size_t)(UINT64_MAX / 8) + 1, &key, 1, mac);
+        check_int("sha256 wrapping key_len clears output",
+                  memcmp(mac, zeros, 32) == 0, 1);
+    }
+#endif
+
+#if SIZE_MAX > (UINT64_MAX - 128)
+    {
+        uint8_t key = 0x0b;
+        uint8_t dummy = 0xaa;
+        uint8_t mac[64];
+        uint8_t zeros[64] = {0};
+        memset(mac, 0xa5, sizeof(mac));
+        neverc_hmac_sha512(&key, 1, &dummy, SIZE_MAX, mac);
+        check_int("sha512 wrapping data_len clears output",
+                  memcmp(mac, zeros, 64) == 0, 1);
+    }
+#endif
+}
+
 int main(void) {
     printf("=== NeverC HMAC Library Tests ===\n");
     printf("(RFC 4231 / RFC 2202 official test vectors)\n\n");
@@ -313,6 +365,7 @@ int main(void) {
     test_hmac_equal();
     test_hmac_not_length_extendable();
     test_empty_and_invalid_inputs();
+    test_hmac_wrapping_lengths();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

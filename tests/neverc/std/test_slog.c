@@ -197,6 +197,55 @@ static void test_skipped_attrs(void) {
     ASSERT_TRUE(strstr(buf, "\"\"=") == NULL);
 }
 
+static void test_reserved_keys_do_not_overwrite(void) {
+    printf("[reserved_keys]\n");
+    char buf[4096];
+    memset(buf, 0, sizeof(buf));
+    FILE *f = tmpfile();
+    if (!f) {
+        ASSERT_TRUE(0);
+        return;
+    }
+    neverc_slog_handler_t h;
+    neverc_slog_init(&h, f, NEVERC_SLOG_DEBUG, NEVERC_SLOG_FORMAT_JSON);
+    neverc_slog_attr_t forged[] = {
+        neverc_slog_string("level", "DEBUG"),
+        neverc_slog_string("msg", "forged"),
+        neverc_slog_string("time", "0"),
+        neverc_slog_string("ok", "yes")
+    };
+    neverc_slog_log(&h, NEVERC_SLOG_INFO, "hello", forged, 4);
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+
+    ASSERT_TRUE(strstr(buf, "\"level\":\"INFO\"") != NULL);
+    ASSERT_TRUE(strstr(buf, "\"level\":\"DEBUG\"") == NULL);
+    ASSERT_TRUE(strstr(buf, "\"msg\":\"hello\"") != NULL);
+    ASSERT_TRUE(strstr(buf, "\"msg\":\"forged\"") == NULL);
+    ASSERT_TRUE(strstr(buf, "\"time\":\"0\"") == NULL);
+    ASSERT_TRUE(strstr(buf, "\"ok\":\"yes\"") != NULL);
+
+    memset(buf, 0, sizeof(buf));
+    f = tmpfile();
+    if (!f) {
+        ASSERT_TRUE(0);
+        return;
+    }
+    neverc_slog_init(&h, f, NEVERC_SLOG_DEBUG, NEVERC_SLOG_FORMAT_TEXT);
+    neverc_slog_log(&h, NEVERC_SLOG_WARN, "hello", forged, 4);
+    rewind(f);
+    n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+    ASSERT_TRUE(strstr(buf, "level=WARN") != NULL);
+    ASSERT_TRUE(strstr(buf, " level=DEBUG") == NULL);
+    ASSERT_TRUE(strstr(buf, "msg=\"hello\"") != NULL);
+    ASSERT_TRUE(strstr(buf, " msg=\"forged\"") == NULL);
+    ASSERT_TRUE(strstr(buf, " ok=yes") != NULL);
+}
+
 static void test_default_handler(void) {
     printf("[default_handler]\n");
     neverc_slog_handler_t *def = neverc_slog_default();
@@ -486,6 +535,7 @@ int main(void) {
     test_text_output();
     test_json_output();
     test_skipped_attrs();
+    test_reserved_keys_do_not_overwrite();
     test_default_handler();
     test_default_level_wrappers();
     test_set_level();

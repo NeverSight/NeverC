@@ -694,6 +694,73 @@ static void test_template_url_and_script(void) {
     check("hyphenated style closer is neutralized",
           out && strstr(out, "</style-foo>#</style>") != NULL);
     free(out);
+
+    neverc_html_template_data_set(&data, "X", ";alert(1)//");
+    out = neverc_html_template_render(
+        "<script>var x=\"ok\"{{.X}}</script>", &data);
+    check("js after closed double quote is not statement concat",
+          out && strstr(out, "\"ok\";alert") == NULL);
+    check("js after closed double quote wraps as a string expr",
+          out && strstr(out, "var x=\"ok\"") != NULL &&
+              strstr(out, "\";alert(1)") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", ";alert(1)//");
+    out = neverc_html_template_render(
+        "<script>var x='ok'{{.X}}</script>", &data);
+    check("js after closed single quote is not statement concat",
+          out && strstr(out, "'ok';alert") == NULL);
+    check("js after closed single quote wraps as a string expr",
+          out && strstr(out, "var x='ok'") != NULL &&
+              strstr(out, "\";alert(1)") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", ";alert(1)//");
+    out = neverc_html_template_render(
+        "<script>var x=\"ok\" {{.X}}</script>", &data);
+    check("js after closed quote plus space is not statement concat",
+          out && strstr(out, "\"ok\" ;alert") == NULL &&
+              strstr(out, "\"ok\";alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "\";alert(1)//");
+    out = neverc_html_template_render(
+        "<script>var x=\"hello {{.X}}\"</script>", &data);
+    check("js mid-string escapes a closer",
+          out && strstr(out, "hello \\\";alert(1)") != NULL);
+    check("js mid-string does not wrap a second literal",
+          out && strstr(out, "hello \"\"") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<script>x=`foo${ {{.X}} }`</script>", &data);
+    check("js template interpolation wraps as a string expr",
+          out && strstr(out, "\"alert(1)\"") != NULL);
+    check("js template interpolation is not a raw call",
+          out && strstr(out, "${ alert(1) }") == NULL &&
+              strstr(out, "${alert(1)}") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X",
+        "red;}body{background:url(https://evil.example/x)}");
+    out = neverc_html_template_render("<style>p{color:{{.X}}}</style>", &data);
+    check_str("css rule breakout neutralized", out, "<style>p{color:#}</style>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "X",
+        "red; background:url(https://evil.example/x)");
+    out = neverc_html_template_render("<div style=\"color:{{.X}}\">", &data);
+    check_str("css property breakout neutralized",
+              out, "<div style=\"color:#\">");
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "red");
+    out = neverc_html_template_render("<div style=\"color:{{.X}}\">", &data);
+    check_str("safe css keyword still interpolates",
+              out, "<div style=\"color:red\">");
+    free(out);
+
     neverc_html_template_data_free(&data);
 }
 

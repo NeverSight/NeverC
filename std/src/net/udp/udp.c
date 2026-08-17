@@ -405,7 +405,12 @@ neverc_udp_conn_t *neverc_udp_listen(const char *addr, const char **errp) {
     }
     conn->fd = fd;
     conn->local_len = sizeof(conn->local);
-    getsockname(fd, (struct sockaddr *)&conn->local, &conn->local_len);
+    if (getsockname(fd, (struct sockaddr *)&conn->local,
+                    &conn->local_len) != 0 ||
+        (size_t)conn->local_len > sizeof(conn->local)) {
+        memset(&conn->local, 0, sizeof(conn->local));
+        conn->local_len = 0;
+    }
     conn->connected = 0;
 #ifdef _WIN32
     conn->recv_msg = udp_load_recv_msg(fd);
@@ -476,7 +481,12 @@ neverc_udp_conn_t *neverc_udp_dial(const char *addr, const char **errp) {
     }
     conn->fd = fd;
     conn->local_len = sizeof(conn->local);
-    getsockname(fd, (struct sockaddr *)&conn->local, &conn->local_len);
+    if (getsockname(fd, (struct sockaddr *)&conn->local,
+                    &conn->local_len) != 0 ||
+        (size_t)conn->local_len > sizeof(conn->local)) {
+        memset(&conn->local, 0, sizeof(conn->local));
+        conn->local_len = 0;
+    }
     conn->connected = 1;
 #ifdef _WIN32
     conn->recv_msg = udp_load_recv_msg(fd);

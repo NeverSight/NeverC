@@ -267,6 +267,15 @@ static void test_prefix(void) {
     ASSERT_EQ(neverc_netip_parse_prefix("2001:db8::/129", &pfx), -1);
     ASSERT_EQ(neverc_netip_parse_prefix("fe80::1%eth0/64", &pfx), -1);
     ASSERT_EQ(neverc_netip_parse_prefix("1.2.3.4/08", &pfx), -1);
+    ASSERT_EQ(neverc_netip_parse_prefix("1.2.3.4/256", &pfx), -1);
+    ASSERT_TRUE(!pfx.valid);
+    ASSERT_EQ(neverc_netip_parse_prefix("1.2.3.4/65536", &pfx), -1);
+    ASSERT_TRUE(!pfx.valid);
+    ASSERT_EQ(neverc_netip_parse_prefix("1.2.3.4/99999", &pfx), -1);
+    ASSERT_EQ(neverc_netip_parse_prefix("1.2.3.4/100000", &pfx), -1);
+    ASSERT_TRUE(!pfx.valid);
+    ASSERT_EQ(neverc_netip_parse_prefix("::/256", &pfx), -1);
+    ASSERT_TRUE(!pfx.valid);
     ASSERT_EQ(neverc_netip_parse_prefix("10.0.0.0/0", &pfx), 0);
 
     ASSERT_EQ(neverc_netip_parse_prefix("2001:db8::/32", &pfx), 0);
@@ -279,6 +288,12 @@ static void test_prefix(void) {
     neverc_netip_parse_addr("::ffff:192.168.2.1", &addr);
     ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
     neverc_netip_parse_addr("192.168.1.100", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+
+    ASSERT_EQ(neverc_netip_parse_prefix("::ffff:10.0.0.0/96", &pfx), 0);
+    neverc_netip_parse_addr("10.0.0.1", &addr);
+    ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("::ffff:10.0.0.1", &addr);
     ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
 }
 

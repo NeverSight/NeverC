@@ -531,6 +531,7 @@ int main(void) {
     CHECK(neverc_thread_executor_create(0, 1) == NULL);
     CHECK(neverc_thread_executor_create(1, 0) == NULL);
     CHECK(neverc_thread_executor_create(SIZE_MAX, 1) == NULL);
+    CHECK(neverc_thread_executor_create(1025, 1) == NULL);
     CHECK(test_channel_fifo_and_close() == 0);
     CHECK(test_channel_wait_cancel_and_close() == 0);
     CHECK(test_channel_context_cancel() == 0);

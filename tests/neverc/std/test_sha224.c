@@ -168,6 +168,59 @@ int main(void) {
         else { tests_failed++; printf("  FAIL: update wrap must not collide with SHA-224(\"abc\")\n"); }
     }
 
+    {
+        uint8_t overflowed[28];
+        memset(overflowed, 0xa5, sizeof(overflowed));
+        neverc_sha224_final(NULL, overflowed);
+        uint8_t zeros[28] = {0};
+        tests_run++;
+        if (memcmp(overflowed, zeros, 28) == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: NULL ctx final must not leave digest untouched\n"); }
+    }
+
+    {
+        uint8_t overflowed[28], empty[28], zeros[28] = {0};
+        memset(overflowed, 0xa5, sizeof(overflowed));
+        neverc_sha224_sum(NULL, 5, overflowed);
+        neverc_sha224_sum((const uint8_t *)"", 0, empty);
+        tests_run++;
+        if (memcmp(overflowed, zeros, 28) == 0 && memcmp(overflowed, empty, 28) != 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: sum(NULL, n) must not hash empty\n"); }
+    }
+
+    {
+        neverc_sha224_ctx ctx;
+        uint8_t leftover[10];
+        memset(leftover, 0x5a, sizeof(leftover));
+        neverc_sha224_init(&ctx);
+        neverc_sha224_update(&ctx, leftover, sizeof(leftover));
+        neverc_sha224_init(&ctx);
+        int dirty = 0;
+        for (size_t i = 0; i < sizeof(ctx.buf); i++)
+            if (ctx.buf[i] != 0) dirty = 1;
+        tests_run++;
+        if (!dirty && ctx.count == 0 && ctx.finalized == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-224 re-init must wipe buf\n"); }
+    }
+
+    {
+        neverc_sha224_ctx ctx, clone;
+        uint8_t d1[28], d2[28];
+        neverc_sha224_init(&ctx);
+        neverc_sha224_update(&ctx, (const uint8_t *)"ab", 2);
+        clone = ctx;
+        neverc_sha224_update(&ctx, (const uint8_t *)"c", 1);
+        neverc_sha224_update(&clone, (const uint8_t *)"c", 1);
+        neverc_sha224_final(&ctx, d1);
+        neverc_sha224_final(&clone, d2);
+        hex_to_bytes("23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7", expected, 28);
+        check_digest("SHA-224 clone after update", d1, expected, 28);
+        tests_run++;
+        if (memcmp(d1, d2, 28) == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-224 cloned ctx mismatch\n"); }
+    }
+
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

@@ -604,7 +604,10 @@ neverc_ws_conn_t *neverc_ws_dial(const char *url,
             goto dial_failed;
         }
         const char *negotiated = neverc_tls_alpn(tls);
-        if (negotiated && strcmp(negotiated, "http/1.1") != 0) {
+        /* Client offered http/1.1. Missing ALPN is fail-closed: a peer
+         * that selected h2 or omitted ALPN is not a confirmed HTTP/1.1
+         * WebSocket transport. */
+        if (!negotiated || strcmp(negotiated, "http/1.1") != 0) {
             ws_set_error(errp, "WSS server selected unsupported ALPN");
             goto dial_failed;
         }

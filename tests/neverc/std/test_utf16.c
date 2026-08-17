@@ -114,15 +114,27 @@ static void test_encode_decode_seq(void) {
     int32_t runes[] = { 'A', 0x1F600, 0xD800, 0x10FFFF, -1 };
     uint16_t enc[16];
     size_t need = neverc_utf16_encode(runes, 5, NULL, 0);
-    check_int("encode need", (int)need, 6); /* A + pair + FFFD + pair + FFFD */
+    /* 1 + 2 + 1 + 2 + 1: lone surrogate and negative are one U+FFFD each. */
+    check_int("encode need", (int)need, 7);
     size_t got = neverc_utf16_encode(runes, 5, enc, 16);
-    check_int("encode wrote need", (int)got, 6);
+    check_int("encode wrote need", (int)got, 7);
     check_i32("enc[0] A", enc[0], 'A');
     check_i32("enc[1] high", enc[1], 0xD83D);
     check_i32("enc[2] low", enc[2], 0xDE00);
     check_i32("enc[3] lone surr -> FFFD", enc[3], NEVERC_UTF16_REPLACEMENT_CHAR);
     check_i32("enc[4] max high", enc[4], 0xDBFF);
     check_i32("enc[5] max low", enc[5], 0xDFFF);
+    check_i32("enc[6] negative -> one FFFD", enc[6],
+              NEVERC_UTF16_REPLACEMENT_CHAR);
+
+    int32_t only_surr[] = { 0xD800 };
+    check_int("lone surr need 1",
+              (int)neverc_utf16_encode(only_surr, 1, NULL, 0), 1);
+    check_int("lone surr rune_len", neverc_utf16_rune_len(0xD800), -1);
+    int32_t only_neg[] = { -1 };
+    check_int("negative need 1",
+              (int)neverc_utf16_encode(only_neg, 1, NULL, 0), 1);
+    check_int("negative rune_len", neverc_utf16_rune_len(-1), -1);
 
     /* Unpaired high, unpaired low, reversed pair, then a valid pair. */
     uint16_t bad[] = { 0xD800, 0x0041, 0xDC00, 0xD800, 0xD800, 0xDC00 };

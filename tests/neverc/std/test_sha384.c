@@ -167,6 +167,47 @@ static void test_invalid_span(void) {
     check_true("invalid span ignored", memcmp(d1, d2, 48) == 0);
 }
 
+static void test_null_ctx_and_sum(void) {
+    printf("[SHA-384 NULL ctx / invalid sum]\n");
+    uint8_t digest[48], empty[48], zeros[48] = {0};
+    memset(digest, 0xa5, sizeof(digest));
+    neverc_sha384_final(NULL, digest);
+    check_true("NULL ctx final fails closed", memcmp(digest, zeros, 48) == 0);
+
+    memset(digest, 0xa5, sizeof(digest));
+    neverc_sha384_sum(NULL, 5, digest);
+    neverc_sha384_sum((const uint8_t *)"", 0, empty);
+    check_true("sum(NULL, n) fails closed", memcmp(digest, zeros, 48) == 0);
+    check_true("sum(NULL, n) != empty hash", memcmp(digest, empty, 48) != 0);
+}
+
+static void test_reset_and_clone(void) {
+    printf("[SHA-384 reset / clone]\n");
+    neverc_sha384_ctx ctx;
+    uint8_t leftover[10];
+    memset(leftover, 0x5a, sizeof(leftover));
+    neverc_sha384_init(&ctx);
+    neverc_sha384_update(&ctx, leftover, sizeof(leftover));
+    neverc_sha384_init(&ctx);
+    int dirty = 0;
+    for (size_t i = 0; i < sizeof(ctx.buf); i++)
+        if (ctx.buf[i] != 0) dirty = 1;
+    check_true("re-init wipes buf", !dirty && ctx.count == 0 && ctx.finalized == 0);
+
+    neverc_sha384_ctx clone;
+    uint8_t d1[48], d2[48], expected[48];
+    neverc_sha384_init(&ctx);
+    neverc_sha384_update(&ctx, (const uint8_t *)"ab", 2);
+    clone = ctx;
+    neverc_sha384_update(&ctx, (const uint8_t *)"c", 1);
+    neverc_sha384_update(&clone, (const uint8_t *)"c", 1);
+    neverc_sha384_final(&ctx, d1);
+    neverc_sha384_final(&clone, d2);
+    neverc_sha384_sum((const uint8_t *)"abc", 3, expected);
+    check_true("clone after update",
+               memcmp(d1, d2, 48) == 0 && memcmp(d1, expected, 48) == 0);
+}
+
 int main(void) {
     printf("=== NeverC SHA-384 Tests ===\n\n");
     test_fips_vectors();
@@ -177,6 +218,8 @@ int main(void) {
     test_128bit_length();
     test_byte_count_wrap();
     test_invalid_span();
+    test_null_ctx_and_sum();
+    test_reset_and_clone();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

@@ -13,10 +13,12 @@
 #include "neverc/std/net/tcp.h"
 
 #ifndef _WIN32
+#include <errno.h>
 #include <poll.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #endif
 
@@ -781,11 +783,40 @@ TEST(h2_client_rejects_zero_timeout) {
 }
 
 #ifndef _WIN32
+#define H2_TEST_IO_TIMEOUT_MS 5000
+
+static void sock_set_timeout(int fd, int ms) {
+    if (fd < 0 || ms < 0) return;
+    struct timeval tv;
+    tv.tv_sec = ms / 1000;
+    tv.tv_usec = (long)(ms % 1000) * 1000;
+    (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    (void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+}
+
+static int h2_reap_child(pid_t child, int *status) {
+    int local = 0;
+    if (!status) status = &local;
+    int elapsed = 0;
+    while (elapsed < H2_TEST_IO_TIMEOUT_MS) {
+        pid_t r = waitpid(child, status, WNOHANG);
+        if (r == child) return 0;
+        if (r < 0) return -1;
+        usleep(20000);
+        elapsed += 20;
+    }
+    (void)kill(child, SIGKILL);
+    (void)waitpid(child, status, 0);
+    return -1;
+}
+
 static int sock_write_all(int fd, const void *buf, size_t len) {
     const char *p = (const char *)buf;
     size_t sent = 0;
     while (sent < len) {
         ssize_t n = write(fd, p + sent, len - sent);
+        if (n < 0 && errno == EINTR)
+            continue;
         if (n <= 0)
             return -1;
         sent += (size_t)n;
@@ -798,6 +829,8 @@ static int sock_read_all(int fd, void *buf, size_t len) {
     size_t got = 0;
     while (got < len) {
         ssize_t n = read(fd, p + got, len - got);
+        if (n < 0 && errno == EINTR)
+            continue;
         if (n <= 0)
             return -1;
         got += (size_t)n;
@@ -903,6 +936,7 @@ static void h2_run_server_child(h2_serve_ctx_t *ctx) {
         neverc_h2_server_set_max_streams(server, ctx->max_streams);
     if (ctx->initial_window > 0)
         neverc_h2_server_set_initial_window_size(server, ctx->initial_window);
+    sock_set_timeout(ctx->fd, H2_TEST_IO_TIMEOUT_MS);
     int rc = neverc_h2_serve_conn(server, ctx->fd);
     neverc_h2_server_destroy(server);
     neverc_http_mux_free(mux);
@@ -929,6 +963,7 @@ TEST(h2c_serve_conn_roundtrip) {
 
     int client_fd = neverc_tcp_conn_fd(client);
     ASSERT_TRUE(client_fd >= 0);
+    sock_set_timeout(client_fd, H2_TEST_IO_TIMEOUT_MS);
 
     ASSERT_EQ(sock_write_all(client_fd, NC_H2_CLIENT_PREFACE,
                               NC_H2_CLIENT_PREFACE_LEN), 0);
@@ -967,7 +1002,7 @@ TEST(h2c_serve_conn_roundtrip) {
     neverc_tcp_close(client);
 
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
 }
@@ -990,6 +1025,7 @@ TEST(h2c_continuation_headers) {
     neverc_tcp_close(server);
 
     int client_fd = neverc_tcp_conn_fd(client);
+    sock_set_timeout(client_fd, H2_TEST_IO_TIMEOUT_MS);
     ASSERT_EQ(sock_write_all(client_fd, NC_H2_CLIENT_PREFACE,
                               NC_H2_CLIENT_PREFACE_LEN), 0);
 
@@ -1028,7 +1064,7 @@ TEST(h2c_continuation_headers) {
     neverc_tcp_close(client);
 
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
 }
@@ -1177,12 +1213,14 @@ static int h2_pipe_handshake_opts(neverc_tcp_conn_t **client, pid_t *child,
     }
     neverc_tcp_close(server);
     int fd = neverc_tcp_conn_fd(*client);
+    sock_set_timeout(fd, H2_TEST_IO_TIMEOUT_MS);
     uint8_t settings[9] = { 0, 0, 0, NC_H2_FRAME_SETTINGS, 0, 0, 0, 0, 0 };
     if (sock_write_all(fd, NC_H2_CLIENT_PREFACE, NC_H2_CLIENT_PREFACE_LEN) != 0 ||
         sock_write_all(fd, settings, sizeof(settings)) != 0 ||
         h2_client_handshake(fd) != 0) {
         neverc_tcp_close(*client);
         *client = NULL;
+        (void)h2_reap_child(*child, NULL);
         return -1;
     }
     return 0;
@@ -1209,7 +1247,7 @@ TEST(h2c_rejects_missing_authority) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1230,7 +1268,7 @@ TEST(h2c_rejects_spaced_authority) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1245,7 +1283,7 @@ static int h2c_expect_protocol_rst(neverc_hpack_header_t *headers, int count) {
              error_code == NC_H2_PROTOCOL_ERROR;
     neverc_tcp_close(client);
     int status = 0;
-    if (waitpid(child, &status, 0) != child || !WIFEXITED(status))
+    if (h2_reap_child(child, &status) != 0 || !WIFEXITED(status))
         return -1;
     return ok ? 0 : -1;
 }
@@ -1322,7 +1360,7 @@ TEST(h2c_rejects_empty_authority) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1343,7 +1381,7 @@ TEST(h2c_rejects_empty_host) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1364,7 +1402,7 @@ TEST(h2c_rejects_path_fragment) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1386,7 +1424,7 @@ TEST(h2c_rejects_host_authority_mismatch) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1409,7 +1447,7 @@ TEST(h2c_rejects_streaming_content_length_overrun) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1432,7 +1470,7 @@ TEST(h2c_rejects_buffered_content_length_overrun) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1455,7 +1493,7 @@ TEST(h2c_rejects_content_length_underrun) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1529,7 +1567,7 @@ TEST(h2c_response_content_length_mismatch_is_reset) {
     ASSERT_EQ(error_code, NC_H2_INTERNAL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1550,7 +1588,7 @@ TEST(h2c_response_content_length_underrun_is_reset) {
     ASSERT_EQ(error_code, NC_H2_INTERNAL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1582,7 +1620,7 @@ TEST(h2c_rejects_header_name_crlf) {
     ASSERT_EQ(error_code, NC_H2_COMPRESSION_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1603,7 +1641,7 @@ TEST(h2c_rejects_method_with_space) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1629,7 +1667,7 @@ TEST(h2c_rejects_reused_refused_stream_id) {
     ASSERT_EQ(error_code, NC_H2_STREAM_CLOSED);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1656,7 +1694,7 @@ TEST(h2c_rejects_overpadded_data_on_closed_stream) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1674,7 +1712,7 @@ TEST(h2c_window_update_overflow_is_connection_error) {
     ASSERT_EQ(error_code, NC_H2_FLOW_CONTROL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1694,6 +1732,7 @@ TEST(h2c_empty_data_does_not_send_zero_window_update) {
     }
     neverc_tcp_close(server);
     int fd = neverc_tcp_conn_fd(client);
+    sock_set_timeout(fd, H2_TEST_IO_TIMEOUT_MS);
     uint8_t settings[9] = { 0, 0, 0, NC_H2_FRAME_SETTINGS, 0, 0, 0, 0, 0 };
     ASSERT_EQ(sock_write_all(fd, NC_H2_CLIENT_PREFACE,
                              NC_H2_CLIENT_PREFACE_LEN), 0);
@@ -1741,7 +1780,7 @@ TEST(h2c_empty_data_does_not_send_zero_window_update) {
     ASSERT_TRUE(!saw_zero_update);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1770,7 +1809,7 @@ TEST(h2c_stream_window_update_overflow_is_connection_error) {
     ASSERT_EQ(error_code, NC_H2_STREAM_CLOSED);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1795,7 +1834,7 @@ TEST(h2c_priority_self_dependency_closes_idle_stream) {
     ASSERT_EQ(error_code, NC_H2_STREAM_CLOSED);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1821,7 +1860,7 @@ TEST(h2c_priority_self_dependency_aborts_open_stream) {
     ASSERT_EQ(error_code, NC_H2_STREAM_CLOSED);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1846,7 +1885,7 @@ TEST(h2c_continuation_flood_is_connection_error) {
     ASSERT_EQ(error_code, NC_H2_ENHANCE_YOUR_CALM);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1864,7 +1903,7 @@ TEST(h2c_continuation_without_headers_is_connection_error) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1881,6 +1920,7 @@ TEST(h2c_rejects_bad_connection_preface) {
     }
     neverc_tcp_close(server);
     int fd = neverc_tcp_conn_fd(client);
+    sock_set_timeout(fd, H2_TEST_IO_TIMEOUT_MS);
     char bad[NC_H2_CLIENT_PREFACE_LEN];
     memset(bad, 'X', sizeof(bad));
     ASSERT_EQ(sock_write_all(fd, bad, sizeof(bad)), 0);
@@ -1889,7 +1929,7 @@ TEST(h2c_rejects_bad_connection_preface) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1907,7 +1947,7 @@ TEST(h2c_rejects_push_promise) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1925,7 +1965,7 @@ TEST(h2c_rejects_settings_ack_with_payload) {
     ASSERT_EQ(error_code, NC_H2_FRAME_SIZE_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1942,7 +1982,7 @@ TEST(h2c_rejects_unsolicited_settings_ack) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1960,7 +2000,7 @@ TEST(h2c_window_update_zero_is_connection_error) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -1985,7 +2025,7 @@ TEST(h2c_stream_window_update_zero_is_stream_error) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -2006,7 +2046,7 @@ TEST(h2c_rejects_even_stream_id) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -2024,7 +2064,7 @@ TEST(h2c_headers_without_end_headers_then_data_is_connection_error) {
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -2066,7 +2106,7 @@ TEST(h2c_continuation_on_refused_stream_keeps_hpack) {
     ASSERT_TRUE(buf_contains(resp, resp_len, "Hello from NeverC HTTP/2!") != NULL);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -2099,7 +2139,7 @@ TEST(h2c_headers_priority_self_dependency_is_stream_error) {
     ASSERT_EQ(error_code, NC_H2_STREAM_CLOSED);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -2144,7 +2184,7 @@ TEST(h2c_headers_priority_self_dependency_keeps_hpack) {
     ASSERT_TRUE(buf_contains(resp, resp_len, "Hello from NeverC HTTP/2!") != NULL);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -2164,6 +2204,7 @@ TEST(h2c_connection_window_ignores_stream_initial_size) {
     }
     neverc_tcp_close(server);
     int fd = neverc_tcp_conn_fd(client);
+    sock_set_timeout(fd, H2_TEST_IO_TIMEOUT_MS);
     uint8_t settings[9] = { 0, 0, 0, NC_H2_FRAME_SETTINGS, 0, 0, 0, 0, 0 };
     ASSERT_EQ(sock_write_all(fd, NC_H2_CLIENT_PREFACE,
                              NC_H2_CLIENT_PREFACE_LEN), 0);
@@ -2210,7 +2251,7 @@ TEST(h2c_connection_window_ignores_stream_initial_size) {
     ASSERT_TRUE(hellos >= 2);
     neverc_tcp_close(client);
     int status = 0;
-    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
     ASSERT_TRUE(WIFEXITED(status));
 }
 
@@ -2220,6 +2261,7 @@ static void h2_run_adversarial_response_child(
     neverc_tcp_conn_t *connection = neverc_tcp_accept(listener, &error);
     if (!connection) _exit(1);
     int fd = neverc_tcp_conn_fd(connection);
+    sock_set_timeout(fd, H2_TEST_IO_TIMEOUT_MS);
     char preface[NC_H2_CLIENT_PREFACE_LEN];
     if (sock_read_all(fd, preface, sizeof(preface)) != 0 ||
         memcmp(preface, NC_H2_CLIENT_PREFACE, sizeof(preface)) != 0)
@@ -2520,7 +2562,7 @@ TEST(h2_client_invalid_trailer_emits_terminal_error) {
     neverc_h2_client_stream_free(stream);
     neverc_h2_client_free(client);
     int status = 0;
-    waitpid(child, &status, 0);
+    (void)h2_reap_child(child, &status);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     if (first != 1 || header_type != NEVERC_H2_CLIENT_EVENT_HEADERS ||
         second != 1 || terminal_type != NEVERC_H2_CLIENT_EVENT_ERROR ||
@@ -2589,7 +2631,7 @@ TEST(h2_client_queue_overflow_emits_terminal_error) {
     neverc_h2_client_stream_free(stream);
     neverc_h2_client_free(client);
     int status = 0;
-    waitpid(child, &status, 0);
+    (void)h2_reap_child(child, &status);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ASSERT_TRUE(saw_error);
 }
@@ -2641,7 +2683,7 @@ TEST(h2_client_rejects_server_enable_push) {
     neverc_h2_client_stream_free(stream);
     neverc_h2_client_free(client);
     int status = 0;
-    waitpid(child, &status, 0);
+    (void)h2_reap_child(child, &status);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ASSERT_TRUE(rejected);
 }
@@ -2693,7 +2735,7 @@ TEST(h2_client_accepts_large_header_table_size) {
     neverc_h2_client_stream_free(stream);
     neverc_h2_client_free(client);
     int status = 0;
-    waitpid(child, &status, 0);
+    (void)h2_reap_child(child, &status);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ASSERT_TRUE(accepted);
 }
@@ -2758,7 +2800,7 @@ TEST(h2_client_rejects_idle_stream_data) {
     neverc_h2_client_stream_free(stream);
     neverc_h2_client_free(client);
     int status = 0;
-    waitpid(child, &status, 0);
+    (void)h2_reap_child(child, &status);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ASSERT_TRUE(rejected);
 }
@@ -2810,7 +2852,7 @@ TEST(h2_client_rejects_priority_self_dependency) {
     neverc_h2_client_stream_free(stream);
     neverc_h2_client_free(client);
     int status = 0;
-    waitpid(child, &status, 0);
+    (void)h2_reap_child(child, &status);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ASSERT_TRUE(rejected);
 }
@@ -2862,7 +2904,7 @@ TEST(h2_client_rejects_push_promise) {
     neverc_h2_client_stream_free(stream);
     neverc_h2_client_free(client);
     int status = 0;
-    waitpid(child, &status, 0);
+    (void)h2_reap_child(child, &status);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ASSERT_TRUE(rejected);
 }
@@ -2914,7 +2956,7 @@ TEST(h2_client_rejects_idle_rst_stream) {
     neverc_h2_client_stream_free(stream);
     neverc_h2_client_free(client);
     int status = 0;
-    waitpid(child, &status, 0);
+    (void)h2_reap_child(child, &status);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ASSERT_TRUE(rejected);
 }
@@ -2966,7 +3008,7 @@ TEST(h2_client_rejects_unsolicited_settings_ack) {
     neverc_h2_client_stream_free(stream);
     neverc_h2_client_free(client);
     int status = 0;
-    waitpid(child, &status, 0);
+    (void)h2_reap_child(child, &status);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ASSERT_TRUE(rejected);
 }
@@ -3014,7 +3056,7 @@ TEST(h2_client_rejects_headers_priority_self_dependency) {
     neverc_h2_client_stream_free(stream);
     neverc_h2_client_free(client);
     int status = 0;
-    waitpid(child, &status, 0);
+    (void)h2_reap_child(child, &status);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ASSERT_TRUE(rejected);
 }
@@ -3034,7 +3076,6 @@ int main(void) {
     run_test_hpack_encode_basic();
     run_test_hpack_roundtrip_custom();
     run_test_huffman_roundtrip();
-    run_test_h2_server_lifecycle();
     run_test_client_preface();
     run_test_hpack_dynamic_table_eviction();
     run_test_hpack_oversized_entries_do_not_expand_table();
@@ -3106,6 +3147,9 @@ int main(void) {
     run_test_h2_client_rejects_unsolicited_settings_ack();
     run_test_h2_client_rejects_headers_priority_self_dependency();
 #endif
+    /* After fork tests: creating the handler pool first can leave the
+     * process multi-threaded, and fork() then deadlocks in the child. */
+    run_test_h2_server_lifecycle();
 
     printf("\n%d passed, %d failed\n", tests_passed, tests_failed);
     return tests_failed > 0 ? 1 : 0;

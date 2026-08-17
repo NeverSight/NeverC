@@ -643,6 +643,59 @@ static void test_parse_edge_cases(void) {
     check_int("argc zero parse ok", neverc_flag_parse(0, NULL), 0);
     check_int("argc zero marks parsed", neverc_flag_parsed(), 1);
     check_int("argc negative is rejected", neverc_flag_parse(-1, NULL), -1);
+
+    /* A later error in the same Parse must not leave nflag/visit reporting
+     * flags that were written before the failure. */
+    neverc_flag_reset();
+    n = 0;
+    int m = 0;
+    neverc_flag_int("n", 0, "n", &n);
+    neverc_flag_int("m", 0, "m", &m);
+    char *partial[] = {"prog", "-n", "1", "-m", "bad"};
+    check_int("partial parse is rejected", neverc_flag_parse(5, partial), -1);
+    check_int("partial parse writes earlier flag", n, 1);
+    check_int("partial parse preserves failed flag", m, 0);
+    check_int("partial parse clears nflag", neverc_flag_nflag(), 0);
+    visit_count_ctx = 0;
+    neverc_flag_visit(visit_counter, NULL);
+    check_int("partial parse visit is empty", visit_count_ctx, 0);
+
+    neverc_flag_reset();
+    n = 0;
+    neverc_flag_int("n", 0, "n", &n);
+    char *then_unknown[] = {"prog", "-n=3", "-missing"};
+    check_int("flag then unknown fails", neverc_flag_parse(3, then_unknown), -1);
+    check_int("flag then unknown writes earlier flag", n, 3);
+    check_int("flag then unknown clears nflag", neverc_flag_nflag(), 0);
+
+    neverc_flag_reset();
+    n = 0;
+    neverc_flag_int("n", 0, "n", &n);
+    char *then_help[] = {"prog", "-n", "2", "-h"};
+    check_int("flag then unregistered help fails",
+              neverc_flag_parse(4, then_help), -1);
+    check_int("flag then help writes earlier flag", n, 2);
+    check_int("flag then help clears nflag", neverc_flag_nflag(), 0);
+
+    neverc_flag_reset();
+    n = 0;
+    m = 0;
+    neverc_flag_int("n", 0, "n", &n);
+    neverc_flag_int("m", 0, "m", &m);
+    char *then_missing[] = {"prog", "-n", "4", "-m"};
+    check_int("flag then missing value fails",
+              neverc_flag_parse(4, then_missing), -1);
+    check_int("flag then missing value writes earlier", n, 4);
+    check_int("flag then missing value clears nflag", neverc_flag_nflag(), 0);
+
+    neverc_flag_reset();
+    n = 0;
+    neverc_flag_int("n", 0, "n", &n);
+    char *then_syntax[] = {"prog", "-n=5", "---x"};
+    check_int("flag then bad syntax fails",
+              neverc_flag_parse(3, then_syntax), -1);
+    check_int("flag then bad syntax writes earlier", n, 5);
+    check_int("flag then bad syntax clears nflag", neverc_flag_nflag(), 0);
 }
 
 int main(void) {

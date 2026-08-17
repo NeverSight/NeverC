@@ -16,6 +16,7 @@
   #include <sys/stat.h>
   #include <dirent.h>
   #include <unistd.h>
+  #include <fcntl.h>
 #endif
 
 static int fs_entries_reserve(neverc_fs_dir_entry_t **entries, size_t *cap,
@@ -104,6 +105,18 @@ static int fs_entry_name_ok(const char *name) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
     if (strchr(name, '\\') != NULL)
         return 0;
+    {
+        /* Win32 strips trailing spaces/dots, so ".. " / ".." become parent. */
+        size_t n = strlen(name);
+        while (n > 0 && (name[n - 1] == ' ' || name[n - 1] == '.'))
+            n--;
+        if (n == 0)
+            return 0;
+        if (n == 1 && name[0] == '.')
+            return 0;
+        if (n == 2 && name[0] == '.' && name[1] == '.')
+            return 0;
+    }
 #endif
     return 1;
 }
@@ -427,7 +440,18 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
         }
         neverc_fs_dir_entry_t *e = &result[*count];
         memset(e, 0, sizeof(*e));
-        strncpy(e->name, fd.cFileName, sizeof(e->name) - 1);
+        {
+            size_t nlen = strlen(fd.cFileName);
+            if (nlen >= sizeof(e->name)) {
+                free(result);
+                FindClose(h);
+                *entries = NULL;
+                *count = 0;
+                errno = ENAMETOOLONG;
+                return -1;
+            }
+            memcpy(e->name, fd.cFileName, nlen + 1);
+        }
         {
             int reparse = (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
             e->is_dir = !reparse &&
@@ -480,7 +504,18 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
         }
         neverc_fs_dir_entry_t *e = &result[*count];
         memset(e, 0, sizeof(*e));
-        strncpy(e->name, de->d_name, sizeof(e->name) - 1);
+        {
+            size_t nlen = strlen(de->d_name);
+            if (nlen >= sizeof(e->name)) {
+                free(result);
+                closedir(d);
+                *entries = NULL;
+                *count = 0;
+                errno = ENAMETOOLONG;
+                return -1;
+            }
+            memcpy(e->name, de->d_name, nlen + 1);
+        }
         if (de->d_type == DT_DIR) {
             e->is_dir = 1;
             e->mode = NEVERC_FS_MODE_DIR;
@@ -564,20 +599,184 @@ glob_fail:
     return -1;
 }
 
+#if defined(NEVERC_PLATFORM_WINDOWS)
 static int fs_is_real_dir(const char *path, const neverc_fs_dir_entry_t *entry) {
+    DWORD attr;
     if (!entry || !entry->is_dir || (entry->mode & NEVERC_FS_MODE_LINK))
         return 0;
-#if defined(NEVERC_PLATFORM_WINDOWS)
-    DWORD attr = GetFileAttributesA(path);
+    attr = GetFileAttributesA(path);
     return attr != INVALID_FILE_ATTRIBUTES &&
            (attr & FILE_ATTRIBUTE_DIRECTORY) &&
            !(attr & FILE_ATTRIBUTE_REPARSE_POINT);
-#else
-    struct stat st;
-    return lstat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
 #endif
+
+#if !defined(NEVERC_PLATFORM_WINDOWS)
+static int fs_same_file(const struct stat *a, const struct stat *b) {
+    return a->st_dev == b->st_dev && a->st_ino == b->st_ino;
 }
 
+static void fs_fill_dir_entry_from_st(neverc_fs_dir_entry_t *e, const char *name,
+                                      const struct stat *st) {
+    memset(e, 0, sizeof(*e));
+    {
+        size_t nlen = strlen(name);
+        if (nlen >= sizeof(e->name)) nlen = sizeof(e->name) - 1;
+        memcpy(e->name, name, nlen);
+        e->name[nlen] = '\0';
+    }
+    e->is_dir = S_ISDIR(st->st_mode) ? 1 : 0;
+    e->mode = (uint32_t)(st->st_mode & NEVERC_FS_PERM_MASK);
+    if (e->is_dir) e->mode |= NEVERC_FS_MODE_DIR;
+    if (S_ISLNK(st->st_mode)) e->mode |= NEVERC_FS_MODE_LINK;
+    if (S_ISFIFO(st->st_mode)) e->mode |= NEVERC_FS_MODE_PIPE;
+    if (S_ISSOCK(st->st_mode)) e->mode |= NEVERC_FS_MODE_SOCKET;
+    if (S_ISCHR(st->st_mode))
+        e->mode |= NEVERC_FS_MODE_DEVICE | NEVERC_FS_MODE_CHAR_DEVICE;
+    else if (S_ISBLK(st->st_mode))
+        e->mode |= NEVERC_FS_MODE_DEVICE;
+    if (st->st_mode & S_ISUID) e->mode |= NEVERC_FS_MODE_SETUID;
+    if (st->st_mode & S_ISGID) e->mode |= NEVERC_FS_MODE_SETGID;
+    if (st->st_mode & S_ISVTX) e->mode |= NEVERC_FS_MODE_STICKY;
+    if (!S_ISREG(st->st_mode) && !S_ISDIR(st->st_mode) && !S_ISLNK(st->st_mode) &&
+        !S_ISFIFO(st->st_mode) && !S_ISSOCK(st->st_mode) &&
+        !S_ISCHR(st->st_mode) && !S_ISBLK(st->st_mode))
+        e->mode |= NEVERC_FS_MODE_IRREGULAR;
+}
+
+static int fs_read_dir_fd(int dir_fd, neverc_fs_dir_entry_t **entries,
+                          size_t *count) {
+    int scan_fd = dup(dir_fd);
+    DIR *d;
+    size_t cap = 16;
+    neverc_fs_dir_entry_t *result;
+    *entries = NULL;
+    *count = 0;
+    if (scan_fd < 0) return -1;
+    d = fdopendir(scan_fd);
+    if (!d) {
+        close(scan_fd);
+        return -1;
+    }
+    result = (neverc_fs_dir_entry_t *)malloc(cap * sizeof(*result));
+    if (!result) {
+        closedir(d);
+        return -1;
+    }
+    for (;;) {
+        struct dirent *de;
+        struct stat st;
+        size_t nlen;
+        errno = 0;
+        de = readdir(d);
+        if (!de) {
+            if (errno != 0) {
+                free(result);
+                closedir(d);
+                return -1;
+            }
+            break;
+        }
+        if (!fs_entry_name_ok(de->d_name))
+            continue;
+        nlen = strlen(de->d_name);
+        if (nlen >= sizeof(result[0].name)) {
+            free(result);
+            closedir(d);
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        if (fstatat(dir_fd, de->d_name, &st, AT_SYMLINK_NOFOLLOW) != 0) {
+            if (errno == ENOENT)
+                continue;
+            free(result);
+            closedir(d);
+            return -1;
+        }
+        if (!fs_entries_reserve(&result, &cap, *count + 1)) {
+            free(result);
+            closedir(d);
+            return -1;
+        }
+        fs_fill_dir_entry_from_st(&result[*count], de->d_name, &st);
+        (*count)++;
+    }
+    if (closedir(d) != 0) {
+        free(result);
+        return -1;
+    }
+    if (*count > 1)
+        qsort(result, *count, sizeof(*result), fs_dir_entry_cmp);
+    *entries = result;
+    return 0;
+}
+
+static int walk_from_fd(int dir_fd, const char *path,
+                        int (*fn)(const char *, const neverc_fs_dir_entry_t *, void *),
+                        void *userdata) {
+    neverc_fs_dir_entry_t *entries = NULL;
+    size_t count = 0;
+    if (fs_read_dir_fd(dir_fd, &entries, &count) != 0) return -1;
+
+    for (size_t i = 0; i < count; i++) {
+        char *full = fs_join_path(path, entries[i].name);
+        int rc;
+        if (!full) {
+            neverc_fs_free_entries(entries);
+            return -1;
+        }
+
+        rc = fn(full, &entries[i], userdata);
+        if (rc == NEVERC_FS_SKIP_ALL) {
+            free(full);
+            neverc_fs_free_entries(entries);
+            return NEVERC_FS_SKIP_ALL;
+        }
+        if (rc == NEVERC_FS_SKIP_DIR) {
+            int skip_rest = !entries[i].is_dir;
+            free(full);
+            if (skip_rest) break;
+            continue;
+        }
+        if (rc != 0) {
+            free(full);
+            neverc_fs_free_entries(entries);
+            return rc;
+        }
+
+        if (entries[i].is_dir && !(entries[i].mode & NEVERC_FS_MODE_LINK)) {
+            int flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW;
+            int child;
+#ifdef O_CLOEXEC
+            flags |= O_CLOEXEC;
+#endif
+            child = openat(dir_fd, entries[i].name, flags);
+            if (child < 0) {
+                if (errno == ENOENT || errno == ELOOP || errno == ENOTDIR) {
+                    free(full);
+                    continue;
+                }
+                free(full);
+                neverc_fs_free_entries(entries);
+                return -1;
+            }
+            rc = walk_from_fd(child, full, fn, userdata);
+            if (close(child) != 0 && rc == 0)
+                rc = -1;
+            if (rc != 0) {
+                free(full);
+                neverc_fs_free_entries(entries);
+                return rc;
+            }
+        }
+        free(full);
+    }
+    neverc_fs_free_entries(entries);
+    return 0;
+}
+#endif
+
+#if defined(NEVERC_PLATFORM_WINDOWS)
 static int walk_recursive(const char *path,
                           int (*fn)(const char *, const neverc_fs_dir_entry_t *, void *),
                           void *userdata) {
@@ -625,6 +824,7 @@ static int walk_recursive(const char *path,
     neverc_fs_free_entries(entries);
     return 0;
 }
+#endif
 
 int neverc_fs_walk_dir(const char *root,
                        int (*fn)(const char *path,
@@ -648,7 +848,29 @@ int neverc_fs_walk_dir(const char *root,
     if (rc == NEVERC_FS_SKIP_DIR || rc == NEVERC_FS_SKIP_ALL) return 0;
     if (rc != 0) return rc;
     if (!info.is_dir || (info.mode & NEVERC_FS_MODE_LINK)) return 0;
+#if defined(NEVERC_PLATFORM_WINDOWS)
     rc = walk_recursive(root, fn, userdata);
+#else
+    {
+        struct stat st, opened;
+        int flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW;
+        int fd;
+#ifdef O_CLOEXEC
+        flags |= O_CLOEXEC;
+#endif
+        if (lstat(root, &st) != 0) return -1;
+        fd = open(root, flags);
+        if (fd < 0) return -1;
+        if (fstat(fd, &opened) != 0 || !fs_same_file(&st, &opened) ||
+            !S_ISDIR(opened.st_mode)) {
+            close(fd);
+            return -1;
+        }
+        rc = walk_from_fd(fd, root, fn, userdata);
+        if (close(fd) != 0 && rc == 0)
+            rc = -1;
+    }
+#endif
     if (rc == NEVERC_FS_SKIP_ALL) return 0;
     return rc;
 }

@@ -696,6 +696,10 @@ static void test_controlled_io(void) {
             receiver, ctx, buf, sizeof(buf), &info);
         check_int("UDP explicit cancel",
                   result.status, NEVERC_NET_CANCELLED);
+        result = neverc_udp_write_context(
+            receiver, ctx, "x", 1, NULL);
+        check_int("UDP cancelled write",
+                  result.status, NEVERC_NET_CANCELLED);
     }
     neverc_context_cancel_handle_free(cancel);
     neverc_context_free(ctx);

@@ -1,11 +1,21 @@
 #include "neverc/std/sync.h"
 #include "neverc/std/_platform.h"
 
+#ifndef NEVERC_SYNC_INIT_SHOULD_FAIL
+#define NEVERC_SYNC_INIT_SHOULD_FAIL() 0
+#endif
+#ifndef NEVERC_SYNC_LOCK_SHOULD_FAIL
+#define NEVERC_SYNC_LOCK_SHOULD_FAIL() 0
+#endif
+
 #if defined(NEVERC_PLATFORM_WINDOWS)
 
-void neverc_mutex_init(neverc_mutex_t *m) {
+int neverc_mutex_init(neverc_mutex_t *m) {
+    if (!m || NEVERC_SYNC_INIT_SHOULD_FAIL())
+        return -1;
     InitializeSRWLock(&m->srw);
     m->owner = 0;
+    return 0;
 }
 void neverc_mutex_destroy(neverc_mutex_t *m) { (void)m; }
 void neverc_mutex_lock(neverc_mutex_t *m) {
@@ -25,7 +35,12 @@ int neverc_mutex_trylock(neverc_mutex_t *m) {
     return 1;
 }
 
-void neverc_rwmutex_init(neverc_rwmutex_t *rw) { InitializeSRWLock(&rw->rw); }
+int neverc_rwmutex_init(neverc_rwmutex_t *rw) {
+    if (!rw || NEVERC_SYNC_INIT_SHOULD_FAIL())
+        return -1;
+    InitializeSRWLock(&rw->rw);
+    return 0;
+}
 void neverc_rwmutex_destroy(neverc_rwmutex_t *rw) { (void)rw; }
 void neverc_rwmutex_rlock(neverc_rwmutex_t *rw) { AcquireSRWLockShared(&rw->rw); }
 int  neverc_rwmutex_tryrlock(neverc_rwmutex_t *rw) { return TryAcquireSRWLockShared(&rw->rw); }
@@ -34,9 +49,15 @@ void neverc_rwmutex_lock(neverc_rwmutex_t *rw) { AcquireSRWLockExclusive(&rw->rw
 int  neverc_rwmutex_trylock(neverc_rwmutex_t *rw) { return TryAcquireSRWLockExclusive(&rw->rw); }
 void neverc_rwmutex_unlock(neverc_rwmutex_t *rw) { ReleaseSRWLockExclusive(&rw->rw); }
 
-void neverc_waitgroup_init(neverc_waitgroup_t *wg) {
-    wg->counter = 0; wg->target = 0;
-    InitializeCriticalSection(&wg->mu); InitializeConditionVariable(&wg->cond);
+int neverc_waitgroup_init(neverc_waitgroup_t *wg) {
+    if (!wg || NEVERC_SYNC_INIT_SHOULD_FAIL())
+        return -1;
+    wg->counter = 0;
+    wg->target = 0;
+    if (!InitializeCriticalSectionAndSpinCount(&wg->mu, 4000))
+        return -1;
+    InitializeConditionVariable(&wg->cond);
+    return 0;
 }
 void neverc_waitgroup_destroy(neverc_waitgroup_t *wg) { DeleteCriticalSection(&wg->mu); }
 int neverc_waitgroup_add_checked(neverc_waitgroup_t *wg, int delta) {
@@ -69,7 +90,14 @@ void neverc_waitgroup_wait(neverc_waitgroup_t *wg) {
     LeaveCriticalSection(&wg->mu);
 }
 
-void neverc_once_init(neverc_once_t *o) { o->done = 0; InitializeCriticalSection(&o->mu); }
+int neverc_once_init(neverc_once_t *o) {
+    if (!o || NEVERC_SYNC_INIT_SHOULD_FAIL())
+        return -1;
+    o->done = 0;
+    if (!InitializeCriticalSectionAndSpinCount(&o->mu, 4000))
+        return -1;
+    return 0;
+}
 void neverc_once_destroy(neverc_once_t *o) { DeleteCriticalSection(&o->mu); }
 void neverc_once_do(neverc_once_t *o, void (*f)(void)) {
     if (!o || !f) return;
@@ -82,8 +110,12 @@ void neverc_once_do(neverc_once_t *o, void (*f)(void)) {
     LeaveCriticalSection(&o->mu);
 }
 
-void neverc_cond_init(neverc_cond_t *c, neverc_mutex_t *m) {
-    InitializeConditionVariable(&c->cond); c->m = m;
+int neverc_cond_init(neverc_cond_t *c, neverc_mutex_t *m) {
+    if (!c || !m || NEVERC_SYNC_INIT_SHOULD_FAIL())
+        return -1;
+    InitializeConditionVariable(&c->cond);
+    c->m = m;
+    return 0;
 }
 void neverc_cond_destroy(neverc_cond_t *c) { (void)c; }
 void neverc_cond_wait(neverc_cond_t *c) {
@@ -97,17 +129,34 @@ void neverc_cond_broadcast(neverc_cond_t *c) { WakeAllConditionVariable(&c->cond
 
 #else /* POSIX */
 
-void neverc_mutex_init(neverc_mutex_t *m) {
+#include <errno.h>
+
+static int sync_posix_mutex_lock(pthread_mutex_t *mu) {
+    for (;;) {
+        /* A failed lock is not "initialization ran" / "wait completed". */
+        if (NEVERC_SYNC_LOCK_SHOULD_FAIL())
+            continue;
+        int rc = pthread_mutex_lock(mu);
+        if (rc == 0)
+            return 0;
+        if (rc == EDEADLK)
+            return -1;
+    }
+}
+
+int neverc_mutex_init(neverc_mutex_t *m) {
+    if (!m || NEVERC_SYNC_INIT_SHOULD_FAIL())
+        return -1;
     pthread_mutexattr_t attr;
     if (pthread_mutexattr_init(&attr) == 0) {
         (void)pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK);
         if (pthread_mutex_init(&m->mu, &attr) == 0) {
             pthread_mutexattr_destroy(&attr);
-            return;
+            return 0;
         }
         pthread_mutexattr_destroy(&attr);
     }
-    pthread_mutex_init(&m->mu, NULL);
+    return pthread_mutex_init(&m->mu, NULL) == 0 ? 0 : -1;
 }
 void neverc_mutex_destroy(neverc_mutex_t *m) {
     pthread_mutex_destroy(&m->mu);
@@ -125,8 +174,10 @@ int neverc_mutex_trylock(neverc_mutex_t *m) {
     return pthread_mutex_trylock(&m->mu) == 0;
 }
 
-void neverc_rwmutex_init(neverc_rwmutex_t *rw) {
-    pthread_rwlock_init(&rw->rw, NULL);
+int neverc_rwmutex_init(neverc_rwmutex_t *rw) {
+    if (!rw || NEVERC_SYNC_INIT_SHOULD_FAIL())
+        return -1;
+    return pthread_rwlock_init(&rw->rw, NULL) == 0 ? 0 : -1;
 }
 void neverc_rwmutex_destroy(neverc_rwmutex_t *rw) {
     pthread_rwlock_destroy(&rw->rw);
@@ -150,11 +201,18 @@ void neverc_rwmutex_unlock(neverc_rwmutex_t *rw) {
     pthread_rwlock_unlock(&rw->rw);
 }
 
-void neverc_waitgroup_init(neverc_waitgroup_t *wg) {
+int neverc_waitgroup_init(neverc_waitgroup_t *wg) {
+    if (!wg || NEVERC_SYNC_INIT_SHOULD_FAIL())
+        return -1;
     wg->counter = 0;
     wg->target = 0;
-    pthread_mutex_init(&wg->mu, NULL);
-    pthread_cond_init(&wg->cond, NULL);
+    if (pthread_mutex_init(&wg->mu, NULL) != 0)
+        return -1;
+    if (pthread_cond_init(&wg->cond, NULL) != 0) {
+        pthread_mutex_destroy(&wg->mu);
+        return -1;
+    }
+    return 0;
 }
 void neverc_waitgroup_destroy(neverc_waitgroup_t *wg) {
     pthread_mutex_destroy(&wg->mu);
@@ -187,16 +245,20 @@ void neverc_waitgroup_done(neverc_waitgroup_t *wg) {
 }
 void neverc_waitgroup_wait(neverc_waitgroup_t *wg) {
     if (!wg) return;
-    if (pthread_mutex_lock(&wg->mu) != 0)
-        return;
+    /* Do not return on lock failure: that would fail-open (waiters proceed
+     * as if every Add had been matched by Done). */
+    while (sync_posix_mutex_lock(&wg->mu) != 0)
+        continue;
     while (wg->counter > 0)
         pthread_cond_wait(&wg->cond, &wg->mu);
     pthread_mutex_unlock(&wg->mu);
 }
 
-void neverc_once_init(neverc_once_t *o) {
+int neverc_once_init(neverc_once_t *o) {
+    if (!o || NEVERC_SYNC_INIT_SHOULD_FAIL())
+        return -1;
     o->done = 0;
-    pthread_mutex_init(&o->mu, NULL);
+    return pthread_mutex_init(&o->mu, NULL) == 0 ? 0 : -1;
 }
 void neverc_once_destroy(neverc_once_t *o) {
     pthread_mutex_destroy(&o->mu);
@@ -206,9 +268,9 @@ void neverc_once_do(neverc_once_t *o, void (*f)(void)) {
         return;
     if (NEVERC_ATOMIC_LOAD32(&o->done))
         return;
-    /* Do not mark done or run f() without the lock: that would fail-open
-     * (callers skip initialization that never ran under exclusion). */
-    if (pthread_mutex_lock(&o->mu) != 0)
+    /* Do not mark done, run f(), or return without the lock: that would
+     * fail-open (callers skip initialization that never ran under exclusion). */
+    if (sync_posix_mutex_lock(&o->mu) != 0)
         return;
     if (!NEVERC_ATOMIC_LOAD32(&o->done)) {
         f();
@@ -217,9 +279,13 @@ void neverc_once_do(neverc_once_t *o, void (*f)(void)) {
     pthread_mutex_unlock(&o->mu);
 }
 
-void neverc_cond_init(neverc_cond_t *c, neverc_mutex_t *m) {
-    pthread_cond_init(&c->cond, NULL);
+int neverc_cond_init(neverc_cond_t *c, neverc_mutex_t *m) {
+    if (!c || !m || NEVERC_SYNC_INIT_SHOULD_FAIL())
+        return -1;
+    if (pthread_cond_init(&c->cond, NULL) != 0)
+        return -1;
     c->mu = &m->mu;
+    return 0;
 }
 void neverc_cond_destroy(neverc_cond_t *c) {
     pthread_cond_destroy(&c->cond);
@@ -264,7 +330,10 @@ neverc_sync_pool_t *neverc_sync_pool_new(void *(*new_func)(void)) {
     if (!p) return NULL;
     p->new_func = new_func;
     p->count = 0;
-    neverc_mutex_init(&p->mu);
+    if (neverc_mutex_init(&p->mu) != 0) {
+        free(p);
+        return NULL;
+    }
     return p;
 }
 
@@ -393,7 +462,11 @@ neverc_sync_map_t *neverc_sync_map_new(void) {
     m->buckets = (smap_entry_t *)calloc(m->cap, sizeof(smap_entry_t));
     if (!m->buckets) { free(m); return NULL; }
     m->count = 0;
-    neverc_rwmutex_init(&m->rw);
+    if (neverc_rwmutex_init(&m->rw) != 0) {
+        free(m->buckets);
+        free(m);
+        return NULL;
+    }
     return m;
 }
 
@@ -465,32 +538,36 @@ static int smap_insert(smap_entry_t *slot, const char *key, void *value) {
     return 0;
 }
 
-void neverc_sync_map_store(neverc_sync_map_t *m, const char *key, void *value) {
+int neverc_sync_map_store(neverc_sync_map_t *m, const char *key, void *value) {
     if (!m || !key)
-        return;
+        return -1;
     neverc_rwmutex_lock(&m->rw);
     smap_entry_t *slot = smap_find_slot(m->buckets, m->cap, key);
     if (slot && slot->occupied == SMAP_OCCUPIED) {
         slot->value = value;
         neverc_rwmutex_unlock(&m->rw);
-        return;
+        return 0;
     }
 
     if (!slot || m->count >= m->cap - m->cap / 4) {
         if (smap_grow(m) < 0) {
             neverc_rwmutex_unlock(&m->rw);
-            return;
+            return -1;
         }
         slot = smap_find_slot(m->buckets, m->cap, key);
         if (slot && slot->occupied == SMAP_OCCUPIED) {
             slot->value = value;
             neverc_rwmutex_unlock(&m->rw);
-            return;
+            return 0;
         }
     }
-    if (slot && smap_insert(slot, key, value) == 0)
+    int stored = 0;
+    if (slot && smap_insert(slot, key, value) == 0) {
         m->count++;
+        stored = 1;
+    }
     neverc_rwmutex_unlock(&m->rw);
+    return stored ? 0 : -1;
 }
 
 void *neverc_sync_map_load(neverc_sync_map_t *m, const char *key, int *ok) {

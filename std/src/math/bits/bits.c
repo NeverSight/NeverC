@@ -360,9 +360,13 @@ void neverc_bits_add64(uint64_t x, uint64_t y, uint64_t carry,
     *sum = s;
     *carry_out = c;
 #else
-    uint64_t s = x + y + carry;
+    /* Same widening as Add32 / the builtin path: carry > 1 must not collapse. */
+    uint64_t t = x + y;
+    uint64_t c = (uint64_t)(t < x);
+    uint64_t s = t + carry;
+    c += (uint64_t)(s < t);
     *sum = s;
-    *carry_out = ((x & y) | ((x | y) & ~s)) >> 63;
+    *carry_out = c;
 #endif
 }
 
@@ -381,9 +385,12 @@ void neverc_bits_sub64(uint64_t x, uint64_t y, uint64_t borrow,
     *diff = d;
     *borrow_out = b;
 #else
-    uint64_t d = x - y - borrow;
+    uint64_t t = x - y;
+    uint64_t b = (uint64_t)(x < y);
+    uint64_t d = t - borrow;
+    b += (uint64_t)(t < borrow);
     *diff = d;
-    *borrow_out = ((~x & y) | (~(x ^ y) & d)) >> 63;
+    *borrow_out = b;
 #endif
 }
 

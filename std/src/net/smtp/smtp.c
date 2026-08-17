@@ -136,17 +136,37 @@ static int smtp_read_response(neverc_smtp_client_t *c) {
 }
 
 /* Reject SMTP atoms that could inject extra commands, source routes, or
- * break path syntax. Leading '@' and ',' / ';' are obsolete source-route
- * punctuation (RFC 5321 §4.1.2). */
+ * break path syntax. Leading '@', extra '@', ',' / ';', and ':' outside
+ * an address-literal are obsolete source-route punctuation
+ * (RFC 5321 §4.1.2). Colons remain valid inside "[...]" IPv6 literals. */
 static int smtp_safe_atom(const char *s) {
     if (!s || !s[0] || s[0] == '@') return 0;
     size_t n = 0;
+    int in_literal = 0;
+    int at_count = 0;
     for (const unsigned char *p = (const unsigned char *)s; *p; p++, n++) {
         if (n >= 255 || *p <= 32 || *p >= 127 || *p == '<' || *p == '>' ||
             *p == ',' || *p == ';')
             return 0;
+        if (*p == '[') {
+            if (in_literal) return 0;
+            in_literal = 1;
+            continue;
+        }
+        if (*p == ']') {
+            if (!in_literal) return 0;
+            in_literal = 0;
+            continue;
+        }
+        if (*p == ':' && !in_literal)
+            return 0;
+        if (*p == '@') {
+            at_count++;
+            if (at_count > 1)
+                return 0;
+        }
     }
-    return 1;
+    return !in_literal;
 }
 
 static int smtp_line_has_break(const char *s, size_t len) {
@@ -157,11 +177,14 @@ static int smtp_line_has_break(const char *s, size_t len) {
     return 0;
 }
 
-/* Send a command and read the response. Returns status code. */
-static int smtp_cmd(neverc_smtp_client_t *c, const char *cmd) {
+/* Send a command and read the response. Returns status code.
+ * AUTH LOGIN continuations may be empty (base64 of an empty credential
+ * is a blank CRLF line). Ordinary SMTP commands must not be. */
+static int smtp_cmd_line(neverc_smtp_client_t *c, const char *cmd,
+                         int allow_empty) {
     size_t len = strlen(cmd);
     char sendbuf[SMTP_BUF_SIZE];
-    if (len == 0 || len >= sizeof(sendbuf) - 3 ||
+    if ((len == 0 && !allow_empty) || len >= sizeof(sendbuf) - 3 ||
         smtp_line_has_break(cmd, len))
         return -1;
     memcpy(sendbuf, cmd, len);
@@ -171,6 +194,10 @@ static int smtp_cmd(neverc_smtp_client_t *c, const char *cmd) {
     if (smtp_write_all(c->conn, sendbuf, len) != 0)
         return -1;
     return smtp_read_response(c);
+}
+
+static int smtp_cmd(neverc_smtp_client_t *c, const char *cmd) {
+    return smtp_cmd_line(c, cmd, 0);
 }
 
 static int smtp_cmdf(neverc_smtp_client_t *c, const char *fmt, ...) {
@@ -388,20 +415,18 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
 
     if (method == NEVERC_SMTP_AUTH_LOGIN) {
         if (!c->supports_auth_login) return -1;
-        char encoded[512];
-        if (smtp_b64_encode(username, strlen(username), encoded,
-                            sizeof(encoded)) != 0 ||
-            neverc_base64_encoded_len(strlen(password)) >= sizeof(encoded))
+        char user_b64[512];
+        char pass_b64[512];
+        if (smtp_b64_encode(username, strlen(username), user_b64,
+                            sizeof(user_b64)) != 0 ||
+            smtp_b64_encode(password, strlen(password), pass_b64,
+                            sizeof(pass_b64)) != 0)
             return -1;
         int code = smtp_cmd(c, "AUTH LOGIN");
         if (code != 334) return -1;
-        code = smtp_cmd(c, encoded);
+        code = smtp_cmd_line(c, user_b64, 1);
         if (code != 334) return -1;
-
-        if (smtp_b64_encode(password, strlen(password), encoded,
-                            sizeof(encoded)) != 0)
-            return -1;
-        code = smtp_cmd(c, encoded);
+        code = smtp_cmd_line(c, pass_b64, 1);
         return (code == 235) ? 0 : -1;
     }
 

@@ -142,6 +142,14 @@ static int tls_new_session_ticket_extension_allowed(uint16_t type) {
     return type == TLS_EXT_EARLY_DATA;
 }
 
+/* RFC 8446 Appendix B.3: CertificateRequest may carry status_request,
+ * signature_algorithms, signature_algorithms_cert, SCT, certificate_authorities,
+ * and oid_filters. This implementation only advertises and consumes
+ * signature_algorithms; other recognized TLS 1.3 types are illegal here. */
+static int tls_certificate_request_extension_allowed(uint16_t type) {
+    return type == TLS_EXT_SIGNATURE_ALGORITHMS;
+}
+
 /* Returns 0 for a non-empty chain, 1 for an allowed empty chain, and -1 for
  * malformed input or allocation failure. Initial-handshake request contexts
  * are required to be empty. */
@@ -255,14 +263,14 @@ static int tls_parse_certificate_request(
     if (extensions_len != message_len - pos)
         return -1;
 
-    uint16_t seen_extensions[32];
+    enum { TLS_MAX_SEEN_CERT_REQ_EXTENSIONS = 32 };
+    uint16_t seen_extensions[TLS_MAX_SEEN_CERT_REQ_EXTENSIONS];
     size_t seen_count = 0;
     int saw_signature_algorithms = 0;
     size_t extensions_end = pos + extensions_len;
     while (pos < extensions_end) {
         if (extensions_end - pos < 4 ||
-            seen_count == sizeof(seen_extensions) /
-                              sizeof(seen_extensions[0]))
+            seen_count >= TLS_MAX_SEEN_CERT_REQ_EXTENSIONS)
             return -1;
         uint16_t extension_type = tls_get_u16(message + pos);
         size_t extension_len = tls_get_u16(message + pos + 2);
@@ -277,6 +285,14 @@ static int tls_parse_certificate_request(
         }
         seen_extensions[seen_count++] = extension_type;
 
+        /* Reject illegal recognized types before parsing so a valid
+         * signature_algorithms extension cannot fall through into
+         * illegal_parameter (RFC 8446 §4.2). */
+        if (tls_is_recognized_extension(extension_type) &&
+            !tls_certificate_request_extension_allowed(extension_type)) {
+            *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+            return -1;
+        }
         if (extension_type == TLS_EXT_SIGNATURE_ALGORITHMS) {
             if (extension_len < 4) return -1;
             size_t algorithms_len = tls_get_u16(message + pos);
@@ -290,11 +306,6 @@ static int tls_parse_certificate_request(
                     *supports_local_signature = 1;
             }
             saw_signature_algorithms = 1;
-        } else if (tls_is_recognized_extension(extension_type)) {
-            /* RFC 8446 §4.2: recognized types other than
-             * signature_algorithms are not legal in CertificateRequest. */
-            *alert = TLS_ALERT_ILLEGAL_PARAMETER;
-            return -1;
         }
         pos += extension_len;
     }

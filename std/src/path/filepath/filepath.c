@@ -250,6 +250,22 @@ int neverc_filepath_is_local(const char *path) {
         if ((n == 1 && start[0] == '.') ||
             (n == 2 && start[0] == '.' && start[1] == '.'))
             has_dots = 1;
+#ifdef _WIN32
+        {
+            /* Win32 strips trailing spaces/dots: "foo\\.. \\x" escapes.
+             * Exact ".." is handled by Clean below; only the padded form
+             * is rejected here so "a/../b" stays local. */
+            size_t stripped = n;
+            while (stripped > 0 &&
+                   (start[stripped - 1] == ' ' || start[stripped - 1] == '.'))
+                stripped--;
+            if (stripped != n &&
+                (stripped == 0 ||
+                 (stripped == 1 && start[0] == '.') ||
+                 (stripped == 2 && start[0] == '.' && start[1] == '.')))
+                return 0;
+        }
+#endif
         if (*p)
             p++;
     }

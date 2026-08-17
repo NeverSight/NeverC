@@ -51,6 +51,22 @@ static size_t nc_slen(const char *s) {
     return n;
 }
 
+/* TZif abbreviations are packed in a counted char array. A missing NUL
+ * must fail closed: unbounded strlen would read past the file, and the
+ * later memcpy of that length could overflow the heap copy. */
+static int tz_chararray_strlen(const uint8_t *chars, uint32_t nchar,
+                               uint8_t off, size_t *out_len) {
+    if ((uint32_t)off >= nchar)
+        return -1;
+    uint32_t i = off;
+    while (i < nchar && chars[i] != 0)
+        i++;
+    if (i >= nchar)
+        return -1;
+    *out_len = (size_t)(i - off);
+    return 0;
+}
+
 /* ======================================================================
  * Timezone database — 100+ common IANA timezones
  *
@@ -926,14 +942,15 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
 
     if (version > 1) {
         size_t skip = 20;
-        if (ntime > (SIZE_MAX - skip) / 5) return NULL;
+        if ((size_t)ntime > (SIZE_MAX - skip) / 5) return NULL;
         skip += (size_t)ntime * 5;
-        if (nzone > (SIZE_MAX - skip) / 6) return NULL;
+        if ((size_t)nzone > (SIZE_MAX - skip) / 6) return NULL;
         skip += (size_t)nzone * 6;
-        if (nleap > (SIZE_MAX - skip) / 8) return NULL;
+        if ((size_t)nleap > (SIZE_MAX - skip) / 8) return NULL;
         skip += (size_t)nleap * 8;
-        if (nchar > SIZE_MAX - skip || nstd > SIZE_MAX - skip - nchar ||
-            nutc > SIZE_MAX - skip - nchar - nstd)
+        if ((size_t)nchar > SIZE_MAX - skip ||
+            (size_t)nstd > SIZE_MAX - skip - (size_t)nchar ||
+            (size_t)nutc > SIZE_MAX - skip - (size_t)nchar - (size_t)nstd)
             return NULL;
         skip += (size_t)nchar + (size_t)nstd + (size_t)nutc;
         if (!tz_cur_read(&c, skip)) return NULL;
@@ -949,8 +966,9 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
 
     int is64 = version > 1;
     size_t tsize = is64 ? 8 : 4;
-    if (ntime > SIZE_MAX / tsize || nzone > SIZE_MAX / 6 ||
-        nleap > SIZE_MAX / (tsize + 4))
+    if ((size_t)ntime > SIZE_MAX / tsize ||
+        (size_t)nzone > SIZE_MAX / 6 ||
+        (size_t)nleap > SIZE_MAX / (tsize + 4))
         return NULL;
 
     const uint8_t *times = tz_cur_read(&c, (size_t)ntime * tsize);
@@ -966,20 +984,25 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
 
     int std_off = 0, dst_off = 0, has_dst = 0, got_std = 0, got_dst = 0;
     const char *std_ab = "UTC", *dst_ab = NULL;
+    size_t slen = 3, dlen = 0;
     uint32_t zi;
     for (zi = 0; zi < nzone; zi++) {
         int off = (int)(int32_t)tz_be32(zdata + (size_t)zi * 6);
         int isdst = zdata[(size_t)zi * 6 + 4] != 0;
         uint8_t ab = zdata[(size_t)zi * 6 + 5];
-        if ((size_t)ab >= nchar) return NULL;
+        size_t alen = 0;
+        if (tz_chararray_strlen(abbrev, nchar, ab, &alen) != 0)
+            return NULL;
         const char *an = (const char *)(abbrev + ab);
         if (!isdst && !got_std) {
             std_off = off;
             std_ab = an;
+            slen = alen;
             got_std = 1;
         } else if (isdst && !got_dst) {
             dst_off = off;
             dst_ab = an;
+            dlen = alen;
             got_dst = 1;
             has_dst = 1;
         }
@@ -987,13 +1010,21 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
     if (!got_std) {
         std_off = (int)(int32_t)tz_be32(zdata);
         uint8_t ab = zdata[5];
-        if ((size_t)ab >= nchar) return NULL;
+        if (tz_chararray_strlen(abbrev, nchar, ab, &slen) != 0)
+            return NULL;
         std_ab = (const char *)(abbrev + ab);
     }
 
     tzif_extra_t *e = (tzif_extra_t *)calloc(1, sizeof(*e));
     if (!e) return NULL;
     if (ntime > 0) {
+        /* v1 times are 4 bytes, but we store int64_t + int arrays. The
+         * earlier tsize check is not enough on 32-bit hosts. */
+        if ((size_t)ntime > SIZE_MAX / sizeof(int64_t) ||
+            (size_t)ntime > SIZE_MAX / sizeof(int)) {
+            free(e);
+            return NULL;
+        }
         e->when = (int64_t *)malloc((size_t)ntime * sizeof(int64_t));
         e->off = (int *)malloc((size_t)ntime * sizeof(int));
         if (!e->when || !e->off) {
@@ -1023,8 +1054,8 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
     }
 
     size_t nlen = name ? nc_slen(name) : 0;
-    size_t slen = nc_slen(std_ab);
-    size_t dlen = dst_ab ? nc_slen(dst_ab) : 0;
+    if (!dst_ab)
+        dlen = 0;
     if (nlen > SIZE_MAX - slen - dlen - 3) {
         free(e->when);
         free(e->off);

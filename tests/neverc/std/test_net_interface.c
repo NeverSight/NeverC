@@ -23,13 +23,36 @@ static void test_interfaces(void) {
     neverc_net_interface_list_t list;
     check_int("list interfaces", neverc_net_interfaces(&list), 0);
     check_true("has interfaces", list.count > 0);
+    check_true("iface count within cap",
+               list.count <= NEVERC_NET_MAX_INTERFACES);
 
     int all_indexed = 1;
+    int naddrs_ok = 1;
+    int prefix_ok = 1;
     for (int i = 0; i < list.count; i++) {
         if (list.ifaces[i].index <= 0)
             all_indexed = 0;
+        if (list.ifaces[i].naddrs < 0 ||
+            list.ifaces[i].naddrs > NEVERC_NET_MAX_IF_ADDRS)
+            naddrs_ok = 0;
+        for (int j = 0; j < list.ifaces[i].naddrs; j++) {
+            int plen = list.ifaces[i].addrs[j].prefix_len;
+            const char *a = list.ifaces[i].addrs[j].addr;
+            if (plen == -1)
+                continue;
+            if (plen < 0)
+                prefix_ok = 0;
+            else if (strchr(a, ':')) {
+                if (plen > 128)
+                    prefix_ok = 0;
+            } else if (plen > 32) {
+                prefix_ok = 0;
+            }
+        }
     }
     check_true("interface indexes are positive", all_indexed);
+    check_true("naddrs within cap", naddrs_ok);
+    check_true("prefix_len in range for family", prefix_ok);
 
     /* Should have at least loopback */
     int has_lo = 0;

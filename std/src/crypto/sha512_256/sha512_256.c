@@ -9,6 +9,7 @@
 
 void neverc_sha512_256_init(neverc_sha512_256_ctx *ctx) {
     if (!ctx) return;
+    memset(ctx, 0, sizeof(*ctx));
     ctx->state[0] = 0x22312194FC2BF72CULL;
     ctx->state[1] = 0x9F555FA3C84C64C2ULL;
     ctx->state[2] = 0x2393B86B6F53B151ULL;
@@ -17,9 +18,6 @@ void neverc_sha512_256_init(neverc_sha512_256_ctx *ctx) {
     ctx->state[5] = 0xBE5E1E2553863992ULL;
     ctx->state[6] = 0x2B0199FC2C85B8AAULL;
     ctx->state[7] = 0x0EB72DDC81C52CA2ULL;
-    ctx->count = 0;
-    ctx->finalized = 0;
-    memset(ctx->buf, 0, sizeof(ctx->buf));
 }
 
 void neverc_sha512_256_update(neverc_sha512_256_ctx *ctx, const uint8_t *data, size_t len) {
@@ -27,7 +25,7 @@ void neverc_sha512_256_update(neverc_sha512_256_ctx *ctx, const uint8_t *data, s
 }
 
 void neverc_sha512_256_final(neverc_sha512_256_ctx *ctx, uint8_t digest[32]) {
-    if (!ctx || !digest) return;
+    if (!digest) return;
     uint8_t full[64];
     neverc_sha512_final(ctx, full);
     memcpy(digest, full, 32);
@@ -35,6 +33,11 @@ void neverc_sha512_256_final(neverc_sha512_256_ctx *ctx, uint8_t digest[32]) {
 }
 
 void neverc_sha512_256_sum(const uint8_t *data, size_t len, uint8_t digest[32]) {
+    if (!digest) return;
+    if (len > 0 && !data) {
+        memset(digest, 0, 32);
+        return;
+    }
     neverc_sha512_256_ctx ctx;
     neverc_sha512_256_init(&ctx);
     neverc_sha512_256_update(&ctx, data, len);

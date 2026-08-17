@@ -25,6 +25,7 @@
   #include <ws2tcpip.h>
   typedef int ssize_t;
 #else
+  #include <errno.h>
   #include <sys/socket.h>
   #include <sys/time.h>
   #include <unistd.h>
@@ -32,6 +33,9 @@
   #define MSG_NOSIGNAL 0
   #endif
 #endif
+
+/* Match neverc_h2_listen_and_serve: a stalled peer must not block forever. */
+#define H2_IO_TIMEOUT_MS 30000
 
 /* ======================================================================
  * HTTP/2 Frame Header Parse/Write
@@ -324,6 +328,31 @@ static void h2_io_init_tls(h2_io_t *io, neverc_tls_conn_t *tls) {
     io->tcp = NULL;
 }
 
+static void h2_io_set_timeout(h2_io_t *io, int ms) {
+    if (!io || ms < 0) return;
+    if (io->kind == H2_IO_TCP) {
+        (void)neverc_tcp_set_timeout(io->tcp, ms);
+        return;
+    }
+    if (io->kind != H2_IO_SOCKET) return;
+#ifdef _WIN32
+    DWORD timeout = (DWORD)ms;
+    (void)setsockopt(io->fd, SOL_SOCKET, SO_RCVTIMEO,
+                     (const char *)&timeout, sizeof(timeout));
+    (void)setsockopt(io->fd, SOL_SOCKET, SO_SNDTIMEO,
+                     (const char *)&timeout, sizeof(timeout));
+#else
+    struct timeval timeout = {
+        .tv_sec = ms / 1000,
+        .tv_usec = (ms % 1000) * 1000
+    };
+    (void)setsockopt(io->fd, SOL_SOCKET, SO_RCVTIMEO,
+                     &timeout, sizeof(timeout));
+    (void)setsockopt(io->fd, SOL_SOCKET, SO_SNDTIMEO,
+                     &timeout, sizeof(timeout));
+#endif
+}
+
 static int h2_io_read_all(h2_io_t *io, void *buf, size_t len) {
     char *p = (char *)buf;
     size_t got = 0;
@@ -333,8 +362,12 @@ static int h2_io_read_all(h2_io_t *io, void *buf, size_t len) {
         case H2_IO_SOCKET:
 #ifdef _WIN32
             n = recv(io->fd, p + got, (int)(len - got), 0);
+            if (n < 0 && WSAGetLastError() == WSAEINTR)
+                continue;
 #else
             n = (int)recv(io->fd, p + got, len - got, 0);
+            if (n < 0 && errno == EINTR)
+                continue;
 #endif
             break;
         case H2_IO_TCP:
@@ -386,8 +419,12 @@ static int h2_io_write_all(h2_io_t *io, const void *buf, size_t len) {
         case H2_IO_SOCKET:
 #ifdef _WIN32
             n = send(io->fd, p + sent, (int)(len - sent), 0);
+            if (n < 0 && WSAGetLastError() == WSAEINTR)
+                continue;
 #else
             n = (int)send(io->fd, p + sent, len - sent, MSG_NOSIGNAL);
+            if (n < 0 && errno == EINTR)
+                continue;
 #endif
             break;
         case H2_IO_TCP:
@@ -1999,6 +2036,7 @@ done:
 static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
     if (!srv || !io)
         return -1;
+    h2_io_set_timeout(io, H2_IO_TIMEOUT_MS);
 
     h2_conn_t conn;
     memset(&conn, 0, sizeof(conn));
@@ -2640,8 +2678,16 @@ cleanup:
         nc_atomic_store(&stream->reset, 1);
         if (stream->cancel)
             neverc_context_cancel_handle_cancel(stream->cancel);
+        if (stream->receive_queue)
+            (void)neverc_thread_channel_close(stream->receive_queue);
     }
     nc_cond_broadcast(&conn.window_changed);
+    nc_mutex_unlock(&conn.state_lock);
+    if (preface_received && !nc_atomic_load(&conn.goaway_sent))
+        (void)h2_conn_write_goaway(&conn, NC_H2_NO_ERROR);
+    /* Unblock a handler stuck in send() before waiting for it. */
+    h2_io_shutdown(&conn.io);
+    nc_mutex_lock(&conn.state_lock);
     while (conn.active_handlers > 0)
         nc_cond_wait(&conn.handlers_done, &conn.state_lock);
     nc_mutex_unlock(&conn.state_lock);
@@ -2656,8 +2702,6 @@ cleanup:
         neverc_hpack_decoder_destroy(conn.hpack_dec);
     if (conn.hpack_enc)
         neverc_hpack_encoder_destroy(conn.hpack_enc);
-    if (preface_received && !nc_atomic_load(&conn.goaway_sent))
-        (void)h2_conn_write_goaway(&conn, NC_H2_NO_ERROR);
     if (nc_atomic_load(&conn.goaway_sent) &&
         conn.goaway_error_code != NC_H2_NO_ERROR)
         h2_io_drain_after_error(&conn.io);

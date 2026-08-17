@@ -1042,9 +1042,9 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     img->width = width;
     img->height = height;
     img->channels = (ncomp == 1) ? 1 : 3;
-    if (width > SIZE_MAX / img->channels) goto fail;
+    if ((size_t)width > SIZE_MAX / (size_t)img->channels) goto fail;
     img->stride = (size_t)width * img->channels;
-    if (height > SIZE_MAX / img->stride) goto fail;
+    if ((size_t)height > SIZE_MAX / img->stride) goto fail;
     img->pixels = (uint8_t *)calloc(1, img->stride * height);
     if (!img->pixels) goto fail;
 
@@ -1099,7 +1099,8 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     for (int c = 0; c < ncomp; c++) {
         plane_w[c] = mcus_x * (uint32_t)comp_h[c] * 8;
         plane_h[c] = mcus_y * (uint32_t)comp_v[c] * 8;
-        if (plane_w[c] == 0 || plane_h[c] > SIZE_MAX / plane_w[c]) {
+        if (plane_w[c] == 0 ||
+            (size_t)plane_h[c] > SIZE_MAX / (size_t)plane_w[c]) {
             for (int k = 0; k < c; k++) free(plane[k]);
             goto fail;
         }

@@ -82,12 +82,11 @@ static void sha512_block(uint64_t state[8], const uint8_t block[128]) {
 
 void neverc_sha512_init(neverc_sha512_ctx *ctx) {
     if (!ctx) return;
+    memset(ctx, 0, sizeof(*ctx));
     ctx->state[0] = 0x6a09e667f3bcc908ULL; ctx->state[1] = 0xbb67ae8584caa73bULL;
     ctx->state[2] = 0x3c6ef372fe94f82bULL; ctx->state[3] = 0xa54ff53a5f1d36f1ULL;
     ctx->state[4] = 0x510e527fade682d1ULL; ctx->state[5] = 0x9b05688c2b3e6c1fULL;
     ctx->state[6] = 0x1f83d9abfb41bd6bULL; ctx->state[7] = 0x5be0cd19137e2179ULL;
-    ctx->count = 0;
-    ctx->finalized = 0;
 }
 
 void neverc_sha512_update(neverc_sha512_ctx *ctx, const uint8_t *data, size_t len) {
@@ -114,7 +113,11 @@ void neverc_sha512_update(neverc_sha512_ctx *ctx, const uint8_t *data, size_t le
 }
 
 void neverc_sha512_final(neverc_sha512_ctx *ctx, uint8_t digest[64]) {
-    if (!ctx || !digest) return;
+    if (!digest) return;
+    if (!ctx) {
+        memset(digest, 0, 64);
+        return;
+    }
     if (ctx->finalized) {
         for (int i = 0; i < 8; i++)
             put_be64(digest + 8 * i, ctx->state[i]);
@@ -141,6 +144,11 @@ void neverc_sha512_final(neverc_sha512_ctx *ctx, uint8_t digest[64]) {
 }
 
 void neverc_sha512_sum(const uint8_t *data, size_t len, uint8_t digest[64]) {
+    if (!digest) return;
+    if (len > 0 && !data) {
+        memset(digest, 0, 64);
+        return;
+    }
     neverc_sha512_ctx ctx;
     neverc_sha512_init(&ctx);
     neverc_sha512_update(&ctx, data, len);

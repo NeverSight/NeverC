@@ -43,7 +43,7 @@ static void test_sha512_224(void) {
     /* FIPS 180-4: SHA-512/224(896-bit / two-block message) */
     {
         const char *msg = "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
-        hex_to_bytes("23fec5bb94d60b23381cb81482899514bbb8cbea4b3a472047800df8", expected, 28);
+        hex_to_bytes("23fec5bb94d60b23308192640b0c453335d664734fe40e7268674af9", expected, 28);
         neverc_sha512_224_sum((const uint8_t *)msg, strlen(msg), digest);
         check_digest("SHA-512/224(896-bit msg)", digest, expected, 28);
     }
@@ -136,6 +136,51 @@ static void test_sha512_224(void) {
         tests_run++;
         if (memcmp(overflowed, zeros, 28) == 0) { tests_passed++; }
         else { tests_failed++; printf("  FAIL: SHA-512/224 wrapped byte count must fail closed\n"); }
+    }
+
+    {
+        uint8_t overflowed[28], empty[28], zeros[28] = {0};
+        memset(overflowed, 0xa5, sizeof(overflowed));
+        neverc_sha512_224_final(NULL, overflowed);
+        tests_run++;
+        if (memcmp(overflowed, zeros, 28) == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-512/224 NULL ctx final must not leave digest untouched\n"); }
+
+        memset(overflowed, 0xa5, sizeof(overflowed));
+        neverc_sha512_224_sum(NULL, 5, overflowed);
+        neverc_sha512_224_sum((const uint8_t *)"", 0, empty);
+        tests_run++;
+        if (memcmp(overflowed, zeros, 28) == 0 && memcmp(overflowed, empty, 28) != 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: SHA-512/224 sum(NULL, n) must not hash empty\n"); }
+    }
+
+    {
+        neverc_sha512_224_ctx ctx, clone;
+        uint8_t leftover[10], d1[28], d2[28];
+        memset(leftover, 0x5a, sizeof(leftover));
+        neverc_sha512_224_init(&ctx);
+        neverc_sha512_224_update(&ctx, leftover, sizeof(leftover));
+        neverc_sha512_224_init(&ctx);
+        int dirty = 0;
+        for (size_t i = 0; i < sizeof(ctx.buf); i++)
+            if (ctx.buf[i] != 0) dirty = 1;
+        tests_run++;
+        if (!dirty && ctx.count == 0 && ctx.finalized == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-512/224 re-init must wipe buf\n"); }
+
+        neverc_sha512_224_init(&ctx);
+        neverc_sha512_224_update(&ctx, (const uint8_t *)"ab", 2);
+        clone = ctx;
+        neverc_sha512_224_update(&ctx, (const uint8_t *)"c", 1);
+        neverc_sha512_224_update(&clone, (const uint8_t *)"c", 1);
+        neverc_sha512_224_final(&ctx, d1);
+        neverc_sha512_224_final(&clone, d2);
+        hex_to_bytes("4634270f707b6a54daae7530460842e20e37ed265ceee9a43e8924aa", expected, 28);
+        check_digest("SHA-512/224 clone after update", d1, expected, 28);
+        tests_run++;
+        if (memcmp(d1, d2, 28) == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-512/224 cloned ctx mismatch\n"); }
     }
 }
 
@@ -241,6 +286,51 @@ static void test_sha512_256(void) {
         tests_run++;
         if (memcmp(overflowed, zeros, 32) == 0) { tests_passed++; }
         else { tests_failed++; printf("  FAIL: SHA-512/256 wrapped byte count must fail closed\n"); }
+    }
+
+    {
+        uint8_t overflowed[32], empty[32], zeros[32] = {0};
+        memset(overflowed, 0xa5, sizeof(overflowed));
+        neverc_sha512_256_final(NULL, overflowed);
+        tests_run++;
+        if (memcmp(overflowed, zeros, 32) == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-512/256 NULL ctx final must not leave digest untouched\n"); }
+
+        memset(overflowed, 0xa5, sizeof(overflowed));
+        neverc_sha512_256_sum(NULL, 5, overflowed);
+        neverc_sha512_256_sum((const uint8_t *)"", 0, empty);
+        tests_run++;
+        if (memcmp(overflowed, zeros, 32) == 0 && memcmp(overflowed, empty, 32) != 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: SHA-512/256 sum(NULL, n) must not hash empty\n"); }
+    }
+
+    {
+        neverc_sha512_256_ctx ctx, clone;
+        uint8_t leftover[10], d1[32], d2[32];
+        memset(leftover, 0x5a, sizeof(leftover));
+        neverc_sha512_256_init(&ctx);
+        neverc_sha512_256_update(&ctx, leftover, sizeof(leftover));
+        neverc_sha512_256_init(&ctx);
+        int dirty = 0;
+        for (size_t i = 0; i < sizeof(ctx.buf); i++)
+            if (ctx.buf[i] != 0) dirty = 1;
+        tests_run++;
+        if (!dirty && ctx.count == 0 && ctx.finalized == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-512/256 re-init must wipe buf\n"); }
+
+        neverc_sha512_256_init(&ctx);
+        neverc_sha512_256_update(&ctx, (const uint8_t *)"ab", 2);
+        clone = ctx;
+        neverc_sha512_256_update(&ctx, (const uint8_t *)"c", 1);
+        neverc_sha512_256_update(&clone, (const uint8_t *)"c", 1);
+        neverc_sha512_256_final(&ctx, d1);
+        neverc_sha512_256_final(&clone, d2);
+        hex_to_bytes("53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23", expected, 32);
+        check_digest("SHA-512/256 clone after update", d1, expected, 32);
+        tests_run++;
+        if (memcmp(d1, d2, 32) == 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-512/256 cloned ctx mismatch\n"); }
     }
 }
 

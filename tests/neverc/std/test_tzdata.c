@@ -305,7 +305,7 @@ static void test_dst_offset(void) {
 /* 2024-04-06 16:00:00 UTC = Sydney autumn-back (first Sunday April 03:00 AEDT). */
 #define SYD_END_2024   1712419200LL
 /* 2024-10-05 16:00:00 UTC = Sydney spring-forward (first Sunday October 02:00 AEST). */
-#define SYD_START_2024 1728132000LL
+#define SYD_START_2024 1728144000LL
 /* 2024-04-06 14:00:00 UTC = NZ/Chatham autumn-back (first Sunday April). */
 #define NZ_END_2024    1712412000LL
 /* 2024-09-28 14:00:00 UTC = NZ/Chatham spring-forward (last Sunday September). */
@@ -787,6 +787,61 @@ static void test_zip_tzif(void) {
     neverc_tzdata_zone_free(NULL);
 }
 
+static size_t build_tzif_v1_abbrev(uint8_t *buf, size_t cap,
+                                   const uint8_t *abbrev, uint32_t nchar) {
+    size_t n = 0;
+    append_bytes(buf, &n, cap, "TZif", 4);
+    uint8_t pad[16] = {0};
+    append_bytes(buf, &n, cap, pad, 16);
+    tzif_counts(buf, &n, cap, 0, 1, nchar);
+    append_be32(buf, &n, cap, 0);
+    uint8_t zmeta[2] = {0, 0};
+    append_bytes(buf, &n, cap, zmeta, 2);
+    append_bytes(buf, &n, cap, abbrev, nchar);
+    return n;
+}
+
+static void test_tzif_abbrev_bounds(void) {
+    printf("[tzif abbrev bounds]\n");
+    uint8_t ok_ab[4] = {'E', 'S', 'T', 0};
+    uint8_t ok[64];
+    size_t ok_len = build_tzif_v1_abbrev(ok, sizeof(ok), ok_ab, 4);
+    neverc_tzdata_zone_t *z = neverc_tzdata_load_tzif("EST", ok, ok_len);
+    check_not_null("v1 tzif nul-terminated abbrev", z);
+    check_str("v1 tzif abbrev", z ? z->abbrev : NULL, "EST");
+    neverc_tzdata_zone_free(z);
+
+    /* Counted char array has no NUL. Padding after `len` would make an
+     * unbounded strlen succeed and copy heap/stack as the abbreviation. */
+    uint8_t padded[128];
+    memset(padded, 'A', sizeof(padded));
+    uint8_t bad_ab[3] = {'E', 'S', 'T'};
+    size_t bad_len = build_tzif_v1_abbrev(padded, sizeof(padded), bad_ab, 3);
+    memset(padded + bad_len, 'A', sizeof(padded) - bad_len);
+    padded[sizeof(padded) - 1] = '\0';
+    check_null("v1 tzif unterminated abbrev rejected",
+               neverc_tzdata_load_tzif("x", padded, bad_len));
+
+    uint8_t v2[128];
+    memset(v2, 'A', sizeof(v2));
+    size_t n = 0;
+    uint8_t zmeta[2] = {0, 0};
+    tzif_header(v2, &n, sizeof(v2));
+    tzif_counts(v2, &n, sizeof(v2), 0, 1, 3);
+    append_be32(v2, &n, sizeof(v2), 0);
+    append_bytes(v2, &n, sizeof(v2), zmeta, 2);
+    append_bytes(v2, &n, sizeof(v2), "EST", 3);
+    tzif_header(v2, &n, sizeof(v2));
+    tzif_counts(v2, &n, sizeof(v2), 0, 1, 3);
+    append_be32(v2, &n, sizeof(v2), 0);
+    append_bytes(v2, &n, sizeof(v2), zmeta, 2);
+    append_bytes(v2, &n, sizeof(v2), "EST", 3);
+    memset(v2 + n, 'A', sizeof(v2) - n);
+    v2[sizeof(v2) - 1] = '\0';
+    check_null("v2 tzif unterminated abbrev rejected",
+               neverc_tzdata_load_tzif("x", v2, n));
+}
+
 /* ===== Main ===== */
 
 int main(void) {
@@ -804,6 +859,7 @@ int main(void) {
     test_edge_cases();
     test_local_tz();
     test_zip_tzif();
+    test_tzif_abbrev_bounds();
 
     printf("\n--- time/tzdata: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

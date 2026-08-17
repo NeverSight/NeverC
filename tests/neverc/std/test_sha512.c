@@ -263,6 +263,65 @@ int main(void) {
         else { tests_failed++; printf("  FAIL: update after final must not length-extend\n"); }
     }
 
+    printf("[NULL ctx final fails closed]\n");
+    {
+        tests_run++;
+        uint8_t digest[64];
+        memset(digest, 0xa5, sizeof(digest));
+        neverc_sha512_final(NULL, digest);
+        uint8_t zeros[64] = {0};
+        if (memcmp(digest, zeros, 64) == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: NULL ctx final must not leave digest untouched\n"); }
+    }
+
+    printf("[one-shot invalid data span fails closed]\n");
+    {
+        tests_run++;
+        uint8_t digest[64], empty[64], zeros[64] = {0};
+        memset(digest, 0xa5, sizeof(digest));
+        neverc_sha512_sum(NULL, 5, digest);
+        neverc_sha512_sum((const uint8_t *)"", 0, empty);
+        if (memcmp(digest, zeros, 64) == 0 && memcmp(digest, empty, 64) != 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: sum(NULL, n) must not hash empty\n"); }
+    }
+
+    printf("[reset wipes leftover buf]\n");
+    {
+        tests_run++;
+        neverc_sha512_ctx ctx;
+        uint8_t leftover[10];
+        memset(leftover, 0x5a, sizeof(leftover));
+        neverc_sha512_init(&ctx);
+        neverc_sha512_update(&ctx, leftover, sizeof(leftover));
+        neverc_sha512_init(&ctx);
+        int dirty = 0;
+        for (size_t i = 0; i < sizeof(ctx.buf); i++)
+            if (ctx.buf[i] != 0) dirty = 1;
+        if (!dirty && ctx.count == 0 && ctx.finalized == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: re-init must wipe buf\n"); }
+    }
+
+    printf("[clone after update]\n");
+    {
+        tests_run++;
+        neverc_sha512_ctx ctx, clone;
+        uint8_t d1[64], d2[64], expected[64];
+        neverc_sha512_init(&ctx);
+        neverc_sha512_update(&ctx, (const uint8_t *)"ab", 2);
+        clone = ctx;
+        neverc_sha512_update(&ctx, (const uint8_t *)"c", 1);
+        neverc_sha512_update(&clone, (const uint8_t *)"c", 1);
+        neverc_sha512_final(&ctx, d1);
+        neverc_sha512_final(&clone, d2);
+        neverc_sha512_sum((const uint8_t *)"abc", 3, expected);
+        if (memcmp(d1, d2, 64) == 0 && memcmp(d1, expected, 64) == 0)
+            tests_passed++;
+        else { tests_failed++; printf("  FAIL: cloned ctx must hash independently\n"); }
+    }
+
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
