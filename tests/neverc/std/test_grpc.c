@@ -690,7 +690,7 @@ static void grpc_fake_h2_task(void *context) {
             .name = ":status", .value = "503"};
         headers[header_count++] = (neverc_hpack_header_t){
             .name = "content-type", .value = "application/grpc"};
-    } else if (test->kind == 4) {
+    } else if (test->kind == 4 || test->kind == 5 || test->kind == 6) {
         headers[header_count++] = (neverc_hpack_header_t){
             .name = ":status", .value = "200"};
         headers[header_count++] = (neverc_hpack_header_t){
@@ -710,9 +710,16 @@ static void grpc_fake_h2_task(void *context) {
     int encoded = encoder && neverc_hpack_encode(
         encoder, headers, header_count, block, sizeof(block),
         &block_length) == 0 && block_length > 0 && block_length <= 0xffffffU;
-    if (encoded && (test->kind == 3 || test->kind == 4)) {
-        neverc_hpack_header_t trailers[] = {
-            {.name = "x-unused", .value = "1"}};
+    if (encoded && (test->kind == 3 || test->kind == 4 || test->kind == 5 ||
+                    test->kind == 6)) {
+        neverc_hpack_header_t trailers[1];
+        if (test->kind == 6) {
+            trailers[0] = (neverc_hpack_header_t){
+                .name = "grpc-status", .value = "7"};
+        } else {
+            trailers[0] = (neverc_hpack_header_t){
+                .name = "x-unused", .value = "1"};
+        }
         encoded = neverc_hpack_encode(
             encoder, trailers, 1, trailer_block, sizeof(trailer_block),
             &trailer_length) == 0 && trailer_length > 0 &&
@@ -739,7 +746,8 @@ static void grpc_fake_h2_task(void *context) {
             test->result = -1;
             return;
         }
-    } else if (test->kind == 3 || test->kind == 4) {
+    } else if (test->kind == 3 || test->kind == 4 || test->kind == 5 ||
+               test->kind == 6) {
         uint8_t grpc_ok[] = {0, 0, 0, 0, 2, 'o', 'k'};
         if (test->kind == 4 &&
             grpc_h2_write_frame(conn, NC_H2_FRAME_DATA, 0, 1U, grpc_ok,
@@ -879,6 +887,21 @@ static void grpc_test_status_mapping(void) {
           status_in_headers->status != NEVERC_GRPC_OK);
     neverc_grpc_result_free(status_in_headers);
 
+    neverc_grpc_result_t *status_then_trailers = grpc_call_fake_h2(5);
+    CHECK(status_then_trailers != NULL);
+    CHECK(status_then_trailers && status_then_trailers->error != NULL);
+    CHECK(status_then_trailers &&
+          status_then_trailers->status != NEVERC_GRPC_OK);
+    neverc_grpc_result_free(status_then_trailers);
+
+    neverc_grpc_result_t *conflicting_status = grpc_call_fake_h2(6);
+    CHECK(conflicting_status != NULL);
+    CHECK(conflicting_status && conflicting_status->error != NULL);
+    CHECK(conflicting_status &&
+          conflicting_status->status != NEVERC_GRPC_OK &&
+          conflicting_status->status != NEVERC_GRPC_PERMISSION_DENIED);
+    neverc_grpc_result_free(conflicting_status);
+
     neverc_grpc_status_t stream_status = NEVERC_GRPC_UNKNOWN;
     const char *stream_error = "unset";
     CHECK(grpc_stream_fake_h2(0, &stream_status, &stream_error) == 0);
@@ -907,6 +930,20 @@ static void grpc_test_status_mapping(void) {
     stream_error = "unset";
     CHECK(grpc_stream_fake_h2(4, &stream_status, &stream_error) == -1);
     CHECK(stream_error != NULL);
+    CHECK(stream_status != NEVERC_GRPC_OK);
+
+    stream_status = NEVERC_GRPC_UNKNOWN;
+    stream_error = "unset";
+    CHECK(grpc_stream_fake_h2(5, &stream_status, &stream_error) == -1);
+    CHECK(stream_error != NULL);
+    CHECK(stream_status != NEVERC_GRPC_OK);
+
+    stream_status = NEVERC_GRPC_UNKNOWN;
+    stream_error = "unset";
+    CHECK(grpc_stream_fake_h2(6, &stream_status, &stream_error) == -1);
+    CHECK(stream_error != NULL);
+    CHECK(stream_status != NEVERC_GRPC_OK);
+    CHECK(stream_status != NEVERC_GRPC_PERMISSION_DENIED);
 }
 
 int main(void) {

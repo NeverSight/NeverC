@@ -292,10 +292,16 @@ int neverc_rpc_open_decode(const void *input, size_t input_length,
         open->metadata[i].key = (const char *)(bytes + offset);
         open->metadata[i].key_length = key_length;
         offset += key_length;
-        if ((size_t)value_length > input_length - offset) return -1;
+        /* Reject a claimed value that does not fit the remaining input
+         * without wrapping offset, and without waiting for UINT32_MAX
+         * more bytes. */
+        if ((size_t)value_length > input_length - offset ||
+            (value_length > 0 &&
+             offset > SIZE_MAX - (size_t)value_length))
+            return -1;
         open->metadata[i].value = bytes + offset;
         open->metadata[i].value_length = value_length;
-        offset += value_length;
+        offset += (size_t)value_length;
         if (offset - metadata_start > max_metadata_size) return -1;
     }
     if (offset != input_length) return -1;

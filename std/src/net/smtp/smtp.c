@@ -135,29 +135,39 @@ static int smtp_read_response(neverc_smtp_client_t *c) {
     return reply_code;
 }
 
-/* Reject SMTP atoms that could inject extra commands or break path syntax. */
+/* Reject SMTP atoms that could inject extra commands, source routes, or
+ * break path syntax. Leading '@' and ',' / ';' are obsolete source-route
+ * punctuation (RFC 5321 §4.1.2). */
 static int smtp_safe_atom(const char *s) {
-    if (!s || !s[0]) return 0;
+    if (!s || !s[0] || s[0] == '@') return 0;
     size_t n = 0;
     for (const unsigned char *p = (const unsigned char *)s; *p; p++, n++) {
-        if (n >= 255 || *p <= 32 || *p >= 127 || *p == '<' || *p == '>')
+        if (n >= 255 || *p <= 32 || *p >= 127 || *p == '<' || *p == '>' ||
+            *p == ',' || *p == ';')
             return 0;
     }
     return 1;
 }
 
+static int smtp_line_has_break(const char *s, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned char ch = (unsigned char)s[i];
+        if (ch == '\r' || ch == '\n') return 1;
+    }
+    return 0;
+}
+
 /* Send a command and read the response. Returns status code. */
 static int smtp_cmd(neverc_smtp_client_t *c, const char *cmd) {
     size_t len = strlen(cmd);
-    /* Send command + CRLF in a single write to avoid fragmentation */
     char sendbuf[SMTP_BUF_SIZE];
-    if (len >= sizeof(sendbuf) - 3) return -1;
+    if (len == 0 || len >= sizeof(sendbuf) - 3 ||
+        smtp_line_has_break(cmd, len))
+        return -1;
     memcpy(sendbuf, cmd, len);
-    if (len < 2 || cmd[len-2] != '\r' || cmd[len-1] != '\n') {
-        sendbuf[len] = '\r';
-        sendbuf[len+1] = '\n';
-        len += 2;
-    }
+    sendbuf[len] = '\r';
+    sendbuf[len + 1] = '\n';
+    len += 2;
     if (smtp_write_all(c->conn, sendbuf, len) != 0)
         return -1;
     return smtp_read_response(c);

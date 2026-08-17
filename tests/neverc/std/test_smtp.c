@@ -324,10 +324,18 @@ static void test_smtp_reject_injection(void) {
 
     check_true("hello crlf rejected",
                neverc_smtp_hello(c, "host\r\nMAIL FROM:<x>") == -1);
+    check_true("hello lf rejected",
+               neverc_smtp_hello(c, "host\nMAIL FROM:<x>") == -1);
     check_true("mail crlf rejected",
                neverc_smtp_mail(c, "a@b.com\r\nRCPT TO:<x@y>") == -1);
+    check_true("mail cr rejected",
+               neverc_smtp_mail(c, "a@b.com\rRCPT TO:<x@y>") == -1);
     check_true("mail angle rejected",
                neverc_smtp_mail(c, "a@b.com>") == -1);
+    check_true("mail source route rejected",
+               neverc_smtp_mail(c, "@evil.com:user@x.com") == -1);
+    check_true("mail recipient list rejected",
+               neverc_smtp_mail(c, "a@b.com,c@d.com") == -1);
     check_true("rcpt crlf rejected",
                neverc_smtp_rcpt(c, "victim@x.com\r\nMAIL FROM:<evil>") == -1);
     neverc_smtp_close(c);
@@ -336,6 +344,11 @@ static void test_smtp_reject_injection(void) {
     check_true("send_mail rejects injected from",
                neverc_smtp_send_mail(addr, NEVERC_SMTP_AUTH_NONE, NULL, NULL,
                                      "from@x.com\r\nRSET", to, 1,
+                                     "x", 1, &err) == -1);
+    const char *injected_to[] = {"ok@example.com\r\nRCPT TO:<evil@x.com>"};
+    check_true("send_mail rejects injected recipient",
+               neverc_smtp_send_mail(addr, NEVERC_SMTP_AUTH_NONE, NULL, NULL,
+                                     "from@x.com", injected_to, 1,
                                      "x", 1, &err) == -1);
 
     neverc_smtp_client_t *auth = neverc_smtp_dial(addr, &err);

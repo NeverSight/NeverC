@@ -582,6 +582,33 @@ static void rpc_test_open_codec(void) {
           memcmp(decoded.metadata[0].value, "abc", 3U) == 0);
     CHECK(neverc_rpc_open_decode(encoded, encoded_length, 1U, &decoded) == -1);
 
+    /* OPEN metadata value_length of UINT32_MAX must be rejected from a
+     * short buffer; do not treat it as an incomplete frame. */
+    uint8_t overflow_open[26];
+    memset(overflow_open, 0, sizeof(overflow_open));
+    overflow_open[9] = 3U;
+    overflow_open[11] = 1U;
+    overflow_open[16] = 'a';
+    overflow_open[17] = '/';
+    overflow_open[18] = 'b';
+    overflow_open[20] = 1U;
+    overflow_open[21] = 0xffU;
+    overflow_open[22] = 0xffU;
+    overflow_open[23] = 0xffU;
+    overflow_open[24] = 0xffU;
+    overflow_open[25] = 'k';
+    memset(&decoded, 0, sizeof(decoded));
+    decoded.metadata = decoded_metadata;
+    decoded.metadata_capacity = 4U;
+    CHECK(neverc_rpc_open_decode(overflow_open, sizeof(overflow_open),
+                                 SIZE_MAX, &decoded) == -1);
+    overflow_open[21] = 0;
+    overflow_open[22] = 0;
+    overflow_open[23] = 0;
+    overflow_open[24] = 2U;
+    CHECK(neverc_rpc_open_decode(overflow_open, sizeof(overflow_open),
+                                 1024U, &decoded) == -1);
+
     open.metadata = NULL;
     open.metadata_count = 0;
     CHECK(neverc_rpc_open_encode(&open, encoded, sizeof(encoded),
