@@ -146,14 +146,17 @@ int neverc_net_lookup_ip(const char *network, const char *host,
     memset(out, 0, sizeof(*out));
 
     /* getaddrinfo / inet_ntop often drop the zone; keep the input zone text
-     * so a literal like fe80::1%lo0 still round-trips. */
+     * so a literal like fe80::1%lo0 still round-trips. Unknown, empty, or
+     * zero zones must fail closed, matching lookup_addr. */
     const char *host_zone = NULL;
     unsigned host_scope = 0;
-    if (strchr(host, ':')) {
+    {
         const char *pct = strchr(host, '%');
-        if (pct && pct[1]) {
+        if (pct) {
+            if (!strchr(host, ':') ||
+                parse_ipv6_zone(pct + 1, &host_scope) != 0)
+                return -1;
             host_zone = pct + 1;
-            (void)parse_ipv6_zone(host_zone, &host_scope);
         }
     }
 

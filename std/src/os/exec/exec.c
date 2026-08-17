@@ -19,6 +19,7 @@ struct neverc_exec_cmd {
     char  *dir;
     char **env;
     int    env_count;
+    int    env_invalid;
     const void *stdin_data;
     size_t      stdin_len;
     int    started;
@@ -165,11 +166,23 @@ void neverc_exec_cmd_set_dir(neverc_exec_cmd_t *cmd, const char *dir) {
 
 void neverc_exec_cmd_set_env(neverc_exec_cmd_t *cmd, const char **env, int env_count) {
     if (!cmd) return;
+    if (env_count < 0 || (env_count > 0 && !env) ||
+        (size_t)env_count > SIZE_MAX / sizeof(char *) - 1) {
+        cmd->env_invalid = 1;
+        return;
+    }
+    for (int i = 0; i < env_count; i++) {
+        if (!env[i] || !exec_env_entry_ok(env[i])) {
+            cmd->env_invalid = 1;
+            return;
+        }
+    }
     char **copy = exec_copy_strings(env, env_count);
     if (!copy) return;
     exec_free_strings(cmd->env, cmd->env_count);
     cmd->env = copy;
     cmd->env_count = env_count;
+    cmd->env_invalid = 0;
 }
 
 void neverc_exec_cmd_set_stdin(neverc_exec_cmd_t *cmd, const void *data, size_t len) {
@@ -200,6 +213,7 @@ static int exec_prepare(neverc_exec_cmd_t *cmd, int capture_stdout,
                         neverc_exec_exit_status_t *status) {
     if (!cmd || !cmd->name || !cmd->argv || cmd->started ||
         (capture_stdout && !out)) return -1;
+    if (cmd->env_invalid) return -1;
     if (exec_batch_args_unsafe(cmd)) return -1;
     if (out) {
         if (out->data || out->len != 0 || out->cap != 0) return -1;

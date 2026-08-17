@@ -130,7 +130,7 @@ static void sha3_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) {
 }
 
 static void sha3_pad_and_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
-    if (!ctx || ctx->squeezed)
+    if (!ctx || ctx->squeezed || !out)
         return;
     if (ctx->finalized) {
         if (out && outlen <= ctx->digest_len)

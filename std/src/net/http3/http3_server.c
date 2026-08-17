@@ -49,6 +49,11 @@ extern int neverc_h3_write_goaway_frame(uint8_t *buffer, size_t capacity,
 extern int neverc_qpack_field_section_size(
     const neverc_qpack_header_t *headers, int nheaders, uint64_t *size);
 
+/* RFC 9114 §7.2.4.1: 0 and UINT64_MAX both mean unlimited. */
+static int h3_field_section_over_limit(uint64_t size, uint64_t limit) {
+    return limit != 0 && size > limit;
+}
+
 #define H3_STREAM_TYPE_CONTROL       0x00U
 #define H3_STREAM_TYPE_PUSH          0x01U
 #define H3_STREAM_TYPE_QPACK_ENCODER 0x02U
@@ -467,7 +472,8 @@ static int h3_parse_request_headers(h3_conn_t *connection,
     uint64_t section_size = 0;
     if (neverc_qpack_field_section_size(headers, header_count,
                                         &section_size) != 0 ||
-        section_size > connection->local_settings.max_field_section_size)
+        h3_field_section_over_limit(
+            section_size, connection->local_settings.max_field_section_size))
         goto cleanup;
     for (int i = 0; i < header_count; i++) {
         char *name = headers[i].name;
@@ -603,8 +609,9 @@ static int h3_read_request(h3_conn_t *connection,
                 uint64_t trailer_size = 0;
                 if (neverc_qpack_field_section_size(decoded, count,
                                                     &trailer_size) != 0 ||
-                    trailer_size >
-                        connection->local_settings.max_field_section_size)
+                    h3_field_section_over_limit(
+                        trailer_size,
+                        connection->local_settings.max_field_section_size))
                     parsed = -1;
                 for (int i = 0; i < count; i++) {
                     if (decoded[i].name[0] == ':' ||
@@ -689,7 +696,9 @@ static int h3_send_header_section(h3_conn_t *connection,
     if (neverc_qpack_field_section_size(headers, header_count,
                                         &section_size) != 0 ||
         (connection->peer_settings_received &&
-         section_size > connection->peer_settings.max_field_section_size)) {
+         h3_field_section_over_limit(
+             section_size,
+             connection->peer_settings.max_field_section_size))) {
         free(encoded);
         return -1;
     }
@@ -1627,7 +1636,8 @@ static int h3_client_parse_header_block(h3_conn_t *connection,
         return -1;
     uint64_t section_size = 0;
     if (neverc_qpack_field_section_size(headers, count, &section_size) != 0 ||
-        section_size > connection->local_settings.max_field_section_size) {
+        h3_field_section_over_limit(
+            section_size, connection->local_settings.max_field_section_size)) {
         for (int i = 0; i < count; i++) {
             free(headers[i].name);
             free(headers[i].value);

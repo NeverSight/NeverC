@@ -381,6 +381,13 @@ static void test_sha3_lifecycle(void) {
     check_true("SHA3-256 invalid data span ignored",
                memcmp(d1, d2, 32) == 0);
 
+    neverc_sha3_256_init(&ctx);
+    neverc_sha3_256_update(&ctx, (const uint8_t *)"abc", 3);
+    neverc_sha3_256_final(&ctx, NULL);
+    neverc_sha3_256_final(&ctx, d2);
+    check_true("SHA3-256 NULL final is a no-op",
+               memcmp(d1, d2, 32) == 0);
+
     {
         uint8_t expected[64];
         neverc_shake128_init(&ctx);

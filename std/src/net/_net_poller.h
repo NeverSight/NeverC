@@ -448,8 +448,6 @@ static inline int nc_poller_del(nc_poller_t *poller, nc_sock_t fd) {
     if (fd < 0 || fd >= poller->fd_cap ||
         poller->fd_events[fd] == 0)
         return -1;
-    poller->fd_data[fd] = NULL;
-    poller->fd_events[fd] = 0;
     struct io_uring_sqe *sqe = nc_uring_get_sqe(&poller->ring);
     if (!sqe) {
         if (nc_uring_submit(&poller->ring) < 0) return -1;
@@ -459,7 +457,10 @@ static inline int nc_poller_del(nc_poller_t *poller, nc_sock_t fd) {
     nc_uring_prep_poll_remove(
         sqe, nc_poller_uring_token(poller, fd));
     nc_uring_sq_advance(&poller->ring, 1);
-    return nc_uring_submit(&poller->ring) < 0 ? -1 : 0;
+    if (nc_uring_submit(&poller->ring) < 0) return -1;
+    poller->fd_data[fd] = NULL;
+    poller->fd_events[fd] = 0;
+    return 0;
 #elif defined(NC_USE_EPOLL)
     if (fd < 0 || fd >= poller->fd_cap ||
         poller->fd_events[fd] == 0)

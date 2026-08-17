@@ -208,6 +208,17 @@ static void test_lookup_ip(void) {
     }
     if (tried_zoned)
         check_true("lookup_ip keeps ipv6 zone", kept_zone);
+
+    neverc_net_addrs_t bad;
+    check_int("lookup_ip unknown iface rejected",
+              neverc_net_lookup_ip("ip6", "fe80::1%no_such_iface_zzz", &bad),
+              -1);
+    check_int("lookup_ip empty zone rejected",
+              neverc_net_lookup_ip("ip6", "fe80::1%", &bad), -1);
+    check_int("lookup_ip zero zone rejected",
+              neverc_net_lookup_ip("ip6", "fe80::1%0", &bad), -1);
+    check_int("lookup_ip ipv4 zone rejected",
+              neverc_net_lookup_ip("ip4", "127.0.0.1%1", &bad), -1);
 }
 
 /* ===== LookupPort ===== */

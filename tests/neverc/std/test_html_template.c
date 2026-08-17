@@ -244,6 +244,31 @@ static void test_template_url_and_script(void) {
     free(out);
 
     neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"refresh\" content=\"0;url={{.Link}}\">", &data);
+    check("meta refresh url= prefix neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check("meta refresh url= prefix becomes hash",
+          out && strstr(out, "url=#") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"refresh\" content=\"{{.Link}}\">", &data);
+    check("meta refresh content neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check("meta refresh content becomes hash",
+          out && strstr(out, "content=\"#\"") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<meta content=\"{{.Link}}\" http-equiv=\"refresh\">", &data);
+    check("meta refresh content-first neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
     out = neverc_html_template_render("<a href=\" {{.Link}}\">x</a>", &data);
     check("space after href quote neutralized",
           out && strstr(out, "javascript:") == NULL);

@@ -477,6 +477,54 @@ static void test_frame_to_rgba_and_transparency(void) {
     ASSERT_TRUE(out == NULL);
 }
 
+static void test_from_rgba_full_palette_transparency(void) {
+    printf("[from_rgba_full_palette_transparency]\n");
+    const uint32_t w = 16, h = 17;
+    size_t np = (size_t)w * h;
+    uint8_t *rgba = (uint8_t *)calloc(np, 4);
+    ASSERT_TRUE(rgba != NULL);
+    for (int i = 0; i < 256; i++) {
+        rgba[i * 4 + 0] = (uint8_t)((i & 7) << 5);
+        rgba[i * 4 + 1] = (uint8_t)(((i >> 3) & 7) << 5);
+        rgba[i * 4 + 2] = (uint8_t)(((i >> 6) & 3) << 5);
+        rgba[i * 4 + 3] = 255;
+    }
+
+    neverc_gif_frame_t frame;
+    ASSERT_EQ(neverc_gif_from_rgba(rgba, w, h, &frame), 0);
+    ASSERT_EQ(frame.has_transparency, 1);
+
+    uint8_t *out = NULL;
+    size_t out_len = 0;
+    ASSERT_EQ(neverc_gif_frame_to_rgba(&frame, &out, &out_len), 0);
+    ASSERT_TRUE(out != NULL);
+    for (int i = 0; i < 256; i++)
+        ASSERT_EQ(out[i * 4 + 3], 255);
+    for (int i = 256; i < (int)np; i++)
+        ASSERT_EQ(out[i * 4 + 3], 0);
+
+    uint8_t *gif = NULL;
+    size_t glen = 0;
+    ASSERT_EQ(neverc_gif_encode(&frame, &gif, &glen), 0);
+    neverc_gif_image_t img;
+    ASSERT_EQ(neverc_gif_decode(gif, glen, &img), 0);
+    ASSERT_EQ(img.num_frames, 1);
+    uint8_t *again = NULL;
+    size_t again_len = 0;
+    ASSERT_EQ(neverc_gif_frame_to_rgba(&img.frames[0], &again, &again_len), 0);
+    for (int i = 0; i < 256; i++)
+        ASSERT_EQ(again[i * 4 + 3], 255);
+    for (int i = 256; i < (int)np; i++)
+        ASSERT_EQ(again[i * 4 + 3], 0);
+
+    free(again);
+    neverc_gif_free(&img);
+    free(gif);
+    free(out);
+    free(frame.indices);
+    free(rgba);
+}
+
 int main(void) {
     printf("NeverC image/gif tests\n");
     test_encode_decode();
@@ -489,6 +537,7 @@ int main(void) {
     test_netscape_loop_count();
     test_failed_decode_clears_geometry();
     test_frame_to_rgba_and_transparency();
+    test_from_rgba_full_palette_transparency();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

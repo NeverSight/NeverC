@@ -115,7 +115,8 @@ int neverc_h3_settings_encode(const h3_settings_t *s,
         if (neverc_quic_varint_encode(H3_SETTINGS_QPACK_MAX_TABLE_CAPACITY, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
         if (neverc_quic_varint_encode(s->qpack_max_table_capacity, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
     }
-    if (s->max_field_section_size < UINT64_MAX) {
+    if (s->max_field_section_size > 0 &&
+        s->max_field_section_size < UINT64_MAX) {
         if (neverc_quic_varint_encode(H3_SETTINGS_MAX_FIELD_SECTION_SIZE, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
         if (neverc_quic_varint_encode(s->max_field_section_size, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
     }
@@ -167,7 +168,8 @@ int neverc_h3_settings_decode(const uint8_t *payload, size_t len,
         case H3_SETTINGS_MAX_FIELD_SECTION_SIZE:
             if (seen & 2U) return -1;
             seen |= 2U;
-            s->max_field_section_size = val;
+            /* RFC 9114 §7.2.4.1: a value of 0 means unlimited. */
+            s->max_field_section_size = val == 0 ? UINT64_MAX : val;
             break;
         case H3_SETTINGS_QPACK_BLOCKED_STREAMS:
             if (seen & 4U) return -1;

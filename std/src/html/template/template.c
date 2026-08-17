@@ -561,6 +561,31 @@ static int html_tag_is(const char *tag, size_t tlen, const char *want) {
     return tlen == wlen && html_ci_eq_n(tag, want, tlen);
 }
 
+static int html_contains_ci_n(const char *s, size_t n, const char *needle) {
+    size_t k = strlen(needle);
+    if (!s || k == 0 || k > n) return 0;
+    for (size_t i = 0; i + k <= n; i++)
+        if (html_ci_eq_n(s + i, needle, k)) return 1;
+    return 0;
+}
+
+static int html_value_is_refresh(const char *buf, size_t start, size_t end) {
+    while (start < end && html_is_ascii_ws((unsigned char)buf[start]))
+        start++;
+    while (end > start && html_is_ascii_ws((unsigned char)buf[end - 1]))
+        end--;
+    return end > start && html_tag_is(buf + start, end - start, "refresh");
+}
+
+static void html_note_http_equiv(const char *buf, size_t value_start,
+                                 size_t value_end, const char *attr,
+                                 size_t alen, int *saw_refresh) {
+    if (!saw_refresh || *saw_refresh || !attr) return;
+    if (html_attr_name_eq(attr, alen, "http-equiv") &&
+        html_value_is_refresh(buf, value_start, value_end))
+        *saw_refresh = 1;
+}
+
 static int html_raw_end_tag(const char *buf, size_t i, size_t len,
                             const char *close, size_t clen) {
     if (i + clen > len || !html_ci_eq_n(buf + i, close, clen)) return 0;
@@ -585,7 +610,8 @@ static void html_scan_doc(const char *buf, size_t len,
                           int *in_script, int *in_style, int *in_open_tag,
                           int *in_attr, int *quoted,
                           const char **aname, size_t *nlen,
-                          const char **aprefix, size_t *aplen) {
+                          const char **aprefix, size_t *aplen,
+                          int *in_meta, int *meta_refresh) {
     *in_script = 0;
     *in_style = 0;
     *in_open_tag = 0;
@@ -595,6 +621,8 @@ static void html_scan_doc(const char *buf, size_t len,
     *nlen = 0;
     *aprefix = NULL;
     *aplen = 0;
+    *in_meta = 0;
+    *meta_refresh = 0;
     if (!buf || len == 0) return;
 
     int state = HS_TEXT;
@@ -602,6 +630,7 @@ static void html_scan_doc(const char *buf, size_t len,
     size_t tlen = 0;
     int is_end = 0;
     int seen_name = 0;
+    int saw_refresh = 0;
     const char *attr = NULL;
     size_t alen = 0;
     size_t value_start = 0;
@@ -632,6 +661,7 @@ static void html_scan_doc(const char *buf, size_t len,
                 tlen = 0;
                 is_end = 0;
                 seen_name = 0;
+                saw_refresh = 0;
                 attr = NULL;
                 alen = 0;
                 i++;
@@ -686,24 +716,45 @@ static void html_scan_doc(const char *buf, size_t len,
             break;
 
         case HS_ATTR_DQ:
-            if (c == '"') { state = HS_TAG; attr = NULL; alen = 0; }
+            if (c == '"') {
+                html_note_http_equiv(buf, value_start, i, attr, alen,
+                                     &saw_refresh);
+                state = HS_TAG;
+                attr = NULL;
+                alen = 0;
+            }
             i++;
             break;
 
         case HS_ATTR_SQ:
-            if (c == '\'') { state = HS_TAG; attr = NULL; alen = 0; }
+            if (c == '\'') {
+                html_note_http_equiv(buf, value_start, i, attr, alen,
+                                     &saw_refresh);
+                state = HS_TAG;
+                attr = NULL;
+                alen = 0;
+            }
             i++;
             break;
 
         case HS_ATTR_UQ:
             if (html_is_ascii_ws(c)) {
+                html_note_http_equiv(buf, value_start, i, attr, alen,
+                                     &saw_refresh);
                 state = HS_TAG;
                 attr = NULL;
                 alen = 0;
                 i++;
                 break;
             }
-            if (c == '>') { state = HS_TAG; attr = NULL; alen = 0; break; }
+            if (c == '>') {
+                html_note_http_equiv(buf, value_start, i, attr, alen,
+                                     &saw_refresh);
+                state = HS_TAG;
+                attr = NULL;
+                alen = 0;
+                break;
+            }
             i++;
             break;
 
@@ -775,6 +826,13 @@ static void html_scan_doc(const char *buf, size_t len,
         if (value_start <= len) {
             *aprefix = buf + value_start;
             *aplen = len - value_start;
+        }
+    }
+    if (state == HS_TAG || state == HS_ATTR_DQ ||
+        state == HS_ATTR_SQ || state == HS_ATTR_UQ) {
+        if (tlen > 0 && tlen < sizeof(tag) && html_tag_is(tag, tlen, "meta")) {
+            *in_meta = 1;
+            *meta_refresh = saw_refresh;
         }
     }
 }
@@ -1088,14 +1146,27 @@ static int execute_nodes(const node_t *n,
                 const char *aprefix = NULL;
                 size_t aplen = 0;
                 int in_script = 0, in_style_tag = 0, in_open_tag = 0;
+                int in_meta = 0, meta_refresh = 0;
                 html_scan_doc(*buf, *len, &in_script, &in_style_tag,
                               &in_open_tag, &in_attr, &quoted,
-                              &aname, &nlen, &aprefix, &aplen);
+                              &aname, &nlen, &aprefix, &aplen,
+                              &in_meta, &meta_refresh);
                 const char *uprefix = NULL;
                 size_t uplen = 0;
                 int in_css_url = html_in_css_url(*buf, *len, &uprefix, &uplen);
+                int in_refresh_url = in_attr && in_meta &&
+                    html_attr_name_eq(aname, nlen, "content") &&
+                    (meta_refresh ||
+                     html_contains_ci_n(aprefix, aplen, "url=") ||
+                     (n->next && n->next->type == NODE_TEXT &&
+                      n->next->text &&
+                      html_contains_ci_n(n->next->text, n->next->text_len,
+                                         "http-equiv") &&
+                      html_contains_ci_n(n->next->text, n->next->text_len,
+                                         "refresh")));
                 int in_url = in_css_url ||
-                    (in_attr && html_is_url_attr_name(aname, nlen));
+                    (in_attr && html_is_url_attr_name(aname, nlen)) ||
+                    in_refresh_url;
                 int in_event = in_attr && nlen > 2 &&
                     html_ci_eq_n(aname, "on", 2);
                 int in_style_attr = in_attr &&

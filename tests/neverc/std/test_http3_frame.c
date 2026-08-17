@@ -171,6 +171,19 @@ static void test_settings_zero_values(void) {
     neverc_h3_parse_frame_header(buf, written, &hdr);
     /* Empty settings payload (all defaults or zero/unlimited) */
     ASSERT_EQ(hdr.length, 0);
+
+    /* Encoding 0 must also mean unlimited (omit the setting). */
+    h3_settings_t zero_limit = { 0, 0, 0 };
+    rc = neverc_h3_settings_encode(&zero_limit, buf, sizeof(buf), &written);
+    ASSERT_EQ(rc, 0);
+    neverc_h3_parse_frame_header(buf, written, &hdr);
+    ASSERT_EQ(hdr.length, 0);
+
+    /* RFC 9114 §7.2.4.1: decode 0 as unlimited. */
+    uint8_t payload[] = { 0x06, 0x00 };
+    h3_settings_t decoded;
+    ASSERT_EQ(neverc_h3_settings_decode(payload, sizeof(payload), &decoded), 0);
+    ASSERT_EQ(decoded.max_field_section_size, UINT64_MAX);
 }
 
 /* ======================================================================

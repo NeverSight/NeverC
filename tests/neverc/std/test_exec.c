@@ -443,8 +443,7 @@ static void test_invalid_env_rejected(void) {
     const char *bad[] = {"NOT_AN_ASSIGNMENT"};
     neverc_exec_cmd_set_env(cmd, bad, 1);
     neverc_exec_exit_status_t st = {0};
-    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
-    ASSERT_INT_EQ(st.exit_code, 0);
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
     neverc_exec_cmd_free(cmd);
 }
 

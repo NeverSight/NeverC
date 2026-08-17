@@ -2628,6 +2628,24 @@ fail:
     return -1;
 }
 
+static int http_parsed_body_too_large(const parsed_request_t *pr,
+                                      size_t max_body) {
+    if (pr->content_length > 0 && (size_t)pr->content_length > max_body)
+        return 1;
+    if (pr->body_len > max_body)
+        return 1;
+    return 0;
+}
+
+static void http_conn_reject_too_large(http_conn_t *hc) {
+    const char *too_large =
+        "HTTP/1.1 413 Payload Too Large\r\n"
+        "Content-Length: 0\r\nConnection: close\r\n\r\n";
+    (void)http_conn_transport_write(
+        hc, too_large, strlen(too_large), hc->write_timeout_ms);
+    hc->state = HC_STATE_CLOSING;
+}
+
 static void http_conn_process(http_conn_t *hc) {
     if (http_conn_output_pending(hc)) return;
     while (hc->read_buf.len > 0 && hc->requests_served < hc->max_requests) {
@@ -2637,22 +2655,15 @@ static void http_conn_process(http_conn_t *hc) {
             hc->read_buf.data, hc->read_buf.len,
             &stream_headers, &header_size);
         if (header_result == 0) {
+            if (http_parsed_body_too_large(&stream_headers,
+                                           hc->max_body_size)) {
+                http_conn_reject_too_large(hc);
+                parsed_request_free(&stream_headers);
+                return;
+            }
             int streaming = nc_http_mux_is_streaming(
                 hc->mux, stream_headers.method, stream_headers.path);
             if (streaming) {
-                if (stream_headers.content_length > 0 &&
-                    (size_t)stream_headers.content_length >
-                        hc->max_body_size) {
-                    const char *too_large =
-                        "HTTP/1.1 413 Payload Too Large\r\n"
-                        "Content-Length: 0\r\nConnection: close\r\n\r\n";
-                    (void)http_conn_transport_write(
-                        hc, too_large, strlen(too_large),
-                        hc->write_timeout_ms);
-                    parsed_request_free(&stream_headers);
-                    hc->state = HC_STATE_CLOSING;
-                    return;
-                }
                 if (http_conn_start_streaming(
                         hc, &stream_headers, header_size) < 0) {
                     parsed_request_free(&stream_headers);
@@ -2691,6 +2702,11 @@ static void http_conn_process(http_conn_t *hc) {
             (void)http_conn_transport_write(
                 hc, err_resp, strlen(err_resp), hc->write_timeout_ms);
             hc->state = HC_STATE_CLOSING;
+            return;
+        }
+        if (http_parsed_body_too_large(&pr, hc->max_body_size)) {
+            http_conn_reject_too_large(hc);
+            parsed_request_free(&pr);
             return;
         }
 

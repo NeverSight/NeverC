@@ -927,7 +927,9 @@ static int gif_quantize_uniform(const uint8_t *rgba, size_t npixels,
 }
 
 /* Mark alpha-0 source pixels as a GIF transparent index. Adds a palette
- * slot when one is free; otherwise reuses the last entry. */
+ * slot when one is free; otherwise prefers an index unused by opaque
+ * pixels. Stealing a used slot remaps those opaque pixels first so they
+ * do not become transparent. */
 static void gif_apply_rgba_transparency(const uint8_t *rgba, size_t npixels,
                                         neverc_gif_frame_t *frame) {
     int saw_trans = 0;
@@ -936,7 +938,14 @@ static void gif_apply_rgba_transparency(const uint8_t *rgba, size_t npixels,
     }
     if (!saw_trans) return;
 
-    int tidx;
+    int used[NEVERC_GIF_MAX_PALETTE];
+    memset(used, 0, sizeof(used));
+    for (size_t i = 0; i < npixels; i++) {
+        if (rgba[i * 4u + 3u] != 0)
+            used[frame->indices[i]] = 1;
+    }
+
+    int tidx = -1;
     if (frame->palette_size < NEVERC_GIF_MAX_PALETTE) {
         tidx = frame->palette_size;
         frame->palette[tidx].r = 0;
@@ -944,7 +953,24 @@ static void gif_apply_rgba_transparency(const uint8_t *rgba, size_t npixels,
         frame->palette[tidx].b = 0;
         frame->palette_size++;
     } else {
-        tidx = NEVERC_GIF_MAX_PALETTE - 1;
+        for (int i = 0; i < NEVERC_GIF_MAX_PALETTE; i++) {
+            if (!used[i]) { tidx = i; break; }
+        }
+        if (tidx < 0) {
+            tidx = NEVERC_GIF_MAX_PALETTE - 1;
+            uint8_t remap = 0;
+            for (int i = 0; i < NEVERC_GIF_MAX_PALETTE; i++) {
+                if (i != tidx && used[i]) {
+                    remap = (uint8_t)i;
+                    break;
+                }
+            }
+            for (size_t i = 0; i < npixels; i++) {
+                if (rgba[i * 4u + 3u] != 0 &&
+                    frame->indices[i] == (uint8_t)tidx)
+                    frame->indices[i] = remap;
+            }
+        }
     }
     frame->has_transparency = 1;
     frame->transparent_index = (uint8_t)tidx;

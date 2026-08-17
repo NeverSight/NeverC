@@ -2015,6 +2015,69 @@ static void test_connection_limit(void) {
     neverc_http_set_max_connections(0);
 }
 
+static pid_t start_max_body_server(int port) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_set_max_body_size(16);
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "/post", post_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    for (int i = 0; i < 100; i++) {
+        usleep(30000);
+        const char *err = NULL;
+        char addr[64];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_tcp_conn_t *c = neverc_tcp_dial(addr, &err);
+        if (c) { neverc_tcp_close(c); break; }
+    }
+    return pid;
+}
+
+static void test_max_body_size_buffered(void) {
+    printf("[max_body_size_buffered]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    pid_t srv = start_max_body_server(port);
+    char buf[4096];
+
+    int n = do_http_request(port,
+        "POST /post HTTP/1.1\r\nHost: localhost\r\n"
+        "Content-Length: 8\r\nConnection: close\r\n\r\n"
+        "12345678",
+        buf, sizeof(buf));
+    check_int("small body accepted",
+              n > 0 && strstr(buf, "201") != NULL, 1);
+    check_int("small body echoed",
+              n > 0 && strstr(buf, "received 8") != NULL, 1);
+
+    n = do_http_request(port,
+        "POST /post HTTP/1.1\r\nHost: localhost\r\n"
+        "Content-Length: 32\r\nConnection: close\r\n\r\n"
+        "0123456789abcdef0123456789abcdef",
+        buf, sizeof(buf));
+    check_int("oversize body is 413",
+              n > 0 && strstr(buf, "413") != NULL, 1);
+    check_int("oversize body not handled",
+              n > 0 && strstr(buf, "received") == NULL, 1);
+
+    n = do_http_request(port,
+        "POST /post HTTP/1.1\r\nHost: localhost\r\n"
+        "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+        "20\r\n0123456789abcdef0123456789abcdef\r\n0\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("oversize chunked is 413",
+              n > 0 && strstr(buf, "413") != NULL, 1);
+
+    stop_test_server(srv);
+    neverc_http_set_max_body_size(0);
+}
+
 /* ===== Test: rapid server start/stop cycle (regression test) ===== */
 
 static void noop_handler(neverc_http_request_t *req,
@@ -3557,6 +3620,7 @@ int main(void) {
     test_client_chunked_response();
     test_client_many_tiny_chunks();
     test_connection_limit();
+    test_max_body_size_buffered();
     test_server_lifecycle();
     test_connection_pool();
     test_convenience_apis();
