@@ -65,6 +65,15 @@ static int multipart_header_name_valid(const char *name) {
     return 1;
 }
 
+static int multipart_header_value_valid(const unsigned char *s, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = s[i];
+        if ((c < 0x20 && c != '\t') || c == 0x7f)
+            return 0;
+    }
+    return 1;
+}
+
 static const unsigned char *find_boundary_line(
     const nci_ss_finder_t *finder, const unsigned char *data, size_t length,
     size_t marker_length, int *closing, const unsigned char **after) {
@@ -138,7 +147,8 @@ static int parse_headers(const unsigned char *data, size_t len,
             size_t add = line_end - vstart;
             size_t cur = strlen(prev->value);
             if (add > 0) {
-                if (cur + 1 + add >= sizeof(prev->value))
+                if (cur + 1 + add >= sizeof(prev->value) ||
+                    !multipart_header_value_valid(data + vstart, add))
                     return -1;
                 prev->value[cur] = ' ';
                 memcpy(prev->value + cur + 1, data + vstart, add);
@@ -169,7 +179,9 @@ static int parse_headers(const unsigned char *data, size_t len,
                (data[vstart] == ' ' || data[vstart] == '\t'))
             vstart++;
         size_t vlen = line_end - vstart;
-        if (vlen >= sizeof(h->value)) return -1;
+        if (vlen >= sizeof(h->value) ||
+            !multipart_header_value_valid(data + vstart, vlen))
+            return -1;
         memcpy(h->value, data + vstart, vlen);
         h->value[vlen] = '\0';
         part->header_count++;

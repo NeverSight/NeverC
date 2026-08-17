@@ -133,6 +133,20 @@ static void test_parse_media_type(void) {
     ASSERT_STR_EQ(keys[0], "filename");
     ASSERT_STR_EQ(vals[0], "star.txt");
     free_params(keys, vals, nparams);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; filename*=utf-8''x%0d%0a.txt",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 0);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; filename=safe.txt; "
+                      "filename*=utf-8''evil%0d%0a.txt",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(keys[0], "filename");
+    ASSERT_STR_EQ(vals[0], "safe.txt");
+    free_params(keys, vals, nparams);
 }
 
 static void test_parse_quoted_params(void) {

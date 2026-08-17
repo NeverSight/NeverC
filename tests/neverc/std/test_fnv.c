@@ -122,6 +122,20 @@ static void test_consistency(void) {
     else { tests_failed++; printf("  FAIL: fnv32 vs fnv32a should differ\n"); }
 }
 
+static void test_null_data(void) {
+    printf("[null data]\n");
+    check_u32("fnv32(null)", neverc_fnv_32(NULL, 8), neverc_fnv_32("", 0));
+    check_u32("fnv32a(null)", neverc_fnv_32a(NULL, 8), neverc_fnv_32a("", 0));
+    check_u64("fnv64(null)", neverc_fnv_64(NULL, 8), neverc_fnv_64("", 0));
+    check_u64("fnv64a(null)", neverc_fnv_64a(NULL, 8), neverc_fnv_64a("", 0));
+    neverc_fnv_128_t z = neverc_fnv_sum128(NULL, 8);
+    neverc_fnv_128_t e = neverc_fnv_sum128("", 0);
+    check_128("fnv128(null)", z, e.hi, e.lo);
+    z = neverc_fnv_sum128a(NULL, 8);
+    e = neverc_fnv_sum128a("", 0);
+    check_128("fnv128a(null)", z, e.hi, e.lo);
+}
+
 int main(void) {
     printf("=== NeverC FNV Library Tests ===\n\n");
 
@@ -132,6 +146,7 @@ int main(void) {
     test_fnv128();
     test_fnv128a();
     test_consistency();
+    test_null_data();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0)

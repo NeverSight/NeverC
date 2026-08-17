@@ -139,12 +139,30 @@ static void test_join(void) {
     neverc_errors_free(extra);
 }
 
+static void test_cycle(void) {
+    printf("[cycle]\n");
+    neverc_error_t *a = neverc_errors_new("a");
+    neverc_error_t *b = neverc_errors_new("b");
+    a->wrapped = b;
+    b->wrapped = a;
+
+    check_bool("is finds peer in cycle", neverc_errors_is(a, b), 1);
+    neverc_error_t *other = neverc_errors_new("c");
+    check_bool("is other survives cycle", neverc_errors_is(a, other), 0);
+    neverc_error_t *found = NULL;
+    check_bool("as finds peer in cycle", neverc_errors_as(a, b, &found), 1);
+    check_bool("as peer node", found == b, 1);
+    neverc_errors_free(other);
+    neverc_errors_free(a);
+}
+
 int main(void) {
     printf("=== NeverC Errors Module Tests ===\n\n");
     test_new_and_message();
     test_wrap_unwrap();
     test_is();
     test_join();
+    test_cycle();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

@@ -1612,6 +1612,7 @@ static int parse_chunked_request_body(const char *raw, size_t raw_length,
     for (;;) {
         const char *line_end = http_find_crlf(cursor, end);
         if (!line_end) goto incomplete;
+        if ((size_t)(line_end - cursor) > 8192) goto invalid;
         size_t chunk_size = 0;
         if (http_parse_chunk_size(cursor, (size_t)(line_end - cursor),
                                   &chunk_size) != 0)
@@ -1619,6 +1620,8 @@ static int parse_chunked_request_body(const char *raw, size_t raw_length,
         cursor = line_end + 2;
 
         if (chunk_size == 0) {
+            int trailer_count = 0;
+            size_t trailer_bytes = 0;
             for (;;) {
                 line_end = http_find_crlf(cursor, end);
                 if (!line_end) goto incomplete;
@@ -1629,9 +1632,14 @@ static int parse_chunked_request_body(const char *raw, size_t raw_length,
                     *consumed = (size_t)(cursor - raw);
                     return 0;
                 }
+                size_t line_length = (size_t)(line_end - cursor);
+                if (trailer_count >= HTTP_MAX_REQUEST_HEADERS ||
+                    line_length > 8192 ||
+                    trailer_bytes > (size_t)1024 * 1024 - line_length)
+                    goto invalid;
                 if (*cursor == ' ' || *cursor == '\t') goto invalid;
                 const char *colon = (const char *)memchr(
-                    cursor, ':', (size_t)(line_end - cursor));
+                    cursor, ':', line_length);
                 if (!colon || !http_valid_token(
                         cursor, (size_t)(colon - cursor)))
                     goto invalid;
@@ -1642,6 +1650,8 @@ static int parse_chunked_request_body(const char *raw, size_t raw_length,
                     http_forbidden_trailer(
                         cursor, (size_t)(colon - cursor)))
                     goto invalid;
+                trailer_count++;
+                trailer_bytes += line_length;
                 cursor = line_end + 2;
             }
         }

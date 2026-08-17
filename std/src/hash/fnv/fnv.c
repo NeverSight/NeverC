@@ -10,8 +10,16 @@
 #define FNV_OFFSET_64 14695981039346656037ULL
 #define FNV_PRIME_64  1099511628211ULL
 
+static const uint8_t *fnv_bytes(const void *data, size_t *len) {
+    if (!data) {
+        *len = 0;
+        return (const uint8_t *)"";
+    }
+    return (const uint8_t *)data;
+}
+
 uint32_t neverc_fnv_sum32(const void *data, size_t len) {
-    const uint8_t *p = (const uint8_t *)data;
+    const uint8_t *p = fnv_bytes(data, &len);
     uint32_t hash = FNV_OFFSET_32;
     size_t i = 0;
     for (; i + 8 <= len; i += 8) {
@@ -32,7 +40,7 @@ uint32_t neverc_fnv_sum32(const void *data, size_t len) {
 }
 
 uint32_t neverc_fnv_sum32a(const void *data, size_t len) {
-    const uint8_t *p = (const uint8_t *)data;
+    const uint8_t *p = fnv_bytes(data, &len);
     uint32_t hash = FNV_OFFSET_32;
     size_t i = 0;
     for (; i + 8 <= len; i += 8) {
@@ -53,7 +61,7 @@ uint32_t neverc_fnv_sum32a(const void *data, size_t len) {
 }
 
 uint64_t neverc_fnv_sum64(const void *data, size_t len) {
-    const uint8_t *p = (const uint8_t *)data;
+    const uint8_t *p = fnv_bytes(data, &len);
     uint64_t hash = FNV_OFFSET_64;
     size_t i = 0;
     for (; i + 8 <= len; i += 8) {
@@ -74,7 +82,7 @@ uint64_t neverc_fnv_sum64(const void *data, size_t len) {
 }
 
 uint64_t neverc_fnv_sum64a(const void *data, size_t len) {
-    const uint8_t *p = (const uint8_t *)data;
+    const uint8_t *p = fnv_bytes(data, &len);
     uint64_t hash = FNV_OFFSET_64;
     size_t i = 0;
     for (; i + 8 <= len; i += 8) {
@@ -132,7 +140,7 @@ static inline void mul128(uint64_t *hi, uint64_t *lo) {
 }
 
 neverc_fnv_128_t neverc_fnv_sum128(const void *data, size_t len) {
-    const uint8_t *p = (const uint8_t *)data;
+    const uint8_t *p = fnv_bytes(data, &len);
     uint64_t hi = FNV_OFFSET_128_HI, lo = FNV_OFFSET_128_LO;
     size_t i = 0;
     for (; i + 8 <= len; i += 8) {
@@ -153,7 +161,7 @@ neverc_fnv_128_t neverc_fnv_sum128(const void *data, size_t len) {
 }
 
 neverc_fnv_128_t neverc_fnv_sum128a(const void *data, size_t len) {
-    const uint8_t *p = (const uint8_t *)data;
+    const uint8_t *p = fnv_bytes(data, &len);
     uint64_t hi = FNV_OFFSET_128_HI, lo = FNV_OFFSET_128_LO;
     size_t i = 0;
     for (; i + 8 <= len; i += 8) {

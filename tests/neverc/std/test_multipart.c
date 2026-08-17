@@ -303,6 +303,17 @@ static void test_rejects_malformed_input(void) {
                   &part, 1, long_boundary, output, sizeof(output)),
               -1);
 
+    const char *bare_cr =
+        "--b\r\n"
+        "X-Foo: bar\rbaz\r\n"
+        "\r\n"
+        "hi\r\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)bare_cr, strlen(bare_cr), "b",
+                  reader),
+              -1);
+
     const char *folded =
         "--b\r\n"
         "Content-Type: text/plain;\r\n"

@@ -292,6 +292,24 @@ static void test_int32_range(void) {
     CHECK(msg.n == 42);
 }
 
+static void test_sint32_truncates_then_zigzag(void) {
+    typedef struct { int32_t n; } sint32_msg_t;
+    static const neverc_protobuf_field_descriptor_t fields[] = {
+        {1U, NEVERC_PROTOBUF_TYPE_SINT32,
+         offsetof(sint32_msg_t, n), SIZE_MAX},
+    };
+    static const neverc_protobuf_message_descriptor_t desc = {
+        sizeof(sint32_msg_t), fields, 1U};
+    sint32_msg_t msg;
+
+    /* 2^32+2 truncated to 32 bits is 2; zigzag32(2) is 1. */
+    static const uint8_t wide[] = {
+        0x08U, 0x82U, 0x80U, 0x80U, 0x80U, 0x10U};
+    CHECK(neverc_protobuf_message_decode(&desc, wide, sizeof(wide),
+                                         64U, &msg, sizeof(msg)) == 0);
+    CHECK(msg.n == 1);
+}
+
 static void test_bool_and_uint32_compat(void) {
     typedef struct {
         int flag;
@@ -363,6 +381,7 @@ int main(void) {
     test_zigzag();
     test_packed_and_wire_compat();
     test_int32_range();
+    test_sint32_truncates_then_zigzag();
     test_bool_and_uint32_compat();
     test_utf8_and_bounds();
     printf("protobuf: %d checks, %d failed\n", tests_run, tests_failed);

@@ -1341,6 +1341,44 @@ static void test_malformed_request(void) {
         (void)n;
     }
 
+    /* Chunk-size lines and trailers share the streaming 8KiB / 128 caps. */
+    {
+        int n = do_http_request(port,
+            "POST /post HTTP/1.1\r\nHost: localhost\r\n"
+            "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+            "1;foo\r\nx\r\n0\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("short chunk-ext ok",
+                  n > 0 && strstr(buf, "201") != NULL, 1);
+        check_int("short chunk-ext body",
+                  n > 0 && strstr(buf, "received 1") != NULL, 1);
+
+        char long_req[16384];
+        int off = snprintf(long_req, sizeof(long_req),
+            "POST /post HTTP/1.1\r\nHost: localhost\r\n"
+            "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+            "1;");
+        for (int i = 0; i < 8200; i++)
+            long_req[off++] = 'a';
+        off += snprintf(long_req + off, sizeof(long_req) - (size_t)off,
+                        "\r\nx\r\n0\r\n\r\n");
+        n = do_http_request(port, long_req, buf, sizeof(buf));
+        check_int("long chunk-ext 400",
+                  n > 0 && strstr(buf, "400 Bad Request") != NULL, 1);
+
+        off = snprintf(long_req, sizeof(long_req),
+            "POST /post HTTP/1.1\r\nHost: localhost\r\n"
+            "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+            "0\r\n");
+        for (int i = 0; i < 200; i++)
+            off += snprintf(long_req + off, sizeof(long_req) - (size_t)off,
+                            "X-%03d: a\r\n", i);
+        snprintf(long_req + off, sizeof(long_req) - (size_t)off, "\r\n");
+        n = do_http_request(port, long_req, buf, sizeof(buf));
+        check_int("too many trailers 400",
+                  n > 0 && strstr(buf, "400 Bad Request") != NULL, 1);
+    }
+
     /* Content-Length smaller than the buffered body must not emit extra
      * bytes that a downstream parser would treat as the next response. */
     {

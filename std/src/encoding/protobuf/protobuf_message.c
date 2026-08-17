@@ -330,8 +330,8 @@ static int protobuf_decode_field(
         break;
     }
     case NEVERC_PROTOBUF_TYPE_SINT32: {
-        int32_t scalar = (int32_t)neverc_protobuf_zigzag_decode64(
-            field->value.varint);
+        int32_t scalar = neverc_protobuf_zigzag_decode32(
+            (uint32_t)field->value.varint);
         memcpy(value, &scalar, sizeof(scalar));
         break;
     }

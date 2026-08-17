@@ -51,9 +51,16 @@ static int error_matches(const neverc_error_t *cur, const neverc_error_t *target
 int neverc_errors_is(const neverc_error_t *err, const neverc_error_t *target) {
     if (!target) return err == NULL;
     const neverc_error_t *cur = err;
+    const neverc_error_t *slow = err;
+    int hop = 0;
     while (cur) {
         if (error_matches(cur, target)) return 1;
         cur = cur->wrapped;
+        hop++;
+        if ((hop & 1) == 0 && slow) {
+            slow = slow->wrapped;
+            if (cur && cur == slow) return 0;
+        }
     }
     return 0;
 }
@@ -68,12 +75,19 @@ int neverc_errors_as(const neverc_error_t *err, const neverc_error_t *target,
         return 0;
     }
     const neverc_error_t *cur = err;
+    const neverc_error_t *slow = err;
+    int hop = 0;
     while (cur) {
         if (error_matches(cur, target)) {
             if (out) *out = (neverc_error_t *)cur;
             return 1;
         }
         cur = cur->wrapped;
+        hop++;
+        if ((hop & 1) == 0 && slow) {
+            slow = slow->wrapped;
+            if (cur && cur == slow) return 0;
+        }
     }
     return 0;
 }
@@ -84,7 +98,14 @@ static neverc_error_t *clone_error_chain(const neverc_error_t *err) {
     neverc_error_t *head = neverc_errors_new(err->msg);
     if (!head) return NULL;
     neverc_error_t *tail = head;
+    const neverc_error_t *slow = err;
+    int hop = 0;
     for (const neverc_error_t *src = err->wrapped; src; src = src->wrapped) {
+        hop++;
+        if ((hop & 1) == 0 && slow) {
+            slow = slow->wrapped;
+            if (src == slow) break;
+        }
         if (!src->msg) break;
         neverc_error_t *node = neverc_errors_new(src->msg);
         if (!node) {
@@ -187,11 +208,36 @@ neverc_error_t *neverc_errors_join(neverc_error_t **errs, size_t count) {
     return e;
 }
 
-void neverc_errors_free(neverc_error_t *err) {
+static void errors_break_cycle(neverc_error_t *err) {
+    neverc_error_t *slow = err;
+    neverc_error_t *fast = err;
     if (!err) return;
-    if (err->owned && err->msg)
-        free((void *)err->msg);
-    if (err->wrapped)
-        neverc_errors_free(err->wrapped);
-    free(err);
+    while (fast && fast->wrapped) {
+        slow = slow->wrapped;
+        fast = fast->wrapped->wrapped;
+        if (slow == fast) {
+            neverc_error_t *p = err;
+            neverc_error_t *q = fast;
+            while (p != q) {
+                p = p->wrapped;
+                q = q->wrapped;
+            }
+            q = p;
+            while (q->wrapped != p)
+                q = q->wrapped;
+            q->wrapped = NULL;
+            return;
+        }
+    }
+}
+
+void neverc_errors_free(neverc_error_t *err) {
+    errors_break_cycle(err);
+    while (err) {
+        neverc_error_t *next = err->wrapped;
+        if (err->owned && err->msg)
+            free((void *)err->msg);
+        free(err);
+        err = next;
+    }
 }

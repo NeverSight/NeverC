@@ -189,6 +189,13 @@ static char *mime_percent_unescape(const char *s, size_t n) {
         }
     }
     out[j] = '\0';
+    for (size_t k = 0; k < j; k++) {
+        unsigned char c = (unsigned char)out[k];
+        if (c < 0x20 || c == 0x7f) {
+            free(out);
+            return NULL;
+        }
+    }
     return out;
 }
 
