@@ -78,16 +78,69 @@ neverc_time_t neverc_time_unix(int64_t sec, int64_t nsec) {
     return t;
 }
 
+/*
+ * Days since 1970-01-01 for a proleptic-Gregorian date, in O(1) (Howard
+ * Hinnant's days_from_civil, as used by C++20 <chrono>). Replaces the previous
+ * O(year) loops that summed one term per year and per month — those grew
+ * without bound for far-off years. Precondition: m in [1,12], d a valid day.
+ */
+static int64_t days_from_civil(int64_t y, int m, int d) {
+    y -= (m <= 2);
+    int64_t era = (y >= 0 ? y : y - 399) / 400;
+    int64_t yoe = y - era * 400;                                    /* [0, 399]    */
+    int64_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;   /* [0, 365]    */
+    int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;            /* [0, 146096] */
+    return era * 146097 + doe - 719468;
+}
+
+/* Inverse of days_from_civil. z is days since 1970-01-01. */
+static void civil_from_days(int64_t z, int64_t *y, int *m, int *d) {
+    z += 719468;
+    int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    int64_t doe = z - era * 146097;                                 /* [0, 146096] */
+    int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; /* [0, 399] */
+    int64_t year = yoe + era * 400;
+    int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);          /* [0, 365]    */
+    int64_t mp = (5 * doy + 2) / 153;                               /* [0, 11]     */
+    int day = (int)(doy - (153 * mp + 2) / 5 + 1);                  /* [1, 31]     */
+    int month = (int)(mp < 10 ? mp + 3 : mp - 9);                   /* [1, 12]     */
+    *y = year + (month <= 2);
+    *m = month;
+    *d = day;
+}
+
+/*
+ * Portable UTC breakdown. libc gmtime_s/gmtime_r reject pre-1970 timestamps
+ * on Windows, which made parse-layout cases such as "2:30PM" (year 0) and
+ * "jun  5 69" (1969) return zeros from neverc_time_year/hour/….
+ */
 static int decompose(neverc_time_t t, struct tm *tm) {
     if (!tm) return 0;
     memset(tm, 0, sizeof(*tm));
     t = normalize_time(t);
-    time_t s = (time_t)t.sec;
-#if defined(NEVERC_PLATFORM_WINDOWS)
-    return gmtime_s(tm, &s) == 0;
-#else
-    return gmtime_r(&s, tm) != NULL;
-#endif
+    int64_t days = t.sec / 86400;
+    int64_t sod = t.sec % 86400;
+    if (sod < 0) {
+        days--;
+        sod += 86400;
+    }
+    int64_t year;
+    int month, day;
+    civil_from_days(days, &year, &month, &day);
+    if (year < (int64_t)INT_MIN + 1900 || year > (int64_t)INT_MAX + 1900)
+        return 0;
+    tm->tm_year = (int)(year - 1900);
+    tm->tm_mon = month - 1;
+    tm->tm_mday = day;
+    tm->tm_hour = (int)(sod / 3600);
+    tm->tm_min = (int)((sod % 3600) / 60);
+    tm->tm_sec = (int)(sod % 60);
+    int64_t wday = (days + 4) % 7; /* 1970-01-01 was Thursday */
+    if (wday < 0) wday += 7;
+    tm->tm_wday = (int)wday;
+    tm->tm_yday = (int)(days - days_from_civil(year, 1, 1));
+    tm->tm_isdst = 0;
+    return 1;
 }
 
 int neverc_time_year(neverc_time_t t)       { struct tm m; return decompose(t, &m) ? m.tm_year + 1900 : 0; }
@@ -286,21 +339,6 @@ static int days_in_month(int y, int m) {
     static const int dm[] = {31,28,31,30,31,30,31,31,30,31,30,31};
     if (m == 2 && is_leap(y)) return 29;
     return dm[m - 1];
-}
-
-/*
- * Days since 1970-01-01 for a proleptic-Gregorian date, in O(1) (Howard
- * Hinnant's days_from_civil, as used by C++20 <chrono>). Replaces the previous
- * O(year) loops that summed one term per year and per month — those grew
- * without bound for far-off years. Precondition: m in [1,12], d a valid day.
- */
-static int64_t days_from_civil(int64_t y, int m, int d) {
-    y -= (m <= 2);
-    int64_t era = (y >= 0 ? y : y - 399) / 400;
-    int64_t yoe = y - era * 400;                                    /* [0, 399]    */
-    int64_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;   /* [0, 365]    */
-    int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;            /* [0, 146096] */
-    return era * 146097 + doe - 719468;
 }
 
 int neverc_time_parse_rfc3339(const char *s, neverc_time_t *out) {

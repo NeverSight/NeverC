@@ -1,0 +1,146 @@
+name: debug-win-arm64-stdlib
+
+# Manual only. Downloads the failed windows-arm64 neverc and compiles just
+# StdLibTest.time + StdLibTest.dot_syntax — no toolchain rebuild.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'windows-arm64-neverc-build run id to pull compiler from'
+        required: false
+        default: '31989493453'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  repro:
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: arm64
+
+      - name: Setup MSVC (native arm64)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: arm64
+
+      - name: Download prebuilt neverc (no rebuild)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          RID="${{ github.event.inputs.run_id }}"
+          [ -n "$RID" ] || RID=31989493453
+          gh run download "$RID" -n windows-arm64-neverc -D dl -R "${{ github.repository }}"
+          python -c "import glob,zipfile; z=glob.glob('dl/*.zip')[0]; zipfile.ZipFile(z).extractall('.')"
+          test -f install/bin/neverc.exe
+          install/bin/neverc.exe --version
+
+      - name: Reproduce + validate time and dot_syntax
+        shell: bash
+        run: |
+          set +e
+          NCC=$(cygpath -m "$PWD/install/bin/neverc.exe")
+          STD=$(cygpath -m "$PWD/std")
+          FLAGS="-I$STD/include -I$STD/src/net -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -O1 -fno-builtin-std -Wno-deprecated-declarations"
+          fails=0
+
+          compile_run() {
+            local label=$1
+            shift
+            local out=$(cygpath -m "$PWD/$label.exe")
+            echo "=== compile $label ==="
+            "$NCC" $FLAGS -o "$out" "$@"
+            local crc=$?
+            echo "compile_${label}_exit=$crc"
+            if [ "$crc" -ne 0 ]; then
+              return "$crc"
+            fi
+            echo "=== run $label ==="
+            "$out"
+            local rc=$?
+            echo "run_${label}_exit=$rc"
+            return "$rc"
+          }
+
+          git show b9337f87b5:std/src/time/time.c > /tmp/old_time.c
+          git show b9337f87b5:tests/neverc/std/test_time.c > /tmp/old_test_time.c
+
+          echo "=== OLD time.c (expect the five pre-1970 accessor FAILs) ==="
+          compile_run time_old \
+            "$(cygpath -m /tmp/old_test_time.c)" \
+            "$(cygpath -m /tmp/old_time.c)"
+          old_rc=$?
+          echo "old_time_rc=$old_rc (nonzero expected)"
+          if [ "$old_rc" -eq 0 ]; then
+            echo "OLD time unexpectedly passed"
+            fails=$((fails+1))
+          fi
+
+          echo "=== HEAD time.c (must be green) ==="
+          compile_run time_head \
+            "$(cygpath -m "$PWD/tests/neverc/std/test_time.c")" \
+            "$(cygpath -m "$PWD/std/src/time/time.c")"
+          if [ $? -ne 0 ]; then
+            echo "HEAD time failed"
+            fails=$((fails+1))
+          fi
+
+          python - <<'PY' > /tmp/dot_syntax_srcs.txt
+          import importlib.util
+          spec = importlib.util.spec_from_file_location(
+              "check_test_deps", "utils/lint/check-test-deps.py")
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          tests = mod.parse_tests(mod.TESTS_CPP.read_text())
+          for src in sorted(tests["dot_syntax"]):
+              print(src)
+          PY
+
+          echo "=== OLD dot_syntax link (drop utf8/netip; expect undefined symbols) ==="
+          OLD_SRCS=()
+          HEAD_SRCS=()
+          while IFS= read -r s; do
+            [ -n "$s" ] || continue
+            HEAD_SRCS+=("$(cygpath -m "$PWD/std/$s")")
+            case "$s" in
+              src/unicode/utf8/utf8.c|src/net/netip/netip.c) ;;
+              *) OLD_SRCS+=("$(cygpath -m "$PWD/std/$s")") ;;
+            esac
+          done < /tmp/dot_syntax_srcs.txt
+          TESTC=$(cygpath -m "$PWD/tests/neverc/std/test_dot_syntax.c")
+
+          echo "=== compile dot_syntax_old ==="
+          "$NCC" $FLAGS -o "$(cygpath -m "$PWD/dot_syntax_old.exe")" \
+            "$TESTC" "${OLD_SRCS[@]}" 2>/tmp/dot_old_err.txt
+          old_link=$?
+          echo "compile_dot_syntax_old_exit=$old_link (nonzero expected)"
+          cat /tmp/dot_old_err.txt
+          if [ "$old_link" -eq 0 ]; then
+            echo "OLD dot_syntax unexpectedly linked"
+            fails=$((fails+1))
+          fi
+          if ! grep -q "neverc_utf8_decode_rune\|neverc_netip_parse_addr" /tmp/dot_old_err.txt; then
+            echo "OLD dot_syntax missing the expected undefined-symbol errors"
+            fails=$((fails+1))
+          fi
+
+          echo "=== HEAD dot_syntax (must link and pass) ==="
+          compile_run dot_syntax_head "$TESTC" "${HEAD_SRCS[@]}"
+          if [ $? -ne 0 ]; then
+            echo "HEAD dot_syntax failed"
+            fails=$((fails+1))
+          fi
+
+          echo "head_fails=$fails"
+          [ "$fails" -eq 0 ] || exit 1

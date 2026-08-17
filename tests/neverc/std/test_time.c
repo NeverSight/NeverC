@@ -160,6 +160,20 @@ static void test_date(void) {
 
     t = neverc_time_date(1970, 1, 1, 0, 0, 0, 0);
     check_bool("date epoch", neverc_time_unix_sec(t) == 0, 1);
+
+    /* Windows gmtime_s rejects pre-1970 timestamps; accessors must not. */
+    t = neverc_time_date(1969, 6, 5, 14, 30, 0, 0);
+    check_int("pre-epoch year", neverc_time_year(t), 1969);
+    check_int("pre-epoch month", neverc_time_month(t), 6);
+    check_int("pre-epoch day", neverc_time_day(t), 5);
+    check_int("pre-epoch hour", neverc_time_hour(t), 14);
+    check_int("pre-epoch minute", neverc_time_minute(t), 30);
+    check_int("pre-epoch weekday", neverc_time_weekday(t), 4); /* Thursday */
+    check_int("pre-epoch yearday", neverc_time_yearday(t), 156);
+
+    t = neverc_time_date(0, 1, 1, 2, 30, 0, 0);
+    check_int("year-zero hour", neverc_time_hour(t), 2);
+    check_int("year-zero minute", neverc_time_minute(t), 30);
 }
 
 static void test_unix_micro(void) {
