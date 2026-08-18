@@ -639,7 +639,7 @@ static void test_duration_boundaries(void) {
     check_int("parse negative leading fraction",
               neverc_time_parse_duration("-.5s", &d), 0);
     check_int64("negative leading fraction value", d, -500000000);
-    check_int("parse Greek mu", neverc_time_parse_duration("2\xce\xbcs", &d), 0);
+    check_int("parse Greek mu", neverc_time_parse_duration("2\xce\xbc" "s", &d), 0);
     check_int64("Greek mu value", d, 2000);
 
     check_int("parse max duration",

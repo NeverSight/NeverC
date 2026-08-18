@@ -410,10 +410,11 @@ int neverc_io_multi_reader_read(void *ctx, uint8_t *buf, size_t len, size_t *n) 
     neverc_io_multi_reader_t *mr = (neverc_io_multi_reader_t *)ctx;
     if (!mr || (!buf && len > 0) || (mr->count > 0 && !mr->readers))
         return NEVERC_IO_ERR_UNEXP;
-    /* Go io.MultiReader: an empty Read on an exhausted reader is EOF. A
-     * zero-length Read on a live reader is still success and does not advance. */
-    if (len == 0)
-        return (mr->current >= mr->count) ? NEVERC_IO_EOF : 0;
+    /* Go io.MultiReader has no len==0 short-circuit: a drained inner
+     * reader still reports EOF on an empty Read (bytes.Reader), and
+     * current is not advanced until that EOF is seen. Treating
+     * current < count as "live" would hide EOF after a final n>0,
+     * err=nil read. */
     while (mr->current < mr->count) {
         neverc_io_reader_t *r = &mr->readers[mr->current];
         if (!r->read) return NEVERC_IO_ERR_UNEXP;

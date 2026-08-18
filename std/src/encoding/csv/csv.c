@@ -79,8 +79,11 @@ static size_t csv_skip_leading_space(const char *s, size_t n) {
 }
 
 static int csv_is_formula_starter(uint32_t cp) {
-    if (cp == '=' || cp == '+' || cp == '-' || cp == '@' ||
-        cp == '\t' || cp == '\r' || cp == '\n')
+    /* Tab/CR/LF are unicode.IsSpace, not formula tokens. Excel still
+     * executes "=cmd" after stripping them, which csv_formula_prefix
+     * handles by skipping space then re-checking. Treating them as
+     * starters would prefix Go-quoted fields like "\tb" with '. */
+    if (cp == '=' || cp == '+' || cp == '-' || cp == '@')
         return 1;
     /* Fullwidth ＝ ＋ － ＠ — spreadsheet locales normalize these to ASCII. */
     return cp == 0xFF1D || cp == 0xFF0B || cp == 0xFF0D || cp == 0xFF20;

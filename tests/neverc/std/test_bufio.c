@@ -672,7 +672,7 @@ static void test_scanner_split_func(void) {
     }
 
     {
-        const char *ideo = "a\xE3\x80\x80b"; /* U+3000 ideographic space */
+        const char *ideo = "a\xE3\x80\x80" "b"; /* U+3000 ideographic space */
         neverc_io_mem_reader_init(&mr, (const uint8_t *)ideo, strlen(ideo));
         r.ctx = &mr;
         neverc_bufio_scanner_init(&sc, r);

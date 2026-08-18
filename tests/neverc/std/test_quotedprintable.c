@@ -37,11 +37,11 @@ static void test_decode_basic(void) {
     ASSERT_MEMEQ(out, "hello_world", 11);
 
     /* Go quotedprintable: unescaped C0/DEL fail; encoded =00 is fine. */
-    n = neverc_qp_decode("foo\x00bar", 7, out, sizeof(out));
+    n = neverc_qp_decode("foo\x00" "bar", 7, out, sizeof(out));
     ASSERT_EQ(n, -1);
-    n = neverc_qp_decode("foo\x0cbar", 7, out, sizeof(out));
+    n = neverc_qp_decode("foo\x0c" "bar", 7, out, sizeof(out));
     ASSERT_EQ(n, -1);
-    n = neverc_qp_decode("foo\x7fbar", 7, out, sizeof(out));
+    n = neverc_qp_decode("foo\x7f" "bar", 7, out, sizeof(out));
     ASSERT_EQ(n, -1);
     n = neverc_qp_decode("foo=00bar", 9, out, sizeof(out));
     ASSERT_EQ(n, 7);

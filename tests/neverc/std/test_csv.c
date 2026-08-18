@@ -134,11 +134,11 @@ static void test_write_quoting(void) {
     dst[n] = '\0';
     ASSERT_STR_EQ(dst, "\" a\",\"\tb\",\"\\.\"\n");
 
-    const char *nbsp_fields[] = {"\xc2\xa0x"};
+    const char *nbsp_fields[] = {"\xc2\xa0" "x"};
     n = neverc_csv_write_record(nbsp_fields, 1, dst, sizeof(dst), NULL);
     ASSERT_INT_EQ(n > 0, 1);
     dst[n] = '\0';
-    ASSERT_STR_EQ(dst, "\"\xc2\xa0x\"\n");
+    ASSERT_STR_EQ(dst, "\"\xc2\xa0" "x\"\n");
 
     /* Formula prefixes are neutralized with a leading ' (OWASP). RFC 4180
      * quotes alone are stripped by Excel/LibreOffice and still execute. */

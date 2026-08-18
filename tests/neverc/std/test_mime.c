@@ -543,7 +543,7 @@ static void test_qp_decode(void) {
     ASSERT_STR_EQ(out, "hello  \rworld");
 
     out_len = 99;
-    ASSERT_INT_EQ(neverc_mime_qp_decode("foo\x00bar", 7, out, sizeof(out),
+    ASSERT_INT_EQ(neverc_mime_qp_decode("foo\x00" "bar", 7, out, sizeof(out),
                                         &out_len), -1);
 }
 

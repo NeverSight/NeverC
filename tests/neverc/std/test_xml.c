@@ -212,7 +212,7 @@ static void test_entities_cdata_and_well_formedness(void) {
     neverc_xml_node_free(tree);
 
     static const char unicode_names[] =
-        "\xef\xbb\xbf<r\xc2\xb7x><\xcd\xbf/></r\xc2\xb7x>";
+        "\xef\xbb\xbf<r\xc2\xb7" "x><\xcd\xbf/></r\xc2\xb7" "x>";
     tree = neverc_xml_parse(unicode_names, sizeof(unicode_names) - 1);
     check_bool("BOM and XML Name ranges parse", tree != NULL, 1);
     neverc_xml_node_free(tree);

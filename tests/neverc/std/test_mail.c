@@ -199,7 +199,7 @@ static void test_parse_message(void) {
     const char *empty_name = ": empty-name\r\n\r\n";
     ASSERT_EQ(neverc_mail_parse_message(empty_name, strlen(empty_name), &m),
               -1);
-    const char *ctl_value = "From: a\x01b\r\n\r\n";
+    const char *ctl_value = "From: a\x01" "b\r\n\r\n";
     ASSERT_EQ(neverc_mail_parse_message(ctl_value, strlen(ctl_value), &m), -1);
     const char *no_colon = "NotAHeader\r\n\r\nbody";
     ASSERT_EQ(neverc_mail_parse_message(no_colon, strlen(no_colon), &m), -1);

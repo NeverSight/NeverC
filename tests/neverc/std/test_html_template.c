@@ -794,7 +794,7 @@ static void test_template_url_and_script(void) {
 
     neverc_html_template_data_set(&data, "X", "alert(1)");
     out = neverc_html_template_render(
-        "<script>if (/"/.test(s)) { var msg = {{.X}}; }</script>", &data);
+        "<script>if (/\"/.test(s)) { var msg = {{.X}}; }</script>", &data);
     check("js regexp quote does not desync into a string",
           out && strstr(out, "\"alert(1)\"") != NULL);
     check("js regexp quote is not a raw call",
