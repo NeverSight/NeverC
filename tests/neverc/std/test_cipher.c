@@ -3,6 +3,7 @@
  * Vectors from NIST SP 800-38A.
  */
 #include "neverc/std/crypto/cipher.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -282,6 +283,16 @@ static void test_ctr_low32_wrap_no_reuse(void) {
               neverc_cipher_ctr_checked(key, 16, iv, ct, pt, 32), 0);
     check_int("adjacent counters do not reuse keystream",
               memcmp(ct, ct + 16, 16) != 0, 1);
+
+#if SIZE_MAX > UINT32_MAX
+    memset(iv, 0, 16);
+    memcpy(iv_saved, iv, 16);
+    memset(ct, 0xA5, sizeof(ct));
+    check_int("CTR SIZE_MAX length rejected",
+              neverc_cipher_ctr_checked(key, 16, iv, ct, pt, SIZE_MAX), -1);
+    check_bytes("CTR SIZE_MAX leaves output unmodified", ct, sentinel, 32);
+    check_bytes("CTR SIZE_MAX leaves IV unmodified", iv, iv_saved, 16);
+#endif
 }
 
 static void test_pkcs7_pad_unpad(void) {

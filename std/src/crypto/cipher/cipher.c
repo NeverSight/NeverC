@@ -102,10 +102,12 @@ int neverc_cipher_ctr_checked(
     if (len > 0) {
         uint32_t ctr = ((uint32_t)iv[12] << 24) | ((uint32_t)iv[13] << 16) |
                        ((uint32_t)iv[14] << 8) | (uint32_t)iv[15];
-        uint64_t blocks = ((uint64_t)len + 15) / 16;
         /* Low 32 bits are the counter (nonce || counter). Wrapping them
-         * into the nonce collides with another 96-bit nonce's block 0. */
-        if (blocks > (uint64_t)(0xFFFFFFFFu - ctr) + 1u)
+         * into the nonce collides with another 96-bit nonce's block 0.
+         * Compare byte length to remaining*16; (len+15)/16 wraps at
+         * SIZE_MAX and would accept a request that reuses keystream. */
+        uint64_t remaining_blocks = (uint64_t)(0xFFFFFFFFu - ctr) + 1u;
+        if ((uint64_t)len > remaining_blocks * 16u)
             return -1;
     }
     neverc_aes_ctx_t ctx;
