@@ -310,6 +310,11 @@ static void test_dst_offset(void) {
 #define NZ_END_2024    1712412000LL
 /* 2024-09-28 14:00:00 UTC = NZ/Chatham spring-forward (last Sunday September). */
 #define NZ_START_2024  1727532000LL
+/* 2025-03-09 07:00:00 UTC = US spring-forward after the test TZif's last tx. */
+#define NY_SPRING_2025 1741503600LL
+#define JUL_2025       1751328000LL
+#define JAN_2024       1705320000LL
+#define JUL_2024       1719835200LL
 
 static void test_offset_at(void) {
     printf("[offset_at]\n");
@@ -383,6 +388,9 @@ static void test_offset_at(void) {
     check_int("NY offset_at INT64_MIN",
               neverc_tzdata_offset_at(ny, INT64_MIN) == -18000 ||
               neverc_tzdata_offset_at(ny, INT64_MIN) == -14400, 1);
+    check_int("Sydney offset_at INT64_MIN",
+              neverc_tzdata_offset_at(syd, INT64_MIN) == 36000 ||
+              neverc_tzdata_offset_at(syd, INT64_MIN) == 39600, 1);
 }
 
 /* ===== Offsets correctness ===== */
@@ -566,6 +574,24 @@ static void test_local_tz(void) {
     check_int("posix UTC0 offset", z ? z->utc_offset : -1, 0);
     check_int("posix UTC0 no dst", z ? z->has_dst : -1, 0);
 
+    tzdata_set_tz("EST5EDT,J79,J355");
+    z = neverc_tzdata_local();
+    check_not_null("posix Julian TZ", z);
+    check_str("posix Julian is not UTC", z && z->name ? z->name : "UTC",
+              "EST5EDT,J79,J355");
+    check_int("posix Julian January EST",
+              neverc_tzdata_offset_at(z, JAN_2024), -18000);
+    check_int("posix Julian July EDT",
+              neverc_tzdata_offset_at(z, JUL_2024), -14400);
+
+    tzdata_set_tz("EST5EDT,78,354");
+    z = neverc_tzdata_local();
+    check_not_null("posix zero-based Julian TZ", z);
+    check_int("posix n-form is not UTC offset",
+              z && z->utc_offset == -18000, 1);
+    check_int("posix n-form July EDT",
+              neverc_tzdata_offset_at(z, JUL_2024), -14400);
+
     if (had) tzdata_set_tz(saved);
     else tzdata_set_tz(NULL);
 }
@@ -656,6 +682,35 @@ static size_t build_tzif_ny(uint8_t *buf, size_t cap) {
     return n;
 }
 
+static size_t build_tzif_ny_footer(uint8_t *buf, size_t cap) {
+    size_t n = build_tzif_ny(buf, cap);
+    append_bytes(buf, &n, cap, "\nEST5EDT,M3.2.0,M11.1.0\n", 24);
+    return n;
+}
+
+static size_t build_tzif_pre_first(uint8_t *buf, size_t cap) {
+    size_t n = 0;
+    uint8_t zmeta[2] = {0, 0};
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 0, 1, 4);
+    append_be32(buf, &n, cap, 0);
+    append_bytes(buf, &n, cap, zmeta, 2);
+    append_bytes(buf, &n, cap, "UTC\0", 4);
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 1, 2, 8);
+    append_be64(buf, &n, cap, 1000);
+    uint8_t idx[1] = {1};
+    append_bytes(buf, &n, cap, idx, 1);
+    append_be32(buf, &n, cap, (uint32_t)-18000);
+    uint8_t est[2] = {0, 0};
+    append_bytes(buf, &n, cap, est, 2);
+    append_be32(buf, &n, cap, (uint32_t)-14400);
+    uint8_t edt[2] = {1, 4};
+    append_bytes(buf, &n, cap, edt, 2);
+    append_bytes(buf, &n, cap, "EST\0EDT\0", 8);
+    return n;
+}
+
 static size_t build_stored_zip(uint8_t *out, size_t cap, const char *name,
                                const uint8_t *data, size_t dlen) {
     size_t n = 0;
@@ -730,6 +785,26 @@ static void test_zip_tzif(void) {
               neverc_tzdata_offset_at(z, NY_SPRING_2024), -14400);
     check_int("ny tzif at fall",
               neverc_tzdata_offset_at(z, NY_FALL_2024), -18000);
+    neverc_tzdata_zone_free(z);
+
+    uint8_t nyf[512];
+    size_t nflen = build_tzif_ny_footer(nyf, sizeof(nyf));
+    z = neverc_tzdata_load_tzif("America/New_York", nyf, nflen);
+    check_not_null("load ny tzif with footer", z);
+    check_int("ny footer after last tx uses POSIX DST",
+              neverc_tzdata_offset_at(z, NY_SPRING_2025), -14400);
+    check_int("ny footer mid-summer 2025",
+              neverc_tzdata_offset_at(z, JUL_2025), -14400);
+    neverc_tzdata_zone_free(z);
+
+    uint8_t pre[256];
+    size_t plen = build_tzif_pre_first(pre, sizeof(pre));
+    z = neverc_tzdata_load_tzif("PreFirst", pre, plen);
+    check_not_null("load pre-first tzif", z);
+    check_int("pre-first uses first ttinfo not first transition",
+              neverc_tzdata_offset_at(z, 0), -18000);
+    check_int("at first transition still DST",
+              neverc_tzdata_offset_at(z, 1000), -14400);
     neverc_tzdata_zone_free(z);
 
     uint8_t zip[1024];

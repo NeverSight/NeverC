@@ -78,15 +78,15 @@ static size_t csv_skip_leading_space(const char *s, size_t n) {
     return i;
 }
 
+static int csv_formula_prefix(const char *s) {
+    return s && s[0] &&
+           (s[0] == '=' || s[0] == '+' || s[0] == '-' || s[0] == '@');
+}
+
 static int needs_quoting(const char *s, char delim, int use_crlf) {
     uint32_t first;
     (void)use_crlf; /* \r and \n always force quoting regardless of line ending */
     if (!s || !s[0]) return 0;
-    /* Spreadsheet formula prefixes (OWASP CSV Injection). Quoted so Excel /
-     * LibreOffice cannot treat a field as `=CMD()` / `-=CMD()` when opened.
-     * Tab and CR are already quoted: tab via unicode.IsSpace, CR in the loop. */
-    if (s[0] == '=' || s[0] == '+' || s[0] == '-' || s[0] == '@')
-        return 1;
     /* Postgres COPY terminator; quoted so it is not taken as end-of-data. */
     if (s[0] == '\\' && s[1] == '.' && s[2] == '\0')
         return 1;
@@ -401,6 +401,37 @@ int neverc_csv_write_record(const char **fields, int nfields,
 
         const char *f = fields[i];
         if (!f) return -1;
+        /* OWASP CSV injection: quoting alone is stripped by Excel/LibreOffice.
+         * Prefix formula fields with ' so the cell is stored as text. */
+        if (csv_formula_prefix(f)) {
+            if (pos >= dst_len) return -1;
+            if (needs_quoting(f, delim, crlf)) {
+                if (pos + 1 >= dst_len) return -1;
+                dst[pos++] = '"';
+                dst[pos++] = '\'';
+                for (const char *q = f; *q; q++) {
+                    if (*q == '"') {
+                        if (pos + 1 >= dst_len) return -1;
+                        dst[pos++] = '"';
+                        dst[pos++] = '"';
+                    } else {
+                        if (pos >= dst_len) return -1;
+                        dst[pos++] = *q;
+                    }
+                }
+                if (pos >= dst_len) return -1;
+                dst[pos++] = '"';
+                continue;
+            }
+            dst[pos++] = '\'';
+            {
+                size_t flen = strlen(f);
+                if (flen > dst_len - pos) return -1;
+                memcpy(dst + pos, f, flen);
+                pos += flen;
+            }
+            continue;
+        }
         if (needs_quoting(f, delim, crlf)) {
             /* The common quoted field (forced by a comma or newline) carries no
              * embedded '"', so its body copies verbatim — wrap it in a single

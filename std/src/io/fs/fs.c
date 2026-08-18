@@ -432,6 +432,8 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
     do {
         if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0)
             continue;
+        if (!fs_entry_name_ok(fd.cFileName))
+            continue;
         if (!fs_entries_reserve(&result, &cap, *count + 1)) {
             free(result);
             FindClose(h);

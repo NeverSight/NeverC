@@ -532,6 +532,21 @@ static frag_t mk_alt(neverc_regexp_t *re, frag_t a, frag_t b) {
 
 #define NCI_RE_CLASS_RUNE_CAP 256
 
+static int class_read_utf8_atom(parser_t *par, int *out) {
+    const unsigned char *s = (const unsigned char *)par->p;
+    size_t n = 0;
+    int r, k;
+    while (s[n]) n++;
+    k = utf8_decode(s, n, &r);
+    if (k < 1) {
+        par->err = "invalid UTF-8";
+        return 0;
+    }
+    par->p += k;
+    *out = r;
+    return 1;
+}
+
 static int class_add_rune(parser_t *par, frag_t **extras, int *nextras,
                           int *extras_cap, int r) {
     if (*nextras >= NCI_RE_CLASS_RUNE_CAP) {
@@ -649,8 +664,15 @@ static frag_t parse_atom(parser_t *par) {
                 entries++;
                 continue;
             }
-            int lo = (uint8_t)*par->p++;
+            int lo;
+            int lo_utf8 = 0;
             int lo_braced = 0;
+            if ((unsigned char)*par->p >= 0x80) {
+                if (!class_read_utf8_atom(par, &lo)) goto class_fail;
+                lo_utf8 = 1;
+            } else {
+                lo = (uint8_t)*par->p++;
+            }
             if (lo == '\\' && *par->p) {
                 char esc = *par->p++;
                 if (esc == 'd') {
@@ -737,7 +759,7 @@ static frag_t parse_atom(parser_t *par) {
             }
             if (*par->p == '-' && par->p[1] && par->p[1] != ']') {
                 par->p++;
-                int hi, hi_braced = 0;
+                int hi = 0, hi_braced = 0, hi_utf8 = 0;
                 if (*par->p == '\\' && par->p[1]) {
                     par->p++;
                     char esc = *par->p++;
@@ -783,14 +805,46 @@ static frag_t parse_atom(parser_t *par) {
                             hi = (uint8_t)esc;
                         }
                     }
+                } else if ((unsigned char)*par->p >= 0x80) {
+                    if (!class_read_utf8_atom(par, &hi)) goto class_fail;
+                    hi_utf8 = 1;
                 } else {
                     hi = (uint8_t)*par->p++;
+                }
+                if (lo_utf8 || hi_utf8) {
+                    if (cc->negated) {
+                        par->err = "invalid escape sequence";
+                        goto class_fail;
+                    }
+                    if (hi < lo) {
+                        par->err = "invalid character class range";
+                        goto class_fail;
+                    }
+                    if (hi - lo >= NCI_RE_CLASS_RUNE_CAP - nextras) {
+                        par->err = "character class too large";
+                        goto class_fail;
+                    }
+                    for (int r = lo; r <= hi; r++) {
+                        if (r < 128) cc_set(cc, r);
+                        else if (!class_add_rune(par, &extras, &nextras,
+                                                 &extras_cap, r))
+                            goto class_fail;
+                    }
+                    entries++;
+                    continue;
                 }
                 if (hi < lo) {
                     par->err = "invalid character class range";
                     goto class_fail;
                 }
                 for (int i = lo; i <= hi; i++) cc_set(cc, i);
+            } else if (lo_utf8) {
+                if (cc->negated) {
+                    par->err = "invalid escape sequence";
+                    goto class_fail;
+                }
+                if (!class_add_rune(par, &extras, &nextras, &extras_cap, lo))
+                    goto class_fail;
             } else {
                 cc_set(cc, lo);
             }

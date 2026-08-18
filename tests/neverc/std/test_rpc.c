@@ -1079,11 +1079,131 @@ static void rpc_test_data_after_end(void) {
     neverc_thread_executor_free(executor);
 }
 
+typedef struct {
+    neverc_tcp_listener_t *listener;
+    int result;
+} rpc_goaway_peer_t;
+
+static void rpc_goaway_ok_task(void *context) {
+    rpc_goaway_peer_t *test = (rpc_goaway_peer_t *)context;
+    const char *error = NULL;
+    neverc_tcp_conn_t *conn = neverc_tcp_accept(test->listener, &error);
+    if (!conn) {
+        test->result = -1;
+        return;
+    }
+    (void)neverc_tcp_set_timeout(conn, 2000);
+    char peek[1];
+    if (neverc_tcp_read(conn, peek, 1) <= 0) {
+        neverc_tcp_close(conn);
+        test->result = -1;
+        return;
+    }
+    neverc_rpc_frame_t goaway;
+    memset(&goaway, 0, sizeof(goaway));
+    goaway.header.version = NEVERC_RPC_VERSION_1;
+    goaway.header.type = NEVERC_RPC_FRAME_GOAWAY;
+    goaway.header.code = NEVERC_RPC_STATUS_OK;
+    uint8_t encoded[64];
+    size_t encoded_length = 0;
+    if (neverc_rpc_frame_encode(&goaway, encoded, sizeof(encoded),
+                                &encoded_length) != 0 ||
+        rpc_tcp_write_all(conn, encoded, encoded_length) != 0) {
+        neverc_tcp_close(conn);
+        test->result = -1;
+        return;
+    }
+    char ignore[64];
+    while (neverc_tcp_read(conn, ignore, sizeof(ignore)) > 0) {
+    }
+    neverc_tcp_close(conn);
+    test->result = 0;
+}
+
+static void rpc_test_goaway_ok_not_success(void) {
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    CHECK(listener != NULL);
+    if (!listener) return;
+    neverc_tcp_addr_t local;
+    CHECK(neverc_tcp_listener_addr(listener, &local) == 0);
+    char address[64];
+    (void)snprintf(address, sizeof(address), "127.0.0.1:%u",
+                   (unsigned)local.port);
+
+    rpc_goaway_peer_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.listener = listener;
+    fake.result = -1;
+    neverc_thread_executor_t *executor =
+        neverc_thread_executor_create(1U, 1U);
+    CHECK(executor != NULL);
+    if (!executor) {
+        neverc_tcp_listener_close(listener);
+        return;
+    }
+    CHECK(neverc_thread_executor_submit(executor, rpc_goaway_ok_task,
+                                         &fake) == NEVERC_THREAD_OK);
+
+    neverc_rpc_client_config_t config = neverc_rpc_client_config_default();
+    config.ping_interval_ms = 0;
+    config.pong_timeout_ms = 0;
+    config.reconnect_enabled = 0;
+    config.connect_timeout_ms = 2000;
+    config.io_timeout_ms = 2000;
+    neverc_rpc_client_t *client =
+        neverc_rpc_client_dial(address, &config, &error);
+    CHECK(client != NULL);
+    if (client) {
+        neverc_context_cancel_handle_t *cancel = NULL;
+        neverc_context_t *background = neverc_context_background();
+        neverc_context_t *context = background
+            ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+            : NULL;
+        CHECK(context != NULL && cancel != NULL);
+        neverc_rpc_stream_t *stream = context
+            ? neverc_rpc_stream_open(client, context, "test.Echo/Bidi",
+                                     NULL, 0U, 0, &error)
+            : NULL;
+        CHECK(stream != NULL);
+        if (stream) {
+            static const char request[] = "unary";
+            (void)neverc_rpc_stream_send(stream, context, request,
+                                         sizeof(request) - 1U);
+            (void)neverc_rpc_stream_close_send(stream, context);
+            neverc_time_sleep(200 * NEVERC_TIME_MILLISECOND);
+            char response[64];
+            size_t length = 0;
+            int result = NEVERC_RPC_IO_OK;
+            while (result == NEVERC_RPC_IO_OK)
+                result = neverc_rpc_stream_recv(
+                    stream, context, response, sizeof(response), &length);
+            neverc_rpc_status_t status = neverc_rpc_stream_status(stream);
+            CHECK(result != NEVERC_RPC_IO_OK);
+            CHECK(status.code != NEVERC_RPC_STATUS_OK);
+            neverc_rpc_stream_free(stream);
+        }
+        if (cancel) {
+            neverc_context_cancel_handle_cancel(cancel);
+            neverc_context_cancel_handle_free(cancel);
+        }
+        neverc_context_free(context);
+        neverc_context_free(background);
+        neverc_rpc_client_close(client);
+    }
+    neverc_tcp_listener_close(listener);
+    CHECK(neverc_thread_executor_shutdown(executor) == NEVERC_THREAD_OK);
+    CHECK(fake.result == 0);
+    neverc_thread_executor_free(executor);
+}
+
 int main(void) {
     printf("NRPC test suite:\n");
     rpc_test_frame_codec();
     rpc_test_open_codec();
     rpc_test_data_after_end();
+    rpc_test_goaway_ok_not_success();
     rpc_test_invalid_mtls_config();
     rpc_test_receive_backpressure();
     rpc_test_tenant_rate_limit();

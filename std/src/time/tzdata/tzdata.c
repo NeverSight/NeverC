@@ -386,9 +386,15 @@ static int tz_in_span(int64_t unix_sec, int64_t start, int64_t end) {
     return unix_sec >= start || unix_sec < end;
 }
 
+/* kind: 0 = Mm.w.d, 1 = Jn (1-365, no leap day), 2 = n (0-365, leap counted). */
 typedef struct {
-    int month, week, wday, at_sec;
+    int kind, month, week, wday, yday, at_sec;
 } posix_rule_t;
+
+typedef struct {
+    int std_off, dst_off, has_dst, has_rules;
+    posix_rule_t start, end;
+} posix_tz_parsed_t;
 
 static neverc_tzdata_zone_t g_posix_zone;
 static char g_posix_tzstr[96];
@@ -473,38 +479,62 @@ static int parse_posix_offset(const char **p, int *utc_sec) {
     return 0;
 }
 
-static int parse_posix_rule(const char **p, posix_rule_t *r) {
-    if (**p != 'M') return -1;
+static int parse_posix_rule_time(const char **p, int *at) {
+    *at = 2 * 3600;
+    if (**p != '/') return 0;
     (*p)++;
-    int month, week, wday;
-    if (posix_uint(p, 2, &month) != 0 || month < 1 || month > 12) return -1;
-    if (**p != '.') return -1;
-    (*p)++;
-    if (posix_uint(p, 1, &week) != 0 || week < 1 || week > 5) return -1;
-    if (**p != '.') return -1;
-    (*p)++;
-    if (posix_uint(p, 1, &wday) != 0 || wday > 6) return -1;
-    int at = 2 * 3600;
-    if (**p == '/') {
+    int hh = 0, mm = 0, ss = 0;
+    if (posix_uint(p, 2, &hh) != 0) return -1;
+    if (**p == ':') {
         (*p)++;
-        int hh = 0, mm = 0, ss = 0;
-        if (posix_uint(p, 2, &hh) != 0) return -1;
+        if (posix_uint(p, 2, &mm) != 0) return -1;
         if (**p == ':') {
             (*p)++;
-            if (posix_uint(p, 2, &mm) != 0) return -1;
-            if (**p == ':') {
-                (*p)++;
-                if (posix_uint(p, 2, &ss) != 0) return -1;
-            }
+            if (posix_uint(p, 2, &ss) != 0) return -1;
         }
-        if (hh > 24 || mm > 59 || ss > 59) return -1;
-        at = hh * 3600 + mm * 60 + ss;
     }
-    r->month = month;
-    r->week = week;
-    r->wday = wday;
-    r->at_sec = at;
+    if (hh > 24 || mm > 59 || ss > 59) return -1;
+    *at = hh * 3600 + mm * 60 + ss;
     return 0;
+}
+
+static int parse_posix_rule(const char **p, posix_rule_t *r) {
+    memset(r, 0, sizeof(*r));
+    if (**p == 'M') {
+        (*p)++;
+        int month, week, wday;
+        if (posix_uint(p, 2, &month) != 0 || month < 1 || month > 12) return -1;
+        if (**p != '.') return -1;
+        (*p)++;
+        if (posix_uint(p, 1, &week) != 0 || week < 1 || week > 5) return -1;
+        if (**p != '.') return -1;
+        (*p)++;
+        if (posix_uint(p, 1, &wday) != 0 || wday > 6) return -1;
+        if (parse_posix_rule_time(p, &r->at_sec) != 0) return -1;
+        r->kind = 0;
+        r->month = month;
+        r->week = week;
+        r->wday = wday;
+        return 0;
+    }
+    if (**p == 'J') {
+        (*p)++;
+        int n;
+        if (posix_uint(p, 3, &n) != 0 || n < 1 || n > 365) return -1;
+        if (parse_posix_rule_time(p, &r->at_sec) != 0) return -1;
+        r->kind = 1;
+        r->yday = n;
+        return 0;
+    }
+    if (**p >= '0' && **p <= '9') {
+        int n;
+        if (posix_uint(p, 3, &n) != 0 || n > 365) return -1;
+        if (parse_posix_rule_time(p, &r->at_sec) != 0) return -1;
+        r->kind = 2;
+        r->yday = n;
+        return 0;
+    }
+    return -1;
 }
 
 static void copy_cstr(char *dst, size_t cap, const char *src) {
@@ -517,39 +547,100 @@ static void copy_cstr(char *dst, size_t cap, const char *src) {
 }
 
 static int64_t posix_rule_unix(int64_t year, const posix_rule_t *r, int offset) {
-    int dom = tz_nth_wday(year, r->month, r->wday, r->week);
-    int64_t base = tz_unix_civil(year, r->month, dom, 0, 0, 0);
+    int64_t base;
+    if (r->kind == 0) {
+        int dom = tz_nth_wday(year, r->month, r->wday, r->week);
+        base = tz_unix_civil(year, r->month, dom, 0, 0, 0);
+    } else {
+        /* Go time.tzruleTime: Jn skips Feb 29; n counts it. */
+        base = tz_unix_civil(year, 1, 1, 0, 0, 0);
+        int64_t days = (r->kind == 1) ? (int64_t)r->yday - 1 : (int64_t)r->yday;
+        if (r->kind == 1 && tz_is_leap(year) && r->yday >= 60)
+            days++;
+        if (days > 0 && days > INT64_MAX / 86400)
+            base = INT64_MAX;
+        else if (days < 0 && days < INT64_MIN / 86400)
+            base = INT64_MIN;
+        else
+            base = tz_add_sat(base, days * 86400);
+    }
     return tz_add_sat(tz_add_sat(base, r->at_sec), -(int64_t)offset);
 }
 
-static const neverc_tzdata_zone_t *parse_posix_tz(const char *tz) {
-    if (!tz || !tz[0] || tz[0] == ':' || tz[0] == '/') return NULL;
+static int parse_posix_tz_fields(const char *tz, posix_tz_parsed_t *out,
+                                 char *stdn, size_t stdn_cap,
+                                 char *dstn, size_t dstn_cap) {
+    if (!tz || !tz[0] || tz[0] == ':' || tz[0] == '/' || !out)
+        return -1;
     const char *p = tz;
-    char stdn[16], dstn[16];
-    dstn[0] = '\0';
-    int std_off = 0, dst_off = 0;
-    if (parse_posix_tz_name(&p, stdn, sizeof(stdn)) != 0) return NULL;
-    if (parse_posix_offset(&p, &std_off) != 0) return NULL;
-    int has_dst = 0;
-    posix_rule_t start = {0, 0, 0, 0}, end = {0, 0, 0, 0};
-    int has_rules = 0;
+    if (dstn && dstn_cap)
+        dstn[0] = '\0';
+    memset(out, 0, sizeof(*out));
+    if (parse_posix_tz_name(&p, stdn, stdn_cap) != 0) return -1;
+    if (parse_posix_offset(&p, &out->std_off) != 0) return -1;
     if (*p && *p != ',') {
-        if (parse_posix_tz_name(&p, dstn, sizeof(dstn)) != 0) return NULL;
-        has_dst = 1;
-        dst_off = std_off + 3600;
+        if (parse_posix_tz_name(&p, dstn, dstn_cap) != 0) return -1;
+        out->has_dst = 1;
+        out->dst_off = out->std_off + 3600;
         if (*p && *p != ',') {
-            if (parse_posix_offset(&p, &dst_off) != 0) return NULL;
+            if (parse_posix_offset(&p, &out->dst_off) != 0) return -1;
         }
     }
     if (*p == ',') {
         p++;
-        if (parse_posix_rule(&p, &start) != 0) return NULL;
-        if (*p != ',') return NULL;
+        if (parse_posix_rule(&p, &out->start) != 0) return -1;
+        if (*p != ',') return -1;
         p++;
-        if (parse_posix_rule(&p, &end) != 0) return NULL;
-        has_rules = 1;
+        if (parse_posix_rule(&p, &out->end) != 0) return -1;
+        out->has_rules = 1;
     }
-    if (*p != '\0') return NULL;
+    if (*p != '\0') return -1;
+    return 0;
+}
+
+static int posix_rules_dst_active(const posix_tz_parsed_t *parsed, int64_t unix_sec) {
+    if (!parsed || !parsed->has_dst) return 0;
+    int64_t days = unix_sec / 86400;
+    int64_t sod = unix_sec % 86400;
+    if (sod < 0) {
+        days--;
+        sod += 86400;
+    }
+    int64_t year;
+    int month, day;
+    tz_civil_from_days(days, &year, &month, &day);
+    if (parsed->has_rules) {
+        int64_t start = posix_rule_unix(year, &parsed->start, parsed->std_off);
+        int64_t end = posix_rule_unix(year, &parsed->end, parsed->dst_off);
+        return tz_in_span(unix_sec, start, end);
+    }
+    int64_t start = tz_add_sat(
+        tz_unix_civil(year, 3, tz_nth_wday(year, 3, 0, 2), 2, 0, 0),
+        -(int64_t)parsed->std_off);
+    int64_t end = tz_add_sat(
+        tz_unix_civil(year, 11, tz_nth_wday(year, 11, 0, 1), 2, 0, 0),
+        -(int64_t)parsed->dst_off);
+    return tz_in_span(unix_sec, start, end);
+}
+
+static int posix_rules_offset_at(const posix_tz_parsed_t *parsed, int64_t unix_sec) {
+    if (!parsed) return 0;
+    if (!parsed->has_dst) return parsed->std_off;
+    return posix_rules_dst_active(parsed, unix_sec) ? parsed->dst_off
+                                                    : parsed->std_off;
+}
+
+static const neverc_tzdata_zone_t *parse_posix_tz(const char *tz) {
+    char stdn[16], dstn[16];
+    posix_tz_parsed_t parsed;
+    if (parse_posix_tz_fields(tz, &parsed, stdn, sizeof(stdn),
+                              dstn, sizeof(dstn)) != 0)
+        return NULL;
+    int std_off = parsed.std_off;
+    int dst_off = parsed.dst_off;
+    int has_dst = parsed.has_dst;
+    int has_rules = parsed.has_rules;
+    posix_rule_t start = parsed.start, end = parsed.end;
 
     posix_lock();
     if (g_posix_tzstr[0] && nc_streq(g_posix_tzstr, tz)) {
@@ -622,32 +713,38 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
                 start_min = 45;
                 end_min = 45;
             }
-            start = tz_unix_civil(year, 9, tz_last_wday(year, 9, 0), 2, start_min, 0) -
-                    zone->utc_offset;
-            end = tz_unix_civil(year, 4, tz_nth_wday(year, 4, 0, 1), 3, end_min, 0) -
-                  zone->dst_offset;
+            start = tz_add_sat(
+                tz_unix_civil(year, 9, tz_last_wday(year, 9, 0), 2, start_min, 0),
+                -(int64_t)zone->utc_offset);
+            end = tz_add_sat(
+                tz_unix_civil(year, 4, tz_nth_wday(year, 4, 0, 1), 3, end_min, 0),
+                -(int64_t)zone->dst_offset);
         } else if (cl) {
-            start = tz_unix_civil(year, 9, tz_nth_wday(year, 9, 6, 1), 0, 0, 0) -
-                    zone->utc_offset;
-            end = tz_unix_civil(year, 4, tz_nth_wday(year, 4, 6, 1), 0, 0, 0) -
-                  zone->dst_offset;
+            start = tz_add_sat(
+                tz_unix_civil(year, 9, tz_nth_wday(year, 9, 6, 1), 0, 0, 0),
+                -(int64_t)zone->utc_offset);
+            end = tz_add_sat(
+                tz_unix_civil(year, 4, tz_nth_wday(year, 4, 6, 1), 0, 0, 0),
+                -(int64_t)zone->dst_offset);
         } else {
             /* Australia: first Sunday October 02:00 std -> first Sunday April 03:00 dst */
-            start = tz_unix_civil(year, 10, tz_nth_wday(year, 10, 0, 1), 2, 0, 0) -
-                    zone->utc_offset;
-            end = tz_unix_civil(year, 4, tz_nth_wday(year, 4, 0, 1), 3, 0, 0) -
-                  zone->dst_offset;
+            start = tz_add_sat(
+                tz_unix_civil(year, 10, tz_nth_wday(year, 10, 0, 1), 2, 0, 0),
+                -(int64_t)zone->utc_offset);
+            end = tz_add_sat(
+                tz_unix_civil(year, 4, tz_nth_wday(year, 4, 0, 1), 3, 0, 0),
+                -(int64_t)zone->dst_offset);
         }
         return tz_in_span(unix_sec, start, end);
     }
 
     if (us) {
-        int64_t start =
-            tz_unix_civil(year, 3, tz_nth_wday(year, 3, 0, 2), 2, 0, 0) -
-            zone->utc_offset;
-        int64_t end =
-            tz_unix_civil(year, 11, tz_nth_wday(year, 11, 0, 1), 2, 0, 0) -
-            zone->dst_offset;
+        int64_t start = tz_add_sat(
+            tz_unix_civil(year, 3, tz_nth_wday(year, 3, 0, 2), 2, 0, 0),
+            -(int64_t)zone->utc_offset);
+        int64_t end = tz_add_sat(
+            tz_unix_civil(year, 11, tz_nth_wday(year, 11, 0, 1), 2, 0, 0),
+            -(int64_t)zone->dst_offset);
         return tz_in_span(unix_sec, start, end);
     }
 
@@ -662,6 +759,9 @@ typedef struct tzif_extra {
     int ntx;
     int64_t *when;
     int *off;
+    int pre_off;
+    int has_posix;
+    posix_tz_parsed_t posix;
     char *storage;
     struct tzif_extra *next;
 } tzif_extra_t;
@@ -696,8 +796,16 @@ static tzif_extra_t *tzif_find(const neverc_tzdata_zone_t *zone) {
 }
 
 static int tzif_offset_at(const tzif_extra_t *e, int64_t unix_sec) {
-    if (!e || e->ntx <= 0 || !e->when || !e->off)
-        return e ? e->zone.utc_offset : 0;
+    if (!e) return 0;
+    if (e->ntx <= 0 || !e->when || !e->off) {
+        if (e->has_posix)
+            return posix_rules_offset_at(&e->posix, unix_sec);
+        return e->pre_off;
+    }
+    if (unix_sec < e->when[0])
+        return e->pre_off;
+    if (e->has_posix && unix_sec > e->when[e->ntx - 1])
+        return posix_rules_offset_at(&e->posix, unix_sec);
     int lo = 0, hi = e->ntx;
     while (lo < hi) {
         int mid = lo + (hi - lo) / 2;
@@ -706,9 +814,7 @@ static int tzif_offset_at(const tzif_extra_t *e, int64_t unix_sec) {
         else
             hi = mid;
     }
-    int i = lo - 1;
-    if (i < 0) i = 0;
-    return e->off[i];
+    return e->off[lo - 1];
 }
 
 int neverc_tzdata_offset_at(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
@@ -982,6 +1088,26 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
     tz_cur_read(&c, nutc);
     if (c.err) return NULL;
 
+    posix_tz_parsed_t footer;
+    int has_footer = 0;
+    memset(&footer, 0, sizeof(footer));
+    if (version > 1 && c.n >= 2 && c.p[0] == '\n') {
+        const uint8_t *fs = c.p + 1;
+        size_t rem = c.n - 1;
+        const uint8_t *nl = (const uint8_t *)memchr(fs, '\n', rem);
+        if (nl && nl > fs && (size_t)(nl - fs) < 96) {
+            char tz[96];
+            memcpy(tz, fs, (size_t)(nl - fs));
+            tz[nl - fs] = '\0';
+            {
+                char stdn[16], dstn[16];
+                if (parse_posix_tz_fields(tz, &footer, stdn, sizeof(stdn),
+                                          dstn, sizeof(dstn)) == 0)
+                    has_footer = 1;
+            }
+        }
+    }
+
     int std_off = 0, dst_off = 0, has_dst = 0, got_std = 0, got_dst = 0;
     const char *std_ab = "UTC", *dst_ab = NULL;
     size_t slen = 3, dlen = 0;
@@ -1017,6 +1143,11 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
 
     tzif_extra_t *e = (tzif_extra_t *)calloc(1, sizeof(*e));
     if (!e) return NULL;
+    e->pre_off = (int)(int32_t)tz_be32(zdata);
+    if (has_footer) {
+        e->has_posix = 1;
+        e->posix = footer;
+    }
     if (ntime > 0) {
         /* v1 times are 4 bytes, but we store int64_t + int arrays. The
          * earlier tsize check is not enough on 32-bit hosts. */

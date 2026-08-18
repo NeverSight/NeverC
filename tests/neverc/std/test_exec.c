@@ -581,6 +581,32 @@ static void test_batch_args_rejected(void) {
     ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
     neverc_exec_cmd_free(cmd);
 
+    /* NTFS ADS suffixes must still classify as batch (BatBadBut). */
+    {
+        char ads[1200];
+#if defined(_WIN32)
+        snprintf(ads, sizeof(ads), "%s::$DATA", script);
+#else
+        snprintf(ads, sizeof(ads), "%s::$DATA", script);
+        sf = fopen(ads, "w");
+        ASSERT_TRUE(sf != NULL);
+        if (sf) {
+            fputs("#!/bin/sh\nexit 0\n", sf);
+            fclose(sf);
+        }
+        chmod(ads, 0755);
+#endif
+        cmd = neverc_exec_command(ads, unsafe, 1);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+        neverc_exec_cmd_free(cmd);
+        cmd = neverc_exec_command("probe.bat:stream", unsafe, 1);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+        neverc_exec_cmd_free(cmd);
+#if !defined(_WIN32)
+        unlink(ads);
+#endif
+    }
+
     /* Names longer than the old 15-byte prefix copy must still be
      * classified as batch (BatBadBut). */
     {

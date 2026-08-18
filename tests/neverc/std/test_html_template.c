@@ -388,6 +388,14 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "<script") == NULL);
     free(out);
 
+    neverc_html_template_data_set(&data, "X", " onload=alert(1)");
+    out = neverc_html_template_render("<iframe srcdoc=Hello{{.X}}>", &data);
+    check("unquoted srcdoc prefix breakout is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("unquoted srcdoc prefix does not inject onload",
+          out && strstr(out, "onload") == NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", "onclick=alert(1)");
     out = neverc_html_template_render("<div {{.X}}>", &data);
     check("attr name context is replaced",

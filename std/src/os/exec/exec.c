@@ -90,6 +90,14 @@ static int exec_is_windows_batch_name(const char *name) {
     base = slash ? slash + 1 : name;
     n = strlen(base);
     while (n > 0 && (base[n - 1] == ' ' || base[n - 1] == '.')) n--;
+    /* NTFS ADS: file.bat::$DATA / file.bat:stream still invoke cmd.exe. */
+    for (i = 0; i < n; i++) {
+        if (base[i] == ':') {
+            n = i;
+            break;
+        }
+    }
+    while (n > 0 && (base[n - 1] == ' ' || base[n - 1] == '.')) n--;
     /* Do not prefix-truncate: "neverc_long_name.bat" must still match. */
     if (n < 5) return 0;
     i = n;

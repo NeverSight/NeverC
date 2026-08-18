@@ -840,6 +840,11 @@ static void test_utf8_class_and_nfa_bound(void) {
     check_bool("[\\x{96}] not raw", neverc_regexp_match_string("[\\x{96}]", "\x96" ""), 0);
     check_bool("[a\\x{96}] a", neverc_regexp_match_string("[a\\x{96}]", "a"), 1);
     check_bool("[\\x{41}] A", neverc_regexp_match_string("[\\x{41}]", "A"), 1);
+    check_bool("[é] matches é", neverc_regexp_match_string("[é]", "é"), 1);
+    check_bool("[é] not lead byte",
+               neverc_regexp_match_string("[é]", "\xC3"), 0);
+    check_bool("[中] not 世", neverc_regexp_match_string("[中]", "世"), 0);
+    check_bool("[中] matches 中", neverc_regexp_match_string("[中]", "中"), 1);
 
     /* Thompson NFA: (a+)+x on a long run of 'a's must not explode. */
     neverc_regexp_t *re = neverc_regexp_compile("(a+)+x", NULL);

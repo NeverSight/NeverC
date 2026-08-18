@@ -171,6 +171,41 @@ static void test_read_dir(void) {
     check("readdir_ok", rc == 0);
     check("readdir_not_empty", count > 0);
     neverc_fs_free_entries(entries);
+
+#if defined(_WIN32)
+    {
+        char parent[1024], raw[1100], query[1100];
+        snprintf(parent, sizeof(parent), "%s\\neverc_fs_dotdot_%lu",
+                 tmpdir, (unsigned long)GetCurrentProcessId());
+        CreateDirectoryA(parent, NULL);
+        snprintf(raw, sizeof(raw), "\\\\?\\%s\\.. ", parent);
+        HANDLE h = CreateFileA(raw, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                               FILE_ATTRIBUTE_NORMAL, NULL);
+        if (h != INVALID_HANDLE_VALUE)
+            CloseHandle(h);
+        snprintf(query, sizeof(query), "\\\\?\\%s", parent);
+        entries = NULL;
+        count = 0;
+        rc = neverc_fs_read_dir(query, &entries, &count);
+        check("readdir_ads_parent_ok", rc == 0);
+        {
+            size_t i;
+            int leaked = 0;
+            for (i = 0; i < count; i++) {
+                const char *n = entries[i].name;
+                size_t len = strlen(n);
+                while (len > 0 && (n[len - 1] == ' ' || n[len - 1] == '.'))
+                    len--;
+                if (len == 2 && n[0] == '.' && n[1] == '.')
+                    leaked = 1;
+            }
+            check("readdir_skips_dotdot_space", !leaked);
+        }
+        neverc_fs_free_entries(entries);
+        DeleteFileA(raw);
+        RemoveDirectoryA(parent);
+    }
+#endif
 }
 
 static void test_glob(void) {

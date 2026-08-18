@@ -140,12 +140,19 @@ static void test_write_quoting(void) {
     dst[n] = '\0';
     ASSERT_STR_EQ(dst, "\"\xc2\xa0x\"\n");
 
-    /* Formula prefixes must be quoted, including a leading minus (OWASP). */
+    /* Formula prefixes are neutralized with a leading ' (OWASP). RFC 4180
+     * quotes alone are stripped by Excel/LibreOffice and still execute. */
     const char *formula_fields[] = {"=1+1", "+cmd", "@SUM(A1)", "-1", "-=cmd"};
     n = neverc_csv_write_record(formula_fields, 5, dst, sizeof(dst), NULL);
     ASSERT_INT_EQ(n > 0, 1);
     dst[n] = '\0';
-    ASSERT_STR_EQ(dst, "\"=1+1\",\"+cmd\",\"@SUM(A1)\",\"-1\",\"-=cmd\"\n");
+    ASSERT_STR_EQ(dst, "'=1+1,'+cmd,'@SUM(A1),'-1,'-=cmd\n");
+
+    const char *formula_comma[] = {"=1,2"};
+    n = neverc_csv_write_record(formula_comma, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "\"'=1,2\"\n");
 
     const char *tab_formula[] = {"\t=CMD()"};
     n = neverc_csv_write_record(tab_formula, 1, dst, sizeof(dst), NULL);
