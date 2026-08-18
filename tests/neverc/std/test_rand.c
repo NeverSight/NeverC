@@ -1,6 +1,7 @@
 #include "neverc/std/math/rand.h"
 #include "neverc/std/math.h"
 #include <stdio.h>
+#include <stdint.h>
 
 static int tests_run = 0;
 static int tests_passed = 0;
@@ -559,6 +560,16 @@ static void test_zipf(void) {
         if (v > 3) { edge_ok = 0; break; }
     }
     check_true("zipf(s→1+, imax=3) stays in [0, imax]", edge_ok);
+
+    neverc_rand_zipf_t z_max;
+    neverc_rand_seed(2);
+    check_true("zipf init UINT64_MAX imax",
+               neverc_rand_zipf_init(&z_max, 2.0, 1.0, UINT64_MAX) == 1);
+    int max_ok = 1;
+    for (int i = 0; i < 64; i++) {
+        (void)neverc_rand_zipf_uint64(&z_max);
+    }
+    check_true("zipf(UINT64_MAX) samples without UB", max_ok);
 }
 
 static void test_int_uint(void) {

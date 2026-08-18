@@ -452,6 +452,17 @@ static void test_sscanf(void) {
     check_int("sscanf incomplete hex 0x.p0 rejected", n, 0);
     check_true("sscanf incomplete hex 0x.p0 leaves output", special == 7.0);
 
+    special = 7.0;
+    n = neverc_fmt_sscanf("0x_1p0", "%f", &special);
+    check_int("sscanf hex underscore", n, 1);
+    check_true("sscanf hex underscore value", special == 1.0);
+    n = neverc_fmt_sscanf("1_000", "%f", &special);
+    check_int("sscanf decimal underscore", n, 1);
+    check_true("sscanf decimal underscore value", special == 1000.0);
+    n = neverc_fmt_sscanf("0x1_0p0", "%f", &special);
+    check_int("sscanf hex mid underscore", n, 1);
+    check_true("sscanf hex mid underscore value", special == 16.0);
+
     a = 77;
     n = neverc_fmt_sscanf("2147483648", "%d", &a);
     check_int("sscanf int overflow rejected", n, 0);

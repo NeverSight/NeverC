@@ -501,6 +501,21 @@ static void test_dwarf_malformed(void) {
                             NULL, 0) == 0 &&
           neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
 
+    static const uint8_t addrx_abbrev[] = {
+        1, NEVERC_DW_TAG_compile_unit, 0,
+        NEVERC_DW_AT_low_pc, NEVERC_DW_FORM_addrx1,
+        0, 0, 0
+    };
+    uint8_t addrx_info[13] = {0};
+    build_v4_header(addrx_info, 9);
+    addrx_info[11] = 1;
+    addrx_info[12] = 0;
+    CHECK("addrx without .debug_addr rejected",
+          neverc_dwarf_init(&d, addrx_info, sizeof(addrx_info),
+                            addrx_abbrev, sizeof(addrx_abbrev),
+                            NULL, 0) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+
     static const uint8_t inline_string_abbrev[] = {
         1, NEVERC_DW_TAG_compile_unit, 0,
         NEVERC_DW_AT_name, NEVERC_DW_FORM_string,

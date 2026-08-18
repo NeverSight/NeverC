@@ -556,5 +556,12 @@ uint64_t neverc_rand_zipf_uint64(neverc_rand_zipf_t *z) {
         if (x != x || ur != ur)
             break;
     }
+    /* C11 6.3.1.4: converting a float that is not in [0, 2^64) to uint64_t
+     * is UB. (double)UINT64_MAX rounds to 2^64, so the imax clamp can land
+     * there for imax in (2^64-2048, 2^64-1]. */
+    if (!(k >= 0.0) || k != k)
+        return 0;
+    if (!(k < 18446744073709551616.0))
+        return UINT64_MAX;
     return (uint64_t)k;
 }

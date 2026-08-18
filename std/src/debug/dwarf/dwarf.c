@@ -528,6 +528,13 @@ static int read_form_uint_depth(uint16_t form, uint8_t addr_size, int dwarf64,
             (uint16_t)actual, addr_size, dwarf64, version, be, p, end,
             value, resolved_form, depth + 1);
     }
+    case NEVERC_DW_FORM_addrx:
+    case NEVERC_DW_FORM_addrx1:
+    case NEVERC_DW_FORM_addrx2:
+    case NEVERC_DW_FORM_addrx3:
+    case NEVERC_DW_FORM_addrx4:
+        /* Indexed addresses need .debug_addr. Skipping them left low_pc=0. */
+        return -1;
     default:
         return 0;
     }

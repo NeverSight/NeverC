@@ -776,26 +776,32 @@ static int scan_float(const char **p, double *out) {
             int saw_hex = 0;
             while ((*q >= '0' && *q <= '9') ||
                    (*q >= 'a' && *q <= 'f') ||
-                   (*q >= 'A' && *q <= 'F')) {
+                   (*q >= 'A' && *q <= 'F') || *q == '_') {
+                if (*q != '_') saw_hex = 1;
                 q++;
-                saw_hex = 1;
             }
             if (*q == '.') {
                 q++;
                 while ((*q >= '0' && *q <= '9') ||
                        (*q >= 'a' && *q <= 'f') ||
-                       (*q >= 'A' && *q <= 'F')) {
+                       (*q >= 'A' && *q <= 'F') || *q == '_') {
+                    if (*q != '_') saw_hex = 1;
                     q++;
-                    saw_hex = 1;
                 }
             }
             if (saw_hex && (*q == 'p' || *q == 'P')) {
                 const char *r = q + 1;
                 if (*r == '+' || *r == '-') r++;
-                if (*r >= '0' && *r <= '9') {
-                    while (*r >= '0' && *r <= '9') r++;
-                    *p = r;
-                    took_hex = 1;
+                if ((*r >= '0' && *r <= '9') || *r == '_') {
+                    int saw_exp = 0;
+                    while ((*r >= '0' && *r <= '9') || *r == '_') {
+                        if (*r != '_') saw_exp = 1;
+                        r++;
+                    }
+                    if (saw_exp) {
+                        *p = r;
+                        took_hex = 1;
+                    }
                 }
             }
             if (!took_hex) {
@@ -806,14 +812,22 @@ static int scan_float(const char **p, double *out) {
             }
         }
         if (!took_hex) {
-            while (**p >= '0' && **p <= '9') (*p)++;
-            if (**p == '.') { (*p)++; while (**p >= '0' && **p <= '9') (*p)++; }
+            while ((**p >= '0' && **p <= '9') || **p == '_') (*p)++;
+            if (**p == '.') {
+                (*p)++;
+                while ((**p >= '0' && **p <= '9') || **p == '_') (*p)++;
+            }
             if (**p == 'e' || **p == 'E') {
                 const char *esave = *p;
                 (*p)++;
                 if (**p == '-' || **p == '+') (*p)++;
-                if (**p >= '0' && **p <= '9') {
-                    while (**p >= '0' && **p <= '9') (*p)++;
+                if ((**p >= '0' && **p <= '9') || **p == '_') {
+                    int saw_exp = 0;
+                    while ((**p >= '0' && **p <= '9') || **p == '_') {
+                        if (**p != '_') saw_exp = 1;
+                        (*p)++;
+                    }
+                    if (!saw_exp) *p = esave;
                 } else {
                     *p = esave;        /* lone 'e' is not part of the number */
                 }

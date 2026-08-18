@@ -477,6 +477,17 @@ static void test_dump_apis(void) {
         free(dump);
     }
     dump = neverc_httputil_dump_request_out(
+        "POST", "/data", "Transfer-Encoding: chunked\r\n",
+        "5\r\nhello\r\n0\r\n\r\n", 16U);
+    CHECK("outbound dump with TE allocated", dump != NULL);
+    if (dump) {
+        CHECK("outbound dump does not add Content-Length under TE",
+              strstr(dump, "Content-Length:") == NULL);
+        check_contains("outbound dump keeps Transfer-Encoding", dump,
+                       "Transfer-Encoding: chunked");
+        free(dump);
+    }
+    dump = neverc_httputil_dump_request_out(
         "POST", "/data", "Content-Length: 5\r\nAccept: */*\r\n",
         "hello", 5U);
     CHECK("outbound dump with existing length allocated", dump != NULL);

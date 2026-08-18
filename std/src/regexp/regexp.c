@@ -1122,12 +1122,9 @@ static frag_t parse_repeat(parser_t *par) {
         if (op == '{') {
             const char *save = par->p;
             if (brace_repeat_leading_zeros(par->p)) {
-                par->p = save + 1;
-                nfa_state_t *s = new_state(par->re, NFA_CHAR);
-                nfa_state_t *e = new_state(par->re, NFA_MATCH);
-                s->ch = '{'; s->out1 = e;
-                f = mk_concat(f, frag(s, e));
-                continue;
+                /* Leave '{' for the next atom, like Go regexp/syntax. */
+                par->p = save;
+                break;
             }
             par->p++;
             int lo = 0, hi, have = 0, too_large = 0;
@@ -1156,12 +1153,8 @@ static frag_t parse_repeat(parser_t *par) {
                 }
             }
             if (!have) {   /* `{` not followed by a digit: literal, like Go */
-                par->p = save + 1;
-                nfa_state_t *s = new_state(par->re, NFA_CHAR);
-                nfa_state_t *e = new_state(par->re, NFA_MATCH);
-                s->ch = '{'; s->out1 = e;
-                f = mk_concat(f, frag(s, e));
-                continue;
+                par->p = save;
+                break;
             }
             if (*par->p != '}') {            /* `{n` started a repeat: require `}` */
                 par->err = "bad repeat syntax";

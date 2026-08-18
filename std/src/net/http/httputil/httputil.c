@@ -122,6 +122,33 @@ static int httputil_headers_have_content_length(const char *headers) {
     return 0;
 }
 
+static int httputil_headers_have_transfer_encoding(const char *headers) {
+    if (!headers) return 0;
+    const char *line = headers;
+    while (*line) {
+        const char *end = line;
+        while (*end && *end != '\n') end++;
+        size_t length = (size_t)(end - line);
+        if (length > 0 && line[length - 1] == '\r') length--;
+        if (length >= 18) {
+            static const char prefix[] = "transfer-encoding:";
+            int match = 1;
+            for (int i = 0; i < 18; i++) {
+                unsigned char c = (unsigned char)line[i];
+                if (c >= 'A' && c <= 'Z') c = (unsigned char)(c + 32);
+                if (c != (unsigned char)prefix[i]) {
+                    match = 0;
+                    break;
+                }
+            }
+            if (match) return 1;
+        }
+        if (*end == '\0') break;
+        line = end + 1;
+    }
+    return 0;
+}
+
 /* ======================================================================
  * Reverse Proxy
  * ====================================================================== */
@@ -1846,6 +1873,7 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
     }
 
     int saw_content_length = 0;
+    int saw_transfer_encoding = 0;
     if (req->raw_headers) {
         const char *p = req->raw_headers;
         for (int i = 0; i < req->nheaders; i++) {
@@ -1861,6 +1889,8 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
             if (req->host && strcasecmp(hname, "Host") == 0) continue;
             if (strcasecmp(hname, "Content-Length") == 0)
                 saw_content_length = 1;
+            if (strcasecmp(hname, "Transfer-Encoding") == 0)
+                saw_transfer_encoding = 1;
             if (httputil_dump_append_string(
                     &buf, &n, &cap, hname) != 0 ||
                 httputil_dump_append_string(
@@ -1873,7 +1903,8 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
         }
     }
 
-    if (include_body && req->body_len > 0 && !saw_content_length) {
+    if (include_body && req->body_len > 0 && !saw_content_length &&
+        !saw_transfer_encoding) {
         char content_length[64];
         int content_length_size = snprintf(
             content_length, sizeof(content_length),
@@ -1935,7 +1966,8 @@ char *neverc_httputil_dump_request_out(const char *method,
         httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0)
         goto fail;
 
-    if (body_len > 0 && !httputil_headers_have_content_length(headers)) {
+    if (body_len > 0 && !httputil_headers_have_content_length(headers) &&
+        !httputil_headers_have_transfer_encoding(headers)) {
         char content_length[64];
         int content_length_size = snprintf(
             content_length, sizeof(content_length),

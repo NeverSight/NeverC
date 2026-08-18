@@ -99,7 +99,9 @@ static void thread_mutex_destroy(neverc_thread_mutex_t *mutex) {
 }
 
 static void thread_mutex_lock(neverc_thread_mutex_t *mutex) {
-    (void)pthread_mutex_lock(mutex);
+    /* Do not proceed unlocked if pthread_mutex_lock fails (EAGAIN / EDEADLK). */
+    while (pthread_mutex_lock(mutex) != 0) {
+    }
 }
 
 static void thread_mutex_unlock(neverc_thread_mutex_t *mutex) {

@@ -828,10 +828,21 @@ static int marshal_string(marshal_t *m, const char *s, size_t len) {
 static NCI_JSON_NOINLINE int marshal_number(marshal_t *m, double val) {
     if (!isfinite(val)) return -1;
 
-    /* Shortest correctly-rounded form (round-trips, matches encoding/json). */
+    /* Go encoding/json float64Encoder: ES6 cutoffs, not strconv 'g'.
+     * 'f' unless 0 < |x| < 1e-6 or |x| >= 1e21; then strip e-0N padding. */
     char tmp[40];
-    int n = neverc_strconv_format_float(val, 'g', -1, tmp, sizeof tmp);
+    double absv = fabs(val);
+    char fmt = 'f';
+    if (absv != 0.0 && (absv < 1e-6 || absv >= 1e21))
+        fmt = 'e';
+    int n = neverc_strconv_format_float(val, fmt, -1, tmp, sizeof tmp);
     if (n < 0) return -1;
+    if (fmt == 'e' && n >= 4 && tmp[n - 4] == 'e' && tmp[n - 3] == '-' &&
+        tmp[n - 2] == '0') {
+        tmp[n - 2] = tmp[n - 1];
+        tmp[n - 1] = '\0';
+        n--;
+    }
     return mw(m, tmp, (size_t)n);
 }
 

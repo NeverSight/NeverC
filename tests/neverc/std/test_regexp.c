@@ -468,6 +468,9 @@ static void test_repeat_braces(void) {
     /* `{` not followed by a digit is a literal '{' (matches Go) */
     check_bool("literal {", neverc_regexp_match_string("^a{$", "a{"), 1);
     check_bool("a{} literal braces", neverc_regexp_match_string("^a{}$", "a{}"), 1);
+    check_bool("a{*} matches a}", neverc_regexp_match_string("a{*}", "a}"), 1);
+    check_bool("a{*} matches a{}", neverc_regexp_match_string("a{*}", "a{}"), 1);
+    check_bool("a{*} does not match }", neverc_regexp_match_string("a{*}", "}"), 0);
 
     /* `{n` that starts a repeat but never closes is an error (matches Go) */
     err = NULL;

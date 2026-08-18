@@ -41,7 +41,11 @@ static SRWLOCK g_lock = SRWLOCK_INIT;
 #else
 #include <pthread.h>
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
-#define LOCK()   pthread_mutex_lock(&g_lock)
+static void unique_lock(void) {
+    while (pthread_mutex_lock(&g_lock) != 0) {
+    }
+}
+#define LOCK()   unique_lock()
 #define UNLOCK() pthread_mutex_unlock(&g_lock)
 #endif
 

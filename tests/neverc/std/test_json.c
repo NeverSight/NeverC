@@ -473,6 +473,34 @@ static void test_marshal_array(void) {
     neverc_json_free(arr);
 }
 
+static void test_marshal_es6_floats(void) {
+    printf("[marshal_es6_floats]\n");
+    char buf[64];
+    neverc_json_value_t *v;
+    int n;
+
+    v = neverc_json_new_number(1000000000.0);
+    n = neverc_json_marshal(v, buf, sizeof(buf), NULL);
+    ASSERT_TRUE(n > 0);
+    if (n > 0) buf[n] = '\0';
+    ASSERT_STR_EQ(buf, "1000000000");
+    neverc_json_free(v);
+
+    v = neverc_json_new_number(0.00001);
+    n = neverc_json_marshal(v, buf, sizeof(buf), NULL);
+    ASSERT_TRUE(n > 0);
+    if (n > 0) buf[n] = '\0';
+    ASSERT_STR_EQ(buf, "0.00001");
+    neverc_json_free(v);
+
+    v = neverc_json_new_number(1e-7);
+    n = neverc_json_marshal(v, buf, sizeof(buf), NULL);
+    ASSERT_TRUE(n > 0);
+    if (n > 0) buf[n] = '\0';
+    ASSERT_STR_EQ(buf, "1e-7");
+    neverc_json_free(v);
+}
+
 static void test_valid(void) {
     printf("[valid]\n");
     ASSERT_TRUE(neverc_json_valid("{}", 2));
@@ -954,6 +982,7 @@ int main(void) {
     test_marshal();
     test_marshal_escapes();
     test_marshal_array();
+    test_marshal_es6_floats();
     test_valid();
     test_whitespace();
     test_escape_sequences();
