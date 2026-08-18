@@ -2216,9 +2216,11 @@ void AArch64InstPrinter::printImm8OptLsl(const MCInst *MI, unsigned OpNum,
 
   T Val;
   if (std::is_signed<T>())
-    Val = (int8_t)UnscaledVal * (1 << AArch64_AM::getShiftValue(Shift));
+    Val = static_cast<T>(static_cast<int8_t>(UnscaledVal)) *
+          static_cast<T>(1U << AArch64_AM::getShiftValue(Shift));
   else
-    Val = (uint8_t)UnscaledVal * (1 << AArch64_AM::getShiftValue(Shift));
+    Val = static_cast<T>(static_cast<uint8_t>(UnscaledVal)) *
+          static_cast<T>(1U << AArch64_AM::getShiftValue(Shift));
 
   printImmSVE(Val, O);
 }

@@ -1279,7 +1279,7 @@ bool handleNonPreemptibleIfunc(Symbol &sym, uint16_t flags) {
     // Change the value to the IPLT and redirect all references to it.
     auto &d = cast<Defined>(sym);
     d.section = in.iplt.get();
-    d.value = d.getPltIdx() * target->ipltEntrySize;
+    d.value = uint64_t(d.getPltIdx()) * target->ipltEntrySize;
     d.size = 0;
     // It's important to set the symbol type here so that dynamic loaders
     // don't try to call the PLT as if it were an ifunc resolver.

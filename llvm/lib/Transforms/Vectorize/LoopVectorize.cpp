@@ -3559,7 +3559,7 @@ void InnerLoopVectorizer::fixVectorizedLoop(VPTransformState &State,
   // assume a pessimistic vscale of '1'.
   setProfileInfoAfterUnrolling(LI->getLoopFor(LoopScalarBody), VectorLoop,
                                LI->getLoopFor(LoopScalarBody),
-                               VF.getKnownMinValue() * UF);
+                               uint64_t(VF.getKnownMinValue()) * UF);
 }
 
 void InnerLoopVectorizer::fixCrossIterationPHIs(VPTransformState &State) {

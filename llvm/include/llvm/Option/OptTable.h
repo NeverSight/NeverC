@@ -114,7 +114,7 @@ protected:
   OptTable(ArrayRef<Info> OptionInfos, bool IgnoreCase = false);
 
   /// Build (or rebuild) the PrefixChars member.
-  void buildPrefixChars();
+  void buildPrefixChars(ArrayRef<StringLiteral> Prefixes);
 
 public:
   virtual ~OptTable();
@@ -344,7 +344,7 @@ protected:
                       ArrayRef<StringLiteral> PrefixesTable,
                       bool IgnoreCase = false)
       : OptTable(OptionInfos, IgnoreCase), PrefixesUnion(PrefixesTable) {
-    buildPrefixChars();
+    buildPrefixChars(PrefixesUnion);
   }
   ArrayRef<StringLiteral> getPrefixesUnion() const final {
     return PrefixesUnion;

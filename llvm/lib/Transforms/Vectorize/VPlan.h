@@ -2793,7 +2793,9 @@ class VPlanPrinter {
   VPSlotTracker SlotTracker;
 
   /// Handle indentation.
-  void bumpIndent(int b) { Indent = std::string((Depth += b) * TabWidth, ' '); }
+  void bumpIndent(int b) {
+    Indent = std::string(size_t(Depth += b) * TabWidth, ' ');
+  }
 
   /// Print a given \p Block of the Plan.
   void dumpBlock(const VPBlockBase *Block);

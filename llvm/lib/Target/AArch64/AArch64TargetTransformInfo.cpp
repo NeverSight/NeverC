@@ -2739,7 +2739,7 @@ InstructionCost AArch64TTIImpl::getScalarizationOverhead(
   if (Ty->getElementType()->isFloatingPointTy())
     return BaseT::getScalarizationOverhead(Ty, DemandedElts, Insert, Extract,
                                            CostKind);
-  return DemandedElts.popcount() * (Insert + Extract) *
+  return InstructionCost(DemandedElts.popcount()) * (Insert + Extract) *
          ST->getVectorInsertExtractBaseCost();
 }
 
@@ -3193,7 +3193,8 @@ InstructionCost AArch64TTIImpl::getInterleavedMemoryOpCost(
     bool UseScalable;
     if (MinElts % Factor == 0 &&
         TLI->isLegalInterleavedAccessType(SubVecTy, DL, UseScalable))
-      return Factor * TLI->getNumInterleavedAccesses(SubVecTy, DL, UseScalable);
+      return InstructionCost(Factor) *
+             TLI->getNumInterleavedAccesses(SubVecTy, DL, UseScalable);
   }
 
   return BaseT::getInterleavedMemoryOpCost(Opcode, VecTy, Factor, Indices,

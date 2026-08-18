@@ -3634,7 +3634,7 @@ void llvm::UpgradeIntrinsicCall(CallBase *CI, Function *NewFn) {
     Value *NewLdCall = Builder.CreateCall(NewFn, Args);
     Value *Ret = llvm::PoisonValue::get(RetTy);
     for (unsigned I = 0; I < N; I++) {
-      Value *Idx = ConstantInt::get(Type::getInt64Ty(C), I * MinElts);
+      Value *Idx = ConstantInt::get(Type::getInt64Ty(C), uint64_t(I) * MinElts);
       Value *SRet = Builder.CreateExtractValue(NewLdCall, I);
       Ret = Builder.CreateInsertVector(RetTy, Ret, SRet, Idx);
     }
@@ -3653,7 +3653,8 @@ void llvm::UpgradeIntrinsicCall(CallBase *CI, Function *NewFn) {
         dyn_cast<ScalableVectorType>(F->getReturnType());
     unsigned MinElts = RetTy->getMinNumElements();
     unsigned I = cast<ConstantInt>(CI->getArgOperand(1))->getZExtValue();
-    Value *NewIdx = ConstantInt::get(Type::getInt64Ty(C), I * MinElts);
+    Value *NewIdx =
+        ConstantInt::get(Type::getInt64Ty(C), uint64_t(I) * MinElts);
     NewCall = Builder.CreateCall(NewFn, {CI->getArgOperand(0), NewIdx});
     break;
   }
@@ -3669,8 +3670,8 @@ void llvm::UpgradeIntrinsicCall(CallBase *CI, Function *NewFn) {
       unsigned I = dyn_cast<ConstantInt>(CI->getArgOperand(1))->getZExtValue();
       ScalableVectorType *Ty =
           dyn_cast<ScalableVectorType>(CI->getArgOperand(2)->getType());
-      Value *NewIdx =
-          ConstantInt::get(Type::getInt64Ty(C), I * Ty->getMinNumElements());
+      Value *NewIdx = ConstantInt::get(Type::getInt64Ty(C),
+                                       uint64_t(I) * Ty->getMinNumElements());
       NewCall = Builder.CreateCall(
           NewFn, {CI->getArgOperand(0), CI->getArgOperand(2), NewIdx});
       break;
@@ -3687,7 +3688,8 @@ void llvm::UpgradeIntrinsicCall(CallBase *CI, Function *NewFn) {
       Value *Ret = llvm::PoisonValue::get(RetTy);
       unsigned MinElts = RetTy->getMinNumElements() / N;
       for (unsigned I = 0; I < N; I++) {
-        Value *Idx = ConstantInt::get(Type::getInt64Ty(C), I * MinElts);
+        Value *Idx =
+            ConstantInt::get(Type::getInt64Ty(C), uint64_t(I) * MinElts);
         Value *V = CI->getArgOperand(I);
         Ret = Builder.CreateInsertVector(RetTy, Ret, V, Idx);
       }

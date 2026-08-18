@@ -77,6 +77,7 @@
 #include "llvm/Transforms/Utils/SimplifyIndVar.h"
 #include <cassert>
 #include <cstdint>
+#include <limits>
 #include <utility>
 
 using namespace llvm;
@@ -334,7 +335,8 @@ bool IndVarSimplify::handleFloatingPointIV(Loop *L, PHINode *PN) {
 
     // If the stride would wrap around the i32 before exiting, we can't
     // transform the IV.
-    if (Leftover != 0 && int32_t(ExitValue + IncValue) < ExitValue)
+    if (Leftover != 0 &&
+        ExitValue + IncValue > std::numeric_limits<int32_t>::max())
       return false;
   } else {
     // If we have a negative stride, we require the init to be greater than the
@@ -361,7 +363,8 @@ bool IndVarSimplify::handleFloatingPointIV(Loop *L, PHINode *PN) {
 
     // If the stride would wrap around the i32 before exiting, we can't
     // transform the IV.
-    if (Leftover != 0 && int32_t(ExitValue + IncValue) > ExitValue)
+    if (Leftover != 0 &&
+        ExitValue + IncValue < std::numeric_limits<int32_t>::min())
       return false;
   }
 

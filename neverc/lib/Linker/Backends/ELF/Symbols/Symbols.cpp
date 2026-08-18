@@ -136,7 +136,7 @@ uint64_t Symbol::getGotVA() const {
 }
 
 uint64_t Symbol::getGotOffset() const {
-  return getGotIdx() * target->gotEntrySize;
+  return uint64_t(getGotIdx()) * target->gotEntrySize;
 }
 
 uint64_t Symbol::getGotPltVA() const {
@@ -147,15 +147,16 @@ uint64_t Symbol::getGotPltVA() const {
 
 uint64_t Symbol::getGotPltOffset() const {
   if (isInIplt)
-    return getPltIdx() * target->gotEntrySize;
-  return (getPltIdx() + target->gotPltHeaderEntriesNum) * target->gotEntrySize;
+    return uint64_t(getPltIdx()) * target->gotEntrySize;
+  return (uint64_t(getPltIdx()) + target->gotPltHeaderEntriesNum) *
+         target->gotEntrySize;
 }
 
 uint64_t Symbol::getPltVA() const {
-  uint64_t outVA = isInIplt
-                       ? in.iplt->getVA() + getPltIdx() * target->ipltEntrySize
-                       : in.plt->getVA() + in.plt->headerSize +
-                             getPltIdx() * target->pltEntrySize;
+  uint64_t outVA = isInIplt ? in.iplt->getVA() +
+                                  uint64_t(getPltIdx()) * target->ipltEntrySize
+                            : in.plt->getVA() + in.plt->headerSize +
+                                  uint64_t(getPltIdx()) * target->pltEntrySize;
 
   return outVA;
 }

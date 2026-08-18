@@ -113,7 +113,7 @@ public:
   /// value.  The string data is always stored immediately after the
   /// StringMapEntry object.
   const char *getKeyData() const {
-    return reinterpret_cast<const char *>(this + 1);
+    return reinterpret_cast<const char *>(this) + sizeof(*this);
   }
 
   StringRef first() const {

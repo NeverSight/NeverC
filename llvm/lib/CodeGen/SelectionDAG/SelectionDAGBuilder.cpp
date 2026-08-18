@@ -516,7 +516,7 @@ getCopyToParts(SelectionDAG &DAG, const SDLoc &DL, SDValue Val, SDValue *Parts,
   }
 
   unsigned PartBits = PartVT.getSizeInBits();
-  if (NumParts * PartBits > ValueVT.getSizeInBits()) {
+  if (uint64_t(NumParts) * PartBits > ValueVT.getSizeInBits()) {
     // If the parts cover more bits than the value has, promote the value.
     if (PartVT.isFloatingPoint() && ValueVT.isFloatingPoint()) {
       assert(NumParts == 1 && "Do not know what to promote to!");
@@ -539,7 +539,7 @@ getCopyToParts(SelectionDAG &DAG, const SDLoc &DL, SDValue Val, SDValue *Parts,
     // Different types of the same size.
     assert(NumParts == 1 && PartEVT != ValueVT);
     Val = DAG.getNode(ISD::BITCAST, DL, PartVT, Val);
-  } else if (NumParts * PartBits < ValueVT.getSizeInBits()) {
+  } else if (uint64_t(NumParts) * PartBits < ValueVT.getSizeInBits()) {
     // If the parts cover less bits than value has, truncate the value.
     assert((PartVT.isInteger() || PartVT == MVT::x86mmx) &&
            ValueVT.isInteger() && "Unknown mismatch!");
@@ -786,9 +786,9 @@ static void getCopyToPartsVector(SelectionDAG &DAG, const SDLoc &DL,
       // This does something sensible for scalable vectors - see the
       // definition of EXTRACT_SUBVECTOR for further details.
       unsigned IntermediateNumElts = IntermediateVT.getVectorMinNumElements();
-      Ops[i] =
-          DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, IntermediateVT, Val,
-                      DAG.getVectorIdxConstant(i * IntermediateNumElts, DL));
+      Ops[i] = DAG.getNode(
+          ISD::EXTRACT_SUBVECTOR, DL, IntermediateVT, Val,
+          DAG.getVectorIdxConstant(uint64_t(i) * IntermediateNumElts, DL));
     } else {
       Ops[i] = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, IntermediateVT, Val,
                            DAG.getVectorIdxConstant(i, DL));
@@ -9994,7 +9994,7 @@ TargetLowering::LowerCallTo(TargetLowering::CallLoweringInfo &CLI) const {
       unsigned RegisterVTByteSZ = RegisterVT.getSizeInBits() / 8;
       RetTys.append(NumRegs, RegisterVT);
       for (unsigned j = 0; j != NumRegs; ++j)
-        Offsets.push_back(Offset + j * RegisterVTByteSZ);
+        Offsets.push_back(Offset + uint64_t(j) * RegisterVTByteSZ);
     }
   }
 

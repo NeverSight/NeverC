@@ -1060,8 +1060,8 @@ public:
 IntelIBT::IntelIBT() { pltHeaderSize = 0; }
 
 void IntelIBT::writeGotPlt(uint8_t *buf, const Symbol &s) const {
-  uint64_t va =
-      in.ibtPlt->getVA() + IBTPltHeaderSize + s.getPltIdx() * pltEntrySize;
+  uint64_t va = in.ibtPlt->getVA() + IBTPltHeaderSize +
+                uint64_t(s.getPltIdx()) * pltEntrySize;
   write64le(buf, va);
 }
 

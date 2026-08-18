@@ -2904,14 +2904,14 @@ Instruction *InstCombinerImpl::visitCallInst(CallInst &CI) {
         if (CanonRK == RK)
           continue;
         if (!CanonRK) {
-          if (BOI.End - BOI.Begin > 0) {
+          if (BOI.End != BOI.Begin) {
             Worklist.pushValue(II->op_begin()[BOI.Begin]);
             Value::dropDroppableUse(II->op_begin()[BOI.Begin]);
           }
           continue;
         }
         assert(RK.AttrKind == CanonRK.AttrKind);
-        if (BOI.End - BOI.Begin > 0)
+        if (BOI.End != BOI.Begin)
           II->op_begin()[BOI.Begin].set(CanonRK.WasOn);
         if (BOI.End - BOI.Begin > 1)
           II->op_begin()[BOI.Begin + 1].set(ConstantInt::get(

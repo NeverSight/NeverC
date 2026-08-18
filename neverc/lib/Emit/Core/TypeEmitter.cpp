@@ -70,7 +70,8 @@ llvm::Type *TypeEmitter::convertTypeForMem(QualType T, bool ForBitField) {
     const Type *Ty = Context.getCanonicalType(T).getTypePtr();
     const ConstantMatrixType *MT = cast<ConstantMatrixType>(Ty);
     return llvm::ArrayType::get(convertType(MT->getElementType()),
-                                MT->getNumRows() * MT->getNumColumns());
+                                uint64_t(MT->getNumRows()) *
+                                    MT->getNumColumns());
   }
 
   llvm::Type *R = convertType(T);

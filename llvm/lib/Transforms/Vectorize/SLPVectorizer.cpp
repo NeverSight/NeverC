@@ -6584,7 +6584,7 @@ protected:
       // All VF-size submasks are identity (e.g.
       // <poison,poison,poison,poison,0,1,2,poison,poison,1,2,3> etc. for VF 4).
       if (Limit % VF == 0 && all_of(seq<int>(0, Limit / VF), [=](int Idx) {
-            ArrayRef<int> Slice = Mask.slice(Idx * VF, VF);
+            ArrayRef<int> Slice = Mask.slice(size_t(Idx) * VF, VF);
             return all_of(Slice, [](int I) { return I == PoisonMaskElem; }) ||
                    ShuffleVectorInst::isIdentityMask(Slice, VF);
           }))
@@ -6929,7 +6929,8 @@ class BoUpSLP::ShuffleCostEstimator : public BaseShuffleAnalysis {
          (InVectors.empty() &&
           any_of(seq<unsigned>(0, VL.size() / MinVF),
                  [&](unsigned Idx) {
-                   ArrayRef<Value *> SubVL = VL.slice(Idx * MinVF, MinVF);
+                   ArrayRef<Value *> SubVL =
+                       VL.slice(size_t(Idx) * MinVF, MinVF);
                    InstructionsState S = getSameOpcode(SubVL, *R.TLI);
                    return S.getOpcode() == Instruction::Load &&
                           !S.isAltShuffle();
@@ -7163,12 +7164,14 @@ class BoUpSLP::ShuffleCostEstimator : public BaseShuffleAnalysis {
            InVectors.front().get<const TreeEntry *>() == &E1 &&
            InVectors.back().get<const TreeEntry *>() == E2) ||
           (!E2 && InVectors.front().get<const TreeEntry *>() == &E1)) {
-        assert(all_of(ArrayRef(CommonMask).slice(Part * SliceSize, SliceSize),
-                      [](int Idx) { return Idx == PoisonMaskElem; }) &&
-               "Expected all poisoned elements.");
+        assert(
+            all_of(
+                ArrayRef(CommonMask).slice(size_t(Part) * SliceSize, SliceSize),
+                [](int Idx) { return Idx == PoisonMaskElem; }) &&
+            "Expected all poisoned elements.");
         ArrayRef<int> SubMask =
-            ArrayRef(Mask).slice(Part * SliceSize, SliceSize);
-        copy(SubMask, std::next(CommonMask.begin(), SliceSize * Part));
+            ArrayRef(Mask).slice(size_t(Part) * SliceSize, SliceSize);
+        copy(SubMask, std::next(CommonMask.begin(), size_t(Part) * SliceSize));
         return;
       }
       // Found non-matching nodes - need to estimate the cost for the matched
@@ -7408,8 +7411,9 @@ public:
     SmallPtrSet<Value *, 4> UniqueBases;
     unsigned SliceSize = VL.size() / NumParts;
     for (unsigned Part = 0; Part < NumParts; ++Part) {
-      ArrayRef<int> SubMask = Mask.slice(Part * SliceSize, SliceSize);
-      for (auto [I, V] : enumerate(VL.slice(Part * SliceSize, SliceSize))) {
+      ArrayRef<int> SubMask = Mask.slice(size_t(Part) * SliceSize, SliceSize);
+      for (auto [I, V] :
+           enumerate(VL.slice(size_t(Part) * SliceSize, SliceSize))) {
         // Ignore non-extractelement scalars.
         if (isa<UndefValue>(V) ||
             (!SubMask.empty() && SubMask[I] == PoisonMaskElem))
@@ -9284,12 +9288,12 @@ BoUpSLP::tryToGatherExtractElements(SmallVectorImpl<Value *> &VL,
     // Scan list of gathered scalars for extractelements that can be represented
     // as shuffles.
     MutableArrayRef<Value *> SubVL =
-        MutableArrayRef(VL).slice(Part * SliceSize, SliceSize);
+        MutableArrayRef(VL).slice(size_t(Part) * SliceSize, SliceSize);
     SmallVector<int> SubMask;
     std::optional<TTI::ShuffleKind> Res =
         tryToGatherSingleRegisterExtractElements(SubVL, SubMask);
     ShufflesRes[Part] = Res;
-    copy(SubMask, std::next(Mask.begin(), Part * SliceSize));
+    copy(SubMask, std::next(Mask.begin(), size_t(Part) * SliceSize));
   }
   if (none_of(ShufflesRes, [](const std::optional<TTI::ShuffleKind> &Res) {
         return Res.has_value();
@@ -9673,7 +9677,7 @@ BoUpSLP::isGatherShuffledEntry(
   unsigned SliceSize = VL.size() / NumParts;
   SmallVector<std::optional<TTI::ShuffleKind>> Res;
   for (unsigned Part = 0; Part < NumParts; ++Part) {
-    ArrayRef<Value *> SubVL = VL.slice(Part * SliceSize, SliceSize);
+    ArrayRef<Value *> SubVL = VL.slice(size_t(Part) * SliceSize, SliceSize);
     SmallVectorImpl<const TreeEntry *> &SubEntries = Entries.emplace_back();
     std::optional<TTI::ShuffleKind> SubRes =
         isGatherShuffledSingleRegisterEntry(TE, SubVL, Mask, SubEntries, Part);
@@ -10193,8 +10197,9 @@ public:
     unsigned SliceSize = E->Scalars.size() / NumParts;
     for (unsigned Part = 0; Part < NumParts; ++Part) {
       ArrayRef<Value *> VL =
-          ArrayRef(E->Scalars).slice(Part * SliceSize, SliceSize);
-      MutableArrayRef<int> SubMask = Mask.slice(Part * SliceSize, SliceSize);
+          ArrayRef(E->Scalars).slice(size_t(Part) * SliceSize, SliceSize);
+      MutableArrayRef<int> SubMask =
+          Mask.slice(size_t(Part) * SliceSize, SliceSize);
       constexpr int MaxBases = 2;
       SmallVector<Value *, MaxBases> Bases(MaxBases);
 #ifndef NDEBUG
@@ -10229,14 +10234,14 @@ public:
         Vec = SubVec;
         assert((Part == 0 || all_of(seq<unsigned>(0, Part),
                                     [&](unsigned P) {
-                                      ArrayRef<int> SubMask =
-                                          Mask.slice(P * SliceSize, SliceSize);
+                                      ArrayRef<int> SubMask = Mask.slice(
+                                          size_t(P) * SliceSize, SliceSize);
                                       return all_of(SubMask, [](int Idx) {
                                         return Idx == PoisonMaskElem;
                                       });
                                     })) &&
                "Expected first part or all previous parts masked.");
-        copy(SubMask, std::next(VecMask.begin(), Part * SliceSize));
+        copy(SubMask, std::next(VecMask.begin(), size_t(Part) * SliceSize));
       } else {
         unsigned VF = cast<FixedVectorType>(Vec->getType())->getNumElements();
         if (Vec->getType() != SubVec->getType()) {
@@ -10248,7 +10253,7 @@ public:
         for (auto [I, Idx] : enumerate(SubMask))
           if (Idx != PoisonMaskElem)
             Idx += VF;
-        copy(SubMask, std::next(VecMask.begin(), Part * SliceSize));
+        copy(SubMask, std::next(VecMask.begin(), size_t(Part) * SliceSize));
         Vec = createShuffle(Vec, SubVec, VecMask);
         TransformToIdentity(VecMask);
       }

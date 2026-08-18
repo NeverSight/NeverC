@@ -882,9 +882,10 @@ StringLiteral *StringLiteral::CreateEmpty(const TreeContext &Ctx,
                                           unsigned NumConcatenated,
                                           unsigned Length,
                                           unsigned CharByteWidth) {
-  void *Mem = Ctx.Allocate(totalSizeToAlloc<unsigned, SourceLocation, char>(
-                               1, NumConcatenated, Length * CharByteWidth),
-                           alignof(StringLiteral));
+  void *Mem =
+      Ctx.Allocate(totalSizeToAlloc<unsigned, SourceLocation, char>(
+                       1, NumConcatenated, size_t(Length) * CharByteWidth),
+                   alignof(StringLiteral));
   return new (Mem)
       StringLiteral(EmptyShell(), NumConcatenated, Length, CharByteWidth);
 }

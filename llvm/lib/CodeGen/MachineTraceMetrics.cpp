@@ -71,7 +71,7 @@ bool MachineTraceMetrics::runOnMachineFunction(MachineFunction &Func) {
   Loops = &getAnalysis<MachineLoopInfo>();
   SchedModel.init(&ST);
   BlockInfo.resize(MF->getNumBlockIDs());
-  ProcReleaseAtCycles.resize(MF->getNumBlockIDs() *
+  ProcReleaseAtCycles.resize(size_t(MF->getNumBlockIDs()) *
                              SchedModel.getNumProcResourceKinds());
   return false;
 }

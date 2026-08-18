@@ -182,7 +182,8 @@ public:
     if (isPointer() || isScalar())
       return TypeSize::getFixed(getScalarSizeInBits());
     auto EC = getElementCount();
-    return TypeSize(getScalarSizeInBits() * EC.getKnownMinValue(),
+    return TypeSize(TypeSize::ScalarTy(getScalarSizeInBits()) *
+                        EC.getKnownMinValue(),
                     EC.isScalable());
   }
 

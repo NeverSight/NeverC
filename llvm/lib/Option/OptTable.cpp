@@ -128,11 +128,11 @@ OptTable::OptTable(ArrayRef<Info> OptionInfos, bool IgnoreCase)
 #endif
 }
 
-void OptTable::buildPrefixChars() {
+void OptTable::buildPrefixChars(ArrayRef<StringLiteral> Prefixes) {
   assert(PrefixChars.empty() && "rebuilding a non-empty prefix char");
 
   // Build prefix chars.
-  for (const StringLiteral &Prefix : getPrefixesUnion()) {
+  for (const StringLiteral &Prefix : Prefixes) {
     for (char C : Prefix)
       if (!is_contained(PrefixChars, C))
         PrefixChars.push_back(C);
@@ -787,5 +787,5 @@ GenericOptTable::GenericOptTable(ArrayRef<Info> OptionInfos, bool IgnoreCase)
   for (auto const &Info : OptionInfos.drop_front(FirstSearchableIndex))
     TmpPrefixesUnion.insert(Info.Prefixes.begin(), Info.Prefixes.end());
   PrefixesUnionBuffer.append(TmpPrefixesUnion.begin(), TmpPrefixesUnion.end());
-  buildPrefixChars();
+  buildPrefixChars(PrefixesUnionBuffer);
 }

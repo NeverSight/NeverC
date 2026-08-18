@@ -5337,7 +5337,7 @@ static void emitFrameOffsetAdj(MachineBasicBlock &MBB,
       TmpReg = DestReg;
     auto MBI = BuildMI(MBB, MBBI, DL, TII->get(Opc), TmpReg)
                    .addReg(SrcReg)
-                   .addImm(Sign * (int)ThisVal);
+                   .addImm(int64_t(Sign) * int64_t(ThisVal));
     if (ShiftSize)
       MBI = MBI.addImm(
           AArch64_AM::getShifterImm(AArch64_AM::LSL, LocalShiftSize));

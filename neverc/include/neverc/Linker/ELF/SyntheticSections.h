@@ -433,7 +433,7 @@ class SymbolTableBaseSection : public SyntheticSection {
 public:
   SymbolTableBaseSection(StringTableSection &strTabSec);
   void finalizeContents() override;
-  size_t getSize() const override { return getNumSymbols() * entsize; }
+  size_t getSize() const override { return size_t(getNumSymbols()) * entsize; }
   void addSymbol(Symbol *sym);
   unsigned getNumSymbols() const { return symbols.size() + 1; }
   size_t getSymbolIndex(Symbol *sym);

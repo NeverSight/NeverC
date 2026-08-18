@@ -1950,7 +1950,7 @@ static Value *simplifyX86vpermilvar(const IntrinsicInst &II,
     // The _256 variants are a bit trickier since the mask bits always index
     // into the corresponding 128 half. In order to convert to a generic
     // shuffle, we have to make that explicit.
-    Index += APInt(32, (I / NumLaneElts) * NumLaneElts);
+    Index += APInt(32, uint64_t(I / NumLaneElts) * NumLaneElts);
 
     Indexes[I] = Index.getZExtValue();
   }

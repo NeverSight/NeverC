@@ -8995,11 +8995,11 @@ SDValue DAGCombiner::mergeTruncStores(StoreSDNode *N) {
   auto checkOffsets = [&](bool MatchLittleEndian) {
     if (MatchLittleEndian) {
       for (unsigned i = 0; i != NumStores; ++i)
-        if (OffsetMap[i] != i * (NarrowNumBits / 8) + FirstOffset)
+        if (OffsetMap[i] != int64_t(i) * (NarrowNumBits / 8) + FirstOffset)
           return false;
     } else { // MatchBigEndian by reversing loop counter.
       for (unsigned i = 0, j = NumStores - 1; i != NumStores; ++i, --j)
-        if (OffsetMap[j] != i * (NarrowNumBits / 8) + FirstOffset)
+        if (OffsetMap[j] != int64_t(i) * (NarrowNumBits / 8) + FirstOffset)
           return false;
     }
     return true;
@@ -24454,7 +24454,7 @@ SDValue DAGCombiner::visitEXTRACT_SUBVECTOR(SDNode *N) {
     if (NVT.isFixedLengthVector() && ConcatSrcVT.isFixedLengthVector() &&
         ConcatSrcNumElts % ExtNumElts == 0) {
       SDLoc DL(N);
-      unsigned NewExtIdx = ExtIdx - ConcatOpIdx * ConcatSrcNumElts;
+      uint64_t NewExtIdx = ExtIdx - uint64_t(ConcatOpIdx) * ConcatSrcNumElts;
       assert(NewExtIdx + ExtNumElts <= ConcatSrcNumElts &&
              "Trying to extract from >1 concat operand?");
       assert(NewExtIdx % ExtNumElts == 0 &&

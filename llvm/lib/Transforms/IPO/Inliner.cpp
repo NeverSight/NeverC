@@ -476,7 +476,7 @@ PreservedAnalyses InlinerPass::run(LazyCallGraph::SCC &InitialC,
                 Attribute NewCBCostMult = Attribute::get(
                     M.getContext(),
                     InlineConstants::FunctionInlineCostMultiplierAttributeName,
-                    itostr(CBCostMult * IntraSCCCostMultiplier));
+                    itostr(int64_t(CBCostMult) * IntraSCCCostMultiplier));
                 ICB->addFnAttr(NewCBCostMult);
               }
             }

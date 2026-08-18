@@ -3092,7 +3092,7 @@ static void emitGlobalConstantDataSequential(
   unsigned ElementByteSize = CDS->getElementByteSize();
   if (isa<IntegerType>(CDS->getElementType())) {
     for (unsigned I = 0, E = CDS->getNumElements(); I != E; ++I) {
-      emitGlobalAliasInline(AP, ElementByteSize * I, AliasList);
+      emitGlobalAliasInline(AP, uint64_t(ElementByteSize) * I, AliasList);
       if (AP.isVerbose())
         AP.OutStreamer->getCommentOS()
             << format("0x%" PRIx64 "\n", CDS->getElementAsInteger(I));
@@ -3102,7 +3102,7 @@ static void emitGlobalConstantDataSequential(
   } else {
     Type *ET = CDS->getElementType();
     for (unsigned I = 0, E = CDS->getNumElements(); I != E; ++I) {
-      emitGlobalAliasInline(AP, ElementByteSize * I, AliasList);
+      emitGlobalAliasInline(AP, uint64_t(ElementByteSize) * I, AliasList);
       emitGlobalConstantFP(CDS->getElementAsAPFloat(I), ET, AP);
     }
   }

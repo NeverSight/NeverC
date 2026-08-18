@@ -664,7 +664,7 @@ class InlineCostCallAnalyzer final : public CallAnalyzer {
   void onCallArgumentSetup(const CallBase &Call) override {
     // Pay the price of the argument setup. We account for the average 1
     // instruction per call argument setup here.
-    addCost(Call.arg_size() * InstrCost);
+    addCost(int64_t(Call.arg_size()) * InstrCost);
   }
   void onLoadRelativeIntrinsic() override {
     // This is normally lowered to 4 LLVM instructions.
@@ -673,7 +673,7 @@ class InlineCostCallAnalyzer final : public CallAnalyzer {
   void onLoweredCall(Function *F, CallBase &Call,
                      bool IsIndirectCall) override {
     // We account for the average 1 instruction per call argument setup here.
-    addCost(Call.arg_size() * InstrCost);
+    addCost(int64_t(Call.arg_size()) * InstrCost);
 
     // If we have a constant that we are calling as a function, we can peer
     // through it and see the function target. This happens not infrequently
@@ -714,7 +714,7 @@ class InlineCostCallAnalyzer final : public CallAnalyzer {
 
     if (NumCaseCluster <= 3) {
       // Suppose a comparison includes one compare and one conditional branch.
-      addCost(NumCaseCluster * 2 * InstrCost);
+      addCost(int64_t(NumCaseCluster) * 2 * InstrCost);
       return;
     }
 
@@ -2705,7 +2705,7 @@ int llvm::getCallsiteCost(const TargetTransformInfo &TTI, const CallBase &Call,
       // DataLayout.
       NumStores = std::min(NumStores, 8U);
 
-      Cost += 2 * NumStores * InstrCost;
+      Cost += int64_t(NumStores) * 2 * InstrCost;
     } else {
       // For non-byval arguments subtract off one instruction per call
       // argument.

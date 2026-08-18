@@ -1827,7 +1827,7 @@ Value *llvm::addDiffRuntimeChecks(
     // Compute VF * IC * AccessSize.
     auto *VFTimesUFTimesSize =
         ChkBuilder.CreateMul(GetVF(ChkBuilder, Ty->getScalarSizeInBits()),
-                             ConstantInt::get(Ty, IC * C.AccessSize));
+                             ConstantInt::get(Ty, uint64_t(IC) * C.AccessSize));
     Value *Diff = Expander.expandCodeFor(
         SE.getMinusSCEV(C.SinkStart, C.SrcStart), Ty, Loc);
 

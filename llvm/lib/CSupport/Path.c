@@ -2197,14 +2197,6 @@ int csupport_fchown_fd(int fd, uint32_t owner, uint32_t group) {
 }
 
 int csupport_remove_path(const char *path, int ignore_nonexisting) {
-  struct stat buf;
-  if (lstat(path, &buf) != 0) {
-    if (errno != ENOENT || !ignore_nonexisting)
-      return errno;
-    return 0;
-  }
-  if (!S_ISREG(buf.st_mode) && !S_ISDIR(buf.st_mode) && !S_ISLNK(buf.st_mode))
-    return -1;
   if (remove(path) == -1) {
     if (errno != ENOENT || !ignore_nonexisting)
       return errno;
@@ -2525,15 +2517,42 @@ int csupport_readdir_entry(void *handle, char *name_buf, size_t name_cap,
   return 1;
 }
 
-int csupport_remove_directories_recursive(const char *path, int ignore_errors) {
-  DIR *dir = opendir(path);
+static int csupport_open_directory_at(int parent_fd, const char *name) {
+  int fd;
+  do {
+    fd = openat(parent_fd, name,
+                O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  } while (fd < 0 && errno == EINTR);
+  return fd;
+}
+
+static int csupport_open_parent_directory(const char *path) {
+  int fd;
+  do {
+    fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+  } while (fd < 0 && errno == EINTR);
+  return fd;
+}
+
+static int csupport_unlink_at(int parent_fd, const char *name, int flags) {
+  int rc;
+  do {
+    rc = unlinkat(parent_fd, name, flags);
+  } while (rc < 0 && errno == EINTR);
+  return rc == 0 ? 0 : errno;
+}
+
+/* Takes ownership of dir_fd, including when fdopendir fails. */
+static int csupport_remove_directory_contents(int dir_fd, int ignore_errors) {
+  DIR *dir = fdopendir(dir_fd);
   if (!dir) {
-    if (ignore_errors && errno == ENOENT)
-      return 0;
-    return errno;
+    int error = errno;
+    close(dir_fd);
+    return ignore_errors ? 0 : error;
   }
 
   int ret = 0;
+  int parent_fd = dirfd(dir);
   for (;;) {
     errno = 0;
     struct dirent *ent = readdir(dir);
@@ -2548,43 +2567,97 @@ int csupport_remove_directories_recursive(const char *path, int ignore_errors) {
          ent->d_name[2] == '\0'))
       continue;
 
-    char child[PATH_MAX];
-    int n = snprintf(child, sizeof(child), "%s/%s", path, ent->d_name);
-    if (n < 0 || (size_t)n >= sizeof(child)) {
-      if (!ret) ret = ENAMETOOLONG;
-      if (!ignore_errors) break;
-      continue;
-    }
-
-    struct stat st;
-    if (lstat(child, &st) != 0) {
-      if (!ret) ret = errno;
-      if (!ignore_errors) break;
-      continue;
-    }
-
-    if (S_ISDIR(st.st_mode)) {
-      int e = csupport_remove_directories_recursive(child, ignore_errors);
-      if (e && !ret) ret = e;
-      if (e && !ignore_errors) break;
+    int child_fd = csupport_open_directory_at(parent_fd, ent->d_name);
+    int error = 0;
+    if (child_fd >= 0) {
+      error = csupport_remove_directory_contents(child_fd, ignore_errors);
+      if (!error)
+        error = csupport_unlink_at(parent_fd, ent->d_name, AT_REMOVEDIR);
     } else {
-      if (remove(child) != 0) {
-        if (!ret) ret = errno;
-        if (!ignore_errors) break;
-      }
+      error = errno;
+      if (error == ENOENT)
+        continue;
+      if (error == ENOTDIR || error == ELOOP)
+        error = csupport_unlink_at(parent_fd, ent->d_name, 0);
+    }
+
+    if (error && error != ENOENT) {
+      if (!ret)
+        ret = error;
+      if (!ignore_errors)
+        break;
     }
   }
 
-  closedir(dir);
-  if (ret && !ignore_errors)
-    return ret;
-
-  if (rmdir(path) != 0) {
-    if (ignore_errors && errno == ENOENT)
-      return 0;
-    if (!ret) ret = errno;
-  }
+  if (closedir(dir) != 0 && !ret)
+    ret = errno;
   return ignore_errors ? 0 : ret;
+}
+
+static int csupport_open_remove_parent(const char *path, char *storage,
+                                       size_t storage_cap,
+                                       const char **basename) {
+  if (!path || path[0] == '\0') {
+    errno = EINVAL;
+    return -1;
+  }
+
+  size_t len = strlen(path);
+  while (len > 1 && path[len - 1] == '/')
+    --len;
+  if (len >= storage_cap) {
+    errno = ENAMETOOLONG;
+    return -1;
+  }
+
+  memcpy(storage, path, len);
+  storage[len] = '\0';
+  char *separator = strrchr(storage, '/');
+  const char *parent = ".";
+  if (!separator) {
+    *basename = storage;
+  } else if (separator == storage) {
+    parent = "/";
+    *basename = separator + 1;
+  } else {
+    *separator = '\0';
+    parent = storage;
+    *basename = separator + 1;
+  }
+
+  if ((*basename)[0] == '\0') {
+    errno = EBUSY;
+    return -1;
+  }
+  return csupport_open_parent_directory(parent);
+}
+
+int csupport_remove_directories_recursive(const char *path, int ignore_errors) {
+  char storage[PATH_MAX];
+  const char *basename = NULL;
+  int parent_fd =
+      csupport_open_remove_parent(path, storage, sizeof(storage), &basename);
+  if (parent_fd < 0)
+    return ignore_errors ? 0 : errno;
+
+  int root_fd = csupport_open_directory_at(parent_fd, basename);
+  if (root_fd < 0) {
+    int error = errno;
+    if (error == ENOENT) {
+      close(parent_fd);
+      return 0;
+    }
+    if (error == ENOTDIR || error == ELOOP)
+      error = csupport_unlink_at(parent_fd, basename, 0);
+    close(parent_fd);
+    return ignore_errors || error == ENOENT ? 0 : error;
+  }
+
+  int ret = csupport_remove_directory_contents(root_fd, ignore_errors);
+  if (!ret)
+    ret = csupport_unlink_at(parent_fd, basename, AT_REMOVEDIR);
+  close(parent_fd);
+  return ignore_errors || ret == ENOENT ? 0 : ret;
 }
 
 /* ===================================================================== */

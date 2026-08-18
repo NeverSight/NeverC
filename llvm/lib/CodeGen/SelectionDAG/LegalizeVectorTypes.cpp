@@ -5433,9 +5433,9 @@ SDValue DAGTypeLegalizer::WidenVecRes_EXTRACT_SUBVECTOR(SDNode *N) {
       SmallVector<SDValue> Parts;
       unsigned I = 0;
       for (; I < VTNumElts / GCD; ++I)
-        Parts.push_back(
-            DAG.getNode(ISD::EXTRACT_SUBVECTOR, dl, PartVT, InOp,
-                        DAG.getVectorIdxConstant(IdxVal + I * GCD, dl)));
+        Parts.push_back(DAG.getNode(
+            ISD::EXTRACT_SUBVECTOR, dl, PartVT, InOp,
+            DAG.getVectorIdxConstant(IdxVal + uint64_t(I) * GCD, dl)));
       for (; I < WidenNumElts / GCD; ++I)
         Parts.push_back(DAG.getUNDEF(PartVT));
 

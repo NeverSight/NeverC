@@ -6244,8 +6244,9 @@ SDValue DAGTypeLegalizer::PromoteIntOp_CONCAT_VECTORS(SDNode *N) {
     for (unsigned OpIdx = 0; OpIdx < NumElems; ++OpIdx) {
       SDValue Op = N->getOperand(OpIdx);
       unsigned OpNumElts = Op.getValueType().getVectorMinNumElements();
-      ResVec = DAG.getNode(ISD::INSERT_SUBVECTOR, dl, ResVT, ResVec, Op,
-                           DAG.getIntPtrConstant(OpIdx * OpNumElts, dl));
+      ResVec =
+          DAG.getNode(ISD::INSERT_SUBVECTOR, dl, ResVT, ResVec, Op,
+                      DAG.getIntPtrConstant(uint64_t(OpIdx) * OpNumElts, dl));
     }
 
     return ResVec;

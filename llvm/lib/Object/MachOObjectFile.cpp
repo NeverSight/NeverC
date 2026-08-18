@@ -103,7 +103,8 @@ static const char *getSectionPtr(const MachOObjectFile &O,
   unsigned SectionSize =
       Is64 ? sizeof(MachO::section_64) : sizeof(MachO::section);
 
-  uintptr_t SectionAddr = CommandAddr + SegmentLoadSize + Sec * SectionSize;
+  uintptr_t SectionAddr =
+      CommandAddr + SegmentLoadSize + uintptr_t(Sec) * SectionSize;
   return reinterpret_cast<const char *>(SectionAddr);
 }
 
@@ -2547,7 +2548,7 @@ symbol_iterator MachOObjectFile::getSymbolByIndex(unsigned Index) const {
       is64Bit() ? sizeof(MachO::nlist_64) : sizeof(MachO::nlist);
   DataRefImpl DRI;
   DRI.p = reinterpret_cast<uintptr_t>(getPtr(*this, Symtab.symoff));
-  DRI.p += Index * SymbolTableEntrySize;
+  DRI.p += uintptr_t(Index) * SymbolTableEntrySize;
   return basic_symbol_iterator(SymbolRef(DRI, this));
 }
 
@@ -4154,8 +4155,8 @@ const char *BindRebaseSegInfo::checkSegAndOffsets(int32_t SegIndex,
   if (SegIndex >= MaxSegIndex)
     return "bad segIndex (too large)";
   for (uint32_t i = 0; i < Count; ++i) {
-    uint32_t Start = SegOffset + i * (PointerSize + Skip);
-    uint32_t End = Start + PointerSize;
+    uint64_t Start = SegOffset + uint64_t(i) * (PointerSize + Skip);
+    uint64_t End = Start + PointerSize;
     bool Found = false;
     for (const SectionInfo &SI : Sections) {
       if (SI.SegmentIndex != SegIndex)

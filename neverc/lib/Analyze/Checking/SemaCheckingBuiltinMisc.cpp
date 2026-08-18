@@ -146,7 +146,7 @@ struct BuiltinDumpStructGenerator {
       return nullptr;
 
     llvm::SmallString<32> Indent;
-    Indent.resize(Depth * Policy.Indentation, ' ');
+    Indent.resize(size_t(Depth) * Policy.Indentation, ' ');
     return getStringLiteral(Indent);
   }
 

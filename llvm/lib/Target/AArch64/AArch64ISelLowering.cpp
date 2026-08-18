@@ -11086,7 +11086,7 @@ SDValue AArch64TargetLowering::ReconstructShuffle(SDValue Op,
 
     // This source is expected to fill ResMultiplier lanes of the final shuffle,
     // starting at the appropriate offset.
-    int *LaneMask = &Mask[i * ResMultiplier];
+    int *LaneMask = &Mask[size_t(i) * ResMultiplier];
 
     int ExtractBase = EltNo * Src->WindowScale + Src->WindowBase;
     ExtractBase += NumElts * (Src - Sources.begin());
@@ -15725,7 +15725,7 @@ bool AArch64TargetLowering::lowerDeinterleaveIntrinsicToLoad(
     Value *Right = PoisonValue::get(VTy);
 
     for (unsigned I = 0; I < NumLoads; ++I) {
-      Value *Offset = Builder.getInt64(I * Factor);
+      Value *Offset = Builder.getInt64(uint64_t(I) * Factor);
 
       Value *Address = Builder.CreateGEP(LdTy, BaseAddr, {Offset});
       Value *LdN = nullptr;
@@ -15734,8 +15734,8 @@ bool AArch64TargetLowering::lowerDeinterleaveIntrinsicToLoad(
       else
         LdN = Builder.CreateCall(LdNFunc, Address, "ldN");
 
-      Value *Idx =
-          Builder.getInt64(I * LdTy->getElementCount().getKnownMinValue());
+      Value *Idx = Builder.getInt64(uint64_t(I) *
+                                    LdTy->getElementCount().getKnownMinValue());
       Left = Builder.CreateInsertVector(
           VTy, Left, Builder.CreateExtractValue(LdN, 0), Idx);
       Right = Builder.CreateInsertVector(
@@ -15801,11 +15801,11 @@ bool AArch64TargetLowering::lowerInterleaveIntrinsicToStore(
   for (unsigned I = 0; I < NumStores; ++I) {
     Value *Address = BaseAddr;
     if (NumStores > 1) {
-      Value *Offset = Builder.getInt64(I * Factor);
+      Value *Offset = Builder.getInt64(uint64_t(I) * Factor);
       Address = Builder.CreateGEP(StTy, BaseAddr, {Offset});
 
-      Value *Idx =
-          Builder.getInt64(I * StTy->getElementCount().getKnownMinValue());
+      Value *Idx = Builder.getInt64(uint64_t(I) *
+                                    StTy->getElementCount().getKnownMinValue());
       L = Builder.CreateExtractVector(StTy, II->getOperand(0), Idx);
       R = Builder.CreateExtractVector(StTy, II->getOperand(1), Idx);
     }
@@ -19292,9 +19292,9 @@ static SDValue performExtBinopLoadFold(SDNode *N, SelectionDAG &DAG) {
   if (Other.getOpcode() != Shift.getOperand(0).getOpcode()) {
     SDValue SubL = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, Op0.getValueType(),
                                NewOp, DAG.getConstant(0, DL, MVT::i64));
-    SDValue SubH =
-        DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, Op0.getValueType(), NewOp,
-                    DAG.getConstant(NumSubElts * NumSubLoads, DL, MVT::i64));
+    SDValue SubH = DAG.getNode(
+        ISD::EXTRACT_SUBVECTOR, DL, Op0.getValueType(), NewOp,
+        DAG.getConstant(uint64_t(NumSubElts) * NumSubLoads, DL, MVT::i64));
     SDValue Extr0 =
         DAG.getVectorShuffle(Op0.getValueType(), DL, SubL, SubH, LowMask);
     SDValue Extr1 =
@@ -19306,9 +19306,9 @@ static SDValue performExtBinopLoadFold(SDNode *N, SelectionDAG &DAG) {
     SDValue Ext = DAG.getNode(Other.getOpcode(), DL, DVT, NewOp);
     SDValue SubL = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, VT, Ext,
                                DAG.getConstant(0, DL, MVT::i64));
-    SDValue SubH =
-        DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, VT, Ext,
-                    DAG.getConstant(NumSubElts * NumSubLoads, DL, MVT::i64));
+    SDValue SubH = DAG.getNode(
+        ISD::EXTRACT_SUBVECTOR, DL, VT, Ext,
+        DAG.getConstant(uint64_t(NumSubElts) * NumSubLoads, DL, MVT::i64));
     Ext0 = DAG.getVectorShuffle(VT, DL, SubL, SubH, LowMask);
     Ext1 = DAG.getVectorShuffle(VT, DL, SubL, SubH, HighMask);
   }

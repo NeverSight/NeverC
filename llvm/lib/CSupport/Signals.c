@@ -334,9 +334,7 @@ void csupport_file_remove_list_remove_all(void) {
        cur = ATOMIC_LOAD(&cur->next)) {
     char *path = ATOMIC_EXCHANGE(&cur->filename, (char *)NULL);
     if (path) {
-      struct stat buf;
-      if (stat(path, &buf) == 0 && S_ISREG(buf.st_mode))
-        unlink(path);
+      unlink(path);
       ATOMIC_EXCHANGE(&cur->filename, path);
     }
   }

@@ -2236,6 +2236,7 @@ add_executable(neverc-support-tests
   SupportCachePruningTests.cpp
   SupportCommandLineTests.cpp
   SupportCOMTests.cpp
+  SupportFileSystemSecurityTests.cpp
   SupportHashTests.cpp
   SupportJSONTests.cpp
   SupportMemoryTests.cpp

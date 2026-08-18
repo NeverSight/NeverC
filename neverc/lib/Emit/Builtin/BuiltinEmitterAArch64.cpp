@@ -2765,7 +2765,7 @@ Value *FunctionEmitter::genSVEStructLoad(const SVETypeFlags &TypeFlags,
   unsigned MinElts = VTy->getMinNumElements();
   Value *Ret = llvm::PoisonValue::get(RetTy);
   for (unsigned I = 0; I < N; I++) {
-    Value *Idx = ConstantInt::get(ME.Int64Ty, I * MinElts);
+    Value *Idx = ConstantInt::get(ME.Int64Ty, uint64_t(I) * MinElts);
     Value *SRet = Builder.CreateExtractValue(Call, I);
     Ret = Builder.CreateInsertVector(RetTy, Ret, SRet, Idx);
   }
@@ -3105,7 +3105,7 @@ Value *FunctionEmitter::genSVETupleCreate(const SVETypeFlags &TypeFlags,
   unsigned MinElts = SrcTy->getMinNumElements();
   Value *Call = llvm::PoisonValue::get(Ty);
   for (unsigned I = 0; I < Ops.size(); I++) {
-    Value *Idx = ConstantInt::get(ME.Int64Ty, I * MinElts);
+    Value *Idx = ConstantInt::get(ME.Int64Ty, uint64_t(I) * MinElts);
     Call = Builder.CreateInsertVector(Ty, Call, Ops[I], Idx);
   }
 
@@ -3134,7 +3134,7 @@ Value *FunctionEmitter::formSVEBuiltinResult(Value *Call) {
   for (unsigned I = 0; I < N; ++I) {
     Value *SRet = Builder.CreateExtractValue(Call, I);
     assert(SRet->getType() == VTy && "Unexpected type for result value");
-    Value *Idx = ConstantInt::get(ME.Int64Ty, I * MinElts);
+    Value *Idx = ConstantInt::get(ME.Int64Ty, uint64_t(I) * MinElts);
 
     if (IsPredTy)
       SRet = genSVEPredicateCast(
@@ -3195,7 +3195,7 @@ void FunctionEmitter::getAArch64SVEProcessedOperands(
     }
 
     for (unsigned I = 0; I < N; ++I) {
-      Value *Idx = ConstantInt::get(ME.Int64Ty, (I * MinElts) / N);
+      Value *Idx = ConstantInt::get(ME.Int64Ty, (uint64_t(I) * MinElts) / N);
       auto *NewVTy =
           ScalableVectorType::get(VTy->getElementType(), MinElts / N);
       Ops.push_back(Builder.CreateExtractVector(NewVTy, Arg, Idx));
