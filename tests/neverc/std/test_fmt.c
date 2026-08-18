@@ -453,6 +453,27 @@ static void test_sscanf(void) {
     check_true("sscanf incomplete hex 0x.p0 leaves output", special == 7.0);
 
     special = 7.0;
+    n = neverc_fmt_sscanf("1e", "%f", &special);
+    check_int("sscanf incomplete decimal 1e rejected", n, 0);
+    check_true("sscanf incomplete decimal 1e leaves output", special == 7.0);
+    special = 7.0;
+    n = neverc_fmt_sscanf("1e+", "%f", &special);
+    check_int("sscanf incomplete decimal 1e+ rejected", n, 0);
+    check_true("sscanf incomplete decimal 1e+ leaves output", special == 7.0);
+    special = 7.0;
+    n = neverc_fmt_sscanf("1e-", "%f", &special);
+    check_int("sscanf incomplete decimal 1e- rejected", n, 0);
+    check_true("sscanf incomplete decimal 1e- leaves output", special == 7.0);
+    special = 7.0;
+    n = neverc_fmt_sscanf("1e_", "%f", &special);
+    check_int("sscanf incomplete decimal 1e_ rejected", n, 0);
+    check_true("sscanf incomplete decimal 1e_ leaves output", special == 7.0);
+    special = 7.0;
+    n = neverc_fmt_sscanf("1e+foo", "%f", &special);
+    check_int("sscanf incomplete decimal 1e+foo rejected", n, 0);
+    check_true("sscanf incomplete decimal 1e+foo leaves output", special == 7.0);
+
+    special = 7.0;
     n = neverc_fmt_sscanf("0x_1p0", "%f", &special);
     check_int("sscanf hex underscore", n, 1);
     check_true("sscanf hex underscore value", special == 1.0);

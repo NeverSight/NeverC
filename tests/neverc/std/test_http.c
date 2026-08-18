@@ -2748,6 +2748,29 @@ static void test_cookies(void) {
         if (v) check_str("bare cookie value", v, "xyz");
     }
 
+    /* Go parseCookieValue allows SP; NeverC used to truncate at the first one. */
+    {
+        neverc_http_request_t spaced;
+        memset(&spaced, 0, sizeof(spaced));
+        char spaced_hdr[256];
+        size_t spos = 0;
+        const char *shname = "Cookie";
+        const char *shval = "q=foo bar; r=\"foo bar\"";
+        memcpy(spaced_hdr + spos, shname, strlen(shname) + 1);
+        spos += strlen(shname) + 1;
+        memcpy(spaced_hdr + spos, shval, strlen(shval) + 1);
+        spaced.raw_headers = spaced_hdr;
+        spaced.nheaders = 1;
+
+        v = neverc_http_get_cookie(&spaced, "q", buf, sizeof(buf));
+        check_not_null("spaced cookie", v);
+        if (v) check_str("spaced cookie value", v, "foo bar");
+
+        v = neverc_http_get_cookie(&spaced, "r", buf, sizeof(buf));
+        check_not_null("quoted spaced cookie", v);
+        if (v) check_str("quoted spaced cookie value", v, "foo bar");
+    }
+
     /* Multiple Cookie headers must all be searched (RFC 6265 / Go r.Cookie). */
     {
         neverc_http_request_t multi;

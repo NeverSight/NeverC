@@ -59,6 +59,11 @@ static int find_eocd(const uint8_t *data, size_t len, size_t *offset) {
                 *offset = pos;
                 return 0;
             }
+            /* CVE-2024-24789 / Go issue 66869: a trailing EOCD whose comment
+             * is truncated must fail the archive instead of scanning inward
+             * for a hidden directory. */
+            if ((size_t)comment_length > len - pos - 22U)
+                return -1;
         }
         if (pos == earliest) break;
         pos--;

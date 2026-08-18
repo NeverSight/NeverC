@@ -818,19 +818,10 @@ static int scan_float(const char **p, double *out) {
                 while ((**p >= '0' && **p <= '9') || **p == '_') (*p)++;
             }
             if (**p == 'e' || **p == 'E') {
-                const char *esave = *p;
                 (*p)++;
                 if (**p == '-' || **p == '+') (*p)++;
-                if ((**p >= '0' && **p <= '9') || **p == '_') {
-                    int saw_exp = 0;
-                    while ((**p >= '0' && **p <= '9') || **p == '_') {
-                        if (**p != '_') saw_exp = 1;
-                        (*p)++;
-                    }
-                    if (!saw_exp) *p = esave;
-                } else {
-                    *p = esave;        /* lone 'e' is not part of the number */
-                }
+                while ((**p >= '0' && **p <= '9') || **p == '_')
+                    (*p)++;
             }
         }
     }

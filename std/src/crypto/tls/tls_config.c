@@ -113,6 +113,22 @@ void nci_tls_config_invalidate_all_sessions(
     tls_mutex_unlock(&cfg->session_mutex);
 }
 
+static int tls_current_x509_time(neverc_x509_time_t *result);
+
+static int tls_session_peer_cert_current(const uint8_t *der, size_t der_len) {
+    neverc_x509_cert_t cert;
+    neverc_x509_time_t now;
+    int ok;
+    if (!der || der_len == 0)
+        return 1;
+    if (neverc_x509_parse_certificate(&cert, der, der_len) != 0)
+        return 0;
+    ok = tls_current_x509_time(&now) == 0 &&
+         neverc_x509_is_valid_at(&cert, &now);
+    neverc_x509_cert_free(&cert);
+    return ok;
+}
+
 int nci_tls_load_client_psk_offer(
     neverc_tls_config_t *cfg, tls_client_psk_offer_t *offer) {
     if (!offer)
@@ -135,7 +151,9 @@ int nci_tls_load_client_psk_offer(
         session->lifetime > 0 &&
         now_ms >= session->received_at_ms &&
         now_ms - session->received_at_ms <
-            (uint64_t)session->lifetime * 1000u;
+            (uint64_t)session->lifetime * 1000u &&
+        tls_session_peer_cert_current(
+            session->peer_cert, session->peer_cert_len);
     if (usable) {
         if (session->peer_cert_len > 0)
             offer->peer_cert =

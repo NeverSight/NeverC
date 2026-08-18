@@ -215,6 +215,24 @@ static void test_partial_decode(void) {
         check_true("short tail buffer remains unchanged",
                    short_buf[0] == 0xaa && short_buf[1] == 0xbb);
     }
+
+    /* Go ascii85.Decode: a full dst stops before the next payload byte. */
+    {
+        const unsigned char src[] = "9jqo^{";
+        unsigned char dec[4] = {0};
+        neverc_ascii85_result_t r =
+            neverc_ascii85_decode(dec, sizeof(dec), src, 6, 0);
+        check_true("full dst does not error on leftover",
+                   r.error == 0 && r.ndst == 4 && r.nsrc == 5);
+        check_true("full dst decoded first group",
+                   memcmp(dec, "Man ", 4) == 0);
+
+        const unsigned char zsrc[] = "9jqo^z";
+        memset(dec, 0, sizeof(dec));
+        r = neverc_ascii85_decode(dec, sizeof(dec), zsrc, 6, 0);
+        check_true("full dst leaves z unconsumed",
+                   r.error == 0 && r.ndst == 4 && r.nsrc == 5);
+    }
 }
 
 static void test_binary_data(void) {

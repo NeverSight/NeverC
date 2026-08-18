@@ -694,6 +694,27 @@ static void test_zip64_sentinels(void) {
     check_int("reject zip64 eocd offset",
               neverc_zip_reader_init(&reader, eocd, sizeof(eocd)), -1);
     neverc_zip_reader_free(&reader);
+
+    /* CVE-2024-24789: trailing truncated EOCD must not fall back to an
+     * inner directory whose comment happens to fill to EOF. */
+    {
+        uint8_t polyglot[44];
+        memset(polyglot, 0, sizeof(polyglot));
+        polyglot[0] = 0x50;
+        polyglot[1] = 0x4b;
+        polyglot[2] = 0x05;
+        polyglot[3] = 0x06;
+        polyglot[20] = 22;
+        polyglot[22] = 0x50;
+        polyglot[23] = 0x4b;
+        polyglot[24] = 0x05;
+        polyglot[25] = 0x06;
+        polyglot[42] = 1;
+        check_int("reject truncated trailing eocd comment",
+                  neverc_zip_reader_init(&reader, polyglot, sizeof(polyglot)),
+                  -1);
+        neverc_zip_reader_free(&reader);
+    }
 }
 
 int main(void) {

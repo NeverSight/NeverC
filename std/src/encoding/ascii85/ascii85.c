@@ -92,6 +92,13 @@ neverc_ascii85_result_t neverc_ascii85_decode(unsigned char *dst, size_t dst_len
         if (b <= ' ')
             continue;
 
+        /* Go ascii85.Decode stops before the next payload byte when dst has
+         * no room for a 4-byte group, leaving leftover src unconsumed instead
+         * of classifying it as corrupt. Incomplete flush tails still use the
+         * exact-size path below. */
+        if (nb == 0 && dst_len - result.ndst < 4)
+            return result;
+
         if (b == 'z' && nb == 0) {
             nb = 5;
             v = 0;

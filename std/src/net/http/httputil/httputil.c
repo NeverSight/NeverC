@@ -1874,6 +1874,7 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
 
     int saw_content_length = 0;
     int saw_transfer_encoding = 0;
+    int saw_chunked = 0;
     if (req->raw_headers) {
         const char *p = req->raw_headers;
         for (int i = 0; i < req->nheaders; i++) {
@@ -1889,8 +1890,11 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
             if (req->host && strcasecmp(hname, "Host") == 0) continue;
             if (strcasecmp(hname, "Content-Length") == 0)
                 saw_content_length = 1;
-            if (strcasecmp(hname, "Transfer-Encoding") == 0)
+            if (strcasecmp(hname, "Transfer-Encoding") == 0) {
                 saw_transfer_encoding = 1;
+                if (strcasecmp(hval, "chunked") == 0)
+                    saw_chunked = 1;
+            }
             if (httputil_dump_append_string(
                     &buf, &n, &cap, hname) != 0 ||
                 httputil_dump_append_string(
@@ -1920,7 +1924,25 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
     if (httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0)
         goto fail;
 
-    if (include_body && req->body_len > 0) {
+    if (include_body && saw_chunked) {
+        /* Parsed requests store a decoded body while still echoing TE.
+         * Replay requires chunked framing, matching Go DumpRequest. */
+        if (req->body_len > 0) {
+            char size_line[32];
+            int size_len = snprintf(
+                size_line, sizeof(size_line), "%zx\r\n", req->body_len);
+            if (size_len < 0 ||
+                (size_t)size_len >= sizeof(size_line) ||
+                httputil_dump_append(
+                    &buf, &n, &cap, size_line, (size_t)size_len) != 0 ||
+                httputil_dump_append(
+                    &buf, &n, &cap, req->body, req->body_len) != 0 ||
+                httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0)
+                goto fail;
+        }
+        if (httputil_dump_append_string(&buf, &n, &cap, "0\r\n\r\n") != 0)
+            goto fail;
+    } else if (include_body && req->body_len > 0) {
         if (httputil_dump_append(
                 &buf, &n, &cap, req->body, req->body_len) != 0)
             goto fail;

@@ -48,8 +48,8 @@ static int quic_config_valid(const neverc_quic_config_t *config,
         config->max_stream_data_bidi_remote > QUIC_VARINT_MAX ||
         config->max_stream_data_uni > QUIC_VARINT_MAX ||
         config->max_data > QUIC_VARINT_MAX ||
-        config->max_streams_bidi > (UINT64_C(1) << 60) ||
-        config->max_streams_uni > (UINT64_C(1) << 60) ||
+        config->max_streams_bidi > QUIC_MAX_STREAMS ||
+        config->max_streams_uni > QUIC_MAX_STREAMS ||
         config->max_udp_payload_size < QUIC_MIN_INITIAL_SIZE ||
         config->max_udp_payload_size > QUIC_MAX_PACKET_SIZE ||
         (config->insecure_skip_verify != 0 &&

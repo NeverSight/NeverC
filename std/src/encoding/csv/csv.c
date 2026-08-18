@@ -410,6 +410,37 @@ int neverc_csv_read_all(const char *data, size_t data_len,
 
 /* ---- Writer ---- */
 
+/* Go encoding/csv.Writer with UseCRLF: quoted fields rewrite \n to \r\n and
+ * drop bare \r so a field CRLF still serializes as one \r\n. */
+static int csv_write_quoted_field(char *dst, size_t dst_len, size_t *pos,
+                                  const char *f, int crlf, char prefix) {
+    if (*pos >= dst_len) return -1;
+    dst[(*pos)++] = '"';
+    if (prefix) {
+        if (*pos >= dst_len) return -1;
+        dst[(*pos)++] = prefix;
+    }
+    for (const char *p = f; *p; p++) {
+        if (*p == '"') {
+            if (*pos + 1 >= dst_len) return -1;
+            dst[(*pos)++] = '"';
+            dst[(*pos)++] = '"';
+        } else if (crlf && *p == '\r') {
+            continue;
+        } else if (crlf && *p == '\n') {
+            if (*pos + 1 >= dst_len) return -1;
+            dst[(*pos)++] = '\r';
+            dst[(*pos)++] = '\n';
+        } else {
+            if (*pos >= dst_len) return -1;
+            dst[(*pos)++] = *p;
+        }
+    }
+    if (*pos >= dst_len) return -1;
+    dst[(*pos)++] = '"';
+    return 0;
+}
+
 int neverc_csv_write_record(const char **fields, int nfields,
                             char *dst, size_t dst_len,
                             const neverc_csv_writer_opts_t *opts) {
@@ -432,21 +463,8 @@ int neverc_csv_write_record(const char **fields, int nfields,
         if (csv_formula_prefix(f)) {
             if (pos >= dst_len) return -1;
             if (needs_quoting(f, delim, crlf)) {
-                if (pos + 1 >= dst_len) return -1;
-                dst[pos++] = '"';
-                dst[pos++] = '\'';
-                for (const char *q = f; *q; q++) {
-                    if (*q == '"') {
-                        if (pos + 1 >= dst_len) return -1;
-                        dst[pos++] = '"';
-                        dst[pos++] = '"';
-                    } else {
-                        if (pos >= dst_len) return -1;
-                        dst[pos++] = *q;
-                    }
-                }
-                if (pos >= dst_len) return -1;
-                dst[pos++] = '"';
+                if (csv_write_quoted_field(dst, dst_len, &pos, f, crlf, '\'') != 0)
+                    return -1;
                 continue;
             }
             dst[pos++] = '\'';
@@ -459,13 +477,11 @@ int neverc_csv_write_record(const char **fields, int nfields,
             continue;
         }
         if (needs_quoting(f, delim, crlf)) {
-            /* The common quoted field (forced by a comma or newline) carries no
-             * embedded '"', so its body copies verbatim — wrap it in a single
-             * memcpy. Only when a '"' is actually present fall back to the
-             * byte-at-a-time path that doubles each quote, which keeps that
-             * (rarer, quote-dense) case at its original speed. strchr avoids a
-             * length scan on the quoted path. */
-            if (!strchr(f, '"')) {
+            /* Fast path: no quotes and no CRLF rewrite, so the body copies
+             * verbatim. Quote-dense fields and UseCRLF interior \n/\r go
+             * through the byte-at-a-time writer that matches Go TestWrite. */
+            if (!strchr(f, '"') &&
+                !(crlf && (strchr(f, '\n') || strchr(f, '\r')))) {
                 size_t flen = strlen(f);
                 if (flen > dst_len - pos ||
                     dst_len - pos - flen < 2)
@@ -474,21 +490,9 @@ int neverc_csv_write_record(const char **fields, int nfields,
                 memcpy(dst + pos, f, flen);
                 pos += flen;
                 dst[pos++] = '"';
-            } else {
-                if (pos >= dst_len) return -1;
-                dst[pos++] = '"';
-                for (const char *p = f; *p; p++) {
-                    if (*p == '"') {
-                        if (pos + 1 >= dst_len) return -1;
-                        dst[pos++] = '"';
-                        dst[pos++] = '"';
-                    } else {
-                        if (pos >= dst_len) return -1;
-                        dst[pos++] = *p;
-                    }
-                }
-                if (pos >= dst_len) return -1;
-                dst[pos++] = '"';
+            } else if (csv_write_quoted_field(
+                           dst, dst_len, &pos, f, crlf, 0) != 0) {
+                return -1;
             }
         } else {
             size_t flen = strlen(f);

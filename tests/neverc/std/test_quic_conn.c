@@ -821,6 +821,24 @@ static void test_configure_rejects_unknown_version(void) {
     neverc_quic_conn_destroy(conn);
 }
 
+static void test_configure_rejects_oversized_stream_limit(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    neverc_quic_config_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.max_streams_bidi = (uint64_t)QUIC_MAX_STREAMS + 1U;
+    neverc_udp_addr_t peer;
+    memset(&peer, 0, sizeof(peer));
+    quic_conn_id_t cid;
+    memset(&cid, 0, sizeof(cid));
+    cid.len = 8;
+    ASSERT_EQ(neverc_quic_conn_configure(
+                  conn, &cfg, (neverc_udp_conn_t *)(uintptr_t)1, 0, &peer,
+                  NULL, &cid, &cid, NULL),
+              -1);
+    neverc_quic_conn_destroy(conn);
+}
+
 static void test_stream_fin_smaller_than_highest_is_final_size_error(void) {
     struct neverc_quic_conn *conn =
         neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
@@ -1254,6 +1272,7 @@ int main(void) {
     test_conn_defaults_to_quic_v1();
     test_copy_peer_cid_allows_empty();
     test_configure_rejects_unknown_version();
+    test_configure_rejects_oversized_stream_limit();
     test_stream_fin_smaller_than_highest_is_final_size_error();
     test_stream_after_reset_stays_reset();
     test_reset_final_size_below_highest();

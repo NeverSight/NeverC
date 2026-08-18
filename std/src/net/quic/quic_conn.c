@@ -281,6 +281,9 @@ int neverc_quic_conn_configure(struct neverc_quic_conn *conn,
         config->max_stream_data_bidi_remote;
     conn->local_params.initial_max_stream_data_uni =
         config->max_stream_data_uni;
+    if (config->max_streams_bidi > QUIC_MAX_STREAMS ||
+        config->max_streams_uni > QUIC_MAX_STREAMS)
+        return -1;
     conn->local_params.initial_max_streams_bidi = config->max_streams_bidi;
     conn->local_params.initial_max_streams_uni = config->max_streams_uni;
     conn->local_params.max_datagram_frame_size =

@@ -589,6 +589,30 @@ static void test_qp_encode(void) {
                                         sizeof(decoded), &dlen), 0);
     ASSERT_INT_EQ((int)dlen, (int)sizeof(longsrc));
     ASSERT_TRUE(memcmp(decoded, longsrc, sizeof(longsrc)) == 0);
+
+    {
+        char newlines[26];
+        memset(newlines, '\n', sizeof(newlines));
+        char qp[256];
+        size_t qlen = 0;
+        ASSERT_INT_EQ(neverc_mime_qp_encode(newlines, sizeof(newlines), qp,
+                                            sizeof(qp), &qlen), 0);
+        qp[qlen] = '\0';
+        ASSERT_TRUE(strstr(qp, "=\r\n") != NULL);
+        size_t line = 0;
+        int lines_ok = 1;
+        for (size_t i = 0; i < qlen; i++) {
+            if (i + 1 < qlen && qp[i] == '\r' && qp[i + 1] == '\n') {
+                if (line > 76) lines_ok = 0;
+                line = 0;
+                i++;
+                continue;
+            }
+            line++;
+        }
+        if (line > 76) lines_ok = 0;
+        ASSERT_INT_EQ(lines_ok, 1);
+    }
 }
 
 static void test_rfc2047_decode_header(void) {

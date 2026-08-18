@@ -350,6 +350,11 @@ static void test_hmac_wrapping_lengths(void) {
         neverc_hmac_sha512(&key, 1, &dummy, SIZE_MAX, mac);
         check_int("sha512 wrapping data_len clears output",
                   memcmp(mac, zeros, 64) == 0, 1);
+
+        memset(mac, 0xa5, sizeof(mac));
+        neverc_hmac_sha512(&dummy, SIZE_MAX, &key, 1, mac);
+        check_int("sha512 wrapping key_len clears output",
+                  memcmp(mac, zeros, 64) == 0, 1);
     }
 #endif
 }

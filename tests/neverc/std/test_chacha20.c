@@ -233,11 +233,22 @@ static void test_null_inputs(void) {
     check_true("null xor leaves output unmodified",
                memcmp(out, aa, sizeof(out)) == 0);
 
+    uint8_t secret[32], leaked[32], aa32[32];
+    memset(secret, 0x5a, sizeof(secret));
+    memset(leaked, 0xAA, sizeof(leaked));
+    neverc_chacha20_ctx raw;
+    memset(&raw, 0, sizeof(raw));
+    check_true("zeroed ctx xor is a no-op",
+               neverc_chacha20_xor_checked(&raw, leaked, secret, sizeof(secret)) == -1);
+    check_true("zeroed ctx does not copy plaintext",
+               memcmp(leaked, secret, sizeof(secret)) != 0);
+    memset(aa32, 0xAA, sizeof(aa32));
+    check_true("zeroed ctx leaves output unmodified",
+               memcmp(leaked, aa32, sizeof(aa32)) == 0);
+
     neverc_chacha20_ctx z;
     memset(&z, 0, sizeof(z));
     neverc_chacha20_init(&z, NULL, nonce, 0);
-    uint8_t secret[32], leaked[32];
-    memset(secret, 0x5a, sizeof(secret));
     memset(leaked, 0xAA, sizeof(leaked));
     neverc_chacha20_xor(&z, leaked, secret, sizeof(secret));
     check_true("failed init does not copy plaintext",
@@ -251,7 +262,6 @@ static void test_null_inputs(void) {
     memset(leaked, 0xAA, sizeof(leaked));
     check_true("failed re-init xor is a no-op",
                neverc_chacha20_xor_checked(&ctx, leaked, secret, sizeof(secret)) == -1);
-    uint8_t aa32[32];
     memset(aa32, 0xAA, sizeof(aa32));
     check_true("failed re-init does not copy plaintext",
                memcmp(leaked, secret, sizeof(secret)) != 0);

@@ -2187,7 +2187,9 @@ static const char *http_cookie_lookup(const char *cookie_hdr, const char *name,
         if (strncmp(p, name, nlen) == 0 && p[nlen] == '=') {
             const char *val = p + nlen + 1;
             size_t i = 0;
-            while (val[i] && val[i] != ';' && val[i] != ' ' && i < buflen - 1) {
+            /* Go parseCookieValue allows SP inside the value and stops at ';'.
+             * Truncating at SP dropped quoted values such as `"foo bar"`. */
+            while (val[i] && val[i] != ';' && i < buflen - 1) {
                 buf[i] = val[i];
                 i++;
             }

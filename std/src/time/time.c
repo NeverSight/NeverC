@@ -1397,6 +1397,12 @@ int neverc_time_parse_in_location(const char *layout, const char *value,
             if (parse_flex_digits(value, vlen, &vi, &mo) != 0) return -1;
             saw_month = 1;
             li += 1;
+        } else if (layout[li] == ' ') {
+            /* Go skip/cutspace: a layout space is one or more spaces on both
+             * sides, so "2006-01-02 15:04:05" accepts extra spaces. */
+            if (vi >= vlen || value[vi] != ' ') return -1;
+            while (li < llen && layout[li] == ' ') li++;
+            while (vi < vlen && value[vi] == ' ') vi++;
         } else {
             if (vi >= vlen || layout[li] != value[vi]) return -1;
             li++;

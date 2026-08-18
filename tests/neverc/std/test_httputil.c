@@ -487,6 +487,32 @@ static void test_dump_apis(void) {
                        "Transfer-Encoding: chunked");
         free(dump);
     }
+    {
+        neverc_http_request_t chunked_req;
+        memset(&chunked_req, 0, sizeof(chunked_req));
+        chunked_req.method = "POST";
+        chunked_req.path = "/data";
+        chunked_req.http_version = "HTTP/1.1";
+        chunked_req.host = "example.test";
+        chunked_req.body = "hello";
+        chunked_req.body_len = 5U;
+        static const char te_headers[] = "Transfer-Encoding\0chunked\0";
+        chunked_req.raw_headers = te_headers;
+        chunked_req.nheaders = 1;
+        dump = neverc_httputil_dump_request(&chunked_req, 1);
+        CHECK("chunked request dump allocated", dump != NULL);
+        if (dump) {
+            CHECK("chunked request dump does not add Content-Length",
+                  strstr(dump, "Content-Length:") == NULL);
+            check_contains("chunked request dump keeps TE", dump,
+                           "Transfer-Encoding: chunked");
+            check_contains("chunked request dump frames decoded body", dump,
+                           "5\r\nhello\r\n0\r\n\r\n");
+            CHECK("chunked request dump does not emit identity body",
+                  strstr(dump, "chunked\r\n\r\nhello") == NULL);
+            free(dump);
+        }
+    }
     dump = neverc_httputil_dump_request_out(
         "POST", "/data", "Content-Length: 5\r\nAccept: */*\r\n",
         "hello", 5U);

@@ -1175,6 +1175,11 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
             continue;
         }
         if (c == '\r' || c == '\n') {
+            if (line_len + 3U > line_cap) {
+                if (required > SIZE_MAX - 3U) return -1;
+                required += 3U;
+                line_len = 0;
+            }
             if (required > SIZE_MAX - 3U) return -1;
             required += 3U;
             line_len += 3U;
@@ -1213,6 +1218,13 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
             continue;
         }
         if (c == '\r' || c == '\n') {
+            if (line_len + 3U > line_cap) {
+                if (mime_qp_need(di, 3, dst_cap)) return -1;
+                dst[di++] = '=';
+                dst[di++] = '\r';
+                dst[di++] = '\n';
+                line_len = 0;
+            }
             if (mime_qp_need(di, 3, dst_cap)) return -1;
             dst[di++] = '=';
             dst[di++] = hex_chars[c >> 4];

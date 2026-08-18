@@ -18,9 +18,13 @@ static int hmac_sha256_family_len_ok(size_t key_len, size_t data_len) {
     return max_bytes >= 64 && (uint64_t)data_len <= max_bytes - 64;
 }
 
-/* SHA-512's implementation refuses a wrapping 64-bit byte counter. After the
- * 128-byte ipad, data_len > UINT64_MAX-128 would wipe the midstate. */
-static int hmac_sha512_len_ok(size_t data_len) {
+/* SHA-512's implementation refuses a wrapping 64-bit byte counter. A wrapping
+ * key is hashed on a fresh ctx (count=0) whose `>` check does not treat
+ * SIZE_MAX as overflow, so reject it here; after the 128-byte ipad,
+ * data_len > UINT64_MAX-128 would wipe the inner midstate. */
+static int hmac_sha512_len_ok(size_t key_len, size_t data_len) {
+    if ((uint64_t)key_len > UINT64_MAX - 128)
+        return 0;
     return (uint64_t)data_len <= UINT64_MAX - 128;
 }
 
@@ -86,7 +90,7 @@ void neverc_hmac_sha512(const uint8_t *key, size_t key_len,
 {
     if (!out) return;
     if ((!key && key_len != 0) || (!data && data_len != 0) ||
-        !hmac_sha512_len_ok(data_len)) {
+        !hmac_sha512_len_ok(key_len, data_len)) {
         memset(out, 0, 64);
         return;
     }

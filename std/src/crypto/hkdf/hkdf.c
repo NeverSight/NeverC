@@ -212,8 +212,10 @@ int neverc_hkdf_extract_sha512(uint8_t prk[64],
         salt = default_salt;
         salt_len = 64;
     }
-    if ((uint64_t)ikm_len > UINT64_MAX - 128) {
+    if ((uint64_t)ikm_len > UINT64_MAX - 128 ||
+        (uint64_t)salt_len > UINT64_MAX - 128) {
         neverc_platform_secure_zero(default_salt, sizeof(default_salt));
+        neverc_platform_secure_zero(prk, 64);
         return -1;
     }
     neverc_hmac_sha512(salt, salt_len, ikm, ikm_len, prk);

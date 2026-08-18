@@ -380,6 +380,13 @@ static void test_parse_layout(void) {
     check_int("parse bad month name",
               neverc_time_parse("Jan 02", "Xxx 15", &t), -1);
 
+    ok = neverc_time_parse("2006-01-02 15:04:05", "2024-06-15  12:00:00", &t);
+    check_int("parse extra value spaces", ok, 0);
+    check_int("parse extra value spaces hour", neverc_time_hour(t), 12);
+    ok = neverc_time_parse("2006-01-02  15:04:05", "2024-06-15 12:00:00", &t);
+    check_int("parse extra layout spaces", ok, 0);
+    check_int("parse extra layout spaces hour", neverc_time_hour(t), 12);
+
     ok = neverc_time_parse("3:04PM", "2:30PM", &t);
     check_int("parse 12h pm", ok, 0);
     check_int("parse 12h hour", neverc_time_hour(t), 14);

@@ -282,9 +282,15 @@ static void test_invalid_spans_and_lengths(void) {
     check_true("SHA-512 extract rejects wrapping IKM",
                neverc_hkdf_extract_sha512(
                    prk512, &byte, 1, &byte, SIZE_MAX) == -1);
+    check_true("SHA-512 extract rejects wrapping salt",
+               neverc_hkdf_extract_sha512(
+                   prk512, &byte, SIZE_MAX, &byte, 1) == -1);
     check_true("SHA-512 expand rejects wrapping info",
                neverc_hkdf_expand_sha512(
                    okm, sizeof(okm), prk512, &byte, SIZE_MAX) == -1);
+    check_true("SHA-512 full rejects wrapping salt",
+               neverc_hkdf_sha512(
+                   okm, 64, &byte, 1, &byte, SIZE_MAX, &byte, 0) == -1);
 #endif
 }
 
