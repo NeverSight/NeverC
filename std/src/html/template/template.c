@@ -667,7 +667,8 @@ static void html_scan_doc(const char *buf, size_t len,
     if (!buf || len == 0) return;
 
     int state = HS_TEXT;
-    enum { JS_CODE, JS_SQ, JS_DQ, JS_TPL, JS_LINE, JS_BLOCK, JS_HTML };
+    enum { JS_CODE, JS_SQ, JS_DQ, JS_TPL, JS_LINE, JS_BLOCK, JS_HTML,
+           JS_RE, JS_RE_CLASS };
     int js = JS_CODE;
     char tag[16];
     size_t tlen = 0;
@@ -759,6 +760,13 @@ static void html_scan_doc(const char *buf, size_t len,
                     i += 2;
                     break;
                 }
+                /* A lone '/' is a regexp, not division, so quotes inside
+                 * /"/.test(...) cannot be mistaken for JS_DQ (Go tJSRegexp). */
+                if (c == '/') {
+                    js = JS_RE;
+                    i++;
+                    break;
+                }
                 if (c == '<' && i + 3 < len &&
                     buf[i + 1] == '!' && buf[i + 2] == '-' &&
                     buf[i + 3] == '-') {
@@ -788,6 +796,17 @@ static void html_scan_doc(const char *buf, size_t len,
                     i += 2;
                     break;
                 }
+                i++;
+                break;
+            case JS_RE:
+                if (c == '\\' && i + 1 < len) { i += 2; break; }
+                if (c == '[') { js = JS_RE_CLASS; i++; break; }
+                if (c == '/') { js = JS_CODE; i++; break; }
+                i++;
+                break;
+            case JS_RE_CLASS:
+                if (c == '\\' && i + 1 < len) { i += 2; break; }
+                if (c == ']') { js = JS_RE; i++; break; }
                 i++;
                 break;
             case JS_HTML:

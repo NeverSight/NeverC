@@ -35,6 +35,16 @@ static void test_decode_basic(void) {
     n = neverc_qp_decode("hello_world", 11, out, sizeof(out));
     ASSERT_EQ(n, 11);
     ASSERT_MEMEQ(out, "hello_world", 11);
+
+    /* Go quotedprintable: unescaped C0/DEL fail; encoded =00 is fine. */
+    n = neverc_qp_decode("foo\x00bar", 7, out, sizeof(out));
+    ASSERT_EQ(n, -1);
+    n = neverc_qp_decode("foo\x0cbar", 7, out, sizeof(out));
+    ASSERT_EQ(n, -1);
+    n = neverc_qp_decode("foo\x7fbar", 7, out, sizeof(out));
+    ASSERT_EQ(n, -1);
+    n = neverc_qp_decode("foo=00bar", 9, out, sizeof(out));
+    ASSERT_EQ(n, 7);
 }
 
 static void test_decode_soft_break(void) {

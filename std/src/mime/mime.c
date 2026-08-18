@@ -230,6 +230,12 @@ static char *mime_percent_unescape(const char *s, size_t n, int *oom) {
             return NULL;
         }
     }
+    /* Overlong UTF-8 of CR/LF (%c0%8d) is not a C0 byte; reject it the
+     * same way RFC 2047 already rejects =C0=8D. */
+    if (!nci_2047_utf8_ok((const unsigned char *)out, j)) {
+        free(out);
+        return NULL;
+    }
     return out;
 }
 
@@ -774,12 +780,7 @@ static int mime_room(size_t used, size_t need, size_t cap) {
 }
 
 static int mime_output_has_ctl(const char *s, size_t n) {
-    for (size_t i = 0; i < n; i++) {
-        unsigned char c = (unsigned char)s[i];
-        if ((c < 0x20 && c != '\t') || c == 0x7f)
-            return 1;
-    }
-    return 0;
+    return nci_2047_has_header_break((const unsigned char *)s, n, 1);
 }
 
 static size_t mime_find(const char *s, size_t n, const char *needle, size_t nn) {
@@ -1102,6 +1103,8 @@ int neverc_mime_qp_decode(const char *src, size_t src_len,
             continue;
         }
 
+        if ((c < 0x20 && c != '\t' && c != '\r' && c != '\n') || c > 0x7e)
+            return -1;
         if (di >= dst_cap) return -1;
         dst[di++] = src[si++];
     }

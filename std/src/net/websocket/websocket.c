@@ -1298,6 +1298,28 @@ static int ws_read_payload(neverc_ws_conn_t *conn, void *buf, size_t plen,
     return 0;
 }
 
+static int ws_discard_payload_tracked(neverc_ws_conn_t *conn, uint64_t plen,
+                                      int masked, const uint8_t *mask_key,
+                                      int track_text) {
+    uint8_t sink[256];
+    size_t total = 0;
+    while (plen > 0) {
+        size_t chunk = plen > sizeof(sink) ? sizeof(sink) : (size_t)plen;
+        if (read_exact(conn, sink, chunk) != 0)
+            return ws_fail(conn);
+        if (masked && mask_key) {
+            size_t i;
+            for (i = 0; i < chunk; i++)
+                sink[i] ^= mask_key[(total + i) % 4];
+        }
+        if (track_text && ws_data_frame_chunk(conn, sink, chunk) != 0)
+            return -1;
+        total += chunk;
+        plen -= chunk;
+    }
+    return 0;
+}
+
 typedef struct {
     int opcode;
     int fin;
@@ -1554,13 +1576,27 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
     } else if (plen > buflen) {
         if (plen > WS_MAX_DISCARD)
             return ws_fail_too_big(conn);
-        if (ws_discard_payload(conn, plen) != 0)
-            return ws_fail(conn);
-        /* Keep the stream usable, matching a discarded complete frame.
+        int track_data = frame_opcode == NC_WS_OPCODE_TEXT ||
+                         frame_opcode == NC_WS_OPCODE_BINARY ||
+                         frame_opcode == NC_WS_OPCODE_CONTINUATION;
+        int track_text = 0;
+        /* RFC 6455 §5.4: a new TEXT/BINARY while a fragment is open, or a
+         * CONTINUATION with none, is 1002 even if the payload will not fit. */
+        if (track_data) {
+            if (ws_data_frame_begin(conn, frame_opcode, frame_fin) != 0)
+                return -1;
+            if (ws_data_message_account(conn, plen) != 0)
+                return -1;
+            track_text = conn->data_message_opcode == NC_WS_OPCODE_TEXT;
+        }
+        if (ws_discard_payload_tracked(conn, plen, masked, header.mask_key,
+                                       track_text) != 0)
+            return -1;
+        if (track_data && ws_data_frame_end(conn, frame_fin) != 0)
+            return -1;
+        /* Keep the stream usable after a sequenced but too-large frame.
          * A leftover data_fragment_active would 1002 the next TEXT/BINARY. */
-        if (frame_opcode == NC_WS_OPCODE_TEXT ||
-            frame_opcode == NC_WS_OPCODE_BINARY ||
-            frame_opcode == NC_WS_OPCODE_CONTINUATION)
+        if (track_data)
             ws_reset_data_fragment(conn);
         return -1;
     }

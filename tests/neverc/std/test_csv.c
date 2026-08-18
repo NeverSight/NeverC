@@ -158,7 +158,31 @@ static void test_write_quoting(void) {
     n = neverc_csv_write_record(tab_formula, 1, dst, sizeof(dst), NULL);
     ASSERT_INT_EQ(n > 0, 1);
     dst[n] = '\0';
-    ASSERT_STR_EQ(dst, "\"\t=CMD()\"\n");
+    ASSERT_STR_EQ(dst, "\"'\t=CMD()\"\n");
+
+    const char *cr_formula[] = {"\r=HYPERLINK()"};
+    n = neverc_csv_write_record(cr_formula, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "\"'\r=HYPERLINK()\"\n");
+
+    const char *lf_formula[] = {"\n=1+1"};
+    n = neverc_csv_write_record(lf_formula, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "\"'\n=1+1\"\n");
+
+    const char *fullwidth_formula[] = {"\xef\xbc\x9d" "1+1"};
+    n = neverc_csv_write_record(fullwidth_formula, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "'\xef\xbc\x9d" "1+1\n");
+
+    const char *spaced_formula[] = {" =CMD()"};
+    n = neverc_csv_write_record(spaced_formula, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "\"' =CMD()\"\n");
 
     neverc_csv_reader_opts_t trim_opts = {
         .delimiter = ',', .trim_leading_space = 1

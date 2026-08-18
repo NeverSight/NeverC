@@ -593,6 +593,124 @@ static void test_small_buffer_discards_fragment_keeps_stream(void) {
     neverc_tcp_listener_close(ln);
 }
 
+/* An oversized TEXT while a fragment is open is 1002, not a silent discard. */
+static void test_oversized_text_during_fragment_is_1002(void) {
+    printf("[oversized_text_during_fragment]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("ovsz-text listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("ovsz-text client", client);
+    check_not_null("ovsz-text server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("ovsz-text server ws", ws);
+    if (ws) {
+        check_int("write first text fragment",
+                  ws_write_masked_frame_ex(client, NC_WS_OPCODE_TEXT, 0,
+                                           "ab", 2),
+                  0);
+        int opcode = 0;
+        char tiny[4];
+        size_t n = 0;
+        check_int("read first fragment",
+                  neverc_ws_read_frame(ws, &opcode, NULL, tiny, sizeof(tiny),
+                                       &n),
+                  0);
+
+        char oversized[20];
+        memset(oversized, 'z', sizeof(oversized));
+        check_int("write oversized text during fragment",
+                  ws_write_masked_frame_ex(client, NC_WS_OPCODE_TEXT, 1,
+                                           oversized, sizeof(oversized)),
+                  0);
+        n = 0;
+        check_int("reject oversized text during fragment",
+                  neverc_ws_read_frame(ws, &opcode, NULL, tiny, sizeof(tiny),
+                                       &n),
+                  -1);
+        uint8_t close_hdr[4];
+        check_int("ovsz-text close header",
+                  ws_tcp_read_exact(client, close_hdr, sizeof(close_hdr)),
+                  0);
+        uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
+                                   close_hdr[3]);
+        check_int("ovsz-text close code 1002", code, 1002);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
+/* A continuation with no open fragment is 1002 even if it does not fit. */
+static void test_oversized_stray_continuation_is_1002(void) {
+    printf("[oversized_stray_continuation]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("ovsz-cont listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("ovsz-cont client", client);
+    check_not_null("ovsz-cont server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("ovsz-cont server ws", ws);
+    if (ws) {
+        char oversized[20];
+        memset(oversized, 'z', sizeof(oversized));
+        check_int("write stray continuation",
+                  ws_write_masked_frame_ex(client, NC_WS_OPCODE_CONTINUATION, 1,
+                                           oversized, sizeof(oversized)),
+                  0);
+        int opcode = 0;
+        char tiny[4];
+        size_t n = 0;
+        check_int("reject stray continuation",
+                  neverc_ws_read_frame(ws, &opcode, NULL, tiny, sizeof(tiny),
+                                       &n),
+                  -1);
+        uint8_t close_hdr[4];
+        check_int("ovsz-cont close header",
+                  ws_tcp_read_exact(client, close_hdr, sizeof(close_hdr)),
+                  0);
+        uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
+                                   close_hdr[3]);
+        check_int("ovsz-cont close code 1002", code, 1002);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
 /* read_message must reset fragment state when a later fragment does not
  * fit the caller buffer, or the next message is rejected as 1002. */
 static void test_read_message_overflow_clears_fragment(void) {
@@ -1724,6 +1842,8 @@ int main(void) {
     test_close_invalid_utf8_reason_is_1007();
     test_local_buffer_too_small_keeps_stream();
     test_small_buffer_discards_fragment_keeps_stream();
+    test_oversized_text_during_fragment_is_1002();
+    test_oversized_stray_continuation_is_1002();
     test_read_message_overflow_clears_fragment();
     test_close_half_closes_write();
     test_frame_length_overflow();

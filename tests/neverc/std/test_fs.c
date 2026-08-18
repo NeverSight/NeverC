@@ -39,6 +39,10 @@ static void test_valid_path(void) {
     check("conlike", neverc_fs_valid_path("console.txt") == 1);
     check("com10", neverc_fs_valid_path("COM10") == 0);
     check("com0", neverc_fs_valid_path("COM0") == 0);
+    check("com_superscript_1", neverc_fs_valid_path("COM\xC2\xB9") == 0);
+    check("lpt_superscript_2", neverc_fs_valid_path("LPT\xC2\xB2") == 0);
+    check("dir_com_superscript_3",
+          neverc_fs_valid_path("dir/COM\xC2\xB3.txt") == 0);
     check("conin$", neverc_fs_valid_path("CONIN$") == 0);
     check("conout$", neverc_fs_valid_path("CONOUT$") == 0);
     check("invalid_utf8", neverc_fs_valid_path("\xff") == 0);

@@ -78,9 +78,32 @@ static size_t csv_skip_leading_space(const char *s, size_t n) {
     return i;
 }
 
+static int csv_is_formula_starter(uint32_t cp) {
+    if (cp == '=' || cp == '+' || cp == '-' || cp == '@' ||
+        cp == '\t' || cp == '\r' || cp == '\n')
+        return 1;
+    /* Fullwidth ＝ ＋ － ＠ — spreadsheet locales normalize these to ASCII. */
+    return cp == 0xFF1D || cp == 0xFF0B || cp == 0xFF0D || cp == 0xFF20;
+}
+
 static int csv_formula_prefix(const char *s) {
-    return s && s[0] &&
-           (s[0] == '=' || s[0] == '+' || s[0] == '-' || s[0] == '@');
+    size_t n, i;
+    if (!s || !s[0]) return 0;
+    n = strlen(s);
+    i = 0;
+    while (i < n) {
+        uint32_t cp;
+        size_t adv;
+        if (csv_decode_rune((const unsigned char *)s + i, n - i, &cp, &adv) != 0)
+            break;
+        if (csv_is_formula_starter(cp))
+            return 1;
+        /* Excel strips leading whitespace before the formula check. */
+        if (!csv_codepoint_is_space(cp))
+            break;
+        i += adv;
+    }
+    return 0;
 }
 
 static int needs_quoting(const char *s, char delim, int use_crlf) {

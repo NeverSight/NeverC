@@ -1406,6 +1406,50 @@ TEST(h2c_rejects_path_fragment) {
     ASSERT_TRUE(WIFEXITED(status));
 }
 
+TEST(h2c_rejects_empty_authority_with_host) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "" },
+        { .name = "host", .value = "victim.example" },
+    };
+    ASSERT_EQ(h2_send_headers(fd, headers, 5, 1), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
+TEST(h2c_rejects_empty_host_with_authority) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "victim.example" },
+        { .name = "host", .value = "" },
+    };
+    ASSERT_EQ(h2_send_headers(fd, headers, 5, 1), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
 TEST(h2c_rejects_host_authority_mismatch) {
     neverc_tcp_conn_t *client = NULL;
     pid_t child = -1;
@@ -3109,6 +3153,8 @@ int main(void) {
     run_test_h2c_rejects_invalid_path();
     run_test_h2c_rejects_empty_host();
     run_test_h2c_rejects_path_fragment();
+    run_test_h2c_rejects_empty_authority_with_host();
+    run_test_h2c_rejects_empty_host_with_authority();
     run_test_h2c_rejects_host_authority_mismatch();
     run_test_h2c_rejects_streaming_content_length_overrun();
     run_test_h2c_rejects_buffered_content_length_overrun();

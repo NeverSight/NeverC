@@ -2068,6 +2068,9 @@ static int regexp_append_expand(char **buffer, size_t *length, size_t *capacity,
             p++;
             continue;
         }
+        /* Go extract(): malformed ${ leaves '{' in the template and only
+         * consumes the '$'. Leading-zero digit names ($01) are names. */
+        const char *after_dollar = p;
         int braced = 0;
         if (*p == '{') { braced = 1; p++; }
         const char *ns = p;
@@ -2077,27 +2080,18 @@ static int regexp_append_expand(char **buffer, size_t *length, size_t *capacity,
             while ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
                    (*p >= '0' && *p <= '9') || *p == '_')
                 p++;
-        } else {
-            if (regexp_append(buffer, length, capacity, "$", 1) != 0) return -1;
-            continue;
         }
         int nlen = (int)(p - ns);
-        if (braced) {
-            if (*p != '}') {
-                if (regexp_append(buffer, length, capacity, "$", 1) != 0) return -1;
-                p = ns;
-                continue;
-            }
-            p++;
-        }
-        if (nlen <= 0) {
+        if (nlen <= 0 || (braced && *p != '}')) {
             if (regexp_append(buffer, length, capacity, "$", 1) != 0) return -1;
+            p = after_dollar;
             continue;
         }
+        if (braced) p++;
         int gi = -1, digits = 1;
         for (int k = 0; k < nlen; k++)
             if (ns[k] < '0' || ns[k] > '9') { digits = 0; break; }
-        if (digits) {
+        if (digits && !(ns[0] == '0' && nlen > 1)) {
             int v = 0;
             for (int k = 0; k < nlen; k++) {
                 if (v > (INT_MAX - (ns[k] - '0')) / 10) { v = -1; break; }

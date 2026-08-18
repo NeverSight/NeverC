@@ -97,12 +97,18 @@ int neverc_qp_decode(const char *src, size_t src_len,
             continue;
         }
 
+        /* RFC 2045 6.7 / Go quotedprintable: unescaped bytes must be
+         * TAB, CR, LF, or printable ASCII. Encoded =00 stays legal. */
+        if ((c < 0x20 && c != '\t' && c != '\r' && c != '\n') || c > 0x7e)
+            return -1;
         {
             size_t j = si + 1;
             while (j < src_len) {
                 unsigned char u = (unsigned char)src[j];
                 if (u == '=' || u == ' ' || u == '\t')
                     break;
+                if ((u < 0x20 && u != '\r' && u != '\n') || u > 0x7e)
+                    return -1;
                 j++;
             }
             if (qp_need(di, j - si, out_cap)) return -1;

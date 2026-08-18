@@ -405,6 +405,20 @@ static void test_sscanf(void) {
     check_int("sscanf malformed Inf rejected", n, 0);
     check_true("sscanf malformed Inf leaves output", special == 7.0);
 
+    /* Go fmt.Scan overflowTests: "1e500" into float64 must fail. */
+    special = 7.0;
+    n = neverc_fmt_sscanf("1e309", "%f", &special);
+    check_int("sscanf float overflow rejected", n, 0);
+    check_true("sscanf float overflow leaves output", special == 7.0);
+    special = 7.0;
+    n = neverc_fmt_sscanf("-1e309", "%f", &special);
+    check_int("sscanf float underflow rejected", n, 0);
+    check_true("sscanf float underflow leaves output", special == 7.0);
+    special = 7.0;
+    n = neverc_fmt_sscanf("1e500", "%f", &special);
+    check_int("sscanf float 1e500 rejected", n, 0);
+    check_true("sscanf float 1e500 leaves output", special == 7.0);
+
     special = 7.0;
     n = neverc_fmt_sscanf("0x1p0", "%f", &special);
     check_int("sscanf hex float", n, 1);

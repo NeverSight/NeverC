@@ -1178,6 +1178,12 @@ static int h2_validate_request_headers(h2_conn_t *conn,
                     strcmp(scheme, "https") != 0) ||
         !h2_valid_path(method, path))
         return -1;
+    /* RFC 9113 §8.3.1: if both are present they MUST be equivalent.
+     * Compare before treating empty as absent, or ":authority: " plus
+     * "host: victim" (and the reverse) would skip the check and later
+     * disagree between request.host and the Host header. */
+    if (authority && host && !h2_ascii_ieq(authority, host))
+        return -1;
     if (authority && !*authority) authority = NULL;
     if (host && !*host) host = NULL;
     if (!authority && !host)
@@ -1185,8 +1191,6 @@ static int h2_validate_request_headers(h2_conn_t *conn,
     if (authority && !h2_valid_authority(authority))
         return -1;
     if (host && !h2_valid_authority(host))
-        return -1;
-    if (authority && host && !h2_ascii_ieq(authority, host))
         return -1;
     return 0;
 }
@@ -1858,7 +1862,7 @@ static void h2_dispatch_request(h2_conn_t *conn, h2_stream_t *stream) {
     request.path = path_copy;
     request.query = query;
     request.http_version = "HTTP/2.0";
-    request.host = authority ? authority : host;
+    request.host = (authority && *authority) ? authority : host;
     request.content_type = content_type;
     request.body = stream->streaming_request
         ? NULL : (const char *)stream->body;

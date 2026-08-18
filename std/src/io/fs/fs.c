@@ -311,11 +311,23 @@ static int fs_win_reserved_component(const char *p, size_t elen) {
     }
     if (stem >= 4 &&
         (fs_ci_eq(p, 3, "com") || fs_ci_eq(p, 3, "lpt"))) {
+        int all_digits = 1;
         for (i = 3; i < stem; i++) {
-            if (p[i] < '0' || p[i] > '9')
-                return 0;
+            if (p[i] < '0' || p[i] > '9') {
+                all_digits = 0;
+                break;
+            }
         }
-        return 1;
+        if (all_digits)
+            return 1;
+        /* CVE-2023-45284: Windows treats ¹ ² ³ as DOS device digits.
+         * Match filepath.IsLocal so ValidPath cannot jail-break past it. */
+        if (stem == 5 &&
+            (unsigned char)p[3] == 0xC2 &&
+            ((unsigned char)p[4] == 0xB9 ||
+             (unsigned char)p[4] == 0xB2 ||
+             (unsigned char)p[4] == 0xB3))
+            return 1;
     }
     return 0;
 }

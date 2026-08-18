@@ -145,6 +145,11 @@ static void test_parse_media_type(void) {
     ASSERT_INT_EQ(nparams, 0);
 
     ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; filename*=utf-8''%c0%8d.txt",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 0);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
                       "text/plain; filename=safe.txt; "
                       "filename*=utf-8''evil%0d%0a.txt",
                       mt, sizeof(mt), keys, vals, 8, &nparams), 0);
@@ -529,6 +534,10 @@ static void test_qp_decode(void) {
     ASSERT_INT_EQ((int)out_len, 13);
     out[out_len] = '\0';
     ASSERT_STR_EQ(out, "hello  \rworld");
+
+    out_len = 99;
+    ASSERT_INT_EQ(neverc_mime_qp_decode("foo\x00bar", 7, out, sizeof(out),
+                                        &out_len), -1);
 }
 
 static void test_qp_encode(void) {
@@ -717,6 +726,19 @@ static void test_rfc2047_decode_header(void) {
     ASSERT_INT_EQ(neverc_mime_decode_header(
                       b64_crlf, strlen(b64_crlf), out, sizeof(out), &n), -1);
     ASSERT_INT_EQ((int)n, 0);
+
+    const char *u2028 = "=?utf-8?q?=E2=80=A8?=";
+    const char *u2029 = "=?utf-8?q?=E2=80=A9?=";
+    const char *nel = "=?iso-8859-1?q?=85?=";
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      u2028, strlen(u2028), out, sizeof(out), &n), -1);
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      u2029, strlen(u2029), out, sizeof(out), &n), -1);
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      nel, strlen(nel), out, sizeof(out), &n), -1);
 }
 
 int main(void) {

@@ -31,6 +31,61 @@ static int nci_2047_is_ctl(const unsigned char *s, size_t n) {
     return 0;
 }
 
+static int nci_2047_is_break_cp(uint32_t cp) {
+    return cp == 0x85 || cp == 0x2028 || cp == 0x2029;
+}
+
+/* Header injection: C0/DEL, plus Unicode line breaks that C0 checks miss.
+ * cs: 1=utf-8, 2=us-ascii, 3=iso-8859-1, 0=unknown. */
+static int nci_2047_has_header_break(const unsigned char *s, size_t n, int cs) {
+    size_t i;
+    if (nci_2047_is_ctl(s, n))
+        return 1;
+    if (cs == 3) {
+        for (i = 0; i < n; i++)
+            if (s[i] == 0x85)
+                return 1;
+        return 0;
+    }
+    if (cs != 1)
+        return 0;
+    i = 0;
+    while (i < n) {
+        unsigned char b0 = s[i];
+        uint32_t cp;
+        size_t need;
+        if (b0 < 0x80) {
+            i++;
+            continue;
+        }
+        if (b0 < 0xC2)
+            return 0;
+        if (b0 < 0xE0) {
+            need = 2;
+            cp = (uint32_t)(b0 & 0x1f);
+        } else if (b0 < 0xF0) {
+            need = 3;
+            cp = (uint32_t)(b0 & 0x0f);
+        } else if (b0 < 0xF5) {
+            need = 4;
+            cp = (uint32_t)(b0 & 0x07);
+        } else {
+            return 0;
+        }
+        if (i + need > n)
+            return 0;
+        for (size_t k = 1; k < need; k++) {
+            if (s[i + k] < 0x80 || s[i + k] > 0xBF)
+                return 0;
+            cp = (cp << 6) | (uint32_t)(s[i + k] & 0x3f);
+        }
+        if (nci_2047_is_break_cp(cp))
+            return 1;
+        i += need;
+    }
+    return 0;
+}
+
 /* Same accept ranges as neverc_utf8_decode_rune / RFC 3629. */
 static int nci_2047_utf8_ok(const unsigned char *s, size_t n) {
     size_t i = 0;
@@ -200,7 +255,8 @@ static int nci_2047_b_decode(const char *s, size_t n,
 static int nci_rfc2047_header_safe(const char *s, size_t n) {
     if (!s)
         return n == 0;
-    if (nci_2047_is_ctl((const unsigned char *)s, n))
+    if (nci_2047_has_header_break((const unsigned char *)s, n, 1) ||
+        nci_2047_has_header_break((const unsigned char *)s, n, 3))
         return 0;
 
     const char *p = s;
@@ -255,7 +311,7 @@ static int nci_rfc2047_header_safe(const char *s, size_t n) {
 
         int cs = (rc == 0) ? nci_2047_charset(charset, clen) : 0;
         if (rc == -2 ||
-            (rc == 0 && (!cs || nci_2047_is_ctl(dec, dlen) ||
+            (rc == 0 && (!cs || nci_2047_has_header_break(dec, dlen, cs) ||
                          (cs == 1 && !nci_2047_utf8_ok(dec, dlen))))) {
             free(heap);
             return 0;

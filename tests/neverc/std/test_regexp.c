@@ -761,6 +761,16 @@ static void test_named_groups_and_replace_expand(void) {
     r = neverc_regexp_replace_all(re, "a12", "[$0]", &outlen);
     check_str("replace $0", r, "a[12]");
     free(r);
+    /* Go extract(): $01 is the name "01", not group 1. */
+    r = neverc_regexp_replace_all(re, "12", "[$01]", &outlen);
+    check_str("replace $01 is name", r, "[]");
+    free(r);
+    r = neverc_regexp_replace_all(re, "12", "${}", &outlen);
+    check_str("replace empty ${}", r, "${}");
+    free(r);
+    r = neverc_regexp_replace_all(re, "12", "${x", &outlen);
+    check_str("replace unclosed ${", r, "${x");
+    free(r);
     neverc_regexp_free(re);
 
     re = neverc_regexp_compile("(?P<n>\\d+)", NULL);

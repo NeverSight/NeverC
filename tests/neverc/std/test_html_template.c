@@ -769,6 +769,31 @@ static void test_template_url_and_script(void) {
 
     neverc_html_template_data_set(&data, "X", "alert(1)");
     out = neverc_html_template_render(
+        "<script>if (/"/.test(s)) { var msg = {{.X}}; }</script>", &data);
+    check("js regexp quote does not desync into a string",
+          out && strstr(out, "\"alert(1)\"") != NULL);
+    check("js regexp quote is not a raw call",
+          out && strstr(out, "msg = alert(1)") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<script>if (/'/.test(s)) { var msg = {{.X}}; }</script>", &data);
+    check("js regexp single quote does not desync",
+          out && strstr(out, "\"alert(1)\"") != NULL &&
+              strstr(out, "msg = alert(1)") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<script>if (/[\"']/.test(s)) { var msg = {{.X}}; }</script>", &data);
+    check("js regexp charset quotes do not desync",
+          out && strstr(out, "\"alert(1)\"") != NULL &&
+              strstr(out, "msg = alert(1)") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
         "<script>x=`foo${ {{.X}} }`</script>", &data);
     check("js template interpolation wraps as a string expr",
           out && strstr(out, "\"alert(1)\"") != NULL);

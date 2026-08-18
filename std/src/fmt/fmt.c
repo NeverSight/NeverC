@@ -827,9 +827,13 @@ static int scan_float(const char **p, double *out) {
     if (!tok) { *p = start; return 0; }
     memcpy(tok, start, len);
     tok[len] = '\0';
-    int rc = neverc_strconv_parse_float(tok, out);
+    /* Match Go fmt.convertFloat: ParseFloat ErrRange (±Inf overflow) is a
+     * scan failure. Explicit "Inf"/"NaN" still succeed (strconv returns OK). */
+    double parsed;
+    int rc = neverc_strconv_parse_float(tok, &parsed);
     if (tok != stackbuf) free(tok);
-    if (rc != NEVERC_STRCONV_OK && rc != NEVERC_STRCONV_ERR_RANGE) { *p = start; return 0; }
+    if (rc != NEVERC_STRCONV_OK) { *p = start; return 0; }
+    *out = parsed;
     return 1;
 }
 
