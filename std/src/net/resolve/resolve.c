@@ -286,6 +286,16 @@ static int port_text_valid(const char *port) {
     return parse_port_text(port, NULL) == 0;
 }
 
+/* Host bytes that would inject headers or break URL/log formatting. */
+static int host_text_valid(const char *host) {
+    if (!host) return 0;
+    for (const unsigned char *p = (const unsigned char *)host; *p; p++) {
+        if (*p <= 0x20 || *p == 0x7f)
+            return 0;
+    }
+    return 1;
+}
+
 int neverc_net_lookup_port(const char *network, const char *service) {
     if (!service || !service[0]) return -1;
     if (network && strcmp(network, "tcp") != 0 && strcmp(network, "udp") != 0)
@@ -806,6 +816,7 @@ int neverc_net_split_host_port(const char *hostport,
         memcpy(port, end + 2, plen);
         port[plen] = '\0';
         if (!port_text_valid(port)) return -1;
+        if (!host_text_valid(host)) return -1;
         return 0;
     }
 
@@ -833,6 +844,7 @@ int neverc_net_split_host_port(const char *hostport,
     memcpy(port, last_colon + 1, plen);
     port[plen] = '\0';
     if (!port_text_valid(port)) return -1;
+    if (!host_text_valid(host)) return -1;
 
     return 0;
 }
@@ -840,7 +852,7 @@ int neverc_net_split_host_port(const char *hostport,
 int neverc_net_join_host_port(const char *host, const char *port,
                                 char *buf, size_t buflen) {
     if (!host || !port || !buf || buflen == 0) return -1;
-    if (!port_text_valid(port)) return -1;
+    if (!port_text_valid(port) || !host_text_valid(host)) return -1;
 
     int need_brackets = (strchr(host, ':') != NULL);
 

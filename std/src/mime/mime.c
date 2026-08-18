@@ -931,17 +931,49 @@ int neverc_mime_decode_header(const char *src, size_t src_len,
         start += pos;
         size_t cur = start + 2;
         size_t q1 = mime_find(src + cur, src_len - cur, "?", 1);
-        if (q1 == SIZE_MAX) break;
+        if (q1 == SIZE_MAX) {
+            size_t lit = start + 1 - pos;
+            if (!mime_room(di, lit, out_cap)) return -1;
+            memcpy(out + di, src + pos, lit);
+            di += lit;
+            pos = start + 1;
+            between_words = 0;
+            continue;
+        }
         const char *charset = src + cur;
         size_t clen = q1;
         cur += q1 + 1;
-        if (cur + 4 > src_len) break;
+        if (cur + 4 > src_len) {
+            size_t lit = start + 1 - pos;
+            if (!mime_room(di, lit, out_cap)) return -1;
+            memcpy(out + di, src + pos, lit);
+            di += lit;
+            pos = start + 1;
+            between_words = 0;
+            continue;
+        }
         unsigned char enc = (unsigned char)src[cur];
         cur++;
-        if (src[cur] != '?') break;
+        if (src[cur] != '?') {
+            size_t lit = start + 1 - pos;
+            if (!mime_room(di, lit, out_cap)) return -1;
+            memcpy(out + di, src + pos, lit);
+            di += lit;
+            pos = start + 1;
+            between_words = 0;
+            continue;
+        }
         cur++;
         size_t qe = mime_find(src + cur, src_len - cur, "?=", 2);
-        if (qe == SIZE_MAX) break;
+        if (qe == SIZE_MAX) {
+            size_t lit = start + 1 - pos;
+            if (!mime_room(di, lit, out_cap)) return -1;
+            memcpy(out + di, src + pos, lit);
+            di += lit;
+            pos = start + 1;
+            between_words = 0;
+            continue;
+        }
         const char *text = src + cur;
         size_t tlen = qe;
         size_t end = cur + qe + 2;
@@ -1120,7 +1152,6 @@ static const char hex_chars[] = "0123456789ABCDEF";
 
 static size_t mime_qp_token_len(unsigned char c, int trailing_ws,
                                 int encode_wsp) {
-    if (c == '\r' || c == '\n') return 1;
     if ((c >= 33 && c <= 126 && c != '=') ||
         ((c == '\t' || c == ' ') && !trailing_ws && !encode_wsp))
         return 1;
@@ -1136,10 +1167,17 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
     size_t required = 0, line_len = 0;
     for (size_t i = 0; i < src_len; i++) {
         unsigned char c = (unsigned char)src[i];
+        if (c == '\r' && i + 1 < src_len && src[i + 1] == '\n') {
+            if (required > SIZE_MAX - 2U) return -1;
+            required += 2U;
+            line_len = 0;
+            i++;
+            continue;
+        }
         if (c == '\r' || c == '\n') {
-            if (required == SIZE_MAX) return -1;
-            required++;
-            if (c == '\n') line_len = 0;
+            if (required > SIZE_MAX - 3U) return -1;
+            required += 3U;
+            line_len += 3U;
             continue;
         }
         int trailing_ws = (c == ' ' || c == '\t') &&
@@ -1166,10 +1204,20 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
     line_len = 0;
     for (size_t si = 0; si < src_len; si++) {
         unsigned char c = (unsigned char)src[si];
+        if (c == '\r' && si + 1 < src_len && src[si + 1] == '\n') {
+            if (mime_qp_need(di, 2, dst_cap)) return -1;
+            dst[di++] = '\r';
+            dst[di++] = '\n';
+            line_len = 0;
+            si++;
+            continue;
+        }
         if (c == '\r' || c == '\n') {
-            if (mime_qp_need(di, 1, dst_cap)) return -1;
-            dst[di++] = (char)c;
-            if (c == '\n') line_len = 0;
+            if (mime_qp_need(di, 3, dst_cap)) return -1;
+            dst[di++] = '=';
+            dst[di++] = hex_chars[c >> 4];
+            dst[di++] = hex_chars[c & 0x0F];
+            line_len += 3;
             continue;
         }
         int trailing_ws = (c == ' ' || c == '\t') &&

@@ -686,11 +686,12 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
         if (result < 0) {
             out[count].events = NC_EV_ERROR;
         } else {
-            if ((result & POLLIN) && (poller->fd_events[fd] & NC_EV_READ))
+            if ((result & (POLLIN | POLLHUP)) &&
+                (poller->fd_events[fd] & NC_EV_READ))
                 out[count].events |= NC_EV_READ;
             if ((result & POLLOUT) && (poller->fd_events[fd] & NC_EV_WRITE))
                 out[count].events |= NC_EV_WRITE;
-            if (result & (POLLERR | POLLHUP | POLLNVAL))
+            if (result & (POLLERR | POLLNVAL))
                 out[count].events |= NC_EV_ERROR;
         }
 
@@ -745,7 +746,9 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
         if ((events[i].events & EPOLLOUT) &&
             (poller->fd_events[fd] & NC_EV_WRITE))
             out[delivered].events |= NC_EV_WRITE;
-        if (events[i].events & (EPOLLERR | EPOLLHUP))
+        if (events[i].events & EPOLLHUP)
+            out[delivered].events |= NC_EV_READ;
+        if (events[i].events & EPOLLERR)
             out[delivered].events |= NC_EV_ERROR;
         if (out[delivered].events == 0)
             continue;
@@ -842,11 +845,11 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
                 out[count].transferred = 0;
                 out[count].error = 0;
                 out[count].events = 0;
-                if (revents & (POLLRDNORM | POLLIN))
+                if (revents & (POLLRDNORM | POLLIN | POLLHUP))
                     out[count].events |= NC_EV_READ;
                 if (revents & (POLLWRNORM | POLLOUT))
                     out[count].events |= NC_EV_WRITE;
-                if (revents & (POLLERR | POLLHUP | POLLNVAL))
+                if (revents & (POLLERR | POLLNVAL))
                     out[count].events |= NC_EV_ERROR;
                 count++;
             }

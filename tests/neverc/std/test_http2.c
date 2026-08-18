@@ -2094,6 +2094,28 @@ TEST(h2c_rejects_even_stream_id) {
     ASSERT_TRUE(WIFEXITED(status));
 }
 
+TEST(h2c_rejects_idle_even_data_after_odd_stream) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    ASSERT_EQ(h2_send_headers_on(fd, 5, headers, 4, 1), 0);
+    ASSERT_EQ(h2_send_data_on(fd, 2, "x", 1, 1), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_goaway(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
 TEST(h2c_headers_without_end_headers_then_data_is_connection_error) {
     neverc_tcp_conn_t *client = NULL;
     pid_t child = -1;
@@ -3184,6 +3206,7 @@ int main(void) {
     run_test_h2c_window_update_zero_is_connection_error();
     run_test_h2c_stream_window_update_zero_is_stream_error();
     run_test_h2c_rejects_even_stream_id();
+    run_test_h2c_rejects_idle_even_data_after_odd_stream();
     run_test_h2c_headers_without_end_headers_then_data_is_connection_error();
     run_test_h2c_continuation_on_refused_stream_keeps_hpack();
     run_test_h2c_headers_priority_self_dependency_is_stream_error();

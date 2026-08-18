@@ -606,6 +606,21 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "url(#)") == NULL);
     free(out);
 
+    neverc_html_template_data_set(&data, "Link", "https://example.com/a)x");
+    out = neverc_html_template_render(
+        "<div style=\"background:url({{.Link}})\">", &data);
+    check("css url() closes paren is percent-encoded",
+          out && strstr(out, "%29") != NULL);
+    check("css url() does not CSS-escape paren",
+          out && strstr(out, "\\29") == NULL);
+    free(out);
+
+    out = neverc_html_template_render(
+        "<script>if (/{{.MissingRe}}/.test(s)) {}</script>", &data);
+    check("missing JS regexp interpolation is (?:)",
+          out && strstr(out, "/(?:)/") != NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", "</textarea><script>alert(1)</script>");
     out = neverc_html_template_render("<textarea>{{.X}}</textarea>", &data);
     check("textarea end tag is html-escaped",

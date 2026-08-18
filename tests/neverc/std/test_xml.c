@@ -121,6 +121,9 @@ static void test_escape(void) {
     char *r = neverc_xml_escape("a < b & c > d", &outlen);
     check_str("escape", r, "a &lt; b &amp; c &gt; d");
     free(r);
+    r = neverc_xml_escape("a\tb\nc\rd", &outlen);
+    check_str("escape tab lf cr", r, "a&#x9;b&#xA;c&#xD;d");
+    free(r);
     outlen = 99;
     check_bool("escape rejects invalid XML characters",
                neverc_xml_escape("\x01", &outlen) == NULL, 1);

@@ -98,6 +98,7 @@ static void test_printf(void) {
 
     check_contains("printf prefix", buf, "PRE: ");
     check_contains("printf content", buf, "count=42 name=Alice");
+    check_contains("printf ends with newline", buf, "count=42 name=Alice\n");
 }
 
 static void test_print_does_not_format(void) {
@@ -115,7 +116,7 @@ static void test_print_does_not_format(void) {
     buf[n] = '\0';
     fclose(tmp);
 
-    check_contains("prefix percent is literal", buf, "%s%s%s%n crashed");
+    check_contains("prefix percent is literal", buf, "%s%s%s%n crashed\n");
     check_contains("println percent is literal", buf, "%d %s\n");
 }
 

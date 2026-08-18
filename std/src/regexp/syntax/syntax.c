@@ -1104,8 +1104,11 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
         break;
     case NC_RE_OP_STAR:
         if (n->nsubs > 0) {
-            int need_paren = (n->subs[0]->op == NC_RE_OP_CONCAT || n->subs[0]->op == NC_RE_OP_ALTERNATE);
-            if (need_paren) sb_putc(sb, '(');
+            int need_paren = (n->subs[0]->op == NC_RE_OP_CONCAT ||
+                              n->subs[0]->op == NC_RE_OP_ALTERNATE ||
+                              (n->subs[0]->op == NC_RE_OP_LITERAL &&
+                               n->subs[0]->nrunes > 1));
+            if (need_paren) sb_puts(sb, "(?:");
             node_to_str(n->subs[0], sb);
             if (need_paren) sb_putc(sb, ')');
         }
@@ -1114,8 +1117,11 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
         break;
     case NC_RE_OP_PLUS:
         if (n->nsubs > 0) {
-            int need_paren = (n->subs[0]->op == NC_RE_OP_CONCAT || n->subs[0]->op == NC_RE_OP_ALTERNATE);
-            if (need_paren) sb_putc(sb, '(');
+            int need_paren = (n->subs[0]->op == NC_RE_OP_CONCAT ||
+                              n->subs[0]->op == NC_RE_OP_ALTERNATE ||
+                              (n->subs[0]->op == NC_RE_OP_LITERAL &&
+                               n->subs[0]->nrunes > 1));
+            if (need_paren) sb_puts(sb, "(?:");
             node_to_str(n->subs[0], sb);
             if (need_paren) sb_putc(sb, ')');
         }
@@ -1124,8 +1130,11 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
         break;
     case NC_RE_OP_QUEST:
         if (n->nsubs > 0) {
-            int need_paren = (n->subs[0]->op == NC_RE_OP_CONCAT || n->subs[0]->op == NC_RE_OP_ALTERNATE);
-            if (need_paren) sb_putc(sb, '(');
+            int need_paren = (n->subs[0]->op == NC_RE_OP_CONCAT ||
+                              n->subs[0]->op == NC_RE_OP_ALTERNATE ||
+                              (n->subs[0]->op == NC_RE_OP_LITERAL &&
+                               n->subs[0]->nrunes > 1));
+            if (need_paren) sb_puts(sb, "(?:");
             node_to_str(n->subs[0], sb);
             if (need_paren) sb_putc(sb, ')');
         }
@@ -1134,8 +1143,11 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
         break;
     case NC_RE_OP_REPEAT:
         if (n->nsubs > 0) {
-            int need_paren = (n->subs[0]->op == NC_RE_OP_CONCAT || n->subs[0]->op == NC_RE_OP_ALTERNATE);
-            if (need_paren) sb_putc(sb, '(');
+            int need_paren = (n->subs[0]->op == NC_RE_OP_CONCAT ||
+                              n->subs[0]->op == NC_RE_OP_ALTERNATE ||
+                              (n->subs[0]->op == NC_RE_OP_LITERAL &&
+                               n->subs[0]->nrunes > 1));
+            if (need_paren) sb_puts(sb, "(?:");
             node_to_str(n->subs[0], sb);
             if (need_paren) sb_putc(sb, ')');
         }
@@ -1149,8 +1161,15 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
         if (n->flags & NC_RE_FLAG_NON_GREEDY) sb_putc(sb, '?');
         break;
     case NC_RE_OP_CONCAT:
-        for (int i = 0; i < n->nsubs; i++)
-            node_to_str(n->subs[i], sb);
+        for (int i = 0; i < n->nsubs; i++) {
+            if (n->subs[i]->op == NC_RE_OP_ALTERNATE) {
+                sb_puts(sb, "(?:");
+                node_to_str(n->subs[i], sb);
+                sb_putc(sb, ')');
+            } else {
+                node_to_str(n->subs[i], sb);
+            }
+        }
         break;
     case NC_RE_OP_ALTERNATE:
         for (int i = 0; i < n->nsubs; i++) {

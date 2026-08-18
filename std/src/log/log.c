@@ -1,5 +1,6 @@
 #include "neverc/std/log.h"
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 typedef struct {
@@ -135,25 +136,41 @@ static void print_message(neverc_log_logger_t *l, const char *msg,
     end_entry(&entry, flush);
 }
 
-static void vprint_message(neverc_log_logger_t *l, const char *fmt,
-                           va_list args, int newline, int flush) {
-    if (!l || !fmt) return;
-    log_entry_t entry;
-    if (!begin_entry(l, &entry)) return;
-    write_header(&entry);
-    vfprintf(entry.output, fmt, args);
-    if (newline) fputc('\n', entry.output);
-    end_entry(&entry, flush);
+static int log_needs_nl(const char *msg) {
+    if (!msg || !msg[0]) return 1;
+    return msg[strlen(msg) - 1] != '\n';
+}
+
+static void vprint_message_go(neverc_log_logger_t *l, const char *fmt,
+                              va_list args, int flush) {
+    char stack[256];
+    va_list copy;
+    va_copy(copy, args);
+    int n = vsnprintf(stack, sizeof(stack), fmt, copy);
+    va_end(copy);
+    if (n < 0) return;
+    if ((size_t)n < sizeof(stack)) {
+        print_message(l, stack, log_needs_nl(stack), flush);
+        return;
+    }
+    char *heap = (char *)malloc((size_t)n + 1U);
+    if (!heap) return;
+    if (vsnprintf(heap, (size_t)n + 1U, fmt, args) != n) {
+        free(heap);
+        return;
+    }
+    print_message(l, heap, log_needs_nl(heap), flush);
+    free(heap);
 }
 
 void neverc_log_print(neverc_log_logger_t *l, const char *msg) {
-    print_message(l, msg, 0, 0);
+    print_message(l, msg, log_needs_nl(msg), 0);
 }
 
 void neverc_log_printf(neverc_log_logger_t *l, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    vprint_message(l, fmt, args, 0, 0);
+    vprint_message_go(l, fmt, args, 0);
     va_end(args);
 }
 
@@ -162,14 +179,14 @@ void neverc_log_println(neverc_log_logger_t *l, const char *msg) {
 }
 
 void neverc_log_fatal(neverc_log_logger_t *l, const char *msg) {
-    print_message(l, msg, 0, 1);
+    print_message(l, msg, log_needs_nl(msg), 1);
     exit(1);
 }
 
 void neverc_log_fatalf(neverc_log_logger_t *l, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    vprint_message(l, fmt, args, 0, 1);
+    vprint_message_go(l, fmt, args, 1);
     va_end(args);
     exit(1);
 }
@@ -180,14 +197,14 @@ void neverc_log_fatalln(neverc_log_logger_t *l, const char *msg) {
 }
 
 void neverc_log_panic(neverc_log_logger_t *l, const char *msg) {
-    print_message(l, msg, 0, 1);
+    print_message(l, msg, log_needs_nl(msg), 1);
     abort();
 }
 
 void neverc_log_panicf(neverc_log_logger_t *l, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    vprint_message(l, fmt, args, 0, 1);
+    vprint_message_go(l, fmt, args, 1);
     va_end(args);
     abort();
 }
@@ -237,7 +254,7 @@ void neverc_log_default_print(const char *msg) {
 void neverc_log_default_printf(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    vprint_message(get_default(), fmt, args, 0, 0);
+    vprint_message_go(get_default(), fmt, args, 0);
     va_end(args);
 }
 
@@ -252,7 +269,7 @@ void neverc_log_default_fatal(const char *msg) {
 void neverc_log_default_fatalf(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    vprint_message(get_default(), fmt, args, 0, 1);
+    vprint_message_go(get_default(), fmt, args, 1);
     va_end(args);
     exit(1);
 }
@@ -264,7 +281,7 @@ void neverc_log_default_panic(const char *msg) {
 void neverc_log_default_panicf(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    vprint_message(get_default(), fmt, args, 0, 1);
+    vprint_message_go(get_default(), fmt, args, 1);
     va_end(args);
     abort();
 }

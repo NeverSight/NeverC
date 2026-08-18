@@ -58,8 +58,10 @@ static int nci_2047_has_header_break(const unsigned char *s, size_t n, int cs) {
             i++;
             continue;
         }
-        if (b0 < 0xC2)
-            return 0;
+        if (b0 < 0xC2) {
+            i++;
+            continue;
+        }
         if (b0 < 0xE0) {
             need = 2;
             cp = (uint32_t)(b0 & 0x1f);
@@ -70,14 +72,24 @@ static int nci_2047_has_header_break(const unsigned char *s, size_t n, int cs) {
             need = 4;
             cp = (uint32_t)(b0 & 0x07);
         } else {
-            return 0;
+            i++;
+            continue;
         }
-        if (i + need > n)
-            return 0;
+        if (i + need > n) {
+            i++;
+            continue;
+        }
+        int bad = 0;
         for (size_t k = 1; k < need; k++) {
-            if (s[i + k] < 0x80 || s[i + k] > 0xBF)
-                return 0;
+            if (s[i + k] < 0x80 || s[i + k] > 0xBF) {
+                bad = 1;
+                break;
+            }
             cp = (cp << 6) | (uint32_t)(s[i + k] & 0x3f);
+        }
+        if (bad) {
+            i++;
+            continue;
         }
         if (nci_2047_is_break_cp(cp))
             return 1;
@@ -268,22 +280,34 @@ static int nci_rfc2047_header_safe(const char *s, size_t n) {
         const char *cur = mark + 2;
         size_t after = left - (size_t)(cur - p);
         const char *q1 = nci_2047_find(cur, after, "?", 1);
-        if (!q1)
-            break;
+        if (!q1) {
+            left -= (size_t)(mark + 1 - p);
+            p = mark + 1;
+            continue;
+        }
         const char *charset = cur;
         size_t clen = (size_t)(q1 - cur);
         cur = q1 + 1;
         after = left - (size_t)(cur - p);
-        if (after < 4)
-            break;
+        if (after < 4) {
+            left -= (size_t)(mark + 1 - p);
+            p = mark + 1;
+            continue;
+        }
         unsigned char enc = (unsigned char)*cur++;
-        if (*cur != '?')
-            break;
+        if (*cur != '?') {
+            left -= (size_t)(mark + 1 - p);
+            p = mark + 1;
+            continue;
+        }
         cur++;
         after = left - (size_t)(cur - p);
         const char *qe = nci_2047_find(cur, after, "?=", 2);
-        if (!qe)
-            break;
+        if (!qe) {
+            left -= (size_t)(mark + 1 - p);
+            p = mark + 1;
+            continue;
+        }
         const char *text = cur;
         size_t tlen = (size_t)(qe - cur);
         const char *end = qe + 2;

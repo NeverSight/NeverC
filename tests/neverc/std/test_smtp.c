@@ -346,6 +346,10 @@ static void test_smtp_reject_injection(void) {
                neverc_smtp_mail(c, "@evil.com:user@x.com") == -1);
     check_true("mail colon source route rejected",
                neverc_smtp_mail(c, "user@x.com:relay") == -1);
+    check_true("mail percent-hack rejected",
+               neverc_smtp_mail(c, "user%evil.com@x.com") == -1);
+    check_true("mail bang-path rejected",
+               neverc_smtp_mail(c, "evil.com!user@x.com") == -1);
     check_true("mail extra at-sign rejected",
                neverc_smtp_mail(c, "a@b@c.com") == -1);
     check_true("hello unclosed ipv6 literal rejected",

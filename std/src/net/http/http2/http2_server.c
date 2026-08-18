@@ -2346,7 +2346,10 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 goto cleanup;
             }
             h2_stream_t *stream = h2_find_stream(&conn, fhdr.stream_id);
-            if (!stream && fhdr.stream_id > conn.max_stream_id) {
+            /* Unused even IDs stay idle after a higher odd client stream.
+             * Unused odd IDs <= max_stream_id are implicitly closed. */
+            if (!stream && ((fhdr.stream_id & 1u) == 0 ||
+                            fhdr.stream_id > conn.max_stream_id)) {
                 (void)h2_conn_write_goaway(&conn, NC_H2_PROTOCOL_ERROR);
                 free(payload);
                 goto cleanup;
@@ -2518,7 +2521,9 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 nc_mutex_lock(&conn.state_lock);
                 h2_stream_t *zero_stream =
                     h2_find_stream(&conn, fhdr.stream_id);
-                if (!zero_stream && fhdr.stream_id > conn.max_stream_id) {
+                if (!zero_stream &&
+                    ((fhdr.stream_id & 1u) == 0 ||
+                     fhdr.stream_id > conn.max_stream_id)) {
                     nc_mutex_unlock(&conn.state_lock);
                     (void)h2_conn_write_goaway(&conn,
                                                NC_H2_PROTOCOL_ERROR);
@@ -2547,7 +2552,8 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 conn.conn_send_window += (int32_t)inc;
             } else {
                 h2_stream_t *s = h2_find_stream(&conn, fhdr.stream_id);
-                if (!s && fhdr.stream_id > conn.max_stream_id) {
+                if (!s && ((fhdr.stream_id & 1u) == 0 ||
+                           fhdr.stream_id > conn.max_stream_id)) {
                     nc_mutex_unlock(&conn.state_lock);
                     (void)h2_conn_write_goaway(
                         &conn, NC_H2_PROTOCOL_ERROR);
@@ -2577,7 +2583,8 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 goto cleanup;
             }
             h2_stream_t *stream = h2_find_stream(&conn, fhdr.stream_id);
-            if (!stream && fhdr.stream_id > conn.max_stream_id) {
+            if (!stream && ((fhdr.stream_id & 1u) == 0 ||
+                            fhdr.stream_id > conn.max_stream_id)) {
                 (void)h2_conn_write_goaway(&conn, NC_H2_PROTOCOL_ERROR);
                 free(payload);
                 goto cleanup;

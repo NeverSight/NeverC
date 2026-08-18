@@ -312,6 +312,45 @@ char *neverc_html_url_query_escape(const char *s) {
     return r;
 }
 
+/* Go html/template urlNormalizer for CSS url(): percent-encode bytes that
+ * CSS would treat as delimiters. CSS hex-escaping `)` as `\29` unescapes
+ * back to `)` and closes url(). */
+static int html_css_url_unreserved(unsigned char c) {
+    if (nc_isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~')
+        return 1;
+    switch (c) {
+    case ':': case '/': case '?': case '#': case '[': case ']':
+    case '@': case '!': case '$': case '&': case '*': case '+':
+    case ',': case ';': case '=':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static char *html_css_url_escape(const char *s) {
+    if (!s) return dup_cstr("");
+    size_t slen = strlen(s);
+    if (slen > (SIZE_MAX - 1U) / 3U) return NULL;
+    char *r = (char *)NC_HTML_TEMPLATE_MALLOC(slen * 3U + 1U);
+    if (!r) return NULL;
+    size_t wi = 0, i = 0;
+    while (i < slen) {
+        size_t start = i;
+        while (i < slen &&
+               html_css_url_unreserved((unsigned char)s[i]))
+            i++;
+        if (i > start) { memcpy(r + wi, s + start, i - start); wi += i - start; }
+        if (i >= slen) break;
+        unsigned char c = (unsigned char)s[i++];
+        r[wi++] = '%';
+        r[wi++] = nc_uphex[c >> 4];
+        r[wi++] = nc_uphex[c & 0x0f];
+    }
+    r[wi] = '\0';
+    return r;
+}
+
 /* --- Template parser --- */
 
 typedef enum {
@@ -646,6 +685,7 @@ static void html_scan_doc(const char *buf, size_t len,
                           int *in_script, int *in_style,
                           int *in_script_comment,
                           int *in_js_quoted,
+                          int *in_js_re,
                           int *in_open_tag,
                           int *in_attr, int *quoted,
                           const char **aname, size_t *nlen,
@@ -655,6 +695,7 @@ static void html_scan_doc(const char *buf, size_t len,
     *in_style = 0;
     *in_script_comment = 0;
     *in_js_quoted = 0;
+    *in_js_re = 0;
     *in_open_tag = 0;
     *in_attr = 0;
     *quoted = 0;
@@ -942,6 +983,7 @@ static void html_scan_doc(const char *buf, size_t len,
     /* Single/double-quoted JS strings only. Template literals keep wrapping
      * so `${ {{.X}} }` cannot run X as code (the scanner does not track `${`). */
     *in_js_quoted = (state == HS_SCRIPT && (js == JS_SQ || js == JS_DQ));
+    *in_js_re = (state == HS_SCRIPT && (js == JS_RE || js == JS_RE_CLASS));
     *in_open_tag = (state == HS_TAG || state == HS_ATTR_DQ ||
                     state == HS_ATTR_SQ || state == HS_ATTR_UQ ||
                     state == HS_MARKUP);
@@ -1369,24 +1411,34 @@ static int execute_nodes(const node_t *n,
             break;
         case NODE_VAR: {
             const char *val = neverc_html_template_data_get(data, n->text);
-            if (val) {
+            {
                 int quoted = 0, in_attr = 0;
                 const char *aname = NULL;
                 size_t nlen = 0;
                 const char *aprefix = NULL;
                 size_t aplen = 0;
                 int in_script = 0, in_style_tag = 0, in_script_comment = 0;
-                int in_js_quoted = 0;
+                int in_js_quoted = 0, in_js_re = 0;
                 int in_open_tag = 0;
                 int in_meta = 0, meta_refresh = 0;
                 html_scan_doc(*buf, *len, &in_script, &in_style_tag,
-                              &in_script_comment, &in_js_quoted,
+                              &in_script_comment, &in_js_quoted, &in_js_re,
                               &in_open_tag, &in_attr, &quoted,
                               &aname, &nlen, &aprefix, &aplen,
                               &in_meta, &meta_refresh);
+                if (!val) {
+                    if (in_js_re &&
+                        buf_append(buf, len, cap, "(?:)", 4) != 0)
+                        return -1;
+                    break;
+                }
                 const char *uprefix = NULL;
                 size_t uplen = 0;
-                int in_css_url = html_in_css_url(*buf, *len, &uprefix, &uplen);
+                html_attr_kind_t akind = in_attr
+                    ? html_attr_kind(aname, nlen) : HTML_ATTR_PLAIN;
+                int in_style_attr = in_attr && akind == HTML_ATTR_STYLE;
+                int in_css_url = (in_style_tag || in_style_attr) &&
+                    html_in_css_url(*buf, *len, &uprefix, &uplen);
                 int in_refresh_url = in_attr && in_meta &&
                     html_attr_name_eq(aname, nlen, "content") &&
                     (meta_refresh ||
@@ -1397,14 +1449,11 @@ static int execute_nodes(const node_t *n,
                                          "http-equiv") &&
                       html_contains_ci_n(n->next->text, n->next->text_len,
                                          "refresh")));
-                html_attr_kind_t akind = in_attr
-                    ? html_attr_kind(aname, nlen) : HTML_ATTR_PLAIN;
                 int in_url = in_css_url ||
                     (in_attr && (akind == HTML_ATTR_URL ||
                                  akind == HTML_ATTR_SRCSET)) ||
                     in_refresh_url;
                 int in_event = in_attr && akind == HTML_ATTR_EVENT;
-                int in_style_attr = in_attr && akind == HTML_ATTR_STYLE;
                 int in_srcdoc = in_attr && akind == HTML_ATTR_SRCDOC;
                 int in_unsafe_attr = in_attr && akind == HTML_ATTR_UNSAFE;
                 int unquoted = in_attr && !quoted;
@@ -1436,7 +1485,7 @@ static int execute_nodes(const node_t *n,
                              dprefix, dplen, val, dsuffix, dslen))
                     escaped = neverc_html_escape("#");
                 else if (in_css_url)
-                    escaped = neverc_html_css_escape(val);
+                    escaped = html_css_url_escape(val);
                 else if (in_event && aplen > 0)
                     escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_event)

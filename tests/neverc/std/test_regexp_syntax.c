@@ -481,6 +481,18 @@ static void test_string(void) {
     check_str("string \\x{96}", s, "\\x{96}");
     free(s);
     neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("(?:a|b)c", 0, &err);
+    s = neverc_regexp_syntax_string(n);
+    check_str("string (?:a|b)c keeps grouping", s, "(?:a|b)c");
+    free(s);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("(?:a|b)*", 0, &err);
+    s = neverc_regexp_syntax_string(n);
+    check_str("string (?:a|b)* stays non-capturing", s, "(?:a|b)*");
+    free(s);
+    neverc_regexp_syntax_free(n);
 }
 
 /* ===== Equality ===== */

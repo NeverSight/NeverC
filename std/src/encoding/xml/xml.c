@@ -973,6 +973,9 @@ neverc_xml_node_t *neverc_xml_node_child(const neverc_xml_node_t *node,
  */
 static const uint8_t xml_esc_extra[256] = {
     ['&'] = 4, ['<'] = 3, ['>'] = 3, ['"'] = 5, ['\''] = 5,
+    /* Go encoding/xml.EscapeText: tab/LF/CR become numeric refs so
+     * attribute/CharData round-trips survive EOL folding. */
+    ['\t'] = 4, ['\n'] = 4, ['\r'] = 4,
 };
 
 char *neverc_xml_escape(const char *s, size_t *outlen) {
@@ -1023,6 +1026,9 @@ char *neverc_xml_escape(const char *s, size_t *outlen) {
             case '>':  memcpy(r + wi, "&gt;",   4); wi += 4; break;
             case '"':  memcpy(r + wi, "&quot;", 6); wi += 6; break;
             case '\'': memcpy(r + wi, "&apos;", 6); wi += 6; break;
+            case '\t': memcpy(r + wi, "&#x9;", 5); wi += 5; break;
+            case '\n': memcpy(r + wi, "&#xA;", 5); wi += 5; break;
+            case '\r': memcpy(r + wi, "&#xD;", 5); wi += 5; break;
         }
     }
     r[wi] = '\0';

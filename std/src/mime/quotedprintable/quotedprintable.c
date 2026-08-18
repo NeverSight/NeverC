@@ -186,7 +186,9 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
             else if (wrap && line_len + 1 >= line_cap)
                 need_encode = 1;
         } else if (c == '\r' || c == '\n') {
-            need_encode = 0; /* pass through line endings */
+            /* Only a canonical CRLF pair may appear raw. */
+            if (!(c == '\r' && i + 1 < src_len && src[i + 1] == '\n'))
+                need_encode = 1;
         } else if (c < 33 || c > 126 || c == '=') {
             need_encode = 1;
         }
@@ -206,11 +208,12 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
             continue;
         }
 
-        if (c == '\r' || c == '\n') {      /* passed through, no wrapping */
-            if (qp_need(di, 1, out_cap)) return -1;
-            out[di++] = (char)c;
-            if (c == '\n') line_len = 0;
-            i++;
+        if (c == '\r' && i + 1 < src_len && src[i + 1] == '\n') {
+            if (qp_need(di, 2, out_cap)) return -1;
+            out[di++] = '\r';
+            out[di++] = '\n';
+            line_len = 0;
+            i += 2;
             continue;
         }
 

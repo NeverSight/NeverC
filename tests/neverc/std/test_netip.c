@@ -120,6 +120,9 @@ static void test_parse_ipv6(void) {
     ASSERT_EQ(neverc_netip_parse_addr("1.2.3.4%x", &addr), -1);
     ASSERT_EQ(neverc_netip_parse_addr("fe80::1%\neth0", &addr), -1);
     ASSERT_EQ(neverc_netip_parse_addr("fe80::1%\x7f", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%]eth0", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%/eth0", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%@eth0", &addr), -1);
 
     ASSERT_EQ(neverc_netip_parse_addr("::ffff:0.0.0.0", &addr), 0);
     ASSERT_TRUE(neverc_netip_addr_is4in6(&addr));

@@ -646,17 +646,24 @@ static void test_unquote(void) {
     check_int("unquote rune len", n, 1);
     check_str("unquote rune value", buf, "a");
     n = neverc_strconv_unquote("'\\xff'", buf, sizeof(buf));
-    check_int("unquote escaped rune len", n, 2);
-    check_str("unquote escaped rune value", buf, "\xc3\xbf");
-    check_int("reject empty rune",
-              neverc_strconv_unquote("''", buf, sizeof(buf)), -1);
+    check_int("unquote escaped rune len", n, 1);
+    check_int("unquote escaped rune value", (unsigned char)buf[0], 0xff);
+    n = neverc_strconv_unquote("'\\377'", buf, sizeof(buf));
+    check_int("unquote octal rune len", n, 1);
+    check_int("unquote octal rune value", (unsigned char)buf[0], 0xff);
+    n = neverc_strconv_unquote("'\\u00ff'", buf, sizeof(buf));
+    check_int("unquote unicode rune len", n, 2);
+    check_str("unquote unicode rune value", buf, "\xc3\xbf");
+    n = neverc_strconv_unquote("''", buf, sizeof(buf));
+    check_int("empty rune is empty string", n, 0);
+    check_str("empty rune value", buf, "");
     check_int("reject multiple runes",
               neverc_strconv_unquote("'ab'", buf, sizeof(buf)), -1);
 
-    char invalid_utf8[] = {'"', (char)0xff, '"', '\0'};
-    check_int("reject invalid UTF-8",
-              neverc_strconv_unquote(
-                  invalid_utf8, buf, sizeof(buf)), -1);
+    char invalid_utf8[] = {'"', (char)0xc0, '"', '\0'};
+    n = neverc_strconv_unquote(invalid_utf8, buf, sizeof(buf));
+    check_int("invalid UTF-8 becomes FFFD len", n, 3);
+    check_str("invalid UTF-8 becomes FFFD", buf, "\xef\xbf\xbd");
 
     n = neverc_strconv_unquote("`a\rb`", buf, sizeof(buf));
     check_int("raw string discards carriage return len", n, 2);
@@ -779,8 +786,9 @@ static void test_quoted_prefix(void) {
 
     check_int("squote prefix", neverc_strconv_quoted_prefix("'A' rest", &plen), 0);
     check_int("squote plen", (int)plen, 3);
-    check_int("squote rejects empty rune",
-              neverc_strconv_quoted_prefix("''", &plen), -1);
+    check_int("squote accepts empty rune",
+              neverc_strconv_quoted_prefix("'' rest", &plen), 0);
+    check_int("squote empty prefix length", (int)plen, 2);
     check_int("squote rejects multiple runes",
               neverc_strconv_quoted_prefix("'AB'", &plen), -1);
     check_int("squote accepts UTF-8 rune",
@@ -854,17 +862,17 @@ static void test_complex(void) {
     check_double_approx("1i re", re, 0.0, 1e-15);
     check_double_approx("1i im", im, 1.0, 1e-15);
     check_int("parse_complex bare i",
-              neverc_strconv_parse_complex("i", &re, &im), 0);
-    check_double_approx("i re", re, 0.0, 1e-15);
-    check_double_approx("i im", im, 1.0, 1e-15);
+              neverc_strconv_parse_complex("i", &re, &im),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("parse_complex +i",
+              neverc_strconv_parse_complex("+i", &re, &im),
+              NEVERC_STRCONV_ERR_SYNTAX);
     check_int("parse_complex -i",
-              neverc_strconv_parse_complex("-i", &re, &im), 0);
-    check_double_approx("-i re", re, 0.0, 1e-15);
-    check_double_approx("-i im", im, -1.0, 1e-15);
+              neverc_strconv_parse_complex("-i", &re, &im),
+              NEVERC_STRCONV_ERR_SYNTAX);
     check_int("parse_complex 1+i",
-              neverc_strconv_parse_complex("1+i", &re, &im), 0);
-    check_double_approx("1+i re", re, 1.0, 1e-15);
-    check_double_approx("1+i im", im, 1.0, 1e-15);
+              neverc_strconv_parse_complex("1+i", &re, &im),
+              NEVERC_STRCONV_ERR_SYNTAX);
     check_int("parse_complex pure real",
               neverc_strconv_parse_complex("1.5", &re, &im), 0);
     check_double_approx("pure real re", re, 1.5, 1e-15);
@@ -898,10 +906,12 @@ static void test_complex(void) {
               neverc_strconv_parse_complex("1-NaNi", &re, &im),
               NEVERC_STRCONV_ERR_SYNTAX);
     check_int("parse_complex NaNi",
-              neverc_strconv_parse_complex("NaNi", &re, &im),
+              neverc_strconv_parse_complex("NaNi", &re, &im), 0);
+    check_double_approx("NaNi re", re, 0.0, 1e-15);
+    check_true("parse_complex NaNi imag", im != im);
+    check_int("parse_complex +NaNi",
+              neverc_strconv_parse_complex("+NaNi", &re, &im),
               NEVERC_STRCONV_ERR_SYNTAX);
-    check_double_approx("hex both re", re, 2.0, 1e-15);
-    check_double_approx("hex both im", im, 0.5, 1e-15);
 
     /* 'f' of 1e100 is ~104 chars; the old 64-byte scratch buffers failed. */
     char large[512];

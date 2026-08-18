@@ -252,7 +252,11 @@ int neverc_strconv_unquote_char(const char *s, size_t slen, char quote,
     if (c >= NEVERC_UTF8_RUNE_SELF) {
         int width;
         neverc_utf8_decode_rune((const uint8_t *)s, slen, r, &width);
-        if (width == 1 && *r == NEVERC_UTF8_RUNE_ERROR) return -1;
+        /* Go UnquoteChar: an invalid UTF-8 byte is U+FFFD, not a hard error. */
+        if (width < 1)
+            width = 1;
+        if (width == 1 && *r == NEVERC_UTF8_RUNE_ERROR)
+            *r = NEVERC_UTF8_RUNE_ERROR;
         *multibyte = 1;
         return width;
     }
@@ -346,20 +350,29 @@ int neverc_strconv_unquote(const char *s, char *buf, size_t bufsize) {
     size_t out = 0;
 
     if (quote == '\'') {
+        /* Go: an empty character literal Unquote's to the empty string. */
+        if (src_len == 0) {
+            buf[0] = '\0';
+            return 0;
+        }
         /* Go interpreted literals reject a raw newline (escaped "\\n" is fine). */
-        if (src_len > 0 && src[0] == '\n') return -1;
+        if (src[0] == '\n') return -1;
         uint32_t r;
         int multibyte;
         int consumed = neverc_strconv_unquote_char(
             src, src_len, quote, &r, &multibyte);
         if (consumed < 0 || (size_t)consumed != src_len) return -1;
 
-        /* A rune literal denotes a Unicode code point even when it was written
-         * with a byte escape such as '\xff'.  String literals keep \xNN and
-         * octal escapes as raw bytes, but rune literals must encode the
-         * resulting code point as UTF-8. */
+        /* Match Go Unquote: \x / octal are raw bytes (multibyte=0). Only
+         * \u / \U / UTF-8 source encode as UTF-8. */
         uint8_t enc[4];
-        int n = neverc_utf8_encode_rune(enc, r);
+        int n;
+        if (multibyte) {
+            n = neverc_utf8_encode_rune(enc, r);
+        } else {
+            enc[0] = (uint8_t)r;
+            n = 1;
+        }
         if ((size_t)n >= bufsize) return -1;
         memcpy(buf, enc, (size_t)n);
         buf[n] = '\0';
@@ -492,7 +505,8 @@ int neverc_strconv_quoted_prefix(const char *s, size_t *prefix_len) {
     size_t rune_count = 0;
     while (i < slen) {
         if (s[i] == quote) {
-            if (quote == '\'' && rune_count != 1) return -1;
+            /* Go: '' is a valid empty rune literal. */
+            if (quote == '\'' && rune_count > 1) return -1;
             *prefix_len = i + 1;
             return 0;
         }
@@ -507,8 +521,8 @@ int neverc_strconv_quoted_prefix(const char *s, size_t *prefix_len) {
             uint32_t r;
             int width;
             neverc_utf8_decode_rune((const uint8_t *)s + i, slen - i, &r, &width);
-            if (width < 1 || (width == 1 && r == NEVERC_UTF8_RUNE_ERROR))
-                return -1;
+            if (width < 1)
+                width = 1;
             i += (size_t)width;
         }
         rune_count++;
@@ -553,11 +567,27 @@ static int parse_float_span(const char *s, size_t n, double *out) {
     return rc;
 }
 
-static int span_is_nan(const char *s, size_t n) {
-    return n == 3 &&
-           (s[0] == 'n' || s[0] == 'N') &&
-           (s[1] == 'a' || s[1] == 'A') &&
-           (s[2] == 'n' || s[2] == 'N');
+/* Longest prefix of [s, s+n) that parse_float accepts. Matches Go
+ * parseFloatPrefix: leftover after the prefix is the caller's problem. */
+static int parse_float_prefix(const char *s, size_t n, double *out,
+                              size_t *consumed) {
+    int best = NEVERC_STRCONV_ERR_SYNTAX;
+    size_t best_n = 0;
+    double best_v = 0.0;
+    for (size_t i = 1; i <= n; i++) {
+        double v;
+        int rc = parse_float_span(s, i, &v);
+        if (rc == NEVERC_STRCONV_OK || rc == NEVERC_STRCONV_ERR_RANGE) {
+            best = rc;
+            best_n = i;
+            best_v = v;
+        }
+    }
+    if (best_n == 0)
+        return NEVERC_STRCONV_ERR_SYNTAX;
+    *out = best_v;
+    *consumed = best_n;
+    return best;
 }
 
 int neverc_strconv_parse_complex(const char *s, double *re, double *im) {
@@ -566,80 +596,54 @@ int neverc_strconv_parse_complex(const char *s, double *re, double *im) {
     if (slen == 0) return NEVERC_STRCONV_ERR_SYNTAX;
 
     const char *start = s;
-    const char *end = s + slen;
-    if (slen >= 2 && *start == '(' && *(end - 1) == ')') {
+    size_t n = slen;
+    if (n >= 2 && start[0] == '(' && start[n - 1] == ')') {
         start++;
-        end--;
+        n -= 2;
     }
-    if (start >= end) return NEVERC_STRCONV_ERR_SYNTAX;
+    if (n == 0) return NEVERC_STRCONV_ERR_SYNTAX;
 
-    int has_i = (*(end - 1) == 'i');
-    if (has_i) end--;
+    /* Go src/internal/strconv/atoc.go ParseComplex. */
+    size_t consumed = 0;
+    int pending = parse_float_prefix(start, n, re, &consumed);
+    if (pending != NEVERC_STRCONV_OK && pending != NEVERC_STRCONV_ERR_RANGE)
+        return pending;
+    start += consumed;
+    n -= consumed;
 
-    const char *split = NULL;
-    for (const char *p = end; p > start; p--) {
-        const char *q = p - 1;
-        if (*q != '+' && *q != '-') continue;
-        /* Decimal e/E and hex-float p/P exponents are not a real/imag split. */
-        if (q > start && (q[-1] == 'e' || q[-1] == 'E' ||
-                          q[-1] == 'p' || q[-1] == 'P'))
-            continue;
-        /* A leading sign is not a real/imag split. */
-        if (q == start) continue;
-        split = q;
+    if (n == 0) {
+        *im = 0.0;
+        return pending;
+    }
+
+    switch (start[0]) {
+    case '+':
+        /* Consume '+' so "+NaNi" after a real part works; hide "++". */
+        if (n > 1 && start[1] != '+') {
+            start++;
+            n--;
+        }
         break;
+    case '-':
+        break;
+    case 'i':
+        if (n == 1) {
+            *im = *re;
+            *re = 0.0;
+            return pending;
+        }
+        return NEVERC_STRCONV_ERR_SYNTAX;
+    default:
+        return NEVERC_STRCONV_ERR_SYNTAX;
     }
 
-    if (has_i && split) {
-        size_t re_len = (size_t)(split - start);
-        size_t im_len = (size_t)(end - split);
-        int r1 = parse_float_span(start, re_len, re);
-        if (r1 != NEVERC_STRCONV_OK && r1 != NEVERC_STRCONV_ERR_RANGE)
-            return r1;
-        if (im_len == 1 && (*split == '+' || *split == '-')) {
-            *im = (*split == '-') ? -1.0 : 1.0;
-            return r1;
-        }
-        /* Go: a NaN imag part may only use a leading '+'; ParseFloat itself
-         * rejects signed NaN, so strip the '+' here. */
-        if (im_len > 1 && (*split == '+' || *split == '-') &&
-            span_is_nan(split + 1, im_len - 1)) {
-            if (*split == '-') return NEVERC_STRCONV_ERR_SYNTAX;
-            int r2 = parse_float_span(split + 1, im_len - 1, im);
-            if (r2 != NEVERC_STRCONV_OK && r2 != NEVERC_STRCONV_ERR_RANGE)
-                return r2;
-            return (r1 == NEVERC_STRCONV_ERR_RANGE || r2 == NEVERC_STRCONV_ERR_RANGE)
-                       ? NEVERC_STRCONV_ERR_RANGE : NEVERC_STRCONV_OK;
-        }
-        int r2 = parse_float_span(split, im_len, im);
-        if (r2 != NEVERC_STRCONV_OK && r2 != NEVERC_STRCONV_ERR_RANGE)
-            return r2;
-        return (r1 == NEVERC_STRCONV_ERR_RANGE || r2 == NEVERC_STRCONV_ERR_RANGE)
-                   ? NEVERC_STRCONV_ERR_RANGE : NEVERC_STRCONV_OK;
-    }
-
-    if (has_i) {
-        *re = 0.0;
-        size_t im_len = (size_t)(end - start);
-        if (im_len == 0) {
-            *im = 1.0;
-            return NEVERC_STRCONV_OK;
-        }
-        if (im_len == 1 && (*start == '+' || *start == '-')) {
-            *im = (*start == '-') ? -1.0 : 1.0;
-            return NEVERC_STRCONV_OK;
-        }
-        /* Go: "NaNi" is a syntax error (NaN followed by i). */
-        if (span_is_nan(start, im_len))
-            return NEVERC_STRCONV_ERR_SYNTAX;
-        if (im_len > 1 && *start == '+' && span_is_nan(start + 1, im_len - 1))
-            return parse_float_span(start + 1, im_len - 1, im);
-        if (im_len > 1 && *start == '-' && span_is_nan(start + 1, im_len - 1))
-            return NEVERC_STRCONV_ERR_SYNTAX;
-        return parse_float_span(start, im_len, im);
-    }
-
-    if (split) return NEVERC_STRCONV_ERR_SYNTAX;
-    *im = 0.0;
-    return parse_float_span(start, (size_t)(end - start), re);
+    int r2 = parse_float_prefix(start, n, im, &consumed);
+    if (r2 != NEVERC_STRCONV_OK && r2 != NEVERC_STRCONV_ERR_RANGE)
+        return r2;
+    start += consumed;
+    n -= consumed;
+    if (n != 1 || start[0] != 'i')
+        return NEVERC_STRCONV_ERR_SYNTAX;
+    return (pending == NEVERC_STRCONV_ERR_RANGE || r2 == NEVERC_STRCONV_ERR_RANGE)
+               ? NEVERC_STRCONV_ERR_RANGE : NEVERC_STRCONV_OK;
 }

@@ -262,7 +262,7 @@ done_parse:
             unsigned char c = (unsigned char)zone_start[zi];
             /* Zone IDs are interface names or decimal indices. CTL in a
              * zone interpolates into URL/log lines as header injection. */
-            if (c <= 0x20 || c == 0x7f)
+            if (c <= 0x20 || c == 0x7f || c == ']' || c == '/' || c == '@')
                 return -1;
         }
         memcpy(out->zone, zone_start, zlen);

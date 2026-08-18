@@ -158,6 +158,13 @@ static void test_encode_basic(void) {
     ASSERT_EQ(strstr(out, " =\r\n") == NULL, 1);
     ASSERT_EQ(strstr(out, "=20") != NULL, 1);
 
+    n = neverc_qp_encode((const unsigned char *)"a\nb", 3, out, sizeof(out), 76);
+    ASSERT_EQ(n, 6);
+    ASSERT_MEMEQ(out, "a=0Ab", 6);
+    n = neverc_qp_encode((const unsigned char *)"a\r\nb", 4, out, sizeof(out), 76);
+    ASSERT_EQ(n, 4);
+    ASSERT_MEMEQ(out, "a\r\nb", 4);
+
     unsigned char wrap_dec[128];
     int dn = neverc_qp_decode(out, (size_t)n, wrap_dec, sizeof(wrap_dec));
     ASSERT_EQ(dn, (int)sizeof(wrap_src));

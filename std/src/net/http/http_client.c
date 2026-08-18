@@ -1130,7 +1130,9 @@ analyze_response:
             framing.status_code == 204 || framing.status_code == 304;
         if (status_has_no_body) {
             if (framing.status_code == 101) framing.keep_alive = 0;
-            has_extra_bytes = body_received > 0;
+            /* RFC 9112: TE still frames a body. 304/HEAD+chunked leftover
+             * must not return the socket to the idle pool. */
+            has_extra_bytes = body_received > 0 || framing.is_chunked;
             response_complete = 1;
         } else if (framing.is_chunked) {
             int scan_result = scan_chunked_body(
@@ -1577,7 +1579,7 @@ static neverc_http_response_t *do_stream_request(
     int keepalive = framing.keep_alive;
     if (status_has_no_body) {
         if (framing.status_code == 101) keepalive = 0;
-        if (wire.len > 0) keepalive = 0;
+        if (wire.len > 0 || framing.is_chunked) keepalive = 0;
     } else if (framing.is_chunked) {
         int chunk_result = stream_read_chunked_response(
             connection, context, &wire, response,

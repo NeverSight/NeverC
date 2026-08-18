@@ -146,7 +146,7 @@ static int smtp_safe_atom(const char *s) {
     int at_count = 0;
     for (const unsigned char *p = (const unsigned char *)s; *p; p++, n++) {
         if (n >= 255 || *p <= 32 || *p >= 127 || *p == '<' || *p == '>' ||
-            *p == ',' || *p == ';')
+            *p == ',' || *p == ';' || *p == '%' || *p == '!')
             return 0;
         if (*p == '[') {
             if (in_literal) return 0;

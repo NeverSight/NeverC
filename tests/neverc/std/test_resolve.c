@@ -101,6 +101,9 @@ static void test_split_host_port(void) {
     check_int("empty ipv6 zone rejected",
               neverc_net_split_host_port("[fe80::1%]:80", host, sizeof(host),
                                          port, sizeof(port)), -1);
+    check_int("split rejects CTL host",
+              neverc_net_split_host_port("host\nname:80", host, sizeof(host),
+                                         port, sizeof(port)), -1);
     check_int("split ipv4-mapped",
               neverc_net_split_host_port("[::ffff:127.0.0.1]:80", host,
                                          sizeof(host), port, sizeof(port)),
@@ -140,6 +143,9 @@ static void test_join_host_port(void) {
                                         sizeof(buf)), -1);
     check_int("join rejects signed port",
               neverc_net_join_host_port("localhost", "+80", buf, sizeof(buf)),
+              -1);
+    check_int("join rejects CTL host",
+              neverc_net_join_host_port("host\nname", "80", buf, sizeof(buf)),
               -1);
     check_true("join ipv4-mapped",
                neverc_net_join_host_port("::ffff:127.0.0.1", "80", buf,

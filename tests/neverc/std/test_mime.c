@@ -462,6 +462,13 @@ static void test_format_rejects_invalid_input(void) {
                   -1);
     ASSERT_STR_EQ(out, "");
 
+    const char *ew_hidden[] = {"=?=?utf-8?q?=0D=0ABcc:_hidden?="};
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", ew_keys, ew_hidden, 1, out, sizeof(out)),
+                  -1);
+    ASSERT_STR_EQ(out, "");
+
     const char *ew_ok[] = {"=?utf-8?q?foo?="};
     ASSERT_INT_EQ(neverc_mime_format_media_type(
                       "text/plain", ew_keys, ew_ok, 1, out, sizeof(out)),
@@ -551,7 +558,10 @@ static void test_qp_encode(void) {
 
     neverc_mime_qp_encode("hello \nworld", 12, out, sizeof(out), &out_len);
     out[out_len] = '\0';
-    ASSERT_STR_EQ(out, "hello=20\nworld");
+    ASSERT_STR_EQ(out, "hello=20=0Aworld");
+    neverc_mime_qp_encode("hello\r\nworld", 12, out, sizeof(out), &out_len);
+    out[out_len] = '\0';
+    ASSERT_STR_EQ(out, "hello\r\nworld");
 
     neverc_mime_qp_encode("\x80\xFF", 2, out, sizeof(out), &out_len);
     out[out_len] = '\0';
@@ -635,6 +645,12 @@ static void test_rfc2047_decode_header(void) {
     n = 99;
     ASSERT_INT_EQ(neverc_mime_decode_header(
                       inject, strlen(inject), out, sizeof(out), &n), -1);
+    ASSERT_INT_EQ((int)n, 0);
+
+    const char *hidden = "=?=?utf-8?q?=0D=0ABcc:_hidden?=";
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      hidden, strlen(hidden), out, sizeof(out), &n), -1);
     ASSERT_INT_EQ((int)n, 0);
 
     n = 99;

@@ -2070,6 +2070,98 @@ static void test_client_many_tiny_chunks(void) {
               WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
 }
 
+static void test_client_304_chunked_not_pooled(void) {
+    printf("[client_304_chunked_not_pooled]\n");
+
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    check_not_null("304 chunked listener", listener);
+    if (!listener) return;
+
+    neverc_tcp_addr_t address;
+    if (neverc_tcp_listener_addr(listener, &address) != 0) {
+        neverc_tcp_listener_close(listener);
+        check_int("304 chunked listener address", 0, 1);
+        return;
+    }
+
+    pid_t server = fork();
+    if (server == 0) {
+        neverc_tcp_conn_t *first = neverc_tcp_accept(listener, &error);
+        if (!first) _exit(1);
+        char request[1024];
+        if (neverc_tcp_read(first, request, sizeof(request)) <= 0)
+            _exit(1);
+        static const char not_modified[] =
+            "HTTP/1.1 304 Not Modified\r\n"
+            "Transfer-Encoding: chunked\r\n"
+            "\r\n"
+            "5\r\nhello\r\n0\r\n\r\n";
+        if (raw_write_all(first, not_modified, sizeof(not_modified) - 1U) != 0)
+            _exit(1);
+        alarm(3);
+        neverc_tcp_conn_t *second = neverc_tcp_accept(listener, &error);
+        alarm(0);
+        if (!second) _exit(2);
+        if (neverc_tcp_read(second, request, sizeof(request)) <= 0)
+            _exit(1);
+        static const char ok[] =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: 6\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "second";
+        if (raw_write_all(second, ok, sizeof(ok) - 1U) != 0)
+            _exit(1);
+        neverc_tcp_close(first);
+        neverc_tcp_close(second);
+        neverc_tcp_listener_close(listener);
+        _exit(0);
+    }
+    neverc_tcp_listener_close(listener);
+    if (server < 0) {
+        check_int("304 chunked server fork", 0, 1);
+        return;
+    }
+
+    neverc_http_client_config_t config =
+        neverc_http_client_config_default();
+    config.timeout_ms = 4000;
+    config.max_idle_per_host = 4;
+    neverc_http_client_t *client = neverc_http_client_new(&config);
+    check_not_null("304 chunked client", client);
+    if (!client) {
+        kill(server, SIGTERM);
+        waitpid(server, NULL, 0);
+        return;
+    }
+    char url[96];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/x", address.port);
+    neverc_http_response_t *first =
+        neverc_http_client_do(client, "GET", url, NULL, NULL, 0U);
+    check_int("304+TE accepted",
+              first != NULL && first->error == NULL &&
+                  first->status_code == 304, 1);
+    check_int("304+TE has no body",
+              first == NULL || first->body_len == 0, 1);
+    neverc_http_response_t *second =
+        neverc_http_client_do(client, "GET", url, NULL, NULL, 0U);
+    check_int("304+TE does not pool leftover",
+              second != NULL && second->error == NULL &&
+                  second->status_code == 200 &&
+                  second->body_len == 6 &&
+                  second->body && memcmp(second->body, "second", 6) == 0, 1);
+
+    neverc_http_response_free(first);
+    neverc_http_response_free(second);
+    neverc_http_client_free(client);
+    int status = 0;
+    waitpid(server, &status, 0);
+    check_int("304 chunked server status",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+}
+
 static void test_client_rejects_bare_lf_status(void) {
     printf("[client_rejects_bare_lf_status]\n");
 
@@ -3845,6 +3937,7 @@ int main(void) {
     test_config_apis();
     test_client_chunked_response();
     test_client_many_tiny_chunks();
+    test_client_304_chunked_not_pooled();
     test_client_rejects_bare_lf_status();
     test_connection_limit();
     test_max_body_size_buffered();
