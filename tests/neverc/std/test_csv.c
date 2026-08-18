@@ -210,13 +210,13 @@ static void test_write_crlf(void) {
     {
         const char *nl[] = {"abc\ndef"};
         n = neverc_csv_write_record(nl, 1, dst, sizeof(dst), &opts);
-        ASSERT_INT_EQ(n, 11);
-        ASSERT_INT_EQ(n > 0 && memcmp(dst, "\"abc\r\ndef\"\r\n", 11) == 0, 1);
+        ASSERT_INT_EQ(n, 12);
+        ASSERT_INT_EQ(n > 0 && memcmp(dst, "\"abc\r\ndef\"\r\n", 12) == 0, 1);
 
         const char *cr[] = {"abc\rdef"};
         n = neverc_csv_write_record(cr, 1, dst, sizeof(dst), &opts);
-        ASSERT_INT_EQ(n, 9);
-        ASSERT_INT_EQ(n > 0 && memcmp(dst, "\"abcdef\"\r\n", 9) == 0, 1);
+        ASSERT_INT_EQ(n, 10);
+        ASSERT_INT_EQ(n > 0 && memcmp(dst, "\"abcdef\"\r\n", 10) == 0, 1);
     }
 }
 

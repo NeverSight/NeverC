@@ -394,9 +394,6 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
                 return -1;
             conn->handshake_confirmed = 1;
             conn->peer_completed_address_validation = 1;
-            /* RFC 9001 §4.9.2: discard Handshake keys once confirmed. */
-            neverc_quic_tls_discard_keys(conn->tls, QUIC_ENC_HANDSHAKE);
-            conn->pn[QUIC_PNS_HANDSHAKE].ack_pending = 0;
             consumed = type_len;
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_DATAGRAM ||
@@ -764,9 +761,6 @@ decrypt_complete:
         if (conn->side == QUIC_SIDE_SERVER) {
             conn->handshake_confirmed = 1;
             conn->handshake_done_pending = 1;
-            /* RFC 9001 §4.9.2: discard Handshake keys once confirmed. */
-            neverc_quic_tls_discard_keys(conn->tls, QUIC_ENC_HANDSHAKE);
-            conn->pn[QUIC_PNS_HANDSHAKE].ack_pending = 0;
         }
         nc_cond_broadcast(&conn->state_cond);
     }

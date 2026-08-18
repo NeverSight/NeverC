@@ -96,7 +96,10 @@ neverc_ascii85_result_t neverc_ascii85_decode(unsigned char *dst, size_t dst_len
          * no room for a 4-byte group, leaving leftover src unconsumed instead
          * of classifying it as corrupt. Incomplete flush tails still use the
          * exact-size path below. */
-        if (nb == 0 && dst_len - result.ndst < 4)
+        /* A flushed 2-4 digit tail needs 1-3 bytes, not a full group.
+         * Only stop early when not flushing, so the exact-size flush
+         * path below can still run. */
+        if (!flush && nb == 0 && dst_len - result.ndst < 4)
             return result;
 
         if (b == 'z' && nb == 0) {
