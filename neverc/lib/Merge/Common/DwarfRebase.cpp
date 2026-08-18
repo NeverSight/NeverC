@@ -323,7 +323,13 @@ bool rebaseDebugInfo(MutableArrayRef<char> Info, ArrayRef<char> Abbrev,
       return false;
 
     // The abbreviations are read at their pre-merge offset, so parse before
-    // the header is rewritten.
+    // the header is rewritten.  LLVM's DataExtractor::getULEB128 asserts
+    // `*OffsetPtr <= Bytes.size()` and only then returns Error, so an
+    // attacker-controlled debug_abbrev_offset past the contribution (or an
+    // absent .debug_abbrev) would abort rather than fail the merge.  Bound it
+    // here the way readULEB128 already bounds every later cursor.
+    if (AbbrOff > Abbrev.size())
+      return false;
     DWARFAbbreviationDeclarationSet Decls;
     uint64_t AbbrCursor = AbbrOff;
     if (Error E = Decls.extract(AbbrevData, &AbbrCursor)) {

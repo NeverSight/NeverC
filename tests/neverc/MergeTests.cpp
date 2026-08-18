@@ -1100,6 +1100,38 @@ TEST(DwarfRebaseTest, RewritesPublicNameAndFrameReferences) {
   EXPECT_EQ(static_cast<unsigned char>(Frame[12]), 80u);
 }
 
+TEST(DwarfRebaseTest, RejectsAbbrevOffsetPastAbbrevSection) {
+  // A well-formed-enough DWARF 4 CU whose debug_abbrev_offset sits past the
+  // abbreviation contribution.  LLVM's DataExtractor::getULEB128 asserts
+  // `*OffsetPtr <= Bytes.size()` before it can return an Error, so handing
+  // that offset to DWARFAbbreviationDeclarationSet::extract aborted the
+  // nightly merge-fuzz soak (crash-bc42eaa7): a Mach-O with __debug_info and
+  // no __debug_abbrev, or a short abbrev section and a large offset.
+  std::array<char, 11> Info = {
+      7, 0, 0, 0,    // unit_length
+      4, 0,          // version
+      0x68, 0, 0, 0, // abbreviation offset 0x68
+      8,             // address size
+  };
+
+  PartitionDwarf MissingAbbrev;
+  MissingAbbrev.record("__debug_info", 0, 0, Info.size());
+  DwarfSlices EmptyAbbrev;
+  EmptyAbbrev[dwarfSectionIndex(DwarfSection::Info)] = Info;
+  EXPECT_FALSE(
+      rebasePartitionDwarf(EmptyAbbrev, MissingAbbrev, /*IsLittleEndian=*/true));
+
+  std::array<char, 1> ShortAbbrev = {0};
+  PartitionDwarf ShortPart;
+  ShortPart.record("__debug_info", 0, 0, Info.size());
+  ShortPart.record("__debug_abbrev", 1, 0, ShortAbbrev.size());
+  DwarfSlices ShortSlices;
+  ShortSlices[dwarfSectionIndex(DwarfSection::Info)] = Info;
+  ShortSlices[dwarfSectionIndex(DwarfSection::Abbrev)] = ShortAbbrev;
+  EXPECT_FALSE(
+      rebasePartitionDwarf(ShortSlices, ShortPart, /*IsLittleEndian=*/true));
+}
+
 TEST(DwarfRebaseTest, RejectsTruncatedLebWithoutLosingParserProgress) {
   std::array<char, 12> Info = {
       8,          0, 0, 0, // unit_length
@@ -11603,6 +11635,7 @@ TEST(MergeFuzzCorpus, NoCrashOnSavedRegressions) {
       "coff-symbol-record-oob",
       "elf-nobits-shsize-alloc-oom",
       "elf-reloc-shinfo-reserved-densekey",
+      "macho-debug-abbrev-offset-oob",
       "macho-huge-ncmds-oom",
       "macho-nlist-misaligned",
       "macho-section-name-uaf",
