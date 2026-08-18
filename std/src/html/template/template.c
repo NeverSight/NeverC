@@ -1422,6 +1422,9 @@ static int execute_nodes(const node_t *n,
                     escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_event)
                     escaped = html_escape_event(val);
+                else if (in_srcdoc && aplen > 0 && aprefix &&
+                         memchr(aprefix, '<', aplen))
+                    escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_srcdoc && unquoted && aplen > 0 &&
                          html_unquoted_value_is_unsafe(val))
                     escaped = neverc_html_escape("ZgotmplZ");

@@ -53,6 +53,14 @@ static void test_keygen(void) {
     ASSERT_TRUE(ks == 64);
 
     neverc_rsa_private_key_free(&key);
+
+    {
+        neverc_rsa_public_key_t pub = {0};
+        ASSERT_TRUE(neverc_rsa_key_size(&pub) == -1);
+        pub.n.len = 513;
+        ASSERT_TRUE(neverc_rsa_key_size(&pub) == -1);
+        ASSERT_TRUE(neverc_rsa_key_size(NULL) == -1);
+    }
 }
 
 static void test_encrypt_decrypt(void) {

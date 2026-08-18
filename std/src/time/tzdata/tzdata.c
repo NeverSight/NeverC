@@ -428,6 +428,24 @@ static int posix_uint(const char **p, int max_digits, int *out) {
     return 0;
 }
 
+/* Go tzsetNum(..., 0, 24*7): variable-length hours, max 168. */
+static int parse_posix_hours(const char **p, int *hh) {
+    if (**p < '0' || **p > '9') return -1;
+    int v = 0, n = 0;
+    while (**p >= '0' && **p <= '9') {
+        if (n >= 4) return -1;
+        v = v * 10 + (*(*p)++ - '0');
+        n++;
+    }
+    if (v > 24 * 7) return -1;
+    *hh = v;
+    return 0;
+}
+
+static int posix_is_rule_sep(int c) {
+    return c == ',' || c == ';';
+}
+
 static int parse_posix_tz_name(const char **p, char *buf, size_t cap) {
     const char *s = *p;
     size_t n = 0;
@@ -455,9 +473,7 @@ static int parse_posix_offset(const char **p, int *utc_sec) {
     else if (*s == '-') { sign = -1; s++; }
     if (*s < '0' || *s > '9') return -1;
     int hh = 0, mm = 0, ss = 0;
-    hh = *s++ - '0';
-    if (*s >= '0' && *s <= '9') hh = hh * 10 + (*s++ - '0');
-    if (hh > 24) return -1;
+    if (parse_posix_hours(&s, &hh) != 0) return -1;
     if (*s == ':') {
         s++;
         if (*s < '0' || *s > '9') return -1;
@@ -483,8 +499,11 @@ static int parse_posix_rule_time(const char **p, int *at) {
     *at = 2 * 3600;
     if (**p != '/') return 0;
     (*p)++;
+    int sign = 1;
+    if (**p == '+') { (*p)++; }
+    else if (**p == '-') { sign = -1; (*p)++; }
     int hh = 0, mm = 0, ss = 0;
-    if (posix_uint(p, 2, &hh) != 0) return -1;
+    if (parse_posix_hours(p, &hh) != 0) return -1;
     if (**p == ':') {
         (*p)++;
         if (posix_uint(p, 2, &mm) != 0) return -1;
@@ -493,8 +512,8 @@ static int parse_posix_rule_time(const char **p, int *at) {
             if (posix_uint(p, 2, &ss) != 0) return -1;
         }
     }
-    if (hh > 24 || mm > 59 || ss > 59) return -1;
-    *at = hh * 3600 + mm * 60 + ss;
+    if (mm > 59 || ss > 59) return -1;
+    *at = sign * (hh * 3600 + mm * 60 + ss);
     return 0;
 }
 
@@ -578,18 +597,18 @@ static int parse_posix_tz_fields(const char *tz, posix_tz_parsed_t *out,
     memset(out, 0, sizeof(*out));
     if (parse_posix_tz_name(&p, stdn, stdn_cap) != 0) return -1;
     if (parse_posix_offset(&p, &out->std_off) != 0) return -1;
-    if (*p && *p != ',') {
+    if (*p && !posix_is_rule_sep(*p)) {
         if (parse_posix_tz_name(&p, dstn, dstn_cap) != 0) return -1;
         out->has_dst = 1;
         out->dst_off = out->std_off + 3600;
-        if (*p && *p != ',') {
+        if (*p && !posix_is_rule_sep(*p)) {
             if (parse_posix_offset(&p, &out->dst_off) != 0) return -1;
         }
     }
-    if (*p == ',') {
+    if (posix_is_rule_sep(*p)) {
         p++;
         if (parse_posix_rule(&p, &out->start) != 0) return -1;
-        if (*p != ',') return -1;
+        if (!posix_is_rule_sep(*p)) return -1;
         p++;
         if (parse_posix_rule(&p, &out->end) != 0) return -1;
         out->has_rules = 1;

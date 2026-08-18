@@ -235,10 +235,11 @@ static void test_parse_float(void) {
     check_int("float Infinity",  neverc_strconv_parse_float("Infinity", &v), 0);
     check_int("float NaN",       neverc_strconv_parse_float("NaN", &v), 0);
     check_int("float nan",       neverc_strconv_parse_float("nan", &v), 0);
-    check_int("float -NaN",      neverc_strconv_parse_float("-NaN", &v), 0);
-    check_true("float -NaN sign", signbit(v) != 0);
-    check_int("float +NaN",      neverc_strconv_parse_float("+NaN", &v), 0);
-    check_true("float +NaN unsigned", signbit(v) == 0);
+    check_true("float NaN is nan", v != v);
+    check_int("float -NaN",      neverc_strconv_parse_float("-NaN", &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("float +NaN",      neverc_strconv_parse_float("+NaN", &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
     check_int("float info=ERR",  neverc_strconv_parse_float("info", &v), NEVERC_STRCONV_ERR_SYNTAX);
     check_int("float nan123=ERR",neverc_strconv_parse_float("nan123", &v), NEVERC_STRCONV_ERR_SYNTAX);
     check_int("float infix=ERR", neverc_strconv_parse_float("infix", &v), NEVERC_STRCONV_ERR_SYNTAX);
@@ -246,7 +247,7 @@ static void test_parse_float(void) {
     check_int("float +inf",     neverc_strconv_parse_float("+inf", &v), 0);
     check_int("float +Infinity",neverc_strconv_parse_float("+Infinity", &v), 0);
 
-    /* Overflow / underflow must report RANGE (Go ParseFloat ErrRange). */
+    /* Overflow reports RANGE (Go ErrRange). Underflow to ±0 is success. */
     check_int("float 1e308 finite",
               neverc_strconv_parse_float("1e308", &v), 0);
     check_true("float 1e308 not Inf", v > 1e307 && v + v != v);
@@ -266,11 +267,14 @@ static void test_parse_float(void) {
               neverc_strconv_parse_float("-1e309", &v), NEVERC_STRCONV_ERR_RANGE);
     check_true("float -1e309 is -Inf", v < -1e308 && v + v == v);
     check_int("float 1e-400 underflow",
-              neverc_strconv_parse_float("1e-400", &v), NEVERC_STRCONV_ERR_RANGE);
+              neverc_strconv_parse_float("1e-400", &v), 0);
     check_true("float 1e-400 is 0", v == 0.0);
     check_int("float -1e-400 underflow",
-              neverc_strconv_parse_float("-1e-400", &v), NEVERC_STRCONV_ERR_RANGE);
-    check_true("float -1e-400 is -0", v == 0.0);
+              neverc_strconv_parse_float("-1e-400", &v), 0);
+    check_true("float -1e-400 is -0", v == 0.0 && signbit(v) != 0);
+    check_int("float 2e-324 flush",
+              neverc_strconv_parse_float("2e-324", &v), 0);
+    check_true("float 2e-324 is 0", v == 0.0);
     check_int("float 0e999 is exact zero",
               neverc_strconv_parse_float("0e999", &v), 0);
     check_true("float 0e999 value", v == 0.0);
@@ -313,21 +317,38 @@ static void test_parse_float(void) {
               neverc_strconv_parse_float("0x0p999", &v), 0);
     check_true("hex zero huge exponent val", v == 0.0);
     check_int("hex underflow",
-              neverc_strconv_parse_float("0x1p-2000", &v),
-              NEVERC_STRCONV_ERR_RANGE);
+              neverc_strconv_parse_float("0x1p-2000", &v), 0);
     check_true("hex underflow is zero", v == 0.0);
     check_int("hex signed underflow",
-              neverc_strconv_parse_float("-0x1p-2000", &v),
-              NEVERC_STRCONV_ERR_RANGE);
-    /* Subnormals are in range; only flush-to-zero is ErrRange. */
+              neverc_strconv_parse_float("-0x1p-2000", &v), 0);
+    check_true("hex signed underflow is -0", v == 0.0 && signbit(v) != 0);
+    /* Subnormals are in range; flush-to-zero is a successful ±0. */
     check_int("hex min subnormal ok",
               neverc_strconv_parse_float("0x1p-1074", &v), 0);
     check_true("hex min subnormal nonzero", v != 0.0);
     check_true("hex min subnormal is min", v / 2.0 == 0.0);
-    check_int("hex just-under min is RANGE",
-              neverc_strconv_parse_float("0x1p-1075", &v),
-              NEVERC_STRCONV_ERR_RANGE);
+    check_int("hex just-under min is OK",
+              neverc_strconv_parse_float("0x1p-1075", &v), 0);
     check_true("hex just-under min is 0", v == 0.0);
+
+    check_int("float underscore", neverc_strconv_parse_float("1_000", &v), 0);
+    check_true("float underscore val", v == 1000.0);
+    check_int("float frac underscore",
+              neverc_strconv_parse_float("1.2_3e4", &v), 0);
+    check_true("float frac underscore val", v == 12300.0);
+    check_int("hex underscore",
+              neverc_strconv_parse_float("-0x1_ep-1", &v), 0);
+    check_true("hex underscore val", v == -15.0);
+    check_int("float double underscore",
+              neverc_strconv_parse_float("1__0", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("float leading underscore",
+              neverc_strconv_parse_float("_1.0", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("float trailing underscore",
+              neverc_strconv_parse_float("1.0_", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("float underscore after dot",
+              neverc_strconv_parse_float("1._0", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("float underscore after e",
+              neverc_strconv_parse_float("1e_2", &v), NEVERC_STRCONV_ERR_SYNTAX);
 
     /* Correctly-rounded hard cases (same bits as IEEE-754 nearest-even). */
     {
@@ -868,6 +889,17 @@ static void test_complex(void) {
     check_double_approx("hex imag p+ im", im, 2.0, 1e-15);
     check_int("parse_complex hex both",
               neverc_strconv_parse_complex("0x1p+1+0x1p-1i", &re, &im), 0);
+    check_double_approx("hex both re", re, 2.0, 1e-15);
+    check_double_approx("hex both im", im, 0.5, 1e-15);
+    check_int("parse_complex +NaNi",
+              neverc_strconv_parse_complex("1+NaNi", &re, &im), 0);
+    check_true("parse_complex +NaNi imag", im != im);
+    check_int("parse_complex -NaNi",
+              neverc_strconv_parse_complex("1-NaNi", &re, &im),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("parse_complex NaNi",
+              neverc_strconv_parse_complex("NaNi", &re, &im),
+              NEVERC_STRCONV_ERR_SYNTAX);
     check_double_approx("hex both re", re, 2.0, 1e-15);
     check_double_approx("hex both im", im, 0.5, 1e-15);
 

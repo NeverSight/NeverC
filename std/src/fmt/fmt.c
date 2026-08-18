@@ -391,6 +391,12 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             }
         }
 
+        /* Go fmt.tooLarge: width/prec above 1e6 is a format error, not a
+         * multi-gigabyte pad allocation. */
+        enum { FMT_MAX_WIDPREC = 1000000 };
+        if (has_width && width > FMT_MAX_WIDPREC) goto format_fail;
+        if (prec > FMT_MAX_WIDPREC) goto format_fail;
+
         /* Parse length modifier */
         int is_long = 0, is_longlong = 0;
         if (i < flen && format[i] == 'l') {

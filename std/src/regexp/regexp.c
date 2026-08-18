@@ -972,6 +972,24 @@ static frag_t parse_atom(parser_t *par) {
     }
 
     if (c && !is_meta(c) && c != ')') {
+        /* Quantifiers bind to a rune, not the last UTF-8 byte: 中{2} is 中中. */
+        if ((unsigned char)c >= 0x80) {
+            int r;
+            size_t n = 0;
+            while (par->p[n]) n++;
+            int k = utf8_decode((const unsigned char *)par->p, n, &r);
+            if (k < 1) {
+                par->err = "invalid UTF-8";
+                return frag(NULL, NULL);
+            }
+            par->p += k;
+            frag_t rf = frag_rune(par->re, r);
+            if (!rf.start) {
+                par->err = "invalid UTF-8";
+                return frag(NULL, NULL);
+            }
+            return rf;
+        }
         par->p++;
         nfa_state_t *s = new_state(par->re, NFA_CHAR);
         s->ch = (uint8_t)c;

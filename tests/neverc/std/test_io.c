@@ -305,6 +305,12 @@ static void test_no_progress_guards(void) {
     check_int("multi_reader data remains after zero-length read",
               neverc_io_multi_reader_read(&multi, &byte, 1, &n), 0);
     check_int("multi_reader retained content", byte, 'z');
+    check_int("drained multi_reader zero-length is EOF",
+              neverc_io_multi_reader_read(&multi, NULL, 0, &n), NEVERC_IO_EOF);
+
+    neverc_io_multi_reader_init(&multi, NULL, 0);
+    check_int("empty multi_reader zero-length is EOF",
+              neverc_io_multi_reader_read(&multi, NULL, 0, &n), NEVERC_IO_EOF);
 
     delayed_reader_t delayed_copy = {0};
     neverc_io_reader_t delayed_src = { &delayed_copy, delayed_read };

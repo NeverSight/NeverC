@@ -353,6 +353,46 @@ static int os_file_size64(FILE *fp, uint64_t *size) {
     return 0;
 }
 
+/* Go os.ReadFile: st_size is a hint. Size-0 files (/proc, sysfs) still have
+ * contents; keep reading until EOF. */
+static int os_read_fp_all(FILE *fp, uint64_t hint, unsigned char **out,
+                          size_t *out_len) {
+    size_t cap;
+    if (hint > (uint64_t)SIZE_MAX - 1U) return -1;
+    cap = (hint == 0) ? 512U : (size_t)hint;
+    unsigned char *buf = (unsigned char *)malloc(cap + 1U);
+    if (!buf) return -1;
+    size_t n = 0;
+    for (;;) {
+        if (n >= cap) {
+            if (cap > (SIZE_MAX - 1U) / 2U) {
+                free(buf);
+                return -1;
+            }
+            size_t ncap = cap * 2U;
+            unsigned char *nb = (unsigned char *)realloc(buf, ncap + 1U);
+            if (!nb) {
+                free(buf);
+                return -1;
+            }
+            buf = nb;
+            cap = ncap;
+        }
+        size_t got = fread(buf + n, 1, cap - n, fp);
+        n += got;
+        if (ferror(fp)) {
+            free(buf);
+            return -1;
+        }
+        if (got == 0)
+            break;
+    }
+    buf[n] = '\0';
+    *out = buf;
+    *out_len = n;
+    return 0;
+}
+
 int neverc_os_read_file(const char *name, unsigned char **out, size_t *out_len) {
     if (!name || !out || !out_len) return -1;
     *out = NULL;
@@ -394,19 +434,16 @@ int neverc_os_read_file(const char *name, unsigned char **out, size_t *out_len) 
         return -1;
     }
 #endif
-    if (sz > (uint64_t)SIZE_MAX - 1U) { fclose(fp); return -1; }
-    unsigned char *buf = (unsigned char *)malloc((size_t)sz + 1U);
-    if (!buf) { fclose(fp); return -1; }
-    size_t n = fread(buf, 1, (size_t)sz, fp);
-    if (n != (size_t)sz && ferror(fp)) {
-        free(buf);
+    if (os_read_fp_all(fp, sz, out, out_len) != 0) {
         fclose(fp);
         return -1;
     }
-    if (fclose(fp) != 0) { free(buf); return -1; }
-    buf[n] = '\0';
-    *out = buf;
-    *out_len = n;
+    if (fclose(fp) != 0) {
+        free(*out);
+        *out = NULL;
+        *out_len = 0;
+        return -1;
+    }
     return 0;
 }
 
@@ -843,7 +880,7 @@ int neverc_os_getppid(void) {
 
 int neverc_os_getuid(void) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    return 0;
+    return -1;
 #else
     return (int)getuid();
 #endif
@@ -851,7 +888,7 @@ int neverc_os_getuid(void) {
 
 int neverc_os_getgid(void) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    return 0;
+    return -1;
 #else
     return (int)getgid();
 #endif
@@ -1443,7 +1480,7 @@ int neverc_os_mkdir_temp(const char *dir, const char *pattern,
 
 int neverc_os_getegid(void) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    return 0;
+    return -1;
 #else
     return (int)getegid();
 #endif
@@ -1451,7 +1488,7 @@ int neverc_os_getegid(void) {
 
 int neverc_os_geteuid(void) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    return 0;
+    return -1;
 #else
     return (int)geteuid();
 #endif

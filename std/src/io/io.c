@@ -410,7 +410,10 @@ int neverc_io_multi_reader_read(void *ctx, uint8_t *buf, size_t len, size_t *n) 
     neverc_io_multi_reader_t *mr = (neverc_io_multi_reader_t *)ctx;
     if (!mr || (!buf && len > 0) || (mr->count > 0 && !mr->readers))
         return NEVERC_IO_ERR_UNEXP;
-    if (len == 0) return 0;
+    /* Go io.MultiReader: an empty Read on an exhausted reader is EOF. A
+     * zero-length Read on a live reader is still success and does not advance. */
+    if (len == 0)
+        return (mr->current >= mr->count) ? NEVERC_IO_EOF : 0;
     while (mr->current < mr->count) {
         neverc_io_reader_t *r = &mr->readers[mr->current];
         if (!r->read) return NEVERC_IO_ERR_UNEXP;

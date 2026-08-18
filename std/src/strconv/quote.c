@@ -553,6 +553,13 @@ static int parse_float_span(const char *s, size_t n, double *out) {
     return rc;
 }
 
+static int span_is_nan(const char *s, size_t n) {
+    return n == 3 &&
+           (s[0] == 'n' || s[0] == 'N') &&
+           (s[1] == 'a' || s[1] == 'A') &&
+           (s[2] == 'n' || s[2] == 'N');
+}
+
 int neverc_strconv_parse_complex(const char *s, double *re, double *im) {
     if (!s || !re || !im) return NEVERC_STRCONV_ERR_SYNTAX;
     size_t slen = strlen(s);
@@ -593,6 +600,17 @@ int neverc_strconv_parse_complex(const char *s, double *re, double *im) {
             *im = (*split == '-') ? -1.0 : 1.0;
             return r1;
         }
+        /* Go: a NaN imag part may only use a leading '+'; ParseFloat itself
+         * rejects signed NaN, so strip the '+' here. */
+        if (im_len > 1 && (*split == '+' || *split == '-') &&
+            span_is_nan(split + 1, im_len - 1)) {
+            if (*split == '-') return NEVERC_STRCONV_ERR_SYNTAX;
+            int r2 = parse_float_span(split + 1, im_len - 1, im);
+            if (r2 != NEVERC_STRCONV_OK && r2 != NEVERC_STRCONV_ERR_RANGE)
+                return r2;
+            return (r1 == NEVERC_STRCONV_ERR_RANGE || r2 == NEVERC_STRCONV_ERR_RANGE)
+                       ? NEVERC_STRCONV_ERR_RANGE : NEVERC_STRCONV_OK;
+        }
         int r2 = parse_float_span(split, im_len, im);
         if (r2 != NEVERC_STRCONV_OK && r2 != NEVERC_STRCONV_ERR_RANGE)
             return r2;
@@ -611,6 +629,13 @@ int neverc_strconv_parse_complex(const char *s, double *re, double *im) {
             *im = (*start == '-') ? -1.0 : 1.0;
             return NEVERC_STRCONV_OK;
         }
+        /* Go: "NaNi" is a syntax error (NaN followed by i). */
+        if (span_is_nan(start, im_len))
+            return NEVERC_STRCONV_ERR_SYNTAX;
+        if (im_len > 1 && *start == '+' && span_is_nan(start + 1, im_len - 1))
+            return parse_float_span(start + 1, im_len - 1, im);
+        if (im_len > 1 && *start == '-' && span_is_nan(start + 1, im_len - 1))
+            return NEVERC_STRCONV_ERR_SYNTAX;
         return parse_float_span(start, im_len, im);
     }
 

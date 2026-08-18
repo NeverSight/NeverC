@@ -33,6 +33,41 @@ static int hex_digit(char c) {
     return -1;
 }
 
+/* Go strconv.underscoreOK: '_' is only legal between two hex/decimal digits. */
+static int float_underscore_ok(const char *s, const char *end) {
+    if (s < end && (*s == '+' || *s == '-')) s++;
+    int hex = 0;
+    if (end - s >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+        s += 2;
+        hex = 1;
+    }
+    int saw = '^';
+    for (; s < end; s++) {
+        char c = *s;
+        int isdig = (c >= '0' && c <= '9') ||
+                    (hex && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')));
+        if (isdig) {
+            saw = '0';
+        } else if (c == '_') {
+            if (saw != '0') return 0;
+            saw = '_';
+        } else {
+            if (saw == '_') return 0;
+            saw = '^';
+        }
+    }
+    return saw != '_';
+}
+
+static int consumed_underscores_ok(const char *start, const char *end) {
+    const char *p;
+    for (p = start; p < end; p++) {
+        if (*p == '_')
+            return float_underscore_ok(start, end);
+    }
+    return 1;
+}
+
 static double nc_make_inf(int neg) {
     uint64_t b = neg ? 0xFFF0000000000000ULL : 0x7FF0000000000000ULL;
     double f; memcpy(&f, &b, 8); return f;
@@ -165,17 +200,16 @@ static uint64_t dec_rounded_integer(const nc_decimal *a) {
 
 static const int dec_powtab[] = {1, 3, 6, 9, 13, 16, 19, 23, 26};
 
-/* Convert decimal -> binary64 bit pattern. Sets *overflow if it rounds to
- * infinity or underflows to zero. Always returns a correctly-rounded result. */
+/* Convert decimal -> binary64 bit pattern. Sets *overflow only when the
+ * result is ±Inf (Go ErrRange). Flush-to-zero is a successful ±0. */
 static uint64_t dec_to_bits(nc_decimal *d, int *overflow) {
     int exp;
     uint64_t mant;
-    int nonzero_in = d->nd != 0;
     *overflow = 0;
 
     if (d->nd == 0) { mant = 0; exp = NC_EXP_BIAS; goto out; }
     if (d->dp > 310) goto ovf;
-    if (d->dp < -330) { mant = 0; exp = NC_EXP_BIAS; *overflow = 1; goto out; }
+    if (d->dp < -330) { mant = 0; exp = NC_EXP_BIAS; goto out; }
 
     exp = 0;
     while (d->dp > 0) {
@@ -209,8 +243,6 @@ static uint64_t dec_to_bits(nc_decimal *d, int *overflow) {
         if (exp - NC_EXP_BIAS >= (1 << NC_EXP_BITS) - 1) goto ovf;
     }
     if ((mant & ((uint64_t)1 << NC_MANT_BITS)) == 0) exp = NC_EXP_BIAS; /* subnormal */
-    /* Nonzero input that rounded to zero is underflow (Go ErrRange). */
-    if (mant == 0 && nonzero_in) *overflow = 1;
     goto out;
 
 ovf:
@@ -234,6 +266,7 @@ static void dec_set(nc_decimal *d, const char *s, const char *end, int neg) {
     for (; s < end; s++) {
         char c = *s;
         if (c == '.') { sawdot = 1; d->dp = d->nd; continue; }
+        if (c == '_') continue;
         if (c >= '0' && c <= '9') {
             if (c == '0' && d->nd == 0) { d->dp--; continue; }  /* leading zero */
             if (d->nd < NC_DEC_CAP) d->d[d->nd++] = (uint8_t)c;
@@ -248,8 +281,11 @@ static void dec_set(nc_decimal *d, const char *s, const char *end, int neg) {
         int esign = 1;
         if (s < end && (*s == '+' || *s == '-')) { if (*s == '-') esign = -1; s++; }
         int e = 0;
-        for (; s < end && *s >= '0' && *s <= '9'; s++)
+        for (; s < end; s++) {
+            if (*s == '_') continue;
+            if (*s < '0' || *s > '9') break;
             if (e < 10000) e = e * 10 + (*s - '0');
+        }
         d->dp += e * esign;
     }
     nc_dec_trim(d);
@@ -260,7 +296,6 @@ static void dec_set(nc_decimal *d, const char *s, const char *end, int neg) {
  * a required decimal power of two. Rounding matches strconv.atofHex.
  * ------------------------------------------------------------------ */
 static int atof_hex(uint64_t mantissa, int exp, int neg, int trunc, double *out) {
-    int input_nonzero = (mantissa != 0 || trunc);
     const int mantbits = NC_MANT_BITS;
     const int expbits = NC_EXP_BITS;
     const int bias = NC_EXP_BIAS;
@@ -302,10 +337,6 @@ static int atof_hex(uint64_t mantissa, int exp, int neg, int trunc, double *out)
         mantissa = (uint64_t)1 << mantbits;
         exp = max_exp + 1;
         overflow = 1;
-    } else if (input_nonzero && mantissa == 0) {
-        /* Flush-to-zero is ErrRange (Go). A nonzero subnormal is in range:
-         * (mant >> mantbits) == 0 is true for every subnormal, not just zero. */
-        overflow = 1;
     }
 
     uint64_t bits = mantissa & (((uint64_t)1 << mantbits) - 1);
@@ -316,6 +347,7 @@ static int atof_hex(uint64_t mantissa, int exp, int neg, int trunc, double *out)
 }
 
 static int parse_hex_float(const char *s, int neg, double *result) {
+    const char *orig = s;
     s += 2; /* skip 0x / 0X */
     uint64_t mantissa = 0;
     int nd = 0, nd_mant = 0, dp = 0;
@@ -323,6 +355,7 @@ static int parse_hex_float(const char *s, int neg, double *result) {
 
     for (;; s++) {
         char c = *s;
+        if (c == '_') continue;
         if (c == '.') {
             if (sawdot) break;
             sawdot = 1;
@@ -359,12 +392,15 @@ static int parse_hex_float(const char *s, int neg, double *result) {
     if (!is_digit(*s))
         return NEVERC_STRCONV_ERR_SYNTAX;
     int exp_val = 0;
-    while (is_digit(*s)) {
+    while (is_digit(*s) || *s == '_') {
+        if (*s == '_') { s++; continue; }
         if (exp_val < 100000) exp_val = exp_val * 10 + (*s - '0');
         s++;
     }
     dp += exp_sign * exp_val;
     if (*s != '\0')
+        return NEVERC_STRCONV_ERR_SYNTAX;
+    if (!consumed_underscores_ok(orig, s))
         return NEVERC_STRCONV_ERR_SYNTAX;
 
     int exp10 = 0;
@@ -383,9 +419,11 @@ int neverc_strconv_parse_float(const char *s, double *result) {
     if (*s == '\0')
         return NEVERC_STRCONV_ERR_SYNTAX;
 
+    const char *orig = s;
     int sign = 1;
-    if (*s == '+') s++;
-    else if (*s == '-') { sign = -1; s++; }
+    int saw_sign = 0;
+    if (*s == '+') { s++; saw_sign = 1; }
+    else if (*s == '-') { sign = -1; s++; saw_sign = 1; }
 
     if ((s[0] == 'i' || s[0] == 'I') &&
         (s[1] == 'n' || s[1] == 'N') &&
@@ -404,9 +442,11 @@ int neverc_strconv_parse_float(const char *s, double *result) {
     if ((s[0] == 'n' || s[0] == 'N') &&
         (s[1] == 'a' || s[1] == 'A') &&
         (s[2] == 'n' || s[2] == 'N')) {
+        /* Go: signed Inf is valid; signed NaN is a syntax error (#73163). */
+        if (saw_sign) return NEVERC_STRCONV_ERR_SYNTAX;
         s += 3;
         if (*s != '\0') return NEVERC_STRCONV_ERR_SYNTAX;
-        *result = nc_make_nan(sign < 0);
+        *result = nc_make_nan(0);
         return NEVERC_STRCONV_OK;
     }
 
@@ -424,6 +464,7 @@ int neverc_strconv_parse_float(const char *s, double *result) {
 
     for (;; s++) {
         char c = *s;
+        if (c == '_') continue;
         if (c == '.') {
             if (sawdot) break;
             sawdot = 1; dp = nd;
@@ -455,7 +496,8 @@ int neverc_strconv_parse_float(const char *s, double *result) {
         if (!is_digit(*s))
             return NEVERC_STRCONV_ERR_SYNTAX;
         int exp_val = 0;
-        while (is_digit(*s)) {
+        while (is_digit(*s) || *s == '_') {
+            if (*s == '_') { s++; continue; }
             if (exp_val < 100000) exp_val = exp_val * 10 + (*s - '0');
             s++;
         }
@@ -465,6 +507,8 @@ int neverc_strconv_parse_float(const char *s, double *result) {
     const char *lit_end = s;      /* one past the numeric literal */
 
     if (*s != '\0')
+        return NEVERC_STRCONV_ERR_SYNTAX;
+    if (!consumed_underscores_ok(orig, s))
         return NEVERC_STRCONV_ERR_SYNTAX;
 
     int neg = (sign < 0);

@@ -821,6 +821,24 @@ neverc_time_t neverc_time_date_in_location(int year, int month, int day,
     return neverc_time_unix(unix_sec, wall.nsec);
 }
 
+/* Go nextStdChunk: '.'/',' + a run of the same '0' or '9', and the run must
+ * not be followed by another digit (so ".0001" is literal, not a frac token). */
+static int frac_layout_len(const char *layout, size_t llen, size_t i, int *digits) {
+    if (i >= llen || (layout[i] != '.' && layout[i] != ',')) return 0;
+    if (i + 1 >= llen) return 0;
+    char d = layout[i + 1];
+    if (d != '0' && d != '9') return 0;
+    int n = 0;
+    while (i + 1 + (size_t)n < llen && n < 9 && layout[i + 1 + (size_t)n] == d)
+        n++;
+    if (i + 1 + (size_t)n < llen) {
+        char next = layout[i + 1 + (size_t)n];
+        if (next >= '0' && next <= '9') return 0;
+    }
+    *digits = n;
+    return 1;
+}
+
 static void write_frac_sec(char *buf, size_t *pos, int ns, int digits, int trim,
                            char sep) {
     int scale = 1;
@@ -937,14 +955,14 @@ char *neverc_time_format(neverc_time_t t, const char *layout) {
             i += 2;
         } else if ((layout[i] == '.' || layout[i] == ',') && i + 1 < llen &&
                    (layout[i + 1] == '0' || layout[i + 1] == '9')) {
-            int trim = layout[i + 1] == '9';
             int digits = 0;
-            while (i + 1 + (size_t)digits < llen && digits < 9 &&
-                   (layout[i + 1 + (size_t)digits] == '0' ||
-                    layout[i + 1 + (size_t)digits] == '9'))
-                digits++;
-            write_frac_sec(buf, &out, ns, digits, trim, layout[i]);
-            i += 1 + (size_t)digits;
+            if (frac_layout_len(layout, llen, i, &digits)) {
+                int trim = layout[i + 1] == '9';
+                write_frac_sec(buf, &out, ns, digits, trim, layout[i]);
+                i += 1 + (size_t)digits;
+            } else {
+                buf[out++] = layout[i++];
+            }
         } else if (layout[i] == '3') {
             write_int(buf, &out, h12, h12 >= 10 ? 2 : 1); i += 1;
         } else if (layout[i] == '4') {
@@ -1296,7 +1314,7 @@ int neverc_time_parse_in_location(const char *layout, const char *value,
             saw_day = 1;
             li += 2;
         } else if (li + 2 <= llen && memcmp(layout + li, "15", 2) == 0) {
-            if (parse_n_digits(value, vlen, &vi, 2, &hr) != 0) return -1;
+            if (parse_flex_digits(value, vlen, &vi, &hr) != 0) return -1;
             li += 2;
         } else if (li + 2 <= llen && memcmp(layout + li, "03", 2) == 0) {
             if (parse_n_digits(value, vlen, &vi, 2, &hr) != 0) return -1;
@@ -1347,16 +1365,18 @@ int neverc_time_parse_in_location(const char *layout, const char *value,
             li += 2;
         } else if ((layout[li] == '.' || layout[li] == ',') && li + 1 < llen &&
                    (layout[li + 1] == '0' || layout[li + 1] == '9')) {
-            int required = layout[li + 1] == '0';
             int digits = 0;
-            while (li + 1 + (size_t)digits < llen && digits < 9 &&
-                   (layout[li + 1 + (size_t)digits] == '0' ||
-                    layout[li + 1 + (size_t)digits] == '9'))
-                digits++;
-            if (parse_frac_sec(value, vlen, &vi, digits, required, layout[li],
-                               &ns) != 0)
-                return -1;
-            li += 1 + (size_t)digits;
+            if (frac_layout_len(layout, llen, li, &digits)) {
+                int required = layout[li + 1] == '0';
+                if (parse_frac_sec(value, vlen, &vi, digits, required, layout[li],
+                                   &ns) != 0)
+                    return -1;
+                li += 1 + (size_t)digits;
+            } else {
+                if (vi >= vlen || value[vi] != layout[li]) return -1;
+                vi++;
+                li++;
+            }
         } else if (layout[li] == '3') {
             if (parse_flex_digits(value, vlen, &vi, &hr) != 0) return -1;
             hour12 = 1;

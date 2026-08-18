@@ -5,6 +5,7 @@
 #include "neverc/std/_platform.h"
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #ifndef NCI_RSA_RANDOM
 #define NCI_RSA_RANDOM neverc_platform_random
@@ -310,8 +311,12 @@ int neverc_rsa_generate_key(neverc_rsa_private_key_t *key, int bits) {
 }
 
 int neverc_rsa_key_size(const neverc_rsa_public_key_t *pub) {
-    if (!pub) return -1;
-    return (neverc_bigint_bit_len(&pub->n) + 7) / 8;
+    if (!pub || pub->n.len == 0 || pub->n.len > 512)
+        return -1;
+    int bits = neverc_bigint_bit_len(&pub->n);
+    if (bits < 0 || bits > INT_MAX - 7)
+        return -1;
+    return (bits + 7) / 8;
 }
 
 /* e=1 makes RSA the identity map: PKCS#1 verify then accepts the encoded

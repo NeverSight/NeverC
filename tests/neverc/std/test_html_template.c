@@ -388,6 +388,24 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "<script") == NULL);
     free(out);
 
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<iframe srcdoc=\"<script>{{.X}}</script>\">", &data);
+    check("nested srcdoc script is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("nested srcdoc script is not raw",
+          out && strstr(out, "alert(1)") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "x onerror=alert(1)");
+    out = neverc_html_template_render(
+        "<iframe srcdoc=\"<img src={{.X}}\">", &data);
+    check("nested srcdoc attr is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("nested srcdoc attr has no onerror",
+          out && strstr(out, "onerror") == NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", " onload=alert(1)");
     out = neverc_html_template_render("<iframe srcdoc=Hello{{.X}}>", &data);
     check("unquoted srcdoc prefix breakout is replaced",

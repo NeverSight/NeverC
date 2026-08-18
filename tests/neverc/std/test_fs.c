@@ -157,6 +157,17 @@ static void test_read_file(void) {
           neverc_fs_read_file(tmpdir, &dir_data, &dir_size) != 0);
     check("read_file_dir_clears", dir_data == NULL && dir_size == 0);
 
+#if defined(__linux__)
+    {
+        uint8_t *proc = NULL;
+        size_t proc_size = 0;
+        check("read_proc_status",
+              neverc_fs_read_file("/proc/self/status", &proc, &proc_size) == 0);
+        check("read_proc_status nonempty", proc != NULL && proc_size > 0);
+        free(proc);
+    }
+#endif
+
     remove(filepath);
 }
 

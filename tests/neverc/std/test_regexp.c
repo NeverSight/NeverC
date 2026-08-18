@@ -868,6 +868,14 @@ static void test_utf8_class_and_nfa_bound(void) {
     check_bool(". matches invalid UTF-8 byte", neverc_regexp_match_string(".", "\xFF"), 1);
     check_bool("utf8 literal e-acute",
                neverc_regexp_match_string("\xC3\xA9", "\xC3\xA9"), 1);
+    check_bool("utf8 literal quantifier",
+               neverc_regexp_match_string("中{2}", "中中"), 1);
+    check_bool("utf8 literal quantifier not last byte",
+               neverc_regexp_match_string("中{2}", "中\x96"), 0);
+    check_bool("utf8 plus is the rune",
+               neverc_regexp_match_string("^中+$", "中中"), 1);
+    check_bool("utf8 e-acute plus",
+               neverc_regexp_match_string("é+", "éé"), 1);
 
     const char *err = NULL;
     re = neverc_regexp_compile("(a{1000}){1000}", &err);

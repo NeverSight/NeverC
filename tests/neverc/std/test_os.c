@@ -192,6 +192,22 @@ static void test_read_write_file(void) {
     ASSERT_TRUE(neverc_os_exists(path));
     neverc_os_remove(path);
     ASSERT_EQ(neverc_os_write_file(path, NULL, 1, 0600), -1);
+
+#if defined(__linux__)
+    {
+        unsigned char *proc = NULL;
+        size_t proc_len = 0;
+        ASSERT_EQ(neverc_os_read_file("/proc/self/status", &proc, &proc_len), 0);
+        ASSERT_TRUE(proc != NULL && proc_len > 0);
+        free(proc);
+    }
+#endif
+#if defined(_WIN32)
+    ASSERT_EQ(neverc_os_getuid(), -1);
+    ASSERT_EQ(neverc_os_geteuid(), -1);
+    ASSERT_EQ(neverc_os_getgid(), -1);
+    ASSERT_EQ(neverc_os_getegid(), -1);
+#endif
     ASSERT_TRUE(!neverc_os_exists(path));
 }
 

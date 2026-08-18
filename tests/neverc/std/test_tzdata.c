@@ -584,6 +584,29 @@ static void test_local_tz(void) {
     check_int("posix Julian July EDT",
               neverc_tzdata_offset_at(z, JUL_2024), -14400);
 
+    tzdata_set_tz("IST-2IDT,M3.4.4/26,M10.5.0");
+    z = neverc_tzdata_local();
+    check_not_null("posix Israel 26h", z);
+    check_str("posix Israel is not UTC", z && z->name ? z->name : "UTC",
+              "IST-2IDT,M3.4.4/26,M10.5.0");
+    check_int("posix Israel std offset", z ? z->utc_offset : 0, 7200);
+    check_int("posix Israel dst offset", z ? z->dst_offset : 0, 10800);
+
+    tzdata_set_tz("XXX168");
+    z = neverc_tzdata_local();
+    check_not_null("posix 168h offset", z);
+    check_int("posix 168h offset val", z ? z->utc_offset : 1, -168 * 3600);
+
+    tzdata_set_tz("XXX169");
+    z = neverc_tzdata_local();
+    check_str("posix 169h rejected", z && z->name ? z->name : NULL, "UTC");
+
+    tzdata_set_tz("EST5EDT,M3.2.0/-1,M11.1.0");
+    z = neverc_tzdata_local();
+    check_not_null("posix negative rule time", z);
+    check_str("posix negative rule not UTC", z && z->name ? z->name : "UTC",
+              "EST5EDT,M3.2.0/-1,M11.1.0");
+
     tzdata_set_tz("EST5EDT,78,354");
     z = neverc_tzdata_local();
     check_not_null("posix zero-based Julian TZ", z);

@@ -382,28 +382,54 @@ int neverc_fs_read_file(const char *path, uint8_t **data, size_t *size) {
     if (!f) return -1;
     uint64_t len = 0;
     int is_dir = 0;
-    if (fs_opened_size(f, &len, &is_dir) != 0 || is_dir ||
-        len > (uint64_t)SIZE_MAX - 1U) {
+    if (fs_opened_size(f, &len, &is_dir) != 0 || is_dir) {
         fclose(f);
         return -1;
     }
-    *data = (uint8_t *)malloc((size_t)len + 1U);
-    if (!*data) { fclose(f); return -1; }
-    *size = fread(*data, 1, (size_t)len, f);
-    if (*size < (size_t)len && ferror(f)) {
-        free(*data);
-        *data = NULL;
-        *size = 0;
+    /* st_size is a hint. Size-0 files (/proc, sysfs) still have contents. */
+    size_t cap;
+    if (len > (uint64_t)SIZE_MAX - 1U) {
         fclose(f);
         return -1;
     }
-    (*data)[*size] = 0;
+    cap = (len == 0) ? 512U : (size_t)len;
+    uint8_t *buf = (uint8_t *)malloc(cap + 1U);
+    if (!buf) { fclose(f); return -1; }
+    size_t n = 0;
+    for (;;) {
+        if (n >= cap) {
+            if (cap > (SIZE_MAX - 1U) / 2U) {
+                free(buf);
+                fclose(f);
+                return -1;
+            }
+            size_t ncap = cap * 2U;
+            uint8_t *nb = (uint8_t *)realloc(buf, ncap + 1U);
+            if (!nb) {
+                free(buf);
+                fclose(f);
+                return -1;
+            }
+            buf = nb;
+            cap = ncap;
+        }
+        size_t got = fread(buf + n, 1, cap - n, f);
+        n += got;
+        if (ferror(f)) {
+            free(buf);
+            fclose(f);
+            return -1;
+        }
+        if (got == 0)
+            break;
+    }
+    buf[n] = 0;
     if (fclose(f) != 0) {
-        free(*data);
-        *data = NULL;
-        *size = 0;
+        free(buf);
         return -1;
     }
+    *data = buf;
+    *size = n;
     return 0;
 }
 

@@ -603,6 +603,22 @@ static void test_invalid_formats(void) {
     check_true("dynamic int precision overflow rejected", result == NULL);
     free(result);
 
+    result = neverc_fmt_sprintf("%*s", 1000001, "x");
+    check_true("star width > 1e6 rejected", result == NULL);
+    free(result);
+
+    result = neverc_fmt_sprintf("%*s", INT_MAX, "x");
+    check_true("INT_MAX star width rejected", result == NULL);
+    free(result);
+
+    result = neverc_fmt_sprintf("%100000000s", "x");
+    check_true("1e8 literal width rejected", result == NULL);
+    free(result);
+
+    result = neverc_fmt_sprintf("%*s", 8, "hi");
+    check_str("width under cap", result, "      hi");
+    free(result);
+
     result = neverc_fmt_sprintf("%z %s", "safe");
     check_true("unknown verb fails safely", result == NULL);
     free(result);
