@@ -34,6 +34,7 @@ trap 'rm -rf "$work_dir"' EXIT
   "$std_root/src/math/modf.c" \
   "$std_root/src/math/trunc.c" \
   "$std_root/src/math/sqrt.c" \
+  "$std_root/src/math/isinf.c" \
   -lm \
   -o "$work_dir/rand-ubsan"
 
@@ -60,6 +61,7 @@ UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
   "$std_root/src/math/modf.c" \
   "$std_root/src/math/trunc.c" \
   "$std_root/src/math/sqrt.c" \
+  "$std_root/src/math/isinf.c" \
   -lm \
   -pthread \
   -o "$work_dir/rand-tsan"
