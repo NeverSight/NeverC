@@ -716,6 +716,9 @@ static void http_stage5_response_framing(void) {
 
 typedef struct {
     neverc_tcp_listener_t *listener;
+    neverc_context_t *background;
+    neverc_context_t *deadline;
+    neverc_context_cancel_handle_t *cancel;
     const char *response;
     size_t response_len;
     int max_accepts;
@@ -741,16 +744,12 @@ static int http_stage5_read_request(neverc_tcp_conn_t *connection,
 
 static void http_stage5_scripted_task(void *context) {
     http_stage5_scripted_t *server = (http_stage5_scripted_t *)context;
-    neverc_context_cancel_handle_t *cancel = NULL;
-    neverc_context_t *background = neverc_context_background();
-    neverc_context_t *deadline = background
-        ? neverc_context_with_timeout_handle(background, 8000, &cancel)
-        : NULL;
     int ok = 0;
     for (int i = 0; i < server->max_accepts; i++) {
         neverc_tcp_conn_t *connection = NULL;
-        neverc_net_result_t accepted = deadline
-            ? neverc_tcp_accept_context(server->listener, deadline, &connection)
+        neverc_net_result_t accepted = server->deadline
+            ? neverc_tcp_accept_context(
+                  server->listener, server->deadline, &connection)
             : (neverc_net_result_t){NEVERC_NET_NOMEM, 0, "accept", 0U};
         if (accepted.status != NEVERC_NET_OK || !connection)
             break;
@@ -766,12 +765,6 @@ static void http_stage5_scripted_task(void *context) {
         neverc_tcp_close(connection);
         ok = 1;
     }
-    if (cancel) {
-        neverc_context_cancel_handle_cancel(cancel);
-        neverc_context_cancel_handle_free(cancel);
-    }
-    neverc_context_free(deadline);
-    neverc_context_free(background);
     server->result = ok ? 0 : -1;
 }
 
@@ -800,24 +793,59 @@ static neverc_http_client_t *http_stage5_security_client(int max_redirects) {
 
 static neverc_thread_executor_t *http_stage5_start_scripted(
     http_stage5_scripted_t *server) {
+    server->background = neverc_context_background();
+    server->deadline = server->background
+        ? neverc_context_with_timeout_handle(
+              server->background, 8000, &server->cancel)
+        : NULL;
+    if (!server->deadline || !server->cancel) {
+        neverc_context_cancel_handle_free(server->cancel);
+        neverc_context_free(server->deadline);
+        neverc_context_free(server->background);
+        server->cancel = NULL;
+        server->deadline = NULL;
+        server->background = NULL;
+        return NULL;
+    }
     neverc_thread_executor_t *executor =
         neverc_thread_executor_create(1U, 1U);
-    if (!executor) return NULL;
+    if (!executor) goto fail;
     if (neverc_thread_executor_submit(
             executor, http_stage5_scripted_task, server) != NEVERC_THREAD_OK) {
         neverc_thread_executor_free(executor);
-        return NULL;
+        goto fail;
     }
     return executor;
+fail:
+    neverc_context_cancel_handle_cancel(server->cancel);
+    neverc_context_cancel_handle_free(server->cancel);
+    neverc_context_free(server->deadline);
+    neverc_context_free(server->background);
+    server->cancel = NULL;
+    server->deadline = NULL;
+    server->background = NULL;
+    return NULL;
 }
 
 static void http_stage5_stop_scripted(neverc_thread_executor_t *executor,
-                                      neverc_tcp_listener_t *listener) {
-    if (listener) neverc_tcp_listener_close(listener);
+                                      http_stage5_scripted_t *server) {
+    if (server && server->cancel)
+        neverc_context_cancel_handle_cancel(server->cancel);
     if (executor) {
         CHECK(neverc_thread_executor_shutdown(executor) == NEVERC_THREAD_OK);
         neverc_thread_executor_free(executor);
     }
+    if (!server) return;
+    if (server->listener) {
+        neverc_tcp_listener_close(server->listener);
+        server->listener = NULL;
+    }
+    neverc_context_cancel_handle_free(server->cancel);
+    neverc_context_free(server->deadline);
+    neverc_context_free(server->background);
+    server->cancel = NULL;
+    server->deadline = NULL;
+    server->background = NULL;
 }
 
 static void http_stage5_client_one_shot(const char *response,
@@ -839,14 +867,14 @@ static void http_stage5_client_one_shot(const char *response,
     CHECK(client != NULL);
     if (!executor || !client) {
         neverc_http_client_free(client);
-        http_stage5_stop_scripted(executor, listener);
+        http_stage5_stop_scripted(executor, &server);
         return;
     }
     char url[128];
     (void)snprintf(url, sizeof(url), "http://127.0.0.1:%d/x", port);
     *out = neverc_http_client_do(client, "GET", url, NULL, NULL, 0U);
     neverc_http_client_free(client);
-    http_stage5_stop_scripted(executor, listener);
+    http_stage5_stop_scripted(executor, &server);
 }
 
 static void http_stage5_client_security(void) {
@@ -932,7 +960,7 @@ static void http_stage5_client_security(void) {
               strstr(resp->error, "too many redirects") != NULL);
         neverc_http_response_free(resp);
         neverc_http_client_free(client);
-        http_stage5_stop_scripted(loop_executor, loop_listener);
+        http_stage5_stop_scripted(loop_executor, &loop_server);
     }
 
     int first_port = 0;
@@ -997,8 +1025,8 @@ static void http_stage5_client_security(void) {
         CHECK(strstr(second_server.request, "session=leaked") == NULL);
         neverc_http_response_free(resp);
         neverc_http_client_free(client);
-        http_stage5_stop_scripted(first_executor, first_listener);
-        http_stage5_stop_scripted(second_executor, second_listener);
+        http_stage5_stop_scripted(first_executor, &first_server);
+        http_stage5_stop_scripted(second_executor, &second_server);
     }
 }
 
