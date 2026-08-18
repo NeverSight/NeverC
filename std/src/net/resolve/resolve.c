@@ -80,6 +80,22 @@ static int idna_lookup_name(const char *host, char *out, size_t cap) {
 #ifndef _WIN32
 static pthread_mutex_t g_resolv_lock = PTHREAD_MUTEX_INITIALIZER;
 
+/* Expand a DNS name that starts inside this RR's RDATA. Compression
+ * pointers may jump earlier in the message (RFC 1035), but the encoded
+ * name must begin and consume bytes only within [rdata, rdata+rdlen). */
+static int dns_expand_rdata_name(const unsigned char *msg, int msglen,
+                                 const unsigned char *rdata, int rdlen,
+                                 int name_off, char *dst, size_t dstlen) {
+    if (!msg || msglen < 0 || !rdata || !dst || dstlen == 0 ||
+        rdlen < 0 || name_off < 0 || name_off >= rdlen)
+        return -1;
+    int consumed = dn_expand(msg, msg + msglen, rdata + name_off,
+                             dst, (int)dstlen);
+    if (consumed < 0 || consumed > rdlen - name_off)
+        return -1;
+    return 0;
+}
+
 /* res_query may return a size larger than anslen (only anslen bytes written)
  * or a UDP answer with the TC bit set. Either case is an incomplete RRset;
  * passing an oversized length to ns_initparse / dn_expand over-reads. */
@@ -519,7 +535,8 @@ int neverc_net_lookup_mx(const char *name, neverc_net_mx_list_t *out) {
             (uint16_t)((rdata[0] << 8) | rdata[1]);
 
         char mxhost[256];
-        if (dn_expand(answer, answer + len, rdata + 2, mxhost, sizeof(mxhost)) < 0)
+        if (dns_expand_rdata_name(answer, len, rdata, rdlen, 2,
+                                  mxhost, sizeof(mxhost)) != 0)
             goto mx_fail;
         if (copy_dns_name(out->records[out->count].host, 256, mxhost) != 0)
             goto mx_fail;
@@ -678,9 +695,11 @@ int neverc_net_lookup_ns(const char *name, neverc_net_ns_list_t *out) {
         if (ns_rr_type(rr) != T_NS) continue;
         if (out->count >= NEVERC_NET_MAX_RECORDS) goto ns_fail;
 
+        const unsigned char *rdata = ns_rr_rdata(rr);
+        int rdlen = ns_rr_rdlen(rr);
         char nshost[256];
-        if (dn_expand(answer, answer + len, ns_rr_rdata(rr),
-                       nshost, sizeof(nshost)) < 0)
+        if (dns_expand_rdata_name(answer, len, rdata, rdlen, 0,
+                                  nshost, sizeof(nshost)) != 0)
             goto ns_fail;
         if (copy_dns_name(out->records[out->count], 256, nshost) != 0)
             goto ns_fail;
@@ -768,8 +787,8 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
             (uint16_t)((rdata[4] << 8) | rdata[5]);
 
         char target[256];
-        if (dn_expand(answer, answer + len, rdata + 6,
-                       target, sizeof(target)) < 0)
+        if (dns_expand_rdata_name(answer, len, rdata, rdlen, 6,
+                                  target, sizeof(target)) != 0)
             goto srv_fail;
         if (copy_dns_name(out->records[out->count].target, 256, target) != 0)
             goto srv_fail;

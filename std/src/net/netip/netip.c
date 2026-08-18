@@ -261,8 +261,9 @@ done_parse:
         for (size_t zi = 0; zi < zlen; zi++) {
             unsigned char c = (unsigned char)zone_start[zi];
             /* Zone IDs are interface names or decimal indices. CTL in a
-             * zone interpolates into URL/log lines as header injection. */
-            if (c <= 0x20 || c == 0x7f || c == ']' || c == '/' || c == '@')
+             * zone interpolates into URL/log lines as header injection.
+             * Space (0x20) is allowed: Windows names like "Ethernet 2". */
+            if (c < 0x20 || c == 0x7f || c == ']' || c == '/' || c == '@')
                 return -1;
         }
         memcpy(out->zone, zone_start, zlen);

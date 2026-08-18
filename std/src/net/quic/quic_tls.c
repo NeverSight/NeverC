@@ -1477,11 +1477,32 @@ int neverc_quic_tls_prepare_read_key_update(quic_tls_t *tls,
 int neverc_quic_tls_commit_read_key_update(quic_tls_t *tls,
                                             const quic_keys_t *next_keys) {
     if (!tls || !next_keys || !tls->pending_read_secret_valid) return -1;
-    uint8_t *current = tls->is_server ? tls->client_app_secret :
-                                        tls->server_app_secret;
-    memcpy(current, tls->pending_read_secret, 32);
+    uint8_t *peer = tls->is_server ? tls->client_app_secret :
+                                     tls->server_app_secret;
+    uint8_t *ours = tls->is_server ? tls->server_app_secret :
+                                     tls->client_app_secret;
+    uint8_t next_write[32];
+    quic_keys_t write_keys;
+    const char *ku_label = tls->version == NEVERC_QUIC_VERSION_2 ?
+        "quicv2 ku" : "quic ku";
+    size_t ku_label_len = tls->version == NEVERC_QUIC_VERSION_2 ? 9 : 7;
+    /* RFC 9001 §6.3: after unprotecting with the next key phase, the
+     * endpoint MUST also switch send keys and toggle the send Key Phase. */
+    if (nci_tls_hkdf_expand_label(ours, 32, ku_label, ku_label_len, NULL, 0,
+                                  next_write, sizeof(next_write)) != 0 ||
+        qt_derive_packet_keys(tls, next_write, &write_keys) != 0) {
+        neverc_platform_secure_zero(next_write, sizeof(next_write));
+        neverc_quic_tls_discard_read_key_update(tls);
+        return -1;
+    }
+    memcpy(peer, tls->pending_read_secret, 32);
+    memcpy(ours, next_write, 32);
     tls->levels[QUIC_ENC_APPLICATION].read = *next_keys;
+    tls->levels[QUIC_ENC_APPLICATION].write = write_keys;
     tls->read_key_phase ^= 1;
+    tls->key_phase ^= 1;
+    neverc_platform_secure_zero(next_write, sizeof(next_write));
+    neverc_platform_secure_zero(&write_keys, sizeof(write_keys));
     neverc_quic_tls_discard_read_key_update(tls);
     return 0;
 }

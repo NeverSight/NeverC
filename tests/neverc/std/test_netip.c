@@ -68,6 +68,10 @@ static void test_parse_ipv6(void) {
 
     ASSERT_EQ(neverc_netip_parse_addr("fe80::1%eth0", &addr), 0);
     ASSERT_STREQ(addr.zone, "eth0");
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%Ethernet 2", &addr), 0);
+    ASSERT_STREQ(addr.zone, "Ethernet 2");
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "fe80::1%Ethernet 2");
     neverc_netip_addr_string(&addr, buf, sizeof(buf));
     ASSERT_STREQ(buf, "fe80::1%eth0");
 

@@ -774,6 +774,24 @@ static void test_template_url_and_script(void) {
               strstr(out, "\"ok\";alert") == NULL);
     free(out);
 
+    neverc_html_template_data_set(&data, "X", ";alert(1)//");
+    out = neverc_html_template_render(
+        "<script>var x=\"OK\\{{.X}}\"</script>", &data);
+    check("js dangling backslash is fail-closed",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("js dangling backslash does not break out",
+          out && strstr(out, "alert(1)") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", ";alert(1)//");
+    out = neverc_html_template_render(
+        "<script>var x='OK\\{{.X}}'</script>", &data);
+    check("js dangling single-quote backslash is fail-closed",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("js dangling single-quote backslash does not break out",
+          out && strstr(out, "alert(1)") == NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", "\";alert(1)//");
     out = neverc_html_template_render(
         "<script>var x=\"hello {{.X}}\"</script>", &data);

@@ -587,6 +587,10 @@ int neverc_url_values_parse(neverc_url_values_t *v, const char *query) {
     if (!v) return -1;
     v->count = 0;
     if (!query || !*query) return 0;
+    /* Go 1.17+ ParseQuery: a raw semicolon is an invalid separator, not
+     * part of a value. Encoded %3B remains allowed. */
+    if (strchr(query, ';'))
+        return -1;
 
     const char *p = query;
     while (*p) {

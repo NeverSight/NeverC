@@ -69,6 +69,10 @@ static void test_with_timeout(void) {
     ASSERT_INT_EQ(neverc_context_done(ctx), 1);
     ASSERT_TRUE(neverc_context_err(ctx) != NULL);
     ASSERT_TRUE(strcmp(neverc_context_err(ctx), "context deadline exceeded") == 0);
+    /* Once observed, expiry is latched: later clock steps cannot un-done it. */
+    ASSERT_INT_EQ(neverc_context_done(ctx), 1);
+    ASSERT_TRUE(strcmp(neverc_context_err(ctx), "context deadline exceeded") == 0);
+    ASSERT_TRUE(strcmp(neverc_context_cause(ctx), "context deadline exceeded") == 0);
 
     neverc_context_free(ctx);
     neverc_context_free(bg);

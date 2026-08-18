@@ -49,7 +49,8 @@ typedef struct {
     int  count;
 } neverc_url_values_t;
 
-/* ValuesParse returns -1 for malformed escapes or fields/counts that do not fit. */
+/* ValuesParse returns -1 for malformed escapes, a raw ';' separator
+ * (Go 1.17+ ParseQuery), or fields/counts that do not fit. */
 int  neverc_url_values_parse(neverc_url_values_t *v, const char *query);
 const char *neverc_url_values_get(const neverc_url_values_t *v, const char *key);
 void neverc_url_values_set(neverc_url_values_t *v, const char *key, const char *val);

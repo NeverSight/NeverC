@@ -671,6 +671,14 @@ enum {
  * or `{{.X}}` in attribute-name position would be HTML-escaped instead of
  * replaced with ZgotmplZ.
  */
+/* Go html/template ErrPartialEscape: an odd number of trailing
+ * backslashes means the next interpolation is still inside an escape. */
+static int html_js_odd_trailing_backslash(const char *buf, size_t len) {
+    size_t n = 0;
+    while (n < len && buf[len - 1 - n] == '\\') n++;
+    return (int)(n & 1U);
+}
+
 static int html_js_is_line_term(const char *buf, size_t i, size_t len) {
     unsigned char c = (unsigned char)buf[i];
     if (c == '\n' || c == '\r') return 1;
@@ -1508,6 +1516,10 @@ static int execute_nodes(const node_t *n,
                 else if (in_srcdoc)
                     escaped = html_escape_srcdoc(val);
                 else if (in_script && !in_attr && in_script_comment)
+                    escaped = neverc_html_escape("ZgotmplZ");
+                else if (in_script && !in_attr &&
+                         (in_js_quoted || in_js_re) &&
+                         html_js_odd_trailing_backslash(*buf, *len))
                     escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_script && !in_attr && in_js_quoted)
                     escaped = neverc_html_js_escape(val);

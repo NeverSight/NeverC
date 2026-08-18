@@ -138,6 +138,9 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%eth0]/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%25eth0]/"), 0);
     ASSERT_STR_EQ(u.host, "fe80::1%eth0");
+    ASSERT_INT_EQ(neverc_url_parse(
+        &u, "http://[fe80::1%25Ethernet%202]/"), 0);
+    ASSERT_STR_EQ(u.host, "fe80::1%Ethernet 2");
     {
         char zoned[64];
         ASSERT_INT_EQ(neverc_url_string(&u, zoned, sizeof(zoned)),
@@ -299,6 +302,12 @@ static void test_values_encoded(void) {
         offset += (size_t)n;
     }
     ASSERT_INT_EQ(neverc_url_values_parse(&v, many_query), -1);
+
+    /* Go 1.17+ ParseQuery rejects a raw semicolon separator. */
+    ASSERT_INT_EQ(neverc_url_values_parse(&v, "a=1;b=2"), -1);
+    ASSERT_INT_EQ(v.count, 0);
+    ASSERT_INT_EQ(neverc_url_values_parse(&v, "a=1%3Bb=2"), 0);
+    ASSERT_STR_EQ(neverc_url_values_get(&v, "a"), "1;b=2");
 }
 
 static void test_escape(void) {

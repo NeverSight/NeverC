@@ -50,6 +50,7 @@ struct neverc_context {
     neverc_context_t *parent;
     volatile int32_t refs;
     volatile int32_t cancelled;
+    volatile int32_t deadline_latched;
 #if defined(_MSC_VER) && !defined(__clang__)
     __declspec(align(8)) volatile int64_t cancel_at;
 #else
@@ -398,11 +399,18 @@ static const char *ctx_reason(const neverc_context_t *ctx, const char **cause_ou
             err = "context canceled";
             cause = ctx->cause ? ctx->cause : err;
         }
-        if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0 &&
-            now >= ctx->deadline_ms && ctx->deadline_ms < best) {
-            best = ctx->deadline_ms;
-            err = "context deadline exceeded";
-            cause = ctx->cause ? ctx->cause : err;
+        if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0) {
+            neverc_context_t *mut = (neverc_context_t *)ctx;
+            int latched = NEVERC_ATOMIC_LOAD32(&mut->deadline_latched);
+            if (!latched && now >= ctx->deadline_ms) {
+                NEVERC_ATOMIC_STORE32(&mut->deadline_latched, 1);
+                latched = 1;
+            }
+            if (latched && ctx->deadline_ms < best) {
+                best = ctx->deadline_ms;
+                err = "context deadline exceeded";
+                cause = ctx->cause ? ctx->cause : err;
+            }
         }
         ctx = ctx->parent;
     }

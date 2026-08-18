@@ -791,6 +791,16 @@ static void test_named_groups_and_replace_expand(void) {
     r = neverc_regexp_replace_all(re, "12", "[$01]", &outlen);
     check_str("replace $01 is name", r, "[]");
     free(r);
+    /* $1a is the name "1a", not group 1 plus a literal 'a'. */
+    r = neverc_regexp_replace_all(re, "12", "[$1a]", &outlen);
+    check_str("replace $1a is name", r, "[]");
+    free(r);
+    r = neverc_regexp_replace_all(re, "12", "[${1}a]", &outlen);
+    check_str("replace ${1}a is group plus a", r, "[12a]");
+    free(r);
+    r = neverc_regexp_replace_all(re, "12", "[$0a]", &outlen);
+    check_str("replace $0a is name", r, "[]");
+    free(r);
     r = neverc_regexp_replace_all(re, "12", "${}", &outlen);
     check_str("replace empty ${}", r, "${}");
     free(r);

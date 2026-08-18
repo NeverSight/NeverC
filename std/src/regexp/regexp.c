@@ -2074,10 +2074,11 @@ static int regexp_append_expand(char **buffer, size_t *length, size_t *capacity,
         const char *after_dollar = p;
         int braced = 0;
         if (*p == '{') { braced = 1; p++; }
+        /* Go extract(): one [A-Za-z0-9_]+ token, then number vs name.
+         * $1a is the name "1a", not group 1 plus a literal 'a'. */
         const char *ns = p;
-        if (*p >= '0' && *p <= '9') {
-            while (*p >= '0' && *p <= '9') p++;
-        } else if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || *p == '_') {
+        if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+            (*p >= '0' && *p <= '9') || *p == '_') {
             while ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
                    (*p >= '0' && *p <= '9') || *p == '_')
                 p++;
