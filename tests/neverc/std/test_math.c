@@ -952,9 +952,10 @@ static void test_jn_yn(void) {
     check_double("yn(1,1)==y1(1)", neverc_math_yn(1, 1.0), neverc_math_y1(1.0));
     check_double("yn(n,-1)", neverc_math_yn(2, -1.0), NC_NAN);
     check_double("yn(0,0)", neverc_math_yn(0, 0.0), NC_NEGINF);
-    /* -n is signed-overflow UB when n == INT_MIN; |n| is huge so Jn/Yn → 0. */
+    /* -n is signed-overflow UB when n == INT_MIN. Jn underflows to 0;
+     * Yn of huge even order overflows to -Inf. */
     check_double("jn(INT_MIN,1)=0", neverc_math_jn(NEVERC_MATH_MIN_INT, 1.0), 0.0);
-    check_double("yn(INT_MIN,1)=0", neverc_math_yn(NEVERC_MATH_MIN_INT, 1.0), 0.0);
+    check_double("yn(INT_MIN,1)=-Inf", neverc_math_yn(NEVERC_MATH_MIN_INT, 1.0), NC_NEGINF);
     check_double("jn(INT_MIN,NaN)", neverc_math_jn(NEVERC_MATH_MIN_INT, NC_NAN), NC_NAN);
 }
 

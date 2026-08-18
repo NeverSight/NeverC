@@ -97,7 +97,7 @@ void neverc_sync_waitgroup_wait(neverc_waitgroup_t *wg);
 #define neverc_waitgroup_wait         neverc_sync_waitgroup_wait
 
 #if defined(_WIN32)
-typedef struct { volatile int32_t done; CRITICAL_SECTION mu; } neverc_once_t;
+typedef struct { volatile int32_t done; SRWLOCK mu; } neverc_once_t;
 #else
 typedef struct { volatile int32_t done; pthread_mutex_t mu; } neverc_once_t;
 #endif

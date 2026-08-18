@@ -154,12 +154,17 @@ int neverc_pe_open(neverc_pe_file_t *f, const uint8_t *data, size_t len) {
         f->sections[i].pointer_to_relocations = rd32(s + 24);
         f->sections[i].number_of_relocations  = rd16(s + 32);
         f->sections[i].characteristics      = rd32(s + 36);
-        if (!pe_range_in_file(len, f->sections[i].pointer_to_raw_data,
-                              f->sections[i].size_of_raw_data) ||
-            (f->sections[i].number_of_relocations != 0 &&
-             !pe_range_in_file(
-                 len, f->sections[i].pointer_to_relocations,
-                 (uint64_t)f->sections[i].number_of_relocations * 10U)))
+        /* PointerToRawData == 0 means no file bytes (BSS / uninitialized),
+         * matching Go debug/pe nobitsSectionReader. SizeOfRawData may still
+         * be FileAlignment-rounded and nonzero. */
+        if (f->sections[i].pointer_to_raw_data != 0 &&
+            !pe_range_in_file(len, f->sections[i].pointer_to_raw_data,
+                              f->sections[i].size_of_raw_data))
+            return pe_open_fail(f);
+        if (f->sections[i].number_of_relocations != 0 &&
+            !pe_range_in_file(
+                len, f->sections[i].pointer_to_relocations,
+                (uint64_t)f->sections[i].number_of_relocations * 10U))
             return pe_open_fail(f);
     }
 
@@ -273,8 +278,9 @@ int neverc_pe_section_data(const neverc_pe_file_t *f,
     *out = NULL;
     *out_len = 0;
     if (!f || (!f->data && f->data_len != 0)) return -1;
-    if (!s || s->size_of_raw_data == 0) {
-        return s ? 0 : -1;
+    if (!s) return -1;
+    if (s->pointer_to_raw_data == 0 || s->size_of_raw_data == 0) {
+        return 0;
     }
     if (!pe_range_in_file(f->data_len, s->pointer_to_raw_data,
                           s->size_of_raw_data))
@@ -404,7 +410,8 @@ static int pe_rva_to_file_offset(const neverc_pe_file_t *f, uint32_t rva,
         uint64_t delta = (uint64_t)rva - section->virtual_address;
         if (delta >= span)
             continue;
-        if (delta >= section->size_of_raw_data)
+        if (section->pointer_to_raw_data == 0 ||
+            delta >= section->size_of_raw_data)
             return -1;
         uint64_t file_offset =
             (uint64_t)section->pointer_to_raw_data + delta;

@@ -23,9 +23,74 @@ static void bufio_scanner_fail(neverc_bufio_scanner_t *s, int err) {
     s->token_len = 0;
 }
 
-static int bufio_is_space(uint8_t c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' ||
-           c == '\r' || c == 0x85 || c == 0xA0;
+static int bufio_utf8_decode(const uint8_t *s, size_t n, uint32_t *rune) {
+    if (n < 1) return 0;
+    unsigned c = s[0];
+    if (c < 0x80) {
+        *rune = c;
+        return 1;
+    }
+    if (c < 0xC2 || c >= 0xF5) {
+        *rune = 0xFFFD;
+        return 1;
+    }
+    if (c < 0xE0) {
+        if (n < 2 || (s[1] & 0xC0) != 0x80) {
+            *rune = 0xFFFD;
+            return 1;
+        }
+        *rune = ((c & 0x1F) << 6) | (s[1] & 0x3F);
+        return 2;
+    }
+    if (c < 0xF0) {
+        if (n < 3 || (s[1] & 0xC0) != 0x80 || (s[2] & 0xC0) != 0x80) {
+            *rune = 0xFFFD;
+            return 1;
+        }
+        uint32_t r = ((c & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+        if (r < 0x800 || (r >= 0xD800 && r <= 0xDFFF)) {
+            *rune = 0xFFFD;
+            return 1;
+        }
+        *rune = r;
+        return 3;
+    }
+    if (n < 4 || (s[1] & 0xC0) != 0x80 || (s[2] & 0xC0) != 0x80 ||
+        (s[3] & 0xC0) != 0x80) {
+        *rune = 0xFFFD;
+        return 1;
+    }
+    uint32_t r = ((c & 0x07) << 18) | ((s[1] & 0x3F) << 12) |
+                 ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+    if (r < 0x10000 || r > 0x10FFFF) {
+        *rune = 0xFFFD;
+        return 1;
+    }
+    *rune = r;
+    return 4;
+}
+
+/* Incomplete UTF-8 at the end of a non-EOF buffer must request more data
+ * rather than being treated as U+FFFD, matching Go ScanWords. */
+static int bufio_utf8_incomplete(const uint8_t *s, size_t n) {
+    if (n < 1) return 0;
+    unsigned c = s[0];
+    if (c < 0xC2 || c >= 0xF5) return 0;
+    if (c < 0xE0) return n < 2;
+    if (c < 0xF0) return n < 3;
+    return n < 4;
+}
+
+/* Go unicode.IsSpace, used by bufio.ScanWords. */
+static int bufio_rune_is_space(uint32_t r) {
+    switch (r) {
+    case '\t': case '\n': case '\v': case '\f': case '\r': case ' ':
+    case 0x85: case 0xA0: case 0x1680:
+    case 0x2028: case 0x2029: case 0x202F: case 0x205F: case 0x3000:
+        return 1;
+    default:
+        return r >= 0x2000 && r <= 0x200A;
+    }
 }
 
 static void bufio_split_clear(size_t *advance, const uint8_t **token,
@@ -80,14 +145,33 @@ int neverc_bufio_scan_words(const uint8_t *data, size_t data_len, int at_eof,
     }
 
     size_t start = 0;
-    while (start < data_len && bufio_is_space(data[start])) start++;
-    for (size_t i = start; i < data_len; i++) {
-        if (bufio_is_space(data[i])) {
-            *advance = i + 1;
+    while (start < data_len) {
+        if (!at_eof && bufio_utf8_incomplete(data + start, data_len - start)) {
+            *advance = start;
+            return 0;
+        }
+        uint32_t r;
+        int w = bufio_utf8_decode(data + start, data_len - start, &r);
+        if (w < 1) break;
+        if (!bufio_rune_is_space(r)) break;
+        start += (size_t)w;
+    }
+    size_t i = start;
+    while (i < data_len) {
+        if (!at_eof && bufio_utf8_incomplete(data + i, data_len - i)) {
+            *advance = start;
+            return 0;
+        }
+        uint32_t r;
+        int w = bufio_utf8_decode(data + i, data_len - i, &r);
+        if (w < 1) break;
+        if (bufio_rune_is_space(r)) {
+            *advance = i + (size_t)w;
             *token = data + start;
             *token_len = i - start;
             return 1;
         }
+        i += (size_t)w;
     }
     if (at_eof && start < data_len) {
         *advance = data_len;

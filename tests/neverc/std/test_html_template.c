@@ -615,6 +615,16 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "\\29") == NULL);
     free(out);
 
+    neverc_html_template_data_set(&data, "Link",
+                                  "https://example.com/&#34;onclick=alert(1) x=&#34;");
+    out = neverc_html_template_render(
+        "<div style=\"background:url({{.Link}})\">", &data);
+    check("css url() attr html-escapes ampersand",
+          out && strstr(out, "&amp;#34;") != NULL);
+    check("css url() attr does not emit raw entity quote",
+          out && strstr(out, "url(https://example.com/&#34;") == NULL);
+    free(out);
+
     out = neverc_html_template_render(
         "<script>if (/{{.MissingRe}}/.test(s)) {}</script>", &data);
     check("missing JS regexp interpolation is (?:)",

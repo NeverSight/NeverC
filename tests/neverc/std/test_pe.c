@@ -473,6 +473,33 @@ static void test_pe_invalid(void) {
     free(data);
 }
 
+static void test_pe_bss_nobits(void) {
+    size_t len = 0;
+    uint8_t *data = build_minimal_pe64(&len);
+    CHECK("build bss PE", data != NULL);
+    if (!data) return;
+
+    /* .text PointerToRawData = 0, SizeOfRawData = 0x200 (FileAlignment).
+     * Go treats this as nobits; NeverC used to map it onto the MZ header. */
+    uint8_t *sec = data + 328;
+    put32(sec + 16, 0x200);
+    put32(sec + 20, 0);
+
+    neverc_pe_file_t f;
+    CHECK("open bss PE", neverc_pe_open(&f, data, len) == 0);
+    const neverc_pe_section_t *text = neverc_pe_section(&f, ".text");
+    CHECK("bss section found", text != NULL);
+    if (text) {
+        uint8_t *sec_data = (uint8_t *)1;
+        size_t sec_len = 99;
+        CHECK("bss section_data empty",
+              neverc_pe_section_data(&f, text, &sec_data, &sec_len) == 0 &&
+              sec_data == NULL && sec_len == 0);
+    }
+    neverc_pe_close(&f);
+    free(data);
+}
+
 int main(void) {
     printf("=== NeverC debug/pe Tests ===\n\n");
 
@@ -482,6 +509,7 @@ int main(void) {
     test_long_section_names();
     test_pe32_and_bounds();
     test_pe_invalid();
+    test_pe_bss_nobits();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);
     if (tests_failed > 0)

@@ -652,6 +652,38 @@ static void test_scanner_split_func(void) {
     check_int("words eof", neverc_bufio_scanner_scan(&sc), 0);
     neverc_bufio_scanner_free(&sc);
 
+    {
+        /* Go ScanWords: 0x85/0xA0 are U+0085/U+00A0 as runes, not as
+         * UTF-8 continuation bytes. "Å" is C3 85 and is one token. */
+        const char *utf8_words = "\xC3\x85 \xC3\xA0";
+        neverc_io_mem_reader_init(&mr, (const uint8_t *)utf8_words,
+                                  strlen(utf8_words));
+        r.ctx = &mr;
+        neverc_bufio_scanner_init(&sc, r);
+        neverc_bufio_scanner_split(&sc, neverc_bufio_scan_words);
+        check_int("utf8 words 1", neverc_bufio_scanner_scan(&sc), 1);
+        check_bytes("word A-ring", neverc_bufio_scanner_bytes(&sc, &len),
+                    len, "\xC3\x85");
+        check_int("utf8 words 2", neverc_bufio_scanner_scan(&sc), 1);
+        check_bytes("word a-grave", neverc_bufio_scanner_bytes(&sc, &len),
+                    len, "\xC3\xA0");
+        check_int("utf8 words eof", neverc_bufio_scanner_scan(&sc), 0);
+        neverc_bufio_scanner_free(&sc);
+    }
+
+    {
+        const char *ideo = "a\xE3\x80\x80b"; /* U+3000 ideographic space */
+        neverc_io_mem_reader_init(&mr, (const uint8_t *)ideo, strlen(ideo));
+        r.ctx = &mr;
+        neverc_bufio_scanner_init(&sc, r);
+        neverc_bufio_scanner_split(&sc, neverc_bufio_scan_words);
+        check_int("ideo space 1", neverc_bufio_scanner_scan(&sc), 1);
+        check_bytes("word a", neverc_bufio_scanner_bytes(&sc, &len), len, "a");
+        check_int("ideo space 2", neverc_bufio_scanner_scan(&sc), 1);
+        check_bytes("word b", neverc_bufio_scanner_bytes(&sc, &len), len, "b");
+        neverc_bufio_scanner_free(&sc);
+    }
+
     neverc_io_mem_reader_init(&mr, (const uint8_t *)"ab", 2);
     r.ctx = &mr;
     neverc_bufio_scanner_init(&sc, r);

@@ -198,6 +198,35 @@ static void test_handshake_rejects(void) {
                                          strlen(dup_upgrade), &consumed),
               -1);
 
+    const char *with_body =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Content-Length: 4\r\n"
+        "\r\n"
+        "XXXX";
+    check_int("reject Content-Length body",
+              neverc_ws_handshake_server(server, with_body, strlen(with_body),
+                                         &consumed),
+              -1);
+
+    const char *with_te =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "\r\n";
+    check_int("reject Transfer-Encoding",
+              neverc_ws_handshake_server(server, with_te, strlen(with_te),
+                                         &consumed),
+              -1);
+
     const char *good =
         "GET /ws HTTP/1.1\r\n"
         "Host: localhost\r\n"

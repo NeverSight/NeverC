@@ -746,6 +746,20 @@ int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
         if (neverc_base64_decode(decoded_key, key_buf, 24) != 16)
             return -1;
     }
+    {
+        char clen[32];
+        int ncl = copy_unique_header_value(raw_request, hdr_scan_end,
+                                           "Content-Length", clen,
+                                           sizeof(clen));
+        if (ncl < 0) return -1;
+        if (ncl == 1 && strcmp(clen, "0") != 0)
+            return -1;
+        char te[32];
+        int nte = copy_unique_header_value(raw_request, hdr_scan_end,
+                                           "Transfer-Encoding", te,
+                                           sizeof(te));
+        if (nte != 0) return -1;
+    }
 
     char accept[64];
     if (neverc_ws_compute_accept(key_buf, accept, sizeof(accept)) != 0)

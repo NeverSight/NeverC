@@ -442,73 +442,78 @@ static void cc_set_word(charclass_t *cc) {
 
 static int cc_set_posix(charclass_t *cc, const char *name, int nlen) {
     if (!cc || !name || nlen <= 0) return 0;
+    int complement = 0;
+    if (nlen > 1 && name[0] == '^') {
+        complement = 1;
+        name++;
+        nlen--;
+    }
+    charclass_t local;
+    charclass_t *dst = cc;
+    if (complement) {
+        memset(&local, 0, sizeof(local));
+        dst = &local;
+    }
 #define NCI_RE_POSIX(s) (nlen == (int)(sizeof(s) - 1) && memcmp(name, s, (size_t)nlen) == 0)
+    int ok = 0;
     if (NCI_RE_POSIX("alnum")) {
-        for (int i = '0'; i <= '9'; i++) cc_set(cc, i);
-        for (int i = 'A'; i <= 'Z'; i++) cc_set(cc, i);
-        for (int i = 'a'; i <= 'z'; i++) cc_set(cc, i);
-        return 1;
-    }
-    if (NCI_RE_POSIX("alpha")) {
-        for (int i = 'A'; i <= 'Z'; i++) cc_set(cc, i);
-        for (int i = 'a'; i <= 'z'; i++) cc_set(cc, i);
-        return 1;
-    }
-    if (NCI_RE_POSIX("ascii")) {
-        for (int i = 0; i < 128; i++) cc_set(cc, i);
-        return 1;
-    }
-    if (NCI_RE_POSIX("blank")) {
-        cc_set(cc, ' ');
-        cc_set(cc, '\t');
-        return 1;
-    }
-    if (NCI_RE_POSIX("cntrl")) {
-        for (int i = 0; i < 32; i++) cc_set(cc, i);
-        cc_set(cc, 127);
-        return 1;
-    }
-    if (NCI_RE_POSIX("digit")) {
-        for (int i = '0'; i <= '9'; i++) cc_set(cc, i);
-        return 1;
-    }
-    if (NCI_RE_POSIX("graph")) {
-        for (int i = 0x21; i <= 0x7E; i++) cc_set(cc, i);
-        return 1;
-    }
-    if (NCI_RE_POSIX("lower")) {
-        for (int i = 'a'; i <= 'z'; i++) cc_set(cc, i);
-        return 1;
-    }
-    if (NCI_RE_POSIX("print")) {
-        for (int i = 0x20; i <= 0x7E; i++) cc_set(cc, i);
-        return 1;
-    }
-    if (NCI_RE_POSIX("punct")) {
+        for (int i = '0'; i <= '9'; i++) cc_set(dst, i);
+        for (int i = 'A'; i <= 'Z'; i++) cc_set(dst, i);
+        for (int i = 'a'; i <= 'z'; i++) cc_set(dst, i);
+        ok = 1;
+    } else if (NCI_RE_POSIX("alpha")) {
+        for (int i = 'A'; i <= 'Z'; i++) cc_set(dst, i);
+        for (int i = 'a'; i <= 'z'; i++) cc_set(dst, i);
+        ok = 1;
+    } else if (NCI_RE_POSIX("ascii")) {
+        for (int i = 0; i < 128; i++) cc_set(dst, i);
+        ok = 1;
+    } else if (NCI_RE_POSIX("blank")) {
+        cc_set(dst, ' ');
+        cc_set(dst, '\t');
+        ok = 1;
+    } else if (NCI_RE_POSIX("cntrl")) {
+        for (int i = 0; i < 32; i++) cc_set(dst, i);
+        cc_set(dst, 127);
+        ok = 1;
+    } else if (NCI_RE_POSIX("digit")) {
+        for (int i = '0'; i <= '9'; i++) cc_set(dst, i);
+        ok = 1;
+    } else if (NCI_RE_POSIX("graph")) {
+        for (int i = 0x21; i <= 0x7E; i++) cc_set(dst, i);
+        ok = 1;
+    } else if (NCI_RE_POSIX("lower")) {
+        for (int i = 'a'; i <= 'z'; i++) cc_set(dst, i);
+        ok = 1;
+    } else if (NCI_RE_POSIX("print")) {
+        for (int i = 0x20; i <= 0x7E; i++) cc_set(dst, i);
+        ok = 1;
+    } else if (NCI_RE_POSIX("punct")) {
         const char *p = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
-        while (*p) cc_set(cc, (unsigned char)*p++);
-        return 1;
-    }
-    if (NCI_RE_POSIX("space")) {
-        cc_set_ws(cc);
-        return 1;
-    }
-    if (NCI_RE_POSIX("upper")) {
-        for (int i = 'A'; i <= 'Z'; i++) cc_set(cc, i);
-        return 1;
-    }
-    if (NCI_RE_POSIX("word")) {
-        cc_set_word(cc);
-        return 1;
-    }
-    if (NCI_RE_POSIX("xdigit")) {
-        for (int i = '0'; i <= '9'; i++) cc_set(cc, i);
-        for (int i = 'A'; i <= 'F'; i++) cc_set(cc, i);
-        for (int i = 'a'; i <= 'f'; i++) cc_set(cc, i);
-        return 1;
+        while (*p) cc_set(dst, (unsigned char)*p++);
+        ok = 1;
+    } else if (NCI_RE_POSIX("space")) {
+        cc_set_ws(dst);
+        ok = 1;
+    } else if (NCI_RE_POSIX("upper")) {
+        for (int i = 'A'; i <= 'Z'; i++) cc_set(dst, i);
+        ok = 1;
+    } else if (NCI_RE_POSIX("word")) {
+        cc_set_word(dst);
+        ok = 1;
+    } else if (NCI_RE_POSIX("xdigit")) {
+        for (int i = '0'; i <= '9'; i++) cc_set(dst, i);
+        for (int i = 'A'; i <= 'F'; i++) cc_set(dst, i);
+        for (int i = 'a'; i <= 'f'; i++) cc_set(dst, i);
+        ok = 1;
     }
 #undef NCI_RE_POSIX
-    return 0;
+    if (!ok) return 0;
+    if (complement) {
+        for (int i = 0; i < 256; i++)
+            if (!cc_test(&local, i)) cc_set(cc, i);
+    }
+    return 1;
 }
 
 static int cc_bitmap_empty(const charclass_t *cc) {
@@ -1187,6 +1192,8 @@ static frag_t parse_repeat(parser_t *par) {
             f = expand_repeat(par->re, f, atom_base, par->re->nstates, lo, hi);
             if (par->re->oom) { par->err = "out of memory"; return f; }
             repeated = 1;
+            /* Go: a single '?' after a quantifier is the non-greedy flag. */
+            if (*par->p == '?') par->p++;
             continue;
         }
         if (repeated) {
@@ -1214,6 +1221,7 @@ static frag_t parse_repeat(parser_t *par) {
             f = frag(split, end);
         }
         repeated = 1;
+        if (*par->p == '?') par->p++;
     }
     return f;
 }

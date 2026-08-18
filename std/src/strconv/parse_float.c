@@ -33,15 +33,17 @@ static int hex_digit(char c) {
     return -1;
 }
 
-/* Go strconv.underscoreOK: '_' is only legal between two hex/decimal digits. */
+/* Go strconv.underscoreOK: '_' is only legal between two hex/decimal digits.
+ * The 0x/0X prefix counts as a digit, so 0x_1p0 is legal. */
 static int float_underscore_ok(const char *s, const char *end) {
     if (s < end && (*s == '+' || *s == '-')) s++;
     int hex = 0;
+    int saw = '^';
     if (end - s >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
         s += 2;
         hex = 1;
+        saw = '0';
     }
-    int saw = '^';
     for (; s < end; s++) {
         char c = *s;
         int isdig = (c >= '0' && c <= '9') ||

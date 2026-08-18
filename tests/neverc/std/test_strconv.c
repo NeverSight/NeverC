@@ -339,6 +339,17 @@ static void test_parse_float(void) {
     check_int("hex underscore",
               neverc_strconv_parse_float("-0x1_ep-1", &v), 0);
     check_true("hex underscore val", v == -15.0);
+    check_int("hex underscore after 0x",
+              neverc_strconv_parse_float("0x_1p0", &v), 0);
+    check_true("hex underscore after 0x val", v == 1.0);
+    check_int("hex underscore after 0X",
+              neverc_strconv_parse_float("0X_1P0", &v), 0);
+    check_true("hex underscore after 0X val", v == 1.0);
+    check_int("hex underscore after +0x",
+              neverc_strconv_parse_float("+0x_1p0", &v), 0);
+    check_true("hex underscore after +0x val", v == 1.0);
+    check_int("hex underscore before p still syntax",
+              neverc_strconv_parse_float("0x1_p0", &v), NEVERC_STRCONV_ERR_SYNTAX);
     check_int("float double underscore",
               neverc_strconv_parse_float("1__0", &v), NEVERC_STRCONV_ERR_SYNTAX);
     check_int("float leading underscore",

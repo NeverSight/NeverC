@@ -94,20 +94,21 @@ int neverc_once_init(neverc_once_t *o) {
     if (!o || NEVERC_SYNC_INIT_SHOULD_FAIL())
         return -1;
     o->done = 0;
-    if (!InitializeCriticalSectionAndSpinCount(&o->mu, 4000))
-        return -1;
+    /* SRWLOCK is non-recursive, matching Go Once.Do (re-entry deadlocks).
+     * CRITICAL_SECTION is recursive and would run f twice. */
+    InitializeSRWLock(&o->mu);
     return 0;
 }
-void neverc_once_destroy(neverc_once_t *o) { DeleteCriticalSection(&o->mu); }
+void neverc_once_destroy(neverc_once_t *o) { (void)o; }
 void neverc_once_do(neverc_once_t *o, void (*f)(void)) {
     if (!o || !f) return;
     if (InterlockedCompareExchange((volatile long*)&o->done, 0, 0)) return;
-    EnterCriticalSection(&o->mu);
+    AcquireSRWLockExclusive(&o->mu);
     if (!InterlockedCompareExchange((volatile long*)&o->done, 0, 0)) {
         f();
         InterlockedExchange((volatile long*)&o->done, 1);
     }
-    LeaveCriticalSection(&o->mu);
+    ReleaseSRWLockExclusive(&o->mu);
 }
 
 int neverc_cond_init(neverc_cond_t *c, neverc_mutex_t *m) {
@@ -162,7 +163,14 @@ void neverc_mutex_destroy(neverc_mutex_t *m) {
     pthread_mutex_destroy(&m->mu);
 }
 void neverc_mutex_lock(neverc_mutex_t *m) {
-    pthread_mutex_lock(&m->mu);
+    /* ERRORCHECK mutexes return EDEADLK on recursive lock. Ignoring that
+     * would fail-open (the caller proceeds without holding the mutex).
+     * Looping matches Go Mutex.Lock, which deadlocks on re-entry. */
+    for (;;) {
+        int rc = pthread_mutex_lock(&m->mu);
+        if (rc == 0)
+            return;
+    }
 }
 void neverc_mutex_unlock(neverc_mutex_t *m) {
     if (!m)

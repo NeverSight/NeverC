@@ -379,6 +379,41 @@ static neverc_regexp_syntax_node_t *parse_escape(parser_t *p) {
 static int add_posix_class(parser_t *p, neverc_regexp_syntax_node_t *n,
                            const char *name, int nlen) {
     if (!name || nlen <= 0) return 0;
+    if (nlen > 1 && name[0] == '^') {
+        neverc_regexp_syntax_node_t tmp;
+        memset(&tmp, 0, sizeof(tmp));
+        tmp.op = NC_RE_OP_CHAR_CLASS;
+        if (!add_posix_class(p, &tmp, name + 1, nlen - 1)) {
+            free(tmp.runes);
+            return 0;
+        }
+        unsigned char bits[32];
+        memset(bits, 0, sizeof(bits));
+        for (int i = 0; i + 1 < tmp.nrunes; i += 2) {
+            int lo = tmp.runes[i], hi = tmp.runes[i + 1];
+            if (lo < 0) lo = 0;
+            if (hi > 255) hi = 255;
+            if (lo > 255) continue;
+            for (int c = lo; c <= hi; c++)
+                bits[c >> 3] |= (unsigned char)(1u << (c & 7));
+        }
+        free(tmp.runes);
+        int start = -1;
+        for (int i = 0; i < 256; i++) {
+            int on = (bits[i >> 3] & (unsigned char)(1u << (i & 7))) == 0;
+            if (on) {
+                if (start < 0) start = i;
+            } else if (start >= 0) {
+                if (!add_rune(p, n, start) || !add_rune(p, n, i - 1))
+                    return 0;
+                start = -1;
+            }
+        }
+        if (start >= 0 &&
+            (!add_rune(p, n, start) || !add_rune(p, n, 255)))
+            return 0;
+        return add_rune(p, n, 256) && add_rune(p, n, NCI_RE_MAX_RUNE);
+    }
 #define NCI_SY_EQ(s) (nlen == (int)(sizeof(s) - 1) && \
                       memcmp(name, s, (size_t)nlen) == 0)
     if (NCI_SY_EQ("alnum"))

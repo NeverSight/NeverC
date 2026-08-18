@@ -503,7 +503,7 @@ static void test_invalid_inputs(void) {
     check_bool("null pattern rejected", re == NULL && err != NULL, 1);
 
     static const char *invalid[] = {
-        "[abc", "[]", "[z-a]", "a)", "\\", "a**", "a+?",
+        "[abc", "[]", "[z-a]", "a)", "\\", "a**",
         "\\q", "\\1", "\\8", "(?P<>x)", "(?P<foo-bar>x)", "(?Pname>x)",
         "(?P foo>x)", "[[:foo:]]",
         "[\\q]", "[\\1]", "[\\A]", "[a-\\q]"
@@ -718,6 +718,29 @@ static void test_posix_classes(void) {
     check_bool("[[:xdigit:]] f", neverc_regexp_match_string("[[:xdigit:]]", "f"), 1);
     check_bool("[[:alnum:]_]+ ident",
                neverc_regexp_match_string("^[[:alnum:]_]+$", "foo_1"), 1);
+    check_bool("[[:^digit:]] a", neverc_regexp_match_string("[[:^digit:]]", "a"), 1);
+    check_bool("[[:^digit:]] 0 no", neverc_regexp_match_string("[[:^digit:]]", "0"), 0);
+    check_bool("[[:^space:]] letter", neverc_regexp_match_string("[[:^space:]]", "x"), 1);
+    check_bool("[[:^space:]] tab no", neverc_regexp_match_string("[[:^space:]]", "\t"), 0);
+    check_bool("[[:^nope:]] rejected",
+               neverc_regexp_compile("[[:^nope:]]", NULL) == NULL, 1);
+    {
+        neverc_regexp_t *re;
+        re = neverc_regexp_compile("a*?", NULL);
+        check_bool("a*? compiles", re != NULL, 1);
+        neverc_regexp_free(re);
+        re = neverc_regexp_compile("a+?", NULL);
+        check_bool("a+? compiles", re != NULL, 1);
+        neverc_regexp_free(re);
+        re = neverc_regexp_compile("a??", NULL);
+        check_bool("a?? compiles", re != NULL, 1);
+        neverc_regexp_free(re);
+        re = neverc_regexp_compile("a{2}?", NULL);
+        check_bool("a{2}? compiles", re != NULL, 1);
+        neverc_regexp_free(re);
+    }
+    check_bool("a*? empty", neverc_regexp_match_string("a*?", ""), 1);
+    check_bool("a*? aaa", neverc_regexp_match_string("^a*?$", "aaa"), 1);
 }
 
 static void test_named_groups_and_replace_expand(void) {

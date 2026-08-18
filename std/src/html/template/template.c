@@ -1484,8 +1484,17 @@ static int execute_nodes(const node_t *n,
                 else if (in_css_url && html_css_url_parts_obfuscated(
                              dprefix, dplen, val, dsuffix, dslen))
                     escaped = neverc_html_escape("#");
-                else if (in_css_url)
+                else if (in_css_url) {
+                    /* Go: urlNormalizer then attrescaper. url() in a style
+                     * attribute is HTML-decoded, so '&' must become '&amp;'
+                     * or &#34; / &colon; break out of the attribute. */
                     escaped = html_css_url_escape(val);
+                    if (escaped && in_style_attr) {
+                        char *html = neverc_html_escape(escaped);
+                        free(escaped);
+                        escaped = html;
+                    }
+                }
                 else if (in_event && aplen > 0)
                     escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_event)

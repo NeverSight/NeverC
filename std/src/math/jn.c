@@ -56,7 +56,7 @@ double neverc_math_jn(int n, double x) {
             double a = neverc_math_j0(x);
             for (int i = 1; i < n; i++) {
                 double tmp = b;
-                b = b * ((double)(i+i) / x) - a;
+                b = b * ((2.0 * (double)i) / x) - a;
                 a = tmp;
             }
         }
@@ -105,14 +105,14 @@ double neverc_math_jn(int n, double x) {
             tmp = tmp * neverc_math_log(nc_abs(v * tmp));
             if (tmp < 7.09782712893383973096e+02) {
                 for (int i = n - 1; i > 0; i--) {
-                    double di = (double)(i + i);
+                    double di = 2.0 * (double)i;
                     double tmpa = b;
                     b = b * di / x - a;
                     a = tmpa;
                 }
             } else {
                 for (int i = n - 1; i > 0; i--) {
-                    double di = (double)(i + i);
+                    double di = 2.0 * (double)i;
                     double tmpa = b;
                     b = b * di / x - a;
                     a = tmpa;
@@ -143,9 +143,10 @@ double neverc_math_yn(int n, double x) {
 
     int sign = 0;
     if (n < 0) {
-        /* -INT_MIN overflows; |n| is even and so large Yn underflows to 0. */
+        /* -INT_MIN overflows. Huge-order Yn(n, x>0) overflows to -Inf
+         * (even n, no sign flip), not 0. Matches Go math.Yn on amd64. */
         if (n == NEVERC_MATH_MIN_INT)
-            return 0.0;
+            return nc_inf(-1);
         n = -n;
         if (n & 1) sign = 1;
     }
@@ -172,7 +173,7 @@ double neverc_math_yn(int n, double x) {
         b = neverc_math_y1(x);
         for (int i = 1; i < n && !nc_isinf_any(b); i++) {
             double tmp = b;
-            b = ((double)(i + i) / x) * b - a;
+            b = ((2.0 * (double)i) / x) * b - a;
             a = tmp;
         }
     }

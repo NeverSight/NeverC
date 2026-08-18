@@ -661,6 +661,10 @@ static void test_complex(void) {
     n = neverc_regexp_syntax_parse("[[:alpha:]]", 0, &err);
     check_not_null("posix class", n);
     neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[[:^digit:]]", 0, &err);
+    check_not_null("posix complement class", n);
+    neverc_regexp_syntax_free(n);
 }
 
 /* ===== Main ===== */
