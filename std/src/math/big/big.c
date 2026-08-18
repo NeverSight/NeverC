@@ -3,10 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Set while a public operation must fail closed on OOM (SetString). Scratch
- * fallbacks (Karatsuba→schoolbook) do not use ensure_cap, so they cannot
- * false-trigger this. */
-static int *bigint_oom;
+/* Set while a public operation must fail closed on OOM (SetString). Each
+ * thread needs its own tracker: TLS certificate validation can parse keys on
+ * concurrent TCP and QUIC workers. Scratch fallbacks (Karatsuba→schoolbook)
+ * do not use ensure_cap, so they cannot false-trigger this. */
+static _Thread_local int *bigint_oom;
 
 static void note_oom(void) {
     if (bigint_oom) *bigint_oom = 1;
