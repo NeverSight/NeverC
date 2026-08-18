@@ -1204,6 +1204,14 @@ static int ws_fail_too_big(neverc_ws_conn_t *conn) {
     return ws_fail(conn);
 }
 
+static void ws_reset_data_fragment(neverc_ws_conn_t *conn) {
+    if (!conn) return;
+    conn->data_fragment_active = 0;
+    conn->data_message_opcode = 0;
+    conn->data_message_bytes = 0;
+    nc_buf_reset(&conn->text_utf8_acc);
+}
+
 static int ws_data_frame_begin(neverc_ws_conn_t *conn, int opcode, int fin) {
     if (opcode == NC_WS_OPCODE_TEXT || opcode == NC_WS_OPCODE_BINARY) {
         if (conn->data_fragment_active)
@@ -1546,6 +1554,12 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
             return ws_fail_too_big(conn);
         if (ws_discard_payload(conn, plen) != 0)
             return ws_fail(conn);
+        /* Keep the stream usable, matching a discarded complete frame.
+         * A leftover data_fragment_active would 1002 the next TEXT/BINARY. */
+        if (frame_opcode == NC_WS_OPCODE_TEXT ||
+            frame_opcode == NC_WS_OPCODE_BINARY ||
+            frame_opcode == NC_WS_OPCODE_CONTINUATION)
+            ws_reset_data_fragment(conn);
         return -1;
     }
 
@@ -1737,6 +1751,7 @@ static int ws_read_data_message(neverc_ws_conn_t *conn, int *output_opcode,
              (acc.len > conn->read_limit ||
               chunk_len > conn->read_limit - acc.len)) ||
             nc_buf_append(&acc, chunk, chunk_len) != 0) {
+            ws_reset_data_fragment(conn);
             free(chunk);
             nc_buf_free(&acc);
             return -1;

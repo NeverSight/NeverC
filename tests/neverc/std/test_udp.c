@@ -730,6 +730,58 @@ static void test_controlled_io(void) {
 
 #endif /* _WIN32 */
 
+/* Dual-stack listen on [::] must sendto an AF_INET dest by mapping it
+ * to ::ffff:a.b.c.d. resolve("127.0.0.1:p") stores sockaddr_in. */
+static void test_dualstack_write_to_ipv4(void) {
+    printf("[dualstack_write_to_ipv4]\n");
+    const char *err = NULL;
+    neverc_udp_conn_t *v6 = neverc_udp_listen("[::]:0", &err);
+    neverc_udp_conn_t *v4 = neverc_udp_listen("127.0.0.1:0", &err);
+    if (!v6) {
+        check_int("dual-stack listen unavailable", 1, 1);
+        if (v4) neverc_udp_close(v4);
+        return;
+    }
+    check_not_null("ipv4 receiver", v4);
+    if (!v4) {
+        neverc_udp_close(v6);
+        return;
+    }
+
+    neverc_udp_set_timeout(v4, 2000);
+    neverc_udp_set_timeout(v6, 2000);
+
+    neverc_udp_addr_t v4addr;
+    neverc_udp_local_addr(v4, &v4addr);
+    char addr_str[64];
+    snprintf(addr_str, sizeof(addr_str), "127.0.0.1:%d", v4addr.port);
+    neverc_udp_addr_t resolved;
+    check_int("resolve ipv4 dest",
+              neverc_udp_resolve_addr(addr_str, &resolved), 0);
+
+    int sent = neverc_udp_write_to(v6, "map4", 4, &resolved);
+    check_int("dual-stack write_to ipv4 dest", sent, 4);
+
+    neverc_udp_addr_t from;
+    char buf[16];
+    int n = neverc_udp_read_from(v4, buf, sizeof(buf), &from);
+    check_int("ipv4 recv mapped send", n, 4);
+    check_int("ipv4 got map4", n == 4 && memcmp(buf, "map4", 4) == 0, 1);
+
+    neverc_net_result_t try_result =
+        neverc_udp_try_write(v6, "try4", 4, &resolved);
+    check_int("dual-stack try_write ipv4 dest",
+              try_result.status == NEVERC_NET_OK &&
+                  try_result.transferred == 4,
+              1);
+    n = neverc_udp_read_from(v4, buf, sizeof(buf), &from);
+    check_int("ipv4 recv try_write", n, 4);
+    check_int("ipv4 got try4", n == 4 && memcmp(buf, "try4", 4) == 0, 1);
+
+    neverc_udp_close(v6);
+    neverc_udp_close(v4);
+}
+
 #ifdef _WIN32
 /* A send to a recently closed UDP peer produces an ICMP Port Unreachable.
  * Winsock reports that asynchronous error as WSAECONNRESET on the shared
@@ -796,6 +848,7 @@ int main(void) {
     test_invalid_addr();
     test_null_safety();
     test_options();
+    test_dualstack_write_to_ipv4();
 #ifndef _WIN32
     test_echo();
     test_ipv4_mapped_addr();

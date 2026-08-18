@@ -164,6 +164,63 @@ static void sa_to_udp_addr(const struct sockaddr *sa, socklen_t salen,
     }
 }
 
+/* Dual-stack IPv6 sockets (IPV6_V6ONLY=0) reject AF_INET sendto.
+ * Convert IPv4 dests to ::ffff:a.b.c.d, and mapped dests back to
+ * AF_INET when the socket itself is IPv4. */
+static int udp_prepare_send_addr(const neverc_udp_conn_t *conn,
+                                 const neverc_udp_addr_t *destination,
+                                 const struct sockaddr **sa,
+                                 socklen_t *salen,
+                                 struct sockaddr_storage *scratch) {
+    const struct sockaddr *src = (const struct sockaddr *)destination->_sa;
+    int sock_family = conn->local.ss_family;
+    int dest_family = src->sa_family;
+
+    if (dest_family == sock_family) {
+        *sa = src;
+        *salen = (socklen_t)destination->_sa_len;
+        return 0;
+    }
+
+    if (sock_family == AF_INET6 && dest_family == AF_INET) {
+        const struct sockaddr_in *in4 = (const struct sockaddr_in *)src;
+        struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)scratch;
+        memset(in6, 0, sizeof(*in6));
+        in6->sin6_family = AF_INET6;
+        in6->sin6_port = in4->sin_port;
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
+    defined(__NetBSD__)
+        in6->sin6_len = sizeof(*in6);
+#endif
+        in6->sin6_addr.s6_addr[10] = 0xff;
+        in6->sin6_addr.s6_addr[11] = 0xff;
+        memcpy(in6->sin6_addr.s6_addr + 12, &in4->sin_addr, 4);
+        *sa = (const struct sockaddr *)in6;
+        *salen = (socklen_t)sizeof(*in6);
+        return 0;
+    }
+
+    if (sock_family == AF_INET && dest_family == AF_INET6) {
+        const struct sockaddr_in6 *in6 = (const struct sockaddr_in6 *)src;
+        if (!nc_in6_is_addr_v4mapped(&in6->sin6_addr))
+            return -1;
+        struct sockaddr_in *in4 = (struct sockaddr_in *)scratch;
+        memset(in4, 0, sizeof(*in4));
+        in4->sin_family = AF_INET;
+        in4->sin_port = in6->sin6_port;
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
+    defined(__NetBSD__)
+        in4->sin_len = sizeof(*in4);
+#endif
+        memcpy(&in4->sin_addr, in6->sin6_addr.s6_addr + 12, 4);
+        *sa = (const struct sockaddr *)in4;
+        *salen = (socklen_t)sizeof(*in4);
+        return 0;
+    }
+
+    return -1;
+}
+
 #ifdef _WIN32
 static nc_udp_recv_msg_fn udp_load_recv_msg(nc_sock_t fd) {
     nc_udp_recv_msg_fn recv_msg = NULL;
@@ -945,19 +1002,24 @@ neverc_net_result_t neverc_udp_try_write(
         return udp_result(NEVERC_NET_WOULD_BLOCK, error, "write", 0);
     }
 
+    const struct sockaddr *send_sa = NULL;
+    socklen_t send_len = 0;
+    struct sockaddr_storage mapped;
+    if (destination &&
+        udp_prepare_send_addr(conn, destination, &send_sa, &send_len,
+                              &mapped) != 0)
+        return udp_result(NEVERC_NET_INVALID, 0, "write", 0);
+
 #ifdef _WIN32
     int n = destination
                 ? sendto(conn->fd, (const char *)data, (int)len, 0,
-                         (const struct sockaddr *)destination->_sa,
-                         destination->_sa_len)
+                         send_sa, send_len)
                 : send(conn->fd, (const char *)data, (int)len, 0);
 #else
     ssize_t n;
     do {
         n = destination
-                ? sendto(conn->fd, data, len, MSG_DONTWAIT,
-                         (const struct sockaddr *)destination->_sa,
-                         (socklen_t)destination->_sa_len)
+                ? sendto(conn->fd, data, len, MSG_DONTWAIT, send_sa, send_len)
                 : send(conn->fd, data, len, MSG_DONTWAIT);
     } while (n < 0 && errno == EINTR);
 #endif
@@ -1100,6 +1162,7 @@ int neverc_udp_write_batch(neverc_udp_conn_t *conn,
 #if defined(__linux__)
     struct mmsghdr msgvec[NEVERC_UDP_MAX_BATCH_SIZE];
     struct iovec iov[NEVERC_UDP_MAX_BATCH_SIZE];
+    struct sockaddr_storage mapped[NEVERC_UDP_MAX_BATCH_SIZE];
     memset(msgvec, 0, sizeof(msgvec));
 
     for (size_t i = 0; i < count; ++i) {
@@ -1108,10 +1171,14 @@ int neverc_udp_write_batch(neverc_udp_conn_t *conn,
         msgvec[i].msg_hdr.msg_iov = &iov[i];
         msgvec[i].msg_hdr.msg_iovlen = 1;
         if (messages[i].destination) {
-            msgvec[i].msg_hdr.msg_name =
-                (void *)messages[i].destination->_sa;
-            msgvec[i].msg_hdr.msg_namelen =
-                (socklen_t)messages[i].destination->_sa_len;
+            const struct sockaddr *send_sa = NULL;
+            socklen_t send_len = 0;
+            if (udp_prepare_send_addr(conn, messages[i].destination,
+                                      &send_sa, &send_len,
+                                      &mapped[i]) != 0)
+                return -1;
+            msgvec[i].msg_hdr.msg_name = (void *)send_sa;
+            msgvec[i].msg_hdr.msg_namelen = send_len;
         }
     }
 
@@ -1270,13 +1337,16 @@ int neverc_udp_write_to(neverc_udp_conn_t *conn, const void *data, size_t len,
         }
     }
     if (udp_refresh_write_deadline(conn) != 0) return -1;
+    const struct sockaddr *send_sa = NULL;
+    socklen_t send_len = 0;
+    struct sockaddr_storage mapped;
+    if (udp_prepare_send_addr(conn, to, &send_sa, &send_len, &mapped) != 0)
+        return -1;
 #ifdef _WIN32
     int n = sendto(conn->fd, (const char *)data, (int)len, 0,
-                   (const struct sockaddr *)to->_sa, to->_sa_len);
+                   send_sa, send_len);
 #else
-    int n = (int)sendto(conn->fd, data, len, 0,
-                        (const struct sockaddr *)to->_sa,
-                        (socklen_t)to->_sa_len);
+    int n = (int)sendto(conn->fd, data, len, 0, send_sa, send_len);
 #endif
     if (n < 0)
         udp_note_blocking_timeout(conn, 1);

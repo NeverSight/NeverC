@@ -504,6 +504,143 @@ static void test_local_buffer_too_small_keeps_stream(void) {
     neverc_tcp_listener_close(ln);
 }
 
+/* Discarding a non-final continuation into a too-small buffer must clear
+ * fragment state so the next TEXT/BINARY is not rejected as 1002. */
+static void test_small_buffer_discards_fragment_keeps_stream(void) {
+    printf("[small_buffer_discards_fragment]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("frag-discard listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("frag-discard client", client);
+    check_not_null("frag-discard server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("frag-discard server ws", ws);
+    if (ws) {
+        check_int("write first text fragment",
+                  ws_write_masked_frame_ex(client, NC_WS_OPCODE_TEXT, 0,
+                                           "ab", 2),
+                  0);
+        int opcode = 0;
+        char tiny[4];
+        size_t n = 0;
+        check_int("read first fragment",
+                  neverc_ws_read_frame(ws, &opcode, NULL, tiny, sizeof(tiny),
+                                       &n),
+                  0);
+        check_int("first fragment opcode", opcode, NC_WS_OPCODE_TEXT);
+        check_int("first fragment len", (int)n, 2);
+
+        char oversized[20];
+        memset(oversized, 'z', sizeof(oversized));
+        check_int("write oversized continuation",
+                  ws_write_masked_frame_ex(client, NC_WS_OPCODE_CONTINUATION, 1,
+                                           oversized, sizeof(oversized)),
+                  0);
+        n = 0;
+        check_int("discard oversized continuation",
+                  neverc_ws_read_frame(ws, &opcode, NULL, tiny, sizeof(tiny),
+                                       &n),
+                  -1);
+
+        check_int("write follow-up text",
+                  ws_write_masked_frame(client, NC_WS_OPCODE_TEXT,
+                                        "hello", 5),
+                  0);
+        char buf[16];
+        n = 0;
+        opcode = 0;
+        check_int("next text after fragment discard",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  0);
+        check_int("follow-up opcode after discard", opcode, NC_WS_OPCODE_TEXT);
+        check_int("follow-up length after discard", (int)n, 5);
+        buf[n] = '\0';
+        check_str("follow-up payload after discard", buf, "hello");
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
+/* read_message must reset fragment state when a later fragment does not
+ * fit the caller buffer, or the next message is rejected as 1002. */
+static void test_read_message_overflow_clears_fragment(void) {
+    printf("[read_message_overflow_clears_fragment]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("msg-overflow listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("msg-overflow client", client);
+    check_not_null("msg-overflow server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("msg-overflow server ws", ws);
+    if (ws) {
+        check_int("write first message fragment",
+                  ws_write_masked_frame_ex(client, NC_WS_OPCODE_TEXT, 0,
+                                           "hello", 5),
+                  0);
+        char mid[20];
+        memset(mid, 'x', sizeof(mid));
+        check_int("write overflowing mid fragment",
+                  ws_write_masked_frame_ex(client, NC_WS_OPCODE_CONTINUATION, 0,
+                                           mid, sizeof(mid)),
+                  0);
+        char small[8];
+        size_t n = 0;
+        check_int("read_message overflow",
+                  neverc_ws_read_message(ws, small, sizeof(small), &n),
+                  -1);
+
+        check_int("write follow-up message",
+                  ws_write_masked_frame(client, NC_WS_OPCODE_TEXT, "ok", 2),
+                  0);
+        char buf[16];
+        n = 0;
+        check_int("next message after overflow",
+                  neverc_ws_read_message(ws, buf, sizeof(buf), &n),
+                  0);
+        check_int("follow-up message length", (int)n, 2);
+        check_str("follow-up message", buf, "ok");
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
 static void test_close_half_closes_write(void) {
     printf("[close_half_closes_write]\n");
     const char *err = NULL;
@@ -1573,6 +1710,8 @@ int main(void) {
     test_close_code_message_too_big();
     test_close_invalid_utf8_reason_is_1007();
     test_local_buffer_too_small_keeps_stream();
+    test_small_buffer_discards_fragment_keeps_stream();
+    test_read_message_overflow_clears_fragment();
     test_close_half_closes_write();
     test_frame_length_overflow();
     test_fragment_exceeds_read_limit();
