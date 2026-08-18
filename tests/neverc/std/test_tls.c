@@ -2771,6 +2771,101 @@ static void test_dial_infers_sni(void) {
     check_str("explicit SNI on client", client_name, "sni.example");
     check_str("explicit SNI on server", server_name, "sni.example");
 }
+
+static void test_dial_does_not_persist_inferred_sni(void) {
+    printf("[dial_does_not_persist_inferred_sni]\n");
+
+    char client_name[256] = {0};
+    char server_name[256] = {0};
+    neverc_tls_config_t *server_config = neverc_tls_config_new();
+    neverc_tls_config_t *client_config = neverc_tls_config_new();
+    check_not_null("persist server config", server_config);
+    check_not_null("persist client config", client_config);
+    if (!server_config || !client_config) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+    if (neverc_tls_config_load_cert_mem(
+            server_config, TEST_CERT_PEM, TEST_KEY_PEM) != 0) {
+        check_int("persist load cert", 0, 1);
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+    neverc_tls_config_insecure_skip_verify(client_config);
+    check_int("config starts with empty SNI",
+              neverc_tls_config_server_name(client_config) == NULL ||
+                  neverc_tls_config_server_name(client_config)[0] == '\0',
+              1);
+
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("persist listener", ln);
+    if (!ln) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+    neverc_tcp_addr_t local;
+    if (neverc_tcp_listener_addr(ln, &local) != 0) {
+        neverc_tcp_listener_close(ln);
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+
+    dial_sni_server_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.ln = ln;
+    ctx.config = server_config;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, dial_sni_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, dial_sni_server_thread, &ctx) == 0;
+#endif
+    if (!thread_started) {
+        neverc_tcp_listener_close(ln);
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)local.port);
+    neverc_tls_conn_t *client = neverc_tls_dial(addr, client_config, &err);
+    if (client) {
+        const char *name = neverc_tls_server_name(client);
+        if (name)
+            snprintf(client_name, sizeof(client_name), "%s", name);
+        neverc_tls_close(client);
+    }
+    neverc_tcp_listener_close(ln);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    if (ctx.requested_server_name[0])
+        snprintf(server_name, sizeof(server_name), "%s",
+                 ctx.requested_server_name);
+    check_int("inferred dial succeeds", client != NULL && ctx.handshake_ok, 1);
+    check_str("dial fills client identity from address",
+              client_name, "127.0.0.1");
+    check_int("dial omits IP from SNI extension", server_name[0] == '\0', 1);
+    check_int("inferred SNI is not written onto the caller config",
+              neverc_tls_config_server_name(client_config) == NULL ||
+                  neverc_tls_config_server_name(client_config)[0] == '\0',
+              1);
+
+    neverc_tls_config_free(server_config);
+    neverc_tls_config_free(client_config);
+}
 #endif
 
 /* ===== Dial error test ===== */
@@ -2849,6 +2944,7 @@ int main(void) {
     test_concurrent_record_io();
     test_mutual_tls();
     test_dial_infers_sni();
+    test_dial_does_not_persist_inferred_sni();
     test_unexpected_server_record_alert();
     test_malformed_server_hello_alert();
     test_plaintext_record_version_ignored();

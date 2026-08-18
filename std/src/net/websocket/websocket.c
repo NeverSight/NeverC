@@ -740,7 +740,9 @@ int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
         strlen(key_buf) != 24)
         return -1;
     {
-        uint8_t decoded_key[16];
+        /* 24 alphabet chars without '=' decode to 18 bytes. Writing into
+         * 16 bytes overflowed the stack before the length check ran. */
+        uint8_t decoded_key[32];
         if (neverc_base64_decode(decoded_key, key_buf, 24) != 16)
             return -1;
     }
@@ -780,7 +782,7 @@ static int ws_validate_http_upgrade(const neverc_http_request_t *req,
 
     const char *ws_key = neverc_http_request_header(req, "Sec-WebSocket-Key");
     if (!ws_key || strlen(ws_key) != 24) return -1;
-    uint8_t decoded_key[16];
+    uint8_t decoded_key[32];
     if (neverc_base64_decode(decoded_key, ws_key, 24) != 16) return -1;
 
     size_t ki = 0;

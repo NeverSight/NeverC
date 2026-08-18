@@ -602,6 +602,12 @@ static void test_batch_args_rejected(void) {
         cmd = neverc_exec_command("probe.bat:stream", unsafe, 1);
         ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
         neverc_exec_cmd_free(cmd);
+        cmd = neverc_exec_command("C:payload.bat", unsafe, 1);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+        neverc_exec_cmd_free(cmd);
+        cmd = neverc_exec_command("c:payload.cmd:stream", unsafe, 1);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+        neverc_exec_cmd_free(cmd);
 #if !defined(_WIN32)
         unlink(ads);
 #endif

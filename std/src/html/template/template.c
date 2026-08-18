@@ -1418,7 +1418,7 @@ static int execute_nodes(const node_t *n,
                     escaped = neverc_html_escape("#");
                 else if (in_css_url)
                     escaped = neverc_html_css_escape(val);
-                else if (in_event && unquoted && aplen > 0)
+                else if (in_event && aplen > 0)
                     escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_event)
                     escaped = html_escape_event(val);

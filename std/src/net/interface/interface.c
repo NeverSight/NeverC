@@ -162,13 +162,16 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
                 struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)sa;
                 inet_ntop(AF_INET6, &in6->sin6_addr, buf, sizeof(buf));
                 unsigned scope = in6->sin6_scope_id;
-                if (!scope)
-                    scope = a->Ipv6IfIndex ? a->Ipv6IfIndex : a->IfIndex;
                 unsigned char raw[16];
                 memcpy(raw, &in6->sin6_addr, sizeof(raw));
-                if (ipv6_addr_needs_zone(raw, scope))
+                /* RFC 4007 / Go: only scoped addresses get a zone. Do not
+                 * invent IfIndex as a zone for global unicast or ::1. */
+                if (ipv6_addr_needs_zone(raw, scope)) {
+                    if (!scope)
+                        scope = a->Ipv6IfIndex ? a->Ipv6IfIndex : a->IfIndex;
                     /* Numeric zone: FriendlyName can contain spaces. */
                     append_ipv6_zone(buf, sizeof(buf), scope, NULL);
+                }
             } else {
                 continue;
             }

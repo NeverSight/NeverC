@@ -437,6 +437,7 @@ struct neverc_quic_conn {
     quic_conn_id_entry_t peer_cids[QUIC_MAX_PEER_CONN_IDS];
     int n_peer_cids;
     int active_peer_cid_idx;
+    uint64_t highest_retire_prior_to;
     uint64_t next_local_cid_seq;
     quic_conn_id_t initial_dcid;
     uint32_t version;

@@ -579,6 +579,10 @@ void neverc_tls_config_set_server_name(neverc_tls_config_t *cfg,
     cfg->server_name = copy;
 }
 
+const char *neverc_tls_config_server_name(const neverc_tls_config_t *cfg) {
+    return cfg ? cfg->server_name : NULL;
+}
+
 int neverc_tls_config_set_client_auth(
     neverc_tls_config_t *cfg, int mode) {
     if (!cfg ||

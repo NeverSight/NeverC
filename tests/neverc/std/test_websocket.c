@@ -171,6 +171,19 @@ static void test_handshake_rejects(void) {
                                          &consumed),
               -1);
 
+    const char *unpadded_key =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAAAA\r\n"
+        "\r\n";
+    check_int("reject unpadded 24-char key",
+              neverc_ws_handshake_server(server, unpadded_key,
+                                         strlen(unpadded_key), &consumed),
+              -1);
+
     const char *dup_upgrade =
         "GET /ws HTTP/1.1\r\n"
         "Host: localhost\r\n"

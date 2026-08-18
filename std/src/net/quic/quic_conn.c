@@ -943,6 +943,22 @@ int neverc_quic_conn_add_peer_cid(struct neverc_quic_conn *conn,
         frame->conn_id_len > QUIC_MAX_CID_LEN ||
         frame->retire_prior_to > frame->sequence)
         return -1;
+    /* RFC 9000 §19.15: sending a zero-length DCID forbids NEW_CONNECTION_ID. */
+    if (conn->n_peer_cids > 0 &&
+        conn->active_peer_cid_idx >= 0 &&
+        conn->active_peer_cid_idx < conn->n_peer_cids &&
+        conn->peer_cids[conn->active_peer_cid_idx].len == 0) {
+        (void)neverc_quic_conn_close_locked(
+            conn, QUIC_ERR_PROTOCOL_VIOLATION,
+            "NEW_CONNECTION_ID with zero-length Destination Connection ID",
+            0);
+        return -1;
+    }
+    uint64_t retire_prior_to = frame->retire_prior_to;
+    /* RFC 9000 §19.15: ignore a Retire Prior To that does not increase. */
+    if (retire_prior_to < conn->highest_retire_prior_to)
+        retire_prior_to = conn->highest_retire_prior_to;
+    int already_retired = frame->sequence < conn->highest_retire_prior_to;
     for (int i = 0; i < conn->n_peer_cids; i++) {
         quic_conn_id_entry_t *entry = &conn->peer_cids[i];
         if (entry->sequence == frame->sequence) {
@@ -956,10 +972,10 @@ int neverc_quic_conn_add_peer_cid(struct neverc_quic_conn *conn,
     }
     /* RFC 9000 §5.1.1 / §19.15: the limit is on active (unretired) IDs
      * after Retire Prior To is applied, not on the raw slot count. */
-    int active = 1;
+    int active = already_retired ? 0 : 1;
     for (int i = 0; i < conn->n_peer_cids; i++) {
         if (!conn->peer_cids[i].retired &&
-            conn->peer_cids[i].sequence >= frame->retire_prior_to)
+            conn->peer_cids[i].sequence >= retire_prior_to)
             active++;
     }
     if (active > QUIC_MAX_PEER_CONN_IDS ||
@@ -971,7 +987,7 @@ int neverc_quic_conn_add_peer_cid(struct neverc_quic_conn *conn,
     } else {
         for (int i = 0; i < conn->n_peer_cids; i++) {
             if (conn->peer_cids[i].retired &&
-                conn->peer_cids[i].sequence < frame->retire_prior_to) {
+                conn->peer_cids[i].sequence < retire_prior_to) {
                 entry = &conn->peer_cids[i];
                 break;
             }
@@ -983,9 +999,15 @@ int neverc_quic_conn_add_peer_cid(struct neverc_quic_conn *conn,
     entry->len = frame->conn_id_len;
     entry->sequence = frame->sequence;
     memcpy(entry->stateless_reset_token, frame->stateless_reset_token, 16);
+    if (already_retired) {
+        entry->retired = 1;
+        entry->retire_unsent = 1;
+    }
 apply_retire:
+    if (retire_prior_to > conn->highest_retire_prior_to)
+        conn->highest_retire_prior_to = retire_prior_to;
     for (int i = 0; i < conn->n_peer_cids; i++) {
-        if (conn->peer_cids[i].sequence < frame->retire_prior_to &&
+        if (conn->peer_cids[i].sequence < conn->highest_retire_prior_to &&
             !conn->peer_cids[i].retired) {
             conn->peer_cids[i].retired = 1;
             conn->peer_cids[i].retire_unsent = 1;

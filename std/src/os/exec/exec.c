@@ -90,6 +90,16 @@ static int exec_is_windows_batch_name(const char *name) {
     base = slash ? slash + 1 : name;
     n = strlen(base);
     while (n > 0 && (base[n - 1] == ' ' || base[n - 1] == '.')) n--;
+    /* Drive-relative "C:payload.bat" — the colon is the drive letter, not
+     * an ADS separator. Skip it before the ADS strip so BatBadBut still
+     * classifies the name (CVE-2024-24576). */
+    if (n >= 2 &&
+        ((base[0] >= 'A' && base[0] <= 'Z') ||
+         (base[0] >= 'a' && base[0] <= 'z')) &&
+        base[1] == ':') {
+        base += 2;
+        n -= 2;
+    }
     /* NTFS ADS: file.bat::$DATA / file.bat:stream still invoke cmd.exe. */
     for (i = 0; i < n; i++) {
         if (base[i] == ':') {

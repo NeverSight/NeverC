@@ -740,6 +740,15 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "hello \"\"") == NULL);
     free(out);
 
+    neverc_html_template_data_set(&data, "X", ");alert(1);//");
+    out = neverc_html_template_render(
+        "<img onclick=\"foo('{{.X}}')\">", &data);
+    check("quoted event prefix is fail-closed",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("quoted event prefix is not a second js string",
+          out && strstr(out, "alert(1)") == NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", "alert(1)");
     out = neverc_html_template_render(
         "<script>x=`foo${ {{.X}} }`</script>", &data);

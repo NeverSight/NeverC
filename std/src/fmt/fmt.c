@@ -126,6 +126,17 @@ static int fmt_return_len(size_t len) {
     return len > (size_t)INT_MAX ? -1 : (int)len;
 }
 
+static int fmt_fwrite(FILE *f, const char *s, size_t len) {
+    if (!f)
+        return -1;
+    if (len == 0)
+        return 0;
+    size_t wrote = fwrite(s, 1, len, f);
+    if (wrote != len || ferror(f))
+        return -1;
+    return fmt_return_len(wrote);
+}
+
 static int encode_rune(char *dst, uint32_t r) {
     if (r <= 0x7F) {
         dst[0] = (char)r;
@@ -595,9 +606,9 @@ int neverc_fmt_fprintf(FILE *f, const char *format, ...) {
         return -1;
     }
     size_t len = my_strlen(s);
-    fwrite(s, 1, len, f);
+    int n = fmt_fwrite(f, s, len);
     free(s);
-    return fmt_return_len(len);
+    return n;
 }
 
 int neverc_fmt_printf(const char *format, ...) {
@@ -607,9 +618,9 @@ int neverc_fmt_printf(const char *format, ...) {
     va_end(args);
     if (!s) return -1;
     size_t len = my_strlen(s);
-    fwrite(s, 1, len, stdout);
+    int n = fmt_fwrite(stdout, s, len);
     free(s);
-    return fmt_return_len(len);
+    return n;
 }
 
 int neverc_fmt_println(const char *format, ...) {
@@ -619,8 +630,11 @@ int neverc_fmt_println(const char *format, ...) {
     va_end(args);
     if (!s) return -1;
     size_t len = my_strlen(s);
-    fwrite(s, 1, len, stdout);
-    fwrite("\n", 1, 1, stdout);
+    if (fmt_fwrite(stdout, s, len) < 0 ||
+        fmt_fwrite(stdout, "\n", 1) < 0) {
+        free(s);
+        return -1;
+    }
     free(s);
     if (len >= (size_t)INT_MAX) return -1;
     return (int)len + 1;
@@ -652,15 +666,14 @@ char *neverc_fmt_sprintln(const char *s) {
 int neverc_fmt_fprint(FILE *f, const char *s) {
     if (!s || !f) return -1;
     size_t len = my_strlen(s);
-    fwrite(s, 1, len, f);
-    return fmt_return_len(len);
+    return fmt_fwrite(f, s, len);
 }
 
 int neverc_fmt_fprintln(FILE *f, const char *s) {
     if (!s || !f) return -1;
     size_t len = my_strlen(s);
-    fwrite(s, 1, len, f);
-    fwrite("\n", 1, 1, f);
+    if (fmt_fwrite(f, s, len) < 0 || fmt_fwrite(f, "\n", 1) < 0)
+        return -1;
     if (len >= (size_t)INT_MAX) return -1;
     return (int)len + 1;
 }

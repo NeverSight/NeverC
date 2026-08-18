@@ -117,6 +117,9 @@ static void test_is_local_and_volume(void) {
     ASSERT_FALSE(neverc_filepath_is_local("LPT0"));
     ASSERT_FALSE(neverc_filepath_is_local("CONIN$"));
     ASSERT_FALSE(neverc_filepath_is_local("CONOUT$"));
+    ASSERT_FALSE(neverc_filepath_is_local("COM\xC2\xB9"));
+    ASSERT_FALSE(neverc_filepath_is_local("LPT\xC2\xB2"));
+    ASSERT_FALSE(neverc_filepath_is_local("foo\\COM\xC2\xB3"));
     ASSERT_FALSE(neverc_filepath_is_local("foo\\..\\..\\bar"));
     ASSERT_TRUE(neverc_filepath_is_local("foo\\bar"));
     ASSERT_FALSE(neverc_filepath_is_local("foo\\.. \\bar"));

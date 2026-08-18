@@ -97,9 +97,13 @@ void neverc_tls_config_set_alpn(neverc_tls_config_t *cfg,
 /* Skip certificate verification (insecure, for testing only). */
 void neverc_tls_config_insecure_skip_verify(neverc_tls_config_t *cfg);
 
-/* Set server name for SNI (client only, auto-set by tls_dial). */
+/* Set server name for SNI (client only). tls_dial infers from addr when
+ * this is empty, but does not persist the inferred name on cfg. */
 void neverc_tls_config_set_server_name(neverc_tls_config_t *cfg,
                                         const char *name);
+
+/* Current configured SNI. Empty/NULL means tls_dial should infer. */
+const char *neverc_tls_config_server_name(const neverc_tls_config_t *cfg);
 
 /* Set the server-side client certificate policy. REQUIRE_AND_VERIFY sends a
  * TLS 1.3 CertificateRequest and validates the client certificate against the

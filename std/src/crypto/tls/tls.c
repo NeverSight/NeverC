@@ -135,21 +135,34 @@ neverc_tls_conn_t *neverc_tls_dial(const char *addr,
             *errp = k_tls_invalid_argument;
         return NULL;
     }
+    int inferred_sni = 0;
     if (!cfg->server_name || cfg->server_name[0] == '\0') {
         char host[TLS_MAX_SERVER_NAME + 1];
         if (tls_split_dial_host(addr, host, sizeof(host)) == 0 &&
-            host[0] != '\0')
+            host[0] != '\0') {
             neverc_tls_config_set_server_name(cfg, host);
+            inferred_sni = cfg->server_name && cfg->server_name[0];
+        }
     }
     const char *tcp_error = NULL;
     neverc_tcp_conn_t *tcp = neverc_tcp_dial(addr, &tcp_error);
     if (!tcp) {
+        if (inferred_sni) {
+            free(cfg->server_name);
+            cfg->server_name = NULL;
+        }
         if (errp)
             *errp = tcp_error ? tcp_error : k_tls_handshake_failed;
         return NULL;
     }
     neverc_tls_conn_t *conn =
         nci_tls_start_handshake(tcp, cfg, 0, 1, NULL, errp);
+    /* Go clones Config before filling ServerName. Restore the caller's
+     * empty name so a later dial cannot verify against the leftover host. */
+    if (inferred_sni) {
+        free(cfg->server_name);
+        cfg->server_name = NULL;
+    }
     if (!conn)
         neverc_tcp_close(tcp);
     return conn;

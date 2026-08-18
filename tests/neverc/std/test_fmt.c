@@ -4,6 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <process.h>
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -629,6 +635,42 @@ static void test_invalid_formats(void) {
     free(result);
 
     check_int("fprintf null file", neverc_fmt_fprintf(NULL, "x"), -1);
+
+    {
+        char path[512];
+#ifdef _WIN32
+        char tmp[MAX_PATH];
+        DWORD n = GetTempPathA((DWORD)sizeof(tmp), tmp);
+        if (n > 0 && n < sizeof(tmp))
+            snprintf(path, sizeof(path), "%sneverc_fmt_ro_%u", tmp,
+                     (unsigned)_getpid());
+        else
+            path[0] = '\0';
+#else
+        snprintf(path, sizeof(path), "/tmp/neverc_fmt_ro_%d", (int)getpid());
+#endif
+        FILE *w = path[0] ? fopen(path, "w") : NULL;
+        if (w) {
+            fputs("x", w);
+            fclose(w);
+        }
+        FILE *rd = path[0] ? fopen(path, "r") : NULL;
+        check_true("write-error fixture", rd != NULL);
+        if (rd) {
+            check_int("fprintf read-only fails closed",
+                      neverc_fmt_fprintf(rd, "hello"), -1);
+            check_int("fprint read-only fails closed",
+                      neverc_fmt_fprint(rd, "hello"), -1);
+            check_int("fprintln read-only fails closed",
+                      neverc_fmt_fprintln(rd, "hello"), -1);
+            fclose(rd);
+        }
+#ifdef _WIN32
+        if (path[0]) DeleteFileA(path);
+#else
+        if (path[0]) unlink(path);
+#endif
+    }
 }
 
 static void test_sscanln(void) {
