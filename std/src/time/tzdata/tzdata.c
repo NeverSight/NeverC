@@ -680,7 +680,7 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
     tz_civil_from_days(days, &year, &month, &day);
 
     int posix_has_rules = 0;
-    posix_rule_t posix_start = {0, 0, 0, 0}, posix_end = {0, 0, 0, 0};
+    posix_rule_t posix_start = {0}, posix_end = {0};
     int utc_off = 0, dst_off = 0;
     if (zone == &g_posix_zone) {
         posix_lock();
