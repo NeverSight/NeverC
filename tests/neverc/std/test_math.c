@@ -965,10 +965,12 @@ static void test_pow10_hypot(void) {
         neverc_math_float64bits(neverc_math_pow10(-50)) ==
         neverc_math_float64bits(1e-32 / 1e18));
 
-    /* Go's 1e-320 table slot underflows to +0, so n in [-323, -308]
-     * is +0. n < -323 is also +0. */
-    check_true("pow10(-323) is +0",
-               neverc_math_float64bits(neverc_math_pow10(-323)) == 0);
+    /* Go: n in [-323, 0) uses the stride tables. 1e-320 is a denormal, so
+     * Pow10(-323) = 1e-320/1e3 is a denormal, not +0. n < -323 is +0. */
+    check_true("pow10(-323) is +denormal",
+               neverc_math_float64bits(neverc_math_pow10(-323)) != 0 &&
+               !neverc_math_signbit(neverc_math_pow10(-323)) &&
+               neverc_math_pow10(-323) < 1e-300);
 
     /* Go: Pow10(n) = +Inf for n > 308, +0 for n < -323. */
     check_double("pow10(309)=+Inf", neverc_math_pow10(309), NC_INF);
