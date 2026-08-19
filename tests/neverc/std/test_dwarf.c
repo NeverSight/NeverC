@@ -408,6 +408,14 @@ static void test_dwarf_malformed(void) {
                             NULL, 0, NULL, 0) == 0 &&
           neverc_dwarf_parse_comp_unit(&d, 0, &hdr) < 0);
 
+    uint8_t reserved_len[12] = {0};
+    put32(reserved_len, 0xFFFFFFF0U);
+    put16(reserved_len + 4, 4);
+    CHECK("reserved DWARF initial length rejected",
+          neverc_dwarf_init(&d, reserved_len, sizeof(reserved_len),
+                            NULL, 0, NULL, 0) == 0 &&
+          neverc_dwarf_parse_comp_unit(&d, 0, &hdr) < 0);
+
     uint8_t info_buf[512];
     int info_len = build_debug_info(info_buf);
     uint8_t valid_abbrev[256];
@@ -670,6 +678,67 @@ static void test_dwarf_big_endian(void) {
     neverc_dwarf_free(&d);
 }
 
+static void test_dwarf_abbrev_offset_and_dwarf64(void) {
+    printf("[abbrev_offset_dwarf64]\n");
+    static const uint8_t abbrev[] = {
+        1, NEVERC_DW_TAG_compile_unit, 0,
+        NEVERC_DW_AT_name, NEVERC_DW_FORM_string,
+        0, 0, 0
+    };
+    uint8_t info[16] = {0};
+    build_v4_header(info, 12);
+    info[11] = 1;
+    info[12] = 'a';
+    info[13] = '\0';
+    info[14] = 0;
+
+    neverc_dwarf_data_t d;
+    walk_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    CHECK("in-range abbrev offset walks",
+          neverc_dwarf_init(&d, info, sizeof(info),
+                            abbrev, sizeof(abbrev), NULL, 0) == 0 &&
+          neverc_dwarf_walk_entries(&d, walk_cb, &ctx) == 0);
+    CHECK("in-range abbrev name",
+          ctx.cu_name && strcmp(ctx.cu_name, "a") == 0);
+
+    put32(info + 6, (uint32_t)sizeof(abbrev) + 4U);
+    CHECK("out-of-range abbrev offset rejected",
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+    put32(info + 6, 0);
+
+    neverc_dwarf_free(&d);
+    uint8_t dwarf64[26] = {0};
+    put32(dwarf64, 0xFFFFFFFFU);
+    put64(dwarf64 + 4, 14);
+    put16(dwarf64 + 12, 4);
+    put64(dwarf64 + 14, 0);
+    dwarf64[22] = 8;
+    dwarf64[23] = 1;
+    dwarf64[24] = 'z';
+    dwarf64[25] = 0;
+
+    neverc_dwarf_comp_unit_header_t hdr;
+    CHECK("DWARF64 init",
+          neverc_dwarf_init(&d, dwarf64, sizeof(dwarf64),
+                            abbrev, sizeof(abbrev), NULL, 0) == 0);
+    CHECK("DWARF64 header parse",
+          neverc_dwarf_parse_comp_unit(&d, 0, &hdr) == 0);
+    CHECK("DWARF64 header fields",
+          hdr.is_64bit == 1 && hdr.version == 4 &&
+              hdr.address_size == 8 && hdr.unit_length == 14 &&
+              hdr.abbrev_offset == 0);
+
+    memset(&ctx, 0, sizeof(ctx));
+    CHECK("DWARF64 walk", neverc_dwarf_walk_entries(&d, walk_cb, &ctx) == 0);
+    CHECK("DWARF64 name", ctx.cu_name && strcmp(ctx.cu_name, "z") == 0);
+
+    put64(dwarf64 + 14, 0x100);
+    CHECK("DWARF64 out-of-range abbrev offset rejected",
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+    neverc_dwarf_free(&d);
+}
+
 int main(void) {
     printf("=== NeverC debug/dwarf Tests ===\n\n");
 
@@ -680,6 +749,7 @@ int main(void) {
     test_dwarf_malformed();
     test_dwarf_v5_type_header();
     test_dwarf_big_endian();
+    test_dwarf_abbrev_offset_and_dwarf64();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);
     if (tests_failed > 0)

@@ -233,6 +233,32 @@ static void test_partial_decode(void) {
         check_true("full dst leaves z unconsumed",
                    r.error == 0 && r.ndst == 4 && r.nsrc == 5);
     }
+
+    /* Go checks dst room before each byte even when flush is set. */
+    {
+        const unsigned char src[] = "9jqo^{";
+        unsigned char dec[4] = {0};
+        neverc_ascii85_result_t r =
+            neverc_ascii85_decode(dec, sizeof(dec), src, 6, 1);
+        check_true("flush full dst leftover not corrupt",
+                   r.error == 0 && r.ndst == 4 && r.nsrc == 5);
+        check_true("flush full dst leftover content",
+                   memcmp(dec, "Man ", 4) == 0);
+
+        unsigned char room[5];
+        memset(room, 0xcc, sizeof(room));
+        r = neverc_ascii85_decode(room, sizeof(room), src, 6, 1);
+        check_true("flush leftover dst room not corrupt",
+                   r.error == 0 && r.ndst == 4 && r.nsrc == 5);
+        check_true("flush leftover dst room sentinel",
+                   memcmp(room, "Man ", 4) == 0 && room[4] == 0xcc);
+
+        const unsigned char spaced[] = "9jqo^  ";
+        memset(dec, 0, sizeof(dec));
+        r = neverc_ascii85_decode(dec, sizeof(dec), spaced, 7, 1);
+        check_true("flush full dst leaves trailing space unconsumed",
+                   r.error == 0 && r.ndst == 4 && r.nsrc == 5);
+    }
 }
 
 static void test_binary_data(void) {

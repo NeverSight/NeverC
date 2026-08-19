@@ -5,6 +5,7 @@
 
 #include "neverc/std/slices.h"
 #include "../sort/sort_impl.h"
+#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,26 +167,26 @@ void *neverc_slices_clone(const void *slice, size_t len, size_t elem_size) {
 
 int neverc_slices_min(const void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
     if (len == 0 || !slice || !cmp || elem_size == 0 ||
-        len > SIZE_MAX / elem_size)
+        len > SIZE_MAX / elem_size || len > (size_t)INT_MAX)
         return -1;
     const char *p = (const char *)slice;
-    int mi = 0;
+    size_t mi = 0;
     for (size_t i = 1; i < len; i++) {
-        if (cmp(p + i * elem_size, p + (size_t)mi * elem_size) < 0) mi = (int)i;
+        if (cmp(p + i * elem_size, p + mi * elem_size) < 0) mi = i;
     }
-    return mi;
+    return (int)mi;
 }
 
 int neverc_slices_max(const void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
     if (len == 0 || !slice || !cmp || elem_size == 0 ||
-        len > SIZE_MAX / elem_size)
+        len > SIZE_MAX / elem_size || len > (size_t)INT_MAX)
         return -1;
     const char *p = (const char *)slice;
-    int mi = 0;
+    size_t mi = 0;
     for (size_t i = 1; i < len; i++) {
-        if (cmp(p + i * elem_size, p + (size_t)mi * elem_size) > 0) mi = (int)i;
+        if (cmp(p + i * elem_size, p + mi * elem_size) > 0) mi = i;
     }
-    return mi;
+    return (int)mi;
 }
 
 /* Type-specific convenience */
@@ -233,7 +234,7 @@ int neverc_slices_binary_search_int(const int *slice, size_t len, int target, in
 }
 
 int neverc_slices_min_int(const int *slice, size_t len) {
-    if (!slice || len == 0) return -1;
+    if (!slice || len == 0 || len > (size_t)INT_MAX) return -1;
     int mi = 0;
     int mv = slice[0];
     for (size_t i = 1; i < len; i++) {
@@ -243,7 +244,7 @@ int neverc_slices_min_int(const int *slice, size_t len) {
 }
 
 int neverc_slices_max_int(const int *slice, size_t len) {
-    if (!slice || len == 0) return -1;
+    if (!slice || len == 0 || len > (size_t)INT_MAX) return -1;
     int mi = 0;
     int mv = slice[0];
     for (size_t i = 1; i < len; i++) {

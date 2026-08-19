@@ -40,6 +40,7 @@ int neverc_tls_test_hello_protocol_rules(void);
 int neverc_tls_test_certificate_request_schemes(void);
 int neverc_tls_test_certificate_entry_extensions(void);
 int neverc_tls_test_new_session_ticket_extensions(void);
+int neverc_tls_test_reject_post_handshake_key_update_flood(void);
 int neverc_tls_test_did_resume(neverc_tls_conn_t *conn);
 int neverc_tls_test_corrupt_client_session(
     neverc_tls_config_t *cfg);
@@ -140,6 +141,8 @@ static void test_config(void) {
               neverc_tls_test_certificate_entry_extensions(), 0);
     check_int("new_session_ticket_extensions",
               neverc_tls_test_new_session_ticket_extensions(), 0);
+    check_int("reject_post_handshake_key_update_flood",
+              neverc_tls_test_reject_post_handshake_key_update_flood(), 0);
     check_int("reject_oversized_test_fragment",
               neverc_tls_test_config_set_handshake_fragment_size(
                   cfg, 16385) != 0,

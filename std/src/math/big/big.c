@@ -1351,6 +1351,13 @@ void neverc_bigint_div(neverc_bigint_t *q, neverc_bigint_t *r,
                 bz_divmod(&quot, &rem, x, y);
             else
                 nat_divmod(&quot, &rem, x, y);
+            /* |x| > |y| always yields |q| >= 1. An empty quotient means
+             * the algorithm could not allocate; leave dest unchanged. */
+            if (quot.len == 0) {
+                neverc_bigint_free(&quot);
+                neverc_bigint_free(&rem);
+                return;
+            }
             quot.neg = (xneg != yneg) && quot.len > 0;
             rem.neg = xneg && rem.len > 0;
         }
@@ -1406,6 +1413,136 @@ void neverc_bigint_abs(neverc_bigint_t *z, const neverc_bigint_t *x) {
     z->neg = 0;
 }
 
+/* Magnitude bitwise helpers. Signs are cleared; callers apply Go math/big
+ * two's-complement identities (And/Or/Xor/Rsh/Bit). */
+static int mag_and(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
+    size_t m = x->len < y->len ? x->len : y->len;
+    if (!ensure_cap(z, m)) return 0;
+    for (size_t i = 0; i < m; i++)
+        z->digits[i] = x->digits[i] & y->digits[i];
+    z->len = m;
+    z->neg = 0;
+    trim(z);
+    return 1;
+}
+
+static int mag_or(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
+    size_t m = x->len > y->len ? x->len : y->len;
+    if (!ensure_cap(z, m)) return 0;
+    for (size_t i = 0; i < m; i++) {
+        uint32_t a = i < x->len ? x->digits[i] : 0;
+        uint32_t b = i < y->len ? y->digits[i] : 0;
+        z->digits[i] = a | b;
+    }
+    z->len = m;
+    z->neg = 0;
+    trim(z);
+    return 1;
+}
+
+static int mag_xor(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
+    size_t m = x->len > y->len ? x->len : y->len;
+    if (!ensure_cap(z, m)) return 0;
+    for (size_t i = 0; i < m; i++) {
+        uint32_t a = i < x->len ? x->digits[i] : 0;
+        uint32_t b = i < y->len ? y->digits[i] : 0;
+        z->digits[i] = a ^ b;
+    }
+    z->len = m;
+    z->neg = 0;
+    trim(z);
+    return 1;
+}
+
+static int mag_andnot(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
+    if (!ensure_cap(z, x->len)) return 0;
+    for (size_t i = 0; i < x->len; i++) {
+        uint32_t b = i < y->len ? y->digits[i] : 0;
+        z->digits[i] = x->digits[i] & ~b;
+    }
+    z->len = x->len;
+    z->neg = 0;
+    trim(z);
+    return 1;
+}
+
+static int mag_sub1(neverc_bigint_t *z, const neverc_bigint_t *x) {
+    size_t n = x->len;
+    if (n == 0) {
+        z->len = 0;
+        z->neg = 0;
+        return 1;
+    }
+    if (z != x && !ensure_cap(z, n)) return 0;
+    uint32_t borrow = 1;
+    for (size_t i = 0; i < n; i++) {
+        uint32_t xi = (z == x) ? z->digits[i] : x->digits[i];
+        z->digits[i] = xi - borrow;
+        borrow = xi < borrow;
+    }
+    z->len = n;
+    z->neg = 0;
+    trim(z);
+    return 1;
+}
+
+static int mag_add1(neverc_bigint_t *z, const neverc_bigint_t *x) {
+    size_t n = x->len;
+    if (!ensure_cap(z, n + 1)) return 0;
+    const uint32_t *src = (z == x) ? z->digits : x->digits;
+    uint64_t carry = 1;
+    for (size_t i = 0; i < n; i++) {
+        uint64_t r = (uint64_t)src[i] + carry;
+        z->digits[i] = (uint32_t)r;
+        carry = r >> 32;
+    }
+    if (carry)
+        z->digits[n] = 1;
+    z->len = n + (carry ? 1 : 0);
+    z->neg = 0;
+    trim(z);
+    return 1;
+}
+
+static int mag_rsh(neverc_bigint_t *z, const neverc_bigint_t *x, unsigned n) {
+    unsigned words = n / 32;
+    unsigned bits = n % 32;
+    if (words >= x->len) {
+        z->len = 0;
+        z->neg = 0;
+        return 1;
+    }
+    size_t newlen = x->len - words;
+    neverc_bigint_t tmp;
+    neverc_bigint_init(&tmp);
+    if (!ensure_cap(&tmp, newlen)) return 0;
+    tmp.len = newlen;
+    tmp.neg = 0;
+    for (size_t i = 0; i < newlen; i++) {
+        tmp.digits[i] = x->digits[i + words] >> bits;
+        if (bits > 0 && i + words + 1 < x->len)
+            tmp.digits[i] |= x->digits[i + words + 1] << (32 - bits);
+    }
+    trim(&tmp);
+    neverc_bigint_free(z);
+    *z = tmp;
+    return 1;
+}
+
+static int bitwise_snap(neverc_bigint_t *tx, neverc_bigint_t *ty,
+                        neverc_bigint_t *z,
+                        const neverc_bigint_t **x, const neverc_bigint_t **y) {
+    if (z == *x) {
+        if (!bigint_set_checked(tx, *x)) return 0;
+        *x = tx;
+    }
+    if (z == *y) {
+        if (!bigint_set_checked(ty, *y)) return 0;
+        *y = ty;
+    }
+    return 1;
+}
+
 void neverc_bigint_lsh(neverc_bigint_t *z, const neverc_bigint_t *x, unsigned n) {
     if (x->len == 0) { z->len = 0; z->neg = 0; return; }
     unsigned words = n / 32;
@@ -1433,98 +1570,116 @@ void neverc_bigint_lsh(neverc_bigint_t *z, const neverc_bigint_t *x, unsigned n)
 }
 
 void neverc_bigint_rsh(neverc_bigint_t *z, const neverc_bigint_t *x, unsigned n) {
-    unsigned words = n / 32;
-    unsigned bits = n % 32;
-
-    if (words >= x->len) { z->len = 0; z->neg = 0; return; }
-
-    size_t newlen = x->len - words;
-    neverc_bigint_t tmp;
-    neverc_bigint_init(&tmp);
-    if (!ensure_cap(&tmp, newlen)) return;
-    tmp.len = newlen;
-    tmp.neg = x->neg;
-
-    for (size_t i = 0; i < newlen; i++) {
-        tmp.digits[i] = x->digits[i + words] >> bits;
-        if (bits > 0 && i + words + 1 < x->len)
-            tmp.digits[i] |= x->digits[i + words + 1] << (32 - bits);
+    neverc_bigint_t t;
+    if (!x->neg) {
+        mag_rsh(z, x, n);
+        return;
     }
-
-    trim(&tmp);
-    neverc_bigint_free(z);
-    *z = tmp;
+    /* Go: z = -((((|x|-1) >> n) + 1))  so -1 >> n stays -1. */
+    neverc_bigint_init(&t);
+    if (!mag_sub1(&t, x) || !mag_rsh(&t, &t, n) || !mag_add1(z, &t)) {
+        neverc_bigint_free(&t);
+        return;
+    }
+    z->neg = z->len > 0;
+    neverc_bigint_free(&t);
 }
 
 void neverc_bigint_and(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
-    size_t m = x->len < y->len ? x->len : y->len;
-    if (!ensure_cap(z, m)) return;
-    for (size_t i = 0; i < m; i++)
-        z->digits[i] = x->digits[i] & y->digits[i];
-    z->len = m;
-    z->neg = 0;
-    trim(z);
+    neverc_bigint_t tx, ty, x1, y1;
+    neverc_bigint_init(&tx); neverc_bigint_init(&ty);
+    neverc_bigint_init(&x1); neverc_bigint_init(&y1);
+    if (!bitwise_snap(&tx, &ty, z, &x, &y)) goto done;
+    if (x->neg == y->neg) {
+        if (x->neg) {
+            if (!mag_sub1(&x1, x) || !mag_sub1(&y1, y) ||
+                !mag_or(z, &x1, &y1) || !mag_add1(z, z))
+                goto done;
+            z->neg = z->len > 0;
+        } else if (!mag_and(z, x, y)) {
+            goto done;
+        }
+    } else {
+        if (x->neg) { const neverc_bigint_t *t = x; x = y; y = t; }
+        if (!mag_sub1(&y1, y) || !mag_andnot(z, x, &y1))
+            goto done;
+    }
+done:
+    neverc_bigint_free(&tx); neverc_bigint_free(&ty);
+    neverc_bigint_free(&x1); neverc_bigint_free(&y1);
 }
 
 void neverc_bigint_or(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
-    /* or/xor grow to max(len). If z aliases the shorter operand, ensure_cap
-     * may realloc and leave x/y->digits dangling — snapshot first, as add(). */
-    neverc_bigint_t tx, ty;
+    neverc_bigint_t tx, ty, x1, y1;
     neverc_bigint_init(&tx); neverc_bigint_init(&ty);
-    if (z == x) {
-        if (!bigint_set_checked(&tx, x)) goto done;
-        x = &tx;
+    neverc_bigint_init(&x1); neverc_bigint_init(&y1);
+    if (!bitwise_snap(&tx, &ty, z, &x, &y)) goto done;
+    if (x->neg == y->neg) {
+        if (x->neg) {
+            if (!mag_sub1(&x1, x) || !mag_sub1(&y1, y) ||
+                !mag_and(z, &x1, &y1) || !mag_add1(z, z))
+                goto done;
+            z->neg = z->len > 0;
+        } else if (!mag_or(z, x, y)) {
+            goto done;
+        }
+    } else {
+        if (x->neg) { const neverc_bigint_t *t = x; x = y; y = t; }
+        if (!mag_sub1(&y1, y) || !mag_andnot(z, &y1, x) || !mag_add1(z, z))
+            goto done;
+        z->neg = z->len > 0;
     }
-    if (z == y) {
-        if (!bigint_set_checked(&ty, y)) goto done;
-        y = &ty;
-    }
-
-    size_t m = x->len > y->len ? x->len : y->len;
-    if (!ensure_cap(z, m)) goto done;
-    for (size_t i = 0; i < m; i++) {
-        uint32_t a = i < x->len ? x->digits[i] : 0;
-        uint32_t b = i < y->len ? y->digits[i] : 0;
-        z->digits[i] = a | b;
-    }
-    z->len = m;
-    z->neg = 0;
-    trim(z);
 done:
     neverc_bigint_free(&tx); neverc_bigint_free(&ty);
+    neverc_bigint_free(&x1); neverc_bigint_free(&y1);
 }
 
 void neverc_bigint_xor(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
-    neverc_bigint_t tx, ty;
+    neverc_bigint_t tx, ty, x1, y1;
     neverc_bigint_init(&tx); neverc_bigint_init(&ty);
-    if (z == x) {
-        if (!bigint_set_checked(&tx, x)) goto done;
-        x = &tx;
+    neverc_bigint_init(&x1); neverc_bigint_init(&y1);
+    if (!bitwise_snap(&tx, &ty, z, &x, &y)) goto done;
+    if (x->neg == y->neg) {
+        if (x->neg) {
+            if (!mag_sub1(&x1, x) || !mag_sub1(&y1, y) || !mag_xor(z, &x1, &y1))
+                goto done;
+        } else if (!mag_xor(z, x, y)) {
+            goto done;
+        }
+    } else {
+        if (x->neg) { const neverc_bigint_t *t = x; x = y; y = t; }
+        if (!mag_sub1(&y1, y) || !mag_xor(z, x, &y1) || !mag_add1(z, z))
+            goto done;
+        z->neg = z->len > 0;
     }
-    if (z == y) {
-        if (!bigint_set_checked(&ty, y)) goto done;
-        y = &ty;
-    }
-
-    size_t m = x->len > y->len ? x->len : y->len;
-    if (!ensure_cap(z, m)) goto done;
-    for (size_t i = 0; i < m; i++) {
-        uint32_t a = i < x->len ? x->digits[i] : 0;
-        uint32_t b = i < y->len ? y->digits[i] : 0;
-        z->digits[i] = a ^ b;
-    }
-    z->len = m;
-    z->neg = 0;
-    trim(z);
 done:
     neverc_bigint_free(&tx); neverc_bigint_free(&ty);
+    neverc_bigint_free(&x1); neverc_bigint_free(&y1);
 }
 
 int neverc_bigint_bit(const neverc_bigint_t *x, unsigned i) {
     unsigned word = i / 32;
     unsigned bit = i % 32;
-    if ((size_t)word >= x->len) return 0;
-    return (x->digits[word] >> bit) & 1;
+    int b = 0;
+    if ((size_t)word < x->len)
+        b = (int)((x->digits[word] >> bit) & 1);
+    if (!x->neg) return b;
+    /* bit i of -x is ((|x|-1).bit(i)) ^ 1 */
+    int lower_zero = 1;
+    unsigned w;
+    for (w = 0; w < word; w++) {
+        if ((size_t)w < x->len && x->digits[w] != 0) {
+            lower_zero = 0;
+            break;
+        }
+    }
+    if (lower_zero) {
+        uint32_t dw = (size_t)word < x->len ? x->digits[word] : 0;
+        uint32_t lowmask = bit ? ((1u << bit) - 1u) : 0;
+        if (dw & lowmask)
+            lower_zero = 0;
+    }
+    return b ^ lower_zero ^ 1;
 }
 
 /*

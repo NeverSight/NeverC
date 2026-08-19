@@ -384,6 +384,12 @@ static void test_sof_grayscale_ignores_sampling(void) {
     ASSERT_EQ(decoded.height, 8);
     neverc_jpeg_free(&decoded);
 
+    /* Factor 3 is rejected before the grayscale 1x1 override (Go processSOF). */
+    ASSERT_EQ(patch_sof_sampling(encoded, encoded_length, 0x31), 0);
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length, &decoded), -1);
+    ASSERT_TRUE(decoded.pixels == NULL);
+
     free(encoded);
 }
 
@@ -453,8 +459,10 @@ static void test_restart_interval_required(void) {
     free(encoded);
 }
 
-static void test_restart_roundtrip(void) {
-    printf("[restart_roundtrip]\n");
+/* Two 8x8 grayscale tiles stitched into a 16x8 baseline JPEG with DRI=1
+ * and a single RST0 between the tiles. *rst_off is the index of the 0xFF
+ * of that RST0. */
+static int make_dri1_two_mcu(uint8_t **out, size_t *out_len, size_t *rst_off) {
     uint8_t left_pix[64], right_pix[64];
     memset(left_pix, 40, sizeof(left_pix));
     memset(right_pix, 200, sizeof(right_pix));
@@ -468,44 +476,80 @@ static void test_restart_roundtrip(void) {
     };
     uint8_t *left_j = NULL, *right_j = NULL;
     size_t left_n = 0, right_n = 0;
-    ASSERT_EQ(neverc_jpeg_encode(&left, 95, &left_j, &left_n), 0);
-    ASSERT_EQ(neverc_jpeg_encode(&right, 95, &right_j, &right_n), 0);
-    if (!left_j || !right_j) { free(left_j); free(right_j); return; }
+    if (neverc_jpeg_encode(&left, 95, &left_j, &left_n) != 0 ||
+        neverc_jpeg_encode(&right, 95, &right_j, &right_n) != 0) {
+        free(left_j);
+        free(right_j);
+        return -1;
+    }
 
     size_t sof = find_marker(left_j, left_n, 0xC0);
     size_t sos = find_marker(left_j, left_n, 0xDA);
     size_t eoi_l = find_marker(left_j, left_n, 0xD9);
     size_t sos_r = find_marker(right_j, right_n, 0xDA);
     size_t eoi_r = find_marker(right_j, right_n, 0xD9);
-    ASSERT_TRUE(sof != SIZE_MAX && sos != SIZE_MAX && eoi_l != SIZE_MAX);
-    ASSERT_TRUE(sos_r != SIZE_MAX && eoi_r != SIZE_MAX);
     if (sof == SIZE_MAX || sos == SIZE_MAX || eoi_l == SIZE_MAX ||
         sos_r == SIZE_MAX || eoi_r == SIZE_MAX) {
-        free(left_j); free(right_j); return;
+        free(left_j);
+        free(right_j);
+        return -1;
     }
     size_t sos_len = ((size_t)left_j[sos + 2] << 8) | left_j[sos + 3];
     size_t ent0 = sos + 2 + sos_len;
     size_t sos_len_r = ((size_t)right_j[sos_r + 2] << 8) | right_j[sos_r + 3];
     size_t ent1 = sos_r + 2 + sos_len_r;
-    ASSERT_TRUE(ent0 <= eoi_l && ent1 <= eoi_r);
+    if (ent0 > eoi_l || ent1 > eoi_r) {
+        free(left_j);
+        free(right_j);
+        return -1;
+    }
 
-    size_t out_n = sos + 6 + (2 + sos_len) + (eoi_l - ent0) + 2 +
-                   (eoi_r - ent1) + 2;
-    uint8_t *out = (uint8_t *)malloc(out_n);
-    ASSERT_TRUE(out != NULL);
-    if (!out) { free(left_j); free(right_j); return; }
+    size_t n = sos + 6 + (2 + sos_len) + (eoi_l - ent0) + 2 +
+               (eoi_r - ent1) + 2;
+    uint8_t *buf = (uint8_t *)malloc(n);
+    if (!buf) {
+        free(left_j);
+        free(right_j);
+        return -1;
+    }
 
     size_t p = 0;
-    memcpy(out + p, left_j, sos); p += sos;
-    out[sof + 7] = 0;
-    out[sof + 8] = 16; /* SOF width 16 */
-    out[p++] = 0xFF; out[p++] = 0xDD; out[p++] = 0x00; out[p++] = 0x04;
-    out[p++] = 0x00; out[p++] = 0x01; /* DRI interval 1 */
-    memcpy(out + p, left_j + sos, 2 + sos_len); p += 2 + sos_len;
-    memcpy(out + p, left_j + ent0, eoi_l - ent0); p += eoi_l - ent0;
-    out[p++] = 0xFF; out[p++] = 0xD0; /* RST0 */
-    memcpy(out + p, right_j + ent1, eoi_r - ent1); p += eoi_r - ent1;
-    out[p++] = 0xFF; out[p++] = 0xD9;
+    memcpy(buf + p, left_j, sos); p += sos;
+    buf[sof + 7] = 0;
+    buf[sof + 8] = 16; /* SOF width 16 */
+    buf[p++] = 0xFF; buf[p++] = 0xDD; buf[p++] = 0x00; buf[p++] = 0x04;
+    buf[p++] = 0x00; buf[p++] = 0x01; /* DRI interval 1 */
+    memcpy(buf + p, left_j + sos, 2 + sos_len); p += 2 + sos_len;
+    memcpy(buf + p, left_j + ent0, eoi_l - ent0); p += eoi_l - ent0;
+    *rst_off = p;
+    buf[p++] = 0xFF; buf[p++] = 0xD0; /* RST0 */
+    memcpy(buf + p, right_j + ent1, eoi_r - ent1); p += eoi_r - ent1;
+    buf[p++] = 0xFF; buf[p++] = 0xD9;
+
+    free(left_j);
+    free(right_j);
+    *out = buf;
+    *out_len = p;
+    return 0;
+}
+
+static uint8_t *insert_bytes_at(const uint8_t *src, size_t src_len,
+                                size_t at, const uint8_t *extra, size_t extra_len) {
+    if (!src || at > src_len || (extra_len && !extra)) return NULL;
+    uint8_t *dst = (uint8_t *)malloc(src_len + extra_len);
+    if (!dst) return NULL;
+    memcpy(dst, src, at);
+    if (extra_len) memcpy(dst + at, extra, extra_len);
+    memcpy(dst + at + extra_len, src + at, src_len - at);
+    return dst;
+}
+
+static void test_restart_roundtrip(void) {
+    printf("[restart_roundtrip]\n");
+    uint8_t *out = NULL;
+    size_t p = 0, rst_off = 0;
+    ASSERT_EQ(make_dri1_two_mcu(&out, &p, &rst_off), 0);
+    if (!out) return;
 
     neverc_jpeg_image_t decoded;
     memset(&decoded, 0, sizeof(decoded));
@@ -517,8 +561,89 @@ static void test_restart_roundtrip(void) {
     ASSERT_NEAR(decoded.pixels[4 * 16 + 12], 200, 20);
     neverc_jpeg_free(&decoded);
     free(out);
-    free(left_j);
-    free(right_j);
+}
+
+/* golang.org/issue/28717: some encoders emit a stuffed 0xFF 0x00 immediately
+ * before RST even when the previous MCU ended on a byte boundary. ITU T.81
+ * F.1.2.3 also stuffs 0x00 when 1-bit padding produces 0xFF. golang.org/issue/40130:
+ * garbage bytes before RST must be skipped the way Go's findRST does. A
+ * different marker (not RST / fill / stuffed 00) is still fatal. */
+static void test_restart_stuffed_and_garbage(void) {
+    printf("[restart_stuffed_and_garbage]\n");
+    uint8_t *base = NULL;
+    size_t n = 0, rst_off = 0;
+    ASSERT_EQ(make_dri1_two_mcu(&base, &n, &rst_off), 0);
+    if (!base) return;
+    ASSERT_TRUE(rst_off + 1 < n && base[rst_off] == 0xFF &&
+                base[rst_off + 1] == 0xD0);
+
+    static const uint8_t stuffed[] = {0xFF, 0x00};
+    uint8_t *with_ff00 = insert_bytes_at(base, n, rst_off, stuffed, 2);
+    ASSERT_TRUE(with_ff00 != NULL);
+    if (with_ff00) {
+        neverc_jpeg_image_t decoded;
+        memset(&decoded, 0, sizeof(decoded));
+        ASSERT_EQ(neverc_jpeg_decode(with_ff00, n + 2, &decoded), 0);
+        ASSERT_EQ(decoded.width, 16);
+        ASSERT_NEAR(decoded.pixels[4 * 16 + 4], 40, 20);
+        ASSERT_NEAR(decoded.pixels[4 * 16 + 12], 200, 20);
+        neverc_jpeg_free(&decoded);
+        free(with_ff00);
+    }
+
+    static const uint8_t fill[] = {0xFF, 0xFF};
+    uint8_t *with_fill = insert_bytes_at(base, n, rst_off, fill, 2);
+    ASSERT_TRUE(with_fill != NULL);
+    if (with_fill) {
+        neverc_jpeg_image_t decoded;
+        memset(&decoded, 0, sizeof(decoded));
+        ASSERT_EQ(neverc_jpeg_decode(with_fill, n + 2, &decoded), 0);
+        ASSERT_EQ(decoded.width, 16);
+        neverc_jpeg_free(&decoded);
+        free(with_fill);
+    }
+
+    static const uint8_t garbage[] = {0x7F};
+    uint8_t *with_junk = insert_bytes_at(base, n, rst_off, garbage, 1);
+    ASSERT_TRUE(with_junk != NULL);
+    if (with_junk) {
+        neverc_jpeg_image_t decoded;
+        memset(&decoded, 0, sizeof(decoded));
+        ASSERT_EQ(neverc_jpeg_decode(with_junk, n + 1, &decoded), 0);
+        ASSERT_EQ(decoded.width, 16);
+        ASSERT_NEAR(decoded.pixels[4 * 16 + 12], 200, 20);
+        neverc_jpeg_free(&decoded);
+        free(with_junk);
+    }
+
+    /* RST1 where RST0 is required — a different marker must not be skipped. */
+    uint8_t *wrong = (uint8_t *)malloc(n);
+    ASSERT_TRUE(wrong != NULL);
+    if (wrong) {
+        memcpy(wrong, base, n);
+        wrong[rst_off + 1] = 0xD1;
+        neverc_jpeg_image_t decoded;
+        memset(&decoded, 0, sizeof(decoded));
+        ASSERT_EQ(neverc_jpeg_decode(wrong, n, &decoded), -1);
+        ASSERT_TRUE(decoded.pixels == NULL);
+        ASSERT_EQ(decoded.width, 0);
+        free(wrong);
+    }
+
+    /* EOI (FF D9) in place of RST is a marker, not garbage. */
+    uint8_t *eoi = (uint8_t *)malloc(n);
+    ASSERT_TRUE(eoi != NULL);
+    if (eoi) {
+        memcpy(eoi, base, n);
+        eoi[rst_off + 1] = 0xD9;
+        neverc_jpeg_image_t decoded;
+        memset(&decoded, 0, sizeof(decoded));
+        ASSERT_EQ(neverc_jpeg_decode(eoi, n, &decoded), -1);
+        ASSERT_TRUE(decoded.pixels == NULL);
+        free(eoi);
+    }
+
+    free(base);
 }
 
 static void test_rejects_huge_sof(void) {
@@ -782,6 +907,39 @@ static void test_tiny_malformed_jpeg(void) {
     }
 }
 
+static void test_rejects_baseline_sos_table_and_factor3(void) {
+    printf("[rejects_baseline_sos_table_and_factor3]\n");
+    uint8_t pixels[8 * 8 * 3];
+    memset(pixels, 80, sizeof(pixels));
+    neverc_jpeg_image_t source = {
+        .width = 8, .height = 8, .channels = 3,
+        .pixels = pixels, .stride = 24
+    };
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&source, 90, &encoded, &encoded_length), 0);
+    if (!encoded) return;
+
+    size_t sos = find_marker(encoded, encoded_length, 0xDA);
+    ASSERT_TRUE(sos != SIZE_MAX && sos + 7 < encoded_length);
+    if (sos != SIZE_MAX && sos + 7 < encoded_length) {
+        /* Y's Td/Ta at SOS+6 after FF DA len ns. Baseline forbids Td=2. */
+        encoded[sos + 6] = 0x20;
+        neverc_jpeg_image_t decoded;
+        memset(&decoded, 0, sizeof(decoded));
+        ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length, &decoded), -1);
+        ASSERT_TRUE(decoded.pixels == NULL);
+        encoded[sos + 6] = 0x00;
+    }
+
+    ASSERT_EQ(patch_sof_sampling(encoded, encoded_length, 0x31), 0);
+    neverc_jpeg_image_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length, &decoded), -1);
+    ASSERT_TRUE(decoded.pixels == NULL);
+    free(encoded);
+}
+
 static void test_rejects_duplicate_sof(void) {
     printf("[rejects_duplicate_sof]\n");
     uint8_t pixels[64];
@@ -838,11 +996,13 @@ int main(void) {
     test_quality100_checkerboard();
     test_restart_interval_required();
     test_restart_roundtrip();
+    test_restart_stuffed_and_garbage();
     test_rejects_huge_sof();
     test_rejects_truncated_eoi();
     test_eoi_fill_bytes_ok();
     test_rejects_complete_huffman_table();
     test_tiny_malformed_jpeg();
+    test_rejects_baseline_sos_table_and_factor3();
     test_rejects_duplicate_sof();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

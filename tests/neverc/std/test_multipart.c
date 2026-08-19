@@ -588,6 +588,29 @@ static void test_missing_close_and_epilogue(void) {
     ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "X-Name"),
                  "=?utf-8?q?ok?=");
 
+    /* UTF-8 Å (C3 85): 0x85 is a continuation, not C1 NEL. */
+    strcpy(ew.headers[0].value, "\xC3\x85ngstrom");
+    ewn = neverc_multipart_write(&ew, 1, "b", output, sizeof(output));
+    ASSERT_TRUE(ewn > 0);
+    ASSERT_EQ(neverc_multipart_parse(output, (size_t)ewn, "b", reader), 0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "X-Name"),
+                 "\xC3\x85ngstrom");
+
+    strcpy(ew.headers[0].value, "x\x85y");
+    ASSERT_EQ(neverc_multipart_write(&ew, 1, "b", output, sizeof(output)), -1);
+
+    const char *nel_part =
+        "--b\r\n"
+        "X-Name: x\x85y\r\n"
+        "\r\n"
+        "hi\r\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)nel_part, strlen(nel_part), "b",
+                  reader),
+              -1);
+
     free(reader);
 }
 

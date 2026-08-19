@@ -150,12 +150,31 @@ static void *mock_smtp_server(void *arg) {
             } else if (strncmp(buf, "DATA", 4) == 0) {
                 const char *resp = "354 Start mail input\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
-                /* Read until ".\r\n" */
-                while (1) {
+                /* Detect "\r\n.\r\n" or a leading ".\r\n" across reads.
+                 * strstr on one TCP chunk misses a terminator split as
+                 * "...\r\n" then ".\r\n". */
+                char window[5];
+                size_t wlen = 0;
+                int saw_term = 0;
+                while (!saw_term) {
                     n = neverc_tcp_read(conn, buf, sizeof(buf) - 1);
                     if (n <= 0) break;
-                    buf[n] = '\0';
-                    if (strstr(buf, "\r\n.\r\n")) break;
+                    for (int i = 0; i < n; i++) {
+                        if (wlen == sizeof(window)) {
+                            memmove(window, window + 1, sizeof(window) - 1);
+                            wlen--;
+                        }
+                        window[wlen++] = buf[i];
+                        if (wlen == 3 && memcmp(window, ".\r\n", 3) == 0) {
+                            saw_term = 1;
+                            break;
+                        }
+                        if (wlen == 5 &&
+                            memcmp(window, "\r\n.\r\n", 5) == 0) {
+                            saw_term = 1;
+                            break;
+                        }
+                    }
                 }
                 resp = "250 Message accepted\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
@@ -218,6 +237,18 @@ static void test_smtp_session(void) {
     /* MAIL FROM */
     rc = neverc_smtp_mail(c, "sender@example.com");
     check_true("MAIL FROM success", rc == 0);
+
+    /* RFC 5321 null reverse-path. */
+    rc = neverc_smtp_reset(c);
+    check_true("RSET before null reverse-path", rc == 0);
+    rc = neverc_smtp_mail(c, "");
+    check_true("MAIL FROM null reverse-path", rc == 0);
+    rc = neverc_smtp_rcpt(c, "recipient@example.com");
+    check_true("RCPT after null reverse-path", rc == 0);
+    rc = neverc_smtp_reset(c);
+    check_true("RSET after null reverse-path", rc == 0);
+    rc = neverc_smtp_mail(c, "sender@example.com");
+    check_true("MAIL FROM after null reverse-path", rc == 0);
 
     /* RCPT TO */
     rc = neverc_smtp_rcpt(c, "recipient@example.com");

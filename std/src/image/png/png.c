@@ -127,6 +127,9 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
     size_t pos = 8;
     int ihdr_found = 0;
     int plte_found = 0;
+    int trns_found = 0;
+    uint8_t trns_gray = 0;
+    uint8_t trns_r = 0, trns_g = 0, trns_b = 0;
     int idat_seen = 0;
     int idat_ended = 0;
     int iend_found = 0;
@@ -203,6 +206,35 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
                 return -1;
             }
             plte_found = 1;
+        } else if (memcmp(chunk_type, "tRNS", 4) == 0) {
+            /* Go image/png applies tRNS before IDAT: grayscale/truecolor
+             * become NRGBA with matching samples transparent. Type 4/6
+             * (already have alpha) and a tRNS after IDAT are errors. */
+            if (trns_found || idat_seen) {
+                png_decode_fail(img, idat_buf, NULL);
+                return -1;
+            }
+            if (img->color_type == NEVERC_PNG_COLOR_GRAYSCALE) {
+                if (chunk_len != 2) {
+                    png_decode_fail(img, idat_buf, NULL);
+                    return -1;
+                }
+                /* 8-bit compare uses the low byte, same as Go's
+                 * d.transparent[1] for cbG8. */
+                trns_gray = chunk_data[1];
+            } else if (img->color_type == NEVERC_PNG_COLOR_TRUECOLOR) {
+                if (chunk_len != 6) {
+                    png_decode_fail(img, idat_buf, NULL);
+                    return -1;
+                }
+                trns_r = chunk_data[1];
+                trns_g = chunk_data[3];
+                trns_b = chunk_data[5];
+            } else {
+                png_decode_fail(img, idat_buf, NULL);
+                return -1;
+            }
+            trns_found = 1;
         } else if (memcmp(chunk_type, "IDAT", 4) == 0) {
             if (idat_ended) {
                 png_decode_fail(img, idat_buf, NULL);
@@ -328,6 +360,72 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
     }
 
     free(raw);
+
+    if (trns_found) {
+        uint32_t w = img->width, h = img->height;
+        if (img->color_type == NEVERC_PNG_COLOR_GRAYSCALE &&
+            img->channels == 1) {
+            if ((size_t)w > SIZE_MAX / 2u ||
+                (h > 0 && (size_t)w * 2u > SIZE_MAX / h)) {
+                png_decode_fail(img, NULL, NULL);
+                return -1;
+            }
+            size_t nstride = (size_t)w * 2u;
+            uint8_t *npix = (uint8_t *)malloc(nstride * h);
+            if (!npix) {
+                png_decode_fail(img, NULL, NULL);
+                return -1;
+            }
+            for (uint32_t y = 0; y < h; y++) {
+                const uint8_t *srcp = img->pixels + (size_t)y * img->stride;
+                uint8_t *dstp = npix + (size_t)y * nstride;
+                for (uint32_t x = 0; x < w; x++) {
+                    uint8_t g = srcp[x];
+                    dstp[x * 2u] = g;
+                    dstp[x * 2u + 1u] = (g == trns_gray) ? 0 : 255;
+                }
+            }
+            free(img->pixels);
+            img->pixels = npix;
+            img->channels = 2;
+            img->stride = nstride;
+            img->color_type = NEVERC_PNG_COLOR_GRAYSCALE_ALPHA;
+        } else if (img->color_type == NEVERC_PNG_COLOR_TRUECOLOR &&
+                   img->channels == 3) {
+            if ((size_t)w > SIZE_MAX / 4u ||
+                (h > 0 && (size_t)w * 4u > SIZE_MAX / h)) {
+                png_decode_fail(img, NULL, NULL);
+                return -1;
+            }
+            size_t nstride = (size_t)w * 4u;
+            uint8_t *npix = (uint8_t *)malloc(nstride * h);
+            if (!npix) {
+                png_decode_fail(img, NULL, NULL);
+                return -1;
+            }
+            for (uint32_t y = 0; y < h; y++) {
+                const uint8_t *srcp = img->pixels + (size_t)y * img->stride;
+                uint8_t *dstp = npix + (size_t)y * nstride;
+                for (uint32_t x = 0; x < w; x++) {
+                    uint8_t r = srcp[x * 3u], g = srcp[x * 3u + 1u],
+                            b = srcp[x * 3u + 2u];
+                    dstp[x * 4u] = r;
+                    dstp[x * 4u + 1u] = g;
+                    dstp[x * 4u + 2u] = b;
+                    dstp[x * 4u + 3u] =
+                        (r == trns_r && g == trns_g && b == trns_b) ? 0 : 255;
+                }
+            }
+            free(img->pixels);
+            img->pixels = npix;
+            img->channels = 4;
+            img->stride = nstride;
+            img->color_type = NEVERC_PNG_COLOR_TRUECOLOR_ALPHA;
+        } else {
+            png_decode_fail(img, NULL, NULL);
+            return -1;
+        }
+    }
     return 0;
 }
 

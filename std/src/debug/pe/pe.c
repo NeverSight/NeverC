@@ -31,6 +31,21 @@ static int pe_range_in_file(size_t len, uint64_t offset, uint64_t size) {
     return offset <= len && size <= (uint64_t)len - offset;
 }
 
+/* IMAGE_DIRECTORY_ENTRY_SECURITY is a file offset (Authenticode overlay), not
+ * an RVA. Mapping it through pe_rva_to_file_offset would look it up in the
+ * section table and miss or mis-parse a truncated certificate table. */
+static int pe_check_security_directory(const neverc_pe_file_t *f, size_t len) {
+    if (f->optional_header.number_of_rva_and_sizes <=
+        NEVERC_IMAGE_DIRECTORY_ENTRY_SECURITY)
+        return 0;
+    const neverc_pe_data_directory_t *sec =
+        &f->optional_header
+             .data_directory[NEVERC_IMAGE_DIRECTORY_ENTRY_SECURITY];
+    if (sec->virtual_address == 0 && sec->size == 0)
+        return 0;
+    return pe_range_in_file(len, sec->virtual_address, sec->size) ? 0 : -1;
+}
+
 int neverc_pe_is_valid(const uint8_t *data, size_t len) {
     if (!data || len < 64) return 0;
     if (data[0] != 'M' || data[1] != 'Z') return 0;
@@ -127,6 +142,8 @@ int neverc_pe_open(neverc_pe_file_t *f, const uint8_t *data, size_t len) {
             return pe_open_fail(f);
         }
 
+        if (pe_check_security_directory(f, len) < 0)
+            return pe_open_fail(f);
         if (f->optional_header.size_of_headers > len)
             return pe_open_fail(f);
     }

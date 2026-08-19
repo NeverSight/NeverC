@@ -500,6 +500,39 @@ static void test_pe_bss_nobits(void) {
     free(data);
 }
 
+static void test_pe_security_directory(void) {
+    size_t len = 0;
+    uint8_t *data = build_minimal_pe64(&len);
+    CHECK("build security-directory PE", data != NULL);
+    if (!data) return;
+
+    neverc_pe_file_t f;
+    uint8_t *opt = data + 88;
+    /* Directory 4 is a file offset. Point it at the in-file .text bytes. */
+    put32(opt + 112 + NEVERC_IMAGE_DIRECTORY_ENTRY_SECURITY * 8, 512);
+    put32(opt + 112 + NEVERC_IMAGE_DIRECTORY_ENTRY_SECURITY * 8 + 4, 16);
+    CHECK("open PE with in-file certificate table",
+          neverc_pe_open(&f, data, len) == 0);
+    CHECK("security directory kept as file offset",
+          f.optional_header.data_directory[NEVERC_IMAGE_DIRECTORY_ENTRY_SECURITY]
+                  .virtual_address == 512 &&
+              f.optional_header.data_directory[NEVERC_IMAGE_DIRECTORY_ENTRY_SECURITY]
+                      .size == 16);
+    neverc_pe_close(&f);
+
+    put32(opt + 112 + NEVERC_IMAGE_DIRECTORY_ENTRY_SECURITY * 8,
+          (uint32_t)(len - 8));
+    put32(opt + 112 + NEVERC_IMAGE_DIRECTORY_ENTRY_SECURITY * 8 + 4, 32);
+    CHECK("reject truncated certificate table",
+          neverc_pe_open(&f, data, len) == -1);
+
+    put32(opt + 112 + NEVERC_IMAGE_DIRECTORY_ENTRY_SECURITY * 8, 0xFFFFFFF0u);
+    put32(opt + 112 + NEVERC_IMAGE_DIRECTORY_ENTRY_SECURITY * 8 + 4, 0x20u);
+    CHECK("reject certificate table offset plus size wrap",
+          neverc_pe_open(&f, data, len) == -1);
+    free(data);
+}
+
 int main(void) {
     printf("=== NeverC debug/pe Tests ===\n\n");
 
@@ -510,6 +543,7 @@ int main(void) {
     test_pe32_and_bounds();
     test_pe_invalid();
     test_pe_bss_nobits();
+    test_pe_security_directory();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);
     if (tests_failed > 0)

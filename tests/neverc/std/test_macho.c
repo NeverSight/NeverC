@@ -361,6 +361,35 @@ static void test_fat(void) {
 
     put32be(fat + 16, (uint32_t)(total + 8));
     CHECK("reject fat arch past EOF", neverc_macho_open(&f, fat, total) == -1);
+    put32be(fat + 16, (uint32_t)offset);
+
+    /* Two architectures: first thin is valid, second claims bytes past EOF.
+     * Open used to return the first slice without looking at the rest. */
+    {
+        size_t two_off0 = 48;
+        size_t two_total = two_off0 + thin_len;
+        uint8_t *two = (uint8_t *)calloc(two_total, 1);
+        CHECK("build two-arch fat", two != NULL);
+        if (two) {
+            two[0] = 0xCA; two[1] = 0xFE; two[2] = 0xBA; two[3] = 0xBE;
+            put32be(two + 4, 2);
+            put32be(two + 8, (uint32_t)NEVERC_CPU_TYPE_ARM64);
+            put32be(two + 16, (uint32_t)two_off0);
+            put32be(two + 20, (uint32_t)thin_len);
+            put32be(two + 28, (uint32_t)NEVERC_CPU_TYPE_X86_64);
+            put32be(two + 36, (uint32_t)(two_total + 16));
+            put32be(two + 40, 64);
+            memcpy(two + two_off0, thin, thin_len);
+            CHECK("reject fat with later arch past EOF",
+                  neverc_macho_open(&f, two, two_total) == -1);
+            put32be(two + 36, (uint32_t)two_off0);
+            put32be(two + 40, (uint32_t)thin_len);
+            CHECK("open fat when every arch is in range",
+                  neverc_macho_open(&f, two, two_total) == 0);
+            neverc_macho_close(&f);
+            free(two);
+        }
+    }
 
     free(fat);
     free(thin);

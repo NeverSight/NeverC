@@ -19,6 +19,9 @@ typedef struct {
     /* Set when userinfo contained a colon, including an empty password
      * (`user:@host`). Distinguishes that from `user@host` (no password). */
     int  has_password;
+    /* Set when the URL contained '?', including a trailing empty query
+     * (`/path?`). Distinguishes that from `/path` (Go url.ForceQuery). */
+    int  has_query;
 } neverc_url_t;
 
 /* Parse a hierarchical URL or relative reference. Components that exceed the

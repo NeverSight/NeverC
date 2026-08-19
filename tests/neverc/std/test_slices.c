@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 #define ASSERT_INT_EQ(expr, expected) do { int _v=(int)(expr); int _e=(int)(expected); tests_run++; if(_v==_e)tests_passed++; else{tests_failed++; printf("  FAIL: %s=%d, expected %d (line %d)\n",#expr,_v,_e,__LINE__);}} while(0)
@@ -122,6 +123,10 @@ static void test_size_overflow_rejected(void) {
     ASSERT_TRUE(!neverc_slices_contains(&a, overflowing_len, &b, 2, eq_int));
     ASSERT_INT_EQ(neverc_slices_min(&a, overflowing_len, 2, cmp_int), -1);
     ASSERT_INT_EQ(neverc_slices_max(&a, overflowing_len, 2, cmp_int), -1);
+    ASSERT_INT_EQ(neverc_slices_min(&a, (size_t)INT_MAX + 1u, 1, cmp_int), -1);
+    ASSERT_INT_EQ(neverc_slices_max(&a, (size_t)INT_MAX + 1u, 1, cmp_int), -1);
+    ASSERT_INT_EQ(neverc_slices_min_int(&a, (size_t)INT_MAX + 1u), -1);
+    ASSERT_INT_EQ(neverc_slices_max_int(&a, (size_t)INT_MAX + 1u), -1);
     int found = 1;
     ASSERT_INT_EQ(neverc_slices_binary_search(&a, overflowing_len, &b, 2,
                                               cmp_int, &found), 0);

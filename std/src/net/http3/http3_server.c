@@ -551,14 +551,19 @@ static int h3_parse_request_headers(h3_conn_t *connection,
             headers[i].value = NULL;
         }
     }
+    /* RFC 9114: if both are present they MUST be equivalent. Compare
+     * before treating empty as absent, or ":authority: victim" plus
+     * "host: " would skip the check and later disagree between
+     * request.host and the Host header. */
+    if (host && !h3_ascii_ieq(request->authority, host))
+        goto cleanup;
     if (host && !*host) host = NULL;
     if (pseudo_seen != (1U | 2U | 4U | 8U) ||
         strcmp(request->scheme, "https") != 0 ||
         !neverc_h3_method_allowed(request->method) ||
         !neverc_h3_request_path_allowed(request->method, request->path) ||
         !neverc_h3_authority_allowed(request->authority) ||
-        (host && !neverc_h3_authority_allowed(host)) ||
-        (host && !h3_ascii_ieq(request->authority, host)))
+        (host && !neverc_h3_authority_allowed(host)))
         goto cleanup;
     result = 0;
 

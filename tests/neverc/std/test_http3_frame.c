@@ -697,6 +697,9 @@ static void test_authority_rejects_host_list_and_userinfo(void) {
     ASSERT_EQ(neverc_h3_authority_allowed("::1"), 0);
     ASSERT_EQ(neverc_h3_authority_allowed("[::1,evil.com]"), 0);
     ASSERT_EQ(neverc_h3_authority_allowed("foo bar"), 0);
+    ASSERT_EQ(neverc_h3_authority_allowed("<script>"), 0);
+    ASSERT_EQ(neverc_h3_authority_allowed("ex\"ample.com"), 0);
+    ASSERT_EQ(neverc_h3_authority_allowed("ex>ample.com"), 0);
     ASSERT_EQ(neverc_h3_authority_allowed(""), 0);
     ASSERT_EQ(neverc_h3_authority_allowed(NULL), 0);
 }

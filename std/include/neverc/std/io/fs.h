@@ -9,21 +9,24 @@
 extern "C" {
 #endif
 
+/* Type bits match Go io/fs.FileMode (high bits) so they do not overlap
+ * Unix 0777. The old 1<<0..1<<8 layout made a 0775 directory look like
+ * MODE_LINK (group-write) and WalkDir skipped its children. */
 typedef enum {
-    NEVERC_FS_MODE_DIR    = 1 << 0,
-    NEVERC_FS_MODE_APPEND = 1 << 1,
-    NEVERC_FS_MODE_EXCL   = 1 << 2,
-    NEVERC_FS_MODE_TEMP   = 1 << 3,
-    NEVERC_FS_MODE_LINK   = 1 << 4,
-    NEVERC_FS_MODE_PIPE   = 1 << 5,
-    NEVERC_FS_MODE_SOCKET = 1 << 6,
-    NEVERC_FS_MODE_DEVICE = 1 << 7,
-    NEVERC_FS_MODE_CHAR_DEVICE = 1 << 8,
-    NEVERC_FS_MODE_IRREGULAR   = 1 << 9,
-    NEVERC_FS_MODE_SETUID  = 1 << 10,
-    NEVERC_FS_MODE_SETGID  = 1 << 11,
-    NEVERC_FS_MODE_STICKY  = 1 << 12,
-    NEVERC_FS_PERM_MASK    = 0777,
+    NEVERC_FS_MODE_DIR         = 1u << 31,
+    NEVERC_FS_MODE_APPEND      = 1u << 30,
+    NEVERC_FS_MODE_EXCL        = 1u << 29,
+    NEVERC_FS_MODE_TEMP        = 1u << 28,
+    NEVERC_FS_MODE_LINK        = 1u << 27,
+    NEVERC_FS_MODE_DEVICE      = 1u << 26,
+    NEVERC_FS_MODE_PIPE        = 1u << 25,
+    NEVERC_FS_MODE_SOCKET      = 1u << 24,
+    NEVERC_FS_MODE_SETUID      = 1u << 23,
+    NEVERC_FS_MODE_SETGID      = 1u << 22,
+    NEVERC_FS_MODE_CHAR_DEVICE = 1u << 21,
+    NEVERC_FS_MODE_STICKY      = 1u << 20,
+    NEVERC_FS_MODE_IRREGULAR   = 1u << 19,
+    NEVERC_FS_PERM_MASK        = 0777,
 } neverc_fs_mode_t;
 
 typedef struct {

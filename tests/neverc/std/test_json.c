@@ -122,6 +122,16 @@ static void test_parse_number(void) {
     ASSERT_NOT_NULL(v);
     ASSERT_DBL_EQ(neverc_json_number(v), 1e15, 1.0);
     neverc_json_free(v);
+
+    /* DOM is float64, matching Go encoding/json into interface{}/float64:
+     * integers above 2^53 round; they are not rejected and not preserved
+     * as a json.Number digit string. */
+    v = neverc_json_parse("9007199254740993", 16);
+    ASSERT_NOT_NULL(v);
+    if (v) {
+        ASSERT_DBL_EQ(neverc_json_number(v), 9007199254740992.0, 0.0);
+        neverc_json_free(v);
+    }
 }
 
 static void test_parse_string(void) {

@@ -411,6 +411,17 @@ static void test_elf_extended_and_truncated(void) {
     data[43] = (uint8_t)(shdr_off >> 24);
     data[60] = 3;
 
+    data[56] = 0xFF; data[57] = 0xFF;
+    data[32] = 64; /* e_phoff inside the file */
+    data[54] = 56;
+    data[shdr_off + 44] = 1; /* sh_info far below PN_XNUM */
+    CHECK("PN_XNUM with sh_info below 0xffff rejected",
+          neverc_elf_open(&f, data, len) < 0);
+    data[56] = 0; data[57] = 0;
+    data[32] = 0;
+    data[54] = 0;
+    data[shdr_off + 44] = 0;
+
     data[58] = 8; /* e_shentsize too small for Elf64_Shdr */
     CHECK("reject undersized section header entries",
           neverc_elf_open(&f, data, len) < 0);

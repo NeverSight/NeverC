@@ -201,13 +201,13 @@ static const char *pem_find_last_begin(const char *search, const char *end_line)
 }
 
 /*
- * Decode the PEM base64 body. Returns 1 on success, 0 if the body is
- * corrupt (caller skips this block), and -1 if the block is valid but
- * out_cap is too small.
+ * Scan a PEM base64 body. out_buf == NULL counts only. Returns 1 on
+ * success, 0 if the body is corrupt (caller skips this block), and -1
+ * if the block is valid but out_cap is too small.
  */
-static int pem_decode_body(uint8_t *out_buf, size_t out_cap,
-                           const char *body_start, const char *end,
-                           size_t *decoded_len) {
+static int pem_scan_body(uint8_t *out_buf, size_t out_cap,
+                         const char *body_start, const char *end,
+                         size_t *decoded_len) {
     int quartet[4];
     size_t quartet_len = 0;
     size_t n = 0;
@@ -242,18 +242,21 @@ static int pem_decode_body(uint8_t *out_buf, size_t out_cap,
         if (emit > out_cap - n)
             return -1;
 
-        out_buf[n++] =
-            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
-        if (emit >= 2) {
-            out_buf[n++] =
-                (uint8_t)((quartet[1] << 4) | (quartet[2] >> 2));
+        if (out_buf) {
+            out_buf[n] =
+                (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
+            if (emit >= 2) {
+                out_buf[n + 1] =
+                    (uint8_t)((quartet[1] << 4) | (quartet[2] >> 2));
+            }
+            if (emit == 3) {
+                out_buf[n + 2] =
+                    (uint8_t)((quartet[2] << 6) | quartet[3]);
+            }
         }
-        if (emit == 3) {
-            out_buf[n++] =
-                (uint8_t)((quartet[2] << 6) | quartet[3]);
-        } else {
+        n += emit;
+        if (emit < 3)
             saw_padding = 1;
-        }
         quartet_len = 0;
     }
     /* StdEncoding requires a complete padded quartet; leftover data is corrupt. */
@@ -261,6 +264,29 @@ static int pem_decode_body(uint8_t *out_buf, size_t out_cap,
         return 0;
 
     *decoded_len = n;
+    return 1;
+}
+
+/*
+ * Decode the PEM base64 body. Validate (and size-check) before writing so a
+ * skipped corrupt candidate cannot clobber dst, and a later shorter valid
+ * block cannot leave leftover bytes from the failed one (Go allocates a
+ * fresh Block.Bytes per candidate).
+ */
+static int pem_decode_body(uint8_t *out_buf, size_t out_cap,
+                           const char *body_start, const char *end,
+                           size_t *decoded_len) {
+    size_t need = 0;
+    int rc = pem_scan_body(NULL, out_cap, body_start, end, &need);
+    if (rc != 1)
+        return rc;
+    if (need != 0) {
+        rc = pem_scan_body(out_buf, out_cap, body_start, end, decoded_len);
+        if (rc != 1)
+            return rc;
+    } else {
+        *decoded_len = 0;
+    }
     return 1;
 }
 

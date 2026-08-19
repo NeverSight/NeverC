@@ -186,7 +186,13 @@ static void test_floats(void) {
     check_str("zero", r, "0.000000"); free(r);
 
     r = neverc_fmt_sprintf("%g", 1.23456789);
-    check_str("g default prec", r, "1.23457"); free(r);
+    check_str("g default is shortest", r, "1.23456789"); free(r);
+
+    r = neverc_fmt_sprintf("%G", 1.23456789);
+    check_str("G default is shortest", r, "1.23456789"); free(r);
+
+    r = neverc_fmt_sprintf("%.6g", 1.23456789);
+    check_str("g explicit prec 6", r, "1.23457"); free(r);
 
     r = neverc_fmt_sprintf("%g", 1.0);
     check_str("g one", r, "1"); free(r);
@@ -202,6 +208,10 @@ static void test_floats(void) {
 
     r = neverc_fmt_sprintf("%#g", 1e10);
     check_str("sharp g exponent zeros", r, "1.00000e+10"); free(r);
+
+    /* Sharp does not truncate a shortest value that already has >6 digits. */
+    r = neverc_fmt_sprintf("%#g", 1.23456789);
+    check_str("sharp g keeps extra shortest digits", r, "1.23456789"); free(r);
 
     r = neverc_fmt_sprintf("%#f", 1.0);
     check_str("sharp f default unchanged", r, "1.000000"); free(r);
@@ -473,6 +483,13 @@ static void test_sscanf(void) {
     check_int("sscanf incomplete decimal 1e+foo rejected", n, 0);
     check_true("sscanf incomplete decimal 1e+foo leaves output", special == 7.0);
 
+    n = neverc_fmt_sscanf("2.3p", "%f", &special);
+    check_int("sscanf incomplete decimal 2.3p rejected", n, 0);
+    check_true("sscanf incomplete decimal 2.3p leaves output", special == 7.0);
+    n = neverc_fmt_sscanf("2.3P+", "%f", &special);
+    check_int("sscanf incomplete decimal 2.3P+ rejected", n, 0);
+    check_true("sscanf incomplete decimal 2.3P+ leaves output", special == 7.0);
+
     special = 7.0;
     n = neverc_fmt_sscanf("0x_1p0", "%f", &special);
     check_int("sscanf hex underscore", n, 1);
@@ -554,6 +571,16 @@ static void test_sscanf(void) {
     one = 0;
     check_int("sscan hex prefix count", neverc_fmt_sscan("0x10", &one), 1);
     check_int("sscan hex prefix val", one, 16);
+    one = 0;
+    check_int("sscan octal 07 count", neverc_fmt_sscan("07", &one), 1);
+    check_int("sscan octal 07 val", one, 7);
+    one = 77;
+    check_int("sscan octal 08 count", neverc_fmt_sscan("08", &one), 1);
+    check_int("sscan octal 08 val", one, 0);
+    a = 0;
+    n = neverc_fmt_sscanf("08", "%d", &a);
+    check_int("sscanf %%d 08 count", n, 1);
+    check_int("sscanf %%d 08 val", a, 8);
     one = 0;
     check_int("sscan thousands count", neverc_fmt_sscan("1_000", &one), 1);
     check_int("sscan thousands val", one, 1000);

@@ -306,9 +306,26 @@ static int h3_valid_port(const char *s, size_t length) {
     return value > 0;
 }
 
+/* Same Host byte allowlist as HTTP/1 and HTTP/2 (Go ValidHostHeader
+ * without comma). '<' '>' '"' used to XSS dumps and reflected Host. */
+static int h3_host_reg_name_byte(unsigned char c) {
+    if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+        (c >= 'a' && c <= 'z'))
+        return 1;
+    switch (c) {
+    case '!': case '$': case '%': case '&': case '\'':
+    case '(': case ')': case '*': case '+':
+    case '-': case '.': case ';': case '=':
+    case '_': case '~':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 /* Same Host/:authority rules as HTTP/1 and HTTP/2: reject userinfo, paths,
- * commas, bad ports, and unbracketed / unclosed IPv6 so intermediaries
- * cannot treat :authority as a Host list or override the origin. */
+ * commas, bad ports, HTML-special bytes, and unbracketed / unclosed IPv6 so
+ * intermediaries cannot treat :authority as a Host list or override origin. */
 int neverc_h3_authority_allowed(const char *value) {
     if (!value || !value[0]) return 0;
     size_t length = strlen(value);
@@ -320,9 +337,7 @@ int neverc_h3_authority_allowed(const char *value) {
         for (size_t i = 0; i < inner; i++) {
             unsigned char c = (unsigned char)value[1 + i];
             if (c == ':') has_colon = 1;
-            if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
-                c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
-                c == ',')
+            else if (!h3_host_reg_name_byte(c))
                 return 0;
         }
         if (!has_colon &&
@@ -337,10 +352,7 @@ int neverc_h3_authority_allowed(const char *value) {
     size_t host_length = colon ? (size_t)(colon - value) : length;
     if (host_length == 0) return 0;
     for (size_t i = 0; i < host_length; i++) {
-        unsigned char c = (unsigned char)value[i];
-        if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
-            c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
-            c == ',' || c == ':')
+        if (!h3_host_reg_name_byte((unsigned char)value[i]))
             return 0;
     }
     if (!colon) return 1;

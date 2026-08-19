@@ -54,8 +54,8 @@ void neverc_arena_reset(neverc_arena_t *a) {
     if (!a) return;
     /* Allocate a fresh chunk first so every previous pointer is released.
      * Keeping the newest (often largest) chunk would leave recent allocations
-     * aliased after reset. If the fresh chunk cannot be allocated, rewind the
-     * existing head and drop extras so the arena stays usable. */
+     * aliased after reset. If the fresh chunk cannot be allocated, keep the
+     * oldest leftover chunk and drop newer ones so the arena stays usable. */
     arena_chunk_t *fresh = chunk_new(ARENA_DEFAULT_CHUNK);
     if (fresh) {
         arena_chunk_t *c = a->head;
@@ -67,15 +67,28 @@ void neverc_arena_reset(neverc_arena_t *a) {
         a->head = fresh;
         a->num_chunks = 1;
     } else {
-        arena_chunk_t *keep = a->head;
-        arena_chunk_t *c = keep ? keep->next : NULL;
-        while (c) {
-            arena_chunk_t *next = c->next;
-            free(c);
-            c = next;
+        /* Keep the oldest chunk (tail), not the newest (head). Head is the
+         * most recent allocation — often the oversized chunk — so rewinding
+         * it would alias pointers obtained just before reset. The original
+         * default-sized chunk is the safer leftover when a fresh one cannot
+         * be allocated. */
+        arena_chunk_t *oldest = a->head;
+        if (oldest) {
+            while (oldest->next)
+                oldest = oldest->next;
+            arena_chunk_t *c = a->head;
+            while (c != oldest) {
+                arena_chunk_t *next = c->next;
+                free(c);
+                c = next;
+            }
+            oldest->used = 0;
+            oldest->next = NULL;
+            a->head = oldest;
+            a->num_chunks = 1;
+        } else {
+            a->num_chunks = 0;
         }
-        if (keep) { keep->used = 0; keep->next = NULL; }
-        a->num_chunks = keep ? 1 : 0;
     }
     a->total_alloc = 0;
 }

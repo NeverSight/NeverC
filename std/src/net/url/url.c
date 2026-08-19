@@ -377,7 +377,8 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
             neverc_netip_addr_t addr;
             /* Go net/url: only a valid IPv6 (including IPv4-mapped) literal
              * may be enclosed in brackets. IPv4 and non-IP text are errors.
-             * `%25` in a zone ID unescapes to `%`; bare `%eth0` is kept. */
+             * RFC 6874 `%25` in a zone ID unescapes to `%`; bare `%eth0`
+             * is an invalid host escape. */
             if (unescape_ipv6_literal(hostbuf, sizeof(hostbuf), p + 1, hlen) != 0 ||
                 neverc_netip_parse_addr(hostbuf, &addr) != 0 ||
                 addr.is_v4 ||
@@ -432,9 +433,14 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
         return -1;
     if (!valid_pct_encoded(u->path, path_len))
         return -1;
-    if (query && copy_exact(u->raw_query, sizeof(u->raw_query), query + 1,
-                            (size_t)(before_fragment - query - 1)) != 0)
-        return -1;
+    if (query) {
+        /* Go ForceQuery: a '?' is kept even when RawQuery is empty so
+         * `http://host/path?` does not round-trip as `http://host/path`. */
+        u->has_query = 1;
+        if (copy_exact(u->raw_query, sizeof(u->raw_query), query + 1,
+                       (size_t)(before_fragment - query - 1)) != 0)
+            return -1;
+    }
     if (fragment) {
         size_t frag_len = (size_t)(raw_end - fragment - 1);
         if (copy_exact(u->fragment, sizeof(u->fragment), fragment + 1,
@@ -501,7 +507,7 @@ int neverc_url_string(const neverc_url_t *u, char *buf, size_t cap) {
         }
     }
     builder_append_field(&builder, u->path, sizeof(u->path));
-    if (u->raw_query[0]) {
+    if (u->has_query || u->raw_query[0]) {
         builder_append_literal(&builder, "?");
         builder_append_field(&builder, u->raw_query, sizeof(u->raw_query));
     }
@@ -533,7 +539,7 @@ int neverc_url_request_uri(const neverc_url_t *u, char *buf, size_t cap) {
         builder_append_field(&builder, u->path, sizeof(u->path));
     } else
         builder_append_literal(&builder, "/");
-    if (u->raw_query[0]) {
+    if (u->has_query || u->raw_query[0]) {
         builder_append_literal(&builder, "?");
         builder_append_field(&builder, u->raw_query, sizeof(u->raw_query));
     }
@@ -594,9 +600,16 @@ int neverc_url_values_parse(neverc_url_values_t *v, const char *query) {
 
     const char *p = query;
     while (*p) {
-        if (v->count >= 64) goto invalid;
         const char *amp = strchr(p, '&');
         const char *end = amp ? amp : p + strlen(p);
+        /* Go ParseQuery skips empty "&" segments (`&&`, leading '&').
+         * `=value` is kept as an empty key. */
+        if (end == p) {
+            if (!amp) break;
+            p = amp + 1;
+            continue;
+        }
+        if (v->count >= 64) goto invalid;
         const char *eq = NULL;
         for (const char *c = p; c < end; c++)
             if (*c == '=') { eq = c; break; }

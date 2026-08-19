@@ -576,31 +576,38 @@ static int qt_process_one_packet(struct neverc_quic_conn *conn,
     uint64_t packet_number = 0;
     quic_keys_t next_read_keys;
     int trying_next_keys = 0;
+    memset(&next_read_keys, 0, sizeof(next_read_keys));
 
-decrypt_attempt:
-    free(copy);
-    free(plaintext);
     copy = (uint8_t *)malloc(packet_len);
-    plaintext = NULL;
     if (!copy) goto decrypt_failed;
     memcpy(copy, packet, packet_len);
+    /* RFC 9001 §6: HP keys do not rotate. Unprotect with the current HP
+     * only; never retry with a derived next-generation HP (AES-ECB HP
+     * removal always "succeeds", so that retry was an HKDF DoS). */
     if (neverc_quic_remove_header_protection(keys->hp, copy, packet_len,
                                              pn_offset) != 0)
-        goto decrypt_retry;
+        goto decrypt_failed;
     if (neverc_quic_parse_packet_header(copy, packet_len, &header,
                                         dcid_len) != 0)
-        goto decrypt_retry;
+        goto decrypt_failed;
     if (header.type != protected_type || header.header_len > packet_len ||
         header.payload_len > packet_len - header.header_len)
-        goto decrypt_retry;
+        goto decrypt_failed;
     if (!is_long && header.key_phase !=
-            (uint8_t)(neverc_quic_tls_get_read_key_phase(conn->tls) ^
-                      trying_next_keys))
-        goto decrypt_retry;
+            (uint8_t)neverc_quic_tls_get_read_key_phase(conn->tls)) {
+        /* RFC 9001 §6.1: a Key Phase flip is only valid after the
+         * handshake is confirmed, not merely after TLS Finished. */
+        if (!conn->handshake_confirmed ||
+            neverc_quic_tls_prepare_read_key_update(conn->tls,
+                                                     &next_read_keys) != 0)
+            goto decrypt_failed;
+        trying_next_keys = 1;
+        keys = &next_read_keys;
+    }
     size_t parsed_len = is_long ? header.header_len + header.payload_len
                                 : packet_len;
     if (parsed_len > packet_len || header.payload_len < 16)
-        goto decrypt_retry;
+        goto decrypt_failed;
     packet_len = parsed_len;
     *consumed = packet_len;
     space = qt_packet_space(header.type);
@@ -616,7 +623,7 @@ decrypt_attempt:
                                     header.header_len,
                                     copy + header.header_len,
                                     header.payload_len, plaintext) != 0)
-        goto decrypt_retry;
+        goto decrypt_failed;
     if (trying_next_keys &&
         neverc_quic_tls_commit_read_key_update(conn->tls,
                                                 &next_read_keys) != 0)
@@ -651,15 +658,6 @@ decrypt_attempt:
     }
     goto decrypt_complete;
 
-decrypt_retry:
-    if (!is_long && !trying_next_keys &&
-        neverc_quic_tls_is_established(conn->tls) &&
-        neverc_quic_tls_prepare_read_key_update(conn->tls,
-                                                 &next_read_keys) == 0) {
-        trying_next_keys = 1;
-        keys = &next_read_keys;
-        goto decrypt_attempt;
-    }
 decrypt_failed:
     neverc_quic_tls_discard_read_key_update(conn->tls);
     neverc_platform_secure_zero(&next_read_keys, sizeof(next_read_keys));
@@ -1099,6 +1097,14 @@ static int qt_build_pto_probe(struct neverc_quic_conn *conn,
         conn->pto_probe_pending = 0;
         return 0;
     }
+    /* RFC 9000 §6.2.4: PTO SHOULD carry new or previously sent unacked
+     * data. Initial CRYPTO is never retired until handshake_confirmed
+     * (Initial keys are public), so rewind and resend it instead of a
+     * PING-only probe that leaves the handshake idle. */
+    neverc_quic_tls_crypto_rewind_unacked(conn->tls, conn->pto_probe_level);
+    int crypto = qt_build_crypto(conn, conn->pto_probe_level, output,
+                                 capacity, meta, written);
+    if (crypto != 0) return crypto;
     if (neverc_quic_write_ping(output, capacity, written) != 0)
         return -1;
     meta->kind = QUIC_TX_CONTROL;
@@ -1435,9 +1441,11 @@ static int qt_send_item(struct neverc_quic_conn *conn,
         record->fin = meta->fin;
         neverc_quic_loss_on_sent(&conn->loss, space, packet_number,
                                  record->sent_at_ms, packet_len, 1);
-        if (meta->kind == QUIC_TX_CRYPTO)
+        if (meta->kind == QUIC_TX_CRYPTO) {
             neverc_quic_tls_crypto_data_sent(conn->tls, meta->level,
                                              meta->length);
+            if (conn->pto_probe_pending > 0) conn->pto_probe_pending--;
+        }
         else if (meta->kind == QUIC_TX_STREAM) {
             quic_stream_t *stream = neverc_quic_conn_find_stream(
                 conn, meta->stream_id);

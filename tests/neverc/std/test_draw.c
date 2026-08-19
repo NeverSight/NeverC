@@ -417,6 +417,32 @@ static void test_draw_clip_past_stride(void) {
     check("far clip did not mutate buffer", far_clean);
 }
 
+/* Src replaces dest (including alpha). Over of a fully transparent
+ * premultiplied color is a no-op. Matches Go draw.Src vs draw.Over on RGBA. */
+static void test_draw_src_vs_over_alpha(void) {
+    printf("[draw_src_vs_over_alpha]\n");
+    neverc_image_rgba_t dst;
+    neverc_image_rgba_init(&dst, neverc_rect(0, 0, 2, 2));
+    neverc_draw_uniform(&dst, neverc_rect(0, 0, 2, 2),
+                        10, 20, 30, 255, NEVERC_DRAW_SRC);
+    neverc_draw_uniform(&dst, neverc_rect(0, 0, 2, 2),
+                        40, 50, 60, 128, NEVERC_DRAW_SRC);
+    uint8_t r, g, b, a;
+    neverc_image_rgba_at(&dst, 0, 0, &r, &g, &b, &a);
+    check("src replaces including alpha",
+          r == 40 && g == 50 && b == 60 && a == 128);
+
+    neverc_draw_uniform(&dst, neverc_rect(0, 0, 2, 2),
+                        10, 20, 30, 255, NEVERC_DRAW_SRC);
+    neverc_draw_uniform(&dst, neverc_rect(0, 0, 2, 2),
+                        0, 0, 0, 0, NEVERC_DRAW_OVER);
+    neverc_image_rgba_at(&dst, 0, 0, &r, &g, &b, &a);
+    check("over ca0 is a no-op",
+          r == 10 && g == 20 && b == 30 && a == 255);
+
+    neverc_image_rgba_free(&dst);
+}
+
 static void test_draw_null(void) {
     printf("[draw_null]\n");
     neverc_image_rgba_t dst;
@@ -448,6 +474,7 @@ int main(void) {
     test_draw_zero_stride_noop();
     test_draw_clip_wider_than_stride();
     test_draw_clip_past_stride();
+    test_draw_src_vs_over_alpha();
     test_draw_null();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

@@ -440,7 +440,11 @@ int nc_http_writer_finish(neverc_http_response_writer_t *writer) {
 }
 
 void neverc_http_set_status(neverc_http_response_writer_t *w, int code) {
-    if (w && code >= 100 && code <= 999) w->status = code;
+    if (!w) return;
+    /* Invalid codes must not remain 200 OK: neverc_http_error("denied", 0)
+     * used to fail-open as success. Match Go WriteHeader's 100..999 range,
+     * but substitute 500 instead of panicking. */
+    w->status = (code >= 100 && code <= 999) ? code : 500;
 }
 
 int neverc_http_add_header(neverc_http_response_writer_t *w,
@@ -1433,6 +1437,25 @@ static int http_valid_port(const char *s, size_t length) {
     return value > 0;
 }
 
+/* Go httpguts.ValidHostHeader allowlist without comma (comma is kept
+ * banned so Host cannot smuggle a second authority). '<' '>' '"' are
+ * outside the table; accepting them used to XSS httputil dumps and
+ * reflected Host / X-Forwarded-Host HTML. */
+static int http_host_reg_name_byte(unsigned char c) {
+    if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+        (c >= 'a' && c <= 'z'))
+        return 1;
+    switch (c) {
+    case '!': case '$': case '%': case '&': case '\'':
+    case '(': case ')': case '*': case '+':
+    case '-': case '.': case ';': case '=':
+    case '_': case '~':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 /* RFC 9112: Host must be uri-host [ ":" port ]. Reject values that can
  * desynchronize intermediaries (userinfo, path, spaces, bad ports). */
 static int http_valid_host(const char *value, size_t length) {
@@ -1445,9 +1468,7 @@ static int http_valid_host(const char *value, size_t length) {
         for (size_t i = 0; i < inner; i++) {
             unsigned char c = (unsigned char)value[1 + i];
             if (c == ':') has_colon = 1;
-            if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
-                c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
-                c == ',')
+            else if (!http_host_reg_name_byte(c))
                 return 0;
         }
         if (!has_colon &&
@@ -1462,10 +1483,7 @@ static int http_valid_host(const char *value, size_t length) {
     size_t host_length = colon ? (size_t)(colon - value) : length;
     if (host_length == 0) return 0;
     for (size_t i = 0; i < host_length; i++) {
-        unsigned char c = (unsigned char)value[i];
-        if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
-            c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
-            c == ',' || c == ':')
+        if (!http_host_reg_name_byte((unsigned char)value[i]))
             return 0;
     }
     if (!colon) return 1;
@@ -1731,9 +1749,19 @@ static int parse_request_mode(const char *raw, size_t raw_length,
     int asterisk_form = target_length == 1 && target[0] == '*';
     if (target[0] != '/' && !asterisk_form)
         goto invalid;
+    /* Origin-form is absolute-path. Reject scheme-relative "//host" (the
+     * leftover of absolute-form after requiring a leading '/') and backslash
+     * (browsers treat "/\\" as a network-path). RFC 9112 / Go allow empty
+     * path segments (`/foo//bar`); only a path that *starts* with `//` is
+     * origin-form leftover. `//` in the query is fine. */
+    const char *target_query = (const char *)memchr(target, '?', target_length);
+    size_t path_length = target_query
+        ? (size_t)(target_query - target) : target_length;
+    if (path_length >= 2 && target[0] == '/' && target[1] == '/')
+        goto invalid;
     for (size_t i = 0; i < target_length; i++) {
         unsigned char c = (unsigned char)target[i];
-        if (c <= 0x20 || c == 0x7f || c == '#') goto invalid;
+        if (c <= 0x20 || c == 0x7f || c == '#' || c == '\\') goto invalid;
     }
 
     const char *version = target_end + 1;
@@ -1757,6 +1785,7 @@ static int parse_request_mode(const char *raw, size_t raw_length,
     request->http_version = strndup_safe(version, version_length);
     if (!request->method || !request->path || !request->http_version ||
         (query && !request->query) ||
+        strcmp(request->method, "CONNECT") == 0 ||
         (asterisk_form && strcmp(request->method, "OPTIONS") != 0))
         goto invalid;
 

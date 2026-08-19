@@ -76,7 +76,7 @@ void neverc_http_request_body_cancel(neverc_http_request_t *request,
 /* --- Response Writer --- */
 typedef struct neverc_http_response_writer neverc_http_response_writer_t;
 
-/* Set response status code (default 200). */
+/* Set response status code (default 200). Values outside 100..999 become 500. */
 void neverc_http_set_status(neverc_http_response_writer_t *w, int code);
 
 /* Set a response header. */

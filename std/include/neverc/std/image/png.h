@@ -30,6 +30,9 @@ typedef struct {
  * Decode a PNG from a memory buffer.
  * Supports non-interlaced 8-bit grayscale, grayscale-alpha, truecolor, and
  * truecolor-alpha images. Indexed-color images are rejected.
+ * A tRNS chunk on grayscale or truecolor is applied as in Go image/png:
+ * matching samples become transparent and the image is promoted to
+ * grayscale-alpha or truecolor-alpha.
  * Returns 0 on success, -1 on error.
  * On success, img->pixels is heap-allocated; caller must call neverc_png_free().
  */

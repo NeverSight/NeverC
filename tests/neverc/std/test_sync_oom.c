@@ -99,6 +99,21 @@ int main(void) {
     neverc_waitgroup_wait(&wg);
     neverc_waitgroup_destroy(&wg);
 
+    /* A failed lock must not drop Add: Wait would then return while the
+     * matching Done never ran (fail-open). */
+    CHECK(neverc_waitgroup_init(&wg) == 0);
+    fail_sync_lock_remaining = 3;
+    neverc_waitgroup_add(&wg, 1);
+    CHECK(wg.counter == 1);
+    fail_sync_lock_remaining = 2;
+    CHECK(neverc_waitgroup_add_checked(&wg, 1) == 0);
+    CHECK(wg.counter == 2);
+    fail_sync_lock_remaining = 0;
+    CHECK(neverc_waitgroup_done_checked(&wg) == 0);
+    CHECK(neverc_waitgroup_done_checked(&wg) == 0);
+    neverc_waitgroup_wait(&wg);
+    neverc_waitgroup_destroy(&wg);
+
     neverc_sync_map_t *map = neverc_sync_map_new();
     CHECK(map != NULL);
 

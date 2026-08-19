@@ -187,17 +187,42 @@ int neverc_mail_parse_address(const char *s, neverc_mail_address_t *out) {
         !nci_rfc2047_header_safe(start, slen))
         return -1;
 
+    /* Angle brackets inside a quoted-string are display-name text
+     * (RFC 5322 / Go ParseAddress: `"foo <bar>" <user@x.com>`). An
+     * unquoted second mailbox such as `John <a@b.com> <evil@x.com>`
+     * still has two unquoted '<' and is rejected. */
     const char *lt = NULL, *gt = NULL;
+    int quoted = 0;
+    int escaped = 0;
     for (size_t i = 0; i < slen; i++) {
-        if (start[i] == '<') {
+        unsigned char c = (unsigned char)start[i];
+        if (escaped) {
+            escaped = 0;
+            continue;
+        }
+        if (quoted) {
+            if (c == '\\') {
+                escaped = 1;
+                continue;
+            }
+            if (c == '"')
+                quoted = 0;
+            continue;
+        }
+        if (c == '"') {
+            quoted = 1;
+            continue;
+        }
+        if (c == '<') {
             if (lt) return -1;
             lt = start + i;
-        }
-        if (start[i] == '>') {
+        } else if (c == '>') {
             if (gt) return -1;
             gt = start + i;
         }
     }
+    if (quoted)
+        return -1;
 
     if (lt || gt) {
         if (!lt || !gt || gt < lt + 2) return -1;
@@ -343,7 +368,9 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
 
     size_t i = 0;
     while (i < len && out->header_count < NEVERC_MAIL_MAX_HEADERS) {
-        /* Empty line = end of headers */
+        /* Empty line = end of headers. Go mail.ReadMessage / textproto
+         * ReadMIMEHeader require this terminator; EOF after the last
+         * field is not a message (the would-be body would be dropped). */
         if (data[i] == '\r' && i+1 < len && data[i+1] == '\n') {
             out->body = data + i + 2;
             out->body_len = len - i - 2;
@@ -426,9 +453,8 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
         return -1;
     }
 
-    out->body = data + i;
-    out->body_len = 0;
-    return 0;
+    /* No blank line: do not treat leftover-less input as an empty body. */
+    return -1;
 }
 
 const char *neverc_mail_header_get(const neverc_mail_message_t *msg, const char *key) {

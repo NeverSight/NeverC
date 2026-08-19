@@ -58,7 +58,12 @@ static int nci_2047_has_header_break(const unsigned char *s, size_t n, int cs) {
             i++;
             continue;
         }
+        /* C1 NEL as a raw/orphan 0x85 (not a UTF-8 continuation). A
+         * continuation 0x85 is consumed in the valid-sequence branch
+         * below, so U+00C5 Å (C3 85) and CJK that use 0x85 are kept. */
         if (b0 < 0xC2) {
+            if (b0 == 0x85)
+                return 1;
             i++;
             continue;
         }
@@ -267,8 +272,10 @@ static int nci_2047_b_decode(const char *s, size_t n,
 static int nci_rfc2047_header_safe(const char *s, size_t n) {
     if (!s)
         return n == 0;
-    if (nci_2047_has_header_break((const unsigned char *)s, n, 1) ||
-        nci_2047_has_header_break((const unsigned char *)s, n, 3))
+    /* Raw text is UTF-8 (or ASCII). Scanning it as iso-8859-1 treats every
+     * 0x85 continuation byte as NEL and rejects Å / Greek / CJK. Orphan
+     * 0x85 and U+0085/2028/2029 are still caught by the UTF-8 walk. */
+    if (nci_2047_has_header_break((const unsigned char *)s, n, 1))
         return 0;
 
     const char *p = s;

@@ -68,6 +68,21 @@ static int httptest_valid_port(const char *s, size_t length) {
     return value > 0;
 }
 
+static int httptest_host_reg_name_byte(unsigned char c) {
+    if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+        (c >= 'a' && c <= 'z'))
+        return 1;
+    switch (c) {
+    case '!': case '$': case '%': case '&': case '\'':
+    case '(': case ')': case '*': case '+':
+    case '-': case '.': case ';': case '=':
+    case '_': case '~':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static int httptest_valid_host(const char *value, size_t length) {
     if (!value || length == 0) return 0;
     if (value[0] == '[') {
@@ -78,9 +93,7 @@ static int httptest_valid_host(const char *value, size_t length) {
         for (size_t i = 0; i < inner; i++) {
             unsigned char c = (unsigned char)value[1 + i];
             if (c == ':') has_colon = 1;
-            if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
-                c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
-                c == ',')
+            else if (!httptest_host_reg_name_byte(c))
                 return 0;
         }
         if (!has_colon &&
@@ -94,10 +107,7 @@ static int httptest_valid_host(const char *value, size_t length) {
     size_t host_length = colon ? (size_t)(colon - value) : length;
     if (host_length == 0) return 0;
     for (size_t i = 0; i < host_length; i++) {
-        unsigned char c = (unsigned char)value[i];
-        if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
-            c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
-            c == ',' || c == ':')
+        if (!httptest_host_reg_name_byte((unsigned char)value[i]))
             return 0;
     }
     if (!colon) return 1;
@@ -193,9 +203,14 @@ static int httptest_parse_request(const char *raw, size_t raw_length,
     size_t target_length = (size_t)(target_end - target);
     int asterisk_form = target_length == 1 && target[0] == '*';
     if (target[0] != '/' && !asterisk_form) return -2;
+    const char *target_query = (const char *)memchr(target, '?', target_length);
+    size_t path_length = target_query
+        ? (size_t)(target_query - target) : target_length;
+    if (path_length >= 2 && target[0] == '/' && target[1] == '/')
+        return -2;
     for (size_t i = 0; i < target_length; i++) {
         unsigned char c = (unsigned char)target[i];
-        if (c <= 0x20 || c == 0x7f || c == '#') return -2;
+        if (c <= 0x20 || c == 0x7f || c == '#' || c == '\\') return -2;
     }
 
     const char *version = target_end + 1;
@@ -210,6 +225,7 @@ static int httptest_parse_request(const char *raw, size_t raw_length,
 
     memcpy(out->method, raw, (size_t)(method_end - raw));
     out->method[method_end - raw] = '\0';
+    if (strcmp(out->method, "CONNECT") == 0) return -2;
     if (asterisk_form && strcmp(out->method, "OPTIONS") != 0) return -2;
 
     const char *query = (const char *)memchr(target, '?', target_length);

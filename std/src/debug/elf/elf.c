@@ -189,8 +189,14 @@ static int elf_resolve_layout(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
             return -1;
         *shnum = (uint32_t)sh_size;
     }
-    if (*phnum == NEVERC_PN_XNUM)
+    /* e_phnum == PN_XNUM is only valid when the real count is >= 0xffff.
+     * A smaller sh_info would silently drop program headers (Go debug/elf
+     * rejects this as "invalid ELF phnum contained in sh_info"). */
+    if (*phnum == NEVERC_PN_XNUM) {
+        if (sh_info < NEVERC_PN_XNUM)
+            return -1;
         *phnum = sh_info;
+    }
     if (*shstrndx == NEVERC_SHN_XINDEX)
         *shstrndx = sh_link;
     return 0;

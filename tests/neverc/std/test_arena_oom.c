@@ -81,7 +81,13 @@ int main(void) {
     CHECK(neverc_arena_num_chunks(arena) == 1);
     CHECK(neverc_arena_bytes_allocated(arena) == 0);
     fail_at = 0;
+    /* OOM reset must keep the original default-sized chunk, not the newest
+     * oversized one: a tiny alloc stays in-place, a large alloc needs another
+     * chunk instead of aliasing the 256KiB allocation just reset. */
     CHECK(neverc_arena_alloc(arena, 8) != NULL);
+    CHECK(neverc_arena_num_chunks(arena) == 1);
+    CHECK(neverc_arena_alloc(arena, 256U * 1024U) != NULL);
+    CHECK(neverc_arena_num_chunks(arena) >= 2);
     neverc_arena_free(arena);
 
     puts("passed");

@@ -586,21 +586,38 @@ static void br_refill(bitreader_t *br) {
 
 /* Resynchronize at a restart-marker (FF D0..D7) boundary: drop the buffered
  * (now padding) bits and consume the marker so entropy decoding resumes byte-
- * aligned on the next interval. refill leaves pos on the marker's 0xFF; any
- * 0xFF fill bytes that legally precede a marker are skipped. The caller resets
- * the per-component DC predictors. */
+ * aligned on the next interval. refill leaves pos on the marker's 0xFF.
+ *
+ * Matches golang image/jpeg findRST (and libjpeg next_marker):
+ *   FF <expected RST>  — success
+ *   FF FF              — fill byte; skip one 0xFF
+ *   FF 00              — stuffed 0xFF (ITU T.81 F.1.2.3 / golang.org/issue/28717)
+ *   FF <other marker>  — fatal (not a restart we can use)
+ *   any other byte     — garbage before RST; skip (golang.org/issue/40130)
+ * The caller resets the per-component DC predictors. */
 static int br_restart(bitreader_t *br, uint8_t expected_marker) {
     br->bit_buf = 0;
     br->bit_cnt = 0;
-    while (br->pos + 1 < br->len && br->data[br->pos] == 0xFF) {
-        uint8_t m = br->data[br->pos + 1];
-        if (m == 0xFF) { br->pos++; continue; }       /* fill byte */
-        if (m != expected_marker) {
-            br->failed = 1;
+    while (br->pos + 1 < br->len) {
+        uint8_t b0 = br->data[br->pos];
+        uint8_t b1 = br->data[br->pos + 1];
+        if (b0 == 0xFF) {
+            if (b1 == expected_marker) {
+                br->pos += 2;
+                return 0;
+            }
+            if (b1 == 0xFF) {
+                br->pos++;                      /* fill byte */
+                continue;
+            }
+            if (b1 == 0x00) {
+                br->pos += 2;                   /* stuffed 0xFF 0x00 */
+                continue;
+            }
+            br->failed = 1;                     /* other marker */
             return -1;
         }
-        br->pos += 2;
-        return 0;
+        br->pos++;                              /* garbage byte */
     }
     br->failed = 1;
     return -1;
@@ -943,6 +960,9 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
                 comp_v[i] = samp & 0x0F;
                 if (comp_h[i] < 1 || comp_h[i] > 4 ||
                     comp_v[i] < 1 || comp_v[i] > 4) goto fail;
+                /* Go image/jpeg rejects factor 3 (no standard YCbCr ratio).
+                 * Checked before the grayscale 1x1 override, same as Go. */
+                if (comp_h[i] == 3 || comp_v[i] == 3) goto fail;
                 /* ITU T.81 A.2.2 / 4.8.2: a one-component scan is
                  * non-interleaved; the MCU is one 8x8 data unit regardless of
                  * the nominal H/V in SOF. Honoring 2x2 here would expect four
@@ -1001,8 +1021,9 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
                 seen[component] = 1;
                 comp_dc_table[component] = (td_ta >> 4) & 0x0F;
                 comp_ac_table[component] = td_ta & 0x0F;
-                if (comp_dc_table[component] >= 4 ||
-                    comp_ac_table[component] >= 4)
+                /* Baseline (table B.3): Td/Ta are 0 or 1. Go rejects > 1. */
+                if (comp_dc_table[component] > 1 ||
+                    comp_ac_table[component] > 1)
                     goto fail;
             }
             int spectral_start = br_read_byte_raw(&br);
@@ -1059,6 +1080,14 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     for (int c = 0; c < ncomp; c++) {
         if (comp_h[c] > Hmax) Hmax = comp_h[c];
         if (comp_v[c] > Vmax) Vmax = comp_v[c];
+    }
+    /* Go processSOF: each component's H/V must divide the frame max so
+     * upsample ratios are integers (4:2:0, 4:2:2, 4:4:4, 4:1:1, ...). */
+    if (ncomp == 3) {
+        for (int c = 0; c < ncomp; c++) {
+            if (Hmax % comp_h[c] != 0 || Vmax % comp_v[c] != 0)
+                goto fail;
+        }
     }
     uint32_t mcu_pw = (uint32_t)Hmax * 8, mcu_ph = (uint32_t)Vmax * 8;
     uint32_t mcus_x = (width + mcu_pw - 1) / mcu_pw;

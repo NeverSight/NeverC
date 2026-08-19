@@ -730,6 +730,12 @@ static void test_identities(void) {
         snprintf(buf, sizeof(buf), "log2(2^%d)=%d", n, n);
         check_double(buf, neverc_math_log2(neverc_math_pow(2.0, (double)n)), (double)n);
     }
+    for (int n = -20; n <= 20; n++) {
+        double x = neverc_math_ldexp(1.0, n);
+        snprintf(buf, sizeof(buf), "log2(ldexp(1,%d)) exact", n);
+        check_true(buf, neverc_math_float64bits(neverc_math_log2(x)) ==
+                            neverc_math_float64bits((double)n));
+    }
 
     /* floor(x) <= x < floor(x)+1 for finite non-integer x */
     for (int i = 0; i < 10; i++) {

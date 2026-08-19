@@ -485,6 +485,15 @@ static void test_walk_dir(void) {
     check("walk_ok", rc == 0);
     check("walk_found_files", walk_count >= 3);
     check("walk_root_is_dir", walk_root_is_dir == 1);
+#if !defined(_WIN32)
+    /* 0775 sets group-write, which used to overlap MODE_LINK and skip kids. */
+    chmod(walkdir, 0775);
+    chmod(subdir, 0775);
+    walk_count = 0;
+    rc = neverc_fs_walk_dir(walkdir, walk_cb, NULL);
+    check("walk_0775_ok", rc == 0);
+    check("walk_0775_descends", walk_count >= 3);
+#endif
 
     walk_count = 0;
     walk_root_is_dir = -1;

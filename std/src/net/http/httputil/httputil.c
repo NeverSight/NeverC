@@ -66,6 +66,56 @@ static int httputil_has_crlf(const char *s) {
     return 0;
 }
 
+/* Wire dumps are often pasted into HTML debug pages. Host is synthesized
+ * as a header line, so '<' '>' '"' in Host are XSS (Go ValidHostHeader
+ * already rejects them). Other header values may legally contain '<'. */
+static int httputil_host_has_xss_bytes(const char *host) {
+    if (!host) return 0;
+    for (; *host; host++)
+        if (*host == '<' || *host == '>' || *host == '"')
+            return 1;
+    return 0;
+}
+
+static int httputil_headers_host_has_xss_bytes(const char *headers) {
+    if (!headers) return 0;
+    const char *line = headers;
+    while (*line) {
+        const char *end = line;
+        while (*end && *end != '\n') end++;
+        size_t length = (size_t)(end - line);
+        if (length > 0 && line[length - 1] == '\r') length--;
+        if (length >= 5) {
+            static const char prefix[] = "host:";
+            int match = 1;
+            for (int i = 0; i < 5; i++) {
+                unsigned char c = (unsigned char)line[i];
+                if (c >= 'A' && c <= 'Z') c = (unsigned char)(c + 32);
+                if (c != (unsigned char)prefix[i]) {
+                    match = 0;
+                    break;
+                }
+            }
+            if (match) {
+                const char *value = line + 5;
+                size_t value_length = length - 5;
+                while (value_length > 0 &&
+                       (*value == ' ' || *value == '\t')) {
+                    value++;
+                    value_length--;
+                }
+                for (size_t i = 0; i < value_length; i++)
+                    if (value[i] == '<' || value[i] == '>' ||
+                        value[i] == '"')
+                        return 1;
+            }
+        }
+        if (*end == '\0') break;
+        line = end + 1;
+    }
+    return 0;
+}
+
 /* A dump header block may contain CRLF line breaks, but a blank line would
  * terminate headers and smuggle a second request. Lone CR/LF is also rejected.
  * A final line without CRLF is accepted; the dumper appends one. */
@@ -744,10 +794,26 @@ static int proxy_valid_query(const char *value) {
     return 1;
 }
 
+static int proxy_forwarded_host_byte(unsigned char c) {
+    if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+        (c >= 'a' && c <= 'z'))
+        return 1;
+    switch (c) {
+    case '!': case '$': case '%': case '&': case '\'':
+    case '(': case ')': case '*': case '+':
+    case '-': case '.': case ':': case ';': case '=':
+    case '[': case ']': case '_': case '~':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static int proxy_valid_forwarded_host(const char *value) {
     if (!value || value[0] == '\0') return 0;
     for (const unsigned char *p = (const unsigned char *)value; *p; p++)
-        if (*p <= 0x20 || *p == 0x7f || *p == ',') return 0;
+        if (!proxy_forwarded_host_byte(*p))
+            return 0;
     return 1;
 }
 
@@ -759,6 +825,7 @@ static int proxy_build_request(
     if (!proxy || !original || !outbound || !headers ||
         !outbound->method ||
         !proxy_valid_token(outbound->method, strlen(outbound->method)) ||
+        strcmp(outbound->method, "CONNECT") == 0 ||
         (outbound->body_len > 0 && !outbound->body) ||
         outbound->body_len > PROXY_BODY_LIMIT ||
         proxy_validate_request_headers(outbound) != 0)
@@ -1832,7 +1899,7 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
         return NULL;
     if (httputil_has_crlf(req->method) || httputil_has_crlf(req->path) ||
         httputil_has_crlf(req->query) || httputil_has_crlf(req->http_version) ||
-        httputil_has_crlf(req->host))
+        httputil_has_crlf(req->host) || httputil_host_has_xss_bytes(req->host))
         return NULL;
 
     size_t cap = 256;
@@ -1886,6 +1953,9 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
             p++;
 
             if (httputil_has_crlf(hname) || httputil_has_crlf(hval))
+                goto fail;
+            if (strcasecmp(hname, "Host") == 0 &&
+                httputil_host_has_xss_bytes(hval))
                 goto fail;
             if (req->host && strcasecmp(hname, "Host") == 0) continue;
             if (strcasecmp(hname, "Content-Length") == 0)
@@ -1964,7 +2034,8 @@ char *neverc_httputil_dump_request_out(const char *method,
         return NULL;
     int needs_header_crlf = 0;
     if (httputil_has_crlf(method) || httputil_has_crlf(url) ||
-        !httputil_header_block_valid(headers, &needs_header_crlf))
+        !httputil_header_block_valid(headers, &needs_header_crlf) ||
+        httputil_headers_host_has_xss_bytes(headers))
         return NULL;
     size_t cap = 256;
     size_t n = 0;

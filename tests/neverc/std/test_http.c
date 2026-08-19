@@ -1291,6 +1291,18 @@ static void test_malformed_request(void) {
             buf, sizeof(buf));
         check_int("host ipv6 comma 400",
                   strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: example.com<script>\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("host html 400",
+                  strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: example.com\">\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("host quote 400",
+                  strstr(buf, "400 Bad Request") != NULL, 1);
     }
 
     /* Duplicate Host / Content-Length, CL+TE, and obs-fold are 400. */
@@ -1340,6 +1352,53 @@ static void test_malformed_request(void) {
             buf, sizeof(buf));
         check_int("options star not 400",
                   strstr(buf, "400 Bad Request") == NULL, 1);
+    }
+
+    /* RFC 9112: absolute-form is for proxies. Origin-form "//host" is the
+     * leftover scheme-relative form; CONNECT is HTTP/2-rejected here too. */
+    {
+        int n = do_http_request(port,
+            "GET //evil.example/ HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("scheme-relative target 400",
+                  strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "GET /foo//bar HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("empty path segment not 400",
+                  strstr(buf, "400 Bad Request") == NULL, 1);
+        n = do_http_request(port,
+            "GET /hello\\x HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("backslash target 400",
+                  strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "GET http://evil.example/hello HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("absolute-form 400",
+                  strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "CONNECT /hello HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("origin-form CONNECT 400",
+                  strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "CONNECT example.com:443 HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("authority-form CONNECT 400",
+                  strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "GET /hello?next=https://example.com HTTP/1.1\r\n"
+            "Host: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("query double-slash ok",
+                  strstr(buf, "Hello, World!") != NULL, 1);
     }
 
     /* Chunk trailers must not be promoted into request headers. */
@@ -3612,6 +3671,14 @@ static void test_strip_prefix(void) {
     check_int("strip prefix rejects encoded dot-dot remainder",
               n > 0 && strstr(buf, "404") != NULL, 1);
     check_int("strip prefix does not leak encoded dot-dot path",
+              strstr(buf, "stripped_path=") == NULL, 1);
+
+    n = do_http_request(port,
+        "GET /api//evil.example/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("strip prefix rejects scheme-relative remainder",
+              n > 0 && strstr(buf, "404") != NULL, 1);
+    check_int("strip prefix does not leak scheme-relative path",
               strstr(buf, "stripped_path=") == NULL, 1);
 
     stop_test_server(pid);

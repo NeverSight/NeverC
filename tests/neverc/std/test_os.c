@@ -114,6 +114,19 @@ static void test_open_flag_semantics(void) {
     const unsigned char data[] = "preserve me";
 
     ASSERT_EQ(neverc_os_write_file(pathbuf, data, sizeof(data) - 1, 0600), 0);
+    ASSERT_TRUE(neverc_os_open("", NEVERC_OS_O_RDONLY, 0) == NULL);
+    ASSERT_TRUE(neverc_os_open(pathbuf,
+                               NEVERC_OS_O_RDONLY | NEVERC_OS_O_TRUNC,
+                               0) == NULL);
+    {
+        unsigned char *preserved = NULL;
+        size_t preserved_len = 0;
+        ASSERT_EQ(neverc_os_read_file(pathbuf, &preserved, &preserved_len), 0);
+        ASSERT_EQ((int)preserved_len, (int)(sizeof(data) - 1));
+        ASSERT_TRUE(preserved != NULL &&
+                    memcmp(preserved, data, preserved_len) == 0);
+        free(preserved);
+    }
     neverc_os_file_t *f = neverc_os_open(pathbuf, NEVERC_OS_O_WRONLY, 0);
     ASSERT_TRUE(f != NULL);
     neverc_os_close(f);
@@ -539,6 +552,53 @@ static void test_read_dir(void) {
     ASSERT_TRUE(entries == NULL);
     ASSERT_EQ((int)count, 0);
     neverc_os_remove(filebuf);
+
+#if defined(_WIN32)
+    {
+        char tmp[1024], query[1200], ntpath[1200], wild[1200];
+        char parent[1024], child[1200], rmquery[1200];
+        neverc_os_dir_entry_t *ents = NULL;
+        size_t n = 0;
+        size_t tlen;
+
+        ASSERT_EQ(neverc_os_temp_dir(tmp, sizeof(tmp)), 0);
+        tlen = strlen(tmp);
+        if (tlen > 0 && (tmp[tlen - 1] == '\\' || tmp[tlen - 1] == '/'))
+            tmp[tlen - 1] = '\0';
+        snprintf(query, sizeof(query), "\\\\?\\%s", tmp);
+        snprintf(ntpath, sizeof(ntpath), "\\??\\%s", tmp);
+        snprintf(wild, sizeof(wild), "%s\\*", tmp);
+
+        ASSERT_EQ(neverc_os_read_dir(query, &ents, &n), 0);
+        ASSERT_TRUE(n > 0);
+        free(ents);
+
+        ents = NULL;
+        n = 0;
+        /* `\??\` is an NT native prefix, not a glob, but Win32 FindFirstFile
+         * only accepts `\\?\`. Skip-as-wildcard is correct; the open fails. */
+        ASSERT_EQ(neverc_os_read_dir(ntpath, &ents, &n), -1);
+        ASSERT_TRUE(ents == NULL);
+        ASSERT_EQ((int)n, 0);
+
+        ents = (neverc_os_dir_entry_t *)1;
+        n = 99;
+        ASSERT_EQ(neverc_os_read_dir(wild, &ents, &n), -1);
+        ASSERT_TRUE(ents == NULL);
+        ASSERT_EQ((int)n, 0);
+
+        make_test_path(parent, sizeof(parent), "neverc_os_win_ext_rm");
+        neverc_os_remove_all(parent);
+        ASSERT_EQ(neverc_os_mkdir(parent, 0700), 0);
+        snprintf(child, sizeof(child), "%s\\file.txt", parent);
+        ASSERT_EQ(neverc_os_write_file(child, (const unsigned char *)"x", 1,
+                                       0600),
+                  0);
+        snprintf(rmquery, sizeof(rmquery), "\\\\?\\%s", parent);
+        ASSERT_EQ(neverc_os_remove_all(rmquery), 0);
+        ASSERT_TRUE(!neverc_os_exists(parent));
+    }
+#endif
 
 #if !defined(_WIN32)
     {

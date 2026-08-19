@@ -685,6 +685,8 @@ void neverc_quic_tls_crypto_data_acked(quic_tls_t *tls,
 void neverc_quic_tls_crypto_data_lost(quic_tls_t *tls,
                                       quic_enc_level_t level,
                                       uint64_t offset);
+void neverc_quic_tls_crypto_rewind_unacked(quic_tls_t *tls,
+                                           quic_enc_level_t level);
 int neverc_quic_tls_install_keys(quic_tls_t *tls, quic_enc_level_t level,
                                  const quic_keys_t *read_key,
                                  const quic_keys_t *write_key);

@@ -68,6 +68,13 @@ static void test_parse_address(void) {
     ASSERT_STREQ(addr.name, "Bcc: hidden");
     ASSERT_STREQ(addr.address, "user@x.com");
 
+    /* Quoted display-name may contain unquoted-looking angle mailboxes. */
+    ASSERT_EQ(neverc_mail_parse_address("\"foo <bar>\" <user@x.com>", &addr),
+              0);
+    ASSERT_STREQ(addr.name, "foo <bar>");
+    ASSERT_STREQ(addr.address, "user@x.com");
+    ASSERT_EQ(neverc_mail_parse_address("\"foo <bar>\"", &addr), -1);
+
     ASSERT_EQ(neverc_mail_parse_address(
                   "=?utf-8?q?=0D=0ABcc:_hidden?= <user@x.com>", &addr),
               -1);
@@ -151,6 +158,15 @@ static void test_format_address(void) {
     ASSERT_STREQ(roundtrip.name, "Bcc:hidden");
     ASSERT_STREQ(roundtrip.address, "user@x.com");
 
+    strcpy(addr.name, "foo <bar>");
+    strcpy(addr.address, "user@x.com");
+    ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)),
+              (int)strlen("\"foo <bar>\" <user@x.com>"));
+    ASSERT_STREQ(buf, "\"foo <bar>\" <user@x.com>");
+    ASSERT_EQ(neverc_mail_parse_address(buf, &roundtrip), 0);
+    ASSERT_STREQ(roundtrip.name, "foo <bar>");
+    ASSERT_STREQ(roundtrip.address, "user@x.com");
+
     strcpy(addr.name, "");
     strcpy(addr.address, "Bcc:hidden@x.com");
     ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)), -1);
@@ -195,6 +211,14 @@ static void test_parse_message(void) {
     ASSERT_STREQ(neverc_mail_header_get(&m, "content-type"), "text/plain");
     ASSERT_TRUE(m.body_len == 15);
     ASSERT_TRUE(memcmp(m.body, "Hello, World!\r\n", 15) == 0);
+
+    ASSERT_EQ(neverc_mail_parse_message("", 0, &m), -1);
+    const char *no_blank = "From: a@b.com\r\nTo: c@d.com";
+    ASSERT_EQ(neverc_mail_parse_message(no_blank, strlen(no_blank), &m), -1);
+    const char *no_blank_crlf = "From: a@b.com\r\n";
+    ASSERT_EQ(neverc_mail_parse_message(no_blank_crlf, strlen(no_blank_crlf),
+                                       &m),
+              -1);
 
     const char *empty_name = ": empty-name\r\n\r\n";
     ASSERT_EQ(neverc_mail_parse_message(empty_name, strlen(empty_name), &m),

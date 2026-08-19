@@ -652,6 +652,121 @@ done:
     nci_tls_clear_handshake_buffer(&conn);
     return result;
 }
+
+static int tls_test_post_handshake_key_update_pipe(
+    neverc_tls_conn_t **reader_conn,
+    neverc_tls_conn_t **writer_conn) {
+    neverc_tcp_conn_t *reader = NULL;
+    neverc_tcp_conn_t *writer = NULL;
+    *reader_conn = NULL;
+    *writer_conn = NULL;
+    if (neverc_tcp_pipe(&reader, &writer) != 0 || !reader || !writer) {
+        neverc_tcp_close(reader);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    neverc_tls_conn_t *incoming = nci_tls_conn_new(reader, 1);
+    neverc_tls_conn_t *outgoing = nci_tls_conn_new(writer, 1);
+    if (!incoming || !outgoing) {
+        if (incoming)
+            neverc_tls_close(incoming);
+        else
+            neverc_tcp_close(reader);
+        if (outgoing)
+            neverc_tls_close(outgoing);
+        else
+            neverc_tcp_close(writer);
+        return -1;
+    }
+
+    uint8_t secret[TLS_HASH_SIZE_SHA256];
+    memset(secret, 0x5a, sizeof(secret));
+    if (nci_tls_derive_traffic_keys_checked(
+            secret, &outgoing->write_keys,
+            TLS_CIPHER_AES_128_GCM_SHA256) != 0 ||
+        nci_tls_derive_traffic_keys_checked(
+            secret, &incoming->read_keys,
+            TLS_CIPHER_AES_128_GCM_SHA256) != 0) {
+        neverc_tls_close(incoming);
+        neverc_tls_close(outgoing);
+        return -1;
+    }
+    memcpy(outgoing->write_traffic_secret, secret, sizeof(secret));
+    memcpy(incoming->read_traffic_secret, secret, sizeof(secret));
+    incoming->handshake_done = 1;
+    incoming->application_keys_active = 1;
+    incoming->write_keys_active = 1;
+    incoming->write_closed = 1;
+    outgoing->handshake_done = 1;
+    outgoing->application_keys_active = 1;
+    outgoing->write_keys_active = 1;
+    *reader_conn = incoming;
+    *writer_conn = outgoing;
+    neverc_platform_secure_zero(secret, sizeof(secret));
+    return 0;
+}
+
+int neverc_tls_test_reject_post_handshake_key_update_flood(void) {
+    neverc_tls_conn_t *reader_conn = NULL;
+    neverc_tls_conn_t *writer_conn = NULL;
+    if (tls_test_post_handshake_key_update_pipe(
+            &reader_conn, &writer_conn) != 0)
+        return -1;
+
+    unsigned int i;
+    for (i = 0; i < TLS_MAX_NON_ADVANCING_RECORDS; i++) {
+        if (nci_tls_send_key_update_message(writer_conn, 0) != 0) {
+            neverc_tls_close(reader_conn);
+            neverc_tls_close(writer_conn);
+            return -1;
+        }
+    }
+    static const uint8_t payload[] = { 'o', 'k' };
+    if (nci_tls_send_encrypted(
+            writer_conn, TLS_CT_APPLICATION_DATA,
+            payload, sizeof(payload)) != 0) {
+        neverc_tls_close(reader_conn);
+        neverc_tls_close(writer_conn);
+        return -1;
+    }
+
+    uint8_t buf[8];
+    int got = neverc_tls_read(reader_conn, buf, sizeof(buf));
+    if (got != (int)sizeof(payload) ||
+        memcmp(buf, payload, sizeof(payload)) != 0) {
+        neverc_tls_close(reader_conn);
+        neverc_tls_close(writer_conn);
+        return -1;
+    }
+    neverc_tls_close(reader_conn);
+    neverc_tls_close(writer_conn);
+
+    if (tls_test_post_handshake_key_update_pipe(
+            &reader_conn, &writer_conn) != 0)
+        return -1;
+    for (i = 0; i < TLS_MAX_NON_ADVANCING_RECORDS + 1; i++) {
+        if (nci_tls_send_key_update_message(writer_conn, 0) != 0) {
+            neverc_tls_close(reader_conn);
+            neverc_tls_close(writer_conn);
+            return -1;
+        }
+    }
+    /* If the flood cap is missing, a blocking read would wait forever.
+     * An application record makes a regression return payload instead. */
+    (void)nci_tls_send_encrypted(
+        writer_conn, TLS_CT_APPLICATION_DATA, payload, sizeof(payload));
+    got = neverc_tls_read(reader_conn, buf, sizeof(buf));
+    const char *reason = reader_conn->failure_reason;
+    neverc_tls_close(reader_conn);
+    neverc_tls_close(writer_conn);
+    if (got != -1)
+        return -1;
+    if (!reason ||
+        strstr(reason, "too many non-advancing TLS records") == NULL)
+        return -1;
+    return 0;
+}
 #endif
 
 size_t nci_tls_handshake_fragment_size(

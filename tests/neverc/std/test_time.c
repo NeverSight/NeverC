@@ -375,8 +375,12 @@ static void test_parse_layout(void) {
     check_int("parse full names", ok, 0);
     check_int("parse full month", neverc_time_month(t), 6);
 
-    check_int("parse weekday mismatch",
-              neverc_time_parse("Mon 2006-01-02", "Sun 2024-06-15", &t), -1);
+    /* Go: weekday names are syntax-checked, then ignored. */
+    ok = neverc_time_parse("Mon 2006-01-02", "Sun 2024-06-15", &t);
+    check_int("parse weekday mismatch is ignored", ok, 0);
+    check_int("parse weekday mismatch year", neverc_time_year(t), 2024);
+    check_int("parse weekday mismatch month", neverc_time_month(t), 6);
+    check_int("parse weekday mismatch day", neverc_time_day(t), 15);
     check_int("parse bad month name",
               neverc_time_parse("Jan 02", "Xxx 15", &t), -1);
 
@@ -459,6 +463,25 @@ static void test_parse_layout(void) {
     check_int("parse comma frac", ok, 0);
     check_int("parse comma frac nsec", neverc_time_nanosecond(t), 123000000);
 
+    ok = neverc_time_parse("15:04:05.000", "12:30:45,123", &t);
+    check_int("parse comma value with dot layout", ok, 0);
+    check_int("parse comma value with dot layout nsec",
+              neverc_time_nanosecond(t), 123000000);
+    ok = neverc_time_parse("15:04:05,000", "12:30:45.123", &t);
+    check_int("parse dot value with comma layout", ok, 0);
+    check_int("parse dot value with comma layout nsec",
+              neverc_time_nanosecond(t), 123000000);
+
+    ok = neverc_time_parse("2006-01-02T15:04:05Z07:00",
+                           "2024-01-15T12:00:00+15:00", &t);
+    check_int("parse +15:00 layout offset", ok, 0);
+    check_int("parse +15:00 hour utc", neverc_time_hour(t), 21);
+    check_int("parse +15:00 day utc", neverc_time_day(t), 14);
+
+    check_int("parse lowercase z rejected",
+              neverc_time_parse("2006-01-02T15:04:05Z07:00",
+                                "2024-06-15T12:00:00z", &t), -1);
+
     ok = neverc_time_parse("15:04:05.999", "12:30:45.123456789", &t);
     check_int("parse 9s extra frac digits", ok, 0);
     check_int("parse 9s extra frac nsec", neverc_time_nanosecond(t), 123456789);
@@ -496,8 +519,11 @@ static void test_parse_layout(void) {
     ok = neverc_time_parse("15:04PM", "02:30PM", &t);
     check_int("parse 24h hour with PM", ok, 0);
     check_int("parse 24h hour with PM hour", neverc_time_hour(t), 14);
-    check_int("parse 14:30PM with 15 is invalid",
-              neverc_time_parse("15:04PM", "14:30PM", &t), -1);
+    /* Go: stdHour 14 + PM leaves 14 (PM only adds 12 when hour < 12). */
+    ok = neverc_time_parse("15:04PM", "14:30PM", &t);
+    check_int("parse 14:30PM with 15 stays 14", ok, 0);
+    check_int("parse 14:30PM hour", neverc_time_hour(t), 14);
+    check_int("parse 14:30PM min", neverc_time_minute(t), 30);
 }
 
 static void test_truncate_round(void) {

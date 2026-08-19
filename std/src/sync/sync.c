@@ -191,7 +191,12 @@ void neverc_rwmutex_destroy(neverc_rwmutex_t *rw) {
     pthread_rwlock_destroy(&rw->rw);
 }
 void neverc_rwmutex_rlock(neverc_rwmutex_t *rw) {
-    pthread_rwlock_rdlock(&rw->rw);
+    /* Same fail-closed rule as neverc_mutex_lock: a failed rdlock is not
+     * "shared access granted". sync.Map load/range run under this lock. */
+    for (;;) {
+        if (pthread_rwlock_rdlock(&rw->rw) == 0)
+            return;
+    }
 }
 int neverc_rwmutex_tryrlock(neverc_rwmutex_t *rw) {
     return pthread_rwlock_tryrdlock(&rw->rw) == 0;
@@ -200,7 +205,10 @@ void neverc_rwmutex_runlock(neverc_rwmutex_t *rw) {
     pthread_rwlock_unlock(&rw->rw);
 }
 void neverc_rwmutex_lock(neverc_rwmutex_t *rw) {
-    pthread_rwlock_wrlock(&rw->rw);
+    for (;;) {
+        if (pthread_rwlock_wrlock(&rw->rw) == 0)
+            return;
+    }
 }
 int neverc_rwmutex_trylock(neverc_rwmutex_t *rw) {
     return pthread_rwlock_trywrlock(&rw->rw) == 0;
@@ -228,8 +236,10 @@ void neverc_waitgroup_destroy(neverc_waitgroup_t *wg) {
 }
 int neverc_waitgroup_add_checked(neverc_waitgroup_t *wg, int delta) {
     if (!wg) return -1;
-    if (pthread_mutex_lock(&wg->mu) != 0)
-        return -1;
+    /* Dropping a positive Add because the lock failed would fail-open:
+     * Wait sees counter==0 and returns while the matching Done never ran. */
+    while (sync_posix_mutex_lock(&wg->mu) != 0)
+        continue;
     int64_t next = (int64_t)wg->counter + (int64_t)delta;
     int result = 0;
     if (next < 0 || next > INT32_MAX) {
@@ -277,9 +287,10 @@ void neverc_once_do(neverc_once_t *o, void (*f)(void)) {
     if (NEVERC_ATOMIC_LOAD32(&o->done))
         return;
     /* Do not mark done, run f(), or return without the lock: that would
-     * fail-open (callers skip initialization that never ran under exclusion). */
-    if (sync_posix_mutex_lock(&o->mu) != 0)
-        return;
+     * fail-open (callers skip initialization that never ran under exclusion).
+     * EDEADLK is re-entry; looping matches Go Once.Do (deadlock), not a skip. */
+    while (sync_posix_mutex_lock(&o->mu) != 0)
+        continue;
     if (!NEVERC_ATOMIC_LOAD32(&o->done)) {
         f();
         NEVERC_ATOMIC_STORE32(&o->done, 1);

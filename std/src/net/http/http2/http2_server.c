@@ -1034,8 +1034,25 @@ static int h2_valid_port(const char *s, size_t length) {
     return value > 0;
 }
 
+/* Same Host byte allowlist as HTTP/1 (Go ValidHostHeader without comma). */
+static int h2_host_reg_name_byte(unsigned char c) {
+    if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+        (c >= 'a' && c <= 'z'))
+        return 1;
+    switch (c) {
+    case '!': case '$': case '%': case '&': case '\'':
+    case '(': case ')': case '*': case '+':
+    case '-': case '.': case ';': case '=':
+    case '_': case '~':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 /* Same rules as HTTP/1 Host: reject userinfo, paths, commas, bad ports,
- * and unbracketed / unclosed IPv6 so intermediaries cannot desync. */
+ * HTML-special bytes, and unbracketed / unclosed IPv6 so intermediaries
+ * cannot desync and dumps cannot XSS. */
 static int h2_valid_host(const char *value, size_t length) {
     if (!value || length == 0) return 0;
     if (value[0] == '[') {
@@ -1046,9 +1063,7 @@ static int h2_valid_host(const char *value, size_t length) {
         for (size_t i = 0; i < inner; i++) {
             unsigned char c = (unsigned char)value[1 + i];
             if (c == ':') has_colon = 1;
-            if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
-                c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
-                c == ',')
+            else if (!h2_host_reg_name_byte(c))
                 return 0;
         }
         if (!has_colon &&
@@ -1063,10 +1078,7 @@ static int h2_valid_host(const char *value, size_t length) {
     size_t host_length = colon ? (size_t)(colon - value) : length;
     if (host_length == 0) return 0;
     for (size_t i = 0; i < host_length; i++) {
-        unsigned char c = (unsigned char)value[i];
-        if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' ||
-            c == '?' || c == '#' || c == '@' || c == '[' || c == ']' ||
-            c == ',' || c == ':')
+        if (!h2_host_reg_name_byte((unsigned char)value[i]))
             return 0;
     }
     if (!colon) return 1;
@@ -1084,8 +1096,11 @@ static int h2_valid_path(const char *method, const char *path) {
     if (strcmp(path, "*") == 0)
         return strcmp(method, "OPTIONS") == 0;
     if (path[0] != '/') return 0;
+    /* Same origin-form rule as HTTP/1: scheme-relative "//host" and a
+     * leading backslash are open-redirect / XSS if reflected into Location. */
+    if (path[1] == '/' || path[1] == '\\') return 0;
     for (const unsigned char *p = (const unsigned char *)path; *p; p++)
-        if (*p <= 0x20 || *p == 0x7f || *p == '#')
+        if (*p <= 0x20 || *p == 0x7f || *p == '#' || *p == '\\')
             return 0;
     return 1;
 }

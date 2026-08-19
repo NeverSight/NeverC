@@ -131,6 +131,36 @@ static void test_parse_media_type(void) {
     ASSERT_STR_EQ(vals[0], "na\xC3\xAFve.txt");
     free_params(keys, vals, nparams);
 
+    /* UTF-8 that uses 0x85 as a continuation is not C1 NEL (Å C3 85,
+     * Greek upsilon CF 85). Raw 0x85 and UTF-8 NEL (C2 85) still fail. */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; filename*=utf-8''%C3%85.txt",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(keys[0], "filename");
+    ASSERT_STR_EQ(vals[0], "\xC3\x85.txt");
+    free_params(keys, vals, nparams);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; filename*=utf-8''%CF%85.txt",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_INT_EQ(nparams, 1);
+    ASSERT_STR_EQ(vals[0], "\xCF\x85.txt");
+    free_params(keys, vals, nparams);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "application/octet-stream; filename*=utf-8''%C2%85.txt",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), -1);
+    ASSERT_INT_EQ(nparams, 0);
+
+    {
+        char raw_nel[] = "text/plain; filename=\"x\x85y\"";
+        ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                          raw_nel, mt, sizeof(mt), keys, vals, 8, &nparams),
+                      -1);
+        ASSERT_INT_EQ(nparams, 0);
+    }
+
     ASSERT_INT_EQ(neverc_mime_parse_media_type(
                       "text/plain; filename=plain.txt; filename*=utf-8''star.txt",
                       mt, sizeof(mt), keys, vals, 8, &nparams), 0);
@@ -474,6 +504,30 @@ static void test_format_rejects_invalid_input(void) {
                       "text/plain", ew_keys, ew_ok, 1, out, sizeof(out)),
                   (int)strlen("text/plain; filename=\"=?utf-8?q?foo?=\""));
     ASSERT_STR_EQ(out, "text/plain; filename=\"=?utf-8?q?foo?=\"");
+
+    const char *utf8_a_keys[] = {"filename"};
+    const char *utf8_a_vals[] = {"\xC3\x85.txt"};
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", utf8_a_keys, utf8_a_vals, 1, out,
+                      sizeof(out)),
+                  (int)strlen("text/plain; filename=\"\xC3\x85.txt\""));
+    ASSERT_STR_EQ(out, "text/plain; filename=\"\xC3\x85.txt\"");
+
+    const char *raw_nel_vals[] = {"x\x85y"};
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", utf8_a_keys, raw_nel_vals, 1, out,
+                      sizeof(out)),
+                  -1);
+    ASSERT_STR_EQ(out, "");
+
+    const char *utf8_nel_vals[] = {"\xC2\x85.txt"};
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", utf8_a_keys, utf8_nel_vals, 1, out,
+                      sizeof(out)),
+                  -1);
+    ASSERT_STR_EQ(out, "");
 }
 
 static void test_qp_decode(void) {
@@ -660,6 +714,12 @@ static void test_rfc2047_decode_header(void) {
                       latin1, strlen(latin1), out, sizeof(out), &n), 0);
     ASSERT_INT_EQ((int)n, 5);
     ASSERT_TRUE(memcmp(out, "caf\xC3\xA9", 5) == 0);
+
+    const char *a_ring = "=?utf-8?q?=C3=85?=";
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      a_ring, strlen(a_ring), out, sizeof(out), &n), 0);
+    ASSERT_INT_EQ((int)n, 2);
+    ASSERT_TRUE(memcmp(out, "\xC3\x85", 2) == 0);
 
     ASSERT_INT_EQ(neverc_mime_decode_header(
                       plain, strlen(plain), out, sizeof(out), &n), 0);

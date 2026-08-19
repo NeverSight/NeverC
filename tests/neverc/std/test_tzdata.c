@@ -711,6 +711,32 @@ static size_t build_tzif_ny_footer(uint8_t *buf, size_t cap) {
     return n;
 }
 
+/* Southern POSIX footer (Oct→Apr) so zip/tzif-loaded zones are not
+ * forced onto the northern dst_hemi=1 path. */
+static size_t build_tzif_syd_footer(uint8_t *buf, size_t cap) {
+    size_t n = 0;
+    uint8_t zmeta[2] = {0, 0};
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 0, 1, 4);
+    append_be32(buf, &n, cap, 0);
+    append_bytes(buf, &n, cap, zmeta, 2);
+    append_bytes(buf, &n, cap, "UTC\0", 4);
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 1, 2, 10);
+    append_be64(buf, &n, cap, 0);
+    uint8_t idx[1] = {0};
+    append_bytes(buf, &n, cap, idx, 1);
+    append_be32(buf, &n, cap, 36000);
+    uint8_t aest[2] = {0, 0};
+    append_bytes(buf, &n, cap, aest, 2);
+    append_be32(buf, &n, cap, 39600);
+    uint8_t aedt[2] = {1, 5};
+    append_bytes(buf, &n, cap, aedt, 2);
+    append_bytes(buf, &n, cap, "AEST\0AEDT\0", 10);
+    append_bytes(buf, &n, cap, "\nAEST-10AEDT,M10.1.0,M4.1.0\n", 28);
+    return n;
+}
+
 static size_t build_tzif_pre_first(uint8_t *buf, size_t cap) {
     size_t n = 0;
     uint8_t zmeta[2] = {0, 0};
@@ -730,6 +756,31 @@ static size_t build_tzif_pre_first(uint8_t *buf, size_t cap) {
     append_be32(buf, &n, cap, (uint32_t)-14400);
     uint8_t edt[2] = {1, 4};
     append_bytes(buf, &n, cap, edt, 2);
+    append_bytes(buf, &n, cap, "EST\0EDT\0", 8);
+    return n;
+}
+
+/* Zone 0 is DST and is used by the first transition; zone 1 is unused STD.
+ * Go lookupFirstZone case 3: times before tx[0] use the first non-DST zone. */
+static size_t build_tzif_used_dst_first(uint8_t *buf, size_t cap) {
+    size_t n = 0;
+    uint8_t zmeta[2] = {0, 0};
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 0, 1, 4);
+    append_be32(buf, &n, cap, 0);
+    append_bytes(buf, &n, cap, zmeta, 2);
+    append_bytes(buf, &n, cap, "UTC\0", 4);
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 1, 2, 8);
+    append_be64(buf, &n, cap, 1000);
+    uint8_t idx[1] = {0};
+    append_bytes(buf, &n, cap, idx, 1);
+    append_be32(buf, &n, cap, (uint32_t)-14400);
+    uint8_t dst[2] = {1, 4};
+    append_bytes(buf, &n, cap, dst, 2);
+    append_be32(buf, &n, cap, (uint32_t)-18000);
+    uint8_t stdz[2] = {0, 0};
+    append_bytes(buf, &n, cap, stdz, 2);
     append_bytes(buf, &n, cap, "EST\0EDT\0", 8);
     return n;
 }
@@ -795,6 +846,16 @@ static void test_zip_tzif(void) {
     check_int("tzif utc no dst", z ? z->has_dst : -1, 0);
     neverc_tzdata_zone_free(z);
 
+    if (tlen > 4 && tlen <= sizeof(tzif)) {
+        uint8_t tzif4[256];
+        memcpy(tzif4, tzif, tlen);
+        tzif4[4] = '4';
+        z = neverc_tzdata_load_tzif("UTC", tzif4, tlen);
+        check_not_null("load tzif v4", z);
+        check_int("tzif v4 utc offset", z ? z->utc_offset : -1, 0);
+        neverc_tzdata_zone_free(z);
+    }
+
     uint8_t ny[512];
     size_t nlen = build_tzif_ny(ny, sizeof(ny));
     z = neverc_tzdata_load_tzif("America/New_York", ny, nlen);
@@ -820,6 +881,17 @@ static void test_zip_tzif(void) {
               neverc_tzdata_offset_at(z, JUL_2025), -14400);
     neverc_tzdata_zone_free(z);
 
+    uint8_t sydf[512];
+    size_t sflen = build_tzif_syd_footer(sydf, sizeof(sydf));
+    z = neverc_tzdata_load_tzif("Custom/South", sydf, sflen);
+    check_not_null("load southern tzif with footer", z);
+    check_int("southern tzif dst hemi", z ? z->dst_hemi : 0, 2);
+    check_int("southern tzif July std",
+              neverc_tzdata_offset_for_month(z, 7), 36000);
+    check_int("southern tzif January dst",
+              neverc_tzdata_offset_for_month(z, 1), 39600);
+    neverc_tzdata_zone_free(z);
+
     uint8_t pre[256];
     size_t plen = build_tzif_pre_first(pre, sizeof(pre));
     z = neverc_tzdata_load_tzif("PreFirst", pre, plen);
@@ -827,6 +899,16 @@ static void test_zip_tzif(void) {
     check_int("pre-first uses first ttinfo not first transition",
               neverc_tzdata_offset_at(z, 0), -18000);
     check_int("at first transition still DST",
+              neverc_tzdata_offset_at(z, 1000), -14400);
+    neverc_tzdata_zone_free(z);
+
+    uint8_t used[256];
+    size_t ulen = build_tzif_used_dst_first(used, sizeof(used));
+    z = neverc_tzdata_load_tzif("UsedDstFirst", used, ulen);
+    check_not_null("load used-dst-first tzif", z);
+    check_int("used-dst-first pre-tx uses first non-DST zone",
+              neverc_tzdata_offset_at(z, 0), -18000);
+    check_int("used-dst-first at first tx is DST",
               neverc_tzdata_offset_at(z, 1000), -14400);
     neverc_tzdata_zone_free(z);
 

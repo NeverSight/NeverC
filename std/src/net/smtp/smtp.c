@@ -434,7 +434,9 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
 }
 
 int neverc_smtp_mail(neverc_smtp_client_t *c, const char *from) {
-    if (smtp_require_command_phase(c) != 0 || !from || !smtp_safe_atom(from))
+    /* RFC 5321 / Go smtp.Client.Mail: a null reverse-path is "<>". */
+    if (smtp_require_command_phase(c) != 0 || !from ||
+        (from[0] && !smtp_safe_atom(from)))
         return -1;
     if (ensure_hello(c) != 0) return -1;
     int code = smtp_cmdf(c, "MAIL FROM:<%s>", from);
@@ -527,7 +529,8 @@ int neverc_smtp_send_mail(const char *addr,
                             const char **to, int nto,
                             const void *msg, size_t msg_len,
                             const char **errp) {
-    if (!from || !smtp_safe_atom(from) || nto < 0 || (nto > 0 && !to))
+    if (!from || (from[0] && !smtp_safe_atom(from)) || nto < 0 ||
+        (nto > 0 && !to))
         return -1;
     for (int i = 0; i < nto; i++) {
         if (!smtp_safe_atom(to[i])) return -1;

@@ -362,6 +362,14 @@ static void test_shift(void) {
     neverc_bigint_lsh(&b, &a, 64);
     ASSERT_INT_EQ(neverc_bigint_bit_len(&b), 65);
 
+    /* Go two's-complement arithmetic right shift. */
+    neverc_bigint_set_int64(&a, -5);
+    neverc_bigint_rsh(&b, &a, 1);
+    ASSERT_INT_EQ(neverc_bigint_int64(&b), -3);
+    neverc_bigint_set_int64(&a, -1);
+    neverc_bigint_rsh(&b, &a, 100);
+    ASSERT_INT_EQ(neverc_bigint_int64(&b), -1);
+
     neverc_bigint_free(&a); neverc_bigint_free(&b);
 }
 
@@ -389,6 +397,18 @@ static void test_bit_ops(void) {
     ASSERT_INT_EQ(neverc_bigint_bit(&a, 0), 1);
     ASSERT_INT_EQ(neverc_bigint_bit(&a, 1), 0);
     ASSERT_INT_EQ(neverc_bigint_bit(&a, 2), 1);
+
+    neverc_bigint_set_int64(&a, -1);
+    neverc_bigint_set_int64(&b, 3);
+    neverc_bigint_and(&c, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_int64(&c), 3);
+    neverc_bigint_or(&c, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_int64(&c), -1);
+    neverc_bigint_set_int64(&b, -2);
+    neverc_bigint_xor(&c, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_int64(&c), 1);
+    ASSERT_INT_EQ(neverc_bigint_bit(&a, 0), 1);
+    ASSERT_INT_EQ(neverc_bigint_bit(&a, 5), 1);
 
     /* In-place or/xor must survive dest aliasing the shorter operand: that
      * path reallocs and used to read freed digits. */

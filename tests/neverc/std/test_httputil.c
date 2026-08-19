@@ -879,6 +879,9 @@ static int rewrite_request(const neverc_http_request_t *input,
     } else if (input->path &&
                strcmp(input->path, "/mid-slash-slash") == 0) {
         output->path = "/foo//bar";
+    } else if (input->path &&
+               strcmp(input->path, "/connect") == 0) {
+        output->method = "CONNECT";
     }
     return 0;
 }
@@ -1350,6 +1353,9 @@ static void test_live_reverse_proxy(void) {
     CHECK("middle double-slash route registered",
           neverc_httputil_proxy_register(
               proxy_mux, "/mid-slash-slash", proxy_a) == 0);
+    CHECK("CONNECT rewrite route registered",
+          neverc_httputil_proxy_register(
+              proxy_mux, "/connect", proxy_a) == 0);
     CHECK("chunked route registered",
           neverc_httputil_proxy_register(
               proxy_mux, "/chunked", proxy_a) == 0);
@@ -1590,6 +1596,20 @@ static void test_live_reverse_proxy(void) {
         check_contains("middle double-slash path rejected",
                        response.data, "proxy-error:/mid-slash-slash:");
         CHECK("middle double-slash returned failure status",
+              strstr(response.data, "HTTP/1.1 598") != NULL);
+    }
+    raw_response_free(&response);
+
+    request_result = raw_http_request(
+        proxy_port,
+        "GET /connect HTTP/1.1\r\n"
+        "Host: client.example\r\nConnection: close\r\n\r\n",
+        256U * 1024U, &response);
+    CHECK("CONNECT rewrite rejection completed", request_result == 0);
+    if (request_result == 0) {
+        check_contains("CONNECT rewrite rejected",
+                       response.data, "proxy-error:/connect:");
+        CHECK("CONNECT rewrite returned failure status",
               strstr(response.data, "HTTP/1.1 598") != NULL);
     }
     raw_response_free(&response);

@@ -1132,7 +1132,8 @@ static int parse_num_zone(const char *value, size_t vlen, size_t *vi,
                           int allow_z, int colon, int with_min, int with_sec,
                           int *tz_sec) {
     if (*vi >= vlen) return -1;
-    if (allow_z && (value[*vi] == 'Z' || value[*vi] == 'z')) {
+    /* Go ISO8601 Z layouts accept only uppercase Z, not z. */
+    if (allow_z && value[*vi] == 'Z') {
         (*vi)++;
         *tz_sec = 0;
         return 0;
@@ -1158,16 +1159,17 @@ static int parse_num_zone(const char *value, size_t vlen, size_t *vi,
             if (parse_n_digits(value, vlen, vi, 2, &ss) != 0) return -1;
         }
     }
-    if (hh > 14 || mm > 59 || ss > 59 ||
-        (hh == 14 && (mm != 0 || ss != 0)))
+    /* Go uses > rather than >=: offsets of 24h / 60min / 60s appear in the wild. */
+    if (hh > 24 || mm > 60 || ss > 60)
         return -1;
     *tz_sec = sign * (hh * 3600 + mm * 60 + ss);
     return 0;
 }
 
 static int parse_frac_sec(const char *value, size_t vlen, size_t *vi,
-                          int digits, int required, char sep, int *ns) {
-    if (*vi < vlen && value[*vi] == sep) {
+                          int digits, int required, int *ns) {
+    /* Go parseNanoseconds: either '.' or ',' regardless of the layout separator. */
+    if (*vi < vlen && (value[*vi] == '.' || value[*vi] == ',')) {
         (*vi)++;
         int got = 0;
         int stored = 0;
@@ -1208,14 +1210,14 @@ static int parse_trailing_frac(const char *layout, size_t llen, size_t li,
     if (*vi >= vlen || (value[*vi] != '.' && value[*vi] != ',')) return 0;
     if (*vi + 1 >= vlen || value[*vi + 1] < '0' || value[*vi + 1] > '9')
         return 0;
-    return parse_frac_sec(value, vlen, vi, 9, 0, value[*vi], ns);
+    return parse_frac_sec(value, vlen, vi, 9, 0, ns);
 }
 
 int neverc_time_parse_in_location(const char *layout, const char *value,
                                   const neverc_time_location_t *loc,
                                   neverc_time_t *out) {
     if (!layout || !value || !out) return -1;
-    int yr = 0, mo = 1, dy = 1, hr = 0, mi = 0, sc = 0, ns = 0, wd = -1;
+    int yr = 0, mo = 1, dy = 1, hr = 0, mi = 0, sc = 0, ns = 0;
     int hour12 = 0, pm = -1, tz_sec = 0;
     int yday = -1, saw_month = 0, saw_day = 0;
     int has_numeric_tz = 0, has_named_zone = 0, has_gmt_off = 0, gmt_off = 0;
@@ -1242,12 +1244,17 @@ int neverc_time_parse_in_location(const char *layout, const char *value,
             saw_month = 1;
             li += 3;
         } else if (layout_match_word(layout, llen, li, "Monday", 6, 1)) {
-            if (time_match_name(value, vlen, &vi, time_wday_full, 7, &wd) != 0)
+            int idx;
+            /* Go: weekday is checked for syntax, then ignored. */
+            if (time_match_name(value, vlen, &vi, time_wday_full, 7, &idx) != 0)
                 return -1;
+            (void)idx;
             li += 6;
         } else if (layout_match_word(layout, llen, li, "Mon", 3, 0)) {
-            if (time_match_name(value, vlen, &vi, time_wday_abbr, 7, &wd) != 0)
+            int idx;
+            if (time_match_name(value, vlen, &vi, time_wday_abbr, 7, &idx) != 0)
                 return -1;
+            (void)idx;
             li += 3;
         } else if (li + 3 <= llen && memcmp(layout + li, "MST", 3) == 0) {
             if (parse_time_zone(value, vlen, &vi, zone_name, sizeof(zone_name),
@@ -1368,8 +1375,7 @@ int neverc_time_parse_in_location(const char *layout, const char *value,
             int digits = 0;
             if (frac_layout_len(layout, llen, li, &digits)) {
                 int required = layout[li + 1] == '0';
-                if (parse_frac_sec(value, vlen, &vi, digits, required, layout[li],
-                                   &ns) != 0)
+                if (parse_frac_sec(value, vlen, &vi, digits, required, &ns) != 0)
                     return -1;
                 li += 1 + (size_t)digits;
             } else {
@@ -1409,14 +1415,15 @@ int neverc_time_parse_in_location(const char *layout, const char *value,
             vi++;
         }
     }
-    /* Go: AM/PM applies whenever the layout has PM/pm, including with "15".
-     * 12-hour fields accept 0 (00:30AM → 00:30). */
-    if (pm >= 0) {
+    /* Go: 12-hour fields are 0..12. AM/PM then applies to any hour field
+     * (including "15"): PM adds 12 only when hour < 12; AM maps 12 → 0. */
+    if (hour12) {
         if (hr < 0 || hr > 12) return -1;
-        if (pm == 1) hr = (hr == 12) ? 12 : hr + 12;
-        else hr = (hr == 12) ? 0 : hr;
-    } else if (hour12) {
-        if (hr < 0 || hr > 12) return -1;
+    }
+    if (pm == 1) {
+        if (hr < 12) hr += 12;
+    } else if (pm == 0) {
+        if (hr == 12) hr = 0;
     }
     if (yday >= 0) {
         int ym, yd;
@@ -1433,8 +1440,6 @@ int neverc_time_parse_in_location(const char *layout, const char *value,
         ns < 0 || ns > 999999999)
         return -1;
     neverc_time_t wall = neverc_time_date(yr, mo, dy, hr, mi, sc, ns);
-    if (wd >= 0 && neverc_time_weekday(wall) != wd)
-        return -1;
 
     int apply_off = 0;
     int use_fixed_off = 0;

@@ -89,18 +89,23 @@ neverc_ascii85_result_t neverc_ascii85_decode(unsigned char *dst, size_t dst_len
     for (size_t i = 0; i < src_len; i++) {
         unsigned char b = src[i];
 
+        /* Go checks dst room before looking at each byte (whitespace
+         * included). A full 4-byte dst must leave leftover src unconsumed
+         * even when flush is set, otherwise a trailing '{' is reported
+         * as corrupt. A flushed 2-4 digit tail needs only 1-3 bytes, so
+         * still allow that exact-size path when remaining dst is a digit
+         * that can form a short tail. Non-digits (`{`, `z`) leftover. */
+        if (nb == 0 && dst_len - result.ndst < 4) {
+            if (!flush || result.ndst == dst_len)
+                return result;
+            if (b <= ' ')
+                continue;
+            if (b < '!' || b > 'u')
+                return result;
+        }
+
         if (b <= ' ')
             continue;
-
-        /* Go ascii85.Decode stops before the next payload byte when dst has
-         * no room for a 4-byte group, leaving leftover src unconsumed instead
-         * of classifying it as corrupt. Incomplete flush tails still use the
-         * exact-size path below. */
-        /* A flushed 2-4 digit tail needs 1-3 bytes, not a full group.
-         * Only stop early when not flushing, so the exact-size flush
-         * path below can still run. */
-        if (!flush && nb == 0 && dst_len - result.ndst < 4)
-            return result;
 
         if (b == 'z' && nb == 0) {
             nb = 5;

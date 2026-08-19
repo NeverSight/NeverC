@@ -50,6 +50,23 @@ static void test_nrgba_conversion(void) {
     ASSERT_INT_EQ(nr.g, 200);
     ASSERT_INT_EQ(nr.a, 255);
 
+    /* Go NRGBA.RGBA + RGBA model: 200*257*200/255 >> 8 == 157, not 156
+     * from the 8-bit (r*a/255) shortcut. */
+    neverc_color_rgba_t go_pre = neverc_color_nrgba_to_rgba(
+        neverc_color_nrgba(200, 200, 200, 200));
+    ASSERT_INT_EQ(go_pre.r, 157);
+    ASSERT_INT_EQ(go_pre.g, 157);
+    ASSERT_INT_EQ(go_pre.b, 157);
+    ASSERT_INT_EQ(go_pre.a, 200);
+
+    /* Go nrgbaModel: (50*65535/51)>>8 == 251, not 250 from (r*255/a). */
+    neverc_color_nrgba_t go_unpre = neverc_color_rgba_to_nrgba(
+        neverc_color_rgba(50, 0, 0, 51));
+    ASSERT_INT_EQ(go_unpre.r, 251);
+    ASSERT_INT_EQ(go_unpre.g, 0);
+    ASSERT_INT_EQ(go_unpre.b, 0);
+    ASSERT_INT_EQ(go_unpre.a, 51);
+
     /* Non-premultiplied (r > a) must clamp, not wrap the uint8_t cast. */
     neverc_color_nrgba_t wrapped = neverc_color_rgba_to_nrgba(
         neverc_color_rgba(255, 0, 0, 1));

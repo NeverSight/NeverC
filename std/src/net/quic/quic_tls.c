@@ -267,7 +267,7 @@ static void qt_transcript_hash(const quic_tls_t *tls, uint8_t output[32]) {
 }
 
 static int qt_derive_packet_keys(const quic_tls_t *tls, const uint8_t secret[32],
-                                 quic_keys_t *keys) {
+                                 quic_keys_t *keys, const uint8_t *retain_hp) {
     const char *key_label = "quic key";
     const char *iv_label = "quic iv";
     const char *hp_label = "quic hp";
@@ -288,8 +288,14 @@ static int qt_derive_packet_keys(const quic_tls_t *tls, const uint8_t secret[32]
                                   sizeof(keys->key)) != 0 ||
         nci_tls_hkdf_expand_label(secret, 32, iv_label, iv_label_len,
                                   NULL, 0, keys->iv,
-                                  sizeof(keys->iv)) != 0 ||
-        nci_tls_hkdf_expand_label(secret, 32, hp_label, hp_label_len,
+                                  sizeof(keys->iv)) != 0)
+        return -1;
+    /* RFC 9001 §6: header-protection keys are not updated. */
+    if (retain_hp) {
+        memcpy(keys->hp, retain_hp, sizeof(keys->hp));
+        return 0;
+    }
+    if (nci_tls_hkdf_expand_label(secret, 32, hp_label, hp_label_len,
                                   NULL, 0, keys->hp,
                                   sizeof(keys->hp)) != 0)
         return -1;
@@ -298,11 +304,25 @@ static int qt_derive_packet_keys(const quic_tls_t *tls, const uint8_t secret[32]
 
 static int qt_install_secret_pair(quic_tls_t *tls, quic_enc_level_t level,
                                   const uint8_t client_secret[32],
-                                  const uint8_t server_secret[32]) {
+                                  const uint8_t server_secret[32],
+                                  int retain_hp) {
     quic_keys_t client_keys;
     quic_keys_t server_keys;
-    if (qt_derive_packet_keys(tls, client_secret, &client_keys) != 0 ||
-        qt_derive_packet_keys(tls, server_secret, &server_keys) != 0)
+    const uint8_t *client_hp = NULL;
+    const uint8_t *server_hp = NULL;
+    if (retain_hp && tls->levels[level].available) {
+        if (tls->is_server) {
+            client_hp = tls->levels[level].read.hp;
+            server_hp = tls->levels[level].write.hp;
+        } else {
+            server_hp = tls->levels[level].read.hp;
+            client_hp = tls->levels[level].write.hp;
+        }
+    }
+    if (qt_derive_packet_keys(tls, client_secret, &client_keys,
+                              client_hp) != 0 ||
+        qt_derive_packet_keys(tls, server_secret, &server_keys,
+                              server_hp) != 0)
         return qt_fail(tls, "failed to derive QUIC packet keys");
     if (tls->is_server) {
         tls->levels[level].read = client_keys;
@@ -345,7 +365,7 @@ static int qt_derive_handshake_keys(quic_tls_t *tls,
         return qt_fail(tls, "TLS traffic secret derivation failed");
     return qt_install_secret_pair(tls, QUIC_ENC_HANDSHAKE,
                                   tls->client_hs_secret,
-                                  tls->server_hs_secret);
+                                  tls->server_hs_secret, 0);
 }
 
 static int qt_derive_application_keys(quic_tls_t *tls,
@@ -375,7 +395,7 @@ static int qt_derive_application_keys(quic_tls_t *tls,
         return qt_fail(tls, "TLS application secret derivation failed");
     if (qt_install_secret_pair(tls, QUIC_ENC_APPLICATION,
                                tls->client_app_secret,
-                               tls->server_app_secret) != 0)
+                               tls->server_app_secret, 0) != 0)
         return -1;
     tls->app_keys_derived = 1;
     return 0;
@@ -1392,6 +1412,14 @@ void neverc_quic_tls_crypto_data_lost(quic_tls_t *tls,
         buffer->write_offset = offset;
 }
 
+void neverc_quic_tls_crypto_rewind_unacked(quic_tls_t *tls,
+                                           quic_enc_level_t level) {
+    if (!tls || level >= QUIC_ENC_LEVEL_COUNT) return;
+    quic_crypto_buf_t *buffer = &tls->crypto_send[level];
+    if (buffer->acked_offset < buffer->write_offset)
+        buffer->write_offset = buffer->acked_offset;
+}
+
 int neverc_quic_tls_install_keys(quic_tls_t *tls, quic_enc_level_t level,
                                  const quic_keys_t *read_key,
                                  const quic_keys_t *write_key) {
@@ -1417,7 +1445,7 @@ int neverc_quic_tls_key_update(quic_tls_t *tls) {
                                   ku_label, ku_label_len, NULL, 0,
                                   next_server, sizeof(next_server)) != 0 ||
         qt_install_secret_pair(tls, QUIC_ENC_APPLICATION,
-                               next_client, next_server) != 0)
+                               next_client, next_server, 1) != 0)
         return qt_fail(tls, "QUIC key update failed");
     memcpy(tls->client_app_secret, next_client, sizeof(next_client));
     memcpy(tls->server_app_secret, next_server, sizeof(next_server));
@@ -1474,7 +1502,8 @@ int neverc_quic_tls_prepare_read_key_update(quic_tls_t *tls,
     if (nci_tls_hkdf_expand_label(current, 32, ku_label, ku_label_len, NULL, 0,
                                   tls->pending_read_secret,
                                   sizeof(tls->pending_read_secret)) != 0 ||
-        qt_derive_packet_keys(tls, tls->pending_read_secret, next_keys) != 0) {
+        qt_derive_packet_keys(tls, tls->pending_read_secret, next_keys,
+                              tls->levels[QUIC_ENC_APPLICATION].read.hp) != 0) {
         neverc_platform_secure_zero(tls->pending_read_secret,
                                     sizeof(tls->pending_read_secret));
         return -1;
@@ -1499,7 +1528,8 @@ int neverc_quic_tls_commit_read_key_update(quic_tls_t *tls,
      * endpoint MUST also switch send keys and toggle the send Key Phase. */
     if (nci_tls_hkdf_expand_label(ours, 32, ku_label, ku_label_len, NULL, 0,
                                   next_write, sizeof(next_write)) != 0 ||
-        qt_derive_packet_keys(tls, next_write, &write_keys) != 0) {
+        qt_derive_packet_keys(tls, next_write, &write_keys,
+                              tls->levels[QUIC_ENC_APPLICATION].write.hp) != 0) {
         neverc_platform_secure_zero(next_write, sizeof(next_write));
         neverc_quic_tls_discard_read_key_update(tls);
         return -1;

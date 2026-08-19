@@ -73,6 +73,11 @@ static int macho_fat_first_slice(const uint8_t *data, size_t len,
     if (narch == 0 || (uint64_t)narch * 20U > len - 8)
         return -1;
 
+    /* Validate every fat_arch before selecting a slice. Returning on the first
+     * thin magic used to accept a truncated later entry (Go's NewFatFile
+     * parses — and therefore bounds-checks — every architecture). */
+    uint32_t slice_off = 0;
+    uint32_t slice_size = 0;
     for (uint32_t i = 0; i < narch; i++) {
         const uint8_t *arch = data + 8 + (size_t)i * 20U;
         uint32_t offset = r32(arch + 8);
@@ -82,13 +87,16 @@ static int macho_fat_first_slice(const uint8_t *data, size_t len,
         uint32_t inner = rd32le(data + offset);
         if (inner == NEVERC_FAT_MAGIC || inner == NEVERC_FAT_CIGAM)
             return -1;
-        if (macho_is_thin_magic(inner)) {
-            *thin = data + offset;
-            *thin_len = size;
-            return 0;
+        if (!macho_is_thin_magic(inner))
+            return -1;
+        if (i == 0) {
+            slice_off = offset;
+            slice_size = size;
         }
     }
-    return -1;
+    *thin = data + slice_off;
+    *thin_len = slice_size;
+    return 0;
 }
 
 static void copy_name(char *dst, size_t dstsz, const uint8_t *src, size_t srcsz) {

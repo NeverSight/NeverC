@@ -213,6 +213,17 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/ok#bad%zz"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/?q=%zz"), 0);
     ASSERT_STR_EQ(u.raw_query, "q=%zz");
+    ASSERT_INT_EQ(u.has_query, 1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/path?"), 0);
+    ASSERT_STR_EQ(u.path, "/path");
+    ASSERT_STR_EQ(u.raw_query, "");
+    ASSERT_INT_EQ(u.has_query, 1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/path"), 0);
+    ASSERT_INT_EQ(u.has_query, 0);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com?#frag"), 0);
+    ASSERT_STR_EQ(u.raw_query, "");
+    ASSERT_INT_EQ(u.has_query, 1);
+    ASSERT_STR_EQ(u.fragment, "frag");
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://b\xc3\xbc""cher.de/"), 0);
     ASSERT_STR_EQ(u.host, "xn--bcher-kva.de");
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://\xff.com/"), -1);
@@ -252,6 +263,18 @@ static void test_string(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://:@host/x"), 0);
     neverc_url_string(&u, buf, sizeof(buf));
     ASSERT_STR_EQ(buf, "http://:@host/x");
+
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/path?"), 0);
+    neverc_url_string(&u, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "http://example.com/path?");
+    neverc_url_request_uri(&u, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "/path?");
+
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com?"), 0);
+    neverc_url_string(&u, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "http://example.com?");
+    neverc_url_request_uri(&u, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "/?");
 }
 
 static void test_values(void) {
@@ -308,6 +331,21 @@ static void test_values_encoded(void) {
     ASSERT_INT_EQ(v.count, 0);
     ASSERT_INT_EQ(neverc_url_values_parse(&v, "a=1%3Bb=2"), 0);
     ASSERT_STR_EQ(neverc_url_values_get(&v, "a"), "1;b=2");
+
+    /* Go ParseQuery skips empty "&" segments; `=x` keeps an empty key. */
+    ASSERT_INT_EQ(neverc_url_values_parse(&v, "a=1&&b=2"), 0);
+    ASSERT_INT_EQ(v.count, 2);
+    ASSERT_STR_EQ(neverc_url_values_get(&v, "a"), "1");
+    ASSERT_STR_EQ(neverc_url_values_get(&v, "b"), "2");
+    ASSERT_INT_EQ(neverc_url_values_parse(&v, "&a=1&"), 0);
+    ASSERT_INT_EQ(v.count, 1);
+    ASSERT_STR_EQ(neverc_url_values_get(&v, "a"), "1");
+    ASSERT_INT_EQ(neverc_url_values_parse(&v, "&&"), 0);
+    ASSERT_INT_EQ(v.count, 0);
+    ASSERT_INT_EQ(neverc_url_values_parse(&v, "=x&a=1"), 0);
+    ASSERT_INT_EQ(v.count, 2);
+    ASSERT_STR_EQ(neverc_url_values_get(&v, ""), "x");
+    ASSERT_STR_EQ(neverc_url_values_get(&v, "a"), "1");
 }
 
 static void test_escape(void) {

@@ -16,7 +16,10 @@ extern "C" {
  * block, skipping malformed armor the same way as Go encoding/pem.Decode.
  *
  * Unlike Go's version, this C API uses caller-provided buffers rather than
- * allocating memory. Returns the number of bytes written, or -1 on error.
+ * allocating memory. Encode returns the payload length (no trailing NUL in
+ * the count), or -1 on error. Decode returns 0 on success or -1 if no valid
+ * block is found / a caller buffer is too small; a failed Decode does not
+ * write type_buf or out_buf.
  */
 
 int neverc_pem_encode(char *out, size_t out_cap,

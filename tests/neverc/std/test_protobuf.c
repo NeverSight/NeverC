@@ -152,6 +152,14 @@ static void test_malformed_inputs(void) {
     CHECK(neverc_protobuf_reader_next(&reader, &field) == 1);
     CHECK(field.number == 1U && field.value.varint == UINT64_MAX);
     CHECK(neverc_protobuf_reader_next(&reader, &field) == 0);
+
+    /* Length-delimited UINT64_MAX must not wrap offset past remaining. */
+    static const uint8_t huge_len[] = {
+        0x0aU, 0xffU, 0xffU, 0xffU, 0xffU, 0xffU,
+        0xffU, 0xffU, 0xffU, 0xffU, 0x01U};
+    neverc_protobuf_reader_init(&reader, huge_len, sizeof(huge_len),
+                                SIZE_MAX);
+    CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
 }
 
 static void test_skip_groups(void) {

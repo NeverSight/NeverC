@@ -13,9 +13,13 @@ neverc_color_nrgba_t neverc_color_nrgba(uint8_t r, uint8_t g, uint8_t b, uint8_t
 
 neverc_color_rgba_t neverc_color_nrgba_to_rgba(neverc_color_nrgba_t c) {
     neverc_color_rgba_t out;
-    out.r = (uint8_t)((uint16_t)c.r * c.a / 255);
-    out.g = (uint8_t)((uint16_t)c.g * c.a / 255);
-    out.b = (uint8_t)((uint16_t)c.b * c.a / 255);
+    /* Go image/color.NRGBA.RGBA: expand 8→16 via (x|x<<8)==x*257, premultiply
+     * by A/255, then the RGBA model stores the high 8 bits. 8-bit (r*a/255)
+     * is off by one for some values (e.g. 200,200 → 156 vs Go 157). */
+    uint32_t a = c.a;
+    out.r = (uint8_t)((((uint32_t)c.r * 257u * a) / 255u) >> 8);
+    out.g = (uint8_t)((((uint32_t)c.g * 257u * a) / 255u) >> 8);
+    out.b = (uint8_t)((((uint32_t)c.b * 257u * a) / 255u) >> 8);
     out.a = c.a;
     return out;
 }
@@ -23,14 +27,24 @@ neverc_color_rgba_t neverc_color_nrgba_to_rgba(neverc_color_nrgba_t c) {
 neverc_color_nrgba_t neverc_color_rgba_to_nrgba(neverc_color_rgba_t c) {
     neverc_color_nrgba_t out;
     if (c.a == 0) { out.r = out.g = out.b = out.a = 0; return out; }
-    /* Valid premultiplied input has channel <= alpha; clamp so a
-     * non-premultiplied (r > a) value cannot wrap the uint8_t cast. */
-    int ur = (int)c.r * 255 / c.a;
-    int ug = (int)c.g * 255 / c.a;
-    int ub = (int)c.b * 255 / c.a;
-    out.r = (uint8_t)(ur > 255 ? 255 : ur);
-    out.g = (uint8_t)(ug > 255 ? 255 : ug);
-    out.b = (uint8_t)(ub > 255 ? 255 : ub);
+    if (c.a == 255) {
+        out.r = c.r;
+        out.g = c.g;
+        out.b = c.b;
+        out.a = 255;
+        return out;
+    }
+    /* Go nrgbaModel: r16=r*257, a16=a*257, then (r16*0xffff)/a16 >> 8.
+     * That simplifies to (r*65535/a)>>8. Valid premultiplied input has
+     * channel <= alpha so the result is in [0,255]; clamp so a
+     * non-premultiplied (r > a) value cannot wrap the uint8_t cast
+     * (Go truncates; we keep the previous NeverC clamp). */
+    uint32_t ur = ((uint32_t)c.r * 65535u / c.a) >> 8;
+    uint32_t ug = ((uint32_t)c.g * 65535u / c.a) >> 8;
+    uint32_t ub = ((uint32_t)c.b * 65535u / c.a) >> 8;
+    out.r = (uint8_t)(ur > 255u ? 255u : ur);
+    out.g = (uint8_t)(ug > 255u ? 255u : ug);
+    out.b = (uint8_t)(ub > 255u ? 255u : ub);
     out.a = c.a;
     return out;
 }

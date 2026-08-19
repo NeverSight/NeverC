@@ -187,6 +187,13 @@ static void test_varint(void) {
     if (s == 1) tests_passed++;
     else { tests_failed++; printf("  FAIL: varint 1 value: got %lld\n", (long long)s); }
 
+    {
+        uint8_t leftover[] = {0x01, 0x80, 0x01};
+        check_int("uvarint stops before leftover",
+                  neverc_binary_uvarint(leftover, sizeof(leftover), &u), 1);
+        check_u64("uvarint leftover value", u, 1);
+    }
+
     check_int("truncated", neverc_binary_uvarint(buf, 0, &u), 0);
     {
         uint8_t cont[] = {0x80};

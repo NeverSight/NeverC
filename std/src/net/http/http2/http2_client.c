@@ -390,9 +390,11 @@ static int h2_client_value_valid(const char *value) {
 
 static int h2_client_path_valid(const char *path) {
     if (!path || path[0] != '/') return 0;
+    if (path[1] == '/' || path[1] == '\\') return 0;
     for (const unsigned char *cursor = (const unsigned char *)path;
          *cursor; cursor++)
-        if (*cursor <= 0x20 || *cursor == 0x7f || *cursor == '#')
+        if (*cursor <= 0x20 || *cursor == 0x7f || *cursor == '#' ||
+            *cursor == '\\')
             return 0;
     return 1;
 }

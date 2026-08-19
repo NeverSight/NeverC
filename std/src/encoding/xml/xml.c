@@ -895,58 +895,28 @@ static void xml_node_release_self(neverc_xml_node_t *node) {
     free(node);
 }
 
-static void xml_node_free_recursive(neverc_xml_node_t *node) {
-    int i;
-    if (!node) return;
-    for (i = 0; i < node->nchildren; i++)
-        xml_node_free_recursive(node->children[i]);
-    xml_node_release_self(node);
-}
-
 /* Iterative free: a 1000-deep tree (the parse cap) plus sanitizer frames can
- * overflow small thread stacks if this recurses per child. */
+ * overflow small thread stacks if this recurses per child. Walk last-child
+ * first so the stack is O(depth), and never fall back to C recursion. */
 void neverc_xml_node_free(neverc_xml_node_t *root) {
-    neverc_xml_node_t **stack;
-    int cap, top;
+    neverc_xml_node_t *stack[NCI_XML_MAX_DEPTH + 2];
+    int top = 0;
     if (!root) return;
-    cap = 8;
-    stack = (neverc_xml_node_t **)malloc((size_t)cap * sizeof(*stack));
-    if (!stack) {
-        xml_node_free_recursive(root);
-        return;
-    }
-    top = 0;
     stack[top++] = root;
     while (top > 0) {
-        neverc_xml_node_t *node = stack[--top];
-        int i;
-        for (i = 0; i < node->nchildren; i++) {
-            neverc_xml_node_t *child = node->children[i];
-            if (!child) continue;
-            if (top >= cap) {
-                neverc_xml_node_t **grown;
-                int next_cap;
-                if (cap > INT32_MAX / 2 ||
-                    (size_t)cap * 2U > SIZE_MAX / sizeof(*stack)) {
-                    xml_node_free_recursive(child);
-                    continue;
-                }
-                next_cap = cap * 2;
-                grown = (neverc_xml_node_t **)realloc(
-                    stack, (size_t)next_cap * sizeof(*stack));
-                if (!grown) {
-                    xml_node_free_recursive(child);
-                    continue;
-                }
-                stack = grown;
-                cap = next_cap;
-            }
+        neverc_xml_node_t *node = stack[top - 1];
+        if (node->nchildren > 0) {
+            neverc_xml_node_t *child = node->children[--node->nchildren];
+            if (!child)
+                continue;
+            if (top >= NCI_XML_MAX_DEPTH + 1)
+                continue;
             stack[top++] = child;
+        } else {
+            top--;
+            xml_node_release_self(node);
         }
-        node->nchildren = 0;
-        xml_node_release_self(node);
     }
-    free(stack);
 }
 
 const char *neverc_xml_node_attr(const neverc_xml_node_t *node, const char *name) {

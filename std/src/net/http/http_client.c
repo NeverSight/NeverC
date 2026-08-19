@@ -536,6 +536,9 @@ static int parse_response_framing(const char *headers, size_t header_length,
         return -1;
     framing->status_code = (headers[9] - '0') * 100 +
                            (headers[10] - '0') * 10 + headers[11] - '0';
+    /* Go statusCodeValid: reject 000-099 so a bogus status cannot fail-open
+     * as a final response with a body. */
+    if (framing->status_code < 100) return -1;
     framing->keep_alive = is_http_11;
 
     const char *cursor = line_end + 2;
@@ -600,6 +603,7 @@ static int build_http_request(nc_buf_t *req, const char *method,
     nc_buf_init(req);
     if (!method || !url || (body_len > 0 && !body) ||
         !client_valid_token(method, strlen(method)) ||
+        strcmp(method, "CONNECT") == 0 ||
         contains_crlf(url->authority) ||
         contains_crlf(url->path) || contains_crlf(content_type))
         return -1;
@@ -651,6 +655,7 @@ static int build_http_stream_request_headers(
     nc_buf_init(req);
     if (!method || !url || content_length < -1 ||
         !client_valid_token(method, strlen(method)) ||
+        strcmp(method, "CONNECT") == 0 ||
         contains_crlf(url->authority) || contains_crlf(url->path) ||
         contains_crlf(content_type))
         return -1;
@@ -2171,8 +2176,15 @@ void neverc_http_set_cookie(neverc_http_response_writer_t *w,
     else if (!failed && c->same_site == 3)
         failed = nc_buf_append(&value, "; SameSite=None", 15) != 0;
 
-    if (!failed) (void)nc_http_writer_add_header(w, "Set-Cookie", value.data);
+    if (failed ||
+        nc_http_writer_add_header(w, "Set-Cookie", value.data) != 0)
+        w->aborted = 1;
     nc_buf_free(&value);
+}
+
+/* Go validCookieValueByte: SP/comma allowed; DQUOTE, ';', '\\', CTL, DEL not. */
+static int http_cookie_value_byte_ok(unsigned char c) {
+    return c >= 0x20 && c < 0x7f && c != '"' && c != ';' && c != '\\';
 }
 
 static const char *http_cookie_lookup(const char *cookie_hdr, const char *name,
@@ -2186,22 +2198,27 @@ static const char *http_cookie_lookup(const char *cookie_hdr, const char *name,
 
         if (strncmp(p, name, nlen) == 0 && p[nlen] == '=') {
             const char *val = p + nlen + 1;
-            size_t i = 0;
-            /* Go parseCookieValue allows SP inside the value and stops at ';'.
-             * Truncating at SP dropped quoted values such as `"foo bar"`. */
-            while (val[i] && val[i] != ';' && i < buflen - 1) {
-                buf[i] = val[i];
-                i++;
+            size_t raw_len = 0;
+            while (val[raw_len] && val[raw_len] != ';')
+                raw_len++;
+            /* Go parseCookieValue: unwrap a matching DQUOTE pair, then
+             * reject leftover '"' / '\\' / CTL. Truncating into buf used
+             * to return a prefix of `"secret"` as a successful value. */
+            const char *inner = val;
+            size_t inner_len = raw_len;
+            if (raw_len >= 2 && val[0] == '"' && val[raw_len - 1] == '"') {
+                inner = val + 1;
+                inner_len = raw_len - 2;
             }
-            /* RFC 6265 §5.2: unwrap a matching DQUOTE pair. */
-            if (i >= 2 && buf[0] == '"' && buf[i - 1] == '"') {
-                size_t inner = i - 2;
-                for (size_t j = 0; j < inner; j++)
-                    buf[j] = buf[j + 1];
-                i = inner;
+            int valid = inner_len < buflen;
+            for (size_t i = 0; valid && i < inner_len; i++)
+                valid = http_cookie_value_byte_ok((unsigned char)inner[i]);
+            if (valid) {
+                if (inner_len > 0)
+                    memcpy(buf, inner, inner_len);
+                buf[inner_len] = '\0';
+                return buf;
             }
-            buf[i] = '\0';
-            return buf;
         }
 
         while (*p && *p != ';') p++;
@@ -2916,7 +2933,11 @@ static void strip_prefix_handler_fn(neverc_http_request_t *req,
         memcpy(owned + 1, rest, rest_len + 1);
         stripped.path = owned;
     }
-    if (http_path_contains_dotdot(stripped.path)) {
+    /* After stripping, "//host" / "/\\host" is a protocol-relative URL.
+     * Handlers that redirect to req->path would otherwise emit Location XSS. */
+    if (http_path_contains_dotdot(stripped.path) ||
+        (stripped.path[0] == '/' &&
+         (stripped.path[1] == '/' || stripped.path[1] == '\\'))) {
         free(owned);
         goto not_found;
     }

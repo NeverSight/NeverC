@@ -736,6 +736,115 @@ static void test_rejects_illegal_and_duplicate_plte(void) {
     free(png);
 }
 
+static void test_trns_grayscale_and_truecolor(void) {
+    printf("[trns_grayscale_and_truecolor]\n");
+    uint8_t gray_px = 128;
+    neverc_png_image_t gray;
+    memset(&gray, 0, sizeof(gray));
+    gray.width = 1;
+    gray.height = 1;
+    gray.bit_depth = 8;
+    gray.color_type = NEVERC_PNG_COLOR_GRAYSCALE;
+    gray.channels = 1;
+    gray.stride = 1;
+    gray.pixels = &gray_px;
+
+    uint8_t *png = NULL;
+    size_t png_len = 0;
+    ASSERT_EQ(neverc_png_encode(&gray, &png, &png_len), 0);
+    ASSERT_TRUE(png != NULL && png_len > 33);
+
+    uint8_t trns_gray[2] = {0, 128};
+    size_t with_len = 0;
+    uint8_t *with = insert_chunk(
+        png, png_len, 33, "tRNS", trns_gray, 2, &with_len);
+    ASSERT_TRUE(with != NULL);
+    if (with) {
+        neverc_png_image_t decoded;
+        ASSERT_EQ(neverc_png_decode(with, with_len, &decoded), 0);
+        ASSERT_EQ(decoded.channels, 2);
+        ASSERT_EQ(decoded.color_type, NEVERC_PNG_COLOR_GRAYSCALE_ALPHA);
+        const uint8_t *p = neverc_png_pixel_at(&decoded, 0, 0);
+        ASSERT_TRUE(p != NULL);
+        if (p) {
+            ASSERT_EQ(p[0], 128);
+            ASSERT_EQ(p[1], 0);
+        }
+        neverc_png_free(&decoded);
+        free(with);
+    }
+
+    uint8_t bad_len[1] = {128};
+    with = insert_chunk(png, png_len, 33, "tRNS", bad_len, 1, &with_len);
+    ASSERT_TRUE(with != NULL);
+    if (with) {
+        neverc_png_image_t decoded;
+        ASSERT_EQ(neverc_png_decode(with, with_len, &decoded), -1);
+        free(with);
+    }
+    free(png);
+
+    uint8_t rgb_px[3] = {10, 20, 30};
+    neverc_png_image_t rgb;
+    memset(&rgb, 0, sizeof(rgb));
+    rgb.width = 1;
+    rgb.height = 1;
+    rgb.bit_depth = 8;
+    rgb.color_type = NEVERC_PNG_COLOR_TRUECOLOR;
+    rgb.channels = 3;
+    rgb.stride = 3;
+    rgb.pixels = rgb_px;
+
+    png = NULL;
+    png_len = 0;
+    ASSERT_EQ(neverc_png_encode(&rgb, &png, &png_len), 0);
+    ASSERT_TRUE(png != NULL);
+
+    uint8_t trns_rgb[6] = {0, 10, 0, 20, 0, 30};
+    with = insert_chunk(png, png_len, 33, "tRNS", trns_rgb, 6, &with_len);
+    ASSERT_TRUE(with != NULL);
+    if (with) {
+        neverc_png_image_t decoded;
+        ASSERT_EQ(neverc_png_decode(with, with_len, &decoded), 0);
+        ASSERT_EQ(decoded.channels, 4);
+        ASSERT_EQ(decoded.color_type, NEVERC_PNG_COLOR_TRUECOLOR_ALPHA);
+        const uint8_t *p = neverc_png_pixel_at(&decoded, 0, 0);
+        ASSERT_TRUE(p != NULL);
+        if (p) {
+            ASSERT_EQ(p[0], 10);
+            ASSERT_EQ(p[1], 20);
+            ASSERT_EQ(p[2], 30);
+            ASSERT_EQ(p[3], 0);
+        }
+        neverc_png_free(&decoded);
+        free(with);
+    }
+    free(png);
+
+    uint8_t rgba_px[4] = {1, 2, 3, 255};
+    neverc_png_image_t rgba;
+    memset(&rgba, 0, sizeof(rgba));
+    rgba.width = 1;
+    rgba.height = 1;
+    rgba.bit_depth = 8;
+    rgba.color_type = NEVERC_PNG_COLOR_TRUECOLOR_ALPHA;
+    rgba.channels = 4;
+    rgba.stride = 4;
+    rgba.pixels = rgba_px;
+    png = NULL;
+    png_len = 0;
+    ASSERT_EQ(neverc_png_encode(&rgba, &png, &png_len), 0);
+    ASSERT_TRUE(png != NULL);
+    with = insert_chunk(png, png_len, 33, "tRNS", trns_rgb, 6, &with_len);
+    ASSERT_TRUE(with != NULL);
+    if (with) {
+        neverc_png_image_t decoded;
+        ASSERT_EQ(neverc_png_decode(with, with_len, &decoded), -1);
+        free(with);
+    }
+    free(png);
+}
+
 int main(void) {
     printf("NeverC image/png tests\n");
     test_encode_decode_rgba();
@@ -756,6 +865,7 @@ int main(void) {
     test_truncated_header_clears_geometry();
     test_rejects_iend_crc_corruption();
     test_rejects_illegal_and_duplicate_plte();
+    test_trns_grayscale_and_truecolor();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

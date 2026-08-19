@@ -571,21 +571,39 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                 size_t w = pix_pos + L;
                 if (is_kwkwk) {
                     w--;
-                    if (w < pix_pos + emit)
-                        indices[w] = (first_byte < pal_size) ? first_byte : 0;
+                    if (w < pix_pos + emit) {
+                        if (first_byte >= pal_size) {
+                            lzw_error = 1;
+                            break;
+                        }
+                        indices[w] = first_byte;
+                    }
                 }
+                if (lzw_error)
+                    break;
                 int c = walk;
                 while (c >= clear_code) {
                     w--;
                     if (w < pix_pos + emit) {
                         uint8_t v = suffix[c];
-                        indices[w] = (v < pal_size) ? v : 0;
+                        if (v >= pal_size) {
+                            lzw_error = 1;
+                            break;
+                        }
+                        indices[w] = v;
                     }
                     c = prefix[c];
                 }
+                if (lzw_error)
+                    break;
                 w--;
-                if (w < pix_pos + emit)
-                    indices[w] = ((uint8_t)c < pal_size) ? (uint8_t)c : 0;
+                if (w < pix_pos + emit) {
+                    if ((uint8_t)c >= pal_size) {
+                        lzw_error = 1;
+                        break;
+                    }
+                    indices[w] = (uint8_t)c;
+                }
                 first_byte = (uint8_t)c;
                 pix_pos += emit;
 
@@ -720,7 +738,10 @@ int neverc_gif_frame_to_rgba(const neverc_gif_frame_t *frame,
 
     for (size_t i = 0; i < npixels; i++) {
         int idx = frame->indices[i];
-        if (idx >= frame->palette_size) idx = 0;
+        if (idx >= frame->palette_size) {
+            free(rgba);
+            return -1;
+        }
         uint8_t *p = rgba + i * 4u;
         p[0] = frame->palette[idx].r;
         p[1] = frame->palette[idx].g;

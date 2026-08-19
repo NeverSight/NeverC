@@ -89,22 +89,58 @@ static int csv_is_formula_starter(uint32_t cp) {
     return cp == 0xFF1D || cp == 0xFF0B || cp == 0xFF0D || cp == 0xFF20;
 }
 
-static int csv_formula_prefix(const char *s) {
-    size_t n, i;
-    if (!s || !s[0]) return 0;
-    n = strlen(s);
-    i = 0;
+/* Excel / LibreOffice also split on ',', ';', and tab even when this
+ * writer uses a different delimiter (EU locale CSV, TSV paste). A field
+ * like "a;=CMD()" is one RFC 4180 cell but two spreadsheet cells. */
+static int csv_is_cell_sep(unsigned char c, char delim) {
+    /* The writer's own delimiter is quoted (RFC 4180); spreadsheets do
+     * not split on it inside quotes. ';' / tab / ',' still start a new
+     * cell when they are *not* the writer delimiter. */
+    if (c == (unsigned char)delim)
+        return 0;
+    return c == ',' || c == ';' || c == '\t';
+}
+
+static size_t csv_skip_formula_space(const char *s, size_t n, size_t i) {
     while (i < n) {
         uint32_t cp;
         size_t adv;
         if (csv_decode_rune((const unsigned char *)s + i, n - i, &cp, &adv) != 0)
             break;
-        if (csv_is_formula_starter(cp))
-            return 1;
-        /* Excel strips leading whitespace before the formula check. */
-        if (!csv_codepoint_is_space(cp))
+        if (!csv_codepoint_is_space(cp) && cp != 0xFEFF && cp != 0x200B)
             break;
         i += adv;
+    }
+    return i;
+}
+
+static int csv_formula_at(const char *s, size_t n, size_t i) {
+    uint32_t cp;
+    size_t adv;
+    i = csv_skip_formula_space(s, n, i);
+    if (i >= n)
+        return 0;
+    if (csv_decode_rune((const unsigned char *)s + i, n - i, &cp, &adv) != 0)
+        return 0;
+    return csv_is_formula_starter(cp);
+}
+
+static int csv_formula_prefix(const char *s) {
+    if (!s || !s[0]) return 0;
+    return csv_formula_at(s, strlen(s), 0);
+}
+
+static int csv_has_interior_formula(const char *s, char delim) {
+    size_t n, i, lead;
+    if (!s || !s[0]) return 0;
+    n = strlen(s);
+    /* Leading formula-space (including tab) is the first cell, not a
+     * spreadsheet split. Interior "," / ";" / tab still start a new cell. */
+    lead = csv_skip_formula_space(s, n, 0);
+    for (i = lead; i < n; i++) {
+        if (csv_is_cell_sep((unsigned char)s[i], delim) &&
+            csv_formula_at(s, n, i + 1))
+            return 1;
     }
     return 0;
 }
@@ -412,6 +448,27 @@ int neverc_csv_read_all(const char *data, size_t data_len,
 
 /* Go encoding/csv.Writer with UseCRLF: quoted fields rewrite \n to \r\n and
  * drop bare \r so a field CRLF still serializes as one \r\n. */
+static int csv_emit_field_char(char *dst, size_t dst_len, size_t *pos,
+                               char c, int crlf, int quote) {
+    if (quote && c == '"') {
+        if (*pos + 1 >= dst_len) return -1;
+        dst[(*pos)++] = '"';
+        dst[(*pos)++] = '"';
+        return 0;
+    }
+    if (quote && crlf && c == '\r')
+        return 0;
+    if (quote && crlf && c == '\n') {
+        if (*pos + 1 >= dst_len) return -1;
+        dst[(*pos)++] = '\r';
+        dst[(*pos)++] = '\n';
+        return 0;
+    }
+    if (*pos >= dst_len) return -1;
+    dst[(*pos)++] = c;
+    return 0;
+}
+
 static int csv_write_quoted_field(char *dst, size_t dst_len, size_t *pos,
                                   const char *f, int crlf, char prefix) {
     if (*pos >= dst_len) return -1;
@@ -421,23 +478,62 @@ static int csv_write_quoted_field(char *dst, size_t dst_len, size_t *pos,
         dst[(*pos)++] = prefix;
     }
     for (const char *p = f; *p; p++) {
-        if (*p == '"') {
-            if (*pos + 1 >= dst_len) return -1;
-            dst[(*pos)++] = '"';
-            dst[(*pos)++] = '"';
-        } else if (crlf && *p == '\r') {
-            continue;
-        } else if (crlf && *p == '\n') {
-            if (*pos + 1 >= dst_len) return -1;
-            dst[(*pos)++] = '\r';
-            dst[(*pos)++] = '\n';
-        } else {
-            if (*pos >= dst_len) return -1;
-            dst[(*pos)++] = *p;
-        }
+        if (csv_emit_field_char(dst, dst_len, pos, *p, crlf, 1) != 0)
+            return -1;
     }
     if (*pos >= dst_len) return -1;
     dst[(*pos)++] = '"';
+    return 0;
+}
+
+/* Copy a field, inserting ' before each spreadsheet cell that Excel would
+ * treat as a formula: the first cell (apostrophe before leading space, so
+ * existing "' =CMD()" tests stay stable) and any cell after ',' / ';' / tab
+ * / the writer delimiter (apostrophe after that cell's leading space). */
+static int csv_write_sanitized_field(char *dst, size_t dst_len, size_t *pos,
+                                     const char *f, char delim, int crlf,
+                                     int quote) {
+    size_t n = strlen(f);
+    size_t i = 0;
+    size_t lead = csv_skip_formula_space(f, n, 0);
+    int first_cell = 1;
+    if (quote) {
+        if (*pos >= dst_len) return -1;
+        dst[(*pos)++] = '"';
+    }
+    while (i <= n) {
+        if (first_cell) {
+            if (csv_formula_at(f, n, 0)) {
+                if (*pos >= dst_len) return -1;
+                dst[(*pos)++] = '\'';
+            }
+            first_cell = 0;
+        } else if (csv_formula_at(f, n, i)) {
+            size_t j = csv_skip_formula_space(f, n, i);
+            while (i < j) {
+                if (csv_emit_field_char(dst, dst_len, pos, f[i], crlf, quote) != 0)
+                    return -1;
+                i++;
+            }
+            if (*pos >= dst_len) return -1;
+            dst[(*pos)++] = '\'';
+        }
+        while (i < n &&
+               !(i >= lead && csv_is_cell_sep((unsigned char)f[i], delim))) {
+            if (csv_emit_field_char(dst, dst_len, pos, f[i], crlf, quote) != 0)
+                return -1;
+            i++;
+        }
+        if (i >= n)
+            break;
+        if (csv_emit_field_char(dst, dst_len, pos, f[i], crlf, quote) != 0)
+            return -1;
+        i++;
+    }
+    if (quote) {
+        if (*pos >= dst_len) return -1;
+        dst[(*pos)++] = '"';
+    }
     return 0;
 }
 
@@ -459,21 +555,12 @@ int neverc_csv_write_record(const char **fields, int nfields,
         const char *f = fields[i];
         if (!f) return -1;
         /* OWASP CSV injection: quoting alone is stripped by Excel/LibreOffice.
-         * Prefix formula fields with ' so the cell is stored as text. */
-        if (csv_formula_prefix(f)) {
-            if (pos >= dst_len) return -1;
-            if (needs_quoting(f, delim, crlf)) {
-                if (csv_write_quoted_field(dst, dst_len, &pos, f, crlf, '\'') != 0)
-                    return -1;
-                continue;
-            }
-            dst[pos++] = '\'';
-            {
-                size_t flen = strlen(f);
-                if (flen > dst_len - pos) return -1;
-                memcpy(dst + pos, f, flen);
-                pos += flen;
-            }
+         * Prefix formula cells with ' so they are stored as text. Interior
+         * ',' / ';' / tab start a new spreadsheet cell (Issue / OWASP split). */
+        if (csv_formula_prefix(f) || csv_has_interior_formula(f, delim)) {
+            if (csv_write_sanitized_field(dst, dst_len, &pos, f, delim, crlf,
+                                          needs_quoting(f, delim, crlf)) != 0)
+                return -1;
             continue;
         }
         if (needs_quoting(f, delim, crlf)) {

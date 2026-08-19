@@ -222,12 +222,21 @@ static void test_invalid_pem(void) {
 
     const char *data_after_padding =
         "-----BEGIN FOO-----\nYQ==YQ==\n-----END FOO-----\n";
-    rc = neverc_pem_decode(data_after_padding,
-                            strlen(data_after_padding),
-                            type_buf, sizeof(type_buf),
-                            out_buf, sizeof(out_buf),
-                            &bytes_written, NULL);
-    check_int("base64 data after padding", rc, -1);
+    {
+        uint8_t sentinel[8] = {0xaa, 0xbb, 0xcc, 0xdd,
+                               0xee, 0xff, 0x11, 0x22};
+        bytes_written = 99;
+        rc = neverc_pem_decode(data_after_padding,
+                                strlen(data_after_padding),
+                                type_buf, sizeof(type_buf),
+                                sentinel, sizeof(sentinel),
+                                &bytes_written, NULL);
+        check_int("base64 data after padding", rc, -1);
+        check_int("corrupt body fail-closed bytes_written",
+                  (int)bytes_written, 0);
+        check_int("corrupt body fail-closed dst", sentinel[0], 0xaa);
+        check_int("corrupt body fail-closed rest", sentinel[1], 0xbb);
+    }
 
     const char *noncanonical =
         "-----BEGIN FOO-----\nYR==\n-----END FOO-----\n";
@@ -661,6 +670,31 @@ static void test_go_armor(void) {
     check_str("unpadded then valid type", type_buf, "BAR");
     check_int("unpadded then valid len", (int)bytes_written, 1);
     check_mem("unpadded then valid data", out_buf, (const uint8_t *)"a", 1);
+
+    /* A skipped candidate that decoded a prefix must not leave leftover
+     * bytes after a shorter valid block (Go allocates a fresh Bytes). */
+    const char *long_corrupt_then_short =
+        "-----BEGIN FOO-----\n"
+        "Zm9vYmFy!!!!\n"
+        "-----END FOO-----\n"
+        "-----BEGIN BAR-----\n"
+        "YQ==\n"
+        "-----END BAR-----\n";
+    {
+        uint8_t sentinel[8] = {0xaa, 0xbb, 0xcc, 0xdd,
+                               0xee, 0xff, 0x11, 0x22};
+        bytes_written = 0;
+        rc = neverc_pem_decode(long_corrupt_then_short,
+                                strlen(long_corrupt_then_short),
+                                type_buf, sizeof(type_buf),
+                                sentinel, sizeof(sentinel),
+                                &bytes_written, NULL);
+        check_int("skip prefix-then-corrupt", rc, 0);
+        check_str("skip prefix-then-corrupt type", type_buf, "BAR");
+        check_int("skip prefix-then-corrupt len", (int)bytes_written, 1);
+        check_int("skip prefix-then-corrupt payload", sentinel[0], 'a');
+        check_int("skip prefix-then-corrupt no leftover", sentinel[1], 0xbb);
+    }
 }
 
 static void test_utf8_bom(void) {

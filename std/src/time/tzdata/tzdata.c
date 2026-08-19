@@ -1046,6 +1046,42 @@ static int tz_cur_counts(tz_cur_t *c, uint32_t n[6]) {
     return 0;
 }
 
+/* Go Location.lookupFirstZone / tzcode localtime.c: offset before tx[0]. */
+static int tzif_lookup_first_zone(const uint8_t *zdata, uint32_t nzone,
+                                  const uint8_t *txidx, uint32_t ntime) {
+    int first_used = 0;
+    uint32_t ti;
+    for (ti = 0; ti < ntime; ti++) {
+        if (txidx[ti] == 0) {
+            first_used = 1;
+            break;
+        }
+    }
+    if (!first_used)
+        return 0;
+
+    /* First zone is used. If the first transition is to DST, pick the
+     * closest preceding non-DST zone. */
+    if (ntime > 0) {
+        if ((uint32_t)txidx[0] >= nzone)
+            return 0;
+        if (zdata[(size_t)txidx[0] * 6 + 4] != 0) {
+            int zi;
+            for (zi = (int)txidx[0] - 1; zi >= 0; zi--) {
+                if (zdata[(size_t)zi * 6 + 4] == 0)
+                    return zi;
+            }
+        }
+    }
+
+    uint32_t zi;
+    for (zi = 0; zi < nzone; zi++) {
+        if (zdata[(size_t)zi * 6 + 4] == 0)
+            return (int)zi;
+    }
+    return 0;
+}
+
 neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
                                               const uint8_t *data, size_t len) {
     if (!data || len < 20) return NULL;
@@ -1055,7 +1091,7 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
     const uint8_t *verpad = tz_cur_read(&c, 16);
     if (!verpad) return NULL;
     int version = 1;
-    if (verpad[0] == '2' || verpad[0] == '3') version = 2;
+    if (verpad[0] == '2' || verpad[0] == '3' || verpad[0] == '4') version = 2;
     else if (verpad[0] != 0) return NULL;
 
     uint32_t n[6];
@@ -1162,7 +1198,10 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
 
     tzif_extra_t *e = (tzif_extra_t *)calloc(1, sizeof(*e));
     if (!e) return NULL;
-    e->pre_off = (int)(int32_t)tz_be32(zdata);
+    {
+        int first = tzif_lookup_first_zone(zdata, nzone, txidx, ntime);
+        e->pre_off = (int)(int32_t)tz_be32(zdata + (size_t)first * 6);
+    }
     if (has_footer) {
         e->has_posix = 1;
         e->posix = footer;
@@ -1237,7 +1276,17 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
     e->zone.utc_offset = std_off;
     e->zone.dst_offset = has_dst ? dst_off : 0;
     e->zone.has_dst = has_dst;
-    e->zone.dst_hemi = has_dst ? 1 : 0;
+    /* Footer wrap-around rules (Oct→Apr) are southern. With no footer,
+     * leave hemi 0 so offset_for_month can fill from the named table. */
+    if (!has_dst)
+        e->zone.dst_hemi = 0;
+    else if (has_footer && footer.has_rules &&
+             footer.start.month > footer.end.month)
+        e->zone.dst_hemi = 2;
+    else if (has_footer)
+        e->zone.dst_hemi = 1;
+    else
+        e->zone.dst_hemi = 0;
 
     tzif_lock();
     e->next = g_tzif_list;

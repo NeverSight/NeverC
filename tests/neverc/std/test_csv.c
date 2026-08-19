@@ -184,6 +184,50 @@ static void test_write_quoting(void) {
     dst[n] = '\0';
     ASSERT_STR_EQ(dst, "\"' =CMD()\"\n");
 
+    /* OWASP: a separator inside one RFC field still starts a spreadsheet cell. */
+    const char *tab_interior[] = {"a\t=CMD()"};
+    n = neverc_csv_write_record(tab_interior, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "a\t'=CMD()\n");
+
+    const char *semi_interior[] = {"a;=CMD()"};
+    n = neverc_csv_write_record(semi_interior, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "a;'=CMD()\n");
+
+    const char *semi_spaced[] = {"a; =CMD()"};
+    n = neverc_csv_write_record(semi_spaced, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "a; '=CMD()\n");
+
+    const char *comma_interior[] = {"a,=CMD()"};
+    n = neverc_csv_write_record(comma_interior, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    /* Writer delimiter is quoted; Excel does not split inside quotes. */
+    ASSERT_STR_EQ(dst, "\"a,=CMD()\"\n");
+
+    const char *bom_formula[] = {"\xef\xbb\xbf=CMD()"};
+    n = neverc_csv_write_record(bom_formula, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "'\xef\xbb\xbf=CMD()\n");
+
+    const char *zwsp_formula[] = {"\xe2\x80\x8b=CMD()"};
+    n = neverc_csv_write_record(zwsp_formula, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "'\xe2\x80\x8b=CMD()\n");
+
+    const char *fullwidth_interior[] = {"x;" "\xef\xbc\x9d" "1"};
+    n = neverc_csv_write_record(fullwidth_interior, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "x;'\xef\xbc\x9d" "1\n");
+
     neverc_csv_reader_opts_t trim_opts = {
         .delimiter = ',', .trim_leading_space = 1
     };

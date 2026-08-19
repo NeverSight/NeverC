@@ -481,5 +481,6 @@ int main(void) {
     test_trim();
     test_null_safety();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_passed == tests_run) puts("passed");
     return tests_passed == tests_run ? 0 : 1;
 }

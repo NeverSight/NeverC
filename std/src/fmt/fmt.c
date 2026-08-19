@@ -253,9 +253,8 @@ static int fmt_float_e(char *buf, size_t cap, double val, int prec, int uppercas
     return neverc_strconv_format_float(
         val, uppercase ? 'E' : 'e', prec, buf, cap);
 }
-/* Go %g/%G default precision is 6 significant digits (not shortest). */
+/* Go %g/%G default is shortest (prec=-1); %#g still pads to 6 in apply_float_sharp. */
 static int fmt_float_g(char *buf, size_t cap, double val, int prec, int uppercase) {
-    if (prec < 0) prec = 6;
     return neverc_strconv_format_float(
         val, uppercase ? 'G' : 'g', prec, buf, cap);
 }
@@ -830,18 +829,14 @@ static int scan_float(const char **p, double *out) {
                 while ((**p >= '0' && **p <= '9') || **p == '_')
                     (*p)++;
             }
-            /* Go convertFloat: decimal mantissa + binary exponent (2.3p2). */
+            /* Go convertFloat: decimal mantissa + binary exponent (2.3p2).
+             * Always consume `p`/`P` and the optional sign/digits so a bare
+             * `2.3p` is a scan failure, not a successful 2.3 leftover `p`. */
             if (**p == 'p' || **p == 'P') {
-                const char *r = *p + 1;
-                if (*r == '+' || *r == '-') r++;
-                if ((*r >= '0' && *r <= '9') || *r == '_') {
-                    int saw_exp = 0;
-                    while ((*r >= '0' && *r <= '9') || *r == '_') {
-                        if (*r != '_') saw_exp = 1;
-                        r++;
-                    }
-                    if (saw_exp) *p = r;
-                }
+                (*p)++;
+                if (**p == '-' || **p == '+') (*p)++;
+                while ((**p >= '0' && **p <= '9') || **p == '_')
+                    (*p)++;
             }
         }
     }
@@ -946,7 +941,9 @@ static int scan_int_literal(const char **p, int64_t *out) {
     } else if (*q == '0' && (q[1] == 'o' || q[1] == 'O')) {
         q += 2;
         digits = "01234567";
-    } else if (*q == '0' && q[1] >= '0' && q[1] <= '7') {
+    } else if (*q == '0') {
+        /* Go scanBasePrefix: a leading 0 that is not 0x/0b/0o is octal.
+         * "08" therefore scans as 0 with leftover '8', not a failed token. */
         digits = "01234567";
     }
     while (*q) {

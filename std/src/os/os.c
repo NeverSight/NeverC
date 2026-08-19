@@ -90,7 +90,23 @@ static int os_win_fail(void) {
     return -1;
 }
 
+/* \\?\, \\.\, and \??\ are Win32/NT prefixes, not FindFirstFile wildcards.
+ * fs.ReadDir already skips them; os.ReadDir/RemoveAll must too. */
+static int os_win_skip_extended_prefix(const char *path) {
+    if ((path[0] == '\\' || path[0] == '/') &&
+        path[1] == '?' && path[2] == '?' &&
+        (path[3] == '\\' || path[3] == '/'))
+        return 4;
+    if ((path[0] == '\\' || path[0] == '/') &&
+        (path[1] == '\\' || path[1] == '/') &&
+        (path[2] == '?' || path[2] == '.') &&
+        (path[3] == '\\' || path[3] == '/'))
+        return 4;
+    return 0;
+}
+
 static int os_win_has_wildcards(const char *path) {
+    path += os_win_skip_extended_prefix(path);
     for (; *path; path++) {
         char c = *path;
         if (c == '*' || c == '?' || c == '<' || c == '>' || c == '"')
@@ -242,10 +258,15 @@ int neverc_os_chdir(const char *dir) {
 /* ---- File Operations ---- */
 
 neverc_os_file_t *neverc_os_open(const char *name, int flags, uint32_t perm) {
-    if (!name) return NULL;
+    if (!name || name[0] == '\0') return NULL;
     int rw = flags & 0x03;
     if (rw != NEVERC_OS_O_RDONLY && rw != NEVERC_OS_O_WRONLY &&
         rw != NEVERC_OS_O_RDWR)
+        return NULL;
+    /* O_TRUNC requires write access. Some CRTs still truncate a read-only
+     * open; Go/Windows CreateFile refuses TRUNCATE_EXISTING without
+     * GENERIC_WRITE. Fail closed instead of wiping the file. */
+    if ((flags & NEVERC_OS_O_TRUNC) && rw == NEVERC_OS_O_RDONLY)
         return NULL;
 
     int native_flags;
