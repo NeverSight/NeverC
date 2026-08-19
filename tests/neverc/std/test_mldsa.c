@@ -178,16 +178,30 @@ static void test_noncanonical_hint_rejected(void) {
     printf("  noncanonical hint rejection ... ");
     neverc_mldsa44_sk_t sk;
     neverc_mldsa44_pk_t pk;
-    ASSERT(neverc_mldsa44_generate_key(&sk) == 0, "keygen");
-    neverc_mldsa44_sk_public_key(&sk, &pk);
-
     const uint8_t msg[] = "canonical encoding";
     uint8_t sig[NEVERC_MLDSA44_SIG_SIZE];
-    ASSERT(neverc_mldsa44_sign(
-               &sk, msg, sizeof(msg) - 1, sig) == 0,
-           "sign");
-    uint8_t *hint = sig + 32 + 4 * 576;
-    int used = hint[80 + 3];
+    uint8_t *hint = NULL;
+    int used = 80;
+    int attempt;
+
+    /* FIPS 204 allows ω used hint indices. Signing is deterministic per key,
+     * so a single random keygen can fill every hint slot and leave no unused
+     * byte to corrupt. Retry until the packed hint has slack. */
+    for (attempt = 0; attempt < 32; attempt++) {
+        if (neverc_mldsa44_generate_key(&sk) != 0) {
+            ASSERT(0, "keygen");
+            return;
+        }
+        neverc_mldsa44_sk_public_key(&sk, &pk);
+        if (neverc_mldsa44_sign(&sk, msg, sizeof(msg) - 1, sig) != 0) {
+            ASSERT(0, "sign");
+            return;
+        }
+        hint = sig + 32 + 4 * 576;
+        used = hint[80 + 3];
+        if (used < 80)
+            break;
+    }
     ASSERT(used >= 0 && used < 80, "signature has an unused hint byte");
     hint[used] = 1;
     ASSERT(neverc_mldsa44_verify(
