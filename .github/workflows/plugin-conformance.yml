@@ -95,6 +95,7 @@ jobs:
       - name: Setup build deps (Linux)
         if: runner.os == 'Linux'
         run: |
+          bash neverc/.github/scripts/configure-apt-ubuntu.sh
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake p7zip-full
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh

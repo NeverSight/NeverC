@@ -167,6 +167,7 @@ jobs:
       - name: Install build dependencies
         run: |
           set -euo pipefail
+          bash neverc/.github/scripts/configure-apt-ubuntu.sh
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             git curl ca-certificates python3 python-is-python3 \

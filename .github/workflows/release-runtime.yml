@@ -24,7 +24,9 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install zip
-        run: sudo apt-get update && sudo apt-get install -y zip
+        run: |
+          bash .github/scripts/configure-apt-ubuntu.sh
+          sudo apt-get update && sudo apt-get install -y zip
 
       # Each runtime package extracts relative to the NeverC root so that
       # <root>/bin/neverc finds <root>/runtime/<target>/... automatically.

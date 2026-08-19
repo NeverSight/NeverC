@@ -43,7 +43,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y clang nghttp2-client netcat-openbsd ripgrep
+        run: |
+          bash .github/scripts/configure-apt-ubuntu.sh
+          sudo apt-get update && sudo apt-get install -y clang nghttp2-client netcat-openbsd ripgrep
 
       - name: Install current Go
         uses: actions/setup-go@v6

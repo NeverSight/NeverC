@@ -17,6 +17,7 @@ on:
       - "utils/ci/check-python-plugin-artifacts.py"
       - "utils/plugin-api/**"
       - "utils/release/**"
+      - ".github/scripts/configure-apt-ubuntu.sh"
       - ".github/workflows/**"
   pull_request:
     paths:
@@ -30,6 +31,7 @@ on:
       - "utils/ci/check-python-plugin-artifacts.py"
       - "utils/plugin-api/**"
       - "utils/release/**"
+      - ".github/scripts/configure-apt-ubuntu.sh"
       - ".github/workflows/**"
 
 concurrency:
@@ -54,7 +56,6 @@ jobs:
     needs: policy
     name: ${{ matrix.host }} / build Python ${{ matrix.python-version }} / plugin CPython 3.12.10
     runs-on: ${{ matrix.runs-on }}
-    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -127,6 +128,7 @@ jobs:
       - name: Setup build deps (Linux)
         if: runner.os == 'Linux'
         run: |
+          bash neverc/.github/scripts/configure-apt-ubuntu.sh
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake patchelf
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
@@ -357,7 +359,6 @@ jobs:
     name: Linux x64 / Python plugins explicitly OFF
     needs: policy
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
     env:
       BUILD_TYPE: RelWithDebInfo
       LLVM_APT_VER: "22"
@@ -375,6 +376,7 @@ jobs:
 
       - name: Setup build deps
         run: |
+          bash neverc/.github/scripts/configure-apt-ubuntu.sh
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh

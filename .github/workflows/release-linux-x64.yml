@@ -36,7 +36,9 @@ jobs:
           python-version: "3.12.10"
 
       - name: Install deps
-        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full zip unzip patchelf
+        run: |
+          bash neverc/.github/scripts/configure-apt-ubuntu.sh
+          sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full zip unzip patchelf
 
       - name: Install Clang (apt.llvm.org, non-PGO)
         run: |

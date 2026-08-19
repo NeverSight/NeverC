@@ -183,6 +183,7 @@ jobs:
 
       - name: Install runtime validation dependencies
         run: |
+          bash .github/scripts/configure-apt-ubuntu.sh
           sudo apt-get update
           sudo apt-get install -y binutils clang llvm p7zip-full
           python3 -m pip install --disable-pip-version-check pyelftools==0.32
@@ -295,6 +296,7 @@ jobs:
 
       - name: Install release and QEMU dependencies
         run: |
+          bash .github/scripts/configure-apt-ubuntu.sh
           sudo apt-get update
           sudo apt-get install -y \
             binutils \

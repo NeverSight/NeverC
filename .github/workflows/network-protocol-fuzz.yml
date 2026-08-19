@@ -53,7 +53,9 @@ jobs:
           path: neverc
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake ccache
+        run: |
+          bash neverc/.github/scripts/configure-apt-ubuntu.sh
+          sudo apt-get update && sudo apt-get install -y ninja-build cmake ccache
 
       - name: Install Clang and compiler-rt
         run: |
