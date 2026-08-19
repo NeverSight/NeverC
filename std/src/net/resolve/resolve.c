@@ -52,7 +52,15 @@
 #endif
 
 static int copy_dns_name(char *dst, size_t dstsz, const char *src) {
-    if (!dst || dstsz == 0 || !src || !src[0]) return -1;
+    if (!dst || dstsz == 0 || !src) return -1;
+    /* POSIX dn_expand writes "" for the DNS root. RFC 7505 Null MX and
+     * RFC 2782 "no service" SRV use "."; Go LookupMX/SRV return ".". */
+    if (!src[0]) {
+        if (dstsz < 2) return -1;
+        dst[0] = '.';
+        dst[1] = '\0';
+        return 0;
+    }
     size_t n = strlen(src);
     if (n >= dstsz) return -1;
     for (size_t i = 0; i < n; i++) {
@@ -306,7 +314,7 @@ static int port_text_valid(const char *port) {
 static int host_text_valid(const char *host) {
     if (!host) return 0;
     for (const unsigned char *p = (const unsigned char *)host; *p; p++) {
-        if (*p <= 0x20 || *p == 0x7f)
+        if (*p < 0x20 || *p == 0x7f)
             return 0;
     }
     return 1;

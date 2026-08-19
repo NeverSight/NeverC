@@ -412,6 +412,45 @@ static void test_remove_all_does_not_follow_symlinks(void) {
 }
 #endif
 
+static void test_remove_all_rejects_dot(void) {
+    printf("[remove all rejects dot]\n");
+    errno = 0;
+    ASSERT_EQ(neverc_os_remove_all("."), -1);
+    ASSERT_EQ(errno, EINVAL);
+    errno = 0;
+    ASSERT_EQ(neverc_os_remove_all("./"), -1);
+    ASSERT_EQ(errno, EINVAL);
+#if defined(_WIN32)
+    errno = 0;
+    ASSERT_EQ(neverc_os_remove_all(".\\"), -1);
+    ASSERT_EQ(errno, EINVAL);
+    errno = 0;
+    ASSERT_EQ(neverc_os_remove_all("\\\\?\\."), -1);
+    ASSERT_EQ(errno, EINVAL);
+#endif
+
+    {
+        char parent[1024], child[1200], dotpath[1200];
+        make_test_path(parent, sizeof(parent), "neverc_test_rm_dot");
+        neverc_os_remove_all(parent);
+        ASSERT_EQ(neverc_os_mkdir(parent, 0700), 0);
+#if defined(_WIN32)
+        snprintf(child, sizeof(child), "%s\\keep.txt", parent);
+        snprintf(dotpath, sizeof(dotpath), "%s\\.", parent);
+#else
+        snprintf(child, sizeof(child), "%s/keep.txt", parent);
+        snprintf(dotpath, sizeof(dotpath), "%s/.", parent);
+#endif
+        ASSERT_EQ(neverc_os_write_file(
+                      child, (const unsigned char *)"keep", 4, 0600), 0);
+        errno = 0;
+        ASSERT_EQ(neverc_os_remove_all(dotpath), -1);
+        ASSERT_EQ(errno, EINVAL);
+        ASSERT_TRUE(neverc_os_exists(child));
+        ASSERT_EQ(neverc_os_remove_all(parent), 0);
+    }
+}
+
 static void test_rename(void) {
     printf("[rename]\n");
     char oldbuf[1024], newbuf[1024];
@@ -794,6 +833,7 @@ int main(void) {
 #if !defined(_WIN32)
     test_remove_all_does_not_follow_symlinks();
 #endif
+    test_remove_all_rejects_dot();
     test_rename();
     test_process();
     test_temp();

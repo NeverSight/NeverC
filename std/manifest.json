@@ -4170,11 +4170,12 @@
     "smtp": {
       "header": "include/neverc/std/net/smtp.h",
       "description": "SMTP client \u2014 send email (mirrors Go net/smtp, RFC 5321)",
-      "deps": ["net/tcp", "encoding/base64"],
+      "deps": ["net/tcp", "encoding/base64", "crypto/tls"],
       "symbols": {
         "neverc_smtp_dial": "src/net/smtp/smtp.c",
         "neverc_smtp_close": "src/net/smtp/smtp.c",
         "neverc_smtp_hello": "src/net/smtp/smtp.c",
+        "neverc_smtp_starttls": "src/net/smtp/smtp.c",
         "neverc_smtp_auth": "src/net/smtp/smtp.c",
         "neverc_smtp_mail": "src/net/smtp/smtp.c",
         "neverc_smtp_rcpt": "src/net/smtp/smtp.c",
@@ -4191,6 +4192,7 @@
         "dial": "neverc_smtp_dial",
         "close": "neverc_smtp_close",
         "hello": "neverc_smtp_hello",
+        "starttls": "neverc_smtp_starttls",
         "auth": "neverc_smtp_auth",
         "mail": "neverc_smtp_mail",
         "rcpt": "neverc_smtp_rcpt",

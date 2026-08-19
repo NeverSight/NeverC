@@ -615,6 +615,28 @@ static void test_local_tz(void) {
     check_int("posix n-form July EDT",
               neverc_tzdata_offset_at(z, JUL_2024), -14400);
 
+    /* Jn / n rules leave posix_rule_t.month=0, so start.month > end.month
+     * cannot classify Sep→Apr wrap-around as southern. */
+    tzdata_set_tz("NZST-12NZDT,J260,J90");
+    z = neverc_tzdata_local();
+    check_not_null("posix Julian wrap TZ", z);
+    check_int("posix Julian wrap hemi south", z ? z->dst_hemi : 0, 2);
+    check_int("posix Julian wrap January DST month",
+              neverc_tzdata_offset_for_month(z, 1), 46800);
+    check_int("posix Julian wrap July STD month",
+              neverc_tzdata_offset_for_month(z, 7), 43200);
+    check_int("posix Julian wrap January DST at",
+              neverc_tzdata_offset_at(z, JAN_2024), 46800);
+    check_int("posix Julian wrap July STD at",
+              neverc_tzdata_offset_at(z, JUL_2024), 43200);
+
+    tzdata_set_tz("NZST-12NZDT,259,89");
+    z = neverc_tzdata_local();
+    check_not_null("posix n-form wrap TZ", z);
+    check_int("posix n-form wrap hemi south", z ? z->dst_hemi : 0, 2);
+    check_int("posix n-form wrap January DST month",
+              neverc_tzdata_offset_for_month(z, 1), 46800);
+
     if (had) tzdata_set_tz(saved);
     else tzdata_set_tz(NULL);
 }
@@ -734,6 +756,32 @@ static size_t build_tzif_syd_footer(uint8_t *buf, size_t cap) {
     append_bytes(buf, &n, cap, aedt, 2);
     append_bytes(buf, &n, cap, "AEST\0AEDT\0", 10);
     append_bytes(buf, &n, cap, "\nAEST-10AEDT,M10.1.0,M4.1.0\n", 28);
+    return n;
+}
+
+/* Julian wrap-around footer (day 260 → day 90). dst_hemi must not use
+ * start.month, which is 0 for Jn rules. */
+static size_t build_tzif_julian_south_footer(uint8_t *buf, size_t cap) {
+    size_t n = 0;
+    uint8_t zmeta[2] = {0, 0};
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 0, 1, 4);
+    append_be32(buf, &n, cap, 0);
+    append_bytes(buf, &n, cap, zmeta, 2);
+    append_bytes(buf, &n, cap, "UTC\0", 4);
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 1, 2, 10);
+    append_be64(buf, &n, cap, 0);
+    uint8_t idx[1] = {0};
+    append_bytes(buf, &n, cap, idx, 1);
+    append_be32(buf, &n, cap, 43200);
+    uint8_t nzst[2] = {0, 0};
+    append_bytes(buf, &n, cap, nzst, 2);
+    append_be32(buf, &n, cap, 46800);
+    uint8_t nzdt[2] = {1, 5};
+    append_bytes(buf, &n, cap, nzdt, 2);
+    append_bytes(buf, &n, cap, "NZST\0NZDT\0", 10);
+    append_bytes(buf, &n, cap, "\nNZST-12NZDT,J260,J90\n", 22);
     return n;
 }
 
@@ -890,6 +938,17 @@ static void test_zip_tzif(void) {
               neverc_tzdata_offset_for_month(z, 7), 36000);
     check_int("southern tzif January dst",
               neverc_tzdata_offset_for_month(z, 1), 39600);
+    neverc_tzdata_zone_free(z);
+
+    uint8_t jsf[512];
+    size_t jslen = build_tzif_julian_south_footer(jsf, sizeof(jsf));
+    z = neverc_tzdata_load_tzif("Custom/JulianSouth", jsf, jslen);
+    check_not_null("load julian-south tzif with footer", z);
+    check_int("julian-south tzif dst hemi", z ? z->dst_hemi : 0, 2);
+    check_int("julian-south tzif January dst",
+              neverc_tzdata_offset_for_month(z, 1), 46800);
+    check_int("julian-south tzif July std",
+              neverc_tzdata_offset_for_month(z, 7), 43200);
     neverc_tzdata_zone_free(z);
 
     uint8_t pre[256];

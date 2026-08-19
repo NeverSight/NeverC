@@ -1,6 +1,12 @@
 #include "neverc/std/weak.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 #define ASSERT_TRUE(expr) do { tests_run++; if(expr)tests_passed++; else{tests_failed++; printf("  FAIL: %s (line %d)\n",#expr,__LINE__);}} while(0)
@@ -167,6 +173,99 @@ static void test_multiple_weak_refs(void) {
     }
 }
 
+static int g_payload_frees;
+
+static void track_payload_free(void *p) {
+    __atomic_fetch_add(&g_payload_frees, 1, __ATOMIC_SEQ_CST);
+    free(p);
+}
+
+static int payload_frees(void) {
+    return __atomic_load_n(&g_payload_frees, __ATOMIC_SEQ_CST);
+}
+
+static void *owned_int(int v) {
+    int *p = (int *)malloc(sizeof(*p));
+    if (p) *p = v;
+    return p;
+}
+
+/* Bitwise copy of a released strong must not drop a recycled control block's
+ * new payload. Sequential case: epoch mismatch after retire. */
+static void test_stale_release_after_recycle(void) {
+    printf("[stale_release_after_recycle]\n");
+    __atomic_store_n(&g_payload_frees, 0, __ATOMIC_SEQ_CST);
+    neverc_weak_strong_t s = neverc_weak_new_with_free(owned_int(1), track_payload_free);
+    ASSERT_TRUE(s.ptr != NULL);
+    neverc_weak_strong_t stale = s;
+    neverc_weak_strong_release(&s);
+    ASSERT_INT_EQ(payload_frees(), 1);
+
+    neverc_weak_strong_t n = neverc_weak_new_with_free(owned_int(2), track_payload_free);
+    ASSERT_TRUE(n.ptr != NULL);
+    ASSERT_INT_EQ(*(int *)n.ptr, 2);
+    neverc_weak_strong_release(&stale);
+    ASSERT_INT_EQ(payload_frees(), 1);
+    ASSERT_TRUE(n.ptr != NULL);
+    ASSERT_INT_EQ(*(int *)n.ptr, 2);
+    ASSERT_INT_EQ(neverc_weak_strong_count(n), 1);
+    neverc_weak_strong_release(&n);
+    ASSERT_INT_EQ(payload_frees(), 2);
+}
+
+#if defined(_WIN32)
+static DWORD WINAPI release_stale_thread(LPVOID arg) {
+    neverc_weak_strong_release((neverc_weak_strong_t *)arg);
+    return 0;
+}
+#else
+static void *release_stale_thread(void *arg) {
+    neverc_weak_strong_release((neverc_weak_strong_t *)arg);
+    return NULL;
+}
+#endif
+
+/* Same contract under overlap: stale release vs last live release + recycle. */
+static void test_stale_release_concurrent_recycle(void) {
+    printf("[stale_release_concurrent_recycle]\n");
+    enum { N = 256 };
+    int ok = 1;
+    for (int i = 0; i < N && ok; i++) {
+        __atomic_store_n(&g_payload_frees, 0, __ATOMIC_SEQ_CST);
+        neverc_weak_strong_t live =
+            neverc_weak_new_with_free(owned_int(1), track_payload_free);
+        if (!live.ptr) { ok = 0; break; }
+        neverc_weak_strong_t stale = live;
+#if defined(_WIN32)
+        HANDLE th = CreateThread(NULL, 0, release_stale_thread, &stale, 0, NULL);
+        if (!th) { neverc_weak_strong_release(&live); ok = 0; break; }
+#else
+        pthread_t th;
+        if (pthread_create(&th, NULL, release_stale_thread, &stale) != 0) {
+            neverc_weak_strong_release(&live);
+            ok = 0;
+            break;
+        }
+#endif
+        neverc_weak_strong_release(&live);
+        neverc_weak_strong_t recycled =
+            neverc_weak_new_with_free(owned_int(2), track_payload_free);
+#if defined(_WIN32)
+        WaitForSingleObject(th, INFINITE);
+        CloseHandle(th);
+#else
+        pthread_join(th, NULL);
+#endif
+        if (!recycled.ptr || *(int *)recycled.ptr != 2 ||
+            neverc_weak_strong_count(recycled) != 1 || payload_frees() != 1)
+            ok = 0;
+        neverc_weak_strong_release(&recycled);
+        if (payload_frees() != 2)
+            ok = 0;
+    }
+    ASSERT_TRUE(ok);
+}
+
 int main(void) {
     test_strong_basic();
     test_strong_retain();
@@ -178,6 +277,8 @@ int main(void) {
     test_make_requires_live_strong();
     test_stale_strong_without_weak();
     test_multiple_weak_refs();
+    test_stale_release_after_recycle();
+    test_stale_release_concurrent_recycle();
     printf("\nweak: %d/%d passed", tests_passed, tests_run);
     if (tests_failed) printf(", %d FAILED", tests_failed);
     printf("\n");

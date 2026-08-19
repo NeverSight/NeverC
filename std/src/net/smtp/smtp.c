@@ -1,5 +1,6 @@
 #include "neverc/std/net/smtp.h"
 #include "neverc/std/net/tcp.h"
+#include "neverc/std/crypto/tls.h"
 #include "neverc/std/encoding/base64.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -23,6 +24,7 @@
 
 struct neverc_smtp_client {
     neverc_tcp_conn_t *conn;
+    neverc_tls_conn_t *tls;
     char server_name[256];
     char last_response[SMTP_BUF_SIZE];
     char pending[SMTP_BUF_SIZE];
@@ -34,17 +36,25 @@ struct neverc_smtp_client {
     int  supports_starttls;
     int  data_at_line_start;
     int  in_data;
+    int  dead;
 };
 
-static int smtp_write_all(neverc_tcp_conn_t *conn, const void *data, size_t len) {
+static int smtp_write_all(neverc_smtp_client_t *c, const void *data, size_t len) {
     const char *p = (const char *)data;
     size_t sent = 0;
     while (sent < len) {
-        int n = neverc_tcp_write(conn, p + sent, len - sent);
+        int n = c->tls
+            ? neverc_tls_write(c->tls, p + sent, len - sent)
+            : neverc_tcp_write(c->conn, p + sent, len - sent);
         if (n <= 0) return -1;
         sent += (size_t)n;
     }
     return 0;
+}
+
+static int smtp_read_some(neverc_smtp_client_t *c, void *buf, size_t cap) {
+    return c->tls ? neverc_tls_read(c->tls, buf, cap)
+                  : neverc_tcp_read(c->conn, buf, cap);
 }
 
 static int smtp_is_status_code(const char *line, size_t line_len) {
@@ -117,9 +127,8 @@ static int smtp_read_response(neverc_smtp_client_t *c) {
         if (complete) break;
 
         if (total >= SMTP_BUF_SIZE - 1) return -1;
-        int n = neverc_tcp_read(c->conn,
-                                 c->last_response + total,
-                                 SMTP_BUF_SIZE - total - 1);
+        int n = smtp_read_some(c, c->last_response + total,
+                               SMTP_BUF_SIZE - total - 1);
         if (n <= 0) return -1;
         total += (size_t)n;
         c->last_response[total] = '\0';
@@ -191,7 +200,7 @@ static int smtp_cmd_line(neverc_smtp_client_t *c, const char *cmd,
     sendbuf[len] = '\r';
     sendbuf[len + 1] = '\n';
     len += 2;
-    if (smtp_write_all(c->conn, sendbuf, len) != 0)
+    if (smtp_write_all(c, sendbuf, len) != 0)
         return -1;
     return smtp_read_response(c);
 }
@@ -278,16 +287,19 @@ neverc_smtp_client_t *neverc_smtp_dial(const char *addr, const char **errp) {
 void neverc_smtp_close(neverc_smtp_client_t *c) {
     if (!c) return;
     if (c->conn) {
-        /* QUIT during DATA would be written as message body. */
-        if (!c->in_data)
+        /* QUIT during DATA would be written as message body. After a
+         * failed STARTTLS handshake the TCP stream is not SMTP. */
+        if (!c->in_data && !c->dead)
             neverc_smtp_quit(c);
+        if (c->tls)
+            neverc_tls_close(c->tls);
         neverc_tcp_close(c->conn);
     }
     free(c);
 }
 
 static int smtp_require_command_phase(neverc_smtp_client_t *c) {
-    return (!c || c->in_data) ? -1 : 0;
+    return (!c || c->in_data || c->dead) ? -1 : 0;
 }
 
 static int smtp_token_eq(const char *s, size_t n, const char *tok) {
@@ -383,6 +395,61 @@ static int ensure_hello(neverc_smtp_client_t *c) {
     return neverc_smtp_hello(c, "localhost");
 }
 
+int neverc_smtp_starttls(neverc_smtp_client_t *c,
+                         struct neverc_tls_config *cfg) {
+    neverc_tls_config_t *owned = NULL;
+    neverc_tls_config_t *use = (neverc_tls_config_t *)cfg;
+    if (smtp_require_command_phase(c) != 0 || c->tls)
+        return -1;
+    if (ensure_hello(c) != 0) return -1;
+    if (!c->supports_starttls) return -1;
+
+    /* RFC 3207: 220 Ready to start TLS, then the handshake immediately. */
+    int code = smtp_cmd(c, "STARTTLS");
+    if (code != 220) return -1;
+    if (c->pending_len != 0) {
+        c->dead = 1;
+        return -1;
+    }
+
+    if (!use) {
+        owned = neverc_tls_config_new();
+        if (!owned) {
+            c->dead = 1;
+            return -1;
+        }
+        if (c->server_name[0])
+            neverc_tls_config_set_server_name(owned, c->server_name);
+        use = owned;
+    }
+
+    const char *tls_err = NULL;
+    neverc_tls_conn_t *tls = neverc_tls_client(c->conn, use, &tls_err);
+    neverc_tls_config_free(owned);
+    (void)tls_err;
+    if (!tls) {
+        c->dead = 1;
+        return -1;
+    }
+    c->tls = tls;
+    c->did_hello = 0;
+    c->supports_auth_plain = 0;
+    c->supports_auth_login = 0;
+    c->supports_8bitmime = 0;
+    c->supports_starttls = 0;
+    if (neverc_smtp_hello(c, "localhost") != 0) {
+        c->dead = 1;
+        return -1;
+    }
+    return 0;
+}
+
+static int smtp_maybe_starttls(neverc_smtp_client_t *c) {
+    if (ensure_hello(c) != 0) return -1;
+    if (!c->supports_starttls || c->tls) return 0;
+    return neverc_smtp_starttls(c, NULL);
+}
+
 int neverc_smtp_auth(neverc_smtp_client_t *c,
                       neverc_smtp_auth_method_t method,
                       const char *username,
@@ -390,6 +457,9 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
     if (smtp_require_command_phase(c) != 0 || !username || !password)
         return -1;
     if (ensure_hello(c) != 0) return -1;
+    /* Go smtp.SendMail / PLAIN: do not send passwords on a connection
+     * that advertised STARTTLS but was never upgraded. */
+    if (c->supports_starttls && !c->tls) return -1;
 
     if (method == NEVERC_SMTP_AUTH_PLAIN) {
         if (!c->supports_auth_plain) return -1;
@@ -468,10 +538,10 @@ static int smtp_write_data_stuffed(neverc_smtp_client_t *c,
     for (size_t i = 0; i < len; i++) {
         uint8_t ch = bytes[i];
         if (c->data_at_line_start && ch == '.') {
-            if (smtp_write_all(c->conn, ".", 1) != 0)
+            if (smtp_write_all(c, ".", 1) != 0)
                 return -1;
         }
-        if (smtp_write_all(c->conn, &ch, 1) != 0)
+        if (smtp_write_all(c, &ch, 1) != 0)
             return -1;
         if (ch == '\n')
             c->data_at_line_start = 1;
@@ -492,7 +562,7 @@ int neverc_smtp_write_data(neverc_smtp_client_t *c,
 int neverc_smtp_data_close(neverc_smtp_client_t *c) {
     if (!c || !c->in_data) return -1;
     const char *term = c->data_at_line_start ? ".\r\n" : "\r\n.\r\n";
-    if (smtp_write_all(c->conn, term, strlen(term)) != 0)
+    if (smtp_write_all(c, term, strlen(term)) != 0)
         return -1;
     int code = smtp_read_response(c);
     c->in_data = 0;
@@ -538,6 +608,14 @@ int neverc_smtp_send_mail(const char *addr,
 
     neverc_smtp_client_t *c = neverc_smtp_dial(addr, errp);
     if (!c) return -1;
+
+    /* Go smtp.SendMail: if Extension("STARTTLS"), StartTLS fail-closed
+     * before AUTH. */
+    if (smtp_maybe_starttls(c) != 0) {
+        if (errp) *errp = "STARTTLS failed";
+        neverc_smtp_close(c);
+        return -1;
+    }
 
     if (auth_method != NEVERC_SMTP_AUTH_NONE) {
         if (neverc_smtp_auth(c, auth_method, username, password) != 0) {

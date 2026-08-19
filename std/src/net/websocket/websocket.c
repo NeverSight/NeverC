@@ -129,6 +129,58 @@ static int ws_parse_port(const char *s, size_t len, unsigned *port) {
     return 0;
 }
 
+/* Same Host byte allowlist as HTTP/1 (Go ValidHostHeader without comma). */
+static int ws_host_reg_name_byte(unsigned char c) {
+    if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+        (c >= 'a' && c <= 'z'))
+        return 1;
+    switch (c) {
+    case '!': case '$': case '%': case '&': case '\'':
+    case '(': case ')': case '*': case '+':
+    case '-': case '.': case ';': case '=':
+    case '_': case '~':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int ws_valid_host(const char *value, size_t length) {
+    if (!value || length == 0) return 0;
+    if (value[0] == '[') {
+        const char *close = (const char *)memchr(value, ']', length);
+        if (!close || close == value + 1) return 0;
+        size_t inner = (size_t)(close - value - 1);
+        int has_colon = 0;
+        for (size_t i = 0; i < inner; i++) {
+            unsigned char c = (unsigned char)value[1 + i];
+            if (c == ':') has_colon = 1;
+            else if (!ws_host_reg_name_byte(c))
+                return 0;
+        }
+        if (!has_colon &&
+            !(inner > 2 && (value[1] == 'v' || value[1] == 'V')))
+            return 0;
+        size_t after = length - (size_t)(close - value) - 1;
+        if (after == 0) return 1;
+        unsigned port = 0;
+        return close[1] == ':' &&
+               ws_parse_port(close + 2, after - 1, &port) == 0;
+    }
+
+    const char *colon = (const char *)memchr(value, ':', length);
+    size_t host_length = colon ? (size_t)(colon - value) : length;
+    if (host_length == 0) return 0;
+    for (size_t i = 0; i < host_length; i++) {
+        if (!ws_host_reg_name_byte((unsigned char)value[i]))
+            return 0;
+    }
+    if (!colon) return 1;
+    if (memchr(colon + 1, ':', length - host_length - 1)) return 0;
+    unsigned port = 0;
+    return ws_parse_port(colon + 1, length - host_length - 1, &port) == 0;
+}
+
 static int ws_parse_url(const char *url, ws_url_t *parsed,
                         const char **errp) {
     if (!url || !parsed) {
@@ -163,10 +215,14 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
     }
     for (size_t i = 0; i < authority_len; i++) {
         unsigned char c = (unsigned char)authority[i];
-        if (c <= 0x20 || c == 0x7f || c == '\\') {
+        if (c <= 0x20 || c == 0x7f || c == '\\' || c == ',') {
             ws_set_error(errp, "invalid WebSocket URL authority");
             return -1;
         }
+    }
+    if (!ws_valid_host(authority, authority_len)) {
+        ws_set_error(errp, "invalid WebSocket URL authority");
+        return -1;
     }
     if (*authority_end == '#') {
         ws_set_error(errp, "WebSocket URL fragments are not allowed");
@@ -254,13 +310,24 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
         }
         for (size_t i = 0; i < target_len; i++) {
             unsigned char c = (unsigned char)target[i];
-            if (c <= 0x20 || c == 0x7f) {
+            if (c <= 0x20 || c == 0x7f || c == '\\') {
                 ws_set_error(errp, "invalid WebSocket request target");
                 return -1;
             }
         }
         if (prefix) parsed->target[0] = '/';
         memcpy(parsed->target + prefix, target, target_len + 1);
+    }
+    {
+        const char *target_query = strchr(parsed->target, '?');
+        size_t path_length = target_query
+            ? (size_t)(target_query - parsed->target)
+            : strlen(parsed->target);
+        if (path_length >= 2 && parsed->target[0] == '/' &&
+            parsed->target[1] == '/') {
+            ws_set_error(errp, "invalid WebSocket request target");
+            return -1;
+        }
     }
     return 0;
 }
@@ -732,6 +799,19 @@ int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
         if (!sp || (size_t)(req_crlf - sp) != 9 ||
             memcmp(sp, " HTTP/1.1", 9) != 0)
             return -1;
+        size_t target_length = (size_t)(sp - target);
+        if (target[0] != '/') return -1;
+        const char *target_query = (const char *)memchr(
+            target, '?', target_length);
+        size_t path_length = target_query
+            ? (size_t)(target_query - target) : target_length;
+        if (path_length >= 2 && target[0] == '/' && target[1] == '/')
+            return -1;
+        for (size_t i = 0; i < target_length; i++) {
+            unsigned char c = (unsigned char)target[i];
+            if (c <= 0x20 || c == 0x7f || c == '#' || c == '\\')
+                return -1;
+        }
     }
 
     /* hdr_end points at the first \r of the terminating \r\n\r\n, which is
@@ -746,7 +826,8 @@ int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
     char version[16];
     char key_buf[64];
     if (copy_unique_header_value(raw_request, hdr_scan_end, "Host",
-                                 host, sizeof(host)) != 1 || !host[0])
+                                 host, sizeof(host)) != 1 || !host[0] ||
+        !ws_valid_host(host, strlen(host)))
         return -1;
     if (copy_unique_header_value(raw_request, hdr_scan_end, "Upgrade",
                                  upgrade, sizeof(upgrade)) != 1 ||

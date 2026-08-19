@@ -893,7 +893,7 @@ static int scan_string(const char **p, char *buf, size_t max_chars) {
 static int scan_hex(const char **p, uint64_t *out) {
     skip_ws(p);
     const char *start = *p;
-    if (**p == '0' && ((*p)[1] == 'x' || (*p)[1] == 'X')) (*p) += 2;
+    /* Go %x/%X is hex digits only. A 0x prefix is %v / Scan, not %x. */
     uint64_t val = 0;
     int found = 0;
     while (1) {

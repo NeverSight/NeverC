@@ -110,6 +110,29 @@ static void test_split_host_port(void) {
               0);
     check_str("ipv4-mapped host", host, "::ffff:127.0.0.1");
     check_str("ipv4-mapped port", port, "80");
+
+    /* Go net.SplitHostPort does not treat SP (0x20) as CTL (0x00-0x1F, 0x7F).
+     * Windows IPv6 zones such as "Ethernet 2" must round-trip. */
+    check_int("split allows space in host",
+              neverc_net_split_host_port("host name:80", host, sizeof(host),
+                                         port, sizeof(port)), 0);
+    check_str("space host", host, "host name");
+    check_str("space port", port, "80");
+    check_int("split allows space in ipv6 zone",
+              neverc_net_split_host_port("[fe80::1%Ethernet 2]:80", host,
+                                         sizeof(host), port, sizeof(port)),
+              0);
+    check_str("space zone host", host, "fe80::1%Ethernet 2");
+    check_str("space zone port", port, "80");
+    check_int("split still rejects tab host",
+              neverc_net_split_host_port("host\tname:80", host, sizeof(host),
+                                         port, sizeof(port)), -1);
+    check_int("split still rejects CR host",
+              neverc_net_split_host_port("host\rname:80", host, sizeof(host),
+                                         port, sizeof(port)), -1);
+    check_int("split still rejects DEL host",
+              neverc_net_split_host_port("host\x7fname:80", host, sizeof(host),
+                                         port, sizeof(port)), -1);
 }
 
 /* ===== JoinHostPort ===== */
@@ -151,6 +174,13 @@ static void test_join_host_port(void) {
                neverc_net_join_host_port("::ffff:127.0.0.1", "80", buf,
                                          sizeof(buf)) > 0);
     check_str("ipv4-mapped join", buf, "[::ffff:127.0.0.1]:80");
+    check_true("join windows ipv6 zone with space",
+               neverc_net_join_host_port("fe80::1%Ethernet 2", "80", buf,
+                                         sizeof(buf)) > 0);
+    check_str("windows zone join", buf, "[fe80::1%Ethernet 2]:80");
+    check_int("join still rejects tab host",
+              neverc_net_join_host_port("host\tname", "80", buf, sizeof(buf)),
+              -1);
 }
 
 static void test_addr_internal(void) {

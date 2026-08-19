@@ -1081,7 +1081,43 @@ static char *html_js_expr(const char *s) {
     return lit;
 }
 
-/* `url({{.X}})`, `url("{{.X}}")`, and the same with a value prefix. */
+/* Skip ASCII whitespace and CSS comments immediately before index i. */
+static size_t html_css_skip_filler_back(const char *buf, size_t i) {
+    for (;;) {
+        while (i > 0 && html_is_ascii_ws((unsigned char)buf[i - 1]))
+            i--;
+        if (i >= 2 && buf[i - 1] == '/' && buf[i - 2] == '*') {
+            size_t j = i - 2;
+            int found = 0;
+            while (j >= 2) {
+                j--;
+                if (buf[j] == '*' && buf[j - 1] == '/') {
+                    i = j - 1;
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found)
+                return i;
+            continue;
+        }
+        return i;
+    }
+}
+
+/* paren_end is exclusive; buf[paren_end-1] must be '('. Allow `url (` and
+ * comments between url and '(' so quoted url() interpolations stay in
+ * URL context. */
+static int html_css_url_open_before(const char *buf, size_t paren_end) {
+    if (paren_end == 0 || buf[paren_end - 1] != '(') return 0;
+    size_t n = html_css_skip_filler_back(buf, paren_end - 1);
+    return n >= 3 && html_ci_eq_n(buf + n - 3, "url", 3);
+}
+
+/* `url({{.X}})`, `url("{{.X}}")`, `url( "{{.X}}")`, and the same with a
+ * value prefix. Whitespace and CSS comments between url( and a quote must
+ * not drop the interpolation out of URL context: CSS-escaping `script:alert`
+ * as `script\3A alert` still becomes javascript: after the browser unescapes. */
 static int html_in_css_url(const char *buf, size_t len,
                            const char **prefix, size_t *plen) {
     *prefix = NULL;
@@ -1097,12 +1133,13 @@ static int html_in_css_url(const char *buf, size_t len,
     }
     if (i == 0) return 0;
     if (buf[i - 1] == '"' || buf[i - 1] == '\'') {
-        if (i < 5 || !html_ci_eq_n(buf + i - 5, "url(", 4)) return 0;
+        size_t k = html_css_skip_filler_back(buf, i - 1);
+        if (!html_css_url_open_before(buf, k)) return 0;
         *prefix = buf + i;
         *plen = len - i;
         return 1;
     }
-    if (buf[i - 1] == '(' && i >= 4 && html_ci_eq_n(buf + i - 4, "url(", 4)) {
+    if (html_css_url_open_before(buf, i)) {
         *prefix = buf + i;
         *plen = len - i;
         return 1;
@@ -1139,19 +1176,25 @@ static void html_spans_skip_ws(html_span_t *sp, int n) {
         html_spans_next(sp, n);
 }
 
-/* Match a scheme in one string, even when ASCII whitespace is sprinkled
- * through it (`java\tscript:`). Used for CSS, where `color:red` must not
- * be treated as a URL. */
-static int html_scheme_is_parts(const char *prefix, size_t plen,
-                                const char *s, const char *scheme) {
+/* Match a scheme across static prefix / interpolation / suffix, even when
+ * ASCII whitespace is sprinkled through it (`java\tscript:`). Used for CSS,
+ * where `color:red` must not be treated as a URL. */
+static int html_scheme_is_joined(const char *prefix, size_t plen,
+                                 const char *s,
+                                 const char *suffix, size_t slen,
+                                 const char *scheme) {
     if (!scheme) return 0;
-    html_span_t sp[2];
+    html_span_t sp[3];
     int n = 0;
     if (prefix && plen) { sp[n].s = prefix; sp[n].n = plen; sp[n].i = 0; n++; }
-    sp[n].s = s ? s : "";
-    sp[n].n = s ? strlen(s) : 0;
-    sp[n].i = 0;
-    n++;
+    if (s && s[0]) {
+        sp[n].s = s;
+        sp[n].n = strlen(s);
+        sp[n].i = 0;
+        n++;
+    }
+    if (suffix && slen) { sp[n].s = suffix; sp[n].n = slen; sp[n].i = 0; n++; }
+    if (n == 0) return 0;
     html_spans_skip_ws(sp, n);
     while (*scheme) {
         html_spans_skip_ws(sp, n);
@@ -1165,6 +1208,31 @@ static int html_scheme_is_parts(const char *prefix, size_t plen,
     }
     html_spans_skip_ws(sp, n);
     return !html_spans_done(sp, n) && html_spans_peek(sp, n) == ':';
+}
+
+static int html_scheme_is_parts(const char *prefix, size_t plen,
+                                const char *s, const char *scheme) {
+    return html_scheme_is_joined(prefix, plen, s, NULL, 0, scheme);
+}
+
+/* CSS strings that are not inside url() (`@import 'java{{.X}}'`) still
+ * concatenate into a javascript:/data: URL after CSS unescaping. */
+static int html_css_join_scheme_unsafe(const char *buf, size_t len,
+                                       const char *val,
+                                       const char *suffix, size_t slen) {
+    size_t i = len;
+    while (i > 0) {
+        char c = buf[i - 1];
+        if (c == '(' || c == '"' || c == '\'' || c == ';' ||
+            c == '{' || c == '}' || c == '<' || c == '>')
+            break;
+        i--;
+    }
+    return html_scheme_is_joined(buf + i, len - i, val, suffix, slen,
+                                 "javascript") ||
+           html_scheme_is_joined(buf + i, len - i, val, suffix, slen,
+                                 "vbscript") ||
+           html_scheme_is_joined(buf + i, len - i, val, suffix, slen, "data");
 }
 
 /*
@@ -1476,10 +1544,15 @@ static int execute_nodes(const node_t *n,
                 if (in_comment)
                     break;
                 if (!val) {
-                    if (in_js_re &&
-                        buf_append(buf, len, cap, "(?:)", 4) != 0)
-                        return -1;
-                    break;
+                    /* Missing keys still run contextual filters so
+                     * href="java{{.X}}script:..." cannot assemble javascript:
+                     * by omitting X. JS regexp is the Go-shaped exception. */
+                    if (in_js_re) {
+                        if (buf_append(buf, len, cap, "(?:)", 4) != 0)
+                            return -1;
+                        break;
+                    }
+                    val = "";
                 }
                 const char *uprefix = NULL;
                 size_t uplen = 0;
@@ -1495,8 +1568,16 @@ static int execute_nodes(const node_t *n,
                 html_attr_kind_t akind = in_attr
                     ? html_attr_kind(aname, nlen) : HTML_ATTR_PLAIN;
                 int in_style_attr = in_attr && akind == HTML_ATTR_STYLE;
+                /* Style attributes HTML-decode before CSS does, so url()
+                 * detection must run on the decoded value (`&quot;`, `&colon;`). */
+                const char *css_buf = *buf;
+                size_t css_len = *len;
+                if (in_style_attr) {
+                    css_buf = aprefix ? aprefix : "";
+                    css_len = aplen;
+                }
                 int in_css_url = (in_style_tag || in_style_attr) &&
-                    html_in_css_url(*buf, *len, &uprefix, &uplen);
+                    html_in_css_url(css_buf, css_len, &uprefix, &uplen);
                 int in_refresh_url = in_attr && in_meta &&
                     html_attr_name_eq(aname, nlen, "content") &&
                     (meta_refresh ||
@@ -1520,8 +1601,8 @@ static int execute_nodes(const node_t *n,
                 size_t dplen = in_css_url ? uplen : (in_url ? aplen : 0);
                 const char *dsuffix = NULL;
                 size_t dslen = 0;
-                if (in_url && n->next && n->next->type == NODE_TEXT &&
-                    n->next->text)
+                if ((in_url || in_style_tag || in_style_attr) &&
+                    n->next && n->next->type == NODE_TEXT && n->next->text)
                     dslen = html_url_follow_len(n->next->text,
                                                 n->next->text_len);
                 if (dslen) dsuffix = n->next->text;
@@ -1541,6 +1622,10 @@ static int execute_nodes(const node_t *n,
                     escaped = neverc_html_escape("#");
                 else if (in_css_url && html_css_url_parts_obfuscated(
                              dprefix, dplen, val, dsuffix, dslen))
+                    escaped = neverc_html_escape("#");
+                else if ((in_style_tag || in_style_attr) &&
+                         html_css_join_scheme_unsafe(
+                             css_buf, css_len, val, dsuffix, dslen))
                     escaped = neverc_html_escape("#");
                 else if (in_css_url) {
                     /* Go: urlNormalizer then attrescaper. url() in a style

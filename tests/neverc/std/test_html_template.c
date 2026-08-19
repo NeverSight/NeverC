@@ -493,6 +493,72 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "javascript:") == NULL);
     free(out);
 
+    neverc_html_template_data_set(&data, "Link", "script:alert");
+    out = neverc_html_template_render(
+        "<div style=\"background:url( 'java{{.Link}}')\">", &data);
+    check("css url() spaced quote split scheme neutralized",
+          out && strstr(out, "url( 'java#')") != NULL);
+    check("css url() spaced quote split is not css-escaped javascript",
+          out && strstr(out, "javascript") == NULL &&
+              strstr(out, "script\\3A") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "https://example.com/a.css");
+    out = neverc_html_template_render(
+        "<div style=\"background:url( '{{.Link}}')\">", &data);
+    check("css url() spaced quote https still interpolated",
+          out && strstr(out, "https://example.com/a.css") != NULL);
+    check("css url() spaced quote https is not replaced with hash",
+          out && strstr(out, "url( '#')") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "script:alert");
+    out = neverc_html_template_render(
+        "<div style=\"background:url(/*x*/'java{{.Link}}')\">", &data);
+    check("css url() comment-quote split scheme neutralized",
+          out && strstr(out, "url(/*x*/'java#')") != NULL);
+    check("css url() comment-quote split is not css-escaped javascript",
+          out && strstr(out, "javascript") == NULL &&
+              strstr(out, "script\\3A") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "script:alert");
+    out = neverc_html_template_render(
+        "<div style=\"background:url(&quot;java{{.Link}})\">", &data);
+    check("css url() entity quote split scheme neutralized",
+          out && strstr(out, "url(&quot;java#)") != NULL);
+    check("css url() entity quote split is not css-escaped javascript",
+          out && strstr(out, "javascript") == NULL &&
+              strstr(out, "script\\3A") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert");
+    out = neverc_html_template_render(
+        "<div style=\"background:url(javascript&colon;{{.X}})\">", &data);
+    check("css url() entity colon neutralized",
+          out && strstr(out, "url(javascript&colon;#)") != NULL);
+    check("css url() entity colon does not keep the payload",
+          out && strstr(out, "javascript&colon;alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "script:alert");
+    out = neverc_html_template_render(
+        "<style>@import 'java{{.X}}';</style>", &data);
+    check("css import split scheme neutralized",
+          out && strstr(out, "@import 'java#';") != NULL);
+    check("css import split is not css-escaped javascript",
+          out && strstr(out, "javascript") == NULL &&
+              strstr(out, "script\\3A") == NULL);
+    free(out);
+
+    out = neverc_html_template_render(
+        "<a href=\"java{{.Missing}}script:alert(1)\">x</a>", &data);
+    check("missing split href scheme neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check("missing split href becomes hash",
+          out && strstr(out, "href=\"java#script:alert(1)\"") != NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", "\" onmouseover=alert(1) x=\"");
     out = neverc_html_template_render(
         "<div data-code=\"<script>\" class=\"{{.X}}\">", &data);

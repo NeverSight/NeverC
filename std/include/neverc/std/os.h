@@ -77,7 +77,8 @@ int  neverc_os_mkdir_all(const char *path, uint32_t perm);
 int  neverc_os_remove(const char *name);
 /* Removes a tree without following links encountered at or below path.
  * Ancestor components must be trusted, and callers must prevent concurrent
- * namespace replacement while removal is in progress. */
+ * namespace replacement while removal is in progress. Paths whose final
+ * component is "." are rejected (Go os.RemoveAll / rmdir(".")). */
 int  neverc_os_remove_all(const char *path);
 int  neverc_os_rename(const char *oldpath, const char *newpath);
 

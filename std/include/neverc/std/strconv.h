@@ -20,8 +20,8 @@ int neverc_strconv_atoi(const char *s, int *result);
 int neverc_strconv_atol(const char *s, long long *result);
 
 /* Base 0 accepts Go-style prefixes (0x/0b/0o/leading 0) and digit-separating
- * underscores. Explicit bases 2/8/16 also accept 0b/0o/0x prefixes but
- * reject underscores. */
+ * underscores. Explicit bases 2–36 do not skip 0x/0b/0o prefixes (Go
+ * ParseInt/ParseUint: those prefixes are syntax unless base is 0). */
 int neverc_strconv_parse_int(const char *s, int base, long long *result);
 int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *result);
 /* Decimal, Inf/NaN, and Go hex floats (0x1p0). Surrounding whitespace is

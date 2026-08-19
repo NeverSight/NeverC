@@ -73,9 +73,9 @@ static int macho_fat_first_slice(const uint8_t *data, size_t len,
     if (narch == 0 || (uint64_t)narch * 20U > len - 8)
         return -1;
 
-    /* Validate every fat_arch before selecting a slice. Returning on the first
-     * thin magic used to accept a truncated later entry (Go's NewFatFile
-     * parses — and therefore bounds-checks — every architecture). */
+    /* Validate every fat_arch before selecting a slice. Offset/size/magic
+     * checks still accept a truncated later thin image; Go's NewFatFile
+     * calls NewFile on every architecture, so we do the same. */
     uint32_t slice_off = 0;
     uint32_t slice_size = 0;
     for (uint32_t i = 0; i < narch; i++) {
@@ -89,6 +89,15 @@ static int macho_fat_first_slice(const uint8_t *data, size_t len,
             return -1;
         if (!macho_is_thin_magic(inner))
             return -1;
+        /* Range and magic are not enough: a later fat_arch can sit entirely
+         * inside the file yet still be a truncated thin image (4-byte magic,
+         * truncated header, or load commands/sections that run off the slice).
+         * Go's NewFatFile calls NewFile on every architecture. Open used to
+         * keep the first valid slice and ignore the rest. */
+        neverc_macho_file_t extra;
+        if (neverc_macho_open(&extra, data + offset, size) < 0)
+            return -1;
+        neverc_macho_close(&extra);
         if (i == 0) {
             slice_off = offset;
             slice_size = size;

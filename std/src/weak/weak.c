@@ -52,8 +52,7 @@ static int ctrl_matches(const ctrl_block_t *cb, uint64_t epoch) {
     return cb && epoch != 0 && cb->epoch == epoch;
 }
 
-static void ctrl_retire(ctrl_block_t *cb) {
-    LOCK();
+static void ctrl_retire_locked(ctrl_block_t *cb) {
     cb->epoch++;
     if (cb->epoch == 0) cb->epoch = 1;
     cb->strong = 0;
@@ -63,32 +62,43 @@ static void ctrl_retire(ctrl_block_t *cb) {
     cb->owns_data = 0;
     cb->next_free = g_freelist;
     g_freelist = cb;
+}
+
+static void ctrl_retire(ctrl_block_t *cb) {
+    LOCK();
+    ctrl_retire_locked(cb);
     UNLOCK();
 }
 
-static ctrl_block_t *ctrl_new(void *data, void (*free_fn)(void *), int owns) {
-    ctrl_block_t *cb = NULL;
-    uint64_t epoch = 1;
-    LOCK();
-    if (g_freelist) {
-        cb = g_freelist;
-        g_freelist = cb->next_free;
-        epoch = cb->epoch;
-        UNLOCK();
-        memset(cb, 0, sizeof(*cb));
-        cb->epoch = epoch;
-    } else {
-        UNLOCK();
-        cb = (ctrl_block_t *)calloc(1, sizeof(*cb));
-        if (!cb) return NULL;
-        cb->epoch = 1;
-    }
+static void ctrl_publish(ctrl_block_t *cb, void *data, void (*free_fn)(void *),
+                         int owns, uint64_t epoch) {
+    memset(cb, 0, sizeof(*cb));
+    cb->epoch = epoch;
     cb->strong = 1;
     cb->weak = 1;
     cb->data = data;
     cb->free_fn = free_fn;
     cb->owns_data = owns;
-    cb->next_free = NULL;
+}
+
+static ctrl_block_t *ctrl_new(void *data, void (*free_fn)(void *), int owns) {
+    ctrl_block_t *cb;
+    LOCK();
+    if (g_freelist) {
+        cb = g_freelist;
+        g_freelist = cb->next_free;
+        uint64_t epoch = cb->epoch;
+        /* Publish epoch/strong/weak/data before dropping the lock so a
+         * stale release that already observed the previous epoch cannot
+         * decrement this new life. */
+        ctrl_publish(cb, data, free_fn, owns, epoch);
+        UNLOCK();
+        return cb;
+    }
+    UNLOCK();
+    cb = (ctrl_block_t *)calloc(1, sizeof(*cb));
+    if (!cb) return NULL;
+    ctrl_publish(cb, data, free_fn, owns, 1);
     return cb;
 }
 
@@ -99,25 +109,6 @@ static neverc_weak_strong_t strong_from_cb(ctrl_block_t *cb) {
     s._ctrl = cb;
     s._epoch = cb->epoch;
     return s;
-}
-
-static void ctrl_release_strong(ctrl_block_t *cb) {
-    int32_t s = release_count(&cb->strong);
-    if (s == 0) {
-        void *data = cb->data;
-        void (*free_fn)(void *) = cb->free_fn;
-        int owns = cb->owns_data;
-        cb->data = NULL;
-        cb->free_fn = NULL;
-        cb->owns_data = 0;
-        if (free_fn)
-            free_fn(data);
-        else if (owns)
-            free(data);
-
-        int32_t w = release_count(&cb->weak);
-        if (w == 0) ctrl_retire(cb);
-    }
 }
 
 static void ctrl_release_weak(ctrl_block_t *cb) {
@@ -160,10 +151,35 @@ void neverc_weak_strong_release(neverc_weak_strong_t *s) {
     s->ptr = NULL;
     s->_ctrl = NULL;
     s->_epoch = 0;
+
+    void *data = NULL;
+    void (*free_fn)(void *) = NULL;
+    int owns = 0;
+    int drop_payload = 0;
+
     LOCK();
-    int live = ctrl_matches(cb, epoch);
+    if (ctrl_matches(cb, epoch)) {
+        int32_t remaining = release_count(&cb->strong);
+        if (remaining == 0) {
+            data = cb->data;
+            free_fn = cb->free_fn;
+            owns = cb->owns_data;
+            cb->data = NULL;
+            cb->free_fn = NULL;
+            cb->owns_data = 0;
+            drop_payload = 1;
+            if (release_count(&cb->weak) == 0)
+                ctrl_retire_locked(cb);
+        }
+    }
     UNLOCK();
-    if (live) ctrl_release_strong(cb);
+
+    if (drop_payload) {
+        if (free_fn)
+            free_fn(data);
+        else if (owns)
+            free(data);
+    }
 }
 
 struct neverc_weak_ref {

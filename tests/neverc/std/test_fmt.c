@@ -387,9 +387,12 @@ static void test_sscanf(void) {
     check_int("sscanf first", a, 10);
     check_int("sscanf second", b, 20);
 
-    n = neverc_fmt_sscanf("0xff", "%x", (unsigned int *)&a);
+    n = neverc_fmt_sscanf("ff", "%x", (unsigned int *)&a);
     check_int("sscanf hex", n, 1);
     check_int("sscanf hex val", a, 255);
+    n = neverc_fmt_sscanf("0xff", "%x", (unsigned int *)&a);
+    check_int("sscanf hex does not swallow 0x prefix", n, 1);
+    check_int("sscanf hex 0x prefix value is 0", a, 0);
 
     n = neverc_fmt_sscanf("", "%d", &a);
     check_int("sscanf empty", n, 0);

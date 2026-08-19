@@ -525,6 +525,43 @@ static int test_executor_self_submit_when_full(void) {
     return 0;
 }
 
+typedef struct {
+    neverc_thread_executor_t *other;
+    neverc_thread_channel_t *completed;
+    int wait_result;
+} wait_other_arg_t;
+
+static void wait_other_task(void *opaque) {
+    wait_other_arg_t *arg = (wait_other_arg_t *)opaque;
+    arg->wait_result = neverc_thread_executor_wait(arg->other);
+    (void)neverc_thread_channel_send(arg->completed, arg);
+}
+
+static int test_executor_tls_is_per_executor(void) {
+    neverc_thread_executor_t *home =
+        neverc_thread_executor_create(1, 1);
+    neverc_thread_executor_t *other =
+        neverc_thread_executor_create(1, 1);
+    neverc_thread_channel_t *completed = neverc_thread_channel_create(1);
+    CHECK(home != NULL);
+    CHECK(other != NULL);
+    CHECK(completed != NULL);
+
+    wait_other_arg_t arg = {other, completed, NEVERC_THREAD_SYSTEM};
+    CHECK(neverc_thread_executor_submit(home, wait_other_task, &arg) ==
+          NEVERC_THREAD_OK);
+    void *value = NULL;
+    CHECK(receive_with_timeout(completed, &value) == NEVERC_THREAD_OK);
+    CHECK(value == &arg);
+    CHECK(arg.wait_result == NEVERC_THREAD_OK);
+    CHECK(neverc_thread_executor_wait(home) == NEVERC_THREAD_OK);
+
+    neverc_thread_channel_free(completed);
+    neverc_thread_executor_free(other);
+    neverc_thread_executor_free(home);
+    return 0;
+}
+
 int main(void) {
     CHECK(neverc_thread_channel_create(0) == NULL);
     CHECK(neverc_thread_channel_create(SIZE_MAX) == NULL);
@@ -540,6 +577,7 @@ int main(void) {
     CHECK(test_executor_context_waits() == 0);
     CHECK(test_executor_reentrancy_and_concurrent_shutdown() == 0);
     CHECK(test_executor_self_submit_when_full() == 0);
+    CHECK(test_executor_tls_is_per_executor() == 0);
     puts("passed");
     return 0;
 }

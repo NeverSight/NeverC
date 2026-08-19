@@ -885,6 +885,14 @@ static void http_stage5_client_security(void) {
     CHECK(resp != NULL && resp->error != NULL);
     neverc_http_response_free(resp);
 
+    resp = neverc_http_get("http://127.0.0.1<script>/");
+    CHECK(resp != NULL && resp->error != NULL);
+    neverc_http_response_free(resp);
+
+    resp = neverc_http_get("http://127.0.0.1//evil.example/");
+    CHECK(resp != NULL && resp->error != NULL);
+    neverc_http_response_free(resp);
+
     resp = neverc_http_get("http://user@127.0.0.1/");
     CHECK(resp != NULL && resp->error != NULL);
     neverc_http_response_free(resp);

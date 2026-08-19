@@ -321,6 +321,70 @@ static int parse_url_port(const char *start, const char *end,
     return 0;
 }
 
+static int client_valid_port(const char *s, size_t length) {
+    if (!s || length == 0) return 0;
+    unsigned value = 0;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c < '0' || c > '9') return 0;
+        unsigned digit = (unsigned)(c - '0');
+        if (value > (65535U - digit) / 10U) return 0;
+        value = value * 10U + digit;
+    }
+    return value > 0;
+}
+
+/* Same Host byte allowlist as the HTTP/1 server (Go ValidHostHeader without
+ * comma). Rejecting only CTL/comma left '<' '>' '"' in Host, which XSS dumps
+ * and reflected Host HTML the same way the unpatched server did. */
+static int client_host_reg_name_byte(unsigned char c) {
+    if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+        (c >= 'a' && c <= 'z'))
+        return 1;
+    switch (c) {
+    case '!': case '$': case '%': case '&': case '\'':
+    case '(': case ')': case '*': case '+':
+    case '-': case '.': case ';': case '=':
+    case '_': case '~':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int client_valid_host(const char *value, size_t length) {
+    if (!value || length == 0) return 0;
+    if (value[0] == '[') {
+        const char *close = (const char *)memchr(value, ']', length);
+        if (!close || close == value + 1) return 0;
+        size_t inner = (size_t)(close - value - 1);
+        int has_colon = 0;
+        for (size_t i = 0; i < inner; i++) {
+            unsigned char c = (unsigned char)value[1 + i];
+            if (c == ':') has_colon = 1;
+            else if (!client_host_reg_name_byte(c))
+                return 0;
+        }
+        if (!has_colon &&
+            !(inner > 2 && (value[1] == 'v' || value[1] == 'V')))
+            return 0;
+        size_t after = length - (size_t)(close - value) - 1;
+        if (after == 0) return 1;
+        return close[1] == ':' && client_valid_port(close + 2, after - 1);
+    }
+
+    const char *colon = (const char *)memchr(value, ':', length);
+    size_t host_length = colon ? (size_t)(colon - value) : length;
+    if (host_length == 0) return 0;
+    for (size_t i = 0; i < host_length; i++) {
+        if (!client_host_reg_name_byte((unsigned char)value[i]))
+            return 0;
+    }
+    if (!colon) return 1;
+    if (memchr(colon + 1, ':', length - host_length - 1)) return 0;
+    return client_valid_port(colon + 1, length - host_length - 1);
+}
+
 static int parse_http_url(const char *url, parsed_url_t *out) {
     if (!url || !out)
         return -1;
@@ -361,6 +425,8 @@ static int parse_http_url(const char *url, parsed_url_t *out) {
     }
     memcpy(out->authority, p, authority_length);
     out->authority[authority_length] = '\0';
+    if (!client_valid_host(out->authority, authority_length))
+        return -1;
 
     if (*p == '[') {
         const char *bracket = (const char *)memchr(
@@ -406,9 +472,17 @@ static int parse_http_url(const char *url, parsed_url_t *out) {
     } else {
         return -1;
     }
+    /* Origin-form leftover: `http://host//evil` would send GET //evil with
+     * Host: host. Same open-redirect / XSS case the HTTP/1 server already
+     * rejects. Empty path segments (`/foo//bar`) are still allowed. */
+    const char *path_query = strchr(out->path, '?');
+    size_t path_length = path_query
+        ? (size_t)(path_query - out->path) : strlen(out->path);
+    if (path_length >= 2 && out->path[0] == '/' && out->path[1] == '/')
+        return -1;
     for (size_t i = 0; out->path[i]; i++) {
         unsigned char c = (unsigned char)out->path[i];
-        if (c <= 0x20 || c == 0x7f) return -1;
+        if (c <= 0x20 || c == 0x7f || c == '\\') return -1;
     }
 
     return 0;

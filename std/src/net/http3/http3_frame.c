@@ -287,8 +287,13 @@ int neverc_h3_request_path_allowed(const char *method, const char *path) {
     if (strcmp(path, "*") == 0)
         return strcmp(method, "OPTIONS") == 0;
     if (path[0] != '/') return 0;
+    /* Same origin-form rule as HTTP/1 and HTTP/2: scheme-relative "//host"
+     * and a leading backslash are open-redirect / XSS if reflected into
+     * Location. RFC 9114 §4.3.1 :path is path-absolute, so "//…" is not
+     * valid; '\' is not pchar. `/foo//bar` empty segments stay allowed. */
+    if (path[1] == '/' || path[1] == '\\') return 0;
     for (const unsigned char *p = (const unsigned char *)path; *p; p++)
-        if (*p <= 0x20 || *p == 0x7f || *p == '#')
+        if (*p <= 0x20 || *p == 0x7f || *p == '#' || *p == '\\')
             return 0;
     return 1;
 }

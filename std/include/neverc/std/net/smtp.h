@@ -6,6 +6,7 @@
  *
  * Features:
  *   - SMTP connection and EHLO/HELO
+ *   - RFC 3207 STARTTLS (fail-closed; mirrors Go smtp.Client.StartTLS)
  *   - PLAIN/LOGIN authentication
  *   - MAIL FROM / RCPT TO / DATA
  *   - Convenience: SendMail()
@@ -20,6 +21,7 @@ extern "C" {
 #endif
 
 typedef struct neverc_smtp_client neverc_smtp_client_t;
+struct neverc_tls_config;
 
 /* Auth method */
 typedef enum {
@@ -43,8 +45,16 @@ void neverc_smtp_close(neverc_smtp_client_t *c);
  * if not called explicitly. Returns 0 on success. */
 int neverc_smtp_hello(neverc_smtp_client_t *c, const char *local_name);
 
+/* RFC 3207 STARTTLS. cfg may be NULL (SNI is taken from the dial address).
+ * A 220 followed by a handshake failure fails closed: the connection is
+ * marked unusable and AUTH is not attempted on leftover plaintext.
+ * Returns 0 on success. */
+int neverc_smtp_starttls(neverc_smtp_client_t *c,
+                         struct neverc_tls_config *cfg);
+
 /* Authenticate with the server. The SASL mechanism must have been advertised
- * in EHLO; AUTH is not attempted after HELO-only or an unadvertised method.
+ * in EHLO; AUTH is not attempted after HELO-only, an unadvertised method, or
+ * when EHLO advertised STARTTLS and the connection has not been upgraded.
  * Returns 0 on success. */
 int neverc_smtp_auth(neverc_smtp_client_t *c,
                       neverc_smtp_auth_method_t method,
@@ -84,7 +94,8 @@ const char *neverc_smtp_last_response(neverc_smtp_client_t *c);
 
 /* Send an email in one call (like Go smtp.SendMail).
  * addr: "host:port", auth can be NONE for unauthenticated.
- * msg should be a complete RFC 822 message (headers + body).
+ * If EHLO advertises STARTTLS, the TLS upgrade is required and fail-closed
+ * before AUTH or DATA. msg should be a complete RFC 822 message.
  * Returns 0 on success. */
 int neverc_smtp_send_mail(const char *addr,
                             neverc_smtp_auth_method_t auth_method,

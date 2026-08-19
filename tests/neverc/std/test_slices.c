@@ -127,9 +127,18 @@ static void test_size_overflow_rejected(void) {
     ASSERT_INT_EQ(neverc_slices_max(&a, (size_t)INT_MAX + 1u, 1, cmp_int), -1);
     ASSERT_INT_EQ(neverc_slices_min_int(&a, (size_t)INT_MAX + 1u), -1);
     ASSERT_INT_EQ(neverc_slices_max_int(&a, (size_t)INT_MAX + 1u), -1);
+    int idx_dummy = 1;
+    ASSERT_INT_EQ(neverc_slices_index_int(&idx_dummy, (size_t)INT_MAX + 1u, 1),
+                  -1);
+    ASSERT_TRUE(!neverc_slices_contains_int(&idx_dummy, (size_t)INT_MAX + 1u, 1));
     int found = 1;
     ASSERT_INT_EQ(neverc_slices_binary_search(&a, overflowing_len, &b, 2,
                                               cmp_int, &found), 0);
+    ASSERT_INT_EQ(found, 0);
+    found = 1;
+    ASSERT_INT_EQ(neverc_slices_binary_search_int(&idx_dummy,
+                                                  (size_t)INT_MAX + 1u, 1,
+                                                  &found), 0);
     ASSERT_INT_EQ(found, 0);
 }
 
@@ -297,6 +306,10 @@ static void test_func_ops(void) {
                 overflowing_len);
     ASSERT_INT_EQ(neverc_slices_index_func(&byte, overflowing_len, 2, is_even),
                   -1);
+    ASSERT_INT_EQ(neverc_slices_index_func(&byte, (size_t)INT_MAX + 1u, 1,
+                                          is_even), -1);
+    ASSERT_TRUE(!neverc_slices_contains_func(&byte, (size_t)INT_MAX + 1u, 1,
+                                            is_even));
 }
 
 static void test_null_guards(void) {

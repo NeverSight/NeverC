@@ -131,9 +131,12 @@ static void test_parse_int(void) {
               neverc_strconv_parse_int("-18446744073709551616", 10, &v),
               NEVERC_STRCONV_ERR_RANGE);
     check_ll("negative magnitude overflow clamp", v, LLONG_MIN);
-    check_int("explicit hex prefix signed",
-              neverc_strconv_parse_int("0x10", 16, &v), 0);
-    check_ll("explicit hex prefix signed val", v, 16);
+    check_int("explicit hex prefix signed is syntax",
+              neverc_strconv_parse_int("0x10", 16, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("explicit hex digits still parse",
+              neverc_strconv_parse_int("10", 16, &v), 0);
+    check_ll("explicit hex digits val", v, 16);
     check_int("overflow trailing junk signed is syntax",
               neverc_strconv_parse_int("18446744073709551616x", 10, &v),
               NEVERC_STRCONV_ERR_SYNTAX);
@@ -181,15 +184,18 @@ static void test_parse_uint(void) {
     check_int("invalid implicit octal rejected",
               neverc_strconv_parse_uint("08", 0, &v),
               NEVERC_STRCONV_ERR_SYNTAX);
-    check_int("explicit hex prefix",
-              neverc_strconv_parse_uint("0xff", 16, &v), 0);
-    check_ull("explicit hex prefix val", v, 255);
-    check_int("explicit bin prefix",
-              neverc_strconv_parse_uint("0b11111111", 2, &v), 0);
-    check_ull("explicit bin prefix val", v, 255);
-    check_int("explicit oct prefix",
-              neverc_strconv_parse_uint("0o377", 8, &v), 0);
-    check_ull("explicit oct prefix val", v, 255);
+    check_int("explicit hex prefix is syntax",
+              neverc_strconv_parse_uint("0xff", 16, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("explicit hex digits still parse",
+              neverc_strconv_parse_uint("ff", 16, &v), 0);
+    check_ull("explicit hex digits val", v, 255);
+    check_int("explicit bin prefix is syntax",
+              neverc_strconv_parse_uint("0b11111111", 2, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("explicit oct prefix is syntax",
+              neverc_strconv_parse_uint("0o377", 8, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
     check_int("uint rejects leading plus",
               neverc_strconv_parse_uint("+1", 10, &v),
               NEVERC_STRCONV_ERR_SYNTAX);

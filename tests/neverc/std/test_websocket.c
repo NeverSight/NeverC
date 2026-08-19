@@ -55,6 +55,15 @@ static void test_null_safety(void) {
     check_int("dial null", neverc_ws_dial(NULL, NULL, &err) == NULL, 1);
     check_int("reject wss plaintext fallback",
               neverc_ws_dial("wss://localhost/ws", NULL, &err) == NULL, 1);
+    check_int("reject Host-list authority",
+              neverc_ws_dial("ws://evil.example,victim.example/", NULL,
+                             &err) == NULL, 1);
+    check_int("reject Host XSS bytes",
+              neverc_ws_dial("ws://example.com<script>/", NULL, &err) == NULL,
+              1);
+    check_int("reject origin-form leftover path",
+              neverc_ws_dial("ws://example.com//evil.example/", NULL,
+                             &err) == NULL, 1);
     neverc_ws_conn_free(NULL);
     check_int("write null", neverc_ws_write_message(NULL, "x"), -1);
     tests_passed++; tests_run++;
@@ -156,6 +165,45 @@ static void test_handshake_rejects(void) {
     check_int("reject missing Host",
               neverc_ws_handshake_server(server, no_host, strlen(no_host),
                                          &consumed),
+              -1);
+
+    const char *host_list =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: example.com,evil.com\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("reject Host-list",
+              neverc_ws_handshake_server(server, host_list, strlen(host_list),
+                                         &consumed),
+              -1);
+
+    const char *host_xss =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: example.com<script>\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("reject Host XSS bytes",
+              neverc_ws_handshake_server(server, host_xss, strlen(host_xss),
+                                         &consumed),
+              -1);
+
+    const char *slash_slash =
+        "GET //evil.example/ HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("reject origin-form leftover target",
+              neverc_ws_handshake_server(server, slash_slash,
+                                         strlen(slash_slash), &consumed),
               -1);
 
     const char *short_key =

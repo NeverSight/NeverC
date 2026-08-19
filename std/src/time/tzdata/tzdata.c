@@ -586,6 +586,17 @@ static int64_t posix_rule_unix(int64_t year, const posix_rule_t *r, int offset) 
     return tz_add_sat(tz_add_sat(base, r->at_sec), -(int64_t)offset);
 }
 
+/* Southern DST wraps the year (Sep→Apr, J260→J90, …). Mm.w.d stores
+ * months, but Jn / n rules leave month=0, so start.month > end.month
+ * cannot see those wrap-arounds. Compare rule instants in a leap year. */
+static int posix_dst_wraps(const posix_tz_parsed_t *parsed) {
+    if (!parsed || !parsed->has_dst || !parsed->has_rules)
+        return 0;
+    int64_t start = posix_rule_unix(2000, &parsed->start, parsed->std_off);
+    int64_t end = posix_rule_unix(2000, &parsed->end, parsed->dst_off);
+    return start > end;
+}
+
 static int parse_posix_tz_fields(const char *tz, posix_tz_parsed_t *out,
                                  char *stdn, size_t stdn_cap,
                                  char *dstn, size_t dstn_cap) {
@@ -676,8 +687,8 @@ static const neverc_tzdata_zone_t *parse_posix_tz(const char *tz) {
     g_posix_zone.utc_offset = std_off;
     g_posix_zone.dst_offset = has_dst ? dst_off : 0;
     g_posix_zone.has_dst = has_dst;
-    /* Wrap-around rules (Sep→Apr) are southern; otherwise northern / US default. */
-    g_posix_zone.dst_hemi = !has_dst ? 0 : (has_rules && start.month > end.month) ? 2 : 1;
+    /* Wrap-around rules (Sep→Apr, J260→J90) are southern; otherwise northern. */
+    g_posix_zone.dst_hemi = !has_dst ? 0 : posix_dst_wraps(&parsed) ? 2 : 1;
     g_posix_has_rules = has_rules;
     g_posix_start = start;
     g_posix_end = end;
@@ -1276,12 +1287,11 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
     e->zone.utc_offset = std_off;
     e->zone.dst_offset = has_dst ? dst_off : 0;
     e->zone.has_dst = has_dst;
-    /* Footer wrap-around rules (Oct→Apr) are southern. With no footer,
-     * leave hemi 0 so offset_for_month can fill from the named table. */
+    /* Footer wrap-around rules (Oct→Apr, J260→J90) are southern. With no
+     * footer, leave hemi 0 so offset_for_month can fill from the named table. */
     if (!has_dst)
         e->zone.dst_hemi = 0;
-    else if (has_footer && footer.has_rules &&
-             footer.start.month > footer.end.month)
+    else if (has_footer && posix_dst_wraps(&footer))
         e->zone.dst_hemi = 2;
     else if (has_footer)
         e->zone.dst_hemi = 1;

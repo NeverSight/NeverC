@@ -61,7 +61,7 @@ int neverc_slices_contains(const void *slice, size_t len, const void *elem,
 int neverc_slices_index(const void *slice, size_t len, const void *elem,
                          size_t elem_size, neverc_eq_func_t eq) {
     if (len == 0 || !slice || !elem || elem_size == 0 || !eq ||
-        len > SIZE_MAX / elem_size)
+        len > SIZE_MAX / elem_size || len > (size_t)INT_MAX)
         return -1;
     const char *p = (const char *)slice;
     for (size_t i = 0; i < len; i++) {
@@ -106,7 +106,8 @@ int neverc_slices_is_sorted(const void *slice, size_t len, size_t elem_size, nev
 int neverc_slices_binary_search(const void *slice, size_t len, const void *target,
                                  size_t elem_size, neverc_cmp_func_t cmp, int *found) {
     if (!slice || !target || elem_size == 0 || !cmp ||
-        (len > 0 && len > SIZE_MAX / elem_size)) {
+        (len > 0 && len > SIZE_MAX / elem_size) ||
+        len > (size_t)INT_MAX) {
         if (found) *found = 0;
         return 0;
     }
@@ -195,7 +196,7 @@ int neverc_slices_equal_ints(const int *s1, size_t len1, const int *s2, size_t l
 }
 
 int neverc_slices_index_int(const int *slice, size_t len, int val) {
-    if (!slice) return -1;
+    if (!slice || len > (size_t)INT_MAX) return -1;
     for (size_t i = 0; i < len; i++)
         if (slice[i] == val) return (int)i;
     return -1;
@@ -218,7 +219,7 @@ void neverc_slices_sort_ints(int *slice, size_t len) {
 }
 
 int neverc_slices_binary_search_int(const int *slice, size_t len, int target, int *found) {
-    if (!slice) {
+    if (!slice || len > (size_t)INT_MAX) {
         if (found) *found = 0;
         return 0;
     }
@@ -395,7 +396,7 @@ int neverc_slices_contains_func(const void *slice, size_t len, size_t elem_size,
 int neverc_slices_index_func(const void *slice, size_t len, size_t elem_size,
                               neverc_slices_pred_func_t f) {
     if (!slice || !f || elem_size == 0 || len == 0 ||
-        len > SIZE_MAX / elem_size)
+        len > SIZE_MAX / elem_size || len > (size_t)INT_MAX)
         return -1;
     const char *p = (const char *)slice;
     for (size_t i = 0; i < len; i++)

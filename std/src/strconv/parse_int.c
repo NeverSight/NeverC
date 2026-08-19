@@ -71,18 +71,6 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
         } else {
             base = 10;
         }
-    } else if (p[0] == '0' && p[1] != '\0') {
-        /* Go ParseInt/ParseUint: explicit base 2/8/16 still accept 0b/0o/0x. */
-        if (base == 16 && (p[1] == 'x' || p[1] == 'X')) {
-            p += 2;
-            after_prefix = 1;
-        } else if (base == 2 && (p[1] == 'b' || p[1] == 'B')) {
-            p += 2;
-            after_prefix = 1;
-        } else if (base == 8 && (p[1] == 'o' || p[1] == 'O')) {
-            p += 2;
-            after_prefix = 1;
-        }
     }
 
     if (*p == '\0' && !saw_digit)

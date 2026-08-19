@@ -941,6 +941,44 @@ static void test_pow10_hypot(void) {
     check_double("pow10(-1)", neverc_math_pow10(-1), 0.1);
     check_double("pow10(22)", neverc_math_pow10(22), 1e22);
 
+    /* Bit-exact vs C literals for values Go's stride tables round correctly.
+     * The old Pow(10, n) fallback was several ULPs off past |n| > 22. */
+    check_true("pow10(23) exact",
+        neverc_math_float64bits(neverc_math_pow10(23)) ==
+        neverc_math_float64bits(1e23));
+    check_true("pow10(32) exact",
+        neverc_math_float64bits(neverc_math_pow10(32)) ==
+        neverc_math_float64bits(1e32));
+    check_true("pow10(100) exact",
+        neverc_math_float64bits(neverc_math_pow10(100)) ==
+        neverc_math_float64bits(1e100));
+    check_true("pow10(200) exact",
+        neverc_math_float64bits(neverc_math_pow10(200)) ==
+        neverc_math_float64bits(1e200));
+    check_true("pow10(308) exact",
+        neverc_math_float64bits(neverc_math_pow10(308)) ==
+        neverc_math_float64bits(1e308));
+    check_true("pow10(-32) exact",
+        neverc_math_float64bits(neverc_math_pow10(-32)) ==
+        neverc_math_float64bits(1e-32));
+    check_true("pow10(-50) exact",
+        neverc_math_float64bits(neverc_math_pow10(-50)) ==
+        neverc_math_float64bits(1e-32 / 1e18));
+
+    /* Go's 1e-320 table slot underflows to +0, so n in [-323, -308]
+     * is +0. n < -323 is also +0. */
+    check_true("pow10(-323) is +0",
+               neverc_math_float64bits(neverc_math_pow10(-323)) == 0);
+
+    /* Go: Pow10(n) = +Inf for n > 308, +0 for n < -323. */
+    check_double("pow10(309)=+Inf", neverc_math_pow10(309), NC_INF);
+    check_double("pow10(INT_MAX)=+Inf",
+                 neverc_math_pow10(NEVERC_MATH_MAX_INT), NC_INF);
+    check_true("pow10(-324) is +0",
+               neverc_math_float64bits(neverc_math_pow10(-324)) == 0);
+    check_true("pow10(INT_MIN) is +0",
+               neverc_math_float64bits(neverc_math_pow10(NEVERC_MATH_MIN_INT)) == 0);
+
     check_double("hypot(3,4)", neverc_math_hypot(3.0, 4.0), 5.0);
     check_double("hypot(5,12)", neverc_math_hypot(5.0, 12.0), 13.0);
     check_double("hypot(0,0)", neverc_math_hypot(0.0, 0.0), 0.0);

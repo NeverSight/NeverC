@@ -651,6 +651,30 @@ static int os_remove_dir_contents(int dir_fd) {
 }
 #endif
 
+static int os_is_sep(char c) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return c == '/' || c == '\\';
+#else
+    return c == '/';
+#endif
+}
+
+/* Go os.endsWithDot: rmdir(".") is EINVAL, so RemoveAll(".") must not
+ * empty the current directory first. Trailing separators are ignored so
+ * "./" and ".\\" are the same as ".". Checked after \\?\ stripping so
+ * "\\\\?\\." cannot jail-break back to cwd. */
+static int os_remove_all_ends_with_dot(const char *path) {
+    size_t n;
+    if (!path || path[0] == '\0')
+        return 0;
+    n = strlen(path);
+    while (n > 1 && os_is_sep(path[n - 1]))
+        n--;
+    if (n == 1 && path[0] == '.')
+        return 1;
+    return n >= 2 && path[n - 1] == '.' && os_is_sep(path[n - 2]);
+}
+
 int neverc_os_remove_all(const char *path) {
     if (!path || path[0] == '\0') return -1;
 
@@ -660,6 +684,13 @@ int neverc_os_remove_all(const char *path) {
         return -1;
     }
     path = os_win_a_path(path);
+#endif
+    if (os_remove_all_ends_with_dot(path)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+#if defined(NEVERC_PLATFORM_WINDOWS)
     DWORD attrs = GetFileAttributesA(path);
     if (attrs == INVALID_FILE_ATTRIBUTES) {
         DWORD error = GetLastError();
@@ -756,14 +787,6 @@ int neverc_os_rename(const char *oldpath, const char *newpath) {
 }
 
 /* ---- File Info ---- */
-
-static int os_is_sep(char c) {
-#if defined(NEVERC_PLATFORM_WINDOWS)
-    return c == '/' || c == '\\';
-#else
-    return c == '/';
-#endif
-}
 
 static int os_dir_entry_cmp(const void *a, const void *b) {
     return strcmp(((const neverc_os_dir_entry_t *)a)->name,

@@ -32,6 +32,7 @@ static void check_null(const char *name, const void *ptr) {
 
 static int g_smtp_port = 0;
 static volatile int g_smtp_running = 1;
+static volatile int g_smtp_ehlo_starttls = 0;
 
 #ifdef _WIN32
 static DWORD WINAPI mock_smtp_server(LPVOID arg) {
@@ -71,7 +72,9 @@ static void *mock_smtp_server(void *arg) {
             if (strncmp(buf, "EHLO", 4) == 0) {
                 /* Final line is "250" with no SP-text (RFC 5321 §4.2).
                  * noauth.local advertises no AUTH; HELP text names PLAIN so a
-                 * cross-line strstr would fail-open. plainonly.local omits LOGIN. */
+                 * cross-line strstr would fail-open. plainonly.local omits LOGIN.
+                 * starttls.local advertises STARTTLS so AUTH/send_mail must
+                 * fail closed instead of sending passwords in cleartext. */
                 const char *resp =
                     strstr(buf, "noauth.local")
                     ? "250-mock.smtp.test\r\n"
@@ -81,6 +84,11 @@ static void *mock_smtp_server(void *arg) {
                     ? "250-mock.smtp.test\r\n"
                       "250-AUTH PLAIN\r\n"
                       "250 8BITMIME\r\n"
+                    : (strstr(buf, "starttls.local") || g_smtp_ehlo_starttls)
+                    ? "250-mock.smtp.test\r\n"
+                      "250-STARTTLS\r\n"
+                      "250-AUTH PLAIN LOGIN\r\n"
+                      "250\r\n"
                     : "250-mock.smtp.test\r\n"
                       "250-8BITMIME\r\n"
                       "250-AUTH PLAIN LOGIN\r\n"
@@ -135,6 +143,13 @@ static void *mock_smtp_server(void *arg) {
                     ? "235 Authentication successful\r\n"
                     : "535 invalid credentials\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
+            } else if (strncmp(buf, "STARTTLS", 8) == 0) {
+                const char *resp = "220 Ready to start TLS\r\n";
+                neverc_tcp_write(conn, resp, strlen(resp));
+                /* Consume ClientHello, then drop the socket so the TLS
+                 * handshake fails closed without waiting out SMTP timeouts. */
+                (void)neverc_tcp_read(conn, buf, sizeof(buf) - 1);
+                break;
             } else if (strncmp(buf, "MAIL FROM:", 10) == 0) {
                 const char *resp = strstr(buf, "leftover@")
                     ? "250 OK\r\n500 leftover-injected\r\n"
@@ -486,6 +501,68 @@ static void test_smtp_reject_injection(void) {
     }
 }
 
+static void test_smtp_starttls_fail_closed(void) {
+    printf("[smtp_starttls_fail_closed]\n");
+
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_smtp_port);
+    const char *err = NULL;
+
+    neverc_smtp_client_t *c = neverc_smtp_dial(addr, &err);
+    check_true("dial for STARTTLS AUTH", c != NULL);
+    if (!c) return;
+
+    check_true("EHLO advertises STARTTLS",
+               neverc_smtp_hello(c, "starttls.local") == 0);
+    check_true("AUTH PLAIN fail-closed before STARTTLS",
+               neverc_smtp_auth(c, NEVERC_SMTP_AUTH_PLAIN, "user", "pass") == -1);
+    check_true("AUTH LOGIN fail-closed before STARTTLS",
+               neverc_smtp_auth(c, NEVERC_SMTP_AUTH_LOGIN, "user", "pass") == -1);
+    check_true("MAIL FROM still allowed without AUTH",
+               neverc_smtp_mail(c, "sender@example.com") == 0);
+    neverc_smtp_close(c);
+
+    c = neverc_smtp_dial(addr, &err);
+    check_true("dial for STARTTLS handshake", c != NULL);
+    if (!c) return;
+    check_true("EHLO before STARTTLS command",
+               neverc_smtp_hello(c, "starttls.local") == 0);
+    check_true("STARTTLS handshake fail-closed",
+               neverc_smtp_starttls(c, NULL) == -1);
+    check_true("AUTH after failed STARTTLS still closed",
+               neverc_smtp_auth(c, NEVERC_SMTP_AUTH_PLAIN, "user", "pass") == -1);
+    check_true("MAIL after failed STARTTLS handshake rejected",
+               neverc_smtp_mail(c, "sender@example.com") == -1);
+    neverc_smtp_close(c);
+
+    c = neverc_smtp_dial(addr, &err);
+    check_true("dial for STARTTLS unadvertised", c != NULL);
+    if (!c) return;
+    check_true("EHLO without STARTTLS",
+               neverc_smtp_hello(c, "test.client") == 0);
+    check_true("STARTTLS rejected when unadvertised",
+               neverc_smtp_starttls(c, NULL) == -1);
+    check_true("AUTH PLAIN after unadvertised STARTTLS",
+               neverc_smtp_auth(c, NEVERC_SMTP_AUTH_PLAIN, "user", "pass") == 0);
+    neverc_smtp_close(c);
+
+    const char *to[] = {"alice@example.com"};
+    const char *msg = "Subject: x\r\n\r\nbody\r\n";
+    g_smtp_ehlo_starttls = 1;
+    int rc = neverc_smtp_send_mail(
+        addr, NEVERC_SMTP_AUTH_PLAIN, "user", "pass",
+        "sender@example.com", to, 1, msg, strlen(msg), &err);
+    g_smtp_ehlo_starttls = 0;
+    check_true("send_mail AUTH fail-closed when STARTTLS advertised", rc == -1);
+
+    g_smtp_ehlo_starttls = 1;
+    rc = neverc_smtp_send_mail(
+        addr, NEVERC_SMTP_AUTH_NONE, NULL, NULL,
+        "sender@example.com", to, 1, msg, strlen(msg), &err);
+    g_smtp_ehlo_starttls = 0;
+    check_true("send_mail fail-closed STARTTLS without AUTH", rc == -1);
+}
+
 static void test_smtp_auth_requires_advertised(void) {
     printf("[smtp_auth_requires_advertised]\n");
 
@@ -590,6 +667,7 @@ int main(void) {
     test_send_mail();
     test_dot_stuffing();
     test_smtp_reject_injection();
+    test_smtp_starttls_fail_closed();
     test_smtp_auth_requires_advertised();
     test_smtp_multiline_code_mismatch();
     test_smtp_response_leftover();

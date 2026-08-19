@@ -19,6 +19,10 @@
 #define NEVERC_THREAD_MAX_WORKERS 1024
 #define NEVERC_THREAD_CONTEXT_POLL_MS 10
 
+/* Worker identity is TLS, not a numeric tid: Linux/Windows reuse ids after
+ * join, and the POSIX worker published its id only after taking the mutex. */
+static _Thread_local neverc_thread_executor_t *neverc_thread_current_executor;
+
 #if defined(_WIN32)
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -276,6 +280,7 @@ static void executor_fail_locked(neverc_thread_executor_t *executor) {
 static DWORD WINAPI executor_worker(void *opaque) {
     neverc_thread_executor_t *executor =
         (neverc_thread_executor_t *)opaque;
+    neverc_thread_current_executor = executor;
 #else
 static uint64_t thread_numeric_id(void) {
 #if defined(__APPLE__)
@@ -293,6 +298,7 @@ static void *executor_worker(void *opaque) {
     worker_arg_t *arg = (worker_arg_t *)opaque;
     neverc_thread_executor_t *executor = arg->executor;
     size_t index = arg->index;
+    neverc_thread_current_executor = executor;
 #endif
 
     thread_mutex_lock(&executor->mutex);
@@ -327,6 +333,7 @@ static void *executor_worker(void *opaque) {
             thread_cond_broadcast(&executor->idle);
     }
     thread_mutex_unlock(&executor->mutex);
+    neverc_thread_current_executor = NULL;
 
 #if defined(_WIN32)
     return 0;
@@ -335,33 +342,9 @@ static void *executor_worker(void *opaque) {
 #endif
 }
 
-static int executor_is_current_worker_locked(
-    neverc_thread_executor_t *executor) {
-    if (executor->shutdown_complete)
-        return 0;
-#if defined(_WIN32)
-    DWORD current = GetCurrentThreadId();
-    for (size_t i = 0; i < executor->worker_count; ++i) {
-        if (executor->thread_ids[i] == current)
-            return 1;
-    }
-#else
-    uint64_t current = thread_numeric_id();
-    for (size_t i = 0; i < executor->worker_count; ++i) {
-        if (executor->thread_ids[i] != 0 &&
-            executor->thread_ids[i] == current)
-            return 1;
-    }
-#endif
-    return 0;
-}
-
 static int executor_is_current_worker(
     neverc_thread_executor_t *executor) {
-    thread_mutex_lock(&executor->mutex);
-    int is_worker = executor_is_current_worker_locked(executor);
-    thread_mutex_unlock(&executor->mutex);
-    return is_worker;
+    return executor && neverc_thread_current_executor == executor;
 }
 
 neverc_thread_executor_t *neverc_thread_executor_create(
@@ -487,7 +470,7 @@ static int executor_submit_impl(
         /* Every worker is inside a task. A blocking self-submit cannot
          * make progress: no worker remains to drain the queue. */
         if (executor->active_count == executor->worker_count &&
-            executor_is_current_worker_locked(executor)) {
+            executor_is_current_worker(executor)) {
             thread_mutex_unlock(&executor->mutex);
             return NEVERC_THREAD_INVALID;
         }
