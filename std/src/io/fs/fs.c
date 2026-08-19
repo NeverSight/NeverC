@@ -135,8 +135,13 @@ static int glob_pattern_has_slash(const char *pattern) {
 }
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
-/* \\?\ and \\.\ are Win32 extended/device prefixes, not glob wildcards. */
+/* \\?\, \\.\, and \??\ are Win32/NT prefixes, not glob wildcards.
+ * filepath already treats \??\ as a volume prefix; glob/ReadDir must too. */
 static int fs_win_skip_extended_prefix(const char *path) {
+    if ((path[0] == '\\' || path[0] == '/') &&
+        path[1] == '?' && path[2] == '?' &&
+        (path[3] == '\\' || path[3] == '/'))
+        return 4;
     if ((path[0] == '\\' || path[0] == '/') &&
         (path[1] == '\\' || path[1] == '/') &&
         (path[2] == '?' || path[2] == '.') &&

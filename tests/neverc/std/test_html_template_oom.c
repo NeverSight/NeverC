@@ -24,6 +24,7 @@ static void *controlled_realloc(void *ptr, size_t size) {
 #define malloc controlled_malloc
 #define calloc controlled_calloc
 #define realloc controlled_realloc
+#include "../../../std/src/html/html.c"
 #include "../../../std/src/html/template/template.c"
 #undef malloc
 #undef calloc

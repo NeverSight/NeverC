@@ -177,6 +177,42 @@ static void test_public_suffix_domain(void) {
     check_int("reject Set-Cookie Domain=github.io",
               neverc_cookiejar_count(jar), 0);
     neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "blogspot.co.uk";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.blogspot.co.uk/", &cookie, 1);
+    check_int("reject Domain=blogspot.co.uk from evil.blogspot.co.uk",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "evil.blogspot.co.uk";
+    neverc_cookiejar_set_cookies(
+        jar, "https://www.evil.blogspot.co.uk/", &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://www.evil.blogspot.co.uk/", out, 1);
+    check_int("Domain=evil.blogspot.co.uk is registrable", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://victim.blogspot.co.uk/", out, 1);
+    check_int("blogspot.co.uk blogs do not share that cookie", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "blogspot.de";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.blogspot.de/", &cookie, 1);
+    check_int("reject Domain=blogspot.de from evil.blogspot.de",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "k12.oh.us";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.k12.oh.us/", &cookie, 1);
+    check_int("reject Domain=k12.oh.us from evil.k12.oh.us",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
 }
 
 static void test_domain_security(void) {

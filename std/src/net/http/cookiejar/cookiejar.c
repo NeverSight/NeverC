@@ -437,6 +437,17 @@ static int cookie_label_is(const char *start, const char *end,
  * PSL is not embedded; this covers single-label suffixes, usual ccTLD
  * second-level forms such as co.uk / com.au, and shared-hosting suffixes
  * that are commonly abused for super-cookies. */
+static int cookie_is_k12_us_suffix(const char *domain) {
+    /* PSL: k12.<state>.us — 3 labels, middle is a 2-letter state. */
+    size_t n = strlen(domain);
+    return n == 9 &&
+           memcmp(domain, "k12.", 4) == 0 &&
+           domain[6] == '.' &&
+           domain[7] == 'u' && domain[8] == 's' &&
+           isalpha((unsigned char)domain[4]) &&
+           isalpha((unsigned char)domain[5]);
+}
+
 static int cookie_domain_is_public_suffix(const char *domain) {
     if (!domain || !domain[0] || host_is_ip_literal(domain)) return 0;
     static const char *const extra[] = {
@@ -463,6 +474,11 @@ static int cookie_domain_is_public_suffix(const char *domain) {
     };
     for (size_t i = 0; i < sizeof(extra) / sizeof(extra[0]); i++)
         if (strcmp(domain, extra[i]) == 0) return 1;
+    /* blogspot.<public-suffix> is itself a public suffix (blogspot.co.uk). */
+    if (strncmp(domain, "blogspot.", 9) == 0 &&
+        cookie_domain_is_public_suffix(domain + 9))
+        return 1;
+    if (cookie_is_k12_us_suffix(domain)) return 1;
     const char *dot = strchr(domain, '.');
     if (!dot) return 1;
     if (strchr(dot + 1, '.')) return 0;

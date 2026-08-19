@@ -546,6 +546,25 @@ static void test_sscanf(void) {
               neverc_fmt_sscan_ints("11 12 13", values, 2), 2);
     check_true("sscan counted results",
                values[0] == 11 && values[1] == 12);
+
+    /* Go unformatted Scan accepts prefixes and underscores; %d does not. */
+    one = 0;
+    check_int("sscan underscore count", neverc_fmt_sscan("2_1", &one), 1);
+    check_int("sscan underscore val", one, 21);
+    one = 0;
+    check_int("sscan hex prefix count", neverc_fmt_sscan("0x10", &one), 1);
+    check_int("sscan hex prefix val", one, 16);
+    one = 0;
+    check_int("sscan thousands count", neverc_fmt_sscan("1_000", &one), 1);
+    check_int("sscan thousands val", one, 1000);
+    a = 0;
+    n = neverc_fmt_sscanf("7_2", "%d", &a);
+    check_int("sscanf %%d underscore stops", n, 1);
+    check_int("sscanf %%d underscore val", a, 7);
+
+    n = neverc_fmt_sscanf("2.3p2", "%g", &special);
+    check_int("sscanf decimal binary exp", n, 1);
+    check_true("sscanf decimal binary exp value", special == 9.2);
 }
 
 static void test_appendf(void) {
@@ -558,6 +577,14 @@ static void test_appendf(void) {
     char tiny_buf[10] = "hi";
     neverc_fmt_appendf(tiny_buf, sizeof(tiny_buf), "%d%d%d", 111, 222, 333);
     check_int("appendf truncate", (int)strlen(tiny_buf) < 10, 1);
+
+    char nul_buf[8];
+    memset(nul_buf, 0x7f, sizeof(nul_buf));
+    n = neverc_fmt_appendf(nul_buf, sizeof(nul_buf), "a%cb", 0);
+    check_int("appendf %%c 0 length", n, 3);
+    check_true("appendf %%c 0 bytes",
+               nul_buf[0] == 'a' && nul_buf[1] == '\0' && nul_buf[2] == 'b' &&
+               nul_buf[3] == '\0');
 }
 
 static void test_errorf(void) {

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <limits.h>
+#include <math.h>
 
 /* Dynamic buffer for building formatted strings */
 typedef struct {
@@ -308,8 +309,9 @@ static int apply_float_sharp(char *num, int tlen, size_t cap, char verb, int pre
     return nlen;
 }
 
-/* Core formatting engine */
-char *neverc_fmt_vsprintf(const char *format, va_list args) {
+/* Core formatting engine. out_len, when set, is the formatted byte count
+ * including interior NULs from %c of 0 — strlen() cannot recover that. */
+static char *fmt_vsprintf_n(const char *format, va_list args, size_t *out_len) {
     if (!format) return NULL;
     fmtbuf_t buf;
     buf_init(&buf);
@@ -586,11 +588,16 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
 
     buf_putc(&buf, '\0');
     if (buf.failed) goto format_fail;
+    if (out_len) *out_len = buf.len > 0 ? buf.len - 1 : 0;
     return buf.data;
 
 format_fail:
     free(buf.data);
     return NULL;
+}
+
+char *neverc_fmt_vsprintf(const char *format, va_list args) {
+    return fmt_vsprintf_n(format, args, NULL);
 }
 
 char *neverc_fmt_sprintf(const char *format, ...) {
@@ -604,14 +611,14 @@ char *neverc_fmt_sprintf(const char *format, ...) {
 int neverc_fmt_fprintf(FILE *f, const char *format, ...) {
     va_list args;
     va_start(args, format);
-    char *s = neverc_fmt_vsprintf(format, args);
+    size_t len = 0;
+    char *s = fmt_vsprintf_n(format, args, &len);
     va_end(args);
     if (!s) return -1;
     if (!f) {
         free(s);
         return -1;
     }
-    size_t len = my_strlen(s);
     int n = fmt_fwrite(f, s, len);
     free(s);
     return n;
@@ -620,10 +627,10 @@ int neverc_fmt_fprintf(FILE *f, const char *format, ...) {
 int neverc_fmt_printf(const char *format, ...) {
     va_list args;
     va_start(args, format);
-    char *s = neverc_fmt_vsprintf(format, args);
+    size_t len = 0;
+    char *s = fmt_vsprintf_n(format, args, &len);
     va_end(args);
     if (!s) return -1;
-    size_t len = my_strlen(s);
     int n = fmt_fwrite(stdout, s, len);
     free(s);
     return n;
@@ -632,10 +639,10 @@ int neverc_fmt_printf(const char *format, ...) {
 int neverc_fmt_println(const char *format, ...) {
     va_list args;
     va_start(args, format);
-    char *s = neverc_fmt_vsprintf(format, args);
+    size_t len = 0;
+    char *s = fmt_vsprintf_n(format, args, &len);
     va_end(args);
     if (!s) return -1;
-    size_t len = my_strlen(s);
     if (fmt_fwrite(stdout, s, len) < 0 ||
         fmt_fwrite(stdout, "\n", 1) < 0) {
         free(s);
@@ -823,6 +830,19 @@ static int scan_float(const char **p, double *out) {
                 while ((**p >= '0' && **p <= '9') || **p == '_')
                     (*p)++;
             }
+            /* Go convertFloat: decimal mantissa + binary exponent (2.3p2). */
+            if (**p == 'p' || **p == 'P') {
+                const char *r = *p + 1;
+                if (*r == '+' || *r == '-') r++;
+                if ((*r >= '0' && *r <= '9') || *r == '_') {
+                    int saw_exp = 0;
+                    while ((*r >= '0' && *r <= '9') || *r == '_') {
+                        if (*r != '_') saw_exp = 1;
+                        r++;
+                    }
+                    if (saw_exp) *p = r;
+                }
+            }
         }
     }
 
@@ -833,9 +853,29 @@ static int scan_float(const char **p, double *out) {
     memcpy(tok, start, len);
     tok[len] = '\0';
     /* Match Go fmt.convertFloat: ParseFloat ErrRange (±Inf overflow) is a
-     * scan failure. Explicit "Inf"/"NaN" still succeed (strconv returns OK). */
+     * scan failure. Explicit "Inf"/"NaN" still succeed (strconv returns OK).
+     * Decimal+p is not a strconv hex float — split and ldexp like Go. */
     double parsed;
-    int rc = neverc_strconv_parse_float(tok, &parsed);
+    int rc = NEVERC_STRCONV_ERR_SYNTAX;
+    char *pmark = NULL;
+    int has_hex = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (tok[i] == 'x' || tok[i] == 'X') has_hex = 1;
+        if (!pmark && (tok[i] == 'p' || tok[i] == 'P')) pmark = tok + i;
+    }
+    if (pmark && !has_hex) {
+        *pmark = '\0';
+        double mant;
+        long long exp;
+        if (neverc_strconv_parse_float(tok, &mant) == NEVERC_STRCONV_OK &&
+            neverc_strconv_parse_int(pmark + 1, 10, &exp) == NEVERC_STRCONV_OK &&
+            exp >= INT_MIN && exp <= INT_MAX) {
+            parsed = ldexp(mant, (int)exp);
+            rc = NEVERC_STRCONV_OK;
+        }
+    } else {
+        rc = neverc_strconv_parse_float(tok, &parsed);
+    }
     if (tok != stackbuf) free(tok);
     if (rc != NEVERC_STRCONV_OK) { *p = start; return 0; }
     *out = parsed;
@@ -881,6 +921,55 @@ static int scan_hex(const char **p, uint64_t *out) {
         return 0;
     }
     *out = val;
+    return 1;
+}
+
+/* Go unformatted Scan/Sscan: 0x/0b/0o/leading-0 prefixes and underscores.
+ * Formatted %d stays decimal-only (scan_int) — Go %d does not take those. */
+static int scan_int_literal(const char **p, int64_t *out) {
+    skip_ws(p);
+    const char *start = *p;
+    if (**p == '+' || **p == '-') (*p)++;
+    if (**p < '0' || **p > '9') {
+        *p = start;
+        return 0;
+    }
+
+    const char *q = *p;
+    const char *digits = "0123456789";
+    if (*q == '0' && (q[1] == 'x' || q[1] == 'X')) {
+        q += 2;
+        digits = "0123456789abcdefABCDEF";
+    } else if (*q == '0' && (q[1] == 'b' || q[1] == 'B')) {
+        q += 2;
+        digits = "01";
+    } else if (*q == '0' && (q[1] == 'o' || q[1] == 'O')) {
+        q += 2;
+        digits = "01234567";
+    } else if (*q == '0' && q[1] >= '0' && q[1] <= '7') {
+        digits = "01234567";
+    }
+    while (*q) {
+        if (*q != '_' && !strchr(digits, *q))
+            break;
+        q++;
+    }
+
+    size_t len = (size_t)(q - start);
+    if (len == 0 || len >= 128) {
+        *p = start;
+        return 0;
+    }
+    char tok[128];
+    memcpy(tok, start, len);
+    tok[len] = '\0';
+    long long parsed;
+    if (neverc_strconv_parse_int(tok, 0, &parsed) != NEVERC_STRCONV_OK) {
+        *p = start;
+        return 0;
+    }
+    *p = q;
+    *out = (int64_t)parsed;
     return 1;
 }
 
@@ -1072,7 +1161,7 @@ int neverc_fmt_sscan_ints(const char *str, int *outputs,
     size_t matched = 0;
     while (matched < output_count) {
         int64_t value;
-        if (!scan_int(&sp, &value) || !scan_value_fits_int(value))
+        if (!scan_int_literal(&sp, &value) || !scan_value_fits_int(value))
             break;
         outputs[matched++] = (int)value;
     }
@@ -1105,7 +1194,7 @@ int neverc_fmt_scan(int *out_int) {
     if (!fgets(line, sizeof(line), stdin)) return 0;
     const char *p = line;
     int64_t val;
-    if (scan_int(&p, &val) && scan_value_fits_int(val)) {
+    if (scan_int_literal(&p, &val) && scan_value_fits_int(val)) {
         *out_int = (int)val;
         return 1;
     }
@@ -1134,10 +1223,10 @@ int neverc_fmt_appendf(char *buf, size_t cap, const char *format, ...) {
 
     va_list args;
     va_start(args, format);
-    char *s = neverc_fmt_vsprintf(format, args);
+    size_t slen = 0;
+    char *s = fmt_vsprintf_n(format, args, &slen);
     va_end(args);
     if (!s) return 0;
-    size_t slen = my_strlen(s);
     size_t space = cap - existing - 1;
     size_t copy = slen < space ? slen : space;
     for (size_t i = 0; i < copy; i++) buf[existing + i] = s[i];
@@ -1175,10 +1264,10 @@ int neverc_fmt_appendln(char *buf, size_t cap, const char *s) {
 char *neverc_fmt_sprintfln(const char *format, ...) {
     va_list args;
     va_start(args, format);
-    char *s = neverc_fmt_vsprintf(format, args);
+    size_t len = 0;
+    char *s = fmt_vsprintf_n(format, args, &len);
     va_end(args);
     if (!s) return NULL;
-    size_t len = my_strlen(s);
     if (len > SIZE_MAX - 2) { free(s); return NULL; }
     char *out = (char *)realloc(s, len + 2);
     if (!out) { free(s); return NULL; }
@@ -1193,7 +1282,7 @@ int neverc_fmt_fscan(FILE *f, int *out_int) {
     if (!fgets(line, sizeof(line), f)) return 0;
     const char *p = line;
     int64_t val;
-    if (scan_int(&p, &val) && scan_value_fits_int(val)) {
+    if (scan_int_literal(&p, &val) && scan_value_fits_int(val)) {
         *out_int = (int)val;
         return 1;
     }

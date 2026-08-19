@@ -414,6 +414,47 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "onload") == NULL);
     free(out);
 
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render("<!-- {{.X}} -->", &data);
+    check("comment interpolation is empty",
+          out && strstr(out, "alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<!--><script>{{.X}}</script>", &data);
+    check("html5 <!--> leaves comment",
+          out && strstr(out, "<script>") != NULL);
+    check("html5 <!--> script is js-escaped",
+          out && strstr(out, "<script>\"alert(1)\"") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<!--x--!><script>{{.X}}</script>", &data);
+    check("html5 --!> leaves comment",
+          out && strstr(out, "<script>") != NULL);
+    check("html5 --!> script is js-escaped",
+          out && strstr(out, "<script>\"alert(1)\"") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<a href=\"javascript&colon;{{.X}}\">", &data);
+    check("entity colon scheme is neutralized",
+          out && strstr(out, "javascript:") == NULL &&
+              strstr(out, "javascript&colon;alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<iframe srcdoc=\"&lt;img src=x onerror={{.X}}&gt;\">", &data);
+    check("entity srcdoc prefix is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("entity srcdoc prefix has no onerror",
+          out && strstr(out, "onerror=alert") == NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", "onclick=alert(1)");
     out = neverc_html_template_render("<div {{.X}}>", &data);
     check("attr name context is replaced",

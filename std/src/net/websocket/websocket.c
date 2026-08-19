@@ -306,6 +306,26 @@ static int copy_unique_header_value(const char *raw, const char *hdr_end,
     return found;
 }
 
+/* Reject obs-fold and bare LF so Content-Length / Transfer-Encoding cannot
+ * hide on a continuation line or inside another header's value. */
+static int ws_headers_reject_obs_fold_and_bare_lf(const char *raw,
+                                                  const char *hdr_end) {
+    if (!raw || !hdr_end || raw >= hdr_end) return -1;
+    const char *p = raw;
+    while (p < hdr_end) {
+        if (*p == '\n' || *p == '\0') return -1;
+        if (*p == '\r') {
+            if (p + 1 >= hdr_end || p[1] != '\n') return -1;
+            p += 2;
+            if (p < hdr_end && (*p == ' ' || *p == '\t'))
+                return -1;
+            continue;
+        }
+        p++;
+    }
+    return 0;
+}
+
 static int ws_value_has_token(const char *value, const char *token) {
     if (!value || !token) return 0;
     size_t token_len = strlen(token);
@@ -446,6 +466,11 @@ static int ws_read_client_handshake(neverc_tcp_conn_t *tcp,
 
     const char *header_end = response + len - 4;
     const char *header_scan_end = header_end + 2;
+    if (ws_headers_reject_obs_fold_and_bare_lf(response, header_scan_end) != 0) {
+        free(response);
+        ws_set_error(errp, "invalid WebSocket handshake header");
+        return -1;
+    }
     char value[256];
     if (copy_unique_header_value(response, header_scan_end, "Upgrade",
                                  value, sizeof(value)) != 1 ||
@@ -712,6 +737,8 @@ int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
     /* hdr_end points at the first \r of the terminating \r\n\r\n, which is
      * also the last header line's trailing \r. Include its \n for parsing. */
     const char *hdr_scan_end = hdr_end + 2;
+    if (ws_headers_reject_obs_fold_and_bare_lf(raw_request, hdr_scan_end) != 0)
+        return -1;
 
     char host[256];
     char upgrade[32];

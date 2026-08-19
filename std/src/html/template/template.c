@@ -1,4 +1,5 @@
 #include "neverc/std/html/template.h"
+#include "neverc/std/html.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -698,7 +699,8 @@ static void html_scan_doc(const char *buf, size_t len,
                           int *in_attr, int *quoted,
                           const char **aname, size_t *nlen,
                           const char **aprefix, size_t *aplen,
-                          int *in_meta, int *meta_refresh) {
+                          int *in_meta, int *meta_refresh,
+                          int *in_comment) {
     *in_script = 0;
     *in_style = 0;
     *in_script_comment = 0;
@@ -713,6 +715,7 @@ static void html_scan_doc(const char *buf, size_t len,
     *aplen = 0;
     *in_meta = 0;
     *meta_refresh = 0;
+    *in_comment = 0;
     if (!buf || len == 0) return;
 
     int state = HS_TEXT;
@@ -727,6 +730,7 @@ static void html_scan_doc(const char *buf, size_t len,
     const char *attr = NULL;
     size_t alen = 0;
     size_t value_start = 0;
+    size_t comment_body_start = 0;
     size_t i = 0;
 
     while (i < len) {
@@ -738,6 +742,7 @@ static void html_scan_doc(const char *buf, size_t len,
                 buf[i + 2] == '-' && buf[i + 3] == '-') {
                 state = HS_COMMENT;
                 i += 4;
+                comment_body_start = i;
                 break;
             }
             if (i + 1 < len && (buf[i + 1] == '!' || buf[i + 1] == '?')) {
@@ -764,10 +769,29 @@ static void html_scan_doc(const char *buf, size_t len,
             break;
 
         case HS_COMMENT:
+            /* HTML5 comment closers: <!-->, <!--->, -->, --!>. */
+            if (i == comment_body_start && c == '>') {
+                state = HS_TEXT;
+                i++;
+                break;
+            }
+            if (i == comment_body_start && c == '-' &&
+                i + 1 < len && buf[i + 1] == '>') {
+                state = HS_TEXT;
+                i += 2;
+                break;
+            }
             if (c == '-' && i + 2 < len &&
                 buf[i + 1] == '-' && buf[i + 2] == '>') {
                 state = HS_TEXT;
                 i += 3;
+                break;
+            }
+            if (c == '-' && i + 3 < len &&
+                buf[i + 1] == '-' && buf[i + 2] == '!' &&
+                buf[i + 3] == '>') {
+                state = HS_TEXT;
+                i += 4;
                 break;
             }
             i++;
@@ -1012,6 +1036,7 @@ static void html_scan_doc(const char *buf, size_t len,
             *meta_refresh = saw_refresh;
         }
     }
+    *in_comment = (state == HS_COMMENT);
 }
 
 static int html_prev_non_ws_is_digit(const char *buf, size_t len) {
@@ -1408,6 +1433,20 @@ static char *html_escape_event(const char *s) {
     return escaped;
 }
 
+static char *html_unescape_span(const char *s, size_t n, size_t *outlen) {
+    if (!outlen) return NULL;
+    *outlen = 0;
+    if (!s) return NULL;
+    if (n == SIZE_MAX) return NULL;
+    char *tmp = (char *)NC_HTML_TEMPLATE_MALLOC(n + 1U);
+    if (!tmp) return NULL;
+    if (n) memcpy(tmp, s, n);
+    tmp[n] = '\0';
+    char *out = neverc_html_unescape_string(tmp, outlen);
+    free(tmp);
+    return out;
+}
+
 static int execute_nodes(const node_t *n,
                          const neverc_html_template_data_t *data,
                          char **buf, size_t *len, size_t *cap) {
@@ -1428,12 +1467,14 @@ static int execute_nodes(const node_t *n,
                 int in_script = 0, in_style_tag = 0, in_script_comment = 0;
                 int in_js_quoted = 0, in_js_re = 0;
                 int in_open_tag = 0;
-                int in_meta = 0, meta_refresh = 0;
+                int in_meta = 0, meta_refresh = 0, in_comment = 0;
                 html_scan_doc(*buf, *len, &in_script, &in_style_tag,
                               &in_script_comment, &in_js_quoted, &in_js_re,
                               &in_open_tag, &in_attr, &quoted,
                               &aname, &nlen, &aprefix, &aplen,
-                              &in_meta, &meta_refresh);
+                              &in_meta, &meta_refresh, &in_comment);
+                if (in_comment)
+                    break;
                 if (!val) {
                     if (in_js_re &&
                         buf_append(buf, len, cap, "(?:)", 4) != 0)
@@ -1442,6 +1483,15 @@ static int execute_nodes(const node_t *n,
                 }
                 const char *uprefix = NULL;
                 size_t uplen = 0;
+                char *decoded_prefix = NULL;
+                size_t decoded_plen = 0;
+                if (aprefix && aplen && memchr(aprefix, '&', aplen)) {
+                    decoded_prefix = html_unescape_span(aprefix, aplen,
+                                                        &decoded_plen);
+                    if (!decoded_prefix) return -1;
+                    aprefix = decoded_prefix;
+                    aplen = decoded_plen;
+                }
                 html_attr_kind_t akind = in_attr
                     ? html_attr_kind(aname, nlen) : HTML_ATTR_PLAIN;
                 int in_style_attr = in_attr && akind == HTML_ATTR_STYLE;
@@ -1539,6 +1589,7 @@ static int execute_nodes(const node_t *n,
                     escaped = neverc_html_escape("ZgotmplZ");
                 else
                     escaped = neverc_html_escape(val);
+                free(decoded_prefix);
                 if (!escaped) return -1;
                 /* Quote a whole unquoted value so spaces cannot start a new
                  * attribute. Skip when a prefix is already in the value. */

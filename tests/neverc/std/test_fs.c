@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <errno.h>
 #if !defined(_WIN32)
 #include <sys/stat.h>
 #include <unistd.h>
@@ -219,6 +220,17 @@ static void test_read_dir(void) {
         neverc_fs_free_entries(entries);
         DeleteFileA(raw);
         RemoveDirectoryA(parent);
+    }
+    {
+        /* \??\ is an NT prefix, not a FindFirstFile wildcard. Listing an
+         * existing directory through it must succeed once '?' is skipped. */
+        char ntpath[1200];
+        snprintf(ntpath, sizeof(ntpath), "\\??\\%s", tmpdir);
+        entries = NULL;
+        count = 0;
+        rc = neverc_fs_read_dir(ntpath, &entries, &count);
+        check("readdir_nt_prefix_ok", rc == 0 && count > 0);
+        neverc_fs_free_entries(entries);
     }
 #endif
 }

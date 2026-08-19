@@ -240,6 +240,36 @@ static void test_handshake_rejects(void) {
                                          &consumed),
               0);
 
+    const char *folded_cl =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        " Content-Length: 4\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n"
+        "XXXX";
+    check_int("reject obs-fold Content-Length",
+              neverc_ws_handshake_server(server, folded_cl, strlen(folded_cl),
+                                         &consumed),
+              -1);
+
+    const char *bare_lf_cl =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\n"
+        "Content-Length: 4\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n"
+        "XXXX";
+    check_int("reject bare LF smuggled Content-Length",
+              neverc_ws_handshake_server(server, bare_lf_cl,
+                                         strlen(bare_lf_cl), &consumed),
+              -1);
+
     neverc_tcp_close(client);
     neverc_tcp_close(server);
     neverc_tcp_listener_close(ln);

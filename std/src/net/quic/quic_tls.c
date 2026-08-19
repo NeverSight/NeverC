@@ -1168,6 +1168,9 @@ static int qt_process_client(quic_tls_t *tls) {
             neverc_platform_secure_zero(server_finished_hash,
                                         sizeof(server_finished_hash));
             qt_consume_message(tls, level, message_len);
+            if (tls->crypto_recv[level].contiguous >
+                tls->crypto_recv[level].processed)
+                return qt_fail(tls, "unexpected Handshake CRYPTO after Finished");
             return qt_finish_handshake(tls);
         } else {
             return 0;
@@ -1203,6 +1206,9 @@ static int qt_process_server(quic_tls_t *tls) {
                 return qt_fail(tls, "expected a valid client Finished");
             neverc_sha256_update(&tls->transcript, message, message_len);
             qt_consume_message(tls, level, message_len);
+            if (tls->crypto_recv[level].contiguous >
+                tls->crypto_recv[level].processed)
+                return qt_fail(tls, "unexpected Handshake CRYPTO after Finished");
             return qt_finish_handshake(tls);
         } else {
             return 0;
@@ -1326,6 +1332,9 @@ int neverc_quic_tls_receive_crypto(quic_tls_t *tls, quic_enc_level_t level,
         (!data && len != 0) || offset > QT_CRYPTO_LIMIT ||
         len > QT_CRYPTO_LIMIT - (size_t)offset)
         return -1;
+    if (tls->handshake_complete && len > 0 &&
+        (level == QUIC_ENC_INITIAL || level == QUIC_ENC_HANDSHAKE))
+        return qt_fail(tls, "unexpected Handshake CRYPTO after Finished");
     if (qt_crypto_receive(&tls->crypto_recv[level], offset, data, len) != 0)
         return qt_fail(tls, "conflicting or oversized QUIC CRYPTO data");
     return 0;
