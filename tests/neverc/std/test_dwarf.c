@@ -686,11 +686,12 @@ static void test_dwarf_abbrev_offset_and_dwarf64(void) {
         0, 0, 0
     };
     uint8_t info[16] = {0};
-    build_v4_header(info, 12);
+    /* unit_length 10 = 7-byte v4 header tail + abbrev 1 + "a\0".
+     * has_children=0, so a trailing 0 would be a depth-0 terminator. */
+    build_v4_header(info, 10);
     info[11] = 1;
     info[12] = 'a';
     info[13] = '\0';
-    info[14] = 0;
 
     neverc_dwarf_data_t d;
     walk_ctx_t ctx;

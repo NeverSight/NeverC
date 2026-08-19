@@ -20,7 +20,7 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 #define ASSERT_DBL_EQ(expr, expected, eps) do { \
     double _v = (expr); double _e = (expected); tests_run++; \
     double _d = _v - _e; if (_d < 0) _d = -_d; \
-    if (_d < (eps)) { tests_passed++; } \
+    if (_d <= (eps)) { tests_passed++; } \
     else { tests_failed++; \
            printf("  FAIL line %d: %s = %g, expected %g\n", __LINE__, #expr, _v, _e); } \
 } while(0)

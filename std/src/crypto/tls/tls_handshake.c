@@ -3396,6 +3396,13 @@ int nci_tls_handle_post_handshake(
                 return nci_tls_error(
                     conn, "failed to rotate TLS read keys");
             }
+            /* CVE-2026-56862: each completed KeyUpdate is non-advancing
+             * and derives new keys. Count messages, not record fragments. */
+            if (++conn->non_advancing_records >
+                TLS_MAX_NON_ADVANCING_RECORDS)
+                return nci_tls_protocol_error(
+                    conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                    "too many non-advancing TLS records");
         } else if (message_type == TLS_HS_NEW_SESSION_TICKET) {
             if (conn->is_server)
                 return nci_tls_protocol_error(

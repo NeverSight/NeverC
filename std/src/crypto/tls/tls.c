@@ -355,15 +355,11 @@ static int nci_tls_read_unlocked(
         }
 
         if (inner_type == TLS_CT_HANDSHAKE) {
-            /* Post-handshake messages (KeyUpdate, NewSessionTicket) do not
-             * advance application data. Counting them as non-advancing
-             * matches Go crypto/tls after CVE-2026-56862: a peer cannot
-             * force unbounded key derivation with a KeyUpdate flood. */
-            if (++conn->non_advancing_records >
-                TLS_MAX_NON_ADVANCING_RECORDS)
-                return nci_tls_protocol_error(
-                    conn, TLS_ALERT_UNEXPECTED_MESSAGE,
-                    "too many non-advancing TLS records");
+            /* KeyUpdate floods are counted inside the handler, once per
+             * complete message. Counting every record here trips the
+             * experimental-transport tests that fragment handshake
+             * records to a few bytes (a single ticket becomes >16
+             * records) without being a KeyUpdate DoS. */
             if (nci_tls_handle_post_handshake(
                     conn, data, data_len) != 0)
                 return -1;

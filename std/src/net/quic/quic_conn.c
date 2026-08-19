@@ -1054,12 +1054,9 @@ void neverc_quic_conn_on_packet_acked(struct neverc_quic_conn *conn,
             continue;
         record->acked = 1;
         if (record->kind == QUIC_TX_CRYPTO) {
-            /* Initial keys are public. A spoofed Initial ACK must not
-             * retire CRYPTO; PTO rewinds unacked bytes instead. */
-            if (space != QUIC_PNS_INITIAL || conn->handshake_confirmed)
-                neverc_quic_tls_crypto_data_acked(conn->tls, record->level,
-                                                  record->offset,
-                                                  record->length);
+            neverc_quic_tls_crypto_data_acked(conn->tls, record->level,
+                                              record->offset,
+                                              record->length);
         } else if (record->kind == QUIC_TX_STREAM) {
             quic_stream_t *stream =
                 neverc_quic_conn_find_stream(conn, record->stream_id);

@@ -8,26 +8,15 @@ set(_NEVERC_ADD_MIMALLOC_INCLUDED TRUE)
 
 include(FetchContent)
 
-# Auto-detect the latest mimalloc release tag from GitHub unless the
-# user explicitly sets NEVERC_MIMALLOC_GIT_TAG on the command line.
+# Pin the last release known to build with Windows Clang + ThinLTO.
+# Tracking GitHub "latest" pulled v3.5.0, whose internal.h:792
+# (`mi_atomic_load_acquire(&page->self)`) is a hard Clang error
+# (-Wincompatible-pointer-types). -w does not suppress it.
+# Override with -DNEVERC_MIMALLOC_GIT_TAG=... if needed.
 if(NOT DEFINED NEVERC_MIMALLOC_GIT_TAG OR NEVERC_MIMALLOC_GIT_TAG STREQUAL "")
-  file(DOWNLOAD
-    "https://api.github.com/repos/microsoft/mimalloc/releases/latest"
-    "${CMAKE_BINARY_DIR}/_mimalloc_latest.json"
-    STATUS _mi_dl_status
-    TIMEOUT 10)
-  list(GET _mi_dl_status 0 _mi_dl_rc)
-  if(_mi_dl_rc EQUAL 0)
-    file(READ "${CMAKE_BINARY_DIR}/_mimalloc_latest.json" _mi_json)
-    string(JSON _mi_latest_tag GET "${_mi_json}" "tag_name")
-    set(NEVERC_MIMALLOC_GIT_TAG "${_mi_latest_tag}" CACHE STRING
-        "Mimalloc git tag (auto-detected from GitHub)." FORCE)
-    message(STATUS "mimalloc: auto-detected latest release ${_mi_latest_tag}")
-  else()
-    set(NEVERC_MIMALLOC_GIT_TAG "v3.3.2" CACHE STRING
-        "Mimalloc git tag (fallback, GitHub unreachable)." FORCE)
-    message(STATUS "mimalloc: GitHub unreachable, falling back to v3.3.2")
-  endif()
+  set(NEVERC_MIMALLOC_GIT_TAG "v3.3.2" CACHE STRING
+      "Mimalloc git tag." FORCE)
+  message(STATUS "mimalloc: using pinned release ${NEVERC_MIMALLOC_GIT_TAG}")
   mark_as_advanced(NEVERC_MIMALLOC_GIT_TAG)
 endif()
 

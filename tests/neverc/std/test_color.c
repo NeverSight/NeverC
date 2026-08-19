@@ -59,10 +59,11 @@ static void test_nrgba_conversion(void) {
     ASSERT_INT_EQ(go_pre.b, 157);
     ASSERT_INT_EQ(go_pre.a, 200);
 
-    /* Go nrgbaModel: (50*65535/51)>>8 == 251, not 250 from (r*255/a). */
+    /* Go nrgbaModel: r16=r*257, a16=a*257, (r16*0xffff)/a16 >> 8.
+     * 50*257*65535/ (51*257) >> 8 == 250, not 249 from (r*255/a). */
     neverc_color_nrgba_t go_unpre = neverc_color_rgba_to_nrgba(
         neverc_color_rgba(50, 0, 0, 51));
-    ASSERT_INT_EQ(go_unpre.r, 251);
+    ASSERT_INT_EQ(go_unpre.r, 250);
     ASSERT_INT_EQ(go_unpre.g, 0);
     ASSERT_INT_EQ(go_unpre.b, 0);
     ASSERT_INT_EQ(go_unpre.a, 51);

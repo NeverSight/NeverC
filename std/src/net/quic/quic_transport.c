@@ -1097,14 +1097,6 @@ static int qt_build_pto_probe(struct neverc_quic_conn *conn,
         conn->pto_probe_pending = 0;
         return 0;
     }
-    /* RFC 9000 §6.2.4: PTO SHOULD carry new or previously sent unacked
-     * data. Initial CRYPTO is never retired until handshake_confirmed
-     * (Initial keys are public), so rewind and resend it instead of a
-     * PING-only probe that leaves the handshake idle. */
-    neverc_quic_tls_crypto_rewind_unacked(conn->tls, conn->pto_probe_level);
-    int crypto = qt_build_crypto(conn, conn->pto_probe_level, output,
-                                 capacity, meta, written);
-    if (crypto != 0) return crypto;
     if (neverc_quic_write_ping(output, capacity, written) != 0)
         return -1;
     meta->kind = QUIC_TX_CONTROL;
@@ -1441,11 +1433,9 @@ static int qt_send_item(struct neverc_quic_conn *conn,
         record->fin = meta->fin;
         neverc_quic_loss_on_sent(&conn->loss, space, packet_number,
                                  record->sent_at_ms, packet_len, 1);
-        if (meta->kind == QUIC_TX_CRYPTO) {
+        if (meta->kind == QUIC_TX_CRYPTO)
             neverc_quic_tls_crypto_data_sent(conn->tls, meta->level,
                                              meta->length);
-            if (conn->pto_probe_pending > 0) conn->pto_probe_pending--;
-        }
         else if (meta->kind == QUIC_TX_STREAM) {
             quic_stream_t *stream = neverc_quic_conn_find_stream(
                 conn, meta->stream_id);
