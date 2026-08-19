@@ -578,13 +578,23 @@ static void test_appendf(void) {
     neverc_fmt_appendf(tiny_buf, sizeof(tiny_buf), "%d%d%d", 111, 222, 333);
     check_int("appendf truncate", (int)strlen(tiny_buf) < 10, 1);
 
+    /* appendf scans for an existing C string; 0x7f fill without a terminator
+     * is not a destination (returns 0). Start empty so interior %c 0 is
+     * visible in the written bytes. */
     char nul_buf[8];
     memset(nul_buf, 0x7f, sizeof(nul_buf));
+    nul_buf[0] = '\0';
     n = neverc_fmt_appendf(nul_buf, sizeof(nul_buf), "a%cb", 0);
     check_int("appendf %%c 0 length", n, 3);
     check_true("appendf %%c 0 bytes",
                nul_buf[0] == 'a' && nul_buf[1] == '\0' && nul_buf[2] == 'b' &&
                nul_buf[3] == '\0');
+
+    char *nul_s = neverc_fmt_sprintf("a%cb", 0);
+    check_true("sprintf %%c 0 bytes",
+               nul_s && nul_s[0] == 'a' && nul_s[1] == '\0' &&
+               nul_s[2] == 'b' && nul_s[3] == '\0');
+    free(nul_s);
 }
 
 static void test_errorf(void) {
