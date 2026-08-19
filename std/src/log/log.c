@@ -172,6 +172,9 @@ static int log_needs_nl(const char *msg) {
 
 static void vprint_message_go(neverc_log_logger_t *l, const char *fmt,
                               va_list args, int flush) {
+    /* NULL format is UB for vsnprintf; glibc often returns -1, Apple/UCRT
+     * SIGSEGV. Go log.Printf is not invoked with a nil format string. */
+    if (!l || !fmt) return;
     char stack[256];
     va_list copy;
     va_copy(copy, args);
