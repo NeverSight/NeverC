@@ -7,9 +7,31 @@
 #include <windows.h>
 #else
 #include <pthread.h>
+#include <unistd.h>
 #endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+
+static FILE *open_capture_file(void) {
+    FILE *tmp = tmpfile();
+    if (tmp) return tmp;
+#ifdef _WIN32
+    char dir[MAX_PATH], path[MAX_PATH];
+    if (GetTempPathA((DWORD)sizeof(dir), dir) == 0) return NULL;
+    if (GetTempFileNameA(dir, "nlg", 0, path) == 0) return NULL;
+    return fopen(path, "w+b");
+#else
+    char path[] = "/tmp/neverc_log_XXXXXX";
+    int fd = mkstemp(path);
+    if (fd < 0) return NULL;
+    unlink(path);
+    return fdopen(fd, "w+");
+#endif
+}
+
+static void finish_section(void) {
+    fflush(stdout);
+}
 
 static void check_bool(const char *name, int got, int expected) {
     tests_run++;
@@ -31,7 +53,12 @@ static void check_contains(const char *name, const char *haystack,
 static void test_basic_output(void) {
     printf("[basic output]\n");
     char buf[512];
-    FILE *tmp = tmpfile();
+    FILE *tmp = open_capture_file();
+    if (!tmp) {
+        check_bool("basic output file opens", 0, 1);
+        finish_section();
+        return;
+    }
     neverc_log_logger_t l;
     neverc_log_init(&l, tmp, "", 0);
 
@@ -44,12 +71,18 @@ static void test_basic_output(void) {
 
     check_contains("basic msg", buf, "hello log");
     check_contains("has newline", buf, "\n");
+    finish_section();
 }
 
 static void test_prefix(void) {
     printf("[prefix]\n");
     char buf[512];
-    FILE *tmp = tmpfile();
+    FILE *tmp = open_capture_file();
+    if (!tmp) {
+        check_bool("prefix output file opens", 0, 1);
+        finish_section();
+        return;
+    }
     neverc_log_logger_t l;
     neverc_log_init(&l, tmp, "[INFO] ", 0);
 
@@ -61,12 +94,18 @@ static void test_prefix(void) {
     fclose(tmp);
 
     check_contains("prefix present", buf, "[INFO] test message");
+    finish_section();
 }
 
 static void test_date_time(void) {
     printf("[date/time]\n");
     char buf[512];
-    FILE *tmp = tmpfile();
+    FILE *tmp = open_capture_file();
+    if (!tmp) {
+        check_bool("date/time output file opens", 0, 1);
+        finish_section();
+        return;
+    }
     neverc_log_logger_t l;
     neverc_log_init(&l, tmp, "", NEVERC_LOG_LDATE | NEVERC_LOG_LTIME);
 
@@ -80,12 +119,18 @@ static void test_date_time(void) {
     check_bool("has slash (date)", strchr(buf, '/') != NULL, 1);
     check_bool("has colon (time)", strchr(buf, ':') != NULL, 1);
     check_contains("has msg", buf, "timed");
+    finish_section();
 }
 
 static void test_printf(void) {
     printf("[printf]\n");
     char buf[512];
-    FILE *tmp = tmpfile();
+    FILE *tmp = open_capture_file();
+    if (!tmp) {
+        check_bool("printf output file opens", 0, 1);
+        finish_section();
+        return;
+    }
     neverc_log_logger_t l;
     neverc_log_init(&l, tmp, "PRE: ", 0);
 
@@ -99,12 +144,18 @@ static void test_printf(void) {
     check_contains("printf prefix", buf, "PRE: ");
     check_contains("printf content", buf, "count=42 name=Alice");
     check_contains("printf ends with newline", buf, "count=42 name=Alice\n");
+    finish_section();
 }
 
 static void test_print_does_not_format(void) {
     printf("[print does not format]\n");
     char buf[512];
-    FILE *tmp = tmpfile();
+    FILE *tmp = open_capture_file();
+    if (!tmp) {
+        check_bool("literal output file opens", 0, 1);
+        finish_section();
+        return;
+    }
     neverc_log_logger_t l;
     neverc_log_init(&l, tmp, "%s", 0);
 
@@ -118,12 +169,18 @@ static void test_print_does_not_format(void) {
 
     check_contains("prefix percent is literal", buf, "%s%s%s%n crashed\n");
     check_contains("println percent is literal", buf, "%d %s\n");
+    finish_section();
 }
 
 static void test_msg_prefix(void) {
     printf("[msg prefix]\n");
     char buf[512];
-    FILE *tmp = tmpfile();
+    FILE *tmp = open_capture_file();
+    if (!tmp) {
+        check_bool("msg prefix output file opens", 0, 1);
+        finish_section();
+        return;
+    }
     neverc_log_logger_t l;
     neverc_log_init(&l, tmp, "[WARN] ", NEVERC_LOG_LDATE | NEVERC_LOG_LMSGPREFIX);
 
@@ -135,12 +192,18 @@ static void test_msg_prefix(void) {
     fclose(tmp);
 
     check_contains("msg prefix after date", buf, "[WARN] warning!");
+    finish_section();
 }
 
 static void test_microseconds_and_accessors(void) {
     printf("[microseconds/accessors]\n");
     char buf[512];
-    FILE *tmp = tmpfile();
+    FILE *tmp = open_capture_file();
+    if (!tmp) {
+        check_bool("microseconds output file opens", 0, 1);
+        finish_section();
+        return;
+    }
     neverc_log_logger_t l;
     neverc_log_init(&l, tmp, "MICRO ", NEVERC_LOG_LMICRO);
 
@@ -164,6 +227,7 @@ static void test_microseconds_and_accessors(void) {
     for (int i = 1; i <= 6 && six_digits; i++)
         six_digits = dot[i] >= '0' && dot[i] <= '9';
     check_bool("microseconds have six digits", six_digits, 1);
+    finish_section();
 }
 
 static void test_null_safety(void) {
@@ -191,6 +255,7 @@ static void test_null_safety(void) {
     neverc_log_print(&logger, NULL);
     neverc_log_printf(&logger, NULL);
     neverc_log_println(&logger, NULL);
+    finish_section();
 }
 
 enum { CONCURRENT_THREADS = 8, CONCURRENT_ROUNDS = 100,
@@ -232,9 +297,10 @@ static void *concurrent_log_worker(void *opaque) {
 static void test_concurrent_entries(void) {
     printf("[concurrent entries]\n");
 
-    FILE *tmp = tmpfile();
+    FILE *tmp = open_capture_file();
     if (!tmp) {
         check_bool("concurrent output file opens", 0, 1);
+        finish_section();
         return;
     }
     char prefix[CONCURRENT_PREFIX_LEN + 1];
@@ -305,9 +371,11 @@ static void test_concurrent_entries(void) {
     check_bool("concurrent records remain atomic", valid, 1);
     free(output);
     fclose(tmp);
+    finish_section();
 }
 
 int main(void) {
+    setvbuf(stdout, NULL, _IONBF, 0);
     printf("=== NeverC Log Module Tests ===\n\n");
     test_basic_output();
     test_prefix();

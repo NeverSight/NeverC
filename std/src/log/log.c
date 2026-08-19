@@ -1,7 +1,11 @@
 #include "neverc/std/log.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 typedef struct {
     FILE *output;
@@ -79,18 +83,43 @@ void neverc_log_set_flags(neverc_log_logger_t *l, int flags) {
     logger_unlock(l);
 }
 
+/* timespec_get is C11 and an inline UCRT wrapper on Windows; clock_gettime /
+ * FILETIME are the paths already proven by slog and neverc_time_now. */
+static void log_wall_clock(time_t *sec, long *nsec) {
+#if defined(_WIN32)
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    uint64_t u = ((uint64_t)ft.dwHighDateTime << 32) | (uint64_t)ft.dwLowDateTime;
+    const uint64_t epoch = 116444736000000000ULL;
+    if (u >= epoch) {
+        u -= epoch;
+        *sec = (time_t)(u / 10000000ULL);
+        *nsec = (long)((u % 10000000ULL) * 100ULL);
+        return;
+    }
+    *sec = time(NULL);
+    *nsec = 0;
+#else
+    struct timespec ts = {0, 0};
+    if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
+        *sec = ts.tv_sec;
+        *nsec = ts.tv_nsec;
+        return;
+    }
+    *sec = time(NULL);
+    *nsec = 0;
+#endif
+}
+
 static void write_header(log_entry_t *entry) {
     if (entry->prefix && !(entry->flags & NEVERC_LOG_LMSGPREFIX))
         fputs(entry->prefix, entry->output);
 
     if (entry->flags &
         (NEVERC_LOG_LDATE | NEVERC_LOG_LTIME | NEVERC_LOG_LMICRO)) {
-        struct timespec now_ts = {0, 0};
-        time_t now;
-        if (timespec_get(&now_ts, TIME_UTC) == TIME_UTC)
-            now = now_ts.tv_sec;
-        else
-            now = time(NULL);
+        time_t now = 0;
+        long nsec = 0;
+        log_wall_clock(&now, &nsec);
         struct tm tm_buf;
         struct tm *tm = NULL;
 #if defined(_WIN32)
@@ -116,7 +145,7 @@ static void write_header(log_entry_t *entry) {
             fprintf(entry->output, "%02d:%02d:%02d",
                     tm->tm_hour, tm->tm_min, tm->tm_sec);
             if (entry->flags & NEVERC_LOG_LMICRO)
-                fprintf(entry->output, ".%06ld", now_ts.tv_nsec / 1000);
+                fprintf(entry->output, ".%06ld", nsec / 1000);
             fputc(' ', entry->output);
         }
     }

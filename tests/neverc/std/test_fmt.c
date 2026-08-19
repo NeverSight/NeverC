@@ -555,9 +555,9 @@ static void test_appendf(void) {
     check_str("appendf result", buf, "prefix:42-ok");
     check_int("appendf return", n > 0, 1);
 
-    char small[10] = "hi";
-    neverc_fmt_appendf(small, sizeof(small), "%d%d%d", 111, 222, 333);
-    check_int("appendf truncate", (int)strlen(small) < 10, 1);
+    char tiny_buf[10] = "hi";
+    neverc_fmt_appendf(tiny_buf, sizeof(tiny_buf), "%d%d%d", 111, 222, 333);
+    check_int("appendf truncate", (int)strlen(tiny_buf) < 10, 1);
 }
 
 static void test_errorf(void) {
@@ -678,11 +678,11 @@ static void test_invalid_formats(void) {
               neverc_fmt_sscanf("hello", "%n", &written), 0);
     check_int("sscanf percent-n leaves dest", written, 77);
 
-    char small[4] = "XXX";
+    char scan_buf[4] = "XXX";
     check_int("sscanf s without width rejected",
-              neverc_fmt_sscanf("abcdef", "%s", small), 0);
+              neverc_fmt_sscanf("abcdef", "%s", scan_buf), 0);
     check_true("sscanf s without width leaves dest",
-               small[0] == 'X' && small[1] == 'X' && small[2] == 'X');
+               scan_buf[0] == 'X' && scan_buf[1] == 'X' && scan_buf[2] == 'X');
 
     char bounded[8];
     memset(bounded, 'Q', sizeof(bounded));

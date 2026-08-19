@@ -135,7 +135,18 @@ static int glob_pattern_has_slash(const char *pattern) {
 }
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
+/* \\?\ and \\.\ are Win32 extended/device prefixes, not glob wildcards. */
+static int fs_win_skip_extended_prefix(const char *path) {
+    if ((path[0] == '\\' || path[0] == '/') &&
+        (path[1] == '\\' || path[1] == '/') &&
+        (path[2] == '?' || path[2] == '.') &&
+        (path[3] == '\\' || path[3] == '/'))
+        return 4;
+    return 0;
+}
+
 static int fs_win_has_wildcards(const char *path) {
+    path += fs_win_skip_extended_prefix(path);
     for (; *path; path++) {
         char c = *path;
         if (c == '*' || c == '?' || c == '<' || c == '>' || c == '"')
