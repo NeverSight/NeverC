@@ -575,11 +575,11 @@ static void test_read_dir(void) {
 
         ents = NULL;
         n = 0;
-        /* `\??\` is an NT native prefix, not a glob, but Win32 FindFirstFile
-         * only accepts `\\?\`. Skip-as-wildcard is correct; the open fails. */
-        ASSERT_EQ(neverc_os_read_dir(ntpath, &ents, &n), -1);
-        ASSERT_TRUE(ents == NULL);
-        ASSERT_EQ((int)n, 0);
+        /* `\??\` is an NT native prefix, not a glob. After skipping it,
+         * FindFirstFileA opens the same directory as `\\?\`. */
+        ASSERT_EQ(neverc_os_read_dir(ntpath, &ents, &n), 0);
+        ASSERT_TRUE(n > 0);
+        free(ents);
 
         ents = (neverc_os_dir_entry_t *)1;
         n = 99;

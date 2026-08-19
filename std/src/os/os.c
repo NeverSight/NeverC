@@ -115,6 +115,18 @@ static int os_win_has_wildcards(const char *path) {
     return 0;
 }
 
+/* ANSI Win32 APIs often reject \\?\ even when FindFirstFileA accepts it.
+ * After wildcard checks, drive-letter extended paths can drop the prefix. */
+static const char *os_win_a_path(const char *path) {
+    int skip = os_win_skip_extended_prefix(path);
+    if (skip == 0)
+        return path;
+    if (strncmp(path + skip, "UNC\\", 4) == 0 ||
+        strncmp(path + skip, "UNC/", 4) == 0)
+        return path;
+    return path + skip;
+}
+
 /* Win32 strips trailing spaces/dots, so ".. " is the parent directory. */
 static int os_win_entry_name_ok(const char *name) {
     size_t n;
@@ -647,6 +659,7 @@ int neverc_os_remove_all(const char *path) {
         errno = EINVAL;
         return -1;
     }
+    path = os_win_a_path(path);
     DWORD attrs = GetFileAttributesA(path);
     if (attrs == INVALID_FILE_ATTRIBUTES) {
         DWORD error = GetLastError();
