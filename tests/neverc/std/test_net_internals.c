@@ -498,6 +498,39 @@ static void test_poller(void) {
     if (fds[1] >= 0)
         close(fds[1]);
     nc_poller_destroy(p);
+
+#if defined(NC_USE_KQUEUE)
+    /* kqueue emits one kevent per filter. HTTP frees conn data on the first
+     * ERROR, so READ+WRITE in the same batch must coalesce like epoll. */
+    {
+        nc_poller_t *kq = nc_poller_create();
+        int sp[2] = {-1, -1};
+        check_true("kqueue poller", kq != NULL);
+        if (kq) {
+        check_int("socketpair", socketpair(AF_UNIX, SOCK_STREAM, 0, sp), 0);
+        nc_set_nonblocking(sp[0]);
+        nc_set_nonblocking(sp[1]);
+        check_int("add read+write",
+                  nc_poller_add(kq, sp[0], NC_EV_READ | NC_EV_WRITE,
+                                (void *)0xbeef),
+                  0);
+        check_int("peer write", (int)write(sp[1], "x", 1), 1);
+        nc_event_t ev[8];
+        int got = nc_poller_wait(kq, ev, 8, 100);
+        check_int("kqueue coalesces dual filter", got, 1);
+        if (got >= 1) {
+            check_int("coalesced fd", (int)ev[0].fd, sp[0]);
+            check_true("coalesced read", (ev[0].events & NC_EV_READ) != 0);
+            check_true("coalesced write", (ev[0].events & NC_EV_WRITE) != 0);
+            check_true("coalesced data", ev[0].data == (void *)0xbeef);
+        }
+        nc_poller_del(kq, sp[0]);
+        close(sp[0]);
+        close(sp[1]);
+        nc_poller_destroy(kq);
+        }
+    }
+#endif
 }
 
 static void test_poller_stale_completion(void) {

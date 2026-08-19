@@ -212,6 +212,9 @@ static void test_pow(void) {
     check_cmplx("pow(0,-1+i)=Inf", neverc_cmplx_pow(C(0.0, 0.0), C(-1.0, 1.0)), NC_INF, NC_INF);
     check_cmplx("pow(0,+Inf)=0", neverc_cmplx_pow(C(0.0, 0.0), C(NC_INF, 0.0)), 0.0, 0.0);
     check_cmplx("pow(0,NaN)=NaN", neverc_cmplx_pow(C(0.0, 0.0), C(NC_NAN, 0.0)), NC_NAN, NC_NAN);
+    /* Go cmplx.IsNaN: Inf wins, so this is 0^(+Inf) rather than NaN. */
+    check_cmplx("pow(0,Inf+NaNi)=0",
+                neverc_cmplx_pow(C(0.0, 0.0), C(NC_INF, NC_NAN)), 0.0, 0.0);
 
     /* pow(i, 2) = -1 */
     neverc_cmplx_t z = neverc_cmplx_pow(C(0.0, 1.0), C(2.0, 0.0));

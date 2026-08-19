@@ -537,6 +537,10 @@ static inline int nc_uring_engine_poll(nc_uring_engine_t *engine,
                     (struct sockaddr *)&accept_engine->accept_addr,
                     accept_engine->accept_addrlen);
             }
+            /* Multishot accept reuses addrlen; the kernel writes the real
+             * sockaddr size, so reset before the next CQE (IPv4 then IPv6). */
+            accept_engine->accept_addrlen =
+                (socklen_t)sizeof(accept_engine->accept_addr);
             if (!(flags & IORING_CQE_F_MORE) &&
                 nc_atomic_load(&accept_engine->running)) {
                 if (accept_engine->multishot_supported &&

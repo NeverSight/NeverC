@@ -637,6 +637,27 @@ static void test_read_dir(void) {
         ASSERT_EQ(neverc_os_remove_all(rmquery), 0);
         ASSERT_TRUE(!neverc_os_exists(parent));
     }
+
+    {
+        char parent[1024], keep[1200], victim[1200], escape[1400];
+        make_test_path(parent, sizeof(parent), "neverc_os_win_rm_dotdot");
+        neverc_os_remove_all(parent);
+        ASSERT_EQ(neverc_os_mkdir(parent, 0700), 0);
+        snprintf(keep, sizeof(keep), "%s\\keep", parent);
+        snprintf(victim, sizeof(victim), "%s\\victim", parent);
+        ASSERT_EQ(neverc_os_mkdir(keep, 0700), 0);
+        ASSERT_EQ(neverc_os_mkdir(victim, 0700), 0);
+        snprintf(escape, sizeof(escape), "\\\\?\\%s\\victim\\..", parent);
+        errno = 0;
+        ASSERT_EQ(neverc_os_remove_all(escape), -1);
+        ASSERT_EQ(errno, EINVAL);
+        ASSERT_TRUE(neverc_os_exists(keep));
+        ASSERT_TRUE(neverc_os_exists(victim));
+        errno = 0;
+        ASSERT_EQ(neverc_os_remove_all("\\\\?\\unc\\localhost\\c$\\.."), -1);
+        ASSERT_EQ(errno, EINVAL);
+        ASSERT_EQ(neverc_os_remove_all(parent), 0);
+    }
 #endif
 
 #if !defined(_WIN32)

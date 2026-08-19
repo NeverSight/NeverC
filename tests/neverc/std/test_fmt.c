@@ -387,6 +387,17 @@ static void test_sscanf(void) {
     check_int("sscanf first", a, 10);
     check_int("sscanf second", b, 20);
 
+    n = neverc_fmt_sscanf("x3", "x %d", &a);
+    check_int("sscanf format space required", n, 0);
+    n = neverc_fmt_sscanf("1\n2", "%d %d", &a, &b);
+    check_int("sscanf format space does not eat newline", n, 1);
+    n = neverc_fmt_sscanf("1 2", "%d\n%d", &a, &b);
+    check_int("sscanf format newline does not match space", n, 1);
+    n = neverc_fmt_sscanf("1\n2", "%d\n%d", &a, &b);
+    check_int("sscanf format newline matches newline", n, 2);
+    check_int("sscanf format newline first", a, 1);
+    check_int("sscanf format newline second", b, 2);
+
     n = neverc_fmt_sscanf("ff", "%x", (unsigned int *)&a);
     check_int("sscanf hex", n, 1);
     check_int("sscanf hex val", a, 255);

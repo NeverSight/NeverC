@@ -1188,7 +1188,7 @@ static int qt_process_client(quic_tls_t *tls) {
             neverc_platform_secure_zero(server_finished_hash,
                                         sizeof(server_finished_hash));
             qt_consume_message(tls, level, message_len);
-            if (tls->crypto_recv[level].contiguous >
+            if (tls->crypto_recv[level].len >
                 tls->crypto_recv[level].processed)
                 return qt_fail(tls, "unexpected Handshake CRYPTO after Finished");
             return qt_finish_handshake(tls);
@@ -1226,7 +1226,7 @@ static int qt_process_server(quic_tls_t *tls) {
                 return qt_fail(tls, "expected a valid client Finished");
             neverc_sha256_update(&tls->transcript, message, message_len);
             qt_consume_message(tls, level, message_len);
-            if (tls->crypto_recv[level].contiguous >
+            if (tls->crypto_recv[level].len >
                 tls->crypto_recv[level].processed)
                 return qt_fail(tls, "unexpected Handshake CRYPTO after Finished");
             return qt_finish_handshake(tls);

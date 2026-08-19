@@ -706,6 +706,51 @@ static int skip_ws(const char **p) {
     return n;
 }
 
+static int is_scan_space(char c) {
+    return c == ' ' || c == '\t' || c == '\v' || c == '\f' || c == '\r' ||
+           c == '\n';
+}
+
+static int is_scan_space_not_nl(char c) {
+    return c == ' ' || c == '\t' || c == '\v' || c == '\f' || c == '\r';
+}
+
+/* Go fmt/scan.go advance(): a format newline must match an input newline
+ * (or EOF). A format space matches one-or-more non-newline spaces or EOF,
+ * and must not consume an input newline. */
+static int scan_advance_format_space(const char **sp, const char **fp) {
+    int newlines = 0;
+    int trailing_space = 0;
+    while (**fp && is_scan_space(**fp)) {
+        if (**fp == '\n') {
+            newlines++;
+            trailing_space = 0;
+        } else {
+            trailing_space = 1;
+        }
+        (*fp)++;
+    }
+    for (int j = 0; j < newlines; j++) {
+        while (is_scan_space_not_nl(**sp))
+            (*sp)++;
+        if (**sp == '\n')
+            (*sp)++;
+        else if (**sp != '\0')
+            return 0;
+    }
+    if (trailing_space) {
+        if (newlines == 0) {
+            if (**sp == '\n')
+                return 0;
+            if (**sp != '\0' && !is_scan_space_not_nl(**sp))
+                return 0;
+        }
+        while (is_scan_space_not_nl(**sp))
+            (*sp)++;
+    }
+    return 1;
+}
+
 static int scan_int(const char **p, int64_t *out) {
     skip_ws(p);
     const char *start = *p;
@@ -1010,9 +1055,10 @@ static int scan_formatted(const char *str, const char *format, va_list args) {
 
     while (*fp) {
         if (*fp != '%') {
-            if (*fp == ' ' || *fp == '\t' || *fp == '\n' || *fp == '\r') {
-                skip_ws(&sp);
-                fp++;
+            if (*fp == ' ' || *fp == '\t' || *fp == '\n' || *fp == '\r' ||
+                *fp == '\v' || *fp == '\f') {
+                if (!scan_advance_format_space(&sp, &fp))
+                    break;
                 continue;
             }
             if (*sp != *fp)

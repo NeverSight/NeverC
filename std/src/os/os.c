@@ -115,14 +115,36 @@ static int os_win_has_wildcards(const char *path) {
     return 0;
 }
 
+static int os_win_is_unc_remainder(const char *p) {
+    return (p[0] == 'U' || p[0] == 'u') &&
+           (p[1] == 'N' || p[1] == 'n') &&
+           (p[2] == 'C' || p[2] == 'c') &&
+           (p[3] == '\\' || p[3] == '/');
+}
+
+/* Go os.RemoveAll keeps \\?\ so Win32 does not re-parse '..'. After dropping
+ * the prefix for ANSI APIs, a leftover '..' component would walk to the
+ * parent. Reject that instead of deleting the wrong tree. */
+static int os_win_path_has_dotdot_component(const char *path) {
+    const char *p = path;
+    while (*p) {
+        if (p[0] == '.' && p[1] == '.' &&
+            (p[2] == '\0' || p[2] == '\\' || p[2] == '/')) {
+            if (p == path || p[-1] == '\\' || p[-1] == '/')
+                return 1;
+        }
+        p++;
+    }
+    return 0;
+}
+
 /* ANSI Win32 APIs often reject \\?\ even when FindFirstFileA accepts it.
  * After wildcard checks, drive-letter extended paths can drop the prefix. */
 static const char *os_win_a_path(const char *path) {
     int skip = os_win_skip_extended_prefix(path);
     if (skip == 0)
         return path;
-    if (strncmp(path + skip, "UNC\\", 4) == 0 ||
-        strncmp(path + skip, "UNC/", 4) == 0)
+    if (os_win_is_unc_remainder(path + skip))
         return path;
     return path + skip;
 }
@@ -684,6 +706,10 @@ int neverc_os_remove_all(const char *path) {
         return -1;
     }
     path = os_win_a_path(path);
+    if (os_win_path_has_dotdot_component(path)) {
+        errno = EINVAL;
+        return -1;
+    }
 #endif
     if (os_remove_all_ends_with_dot(path)) {
         errno = EINVAL;

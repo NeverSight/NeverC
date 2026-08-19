@@ -191,6 +191,42 @@ static void builder_append_literal(url_builder_t *builder,
     builder_append(builder, literal, strlen(literal));
 }
 
+/* Go net/url shouldEscape(c, encodeHost): alnum, unreserved -_.~,
+ * sub-delims, and :[]<>" stay literal. */
+static int url_host_byte_should_escape(unsigned char c) {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9'))
+        return 0;
+    switch (c) {
+    case '!': case '$': case '&': case '\'': case '(': case ')':
+    case '*': case '+': case ',': case ';': case '=':
+    case ':': case '[': case ']': case '<': case '>': case '"':
+    case '-': case '_': case '.': case '~':
+        return 0;
+    default:
+        return 1;
+    }
+}
+
+static void builder_append_host(url_builder_t *builder, const char *host,
+                                size_t host_length) {
+    static const char hex[] = "0123456789ABCDEF";
+    for (size_t i = 0; i < host_length; i++) {
+        unsigned char c = (unsigned char)host[i];
+        if (c == '%') {
+            builder_append_literal(builder, "%25");
+        } else if (url_host_byte_should_escape(c)) {
+            char enc[3];
+            enc[0] = '%';
+            enc[1] = hex[c >> 4];
+            enc[2] = hex[c & 0xF];
+            builder_append(builder, enc, 3);
+        } else {
+            builder_append(builder, host + i, 1);
+        }
+    }
+}
+
 static int builder_append_field(url_builder_t *builder, const char *field,
                                 size_t capacity) {
     size_t length = bounded_string_length(field, capacity);
@@ -490,16 +526,7 @@ int neverc_url_string(const neverc_url_t *u, char *buf, size_t cap) {
         if (host_length == sizeof(u->host)) builder.failed = 1;
         int is_ipv6 = !builder.failed && memchr(u->host, ':', host_length);
         if (is_ipv6) builder_append_literal(&builder, "[");
-        if (is_ipv6) {
-            for (size_t i = 0; i < host_length; i++) {
-                if (u->host[i] == '%')
-                    builder_append_literal(&builder, "%25");
-                else
-                    builder_append(&builder, u->host + i, 1);
-            }
-        } else {
-            builder_append(&builder, u->host, host_length);
-        }
+        builder_append_host(&builder, u->host, host_length);
         if (is_ipv6) builder_append_literal(&builder, "]");
         if (u->port[0]) {
             builder_append_literal(&builder, ":");

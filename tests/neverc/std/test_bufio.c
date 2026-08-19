@@ -831,6 +831,41 @@ static void test_invalid_arguments(void) {
     neverc_bufio_writer_free(NULL);
 }
 
+static void test_zero_length_read_eof(void) {
+    printf("[zero-length read eof]\n");
+    const char *data = "z";
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)data, 1);
+    neverc_io_reader_t r = { &mr, neverc_io_mem_reader_read };
+    neverc_bufio_reader_t br;
+    neverc_bufio_reader_init_size(&br, r, 8);
+
+    uint8_t byte = 0;
+    size_t n = 99;
+    check_int("read one byte", neverc_bufio_reader_read(&br, &byte, 1, &n), 0);
+    check_size("read one byte count", n, 1);
+
+    n = 99;
+    check_int("next read hits EOF",
+              neverc_bufio_reader_read(&br, &byte, 1, &n), NEVERC_IO_EOF);
+    check_size("eof read count", n, 0);
+    n = 99;
+    check_int("drained zero-length is EOF",
+              neverc_bufio_reader_read(&br, NULL, 0, &n), NEVERC_IO_EOF);
+    check_size("drained zero-length count", n, 0);
+    neverc_bufio_reader_free(&br);
+
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)data, 1);
+    neverc_bufio_reader_init_size(&br, r, 8);
+    uint8_t peek[3];
+    check_int("peek leftover", neverc_bufio_reader_peek(&br, peek, 1), 1);
+    n = 99;
+    check_int("buffered zero-length is success",
+              neverc_bufio_reader_read(&br, NULL, 0, &n), 0);
+    check_size("buffered zero-length count", n, 0);
+    neverc_bufio_reader_free(&br);
+}
+
 int main(void) {
     printf("=== NeverC Bufio Module Tests ===\n\n");
     test_scanner();
@@ -856,6 +891,7 @@ int main(void) {
     test_scanner_split_func();
     test_peek_after_unread();
     test_invalid_arguments();
+    test_zero_length_read_eof();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

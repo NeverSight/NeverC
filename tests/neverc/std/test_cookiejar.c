@@ -213,6 +213,39 @@ static void test_public_suffix_domain(void) {
     check_int("reject Domain=k12.oh.us from evil.k12.oh.us",
               neverc_cookiejar_count(jar), 0);
     neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "s3.eu-west-1.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.s3.eu-west-1.amazonaws.com/", &cookie, 1);
+    check_int("reject Domain=s3.eu-west-1.amazonaws.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "uk.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.uk.com/", &cookie, 1);
+    check_int("reject Domain=uk.com from evil.uk.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "pvt.k12.ma.us";
+    neverc_cookiejar_set_cookies(
+        jar, "https://school.pvt.k12.ma.us/", &cookie, 1);
+    check_int("reject Domain=pvt.k12.ma.us",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "example.co.uk";
+    neverc_cookiejar_set_cookies(
+        jar, "https://www.example.co.uk/", &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://www.example.co.uk/", out, 1);
+    check_int("Domain=example.co.uk stays registrable", n, 1);
+    neverc_cookiejar_free(jar);
 }
 
 static void test_domain_security(void) {

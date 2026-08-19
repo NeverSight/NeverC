@@ -147,6 +147,20 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(
         &u, "http://[fe80::1%25Ethernet%202]/"), 0);
     ASSERT_STR_EQ(u.host, "fe80::1%Ethernet 2");
+    {
+        char zoned_space[80];
+        ASSERT_INT_EQ(neverc_url_string(&u, zoned_space, sizeof(zoned_space)),
+                      (int)strlen("http://[fe80::1%25Ethernet%202]/"));
+        ASSERT_STR_EQ(zoned_space, "http://[fe80::1%25Ethernet%202]/");
+        ASSERT_INT_EQ(neverc_url_parse(&u, zoned_space), 0);
+    }
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://ex%25ample.com/"), 0);
+    {
+        char pct_host[64];
+        ASSERT_INT_EQ(neverc_url_string(&u, pct_host, sizeof(pct_host)),
+                      (int)strlen("http://ex%25ample.com/"));
+        ASSERT_STR_EQ(pct_host, "http://ex%25ample.com/");
+    }
     ASSERT_INT_EQ(neverc_url_parse(
         &u, "http://user:p%40ss@[fe80::1%25eth0]:8080/x"), 0);
     ASSERT_STR_EQ(u.user, "user");

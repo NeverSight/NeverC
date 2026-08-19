@@ -778,6 +778,17 @@ int neverc_quic_conn_process_datagram(struct neverc_quic_conn *conn,
         nc_mutex_unlock(&conn->lock);
         return -1;
     }
+    /* RFC 9000 §14.1: a server MUST discard an Initial carried in a UDP
+     * datagram smaller than 1200 bytes, including after the connection
+     * already exists. */
+    if (conn->side == QUIC_SIDE_SERVER && length < QUIC_MIN_INITIAL_SIZE) {
+        quic_packet_header_t header;
+        if (neverc_quic_parse_packet_header(packet, length, &header, 0) == 0 &&
+            header.type == QUIC_PKT_INITIAL) {
+            nc_mutex_unlock(&conn->lock);
+            return 0;
+        }
+    }
     if (conn->side == QUIC_SIDE_SERVER && !conn->address_validated) {
         if (conn->bytes_received_before_validation <= UINT64_MAX - length)
             conn->bytes_received_before_validation += length;

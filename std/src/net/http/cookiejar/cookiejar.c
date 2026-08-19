@@ -467,13 +467,33 @@ static int cookie_domain_is_public_suffix(const char *domain) {
         "netlify.app",
         "pages.dev",
         "s3.amazonaws.com",
+        "*.s3.amazonaws.com",
+        "s3.eu-west-1.amazonaws.com",
+        "s3.eu-central-1.amazonaws.com",
+        "s3.us-east-1.amazonaws.com",
+        "s3.us-west-1.amazonaws.com",
+        "s3.us-west-2.amazonaws.com",
+        "uk.com",
+        "co.com",
+        "pvt.k12.ma.us",
         "trafficmanager.net",
         "vercel.app",
         "web.app",
         "workers.dev",
     };
-    for (size_t i = 0; i < sizeof(extra) / sizeof(extra[0]); i++)
-        if (strcmp(domain, extra[i]) == 0) return 1;
+    for (size_t i = 0; i < sizeof(extra) / sizeof(extra[0]); i++) {
+        const char *rule = extra[i];
+        if (rule[0] == '*' && rule[1] == '.') {
+            const char *suffix = rule + 2;
+            size_t n = strlen(domain), m = strlen(suffix);
+            if (n > m + 1 && domain[n - m - 1] == '.' &&
+                strcmp(domain + (n - m), suffix) == 0 &&
+                memchr(domain, '.', n - m - 1) == NULL)
+                return 1;
+        } else if (strcmp(domain, rule) == 0) {
+            return 1;
+        }
+    }
     /* blogspot.<public-suffix> is itself a public suffix (blogspot.co.uk). */
     if (strncmp(domain, "blogspot.", 9) == 0 &&
         cookie_domain_is_public_suffix(domain + 9))

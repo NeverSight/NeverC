@@ -650,7 +650,6 @@ static void ctx_stop_after_funcs(neverc_context_t *ctx) {
 neverc_context_stop_func_t neverc_context_after_func(neverc_context_t *ctx,
                                                       void (*f)(void)) {
     if (!ctx || !f) return NULL;
-    if (neverc_context_done(ctx)) { f(); return NULL; }
 
     after_func_state_t *s = (after_func_state_t *)calloc(1, sizeof(*s));
     if (!s)

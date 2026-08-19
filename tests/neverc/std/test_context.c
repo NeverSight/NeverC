@@ -643,6 +643,35 @@ static void test_after_func(void) {
     neverc_context_free(bg);
 }
 
+static void test_after_func_already_done(void) {
+    printf("[after_func_already_done]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_cancel_func_t cancel = NULL;
+    neverc_context_t *ctx = neverc_context_with_cancel(bg, &cancel);
+    ASSERT_TRUE(ctx != NULL);
+    cancel();
+    ASSERT_INT_EQ(neverc_context_done(ctx), 1);
+
+    NEVERC_ATOMIC_STORE32(&g_after_called, 0);
+    neverc_context_stop_func_t stop = neverc_context_after_func(ctx, after_cb);
+    /* Go context.AfterFunc always returns a stop func and runs f asynchronously,
+     * even when ctx is already done. */
+    ASSERT_TRUE(stop != NULL);
+    for (int i = 0; i < 1000 &&
+                    !NEVERC_ATOMIC_LOAD32(&g_after_called); i++) {
+#if defined(_WIN32)
+        Sleep(1);
+#else
+        usleep(1000);
+#endif
+    }
+    ASSERT_INT_EQ(NEVERC_ATOMIC_LOAD32(&g_after_called), 1);
+    ASSERT_INT_EQ(stop(), 0);
+
+    neverc_context_free(ctx);
+    neverc_context_free(bg);
+}
+
 static void test_after_func_stop(void) {
     printf("[after_func_stop]\n");
     neverc_context_t *bg = neverc_context_background();
@@ -838,6 +867,7 @@ int main(void) {
     test_with_timeout_cause();
     test_with_deadline_cause();
     test_after_func();
+    test_after_func_already_done();
     test_after_func_stop();
     test_after_func_stopped_before_context_free();
     test_after_func_can_free_own_context();

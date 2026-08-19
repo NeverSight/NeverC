@@ -777,32 +777,48 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
             poller->fd_events[fd] == 0 ||
             poller->fd_generation[fd] != generation)
             continue;
-        out[delivered].data = poller->fd_data[fd];
-        out[delivered].fd = fd;
-        out[delivered].operation = NULL;
-        out[delivered].transferred = 0;
-        out[delivered].error = 0;
-        out[delivered].events = 0;
+        uint32_t ev = 0;
         if (events[i].filter == EVFILT_READ) {
             if (!(poller->fd_events[fd] & NC_EV_READ))
                 continue;
-            out[delivered].events |= NC_EV_READ;
+            ev |= NC_EV_READ;
         }
         if (events[i].filter == EVFILT_WRITE) {
             if (!(poller->fd_events[fd] & NC_EV_WRITE))
                 continue;
-            out[delivered].events |= NC_EV_WRITE;
+            ev |= NC_EV_WRITE;
         }
         /* EV_EOF on a read filter is peer FIN, not an error. Mapping it to
          * NC_EV_ERROR made macOS treat a clean shutdown as a hard failure. */
         if (events[i].flags & EV_ERROR)
-            out[delivered].events |= NC_EV_ERROR;
+            ev |= NC_EV_ERROR;
         else if ((events[i].flags & EV_EOF) &&
                  events[i].filter != EVFILT_READ)
-            out[delivered].events |= NC_EV_ERROR;
-        if (out[delivered].events == 0)
+            ev |= NC_EV_ERROR;
+        if (ev == 0)
             continue;
-        delivered++;
+        /* epoll coalesces per fd; kqueue delivers one kevent per filter.
+         * HTTP frees conn data on the first ERROR, so a second filter in
+         * the same batch would UAF. Merge by fd like epoll. */
+        int slot = -1;
+        for (int j = 0; j < delivered; j++) {
+            if (out[j].fd == fd) {
+                slot = j;
+                break;
+            }
+        }
+        if (slot < 0) {
+            if (delivered >= max_events)
+                continue;
+            slot = delivered++;
+            out[slot].data = poller->fd_data[fd];
+            out[slot].fd = fd;
+            out[slot].operation = NULL;
+            out[slot].transferred = 0;
+            out[slot].error = 0;
+            out[slot].events = 0;
+        }
+        out[slot].events |= ev;
     }
     return delivered;
 #elif defined(NC_USE_IOCP)

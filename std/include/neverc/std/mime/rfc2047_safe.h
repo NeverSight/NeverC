@@ -226,44 +226,83 @@ static int nci_2047_b64(unsigned char c) {
 
 static int nci_2047_b_decode(const char *s, size_t n,
                              unsigned char *out, size_t cap, size_t *olen) {
-    if (n % 4 != 0)
+    char pad_stack[260];
+    char *pad_heap = NULL;
+    const char *src = s;
+    size_t nsrc = n;
+    if (n % 4 == 1)
         return -1;
-    size_t di = 0;
-    for (size_t i = 0; i < n; i += 4) {
-        int last = (i + 4 >= n);
-        if (!last && (s[i + 2] == '=' || s[i + 3] == '='))
+    if (n % 4 != 0) {
+        size_t pad = 4 - (n % 4);
+        if (n > SIZE_MAX - pad)
             return -1;
-        if (s[i + 2] == '=' && s[i + 3] != '=')
-            return -1;
-        int v0 = nci_2047_b64((unsigned char)s[i]);
-        int v1 = nci_2047_b64((unsigned char)s[i + 1]);
-        if (v0 < 0 || v1 < 0)
-            return -1;
-        int v2 = 0, v3 = 0;
-        if (s[i + 2] != '=') {
-            v2 = nci_2047_b64((unsigned char)s[i + 2]);
-            if (v2 < 0)
-                return -1;
-        }
-        if (s[i + 3] != '=') {
-            v3 = nci_2047_b64((unsigned char)s[i + 3]);
-            if (v3 < 0)
-                return -1;
-        }
-        if (di >= cap)
-            return -2;
-        out[di++] = (unsigned char)((v0 << 2) | (v1 >> 4));
-        if (s[i + 2] != '=') {
-            if (di >= cap)
+        if (n + pad <= sizeof(pad_stack)) {
+            memcpy(pad_stack, s, n);
+            memset(pad_stack + n, '=', pad);
+            src = pad_stack;
+        } else {
+            pad_heap = (char *)malloc(n + pad);
+            if (!pad_heap)
                 return -2;
+            memcpy(pad_heap, s, n);
+            memset(pad_heap + n, '=', pad);
+            src = pad_heap;
+        }
+        nsrc = n + pad;
+    }
+    size_t di = 0;
+    for (size_t i = 0; i < nsrc; i += 4) {
+        int last = (i + 4 >= nsrc);
+        if (!last && (src[i + 2] == '=' || src[i + 3] == '=')) {
+            free(pad_heap);
+            return -1;
+        }
+        if (src[i + 2] == '=' && src[i + 3] != '=') {
+            free(pad_heap);
+            return -1;
+        }
+        int v0 = nci_2047_b64((unsigned char)src[i]);
+        int v1 = nci_2047_b64((unsigned char)src[i + 1]);
+        if (v0 < 0 || v1 < 0) {
+            free(pad_heap);
+            return -1;
+        }
+        int v2 = 0, v3 = 0;
+        if (src[i + 2] != '=') {
+            v2 = nci_2047_b64((unsigned char)src[i + 2]);
+            if (v2 < 0) {
+                free(pad_heap);
+                return -1;
+            }
+        }
+        if (src[i + 3] != '=') {
+            v3 = nci_2047_b64((unsigned char)src[i + 3]);
+            if (v3 < 0) {
+                free(pad_heap);
+                return -1;
+            }
+        }
+        if (di >= cap) {
+            free(pad_heap);
+            return -2;
+        }
+        out[di++] = (unsigned char)((v0 << 2) | (v1 >> 4));
+        if (src[i + 2] != '=') {
+            if (di >= cap) {
+                free(pad_heap);
+                return -2;
+            }
             out[di++] = (unsigned char)((v1 << 4) | (v2 >> 2));
         }
-        if (s[i + 3] != '=') {
-            if (di >= cap)
+        if (src[i + 3] != '=') {
+            if (di >= cap) {
+                free(pad_heap);
                 return -2;
+            }
             out[di++] = (unsigned char)((v2 << 6) | v3);
         }
     }
+    free(pad_heap);
     *olen = di;
     return 0;
 }
@@ -346,6 +385,14 @@ static int nci_rfc2047_header_safe(const char *s, size_t n) {
                          (cs == 1 && !nci_2047_utf8_ok(dec, dlen))))) {
             free(heap);
             return 0;
+        }
+        if (rc == 0) {
+            for (size_t k = 0; k + 1 < dlen; k++) {
+                if (dec[k] == '=' && dec[k + 1] == '?') {
+                    free(heap);
+                    return 0;
+                }
+            }
         }
         free(heap);
 

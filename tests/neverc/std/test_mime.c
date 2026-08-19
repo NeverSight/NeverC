@@ -827,6 +827,26 @@ static void test_rfc2047_decode_header(void) {
                       b64_crlf, strlen(b64_crlf), out, sizeof(out), &n), -1);
     ASSERT_INT_EQ((int)n, 0);
 
+    const char *b64_crlf_raw = "=?utf-8?b?DQo?=";
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      b64_crlf_raw, strlen(b64_crlf_raw), out, sizeof(out), &n),
+                  -1);
+    ASSERT_INT_EQ((int)n, 0);
+
+    const char *nested_crlf =
+        "=?utf-8?q?=3D=3Futf-8=3Fq=3F=0D=0A=3F=3D?=";
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      nested_crlf, strlen(nested_crlf), out, sizeof(out), &n),
+                  -1);
+
+    const char *keys[] = {"filename"};
+    const char *vals[] = {b64_crlf_raw};
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", keys, vals, 1, out, sizeof(out)),
+                  -1);
+
     const char *u2028 = "=?utf-8?q?=E2=80=A8?=";
     const char *u2029 = "=?utf-8?q?=E2=80=A9?=";
     const char *nel = "=?iso-8859-1?q?=85?=";

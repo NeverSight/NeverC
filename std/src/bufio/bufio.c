@@ -482,7 +482,15 @@ int neverc_bufio_reader_read(neverc_bufio_reader_t *br,
                              uint8_t *buf, size_t len, size_t *n) {
     if (!n) return NEVERC_IO_ERR_UNEXP;
     *n = 0;
-    if (len == 0) return 0;
+    if (len == 0) {
+        if (!br || br->r > br->w || br->w > br->buf_cap)
+            return NEVERC_IO_ERR_UNEXP;
+        if (br->r < br->w)
+            return 0;
+        if (br->eof)
+            return bufio_reader_terminal_error(br);
+        return 0;
+    }
     if (!br || !buf || br->r > br->w || br->w > br->buf_cap)
         return NEVERC_IO_ERR_UNEXP;
     while (*n < len) {

@@ -142,9 +142,11 @@ neverc_cmplx_t neverc_cmplx_pow(neverc_cmplx_t x, neverc_cmplx_t y) {
     if (RE(y) == 0.0 && IM(y) == 0.0)
         return MK(1.0, 0.0);
     if (RE(x) == 0.0 && IM(x) == 0.0) {
-        double yr = RE(y), yi = IM(y);
-        if (neverc_math_isnan(yr) || neverc_math_isnan(yi))
+        /* Go cmplx.Pow / IsNaN: Inf in either part wins over NaN, so
+         * 0^(Inf+NaNi) is +0 rather than NaN. */
+        if (neverc_cmplx_isnan(y))
             return neverc_cmplx_nan_val();
+        double yr = RE(y), yi = IM(y);
         if (yr == 0.0)
             return MK(1.0, 0.0);
         if (yr < 0.0) {
