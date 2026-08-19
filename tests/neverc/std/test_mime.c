@@ -842,10 +842,12 @@ static void test_rfc2047_decode_header(void) {
         }
     }
 
-    /* utf-8 encoded-word must not accept overlong LF or a surrogate half. */
+    /* utf-8 encoded-word must not accept overlong LF or a surrogate half.
+     * Split the literal: C hex is greedy, so "\x8AB" is one out-of-range
+     * escape rather than 0x8A plus 'B'. */
     n = 99;
     ASSERT_INT_EQ(neverc_mime_decode_header(
-                      "Hello\xC0\x8ABcc: hidden", 18, out, sizeof(out),
+                      "Hello\xC0\x8A" "Bcc: hidden", 18, out, sizeof(out),
                       &n),
                   -1);
     ASSERT_INT_EQ((int)n, 0);
@@ -883,11 +885,14 @@ static void test_rfc2047_decode_header(void) {
                       nested_crlf, strlen(nested_crlf), out, sizeof(out), &n),
                   -1);
 
-    const char *keys[] = {"filename"};
-    const char *vals[] = {b64_crlf_raw};
-    ASSERT_INT_EQ(neverc_mime_format_media_type(
-                      "text/plain", keys, vals, 1, out, sizeof(out)),
-                  -1);
+    {
+        const char *fmt_keys[] = {"filename"};
+        const char *fmt_vals[] = {b64_crlf_raw};
+        ASSERT_INT_EQ(neverc_mime_format_media_type(
+                          "text/plain", fmt_keys, fmt_vals, 1, out,
+                          sizeof(out)),
+                      -1);
+    }
 
     const char *u2028 = "=?utf-8?q?=E2=80=A8?=";
     const char *u2029 = "=?utf-8?q?=E2=80=A9?=";
