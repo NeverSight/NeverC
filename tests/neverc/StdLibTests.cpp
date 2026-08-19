@@ -462,11 +462,13 @@ TEST_F(StdLibTest, ErrorsAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(html, "src/html/html.c")
-STD_TEST(fmt, "src/fmt/fmt.c", "src/strconv/format_float.c", "src/strconv/parse_float.c")
+STD_TEST(fmt, "src/fmt/fmt.c", "src/strconv/format_float.c",
+         "src/strconv/parse_float.c", "src/strconv/parse_int.c")
 TEST_F(StdLibTest, FmtAllocationFailure) {
   auto r = compileAndRunStdTest(
       "fmt_oom",
-      {"src/strconv/format_float.c", "src/strconv/parse_float.c"},
+      {"src/strconv/format_float.c", "src/strconv/parse_float.c",
+       "src/strconv/parse_int.c"},
       {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;

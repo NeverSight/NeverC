@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static size_t allocation_count;
 static size_t fail_at;
@@ -24,7 +25,33 @@ static void *controlled_realloc(void *ptr, size_t size) {
 #define malloc controlled_malloc
 #define calloc controlled_calloc
 #define realloc controlled_realloc
-#include "../../../std/src/html/html.c"
+/* Do not include html.c here: it defines the same static html_esc_extra table
+ * as template.c. Provide unescape via the hooked allocator so entity-prefix
+ * checks still exercise malloc failure. */
+char *neverc_html_unescape_string(const char *s, size_t *outlen) {
+    size_t n;
+    char *out;
+
+    if (!s) {
+        if (outlen) {
+            *outlen = 0;
+        }
+        return NULL;
+    }
+    n = strlen(s);
+    out = malloc(n + 1);
+    if (!out) {
+        if (outlen) {
+            *outlen = 0;
+        }
+        return NULL;
+    }
+    memcpy(out, s, n + 1);
+    if (outlen) {
+        *outlen = n;
+    }
+    return out;
+}
 #include "../../../std/src/html/template/template.c"
 #undef malloc
 #undef calloc
