@@ -892,6 +892,15 @@ static void test_template_url_and_script(void) {
 
     neverc_html_template_data_set(&data, "X", ";alert(1)//");
     out = neverc_html_template_render(
+        "<script>var x=`OK\\{{.X}}`</script>", &data);
+    check("js dangling template-literal backslash is fail-closed",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("js dangling template-literal backslash does not break out",
+          out && strstr(out, "alert(1)") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", ";alert(1)//");
+    out = neverc_html_template_render(
         "<script>var x='OK\\{{.X}}'</script>", &data);
     check("js dangling single-quote backslash is fail-closed",
           out && strstr(out, "ZgotmplZ") != NULL);
@@ -950,6 +959,31 @@ static void test_template_url_and_script(void) {
     check("js template interpolation is not a raw call",
           out && strstr(out, "${ alert(1) }") == NULL &&
               strstr(out, "${alert(1)}") == NULL);
+    free(out);
+
+    /* Go CVE-2026-39826: empty / whitespace script type is still JavaScript.
+     * HTML-escaping alert(1) is a no-op and would execute. */
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<script type=\"\">{{.X}}</script>", &data);
+    check("empty script type is js-wrapped",
+          out && strstr(out, "\"alert(1)\"") != NULL);
+    check("empty script type is not a raw call",
+          out && strstr(out, "<script type=\"\">alert(1)</script>") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<script type=\" \">{{.X}}</script>", &data);
+    check("whitespace script type is js-wrapped",
+          out && strstr(out, "\"alert(1)\"") != NULL);
+    check("whitespace script type is not a raw call",
+          out && strstr(out, "type=\" \">alert(1)") == NULL);
+    free(out);
+
+    out = neverc_html_template_render("<script>{{.Missing}}</script>", &data);
+    check("missing JS action is an empty string expr",
+          out && strstr(out, "<script>\"\"</script>") != NULL);
     free(out);
 
     neverc_html_template_data_set(&data, "X",

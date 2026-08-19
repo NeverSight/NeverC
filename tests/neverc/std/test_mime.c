@@ -161,6 +161,24 @@ static void test_parse_media_type(void) {
         ASSERT_INT_EQ(nparams, 0);
     }
 
+    {
+        char overlong_lf[] = "text/plain; filename=\"x\xC0\x8Ay\"";
+        ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                          overlong_lf, mt, sizeof(mt), keys, vals, 8,
+                          &nparams),
+                      -1);
+        ASSERT_INT_EQ(nparams, 0);
+    }
+
+    {
+        char overlong_3[] = "text/plain; filename=\"x\xE0\x80\x8Ay\"";
+        ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                          overlong_3, mt, sizeof(mt), keys, vals, 8,
+                          &nparams),
+                      -1);
+        ASSERT_INT_EQ(nparams, 0);
+    }
+
     ASSERT_INT_EQ(neverc_mime_parse_media_type(
                       "text/plain; filename=plain.txt; filename*=utf-8''star.txt",
                       mt, sizeof(mt), keys, vals, 8, &nparams), 0);
@@ -528,6 +546,23 @@ static void test_format_rejects_invalid_input(void) {
                       sizeof(out)),
                   -1);
     ASSERT_STR_EQ(out, "");
+
+    /* Overlong UTF-8 LF is not a C0 byte; format must still refuse it. */
+    const char *overlong_lf_vals[] = {"x\xC0\x8Ay"};
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", utf8_a_keys, overlong_lf_vals, 1, out,
+                      sizeof(out)),
+                  -1);
+    ASSERT_STR_EQ(out, "");
+
+    const char *overlong_3_vals[] = {"x\xE0\x80\x8Ay"};
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", utf8_a_keys, overlong_3_vals, 1, out,
+                      sizeof(out)),
+                  -1);
+    ASSERT_STR_EQ(out, "");
 }
 
 static void test_qp_decode(void) {
@@ -808,6 +843,13 @@ static void test_rfc2047_decode_header(void) {
     }
 
     /* utf-8 encoded-word must not accept overlong LF or a surrogate half. */
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      "Hello\xC0\x8ABcc: hidden", 18, out, sizeof(out),
+                      &n),
+                  -1);
+    ASSERT_INT_EQ((int)n, 0);
+
     const char *overlong_lf = "=?utf-8?q?=C0=8D?=";
     const char *surr_word = "=?utf-8?q?=ED=A0=80?=";
     n = 99;

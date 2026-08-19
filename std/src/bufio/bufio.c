@@ -493,32 +493,48 @@ int neverc_bufio_reader_read(neverc_bufio_reader_t *br,
     }
     if (!br || !buf || br->r > br->w || br->w > br->buf_cap)
         return NEVERC_IO_ERR_UNEXP;
-    while (*n < len) {
-        if (br->r >= br->w) {
-            if (br->eof) {
-                if (*n > 0) {
-                    br->last_byte = buf[*n - 1];
-                    return 0;
-                }
-                return bufio_reader_terminal_error(br);
+
+    /* Go bufio.Reader.Read copies at most once. Looping until `len` is
+     * ReadFull semantics and blocks a short underlying read (a socket
+     * that delivered 10 bytes while the caller asked for 100). */
+    if (br->r == br->w) {
+        if (br->eof)
+            return bufio_reader_terminal_error(br);
+        if (len >= br->buf_cap) {
+            if (!br->reader.read) {
+                br->eof = 1;
+                br->err = NEVERC_IO_ERR_UNEXP;
+                return NEVERC_IO_ERR_UNEXP;
             }
-            bufio_fill(br);
-            if (br->r >= br->w) {
-                if (*n > 0) {
-                    br->last_byte = buf[*n - 1];
-                    return 0;
-                }
-                return bufio_reader_terminal_error(br);
+            size_t nr = 0;
+            int err = br->reader.read(br->reader.ctx, buf, len, &nr);
+            if (nr > len) {
+                br->eof = 1;
+                br->err = NEVERC_IO_ERR_UNEXP;
+                return NEVERC_IO_ERR_UNEXP;
             }
+            *n = nr;
+            if (nr > 0) br->last_byte = buf[nr - 1];
+            if (err != 0) {
+                br->eof = 1;
+                br->err = err;
+                if (nr == 0)
+                    return bufio_reader_terminal_error(br);
+                return err;
+            }
+            return 0;
         }
-        size_t avail = br->w - br->r;
-        size_t want = len - *n;
-        size_t copy = avail < want ? avail : want;
-        memcpy(buf + *n, br->buf + br->r, copy);
-        br->r += copy;
-        *n += copy;
+        bufio_fill(br);
+        if (br->r >= br->w)
+            return bufio_reader_terminal_error(br);
     }
-    if (*n > 0) br->last_byte = buf[*n - 1];
+
+    size_t avail = br->w - br->r;
+    size_t copy = avail < len ? avail : len;
+    memcpy(buf, br->buf + br->r, copy);
+    br->r += copy;
+    *n = copy;
+    if (copy > 0) br->last_byte = buf[copy - 1];
     return 0;
 }
 

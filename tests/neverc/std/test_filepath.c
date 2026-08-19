@@ -84,6 +84,9 @@ static void test_isabs(void) {
     ASSERT_TRUE(neverc_filepath_isabs("\\\\server\\share"));
     ASSERT_TRUE(neverc_filepath_isabs("\\\\server\\share\\foo"));
     ASSERT_TRUE(neverc_filepath_isabs("\\\\?\\C:\\foo"));
+    ASSERT_TRUE(neverc_filepath_isabs("\\??\\C:\\foo"));
+    ASSERT_TRUE(neverc_filepath_isabs("\\??\\C:\\"));
+    ASSERT_FALSE(neverc_filepath_isabs("\\??\\C:"));
     ASSERT_TRUE(neverc_filepath_isabs("1:\\foo"));
     ASSERT_FALSE(neverc_filepath_isabs("\\\\..\\..\\a"));
     ASSERT_FALSE(neverc_filepath_isabs("\\\\i\\..\\c$"));
@@ -110,6 +113,7 @@ static void test_is_local_and_volume(void) {
     ASSERT_FALSE(neverc_filepath_is_local("C:\\Windows"));
     ASSERT_FALSE(neverc_filepath_is_local("C:foo"));
     ASSERT_FALSE(neverc_filepath_is_local("\\\\server\\share"));
+    ASSERT_FALSE(neverc_filepath_is_local("\\??\\C:\\foo"));
     ASSERT_FALSE(neverc_filepath_is_local("NUL"));
     ASSERT_FALSE(neverc_filepath_is_local("con"));
     ASSERT_FALSE(neverc_filepath_is_local("COM0"));
@@ -127,6 +131,8 @@ static void test_is_local_and_volume(void) {
     ASSERT_FALSE(neverc_filepath_is_local(".. "));
     ASSERT_STR_EQ(neverc_filepath_volume_name("C:\\foo\\bar", buf, sizeof(buf)),
                   "C:");
+    ASSERT_STR_EQ(neverc_filepath_volume_name("\\??\\C:\\foo", buf, sizeof(buf)),
+                  "\\??\\C:");
     ASSERT_STR_EQ(neverc_filepath_volume_name("\\\\host\\share\\x", buf, sizeof(buf)),
                   "\\\\host\\share");
     ASSERT_STR_EQ(neverc_filepath_volume_name("//host/share/x", buf, sizeof(buf)),
@@ -178,6 +184,7 @@ static void test_clean(void) {
     ASSERT_STR_EQ(neverc_filepath_clean("\\\\i\\..\\c$", buf, sizeof(buf)), "\\c$");
     ASSERT_STR_EQ(neverc_filepath_clean("/a/../??/a", buf, sizeof(buf)), "\\.\\??\\a");
     ASSERT_STR_EQ(neverc_filepath_clean("\\\\?\\C:\\", buf, sizeof(buf)), "\\\\?\\C:\\");
+    ASSERT_STR_EQ(neverc_filepath_clean("\\??\\C:\\", buf, sizeof(buf)), "\\??\\C:\\");
 #else
     ASSERT_STR_EQ(neverc_filepath_clean("abc/def/../..", buf, sizeof(buf)), ".");
     ASSERT_STR_EQ(neverc_filepath_clean("/abc/def/../../..", buf, sizeof(buf)), "/");

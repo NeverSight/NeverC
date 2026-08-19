@@ -117,8 +117,8 @@ static void test_size_overflow_rejected(void) {
     /* Read paths used to walk i*elem_size without a span check and would
      * compute an overflowing pointer from a 1-byte dummy buffer. */
     ASSERT_INT_EQ(neverc_slices_is_sorted(&a, overflowing_len, 2, cmp_int), 0);
-    ASSERT_INT_EQ(neverc_slices_compare(&a, overflowing_len, &b,
-                                        overflowing_len, 2, cmp_int), 0);
+    ASSERT_TRUE(neverc_slices_compare(&a, overflowing_len, &b,
+                                      overflowing_len, 2, cmp_int) != 0);
     ASSERT_INT_EQ(neverc_slices_index(&a, overflowing_len, &b, 2, eq_int), -1);
     ASSERT_TRUE(!neverc_slices_contains(&a, overflowing_len, &b, 2, eq_int));
     ASSERT_INT_EQ(neverc_slices_min(&a, overflowing_len, 2, cmp_int), -1);

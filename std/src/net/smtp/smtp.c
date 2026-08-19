@@ -229,6 +229,38 @@ static int smtp_b64_encode(const void *src, size_t srclen,
     return 0;
 }
 
+/* Go smtp.Dial uses net.SplitHostPort. "[::1]:587" is host "::1"; a
+ * hostname:port with exactly one colon is the name before that colon. */
+static int smtp_copy_server_name(const char *addr, char *dst, size_t cap) {
+    if (!addr || !dst || cap == 0)
+        return -1;
+    dst[0] = '\0';
+    if (addr[0] == '[') {
+        const char *end = strchr(addr, ']');
+        if (!end || end == addr + 1)
+            return -1;
+        size_t n = (size_t)(end - addr - 1);
+        if (n >= cap)
+            return -1;
+        memcpy(dst, addr + 1, n);
+        dst[n] = '\0';
+        return 0;
+    }
+    const char *colon = strrchr(addr, ':');
+    if (!colon || colon == addr)
+        return -1;
+    for (const char *p = addr; p < colon; p++) {
+        if (*p == ':')
+            return -1;
+    }
+    size_t n = (size_t)(colon - addr);
+    if (n >= cap)
+        return -1;
+    memcpy(dst, addr, n);
+    dst[n] = '\0';
+    return 0;
+}
+
 /* ======================================================================
  * Public API
  * ====================================================================== */
@@ -261,16 +293,11 @@ neverc_smtp_client_t *neverc_smtp_dial(const char *addr, const char **errp) {
     }
     c->conn = conn;
 
-    /* Extract hostname from addr */
-    const char *colon = strrchr(addr, ':');
-    if (colon) {
-        size_t hlen = (size_t)(colon - addr);
-        if (hlen >= sizeof(c->server_name)) hlen = sizeof(c->server_name) - 1;
-        memcpy(c->server_name, addr, hlen);
-        c->server_name[hlen] = '\0';
-    } else {
-        snprintf(c->server_name, sizeof(c->server_name), "%s", addr);
-    }
+    /* Go smtp.Dial uses net.SplitHostPort: "[::1]:587" is host "::1",
+     * not "[::1]". strrchr(':') left the brackets in ServerName. */
+    if (smtp_copy_server_name(addr, c->server_name,
+                              sizeof(c->server_name)) != 0)
+        c->server_name[0] = '\0';
 
     /* Read the greeting (220) */
     int code = smtp_read_response(c);

@@ -398,6 +398,33 @@ static void test_sscanf(void) {
     check_int("sscanf format newline first", a, 1);
     check_int("sscanf format newline second", b, 2);
 
+    /* Go Fscanf: nlIsSpace=false, so a leading/interior newline is not
+     * skipped as value whitespace. \v/\f are isSpace and are skipped.
+     * https://github.com/golang/go/blob/master/src/fmt/scan.go */
+    a = 77;
+    n = neverc_fmt_sscanf("\n42", "%d", &a);
+    check_int("sscanf leading newline rejected", n, 0);
+    check_int("sscanf leading newline leaves dest", a, 77);
+    a = 77;
+    n = neverc_fmt_sscanf("42\n43", "%d%d", &a, &b);
+    check_int("sscanf interior newline not skipped", n, 1);
+    check_int("sscanf interior newline first", a, 42);
+    n = neverc_fmt_sscanf("\n42", "\n%d", &a);
+    check_int("sscanf format newline then value", n, 1);
+    check_int("sscanf format newline then value val", a, 42);
+    n = neverc_fmt_sscanf("\v42", "%d", &a);
+    check_int("sscanf vertical tab skipped", n, 1);
+    check_int("sscanf vertical tab val", a, 42);
+    n = neverc_fmt_sscanf("\f42", "%d", &a);
+    check_int("sscanf form feed skipped", n, 1);
+    check_int("sscanf form feed val", a, 42);
+    n = neverc_fmt_sscanf("hello\vworld", "%63s", s);
+    check_int("sscanf string stops at vertical tab", n, 1);
+    check_str("sscanf string vertical tab val", s, "hello");
+    n = neverc_fmt_sscanf("hello\fworld", "%63s", s);
+    check_int("sscanf string stops at form feed", n, 1);
+    check_str("sscanf string form feed val", s, "hello");
+
     n = neverc_fmt_sscanf("ff", "%x", (unsigned int *)&a);
     check_int("sscanf hex", n, 1);
     check_int("sscanf hex val", a, 255);
@@ -598,6 +625,13 @@ static void test_sscanf(void) {
     one = 0;
     check_int("sscan thousands count", neverc_fmt_sscan("1_000", &one), 1);
     check_int("sscan thousands val", one, 1000);
+    one = 0;
+    check_int("sscan newline is space count", neverc_fmt_sscan("\n9", &one), 1);
+    check_int("sscan newline is space val", one, 9);
+    one = 0;
+    check_int("sscan vertical tab is space count",
+              neverc_fmt_sscan("\v8", &one), 1);
+    check_int("sscan vertical tab is space val", one, 8);
     a = 0;
     n = neverc_fmt_sscanf("7_2", "%d", &a);
     check_int("sscanf %%d underscore stops", n, 1);

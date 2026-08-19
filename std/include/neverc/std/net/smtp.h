@@ -32,8 +32,9 @@ typedef enum {
 
 /* --- Connection --- */
 
-/* Connect to an SMTP server. addr is "host:port" (e.g. "smtp.gmail.com:587").
- * Returns NULL on error; *errp is set. */
+/* Connect to an SMTP server. addr is "host:port" or "[IPv6]:port"
+ * (Go net.SplitHostPort, e.g. "smtp.gmail.com:587"). The host without
+ * brackets is kept as the TLS ServerName. Returns NULL on error; *errp is set. */
 neverc_smtp_client_t *neverc_smtp_dial(const char *addr, const char **errp);
 
 /* Close the SMTP connection. Sends QUIT if connected. */

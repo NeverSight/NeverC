@@ -150,6 +150,66 @@ static int fs_win_skip_extended_prefix(const char *path) {
     return 0;
 }
 
+static int fs_win_is_unc_remainder(const char *p) {
+    return (p[0] == 'U' || p[0] == 'u') &&
+           (p[1] == 'N' || p[1] == 'n') &&
+           (p[2] == 'C' || p[2] == 'c') &&
+           (p[3] == '\\' || p[3] == '/');
+}
+
+static int fs_win_prepare_path(const char *path, char *dst, size_t dst_cap,
+                               const char **out) {
+    int skip = fs_win_skip_extended_prefix(path);
+    const char *rest = path + skip;
+    int nt_prefix;
+    int n;
+
+    if (skip == 0) {
+        *out = path;
+        return 0;
+    }
+    nt_prefix = path[1] == '?' && path[2] == '?';
+
+    if (fs_win_is_unc_remainder(rest)) {
+        n = snprintf(dst, dst_cap, "\\\\%s", rest + 4);
+        if (n < 0 || (size_t)n >= dst_cap)
+            return -1;
+        *out = dst;
+        return 0;
+    }
+
+    if (rest[0] != '\0' && rest[1] == ':' &&
+        (rest[2] == '\\' || rest[2] == '/')) {
+        *out = rest;
+        return 0;
+    }
+
+    if (nt_prefix) {
+        n = snprintf(dst, dst_cap, "\\\\?\\%s", rest);
+        if (n < 0 || (size_t)n >= dst_cap)
+            return -1;
+        *out = dst;
+        return 0;
+    }
+    *out = path;
+    return 0;
+}
+
+static int fs_win_dir_star(char *pattern, size_t cap, const char *dir) {
+    size_t n;
+    int w;
+    if (!dir || dir[0] == '\0')
+        return -1;
+    n = strlen(dir);
+    if (dir[n - 1] == '\\' || dir[n - 1] == '/')
+        w = snprintf(pattern, cap, "%s*", dir);
+    else
+        w = snprintf(pattern, cap, "%s\\*", dir);
+    if (w < 0 || (size_t)w >= cap)
+        return -1;
+    return 0;
+}
+
 static int fs_win_has_wildcards(const char *path) {
     path += fs_win_skip_extended_prefix(path);
     for (; *path; path++) {
@@ -473,9 +533,15 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
 #endif
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
+    char prepared[4096];
     char pattern[4096];
-    int pattern_len = snprintf(pattern, sizeof(pattern), "%s\\*", path);
-    if (pattern_len < 0 || (size_t)pattern_len >= sizeof(pattern)) return -1;
+    const char *diruse;
+    if (fs_win_prepare_path(path, prepared, sizeof(prepared), &diruse) != 0) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    if (fs_win_dir_star(pattern, sizeof(pattern), diruse) != 0)
+        return -1;
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA(pattern, &fd);
     if (h == INVALID_HANDLE_VALUE) return fs_win_fail();

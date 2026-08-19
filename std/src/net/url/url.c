@@ -747,14 +747,15 @@ int neverc_url_values_encode(const neverc_url_values_t *v, char *buf, size_t cap
  * be observed half-initialized by another thread on weakly-ordered targets such
  * as arm64).
  *
- * path:  left as-is only for ALPHA / DIGIT and "-_.~/:@"  (0); else escape (1).
+ * path:  Go url.PathEscape (encodePathSegment). Unescaped: ALPHA / DIGIT
+ *        and "-_.~$&+:@=". Escapes "/" ";" "," "?" and every other byte.
  * query: left as-is only for ALPHA / DIGIT and "-_.~"     (0); else escape (1).
  */
 static const unsigned char esc_table_path[256] = {
     1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
     1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
-    1,1,1,1,1,1,1,1, 1,1,1,1,1,0,0,0,
-    0,0,0,0,0,0,0,0, 0,0,0,1,1,1,1,1,
+    1,1,1,1,0,1,0,1, 1,1,1,0,1,0,0,1,
+    0,0,0,0,0,0,0,0, 0,0,0,1,1,0,1,1,
     0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
     0,0,0,0,0,0,0,0, 0,0,0,1,1,1,1,0,
     1,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,

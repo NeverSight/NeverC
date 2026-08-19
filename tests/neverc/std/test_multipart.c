@@ -611,6 +611,20 @@ static void test_missing_close_and_epilogue(void) {
                   reader),
               -1);
 
+    strcpy(ew.headers[0].value, "x\xC0\x8Ay");
+    ASSERT_EQ(neverc_multipart_write(&ew, 1, "b", output, sizeof(output)), -1);
+
+    const char *overlong_part =
+        "--b\r\n"
+        "X-Name: x\xC0\x8Ay\r\n"
+        "\r\n"
+        "hi\r\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)overlong_part, strlen(overlong_part),
+                  "b", reader),
+              -1);
+
     free(reader);
 }
 

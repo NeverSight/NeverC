@@ -897,9 +897,14 @@ static void xml_node_release_self(neverc_xml_node_t *node) {
 
 /* Iterative free: a 1000-deep tree (the parse cap) plus sanitizer frames can
  * overflow small thread stacks if this recurses per child. Walk last-child
- * first so the stack is O(depth), and never fall back to C recursion. */
+ * first so the stack is O(depth), and never fall back to C recursion.
+ *
+ * Parse allows one extra self-closing leaf on the innermost element
+ * (non-self-closing tags stop at NCI_XML_MAX_DEPTH). The C stack is
+ * root + 1000 open elements + that leaf = NCI_XML_MAX_DEPTH + 2 slots. */
 void neverc_xml_node_free(neverc_xml_node_t *root) {
     neverc_xml_node_t *stack[NCI_XML_MAX_DEPTH + 2];
+    const int stack_cap = (int)(sizeof stack / sizeof stack[0]);
     int top = 0;
     if (!root) return;
     stack[top++] = root;
@@ -909,8 +914,14 @@ void neverc_xml_node_free(neverc_xml_node_t *root) {
             neverc_xml_node_t *child = node->children[--node->nchildren];
             if (!child)
                 continue;
-            if (top >= NCI_XML_MAX_DEPTH + 1)
+            if (top >= stack_cap) {
+                /* Parse only attaches leaves here. Free those so a
+                 * self-closing child at the cap cannot leak; do not
+                 * release a non-leaf (that would drop its descendants). */
+                if (child->nchildren == 0)
+                    xml_node_release_self(child);
                 continue;
+            }
             stack[top++] = child;
         } else {
             top--;

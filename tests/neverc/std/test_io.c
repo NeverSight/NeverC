@@ -53,7 +53,19 @@ static void test_read_full(void) {
     check_bytes("read_full content 2", buf, 4, "efgh");
 
     err = neverc_io_read_full(&r, buf, 4);
-    check_int("read_full eof", err, NEVERC_IO_ERR_UNEXP);
+    check_int("read_full eof", err, NEVERC_IO_EOF);
+
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"ab", 2);
+    r.ctx = &mr;
+    err = neverc_io_read_full(&r, buf, 4);
+    check_int("read_full short is unexpected eof", err, NEVERC_IO_ERR_UNEXP);
+
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"", 0);
+    r.ctx = &mr;
+    size_t n = 99;
+    err = neverc_io_read_at_least(&r, buf, 4, 1, &n);
+    check_int("read_at_least empty is eof", err, NEVERC_IO_EOF);
+    check_size("read_at_least empty n", n, 0);
 }
 
 static void test_copy(void) {
@@ -289,7 +301,8 @@ static void test_no_progress_guards(void) {
     check_size("multi_reader idle read reports no bytes", n, 0);
     check_int("multi_reader idle read does not advance", multi.current, 0);
     check_int("multi_reader resumes temporarily idle reader",
-              neverc_io_multi_reader_read(&multi, &byte, 1, &n), 0);
+              neverc_io_multi_reader_read(&multi, &byte, 1, &n),
+              NEVERC_IO_EOF);
     check_size("multi_reader resumed byte count", n, 1);
     check_int("multi_reader resumed content", byte, 'x');
 
@@ -563,6 +576,17 @@ static void test_multi_reader_eof_then_next(void) {
               neverc_io_multi_reader_read(&multi, &byte, 1, &n),
               NEVERC_IO_EOF);
     check_size("multi exhausted n", n, 0);
+
+    eof_chunk_reader_t last = { (const uint8_t *)"xy", 2, 0 };
+    neverc_io_reader_t only = { &last, eof_chunk_read };
+    neverc_io_multi_reader_init(&multi, &only, 1);
+    uint8_t chunk[4];
+    n = 99;
+    check_int("last reader data+eof rc",
+              neverc_io_multi_reader_read(&multi, chunk, sizeof(chunk), &n),
+              NEVERC_IO_EOF);
+    check_size("last reader data+eof n", n, 2);
+    check_int("last reader data+eof bytes", memcmp(chunk, "xy", 2) == 0, 1);
 }
 
 static void test_limit_reader_wrap(void) {

@@ -286,6 +286,59 @@ static void test_domain_security(void) {
     check_int("reject cross-domain Set-Cookie",
               neverc_cookiejar_count(jar), 0);
     neverc_cookiejar_free(jar);
+
+    /* Go domainAndType: only one leading dot is stripped; "..example.com"
+     * is malformed and must not become a domain cookie for example.com. */
+    jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://www.example.com/",
+        "sid=x; Domain=..example.com; Path=/");
+    check_int("reject Domain=..example.com Set-Cookie",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "..example.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://www.example.com/", &cookie, 1);
+    check_int("reject Domain=..example.com set_cookies",
+              neverc_cookiejar_count(jar), 0);
+    n = neverc_cookiejar_cookies(
+        jar, "https://other.example.com/", out, 1);
+    check_int("double-dot Domain does not leak to sibling", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://www.example.com/", "sid=x; Domain=.; Path=/");
+    check_int("reject Domain=.", neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://www.example.com/", "sid=x; Domain=..; Path=/");
+    check_int("reject Domain=..", neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://www.example.com/",
+        "sid=x; Domain=.example.com; Path=/");
+    check_int("single leading dot still accepted",
+              neverc_cookiejar_count(jar), 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://other.example.com/", out, 1);
+    check_int("single leading dot is a domain cookie", n, 1);
+    neverc_cookiejar_free(jar);
+
+    /* Go isIP: a request-host containing '%' is not a DNS name, so it
+     * cannot set Domain=www.example.com cookies via suffix matching. */
+    jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://x%25.www.example.com/",
+        "sid=x; Domain=www.example.com; Path=/");
+    check_int("percent-host cannot set Domain=www.example.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://x%25.www.example.com/",
+        "sid=x; Domain=example.com; Path=/");
+    check_int("percent-host cannot set Domain=example.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
 }
 
 static void test_http_schemes_only(void) {

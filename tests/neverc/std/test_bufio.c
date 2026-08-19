@@ -243,6 +243,32 @@ static void test_buffered_reader(void) {
     neverc_bufio_reader_free(&br);
 }
 
+static int one_byte_mem_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
+    if (len > 1) len = 1;
+    return neverc_io_mem_reader_read(ctx, buf, len, n);
+}
+
+static void test_buffered_reader_short_read(void) {
+    printf("[buffered reader short read]\n");
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"abcdef", 6);
+    neverc_io_reader_t r = { &mr, one_byte_mem_read };
+    neverc_bufio_reader_t br;
+    neverc_bufio_reader_init_size(&br, r, 8);
+    uint8_t out[5];
+    size_t n = 99;
+    check_int("short read rc",
+              neverc_bufio_reader_read(&br, out, sizeof(out), &n), 0);
+    check_size("short read n", n, 1);
+    check_int("short read byte", out[0], 'a');
+    n = 99;
+    check_int("short read second rc",
+              neverc_bufio_reader_read(&br, out, sizeof(out), &n), 0);
+    check_size("short read second n", n, 1);
+    check_int("short read second byte", out[0], 'b');
+    neverc_bufio_reader_free(&br);
+}
+
 static void test_buffered_reader_preserves_terminal_error(void) {
     printf("[buffered reader terminal error]\n");
 
@@ -875,6 +901,7 @@ int main(void) {
     test_scanner_full_buffer_with_eof();
     test_scanner_data_with_terminal_error();
     test_buffered_reader();
+    test_buffered_reader_short_read();
     test_buffered_reader_preserves_terminal_error();
     test_buffered_reader_readline();
     test_buffered_writer();

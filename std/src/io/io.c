@@ -102,7 +102,9 @@ int neverc_io_read_full(neverc_io_reader_t *r, uint8_t *buf, size_t len) {
         total += n;
         if (total == len) return 0;
         if (err == NEVERC_IO_EOF) {
-            return NEVERC_IO_ERR_UNEXP;
+            /* Go ReadFull: EOF only if no bytes were read; a short
+             * read that hits EOF is UnexpectedEOF. */
+            return total == 0 ? NEVERC_IO_EOF : NEVERC_IO_ERR_UNEXP;
         }
         if (err != 0) return err;
         if (n == 0) {
@@ -290,7 +292,7 @@ int neverc_io_read_at_least(neverc_io_reader_t *r, uint8_t *buf,
         }
         if (rc == NEVERC_IO_EOF) {
             if (n) *n = total;
-            return NEVERC_IO_ERR_UNEXP;
+            return total == 0 ? NEVERC_IO_EOF : NEVERC_IO_ERR_UNEXP;
         }
         if (rc != 0) { if (n) *n = total; return rc; }
         if (got == 0) {
@@ -425,7 +427,10 @@ int neverc_io_multi_reader_read(void *ctx, uint8_t *buf, size_t len, size_t *n) 
             *n = got;
             if (rc == NEVERC_IO_EOF) {
                 mr->current++;
-                return 0;
+                /* Go io.MultiReader: swallow EOF only while more readers
+                 * remain. The final reader's (n>0, EOF) is returned as
+                 * EOF so the concatenation ends on this Read. */
+                return mr->current < mr->count ? 0 : NEVERC_IO_EOF;
             }
             return rc;
         }

@@ -1163,6 +1163,66 @@ static void test_unprotected_packet_length_coalesced_and_truncated(void) {
               -1);
 }
 
+static void test_unprotected_is_initial_ignores_hp_pn_length(void) {
+    /* RFC 9000 §14.1 / RFC 9001 §5.4.1 / Go x/net getPacketType:
+     * Initial identification for the 1200-byte datagram discard must use
+     * unprotected type bits, not a full header parse of HP-garbled PN
+     * length. */
+    uint8_t buf[128];
+    size_t packet_len = 0;
+    ASSERT_EQ(write_parseable_long_header(NEVERC_QUIC_VERSION_1,
+                                          QUIC_PKT_INITIAL, buf,
+                                          sizeof(buf), &packet_len), 0);
+    ASSERT_EQ(neverc_quic_unprotected_is_initial(buf, packet_len), 1);
+
+    buf[0] = (uint8_t)((buf[0] & 0xf0U) | 0x0fU);
+    ASSERT_EQ(neverc_quic_unprotected_is_initial(buf, packet_len), 1);
+
+    /* Length=1 plus garbled 4-byte PN length: full parse fails, type bits
+     * still name the packet Initial. The old conn-level check fail-opened. */
+    uint8_t tiny[16];
+    memset(tiny, 0, sizeof(tiny));
+    tiny[0] = 0xcf; /* long, fixed, v1 Initial, reserved+PN len garbled */
+    tiny[4] = 1;
+    tiny[8] = 1; /* Length */
+    tiny[9] = 0xaa;
+    ASSERT_EQ(neverc_quic_unprotected_is_initial(tiny, 10), 1);
+    quic_packet_header_t parsed;
+    ASSERT_EQ(neverc_quic_parse_packet_header(tiny, 10, &parsed, 0), -1);
+
+    ASSERT_EQ(write_parseable_long_header(NEVERC_QUIC_VERSION_1,
+                                          QUIC_PKT_HANDSHAKE, buf,
+                                          sizeof(buf), &packet_len), 0);
+    ASSERT_EQ(neverc_quic_unprotected_is_initial(buf, packet_len), 0);
+
+    ASSERT_EQ(write_parseable_long_header(NEVERC_QUIC_VERSION_2,
+                                          QUIC_PKT_INITIAL, buf,
+                                          sizeof(buf), &packet_len), 0);
+    ASSERT_EQ(neverc_quic_unprotected_is_initial(buf, packet_len), 1);
+
+    /* RFC 9369: v2 Retry reuses v1 Initial type bits 0b00. */
+    quic_packet_header_t retry;
+    memset(&retry, 0, sizeof(retry));
+    retry.type = QUIC_PKT_RETRY;
+    retry.version = NEVERC_QUIC_VERSION_2;
+    retry.dcid.len = 8;
+    memset(retry.dcid.data, 0x11, 8);
+    retry.scid.len = 8;
+    memset(retry.scid.data, 0x22, 8);
+    retry.pkt_number_len = 1;
+    size_t written = 0;
+    ASSERT_EQ(neverc_quic_write_long_header(buf, sizeof(buf), &retry,
+                                            &written), 0);
+    ASSERT_EQ((buf[0] >> 4) & 3, 0);
+    ASSERT_EQ(neverc_quic_unprotected_is_initial(buf, written), 0);
+
+    uint8_t vn[5] = { 0xc0, 0, 0, 0, 0 };
+    ASSERT_EQ(neverc_quic_unprotected_is_initial(vn, sizeof(vn)), 0);
+    uint8_t short_hdr = 0x40;
+    ASSERT_EQ(neverc_quic_unprotected_is_initial(&short_hdr, 1), 0);
+    ASSERT_EQ(neverc_quic_unprotected_is_initial(NULL, 5), 0);
+}
+
 static void test_pn_window_tracks_extra_and_reacks(void) {
     quic_pn_state_t state;
     memset(&state, 0, sizeof(state));
@@ -1285,6 +1345,7 @@ int main(void) {
     test_version_negotiation_empty_cid();
     test_version_negotiation_dcid_extract();
     test_unprotected_packet_length_coalesced_and_truncated();
+    test_unprotected_is_initial_ignores_hp_pn_length();
     test_pn_window_tracks_extra_and_reacks();
     test_retired_local_cid_still_matches();
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);

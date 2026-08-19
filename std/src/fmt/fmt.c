@@ -700,12 +700,6 @@ char *neverc_fmt_errorf(const char *format, ...) {
 
 /* ---- Scan functions ---- */
 
-static int skip_ws(const char **p) {
-    int n = 0;
-    while (**p == ' ' || **p == '\t' || **p == '\n' || **p == '\r') { (*p)++; n++; }
-    return n;
-}
-
 static int is_scan_space(char c) {
     return c == ' ' || c == '\t' || c == '\v' || c == '\f' || c == '\r' ||
            c == '\n';
@@ -713,6 +707,21 @@ static int is_scan_space(char c) {
 
 static int is_scan_space_not_nl(char c) {
     return c == ' ' || c == '\t' || c == '\v' || c == '\f' || c == '\r';
+}
+
+/* Formatted Scanf (Go fmt/scan.go: Fscanf nlIsSpace=false). Skip \v/\f as
+ * well as space/tab/CR, but not newlines — those must appear in the format. */
+static int skip_ws(const char **p) {
+    int n = 0;
+    while (is_scan_space_not_nl(**p)) { (*p)++; n++; }
+    return n;
+}
+
+/* Unformatted Scan/Sscan (Go Fscan nlIsSpace=true): newlines count as space. */
+static int skip_ws_nl(const char **p) {
+    int n = 0;
+    while (is_scan_space(**p)) { (*p)++; n++; }
+    return n;
 }
 
 /* Go fmt/scan.go advance(): a format newline must match an input newline
@@ -926,8 +935,7 @@ static int scan_string(const char **p, char *buf, size_t max_chars) {
     skip_ws(p);
     if (!buf || max_chars == 0 || **p == '\0') return 0;
     size_t i = 0;
-    while (i < max_chars && **p && **p != ' ' && **p != '\t' &&
-           **p != '\n' && **p != '\r') {
+    while (i < max_chars && **p && !is_scan_space(**p)) {
         buf[i++] = **p;
         (*p)++;
     }
@@ -967,7 +975,7 @@ static int scan_hex(const char **p, uint64_t *out) {
 /* Go unformatted Scan/Sscan: 0x/0b/0o/leading-0 prefixes and underscores.
  * Formatted %d stays decimal-only (scan_int) — Go %d does not take those. */
 static int scan_int_literal(const char **p, int64_t *out) {
-    skip_ws(p);
+    skip_ws_nl(p);
     const char *start = *p;
     if (**p == '+' || **p == '-') (*p)++;
     if (**p < '0' || **p > '9') {

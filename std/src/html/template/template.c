@@ -695,6 +695,7 @@ static void html_scan_doc(const char *buf, size_t len,
                           int *in_script_comment,
                           int *in_js_quoted,
                           int *in_js_re,
+                          int *in_js_tpl,
                           int *in_open_tag,
                           int *in_attr, int *quoted,
                           const char **aname, size_t *nlen,
@@ -706,6 +707,7 @@ static void html_scan_doc(const char *buf, size_t len,
     *in_script_comment = 0;
     *in_js_quoted = 0;
     *in_js_re = 0;
+    *in_js_tpl = 0;
     *in_open_tag = 0;
     *in_attr = 0;
     *quoted = 0;
@@ -1013,9 +1015,12 @@ static void html_scan_doc(const char *buf, size_t len,
     *in_script_comment = (state == HS_SCRIPT &&
                           (js == JS_LINE || js == JS_BLOCK || js == JS_HTML));
     /* Single/double-quoted JS strings only. Template literals keep wrapping
-     * so `${ {{.X}} }` cannot run X as code (the scanner does not track `${`). */
+     * so `${ {{.X}} }` cannot run X as code (the scanner does not track `${`).
+     * Odd trailing backslashes still fail closed: wrapping would place a
+     * quote after `\` and Go html/template reports ErrPartialEscape. */
     *in_js_quoted = (state == HS_SCRIPT && (js == JS_SQ || js == JS_DQ));
     *in_js_re = (state == HS_SCRIPT && (js == JS_RE || js == JS_RE_CLASS));
+    *in_js_tpl = (state == HS_SCRIPT && js == JS_TPL);
     *in_open_tag = (state == HS_TAG || state == HS_ATTR_DQ ||
                     state == HS_ATTR_SQ || state == HS_ATTR_UQ ||
                     state == HS_MARKUP);
@@ -1533,12 +1538,12 @@ static int execute_nodes(const node_t *n,
                 const char *aprefix = NULL;
                 size_t aplen = 0;
                 int in_script = 0, in_style_tag = 0, in_script_comment = 0;
-                int in_js_quoted = 0, in_js_re = 0;
+                int in_js_quoted = 0, in_js_re = 0, in_js_tpl = 0;
                 int in_open_tag = 0;
                 int in_meta = 0, meta_refresh = 0, in_comment = 0;
                 html_scan_doc(*buf, *len, &in_script, &in_style_tag,
                               &in_script_comment, &in_js_quoted, &in_js_re,
-                              &in_open_tag, &in_attr, &quoted,
+                              &in_js_tpl, &in_open_tag, &in_attr, &quoted,
                               &aname, &nlen, &aprefix, &aplen,
                               &in_meta, &meta_refresh, &in_comment);
                 if (in_comment)
@@ -1653,7 +1658,7 @@ static int execute_nodes(const node_t *n,
                 else if (in_script && !in_attr && in_script_comment)
                     escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_script && !in_attr &&
-                         (in_js_quoted || in_js_re) &&
+                         (in_js_quoted || in_js_re || in_js_tpl) &&
                          html_js_odd_trailing_backslash(*buf, *len))
                     escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_script && !in_attr && in_js_quoted)

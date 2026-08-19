@@ -343,6 +343,30 @@ static void test_entities_cdata_and_well_formedness(void) {
             tree = neverc_xml_parse(nested, len);
             check_bool("accept depth-1000 nesting", tree != NULL, 1);
             neverc_xml_node_free(tree);
+
+            /* Parse permits a self-closing leaf on the innermost element.
+             * neverc_xml_node_free used to skip that child when the C
+             * stack already held root + 1000 open elements (off-by-one
+             * vs the NCI_XML_MAX_DEPTH+2 array). */
+            len = 0;
+            for (int i = 0; i < 1000; i++)
+                len += (size_t)snprintf(nested + len, cap - len, "<a>");
+            len += (size_t)snprintf(nested + len, cap - len, "<b/>");
+            for (int i = 0; i < 1000; i++)
+                len += (size_t)snprintf(nested + len, cap - len, "</a>");
+            tree = neverc_xml_parse(nested, len);
+            check_bool("accept depth-1000 with self-closing leaf",
+                       tree != NULL, 1);
+            {
+                neverc_xml_node_t *n = tree;
+                int i;
+                for (i = 0; n && i < 1000; i++)
+                    n = neverc_xml_node_child(n, "a");
+                check_bool("innermost a at depth 1000", n != NULL, 1);
+                check_bool("self-closing leaf attached",
+                           n && neverc_xml_node_child(n, "b") != NULL, 1);
+            }
+            neverc_xml_node_free(tree);
             free(nested);
         }
     }

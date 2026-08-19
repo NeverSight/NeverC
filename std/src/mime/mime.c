@@ -960,7 +960,9 @@ int neverc_mime_decode_header(const char *src, size_t src_len,
     size_t di = 0;
     size_t mark = mime_find(src, src_len, "=?", 2);
     if (mark == SIZE_MAX) {
-        if (mime_output_has_ctl(src, src_len)) return -1;
+        if (mime_output_has_ctl(src, src_len) ||
+            !nci_2047_utf8_ok((const unsigned char *)src, src_len))
+            return -1;
         if (!mime_room(0, src_len, out_cap)) return -1;
         if (src_len) memcpy(out, src, src_len);
         if (out_len) *out_len = src_len;
@@ -1089,7 +1091,9 @@ int neverc_mime_decode_header(const char *src, size_t src_len,
         memcpy(out + di, src + pos, lit);
         di += lit;
     }
-    if (mime_output_has_ctl(out, di)) return -1;
+    if (mime_output_has_ctl(out, di) ||
+        !nci_2047_utf8_ok((const unsigned char *)out, di))
+        return -1;
     if (out_len) *out_len = di;
     return 0;
 }

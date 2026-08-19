@@ -338,8 +338,14 @@ static int parse_url_parts(const char *url, char *scheme, size_t slen,
 }
 
 static int host_is_ip_literal(const char *host) {
+    if (!host || !host[0]) return 0;
+    /* Go cookiejar isIP: ':' and '%' cannot appear in a DNS hostname, so
+     * treat them as IP-like and disable suffix matching. Otherwise a host
+     * such as x%.www.example.com domain-matches www.example.com. */
+    if (strchr(host, ':') || strchr(host, '%'))
+        return 1;
     neverc_netip_addr_t addr;
-    return host && neverc_netip_parse_addr(host, &addr) == 0;
+    return neverc_netip_parse_addr(host, &addr) == 0;
 }
 
 /* RFC 6265 section 5.1.3 domain matching for normalized domains. */
@@ -358,13 +364,17 @@ static int domain_match(const char *cookie_domain, const char *request_host) {
 
 static int normalize_cookie_domain(const char *input, char *domain,
                                    size_t capacity) {
-    while (*input == '.') input++;
+    /* RFC 6265 §5.2.3 / Go domainAndType: strip at most one leading dot.
+     * Domain=..example.com used to collapse to example.com and store a
+     * parent-domain cookie that Go rejects as errMalformedDomain. */
+    if (*input == '.') input++;
     size_t length = strlen(input);
     if (length >= 2 && input[0] == '[' && input[length - 1] == ']') {
         input++;
         length -= 2;
     }
-    if (length == 0 || length >= capacity || input[length - 1] == '.')
+    if (length == 0 || length >= capacity || input[0] == '.' ||
+        input[length - 1] == '.')
         return -1;
     for (size_t i = 0; i < length; i++) {
         unsigned char c = (unsigned char)input[i];
@@ -651,8 +661,10 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
                 !domain_match(domain, host))
                 continue;
             host_only = 0;
-            if (!host_is_ip_literal(host) &&
-                cookie_domain_is_public_suffix(domain)) {
+            if (host_is_ip_literal(host)) {
+                /* Go domainAndType: IP Domain attributes are host-only. */
+                host_only = 1;
+            } else if (cookie_domain_is_public_suffix(domain)) {
                 if (strcmp(domain, host) != 0) continue;
                 host_only = 1;
             }

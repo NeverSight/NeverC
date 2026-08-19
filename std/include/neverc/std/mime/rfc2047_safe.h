@@ -313,8 +313,11 @@ static int nci_rfc2047_header_safe(const char *s, size_t n) {
         return n == 0;
     /* Raw text is UTF-8 (or ASCII). Scanning it as iso-8859-1 treats every
      * 0x85 continuation byte as NEL and rejects Å / Greek / CJK. Orphan
-     * 0x85 and U+0085/2028/2029 are still caught by the UTF-8 walk. */
-    if (nci_2047_has_header_break((const unsigned char *)s, n, 1))
+     * 0x85 and U+0085/2028/2029 are still caught by the UTF-8 walk.
+     * Overlong CR/LF (C0 8D, E0 80 8A) is not a C0 byte; reject ill-formed
+     * UTF-8 the same way encoded-words and RFC 2231 already do. */
+    if (nci_2047_has_header_break((const unsigned char *)s, n, 1) ||
+        !nci_2047_utf8_ok((const unsigned char *)s, n))
         return 0;
 
     const char *p = s;

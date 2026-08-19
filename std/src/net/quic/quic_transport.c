@@ -524,7 +524,7 @@ static int qt_handle_version_negotiation(struct neverc_quic_conn *conn,
 static int qt_process_one_packet(struct neverc_quic_conn *conn,
                                  const uint8_t *packet, size_t length,
                                  const neverc_udp_addr_t *source,
-                                 size_t *consumed) {
+                                 size_t *consumed, size_t datagram_len) {
     if (!conn || !packet || !source || !consumed || length < 1) return -1;
     *consumed = 0;
     int is_long = (packet[0] & 0x80U) != 0;
@@ -558,6 +558,13 @@ static int qt_process_one_packet(struct neverc_quic_conn *conn,
         return 0;
     }
     *consumed = packet_len;
+    /* RFC 9000 §14.1 / Go x/net: identify Initial from unprotected type
+     * bits. A coalesced Handshake+Initial in a short datagram must still
+     * drop the Initial; do not decrypt it. */
+    if (conn->side == QUIC_SIDE_SERVER &&
+        protected_type == QUIC_PKT_INITIAL &&
+        datagram_len < QUIC_MIN_INITIAL_SIZE)
+        return 0;
     /* RFC 9000 §17.2: packets with Fixed Bit 0 MUST be discarded. */
     if ((packet[0] & 0x40U) == 0)
         return 0;
@@ -780,14 +787,13 @@ int neverc_quic_conn_process_datagram(struct neverc_quic_conn *conn,
     }
     /* RFC 9000 §14.1: a server MUST discard an Initial carried in a UDP
      * datagram smaller than 1200 bytes, including after the connection
-     * already exists. */
-    if (conn->side == QUIC_SIDE_SERVER && length < QUIC_MIN_INITIAL_SIZE) {
-        quic_packet_header_t header;
-        if (neverc_quic_parse_packet_header(packet, length, &header, 0) == 0 &&
-            header.type == QUIC_PKT_INITIAL) {
-            nc_mutex_unlock(&conn->lock);
-            return 0;
-        }
+     * already exists. Type bits are not header-protected (RFC 9001
+     * §5.4.1); a full header parse uses the protected PN length and
+     * fail-opens when that parse rejects a still-identifiable Initial. */
+    if (conn->side == QUIC_SIDE_SERVER && length < QUIC_MIN_INITIAL_SIZE &&
+        neverc_quic_unprotected_is_initial(packet, length)) {
+        nc_mutex_unlock(&conn->lock);
+        return 0;
     }
     if (conn->side == QUIC_SIDE_SERVER && !conn->address_validated) {
         if (conn->bytes_received_before_validation <= UINT64_MAX - length)
@@ -800,7 +806,7 @@ int neverc_quic_conn_process_datagram(struct neverc_quic_conn *conn,
         size_t consumed = 0;
         int status = qt_process_one_packet(conn, packet + position,
                                            length - position, source,
-                                           &consumed);
+                                           &consumed, length);
         if (status != 0) {
             int send_close = conn->close_pending &&
                              conn->state != QUIC_CONN_CLOSED;

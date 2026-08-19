@@ -427,6 +427,9 @@ static void test_remove_all_rejects_dot(void) {
     errno = 0;
     ASSERT_EQ(neverc_os_remove_all("\\\\?\\."), -1);
     ASSERT_EQ(errno, EINVAL);
+    errno = 0;
+    ASSERT_EQ(neverc_os_remove_all("\\??\\."), -1);
+    ASSERT_EQ(errno, EINVAL);
 #endif
 
     {
@@ -636,6 +639,38 @@ static void test_read_dir(void) {
         snprintf(rmquery, sizeof(rmquery), "\\\\?\\%s", parent);
         ASSERT_EQ(neverc_os_remove_all(rmquery), 0);
         ASSERT_TRUE(!neverc_os_exists(parent));
+
+        make_test_path(parent, sizeof(parent), "neverc_os_win_nt_rm");
+        neverc_os_remove_all(parent);
+        ASSERT_EQ(neverc_os_mkdir(parent, 0700), 0);
+        snprintf(child, sizeof(child), "%s\\file.txt", parent);
+        ASSERT_EQ(neverc_os_write_file(child, (const unsigned char *)"x", 1,
+                                       0600),
+                  0);
+        snprintf(rmquery, sizeof(rmquery), "\\??\\%s", parent);
+        ASSERT_EQ(neverc_os_remove_all(rmquery), 0);
+        ASSERT_TRUE(!neverc_os_exists(parent));
+
+        /* Stripping \\?\C: to C: would RemoveAll the drive's cwd. */
+        {
+            char cwd[1024], sentinel[1200], drive_ext[16];
+            ASSERT_EQ(neverc_os_getwd(cwd, sizeof(cwd)), 0);
+            if (((cwd[0] >= 'A' && cwd[0] <= 'Z') ||
+                 (cwd[0] >= 'a' && cwd[0] <= 'z')) && cwd[1] == ':') {
+                snprintf(sentinel, sizeof(sentinel),
+                         "%s\\neverc_cwd_rm_sentinel", cwd);
+                ASSERT_EQ(neverc_os_write_file(
+                              sentinel, (const unsigned char *)"x", 1, 0600),
+                          0);
+                snprintf(drive_ext, sizeof(drive_ext), "\\\\?\\%c:", cwd[0]);
+                neverc_os_remove_all(drive_ext);
+                ASSERT_TRUE(neverc_os_exists(sentinel));
+                snprintf(drive_ext, sizeof(drive_ext), "\\??\\%c:", cwd[0]);
+                neverc_os_remove_all(drive_ext);
+                ASSERT_TRUE(neverc_os_exists(sentinel));
+                neverc_os_remove(sentinel);
+            }
+        }
     }
 
     {

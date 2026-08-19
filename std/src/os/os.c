@@ -138,15 +138,63 @@ static int os_win_path_has_dotdot_component(const char *path) {
     return 0;
 }
 
-/* ANSI Win32 APIs often reject \\?\ even when FindFirstFileA accepts it.
- * After wildcard checks, drive-letter extended paths can drop the prefix. */
-static const char *os_win_a_path(const char *path) {
+/* Map NT/Win32 prefixes to a path ANSI APIs can use without turning a
+ * volume/device path into a cwd-relative name (Go os.normaliseLinkPath /
+ * RemoveAll). Drive-absolute \\?\C:\foo may drop the prefix; \\?\C: must
+ * not become C: (the drive's cwd). \??\ is converted to \\?\ otherwise so
+ * FindFirstFileA does not treat '?' as a wildcard. */
+static int os_win_prepare_path(const char *path, char *dst, size_t dst_cap,
+                               const char **out) {
     int skip = os_win_skip_extended_prefix(path);
-    if (skip == 0)
-        return path;
-    if (os_win_is_unc_remainder(path + skip))
-        return path;
-    return path + skip;
+    const char *rest = path + skip;
+    int nt_prefix;
+    int n;
+
+    if (skip == 0) {
+        *out = path;
+        return 0;
+    }
+    nt_prefix = path[1] == '?' && path[2] == '?';
+
+    if (os_win_is_unc_remainder(rest)) {
+        n = snprintf(dst, dst_cap, "\\\\%s", rest + 4);
+        if (n < 0 || (size_t)n >= dst_cap)
+            return -1;
+        *out = dst;
+        return 0;
+    }
+
+    if (rest[0] != '\0' && rest[1] == ':' &&
+        (rest[2] == '\\' || rest[2] == '/')) {
+        *out = rest;
+        return 0;
+    }
+
+    if (nt_prefix) {
+        n = snprintf(dst, dst_cap, "\\\\?\\%s", rest);
+        if (n < 0 || (size_t)n >= dst_cap)
+            return -1;
+        *out = dst;
+        return 0;
+    }
+    *out = path;
+    return 0;
+}
+
+/* Go #17500: \\?\C:\\* (doubled slash) fails on some Windows versions. */
+static int os_win_dir_star(char *pattern, size_t cap, const char *dir) {
+    size_t n;
+    int w;
+    if (!dir || dir[0] == '\0')
+        return -1;
+    n = strlen(dir);
+    if (dir[n - 1] == '\\' || dir[n - 1] == '/')
+        w = snprintf(pattern, cap, "%s*", dir);
+    else
+        w = snprintf(pattern, cap, "%s\\*", dir);
+    if (w < 0 || (size_t)w >= cap)
+        return -1;
+    return 0;
 }
 
 /* Win32 strips trailing spaces/dots, so ".. " is the parent directory. */
@@ -701,11 +749,17 @@ int neverc_os_remove_all(const char *path) {
     if (!path || path[0] == '\0') return -1;
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
+    char prepared[4096];
+    const char *use;
     if (os_win_has_wildcards(path)) {
         errno = EINVAL;
         return -1;
     }
-    path = os_win_a_path(path);
+    if (os_win_prepare_path(path, prepared, sizeof(prepared), &use) != 0) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    path = use;
     if (os_win_path_has_dotdot_component(path)) {
         errno = EINVAL;
         return -1;
@@ -715,6 +769,17 @@ int neverc_os_remove_all(const char *path) {
         errno = EINVAL;
         return -1;
     }
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    /* \\?\. and \??\. keep an extended prefix after prepare; the final
+     * component is still "." (Go os.endsWithDot / rmdir(".")). */
+    {
+        int skip = os_win_skip_extended_prefix(path);
+        if (skip && os_remove_all_ends_with_dot(path + skip)) {
+            errno = EINVAL;
+            return -1;
+        }
+    }
+#endif
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
     DWORD attrs = GetFileAttributesA(path);
@@ -733,8 +798,7 @@ int neverc_os_remove_all(const char *path) {
 
     WIN32_FIND_DATAA fd;
     char pattern[4096];
-    int pattern_len = snprintf(pattern, sizeof(pattern), "%s\\*", path);
-    if (pattern_len < 0 || (size_t)pattern_len >= sizeof(pattern))
+    if (os_win_dir_star(pattern, sizeof(pattern), path) != 0)
         return -1;
     HANDLE h = FindFirstFileA(pattern, &fd);
     if (h == INVALID_HANDLE_VALUE) return -1;
@@ -1405,12 +1469,17 @@ int neverc_os_readlink(const char *name, char *buf, size_t cap) {
                                 NULL, NULL);
     if (n <= 0 || (size_t)n >= cap) return os_win_fail();
     buf[n] = '\0';
-    if (strncmp(buf, "\\??\\UNC\\", 8) == 0) {
+    /* Go os.normaliseLinkPath: \??\C:\foo -> C:\foo, \??\UNC\x -> \\x,
+     * \??\Volume{guid}\ -> \\?\Volume{guid}\ (not a cwd-relative name). */
+    if (strncmp(buf, "\\??\\UNC\\", 8) == 0 || strncmp(buf, "\\\\?\\UNC\\", 8) == 0) {
         buf[0] = '\\';
         buf[1] = '\\';
         memmove(buf + 2, buf + 8, strlen(buf + 8) + 1);
-    } else if (strncmp(buf, "\\??\\", 4) == 0 || strncmp(buf, "\\\\?\\", 4) == 0) {
+    } else if ((strncmp(buf, "\\??\\", 4) == 0 || strncmp(buf, "\\\\?\\", 4) == 0) &&
+               buf[4] != '\0' && buf[5] == ':') {
         memmove(buf, buf + 4, strlen(buf + 4) + 1);
+    } else if (strncmp(buf, "\\??\\", 4) == 0) {
+        buf[1] = '\\';
     }
     return 0;
 #else
@@ -1438,9 +1507,15 @@ int neverc_os_read_dir(const char *dirname, neverc_os_dir_entry_t **entries,
     size_t length = 0;
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
+    char prepared[4096];
     char pattern[4096];
-    int pattern_length = snprintf(pattern, sizeof(pattern), "%s\\*", dirname);
-    if (pattern_length < 0 || (size_t)pattern_length >= sizeof(pattern)) {
+    const char *diruse;
+    if (os_win_prepare_path(dirname, prepared, sizeof(prepared), &diruse) != 0) {
+        free(arr);
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    if (os_win_dir_star(pattern, sizeof(pattern), diruse) != 0) {
         free(arr);
         return -1;
     }

@@ -213,6 +213,20 @@ static int quic_decode_varint_at(const uint8_t *buf, size_t len, size_t *pos,
     return 0;
 }
 
+int neverc_quic_unprotected_is_initial(const uint8_t *buf, size_t len) {
+    /* RFC 9001 §5.4.1: long-header type bits (4–5) and Version are not
+     * header-protected. Packet Number length (bits 0–1) is, so a full
+     * header parse must not be used to decide RFC 9000 §14.1 discard. */
+    if (!buf || len < 5 || (buf[0] & 0xc0U) != 0xc0U)
+        return 0;
+    uint32_t version = ((uint32_t)buf[1] << 24) | ((uint32_t)buf[2] << 16) |
+                       ((uint32_t)buf[3] << 8) | (uint32_t)buf[4];
+    if (version == 0)
+        return 0;
+    return quic_long_packet_type((buf[0] >> 4) & 3U, version) ==
+           QUIC_PKT_INITIAL;
+}
+
 int neverc_quic_unprotected_packet_length(const uint8_t *packet, size_t length,
                                           uint8_t short_dcid_len,
                                           size_t *packet_len) {

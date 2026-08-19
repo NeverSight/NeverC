@@ -30,7 +30,11 @@ static int o_isalnum(int c) {
 }
 static int o_should_escape_path(unsigned char c) {
     if (o_isalnum(c)) return 0;
-    if (c == '-' || c == '_' || c == '.' || c == '~' || c == '/' || c == ':' || c == '@') return 0;
+    /* Go url.PathEscape / encodePathSegment. */
+    if (c == '-' || c == '_' || c == '.' || c == '~' ||
+        c == '$' || c == '&' || c == '+' || c == ':' ||
+        c == '=' || c == '@')
+        return 0;
     return 1;
 }
 static int o_should_escape_query(unsigned char c) {

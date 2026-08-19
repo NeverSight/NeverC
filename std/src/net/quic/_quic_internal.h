@@ -529,6 +529,7 @@ int neverc_quic_write_version_negotiation(
     uint8_t *buf, size_t cap, uint8_t first_byte,
     const quic_conn_id_t *destination, const quic_conn_id_t *source,
     const uint32_t *versions, size_t nversions, size_t *written);
+int neverc_quic_unprotected_is_initial(const uint8_t *buf, size_t len);
 int neverc_quic_unprotected_packet_length(const uint8_t *packet, size_t length,
                                           uint8_t short_dcid_len,
                                           size_t *packet_len);

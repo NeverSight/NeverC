@@ -35,10 +35,16 @@ int neverc_slices_equal(const void *s1, size_t len1, const void *s2, size_t len2
 
 int neverc_slices_compare(const void *s1, size_t len1, const void *s2, size_t len2,
                            size_t elem_size, neverc_cmp_func_t cmp) {
-    if (!cmp || elem_size == 0) return 0;
+    /* Go slices.Compare == 0 iff Equal. Overflow / missing cmp / zero
+     * elem_size cannot inspect elements: fail closed (not equal) except
+     * for the empty-empty identity Equal already treats as true. */
+    if (!cmp || elem_size == 0) {
+        if (len1 == 0 && len2 == 0) return 0;
+        return 1;
+    }
     if ((len1 > 0 && len1 > SIZE_MAX / elem_size) ||
         (len2 > 0 && len2 > SIZE_MAX / elem_size))
-        return 0;
+        return 1;
     if (len1 > 0 && !s1) len1 = 0;
     if (len2 > 0 && !s2) len2 = 0;
     size_t minlen = len1 < len2 ? len1 : len2;

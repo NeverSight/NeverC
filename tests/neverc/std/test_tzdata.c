@@ -759,6 +759,29 @@ static size_t build_tzif_syd_footer(uint8_t *buf, size_t cap) {
     return n;
 }
 
+/* No transitions + POSIX footer. Go Location.lookup ignores extend when
+ * len(tx)==0 and uses lookupFirstZone for every instant. */
+static size_t build_tzif_posix_no_tx(uint8_t *buf, size_t cap) {
+    size_t n = 0;
+    uint8_t zmeta[2] = {0, 0};
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 0, 1, 4);
+    append_be32(buf, &n, cap, 0);
+    append_bytes(buf, &n, cap, zmeta, 2);
+    append_bytes(buf, &n, cap, "UTC\0", 4);
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 0, 2, 8);
+    append_be32(buf, &n, cap, (uint32_t)-18000);
+    uint8_t est[2] = {0, 0};
+    append_bytes(buf, &n, cap, est, 2);
+    append_be32(buf, &n, cap, (uint32_t)-14400);
+    uint8_t edt[2] = {1, 4};
+    append_bytes(buf, &n, cap, edt, 2);
+    append_bytes(buf, &n, cap, "EST\0EDT\0", 8);
+    append_bytes(buf, &n, cap, "\nEST5EDT,M3.2.0,M11.1.0\n", 24);
+    return n;
+}
+
 /* Julian wrap-around footer (day 260 → day 90). dst_hemi must not use
  * start.month, which is 0 for Jn rules. */
 static size_t build_tzif_julian_south_footer(uint8_t *buf, size_t cap) {
@@ -938,6 +961,16 @@ static void test_zip_tzif(void) {
               neverc_tzdata_offset_for_month(z, 7), 36000);
     check_int("southern tzif January dst",
               neverc_tzdata_offset_for_month(z, 1), 39600);
+    neverc_tzdata_zone_free(z);
+
+    uint8_t notx[512];
+    size_t ntlen = build_tzif_posix_no_tx(notx, sizeof(notx));
+    z = neverc_tzdata_load_tzif("Custom/NoTx", notx, ntlen);
+    check_not_null("load no-tx tzif with posix footer", z);
+    check_int("no-tx July uses first zone not POSIX DST",
+              neverc_tzdata_offset_at(z, JUL_2024), -18000);
+    check_int("no-tx January uses first zone",
+              neverc_tzdata_offset_at(z, JAN_2024), -18000);
     neverc_tzdata_zone_free(z);
 
     uint8_t jsf[512];

@@ -60,7 +60,8 @@ void neverc_url_values_set(neverc_url_values_t *v, const char *key, const char *
 int  neverc_url_values_encode(const neverc_url_values_t *v, char *buf, size_t cap);
 
 /* Escape/unescape functions use the same length convention as formatting.
- * Unescape returns -1 for malformed escapes or an encoded NUL. */
+ * PathEscape matches Go url.PathEscape (a single path segment, so '/' is
+ * encoded). Unescape returns -1 for malformed escapes or an encoded NUL. */
 int  neverc_url_path_escape(const char *s, char *buf, size_t cap);
 int  neverc_url_path_unescape(const char *s, char *buf, size_t cap);
 int  neverc_url_query_escape(const char *s, char *buf, size_t cap);

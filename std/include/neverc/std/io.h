@@ -7,8 +7,9 @@
  * Provides Reader/Writer interfaces as function-pointer structs,
  * plus utility functions: ReadAll, Copy, ReadFull, etc.
  * Transient zero-byte successful reads are retried; persistent no-progress
- * is not treated as EOF (Copy/ReadAll stop after a retry limit; ReadFull
- * and ReadAtLeast surface NEVERC_IO_ERR_UNEXP / SHORT).
+ * is not treated as EOF (Copy/ReadAll stop after a retry limit). ReadFull
+ * and ReadAtLeast return NEVERC_IO_EOF only when no bytes were read, matching
+ * Go io.ReadFull / ReadAtLeast; a short read that hits EOF is UNEXP.
  */
 
 #include <stddef.h>

@@ -370,6 +370,18 @@ static void test_escape(void) {
 
     neverc_url_query_escape("a=b&c=d", buf, sizeof(buf));
     ASSERT_STR_EQ(buf, "a%3Db%26c%3Dd");
+
+    /* Go url.PathEscape / encodePathSegment. */
+    neverc_url_path_escape("a/b", buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "a%2Fb");
+    neverc_url_path_escape("a;b,c?d", buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "a%3Bb%2Cc%3Fd");
+    neverc_url_path_escape("$-_.+!*'(),", buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "$-_.+%21%2A%27%28%29%2C");
+    neverc_url_path_escape(":@&=+$", buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, ":@&=+$");
+    neverc_url_path_escape("../etc/passwd", buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "..%2Fetc%2Fpasswd");
 }
 
 static void test_unescape(void) {
