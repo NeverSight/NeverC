@@ -1191,15 +1191,11 @@ static void bz_div3n2n(neverc_bigint_t *q, neverc_bigint_t *r,
     neverc_bigint_add(&rh, &rh, &a3);
     neverc_bigint_sub(&rh, &rh, &d);
 
-    /* At most twice. An OOM no-op add would otherwise spin forever. */
+    /* At most twice. Cap the loop so an OOM no-op add cannot spin. */
     for (int k = 0; k < 2 && rh.neg && rh.len > 0; k++) {
-        size_t before = rh.len;
-        int was_neg = rh.neg;
         neverc_bigint_add(&rh, &rh, b);
         neverc_bigint_set_uint64(&t, 1);
         neverc_bigint_sub(&qh, &qh, &t);
-        if (rh.neg == was_neg && rh.len == before)
-            goto cleanup;
     }
     if (rh.neg && rh.len > 0)
         goto cleanup;

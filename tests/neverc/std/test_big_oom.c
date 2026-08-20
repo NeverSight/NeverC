@@ -78,7 +78,7 @@ int main(void) {
     neverc_bigint_init(&src);
     neverc_bigint_set_uint64(&dest, 7);
     CHECK(neverc_bigint_set_string(&src,
-        "999999999999999999999999999999", 10) == 0);
+        "999999999999999999999999999999999999999999999999999999999999", 10) == 0);
     src.neg = 1;
     fail_realloc = 1;
     neverc_bigint_neg(&dest, &src);
