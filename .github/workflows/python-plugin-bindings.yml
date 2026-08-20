@@ -85,7 +85,9 @@ jobs:
             managed-python: build/python/bin/python3.12
             compiler: build/bin/neverc
           - host: windows-x64
-            runs-on: windows-latest
+            # Pin 2022: windows-latest (2025) has been dropping the hosted
+            # runner mid-MSVC RelWithDebInfo link ("lost communication").
+            runs-on: windows-2022
             python-version: "3.10"
             python-arch: x64
             msvc-arch: x64
@@ -93,7 +95,11 @@ jobs:
             ninja-archive: ninja-win.zip
             managed-python: build/python/python.exe
             compiler: build/bin/neverc.exe
-            cmake_extra: ""
+            cmake_extra: >-
+              -DCMAKE_POLICY_DEFAULT_CMP0141=NEW
+              -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+              -DLLVM_PARALLEL_COMPILE_JOBS=2
+              -DLLVM_PARALLEL_LINK_JOBS=1
           - host: windows-arm64
             runs-on: windows-11-arm
             python-version: "3.12.10"
@@ -103,7 +109,12 @@ jobs:
             ninja-archive: ninja-winarm64.zip
             managed-python: build/python/python.exe
             compiler: build/bin/neverc.exe
-            cmake_extra: -DCMAKE_SYSTEM_PROCESSOR=ARM64
+            cmake_extra: >-
+              -DCMAKE_SYSTEM_PROCESSOR=ARM64
+              -DCMAKE_POLICY_DEFAULT_CMP0141=NEW
+              -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+              -DLLVM_PARALLEL_COMPILE_JOBS=2
+              -DLLVM_PARALLEL_LINK_JOBS=1
     defaults:
       run:
         shell: bash
@@ -195,8 +206,19 @@ jobs:
 
       - name: Build compiler, Python bridge, core tests and SDK
         run: |
-          cmake --build build --config ${{ env.BUILD_TYPE }} \
-            --target neverc neverc-plugin-core-tests neverc-pluginsdk
+          # Windows RelWithDebInfo + ninja-all-cores OOMs the hosted runner
+          # (mspdbsrv / link). Build the three targets sequentially so the
+          # neverc.exe link does not overlap the test/SDK compiles.
+          if [ "${{ runner.os }}" = Windows ]; then
+            cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+            cmake --build build --config ${{ env.BUILD_TYPE }} \
+              --target neverc-plugin-core-tests
+            cmake --build build --config ${{ env.BUILD_TYPE }} \
+              --target neverc-pluginsdk
+          else
+            cmake --build build --config ${{ env.BUILD_TYPE }} \
+              --target neverc neverc-plugin-core-tests neverc-pluginsdk
+          fi
 
       - name: Run Python lifecycle and SDK tests
         run: |
