@@ -838,7 +838,13 @@ int neverc_quic_conn_process_datagram(struct neverc_quic_conn *conn,
     int closed = conn->state == QUIC_CONN_CLOSED;
     nc_mutex_unlock(&conn->lock);
     if (closed) return 0;
-    return neverc_quic_conn_flush(conn);
+    /* A valid packet can still leave the send path unable to emit
+     * (PTO CRYPTO that does not fit, UDP WOULD_BLOCK, a packet that
+     * exceeds the 1200-byte test MTU after ACK coalescing). Send
+     * failure is not a receive-path protocol violation; closing here
+     * races with dial seeing ESTABLISHED and kills the connection. */
+    (void)neverc_quic_conn_flush(conn);
+    return 0;
 }
 
 static int qt_write_varint(uint8_t *output, size_t capacity, size_t *position,
@@ -918,14 +924,14 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
         meta->control_type = QUIC_FRAME_CONNECTION_CLOSE;
         meta->level = qt_close_level(conn);
     } else if (conn->path_response_pending) {
-        if (capacity < 9) return -1;
+        if (capacity < 9) return 0;
         output[position++] = QUIC_FRAME_PATH_RESPONSE;
         memcpy(output + position, conn->path_response, 8);
         position += 8;
         meta->destination = &conn->path_response_addr;
         meta->control_type = QUIC_FRAME_PATH_RESPONSE;
     } else if (conn->path_challenge_pending) {
-        if (capacity < 9) return -1;
+        if (capacity < 9) return 0;
         output[position++] = QUIC_FRAME_PATH_CHALLENGE;
         memcpy(output + position, conn->path_challenge, 8);
         position += 8;
@@ -1026,12 +1032,13 @@ static int qt_build_crypto(struct neverc_quic_conn *conn,
                                         &data, &length) != 0 || length == 0)
         return 0;
     size_t overhead = 1U + neverc_quic_varint_len(offset) + 8U;
-    if (capacity <= overhead) return -1;
+    if (capacity <= overhead) return 0;
     if (length > capacity - overhead) length = capacity - overhead;
+    if (length == 0) return 0;
     size_t frame_len;
     if (neverc_quic_write_crypto_frame(output, capacity, offset, data,
                                        length, &frame_len) != 0)
-        return -1;
+        return 0;
     meta->kind = QUIC_TX_CRYPTO;
     meta->level = level;
     meta->offset = offset;
@@ -1057,7 +1064,7 @@ static int qt_build_stream(struct neverc_quic_conn *conn, uint8_t *output,
                           neverc_quic_varint_len(stream->send_offset) + 8U;
         if (capacity <= overhead) {
             nc_mutex_unlock(&stream->lock);
-            return -1;
+            return 0;
         }
         size_t length = stream->send_len;
         if (length > capacity - overhead) length = capacity - overhead;
@@ -1083,7 +1090,7 @@ static int qt_build_stream(struct neverc_quic_conn *conn, uint8_t *output,
         if (neverc_quic_write_stream_frame(output, capacity, &frame,
                                            &frame_len) != 0) {
             nc_mutex_unlock(&stream->lock);
-            return -1;
+            continue;
         }
         meta->kind = QUIC_TX_STREAM;
         meta->level = QUIC_ENC_APPLICATION;
@@ -1109,7 +1116,7 @@ static int qt_build_datagram(struct neverc_quic_conn *conn, uint8_t *output,
                         QUIC_FRAME_DATAGRAM_LEN) != 0 ||
         qt_write_varint(output, capacity, &position, entry->len) != 0 ||
         entry->len > capacity - position)
-        return -1;
+        return 0;
     memcpy(output + position, entry->data, entry->len);
     position += entry->len;
     meta->kind = QUIC_TX_CONTROL;
@@ -1135,9 +1142,9 @@ static int qt_build_pto_probe(struct neverc_quic_conn *conn,
     neverc_quic_tls_crypto_rewind_unacked(conn->tls, conn->pto_probe_level);
     int crypto = qt_build_crypto(conn, conn->pto_probe_level, output,
                                  capacity, meta, written);
-    if (crypto != 0) return crypto;
+    if (crypto > 0) return crypto;
     if (neverc_quic_write_ping(output, capacity, written) != 0)
-        return -1;
+        return 0;
     meta->kind = QUIC_TX_CONTROL;
     meta->level = conn->pto_probe_level;
     meta->control_type = QUIC_FRAME_PING;
@@ -1179,7 +1186,7 @@ static int qt_build_item(struct neverc_quic_conn *conn, uint8_t *output,
                                             (quic_enc_level_t)level)) {
             if (qt_write_ack(&conn->pn[space], output, capacity,
                              written) != 0)
-                return -1;
+                return 0;
             meta->level = (quic_enc_level_t)level;
             meta->ack_only = 1;
             meta->destination = &conn->peer_addr;
@@ -1409,7 +1416,7 @@ static int qt_send_item(struct neverc_quic_conn *conn,
     if (header_len > maximum - 16U ||
         payload_len > maximum - header_len - 16U) {
         free(packet);
-        return -1;
+        return 1;
     }
     const quic_keys_t *keys = neverc_quic_tls_get_write_keys(conn->tls,
                                                               meta->level);
@@ -1566,19 +1573,12 @@ int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
         }
         if (built <= 0) {
             free(payload);
-            if (built < 0) result = -1;
             break;
         }
         int sent = qt_send_item(conn, payload, payload_len, &meta);
         free(payload);
-        if (sent != 0) {
-            result = sent < 0 ? -1 : 0;
+        if (sent != 0)
             break;
-        }
-    }
-    if (result < 0 && conn->state != QUIC_CONN_DRAINING) {
-        size_t length = strlen("QUIC packet send failed");
-        memcpy(conn->error, "QUIC packet send failed", length + 1U);
     }
     nc_mutex_unlock(&conn->lock);
     return result;

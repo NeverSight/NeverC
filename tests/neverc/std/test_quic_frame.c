@@ -148,6 +148,19 @@ static void test_crypto_frame_rejects_offset_length_overflow(void) {
                                              data, 0, &written), 0);
 }
 
+static void test_crypto_frame_rejects_undersized_buffer(void) {
+    uint8_t data[] = { 'A', 'B', 'C', 'D' };
+    uint8_t buf[32];
+    size_t written = 0;
+    ASSERT_EQ(neverc_quic_write_crypto_frame(buf, sizeof(buf), 0,
+                                             data, sizeof(data), &written), 0);
+    ASSERT_TRUE(written > sizeof(data));
+    written = 0;
+    ASSERT_EQ(neverc_quic_write_crypto_frame(buf, 1, 0, data, sizeof(data),
+                                             &written), -1);
+    ASSERT_EQ(written, 0);
+}
+
 static void test_stream_frame_rejects_offset_length_overflow(void) {
     /* RFC 9000 §19.8: offset + length MUST NOT exceed 2^62-1. */
     uint8_t overflow_len[] = {
@@ -955,6 +968,7 @@ int main(void) {
     test_crypto_frame_roundtrip();
     test_crypto_frame_with_offset();
     test_crypto_frame_rejects_offset_length_overflow();
+    test_crypto_frame_rejects_undersized_buffer();
     test_quic_varint_bounds_and_truncated();
     test_truncated_frames_rejected();
     test_padding_rejects_nonminimal_type();

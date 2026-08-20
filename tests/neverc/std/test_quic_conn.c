@@ -80,9 +80,10 @@ void neverc_quic_tls_crypto_data_lost(quic_tls_t *tls, quic_enc_level_t level,
 }
 
 void neverc_udp_close(neverc_udp_conn_t *conn) { (void)conn; }
+static int g_flush_result;
 int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
     (void)conn;
-    return 0;
+    return g_flush_result;
 }
 
 #include "../../../std/src/net/quic/quic_conn.c"
@@ -281,6 +282,24 @@ static void test_stream_write_read(void) {
     ASSERT_EQ(nread, 2);
     ASSERT_TRUE(memcmp(buf, "OK", 2) == 0);
     ASSERT_EQ(s->recv_len, 0);
+
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_stream_write_ignores_flush_failure(void) {
+    struct neverc_quic_conn *conn = neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+
+    quic_stream_t *s = neverc_quic_conn_open_stream(conn);
+    ASSERT_NOT_NULL(s);
+
+    g_flush_result = -1;
+    const char *msg = "queued anyway";
+    int written = neverc_quic_stream_write_data(s, msg, strlen(msg));
+    g_flush_result = 0;
+    ASSERT_EQ(written, (int)strlen(msg));
+    ASSERT_EQ(s->send_len, strlen(msg));
+    ASSERT_TRUE(memcmp(s->send_buf, msg, strlen(msg)) == 0);
 
     neverc_quic_conn_destroy(conn);
 }
@@ -1348,6 +1367,7 @@ int main(void) {
     test_stream_open_requires_established();
     test_stream_is_local();
     test_stream_write_read();
+    test_stream_write_ignores_flush_failure();
     test_stream_write_grow_buffer();
     test_stream_read_fin();
     test_stream_zero_flow_control_limit();

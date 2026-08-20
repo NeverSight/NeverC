@@ -291,10 +291,11 @@ static void *quic_endpoint_io(void *argument) {
                             endpoint, &dcid, &scid, &info.source, version);
                     }
                 }
-                if (conn && neverc_quic_conn_process_datagram(
-                                conn, packet, (size_t)received,
-                                &info.source) == 0)
+                if (conn) {
+                    (void)neverc_quic_conn_process_datagram(
+                        conn, packet, (size_t)received, &info.source);
                     quic_endpoint_enqueue_accept(endpoint, conn);
+                }
             }
         }
         uint64_t now = nc_monotonic_ms();

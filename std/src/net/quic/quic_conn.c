@@ -441,7 +441,10 @@ int neverc_quic_stream_write_data(quic_stream_t *stream,
             nc_cond_wait(&stream->write_cond, &stream->lock);
         }
         nc_mutex_unlock(&stream->lock);
-        if (neverc_quic_conn_flush(stream->conn) < 0) return -1;
+        /* Data is already queued. A transient send failure must not
+         * discard it: HTTP/3 SETTINGS is written on the listen thread
+         * before the worker starts, and a failed write drops the conn. */
+        (void)neverc_quic_conn_flush(stream->conn);
     }
     return (int)length;
 }
