@@ -555,7 +555,17 @@ static int h2_client_decode_pending(neverc_h2_client_t *client,
         free(decoded[i].value);
     }
     h2_client_clear_pending(client);
-    if (decode_result != 0) return -1;
+    if (decode_result < 0) return -1;
+    if (decode_result > 0) {
+        if (!stream) return -1;
+        stream->error = "HTTP/2 header list exceeded decoder limit";
+        stream->error_code = NC_H2_PROTOCOL_ERROR;
+        stream->done = 1;
+        h2_client_push_terminal_event(stream, stream->error,
+                                      stream->error_code);
+        nc_cond_broadcast(&stream->changed);
+        return 0;
+    }
     if (!stream) return result == 0 ? 0 : -1;
     if (result != 0) {
         stream->error = "invalid HTTP/2 response headers";
@@ -763,7 +773,35 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
         uint32_t increment = ((uint32_t)(payload[0] & 0x7f) << 24) |
                              ((uint32_t)payload[1] << 16) |
                              ((uint32_t)payload[2] << 8) | payload[3];
-        if (increment == 0) return -1;
+        if (increment == 0) {
+            /* RFC 9113 §6.9: increment 0 is a connection error on stream
+             * 0 and a stream error otherwise (match the server). */
+            if (header->stream_id == 0) return -1;
+            nc_mutex_lock(&client->state_lock);
+            h2_client_stream_t *zero_stream =
+                h2_client_find_stream(client, header->stream_id);
+            if (!zero_stream &&
+                ((header->stream_id & 1U) == 0 ||
+                 header->stream_id >= client->next_stream_id)) {
+                nc_mutex_unlock(&client->state_lock);
+                return -1;
+            }
+            if (zero_stream && !zero_stream->done) {
+                zero_stream->error =
+                    "HTTP/2 WINDOW_UPDATE increment of 0";
+                zero_stream->error_code = NC_H2_PROTOCOL_ERROR;
+                zero_stream->done = 1;
+                h2_client_push_terminal_event(zero_stream,
+                                              zero_stream->error,
+                                              zero_stream->error_code);
+                nc_cond_broadcast(&zero_stream->changed);
+            }
+            nc_mutex_unlock(&client->state_lock);
+            (void)h2_client_write_u32(client, NC_H2_FRAME_RST_STREAM,
+                                      header->stream_id,
+                                      NC_H2_PROTOCOL_ERROR);
+            return 0;
+        }
         nc_mutex_lock(&client->state_lock);
         if (header->stream_id == 0) {
             if ((int64_t)client->conn_send_window + increment > INT32_MAX) {

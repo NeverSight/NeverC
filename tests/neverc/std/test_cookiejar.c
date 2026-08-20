@@ -223,6 +223,14 @@ static void test_public_suffix_domain(void) {
     neverc_cookiejar_free(jar);
 
     jar = neverc_cookiejar_new();
+    cookie.domain = "s3.ap-northeast-1.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.s3.ap-northeast-1.amazonaws.com/", &cookie, 1);
+    check_int("reject Domain=s3.ap-northeast-1.amazonaws.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
     cookie.domain = "uk.com";
     neverc_cookiejar_set_cookies(
         jar, "https://evil.uk.com/", &cookie, 1);

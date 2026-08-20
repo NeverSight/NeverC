@@ -547,14 +547,16 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
     *nheaders = 0;
     size_t pos = 0;
     int saw_header = 0;
+    int overflow = 0;
 
-    while (pos < len && *nheaders < max_headers) {
+    while (pos < len) {
         uint8_t byte = data[pos];
         const char *name = NULL;
         const char *value = NULL;
         char *alloc_name = NULL;
         char *alloc_value = NULL;
         int add_to_dyn = 0;
+        int sensitive = 0;
 
         if (byte & 0x80) {
             /* Indexed Header Field (§6.1) */
@@ -566,15 +568,13 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
             if (index > INT_MAX ||
                 hpack_lookup(dec, (int)index, &name, &value) != 0)
                 return -1;
-            headers[*nheaders].name = strdup(name);
-            headers[*nheaders].value = strdup(value);
-            if (!headers[*nheaders].name || !headers[*nheaders].value) {
-                free(headers[*nheaders].name);
-                free(headers[*nheaders].value);
+            alloc_name = strdup(name);
+            alloc_value = strdup(value);
+            if (!alloc_name || !alloc_value) {
+                free(alloc_name);
+                free(alloc_value);
                 return -1;
             }
-            headers[*nheaders].sensitive = 0;
-            (*nheaders)++;
             saw_header = 1;
         } else if ((byte & 0xc0) == 0x40) {
             /* Literal with Incremental Indexing (§6.2.1) */
@@ -602,16 +602,11 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
                 return -1;
             }
             pos += consumed;
-
-            headers[*nheaders].name = alloc_name;
-            headers[*nheaders].value = alloc_value;
-            headers[*nheaders].sensitive = 0;
-            (*nheaders)++;
             add_to_dyn = 1;
             saw_header = 1;
         } else if ((byte & 0xf0) == 0x00 || (byte & 0xf0) == 0x10) {
             /* Literal without Indexing (§6.2.2) or Never Indexed (§6.2.3) */
-            int sensitive = !!(byte & 0x10);
+            sensitive = !!(byte & 0x10);
             uint64_t index;
             size_t consumed;
             if (hpack_decode_int(data + pos, len - pos, 4, &index, &consumed) != 0)
@@ -636,11 +631,6 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
                 return -1;
             }
             pos += consumed;
-
-            headers[*nheaders].name = alloc_name;
-            headers[*nheaders].value = alloc_value;
-            headers[*nheaders].sensitive = sensitive;
-            (*nheaders)++;
             saw_header = 1;
         } else if ((byte & 0xe0) == 0x20) {
             /* Dynamic Table Size Update (§6.3) */
@@ -658,10 +648,24 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
         }
 
         if (add_to_dyn && alloc_name && alloc_value &&
-            dyn_table_add(&dec->dyn, alloc_name, alloc_value) != 0)
+            dyn_table_add(&dec->dyn, alloc_name, alloc_value) != 0) {
+            free(alloc_name);
+            free(alloc_value);
             return -1;
+        }
+
+        if (*nheaders < max_headers) {
+            headers[*nheaders].name = alloc_name;
+            headers[*nheaders].value = alloc_value;
+            headers[*nheaders].sensitive = sensitive;
+            (*nheaders)++;
+        } else {
+            overflow = 1;
+            free(alloc_name);
+            free(alloc_value);
+        }
     }
-    return pos == len ? 0 : -1;
+    return overflow ? 1 : 0;
 }
 
 /* ======================================================================
@@ -764,6 +768,24 @@ static int hpack_encode_string(uint8_t *out, size_t cap, const char *str,
     return hpack_encode_string_raw(out, cap, str, slen, written);
 }
 
+static int hpack_name_eq_ci(const char *name, const char *lit) {
+    size_t i;
+    if (!name) return 0;
+    for (i = 0; lit[i]; i++) {
+        unsigned char a = (unsigned char)name[i];
+        if (a >= 'A' && a <= 'Z') a = (unsigned char)(a - 'A' + 'a');
+        if (a != (unsigned char)lit[i]) return 0;
+    }
+    return name[i] == '\0';
+}
+
+static int hpack_is_sensitive_name(const char *name) {
+    return hpack_name_eq_ci(name, "authorization") ||
+           hpack_name_eq_ci(name, "proxy-authorization") ||
+           hpack_name_eq_ci(name, "cookie") ||
+           hpack_name_eq_ci(name, "set-cookie");
+}
+
 int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
                          const neverc_hpack_header_t *headers, int nheaders,
                          uint8_t *out, size_t out_cap, size_t *out_len) {
@@ -800,7 +822,8 @@ int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
             return -1;
 
         int idx = hpack_find_static(name, value);
-        int sensitive = headers[i].sensitive != 0;
+        int sensitive = headers[i].sensitive != 0 ||
+                        hpack_is_sensitive_name(name);
         if (idx > 0 && !sensitive) {
             /* Full indexed reference */
             size_t written;

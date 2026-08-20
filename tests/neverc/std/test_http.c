@@ -294,6 +294,12 @@ static void redirect_307_handler(neverc_http_request_t *req,
     neverc_http_redirect(w, "/redirect/inspect", 307);
 }
 
+static void redirect_put_301_handler(neverc_http_request_t *req,
+                                     neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_redirect(w, "/redirect/inspect", 301);
+}
+
 static void redirect_inspect_handler(neverc_http_request_t *req,
                                      neverc_http_response_writer_t *w) {
     neverc_http_writef(w, "%s:%zu", req->method, req->body_len);
@@ -365,6 +371,8 @@ static pid_t start_test_server(int port) {
         neverc_http_mux_handle(mux, "/redirect/post-second",
                                redirect_post_second_handler);
         neverc_http_mux_handle(mux, "/redirect/307", redirect_307_handler);
+        neverc_http_mux_handle(mux, "/redirect/put-301",
+                               redirect_put_301_handler);
         neverc_http_mux_handle(mux, "/redirect/inspect",
                                redirect_inspect_handler);
         if (static_test_dir[0] != '\0')
@@ -736,6 +744,14 @@ static void test_http_client_redirects(void) {
     check_int("307 preserves method and body",
               resp && !resp->error && resp->body &&
                   strcmp(resp->body, "POST:4") == 0, 1);
+    neverc_http_response_free(resp);
+
+    snprintf(url, sizeof(url),
+             "http://127.0.0.1:%d/redirect/put-301", port);
+    resp = neverc_http_do("PUT", url, "text/plain", "secret", 6);
+    check_int("301 rewrites PUT to GET without body",
+              resp && !resp->error && resp->body &&
+                  strcmp(resp->body, "GET:0") == 0, 1);
     neverc_http_response_free(resp);
 
     stop_test_server(server_pid);
@@ -3934,6 +3950,25 @@ static void test_json_helpers(void) {
     /* Missing key */
     v = neverc_http_json_get(&req, "missing", vbuf, sizeof(vbuf));
     check_int("json missing key", v == NULL, 1);
+
+    /* Nested objects must not steal a later top-level field. */
+    const char *nested =
+        "{\"user\":{\"role\":\"admin\"},\"role\":\"user\"}";
+    req.body = nested;
+    req.body_len = strlen(nested);
+    v = neverc_http_json_get(&req, "role", vbuf, sizeof(vbuf));
+    check_not_null("json top-level role", v);
+    if (v) check_str("json top-level role val", v, "user");
+
+    /* Quote-scan confusion is not a key. */
+    const char *confused = "{\"x\":\"role\":\"admin\"}";
+    req.body = confused;
+    req.body_len = strlen(confused);
+    v = neverc_http_json_get(&req, "role", vbuf, sizeof(vbuf));
+    check_int("json reject quote-scan role", v == NULL, 1);
+
+    req.body = json_body;
+    req.body_len = strlen(json_body);
 
     /* Null safety */
     check_int("json get null req",

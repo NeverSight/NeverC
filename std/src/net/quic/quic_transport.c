@@ -601,6 +601,17 @@ static int qt_process_one_packet(struct neverc_quic_conn *conn,
     if (neverc_quic_client_must_drop_initial_token(
             conn->side == QUIC_SIDE_CLIENT, &header))
         goto decrypt_failed;
+    /* This stack never issues Retry or NEW_TOKEN, so a non-empty client
+     * token cannot be valid (RFC 9000 §8.1.3 SHOULD → INVALID_TOKEN). */
+    if (neverc_quic_server_must_reject_unissued_token(
+            conn->side == QUIC_SIDE_SERVER, &header)) {
+        free(copy);
+        if (conn->state != QUIC_CONN_DRAINING &&
+            conn->state != QUIC_CONN_CLOSED)
+            (void)neverc_quic_conn_close_locked(
+                conn, QUIC_ERR_INVALID_TOKEN, "unexpected retry token", 0);
+        return -1;
+    }
     if (header.type != protected_type || header.header_len > packet_len ||
         header.payload_len > packet_len - header.header_len)
         goto decrypt_failed;
@@ -1118,6 +1129,13 @@ static int qt_build_pto_probe(struct neverc_quic_conn *conn,
         conn->pto_probe_pending = 0;
         return 0;
     }
+    /* RFC 9002 §6.2.4: PTO SHOULD carry new or previously sent unacked
+     * data. First-flight CRYPTO has no time-threshold loss until an ACK
+     * arrives, so rewind and resend it instead of a PING-only probe. */
+    neverc_quic_tls_crypto_rewind_unacked(conn->tls, conn->pto_probe_level);
+    int crypto = qt_build_crypto(conn, conn->pto_probe_level, output,
+                                 capacity, meta, written);
+    if (crypto != 0) return crypto;
     if (neverc_quic_write_ping(output, capacity, written) != 0)
         return -1;
     meta->kind = QUIC_TX_CONTROL;
@@ -1457,9 +1475,11 @@ static int qt_send_item(struct neverc_quic_conn *conn,
         record->fin = meta->fin;
         neverc_quic_loss_on_sent(&conn->loss, space, packet_number,
                                  record->sent_at_ms, packet_len, 1);
-        if (meta->kind == QUIC_TX_CRYPTO)
+        if (meta->kind == QUIC_TX_CRYPTO) {
             neverc_quic_tls_crypto_data_sent(conn->tls, meta->level,
                                              meta->length);
+            if (conn->pto_probe_pending > 0) conn->pto_probe_pending--;
+        }
         else if (meta->kind == QUIC_TX_STREAM) {
             quic_stream_t *stream = neverc_quic_conn_find_stream(
                 conn, meta->stream_id);

@@ -770,8 +770,8 @@ static size_t build_tzif_syd_footer(uint8_t *buf, size_t cap) {
     return n;
 }
 
-/* No transitions + POSIX footer. Go Location.lookup ignores extend when
- * len(tx)==0 and uses lookupFirstZone for every instant. */
+/* No transitions + POSIX footer. Go LoadLocationFromTZData synthesizes a
+ * fake transition at alpha, so lookup applies the extend string. */
 static size_t build_tzif_posix_no_tx(uint8_t *buf, size_t cap) {
     size_t n = 0;
     uint8_t zmeta[2] = {0, 0};
@@ -978,9 +978,9 @@ static void test_zip_tzif(void) {
     size_t ntlen = build_tzif_posix_no_tx(notx, sizeof(notx));
     z = neverc_tzdata_load_tzif("Custom/NoTx", notx, ntlen);
     check_not_null("load no-tx tzif with posix footer", z);
-    check_int("no-tx July uses first zone not POSIX DST",
-              neverc_tzdata_offset_at(z, JUL_2024), -18000);
-    check_int("no-tx January uses first zone",
+    check_int("no-tx July uses POSIX DST",
+              neverc_tzdata_offset_at(z, JUL_2024), -14400);
+    check_int("no-tx January uses POSIX STD",
               neverc_tzdata_offset_at(z, JAN_2024), -18000);
     neverc_tzdata_zone_free(z);
 

@@ -504,6 +504,17 @@ static int cookie_domain_is_public_suffix(const char *domain) {
             return 1;
         }
     }
+    /* Regional S3 endpoints are public suffixes (s3.<region>.amazonaws.com).
+     * Listing a few regions fails open for the rest (ap-northeast-1, etc.). */
+    {
+        static const char aws[] = "amazonaws.com";
+        size_t n = strlen(domain);
+        size_t m = sizeof(aws) - 1;
+        if (n > m + 1 && domain[n - m - 1] == '.' &&
+            strcmp(domain + (n - m), aws) == 0 &&
+            strncmp(domain, "s3.", 3) == 0)
+            return 1;
+    }
     /* blogspot.<public-suffix> is itself a public suffix (blogspot.co.uk). */
     if (strncmp(domain, "blogspot.", 9) == 0 &&
         cookie_domain_is_public_suffix(domain + 9))

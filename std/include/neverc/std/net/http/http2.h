@@ -109,6 +109,9 @@ typedef struct neverc_hpack_encoder neverc_hpack_encoder_t;
 
 neverc_hpack_decoder_t *neverc_hpack_decoder_create(uint32_t max_table_size);
 void neverc_hpack_decoder_destroy(neverc_hpack_decoder_t *dec);
+/* 0 = decoded into headers; 1 = HPACK synced but more fields than
+ * max_headers (overflow is a stream error, not COMPRESSION_ERROR);
+ * -1 = malformed block (connection COMPRESSION_ERROR). */
 int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
                          const uint8_t *data, size_t len,
                          neverc_hpack_header_t *headers, int max_headers,

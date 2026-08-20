@@ -828,10 +828,14 @@ static tzif_extra_t *tzif_find(const neverc_tzdata_zone_t *zone) {
 
 static int tzif_offset_at(const tzif_extra_t *e, int64_t unix_sec) {
     if (!e) return 0;
-    /* Go Location.lookup: with no transitions, use lookupFirstZone for
-     * all times and ignore the POSIX extend string. */
-    if (e->ntx <= 0 || !e->when || !e->off)
+    /* Go LoadLocationFromTZData synthesizes tx={alpha, index:0} when the
+     * file has no transitions, so lookup treats every real instant as
+     * "after the last transition" and applies the POSIX extend string. */
+    if (e->ntx <= 0 || !e->when || !e->off) {
+        if (e->has_posix)
+            return posix_rules_offset_at(&e->posix, unix_sec);
         return e->pre_off;
+    }
     if (unix_sec < e->when[0])
         return e->pre_off;
     /* Go: extend applies when lo == len(tx)-1, i.e. sec >= last tx. */

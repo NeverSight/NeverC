@@ -207,6 +207,20 @@ static void test_look_path(void) {
         }
         p = neverc_exec_look_path("neverc_cwd_only_hijack.exe", buf, sizeof(buf));
         ASSERT_TRUE(p == NULL);
+        {
+            char old_path[32768];
+            DWORD n = GetEnvironmentVariableA("PATH", old_path, sizeof(old_path));
+            SetEnvironmentVariableA("PATH", ".\\");
+            p = neverc_exec_look_path("neverc_cwd_only_hijack.exe", buf, sizeof(buf));
+            ASSERT_TRUE(p == NULL);
+            SetEnvironmentVariableA("PATH", "C:");
+            p = neverc_exec_look_path("neverc_cwd_only_hijack.exe", buf, sizeof(buf));
+            ASSERT_TRUE(p == NULL);
+            if (n > 0 && n < sizeof(old_path))
+                SetEnvironmentVariableA("PATH", old_path);
+            else
+                SetEnvironmentVariableA("PATH", NULL);
+        }
         DeleteFileA(planted);
     }
 #endif

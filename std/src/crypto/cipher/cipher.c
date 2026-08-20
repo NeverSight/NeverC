@@ -12,11 +12,20 @@ static void xor_block(uint8_t *dst, const uint8_t *a, const uint8_t *b) {
     for (int i = 0; i < 16; i++) dst[i] = a[i] ^ b[i];
 }
 
-static void increment_counter(uint8_t ctr[16]) {
-    for (int i = 15; i >= 0; i--) {
-        if (++ctr[i] != 0) break;
+/* Increment only the documented 32-bit counter (nonce || counter).
+ * Returns 1 when the counter wraps; the caller must poison the IV so a
+ * follow-up call cannot emit nonce+1 || 0 (alias of the next nonce). */
+static int increment_counter_low32(uint8_t ctr[16]) {
+    for (int i = 15; i >= 12; i--) {
+        if (++ctr[i] != 0) return 0;
     }
+    return 1;
 }
+
+static const uint8_t k_ctr_exhausted[16] = {
+    0x4e, 0x43, 0x49, 0x43, 0x54, 0x52, 0x58, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00
+};
 
 /* dst after src with overlap: a later block would read source bytes that
  * an earlier write already clobbered. Slide into dst, then treat as in-place. */
@@ -99,6 +108,8 @@ int neverc_cipher_ctr_checked(
 {
     if (!key || !iv || (!dst && len != 0) || (!src && len != 0))
         return -1;
+    if (memcmp(iv, k_ctr_exhausted, 16) == 0)
+        return -1;
     if (len > 0) {
         uint32_t ctr = ((uint32_t)iv[12] << 24) | ((uint32_t)iv[13] << 16) |
                        ((uint32_t)iv[14] << 8) | (uint32_t)iv[15];
@@ -122,13 +133,22 @@ int neverc_cipher_ctr_checked(
     uint8_t keystream[16];
     while (off < len) {
         neverc_aes_encrypt_block(&ctx, keystream, iv);
-        increment_counter(iv);
+        int wrapped = increment_counter_low32(iv);
 
         size_t chunk = len - off;
         if (chunk > 16) chunk = 16;
         for (size_t i = 0; i < chunk; i++)
             dst[off + i] = src[off + i] ^ keystream[i];
         off += chunk;
+        if (wrapped) {
+            memcpy(iv, k_ctr_exhausted, 16);
+            if (off < len) {
+                neverc_platform_secure_zero(keystream, sizeof(keystream));
+                neverc_platform_secure_zero(&ctx, sizeof(ctx));
+                return -1;
+            }
+            break;
+        }
     }
     neverc_platform_secure_zero(keystream, sizeof(keystream));
     neverc_platform_secure_zero(&ctx, sizeof(ctx));

@@ -736,7 +736,12 @@ static int rpc_server_dispatch_request_frame(
     if (receive_closed && frame->header.type == NEVERC_RPC_FRAME_DATA) {
         nc_mutex_unlock(&connection->streams_lock);
         free(inbound);
-        return -1;
+        /* Mirror the client: DATA after END is a stream error, not a
+         * connection kill, so a bidi handler can still finish. */
+        (void)rpc_server_stream_end_internal(
+            stream, NEVERC_RPC_STATUS_DATA_LOSS,
+            "RPC DATA after end of stream", NULL);
+        return 0;
     }
     if (frame->header.type == NEVERC_RPC_FRAME_CANCEL) {
         nc_mutex_lock(&stream->lock);

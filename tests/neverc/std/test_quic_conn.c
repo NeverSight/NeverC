@@ -770,6 +770,8 @@ static void test_client_drops_server_initial_token(void) {
     ASSERT_EQ(parsed.token_len, sizeof(token));
     ASSERT_EQ(neverc_quic_client_must_drop_initial_token(1, &parsed), 1);
     ASSERT_EQ(neverc_quic_client_must_drop_initial_token(0, &parsed), 0);
+    ASSERT_EQ(neverc_quic_server_must_reject_unissued_token(1, &parsed), 1);
+    ASSERT_EQ(neverc_quic_server_must_reject_unissued_token(0, &parsed), 0);
 
     ASSERT_EQ(write_parseable_long_header(NEVERC_QUIC_VERSION_1,
                                           QUIC_PKT_INITIAL, buf,
@@ -778,6 +780,7 @@ static void test_client_drops_server_initial_token(void) {
               0);
     ASSERT_EQ(parsed.token_len, 0);
     ASSERT_EQ(neverc_quic_client_must_drop_initial_token(1, &parsed), 0);
+    ASSERT_EQ(neverc_quic_server_must_reject_unissued_token(1, &parsed), 0);
 }
 
 static void test_v2_long_header_type_bits(void) {

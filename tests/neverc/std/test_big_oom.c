@@ -72,6 +72,46 @@ int main(void) {
     neverc_bigint_free(&parsed);
     neverc_bigint_free(&empty_parse);
 
+    fail_realloc = 0;
+    neverc_bigint_t dest, src;
+    neverc_bigint_init(&dest);
+    neverc_bigint_init(&src);
+    neverc_bigint_set_uint64(&dest, 7);
+    CHECK(neverc_bigint_set_string(&src,
+        "999999999999999999999999999999", 10) == 0);
+    src.neg = 1;
+    fail_realloc = 1;
+    neverc_bigint_neg(&dest, &src);
+    CHECK(neverc_bigint_uint64(&dest) == 7);
+    neverc_bigint_abs(&dest, &src);
+    CHECK(neverc_bigint_uint64(&dest) == 7);
+
+    fail_realloc = 0;
+    neverc_bigint_t small, large;
+    neverc_bigint_init(&small);
+    neverc_bigint_init(&large);
+    neverc_bigint_set_uint64(&dest, 7);
+    neverc_bigint_set_uint64(&small, 3);
+    CHECK(neverc_bigint_set_string(&large,
+        "999999999999999999999999999999", 10) == 0);
+    fail_realloc = 1;
+    neverc_bigint_mod(&dest, &small, &large);
+    CHECK(neverc_bigint_uint64(&dest) == 7);
+
+    fail_realloc = 0;
+    neverc_bigint_set_uint64(&dest, 7);
+    neverc_bigint_set_uint64(&small, 5);
+    neverc_bigint_set_uint64(&large, 5);
+    fail_realloc = 1;
+    neverc_bigint_div(&dest, NULL, &small, &large);
+    CHECK(neverc_bigint_uint64(&dest) == 7);
+
+    fail_realloc = 0;
+    neverc_bigint_free(&dest);
+    neverc_bigint_free(&src);
+    neverc_bigint_free(&small);
+    neverc_bigint_free(&large);
+
     puts("passed");
     return 0;
 }

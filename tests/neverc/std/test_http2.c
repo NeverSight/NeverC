@@ -518,6 +518,50 @@ TEST(hpack_sensitive_headers_are_never_indexed) {
     neverc_hpack_decoder_destroy(dec);
 }
 
+TEST(hpack_authorization_is_never_indexed_by_default) {
+    neverc_hpack_encoder_t *enc = neverc_hpack_encoder_create(4096);
+    ASSERT_TRUE(enc != NULL);
+    neverc_hpack_header_t header = {
+        .name = "authorization", .value = "secret", .sensitive = 0,
+    };
+    uint8_t encoded[256];
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_hpack_encode(enc, &header, 1, encoded,
+                                  sizeof(encoded), &encoded_length), 0);
+    ASSERT_TRUE(encoded_length > 0);
+    ASSERT_EQ(encoded[0] & 0xf0, 0x10);
+    neverc_hpack_encoder_destroy(enc);
+}
+
+TEST(hpack_overflow_keeps_decoder_in_sync) {
+    neverc_hpack_decoder_t *dec = neverc_hpack_decoder_create(4096);
+    ASSERT_TRUE(dec != NULL);
+    /* RFC 7541 Appendix A: 0x82 = :method GET, 0x84 = :path / */
+    uint8_t block[] = {0x82, 0x84};
+    neverc_hpack_header_t one[1];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_hpack_decode(dec, block, sizeof(block), one, 1,
+                                  &nheaders), 1);
+    ASSERT_EQ(nheaders, 1);
+    ASSERT_STREQ(one[0].name, ":method");
+    ASSERT_STREQ(one[0].value, "GET");
+    free(one[0].name);
+    free(one[0].value);
+
+    neverc_hpack_header_t two[2];
+    nheaders = 0;
+    ASSERT_EQ(neverc_hpack_decode(dec, block, sizeof(block), two, 2,
+                                  &nheaders), 0);
+    ASSERT_EQ(nheaders, 2);
+    ASSERT_STREQ(two[0].name, ":method");
+    ASSERT_STREQ(two[1].name, ":path");
+    free(two[0].name);
+    free(two[0].value);
+    free(two[1].name);
+    free(two[1].value);
+    neverc_hpack_decoder_destroy(dec);
+}
+
 TEST(hpack_rejects_overflowing_integer) {
     neverc_hpack_decoder_t *dec = neverc_hpack_decoder_create(4096);
     ASSERT_TRUE(dec != NULL);
@@ -3169,6 +3213,8 @@ int main(void) {
     run_test_hpack_dynamic_table_honors_supported_capacity();
     run_test_hpack_zero_capacity_output_is_not_written();
     run_test_hpack_sensitive_headers_are_never_indexed();
+    run_test_hpack_authorization_is_never_indexed_by_default();
+    run_test_hpack_overflow_keeps_decoder_in_sync();
     run_test_hpack_rejects_overflowing_integer();
     run_test_hpack_encoder_emits_dynamic_table_size_update();
     run_test_hpack_encoder_emits_min_then_current_after_shrink_grow();

@@ -102,6 +102,14 @@ static inline int neverc_quic_client_must_drop_initial_token(
            hdr->token_len != 0;
 }
 
+/* RFC 9000 §8.1.3: a token the server did not mint is INVALID_TOKEN.
+ * This stack never issues Retry or NEW_TOKEN, so any client token fails. */
+static inline int neverc_quic_server_must_reject_unissued_token(
+    int is_server, const quic_packet_header_t *hdr) {
+    return is_server && hdr && hdr->type == QUIC_PKT_INITIAL &&
+           hdr->token_len != 0;
+}
+
 typedef struct {
     uint8_t key[16];
     uint8_t iv[12];

@@ -1321,9 +1321,18 @@ void neverc_bigint_div(neverc_bigint_t *q, neverc_bigint_t *r,
     } else {
         int c = abs_cmp(x, y);
         if (c < 0) {
-            neverc_bigint_set(&rem, x);
+            if (!bigint_set_checked(&rem, x)) {
+                neverc_bigint_free(&quot);
+                neverc_bigint_free(&rem);
+                return;
+            }
         } else if (c == 0) {
             neverc_bigint_set_int64(&quot, 1);
+            if (quot.len == 0) {
+                neverc_bigint_free(&quot);
+                neverc_bigint_free(&rem);
+                return;
+            }
             quot.neg = (xneg != yneg);
         } else if (y->len == 1) {
             uint32_t d = y->digits[0];
@@ -1388,7 +1397,11 @@ void neverc_bigint_mod(neverc_bigint_t *z, const neverc_bigint_t *x, const never
         return;
     }
     neverc_bigint_init(&modulus);
-    neverc_bigint_set(&modulus, m);
+    if (!bigint_set_checked(&modulus, m)) {
+        neverc_bigint_free(&modulus);
+        neverc_bigint_free(&rem);
+        return;
+    }
     neverc_bigint_div(NULL, &rem, x, &modulus);
     /* Euclidean remainder is in [0, |m|). Adding m when m is negative
      * makes a negative remainder more negative; add |m| instead. */
@@ -1404,12 +1417,12 @@ void neverc_bigint_mod(neverc_bigint_t *z, const neverc_bigint_t *x, const never
 }
 
 void neverc_bigint_neg(neverc_bigint_t *z, const neverc_bigint_t *x) {
-    neverc_bigint_set(z, x);
+    if (!bigint_set_checked(z, x)) return;
     if (z->len > 0) z->neg = !z->neg;
 }
 
 void neverc_bigint_abs(neverc_bigint_t *z, const neverc_bigint_t *x) {
-    neverc_bigint_set(z, x);
+    if (!bigint_set_checked(z, x)) return;
     z->neg = 0;
 }
 

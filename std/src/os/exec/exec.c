@@ -425,12 +425,31 @@ static int exec_win_is_drive_cwd(const char *dir, size_t n) {
 }
 
 static int exec_win_skip_path_dir(const char *dir, size_t dlen) {
+    size_t i = 0;
+    int drive_abs = 0;
     if (dlen == 0) return 1;
-    if (dlen == 1 && dir[0] == '.') return 1;
-    if (dlen == 2 && dir[0] == '.' &&
-        (dir[1] == '.' || dir[1] == '\\' || dir[1] == '/'))
-        return 1;
-    return 0;
+    if (dlen >= 2 &&
+        ((dir[0] >= 'A' && dir[0] <= 'Z') ||
+         (dir[0] >= 'a' && dir[0] <= 'z')) &&
+        dir[1] == ':') {
+        if (dlen == 2) return 1; /* C: is the drive cwd */
+        if (dir[2] != '\\' && dir[2] != '/') return 1; /* C:foo / C:. */
+        drive_abs = 1;
+        i = 2;
+    }
+    while (i < dlen) {
+        while (i < dlen && (dir[i] == '\\' || dir[i] == '/')) i++;
+        if (i >= dlen) break;
+        size_t start = i;
+        while (i < dlen && dir[i] != '\\' && dir[i] != '/') i++;
+        size_t clen = i - start;
+        if (clen == 1 && dir[start] == '.') continue;
+        if (clen == 2 && dir[start] == '.' && dir[start + 1] == '.')
+            return 1;
+        return 0;
+    }
+    /* Only dots and slashes: ".\\" is cwd, "C:\\" is the volume root. */
+    return drive_abs ? 0 : 1;
 }
 
 /* Search PATH only. SearchPathA(NULL) also tries the application directory

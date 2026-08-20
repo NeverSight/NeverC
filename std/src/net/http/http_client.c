@@ -1987,12 +1987,12 @@ static neverc_http_response_t *do_request_with_redirects(
         if (parse_http_url(current_url, &pu) != 0)
             return make_error_response("invalid url");
 
-        /* 303 changes every method except HEAD to GET. For compatibility,
-         * 301/302 change POST to GET; 307/308 preserve method and body. */
+        /* Go net/http redirectBehavior: 301/302/303 drop the body and
+         * rewrite any method except GET/HEAD to GET. 307/308 preserve. */
         if (redirects > 0 &&
-            ((last_status == 303 && strcmp(current_method, "HEAD") != 0) ||
-             ((last_status == 301 || last_status == 302) &&
-              strcmp(current_method, "POST") == 0))) {
+            (last_status == 301 || last_status == 302 || last_status == 303) &&
+            strcmp(current_method, "GET") != 0 &&
+            strcmp(current_method, "HEAD") != 0) {
             current_method = "GET";
             current_content_type = NULL;
             current_body = NULL;
@@ -3466,6 +3466,82 @@ void neverc_http_enable_cors(neverc_http_mux_t *mux,
  * JSON Request Helpers
  * ====================================================================== */
 
+static const char *http_json_skip_ws(const char *p, const char *end) {
+    while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r'))
+        p++;
+    return p;
+}
+
+static const char *http_json_skip_string(const char *p, const char *end) {
+    if (p >= end || *p != '"') return NULL;
+    p++;
+    while (p < end) {
+        if (*p == '\\') {
+            p++;
+            if (p < end) p++;
+            continue;
+        }
+        if (*p == '"') return p + 1;
+        p++;
+    }
+    return NULL;
+}
+
+static const char *http_json_skip_value(const char *p, const char *end) {
+    p = http_json_skip_ws(p, end);
+    if (p >= end) return NULL;
+    if (*p == '"') return http_json_skip_string(p, end);
+    if (*p == '{' || *p == '[') {
+        int depth = 1;
+        p++;
+        while (p < end && depth > 0) {
+            if (*p == '"') {
+                p = http_json_skip_string(p, end);
+                if (!p) return NULL;
+                continue;
+            }
+            if (*p == '{' || *p == '[') depth++;
+            else if (*p == '}' || *p == ']') depth--;
+            p++;
+        }
+        return depth == 0 ? p : NULL;
+    }
+    while (p < end && *p != ',' && *p != '}' && *p != ']' &&
+           *p != ' ' && *p != '\t' && *p != '\n' && *p != '\r')
+        p++;
+    return p;
+}
+
+static int http_json_copy_scalar(const char *value, const char *end,
+                                 char *buf, size_t buflen) {
+    if (value >= end || buflen == 0) return 0;
+    if (*value == '"' ) {
+        const char *vstart = value + 1;
+        const char *vend = vstart;
+        while (vend < end && *vend != '"') {
+            if (*vend == '\\' && vend + 1 < end) vend++;
+            vend++;
+        }
+        size_t vlen = (size_t)(vend - vstart);
+        if (vlen >= buflen) vlen = buflen - 1;
+        memcpy(buf, vstart, vlen);
+        buf[vlen] = '\0';
+        return 1;
+    }
+    if (*value == '{' || *value == '[')
+        return 0;
+    const char *vend = value;
+    while (vend < end && *vend != ',' && *vend != '}' && *vend != ']' &&
+           *vend != ' ' && *vend != '\t' && *vend != '\n' && *vend != '\r')
+        vend++;
+    size_t vlen = (size_t)(vend - value);
+    if (vlen == 0) return 0;
+    if (vlen >= buflen) vlen = buflen - 1;
+    memcpy(buf, value, vlen);
+    buf[vlen] = '\0';
+    return 1;
+}
+
 const char *neverc_http_json_get(const neverc_http_request_t *req,
                                    const char *key, char *buf, size_t buflen) {
     if (!req || !req->body || req->body_len == 0 || !key || !buf || buflen == 0)
@@ -3475,51 +3551,31 @@ const char *neverc_http_json_get(const neverc_http_request_t *req,
     const char *p = req->body;
     const char *end = req->body + req->body_len;
 
-    /* Search for "key": or "key" : */
+    p = http_json_skip_ws(p, end);
+    if (p >= end || *p != '{') return NULL;
+    p++;
     while (p < end) {
-        const char *quote = memchr(p, '"', (size_t)(end - p));
-        if (!quote) break;
+        p = http_json_skip_ws(p, end);
+        if (p < end && *p == '}') return NULL;
+        if (p >= end || *p != '"') return NULL;
+        const char *kstart = p + 1;
+        const char *after_key = http_json_skip_string(p, end);
+        if (!after_key) return NULL;
+        size_t this_klen = (size_t)(after_key - kstart - 1);
+        int match = (this_klen == klen && memcmp(kstart, key, klen) == 0);
 
-        const char *kstart = quote + 1;
-        if (kstart + klen >= end) break;
+        p = http_json_skip_ws(after_key, end);
+        if (p >= end || *p != ':') return NULL;
+        p = http_json_skip_ws(p + 1, end);
+        if (p >= end) return NULL;
 
-        if (memcmp(kstart, key, klen) == 0 && kstart[klen] == '"') {
-            /* Found key. Skip to colon and value. */
-            const char *after_key = kstart + klen + 1;
-            while (after_key < end && (*after_key == ' ' || *after_key == ':'))
-                after_key++;
+        if (match)
+            return http_json_copy_scalar(p, end, buf, buflen) ? buf : NULL;
 
-            if (after_key >= end) break;
-
-            if (*after_key == '"') {
-                /* String value */
-                const char *vstart = after_key + 1;
-                const char *vend = vstart;
-                while (vend < end && *vend != '"') {
-                    if (*vend == '\\' && vend + 1 < end) vend++; /* skip escape */
-                    vend++;
-                }
-                size_t vlen = (size_t)(vend - vstart);
-                if (vlen >= buflen) vlen = buflen - 1;
-                memcpy(buf, vstart, vlen);
-                buf[vlen] = '\0';
-                return buf;
-            }
-
-            /* Number, boolean, null */
-            const char *vstart = after_key;
-            const char *vend = vstart;
-            while (vend < end && *vend != ',' && *vend != '}' &&
-                   *vend != ' ' && *vend != '\n' && *vend != '\r')
-                vend++;
-            size_t vlen = (size_t)(vend - vstart);
-            if (vlen >= buflen) vlen = buflen - 1;
-            memcpy(buf, vstart, vlen);
-            buf[vlen] = '\0';
-            return buf;
-        }
-
-        p = kstart + 1;
+        p = http_json_skip_value(p, end);
+        if (!p) return NULL;
+        p = http_json_skip_ws(p, end);
+        if (p < end && *p == ',') p++;
     }
     return NULL;
 }

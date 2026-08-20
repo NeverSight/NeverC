@@ -276,6 +276,8 @@ static void test_ctr_low32_wrap_no_reuse(void) {
     iv[12] = iv[13] = iv[14] = iv[15] = 0xFF;
     check_int("CTR last counter block allowed",
               neverc_cipher_ctr_checked(key, 16, iv, ct, pt, 16), 0);
+    check_int("CTR follow-up after wrap rejected",
+              neverc_cipher_ctr_checked(key, 16, iv, ct, pt, 16), -1);
 
     memset(iv, 0, 16);
     iv[15] = 0xFE;

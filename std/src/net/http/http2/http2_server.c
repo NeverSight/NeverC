@@ -856,7 +856,7 @@ static int h2_finish_discarded_header_block(h2_conn_t *conn) {
     uint32_t stream_id = conn->pending_hdr_stream_id;
     uint32_t rst_code = conn->pending_hdr_rst_code;
     h2_clear_pending_hdr(conn);
-    if (rc != 0) {
+    if (rc < 0) {
         (void)h2_conn_write_goaway(conn, NC_H2_COMPRESSION_ERROR);
         return -1;
     }
@@ -1245,17 +1245,30 @@ static int h2_process_trailer_block(h2_conn_t *conn, h2_stream_t *stream,
     neverc_hpack_header_t trailers[64];
     memset(trailers, 0, sizeof(trailers));
     int count = 0;
-    if (!end_stream ||
-        (stream->state != H2_STREAM_OPEN &&
-         stream->state != H2_STREAM_HALF_CLOSED_LOCAL))
-        return -2;
-    if (neverc_hpack_decode(conn->hpack_dec, block, block_len,
-                            trailers, 64, &count) != 0) {
+    int rc = neverc_hpack_decode(conn->hpack_dec, block, block_len,
+                                 trailers, 64, &count);
+    if (rc < 0) {
         for (int i = 0; i < count; i++) {
             free(trailers[i].name);
             free(trailers[i].value);
         }
         return -1;
+    }
+    if (rc > 0) {
+        for (int i = 0; i < count; i++) {
+            free(trailers[i].name);
+            free(trailers[i].value);
+        }
+        return -2;
+    }
+    if (!end_stream ||
+        (stream->state != H2_STREAM_OPEN &&
+         stream->state != H2_STREAM_HALF_CLOSED_LOCAL)) {
+        for (int i = 0; i < count; i++) {
+            free(trailers[i].name);
+            free(trailers[i].value);
+        }
+        return -2;
     }
     int valid = h2_validate_trailers(conn, trailers, count) == 0 &&
         (stream->content_length < 0 ||
@@ -1306,8 +1319,9 @@ static int h2_process_header_block(h2_conn_t *conn, h2_stream_t *stream,
         return h2_process_trailer_block(conn, stream, block, block_len,
                                         end_stream);
     int nh = 0;
-    if (neverc_hpack_decode(conn->hpack_dec, block, block_len,
-                             stream->headers, 64, &nh) != 0) {
+    int rc = neverc_hpack_decode(conn->hpack_dec, block, block_len,
+                                 stream->headers, 64, &nh);
+    if (rc < 0) {
         for (int i = 0; i < nh; i++) {
             free(stream->headers[i].name);
             free(stream->headers[i].value);
@@ -1317,6 +1331,7 @@ static int h2_process_header_block(h2_conn_t *conn, h2_stream_t *stream,
         return -1;
     }
     stream->nheaders = nh;
+    if (rc > 0) return -2;
     if (h2_validate_request_headers(conn, stream) != 0) return -2;
     stream->headers_complete = 1;
     stream->streaming_request = h2_request_uses_streaming_route(conn, stream);
