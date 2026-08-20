@@ -595,6 +595,25 @@ static void test_with_timeout_cause(void) {
     neverc_context_free(bg);
 }
 
+static void test_timeout_cancel_does_not_use_timeout_cause(void) {
+    printf("[timeout_cancel_does_not_use_timeout_cause]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_cancel_func_t cancel = NULL;
+    neverc_context_t *ctx = neverc_context_with_timeout_cause(
+        bg, 60000, &cancel, "slow query");
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_TRUE(cancel != NULL);
+    cancel();
+    ASSERT_INT_EQ(neverc_context_done(ctx), 1);
+    ASSERT_TRUE(neverc_context_err(ctx) != NULL);
+    ASSERT_TRUE(strcmp(neverc_context_err(ctx), "context canceled") == 0);
+    ASSERT_TRUE(neverc_context_cause(ctx) != NULL);
+    ASSERT_TRUE(strcmp(neverc_context_cause(ctx), "context canceled") == 0);
+
+    neverc_context_free(ctx);
+    neverc_context_free(bg);
+}
+
 static void test_with_deadline_cause(void) {
     printf("[with_deadline_cause]\n");
     neverc_context_t *bg = neverc_context_background();
@@ -865,6 +884,7 @@ int main(void) {
     test_deep_chain_is_iterative();
     test_with_cancel_cause();
     test_with_timeout_cause();
+    test_timeout_cancel_does_not_use_timeout_cause();
     test_with_deadline_cause();
     test_after_func();
     test_after_func_already_done();

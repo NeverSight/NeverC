@@ -446,6 +446,13 @@ static void test_template_url_and_script(void) {
               strstr(out, "javascript&colon;alert") == NULL);
     free(out);
 
+    out = neverc_html_template_render(
+        "<a href=\"javascript&Colon;{{.X}}\">", &data);
+    check("html5 Colon entity scheme is neutralized",
+          out && strstr(out, "javascript:") == NULL &&
+              strstr(out, "javascript&Colon;alert") == NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", "alert(1)");
     out = neverc_html_template_render(
         "<iframe srcdoc=\"&lt;img src=x onerror={{.X}}&gt;\">", &data);
@@ -539,6 +546,14 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "url(javascript&colon;#)") != NULL);
     check("css url() entity colon does not keep the payload",
           out && strstr(out, "javascript&colon;alert") == NULL);
+    free(out);
+
+    out = neverc_html_template_render(
+        "<div style=\"background:url(javascript&Colon;{{.X}})\">", &data);
+    check("css url() html5 Colon neutralized",
+          out && strstr(out, "url(javascript&Colon;#)") != NULL);
+    check("css url() html5 Colon does not keep the payload",
+          out && strstr(out, "javascript&Colon;alert") == NULL);
     free(out);
 
     neverc_html_template_data_set(&data, "X", "script:alert");
@@ -842,6 +857,16 @@ static void test_template_url_and_script(void) {
     check("html-close-comment then action is a js string",
           out && strstr(out, "\"alert(1)\"") != NULL);
     check("html-close-comment does not emit a bare call",
+          out && strstr(out, "\nalert(1)") == NULL);
+    free(out);
+
+    /* Go html/template: Annex B.1.1 `<!--` is a line comment. A quote on
+     * that line must not desync so the next line is a raw JS expression. */
+    out = neverc_html_template_render(
+        "<script><!-- --> \"\n{{.X}}\n</script>", &data);
+    check("html-open-comment then action is a js string",
+          out && strstr(out, "\"alert(1)\"") != NULL);
+    check("html-open-comment does not emit a bare call",
           out && strstr(out, "\nalert(1)") == NULL);
     free(out);
 

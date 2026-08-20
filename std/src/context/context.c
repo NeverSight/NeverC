@@ -397,7 +397,13 @@ static const char *ctx_reason(const neverc_context_t *ctx, const char **cause_ou
         if (cancel_at > 0 && cancel_at < best) {
             best = cancel_at;
             err = "context canceled";
-            cause = ctx->cause ? ctx->cause : err;
+            /* Go WithTimeoutCause/WithDeadlineCause: CancelFunc does not
+             * attach the timeout cause. CTX_CANCEL still uses ctx->cause
+             * (WithCancelCause). */
+            if (ctx->kind == CTX_TIMEOUT)
+                cause = err;
+            else
+                cause = ctx->cause ? ctx->cause : err;
         }
         if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0) {
             neverc_context_t *mut = (neverc_context_t *)ctx;

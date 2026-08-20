@@ -894,6 +894,45 @@ static const char *exec_look_in_path(const char *file, const char *path_env,
     return NULL;
 }
 
+/* Go Cmd.Start looks up a pathless name in the parent, then chdir.
+ * Searching PATH after chdir would run Dir/name when PATH contains ".".
+ * Relative hits ("./tool", "rel/tool") are made absolute against the
+ * parent's cwd so the child still execs the same file after chdir. */
+static int exec_posix_resolve_pathless(const neverc_exec_cmd_t *cmd,
+                                       char *buf, size_t cap) {
+    const char *path;
+    char found[4096];
+    char cwd[4096];
+    const char *rel;
+    int n;
+
+    if (!cmd || !cmd->name || !buf || cap == 0)
+        return -1;
+    if (strchr(cmd->name, '/'))
+        return 0;
+    if (cmd->env)
+        path = exec_env_path(cmd->env, cmd->env_count);
+    else
+        path = getenv("PATH");
+    if (!exec_look_in_path(cmd->name, path, found, sizeof(found)))
+        return -1;
+    if (found[0] == '/') {
+        size_t flen = strlen(found);
+        if (flen >= cap) return -1;
+        memcpy(buf, found, flen + 1);
+        return 1;
+    }
+    if (!getcwd(cwd, sizeof(cwd)))
+        return -1;
+    rel = found;
+    if (rel[0] == '.' && rel[1] == '/')
+        rel += 2;
+    n = snprintf(buf, cap, "%s/%s", cwd, rel);
+    if (n < 0 || (size_t)n >= cap)
+        return -1;
+    return 1;
+}
+
 static void exec_posix_reset_signals(void) {
     int sig;
 #ifndef NSIG
@@ -1063,12 +1102,24 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
     pid_t stdin_writer = -1;
     int run_error = 0;
     int wstatus = 0;
+    char resolved[4096];
+    char *saved_name;
+    int resolved_rc;
     if (exec_prepare(cmd, capture_stdout || capture_stderr, out, st) != 0) return -1;
 
-    if (exec_pipe(err_pipe) < 0) return -1;
+    saved_name = cmd->name;
+    resolved_rc = exec_posix_resolve_pathless(cmd, resolved, sizeof(resolved));
+    if (resolved_rc < 0) return -1;
+    if (resolved_rc > 0) cmd->name = resolved;
+
+    if (exec_pipe(err_pipe) < 0) {
+        cmd->name = saved_name;
+        return -1;
+    }
     if (capture_stdout || capture_stderr) {
         if (exec_pipe(stdout_pipe) < 0) {
             close(err_pipe[0]); close(err_pipe[1]);
+            cmd->name = saved_name;
             return -1;
         }
     }
@@ -1076,11 +1127,14 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
         if (exec_pipe(stdin_pipe) < 0) {
             close(err_pipe[0]); close(err_pipe[1]);
             if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
+            cmd->name = saved_name;
             return -1;
         }
     }
 
     pid = fork();
+    if (pid != 0)
+        cmd->name = saved_name;
     if (pid < 0) {
         close(err_pipe[0]); close(err_pipe[1]);
         if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
@@ -1161,15 +1215,28 @@ int neverc_exec_cmd_start(neverc_exec_cmd_t *cmd) {
     int err_pipe[2] = {-1, -1};
     pid_t pid;
     pid_t stdin_writer = -1;
+    char resolved[4096];
+    char *saved_name;
+    int resolved_rc;
     if (exec_prepare(cmd, 0, NULL, NULL) != 0) return -1;
-    if (exec_pipe(err_pipe) < 0) return -1;
+    saved_name = cmd->name;
+    resolved_rc = exec_posix_resolve_pathless(cmd, resolved, sizeof(resolved));
+    if (resolved_rc < 0) return -1;
+    if (resolved_rc > 0) cmd->name = resolved;
+    if (exec_pipe(err_pipe) < 0) {
+        cmd->name = saved_name;
+        return -1;
+    }
     if (cmd->stdin_data && cmd->stdin_len > 0) {
         if (exec_pipe(stdin_pipe) < 0) {
             close(err_pipe[0]); close(err_pipe[1]);
+            cmd->name = saved_name;
             return -1;
         }
     }
     pid = fork();
+    if (pid != 0)
+        cmd->name = saved_name;
     if (pid < 0) {
         close(err_pipe[0]); close(err_pipe[1]);
         if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); close(stdin_pipe[1]); }

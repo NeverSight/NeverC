@@ -179,6 +179,10 @@ static void test_unescape(void) {
     check_str("colon named entity", r27, "javascript:alert(1)");
     free(r27);
 
+    char *r27b = neverc_html_unescape_string("javascript&Colon;alert(1)", &outlen);
+    check_str("html5 Colon named entity", r27b, "javascript:alert(1)");
+    free(r27b);
+
     char *r28 = neverc_html_unescape_string("javascript&colon alert(1)", &outlen);
     check_str("unterminated colon stays literal", r28,
               "javascript&colon alert(1)");

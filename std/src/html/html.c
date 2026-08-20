@@ -179,6 +179,7 @@ static const html_named_entity_t html_named[] = {
     {"micro",   0x00B5, 0},
     {"pound",   0x00A3, 0},
     {"colon",   0x003A, 1},
+    {"Colon",   0x003A, 1},
     {"grave",   0x0060, 1},
     {"lpar",    0x0028, 1},
     {"rpar",    0x0029, 1},

@@ -471,6 +471,10 @@ static void test_rename(void) {
 static void test_process(void) {
     printf("[process]\n");
     ASSERT_TRUE(neverc_os_getpid() > 0);
+    ASSERT_TRUE(neverc_os_getppid() != neverc_os_getpid());
+#if defined(_WIN32)
+    ASSERT_TRUE(neverc_os_getppid() != 0);
+#endif
 }
 
 static void test_temp(void) {
@@ -668,6 +672,25 @@ static void test_read_dir(void) {
                 snprintf(drive_ext, sizeof(drive_ext), "\\??\\%c:", cwd[0]);
                 neverc_os_remove_all(drive_ext);
                 ASSERT_TRUE(neverc_os_exists(sentinel));
+
+                /* Go os.ReadDir("C:") is the drive cwd, not C:\. */
+                {
+                    char drive_rel[8];
+                    neverc_os_dir_entry_t *dents = NULL;
+                    size_t dn = 0, i;
+                    const char *base;
+                    int saw = 0;
+                    snprintf(drive_rel, sizeof(drive_rel), "%c:", cwd[0]);
+                    ASSERT_EQ(neverc_os_read_dir(drive_rel, &dents, &dn), 0);
+                    base = strrchr(sentinel, '\\');
+                    base = base ? base + 1 : sentinel;
+                    for (i = 0; i < dn; i++) {
+                        if (strcmp(dents[i].name, base) == 0)
+                            saw = 1;
+                    }
+                    free(dents);
+                    ASSERT_TRUE(saw);
+                }
                 neverc_os_remove(sentinel);
             }
         }

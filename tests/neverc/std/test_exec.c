@@ -433,6 +433,57 @@ static void test_set_dir(void) {
     neverc_exec_output_free(&out);
     neverc_exec_cmd_free(cmd);
 }
+
+static void test_set_dir_does_not_research_path(void) {
+    printf("[set_dir_pathless_lookpath]\n");
+    char gooddir[256], evildir[256], goodbin[300], evilbin[300], pathenv[320];
+    FILE *f;
+    neverc_exec_cmd_t *cmd;
+    neverc_exec_output_t out = {0};
+    neverc_exec_exit_status_t st = {0};
+    const char *env[1];
+    int pid = (int)getpid();
+
+    snprintf(gooddir, sizeof(gooddir), "/tmp/neverc_exec_good_%d", pid);
+    snprintf(evildir, sizeof(evildir), "/tmp/neverc_exec_evil_%d", pid);
+    mkdir(gooddir, 0700);
+    mkdir(evildir, 0700);
+    snprintf(goodbin, sizeof(goodbin), "%s/nctool", gooddir);
+    snprintf(evilbin, sizeof(evilbin), "%s/nctool", evildir);
+
+    f = fopen(goodbin, "w");
+    ASSERT_TRUE(f != NULL);
+    if (f) {
+        fputs("#!/bin/sh\necho GOOD\n", f);
+        fclose(f);
+    }
+    chmod(goodbin, 0755);
+    f = fopen(evilbin, "w");
+    ASSERT_TRUE(f != NULL);
+    if (f) {
+        fputs("#!/bin/sh\necho EVIL\n", f);
+        fclose(f);
+    }
+    chmod(evilbin, 0755);
+
+    snprintf(pathenv, sizeof(pathenv), "PATH=%s", gooddir);
+    env[0] = pathenv;
+    cmd = neverc_exec_command("nctool", NULL, 0);
+    ASSERT_TRUE(cmd != NULL);
+    neverc_exec_cmd_set_dir(cmd, evildir);
+    neverc_exec_cmd_set_env(cmd, env, 1);
+    ASSERT_INT_EQ(neverc_exec_cmd_output(cmd, &out, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+    ASSERT_TRUE(memmem(out.data, out.len, "GOOD", 4) != NULL);
+    ASSERT_TRUE(memmem(out.data, out.len, "EVIL", 4) == NULL);
+
+    neverc_exec_output_free(&out);
+    neverc_exec_cmd_free(cmd);
+    unlink(goodbin);
+    unlink(evilbin);
+    rmdir(gooddir);
+    rmdir(evildir);
+}
 #endif
 
 static void test_argv_quoting(const char *executable) {
@@ -776,6 +827,7 @@ int main(int argc, char **argv) {
     test_env_still_searches_path();
     test_env_without_path_does_not_use_parent_path();
     test_set_dir();
+    test_set_dir_does_not_research_path();
 #endif
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

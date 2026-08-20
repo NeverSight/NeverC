@@ -16,6 +16,7 @@
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 #include <windows.h>
+#include <tlhelp32.h>
 #include <winioctl.h>
 #include <direct.h>
 #include <fcntl.h>
@@ -191,6 +192,15 @@ static int os_win_prepare_path(const char *path, char *dst, size_t dst_cap,
     return 0;
 }
 
+/* Go path/filepath: "C:" is the drive's cwd, not C:\. Join("C:", "*")
+ * is "C:*". "C:\*" would list/delete the volume root. */
+static int os_win_is_drive_cwd(const char *dir, size_t n) {
+    return n == 2 &&
+           ((dir[0] >= 'A' && dir[0] <= 'Z') ||
+            (dir[0] >= 'a' && dir[0] <= 'z')) &&
+           dir[1] == ':';
+}
+
 /* Go #17500: \\?\C:\\* (doubled slash) fails on some Windows versions. */
 static int os_win_dir_star(char *pattern, size_t cap, const char *dir) {
     size_t n;
@@ -198,7 +208,7 @@ static int os_win_dir_star(char *pattern, size_t cap, const char *dir) {
     if (!dir || dir[0] == '\0')
         return -1;
     n = strlen(dir);
-    if (dir[n - 1] == '\\' || dir[n - 1] == '/')
+    if (dir[n - 1] == '\\' || dir[n - 1] == '/' || os_win_is_drive_cwd(dir, n))
         w = snprintf(pattern, cap, "%s*", dir);
     else
         w = snprintf(pattern, cap, "%s\\*", dir);
@@ -1049,7 +1059,26 @@ int neverc_os_getpid(void) {
 
 int neverc_os_getppid(void) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    return 0;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    PROCESSENTRY32A pe;
+    DWORD pid;
+    DWORD ppid = 0;
+    int found = 0;
+    if (snap == INVALID_HANDLE_VALUE)
+        return -1;
+    pe.dwSize = sizeof(pe);
+    pid = GetCurrentProcessId();
+    if (Process32FirstA(snap, &pe)) {
+        do {
+            if (pe.th32ProcessID == pid) {
+                ppid = pe.th32ParentProcessID;
+                found = 1;
+                break;
+            }
+        } while (Process32NextA(snap, &pe));
+    }
+    CloseHandle(snap);
+    return found ? (int)ppid : -1;
 #else
     return (int)getppid();
 #endif

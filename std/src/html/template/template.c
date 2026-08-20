@@ -845,7 +845,12 @@ static void html_scan_doc(const char *buf, size_t len,
                 if (c == '<' && i + 3 < len &&
                     buf[i + 1] == '!' && buf[i + 2] == '-' &&
                     buf[i + 3] == '-') {
-                    js = JS_HTML;
+                    /* Go html/template tJS: Annex B.1.1 `<!--` is a
+                     * single-line comment (stateJSHTMLOpenCmt -> tLineCmt),
+                     * not a block that lasts until `-->`. Treating it as
+                     * a block lets a quote on that line desync so the
+                     * next line's action is only js_escape'd. */
+                    js = JS_LINE;
                     i += 4;
                     break;
                 }
@@ -877,6 +882,7 @@ static void html_scan_doc(const char *buf, size_t len,
                 i++;
                 break;
             case JS_LINE:
+            case JS_HTML:
                 if (html_js_is_line_term(buf, i, len)) js = JS_CODE;
                 i++;
                 break;
@@ -897,15 +903,6 @@ static void html_scan_doc(const char *buf, size_t len,
             case JS_RE_CLASS:
                 if (c == '\\' && i + 1 < len) { i += 2; break; }
                 if (c == ']') { js = JS_RE; i++; break; }
-                i++;
-                break;
-            case JS_HTML:
-                if (c == '-' && i + 2 < len &&
-                    buf[i + 1] == '-' && buf[i + 2] == '>') {
-                    js = JS_CODE;
-                    i += 3;
-                    break;
-                }
                 i++;
                 break;
             }

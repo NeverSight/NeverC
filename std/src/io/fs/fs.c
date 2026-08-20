@@ -195,13 +195,20 @@ static int fs_win_prepare_path(const char *path, char *dst, size_t dst_cap,
     return 0;
 }
 
+static int fs_win_is_drive_cwd(const char *dir, size_t n) {
+    return n == 2 &&
+           ((dir[0] >= 'A' && dir[0] <= 'Z') ||
+            (dir[0] >= 'a' && dir[0] <= 'z')) &&
+           dir[1] == ':';
+}
+
 static int fs_win_dir_star(char *pattern, size_t cap, const char *dir) {
     size_t n;
     int w;
     if (!dir || dir[0] == '\0')
         return -1;
     n = strlen(dir);
-    if (dir[n - 1] == '\\' || dir[n - 1] == '/')
+    if (dir[n - 1] == '\\' || dir[n - 1] == '/' || fs_win_is_drive_cwd(dir, n))
         w = snprintf(pattern, cap, "%s*", dir);
     else
         w = snprintf(pattern, cap, "%s\\*", dir);
