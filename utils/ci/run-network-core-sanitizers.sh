@@ -97,6 +97,8 @@ protocol_sources=(
   "$repo_root/tests/neverc/NetworkProtocolFuzzAdapters.c"
   "$std_root/src/net/http/http.c"
   "$std_root/src/net/websocket/websocket.c"
+  "$std_root/src/net/url/url.c"
+  "$std_root/src/net/netip/netip.c"
   "$std_root/src/net/http/http2/http2.c"
   "$std_root/src/net/http/http2/http2_server.c"
   "$std_root/src/net/http3/http3_frame.c"

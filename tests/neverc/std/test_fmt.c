@@ -640,6 +640,36 @@ static void test_sscanf(void) {
     n = neverc_fmt_sscanf("2.3p2", "%g", &special);
     check_int("sscanf decimal binary exp", n, 1);
     check_true("sscanf decimal binary exp value", special == 9.2);
+    special = 7.0;
+    n = neverc_fmt_sscanf("2.3P2", "%f", &special);
+    check_int("sscanf decimal P is not binary exp", n, 0);
+    check_true("sscanf decimal P leaves output", special == 7.0);
+
+    {
+        int width_d = 0;
+        n = neverc_fmt_sscanf("123", "%2d", &width_d);
+        check_int("sscanf %%2d count", n, 1);
+        check_int("sscanf %%2d val", width_d, 12);
+    }
+    {
+        unsigned oct = 0, bin = 0;
+        n = neverc_fmt_sscanf("10", "%o", &oct);
+        check_int("sscanf %%o count", n, 1);
+        check_int("sscanf %%o val", (int)oct, 8);
+        n = neverc_fmt_sscanf("1010", "%b", &bin);
+        check_int("sscanf %%b count", n, 1);
+        check_int("sscanf %%b val", (int)bin, 10);
+    }
+    special = 0.0;
+    n = neverc_fmt_sscanf("1.5", "%F", &special);
+    check_int("sscanf %%F count", n, 1);
+    check_true("sscanf %%F val", special == 1.5);
+    n = neverc_fmt_sscanf("2.5e1", "%E", &special);
+    check_int("sscanf %%E count", n, 1);
+    check_true("sscanf %%E val", special == 25.0);
+    n = neverc_fmt_sscanf("3.5", "%G", &special);
+    check_int("sscanf %%G count", n, 1);
+    check_true("sscanf %%G val", special == 3.5);
 }
 
 static void test_appendf(void) {

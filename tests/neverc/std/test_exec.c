@@ -223,6 +223,40 @@ static void test_look_path(void) {
         }
         DeleteFileA(planted);
     }
+    {
+        char old_path[32768];
+        FILE *pf;
+        DWORD n = GetEnvironmentVariableA("PATH", old_path, sizeof(old_path));
+        CreateDirectoryA("neverc_lp_dir", NULL);
+        pf = fopen("neverc_lp_dir\\neverc_noext_hijack", "wb");
+        ASSERT_TRUE(pf != NULL);
+        if (pf) {
+            fputs("MZ", pf);
+            fclose(pf);
+        }
+        SetEnvironmentVariableA("PATH", "neverc_lp_dir");
+        p = neverc_exec_look_path("neverc_noext_hijack", buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+        DeleteFileA("neverc_lp_dir\\neverc_noext_hijack");
+        RemoveDirectoryA("neverc_lp_dir");
+
+        pf = fopen("neverc_dotdot_hijack.exe", "wb");
+        ASSERT_TRUE(pf != NULL);
+        if (pf) {
+            fputs("MZ", pf);
+            fclose(pf);
+        }
+        CreateDirectoryA("neverc_path_dd", NULL);
+        SetEnvironmentVariableA("PATH", "neverc_path_dd\\..");
+        p = neverc_exec_look_path("neverc_dotdot_hijack.exe", buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+        DeleteFileA("neverc_dotdot_hijack.exe");
+        RemoveDirectoryA("neverc_path_dd");
+        if (n > 0 && n < sizeof(old_path))
+            SetEnvironmentVariableA("PATH", old_path);
+        else
+            SetEnvironmentVariableA("PATH", NULL);
+    }
 #endif
 
 #if defined(_WIN32)

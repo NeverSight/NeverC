@@ -1191,11 +1191,18 @@ static void bz_div3n2n(neverc_bigint_t *q, neverc_bigint_t *r,
     neverc_bigint_add(&rh, &rh, &a3);
     neverc_bigint_sub(&rh, &rh, &d);
 
-    while (rh.neg && rh.len > 0) {                   /* at most twice */
+    /* At most twice. An OOM no-op add would otherwise spin forever. */
+    for (int k = 0; k < 2 && rh.neg && rh.len > 0; k++) {
+        size_t before = rh.len;
+        int was_neg = rh.neg;
         neverc_bigint_add(&rh, &rh, b);
         neverc_bigint_set_uint64(&t, 1);
         neverc_bigint_sub(&qh, &qh, &t);
+        if (rh.neg == was_neg && rh.len == before)
+            goto cleanup;
     }
+    if (rh.neg && rh.len > 0)
+        goto cleanup;
 
     neverc_bigint_set(q, &qh);
     neverc_bigint_set(r, &rh);
@@ -1402,15 +1409,24 @@ void neverc_bigint_mod(neverc_bigint_t *z, const neverc_bigint_t *x, const never
         neverc_bigint_free(&rem);
         return;
     }
+    int oom = 0;
+    bigint_oom = &oom;
     neverc_bigint_div(NULL, &rem, x, &modulus);
     /* Euclidean remainder is in [0, |m|). Adding m when m is negative
      * makes a negative remainder more negative; add |m| instead. */
-    if (rem.neg && rem.len > 0) {
+    if (!oom && rem.neg && rem.len > 0) {
         if (modulus.neg)
             neverc_bigint_sub(&rem, &rem, &modulus);
         else
             neverc_bigint_add(&rem, &rem, &modulus);
     }
+    if (oom || (rem.neg && rem.len > 0)) {
+        bigint_oom = NULL;
+        neverc_bigint_free(&modulus);
+        neverc_bigint_free(&rem);
+        return;
+    }
+    bigint_oom = NULL;
     neverc_bigint_free(z);
     *z = rem;
     neverc_bigint_free(&modulus);

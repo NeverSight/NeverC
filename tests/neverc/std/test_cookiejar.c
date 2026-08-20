@@ -231,6 +231,27 @@ static void test_public_suffix_domain(void) {
     neverc_cookiejar_free(jar);
 
     jar = neverc_cookiejar_new();
+    cookie.domain = "bucket.s3.eu-west-1.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.bucket.s3.eu-west-1.amazonaws.com/", &cookie, 1);
+    check_int("reject Domain=bucket.s3.eu-west-1.amazonaws.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "evil.bucket.s3.eu-west-1.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://www.evil.bucket.s3.eu-west-1.amazonaws.com/",
+        &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://www.evil.bucket.s3.eu-west-1.amazonaws.com/", out, 1);
+    check_int("regional S3 bucket host stays registrable", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://victim.bucket.s3.eu-west-1.amazonaws.com/", out, 1);
+    check_int("regional S3 bucket cookie is not sent to sibling", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
     cookie.domain = "uk.com";
     neverc_cookiejar_set_cookies(
         jar, "https://evil.uk.com/", &cookie, 1);

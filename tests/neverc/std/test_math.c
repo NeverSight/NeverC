@@ -809,6 +809,15 @@ static void test_decomposition(void) {
 
     /* NULL out-params must not crash (same fail-closed style as bits.Div). */
     check_double("modf(3.5,NULL).frac", neverc_math_modf(3.5, NULL), 0.5);
+    {
+        double ipart = 0.0;
+        double fpart = neverc_math_modf(NC_INF, &ipart);
+        check_double("modf(+Inf).int", ipart, NC_INF);
+        check_double("modf(+Inf).frac", fpart, NC_NAN);
+        fpart = neverc_math_modf(NC_NEGINF, &ipart);
+        check_double("modf(-Inf).int", ipart, NC_NEGINF);
+        check_double("modf(-Inf).frac", fpart, NC_NAN);
+    }
     check_double("frexp(4,NULL).frac", neverc_math_frexp(4.0, NULL), 0.5);
     {
         double s = 99.0, c = 99.0;

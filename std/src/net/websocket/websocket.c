@@ -1,5 +1,6 @@
 #include "neverc/std/net/websocket.h"
 #include "neverc/std/net/http.h"
+#include "neverc/std/net/url.h"
 #include "neverc/std/crypto/tls.h"
 #include "neverc/std/crypto/rand.h"
 #include "neverc/std/crypto/sha1.h"
@@ -181,142 +182,120 @@ static int ws_valid_host(const char *value, size_t length) {
     return ws_parse_port(colon + 1, length - host_length - 1, &port) == 0;
 }
 
+/* Host header extras beyond net/url (comma / XSS bytes). */
+static int ws_host_header_ok(const char *host) {
+    if (!host || !host[0]) return 0;
+    for (const unsigned char *p = (const unsigned char *)host; *p; p++) {
+        if (*p <= 0x20 || *p == 0x7f || *p == ',' || *p == '<' ||
+            *p == '>' || *p == '"' || *p == '\\')
+            return 0;
+    }
+    return 1;
+}
+
 static int ws_parse_url(const char *url, ws_url_t *parsed,
                         const char **errp) {
+    neverc_url_t u;
+    int n;
+    unsigned port;
+    int ipv6;
+    size_t host_len;
+    size_t path_len;
+    size_t query_len;
+    size_t target_len;
+
     if (!url || !parsed) {
         ws_set_error(errp, "invalid WebSocket URL");
         return -1;
     }
-    size_t scheme_length = 0;
-    if (strncmp(url, "wss://", 6) == 0) {
+    memset(parsed, 0, sizeof(*parsed));
+    if (neverc_url_parse(&u, url) != 0) {
+        ws_set_error(errp, "invalid WebSocket URL");
+        return -1;
+    }
+    if (strcmp(u.scheme, "wss") == 0)
         parsed->secure = 1;
-        scheme_length = 6;
-    } else if (strncmp(url, "ws://", 5) == 0) {
-        scheme_length = 5;
-    } else {
+    else if (strcmp(u.scheme, "ws") != 0) {
         ws_set_error(errp, "WebSocket URL must use ws:// or wss://");
         return -1;
     }
-    if (ws_contains_ctl(url)) {
-        ws_set_error(errp, "WebSocket URL contains invalid characters");
+    if (u.user[0] || u.has_password) {
+        ws_set_error(errp, "WebSocket URL userinfo is not allowed");
         return -1;
     }
-
-    const char *authority = url + scheme_length;
-    const char *authority_end = authority;
-    while (*authority_end && *authority_end != '/' &&
-           *authority_end != '?' && *authority_end != '#')
-        authority_end++;
-    size_t authority_len = (size_t)(authority_end - authority);
-    if (authority_len == 0 || authority_len >= sizeof(parsed->host_header) ||
-        memchr(authority, '@', authority_len) != NULL) {
-        ws_set_error(errp, "invalid WebSocket URL authority");
-        return -1;
-    }
-    for (size_t i = 0; i < authority_len; i++) {
-        unsigned char c = (unsigned char)authority[i];
-        if (c <= 0x20 || c == 0x7f || c == '\\' || c == ',') {
-            ws_set_error(errp, "invalid WebSocket URL authority");
-            return -1;
-        }
-    }
-    if (!ws_valid_host(authority, authority_len)) {
-        ws_set_error(errp, "invalid WebSocket URL authority");
-        return -1;
-    }
-    if (*authority_end == '#') {
+    if (u.fragment[0] || strchr(url, '#')) {
         ws_set_error(errp, "WebSocket URL fragments are not allowed");
         return -1;
     }
-
-    unsigned port = parsed->secure ? 443u : 80u;
-    const char *host = authority;
-    size_t host_len = authority_len;
-    if (authority[0] == '[') {
-        const char *close = memchr(authority, ']', authority_len);
-        if (!close || close == authority + 1) {
-            ws_set_error(errp, "invalid IPv6 WebSocket authority");
-            return -1;
-        }
-        host_len = (size_t)(close - authority + 1);
-        if (host_len < authority_len) {
-            if (authority[host_len] != ':' ||
-                ws_parse_port(authority + host_len + 1,
-                              authority_len - host_len - 1, &port) != 0) {
-                ws_set_error(errp, "invalid WebSocket URL port");
-                return -1;
-            }
-        }
-    } else {
-        const char *colon = memchr(authority, ':', authority_len);
-        if (colon) {
-            if (memchr(colon + 1, ':',
-                       authority_len - (size_t)(colon + 1 - authority))) {
-                ws_set_error(errp, "IPv6 WebSocket hosts must use brackets");
-                return -1;
-            }
-            host_len = (size_t)(colon - authority);
-            if (host_len == 0 ||
-                ws_parse_port(colon + 1,
-                              authority_len - host_len - 1, &port) != 0) {
-                ws_set_error(errp, "invalid WebSocket URL port");
-                return -1;
-            }
-        }
-    }
-    if (host_len == 0 || host_len >= sizeof(parsed->dial_addr) - 8) {
-        ws_set_error(errp, "invalid WebSocket URL host");
+    if (!ws_host_header_ok(u.host)) {
+        ws_set_error(errp, "invalid WebSocket URL authority");
         return -1;
     }
 
-    const char *server_name = host;
-    size_t server_name_length = host_len;
-    if (host[0] == '[') {
-        server_name++;
-        server_name_length -= 2;
+    port = parsed->secure ? 443u : 80u;
+    if (u.port[0] &&
+        ws_parse_port(u.port, strlen(u.port), &port) != 0) {
+        ws_set_error(errp, "invalid WebSocket URL port");
+        return -1;
     }
-    if (server_name_length == 0 ||
-        server_name_length >= sizeof(parsed->server_name)) {
+
+    host_len = strlen(u.host);
+    if (host_len == 0 || host_len >= sizeof(parsed->server_name)) {
         ws_set_error(errp, "invalid WebSocket server name");
         return -1;
     }
-    memcpy(parsed->server_name, server_name, server_name_length);
-    parsed->server_name[server_name_length] = '\0';
+    memcpy(parsed->server_name, u.host, host_len + 1);
 
-    memcpy(parsed->host_header, authority, authority_len);
-    parsed->host_header[authority_len] = '\0';
-    int n;
-    n = snprintf(parsed->dial_addr, sizeof(parsed->dial_addr), "%.*s:%u",
-                 (int)host_len, host, port);
+    ipv6 = strchr(u.host, ':') != NULL;
+    if (ipv6) {
+        n = u.port[0]
+                ? snprintf(parsed->host_header, sizeof(parsed->host_header),
+                           "[%s]:%s", u.host, u.port)
+                : snprintf(parsed->host_header, sizeof(parsed->host_header),
+                           "[%s]", u.host);
+    } else {
+        n = u.port[0]
+                ? snprintf(parsed->host_header, sizeof(parsed->host_header),
+                           "%s:%s", u.host, u.port)
+                : snprintf(parsed->host_header, sizeof(parsed->host_header),
+                           "%s", u.host);
+    }
+    if (n <= 0 || (size_t)n >= sizeof(parsed->host_header)) {
+        ws_set_error(errp, "invalid WebSocket URL authority");
+        return -1;
+    }
+
+    n = ipv6
+            ? snprintf(parsed->dial_addr, sizeof(parsed->dial_addr),
+                       "[%s]:%u", u.host, port)
+            : snprintf(parsed->dial_addr, sizeof(parsed->dial_addr),
+                       "%s:%u", u.host, port);
     if (n <= 0 || (size_t)n >= sizeof(parsed->dial_addr)) {
         ws_set_error(errp, "WebSocket dial address is too long");
         return -1;
     }
 
-    const char *target = authority_end;
-    if (*target == '\0') {
-        memcpy(parsed->target, "/", 2);
+    path_len = strlen(u.path);
+    query_len = u.has_query ? strlen(u.raw_query) : 0;
+    if (path_len == 0) {
+        parsed->target[0] = '/';
+        parsed->target[1] = '\0';
+        target_len = 1;
     } else {
-        const char *fragment = strchr(target, '#');
-        if (fragment) {
-            ws_set_error(errp, "WebSocket URL fragments are not allowed");
-            return -1;
-        }
-        size_t target_len = strlen(target);
-        size_t prefix = target[0] == '?' ? 1u : 0u;
-        if (target_len + prefix >= sizeof(parsed->target)) {
+        if (path_len >= sizeof(parsed->target)) {
             ws_set_error(errp, "WebSocket request target is too long");
             return -1;
         }
-        for (size_t i = 0; i < target_len; i++) {
-            unsigned char c = (unsigned char)target[i];
-            if (c <= 0x20 || c == 0x7f || c == '\\') {
-                ws_set_error(errp, "invalid WebSocket request target");
-                return -1;
-            }
+        memcpy(parsed->target, u.path, path_len + 1);
+        target_len = path_len;
+    }
+    if (u.has_query) {
+        if (target_len + 1 + query_len >= sizeof(parsed->target)) {
+            ws_set_error(errp, "WebSocket request target is too long");
+            return -1;
         }
-        if (prefix) parsed->target[0] = '/';
-        memcpy(parsed->target + prefix, target, target_len + 1);
+        parsed->target[target_len] = '?';
+        memcpy(parsed->target + target_len + 1, u.raw_query, query_len + 1);
     }
     {
         const char *target_query = strchr(parsed->target, '?');

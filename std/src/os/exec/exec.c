@@ -424,9 +424,17 @@ static int exec_win_is_drive_cwd(const char *dir, size_t n) {
            dir[1] == ':';
 }
 
+static int exec_win_component_is_dotdot(const char *s, size_t n) {
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '.'))
+        n--;
+    return n == 2 && s[0] == '.' && s[1] == '.';
+}
+
 static int exec_win_skip_path_dir(const char *dir, size_t dlen) {
     size_t i = 0;
     int drive_abs = 0;
+    int saw_dotdot = 0;
+    int saw_real = 0;
     if (dlen == 0) return 1;
     if (dlen >= 2 &&
         ((dir[0] >= 'A' && dir[0] <= 'Z') ||
@@ -444,10 +452,16 @@ static int exec_win_skip_path_dir(const char *dir, size_t dlen) {
         while (i < dlen && dir[i] != '\\' && dir[i] != '/') i++;
         size_t clen = i - start;
         if (clen == 1 && dir[start] == '.') continue;
-        if (clen == 2 && dir[start] == '.' && dir[start + 1] == '.')
-            return 1;
-        return 0;
+        if (exec_win_component_is_dotdot(dir + start, clen)) {
+            saw_dotdot = 1;
+            continue;
+        }
+        saw_real = 1;
     }
+    /* Go filepath.Clean("foo\\..") is "." (cwd). Absolute "C:\\Windows\\.."
+     * cleans to a volume path and is still searched. */
+    if (saw_dotdot && !drive_abs) return 1;
+    if (saw_real) return 0;
     /* Only dots and slashes: ".\\" is cwd, "C:\\" is the volume root. */
     return drive_abs ? 0 : 1;
 }
@@ -479,7 +493,9 @@ static const char *exec_look_in_win_path(const char *file, const char *path_env,
             n = trailing
                     ? snprintf(buf, cap, "%.*s%s", (int)dlen, dir, file)
                     : snprintf(buf, cap, "%.*s\\%s", (int)dlen, dir, file);
-            if (n > 0 && (DWORD)n < cap && exec_win_is_file(buf))
+            /* Go LookPath: a pathless name without PATHEXT is not a hit.
+             * CreateProcessA would still run a PE with no extension. */
+            if (has_ext && n > 0 && (DWORD)n < cap && exec_win_is_file(buf))
                 return buf;
             if (!has_ext) {
                 n = trailing

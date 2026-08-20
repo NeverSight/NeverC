@@ -180,7 +180,8 @@ static void test_unescape(void) {
     free(r27);
 
     char *r27b = neverc_html_unescape_string("javascript&Colon;alert(1)", &outlen);
-    check_str("html5 Colon named entity", r27b, "javascript:alert(1)");
+    check_str("html5 Colon named entity", r27b,
+              "javascript" "\xE2\x88\xB7" "alert(1)");
     free(r27b);
 
     char *r28 = neverc_html_unescape_string("javascript&colon alert(1)", &outlen);

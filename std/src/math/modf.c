@@ -8,13 +8,9 @@ double neverc_math_modf(double x, double *iptr) {
         *iptr = nc_nan();
         return nc_nan();
     }
-    if (nc_isinf_any(x)) {
-        *iptr = x;
-        return nc_copysign(0.0, x);
-    }
 
+    /* Go math.Modf: Modf(±Inf) = ±Inf, NaN (Inf-Inf after Trunc). */
     double t = neverc_math_trunc(x);
     *iptr = t;
-    double frac = x - t;
-    return nc_copysign(frac, x);
+    return nc_copysign(x - t, x);
 }

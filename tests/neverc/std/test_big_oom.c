@@ -100,6 +100,14 @@ int main(void) {
 
     fail_realloc = 0;
     neverc_bigint_set_uint64(&dest, 7);
+    neverc_bigint_set_uint64(&small, 1);
+    small.neg = 1;
+    fail_realloc = 1;
+    neverc_bigint_mod(&dest, &small, &large);
+    CHECK(neverc_bigint_uint64(&dest) == 7);
+
+    fail_realloc = 0;
+    neverc_bigint_set_uint64(&dest, 7);
     neverc_bigint_set_uint64(&small, 5);
     neverc_bigint_set_uint64(&large, 5);
     fail_realloc = 1;

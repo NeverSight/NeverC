@@ -77,7 +77,6 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
         return NEVERC_STRCONV_ERR_SYNTAX;
 
     unsigned long long val = 0;
-    int overflow = 0;
 
     if (base == 10) {
         /*
@@ -98,11 +97,13 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
                 }
                 return NEVERC_STRCONV_ERR_SYNTAX;
             }
-            if (!overflow &&
-                (val > cutoff || (val == cutoff && d > rem)))
-                overflow = 1;
-            if (!overflow)
-                val = val * 10ULL + d;
+            /* Go ParseUint returns ErrRange immediately on overflow and
+             * never inspects later bytes (including junk or '_'). */
+            if (val > cutoff || (val == cutoff && d > rem)) {
+                *result = NC_ULLONG_MAX;
+                return NEVERC_STRCONV_ERR_RANGE;
+            }
+            val = val * 10ULL + d;
             saw_digit = 1;
             previous_underscore = 0;
             after_prefix = 0;
@@ -124,11 +125,11 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
             if (d >= (unsigned)base)
                 return NEVERC_STRCONV_ERR_SYNTAX;
 
-            if (!overflow &&
-                (val > cutoff || (val == cutoff && d > rem)))
-                overflow = 1;
-            if (!overflow)
-                val = val * ubase + d;
+            if (val > cutoff || (val == cutoff && d > rem)) {
+                *result = NC_ULLONG_MAX;
+                return NEVERC_STRCONV_ERR_RANGE;
+            }
+            val = val * ubase + d;
             saw_digit = 1;
             previous_underscore = 0;
             after_prefix = 0;
@@ -138,10 +139,6 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
     if (!saw_digit || previous_underscore)
         return NEVERC_STRCONV_ERR_SYNTAX;
 
-    if (overflow) {
-        *result = NC_ULLONG_MAX;
-        return NEVERC_STRCONV_ERR_RANGE;
-    }
     *result = val;
     return NEVERC_STRCONV_OK;
 }

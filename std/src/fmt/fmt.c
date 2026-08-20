@@ -471,7 +471,7 @@ static char *fmt_vsprintf_n(const char *format, va_list args, size_t *out_len) {
             if (flag_minus) buf_pad(&buf, ' ', pad);
             continue;
         }
-        case 'f': {
+        case 'f': case 'F': {
             double val = va_arg(args, double);
             tlen = fmt_float_f(tmp, sizeof tmp, val, prec);
             break;
@@ -498,7 +498,7 @@ static char *fmt_vsprintf_n(const char *format, va_list args, size_t *out_len) {
         }
         if (tlen < 0) goto format_fail;
         if (flag_hash &&
-            (verb == 'f' || verb == 'e' || verb == 'E' ||
+            (verb == 'f' || verb == 'F' || verb == 'e' || verb == 'E' ||
              verb == 'g' || verb == 'G')) {
             tlen = apply_float_sharp(tmp, tlen, sizeof tmp, verb, prec);
             if (tlen < 0) goto format_fail;
@@ -506,7 +506,7 @@ static char *fmt_vsprintf_n(const char *format, va_list args, size_t *out_len) {
 
         /* Apply width/padding */
         int is_float_verb =
-            verb == 'f' || verb == 'e' || verb == 'E' ||
+            verb == 'f' || verb == 'F' || verb == 'e' || verb == 'E' ||
             verb == 'g' || verb == 'G';
         int is_int_verb =
             verb == 'd' || verb == 'i' || verb == 'u' ||
@@ -883,9 +883,8 @@ static int scan_float(const char **p, double *out) {
                 while ((**p >= '0' && **p <= '9') || **p == '_')
                     (*p)++;
             }
-            /* Go convertFloat: decimal mantissa + binary exponent (2.3p2).
-             * Always consume `p`/`P` and the optional sign/digits so a bare
-             * `2.3p` is a scan failure, not a successful 2.3 leftover `p`. */
+            /* Go floatToken exponent = "eEpP": consume p/P so "2.3P2" is
+             * one token. convertFloat only splits on lowercase 'p'. */
             if (**p == 'p' || **p == 'P') {
                 (*p)++;
                 if (**p == '-' || **p == '+') (*p)++;
@@ -910,7 +909,7 @@ static int scan_float(const char **p, double *out) {
     int has_hex = 0;
     for (size_t i = 0; i < len; i++) {
         if (tok[i] == 'x' || tok[i] == 'X') has_hex = 1;
-        if (!pmark && (tok[i] == 'p' || tok[i] == 'P')) pmark = tok + i;
+        if (!pmark && tok[i] == 'p') pmark = tok + i;
     }
     if (pmark && !has_hex) {
         *pmark = '\0';
@@ -970,6 +969,79 @@ static int scan_hex(const char **p, uint64_t *out) {
     }
     *out = val;
     return 1;
+}
+
+static int scan_oct(const char **p, uint64_t *out) {
+    skip_ws(p);
+    const char *start = *p;
+    uint64_t val = 0;
+    int found = 0;
+    while (**p >= '0' && **p <= '7') {
+        unsigned digit = (unsigned)(**p - '0');
+        if (val > (UINT64_MAX - digit) / 8U) {
+            *p = start;
+            return 0;
+        }
+        val = val * 8U + digit;
+        found = 1;
+        (*p)++;
+    }
+    if (!found) {
+        *p = start;
+        return 0;
+    }
+    *out = val;
+    return 1;
+}
+
+static int scan_bin(const char **p, uint64_t *out) {
+    skip_ws(p);
+    const char *start = *p;
+    uint64_t val = 0;
+    int found = 0;
+    while (**p == '0' || **p == '1') {
+        unsigned digit = (unsigned)(**p - '0');
+        if (val > (UINT64_MAX - digit) / 2U) {
+            *p = start;
+            return 0;
+        }
+        val = val * 2U + digit;
+        found = 1;
+        (*p)++;
+    }
+    if (!found) {
+        *p = start;
+        return 0;
+    }
+    *out = val;
+    return 1;
+}
+
+/* Go Scanf: SkipSpace, then at most `width` bytes of the token. */
+static int scan_apply_width(const char **sp, size_t width, int has_width,
+                            char *tmp, size_t cap, const char **q) {
+    skip_ws(sp);
+    if (!has_width) {
+        *q = *sp;
+        return 1;
+    }
+    size_t n = 0;
+    while (n < width && (*sp)[n])
+        n++;
+    if (n >= cap)
+        return 0;
+    memcpy(tmp, *sp, n);
+    tmp[n] = '\0';
+    *q = tmp;
+    return 1;
+}
+
+static void scan_commit_width(const char **sp, const char *q, const char *tmp,
+                              int has_width) {
+    if (has_width)
+        *sp += (size_t)(q - tmp);
+    else
+        *sp = q;
 }
 
 /* Go unformatted Scan/Sscan: 0x/0b/0o/leading-0 prefixes and underscores.
@@ -1104,8 +1176,12 @@ static int scan_formatted(const char *str, const char *format, va_list args) {
         case 'd':
         case 'i': {
             int64_t value;
-            if (has_width || !scan_int(&sp, &value))
+            char tmp[256];
+            const char *q;
+            if (!scan_apply_width(&sp, width, has_width, tmp, sizeof tmp, &q) ||
+                !scan_int(&q, &value))
                 goto done;
+            scan_commit_width(&sp, q, tmp, has_width);
             if (length == SCAN_LENGTH_LONG_LONG) {
                 long long *out = va_arg(ap, long long *);
                 if (!out) goto done;
@@ -1128,12 +1204,26 @@ static int scan_formatted(const char *str, const char *format, va_list args) {
         }
         case 'u':
         case 'x':
-        case 'X': {
+        case 'X':
+        case 'o':
+        case 'b': {
             uint64_t value;
-            int ok = *fp == 'u' ? scan_uint(&sp, &value)
-                                : scan_hex(&sp, &value);
-            if (has_width || !ok)
+            char tmp[256];
+            const char *q;
+            int ok;
+            if (!scan_apply_width(&sp, width, has_width, tmp, sizeof tmp, &q))
                 goto done;
+            if (*fp == 'u')
+                ok = scan_uint(&q, &value);
+            else if (*fp == 'o')
+                ok = scan_oct(&q, &value);
+            else if (*fp == 'b')
+                ok = scan_bin(&q, &value);
+            else
+                ok = scan_hex(&q, &value);
+            if (!ok)
+                goto done;
+            scan_commit_width(&sp, q, tmp, has_width);
             if (length == SCAN_LENGTH_LONG_LONG) {
                 unsigned long long *out =
                     va_arg(ap, unsigned long long *);
@@ -1156,12 +1246,19 @@ static int scan_formatted(const char *str, const char *format, va_list args) {
             break;
         }
         case 'f':
+        case 'F':
         case 'g':
-        case 'e': {
+        case 'G':
+        case 'e':
+        case 'E': {
             double value;
-            if (has_width || length == SCAN_LENGTH_LONG_LONG ||
-                !scan_float(&sp, &value))
+            char tmp[256];
+            const char *q;
+            if (length == SCAN_LENGTH_LONG_LONG ||
+                !scan_apply_width(&sp, width, has_width, tmp, sizeof tmp, &q) ||
+                !scan_float(&q, &value))
                 goto done;
+            scan_commit_width(&sp, q, tmp, has_width);
             double *out = va_arg(ap, double *);
             if (!out) goto done;
             *out = value;

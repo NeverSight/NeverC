@@ -64,6 +64,10 @@ static void test_null_safety(void) {
     check_int("reject origin-form leftover path",
               neverc_ws_dial("ws://example.com//evil.example/", NULL,
                              &err) == NULL, 1);
+    check_int("reject bare IPv6 zone id",
+              neverc_ws_dial("ws://[fe80::1%eth0]/", NULL, &err) == NULL, 1);
+    check_int("reject empty IPv6 zone escape",
+              neverc_ws_dial("ws://[::1%25]/", NULL, &err) == NULL, 1);
     neverc_ws_conn_free(NULL);
     check_int("write null", neverc_ws_write_message(NULL, "x"), -1);
     tests_passed++; tests_run++;

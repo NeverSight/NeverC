@@ -713,7 +713,7 @@ TEST_F(StdLibTest, HttpClientAllocationFailure) {
 }
 #endif
 STD_TEST(websocket, "src/net/websocket/websocket.c", TCP_DEPS,
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", "src/net/url/url.c", "src/net/netip/netip.c", HTTP_TLS_DEPS)
 STD_TEST(url, "src/net/url/url.c", "src/net/netip/netip.c")
 STD_TEST(netip, "src/net/netip/netip.c")
 STD_TEST(mail, "src/net/mail/mail.c", "src/net/netip/netip.c")

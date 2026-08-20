@@ -137,9 +137,10 @@ static void test_parse_int(void) {
     check_int("explicit hex digits still parse",
               neverc_strconv_parse_int("10", 16, &v), 0);
     check_ll("explicit hex digits val", v, 16);
-    check_int("overflow trailing junk signed is syntax",
+    check_int("overflow trailing junk signed is range",
               neverc_strconv_parse_int("18446744073709551616x", 10, &v),
-              NEVERC_STRCONV_ERR_SYNTAX);
+              NEVERC_STRCONV_ERR_RANGE);
+    check_ll("overflow trailing junk signed clamp", v, LLONG_MAX);
     check_int("min int64 exact",
               neverc_strconv_parse_int("-9223372036854775808", 10, &v), 0);
     check_ll("min int64 exact val", v, LLONG_MIN);
@@ -205,8 +206,16 @@ static void test_parse_uint(void) {
     check_int("non-ascii digit rejected",
               neverc_strconv_parse_uint("\x96" "B", 16, &v),
               NEVERC_STRCONV_ERR_SYNTAX);
-    check_int("overflow trailing junk is syntax",
+    check_int("overflow trailing junk is range",
               neverc_strconv_parse_uint("18446744073709551616x", 10, &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_ull("overflow trailing junk clamp", v, ULLONG_MAX);
+    check_int("overflow trailing underscore is range",
+              neverc_strconv_parse_uint("18446744073709551616_", 0, &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_ull("overflow trailing underscore clamp", v, ULLONG_MAX);
+    check_int("uint max trailing junk is syntax",
+              neverc_strconv_parse_uint("18446744073709551615x", 10, &v),
               NEVERC_STRCONV_ERR_SYNTAX);
     check_int("overflow still range without junk",
               neverc_strconv_parse_uint("18446744073709551616", 10, &v),

@@ -515,6 +515,22 @@ static int cookie_domain_is_public_suffix(const char *domain) {
             strncmp(domain, "s3.", 3) == 0)
             return 1;
     }
+    /* PSL: *.s3.<region>.amazonaws.com is a public suffix (bucket names).
+     * One extra left label only — do not recurse, or
+     * evil.bucket.s3.<region>.amazonaws.com would also match. */
+    {
+        const char *dot = strchr(domain, '.');
+        if (dot) {
+            static const char aws[] = "amazonaws.com";
+            const char *rest = dot + 1;
+            size_t n = strlen(rest);
+            size_t m = sizeof(aws) - 1;
+            if (n > m + 1 && rest[n - m - 1] == '.' &&
+                strcmp(rest + (n - m), aws) == 0 &&
+                strncmp(rest, "s3.", 3) == 0)
+                return 1;
+        }
+    }
     /* blogspot.<public-suffix> is itself a public suffix (blogspot.co.uk). */
     if (strncmp(domain, "blogspot.", 9) == 0 &&
         cookie_domain_is_public_suffix(domain + 9))
