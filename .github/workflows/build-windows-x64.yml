@@ -18,7 +18,9 @@ jobs:
       (github.event_name == 'push' ||
        (github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name != github.repository))
-    runs-on: windows-latest
+    # windows-latest is Server 2025 + VS 2026; pin 2022 so MSVC RelWithDebInfo
+    # LLVM links do not depend on whichever image GitHub retargets latest to.
+    runs-on: windows-2022
     env:
       BUILD_TYPE: RelWithDebInfo
       # Make any parallel-codegen merge/self-verify fallback a hard CI failure

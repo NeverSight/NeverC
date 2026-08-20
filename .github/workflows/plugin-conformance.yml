@@ -59,18 +59,29 @@ jobs:
             python: python3
             module: .so
           - host: windows-x64
-            runs-on: windows-latest
+            # Same class as python-plugin-bindings: RelWithDebInfo, LTO off.
+            runs-on: windows-2022
             python: python
             exe: .exe
             module: .dll
             msvc-arch: x64
+            cmake-extra: >-
+              -DCMAKE_POLICY_DEFAULT_CMP0141=NEW
+              -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+              -DLLVM_PARALLEL_COMPILE_JOBS=2
+              -DLLVM_PARALLEL_LINK_JOBS=1
           - host: windows-arm64
             runs-on: windows-11-arm
             python: python
             exe: .exe
             module: .dll
             msvc-arch: arm64
-            cmake-extra: -DCMAKE_SYSTEM_PROCESSOR=ARM64
+            cmake-extra: >-
+              -DCMAKE_SYSTEM_PROCESSOR=ARM64
+              -DCMAKE_POLICY_DEFAULT_CMP0141=NEW
+              -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+              -DLLVM_PARALLEL_COMPILE_JOBS=2
+              -DLLVM_PARALLEL_LINK_JOBS=1
     runs-on: ${{ matrix.runs-on }}
     defaults:
       run:
@@ -171,8 +182,16 @@ jobs:
 
       - name: Build compiler, conformance suite and SDK
         run: |
-          cmake --build build --config ${{ env.BUILD_TYPE }} \
-            --target neverc neverc-plugin-conformance neverc-pluginsdk
+          if [ "${{ runner.os }}" = Windows ]; then
+            cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+            cmake --build build --config ${{ env.BUILD_TYPE }} \
+              --target neverc-plugin-conformance
+            cmake --build build --config ${{ env.BUILD_TYPE }} \
+              --target neverc-pluginsdk
+          else
+            cmake --build build --config ${{ env.BUILD_TYPE }} \
+              --target neverc neverc-plugin-conformance neverc-pluginsdk
+          fi
 
       - name: Capability bindings and phase inventory
         run: |

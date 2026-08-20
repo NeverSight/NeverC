@@ -211,7 +211,7 @@ def check_source_build_contract() -> list[str]:
         "macos-15-intel",
         "macos-15",
         "windows-11-arm",
-        "windows-latest",
+        "windows-2022",
         "NEVERC_MANAGED_PYTHON_ROOT",
         '"neverc/cmake/**"',
         "PluginPythonABIGeneration",
