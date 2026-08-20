@@ -94,6 +94,14 @@ typedef struct {
     size_t payload_len;
 } quic_packet_header_t;
 
+/* RFC 9000 §17.2.2: a client MUST discard a server Initial whose Token
+ * Length is not 0, or close with PROTOCOL_VIOLATION. */
+static inline int neverc_quic_client_must_drop_initial_token(
+    int is_client, const quic_packet_header_t *hdr) {
+    return is_client && hdr && hdr->type == QUIC_PKT_INITIAL &&
+           hdr->token_len != 0;
+}
+
 typedef struct {
     uint8_t key[16];
     uint8_t iv[12];

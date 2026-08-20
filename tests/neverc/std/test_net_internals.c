@@ -427,6 +427,12 @@ static void test_parse_addr(void) {
               nc_parse_addr("::1:443", host, sizeof(host), &port), -1);
     check_int("reject truncated host",
               nc_parse_addr("localhost:80", host, 4, &port), -1);
+    check_int("reject extra brackets",
+              nc_parse_addr("foo[bar]:80", host, sizeof(host), &port), -1);
+    check_int("reject stray close bracket",
+              nc_parse_addr("]:80", host, sizeof(host), &port), -1);
+    check_int("reject CTL in host",
+              nc_parse_addr("host\nname:80", host, sizeof(host), &port), -1);
 }
 
 /* ===== Non-blocking / Socket Options Tests ===== */

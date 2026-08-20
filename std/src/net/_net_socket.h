@@ -121,6 +121,17 @@ static inline int nc_parse_port(const char *text, uint16_t *port) {
     return 0;
 }
 
+/* Host bytes that would inject headers, break logs, or mismatch Go
+ * net.SplitHostPort (extra '[' / ']'). Space is allowed (Windows zones). */
+static inline int nc_host_bytes_ok(const char *host) {
+    if (!host) return 0;
+    for (const unsigned char *p = (const unsigned char *)host; *p; p++) {
+        if (*p < 0x20 || *p == 0x7f || *p == '[' || *p == ']')
+            return 0;
+    }
+    return 1;
+}
+
 /* Parse host:port and [IPv6]:port spellings used by network APIs. */
 static inline int nc_parse_addr(const char *addr, char *host, size_t hostlen,
                                 uint16_t *port) {
@@ -139,6 +150,7 @@ static inline int nc_parse_addr(const char *addr, char *host, size_t hostlen,
         if (hlen == 0 || hlen >= hostlen) return -1;
         memcpy(host, addr + 1, hlen);
         host[hlen] = '\0';
+        if (!nc_host_bytes_ok(host)) return -1;
         return nc_parse_port(end + 2, port);
     }
 
@@ -154,6 +166,7 @@ static inline int nc_parse_addr(const char *addr, char *host, size_t hostlen,
     if (hlen >= hostlen) return -1;
     memcpy(host, addr, hlen);
     host[hlen] = '\0';
+    if (!nc_host_bytes_ok(host)) return -1;
     return nc_parse_port(colon + 1, port);
 }
 

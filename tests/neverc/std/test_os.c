@@ -688,6 +688,17 @@ static void test_read_dir(void) {
         ASSERT_EQ(errno, EINVAL);
         ASSERT_TRUE(neverc_os_exists(keep));
         ASSERT_TRUE(neverc_os_exists(victim));
+        snprintf(escape, sizeof(escape), "\\\\?\\%s\\victim\\.. ", parent);
+        errno = 0;
+        ASSERT_EQ(neverc_os_remove_all(escape), -1);
+        ASSERT_EQ(errno, EINVAL);
+        ASSERT_TRUE(neverc_os_exists(keep));
+        ASSERT_TRUE(neverc_os_exists(victim));
+        snprintf(escape, sizeof(escape), "\\\\?\\%s\\. ", parent);
+        errno = 0;
+        ASSERT_EQ(neverc_os_remove_all(escape), -1);
+        ASSERT_EQ(errno, EINVAL);
+        ASSERT_TRUE(neverc_os_exists(parent));
         errno = 0;
         ASSERT_EQ(neverc_os_remove_all("\\\\?\\unc\\localhost\\c$\\.."), -1);
         ASSERT_EQ(errno, EINVAL);

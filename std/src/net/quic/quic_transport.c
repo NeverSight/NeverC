@@ -597,6 +597,10 @@ static int qt_process_one_packet(struct neverc_quic_conn *conn,
     if (neverc_quic_parse_packet_header(copy, packet_len, &header,
                                         dcid_len) != 0)
         goto decrypt_failed;
+    /* RFC 9000 §17.2.2: servers send Token Length 0 on Initials. */
+    if (neverc_quic_client_must_drop_initial_token(
+            conn->side == QUIC_SIDE_CLIENT, &header))
+        goto decrypt_failed;
     if (header.type != protected_type || header.header_len > packet_len ||
         header.payload_len > packet_len - header.header_len)
         goto decrypt_failed;

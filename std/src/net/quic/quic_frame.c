@@ -82,11 +82,13 @@ int neverc_quic_frame_allowed(uint64_t frame_type, quic_enc_level_t level) {
         frame_type == QUIC_FRAME_STREAMS_BLOCKED_UNI ||
         frame_type == QUIC_FRAME_NEW_CONNECTION_ID ||
         frame_type == QUIC_FRAME_RETIRE_CONNECTION_ID ||
-        frame_type == QUIC_FRAME_PATH_CHALLENGE ||
-        frame_type == QUIC_FRAME_PATH_RESPONSE ||
         frame_type == QUIC_FRAME_DATAGRAM ||
         frame_type == QUIC_FRAME_DATAGRAM_LEN)
         return early_or_app;
+    /* RFC 9000 Table 3: PATH_CHALLENGE / PATH_RESPONSE are 1-RTT only. */
+    if (frame_type == QUIC_FRAME_PATH_CHALLENGE ||
+        frame_type == QUIC_FRAME_PATH_RESPONSE)
+        return application;
     if (frame_type >= QUIC_FRAME_STREAM_BASE &&
         frame_type <= QUIC_FRAME_STREAM_BASE + 7U)
         return early_or_app;

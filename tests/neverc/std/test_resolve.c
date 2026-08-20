@@ -133,6 +133,12 @@ static void test_split_host_port(void) {
     check_int("split still rejects DEL host",
               neverc_net_split_host_port("host\x7fname:80", host, sizeof(host),
                                          port, sizeof(port)), -1);
+    check_int("split rejects extra brackets",
+              neverc_net_split_host_port("foo[bar]:80", host, sizeof(host),
+                                         port, sizeof(port)), -1);
+    check_int("split rejects stray close bracket",
+              neverc_net_split_host_port("]:80", host, sizeof(host),
+                                         port, sizeof(port)), -1);
 }
 
 /* ===== JoinHostPort ===== */

@@ -487,7 +487,11 @@ const char *neverc_filepath_join(const char *a, const char *b, char *buf, size_t
 #else
     extra = 1;
 #endif
-    if (buse_len > SIZE_MAX - 2 || alen > SIZE_MAX - buse_len - extra) return NULL;
+    /* Reserve the trailing NUL: joined_len == SIZE_MAX would wrap malloc. */
+    if (extra > SIZE_MAX - 1 ||
+        buse_len > SIZE_MAX - extra - 1 ||
+        alen > SIZE_MAX - buse_len - extra - 1)
+        return NULL;
     size_t joined_len = alen + extra + buse_len;
     char *tmp = (char *)malloc(joined_len + 1);
     if (!tmp) return NULL;
@@ -626,7 +630,7 @@ const char *neverc_filepath_rel(const char *basepath, const char *targpath,
             goto done;
         size = 2 + seps * 3;
         if (rest) {
-            if (rest > SIZE_MAX - size - 1)
+            if (size > SIZE_MAX - 2 || rest > SIZE_MAX - size - 2)
                 goto done;
             size += 1 + rest;
         }

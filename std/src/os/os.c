@@ -124,16 +124,26 @@ static int os_win_is_unc_remainder(const char *p) {
 
 /* Go os.RemoveAll keeps \\?\ so Win32 does not re-parse '..'. After dropping
  * the prefix for ANSI APIs, a leftover '..' component would walk to the
- * parent. Reject that instead of deleting the wrong tree. */
+ * parent. Reject that instead of deleting the wrong tree. Win32 also
+ * strips trailing spaces/dots per component, so ".. " is the parent. */
 static int os_win_path_has_dotdot_component(const char *path) {
     const char *p = path;
     while (*p) {
-        if (p[0] == '.' && p[1] == '.' &&
-            (p[2] == '\0' || p[2] == '\\' || p[2] == '/')) {
-            if (p == path || p[-1] == '\\' || p[-1] == '/')
-                return 1;
-        }
-        p++;
+        const char *start = p;
+        while (*p && *p != '\\' && *p != '/')
+            p++;
+        size_t n = (size_t)(p - start);
+        if (n == 2 && start[0] == '.' && start[1] == '.')
+            return 1;
+        size_t stripped = n;
+        while (stripped > 0 &&
+               (start[stripped - 1] == ' ' || start[stripped - 1] == '.'))
+            stripped--;
+        if (stripped != n && stripped == 2 &&
+            start[0] == '.' && start[1] == '.')
+            return 1;
+        if (*p)
+            p++;
     }
     return 0;
 }
@@ -742,7 +752,27 @@ static int os_remove_all_ends_with_dot(const char *path) {
         n--;
     if (n == 1 && path[0] == '.')
         return 1;
-    return n >= 2 && path[n - 1] == '.' && os_is_sep(path[n - 2]);
+    if (n >= 2 && path[n - 1] == '.' && os_is_sep(path[n - 2]))
+        return 1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    /* After \\?\ is dropped, Win32 strips trailing spaces/dots: ". " is
+     * rmdir("."). Exact "foo." stays a filename (stripped != "."). */
+    {
+        size_t end = n;
+        size_t start;
+        while (n > 0 && !os_is_sep(path[n - 1]))
+            n--;
+        start = n;
+        n = end - start;
+        while (n > 0 && (path[start + n - 1] == ' ' ||
+                         path[start + n - 1] == '.'))
+            n--;
+        if ((end - start) != n && n <= 1 &&
+            (n == 0 || path[start] == '.'))
+            return 1;
+    }
+#endif
+    return 0;
 }
 
 int neverc_os_remove_all(const char *path) {

@@ -739,6 +739,47 @@ static void test_v1_long_header_type_bits(void) {
     ASSERT_EQ(parsed.version, NEVERC_QUIC_VERSION_1);
 }
 
+static void test_client_drops_server_initial_token(void) {
+    /* RFC 9000 §17.2.2: Token Length on a server Initial must be 0. */
+    uint8_t token[4] = {0xde, 0xad, 0xbe, 0xef};
+    uint8_t buf[128];
+    quic_packet_header_t header;
+    size_t header_len = 0;
+    size_t packet_len;
+    quic_packet_header_t parsed;
+
+    memset(&header, 0, sizeof(header));
+    header.type = QUIC_PKT_INITIAL;
+    header.version = NEVERC_QUIC_VERSION_1;
+    header.dcid.len = 8;
+    memset(header.dcid.data, 0x11, 8);
+    header.scid.len = 8;
+    memset(header.scid.data, 0x22, 8);
+    header.pkt_number = 1;
+    header.pkt_number_len = 1;
+    header.payload_len = 20;
+    header.token = token;
+    header.token_len = sizeof(token);
+    ASSERT_EQ(neverc_quic_write_long_header(buf, sizeof(buf), &header,
+                                            &header_len), 0);
+    memset(buf + header_len, 0, 20);
+    packet_len = header_len + 20;
+    ASSERT_EQ(neverc_quic_parse_packet_header(buf, packet_len, &parsed, 8),
+              0);
+    ASSERT_EQ(parsed.type, QUIC_PKT_INITIAL);
+    ASSERT_EQ(parsed.token_len, sizeof(token));
+    ASSERT_EQ(neverc_quic_client_must_drop_initial_token(1, &parsed), 1);
+    ASSERT_EQ(neverc_quic_client_must_drop_initial_token(0, &parsed), 0);
+
+    ASSERT_EQ(write_parseable_long_header(NEVERC_QUIC_VERSION_1,
+                                          QUIC_PKT_INITIAL, buf,
+                                          sizeof(buf), &packet_len), 0);
+    ASSERT_EQ(neverc_quic_parse_packet_header(buf, packet_len, &parsed, 8),
+              0);
+    ASSERT_EQ(parsed.token_len, 0);
+    ASSERT_EQ(neverc_quic_client_must_drop_initial_token(1, &parsed), 0);
+}
+
 static void test_v2_long_header_type_bits(void) {
     /* RFC 9369 §3.2: v2 remaps long-header types so v1 Initial bits
      * (0b00) are Retry and v2 Initial is 0b01. */
@@ -1328,6 +1369,7 @@ int main(void) {
     test_stop_sending_creates_peer_bidi();
     test_decode_packet_number_wrap_and_limit();
     test_v1_long_header_type_bits();
+    test_client_drops_server_initial_token();
     test_v2_long_header_type_bits();
     test_conn_defaults_to_quic_v1();
     test_copy_peer_cid_allows_empty();

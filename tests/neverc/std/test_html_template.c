@@ -825,6 +825,31 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "alert") == NULL);
     free(out);
 
+    /* CVE-2023-39318 / Go html/template: #! and --> are JS line comments.
+     * A quote on the comment line must not desync so the next line is a
+     * raw JS expression. */
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<script>#! \"\n{{.X}}\n</script>", &data);
+    check("hashbang then action is a js string",
+          out && strstr(out, "\"alert(1)\"") != NULL);
+    check("hashbang does not emit a bare call",
+          out && strstr(out, "\nalert(1)") == NULL);
+    free(out);
+
+    out = neverc_html_template_render(
+        "<script>--> \"\n{{.X}}\n</script>", &data);
+    check("html-close-comment then action is a js string",
+          out && strstr(out, "\"alert(1)\"") != NULL);
+    check("html-close-comment does not emit a bare call",
+          out && strstr(out, "\nalert(1)") == NULL);
+    free(out);
+
+    out = neverc_html_template_render("<script>#!{{.X}}</script>", &data);
+    check("hashbang same-line interpolation is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", "hello");
     out = neverc_html_template_render(
         "<script>/* done */var x = {{.X}};</script>", &data);

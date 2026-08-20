@@ -849,6 +849,21 @@ static void html_scan_doc(const char *buf, size_t len,
                     i += 4;
                     break;
                 }
+                /* Go html/template / CVE-2023-39318: ECMAScript 12.5
+                 * hashbang and Annex B.1.1 `-->` are line comments. If
+                 * they are not, a quote on that line desyncs into a JS
+                 * string and the next line's action is only js_escape'd. */
+                if (c == '#' && i + 1 < len && buf[i + 1] == '!') {
+                    js = JS_LINE;
+                    i += 2;
+                    break;
+                }
+                if (c == '-' && i + 2 < len &&
+                    buf[i + 1] == '-' && buf[i + 2] == '>') {
+                    js = JS_LINE;
+                    i += 3;
+                    break;
+                }
                 i++;
                 break;
             case JS_SQ:

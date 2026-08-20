@@ -925,6 +925,11 @@ static void test_frame_allowed_encryption_levels(void) {
     ASSERT_EQ(neverc_quic_frame_allowed(0x1e, QUIC_ENC_APPLICATION), 1);
     ASSERT_EQ(neverc_quic_frame_allowed(0x02, QUIC_ENC_INITIAL), 1);
     ASSERT_EQ(neverc_quic_frame_allowed(0x02, QUIC_ENC_EARLY_DATA), 0);
+    /* RFC 9000 Table 3: PATH_CHALLENGE / PATH_RESPONSE are 1-RTT only. */
+    ASSERT_EQ(neverc_quic_frame_allowed(0x1a, QUIC_ENC_EARLY_DATA), 0);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x1a, QUIC_ENC_APPLICATION), 1);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x1b, QUIC_ENC_EARLY_DATA), 0);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x1b, QUIC_ENC_APPLICATION), 1);
 }
 
 static void test_max_data_frame(void) {

@@ -310,11 +310,12 @@ static int port_text_valid(const char *port) {
     return parse_port_text(port, NULL) == 0;
 }
 
-/* Host bytes that would inject headers or break URL/log formatting. */
+/* Host bytes that would inject headers or break URL/log formatting.
+ * Extra '[' / ']' mismatch Go net.SplitHostPort (`foo[bar]:80`, `]:80`). */
 static int host_text_valid(const char *host) {
     if (!host) return 0;
     for (const unsigned char *p = (const unsigned char *)host; *p; p++) {
-        if (*p < 0x20 || *p == 0x7f)
+        if (*p < 0x20 || *p == 0x7f || *p == '[' || *p == ']')
             return 0;
     }
     return 1;
