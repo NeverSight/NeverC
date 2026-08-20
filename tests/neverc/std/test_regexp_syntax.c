@@ -354,6 +354,10 @@ static void test_parse_charclass(void) {
 
     n = neverc_regexp_syntax_parse("[[:foo:]]", 0, &err);
     check_null("[[:foo:]] unknown", n);
+
+    n = neverc_regexp_syntax_parse("[[:]", 0, &err);
+    check_not_null("incomplete POSIX class", n);
+    neverc_regexp_syntax_free(n);
 }
 
 /* ===== Escapes ===== */

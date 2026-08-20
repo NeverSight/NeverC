@@ -75,6 +75,10 @@ static void test_if_true(void) {
     check_str("if true", r, "visible");
     free(r);
 
+    r = neverc_template_render("{{if.Show}}adjacent{{end}}", &data, &outlen);
+    check_str("if without space before selector", r, "adjacent");
+    free(r);
+
     neverc_template_data_free(&data);
 }
 

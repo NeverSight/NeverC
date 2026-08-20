@@ -417,6 +417,13 @@ static int exec_win_has_ext(const char *name) {
     return dot && dot[1] != '\0' && (!slash || dot > slash);
 }
 
+static int exec_win_is_drive_cwd(const char *dir, size_t n) {
+    return n == 2 &&
+           ((dir[0] >= 'A' && dir[0] <= 'Z') ||
+            (dir[0] >= 'a' && dir[0] <= 'z')) &&
+           dir[1] == ':';
+}
+
 static int exec_win_skip_path_dir(const char *dir, size_t dlen) {
     if (dlen == 0) return 1;
     if (dlen == 1 && dir[0] == '.') return 1;
@@ -448,7 +455,8 @@ static const char *exec_look_in_win_path(const char *file, const char *path_env,
         }
         if (dlen > 0 && dlen <= (size_t)INT_MAX &&
             !exec_win_skip_path_dir(dir, dlen)) {
-            int trailing = dir[dlen - 1] == '\\' || dir[dlen - 1] == '/';
+            int trailing = dir[dlen - 1] == '\\' || dir[dlen - 1] == '/' ||
+                           exec_win_is_drive_cwd(dir, dlen);
             n = trailing
                     ? snprintf(buf, cap, "%.*s%s", (int)dlen, dir, file)
                     : snprintf(buf, cap, "%.*s\\%s", (int)dlen, dir, file);
@@ -482,7 +490,9 @@ static const char *exec_windows_resolve_app(const neverc_exec_cmd_t *cmd,
         name[0] != '\\' && name[0] != '/' &&
         !(name[0] && name[1] == ':') &&
         (strchr(name, '\\') || strchr(name, '/'))) {
-        int n = snprintf(buf, cap, "%s\\%s", cmd->dir, name);
+        int n = exec_win_is_drive_cwd(cmd->dir, strlen(cmd->dir))
+                    ? snprintf(buf, cap, "%s%s", cmd->dir, name)
+                    : snprintf(buf, cap, "%s\\%s", cmd->dir, name);
         if (n < 0 || (DWORD)n >= cap) return NULL;
         name = buf;
     }

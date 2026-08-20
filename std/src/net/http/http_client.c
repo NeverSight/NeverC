@@ -2413,29 +2413,6 @@ struct neverc_http_multipart {
     char *storage;
 };
 
-static const char *find_boundary(const char *content_type) {
-    if (!content_type) return NULL;
-    const char *bp = strstr(content_type, "boundary=");
-    if (!bp) return NULL;
-    bp += 9;
-    if (*bp == '"') {
-        bp++;
-        const char *end = strchr(bp, '"');
-        if (!end) return NULL;
-        return bp;
-    }
-    return bp;
-}
-
-static size_t boundary_len(const char *boundary) {
-    size_t len = 0;
-    while (boundary[len] && boundary[len] != '"' &&
-           boundary[len] != ';' && boundary[len] != ' ' &&
-           boundary[len] != '\r' && boundary[len] != '\n')
-        len++;
-    return len;
-}
-
 static char *multipart_quoted_parameter(const char *begin, const char *end,
                                         const char *wanted,
                                         size_t wanted_length,
@@ -2621,17 +2598,29 @@ static const char *multipart_find_next_boundary(
 
 neverc_http_multipart_t *neverc_http_multipart_parse(
     const char *content_type, const char *body, size_t body_len) {
-    const char *boundary = find_boundary(content_type);
-    if (!boundary || !body || body_len == 0) return NULL;
+    int allocation_failed = 0;
+    char *boundary = NULL;
+    if (!content_type || !body || body_len == 0) return NULL;
+    boundary = multipart_quoted_parameter(
+        content_type, content_type + strlen(content_type),
+        "boundary", 8, &allocation_failed);
+    if (allocation_failed || !boundary) {
+        free(boundary);
+        return NULL;
+    }
 
-    size_t blen = boundary_len(boundary);
-    if (blen == 0 || blen > 200) return NULL;
+    size_t blen = strlen(boundary);
+    if (blen == 0 || blen > 200) {
+        free(boundary);
+        return NULL;
+    }
 
     char delim[256];
     delim[0] = '-';
     delim[1] = '-';
     memcpy(delim + 2, boundary, blen);
     size_t dlen = blen + 2;
+    free(boundary);
 
     neverc_http_multipart_t *mp =
         (neverc_http_multipart_t *)calloc(1, sizeof(*mp));
@@ -3535,13 +3524,46 @@ const char *neverc_http_json_get(const neverc_http_request_t *req,
     return NULL;
 }
 
+static int json_append_escaped(nc_buf_t *buf, const char *s) {
+    if (!s) s = "";
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        char u[8];
+        int n;
+        if (c == '"' || c == '\\') {
+            char e[2] = { '\\', (char)c };
+            if (nc_buf_append(buf, e, 2) != 0) return -1;
+        } else if (c < 0x20) {
+            n = snprintf(u, sizeof(u), "\\u%04x", c);
+            if (n != 6 || nc_buf_append(buf, u, 6) != 0) return -1;
+        } else if (nc_buf_append(buf, s, 1) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int neverc_http_json_error(neverc_http_response_writer_t *w,
                              int code, const char *message) {
+    nc_buf_t body;
+    char codebuf[32];
+    int n;
+    int rc;
     if (!w) return 0;
     neverc_http_set_status(w, code);
     neverc_http_set_header(w, "Content-Type", "application/json; charset=utf-8");
-    return neverc_http_writef(w, "{\"error\":\"%s\",\"code\":%d}",
-                              message ? message : "error", code);
+    nc_buf_init(&body);
+    n = snprintf(codebuf, sizeof(codebuf), "\",\"code\":%d}", code);
+    if (n < 0 || (size_t)n >= sizeof(codebuf) ||
+        nc_buf_append(&body, "{\"error\":\"", 10) != 0 ||
+        json_append_escaped(&body, message ? message : "error") != 0 ||
+        nc_buf_append(&body, codebuf, (size_t)n) != 0) {
+        nc_buf_free(&body);
+        return -1;
+    }
+    rc = neverc_http_write(w, body.data, body.len);
+    nc_buf_free(&body);
+    return rc;
 }
 
 /* ======================================================================
@@ -3649,18 +3671,16 @@ int neverc_sse_send(neverc_sse_t *sse, const char *event_type,
     }
     if (data) {
         const char *p = data;
-        while (*p) {
-            const char *nl = strchr(p, '\n');
+        for (;;) {
+            const char *line_end = p;
+            while (*line_end && *line_end != '\r' && *line_end != '\n')
+                line_end++;
             nc_buf_append(&ev, "data: ", 6);
-            if (nl) {
-                nc_buf_append(&ev, p, (size_t)(nl - p));
-                nc_buf_append(&ev, "\n", 1);
-                p = nl + 1;
-            } else {
-                nc_buf_append(&ev, p, strlen(p));
-                nc_buf_append(&ev, "\n", 1);
-                break;
-            }
+            nc_buf_append(&ev, p, (size_t)(line_end - p));
+            nc_buf_append(&ev, "\n", 1);
+            if (*line_end == '\0') break;
+            if (*line_end == '\r' && line_end[1] == '\n') line_end++;
+            p = line_end + 1;
         }
     } else {
         nc_buf_append(&ev, "data: \n", 7);
@@ -3686,6 +3706,7 @@ int neverc_sse_retry(neverc_sse_t *sse, int retry_ms) {
 
 int neverc_sse_comment(neverc_sse_t *sse, const char *text) {
     if (!sse || sse->closed) return -1;
+    if (contains_crlf(text)) return -1;
 
     nc_buf_t ev;
     nc_buf_init(&ev);

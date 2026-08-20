@@ -3033,6 +3033,27 @@ static void test_multipart_parsing(void) {
     check_not_null("non-NUL-terminated multipart body", mp);
     neverc_http_multipart_free(mp);
     free(bounded_body);
+
+    {
+        const char *smuggle_ct =
+            "multipart/form-data; notboundary=SMUGGLE; boundary=REAL";
+        const char *real_body =
+            "--REAL\r\n"
+            "Content-Disposition: form-data; name=\"ok\"\r\n"
+            "\r\n"
+            "yes\r\n"
+            "--REAL--\r\n";
+        neverc_http_multipart_t *parsed = neverc_http_multipart_parse(
+            smuggle_ct, real_body, strlen(real_body));
+        const neverc_http_multipart_part_t *part =
+            parsed ? neverc_http_multipart_field(parsed, "ok") : NULL;
+        check_not_null("boundary is not stolen by notboundary", parsed);
+        check_int("real boundary field",
+                  part && part->data_len == 3 &&
+                      memcmp(part->data, "yes", 3) == 0,
+                  1);
+        neverc_http_multipart_free(parsed);
+    }
 }
 
 /* ===== SSE (Server-Sent Events) ===== */
@@ -3942,6 +3963,21 @@ static void test_json_helpers(void) {
         check_int("json_error body has code",
                    data && strstr(data, "400") != NULL, 1);
 
+        free(data);
+        neverc_http_memory_writer_free(w);
+    }
+
+    w = neverc_http_memory_writer_new();
+    check_not_null("json_error quote writer", w);
+    if (w) {
+        neverc_http_json_error(w, 400, "a\"b\\c");
+        char *data = NULL;
+        size_t data_len = 0;
+        (void)neverc_http_memory_writer_result(w, &data, &data_len);
+        check_int("json_error escapes quote",
+                  data && strstr(data, "\"a\\\"b\\\\c\"") != NULL, 1);
+        check_int("json_error does not split object",
+                  data && strstr(data, "\"a\"b") == NULL, 1);
         free(data);
         neverc_http_memory_writer_free(w);
     }

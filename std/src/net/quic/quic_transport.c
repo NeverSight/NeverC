@@ -1406,6 +1406,10 @@ static int qt_send_item(struct neverc_quic_conn *conn,
         free(packet);
         return -1;
     }
+    /* RFC 9000 §12.3 / RFC 9001 §5.3: a PN is used for at most one seal.
+     * Consume it as soon as ciphertext exists so a later anti-amplification
+     * drop or WOULD_BLOCK retry cannot reseal with the same nonce. */
+    conn->pn[space].next_pn = packet_number + 1;
     size_t packet_len = header_len + payload_len + 16U;
     size_t pn_offset = header_len - pn_len;
     if (neverc_quic_apply_header_protection(keys->hp, packet,
@@ -1436,7 +1440,6 @@ static int qt_send_item(struct neverc_quic_conn *conn,
         return result.status == NEVERC_NET_WOULD_BLOCK ? 1 : -1;
     if (conn->side == QUIC_SIDE_SERVER && !conn->address_validated)
         conn->bytes_sent_before_validation += packet_len;
-    conn->pn[space].next_pn++;
     if (included_ack) conn->pn[space].ack_pending = 0;
     if (ack_eliciting) {
         memset(record, 0, sizeof(*record));

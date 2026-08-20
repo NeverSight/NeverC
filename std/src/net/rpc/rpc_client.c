@@ -317,9 +317,16 @@ static int rpc_dispatch_inbound(neverc_rpc_client_t *client,
     neverc_rpc_stream_t *stream = rpc_find_stream_locked(
         client, frame->header.request_id);
     if (stream && stream->peer_end_queued) {
+        /* DATA/CANCEL after the peer already ended this stream is a
+         * stream-level protocol error. Queue the extra frame so recv()
+         * can report DATA_LOSS, but do not abort the connection — a
+         * bidi client must still be able to close_send(). */
+        int queued_extra = neverc_thread_channel_try_send(
+            stream->receive_queue, inbound);
         nc_mutex_unlock(&client->streams_lock);
-        free(inbound);
-        return -1;
+        if (queued_extra != NEVERC_THREAD_OK)
+            free(inbound);
+        return 0;
     }
     int queued = stream ? neverc_thread_channel_try_send(
                               stream->receive_queue, inbound)

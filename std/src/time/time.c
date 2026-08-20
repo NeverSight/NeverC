@@ -822,20 +822,23 @@ neverc_time_t neverc_time_date_in_location(int year, int month, int day,
 }
 
 /* Go nextStdChunk: '.'/',' + a run of the same '0' or '9', and the run must
- * not be followed by another digit (so ".0001" is literal, not a frac token). */
-static int frac_layout_len(const char *layout, size_t llen, size_t i, int *digits) {
+ * not be followed by another digit (so ".0001" is literal, not a frac token).
+ * The run may be longer than 9; format/parse still cap nanoseconds at 9. */
+static int frac_layout_len(const char *layout, size_t llen, size_t i,
+                           int *digits, int *skip) {
     if (i >= llen || (layout[i] != '.' && layout[i] != ',')) return 0;
     if (i + 1 >= llen) return 0;
     char d = layout[i + 1];
     if (d != '0' && d != '9') return 0;
     int n = 0;
-    while (i + 1 + (size_t)n < llen && n < 9 && layout[i + 1 + (size_t)n] == d)
+    while (i + 1 + (size_t)n < llen && layout[i + 1 + (size_t)n] == d)
         n++;
     if (i + 1 + (size_t)n < llen) {
         char next = layout[i + 1 + (size_t)n];
         if (next >= '0' && next <= '9') return 0;
     }
     *digits = n;
+    *skip = 1 + n;
     return 1;
 }
 
@@ -955,11 +958,12 @@ char *neverc_time_format(neverc_time_t t, const char *layout) {
             i += 2;
         } else if ((layout[i] == '.' || layout[i] == ',') && i + 1 < llen &&
                    (layout[i + 1] == '0' || layout[i + 1] == '9')) {
-            int digits = 0;
-            if (frac_layout_len(layout, llen, i, &digits)) {
+            int digits = 0, skip = 0;
+            if (frac_layout_len(layout, llen, i, &digits, &skip)) {
                 int trim = layout[i + 1] == '9';
-                write_frac_sec(buf, &out, ns, digits, trim, layout[i]);
-                i += 1 + (size_t)digits;
+                int emit = digits > 9 ? 9 : digits;
+                write_frac_sec(buf, &out, ns, emit, trim, layout[i]);
+                i += (size_t)skip;
             } else {
                 buf[out++] = layout[i++];
             }
@@ -1372,12 +1376,12 @@ int neverc_time_parse_in_location(const char *layout, const char *value,
             li += 2;
         } else if ((layout[li] == '.' || layout[li] == ',') && li + 1 < llen &&
                    (layout[li + 1] == '0' || layout[li + 1] == '9')) {
-            int digits = 0;
-            if (frac_layout_len(layout, llen, li, &digits)) {
+            int digits = 0, skip = 0;
+            if (frac_layout_len(layout, llen, li, &digits, &skip)) {
                 int required = layout[li + 1] == '0';
                 if (parse_frac_sec(value, vlen, &vi, digits, required, &ns) != 0)
                     return -1;
-                li += 1 + (size_t)digits;
+                li += (size_t)skip;
             } else {
                 if (vi >= vlen || value[vi] != layout[li]) return -1;
                 vi++;

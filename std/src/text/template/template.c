@@ -106,17 +106,18 @@ static char *parse_dot_key(const char *s) {
     return dup_str(start, (size_t)(s - start));
 }
 
-/* "if" / "range" plus whitespace (space, tab, or newline), matching Go. */
+/* Go text/template lexer atTerminator: whitespace or . , | : ( ) [ ]. */
 static int action_keyword(const char *action, const char *kw, const char **rest) {
     size_t n = strlen(kw);
+    char c;
     if (strncmp(action, kw, n) != 0) return 0;
-    if (action[n] == '\0') {
+    c = action[n];
+    if (c == '\0' || is_action_ws(c) || c == '.' || c == ',' || c == '|' ||
+        c == ':' || c == '(' || c == ')' || c == '[' || c == ']') {
         *rest = action + n;
         return 1;
     }
-    if (!is_action_ws(action[n])) return 0;
-    *rest = action + n;
-    return 1;
+    return 0;
 }
 
 static int parse_nodes(const char **p, const char *end,

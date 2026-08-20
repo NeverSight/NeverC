@@ -122,6 +122,14 @@ static neverc_grpc_status_t grpc_test_unary_end_early_handler(
         ? NEVERC_GRPC_OK : NEVERC_GRPC_INTERNAL;
 }
 
+static neverc_grpc_status_t grpc_test_bidi_end_early_handler(
+    neverc_grpc_server_stream_t *stream, void *context) {
+    (void)context;
+    if (neverc_grpc_server_stream_send(stream, "hi", 2U) != 0)
+        return NEVERC_GRPC_INTERNAL;
+    return NEVERC_GRPC_OK;
+}
+
 static const neverc_grpc_method_t grpc_test_unary_method = {
     "/test.Echo/Unary", NEVERC_GRPC_UNARY, 1024U, 1024U,
     grpc_test_unary_handler, NULL};
@@ -141,6 +149,10 @@ static const neverc_grpc_method_t grpc_test_client_streaming_method = {
 static const neverc_grpc_method_t grpc_test_unary_end_early_method = {
     "/test.Echo/UnaryEndEarly", NEVERC_GRPC_UNARY, 1024U, 1024U,
     grpc_test_unary_end_early_handler, NULL};
+
+static const neverc_grpc_method_t grpc_test_bidi_end_early_method = {
+    "/test.Echo/BidiEndEarly", NEVERC_GRPC_BIDI_STREAMING, 1024U, 1024U,
+    grpc_test_bidi_end_early_handler, NULL};
 
 static const neverc_grpc_method_t grpc_test_reserved_metadata_method = {
     "/test.Echo/Reserved", NEVERC_GRPC_UNARY, 1024U, 1024U,
@@ -410,6 +422,34 @@ static void grpc_test_bidi(neverc_h2_client_t *client) {
     neverc_context_free(background);
 }
 
+static void grpc_test_bidi_trailers_without_halfclose(neverc_h2_client_t *client) {
+    neverc_context_cancel_handle_t *cancel = NULL;
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *context = background
+        ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+        : NULL;
+    const char *error = NULL;
+    neverc_grpc_client_stream_t *stream = neverc_grpc_client_stream_open(
+        client, context, "/test.Echo/BidiEndEarly", NEVERC_GRPC_BIDI_STREAMING,
+        NULL, 0U, 1024U, &error);
+    CHECK(stream != NULL);
+    if (stream) {
+        neverc_grpc_message_t message;
+        CHECK(neverc_grpc_client_stream_send(stream, context, "x", 1U) == 0);
+        CHECK(neverc_grpc_client_stream_receive(stream, context, &message) ==
+              1);
+        CHECK(message.length == 2U && memcmp(message.data, "hi", 2U) == 0);
+        CHECK(neverc_grpc_client_stream_receive(stream, context, &message) ==
+              0);
+        CHECK(neverc_grpc_client_stream_status(stream) == NEVERC_GRPC_OK);
+        neverc_grpc_client_stream_free(stream);
+    }
+    neverc_context_cancel_handle_cancel(cancel);
+    neverc_context_cancel_handle_free(cancel);
+    neverc_context_free(context);
+    neverc_context_free(background);
+}
+
 static void grpc_test_directional_streaming(neverc_h2_client_t *client) {
     neverc_context_cancel_handle_t *cancel = NULL;
     neverc_context_t *background = neverc_context_background();
@@ -566,6 +606,8 @@ static int grpc_test_register_methods(neverc_http_mux_t *mux) {
            neverc_grpc_server_register(
                mux, &grpc_test_unary_end_early_method) == 0 &&
            neverc_grpc_server_register(
+               mux, &grpc_test_bidi_end_early_method) == 0 &&
+           neverc_grpc_server_register(
                mux, &grpc_test_reserved_metadata_method) == 0;
 }
 
@@ -592,6 +634,7 @@ static void grpc_test_h2c_end_to_end(void) {
         grpc_test_unary(client);
         grpc_test_directional_streaming(client);
         grpc_test_bidi(client);
+        grpc_test_bidi_trailers_without_halfclose(client);
         grpc_test_unary_extra_frames(client);
         grpc_test_reserved_metadata(client);
         grpc_test_max_request_message_size(client);

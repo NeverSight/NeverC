@@ -691,6 +691,20 @@ static void test_read_dir(void) {
                     free(dents);
                     ASSERT_TRUE(saw);
                 }
+                {
+                    char drive_rel[8];
+                    char tmpd[1200];
+                    snprintf(drive_rel, sizeof(drive_rel), "%c:", cwd[0]);
+                    ASSERT_EQ(neverc_os_mkdir_temp(
+                                  drive_rel, "neverc_cwd_d_", tmpd,
+                                  sizeof(tmpd)),
+                              0);
+                    /* Go filepath.Join("C:", "name") is "C:name", not "C:\\name". */
+                    ASSERT_TRUE(tmpd[0] == cwd[0] && tmpd[1] == ':' &&
+                                tmpd[2] != '\\' && tmpd[2] != '/');
+                    ASSERT_TRUE(neverc_os_is_dir(tmpd));
+                    neverc_os_remove_all(tmpd);
+                }
                 neverc_os_remove(sentinel);
             }
         }

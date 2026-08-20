@@ -750,11 +750,12 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
                 tz_unix_civil(year, 4, tz_nth_wday(year, 4, 0, 1), 3, end_min, 0),
                 -(int64_t)zone->dst_offset);
         } else if (cl) {
+            /* IANA America/Santiago: first Saturday 24:00 (Sunday 00:00). */
             start = tz_add_sat(
-                tz_unix_civil(year, 9, tz_nth_wday(year, 9, 6, 1), 0, 0, 0),
+                tz_unix_civil(year, 9, tz_nth_wday(year, 9, 6, 1) + 1, 0, 0, 0),
                 -(int64_t)zone->utc_offset);
             end = tz_add_sat(
-                tz_unix_civil(year, 4, tz_nth_wday(year, 4, 6, 1), 0, 0, 0),
+                tz_unix_civil(year, 4, tz_nth_wday(year, 4, 6, 1) + 1, 0, 0, 0),
                 -(int64_t)zone->dst_offset);
         } else {
             /* Australia: first Sunday October 02:00 std -> first Sunday April 03:00 dst */

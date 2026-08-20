@@ -233,6 +233,10 @@ static char *fs_join_path(const char *dir, const char *name) {
     while (dlen > 1 && fs_is_sep(dir[dlen - 1]))
         dlen--;
     int need_sep = dlen > 0 && !fs_is_sep(dir[dlen - 1]);
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    if (fs_win_is_drive_cwd(dir, dlen))
+        need_sep = 0;
+#endif
     size_t extra = need_sep ? 1 : 0;
     if (dlen > SIZE_MAX - nlen - extra - 1) return NULL;
     char *full = (char *)malloc(dlen + extra + nlen + 1);

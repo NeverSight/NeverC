@@ -475,25 +475,24 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
         first = 0;
 
         if (c == '[' && p->pos + 1 < p->len && p->src[p->pos + 1] == ':') {
+            int save = p->pos;
             next(p); next(p);
             int ns = p->pos;
             while (p->pos < p->len &&
                    !(peek(p) == ':' && p->pos + 1 < p->len &&
                      p->src[p->pos + 1] == ']'))
                 next(p);
-            if (p->pos >= p->len) {
-                p->err = "invalid POSIX class";
-                neverc_regexp_syntax_free(n);
-                return NULL;
+            if (p->pos < p->len) {
+                int nlen = p->pos - ns;
+                next(p); next(p);
+                if (!add_posix_class(p, n, p->src + ns, nlen)) {
+                    if (!p->err) p->err = "invalid POSIX class";
+                    neverc_regexp_syntax_free(n);
+                    return NULL;
+                }
+                continue;
             }
-            int nlen = p->pos - ns;
-            next(p); next(p);
-            if (!add_posix_class(p, n, p->src + ns, nlen)) {
-                if (!p->err) p->err = "invalid POSIX class";
-                neverc_regexp_syntax_free(n);
-                return NULL;
-            }
-            continue;
+            p->pos = save;
         }
 
         if (c == '\\') {

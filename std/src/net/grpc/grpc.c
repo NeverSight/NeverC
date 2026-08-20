@@ -541,7 +541,12 @@ static void grpc_server_dispatch(neverc_http_request_t *request,
     neverc_grpc_status_t status = framing_valid
         ? method->handler(&stream, method->context)
         : NEVERC_GRPC_INVALID_ARGUMENT;
-    if (request->protocol_stream && framing_valid) {
+    /* Unary/server-streaming must see client half-close (exactly one request).
+     * Bidi/client-streaming must send trailers when the handler returns;
+     * waiting for END_STREAM deadlocks a client that Recvs first. */
+    if (request->protocol_stream && framing_valid &&
+        (method->cardinality == NEVERC_GRPC_UNARY ||
+         method->cardinality == NEVERC_GRPC_SERVER_STREAMING)) {
         for (;;) {
             neverc_grpc_message_t ignored;
             int next = grpc_server_stream_recv_internal(&stream, &ignored);
@@ -551,9 +556,7 @@ static void grpc_server_dispatch(neverc_http_request_t *request,
                 break;
             }
         }
-        if ((method->cardinality == NEVERC_GRPC_UNARY ||
-             method->cardinality == NEVERC_GRPC_SERVER_STREAMING) &&
-            stream.received_count != 1)
+        if (stream.received_count != 1)
             framing_valid = 0;
         if (!framing_valid) {
             status = NEVERC_GRPC_INVALID_ARGUMENT;

@@ -728,6 +728,17 @@ static void test_posix_classes(void) {
     check_bool("[[:^nope:]] rejected",
                neverc_regexp_compile("[[:^nope:]]", NULL) == NULL, 1);
     {
+        neverc_regexp_t *posix_re = neverc_regexp_compile("[[:]", NULL);
+        check_bool("incomplete POSIX class compiles", posix_re != NULL, 1);
+        neverc_regexp_free(posix_re);
+    }
+    check_bool("incomplete POSIX matches bracket",
+               neverc_regexp_match_string("[[:]", "["), 1);
+    check_bool("incomplete POSIX matches colon",
+               neverc_regexp_match_string("[[:]", ":"), 1);
+    check_bool("incomplete POSIX rejects letter",
+               neverc_regexp_match_string("[[:]", "a"), 0);
+    {
         neverc_regexp_t *re;
         re = neverc_regexp_compile("a*?", NULL);
         check_bool("a*? compiles", re != NULL, 1);

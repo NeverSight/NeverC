@@ -217,6 +217,17 @@ static int os_win_dir_star(char *pattern, size_t cap, const char *dir) {
     return 0;
 }
 
+static int os_win_join_child(char *dst, size_t cap, const char *dir,
+                             const char *name) {
+    size_t n;
+    if (!dir || !name || cap == 0) return -1;
+    n = strlen(dir);
+    if (n == 0) return -1;
+    if (dir[n - 1] == '\\' || dir[n - 1] == '/' || os_win_is_drive_cwd(dir, n))
+        return snprintf(dst, cap, "%s%s", dir, name);
+    return snprintf(dst, cap, "%s\\%s", dir, name);
+}
+
 /* Win32 strips trailing spaces/dots, so ".. " is the parent directory. */
 static int os_win_entry_name_ok(const char *name) {
     size_t n;
@@ -846,8 +857,8 @@ int neverc_os_remove_all(const char *path) {
     do {
         if (!os_win_entry_name_ok(fd.cFileName)) continue;
         char child[4096];
-        int child_len = snprintf(
-            child, sizeof(child), "%s\\%s", path, fd.cFileName);
+        int child_len = os_win_join_child(
+            child, sizeof(child), path, fd.cFileName);
         if (child_len < 0 || (size_t)child_len >= sizeof(child) ||
             neverc_os_remove_all(child) != 0)
             result = -1;
@@ -1153,12 +1164,21 @@ neverc_os_file_t *neverc_os_create_temp(const char *dir, const char *pattern) {
         hex[16] = '\0';
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
-        int n = snprintf(path, sizeof(path), "%s\\%s%s", dir, pattern, hex);
+        {
+            char leaf[512];
+            int leaf_n = snprintf(leaf, sizeof(leaf), "%s%s", pattern, hex);
+            int n;
+            if (leaf_n < 0 || (size_t)leaf_n >= sizeof(leaf))
+                return NULL;
+            n = os_win_join_child(path, sizeof(path), dir, leaf);
+            if (n < 0 || (size_t)n >= sizeof(path))
+                return NULL;
+        }
 #else
         int n = snprintf(path, sizeof(path), "%s/%s%s", dir, pattern, hex);
-#endif
         if (n < 0 || (size_t)n >= sizeof(path))
             return NULL;
+#endif
         neverc_os_file_t *file = neverc_os_open(
             path, NEVERC_OS_O_RDWR | NEVERC_OS_O_CREATE | NEVERC_OS_O_EXCL,
             0600);
@@ -1681,12 +1701,21 @@ int neverc_os_mkdir_temp(const char *dir, const char *pattern,
         hex[16] = '\0';
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
-        int n = snprintf(buf, cap, "%s\\%s%s", dir, pattern, hex);
+        {
+            char leaf[512];
+            int leaf_n = snprintf(leaf, sizeof(leaf), "%s%s", pattern, hex);
+            int n;
+            if (leaf_n < 0 || (size_t)leaf_n >= sizeof(leaf))
+                return -1;
+            n = os_win_join_child(buf, cap, dir, leaf);
+            if (n < 0 || (size_t)n >= cap)
+                return -1;
+        }
 #else
         int n = snprintf(buf, cap, "%s/%s%s", dir, pattern, hex);
-#endif
         if (n < 0 || (size_t)n >= cap)
             return -1;
+#endif
         if (neverc_os_mkdir(buf, 0700) == 0)
             return 0;
         if (errno != EEXIST)

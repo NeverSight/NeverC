@@ -661,13 +661,16 @@ static frag_t parse_atom(parser_t *par) {
                 const char *ns = par->p + 2;
                 const char *q = ns;
                 while (*q && !(*q == ':' && q[1] == ']')) q++;
-                if (!*q || !cc_set_posix(cc, ns, (int)(q - ns))) {
-                    par->err = "invalid POSIX class";
-                    goto class_fail;
+                if (*q) {
+                    if (!cc_set_posix(cc, ns, (int)(q - ns))) {
+                        par->err = "invalid POSIX class";
+                        goto class_fail;
+                    }
+                    par->p = q + 2;
+                    entries++;
+                    continue;
                 }
-                par->p = q + 2;
-                entries++;
-                continue;
+                /* Go: missing ":]" is not a POSIX class; '[' is literal. */
             }
             int lo;
             int lo_utf8 = 0;

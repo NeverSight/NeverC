@@ -323,8 +323,9 @@ static void test_offset_at(void) {
     const neverc_tzdata_zone_t *syd = neverc_tzdata_lookup("Australia/Sydney");
     const neverc_tzdata_zone_t *akl = neverc_tzdata_lookup("Pacific/Auckland");
     const neverc_tzdata_zone_t *cht = neverc_tzdata_lookup("Pacific/Chatham");
+    const neverc_tzdata_zone_t *scl = neverc_tzdata_lookup("America/Santiago");
     const neverc_tzdata_zone_t *utc = neverc_tzdata_utc();
-    if (!ny || !lon || !syd || !akl || !cht || !utc) {
+    if (!ny || !lon || !syd || !akl || !cht || !scl || !utc) {
         printf("  SKIP: required zone missing\n");
         return;
     }
@@ -380,6 +381,16 @@ static void test_offset_at(void) {
               neverc_tzdata_offset_at(cht, NZ_END_2024 - 1), 49500);
     check_int("Chatham at autumn-back CHAST",
               neverc_tzdata_offset_at(cht, NZ_END_2024), 45900);
+
+    /* IANA America/Santiago: first Saturday 24:00 (Sunday 00:00), not Sat 00:00. */
+    check_int("Santiago Sat before Sep Sunday 00:00 is CLT",
+              neverc_tzdata_offset_at(scl, 1725685200), -14400);
+    check_int("Santiago after Sep Sunday 00:00 is CLST",
+              neverc_tzdata_offset_at(scl, 1725768000), -10800);
+    check_int("Santiago Sat before Apr Sunday 00:00 is CLST",
+              neverc_tzdata_offset_at(scl, 1712404800), -10800);
+    check_int("Santiago after Apr Sunday 00:00 is CLT",
+              neverc_tzdata_offset_at(scl, 1712458800), -14400);
 
     /* Extreme unix_sec must not overflow civil math. */
     check_int("NY offset_at INT64_MAX",

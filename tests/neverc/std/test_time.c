@@ -317,6 +317,12 @@ static void test_format_layout(void) {
     check_bool("format mixed frac is literal", strcmp(s, ".0001") == 0, 1);
     free(s);
 
+    s = neverc_time_format(neverc_time_date(2024, 1, 5, 0, 0, 0, 123456789),
+                           ".0000000000");
+    check_bool("format 10-zero frac is 9 digits",
+               strcmp(s, ".123456789") == 0, 1);
+    free(s);
+
     s = neverc_time_format(fifth, "15:04:05.999");
     check_bool("format trim frac", strcmp(s, "00:00:00.123") == 0, 1);
     free(s);
@@ -418,6 +424,10 @@ static void test_parse_layout(void) {
 
     ok = neverc_time_parse(".0001", ".0001", &t);
     check_int("parse mixed frac as literals", ok, 0);
+
+    ok = neverc_time_parse(".0000000000", ".1234567890", &t);
+    check_int("parse 10-zero frac", ok, 0);
+    check_int("parse 10-zero nsec", neverc_time_nanosecond(t), 123456789);
 
     ok = neverc_time_parse("15:4:5", "12:5:7", &t);
     check_int("parse unpadded min sec", ok, 0);
