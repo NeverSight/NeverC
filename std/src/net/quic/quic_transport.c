@@ -1068,12 +1068,18 @@ static int qt_build_stream(struct neverc_quic_conn *conn, uint8_t *output,
         }
         size_t length = stream->send_len;
         if (length > capacity - overhead) length = capacity - overhead;
-        int is_new_data = stream->send_offset == stream->send_highest;
-        if (is_new_data) {
-            uint64_t available = conn->flow.max_data_peer > conn->flow.data_sent ?
-                conn->flow.max_data_peer - conn->flow.data_sent : 0;
-            if (length > available) length = (size_t)available;
-        }
+        /* RFC 9000 §4.1: retransmission of already-counted bytes is free,
+         * but any payload past send_highest still consumes MAX_DATA. */
+        uint64_t already = 0;
+        if (stream->send_highest > stream->send_offset)
+            already = stream->send_highest - stream->send_offset;
+        if (already > length) already = length;
+        uint64_t new_bytes = length - already;
+        uint64_t available =
+            conn->flow.max_data_peer > conn->flow.data_sent ?
+            conn->flow.max_data_peer - conn->flow.data_sent : 0;
+        if (new_bytes > available)
+            length = (size_t)(already + available);
         int fin = stream->send_fin && length == stream->send_len;
         if (length == 0 && !fin) {
             nc_mutex_unlock(&stream->lock);
@@ -1492,9 +1498,12 @@ static int qt_send_item(struct neverc_quic_conn *conn,
                 conn, meta->stream_id);
             if (stream) {
                 nc_mutex_lock(&stream->lock);
-                if (stream->send_offset == stream->send_highest) {
-                    conn->flow.data_sent += meta->length;
-                    stream->send_highest += meta->length;
+                {
+                    uint64_t end = stream->send_offset + meta->length;
+                    if (end > stream->send_highest) {
+                        conn->flow.data_sent += end - stream->send_highest;
+                        stream->send_highest = end;
+                    }
                 }
                 stream->send_inflight = meta->length;
                 stream->send_inflight_pn = packet_number;

@@ -101,6 +101,10 @@ static int dns_expand_rdata_name(const unsigned char *msg, int msglen,
                              dst, (int)dstlen);
     if (consumed < 0 || consumed > rdlen - name_off)
         return -1;
+    /* RFC 1035 MX/NS/SRV RDATA is preference/header plus a single name.
+     * Trailing bytes after the expanded name are not part of the RR. */
+    if (name_off + consumed != rdlen)
+        return -1;
     return 0;
 }
 

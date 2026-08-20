@@ -230,8 +230,17 @@ static int fs_win_has_wildcards(const char *path) {
 
 static char *fs_join_path(const char *dir, const char *name) {
     size_t dlen = strlen(dir), nlen = strlen(name);
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    size_t original = dlen;
+#endif
     while (dlen > 1 && fs_is_sep(dir[dlen - 1]))
         dlen--;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    /* "C:\" is a volume root. Stripping the separator yields "C:", which
+     * Win32 treats as the drive's current directory (Go filepath.Join). */
+    if (fs_win_is_drive_cwd(dir, dlen) && original > dlen)
+        dlen = original;
+#endif
     int need_sep = dlen > 0 && !fs_is_sep(dir[dlen - 1]);
 #if defined(NEVERC_PLATFORM_WINDOWS)
     if (fs_win_is_drive_cwd(dir, dlen))

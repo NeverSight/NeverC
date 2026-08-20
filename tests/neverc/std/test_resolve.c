@@ -395,7 +395,8 @@ static void test_lookup_port(void) {
     check_int("empty mx name rejected", neverc_net_lookup_mx("", &mx), -1);
     check_int("empty mx clears leftover", mx.count, 0);
     /* MX/NS/SRV name expansion is bounded to that RR's RDATA so a short
-     * rdlen cannot start dn_expand in the next record. */
+     * rdlen cannot start dn_expand in the next record, and trailing bytes
+     * after the name are rejected. */
     neverc_net_txt_list_t txt;
     txt.count = 3;
     check_int("empty txt name rejected", neverc_net_lookup_txt("", &txt), -1);

@@ -329,6 +329,14 @@ int neverc_dsa_verify(const neverc_dsa_public_key_t *key,
                        const neverc_dsa_signature_t *sig) {
     if (!key || !hash || hash_len == 0 || !sig || !dsa_public_valid(key))
         return -1;
+    /* Go crypto/dsa.Verify requires Q.BitLen()%8==0. Tiny primes such as
+     * q=3 otherwise make verify a forgery oracle (FIPS L1024N160 minimum). */
+    {
+        int qbits = neverc_bigint_bit_len(&key->q);
+        if (qbits < 160 || (qbits & 7) != 0 ||
+            neverc_bigint_bit_len(&key->p) < 1024)
+            return -1;
+    }
     if (neverc_bigint_sign(&sig->r) <= 0 || neverc_bigint_sign(&sig->s) <= 0)
         return -1;
     if (neverc_bigint_cmp(&sig->r, &key->q) >= 0 ||

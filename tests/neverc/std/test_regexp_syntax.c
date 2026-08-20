@@ -421,6 +421,13 @@ static void test_parse_escapes(void) {
     check_null("\\x4 invalid", n);
     n = neverc_regexp_syntax_parse("\\xGG", 0, &err);
     check_null("\\xGG invalid", n);
+    n = neverc_regexp_syntax_parse("\\x{D800}", 0, &err);
+    check_null("\\x{D800} surrogate", n);
+    n = neverc_regexp_syntax_parse("\\x{DFFF}", 0, &err);
+    check_null("\\x{DFFF} surrogate", n);
+    n = neverc_regexp_syntax_parse("\\x{10FFFF}", 0, &err);
+    check_not_null("\\x{10FFFF}", n);
+    neverc_regexp_syntax_free(n);
 
     n = neverc_regexp_syntax_parse("\\q", 0, &err);
     check_null("\\q unknown letter escape", n);

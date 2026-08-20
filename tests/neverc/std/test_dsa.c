@@ -329,6 +329,29 @@ static void test_verify_rejects_oversized_q(void) {
     neverc_dsa_public_key_free(&pub);
 }
 
+static void test_verify_rejects_tiny_prime_group(void) {
+    printf("[tiny_prime_group]\n");
+    /* p=7, q=3, g=y=2 is a mathematically valid DSA group, but Go Verify
+     * rejects Q.BitLen()%8!=0 and FIPS does not allow 3-bit q. */
+    neverc_dsa_public_key_t pub;
+    neverc_dsa_public_key_init(&pub);
+    neverc_bigint_set_int64(&pub.p, 7);
+    neverc_bigint_set_int64(&pub.q, 3);
+    neverc_bigint_set_int64(&pub.g, 2);
+    neverc_bigint_set_int64(&pub.y, 2);
+
+    neverc_dsa_signature_t sig;
+    neverc_dsa_signature_init(&sig);
+    neverc_bigint_set_int64(&sig.r, 1);
+    neverc_bigint_set_int64(&sig.s, 1);
+
+    uint8_t hash[1] = {0x01};
+    ASSERT_TRUE(neverc_dsa_verify(&pub, hash, sizeof(hash), &sig) != 0);
+
+    neverc_dsa_signature_free(&sig);
+    neverc_dsa_public_key_free(&pub);
+}
+
 static void test_verify_rejects_composite_q_forgery(void) {
     printf("[composite_q_forgery]\n");
     /* q=9 is composite and divides p-1=18. g=y=7 has order 3, not 9,
@@ -436,6 +459,7 @@ int main(void) {
     test_verify_rejects_q_not_dividing_p_minus_1();
     test_verify_rejects_composite_p_forgery();
     test_verify_rejects_oversized_q();
+    test_verify_rejects_tiny_prime_group();
     test_verify_rejects_composite_q_forgery();
     test_verify_rejects_noninvertible_s();
     test_sign_rejects_invalid_inputs();
