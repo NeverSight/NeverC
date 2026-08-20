@@ -1060,7 +1060,7 @@ int neverc_os_getpid(void) {
 int neverc_os_getppid(void) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    PROCESSENTRY32A pe;
+    PROCESSENTRY32 pe;
     DWORD pid;
     DWORD ppid = 0;
     int found = 0;
@@ -1068,14 +1068,14 @@ int neverc_os_getppid(void) {
         return -1;
     pe.dwSize = sizeof(pe);
     pid = GetCurrentProcessId();
-    if (Process32FirstA(snap, &pe)) {
+    if (Process32First(snap, &pe)) {
         do {
             if (pe.th32ProcessID == pid) {
                 ppid = pe.th32ParentProcessID;
                 found = 1;
                 break;
             }
-        } while (Process32NextA(snap, &pe));
+        } while (Process32Next(snap, &pe));
     }
     CloseHandle(snap);
     return found ? (int)ppid : -1;
