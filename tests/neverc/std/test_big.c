@@ -295,6 +295,12 @@ static void test_div(void) {
     neverc_bigint_div(&q, &r, &a, &b);
     ASSERT_INT_EQ(neverc_bigint_int64(&q), 14);
     ASSERT_INT_EQ(neverc_bigint_int64(&r), 2);
+    ASSERT_INT_EQ(neverc_bigint_bit_len(&b), 3);
+
+    neverc_bigint_set_uint64(&b, 0x100000000ULL);
+    ASSERT_TRUE(b.digits && b.len == 2);
+    b.digits[1] = 0;
+    ASSERT_INT_EQ(neverc_bigint_bit_len(&b), 0);
 
     neverc_bigint_set_int64(&a, 100);
     neverc_bigint_set_int64(&b, 0);

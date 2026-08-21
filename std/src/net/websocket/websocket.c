@@ -867,10 +867,28 @@ int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
     return 0;
 }
 
+static int ws_header_count(const neverc_http_request_t *req, const char *name) {
+    if (!req || !req->raw_headers || !name) return 0;
+    const char *p = req->raw_headers;
+    int count = 0;
+    for (int i = 0; i < req->nheaders; i++) {
+        const char *hname = p;
+        while (*p) p++;
+        p++;
+        while (*p) p++;
+        p++;
+        if (strcasecmp(hname, name) == 0) count++;
+    }
+    return count;
+}
+
 static int ws_validate_http_upgrade(const neverc_http_request_t *req,
                                      char *key_buf, size_t key_cap) {
     if (!req || !key_buf || key_cap < 2) return -1;
     if (!req->method || strcmp(req->method, "GET") != 0) return -1;
+    if (!req->http_version || strcmp(req->http_version, "HTTP/1.1") != 0)
+        return -1;
+    if (req->body_len > 0) return -1;
 
     const char *upgrade = neverc_http_request_header(req, "Upgrade");
     if (!upgrade || strcasecmp(upgrade, "websocket") != 0) return -1;
@@ -881,10 +899,20 @@ static int ws_validate_http_upgrade(const neverc_http_request_t *req,
     const char *version = neverc_http_request_header(req, "Sec-WebSocket-Version");
     if (!version || strcmp(version, "13") != 0) return -1;
 
+    if (ws_header_count(req, "Sec-WebSocket-Key") != 1) return -1;
     const char *ws_key = neverc_http_request_header(req, "Sec-WebSocket-Key");
     if (!ws_key || strlen(ws_key) != 24) return -1;
     uint8_t decoded_key[32];
     if (neverc_base64_decode(decoded_key, ws_key, 24) != 16) return -1;
+
+    int ncl = ws_header_count(req, "Content-Length");
+    if (ncl < 0) return -1;
+    if (ncl > 1) return -1;
+    if (ncl == 1) {
+        const char *clen = neverc_http_request_header(req, "Content-Length");
+        if (!clen || strcmp(clen, "0") != 0) return -1;
+    }
+    if (ws_header_count(req, "Transfer-Encoding") != 0) return -1;
 
     size_t ki = 0;
     while (ws_key[ki] && ki < key_cap - 1) {

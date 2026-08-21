@@ -87,6 +87,12 @@ static const tz_entry_t tz_table[] = {
     {"Etc/UTC",                 "UTC",  NULL,   0,      0,      0},
     {"Etc/GMT",                 "GMT",  NULL,   0,      0,      0},
 
+    /* Go zoneinfo "factory" names: fixed offsets, no DST.
+     * LoadLocation("EST") is not America/New_York. */
+    {"EST",                     "EST",  NULL,   -18000, 0,      0},
+    {"MST",                     "MST",  NULL,   -25200, 0,      0},
+    {"HST",                     "HST",  NULL,   -36000, 0,      0},
+
     /* Americas */
     {"America/New_York",        "EST",  "EDT",  -18000, -14400, N},
     {"America/Chicago",         "CST",  "CDT",  -21600, -18000, N},
@@ -942,9 +948,7 @@ static const char *iana_from_tz_string(const char *tz) {
 static const neverc_tzdata_zone_t *lookup_tz_string(const char *tz) {
     const char *iana = iana_from_tz_string(tz);
     if (!iana) return NULL;
-    const neverc_tzdata_zone_t *z = neverc_tzdata_lookup(iana);
-    if (z) return z;
-    return neverc_tzdata_lookup_abbrev(iana);
+    return neverc_tzdata_lookup(iana);
 }
 
 #if !defined(_WIN32)

@@ -892,6 +892,28 @@ static int exec_is_exe_file(const char *path) {
     return stat(path, &st) == 0 && S_ISREG(st.st_mode);
 }
 
+/* Go 1.19+ LookPath: a relative PATH entry that Cleans through `..`
+ * (e.g. "foo/..") is ErrDot, not a search hit. */
+static int exec_posix_skip_path_dir(const char *dir, size_t dlen) {
+    size_t i = 0;
+    int saw_dotdot = 0;
+    int is_abs = dlen > 0 && dir[0] == '/';
+    if (dlen == 0) return 0;
+    while (i < dlen) {
+        while (i < dlen && dir[i] == '/') i++;
+        if (i >= dlen) break;
+        size_t start = i;
+        while (i < dlen && dir[i] != '/') i++;
+        size_t clen = i - start;
+        if (clen == 1 && dir[start] == '.') continue;
+        if (clen == 2 && dir[start] == '.' && dir[start + 1] == '.') {
+            saw_dotdot = 1;
+            continue;
+        }
+    }
+    return saw_dotdot && !is_abs;
+}
+
 static int exec_set_cloexec(int fd) {
 #ifdef FD_CLOEXEC
     return fcntl(fd, F_SETFD, FD_CLOEXEC);
@@ -936,7 +958,8 @@ static const char *exec_look_in_path(const char *file, const char *path_env,
                 memcpy(buf + 2, file, flen + 1);
                 if (exec_is_exe_file(buf)) return buf;
             }
-        } else if (cap >= 2 && dlen <= cap - 2 && flen <= cap - 2 - dlen) {
+        } else if (!exec_posix_skip_path_dir(p, dlen) &&
+                   cap >= 2 && dlen <= cap - 2 && flen <= cap - 2 - dlen) {
             memcpy(buf, p, dlen);
             buf[dlen] = '/';
             memcpy(buf + dlen + 1, file, flen + 1);

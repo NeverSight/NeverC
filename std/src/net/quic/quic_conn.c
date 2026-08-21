@@ -489,7 +489,7 @@ static int quic_stream_read_impl(quic_stream_t *stream, void *buffer,
                      &new_stream_limit) == 0 &&
         new_stream_limit <= QUIC_VARINT_MAX) {
         stream->recv_max_data = new_stream_limit;
-        stream->conn->max_stream_data_pending = stream;
+        stream->max_stream_data_pending = 1;
     }
     uint64_t new_conn_limit;
     if (quic_add_u64(stream->conn->flow.max_data_local, consumed,
@@ -854,6 +854,20 @@ int neverc_quic_stream_receive_reset_locked(
     stream->recv_final_size = frame->final_size;
     stream->reset_error_code = frame->error_code;
     stream->state = QUIC_STREAM_RESET;
+    /* RFC 9000 §4.1: data dropped after RESET_STREAM still counts as
+     * received, but the receiver retires it so MAX_DATA can advance. */
+    if (frame->final_size > stream->recv_offset) {
+        uint64_t abandoned = frame->final_size - stream->recv_offset;
+        if (conn->flow.data_consumed <= UINT64_MAX - abandoned)
+            conn->flow.data_consumed += abandoned;
+        uint64_t new_conn_limit;
+        if (quic_add_u64(conn->flow.max_data_local, abandoned,
+                         &new_conn_limit) == 0 &&
+            new_conn_limit <= QUIC_VARINT_MAX) {
+            conn->flow.max_data_local = new_conn_limit;
+            conn->max_data_pending = 1;
+        }
+    }
     nc_cond_broadcast(&stream->read_cond);
     nc_mutex_unlock(&stream->lock);
     return 0;
@@ -1125,10 +1139,12 @@ void neverc_quic_conn_on_packet_lost(struct neverc_quic_conn *conn,
             case QUIC_FRAME_MAX_DATA:
                 conn->max_data_pending = 1;
                 break;
-            case QUIC_FRAME_MAX_STREAM_DATA:
-                conn->max_stream_data_pending =
-                    neverc_quic_conn_find_stream(conn, record->stream_id);
+            case QUIC_FRAME_MAX_STREAM_DATA: {
+                quic_stream_t *stream = neverc_quic_conn_find_stream(
+                    conn, record->stream_id);
+                if (stream) stream->max_stream_data_pending = 1;
                 break;
+            }
             case QUIC_FRAME_NEW_CONNECTION_ID:
                 conn->new_cid_pending = 1;
                 conn->new_cid_retransmit_index = (int)record->stream_id;

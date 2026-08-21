@@ -225,6 +225,7 @@ typedef struct neverc_quic_stream {
     int send_fin_sent;
     int send_fin_acked;
     int reset_pending;
+    int max_stream_data_pending;
     uint64_t reset_error_code;
     int stop_sending_pending;
     uint64_t stop_sending_error_code;
@@ -491,7 +492,6 @@ struct neverc_quic_conn {
     int new_cid_pending;
     int new_cid_retransmit_index;
     int max_data_pending;
-    quic_stream_t *max_stream_data_pending;
     int pto_probe_pending;
     quic_enc_level_t pto_probe_level;
     quic_datagram_entry_t recv_datagrams[QUIC_DATAGRAM_QUEUE_CAPACITY];

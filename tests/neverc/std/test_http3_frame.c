@@ -871,6 +871,40 @@ static void test_qpack_decoder_stream_instructions(void) {
               0);
 }
 
+static void test_qpack_encoder_stream_instructions(void) {
+    size_t consumed = 0;
+    uint8_t cap0[] = { 0x20 }; /* Set Dynamic Table Capacity(0) */
+    ASSERT_EQ(neverc_qpack_encoder_stream_instruction(
+                  cap0, sizeof(cap0), &consumed),
+              1);
+    ASSERT_EQ(consumed, 1);
+
+    uint8_t cap1[] = { 0x21 }; /* capacity 1 forbidden */
+    ASSERT_EQ(neverc_qpack_encoder_stream_instruction(
+                  cap1, sizeof(cap1), &consumed),
+              -1);
+
+    uint8_t insert[] = { 0x80 }; /* Insert With Name Reference */
+    ASSERT_EQ(neverc_qpack_encoder_stream_instruction(
+                  insert, sizeof(insert), &consumed),
+              -1);
+
+    uint8_t lit[] = { 0x40 }; /* Insert With Literal Name */
+    ASSERT_EQ(neverc_qpack_encoder_stream_instruction(
+                  lit, sizeof(lit), &consumed),
+              -1);
+
+    uint8_t dup[] = { 0x00 }; /* Duplicate */
+    ASSERT_EQ(neverc_qpack_encoder_stream_instruction(
+                  dup, sizeof(dup), &consumed),
+              -1);
+
+    uint8_t truncated[] = { 0x3f }; /* capacity prefix continues */
+    ASSERT_EQ(neverc_qpack_encoder_stream_instruction(
+                  truncated, sizeof(truncated), &consumed),
+              0);
+}
+
 static void test_qpack_rejects_truncated_prefix_integer(void) {
     neverc_qpack_decoder_t *dec = neverc_qpack_decoder_create(4096);
     /* Indexed static, 6-bit prefix saturated, continuation truncated. */
@@ -985,6 +1019,7 @@ int main(void) {
     test_goaway_and_stream_type_helpers();
     test_varint_payload_and_max_push_id();
     test_qpack_decoder_stream_instructions();
+    test_qpack_encoder_stream_instructions();
     test_qpack_rejects_truncated_prefix_integer();
     test_qpack_rejects_dynamic_and_post_base();
     test_qpack_rejects_truncated_header_list();

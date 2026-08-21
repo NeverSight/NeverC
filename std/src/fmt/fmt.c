@@ -466,7 +466,10 @@ static char *fmt_vsprintf_n(const char *format, va_list args, size_t *out_len) {
             if (nrunes > (size_t)INT_MAX) goto format_fail;
             int pad = (has_width && width > (int)nrunes)
                           ? width - (int)nrunes : 0;
-            if (!flag_minus) buf_pad(&buf, ' ', pad);
+            /* Go fmt: the '0' flag zero-pads strings unless '-' is set
+             * (fmt_test.go `%05s` → `00abc`; issue 56486 documented this). */
+            char padc = (flag_zero && !flag_minus) ? '0' : ' ';
+            if (!flag_minus) buf_pad(&buf, padc, pad);
             buf_puts(&buf, s, slen);
             if (flag_minus) buf_pad(&buf, ' ', pad);
             continue;
@@ -566,11 +569,11 @@ static char *fmt_vsprintf_n(const char *format, va_list args, size_t *out_len) {
             alt_prefix = "0x";
             alt_len = 2;
         }
-        /* Zero-pad only numeric verbs. Precision on integers suppresses 0
-         * (Go/C99). %c is a rune: width is spaces, never '0'. */
+        /* Go writePadding: '0' pads numbers and %c runes. Integer precision
+         * suppresses 0. Inf/NaN stay space-padded. */
         int use_zero_padding =
             flag_zero && !formatted_is_special &&
-            (is_int_verb || is_float_verb) &&
+            (is_int_verb || is_float_verb || verb == 'c') &&
             !(is_int_verb && prec >= 0);
         /* %c is one rune; width is measured in runes, not UTF-8 bytes. */
         int content_width = (verb == 'c') ? (tlen > 0 ? 1 : 0) : body_len;
@@ -1212,8 +1215,7 @@ static int scan_formatted(const char *str, const char *format, va_list args) {
 
     while (*fp) {
         if (*fp != '%') {
-            if (*fp == ' ' || *fp == '\t' || *fp == '\n' || *fp == '\r' ||
-                *fp == '\v' || *fp == '\f') {
+            if (scan_space_bytes(fp, 1) > 0) {
                 if (!scan_advance_format_space(&sp, &fp))
                     break;
                 continue;
@@ -1227,6 +1229,8 @@ static int scan_formatted(const char *str, const char *format, va_list args) {
 
         fp++;
         if (*fp == '%') {
+            /* Go scanPercent: SkipSpace before matching a literal '%'. */
+            skip_ws(&sp);
             if (*sp != '%')
                 break;
             sp++;

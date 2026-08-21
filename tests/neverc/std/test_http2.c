@@ -1780,6 +1780,84 @@ TEST(h2c_rejects_reused_refused_stream_id) {
     ASSERT_TRUE(WIFEXITED(status));
 }
 
+TEST(h2c_header_overflow_on_refused_stream_keeps_hpack) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake_opts(&client, &child, 0, 1), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    ASSERT_EQ(h2_send_headers_on(fd, 1, headers, 4, 0), 0);
+    uint8_t block[65];
+    memset(block, 0x82, sizeof(block));
+    neverc_h2_frame_header_t frame = {
+        .length = (uint32_t)sizeof(block),
+        .type = NC_H2_FRAME_HEADERS,
+        .flags = NC_H2_FLAG_END_HEADERS | NC_H2_FLAG_END_STREAM,
+        .stream_id = 3
+    };
+    uint8_t header[9];
+    ASSERT_EQ(neverc_h2_frame_header_write(&frame, header), 0);
+    ASSERT_EQ(sock_write_all(fd, header, sizeof(header)), 0);
+    ASSERT_EQ(sock_write_all(fd, block, sizeof(block)), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst_on(fd, 3, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_REFUSED_STREAM);
+    ASSERT_EQ(h2_send_data_end(fd, NULL, 0, 1), 0);
+    char resp[2048];
+    size_t resp_len = 0;
+    while (resp_len < sizeof(resp) - 1) {
+        ssize_t n = read(fd, resp + resp_len, sizeof(resp) - 1 - resp_len);
+        if (n <= 0)
+            break;
+        resp_len += (size_t)n;
+        if (buf_contains(resp, resp_len, "Hello from NeverC HTTP/2!") != NULL)
+            break;
+    }
+    ASSERT_TRUE(buf_contains(resp, resp_len, "Hello from NeverC HTTP/2!") != NULL);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
+TEST(h2c_priority_self_dependency_does_not_skip_lower_idle) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    ASSERT_EQ(h2_send_priority_self(fd, 3), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst_on(fd, 3, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    ASSERT_EQ(h2_send_headers_on(fd, 1, headers, 4, 1), 0);
+    char resp[2048];
+    size_t resp_len = 0;
+    while (resp_len < sizeof(resp) - 1) {
+        ssize_t n = read(fd, resp + resp_len, sizeof(resp) - 1 - resp_len);
+        if (n <= 0)
+            break;
+        resp_len += (size_t)n;
+        if (buf_contains(resp, resp_len, "Hello from NeverC HTTP/2!") != NULL)
+            break;
+    }
+    ASSERT_TRUE(buf_contains(resp, resp_len, "Hello from NeverC HTTP/2!") != NULL);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
 TEST(h2c_rejects_overpadded_data_on_closed_stream) {
     neverc_tcp_conn_t *client = NULL;
     pid_t child = -1;
@@ -3258,6 +3336,8 @@ int main(void) {
     run_test_h2c_rejects_header_name_crlf();
     run_test_h2c_rejects_method_with_space();
     run_test_h2c_rejects_reused_refused_stream_id();
+    run_test_h2c_header_overflow_on_refused_stream_keeps_hpack();
+    run_test_h2c_priority_self_dependency_does_not_skip_lower_idle();
     run_test_h2c_rejects_overpadded_data_on_closed_stream();
     run_test_h2c_window_update_overflow_is_connection_error();
     run_test_h2c_empty_data_does_not_send_zero_window_update();

@@ -582,7 +582,8 @@ static void test_errors(void) {
     check_null("unclosed group", n);
 
     n = neverc_regexp_syntax_parse("a{3", 0, &err);
-    check_null("bad repeat", n);
+    check_not_null("unclosed {n is literal", n);
+    neverc_regexp_syntax_free(n);
 
     n = neverc_regexp_syntax_parse("a{2}*", 0, &err);
     check_null("stacked a{2}*", n);

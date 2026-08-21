@@ -140,13 +140,16 @@ static void test_strings(void) {
     r = neverc_fmt_sprintf("%5c", 0x4e16);
     check_str("rune width", r, "    \xe4\xb8\x96"); free(r);
 
-    /* Zero flag applies to numeric verbs only (Go/C99). %c is space-padded. */
+    /* Zero flag pads %c runes (Go writePadding / fmtC). */
     r = neverc_fmt_sprintf("%010c", 'A');
-    check_str("zero flag ignored for char", r, "         A"); free(r);
+    check_str("zero flag pads char", r, "000000000A"); free(r);
     r = neverc_fmt_sprintf("%05c", 0x4e16);
-    check_str("zero flag ignored for rune", r, "    \xe4\xb8\x96"); free(r);
+    check_str("zero flag pads rune", r, "0000\xe4\xb8\x96"); free(r);
     r = neverc_fmt_sprintf("%0*c", 4, 'Z');
-    check_str("zero flag ignored for star char", r, "   Z"); free(r);
+    check_str("zero flag star char", r, "000Z"); free(r);
+
+    r = neverc_fmt_sprintf("%05s", "abc");
+    check_str("zero flag pads string", r, "00abc"); free(r);
 
     r = neverc_fmt_sprintf("%.1s", "\xe4\xb8\x96\xe7\x95\x8c");
     check_str("string prec runes", r, "\xe4\xb8\x96"); free(r);
@@ -354,9 +357,19 @@ static void test_sscanf(void) {
     double f;
     char s[64];
 
-    int n = neverc_fmt_sscanf("42", "%d", &a);
+    int     n = neverc_fmt_sscanf("42", "%d", &a);
     check_int("sscanf int", n, 1);
     check_int("sscanf int val", a, 42);
+
+    n = neverc_fmt_sscanf("42 % 7", "%d%%%d", &a, &b);
+    check_int("percent skip ws count", n, 2);
+    check_int("percent skip ws a", a, 42);
+    check_int("percent skip ws b", b, 7);
+
+    n = neverc_fmt_sscanf("1 2", "%d\xc2\xa0%d", &a, &b);
+    check_int("nbsp format count", n, 2);
+    check_int("nbsp format a", a, 1);
+    check_int("nbsp format b", b, 2);
 
     n = neverc_fmt_sscanf("  -17  3.14", "%d %f", &a, &f);
     check_int("sscanf int+float count", n, 2);

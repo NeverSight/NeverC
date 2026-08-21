@@ -472,10 +472,12 @@ static void test_repeat_braces(void) {
     check_bool("a{*} matches a{}", neverc_regexp_match_string("a{*}", "a{}"), 1);
     check_bool("a{*} does not match }", neverc_regexp_match_string("a{*}", "}"), 0);
 
-    /* `{n` that starts a repeat but never closes is an error (matches Go) */
+    /* `{n` that starts a repeat but never closes is a literal (matches Go) */
     err = NULL;
     re = neverc_regexp_compile("a{3", &err);
-    check_bool("a{3 unclosed rejected", re == NULL, 1);
+    check_bool("a{3 unclosed compiles", re != NULL, 1);
+    check_bool("a{3 unclosed matches literal",
+               re && neverc_regexp_match(re, "a{3"), 1);
     neverc_regexp_free(re);
 
     err = NULL;

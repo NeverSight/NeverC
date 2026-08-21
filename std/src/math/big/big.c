@@ -393,13 +393,15 @@ int neverc_bigint_is_zero(const neverc_bigint_t *x) {
 }
 
 int neverc_bigint_bit_len(const neverc_bigint_t *x) {
-    if (x->len == 0) return 0;
+    neverc_bigint_t view;
+    mag_view(&view, x);
+    if (view.len == 0) return 0;
     /* (len-1)*32 as int overflows for a few-hundred-MB integer (UB), then
      * string() under-allocates and writes off the end of tmp. */
-    if (x->len - 1 > (size_t)INT_MAX / 32)
+    if (view.len - 1 > (size_t)INT_MAX / 32)
         return INT_MAX;
-    uint32_t top = x->digits[x->len - 1];
-    int bits = (int)(x->len - 1) * 32;
+    uint32_t top = view.digits[view.len - 1];
+    int bits = (int)(view.len - 1) * 32;
     while (top) {
         if (bits == INT_MAX) return INT_MAX;
         bits++;

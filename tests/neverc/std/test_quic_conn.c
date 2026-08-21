@@ -974,6 +974,23 @@ static void test_stream_after_reset_stays_reset(void) {
     neverc_quic_conn_destroy(conn);
 }
 
+static void test_reset_retires_connection_window(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    uint64_t before_consumed = conn->flow.data_consumed;
+    uint64_t before_max = conn->flow.max_data_local;
+    quic_frame_reset_stream_t reset;
+    memset(&reset, 0, sizeof(reset));
+    reset.stream_id = 0;
+    reset.final_size = 1000;
+    ASSERT_EQ(neverc_quic_stream_receive_reset(conn, &reset), 0);
+    ASSERT_EQ(conn->flow.data_consumed, before_consumed + 1000);
+    ASSERT_EQ(conn->flow.max_data_local, before_max + 1000);
+    ASSERT_EQ(conn->max_data_pending, 1);
+    neverc_quic_conn_destroy(conn);
+}
+
 static void test_reset_final_size_below_highest(void) {
     struct neverc_quic_conn *conn =
         neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
@@ -1400,6 +1417,7 @@ int main(void) {
     test_configure_rejects_oversized_stream_limit();
     test_stream_fin_smaller_than_highest_is_final_size_error();
     test_stream_after_reset_stays_reset();
+    test_reset_retires_connection_window();
     test_reset_final_size_below_highest();
     test_stream_overlapping_data_must_match();
     test_new_conn_id_retire_prior_to_marks_unsent();

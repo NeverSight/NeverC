@@ -160,6 +160,14 @@ static void test_lookup(void) {
 
     z = neverc_tzdata_lookup("Nonexistent/Zone");
     check_null("nonexistent", z);
+
+    z = neverc_tzdata_lookup("EST");
+    check_not_null("factory EST", z);
+    check_str("factory EST name", z ? z->name : NULL, "EST");
+    check_int("factory EST offset", z ? z->utc_offset : 0, -18000);
+    check_int("factory EST no dst", z ? z->has_dst : 1, 0);
+    check_int("factory EST summer",
+              neverc_tzdata_offset_at(z, 1719835200LL), -18000);
 }
 
 /* ===== Lookup by abbreviation ===== */
@@ -551,6 +559,14 @@ static void test_local_tz(void) {
     z = neverc_tzdata_local();
     check_not_null("unknown TZ", z);
     check_str("unknown TZ is UTC", z ? z->name : NULL, "UTC");
+
+    tzdata_set_tz("EST");
+    z = neverc_tzdata_local();
+    check_not_null("TZ=EST", z);
+    check_str("TZ=EST name", z ? z->name : NULL, "EST");
+    check_int("TZ=EST no dst", z ? z->has_dst : 1, 0);
+    check_int("TZ=EST summer offset",
+              neverc_tzdata_offset_at(z, JUL_2024), -18000);
 
     tzdata_set_tz("EST5EDT,M3.2.0,M11.1.0");
     const neverc_tzdata_zone_t *est = neverc_tzdata_local();

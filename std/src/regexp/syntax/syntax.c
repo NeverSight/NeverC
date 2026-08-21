@@ -786,6 +786,7 @@ static neverc_regexp_syntax_node_t *parse_repeat(parser_t *p) {
             p->src[p->pos + 1] < '0' || p->src[p->pos + 1] > '9' ||
             brace_repeat_leading_zeros(p->src, p->pos, p->len))
             return atom;
+        int brace_pos = p->pos;
         next(p);
         int min_val;
         if (!parse_int(p, &min_val)) {
@@ -803,7 +804,12 @@ static neverc_regexp_syntax_node_t *parse_repeat(parser_t *p) {
                     return NULL;
                 }
         }
-        if (next(p) != '}') { p->err = "bad repeat syntax"; neverc_regexp_syntax_free(atom); return NULL; }
+        if (peek(p) != '}') {
+            /* Go: unclosed `{n` is a literal, not a syntax error. */
+            p->pos = brace_pos;
+            return atom;
+        }
+        next(p);
         if (min_val > NCI_RE_MAX_REPEAT || max_val > NCI_RE_MAX_REPEAT) {
             p->err = "invalid repeat count";
             neverc_regexp_syntax_free(atom);

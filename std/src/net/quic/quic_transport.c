@@ -950,15 +950,24 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
                                        &position) != 0)
             return 0;
         meta->control_type = QUIC_FRAME_MAX_DATA;
-    } else if (conn->max_stream_data_pending) {
-        quic_stream_t *stream = conn->max_stream_data_pending;
-        if (neverc_quic_write_max_stream_data(output, capacity, stream->id,
-                                              stream->recv_max_data,
-                                              &position) != 0)
-            return 0;
-        meta->stream_id = stream->id;
-        meta->control_type = QUIC_FRAME_MAX_STREAM_DATA;
-    } else if (conn->new_cid_pending) {
+    } else {
+        quic_stream_t *pending_msd = NULL;
+        for (int i = 0; i < conn->n_streams; i++) {
+            if (conn->streams[i] &&
+                conn->streams[i]->max_stream_data_pending) {
+                pending_msd = conn->streams[i];
+                break;
+            }
+        }
+        if (pending_msd) {
+            if (neverc_quic_write_max_stream_data(output, capacity,
+                                                  pending_msd->id,
+                                                  pending_msd->recv_max_data,
+                                                  &position) != 0)
+                return 0;
+            meta->stream_id = pending_msd->id;
+            meta->control_type = QUIC_FRAME_MAX_STREAM_DATA;
+        } else if (conn->new_cid_pending) {
         if (conn->new_cid_retransmit_index < 0)
             conn->new_cid_retransmit_index = conn->n_local_cids;
         if (qt_write_new_cid(conn, output, capacity,
@@ -977,6 +986,7 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
             meta->stream_id = conn->peer_cids[i].sequence;
             meta->control_type = QUIC_FRAME_RETIRE_CONNECTION_ID;
             break;
+        }
         }
     }
     if (position == 0) {
@@ -1292,11 +1302,12 @@ static void qt_commit_control(struct neverc_quic_conn *conn,
     case QUIC_FRAME_MAX_DATA:
         conn->max_data_pending = 0;
         break;
-    case QUIC_FRAME_MAX_STREAM_DATA:
-        if (conn->max_stream_data_pending &&
-            conn->max_stream_data_pending->id == meta->stream_id)
-            conn->max_stream_data_pending = NULL;
+    case QUIC_FRAME_MAX_STREAM_DATA: {
+        quic_stream_t *stream = neverc_quic_conn_find_stream(
+            conn, meta->stream_id);
+        if (stream) stream->max_stream_data_pending = 0;
         break;
+    }
     case QUIC_FRAME_NEW_CONNECTION_ID:
         if (meta->stream_id == (uint64_t)conn->n_local_cids &&
             conn->n_local_cids < QUIC_MAX_LOCAL_CONN_IDS) {

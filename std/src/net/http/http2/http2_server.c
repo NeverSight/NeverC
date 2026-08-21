@@ -901,7 +901,7 @@ static int h2_reject_headers_keep_hpack(h2_conn_t *conn,
         }
         return 0;
     }
-    if (h2_decode_header_block_discard(conn, fragment, fragment_length) != 0) {
+    if (h2_decode_header_block_discard(conn, fragment, fragment_length) < 0) {
         (void)h2_conn_write_goaway(conn, NC_H2_COMPRESSION_ERROR);
         return -1;
     }
@@ -1425,6 +1425,26 @@ static void h2_consume_idle_stream_id(h2_conn_t *conn, uint32_t id) {
     if (id <= conn->max_stream_id)
         return;
     conn->max_stream_id = id;
+    h2_closed_stream_t *entry =
+        &conn->closed_streams[conn->closed_stream_next];
+    entry->id = id;
+    entry->reset = 1;
+    conn->closed_stream_next =
+        (conn->closed_stream_next + 1U) % H2_CLOSED_STREAM_HISTORY;
+    if (conn->closed_stream_count < H2_CLOSED_STREAM_HISTORY)
+        conn->closed_stream_count++;
+}
+
+/* PRIORITY does not open a stream (RFC 9113 §5.1 / §6.3), so recording a
+ * self-dependent idle id must not raise max_stream_id and close lower ids. */
+static void h2_remember_reset_stream_id(h2_conn_t *conn, uint32_t id) {
+    size_t i;
+    for (i = 0; i < conn->closed_stream_count; i++) {
+        if (conn->closed_streams[i].id == id) {
+            conn->closed_streams[i].reset = 1;
+            return;
+        }
+    }
     h2_closed_stream_t *entry =
         &conn->closed_streams[conn->closed_stream_next];
     entry->id = id;
@@ -2241,6 +2261,20 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                     }
                     break;
                 }
+                {
+                    int found_reset = 0;
+                    int was_reset = h2_closed_stream_was_reset(
+                        &conn, fhdr.stream_id, &found_reset);
+                    if (found_reset && was_reset) {
+                        if (h2_reject_headers_keep_hpack(
+                                &conn, &fhdr, payload,
+                                NC_H2_STREAM_CLOSED) != 0) {
+                            free(payload);
+                            goto cleanup;
+                        }
+                        break;
+                    }
+                }
                 if (fhdr.stream_id <= conn.max_stream_id) {
                     int found = 0;
                     int reset = h2_closed_stream_was_reset(
@@ -2313,7 +2347,7 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                         goto cleanup;
                     }
                 } else if (h2_decode_header_block_discard(
-                               &conn, fragment, fragment_length) != 0) {
+                               &conn, fragment, fragment_length) < 0) {
                     (void)h2_conn_write_goaway(&conn,
                                                NC_H2_COMPRESSION_ERROR);
                     free(payload);
@@ -2664,7 +2698,7 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 break;
             }
             if (fhdr.stream_id > conn.max_stream_id)
-                h2_consume_idle_stream_id(&conn, fhdr.stream_id);
+                h2_remember_reset_stream_id(&conn, fhdr.stream_id);
             nc_mutex_unlock(&conn.state_lock);
             (void)h2_conn_write_rst(&conn, fhdr.stream_id,
                                     NC_H2_PROTOCOL_ERROR);

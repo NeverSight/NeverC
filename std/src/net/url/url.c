@@ -499,7 +499,8 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
 
     if (via_request && !u->scheme[0] && !u->host[0] &&
         u->path[0] != '/' &&
-        !(u->path[0] == '*' && u->path[1] == '\0'))
+        !(u->path[0] == '*' && u->path[1] == '\0' && !u->has_query &&
+          raw_length == 1 && raw_url[0] == '*'))
         return -1;
 
     return 0;

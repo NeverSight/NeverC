@@ -68,6 +68,9 @@ extern int neverc_h3_field_section_over_limit(uint64_t size, uint64_t limit);
 extern int neverc_qpack_decoder_stream_instruction(const uint8_t *data,
                                                    size_t length,
                                                    size_t *consumed);
+extern int neverc_qpack_encoder_stream_instruction(const uint8_t *data,
+                                                   size_t length,
+                                                   size_t *consumed);
 extern int neverc_qpack_field_section_size(
     const neverc_qpack_header_t *headers, int nheaders, uint64_t *size);
 
@@ -86,6 +89,7 @@ extern int neverc_qpack_field_section_size(
 #define H3_POST_DRAIN_GRACE_MS 3000U
 #define H3_SHUTDOWN_ABSOLUTE_MAX_MS 30000U
 #define H3_QPACK_DECODER_LEFTOVER     16U
+#define H3_QPACK_ENCODER_LEFTOVER     16U
 
 /* RFC 9114 §7.2 / §11.2.1: HTTP/2 frame types that were not redefined
  * for HTTP/3 MUST be treated as H3_FRAME_UNEXPECTED. */
@@ -147,6 +151,8 @@ struct h3_conn {
     int max_push_id_seen;
     uint8_t qpack_decoder_leftover[H3_QPACK_DECODER_LEFTOVER];
     size_t qpack_decoder_leftover_len;
+    uint8_t qpack_encoder_leftover[H3_QPACK_ENCODER_LEFTOVER];
+    size_t qpack_encoder_leftover_len;
     uint64_t last_request_stream_id;
     nc_mutex_t lock;
     nc_cond_t settings_cond;
@@ -1195,6 +1201,43 @@ static int h3_feed_qpack_decoder(h3_conn_t *connection, const uint8_t *data,
     return 0;
 }
 
+static int h3_feed_qpack_encoder(h3_conn_t *connection, const uint8_t *data,
+                                 size_t length) {
+    uint8_t tmp[H3_QPACK_ENCODER_LEFTOVER + 4096U];
+    if (connection->qpack_encoder_leftover_len + length > sizeof(tmp))
+        return -1;
+    memcpy(tmp, connection->qpack_encoder_leftover,
+           connection->qpack_encoder_leftover_len);
+    if (length)
+        memcpy(tmp + connection->qpack_encoder_leftover_len, data, length);
+    size_t total = connection->qpack_encoder_leftover_len + length;
+    size_t pos = 0;
+    while (pos < total) {
+        size_t consumed = 0;
+        int rc = neverc_qpack_encoder_stream_instruction(
+            tmp + pos, total - pos, &consumed);
+        if (rc == 0) {
+            size_t rest = total - pos;
+            if (rest > H3_QPACK_ENCODER_LEFTOVER) {
+                h3_protocol_error(connection, NC_H3_QPACK_ENCODER_STREAM_ERROR,
+                                  "oversized QPACK encoder instruction");
+                return -1;
+            }
+            memcpy(connection->qpack_encoder_leftover, tmp + pos, rest);
+            connection->qpack_encoder_leftover_len = rest;
+            return 0;
+        }
+        if (rc < 0) {
+            h3_protocol_error(connection, NC_H3_QPACK_ENCODER_STREAM_ERROR,
+                              "invalid QPACK encoder-stream instruction");
+            return -1;
+        }
+        pos += consumed;
+    }
+    connection->qpack_encoder_leftover_len = 0;
+    return 0;
+}
+
 static int h3_poll_qpack_stream(h3_conn_t *connection,
                                 neverc_quic_stream_t *stream, int *worked,
                                 int encoder_stream) {
@@ -1217,17 +1260,13 @@ static int h3_poll_qpack_stream(h3_conn_t *connection,
         }
         if (count < 0) return -1;
         *worked = 1;
-        /* RFC 9204 §3.2.3: capacity 0 forbids encoder inserts. This endpoint
-         * advertises capacity and blocked streams as zero, so any encoder
-         * instruction is QPACK_ENCODER_STREAM_ERROR. */
-        if (encoder_stream && count > 0) {
-            h3_protocol_error(connection, NC_H3_QPACK_ENCODER_STREAM_ERROR,
-                              "QPACK encoder instruction with zero capacity");
+        if (encoder_stream) {
+            if (h3_feed_qpack_encoder(connection, scratch, (size_t)count) != 0)
+                return -1;
+        } else if (h3_feed_qpack_decoder(connection, scratch,
+                                         (size_t)count) != 0) {
             return -1;
         }
-        if (!encoder_stream &&
-            h3_feed_qpack_decoder(connection, scratch, (size_t)count) != 0)
-            return -1;
     }
 }
 

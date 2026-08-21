@@ -1159,9 +1159,10 @@ static frag_t parse_repeat(parser_t *par) {
                 par->p = save;
                 break;
             }
-            if (*par->p != '}') {            /* `{n` started a repeat: require `}` */
-                par->err = "bad repeat syntax";
-                return f;
+            if (*par->p != '}') {
+                /* Go parseRepeat: a malformed `{` is a literal, not an error. */
+                par->p = save;
+                break;
             }
             par->p++;                        /* consume '}' */
             if (repeated) {

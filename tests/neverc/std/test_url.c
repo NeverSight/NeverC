@@ -426,6 +426,8 @@ static void test_request_uri(void) {
     ASSERT_STR_EQ(u.host, "example.com");
     ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "*"), 0);
     ASSERT_STR_EQ(u.path, "*");
+    ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "*?"), -1);
+    ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "*?q"), -1);
     ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "foo"), -1);
     ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "//evil.com/phish"), -1);
     ASSERT_INT_EQ(neverc_url_parse_request_uri(

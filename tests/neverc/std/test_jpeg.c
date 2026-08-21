@@ -982,6 +982,66 @@ static void test_rejects_duplicate_sof(void) {
     free(encoded);
 }
 
+static void test_sos_scan_order_swaps_chroma(void) {
+    printf("[sos_scan_order_swaps_chroma]\n");
+    neverc_jpeg_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 16;
+    img.height = 16;
+    img.channels = 3;
+    img.stride = 16 * 3;
+    img.pixels = (uint8_t *)calloc(1, img.height * img.stride);
+    ASSERT_TRUE(img.pixels != NULL);
+    if (!img.pixels) return;
+    for (uint32_t y = 0; y < img.height; y++) {
+        for (uint32_t x = 0; x < img.width; x++) {
+            uint8_t *p = img.pixels + y * img.stride + x * 3;
+            p[0] = 255; p[1] = 0; p[2] = 0;
+        }
+    }
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&img, 90, &encoded, &encoded_length), 0);
+    ASSERT_TRUE(encoded != NULL);
+    if (!encoded) {
+        free(img.pixels);
+        return;
+    }
+    neverc_jpeg_image_t original;
+    memset(&original, 0, sizeof(original));
+    ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length, &original), 0);
+
+    size_t sos = find_marker(encoded, encoded_length, 0xDA);
+    ASSERT_TRUE(sos != SIZE_MAX && sos + 10 < encoded_length);
+    if (sos != SIZE_MAX && sos + 10 < encoded_length) {
+        uint8_t tmp = encoded[sos + 7];
+        encoded[sos + 7] = encoded[sos + 9];
+        encoded[sos + 9] = tmp;
+    }
+    neverc_jpeg_image_t swapped;
+    memset(&swapped, 0, sizeof(swapped));
+    ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length, &swapped), 0);
+    ASSERT_TRUE(original.pixels && swapped.pixels);
+    if (original.pixels && swapped.pixels &&
+        original.width == swapped.width &&
+        original.height == swapped.height &&
+        original.channels == swapped.channels) {
+        int differ = 0;
+        size_t nbytes = (size_t)original.height * original.stride;
+        for (size_t i = 0; i < nbytes; i++) {
+            if (original.pixels[i] != swapped.pixels[i]) {
+                differ = 1;
+                break;
+            }
+        }
+        ASSERT_TRUE(differ);
+    }
+    neverc_jpeg_free(&original);
+    neverc_jpeg_free(&swapped);
+    free(encoded);
+    free(img.pixels);
+}
+
 int main(void) {
     printf("NeverC image/jpeg tests\n");
     test_encode_decode_rgb();
@@ -1004,6 +1064,7 @@ int main(void) {
     test_tiny_malformed_jpeg();
     test_rejects_baseline_sos_table_and_factor3();
     test_rejects_duplicate_sof();
+    test_sos_scan_order_swaps_chroma();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

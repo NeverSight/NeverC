@@ -307,6 +307,11 @@ static void test_look_path(void) {
         ASSERT_INT_EQ(neverc_exec_cmd_run(empty_cmd, &empty_st), -1);
         neverc_exec_cmd_free(empty_cmd);
     }
+    mkdir("neverc_path_dd", 0755);
+    setenv("PATH", "neverc_path_dd/..", 1);
+    p = neverc_exec_look_path(name, buf, sizeof(buf));
+    ASSERT_TRUE(p == NULL);
+    rmdir("neverc_path_dd");
     setenv("PATH", ":", 1);
     p = neverc_exec_look_path(name, buf, sizeof(buf));
     ASSERT_TRUE(p != NULL && strcmp(p, "./") != 0);

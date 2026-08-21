@@ -1943,9 +1943,44 @@ static void test_http_ws_upgrade(void) {
 
 #endif /* _WIN32 */
 
+static void test_upgrade_http_rejects_body(void) {
+    printf("[upgrade_http_rejects_body]\n");
+    static const char raw[] =
+        "Upgrade" "\0" "websocket" "\0"
+        "Connection" "\0" "Upgrade" "\0"
+        "Sec-WebSocket-Version" "\0" "13" "\0"
+        "Sec-WebSocket-Key" "\0" "dGhlIHNhbXBsZSBub25jZQ==" "\0"
+        "Content-Length" "\0" "8" "\0";
+    neverc_http_request_t req;
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/ws";
+    req.http_version = "HTTP/1.1";
+    req.raw_headers = raw;
+    req.nheaders = 5;
+    neverc_http_response_writer_t *w = neverc_http_memory_writer_new();
+    check_not_null("memory writer", w);
+    if (!w) return;
+    check_int("upgrade with content-length",
+              neverc_ws_upgrade_http(&req, w) == NULL, 1);
+
+    req.nheaders = 4;
+    req.body_len = 4;
+    req.body = "ping";
+    check_int("upgrade with body_len",
+              neverc_ws_upgrade_http(&req, w) == NULL, 1);
+    req.body_len = 0;
+    req.body = NULL;
+    req.http_version = "HTTP/1.0";
+    check_int("upgrade http/1.0",
+              neverc_ws_upgrade_http(&req, w) == NULL, 1);
+    neverc_http_memory_writer_free(w);
+}
+
 int main(void) {
     test_compute_accept();
     test_null_safety();
+    test_upgrade_http_rejects_body();
     test_utf8_prefix_validation();
     test_handshake_rejects();
     test_reject_unmasked_client_frame();

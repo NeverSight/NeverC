@@ -893,6 +893,7 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     memset(dc_tables, 0, sizeof(dc_tables));
     memset(ac_tables, 0, sizeof(ac_tables));
 
+    int scan_order[4] = {0, 1, 2, 3};
     int scan_found = 0;
     int sof_found = 0;
 
@@ -1019,6 +1020,7 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
                     if (comp_id[c] == selector) component = c;
                 if (component < 0 || seen[component]) goto fail;
                 seen[component] = 1;
+                scan_order[i] = component;
                 comp_dc_table[component] = (td_ta >> 4) & 0x0F;
                 comp_ac_table[component] = td_ta & 0x0F;
                 /* Baseline (table B.3): Td/Ta are 0 or 1. Go rejects > 1. */
@@ -1156,7 +1158,8 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
                 prev_dc[0] = prev_dc[1] = prev_dc[2] = prev_dc[3] = 0;
             }
             mcu_idx++;
-            for (int c = 0; c < ncomp; c++) {
+            for (int si = 0; si < ncomp; si++) {
+                int c = scan_order[si];
                 int qt = comp_quant[c];
                 if (qt >= 4) qt = 0;
                 /* Blocks within an MCU are interleaved component-by-component,

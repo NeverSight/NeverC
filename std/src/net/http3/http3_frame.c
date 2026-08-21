@@ -1045,3 +1045,34 @@ int neverc_qpack_decoder_stream_instruction(const uint8_t *data, size_t len,
     rc = qpack_prefix_int(data, len, 6, &value, &n);
     return rc <= 0 ? rc : -1;
 }
+
+/* RFC 9204 §4.3 encoder-stream instructions. Capacity 0 allows only
+ * Set Dynamic Table Capacity(0) (typically the single byte 0x20). */
+int neverc_qpack_encoder_stream_instruction(const uint8_t *data, size_t len,
+                                            size_t *consumed) {
+    if (!consumed) return -1;
+    *consumed = 0;
+    if (!data || len == 0) return 0;
+    uint64_t value = 0;
+    size_t n = 0;
+    int rc;
+    if (data[0] & 0x80U) {
+        /* Insert With Name Reference. */
+        rc = qpack_prefix_int(data, len, 6, &value, &n);
+        return rc <= 0 ? rc : -1;
+    }
+    if ((data[0] & 0xC0U) == 0x40U) {
+        /* Insert With Literal Name. The first byte is enough. */
+        return -1;
+    }
+    if ((data[0] & 0xE0U) == 0x20U) {
+        rc = qpack_prefix_int(data, len, 5, &value, &n);
+        if (rc <= 0) return rc;
+        if (value != 0) return -1;
+        *consumed = n;
+        return 1;
+    }
+    /* Duplicate. */
+    rc = qpack_prefix_int(data, len, 5, &value, &n);
+    return rc <= 0 ? rc : -1;
+}
