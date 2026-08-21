@@ -1077,6 +1077,7 @@ void neverc_rpc_server_shutdown(neverc_rpc_server_t *server) {
     if (!server) return;
     nc_atomic_store(&server->stop_requested, 1);
     nc_atomic_store(&server->running, 0);
+    nc_atomic_store(&server->bound_port, 0);
     nc_mutex_lock(&server->lifecycle_lock);
     neverc_quic_endpoint_t *quic_endpoint = server->quic_endpoint;
     server->quic_endpoint = NULL;
@@ -1133,6 +1134,7 @@ static int rpc_server_serve(neverc_rpc_server_t *server, const char *addr,
     }
     const char *listen_error = NULL;
     neverc_quic_endpoint_t *quic_endpoint = NULL;
+    int bound_port = 0;
     if (use_quic) {
         const char *alpn[] = { "nrpc/1", NULL };
         neverc_quic_config_t quic_config = neverc_quic_config_default();
@@ -1147,21 +1149,27 @@ static int rpc_server_serve(neverc_rpc_server_t *server, const char *addr,
         nc_mutex_lock(&server->lifecycle_lock);
         server->quic_endpoint = quic_endpoint;
         nc_mutex_unlock(&server->lifecycle_lock);
-        int port = neverc_quic_endpoint_bound_port(quic_endpoint);
-        if (port < 0) goto cleanup;
-        nc_atomic_store(&server->bound_port, port);
+        bound_port = neverc_quic_endpoint_bound_port(quic_endpoint);
+        if (bound_port <= 0) goto cleanup;
     } else {
         server->listener = neverc_tcp_listen(addr, &listen_error);
         if (!server->listener) goto cleanup;
         neverc_tcp_addr_t local_addr;
-        if (neverc_tcp_listener_addr(server->listener, &local_addr) == 0)
-            nc_atomic_store(&server->bound_port, local_addr.port);
+        if (neverc_tcp_listener_addr(server->listener, &local_addr) != 0)
+            goto cleanup;
+        bound_port = local_addr.port;
+        if (bound_port <= 0) goto cleanup;
     }
     if (nc_atomic_load(&server->stop_requested)) {
         result = 0;
         goto cleanup;
     }
+    /* Publish running before bound_port so waiters that see a port also
+     * observe an accept loop that is about to run. listen()/quic_listen()
+     * already bound the socket; Darwin still refuses a connect() that
+     * races the first accept, which tests handle with a ready-dial wait. */
     nc_atomic_store(&server->running, 1);
+    nc_atomic_store(&server->bound_port, bound_port);
     if (nc_atomic_load(&server->stop_requested))
         neverc_rpc_server_shutdown(server);
 
@@ -1291,6 +1299,10 @@ int neverc_rpc_server_listen_and_serve_quic(
 
 size_t neverc_rpc_server_active_connections(neverc_rpc_server_t *server) {
     return server ? (size_t)nc_atomic_load(&server->active_connections) : 0;
+}
+
+int neverc_rpc_server_is_running(neverc_rpc_server_t *server) {
+    return server ? nc_atomic_load(&server->running) : 0;
 }
 
 int neverc_rpc_server_bound_port(neverc_rpc_server_t *server) {

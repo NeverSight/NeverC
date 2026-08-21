@@ -321,6 +321,10 @@ int neverc_rpc_server_listen_and_serve_quic(
     const char *cert_file, const char *key_file);
 void neverc_rpc_server_shutdown(neverc_rpc_server_t *server);
 size_t neverc_rpc_server_active_connections(neverc_rpc_server_t *server);
+/* True once listen/bind succeeded and the accept loop is about to run.
+ * bound_port is published only after this becomes true, and is cleared
+ * again on shutdown so waiters cannot observe a stale ephemeral port. */
+int neverc_rpc_server_is_running(neverc_rpc_server_t *server);
 int neverc_rpc_server_bound_port(neverc_rpc_server_t *server);
 void neverc_rpc_server_free(neverc_rpc_server_t *server);
 

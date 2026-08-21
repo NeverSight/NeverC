@@ -563,6 +563,35 @@ static void test_smtp_starttls_fail_closed(void) {
     check_true("send_mail fail-closed STARTTLS without AUTH", rc == -1);
 }
 
+static void test_smtp_auth_plaintext_non_localhost(void) {
+    printf("[smtp_auth_plaintext_non_localhost]\n");
+
+    /* Go smtp.PlainAuth: EHLO is untrusted without TLS. Dialing via a
+     * name that still reaches the loopback listener ("LocalHost" is not
+     * isLocalhost) must not send PLAIN/LOGIN credentials in the clear. */
+    char addr[64];
+    snprintf(addr, sizeof(addr), "LocalHost:%d", g_smtp_port);
+    const char *err = NULL;
+    neverc_smtp_client_t *c = neverc_smtp_dial(addr, &err);
+    check_true("dial LocalHost for plaintext AUTH", c != NULL);
+    if (!c) return;
+
+    check_true("AUTH PLAIN fail-closed off localhost without TLS",
+               neverc_smtp_auth(c, NEVERC_SMTP_AUTH_PLAIN, "user", "pass") == -1);
+    check_true("AUTH LOGIN fail-closed off localhost without TLS",
+               neverc_smtp_auth(c, NEVERC_SMTP_AUTH_LOGIN, "user", "pass") == -1);
+    check_true("MAIL FROM still allowed after rejected plaintext AUTH",
+               neverc_smtp_mail(c, "sender@example.com") == 0);
+    neverc_smtp_close(c);
+
+    const char *to[] = {"alice@example.com"};
+    const char *msg = "Subject: x\r\n\r\nbody\r\n";
+    check_true("send_mail AUTH fail-closed off localhost without TLS",
+               neverc_smtp_send_mail(addr, NEVERC_SMTP_AUTH_PLAIN, "user",
+                                     "pass", "sender@example.com", to, 1,
+                                     msg, strlen(msg), &err) == -1);
+}
+
 static void test_smtp_auth_requires_advertised(void) {
     printf("[smtp_auth_requires_advertised]\n");
 
@@ -668,6 +697,7 @@ int main(void) {
     test_dot_stuffing();
     test_smtp_reject_injection();
     test_smtp_starttls_fail_closed();
+    test_smtp_auth_plaintext_non_localhost();
     test_smtp_auth_requires_advertised();
     test_smtp_multiline_code_mismatch();
     test_smtp_response_leftover();

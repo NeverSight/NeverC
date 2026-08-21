@@ -216,6 +216,16 @@ static void test_look_path(void) {
             SetEnvironmentVariableA("PATH", "C:");
             p = neverc_exec_look_path("neverc_cwd_only_hijack.exe", buf, sizeof(buf));
             ASSERT_TRUE(p == NULL);
+            /* Win32 treats ". " as "." (cwd). Must not be a PATH hit. */
+            SetEnvironmentVariableA("PATH", ". ");
+            p = neverc_exec_look_path("neverc_cwd_only_hijack.exe", buf, sizeof(buf));
+            ASSERT_TRUE(p == NULL);
+            SetEnvironmentVariableA("PATH", ".  ");
+            p = neverc_exec_look_path("neverc_cwd_only_hijack.exe", buf, sizeof(buf));
+            ASSERT_TRUE(p == NULL);
+            SetEnvironmentVariableA("PATH", "\". \"");
+            p = neverc_exec_look_path("neverc_cwd_only_hijack.exe", buf, sizeof(buf));
+            ASSERT_TRUE(p == NULL);
             if (n > 0 && n < sizeof(old_path))
                 SetEnvironmentVariableA("PATH", old_path);
             else
@@ -248,6 +258,9 @@ static void test_look_path(void) {
         }
         CreateDirectoryA("neverc_path_dd", NULL);
         SetEnvironmentVariableA("PATH", "neverc_path_dd\\..");
+        p = neverc_exec_look_path("neverc_dotdot_hijack.exe", buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+        SetEnvironmentVariableA("PATH", "neverc_path_dd\\.. ");
         p = neverc_exec_look_path("neverc_dotdot_hijack.exe", buf, sizeof(buf));
         ASSERT_TRUE(p == NULL);
         DeleteFileA("neverc_dotdot_hijack.exe");

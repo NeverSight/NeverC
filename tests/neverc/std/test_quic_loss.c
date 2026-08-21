@@ -197,6 +197,27 @@ static void test_loss_on_sent_tracking(void) {
     neverc_quic_loss_destroy(&ld);
 }
 
+static void test_loss_discard_space(void) {
+    quic_loss_detector_t ld;
+    neverc_quic_loss_init(&ld);
+
+    neverc_quic_loss_on_sent(&ld, QUIC_PNS_INITIAL, 0, 1000, 1200, 1);
+    neverc_quic_loss_on_sent(&ld, QUIC_PNS_HANDSHAKE, 0, 1010, 800, 1);
+    ASSERT_EQ(ld.cc.bytes_in_flight, 2000);
+    uint64_t window = ld.cc.congestion_window;
+
+    neverc_quic_loss_discard_space(&ld, QUIC_PNS_INITIAL);
+    ASSERT_EQ(ld.cc.bytes_in_flight, 800);
+    ASSERT_EQ(ld.cc.congestion_window, window);
+    ASSERT_TRUE(ld.spaces[QUIC_PNS_INITIAL].sent_packets == NULL);
+
+    neverc_quic_loss_discard_space(&ld, QUIC_PNS_HANDSHAKE);
+    ASSERT_EQ(ld.cc.bytes_in_flight, 0);
+    ASSERT_EQ(ld.cc.congestion_window, window);
+
+    neverc_quic_loss_destroy(&ld);
+}
+
 static void test_loss_packet_threshold_detection(void) {
     quic_loss_detector_t ld;
     neverc_quic_loss_init(&ld);
@@ -397,6 +418,7 @@ int main(void) {
     test_cc_can_send();
     test_loss_detector_init();
     test_loss_on_sent_tracking();
+    test_loss_discard_space();
     test_loss_packet_threshold_detection();
     test_loss_rtt_measurement();
     test_loss_cleanup();

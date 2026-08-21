@@ -424,19 +424,20 @@ static int exec_win_is_drive_cwd(const char *dir, size_t n) {
            dir[1] == ':';
 }
 
-static int exec_win_component_is_dotdot(const char *s, size_t n) {
-    /* Windows strips trailing '.' / ' ' from a file name, but the relative
-     * component ".." (and ".." plus trailing spaces) must stay parent-
-     * directory. Stripping first turns ".." into "" and PATH=foo\.. is
-     * then searched as a real directory. */
+/* Win32 strips trailing '.' / ' ' from a component, but keeps "." and
+ * ".." (including those plus trailing spaces). Naive strip turns ".."
+ * into "" so PATH=foo\.. is searched as a real directory; ". " becomes
+ * cwd and PATH=". " is cwd exe hijacking. */
+static size_t exec_win_component_base_len(const char *s, size_t n) {
     size_t end = n;
-    while (end > 0 && s[end - 1] == ' ')
+    while (end > 0 && (s[end - 1] == ' ' || s[end - 1] == '.')) {
+        if (end == 1 && s[0] == '.')
+            break;
+        if (end == 2 && s[0] == '.' && s[1] == '.')
+            break;
         end--;
-    if (end == 2 && s[0] == '.' && s[1] == '.')
-        return 1;
-    while (end > 0 && (s[end - 1] == ' ' || s[end - 1] == '.'))
-        end--;
-    return end == 2 && s[0] == '.' && s[1] == '.';
+    }
+    return end;
 }
 
 static int exec_win_skip_path_dir(const char *dir, size_t dlen) {
@@ -458,10 +459,14 @@ static int exec_win_skip_path_dir(const char *dir, size_t dlen) {
         while (i < dlen && (dir[i] == '\\' || dir[i] == '/')) i++;
         if (i >= dlen) break;
         size_t start = i;
+        size_t blen;
         while (i < dlen && dir[i] != '\\' && dir[i] != '/') i++;
-        size_t clen = i - start;
-        if (clen == 1 && dir[start] == '.') continue;
-        if (exec_win_component_is_dotdot(dir + start, clen)) {
+        blen = exec_win_component_base_len(dir + start, i - start);
+        if (blen == 0)
+            continue; /* spaces-only / stripped-empty: not a real dir */
+        if (blen == 1 && dir[start] == '.')
+            continue;
+        if (blen == 2 && dir[start] == '.' && dir[start + 1] == '.') {
             saw_dotdot = 1;
             continue;
         }

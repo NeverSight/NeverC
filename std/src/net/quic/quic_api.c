@@ -461,17 +461,9 @@ static void *quic_client_io(void *argument) {
         int received = neverc_udp_read_packet(conn->udp, packet,
                                                NEVERC_UDP_MAX_DATAGRAM_SIZE,
                                                &info);
-        if (received > 0 && !info.truncated &&
-            neverc_quic_conn_process_datagram(
-                conn, packet, (size_t)received, &info.source) != 0 &&
-            conn->state != QUIC_CONN_DRAINING &&
-            conn->state != QUIC_CONN_CLOSED) {
-            const char *tls_error = neverc_quic_tls_error(conn->tls);
-            neverc_quic_conn_close_internal(
-                conn, QUIC_ERR_PROTOCOL_VIOLATION,
-                tls_error && tls_error[0] ? tls_error :
-                                             "invalid QUIC packet", 0);
-        }
+        if (received > 0 && !info.truncated)
+            (void)neverc_quic_conn_process_datagram(
+                conn, packet, (size_t)received, &info.source);
         neverc_quic_conn_tick(conn, nc_monotonic_ms());
     }
     free(packet);

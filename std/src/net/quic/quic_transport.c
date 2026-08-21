@@ -32,6 +32,9 @@ static quic_packet_type_t qt_long_type(uint8_t encoded, uint32_t version) {
     return v2_types[encoded & 3U];
 }
 
+static void qt_discard_encryption_level(struct neverc_quic_conn *conn,
+                                        quic_enc_level_t level);
+
 static int qt_address_equal(const neverc_udp_addr_t *left,
                             const neverc_udp_addr_t *right) {
     if (!left || !right || left->_sa_len <= 0 ||
@@ -142,7 +145,17 @@ static int qt_ack_contains(const quic_frame_ack_t *ack,
 static int qt_process_ack(struct neverc_quic_conn *conn, int space,
                           quic_frame_ack_t *ack, uint64_t now_ms) {
     if (!conn || !ack || space < 0 || space >= QUIC_PNS_COUNT) return -1;
-    if (ack->largest_acked >= conn->pn[space].next_pn) return -1;
+    /* An ACK in a packet-number space we have not sent yet cannot be
+     * an ACK of an unsent PN. Drop it instead of treating 0 >= 0 as
+     * PROTOCOL_VIOLATION. */
+    if (conn->pn[space].next_pn == 0)
+        return 0;
+    if (ack->largest_acked >= conn->pn[space].next_pn) {
+        (void)neverc_quic_conn_close_locked(
+            conn, QUIC_ERR_PROTOCOL_VIOLATION,
+            "ACK of unsent packet number", 0);
+        return -1;
+    }
     uint64_t encoded_delay = ack->ack_delay;
     /* RFC 9000 §19.3: Initial/Handshake ACK Delay uses exponent 3. */
     uint64_t exponent = space == QUIC_PNS_APPLICATION ?
@@ -394,6 +407,9 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
                 return -1;
             conn->handshake_confirmed = 1;
             conn->peer_completed_address_validation = 1;
+            /* RFC 9001 §4.9.2: the client discards Handshake keys once
+             * the handshake is confirmed. */
+            qt_discard_encryption_level(conn, QUIC_ENC_HANDSHAKE);
             consumed = type_len;
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_DATAGRAM ||
@@ -462,9 +478,23 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
     return 0;
 }
 
+static void qt_discard_encryption_level(struct neverc_quic_conn *conn,
+                                        quic_enc_level_t level) {
+    int space;
+    if (!conn) return;
+    neverc_quic_tls_discard_keys(conn->tls, level);
+    space = level == QUIC_ENC_INITIAL ? QUIC_PNS_INITIAL :
+            level == QUIC_ENC_HANDSHAKE ? QUIC_PNS_HANDSHAKE :
+                                          QUIC_PNS_APPLICATION;
+    conn->pn[space].ack_pending = 0;
+    neverc_quic_loss_discard_space(&conn->loss, space);
+}
+
 static void qt_start_path_validation(struct neverc_quic_conn *conn,
                                      const neverc_udp_addr_t *source) {
-    if (!conn || !source || conn->peer_disable_migration ||
+    if (!conn || !source || source->_sa_len <= 0 ||
+        conn->peer_addr._sa_len <= 0 ||
+        conn->peer_disable_migration ||
         conn->side != QUIC_SIDE_SERVER ||
         qt_address_equal(source, &conn->peer_addr) ||
         (conn->path_validation_pending &&
@@ -731,11 +761,10 @@ decrypt_complete:
         /* RFC 9000 §13.2.1: a duplicate often means the ACK was lost. */
         conn->pn[space].ack_pending = 1;
     }
-    /* RFC 9001 §4.9.1: drop Initial keys after a Handshake packet. */
-    if (header.type == QUIC_PKT_HANDSHAKE) {
-        neverc_quic_tls_discard_keys(conn->tls, QUIC_ENC_INITIAL);
-        conn->pn[QUIC_PNS_INITIAL].ack_pending = 0;
-    }
+    /* RFC 9001 §4.9.1 / RFC 9002 §6.4: drop Initial keys and that
+     * packet-number space after a Handshake packet. */
+    if (header.type == QUIC_PKT_HANDSHAKE)
+        qt_discard_encryption_level(conn, QUIC_ENC_INITIAL);
     conn->last_activity_ms = nc_monotonic_ms();
     if (neverc_quic_tls_is_established(conn->tls) &&
         conn->state == QUIC_CONN_HANDSHAKING) {
@@ -781,6 +810,9 @@ decrypt_complete:
         if (conn->side == QUIC_SIDE_SERVER) {
             conn->handshake_confirmed = 1;
             conn->handshake_done_pending = 1;
+            /* RFC 9001 §4.9.2: the server discards Handshake keys when
+             * the handshake is complete. */
+            qt_discard_encryption_level(conn, QUIC_ENC_HANDSHAKE);
         }
         nc_cond_broadcast(&conn->state_cond);
     }
@@ -1230,6 +1262,7 @@ static int qt_prepend_ack(struct neverc_quic_conn *conn,
         return 0;
     }
     if (!conn->pn[space].ack_pending) return 0;
+    if (*payload_len > capacity) return 0;
     uint8_t ack_buffer[1024];
     size_t ack_len;
     if (qt_write_ack(&conn->pn[space], ack_buffer, sizeof(ack_buffer),

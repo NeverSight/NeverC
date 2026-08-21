@@ -305,6 +305,14 @@ static void redirect_inspect_handler(neverc_http_request_t *req,
     neverc_http_writef(w, "%s:%zu", req->method, req->body_len);
 }
 
+static void redirect_blank_location_handler(neverc_http_request_t *req,
+                                           neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_set_status(w, 302);
+    neverc_http_set_header(w, "Location", " ");
+    neverc_http_write_string(w, "blank-location");
+}
+
 static int get_free_port(void) {
     const char *err = NULL;
     neverc_tcp_listener_t *probe = neverc_tcp_listen("127.0.0.1:0", &err);
@@ -375,6 +383,8 @@ static pid_t start_test_server(int port) {
                                redirect_put_301_handler);
         neverc_http_mux_handle(mux, "/redirect/inspect",
                                redirect_inspect_handler);
+        neverc_http_mux_handle(mux, "/redirect/blank",
+                               redirect_blank_location_handler);
         if (static_test_dir[0] != '\0')
             neverc_http_serve_dir(mux, "/static/", static_test_dir);
 
@@ -752,6 +762,13 @@ static void test_http_client_redirects(void) {
     check_int("301 rewrites PUT to GET without body",
               resp && !resp->error && resp->body &&
                   strcmp(resp->body, "GET:0") == 0, 1);
+    neverc_http_response_free(resp);
+
+    snprintf(url, sizeof(url),
+             "http://127.0.0.1:%d/redirect/blank", port);
+    resp = neverc_http_get(url);
+    check_int("whitespace Location is not followed",
+              resp && !resp->error && resp->status_code == 302, 1);
     neverc_http_response_free(resp);
 
     stop_test_server(server_pid);

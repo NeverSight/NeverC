@@ -672,6 +672,7 @@ int neverc_quic_loss_detect(quic_loss_detector_t *detector, uint64_t now);
 uint64_t neverc_quic_loss_get_timeout(
     const quic_loss_detector_t *detector, int handshake_confirmed);
 void neverc_quic_loss_cleanup(quic_loss_detector_t *detector, int space);
+void neverc_quic_loss_discard_space(quic_loss_detector_t *detector, int space);
 void neverc_quic_loss_destroy(quic_loss_detector_t *detector);
 
 quic_tls_t *neverc_quic_tls_create(int is_server);

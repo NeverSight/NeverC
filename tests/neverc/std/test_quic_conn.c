@@ -689,6 +689,8 @@ static void test_max_stream_data_creates_peer_bidi(void) {
     ASSERT_EQ(stream->send_max_data, 4096);
     ASSERT_NOT_NULL(neverc_quic_conn_find_stream(conn, 0));
     ASSERT_EQ(neverc_quic_stream_apply_max_stream_data(conn, 2, 4096), -1);
+    ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_STREAM_STATE_ERROR);
     ASSERT_EQ(neverc_quic_stream_apply_max_stream_data(conn, 1, 4096), -1);
 
     neverc_quic_conn_destroy(conn);
@@ -705,6 +707,8 @@ static void test_stop_sending_creates_peer_bidi(void) {
     ASSERT_EQ(stream->reset_error_code, 0x01);
     ASSERT_EQ(conn->n_streams, 3);
     ASSERT_EQ(neverc_quic_stream_apply_stop_sending(conn, 2, 0x01), -1);
+    ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_STREAM_STATE_ERROR);
     ASSERT_EQ(neverc_quic_stream_apply_stop_sending(conn, 1, 0x01), -1);
 
     neverc_quic_conn_destroy(conn);

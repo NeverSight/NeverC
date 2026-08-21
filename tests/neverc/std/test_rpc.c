@@ -189,13 +189,40 @@ static void rpc_test_server_task(void *context) {
     }
 }
 
-static int rpc_test_wait_for_port(neverc_rpc_server_t *server) {
+static int rpc_test_wait_ready(neverc_rpc_server_t *server) {
     for (int attempt = 0; attempt < 500; attempt++) {
-        int port = neverc_rpc_server_bound_port(server);
-        if (port > 0) return port;
+        if (neverc_rpc_server_is_running(server)) {
+            int port = neverc_rpc_server_bound_port(server);
+            if (port > 0) return port;
+        }
         neverc_time_sleep(10 * NEVERC_TIME_MILLISECOND);
     }
     return -1;
+}
+
+/* Darwin can ECONNREFUSED the first connect() to a socket that has already
+ * listen()'d if accept() has not yet run (and QUIC Initial can be dropped
+ * in the same window). Retry until the transport is actually reachable. */
+static neverc_rpc_client_t *rpc_test_dial(
+    const char *address, const neverc_rpc_client_config_t *config,
+    const char **errp) {
+    neverc_rpc_client_config_t attempt_config = config
+        ? *config : neverc_rpc_client_config_default();
+    if (attempt_config.connect_timeout_ms > 500)
+        attempt_config.connect_timeout_ms = 500;
+    const char *error = NULL;
+    neverc_rpc_client_t *client = NULL;
+    for (int attempt = 0; attempt < 100; attempt++) {
+        error = NULL;
+        client = neverc_rpc_client_dial(address, &attempt_config, &error);
+        if (client) break;
+        neverc_time_sleep(10 * NEVERC_TIME_MILLISECOND);
+    }
+    if (errp) *errp = error;
+    if (!client)
+        printf("  dial %s failed: %s\n", address,
+               error ? error : "(no error string)");
+    return client;
 }
 
 static int rpc_test_stream_roundtrip(neverc_rpc_client_t *client) {
@@ -349,7 +376,7 @@ static void rpc_test_roundtrip(int mtls, int quic) {
     if (!executor) return;
     CHECK(neverc_thread_executor_submit(executor, rpc_test_server_task,
                                          &test) == NEVERC_THREAD_OK);
-    int port = rpc_test_wait_for_port(test.server);
+    int port = rpc_test_wait_ready(test.server);
     CHECK(port > 0);
     char address[64];
     (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
@@ -400,7 +427,7 @@ static void rpc_test_roundtrip(int mtls, int quic) {
         client_config.reconnect_backoff_ms = 0;
     }
     const char *error = NULL;
-    neverc_rpc_client_t *client = neverc_rpc_client_dial(
+    neverc_rpc_client_t *client = rpc_test_dial(
         address, &client_config, &error);
     CHECK(client != NULL);
     if (client) {
@@ -683,7 +710,7 @@ static void rpc_test_receive_backpressure(void) {
     }
     CHECK(neverc_thread_executor_submit(executor, rpc_test_server_task,
                                          &test) == NEVERC_THREAD_OK);
-    int port = rpc_test_wait_for_port(test.server);
+    int port = rpc_test_wait_ready(test.server);
     CHECK(port > 0);
     char address[64];
     (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
@@ -692,7 +719,7 @@ static void rpc_test_receive_backpressure(void) {
         neverc_rpc_client_config_default();
     client_config.send_queue_capacity = 64U;
     const char *error = NULL;
-    neverc_rpc_client_t *client = neverc_rpc_client_dial(
+    neverc_rpc_client_t *client = rpc_test_dial(
         address, &client_config, &error);
     CHECK(client != NULL);
     if (client) {
@@ -783,7 +810,7 @@ static void rpc_test_tenant_rate_limit(void) {
     }
     CHECK(neverc_thread_executor_submit(executor, rpc_test_server_task,
                                          &test) == NEVERC_THREAD_OK);
-    int port = rpc_test_wait_for_port(test.server);
+    int port = rpc_test_wait_ready(test.server);
     CHECK(port > 0);
     char address[64];
     (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
@@ -792,7 +819,7 @@ static void rpc_test_tenant_rate_limit(void) {
     neverc_rpc_client_config_t client_config =
         neverc_rpc_client_config_default();
     neverc_rpc_client_t *client = port > 0
-        ? neverc_rpc_client_dial(address, &client_config, &error) : NULL;
+        ? rpc_test_dial(address, &client_config, &error) : NULL;
     CHECK(client != NULL);
     if (client) {
         static const uint8_t tenant_a[] = "tenant-a";
@@ -848,7 +875,7 @@ static void rpc_test_reconnect_roundtrip(void) {
     }
     CHECK(neverc_thread_executor_submit(first_executor, rpc_test_server_task,
                                          &test) == NEVERC_THREAD_OK);
-    int port = rpc_test_wait_for_port(test.server);
+    int port = rpc_test_wait_ready(test.server);
     CHECK(port > 0);
     if (port <= 0) {
         neverc_rpc_server_shutdown(test.server);
@@ -866,7 +893,7 @@ static void rpc_test_reconnect_roundtrip(void) {
     client_config.io_timeout_ms = 1000;
     client_config.reconnect_backoff_ms = 0;
     const char *error = NULL;
-    neverc_rpc_client_t *client = neverc_rpc_client_dial(
+    neverc_rpc_client_t *client = rpc_test_dial(
         address, &client_config, &error);
     CHECK(client != NULL);
     if (client) CHECK(rpc_test_unary_roundtrip(client) == 0);
@@ -890,7 +917,7 @@ static void rpc_test_reconnect_roundtrip(void) {
     }
     CHECK(neverc_thread_executor_submit(second_executor, rpc_test_server_task,
                                          &test) == NEVERC_THREAD_OK);
-    neverc_time_sleep(100 * NEVERC_TIME_MILLISECOND);
+    CHECK(rpc_test_wait_ready(test.server) == port);
 
     neverc_context_cancel_handle_t *cancel = NULL;
     neverc_context_t *background = neverc_context_background();
@@ -899,8 +926,14 @@ static void rpc_test_reconnect_roundtrip(void) {
         : NULL;
     CHECK(context != NULL && cancel != NULL);
     if (client && context) {
-        CHECK(neverc_rpc_client_reconnect(client, context, &error) ==
-              NEVERC_RPC_IO_OK);
+        int reconnect_result = NEVERC_RPC_IO_CLOSED;
+        for (int attempt = 0; attempt < 100; attempt++) {
+            reconnect_result = neverc_rpc_client_reconnect(
+                client, context, &error);
+            if (reconnect_result == NEVERC_RPC_IO_OK) break;
+            neverc_time_sleep(10 * NEVERC_TIME_MILLISECOND);
+        }
+        CHECK(reconnect_result == NEVERC_RPC_IO_OK);
         CHECK(rpc_test_unary_roundtrip(client) == 0);
     }
     if (cancel) {
@@ -1032,7 +1065,7 @@ static void rpc_test_data_after_end(void) {
     config.connect_timeout_ms = 2000;
     config.io_timeout_ms = 2000;
     neverc_rpc_client_t *client =
-        neverc_rpc_client_dial(address, &config, &error);
+        rpc_test_dial(address, &config, &error);
     CHECK(client != NULL);
     if (client) {
         neverc_context_cancel_handle_t *cancel = NULL;
@@ -1153,7 +1186,7 @@ static void rpc_test_goaway_ok_not_success(void) {
     config.connect_timeout_ms = 2000;
     config.io_timeout_ms = 2000;
     neverc_rpc_client_t *client =
-        neverc_rpc_client_dial(address, &config, &error);
+        rpc_test_dial(address, &config, &error);
     CHECK(client != NULL);
     if (client) {
         neverc_context_cancel_handle_t *cancel = NULL;

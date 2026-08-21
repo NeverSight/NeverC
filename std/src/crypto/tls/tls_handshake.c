@@ -1753,6 +1753,7 @@ static int tls_parse_client_hello(
     int supports_ecdsa_p256_sha256 = 0;
     int saw_key_share = 0;
     int has_x25519_key_share = 0;
+    int offered_early_data = 0;
     while (extensions.pos < extensions.len) {
         uint16_t extension_type;
         tls_cursor_t extension_data;
@@ -1861,6 +1862,13 @@ static int tls_parse_client_hello(
                     TLS_MAX_ALPN_PROTOCOLS,
                     &result->alpn_count, alert) != 0)
                 return -1;
+        } else if (extension_type == TLS_EXT_EARLY_DATA) {
+            /* RFC 8446 §4.2.10: ClientHello early_data is empty. 0-RTT is
+             * not implemented, and this stack cannot skip 0-RTT records.
+             * Match Go's TCP crypto/tls: reject rather than ignore. */
+            if (extension_data.len != 0)
+                return -1;
+            offered_early_data = 1;
         } else if (extension_type ==
                    TLS_EXT_PSK_KEY_EXCHANGE_MODES) {
             tls_cursor_t modes;
@@ -1970,6 +1978,10 @@ static int tls_parse_client_hello(
             TLS_CIPHER_CHACHA20_POLY1305_SHA256;
     } else {
         *alert = TLS_ALERT_HANDSHAKE_FAILURE;
+        return -1;
+    }
+    if (offered_early_data) {
+        *alert = TLS_ALERT_UNSUPPORTED_EXTENSION;
         return -1;
     }
     return 0;
@@ -3759,14 +3771,15 @@ static int tls_test_put_u16(
     return tls_test_put(out, cap, len, encoded, 2);
 }
 
-static int tls_test_make_client_hello(
+static int tls_test_make_client_hello_ex(
     uint8_t *out, size_t cap, size_t *out_len,
     uint16_t legacy_version,
     int include_supported_versions,
     uint16_t offered_version,
     int include_tls13_core,
     const uint8_t *sni, size_t sni_len,
-    const uint8_t *alpn, size_t alpn_len) {
+    const uint8_t *alpn, size_t alpn_len,
+    int include_early_data, size_t early_data_len) {
     if (!out || !out_len)
         return -1;
     size_t len = 4;
@@ -3843,6 +3856,19 @@ static int tls_test_make_client_hello(
             tls_test_put(out, cap, &len, alpn, alpn_len) != 0)
             return -1;
     }
+    if (include_early_data) {
+        uint8_t zeros[8];
+        if (early_data_len > sizeof(zeros) ||
+            tls_test_put_u16(out, cap, &len, TLS_EXT_EARLY_DATA) != 0 ||
+            tls_test_put_u16(
+                out, cap, &len, (uint16_t)early_data_len) != 0)
+            return -1;
+        if (early_data_len > 0) {
+            memset(zeros, 0, early_data_len);
+            if (tls_test_put(out, cap, &len, zeros, early_data_len) != 0)
+                return -1;
+        }
+    }
 
     if (len == extensions_start) {
         /* TLS 1.2 ClientHello with no extensions vector at all. */
@@ -3854,6 +3880,21 @@ static int tls_test_make_client_hello(
     tls_put_u24(out + 1, (uint32_t)(len - 4));
     *out_len = len;
     return 0;
+}
+
+static int tls_test_make_client_hello(
+    uint8_t *out, size_t cap, size_t *out_len,
+    uint16_t legacy_version,
+    int include_supported_versions,
+    uint16_t offered_version,
+    int include_tls13_core,
+    const uint8_t *sni, size_t sni_len,
+    const uint8_t *alpn, size_t alpn_len) {
+    return tls_test_make_client_hello_ex(
+        out, cap, out_len, legacy_version,
+        include_supported_versions, offered_version,
+        include_tls13_core, sni, sni_len, alpn, alpn_len,
+        0, 0);
 }
 
 static int tls_test_make_server_hello(
@@ -4009,6 +4050,26 @@ int neverc_tls_test_hello_protocol_rules(void) {
             NULL, 0, alpn_with_nul, sizeof(alpn_with_nul)) != 0 ||
         tls_parse_client_hello(
             message, message_len, &client_hello, &alert) == 0)
+        return -1;
+
+    alert = 0;
+    if (tls_test_make_client_hello_ex(
+            message, sizeof(message), &message_len,
+            TLS_LEGACY_VERSION, 1, NEVERC_TLS_VERSION_13, 1,
+            NULL, 0, NULL, 0, 1, 0) != 0 ||
+        tls_parse_client_hello(
+            message, message_len, &client_hello, &alert) == 0 ||
+        alert != TLS_ALERT_UNSUPPORTED_EXTENSION)
+        return -1;
+
+    alert = 0;
+    if (tls_test_make_client_hello_ex(
+            message, sizeof(message), &message_len,
+            TLS_LEGACY_VERSION, 1, NEVERC_TLS_VERSION_13, 1,
+            NULL, 0, NULL, 0, 1, 4) != 0 ||
+        tls_parse_client_hello(
+            message, message_len, &client_hello, &alert) == 0 ||
+        alert != TLS_ALERT_DECODE_ERROR)
         return -1;
 
     alert = 0;

@@ -699,7 +699,8 @@ static int proxy_is_hop_header(const char *name, size_t length) {
            proxy_equal_ci_n(name, length, "TE") ||
            proxy_equal_ci_n(name, length, "Trailer") ||
            proxy_equal_ci_n(name, length, "Transfer-Encoding") ||
-           proxy_equal_ci_n(name, length, "Upgrade");
+           proxy_equal_ci_n(name, length, "Upgrade") ||
+           proxy_equal_ci_n(name, length, "HTTP2-Settings");
 }
 
 static int proxy_is_forwarded_header(const char *name, size_t length) {

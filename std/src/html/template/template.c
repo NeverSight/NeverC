@@ -1532,6 +1532,82 @@ static char *html_unescape_span(const char *s, size_t n, size_t *outlen) {
     return out;
 }
 
+static int html_join_contains_amp(const char *a, size_t an,
+                                  const char *b,
+                                  const char *c, size_t cn) {
+    size_t bn = b ? strlen(b) : 0;
+    return (a && an && memchr(a, '&', an)) ||
+           (b && bn && memchr(b, '&', bn)) ||
+           (c && cn && memchr(c, '&', cn));
+}
+
+static char *html_concat_unescape(const char *a, size_t an,
+                                  const char *b,
+                                  const char *c, size_t cn,
+                                  size_t *outn) {
+    size_t bn = b ? strlen(b) : 0;
+    if (!a) { a = ""; an = 0; }
+    if (!b) { b = ""; bn = 0; }
+    if (!c) { c = ""; cn = 0; }
+    if (an > SIZE_MAX - bn || an + bn > SIZE_MAX - cn ||
+        an + bn + cn == SIZE_MAX)
+        return NULL;
+    size_t n = an + bn + cn;
+    char *raw = (char *)NC_HTML_TEMPLATE_MALLOC(n + 1U);
+    if (!raw) return NULL;
+    if (an) memcpy(raw, a, an);
+    if (bn) memcpy(raw + an, b, bn);
+    if (cn) memcpy(raw + an + bn, c, cn);
+    raw[n] = '\0';
+    char *out = neverc_html_unescape_string(raw, outn);
+    free(raw);
+    return out;
+}
+
+/* The browser HTML-decodes the assembled attribute, so a colon entity
+ * split across the interpolation (`javascript&colo` + `n;alert(1)`)
+ * becomes javascript:alert(1). Checking the prefix alone sees no ':'.
+ * OOM fails closed. */
+static int html_unescaped_url_unsafe(const char *prefix, size_t plen,
+                                     const char *val,
+                                     const char *suffix, size_t slen,
+                                     int srcset) {
+    if (!html_join_contains_amp(prefix, plen, val, suffix, slen))
+        return 0;
+    size_t n = 0;
+    char *u = html_concat_unescape(prefix, plen, val, suffix, slen, &n);
+    if (!u) return 1;
+    html_span_t sp = { u, n, 0 };
+    int unsafe = srcset ? !html_is_safe_srcset_spans(&sp, 1)
+                        : !html_is_safe_url_spans(&sp, 1, 0);
+    free(u);
+    return unsafe;
+}
+
+static int html_unescaped_css_scheme_unsafe(const char *prefix, size_t plen,
+                                            const char *val,
+                                            const char *suffix, size_t slen) {
+    if (!html_join_contains_amp(prefix, plen, val, suffix, slen))
+        return 0;
+    size_t n = 0;
+    char *u = html_concat_unescape(prefix, plen, val, suffix, slen, &n);
+    if (!u) return 1;
+    const char *up = NULL;
+    size_t ulen = 0;
+    int unsafe = 0;
+    /* Reverse-scan stops at '(' so url(javascript&colo + n;alert) is
+     * missed. After unescape, scan forward for unsafe url() args. */
+    unsafe = html_css_has_unsafe_url(u);
+    if (!unsafe && html_in_css_url(u, n, &up, &ulen)) {
+        unsafe = html_url_parts_unsafe(up, ulen, "", NULL, 0, 0) ||
+                 html_css_url_parts_obfuscated(up, ulen, "", NULL, 0);
+    }
+    if (!unsafe)
+        unsafe = html_css_join_scheme_unsafe(u, n, "", NULL, 0);
+    free(u);
+    return unsafe;
+}
+
 static int execute_nodes(const node_t *n,
                          const neverc_html_template_data_t *data,
                          char **buf, size_t *len, size_t *cap) {
@@ -1573,6 +1649,8 @@ static int execute_nodes(const node_t *n,
                 }
                 const char *uprefix = NULL;
                 size_t uplen = 0;
+                const char *raw_aprefix = aprefix;
+                size_t raw_aplen = aplen;
                 char *decoded_prefix = NULL;
                 size_t decoded_plen = 0;
                 if (aprefix && aplen && memchr(aprefix, '&', aplen)) {
@@ -1632,10 +1710,17 @@ static int execute_nodes(const node_t *n,
                  * are neutralized instead of JS-escaped (a no-op for those). */
                 if (in_unsafe_attr)
                     escaped = neverc_html_escape("ZgotmplZ");
-                else if (in_url && in_query)
-                    escaped = neverc_html_url_query_escape(val);
                 else if (in_url && html_url_parts_unsafe(
                              dprefix, dplen, val, dsuffix, dslen, is_srcset))
+                    escaped = neverc_html_escape("#");
+                else if (in_url && !in_css_url &&
+                         html_unescaped_url_unsafe(raw_aprefix, raw_aplen,
+                                                   val, dsuffix, dslen,
+                                                   is_srcset))
+                    escaped = neverc_html_escape("#");
+                else if (in_style_attr &&
+                         html_unescaped_css_scheme_unsafe(
+                             raw_aprefix, raw_aplen, val, dsuffix, dslen))
                     escaped = neverc_html_escape("#");
                 else if (in_css_url && html_css_url_parts_obfuscated(
                              dprefix, dplen, val, dsuffix, dslen))
@@ -1644,6 +1729,8 @@ static int execute_nodes(const node_t *n,
                          html_css_join_scheme_unsafe(
                              css_buf, css_len, val, dsuffix, dslen))
                     escaped = neverc_html_escape("#");
+                else if (in_url && in_query)
+                    escaped = neverc_html_url_query_escape(val);
                 else if (in_css_url) {
                     /* Go: urlNormalizer then attrescaper. url() in a style
                      * attribute is HTML-decoded, so '&' must become '&amp;'

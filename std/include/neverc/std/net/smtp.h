@@ -56,6 +56,8 @@ int neverc_smtp_starttls(neverc_smtp_client_t *c,
 /* Authenticate with the server. The SASL mechanism must have been advertised
  * in EHLO; AUTH is not attempted after HELO-only, an unadvertised method, or
  * when EHLO advertised STARTTLS and the connection has not been upgraded.
+ * PLAIN/LOGIN also match Go smtp.PlainAuth: credentials are not sent unless
+ * the connection is TLS or the dial host is localhost / 127.0.0.1 / ::1.
  * Returns 0 on success. */
 int neverc_smtp_auth(neverc_smtp_client_t *c,
                       neverc_smtp_auth_method_t method,

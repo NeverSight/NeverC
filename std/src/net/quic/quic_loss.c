@@ -401,6 +401,25 @@ void neverc_quic_loss_cleanup(quic_loss_detector_t *ld, int space) {
     }
 }
 
+/* RFC 9002 §6.4: drop a discarded packet-number space from
+ * bytes_in_flight without a congestion event. */
+void neverc_quic_loss_discard_space(quic_loss_detector_t *ld, int space) {
+    if (!ld || space < 0 || space >= QUIC_PN_SPACE_COUNT) return;
+    quic_sent_packet_t *pkt = ld->spaces[space].sent_packets;
+    while (pkt) {
+        quic_sent_packet_t *next = pkt->next;
+        if (pkt->in_flight && !pkt->acked && !pkt->lost) {
+            if (pkt->sent_bytes >= ld->cc.bytes_in_flight)
+                ld->cc.bytes_in_flight = 0;
+            else
+                ld->cc.bytes_in_flight -= pkt->sent_bytes;
+        }
+        free(pkt);
+        pkt = next;
+    }
+    memset(&ld->spaces[space], 0, sizeof(ld->spaces[space]));
+}
+
 void neverc_quic_loss_destroy(quic_loss_detector_t *ld) {
     for (int i = 0; i < 3; i++) {
         quic_sent_packet_t *pkt = ld->spaces[i].sent_packets;

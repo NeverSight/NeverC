@@ -322,6 +322,9 @@ static int h3_conn_init(h3_conn_t *connection,
 }
 
 static void h3_conn_teardown(h3_conn_t *connection) {
+    for (size_t i = 0; i < connection->pending_uni_count; i++)
+        neverc_quic_stream_free(connection->pending_uni[i].stream);
+    connection->pending_uni_count = 0;
     neverc_quic_stream_free(connection->control_out);
     neverc_quic_stream_free(connection->qpack_encoder_out);
     neverc_quic_stream_free(connection->qpack_decoder_out);
@@ -1435,6 +1438,7 @@ static void *h3_connection_worker(void *argument) {
 worker_done:
     for (size_t i = 0; i < connection->pending_uni_count; i++)
         neverc_quic_stream_free(connection->pending_uni[i].stream);
+    connection->pending_uni_count = 0;
     atomic_store_explicit(&connection->worker_done, 1,
                           memory_order_release);
     nc_mutex_lock(&connection->lock);
@@ -1755,47 +1759,51 @@ static neverc_http_response_t *h3_error_response(const char *error) {
 }
 
 static int h3_client_receive_settings(h3_conn_t *connection) {
-    for (int i = 0; i < 16; i++) {
-        neverc_quic_stream_t *stream =
-            neverc_quic_accept_stream(connection->quic, NULL);
-        if (!stream)
+    for (int attempt = 0; attempt < 2000; attempt++) {
+        int worked = 0;
+        if (h3_poll_pending_uni(connection, &worked) != 0)
             return -1;
+        if (connection->control_in) {
+            uint64_t frame_type;
+            uint64_t frame_length;
+            if (h3_read_varint(connection->control_in, &frame_type) != 1 ||
+                frame_type != NC_H3_FRAME_SETTINGS ||
+                h3_read_varint(connection->control_in, &frame_length) != 1)
+                return -1;
+            uint8_t *payload = NULL;
+            if (h3_read_payload(connection->control_in, frame_length,
+                                65536, &payload) != 0)
+                return -1;
+            int decoded = neverc_h3_settings_decode(
+                payload, (size_t)frame_length, &connection->peer_settings);
+            free(payload);
+            if (decoded != 0) return -1;
+            connection->peer_settings_received = 1;
+            return 0;
+        }
+        neverc_quic_stream_t *stream = NULL;
+        int status = neverc_quic_try_accept_stream(connection->quic, &stream);
+        if (status < 0) return -1;
+        if (status == 0) {
+            if (!neverc_quic_conn_is_alive(connection->quic))
+                return -1;
+            (void)neverc_quic_conn_flush(connection->quic);
+            neverc_quic_conn_tick(connection->quic, nc_monotonic_ms());
+            h3_sleep_ms(2);
+            continue;
+        }
         if ((neverc_quic_stream_id(stream) & 2U) == 0) {
             /* RFC 9000 §2.1 may implicitly open lower bidi IDs. SETTINGS
              * lives on the uni control stream; keep waiting for it. */
             neverc_quic_stream_free(stream);
             continue;
         }
-        uint64_t stream_type;
-        if (h3_read_varint(stream, &stream_type) != 1) {
+        if (connection->pending_uni_count == 16) {
             neverc_quic_stream_free(stream);
             return -1;
         }
-        if (stream_type != H3_STREAM_TYPE_CONTROL) {
-            neverc_quic_stream_free(stream);
-            continue;
-        }
-        uint64_t frame_type;
-        uint64_t frame_length;
-        if (h3_read_varint(stream, &frame_type) != 1 ||
-            frame_type != NC_H3_FRAME_SETTINGS ||
-            h3_read_varint(stream, &frame_length) != 1) {
-            neverc_quic_stream_free(stream);
-            return -1;
-        }
-        uint8_t *payload = NULL;
-        if (h3_read_payload(stream, frame_length, 65536, &payload) != 0) {
-            neverc_quic_stream_free(stream);
-            return -1;
-        }
-        int decoded = neverc_h3_settings_decode(payload,
-                                                 (size_t)frame_length,
-                                                 &connection->peer_settings);
-        free(payload);
-        neverc_quic_stream_free(stream);
-        if (decoded != 0) return -1;
-        connection->peer_settings_received = 1;
-        return 0;
+        connection->pending_uni[connection->pending_uni_count++] =
+            (h3_pending_uni_t){.stream = stream};
     }
     return -1;
 }

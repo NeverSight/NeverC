@@ -1352,9 +1352,8 @@ int neverc_quic_tls_receive_crypto(quic_tls_t *tls, quic_enc_level_t level,
         (!data && len != 0) || offset > QT_CRYPTO_LIMIT ||
         len > QT_CRYPTO_LIMIT - (size_t)offset)
         return -1;
-    if (tls->handshake_complete && len > 0 &&
-        (level == QUIC_ENC_INITIAL || level == QUIC_ENC_HANDSHAKE))
-        return qt_fail(tls, "unexpected Handshake CRYPTO after Finished");
+    /* RFC 9001 §4.1: Handshake CRYPTO is retransmitted at Handshake keys
+     * after 1-RTT is in use. Duplicates belong on the CRYPTO stream. */
     if (qt_crypto_receive(&tls->crypto_recv[level], offset, data, len) != 0)
         return qt_fail(tls, "conflicting or oversized QUIC CRYPTO data");
     return 0;
@@ -1563,6 +1562,10 @@ const quic_keys_t *neverc_quic_tls_get_read_keys(
     const quic_tls_t *tls, quic_enc_level_t level) {
     if (!tls || level >= QUIC_ENC_LEVEL_COUNT ||
         !tls->levels[level].available)
+        return NULL;
+    /* RFC 9001 §5.7: do not decrypt inbound 1-RTT until the handshake
+     * is complete. Write keys may exist earlier. */
+    if (level == QUIC_ENC_APPLICATION && !tls->handshake_complete)
         return NULL;
     return &tls->levels[level].read;
 }

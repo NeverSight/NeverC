@@ -888,11 +888,20 @@ int neverc_quic_stream_apply_max_stream_data_locked(
     if (!conn || stream_id > QUIC_VARINT_MAX || maximum > QUIC_VARINT_MAX)
         return -1;
     /* Receive-only streams have no send side (RFC 9000 §19.10). */
-    if (stream_is_uni(stream_id) && !stream_is_local(conn, stream_id))
+    if (stream_is_uni(stream_id) && !stream_is_local(conn, stream_id)) {
+        neverc_quic_conn_close_locked(conn, QUIC_ERR_STREAM_STATE_ERROR,
+                                      "MAX_STREAM_DATA on receive-only stream",
+                                      0);
         return -1;
+    }
     quic_stream_t *stream = neverc_quic_conn_find_stream(conn, stream_id);
     if (!stream) {
-        if (stream_is_local(conn, stream_id)) return -1;
+        if (stream_is_local(conn, stream_id)) {
+            neverc_quic_conn_close_locked(
+                conn, QUIC_ERR_STREAM_STATE_ERROR,
+                "MAX_STREAM_DATA on unopened local stream", 0);
+            return -1;
+        }
         stream = get_or_create_receive_stream_locked(conn, stream_id);
     }
     if (!stream) return -1;
@@ -917,11 +926,20 @@ int neverc_quic_stream_apply_stop_sending_locked(
     struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t error_code) {
     if (!conn || stream_id > QUIC_VARINT_MAX || error_code > QUIC_VARINT_MAX)
         return -1;
-    if (stream_is_uni(stream_id) && !stream_is_local(conn, stream_id))
+    if (stream_is_uni(stream_id) && !stream_is_local(conn, stream_id)) {
+        neverc_quic_conn_close_locked(conn, QUIC_ERR_STREAM_STATE_ERROR,
+                                      "STOP_SENDING on receive-only stream",
+                                      0);
         return -1;
+    }
     quic_stream_t *stream = neverc_quic_conn_find_stream(conn, stream_id);
     if (!stream) {
-        if (stream_is_local(conn, stream_id)) return -1;
+        if (stream_is_local(conn, stream_id)) {
+            neverc_quic_conn_close_locked(
+                conn, QUIC_ERR_STREAM_STATE_ERROR,
+                "STOP_SENDING on unopened local stream", 0);
+            return -1;
+        }
         stream = get_or_create_receive_stream_locked(conn, stream_id);
     }
     if (!stream) return -1;

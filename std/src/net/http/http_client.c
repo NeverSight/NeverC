@@ -2015,6 +2015,12 @@ static neverc_http_response_t *do_request_with_redirects(
                 return make_error_response("out of memory");
             }
             if (location_result > 0) {
+                /* Go net/http: a present-but-empty Location is not a
+                 * same-document redirect. Whitespace was already trimmed. */
+                if (location[0] == '\0') {
+                    free(location);
+                    return resp;
+                }
                 if (redirects >= max_redirects) {
                     free(location);
                     neverc_http_response_free(resp);

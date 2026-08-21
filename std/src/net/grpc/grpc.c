@@ -425,8 +425,13 @@ int neverc_grpc_server_stream_end(neverc_grpc_server_stream_t *stream,
             neverc_grpc_message_t ignored;
             int next = grpc_server_stream_recv_internal(stream, &ignored);
             if (next != 0) {
-                status = NEVERC_GRPC_INVALID_ARGUMENT;
-                message = "invalid request framing";
+                if (neverc_context_done(stream->context)) {
+                    status = grpc_context_status(stream->context);
+                    message = NULL;
+                } else {
+                    status = NEVERC_GRPC_INVALID_ARGUMENT;
+                    message = "invalid request framing";
+                }
             }
         }
     }

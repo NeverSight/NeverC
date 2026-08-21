@@ -1206,6 +1206,7 @@ static void test_live_reverse_proxy(void) {
         "Proxy-Connection: keep-alive\r\n"
         "Proxy-Authenticate: Basic realm=\"backend\"\r\n"
         "TE: trailers\r\n"
+        "HTTP2-Settings: AAEAAQAAAAIAAAAAAAIAAAAA\r\n"
         "X-Hop: secret\r\n"
         "X-Keep: yes\r\n"
         "\r\n"
@@ -1872,6 +1873,8 @@ static void test_live_reverse_proxy(void) {
               strstr(response.data, "Proxy-Authenticate:") == NULL);
         CHECK("TE hop header stripped",
               strstr(response.data, "TE:") == NULL);
+        CHECK("HTTP2-Settings hop header stripped",
+              strstr(response.data, "HTTP2-Settings:") == NULL);
         CHECK("Connection-nominated response header stripped",
               strstr(response.data, "X-Hop:") == NULL);
     }

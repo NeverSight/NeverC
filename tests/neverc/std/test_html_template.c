@@ -452,6 +452,57 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "javascript:") == NULL);
     free(out);
 
+    /* Entity name / numeric reference split across the interpolation: the
+     * browser HTML-decodes the assembled attribute, so javascript&colo +
+     * n;alert(1) becomes javascript:alert(1). Checking only the prefix
+     * leaves no ASCII colon. */
+    neverc_html_template_data_set(&data, "X", "n;alert(1)");
+    out = neverc_html_template_render(
+        "<a href=\"javascript&colo{{.X}}\">", &data);
+    check("split named colon entity is neutralized",
+          out && strstr(out, "javascript:") == NULL &&
+              strstr(out, "javascript&colon;alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "colon;alert(1)");
+    out = neverc_html_template_render(
+        "<a href=\"javascript&{{.X}}\">", &data);
+    check("split amp-colon entity is neutralized",
+          out && strstr(out, "javascript:") == NULL &&
+              strstr(out, "javascript&colon;alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "58;alert(1)");
+    out = neverc_html_template_render(
+        "<a href=\"javascript&#{{.X}}\">", &data);
+    check("split numeric colon is neutralized",
+          out && strstr(out, "javascript:") == NULL &&
+              strstr(out, "javascript&#58;alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "a;alert(1)");
+    out = neverc_html_template_render(
+        "<a href=\"javascript&#x3{{.X}}\">", &data);
+    check("split hex colon is neutralized",
+          out && strstr(out, "javascript:") == NULL &&
+              strstr(out, "javascript&#x3a;alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "colon;text/html,alert(1)");
+    out = neverc_html_template_render(
+        "<a href=\"data&{{.X}}\">", &data);
+    check("split data colon entity is neutralized",
+          out && strstr(out, "data&colon;text") == NULL &&
+              strstr(out, "data&colon;alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "colon;alert(1)");
+    out = neverc_html_template_render(
+        "<a href=\"vbscript&{{.X}}\">", &data);
+    check("split vbscript colon entity is neutralized",
+          out && strstr(out, "vbscript&colon;alert") == NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", "alert(1)");
     out = neverc_html_template_render(
         "<iframe srcdoc=\"&lt;img src=x onerror={{.X}}&gt;\">", &data);
@@ -551,6 +602,22 @@ static void test_template_url_and_script(void) {
         "<div style=\"background:url(javascript&Colon;{{.X}})\">", &data);
     check("css url() html5 Colon is not a colon scheme",
           out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "n;alert(1)");
+    out = neverc_html_template_render(
+        "<div style=\"background:url(javascript&colo{{.X}})\">", &data);
+    check("css url() split named colon neutralized",
+          out && strstr(out, "javascript:") == NULL &&
+              strstr(out, "javascript&colon;") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "colon;alert(1)");
+    out = neverc_html_template_render(
+        "<div style=\"background:url(javascript&{{.X}})\">", &data);
+    check("css url() split amp-colon neutralized",
+          out && strstr(out, "javascript:") == NULL &&
+              strstr(out, "javascript&colon;") == NULL);
     free(out);
 
     neverc_html_template_data_set(&data, "X", "script:alert");

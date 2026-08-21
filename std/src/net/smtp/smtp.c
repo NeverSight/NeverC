@@ -186,6 +186,14 @@ static int smtp_line_has_break(const char *s, size_t len) {
     return 0;
 }
 
+/* Go smtp.PlainAuth isLocalhost: TLS is the only way to trust EHLO.
+ * Without TLS, a MITM can strip STARTTLS and advertise AUTH PLAIN. */
+static int smtp_is_localhost(const char *name) {
+    return name && (strcmp(name, "localhost") == 0 ||
+                    strcmp(name, "127.0.0.1") == 0 ||
+                    strcmp(name, "::1") == 0);
+}
+
 /* Send a command and read the response. Returns status code.
  * AUTH LOGIN continuations may be empty (base64 of an empty credential
  * is a blank CRLF line). Ordinary SMTP commands must not be. */
@@ -487,6 +495,9 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
     /* Go smtp.SendMail / PLAIN: do not send passwords on a connection
      * that advertised STARTTLS but was never upgraded. */
     if (c->supports_starttls && !c->tls) return -1;
+    /* Go smtp.PlainAuth: without TLS, EHLO (including AUTH and the
+     * absence of STARTTLS) is untrusted. Localhost is the only exception. */
+    if (!c->tls && !smtp_is_localhost(c->server_name)) return -1;
 
     if (method == NEVERC_SMTP_AUTH_PLAIN) {
         if (!c->supports_auth_plain) return -1;
