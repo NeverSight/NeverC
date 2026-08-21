@@ -193,6 +193,8 @@ static void test_look_path(void) {
     p = neverc_exec_look_path("this_command_does_not_exist_xyz", buf, sizeof(buf));
     ASSERT_TRUE(p == NULL);
     ASSERT_TRUE(neverc_exec_look_path("", buf, sizeof(buf)) == NULL);
+    ASSERT_TRUE(neverc_exec_look_path(".", buf, sizeof(buf)) == NULL);
+    ASSERT_TRUE(neverc_exec_look_path("..", buf, sizeof(buf)) == NULL);
 
 #if defined(_WIN32)
     {
@@ -211,6 +213,12 @@ static void test_look_path(void) {
             char old_path[32768];
             DWORD n = GetEnvironmentVariableA("PATH", old_path, sizeof(old_path));
             SetEnvironmentVariableA("PATH", ".\\");
+            p = neverc_exec_look_path("neverc_cwd_only_hijack.exe", buf, sizeof(buf));
+            ASSERT_TRUE(p == NULL);
+            SetEnvironmentVariableA("PATH", "./");
+            p = neverc_exec_look_path("neverc_cwd_only_hijack.exe", buf, sizeof(buf));
+            ASSERT_TRUE(p == NULL);
+            SetEnvironmentVariableA("PATH", "./.");
             p = neverc_exec_look_path("neverc_cwd_only_hijack.exe", buf, sizeof(buf));
             ASSERT_TRUE(p == NULL);
             SetEnvironmentVariableA("PATH", "C:");
@@ -331,6 +339,30 @@ static void test_look_path(void) {
     setenv("PATH", ".", 1);
     p = neverc_exec_look_path(name, buf, sizeof(buf));
     ASSERT_TRUE(p == NULL);
+    setenv("PATH", "./", 1);
+    p = neverc_exec_look_path(name, buf, sizeof(buf));
+    ASSERT_TRUE(p == NULL);
+    setenv("PATH", ".//", 1);
+    p = neverc_exec_look_path(name, buf, sizeof(buf));
+    ASSERT_TRUE(p == NULL);
+    setenv("PATH", "./.", 1);
+    p = neverc_exec_look_path(name, buf, sizeof(buf));
+    ASSERT_TRUE(p == NULL);
+    /* CVE-2025-47906: a PATH element that is itself a file must not
+     * make LookPath(".") / ".." resolve to that file. */
+    setenv("PATH", script, 1);
+    p = neverc_exec_look_path(".", buf, sizeof(buf));
+    ASSERT_TRUE(p == NULL);
+    p = neverc_exec_look_path("..", buf, sizeof(buf));
+    ASSERT_TRUE(p == NULL);
+    setenv("PATH", "./", 1);
+    {
+        neverc_exec_cmd_t *cwd_cmd = neverc_exec_command(name, NULL, 0);
+        neverc_exec_exit_status_t cwd_st = {0};
+        ASSERT_TRUE(cwd_cmd != NULL);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cwd_cmd, &cwd_st), -1);
+        neverc_exec_cmd_free(cwd_cmd);
+    }
     setenv("PATH", ":/usr/bin:", 1);
     p = neverc_exec_look_path(name, buf, sizeof(buf));
     ASSERT_TRUE(p == NULL);

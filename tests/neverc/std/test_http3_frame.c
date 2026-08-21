@@ -184,6 +184,20 @@ static void test_settings_grease_ignored(void) {
                                         &decoded), 0);
     ASSERT_EQ(decoded.qpack_max_table_capacity, 0);
     ASSERT_EQ(decoded.qpack_blocked_streams, 0);
+
+    /* Distinct GREASE IDs (0x21 and 0x40 = 0x1f*1+0x21) are ignored. */
+    uint8_t two[] = { 0x21, 0x00, 0x40, 0x40, 0x00 };
+    ASSERT_EQ(neverc_h3_settings_decode(two, sizeof(two), &decoded), 0);
+}
+
+static void test_settings_duplicate_grease_rejected(void) {
+    /* RFC 9114 §7.2.4: the same identifier MUST NOT occur more than once,
+     * including GREASE. quic-go parseSettingsFrame rejects Other[id]
+     * collisions the same way. */
+    uint8_t payload[] = { 0x21, 0x00, 0x21, 0x01 };
+    h3_settings_t decoded;
+    ASSERT_EQ(neverc_h3_settings_decode(payload, sizeof(payload),
+                                        &decoded), -1);
 }
 
 static void test_settings_truncated_pair_rejected(void) {
@@ -985,6 +999,7 @@ int main(void) {
     test_settings_reserved_http2_ids_rejected();
     test_settings_duplicate_ids_rejected();
     test_settings_grease_ignored();
+    test_settings_duplicate_grease_rejected();
     test_settings_truncated_pair_rejected();
     test_settings_zero_values();
     test_data_frame_write();

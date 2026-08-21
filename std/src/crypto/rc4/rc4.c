@@ -66,5 +66,5 @@ void neverc_rc4_xor_keystream(neverc_rc4_cipher_t *c,
 
 void neverc_rc4_reset(neverc_rc4_cipher_t *c) {
     if (!c) return;
-    memset(c, 0, sizeof(*c));
+    neverc_platform_secure_zero(c, sizeof(*c));
 }

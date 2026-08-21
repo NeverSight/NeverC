@@ -26,6 +26,20 @@ static void test_ecma_known(void) {
 
     uint64_t c = neverc_crc64_checksum(table, (const uint8_t *)"123456789", 9);
     check_u64("crc64_ecma('123456789')", c, 0x995DC9BBDF1939FAULL);
+
+    /* Go hash/crc64 golden */
+    check_u64("crc64_ecma('a')",
+              neverc_crc64_checksum(table, (const uint8_t *)"a", 1),
+              0x330284772E652B05ULL);
+    check_u64("crc64_ecma('abc')",
+              neverc_crc64_checksum(table, (const uint8_t *)"abc", 3),
+              0x2CD8094A1A277627ULL);
+    check_u64("crc64_ecma(broadcast)",
+              neverc_crc64_checksum(
+                  table,
+                  (const uint8_t *)"This is a test of the emergency broadcast system.",
+                  49),
+              0x27DB187FC15BBC72ULL);
 }
 
 static void test_iso_known(void) {
@@ -37,6 +51,20 @@ static void test_iso_known(void) {
 
     uint64_t c = neverc_crc64_checksum(table, (const uint8_t *)"123456789", 9);
     check_u64("crc64_iso('123456789')", c, 0xB90956C775A41001ULL);
+
+    /* Go hash/crc64 golden */
+    check_u64("crc64_iso('a')",
+              neverc_crc64_checksum(table, (const uint8_t *)"a", 1),
+              0x3420000000000000ULL);
+    check_u64("crc64_iso('abc')",
+              neverc_crc64_checksum(table, (const uint8_t *)"abc", 3),
+              0x3776C42000000000ULL);
+    check_u64("crc64_iso(broadcast)",
+              neverc_crc64_checksum(
+                  table,
+                  (const uint8_t *)"This is a test of the emergency broadcast system.",
+                  49),
+              0xE7FCF1006B503B61ULL);
 }
 
 static void test_incremental(void) {

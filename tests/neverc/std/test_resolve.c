@@ -323,6 +323,55 @@ static void test_lookup_ip(void) {
     check_int("lookup_ip invalid utf8 rejected",
               neverc_net_lookup_ip("ip", "\xff\xfe.example", &bad), -1);
 
+    neverc_net_addrs_t leftover;
+    leftover.count = 9;
+    strcpy(leftover.addrs[0], "8.8.8.8");
+    check_int("lookup_host CTL name rejected",
+              neverc_net_lookup_host("foo\nbar.example", &leftover), -1);
+    check_int("lookup_host CTL clears leftover", leftover.count, 0);
+    leftover.count = 9;
+    check_int("lookup_ip CR name rejected",
+              neverc_net_lookup_ip("ip", "foo\rbar.example", &leftover), -1);
+    check_int("lookup_ip CR clears leftover", leftover.count, 0);
+    leftover.count = 9;
+    check_int("lookup_ip TAB name rejected",
+              neverc_net_lookup_ip("ip4", "foo\tbar.example", &leftover), -1);
+    check_int("lookup_ip TAB clears leftover", leftover.count, 0);
+    leftover.count = 9;
+    check_int("lookup_addr CTL rejected",
+              neverc_net_lookup_addr("127.0.0.1\n", &leftover), -1);
+    check_int("lookup_addr CTL clears leftover", leftover.count, 0);
+    check_int("lookup_port CTL service rejected",
+              neverc_net_lookup_port("tcp", "http\n"), -1);
+    neverc_net_mx_list_t mxctl;
+    mxctl.count = 4;
+    check_int("lookup_mx CTL name rejected",
+              neverc_net_lookup_mx("example.com\n", &mxctl), -1);
+    check_int("lookup_mx CTL clears leftover", mxctl.count, 0);
+    neverc_net_txt_list_t txtctl;
+    txtctl.count = 4;
+    check_int("lookup_txt CTL name rejected",
+              neverc_net_lookup_txt("example.com\r", &txtctl), -1);
+    check_int("lookup_txt CTL clears leftover", txtctl.count, 0);
+    neverc_net_srv_list_t srvctl;
+    srvctl.count = 4;
+    check_int("lookup_srv CTL service rejected",
+              neverc_net_lookup_srv("http\n", "tcp", "example.com", &srvctl),
+              -1);
+    check_int("lookup_srv CTL service clears leftover", srvctl.count, 0);
+    srvctl.count = 4;
+    check_int("lookup_srv CTL proto rejected",
+              neverc_net_lookup_srv("http", "tcp\n", "example.com", &srvctl),
+              -1);
+    check_int("lookup_srv CTL proto clears leftover", srvctl.count, 0);
+    char cname_ctl[64];
+    memset(cname_ctl, 'A', sizeof(cname_ctl) - 1);
+    cname_ctl[sizeof(cname_ctl) - 1] = '\0';
+    check_int("lookup_cname CTL name rejected",
+              neverc_net_lookup_cname("localhost\n", cname_ctl,
+                                      sizeof(cname_ctl)), -1);
+    check_true("lookup_cname CTL clears leftover", cname_ctl[0] == '\0');
+
     /* Dual-stack / mapped literals must print as IPv4 for ACL matching. */
     neverc_net_addrs_t mapped;
     check_int("lookup_ip mapped literal",

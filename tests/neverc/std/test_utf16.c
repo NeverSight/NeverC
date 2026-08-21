@@ -167,6 +167,23 @@ static void test_encode_decode_seq(void) {
     need = neverc_utf16_encode(emoji, 1, tiny, 1);
     check_int("emoji encode need", (int)need, 2);
     check_i32("no lone high surrogate", tiny[0], 0);
+
+    /* WTF-16 would keep unpaired surrogates as themselves. Go utf16.Decode
+     * replaces them with U+FFFD; encode must not pass a surrogate through. */
+    uint16_t wtf_high[] = { 0xD83D };
+    neverc_utf16_decode(wtf_high, 1, dec, 16);
+    check_i32("WTF-16 unpaired high is FFFD not kept", dec[0],
+              NEVERC_UTF16_REPLACEMENT_CHAR);
+    uint16_t wtf_low[] = { 0xDE00 };
+    neverc_utf16_decode(wtf_low, 1, dec, 16);
+    check_i32("WTF-16 unpaired low is FFFD not kept", dec[0],
+              NEVERC_UTF16_REPLACEMENT_CHAR);
+    int32_t enc_surr[1];
+    uint16_t enc_surr_out[4];
+    enc_surr[0] = 0xD83D;
+    neverc_utf16_encode(enc_surr, 1, enc_surr_out, 4);
+    check_i32("encode surrogate rune is FFFD unit not WTF-16",
+              enc_surr_out[0], NEVERC_UTF16_REPLACEMENT_CHAR);
 }
 
 int main(void) {

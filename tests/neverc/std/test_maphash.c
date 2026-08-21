@@ -160,6 +160,40 @@ static void test_empty_data(void) {
     ASSERT_U64_EQ(neverc_maphash_sum64(&h), h1);
 }
 
+static void test_buf_size_boundary(void) {
+    printf("[buf_size_boundary]\n");
+    uint64_t seed = 0x9e3779b97f4a7c15ULL;
+    char buf[256];
+    memset(buf, 'Q', sizeof(buf));
+
+    const size_t sizes[] = {127, 128, 129, 256};
+    for (size_t s = 0; s < sizeof(sizes) / sizeof(sizes[0]); s++) {
+        size_t n = sizes[s];
+        uint64_t oneshot = neverc_maphash_bytes(seed, buf, n);
+
+        neverc_maphash_t h;
+        neverc_maphash_init(&h, seed);
+        ASSERT_U64_EQ(neverc_maphash_write(&h, buf, n), n);
+        ASSERT_U64_EQ(neverc_maphash_sum64(&h), oneshot);
+
+        neverc_maphash_init(&h, seed);
+        for (size_t i = 0; i < n; i++)
+            neverc_maphash_write_byte(&h, (uint8_t)buf[i]);
+        ASSERT_U64_EQ(neverc_maphash_sum64(&h), oneshot);
+
+        /* Split so the first write lands exactly on the 128-byte flush. */
+        neverc_maphash_init(&h, seed);
+        size_t first = n > 128 ? 128 : n;
+        neverc_maphash_write(&h, buf, first);
+        uint64_t mid = neverc_maphash_sum64(&h);
+        ASSERT_U64_EQ(mid, neverc_maphash_bytes(seed, buf, first));
+        if (first < n) {
+            neverc_maphash_write(&h, buf + first, n - first);
+            ASSERT_U64_EQ(neverc_maphash_sum64(&h), oneshot);
+        }
+    }
+}
+
 static void test_large_data(void) {
     printf("[large_data]\n");
     char buf[1024];
@@ -263,6 +297,7 @@ int main(void) {
     test_make_seed();
     test_seed_zero();
     test_empty_data();
+    test_buf_size_boundary();
     test_large_data();
     test_write_n();
     test_sum_reuse();

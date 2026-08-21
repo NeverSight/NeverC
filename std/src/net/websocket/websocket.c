@@ -302,8 +302,9 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
         size_t path_length = target_query
             ? (size_t)(target_query - parsed->target)
             : strlen(parsed->target);
-        if (path_length >= 2 && parsed->target[0] == '/' &&
-            parsed->target[1] == '/') {
+        if (path_length >= 2 &&
+            neverc_url_path_n_is_protocol_relative(
+                parsed->target, path_length)) {
             ws_set_error(errp, "invalid WebSocket request target");
             return -1;
         }
@@ -784,7 +785,8 @@ int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
             target, '?', target_length);
         size_t path_length = target_query
             ? (size_t)(target_query - target) : target_length;
-        if (path_length >= 2 && target[0] == '/' && target[1] == '/')
+        if (path_length >= 2 &&
+            neverc_url_path_n_is_protocol_relative(target, path_length))
             return -1;
         for (size_t i = 0; i < target_length; i++) {
             unsigned char c = (unsigned char)target[i];

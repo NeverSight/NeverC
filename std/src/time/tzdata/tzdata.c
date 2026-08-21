@@ -51,6 +51,20 @@ static size_t nc_slen(const char *s) {
     return n;
 }
 
+/* Go time.LoadLocation: reject "..", a leading '/' or '\\'. Empty is not
+ * UTC here — lookup documents NULL for unknown names. */
+static int tz_iana_name_ok(const char *name) {
+    if (!name || !name[0])
+        return 0;
+    if (name[0] == '/' || name[0] == '\\')
+        return 0;
+    for (const char *p = name; p[0] && p[1]; p++) {
+        if (p[0] == '.' && p[1] == '.')
+            return 0;
+    }
+    return 1;
+}
+
 /* TZif abbreviations are packed in a counted char array. A missing NUL
  * must fail closed: unbounded strlen would read past the file, and the
  * later memcpy of that length could overflow the heap copy. */
@@ -248,7 +262,7 @@ static void init_zones(void) {
 }
 
 const neverc_tzdata_zone_t *neverc_tzdata_lookup(const char *name) {
-    if (!name) return NULL;
+    if (!tz_iana_name_ok(name)) return NULL;
     init_zones();
     for (int i = 0; i < tz_count; i++) {
         if (nc_streq(tz_table[i].name, name))
@@ -1358,6 +1372,8 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
 neverc_tzdata_zone_t *neverc_tzdata_load_from_zip(const uint8_t *zip,
                                                   size_t zip_len,
                                                   const char *name) {
+    if (!tz_iana_name_ok(name))
+        return NULL;
     size_t n = 0;
     uint8_t *data = neverc_tzdata_zip_extract(zip, zip_len, name, &n);
     if (!data) return NULL;

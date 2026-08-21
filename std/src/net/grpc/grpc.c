@@ -606,6 +606,47 @@ static int grpc_binary_key(const char *key) {
     return length >= 4 && strcmp(key + length - 4, "-bin") == 0;
 }
 
+/* PROTOCOL-HTTP2 Custom-Metadata: keys ending in -bin are RFC 4648 Base64
+ * without padding (grpc-go encodeMetadataHeader uses RawStdEncoding). */
+static int grpc_metadata_value_wire(const neverc_grpc_metadata_t *item,
+                                    char **owned) {
+    size_t capacity;
+    size_t length;
+    *owned = NULL;
+    if (grpc_binary_key(item->key)) {
+        capacity = neverc_base64_raw_encoded_len(item->value_length);
+        if (capacity == SIZE_MAX ||
+            capacity > GRPC_MAX_ENCODED_METADATA_VALUE_SIZE)
+            return -1;
+        *owned = (char *)malloc(capacity + 1);
+        if (!*owned) return -1;
+        length = neverc_base64_raw_encode(
+            *owned, item->value, item->value_length);
+        if (length != capacity) {
+            free(*owned);
+            *owned = NULL;
+            return -1;
+        }
+    } else {
+        capacity = item->value_length;
+        *owned = (char *)malloc(capacity + 1);
+        if (!*owned) return -1;
+        if (capacity != 0)
+            memcpy(*owned, item->value, capacity);
+        length = capacity;
+        for (size_t j = 0; j < length; j++) {
+            unsigned char c = (unsigned char)(*owned)[j];
+            if (c < 0x20 || c == 0x7f) {
+                free(*owned);
+                *owned = NULL;
+                return -1;
+            }
+        }
+    }
+    (*owned)[length] = '\0';
+    return 0;
+}
+
 static const char *grpc_find_header(neverc_hpack_header_t *headers,
                                     size_t count, const char *name,
                                     size_t *matches) {
@@ -770,32 +811,9 @@ static int grpc_client_header_block_build(
             (metadata[i].value_length && !metadata[i].value) ||
             metadata[i].value_length > GRPC_MAX_METADATA_VALUE_SIZE)
             return -1;
-        size_t capacity;
-        size_t length;
-        if (grpc_binary_key(metadata[i].key)) {
-            capacity = neverc_base64_encoded_len(metadata[i].value_length);
-            if (capacity == SIZE_MAX ||
-                capacity > GRPC_MAX_ENCODED_METADATA_VALUE_SIZE)
-                return -1;
-            block->owned_values[i] = (char *)malloc(capacity + 1);
-            if (!block->owned_values[i]) return -1;
-            length = neverc_base64_encode(
-                block->owned_values[i], metadata[i].value,
-                metadata[i].value_length);
-            if (length != capacity) return -1;
-        } else {
-            capacity = metadata[i].value_length;
-            block->owned_values[i] = (char *)malloc(capacity + 1);
-            if (!block->owned_values[i]) return -1;
-            if (capacity != 0)
-                memcpy(block->owned_values[i], metadata[i].value, capacity);
-            length = capacity;
-            for (size_t j = 0; j < length; j++) {
-                unsigned char c = (unsigned char)block->owned_values[i][j];
-                if (c < 0x20 || c == 0x7f) return -1;
-            }
-        }
-        block->owned_values[i][length] = '\0';
+        if (grpc_metadata_value_wire(&metadata[i],
+                                     &block->owned_values[i]) != 0)
+            return -1;
         block->headers[block->count++] = (neverc_hpack_header_t){
             .name = (char *)metadata[i].key,
             .value = block->owned_values[i]};
@@ -1263,55 +1281,15 @@ neverc_grpc_result_t *neverc_grpc_client_call(
     for (size_t i = 0; i < metadata_count; i++) {
         if (!grpc_metadata_key_valid(metadata[i].key) ||
             (metadata[i].value_length > 0 && !metadata[i].value) ||
-            metadata[i].value_length > GRPC_MAX_METADATA_VALUE_SIZE) {
+            metadata[i].value_length > GRPC_MAX_METADATA_VALUE_SIZE ||
+            grpc_metadata_value_wire(&metadata[i], &owned_values[i]) != 0) {
             metadata_valid = 0;
             break;
         }
-        size_t value_capacity;
-        size_t value_length;
-        if (grpc_binary_key(metadata[i].key)) {
-            value_capacity = neverc_base64_encoded_len(
-                metadata[i].value_length);
-            if (value_capacity == SIZE_MAX ||
-                value_capacity > GRPC_MAX_ENCODED_METADATA_VALUE_SIZE) {
-                metadata_valid = 0;
-                break;
-            }
-            owned_values[i] = (char *)malloc(value_capacity + 1);
-            if (!owned_values[i]) {
-                metadata_valid = 0;
-                break;
-            }
-            value_length = neverc_base64_encode(
-                owned_values[i], metadata[i].value,
-                metadata[i].value_length);
-            if (value_length != value_capacity) {
-                metadata_valid = 0;
-                break;
-            }
-        } else {
-            value_capacity = metadata[i].value_length;
-            owned_values[i] = (char *)malloc(value_capacity + 1);
-            if (!owned_values[i]) {
-                metadata_valid = 0;
-                break;
-            }
-            if (value_capacity != 0)
-                memcpy(owned_values[i], metadata[i].value, value_capacity);
-            value_length = value_capacity;
-            for (size_t j = 0; j < value_length; j++)
-                if ((unsigned char)owned_values[i][j] < 0x20 ||
-                    (unsigned char)owned_values[i][j] == 0x7f) {
-                    metadata_valid = 0;
-                    break;
-                }
-        }
-        owned_values[i][value_length] = '\0';
         headers[header_count++] = (neverc_hpack_header_t){
             .name = (char *)metadata[i].key,
             .value = owned_values[i],
             .sensitive = 0};
-        if (!metadata_valid) break;
     }
     char timeout_value[10];
     int64_t deadline = context ? neverc_context_deadline(context) : 0;

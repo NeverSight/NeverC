@@ -88,6 +88,31 @@ static void test_invalid_headers_and_spans(void) {
                       invalid, valid_compressed_len, output, &output_len),
                   -1);
 
+    /* Adler-32 of 0 is a real checksum, not a skip / fail-open. */
+    memcpy(invalid, compressed, valid_compressed_len);
+    invalid[valid_compressed_len - 4] = 0;
+    invalid[valid_compressed_len - 3] = 0;
+    invalid[valid_compressed_len - 2] = 0;
+    invalid[valid_compressed_len - 1] = 0;
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_zlib_decompress(
+                      invalid, valid_compressed_len, output, &output_len),
+                  -1);
+
+    memcpy(invalid, compressed, valid_compressed_len);
+    invalid[1] |= 0x20; /* FDICT */
+    for (unsigned flag = 0; flag < 32; flag++) {
+        uint8_t flg = (uint8_t)(flag | 0x20U);
+        if ((((unsigned)invalid[0] * 256U + flg) % 31U) == 0) {
+            invalid[1] = flg;
+            break;
+        }
+    }
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_zlib_decompress(
+                      invalid, valid_compressed_len, output, &output_len),
+                  -1);
+
     output_len = sizeof(output);
     ASSERT_INT_EQ(neverc_zlib_decompress(
                       compressed, valid_compressed_len - 1U, output, &output_len),

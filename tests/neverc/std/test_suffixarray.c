@@ -195,6 +195,19 @@ static void test_bounds_and_ends(void) {
                                             results, 0, &n), 0);
     ASSERT_INT_EQ(n, 0);
 
+    ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, (const unsigned char *)"xabcyabc", 8,
+                                            results, 8, &n), 0);
+    ASSERT_INT_EQ(n, 1);
+    ASSERT_INT_EQ(results[0], 0);
+
+    n = 99;
+    ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, (const unsigned char *)"abc", 3,
+                                            results, 8, NULL), 0);
+
+    ASSERT_INT_EQ(neverc_suffixarray_lookup(NULL, (const unsigned char *)"a", 1,
+                                            results, 8, &n), 0);
+    ASSERT_INT_EQ(n, 0);
+
     neverc_suffixarray_free(&idx);
 }
 

@@ -337,6 +337,14 @@ int neverc_csv_read_all(const char *data, size_t data_len,
         return -1;
     char comment = (opts && opts->comment) ? opts->comment : 0;
     char delim = (opts && opts->delimiter) ? opts->delimiter : ',';
+    /* Go encoding/csv.Reader: Comma/Comment must be validDelim, and
+     * Comment must not equal Comma. Check before scanning so empty input
+     * with invalid options is an error, not a successful 0-record read. */
+    if (delim == '"' || delim == '\r' || delim == '\n')
+        return -1;
+    if (comment && (comment == delim || comment == '"' ||
+                    comment == '\r' || comment == '\n'))
+        return -1;
     int trim = (opts && opts->trim_leading_space) ? 1 : 0;
     int lazy = (opts && opts->lazy_quotes) ? 1 : 0;
     int nrecords = 0;

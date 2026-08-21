@@ -79,6 +79,30 @@ static void test_optional_headers_and_invalid_inputs(void) {
                   -1);
     extended[header_crc_pos] ^= 1;
 
+    /* FHCRC-only header: CRC16 covers the 10-byte header, not the CRC field.
+     * Must run while base_len is still the compressed size. */
+    {
+        uint8_t fhcrc[320];
+        memcpy(fhcrc, base, 10);
+        fhcrc[3] = 0x02;
+        uint16_t header_crc_only =
+            (uint16_t)(neverc_crc32_ieee(fhcrc, 10) & UINT32_C(0xffff));
+        fhcrc[10] = (uint8_t)header_crc_only;
+        fhcrc[11] = (uint8_t)(header_crc_only >> 8);
+        memcpy(fhcrc + 12, base + 10, base_len - 10);
+        size_t fhcrc_len = 12 + base_len - 10;
+        output_len = sizeof(output);
+        ASSERT_INT_EQ(neverc_gzip_decompress(
+                          fhcrc, fhcrc_len, output, &output_len),
+                      0);
+        ASSERT_TRUE(output_len == 3 && memcmp(output, "abc", 3) == 0);
+        fhcrc[10] ^= 1;
+        output_len = sizeof(output);
+        ASSERT_INT_EQ(neverc_gzip_decompress(
+                          fhcrc, fhcrc_len, output, &output_len),
+                      -1);
+    }
+
     uint8_t malformed[256];
     memcpy(malformed, base, base_len);
     malformed[3] = 0x04;

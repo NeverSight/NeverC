@@ -205,6 +205,29 @@ static void test_parse_edges(void) {
     ASSERT_STR_EQ(u.path, "/path");
     ASSERT_STR_EQ(u.raw_query, "q=1");
     ASSERT_STR_EQ(u.fragment, "frag");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "//[::1]/path"), 0);
+    ASSERT_STR_EQ(u.scheme, "");
+    ASSERT_STR_EQ(u.host, "::1");
+    ASSERT_STR_EQ(u.path, "/path");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "//[::ffff:127.0.0.1]:8080/x"), 0);
+    ASSERT_STR_EQ(u.host, "::ffff:127.0.0.1");
+    ASSERT_STR_EQ(u.port, "8080");
+    ASSERT_STR_EQ(u.path, "/x");
+    ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "//[::1]/path"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://user:p%40ss@[::1]:80/x"), 0);
+    ASSERT_STR_EQ(u.user, "user");
+    ASSERT_STR_EQ(u.password, "p%40ss");
+    ASSERT_STR_EQ(u.host, "::1");
+    ASSERT_STR_EQ(u.port, "80");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://u%40ser:p@host/"), 0);
+    ASSERT_STR_EQ(u.user, "u%40ser");
+    ASSERT_STR_EQ(u.password, "p");
+    ASSERT_STR_EQ(u.host, "host");
+    /* Last '@' splits userinfo from host (Go net/url). */
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://user:p@ss@host/"), 0);
+    ASSERT_STR_EQ(u.user, "user");
+    ASSERT_STR_EQ(u.password, "p@ss");
+    ASSERT_STR_EQ(u.host, "host");
     ASSERT_INT_EQ(neverc_url_parse(
         &u, "//user:p%40ss@[fe80::1%25eth0]:8080/x"), 0);
     ASSERT_STR_EQ(u.user, "user");
@@ -480,9 +503,18 @@ static void test_safe_redirect(void) {
     ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%2fevil.com", NULL), 0);
     ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%5cevil.com", NULL), 0);
     ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%5Cevil.com", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%09//evil.com", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%0d//evil.com", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%0a//evil.com", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%7f//evil.com", NULL), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%09/foo", NULL), 0);
     ASSERT_INT_EQ(neverc_url_is_safe_redirect("/foo%2fbar", NULL), 1);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/foo%09/bar", NULL), 1);
     ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/%2f/evil.com"), 1);
+    ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/%09//evil.com"), 1);
+    ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/%0d%0a//evil.com"), 1);
     ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/foo%2fbar"), 0);
+    ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/foo%09/bar"), 0);
     ASSERT_INT_EQ(neverc_url_path_n_is_protocol_relative("/%2f/x?y", 6), 1);
     ASSERT_INT_EQ(neverc_url_is_safe_redirect(
         "https://good.com/%2fevil.com", "good.com"), 1);

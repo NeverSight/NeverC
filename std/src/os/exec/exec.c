@@ -146,6 +146,17 @@ static int exec_batch_args_unsafe(const neverc_exec_cmd_t *cmd) {
     return exec_batch_args_have_metachars(cmd);
 }
 
+/* Go validateLookPath (CVE-2025-47906): "", ".", and ".." are not
+ * executable names. filepath.Join(path_entry, ".") can collapse to a
+ * PATH element that is itself a file; PATHEXT can turn that into a
+ * sibling executable. */
+static int exec_look_path_name_ok(const char *file) {
+    if (!file || file[0] == '\0') return 0;
+    if (file[0] == '.' && file[1] == '\0') return 0;
+    if (file[0] == '.' && file[1] == '.' && file[2] == '\0') return 0;
+    return 1;
+}
+
 static const char *exec_env_path(char **env, int env_count) {
     int i;
     if (!env) return NULL;
@@ -487,8 +498,8 @@ static const char *exec_look_in_win_path(const char *file, const char *path_env,
                                          char *buf, DWORD cap) {
     const char *p;
     int has_ext;
-    if (!file || file[0] == '\0' || !buf || cap == 0 || !path_env ||
-        path_env[0] == '\0')
+    if (!file || !exec_look_path_name_ok(file) || !buf || cap == 0 ||
+        !path_env || path_env[0] == '\0')
         return NULL;
     has_ext = exec_win_has_ext(file);
     p = path_env;
@@ -867,7 +878,8 @@ int neverc_exec_cmd_pid(const neverc_exec_cmd_t *cmd) {
 const char *neverc_exec_look_path(const char *file, char *buf, size_t cap) {
     char path_storage[32768];
     DWORD n;
-    if (!file || file[0] == '\0' || !buf || cap == 0 || cap > MAXDWORD)
+    if (!file || !exec_look_path_name_ok(file) || !buf || cap == 0 ||
+        cap > MAXDWORD)
         return NULL;
     if (strchr(file, '\\') || strchr(file, '/') ||
         (file[0] && file[1] == ':')) {
@@ -898,14 +910,14 @@ static int exec_is_exe_file(const char *path) {
     return stat(path, &st) == 0 && S_ISREG(st.st_mode);
 }
 
-/* Go 1.19+ LookPath: empty PATH entries, ".", and relative dirs that
- * Clean through `..` are ErrDot, not a search hit. */
+/* Go 1.19+ LookPath: empty PATH entries, cwd aliases (".", "./",
+ * ".//"), and relative dirs that Clean through `..` are ErrDot. */
 static int exec_posix_skip_path_dir(const char *dir, size_t dlen) {
     size_t i = 0;
     int saw_dotdot = 0;
+    int saw_real = 0;
     int is_abs = dlen > 0 && dir[0] == '/';
     if (dlen == 0) return 1;
-    if (dlen == 1 && dir[0] == '.') return 1;
     while (i < dlen) {
         while (i < dlen && dir[i] == '/') i++;
         if (i >= dlen) break;
@@ -917,8 +929,12 @@ static int exec_posix_skip_path_dir(const char *dir, size_t dlen) {
             saw_dotdot = 1;
             continue;
         }
+        saw_real = 1;
     }
-    return saw_dotdot && !is_abs;
+    if (saw_dotdot && !is_abs) return 1;
+    if (saw_real) return 0;
+    /* Only dots and slashes: ".", "./", ".//" are cwd. "/" is the root. */
+    return !is_abs;
 }
 
 static int exec_set_cloexec(int fd) {
@@ -942,7 +958,8 @@ static int exec_pipe(int fds[2]) {
 
 static const char *exec_look_in_path(const char *file, const char *path_env,
                                      char *buf, size_t cap) {
-    if (!file || file[0] == '\0' || !buf || cap == 0) return NULL;
+    if (!file || !exec_look_path_name_ok(file) || !buf || cap == 0)
+        return NULL;
     if (strchr(file, '/')) {
         if (exec_is_exe_file(file)) {
             size_t flen = strlen(file);

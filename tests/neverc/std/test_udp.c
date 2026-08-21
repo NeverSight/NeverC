@@ -168,6 +168,13 @@ static void test_options(void) {
                   neverc_udp_set_read_deadline(conn, 1), 0);
         check_int("absolute write deadline",
                   neverc_udp_set_write_deadline(conn, 1), 0);
+        {
+            char dead_buf[8];
+            check_int("past UDP read deadline fires",
+                      neverc_udp_read(conn, dead_buf, sizeof(dead_buf)), -1);
+        }
+        check_int("clear UDP read deadline",
+                  neverc_udp_set_read_deadline(conn, 0), 0);
         check_int("broadcast", neverc_udp_set_broadcast(conn, 1), 0);
         neverc_udp_close(conn);
     }

@@ -105,6 +105,47 @@ static void test_query_get(void) {
     check_str("query after long", v, "b");
 }
 
+/* Go Request.ParseForm / FormValue on application/x-www-form-urlencoded. */
+static void test_form_value(void) {
+    printf("[form_value]\n");
+    char buf[256];
+    const char *v;
+
+    v = neverc_http_form_value("name=John", 9, "name", buf, sizeof(buf));
+    check_str("form name", v, "John");
+
+    v = neverc_http_form_value("name=Hello+World!", 17, "name", buf, sizeof(buf));
+    check_str("form plus", v, "Hello World!");
+
+    v = neverc_http_form_value("x=hello%20world", 16, "x", buf, sizeof(buf));
+    check_str("form pct", v, "hello world");
+
+    v = neverc_http_form_value("na%6De=John", 11, "name", buf, sizeof(buf));
+    check_str("form encoded key", v, "John");
+
+    v = neverc_http_form_value("name", 4, "name", buf, sizeof(buf));
+    check_str("form key without equals", v, "");
+
+    v = neverc_http_form_value("name=John%00admin", 17, "name", buf, sizeof(buf));
+    check_int("form encoded NUL rejected", v == NULL, 1);
+
+    v = neverc_http_form_value("name=%%", 7, "name", buf, sizeof(buf));
+    check_int("form malformed percent rejected", v == NULL, 1);
+
+    v = neverc_http_form_value("a=1;b=2&name=ok", 15, "name", buf, sizeof(buf));
+    check_str("form skips semicolon pair", v, "ok");
+
+    v = neverc_http_form_value("a=1;b=2&name=ok", 15, "a", buf, sizeof(buf));
+    check_int("form semicolon pair not a value", v == NULL, 1);
+
+    v = neverc_http_form_value("name=John%00x&name=Jane", 23, "name", buf,
+                               sizeof(buf));
+    check_str("form later pair after NUL", v, "Jane");
+
+    v = neverc_http_form_value(NULL, 0, "k", buf, sizeof(buf));
+    check_int("form null body", v == NULL, 1);
+}
+
 /* ===== Mux ===== */
 
 static void dummy_handler(neverc_http_request_t *req,
@@ -4093,6 +4134,7 @@ static void test_response_header(void) {
 int main(void) {
     test_status_text();
     test_query_get();
+    test_form_value();
     test_mux();
     test_writer_null_safety();
     test_response_free_null();
@@ -4149,5 +4191,6 @@ int main(void) {
     printf("\n--- net/http: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ---\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

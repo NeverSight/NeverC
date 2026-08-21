@@ -371,6 +371,21 @@ static void test_cancel_slots_released_on_free(void) {
         neverc_context_free(ctx);
     }
 
+    for (int i = 0; i < 32; i++) {
+        neverc_cancel_func_t cancel = NULL;
+        neverc_context_t *ctx =
+            neverc_context_with_timeout(bg, 60000, &cancel);
+        ASSERT_TRUE(ctx != NULL);
+        ASSERT_TRUE(cancel != NULL);
+        neverc_context_free(ctx);
+    }
+
+    neverc_cancel_func_t again = NULL;
+    neverc_context_t *reuse = neverc_context_with_cancel(bg, &again);
+    ASSERT_TRUE(reuse != NULL);
+    ASSERT_TRUE(again != NULL);
+    neverc_context_free(reuse);
+
     neverc_context_free(bg);
 }
 

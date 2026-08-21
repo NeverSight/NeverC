@@ -790,6 +790,10 @@ int neverc_quic_stream_apply_stop_sending(
     struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t error_code);
 int neverc_quic_stream_apply_stop_sending_locked(
     struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t error_code);
+int neverc_quic_stream_apply_stream_data_blocked(
+    struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t maximum);
+int neverc_quic_stream_apply_stream_data_blocked_locked(
+    struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t maximum);
 int neverc_quic_conn_apply_max_data_locked(struct neverc_quic_conn *conn,
                                            uint64_t maximum);
 int neverc_quic_conn_add_peer_cid(struct neverc_quic_conn *conn,

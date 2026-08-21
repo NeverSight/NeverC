@@ -6,6 +6,8 @@
 #include "neverc/std/compress/gzip.h"
 #include "../_net_internal.h"
 #include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 static neverc_http_server_t *volatile g_server_ptr;
@@ -4410,46 +4412,59 @@ void neverc_http_error(neverc_http_response_writer_t *w,
     neverc_http_write_string(w, "\n");
 }
 
+/* Go url.QueryUnescape / ParseQuery: reject interior NUL, malformed %,
+ * and encoded NUL. The span is not necessarily C-string terminated. */
+static int http_form_unescape_span(const char *s, size_t n,
+                                   char *out, size_t out_cap) {
+    if (!out || out_cap == 0 || (!s && n > 0) || n == SIZE_MAX) return -1;
+    if (s && n > 0 && memchr(s, '\0', n)) return -1;
+    char *tmp = (char *)malloc(n + 1);
+    if (!tmp) return -1;
+    if (n) memcpy(tmp, s, n);
+    tmp[n] = '\0';
+    int decoded = neverc_url_query_unescape(tmp, out, out_cap);
+    free(tmp);
+    if (decoded < 0 || (size_t)decoded >= out_cap) return -1;
+    return decoded;
+}
+
 const char *neverc_http_form_value(const char *body, size_t body_len,
                                      const char *key, char *buf, size_t buflen) {
     if (!body || !key || !buf || buflen == 0 || body_len == 0) return NULL;
-    size_t klen = strlen(key);
+
+    char decoded_key[256];
     const char *end = body + body_len;
     const char *p = body;
 
     while (p < end) {
-        if ((size_t)(end - p) > klen && memcmp(p, key, klen) == 0 &&
-            p[klen] == '=') {
-            const char *val = p + klen + 1;
-            size_t i = 0;
-            while (val + i < end && val[i] != '&' && i < buflen - 1) {
-                if (val[i] == '+')
-                    buf[i] = ' ';
-                else if (val[i] == '%' && i + 2 < buflen - 1 &&
-                         val + i + 2 < end) {
-                    int hi = val[i + 1];
-                    int lo = val[i + 2];
-                    if (hi >= '0' && hi <= '9') hi -= '0';
-                    else if (hi >= 'a' && hi <= 'f') hi = hi - 'a' + 10;
-                    else if (hi >= 'A' && hi <= 'F') hi = hi - 'A' + 10;
-                    else { buf[i] = val[i]; i++; continue; }
-                    if (lo >= '0' && lo <= '9') lo -= '0';
-                    else if (lo >= 'a' && lo <= 'f') lo = lo - 'a' + 10;
-                    else if (lo >= 'A' && lo <= 'F') lo = lo - 'A' + 10;
-                    else { buf[i] = val[i]; i++; continue; }
-                    buf[i] = (char)(hi * 16 + lo);
-                    /* Consume 2 extra chars from val but only 1 in buf */
-                    val += 2;
-                } else {
-                    buf[i] = val[i];
-                }
-                i++;
-            }
-            buf[i] = '\0';
-            return buf;
+        const char *amp = (const char *)memchr(p, '&', (size_t)(end - p));
+        const char *pair_end = amp ? amp : end;
+        if (pair_end == p) {
+            p = amp ? amp + 1 : end;
+            continue;
         }
-        while (p < end && *p != '&') p++;
-        if (p < end) p++;
+        /* Go 1.17+ ParseQuery: a raw semicolon is not a value octet. Skip
+         * that pair and keep scanning, matching FormValue-after-error. */
+        if (memchr(p, ';', (size_t)(pair_end - p))) {
+            p = amp ? amp + 1 : end;
+            continue;
+        }
+
+        const char *eq = (const char *)memchr(p, '=', (size_t)(pair_end - p));
+        const char *key_end = eq ? eq : pair_end;
+        const char *val = eq ? eq + 1 : pair_end;
+        if (http_form_unescape_span(p, (size_t)(key_end - p),
+                                    decoded_key, sizeof(decoded_key)) < 0 ||
+            strcmp(decoded_key, key) != 0) {
+            p = amp ? amp + 1 : end;
+            continue;
+        }
+        if (http_form_unescape_span(val, (size_t)(pair_end - val),
+                                    buf, buflen) < 0) {
+            p = amp ? amp + 1 : end;
+            continue;
+        }
+        return buf;
     }
     return NULL;
 }

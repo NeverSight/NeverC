@@ -168,6 +168,27 @@ static void test_lookup(void) {
     check_int("factory EST no dst", z ? z->has_dst : 1, 0);
     check_int("factory EST summer",
               neverc_tzdata_offset_at(z, 1719835200LL), -18000);
+
+    z = neverc_tzdata_lookup("MST");
+    check_not_null("factory MST", z);
+    check_str("factory MST name", z ? z->name : NULL, "MST");
+    check_int("factory MST offset", z ? z->utc_offset : 0, -25200);
+    check_int("factory MST no dst", z ? z->has_dst : 1, 0);
+    check_int("factory MST summer",
+              neverc_tzdata_offset_at(z, 1719835200LL), -25200);
+
+    z = neverc_tzdata_lookup("HST");
+    check_not_null("factory HST", z);
+    check_str("factory HST name", z ? z->name : NULL, "HST");
+    check_int("factory HST offset", z ? z->utc_offset : 0, -36000);
+    check_int("factory HST no dst", z ? z->has_dst : 1, 0);
+
+    /* Go LoadLocation rejects ".." and a leading slash or backslash. */
+    check_null("lookup empty", neverc_tzdata_lookup(""));
+    check_null("lookup dot-dot", neverc_tzdata_lookup("America/../UTC"));
+    check_null("lookup leading slash", neverc_tzdata_lookup("/UTC"));
+    check_null("lookup leading backslash", neverc_tzdata_lookup("\\UTC"));
+    check_not_null("lookup UTC still works", neverc_tzdata_lookup("UTC"));
 }
 
 /* ===== Lookup by abbreviation ===== */
@@ -1079,6 +1100,11 @@ static void test_zip_tzif(void) {
     check_int("zip-loaded spring",
               neverc_tzdata_offset_at(z, NY_SPRING_2024), -14400);
     neverc_tzdata_zone_free(z);
+
+    check_null("load zip dot-dot name",
+               neverc_tzdata_load_from_zip(zip, zlen, "../America/New_York"));
+    check_null("load zip leading slash",
+               neverc_tzdata_load_from_zip(zip, zlen, "/America/New_York"));
 
     uint8_t bad[] = "not-tzif-data-at-all";
     check_null("bad tzif magic",

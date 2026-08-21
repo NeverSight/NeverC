@@ -753,7 +753,37 @@ typedef struct {
     neverc_tcp_listener_t *listener;
     int kind;
     int result;
+    char captured_bin[16];
 } grpc_fake_h2_t;
+
+static void grpc_fake_capture_bin(grpc_fake_h2_t *test, const uint8_t *payload,
+                                  size_t length) {
+    neverc_hpack_decoder_t *decoder;
+    neverc_hpack_header_t headers[32];
+    int nheaders = 0;
+    if (!test || !payload)
+        return;
+    decoder = neverc_hpack_decoder_create(4096);
+    if (!decoder ||
+        neverc_hpack_decode(decoder, payload, length, headers, 32,
+                            &nheaders) < 0) {
+        neverc_hpack_decoder_destroy(decoder);
+        return;
+    }
+    for (int i = 0; i < nheaders; i++) {
+        if (headers[i].name && headers[i].value &&
+            strcmp(headers[i].name, "x-bin") == 0) {
+            size_t n = strlen(headers[i].value);
+            if (n >= sizeof(test->captured_bin))
+                n = sizeof(test->captured_bin) - 1;
+            memcpy(test->captured_bin, headers[i].value, n);
+            test->captured_bin[n] = '\0';
+        }
+        free(headers[i].name);
+        free(headers[i].value);
+    }
+    neverc_hpack_decoder_destroy(decoder);
+}
 
 static void grpc_fake_h2_task(void *context) {
     grpc_fake_h2_t *test = (grpc_fake_h2_t *)context;
@@ -786,6 +816,7 @@ static void grpc_fake_h2_task(void *context) {
         if (header.type == NC_H2_FRAME_HEADERS && header.stream_id == 1U)
             break;
     }
+    grpc_fake_capture_bin(test, payload, header.length);
     neverc_hpack_encoder_t *encoder = neverc_hpack_encoder_create(4096);
     neverc_hpack_header_t headers[4];
     int header_count = 0;
@@ -803,14 +834,8 @@ static void grpc_fake_h2_task(void *context) {
             .name = ":status", .value = "503"};
         headers[header_count++] = (neverc_hpack_header_t){
             .name = "content-type", .value = "application/grpc"};
-    } else if (test->kind == 4 || test->kind == 5 || test->kind == 6) {
-        headers[header_count++] = (neverc_hpack_header_t){
-            .name = ":status", .value = "200"};
-        headers[header_count++] = (neverc_hpack_header_t){
-            .name = "content-type", .value = "application/grpc"};
-        headers[header_count++] = (neverc_hpack_header_t){
-            .name = "grpc-status", .value = "0"};
-    } else {
+    } else if (test->kind == 4 || test->kind == 5 || test->kind == 6 ||
+               test->kind == 7) {
         headers[header_count++] = (neverc_hpack_header_t){
             .name = ":status", .value = "503"};
         headers[header_count++] = (neverc_hpack_header_t){
@@ -840,7 +865,7 @@ static void grpc_fake_h2_task(void *context) {
     }
     neverc_hpack_encoder_destroy(encoder);
     uint8_t header_flags = NC_H2_FLAG_END_HEADERS;
-    if (test->kind == 0 || test->kind == 1)
+    if (test->kind == 0 || test->kind == 1 || test->kind == 7)
         header_flags = (uint8_t)(header_flags | NC_H2_FLAG_END_STREAM);
     if (!encoded ||
         grpc_h2_write_frame(
@@ -1060,11 +1085,51 @@ static void grpc_test_status_mapping(void) {
     CHECK(stream_status != NEVERC_GRPC_PERMISSION_DENIED);
 }
 
+static void grpc_test_binary_metadata_unpadded(void) {
+    static const uint8_t raw[] = {0x00};
+    neverc_grpc_metadata_t metadata = {"x-bin", raw, sizeof(raw)};
+    neverc_grpc_message_t request = {(const uint8_t *)"x", 1U};
+    grpc_fake_h2_t fake;
+    neverc_thread_executor_t *executor = NULL;
+    neverc_h2_client_t *client = grpc_start_fake_h2(&fake, &executor, 7);
+    neverc_grpc_result_t *result = client
+        ? neverc_grpc_client_call(
+              client, NULL, "/test.Echo/Unary", NEVERC_GRPC_UNARY,
+              &metadata, 1U, &request, 1U, 1024U)
+        : NULL;
+    CHECK(result != NULL);
+    CHECK(result && result->error == NULL);
+    CHECK(result && result->status == NEVERC_GRPC_OK);
+    CHECK(strcmp(fake.captured_bin, "AA") == 0);
+    neverc_grpc_result_free(result);
+    grpc_stop_fake_h2(&fake, executor, client);
+
+    executor = NULL;
+    client = grpc_start_fake_h2(&fake, &executor, 7);
+    const char *error = NULL;
+    neverc_grpc_client_stream_t *stream = client
+        ? neverc_grpc_client_stream_open(
+              client, NULL, "/test.Echo/Unary", NEVERC_GRPC_UNARY,
+              &metadata, 1U, 1024U, &error)
+        : NULL;
+    if (stream &&
+        neverc_grpc_client_stream_send(stream, NULL, "x", 1U) == 0 &&
+        neverc_grpc_client_stream_close_send(stream, NULL) == 0) {
+        neverc_grpc_message_t message;
+        (void)neverc_grpc_client_stream_receive(stream, NULL, &message);
+    }
+    CHECK(stream != NULL);
+    CHECK(strcmp(fake.captured_bin, "AA") == 0);
+    neverc_grpc_client_stream_free(stream);
+    grpc_stop_fake_h2(&fake, executor, client);
+}
+
 int main(void) {
     printf("gRPC test suite:\n");
     grpc_test_frame_and_timeout();
     grpc_test_metadata_limits();
     grpc_test_status_mapping();
+    grpc_test_binary_metadata_unpadded();
     grpc_test_h2c_end_to_end();
     grpc_test_tls_end_to_end();
     printf("grpc: %d checks, %d failed\n", tests_run, tests_failed);

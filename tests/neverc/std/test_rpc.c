@@ -652,6 +652,10 @@ static void rpc_test_open_codec(void) {
     CHECK(neverc_rpc_open_decode(encoded, encoded_length, 1024U, &decoded) ==
           -1);
     encoded[13] = 0;
+    encoded[12] = 3U;
+    CHECK(neverc_rpc_open_decode(encoded, encoded_length, 1024U, &decoded) ==
+          -1);
+    encoded[12] = (uint8_t)NEVERC_RPC_CODEC_JSON;
 
     open.method = "/game.Session/Join";
     open.method_length = strlen(open.method);

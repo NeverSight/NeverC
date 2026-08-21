@@ -43,6 +43,9 @@ static void test_fnv32a(void) {
     printf("[fnv32a]\n");
     check_u32("fnv32a(empty)", neverc_fnv_32a("", 0), 0x811c9dc5);
     check_u32("fnv32a(a)",     neverc_fnv_32a("a", 1), 0xe40c292c);
+    /* Go hash/fnv golden32a */
+    check_u32("fnv32a(ab)",    neverc_fnv_32a("ab", 2), 0x4d2505ca);
+    check_u32("fnv32a(abc)",   neverc_fnv_32a("abc", 3), 0x1a47e90b);
     check_u32("fnv32a(foobar)", neverc_fnv_32a("foobar", 6), 0xbf9cf968);
 }
 
@@ -58,6 +61,9 @@ static void test_fnv64a(void) {
     printf("[fnv64a]\n");
     check_u64("fnv64a(empty)", neverc_fnv_64a("", 0), 0xcbf29ce484222325ULL);
     check_u64("fnv64a(a)",     neverc_fnv_64a("a", 1), 0xaf63dc4c8601ec8cULL);
+    /* Go hash/fnv golden64a */
+    check_u64("fnv64a(ab)",    neverc_fnv_64a("ab", 2), 0x089c4407b545986aULL);
+    check_u64("fnv64a(abc)",   neverc_fnv_64a("abc", 3), 0xe71fa2190541574bULL);
     check_u64("fnv64a(foobar)", neverc_fnv_64a("foobar", 6), 0x85944171f73967e8ULL);
 }
 
@@ -85,6 +91,21 @@ static void test_fnv128(void) {
               0x0880945aeeab1be9ULL, 0x5aa073305526c088ULL);
     check_128("fnv128(abc)", neverc_fnv_sum128("abc", 3),
               0xa68bb2a4348b5822ULL, 0x836dbc78c6aee73bULL);
+
+    /* Longer than 8 bytes: exercises the unrolled loop and 128-bit mul carry.
+     * Independent of this implementation: FNV-1-128 with offset/prime from
+     * Go hash/fnv (prime = 2^88 + 0x13b). */
+    static const uint8_t ff32[32] = {
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+    };
+    check_128("fnv128(32*0xff)", neverc_fnv_sum128(ff32, sizeof ff32),
+              0xec8a9f9627439590ULL, 0x4eb76e4cc7af052dULL);
+    check_128("fnv128(fox)",
+              neverc_fnv_sum128("The quick brown fox jumps over the lazy dog", 43),
+              0x185adb693e7c9784ULL, 0x4ecfa9497cb529b6ULL);
 }
 
 static void test_fnv128a(void) {
@@ -101,6 +122,17 @@ static void test_fnv128a(void) {
               0xa68d622cec8b5822ULL, 0x836dbc7977af7f3bULL);
     check_128("fnv128a(foobar)", neverc_fnv_sum128a("foobar", 6),
               0x343e1662793c64bfULL, 0x6f0d3597ba446f18ULL);
+    static const uint8_t ff32[32] = {
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+    };
+    check_128("fnv128a(32*0xff)", neverc_fnv_sum128a(ff32, sizeof ff32),
+              0x435897b305839886ULL, 0xf6d3fe804b419a6dULL);
+    check_128("fnv128a(fox)",
+              neverc_fnv_sum128a("The quick brown fox jumps over the lazy dog", 43),
+              0x68cce4cd885ea042ULL, 0x39f02af30e297870ULL);
 }
 
 static void test_consistency(void) {

@@ -34,6 +34,10 @@ static void test_ieee(void) {
     check_u32("ieee(abc)",
               neverc_crc32_ieee("abc", 3),
               0x352441C2);
+
+    check_u32("ieee(fox)",
+              neverc_crc32_ieee("The quick brown fox jumps over the lazy dog", 43),
+              0x414FA339);
 }
 
 static void test_make_table(void) {
@@ -66,6 +70,16 @@ static void test_update(void) {
     uint32_t part = neverc_crc32_update(0, table, long_data, 40);
     part = neverc_crc32_update(part, table, long_data + 40, 40);
     check_u32("slicing8 80 vs 40+40", part, full);
+
+    /* ieee() always uses slicing-8; checksum() uses the byte table below 64. */
+    check_u32("ieee vs checksum 80", neverc_crc32_ieee(long_data, 80), full);
+
+    uint8_t eight[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    uint32_t c8 = neverc_crc32_checksum(table, eight, 8);
+    check_u32("ieee vs checksum 8", neverc_crc32_ieee(eight, 8), c8);
+    uint32_t c8_parts = neverc_crc32_update(0, table, eight, 3);
+    c8_parts = neverc_crc32_update(c8_parts, table, eight + 3, 5);
+    check_u32("update 3+5 vs 8", c8_parts, c8);
 }
 
 static void test_castagnoli(void) {
@@ -73,9 +87,17 @@ static void test_castagnoli(void) {
     neverc_crc32_table_t table;
     neverc_crc32_make_table(NEVERC_CRC32_CASTAGNOLI, table);
 
+    check_u32("castagnoli(empty)",
+              neverc_crc32_checksum(table, "", 0),
+              0);
     check_u32("castagnoli(123456789)",
               neverc_crc32_checksum(table, "123456789", 9),
               0xE3069283);
+    check_u32("castagnoli(fox)",
+              neverc_crc32_checksum(table,
+                                    "The quick brown fox jumps over the lazy dog",
+                                    43),
+              0x22620404);
 }
 
 static void test_koopman(void) {

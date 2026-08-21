@@ -520,6 +520,41 @@ static void test_invalid_inputs(void) {
                       -1);
     }
 
+    /* Go encoding/csv.Read: invalid Comma/Comment is errInvalidDelim even
+     * when there are no records (empty input must not succeed). */
+    {
+        const char *row[NEVERC_CSV_MAX_FIELDS];
+        const char **records[] = {row};
+        int field_count = 0;
+        neverc_csv_reader_opts_t comma_comment = {.comment = ','};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          "", 0U, records, &field_count, 1,
+                          work, sizeof(work), &comma_comment),
+                      -1);
+        neverc_csv_reader_opts_t quote_comment = {.comment = '"'};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          "a,b\n", 4U, records, &field_count, 1,
+                          work, sizeof(work), &quote_comment),
+                      -1);
+        neverc_csv_reader_opts_t nl_delim = {.delimiter = '\n'};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          "", 0U, records, &field_count, 1,
+                          work, sizeof(work), &nl_delim),
+                      -1);
+        neverc_csv_reader_opts_t cr_comment = {.comment = '\r'};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          "a,b\n", 4U, records, &field_count, 1,
+                          work, sizeof(work), &cr_comment),
+                      -1);
+        /* comment == delimiter would previously skip every record that
+         * started with the delimiter (silent data loss). */
+        neverc_csv_reader_opts_t same = {.delimiter = ';', .comment = ';'};
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          ";a;b\n", 5U, records, &field_count, 1,
+                          work, sizeof(work), &same),
+                      -1);
+    }
+
     neverc_csv_reader_opts_t lazy = {.lazy_quotes = 1};
     ASSERT_INT_EQ(neverc_csv_read_line(
                       "\"unterminated", 13U, fields, 2,

@@ -96,6 +96,8 @@ static void test_index(void) {
     check_int("index null haystack", neverc_cstring_index(NULL, "x"), -1);
     check_int("index null empty needle", neverc_cstring_index(NULL, NULL), 0);
     check_int("index null needle", neverc_cstring_index("hello", NULL), 0);
+    /* A C needle of only NUL is the empty string, not a search for 0x00. */
+    check_int("NUL-only needle is empty", neverc_cstring_index("hello", "\0"), 0);
 }
 
 static void test_last_index(void) {
@@ -916,5 +918,6 @@ int main(void) {
     printf("\n--- cstring: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ---\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

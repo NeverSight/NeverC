@@ -108,6 +108,20 @@ static void test_hmac_sha256_rfc4231(void) {
             "9b09ffa71b942fcb27635fbcd5b0e944"
             "bfdc63644f0713938a7f51535c3a35e2", 32);
     }
+
+    /* RFC 2104: key_len == block_size is padded, not hashed (>= would differ). */
+    {
+        uint8_t key[65]; memset(key, 0x0b, 65);
+        const uint8_t *data = (const uint8_t *)"Hi There";
+        neverc_hmac_sha256(key, 64, data, 8, mac);
+        check_hex("sha256 key_len == 64 not hashed", mac,
+            "21cd586aeca0579d99a1c938127c9252"
+            "5a371f807bc5ba6eb78bc825bd4f2be3", 32);
+        neverc_hmac_sha256(key, 65, data, 8, mac);
+        check_hex("sha256 key_len == 65 hashed", mac,
+            "727b82fba264393c5d67fd6d6ad783e9"
+            "019a1fa6a857fccb70f5852f04be5d5d", 32);
+    }
 }
 
 /*
@@ -141,6 +155,25 @@ static void test_hmac_md5_rfc2202(void) {
         neverc_hmac_md5(key, 16, data, 50, mac);
         check_hex("TC3 md5", mac, "56be34521d144c88dbb8c733f0e8b3f6", 16);
     }
+
+    /* TC6: key > block_size must be hashed first. */
+    {
+        uint8_t key[80]; memset(key, 0xaa, 80);
+        const uint8_t *data = (const uint8_t *)
+            "Test Using Larger Than Block-Size Key - Hash Key First";
+        neverc_hmac_md5(key, 80, data, 54, mac);
+        check_hex("TC6 md5 (long key)", mac, "6b1ab7fe4bd7bf8f0b62e6ce61b9d0cd", 16);
+    }
+
+    /* TC7: long key + long data */
+    {
+        uint8_t key[80]; memset(key, 0xaa, 80);
+        const uint8_t *data = (const uint8_t *)
+            "Test Using Larger Than Block-Size Key and Larger "
+            "Than One Block-Size Data";
+        neverc_hmac_md5(key, 80, data, 73, mac);
+        check_hex("TC7 md5 (long key+data)", mac, "6f630fad67cda0ee1fb1f562db3aa53e", 16);
+    }
 }
 
 /*
@@ -173,6 +206,27 @@ static void test_hmac_sha1_rfc2202(void) {
         uint8_t data[50]; memset(data, 0xdd, 50);
         neverc_hmac_sha1(key, 20, data, 50, mac);
         check_hex("TC3 sha1", mac, "125d7342b9ac11cd91a39af48aa17b4f63f175d3", 20);
+    }
+
+    /* TC6: key > block_size must be hashed first. */
+    {
+        uint8_t key[80]; memset(key, 0xaa, 80);
+        const uint8_t *data = (const uint8_t *)
+            "Test Using Larger Than Block-Size Key - Hash Key First";
+        neverc_hmac_sha1(key, 80, data, 54, mac);
+        check_hex("TC6 sha1 (long key)", mac,
+            "aa4ae5e15272d00e95705637ce8a3b55ed402112", 20);
+    }
+
+    /* TC7: long key + long data */
+    {
+        uint8_t key[80]; memset(key, 0xaa, 80);
+        const uint8_t *data = (const uint8_t *)
+            "Test Using Larger Than Block-Size Key and Larger "
+            "Than One Block-Size Data";
+        neverc_hmac_sha1(key, 80, data, 73, mac);
+        check_hex("TC7 sha1 (long key+data)", mac,
+            "e8e99d0f45237d786d6bbaa7965c7808bbff1a91", 20);
     }
 }
 
@@ -219,6 +273,39 @@ static void test_hmac_sha512_rfc4231(void) {
             "9b46d1f41b4aeec1121b013783f8f352"
             "6b56d037e05f2598bd0fd2215d6a1e52"
             "95e64f73f63f0aec8b915a985d786598", 64);
+    }
+
+    /* TC7: key and data both larger than SHA-512 block size. */
+    {
+        uint8_t key[131]; memset(key, 0xaa, 131);
+        const uint8_t *data = (const uint8_t *)
+            "This is a test using a larger than block-size key and a "
+            "larger than block-size data. The key needs to be hashed "
+            "before being used by the HMAC algorithm.";
+        neverc_hmac_sha512(key, 131, data, 152, mac);
+        check_hex("TC7 sha512 (long key+data)", mac,
+            "e37b6a775dc87dbaa4dfa9f96e5e3ffd"
+            "debd71f8867289865df5a32d20cdc944"
+            "b6022cac3c4982b10d5eeb55c3e4de15"
+            "134676fb6de0446065c97440fa8c6a58", 64);
+    }
+
+    /* RFC 2104: key_len == block_size is padded, not hashed. */
+    {
+        uint8_t key[129]; memset(key, 0x0b, 129);
+        const uint8_t *data = (const uint8_t *)"Hi There";
+        neverc_hmac_sha512(key, 128, data, 8, mac);
+        check_hex("sha512 key_len == 128 not hashed", mac,
+            "e0853e8ef09d70a6ae8431a46c5c8759"
+            "0e12ad57f6ab11504a15bf500b431c11"
+            "2501952fe1fdcdc6464e3b16d26a0702"
+            "52abd243a0efafb5cd46fc11c6934658", 64);
+        neverc_hmac_sha512(key, 129, data, 8, mac);
+        check_hex("sha512 key_len == 129 hashed", mac,
+            "aa1c23fe040c4f3e6545a9154e339d17"
+            "ffb5272e0a545b84d38b9bf8e2c7464d"
+            "f2d62bb5000557686f8510eb4302a0ca"
+            "e6b5dd1f3700beaede755f86fdbeb48f", 64);
     }
 }
 

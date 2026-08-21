@@ -73,8 +73,22 @@ static int copy_dns_name(char *dst, size_t dstsz, const char *src) {
     return 0;
 }
 
+/* Query names/service labels handed to getaddrinfo / res_query / DnsQuery.
+ * Reject C0 and DEL so a leftover Host/header cannot be injected through
+ * the resolver. Space (0x20) is allowed: Windows IPv6 zones like
+ * "Ethernet 2". Answers still use copy_dns_name (space-rejected). */
+static int dns_query_text_ok(const char *s) {
+    if (!s || !s[0]) return 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (*p < 0x20 || *p == 0x7f)
+            return 0;
+    }
+    return 1;
+}
+
 static int idna_lookup_name(const char *host, char *out, size_t cap) {
     if (!host || !host[0] || !out || cap == 0) return -1;
+    if (!dns_query_text_ok(host)) return -1;
     /* IPv6 literals (with or without zone) are not IDNA names. */
     if (strchr(host, ':')) {
         size_t n = strlen(host);
@@ -196,7 +210,7 @@ int neverc_net_lookup_ip(const char *network, const char *host,
                           neverc_net_addrs_t *out) {
     if (!out) return -1;
     memset(out, 0, sizeof(*out));
-    if (!host || !host[0]) return -1;
+    if (!host || !host[0] || !dns_query_text_ok(host)) return -1;
     ensure_wsa_init();
 
     /* getaddrinfo / inet_ntop often drop the zone; keep the input zone text
@@ -326,7 +340,7 @@ static int host_text_valid(const char *host) {
 }
 
 int neverc_net_lookup_port(const char *network, const char *service) {
-    if (!service || !service[0]) return -1;
+    if (!service || !service[0] || !dns_query_text_ok(service)) return -1;
     if (network && strcmp(network, "tcp") != 0 && strcmp(network, "udp") != 0)
         return -1;
     ensure_wsa_init();
@@ -375,7 +389,7 @@ int neverc_net_lookup_port(const char *network, const char *service) {
 int neverc_net_lookup_addr(const char *addr, neverc_net_addrs_t *out) {
     if (!out) return -1;
     memset(out, 0, sizeof(*out));
-    if (!addr || !addr[0]) return -1;
+    if (!addr || !addr[0] || !dns_query_text_ok(addr)) return -1;
     ensure_wsa_init();
 
     struct sockaddr_storage ss;
@@ -737,6 +751,10 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
 
     char ascii_name[256];
     if (idna_lookup_name(name, ascii_name, sizeof(ascii_name)) != 0)
+        return -1;
+    if (service && !dns_query_text_ok(service))
+        return -1;
+    if (proto && !dns_query_text_ok(proto))
         return -1;
 
     char qname[512];

@@ -54,6 +54,10 @@ static void test_rand_int(void) {
     check_int("rand_int ok", err, 0);
     check_bool("in range", val < 100, 1);
 
+    err = neverc_crypto_rand_int(&val, 1);
+    check_int("rand_int max=1 ok", err, 0);
+    check_bool("max=1 yields 0", val == 0, 1);
+
     int all_same = 1;
     uint64_t first;
     neverc_crypto_rand_int(&first, 1000);
@@ -90,6 +94,10 @@ static void test_prime(void) {
     err = neverc_crypto_rand_prime(buf, 8);
     check_int("prime 8-bit ok", err, 0);
     check_bool("8-bit odd", buf[0] & 1, 1);
+
+    err = neverc_crypto_rand_prime(buf, 2);
+    check_int("prime 2-bit ok", err, 0);
+    check_bool("2-bit is 3", buf[0] == 3, 1);
 }
 
 int main(void) {

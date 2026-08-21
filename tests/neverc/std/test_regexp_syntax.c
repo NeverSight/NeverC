@@ -245,6 +245,12 @@ static void test_parse_alternate(void) {
     check_not_null("a|b|c", n);
     check_int("a|b|c nsubs", n ? n->nsubs : 0, 3);
     neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("a|ab", 0, &err);
+    check_not_null("a|ab", n);
+    check_op("a|ab op", n, NC_RE_OP_ALTERNATE);
+    check_int("a|ab nsubs", n ? n->nsubs : 0, 2);
+    neverc_regexp_syntax_free(n);
 }
 
 static void test_parse_group(void) {
@@ -332,6 +338,19 @@ static void test_parse_charclass(void) {
 
     n = neverc_regexp_syntax_parse("[a-\\d]", 0, &err);
     check_null("[a-\\d] class as range end", n);
+
+    /* Go: `[\d-a]` is the class `\d`, then literal '-' and 'a' (not a range). */
+    n = neverc_regexp_syntax_parse("[\\d-a]", 0, &err);
+    check_not_null("[\\d-a]", n);
+    check_op("[\\d-a] op", n, NC_RE_OP_CHAR_CLASS);
+    check_int("[\\d-a] nrunes", n ? n->nrunes : 0, 6);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[^é]", 0, &err);
+    check_not_null("[^é] syntax accepts negated rune", n);
+    check_int("[^é] negated", n ? (n->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 0, 1);
+    check_int("[^é] nrunes", n ? n->nrunes : 0, 2);
+    neverc_regexp_syntax_free(n);
 
     n = neverc_regexp_syntax_parse("[\\a]", 0, &err);
     check_not_null("[\\a]", n);

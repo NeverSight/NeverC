@@ -274,6 +274,10 @@ static void test_reject_unsafe_paths(void) {
     check_int("writer rejects nested traversal",
               neverc_zip_writer_add(
                   &w, "foo/../bar", payload, sizeof(payload) - 1), -1);
+    check_int("writer rejects deep traversal",
+              neverc_zip_writer_add(
+                  &w, "foo/bar/../../etc/passwd", payload,
+                  sizeof(payload) - 1), -1);
     check_int("writer rejects backslash",
               neverc_zip_writer_add(
                   &w, "foo\\..\\bar", payload, sizeof(payload) - 1), -1);
@@ -481,6 +485,26 @@ static void test_directory_extra_and_descriptor(void) {
     if (n > 0) {
         neverc_zip_reader_t reader;
         check_int("reader rejects nested traversal",
+                  neverc_zip_reader_init(&reader, crafted, n), -1);
+        neverc_zip_reader_free(&reader);
+    }
+
+    n = build_stored_zip(crafted, sizeof(crafted), "foo/bar/../../etc/passwd",
+                         payload, sizeof(payload) - 1U, 0, 0, 0);
+    check_int("deep traversal fixture", n > 0, 1);
+    if (n > 0) {
+        neverc_zip_reader_t reader;
+        check_int("reader rejects deep traversal",
+                  neverc_zip_reader_init(&reader, crafted, n), -1);
+        neverc_zip_reader_free(&reader);
+    }
+
+    n = build_stored_zip(crafted, sizeof(crafted), "foo\\bar",
+                         payload, sizeof(payload) - 1U, 0, 0, 0);
+    check_int("backslash fixture", n > 0, 1);
+    if (n > 0) {
+        neverc_zip_reader_t reader;
+        check_int("reader rejects backslash name",
                   neverc_zip_reader_init(&reader, crafted, n), -1);
         neverc_zip_reader_free(&reader);
     }

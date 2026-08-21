@@ -264,18 +264,29 @@ static void test_invalid_spans_and_lengths(void) {
                    okm, 255U * 64U + 1U, prk512, NULL, 0) == -1);
 
 #if SIZE_MAX > (UINT64_MAX / 8)
-    check_true("SHA-256 extract rejects wrapping IKM",
-               neverc_hkdf_extract_sha256(
-                   prk256, &byte, 1, &byte, SIZE_MAX) == -1);
-    check_true("SHA-256 extract rejects wrapping salt",
-               neverc_hkdf_extract_sha256(
-                   prk256, &byte, SIZE_MAX, &byte, 1) == -1);
-    check_true("SHA-256 expand rejects wrapping info",
-               neverc_hkdf_expand_sha256(
-                   okm, sizeof(okm), prk256, &byte, SIZE_MAX) == -1);
-    check_true("SHA-256 full rejects wrapping IKM",
-               neverc_hkdf_sha256(
-                   okm, 32, &byte, SIZE_MAX, &byte, 1, &byte, 0) == -1);
+    {
+        uint8_t sentinel[32];
+        uint8_t zeros[32] = {0};
+        memset(sentinel, 0xa5, sizeof(sentinel));
+        memcpy(prk256, sentinel, sizeof(prk256));
+        check_true("SHA-256 extract rejects wrapping IKM",
+                   neverc_hkdf_extract_sha256(
+                       prk256, &byte, 1, &byte, SIZE_MAX) == -1);
+        check_true("SHA-256 wrapping IKM wipes PRK",
+                   memcmp(prk256, zeros, sizeof(prk256)) == 0);
+        memcpy(prk256, sentinel, sizeof(prk256));
+        check_true("SHA-256 extract rejects wrapping salt",
+                   neverc_hkdf_extract_sha256(
+                       prk256, &byte, SIZE_MAX, &byte, 1) == -1);
+        check_true("SHA-256 wrapping salt wipes PRK",
+                   memcmp(prk256, zeros, sizeof(prk256)) == 0);
+        check_true("SHA-256 expand rejects wrapping info",
+                   neverc_hkdf_expand_sha256(
+                       okm, sizeof(okm), prk256, &byte, SIZE_MAX) == -1);
+        check_true("SHA-256 full rejects wrapping IKM",
+                   neverc_hkdf_sha256(
+                       okm, 32, &byte, SIZE_MAX, &byte, 1, &byte, 0) == -1);
+    }
 #endif
 
 #if SIZE_MAX > (UINT64_MAX - 128)

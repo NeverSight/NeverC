@@ -714,6 +714,56 @@ static void test_stop_sending_creates_peer_bidi(void) {
     neverc_quic_conn_destroy(conn);
 }
 
+static void test_stream_data_blocked_send_only_is_stream_state_error(void) {
+    /* RFC 9000 §19.13: STREAM_DATA_BLOCKED on a send-only stream MUST
+     * close with STREAM_STATE_ERROR. quic-go getReceiveStream does the
+     * same. The frame still opens a peer receive stream (§3.2). */
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    ASSERT_EQ(neverc_quic_stream_apply_stream_data_blocked(conn, 8, 1024),
+              0);
+    ASSERT_EQ(conn->n_streams, 3);
+    ASSERT_NOT_NULL(neverc_quic_conn_find_stream(conn, 0));
+    ASSERT_NOT_NULL(neverc_quic_conn_find_stream(conn, 4));
+    ASSERT_NOT_NULL(neverc_quic_conn_find_stream(conn, 8));
+    ASSERT_EQ(neverc_quic_stream_apply_stream_data_blocked(conn, 2, 1024),
+              0);
+    ASSERT_NOT_NULL(neverc_quic_conn_find_stream(conn, 2));
+
+    ASSERT_EQ(neverc_quic_stream_apply_stream_data_blocked(conn, 3, 1024),
+              -1);
+    ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_STREAM_STATE_ERROR);
+    neverc_quic_conn_destroy(conn);
+
+    conn = neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    ASSERT_EQ(neverc_quic_stream_apply_stream_data_blocked(conn, 1, 1024),
+              -1);
+    ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_STREAM_STATE_ERROR);
+    neverc_quic_conn_destroy(conn);
+
+    conn = neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    quic_stream_t *local = neverc_quic_conn_open_stream(conn);
+    ASSERT_NOT_NULL(local);
+    ASSERT_EQ(neverc_quic_stream_apply_stream_data_blocked(
+                  conn, local->id, 2048),
+              0);
+    neverc_quic_conn_destroy(conn);
+
+    conn = neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    conn->local_params.initial_max_streams_bidi = 2;
+    ASSERT_EQ(neverc_quic_stream_apply_stream_data_blocked(conn, 8, 1024),
+              -1);
+    ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_STREAM_LIMIT_ERROR);
+    neverc_quic_conn_destroy(conn);
+}
+
 static void test_decode_packet_number_wrap_and_limit(void) {
     ASSERT_EQ(neverc_quic_decode_packet_number(250, 5, 8), 261);
     ASSERT_EQ(neverc_quic_decode_packet_number(0, 1, 8), 1);
@@ -1411,6 +1461,7 @@ int main(void) {
     test_stream_receive_gap_respects_limit();
     test_max_stream_data_creates_peer_bidi();
     test_stop_sending_creates_peer_bidi();
+    test_stream_data_blocked_send_only_is_stream_state_error();
     test_decode_packet_number_wrap_and_limit();
     test_v1_long_header_type_bits();
     test_client_drops_server_initial_token();

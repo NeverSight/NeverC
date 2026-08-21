@@ -197,6 +197,27 @@ static void test_oneshot_seal_open(void) {
     ASSERT(rc == 0, "open");
     ASSERT(pt_len == sizeof(msg)-1, "open length");
     ASSERT(memcmp(pt, msg, pt_len) == 0, "match");
+
+    size_t empty_ct_len = 0;
+    ASSERT(neverc_hpke_seal(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               pub, (size_t)pub_len, NULL, 0,
+               NULL, 0, ct, &empty_ct_len) == 0,
+           "empty plaintext seal");
+    ASSERT(empty_ct_len == 32U + 16U, "empty plaintext is enc || tag");
+    size_t empty_pt_len = 99U;
+    uint8_t empty_pt_byte = 0xa5;
+    ASSERT(neverc_hpke_open(
+               NEVERC_HPKE_KEM_X25519_SHA256,
+               NEVERC_HPKE_KDF_SHA256,
+               NEVERC_HPKE_AEAD_AES128GCM,
+               priv, (size_t)priv_len, NULL, 0,
+               ct, empty_ct_len, NULL, &empty_pt_len) == 0,
+           "empty plaintext open");
+    ASSERT(empty_pt_len == 0U, "empty plaintext length");
+    ASSERT(empty_pt_byte == 0xa5, "NULL empty open writes nothing");
     printf("ok\n");
 }
 
@@ -436,6 +457,16 @@ static void test_rfc9180_x25519_aes128_vector(void) {
                memcmp(recipient.ctx.base_nonce, expected_nonce,
                       sizeof(expected_nonce)) == 0,
            "RFC base nonce");
+    uint8_t expected_exporter_secret[32];
+    ASSERT(decode_hex(
+               "45ff1c2e220db587171952c0592d5f5ebe103f1561a2614e38f2ffd47e99e3f8",
+               expected_exporter_secret,
+               sizeof(expected_exporter_secret)) == 0,
+           "decode RFC exporter secret");
+    ASSERT(recipient.ctx.exp_len == (int)sizeof(expected_exporter_secret) &&
+               memcmp(recipient.ctx.exp_secret, expected_exporter_secret,
+                      sizeof(expected_exporter_secret)) == 0,
+           "RFC exporter secret");
 
     uint8_t plaintext[sizeof(expected_plaintext)];
     ASSERT(neverc_hpke_recipient_open(
@@ -451,6 +482,30 @@ static void test_rfc9180_x25519_aes128_vector(void) {
            "RFC export");
     ASSERT(memcmp(exported, expected_export, sizeof(exported)) == 0,
            "RFC exported value");
+
+    uint8_t ctx00[1], expected_export_00[32], expected_export_test[32];
+    ASSERT(decode_hex("00", ctx00, sizeof(ctx00)) == 0,
+           "decode RFC exporter context 00");
+    ASSERT(decode_hex(
+               "2e8f0b54673c7029649d4eb9d5e33bf1872cf76d623ff164ac185da9e88c21a5",
+               expected_export_00, sizeof(expected_export_00)) == 0,
+           "decode RFC export context 00");
+    ASSERT(neverc_hpke_recipient_export(
+               &recipient, ctx00, sizeof(ctx00), exported,
+               sizeof(exported)) == 0,
+           "RFC export context 00");
+    ASSERT(memcmp(exported, expected_export_00, sizeof(exported)) == 0,
+           "RFC exported value for context 00");
+    ASSERT(decode_hex(
+               "e9e43065102c3836401bed8c3c3c75ae46be1639869391d62c61f1ec7af54931",
+               expected_export_test, sizeof(expected_export_test)) == 0,
+           "decode RFC TestContext export");
+    ASSERT(neverc_hpke_recipient_export(
+               &recipient, (const uint8_t *)"TestContext", 11, exported,
+               sizeof(exported)) == 0,
+           "RFC export TestContext");
+    ASSERT(memcmp(exported, expected_export_test, sizeof(exported)) == 0,
+           "RFC exported value for TestContext");
     printf("ok\n");
 }
 
@@ -628,6 +683,18 @@ static void test_rfc9180_p256_sha512_vector(void) {
                   sizeof(expected_nonce)) == 0,
            "SHA-512 RFC base nonce");
 
+    uint8_t expected_exporter_secret[64];
+    ASSERT(decode_hex(
+               "4a7abb2ac43e6553f129b2c5750a7e82d149a76ed56dc342d7bca61e26d494f4"
+               "855dff0d0165f27ce57756f7f16baca006539bb8e4518987ba610480ac03efa8",
+               expected_exporter_secret,
+               sizeof(expected_exporter_secret)) == 0,
+           "decode SHA-512 exporter secret");
+    ASSERT(recipient.ctx.exp_len == (int)sizeof(expected_exporter_secret) &&
+               memcmp(recipient.ctx.exp_secret, expected_exporter_secret,
+                      sizeof(expected_exporter_secret)) == 0,
+           "SHA-512 RFC exporter secret");
+
     uint8_t plaintext[sizeof(expected_plaintext)];
     ASSERT(neverc_hpke_recipient_open(
                &recipient, aad, sizeof(aad), ciphertext, sizeof(ciphertext),
@@ -635,6 +702,40 @@ static void test_rfc9180_p256_sha512_vector(void) {
            "SHA-512 RFC ciphertext opens");
     ASSERT(memcmp(plaintext, expected_plaintext, sizeof(plaintext)) == 0,
            "SHA-512 RFC plaintext matches");
+
+    uint8_t exported[32], expected_export[32];
+    ASSERT(decode_hex(
+               "a32186b8946f61aeead1c093fe614945f85833b165b28c46bf271abf16b57208",
+               expected_export, sizeof(expected_export)) == 0,
+           "decode SHA-512 empty export");
+    ASSERT(neverc_hpke_recipient_export(
+               &recipient, NULL, 0, exported, sizeof(exported)) == 0,
+           "SHA-512 RFC export");
+    ASSERT(memcmp(exported, expected_export, sizeof(exported)) == 0,
+           "SHA-512 RFC exported value");
+    uint8_t ctx00[1];
+    ASSERT(decode_hex("00", ctx00, sizeof(ctx00)) == 0,
+           "decode SHA-512 exporter context 00");
+    ASSERT(decode_hex(
+               "84998b304a0ea2f11809398755f0abd5f9d2c141d1822def79dd15c194803c2a",
+               expected_export, sizeof(expected_export)) == 0,
+           "decode SHA-512 export context 00");
+    ASSERT(neverc_hpke_recipient_export(
+               &recipient, ctx00, sizeof(ctx00), exported,
+               sizeof(exported)) == 0,
+           "SHA-512 export context 00");
+    ASSERT(memcmp(exported, expected_export, sizeof(exported)) == 0,
+           "SHA-512 exported value for context 00");
+    ASSERT(decode_hex(
+               "93fb9411430b2cfa2cf0bed448c46922a5be9beff20e2e621df7e4655852edbc",
+               expected_export, sizeof(expected_export)) == 0,
+           "decode SHA-512 TestContext export");
+    ASSERT(neverc_hpke_recipient_export(
+               &recipient, (const uint8_t *)"TestContext", 11, exported,
+               sizeof(exported)) == 0,
+           "SHA-512 export TestContext");
+    ASSERT(memcmp(exported, expected_export, sizeof(exported)) == 0,
+           "SHA-512 exported value for TestContext");
     printf("ok\n");
 }
 
@@ -676,12 +777,47 @@ static void test_rfc9180_export_only_vector(void) {
                &recipient, NULL, 0, dummy, sizeof(dummy), dummy) == -1,
            "export-only open is rejected");
 
+    uint8_t expected_exporter_secret[32];
+    ASSERT(decode_hex(
+               "79dc8e0509cf4a3364ca027e5a0138235281611ca910e435e8ed58167c72f79b",
+               expected_exporter_secret,
+               sizeof(expected_exporter_secret)) == 0,
+           "decode export-only exporter secret");
+    ASSERT(recipient.ctx.exp_len == (int)sizeof(expected_exporter_secret) &&
+               memcmp(recipient.ctx.exp_secret, expected_exporter_secret,
+                      sizeof(expected_exporter_secret)) == 0,
+           "export-only RFC exporter secret");
+
     uint8_t exported[sizeof(expected_export)];
     ASSERT(neverc_hpke_recipient_export(
                &recipient, NULL, 0, exported, sizeof(exported)) == 0,
            "export-only export");
     ASSERT(memcmp(exported, expected_export, sizeof(exported)) == 0,
            "export-only RFC exported value");
+
+    uint8_t ctx00[1];
+    ASSERT(decode_hex("00", ctx00, sizeof(ctx00)) == 0,
+           "decode export-only exporter context 00");
+    ASSERT(decode_hex(
+               "d5535b87099c6c3ce80dc112a2671c6ec8e811a2f284f948cec6dd1708ee33f0",
+               expected_export, sizeof(expected_export)) == 0,
+           "decode export-only export context 00");
+    ASSERT(neverc_hpke_recipient_export(
+               &recipient, ctx00, sizeof(ctx00), exported,
+               sizeof(exported)) == 0,
+           "export-only export context 00");
+    ASSERT(memcmp(exported, expected_export, sizeof(exported)) == 0,
+           "export-only exported value for context 00");
+    ASSERT(decode_hex(
+               "ffaabc85a776136ca0c378e5d084c9140ab552b78f039d2e8775f26efff4c70e",
+               expected_export, sizeof(expected_export)) == 0,
+           "decode export-only TestContext export");
+    ASSERT(neverc_hpke_recipient_export(
+               &recipient, (const uint8_t *)"TestContext", 11, exported,
+               sizeof(exported)) == 0,
+           "export-only export TestContext");
+    ASSERT(memcmp(exported, expected_export, sizeof(exported)) == 0,
+           "export-only exported value for TestContext");
     printf("ok\n");
 }
 
@@ -955,6 +1091,18 @@ static void test_limits_and_invalid_inputs(void) {
                (size_t)UINT16_MAX + 1U) == -1,
            "oversized export rejected");
     ASSERT(output[0] == 0x5a, "oversized export writes nothing");
+    /* RFC 9180 §5.3: L ≤ 255·Nh. HKDF-SHA256 Nh = 32. */
+    {
+        uint8_t max_export[255 * 32];
+        ASSERT(neverc_hpke_sender_export(
+                   &sender, NULL, 0, max_export, sizeof(max_export)) == 0,
+               "max HKDF-SHA256 export length");
+        output[0] = 0x5a;
+        ASSERT(neverc_hpke_sender_export(
+                   &sender, NULL, 0, output, sizeof(max_export) + 1U) == -1,
+               "255*Nh+1 export rejected");
+        ASSERT(output[0] == 0x5a, "over-limit export writes nothing");
+    }
 
     neverc_hpke_sender_t invalid_sender;
     enc_len = sizeof(enc);

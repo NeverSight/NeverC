@@ -102,6 +102,15 @@ static void test_cas(void) {
 
     ASSERT_TRUE(!neverc_atomic_cas_int32(&v, 10, 30));
     ASSERT_INT_EQ(neverc_atomic_load_int32(&v), 20);
+
+    _Alignas(8) volatile int64_t v64 = 20;
+    ASSERT_TRUE(neverc_atomic_cas_int64(&v64, 20, 30));
+    ASSERT_TRUE(!neverc_atomic_cas_int64(&v64, 20, 40));
+    ASSERT_INT_EQ(neverc_atomic_load_int64(&v64), 30);
+
+    _Alignas(8) volatile uint64_t u64 = 8;
+    ASSERT_TRUE(!neverc_atomic_cas_uint64(&u64, 7, 11));
+    ASSERT_INT_EQ(neverc_atomic_load_uint64(&u64), 8);
 }
 
 static void test_pointer(void) {

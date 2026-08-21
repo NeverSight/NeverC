@@ -71,6 +71,19 @@ static void test_search(void) {
     check_size("index byte", neverc_bytes_index_byte(B("hello"), 'l'), 2);
     check_size("index byte none", neverc_bytes_index_byte(B("hello"), 'z'), NOT_FOUND);
 
+    static const uint8_t with_nul[] = { 'a', 0, 'b', 0, 'c' };
+    check_size("index byte NUL",
+               neverc_bytes_index_byte(with_nul, sizeof(with_nul), 0), 1);
+    check_size("last index byte NUL",
+               neverc_bytes_last_index_byte(with_nul, sizeof(with_nul), 0), 3);
+    check_size("index NUL needle",
+               neverc_bytes_index(with_nul, sizeof(with_nul), with_nul + 1, 1),
+               1);
+    check_size("last index NUL needle",
+               neverc_bytes_last_index(with_nul, sizeof(with_nul),
+                                       with_nul + 1, 1),
+               3);
+
     check_size("last index", neverc_bytes_last_index(B("go gopher"), B("go")), 3);
     check_size("last index empty sep", neverc_bytes_last_index(B("hello"), B("")), 5);
     check_size("last index needle longer",
@@ -213,6 +226,13 @@ static void test_transform(void) {
     check_bool("replace empty-old overflow rejected", overflow == NULL, 1);
     check_size("replace empty-old overflow length", outlen, 0);
     free(overflow);
+
+    static const uint8_t nul_hay[] = { 'a', 0, 'b', 0, 'c' };
+    static const uint8_t nul_old[] = { 0 };
+    uint8_t *repl_nul = neverc_bytes_replace(nul_hay, sizeof(nul_hay),
+                                             nul_old, 1, B("X"), -1, &outlen);
+    check_bytes("replace embedded NUL", repl_nul, outlen, "aXbXc");
+    free(repl_nul);
 }
 
 static void test_trim(void) {
@@ -816,5 +836,6 @@ int main(void) {
     test_runes();
     test_to_valid_utf8();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

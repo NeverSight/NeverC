@@ -694,6 +694,17 @@ static void test_independent_timeouts(void) {
     check_int("set absolute write deadline",
               neverc_tcp_set_write_deadline(a, test_now_ms() + 500), 0);
 
+    started = test_now_ms();
+    check_int("set past read deadline",
+              neverc_tcp_set_read_deadline(a, 1), 0);
+    n = neverc_tcp_read(a, buf, sizeof(buf));
+    elapsed = test_now_ms() - started;
+    check_int("past read deadline fired", n, -1);
+    check_int("past deadline errno", errno == ETIMEDOUT, 1);
+    check_int("past deadline immediate", elapsed < 200, 1);
+    check_int("clear read deadline",
+              neverc_tcp_set_read_deadline(a, 0), 0);
+
     check_int("write remains usable", neverc_tcp_write(a, "ok", 2), 2);
     check_int("peer receives after read timeout",
               neverc_tcp_read(b, buf, sizeof(buf)), 2);

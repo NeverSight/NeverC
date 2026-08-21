@@ -456,7 +456,9 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             if (qt_decode_varint_at(payload, payload_len, &cursor,
                                     &stream_id) != 0 ||
                 qt_decode_varint_at(payload, payload_len, &cursor,
-                                    &maximum) != 0)
+                                    &maximum) != 0 ||
+                neverc_quic_stream_apply_stream_data_blocked_locked(
+                    conn, stream_id, maximum) != 0)
                 return -1;
             consumed = cursor - position;
             *ack_eliciting = 1;

@@ -342,6 +342,33 @@ static void test_encode_surrogate(void) {
     uint32_t r; int sz;
     neverc_utf8_decode_rune(buf, (size_t)len, &r, &sz);
     check_u32("encode surrogate -> RuneError", r, NEVERC_UTF8_RUNE_ERROR);
+
+    len = neverc_utf8_encode_rune(buf, 0x110000);
+    check_int("encode >MaxRune len", len, 3);
+    neverc_utf8_decode_rune(buf, (size_t)len, &r, &sz);
+    check_u32("encode >MaxRune -> RuneError", r, NEVERC_UTF8_RUNE_ERROR);
+
+    /* Overlong encodings are width-1 error runes, never a hidden NUL. */
+    {
+        uint8_t overlong_nul[2];
+        overlong_nul[0] = 0xC0;
+        overlong_nul[1] = 0x80;
+        neverc_utf8_decode_rune(overlong_nul, 2, &r, &sz);
+        check_u32("overlong C0 80 is RuneError not NUL", r,
+                  NEVERC_UTF8_RUNE_ERROR);
+        check_int("overlong C0 80 size 1", sz, 1);
+        check_int("overlong C0 80 not valid",
+                  neverc_utf8_valid(overlong_nul, 2), 0);
+    }
+    {
+        uint8_t overlong_slash[2];
+        overlong_slash[0] = 0xC0;
+        overlong_slash[1] = 0xAF;
+        neverc_utf8_decode_rune(overlong_slash, 2, &r, &sz);
+        check_u32("overlong slash is RuneError not '/'", r,
+                  NEVERC_UTF8_RUNE_ERROR);
+        check_int("overlong slash size 1", sz, 1);
+    }
 }
 
 static void test_full_rune(void) {

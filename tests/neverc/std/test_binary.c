@@ -187,6 +187,13 @@ static void test_varint(void) {
     if (s == 1) tests_passed++;
     else { tests_failed++; printf("  FAIL: varint 1 value: got %lld\n", (long long)s); }
 
+    n = neverc_binary_put_varint(buf, sizeof(buf), INT64_MIN);
+    check_int("put varint INT64_MIN len", n, 10);
+    check_int("get varint INT64_MIN", neverc_binary_varint(buf, (size_t)n, &s), 10);
+    tests_run++;
+    if (s == INT64_MIN) tests_passed++;
+    else { tests_failed++; printf("  FAIL: varint INT64_MIN value: got %lld\n", (long long)s); }
+
     {
         uint8_t leftover[] = {0x01, 0x80, 0x01};
         check_int("uvarint stops before leftover",

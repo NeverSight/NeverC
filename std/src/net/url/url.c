@@ -53,7 +53,10 @@ static int copy_exact(char *dst, size_t cap, const char *src, size_t len) {
 static int percent_decode(const char *s, char *buf, size_t cap, int flags);
 
 /* True if path is `//...` or `/\...`, including after percent-decode.
- * `/%2f/evil.com` and `/%5cevil.com` must not look like a same-origin path. */
+ * `/%2f/evil.com` and `/%5cevil.com` must not look like a same-origin path.
+ * Encoded C0 (`/%09//evil`, `/%0d//evil`) is skipped after decode so a
+ * later strip of TAB/CR/LF cannot turn a "same-origin" path into leftover
+ * Host. */
 int neverc_url_path_is_protocol_relative(const char *path) {
     if (!path || path[0] != '/')
         return 0;
@@ -62,7 +65,12 @@ int neverc_url_path_is_protocol_relative(const char *path) {
     char decoded[sizeof(((neverc_url_t *)0)->path)];
     if (percent_decode(path, decoded, sizeof(decoded), 0) < 0)
         return 0;
-    return decoded[0] == '/' && (decoded[1] == '/' || decoded[1] == '\\');
+    if (decoded[0] != '/')
+        return 0;
+    const unsigned char *p = (const unsigned char *)decoded + 1;
+    while (*p && (*p < 0x20 || *p == 0x7f))
+        p++;
+    return *p == '/' || *p == '\\';
 }
 
 int neverc_url_path_n_is_protocol_relative(const char *path, size_t n) {

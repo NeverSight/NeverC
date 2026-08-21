@@ -302,6 +302,56 @@ static void test_prefix(void) {
     ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
     neverc_netip_parse_addr("::ffff:10.0.0.1", &addr);
     ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+
+    /* Go Prefix.Contains: /0 matches the whole family; host bits of an
+     * uncanonical prefix are ignored; partial-byte masks use the high bits. */
+    ASSERT_EQ(neverc_netip_parse_prefix("0.0.0.0/0", &pfx), 0);
+    neverc_netip_parse_addr("8.8.8.8", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("255.255.255.255", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("::1", &addr);
+    ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
+
+    ASSERT_EQ(neverc_netip_parse_prefix("192.168.1.0/24", &pfx), 0);
+    neverc_netip_parse_addr("192.168.1.255", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("192.168.1.0", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+
+    ASSERT_EQ(neverc_netip_parse_prefix("192.168.1.100/24", &pfx), 0);
+    neverc_netip_parse_addr("192.168.1.1", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+
+    ASSERT_EQ(neverc_netip_parse_prefix("192.168.1.0/31", &pfx), 0);
+    neverc_netip_parse_addr("192.168.1.0", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("192.168.1.1", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("192.168.1.2", &addr);
+    ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
+
+    ASSERT_EQ(neverc_netip_parse_prefix("::/0", &pfx), 0);
+    neverc_netip_parse_addr("::1", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("2001:db8::1", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("1.2.3.4", &addr);
+    ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
+
+    ASSERT_EQ(neverc_netip_parse_prefix("::1/128", &pfx), 0);
+    neverc_netip_parse_addr("::1", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("::2", &addr);
+    ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
+
+    ASSERT_EQ(neverc_netip_parse_prefix("2001:db8::/121", &pfx), 0);
+    neverc_netip_parse_addr("2001:db8::1", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("2001:db8::7f", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("2001:db8::80", &addr);
+    ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
 }
 
 static void test_addrport(void) {

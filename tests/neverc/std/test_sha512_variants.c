@@ -231,6 +231,16 @@ static void test_sha512_256(void) {
         else { tests_failed++; printf("  FAIL: SHA-512/256 == SHA-256\n"); }
     }
 
+    /* SHA-512/224 is not truncated SHA-512/256 (different IVs). */
+    {
+        uint8_t d224[28], d256[32];
+        neverc_sha512_224_sum((const uint8_t *)"abc", 3, d224);
+        neverc_sha512_256_sum((const uint8_t *)"abc", 3, d256);
+        tests_run++;
+        if (memcmp(d224, d256, 28) != 0) { tests_passed++; }
+        else { tests_failed++; printf("  FAIL: SHA-512/224 == truncated SHA-512/256\n"); }
+    }
+
     {
         neverc_sha512_256_ctx ctx;
         neverc_sha512_256_init(&ctx);

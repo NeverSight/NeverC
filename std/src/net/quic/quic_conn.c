@@ -960,6 +960,60 @@ int neverc_quic_stream_apply_stop_sending(
     return result;
 }
 
+int neverc_quic_stream_apply_stream_data_blocked_locked(
+    struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t maximum) {
+    if (!conn || stream_id > QUIC_VARINT_MAX || maximum > QUIC_VARINT_MAX)
+        return -1;
+    /* RFC 9000 §19.13 / quic-go HandleStreamDataBlockedFrame: this frame
+     * is sent by a blocked sender. A send-only stream has no receive
+     * half, so the connection MUST close with STREAM_STATE_ERROR. */
+    if (stream_is_uni(stream_id) && stream_is_local(conn, stream_id)) {
+        neverc_quic_conn_close_locked(
+            conn, QUIC_ERR_STREAM_STATE_ERROR,
+            "STREAM_DATA_BLOCKED on send-only stream", 0);
+        return -1;
+    }
+    if (!neverc_quic_conn_find_stream(conn, stream_id)) {
+        if (stream_is_local(conn, stream_id)) {
+            neverc_quic_conn_close_locked(
+                conn, QUIC_ERR_STREAM_STATE_ERROR,
+                "STREAM_DATA_BLOCKED on unopened local stream", 0);
+            return -1;
+        }
+        uint64_t ordinal = stream_ordinal(stream_id);
+        uint64_t limit = stream_is_uni(stream_id) ?
+            conn->local_params.initial_max_streams_uni :
+            conn->local_params.initial_max_streams_bidi;
+        if (ordinal > limit) {
+            neverc_quic_conn_close_locked(
+                conn, QUIC_ERR_STREAM_LIMIT_ERROR,
+                "STREAM_DATA_BLOCKED stream limit exceeded", 0);
+            return -1;
+        }
+    }
+    /* RFC 9000 §3.2: STREAM_DATA_BLOCKED creates the receiving part. */
+    quic_stream_t *stream =
+        get_or_create_receive_stream_locked(conn, stream_id);
+    if (!stream || (stream_is_uni(stream->id) &&
+                    stream_is_local(conn, stream->id))) {
+        neverc_quic_conn_close_locked(
+            conn, QUIC_ERR_STREAM_STATE_ERROR,
+            "STREAM_DATA_BLOCKED not permitted", 0);
+        return -1;
+    }
+    return 0;
+}
+
+int neverc_quic_stream_apply_stream_data_blocked(
+    struct neverc_quic_conn *conn, uint64_t stream_id, uint64_t maximum) {
+    if (!conn) return -1;
+    nc_mutex_lock(&conn->lock);
+    int result = neverc_quic_stream_apply_stream_data_blocked_locked(
+        conn, stream_id, maximum);
+    nc_mutex_unlock(&conn->lock);
+    return result;
+}
+
 int neverc_quic_conn_apply_max_data_locked(struct neverc_quic_conn *conn,
                                            uint64_t maximum) {
     if (!conn || maximum > QUIC_VARINT_MAX) return -1;

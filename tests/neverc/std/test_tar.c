@@ -638,6 +638,36 @@ static void test_header_only_and_typeflags(void) {
     check_int("reject pax extended header",
               neverc_tar_reader_next(&reader, &header), -1);
 
+    /* PAX/GNU specials must fail closed before skipping a claimed payload.
+     * Treating typeflag 'x'/'L' as a regular file would swallow the next
+     * member (the overflow/skip class of Go archive/tar PAX bugs). */
+    {
+        uint8_t pax_archive[NEVERC_TAR_BLOCK_SIZE * 5U];
+        memset(pax_archive, 0, sizeof(pax_archive));
+        test_fill_header(pax_archive, "PaxHeaders.0/a", 'x', 512, NULL);
+        test_fill_header(pax_archive + NEVERC_TAR_BLOCK_SIZE * 2U,
+                         "visible.txt", NEVERC_TAR_REG, 0, NULL);
+        neverc_tar_reader_init(&reader, pax_archive, sizeof(pax_archive));
+        check_int("reject pax header with payload size",
+                  neverc_tar_reader_next(&reader, &header), -1);
+
+        memset(pax_archive, 0, sizeof(pax_archive));
+        test_fill_header(pax_archive, "longname", 'L', 512, NULL);
+        test_fill_header(pax_archive + NEVERC_TAR_BLOCK_SIZE * 2U,
+                         "visible.txt", NEVERC_TAR_REG, 0, NULL);
+        neverc_tar_reader_init(&reader, pax_archive, sizeof(pax_archive));
+        check_int("reject gnu long-name with payload size",
+                  neverc_tar_reader_next(&reader, &header), -1);
+
+        memset(pax_archive, 0, sizeof(pax_archive));
+        test_fill_header(pax_archive, "PaxHeaders.0/g", 'g', 512, NULL);
+        test_fill_header(pax_archive + NEVERC_TAR_BLOCK_SIZE * 2U,
+                         "visible.txt", NEVERC_TAR_REG, 0, NULL);
+        neverc_tar_reader_init(&reader, pax_archive, sizeof(pax_archive));
+        check_int("reject pax global header with payload size",
+                  neverc_tar_reader_next(&reader, &header), -1);
+    }
+
     test_fill_header(block, "longname", 'L', 0, NULL);
     neverc_tar_reader_init(&reader, block, sizeof(block));
     check_int("reject gnu long name",

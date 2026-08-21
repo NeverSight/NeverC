@@ -299,8 +299,8 @@ static int cap_slot_count(int ngroups, int *nslots) {
     return 1;
 }
 
-/* After consuming `\x`. Go: `\xHH` is a raw byte; `\x{H+}` is a rune.
- * *braced is optional; set when the `{H+}` form was used. */
+/* After consuming `\x`. NeverC: `\xHH` is a raw byte; `\x{H+}` is a rune.
+ * Go/RE2 treat both as runes. *braced is set for the `{H+}` form. */
 static int parse_hex_escape(parser_t *par, int *out, int *braced) {
     if (braced) *braced = 0;
     if (*par->p == '{') {
@@ -921,7 +921,8 @@ static frag_t parse_atom(parser_t *par) {
                 }
                 return hf;
             }
-            /* `\xHH` is a single raw byte, not a UTF-8 rune (Go/RE2). */
+            /* `\xHH` is a single raw byte; `\x{H+}` above is a UTF-8 rune.
+             * Go/RE2 treat both as runes; this split is intentional. */
             nfa_state_t *s = new_state(par->re, NFA_CHAR);
             nfa_state_t *e = new_state(par->re, NFA_MATCH);
             s->ch = r & 0xFF;

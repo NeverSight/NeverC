@@ -1,5 +1,6 @@
 #include "neverc/std/hash/adler32.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -38,6 +39,12 @@ static void test_known_values(void) {
     /* adler32("abcdefghijklmnopqrstuvwxyz") */
     check_u32("adler32(a-z)",
         neverc_adler32_checksum((const uint8_t *)"abcdefghijklmnopqrstuvwxyz", 26), 0x90860B20U);
+
+    /* Go hash/adler32 golden */
+    check_u32("adler32('ab')",
+        neverc_adler32_checksum((const uint8_t *)"ab", 2), 0x012600C4U);
+    check_u32("adler32('Wikipedia')",
+        neverc_adler32_checksum((const uint8_t *)"Wikipedia", 9), 0x11E60398U);
 }
 
 static void test_incremental(void) {
@@ -93,6 +100,54 @@ static void test_all_zeros(void) {
         (100U << 16) | 1U);
 }
 
+static void test_nmax_go_golden(void) {
+    printf("[nmax go golden]\n");
+    /* Go hash/adler32: nmax=5552 is the largest n that cannot overflow
+     * uint32 before the modulo. These vectors sit on either side of that
+     * bound (Repeat("\xff", n) + digit). */
+    static const struct {
+        int n_ff;
+        char last;
+        uint32_t want;
+    } cases[] = {
+        {5548, '8', 0x211297C8U},
+        {5549, '9', 0xBAA198C8U},
+        {5550, '0', 0x553499BEU},
+        {5551, '1', 0xF0C19ABEU},
+        {5552, '2', 0x8D5C9BBEU},
+        {5553, '3', 0x2AF69CBEU},
+        {5554, '4', 0xC9809DBEU},
+        {5555, '5', 0x69189EBEU},
+    };
+    uint8_t buf[5556];
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        int n = cases[i].n_ff;
+        memset(buf, 0xff, (size_t)n);
+        buf[n] = (uint8_t)cases[i].last;
+        char name[64];
+        snprintf(name, sizeof(name), "adler32(0xff*%d+'%c')", n, cases[i].last);
+        check_u32(name, neverc_adler32_checksum(buf, (size_t)n + 1), cases[i].want);
+    }
+
+    /* Go: Checksum of 1e5 zero bytes and 1e5 'a's. */
+    uint8_t *big = (uint8_t *)malloc(100000);
+    if (!big) {
+        tests_run++;
+        tests_failed++;
+        printf("  FAIL: malloc 100000\n");
+        return;
+    }
+    memset(big, 0, 100000);
+    check_u32("adler32(1e5 zeros)", neverc_adler32_checksum(big, 100000), 0x86AF0001U);
+    memset(big, 'a', 100000);
+    check_u32("adler32(1e5 a)", neverc_adler32_checksum(big, 100000), 0x79660B4DU);
+    /* Streaming across the nmax boundary must match one-shot. */
+    uint32_t inc = neverc_adler32_update(NEVERC_ADLER32_INIT, big, 5552);
+    inc = neverc_adler32_update(inc, big + 5552, 100000 - 5552);
+    check_u32("adler32(1e5 a) 5552+rest", inc, 0x79660B4DU);
+    free(big);
+}
+
 static void test_null_empty(void) {
     printf("[null empty]\n");
     check_u32("update(NULL,0)",
@@ -107,6 +162,7 @@ int main(void) {
     test_incremental();
     test_large_data();
     test_all_zeros();
+    test_nmax_go_golden();
     test_null_empty();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

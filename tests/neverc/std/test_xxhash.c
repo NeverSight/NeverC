@@ -45,9 +45,30 @@ static void test_upstream_vectors(void) {
     check_u64("length 1",
               neverc_xxhash64(buffer, 1, 0),
               UINT64_C(0xe934a84adb052768));
+    check_u64("length 1, seeded",
+              neverc_xxhash64(buffer, 1, XXH_TEST_PRIME32),
+              UINT64_C(0x5014607643a9b4c3));
     check_u64("length 4",
               neverc_xxhash64(buffer, 4, 0),
               UINT64_C(0x9136a0dca57457ee));
+    /* Stripe / remainder boundaries from the XXH64 spec, using the same
+     * official generator. Expected values computed from the spec, not from
+     * this implementation. */
+    check_u64("length 8",
+              neverc_xxhash64(buffer, 8, 0),
+              UINT64_C(0xcdbcf538e71d1348));
+    check_u64("length 16",
+              neverc_xxhash64(buffer, 16, 0),
+              UINT64_C(0x98c90b57fdfcb55c));
+    check_u64("length 31",
+              neverc_xxhash64(buffer, 31, 0),
+              UINT64_C(0x299b39a290e6d783));
+    check_u64("length 32",
+              neverc_xxhash64(buffer, 32, 0),
+              UINT64_C(0x18b216492bb44b70));
+    check_u64("length 33",
+              neverc_xxhash64(buffer, 33, 0),
+              UINT64_C(0x55c8dc3e578f5b59));
     check_u64("length 14",
               neverc_xxhash64(buffer, 14, 0),
               UINT64_C(0x8282dcc4994e35c8));

@@ -767,6 +767,51 @@ int neverc_tls_test_reject_post_handshake_key_update_flood(void) {
         return -1;
     return 0;
 }
+
+int neverc_tls_test_reject_plaintext_record_overflow(void) {
+    neverc_tcp_conn_t *reader = NULL;
+    neverc_tcp_conn_t *writer = NULL;
+    if (neverc_tcp_pipe(&reader, &writer) != 0 || !reader || !writer) {
+        neverc_tcp_close(reader);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    neverc_tls_conn_t *conn = nci_tls_conn_new(reader, 1);
+    if (!conn) {
+        neverc_tcp_close(reader);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    uint8_t overflow_header[5] = {
+        TLS_CT_HANDSHAKE, 0x03, 0x03,
+        (uint8_t)((TLS_MAX_PLAINTEXT + 1u) >> 8),
+        (uint8_t)(TLS_MAX_PLAINTEXT + 1u)
+    };
+    if (neverc_tcp_write(writer, overflow_header,
+                         sizeof(overflow_header)) !=
+        (int)sizeof(overflow_header)) {
+        neverc_tls_close(conn);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    uint8_t rec_type = 0;
+    uint8_t rec_data[TLS_MAX_CIPHERTEXT];
+    size_t rec_len = 0;
+    int result = nci_tls_recv_record(
+        conn, &rec_type, rec_data, &rec_len);
+    const char *reason = conn->failure_reason;
+    neverc_tls_close(conn);
+    neverc_tcp_close(writer);
+    if (result == 0)
+        return -1;
+    if (!reason ||
+        strstr(reason, "TLS record exceeds the configured limit") == NULL)
+        return -1;
+    return 0;
+}
 #endif
 
 size_t nci_tls_handshake_fragment_size(

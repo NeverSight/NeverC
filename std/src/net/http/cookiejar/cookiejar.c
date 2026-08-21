@@ -690,16 +690,26 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
         char domain[256];
         int host_only = 1;
         if (c->domain && c->domain[0]) {
-            if (normalize_cookie_domain(c->domain, domain, sizeof(domain)) != 0 ||
-                !domain_match(domain, host))
-                continue;
-            host_only = 0;
             if (host_is_ip_literal(host)) {
-                /* Go domainAndType: IP Domain attributes are host-only. */
+                /* Go domainAndType: IP Domain is host-only only when it
+                 * equals the request-host. A leading dot is NOT stripped
+                 * (Domain=.127.0.0.1 is errIllegalDomain). */
+                if (c->domain[0] == '.' ||
+                    normalize_cookie_domain(c->domain, domain,
+                                            sizeof(domain)) != 0 ||
+                    strcmp(domain, host) != 0)
+                    continue;
                 host_only = 1;
-            } else if (cookie_domain_is_public_suffix(domain)) {
-                if (strcmp(domain, host) != 0) continue;
-                host_only = 1;
+            } else if (normalize_cookie_domain(c->domain, domain,
+                                               sizeof(domain)) != 0 ||
+                       !domain_match(domain, host)) {
+                continue;
+            } else {
+                host_only = 0;
+                if (cookie_domain_is_public_suffix(domain)) {
+                    if (strcmp(domain, host) != 0) continue;
+                    host_only = 1;
+                }
             }
         } else {
             memcpy(domain, host, strlen(host) + 1);

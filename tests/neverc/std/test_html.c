@@ -52,6 +52,23 @@ static void test_escape(void) {
     check_str("operators", r6, "a &lt; b &amp;&amp; c &gt; d");
     free(r6);
 
+    /* Go html.EscapeString escapes only < > & ' ". Slash and backtick stay
+     * literal; html/template does the extra contextual work. */
+    char *r7 = neverc_html_escape_string("onclick=`alert(1)` /path", &outlen);
+    check_str("backtick and slash stay literal", r7,
+              "onclick=`alert(1)` /path");
+    free(r7);
+
+    char *r8 = neverc_html_escape_string("x=\"a\" y='b' z=`c` w=/", &outlen);
+    check_str("quotes escaped, backtick slash literal", r8,
+              "x=&#34;a&#34; y=&#39;b&#39; z=`c` w=/");
+    free(r8);
+
+    char *r9 = neverc_html_escape_string("</script>`onclick=/", &outlen);
+    check_str("tag close is escaped via lt/gt", r9,
+              "&lt;/script&gt;`onclick=/");
+    free(r9);
+
     outlen = 123;
     check_true("escape rejects NULL input",
                neverc_html_escape_string(NULL, &outlen) == NULL);
@@ -221,6 +238,20 @@ static void test_unescape(void) {
               "\xef\xbf\xbd" "\xef\xbf\xbd");
     check_true("packed numeric NUL length", outlen == 6);
     free(r34);
+
+    /* Leftover-hole: `&amp` + name char must not become `&` that a later
+     * parse can consume as `&lt;`. `&amp;lt;` is one-pass leftover by spec. */
+    char *r35 = neverc_html_unescape_string("&amplt;", &outlen);
+    check_str("leftover hole amplt stays literal", r35, "&amplt;");
+    free(r35);
+
+    char *r36 = neverc_html_unescape_string("&amp;lt;", &outlen);
+    check_str("one-pass amp then lt leftover", r36, "&lt;");
+    free(r36);
+
+    char *r37 = neverc_html_unescape_string("&grave;&sol;", &outlen);
+    check_str("grave and sol named entities", r37, "`/");
+    free(r37);
 
     outlen = 123;
     check_true("unescape rejects NULL input",

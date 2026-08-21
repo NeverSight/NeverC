@@ -413,6 +413,21 @@ static void test_inplace_and_aad_overlap(void) {
         overlap, key, nonce, overlap + 12, 32, overlap, 12);
     check_int("AAD-overlap seal length", (int)n, 48);
     check_bytes("AAD-overlap ciphertext+tag", overlap, disjoint, 48);
+
+    /* dest-after-src: ChaCha XOR used to clobber unread plaintext. */
+    uint8_t wide[32 + 16 + 4];
+    memcpy(wide, pt, 32);
+    n = neverc_chacha20poly1305_seal(
+        wide + 4, key, nonce, wide, 32, aad, 12);
+    check_int("dst=src+4 seal length", (int)n, 48);
+    check_bytes("dst=src+4 ciphertext+tag", wide + 4, disjoint, 48);
+
+    memcpy(wide, disjoint, 48);
+    check_int("dst=src+4 open length",
+              neverc_chacha20poly1305_open(
+                  wide + 4, key, nonce, wide, 48, aad, 12),
+              32);
+    check_bytes("dst=src+4 open plaintext", wide + 4, pt, 32);
 }
 
 int main(void) {

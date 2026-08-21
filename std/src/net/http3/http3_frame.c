@@ -139,6 +139,26 @@ int neverc_h3_settings_encode(const h3_settings_t *s,
     return 0;
 }
 
+static int h3_settings_id_duplicate(const uint8_t *payload, size_t prefix_len,
+                                    uint64_t id) {
+    const uint8_t *scan = payload;
+    size_t rem = prefix_len;
+    while (rem > 0) {
+        uint64_t prev_id, prev_val;
+        size_t used;
+        if (neverc_quic_varint_decode(scan, rem, &prev_id, &used) != 0)
+            return -1;
+        scan += used;
+        rem -= used;
+        if (neverc_quic_varint_decode(scan, rem, &prev_val, &used) != 0)
+            return -1;
+        scan += used;
+        rem -= used;
+        if (prev_id == id) return 1;
+    }
+    return 0;
+}
+
 int neverc_h3_settings_decode(const uint8_t *payload, size_t len,
                                 h3_settings_t *s) {
     if (!s || (!payload && len != 0)) return -1;
@@ -151,6 +171,7 @@ int neverc_h3_settings_decode(const uint8_t *payload, size_t len,
 
     unsigned seen = 0;
     while (rem > 0) {
+        const uint8_t *pair = p;
         uint64_t id, val;
         size_t consumed;
 
@@ -159,6 +180,12 @@ int neverc_h3_settings_decode(const uint8_t *payload, size_t len,
 
         if (neverc_quic_varint_decode(p, rem, &val, &consumed) != 0) return -1;
         p += consumed; rem -= consumed;
+
+        /* RFC 9114 §7.2.4 / quic-go parseSettingsFrame: every identifier,
+         * including GREASE 0x1f*N+0x21, MUST occur at most once. */
+        if (h3_settings_id_duplicate(payload, (size_t)(pair - payload),
+                                     id) != 0)
+            return -1;
 
         switch (id) {
         case H3_SETTINGS_QPACK_MAX_TABLE_CAPACITY:

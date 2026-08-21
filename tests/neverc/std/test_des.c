@@ -346,6 +346,29 @@ static void test_null_inputs(void) {
     }
 }
 
+static void test_des_parity_ignored(void) {
+    printf("[DES parity bits ignored]\n");
+
+    /* FIPS 81 key has odd parity in each LSB. Flipping those bits must not
+     * change the schedule: PC-1 drops them, matching Go crypto/des. */
+    const uint8_t key[] = {0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF};
+    uint8_t key_flip[8];
+    for (int i = 0; i < 8; i++)
+        key_flip[i] = (uint8_t)(key[i] ^ 0x01);
+    const uint8_t pt[] = {0x4E,0x6F,0x77,0x20,0x69,0x73,0x20,0x74};
+    const uint8_t expected_ct[] = {0x3F,0xA4,0x0E,0x8A,0x98,0x4D,0x48,0x15};
+
+    neverc_des_cipher_t a, b;
+    neverc_des_init(&a, key);
+    neverc_des_init(&b, key_flip);
+
+    uint8_t ct1[8], ct2[8];
+    neverc_des_encrypt_block(&a, ct1, pt);
+    neverc_des_encrypt_block(&b, ct2, pt);
+    check_bytes("parity-flipped key same ciphertext", ct1, ct2, 8);
+    check_bytes("parity-flipped still FIPS 81", ct2, expected_ct, 8);
+}
+
 static void test_3des_two_key(void) {
     printf("[3DES two-key (K1=K3)]\n");
 
@@ -376,6 +399,7 @@ int main(void) {
     test_des_weak_keys();
     test_des_different_keys();
     test_null_inputs();
+    test_des_parity_ignored();
     test_3des_two_key();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

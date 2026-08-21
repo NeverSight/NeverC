@@ -312,6 +312,38 @@ static void test_invalid_streams(void) {
     ASSERT_INT_EQ(neverc_flate_decompress_consumed(
                       stored, stored_len, output, &output_len, NULL),
                   -1);
+
+    /* RFC 1951: BTYPE=3 is reserved and must fail closed (Go TestStreams). */
+    uint8_t reserved_type[1] = {0x07}; /* BFINAL=1, BTYPE=3 */
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      reserved_type, sizeof(reserved_type), output, &output_len),
+                  -1);
+
+    /* Stored LEN/NLEN must be one's complements. */
+    uint8_t bad_nlen[] = {0x01, 0x01, 0x00, 0xff, 0xff, 0x11};
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      bad_nlen, sizeof(bad_nlen), output, &output_len),
+                  -1);
+
+    /* Fixed Huffman reserved length symbol 287 (Go "33180700"). */
+    uint8_t reserved_sym[] = {0x33, 0x18, 0x07, 0x00};
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      reserved_sym, sizeof(reserved_sym), output, &output_len),
+                  -1);
+
+    /* Go issue 11030: empty distance tree on a literal-only stream is valid. */
+    uint8_t empty_hdist[] = {
+        0x05, 0xc0, 0x07, 0x06, 0x00, 0x00, 0x00, 0x80,
+        0x40, 0x0f, 0xff, 0x37, 0xa0, 0xca
+    };
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      empty_hdist, sizeof(empty_hdist), output, &output_len),
+                  0);
+    ASSERT_TRUE(output_len == 0);
 }
 
 static void test_distance_too_far(void) {

@@ -64,6 +64,12 @@ static void test_null_safety(void) {
     check_int("reject origin-form leftover path",
               neverc_ws_dial("ws://example.com//evil.example/", NULL,
                              &err) == NULL, 1);
+    check_int("reject percent-encoded origin-form leftover path",
+              neverc_ws_dial("ws://example.com/%2f/evil.example/", NULL,
+                             &err) == NULL, 1);
+    check_int("reject encoded-backslash origin-form leftover path",
+              neverc_ws_dial("ws://example.com/%5cevil.example/", NULL,
+                             &err) == NULL, 1);
     check_int("reject bare IPv6 zone id",
               neverc_ws_dial("ws://[fe80::1%eth0]/", NULL, &err) == NULL, 1);
     check_int("reject empty IPv6 zone escape",
@@ -208,6 +214,33 @@ static void test_handshake_rejects(void) {
     check_int("reject origin-form leftover target",
               neverc_ws_handshake_server(server, slash_slash,
                                          strlen(slash_slash), &consumed),
+              -1);
+
+    const char *slash_encoded =
+        "GET /%2f/evil.example/ HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("reject percent-encoded origin-form leftover target",
+              neverc_ws_handshake_server(server, slash_encoded,
+                                         strlen(slash_encoded), &consumed),
+              -1);
+
+    const char *slash_backslash =
+        "GET /%5cevil.example/ HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("reject encoded-backslash origin-form leftover target",
+              neverc_ws_handshake_server(server, slash_backslash,
+                                         strlen(slash_backslash),
+                                         &consumed),
               -1);
 
     const char *short_key =
@@ -559,6 +592,61 @@ static void test_close_invalid_utf8_reason_is_1007(void) {
         uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
                                    close_hdr[3]);
         check_int("close code 1007", code, 1007);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
+static void test_reserved_close_code_is_1002(void) {
+    printf("[reserved_close_code]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("reserved-close listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("reserved-close client", client);
+    check_not_null("reserved-close server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("reserved-close server ws", ws);
+    if (ws) {
+        /* RFC 6455: 1005 must not appear on the wire. */
+        uint8_t payload[] = { 0x03, 0xed };
+        check_int("write reserved close 1005",
+                  ws_write_masked_frame(client, NC_WS_OPCODE_CLOSE,
+                                        payload, sizeof(payload)),
+                  0);
+        int opcode = 0;
+        char buf[32];
+        size_t n = 0;
+        check_int("reject reserved close code",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  -1);
+        uint8_t close_hdr[4];
+        check_int("read close header",
+                  ws_tcp_read_exact(client, close_hdr, sizeof(close_hdr)),
+                  0);
+        check_int("close opcode", close_hdr[0], 0x88);
+        check_int("close unmasked len 2", close_hdr[1], 0x02);
+        uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
+                                   close_hdr[3]);
+        check_int("close code 1002", code, 1002);
         neverc_ws_conn_free(ws);
     } else {
         neverc_tcp_close(server);
@@ -1986,6 +2074,7 @@ int main(void) {
     test_reject_unmasked_client_frame();
     test_close_code_message_too_big();
     test_close_invalid_utf8_reason_is_1007();
+    test_reserved_close_code_is_1002();
     test_local_buffer_too_small_keeps_stream();
     test_small_buffer_discards_fragment_keeps_stream();
     test_oversized_text_during_fragment_is_1002();

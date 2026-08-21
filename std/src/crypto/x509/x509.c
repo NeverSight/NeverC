@@ -1087,15 +1087,25 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
         cert->version = integer[0];
     }
 
-    /* SerialNumber */
+    /* SerialNumber. RFC 5280 §4.1.2.2: applications MUST handle serial
+     * values up to 20 octets. A 20-octet magnitude with the high bit set
+     * is a 21-byte DER INTEGER (leading 0x00). Reject negatives,
+     * non-minimal encodings, and magnitudes longer than 20 octets. */
     {
         uint8_t tag;
         const uint8_t *val;
         size_t vlen;
         if (asn1_read_tlv(&tbs, &tag, &val, &vlen) < 0 ||
             tag != ASN1_TAG_INTEGER || vlen == 0 ||
-            vlen > sizeof(cert->serial) || (val[0] & 0x80) != 0 ||
-            (vlen > 1 && val[0] == 0 && (val[1] & 0x80) == 0))
+            (val[0] & 0x80) != 0)
+            return -1;
+        if (vlen > 1 && val[0] == 0) {
+            if ((val[1] & 0x80) == 0)
+                return -1;
+            val++;
+            vlen--;
+        }
+        if (vlen > sizeof(cert->serial))
             return -1;
         cert->serial_len = (int)vlen;
         memcpy(cert->serial, val, vlen);

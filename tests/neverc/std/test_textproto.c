@@ -395,6 +395,18 @@ static void test_read_code_line(void) {
     check("code_crlf_rejected", rc == -1);
     rc = neverc_textproto_read_code_line("220 foo\nInjected", &code, &msg);
     check("code_lf_rejected", rc == -1);
+
+    rc = neverc_textproto_read_code_line("220", &code, &msg);
+    check("bare_code_rejected", rc == -1);
+    rc = neverc_textproto_read_code_line("099 ok", &code, &msg);
+    check("code_below_100_rejected", rc == -1);
+    rc = neverc_textproto_read_code_line("220 ", &code, &msg);
+    check("code_empty_msg_ok", rc == 0);
+    check("code_empty_msg_220", code == 220);
+    check_str("code_empty_msg", msg, "");
+    rc = neverc_textproto_read_code_line("100 Start", &code, &msg);
+    check("code_100_ok", rc == 0);
+    check("code_100", code == 100);
 }
 
 static void test_dot_lines(void) {

@@ -64,6 +64,50 @@ static void test_rfc7914_vectors(void) {
     }
 }
 
+static void test_rfc6070_sha256_vectors(void) {
+    printf("[PBKDF2-SHA256 RFC 6070-style vectors]\n");
+
+    /* Same P/S/c as RFC 6070 HMAC-SHA1 vectors, SHA-256 PRF (Python hashlib). */
+    {
+        const char *pass = "password";
+        const char *salt = "salt";
+        uint8_t dk[32];
+        uint8_t expected[32];
+
+        neverc_pbkdf2_sha256(dk, 32,
+            (const uint8_t *)pass, strlen(pass),
+            (const uint8_t *)salt, strlen(salt), 1);
+        hex_to_bytes(
+            "120fb6cffcf8b32c43e7225256c4f837"
+            "a86548c92ccc35480805987cb70be17b",
+            expected, 32);
+        check_true("password/salt/c=1", memcmp(dk, expected, 32) == 0);
+
+        neverc_pbkdf2_sha256(dk, 32,
+            (const uint8_t *)pass, strlen(pass),
+            (const uint8_t *)salt, strlen(salt), 2);
+        hex_to_bytes(
+            "ae4d0c95af6b46d32d0adff928f06dd0"
+            "2a303f8ef3c251dfd6e2d85a95474c43",
+            expected, 32);
+        check_true("password/salt/c=2", memcmp(dk, expected, 32) == 0);
+    }
+
+    /* Truncated last block (dkLen not a multiple of hLen) + long P/S. */
+    {
+        const char *pass = "passwordPASSWORDpassword";
+        const char *salt = "saltSALTsaltSALTsaltSALT";
+        uint8_t dk[25];
+        uint8_t expected[25];
+        neverc_pbkdf2_sha256(dk, 25,
+            (const uint8_t *)pass, strlen(pass),
+            (const uint8_t *)salt, strlen(salt), 4096);
+        hex_to_bytes("619357d665af3c74f1112a49aa13cde5421e1a0d08bd40bbdc",
+                     expected, 25);
+        check_true("long P/S c=4096 dkLen=25", memcmp(dk, expected, 25) == 0);
+    }
+}
+
 static void test_basic(void) {
     printf("[PBKDF2-SHA256 basic]\n");
 
@@ -173,6 +217,7 @@ static void test_invalid_inputs(void) {
 int main(void) {
     printf("=== NeverC PBKDF2 Tests ===\n\n");
     test_rfc7914_vectors();
+    test_rfc6070_sha256_vectors();
     test_basic();
     test_various_lengths();
     test_invalid_inputs();

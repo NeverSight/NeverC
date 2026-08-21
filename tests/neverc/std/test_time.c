@@ -684,6 +684,30 @@ static void test_duration_boundaries(void) {
     check_int64("negative leading fraction value", d, -500000000);
     check_int("parse Greek mu", neverc_time_parse_duration("2\xce\xbc" "s", &d), 0);
     check_int64("Greek mu value", d, 2000);
+    check_int("parse micro sign", neverc_time_parse_duration("2\xc2\xb5" "s", &d), 0);
+    check_int64("micro sign value", d, 2000);
+
+    check_int("parse trailing-dot seconds", neverc_time_parse_duration("5.s", &d), 0);
+    check_int64("trailing-dot seconds value", d, 5 * NEVERC_TIME_SECOND);
+    check_int("parse leading-dot hours",
+              neverc_time_parse_duration("0.3333333333333333333h", &d), 0);
+    check_int64("long fraction hour is 20m", d, 20 * NEVERC_TIME_MINUTE);
+    check_int("parse mixed fraction then minutes",
+              neverc_time_parse_duration("10.5s4m", &d), 0);
+    check_int64("mixed fraction then minutes value", d,
+                4 * NEVERC_TIME_MINUTE + 10 * NEVERC_TIME_SECOND +
+                    500 * NEVERC_TIME_MILLISECOND);
+
+    d = 99;
+    check_int("reject missing unit", neverc_time_parse_duration("1", &d), -1);
+    check_int64("missing unit is atomic", d, 99);
+    check_int("reject unknown unit", neverc_time_parse_duration("1d", &d), -1);
+    check_int("reject dot without digits", neverc_time_parse_duration(".s", &d), -1);
+    check_int("reject unitless sign", neverc_time_parse_duration("+", &d), -1);
+
+    check_int("parse min composite duration",
+              neverc_time_parse_duration("-2562047h47m16.854775808s", &d), 0);
+    check_int64("min composite duration value", d, INT64_MIN);
 
     check_int("parse max duration",
               neverc_time_parse_duration("9223372036854775807ns", &d), 0);
@@ -913,6 +937,12 @@ static void test_parse_layout_go_tokens(void) {
 
     check_int("parse lowercase zone rejected",
               neverc_time_parse("MST", "est", &t), -1);
+
+    ok = neverc_time_parse("MST", "WITA", &t);
+    check_int("parse WITA", ok, 0);
+    ok = neverc_time_parse("MST", "ChST", &t);
+    check_int("parse ChST", ok, 0);
+    check_int("parse MeST", neverc_time_parse("MST", "MeST", &t), 0);
 }
 
 static void test_parse_in_location_dst(void) {

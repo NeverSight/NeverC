@@ -142,6 +142,31 @@ static void test_escape(void) {
     r = neverc_xml_unescape("&amp;lt;", 8, &outlen);
     check_str("no recursive entity expansion", r, "&lt;");
     free(r);
+
+    /* Decimal/hex numeric entities that decode to markup must still go
+     * through escape() before interpolation (XSS: &#60;script&#62;). */
+    r = neverc_xml_unescape("&#60;script&#62;", 16, &outlen);
+    check_str("decimal entity markup", r, "<script>");
+    {
+        char *esc = neverc_xml_escape(r, &outlen);
+        check_str("escape decoded markup", esc, "&lt;script&gt;");
+        free(esc);
+    }
+    free(r);
+    r = neverc_xml_unescape("&#x3C;script&#x3E;", strlen("&#x3C;script&#x3E;"),
+                            &outlen);
+    check_str("hex entity markup", r, "<script>");
+    free(r);
+    r = neverc_xml_unescape("&#x22;onclick=alert(1)&#x22;",
+                            strlen("&#x22;onclick=alert(1)&#x22;"), &outlen);
+    check_str("hex entity quotes", r, "\"onclick=alert(1)\"");
+    {
+        char *esc = neverc_xml_escape(r, &outlen);
+        check_str("escape decoded quotes", esc,
+                  "&quot;onclick=alert(1)&quot;");
+        free(esc);
+    }
+    free(r);
 }
 
 static void test_entities_cdata_and_well_formedness(void) {

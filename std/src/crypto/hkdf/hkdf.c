@@ -147,6 +147,7 @@ int neverc_hkdf_extract_sha256(uint8_t prk[32],
     }
     if (!hkdf_sha256_hmac_len_ok(salt_len, ikm_len)) {
         neverc_platform_secure_zero(default_salt, sizeof(default_salt));
+        neverc_platform_secure_zero(prk, 32);
         return -1;
     }
     neverc_hmac_sha256(salt, salt_len, ikm, ikm_len, prk);

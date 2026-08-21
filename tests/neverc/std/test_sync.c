@@ -60,6 +60,43 @@ static void test_mutex_unlock_unlocked(void) {
     neverc_mutex_destroy(&m);
 }
 
+static neverc_mutex_t g_wrong_thread_mu;
+
+#if defined(_WIN32)
+static DWORD WINAPI unlock_other_thread(LPVOID arg) {
+    (void)arg;
+    neverc_mutex_unlock(&g_wrong_thread_mu);
+    return 0;
+}
+#else
+static void *unlock_other_thread(void *arg) {
+    (void)arg;
+    neverc_mutex_unlock(&g_wrong_thread_mu);
+    return NULL;
+}
+#endif
+
+static void test_mutex_unlock_wrong_thread(void) {
+    printf("[mutex_unlock_wrong_thread]\n");
+    neverc_mutex_init(&g_wrong_thread_mu);
+    neverc_mutex_lock(&g_wrong_thread_mu);
+#if defined(_WIN32)
+    HANDLE thread = CreateThread(NULL, 0, unlock_other_thread, NULL, 0, NULL);
+    ASSERT_TRUE(thread != NULL);
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_t thread;
+    ASSERT_TRUE(pthread_create(&thread, NULL, unlock_other_thread, NULL) == 0);
+    pthread_join(thread, NULL);
+#endif
+    ASSERT_TRUE(!neverc_mutex_trylock(&g_wrong_thread_mu));
+    neverc_mutex_unlock(&g_wrong_thread_mu);
+    ASSERT_TRUE(neverc_mutex_trylock(&g_wrong_thread_mu));
+    neverc_mutex_unlock(&g_wrong_thread_mu);
+    neverc_mutex_destroy(&g_wrong_thread_mu);
+}
+
 static neverc_mutex_t g_mutex;
 static int g_counter = 0;
 #define M_THREADS 4
@@ -909,6 +946,7 @@ int main(void) {
     test_mutex_basic();
     test_mutex_trylock();
     test_mutex_unlock_unlocked();
+    test_mutex_unlock_wrong_thread();
     test_mutex_concurrent();
     test_rwmutex();
     test_rwmutex_try();

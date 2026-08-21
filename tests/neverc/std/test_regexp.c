@@ -942,6 +942,104 @@ static void test_utf8_class_and_nfa_bound(void) {
     neverc_regexp_free(re);
 }
 
+/* Pin documented NeverC/Go divergences and remaining lookup bounds so a
+ * later “align with RE2” pass cannot silently change them. */
+static void test_go_compat_edges(void) {
+    section("[go compat edges]");
+    char buf[64];
+    size_t mlen = 0;
+
+    /* Go Compile is leftmost-first (`a`); NeverC find is leftmost-longest. */
+    neverc_regexp_t *re = neverc_regexp_compile("a|ab", NULL);
+    check_str("a|ab find ab is longest", find_str(re, "ab", buf), "ab");
+    check_str("a|ab find xab is longest", find_str(re, "xab", buf), "ab");
+    size_t outlen = 0;
+    char *r = neverc_regexp_replace_all(re, "ab", "X", &outlen);
+    check_str("a|ab replace longest", r, "X");
+    free(r);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("ab|a", NULL);
+    check_str("ab|a find ab is longest", find_str(re, "ab", buf), "ab");
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile_posix("a|ab", NULL);
+    check_str("posix a|ab also longest", find_str(re, "ab", buf), "ab");
+    neverc_regexp_free(re);
+
+    neverc_regexp_match_t m[4];
+    memset(m, 0, sizeof(m));
+    re = neverc_regexp_compile("(a)|(ab)", NULL);
+    check_int("(a)|(ab) found", neverc_regexp_find_submatch(re, "ab", m, 4), 1);
+    check_int("(a)|(ab) full len", (int)m[0].len, 2);
+    check_int("(a)|(ab) g1 unset", m[1].start == NULL, 1);
+    check_int("(a)|(ab) g2 longest", m[2].start != NULL && (int)m[2].len == 2, 1);
+    neverc_regexp_free(re);
+
+    memset(m, 0, sizeof(m));
+    re = neverc_regexp_compile("(ab)|(a)", NULL);
+    check_int("(ab)|(a) found", neverc_regexp_find_submatch(re, "ab", m, 4), 1);
+    check_int("(ab)|(a) g1 set", m[1].start != NULL && (int)m[1].len == 2, 1);
+    check_int("(ab)|(a) g2 unset", m[2].start == NULL, 1);
+    neverc_regexp_free(re);
+
+    /* `[\d-a]`: Go treats `\d` as a class then `-` and `a` as literals. */
+    check_bool("[\\d-a] digit", neverc_regexp_match_string("[\\d-a]", "5"), 1);
+    check_bool("[\\d-a] dash", neverc_regexp_match_string("[\\d-a]", "-"), 1);
+    check_bool("[\\d-a] a", neverc_regexp_match_string("[\\d-a]", "a"), 1);
+    check_bool("[\\d-a] b no", neverc_regexp_match_string("[\\d-a]", "b"), 0);
+
+    check_bool("[^]] letter", neverc_regexp_match_string("[^]]", "a"), 1);
+    check_bool("[^]] bracket no", neverc_regexp_match_string("[^]]", "]"), 0);
+
+    /* Byte-oriented `.`: a 3-byte rune is three dots, not one. */
+    check_bool("^.$ not one UTF-8 rune", neverc_regexp_match_string("^.$", "中"), 0);
+    check_bool("^.{3}$ three bytes of 中", neverc_regexp_match_string("^.{3}$", "中"), 1);
+
+    const char *err = NULL;
+    re = neverc_regexp_compile("\\x{D800}", &err);
+    check_bool("\\x{D800} surrogate rejected", re == NULL && err != NULL, 1);
+    neverc_regexp_free(re);
+    re = neverc_regexp_compile("\\x{110000}", &err);
+    check_bool("\\x{110000} rejected", re == NULL && err != NULL, 1);
+    neverc_regexp_free(re);
+
+    /* Negated UTF-8 extras cannot be a byte bitmap; fail closed. */
+    re = neverc_regexp_compile("[^é]", &err);
+    check_bool("[^é] rejected", re == NULL && err != NULL, 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("(?P<n>a)(?P<n>b)", NULL);
+    check_int("duplicate name leftmost index", neverc_regexp_subexp_index(re, "n"), 1);
+    neverc_regexp_free(re);
+
+    /* Trailing/leading empty alt: full match may be empty; find stays non-empty. */
+    check_bool("a| matches empty", neverc_regexp_match_string("a|", ""), 1);
+    check_bool("|a matches empty", neverc_regexp_match_string("|a", ""), 1);
+    re = neverc_regexp_compile("a|", NULL);
+    check_bool("a| find empty is null", neverc_regexp_find(re, "", &mlen) == NULL, 1);
+    neverc_regexp_free(re);
+    check_bool("\\B matches empty", neverc_regexp_match_string("\\B", ""), 1);
+    check_bool("\\b does not match empty", neverc_regexp_match_string("\\b", ""), 0);
+
+    re = neverc_regexp_compile(",", NULL);
+    int scount = 0;
+    char **parts = neverc_regexp_split(re, "a,b,c", 2, &scount);
+    check_int("split n=2 count", scount, 2);
+    if (scount >= 2) {
+        check_str("split n=2 [0]", parts[0], "a");
+        check_str("split n=2 [1]", parts[1], "b,c");
+    }
+    neverc_regexp_free_strings(parts, scount);
+    neverc_regexp_free(re);
+
+    char bad[] = { 'x', (char)0xFF, 'y', 0 };
+    re = neverc_regexp_compile("\\xFF", NULL);
+    check_bool("find raw 0xFF in text", neverc_regexp_find(re, bad, &mlen) != NULL, 1);
+    check_int("find raw 0xFF len", (int)mlen, 1);
+    neverc_regexp_free(re);
+}
+
 static void test_find_differential(void) {
     section("[find_differential]");
     rrng = 0x9e3779b97f4a7c15ULL;
@@ -1025,6 +1123,7 @@ int main(void) {
     test_posix_classes();
     test_named_groups_and_replace_expand();
     test_utf8_class_and_nfa_bound();
+    test_go_compat_edges();
     test_find_differential();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");

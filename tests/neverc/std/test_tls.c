@@ -41,6 +41,7 @@ int neverc_tls_test_certificate_request_schemes(void);
 int neverc_tls_test_certificate_entry_extensions(void);
 int neverc_tls_test_new_session_ticket_extensions(void);
 int neverc_tls_test_reject_post_handshake_key_update_flood(void);
+int neverc_tls_test_reject_plaintext_record_overflow(void);
 int neverc_tls_test_did_resume(neverc_tls_conn_t *conn);
 int neverc_tls_test_corrupt_client_session(
     neverc_tls_config_t *cfg);
@@ -143,6 +144,8 @@ static void test_config(void) {
               neverc_tls_test_new_session_ticket_extensions(), 0);
     check_int("reject_post_handshake_key_update_flood",
               neverc_tls_test_reject_post_handshake_key_update_flood(), 0);
+    check_int("reject_plaintext_record_overflow",
+              neverc_tls_test_reject_plaintext_record_overflow(), 0);
     check_int("reject_oversized_test_fragment",
               neverc_tls_test_config_set_handshake_fragment_size(
                   cfg, 16385) != 0,
@@ -972,6 +975,81 @@ static void *concurrent_tls_server_thread(void *arg) {
 #endif
 }
 
+static void fake_put_u16(uint8_t *p, uint16_t v) {
+    p[0] = (uint8_t)(v >> 8);
+    p[1] = (uint8_t)v;
+}
+
+static void fake_put_u24(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)(v >> 16);
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)v;
+}
+
+/* TLS 1.3 ServerHello that echoes the ClientHello session_id, plus a
+ * second handshake message in the same plaintext record. */
+static int fake_write_server_hello_with_trailing(
+    neverc_tcp_conn_t *tcp, const uint8_t *client_hello,
+    size_t client_hello_len) {
+    if (!tcp || !client_hello || client_hello_len < 39)
+        return -1;
+    uint8_t sid_len = client_hello[38];
+    if (sid_len > 32 ||
+        (size_t)39 + sid_len > client_hello_len)
+        return -1;
+
+    uint8_t rec[256];
+    size_t n = 0;
+    rec[n++] = 22;
+    rec[n++] = 0x03;
+    rec[n++] = 0x03;
+    size_t rec_len_pos = n;
+    n += 2;
+    rec[n++] = 2;
+    size_t hs_len_pos = n;
+    n += 3;
+    size_t body_start = n;
+    rec[n++] = 0x03;
+    rec[n++] = 0x03;
+    memset(rec + n, 0x33, 32);
+    n += 32;
+    rec[n++] = sid_len;
+    memcpy(rec + n, client_hello + 39, sid_len);
+    n += sid_len;
+    fake_put_u16(rec + n, NEVERC_TLS_AES_128_GCM_SHA256);
+    n += 2;
+    rec[n++] = 0;
+    size_t ext_len_pos = n;
+    n += 2;
+    size_t ext_start = n;
+    fake_put_u16(rec + n, 0x002b);
+    n += 2;
+    fake_put_u16(rec + n, 2);
+    n += 2;
+    fake_put_u16(rec + n, NEVERC_TLS_VERSION_13);
+    n += 2;
+    fake_put_u16(rec + n, 0x0033);
+    n += 2;
+    fake_put_u16(rec + n, 36);
+    n += 2;
+    fake_put_u16(rec + n, NEVERC_TLS_GROUP_X25519);
+    n += 2;
+    fake_put_u16(rec + n, 32);
+    n += 2;
+    memset(rec + n, 0x44, 32);
+    n += 32;
+    fake_put_u16(rec + ext_len_pos, (uint16_t)(n - ext_start));
+    fake_put_u24(rec + hs_len_pos, (uint32_t)(n - body_start));
+    rec[n++] = 8;
+    rec[n++] = 0;
+    rec[n++] = 0;
+    rec[n++] = 2;
+    rec[n++] = 0;
+    rec[n++] = 0;
+    fake_put_u16(rec + rec_len_pos, (uint16_t)(n - 5));
+    return neverc_tcp_write(tcp, rec, n) == (int)n ? 0 : -1;
+}
+
 #ifdef _WIN32
 static DWORD WINAPI fake_server_thread(LPVOID arg) {
 #else
@@ -1032,6 +1110,9 @@ static void *fake_server_thread(void *arg) {
                 (void)neverc_tcp_write(
                     ctx->tcp, truncated_alert,
                     sizeof(truncated_alert));
+            } else if (ctx->response_mode == 6) {
+                (void)fake_write_server_hello_with_trailing(
+                    ctx->tcp, payload, record_len);
             } else {
                 /* HelloRetryRequest magic in ServerHello.random. */
                 uint8_t hello_retry[5 + 4 + 2 + 32];
@@ -1289,6 +1370,61 @@ static void test_hello_retry_request_alert(void) {
               ctx.saw_client_hello, 1);
     check_int("send_handshake_failure_for_hrr",
               ctx.alert_description, 40);
+    neverc_tls_config_free(config);
+}
+
+static void test_trailing_plaintext_after_server_hello(void) {
+    printf("[trailing_plaintext_after_server_hello]\n");
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_trailing_hello_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    fake_server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.response_mode = 6;
+    ctx.alert_description = -1;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, fake_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, fake_server_thread, &ctx) == 0;
+#endif
+    check_int("start_trailing_hello_thread", thread_started, 1);
+    if (!thread_started) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    neverc_tls_config_t *config = neverc_tls_config_new();
+    neverc_tls_config_insecure_skip_verify(config);
+    const char *err = NULL;
+    neverc_tls_conn_t *client =
+        neverc_tls_client(client_tcp, config, &err);
+    check_null("reject_trailing_plaintext_after_server_hello",
+               client);
+    neverc_tls_close(client);
+    neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    check_int("trailing_hello_server_saw_client_hello",
+              ctx.saw_client_hello, 1);
+    check_int("trailing_after_server_hello_unexpected_message",
+              ctx.alert_description, 10);
     neverc_tls_config_free(config);
 }
 
@@ -2952,6 +3088,7 @@ int main(void) {
     test_malformed_server_hello_alert();
     test_plaintext_record_version_ignored();
     test_hello_retry_request_alert();
+    test_trailing_plaintext_after_server_hello();
     test_oversized_server_handshake_alert();
     test_malformed_client_hello_alert();
     test_tls12_client_hello_alert();

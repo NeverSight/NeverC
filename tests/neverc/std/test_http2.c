@@ -334,6 +334,48 @@ TEST(huffman_roundtrip) {
     }
 }
 
+/* RFC 7541 C.4 / Appendix B: Huffman coding of "www.example.com". */
+TEST(huffman_rfc7541_www_example_com) {
+    static const uint8_t want[] = {
+        0xf1, 0xe3, 0xc2, 0xe5, 0xf2, 0x3a, 0x6b, 0xa0,
+        0xab, 0x90, 0xf4, 0xff
+    };
+    uint8_t encoded[32];
+    size_t elen = 0;
+    ASSERT_EQ(neverc_hpack_huffman_encode(
+        (const uint8_t *)"www.example.com", 15, encoded, sizeof(encoded),
+        &elen), 0);
+    ASSERT_EQ(elen, sizeof(want));
+    ASSERT_TRUE(memcmp(encoded, want, sizeof(want)) == 0);
+
+    uint8_t decoded[32];
+    size_t dlen = 0;
+    ASSERT_EQ(neverc_hpack_huffman_decode(
+        want, sizeof(want), decoded, sizeof(decoded), &dlen), 0);
+    ASSERT_EQ(dlen, 15);
+    ASSERT_TRUE(memcmp(decoded, "www.example.com", 15) == 0);
+}
+
+/* RFC 7541 §5.2: leftover Huffman bits > 7, or not an EOS prefix, fail. */
+TEST(huffman_rejects_overlong_eos_padding) {
+    uint8_t ff = 0xff;
+    uint8_t out[8];
+    size_t n = 0;
+    ASSERT_EQ(neverc_hpack_huffman_decode(&ff, 1, out, sizeof(out), &n), -1);
+}
+
+/* RFC 7541 §6.1: index 0 is unused and is a decoding error. */
+TEST(hpack_rejects_indexed_zero) {
+    neverc_hpack_decoder_t *dec = neverc_hpack_decoder_create(4096);
+    ASSERT_TRUE(dec != NULL);
+    uint8_t data[] = { 0x80 };
+    neverc_hpack_header_t headers[1];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_hpack_decode(dec, data, sizeof(data), headers, 1,
+                                  &nheaders), -1);
+    neverc_hpack_decoder_destroy(dec);
+}
+
 /* ===== Test 11: Server create/destroy ===== */
 TEST(h2_server_lifecycle) {
     neverc_h2_server_t *srv = neverc_h2_server_create(NULL);
@@ -3292,6 +3334,9 @@ int main(void) {
     run_test_hpack_encode_basic();
     run_test_hpack_roundtrip_custom();
     run_test_huffman_roundtrip();
+    run_test_huffman_rfc7541_www_example_com();
+    run_test_huffman_rejects_overlong_eos_padding();
+    run_test_hpack_rejects_indexed_zero();
     run_test_client_preface();
     run_test_hpack_dynamic_table_eviction();
     run_test_hpack_oversized_entries_do_not_expand_table();

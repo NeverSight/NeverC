@@ -28,6 +28,20 @@ static void test_parse_address(void) {
     ASSERT_STREQ(addr.address, "john@example.com");
     ASSERT_STREQ(addr.name, "John Doe");
 
+    ASSERT_EQ(neverc_mail_parse_address("<user@example.com>", &addr), 0);
+    ASSERT_STREQ(addr.address, "user@example.com");
+    ASSERT_STREQ(addr.name, "");
+    ASSERT_EQ(neverc_mail_parse_address("John.Doe <john@example.com>", &addr),
+              0);
+    ASSERT_STREQ(addr.name, "John.Doe");
+    ASSERT_STREQ(addr.address, "john@example.com");
+    ASSERT_EQ(neverc_mail_parse_address("user@127.0.0.1", &addr), 0);
+    ASSERT_STREQ(addr.address, "user@127.0.0.1");
+    ASSERT_EQ(neverc_mail_parse_address("user@exam ple.com", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("undisclosed-recipients:;", &addr),
+              -1);
+    ASSERT_EQ(neverc_mail_parse_address("\"quoted\"@example.com", &addr), -1);
+
     ASSERT_EQ(neverc_mail_parse_address("\"Doe, John\" <john@example.com>", &addr), 0);
     ASSERT_STREQ(addr.address, "john@example.com");
     ASSERT_STREQ(addr.name, "Doe, John");

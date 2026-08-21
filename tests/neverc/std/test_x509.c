@@ -711,6 +711,56 @@ static void test_x509_invalid(void) {
     if (rc == 0)
         neverc_x509_cert_free(&cert);
 
+    /* test_cert_der serial is 20 bytes at offset 15; length byte at 14.
+     * Outer SEQUENCE length is bytes 2-3; TBS length is bytes 6-7. */
+    {
+        uint8_t high_bit_serial[sizeof(test_cert_der) + 1];
+        memcpy(high_bit_serial, test_cert_der, 15);
+        high_bit_serial[3] = (uint8_t)(test_cert_der[3] + 1);
+        high_bit_serial[7] = (uint8_t)(test_cert_der[7] + 1);
+        high_bit_serial[14] = 21;
+        high_bit_serial[15] = 0x00;
+        memcpy(high_bit_serial + 16, test_cert_der + 15, 20);
+        high_bit_serial[16] = (uint8_t)(test_cert_der[15] | 0x80);
+        memcpy(high_bit_serial + 36, test_cert_der + 35,
+               sizeof(test_cert_der) - 35);
+        rc = neverc_x509_parse_certificate(
+            &cert, high_bit_serial, sizeof(high_bit_serial));
+        CHECK("twenty_octet_high_bit_serial_parses", rc == 0);
+        if (rc == 0) {
+            CHECK("twenty_octet_high_bit_serial_len",
+                  cert.serial_len == 20);
+            CHECK("twenty_octet_high_bit_serial_msb",
+                  cert.serial[0] ==
+                      (uint8_t)(test_cert_der[15] | 0x80));
+            neverc_x509_cert_free(&cert);
+        }
+
+        uint8_t nonminimal_serial[sizeof(test_cert_der) + 1];
+        memcpy(nonminimal_serial, high_bit_serial,
+               sizeof(nonminimal_serial));
+        nonminimal_serial[16] = test_cert_der[15];
+        rc = neverc_x509_parse_certificate(
+            &cert, nonminimal_serial, sizeof(nonminimal_serial));
+        CHECK("nonminimal_serial_padding_fails", rc < 0);
+        if (rc == 0)
+            neverc_x509_cert_free(&cert);
+
+        uint8_t overlong_serial[sizeof(test_cert_der) + 1];
+        memcpy(overlong_serial, test_cert_der, 15);
+        overlong_serial[3] = (uint8_t)(test_cert_der[3] + 1);
+        overlong_serial[7] = (uint8_t)(test_cert_der[7] + 1);
+        overlong_serial[14] = 21;
+        overlong_serial[15] = 0x01;
+        memcpy(overlong_serial + 16, test_cert_der + 15,
+               sizeof(test_cert_der) - 15);
+        rc = neverc_x509_parse_certificate(
+            &cert, overlong_serial, sizeof(overlong_serial));
+        CHECK("twenty_one_octet_serial_fails", rc < 0);
+        if (rc == 0)
+            neverc_x509_cert_free(&cert);
+    }
+
     uint8_t malformed_issuer_name[sizeof(test_cert_der)];
     memcpy(malformed_issuer_name, test_cert_der,
            sizeof(malformed_issuer_name));

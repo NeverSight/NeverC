@@ -598,6 +598,26 @@ static void test_ipv4_mapped_isolation(void) {
     check_int("IPv4 Domain attribute does not match hostname suffix", n, 0);
 
     neverc_cookiejar_free(jar);
+
+    /* Go domainAndType does not strip a leading dot on IP Domain. */
+    jar = neverc_cookiejar_new();
+    cookie.domain = ".192.168.1.1";
+    neverc_cookiejar_set_cookies(jar, "http://192.168.1.1/", &cookie, 1);
+    check_int("reject Domain=.IPv4 set_cookies",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_set_cookie_header(
+        jar, "http://192.168.1.1/",
+        "sid=x; Domain=.192.168.1.1; Path=/");
+    check_int("reject Domain=.IPv4 Set-Cookie",
+              neverc_cookiejar_count(jar), 0);
+    cookie.domain = "192.168.1.1";
+    neverc_cookiejar_set_cookies(jar, "http://192.168.1.1/", &cookie, 1);
+    check_int("IPv4 Domain without leading dot is host-only",
+              neverc_cookiejar_count(jar), 1);
+    n = neverc_cookiejar_cookies(jar, "http://192.168.1.1/", out, 1);
+    check_int("IPv4 Domain without leading dot matches host", n, 1);
+
+    neverc_cookiejar_free(jar);
 }
 
 static void test_ipv6_host_isolation(void) {
@@ -637,6 +657,14 @@ static void test_ipv6_host_isolation(void) {
     n = neverc_cookiejar_cookies(
         jar, "http://[2001:db8::1]/", out, 1);
     check_int("bracketed IPv6 Domain attribute accepted", n, 1);
+
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = ".2001:db8::1";
+    neverc_cookiejar_set_cookies(
+        jar, "http://[2001:db8::1]/", &cookie, 1);
+    check_int("reject Domain=.IPv6", neverc_cookiejar_count(jar), 0);
 
     neverc_cookiejar_free(jar);
 }
@@ -1067,5 +1095,6 @@ int main(void) {
     printf("\n--- cookiejar: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ---\n");
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

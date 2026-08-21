@@ -425,20 +425,17 @@ int neverc_textproto_read_dot_lines(const char *data, size_t len,
 
 int neverc_textproto_read_code_line(const char *line, int *code,
                                      const char **msg) {
-    if (!line || !code || strlen(line) < 3) return -1;
+    /* Go textproto.parseCodeLine: at least "XYZ " / "XYZ-", code >= 100. */
+    if (!line || !code || strlen(line) < 4) return -1;
     if (!nc_isdigit((unsigned char)line[0]) || !nc_isdigit((unsigned char)line[1]) ||
         !nc_isdigit((unsigned char)line[2])) return -1;
     *code = (line[0] - '0') * 100 + (line[1] - '0') * 10 + (line[2] - '0');
-    if (line[3] == ' ' || line[3] == '-') {
-        for (const unsigned char *p = (const unsigned char *)line + 4; *p; p++) {
-            if (*p == '\r' || *p == '\n') return -1;
-        }
-        if (msg) *msg = line + 4;
-    } else if (line[3] == '\0') {
-        if (msg) *msg = "";
-    } else {
-        return -1;
+    if (*code < 100) return -1;
+    if (line[3] != ' ' && line[3] != '-') return -1;
+    for (const unsigned char *p = (const unsigned char *)line + 4; *p; p++) {
+        if (*p == '\r' || *p == '\n') return -1;
     }
+    if (msg) *msg = line + 4;
     return (line[3] == '-') ? 1 : 0;
 }
 
