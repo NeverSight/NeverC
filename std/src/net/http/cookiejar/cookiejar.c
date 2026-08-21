@@ -458,18 +458,27 @@ static int cookie_is_k12_us_suffix(const char *domain) {
            isalpha((unsigned char)domain[5]);
 }
 
-/* Labels before .amazonaws.com. */
+/* Labels before .amazonaws.com or the China partition .amazonaws.com.cn. */
 static int cookie_amazonaws_head(const char *domain, const char **head,
                                  size_t *head_len) {
+    static const char aws_cn[] = "amazonaws.com.cn";
     static const char aws[] = "amazonaws.com";
     size_t n = strlen(domain);
+    size_t m_cn = sizeof(aws_cn) - 1;
     size_t m = sizeof(aws) - 1;
-    if (n <= m + 1 || domain[n - m - 1] != '.' ||
-        strcmp(domain + (n - m), aws) != 0)
-        return 0;
-    *head = domain;
-    *head_len = n - m - 1;
-    return 1;
+    if (n > m_cn + 1 && domain[n - m_cn - 1] == '.' &&
+        strcmp(domain + (n - m_cn), aws_cn) == 0) {
+        *head = domain;
+        *head_len = n - m_cn - 1;
+        return 1;
+    }
+    if (n > m + 1 && domain[n - m - 1] == '.' &&
+        strcmp(domain + (n - m), aws) == 0) {
+        *head = domain;
+        *head_len = n - m - 1;
+        return 1;
+    }
+    return 0;
 }
 
 /* PSL s3 / s3.<region> / s3-website-* / s3-accesspoint* / s3-fips*.
@@ -477,6 +486,16 @@ static int cookie_amazonaws_head(const char *domain, const char **head,
 static int cookie_aws_s3_product(const char *s, size_t n) {
     return n >= 2 && s[0] == 's' && s[1] == '3' &&
            (n == 2 || s[2] == '.' || s[2] == '-');
+}
+
+/* PSL execute-api.<region> / lambda-url.<region> (prefix products, like s3).
+ * Matching only *.execute-api.amazonaws.com left the regional form fail-open. */
+static int cookie_aws_prefix_product(const char *s, size_t n,
+                                     const char *product) {
+    size_t m = strlen(product);
+    if (n < m || memcmp(s, product, m) != 0)
+        return 0;
+    return n == m || s[m] == '.' || s[m] == '-';
 }
 
 /* PSL wildcard *.product.amazonaws.com: exactly one left label. */
@@ -500,17 +519,19 @@ static int cookie_amazonaws_is_public_suffix(const char *domain) {
     if (dot && cookie_aws_s3_product(
             dot + 1, n - (size_t)(dot - head) - 1))
         return 1;
+    if (cookie_aws_prefix_product(head, n, "execute-api") ||
+        cookie_aws_prefix_product(head, n, "lambda-url"))
+        return 1;
     return cookie_aws_one_label_product(head, n, "compute") ||
            cookie_aws_one_label_product(head, n, "compute-1") ||
-           cookie_aws_one_label_product(head, n, "elb") ||
-           cookie_aws_one_label_product(head, n, "execute-api") ||
-           cookie_aws_one_label_product(head, n, "lambda-url");
+           cookie_aws_one_label_product(head, n, "elb");
 }
 
 static int cookie_domain_is_public_suffix(const char *domain) {
     if (!domain || !domain[0] || host_is_ip_literal(domain)) return 0;
     static const char *const extra[] = {
         "amazonaws.com",
+        "amazonaws.com.cn",
         "appspot.com",
         "azurefd.net",
         "azurewebsites.net",

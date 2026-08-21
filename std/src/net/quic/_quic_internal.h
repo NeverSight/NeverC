@@ -212,6 +212,7 @@ typedef struct neverc_quic_stream {
     uint64_t recv_final_size;
     int recv_final_known;
     int recv_fin;
+    int recv_reset_retired;
     quic_fragment_t *recv_fragments;
     uint8_t *send_buf;
     size_t send_buf_cap;

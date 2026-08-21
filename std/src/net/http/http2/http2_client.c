@@ -439,7 +439,9 @@ static int h2_client_store_decoded_headers(
     int status_code = 0;
     int content_length_count = 0;
     uint64_t content_length = 0;
-    size_t list_size = stream->header_list_size;
+    /* RFC 9113 §6.5.2 / §4.3: MAX_HEADER_LIST_SIZE is per header block
+     * (1xx, response headers, and trailers are separate lists). */
+    size_t list_size = 0;
     size_t regular_count = 0;
     for (int i = 0; i < decoded_count; i++) {
         const char *name = decoded[i].name;

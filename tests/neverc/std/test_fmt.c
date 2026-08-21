@@ -411,6 +411,22 @@ static void test_sscanf(void) {
     check_int("sscanf format newline first", a, 1);
     check_int("sscanf format newline second", b, 2);
 
+    {
+        FILE *tmp = tmpfile();
+        check_true("fscanf fixture", tmp != NULL);
+        if (tmp) {
+            fputs("1\n2\n", tmp);
+            rewind(tmp);
+            a = 0;
+            b = 0;
+            n = neverc_fmt_fscanf(tmp, "%d\n%d", &a, &b);
+            check_int("fscanf format newline count", n, 2);
+            check_int("fscanf format newline first", a, 1);
+            check_int("fscanf format newline second", b, 2);
+            fclose(tmp);
+        }
+    }
+
     /* Go Fscanf: nlIsSpace=false, so a leading/interior newline is not
      * skipped as value whitespace. \v/\f are isSpace and are skipped.
      * https://github.com/golang/go/blob/master/src/fmt/scan.go */

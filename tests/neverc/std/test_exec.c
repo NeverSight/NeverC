@@ -777,6 +777,32 @@ static void test_invalid_env_rejected(void) {
     neverc_exec_exit_status_t st = {0};
     ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
     neverc_exec_cmd_free(cmd);
+
+#if defined(_WIN32)
+    cmd = neverc_exec_command("cmd.exe", args, 2);
+    ASSERT_TRUE(cmd != NULL);
+    {
+        char drive_cwd[64];
+        snprintf(drive_cwd, sizeof(drive_cwd), "=C:=C:\\Windows");
+        const char *win_env[] = {drive_cwd, "PATH=C:\\Windows\\System32"};
+        neverc_exec_cmd_set_env(cmd, win_env, 2);
+        st.exit_code = -1;
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
+        ASSERT_INT_EQ(st.exit_code, 0);
+    }
+    neverc_exec_cmd_free(cmd);
+
+    {
+        const char *slash_args[] = {"/C", "exit /B 0"};
+        cmd = neverc_exec_command("C:System32\\cmd.exe", slash_args, 2);
+        ASSERT_TRUE(cmd != NULL);
+        neverc_exec_cmd_set_dir(cmd, "C:\\Windows");
+        st.exit_code = -1;
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
+        ASSERT_INT_EQ(st.exit_code, 0);
+        neverc_exec_cmd_free(cmd);
+    }
+#endif
 }
 
 static void test_batch_args_rejected(void) {

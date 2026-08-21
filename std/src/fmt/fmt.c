@@ -1410,14 +1410,64 @@ int neverc_fmt_sscan(const char *str, ...) {
     return neverc_fmt_sscan_ints(str, out_int, out_int ? 1U : 0U);
 }
 
+/* Go Fscanf: a format newline matches one input newline, then scanning
+ * continues on the next line. One fgets() would drop the rest of the stream. */
+static int scan_format_newline_count(const char *format) {
+    int count = 0;
+    for (; format && *format; format++)
+        if (*format == '\n') count++;
+    return count;
+}
+
+static char *scan_read_format_lines(FILE *f, const char *format) {
+    int lines = scan_format_newline_count(format) + 1;
+    size_t cap = 4096, len = 0;
+    char *buf;
+    if (!f || !format || lines <= 0) return NULL;
+    buf = (char *)malloc(cap);
+    if (!buf) return NULL;
+    buf[0] = '\0';
+    for (int i = 0; i < lines; i++) {
+        char line[4096];
+        size_t n;
+        if (!fgets(line, (int)sizeof(line), f)) break;
+        n = strlen(line);
+        if (n >= cap - len) {
+            size_t need = len + n + 1;
+            size_t next = cap;
+            char *grown;
+            while (next < need) {
+                if (next > SIZE_MAX / 2) {
+                    next = need;
+                    break;
+                }
+                next *= 2;
+            }
+            grown = (char *)realloc(buf, next);
+            if (!grown) {
+                free(buf);
+                return NULL;
+            }
+            buf = grown;
+            cap = next;
+        }
+        memcpy(buf + len, line, n);
+        len += n;
+        buf[len] = '\0';
+    }
+    return buf;
+}
+
 int neverc_fmt_scanf(const char *format, ...) {
     if (!format) return 0;
-    char line[4096];
-    if (!fgets(line, sizeof(line), stdin)) return 0;
+    char *input = scan_read_format_lines(stdin, format);
+    int matched;
     va_list args;
+    if (!input) return 0;
     va_start(args, format);
-    int matched = scan_formatted(line, format, args);
+    matched = scan_formatted(input, format, args);
     va_end(args);
+    free(input);
     return matched;
 }
 
@@ -1436,13 +1486,14 @@ int neverc_fmt_scan(int *out_int) {
 
 int neverc_fmt_fscanf(FILE *f, const char *format, ...) {
     if (!f || !format) return 0;
-    char line[4096];
-    if (!fgets(line, sizeof(line), f)) return 0;
-
+    char *input = scan_read_format_lines(f, format);
+    int matched;
     va_list args;
+    if (!input) return 0;
     va_start(args, format);
-    int matched = scan_formatted(line, format, args);
+    matched = scan_formatted(input, format, args);
     va_end(args);
+    free(input);
     return matched;
 }
 

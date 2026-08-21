@@ -1043,6 +1043,26 @@ static void test_reset_retires_connection_window(void) {
     ASSERT_EQ(conn->flow.max_data_local, before_max + 1000);
     ASSERT_EQ(conn->max_data_pending, 1);
     neverc_quic_conn_destroy(conn);
+
+    conn = neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    uint8_t buffered[7];
+    memset(buffered, 'R', sizeof(buffered));
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.data = buffered;
+    frame.data_len = sizeof(buffered);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    before_consumed = conn->flow.data_consumed;
+    before_max = conn->flow.max_data_local;
+    memset(&reset, 0, sizeof(reset));
+    reset.stream_id = 0;
+    reset.final_size = sizeof(buffered);
+    ASSERT_EQ(neverc_quic_stream_receive_reset(conn, &reset), 0);
+    ASSERT_EQ(conn->flow.data_consumed, before_consumed + sizeof(buffered));
+    ASSERT_EQ(conn->flow.max_data_local, before_max + sizeof(buffered));
+    neverc_quic_conn_destroy(conn);
 }
 
 static void test_reset_final_size_below_highest(void) {

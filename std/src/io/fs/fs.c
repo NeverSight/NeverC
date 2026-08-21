@@ -753,6 +753,18 @@ static int fs_is_real_dir(const char *path, const neverc_fs_dir_entry_t *entry) 
 }
 #endif
 
+/* Go io/fs.WalkDir: a nested ReadDir/open failure is reported to fn
+ * (NULL entry here) and does not abort the walk unless fn asks it to. */
+static int walk_notify_error(
+    const char *path,
+    int (*fn)(const char *, const neverc_fs_dir_entry_t *, void *),
+    void *userdata) {
+    int rc = fn(path, NULL, userdata);
+    if (rc == NEVERC_FS_SKIP_ALL) return NEVERC_FS_SKIP_ALL;
+    if (rc == NEVERC_FS_SKIP_DIR || rc == 0) return 0;
+    return rc;
+}
+
 #if !defined(NEVERC_PLATFORM_WINDOWS)
 static int fs_same_file(const struct stat *a, const struct stat *b) {
     return a->st_dev == b->st_dev && a->st_ino == b->st_ino;
@@ -858,7 +870,8 @@ static int walk_from_fd(int dir_fd, const char *path,
                         void *userdata) {
     neverc_fs_dir_entry_t *entries = NULL;
     size_t count = 0;
-    if (fs_read_dir_fd(dir_fd, &entries, &count) != 0) return -1;
+    if (fs_read_dir_fd(dir_fd, &entries, &count) != 0)
+        return walk_notify_error(path, fn, userdata);
 
     for (size_t i = 0; i < count; i++) {
         char *full = fs_join_path(path, entries[i].name);
@@ -894,13 +907,13 @@ static int walk_from_fd(int dir_fd, const char *path,
 #endif
             child = openat(dir_fd, entries[i].name, flags);
             if (child < 0) {
-                if (errno == ENOENT || errno == ELOOP || errno == ENOTDIR) {
-                    free(full);
-                    continue;
-                }
+                rc = walk_notify_error(full, fn, userdata);
                 free(full);
-                neverc_fs_free_entries(entries);
-                return -1;
+                if (rc != 0) {
+                    neverc_fs_free_entries(entries);
+                    return rc;
+                }
+                continue;
             }
             rc = walk_from_fd(child, full, fn, userdata);
             if (close(child) != 0 && rc == 0)
@@ -924,7 +937,8 @@ static int walk_recursive(const char *path,
                           void *userdata) {
     neverc_fs_dir_entry_t *entries = NULL;
     size_t count = 0;
-    if (neverc_fs_read_dir(path, &entries, &count) != 0) return -1;
+    if (neverc_fs_read_dir(path, &entries, &count) != 0)
+        return walk_notify_error(path, fn, userdata);
 
     for (size_t i = 0; i < count; i++) {
         if (!fs_entry_name_ok(entries[i].name))
@@ -1002,7 +1016,12 @@ int neverc_fs_walk_dir(const char *root,
 #endif
         if (lstat(root, &st) != 0) return -1;
         fd = open(root, flags);
-        if (fd < 0) return -1;
+        if (fd < 0) {
+            rc = fn(root, NULL, userdata);
+            if (rc == NEVERC_FS_SKIP_DIR || rc == NEVERC_FS_SKIP_ALL) return 0;
+            if (rc != 0) return rc;
+            return -1;
+        }
         if (fstat(fd, &opened) != 0 || !fs_same_file(&st, &opened) ||
             !S_ISDIR(opened.st_mode)) {
             close(fd);

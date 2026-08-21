@@ -479,7 +479,13 @@ static int quic_stream_read_impl(quic_stream_t *stream, void *buffer,
         memmove(stream->recv_buf, stream->recv_buf + count,
                 stream->recv_len);
     uint64_t consumed = (uint64_t)count;
+    int already_retired = stream->recv_reset_retired;
     nc_mutex_unlock(&stream->lock);
+
+    if (already_retired) {
+        (void)neverc_quic_conn_flush(stream->conn);
+        return (int)count;
+    }
 
     nc_mutex_lock(&stream->conn->lock);
     if (stream->conn->flow.data_consumed <= UINT64_MAX - consumed)
@@ -855,9 +861,18 @@ int neverc_quic_stream_receive_reset_locked(
     stream->reset_error_code = frame->error_code;
     stream->state = QUIC_STREAM_RESET;
     /* RFC 9000 §4.1: data dropped after RESET_STREAM still counts as
-     * received, but the receiver retires it so MAX_DATA can advance. */
+     * received, but the receiver retires it so MAX_DATA can advance.
+     * Bytes already in recv_buf (recv_len) were charged on STREAM arrival
+     * and must be retired even when final_size == recv_offset. */
+    uint64_t abandoned = stream->recv_len;
     if (frame->final_size > stream->recv_offset) {
-        uint64_t abandoned = frame->final_size - stream->recv_offset;
+        uint64_t unread_gap = frame->final_size - stream->recv_offset;
+        if (abandoned <= UINT64_MAX - unread_gap)
+            abandoned += unread_gap;
+        else
+            abandoned = UINT64_MAX;
+    }
+    if (abandoned > 0) {
         if (conn->flow.data_consumed <= UINT64_MAX - abandoned)
             conn->flow.data_consumed += abandoned;
         uint64_t new_conn_limit;
@@ -867,6 +882,7 @@ int neverc_quic_stream_receive_reset_locked(
             conn->flow.max_data_local = new_conn_limit;
             conn->max_data_pending = 1;
         }
+        stream->recv_reset_retired = 1;
     }
     nc_cond_broadcast(&stream->read_cond);
     nc_mutex_unlock(&stream->lock);

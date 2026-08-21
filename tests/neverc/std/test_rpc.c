@@ -1249,6 +1249,7 @@ static void rpc_test_goaway_ok_not_success(void) {
                     stream, context, response, sizeof(response), &length);
             neverc_rpc_status_t status = neverc_rpc_stream_status(stream);
             CHECK(result != NEVERC_RPC_IO_OK);
+            CHECK(result != NEVERC_RPC_IO_END);
             CHECK(status.code != NEVERC_RPC_STATUS_OK);
             neverc_rpc_stream_free(stream);
         }

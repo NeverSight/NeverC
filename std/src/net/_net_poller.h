@@ -530,21 +530,21 @@ static inline int nc_poller_del(nc_poller_t *poller, nc_sock_t fd) {
     if (fd < 0 || fd >= poller->fd_cap ||
         poller->fd_events[fd] == 0)
         return -1;
-    struct io_uring_sqe *sqe = nc_uring_get_sqe(&poller->ring);
-    if (!sqe) {
-        if (nc_uring_submit(&poller->ring) < 0) return -1;
-        sqe = nc_uring_get_sqe(&poller->ring);
-        if (!sqe) return -1;
-    }
-    nc_uring_prep_poll_remove(
-        sqe, nc_poller_uring_token(poller, fd));
-    nc_uring_sq_advance(&poller->ring, 1);
-    if (nc_uring_submit(&poller->ring) < 0) return -1;
+    uint64_t token = nc_poller_uring_token(poller, fd);
     poller->fd_generation[fd]++;
     if (poller->fd_generation[fd] == 0)
         poller->fd_generation[fd] = 1;
     poller->fd_data[fd] = NULL;
     poller->fd_events[fd] = 0;
+    struct io_uring_sqe *sqe = nc_uring_get_sqe(&poller->ring);
+    if (!sqe) {
+        if (nc_uring_submit(&poller->ring) < 0) return 0;
+        sqe = nc_uring_get_sqe(&poller->ring);
+        if (!sqe) return 0;
+    }
+    nc_uring_prep_poll_remove(sqe, token);
+    nc_uring_sq_advance(&poller->ring, 1);
+    (void)nc_uring_submit(&poller->ring);
     return 0;
 #elif defined(NC_USE_EPOLL)
     if (fd < 0 || fd >= poller->fd_cap ||
@@ -647,87 +647,92 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
         max_events = NC_POLLER_MAX_BATCH;
 
 #if defined(NC_USE_IO_URING) && NC_USE_IO_URING && defined(__linux__)
-    if (!nc_uring_peek_cqe(&poller->ring)) {
+    for (;;) {
         if (nc_uring_submit(&poller->ring) < 0) return -1;
-        struct pollfd ring_fd;
-        memset(&ring_fd, 0, sizeof(ring_fd));
-        ring_fd.fd = poller->ring.ring_fd;
-        ring_fd.events = POLLIN;
-        int ready;
-        do {
-            ready = poll(&ring_fd, 1, timeout_ms);
-        } while (ready < 0 && errno == EINTR);
-        if (ready <= 0) return ready;
-    }
-
-    int count = 0;
-    int rearm_count = 0;
-    struct {
-        int fd;
-        unsigned poll_mask;
-    } rearms[NC_POLLER_MAX_BATCH];
-
-    while (count < max_events) {
-        struct io_uring_cqe *cqe = nc_uring_peek_cqe(&poller->ring);
-        if (!cqe) break;
-        uint64_t user_data = cqe->user_data;
-        int result = cqe->res;
-        nc_uring_cq_advance(&poller->ring, 1);
-
-        if (user_data == UINT64_MAX) continue;
-        int fd = (int)(uint32_t)user_data;
-        uint32_t generation = (uint32_t)(user_data >> 32);
-        if (fd < 0 || fd >= poller->fd_cap ||
-            poller->fd_events[fd] == 0 ||
-            poller->fd_generation[fd] != generation)
-            continue;
-
-        out[count].fd = fd;
-        out[count].data = poller->fd_data[fd];
-        out[count].operation = NULL;
-        out[count].transferred = 0;
-        out[count].error = 0;
-        out[count].events = 0;
-        if (result < 0) {
-            out[count].events = NC_EV_ERROR;
-        } else {
-            if ((result & (POLLIN | POLLHUP)) &&
-                (poller->fd_events[fd] & NC_EV_READ))
-                out[count].events |= NC_EV_READ;
-            if ((result & POLLOUT) && (poller->fd_events[fd] & NC_EV_WRITE))
-                out[count].events |= NC_EV_WRITE;
-            if (result & (POLLERR | POLLNVAL))
-                out[count].events |= NC_EV_ERROR;
+        if (!nc_uring_peek_cqe(&poller->ring)) {
+            struct pollfd ring_fd;
+            memset(&ring_fd, 0, sizeof(ring_fd));
+            ring_fd.fd = poller->ring.ring_fd;
+            ring_fd.events = POLLIN;
+            int ready;
+            do {
+                ready = poll(&ring_fd, 1, timeout_ms);
+            } while (ready < 0 && errno == EINTR);
+            if (ready <= 0) return ready;
         }
 
-        if (result >= 0 && poller->fd_events[fd] != 0 &&
-            rearm_count < NC_POLLER_MAX_BATCH) {
-            unsigned mask = 0;
-            if (poller->fd_events[fd] & NC_EV_READ) mask |= POLLIN;
-            if (poller->fd_events[fd] & NC_EV_WRITE) mask |= POLLOUT;
-            rearms[rearm_count].fd = fd;
-            rearms[rearm_count++].poll_mask = mask;
-        }
-        if (out[count].events == 0)
-            continue;
-        count++;
-    }
+        int count = 0;
+        int rearm_count = 0;
+        struct {
+            int fd;
+            unsigned poll_mask;
+        } rearms[NC_POLLER_MAX_BATCH];
 
-    for (int i = 0; i < rearm_count; i++) {
-        struct io_uring_sqe *sqe = nc_uring_get_sqe(&poller->ring);
-        if (!sqe) {
-            if (nc_uring_submit(&poller->ring) < 0) return -1;
-            sqe = nc_uring_get_sqe(&poller->ring);
-            if (!sqe) return -1;
+        while (count < max_events) {
+            struct io_uring_cqe *cqe = nc_uring_peek_cqe(&poller->ring);
+            if (!cqe) break;
+            uint64_t user_data = cqe->user_data;
+            int result = cqe->res;
+            nc_uring_cq_advance(&poller->ring, 1);
+
+            if (user_data == UINT64_MAX) continue;
+            int fd = (int)(uint32_t)user_data;
+            uint32_t generation = (uint32_t)(user_data >> 32);
+            if (fd < 0 || fd >= poller->fd_cap ||
+                poller->fd_events[fd] == 0 ||
+                poller->fd_generation[fd] != generation)
+                continue;
+
+            out[count].fd = fd;
+            out[count].data = poller->fd_data[fd];
+            out[count].operation = NULL;
+            out[count].transferred = 0;
+            out[count].error = 0;
+            out[count].events = 0;
+            if (result < 0) {
+                out[count].events = NC_EV_ERROR;
+            } else {
+                if ((result & (POLLIN | POLLHUP)) &&
+                    (poller->fd_events[fd] & NC_EV_READ))
+                    out[count].events |= NC_EV_READ;
+                if ((result & POLLOUT) && (poller->fd_events[fd] & NC_EV_WRITE))
+                    out[count].events |= NC_EV_WRITE;
+                if (result & (POLLERR | POLLNVAL))
+                    out[count].events |= NC_EV_ERROR;
+            }
+
+            if (result >= 0 && poller->fd_events[fd] != 0 &&
+                rearm_count < NC_POLLER_MAX_BATCH) {
+                unsigned mask = 0;
+                if (poller->fd_events[fd] & NC_EV_READ) mask |= POLLIN;
+                if (poller->fd_events[fd] & NC_EV_WRITE) mask |= POLLOUT;
+                rearms[rearm_count].fd = fd;
+                rearms[rearm_count++].poll_mask = mask;
+            }
+            if (out[count].events == 0)
+                continue;
+            count++;
         }
-        nc_uring_prep_poll_add(
-            sqe, rearms[i].fd, rearms[i].poll_mask,
-            nc_poller_uring_token(poller, rearms[i].fd));
-        nc_uring_sq_advance(&poller->ring, 1);
+
+        for (int i = 0; i < rearm_count; i++) {
+            struct io_uring_sqe *sqe = nc_uring_get_sqe(&poller->ring);
+            if (!sqe) {
+                if (nc_uring_submit(&poller->ring) < 0) return -1;
+                sqe = nc_uring_get_sqe(&poller->ring);
+                if (!sqe) return -1;
+            }
+            nc_uring_prep_poll_add(
+                sqe, rearms[i].fd, rearms[i].poll_mask,
+                nc_poller_uring_token(poller, rearms[i].fd));
+            nc_uring_sq_advance(&poller->ring, 1);
+        }
+        if (rearm_count > 0 && nc_uring_submit(&poller->ring) < 0)
+            return -1;
+        if (count > 0) return count;
+        if (timeout_ms == 0) return 0;
+        /* Only skippable CQEs (POLL_REMOVE / stale generation). Wait again
+         * rather than returning a fake timeout. */
     }
-    if (rearm_count > 0 && nc_uring_submit(&poller->ring) < 0)
-        return -1;
-    return count;
 #elif defined(NC_USE_EPOLL)
     struct epoll_event events[NC_POLLER_MAX_BATCH];
     int count =

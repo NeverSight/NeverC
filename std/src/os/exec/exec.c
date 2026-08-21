@@ -47,7 +47,14 @@ static int exec_env_entry_ok(const char *entry) {
     const char *eq;
     if (!entry || entry[0] == '\0') return 0;
     eq = strchr(entry, '=');
-    return eq && eq != entry;
+    if (!eq) return 0;
+    if (eq != entry) return 1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    /* Go dedupEnv: Windows per-drive cwd is "=C:=C:\path". */
+    return strchr(entry + 1, '=') != NULL;
+#else
+    return 0;
+#endif
 }
 
 static char **exec_copy_strings(const char **values, int count) {
@@ -551,6 +558,53 @@ static const char *exec_look_in_win_path(const char *file, const char *path_env,
     return NULL;
 }
 
+static int exec_win_join_dir_and_name(const char *dir, const char *name,
+                                      char *buf, DWORD cap) {
+    size_t nlen;
+    size_t dlen;
+    int n;
+    if (!dir || !name || !buf || cap == 0) return -1;
+    nlen = strlen(name);
+    dlen = strlen(dir);
+    if (nlen == 0) return -1;
+    /* \\server\share\path */
+    if (nlen > 2 && (name[0] == '\\' || name[0] == '/') &&
+        (name[1] == '\\' || name[1] == '/')) {
+        n = snprintf(buf, cap, "%s", name);
+        return (n < 0 || (DWORD)n >= cap) ? -1 : n;
+    }
+    if (nlen > 1 && name[1] == ':') {
+        if (nlen == 2) return -1;
+        if (name[2] == '\\' || name[2] == '/') {
+            n = snprintf(buf, cap, "%s", name);
+            return (n < 0 || (DWORD)n >= cap) ? -1 : n;
+        }
+        /* C:foo — same-volume drive-relative (Go joinExeDirAndFName). */
+        if (dlen >= 1 &&
+            ((dir[0] | 32) == (name[0] | 32))) {
+            n = exec_win_is_drive_cwd(dir, dlen)
+                    ? snprintf(buf, cap, "%s%s", dir, name + 2)
+                    : snprintf(buf, cap, "%s\\%s", dir, name + 2);
+            return (n < 0 || (DWORD)n >= cap) ? -1 : n;
+        }
+        n = snprintf(buf, cap, "%s", name);
+        return (n < 0 || (DWORD)n >= cap) ? -1 : n;
+    }
+    /* \foo — Dir's drive + absolute-on-drive path. Do not Join as Dir\foo. */
+    if (name[0] == '\\' || name[0] == '/') {
+        if (dlen >= 2 && dir[1] == ':') {
+            n = snprintf(buf, cap, "%c:%s", dir[0], name);
+            return (n < 0 || (DWORD)n >= cap) ? -1 : n;
+        }
+        n = snprintf(buf, cap, "%s", name);
+        return (n < 0 || (DWORD)n >= cap) ? -1 : n;
+    }
+    n = exec_win_is_drive_cwd(dir, dlen)
+            ? snprintf(buf, cap, "%s%s", dir, name)
+            : snprintf(buf, cap, "%s\\%s", dir, name);
+    return (n < 0 || (DWORD)n >= cap) ? -1 : n;
+}
+
 static const char *exec_windows_resolve_app(const neverc_exec_cmd_t *cmd,
                                             char *buf, DWORD cap) {
     const char *name;
@@ -558,16 +612,13 @@ static const char *exec_windows_resolve_app(const neverc_exec_cmd_t *cmd,
     char path_storage[32768];
     if (!cmd->name || cmd->name[0] == '\0' || !buf || cap == 0) return NULL;
     name = cmd->name;
-    /* Relative Path with a separator is evaluated against Dir (Go Cmd.Start).
-     * argv[0] stays the original name. */
+    /* StartProcess joins argv0 against Dir (Go syscall.joinExeDirAndFName).
+     * Pathless names still go through LookPath first. */
     if (cmd->dir && cmd->dir[0] != '\0' &&
-        name[0] != '\\' && name[0] != '/' &&
-        !(name[0] && name[1] == ':') &&
-        (strchr(name, '\\') || strchr(name, '/'))) {
-        int n = exec_win_is_drive_cwd(cmd->dir, strlen(cmd->dir))
-                    ? snprintf(buf, cap, "%s%s", cmd->dir, name)
-                    : snprintf(buf, cap, "%s\\%s", cmd->dir, name);
-        if (n < 0 || (DWORD)n >= cap) return NULL;
+        (strchr(name, '\\') || strchr(name, '/') ||
+         (name[0] && name[1] == ':'))) {
+        if (exec_win_join_dir_and_name(cmd->dir, name, buf, cap) < 0)
+            return NULL;
         name = buf;
     }
     if (strchr(name, '\\') || strchr(name, '/') ||

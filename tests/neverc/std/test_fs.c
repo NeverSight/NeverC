@@ -379,6 +379,19 @@ static int walk_saw_child;
 static int walk_skip_hidden;
 static int walk_skip_after;
 static int walk_saw_null_entry;
+static int walk_null_nested;
+
+static int walk_nested_err_cb(const char *path,
+                              const neverc_fs_dir_entry_t *entry, void *ud) {
+    (void)ud;
+    if (!entry) {
+        walk_null_nested++;
+        if (path && strstr(path, "locked"))
+            return NEVERC_FS_SKIP_DIR;
+        return 0;
+    }
+    return 0;
+}
 static int walk_saw_zzz;
 static int walk_saw_aaa;
 
@@ -493,6 +506,21 @@ static void test_walk_dir(void) {
     rc = neverc_fs_walk_dir(walkdir, walk_cb, NULL);
     check("walk_0775_ok", rc == 0);
     check("walk_0775_descends", walk_count >= 3);
+
+    {
+        char locked[2048];
+        snprintf(locked, sizeof(locked), "%s/locked", walkdir);
+        mkdir(locked, 0000);
+        chmod(locked, 0000);
+        if (geteuid() != 0) {
+            walk_null_nested = 0;
+            rc = neverc_fs_walk_dir(walkdir, walk_nested_err_cb, NULL);
+            check("walk_nested_unreadable_ok", rc == 0);
+            check("walk_nested_unreadable_notified", walk_null_nested >= 1);
+        }
+        chmod(locked, 0755);
+        rmdir(locked);
+    }
 #endif
 
     walk_count = 0;

@@ -34,6 +34,7 @@ struct neverc_rpc_stream {
     int send_closed;
     int ended;
     int peer_end_queued;
+    int peer_cancelled;
     neverc_rpc_status_code_t status_code;
     char *status_message;
 };
@@ -1112,7 +1113,22 @@ int neverc_rpc_stream_recv(neverc_rpc_stream_t *stream,
         stream->receive_queue, context, &value);
     if (received == NEVERC_THREAD_CANCELLED)
         return NEVERC_RPC_IO_CANCELLED;
-    if (received == NEVERC_THREAD_CLOSED) return NEVERC_RPC_IO_END;
+    if (received == NEVERC_THREAD_CLOSED) {
+        /* CANCEL / GOAWAY / teardown close the queue. That is not a clean
+         * half-close: Recv must not look like IO_END so unary Call cannot
+         * fail-open as success. */
+        neverc_rpc_status_code_t code;
+        int cancelled;
+        nc_mutex_lock(&stream->lock);
+        cancelled = stream->peer_cancelled;
+        code = stream->status_code;
+        nc_mutex_unlock(&stream->lock);
+        if (cancelled || code == NEVERC_RPC_STATUS_CANCELLED)
+            return NEVERC_RPC_IO_CANCELLED;
+        if (code != NEVERC_RPC_STATUS_OK && code != NEVERC_RPC_STATUS_UNKNOWN)
+            return NEVERC_RPC_IO_CLOSED;
+        return NEVERC_RPC_IO_END;
+    }
     if (received != NEVERC_THREAD_OK) return NEVERC_RPC_IO_CLOSED;
     rpc_inbound_t *inbound = (rpc_inbound_t *)value;
     if (inbound->header.type == NEVERC_RPC_FRAME_DATA) {
@@ -1132,6 +1148,7 @@ int neverc_rpc_stream_recv(neverc_rpc_stream_t *stream,
     if (inbound->header.type == NEVERC_RPC_FRAME_END ||
         inbound->header.type == NEVERC_RPC_FRAME_CANCEL) {
         int extra_frame = 0;
+        int cancelled = inbound->header.type == NEVERC_RPC_FRAME_CANCEL;
         for (;;) {
             void *queued = NULL;
             int drained = neverc_thread_channel_try_receive(
@@ -1157,13 +1174,18 @@ int neverc_rpc_stream_recv(neverc_rpc_stream_t *stream,
                 message[inbound->header.payload_length] = '\0';
             }
         }
+        if (cancelled) {
+            nc_mutex_lock(&stream->lock);
+            stream->peer_cancelled = 1;
+            nc_mutex_unlock(&stream->lock);
+        }
         rpc_stream_set_terminal(
             stream,
             (neverc_rpc_status_code_t)inbound->header.code,
             message ? message : "");
         free(message);
         free(inbound);
-        return NEVERC_RPC_IO_END;
+        return cancelled ? NEVERC_RPC_IO_CANCELLED : NEVERC_RPC_IO_END;
     }
     free(inbound);
     return NEVERC_RPC_IO_PROTOCOL;
@@ -1332,8 +1354,11 @@ int neverc_rpc_client_call_ex(
             *response_length = total;
             *status = neverc_rpc_stream_status(stream);
             status->message = NULL;
-            final_result = result == NEVERC_RPC_IO_END
-                ? NEVERC_RPC_IO_OK : result;
+            if (result == NEVERC_RPC_IO_END)
+                final_result = status->code == NEVERC_RPC_STATUS_OK
+                    ? NEVERC_RPC_IO_OK : NEVERC_RPC_IO_CLOSED;
+            else
+                final_result = result;
             neverc_rpc_stream_free(stream);
         }
         int retryable = effective.idempotent &&

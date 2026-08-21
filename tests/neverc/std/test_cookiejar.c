@@ -338,6 +338,44 @@ static void test_public_suffix_domain(void) {
     neverc_cookiejar_free(jar);
 
     jar = neverc_cookiejar_new();
+    cookie.domain = "s3.cn-north-1.amazonaws.com.cn";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.s3.cn-north-1.amazonaws.com.cn/", &cookie, 1);
+    check_int("reject Domain=s3.cn-north-1.amazonaws.com.cn",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "execute-api.us-east-1.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.execute-api.us-east-1.amazonaws.com/", &cookie, 1);
+    check_int("reject Domain=execute-api.us-east-1.amazonaws.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "abcd1234.execute-api.us-east-1.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://www.abcd1234.execute-api.us-east-1.amazonaws.com/",
+        &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://www.abcd1234.execute-api.us-east-1.amazonaws.com/",
+        out, 1);
+    check_int("API Gateway host stays registrable", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://victim.execute-api.us-east-1.amazonaws.com/", out, 1);
+    check_int("API Gateway cookie is not sent to sibling", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "lambda-url.us-east-1.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.lambda-url.us-east-1.amazonaws.com/", &cookie, 1);
+    check_int("reject Domain=lambda-url.us-east-1.amazonaws.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
     cookie.domain = "blob.core.windows.net";
     neverc_cookiejar_set_cookies(
         jar, "https://evil.blob.core.windows.net/", &cookie, 1);

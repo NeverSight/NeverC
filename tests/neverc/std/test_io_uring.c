@@ -536,6 +536,38 @@ TEST(poller_drops_stale_after_del) {
 #endif
 }
 
+TEST(poller_wait_after_del_does_not_false_timeout) {
+#if defined(NC_USE_IO_URING) && NC_USE_IO_URING && defined(__linux__)
+    nc_poller_t *poller = nc_poller_create();
+    if (!poller) { printf("(skipped) "); return; }
+
+    int idle[2];
+    int readyfd[2];
+    ASSERT_EQ(pipe(idle), 0);
+    ASSERT_EQ(pipe(readyfd), 0);
+
+    int idle_tag = 1, ready_tag = 2;
+    ASSERT_EQ(nc_poller_add(poller, idle[0], NC_EV_READ, &idle_tag), 0);
+    ASSERT_EQ(nc_poller_add(poller, readyfd[0], NC_EV_READ, &ready_tag), 0);
+    ASSERT_EQ(nc_poller_del(poller, idle[0]), 0);
+
+    char c = 'W';
+    ASSERT_EQ(write(readyfd[1], &c, 1), 1);
+
+    nc_event_t events[8];
+    int n = nc_poller_wait(poller, events, 8, 1000);
+    ASSERT_GE(n, 1);
+    ASSERT_EQ(events[0].data, &ready_tag);
+
+    nc_poller_del(poller, readyfd[0]);
+    close(idle[0]);
+    close(idle[1]);
+    close(readyfd[0]);
+    close(readyfd[1]);
+    nc_poller_destroy(poller);
+#endif
+}
+
 /* ===== Test 13: Ring capacity — fill and drain ===== */
 TEST(uring_ring_capacity) {
 #if defined(NC_USE_IO_URING) && NC_USE_IO_URING && defined(__linux__)
@@ -596,6 +628,7 @@ int main(void) {
     run_test_uring_multi_fd_poll();
     run_test_uring_poller_mod();
     run_test_poller_drops_stale_after_del();
+    run_test_poller_wait_after_del_does_not_false_timeout();
     run_test_uring_ring_capacity();
 
     printf("\n%d passed, %d failed\n", tests_passed, tests_failed);
