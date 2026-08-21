@@ -666,19 +666,19 @@ static void test_sscanf(void) {
               neverc_fmt_sscan("\xC2\xA0""9", &one), 1);
     check_int("sscan nbsp is space val", one, 9);
     a = 0;
-    n = neverc_fmt_sscanf("\xc2\xa042", "%d", &a);
+    n = neverc_fmt_sscanf("\xc2\xa0""42", "%d", &a);
     check_int("sscanf utf8 nbsp skipped", n, 1);
     check_int("sscanf utf8 nbsp val", a, 42);
-    n = neverc_fmt_sscanf("\xc2\x8542", "%d", &a);
+    n = neverc_fmt_sscanf("\xc2\x85""42", "%d", &a);
     check_int("sscanf utf8 nel skipped", n, 1);
     check_int("sscanf utf8 nel val", a, 42);
     /* Go fmt/scan.go: invalid UTF-8 is U+FFFD, which is not isSpace. */
     a = 77;
-    n = neverc_fmt_sscanf("\xa042", "%d", &a);
+    n = neverc_fmt_sscanf("\xa0""42", "%d", &a);
     check_int("sscanf lone 0xa0 is not space", n, 0);
     check_int("sscanf lone 0xa0 leaves dest", a, 77);
     a = 77;
-    n = neverc_fmt_sscanf("\x8542", "%d", &a);
+    n = neverc_fmt_sscanf("\x85""42", "%d", &a);
     check_int("sscanf lone 0x85 is not space", n, 0);
     check_int("sscanf lone 0x85 leaves dest", a, 77);
     n = neverc_fmt_sscanf("hello\xa0world", "%63s", s);
@@ -686,7 +686,7 @@ static void test_sscanf(void) {
     check_str("sscanf string keeps lone 0xa0", s, "hello\xa0world");
     one = 77;
     check_int("sscan lone 0xa0 is not space count",
-              neverc_fmt_sscan("\xa09", &one), 0);
+              neverc_fmt_sscan("\xa0""9", &one), 0);
     check_int("sscan lone 0xa0 leaves dest", one, 77);
     a = 0;
     n = neverc_fmt_sscanf("7_2", "%d", &a);

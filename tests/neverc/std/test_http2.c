@@ -1437,6 +1437,12 @@ TEST(h2c_rejects_invalid_path) {
         { .name = ":scheme", .value = "http" },
         { .name = ":authority", .value = "localhost" },
     };
+    neverc_hpack_header_t scheme_rel_nul[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/%00//evil.example/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
     neverc_hpack_header_t backslash[] = {
         { .name = ":method", .value = "GET" },
         { .name = ":path", .value = "/foo\\bar" },
@@ -1447,6 +1453,7 @@ TEST(h2c_rejects_invalid_path) {
     ASSERT_EQ(h2c_expect_protocol_rst(star, 4), 0);
     ASSERT_EQ(h2c_expect_protocol_rst(scheme_rel, 4), 0);
     ASSERT_EQ(h2c_expect_protocol_rst(scheme_rel_pct, 4), 0);
+    ASSERT_EQ(h2c_expect_protocol_rst(scheme_rel_nul, 4), 0);
     ASSERT_EQ(h2c_expect_protocol_rst(backslash, 4), 0);
 }
 

@@ -49,6 +49,7 @@ static int copy_exact(char *dst, size_t cap, const char *src, size_t len) {
 #define PCT_PLUS 1
 #define PCT_HOST 2
 #define PCT_ZONE 4
+#define PCT_ALLOW_NUL 8
 
 static int percent_decode(const char *s, char *buf, size_t cap, int flags);
 
@@ -63,14 +64,21 @@ int neverc_url_path_is_protocol_relative(const char *path) {
     if (path[1] == '/' || path[1] == '\\')
         return 1;
     char decoded[sizeof(((neverc_url_t *)0)->path)];
-    if (percent_decode(path, decoded, sizeof(decoded), 0) < 0)
+    int n = percent_decode(path, decoded, sizeof(decoded), PCT_ALLOW_NUL);
+    /* Invalid percent-encoding cannot be shown safe. `%00` used to fail
+     * decode and return 0, so `/%00//evil` missed the C0 skip. */
+    if (n < 0)
+        return 1;
+    if (n < 1 || decoded[0] != '/')
         return 0;
-    if (decoded[0] != '/')
+    size_t i = 1;
+    while (i < (size_t)n &&
+           ((unsigned char)decoded[i] < 0x20 ||
+            (unsigned char)decoded[i] == 0x7f))
+        i++;
+    if (i >= (size_t)n)
         return 0;
-    const unsigned char *p = (const unsigned char *)decoded + 1;
-    while (*p && (*p < 0x20 || *p == 0x7f))
-        p++;
-    return *p == '/' || *p == '\\';
+    return decoded[i] == '/' || decoded[i] == '\\';
 }
 
 int neverc_url_path_n_is_protocol_relative(const char *path, size_t n) {
@@ -866,7 +874,8 @@ static int percent_decode(const char *s, char *buf, size_t cap, int flags) {
             if ((flags & PCT_ZONE) && !is_pct25 && decoded != ' ' &&
                 (decoded < 0x80 && !host_ascii_ok(decoded)))
                 goto malformed;
-            if (decoded == 0) goto malformed;
+            if (decoded == 0 && !(flags & PCT_ALLOW_NUL))
+                goto malformed;
             input_offset += 3;
         } else {
             if ((flags & PCT_PLUS) && decoded == '+') decoded = ' ';

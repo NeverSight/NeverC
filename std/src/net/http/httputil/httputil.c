@@ -1915,7 +1915,8 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
         httputil_has_crlf(req->host) || httputil_host_has_xss_bytes(req->host) ||
         httputil_has_request_line_inject(req->method) ||
         httputil_has_request_line_inject(req->path) ||
-        httputil_has_request_line_inject(req->query))
+        httputil_has_request_line_inject(req->query) ||
+        httputil_has_request_line_inject(req->http_version))
         return NULL;
 
     size_t cap = 256;

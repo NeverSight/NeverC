@@ -538,6 +538,10 @@ static void test_dump_apis(void) {
     CHECK("request dump rejects CRLF in path",
           neverc_httputil_dump_request(&request, 0) == NULL);
     request.path = "/";
+    request.http_version = "HTTP/1.1 extra";
+    CHECK("request dump rejects SP in http_version",
+          neverc_httputil_dump_request(&request, 0) == NULL);
+    request.http_version = "HTTP/1.1";
     CHECK("outbound dump rejects CRLF in URL",
           neverc_httputil_dump_request_out(
               "GET", "/x\r\nHost: evil", NULL, NULL, 0) == NULL);

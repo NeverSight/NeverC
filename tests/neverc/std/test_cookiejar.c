@@ -440,6 +440,46 @@ static void test_public_suffix_domain(void) {
     neverc_cookiejar_free(jar);
 
     jar = neverc_cookiejar_new();
+    cookie.domain = "us-east-1.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://foo.us-east-1.amazonaws.com/", &cookie, 1);
+    check_int("reject Domain=us-east-1.amazonaws.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "trycloudflare.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.trycloudflare.com/", &cookie, 1);
+    check_int("reject Domain=trycloudflare.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "replit.app";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.replit.app/", &cookie, 1);
+    check_int("reject Domain=replit.app",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "replit.dev";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.replit.dev/", &cookie, 1);
+    check_int("reject Domain=replit.dev",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "amplifyapp.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.amplifyapp.com/", &cookie, 1);
+    check_int("reject Domain=amplifyapp.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
     cookie.domain = "blob.core.windows.net";
     neverc_cookiejar_set_cookies(
         jar, "https://evil.blob.core.windows.net/", &cookie, 1);

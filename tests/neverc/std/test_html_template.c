@@ -1147,6 +1147,37 @@ static void test_template_url_and_script(void) {
               strstr(out, "msg = alert(1)") == NULL);
     free(out);
 
+    /* Go nextJSCtx: after an identifier, '/' is division. Treating it as a
+     * regexp consumes the author's later quotes so html_js_expr wraps a
+     * second literal and closes the surrounding JS string. */
+    neverc_html_template_data_set(&data, "X", "\";alert(1)//");
+    out = neverc_html_template_render(
+        "<script>var x = a / b; var s = \"{{.X}}\"</script>", &data);
+    check("js division slash does not desync into a regexp",
+          out && strstr(out, "\\\";alert(1)") != NULL);
+    check("js division slash does not wrap a second literal",
+          out && strstr(out, "s = \"\"") == NULL &&
+              strstr(out, "\"\";alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<script>var x = a / b; var y = {{.X}};</script>", &data);
+    check("js after division still wraps an expression",
+          out && strstr(out, "\"alert(1)\"") != NULL);
+    check("js after division is not a raw call",
+          out && strstr(out, "y = alert(1)") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<script>return /{{.X}}/;</script>", &data);
+    check("js return slash stays a regexp opener",
+          out && strstr(out, "return /") != NULL);
+    check("js return slash is not rewritten as a string then comment",
+          out && strstr(out, "return \"alert(1)\"/") == NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", "alert(1)");
     out = neverc_html_template_render(
         "<script>x=`foo${ {{.X}} }`</script>", &data);

@@ -784,6 +784,25 @@ static void test_scanner_split_func(void) {
         neverc_bufio_scanner_free(&sc);
     }
 
+    {
+        /* Go FullRune: 0xE3 0x20 is a finished error rune + space, not an
+         * incomplete 3-byte sequence that should stall ScanWords. */
+        const uint8_t bad_prefix[] = {0xE3, 0x20};
+        size_t advance = 0;
+        const uint8_t *token = NULL;
+        size_t token_len = 0;
+        int split_err = 0;
+        check_int("invalid utf8 prefix splits",
+                  neverc_bufio_scan_words(bad_prefix, sizeof(bad_prefix), 0,
+                                          &advance, &token, &token_len,
+                                          &split_err),
+                  1);
+        check_int("invalid utf8 prefix token len", token_len, 1);
+        check_int("invalid utf8 prefix token byte",
+                  token && token[0] == 0xE3, 1);
+        check_int("invalid utf8 prefix advance", advance, 2);
+    }
+
     neverc_io_mem_reader_init(&mr, (const uint8_t *)"ab", 2);
     r.ctx = &mr;
     neverc_bufio_scanner_init(&sc, r);

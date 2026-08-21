@@ -690,6 +690,98 @@ static int html_js_is_line_term(const char *buf, size_t i, size_t len) {
             (unsigned char)buf[i + 2] == 0xA9);
 }
 
+/* Go html/template isJSIdentPart — ASCII identifier / keyword / numeric. */
+static int html_js_ident_part(unsigned char c) {
+    return c == '$' || c == '_' ||
+           (c >= '0' && c <= '9') ||
+           (c >= 'A' && c <= 'Z') ||
+           (c >= 'a' && c <= 'z');
+}
+
+/* Trim the Go jsWhitespace set from the right of s[0,n). */
+static size_t html_js_trim_right(const char *s, size_t n) {
+    while (n > 0) {
+        unsigned char c = (unsigned char)s[n - 1];
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
+            c == '\f' || c == '\v') {
+            n--;
+            continue;
+        }
+        if (n >= 2 && (unsigned char)s[n - 2] == 0xC2 && c == 0xA0) {
+            n -= 2;
+            continue;
+        }
+        if (n >= 3 && (unsigned char)s[n - 3] == 0xE2 &&
+            (unsigned char)s[n - 2] == 0x80 &&
+            (c == 0xA8 || c == 0xA9 || c == 0xAF)) {
+            n -= 3;
+            continue;
+        }
+        break;
+    }
+    return n;
+}
+
+/*
+ * Go html/template nextJSCtx: whether a slash after s[0,n) starts a
+ * regexp literal rather than a division operator. Empty input keeps
+ * preceding_re (script bodies start as regexp, matching jsCtxRegexp).
+ */
+static int html_js_next_ctx(const char *s, size_t n, int preceding_re) {
+    static const char *const kws[] = {
+        "break", "case", "continue", "delete", "do", "else",
+        "finally", "in", "instanceof", "return", "throw", "try",
+        "typeof", "void"
+    };
+    size_t i;
+
+    n = html_js_trim_right(s, n);
+    if (n == 0) return preceding_re;
+
+    {
+        unsigned char c = (unsigned char)s[n - 1];
+        if (c == '+' || c == '-') {
+            size_t start = n - 1;
+            while (start > 0 && (unsigned char)s[start - 1] == c)
+                start--;
+            return ((n - start) & 1U) == 1U;
+        }
+        if (c == '.') {
+            if (n != 1 && s[n - 2] >= '0' && s[n - 2] <= '9')
+                return 0;
+            return 1;
+        }
+        switch (c) {
+        case ',': case '<': case '>': case '=': case '*': case '%':
+        case '&': case '|': case '^': case '?':
+        case '!': case '~':
+        case '(': case '[':
+        case ':': case ';': case '{':
+        case '}':
+            return 1;
+        default:
+            break;
+        }
+        {
+            size_t j = n;
+            while (j > 0 && html_js_ident_part((unsigned char)s[j - 1]))
+                j--;
+            for (i = 0; i < sizeof(kws) / sizeof(kws[0]); i++) {
+                size_t kn = strlen(kws[i]);
+                if (n - j == kn && memcmp(s + j, kws[i], kn) == 0)
+                    return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int html_js_ctx_span(const char *buf, size_t from, size_t i,
+                            int preceding_re) {
+    if (!buf || from > i) return preceding_re;
+    return html_js_next_ctx(buf + from, i - from, preceding_re);
+}
+
 static void html_scan_doc(const char *buf, size_t len,
                           int *in_script, int *in_style,
                           int *in_script_comment,
@@ -724,6 +816,9 @@ static void html_scan_doc(const char *buf, size_t len,
     enum { JS_CODE, JS_SQ, JS_DQ, JS_TPL, JS_LINE, JS_BLOCK, JS_HTML,
            JS_RE, JS_RE_CLASS };
     int js = JS_CODE;
+    /* Go jsCtxRegexp at the start of a script body. */
+    int js_ctx_re = 1;
+    size_t js_code_from = 0;
     char tag[16];
     size_t tlen = 0;
     int is_end = 0;
@@ -808,6 +903,7 @@ static void html_scan_doc(const char *buf, size_t len,
             if (html_raw_end_tag(buf, i, len, "</script", 8)) {
                 state = HS_TAG;
                 js = JS_CODE;
+                js_ctx_re = 1;
                 is_end = 1;
                 seen_name = 1;
                 memcpy(tag, "script", 6);
@@ -822,23 +918,36 @@ static void html_scan_doc(const char *buf, size_t len,
              * a no-op inside a comment: a closer in the value still ends it. */
             switch (js) {
             case JS_CODE:
-                if (c == '"') { js = JS_DQ; i++; break; }
-                if (c == '\'') { js = JS_SQ; i++; break; }
-                if (c == '`') { js = JS_TPL; i++; break; }
+                if (c == '"') { js = JS_DQ; js_ctx_re = 1; i++; break; }
+                if (c == '\'') { js = JS_SQ; js_ctx_re = 1; i++; break; }
+                if (c == '`') { js = JS_TPL; js_ctx_re = 1; i++; break; }
                 if (c == '/' && i + 1 < len && buf[i + 1] == '/') {
+                    js_ctx_re = html_js_ctx_span(buf, js_code_from, i,
+                                                 js_ctx_re);
                     js = JS_LINE;
                     i += 2;
                     break;
                 }
                 if (c == '/' && i + 1 < len && buf[i + 1] == '*') {
+                    js_ctx_re = html_js_ctx_span(buf, js_code_from, i,
+                                                 js_ctx_re);
                     js = JS_BLOCK;
                     i += 2;
                     break;
                 }
-                /* A lone '/' is a regexp, not division, so quotes inside
-                 * /"/.test(...) cannot be mistaken for JS_DQ (Go tJSRegexp). */
+                /* Go nextJSCtx: '/' after an identifier / ')' is division.
+                 * Treating every '/' as a regexp consumes later author
+                 * quotes as the regexp body, so in_js_quoted stays false
+                 * and html_js_expr wraps a second literal. */
                 if (c == '/') {
-                    js = JS_RE;
+                    js_ctx_re = html_js_ctx_span(buf, js_code_from, i,
+                                                 js_ctx_re);
+                    if (js_ctx_re) {
+                        js = JS_RE;
+                    } else {
+                        js_ctx_re = 1;
+                        js_code_from = i + 1;
+                    }
                     i++;
                     break;
                 }
@@ -850,6 +959,8 @@ static void html_scan_doc(const char *buf, size_t len,
                      * not a block that lasts until `-->`. Treating it as
                      * a block lets a quote on that line desync so the
                      * next line's action is only js_escape'd. */
+                    js_ctx_re = html_js_ctx_span(buf, js_code_from, i,
+                                                 js_ctx_re);
                     js = JS_LINE;
                     i += 4;
                     break;
@@ -859,12 +970,16 @@ static void html_scan_doc(const char *buf, size_t len,
                  * they are not, a quote on that line desyncs into a JS
                  * string and the next line's action is only js_escape'd. */
                 if (c == '#' && i + 1 < len && buf[i + 1] == '!') {
+                    js_ctx_re = html_js_ctx_span(buf, js_code_from, i,
+                                                 js_ctx_re);
                     js = JS_LINE;
                     i += 2;
                     break;
                 }
                 if (c == '-' && i + 2 < len &&
                     buf[i + 1] == '-' && buf[i + 2] == '>') {
+                    js_ctx_re = html_js_ctx_span(buf, js_code_from, i,
+                                                 js_ctx_re);
                     js = JS_LINE;
                     i += 3;
                     break;
@@ -877,18 +992,25 @@ static void html_scan_doc(const char *buf, size_t len,
                 if (c == '\\' && i + 1 < len) { i += 2; break; }
                 if ((js == JS_SQ && c == '\'') ||
                     (js == JS_DQ && c == '"') ||
-                    (js == JS_TPL && c == '`'))
+                    (js == JS_TPL && c == '`')) {
                     js = JS_CODE;
+                    js_ctx_re = 0;
+                    js_code_from = i + 1;
+                }
                 i++;
                 break;
             case JS_LINE:
             case JS_HTML:
-                if (html_js_is_line_term(buf, i, len)) js = JS_CODE;
+                if (html_js_is_line_term(buf, i, len)) {
+                    js = JS_CODE;
+                    js_code_from = i + 1;
+                }
                 i++;
                 break;
             case JS_BLOCK:
                 if (c == '*' && i + 1 < len && buf[i + 1] == '/') {
                     js = JS_CODE;
+                    js_code_from = i + 2;
                     i += 2;
                     break;
                 }
@@ -897,7 +1019,13 @@ static void html_scan_doc(const char *buf, size_t len,
             case JS_RE:
                 if (c == '\\' && i + 1 < len) { i += 2; break; }
                 if (c == '[') { js = JS_RE_CLASS; i++; break; }
-                if (c == '/') { js = JS_CODE; i++; break; }
+                if (c == '/') {
+                    js = JS_CODE;
+                    js_ctx_re = 0;
+                    js_code_from = i + 1;
+                    i++;
+                    break;
+                }
                 i++;
                 break;
             case JS_RE_CLASS:
@@ -986,6 +1114,8 @@ static void html_scan_doc(const char *buf, size_t len,
                     html_tag_is(tag, tlen, "script")) {
                     state = HS_SCRIPT;
                     js = JS_CODE;
+                    js_ctx_re = 1;
+                    js_code_from = i + 1;
                 } else if (!is_end && tlen > 0 && tlen < sizeof(tag) &&
                          html_tag_is(tag, tlen, "style"))
                     state = HS_STYLE;

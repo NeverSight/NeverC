@@ -889,8 +889,8 @@ int main(void) {
     test_null_safety();
     test_options();
     test_dualstack_write_to_ipv4();
-    test_write_to_connected_fails();
 #ifndef _WIN32
+    test_write_to_connected_fails();
     test_echo();
     test_ipv4_mapped_addr();
     test_read_timeout_errno();

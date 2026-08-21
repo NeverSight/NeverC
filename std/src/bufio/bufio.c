@@ -70,15 +70,27 @@ static int bufio_utf8_decode(const uint8_t *s, size_t n, uint32_t *rune) {
     return 4;
 }
 
-/* Incomplete UTF-8 at the end of a non-EOF buffer must request more data
- * rather than being treated as U+FFFD, matching Go ScanWords. */
+/*
+ * Go unicode/utf8.FullRune inverted: wait only when more bytes could
+ * still complete a valid rune. A bad continuation is a finished width-1
+ * error rune (ScanWords then splits on the following space).
+ */
 static int bufio_utf8_incomplete(const uint8_t *s, size_t n) {
+    size_t need;
+    size_t i;
+    unsigned c;
     if (n < 1) return 0;
-    unsigned c = s[0];
+    c = s[0];
     if (c < 0xC2 || c >= 0xF5) return 0;
-    if (c < 0xE0) return n < 2;
-    if (c < 0xF0) return n < 3;
-    return n < 4;
+    if (c < 0xE0) need = 2;
+    else if (c < 0xF0) need = 3;
+    else need = 4;
+    if (n >= need) return 0;
+    for (i = 1; i < n; i++) {
+        if ((s[i] & 0xC0) != 0x80)
+            return 0;
+    }
+    return 1;
 }
 
 /* Go unicode.IsSpace, used by bufio.ScanWords. */

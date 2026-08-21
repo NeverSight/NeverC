@@ -1444,6 +1444,12 @@ static void test_malformed_request(void) {
         check_int("percent-encoded scheme-relative 400",
                   strstr(buf, "400 Bad Request") != NULL, 1);
         n = do_http_request(port,
+            "GET /%00//evil.example/ HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("nul-encoded scheme-relative 400",
+                  strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
             "GET /foo%2fbar HTTP/1.1\r\nHost: localhost\r\n"
             "Connection: close\r\n\r\n",
             buf, sizeof(buf));

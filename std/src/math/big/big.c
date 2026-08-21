@@ -2278,22 +2278,33 @@ int neverc_bigint_string(const neverc_bigint_t *x, int base, char *buf, size_t c
     if (x->len >= (size_t)NCI_BIGSTR_DC_MIN) {
         int cb = 0; { uint32_t c = chunk; while (c) { cb++; c >>= 1; } }
         size_t denom = (cb > 1) ? (size_t)(cb - 1) : 1;
-        size_t B = (size_t)neverc_bigint_bit_len(x);
-        size_t M = (B + denom - 1) / denom;          /* >= true chunk count */
+        /* bit_len saturates at INT_MAX; word count does not, so M must
+         * come from len or D&C drops high digits on huge values. */
+        if (x->len > SIZE_MAX / 32) {
+            /* fall through to the linear path's overflow check */
+        } else {
+        size_t B = x->len * 32;
+        size_t M = (B + denom - 1) / denom;
         if (M < 1) M = 1;
 
         neverc_bigint_t pw2[64];
         int np = 0;
+        int dc_ok = 1;
         neverc_bigint_init(&pw2[0]);
         neverc_bigint_set_uint64(&pw2[0], chunk);
         np = 1;
         while (np < 63 && ((size_t)1 << np) < M) {
             neverc_bigint_init(&pw2[np]);
             neverc_bigint_mul(&pw2[np], &pw2[np - 1], &pw2[np - 1]);
+            if (pw2[np].len == 0) {
+                dc_ok = 0;
+                np++;
+                break;
+            }
             np++;
         }
 
-        char *dc = (k > 0 && M <= SIZE_MAX / (size_t)k)
+        char *dc = (dc_ok && k > 0 && M <= SIZE_MAX / (size_t)k)
                    ? (char *)malloc(M * (size_t)k) : NULL;
         if (dc) {
             neverc_bigint_t v2;
@@ -2322,7 +2333,8 @@ int neverc_bigint_string(const neverc_bigint_t *x, int base, char *buf, size_t c
             return out;
         }
         for (int i = 0; i < np; i++) neverc_bigint_free(&pw2[i]);
-        /* malloc failed: fall through to the simple single-word loop */
+        /* malloc/OOM: fall through to the simple single-word loop */
+        }
     }
 
     /* Bound by word count, not bit_len(): that API saturates at INT_MAX. */

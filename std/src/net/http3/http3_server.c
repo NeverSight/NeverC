@@ -646,7 +646,9 @@ static int h3_read_request(h3_conn_t *connection,
                  * HEADERS after that is a malformed request. */
                 if (trailers) {
                     free(payload);
-                    return -1;
+                    /* RFC 9114 §4.1: HEADERS after a trailer section is
+                     * H3_FRAME_UNEXPECTED, not a per-stream message error. */
+                    return -4;
                 }
                 neverc_qpack_header_t decoded[64];
                 int count = 0;
@@ -678,7 +680,9 @@ static int h3_read_request(h3_conn_t *connection,
                 trailers = 1;
             }
         } else if (type == NC_H3_FRAME_DATA) {
-            if (!initial_headers || trailers || length > H3_MAX_REQUEST_BODY ||
+            if (!initial_headers || trailers)
+                return -4;
+            if (length > H3_MAX_REQUEST_BODY ||
                 length > H3_MAX_REQUEST_BODY - request->body_len)
                 return -1;
             uint8_t *payload = NULL;
@@ -1344,9 +1348,13 @@ static int h3_poll_pending_uni(h3_conn_t *connection, int *worked) {
             continue;
         }
         if (count <= 0) {
-            h3_protocol_error(connection, NC_H3_STREAM_CREATION_ERROR,
-                              "unidirectional stream closed before type");
-            return -1;
+            /* RFC 9114 §6.2: a uni stream MAY be closed or reset before
+             * the type varint (GREASE, lost STREAM + RESET, implicit unis). */
+            neverc_quic_stream_free(pending->stream);
+            connection->pending_uni[index] =
+                connection->pending_uni[connection->pending_uni_count - 1U];
+            connection->pending_uni_count--;
+            continue;
         }
         *worked = 1;
         pending->encoded_length += (size_t)count;
@@ -1963,7 +1971,7 @@ static int h3_client_read_response(h3_conn_t *connection,
                 return -1;
             if (trailers) {
                 free(payload);
-                return -1;
+                return -4;
             }
             int parsed = h3_client_parse_header_block(
                 connection, payload, (size_t)length, final_headers,
@@ -1984,8 +1992,9 @@ static int h3_client_read_response(h3_conn_t *connection,
                 trailers = 1;
             }
         } else if (type == NC_H3_FRAME_DATA) {
-            if (!final_headers || trailers ||
-                !neverc_h3_response_body_allowed(response->status_code) ||
+            if (!final_headers || trailers)
+                return -4;
+            if (!neverc_h3_response_body_allowed(response->status_code) ||
                 length > H3_MAX_RESPONSE_BODY ||
                 length > H3_MAX_RESPONSE_BODY - response->body_len)
                 return -1;

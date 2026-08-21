@@ -513,6 +513,10 @@ static void test_safe_redirect(void) {
     ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/%2f/evil.com"), 1);
     ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/%09//evil.com"), 1);
     ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/%0d%0a//evil.com"), 1);
+    ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/%00//evil.com"), 1);
+    ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/%00%2f/evil"), 1);
+    ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/%00foo"), 0);
+    ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%00//evil.com", NULL), 0);
     ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/foo%2fbar"), 0);
     ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/foo%09/bar"), 0);
     ASSERT_INT_EQ(neverc_url_path_n_is_protocol_relative("/%2f/x?y", 6), 1);
