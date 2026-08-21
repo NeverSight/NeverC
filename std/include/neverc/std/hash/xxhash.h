@@ -17,6 +17,9 @@ extern "C" {
  */
 uint64_t neverc_xxhash64(const void *data, size_t len, uint64_t seed);
 
+/* Dot-syntax alias: hash.xxhash.hash64(...) looks up neverc_xxhash_hash64. */
+uint64_t neverc_xxhash_hash64(const void *data, size_t len, uint64_t seed);
+
 #ifdef __cplusplus
 }
 #endif

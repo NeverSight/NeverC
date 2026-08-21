@@ -480,6 +480,21 @@ static void test_repeat_braces(void) {
                re && neverc_regexp_match(re, "a{3"), 1);
     neverc_regexp_free(re);
 
+    /* Go: `{01}` is not a repeat (parseInt leading zeros), so it stays a
+     * literal even after a quantifier. Unclosed `{3` is the same. */
+    check_bool("a{2}{01} after repeat is literal",
+               neverc_regexp_match_string("a{2}{01}", "aa{01}"), 1);
+    check_bool("a{2}{01} is not a{2}",
+               neverc_regexp_match_string("a{2}{01}", "aa"), 0);
+    check_bool("a*{01} empty then literal",
+               neverc_regexp_match_string("a*{01}", "{01}"), 1);
+    check_bool("a{2}{3 unclosed after repeat is literal",
+               neverc_regexp_match_string("a{2}{3", "aa{3"), 1);
+    err = NULL;
+    re = neverc_regexp_compile("a{2}{3}", &err);
+    check_bool("a{2}{3} still nested error", re == NULL && err != NULL, 1);
+    neverc_regexp_free(re);
+
     err = NULL;
     re = neverc_regexp_compile("[a-\\d]", &err);
     check_bool("[a-\\d] range rejected", re == NULL, 1);

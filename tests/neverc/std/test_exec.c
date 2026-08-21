@@ -234,6 +234,30 @@ static void test_look_path(void) {
             SetEnvironmentVariableA("PATH", "\". \"");
             p = neverc_exec_look_path("neverc_cwd_only_hijack.exe", buf, sizeof(buf));
             ASSERT_TRUE(p == NULL);
+            /* Go LookPath: explicit relative / drive-relative names are ErrDot. */
+            p = neverc_exec_look_path(".\\neverc_cwd_only_hijack.exe", buf, sizeof(buf));
+            ASSERT_TRUE(p == NULL);
+            p = neverc_exec_look_path("./neverc_cwd_only_hijack.exe", buf, sizeof(buf));
+            ASSERT_TRUE(p == NULL);
+            p = neverc_exec_look_path("..\\neverc_cwd_only_hijack.exe", buf, sizeof(buf));
+            ASSERT_TRUE(p == NULL);
+            {
+                char drive_rel[64];
+                char cwd[MAX_PATH];
+                DWORD clen = GetCurrentDirectoryA(sizeof(cwd), cwd);
+                if (clen > 0 && clen < sizeof(cwd) &&
+                    ((cwd[0] >= 'A' && cwd[0] <= 'Z') ||
+                     (cwd[0] >= 'a' && cwd[0] <= 'z')) && cwd[1] == ':')
+                    snprintf(drive_rel, sizeof(drive_rel),
+                             "%c:neverc_cwd_only_hijack.exe", cwd[0]);
+                else
+                    snprintf(drive_rel, sizeof(drive_rel),
+                             "C:neverc_cwd_only_hijack.exe");
+                p = neverc_exec_look_path(drive_rel, buf, sizeof(buf));
+                ASSERT_TRUE(p == NULL);
+            }
+            p = neverc_exec_look_path("\\neverc_cwd_only_hijack.exe", buf, sizeof(buf));
+            ASSERT_TRUE(p == NULL);
             if (n > 0 && n < sizeof(old_path))
                 SetEnvironmentVariableA("PATH", old_path);
             else
@@ -257,6 +281,34 @@ static void test_look_path(void) {
         ASSERT_TRUE(p == NULL);
         DeleteFileA("neverc_lp_dir\\neverc_noext_hijack");
         RemoveDirectoryA("neverc_lp_dir");
+
+        /* Relative PATH with a real component is still cwd-relative (ErrDot). */
+        CreateDirectoryA("neverc_lp_rel", NULL);
+        pf = fopen("neverc_lp_rel\\neverc_rel_hijack.exe", "wb");
+        ASSERT_TRUE(pf != NULL);
+        if (pf) {
+            fputs("MZ", pf);
+            fclose(pf);
+        }
+        SetEnvironmentVariableA("PATH", "neverc_lp_rel");
+        p = neverc_exec_look_path("neverc_rel_hijack.exe", buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+        SetEnvironmentVariableA("PATH", ".\\neverc_lp_rel");
+        p = neverc_exec_look_path("neverc_rel_hijack.exe", buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+        SetEnvironmentVariableA("PATH", "./neverc_lp_rel");
+        p = neverc_exec_look_path("neverc_rel_hijack.exe", buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+        {
+            neverc_exec_cmd_t *rel_cmd =
+                neverc_exec_command("neverc_rel_hijack.exe", NULL, 0);
+            neverc_exec_exit_status_t rel_st = {0};
+            ASSERT_TRUE(rel_cmd != NULL);
+            ASSERT_INT_EQ(neverc_exec_cmd_run(rel_cmd, &rel_st), -1);
+            neverc_exec_cmd_free(rel_cmd);
+        }
+        DeleteFileA("neverc_lp_rel\\neverc_rel_hijack.exe");
+        RemoveDirectoryA("neverc_lp_rel");
 
         pf = fopen("neverc_dotdot_hijack.exe", "wb");
         ASSERT_TRUE(pf != NULL);
@@ -348,6 +400,46 @@ static void test_look_path(void) {
     setenv("PATH", "./.", 1);
     p = neverc_exec_look_path(name, buf, sizeof(buf));
     ASSERT_TRUE(p == NULL);
+    /* Go LookPath("./name") is ErrDot even when the file is in cwd. */
+    {
+        char rel[80];
+        snprintf(rel, sizeof(rel), "./%s", name);
+        p = neverc_exec_look_path(rel, buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+        snprintf(rel, sizeof(rel), "../%s", name);
+        p = neverc_exec_look_path(rel, buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+    }
+    mkdir("neverc_lp_rel", 0755);
+    {
+        char relbin[1280];
+        snprintf(relbin, sizeof(relbin), "neverc_lp_rel/%s", name);
+        FILE *rf = fopen(relbin, "w");
+        ASSERT_TRUE(rf != NULL);
+        if (rf) {
+            fputs("#!/bin/sh\nexit 0\n", rf);
+            fclose(rf);
+        }
+        chmod(relbin, 0755);
+        setenv("PATH", "neverc_lp_rel", 1);
+        p = neverc_exec_look_path(name, buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+        setenv("PATH", "./neverc_lp_rel", 1);
+        p = neverc_exec_look_path(name, buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+        {
+            neverc_exec_cmd_t *rel_cmd = neverc_exec_command(name, NULL, 0);
+            neverc_exec_exit_status_t rel_st = {0};
+            ASSERT_TRUE(rel_cmd != NULL);
+            ASSERT_INT_EQ(neverc_exec_cmd_run(rel_cmd, &rel_st), -1);
+            neverc_exec_cmd_free(rel_cmd);
+        }
+        unlink(relbin);
+    }
+    rmdir("neverc_lp_rel");
+    /* Absolute path with a separator is still a hit (not ErrDot). */
+    p = neverc_exec_look_path(script, buf, sizeof(buf));
+    ASSERT_TRUE(p != NULL);
     /* CVE-2025-47906: a PATH element that is itself a file must not
      * make LookPath(".") / ".." resolve to that file. */
     setenv("PATH", script, 1);

@@ -142,6 +142,8 @@ void neverc_io_nop_closer_init(neverc_io_nop_closer_t *nc,
 }
 #endif
 
+#include "io/fs.h"
+
 #ifdef __neverc__
 struct __neverc_std_fs_t { char __tag; };
 

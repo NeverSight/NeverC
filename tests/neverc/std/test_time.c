@@ -621,10 +621,8 @@ static void test_strict_rfc3339(void) {
         "2024-01-15T12:30:45",
         "2024-01-15T12:30:45Zjunk",
         "2024-01-15T12:30:45.Z",
-        "2024-01-15T12:30:45+24:00",
-        "2024-01-15T12:30:45+23:59",
-        "2024-01-15T12:30:45+14:01",
-        "2024-01-15T12:30:45+08:60",
+        "2024-01-15T12:30:45+25:00",
+        "2024-01-15T12:30:45+08:61",
         "2024-01-15 12:30:45Z",
         "2024-01-15t12:30:45z",
         "2024-01-15T12:30:61Z",
@@ -643,6 +641,35 @@ static void test_strict_rfc3339(void) {
               neverc_time_parse_rfc3339("2024-01-15T12:00:00+14:00", &out), 0);
     check_int("accept -14:00",
               neverc_time_parse_rfc3339("2024-01-15T12:00:00-14:00", &out), 0);
+    /* Go parseRFC3339 allows hour 0-23; Parse(RFC3339) then accepts 24/60
+     * via the layout fallback (hr > 24 / mm > 60). */
+    check_int("accept +23:59",
+              neverc_time_parse_rfc3339("2024-01-15T12:30:45+23:59", &out), 0);
+    check_int64("utc of +23:59", out.sec, 1705321845LL - (23 * 3600 + 59 * 60));
+    check_int("accept +14:01",
+              neverc_time_parse_rfc3339("2024-01-15T12:00:00+14:01", &out), 0);
+    check_int64("utc of +14:01", out.sec, 1705320000LL - (14 * 3600 + 60));
+    check_int("accept -14:01",
+              neverc_time_parse_rfc3339("2024-01-15T12:00:00-14:01", &out), 0);
+    check_int64("utc of -14:01", out.sec, 1705320000LL + (14 * 3600 + 60));
+    check_int("accept +24:00",
+              neverc_time_parse_rfc3339("2024-01-15T12:30:45+24:00", &out), 0);
+    check_int64("utc of +24:00", out.sec, 1705321845LL - 24 * 3600);
+    check_int("accept +08:60",
+              neverc_time_parse_rfc3339("2024-01-15T12:30:45+08:60", &out), 0);
+    check_int64("utc of +08:60", out.sec, 1705321845LL - (8 * 3600 + 60 * 60));
+    {
+        neverc_time_t layout_out;
+        check_int("layout parse +23:59",
+                  neverc_time_parse("2006-01-02T15:04:05Z07:00",
+                                    "2024-01-15T12:30:45+23:59",
+                                    &layout_out), 0);
+        check_int("rfc3339 +23:59 matches layout",
+                  neverc_time_parse_rfc3339("2024-01-15T12:30:45+23:59",
+                                            &out), 0);
+        check_bool("rfc3339/layout +23:59 same instant",
+                   out.sec == layout_out.sec && out.nsec == layout_out.nsec, 1);
+    }
     check_int("accept compact +0800",
               neverc_time_parse_rfc3339("2024-01-15T12:30:45+0800", &out), 0);
     {
@@ -659,8 +686,6 @@ static void test_strict_rfc3339(void) {
     }
     check_int("reject leap second 60",
               neverc_time_parse_rfc3339("2024-01-15T12:30:60Z", &out), -1);
-    check_int("reject -14:01",
-              neverc_time_parse_rfc3339("2024-01-15T12:00:00-14:01", &out), -1);
     check_int("null rfc3339 input", neverc_time_parse_rfc3339(NULL, &out), -1);
     check_int("null rfc3339 output",
               neverc_time_parse_rfc3339("1970-01-01T00:00:00Z", NULL), -1);

@@ -88,8 +88,11 @@ void neverc_tzdata_zone_free(neverc_tzdata_zone_t *zone);
 
 /* ===== Std Module Dot-Syntax Support ===== */
 #ifdef __neverc__
-struct __neverc_std_time_tzdata_t { char __tag; };
-extern struct __neverc_std_time_tzdata_t __neverc_mod_tzdata;
+/* Marker name must match neverc_tzdata_* so time_mod.tzdata.lookup()
+ * resolves to neverc_tzdata_lookup, not neverc_time_tzdata_lookup. */
+struct __neverc_std_tzdata_t { char __tag; };
+#include <neverc/std/time.h>
+extern struct __neverc_std_tzdata_t __neverc_mod_tzdata;
 #endif
 
 #endif /* NEVERC_TIME_TZDATA_H */

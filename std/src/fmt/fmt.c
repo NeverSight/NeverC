@@ -762,12 +762,16 @@ static int scan_rune_is_space(uint32_t r) {
            r == 0x205F || r == 0x3000;
 }
 
-/* Byte length of a space rune at s, or 0. allow_nl includes U+000A. */
+/* Byte length of a space rune at s, or 0. allow_nl includes U+000A.
+ * Invalid UTF-8 is not space: Go DecodeRune yields RuneError, and
+ * isSpace(U+FFFD) is false. A lone 0xA0/0x85 byte must not skip as
+ * U+00A0/U+0085 (those exist only as the 2-byte encodings C2 A0 / C2 85). */
 static int scan_space_bytes(const char *s, int allow_nl) {
     if (!s || !*s) return 0;
     uint32_t r;
     int n;
-    scan_decode_rune(s, &r, &n);
+    if (!scan_decode_rune(s, &r, &n))
+        return 0;
     if (r == '\n') return allow_nl ? n : 0;
     return scan_rune_is_space(r) ? n : 0;
 }

@@ -461,6 +461,13 @@ int neverc_h3_server_goaway_id_valid(uint64_t stream_id) {
            stream_id <= neverc_h3_graceful_goaway_id();
 }
 
+/* RFC 9114 §6.1: HTTP/3 does not use server-initiated bidirectional
+ * streams. A client MUST treat one as H3_STREAM_CREATION_ERROR.
+ * Type bits 0b01 (id & 3 == 1): server-initiated, bidirectional. */
+int neverc_h3_is_server_initiated_bidi(uint64_t stream_id) {
+    return (stream_id & 3U) == 1U;
+}
+
 /* 1 if this request stream is above the advertised GOAWAY identifier. */
 int neverc_h3_request_stream_after_goaway(uint64_t goaway_id,
                                           uint64_t stream_id) {

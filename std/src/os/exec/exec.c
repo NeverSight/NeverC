@@ -452,18 +452,31 @@ static size_t exec_win_component_base_len(const char *s, size_t n) {
     return end;
 }
 
+/* Go filepath.IsAbs, plus \??\ (NT native). Drive-relative "C:foo",
+ * current-drive "\foo", and ".\bin" are not absolute (Go ErrDot). */
+static int exec_win_path_is_abs(const char *dir, size_t n) {
+    if (n >= 3 && dir[1] == ':' && (dir[2] == '\\' || dir[2] == '/'))
+        return 1;
+    if (n >= 2 && (dir[0] == '\\' || dir[0] == '/') &&
+        (dir[1] == '\\' || dir[1] == '/'))
+        return 1;
+    if (n >= 4 && (dir[0] == '\\' || dir[0] == '/') &&
+        dir[1] == '?' && dir[2] == '?' &&
+        (dir[3] == '\\' || dir[3] == '/'))
+        return 1;
+    return 0;
+}
+
 static int exec_win_skip_path_dir(const char *dir, size_t dlen) {
     size_t i = 0;
     int drive_abs = 0;
     int saw_dotdot = 0;
     int saw_real = 0;
     if (dlen == 0) return 1;
-    if (dlen >= 2 &&
-        ((dir[0] >= 'A' && dir[0] <= 'Z') ||
-         (dir[0] >= 'a' && dir[0] <= 'z')) &&
-        dir[1] == ':') {
-        if (dlen == 2) return 1; /* C: is the drive cwd */
-        if (dir[2] != '\\' && dir[2] != '/') return 1; /* C:foo / C:. */
+    /* Leftover Go ErrDot: relative PATH ("bin", ".\\bin"), drive-relative
+     * "C:foo", and current-drive "\\Windows" are not IsAbs. */
+    if (!exec_win_path_is_abs(dir, dlen)) return 1;
+    if (dlen >= 2 && dir[1] == ':') {
         drive_abs = 1;
         i = 2;
     }
@@ -484,8 +497,8 @@ static int exec_win_skip_path_dir(const char *dir, size_t dlen) {
         }
         saw_real = 1;
     }
-    /* Go filepath.Clean("foo\\..") is "." (cwd). Absolute "C:\\Windows\\.."
-     * cleans to a volume path and is still searched. */
+    /* Go filepath.Clean("foo\\..") is "." (cwd). UNC "\\i\\..\\c$" is not
+     * IsAbs (invalid volume). Absolute "C:\\Windows\\.." is still searched. */
     if (saw_dotdot && !drive_abs) return 1;
     if (saw_real) return 0;
     /* Only dots and slashes: ".\\" is cwd, "C:\\" is the volume root. */
@@ -883,9 +896,12 @@ const char *neverc_exec_look_path(const char *file, char *buf, size_t cap) {
         return NULL;
     if (strchr(file, '\\') || strchr(file, '/') ||
         (file[0] && file[1] == ':')) {
-        size_t flen;
-        if (!exec_win_is_file(file)) return NULL;
-        flen = strlen(file);
+        size_t flen = strlen(file);
+        /* Go LookPath: a relative / drive-relative / current-drive path is
+         * ErrDot even when the file exists (".\\a.exe", "C:a.exe", "\\a.exe").
+         * UNC with ".." in the volume is also not IsAbs. */
+        if (exec_win_skip_path_dir(file, flen) || !exec_win_is_file(file))
+            return NULL;
         if (flen >= cap) return NULL;
         memcpy(buf, file, flen + 1);
         return buf;
@@ -910,31 +926,12 @@ static int exec_is_exe_file(const char *path) {
     return stat(path, &st) == 0 && S_ISREG(st.st_mode);
 }
 
-/* Go 1.19+ LookPath: empty PATH entries, cwd aliases (".", "./",
- * ".//"), and relative dirs that Clean through `..` are ErrDot. */
+/* Go 1.19+ LookPath ErrDot: empty PATH, cwd aliases (".", "./"),
+ * relative dirs that Clean through `..`, and any other non-absolute
+ * entry ("./bin", "bin") must not be a successful hit. */
 static int exec_posix_skip_path_dir(const char *dir, size_t dlen) {
-    size_t i = 0;
-    int saw_dotdot = 0;
-    int saw_real = 0;
-    int is_abs = dlen > 0 && dir[0] == '/';
     if (dlen == 0) return 1;
-    while (i < dlen) {
-        while (i < dlen && dir[i] == '/') i++;
-        if (i >= dlen) break;
-        size_t start = i;
-        while (i < dlen && dir[i] != '/') i++;
-        size_t clen = i - start;
-        if (clen == 1 && dir[start] == '.') continue;
-        if (clen == 2 && dir[start] == '.' && dir[start + 1] == '.') {
-            saw_dotdot = 1;
-            continue;
-        }
-        saw_real = 1;
-    }
-    if (saw_dotdot && !is_abs) return 1;
-    if (saw_real) return 0;
-    /* Only dots and slashes: ".", "./", ".//" are cwd. "/" is the root. */
-    return !is_abs;
+    return dir[0] != '/';
 }
 
 static int exec_set_cloexec(int fd) {
@@ -961,14 +958,17 @@ static const char *exec_look_in_path(const char *file, const char *path_env,
     if (!file || !exec_look_path_name_ok(file) || !buf || cap == 0)
         return NULL;
     if (strchr(file, '/')) {
+        /* Go LookPath("./tool") is ErrDot; only an absolute path is a hit. */
+        if (file[0] != '/')
+            return NULL;
         if (exec_is_exe_file(file)) {
             size_t flen = strlen(file);
             if (flen < cap) { memcpy(buf, file, flen + 1); return buf; }
         }
         return NULL;
     }
-    /* PATH="" is no search list (Go SplitList("")). Empty components and
-     * "." are cwd hits (Go ErrDot) and are skipped like Windows. */
+    /* PATH="" is no search list (Go SplitList("")). Empty, ".", and other
+     * relative components are cwd hits (Go ErrDot) and are skipped. */
     if (!path_env || path_env[0] == '\0') return NULL;
 
     const char *p = path_env;
@@ -991,9 +991,7 @@ static const char *exec_look_in_path(const char *file, const char *path_env,
 }
 
 /* Go Cmd.Start looks up a pathless name in the parent, then chdir.
- * Searching PATH after chdir would run Dir/name when PATH contains ".".
- * Relative hits ("./tool", "rel/tool") are made absolute against the
- * parent's cwd so the child still execs the same file after chdir. */
+ * Searching PATH after chdir would run Dir/name when PATH contains ".". */
 static int exec_posix_resolve_pathless(const neverc_exec_cmd_t *cmd,
                                        char *buf, size_t cap) {
     const char *path;

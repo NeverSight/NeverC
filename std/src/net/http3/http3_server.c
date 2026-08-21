@@ -63,6 +63,7 @@ extern uint64_t neverc_h3_graceful_goaway_id(void);
 extern int neverc_h3_server_goaway_id_valid(uint64_t stream_id);
 extern int neverc_h3_request_stream_after_goaway(uint64_t goaway_id,
                                                  uint64_t stream_id);
+extern int neverc_h3_is_server_initiated_bidi(uint64_t stream_id);
 extern int neverc_h3_uni_stream_type_class(uint64_t type);
 extern int neverc_h3_field_section_over_limit(uint64_t size, uint64_t limit);
 extern int neverc_qpack_decoder_stream_instruction(const uint8_t *data,
@@ -188,6 +189,16 @@ static int h3_write_all(neverc_quic_stream_t *stream, const void *data,
     if (length > INT_MAX) return -1;
     return neverc_quic_stream_write(stream, data, length) == (int)length ?
         0 : -1;
+}
+
+/* RFC 9114 §8: stream errors are indicated with RESET_STREAM and
+ * STOP_SENDING. RESET_STREAM alone leaves the receive half open, so the
+ * peer can keep sending and consume connection flow-control credit. */
+static void h3_abort_request_stream(neverc_quic_stream_t *stream,
+                                    uint64_t error_code) {
+    if (!stream) return;
+    (void)neverc_quic_stream_stop_sending(stream, error_code);
+    (void)neverc_quic_stream_reset(stream, error_code);
 }
 
 static void h3_sleep_ms(unsigned milliseconds) {
@@ -902,7 +913,7 @@ static void h3_request_task(h3_stream_task_t *task) {
             h3_protocol_error(connection, NC_H3_FRAME_UNEXPECTED,
                               "unexpected HTTP/3 frame on request stream");
         } else {
-            (void)neverc_quic_stream_reset(stream, NC_H3_MESSAGE_ERROR);
+            h3_abort_request_stream(stream, NC_H3_MESSAGE_ERROR);
         }
         neverc_quic_stream_free(stream);
         return;
@@ -949,7 +960,7 @@ static void h3_request_task(h3_stream_task_t *task) {
     request.context = NULL;
     if (h3_send_response(connection, stream, writer) != 0 &&
         neverc_quic_conn_is_alive(connection->quic))
-        (void)neverc_quic_stream_reset(stream, NC_H3_INTERNAL_ERROR);
+        h3_abort_request_stream(stream, NC_H3_INTERNAL_ERROR);
     neverc_http_memory_writer_free(writer);
     free(path);
     free(raw_headers);
@@ -1376,7 +1387,7 @@ static int h3_dispatch_request_stream(h3_conn_t *connection,
         neverc_h3_request_stream_after_goaway(connection->goaway_sent_id,
                                               stream_id)) {
         nc_mutex_unlock(&connection->lock);
-        (void)neverc_quic_stream_reset(stream, NC_H3_REQUEST_REJECTED);
+        h3_abort_request_stream(stream, NC_H3_REQUEST_REJECTED);
         neverc_quic_stream_free(stream);
         return 0;
     }
@@ -1387,7 +1398,7 @@ static int h3_dispatch_request_stream(h3_conn_t *connection,
         atomic_fetch_sub_explicit(&connection->active_requests, 1,
                                   memory_order_acq_rel);
         nc_mutex_unlock(&connection->lock);
-        (void)neverc_quic_stream_reset(stream, NC_H3_EXCESSIVE_LOAD);
+        h3_abort_request_stream(stream, NC_H3_EXCESSIVE_LOAD);
         neverc_quic_stream_free(stream);
         return active > connection->server->max_concurrent_streams ? 0 : -1;
     }
@@ -1808,11 +1819,15 @@ static int h3_client_receive_settings(h3_conn_t *connection) {
             h3_sleep_ms(2);
             continue;
         }
-        if ((neverc_quic_stream_id(stream) & 2U) == 0) {
-            /* RFC 9000 §2.1 may implicitly open lower bidi IDs. SETTINGS
-             * lives on the uni control stream; keep waiting for it. */
+        if (neverc_h3_is_server_initiated_bidi(
+                neverc_quic_stream_id(stream))) {
+            /* RFC 9114 §6.1: HTTP/3 clients MUST treat a server-initiated
+             * bidirectional stream as H3_STREAM_CREATION_ERROR. These are
+             * not client request-stream holes (those are locally opened). */
             neverc_quic_stream_free(stream);
-            continue;
+            h3_protocol_error(connection, NC_H3_STREAM_CREATION_ERROR,
+                              "server-initiated HTTP/3 bidirectional stream");
+            return -1;
         }
         if (connection->pending_uni_count == 16) {
             neverc_quic_stream_free(stream);

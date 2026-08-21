@@ -136,18 +136,14 @@ int neverc_sort_doubles_are_sorted(const double *arr, size_t n) {
 size_t neverc_sort_find(size_t n, int (*cmp)(size_t i), int *found) {
     if (found) *found = 0;
     if (!cmp) return 0;
+    /* cmp(i) < 0 ⇒ entry i is less than the target (Go cmp.Compare). */
     size_t lo = 0, hi = n;
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
-        int c = cmp(mid);
-        if (c > 0) {
+        if (cmp(mid) < 0)
             lo = mid + 1;
-        } else if (c < 0) {
+        else
             hi = mid;
-        } else {
-            if (found) *found = 1;
-            hi = mid;
-        }
     }
     if (found && lo < n && cmp(lo) == 0)
         *found = 1;

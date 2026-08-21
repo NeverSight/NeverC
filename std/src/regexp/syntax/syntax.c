@@ -210,6 +210,27 @@ static int brace_repeat_leading_zeros(const char *s, int pos, int len) {
     return 0;
 }
 
+/* True when `{` at pos is a complete {n} / {n,} / {n,m} that Go parseRepeat
+ * would treat as a quantifier. Leading zeros and unclosed braces are
+ * literals, so they must not trip the nested-repeat check after *+?{n}. */
+static int complete_brace_repeat(const char *s, int pos, int len) {
+    if (pos >= len || s[pos] != '{') return 0;
+    if (brace_repeat_leading_zeros(s, pos, len)) return 0;
+    pos++;
+    if (pos >= len || s[pos] < '0' || s[pos] > '9') return 0;
+    while (pos < len && s[pos] >= '0' && s[pos] <= '9') pos++;
+    if (pos >= len) return 0;
+    if (s[pos] == ',') {
+        pos++;
+        if (pos >= len) return 0;
+        if (s[pos] != '}') {
+            if (s[pos] < '0' || s[pos] > '9') return 0;
+            while (pos < len && s[pos] >= '0' && s[pos] <= '9') pos++;
+        }
+    }
+    return pos < len && s[pos] == '}';
+}
+
 static int peek(parser_t *p);
 static int next(parser_t *p);
 
@@ -843,13 +864,14 @@ static neverc_regexp_syntax_node_t *parse_repeat(parser_t *p) {
         rep->flags |= NC_RE_FLAG_NON_GREEDY;
     }
 
-    /* Go/Perl: a second *+? or {n} after a quantifier is invalid (a{2}*, a**).
-     * A single trailing '?' is the non-greedy flag, already consumed above. */
+    /* Go/Perl: a second *+? or a complete {n}/{n,}/{n,m} after a quantifier
+     * is invalid (a{2}*, a**). `{01}` and unclosed `{3` are literals
+     * (Go parseRepeat), not stacked repeats. A single trailing '?' is the
+     * non-greedy flag, already consumed above. */
     {
         int nxt = peek(p);
         if (nxt == '*' || nxt == '+' || nxt == '?' ||
-            (nxt == '{' && p->pos + 1 < p->len &&
-             p->src[p->pos + 1] >= '0' && p->src[p->pos + 1] <= '9')) {
+            complete_brace_repeat(p->src, p->pos, p->len)) {
             p->err = "invalid nested repetition operator";
             neverc_regexp_syntax_free(atom);
             neverc_regexp_syntax_free(rep);

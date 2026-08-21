@@ -105,3 +105,7 @@ uint64_t neverc_xxhash64(const void *data, size_t len, uint64_t seed) {
 
     return h64;
 }
+
+uint64_t neverc_xxhash_hash64(const void *data, size_t len, uint64_t seed) {
+    return neverc_xxhash64(data, len, seed);
+}

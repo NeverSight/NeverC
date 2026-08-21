@@ -10,12 +10,14 @@
 #include "text/tabwriter.h"
 
 #ifdef __neverc__
-struct __neverc_std_text_template_t { char __tag; };
+/* Marker name must match neverc_template_* so text.template_mod.parse()
+ * resolves to neverc_template_parse, not neverc_text_template_parse. */
+struct __neverc_std_template_t { char __tag; };
 struct __neverc_std_scanner_t { char __tag; };
 struct __neverc_std_tabwriter_t { char __tag; };
 
 struct __neverc_std_text_t {
-    struct __neverc_std_text_template_t template_mod;
+    struct __neverc_std_template_t template_mod;
     struct __neverc_std_scanner_t scanner;
     struct __neverc_std_tabwriter_t tabwriter;
 };

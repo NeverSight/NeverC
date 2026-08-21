@@ -829,17 +829,28 @@ static void grpc_fake_h2_task(void *context) {
             .name = "grpc-status", .value = "5"};
         headers[header_count++] = (neverc_hpack_header_t){
             .name = "grpc-message", .value = "missing"};
-    } else if (test->kind == 2) {
+    } else if (test->kind == 1) {
+        /* Non-200 without grpc-status: HTTP mapping (503 → UNAVAILABLE). */
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = ":status", .value = "503"};
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = "content-type", .value = "text/plain"};
+    } else if (test->kind == 2 || test->kind == 3) {
         headers[header_count++] = (neverc_hpack_header_t){
             .name = ":status", .value = "503"};
         headers[header_count++] = (neverc_hpack_header_t){
             .name = "content-type", .value = "application/grpc"};
     } else if (test->kind == 4 || test->kind == 5 || test->kind == 6 ||
                test->kind == 7) {
+        /* kind 7 is Trailers-Only OK. kinds 4–6 put grpc-status on
+         * Response-Headers, which is valid only when there is no DATA and
+         * no later trailer block. */
         headers[header_count++] = (neverc_hpack_header_t){
-            .name = ":status", .value = "503"};
+            .name = ":status", .value = "200"};
         headers[header_count++] = (neverc_hpack_header_t){
-            .name = "content-type", .value = "text/plain"};
+            .name = "content-type", .value = "application/grpc"};
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = "grpc-status", .value = "0"};
     }
     uint8_t block[256];
     size_t block_length = 0;

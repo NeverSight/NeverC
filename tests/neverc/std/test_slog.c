@@ -176,11 +176,12 @@ static void test_skipped_attrs(void) {
         neverc_slog_string("", "empty-key"),
         neverc_slog_string(NULL, "null-key"),
         { NULL, NEVERC_SLOG_ATTR_NONE, {0} },
-        neverc_slog_int64("n", 1)
+        neverc_slog_int64("n", 1),
+        neverc_slog_int64("", 0)
     };
     attrs[3].key = "none";
     attrs[3].kind = NEVERC_SLOG_ATTR_NONE;
-    neverc_slog_log(&h, NEVERC_SLOG_INFO, "skip", attrs, 5);
+    neverc_slog_log(&h, NEVERC_SLOG_INFO, "skip", attrs, 6);
 #if defined(_WIN32)
     fflush(f);
     rewind(f);
@@ -191,10 +192,30 @@ static void test_skipped_attrs(void) {
 
     ASSERT_TRUE(strstr(buf, "keep=yes") != NULL);
     ASSERT_TRUE(strstr(buf, "n=1") != NULL);
-    ASSERT_TRUE(strstr(buf, "empty-key") == NULL);
+    /* Go slog #59282: empty key with a real value is emitted. */
+    ASSERT_TRUE(strstr(buf, "empty-key") != NULL);
+    ASSERT_TRUE(strstr(buf, "\"\"=empty-key") != NULL);
+    ASSERT_TRUE(strstr(buf, "\"\"=0") != NULL);
     ASSERT_TRUE(strstr(buf, "null-key") == NULL);
     ASSERT_TRUE(strstr(buf, "none=") == NULL);
-    ASSERT_TRUE(strstr(buf, "\"\"=") == NULL);
+
+    memset(buf, 0, sizeof(buf));
+    f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    if (!f) return;
+    neverc_slog_init(&h, f, NEVERC_SLOG_DEBUG, NEVERC_SLOG_FORMAT_JSON);
+    neverc_slog_log(&h, NEVERC_SLOG_INFO, "skip", attrs, 6);
+    rewind(f);
+    {
+        size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+        buf[n] = '\0';
+    }
+    fclose(f);
+    ASSERT_TRUE(strstr(buf, "\"keep\":\"yes\"") != NULL);
+    ASSERT_TRUE(strstr(buf, "\"\":\"empty-key\"") != NULL);
+    ASSERT_TRUE(strstr(buf, "\"\":0") != NULL);
+    ASSERT_TRUE(strstr(buf, "null-key") == NULL);
+    ASSERT_TRUE(strstr(buf, "\"none\"") == NULL);
 }
 
 static void test_reserved_keys_do_not_overwrite(void) {

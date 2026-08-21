@@ -419,7 +419,16 @@ int neverc_rpc_server_stream_recv(
         stream->receive_queue, stream->context, &value);
     if (received == NEVERC_THREAD_CANCELLED)
         return NEVERC_RPC_IO_CANCELLED;
-    if (received == NEVERC_THREAD_CLOSED) return NEVERC_RPC_IO_END;
+    if (received == NEVERC_THREAD_CLOSED) {
+        /* CANCEL (and connection teardown) close the queue. That is not a
+         * clean client half-close: Go net/rpc and grpc-go Recv report the
+         * cancellation error, not io.EOF, so handlers must not fail-open as
+         * success. */
+        nc_mutex_lock(&stream->lock);
+        int cancelled = stream->peer_cancelled;
+        nc_mutex_unlock(&stream->lock);
+        return cancelled ? NEVERC_RPC_IO_CANCELLED : NEVERC_RPC_IO_END;
+    }
     if (received != NEVERC_THREAD_OK) return NEVERC_RPC_IO_CLOSED;
     rpc_server_inbound_t *inbound = (rpc_server_inbound_t *)value;
     if (inbound->header.type != NEVERC_RPC_FRAME_DATA ||
@@ -734,13 +743,14 @@ static int rpc_server_dispatch_request_frame(
     int receive_closed = stream->receive_closed;
     nc_mutex_unlock(&stream->lock);
     if (receive_closed && frame->header.type == NEVERC_RPC_FRAME_DATA) {
-        nc_mutex_unlock(&connection->streams_lock);
         free(inbound);
-        /* Mirror the client: DATA after END is a stream error, not a
-         * connection kill, so a bidi handler can still finish. */
+        /* Hold streams_lock across END so destroy cannot free `stream`
+         * after we drop the table lock. DATA after END is a stream error,
+         * not a connection kill, so a bidi handler can still finish. */
         (void)rpc_server_stream_end_internal(
             stream, NEVERC_RPC_STATUS_DATA_LOSS,
             "RPC DATA after end of stream", NULL);
+        nc_mutex_unlock(&connection->streams_lock);
         return 0;
     }
     if (frame->header.type == NEVERC_RPC_FRAME_CANCEL) {

@@ -32,6 +32,7 @@ int neverc_path_match(const char *pattern, const char *name);
 }
 #endif
 
+#include "path/filepath.h"
 
 /* ===== Std Module Dot-Syntax Support ===== */
 

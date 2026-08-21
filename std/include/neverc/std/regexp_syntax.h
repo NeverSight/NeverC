@@ -94,6 +94,7 @@ int neverc_regexp_syntax_node_count(const neverc_regexp_syntax_node_t *node);
 /* ===== Std Module Dot-Syntax Support ===== */
 #ifdef __neverc__
 struct __neverc_std_regexp_syntax_t { char __tag; };
+#include <neverc/std/regexp.h>
 extern struct __neverc_std_regexp_syntax_t __neverc_mod_regexp_syntax;
 #endif
 

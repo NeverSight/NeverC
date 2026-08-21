@@ -73,10 +73,25 @@ static int copy_dns_name(char *dst, size_t dstsz, const char *src) {
     return 0;
 }
 
+/* IP literals and getaddrinfo results, including Windows zones with spaces
+ * ("Ethernet 2"). Still reject CTL so a leftover Host cannot be injected. */
+static int copy_ip_text(char *dst, size_t dstsz, const char *src) {
+    if (!dst || dstsz == 0 || !src || !src[0]) return -1;
+    size_t n = strlen(src);
+    if (n >= dstsz) return -1;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)src[i];
+        if (c < 0x20 || c == 0x7f)
+            return -1;
+    }
+    memcpy(dst, src, n + 1);
+    return 0;
+}
+
 /* Query names/service labels handed to getaddrinfo / res_query / DnsQuery.
  * Reject C0 and DEL so a leftover Host/header cannot be injected through
  * the resolver. Space (0x20) is allowed: Windows IPv6 zones like
- * "Ethernet 2". Answers still use copy_dns_name (space-rejected). */
+ * "Ethernet 2". DNS names still use copy_dns_name (space-rejected). */
 static int dns_query_text_ok(const char *s) {
     if (!s || !s[0]) return 0;
     for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
@@ -197,6 +212,53 @@ static int parse_ipv6_zone(const char *zone, unsigned *scope_id) {
     return 0;
 }
 
+/* Go Resolver.LookupIP parses IP literals in-process (ipv4only / ipv6only /
+ * To4). getaddrinfo(AF_INET, "::ffff:a.b.c.d") often fails even though Go
+ * LookupIP("ip4", mapped) returns the embedded IPv4. Returns 1 if `lit`
+ * is not an IP literal. */
+static int lookup_ip_from_literal(int family, const char *lit,
+                                  unsigned host_scope, const char *host_zone,
+                                  neverc_net_addrs_t *out) {
+    struct in_addr v4;
+    struct in6_addr v6;
+    char buf[64] = {0};
+
+    if (inet_pton(AF_INET, lit, &v4) == 1) {
+        if (host_zone || family == AF_INET6)
+            return -1;
+        if (format_resolved_ip(AF_INET, &v4, 0, buf, sizeof(buf)) != 0)
+            return -1;
+    } else if (inet_pton(AF_INET6, lit, &v6) == 1) {
+        if (nc_in6_is_addr_v4mapped(&v6)) {
+            /* Go ipv6only: To4() != nil is not a suitable address. */
+            if (host_zone || family == AF_INET6)
+                return -1;
+            if (format_resolved_ip(AF_INET, v6.s6_addr + 12, 0, buf,
+                                   sizeof(buf)) != 0)
+                return -1;
+        } else {
+            if (family == AF_INET)
+                return -1;
+            if (format_resolved_ip(AF_INET6, &v6, host_scope, buf,
+                                   sizeof(buf)) != 0)
+                return -1;
+            if (host_zone && !strchr(buf, '%')) {
+                size_t used = strlen(buf);
+                int n = snprintf(buf + used, sizeof(buf) - used, "%%%s",
+                                 host_zone);
+                if (n <= 0 || (size_t)n >= sizeof(buf) - used)
+                    return -1;
+            }
+        }
+    } else {
+        return 1;
+    }
+    if (copy_ip_text(out->addrs[0], sizeof(out->addrs[0]), buf) != 0)
+        return -1;
+    out->count = 1;
+    return 0;
+}
+
 /* ======================================================================
  * DNS Lookup — LookupHost / LookupIP
  * Uses getaddrinfo for cross-platform portability.
@@ -249,12 +311,33 @@ int neverc_net_lookup_ip(const char *network, const char *host,
     else
         return -1;
 
+    {
+        const char *lit = lookup;
+        char iponly[256];
+        if (host_zone) {
+            const char *pct = host_zone - 1;
+            size_t n = (size_t)(pct - host);
+            if (n == 0 || n >= sizeof(iponly))
+                return -1;
+            memcpy(iponly, host, n);
+            iponly[n] = '\0';
+            lit = iponly;
+        }
+        int lit_rc = lookup_ip_from_literal(hints.ai_family, lit, host_scope,
+                                            host_zone, out);
+        if (lit_rc <= 0)
+            return lit_rc;
+    }
+
     int rc = getaddrinfo(lookup, NULL, &hints, &result);
     if (rc != 0) return -1;
 
     for (rp = result; rp && out->count < NEVERC_NET_MAX_ADDRS; rp = rp->ai_next) {
         char buf[64] = {0};
         if (rp->ai_family == AF_INET) {
+            /* Go LookupIP("ip6"): IPv4 (To4 != nil) is not a suitable address. */
+            if (hints.ai_family == AF_INET6)
+                continue;
             struct sockaddr_in *in = (struct sockaddr_in *)rp->ai_addr;
             if (format_resolved_ip(AF_INET, &in->sin_addr, 0, buf,
                                    sizeof(buf)) != 0)
@@ -262,13 +345,18 @@ int neverc_net_lookup_ip(const char *network, const char *host,
         } else if (rp->ai_family == AF_INET6) {
             struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)rp->ai_addr;
             /* IPv4-mapped AAAA / literals must print as IPv4 so an ACL
-             * that allows "127.0.0.1" is not bypassed by ::ffff:127.0.0.1. */
+             * that allows "127.0.0.1" is not bypassed by ::ffff:127.0.0.1.
+             * Go ipv6only also drops mapped addresses (To4 != nil). */
             if (nc_in6_is_addr_v4mapped(&in6->sin6_addr)) {
+                if (hints.ai_family == AF_INET6)
+                    continue;
                 if (format_resolved_ip(AF_INET,
                                        in6->sin6_addr.s6_addr + 12, 0, buf,
                                        sizeof(buf)) != 0)
                     continue;
             } else {
+                if (hints.ai_family == AF_INET)
+                    continue;
                 unsigned scope = in6->sin6_scope_id ? in6->sin6_scope_id
                                                     : host_scope;
                 if (format_resolved_ip(AF_INET6, &in6->sin6_addr, scope, buf,
@@ -293,7 +381,7 @@ int neverc_net_lookup_ip(const char *network, const char *host,
             if (strcmp(out->addrs[i], buf) == 0) { dup = 1; break; }
         }
         if (!dup) {
-            if (copy_dns_name(out->addrs[out->count], 64, buf) != 0)
+            if (copy_ip_text(out->addrs[out->count], 64, buf) != 0)
                 continue;
             out->count++;
         }
@@ -854,19 +942,27 @@ int neverc_net_split_host_port(const char *hostport,
 
         size_t hlen = (size_t)(end - s - 1);
         if (hlen >= hostlen) return -1;
-        memcpy(host, s + 1, hlen);
-        host[hlen] = '\0';
-        /* RFC 4007 zone-id after '%' must be non-empty. */
-        const char *zone = strchr(host, '%');
-        if (zone && !zone[1]) return -1;
-
+        /* RFC 4007 zone-id after '%' must be non-empty. Validate before
+         * copying so a failed split cannot leak CTL / leftover Host. */
+        {
+            const char *raw_host = s + 1;
+            const char *zone = memchr(raw_host, '%', hlen);
+            if (zone && (size_t)(zone - raw_host) + 1 >= hlen)
+                return -1;
+        }
         if (end[1] != ':') return -1;
         size_t plen = strlen(end + 2);
         if (plen >= portlen) return -1;
+        if (!port_text_valid(end + 2)) return -1;
+        memcpy(host, s + 1, hlen);
+        host[hlen] = '\0';
         memcpy(port, end + 2, plen);
         port[plen] = '\0';
-        if (!port_text_valid(port)) return -1;
-        if (!host_text_valid(host)) return -1;
+        if (!host_text_valid(host)) {
+            host[0] = '\0';
+            port[0] = '\0';
+            return -1;
+        }
         return 0;
     }
 
@@ -886,15 +982,19 @@ int neverc_net_split_host_port(const char *hostport,
 
     size_t hlen = (size_t)(last_colon - s);
     if (hlen >= hostlen) return -1;
-    memcpy(host, s, hlen);
-    host[hlen] = '\0';
-
     size_t plen = strlen(last_colon + 1);
     if (plen >= portlen) return -1;
+    if (!port_text_valid(last_colon + 1)) return -1;
+
+    memcpy(host, s, hlen);
+    host[hlen] = '\0';
     memcpy(port, last_colon + 1, plen);
     port[plen] = '\0';
-    if (!port_text_valid(port)) return -1;
-    if (!host_text_valid(host)) return -1;
+    if (!host_text_valid(host)) {
+        host[0] = '\0';
+        port[0] = '\0';
+        return -1;
+    }
 
     return 0;
 }

@@ -123,4 +123,8 @@ char *neverc_httputil_dump_request_out(const char *method,
 }
 #endif
 
+#ifdef __neverc__
+#include <neverc/std/net.h>
+#endif
+
 #endif /* NEVERC_NET_HTTP_HTTPUTIL_H */

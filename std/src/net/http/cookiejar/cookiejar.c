@@ -458,6 +458,55 @@ static int cookie_is_k12_us_suffix(const char *domain) {
            isalpha((unsigned char)domain[5]);
 }
 
+/* Labels before .amazonaws.com. */
+static int cookie_amazonaws_head(const char *domain, const char **head,
+                                 size_t *head_len) {
+    static const char aws[] = "amazonaws.com";
+    size_t n = strlen(domain);
+    size_t m = sizeof(aws) - 1;
+    if (n <= m + 1 || domain[n - m - 1] != '.' ||
+        strcmp(domain + (n - m), aws) != 0)
+        return 0;
+    *head = domain;
+    *head_len = n - m - 1;
+    return 1;
+}
+
+/* PSL s3 / s3.<region> / s3-website-* / s3-accesspoint* / s3-fips*.
+ * Matching only "s3." left hyphenated website endpoints fail-open. */
+static int cookie_aws_s3_product(const char *s, size_t n) {
+    return n >= 2 && s[0] == 's' && s[1] == '3' &&
+           (n == 2 || s[2] == '.' || s[2] == '-');
+}
+
+/* PSL wildcard *.product.amazonaws.com: exactly one left label. */
+static int cookie_aws_one_label_product(const char *s, size_t n,
+                                        const char *product) {
+    size_t m = strlen(product);
+    if (n <= m + 1 || s[n - m - 1] != '.' ||
+        memcmp(s + (n - m), product, m) != 0)
+        return 0;
+    return memchr(s, '.', n - m - 1) == NULL;
+}
+
+static int cookie_amazonaws_is_public_suffix(const char *domain) {
+    const char *head;
+    size_t n;
+    if (!cookie_amazonaws_head(domain, &head, &n))
+        return 0;
+    if (cookie_aws_s3_product(head, n))
+        return 1;
+    const char *dot = (const char *)memchr(head, '.', n);
+    if (dot && cookie_aws_s3_product(
+            dot + 1, n - (size_t)(dot - head) - 1))
+        return 1;
+    return cookie_aws_one_label_product(head, n, "compute") ||
+           cookie_aws_one_label_product(head, n, "compute-1") ||
+           cookie_aws_one_label_product(head, n, "elb") ||
+           cookie_aws_one_label_product(head, n, "execute-api") ||
+           cookie_aws_one_label_product(head, n, "lambda-url");
+}
+
 static int cookie_domain_is_public_suffix(const char *domain) {
     if (!domain || !domain[0] || host_is_ip_literal(domain)) return 0;
     static const char *const extra[] = {
@@ -492,6 +541,13 @@ static int cookie_domain_is_public_suffix(const char *domain) {
         "uk.com",
         "co.com",
         "pvt.k12.ma.us",
+        "scm.azurewebsites.net",
+        "blob.core.windows.net",
+        "dfs.core.windows.net",
+        "file.core.windows.net",
+        "queue.core.windows.net",
+        "table.core.windows.net",
+        "web.core.windows.net",
         "trafficmanager.net",
         "vercel.app",
         "web.app",
@@ -510,33 +566,8 @@ static int cookie_domain_is_public_suffix(const char *domain) {
             return 1;
         }
     }
-    /* Regional S3 endpoints are public suffixes (s3.<region>.amazonaws.com).
-     * Listing a few regions fails open for the rest (ap-northeast-1, etc.). */
-    {
-        static const char aws[] = "amazonaws.com";
-        size_t n = strlen(domain);
-        size_t m = sizeof(aws) - 1;
-        if (n > m + 1 && domain[n - m - 1] == '.' &&
-            strcmp(domain + (n - m), aws) == 0 &&
-            strncmp(domain, "s3.", 3) == 0)
-            return 1;
-    }
-    /* PSL: *.s3.<region>.amazonaws.com is a public suffix (bucket names).
-     * One extra left label only — do not recurse, or
-     * evil.bucket.s3.<region>.amazonaws.com would also match. */
-    {
-        const char *dot = strchr(domain, '.');
-        if (dot) {
-            static const char aws[] = "amazonaws.com";
-            const char *rest = dot + 1;
-            size_t n = strlen(rest);
-            size_t m = sizeof(aws) - 1;
-            if (n > m + 1 && rest[n - m - 1] == '.' &&
-                strcmp(rest + (n - m), aws) == 0 &&
-                strncmp(rest, "s3.", 3) == 0)
-                return 1;
-        }
-    }
+    if (cookie_amazonaws_is_public_suffix(domain))
+        return 1;
     /* blogspot.<public-suffix> is itself a public suffix (blogspot.co.uk). */
     if (strncmp(domain, "blogspot.", 9) == 0 &&
         cookie_domain_is_public_suffix(domain + 9))

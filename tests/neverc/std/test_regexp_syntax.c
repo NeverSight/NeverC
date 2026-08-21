@@ -226,6 +226,27 @@ static void test_parse_repeat(void) {
     check_not_null("a{0,01} literals", n);
     check_op("a{0,01} op", n, NC_RE_OP_CONCAT);
     neverc_regexp_syntax_free(n);
+
+    /* After a quantifier, `{01}` / unclosed `{3` are still literals (Go).
+     * Treating `{`+digit as nested `{n}` rejected a{2}{01} and a*{01}. */
+    n = neverc_regexp_syntax_parse("a{2}{01}", 0, &err);
+    check_not_null("a{2}{01} literals after repeat", n);
+    check_op("a{2}{01} op", n, NC_RE_OP_CONCAT);
+    check_int("a{2}{01} nsubs", n ? n->nsubs : 0, 5);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("a*{01}", 0, &err);
+    check_not_null("a*{01} star plus literals", n);
+    check_op("a*{01} op", n, NC_RE_OP_CONCAT);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("a{2}{3", 0, &err);
+    check_not_null("a{2}{3 unclosed after repeat is literal", n);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("a{2}{3,", 0, &err);
+    check_not_null("a{2}{3, unclosed after repeat is literal", n);
+    neverc_regexp_syntax_free(n);
 }
 
 /* ===== Alternation / Groups ===== */

@@ -260,6 +260,104 @@ static void test_public_suffix_domain(void) {
     neverc_cookiejar_free(jar);
 
     jar = neverc_cookiejar_new();
+    cookie.domain = "s3-website-us-east-1.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.s3-website-us-east-1.amazonaws.com/", &cookie, 1);
+    check_int("reject Domain=s3-website-us-east-1.amazonaws.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "s3-website.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.s3-website.amazonaws.com/", &cookie, 1);
+    check_int("reject Domain=s3-website.amazonaws.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "s3-accesspoint.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.s3-accesspoint.amazonaws.com/", &cookie, 1);
+    check_int("reject Domain=s3-accesspoint.amazonaws.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "bucket.s3-website-us-east-1.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.bucket.s3-website-us-east-1.amazonaws.com/",
+        &cookie, 1);
+    check_int("reject Domain=bucket.s3-website-us-east-1.amazonaws.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "evil.bucket.s3-website-us-east-1.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://www.evil.bucket.s3-website-us-east-1.amazonaws.com/",
+        &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar,
+        "https://www.evil.bucket.s3-website-us-east-1.amazonaws.com/",
+        out, 1);
+    check_int("s3-website bucket host stays registrable", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://victim.bucket.s3-website-us-east-1.amazonaws.com/",
+        out, 1);
+    check_int("s3-website bucket cookie is not sent to sibling", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "us-east-1.compute.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://i-abc.us-east-1.compute.amazonaws.com/", &cookie, 1);
+    check_int("reject Domain=us-east-1.compute.amazonaws.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "ec2-1-2-3-4.compute-1.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://www.ec2-1-2-3-4.compute-1.amazonaws.com/", &cookie, 1);
+    check_int("reject Domain=ec2-1-2-3-4.compute-1.amazonaws.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "i-abc.us-east-1.compute.amazonaws.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://www.i-abc.us-east-1.compute.amazonaws.com/",
+        &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://www.i-abc.us-east-1.compute.amazonaws.com/", out, 1);
+    check_int("EC2 instance host stays registrable", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://i-xyz.us-east-1.compute.amazonaws.com/", out, 1);
+    check_int("EC2 instance cookie is not sent to sibling", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "blob.core.windows.net";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.blob.core.windows.net/", &cookie, 1);
+    check_int("reject Domain=blob.core.windows.net",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "mystorage.blob.core.windows.net";
+    neverc_cookiejar_set_cookies(
+        jar, "https://www.mystorage.blob.core.windows.net/", &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://www.mystorage.blob.core.windows.net/", out, 1);
+    check_int("Azure blob account host stays registrable", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://victim.blob.core.windows.net/", out, 1);
+    check_int("Azure blob account cookie is not sent to sibling", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
     cookie.domain = "uk.com";
     neverc_cookiejar_set_cookies(
         jar, "https://evil.uk.com/", &cookie, 1);

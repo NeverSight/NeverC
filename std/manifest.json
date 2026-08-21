@@ -377,10 +377,11 @@
       "header": "include/neverc/std/hash/xxhash.h",
       "description": "xxHash64 extremely fast non-cryptographic hash function",
       "symbols": {
-        "neverc_xxhash64": "src/hash/xxhash/xxhash.c"
+        "neverc_xxhash64": "src/hash/xxhash/xxhash.c",
+        "neverc_xxhash_hash64": "src/hash/xxhash/xxhash.c"
       },
       "dot_methods": {
-        "hash64": "neverc_xxhash64"
+        "hash64": "neverc_xxhash_hash64"
       }
     },
     "hash/crc64": {
@@ -2464,6 +2465,8 @@
         "neverc_ed25519_verify": "src/crypto/ed25519/ed25519.c",
         "neverc_ed25519_sign_ctx": "src/crypto/ed25519/ed25519.c",
         "neverc_ed25519_verify_ctx": "src/crypto/ed25519/ed25519.c",
+        "neverc_ed25519_sign_ph": "src/crypto/ed25519/ed25519.c",
+        "neverc_ed25519_verify_ph": "src/crypto/ed25519/ed25519.c",
         "neverc_ed25519_seed": "src/crypto/ed25519/ed25519.c"
       },
       "dot_methods": {
@@ -2473,6 +2476,8 @@
         "verify": "neverc_ed25519_verify",
         "sign_ctx": "neverc_ed25519_sign_ctx",
         "verify_ctx": "neverc_ed25519_verify_ctx",
+        "sign_ph": "neverc_ed25519_sign_ph",
+        "verify_ph": "neverc_ed25519_verify_ph",
         "seed": "neverc_ed25519_seed"
       }
     },

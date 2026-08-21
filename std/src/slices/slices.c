@@ -16,6 +16,14 @@ static int slices_byte_size(size_t len, size_t elem_size, size_t *bytes) {
     return 1;
 }
 
+/* Go slices.Compact/Delete/Replace clear discarded tail slots so leftover
+ * values (including pointers) cannot be observed past the new length. */
+static void slices_clear_tail(char *p, size_t new_len, size_t old_len,
+                              size_t elem_size) {
+    if (!p || new_len >= old_len) return;
+    memset(p + new_len * elem_size, 0, (old_len - new_len) * elem_size);
+}
+
 static int slices_ranges_overlap(const void *a, size_t a_bytes,
                                  const void *b, size_t b_bytes) {
     if (a_bytes == 0 || b_bytes == 0) return 0;
@@ -160,6 +168,7 @@ size_t neverc_slices_compact(void *slice, size_t len, size_t elem_size, neverc_e
             memmove(p + w * elem_size, p + run_start * elem_size, run_len * elem_size);
         w += run_len;
     }
+    slices_clear_tail(p, w, len, elem_size);
     return w;
 }
 
@@ -283,7 +292,9 @@ size_t neverc_slices_delete(void *slice, size_t len, size_t elem_size, size_t i,
     char *p = (char *)slice;
     size_t tail = len - j;
     if (tail > 0) memmove(p + i * elem_size, p + j * elem_size, tail * elem_size);
-    return len - (j - i);
+    size_t new_len = len - (j - i);
+    slices_clear_tail(p, new_len, len, elem_size);
+    return new_len;
 }
 
 size_t neverc_slices_insert(void *slice, size_t len, size_t elem_size,
@@ -344,6 +355,7 @@ size_t neverc_slices_replace(void *slice, size_t len, size_t elem_size,
         memmove(p + (i + count) * elem_size, p + j * elem_size,
                 tail * elem_size);
     if (count > 0) memcpy(p + i * elem_size, elems, input_bytes);
+    slices_clear_tail(p, new_len, len, elem_size);
     free(input_copy);
     return new_len;
 }
@@ -430,5 +442,6 @@ size_t neverc_slices_delete_func(void *slice, size_t len, size_t elem_size,
             memmove(p + w * elem_size, p + run_start * elem_size, run_len * elem_size);
         w += run_len;
     }
+    slices_clear_tail(p, w, len, elem_size);
     return w;
 }

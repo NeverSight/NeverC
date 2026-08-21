@@ -357,19 +357,46 @@ static void test_doubles_are_sorted(void) {
 
 static int find_arr[5] = {10, 20, 30, 40, 50};
 
+/* Go sort.Find: cmp(i) has the sign of cmp.Compare(entry[i], target). */
 static int find_cmp(size_t i) {
-    if (find_arr[i] < 30) return 1;
-    if (find_arr[i] > 30) return -1;
+    if (find_arr[i] < 30) return -1;
+    if (find_arr[i] > 30) return 1;
     return 0;
 }
 
 static int find_cmp_missing(size_t i) {
-    if (find_arr[i] < 25) return 1;
-    if (find_arr[i] > 25) return -1;
+    if (find_arr[i] < 25) return -1;
+    if (find_arr[i] > 25) return 1;
+    return 0;
+}
+
+static int find_dup_arr[6] = {10, 20, 30, 30, 30, 40};
+
+static int find_cmp_dup(size_t i) {
+    if (find_dup_arr[i] < 30) return -1;
+    if (find_dup_arr[i] > 30) return 1;
+    return 0;
+}
+
+static int find_cmp_before(size_t i) {
+    if (find_arr[i] < 5) return -1;
+    if (find_arr[i] > 5) return 1;
+    return 0;
+}
+
+static int find_cmp_after(size_t i) {
+    if (find_arr[i] < 60) return -1;
+    if (find_arr[i] > 60) return 1;
+    return 0;
+}
+
+static int find_cmp_unused(size_t i) {
+    (void)i;
     return 0;
 }
 
 static void test_find(void) {
+    printf("[find]\n");
     int found = 0;
     size_t idx = neverc_sort_find(5, find_cmp, &found);
     check_int("find_30_index", (int)idx, 2);
@@ -379,6 +406,29 @@ static void test_find(void) {
     idx = neverc_sort_find(5, find_cmp_missing, &found);
     check_int("find_25_not_found", found, 0);
     check_int("find_25_insert_pos", (int)idx, 2);
+
+    found = 0;
+    idx = neverc_sort_find(6, find_cmp_dup, &found);
+    check_int("find_first_equal", (int)idx, 2);
+    check_int("find_first_equal_found", found, 1);
+
+    found = 1;
+    idx = neverc_sort_find(5, find_cmp_before, &found);
+    check_int("find_before_all", (int)idx, 0);
+    check_int("find_before_all_found", found, 0);
+
+    found = 1;
+    idx = neverc_sort_find(5, find_cmp_after, &found);
+    check_int("find_after_all", (int)idx, 5);
+    check_int("find_after_all_found", found, 0);
+
+    found = 1;
+    idx = neverc_sort_find(0, find_cmp_unused, &found);
+    check_int("find_empty_index", (int)idx, 0);
+    check_int("find_empty_found", found, 0);
+
+    idx = neverc_sort_find(5, NULL, &found);
+    check_int("find_null_cmp", (int)idx, 0);
 }
 
 static int cmp_int_generic(const void *a, const void *b) {

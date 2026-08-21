@@ -45,9 +45,11 @@ void neverc_sort_reverse(void *base, size_t n, size_t elem_size);
 int  neverc_sort_ints_are_sorted(const int *arr, size_t n);
 int  neverc_sort_doubles_are_sorted(const double *arr, size_t n);
 
-/* Find: binary search returning (index, found).
- * The cmp function compares the element at index i against the target.
- * Returns the index where target would be inserted; sets *found to 1 if exact match. */
+/* Find: binary search like Go sort.Find.
+ * cmp(i) must return <0 if entry i is less than the target, 0 if equal,
+ * >0 if greater — the same sign as cmp.Compare(entry[i], target).
+ * Returns the smallest index i in [0, n] at which cmp(i) >= 0 (n if none).
+ * Sets *found if i < n and cmp(i) == 0. */
 size_t neverc_sort_find(size_t n, int (*cmp)(size_t i), int *found);
 
 /* Go sort.Slice equivalent — alias for custom */

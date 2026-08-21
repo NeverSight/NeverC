@@ -82,4 +82,8 @@ int neverc_cookiejar_count(neverc_cookiejar_t *jar);
 }
 #endif
 
+#ifdef __neverc__
+#include <neverc/std/net.h>
+#endif
+
 #endif /* NEVERC_NET_HTTP_COOKIEJAR_H */

@@ -27,6 +27,7 @@ void neverc_slices_sort(void *slice, size_t len, size_t elem_size, neverc_cmp_fu
 int  neverc_slices_is_sorted(const void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp);
 int  neverc_slices_binary_search(const void *slice, size_t len, const void *target,
                                   size_t elem_size, neverc_cmp_func_t cmp, int *found);
+/* Consecutive equal runs only. Discarded tail slots are zeroed. */
 size_t neverc_slices_compact(void *slice, size_t len, size_t elem_size, neverc_eq_func_t eq);
 void *neverc_slices_clone(const void *slice, size_t len, size_t elem_size);
 int  neverc_slices_min(const void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp);
@@ -36,7 +37,7 @@ int  neverc_slices_max(const void *slice, size_t len, size_t elem_size, neverc_c
 void neverc_slices_sort_stable(void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp);
 
 /* Delete elements [i,j) in-place. Returns new length.
-   Caller ensures 0 <= i <= j <= len. */
+   Caller ensures 0 <= i <= j <= len. Discarded tail slots are zeroed. */
 size_t neverc_slices_delete(void *slice, size_t len, size_t elem_size, size_t i, size_t j);
 
 /* Insert 'count' elements from 'elems' at position 'i'.
@@ -47,7 +48,7 @@ size_t neverc_slices_insert(void *slice, size_t len, size_t elem_size,
 
 /* Replace elements [i,j) with 'elems' (count elements).
    slice must have capacity >= (len - (j-i) + count) * elem_size.
-   Returns new length. */
+   Returns new length. A shrinking replace zeroes discarded tail slots. */
 size_t neverc_slices_replace(void *slice, size_t len, size_t elem_size,
                               size_t i, size_t j, const void *elems, size_t count);
 

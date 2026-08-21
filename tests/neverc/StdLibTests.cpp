@@ -331,6 +331,7 @@ STD_TEST(fnv, "src/hash/fnv/fnv.c")
 STD_TEST(crc32, "src/hash/crc32/crc32.c")
 STD_TEST(crc64, "src/hash/crc64/crc64.c")
 STD_TEST(xxhash, "src/hash/xxhash/xxhash.c")
+STD_TEST(xxhash_holes, "src/hash/xxhash/xxhash.c")
 #ifndef _WIN32
 TEST_F(StdLibTest, crc_concurrency) {
   auto r = compileAndRunStdTest("crc_concurrency",

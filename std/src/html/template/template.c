@@ -1318,6 +1318,57 @@ static int html_url_is_query_or_frag(const char *p, size_t n) {
     return 0;
 }
 
+/* `url` + optional whitespace + `=` (CVE-2026-39823: `url =` still starts
+ * the refresh URL). */
+static int html_prefix_has_url_eq(const char *s, size_t n) {
+    if (!s || n < 4) return 0;
+    for (size_t i = 0; i + 3 < n; i++) {
+        if (!html_ci_eq_n(s + i, "url", 3)) continue;
+        size_t j = i + 3;
+        while (j < n && html_is_ascii_ws((unsigned char)s[j])) j++;
+        if (j < n && s[j] == '=') return 1;
+    }
+    return 0;
+}
+
+/* Go html/template tMetaContent: urlFilter sees only the URL after `url=`
+ * (or after `;` / `,` in the implicit `0; URL` form). Folding the delay
+ * prefix into the scheme (`0;url=https` as protocol) defangs safe http(s)
+ * interpolations. */
+static void html_meta_refresh_url_span(const char *prefix, size_t plen,
+                                       const char **out, size_t *olen) {
+    *out = prefix;
+    *olen = plen;
+    if (!prefix || plen == 0) return;
+
+    size_t url_at = SIZE_MAX;
+    for (size_t i = 0; i + 3 < plen; i++) {
+        if (!html_ci_eq_n(prefix + i, "url", 3)) continue;
+        size_t j = i + 3;
+        while (j < plen && html_is_ascii_ws((unsigned char)prefix[j]))
+            j++;
+        if (j < plen && prefix[j] == '=')
+            url_at = j + 1;
+    }
+    if (url_at != SIZE_MAX) {
+        while (url_at < plen &&
+               html_is_ascii_ws((unsigned char)prefix[url_at]))
+            url_at++;
+        *out = prefix + url_at;
+        *olen = plen - url_at;
+        return;
+    }
+
+    size_t sep = SIZE_MAX;
+    for (size_t i = 0; i < plen; i++)
+        if (prefix[i] == ';' || prefix[i] == ',') sep = i + 1;
+    if (sep == SIZE_MAX) return;
+    while (sep < plen && html_is_ascii_ws((unsigned char)prefix[sep]))
+        sep++;
+    *out = prefix + sep;
+    *olen = plen - sep;
+}
+
 static int html_is_srcset_attr(const char *name, size_t nlen) {
     return html_attr_name_eq(name, nlen, "srcset") ||
            html_attr_name_eq(name, nlen, "imagesrcset");
@@ -1676,13 +1727,19 @@ static int execute_nodes(const node_t *n,
                 int in_refresh_url = in_attr && in_meta &&
                     html_attr_name_eq(aname, nlen, "content") &&
                     (meta_refresh ||
-                     html_contains_ci_n(aprefix, aplen, "url=") ||
+                     html_prefix_has_url_eq(aprefix, aplen) ||
                      (n->next && n->next->type == NODE_TEXT &&
                       n->next->text &&
                       html_contains_ci_n(n->next->text, n->next->text_len,
                                          "http-equiv") &&
                       html_contains_ci_n(n->next->text, n->next->text_len,
                                          "refresh")));
+                if (in_refresh_url) {
+                    html_meta_refresh_url_span(aprefix, aplen,
+                                               &aprefix, &aplen);
+                    html_meta_refresh_url_span(raw_aprefix, raw_aplen,
+                                               &raw_aprefix, &raw_aplen);
+                }
                 int in_url = in_css_url ||
                     (in_attr && (akind == HTML_ATTR_URL ||
                                  akind == HTML_ATTR_SRCSET)) ||

@@ -1,4 +1,5 @@
 #include "neverc/std/crypto/ed25519.h"
+#include "neverc/std/crypto/sha512.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -376,6 +377,95 @@ static void test_reject_invalid_points(void) {
                     pub, msg, sizeof(msg) - 1, good_sig) != 0);
 }
 
+static void test_rfc8032_ph(void) {
+    printf("[rfc8032_ed25519ph]\n");
+    /* RFC 8032 §7.3 TEST abc, and Go crypto/ed25519 TestSignVerifyHashed. */
+    static const unsigned char seed[32] = {
+        0x83, 0x3f, 0xe6, 0x24, 0x09, 0x23, 0x7b, 0x9d,
+        0x62, 0xec, 0x77, 0x58, 0x75, 0x20, 0x91, 0x1e,
+        0x9a, 0x75, 0x9c, 0xec, 0x1d, 0x19, 0x75, 0x5b,
+        0x7d, 0xa9, 0x01, 0xb9, 0x6d, 0xca, 0x3d, 0x42,
+    };
+    static const unsigned char expected_pub[32] = {
+        0xec, 0x17, 0x2b, 0x93, 0xad, 0x5e, 0x56, 0x3b,
+        0xf4, 0x93, 0x2c, 0x70, 0xe1, 0x24, 0x50, 0x34,
+        0xc3, 0x54, 0x67, 0xef, 0x2e, 0xfd, 0x4d, 0x64,
+        0xeb, 0xf8, 0x19, 0x68, 0x34, 0x67, 0xe2, 0xbf,
+    };
+    static const unsigned char expected_ph[64] = {
+        0x98, 0xa7, 0x02, 0x22, 0xf0, 0xb8, 0x12, 0x1a,
+        0xa9, 0xd3, 0x0f, 0x81, 0x3d, 0x68, 0x3f, 0x80,
+        0x9e, 0x46, 0x2b, 0x46, 0x9c, 0x7f, 0xf8, 0x76,
+        0x39, 0x49, 0x9b, 0xb9, 0x4e, 0x6d, 0xae, 0x41,
+        0x31, 0xf8, 0x50, 0x42, 0x46, 0x3c, 0x2a, 0x35,
+        0x5a, 0x20, 0x03, 0xd0, 0x62, 0xad, 0xf5, 0xaa,
+        0xa1, 0x0b, 0x8c, 0x61, 0xe6, 0x36, 0x06, 0x2a,
+        0xaa, 0xd1, 0x1c, 0x2a, 0x26, 0x08, 0x34, 0x06,
+    };
+    /* RFC 8032 §7.1 TEST SHA(abc): PureEdDSA of SHA-512("abc"). */
+    static const unsigned char expected_pure_of_hash[64] = {
+        0xdc, 0x2a, 0x44, 0x59, 0xe7, 0x36, 0x96, 0x33,
+        0xa5, 0x2b, 0x1b, 0xf2, 0x77, 0x83, 0x9a, 0x00,
+        0x20, 0x10, 0x09, 0xa3, 0xef, 0xbf, 0x3e, 0xcb,
+        0x69, 0xbe, 0xa2, 0x18, 0x6c, 0x26, 0xb5, 0x89,
+        0x09, 0x35, 0x1f, 0xc9, 0xac, 0x90, 0xb3, 0xec,
+        0xfd, 0xfb, 0xc7, 0xc6, 0x64, 0x31, 0xe0, 0x30,
+        0x3d, 0xca, 0x17, 0x9c, 0x13, 0x8a, 0xc1, 0x7a,
+        0xd9, 0xbe, 0xf1, 0x17, 0x73, 0x31, 0xa7, 0x04,
+    };
+    unsigned char pub[32], priv[64], sig[64], pure_sig[64], ctx_sig[64];
+    unsigned char hash[NEVERC_SHA512_DIGEST_SIZE];
+    static const unsigned char msg_abc[] = {0x61, 0x62, 0x63};
+    static const unsigned char ctx[] = {'1', '2', '3'};
+
+    ASSERT_INT_EQ(neverc_ed25519_new_key_from_seed(seed, pub, priv), 0);
+    ASSERT_TRUE(memcmp(pub, expected_pub, 32) == 0);
+    neverc_sha512_sum(msg_abc, sizeof(msg_abc), hash);
+
+    ASSERT_INT_EQ(
+        neverc_ed25519_sign_ph(priv, hash, sizeof(hash), NULL, 0, sig), 0);
+    ASSERT_TRUE(memcmp(sig, expected_ph, 64) == 0);
+    ASSERT_INT_EQ(
+        neverc_ed25519_verify_ph(pub, hash, sizeof(hash), NULL, 0, sig), 0);
+
+    /* PureEdDSA of the same 64-byte digest is a different scheme. */
+    ASSERT_INT_EQ(neverc_ed25519_sign(priv, hash, sizeof(hash), pure_sig), 0);
+    ASSERT_TRUE(memcmp(pure_sig, expected_pure_of_hash, 64) == 0);
+    ASSERT_TRUE(memcmp(pure_sig, sig, 64) != 0);
+    ASSERT_TRUE(neverc_ed25519_verify(pub, hash, sizeof(hash), sig) != 0);
+    ASSERT_TRUE(
+        neverc_ed25519_verify_ph(pub, hash, sizeof(hash), NULL, 0,
+                                 pure_sig) != 0);
+    ASSERT_TRUE(
+        neverc_ed25519_verify_ctx(pub, hash, sizeof(hash), NULL, 0, sig) != 0);
+
+    ASSERT_INT_EQ(
+        neverc_ed25519_sign_ctx(priv, hash, sizeof(hash), NULL, 0, ctx_sig),
+        0);
+    ASSERT_TRUE(memcmp(ctx_sig, sig, 64) != 0);
+
+    ASSERT_INT_EQ(
+        neverc_ed25519_sign_ph(priv, hash, sizeof(hash), ctx, 3, sig), 0);
+    ASSERT_INT_EQ(
+        neverc_ed25519_verify_ph(pub, hash, sizeof(hash), ctx, 3, sig), 0);
+    ASSERT_TRUE(
+        neverc_ed25519_verify_ph(pub, hash, sizeof(hash), NULL, 0, sig) != 0);
+
+    memset(sig, 0x5a, sizeof(sig));
+    ASSERT_TRUE(
+        neverc_ed25519_sign_ph(priv, hash, sizeof(hash) - 1, NULL, 0, sig) !=
+        0);
+    {
+        int cleared = 1;
+        for (int i = 0; i < 64; i++)
+            if (sig[i]) cleared = 0;
+        ASSERT_TRUE(cleared);
+    }
+    ASSERT_TRUE(
+        neverc_ed25519_verify_ph(pub, hash, sizeof(hash) - 1, NULL, 0,
+                                 expected_ph) != 0);
+}
+
 int main(void) {
     printf("=== NeverC crypto/ed25519 Tests ===\n");
     test_concurrent_first_use();
@@ -391,6 +481,7 @@ int main(void) {
     test_reject_small_order_forgery();
     test_rfc8032_empty_message();
     test_rfc8032_ctx();
+    test_rfc8032_ph();
     test_reject_invalid_points();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

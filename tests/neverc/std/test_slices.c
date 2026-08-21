@@ -86,6 +86,17 @@ static void test_compact(void) {
     ASSERT_INT_EQ(arr[1], 2);
     ASSERT_INT_EQ(arr[2], 3);
     ASSERT_INT_EQ(arr[3], 4);
+    /* Go slices.Compact zeroes leftover slots past the new length. */
+    ASSERT_INT_EQ(arr[4], 0);
+    ASSERT_INT_EQ(arr[5], 0);
+    ASSERT_INT_EQ(arr[6], 0);
+    ASSERT_INT_EQ(arr[7], 0);
+
+    int unique[] = {1, 2, 3};
+    ASSERT_INT_EQ((int)neverc_slices_compact(unique, 3, sizeof(int), eq_int), 3);
+    ASSERT_INT_EQ(unique[0], 1);
+    ASSERT_INT_EQ(unique[1], 2);
+    ASSERT_INT_EQ(unique[2], 3);
 }
 
 static void test_clone(void) {
@@ -167,6 +178,8 @@ static void test_delete(void) {
     ASSERT_INT_EQ(arr[0], 1);
     ASSERT_INT_EQ(arr[1], 4);
     ASSERT_INT_EQ(arr[2], 5);
+    ASSERT_INT_EQ(arr[3], 0);
+    ASSERT_INT_EQ(arr[4], 0);
 }
 
 static void test_insert(void) {
@@ -205,6 +218,16 @@ static void test_replace(void) {
     ASSERT_INT_EQ(arr[3], 30);
     ASSERT_INT_EQ(arr[4], 4);
     ASSERT_INT_EQ(arr[5], 5);
+
+    int shrink[] = {1, 2, 3, 4, 5};
+    int one[] = {9};
+    size_t shrunk = neverc_slices_replace(shrink, 5, sizeof(int), 1, 4, one, 1);
+    ASSERT_INT_EQ((int)shrunk, 3);
+    ASSERT_INT_EQ(shrink[0], 1);
+    ASSERT_INT_EQ(shrink[1], 9);
+    ASSERT_INT_EQ(shrink[2], 5);
+    ASSERT_INT_EQ(shrink[3], 0);
+    ASSERT_INT_EQ(shrink[4], 0);
 }
 
 static void test_replace_overlapping_source(void) {
@@ -295,6 +318,9 @@ static void test_func_ops(void) {
     ASSERT_INT_EQ(arr2[0], 1);
     ASSERT_INT_EQ(arr2[1], 3);
     ASSERT_INT_EQ(arr2[2], 5);
+    ASSERT_INT_EQ(arr2[3], 0);
+    ASSERT_INT_EQ(arr2[4], 0);
+    ASSERT_INT_EQ(arr2[5], 0);
 
     unsigned char byte = 1;
     size_t overflowing_len = SIZE_MAX / 2 + 1;

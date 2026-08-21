@@ -245,50 +245,55 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
 
     for (;;) {
         size_t data_len = s->buf_len - s->start;
-        size_t advance = 0;
-        const uint8_t *token = NULL;
-        size_t token_len = 0;
-        int split_err = 0;
-        int split_rc = split(s->buf + s->start, data_len, s->done,
-                             &advance, &token, &token_len, &split_err);
-        if (split_rc < 0) {
-            bufio_scanner_fail(s, split_err != 0 ? split_err
-                                                 : NEVERC_IO_ERR_UNEXP);
-            return 0;
-        }
-        if (advance > data_len) {
-            bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
-            return 0;
-        }
-        if (split_rc > 0) {
-            const uint8_t *window = s->buf + s->start;
-            if (advance == 0 || !token || token < window ||
-                token > window + data_len ||
-                token_len > (size_t)(window + data_len - token) ||
-                token_len > (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE) {
-                bufio_scanner_fail(s, token_len >
-                                          (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE
-                                      ? NEVERC_BUFIO_ERR_TOO_LONG
-                                      : NEVERC_IO_ERR_UNEXP);
+        /* Go bufio.SplitFunc: never called with empty data unless atEOF.
+         * A ScanBytes port that indexes data[0] after only checking
+         * (atEOF && len==0) would otherwise fail on the first Scan. */
+        if (data_len > 0 || s->done) {
+            size_t advance = 0;
+            const uint8_t *token = NULL;
+            size_t token_len = 0;
+            int split_err = 0;
+            int split_rc = split(s->buf + s->start, data_len, s->done,
+                                 &advance, &token, &token_len, &split_err);
+            if (split_rc < 0) {
+                bufio_scanner_fail(s, split_err != 0 ? split_err
+                                                     : NEVERC_IO_ERR_UNEXP);
                 return 0;
             }
-            s->token = token;
-            s->token_len = token_len;
-            size_t token_end = (size_t)(token - s->buf) + token_len;
-            if (token_end < s->buf_cap) {
-                s->text_saved_byte = s->buf[token_end];
-                s->text_saved_at = token_end;
-                s->text_saved = 1;
-                s->buf[token_end] = '\0';
+            if (advance > data_len) {
+                bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
+                return 0;
             }
+            if (split_rc > 0) {
+                const uint8_t *window = s->buf + s->start;
+                if (advance == 0 || !token || token < window ||
+                    token > window + data_len ||
+                    token_len > (size_t)(window + data_len - token) ||
+                    token_len > (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE) {
+                    bufio_scanner_fail(s, token_len >
+                                              (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE
+                                          ? NEVERC_BUFIO_ERR_TOO_LONG
+                                          : NEVERC_IO_ERR_UNEXP);
+                    return 0;
+                }
+                s->token = token;
+                s->token_len = token_len;
+                size_t token_end = (size_t)(token - s->buf) + token_len;
+                if (token_end < s->buf_cap) {
+                    s->text_saved_byte = s->buf[token_end];
+                    s->text_saved_at = token_end;
+                    s->text_saved = 1;
+                    s->buf[token_end] = '\0';
+                }
+                s->start += advance;
+                return 1;
+            }
+
+            /* Need more data. Honor skip-advance (ScanWords leading space). */
             s->start += advance;
-            return 1;
+
+            if (s->done) return 0;
         }
-
-        /* Need more data. Honor skip-advance (ScanWords leading space). */
-        s->start += advance;
-
-        if (s->done) return 0;
 
         if (s->start > 0) {
             if (s->start > s->buf_len) {

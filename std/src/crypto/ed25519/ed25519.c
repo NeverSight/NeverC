@@ -542,13 +542,21 @@ void neverc_ed25519_seed(const unsigned char priv[64], unsigned char seed[32]) {
 static int ed25519_sign_ex(const unsigned char priv[64],
                             const unsigned char *msg, size_t msg_len,
                             const unsigned char *context, size_t context_len,
-                            int use_dom2, unsigned char sig[64]) {
+                            int use_dom2, int phflag, unsigned char sig[64]) {
     if (!priv || (!msg && msg_len != 0) || !sig)
         return -1;
-    /* RFC 8032: Ed25519ctx context is 0..255 octets. Empty is allowed and
-     * is not the same as PureEdDSA (which omits the DOM2 prefix). */
+    /* RFC 8032: Ed25519ctx/ph context is 0..255 octets. Empty is allowed
+     * for both; ctx with empty C is still not PureEdDSA. */
+    if (use_dom2 && (phflag != 0 && phflag != 1))
+        return -1;
     if (use_dom2 && (context_len > 255 || (context_len > 0 && !context)))
         return -1;
+    /* Go crypto/ed25519 SignPH: the message is SHA-512(M), 64 octets. */
+    if (use_dom2 && phflag == 1 &&
+        (msg_len != NEVERC_SHA512_DIGEST_SIZE || !msg)) {
+        memset(sig, 0, 64);
+        return -1;
+    }
     ensure_init();
     unsigned char h[64];
     neverc_sha512_sum(priv, 32, h);
@@ -561,7 +569,7 @@ static int ed25519_sign_ex(const unsigned char priv[64],
     neverc_sha512_ctx ctx;
     neverc_sha512_init(&ctx);
     if (use_dom2)
-        ed25519_dom2(&ctx, 0, context, context_len);
+        ed25519_dom2(&ctx, phflag, context, context_len);
     neverc_sha512_update(&ctx, h + 32, 32);
     if (msg && msg_len > 0) neverc_sha512_update(&ctx, msg, msg_len);
     unsigned char nonce_hash[64];
@@ -586,7 +594,7 @@ static int ed25519_sign_ex(const unsigned char priv[64],
 
     neverc_sha512_init(&ctx);
     if (use_dom2)
-        ed25519_dom2(&ctx, 0, context, context_len);
+        ed25519_dom2(&ctx, phflag, context, context_len);
     neverc_sha512_update(&ctx, sig, 32);
     neverc_sha512_update(&ctx, priv + 32, 32);
     if (msg && msg_len > 0) neverc_sha512_update(&ctx, msg, msg_len);
@@ -616,14 +624,23 @@ sign_cleanup:
 int neverc_ed25519_sign(const unsigned char priv[64],
                          const unsigned char *msg, size_t msg_len,
                          unsigned char sig[64]) {
-    return ed25519_sign_ex(priv, msg, msg_len, NULL, 0, 0, sig);
+    return ed25519_sign_ex(priv, msg, msg_len, NULL, 0, 0, 0, sig);
 }
 
 int neverc_ed25519_sign_ctx(const unsigned char priv[64],
                              const unsigned char *msg, size_t msg_len,
                              const unsigned char *context, size_t context_len,
                              unsigned char sig[64]) {
-    return ed25519_sign_ex(priv, msg, msg_len, context, context_len, 1, sig);
+    return ed25519_sign_ex(priv, msg, msg_len, context, context_len, 1, 0,
+                           sig);
+}
+
+int neverc_ed25519_sign_ph(const unsigned char priv[64],
+                            const unsigned char *hash, size_t hash_len,
+                            const unsigned char *context, size_t context_len,
+                            unsigned char sig[64]) {
+    return ed25519_sign_ex(priv, hash, hash_len, context, context_len, 1, 1,
+                           sig);
 }
 
 static int scalar_is_canonical(const unsigned char scalar[32]) {
@@ -645,11 +662,17 @@ static int scalar_is_canonical(const unsigned char scalar[32]) {
 static int ed25519_verify_ex(const unsigned char pub[32],
                               const unsigned char *msg, size_t msg_len,
                               const unsigned char *context, size_t context_len,
-                              int use_dom2, const unsigned char sig[64]) {
+                              int use_dom2, int phflag,
+                              const unsigned char sig[64]) {
     if (!pub || !sig || (!msg && msg_len != 0) ||
         !scalar_is_canonical(sig + 32))
         return -1;
+    if (use_dom2 && (phflag != 0 && phflag != 1))
+        return -1;
     if (use_dom2 && (context_len > 255 || (context_len > 0 && !context)))
+        return -1;
+    if (use_dom2 && phflag == 1 &&
+        (msg_len != NEVERC_SHA512_DIGEST_SIZE || !msg))
         return -1;
     ensure_init();
     edpt A, R;
@@ -666,7 +689,7 @@ static int ed25519_verify_ex(const unsigned char pub[32],
     neverc_sha512_ctx ctx;
     neverc_sha512_init(&ctx);
     if (use_dom2)
-        ed25519_dom2(&ctx, 0, context, context_len);
+        ed25519_dom2(&ctx, phflag, context, context_len);
     neverc_sha512_update(&ctx, sig, 32);
     neverc_sha512_update(&ctx, pub, 32);
     if (msg && msg_len > 0) neverc_sha512_update(&ctx, msg, msg_len);
@@ -708,12 +731,21 @@ static int ed25519_verify_ex(const unsigned char pub[32],
 int neverc_ed25519_verify(const unsigned char pub[32],
                            const unsigned char *msg, size_t msg_len,
                            const unsigned char sig[64]) {
-    return ed25519_verify_ex(pub, msg, msg_len, NULL, 0, 0, sig);
+    return ed25519_verify_ex(pub, msg, msg_len, NULL, 0, 0, 0, sig);
 }
 
 int neverc_ed25519_verify_ctx(const unsigned char pub[32],
                                const unsigned char *msg, size_t msg_len,
                                const unsigned char *context, size_t context_len,
                                const unsigned char sig[64]) {
-    return ed25519_verify_ex(pub, msg, msg_len, context, context_len, 1, sig);
+    return ed25519_verify_ex(pub, msg, msg_len, context, context_len, 1, 0,
+                             sig);
+}
+
+int neverc_ed25519_verify_ph(const unsigned char pub[32],
+                              const unsigned char *hash, size_t hash_len,
+                              const unsigned char *context, size_t context_len,
+                              const unsigned char sig[64]) {
+    return ed25519_verify_ex(pub, hash, hash_len, context, context_len, 1, 1,
+                             sig);
 }

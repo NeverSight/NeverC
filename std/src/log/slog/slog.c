@@ -298,7 +298,10 @@ static int slog_reserved_key(const char *key) {
 }
 
 static int slog_attr_emit(const neverc_slog_attr_t *a) {
-    return a && a->key && a->key[0] && a->kind != NEVERC_SLOG_ATTR_NONE &&
+    /* Go slog.Handler: drop only a fully empty Attr (key and value both
+     * zero). An empty key with a real value is emitted (issue 59282).
+     * ATTR_NONE is the C Attr{} sentinel; a NULL key cannot be written. */
+    return a && a->key && a->kind != NEVERC_SLOG_ATTR_NONE &&
            !slog_reserved_key(a->key);
 }
 

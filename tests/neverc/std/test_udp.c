@@ -120,8 +120,12 @@ static void test_invalid_addr(void) {
     if (c) neverc_udp_close(c);
 
     neverc_udp_addr_t addr;
+    strcpy(addr.addr, "8.8.8.8:53");
+    addr.port = 53;
     check_int("resolve port overflow",
               neverc_udp_resolve_addr("127.0.0.1:65536", &addr), -1);
+    check_int("overflow clears leftover port", addr.port, 0);
+    check_int("overflow clears leftover addr", addr.addr[0] == '\0', 1);
 }
 
 /* ===== null safety ===== */

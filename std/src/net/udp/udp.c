@@ -1611,6 +1611,7 @@ int neverc_udp_set_broadcast(neverc_udp_conn_t *conn, int enable) {
 
 int neverc_udp_resolve_addr(const char *addr_str, neverc_udp_addr_t *out) {
     if (!addr_str || !out) return -1;
+    memset(out, 0, sizeof(*out));
     if (nc_net_init() != 0) return -1;
 
     char host[256] = {0};

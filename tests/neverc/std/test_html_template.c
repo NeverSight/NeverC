@@ -337,6 +337,88 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "url=#") != NULL);
     free(out);
 
+    /* Go html/template urlFilter runs on the URL after `url=`, not on
+     * `0;url=`+value as one scheme (`0;url=https` is not https). */
+    neverc_html_template_data_set(&data, "Link", "https://example.com/r");
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"refresh\" content=\"0;url={{.Link}}\">", &data);
+    check_str("meta refresh url= keeps https", out,
+              "<meta http-equiv=\"refresh\" content=\"0;url=https://example.com/r\">");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "https://example.com/r");
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"refresh\" content=\"0; url ={{.Link}}\">", &data);
+    check("meta refresh url = keeps https",
+          out && strstr(out, "url =https://example.com/r") != NULL);
+    check("meta refresh url = https is not a hash",
+          out && strstr(out, "url =#") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"refresh\" content=\"0; url ={{.Link}}\">", &data);
+    check("meta refresh url = js neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check("meta refresh url = js becomes hash",
+          out && strstr(out, "url =#") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "https://example.com/r");
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"refresh\" content=\"0; {{.Link}}\">", &data);
+    check("meta refresh implicit semicolon keeps https",
+          out && strstr(out, "0; https://example.com/r") != NULL);
+    check("meta refresh implicit semicolon https is not a hash",
+          out && strstr(out, "0; #") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"refresh\" content=\"0; {{.Link}}\">", &data);
+    check("meta refresh implicit semicolon js neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check("meta refresh implicit semicolon js becomes hash",
+          out && strstr(out, "0; #") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "https://example.com/r");
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"refresh\" content=\"0,{{.Link}}\">", &data);
+    check("meta refresh implicit comma keeps https",
+          out && strstr(out, "0,https://example.com/r") != NULL);
+    check("meta refresh implicit comma https is not a hash",
+          out && strstr(out, "0,#") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"refresh\" content=\"0,{{.Link}}\">", &data);
+    check("meta refresh implicit comma js neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check("meta refresh implicit comma js becomes hash",
+          out && strstr(out, "0,#") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "https://example.com/r");
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"refresh\" content=\"0;URL={{.Link}}\">", &data);
+    check("meta refresh URL= keeps https",
+          out && strstr(out, "URL=https://example.com/r") != NULL);
+    check("meta refresh URL= https is not a hash",
+          out && strstr(out, "URL=#") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "script:alert(1)");
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"refresh\" content=\"0;url=java{{.Link}}\">",
+        &data);
+    check("meta refresh url= split scheme neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check("meta refresh url= split scheme becomes hash",
+          out && strstr(out, "url=java#") != NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
     out = neverc_html_template_render(
         "<meta http-equiv=\"refresh\" content=\"{{.Link}}\">", &data);

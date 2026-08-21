@@ -20,6 +20,8 @@ char *neverc_html_unescape_string(const char *s, size_t *outlen);
 }
 #endif
 
+#include "html/template.h"
+
 #ifdef __neverc__
 struct __neverc_std_html_template_t { char __tag; };
 

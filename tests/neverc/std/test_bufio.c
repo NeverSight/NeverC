@@ -639,6 +639,80 @@ static void test_scanner_token_too_long(void) {
     free(data);
 }
 
+/* Go bufio.ScanBytes: only the (atEOF && len==0) guard. Indexing data[0]
+ * is implied by returning data[0:1]. Calling this with empty !atEOF must
+ * not happen. */
+static int go_scan_bytes(const uint8_t *data, size_t data_len, int at_eof,
+                         size_t *advance, const uint8_t **token,
+                         size_t *token_len, int *err) {
+    if (advance) *advance = 0;
+    if (token) *token = NULL;
+    if (token_len) *token_len = 0;
+    if (err) *err = 0;
+    if (at_eof && data_len == 0) return 0;
+    if (!data || data_len == 0) {
+        if (err) *err = NEVERC_IO_ERR_UNEXP;
+        return -1;
+    }
+    *advance = 1;
+    *token = data;
+    *token_len = 1;
+    return 1;
+}
+
+static int g_split_empty_non_eof;
+
+static int contract_scan_lines(const uint8_t *data, size_t data_len, int at_eof,
+                               size_t *advance, const uint8_t **token,
+                               size_t *token_len, int *err) {
+    if (!at_eof && data_len == 0)
+        g_split_empty_non_eof++;
+    return neverc_bufio_scan_lines(data, data_len, at_eof, advance, token,
+                                   token_len, err);
+}
+
+static void test_scanner_split_empty_contract(void) {
+    printf("[scanner split empty contract]\n");
+
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"ab", 2);
+    neverc_io_reader_t r = { &mr, neverc_io_mem_reader_read };
+    neverc_bufio_scanner_t sc;
+    neverc_bufio_scanner_init(&sc, r);
+    neverc_bufio_scanner_split(&sc, go_scan_bytes);
+
+    size_t len = 0;
+    check_int("go ScanBytes first", neverc_bufio_scanner_scan(&sc), 1);
+    check_bytes("go ScanBytes a", neverc_bufio_scanner_bytes(&sc, &len),
+                len, "a");
+    check_int("go ScanBytes second", neverc_bufio_scanner_scan(&sc), 1);
+    check_bytes("go ScanBytes b", neverc_bufio_scanner_bytes(&sc, &len),
+                len, "b");
+    check_int("go ScanBytes eof", neverc_bufio_scanner_scan(&sc), 0);
+    check_int("go ScanBytes no err", neverc_bufio_scanner_err(&sc), 0);
+    neverc_bufio_scanner_free(&sc);
+
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"", 0);
+    r.ctx = &mr;
+    neverc_bufio_scanner_init(&sc, r);
+    neverc_bufio_scanner_split(&sc, go_scan_bytes);
+    check_int("go ScanBytes empty file", neverc_bufio_scanner_scan(&sc), 0);
+    check_int("go ScanBytes empty file no err",
+              neverc_bufio_scanner_err(&sc), 0);
+    neverc_bufio_scanner_free(&sc);
+
+    g_split_empty_non_eof = 0;
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"x\ny\n", 4);
+    r.ctx = &mr;
+    neverc_bufio_scanner_init(&sc, r);
+    neverc_bufio_scanner_split(&sc, contract_scan_lines);
+    check_int("contract scan 1", neverc_bufio_scanner_scan(&sc), 1);
+    check_int("contract scan 2", neverc_bufio_scanner_scan(&sc), 1);
+    check_int("contract scan eof", neverc_bufio_scanner_scan(&sc), 0);
+    check_int("split not called with empty !atEOF", g_split_empty_non_eof, 0);
+    neverc_bufio_scanner_free(&sc);
+}
+
 static int huge_token_split(const uint8_t *data, size_t data_len, int at_eof,
                             size_t *advance, const uint8_t **token,
                             size_t *token_len, int *err) {
@@ -915,10 +989,12 @@ int main(void) {
     test_reader_rejects_invalid_count();
     test_scanner_missing_reader();
     test_scanner_token_too_long();
+    test_scanner_split_empty_contract();
     test_scanner_split_func();
     test_peek_after_unread();
     test_invalid_arguments();
     test_zero_length_read_eof();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

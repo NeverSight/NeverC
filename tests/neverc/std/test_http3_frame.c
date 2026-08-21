@@ -836,6 +836,15 @@ static void test_goaway_and_stream_type_helpers(void) {
     ASSERT_EQ(neverc_h3_uni_stream_type_class(0x01), -1); /* client push */
     ASSERT_EQ(neverc_h3_uni_stream_type_class(0x21), 1); /* GREASE */
     ASSERT_EQ(neverc_h3_uni_stream_type_class(0x40), 1);
+
+    /* RFC 9000 §2.1 / RFC 9114 §6.1: type bits 0b01 are server bidi. */
+    ASSERT_EQ(neverc_h3_is_server_initiated_bidi(0), 0); /* client bidi */
+    ASSERT_EQ(neverc_h3_is_server_initiated_bidi(1), 1);
+    ASSERT_EQ(neverc_h3_is_server_initiated_bidi(2), 0); /* client uni */
+    ASSERT_EQ(neverc_h3_is_server_initiated_bidi(3), 0); /* server uni */
+    ASSERT_EQ(neverc_h3_is_server_initiated_bidi(4), 0);
+    ASSERT_EQ(neverc_h3_is_server_initiated_bidi(5), 1);
+    ASSERT_EQ(neverc_h3_is_server_initiated_bidi(9), 1);
 }
 
 static void test_varint_payload_and_max_push_id(void) {

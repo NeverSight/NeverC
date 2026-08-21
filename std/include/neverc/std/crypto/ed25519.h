@@ -39,6 +39,19 @@ int  neverc_ed25519_verify_ctx(const unsigned char pub[32],
                                 const unsigned char *context, size_t context_len,
                                 const unsigned char sig[64]);
 
+/* RFC 8032 Ed25519ph (phflag=1), matching Go crypto/ed25519 Sign/Verify
+ * with Hash: SHA-512. hash_len must be 64 (SHA-512(M)). context_len
+ * must be 0..255; empty context is the RFC 8032 default. PureEdDSA of
+ * the same 64-byte digest is a different scheme. */
+int  neverc_ed25519_sign_ph(const unsigned char priv[64],
+                             const unsigned char *hash, size_t hash_len,
+                             const unsigned char *context, size_t context_len,
+                             unsigned char sig[64]);
+int  neverc_ed25519_verify_ph(const unsigned char pub[32],
+                               const unsigned char *hash, size_t hash_len,
+                               const unsigned char *context, size_t context_len,
+                               const unsigned char sig[64]);
+
 void neverc_ed25519_seed(const unsigned char priv[64], unsigned char seed[32]);
 
 #ifdef __cplusplus

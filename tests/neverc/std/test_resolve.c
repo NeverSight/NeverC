@@ -71,18 +71,31 @@ static void test_split_host_port(void) {
     check_str("empty host", host, "");
     check_str("port only", port, "8080");
 
+    /* Go net.SplitHostPort("[]:80") is host "", port "80". */
+    check_int("split []:80", neverc_net_split_host_port("[]:80", host, sizeof(host), port, sizeof(port)), 0);
+    check_str("empty ipv6 host", host, "");
+    check_str("empty ipv6 host port", port, "80");
+
     char tiny_host[4];
     char tiny_port[16];
     check_int("host overflow rejected",
               neverc_net_split_host_port("192.168.1.1:80", tiny_host,
                                          sizeof(tiny_host), tiny_port,
                                          sizeof(tiny_port)), -1);
+    strcpy(host, "leftover.example");
+    strcpy(port, "9999");
     check_int("non-numeric port rejected",
               neverc_net_split_host_port("localhost:abc", host, sizeof(host),
                                          port, sizeof(port)), -1);
+    check_str("non-numeric port clears leftover host", host, "");
+    check_str("non-numeric port clears leftover port", port, "");
+    strcpy(host, "leftover.example");
+    strcpy(port, "9999");
     check_int("port overflow rejected",
               neverc_net_split_host_port("localhost:65536", host, sizeof(host),
                                          port, sizeof(port)), -1);
+    check_str("port overflow clears leftover host", host, "");
+    check_str("port overflow clears leftover port", port, "");
     check_int("ipv6 missing port rejected",
               neverc_net_split_host_port("[::1]", host, sizeof(host),
                                          port, sizeof(port)), -1);
@@ -98,12 +111,20 @@ static void test_split_host_port(void) {
     check_int("empty hostport rejected",
               neverc_net_split_host_port("", host, sizeof(host),
                                          port, sizeof(port)), -1);
+    strcpy(host, "leftover.example");
+    strcpy(port, "9999");
     check_int("empty ipv6 zone rejected",
               neverc_net_split_host_port("[fe80::1%]:80", host, sizeof(host),
                                          port, sizeof(port)), -1);
+    check_str("empty ipv6 zone clears leftover host", host, "");
+    check_str("empty ipv6 zone clears leftover port", port, "");
+    strcpy(host, "leftover.example");
+    strcpy(port, "9999");
     check_int("split rejects CTL host",
               neverc_net_split_host_port("host\nname:80", host, sizeof(host),
                                          port, sizeof(port)), -1);
+    check_str("CTL split clears leftover host", host, "");
+    check_str("CTL split clears leftover port", port, "");
     check_int("split ipv4-mapped",
               neverc_net_split_host_port("[::ffff:127.0.0.1]:80", host,
                                          sizeof(host), port, sizeof(port)),
@@ -284,6 +305,14 @@ static void test_lookup_ip(void) {
         check_true("ip4 filter works", all_v4);
     }
 
+    rc = neverc_net_lookup_ip("ip6", "localhost", &addrs);
+    if (rc == 0) {
+        int all_v6 = 1;
+        for (int i = 0; i < addrs.count; i++)
+            if (!strchr(addrs.addrs[i], ':')) all_v6 = 0;
+        check_true("ip6 filter works", all_v6);
+    }
+
     check_int("unknown ip network rejected",
               neverc_net_lookup_ip("tcp", "localhost", &addrs), -1);
     check_int("invalid ip network rejected",
@@ -385,6 +414,41 @@ static void test_lookup_ip(void) {
         }
         check_true("lookup_ip unmaps ipv4-mapped", unmapped);
         check_true("lookup_ip mapped has no ffff", !has_ffff);
+    }
+
+    /* Go LookupIP("ip6"): To4() != nil (IPv4 and IPv4-mapped) is rejected.
+     * LookupIP("ip4", mapped) returns the embedded IPv4. */
+    leftover.count = 9;
+    strcpy(leftover.addrs[0], "8.8.8.8");
+    check_int("lookup_ip ip6 mapped rejected",
+              neverc_net_lookup_ip("ip6", "::ffff:127.0.0.1", &leftover), -1);
+    check_int("lookup_ip ip6 mapped clears leftover", leftover.count, 0);
+    check_true("lookup_ip ip6 mapped leftover addr", leftover.addrs[0][0] == '\0');
+    leftover.count = 9;
+    strcpy(leftover.addrs[0], "8.8.8.8");
+    check_int("lookup_ip ip6 ipv4 rejected",
+              neverc_net_lookup_ip("ip6", "127.0.0.1", &leftover), -1);
+    check_int("lookup_ip ip6 ipv4 clears leftover", leftover.count, 0);
+    leftover.count = 9;
+    strcpy(leftover.addrs[0], "8.8.8.8");
+    check_int("lookup_ip ip4 ipv6 rejected",
+              neverc_net_lookup_ip("ip4", "::1", &leftover), -1);
+    check_int("lookup_ip ip4 ipv6 clears leftover", leftover.count, 0);
+
+    neverc_net_addrs_t mapped4;
+    mapped4.count = 9;
+    strcpy(mapped4.addrs[0], "leftover");
+    check_int("lookup_ip ip4 mapped literal",
+              neverc_net_lookup_ip("ip4", "::ffff:127.0.0.1", &mapped4), 0);
+    if (mapped4.count > 0) {
+        int unmapped4 = 0;
+        int has_ffff4 = 0;
+        for (int i = 0; i < mapped4.count; i++) {
+            if (strcmp(mapped4.addrs[i], "127.0.0.1") == 0) unmapped4 = 1;
+            if (strstr(mapped4.addrs[i], "ffff")) has_ffff4 = 1;
+        }
+        check_true("lookup_ip ip4 unmaps ipv4-mapped", unmapped4);
+        check_true("lookup_ip ip4 mapped has no ffff", !has_ffff4);
     }
 
     neverc_net_addrs_t rev4, revm;

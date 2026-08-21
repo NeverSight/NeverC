@@ -141,8 +141,13 @@ neverc_time_t neverc_time_round(neverc_time_t t, neverc_duration_t d);
 }
 #endif
 
+#include "time_tzdata.h"
+
 #ifdef __neverc__
-struct __neverc_std_time_t { char __tag; };
+struct __neverc_std_time_t {
+    char __tag;
+    struct __neverc_std_tzdata_t tzdata;
+};
 extern struct __neverc_std_time_t __neverc_mod_time_mod;
 extern struct __neverc_std_time_t time_mod;
 #endif
