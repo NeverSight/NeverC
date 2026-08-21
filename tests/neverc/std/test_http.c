@@ -117,7 +117,7 @@ static void test_form_value(void) {
     v = neverc_http_form_value("name=Hello+World!", 17, "name", buf, sizeof(buf));
     check_str("form plus", v, "Hello World!");
 
-    v = neverc_http_form_value("x=hello%20world", 16, "x", buf, sizeof(buf));
+    v = neverc_http_form_value("x=hello%20world", 15, "x", buf, sizeof(buf));
     check_str("form pct", v, "hello world");
 
     v = neverc_http_form_value("na%6De=John", 11, "name", buf, sizeof(buf));
@@ -2673,7 +2673,7 @@ static void test_convenience_apis(void) {
         check_int("form null key", v == NULL, 1);
         v = neverc_http_form_value("a=1&b=2", 7, "b", fb, sizeof(fb));
         check_str("form val b", v, "2");
-        v = neverc_http_form_value("x=hello%20world", 16, "x", fb, sizeof(fb));
+        v = neverc_http_form_value("x=hello%20world", 15, "x", fb, sizeof(fb));
         check_str("form pct", v, "hello world");
     }
 

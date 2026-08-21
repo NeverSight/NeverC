@@ -1354,9 +1354,13 @@ int neverc_rpc_client_call_ex(
             *response_length = total;
             *status = neverc_rpc_stream_status(stream);
             status->message = NULL;
+            /* A clean END frame means the RPC completed. Application
+             * statuses (PERMISSION_DENIED, RESOURCE_EXHAUSTED, ...) live
+             * in status->code. Mapping those to IO_CLOSED made Call() look
+             * like a transport failure and broke interceptor tests.
+             * Recv already maps CANCEL/GOAWAY teardown to CLOSED/CANCELLED. */
             if (result == NEVERC_RPC_IO_END)
-                final_result = status->code == NEVERC_RPC_STATUS_OK
-                    ? NEVERC_RPC_IO_OK : NEVERC_RPC_IO_CLOSED;
+                final_result = NEVERC_RPC_IO_OK;
             else
                 final_result = result;
             neverc_rpc_stream_free(stream);

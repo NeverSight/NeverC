@@ -851,6 +851,13 @@ static void grpc_fake_h2_task(void *context) {
             .name = "content-type", .value = "application/grpc"};
         headers[header_count++] = (neverc_hpack_header_t){
             .name = "grpc-status", .value = "0"};
+    } else if (test->kind == 8) {
+        /* Unary success: headers without grpc-status, one DATA message,
+         * trailers with grpc-status 0. */
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = ":status", .value = "200"};
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = "content-type", .value = "application/grpc"};
     }
     uint8_t block[256];
     size_t block_length = 0;
@@ -860,11 +867,14 @@ static void grpc_fake_h2_task(void *context) {
         encoder, headers, header_count, block, sizeof(block),
         &block_length) == 0 && block_length > 0 && block_length <= 0xffffffU;
     if (encoded && (test->kind == 3 || test->kind == 4 || test->kind == 5 ||
-                    test->kind == 6)) {
+                    test->kind == 6 || test->kind == 8)) {
         neverc_hpack_header_t trailers[1];
         if (test->kind == 6) {
             trailers[0] = (neverc_hpack_header_t){
                 .name = "grpc-status", .value = "7"};
+        } else if (test->kind == 8) {
+            trailers[0] = (neverc_hpack_header_t){
+                .name = "grpc-status", .value = "0"};
         } else {
             trailers[0] = (neverc_hpack_header_t){
                 .name = "x-unused", .value = "1"};
@@ -896,9 +906,9 @@ static void grpc_fake_h2_task(void *context) {
             return;
         }
     } else if (test->kind == 3 || test->kind == 4 || test->kind == 5 ||
-               test->kind == 6) {
+               test->kind == 6 || test->kind == 8) {
         uint8_t grpc_ok[] = {0, 0, 0, 0, 2, 'o', 'k'};
-        if (test->kind == 4 &&
+        if ((test->kind == 4 || test->kind == 8) &&
             grpc_h2_write_frame(conn, NC_H2_FRAME_DATA, 0, 1U, grpc_ok,
                                 (uint32_t)sizeof(grpc_ok)) != 0) {
             neverc_tcp_close(conn);
@@ -1102,7 +1112,7 @@ static void grpc_test_binary_metadata_unpadded(void) {
     neverc_grpc_message_t request = {(const uint8_t *)"x", 1U};
     grpc_fake_h2_t fake;
     neverc_thread_executor_t *executor = NULL;
-    neverc_h2_client_t *client = grpc_start_fake_h2(&fake, &executor, 7);
+    neverc_h2_client_t *client = grpc_start_fake_h2(&fake, &executor, 8);
     neverc_grpc_result_t *result = client
         ? neverc_grpc_client_call(
               client, NULL, "/test.Echo/Unary", NEVERC_GRPC_UNARY,
@@ -1116,7 +1126,7 @@ static void grpc_test_binary_metadata_unpadded(void) {
     grpc_stop_fake_h2(&fake, executor, client);
 
     executor = NULL;
-    client = grpc_start_fake_h2(&fake, &executor, 7);
+    client = grpc_start_fake_h2(&fake, &executor, 8);
     const char *error = NULL;
     neverc_grpc_client_stream_t *stream = client
         ? neverc_grpc_client_stream_open(

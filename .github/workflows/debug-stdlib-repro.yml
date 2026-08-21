@@ -1,0 +1,80 @@
+# Throwaway: download a prebuilt neverc and rerun the dest stdlib
+# failures (fmt/http/rpc/grpc). Delete this file after it goes green.
+name: debug-stdlib-repro
+on:
+  workflow_dispatch:
+    inputs:
+      macos_run_id:
+        description: 'macos-arm64-neverc-build run id (compiler artifact)'
+        required: false
+        default: '32503073599'
+      linux_run_id:
+        description: 'linux-x64-neverc-build run id (compiler artifact)'
+        required: false
+        default: '32503074147'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download compiler (no rebuild)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RID="${{ github.event.inputs.macos_run_id }}"
+          gh run download "$RID" -n macos-arm64-neverc-compiler -D dl \
+            -R "${{ github.repository }}"
+          unzip -qo dl/*.zip -d .
+          if [ ! -x install/bin/neverc ]; then unzip -qo ./*.zip -d .; fi
+          chmod +x install/bin/neverc
+          install/bin/neverc --version
+      - name: Compile and run fmt/http/rpc/grpc
+        run: |
+          set -euo pipefail
+          NCC="$PWD/install/bin/neverc"
+          SRC=$(find std/src -name '*.c')
+          for name in fmt http rpc grpc; do
+            echo "=== $name ==="
+            "$NCC" -fno-builtin-std -I std/include -I std/src/net \
+              -I tests/neverc/std -Wno-unused-parameter -Wno-unused-function -O1 \
+              -o "/tmp/test_$name" "tests/neverc/std/test_$name.c" $SRC \
+              -lm -lpthread -lresolv
+            "/tmp/test_$name"
+          done
+
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download compiler (no rebuild)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RID="${{ github.event.inputs.linux_run_id }}"
+          sudo apt-get update -qq && sudo apt-get install -y -qq unzip
+          gh run download "$RID" -n linux-x64-neverc-compiler -D dl \
+            -R "${{ github.repository }}"
+          unzip -qo dl/*.zip -d .
+          if [ ! -x install/bin/neverc ]; then unzip -qo ./*.zip -d .; fi
+          chmod +x install/bin/neverc
+          install/bin/neverc --version
+      - name: Compile and run fmt/http/rpc/grpc
+        run: |
+          set -euo pipefail
+          NCC="$PWD/install/bin/neverc"
+          SRC=$(find std/src -name '*.c')
+          for name in fmt http rpc grpc; do
+            echo "=== $name ==="
+            "$NCC" -fno-builtin-std -I std/include -I std/src/net \
+              -I tests/neverc/std -Wno-unused-parameter -Wno-unused-function -O1 \
+              -o "/tmp/test_$name" "tests/neverc/std/test_$name.c" $SRC \
+              -lm -lpthread -lresolv -ldl
+            "/tmp/test_$name"
+          done
