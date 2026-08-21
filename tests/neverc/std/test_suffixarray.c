@@ -53,10 +53,13 @@ static void test_invalid_input(void) {
     unsigned char byte = 'x';
     ASSERT_INT_EQ(neverc_suffixarray_new(&idx, NULL, 1), -1);
     ASSERT_TRUE(idx.sa == NULL);
+    ASSERT_TRUE(idx.data_len == 0);
     ASSERT_INT_EQ(neverc_suffixarray_new(&idx, &byte, (size_t)INT32_MAX), -1);
     ASSERT_TRUE(idx.sa == NULL);
+    ASSERT_TRUE(idx.data_len == 0);
     ASSERT_INT_EQ(neverc_suffixarray_new(&idx, &byte, SIZE_MAX), -1);
     ASSERT_TRUE(idx.sa == NULL);
+    ASSERT_TRUE(idx.data_len == 0);
 }
 
 static void test_lookup_basic(void) {

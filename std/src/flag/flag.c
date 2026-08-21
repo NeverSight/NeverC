@@ -60,7 +60,11 @@ void neverc_flag_string(const char *name, const char *defval,
                         const char *usage, const char **ptr) {
     if (!ptr) return;
     flag_entry_t *f = register_flag(name, usage, FLAG_STRING);
-    if (!f) return;
+    if (!f) {
+        if (flag_name_ok(name))
+            *ptr = defval;
+        return;
+    }
     *ptr = defval;
     f->ptr.s = ptr;
 }
@@ -69,7 +73,11 @@ void neverc_flag_int(const char *name, int defval,
                      const char *usage, int *ptr) {
     if (!ptr) return;
     flag_entry_t *f = register_flag(name, usage, FLAG_INT);
-    if (!f) return;
+    if (!f) {
+        if (flag_name_ok(name))
+            *ptr = defval;
+        return;
+    }
     *ptr = defval;
     f->ptr.i = ptr;
 }
@@ -78,7 +86,11 @@ void neverc_flag_bool(const char *name, int defval,
                       const char *usage, int *ptr) {
     if (!ptr) return;
     flag_entry_t *f = register_flag(name, usage, FLAG_BOOL);
-    if (!f) return;
+    if (!f) {
+        if (flag_name_ok(name))
+            *ptr = defval;
+        return;
+    }
     *ptr = defval;
     f->ptr.i = ptr;
 }
@@ -87,7 +99,11 @@ void neverc_flag_double(const char *name, double defval,
                         const char *usage, double *ptr) {
     if (!ptr) return;
     flag_entry_t *f = register_flag(name, usage, FLAG_DOUBLE);
-    if (!f) return;
+    if (!f) {
+        if (flag_name_ok(name))
+            *ptr = defval;
+        return;
+    }
     *ptr = defval;
     f->ptr.d = ptr;
 }
@@ -96,7 +112,11 @@ void neverc_flag_int64(const char *name, long long defval,
                        const char *usage, long long *ptr) {
     if (!ptr) return;
     flag_entry_t *f = register_flag(name, usage, FLAG_INT64);
-    if (!f) return;
+    if (!f) {
+        if (flag_name_ok(name))
+            *ptr = defval;
+        return;
+    }
     *ptr = defval;
     f->ptr.i64 = ptr;
 }
@@ -105,7 +125,11 @@ void neverc_flag_uint64(const char *name, unsigned long long defval,
                         const char *usage, unsigned long long *ptr) {
     if (!ptr) return;
     flag_entry_t *f = register_flag(name, usage, FLAG_UINT64);
-    if (!f) return;
+    if (!f) {
+        if (flag_name_ok(name))
+            *ptr = defval;
+        return;
+    }
     *ptr = defval;
     f->ptr.u64 = ptr;
 }

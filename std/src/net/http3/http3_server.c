@@ -880,23 +880,30 @@ static void h3_request_task(h3_stream_task_t *task) {
     neverc_quic_stream_t *stream = task->stream;
     h3_request_t parsed;
     memset(&parsed, 0, sizeof(parsed));
-    int read_status = h3_wait_for_settings(connection) != 0 ?
-        -1 : h3_read_request(connection, stream, &parsed);
+    if (h3_wait_for_settings(connection) != 0) {
+        h3_request_cleanup(&parsed);
+        neverc_quic_stream_free(stream);
+        return;
+    }
+    int read_status = h3_read_request(connection, stream, &parsed);
     if (read_status != 0) {
         h3_request_cleanup(&parsed);
-        uint64_t error_code = NC_H3_MESSAGE_ERROR;
-        const char *reason = "invalid HTTP/3 request";
+        /* RFC 9114 §4.1.2: a malformed request is a stream error of type
+         * H3_MESSAGE_ERROR so sibling streams stay up. QPACK failure,
+         * oversized field sections, and unexpected frames remain
+         * connection errors (RFC 9204 / RFC 9114 §7). */
         if (read_status == -2) {
-            error_code = NC_H3_QPACK_DECOMPRESSION_FAILED;
-            reason = "QPACK decompression failed";
+            h3_protocol_error(connection, NC_H3_QPACK_DECOMPRESSION_FAILED,
+                              "QPACK decompression failed");
         } else if (read_status == -3) {
-            error_code = NC_H3_EXCESSIVE_LOAD;
-            reason = "HTTP/3 field section too large";
+            h3_protocol_error(connection, NC_H3_EXCESSIVE_LOAD,
+                              "HTTP/3 field section too large");
         } else if (read_status == -4) {
-            error_code = NC_H3_FRAME_UNEXPECTED;
-            reason = "unexpected HTTP/3 frame on request stream";
+            h3_protocol_error(connection, NC_H3_FRAME_UNEXPECTED,
+                              "unexpected HTTP/3 frame on request stream");
+        } else {
+            (void)neverc_quic_stream_reset(stream, NC_H3_MESSAGE_ERROR);
         }
-        h3_protocol_error(connection, error_code, reason);
         neverc_quic_stream_free(stream);
         return;
     }
@@ -1046,7 +1053,12 @@ static int h3_parse_control_buffer(h3_conn_t *connection) {
             return -1;
         }
         if (type == NC_H3_FRAME_SETTINGS) {
-            if (connection->peer_settings_received || length > 65536U)
+            if (connection->peer_settings_received) {
+                h3_protocol_error(connection, NC_H3_FRAME_UNEXPECTED,
+                                  "second HTTP/3 SETTINGS");
+                return -1;
+            }
+            if (length > 65536U)
                 goto invalid;
             if (length > connection->control_buffer_length - position)
                 return 0;
@@ -1126,7 +1138,11 @@ static int h3_parse_control_buffer(h3_conn_t *connection) {
                    type == NC_H3_FRAME_HEADERS ||
                    type == NC_H3_FRAME_PUSH_PROMISE ||
                    h3_http2_reserved_frame(type)) {
-            goto invalid;
+            /* RFC 9114 §7.2.1 / §11.2.1: these types on the control
+             * stream are H3_FRAME_UNEXPECTED, not H3_FRAME_ERROR. */
+            h3_protocol_error(connection, NC_H3_FRAME_UNEXPECTED,
+                              "unexpected HTTP/3 frame on control stream");
+            return -1;
         } else {
             h3_consume_control_buffer(connection, position);
             connection->control_skip_remaining = length;

@@ -673,8 +673,6 @@ static int h2_client_apply_settings(neverc_h2_client_t *client,
                                     const uint8_t *payload,
                                     uint32_t length) {
     if (length % 6 != 0) return -1;
-    uint32_t encoder_table_size = 0;
-    int encoder_table_changed = 0;
     nc_mutex_lock(&client->state_lock);
     for (uint32_t offset = 0; offset < length; offset += 6) {
         uint16_t id = (uint16_t)((payload[offset] << 8) |
@@ -716,22 +714,23 @@ static int h2_client_apply_settings(neverc_h2_client_t *client,
         } else if (id == NC_H2_SETTINGS_MAX_CONCURRENT_STREAMS) {
             client->peer_settings.max_concurrent_streams = value;
         } else if (id == NC_H2_SETTINGS_HEADER_TABLE_SIZE) {
+            /* RFC 7541 §4.2: apply every HEADER_TABLE_SIZE in order so a
+             * shrink-then-grow frame emits the required size-update of the
+             * smallest value in the interval. Last-wins skips the shrink. */
             client->peer_settings.header_table_size = value;
-            encoder_table_size = value > NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE
-                ? NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE : value;
-            encoder_table_changed = 1;
+            uint32_t encoder_table_size =
+                value > NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE
+                    ? NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE : value;
+            nc_mutex_lock(&client->write_lock);
+            int table_result = neverc_hpack_encoder_set_max_table_size(
+                client->encoder, encoder_table_size);
+            nc_mutex_unlock(&client->write_lock);
+            if (table_result != 0) {
+                nc_mutex_unlock(&client->state_lock);
+                return -1;
+            }
         } else if (id == NC_H2_SETTINGS_MAX_HEADER_LIST_SIZE) {
             client->peer_settings.max_header_list_size = value;
-        }
-    }
-    if (encoder_table_changed) {
-        nc_mutex_lock(&client->write_lock);
-        int result = neverc_hpack_encoder_set_max_table_size(
-            client->encoder, encoder_table_size);
-        nc_mutex_unlock(&client->write_lock);
-        if (result != 0) {
-            nc_mutex_unlock(&client->state_lock);
-            return -1;
         }
     }
     nc_cond_broadcast(&client->window_changed);
@@ -826,8 +825,22 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
             }
             if (stream) {
                 if ((int64_t)stream->send_window + increment > INT32_MAX) {
+                    /* RFC 9113 §6.9.1: stream overflow is RST_STREAM, not a
+                     * connection error. */
+                    if (!stream->done) {
+                        stream->error =
+                            "HTTP/2 WINDOW_UPDATE overflow";
+                        stream->error_code = NC_H2_FLOW_CONTROL_ERROR;
+                        stream->done = 1;
+                        h2_client_push_terminal_event(
+                            stream, stream->error, stream->error_code);
+                        nc_cond_broadcast(&stream->changed);
+                    }
                     nc_mutex_unlock(&client->state_lock);
-                    return -1;
+                    (void)h2_client_write_u32(
+                        client, NC_H2_FRAME_RST_STREAM, header->stream_id,
+                        NC_H2_FLOW_CONTROL_ERROR);
+                    return 0;
                 }
                 stream->send_window += (int32_t)increment;
             }

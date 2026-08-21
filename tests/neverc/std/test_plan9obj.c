@@ -215,6 +215,44 @@ static void test_path_symbols(void) {
     free(buf);
 }
 
+static void test_path_expansion_cap(void) {
+    const size_t copies = 5000;
+    const char component[] =
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+    uint32_t f_len = 4 + 1 + (uint32_t)sizeof(component);
+    uint32_t z_len = 4 + 1 + 1 + (uint32_t)(copies * 2U) + 2U;
+    uint32_t syms_len = f_len + z_len;
+    size_t total = 32 + (size_t)syms_len;
+    uint8_t *buf = (uint8_t *)calloc(total, 1);
+    CHECK("build oversized z path", buf != NULL);
+    if (!buf) return;
+
+    put32be(buf, NEVERC_PLAN9_MAGIC386);
+    put32be(buf + 16, syms_len);
+    uint8_t *p = buf + 32;
+    put32be(p, 1);
+    p[4] = 'f';
+    memcpy(p + 5, component, sizeof(component));
+    p += f_len;
+    put32be(p, 0);
+    p[4] = 'z';
+    p[5] = 0;
+    for (size_t i = 0; i < copies; i++) {
+        p[6 + i * 2] = 0;
+        p[7 + i * 2] = 1;
+    }
+    p[6 + copies * 2] = 0;
+    p[7 + copies * 2] = 0;
+
+    neverc_plan9_file_t f;
+    CHECK("parse oversized z path",
+          neverc_plan9_parse(&f, buf, total) == 0);
+    CHECK("reject oversized z expansion",
+          neverc_plan9_symbols(&f) == -1);
+    neverc_plan9_close(&f);
+    free(buf);
+}
+
 static void test_parse_invalid(void) {
     neverc_plan9_file_t f;
 
@@ -301,6 +339,7 @@ int main(void) {
     test_parse_386();
     test_parse_amd64();
     test_path_symbols();
+    test_path_expansion_cap();
     test_parse_invalid();
     test_section_data_bounds();
 

@@ -521,7 +521,8 @@ int neverc_elliptic_marshal(const neverc_elliptic_curve_t *curve,
 
     out[0] = 0x04;
     char hex[256];
-    neverc_bigint_string(&pt->x, 16, hex, sizeof(hex));
+    if (neverc_bigint_string(&pt->x, 16, hex, sizeof(hex)) < 0)
+        return -1;
     size_t hlen = strlen(hex);
     memset(out + 1, 0, (size_t)byte_len);
     for (size_t i = 0; i < hlen && i < (size_t)byte_len * 2; i++) {
@@ -533,7 +534,8 @@ int neverc_elliptic_marshal(const neverc_elliptic_curve_t *curve,
         out[1 + byte_len - 1 - (int)(i / 2)] |= (unsigned char)(v << ((i % 2) * 4));
     }
 
-    neverc_bigint_string(&pt->y, 16, hex, sizeof(hex));
+    if (neverc_bigint_string(&pt->y, 16, hex, sizeof(hex)) < 0)
+        return -1;
     hlen = strlen(hex);
     memset(out + 1 + byte_len, 0, (size_t)byte_len);
     for (size_t i = 0; i < hlen && i < (size_t)byte_len * 2; i++) {

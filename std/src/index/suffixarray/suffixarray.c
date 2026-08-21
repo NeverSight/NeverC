@@ -253,7 +253,10 @@ int neverc_suffixarray_new(neverc_suffixarray_t *idx, const unsigned char *data,
     idx->data_len = len;
     idx->sa_len = len;
     idx->sa = (int32_t *)malloc(len * sizeof(int32_t));
-    if (!idx->sa) return -1;
+    if (!idx->sa) {
+        memset(idx, 0, sizeof(*idx));
+        return -1;
+    }
 
     if (build_suffix_array(data, len, idx->sa) != 0) {
         free(idx->sa);

@@ -3,6 +3,9 @@
 
 #include "_net_io_uring.h"
 #include "_net_iocp.h"
+#if defined(NC_USE_EPOLL)
+#include <errno.h>
+#endif
 
 #define NC_EV_READ  1
 #define NC_EV_WRITE 2
@@ -548,6 +551,8 @@ static inline int nc_poller_del(nc_poller_t *poller, nc_sock_t fd) {
         poller->fd_events[fd] == 0)
         return -1;
     int result = epoll_ctl(poller->epfd, EPOLL_CTL_DEL, fd, NULL);
+    if (result != 0 && (errno == EBADF || errno == ENOENT))
+        result = 0;
     if (result == 0) {
         poller->fd_data[fd] = NULL;
         poller->fd_events[fd] = 0;

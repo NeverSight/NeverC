@@ -108,11 +108,12 @@ static int exec_is_windows_batch_name(const char *name) {
         }
     }
     while (n > 0 && (base[n - 1] == ' ' || base[n - 1] == '.')) n--;
-    /* Do not prefix-truncate: "neverc_long_name.bat" must still match. */
-    if (n < 5) return 0;
+    /* Do not prefix-truncate: "neverc_long_name.bat" must still match.
+     * Stemless ".bat" / ".cmd" still invoke cmd.exe (Go filepath.Ext). */
+    if (n < 4) return 0;
     i = n;
     while (i > 0 && base[i - 1] != '.') i--;
-    if (i <= 1) return 0;
+    if (i == 0) return 0;
     if (n - i + 1 >= sizeof(ext)) return 0;
     ext[0] = '.';
     memcpy(ext + 1, base + i, n - i);
@@ -897,13 +898,14 @@ static int exec_is_exe_file(const char *path) {
     return stat(path, &st) == 0 && S_ISREG(st.st_mode);
 }
 
-/* Go 1.19+ LookPath: a relative PATH entry that Cleans through `..`
- * (e.g. "foo/..") is ErrDot, not a search hit. */
+/* Go 1.19+ LookPath: empty PATH entries, ".", and relative dirs that
+ * Clean through `..` are ErrDot, not a search hit. */
 static int exec_posix_skip_path_dir(const char *dir, size_t dlen) {
     size_t i = 0;
     int saw_dotdot = 0;
     int is_abs = dlen > 0 && dir[0] == '/';
-    if (dlen == 0) return 0;
+    if (dlen == 0) return 1;
+    if (dlen == 1 && dir[0] == '.') return 1;
     while (i < dlen) {
         while (i < dlen && dir[i] == '/') i++;
         if (i >= dlen) break;
@@ -948,7 +950,8 @@ static const char *exec_look_in_path(const char *file, const char *path_env,
         }
         return NULL;
     }
-    /* PATH="" is no search list (Go SplitList("")). PATH=":" still means ".". */
+    /* PATH="" is no search list (Go SplitList("")). Empty components and
+     * "." are cwd hits (Go ErrDot) and are skipped like Windows. */
     if (!path_env || path_env[0] == '\0') return NULL;
 
     const char *p = path_env;
@@ -956,15 +959,9 @@ static const char *exec_look_in_path(const char *file, const char *path_env,
     for (;;) {
         const char *colon = strchr(p, ':');
         size_t dlen = colon ? (size_t)(colon - p) : strlen(p);
-        if (dlen == 0) {
-            if (cap >= 3 && flen <= cap - 3) {
-                buf[0] = '.';
-                buf[1] = '/';
-                memcpy(buf + 2, file, flen + 1);
-                if (exec_is_exe_file(buf)) return buf;
-            }
-        } else if (!exec_posix_skip_path_dir(p, dlen) &&
-                   cap >= 2 && dlen <= cap - 2 && flen <= cap - 2 - dlen) {
+        if (!exec_posix_skip_path_dir(p, dlen) &&
+            dlen > 0 && cap >= 2 && dlen <= cap - 2 &&
+            flen <= cap - 2 - dlen) {
             memcpy(buf, p, dlen);
             buf[dlen] = '/';
             memcpy(buf + dlen + 1, file, flen + 1);

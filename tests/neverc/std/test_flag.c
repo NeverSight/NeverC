@@ -696,6 +696,20 @@ static void test_parse_edge_cases(void) {
               neverc_flag_parse(3, then_syntax), -1);
     check_int("flag then bad syntax writes earlier", n, 5);
     check_int("flag then bad syntax clears nflag", neverc_flag_nflag(), 0);
+
+    neverc_flag_reset();
+    {
+        int first = 0, second = 99;
+        neverc_flag_int("n", 7, "first", &first);
+        neverc_flag_int("n", 11, "second", &second);
+        check_int("first registration keeps default", first, 7);
+        check_int("duplicate registration still writes default", second, 11);
+        char *dup[] = {"prog", "-n", "3"};
+        check_int("duplicate name still parses original",
+                  neverc_flag_parse(3, dup), 0);
+        check_int("original flag is set", first, 3);
+        check_int("duplicate target is not parsed", second, 11);
+    }
 }
 
 int main(void) {

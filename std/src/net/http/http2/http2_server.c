@@ -2591,7 +2591,8 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                     } else {
                         h2_remove_stream(&conn, stream->id);
                     }
-                    h2_refund_connection_window(&conn, fhdr.length);
+                    /* DATA already counted and (for streaming) restored.
+                     * Refunding again inflates the connection window. */
                     break;
                 }
                 nc_mutex_lock(&conn.state_lock);

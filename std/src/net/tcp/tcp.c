@@ -1130,6 +1130,25 @@ int neverc_tcp_pipe(neverc_tcp_conn_t **a, neverc_tcp_conn_t **b) {
     sv[1] = accept(listener, NULL, NULL);
     closesocket(listener);
     if (sv[1] == INVALID_SOCKET) { closesocket(sv[0]); return -1; }
+    {
+        struct sockaddr_in local0, peer1, local1, peer0;
+        int l0 = (int)sizeof(local0), p1 = (int)sizeof(peer1);
+        int l1 = (int)sizeof(local1), p0 = (int)sizeof(peer0);
+        if (getsockname(sv[0], (struct sockaddr *)&local0, &l0) == SOCKET_ERROR ||
+            getpeername(sv[1], (struct sockaddr *)&peer1, &p1) == SOCKET_ERROR ||
+            getsockname(sv[1], (struct sockaddr *)&local1, &l1) == SOCKET_ERROR ||
+            getpeername(sv[0], (struct sockaddr *)&peer0, &p0) == SOCKET_ERROR ||
+            local0.sin_family != AF_INET || peer1.sin_family != AF_INET ||
+            local1.sin_family != AF_INET || peer0.sin_family != AF_INET ||
+            local0.sin_port != peer1.sin_port ||
+            local0.sin_addr.s_addr != peer1.sin_addr.s_addr ||
+            local1.sin_port != peer0.sin_port ||
+            local1.sin_addr.s_addr != peer0.sin_addr.s_addr) {
+            closesocket(sv[0]);
+            closesocket(sv[1]);
+            return -1;
+        }
+    }
 #else
     int sv[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)

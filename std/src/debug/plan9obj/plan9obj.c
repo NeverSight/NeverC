@@ -267,6 +267,10 @@ static char *plan9_expand_path_name(const plan9_raw_symbol_t *raw,
         if (component_len > SIZE_MAX - length)
             return NULL;
         length += component_len;
+        /* Cap expanded z/Z paths so a small symbol table cannot request
+         * O(n²) bytes (one 'f' component repeated through many indexes). */
+        if (length > (256U * 1024U))
+            return NULL;
         if (component_len != 0)
             ends_with_slash = component[component_len - 1] == '/';
     }

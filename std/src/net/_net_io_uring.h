@@ -532,10 +532,13 @@ static inline int nc_uring_engine_poll(nc_uring_engine_t *engine,
             nc_uring_engine_t *accept_engine =
                 (nc_uring_engine_t *)ptr;
             if (completion >= 0 && accept_engine->on_accept) {
+                /* Multishot accept reuses one sockaddr buffer. Copy before
+                 * the callback so a later CQE cannot tear the peer address. */
+                struct sockaddr_storage peer = accept_engine->accept_addr;
+                socklen_t peer_len = accept_engine->accept_addrlen;
                 accept_engine->on_accept(
                     accept_engine->accept_ctx, (nc_sock_t)completion,
-                    (struct sockaddr *)&accept_engine->accept_addr,
-                    accept_engine->accept_addrlen);
+                    (struct sockaddr *)&peer, peer_len);
             }
             /* Multishot accept reuses addrlen; the kernel writes the real
              * sockaddr size, so reset before the next CQE (IPv4 then IPv6). */

@@ -327,8 +327,13 @@ static void test_look_path(void) {
     rmdir("neverc_path_dd");
     setenv("PATH", ":", 1);
     p = neverc_exec_look_path(name, buf, sizeof(buf));
-    ASSERT_TRUE(p != NULL && strcmp(p, "./") != 0);
-    ASSERT_TRUE(p != NULL && p[0] == '.' && p[1] == '/');
+    ASSERT_TRUE(p == NULL);
+    setenv("PATH", ".", 1);
+    p = neverc_exec_look_path(name, buf, sizeof(buf));
+    ASSERT_TRUE(p == NULL);
+    setenv("PATH", ":/usr/bin:", 1);
+    p = neverc_exec_look_path(name, buf, sizeof(buf));
+    ASSERT_TRUE(p == NULL);
     unlink(script);
     if (saved) {
         setenv("PATH", saved, 1);
@@ -723,6 +728,15 @@ static void test_batch_args_rejected(void) {
         ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
         neverc_exec_cmd_free(cmd);
         cmd = neverc_exec_command("c:payload.cmd:stream", unsafe, 1);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+        neverc_exec_cmd_free(cmd);
+        cmd = neverc_exec_command(".bat", unsafe, 1);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+        neverc_exec_cmd_free(cmd);
+        cmd = neverc_exec_command(".cmd", unsafe, 1);
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+        neverc_exec_cmd_free(cmd);
+        cmd = neverc_exec_command("/tmp/.bat", unsafe, 1);
         ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
         neverc_exec_cmd_free(cmd);
 #if !defined(_WIN32)
