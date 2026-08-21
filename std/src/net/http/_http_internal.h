@@ -3,6 +3,7 @@
 
 #include "neverc/std/net/http.h"
 #include "neverc/std/net/tcp.h"
+#include "neverc/std/net/url.h"
 #include "neverc/std/crypto/tls.h"
 #include "../_net_internal.h"
 #include <stdarg.h>

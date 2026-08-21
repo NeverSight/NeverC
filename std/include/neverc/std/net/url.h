@@ -46,6 +46,11 @@ int  neverc_url_is_abs(const neverc_url_t *u);
  * userinfo). allowed_host may be NULL to allow relative targets only. */
 int  neverc_url_is_safe_redirect(const char *raw_url, const char *allowed_host);
 
+/* Origin-form leftover: path starts with `//` or `/\`, including after
+ * percent-decode (`/%2f/evil`, `/%5cevil`). `/foo%2fbar` is not. */
+int  neverc_url_path_is_protocol_relative(const char *path);
+int  neverc_url_path_n_is_protocol_relative(const char *path, size_t n);
+
 typedef struct {
     char keys[64][256];
     char vals[64][1024];

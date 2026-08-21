@@ -1097,8 +1097,14 @@ static int h2_valid_path(const char *method, const char *path) {
         return strcmp(method, "OPTIONS") == 0;
     if (path[0] != '/') return 0;
     /* Same origin-form rule as HTTP/1: scheme-relative "//host" and a
-     * leading backslash are open-redirect / XSS if reflected into Location. */
-    if (path[1] == '/' || path[1] == '\\') return 0;
+     * leading backslash are open-redirect / XSS if reflected into Location.
+     * Percent-decoded `/%2f` / `/%5c` are the same leftover. */
+    {
+        const char *query = strchr(path, '?');
+        size_t path_len = query ? (size_t)(query - path) : strlen(path);
+        if (neverc_url_path_n_is_protocol_relative(path, path_len))
+            return 0;
+    }
     for (const unsigned char *p = (const unsigned char *)path; *p; p++)
         if (*p <= 0x20 || *p == 0x7f || *p == '#' || *p == '\\')
             return 0;

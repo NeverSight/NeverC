@@ -54,7 +54,7 @@ static int percent_decode(const char *s, char *buf, size_t cap, int flags);
 
 /* True if path is `//...` or `/\...`, including after percent-decode.
  * `/%2f/evil.com` and `/%5cevil.com` must not look like a same-origin path. */
-static int path_is_protocol_relative(const char *path) {
+int neverc_url_path_is_protocol_relative(const char *path) {
     if (!path || path[0] != '/')
         return 0;
     if (path[1] == '/' || path[1] == '\\')
@@ -63,6 +63,17 @@ static int path_is_protocol_relative(const char *path) {
     if (percent_decode(path, decoded, sizeof(decoded), 0) < 0)
         return 0;
     return decoded[0] == '/' && (decoded[1] == '/' || decoded[1] == '\\');
+}
+
+int neverc_url_path_n_is_protocol_relative(const char *path, size_t n) {
+    char buf[sizeof(((neverc_url_t *)0)->path)];
+    if (!path || n < 2)
+        return 0;
+    if (n >= sizeof(buf))
+        n = sizeof(buf) - 1;
+    memcpy(buf, path, n);
+    buf[n] = '\0';
+    return neverc_url_path_is_protocol_relative(buf);
 }
 
 /* RFC 3986 reg-name octets that may appear unescaped. */
@@ -561,7 +572,7 @@ int neverc_url_request_uri(const neverc_url_t *u, char *buf, size_t cap) {
         /* origin-form `//host` is protocol-relative. Prefix so a
          * Request-URI cannot retarget a different authority. Encoded
          * `/%2f...` / `/%5c...` decode to the same form. */
-        if (path_is_protocol_relative(u->path))
+        if (neverc_url_path_is_protocol_relative(u->path))
             builder_append_literal(&builder, "/.");
         builder_append_field(&builder, u->path, sizeof(u->path));
     } else
@@ -609,7 +620,7 @@ int neverc_url_is_safe_redirect(const char *raw_url, const char *allowed_host) {
      * Encoded `/%2f/evil.com` / `/%5cevil.com` decode to the same. */
     if (u.host[0])
         return 0;
-    if (path_is_protocol_relative(u.path))
+    if (neverc_url_path_is_protocol_relative(u.path))
         return 0;
     if (u.path[0] && u.path[0] != '/')
         return 0;

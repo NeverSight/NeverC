@@ -220,12 +220,8 @@ static int hex_digit(int c) {
     return -1;
 }
 
-/* Go utf8.ValidRune: reject surrogates; regexp/syntax reports ErrorInvalidUTF8. */
-static int syntax_rune_ok(int v) {
-    return v >= 0 && v <= NCI_RE_MAX_RUNE && (v < 0xD800 || v > 0xDFFF);
-}
-
-/* After consuming `\x`. Go: `\xHH` or `\x{H+}`. */
+/* After consuming `\x`. Go: `\xHH` or `\x{H+}`. Go regexp/syntax accepts
+ * surrogate code points in hex escapes (`\x{D800}`); they are not UTF-8. */
 static int parse_hex_rune(parser_t *p, int *out) {
     int c = peek(p);
     if (c == '{') {
@@ -236,10 +232,6 @@ static int parse_hex_rune(parser_t *p, int *out) {
             if (c == '}') {
                 if (n == 0) { p->err = "invalid escape sequence"; return 0; }
                 next(p);
-                if (!syntax_rune_ok(v)) {
-                    p->err = "invalid UTF-8";
-                    return 0;
-                }
                 *out = v;
                 return 1;
             }

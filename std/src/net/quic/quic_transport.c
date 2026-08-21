@@ -924,36 +924,38 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
         meta->control_type = QUIC_FRAME_CONNECTION_CLOSE;
         meta->level = qt_close_level(conn);
     } else if (conn->path_response_pending) {
-        if (capacity < 9) return 0;
-        output[position++] = QUIC_FRAME_PATH_RESPONSE;
-        memcpy(output + position, conn->path_response, 8);
-        position += 8;
-        meta->destination = &conn->path_response_addr;
-        meta->control_type = QUIC_FRAME_PATH_RESPONSE;
+        if (capacity >= 9) {
+            output[position++] = QUIC_FRAME_PATH_RESPONSE;
+            memcpy(output + position, conn->path_response, 8);
+            position += 8;
+            meta->destination = &conn->path_response_addr;
+            meta->control_type = QUIC_FRAME_PATH_RESPONSE;
+        }
     } else if (conn->path_challenge_pending) {
-        if (capacity < 9) return 0;
-        output[position++] = QUIC_FRAME_PATH_CHALLENGE;
-        memcpy(output + position, conn->path_challenge, 8);
-        position += 8;
-        meta->destination = &conn->candidate_addr;
-        meta->control_type = QUIC_FRAME_PATH_CHALLENGE;
+        if (capacity >= 9) {
+            output[position++] = QUIC_FRAME_PATH_CHALLENGE;
+            memcpy(output + position, conn->path_challenge, 8);
+            position += 8;
+            meta->destination = &conn->candidate_addr;
+            meta->control_type = QUIC_FRAME_PATH_CHALLENGE;
+        }
     } else if (conn->handshake_done_pending) {
         if (neverc_quic_write_handshake_done(output, capacity,
                                              &position) != 0)
-            return -1;
+            return 0;
         meta->control_type = QUIC_FRAME_HANDSHAKE_DONE;
     } else if (conn->max_data_pending) {
         if (neverc_quic_write_max_data(output, capacity,
                                        conn->flow.max_data_local,
                                        &position) != 0)
-            return -1;
+            return 0;
         meta->control_type = QUIC_FRAME_MAX_DATA;
     } else if (conn->max_stream_data_pending) {
         quic_stream_t *stream = conn->max_stream_data_pending;
         if (neverc_quic_write_max_stream_data(output, capacity, stream->id,
                                               stream->recv_max_data,
                                               &position) != 0)
-            return -1;
+            return 0;
         meta->stream_id = stream->id;
         meta->control_type = QUIC_FRAME_MAX_STREAM_DATA;
     } else if (conn->new_cid_pending) {
@@ -962,7 +964,7 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
         if (qt_write_new_cid(conn, output, capacity,
                              conn->new_cid_retransmit_index,
                              &position) != 0)
-            return -1;
+            return 0;
         meta->stream_id = (uint64_t)conn->new_cid_retransmit_index;
         meta->control_type = QUIC_FRAME_NEW_CONNECTION_ID;
     } else {
@@ -971,7 +973,7 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
             if (neverc_quic_write_retire_conn_id(
                     output, capacity, conn->peer_cids[i].sequence,
                     &position) != 0)
-                return -1;
+                return 0;
             meta->stream_id = conn->peer_cids[i].sequence;
             meta->control_type = QUIC_FRAME_RETIRE_CONNECTION_ID;
             break;
@@ -988,7 +990,7 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
                     stream->reset_error_code,
                     stream->send_offset + stream->send_len, &position);
                 nc_mutex_unlock(&stream->lock);
-                if (result != 0) return -1;
+                if (result != 0) return 0;
                 meta->stream_id = stream->id;
                 meta->control_type = QUIC_FRAME_RESET_STREAM;
                 break;
@@ -1001,7 +1003,7 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
                     qt_write_varint(output, capacity, &position,
                                     stream->stop_sending_error_code) != 0) {
                     nc_mutex_unlock(&stream->lock);
-                    return -1;
+                    return 0;
                 }
                 nc_mutex_unlock(&stream->lock);
                 meta->stream_id = stream->id;
@@ -1064,7 +1066,7 @@ static int qt_build_stream(struct neverc_quic_conn *conn, uint8_t *output,
                           neverc_quic_varint_len(stream->send_offset) + 8U;
         if (capacity <= overhead) {
             nc_mutex_unlock(&stream->lock);
-            return 0;
+            continue;
         }
         size_t length = stream->send_len;
         if (length > capacity - overhead) length = capacity - overhead;
@@ -1227,6 +1229,43 @@ static int qt_prepend_ack(struct neverc_quic_conn *conn,
     return 0;
 }
 
+static size_t qt_packet_maximum(const struct neverc_quic_conn *conn) {
+    size_t maximum = (size_t)conn->local_params.max_udp_payload_size;
+    if (conn->peer_params.max_udp_payload_size >= QUIC_MIN_INITIAL_SIZE &&
+        conn->peer_params.max_udp_payload_size < maximum)
+        maximum = (size_t)conn->peer_params.max_udp_payload_size;
+    if (maximum < QUIC_MIN_INITIAL_SIZE) maximum = QUIC_MIN_INITIAL_SIZE;
+    if (maximum > QUIC_MAX_PACKET_SIZE) maximum = QUIC_MAX_PACKET_SIZE;
+    return maximum;
+}
+
+static size_t qt_header_tag_overhead(const struct neverc_quic_conn *conn,
+                                     quic_enc_level_t level) {
+    uint8_t pn_len = 4;
+    size_t dcid = 0;
+    size_t scid = 0;
+    if (conn->n_peer_cids > 0 &&
+        conn->active_peer_cid_idx >= 0 &&
+        conn->active_peer_cid_idx < conn->n_peer_cids)
+        dcid = conn->peer_cids[conn->active_peer_cid_idx].len;
+    if (conn->n_local_cids > 0)
+        scid = conn->local_cids[0].len;
+    if (level == QUIC_ENC_APPLICATION)
+        return 1U + dcid + pn_len + 16U;
+    /* type + version + dcid len/id + scid len/id + length + pn + tag */
+    return 1U + 4U + 1U + dcid + 1U + scid + 8U + pn_len + 16U;
+}
+
+static size_t qt_payload_budget(const struct neverc_quic_conn *conn,
+                                quic_enc_level_t level) {
+    size_t maximum = qt_packet_maximum(conn);
+    size_t overhead = qt_header_tag_overhead(conn, level);
+    if (overhead < QUIC_PACKET_OVERHEAD_RESERVE)
+        overhead = QUIC_PACKET_OVERHEAD_RESERVE;
+    if (overhead >= maximum) return 0;
+    return maximum - overhead;
+}
+
 static quic_tx_record_t *qt_alloc_tx_record(
     struct neverc_quic_conn *conn) {
     for (size_t i = 0; i < QUIC_TX_RECORD_CAPACITY; i++) {
@@ -1346,17 +1385,30 @@ static int qt_send_item(struct neverc_quic_conn *conn,
     uint64_t packet_number = conn->pn[space].next_pn;
     if (packet_number > QUIC_VARINT_MAX) return -1;
     uint8_t pn_len = 4;
-    size_t maximum = (size_t)conn->local_params.max_udp_payload_size;
-    if (conn->peer_params.max_udp_payload_size >= QUIC_MIN_INITIAL_SIZE &&
-        conn->peer_params.max_udp_payload_size < maximum)
-        maximum = (size_t)conn->peer_params.max_udp_payload_size;
-    if (maximum < QUIC_MIN_INITIAL_SIZE) maximum = QUIC_MIN_INITIAL_SIZE;
-    if (maximum > QUIC_MAX_PACKET_SIZE) maximum = QUIC_MAX_PACKET_SIZE;
+    size_t maximum = qt_packet_maximum(conn);
+    size_t payload_cap = qt_payload_budget(conn, meta->level);
     uint8_t *packet = (uint8_t *)malloc(maximum);
     if (!packet) return -1;
     int included_ack;
     (void)qt_prepend_ack(conn, meta, payload, &payload_len,
-                         maximum - 64U, &included_ack);
+                         payload_cap, &included_ack);
+    if (payload_cap > 0 && payload_len > payload_cap) {
+        /* STREAM/CRYPTO plus ACK exceeded the UDP budget. Keep the ACK so
+         * the peer can open its window; retry the rest on the next packet. */
+        if (included_ack && !meta->ack_only) {
+            size_t ack_len = 0;
+            if (qt_write_ack(&conn->pn[space], payload, payload_cap,
+                             &ack_len) != 0) {
+                free(packet);
+                return 1;
+            }
+            payload_len = ack_len;
+            meta->ack_only = 1;
+        } else {
+            free(packet);
+            return 1;
+        }
+    }
     size_t header_len;
     if (meta->level == QUIC_ENC_APPLICATION) {
         if (qt_write_short_header(conn, packet, maximum, packet_number,
@@ -1525,9 +1577,12 @@ int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
     nc_mutex_lock(&conn->lock);
     int result = 0;
     for (int attempts = 0; attempts < 32; attempts++) {
-        size_t maximum = (size_t)conn->local_params.max_udp_payload_size;
-        if (maximum < QUIC_MIN_INITIAL_SIZE) maximum = QUIC_MIN_INITIAL_SIZE;
-        if (maximum > QUIC_MAX_PACKET_SIZE) maximum = QUIC_MAX_PACKET_SIZE;
+        size_t maximum = qt_packet_maximum(conn);
+        size_t budget = qt_payload_budget(conn, QUIC_ENC_HANDSHAKE);
+        if (budget == 0) {
+            result = 0;
+            break;
+        }
         uint8_t *payload = (uint8_t *)malloc(maximum);
         if (!payload) {
             result = -1;
@@ -1545,15 +1600,11 @@ int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
         if (conn->close_pending) {
             memset(&meta, 0, sizeof(meta));
             meta.destination = &conn->peer_addr;
-            built = qt_build_control(conn, payload,
-                                     maximum - QUIC_PACKET_OVERHEAD_RESERVE,
-                                     &meta, &payload_len);
+            built = qt_build_control(conn, payload, budget, &meta, &payload_len);
         } else if (congestion_blocked && conn->pto_probe_pending > 0) {
             memset(&meta, 0, sizeof(meta));
             meta.destination = &conn->peer_addr;
-            built = qt_build_pto_probe(conn, payload,
-                                       maximum - QUIC_PACKET_OVERHEAD_RESERVE,
-                                       &meta, &payload_len);
+            built = qt_build_pto_probe(conn, payload, budget, &meta, &payload_len);
         } else if (congestion_blocked) {
             built = 0;
             for (int level = QUIC_ENC_INITIAL;
@@ -1569,16 +1620,13 @@ int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
                     meta.ack_only = 1;
                     meta.destination = &conn->peer_addr;
                     built = qt_write_ack(
-                        &conn->pn[space], payload,
-                        maximum - QUIC_PACKET_OVERHEAD_RESERVE,
-                                         &payload_len) == 0 ? 1 : -1;
+                        &conn->pn[space], payload, budget,
+                                         &payload_len) == 0 ? 1 : 0;
                     break;
                 }
             }
         } else {
-            built = qt_build_item(conn, payload,
-                                  maximum - QUIC_PACKET_OVERHEAD_RESERVE,
-                                  &meta, &payload_len);
+            built = qt_build_item(conn, payload, budget, &meta, &payload_len);
         }
         if (built <= 0) {
             free(payload);

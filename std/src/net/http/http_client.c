@@ -478,7 +478,8 @@ static int parse_http_url(const char *url, parsed_url_t *out) {
     const char *path_query = strchr(out->path, '?');
     size_t path_length = path_query
         ? (size_t)(path_query - out->path) : strlen(out->path);
-    if (path_length >= 2 && out->path[0] == '/' && out->path[1] == '/')
+    if (path_length >= 2 &&
+        neverc_url_path_n_is_protocol_relative(out->path, path_length))
         return -1;
     for (size_t i = 0; out->path[i]; i++) {
         unsigned char c = (unsigned char)out->path[i];
@@ -2999,8 +3000,7 @@ static void strip_prefix_handler_fn(neverc_http_request_t *req,
     /* After stripping, "//host" / "/\\host" is a protocol-relative URL.
      * Handlers that redirect to req->path would otherwise emit Location XSS. */
     if (http_path_contains_dotdot(stripped.path) ||
-        (stripped.path[0] == '/' &&
-         (stripped.path[1] == '/' || stripped.path[1] == '\\'))) {
+        neverc_url_path_is_protocol_relative(stripped.path)) {
         free(owned);
         goto not_found;
     }

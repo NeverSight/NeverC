@@ -206,7 +206,8 @@ static int httptest_parse_request(const char *raw, size_t raw_length,
     const char *target_query = (const char *)memchr(target, '?', target_length);
     size_t path_length = target_query
         ? (size_t)(target_query - target) : target_length;
-    if (path_length >= 2 && target[0] == '/' && target[1] == '/')
+    if (path_length >= 2 &&
+        neverc_url_path_n_is_protocol_relative(target, path_length))
         return -2;
     for (size_t i = 0; i < target_length; i++) {
         unsigned char c = (unsigned char)target[i];

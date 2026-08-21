@@ -326,10 +326,6 @@ static int parse_hex_escape(parser_t *par, int *out, int *braced) {
             return 0;
         }
         par->p++;
-        if (v >= 0xD800 && v <= 0xDFFF) {
-            par->err = "invalid UTF-8";
-            return 0;
-        }
         *out = v;
         return 1;
     }

@@ -151,6 +151,14 @@ static void test_public_suffix_domain(void) {
     neverc_cookiejar_free(jar);
 
     jar = neverc_cookiejar_new();
+    cookie.domain = "duckdns.org";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.duckdns.org/", &cookie, 1);
+    check_int("reject Domain=duckdns.org from evil.duckdns.org",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
     cookie.domain = "evil.github.io";
     neverc_cookiejar_set_cookies(
         jar, "https://www.evil.github.io/", &cookie, 1);

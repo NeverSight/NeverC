@@ -1,5 +1,6 @@
 #include "neverc/std/net/http/http2.h"
 #include "neverc/std/thread.h"
+#include "neverc/std/net/url.h"
 
 #include "../../_net_buffer.h"
 #include "../../_net_platform.h"
@@ -390,7 +391,12 @@ static int h2_client_value_valid(const char *value) {
 
 static int h2_client_path_valid(const char *path) {
     if (!path || path[0] != '/') return 0;
-    if (path[1] == '/' || path[1] == '\\') return 0;
+    {
+        const char *query = strchr(path, '?');
+        size_t path_len = query ? (size_t)(query - path) : strlen(path);
+        if (neverc_url_path_n_is_protocol_relative(path, path_len))
+            return 0;
+    }
     for (const unsigned char *cursor = (const unsigned char *)path;
          *cursor; cursor++)
         if (*cursor <= 0x20 || *cursor == 0x7f || *cursor == '#' ||

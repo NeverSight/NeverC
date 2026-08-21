@@ -425,9 +425,18 @@ static int exec_win_is_drive_cwd(const char *dir, size_t n) {
 }
 
 static int exec_win_component_is_dotdot(const char *s, size_t n) {
-    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '.'))
-        n--;
-    return n == 2 && s[0] == '.' && s[1] == '.';
+    /* Windows strips trailing '.' / ' ' from a file name, but the relative
+     * component ".." (and ".." plus trailing spaces) must stay parent-
+     * directory. Stripping first turns ".." into "" and PATH=foo\.. is
+     * then searched as a real directory. */
+    size_t end = n;
+    while (end > 0 && s[end - 1] == ' ')
+        end--;
+    if (end == 2 && s[0] == '.' && s[1] == '.')
+        return 1;
+    while (end > 0 && (s[end - 1] == ' ' || s[end - 1] == '.'))
+        end--;
+    return end == 2 && s[0] == '.' && s[1] == '.';
 }
 
 static int exec_win_skip_path_dir(const char *dir, size_t dlen) {

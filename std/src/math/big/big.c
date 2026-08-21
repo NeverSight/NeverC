@@ -972,7 +972,11 @@ static void nat_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
     uint32_t *v  = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t *u  = (uint32_t *)malloc((m + n + 2) * sizeof(uint32_t));
     uint32_t *qd = (uint32_t *)calloc(m + 1, sizeof(uint32_t));
-    if (!v || !u || !qd) { free(v); free(u); free(qd); return; }
+    if (!v || !u || !qd) {
+        note_oom();
+        free(v); free(u); free(qd);
+        return;
+    }
 
     { uint32_t c = 0;                         /* v = y << s (fits in n words) */
       for (size_t i = 0; i < n; i++) {
@@ -1021,10 +1025,13 @@ static void nat_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
         qd[j] = (uint32_t)qhat;
     }
 
+    int wrote_q = !q;
+    int wrote_r = !r;
     if (q) {
         if (ensure_cap(q, m + 1)) {
             memcpy(q->digits, qd, (m + 1) * sizeof(uint32_t));
             q->len = m + 1; q->neg = 0; trim(q);
+            wrote_q = 1;
         }
     }
     if (r) {
@@ -1036,7 +1043,12 @@ static void nat_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
                 c = s ? (cur << (32 - s)) : 0;
             }
             r->len = n; r->neg = 0; trim(r);
+            wrote_r = 1;
         }
+    }
+    if (!wrote_q || !wrote_r) {
+        if (q) { q->len = 0; q->neg = 0; }
+        if (r) { r->len = 0; r->neg = 0; }
     }
     free(v); free(u); free(qd);
 }
@@ -1901,6 +1913,7 @@ static int exp_montgomery(neverc_bigint_t *z, const neverc_bigint_t *base,
     uint32_t *buf1  = (uint32_t *)calloc(n, sizeof(uint32_t));
     uint32_t *g     = (uint32_t *)calloc((size_t)tbl * n, sizeof(uint32_t));
     if (!t || !R2w || !basew || !amont || !onew || !buf0 || !buf1 || !g) {
+        note_oom();
         free(t); free(R2w); free(basew); free(amont);
         free(onew); free(buf0); free(buf1); free(g);
         neverc_bigint_free(&R2); neverc_bigint_free(&bmod);

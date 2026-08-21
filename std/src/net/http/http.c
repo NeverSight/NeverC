@@ -1,6 +1,7 @@
 #include "neverc/std/net/http.h"
 #include "neverc/std/net/http/http2.h"
 #include "neverc/std/net/tcp.h"
+#include "neverc/std/net/url.h"
 #include "neverc/std/crypto/tls.h"
 #include "neverc/std/compress/gzip.h"
 #include "../_net_internal.h"
@@ -1757,7 +1758,8 @@ static int parse_request_mode(const char *raw, size_t raw_length,
     const char *target_query = (const char *)memchr(target, '?', target_length);
     size_t path_length = target_query
         ? (size_t)(target_query - target) : target_length;
-    if (path_length >= 2 && target[0] == '/' && target[1] == '/')
+    if (path_length >= 2 &&
+        neverc_url_path_n_is_protocol_relative(target, path_length))
         goto invalid;
     for (size_t i = 0; i < target_length; i++) {
         unsigned char c = (unsigned char)target[i];
@@ -4385,7 +4387,10 @@ void neverc_http_redirect(neverc_http_response_writer_t *w,
     if (!w || !url) return;
     if (code < 300 || code > 399) code = 302;
     neverc_http_set_status(w, code);
-    neverc_http_set_header(w, "Location", url);
+    /* Fail closed: protocol-relative Location (`//host`, `/%2f/host`) is
+     * an open redirect / XSS if a handler reflects req->path. */
+    if (!neverc_url_path_is_protocol_relative(url))
+        neverc_http_set_header(w, "Location", url);
     neverc_http_set_header(w, "Content-Type", "text/html; charset=utf-8");
     neverc_http_write_string(w, "<a href=\"");
     http_write_html_escaped(w, url);

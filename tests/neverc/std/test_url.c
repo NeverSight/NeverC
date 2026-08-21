@@ -479,6 +479,9 @@ static void test_safe_redirect(void) {
     ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%5cevil.com", NULL), 0);
     ASSERT_INT_EQ(neverc_url_is_safe_redirect("/%5Cevil.com", NULL), 0);
     ASSERT_INT_EQ(neverc_url_is_safe_redirect("/foo%2fbar", NULL), 1);
+    ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/%2f/evil.com"), 1);
+    ASSERT_INT_EQ(neverc_url_path_is_protocol_relative("/foo%2fbar"), 0);
+    ASSERT_INT_EQ(neverc_url_path_n_is_protocol_relative("/%2f/x?y", 6), 1);
     ASSERT_INT_EQ(neverc_url_is_safe_redirect(
         "https://good.com/%2fevil.com", "good.com"), 1);
 }

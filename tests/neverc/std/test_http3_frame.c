@@ -757,6 +757,9 @@ static void test_request_path_allows_options_asterisk(void) {
     ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/a b"), 0);
     ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/a#b"), 0);
     ASSERT_EQ(neverc_h3_request_path_allowed("GET", "//evil.example/"), 0);
+    ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/%2f/evil.example/"), 0);
+    ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/%5cevil"), 0);
+    ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/foo%2fbar"), 1);
     ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/\\evil"), 0);
     ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/foo\\bar"), 0);
     ASSERT_EQ(neverc_h3_request_path_allowed("GET", "/foo//bar"), 1);
