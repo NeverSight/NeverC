@@ -4387,10 +4387,11 @@ void neverc_http_redirect(neverc_http_response_writer_t *w,
     if (!w || !url) return;
     if (code < 300 || code > 399) code = 302;
     neverc_http_set_status(w, code);
-    /* Fail closed: protocol-relative Location (`//host`, `/%2f/host`) is
-     * an open redirect / XSS if a handler reflects req->path. */
-    if (!neverc_url_path_is_protocol_relative(url))
-        neverc_http_set_header(w, "Location", url);
+    /* Match Go http.Redirect: Location is the caller's URL, including
+     * RFC 3986 network-path references (`//host`). Request-line parsing
+     * already 400s origin-form `//host`; use neverc_url_is_safe_redirect
+     * when the target is untrusted. */
+    neverc_http_set_header(w, "Location", url);
     neverc_http_set_header(w, "Content-Type", "text/html; charset=utf-8");
     neverc_http_write_string(w, "<a href=\"");
     http_write_html_escaped(w, url);

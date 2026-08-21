@@ -953,9 +953,12 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
     } else {
         quic_stream_t *pending_msd = NULL;
         for (int i = 0; i < conn->n_streams; i++) {
-            if (conn->streams[i] &&
-                conn->streams[i]->max_stream_data_pending) {
-                pending_msd = conn->streams[i];
+            quic_stream_t *stream = conn->streams[i];
+            /* RFC 9000 §19.10: MAX_STREAM_DATA is a receive window. Sending
+             * it for a local uni stream is STREAM_STATE_ERROR at the peer. */
+            if (stream && stream->max_stream_data_pending &&
+                !(qt_stream_is_uni(stream->id) && !stream->peer_initiated)) {
+                pending_msd = stream;
                 break;
             }
         }

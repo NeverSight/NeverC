@@ -1428,6 +1428,7 @@ static void *h3_connection_worker(void *argument) {
                 goto worker_done;
             }
         }
+        (void)neverc_quic_conn_flush(connection->quic);
         if (!worked) h3_sleep_ms(2);
     }
 
@@ -1760,8 +1761,10 @@ static int h3_client_receive_settings(h3_conn_t *connection) {
         if (!stream)
             return -1;
         if ((neverc_quic_stream_id(stream) & 2U) == 0) {
+            /* RFC 9000 §2.1 may implicitly open lower bidi IDs. SETTINGS
+             * lives on the uni control stream; keep waiting for it. */
             neverc_quic_stream_free(stream);
-            return -1;
+            continue;
         }
         uint64_t stream_type;
         if (h3_read_varint(stream, &stream_type) != 1) {
