@@ -120,6 +120,22 @@ static void test_clone(void) {
     neverc_map_free(m);
 }
 
+static void test_equal_nil_empty(void) {
+    printf("[equal_nil_empty]\n");
+    neverc_map_t *empty = neverc_map_new();
+    ASSERT_TRUE(empty != NULL);
+    ASSERT_INT_EQ(neverc_map_equal(NULL, NULL), 1);
+    ASSERT_INT_EQ(neverc_map_equal(NULL, empty), 1);
+    ASSERT_INT_EQ(neverc_map_equal(empty, NULL), 1);
+    ASSERT_INT_EQ(neverc_map_equal(empty, empty), 1);
+
+    int v = 1;
+    neverc_map_set(empty, "k", &v);
+    ASSERT_INT_EQ(neverc_map_equal(NULL, empty), 0);
+    ASSERT_INT_EQ(neverc_map_equal(empty, NULL), 0);
+    neverc_map_free(empty);
+}
+
 static void test_many_entries(void) {
     printf("[many_entries]\n");
     neverc_map_t *m = neverc_map_new();
@@ -425,6 +441,7 @@ int main(void) {
     test_clear();
     test_keys_values();
     test_clone();
+    test_equal_nil_empty();
     test_many_entries();
     test_copy();
     test_delete_func_probe_chain();

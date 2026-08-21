@@ -165,19 +165,60 @@ static int exec_look_path_name_ok(const char *file) {
 }
 
 static const char *exec_env_path(char **env, int env_count) {
+    const char *found = NULL;
     int i;
     if (!env) return NULL;
+    /* Go dedupEnvCase: duplicate keys keep the last value. */
     for (i = 0; i < env_count; i++) {
         if (!env[i]) continue;
 #if defined(NEVERC_PLATFORM_WINDOWS)
         if (_strnicmp(env[i], "PATH=", 5) == 0)
-            return env[i] + 5;
+            found = env[i] + 5;
 #else
         if (strncmp(env[i], "PATH=", 5) == 0)
-            return env[i] + 5;
+            found = env[i] + 5;
 #endif
     }
-    return NULL;
+    return found;
+}
+
+static char *exec_join_dir_file(const char *dir, size_t dlen,
+                                const char *file, size_t flen,
+                                int add_sep, char sep, const char *ext) {
+    size_t elen = ext ? strlen(ext) : 0;
+    size_t n, o;
+    char *p;
+    if (!dir || !file) return NULL;
+    if (dlen > SIZE_MAX - 3 || flen > SIZE_MAX - 3 - dlen ||
+        elen > SIZE_MAX - 3 - dlen - flen)
+        return NULL;
+    n = dlen + (add_sep ? 1 : 0) + flen + elen + 1;
+    p = (char *)malloc(n);
+    if (!p) return NULL;
+    memcpy(p, dir, dlen);
+    o = dlen;
+    if (add_sep) p[o++] = sep;
+    memcpy(p + o, file, flen);
+    o += flen;
+    if (elen) {
+        memcpy(p + o, ext, elen);
+        o += elen;
+    }
+    p[o] = '\0';
+    return p;
+}
+
+static const char *exec_finish_look(char *buf, size_t cap, char *found) {
+    size_t n;
+    if (!found) return NULL;
+    n = strlen(found);
+    if (!buf || cap == 0 || n >= cap) {
+        free(found);
+        return NULL;
+    }
+    memcpy(buf, found, n + 1);
+    free(found);
+    return buf;
 }
 
 neverc_exec_cmd_t *neverc_exec_command(const char *name, const char **args, int argc) {
@@ -527,30 +568,25 @@ static const char *exec_look_in_win_path(const char *file, const char *path_env,
         const char *semi = strchr(p, ';');
         size_t dlen = semi ? (size_t)(semi - p) : strlen(p);
         const char *dir = p;
-        int n;
         if (dlen >= 2 && dir[0] == '"' && dir[dlen - 1] == '"') {
             dir++;
             dlen -= 2;
         }
         if (dlen > 0 && dlen <= (size_t)INT_MAX &&
             !exec_win_skip_path_dir(dir, dlen)) {
+            size_t flen = strlen(file);
             int trailing = dir[dlen - 1] == '\\' || dir[dlen - 1] == '/' ||
                            exec_win_is_drive_cwd(dir, dlen);
-            n = trailing
-                    ? snprintf(buf, cap, "%.*s%s", (int)dlen, dir, file)
-                    : snprintf(buf, cap, "%.*s\\%s", (int)dlen, dir, file);
-            /* Go LookPath: a pathless name without PATHEXT is not a hit.
-             * CreateProcessA would still run a PE with no extension. */
-            if (has_ext && n > 0 && (DWORD)n < cap && exec_win_is_file(buf))
-                return buf;
-            if (!has_ext) {
-                n = trailing
-                        ? snprintf(buf, cap, "%.*s%s.exe", (int)dlen, dir, file)
-                        : snprintf(buf, cap, "%.*s\\%s.exe", (int)dlen, dir,
-                                   file);
-                if (n > 0 && (DWORD)n < cap && exec_win_is_file(buf))
-                    return buf;
-            }
+            int add_sep = !trailing;
+            char *cand;
+            /* Heap-join so a PATH entry that does not fit `buf` is still
+             * stat'd. Skipping it would let a later short directory win. */
+            cand = exec_join_dir_file(dir, dlen, file, flen, add_sep, '\\',
+                                      has_ext ? NULL : ".exe");
+            if (!cand) return NULL;
+            if (exec_win_is_file(cand))
+                return exec_finish_look(buf, cap, cand);
+            free(cand);
         }
         if (!semi) break;
         p = semi + 1;
@@ -1027,13 +1063,12 @@ static const char *exec_look_in_path(const char *file, const char *path_env,
     for (;;) {
         const char *colon = strchr(p, ':');
         size_t dlen = colon ? (size_t)(colon - p) : strlen(p);
-        if (!exec_posix_skip_path_dir(p, dlen) &&
-            dlen > 0 && cap >= 2 && dlen <= cap - 2 &&
-            flen <= cap - 2 - dlen) {
-            memcpy(buf, p, dlen);
-            buf[dlen] = '/';
-            memcpy(buf + dlen + 1, file, flen + 1);
-            if (exec_is_exe_file(buf)) return buf;
+        if (!exec_posix_skip_path_dir(p, dlen) && dlen > 0) {
+            char *cand = exec_join_dir_file(p, dlen, file, flen, 1, '/', NULL);
+            if (!cand) return NULL;
+            if (exec_is_exe_file(cand))
+                return exec_finish_look(buf, cap, cand);
+            free(cand);
         }
         if (!colon) break;
         p = colon + 1;

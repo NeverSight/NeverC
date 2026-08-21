@@ -595,9 +595,13 @@ neverc_map_t *neverc_maps_clone(const neverc_map_t *m) {
 }
 
 int neverc_maps_equal(const neverc_map_t *a, const neverc_map_t *b) {
-    if (!a && !b) return 1;
-    if (!a || !b) return 0;
-    if (a->len != b->len) return 0;
+    size_t alen;
+    size_t blen;
+    if (a == b) return 1;
+    alen = a ? a->len : 0;
+    blen = b ? b->len : 0;
+    if (alen != blen) return 0;
+    if (!a || !b) return 1;
     for (size_t i = 0; i < a->cap; i++) {
         if (!NCI_IS_FULL(a->ctrl[i])) continue;
         const map_entry_t *e = &a->slots[i];

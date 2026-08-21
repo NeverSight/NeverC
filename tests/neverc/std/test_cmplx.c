@@ -379,20 +379,22 @@ static void test_inv_trig(void) {
     /* C99/Go: atan(-i) is 0 - i∞, not NaN. */
     check_cmplx("atan(-i)", neverc_cmplx_atan(C(0.0, -1.0)), 0.0, -NC_INF);
 
-    /* Go math/cmplx.Atan branch cut: imag axis |y| > 1.
-     * atan(+0+2i) = +π/2 + i½ln3; the log-quotient form returned -π/2. */
+    /* Go math/cmplx.Atan: reducePi maps ½atan2(+0,−3)=+π/2 onto −π/2. */
     {
         double half_ln3 = 0.5 * neverc_math_log(3.0);
         neverc_cmplx_t w = neverc_cmplx_atan(C(0.0, 2.0));
-        check_cmplx("atan(+0+2i)", w, NEVERC_MATH_PI / 2.0, half_ln3);
-        check_signbit("atan(+0+2i).re pos", w.re, 0);
+        check_cmplx("atan(+0+2i)", w, -NEVERC_MATH_PI / 2.0, half_ln3);
+        check_signbit("atan(+0+2i).re neg", w.re, 1);
         w = neverc_cmplx_atan(C(0.0, -2.0));
-        check_cmplx("atan(+0-2i)", w, NEVERC_MATH_PI / 2.0, -half_ln3);
-        check_signbit("atan(+0-2i).re pos", w.re, 0);
+        check_cmplx("atan(+0-2i)", w, -NEVERC_MATH_PI / 2.0, -half_ln3);
+        check_signbit("atan(+0-2i).re neg", w.re, 1);
         double nz = neverc_math_copysign(0.0, -1.0);
         w = neverc_cmplx_atan(C(nz, 2.0));
         check_cmplx("atan(-0+2i)", w, -NEVERC_MATH_PI / 2.0, half_ln3);
         check_signbit("atan(-0+2i).re neg", w.re, 1);
+        w = neverc_cmplx_atan(C(0.6, 0.8));
+        if (1.0 - 0.6 * 0.6 - 0.8 * 0.8 == 0.0)
+            check_true("atan unit-circle is NaN", neverc_cmplx_isnan(w));
     }
 
     /* Inf arguments: the algebraic forms do Inf*0 and used to return NaN. */

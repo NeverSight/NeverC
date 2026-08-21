@@ -66,6 +66,18 @@ static int httputil_has_crlf(const char *s) {
     return 0;
 }
 
+/* Request-line fields are space-delimited. SP/HTAB in method or URL
+ * desynchronizes DumpRequestOut from a parsed *http.Request dump. */
+static int httputil_has_request_line_inject(const char *s) {
+    if (!s) return 0;
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '\r' || c == '\n' || c == ' ' || c == '\t')
+            return 1;
+    }
+    return 0;
+}
+
 /* Wire dumps are often pasted into HTML debug pages. Host is synthesized
  * as a header line, so '<' '>' '"' in Host are XSS (Go ValidHostHeader
  * already rejects them). Other header values may legally contain '<'. */
@@ -1900,7 +1912,10 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
         return NULL;
     if (httputil_has_crlf(req->method) || httputil_has_crlf(req->path) ||
         httputil_has_crlf(req->query) || httputil_has_crlf(req->http_version) ||
-        httputil_has_crlf(req->host) || httputil_host_has_xss_bytes(req->host))
+        httputil_has_crlf(req->host) || httputil_host_has_xss_bytes(req->host) ||
+        httputil_has_request_line_inject(req->method) ||
+        httputil_has_request_line_inject(req->path) ||
+        httputil_has_request_line_inject(req->query))
         return NULL;
 
     size_t cap = 256;
@@ -2034,7 +2049,8 @@ char *neverc_httputil_dump_request_out(const char *method,
     if (!body && body_len != 0)
         return NULL;
     int needs_header_crlf = 0;
-    if (httputil_has_crlf(method) || httputil_has_crlf(url) ||
+    if (httputil_has_request_line_inject(method) ||
+        httputil_has_request_line_inject(url) ||
         !httputil_header_block_valid(headers, &needs_header_crlf) ||
         httputil_headers_host_has_xss_bytes(headers))
         return NULL;

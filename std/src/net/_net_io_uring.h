@@ -447,13 +447,14 @@ static inline int nc_uring_engine_accept(
 
     struct io_uring_sqe *sqe = nc_uring_get_sqe(&engine->ring);
     if (!sqe) return -1;
-    engine->accept_addrlen = sizeof(engine->accept_addr);
     if (engine->multishot_supported) {
+        /* Multishot accept does not fill addr/addrlen reliably; a shared
+         * sockaddr is also racy across CQEs. Resolve the peer after accept. */
         nc_uring_prep_accept_multishot(
-            sqe, listen_fd, (struct sockaddr *)&engine->accept_addr,
-            &engine->accept_addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC,
+            sqe, listen_fd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC,
             nc_uring_encode_ud(NC_URING_OP_ACCEPT, engine));
     } else {
+        engine->accept_addrlen = sizeof(engine->accept_addr);
         nc_uring_prep_accept(
             sqe, listen_fd, (struct sockaddr *)&engine->accept_addr,
             &engine->accept_addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC,
@@ -532,13 +533,15 @@ static inline int nc_uring_engine_poll(nc_uring_engine_t *engine,
             nc_uring_engine_t *accept_engine =
                 (nc_uring_engine_t *)ptr;
             if (completion >= 0 && accept_engine->on_accept) {
-                /* Multishot accept reuses one sockaddr buffer. Copy before
-                 * the callback so a later CQE cannot tear the peer address. */
-                struct sockaddr_storage peer = accept_engine->accept_addr;
-                socklen_t peer_len = accept_engine->accept_addrlen;
+                struct sockaddr_storage peer;
+                socklen_t peer_len = (socklen_t)sizeof(peer);
+                memset(&peer, 0, sizeof(peer));
+                if (getpeername((int)completion, (struct sockaddr *)&peer,
+                                &peer_len) != 0)
+                    peer_len = 0;
                 accept_engine->on_accept(
                     accept_engine->accept_ctx, (nc_sock_t)completion,
-                    (struct sockaddr *)&peer, peer_len);
+                    peer_len ? (struct sockaddr *)&peer : NULL, peer_len);
             }
             /* Multishot accept reuses addrlen; the kernel writes the real
              * sockaddr size, so reset before the next CQE (IPv4 then IPv6). */

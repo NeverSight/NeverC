@@ -159,6 +159,70 @@ static void test_public_suffix_domain(void) {
     neverc_cookiejar_free(jar);
 
     jar = neverc_cookiejar_new();
+    cookie.domain = "fly.dev";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.fly.dev/", &cookie, 1);
+    check_int("reject Domain=fly.dev from evil.fly.dev",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "railway.app";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.railway.app/", &cookie, 1);
+    check_int("reject Domain=railway.app from evil.railway.app",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "supabase.co";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.supabase.co/", &cookie, 1);
+    check_int("reject Domain=supabase.co from evil.supabase.co",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "webflow.io";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.webflow.io/", &cookie, 1);
+    check_int("reject Domain=webflow.io from evil.webflow.io",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "readthedocs.io";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.readthedocs.io/", &cookie, 1);
+    check_int("reject Domain=readthedocs.io from evil.readthedocs.io",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "azurestaticapps.net";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.azurestaticapps.net/", &cookie, 1);
+    check_int("reject Domain=azurestaticapps.net",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "cloudfunctions.net";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.cloudfunctions.net/", &cookie, 1);
+    check_int("reject Domain=cloudfunctions.net",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "deno.dev";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.deno.dev/", &cookie, 1);
+    check_int("reject Domain=deno.dev from evil.deno.dev",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
     cookie.domain = "evil.github.io";
     neverc_cookiejar_set_cookies(
         jar, "https://www.evil.github.io/", &cookie, 1);

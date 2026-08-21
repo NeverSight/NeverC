@@ -523,6 +523,10 @@ neverc_udp_conn_t *neverc_udp_dial(const char *addr, const char **errp) {
         return NULL;
     }
 
+#ifdef _WIN32
+    udp_disable_connection_reset(fd);
+#endif
+
     neverc_udp_conn_t *conn = (neverc_udp_conn_t *)calloc(1, sizeof(*conn));
     if (!conn) {
         nc_sock_close(fd);
@@ -984,6 +988,7 @@ neverc_net_result_t neverc_udp_try_write(
     if (!conn || (!data && len > 0) ||
         len > NEVERC_UDP_MAX_DATAGRAM_SIZE ||
         (!destination && !conn->connected) ||
+        (destination && conn->connected) ||
         (destination &&
          (destination->_sa_len <= 0 ||
           destination->_sa_len > (int)sizeof(destination->_sa))))
@@ -1151,6 +1156,7 @@ int neverc_udp_write_batch(neverc_udp_conn_t *conn,
         if ((!messages[i].data && messages[i].len > 0) ||
             messages[i].len > NEVERC_UDP_MAX_DATAGRAM_SIZE ||
             (!messages[i].destination && !conn->connected) ||
+            (messages[i].destination && conn->connected) ||
             (messages[i].destination &&
              (messages[i].destination->_sa_len <= 0 ||
               messages[i].destination->_sa_len >
@@ -1318,7 +1324,7 @@ void neverc_udp_queue_free(neverc_udp_queue_t *queue) {
 
 int neverc_udp_write_to(neverc_udp_conn_t *conn, const void *data, size_t len,
                          const neverc_udp_addr_t *to) {
-    if (!conn || !to || (!data && len > 0) ||
+    if (!conn || !to || conn->connected || (!data && len > 0) ||
         len > NEVERC_UDP_MAX_DATAGRAM_SIZE ||
         to->_sa_len <= 0 || to->_sa_len > (int)sizeof(to->_sa))
         return -1;

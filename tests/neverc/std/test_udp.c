@@ -434,6 +434,35 @@ static void test_write_to_read_from(void) {
     neverc_udp_close(b);
 }
 
+static void test_write_to_connected_fails(void) {
+    printf("[write_to_connected]\n");
+    const char *err = NULL;
+    neverc_udp_conn_t *server = neverc_udp_listen("127.0.0.1:0", &err);
+    check_not_null("connected write_to server", server);
+    if (!server)
+        return;
+
+    neverc_udp_addr_t local;
+    neverc_udp_local_addr(server, &local);
+    char addr_str[64];
+    snprintf(addr_str, sizeof(addr_str), "127.0.0.1:%d", local.port);
+    neverc_udp_conn_t *client = neverc_udp_dial(addr_str, &err);
+    check_not_null("connected write_to client", client);
+    if (!client) {
+        neverc_udp_close(server);
+        return;
+    }
+
+    neverc_udp_addr_t dest;
+    neverc_udp_resolve_addr(addr_str, &dest);
+    check_int("WriteTo on connected UDP fails",
+              neverc_udp_write_to(client, "x", 1, &dest), -1);
+    neverc_udp_write(client, "x", 1);
+
+    neverc_udp_close(client);
+    neverc_udp_close(server);
+}
+
 /* ===== truncation-aware packet reads ===== */
 
 static void test_truncation_detection(void) {
@@ -860,6 +889,7 @@ int main(void) {
     test_null_safety();
     test_options();
     test_dualstack_write_to_ipv4();
+    test_write_to_connected_fails();
 #ifndef _WIN32
     test_echo();
     test_ipv4_mapped_addr();

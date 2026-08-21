@@ -541,6 +541,15 @@ static void test_dump_apis(void) {
     CHECK("outbound dump rejects CRLF in URL",
           neverc_httputil_dump_request_out(
               "GET", "/x\r\nHost: evil", NULL, NULL, 0) == NULL);
+    CHECK("outbound dump rejects SP in method",
+          neverc_httputil_dump_request_out(
+              "GET /evil HTTP/1.1", "/", NULL, NULL, 0) == NULL);
+    CHECK("outbound dump rejects SP in URL",
+          neverc_httputil_dump_request_out(
+              "GET", "/evil HTTP/1.1 /", NULL, NULL, 0) == NULL);
+    CHECK("outbound dump rejects HTAB in URL",
+          neverc_httputil_dump_request_out(
+              "GET", "/evil\tHTTP/1.1", NULL, NULL, 0) == NULL);
     CHECK("outbound dump rejects header smuggling",
           neverc_httputil_dump_request_out(
               "GET", "/", "X-A: 1\r\n\r\nGET /x HTTP/1.1\r\n",

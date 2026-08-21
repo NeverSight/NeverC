@@ -225,9 +225,13 @@ void neverc_weak_ref_release(neverc_weak_ref_t *w) {
 }
 
 void *neverc_weak_value(neverc_weak_ref_t *w) {
+    void *data = NULL;
     if (!w || !w->cb) return NULL;
-    if (NEVERC_ATOMIC_LOAD32(&w->cb->strong) <= 0) return NULL;
-    return w->cb->data;
+    LOCK();
+    if (NEVERC_ATOMIC_LOAD32(&w->cb->strong) > 0)
+        data = w->cb->data;
+    UNLOCK();
+    return data;
 }
 
 neverc_weak_strong_t neverc_weak_upgrade(neverc_weak_ref_t *w) {

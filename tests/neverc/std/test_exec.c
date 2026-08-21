@@ -679,6 +679,121 @@ static void test_set_dir_does_not_research_path(void) {
     rmdir(gooddir);
     rmdir(evildir);
 }
+
+static void test_env_path_last_wins(void) {
+    printf("[env_path_last_wins]\n");
+    char gooddir[256], evildir[256], goodbin[300], evilbin[300];
+    char evil_env[320], good_env[320];
+    FILE *f;
+    neverc_exec_cmd_t *cmd;
+    neverc_exec_output_t out = {0};
+    neverc_exec_exit_status_t st = {0};
+    const char *env[2];
+    int pid = (int)getpid();
+
+    snprintf(gooddir, sizeof(gooddir), "/tmp/neverc_exec_last_good_%d", pid);
+    snprintf(evildir, sizeof(evildir), "/tmp/neverc_exec_last_evil_%d", pid);
+    mkdir(gooddir, 0700);
+    mkdir(evildir, 0700);
+    snprintf(goodbin, sizeof(goodbin), "%s/nctool", gooddir);
+    snprintf(evilbin, sizeof(evilbin), "%s/nctool", evildir);
+
+    f = fopen(goodbin, "w");
+    ASSERT_TRUE(f != NULL);
+    if (f) {
+        fputs("#!/bin/sh\necho GOOD\n", f);
+        fclose(f);
+    }
+    chmod(goodbin, 0755);
+    f = fopen(evilbin, "w");
+    ASSERT_TRUE(f != NULL);
+    if (f) {
+        fputs("#!/bin/sh\necho EVIL\n", f);
+        fclose(f);
+    }
+    chmod(evilbin, 0755);
+
+    snprintf(evil_env, sizeof(evil_env), "PATH=%s", evildir);
+    snprintf(good_env, sizeof(good_env), "PATH=%s", gooddir);
+    env[0] = evil_env;
+    env[1] = good_env;
+    cmd = neverc_exec_command("nctool", NULL, 0);
+    ASSERT_TRUE(cmd != NULL);
+    neverc_exec_cmd_set_env(cmd, env, 2);
+    ASSERT_INT_EQ(neverc_exec_cmd_output(cmd, &out, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+    ASSERT_TRUE(memmem(out.data, out.len, "GOOD", 4) != NULL);
+    ASSERT_TRUE(memmem(out.data, out.len, "EVIL", 4) == NULL);
+
+    neverc_exec_output_free(&out);
+    neverc_exec_cmd_free(cmd);
+    unlink(goodbin);
+    unlink(evilbin);
+    rmdir(gooddir);
+    rmdir(evildir);
+}
+
+static void test_look_path_overflow_does_not_skip(void) {
+    printf("[look_path_overflow]\n");
+    char longdir[256], shortdir[256], longbin[420], shortbin[300];
+    char pathbuf[700], tiny[64], big[512];
+    const char *old = getenv("PATH");
+    char *oldcopy = old ? strdup(old) : NULL;
+    FILE *f;
+    const char *p;
+    int pid = (int)getpid();
+    size_t n;
+
+    snprintf(shortdir, sizeof(shortdir), "/tmp/nclps_%d", pid);
+    snprintf(longdir, sizeof(longdir), "/tmp/nclpl_%d_", pid);
+    n = strlen(longdir);
+    memset(longdir + n, 'a', 160);
+    longdir[n + 160] = '\0';
+    mkdir(longdir, 0700);
+    mkdir(shortdir, 0700);
+    snprintf(longbin, sizeof(longbin), "%s/nclook", longdir);
+    snprintf(shortbin, sizeof(shortbin), "%s/nclook", shortdir);
+
+    f = fopen(longbin, "w");
+    ASSERT_TRUE(f != NULL);
+    if (f) {
+        fputs("#!/bin/sh\necho LONG\n", f);
+        fclose(f);
+    }
+    chmod(longbin, 0755);
+    f = fopen(shortbin, "w");
+    ASSERT_TRUE(f != NULL);
+    if (f) {
+        fputs("#!/bin/sh\necho SHORT\n", f);
+        fclose(f);
+    }
+    chmod(shortbin, 0755);
+
+    snprintf(pathbuf, sizeof(pathbuf), "%s:%s", longdir, shortdir);
+    ASSERT_INT_EQ(setenv("PATH", pathbuf, 1), 0);
+
+    p = neverc_exec_look_path("nclook", tiny, sizeof(tiny));
+    ASSERT_TRUE(p == NULL);
+
+    p = neverc_exec_look_path("nclook", big, sizeof(big));
+    ASSERT_TRUE(p != NULL);
+    ASSERT_TRUE(p && strstr(p, longdir) != NULL);
+
+    unlink(longbin);
+    p = neverc_exec_look_path("nclook", tiny, sizeof(tiny));
+    ASSERT_TRUE(p != NULL);
+    ASSERT_TRUE(p && strstr(p, shortdir) != NULL);
+
+    if (oldcopy) {
+        setenv("PATH", oldcopy, 1);
+        free(oldcopy);
+    } else {
+        unsetenv("PATH");
+    }
+    unlink(shortbin);
+    rmdir(longdir);
+    rmdir(shortdir);
+}
 #endif
 
 static void test_argv_quoting(const char *executable) {
@@ -1058,6 +1173,8 @@ int main(int argc, char **argv) {
     test_env_without_path_does_not_use_parent_path();
     test_set_dir();
     test_set_dir_does_not_research_path();
+    test_env_path_last_wins();
+    test_look_path_overflow_does_not_skip();
 #endif
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

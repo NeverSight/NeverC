@@ -4,10 +4,23 @@
  * All functions use neverc_math_* — zero libc math dependency.
  */
 #include "neverc/std/math/cmplx.h"
+#include <stdint.h>
 
 #define RE(z) ((z).re)
 #define IM(z) ((z).im)
 #define MK(r,i) neverc_cmplx(r,i)
+
+/* Go math/cmplx.reducePi Cody-Waite reduction for |x| < 2^30.
+ * Atan2 yields at most π, so Atan's ½atan2 argument always fits. */
+static double cmplx_reduce_pi(double x) {
+    const double pi1 = 3.141592502593994;       /* 0x400921fb40000000 */
+    const double pi2 = 1.5099578831723193e-07;  /* 0x3e84442d00000000 */
+    const double pi3 = 1.0780605716316238e-14;  /* 0x3d08469898cc5170 */
+    double t = x / NEVERC_MATH_PI;
+    t += 0.5;
+    t = (double)(int64_t)t;
+    return ((x - t * pi1) - t * pi2) - t * pi3;
+}
 
 /* ===== Basic ===== */
 
@@ -347,17 +360,18 @@ neverc_cmplx_t neverc_cmplx_atan(neverc_cmplx_t z) {
     if (neverc_math_isnan(a) || neverc_math_isnan(b))
         return neverc_cmplx_nan_val();
 
-    /* Go math/cmplx.Atan: Re = ½ atan2(2x, 1-x²-y²), Im = ¼ log(r₊/r₋).
-     * The (1+iz)/(1-iz) log form lands on the negative-real axis with
-     * the wrong signed zero, so atan(+0+2i) was -π/2 instead of +π/2. */
+    /* Go math/cmplx.Atan: Re = reducePi(½ atan2(2x, 1-x²-y²)),
+     * Im = ¼ log(r₊/r₋). reducePi maps +π/2 → −π/2, so atan(+0+2i)
+     * is −π/2 + i½ln3, not +π/2. a==0 / imag-denominator 0 are NaN. */
     double x2 = a * a;
     double aa = 1.0 - x2 - b * b;
-    double w = 0.5 * neverc_math_atan2(2.0 * a, aa);
+    if (aa == 0.0)
+        return neverc_cmplx_nan_val();
+    double w = cmplx_reduce_pi(0.5 * neverc_math_atan2(2.0 * a, aa));
     double t = b - 1.0;
     double bb = x2 + t * t;
     if (bb == 0.0)
-        return MK(neverc_math_copysign(0.0, a),
-                  neverc_math_copysign(neverc_math_inf(1), b));
+        return neverc_cmplx_nan_val();
     t = b + 1.0;
     return MK(w, 0.25 * neverc_math_log((x2 + t * t) / bb));
 }
