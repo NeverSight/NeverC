@@ -286,6 +286,8 @@ static void http3_test_unified_end_to_end(void) {
     h3_config.root_cert_file = files.ca;
     (void)snprintf(url, sizeof(url), "https://127.0.0.1:%d/echo", port);
     response = neverc_http3_get_with_config(url, &h3_config);
+    if (response && response->error)
+        printf("  unified h3 GET error: %s\n", response->error);
     CHECK(response != NULL && response->error == NULL &&
           response->status_code == 200 && response->body_len == 13U);
     neverc_http_response_free(response);

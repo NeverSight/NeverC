@@ -968,25 +968,25 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
             meta->stream_id = pending_msd->id;
             meta->control_type = QUIC_FRAME_MAX_STREAM_DATA;
         } else if (conn->new_cid_pending) {
-        if (conn->new_cid_retransmit_index < 0)
-            conn->new_cid_retransmit_index = conn->n_local_cids;
-        if (qt_write_new_cid(conn, output, capacity,
-                             conn->new_cid_retransmit_index,
-                             &position) != 0)
-            return 0;
-        meta->stream_id = (uint64_t)conn->new_cid_retransmit_index;
-        meta->control_type = QUIC_FRAME_NEW_CONNECTION_ID;
-    } else {
-        for (int i = 0; i < conn->n_peer_cids; i++) {
-            if (!conn->peer_cids[i].retire_unsent) continue;
-            if (neverc_quic_write_retire_conn_id(
-                    output, capacity, conn->peer_cids[i].sequence,
-                    &position) != 0)
+            if (conn->new_cid_retransmit_index < 0)
+                conn->new_cid_retransmit_index = conn->n_local_cids;
+            if (qt_write_new_cid(conn, output, capacity,
+                                 conn->new_cid_retransmit_index,
+                                 &position) != 0)
                 return 0;
-            meta->stream_id = conn->peer_cids[i].sequence;
-            meta->control_type = QUIC_FRAME_RETIRE_CONNECTION_ID;
-            break;
-        }
+            meta->stream_id = (uint64_t)conn->new_cid_retransmit_index;
+            meta->control_type = QUIC_FRAME_NEW_CONNECTION_ID;
+        } else {
+            for (int i = 0; i < conn->n_peer_cids; i++) {
+                if (!conn->peer_cids[i].retire_unsent) continue;
+                if (neverc_quic_write_retire_conn_id(
+                        output, capacity, conn->peer_cids[i].sequence,
+                        &position) != 0)
+                    return 0;
+                meta->stream_id = conn->peer_cids[i].sequence;
+                meta->control_type = QUIC_FRAME_RETIRE_CONNECTION_ID;
+                break;
+            }
         }
     }
     if (position == 0) {

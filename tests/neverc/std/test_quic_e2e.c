@@ -179,6 +179,8 @@ static void quic_test_roundtrip(void) {
     neverc_quic_conn_t *client = neverc_quic_dial(address, &client_config,
                                                     &error);
     CHECK(client != NULL);
+    if (!client)
+        printf("  dial error: %s\n", error ? error : "(null)");
     if (client) {
         CHECK(strcmp(neverc_quic_conn_alpn(client),
                      "neverc-quic-test/1") == 0);

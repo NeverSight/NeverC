@@ -1216,6 +1216,8 @@ static int h3_feed_qpack_encoder(h3_conn_t *connection, const uint8_t *data,
         size_t consumed = 0;
         int rc = neverc_qpack_encoder_stream_instruction(
             tmp + pos, total - pos, &consumed);
+        if (rc > 0 && consumed == 0)
+            rc = -1;
         if (rc == 0) {
             size_t rest = total - pos;
             if (rest > H3_QPACK_ENCODER_LEFTOVER) {
@@ -2035,10 +2037,14 @@ static neverc_http_response_t *h3_client_request(
     h3_conn_t connection;
     if (h3_conn_init(&connection, NULL, quic) != 0) {
         neverc_quic_conn_free(quic);
-        return h3_error_response("HTTP/3 peer SETTINGS failed");
+        return h3_error_response("HTTP/3 connection init failed");
     }
-    if (h3_setup_local_streams(&connection) != 0 ||
-        h3_client_receive_settings(&connection) != 0) {
+    if (h3_setup_local_streams(&connection) != 0) {
+        h3_conn_teardown(&connection);
+        neverc_quic_conn_free(quic);
+        return h3_error_response("HTTP/3 local streams failed");
+    }
+    if (h3_client_receive_settings(&connection) != 0) {
         h3_conn_teardown(&connection);
         neverc_quic_conn_free(quic);
         return h3_error_response("HTTP/3 peer SETTINGS failed");

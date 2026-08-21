@@ -634,6 +634,9 @@ STD_TEST(atomic, "src/sync/atomic/atomic.c")
     "src/net/tcp/tcp.c", "src/net/tcp/tcp_context.c", \
     "src/context/context.c"
 
+#define URL_DEPS \
+    "src/net/url/url.c", "src/net/netip/netip.c"
+
 STD_TEST(tcp, TCP_DEPS)
 STD_TEST(udp, "src/net/udp/udp.c", "src/net/udp/udp_context.c",
          "src/context/context.c")
@@ -673,20 +676,20 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
     "src/math/big/big.c", "src/encoding/base64/base64.c", \
     "src/encoding/pem/pem.c"
 
-STD_TEST(http, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
+STD_TEST(http, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS, URL_DEPS, HTTP_TLS_DEPS)
 STD_TEST(http_stage5,
          "src/net/http/http.c", "src/net/http/http_client.c",
          "src/net/http/http2/http2.c",
          "src/net/http/http2/http2_server.c",
          "src/net/http/http2/http2_client.c",
-         "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
+         "src/time/time.c", TCP_DEPS, URL_DEPS, HTTP_TLS_DEPS)
 TEST_F(StdLibTest, HttpRouteAllocationFailure) {
   auto r = compileAndRunStdTest(
       "http_route_oom",
       {"src/net/http/http_client.c", "src/net/http/http2/http2.c",
        "src/net/http/http2/http2_server.c",
        "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS,
-       HTTP_TLS_DEPS});
+       URL_DEPS, HTTP_TLS_DEPS});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
@@ -696,7 +699,7 @@ TEST_F(StdLibTest, HttpStripPrefixAllocationFailure) {
       {"src/net/http/http.c", "src/net/http/http2/http2.c",
        "src/net/http/http2/http2_server.c",
        "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS,
-       HTTP_TLS_DEPS});
+       URL_DEPS, HTTP_TLS_DEPS});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
@@ -707,13 +710,13 @@ TEST_F(StdLibTest, HttpClientAllocationFailure) {
       {"src/net/http/http.c", "src/net/http/http2/http2.c",
        "src/net/http/http2/http2_server.c",
        "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS,
-       HTTP_TLS_DEPS});
+       URL_DEPS, HTTP_TLS_DEPS});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 #endif
 STD_TEST(websocket, "src/net/websocket/websocket.c", TCP_DEPS,
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", "src/net/url/url.c", "src/net/netip/netip.c", HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", URL_DEPS, HTTP_TLS_DEPS)
 STD_TEST(url, "src/net/url/url.c", "src/net/netip/netip.c")
 STD_TEST(netip, "src/net/netip/netip.c")
 STD_TEST(mail, "src/net/mail/mail.c", "src/net/netip/netip.c")
@@ -724,16 +727,16 @@ TEST_F(StdLibTest, TextprotoAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(httptest, "src/net/http/httptest/httptest.c",
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS, URL_DEPS, HTTP_TLS_DEPS)
 
 // ===== io_uring =====
-STD_TEST(io_uring, TCP_DEPS, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", HTTP_TLS_DEPS)
+STD_TEST(io_uring, TCP_DEPS, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", URL_DEPS, HTTP_TLS_DEPS)
 
 // ===== HTTP/2 =====
 STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/net/http/http.c", "src/net/http/http_client.c", TCP_DEPS,
-    "src/time/time.c", HTTP_TLS_DEPS)
+    "src/time/time.c", URL_DEPS, HTTP_TLS_DEPS)
 STD_TEST(http2_oom, "src/net/http/http2/http2.c", "src/net/http/http.c",
-    "src/net/http/http_client.c", "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
+    "src/net/http/http_client.c", "src/time/time.c", TCP_DEPS, URL_DEPS, HTTP_TLS_DEPS)
 TEST_F(StdLibTest, HpackAllocationFailure) {
   auto r = compileAndRunStdTest("hpack_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
@@ -767,11 +770,11 @@ TEST_F(StdLibTest, EmbeddedContextCancelHandleDotSyntax) {
 }
 
 // ===== HTTP Benchmark =====
-STD_TEST(http_bench, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
+STD_TEST(http_bench, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS, URL_DEPS, HTTP_TLS_DEPS)
 
 // ===== HTTP Util =====
 STD_TEST(httputil, "src/net/http/httputil/httputil.c",
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/net/netip/netip.c", "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", URL_DEPS, "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
 
 // ===== Cookie Jar =====
 STD_TEST(cookiejar, "src/net/http/cookiejar/cookiejar.c",
@@ -1179,6 +1182,5 @@ STD_TEST(dot_syntax,
     "src/net/http/http_client.c",
     "src/net/http/http2/http2.c",
     "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c",
-    "src/net/url/url.c",
-    "src/net/netip/netip.c",
+    URL_DEPS,
     HTTP_TLS_DEPS)

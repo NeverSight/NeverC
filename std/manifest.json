@@ -2376,6 +2376,7 @@
     "net/url": {
       "header": "include/neverc/std/net/url.h",
       "description": "URL parsing, query encoding/decoding, percent escaping (mirrors Go net/url package)",
+      "deps": ["net/netip"],
       "symbols": {
         "neverc_url_parse": "src/net/url/url.c",
         "neverc_url_parse_request_uri": "src/net/url/url.c",
@@ -3916,7 +3917,7 @@
     "http": {
       "header": "include/neverc/std/net/http.h",
       "description": "Experimental HTTP/1.1 server and client; HTTPS remains unavailable until TLS verification is complete",
-      "deps": ["net/http2", "net/tcp", "crypto/tls", "compress/gzip", "context"],
+      "deps": ["net/http2", "net/tcp", "crypto/tls", "compress/gzip", "context", "net/url"],
       "symbols": {
         "neverc_http_set_status": "src/net/http/http.c",
         "neverc_http_set_header": "src/net/http/http.c",
