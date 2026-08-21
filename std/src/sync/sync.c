@@ -604,7 +604,7 @@ void *neverc_sync_map_load(neverc_sync_map_t *m, const char *key, int *ok) {
     return val;
 }
 
-void *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void *value, int *loaded) {
+void  *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void *value, int *loaded) {
     if (!m || !key) {
         if (loaded) *loaded = 0;
         return NULL;
@@ -613,6 +613,7 @@ void *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void 
     smap_entry_t *slot = smap_find_slot(m->buckets, m->cap, key);
     void *actual = NULL;
     int was_loaded = 0;
+    int oom = 0;
     if (slot && slot->occupied == SMAP_OCCUPIED) {
         actual = slot->value;
         was_loaded = 1;
@@ -620,7 +621,7 @@ void *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void 
         if (!slot || m->count >= m->cap - m->cap / 4) {
             if (smap_grow(m) != 0) {
                 neverc_rwmutex_unlock(&m->rw);
-                if (loaded) *loaded = 0;
+                if (loaded) *loaded = -1;
                 return NULL;
             }
             slot = smap_find_slot(m->buckets, m->cap, key);
@@ -635,10 +636,12 @@ void *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void 
         if (slot && smap_insert(slot, key, value) == 0) {
             actual = value;
             m->count++;
+        } else {
+            oom = 1;
         }
     }
     neverc_rwmutex_unlock(&m->rw);
-    if (loaded) *loaded = was_loaded;
+    if (loaded) *loaded = oom ? -1 : was_loaded;
     return actual;
 }
 
@@ -756,7 +759,7 @@ void *neverc_sync_map_swap(neverc_sync_map_t *m, const char *key, void *value, i
         if (!slot || m->count >= m->cap - m->cap / 4) {
             if (smap_grow(m) != 0) {
                 neverc_rwmutex_unlock(&m->rw);
-                if (loaded) *loaded = 0;
+                if (loaded) *loaded = -1;
                 return NULL;
             }
             slot = smap_find_slot(m->buckets, m->cap, key);
@@ -771,6 +774,11 @@ void *neverc_sync_map_swap(neverc_sync_map_t *m, const char *key, void *value, i
         }
         if (slot && smap_insert(slot, key, value) == 0)
             m->count++;
+        else {
+            neverc_rwmutex_unlock(&m->rw);
+            if (loaded) *loaded = -1;
+            return NULL;
+        }
     }
     neverc_rwmutex_unlock(&m->rw);
     if (loaded) *loaded = was_loaded;

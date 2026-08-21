@@ -2391,7 +2391,9 @@
         "neverc_url_path_unescape": "src/net/url/url.c",
         "neverc_url_query_escape": "src/net/url/url.c",
         "neverc_url_query_unescape": "src/net/url/url.c",
-        "neverc_url_is_safe_redirect": "src/net/url/url.c"
+        "neverc_url_is_safe_redirect": "src/net/url/url.c",
+        "neverc_url_path_is_protocol_relative": "src/net/url/url.c",
+        "neverc_url_path_n_is_protocol_relative": "src/net/url/url.c"
       },
       "dot_methods": {
         "parse": "neverc_url_parse",
@@ -2408,7 +2410,9 @@
         "path_unescape": "neverc_url_path_unescape",
         "query_escape": "neverc_url_query_escape",
         "query_unescape": "neverc_url_query_unescape",
-        "is_safe_redirect": "neverc_url_is_safe_redirect"
+        "is_safe_redirect": "neverc_url_is_safe_redirect",
+        "path_is_protocol_relative": "neverc_url_path_is_protocol_relative",
+        "path_n_is_protocol_relative": "neverc_url_path_n_is_protocol_relative"
       }
     },
     "image/color": {

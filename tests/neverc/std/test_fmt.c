@@ -632,6 +632,10 @@ static void test_sscanf(void) {
     check_int("sscan vertical tab is space count",
               neverc_fmt_sscan("\v8", &one), 1);
     check_int("sscan vertical tab is space val", one, 8);
+    one = 0;
+    check_int("sscan nbsp is space count",
+              neverc_fmt_sscan("\xC2\xA0""9", &one), 1);
+    check_int("sscan nbsp is space val", one, 9);
     a = 0;
     n = neverc_fmt_sscanf("7_2", "%d", &a);
     check_int("sscanf %%d underscore stops", n, 1);

@@ -159,12 +159,12 @@ int main(void) {
     loaded = 1;
     CHECK(neverc_sync_map_load_or_store(
               map, "grow-load-or-store-oom", &original, &loaded) == NULL);
-    CHECK(loaded == 0);
+    CHECK(loaded == -1);
 
     loaded = 1;
     CHECK(neverc_sync_map_swap(
               map, "grow-swap-oom", &original, &loaded) == NULL);
-    CHECK(loaded == 0);
+    CHECK(loaded == -1);
 
     fail_bucket_allocation = 0;
     fail_key_allocation = 1;
@@ -187,14 +187,14 @@ int main(void) {
     loaded = 1;
     CHECK(neverc_sync_map_load_or_store(
               map, "load-or-store-oom", &original, &loaded) == NULL);
-    CHECK(loaded == 0);
+    CHECK(loaded == -1);
     CHECK(neverc_sync_map_load(map, "load-or-store-oom", &ok) == NULL);
     CHECK(ok == 0);
 
     loaded = 1;
     CHECK(neverc_sync_map_swap(
               map, "swap-oom", &original, &loaded) == NULL);
-    CHECK(loaded == 0);
+    CHECK(loaded == -1);
     CHECK(neverc_sync_map_load(map, "swap-oom", &ok) == NULL);
     CHECK(ok == 0);
 

@@ -700,28 +700,91 @@ char *neverc_fmt_errorf(const char *format, ...) {
 
 /* ---- Scan functions ---- */
 
-static int is_scan_space(char c) {
-    return c == ' ' || c == '\t' || c == '\v' || c == '\f' || c == '\r' ||
-           c == '\n';
+/* Go fmt/scan.go isSpace + unicode.IsSpace. Formatted Scanf treats only
+ * U+000A as a newline; other Unicode spaces still skip. */
+static int scan_decode_rune(const char *s, uint32_t *r, int *n) {
+    unsigned char c = (unsigned char)*s;
+    if (c < 0x80) {
+        *r = c;
+        *n = 1;
+        return 1;
+    }
+    int need = 0;
+    uint32_t minv = 0;
+    if ((c & 0xE0) == 0xC0) {
+        need = 2;
+        *r = c & 0x1F;
+        minv = 0x80;
+    } else if ((c & 0xF0) == 0xE0) {
+        need = 3;
+        *r = c & 0x0F;
+        minv = 0x800;
+    } else if ((c & 0xF8) == 0xF0) {
+        need = 4;
+        *r = c & 0x07;
+        minv = 0x10000;
+    } else {
+        *r = c;
+        *n = 1;
+        return 0;
+    }
+    int i;
+    for (i = 1; i < need; i++) {
+        unsigned char b = (unsigned char)s[i];
+        if ((b & 0xC0) != 0x80) {
+            *r = c;
+            *n = 1;
+            return 0;
+        }
+        *r = (*r << 6) | (uint32_t)(b & 0x3F);
+    }
+    if (*r < minv || *r > 0x10FFFF || (*r >= 0xD800 && *r <= 0xDFFF)) {
+        *r = c;
+        *n = 1;
+        return 0;
+    }
+    *n = need;
+    return 1;
 }
 
-static int is_scan_space_not_nl(char c) {
-    return c == ' ' || c == '\t' || c == '\v' || c == '\f' || c == '\r';
+static int scan_rune_is_space(uint32_t r) {
+    if (r == ' ' || r == '\t' || r == '\n' || r == '\r' ||
+        r == '\v' || r == '\f')
+        return 1;
+    if (r == 0x85 || r == 0xA0 || r == 0x1680)
+        return 1;
+    if (r >= 0x2000 && r <= 0x200A)
+        return 1;
+    return r == 0x2028 || r == 0x2029 || r == 0x202F ||
+           r == 0x205F || r == 0x3000;
 }
 
-/* Formatted Scanf (Go fmt/scan.go: Fscanf nlIsSpace=false). Skip \v/\f as
- * well as space/tab/CR, but not newlines — those must appear in the format. */
+/* Byte length of a space rune at s, or 0. allow_nl includes U+000A. */
+static int scan_space_bytes(const char *s, int allow_nl) {
+    if (!s || !*s) return 0;
+    uint32_t r;
+    int n;
+    scan_decode_rune(s, &r, &n);
+    if (r == '\n') return allow_nl ? n : 0;
+    return scan_rune_is_space(r) ? n : 0;
+}
+
 static int skip_ws(const char **p) {
-    int n = 0;
-    while (is_scan_space_not_nl(**p)) { (*p)++; n++; }
-    return n;
+    int total = 0, n;
+    while ((n = scan_space_bytes(*p, 0)) > 0) {
+        (*p) += n;
+        total += n;
+    }
+    return total;
 }
 
-/* Unformatted Scan/Sscan (Go Fscan nlIsSpace=true): newlines count as space. */
 static int skip_ws_nl(const char **p) {
-    int n = 0;
-    while (is_scan_space(**p)) { (*p)++; n++; }
-    return n;
+    int total = 0, n;
+    while ((n = scan_space_bytes(*p, 1)) > 0) {
+        (*p) += n;
+        total += n;
+    }
+    return total;
 }
 
 /* Go fmt/scan.go advance(): a format newline must match an input newline
@@ -730,18 +793,21 @@ static int skip_ws_nl(const char **p) {
 static int scan_advance_format_space(const char **sp, const char **fp) {
     int newlines = 0;
     int trailing_space = 0;
-    while (**fp && is_scan_space(**fp)) {
+    while (**fp) {
+        int n = scan_space_bytes(*fp, 1);
+        if (n == 0) break;
         if (**fp == '\n') {
             newlines++;
             trailing_space = 0;
         } else {
             trailing_space = 1;
         }
-        (*fp)++;
+        (*fp) += n;
     }
     for (int j = 0; j < newlines; j++) {
-        while (is_scan_space_not_nl(**sp))
-            (*sp)++;
+        int n;
+        while ((n = scan_space_bytes(*sp, 0)) > 0)
+            (*sp) += n;
         if (**sp == '\n')
             (*sp)++;
         else if (**sp != '\0')
@@ -751,11 +817,12 @@ static int scan_advance_format_space(const char **sp, const char **fp) {
         if (newlines == 0) {
             if (**sp == '\n')
                 return 0;
-            if (**sp != '\0' && !is_scan_space_not_nl(**sp))
+            if (**sp != '\0' && scan_space_bytes(*sp, 0) == 0)
                 return 0;
         }
-        while (is_scan_space_not_nl(**sp))
-            (*sp)++;
+        int n;
+        while ((n = scan_space_bytes(*sp, 0)) > 0)
+            (*sp) += n;
     }
     return 1;
 }
@@ -934,7 +1001,7 @@ static int scan_string(const char **p, char *buf, size_t max_chars) {
     skip_ws(p);
     if (!buf || max_chars == 0 || **p == '\0') return 0;
     size_t i = 0;
-    while (i < max_chars && **p && !is_scan_space(**p)) {
+    while (i < max_chars && **p && scan_space_bytes(*p, 1) == 0) {
         buf[i++] = **p;
         (*p)++;
     }
@@ -1078,15 +1145,25 @@ static int scan_int_literal(const char **p, int64_t *out) {
     }
 
     size_t len = (size_t)(q - start);
-    if (len == 0 || len >= 128) {
+    if (len == 0) {
         *p = start;
         return 0;
     }
-    char tok[128];
+    char stacktok[128];
+    char *tok = stacktok;
+    if (len >= sizeof(stacktok)) {
+        tok = (char *)malloc(len + 1);
+        if (!tok) {
+            *p = start;
+            return 0;
+        }
+    }
     memcpy(tok, start, len);
     tok[len] = '\0';
     long long parsed;
-    if (neverc_strconv_parse_int(tok, 0, &parsed) != NEVERC_STRCONV_OK) {
+    int ok = neverc_strconv_parse_int(tok, 0, &parsed) == NEVERC_STRCONV_OK;
+    if (tok != stacktok) free(tok);
+    if (!ok) {
         *p = start;
         return 0;
     }

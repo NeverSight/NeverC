@@ -152,6 +152,8 @@ void   neverc_sync_map_free(neverc_sync_map_t *m);
 /* Returns 0 on success, -1 if the key cannot be stored (OOM / invalid). */
 int    neverc_sync_map_store(neverc_sync_map_t *m, const char *key, void *value);
 void  *neverc_sync_map_load(neverc_sync_map_t *m, const char *key, int *ok);
+/* *loaded is 1 if the key was already present, 0 if this call stored value,
+ * and -1 if nothing was stored (OOM). */
 void  *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void *value, int *loaded);
 void  *neverc_sync_map_load_and_delete(neverc_sync_map_t *m, const char *key, int *loaded);
 void   neverc_sync_map_delete(neverc_sync_map_t *m, const char *key);

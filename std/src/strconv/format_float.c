@@ -2,6 +2,7 @@
 #include "decimal.h"
 #include "ryu_table.h"
 #include <limits.h>
+#include <stddef.h>
 #include <string.h>
 #include <stdint.h>
 
@@ -18,7 +19,7 @@
  *
  * The previous implementation extracted digits by naive FP scaling, which was
  * neither shortest (0.1 printed as "0.100000") nor reliably correctly rounded.
- * Supports 'e', 'E', 'f', 'g', 'G'.
+ * Supports 'b', 'e', 'E', 'f', 'g', 'G', 'x', 'X'. Unknown fmt returns -1.
  */
 
 static int nc_is_nan(double f) { return f != f; }
@@ -249,6 +250,109 @@ static void w_digs(nc_w *w, const uint8_t *d, int from, int to) {
     for (int i = from; i < to; i++) w_ch(w, (char)d[i]);
 }
 
+static void w_u64(nc_w *w, uint64_t v) {
+    char tmp[20];
+    int n = 0;
+    if (v == 0) {
+        w_ch(w, '0');
+        return;
+    }
+    while (v > 0) {
+        tmp[n++] = (char)('0' + (v % 10));
+        v /= 10;
+    }
+    while (n--) w_ch(w, tmp[n]);
+}
+
+/* Go strconv fmtB: -ddddp±ddd */
+static int fmt_b(char *buf, size_t bufsize, int neg, uint64_t mant, int exp) {
+    nc_w w = { buf, buf + bufsize - 1, 0 };
+    if (neg) w_ch(&w, '-');
+    w_u64(&w, mant);
+    w_ch(&w, 'p');
+    exp -= NC_MANT_BITS;
+    if (exp >= 0) w_ch(&w, '+');
+    if (exp < 0) {
+        w_ch(&w, '-');
+        exp = -exp;
+    }
+    w_u64(&w, (uint64_t)exp);
+    if (w.of) return -1;
+    *w.p = '\0';
+    ptrdiff_t written = w.p - buf;
+    return written <= INT_MAX ? (int)written : -1;
+}
+
+/* Go strconv fmtX: -0x1.yyyyyyyyp±ddd */
+static int fmt_x(char *buf, size_t bufsize, int prec, char fmt,
+                 int neg, uint64_t mant, int exp) {
+    static const char lowerhex[] = "0123456789abcdef";
+    static const char upperhex[] = "0123456789ABCDEF";
+    const char *hex = fmt == 'X' ? upperhex : lowerhex;
+    if (mant == 0) exp = 0;
+    mant <<= (unsigned)(60 - NC_MANT_BITS);
+    while (mant != 0 && (mant & ((uint64_t)1 << 60)) == 0) {
+        mant <<= 1;
+        exp--;
+    }
+    if (prec >= 0 && prec < 15) {
+        unsigned shift = (unsigned)prec * 4U;
+        uint64_t extra = (mant << shift) & (((uint64_t)1 << 60) - 1);
+        mant >>= 60 - shift;
+        if ((extra | (mant & 1)) > ((uint64_t)1 << 59))
+            mant++;
+        mant <<= 60 - shift;
+        if ((mant & ((uint64_t)1 << 61)) != 0) {
+            mant >>= 1;
+            exp++;
+        }
+    }
+
+    nc_w w = { buf, buf + bufsize - 1, 0 };
+    if (neg) w_ch(&w, '-');
+    w_ch(&w, '0');
+    w_ch(&w, fmt);
+    w_ch(&w, (char)('0' + (int)((mant >> 60) & 1)));
+    mant <<= 4;
+    if (prec < 0 && mant != 0) {
+        w_ch(&w, '.');
+        while (mant != 0) {
+            w_ch(&w, hex[(mant >> 60) & 15]);
+            mant <<= 4;
+        }
+    } else if (prec > 0) {
+        w_ch(&w, '.');
+        for (int i = 0; i < prec; i++) {
+            w_ch(&w, hex[(mant >> 60) & 15]);
+            mant <<= 4;
+        }
+    }
+    w_ch(&w, fmt == 'X' ? 'P' : 'p');
+    if (exp < 0) {
+        w_ch(&w, '-');
+        exp = -exp;
+    } else {
+        w_ch(&w, '+');
+    }
+    if (exp < 100) {
+        w_ch(&w, (char)('0' + exp / 10));
+        w_ch(&w, (char)('0' + exp % 10));
+    } else if (exp < 1000) {
+        w_ch(&w, (char)('0' + exp / 100));
+        w_ch(&w, (char)('0' + (exp / 10) % 10));
+        w_ch(&w, (char)('0' + exp % 10));
+    } else {
+        w_ch(&w, (char)('0' + exp / 1000));
+        w_ch(&w, (char)('0' + (exp / 100) % 10));
+        w_ch(&w, (char)('0' + (exp / 10) % 10));
+        w_ch(&w, (char)('0' + exp % 10));
+    }
+    if (w.of) return -1;
+    *w.p = '\0';
+    ptrdiff_t written = w.p - buf;
+    return written <= INT_MAX ? (int)written : -1;
+}
+
 static void fmt_e(nc_w *w, int neg, const nc_decimal *d, int prec, char ech) {
     if (neg) w_ch(w, '-');
     w_ch(w, d->nd != 0 ? (char)d->d[0] : '0');
@@ -314,8 +418,7 @@ static int format_digits(char *buf, size_t bufsize, int shortest, int neg,
         break;
     }
     default:
-        fmt_f(&w, neg, d, prec);
-        break;
+        return -1;
     }
     if (w.of) return -1;
     *w.p = '\0';
@@ -336,6 +439,21 @@ int neverc_strconv_format_float(double f, char fmt, int prec, char *buf, size_t 
     int neg = (int)(bits >> (NC_EXP_BITS + NC_MANT_BITS));
     uint32_t ieee_exp = (uint32_t)((bits >> NC_MANT_BITS) & ((1u << NC_EXP_BITS) - 1));
     uint64_t ieee_mant = bits & (((uint64_t)1 << NC_MANT_BITS) - 1);
+
+    if (fmt == 'b' || fmt == 'x' || fmt == 'X') {
+        int exp = (int)ieee_exp;
+        uint64_t mant = ieee_mant;
+        if (exp == 0)
+            exp++;
+        else
+            mant |= (uint64_t)1 << NC_MANT_BITS;
+        exp += NC_EXP_BIAS;
+        if (fmt == 'b')
+            return fmt_b(buf, bufsize, neg, mant, exp);
+        return fmt_x(buf, bufsize, prec, fmt, neg, mant, exp);
+    }
+    if (fmt != 'e' && fmt != 'E' && fmt != 'f' && fmt != 'g' && fmt != 'G')
+        return -1;
 
     nc_decimal d = {0};
     d.neg = neg;

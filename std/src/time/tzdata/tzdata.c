@@ -396,12 +396,16 @@ typedef struct {
     posix_rule_t start, end;
 } posix_tz_parsed_t;
 
-static neverc_tzdata_zone_t g_posix_zone;
-static char g_posix_tzstr[96];
-static char g_posix_std[16];
-static char g_posix_dst[16];
-static posix_rule_t g_posix_start, g_posix_end;
-static int g_posix_has_rules;
+typedef struct posix_extra {
+    neverc_tzdata_zone_t zone;
+    char std[16];
+    char dst[16];
+    posix_tz_parsed_t parsed;
+    char *tzstr;
+    struct posix_extra *next;
+} posix_extra_t;
+
+static posix_extra_t *g_posix_list;
 static volatile int32_t g_posix_lock;
 
 static void posix_lock(void) {
@@ -660,6 +664,26 @@ static int posix_rules_offset_at(const posix_tz_parsed_t *parsed, int64_t unix_s
                                                     : parsed->std_off;
 }
 
+static posix_extra_t *posix_find_locked(const neverc_tzdata_zone_t *zone) {
+    posix_extra_t *e;
+    for (e = g_posix_list; e; e = e->next)
+        if (&e->zone == zone) return e;
+    return NULL;
+}
+
+static posix_extra_t *posix_find_tz_locked(const char *tz) {
+    posix_extra_t *e;
+    for (e = g_posix_list; e; e = e->next)
+        if (e->tzstr && nc_streq(e->tzstr, tz)) return e;
+    return NULL;
+}
+
+static void posix_extra_free(posix_extra_t *e) {
+    if (!e) return;
+    free(e->tzstr);
+    free(e);
+}
+
 static const neverc_tzdata_zone_t *parse_posix_tz(const char *tz) {
     char stdn[16], dstn[16];
     posix_tz_parsed_t parsed;
@@ -669,31 +693,46 @@ static const neverc_tzdata_zone_t *parse_posix_tz(const char *tz) {
     int std_off = parsed.std_off;
     int dst_off = parsed.dst_off;
     int has_dst = parsed.has_dst;
-    int has_rules = parsed.has_rules;
-    posix_rule_t start = parsed.start, end = parsed.end;
 
     posix_lock();
-    if (g_posix_tzstr[0] && nc_streq(g_posix_tzstr, tz)) {
+    posix_extra_t *exist = posix_find_tz_locked(tz);
+    if (exist) {
         posix_unlock();
-        return &g_posix_zone;
+        return &exist->zone;
     }
-
-    copy_cstr(g_posix_tzstr, sizeof(g_posix_tzstr), tz);
-    copy_cstr(g_posix_std, sizeof(g_posix_std), stdn);
-    copy_cstr(g_posix_dst, sizeof(g_posix_dst), dstn);
-    g_posix_zone.name = g_posix_tzstr;
-    g_posix_zone.abbrev = g_posix_std;
-    g_posix_zone.abbrev_dst = has_dst ? g_posix_dst : NULL;
-    g_posix_zone.utc_offset = std_off;
-    g_posix_zone.dst_offset = has_dst ? dst_off : 0;
-    g_posix_zone.has_dst = has_dst;
-    /* Wrap-around rules (Sep→Apr, J260→J90) are southern; otherwise northern. */
-    g_posix_zone.dst_hemi = !has_dst ? 0 : posix_dst_wraps(&parsed) ? 2 : 1;
-    g_posix_has_rules = has_rules;
-    g_posix_start = start;
-    g_posix_end = end;
     posix_unlock();
-    return &g_posix_zone;
+
+    posix_extra_t *e = (posix_extra_t *)calloc(1, sizeof(*e));
+    if (!e) return NULL;
+    size_t n = nc_slen(tz);
+    e->tzstr = (char *)malloc(n + 1);
+    if (!e->tzstr) {
+        free(e);
+        return NULL;
+    }
+    memcpy(e->tzstr, tz, n + 1);
+    copy_cstr(e->std, sizeof(e->std), stdn);
+    copy_cstr(e->dst, sizeof(e->dst), dstn);
+    e->parsed = parsed;
+    e->zone.name = e->tzstr;
+    e->zone.abbrev = e->std;
+    e->zone.abbrev_dst = has_dst ? e->dst : NULL;
+    e->zone.utc_offset = std_off;
+    e->zone.dst_offset = has_dst ? dst_off : 0;
+    e->zone.has_dst = has_dst;
+    e->zone.dst_hemi = !has_dst ? 0 : posix_dst_wraps(&parsed) ? 2 : 1;
+
+    posix_lock();
+    exist = posix_find_tz_locked(tz);
+    if (exist) {
+        posix_unlock();
+        posix_extra_free(e);
+        return &exist->zone;
+    }
+    e->next = g_posix_list;
+    g_posix_list = e;
+    posix_unlock();
+    return &e->zone;
 }
 
 static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
@@ -712,23 +751,25 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
     int posix_has_rules = 0;
     posix_rule_t posix_start = {0}, posix_end = {0};
     int utc_off = 0, dst_off = 0;
-    if (zone == &g_posix_zone) {
-        posix_lock();
-        posix_has_rules = g_posix_has_rules;
-        posix_start = g_posix_start;
-        posix_end = g_posix_end;
-        utc_off = g_posix_zone.utc_offset;
-        dst_off = g_posix_zone.dst_offset;
-        posix_unlock();
-        if (posix_has_rules) {
-            int64_t start = posix_rule_unix(year, &posix_start, utc_off);
-            int64_t end = posix_rule_unix(year, &posix_end, dst_off);
-            return tz_in_span(unix_sec, start, end);
-        }
+    posix_extra_t *pe = NULL;
+    posix_lock();
+    pe = posix_find_locked(zone);
+    if (pe) {
+        posix_has_rules = pe->parsed.has_rules;
+        posix_start = pe->parsed.start;
+        posix_end = pe->parsed.end;
+        utc_off = pe->zone.utc_offset;
+        dst_off = pe->zone.dst_offset;
+    }
+    posix_unlock();
+    if (pe && posix_has_rules) {
+        int64_t start = posix_rule_unix(year, &posix_start, utc_off);
+        int64_t end = posix_rule_unix(year, &posix_end, dst_off);
+        return tz_in_span(unix_sec, start, end);
     }
 
     /* POSIX without rules: glibc uses US DST. */
-    int us = (zone == &g_posix_zone) ||
+    int us = (pe != NULL) ||
              (zone->name && nc_strpfx(zone->name, "America/"));
     int nz = zone->name && (nc_streq(zone->name, "Pacific/Auckland") ||
                             nc_streq(zone->name, "Pacific/Chatham"));
@@ -1324,7 +1365,12 @@ neverc_tzdata_zone_t *neverc_tzdata_load_from_zip(const uint8_t *zip,
 void neverc_tzdata_zone_free(neverc_tzdata_zone_t *zone) {
     if (!zone) return;
     if (zone >= g_zones && zone < g_zones + tz_count) return;
-    if (zone == &g_posix_zone) return;
+    posix_lock();
+    if (posix_find_locked(zone)) {
+        posix_unlock();
+        return;
+    }
+    posix_unlock();
 
     tzif_lock();
     tzif_extra_t **pp = &g_tzif_list;

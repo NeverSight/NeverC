@@ -479,6 +479,19 @@ static void test_format_float(void) {
     neverc_strconv_format_float(0.1, 'g', -1, buf, sizeof(buf));
     check_str("g shortest 0.1", buf, "0.1");
 
+    neverc_strconv_format_float(1.0, 'b', -1, buf, sizeof(buf));
+    check_str("b 1.0", buf, "4503599627370496p-52");
+    neverc_strconv_format_float(0.0, 'b', -1, buf, sizeof(buf));
+    check_str("b 0.0", buf, "0p-1074");
+    neverc_strconv_format_float(1.0, 'x', -1, buf, sizeof(buf));
+    check_str("x 1.0", buf, "0x1p+00");
+    neverc_strconv_format_float(1.0, 'X', -1, buf, sizeof(buf));
+    check_str("X 1.0", buf, "0X1P+00");
+    neverc_strconv_format_float(-1.5, 'x', -1, buf, sizeof(buf));
+    check_str("x -1.5", buf, "-0x1.8p+00");
+    check_int("unknown fmt rejected",
+              neverc_strconv_format_float(1.0, 'q', -1, buf, sizeof(buf)), -1);
+
     neverc_strconv_format_float(2.5, 'f', 0, buf, sizeof(buf));
     check_str("f round even 2.5", buf, "2");
     neverc_strconv_format_float(3.5, 'f', 0, buf, sizeof(buf));

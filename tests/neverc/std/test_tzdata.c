@@ -553,7 +553,8 @@ static void test_local_tz(void) {
     check_str("unknown TZ is UTC", z ? z->name : NULL, "UTC");
 
     tzdata_set_tz("EST5EDT,M3.2.0,M11.1.0");
-    z = neverc_tzdata_local();
+    const neverc_tzdata_zone_t *est = neverc_tzdata_local();
+    z = est;
     check_not_null("posix TZ", z);
     check_int("posix EST offset", z ? z->utc_offset : 0, -18000);
     check_int("posix EDT offset", z ? z->dst_offset : 0, -14400);
@@ -578,6 +579,10 @@ static void test_local_tz(void) {
               neverc_tzdata_offset_at(z, NZ_START_2024), 46800);
     check_int("posix NZ before spring-forward",
               neverc_tzdata_offset_at(z, NZ_START_2024 - 1), 43200);
+    check_int("posix EST immutable after NZ load",
+              est ? est->utc_offset : 0, -18000);
+    check_int("posix EST offset_at after NZ load",
+              neverc_tzdata_offset_at(est, NY_SPRING_2024), -14400);
 
     tzdata_set_tz("UTC0");
     z = neverc_tzdata_local();

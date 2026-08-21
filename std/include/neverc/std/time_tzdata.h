@@ -79,7 +79,7 @@ neverc_tzdata_zone_t *neverc_tzdata_load_from_zip(const uint8_t *zip,
                                                   const char *name);
 
 /* Free a heap zone from fixed_zone / load_tzif / load_from_zip.
- * No-op for built-in table or POSIX TZ slots. */
+ * No-op for built-in table or interned POSIX TZ slots. */
 void neverc_tzdata_zone_free(neverc_tzdata_zone_t *zone);
 
 #ifdef __cplusplus
