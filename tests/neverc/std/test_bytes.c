@@ -64,12 +64,13 @@ static void test_compare(void) {
     check_bool("equalfold sigma", neverc_bytes_equal_fold(
                    (const uint8_t *)"\xce\xa3", 2,
                    (const uint8_t *)"\xcf\x83", 2), 1);
+    /* Go 1.23 SimpleFold has no ΐ/ΐ or ﬅ/ﬆ orbit. */
     check_bool("equalfold iota dialytika", neverc_bytes_equal_fold(
                    (const uint8_t *)"\xce\x90", 2,
-                   (const uint8_t *)"\xe1\xbf\x93", 3), 1);
+                   (const uint8_t *)"\xe1\xbf\x93", 3), 0);
     check_bool("equalfold st ligatures", neverc_bytes_equal_fold(
                    (const uint8_t *)"\xef\xac\x85", 3,
-                   (const uint8_t *)"\xef\xac\x86", 3), 1);
+                   (const uint8_t *)"\xef\xac\x86", 3), 0);
 }
 
 static void test_search(void) {

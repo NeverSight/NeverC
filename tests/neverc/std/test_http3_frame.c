@@ -984,7 +984,7 @@ static void test_qpack_rejects_truncated_header_list(void) {
     neverc_qpack_header_t decoded[4];
     int nheaders = 0;
     ASSERT_EQ(neverc_qpack_decode(dec, block, sizeof(block), decoded, 1,
-                                  &nheaders), -1);
+                                  &nheaders), -2);
     ASSERT_EQ(nheaders, 0);
     neverc_qpack_decoder_destroy(dec);
 }

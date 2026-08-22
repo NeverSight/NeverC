@@ -1482,6 +1482,76 @@ static void rpc_test_peer_cancel_is_not_eof(void) {
     neverc_rpc_server_free(test.server);
 }
 
+static void rpc_test_call_deadline(void) {
+    neverc_rpc_server_config_t server_config =
+        neverc_rpc_server_config_default();
+    server_config.connection_workers = 2U;
+    server_config.connection_queue_capacity = 4U;
+    server_config.handler_workers = 2U;
+    server_config.handler_queue_capacity = 4U;
+
+    rpc_test_server_t test;
+    memset(&test, 0, sizeof(test));
+    test.result = -1;
+    test.server = neverc_rpc_server_new(&server_config);
+    CHECK(test.server != NULL);
+    if (!test.server) return;
+    CHECK(neverc_rpc_server_register(test.server, "test.Slow/Unary",
+                                     rpc_test_slow_handler, NULL) ==
+          NEVERC_RPC_IO_OK);
+    neverc_thread_executor_t *executor =
+        neverc_thread_executor_create(1U, 1U);
+    CHECK(executor != NULL);
+    if (!executor) {
+        neverc_rpc_server_free(test.server);
+        return;
+    }
+    CHECK(neverc_thread_executor_submit(executor, rpc_test_server_task,
+                                         &test) == NEVERC_THREAD_OK);
+    int port = rpc_test_wait_ready(test.server);
+    CHECK(port > 0);
+    char address[64];
+    (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
+
+    neverc_rpc_client_config_t client_config =
+        neverc_rpc_client_config_default();
+    client_config.ping_interval_ms = 0;
+    client_config.pong_timeout_ms = 0;
+    const char *error = NULL;
+    neverc_rpc_client_t *client = port > 0
+        ? rpc_test_dial(address, &client_config, &error) : NULL;
+    CHECK(client != NULL);
+    if (client) {
+        neverc_context_cancel_handle_t *cancel = NULL;
+        neverc_context_t *background = neverc_context_background();
+        neverc_context_t *deadline = background
+            ? neverc_context_with_timeout_handle(background, 1, &cancel)
+            : NULL;
+        CHECK(deadline != NULL && cancel != NULL);
+        static const char request[] = "unary";
+        char response[64];
+        size_t response_length = 0;
+        neverc_rpc_status_t status;
+        int result = deadline
+            ? neverc_rpc_client_call(
+                  client, deadline, "test.Slow/Unary", NULL, 0U, request,
+                  sizeof(request) - 1U, response, sizeof(response),
+                  &response_length, &status)
+            : NEVERC_RPC_IO_CLOSED;
+        CHECK(result == NEVERC_RPC_IO_CANCELLED);
+        CHECK(status.code == NEVERC_RPC_STATUS_DEADLINE_EXCEEDED);
+        neverc_context_cancel_handle_cancel(cancel);
+        neverc_context_cancel_handle_free(cancel);
+        neverc_context_free(deadline);
+        neverc_context_free(background);
+        neverc_rpc_client_close(client);
+    }
+    neverc_rpc_server_shutdown(test.server);
+    CHECK(neverc_thread_executor_shutdown(executor) == NEVERC_THREAD_OK);
+    neverc_thread_executor_free(executor);
+    neverc_rpc_server_free(test.server);
+}
+
 int main(void) {
     printf("NRPC test suite:\n");
     rpc_test_frame_codec();
@@ -1491,6 +1561,7 @@ int main(void) {
     rpc_test_goaway_unknown_not_success();
     rpc_test_invalid_mtls_config();
     rpc_test_peer_cancel_is_not_eof();
+    rpc_test_call_deadline();
     rpc_test_receive_backpressure();
     rpc_test_tenant_rate_limit();
     rpc_test_reconnect_roundtrip();

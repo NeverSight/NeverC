@@ -12,6 +12,20 @@ static int user_copy_env_path(char *dst, size_t cap, const char *src) {
     return 0;
 }
 
+static int user_path_isabs(const char *p) {
+    if (!p || !p[0]) return 0;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    if ((p[0] == '\\' && p[1] == '\\') || (p[0] == '/' && p[1] == '/'))
+        return 1;
+    if (((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z')) &&
+        p[1] == ':' && (p[2] == '\\' || p[2] == '/'))
+        return 1;
+    return 0;
+#else
+    return p[0] == '/';
+#endif
+}
+
 /* Empty src is allowed (unlike env paths). Truncation is failure so a
  * shortened home/SID/username cannot be treated as the real value. */
 static int user_copy_field(char *dst, size_t cap, const char *src) {
@@ -183,19 +197,25 @@ const char *neverc_user_home_dir(void) {
 
 const char *neverc_user_cache_dir(void) {
     static char buf[MAX_PATH];
-    if (SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, buf) == S_OK)
+    if (SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, buf) == S_OK &&
+        user_path_isabs(buf))
         return buf;
-    if (user_copy_env_path(buf, sizeof(buf), getenv("LOCALAPPDATA")) == 0)
+    if (user_copy_env_path(buf, sizeof(buf), getenv("LOCALAPPDATA")) == 0 &&
+        user_path_isabs(buf))
         return buf;
+    buf[0] = '\0';
     return "";
 }
 
 const char *neverc_user_config_dir(void) {
     static char buf[MAX_PATH];
-    if (SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, buf) == S_OK)
+    if (SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, buf) == S_OK &&
+        user_path_isabs(buf))
         return buf;
-    if (user_copy_env_path(buf, sizeof(buf), getenv("APPDATA")) == 0)
+    if (user_copy_env_path(buf, sizeof(buf), getenv("APPDATA")) == 0 &&
+        user_path_isabs(buf))
         return buf;
+    buf[0] = '\0';
     return "";
 }
 
@@ -429,15 +449,19 @@ const char *neverc_user_cache_dir(void) {
     if (xdg && xdg[0]) {
         /* Go UserCacheDir: relative XDG_* is an error, not a leftover cwd. */
         if (xdg[0] != '/') return "";
-        if (user_copy_env_path(buf, sizeof(buf), xdg) == 0)
-            return buf;
+        if (user_copy_env_path(buf, sizeof(buf), xdg) != 0)
+            return "";
+    } else {
+        const char *home = neverc_user_home_dir();
+        if (!home || !home[0]) return "";
+        if (user_format_under(buf, sizeof(buf), "%s/.cache", home) != 0)
+            return "";
+    }
+#endif
+    if (!user_path_isabs(buf)) {
+        buf[0] = '\0';
         return "";
     }
-    const char *home = neverc_user_home_dir();
-    if (!home || !home[0]) return "";
-    if (user_format_under(buf, sizeof(buf), "%s/.cache", home) != 0)
-        return "";
-#endif
     return buf;
 }
 
@@ -453,15 +477,19 @@ const char *neverc_user_config_dir(void) {
     const char *xdg = getenv("XDG_CONFIG_HOME");
     if (xdg && xdg[0]) {
         if (xdg[0] != '/') return "";
-        if (user_copy_env_path(buf, sizeof(buf), xdg) == 0)
-            return buf;
+        if (user_copy_env_path(buf, sizeof(buf), xdg) != 0)
+            return "";
+    } else {
+        const char *home = neverc_user_home_dir();
+        if (!home || !home[0]) return "";
+        if (user_format_under(buf, sizeof(buf), "%s/.config", home) != 0)
+            return "";
+    }
+#endif
+    if (!user_path_isabs(buf)) {
+        buf[0] = '\0';
         return "";
     }
-    const char *home = neverc_user_home_dir();
-    if (!home || !home[0]) return "";
-    if (user_format_under(buf, sizeof(buf), "%s/.config", home) != 0)
-        return "";
-#endif
     return buf;
 }
 

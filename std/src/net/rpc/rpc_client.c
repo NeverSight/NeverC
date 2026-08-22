@@ -163,6 +163,13 @@ static neverc_rpc_stream_t *rpc_find_stream_locked(
     return NULL;
 }
 
+static neverc_rpc_status_code_t rpc_context_status(neverc_context_t *context) {
+    const char *error = neverc_context_err(context);
+    return error && strcmp(error, "context deadline exceeded") == 0
+        ? NEVERC_RPC_STATUS_DEADLINE_EXCEEDED
+        : NEVERC_RPC_STATUS_CANCELLED;
+}
+
 static void rpc_stream_set_terminal(neverc_rpc_stream_t *stream,
                                     neverc_rpc_status_code_t code,
                                     const char *message) {
@@ -1113,8 +1120,14 @@ int neverc_rpc_stream_recv(neverc_rpc_stream_t *stream,
     void *value = NULL;
     int received = neverc_thread_channel_receive_context(
         stream->receive_queue, context, &value);
-    if (received == NEVERC_THREAD_CANCELLED)
+    if (received == NEVERC_THREAD_CANCELLED) {
+        neverc_rpc_status_code_t code = rpc_context_status(context);
+        nc_mutex_lock(&stream->lock);
+        if (stream->status_code == NEVERC_RPC_STATUS_UNKNOWN)
+            stream->status_code = code;
+        nc_mutex_unlock(&stream->lock);
         return NEVERC_RPC_IO_CANCELLED;
+    }
     if (received == NEVERC_THREAD_CLOSED) {
         /* CANCEL / GOAWAY / teardown close the queue. That is not a clean
          * half-close: Recv must not look like IO_END so unary Call cannot
@@ -1338,6 +1351,8 @@ int neverc_rpc_client_call_ex(
         if (!stream) {
             final_result = neverc_context_done(context)
                 ? NEVERC_RPC_IO_CANCELLED : NEVERC_RPC_IO_CLOSED;
+            if (neverc_context_done(context))
+                status->code = rpc_context_status(context);
         } else {
             int result = neverc_rpc_stream_send(stream, context, request,
                                                 request_length);
@@ -1365,6 +1380,10 @@ int neverc_rpc_client_call_ex(
                 final_result = NEVERC_RPC_IO_OK;
             else
                 final_result = result;
+            if (final_result == NEVERC_RPC_IO_CANCELLED &&
+                (status->code == NEVERC_RPC_STATUS_UNKNOWN ||
+                 status->code == NEVERC_RPC_STATUS_OK))
+                status->code = rpc_context_status(context);
             neverc_rpc_stream_free(stream);
         }
         int retryable = effective.idempotent &&

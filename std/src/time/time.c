@@ -1087,10 +1087,18 @@ static int parse_time_zone(const char *value, size_t vlen, size_t *vi,
         return 0;
     }
     if (s[0] == '+' || s[0] == '-') {
-        /* Go parseTimeZone: ±HH is an unknown zone name; offset stays 0.
-         * Only GMT±HH applies the numeric offset. */
+        /* Go parseTimeZone: ±HH is a zone name. The numeric offset is
+         * not applied here; lookupName later matches loc abbreviations
+         * such as "+01". Only GMT±HH sets has_gmt_off. */
+        size_t start = *vi;
         if (parse_signed_hour_offset(value, vlen, vi, gmt_off) != 0)
             return -1;
+        if (name && ncap) {
+            size_t n = *vi - start;
+            size_t copy = n < ncap - 1 ? n : ncap - 1;
+            memcpy(name, value + start, copy);
+            name[copy] = '\0';
+        }
         *has_gmt_off = 0;
         *gmt_off = 0;
         return 0;

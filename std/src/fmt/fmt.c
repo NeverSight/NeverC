@@ -515,16 +515,17 @@ static char *fmt_vsprintf_n(const char *format, va_list args, size_t *out_len) {
             verb == 'd' || verb == 'i' || verb == 'u' ||
             verb == 'x' || verb == 'X' || verb == 'o' || verb == 'b' ||
             verb == 'p';
-        int is_signed_verb =
-            verb == 'd' || verb == 'i' || is_float_verb;
+        /* Go fmtInteger applies '+' / ' ' to every integer verb,
+         * including unsigned bases and %p, not only signed d/i. */
+        int takes_sign_flag = is_int_verb || is_float_verb;
         int formatted_has_sign =
             tlen > 0 && (tmp[0] == '+' || tmp[0] == '-');
         int body_offset =
-            is_signed_verb && formatted_has_sign ? 1 : 0;
+            takes_sign_flag && formatted_has_sign ? 1 : 0;
         char sign_prefix = body_offset ? tmp[0] : '\0';
         if (sign_prefix == '+' && flag_space && !flag_plus)
             sign_prefix = ' ';
-        if (!sign_prefix && is_signed_verb) {
+        if (!sign_prefix && takes_sign_flag) {
             if (flag_plus)
                 sign_prefix = '+';
             else if (flag_space)

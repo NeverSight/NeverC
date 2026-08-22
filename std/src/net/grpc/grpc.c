@@ -70,6 +70,29 @@ static char *grpc_decode_bin_value(const char *wire) {
     return out;
 }
 
+static int grpc_request_bin_headers_valid(const neverc_http_request_t *request) {
+    const char *p;
+    int i;
+    if (!request) return 0;
+    if (request->nheaders <= 0) return 1;
+    if (!request->raw_headers) return 0;
+    p = request->raw_headers;
+    for (i = 0; i < request->nheaders; i++) {
+        const char *name = p;
+        char *decoded;
+        while (*p) p++;
+        p++;
+        const char *value = p;
+        while (*p) p++;
+        p++;
+        if (!grpc_binary_key(name)) continue;
+        decoded = grpc_decode_bin_value(value);
+        if (!decoded) return 0;
+        free(decoded);
+    }
+    return 1;
+}
+
 static int grpc_decode_incoming_bin_headers(neverc_hpack_header_t *headers,
                                             size_t count) {
     if (count && !headers) return -1;
@@ -589,6 +612,18 @@ static void grpc_server_dispatch(neverc_http_request_t *request,
                      : "te: trailers is required");
         return;
     }
+    if (!grpc_request_bin_headers_valid(request)) {
+        neverc_http_set_status(writer, 200);
+        neverc_http_set_header(writer, "content-type", "application/grpc");
+        neverc_http_enable_chunked(writer);
+        neverc_grpc_server_stream_t rejected = {
+            .method = method, .request = request, .writer = writer,
+            .context = request->context};
+        (void)neverc_grpc_server_stream_end(
+            &rejected, NEVERC_GRPC_INVALID_ARGUMENT,
+            "invalid binary metadata");
+        return;
+    }
 
     neverc_context_t *call_context = request->context;
     neverc_context_cancel_handle_t *call_cancel = NULL;
@@ -746,7 +781,8 @@ static int grpc_metadata_value_wire(const neverc_grpc_metadata_t *item,
         length = capacity;
         for (size_t j = 0; j < length; j++) {
             unsigned char c = (unsigned char)(*owned)[j];
-            if (c < 0x20 || c == 0x7f) {
+            /* RFC 9113 / grpc-go ValidatePair: printable ASCII %x20-7E. */
+            if (c < 0x20 || c > 0x7E) {
                 free(*owned);
                 *owned = NULL;
                 return -1;
@@ -1041,6 +1077,8 @@ int neverc_grpc_client_stream_send(
         stream->sent_count++;
     } else {
         stream->error = "gRPC stream send failed";
+        if (neverc_context_done(context))
+            stream->status = grpc_context_status(context);
     }
     return result;
 }
@@ -1062,6 +1100,8 @@ int neverc_grpc_client_stream_close_send(
         stream->send_closed = 1;
     } else {
         stream->error = "gRPC stream half-close failed";
+        if (neverc_context_done(context))
+            stream->status = grpc_context_status(context);
     }
     return result;
 }

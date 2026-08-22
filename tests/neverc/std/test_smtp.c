@@ -38,6 +38,8 @@ static volatile int g_smtp_login_first_leftover = 0;
 static volatile int g_smtp_plain_leftover = 0;
 static volatile int g_smtp_plain_challenge = 0;
 static char g_last_mail[256];
+static char g_last_data[2048];
+static size_t g_last_data_len;
 
 #ifdef _WIN32
 static DWORD WINAPI mock_smtp_server(LPVOID arg) {
@@ -207,10 +209,16 @@ static void *mock_smtp_server(void *arg) {
                 char window[5];
                 size_t wlen = 0;
                 int saw_term = 0;
+                g_last_data_len = 0;
+                g_last_data[0] = '\0';
                 while (!saw_term) {
                     n = neverc_tcp_read(conn, buf, sizeof(buf) - 1);
                     if (n <= 0) break;
                     for (int i = 0; i < n; i++) {
+                        if (g_last_data_len + 1 < sizeof(g_last_data)) {
+                            g_last_data[g_last_data_len++] = buf[i];
+                            g_last_data[g_last_data_len] = '\0';
+                        }
                         if (wlen == sizeof(window)) {
                             memmove(window, window + 1, sizeof(window) - 1);
                             wlen--;
@@ -409,6 +417,31 @@ static void test_dot_stuffing(void) {
     check_true("DATA close after dot stuffing",
                neverc_smtp_data_close(c) == 0);
 
+    neverc_smtp_close(c);
+}
+
+static void test_lone_cr_terminator(void) {
+    printf("[lone_cr_terminator]\n");
+
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_smtp_port);
+
+    const char *err = NULL;
+    neverc_smtp_client_t *c = neverc_smtp_dial(addr, &err);
+    check_true("dial for lone CR", c != NULL);
+    if (!c) return;
+
+    check_true("EHLO", neverc_smtp_hello(c, "test.client") == 0);
+    check_true("MAIL FROM", neverc_smtp_mail(c, "sender@example.com") == 0);
+    check_true("RCPT TO", neverc_smtp_rcpt(c, "recipient@example.com") == 0);
+    check_true("DATA", neverc_smtp_data(c) == 0);
+    check_true("write lone CR body",
+               neverc_smtp_write_data(c, "hello\r", 6) == 0);
+    check_true("DATA close after lone CR", neverc_smtp_data_close(c) == 0);
+    check_true("lone CR uses CRLF then dot",
+               g_last_data_len >= 11 &&
+               memcmp(g_last_data + g_last_data_len - 11,
+                      "hello\r\r\n.\r\n", 11) == 0);
     neverc_smtp_close(c);
 }
 
@@ -803,6 +836,7 @@ int main(void) {
     test_smtp_auth_login();
     test_send_mail();
     test_dot_stuffing();
+    test_lone_cr_terminator();
     test_smtp_reject_injection();
     test_smtp_starttls_fail_closed();
     test_smtp_auth_plaintext_non_localhost();

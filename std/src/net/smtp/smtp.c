@@ -644,10 +644,9 @@ static int smtp_write_data_stuffed(neverc_smtp_client_t *c,
         }
         if (smtp_write_all(c, &ch, 1) != 0)
             return -1;
-        if (ch == '\n')
-            c->data_at_line_start = 1;
-        else if (ch != '\r')
-            c->data_at_line_start = 0;
+        /* Go net/textproto dotWriter: only LF returns to line start.
+         * A lone CR is wstateCR, so Close writes "\r\n.\r\n". */
+        c->data_at_line_start = (ch == '\n');
     }
     return 0;
 }

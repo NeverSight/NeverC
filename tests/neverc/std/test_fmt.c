@@ -251,6 +251,21 @@ static void test_width_padding(void) {
     r = neverc_fmt_sprintf("% d", 42);
     check_str("space sign", r, " 42"); free(r);
 
+    r = neverc_fmt_sprintf("%+x", 15);
+    check_str("plus hex", r, "+f"); free(r);
+
+    r = neverc_fmt_sprintf("%+u", 7u);
+    check_str("plus uint", r, "+7"); free(r);
+
+    r = neverc_fmt_sprintf("% x", 15);
+    check_str("space hex", r, " f"); free(r);
+
+    r = neverc_fmt_sprintf("%+o", 8);
+    check_str("plus octal", r, "+10"); free(r);
+
+    r = neverc_fmt_sprintf("%+b", 10);
+    check_str("plus binary", r, "+1010"); free(r);
+
     r = neverc_fmt_sprintf("%*s", -5, "hi");
     check_str("negative star width", r, "hi   "); free(r);
 
@@ -262,6 +277,12 @@ static void test_width_padding(void) {
 
     r = neverc_fmt_sprintf("%p", (void *)0);
     check_str("nil pointer", r, "0x0"); free(r);
+
+    r = neverc_fmt_sprintf("%+p", (void *)0);
+    check_str("plus pointer", r, "+0x0"); free(r);
+
+    r = neverc_fmt_sprintf("% p", (void *)0);
+    check_str("space pointer", r, " 0x0"); free(r);
 
     r = neverc_fmt_sprintf("%#p", (void *)0);
     check_str("sharp pointer omits 0x", r, "0"); free(r);

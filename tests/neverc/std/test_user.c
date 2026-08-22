@@ -192,6 +192,39 @@ static void test_cache_dir(void) {
         }
     }
 #endif
+
+#if !defined(_WIN32)
+    {
+        const char *old_cache = getenv("XDG_CACHE_HOME");
+        const char *old_cfg = getenv("XDG_CONFIG_HOME");
+        const char *old_home = getenv("HOME");
+        char *saved_cache = old_cache ? strdup(old_cache) : NULL;
+        char *saved_cfg = old_cfg ? strdup(old_cfg) : NULL;
+        char *saved_home = old_home ? strdup(old_home) : NULL;
+        unsetenv("XDG_CACHE_HOME");
+        unsetenv("XDG_CONFIG_HOME");
+        setenv("HOME", "relhome", 1);
+        cache = neverc_user_cache_dir();
+        ASSERT_TRUE(cache != NULL && cache[0] == '\0');
+        const char *config = neverc_user_config_dir();
+        ASSERT_TRUE(config != NULL && config[0] == '\0');
+        if (saved_cache)
+            setenv("XDG_CACHE_HOME", saved_cache, 1);
+        else
+            unsetenv("XDG_CACHE_HOME");
+        if (saved_cfg)
+            setenv("XDG_CONFIG_HOME", saved_cfg, 1);
+        else
+            unsetenv("XDG_CONFIG_HOME");
+        if (saved_home)
+            setenv("HOME", saved_home, 1);
+        else
+            unsetenv("HOME");
+        free(saved_cache);
+        free(saved_cfg);
+        free(saved_home);
+    }
+#endif
 }
 
 static void test_config_dir(void) {

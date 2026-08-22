@@ -1024,6 +1024,20 @@ static void test_parse_in_location_dst(void) {
     check_int("NY overlap EDT name", ok, 0);
     check_int64("NY overlap EDT instant", t.sec, 1730611800LL);
 
+    neverc_time_location_t plus01 = {
+        3600, 3600, "+01", "+01", NULL, NULL
+    };
+    ok = neverc_time_parse_in_location("2006-01-02 15:04:05 MST",
+                                       "2024-01-15 12:00:00 +01", &plus01, &t);
+    check_int("lookupName +01 ok", ok, 0);
+    /* 2024-01-15 12:00 +01 → 11:00 UTC = 1705320000 - 3600 */
+    check_int64("lookupName +01 instant", t.sec, 1705320000LL - 3600);
+
+    ok = neverc_time_parse_in_location("2006-01-02 15:04:05 MST",
+                                       "2024-01-15 12:00:00 +08", &ny, &t);
+    check_int("unknown +08 in NY loc", ok, 0);
+    check_int64("unknown +08 stays wall-as-UTC", t.sec, 1705320000LL);
+
     neverc_time_t d = neverc_time_date_in_location(2024, 3, 10, 2, 30, 0, 0, &ny);
     check_int64("DateInLocation gap", d.sec, 1710052200LL);
 }

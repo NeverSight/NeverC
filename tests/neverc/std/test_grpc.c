@@ -365,6 +365,17 @@ static void grpc_test_metadata_limits(void) {
           strcmp(result->error, "invalid gRPC metadata") == 0);
     neverc_grpc_result_free(result);
 
+    unsigned char high[] = { 'a', 0x80, 'b' };
+    neverc_grpc_metadata_t high_md = { "x-ascii", high, sizeof(high) };
+    result = neverc_grpc_client_call(
+        (neverc_h2_client_t *)(void *)&client_storage, NULL,
+        "/test.Echo/Unary", NEVERC_GRPC_UNARY, &high_md, 1U,
+        &request, 1U, 1024U);
+    CHECK(result != NULL);
+    CHECK(result && result->error &&
+          strcmp(result->error, "invalid gRPC metadata") == 0);
+    neverc_grpc_result_free(result);
+
     neverc_grpc_metadata_t reserved = {
         "grpc-status", &byte, 1U};
     result = neverc_grpc_client_call(
@@ -664,6 +675,38 @@ static void grpc_test_bin_metadata(neverc_h2_client_t *client) {
     neverc_grpc_result_free(result);
 }
 
+static void grpc_test_invalid_incoming_bin(neverc_h2_client_t *client) {
+    neverc_hpack_header_t headers[] = {
+        { .name = "content-type", .value = "application/grpc" },
+        { .name = "te", .value = "trailers" },
+        { .name = "x-bin", .value = "!!!" },
+    };
+    uint8_t body[6] = { 0, 0, 0, 0, 1, 'x' };
+    neverc_h2_response_t *response = neverc_h2_client_do_context(
+        client, NULL, "POST", "/test.Echo/Unary", headers, 3,
+        body, sizeof(body));
+    CHECK(response != NULL);
+    int status_seen = 0;
+    if (response) {
+        for (size_t i = 0; i < response->trailer_count; i++) {
+            if (response->trailers[i].name &&
+                strcmp(response->trailers[i].name, "grpc-status") == 0 &&
+                response->trailers[i].value &&
+                strcmp(response->trailers[i].value, "3") == 0)
+                status_seen = 1;
+        }
+        for (size_t i = 0; i < response->header_count; i++) {
+            if (response->headers[i].name &&
+                strcmp(response->headers[i].name, "grpc-status") == 0 &&
+                response->headers[i].value &&
+                strcmp(response->headers[i].value, "3") == 0)
+                status_seen = 1;
+        }
+        neverc_h2_response_free(response);
+    }
+    CHECK(status_seen);
+}
+
 static void grpc_test_unary_no_send(neverc_h2_client_t *client) {
     neverc_grpc_message_t request = {(const uint8_t *)"ping", 4U};
     neverc_grpc_result_t *result = neverc_grpc_client_call(
@@ -745,6 +788,7 @@ static void grpc_test_h2c_end_to_end(void) {
         grpc_test_unary_extra_frames(client);
         grpc_test_reserved_metadata(client);
         grpc_test_bin_metadata(client);
+        grpc_test_invalid_incoming_bin(client);
         grpc_test_unary_no_send(client);
         grpc_test_max_request_message_size(client);
         neverc_h2_client_close(client);
@@ -1345,6 +1389,33 @@ static void grpc_test_status_mapping(void) {
     neverc_context_cancel_handle_free(deadline_cancel);
     neverc_context_free(deadline);
     neverc_context_free(background);
+
+    neverc_h2_client_t *send_client =
+        grpc_start_fake_h2(&fake, &executor, 13);
+    const char *send_error = NULL;
+    neverc_grpc_client_stream_t *send_stream = send_client
+        ? neverc_grpc_client_stream_open(
+              send_client, NULL, "/test.Echo/Unary", NEVERC_GRPC_UNARY,
+              NULL, 0U, 1024U, &send_error)
+        : NULL;
+    CHECK(send_stream != NULL);
+    neverc_context_t *send_bg = neverc_context_background();
+    neverc_context_cancel_handle_t *send_cancel = NULL;
+    neverc_context_t *send_deadline = send_bg
+        ? neverc_context_with_timeout_handle(send_bg, 1, &send_cancel)
+        : NULL;
+    neverc_time_sleep(20 * NEVERC_TIME_MILLISECOND);
+    CHECK(send_stream && send_deadline &&
+          neverc_grpc_client_stream_send(send_stream, send_deadline, "x", 1U) ==
+              -1);
+    CHECK(neverc_grpc_client_stream_status(send_stream) ==
+          NEVERC_GRPC_DEADLINE_EXCEEDED);
+    neverc_grpc_client_stream_free(send_stream);
+    grpc_stop_fake_h2(&fake, executor, send_client);
+    neverc_context_cancel_handle_cancel(send_cancel);
+    neverc_context_cancel_handle_free(send_cancel);
+    neverc_context_free(send_deadline);
+    neverc_context_free(send_bg);
 }
 
 static void grpc_test_binary_metadata_unpadded(void) {

@@ -499,6 +499,13 @@ static int h3_copy_pseudo(char *destination, size_t capacity,
     return 0;
 }
 
+/* neverc_qpack_decode: 0 ok, -2 header-slot overflow, -1 damaged block. */
+static int h3_qpack_read_status(int decoded) {
+    if (decoded == 0) return 0;
+    if (decoded == -2) return -3;
+    return -2;
+}
+
 static int h3_parse_request_headers(h3_conn_t *connection,
                                     const uint8_t *encoded, size_t length,
                                     h3_request_t *request) {
@@ -508,7 +515,7 @@ static int h3_parse_request_headers(h3_conn_t *connection,
     int decoded = neverc_qpack_decode(connection->decoder, encoded, length,
                                       headers, 64, &header_count);
     nc_mutex_unlock(&connection->lock);
-    if (decoded != 0) return -2;
+    if (decoded != 0) return h3_qpack_read_status(decoded);
     int regular_seen = 0;
     unsigned pseudo_seen = 0;
     const char *host = NULL;
@@ -670,7 +677,7 @@ static int h3_read_request(h3_conn_t *connection,
                     decoded, 64, &count);
                 nc_mutex_unlock(&connection->lock);
                 free(payload);
-                if (parsed != 0) return -2;
+                if (parsed != 0) return h3_qpack_read_status(parsed);
                 uint64_t trailer_size = 0;
                 int trailer_error = 0;
                 if (neverc_qpack_field_section_size(decoded, count,
@@ -713,11 +720,11 @@ static int h3_read_request(h3_conn_t *connection,
                    type == NC_H3_FRAME_CANCEL_PUSH ||
                    type == NC_H3_FRAME_PUSH_PROMISE) {
             return -4;
-        } else if (length > H3_MAX_HEADER_SECTION ||
-                   h3_skip_exact(stream, length) != 0) {
-            /* RFC 9114 §9: unknown types, including GREASE, MUST be ignored
-             * even after trailers. DATA/HEADERS after trailers are rejected
-             * above. */
+        } else if (length > H3_MAX_HEADER_SECTION) {
+            /* RFC 9114 §9: unknown/GREASE frames are ignored. Refusing to
+             * buffer a huge skip is a load limit, not H3_MESSAGE_ERROR. */
+            return -3;
+        } else if (h3_skip_exact(stream, length) != 0) {
             return -1;
         }
     }
@@ -925,9 +932,9 @@ static void h3_request_task(h3_stream_task_t *task) {
     if (read_status != 0) {
         h3_request_cleanup(&parsed);
         /* RFC 9114 §4.1.2: a malformed request is a stream error of type
-         * H3_MESSAGE_ERROR so sibling streams stay up. QPACK failure,
-         * oversized field sections, and unexpected frames remain
-         * connection errors (RFC 9204 / RFC 9114 §7). */
+         * H3_MESSAGE_ERROR so sibling streams stay up. Damaged QPACK is
+         * QPACK_DECOMPRESSION_FAILED; header-slot overflow and oversized
+         * field sections are EXCESSIVE_LOAD (RFC 9204 / RFC 9114 §7). */
         if (read_status == -2) {
             h3_protocol_error(connection, NC_H3_QPACK_DECOMPRESSION_FAILED,
                               "QPACK decompression failed");

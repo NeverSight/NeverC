@@ -891,6 +891,37 @@ static void test_user_dirs(void) {
     }
 #endif
 
+#if !defined(_WIN32)
+    /* Go UserCacheDir / UserConfigDir: HOME-relative results must fail. */
+    {
+        const char *old_cache = neverc_os_getenv("XDG_CACHE_HOME");
+        const char *old_cfg = neverc_os_getenv("XDG_CONFIG_HOME");
+        const char *old_home = neverc_os_getenv("HOME");
+        char *saved_cache = old_cache ? strdup(old_cache) : NULL;
+        char *saved_cfg = old_cfg ? strdup(old_cfg) : NULL;
+        char *saved_home = old_home ? strdup(old_home) : NULL;
+        neverc_os_unsetenv("XDG_CACHE_HOME");
+        neverc_os_unsetenv("XDG_CONFIG_HOME");
+        ASSERT_EQ(neverc_os_setenv("HOME", "relhome"), 0);
+        ASSERT_EQ(neverc_os_user_cache_dir(buf, sizeof(buf)), -1);
+        ASSERT_EQ(neverc_os_user_config_dir(buf, sizeof(buf)), -1);
+        if (saved_cache) {
+            neverc_os_setenv("XDG_CACHE_HOME", saved_cache);
+            free(saved_cache);
+        }
+        if (saved_cfg) {
+            neverc_os_setenv("XDG_CONFIG_HOME", saved_cfg);
+            free(saved_cfg);
+        }
+        if (saved_home) {
+            neverc_os_setenv("HOME", saved_home);
+            free(saved_home);
+        } else {
+            neverc_os_unsetenv("HOME");
+        }
+    }
+#endif
+
 #if defined(_WIN32)
     const char *home_key = "USERPROFILE";
 #else

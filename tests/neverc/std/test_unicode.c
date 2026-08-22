@@ -304,14 +304,14 @@ static void test_unicode_conformance_edges(void) {
               neverc_unicode_simple_fold(0x03C2), 0x03C3);
     check_u32("fold small sigma to capital sigma",
               neverc_unicode_simple_fold(0x03C3), 0x03A3);
-    check_u32("fold iota-dialytika-tonos",
-              neverc_unicode_simple_fold(0x0390), 0x1FD3);
-    check_u32("fold iota-dialytika-oxia",
-              neverc_unicode_simple_fold(0x1FD3), 0x0390);
-    check_u32("fold upsilon-dialytika-tonos",
-              neverc_unicode_simple_fold(0x03B0), 0x1FE3);
-    check_u32("fold st ligatures",
-              neverc_unicode_simple_fold(0xFB05), 0xFB06);
+    check_u32("fold iota-dialytika-tonos stays",
+              neverc_unicode_simple_fold(0x0390), 0x0390);
+    check_u32("fold iota-dialytika-oxia stays",
+              neverc_unicode_simple_fold(0x1FD3), 0x1FD3);
+    check_u32("fold upsilon-dialytika-tonos stays",
+              neverc_unicode_simple_fold(0x03B0), 0x03B0);
+    check_u32("fold st ligature stays",
+              neverc_unicode_simple_fold(0xFB05), 0xFB05);
     check_u32("fold capital I with dot to itself",
               neverc_unicode_simple_fold(0x0130), 0x0130);
     check_u32("fold dotless i to itself",

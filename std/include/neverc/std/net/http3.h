@@ -92,6 +92,8 @@ int neverc_qpack_encode(neverc_qpack_encoder_t *enc,
 
 neverc_qpack_decoder_t *neverc_qpack_decoder_create(uint32_t max_table_cap);
 void neverc_qpack_decoder_destroy(neverc_qpack_decoder_t *dec);
+/* 0 on success, -2 if max_headers filled with leftover bytes, -1 if the
+ * field section is damaged. */
 int neverc_qpack_decode(neverc_qpack_decoder_t *dec,
                           const uint8_t *data, size_t len,
                           neverc_qpack_header_t *headers, int max_headers,

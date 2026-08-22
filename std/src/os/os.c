@@ -1825,6 +1825,29 @@ static int os_format_under(char *buf, size_t cap, const char *fmt, const char *a
     return 0;
 }
 
+/* Go os.UserCacheDir / UserConfigDir: the constructed path must be absolute. */
+static int os_path_isabs(const char *p) {
+    if (!p || !p[0]) return 0;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    if ((p[0] == '\\' && p[1] == '\\') || (p[0] == '/' && p[1] == '/'))
+        return 1;
+    if (((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z')) &&
+        p[1] == ':' && (p[2] == '\\' || p[2] == '/'))
+        return 1;
+    return 0;
+#else
+    return p[0] == '/';
+#endif
+}
+
+static int os_require_abs(char *buf) {
+    if (!os_path_isabs(buf)) {
+        if (buf) buf[0] = '\0';
+        return -1;
+    }
+    return 0;
+}
+
 int neverc_os_executable(char *buf, size_t cap) {
     if (!buf || cap == 0) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
@@ -1854,39 +1877,51 @@ int neverc_os_user_home_dir(char *buf, size_t cap) {
 
 int neverc_os_user_cache_dir(char *buf, size_t cap) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    return os_copy_cstr(buf, cap, neverc_os_getenv("LOCALAPPDATA"));
+    if (os_copy_cstr(buf, cap, neverc_os_getenv("LOCALAPPDATA")) != 0)
+        return -1;
+    return os_require_abs(buf);
 #elif defined(NEVERC_PLATFORM_APPLE)
     char home[1024];
     if (neverc_os_user_home_dir(home, sizeof(home)) < 0) return -1;
-    return os_format_under(buf, cap, "%s/Library/Caches", home);
+    if (os_format_under(buf, cap, "%s/Library/Caches", home) != 0)
+        return -1;
+    return os_require_abs(buf);
 #else
     const char *xdg = getenv("XDG_CACHE_HOME");
     if (xdg && xdg[0]) {
         if (xdg[0] != '/') return -1;
-        return os_copy_cstr(buf, cap, xdg);
+        if (os_copy_cstr(buf, cap, xdg) != 0) return -1;
+        return os_require_abs(buf);
     }
     char home[1024];
     if (neverc_os_user_home_dir(home, sizeof(home)) < 0) return -1;
-    return os_format_under(buf, cap, "%s/.cache", home);
+    if (os_format_under(buf, cap, "%s/.cache", home) != 0) return -1;
+    return os_require_abs(buf);
 #endif
 }
 
 int neverc_os_user_config_dir(char *buf, size_t cap) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    return os_copy_cstr(buf, cap, neverc_os_getenv("APPDATA"));
+    if (os_copy_cstr(buf, cap, neverc_os_getenv("APPDATA")) != 0)
+        return -1;
+    return os_require_abs(buf);
 #elif defined(NEVERC_PLATFORM_APPLE)
     char home[1024];
     if (neverc_os_user_home_dir(home, sizeof(home)) < 0) return -1;
-    return os_format_under(buf, cap, "%s/Library/Application Support", home);
+    if (os_format_under(buf, cap, "%s/Library/Application Support", home) != 0)
+        return -1;
+    return os_require_abs(buf);
 #else
     const char *xdg = getenv("XDG_CONFIG_HOME");
     if (xdg && xdg[0]) {
         if (xdg[0] != '/') return -1;
-        return os_copy_cstr(buf, cap, xdg);
+        if (os_copy_cstr(buf, cap, xdg) != 0) return -1;
+        return os_require_abs(buf);
     }
     char home[1024];
     if (neverc_os_user_home_dir(home, sizeof(home)) < 0) return -1;
-    return os_format_under(buf, cap, "%s/.config", home);
+    if (os_format_under(buf, cap, "%s/.config", home) != 0) return -1;
+    return os_require_abs(buf);
 #endif
 }
 

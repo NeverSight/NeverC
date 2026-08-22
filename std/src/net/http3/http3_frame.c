@@ -978,7 +978,16 @@ int neverc_qpack_decode(neverc_qpack_decoder_t *dec,
         }
     }
 
-    if (pos != len) goto failed;
+    if (pos != len) {
+        /* Remaining bytes after filling max_headers is an implementation
+         * limit, not a damaged field section (RFC 9204 decompression). */
+        if (count == max_headers) {
+            qpack_free_decoded(headers, count);
+            *nheaders = 0;
+            return -2;
+        }
+        goto failed;
+    }
 
     *nheaders = count;
     return 0;
