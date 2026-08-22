@@ -107,7 +107,8 @@ static size_t csv_skip_formula_space(const char *s, size_t n, size_t i) {
         size_t adv;
         if (csv_decode_rune((const unsigned char *)s + i, n - i, &cp, &adv) != 0)
             break;
-        if (!csv_codepoint_is_space(cp) && cp != 0xFEFF && cp != 0x200B)
+        if (!csv_codepoint_is_space(cp) && cp != 0xFEFF &&
+            cp != 0x200B && cp != 0x200C && cp != 0x200D && cp != 0x2060)
             break;
         i += adv;
     }

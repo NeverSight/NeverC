@@ -3883,6 +3883,7 @@ static void test_path_params(void) {
                                 path_param_handler);
         neverc_http_mux_handle(mux, "GET /posts/{$}",
                                 mux_posts_exact_handler);
+        neverc_http_mux_handle(mux, "GET /enc/a", mux_home_handler);
         char addr[32];
         snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
         neverc_http_listen_and_serve(addr, mux);
@@ -3996,6 +3997,30 @@ static void test_path_params(void) {
         buf, sizeof(buf));
     check_int("{$} does not match /posts without slash",
                n > 0 && strstr(buf, "posts_exact") == NULL, 1);
+
+    n = do_http_request(port,
+        "GET /users/%61 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("path unescape {id}=a from %61",
+               n > 0 && strstr(buf, "id=a") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /users/a%2Fb HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("path unescape keeps %2F in the segment",
+               n > 0 && strstr(buf, "id=a/b") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /files/a%2Fb/c HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("wildcard PathUnescape remainder",
+               n > 0 && strstr(buf, "path=a/b/c") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /enc/%61 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("literal pattern /enc/a matches /enc/%61",
+               n > 0 && strstr(buf, "home") != NULL, 1);
 
     /* neverc_http_path_value null safety */
     check_int("path_value null req",

@@ -162,6 +162,7 @@ typedef struct {
  * need_semi: 0 = HTML4 (semicolon optional), 1 = HTML5 (required). */
 static const html_named_entity_t html_named[] = {
     {"NewLine", 0x000A, 1},
+    {"ltimes",  0x22C9, 1},
     {"notin",   0x2209, 1},
     {"hellip",  0x2026, 1},
     {"plusmn",  0x00B1, 0},
@@ -237,24 +238,8 @@ char *neverc_html_unescape_string(const char *s, size_t *outlen) {
                 if ((n = match_amp_entity(s, slen, i))) {
                     r[wi++] = '&'; i += (size_t)n; continue;
                 }
-                if ((n = match_named_entity(s, slen, i, "lt", 2, 0)) ||
-                    (n = match_named_entity(s, slen, i, "LT", 2, 0))) {
-                    r[wi++] = '<'; i += (size_t)n; continue;
-                }
-                if ((n = match_named_entity(s, slen, i, "gt", 2, 0)) ||
-                    (n = match_named_entity(s, slen, i, "GT", 2, 0))) {
-                    r[wi++] = '>'; i += (size_t)n; continue;
-                }
-                if ((n = match_named_entity(s, slen, i, "quot", 4, 0)) ||
-                    (n = match_named_entity(s, slen, i, "QUOT", 4, 0))) {
-                    r[wi++] = '"'; i += (size_t)n; continue;
-                }
-                if ((n = match_named_entity(s, slen, i, "apos", 4, 1))) {
-                    r[wi++] = '\''; i += (size_t)n; continue;
-                }
-                if (starts_with(s + i, "&#34;"))  { r[wi++] = '"';  i += 5; continue; }
-                if (starts_with(s + i, "&#39;"))  { r[wi++] = '\''; i += 5; continue; }
-
+                /* Longer HTML5 names before HTML4 lt/gt/quot so
+                 * `&ltimes;` is U+22C9, not `<` + `imes;`. */
                 int named_hit = 0;
                 for (size_t e = 0; e < sizeof(html_named) / sizeof(html_named[0]); e++) {
                     const char *name = html_named[e].name;
@@ -272,6 +257,23 @@ char *neverc_html_unescape_string(const char *s, size_t *outlen) {
                     }
                 }
                 if (named_hit) continue;
+                if ((n = match_named_entity(s, slen, i, "lt", 2, 0)) ||
+                    (n = match_named_entity(s, slen, i, "LT", 2, 0))) {
+                    r[wi++] = '<'; i += (size_t)n; continue;
+                }
+                if ((n = match_named_entity(s, slen, i, "gt", 2, 0)) ||
+                    (n = match_named_entity(s, slen, i, "GT", 2, 0))) {
+                    r[wi++] = '>'; i += (size_t)n; continue;
+                }
+                if ((n = match_named_entity(s, slen, i, "quot", 4, 0)) ||
+                    (n = match_named_entity(s, slen, i, "QUOT", 4, 0))) {
+                    r[wi++] = '"'; i += (size_t)n; continue;
+                }
+                if ((n = match_named_entity(s, slen, i, "apos", 4, 1))) {
+                    r[wi++] = '\''; i += (size_t)n; continue;
+                }
+                if (starts_with(s + i, "&#34;"))  { r[wi++] = '"';  i += 5; continue; }
+                if (starts_with(s + i, "&#39;"))  { r[wi++] = '\''; i += 5; continue; }
             }
 
             if (starts_with(s + i, "&#")) {

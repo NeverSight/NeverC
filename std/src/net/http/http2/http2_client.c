@@ -28,6 +28,7 @@ struct neverc_h2_client_stream {
     neverc_hpack_header_t *trailers;
     size_t trailer_count;
     int received_trailers;
+    int received_data;
     nc_buf_t body;
     size_t received_body_size;
     size_t header_list_size;
@@ -953,10 +954,10 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
                 client->config.max_response_body_size - data_length ||
             length_invalid;
         neverc_h2_client_event_t *data_event = NULL;
-        if (!invalid && stream->live && data_length > 0) {
+        if (!invalid && stream->live) {
             data_event = (neverc_h2_client_event_t *)calloc(
                 1, sizeof(*data_event));
-            if (data_event) {
+            if (data_event && data_length > 0) {
                 data_event->data = (uint8_t *)malloc(data_length);
                 if (!data_event->data) {
                     free(data_event);
@@ -967,7 +968,8 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
                 invalid = 1;
             } else {
                 data_event->type = NEVERC_H2_CLIENT_EVENT_DATA;
-                memcpy(data_event->data, data, data_length);
+                if (data_length > 0)
+                    memcpy(data_event->data, data, data_length);
                 data_event->data_length = data_length;
                 data_event->flow_controlled_length = data_length;
                 if (h2_client_push_event(stream, data_event) != 0) {
@@ -979,6 +981,8 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
                    nc_buf_append(&stream->body, data, data_length) != 0) {
             invalid = 1;
         }
+        if (!invalid)
+            stream->received_data = 1;
         if (invalid) {
             stream->error = length_invalid
                 ? "invalid HTTP/2 response content length"
@@ -1862,6 +1866,7 @@ neverc_h2_response_t *neverc_h2_client_do_context(
         response->trailers = stream->trailers;
         response->trailer_count = stream->trailer_count;
         response->received_trailers = stream->received_trailers;
+        response->received_data = stream->received_data;
         response->body = (uint8_t *)stream->body.data;
         response->body_length = stream->body.len;
         response->stream_error =

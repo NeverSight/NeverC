@@ -559,6 +559,26 @@ static int ws_read_client_handshake(neverc_tcp_conn_t *tcp,
         ws_set_error(errp, "server selected an unsupported WebSocket extension");
         return -1;
     }
+    {
+        char clen[32];
+        int ncl = copy_unique_header_value(response, header_scan_end,
+                                           "Content-Length", clen,
+                                           sizeof(clen));
+        if (ncl < 0 || (ncl == 1 && strcmp(clen, "0") != 0)) {
+            free(response);
+            ws_set_error(errp, "WebSocket 101 must not have a body");
+            return -1;
+        }
+        char te[32];
+        int nte = copy_unique_header_value(response, header_scan_end,
+                                           "Transfer-Encoding", te,
+                                           sizeof(te));
+        if (nte != 0) {
+            free(response);
+            ws_set_error(errp, "WebSocket 101 must not have a body");
+            return -1;
+        }
+    }
 
     free(response);
     return 0;
@@ -1725,10 +1745,13 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
             return -1;
         if (track_data && ws_data_frame_end(conn, frame_fin) != 0)
             return -1;
-        /* Keep the stream usable after a sequenced but too-large frame.
-         * A leftover data_fragment_active would 1002 the next TEXT/BINARY. */
-        if (track_data)
+        /* A complete oversized message can be abandoned. Resetting a
+         * non-final first fragment would 1002 the peer's CONTINUATION. */
+        if (track_data) {
+            if (!frame_fin)
+                return ws_fail_protocol(conn);
             ws_reset_data_fragment(conn);
+        }
         return -1;
     }
 

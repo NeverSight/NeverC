@@ -469,15 +469,6 @@ static int exec_win_is_file(const char *path) {
            (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
-static int exec_win_has_ext(const char *name) {
-    const char *dot = strrchr(name, '.');
-    const char *slash = strrchr(name, '\\');
-    const char *fwd = strrchr(name, '/');
-    if (fwd && (!slash || fwd > slash)) slash = fwd;
-    /* Go filepath.Ext("file.") is "." — a trailing dot is still an ext. */
-    return dot && (!slash || dot > slash);
-}
-
 /* CRT getenv() is a stale snapshot vs SetEnvironmentVariableA / Win32
  * LookPath. Read PATHEXT the same way PATH is read. */
 static const char *exec_win_pathext(char *buf, DWORD cap) {
@@ -490,8 +481,9 @@ static const char *exec_win_pathext(char *buf, DWORD cap) {
     return buf;
 }
 
-/* Go lookExtensions: exact name, then each PATHEXT entry
- * (default .COM;.EXE;.BAT;.CMD) when the name has no extension. */
+/* Go findExecutable: exact name, then each PATHEXT entry even when the
+ * name already has an extension ("a.exe" → "a.exe.exe").
+ * 0 = copied into buf, -2 = exists but does not fit, -1 = not found. */
 static int exec_win_try_with_exe(const char *file, char *buf, DWORD cap) {
     size_t n;
     const char *exts;
@@ -499,23 +491,39 @@ static int exec_win_try_with_exe(const char *file, char *buf, DWORD cap) {
     if (!file || !buf || cap == 0) return -1;
     if (exec_win_is_file(file)) {
         n = strlen(file);
-        if (n >= cap) return -1;
+        if (n >= cap) return -2;
         memcpy(buf, file, n + 1);
         return 0;
     }
-    if (exec_win_has_ext(file)) return -1;
     exts = exec_win_pathext(pathext, (DWORD)sizeof(pathext));
     while (*exts) {
         const char *end = strchr(exts, ';');
         size_t elen = end ? (size_t)(end - exts) : strlen(exts);
-        int written;
         if (elen > 0) {
-            if (exts[0] == '.')
-                written = snprintf(buf, cap, "%s%.*s", file, (int)elen, exts);
-            else
-                written = snprintf(buf, cap, "%s.%.*s", file, (int)elen, exts);
-            if (written >= 0 && (DWORD)written < cap && exec_win_is_file(buf))
-                return 0;
+            size_t flen = strlen(file);
+            int dotted = exts[0] == '.';
+            size_t need = flen + (dotted ? 0U : 1U) + elen;
+            if (need < cap) {
+                int written = dotted
+                    ? snprintf(buf, cap, "%s%.*s", file, (int)elen, exts)
+                    : snprintf(buf, cap, "%s.%.*s", file, (int)elen, exts);
+                if (written >= 0 && (DWORD)written < cap &&
+                    exec_win_is_file(buf))
+                    return 0;
+            } else {
+                char *full = (char *)malloc(need + 1U);
+                int exists;
+                if (!full) return -1;
+                if (dotted)
+                    (void)snprintf(full, need + 1U, "%s%.*s",
+                                   file, (int)elen, exts);
+                else
+                    (void)snprintf(full, need + 1U, "%s.%.*s",
+                                   file, (int)elen, exts);
+                exists = exec_win_is_file(full);
+                free(full);
+                if (exists) return -2;
+            }
         }
         if (!end)
             break;
@@ -630,11 +638,12 @@ static const char *exec_look_in_win_path(const char *file, const char *path_env,
             cand = exec_join_dir_file(dir, dlen, file, flen, add_sep, '\\',
                                       NULL);
             if (!cand) return NULL;
-            if (exec_win_try_with_exe(cand, buf, cap) == 0) {
+            {
+                int rc = exec_win_try_with_exe(cand, buf, cap);
                 free(cand);
-                return buf;
+                if (rc == 0) return buf;
+                if (rc == -2) return NULL;
             }
-            free(cand);
         }
         if (!semi) break;
         p = semi + 1;

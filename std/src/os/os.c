@@ -201,6 +201,20 @@ static int os_win_is_drive_cwd(const char *dir, size_t n) {
            dir[1] == ':';
 }
 
+/* Go: \\?\C: is not a valid Win32 directory name (needs \\?\C:\). */
+static int os_win_is_prefixed_bare_drive(const char *dir, size_t n) {
+    if (n != 6) return 0;
+    if (dir[5] != ':') return 0;
+    if (!((dir[4] >= 'A' && dir[4] <= 'Z') ||
+          (dir[4] >= 'a' && dir[4] <= 'z')))
+        return 0;
+    if (!(dir[0] == '\\' || dir[0] == '/')) return 0;
+    if (!(dir[3] == '\\' || dir[3] == '/')) return 0;
+    if (dir[1] == '?' && dir[2] == '?')
+        return 1;
+    return (dir[1] == '\\' || dir[1] == '/') && dir[2] == '?';
+}
+
 /* Go #17500: \\?\C:\\* (doubled slash) fails on some Windows versions. */
 static int os_win_dir_star(char *pattern, size_t cap, const char *dir) {
     size_t n;
@@ -208,6 +222,10 @@ static int os_win_dir_star(char *pattern, size_t cap, const char *dir) {
     if (!dir || dir[0] == '\0')
         return -1;
     n = strlen(dir);
+    if (os_win_is_prefixed_bare_drive(dir, n)) {
+        errno = EINVAL;
+        return -1;
+    }
     if (dir[n - 1] == '\\' || dir[n - 1] == '/' || os_win_is_drive_cwd(dir, n))
         w = snprintf(pattern, cap, "%s*", dir);
     else

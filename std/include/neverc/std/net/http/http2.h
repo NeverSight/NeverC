@@ -244,6 +244,7 @@ typedef struct {
     neverc_hpack_header_t *trailers;
     size_t trailer_count;
     int received_trailers; /* 1 if a trailer HEADERS block arrived, even empty */
+    int received_data;     /* 1 if a DATA frame arrived, including empty */
     uint8_t *body;
     size_t body_length;
     uint32_t stream_error;

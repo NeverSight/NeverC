@@ -85,9 +85,11 @@ static void test_character_classes(void) {
     check_bool("\\w", neverc_regexp_match_string("\\w+", "hello_123"), 1);
     check_bool("\\s", neverc_regexp_match_string("\\s+", "  \t"), 1);
     check_bool("\\s formfeed", neverc_regexp_match_string("\\s", "\f"), 1);
-    check_bool("\\s vtab", neverc_regexp_match_string("\\s", "\v"), 1);
+    /* Go/RE2: \\s is [\\t\\n\\f\\r ], not \\v. */
+    check_bool("\\s not vtab", neverc_regexp_match_string("\\s", "\v"), 0);
+    check_bool("\\S matches vtab", neverc_regexp_match_string("\\S", "\v"), 1);
     check_bool("[\\s] formfeed", neverc_regexp_match_string("[\\s]", "\f"), 1);
-    check_bool("[\\s] vtab", neverc_regexp_match_string("[\\s]", "\v"), 1);
+    check_bool("[\\s] not vtab", neverc_regexp_match_string("[\\s]", "\v"), 0);
     check_bool("\\n newline", neverc_regexp_match_string("\\n", "\n"), 1);
     check_bool("[\\n] newline", neverc_regexp_match_string("[\\n]", "\n"), 1);
     check_bool("[\\t-\\n] tab", neverc_regexp_match_string("[\\t-\\n]", "\t"), 1);

@@ -1208,7 +1208,8 @@ static int scan_parse_size(const char **format, size_t *width,
     return !*has_width || *width != 0;
 }
 
-static int scan_formatted(const char *str, const char *format, va_list args) {
+static int scan_formatted(const char *str, const char *format, va_list args,
+                          size_t *consumed) {
     if (!str || !format) return 0;
 
     va_list ap;
@@ -1376,13 +1377,15 @@ static int scan_formatted(const char *str, const char *format, va_list args) {
 
 done:
     va_end(ap);
+    if (consumed)
+        *consumed = str ? (size_t)(sp - str) : 0;
     return matched;
 }
 
 int neverc_fmt_sscanf(const char *str, const char *format, ...) {
     va_list args;
     va_start(args, format);
-    int matched = scan_formatted(str, format, args);
+    int matched = scan_formatted(str, format, args, NULL);
     va_end(args);
     return matched;
 }
@@ -1463,25 +1466,39 @@ static char *scan_read_format_lines(FILE *f, const char *format) {
     return buf;
 }
 
-int neverc_fmt_scanf(const char *format, ...) {
-    if (!format) return 0;
-    char *input = scan_read_format_lines(stdin, format);
-    int matched;
-    va_list args;
-    if (!input) return 0;
-    va_start(args, format);
-    matched = scan_formatted(input, format, args);
-    va_end(args);
-    free(input);
-    return matched;
+static int scan_rewind_unused(FILE *f, long start, size_t consumed) {
+    if (!f || start < 0 || consumed > (size_t)LONG_MAX)
+        return -1;
+    return fseek(f, start + (long)consumed, SEEK_SET);
 }
 
-int neverc_fmt_scan(int *out_int) {
-    if (!out_int) return 0;
-    char line[256];
-    if (!fgets(line, sizeof(line), stdin)) return 0;
-    const char *p = line;
+static int scan_int_from_file(FILE *f, int *out_int) {
+    int c;
+    char buf[128];
+    size_t n = 0;
+    const char *p;
     int64_t val;
+    if (!f || !out_int) return 0;
+    while ((c = getc(f)) != EOF) {
+        unsigned char uc = (unsigned char)c;
+        if (uc != ' ' && uc != '\t' && uc != '\n' && uc != '\r' &&
+            uc != '\f' && uc != '\v') {
+            ungetc(c, f);
+            break;
+        }
+    }
+    if (c == EOF) return 0;
+    while ((c = getc(f)) != EOF && n + 1U < sizeof(buf)) {
+        unsigned char uc = (unsigned char)c;
+        if (uc == ' ' || uc == '\t' || uc == '\n' || uc == '\r' ||
+            uc == '\f' || uc == '\v') {
+            ungetc(c, f);
+            break;
+        }
+        buf[n++] = (char)c;
+    }
+    buf[n] = '\0';
+    p = buf;
     if (scan_int_literal(&p, &val) && scan_value_fits_int(val)) {
         *out_int = (int)val;
         return 1;
@@ -1489,15 +1506,38 @@ int neverc_fmt_scan(int *out_int) {
     return 0;
 }
 
+int neverc_fmt_scanf(const char *format, ...) {
+    if (!format) return 0;
+    long start = ftell(stdin);
+    char *input = scan_read_format_lines(stdin, format);
+    int matched;
+    va_list args;
+    size_t consumed = 0;
+    if (!input) return 0;
+    va_start(args, format);
+    matched = scan_formatted(input, format, args, &consumed);
+    va_end(args);
+    (void)scan_rewind_unused(stdin, start, consumed);
+    free(input);
+    return matched;
+}
+
+int neverc_fmt_scan(int *out_int) {
+    return scan_int_from_file(stdin, out_int);
+}
+
 int neverc_fmt_fscanf(FILE *f, const char *format, ...) {
     if (!f || !format) return 0;
+    long start = ftell(f);
     char *input = scan_read_format_lines(f, format);
     int matched;
     va_list args;
+    size_t consumed = 0;
     if (!input) return 0;
     va_start(args, format);
-    matched = scan_formatted(input, format, args);
+    matched = scan_formatted(input, format, args, &consumed);
     va_end(args);
+    (void)scan_rewind_unused(f, start, consumed);
     free(input);
     return matched;
 }
@@ -1566,16 +1606,7 @@ char *neverc_fmt_sprintfln(const char *format, ...) {
 }
 
 int neverc_fmt_fscan(FILE *f, int *out_int) {
-    if (!f || !out_int) return 0;
-    char line[256];
-    if (!fgets(line, sizeof(line), f)) return 0;
-    const char *p = line;
-    int64_t val;
-    if (scan_int_literal(&p, &val) && scan_value_fits_int(val)) {
-        *out_int = (int)val;
-        return 1;
-    }
-    return 0;
+    return scan_int_from_file(f, out_int);
 }
 
 int neverc_fmt_scanln(const char *format, ...) {
@@ -1587,7 +1618,7 @@ int neverc_fmt_scanln(const char *format, ...) {
 
     va_list args;
     va_start(args, format);
-    int matched = scan_formatted(line, format, args);
+    int matched = scan_formatted(line, format, args, NULL);
     va_end(args);
     return matched;
 }
@@ -1605,7 +1636,7 @@ int neverc_fmt_sscanln(const char *str, const char *format, ...) {
 
     va_list args;
     va_start(args, format);
-    int matched = scan_formatted(line, format, args);
+    int matched = scan_formatted(line, format, args, NULL);
     va_end(args);
     return matched;
 }
@@ -1619,7 +1650,7 @@ int neverc_fmt_fscanln(FILE *f, const char *format, ...) {
 
     va_list args;
     va_start(args, format);
-    int matched = scan_formatted(line, format, args);
+    int matched = scan_formatted(line, format, args, NULL);
     va_end(args);
     return matched;
 }

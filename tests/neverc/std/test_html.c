@@ -253,6 +253,10 @@ static void test_unescape(void) {
     check_str("grave and sol named entities", r37, "`/");
     free(r37);
 
+    char *r38 = neverc_html_unescape_string("&ltimes;", &outlen);
+    check_str("ltimes is not lt leftover", r38, "\xE2\x8B\x89");
+    free(r38);
+
     outlen = 123;
     check_true("unescape rejects NULL input",
                neverc_html_unescape_string(NULL, &outlen) == NULL);

@@ -920,6 +920,14 @@ static void grpc_fake_h2_task(void *context) {
             .name = "content-type", .value = "application/grpc"};
         headers[header_count++] = (neverc_hpack_header_t){
             .name = "grpc-status", .value = "0"};
+    } else if (test->kind == 10) {
+        /* Response-Headers carry grpc-status, then empty DATA+ES. */
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = ":status", .value = "200"};
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = "content-type", .value = "application/grpc"};
+        headers[header_count++] = (neverc_hpack_header_t){
+            .name = "grpc-status", .value = "5"};
     } else if (test->kind == 8) {
         /* Unary success: headers without grpc-status, one DATA message,
          * trailers with grpc-status 0. */
@@ -971,7 +979,14 @@ static void grpc_fake_h2_task(void *context) {
         test->result = -1;
         return;
     }
-    if (test->kind == 2) {
+    if (test->kind == 10) {
+        if (grpc_h2_write_frame(conn, NC_H2_FRAME_DATA, NC_H2_FLAG_END_STREAM,
+                                1U, NULL, 0) != 0) {
+            neverc_tcp_close(conn);
+            test->result = -1;
+            return;
+        }
+    } else if (test->kind == 2) {
         uint8_t garbage[] = {0, 0, 0, 0, 50, 'x'};
         if (grpc_h2_write_frame(
                 conn, NC_H2_FRAME_DATA, NC_H2_FLAG_END_STREAM, 1U,
@@ -1143,6 +1158,11 @@ static void grpc_test_status_mapping(void) {
     CHECK(empty_trailers && empty_trailers->status != NEVERC_GRPC_OK);
     neverc_grpc_result_free(empty_trailers);
 
+    neverc_grpc_result_t *empty_data = grpc_call_fake_h2(10);
+    CHECK(empty_data && empty_data->error != NULL);
+    CHECK(empty_data && empty_data->status != NEVERC_GRPC_NOT_FOUND);
+    neverc_grpc_result_free(empty_data);
+
     neverc_grpc_status_t stream_status = NEVERC_GRPC_UNKNOWN;
     const char *stream_error = "unset";
     CHECK(grpc_stream_fake_h2(0, &stream_status, &stream_error) == 0);
@@ -1191,6 +1211,12 @@ static void grpc_test_status_mapping(void) {
     CHECK(grpc_stream_fake_h2(9, &stream_status, &stream_error) == -1);
     CHECK(stream_error != NULL);
     CHECK(stream_status != NEVERC_GRPC_OK);
+
+    stream_status = NEVERC_GRPC_UNKNOWN;
+    stream_error = "unset";
+    CHECK(grpc_stream_fake_h2(10, &stream_status, &stream_error) == -1);
+    CHECK(stream_error != NULL);
+    CHECK(stream_status != NEVERC_GRPC_NOT_FOUND);
 }
 
 static void grpc_test_binary_metadata_unpadded(void) {

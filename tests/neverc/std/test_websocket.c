@@ -1686,6 +1686,208 @@ static void test_reject_server_extensions(void) {
     neverc_tcp_listener_close(ln);
 }
 
+static void test_reject_101_body(void) {
+    printf("[reject_101_body]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("101-body listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    pid_t pid = fork();
+    if (pid == 0) {
+        char url[128];
+        snprintf(url, sizeof(url), "ws://127.0.0.1:%u/ws",
+                 (unsigned)laddr.port);
+        neverc_ws_conn_t *ws = neverc_ws_dial(url, NULL, &err);
+        if (ws) {
+            neverc_ws_conn_free(ws);
+            _exit(1);
+        }
+        _exit(0);
+    }
+
+    neverc_tcp_conn_t *conn = neverc_tcp_accept(ln, &err);
+    check_not_null("101-body accept", conn);
+    if (conn) {
+        neverc_tcp_set_timeout(conn, 5000);
+        char request[4096];
+        int total = 0;
+        while (total < (int)sizeof(request) - 1) {
+            int n = neverc_tcp_read(conn, request + total,
+                                    sizeof(request) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+            request[total] = '\0';
+            if (strstr(request, "\r\n\r\n")) break;
+        }
+        const char *key_line = strstr(request, "Sec-WebSocket-Key: ");
+        char accept[64];
+        int have_accept = 0;
+        if (key_line) {
+            const char *key = key_line + 19;
+            if ((size_t)(request + total - key) >= 24) {
+                char key_buf[25];
+                memcpy(key_buf, key, 24);
+                key_buf[24] = '\0';
+                have_accept = neverc_ws_compute_accept(
+                    key_buf, accept, sizeof(accept)) == 0;
+            }
+        }
+        check_int("101-body client key", have_accept, 1);
+        if (have_accept) {
+            char response[512];
+            int n = snprintf(
+                response, sizeof(response),
+                "HTTP/1.1 101 Switching Protocols\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                "Sec-WebSocket-Accept: %s\r\n"
+                "Content-Length: 5\r\n"
+                "\r\n"
+                "xxxxx",
+                accept);
+            if (n > 0)
+                neverc_tcp_write(conn, response, (size_t)n);
+        }
+        neverc_tcp_close(conn);
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    check_int("client rejected 101 Content-Length",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+    neverc_tcp_listener_close(ln);
+}
+
+static void test_reject_101_transfer_encoding(void) {
+    printf("[reject_101_te]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("101-te listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    pid_t pid = fork();
+    if (pid == 0) {
+        char url[128];
+        snprintf(url, sizeof(url), "ws://127.0.0.1:%u/ws",
+                 (unsigned)laddr.port);
+        neverc_ws_conn_t *ws = neverc_ws_dial(url, NULL, &err);
+        if (ws) {
+            neverc_ws_conn_free(ws);
+            _exit(1);
+        }
+        _exit(0);
+    }
+
+    neverc_tcp_conn_t *conn = neverc_tcp_accept(ln, &err);
+    check_not_null("101-te accept", conn);
+    if (conn) {
+        neverc_tcp_set_timeout(conn, 5000);
+        char request[4096];
+        int total = 0;
+        while (total < (int)sizeof(request) - 1) {
+            int n = neverc_tcp_read(conn, request + total,
+                                    sizeof(request) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+            request[total] = '\0';
+            if (strstr(request, "\r\n\r\n")) break;
+        }
+        const char *key_line = strstr(request, "Sec-WebSocket-Key: ");
+        char accept[64];
+        int have_accept = 0;
+        if (key_line) {
+            const char *key = key_line + 19;
+            if ((size_t)(request + total - key) >= 24) {
+                char key_buf[25];
+                memcpy(key_buf, key, 24);
+                key_buf[24] = '\0';
+                have_accept = neverc_ws_compute_accept(
+                    key_buf, accept, sizeof(accept)) == 0;
+            }
+        }
+        check_int("101-te client key", have_accept, 1);
+        if (have_accept) {
+            char response[512];
+            int n = snprintf(
+                response, sizeof(response),
+                "HTTP/1.1 101 Switching Protocols\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                "Sec-WebSocket-Accept: %s\r\n"
+                "Transfer-Encoding: chunked\r\n"
+                "\r\n",
+                accept);
+            if (n > 0)
+                neverc_tcp_write(conn, response, (size_t)n);
+        }
+        neverc_tcp_close(conn);
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    check_int("client rejected 101 Transfer-Encoding",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+    neverc_tcp_listener_close(ln);
+}
+
+static void test_oversized_first_fragment_fails_closed(void) {
+    printf("[oversized_first_fragment]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("ovsz-first listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("ovsz-first client", client);
+    check_not_null("ovsz-first server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("ovsz-first server ws", ws);
+    if (ws) {
+        char oversized[20];
+        memset(oversized, 'a', sizeof(oversized));
+        check_int("write oversized first fragment",
+                  ws_write_masked_frame_ex(client, NC_WS_OPCODE_TEXT, 0,
+                                           oversized, sizeof(oversized)), 0);
+        int opcode = 0;
+        char tiny[4];
+        size_t n = 0;
+        check_int("discard oversized first fragment",
+                  neverc_ws_read_frame(ws, &opcode, NULL, tiny, sizeof(tiny),
+                                       &n),
+                  -1);
+        check_int("write continuation of same message",
+                  ws_write_masked_frame_ex(client, NC_WS_OPCODE_CONTINUATION, 1,
+                                           "z", 1), 0);
+        n = 0;
+        check_int("continuation after discarded first fragment",
+                  neverc_ws_read_frame(ws, &opcode, NULL, tiny, sizeof(tiny),
+                                       &n),
+                  -1);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
 static int ws_client_send_masked_text(neverc_tcp_conn_t *conn, const char *msg) {
     size_t len = strlen(msg);
     if (len > 125) return -1;
@@ -2135,6 +2337,9 @@ int main(void) {
     test_client_dial_and_masking();
     test_reject_masked_server_frame();
     test_reject_server_extensions();
+    test_reject_101_body();
+    test_reject_101_transfer_encoding();
+    test_oversized_first_fragment_fails_closed();
     test_handshake_and_echo();
     test_ping_pong();
     test_http_ws_upgrade();

@@ -133,9 +133,9 @@ static int add_escape_class(parser_t *p, neverc_regexp_syntax_node_t *n,
                add_rune(p, n, 'a') && add_rune(p, n, 'z') &&
                add_rune(p, n, '_') && add_rune(p, n, '_');
     case 's':
+        /* RE2/Go: \s is [\t\n\f\r ], not \v (issue 22057). */
         return add_rune(p, n, '\t') && add_rune(p, n, '\t') &&
                add_rune(p, n, '\n') && add_rune(p, n, '\n') &&
-               add_rune(p, n, '\v') && add_rune(p, n, '\v') &&
                add_rune(p, n, '\f') && add_rune(p, n, '\f') &&
                add_rune(p, n, '\r') && add_rune(p, n, '\r') &&
                add_rune(p, n, ' ') && add_rune(p, n, ' ');
@@ -297,7 +297,9 @@ static int add_escape_class_complement(parser_t *p, neverc_regexp_syntax_node_t 
                add_rune(p, n, '_' + 1) && add_rune(p, n, 'a' - 1) &&
                add_rune(p, n, 'z' + 1) && add_rune(p, n, NCI_RE_MAX_RUNE);
     case 's':
+        /* Complement of [\t\n\f\r ]. [\t-\r] would still include \v. */
         return add_rune(p, n, 0) && add_rune(p, n, '\t' - 1) &&
+               add_rune(p, n, '\n' + 1) && add_rune(p, n, '\f' - 1) &&
                add_rune(p, n, '\r' + 1) && add_rune(p, n, ' ' - 1) &&
                add_rune(p, n, ' ' + 1) && add_rune(p, n, NCI_RE_MAX_RUNE);
     default:

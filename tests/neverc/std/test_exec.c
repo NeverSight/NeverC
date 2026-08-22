@@ -238,6 +238,70 @@ static void test_look_path(void) {
         DeleteFileA(bat);
         RemoveDirectoryA(dir);
     }
+    /* Go findExecutable: LookPath("a.exe") finds a.exe.exe. */
+    {
+        char dir[MAX_PATH], exe[MAX_PATH], absdir[MAX_PATH];
+        FILE *pf;
+        DWORD n;
+        char old_path[32768];
+        GetCurrentDirectoryA((DWORD)sizeof(absdir), absdir);
+        snprintf(dir, sizeof(dir), "%s\\neverc_dbl_ext_dir", absdir);
+        snprintf(exe, sizeof(exe), "%s\\a.exe.exe", dir);
+        CreateDirectoryA(dir, NULL);
+        pf = fopen(exe, "wb");
+        ASSERT_TRUE(pf != NULL);
+        if (pf) {
+            fputs("MZ", pf);
+            fclose(pf);
+        }
+        n = GetEnvironmentVariableA("PATH", old_path, sizeof(old_path));
+        SetEnvironmentVariableA("PATH", dir);
+        SetEnvironmentVariableA("PATHEXT", ".EXE;.BAT");
+        p = neverc_exec_look_path("a.exe", buf, sizeof(buf));
+        ASSERT_TRUE(p != NULL);
+        ASSERT_TRUE(p && strstr(p, "a.exe.exe") != NULL);
+        if (n > 0 && n < sizeof(old_path))
+            SetEnvironmentVariableA("PATH", old_path);
+        else
+            SetEnvironmentVariableA("PATH", NULL);
+        SetEnvironmentVariableA("PATHEXT", NULL);
+        DeleteFileA(exe);
+        RemoveDirectoryA(dir);
+    }
+    /* A too-long first PATH hit must not fall through to a later directory. */
+    {
+        char dir[MAX_PATH], exe[MAX_PATH], absdir[MAX_PATH], windir[MAX_PATH];
+        char pathbuf[MAX_PATH * 2], small[16];
+        FILE *pf;
+        DWORD n;
+        size_t prefix;
+        char old_path[32768];
+        GetCurrentDirectoryA((DWORD)sizeof(absdir), absdir);
+        GetWindowsDirectoryA(windir, (UINT)sizeof(windir));
+        snprintf(dir, sizeof(dir), "%s\\nclpl_", absdir);
+        prefix = strlen(dir);
+        memset(dir + prefix, 'a', 80);
+        dir[prefix + 80] = '\0';
+        snprintf(exe, sizeof(exe), "%s\\notepad.exe", dir);
+        CreateDirectoryA(dir, NULL);
+        pf = fopen(exe, "wb");
+        ASSERT_TRUE(pf != NULL);
+        if (pf) {
+            fputs("MZ", pf);
+            fclose(pf);
+        }
+        n = GetEnvironmentVariableA("PATH", old_path, sizeof(old_path));
+        snprintf(pathbuf, sizeof(pathbuf), "%s;%s\\System32", dir, windir);
+        SetEnvironmentVariableA("PATH", pathbuf);
+        p = neverc_exec_look_path("notepad", small, sizeof(small));
+        ASSERT_TRUE(p == NULL);
+        if (n > 0 && n < sizeof(old_path))
+            SetEnvironmentVariableA("PATH", old_path);
+        else
+            SetEnvironmentVariableA("PATH", NULL);
+        DeleteFileA(exe);
+        RemoveDirectoryA(dir);
+    }
 #endif
 
     p = neverc_exec_look_path("this_command_does_not_exist_xyz", buf, sizeof(buf));

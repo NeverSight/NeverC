@@ -232,6 +232,25 @@ static void test_read_dir(void) {
         check("readdir_nt_prefix_ok", rc == 0 && count > 0);
         neverc_fs_free_entries(entries);
     }
+    {
+        char cwd[MAX_PATH], drive_ext[16];
+        neverc_fs_dir_entry_t *fents = NULL;
+        size_t n = 0;
+        GetCurrentDirectoryA((DWORD)sizeof(cwd), cwd);
+        if (((cwd[0] >= 'A' && cwd[0] <= 'Z') ||
+             (cwd[0] >= 'a' && cwd[0] <= 'z')) && cwd[1] == ':') {
+            snprintf(drive_ext, sizeof(drive_ext), "\\\\?\\%c:", cwd[0]);
+            errno = 0;
+            check("readdir_ext_bare_drive",
+                  neverc_fs_read_dir(drive_ext, &fents, &n) == -1 &&
+                  errno == EINVAL);
+            snprintf(drive_ext, sizeof(drive_ext), "\\??\\%c:", cwd[0]);
+            errno = 0;
+            check("readdir_nt_bare_drive",
+                  neverc_fs_read_dir(drive_ext, &fents, &n) == -1 &&
+                  errno == EINVAL);
+        }
+    }
 #endif
 }
 

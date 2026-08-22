@@ -186,6 +186,8 @@ void neverc_http_handle_func(const char *pattern,
 
 /* Get a path parameter by name from the request.
  * E.g. if pattern is "/users/{id}" and path is "/users/42", returns "42".
+ * Values are PathUnescape'd (Go 1.22): `/users/%61` → "a", and `%2F`
+ * stays inside the segment (`/b/a%2Fb` → "a/b").
  * Returns NULL if not found. */
 const char *neverc_http_path_value(const neverc_http_request_t *req,
                                     const char *name);

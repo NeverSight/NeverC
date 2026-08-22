@@ -222,6 +222,24 @@ static void test_write_quoting(void) {
     dst[n] = '\0';
     ASSERT_STR_EQ(dst, "'\xe2\x80\x8b=CMD()\n");
 
+    const char *zwnj_formula[] = {"\xe2\x80\x8c" "=CMD()"};
+    n = neverc_csv_write_record(zwnj_formula, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "'\xe2\x80\x8c=CMD()\n");
+
+    const char *zwj_formula[] = {"\xe2\x80\x8d" "=CMD()"};
+    n = neverc_csv_write_record(zwj_formula, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "'\xe2\x80\x8d=CMD()\n");
+
+    const char *wj_formula[] = {"\xe2\x81\xa0" "=CMD()"};
+    n = neverc_csv_write_record(wj_formula, 1, dst, sizeof(dst), NULL);
+    ASSERT_INT_EQ(n > 0, 1);
+    dst[n] = '\0';
+    ASSERT_STR_EQ(dst, "'\xe2\x81\xa0=CMD()\n");
+
     const char *fullwidth_interior[] = {"x;" "\xef\xbc\x9d" "1"};
     n = neverc_csv_write_record(fullwidth_interior, 1, dst, sizeof(dst), NULL);
     ASSERT_INT_EQ(n > 0, 1);

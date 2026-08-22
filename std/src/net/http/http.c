@@ -1014,10 +1014,112 @@ int nc_http_default_handle_owned_context(
         &default_mux, pattern, handler, context, destroy_context);
 }
 
+/* Go pathUnescape: on error keep the original bytes. `+` stays `+`. */
+#define HTTP_MUX_SEG 2048
+
+static int http_mux_unescape_span(const char *s, size_t n,
+                                  char *out, size_t cap, size_t *outn) {
+    char tmp[HTTP_MUX_SEG];
+    int decoded;
+
+    if (!s || !out || cap == 0)
+        return -1;
+    if (n >= HTTP_MUX_SEG) {
+        if (n >= cap) return -1;
+        memcpy(out, s, n);
+        out[n] = '\0';
+        if (outn) *outn = n;
+        return 0;
+    }
+    memcpy(tmp, s, n);
+    tmp[n] = '\0';
+    decoded = neverc_url_path_unescape(tmp, out, cap);
+    if (decoded < 0) {
+        if (n >= cap) return -1;
+        memcpy(out, s, n);
+        out[n] = '\0';
+        if (outn) *outn = n;
+        return 0;
+    }
+    if (outn) *outn = (size_t)decoded;
+    return 0;
+}
+
+static int http_mux_store_param(path_params_t *params,
+                                const char *name, size_t namelen,
+                                const char *val, size_t vallen) {
+    if (!params) return 1;
+    if (params->len + (int)namelen + 1 + (int)vallen + 1
+        >= (int)sizeof(params->buf))
+        return 1;
+    memcpy(params->buf + params->len, name, namelen);
+    params->len += (int)namelen;
+    params->buf[params->len++] = '\0';
+    if (vallen)
+        memcpy(params->buf + params->len, val, vallen);
+    params->len += (int)vallen;
+    params->buf[params->len++] = '\0';
+    params->count++;
+    return 1;
+}
+
+/* Walk both paths segment-by-segment after PathUnescape. A trailing slash
+ * is its own segment so `/foo` ≠ `/foo/`. prefix: pattern ends with `/` and
+ * the request must still have a `/` after the shared segments. */
+static int http_mux_unescaped_compare(const char *pat, const char *path,
+                                      int prefix) {
+    char pseg[HTTP_MUX_SEG], rseg[HTTP_MUX_SEG];
+    size_t pn, rn;
+
+    if (!pat || !path) return 0;
+    while (*pat || *path) {
+        const char *pe;
+        const char *re;
+        int pat_slash;
+        int path_slash;
+
+        if (*pat == '/') pat++;
+        else if (*pat) return 0;
+        if (*path == '/') path++;
+        else if (*path) return 0;
+
+        pat_slash = (*pat == '\0' && pat[-1] == '/');
+        path_slash = (*path == '\0' && path[-1] == '/');
+        pe = pat;
+        while (*pe && *pe != '/') pe++;
+        re = path;
+        while (*re && *re != '/') re++;
+
+        if (prefix && pat_slash) {
+            /* Trailing `/` on the pattern: path must still have a `/`
+             * after the last compared segment (already consumed). */
+            return path_slash || *path != '\0' || re > path;
+        }
+
+        if (http_mux_unescape_span(pat, (size_t)(pe - pat),
+                                   pseg, sizeof(pseg), &pn) != 0)
+            return 0;
+        if (http_mux_unescape_span(path, (size_t)(re - path),
+                                   rseg, sizeof(rseg), &rn) != 0)
+            return 0;
+        if (pat_slash != path_slash || pn != rn ||
+            memcmp(pseg, rseg, pn) != 0)
+            return 0;
+        pat = pe;
+        path = re;
+    }
+    return 1;
+}
+
 /* Match a pattern with path parameters.
- * Returns 1 on match, 0 on no match. Fills params if non-NULL. */
+ * Returns 1 on match, 0 on no match. Fills params if non-NULL.
+ * Go 1.22: each segment is PathUnescape'd before compare/capture;
+ * `%2F` does not split a segment. */
 static int pattern_match(const char *pattern, const char *path,
                           path_params_t *params) {
+    char captured[HTTP_MUX_SEG];
+    size_t captured_len = 0;
+
     if (params) { params->len = 0; params->count = 0; }
 
     const char *pp = pattern;
@@ -1048,43 +1150,58 @@ static int pattern_match(const char *pattern, const char *path,
             if (wildcard) {
                 if (close[1] != '\0') return 0;
                 /* Go {name...}: remainder after the joining '/', including
-                 * empty (/files and /files/ → ""). */
+                 * empty (/files and /files/ → ""). PathUnescape the rest
+                 * as a whole (`a%2Fb` → `a/b`). */
                 const char *rest = rp;
                 if (rest[0] == '/') rest++;
-                if (params && params->len + (int)namelen + 1 + (int)strlen(rest) + 1
-                    < (int)sizeof(params->buf)) {
-                    memcpy(params->buf + params->len, name, namelen);
-                    params->len += (int)namelen;
-                    params->buf[params->len++] = '\0';
-                    size_t vlen = strlen(rest);
-                    memcpy(params->buf + params->len, rest, vlen);
-                    params->len += (int)vlen;
-                    params->buf[params->len++] = '\0';
-                    params->count++;
-                }
-                return 1;
+                if (http_mux_unescape_span(rest, strlen(rest), captured,
+                                           sizeof(captured),
+                                           &captured_len) != 0)
+                    return 0;
+                return http_mux_store_param(params, name, namelen,
+                                            captured, captured_len);
             }
 
-            /* Find end of this path segment */
+            /* Find end of this path segment; do not split on `%2F`. */
             const char *seg_end = rp;
             while (*seg_end && *seg_end != '/') seg_end++;
             size_t vallen = (size_t)(seg_end - rp);
 
             if (vallen == 0) return 0;
-
-            if (params && params->len + (int)namelen + 1 + (int)vallen + 1
-                < (int)sizeof(params->buf)) {
-                memcpy(params->buf + params->len, name, namelen);
-                params->len += (int)namelen;
-                params->buf[params->len++] = '\0';
-                memcpy(params->buf + params->len, rp, vallen);
-                params->len += (int)vallen;
-                params->buf[params->len++] = '\0';
-                params->count++;
-            }
+            if (http_mux_unescape_span(rp, vallen, captured,
+                                       sizeof(captured),
+                                       &captured_len) != 0)
+                return 0;
+            if (!http_mux_store_param(params, name, namelen,
+                                      captured, captured_len))
+                return 0;
 
             rp = seg_end;
             pp = close + 1;
+        } else if (*pp == '/' && *rp == '/') {
+            const char *pe;
+            const char *re;
+            char pseg[HTTP_MUX_SEG], rseg[HTTP_MUX_SEG];
+            size_t pn, rn;
+
+            pp++;
+            rp++;
+            if (*pp == '{')
+                continue;
+            pe = pp;
+            while (*pe && *pe != '/' && *pe != '{') pe++;
+            re = rp;
+            while (*re && *re != '/') re++;
+            if (http_mux_unescape_span(pp, (size_t)(pe - pp),
+                                       pseg, sizeof(pseg), &pn) != 0)
+                return 0;
+            if (http_mux_unescape_span(rp, (size_t)(re - rp),
+                                       rseg, sizeof(rseg), &rn) != 0)
+                return 0;
+            if (pn != rn || memcmp(pseg, rseg, pn) != 0)
+                return 0;
+            pp = pe;
+            rp = re;
         } else {
             if (*pp != *rp) return 0;
             pp++;
@@ -1094,7 +1211,18 @@ static int pattern_match(const char *pattern, const char *path,
 
     /* Both consumed = exact match. Pattern ends with / = prefix match.
      * Go: `{name...}` also matches when the request path ends at the
-     * wildcard (`/files` against `/files/{path...}`). */
+     * wildcard (`/files` against `/files/{path...}`). Do not eat the
+     * slash before `{$}`: `/posts` is not `/posts/`. */
+    if (*pp == '/' && pp[1] == '{') {
+        const char *close = strchr(pp + 1, '}');
+        if (close && close[1] == '\0') {
+            const char *name = pp + 2;
+            size_t namelen = (size_t)(close - name);
+            if (namelen >= 3 && name[namelen - 3] == '.' &&
+                name[namelen - 2] == '.' && name[namelen - 1] == '.')
+                pp++;
+        }
+    }
     if (*pp == '{') {
         const char *close = strchr(pp, '}');
         if (close && close[1] == '\0') {
@@ -1105,15 +1233,7 @@ static int pattern_match(const char *pattern, const char *path,
             if (namelen >= 3 && name[namelen - 3] == '.' &&
                 name[namelen - 2] == '.' && name[namelen - 1] == '.') {
                 namelen -= 3;
-                if (params && params->len + (int)namelen + 2
-                    < (int)sizeof(params->buf)) {
-                    memcpy(params->buf + params->len, name, namelen);
-                    params->len += (int)namelen;
-                    params->buf[params->len++] = '\0';
-                    params->buf[params->len++] = '\0';
-                    params->count++;
-                }
-                return 1;
+                return http_mux_store_param(params, name, namelen, "", 0);
             }
         }
     }
@@ -1227,8 +1347,11 @@ static route_t *mux_match_ex(neverc_http_mux_t *mux,
 
         size_t plen = strlen(pat);
 
-        /* Exact match */
-        if (strcmp(pat, path) == 0) {
+        /* Exact match. Go 1.22 compares PathUnescape'd segments
+         * (`/a` equals `/%61`). Host-prefixed patterns keep strcmp. */
+        if (strcmp(pat, path) == 0 ||
+            (pat[0] == '/' && path[0] == '/' &&
+             http_mux_unescaped_compare(pat, path, 0))) {
             int path_rank = mux_path_rank_exact(plen);
             if (mux_better(path_rank, method_rank, plen,
                            best_path_rank, best_method_rank, best_len)) {
@@ -1241,9 +1364,12 @@ static route_t *mux_match_ex(neverc_http_mux_t *mux,
             continue;
         }
 
-        /* Prefix match (pattern ends with /) */
+        /* Prefix match (pattern ends with /). Unescape each segment
+         * so `/api/` still matches `/ap%69/users`. */
         if (plen > 0 && pat[plen - 1] == '/' &&
-            strncmp(path, pat, plen) == 0) {
+            (strncmp(path, pat, plen) == 0 ||
+             (pat[0] == '/' && path[0] == '/' &&
+              http_mux_unescaped_compare(pat, path, 1)))) {
             int path_rank = mux_path_rank_prefix(plen);
             if (mux_better(path_rank, method_rank, plen,
                            best_path_rank, best_method_rank, best_len)) {

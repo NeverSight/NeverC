@@ -432,7 +432,6 @@ static void cc_set_ws(charclass_t *cc) {
     cc_set(cc, '\n');
     cc_set(cc, '\r');
     cc_set(cc, '\f');
-    cc_set(cc, '\v');
 }
 
 static void cc_set_word(charclass_t *cc) {

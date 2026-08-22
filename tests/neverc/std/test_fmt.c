@@ -427,6 +427,24 @@ static void test_sscanf(void) {
         }
     }
 
+    {
+        FILE *tmp = tmpfile();
+        check_true("fscanf leftover fixture", tmp != NULL);
+        if (tmp) {
+            fputs("10 20\n", tmp);
+            rewind(tmp);
+            a = 0;
+            b = 0;
+            n = neverc_fmt_fscanf(tmp, "%d", &a);
+            check_int("fscanf first leftover", n, 1);
+            check_int("fscanf leftover val", a, 10);
+            n = neverc_fmt_fscanf(tmp, "%d", &b);
+            check_int("fscanf second leftover", n, 1);
+            check_int("fscanf leftover second val", b, 20);
+            fclose(tmp);
+        }
+    }
+
     /* A line longer than the 4096-byte fgets chunk must still count as one
      * format record, or the second conversion never sees its input. */
     {
@@ -983,6 +1001,22 @@ static void test_stream_scan(void) {
     check_int("fscanln value", value, -2);
     check_str("fscanln word", word, "word");
     fclose(tmp);
+
+    tmp = tmpfile();
+    check_true("fscan long space fixture", tmp != NULL);
+    if (tmp) {
+        char pad[260];
+        memset(pad, ' ', 255);
+        pad[255] = '7';
+        pad[256] = '\n';
+        pad[257] = '\0';
+        fputs(pad, tmp);
+        rewind(tmp);
+        value = 0;
+        check_int("fscan long leading space", neverc_fmt_fscan(tmp, &value), 1);
+        check_int("fscan long leading space val", value, 7);
+        fclose(tmp);
+    }
 }
 
 int main(void) {

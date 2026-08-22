@@ -692,6 +692,18 @@ static void test_read_dir(void) {
                     ASSERT_TRUE(saw);
                 }
                 {
+                    neverc_os_dir_entry_t *ents = NULL;
+                    size_t nents = 0;
+                    snprintf(drive_ext, sizeof(drive_ext), "\\\\?\\%c:", cwd[0]);
+                    errno = 0;
+                    ASSERT_EQ(neverc_os_read_dir(drive_ext, &ents, &nents), -1);
+                    ASSERT_EQ(errno, EINVAL);
+                    snprintf(drive_ext, sizeof(drive_ext), "\\??\\%c:", cwd[0]);
+                    errno = 0;
+                    ASSERT_EQ(neverc_os_read_dir(drive_ext, &ents, &nents), -1);
+                    ASSERT_EQ(errno, EINVAL);
+                }
+                {
                     char drive_rel[8];
                     char tmpd[1200];
                     snprintf(drive_rel, sizeof(drive_rel), "%c:", cwd[0]);
