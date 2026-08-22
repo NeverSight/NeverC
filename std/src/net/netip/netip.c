@@ -322,6 +322,7 @@ int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
     memset(out, 0, sizeof(*out));
     size_t slen = strlen(s);
 
+    neverc_netip_addr_t addr;
     const char *colon = NULL;
     if (s[0] == '[') {
         const char *rb = strrchr(s, ']');
@@ -331,9 +332,9 @@ int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
         if (alen == 0 || alen >= sizeof(addrbuf)) return -1;
         memcpy(addrbuf, s+1, alen);
         addrbuf[alen] = '\0';
-        if (neverc_netip_parse_addr(addrbuf, &out->addr) != 0) return -1;
+        if (neverc_netip_parse_addr(addrbuf, &addr) != 0) return -1;
         /* Go netip.ParseAddrPort: brackets are valid only for IPv6. */
-        if (out->addr.is_v4) return -1;
+        if (addr.is_v4) return -1;
         colon = rb + 1;
     } else {
         /* IPv4: find last colon */
@@ -344,8 +345,8 @@ int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
         if (alen == 0 || alen >= sizeof(addrbuf)) return -1;
         memcpy(addrbuf, s, alen);
         addrbuf[alen] = '\0';
-        if (neverc_netip_parse_addr(addrbuf, &out->addr) != 0) return -1;
-        if (!out->addr.is_v4) return -1;
+        if (neverc_netip_parse_addr(addrbuf, &addr) != 0) return -1;
+        if (!addr.is_v4) return -1;
     }
 
     const char *port_str = colon + 1;
@@ -360,6 +361,8 @@ int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
         port = port * 10u + (unsigned)(port_str[i] - '0');
     }
     if (port > 65535u) return -1;
+    /* Go ParseAddrPort returns a zero AddrPort on every error path. */
+    out->addr = addr;
     out->port = (uint16_t)port;
     return 0;
 }

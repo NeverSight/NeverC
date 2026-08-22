@@ -17,6 +17,7 @@
 #define QUIC_MAX_CONNECTIONS 4096
 #define QUIC_MAX_PENDING_ACCEPTS 1024
 #define QUIC_DATAGRAM_QUEUE_CAPACITY 256
+#define QUIC_MAX_PATH_RESPONSES 8
 #define QUIC_TX_RECORD_CAPACITY 512
 #define QUIC_STREAM_SEND_BUFFER_LIMIT (1024U * 1024U)
 #define QUIC_MIN_INITIAL_SIZE 1200
@@ -507,11 +508,15 @@ struct neverc_quic_conn {
     size_t send_datagram_count;
     neverc_udp_addr_t candidate_addr;
     neverc_udp_addr_t path_response_addr;
+    neverc_udp_addr_t path_response_addr_queue[QUIC_MAX_PATH_RESPONSES];
     uint8_t path_challenge[8];
     uint8_t path_response[8];
+    uint8_t path_response_queue[QUIC_MAX_PATH_RESPONSES][8];
     int path_challenge_pending;
     int path_validation_pending;
     int path_response_pending;
+    int path_response_inflight;
+    int path_response_qcount;
     int peer_disable_migration;
     nc_mutex_t lock;
     nc_cond_t stream_avail_cond;
@@ -810,6 +815,11 @@ void neverc_quic_conn_on_packet_acked(struct neverc_quic_conn *conn,
                                       int space, uint64_t packet_number);
 void neverc_quic_conn_on_packet_lost(struct neverc_quic_conn *conn,
                                      int space, uint64_t packet_number);
+void neverc_quic_conn_enqueue_path_response(
+    struct neverc_quic_conn *conn, const uint8_t token[8],
+    const neverc_udp_addr_t *source);
+void neverc_quic_conn_path_response_sent(struct neverc_quic_conn *conn);
+void neverc_quic_conn_path_response_acked(struct neverc_quic_conn *conn);
 int neverc_quic_conn_id_matches(const struct neverc_quic_conn *conn,
                                 const uint8_t *cid, size_t cid_len);
 int neverc_quic_packet_number_offset(const uint8_t *packet, size_t length,

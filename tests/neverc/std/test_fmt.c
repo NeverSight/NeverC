@@ -1017,6 +1017,19 @@ static void test_stream_scan(void) {
         check_int("fscan long leading space val", value, 7);
         fclose(tmp);
     }
+
+    tmp = tmpfile();
+    check_true("fscan leftover fixture", tmp != NULL);
+    if (tmp) {
+        fputs("08 9\n", tmp);
+        rewind(tmp);
+        int a = 0, b = 0;
+        check_int("fscan leftover first", neverc_fmt_fscan(tmp, &a), 1);
+        check_int("fscan leftover first val", a, 0);
+        check_int("fscan leftover second", neverc_fmt_fscan(tmp, &b), 1);
+        check_int("fscan leftover second val", b, 8);
+        fclose(tmp);
+    }
 }
 
 int main(void) {

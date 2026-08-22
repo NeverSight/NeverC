@@ -361,9 +361,8 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_PATH_CHALLENGE) {
             if (payload_len - position < type_len + 8U) return -1;
-            memcpy(conn->path_response, payload + position + type_len, 8);
-            conn->path_response_addr = *source;
-            conn->path_response_pending = 1;
+            neverc_quic_conn_enqueue_path_response(
+                conn, payload + position + type_len, source);
             consumed = type_len + 8U;
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_PATH_RESPONSE) {
@@ -963,6 +962,11 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
                                   conn->close_error_code);
         close_frame.reason = conn->close_reason;
         close_frame.reason_len = strlen(conn->close_reason);
+        /* RFC 9000 §10.2.3: converting 0x1d to 0x1c MUST clear Reason Phrase. */
+        if (conn->close_is_app && !have_app) {
+            close_frame.reason = "";
+            close_frame.reason_len = 0;
+        }
         if (neverc_quic_write_connection_close(output, capacity,
                                                &close_frame,
                                                &position) != 0)
@@ -1341,7 +1345,7 @@ static void qt_commit_control(struct neverc_quic_conn *conn,
         conn->close_pending = 0;
         break;
     case QUIC_FRAME_PATH_RESPONSE:
-        conn->path_response_pending = 0;
+        neverc_quic_conn_path_response_sent(conn);
         break;
     case QUIC_FRAME_PATH_CHALLENGE:
         conn->path_challenge_pending = 0;
@@ -1437,6 +1441,18 @@ static int qt_write_short_header(struct neverc_quic_conn *conn,
     return 0;
 }
 
+static int qt_anti_amp_allows(const struct neverc_quic_conn *conn,
+                              size_t packet_len) {
+    if (conn->side != QUIC_SIDE_SERVER || conn->address_validated)
+        return 1;
+    uint64_t limit =
+        conn->bytes_received_before_validation > UINT64_MAX / 3U ?
+        UINT64_MAX : conn->bytes_received_before_validation * 3U;
+    if (conn->bytes_sent_before_validation > limit)
+        return 0;
+    return packet_len <= limit - conn->bytes_sent_before_validation;
+}
+
 static int qt_send_item(struct neverc_quic_conn *conn,
                         uint8_t *payload, size_t payload_len,
                         quic_send_meta_t *meta) {
@@ -1530,6 +1546,20 @@ static int qt_send_item(struct neverc_quic_conn *conn,
                 free(packet);
                 return -1;
             }
+        }
+    }
+    /* RFC 9000 §8.2.1 / §8.2.2: PATH_CHALLENGE / PATH_RESPONSE datagrams
+     * MUST expand to 1200 bytes unless anti-amplification forbids it. */
+    if (meta->kind == QUIC_TX_CONTROL &&
+        (meta->control_type == QUIC_FRAME_PATH_CHALLENGE ||
+         meta->control_type == QUIC_FRAME_PATH_RESPONSE) &&
+        header_len + payload_len + 16U < QUIC_MIN_INITIAL_SIZE &&
+        QUIC_MIN_INITIAL_SIZE <= maximum) {
+        size_t pad = QUIC_MIN_INITIAL_SIZE - (header_len + payload_len + 16U);
+        if (payload_len + pad <= maximum &&
+            qt_anti_amp_allows(conn, QUIC_MIN_INITIAL_SIZE)) {
+            memset(payload + payload_len, 0, pad);
+            payload_len += pad;
         }
     }
     if (header_len > maximum - 16U ||

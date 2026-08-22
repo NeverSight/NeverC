@@ -1185,6 +1185,9 @@ void neverc_quic_conn_on_packet_acked(struct neverc_quic_conn *conn,
                 }
                 nc_mutex_unlock(&stream->lock);
             }
+        } else if (record->kind == QUIC_TX_CONTROL &&
+                   (int)record->offset == QUIC_FRAME_PATH_RESPONSE) {
+            neverc_quic_conn_path_response_acked(conn);
         }
         record->used = 0;
     }
@@ -1206,8 +1209,12 @@ void neverc_quic_conn_on_packet_lost(struct neverc_quic_conn *conn,
                 neverc_quic_conn_find_stream(conn, record->stream_id);
             if (stream) {
                 nc_mutex_lock(&stream->lock);
-                if (stream->send_inflight_pn == packet_number)
+                if (stream->send_inflight_pn == packet_number) {
                     stream->send_inflight = 0;
+                    /* RFC 9000 §13.3: a lost FIN-only STREAM must be sent again. */
+                    if (record->fin)
+                        stream->send_fin_sent = 0;
+                }
                 nc_mutex_unlock(&stream->lock);
             }
         } else if (record->kind == QUIC_TX_CONTROL) {
@@ -1216,6 +1223,7 @@ void neverc_quic_conn_on_packet_lost(struct neverc_quic_conn *conn,
                 conn->close_pending = 1;
                 break;
             case QUIC_FRAME_PATH_RESPONSE:
+                conn->path_response_inflight = 0;
                 conn->path_response_pending = 1;
                 break;
             case QUIC_FRAME_PATH_CHALLENGE:
@@ -1270,6 +1278,48 @@ void neverc_quic_conn_on_packet_lost(struct neverc_quic_conn *conn,
         }
         record->used = 0;
     }
+}
+
+void neverc_quic_conn_enqueue_path_response(
+    struct neverc_quic_conn *conn, const uint8_t token[8],
+    const neverc_udp_addr_t *source) {
+    if (!conn || !token || !source) return;
+    if (!conn->path_response_pending && !conn->path_response_inflight) {
+        memcpy(conn->path_response, token, 8);
+        conn->path_response_addr = *source;
+        conn->path_response_pending = 1;
+        return;
+    }
+    if (conn->path_response_qcount >= QUIC_MAX_PATH_RESPONSES)
+        return;
+    int index = conn->path_response_qcount++;
+    memcpy(conn->path_response_queue[index], token, 8);
+    conn->path_response_addr_queue[index] = *source;
+}
+
+void neverc_quic_conn_path_response_sent(struct neverc_quic_conn *conn) {
+    if (!conn) return;
+    conn->path_response_pending = 0;
+    conn->path_response_inflight = 1;
+}
+
+void neverc_quic_conn_path_response_acked(struct neverc_quic_conn *conn) {
+    if (!conn) return;
+    conn->path_response_inflight = 0;
+    conn->path_response_pending = 0;
+    if (conn->path_response_qcount <= 0) return;
+    memcpy(conn->path_response, conn->path_response_queue[0], 8);
+    conn->path_response_addr = conn->path_response_addr_queue[0];
+    conn->path_response_qcount--;
+    if (conn->path_response_qcount > 0) {
+        memmove(conn->path_response_queue[0], conn->path_response_queue[1],
+                (size_t)conn->path_response_qcount * 8);
+        memmove(conn->path_response_addr_queue,
+                conn->path_response_addr_queue + 1,
+                (size_t)conn->path_response_qcount *
+                    sizeof(neverc_udp_addr_t));
+    }
+    conn->path_response_pending = 1;
 }
 
 void quic_stream_mark_connection_closing(quic_stream_t *stream) {

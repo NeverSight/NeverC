@@ -165,6 +165,9 @@ static int smtp_safe_atom(const char *s) {
         if (*p == ']') {
             if (!in_literal) return 0;
             in_literal = 0;
+            /* Leftover after a closed address-literal is not part of the atom. */
+            if (p[1] != '\0')
+                return 0;
             continue;
         }
         if (*p == ':' && !in_literal)
@@ -532,9 +535,28 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
             return -1;
         int code = smtp_cmd(c, "AUTH LOGIN");
         if (code != 334) return -1;
+        /* Same leftover class as STARTTLS: extra reply lines after 334
+         * must not become the next SASL step (Go Client.Auth sends '*'). */
+        if (c->pending_len != 0) {
+            c->dead = 1;
+            (void)smtp_cmd_line(c, "*", 1);
+            return -1;
+        }
         code = smtp_cmd_line(c, user_b64, 1);
-        if (code != 334) return -1;
+        if (code != 334) {
+            c->dead = 1;
+            if (code > 0)
+                (void)smtp_cmd_line(c, "*", 1);
+            return -1;
+        }
+        if (c->pending_len != 0) {
+            c->dead = 1;
+            (void)smtp_cmd_line(c, "*", 1);
+            return -1;
+        }
         code = smtp_cmd_line(c, pass_b64, 1);
+        if (code != 235)
+            c->dead = 1;
         return (code == 235) ? 0 : -1;
     }
 

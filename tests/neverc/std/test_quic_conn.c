@@ -1441,6 +1441,86 @@ static void test_retired_local_cid_still_matches(void) {
     neverc_quic_conn_destroy(conn);
 }
 
+static void test_empty_fin_retransmitted_after_loss(void) {
+    struct neverc_quic_conn *conn = neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    quic_stream_t *stream = neverc_quic_conn_open_stream(conn);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_EQ(neverc_quic_stream_close_write_side(stream), 0);
+    stream->send_len = 0;
+    stream->send_inflight = 1;
+    stream->send_inflight_pn = 7;
+    stream->send_fin_sent = 1;
+    memset(&conn->tx_records[0], 0, sizeof(conn->tx_records[0]));
+    conn->tx_records[0].used = 1;
+    conn->tx_records[0].kind = QUIC_TX_STREAM;
+    conn->tx_records[0].space = QUIC_PNS_APPLICATION;
+    conn->tx_records[0].packet_number = 7;
+    conn->tx_records[0].stream_id = stream->id;
+    conn->tx_records[0].fin = 1;
+    conn->tx_records[0].length = 0;
+    neverc_quic_conn_on_packet_lost(conn, QUIC_PNS_APPLICATION, 7);
+    ASSERT_EQ(stream->send_fin_sent, 0);
+    ASSERT_EQ(stream->send_inflight, 0);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_path_response_enqueue_keeps_unanswered(void) {
+    struct neverc_quic_conn *conn = neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    neverc_udp_addr_t first, second;
+    memset(&first, 0, sizeof(first));
+    memset(&second, 0, sizeof(second));
+    first.port = 9;
+    second.port = 10;
+    uint8_t token_a[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    uint8_t token_b[8] = {8, 7, 6, 5, 4, 3, 2, 1};
+    neverc_quic_conn_enqueue_path_response(conn, token_a, &first);
+    neverc_quic_conn_enqueue_path_response(conn, token_b, &second);
+    ASSERT_EQ(conn->path_response_pending, 1);
+    ASSERT_EQ(conn->path_response_qcount, 1);
+    ASSERT_TRUE(memcmp(conn->path_response, token_a, 8) == 0);
+    ASSERT_TRUE(memcmp(conn->path_response_queue[0], token_b, 8) == 0);
+    neverc_quic_conn_path_response_sent(conn);
+    ASSERT_EQ(conn->path_response_pending, 0);
+    ASSERT_EQ(conn->path_response_inflight, 1);
+    ASSERT_TRUE(memcmp(conn->path_response, token_a, 8) == 0);
+    neverc_quic_conn_path_response_acked(conn);
+    ASSERT_EQ(conn->path_response_pending, 1);
+    ASSERT_EQ(conn->path_response_qcount, 0);
+    ASSERT_TRUE(memcmp(conn->path_response, token_b, 8) == 0);
+    ASSERT_EQ(conn->path_response_addr.port, 10);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_path_response_queue_promotes_after_ack(void) {
+    struct neverc_quic_conn *conn = neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    neverc_udp_addr_t first, second;
+    memset(&first, 0, sizeof(first));
+    memset(&second, 0, sizeof(second));
+    first.port = 1;
+    second.port = 2;
+    memcpy(conn->path_response, "AAAAAAAA", 8);
+    conn->path_response_addr = first;
+    conn->path_response_inflight = 1;
+    conn->path_response_pending = 0;
+    memcpy(conn->path_response_queue[0], "BBBBBBBB", 8);
+    conn->path_response_addr_queue[0] = second;
+    conn->path_response_qcount = 1;
+    memset(&conn->tx_records[0], 0, sizeof(conn->tx_records[0]));
+    conn->tx_records[0].used = 1;
+    conn->tx_records[0].kind = QUIC_TX_CONTROL;
+    conn->tx_records[0].space = QUIC_PNS_APPLICATION;
+    conn->tx_records[0].packet_number = 3;
+    conn->tx_records[0].offset = QUIC_FRAME_PATH_RESPONSE;
+    neverc_quic_conn_on_packet_acked(conn, QUIC_PNS_APPLICATION, 3);
+    ASSERT_EQ(conn->path_response_pending, 1);
+    ASSERT_EQ(conn->path_response_inflight, 0);
+    ASSERT_EQ(conn->path_response_qcount, 0);
+    ASSERT_TRUE(memcmp(conn->path_response, "BBBBBBBB", 8) == 0);
+    ASSERT_EQ(conn->path_response_addr.port, 2);
+    neverc_quic_conn_destroy(conn);
+}
+
 /* ======================================================================
  * main
  * ====================================================================== */
@@ -1506,6 +1586,9 @@ int main(void) {
     test_unprotected_is_initial_ignores_hp_pn_length();
     test_pn_window_tracks_extra_and_reacks();
     test_retired_local_cid_still_matches();
+    test_empty_fin_retransmitted_after_loss();
+    test_path_response_enqueue_keeps_unanswered();
+    test_path_response_queue_promotes_after_ack();
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

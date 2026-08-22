@@ -218,6 +218,24 @@ static void test_loss_discard_space(void) {
     neverc_quic_loss_destroy(&ld);
 }
 
+static void test_loss_discard_space_resets_pto_count(void) {
+    quic_loss_detector_t ld;
+    neverc_quic_loss_init(&ld);
+
+    neverc_quic_loss_on_sent(&ld, QUIC_PNS_HANDSHAKE, 0, 1010, 800, 1);
+    neverc_quic_loss_on_sent(&ld, QUIC_PNS_APPLICATION, 0, 1020, 800, 1);
+    ld.pto_count = 3;
+    uint64_t inflated = neverc_quic_loss_get_timeout(&ld, 1);
+    neverc_quic_loss_discard_space(&ld, QUIC_PNS_HANDSHAKE);
+    ASSERT_EQ(ld.pto_count, 0);
+    uint64_t pto = neverc_quic_pto(&ld.rtt, 1);
+    uint64_t timeout = neverc_quic_loss_get_timeout(&ld, 1);
+    ASSERT_EQ(timeout, 1020 + pto);
+    ASSERT_TRUE(inflated > timeout);
+
+    neverc_quic_loss_destroy(&ld);
+}
+
 static void test_loss_packet_threshold_detection(void) {
     quic_loss_detector_t ld;
     neverc_quic_loss_init(&ld);
@@ -439,6 +457,7 @@ int main(void) {
     test_loss_detector_init();
     test_loss_on_sent_tracking();
     test_loss_discard_space();
+    test_loss_discard_space_resets_pto_count();
     test_loss_packet_threshold_detection();
     test_loss_ack_of_unsent_does_not_raise_largest();
     test_loss_rtt_measurement();

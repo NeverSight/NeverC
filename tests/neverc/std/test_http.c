@@ -1979,6 +1979,7 @@ static void host_trailer_handler(neverc_http_request_t *req,
     neverc_http_enable_chunked(w);
     neverc_http_set_trailer(w, "Host", "evil.com");
     neverc_http_set_trailer(w, "Connection", "close");
+    neverc_http_set_trailer(w, "TE", "trailers");
     neverc_http_set_trailer(w, "X-Ok", "1");
     neverc_http_write_string(w, "ok");
     neverc_http_end_chunked(w);
@@ -2031,6 +2032,10 @@ static void test_chunked_encoding(void) {
               n > 0 && strstr(buf, "Host: evil.com") == NULL, 1);
     check_int("trailer-host omits Host from Trailer",
               n > 0 && strstr(buf, "Trailer: Host") == NULL, 1);
+    check_int("trailer-host omits TE from Trailer",
+              n > 0 && strstr(buf, "Trailer: TE") == NULL, 1);
+    check_int("trailer-host drops TE field",
+              n > 0 && strstr(buf, "TE: trailers") == NULL, 1);
 
     stop_test_server(server_pid);
 }
@@ -4035,6 +4040,92 @@ static void test_path_params(void) {
     stop_test_server(pid);
 }
 
+static void mux_items_handler(neverc_http_request_t *req,
+                              neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_string(w, "item");
+}
+
+static void mux_static_handler(neverc_http_request_t *req,
+                               neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_string(w, "static");
+}
+
+static void test_mux_method_and_slash(void) {
+    printf("[mux_method_and_slash]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "GET /items/{id}", mux_items_handler);
+        neverc_http_mux_handle(mux, "GET /static/", mux_static_handler);
+        neverc_http_mux_handle(mux, "GET /", mux_home_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+
+    char buf[4096];
+    int n = do_http_request(port,
+        "GET /items/42 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mux GET item", n > 0 && strstr(buf, "item") != NULL, 1);
+
+    n = do_http_request(port,
+        "DELETE /items/42 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mux DELETE 405", n > 0 && strstr(buf, "405") != NULL, 1);
+    check_int("mux DELETE Allow GET",
+              n > 0 && strstr(buf, "Allow:") != NULL &&
+              strstr(buf, "GET") != NULL, 1);
+    check_int("mux DELETE not 404",
+              n > 0 && strstr(buf, "404 page not found") == NULL, 1);
+
+    n = do_http_request(port,
+        "GET /static HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mux /static redirects",
+              n > 0 && strstr(buf, "301") != NULL &&
+              strstr(buf, "Location: /static/") != NULL, 1);
+    check_int("mux /static not catch-all",
+              n > 0 && strstr(buf, "home") == NULL, 1);
+
+    n = do_http_request(port,
+        "GET /static/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mux /static/ serves prefix",
+              n > 0 && strstr(buf, "static") != NULL, 1);
+
+    stop_test_server(pid);
+
+    port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+    pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "GET /items/{id}", mux_items_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+    n = do_http_request(port,
+        "POST /items/42 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mux POST without / is 405",
+              n > 0 && strstr(buf, "405") != NULL, 1);
+    check_int("mux POST Allow lists HEAD",
+              n > 0 && strstr(buf, "HEAD") != NULL, 1);
+    stop_test_server(pid);
+}
+
 /* ===== Rate limiter test ===== */
 
 static void test_rate_limiter(void) {
@@ -4339,6 +4430,7 @@ int main(void) {
     test_serve_file();
     test_strip_prefix();
     test_path_params();
+    test_mux_method_and_slash();
     test_rate_limiter();
     test_cors();
     test_json_helpers();

@@ -549,7 +549,8 @@ void neverc_http_set_trailer(neverc_http_response_writer_t *w,
         strcasecmp(name, "Transfer-Encoding") == 0 ||
         strcasecmp(name, "Trailer") == 0 ||
         strcasecmp(name, "Host") == 0 ||
-        strcasecmp(name, "Connection") == 0)
+        strcasecmp(name, "Connection") == 0 ||
+        strcasecmp(name, "TE") == 0)
         return;
     for (int i = 0; i < w->ntrailers; i++) {
         if (strcasecmp(w->trailer_names[i], name) == 0) {
@@ -1293,6 +1294,30 @@ static int mux_better(int path_rank, int method_rank, size_t plen,
     return plen > best_len;
 }
 
+static int mux_route_path_rank(const route_t *r) {
+    const char *pat = r->path_pattern;
+    size_t plen = strlen(pat);
+    if (r->has_params) {
+        if (mux_pattern_ends_dollar(pat))
+            return mux_path_rank_exact((size_t)mux_pattern_literal_len(pat));
+        return mux_path_rank_param(pat);
+    }
+    if (plen > 0 && pat[plen - 1] == '/')
+        return mux_path_rank_prefix(plen);
+    return mux_path_rank_exact(plen);
+}
+
+static int mux_with_trailing_slash(const char *path, char *out, size_t cap) {
+    size_t n;
+    if (!path || !out || cap < 3) return -1;
+    n = strlen(path);
+    if (n == 0 || path[n - 1] == '/' || n + 2 > cap) return -1;
+    memcpy(out, path, n);
+    out[n] = '/';
+    out[n + 1] = '\0';
+    return 0;
+}
+
 static route_t *mux_match_ex(neverc_http_mux_t *mux,
                              const char *method, const char *path,
                              path_params_t *params) {
@@ -1382,6 +1407,114 @@ static route_t *mux_match_ex(neverc_http_mux_t *mux,
         }
     }
     return best;
+}
+
+static int mux_route_path_matches(const route_t *r, const char *path) {
+    const char *pat;
+    size_t plen;
+    path_params_t tmp;
+    if (!r || !path) return 0;
+    pat = r->path_pattern;
+    if (r->has_params) {
+        memset(&tmp, 0, sizeof(tmp));
+        return pattern_match(pat, path, &tmp);
+    }
+    plen = strlen(pat);
+    if (strcmp(pat, path) == 0 ||
+        (pat[0] == '/' && path[0] == '/' &&
+         http_mux_unescaped_compare(pat, path, 0)))
+        return 1;
+    return plen > 0 && pat[plen - 1] == '/' &&
+           (strncmp(path, pat, plen) == 0 ||
+            (pat[0] == '/' && path[0] == '/' &&
+             http_mux_unescaped_compare(pat, path, 1)));
+}
+
+static int mux_slash_redirect(neverc_http_mux_t *mux, const char *method,
+                              const char *path, route_t *current,
+                              char *loc, size_t loc_cap) {
+    char slashed[4096];
+    path_params_t ignored;
+    route_t *slash;
+    size_t plen;
+    if (mux_with_trailing_slash(path, slashed, sizeof(slashed)) != 0)
+        return 0;
+    memset(&ignored, 0, sizeof(ignored));
+    slash = mux_match_ex(mux, method, slashed, &ignored);
+    if (!slash || mux_pattern_ends_dollar(slash->path_pattern))
+        return 0;
+    plen = strlen(slash->path_pattern);
+    if (plen == 0 || slash->path_pattern[plen - 1] != '/')
+        return 0;
+    if (current && mux_route_path_rank(slash) <= mux_route_path_rank(current))
+        return 0;
+    if (strlen(slashed) + 1 > loc_cap) return 0;
+    memcpy(loc, slashed, strlen(slashed) + 1);
+    return 1;
+}
+
+static int mux_fill_allow(neverc_http_mux_t *mux, const char *path,
+                          char *allow, size_t allow_cap) {
+    char methods[16][16];
+    char slashed[4096];
+    int n = 0;
+    int has_get = 0;
+    int have_slash = mux_with_trailing_slash(path, slashed, sizeof(slashed)) == 0;
+    int i, j;
+    size_t pos;
+    if (!mux || !path || !allow || allow_cap == 0) return 0;
+    for (i = 0; i < mux->nroutes; i++) {
+        route_t *r = &mux->routes[i];
+        if (!mux_route_path_matches(r, path) &&
+            !(have_slash && mux_route_path_matches(r, slashed)))
+            continue;
+        if (!r->method || !r->method[0]) continue;
+        for (j = 0; j < n; j++)
+            if (strcmp(methods[j], r->method) == 0)
+                break;
+        if (j < n) continue;
+        if (n >= 16) continue;
+        strncpy(methods[n], r->method, sizeof(methods[n]) - 1);
+        methods[n][sizeof(methods[n]) - 1] = '\0';
+        if (strcmp(r->method, "GET") == 0) has_get = 1;
+        n++;
+    }
+    if (has_get) {
+        for (j = 0; j < n; j++)
+            if (strcmp(methods[j], "HEAD") == 0)
+                break;
+        if (j == n && n < 16) {
+            memcpy(methods[n], "HEAD", 5);
+            n++;
+        }
+    }
+    if (n == 0) return 0;
+    for (i = 0; i < n; i++) {
+        int best = i;
+        for (j = i + 1; j < n; j++)
+            if (strcmp(methods[j], methods[best]) < 0)
+                best = j;
+        if (best != i) {
+            char tmp[16];
+            memcpy(tmp, methods[i], sizeof(tmp));
+            memcpy(methods[i], methods[best], sizeof(tmp));
+            memcpy(methods[best], tmp, sizeof(tmp));
+        }
+    }
+    pos = 0;
+    for (i = 0; i < n; i++) {
+        size_t mlen = strlen(methods[i]);
+        size_t need = mlen + (i ? 2U : 0U);
+        if (pos + need + 1 > allow_cap) return 0;
+        if (i) {
+            allow[pos++] = ',';
+            allow[pos++] = ' ';
+        }
+        memcpy(allow + pos, methods[i], mlen);
+        pos += mlen;
+    }
+    allow[pos] = '\0';
+    return 1;
 }
 
 static void route_invoke(route_t *route, neverc_http_request_t *request,
@@ -1574,11 +1707,35 @@ void nc_http_mux_dispatch(neverc_http_mux_t *mux,
         const char *origin = neverc_http_request_header(request, "Origin");
         neverc_http_cors_headers(writer, &g_cors_config, origin);
     }
+    {
+        char loc[4096];
+        if (mux_slash_redirect(mux, request->method, request->path, route,
+                               loc, sizeof(loc))) {
+            if (request->query && request->query[0]) {
+                char locq[4096];
+                if ((size_t)snprintf(locq, sizeof(locq), "%s?%s", loc,
+                                     request->query) < sizeof(locq))
+                    neverc_http_redirect(writer, locq, 301);
+                else
+                    neverc_http_redirect(writer, loc, 301);
+            } else {
+                neverc_http_redirect(writer, loc, 301);
+            }
+            return;
+        }
+    }
     if (route) {
         route_invoke(route, request, writer);
     } else {
-        neverc_http_set_status(writer, 404);
-        (void)neverc_http_write_string(writer, "404 page not found\n");
+        char allow[256];
+        if (mux_fill_allow(mux, request->path, allow, sizeof(allow))) {
+            neverc_http_set_status(writer, 405);
+            neverc_http_set_header(writer, "Allow", allow);
+            (void)neverc_http_write_string(writer, "Method Not Allowed\n");
+        } else {
+            neverc_http_set_status(writer, 404);
+            (void)neverc_http_write_string(writer, "404 page not found\n");
+        }
     }
 }
 
@@ -3086,11 +3243,33 @@ static void http_conn_process(http_conn_t *hc) {
             neverc_http_cors_headers(w, &g_cors_config, origin);
         }
 
-        if (route) {
-            route_invoke(route, &req, w);
-        } else {
-            neverc_http_set_status(w, 404);
-            neverc_http_write_string(w, "404 page not found\n");
+        {
+            char loc[4096];
+            if (mux_slash_redirect(hc->mux, req.method, req.path, route,
+                                   loc, sizeof(loc))) {
+                if (req.query && req.query[0]) {
+                    char locq[4096];
+                    if ((size_t)snprintf(locq, sizeof(locq), "%s?%s", loc,
+                                         req.query) < sizeof(locq))
+                        neverc_http_redirect(w, locq, 301);
+                    else
+                        neverc_http_redirect(w, loc, 301);
+                } else {
+                    neverc_http_redirect(w, loc, 301);
+                }
+            } else if (route) {
+                route_invoke(route, &req, w);
+            } else {
+                char allow[256];
+                if (mux_fill_allow(hc->mux, req.path, allow, sizeof(allow))) {
+                    neverc_http_set_status(w, 405);
+                    neverc_http_set_header(w, "Allow", allow);
+                    neverc_http_write_string(w, "Method Not Allowed\n");
+                } else {
+                    neverc_http_set_status(w, 404);
+                    neverc_http_write_string(w, "404 page not found\n");
+                }
+            }
         }
 
         if (hc->handler_timeout_ms > 0 &&

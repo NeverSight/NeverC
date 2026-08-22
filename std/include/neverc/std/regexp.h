@@ -13,7 +13,8 @@
  *   [] [^] [[:posix:]] \d \D \w \W \s \S \n \t \r \f \v \a \b \B \A \z
  *   \xHH \x{H+} ^ $ {n} {n,m}
  * Character classes: [a-z] [^abc] []] [[:name:]] \d \D \w \W \s \S \xHH \x{H+};
- *   \s includes VT/FF; [\b] is backspace. \x{H+} in a class matches the UTF-8 rune.
+ *   \s is Go/RE2 [\t\n\f\r ] (no VT); [[:space:]] also matches VT.
+ *   [\b] is backspace. \x{H+} in a class matches the UTF-8 rune.
  * ReplaceAll expands $0 $1 ${name} $$ (Go/RE2 Expand). Unknown letter/digit
  * escapes are errors (no backreferences).
  */

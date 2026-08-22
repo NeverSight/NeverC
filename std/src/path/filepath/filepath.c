@@ -693,8 +693,15 @@ const char *neverc_filepath_rel(const char *basepath, const char *targpath,
             goto done;
         buf[0] = '.';
         buf[1] = '\0';
-    } else if (neverc_filepath_clean(t + t0, buf, buf_len) != buf) {
-        goto done;
+    } else {
+        /* Go filepath.Rel returns the already-cleaned target suffix
+         * without a second Clean. On Windows, leftover `c:` is a drive
+         * volume and Clean would rewrite it to `c:.`. */
+        size_t rest = tl - t0;
+        if (rest + 1 > buf_len)
+            goto done;
+        memcpy(buf, t + t0, rest);
+        buf[rest] = '\0';
     }
 
     /* Rel must stay relative; an absolute result would be an escape. */

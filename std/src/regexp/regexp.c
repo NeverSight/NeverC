@@ -434,6 +434,12 @@ static void cc_set_ws(charclass_t *cc) {
     cc_set(cc, '\f');
 }
 
+/* POSIX/Go [:space:] is [\t\n\v\f\r ]. Perl \s dropped VT (issue 22057). */
+static void cc_set_posix_space(charclass_t *cc) {
+    cc_set_ws(cc);
+    cc_set(cc, '\v');
+}
+
 static void cc_set_word(charclass_t *cc) {
     for (int i = 'a'; i <= 'z'; i++) cc_set(cc, i);
     for (int i = 'A'; i <= 'Z'; i++) cc_set(cc, i);
@@ -494,7 +500,7 @@ static int cc_set_posix(charclass_t *cc, const char *name, int nlen) {
         while (*p) cc_set(dst, (unsigned char)*p++);
         ok = 1;
     } else if (NCI_RE_POSIX("space")) {
-        cc_set_ws(dst);
+        cc_set_posix_space(dst);
         ok = 1;
     } else if (NCI_RE_POSIX("upper")) {
         for (int i = 'A'; i <= 'Z'; i++) cc_set(dst, i);

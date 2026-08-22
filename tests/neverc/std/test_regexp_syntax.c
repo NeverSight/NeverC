@@ -409,6 +409,17 @@ static void test_parse_charclass(void) {
     check_int("[[:digit:]] hi", (n && n->nrunes >= 2) ? n->runes[1] : -1, '9');
     neverc_regexp_syntax_free(n);
 
+    n = neverc_regexp_syntax_parse("[[:space:]]", 0, &err);
+    check_not_null("[[:space:]]", n);
+    check_int("[[:space:]] nrunes", n ? n->nrunes : 0, 4);
+    check_int("[[:space:]] tab-cr lo",
+              (n && n->nrunes >= 2) ? n->runes[0] : -1, '\t');
+    check_int("[[:space:]] tab-cr hi includes vtab",
+              (n && n->nrunes >= 2) ? n->runes[1] : -1, '\r');
+    check_int("[[:space:]] space lo",
+              (n && n->nrunes >= 4) ? n->runes[2] : -1, ' ');
+    neverc_regexp_syntax_free(n);
+
     n = neverc_regexp_syntax_parse("[[:foo:]]", 0, &err);
     check_null("[[:foo:]] unknown", n);
 

@@ -1488,18 +1488,47 @@ static int scan_int_from_file(FILE *f, int *out_int) {
         }
     }
     if (c == EOF) return 0;
-    while ((c = getc(f)) != EOF && n + 1U < sizeof(buf)) {
-        unsigned char uc = (unsigned char)c;
-        if (uc == ' ' || uc == '\t' || uc == '\n' || uc == '\r' ||
-            uc == '\f' || uc == '\v') {
-            ungetc(c, f);
-            break;
-        }
+    /* Go scanNumber leaves in-token leftovers in the stream. Slurping the
+     * whole whitespace token would drop the '8' in "08 9". */
+    c = getc(f);
+    if (c == '+' || c == '-') {
         buf[n++] = (char)c;
+        c = getc(f);
+    }
+    if (c < '0' || c > '9') {
+        if (c != EOF) ungetc(c, f);
+        return 0;
+    }
+    buf[n++] = (char)c;
+    {
+        const char *digits = "0123456789";
+        if (c == '0') {
+            int prefix = getc(f);
+            if (prefix == 'x' || prefix == 'X') {
+                buf[n++] = (char)prefix;
+                digits = "0123456789abcdefABCDEF";
+            } else if (prefix == 'b' || prefix == 'B') {
+                buf[n++] = (char)prefix;
+                digits = "01";
+            } else if (prefix == 'o' || prefix == 'O') {
+                buf[n++] = (char)prefix;
+                digits = "01234567";
+            } else {
+                if (prefix != EOF) ungetc(prefix, f);
+                digits = "01234567";
+            }
+        }
+        while (n + 1U < sizeof(buf) && (c = getc(f)) != EOF) {
+            if (c != '_' && !strchr(digits, c)) {
+                ungetc(c, f);
+                break;
+            }
+            buf[n++] = (char)c;
+        }
     }
     buf[n] = '\0';
     p = buf;
-    if (scan_int_literal(&p, &val) && scan_value_fits_int(val)) {
+    if (scan_int_literal(&p, &val) && scan_value_fits_int(val) && *p == '\0') {
         *out_int = (int)val;
         /* Same-line spaces stay for a later Scan. Consume a trailing
          * newline so Fscanln can read the next line. */

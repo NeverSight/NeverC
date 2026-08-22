@@ -393,13 +393,17 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
         p = scheme_end + 3;
         has_authority = 1;
     } else if (p[0] == '/' && p[1] == '/') {
-        /* RFC 3986 network-path reference: //host/path.
-         * ParseRequestURI only accepts absolute URIs or origin-form
-         * paths; `GET //evil.com` is not a valid request-target. */
-        if (via_request)
+        /* Go net/url: a /// prefix is a path-absolute relative-ref
+         * (and origin-form), not a network-path. `GET //evil.com` is
+         * still not a valid request-target. */
+        if (p[2] == '/') {
+            has_authority = 0;
+        } else if (via_request) {
             return -1;
-        p += 2;
-        has_authority = 1;
+        } else {
+            p += 2;
+            has_authority = 1;
+        }
     }
 
     if (has_authority) {

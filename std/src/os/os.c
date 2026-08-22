@@ -1612,6 +1612,11 @@ int neverc_os_read_dir(const char *dirname, neverc_os_dir_entry_t **entries,
         errno = ENAMETOOLONG;
         return -1;
     }
+    if (os_win_path_has_dotdot_component(diruse)) {
+        free(arr);
+        errno = EINVAL;
+        return -1;
+    }
     if (os_win_dir_star(pattern, sizeof(pattern), diruse) != 0) {
         free(arr);
         return -1;

@@ -370,14 +370,19 @@ static void test_addrport(void) {
     ASSERT_STREQ(buf, "[::1]:443");
 
     ASSERT_EQ(neverc_netip_parse_addrport("::1:8080", &ap), -1);
+    ASSERT_TRUE(!ap.addr.valid);
     ASSERT_EQ(neverc_netip_parse_addrport("192.168.1.1:65536", &ap), -1);
+    ASSERT_TRUE(!ap.addr.valid);
     ASSERT_EQ(neverc_netip_parse_addrport("[::1]:65536", &ap), -1);
+    ASSERT_TRUE(!ap.addr.valid);
     ASSERT_EQ(neverc_netip_parse_addrport("192.168.1.1:", &ap), -1);
+    ASSERT_TRUE(!ap.addr.valid);
     ASSERT_EQ(neverc_netip_parse_addrport("", &ap), -1);
     ASSERT_EQ(neverc_netip_parse_addrport(NULL, &ap), -1);
     ASSERT_EQ(neverc_netip_parse_addrport("[::1]", &ap), -1);
     ASSERT_EQ(neverc_netip_parse_addrport("192.168.1.1", &ap), -1);
     ASSERT_EQ(neverc_netip_parse_addrport("[192.168.1.1]:80", &ap), -1);
+    ASSERT_TRUE(!ap.addr.valid);
     ASSERT_EQ(neverc_netip_parse_addrport("[fe80::1%eth0]:80", &ap), 0);
     ASSERT_EQ(ap.port, 80);
     neverc_netip_addrport_string(&ap, buf, sizeof(buf));
@@ -386,6 +391,7 @@ static void test_addrport(void) {
     neverc_netip_addrport_string(&ap, buf, sizeof(buf));
     ASSERT_STREQ(buf, "[::ffff:192.168.1.1]:80");
     ASSERT_EQ(neverc_netip_parse_addrport("::ffff:192.168.1.1:80", &ap), -1);
+    ASSERT_TRUE(!ap.addr.valid);
     ASSERT_EQ(neverc_netip_parse_addrport("192.168.1.1:00080", &ap), 0);
     ASSERT_EQ(ap.port, 80);
     ASSERT_EQ(neverc_netip_parse_addrport("[::1]:00080", &ap), 0);

@@ -745,6 +745,9 @@ static void test_posix_classes(void) {
     check_bool("[[:alpha:]] Q", neverc_regexp_match_string("[[:alpha:]]", "Q"), 1);
     check_bool("[[:alpha:]] 9 no", neverc_regexp_match_string("[[:alpha:]]", "9"), 0);
     check_bool("[[:space:]] formfeed", neverc_regexp_match_string("[[:space:]]", "\f"), 1);
+    check_bool("[[:space:]] vtab", neverc_regexp_match_string("[[:space:]]", "\v"), 1);
+    check_bool("[[:^space:]] vtab no",
+               neverc_regexp_match_string("[[:^space:]]", "\v"), 0);
     check_bool("[[:word:]] _", neverc_regexp_match_string("[[:word:]]", "_"), 1);
     check_bool("[^[:digit:]] a", neverc_regexp_match_string("[^[:digit:]]", "a"), 1);
     check_bool("[^[:digit:]] 3 no", neverc_regexp_match_string("[^[:digit:]]", "3"), 0);

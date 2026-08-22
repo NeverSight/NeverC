@@ -453,6 +453,12 @@ static void test_request_uri(void) {
     ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "*?q"), -1);
     ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "foo"), -1);
     ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "//evil.com/phish"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "///foo"), 0);
+    ASSERT_STR_EQ(u.path, "///foo");
+    ASSERT_STR_EQ(u.host, "");
+    ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, "///foo?q=1"), 0);
+    ASSERT_STR_EQ(u.path, "///foo");
+    ASSERT_STR_EQ(u.raw_query, "q=1");
     ASSERT_INT_EQ(neverc_url_parse_request_uri(
         &u, "https://example.com/path#frag"), -1);
     ASSERT_INT_EQ(neverc_url_parse_request_uri(&u, ""), -1);

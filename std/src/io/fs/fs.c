@@ -195,6 +195,28 @@ static int fs_win_prepare_path(const char *path, char *dst, size_t dst_cap,
     return 0;
 }
 
+static int fs_win_path_has_dotdot_component(const char *path) {
+    const char *p = path;
+    while (*p) {
+        const char *start = p;
+        while (*p && *p != '\\' && *p != '/')
+            p++;
+        size_t n = (size_t)(p - start);
+        if (n == 2 && start[0] == '.' && start[1] == '.')
+            return 1;
+        size_t stripped = n;
+        while (stripped > 0 &&
+               (start[stripped - 1] == ' ' || start[stripped - 1] == '.'))
+            stripped--;
+        if (stripped != n && stripped == 2 &&
+            start[0] == '.' && start[1] == '.')
+            return 1;
+        if (*p)
+            p++;
+    }
+    return 0;
+}
+
 static int fs_win_is_drive_cwd(const char *dir, size_t n) {
     return n == 2 &&
            ((dir[0] >= 'A' && dir[0] <= 'Z') ||
@@ -575,6 +597,10 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
     const char *diruse;
     if (fs_win_prepare_path(path, prepared, sizeof(prepared), &diruse) != 0) {
         errno = ENAMETOOLONG;
+        return -1;
+    }
+    if (fs_win_path_has_dotdot_component(diruse)) {
+        errno = EINVAL;
         return -1;
     }
     if (fs_win_dir_star(pattern, sizeof(pattern), diruse) != 0)

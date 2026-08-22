@@ -476,7 +476,9 @@ static int add_posix_class(parser_t *p, neverc_regexp_syntax_node_t *n,
         return 1;
     }
     if (NCI_SY_EQ("space"))
-        return add_escape_class(p, n, 's');
+        /* POSIX/Go [:space:] is [\t-\r ] (includes VT). Do not reuse \s. */
+        return add_rune(p, n, '\t') && add_rune(p, n, '\r') &&
+               add_rune(p, n, ' ') && add_rune(p, n, ' ');
     if (NCI_SY_EQ("upper"))
         return add_rune(p, n, 'A') && add_rune(p, n, 'Z');
     if (NCI_SY_EQ("word"))

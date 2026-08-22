@@ -550,7 +550,8 @@ static int h2_client_decode_pending(neverc_h2_client_t *client,
         decoded, H2_CLIENT_MAX_DECODED_HEADERS, &count);
     int result = decode_result;
     int was_response_started = stream ? stream->response_started : 0;
-    if (result == 0 && stream)
+    int already_done = stream && stream->done;
+    if (result == 0 && stream && !already_done)
         result = h2_client_store_decoded_headers(
             client, stream, decoded, count);
     if (result == 0 && stream && was_response_started && !end_stream)
@@ -567,6 +568,10 @@ static int h2_client_decode_pending(neverc_h2_client_t *client,
     }
     h2_client_clear_pending(client);
     if (decode_result < 0) return -1;
+    /* RFC 9113 §5.1 / §8.1: HEADERS after remote END_STREAM is not a
+     * trailer. Keep HPACK aligned and leave the existing stream error. */
+    if (already_done)
+        return 0;
     if (decode_result > 0) {
         if (!stream) return -1;
         stream->error = "HTTP/2 header list exceeded decoder limit";
@@ -866,6 +871,9 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
             nc_mutex_unlock(&client->state_lock);
             return -1;
         }
+        h2_client_stream_t *hdr_stream =
+            h2_client_find_stream(client, header->stream_id);
+        int already_done = hdr_stream && hdr_stream->done;
         if (h2_client_append_pending(client, fragment,
                                      fragment_length) != 0) {
             nc_mutex_unlock(&client->state_lock);
@@ -882,6 +890,12 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
             result = h2_client_decode_pending(
                 client, client->pending_end_stream);
         nc_mutex_unlock(&client->state_lock);
+        if (already_done && result == 0) {
+            (void)h2_client_write_u32(client, NC_H2_FRAME_RST_STREAM,
+                                      header->stream_id,
+                                      NC_H2_STREAM_CLOSED);
+            return 0;
+        }
         return result;
     }
     case NC_H2_FRAME_CONTINUATION: {
@@ -899,10 +913,21 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
             return -1;
         }
         int result = 0;
-        if (header->flags & NC_H2_FLAG_END_HEADERS)
+        int already_done = 0;
+        if (header->flags & NC_H2_FLAG_END_HEADERS) {
+            h2_client_stream_t *cont_stream =
+                h2_client_find_stream(client, header->stream_id);
+            already_done = cont_stream && cont_stream->done;
             result = h2_client_decode_pending(
                 client, client->pending_end_stream);
+        }
         nc_mutex_unlock(&client->state_lock);
+        if (already_done && result == 0) {
+            (void)h2_client_write_u32(client, NC_H2_FRAME_RST_STREAM,
+                                      header->stream_id,
+                                      NC_H2_STREAM_CLOSED);
+            return 0;
+        }
         return result;
     }
     case NC_H2_FRAME_DATA: {
@@ -938,6 +963,20 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
                     client, NC_H2_FRAME_WINDOW_UPDATE, 0, header->length);
             return 0;
         }
+        if (stream->done) {
+            /* RFC 9113 §5.1 / §6.1: DATA after remote END_STREAM.
+             * Refund connection flow control and leave the existing error. */
+            client->conn_recv_window -= (int32_t)header->length;
+            client->conn_recv_window += (int32_t)header->length;
+            nc_mutex_unlock(&client->state_lock);
+            if (header->length > 0)
+                (void)h2_client_write_u32(
+                    client, NC_H2_FRAME_WINDOW_UPDATE, 0, header->length);
+            (void)h2_client_write_u32(client, NC_H2_FRAME_RST_STREAM,
+                                      header->stream_id,
+                                      NC_H2_STREAM_CLOSED);
+            return 0;
+        }
         int length_invalid = stream->body_forbidden && data_length > 0;
         if (!length_invalid && stream->content_length_seen &&
             (uint64_t)data_length >
@@ -946,7 +985,7 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
                          ? (uint64_t)stream->received_body_size
                          : stream->content_length))
             length_invalid = 1;
-        int invalid = stream->done || !stream->response_started ||
+        int invalid = !stream->response_started ||
             stream->recv_window < 0 ||
             header->length > (uint32_t)stream->recv_window ||
             data_length > client->config.max_response_body_size ||

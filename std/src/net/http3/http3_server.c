@@ -855,6 +855,11 @@ static int h3_send_response(h3_conn_t *connection,
                 result = -1;
                 break;
             }
+            if (!neverc_h3_trailer_name_allowed(lower_names[i])) {
+                free(lower_names[i]);
+                lower_names[i] = NULL;
+                continue;
+            }
             headers[count++] = (neverc_qpack_header_t){
                 lower_names[i], writer->trailer_values[i]};
         }

@@ -33,6 +33,7 @@ static void check_null(const char *name, const void *ptr) {
 static int g_smtp_port = 0;
 static volatile int g_smtp_running = 1;
 static volatile int g_smtp_ehlo_starttls = 0;
+static volatile int g_smtp_login_leftover = 0;
 
 #ifdef _WIN32
 static DWORD WINAPI mock_smtp_server(LPVOID arg) {
@@ -114,6 +115,11 @@ static void *mock_smtp_server(void *arg) {
                     : "535 invalid credentials\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
             } else if (strncmp(buf, "AUTH LOGIN", 10) == 0) {
+                if (g_smtp_login_leftover) {
+                    const char *resp = "334 VXNlcm5hbWU6\r\n235 leftover\r\n";
+                    neverc_tcp_write(conn, resp, strlen(resp));
+                    continue;
+                }
                 const char *resp = "334 VXNlcm5hbWU6\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
                 n = neverc_tcp_read(conn, buf, sizeof(buf) - 1);
@@ -400,6 +406,10 @@ static void test_smtp_reject_injection(void) {
                neverc_smtp_mail(c, "a@b@c.com") == -1);
     check_true("hello unclosed ipv6 literal rejected",
                neverc_smtp_hello(c, "[2001:db8::1") == -1);
+    check_true("hello leftover after literal rejected",
+               neverc_smtp_hello(c, "[2001:db8::1]leftover") == -1);
+    check_true("mail leftover after literal rejected",
+               neverc_smtp_mail(c, "user@[192.168.1.1]smuggle") == -1);
     check_true("mail recipient list rejected",
                neverc_smtp_mail(c, "a@b.com,c@d.com") == -1);
     check_true("rcpt crlf rejected",
@@ -658,6 +668,21 @@ static void test_smtp_response_leftover(void) {
     check_true("RCPT consumes leftover 500",
                neverc_smtp_rcpt(c, "victim@example.com") == -1);
     neverc_smtp_close(c);
+
+    g_smtp_login_leftover = 1;
+    c = neverc_smtp_dial(addr, &err);
+    check_true("dial for AUTH LOGIN leftover", c != NULL);
+    if (c) {
+        check_true("EHLO before AUTH LOGIN leftover",
+                   neverc_smtp_hello(c, "test.client") == 0);
+        check_true("AUTH LOGIN leftover after 334 rejected",
+                   neverc_smtp_auth(c, NEVERC_SMTP_AUTH_LOGIN,
+                                    "user", "pass") == -1);
+        check_true("MAIL after AUTH LOGIN leftover is dead",
+                   neverc_smtp_mail(c, "ok@example.com") == -1);
+        neverc_smtp_close(c);
+    }
+    g_smtp_login_leftover = 0;
 }
 
 int main(void) {

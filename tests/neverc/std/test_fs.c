@@ -222,6 +222,27 @@ static void test_read_dir(void) {
         RemoveDirectoryA(parent);
     }
     {
+        char parent[1024], keep[1200], victim[1200], escape[1400];
+        snprintf(parent, sizeof(parent), "%s\\neverc_fs_rd_dotdot_%lu",
+                 tmpdir, (unsigned long)GetCurrentProcessId());
+        CreateDirectoryA(parent, NULL);
+        snprintf(keep, sizeof(keep), "%s\\keep", parent);
+        snprintf(victim, sizeof(victim), "%s\\victim", parent);
+        CreateDirectoryA(keep, NULL);
+        CreateDirectoryA(victim, NULL);
+        snprintf(escape, sizeof(escape), "\\\\?\\%s\\victim\\..", parent);
+        entries = NULL;
+        count = 0;
+        errno = 0;
+        rc = neverc_fs_read_dir(escape, &entries, &count);
+        check("readdir_extended_dotdot_rejected", rc == -1);
+        check("readdir_extended_dotdot_einval", errno == EINVAL);
+        neverc_fs_free_entries(entries);
+        RemoveDirectoryA(keep);
+        RemoveDirectoryA(victim);
+        RemoveDirectoryA(parent);
+    }
+    {
         /* \??\ is an NT prefix, not a FindFirstFile wildcard. Listing an
          * existing directory through it must succeed once '?' is skipped. */
         char ntpath[1200];

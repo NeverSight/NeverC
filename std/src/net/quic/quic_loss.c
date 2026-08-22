@@ -434,6 +434,8 @@ void neverc_quic_loss_discard_space(quic_loss_detector_t *ld, int space) {
         pkt = next;
     }
     memset(&ld->spaces[space], 0, sizeof(ld->spaces[space]));
+    /* RFC 9002 §6.4 / A.11 OnPacketNumberSpaceDiscarded: pto_count = 0. */
+    ld->pto_count = 0;
 }
 
 void neverc_quic_loss_destroy(quic_loss_detector_t *ld) {

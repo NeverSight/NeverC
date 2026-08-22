@@ -2827,6 +2827,24 @@ static void h2_run_adversarial_response_child(
         _exit(0);
     }
 
+    if (response_kind == 11) {
+        /* HEADERS+END_STREAM then leftover DATA must not clobber status. */
+        uint8_t final_headers[10] = {
+            0, 0, 1, NC_H2_FRAME_HEADERS,
+            (uint8_t)(NC_H2_FLAG_END_HEADERS | NC_H2_FLAG_END_STREAM),
+            0, 0, 0, 1, 0x88};
+        uint8_t extra_data[10] = {
+            0, 0, 1, NC_H2_FRAME_DATA, 0, 0, 0, 0, 1, 'x'};
+        if (sock_write_all(fd, final_headers, sizeof(final_headers)) != 0 ||
+            sock_write_all(fd, extra_data, sizeof(extra_data)) != 0)
+            _exit(1);
+        char drain[256];
+        while (read(fd, drain, sizeof(drain)) > 0) { }
+        neverc_tcp_close(connection);
+        neverc_tcp_listener_close(listener);
+        _exit(0);
+    }
+
     uint8_t response_header[NC_H2_FRAME_HEADER_SIZE] = {
         0, 0, 1, NC_H2_FRAME_HEADERS, NC_H2_FLAG_END_HEADERS,
         0, 0, 0, 1};
@@ -2934,6 +2952,66 @@ TEST(h2_client_invalid_trailer_emits_terminal_error) {
     ASSERT_EQ(second, 1);
     ASSERT_EQ(terminal_type, NEVERC_H2_CLIENT_EVENT_ERROR);
     ASSERT_EQ(terminal_error_code, NC_H2_PROTOCOL_ERROR);
+}
+
+TEST(h2_client_data_after_end_stream_keeps_status) {
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    ASSERT_TRUE(listener != NULL);
+    neverc_tcp_addr_t address;
+    ASSERT_EQ(neverc_tcp_listener_addr(listener, &address), 0);
+
+    pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0)
+        h2_run_adversarial_response_child(listener, 11, -1);
+    neverc_tcp_listener_close(listener);
+
+    char dial_address[64];
+    snprintf(dial_address, sizeof(dial_address), "127.0.0.1:%d",
+             address.port);
+    neverc_h2_client_config_t config = neverc_h2_client_config_default();
+    config.timeout_ms = 3000;
+    neverc_h2_client_t *client = neverc_h2_client_dial(
+        dial_address, "localhost", 0, &config, &error);
+    neverc_h2_client_stream_t *stream = client
+        ? neverc_h2_client_stream_open(client, NULL, "GET", "/",
+                                       NULL, 0U, 1, &error)
+        : NULL;
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *context = background
+        ? neverc_context_with_timeout(background, 2000, NULL) : NULL;
+    neverc_h2_client_event_t *headers = NULL;
+    neverc_h2_client_event_t *terminal = NULL;
+    int first = stream && context
+        ? neverc_h2_client_stream_receive(stream, context, &headers) : -1;
+    int second = first == 1
+        ? neverc_h2_client_stream_receive(stream, context, &terminal) : -1;
+    int header_type = headers ? (int)headers->type : -1;
+    int header_status = headers ? headers->status_code : -1;
+    int terminal_type = terminal ? (int)terminal->type : -1;
+    const char *terminal_error = terminal ? terminal->error : "missing";
+    uint32_t terminal_error_code = terminal ? terminal->error_code : 0xffffU;
+
+    if (!client)
+        kill(child, SIGTERM);
+    neverc_h2_client_event_free(headers);
+    neverc_h2_client_event_free(terminal);
+    neverc_context_free(context);
+    neverc_context_free(background);
+    neverc_h2_client_stream_free(stream);
+    neverc_h2_client_free(client);
+    int status = 0;
+    (void)h2_reap_child(child, &status);
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    ASSERT_EQ(first, 1);
+    ASSERT_EQ(header_type, NEVERC_H2_CLIENT_EVENT_HEADERS);
+    ASSERT_EQ(header_status, 200);
+    ASSERT_EQ(second, 1);
+    ASSERT_EQ(terminal_type, NEVERC_H2_CLIENT_EVENT_END);
+    ASSERT_TRUE(terminal_error == NULL);
+    ASSERT_EQ(terminal_error_code, 0U);
 }
 
 TEST(h2_client_header_list_size_is_per_block) {
@@ -3561,6 +3639,7 @@ int main(void) {
     run_test_h2c_headers_priority_self_dependency_keeps_hpack();
     run_test_h2c_connection_window_ignores_stream_initial_size();
     run_test_h2_client_invalid_trailer_emits_terminal_error();
+    run_test_h2_client_data_after_end_stream_keeps_status();
     run_test_h2_client_header_list_size_is_per_block();
     run_test_h2_client_queue_overflow_emits_terminal_error();
     run_test_h2_client_rejects_server_enable_push();
