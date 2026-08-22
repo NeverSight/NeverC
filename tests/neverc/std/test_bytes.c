@@ -176,7 +176,8 @@ static void test_transform(void) {
     check_bytes("to_title separators", title, outlen, "One-Two.Three");
     free(title);
 
-    title = neverc_bytes_to_title((const uint8_t *)"a\xE4\xB8\xADb", 5, &outlen);
+    /* Split hex escapes so `\xAD` is not parsed as `\xADb`. */
+    title = neverc_bytes_to_title((const uint8_t *)"a" "\xE4\xB8\xAD" "b", 5, &outlen);
     check_bytes("to_title utf8 letter not sep", title, outlen,
                 "A" "\xE4\xB8\xAD" "b");
     free(title);
