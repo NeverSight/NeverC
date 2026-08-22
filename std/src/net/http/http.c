@@ -1297,6 +1297,21 @@ static int mux_pattern_ends_dollar(const char *pat) {
            pat[n - 1] == '}';
 }
 
+/* Go ServeMux exactMatch: the last segment is "multi" only for a trailing
+ * slash (anonymous `{...}`) or `{name...}`. `{$}` is a literal empty
+ * segment, not multi. An exact current match must not slash-redirect. */
+static int mux_pattern_last_is_multi(const char *pat) {
+    const char *close;
+    if (!pat || !pat[0]) return 0;
+    close = pat + strlen(pat);
+    if (close[-1] == '/')
+        return 1;
+    if (close[-1] != '}')
+        return 0;
+    return close - pat >= 5 && close[-4] == '.' && close[-3] == '.' &&
+           close[-2] == '.';
+}
+
 static int mux_better(int path_rank, int method_rank, size_t plen,
                       int best_path, int best_method, size_t best_len) {
     if (path_rank != best_path) return path_rank > best_path;
@@ -1452,6 +1467,12 @@ static int mux_slash_redirect(neverc_http_mux_t *mux, const char *method,
     memset(&ignored, 0, sizeof(ignored));
     slash = mux_match_ex(mux, method, slashed, &ignored);
     if (!slash)
+        return 0;
+    /* Go matchOrRedirect: an exact current match (`/posts`, `{id}`)
+     * wins over a more-specific trailing-slash sibling (`/posts/{$}`,
+     * `{id}/`). `{$}`-only and prefix-only routes stay inexact, so
+     * `/posts` still 301s to `/posts/`. */
+    if (current && !mux_pattern_last_is_multi(current->path_pattern))
         return 0;
     /* Go {$} is an exact `/path/` match, so `/path` slash-redirects to
      * `/path/`. Do not treat `{$}` as a reason to skip the redirect. */

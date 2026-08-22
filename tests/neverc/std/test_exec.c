@@ -442,6 +442,38 @@ static void test_look_path(void) {
         ASSERT_TRUE(p == NULL);
         DeleteFileA("neverc_dotdot_hijack.exe");
         RemoveDirectoryA("neverc_path_dd");
+
+        /* Go filepath.SplitList: quoted PATH entries may contain ';'. */
+        CreateDirectoryA("neverc_lp;dir", NULL);
+        pf = fopen("neverc_lp;dir\\neverc_semi_hit.exe", "wb");
+        ASSERT_TRUE(pf != NULL);
+        if (pf) {
+            fputs("MZ", pf);
+            fclose(pf);
+        }
+        SetEnvironmentVariableA("PATH", "\"neverc_lp;dir\"");
+        p = neverc_exec_look_path("neverc_semi_hit.exe", buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+        {
+            char abs_semi[MAX_PATH];
+            DWORD alen = GetFullPathNameA("neverc_lp;dir", sizeof(abs_semi),
+                                          abs_semi, NULL);
+            if (alen > 0 && alen < sizeof(abs_semi)) {
+                char quoted[MAX_PATH + 8];
+                snprintf(quoted, sizeof(quoted), "\"%s\"", abs_semi);
+                SetEnvironmentVariableA("PATH", quoted);
+                p = neverc_exec_look_path("neverc_semi_hit.exe", buf,
+                                          sizeof(buf));
+                ASSERT_TRUE(p != NULL);
+            }
+        }
+        DeleteFileA("neverc_lp;dir\\neverc_semi_hit.exe");
+        RemoveDirectoryA("neverc_lp;dir");
+
+        /* Go validVolumeNameLen: `..` inside a UNC volume is not IsAbs. */
+        p = neverc_exec_look_path("\\\\i\\..\\c$\\neverc_missing.exe",
+                                  buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
         if (n > 0 && n < sizeof(old_path))
             SetEnvironmentVariableA("PATH", old_path);
         else

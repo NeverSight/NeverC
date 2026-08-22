@@ -4102,6 +4102,12 @@ static void mux_posts_exact_handler(neverc_http_request_t *req,
     neverc_http_write_string(w, "posts_exact");
 }
 
+static void mux_posts_list_handler(neverc_http_request_t *req,
+                                    neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_string(w, "posts_list");
+}
+
 static void test_path_params(void) {
     printf("[path_params]\n");
 
@@ -4302,6 +4308,35 @@ static void test_path_params(void) {
                strstr(buf, "Location: /posts/") != NULL &&
                strstr(buf, "405") == NULL, 1);
     stop_test_server(pid);
+
+    /* Go: registering `/posts` beside `/posts/{$}` turns off the
+     * `/posts` → `/posts/` redirect. The no-slash route is exact. */
+    port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+    pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "GET /posts", mux_posts_list_handler);
+        neverc_http_mux_handle(mux, "GET /posts/{$}",
+                                mux_posts_exact_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+    n = do_http_request(port,
+        "GET /posts HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("{$} sibling keeps exact /posts",
+               n > 0 && strstr(buf, "posts_list") != NULL &&
+               strstr(buf, "301") == NULL, 1);
+    n = do_http_request(port,
+        "GET /posts/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("{$} sibling still matches /posts/",
+               n > 0 && strstr(buf, "posts_exact") != NULL, 1);
+    stop_test_server(pid);
 }
 
 static void mux_items_handler(neverc_http_request_t *req,
@@ -4448,6 +4483,35 @@ static void test_mux_method_and_slash(void) {
         check_int("mux {path...} overflow not path=null",
                   n > 0 && strstr(buf, "path=null") == NULL, 1);
     }
+    stop_test_server(pid);
+
+    /* Go: `{id}` is exact, so a sibling `{id}/` must not steal `/items/42`. */
+    port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+    pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "GET /items/{id}", mux_items_handler);
+        neverc_http_mux_handle(mux, "GET /items/{id}/",
+                                mux_item_subtree_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+    n = do_http_request(port,
+        "GET /items/42 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mux {id} sibling keeps exact item",
+              n > 0 && strstr(buf, "item") != NULL &&
+              strstr(buf, "301") == NULL &&
+              strstr(buf, "id=") == NULL, 1);
+    n = do_http_request(port,
+        "GET /items/42/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mux {id}/ sibling still matches slash",
+              n > 0 && strstr(buf, "id=42") != NULL, 1);
     stop_test_server(pid);
 }
 

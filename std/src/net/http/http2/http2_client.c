@@ -519,10 +519,10 @@ static int h2_client_store_decoded_headers(
         stream->trailer_count = regular_count;
         stream->received_trailers = 1;
     } else {
-        if (status_code == 204 && content_length_count != 0) {
-            h2_client_free_headers(stored, regular_count);
-            return -1;
-        }
+        /* RFC 9113 §8.1.1 / Go handleResponse: 204 MAY carry
+         * content-length (even nonzero) when there is no DATA. The
+         * body_forbidden path below ignores CL and rejects non-empty
+         * DATA, matching 304 and HEAD. */
         stream->headers = stored;
         stream->header_count = regular_count;
         stream->response_started = 1;

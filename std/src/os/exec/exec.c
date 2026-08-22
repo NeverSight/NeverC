@@ -539,73 +539,90 @@ static int exec_win_is_drive_cwd(const char *dir, size_t n) {
            dir[1] == ':';
 }
 
-/* Win32 strips trailing '.' / ' ' from a component, but keeps "." and
- * ".." (including those plus trailing spaces). Naive strip turns ".."
- * into "" so PATH=foo\.. is searched as a real directory; ". " becomes
- * cwd and PATH=". " is cwd exe hijacking. */
-static size_t exec_win_component_base_len(const char *s, size_t n) {
-    size_t end = n;
-    while (end > 0 && (s[end - 1] == ' ' || s[end - 1] == '.')) {
-        if (end == 1 && s[0] == '.')
-            break;
-        if (end == 2 && s[0] == '.' && s[1] == '.')
-            break;
-        end--;
-    }
-    return end;
+static int exec_win_is_sep(char c) {
+    return c == '\\' || c == '/';
 }
 
-/* Go filepath.IsAbs, plus \??\ (NT native). Drive-relative "C:foo",
- * current-drive "\foo", and ".\bin" are not absolute (Go ErrDot). */
-static int exec_win_path_is_abs(const char *dir, size_t n) {
-    if (n >= 3 && dir[1] == ':' && (dir[2] == '\\' || dir[2] == '/'))
-        return 1;
-    if (n >= 2 && (dir[0] == '\\' || dir[0] == '/') &&
-        (dir[1] == '\\' || dir[1] == '/'))
-        return 1;
-    if (n >= 4 && (dir[0] == '\\' || dir[0] == '/') &&
-        dir[1] == '?' && dir[2] == '?' &&
-        (dir[3] == '\\' || dir[3] == '/'))
-        return 1;
+static int exec_win_prefix_fold(const char *s, size_t slen,
+                                const char *prefix, size_t plen) {
+    size_t i;
+    if (slen < plen) return 0;
+    for (i = 0; i < plen; i++) {
+        char a = s[i], b = prefix[i];
+        if (exec_win_is_sep(b)) {
+            if (!exec_win_is_sep(a)) return 0;
+            continue;
+        }
+        if (a >= 'a' && a <= 'z') a = (char)(a - 32);
+        if (b >= 'a' && b <= 'z') b = (char)(b - 32);
+        if (a != b) return 0;
+    }
+    return 1;
+}
+
+static size_t exec_win_unc_end(const char *path, size_t n, size_t prefix) {
+    int count = 0;
+    size_t i;
+    for (i = prefix; i < n; i++) {
+        if (exec_win_is_sep(path[i])) {
+            count++;
+            if (count == 2) return i;
+        }
+    }
+    return n;
+}
+
+/* Go validVolumeNameLen: a volume that contains ".." is not a volume. */
+static size_t exec_win_valid_vol(const char *path, size_t n) {
+    size_t i = 0;
+    while (i < n) {
+        size_t start = i;
+        while (i < n && !exec_win_is_sep(path[i])) i++;
+        if (i - start == 2 && path[start] == '.' && path[start + 1] == '.')
+            return 0;
+        if (i < n) i++;
+    }
+    return n;
+}
+
+/* Go filepath.VolumeNameLen + IsAbs. Drive-relative "C:foo", current-drive
+ * "\foo", and ".\bin" are not absolute. UNC / \\?\ stay absolute after a
+ * trailing `..` as long as `..` is not inside the volume (`\\i\..\c$`). */
+static size_t exec_win_volume_len(const char *path, size_t n) {
+    size_t i;
+    if (n >= 2 && path[1] == ':') return 2;
+    if (n == 0 || !exec_win_is_sep(path[0])) return 0;
+    if (exec_win_prefix_fold(path, n, "\\\\.", 3) ||
+        exec_win_prefix_fold(path, n, "\\\\?", 3) ||
+        exec_win_prefix_fold(path, n, "\\??", 3)) {
+        if (n == 3) return 3;
+        if (n >= 7 && exec_win_prefix_fold(path + 4, n - 4, "UNC", 3))
+            return exec_win_valid_vol(path, exec_win_unc_end(path, n, 8));
+        for (i = 0; i < n - 4; i++) {
+            if (exec_win_is_sep(path[4 + i]))
+                return exec_win_valid_vol(path, 4 + i);
+        }
+        return exec_win_valid_vol(path, n);
+    }
+    if (n >= 2 && exec_win_is_sep(path[1]))
+        return exec_win_valid_vol(path, exec_win_unc_end(path, n, 2));
     return 0;
 }
 
+static int exec_win_path_is_abs(const char *dir, size_t n) {
+    size_t vol = exec_win_volume_len(dir, n);
+    if (vol == 0) return 0;
+    if (n >= 2 && exec_win_is_sep(dir[0]) && exec_win_is_sep(dir[1]))
+        return 1;
+    if (n >= 4 && exec_win_is_sep(dir[0]) && dir[1] == '?' &&
+        dir[2] == '?' && exec_win_is_sep(dir[3]))
+        return 1;
+    return vol < n && exec_win_is_sep(dir[vol]);
+}
+
 static int exec_win_skip_path_dir(const char *dir, size_t dlen) {
-    size_t i = 0;
-    int drive_abs = 0;
-    int saw_dotdot = 0;
-    int saw_real = 0;
     if (dlen == 0) return 1;
-    /* Leftover Go ErrDot: relative PATH ("bin", ".\\bin"), drive-relative
-     * "C:foo", and current-drive "\\Windows" are not IsAbs. */
-    if (!exec_win_path_is_abs(dir, dlen)) return 1;
-    if (dlen >= 2 && dir[1] == ':') {
-        drive_abs = 1;
-        i = 2;
-    }
-    while (i < dlen) {
-        while (i < dlen && (dir[i] == '\\' || dir[i] == '/')) i++;
-        if (i >= dlen) break;
-        size_t start = i;
-        size_t blen;
-        while (i < dlen && dir[i] != '\\' && dir[i] != '/') i++;
-        blen = exec_win_component_base_len(dir + start, i - start);
-        if (blen == 0)
-            continue; /* spaces-only / stripped-empty: not a real dir */
-        if (blen == 1 && dir[start] == '.')
-            continue;
-        if (blen == 2 && dir[start] == '.' && dir[start + 1] == '.') {
-            saw_dotdot = 1;
-            continue;
-        }
-        saw_real = 1;
-    }
-    /* Go filepath.Clean("foo\\..") is "." (cwd). UNC "\\i\\..\\c$" is not
-     * IsAbs (invalid volume). Absolute "C:\\Windows\\.." is still searched. */
-    if (saw_dotdot && !drive_abs) return 1;
-    if (saw_real) return 0;
-    /* Only dots and slashes: ".\\" is cwd, "C:\\" is the volume root. */
-    return drive_abs ? 0 : 1;
+    return !exec_win_path_is_abs(dir, dlen);
 }
 
 /* Search PATH only. SearchPathA(NULL) also tries the application directory
@@ -618,13 +635,30 @@ static const char *exec_look_in_win_path(const char *file, const char *path_env,
         return NULL;
     p = path_env;
     for (;;) {
-        const char *semi = strchr(p, ';');
-        size_t dlen = semi ? (size_t)(semi - p) : strlen(p);
-        const char *dir = p;
-        if (dlen >= 2 && dir[0] == '"' && dir[dlen - 1] == '"') {
-            dir++;
-            dlen -= 2;
+        /* Go filepath.SplitList: do not split on ';' inside quotes, then
+         * drop every '"' so `PATH="C:\foo;bar";C:\Windows` stays two
+         * entries. */
+        const char *q = p;
+        const char *dir;
+        size_t dlen, i, o;
+        int in_quote = 0;
+        char entry[32768];
+        while (*q) {
+            if (*q == '"') in_quote = !in_quote;
+            else if (*q == ';' && !in_quote) break;
+            q++;
         }
+        dlen = (size_t)(q - p);
+        if (dlen >= sizeof(entry))
+            dlen = sizeof(entry) - 1;
+        o = 0;
+        for (i = 0; i < dlen; i++) {
+            if (p[i] != '"')
+                entry[o++] = p[i];
+        }
+        entry[o] = '\0';
+        dir = entry;
+        dlen = o;
         if (dlen > 0 && dlen <= (size_t)INT_MAX &&
             !exec_win_skip_path_dir(dir, dlen)) {
             size_t flen = strlen(file);
@@ -645,8 +679,8 @@ static const char *exec_look_in_win_path(const char *file, const char *path_env,
                 if (rc == -2) return NULL;
             }
         }
-        if (!semi) break;
-        p = semi + 1;
+        if (*q == '\0') break;
+        p = q + 1;
     }
     return NULL;
 }

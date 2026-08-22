@@ -2976,6 +2976,25 @@ static void h2_run_adversarial_response_child(
         _exit(0);
     }
 
+    if (response_kind == 14 || response_kind == 15) {
+        /* RFC 9113 §8.1.1: 204 MAY carry content-length with no DATA.
+         * Kind 14: headers+ES only. Kind 15: headers then a DATA body. */
+        neverc_hpack_header_t headers[2] = {
+            {.name = ":status", .value = "204"},
+            {.name = "content-length", .value = "0"},
+        };
+        if (h2_send_headers(fd, headers, 2, response_kind == 14) != 0)
+            _exit(1);
+        if (response_kind == 15 &&
+            h2_send_data_end(fd, "x", 1, 1) != 0)
+            _exit(1);
+        char drain[256];
+        while (read(fd, drain, sizeof(drain)) > 0) { }
+        neverc_tcp_close(connection);
+        neverc_tcp_listener_close(listener);
+        _exit(0);
+    }
+
     uint8_t response_header[NC_H2_FRAME_HEADER_SIZE] = {
         0, 0, 1, NC_H2_FRAME_HEADERS, NC_H2_FLAG_END_HEADERS,
         0, 0, 0, 1};
@@ -3198,6 +3217,22 @@ TEST(h2_client_do_head_allows_content_length_without_body) {
 
 TEST(h2_client_do_get_rejects_content_length_without_body) {
     neverc_h2_response_t *response = h2_client_do_kind(12, "GET");
+    ASSERT_TRUE(response != NULL);
+    ASSERT_TRUE(response->error != NULL);
+    neverc_h2_response_free(response);
+}
+
+TEST(h2_client_do_get_204_allows_content_length_without_body) {
+    neverc_h2_response_t *response = h2_client_do_kind(14, "GET");
+    ASSERT_TRUE(response != NULL);
+    ASSERT_TRUE(response->error == NULL);
+    ASSERT_EQ(response->status_code, 204);
+    ASSERT_EQ(response->body_length, 0);
+    neverc_h2_response_free(response);
+}
+
+TEST(h2_client_do_get_204_rejects_data_body) {
+    neverc_h2_response_t *response = h2_client_do_kind(15, "GET");
     ASSERT_TRUE(response != NULL);
     ASSERT_TRUE(response->error != NULL);
     neverc_h2_response_free(response);
