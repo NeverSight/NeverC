@@ -321,10 +321,11 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
 
         /* Keep one byte free so scanner_text() can always expose a
          * NUL-terminated token, including data returned together with EOF.
-         * Keep one additional byte for probing whether a max-sized token is
-         * followed by EOF or more data. */
+         * The data limit is MaxScanTokenSize itself (Go): a 64KiB line plus
+         * its newline must not fit. A trailing probe byte used to accept that
+         * pair and return a max-sized token instead of ErrTooLong. */
         if (s->buf_len >= s->buf_cap - 1) {
-            size_t max_cap = (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE + 2;
+            size_t max_cap = (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE + 1;
             if (s->buf_cap >= max_cap) {
                 bufio_scanner_fail(s, NEVERC_BUFIO_ERR_TOO_LONG);
                 return 0;

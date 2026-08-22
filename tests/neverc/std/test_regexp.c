@@ -480,6 +480,17 @@ static void test_repeat_braces(void) {
                re && neverc_regexp_match(re, "a{3"), 1);
     neverc_regexp_free(re);
 
+    check_bool("a{3, unclosed is literal",
+               neverc_regexp_match_string("a{3,", "a{3,"), 1);
+    check_bool("a{3,x} is literal",
+               neverc_regexp_match_string("a{3,x}", "a{3,x}"), 1);
+    err = NULL;
+    re = neverc_regexp_compile("a{2147483648", &err);
+    check_bool("unclosed overflow {n compiles", re != NULL, 1);
+    check_bool("unclosed overflow {n matches literal",
+               re && neverc_regexp_match(re, "a{2147483648"), 1);
+    neverc_regexp_free(re);
+
     /* Go: `{01}` is not a repeat (parseInt leading zeros), so it stays a
      * literal even after a quantifier. Unclosed `{3` is the same. */
     check_bool("a{2}{01} after repeat is literal",

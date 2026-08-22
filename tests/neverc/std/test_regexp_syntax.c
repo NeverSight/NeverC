@@ -247,6 +247,23 @@ static void test_parse_repeat(void) {
     n = neverc_regexp_syntax_parse("a{2}{3,", 0, &err);
     check_not_null("a{2}{3, unclosed after repeat is literal", n);
     neverc_regexp_syntax_free(n);
+
+    /* Go parseRepeat: `{` is a literal unless `{min}`, `{min,}`, or
+     * `{min,max}` is complete. `a{3,` / `a{3,x}` / unclosed overflow
+     * used to error in syntax.c while regexp.c accepted them. */
+    n = neverc_regexp_syntax_parse("a{3,", 0, &err);
+    check_not_null("a{3, unclosed is literal", n);
+    check_op("a{3, op", n, NC_RE_OP_CONCAT);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("a{3,x}", 0, &err);
+    check_not_null("a{3,x} is literal", n);
+    check_op("a{3,x} op", n, NC_RE_OP_CONCAT);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("a{2147483648", 0, &err);
+    check_not_null("unclosed overflow {n is literal", n);
+    neverc_regexp_syntax_free(n);
 }
 
 /* ===== Alternation / Groups ===== */

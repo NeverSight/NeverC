@@ -100,6 +100,10 @@ static void test_css_escape(void) {
     check_str("non-hex continuation needs no separator", e, "\\21G");
     free(e);
 
+    e = neverc_html_css_escape("!");
+    check_str("css escape terminates at end of value", e, "\\21 ");
+    free(e);
+
     e = neverc_html_css_escape(NULL);
     check_str("css null", e, "");
     free(e);
@@ -232,6 +236,12 @@ static void test_template_url_and_script(void) {
     neverc_html_template_data_set(&data, "Color", "!B");
     out = neverc_html_template_render("<div style=\"{{.Color}}\">", &data);
     check_str("style uses css escape", out, "<div style=\"\\21 B\">");
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "!");
+    out = neverc_html_template_render("<style>p{x:{{.X}}fff}</style>", &data);
+    check_str("css action does not absorb following hex",
+              out, "<style>p{x:\\21 fff}</style>");
     free(out);
 
     neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
@@ -1176,6 +1186,17 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "return /") != NULL);
     check("js return slash is not rewritten as a string then comment",
           out && strstr(out, "return \"alert(1)\"/") == NULL);
+    free(out);
+
+    /* U+2000 EN QUAD is in Go jsWhitespace. Missing it treats '/' as
+     * division and desyncs the next quote into a raw call. */
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<script>return\xe2\x80\x80\"/;{{.X}}</script>", &data);
+    check("u2000 after return does not desync into a string",
+          out && strstr(out, "\"alert(1)\"") != NULL);
+    check("u2000 after return is not a raw call",
+          out && strstr(out, "/;alert(1)") == NULL);
     free(out);
 
     neverc_html_template_data_set(&data, "X", "alert(1)");

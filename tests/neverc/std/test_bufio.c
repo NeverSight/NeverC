@@ -621,6 +621,23 @@ static void test_scanner_token_too_long(void) {
     neverc_bufio_scanner_free(&sc);
     free(data);
 
+    /* Go: 65536 bytes plus a newline fills MaxScanTokenSize with no
+     * delimiter in-buffer, then Scan reports ErrTooLong. A probe byte
+     * past the limit used to accept the line. */
+    n = (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE + 1;
+    data = (uint8_t *)malloc(n);
+    memset(data, 'x', n - 1);
+    data[n - 1] = '\n';
+    neverc_io_mem_reader_init(&mr, data, n);
+    r.ctx = &mr;
+    neverc_bufio_scanner_init(&sc, r);
+    check_int("max line plus newline fails closed",
+              neverc_bufio_scanner_scan(&sc), 0);
+    check_int("max line plus newline is too long",
+              neverc_bufio_scanner_err(&sc), NEVERC_BUFIO_ERR_TOO_LONG);
+    neverc_bufio_scanner_free(&sc);
+    free(data);
+
     data = (uint8_t *)malloc((size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE);
     memset(data, 'y', (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE);
     neverc_io_mem_reader_init(&mr, data,

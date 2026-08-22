@@ -225,6 +225,139 @@ static void *release_stale_thread(void *arg) {
 }
 #endif
 
+/* A live weak handle must not observe a recycled payload after last-strong. */
+static void test_weak_value_after_recycle(void) {
+    printf("[weak_value_after_recycle]\n");
+    __atomic_store_n(&g_payload_frees, 0, __ATOMIC_SEQ_CST);
+    neverc_weak_strong_t s =
+        neverc_weak_new_with_free(owned_int(1), track_payload_free);
+    ASSERT_TRUE(s.ptr != NULL);
+    neverc_weak_ref_t *w = neverc_weak_make(s);
+    neverc_weak_ref_t *kept = neverc_weak_ref_retain(w);
+    ASSERT_TRUE(w != NULL && kept == w);
+    neverc_weak_strong_release(&s);
+    ASSERT_INT_EQ(payload_frees(), 1);
+    ASSERT_TRUE(neverc_weak_value(kept) == NULL);
+    ASSERT_TRUE(neverc_weak_upgrade(kept).ptr == NULL);
+
+    neverc_weak_strong_t n =
+        neverc_weak_new_with_free(owned_int(2), track_payload_free);
+    ASSERT_TRUE(n.ptr != NULL);
+    ASSERT_INT_EQ(*(int *)n.ptr, 2);
+    ASSERT_TRUE(neverc_weak_value(kept) == NULL);
+    ASSERT_TRUE(neverc_weak_upgrade(kept).ptr == NULL);
+    neverc_weak_ref_release(kept);
+    neverc_weak_strong_release(&n);
+    ASSERT_INT_EQ(payload_frees(), 2);
+}
+
+#if defined(_WIN32)
+typedef struct {
+    neverc_weak_ref_t *w;
+    volatile int *ok;
+} retain_recycle_arg_t;
+
+static DWORD WINAPI retain_during_recycle_thread(LPVOID arg) {
+    retain_recycle_arg_t *a = (retain_recycle_arg_t *)arg;
+    neverc_weak_ref_t *r = neverc_weak_ref_retain(a->w);
+    if (r) {
+        void *v = neverc_weak_value(r);
+        if (v && *(int *)v != 1)
+            __atomic_store_n(a->ok, 0, __ATOMIC_SEQ_CST);
+        neverc_weak_strong_t u = neverc_weak_upgrade(r);
+        if (u.ptr && *(int *)u.ptr != 1)
+            __atomic_store_n(a->ok, 0, __ATOMIC_SEQ_CST);
+        if (u.ptr)
+            neverc_weak_strong_release(&u);
+        neverc_weak_ref_release(r);
+    }
+    return 0;
+}
+#else
+typedef struct {
+    neverc_weak_ref_t *w;
+    volatile int *ok;
+} retain_recycle_arg_t;
+
+static void *retain_during_recycle_thread(void *arg) {
+    retain_recycle_arg_t *a = (retain_recycle_arg_t *)arg;
+    neverc_weak_ref_t *r = neverc_weak_ref_retain(a->w);
+    if (r) {
+        void *v = neverc_weak_value(r);
+        if (v && *(int *)v != 1)
+            __atomic_store_n(a->ok, 0, __ATOMIC_SEQ_CST);
+        neverc_weak_strong_t u = neverc_weak_upgrade(r);
+        if (u.ptr && *(int *)u.ptr != 1)
+            __atomic_store_n(a->ok, 0, __ATOMIC_SEQ_CST);
+        if (u.ptr)
+            neverc_weak_strong_release(&u);
+        neverc_weak_ref_release(r);
+    }
+    return NULL;
+}
+#endif
+
+/* Concurrent retain of a shared handle vs last-strong + freelist recycle.
+ * The handle stays live (caller keeps one ref); value/upgrade must never
+ * see the recycled payload. */
+static void test_retain_concurrent_recycle(void) {
+    printf("[retain_concurrent_recycle]\n");
+    enum { N = 256 };
+    int ok = 1;
+    for (int i = 0; i < N && ok; i++) {
+        volatile int iter_ok = 1;
+        __atomic_store_n(&g_payload_frees, 0, __ATOMIC_SEQ_CST);
+        neverc_weak_strong_t live =
+            neverc_weak_new_with_free(owned_int(1), track_payload_free);
+        if (!live.ptr) { ok = 0; break; }
+        neverc_weak_ref_t *w = neverc_weak_make(live);
+        if (!w) {
+            neverc_weak_strong_release(&live);
+            ok = 0;
+            break;
+        }
+        retain_recycle_arg_t arg = { w, &iter_ok };
+#if defined(_WIN32)
+        HANDLE th = CreateThread(NULL, 0, retain_during_recycle_thread,
+                                 &arg, 0, NULL);
+        if (!th) {
+            neverc_weak_ref_release(w);
+            neverc_weak_strong_release(&live);
+            ok = 0;
+            break;
+        }
+#else
+        pthread_t th;
+        if (pthread_create(&th, NULL, retain_during_recycle_thread, &arg) != 0) {
+            neverc_weak_ref_release(w);
+            neverc_weak_strong_release(&live);
+            ok = 0;
+            break;
+        }
+#endif
+        neverc_weak_strong_release(&live);
+        neverc_weak_strong_t recycled =
+            neverc_weak_new_with_free(owned_int(2), track_payload_free);
+#if defined(_WIN32)
+        WaitForSingleObject(th, INFINITE);
+        CloseHandle(th);
+#else
+        pthread_join(th, NULL);
+#endif
+        void *snap = neverc_weak_value(w);
+        if (snap && *(int *)snap != 1)
+            iter_ok = 0;
+        if (!recycled.ptr || *(int *)recycled.ptr != 2 ||
+            neverc_weak_strong_count(recycled) != 1 || payload_frees() != 1)
+            iter_ok = 0;
+        neverc_weak_ref_release(w);
+        neverc_weak_strong_release(&recycled);
+        if (payload_frees() != 2 || !iter_ok)
+            ok = 0;
+    }
+    ASSERT_TRUE(ok);
+}
+
 /* Same contract under overlap: stale release vs last live release + recycle. */
 static void test_stale_release_concurrent_recycle(void) {
     printf("[stale_release_concurrent_recycle]\n");
@@ -278,6 +411,8 @@ int main(void) {
     test_stale_strong_without_weak();
     test_multiple_weak_refs();
     test_stale_release_after_recycle();
+    test_weak_value_after_recycle();
+    test_retain_concurrent_recycle();
     test_stale_release_concurrent_recycle();
     printf("\nweak: %d/%d passed", tests_passed, tests_run);
     if (tests_failed) printf(", %d FAILED", tests_failed);

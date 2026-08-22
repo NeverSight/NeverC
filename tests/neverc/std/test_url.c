@@ -536,6 +536,34 @@ static void test_safe_redirect(void) {
     memset(long_c0 + 1, '\t', 1100);
     memcpy(long_c0 + 1101, "//evil", 7);
     ASSERT_INT_EQ(neverc_url_path_is_protocol_relative(long_c0), 1);
+    /* Length-delimited entry must not truncate a 1023-byte C0 prefix. */
+    ASSERT_INT_EQ(neverc_url_path_n_is_protocol_relative(long_c0, 1108), 1);
+    ASSERT_INT_EQ(neverc_url_path_n_is_protocol_relative(long_safe, 2001), 0);
+
+    /* Encoded NULs past the old 1023-byte copy, then `//`. */
+    char enc[4 + 340 * 3 + 8 + 1];
+    size_t elen = 0;
+    memcpy(enc, "/", 1);
+    elen = 1;
+    {
+        int k;
+        for (k = 0; k < 340; k++) {
+            memcpy(enc + elen, "%00", 3);
+            elen += 3;
+        }
+    }
+    memcpy(enc + elen, "%2f/evil", 8);
+    elen += 8;
+    enc[elen] = '\0';
+    ASSERT_INT_EQ(neverc_url_path_is_protocol_relative(enc), 1);
+    ASSERT_INT_EQ(neverc_url_path_n_is_protocol_relative(enc, elen), 1);
+
+    /* Raw NUL must not cut the length-delimited scan. */
+    {
+        char raw_nul[] = { '/', 0, '/', '/', 'e', 'v', 'i', 'l' };
+        ASSERT_INT_EQ(neverc_url_path_n_is_protocol_relative(
+                          raw_nul, sizeof(raw_nul)), 1);
+    }
 }
 
 static void test_bounded_outputs(void) {

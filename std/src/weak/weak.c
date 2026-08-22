@@ -64,12 +64,6 @@ static void ctrl_retire_locked(ctrl_block_t *cb) {
     g_freelist = cb;
 }
 
-static void ctrl_retire(ctrl_block_t *cb) {
-    LOCK();
-    ctrl_retire_locked(cb);
-    UNLOCK();
-}
-
 static void ctrl_publish(ctrl_block_t *cb, void *data, void (*free_fn)(void *),
                          int owns, uint64_t epoch) {
     memset(cb, 0, sizeof(*cb));
@@ -109,11 +103,6 @@ static neverc_weak_strong_t strong_from_cb(ctrl_block_t *cb) {
     s._ctrl = cb;
     s._epoch = cb->epoch;
     return s;
-}
-
-static void ctrl_release_weak(ctrl_block_t *cb) {
-    int32_t w = release_count(&cb->weak);
-    if (w == 0) ctrl_retire(cb);
 }
 
 neverc_weak_strong_t neverc_weak_new(void *data, size_t size) {
@@ -184,6 +173,7 @@ void neverc_weak_strong_release(neverc_weak_strong_t *s) {
 
 struct neverc_weak_ref {
     ctrl_block_t *cb;
+    uint64_t epoch;
     volatile int32_t refs;
 };
 
@@ -200,35 +190,67 @@ neverc_weak_ref_t *neverc_weak_make(neverc_weak_strong_t s) {
         return NULL;
     }
     w->cb = cb;
+    w->epoch = cb->epoch;
     w->refs = 1;
     UNLOCK();
     return w;
 }
 
 neverc_weak_ref_t *neverc_weak_ref_retain(neverc_weak_ref_t *w) {
-    if (!w || !w->cb || !retain_count(&w->refs)) return NULL;
-    if (!retain_count(&w->cb->weak)) {
-        (void)release_count(&w->refs);
+    if (!w) return NULL;
+    LOCK();
+    /* Pin the control block first. Incrementing refs before weak left a
+     * window where last-strong could retire (and recycle) the block while
+     * this handle still had refs > 0. */
+    if (!ctrl_matches(w->cb, w->epoch) ||
+        NEVERC_ATOMIC_LOAD32(&w->refs) <= 0 ||
+        !retain_count(&w->cb->weak)) {
+        UNLOCK();
         return NULL;
     }
+    if (!retain_count(&w->refs)) {
+        if (release_count(&w->cb->weak) == 0)
+            ctrl_retire_locked(w->cb);
+        UNLOCK();
+        return NULL;
+    }
+    UNLOCK();
     return w;
 }
 
 void neverc_weak_ref_release(neverc_weak_ref_t *w) {
-    if (!w || !w->cb) return;
-    ctrl_block_t *cb = w->cb;
-    int32_t refs = release_count(&w->refs);
-    if (refs < 0) return;
-    if (refs == 0) w->cb = NULL;
-    ctrl_release_weak(cb);
+    ctrl_block_t *cb;
+    uint64_t epoch;
+    int32_t refs;
+    if (!w) return;
+    LOCK();
+    if (!w->cb) {
+        UNLOCK();
+        return;
+    }
+    cb = w->cb;
+    epoch = w->epoch;
+    refs = release_count(&w->refs);
+    if (refs < 0) {
+        UNLOCK();
+        return;
+    }
+    if (refs == 0) {
+        w->cb = NULL;
+        w->epoch = 0;
+    }
+    if (ctrl_matches(cb, epoch) && release_count(&cb->weak) == 0)
+        ctrl_retire_locked(cb);
+    UNLOCK();
     if (refs == 0) free(w);
 }
 
 void *neverc_weak_value(neverc_weak_ref_t *w) {
     void *data = NULL;
-    if (!w || !w->cb) return NULL;
+    if (!w) return NULL;
     LOCK();
-    if (NEVERC_ATOMIC_LOAD32(&w->cb->strong) > 0)
+    if (ctrl_matches(w->cb, w->epoch) &&
+        NEVERC_ATOMIC_LOAD32(&w->cb->strong) > 0)
         data = w->cb->data;
     UNLOCK();
     return data;
@@ -236,20 +258,18 @@ void *neverc_weak_value(neverc_weak_ref_t *w) {
 
 neverc_weak_strong_t neverc_weak_upgrade(neverc_weak_ref_t *w) {
     neverc_weak_strong_t s = {0};
-    if (!w || !w->cb) return s;
-
-    for (;;) {
-        int32_t cur = NEVERC_ATOMIC_LOAD32(&w->cb->strong);
-        if (cur <= 0 || cur == INT32_MAX) return s;
-        if (NEVERC_ATOMIC_CAS32(&w->cb->strong, cur, cur + 1))
-            return strong_from_cb(w->cb);
-    }
+    if (!w) return s;
+    LOCK();
+    if (ctrl_matches(w->cb, w->epoch) && retain_count(&w->cb->strong))
+        s = strong_from_cb(w->cb);
+    UNLOCK();
+    return s;
 }
 
 int neverc_weak_ref_equal(const neverc_weak_ref_t *a, const neverc_weak_ref_t *b) {
     if (!a && !b) return 1;
     if (!a || !b) return 0;
-    return a->cb == b->cb;
+    return a->cb == b->cb && a->epoch == b->epoch;
 }
 
 int neverc_weak_strong_count(neverc_weak_strong_t s) {
@@ -263,6 +283,11 @@ int neverc_weak_strong_count(neverc_weak_strong_t s) {
 }
 
 int neverc_weak_ref_count(neverc_weak_ref_t *w) {
-    if (!w || !w->cb) return 0;
-    return NEVERC_ATOMIC_LOAD32(&w->cb->weak);
+    int n = 0;
+    if (!w) return 0;
+    LOCK();
+    if (ctrl_matches(w->cb, w->epoch))
+        n = NEVERC_ATOMIC_LOAD32(&w->cb->weak);
+    UNLOCK();
+    return n;
 }

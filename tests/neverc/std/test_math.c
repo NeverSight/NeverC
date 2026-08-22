@@ -1025,6 +1025,20 @@ static void test_jn_yn(void) {
                    neverc_math_abs(jn_huge) < 1e-140 &&
                    neverc_math_abs(jn_huge) > 1e-160);
     }
+    /* n < x << 2^302: still oscillatory, not the x << n underflow/pole. */
+    {
+        double x = 1e40;
+        double j = neverc_math_jn(NEVERC_MATH_MIN_INT, x);
+        double y = neverc_math_yn(NEVERC_MATH_MIN_INT, x);
+        check_true("jn(INT_MIN,1e40) finite",
+                   !neverc_math_isnan(j) && !neverc_math_isinf(j, 0));
+        check_true("yn(INT_MIN,1e40) finite",
+                   !neverc_math_isnan(y) && !neverc_math_isinf(y, 0));
+        check_true("jn(INT_MIN,1e40) ~ 1/sqrt(pi x)",
+                   neverc_math_abs(j) > 1e-25 && neverc_math_abs(j) < 1e-18);
+        check_true("yn(INT_MIN,1e40) ~ 1/sqrt(pi x)",
+                   neverc_math_abs(y) > 1e-25 && neverc_math_abs(y) < 1e-18);
+    }
 }
 
 /* ========== Constants test ========== */

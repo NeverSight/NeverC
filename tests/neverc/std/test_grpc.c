@@ -138,6 +138,19 @@ static neverc_grpc_status_t grpc_test_unary_end_early_handler(
         ? NEVERC_GRPC_OK : NEVERC_GRPC_INTERNAL;
 }
 
+static neverc_grpc_status_t grpc_test_unary_return_ok_handler(
+    neverc_grpc_server_stream_t *stream, void *context) {
+    (void)context;
+    neverc_grpc_message_t message;
+    if (neverc_grpc_server_stream_recv(stream, &message) != 1)
+        return NEVERC_GRPC_INVALID_ARGUMENT;
+    if (neverc_grpc_server_stream_send(stream, "ok", 2U) != 0)
+        return NEVERC_GRPC_INTERNAL;
+    /* Leave end() to the dispatcher. Extra unary DATA must still produce
+     * grpc-status trailers, not RST-without-status. */
+    return NEVERC_GRPC_OK;
+}
+
 static neverc_grpc_status_t grpc_test_bidi_end_early_handler(
     neverc_grpc_server_stream_t *stream, void *context) {
     (void)context;
@@ -165,6 +178,10 @@ static const neverc_grpc_method_t grpc_test_client_streaming_method = {
 static const neverc_grpc_method_t grpc_test_unary_end_early_method = {
     "/test.Echo/UnaryEndEarly", NEVERC_GRPC_UNARY, 1024U, 1024U,
     grpc_test_unary_end_early_handler, NULL};
+
+static const neverc_grpc_method_t grpc_test_unary_return_ok_method = {
+    "/test.Echo/UnaryReturnOk", NEVERC_GRPC_UNARY, 1024U, 1024U,
+    grpc_test_unary_return_ok_handler, NULL};
 
 static const neverc_grpc_method_t grpc_test_bidi_end_early_method = {
     "/test.Echo/BidiEndEarly", NEVERC_GRPC_BIDI_STREAMING, 1024U, 1024U,
@@ -567,6 +584,16 @@ static void grpc_test_unary_extra_frames(neverc_h2_client_t *client) {
     status = grpc_response_status(partial);
     CHECK(status && strcmp(status, "3") == 0);
     neverc_h2_response_free(partial);
+
+    /* Dispatcher drain (handler returns OK, does not call end()). */
+    neverc_h2_response_t *drain = neverc_h2_client_do_context(
+        client, NULL, "POST", "/test.Echo/UnaryReturnOk", headers, 2U,
+        body, first + second);
+    CHECK(drain != NULL);
+    CHECK(drain && drain->error == NULL);
+    status = grpc_response_status(drain);
+    CHECK(status && strcmp(status, "3") == 0);
+    neverc_h2_response_free(drain);
 }
 
 static void grpc_test_reserved_metadata(neverc_h2_client_t *client) {
@@ -642,6 +669,8 @@ static int grpc_test_register_methods(neverc_http_mux_t *mux) {
                mux, &grpc_test_client_streaming_method) == 0 &&
            neverc_grpc_server_register(
                mux, &grpc_test_unary_end_early_method) == 0 &&
+           neverc_grpc_server_register(
+               mux, &grpc_test_unary_return_ok_method) == 0 &&
            neverc_grpc_server_register(
                mux, &grpc_test_bidi_end_early_method) == 0 &&
            neverc_grpc_server_register(

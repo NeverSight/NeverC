@@ -339,20 +339,24 @@ static int next_rune(parser_t *p, int *rune) {
 static int parse_int(parser_t *p, int *value) {
     int val = 0;
     int start = p->pos;
+    int overflow = 0;
+    /* Go parseInt: digits are accepted even when the value overflows; the
+     * caller then either treats an unclosed `{n` as a literal or rejects a
+     * complete `{n}` whose count is too large. Failing here used to make
+     * `a{2147483648` a syntax error instead of the literal `{`. */
     while (p->pos < p->len && p->src[p->pos] >= '0' && p->src[p->pos] <= '9') {
         int digit = p->src[p->pos] - '0';
-        if (val > (INT_MAX - digit) / 10) {
-            p->err = "repeat count overflow";
-            return 0;
-        }
-        val = val * 10 + digit;
+        if (overflow || val > (INT_MAX - digit) / 10)
+            overflow = 1;
+        else
+            val = val * 10 + digit;
         p->pos++;
     }
     if (p->pos == start) {
         p->err = "bad repeat syntax";
         return 0;
     }
-    *value = val;
+    *value = overflow ? INT_MAX : val;
     return 1;
 }
 
@@ -811,19 +815,22 @@ static neverc_regexp_syntax_node_t *parse_repeat(parser_t *p) {
         next(p);
         int min_val;
         if (!parse_int(p, &min_val)) {
-            neverc_regexp_syntax_free(atom);
-            return NULL;
+            /* Go: `{` is a literal unless `{min}`, `{min,}`, or `{min,max}`
+             * parses completely. `a{3,` and `a{3,x}` are ordinary text. */
+            p->err = NULL;
+            p->pos = brace_pos;
+            return atom;
         }
         int max_val = min_val;
         if (peek(p) == ',') {
             next(p);
             if (peek(p) == '}')
                 max_val = -1;
-            else
-                if (!parse_int(p, &max_val)) {
-                    neverc_regexp_syntax_free(atom);
-                    return NULL;
-                }
+            else if (!parse_int(p, &max_val)) {
+                p->err = NULL;
+                p->pos = brace_pos;
+                return atom;
+            }
         }
         if (peek(p) != '}') {
             /* Go: unclosed `{n` is a literal, not a syntax error. */

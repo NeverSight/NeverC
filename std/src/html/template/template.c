@@ -254,9 +254,10 @@ char *neverc_html_js_escape(const char *s) {
 char *neverc_html_css_escape(const char *s) {
     if (!s) return dup_cstr("");
     size_t slen = strlen(s);
-    if (slen > (SIZE_MAX - 1U) / 3U) return NULL;
-    /* Worst case is "\\XX" (3 bytes) per input byte; allocate the bound once. */
-    char *r = (char *)NC_HTML_TEMPLATE_MALLOC(slen * 3U + 1U);
+    if (slen > (SIZE_MAX - 1U) / 4U) return NULL;
+    /* Worst case is "\\XX " (4 bytes) per input byte once a hex escape
+     * is terminated at end-of-value, before a hex digit, or a CSS space. */
+    char *r = (char *)NC_HTML_TEMPLATE_MALLOC(slen * 4U + 1U);
     if (!r) return NULL;
     size_t wi = 0, i = 0;
     while (i < slen) {
@@ -273,13 +274,15 @@ char *neverc_html_css_escape(const char *s) {
         r[wi++] = '\\';
         r[wi++] = nc_uphex[c >> 4];
         r[wi++] = nc_uphex[c & 0x0f];
-        /* Terminate a short CSS hex escape before a following hex digit.
-         * The following digit passes through as one byte, so the existing
-         * three-bytes-per-input allocation bound still covers this space. */
-        if (i < slen &&
-            ((s[i] >= '0' && s[i] <= '9') ||
-             (s[i] >= 'A' && s[i] <= 'F') ||
-             (s[i] >= 'a' && s[i] <= 'f')))
+        /* Go cssEscaper: terminate a hex escape at end of value, before a
+         * following hex digit, or before a CSS wc so it cannot swallow
+         * static text after the action (`{{.X}}fff` with X="!"). */
+        if (i >= slen ||
+            (s[i] >= '0' && s[i] <= '9') ||
+            (s[i] >= 'A' && s[i] <= 'F') ||
+            (s[i] >= 'a' && s[i] <= 'f') ||
+            s[i] == ' ' || s[i] == '\t' || s[i] == '\n' ||
+            s[i] == '\f' || s[i] == '\r')
             r[wi++] = ' ';
     }
     r[wi] = '\0';
@@ -698,7 +701,9 @@ static int html_js_ident_part(unsigned char c) {
            (c >= 'a' && c <= 'z');
 }
 
-/* Trim the Go jsWhitespace set from the right of s[0,n). */
+/* Trim Go html/template jsWhitespace (`\s`) from the right of s[0,n).
+ * Includes U+1680, U+2000–U+200A, U+205F, U+3000, and U+FEFF so
+ * `return` + those spaces still precedes a regexp slash. */
 static size_t html_js_trim_right(const char *s, size_t n) {
     while (n > 0) {
         unsigned char c = (unsigned char)s[n - 1];
@@ -711,9 +716,30 @@ static size_t html_js_trim_right(const char *s, size_t n) {
             n -= 2;
             continue;
         }
+        if (n >= 3 && (unsigned char)s[n - 3] == 0xE1 &&
+            (unsigned char)s[n - 2] == 0x9A && c == 0x80) {
+            n -= 3;
+            continue;
+        }
         if (n >= 3 && (unsigned char)s[n - 3] == 0xE2 &&
             (unsigned char)s[n - 2] == 0x80 &&
-            (c == 0xA8 || c == 0xA9 || c == 0xAF)) {
+            ((c >= 0x80 && c <= 0x8A) ||
+             c == 0xA8 || c == 0xA9 || c == 0xAF)) {
+            n -= 3;
+            continue;
+        }
+        if (n >= 3 && (unsigned char)s[n - 3] == 0xE2 &&
+            (unsigned char)s[n - 2] == 0x81 && c == 0x9F) {
+            n -= 3;
+            continue;
+        }
+        if (n >= 3 && (unsigned char)s[n - 3] == 0xE3 &&
+            (unsigned char)s[n - 2] == 0x80 && c == 0x80) {
+            n -= 3;
+            continue;
+        }
+        if (n >= 3 && (unsigned char)s[n - 3] == 0xEF &&
+            (unsigned char)s[n - 2] == 0xBB && c == 0xBF) {
             n -= 3;
             continue;
         }

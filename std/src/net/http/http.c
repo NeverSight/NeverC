@@ -1025,14 +1025,17 @@ static int pattern_match(const char *pattern, const char *path,
 
             if (wildcard) {
                 if (close[1] != '\0') return 0;
-                /* Capture the rest of the path */
-                if (params && params->len + (int)namelen + 1 + (int)strlen(rp) + 1
+                /* Go {name...}: remainder after the joining '/', including
+                 * empty (/files and /files/ → ""). */
+                const char *rest = rp;
+                if (rest[0] == '/') rest++;
+                if (params && params->len + (int)namelen + 1 + (int)strlen(rest) + 1
                     < (int)sizeof(params->buf)) {
                     memcpy(params->buf + params->len, name, namelen);
                     params->len += (int)namelen;
                     params->buf[params->len++] = '\0';
-                    size_t vlen = strlen(rp);
-                    memcpy(params->buf + params->len, rp, vlen);
+                    size_t vlen = strlen(rest);
+                    memcpy(params->buf + params->len, rest, vlen);
                     params->len += (int)vlen;
                     params->buf[params->len++] = '\0';
                     params->count++;
@@ -1067,10 +1070,73 @@ static int pattern_match(const char *pattern, const char *path,
         }
     }
 
-    /* Both consumed = exact match. Pattern ends with / = prefix match. */
+    /* Both consumed = exact match. Pattern ends with / = prefix match.
+     * Go: `{name...}` also matches when the request path ends at the
+     * wildcard (`/files` against `/files/{path...}`). */
+    if (*pp == '{') {
+        const char *close = strchr(pp, '}');
+        if (close && close[1] == '\0') {
+            const char *name = pp + 1;
+            size_t namelen = (size_t)(close - name);
+            if (namelen >= 3 && name[namelen - 3] == '.' &&
+                name[namelen - 2] == '.' && name[namelen - 1] == '.') {
+                namelen -= 3;
+                if (params && params->len + (int)namelen + 2
+                    < (int)sizeof(params->buf)) {
+                    memcpy(params->buf + params->len, name, namelen);
+                    params->len += (int)namelen;
+                    params->buf[params->len++] = '\0';
+                    params->buf[params->len++] = '\0';
+                    params->count++;
+                }
+                return 1;
+            }
+        }
+    }
     if (*pp == '\0' && *rp == '\0') return 1;
     if (*pp == '\0' && pp > pattern && pp[-1] == '/') return 1;
     return 0;
+}
+
+/* Path rank outranks method. Go ServeMux: a more specific path wins
+ * even when the broader pattern has a method (`GET /` vs `/users/{id}`).
+ * Method is only a tie-break on the same path. */
+static int mux_pattern_literal_len(const char *pat) {
+    int n = 0;
+    for (; *pat; ) {
+        if (*pat == '{') {
+            const char *close = strchr(pat, '}');
+            if (!close) break;
+            pat = close + 1;
+        } else {
+            n++;
+            pat++;
+        }
+    }
+    return n;
+}
+
+static int mux_path_rank_exact(size_t plen) {
+    if (plen > 99999U) plen = 99999U;
+    return 1000000 + (int)plen;
+}
+
+static int mux_path_rank_param(const char *pat) {
+    int lit = mux_pattern_literal_len(pat);
+    if (lit > 99999) lit = 99999;
+    return 100000 + lit;
+}
+
+static int mux_path_rank_prefix(size_t plen) {
+    if (plen > 99999U) plen = 99999U;
+    return (int)plen;
+}
+
+static int mux_better(int path_rank, int method_rank, size_t plen,
+                      int best_path, int best_method, size_t best_len) {
+    if (path_rank != best_path) return path_rank > best_path;
+    if (method_rank != best_method) return method_rank > best_method;
+    return plen > best_len;
 }
 
 static route_t *mux_match_ex(neverc_http_mux_t *mux,
@@ -1078,7 +1144,8 @@ static route_t *mux_match_ex(neverc_http_mux_t *mux,
                              path_params_t *params) {
     route_t *best = NULL;
     size_t best_len = 0;
-    int best_specificity = 0; /* higher = more specific */
+    int best_path_rank = -1;
+    int best_method_rank = -1;
 
     int nr = mux->nroutes;
 #if defined(__GNUC__) || defined(__clang__)
@@ -1102,18 +1169,19 @@ static route_t *mux_match_ex(neverc_http_mux_t *mux,
         }
 
         const char *pat = r->path_pattern;
-        int specificity = r->method ? (get_serves_head ? 1 : 2) : 0;
+        int method_rank = r->method ? (get_serves_head ? 1 : 2) : 0;
 
         if (r->has_params) {
             memset(&tmp_params, 0, sizeof(tmp_params));
             if (pattern_match(pat, path, &tmp_params)) {
-                specificity += 1;
                 size_t plen = strlen(pat);
-                if (specificity > best_specificity ||
-                    (specificity == best_specificity && plen > best_len)) {
+                int path_rank = mux_path_rank_param(pat);
+                if (mux_better(path_rank, method_rank, plen,
+                               best_path_rank, best_method_rank, best_len)) {
                     best = r;
                     best_len = plen;
-                    best_specificity = specificity;
+                    best_path_rank = path_rank;
+                    best_method_rank = method_rank;
                     if (params) *params = tmp_params;
                 }
             }
@@ -1124,11 +1192,13 @@ static route_t *mux_match_ex(neverc_http_mux_t *mux,
 
         /* Exact match */
         if (strcmp(pat, path) == 0) {
-            specificity += 3;
-            if (specificity > best_specificity) {
+            int path_rank = mux_path_rank_exact(plen);
+            if (mux_better(path_rank, method_rank, plen,
+                           best_path_rank, best_method_rank, best_len)) {
                 best = r;
                 best_len = plen;
-                best_specificity = specificity;
+                best_path_rank = path_rank;
+                best_method_rank = method_rank;
                 if (params) { params->len = 0; params->count = 0; }
             }
             continue;
@@ -1137,11 +1207,13 @@ static route_t *mux_match_ex(neverc_http_mux_t *mux,
         /* Prefix match (pattern ends with /) */
         if (plen > 0 && pat[plen - 1] == '/' &&
             strncmp(path, pat, plen) == 0) {
-            if (specificity > best_specificity ||
-                (specificity == best_specificity && plen > best_len)) {
+            int path_rank = mux_path_rank_prefix(plen);
+            if (mux_better(path_rank, method_rank, plen,
+                           best_path_rank, best_method_rank, best_len)) {
                 best = r;
                 best_len = plen;
-                best_specificity = specificity;
+                best_path_rank = path_rank;
+                best_method_rank = method_rank;
                 if (params) { params->len = 0; params->count = 0; }
             }
         }

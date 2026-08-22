@@ -478,11 +478,24 @@ static int exec_win_has_ext(const char *name) {
     return dot && (!slash || dot > slash);
 }
 
+/* CRT getenv() is a stale snapshot vs SetEnvironmentVariableA / Win32
+ * LookPath. Read PATHEXT the same way PATH is read. */
+static const char *exec_win_pathext(char *buf, DWORD cap) {
+    DWORD n;
+    if (!buf || cap == 0)
+        return ".COM;.EXE;.BAT;.CMD";
+    n = GetEnvironmentVariableA("PATHEXT", buf, cap);
+    if (n == 0 || n >= cap || !buf[0])
+        return ".COM;.EXE;.BAT;.CMD";
+    return buf;
+}
+
 /* Go lookExtensions: exact name, then each PATHEXT entry
  * (default .COM;.EXE;.BAT;.CMD) when the name has no extension. */
 static int exec_win_try_with_exe(const char *file, char *buf, DWORD cap) {
     size_t n;
     const char *exts;
+    char pathext[4096];
     if (!file || !buf || cap == 0) return -1;
     if (exec_win_is_file(file)) {
         n = strlen(file);
@@ -491,9 +504,7 @@ static int exec_win_try_with_exe(const char *file, char *buf, DWORD cap) {
         return 0;
     }
     if (exec_win_has_ext(file)) return -1;
-    exts = getenv("PATHEXT");
-    if (!exts || !exts[0])
-        exts = ".COM;.EXE;.BAT;.CMD";
+    exts = exec_win_pathext(pathext, (DWORD)sizeof(pathext));
     while (*exts) {
         const char *end = strchr(exts, ';');
         size_t elen = end ? (size_t)(end - exts) : strlen(exts);
@@ -594,11 +605,9 @@ static int exec_win_skip_path_dir(const char *dir, size_t dlen) {
 static const char *exec_look_in_win_path(const char *file, const char *path_env,
                                          char *buf, DWORD cap) {
     const char *p;
-    int has_ext;
     if (!file || !exec_look_path_name_ok(file) || !buf || cap == 0 ||
         !path_env || path_env[0] == '\0')
         return NULL;
-    has_ext = exec_win_has_ext(file);
     p = path_env;
     for (;;) {
         const char *semi = strchr(p, ';');
@@ -616,12 +625,15 @@ static const char *exec_look_in_win_path(const char *file, const char *path_env,
             int add_sep = !trailing;
             char *cand;
             /* Heap-join so a PATH entry that does not fit `buf` is still
-             * stat'd. Skipping it would let a later short directory win. */
+             * stat'd. Skipping it would let a later short directory win.
+             * Pathless names use lookExtensions (PATHEXT), not only .exe. */
             cand = exec_join_dir_file(dir, dlen, file, flen, add_sep, '\\',
-                                      has_ext ? NULL : ".exe");
+                                      NULL);
             if (!cand) return NULL;
-            if (exec_win_is_file(cand))
-                return exec_finish_look(buf, cap, cand);
+            if (exec_win_try_with_exe(cand, buf, cap) == 0) {
+                free(cand);
+                return buf;
+            }
             free(cand);
         }
         if (!semi) break;

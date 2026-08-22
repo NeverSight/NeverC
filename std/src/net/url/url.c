@@ -53,48 +53,63 @@ static int copy_exact(char *dst, size_t cap, const char *src, size_t len) {
 
 static int percent_decode(const char *s, char *buf, size_t cap, int flags);
 
+/* Decode one path octet. Malformed or truncated `%XX` cannot be shown safe. */
+static int path_decode_next(const char *path, size_t n, size_t i,
+                            unsigned char *out, size_t *consumed) {
+    if (i >= n) return 0;
+    unsigned char c = (unsigned char)path[i];
+    if (c != '%') {
+        *out = c;
+        *consumed = 1;
+        return 1;
+    }
+    if (i + 2 >= n) return 0;
+    int high = hex_val[(unsigned char)path[i + 1]];
+    int low = hex_val[(unsigned char)path[i + 2]];
+    if ((high | low) < 0) return 0;
+    *out = (unsigned char)((high << 4) | low);
+    *consumed = 3;
+    return 1;
+}
+
 /* True if path is `//...` or `/\...`, including after percent-decode.
  * `/%2f/evil.com` and `/%5cevil.com` must not look like a same-origin path.
  * Encoded C0 (`/%09//evil`, `/%0d//evil`) is skipped after decode so a
  * later strip of TAB/CR/LF cannot turn a "same-origin" path into leftover
- * Host. */
+ * Host. Walks the full `n` bytes so a 1023-byte C0 prefix cannot hide a
+ * later `//`, and a raw NUL cannot truncate the scan. */
+static int path_n_is_protocol_relative(const char *path, size_t n) {
+    if (!path || n < 1 || path[0] != '/')
+        return 0;
+    if (n >= 2 && (path[1] == '/' || path[1] == '\\'))
+        return 1;
+
+    size_t i = 0;
+    unsigned char decoded;
+    size_t consumed;
+    if (!path_decode_next(path, n, i, &decoded, &consumed))
+        return 1;
+    if (decoded != '/')
+        return 0;
+    i += consumed;
+    while (i < n) {
+        if (!path_decode_next(path, n, i, &decoded, &consumed))
+            return 1;
+        i += consumed;
+        if (decoded < 0x20 || decoded == 0x7f)
+            continue;
+        return decoded == '/' || decoded == '\\';
+    }
+    return 0;
+}
+
 int neverc_url_path_is_protocol_relative(const char *path) {
-    if (!path || path[0] != '/')
-        return 0;
-    if (path[1] == '/' || path[1] == '\\')
-        return 1;
-    char decoded[sizeof(((neverc_url_t *)0)->path)];
-    int n = percent_decode(path, decoded, sizeof(decoded), PCT_ALLOW_NUL);
-    /* Invalid percent-encoding cannot be shown safe. `%00` used to fail
-     * decode and return 0, so `/%00//evil` missed the C0 skip. */
-    if (n < 0)
-        return 1;
-    /* percent_decode reports the full logical length and truncates the
-     * buffer. Walking `n` past sizeof(decoded)-1 overreads the stack
-     * and can miss a later `//` that landed past the stored bytes. */
-    size_t stored = (size_t)n < sizeof(decoded) ? (size_t)n
-                                                : sizeof(decoded) - 1U;
-    if (stored < 1 || decoded[0] != '/')
-        return 0;
-    size_t i = 1;
-    while (i < stored &&
-           ((unsigned char)decoded[i] < 0x20 ||
-            (unsigned char)decoded[i] == 0x7f))
-        i++;
-    if (i >= stored)
-        return (size_t)n >= sizeof(decoded);
-    return decoded[i] == '/' || decoded[i] == '\\';
+    if (!path) return 0;
+    return path_n_is_protocol_relative(path, strlen(path));
 }
 
 int neverc_url_path_n_is_protocol_relative(const char *path, size_t n) {
-    char buf[sizeof(((neverc_url_t *)0)->path)];
-    if (!path || n < 2)
-        return 0;
-    if (n >= sizeof(buf))
-        n = sizeof(buf) - 1;
-    memcpy(buf, path, n);
-    buf[n] = '\0';
-    return neverc_url_path_is_protocol_relative(buf);
+    return path_n_is_protocol_relative(path, n);
 }
 
 /* RFC 3986 reg-name octets that may appear unescaped. */

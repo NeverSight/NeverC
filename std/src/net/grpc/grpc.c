@@ -644,21 +644,24 @@ static void grpc_server_dispatch(neverc_http_request_t *request,
         }
         if (stream.received_count != 1)
             framing_valid = 0;
-        if (!framing_valid) {
+        if (!framing_valid)
             status = NEVERC_GRPC_INVALID_ARGUMENT;
-            /* Oversized/corrupt frames set recv_failed and must still get a
-             * grpc-status trailer. RST only leftover unread DATA after a
-             * well-framed extra unary message. */
-            if (!stream.input_eof && !stream.recv_failed)
-                neverc_h2_request_stream_cancel(
-                    request->protocol_stream, NC_H2_PROTOCOL_ERROR);
-        }
     }
     if (!neverc_grpc_status_valid((uint32_t)status))
         status = NEVERC_GRPC_INTERNAL;
     if (!stream.ended)
         (void)neverc_grpc_server_stream_end(
             &stream, status, framing_valid ? NULL : "invalid request framing");
+    /* PROTOCOL-HTTP2: send grpc-status first. A well-framed extra unary
+     * message used to RST before trailers (drain recv -1 without input_eof),
+     * so the peer saw reset and no status. RST leftover unread DATA only
+     * after end(). */
+    if (request->protocol_stream && !framing_valid &&
+        (method->cardinality == NEVERC_GRPC_UNARY ||
+         method->cardinality == NEVERC_GRPC_SERVER_STREAMING) &&
+        !stream.input_eof && !stream.recv_failed)
+        neverc_h2_request_stream_cancel(
+            request->protocol_stream, NC_H2_PROTOCOL_ERROR);
     grpc_decoded_md_free(stream.decoded_md);
     free(stream.received_message);
     if (owns_context) {

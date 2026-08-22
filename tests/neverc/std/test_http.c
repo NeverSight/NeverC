@@ -3809,6 +3809,18 @@ static void path_param_handler(neverc_http_request_t *req,
                         rest ? rest : "NULL");
 }
 
+static void mux_home_handler(neverc_http_request_t *req,
+                              neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_string(w, "home");
+}
+
+static void mux_api_prefix_handler(neverc_http_request_t *req,
+                                    neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_string(w, "api_prefix");
+}
+
 static void test_path_params(void) {
     printf("[path_params]\n");
 
@@ -3818,6 +3830,10 @@ static void test_path_params(void) {
     pid_t pid = fork();
     if (pid == 0) {
         neverc_http_mux_t *mux = neverc_http_new_mux();
+        /* Go: most-specific path wins; method is only a tie-break. */
+        neverc_http_mux_handle(mux, "GET /", mux_home_handler);
+        neverc_http_mux_handle(mux, "GET /api/", mux_api_prefix_handler);
+        neverc_http_mux_handle(mux, "/api/users/{id}", path_param_handler);
         neverc_http_mux_handle(mux, "GET /users/{id}", path_param_handler);
         neverc_http_mux_handle(mux, "HEAD /items/{id}/{action}",
                                 path_param_handler);
@@ -3843,6 +3859,8 @@ static void test_path_params(void) {
     check_int("path_params resp", n > 0, 1);
     check_int("path_params id=42",
                strstr(buf, "id=42") != NULL, 1);
+    check_int("GET / does not steal /users/{id}",
+               strstr(buf, "home") == NULL, 1);
 
     /* Go 1.22: GET-only patterns also serve HEAD. */
     n = do_http_request(port,
@@ -3883,6 +3901,35 @@ static void test_path_params(void) {
     check_int("wildcard resp", n > 0, 1);
     check_int("wildcard captures remainder",
                strstr(buf, "path=a/b/c") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /files HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("wildcard empty remainder /files",
+               n > 0 && strstr(buf, "200") != NULL &&
+               strstr(buf, "path=") != NULL &&
+               strstr(buf, "path=NULL") == NULL, 1);
+
+    n = do_http_request(port,
+        "GET /files/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("wildcard empty remainder /files/",
+               n > 0 && strstr(buf, "200") != NULL &&
+               strstr(buf, "path=") != NULL &&
+               strstr(buf, "path=NULL") == NULL, 1);
+
+    n = do_http_request(port,
+        "GET /api/users/7 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("method-less /api/users/{id} beats GET /api/",
+               n > 0 && strstr(buf, "id=7") != NULL &&
+               strstr(buf, "api_prefix") == NULL, 1);
+
+    n = do_http_request(port,
+        "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("GET / still serves the root",
+               n > 0 && strstr(buf, "home") != NULL, 1);
 
     n = do_http_request(port,
         "GET /wild/foo/x HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",

@@ -41,7 +41,9 @@ double neverc_math_jn(int n, double x) {
 
     double b;
     if ((double)N <= x) {
-        if (x >= Two302) {
+        /* |INT_MIN| cannot run the int recurrence. For n < x the Hankel
+         * 1/√x oscillation still applies below Two302 (e.g. x=1e40). */
+        if (x >= Two302 || N > NEVERC_MATH_MAX_INT) {
             double s = neverc_math_sin(x);
             double c = neverc_math_cos(x);
             double temp;
@@ -53,8 +55,6 @@ double neverc_math_jn(int n, double x) {
             default: temp = 0; break;
             }
             b = INV_SQRT_PI * temp / neverc_math_sqrt(x);
-        } else if (N > NEVERC_MATH_MAX_INT) {
-            b = 0.0;
         } else {
             n = (int)N;
             b = neverc_math_j1(x);
@@ -163,7 +163,7 @@ double neverc_math_yn(int n, double x) {
     }
 
     double b;
-    if (x >= Two302) {
+    if (x >= Two302 || (N > NEVERC_MATH_MAX_INT && (double)N <= x)) {
         double s = neverc_math_sin(x);
         double c = neverc_math_cos(x);
         double temp;
