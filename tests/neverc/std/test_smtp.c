@@ -34,6 +34,9 @@ static int g_smtp_port = 0;
 static volatile int g_smtp_running = 1;
 static volatile int g_smtp_ehlo_starttls = 0;
 static volatile int g_smtp_login_leftover = 0;
+static volatile int g_smtp_plain_leftover = 0;
+static volatile int g_smtp_plain_challenge = 0;
+static char g_last_mail[256];
 
 #ifdef _WIN32
 static DWORD WINAPI mock_smtp_server(LPVOID arg) {
@@ -92,6 +95,7 @@ static void *mock_smtp_server(void *arg) {
                       "250\r\n"
                     : "250-mock.smtp.test\r\n"
                       "250-8BITMIME\r\n"
+                      "250-SMTPUTF8\r\n"
                       "250-AUTH PLAIN LOGIN\r\n"
                       "250\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
@@ -99,6 +103,16 @@ static void *mock_smtp_server(void *arg) {
                 const char *resp = "250 Hello\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
             } else if (strncmp(buf, "AUTH PLAIN ", 11) == 0) {
+                if (g_smtp_plain_leftover) {
+                    const char *resp = "535 invalid\r\n250 leftover\r\n";
+                    neverc_tcp_write(conn, resp, strlen(resp));
+                    continue;
+                }
+                if (g_smtp_plain_challenge) {
+                    const char *resp = "334 VXNlcm5hbWU6\r\n";
+                    neverc_tcp_write(conn, resp, strlen(resp));
+                    continue;
+                }
                 uint8_t raw[10];
                 raw[0] = 0;
                 memcpy(raw + 1, "user", 4);
@@ -157,6 +171,11 @@ static void *mock_smtp_server(void *arg) {
                 (void)neverc_tcp_read(conn, buf, sizeof(buf) - 1);
                 break;
             } else if (strncmp(buf, "MAIL FROM:", 10) == 0) {
+                size_t mail_len = strlen(buf);
+                if (mail_len >= sizeof(g_last_mail))
+                    mail_len = sizeof(g_last_mail) - 1;
+                memcpy(g_last_mail, buf, mail_len);
+                g_last_mail[mail_len] = '\0';
                 const char *resp = strstr(buf, "leftover@")
                     ? "250 OK\r\n500 leftover-injected\r\n"
                     : strstr(buf, "mismatch@")
@@ -263,6 +282,10 @@ static void test_smtp_session(void) {
     /* MAIL FROM */
     rc = neverc_smtp_mail(c, "sender@example.com");
     check_true("MAIL FROM success", rc == 0);
+    check_true("MAIL FROM advertises 8BITMIME",
+               strstr(g_last_mail, "BODY=8BITMIME") != NULL);
+    check_true("MAIL FROM advertises SMTPUTF8",
+               strstr(g_last_mail, "SMTPUTF8") != NULL);
 
     /* RFC 5321 null reverse-path. */
     rc = neverc_smtp_reset(c);
@@ -692,6 +715,36 @@ static void test_smtp_response_leftover(void) {
         neverc_smtp_close(c);
     }
     g_smtp_login_leftover = 0;
+
+    g_smtp_plain_leftover = 1;
+    c = neverc_smtp_dial(addr, &err);
+    check_true("dial for AUTH PLAIN leftover", c != NULL);
+    if (c) {
+        check_true("EHLO before AUTH PLAIN leftover",
+                   neverc_smtp_hello(c, "test.client") == 0);
+        check_true("AUTH PLAIN leftover after 535 rejected",
+                   neverc_smtp_auth(c, NEVERC_SMTP_AUTH_PLAIN,
+                                    "user", "wrong") == -1);
+        check_true("MAIL after AUTH PLAIN leftover is dead",
+                   neverc_smtp_mail(c, "ok@example.com") == -1);
+        neverc_smtp_close(c);
+    }
+    g_smtp_plain_leftover = 0;
+
+    g_smtp_plain_challenge = 1;
+    c = neverc_smtp_dial(addr, &err);
+    check_true("dial for AUTH PLAIN 334", c != NULL);
+    if (c) {
+        check_true("EHLO before AUTH PLAIN 334",
+                   neverc_smtp_hello(c, "test.client") == 0);
+        check_true("AUTH PLAIN 334 rejected",
+                   neverc_smtp_auth(c, NEVERC_SMTP_AUTH_PLAIN,
+                                    "user", "pass") == -1);
+        check_true("MAIL after AUTH PLAIN 334 is dead",
+                   neverc_smtp_mail(c, "ok@example.com") == -1);
+        neverc_smtp_close(c);
+    }
+    g_smtp_plain_challenge = 0;
 }
 
 int main(void) {

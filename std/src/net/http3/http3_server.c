@@ -798,13 +798,17 @@ static int h3_send_response(h3_conn_t *connection,
     for (int i = 0; i < writer->nheaders; i++) {
         if (!h3_response_header_allowed(writer->header_names[i])) continue;
         if (strcasecmp(writer->header_names[i], "content-length") == 0) {
-            if (!neverc_h3_response_body_allowed(writer->status) &&
-                writer->status != 304)
+            if (writer->status == 204)
                 continue;
             uint64_t content_length;
             if (h3_parse_content_length(writer->header_values[i],
-                                        &content_length) != 0 ||
-                content_length != writer->body.len) {
+                                        &content_length) != 0) {
+                result = -1;
+                break;
+            }
+            /* RFC 9110 §8.6: CL on HEAD/304 is representation metadata.
+             * Only require CL == DATA bytes when a body is actually sent. */
+            if (body_allowed && content_length != writer->body.len) {
                 result = -1;
                 break;
             }

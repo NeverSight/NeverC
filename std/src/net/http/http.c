@@ -1446,10 +1446,13 @@ static int mux_slash_redirect(neverc_http_mux_t *mux, const char *method,
         return 0;
     memset(&ignored, 0, sizeof(ignored));
     slash = mux_match_ex(mux, method, slashed, &ignored);
-    if (!slash || mux_pattern_ends_dollar(slash->path_pattern))
+    if (!slash)
         return 0;
+    /* Go {$} is an exact `/path/` match, so `/path` slash-redirects to
+     * `/path/`. Do not treat `{$}` as a reason to skip the redirect. */
     plen = strlen(slash->path_pattern);
-    if (plen == 0 || slash->path_pattern[plen - 1] != '/')
+    if (!(plen > 0 && slash->path_pattern[plen - 1] == '/') &&
+        !mux_pattern_ends_dollar(slash->path_pattern))
         return 0;
     if (current && mux_route_path_rank(slash) <= mux_route_path_rank(current))
         return 0;

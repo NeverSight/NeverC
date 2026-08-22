@@ -82,7 +82,10 @@ static void test_integers(void) {
     check_str("zero prec zero", r, ""); free(r);
 
     r = neverc_fmt_sprintf("%+.0d", 0);
-    check_str("plus zero prec zero", r, "+"); free(r);
+    check_str("plus zero prec zero", r, ""); free(r);
+
+    r = neverc_fmt_sprintf("%+8.0d", 0);
+    check_str("plus width zero prec zero", r, "        "); free(r);
 
     r = neverc_fmt_sprintf("%8.5d", 42);
     check_str("width and precision", r, "   00042"); free(r);
@@ -94,10 +97,13 @@ static void test_integers(void) {
     check_str("hex precision", r, "0002a"); free(r);
 
     r = neverc_fmt_sprintf("%#.0x", 0);
-    check_str("alt hex zero prec", r, "0x"); free(r);
+    check_str("alt hex zero prec", r, ""); free(r);
+
+    r = neverc_fmt_sprintf("%#8.0x", 0);
+    check_str("alt hex width zero prec", r, "        "); free(r);
 
     r = neverc_fmt_sprintf("%#.0o", 0);
-    check_str("alt octal zero prec", r, "0"); free(r);
+    check_str("alt octal zero prec", r, ""); free(r);
 }
 
 static void test_strings(void) {

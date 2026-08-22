@@ -2241,8 +2241,10 @@ void neverc_http_set_cookie(neverc_http_response_writer_t *w,
                  nc_buf_append(&value, c->domain, strlen(c->domain)) != 0;
     if (!failed && c->max_age != 0) {
         char max_age[32];
+        /* Go Cookie.String: MaxAge < 0 is a delete cookie (Max-Age=0). */
+        int age = c->max_age < 0 ? 0 : c->max_age;
         int length = snprintf(max_age, sizeof(max_age), "; Max-Age=%d",
-                              c->max_age);
+                              age);
         failed = length < 0 || (size_t)length >= sizeof(max_age) ||
                  nc_buf_append(&value, max_age, (size_t)length) != 0;
     }

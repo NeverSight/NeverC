@@ -244,6 +244,17 @@ static void test_parse_edges(void) {
                       (int)strlen("http://user:p%40ss@host/"));
         ASSERT_STR_EQ(userinfo, "http://user:p%40ss@host/");
     }
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://user:p:ss@host/"), 0);
+    ASSERT_STR_EQ(u.user, "user");
+    ASSERT_STR_EQ(u.password, "p:ss");
+    ASSERT_STR_EQ(u.host, "host");
+    {
+        char colon_userinfo[64];
+        ASSERT_INT_EQ(neverc_url_string(&u, colon_userinfo,
+                                        sizeof(colon_userinfo)),
+                      (int)strlen("http://user:p%3Ass@host/"));
+        ASSERT_STR_EQ(colon_userinfo, "http://user:p%3Ass@host/");
+    }
     ASSERT_INT_EQ(neverc_url_parse(
         &u, "//user:p%40ss@[fe80::1%25eth0]:8080/x"), 0);
     ASSERT_STR_EQ(u.user, "user");
@@ -417,7 +428,17 @@ static void test_escape(void) {
     printf("[escape]\n");
     char buf[256];
     neverc_url_query_escape("hello world", buf, sizeof(buf));
-    ASSERT_STR_EQ(buf, "hello%20world");
+    ASSERT_STR_EQ(buf, "hello+world");
+    neverc_url_query_escape("a+b c", buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "a%2Bb+c");
+    {
+        neverc_url_values_t values;
+        memset(&values, 0, sizeof(values));
+        neverc_url_values_set(&values, "q", "hello world");
+        ASSERT_INT_EQ(neverc_url_values_encode(&values, buf, sizeof(buf)),
+                      (int)strlen("q=hello+world"));
+        ASSERT_STR_EQ(buf, "q=hello+world");
+    }
 
     neverc_url_query_escape("a=b&c=d", buf, sizeof(buf));
     ASSERT_STR_EQ(buf, "a%3Db%26c%3Dd");

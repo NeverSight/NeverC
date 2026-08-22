@@ -531,11 +531,13 @@ static char *fmt_vsprintf_n(const char *format, va_list args, size_t *out_len) {
                 sign_prefix = ' ';
         }
         int body_len = tlen - body_offset;
+        int zero_prec_zero = 0;
         if (is_int_verb && prec >= 0) {
             int is_zero_body =
                 body_len == 1 && tmp[body_offset] == '0';
             if (prec == 0 && is_zero_body) {
                 body_len = 0;
+                zero_prec_zero = 1;
             } else if (prec > body_len) {
                 size_t extra = (size_t)prec - (size_t)body_len;
                 if (tlen < 0 || extra >= sizeof(tmp) ||
@@ -568,6 +570,13 @@ static char *fmt_vsprintf_n(const char *format, va_list args, size_t *out_len) {
         } else if (verb == 'p') {
             alt_prefix = "0x";
             alt_len = 2;
+        }
+        /* Go fmtInteger: prec==0 && value==0 writes only width padding,
+         * before sign or '#' prefixes. */
+        if (zero_prec_zero) {
+            sign_prefix = '\0';
+            alt_prefix = NULL;
+            alt_len = 0;
         }
         /* Go writePadding: '0' pads numbers and %c runes. Integer precision
          * suppresses 0. Inf/NaN stay space-padded. */

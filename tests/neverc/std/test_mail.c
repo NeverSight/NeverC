@@ -87,6 +87,10 @@ static void test_parse_address(void) {
               0);
     ASSERT_STREQ(addr.name, "foo <bar>");
     ASSERT_STREQ(addr.address, "user@x.com");
+    ASSERT_EQ(neverc_mail_parse_address("\"foo\\\"bar\" <user@x.com>", &addr),
+              0);
+    ASSERT_STREQ(addr.name, "foo\"bar");
+    ASSERT_STREQ(addr.address, "user@x.com");
     ASSERT_EQ(neverc_mail_parse_address("\"foo <bar>\"", &addr), -1);
 
     ASSERT_EQ(neverc_mail_parse_address(

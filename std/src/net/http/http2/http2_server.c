@@ -2064,6 +2064,10 @@ static void h2_handler_task(void *arg) {
         stream->state != H2_STREAM_CLOSED;
     if (send_no_error_rst && stream->state == H2_STREAM_OPEN)
         stream->state = H2_STREAM_HALF_CLOSED_LOCAL;
+    /* Record the RST so leftover HEADERS after reap are stream errors,
+     * not GOAWAY STREAM_CLOSED (RFC 9113 §8.1 / §5.1). */
+    if (send_no_error_rst)
+        nc_atomic_store(&stream->reset, 1);
     nc_mutex_unlock(&conn->state_lock);
     if (send_no_error_rst)
         (void)h2_conn_write_rst(conn, stream->id, NC_H2_NO_ERROR);

@@ -2879,6 +2879,12 @@ static void cookie_handler(neverc_http_request_t *req,
     injected.path = "/; Domain=evil.com";
     neverc_http_set_cookie(w, &injected);
 
+    neverc_http_cookie_t del = {0};
+    del.name = "gone";
+    del.value = "x";
+    del.max_age = -1;
+    neverc_http_set_cookie(w, &del);
+
     /* Check incoming cookie */
     char buf[128];
     const char *v = neverc_http_get_cookie(req, "test_cookie", buf, sizeof(buf));
@@ -3044,6 +3050,10 @@ static void test_cookies(void) {
                      strstr(resp, "Domain=evil.com") == NULL, 1);
         check_int("Set-Cookie rejects path attribute injection",
                      strstr(resp, "inject=") == NULL, 1);
+        check_int("delete cookie is Max-Age=0",
+                     strstr(resp, "Set-Cookie: gone=x; Max-Age=0") != NULL, 1);
+        check_int("delete cookie not Max-Age=-1",
+                     strstr(resp, "Max-Age=-1") == NULL, 1);
         check_int("body has cookie value",
                      strstr(resp, "cookie=hello_world") != NULL, 1);
     }
@@ -4013,6 +4023,9 @@ static void test_path_params(void) {
     n = do_http_request(port,
         "GET /posts HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         buf, sizeof(buf));
+    check_int("{$} slash-redirects /posts",
+               n > 0 && strstr(buf, "301") != NULL &&
+               strstr(buf, "Location: /posts/") != NULL, 1);
     check_int("{$} does not match /posts without slash",
                n > 0 && strstr(buf, "posts_exact") == NULL, 1);
 
@@ -4050,6 +4063,28 @@ static void test_path_params(void) {
                    neverc_http_path_value(&empty_req, "x") == NULL, 1);
     }
 
+    stop_test_server(pid);
+
+    port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+    pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "GET /posts/{$}",
+                                mux_posts_exact_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+    n = do_http_request(port,
+        "GET /posts HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("{$}-only slash-redirects, not 405",
+               n > 0 && strstr(buf, "301") != NULL &&
+               strstr(buf, "Location: /posts/") != NULL &&
+               strstr(buf, "405") == NULL, 1);
     stop_test_server(pid);
 }
 

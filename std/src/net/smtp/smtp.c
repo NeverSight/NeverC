@@ -33,6 +33,7 @@ struct neverc_smtp_client {
     int  supports_auth_plain;
     int  supports_auth_login;
     int  supports_8bitmime;
+    int  supports_smtputf8;
     int  supports_starttls;
     int  data_at_line_start;
     int  in_data;
@@ -370,6 +371,8 @@ static void smtp_parse_ehlo_line(neverc_smtp_client_t *c,
         kw_end++;
     if (smtp_token_eq(line + pos, kw_end - pos, "8BITMIME"))
         c->supports_8bitmime = 1;
+    if (smtp_token_eq(line + pos, kw_end - pos, "SMTPUTF8"))
+        c->supports_smtputf8 = 1;
     if (smtp_token_eq(line + pos, kw_end - pos, "STARTTLS"))
         c->supports_starttls = 1;
     if (!smtp_token_eq(line + pos, kw_end - pos, "AUTH")) return;
@@ -401,6 +404,7 @@ int neverc_smtp_hello(neverc_smtp_client_t *c, const char *local_name) {
         c->supports_auth_plain = 0;
         c->supports_auth_login = 0;
         c->supports_8bitmime = 0;
+        c->supports_smtputf8 = 0;
         c->supports_starttls = 0;
         const char *line = c->last_response;
         while (line && *line) {
@@ -421,6 +425,7 @@ int neverc_smtp_hello(neverc_smtp_client_t *c, const char *local_name) {
         c->supports_auth_plain = 0;
         c->supports_auth_login = 0;
         c->supports_8bitmime = 0;
+        c->supports_smtputf8 = 0;
         c->supports_starttls = 0;
         return 0;
     }
@@ -474,6 +479,7 @@ int neverc_smtp_starttls(neverc_smtp_client_t *c,
     c->supports_auth_plain = 0;
     c->supports_auth_login = 0;
     c->supports_8bitmime = 0;
+    c->supports_smtputf8 = 0;
     c->supports_starttls = 0;
     if (neverc_smtp_hello(c, "localhost") != 0) {
         c->dead = 1;
@@ -521,7 +527,17 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
             return -1;
 
         int code = smtp_cmdf(c, "AUTH PLAIN %s", encoded);
-        return (code == 235) ? 0 : -1;
+        if (code != 235) {
+            /* Same leftover class as LOGIN: a 334 challenge or extra reply
+             * lines after AUTH must not become MAIL FROM (Go Client.Auth
+             * sends '*'). Bare 535 already finished AUTH; keep the session. */
+            if (c->pending_len != 0 || (code >= 300 && code < 400)) {
+                c->dead = 1;
+                (void)smtp_cmd_line(c, "*", 1);
+            }
+            return -1;
+        }
+        return 0;
     }
 
     if (method == NEVERC_SMTP_AUTH_LOGIN) {
@@ -577,7 +593,14 @@ int neverc_smtp_mail(neverc_smtp_client_t *c, const char *from) {
         (from[0] && !smtp_safe_atom(from)))
         return -1;
     if (ensure_hello(c) != 0) return -1;
-    int code = smtp_cmdf(c, "MAIL FROM:<%s>", from);
+    /* Go smtp.Client.Mail: advertise BODY=8BITMIME / SMTPUTF8 when EHLO
+     * listed those extensions. */
+    char extra[32] = "";
+    if (c->supports_8bitmime)
+        strcat(extra, " BODY=8BITMIME");
+    if (c->supports_smtputf8)
+        strcat(extra, " SMTPUTF8");
+    int code = smtp_cmdf(c, "MAIL FROM:<%s>%s", from, extra);
     return (code == 250) ? 0 : -1;
 }
 

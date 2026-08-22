@@ -266,8 +266,9 @@ static int url_host_byte_should_escape(unsigned char c) {
     }
 }
 
-/* Go encodeUserPassword: keep existing %XX; escape @ / ? and other
- * reserved bytes so `user:p@ss` String()s as `user:p%40ss`. */
+/* Go encodeUserPassword: keep existing %XX; escape @ / ? / : so
+ * `user:p@ss` String()s as `user:p%40ss` and `user:p:ss` as
+ * `user:p%3Ass`. */
 static int userinfo_byte_should_escape(unsigned char c) {
     if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
         (c >= '0' && c <= '9'))
@@ -275,7 +276,7 @@ static int userinfo_byte_should_escape(unsigned char c) {
     switch (c) {
     case '-': case '_': case '.': case '~':
     case '$': case '&': case '+': case ',':
-    case ':': case ';': case '=':
+    case ';': case '=':
         return 0;
     default:
         return 1;
@@ -873,7 +874,8 @@ int neverc_url_values_encode(const neverc_url_values_t *v, char *buf, size_t cap
  *
  * path:  Go url.PathEscape (encodePathSegment). Unescaped: ALPHA / DIGIT
  *        and "-_.~$&+:@=". Escapes "/" ";" "," "?" and every other byte.
- * query: left as-is only for ALPHA / DIGIT and "-_.~"     (0); else escape (1).
+ * query: Go url.QueryEscape (encodeQueryComponent). Unescaped: ALPHA /
+ *        DIGIT and "-_.~". Space becomes '+'; every other byte is %XX.
  */
 static const unsigned char esc_table_path[256] = {
     1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
@@ -921,11 +923,15 @@ static int percent_encode(const char *s, char *buf, size_t cap,
     size_t output_length = 0;
     for (size_t input_offset = 0; s[input_offset]; input_offset++) {
         unsigned char c = (unsigned char)s[input_offset];
-        size_t encoded_length = esc[c] ? 3U : 1U;
+        int query_plus = (esc == esc_table_query && c == ' ');
+        size_t encoded_length = (esc[c] && !query_plus) ? 3U : 1U;
         if (encoded_length > SIZE_MAX - output_length ||
             output_length + encoded_length > (size_t)INT_MAX)
             return -1;
-        if (esc[c]) {
+        if (query_plus) {
+            if (cap > 0 && output_length < cap - 1)
+                buf[output_length] = '+';
+        } else if (esc[c]) {
             if (cap > 0 && output_length < cap - 1)
                 buf[output_length] = '%';
             if (cap > 0 && output_length + 1 < cap - 1)

@@ -244,13 +244,29 @@ int neverc_mail_parse_address(const char *s, neverc_mail_address_t *out) {
         if (nlen >= 2 && nstart[0] == '"' && nstart[nlen-1] == '"') {
             nstart++; nlen -= 2;
             if (!mail_quoted_content_ok(nstart, nlen)) return -1;
+            /* Go consumeQuotedString: quoted-pair keeps only the
+             * following rune (`foo\"bar` → foo"bar). */
+            size_t o = 0;
+            for (size_t i = 0; i < nlen; i++) {
+                unsigned char c = (unsigned char)nstart[i];
+                if (c == '\\') {
+                    if (i + 1 >= nlen) return -1;
+                    c = (unsigned char)nstart[++i];
+                }
+                if (o + 1 >= sizeof(out->name)) return -1;
+                out->name[o++] = (char)c;
+            }
+            out->name[o] = '\0';
         } else if (!mail_unquoted_phrase_ok(nstart, nlen)) {
             return -1;
+        } else {
+            if (mail_field_has_ctl(nstart, nlen)) return -1;
+            if (nlen >= sizeof(out->name)) return -1;
+            memcpy(out->name, nstart, nlen);
+            out->name[nlen] = '\0';
         }
-        if (mail_field_has_ctl(nstart, nlen)) return -1;
-        if (nlen >= sizeof(out->name)) return -1;
-        memcpy(out->name, nstart, nlen);
-        out->name[nlen] = '\0';
+        if (out->name[0] && mail_field_has_ctl(out->name, strlen(out->name)))
+            return -1;
     } else {
         if (slen >= sizeof(out->address)) return -1;
         memcpy(out->address, start, slen);
