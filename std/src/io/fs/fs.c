@@ -1028,16 +1028,12 @@ int neverc_fs_walk_dir(const char *root,
 #endif
         if (lstat(root, &st) != 0) return -1;
         fd = open(root, flags);
-        if (fd < 0) {
-            rc = fn(root, NULL, userdata);
-            if (rc == NEVERC_FS_SKIP_DIR || rc == NEVERC_FS_SKIP_ALL) return 0;
-            if (rc != 0) return rc;
-            return -1;
-        }
+        if (fd < 0)
+            return walk_notify_error(root, fn, userdata);
         if (fstat(fd, &opened) != 0 || !fs_same_file(&st, &opened) ||
             !S_ISDIR(opened.st_mode)) {
             close(fd);
-            return -1;
+            return walk_notify_error(root, fn, userdata);
         }
         rc = walk_from_fd(fd, root, fn, userdata);
         if (close(fd) != 0 && rc == 0)

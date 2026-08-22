@@ -538,11 +538,14 @@ static int cookie_domain_is_public_suffix(const char *domain) {
         "azurestaticapps.net",
         "azurewebsites.net",
         "blogspot.com",
+        "cloudapp.azure.com",
         "cloudapp.net",
         "cloudfront.net",
         "cloudfunctions.net",
         "deno.dev",
         "duckdns.org",
+        "elasticbeanstalk.com",
+        "*.elasticbeanstalk.com",
         "firebaseapp.com",
         "fly.dev",
         "fly.io",
@@ -555,6 +558,7 @@ static int cookie_domain_is_public_suffix(const char *domain) {
         "myshopify.com",
         "netlify.app",
         "ngrok.io",
+        "on.aws",
         "onrender.com",
         "pages.dev",
         "railway.app",
@@ -603,6 +607,14 @@ static int cookie_domain_is_public_suffix(const char *domain) {
     }
     if (cookie_amazonaws_is_public_suffix(domain))
         return 1;
+    /* PSL lambda-url.<region>.on.aws — on.aws itself is in extra[]. */
+    {
+        const char *on_aws = ".on.aws";
+        size_t n = strlen(domain), m = 7;
+        if (n > m && strcmp(domain + (n - m), on_aws) == 0 &&
+            cookie_aws_prefix_product(domain, n - m, "lambda-url"))
+            return 1;
+    }
     /* blogspot.<public-suffix> is itself a public suffix (blogspot.co.uk). */
     if (strncmp(domain, "blogspot.", 9) == 0 &&
         cookie_domain_is_public_suffix(domain + 9))

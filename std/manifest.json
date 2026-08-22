@@ -1517,6 +1517,7 @@
     "path/filepath": {
       "header": "include/neverc/std/path/filepath.h",
       "description": "OS-specific file path manipulation (mirrors Go path/filepath package)",
+      "deps": ["unicode", "unicode/utf8"],
       "symbols": {
         "neverc_filepath_base": "src/path/filepath/filepath.c",
         "neverc_filepath_dir": "src/path/filepath/filepath.c",
@@ -1740,6 +1741,7 @@
         "split_after_n": "neverc_bytes_split_after_n",
         "cut_last": "neverc_bytes_cut_last",
         "index_rune": "neverc_bytes_index_rune",
+        "contains_rune": "neverc_bytes_contains_rune",
         "runes": "neverc_bytes_runes",
         "to_valid_utf8": "neverc_bytes_to_valid_utf8"
       }

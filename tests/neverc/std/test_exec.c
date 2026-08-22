@@ -208,6 +208,36 @@ static void test_look_path(void) {
         p = neverc_exec_look_path(".\\notepad", buf, sizeof(buf));
         ASSERT_TRUE(p == NULL);
     }
+    /* Go lookExtensions walks PATHEXT, not only .exe. */
+    {
+        char dir[MAX_PATH], bat[MAX_PATH], absdir[MAX_PATH];
+        FILE *pf;
+        DWORD n;
+        char old_path[32768];
+        GetCurrentDirectoryA((DWORD)sizeof(absdir), absdir);
+        snprintf(dir, sizeof(dir), "%s\\neverc_pathext_dir", absdir);
+        snprintf(bat, sizeof(bat), "%s\\neverc_pathext_only.bat", dir);
+        CreateDirectoryA(dir, NULL);
+        pf = fopen(bat, "wb");
+        ASSERT_TRUE(pf != NULL);
+        if (pf) {
+            fputs("@echo off\r\n", pf);
+            fclose(pf);
+        }
+        n = GetEnvironmentVariableA("PATH", old_path, sizeof(old_path));
+        SetEnvironmentVariableA("PATH", dir);
+        SetEnvironmentVariableA("PATHEXT", ".BAT;.CMD;.EXE");
+        p = neverc_exec_look_path("neverc_pathext_only", buf, sizeof(buf));
+        ASSERT_TRUE(p != NULL);
+        ASSERT_TRUE(strstr(p, ".bat") != NULL || strstr(p, ".BAT") != NULL);
+        if (n > 0 && n < sizeof(old_path))
+            SetEnvironmentVariableA("PATH", old_path);
+        else
+            SetEnvironmentVariableA("PATH", NULL);
+        SetEnvironmentVariableA("PATHEXT", NULL);
+        DeleteFileA(bat);
+        RemoveDirectoryA(dir);
+    }
 #endif
 
     p = neverc_exec_look_path("this_command_does_not_exist_xyz", buf, sizeof(buf));

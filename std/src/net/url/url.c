@@ -69,15 +69,20 @@ int neverc_url_path_is_protocol_relative(const char *path) {
      * decode and return 0, so `/%00//evil` missed the C0 skip. */
     if (n < 0)
         return 1;
-    if (n < 1 || decoded[0] != '/')
+    /* percent_decode reports the full logical length and truncates the
+     * buffer. Walking `n` past sizeof(decoded)-1 overreads the stack
+     * and can miss a later `//` that landed past the stored bytes. */
+    size_t stored = (size_t)n < sizeof(decoded) ? (size_t)n
+                                                : sizeof(decoded) - 1U;
+    if (stored < 1 || decoded[0] != '/')
         return 0;
     size_t i = 1;
-    while (i < (size_t)n &&
+    while (i < stored &&
            ((unsigned char)decoded[i] < 0x20 ||
             (unsigned char)decoded[i] == 0x7f))
         i++;
-    if (i >= (size_t)n)
-        return 0;
+    if (i >= stored)
+        return (size_t)n >= sizeof(decoded);
     return decoded[i] == '/' || decoded[i] == '\\';
 }
 

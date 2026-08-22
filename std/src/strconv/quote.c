@@ -533,22 +533,34 @@ int neverc_strconv_quoted_prefix(const char *s, size_t *prefix_len) {
 int neverc_strconv_format_complex(double re, double im, char fmt, int prec,
                                    char *buf, size_t bufsize) {
     if (!buf || bufsize == 0) return -1;
-    /* 'f' of ~1e308 with modest precision is ~310 digits; 64 was too small. */
-    char re_buf[512], im_buf[512];
-    int re_len = neverc_strconv_format_float(re, fmt, prec, re_buf, sizeof(re_buf));
-    int im_len = neverc_strconv_format_float(im, fmt, prec, im_buf, sizeof(im_buf));
-    if (re_len < 0 || im_len < 0) return -1;
+    /* Format both parts into the caller buffer. A fixed scratch used to
+     * reject 'f' of ~1e308 with large prec even when dst was big enough. */
+    buf[0] = '(';
+    int re_len = neverc_strconv_format_float(re, fmt, prec, buf + 1,
+                                             bufsize - 1);
+    if (re_len < 0)
+        return -1;
 
-    int needs_separator = im_buf[0] != '+' && im_buf[0] != '-';
-    size_t total = 1 + (size_t)re_len + (size_t)needs_separator +
-                   (size_t)im_len + 2;
-    if (total + 1 > bufsize) return -1;
+    size_t pos = 1 + (size_t)re_len;
+    if (pos + 1 >= bufsize)
+        return -1;
+    size_t im_start = pos + 1;
+    int im_len = neverc_strconv_format_float(im, fmt, prec, buf + im_start,
+                                             bufsize - im_start);
+    if (im_len < 0)
+        return -1;
+    /* Trailer is "i)" plus NUL. */
+    if ((size_t)im_len + 3U > bufsize - im_start)
+        return -1;
 
-    size_t pos = 0;
-    buf[pos++] = '(';
-    memcpy(buf + pos, re_buf, (size_t)re_len); pos += (size_t)re_len;
-    if (needs_separator) buf[pos++] = '+';
-    memcpy(buf + pos, im_buf, (size_t)im_len); pos += (size_t)im_len;
+    int needs_separator = buf[im_start] != '+' && buf[im_start] != '-';
+    if (needs_separator) {
+        buf[pos] = '+';
+        pos = im_start + (size_t)im_len;
+    } else {
+        memmove(buf + pos, buf + im_start, (size_t)im_len);
+        pos += (size_t)im_len;
+    }
     buf[pos++] = 'i';
     buf[pos++] = ')';
     buf[pos] = '\0';

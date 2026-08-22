@@ -93,6 +93,22 @@ static neverc_grpc_status_t grpc_test_client_streaming_handler(
     return NEVERC_GRPC_OK;
 }
 
+static neverc_grpc_status_t grpc_test_bin_metadata_handler(
+    neverc_grpc_server_stream_t *stream, void *context) {
+    const char *value;
+    neverc_grpc_message_t message;
+    (void)context;
+    value = neverc_grpc_server_stream_metadata(stream, "x-bin");
+    if (!value || (unsigned char)value[0] != 0x01 ||
+        (unsigned char)value[1] != 0x02 || value[2] != '\0')
+        return NEVERC_GRPC_INVALID_ARGUMENT;
+    if (neverc_grpc_server_stream_recv(stream, &message) != 1)
+        return NEVERC_GRPC_INVALID_ARGUMENT;
+    if (neverc_grpc_server_stream_send(stream, value, 2U) != 0)
+        return NEVERC_GRPC_INTERNAL;
+    return NEVERC_GRPC_OK;
+}
+
 static neverc_grpc_status_t grpc_test_reserved_metadata_handler(
     neverc_grpc_server_stream_t *stream, void *context) {
     (void)context;
@@ -157,6 +173,10 @@ static const neverc_grpc_method_t grpc_test_bidi_end_early_method = {
 static const neverc_grpc_method_t grpc_test_reserved_metadata_method = {
     "/test.Echo/Reserved", NEVERC_GRPC_UNARY, 1024U, 1024U,
     grpc_test_reserved_metadata_handler, NULL};
+
+static const neverc_grpc_method_t grpc_test_bin_metadata_method = {
+    "/test.Echo/BinMeta", NEVERC_GRPC_UNARY, 1024U, 1024U,
+    grpc_test_bin_metadata_handler, NULL};
 
 static void grpc_test_server_task(void *context) {
     grpc_test_server_t *test = (grpc_test_server_t *)context;
@@ -583,6 +603,23 @@ static void grpc_test_reserved_metadata(neverc_h2_client_t *client) {
     neverc_grpc_result_free(result);
 }
 
+static void grpc_test_bin_metadata(neverc_h2_client_t *client) {
+    static const uint8_t raw[] = {0x01, 0x02};
+    neverc_grpc_metadata_t metadata = {"x-bin", raw, sizeof(raw)};
+    neverc_grpc_message_t request = {(const uint8_t *)"x", 1U};
+    neverc_grpc_result_t *result = neverc_grpc_client_call(
+        client, NULL, "/test.Echo/BinMeta", NEVERC_GRPC_UNARY, &metadata, 1U,
+        &request, 1U, 1024U);
+    CHECK(result != NULL);
+    CHECK(result && result->error == NULL);
+    CHECK(result && result->status == NEVERC_GRPC_OK);
+    CHECK(result && result->message_count == 1U);
+    CHECK(result && result->messages[0].length == 2U &&
+          result->messages[0].data[0] == 0x01 &&
+          result->messages[0].data[1] == 0x02);
+    neverc_grpc_result_free(result);
+}
+
 static void grpc_test_max_request_message_size(neverc_h2_client_t *client) {
     uint8_t oversized[1025];
     memset(oversized, 'x', sizeof(oversized));
@@ -608,7 +645,9 @@ static int grpc_test_register_methods(neverc_http_mux_t *mux) {
            neverc_grpc_server_register(
                mux, &grpc_test_bidi_end_early_method) == 0 &&
            neverc_grpc_server_register(
-               mux, &grpc_test_reserved_metadata_method) == 0;
+               mux, &grpc_test_reserved_metadata_method) == 0 &&
+           neverc_grpc_server_register(
+               mux, &grpc_test_bin_metadata_method) == 0;
 }
 
 static void grpc_test_h2c_end_to_end(void) {
@@ -637,6 +676,7 @@ static void grpc_test_h2c_end_to_end(void) {
         grpc_test_bidi_trailers_without_halfclose(client);
         grpc_test_unary_extra_frames(client);
         grpc_test_reserved_metadata(client);
+        grpc_test_bin_metadata(client);
         grpc_test_max_request_message_size(client);
         neverc_h2_client_close(client);
         neverc_h2_client_free(client);

@@ -427,6 +427,31 @@ static void test_sscanf(void) {
         }
     }
 
+    /* A line longer than the 4096-byte fgets chunk must still count as one
+     * format record, or the second conversion never sees its input. */
+    {
+        FILE *tmp = tmpfile();
+        char *longline = (char *)malloc(5002);
+        char word[8192];
+        check_true("fscanf long line fixture", tmp != NULL && longline != NULL);
+        if (tmp && longline) {
+            memset(longline, 'A', 5000);
+            longline[5000] = '\n';
+            longline[5001] = '\0';
+            fputs(longline, tmp);
+            fputs("42\n", tmp);
+            rewind(tmp);
+            memset(word, 0, sizeof(word));
+            a = 0;
+            n = neverc_fmt_fscanf(tmp, "%8191s\n%d", word, &a);
+            check_int("fscanf long line count", n, 2);
+            check_int("fscanf long line len", (int)strlen(word), 5000);
+            check_int("fscanf long line second", a, 42);
+            fclose(tmp);
+        }
+        free(longline);
+    }
+
     /* Go Fscanf: nlIsSpace=false, so a leading/interior newline is not
      * skipped as value whitespace. \v/\f are isSpace and are skipped.
      * https://github.com/golang/go/blob/master/src/fmt/scan.go */

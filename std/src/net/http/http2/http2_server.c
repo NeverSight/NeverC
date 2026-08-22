@@ -1408,13 +1408,36 @@ static h2_stream_t *h2_find_stream(h2_conn_t *conn, uint32_t id) {
     return NULL;
 }
 
+/* Prefer a slot that is not a still-live idle reset (id > max_stream_id).
+ * FIFO eviction of those ids would let a later HEADERS reopen them. */
+static int h2_closed_stream_pick_slot(h2_conn_t *conn, size_t *slot_out) {
+    size_t slot = conn->closed_stream_next;
+    if (conn->closed_stream_count == H2_CLOSED_STREAM_HISTORY) {
+        size_t n;
+        for (n = 0; n < H2_CLOSED_STREAM_HISTORY; n++) {
+            size_t j = (conn->closed_stream_next + n) %
+                       H2_CLOSED_STREAM_HISTORY;
+            if (!conn->closed_streams[j].reset ||
+                conn->closed_streams[j].id <= conn->max_stream_id) {
+                slot = j;
+                break;
+            }
+        }
+        if (n == H2_CLOSED_STREAM_HISTORY)
+            return -1;
+    }
+    *slot_out = slot;
+    return 0;
+}
+
 static void h2_record_closed_stream(h2_conn_t *conn, h2_stream_t *stream) {
-    h2_closed_stream_t *entry =
-        &conn->closed_streams[conn->closed_stream_next];
+    size_t slot;
+    if (h2_closed_stream_pick_slot(conn, &slot) != 0)
+        slot = conn->closed_stream_next;
+    h2_closed_stream_t *entry = &conn->closed_streams[slot];
     entry->id = stream->id;
     entry->reset = nc_atomic_load(&stream->reset) != 0;
-    conn->closed_stream_next =
-        (conn->closed_stream_next + 1U) % H2_CLOSED_STREAM_HISTORY;
+    conn->closed_stream_next = (slot + 1U) % H2_CLOSED_STREAM_HISTORY;
     if (conn->closed_stream_count < H2_CLOSED_STREAM_HISTORY)
         conn->closed_stream_count++;
 }
@@ -1460,21 +1483,9 @@ static int h2_remember_reset_stream_id(h2_conn_t *conn, uint32_t id) {
             return 0;
         }
     }
-    size_t slot = conn->closed_stream_next;
-    if (conn->closed_stream_count == H2_CLOSED_STREAM_HISTORY) {
-        size_t n;
-        for (n = 0; n < H2_CLOSED_STREAM_HISTORY; n++) {
-            size_t j = (conn->closed_stream_next + n) %
-                       H2_CLOSED_STREAM_HISTORY;
-            if (!conn->closed_streams[j].reset ||
-                conn->closed_streams[j].id <= conn->max_stream_id) {
-                slot = j;
-                break;
-            }
-        }
-        if (n == H2_CLOSED_STREAM_HISTORY)
-            return -1;
-    }
+    size_t slot;
+    if (h2_closed_stream_pick_slot(conn, &slot) != 0)
+        return -1;
     h2_closed_stream_t *entry = &conn->closed_streams[slot];
     entry->id = id;
     entry->reset = 1;

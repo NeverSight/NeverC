@@ -885,6 +885,16 @@ static void test_rfc2047_decode_header(void) {
                       nested_crlf, strlen(nested_crlf), out, sizeof(out), &n),
                   -1);
 
+    /* Per-word `=?` check is not enough: `=` + `?utf-8?q?=0D=0A?=` stitches. */
+    const char *nested_split =
+        "=?utf-8?q?=3D?= =?utf-8?q?=3Futf-8=3Fq=3F=0D=0A=3F=3D?=";
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      nested_split, strlen(nested_split), out, sizeof(out),
+                      &n),
+                  -1);
+    ASSERT_INT_EQ((int)n, 0);
+
     {
         const char *fmt_keys[] = {"filename"};
         const char *fmt_vals[] = {b64_crlf_raw};

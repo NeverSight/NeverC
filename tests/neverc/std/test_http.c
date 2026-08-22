@@ -3819,6 +3819,8 @@ static void test_path_params(void) {
     if (pid == 0) {
         neverc_http_mux_t *mux = neverc_http_new_mux();
         neverc_http_mux_handle(mux, "GET /users/{id}", path_param_handler);
+        neverc_http_mux_handle(mux, "HEAD /items/{id}/{action}",
+                                path_param_handler);
         neverc_http_mux_handle(mux, "GET /items/{id}/{action}",
                                 path_param_handler);
         neverc_http_mux_handle(mux, "GET /files/{path...}",
@@ -3842,6 +3844,15 @@ static void test_path_params(void) {
     check_int("path_params id=42",
                strstr(buf, "id=42") != NULL, 1);
 
+    /* Go 1.22: GET-only patterns also serve HEAD. */
+    n = do_http_request(port,
+        "HEAD /users/42 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("path_params HEAD via GET",
+               n > 0 && strstr(buf, "200") != NULL, 1);
+    check_int("path_params HEAD via GET no body",
+               strstr(buf, "id=42") == NULL, 1);
+
     /* Two params */
     n = do_http_request(port,
         "GET /items/99/edit HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
@@ -3851,6 +3862,12 @@ static void test_path_params(void) {
                strstr(buf, "id=99") != NULL, 1);
     check_int("path_params action=edit",
                strstr(buf, "action=edit") != NULL, 1);
+
+    n = do_http_request(port,
+        "HEAD /items/99/edit HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("path_params dedicated HEAD",
+               n > 0 && strstr(buf, "200") != NULL, 1);
 
     /* No match → 404 */
     n = do_http_request(port,

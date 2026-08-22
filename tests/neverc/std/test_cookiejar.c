@@ -199,6 +199,45 @@ static void test_public_suffix_domain(void) {
     neverc_cookiejar_free(jar);
 
     jar = neverc_cookiejar_new();
+    cookie.domain = "on.aws";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.lambda-url.us-east-1.on.aws/", &cookie, 1);
+    check_int("reject Domain=on.aws", neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "lambda-url.us-east-1.on.aws";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.lambda-url.us-east-1.on.aws/", &cookie, 1);
+    check_int("reject Domain=lambda-url.<region>.on.aws",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "elasticbeanstalk.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.us-west-2.elasticbeanstalk.com/", &cookie, 1);
+    check_int("reject Domain=elasticbeanstalk.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "us-west-2.elasticbeanstalk.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.us-west-2.elasticbeanstalk.com/", &cookie, 1);
+    check_int("reject Domain=<region>.elasticbeanstalk.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "cloudapp.azure.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://evil.cloudapp.azure.com/", &cookie, 1);
+    check_int("reject Domain=cloudapp.azure.com",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
     cookie.domain = "azurestaticapps.net";
     neverc_cookiejar_set_cookies(
         jar, "https://evil.azurestaticapps.net/", &cookie, 1);

@@ -24,10 +24,64 @@ struct neverc_grpc_server_stream {
     size_t received_count;
     size_t sent_count;
     uint8_t *received_message;
+    struct grpc_decoded_md {
+        char *key;
+        char *value;
+        struct grpc_decoded_md *next;
+    } *decoded_md;
     int input_eof;
     int recv_failed;
     int ended;
 };
+
+static int grpc_binary_key(const char *key) {
+    size_t length;
+    if (!key) return 0;
+    length = strlen(key);
+    return length >= 4 && strcmp(key + length - 4, "-bin") == 0;
+}
+
+static void grpc_decoded_md_free(struct grpc_decoded_md *list) {
+    while (list) {
+        struct grpc_decoded_md *next = list->next;
+        free(list->key);
+        free(list->value);
+        free(list);
+        list = next;
+    }
+}
+
+/* PROTOCOL-HTTP2: *-bin is unpadded Base64; padded input is also accepted. */
+static char *grpc_decode_bin_value(const char *wire) {
+    size_t n = wire ? strlen(wire) : 0;
+    size_t cap = neverc_base64_decoded_len(n);
+    char *out = (char *)malloc(cap + 1);
+    int dlen;
+    if (!out) return NULL;
+    dlen = neverc_base64_decode((uint8_t *)out, wire ? wire : "", n);
+    if (dlen < 0) {
+        free(out);
+        return NULL;
+    }
+    out[dlen] = '\0';
+    return out;
+}
+
+static int grpc_decode_incoming_bin_headers(neverc_hpack_header_t *headers,
+                                            size_t count) {
+    if (count && !headers) return -1;
+    for (size_t i = 0; i < count; i++) {
+        char *decoded;
+        if (!headers[i].name || !grpc_binary_key(headers[i].name))
+            continue;
+        decoded = grpc_decode_bin_value(
+            headers[i].value ? headers[i].value : "");
+        if (!decoded) return -1;
+        free(headers[i].value);
+        headers[i].value = decoded;
+    }
+    return 0;
+}
 
 static int64_t grpc_now_ms(void) {
     struct timespec time_value;
@@ -260,7 +314,34 @@ neverc_context_t *neverc_grpc_server_stream_context(
 
 const char *neverc_grpc_server_stream_metadata(
     neverc_grpc_server_stream_t *stream, const char *key) {
-    return stream ? neverc_http_request_header(stream->request, key) : NULL;
+    const char *raw;
+    struct grpc_decoded_md *node;
+    char *decoded;
+    size_t key_len;
+    if (!stream || !key) return NULL;
+    raw = neverc_http_request_header(stream->request, key);
+    if (!raw || !grpc_binary_key(key)) return raw;
+    for (node = stream->decoded_md; node; node = node->next)
+        if (strcmp(node->key, key) == 0) return node->value;
+    decoded = grpc_decode_bin_value(raw);
+    if (!decoded) return NULL;
+    node = (struct grpc_decoded_md *)malloc(sizeof(*node));
+    if (!node) {
+        free(decoded);
+        return NULL;
+    }
+    key_len = strlen(key);
+    node->key = (char *)malloc(key_len + 1);
+    if (!node->key) {
+        free(decoded);
+        free(node);
+        return NULL;
+    }
+    memcpy(node->key, key, key_len + 1);
+    node->value = decoded;
+    node->next = stream->decoded_md;
+    stream->decoded_md = node;
+    return decoded;
 }
 
 static int grpc_h2_read_exact(neverc_grpc_server_stream_t *stream,
@@ -578,6 +659,7 @@ static void grpc_server_dispatch(neverc_http_request_t *request,
     if (!stream.ended)
         (void)neverc_grpc_server_stream_end(
             &stream, status, framing_valid ? NULL : "invalid request framing");
+    grpc_decoded_md_free(stream.decoded_md);
     free(stream.received_message);
     if (owns_context) {
         neverc_context_cancel_handle_cancel(call_cancel);
@@ -599,11 +681,6 @@ int neverc_grpc_server_register(neverc_http_mux_t *mux,
         mux, pattern, grpc_server_dispatch, (void *)method);
     free(pattern);
     return result;
-}
-
-static int grpc_binary_key(const char *key) {
-    size_t length = strlen(key);
-    return length >= 4 && strcmp(key + length - 4, "-bin") == 0;
 }
 
 /* PROTOCOL-HTTP2 Custom-Metadata: keys ending in -bin are RFC 4648 Base64
@@ -1075,6 +1152,11 @@ int neverc_grpc_client_stream_receive(
                 stream->header_count = event->header_count;
                 event->headers = NULL;
                 event->header_count = 0;
+                if (grpc_decode_incoming_bin_headers(
+                        stream->headers, stream->header_count) != 0) {
+                    result = grpc_client_stream_fail(
+                        stream, "invalid gRPC binary metadata");
+                } else {
                 neverc_grpc_status_t header_status = NEVERC_GRPC_UNKNOWN;
                 char *header_message = NULL;
                 int extracted = grpc_extract_status(
@@ -1092,6 +1174,7 @@ int neverc_grpc_client_stream_receive(
                     free(stream->header_status_message);
                     stream->header_status_message = header_message;
                 }
+                }
             }
         } else if (event->type == NEVERC_H2_CLIENT_EVENT_DATA) {
             if (!stream->headers_received || stream->trailers_received ||
@@ -1107,6 +1190,8 @@ int neverc_grpc_client_stream_receive(
         } else if (event->type == NEVERC_H2_CLIENT_EVENT_TRAILERS) {
             if (!stream->headers_received || stream->trailers_received ||
                 stream->header_status_seen ||
+                grpc_decode_incoming_bin_headers(
+                    event->headers, event->header_count) != 0 ||
                 grpc_client_stream_parse_trailers(
                     stream, event->headers, event->header_count) != 0) {
                 result = grpc_client_stream_fail(
@@ -1336,6 +1421,14 @@ neverc_grpc_result_t *neverc_grpc_client_call(
     response->header_count = 0;
     response->trailers = NULL;
     response->trailer_count = 0;
+    if (grpc_decode_incoming_bin_headers(result->headers,
+                                         result->header_count) != 0 ||
+        grpc_decode_incoming_bin_headers(result->trailers,
+                                         result->trailer_count) != 0) {
+        neverc_h2_response_free(response);
+        result->error = "invalid gRPC metadata";
+        return result;
+    }
 
     neverc_grpc_status_t trailer_status = NEVERC_GRPC_UNKNOWN;
     neverc_grpc_status_t header_status = NEVERC_GRPC_UNKNOWN;

@@ -1188,10 +1188,17 @@ static int h3_poll_control_stream(h3_conn_t *connection, int *worked) {
                               "HTTP/3 control stream closed");
             return -1;
         }
-        if (count < 0 || h3_append_bytes(&connection->control_buffer,
-                                         &connection->control_buffer_length,
-                                         H3_MAX_CONTROL_BUFFER, scratch,
-                                         (size_t)count) != 0)
+        if (count < 0) {
+            /* RESET_STREAM is a close of the critical stream (RFC 9114 §6.2.1).
+             * Falling through used to become H3_GENERAL_PROTOCOL_ERROR. */
+            h3_protocol_error(connection, NC_H3_CLOSED_CRITICAL_STREAM,
+                              "HTTP/3 control stream reset");
+            return -1;
+        }
+        if (h3_append_bytes(&connection->control_buffer,
+                            &connection->control_buffer_length,
+                            H3_MAX_CONTROL_BUFFER, scratch,
+                            (size_t)count) != 0)
             return -1;
         *worked = 1;
         if (h3_parse_control_buffer(connection) != 0) return -1;
@@ -1294,7 +1301,11 @@ static int h3_poll_qpack_stream(h3_conn_t *connection,
                               "QPACK critical stream closed");
             return -1;
         }
-        if (count < 0) return -1;
+        if (count < 0) {
+            h3_protocol_error(connection, NC_H3_CLOSED_CRITICAL_STREAM,
+                              "QPACK critical stream reset");
+            return -1;
+        }
         *worked = 1;
         if (encoder_stream) {
             if (h3_feed_qpack_encoder(connection, scratch, (size_t)count) != 0)

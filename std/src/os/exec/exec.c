@@ -478,10 +478,11 @@ static int exec_win_has_ext(const char *name) {
     return dot && (!slash || dot > slash);
 }
 
-/* Go lookExtensions: try the exact name, then ".exe" when there is no ext. */
+/* Go lookExtensions: exact name, then each PATHEXT entry
+ * (default .COM;.EXE;.BAT;.CMD) when the name has no extension. */
 static int exec_win_try_with_exe(const char *file, char *buf, DWORD cap) {
     size_t n;
-    int written;
+    const char *exts;
     if (!file || !buf || cap == 0) return -1;
     if (exec_win_is_file(file)) {
         n = strlen(file);
@@ -490,9 +491,26 @@ static int exec_win_try_with_exe(const char *file, char *buf, DWORD cap) {
         return 0;
     }
     if (exec_win_has_ext(file)) return -1;
-    written = snprintf(buf, cap, "%s.exe", file);
-    if (written < 0 || (DWORD)written >= cap) return -1;
-    return exec_win_is_file(buf) ? 0 : -1;
+    exts = getenv("PATHEXT");
+    if (!exts || !exts[0])
+        exts = ".COM;.EXE;.BAT;.CMD";
+    while (*exts) {
+        const char *end = strchr(exts, ';');
+        size_t elen = end ? (size_t)(end - exts) : strlen(exts);
+        int written;
+        if (elen > 0) {
+            if (exts[0] == '.')
+                written = snprintf(buf, cap, "%s%.*s", file, (int)elen, exts);
+            else
+                written = snprintf(buf, cap, "%s.%.*s", file, (int)elen, exts);
+            if (written >= 0 && (DWORD)written < cap && exec_win_is_file(buf))
+                return 0;
+        }
+        if (!end)
+            break;
+        exts = end + 1;
+    }
+    return -1;
 }
 
 static int exec_win_is_drive_cwd(const char *dir, size_t n) {

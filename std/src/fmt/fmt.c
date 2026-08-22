@@ -1427,7 +1427,10 @@ static char *scan_read_format_lines(FILE *f, const char *format) {
     buf = (char *)malloc(cap);
     if (!buf) return NULL;
     buf[0] = '\0';
-    for (int i = 0; i < lines; i++) {
+    /* Count newline-terminated records, not fgets() chunks. A 4096-byte
+     * fgets of a longer line is one chunk, not one format line. */
+    int got = 0;
+    while (got < lines) {
         char line[4096];
         size_t n;
         if (!fgets(line, (int)sizeof(line), f)) break;
@@ -1454,6 +1457,8 @@ static char *scan_read_format_lines(FILE *f, const char *format) {
         memcpy(buf + len, line, n);
         len += n;
         buf[len] = '\0';
+        if (n > 0 && line[n - 1] == '\n')
+            got++;
     }
     return buf;
 }

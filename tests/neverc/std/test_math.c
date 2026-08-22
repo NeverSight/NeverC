@@ -1012,6 +1012,19 @@ static void test_jn_yn(void) {
     check_double("jn(INT_MIN,1)=0", neverc_math_jn(NEVERC_MATH_MIN_INT, 1.0), 0.0);
     check_double("yn(INT_MIN,1)=-Inf", neverc_math_yn(NEVERC_MATH_MIN_INT, 1.0), NC_NEGINF);
     check_double("jn(INT_MIN,NaN)", neverc_math_jn(NEVERC_MATH_MIN_INT, NC_NAN), NC_NAN);
+    /* |n|=2^31 with x ≥ 2^302 is the oscillatory 1/√x regime, not a pole. */
+    {
+        double huge = 1e300;
+        double jn_huge = neverc_math_jn(NEVERC_MATH_MIN_INT, huge);
+        double yn_huge = neverc_math_yn(NEVERC_MATH_MIN_INT, huge);
+        check_true("jn(INT_MIN,1e300) finite",
+                   !neverc_math_isnan(jn_huge) && !neverc_math_isinf(jn_huge, 0));
+        check_true("yn(INT_MIN,1e300) finite",
+                   !neverc_math_isnan(yn_huge) && !neverc_math_isinf(yn_huge, 0));
+        check_true("jn(INT_MIN,1e300) ~ 1/sqrt(x)",
+                   neverc_math_abs(jn_huge) < 1e-140 &&
+                   neverc_math_abs(jn_huge) > 1e-160);
+    }
 }
 
 /* ========== Constants test ========== */

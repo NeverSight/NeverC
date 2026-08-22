@@ -1094,6 +1094,12 @@ int neverc_mime_decode_header(const char *src, size_t src_len,
     if (mime_output_has_ctl(out, di) ||
         !nci_2047_utf8_ok((const unsigned char *)out, di))
         return -1;
+    /* Adjacent encoded-words are concatenated after the per-word `=?`
+     * check. Reject a stitch that rebuilds a nested encoded-word. */
+    for (size_t k = 0; k + 1 < di; k++) {
+        if (out[k] == '=' && out[k + 1] == '?')
+            return -1;
+    }
     if (out_len) *out_len = di;
     return 0;
 }

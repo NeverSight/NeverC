@@ -522,6 +522,20 @@ static void test_safe_redirect(void) {
     ASSERT_INT_EQ(neverc_url_path_n_is_protocol_relative("/%2f/x?y", 6), 1);
     ASSERT_INT_EQ(neverc_url_is_safe_redirect(
         "https://good.com/%2fevil.com", "good.com"), 1);
+
+    /* Decode longer than neverc_url_t.path: must not walk past the
+     * stored buffer, and must fail closed if C0s fill it. */
+    char long_safe[2048];
+    long_safe[0] = '/';
+    memset(long_safe + 1, 'a', 2000);
+    long_safe[2001] = '\0';
+    ASSERT_INT_EQ(neverc_url_path_is_protocol_relative(long_safe), 0);
+
+    char long_c0[2048];
+    long_c0[0] = '/';
+    memset(long_c0 + 1, '\t', 1100);
+    memcpy(long_c0 + 1101, "//evil", 7);
+    ASSERT_INT_EQ(neverc_url_path_is_protocol_relative(long_c0), 1);
 }
 
 static void test_bounded_outputs(void) {

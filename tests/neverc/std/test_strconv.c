@@ -959,6 +959,16 @@ static void test_complex(void) {
     check_true("format_complex 1e100 paren", large[0] == '(');
     check_true("format_complex 1e100 starts 1", large[1] == '1');
     check_true("format_complex 1e100 has +2", strstr(large, "+2") != NULL);
+
+    /* 'f' of 1e308 with prec 200 is ~510 chars per part; a 512-byte
+     * scratch still failed after the 64-byte bump. */
+    char huge[2048];
+    n = neverc_strconv_format_complex(1e308, -1e308, 'f', 200, huge, sizeof(huge));
+    check_true("format_complex 1e308 prec200 fits", n > 500);
+    check_true("format_complex 1e308 prec200 paren", huge[0] == '(');
+    check_true("format_complex 1e308 prec200 minus", strchr(huge, '-') != NULL);
+    check_true("format_complex 1e308 prec200 imag",
+               n > 2 && huge[n - 2] == 'i' && huge[n - 1] == ')');
 }
 
 int main(void) {

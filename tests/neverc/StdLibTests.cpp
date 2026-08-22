@@ -843,7 +843,7 @@ TEST_F(StdLibTest, NetEventLoopAllocationFailure) {
 }
 
 // ===== Path =====
-STD_TEST(filepath, "src/path/filepath/filepath.c", "src/unicode/utf8/utf8.c")
+STD_TEST(filepath, "src/path/filepath/filepath.c", "src/unicode/utf8/utf8.c", "src/unicode/unicode.c")
 
 // ===== Image =====
 STD_TEST(color, "src/image/color/color.c")

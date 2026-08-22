@@ -405,8 +405,14 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             nc_cond_broadcast(&conn->stream_avail_cond);
             nc_cond_broadcast(&conn->datagram_cond);
         } else if (frame_type == QUIC_FRAME_HANDSHAKE_DONE) {
-            if (conn->side != QUIC_SIDE_CLIENT)
+            /* RFC 9000 §19.20: a server MUST treat this as PROTOCOL_VIOLATION.
+             * Returning -1 alone is mapped to FRAME_ENCODING_ERROR. */
+            if (conn->side != QUIC_SIDE_CLIENT) {
+                (void)neverc_quic_conn_close_locked(
+                    conn, QUIC_ERR_PROTOCOL_VIOLATION,
+                    "HANDSHAKE_DONE received by server", 0);
                 return -1;
+            }
             conn->handshake_confirmed = 1;
             conn->peer_completed_address_validation = 1;
             /* RFC 9001 §4.9.2: the client discards Handshake keys once
@@ -435,10 +441,14 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             consumed = cursor - position;
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_NEW_TOKEN) {
-            /* RFC 9000 §19.7: clients receive NEW_TOKEN; servers MUST NOT.
-             * Token Length of 0 is FRAME_ENCODING_ERROR. */
-            if (conn->side != QUIC_SIDE_CLIENT)
+            /* RFC 9000 §19.7: a server MUST treat this as PROTOCOL_VIOLATION.
+             * Token Length of 0 stays FRAME_ENCODING_ERROR via parse. */
+            if (conn->side != QUIC_SIDE_CLIENT) {
+                (void)neverc_quic_conn_close_locked(
+                    conn, QUIC_ERR_PROTOCOL_VIOLATION,
+                    "NEW_TOKEN received by server", 0);
                 return -1;
+            }
             if (neverc_quic_parse_new_token(payload + position,
                                             payload_len - position,
                                             &consumed) != 0)

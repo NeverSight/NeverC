@@ -322,6 +322,9 @@ static int nci_rfc2047_header_safe(const char *s, size_t n) {
 
     const char *p = s;
     size_t left = n;
+    int have_prev = 0;
+    unsigned char prev_last = 0;
+    const char *prev_end = NULL;
     while (left >= 2) {
         const char *mark = nci_2047_find(p, left, "=?", 2);
         if (!mark)
@@ -395,6 +398,27 @@ static int nci_rfc2047_header_safe(const char *s, size_t n) {
                     free(heap);
                     return 0;
                 }
+            }
+            /* Same stitch as decode_header: WSP-joined words can rebuild
+             * `=?` across the boundary (`=` + `?utf-8?q?...`). */
+            if (have_prev && prev_end && dlen > 0) {
+                int only_wsp = 1;
+                for (const char *g = prev_end; g < mark; g++) {
+                    unsigned char c = (unsigned char)*g;
+                    if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {
+                        only_wsp = 0;
+                        break;
+                    }
+                }
+                if (only_wsp && prev_last == '=' && dec[0] == '?') {
+                    free(heap);
+                    return 0;
+                }
+            }
+            if (dlen > 0) {
+                have_prev = 1;
+                prev_last = dec[dlen - 1];
+                prev_end = end;
             }
         }
         free(heap);

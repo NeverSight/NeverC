@@ -1111,6 +1111,67 @@ static void bn_shl_words(neverc_bigint_t *z, size_t words) {
     z->len = newlen;
 }
 
+/* bit_len() saturates at INT_MAX; BZ normalization needs the full width. */
+static int bigint_bit_len_size(const neverc_bigint_t *x, size_t *out) {
+    neverc_bigint_t view;
+    size_t bits;
+    uint32_t top;
+    if (!x || !out) return -1;
+    mag_view(&view, x);
+    if (view.len == 0) {
+        *out = 0;
+        return 0;
+    }
+    if (view.len - 1 > SIZE_MAX / 32)
+        return -1;
+    bits = (view.len - 1) * 32;
+    top = view.digits[view.len - 1];
+    while (top) {
+        if (bits == SIZE_MAX) return -1;
+        bits++;
+        top >>= 1;
+    }
+    *out = bits;
+    return 0;
+}
+
+static void bigint_lsh_bits(neverc_bigint_t *z, const neverc_bigint_t *x,
+                            size_t n) {
+    size_t words = n / 32;
+    unsigned rem = (unsigned)(n % 32);
+    if (z != x)
+        neverc_bigint_set(z, x);
+    if (words)
+        bn_shl_words(z, words);
+    if (rem)
+        neverc_bigint_lsh(z, z, rem);
+}
+
+static void bn_shr_words(neverc_bigint_t *z, size_t words) {
+    if (z->len == 0) return;
+    if (words >= z->len) {
+        z->len = 0;
+        z->neg = 0;
+        return;
+    }
+    memmove(z->digits, z->digits + words,
+            (z->len - words) * sizeof(uint32_t));
+    z->len -= words;
+    trim(z);
+}
+
+static void bigint_rsh_bits(neverc_bigint_t *z, const neverc_bigint_t *x,
+                            size_t n) {
+    size_t words = n / 32;
+    unsigned rem = (unsigned)(n % 32);
+    if (z != x)
+        neverc_bigint_set(z, x);
+    if (words)
+        bn_shr_words(z, words);
+    if (rem)
+        neverc_bigint_rsh(z, z, rem);
+}
+
 /* q = floor(x / y), r = x mod y for nonnegative magnitudes (y != 0).
  * No BZ recursion — Knuth / single-word only. Handles x < y and x == y. */
 static void mag_divmod_basic(neverc_bigint_t *q, neverc_bigint_t *r,
@@ -1282,8 +1343,10 @@ static void bz_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
         return;
     size_t n32 = n * 32;
 
-    size_t ybits = (size_t)neverc_bigint_bit_len(y);
-    size_t sigma = (n32 > ybits) ? (n32 - ybits) : 0;
+    size_t ybits, xbits, sigma, t;
+    if (bigint_bit_len_size(y, &ybits) != 0)
+        return;
+    sigma = (n32 > ybits) ? (n32 - ybits) : 0;
 
     neverc_bigint_t ys, xs, z, blk, qi, ri, qq, sh;
     neverc_bigint_init(&ys); neverc_bigint_init(&xs);
@@ -1291,12 +1354,15 @@ static void bz_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
     neverc_bigint_init(&qi); neverc_bigint_init(&ri);
     neverc_bigint_init(&qq); neverc_bigint_init(&sh);
 
-    neverc_bigint_lsh(&ys, y, (unsigned)sigma);   /* normalize: exactly n words */
-    neverc_bigint_lsh(&xs, x, (unsigned)sigma);
+    bigint_lsh_bits(&ys, y, sigma);   /* normalize: exactly n words */
+    bigint_lsh_bits(&xs, x, sigma);
     ys.neg = 0; xs.neg = 0;
 
-    size_t xbits = (size_t)neverc_bigint_bit_len(&xs);
-    size_t t = (xbits + n32) / n32;               /* number of n-word blocks */
+    if (bigint_bit_len_size(&xs, &xbits) != 0)
+        goto bz_done;
+    if (n32 != 0 && xbits > SIZE_MAX - n32)
+        goto bz_done;
+    t = (xbits + n32) / n32;               /* number of n-word blocks */
     if (t < 2) t = 2;
 
     bn_block(&z, &xs, (t - 1) * n, n);            /* top block (< ys) */
@@ -1313,8 +1379,9 @@ static void bz_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
     }
 
     if (q) { neverc_bigint_set(q, &qq); q->neg = 0; }
-    if (r) { neverc_bigint_rsh(r, &z, (unsigned)sigma); r->neg = 0; }
+    if (r) { bigint_rsh_bits(r, &z, sigma); r->neg = 0; }
 
+bz_done:
     neverc_bigint_free(&ys); neverc_bigint_free(&xs);
     neverc_bigint_free(&z); neverc_bigint_free(&blk);
     neverc_bigint_free(&qi); neverc_bigint_free(&ri);

@@ -84,6 +84,8 @@ int neverc_grpc_server_register(neverc_http_mux_t *mux,
                                  const neverc_grpc_method_t *method);
 neverc_context_t *neverc_grpc_server_stream_context(
     neverc_grpc_server_stream_t *stream);
+/* Incoming *-bin values are RawStd-decoded (padded input is accepted).
+ * Invalid Base64 returns NULL. Decoded bytes may contain NUL. */
 const char *neverc_grpc_server_stream_metadata(
     neverc_grpc_server_stream_t *stream, const char *key);
 int neverc_grpc_server_stream_recv(neverc_grpc_server_stream_t *stream,

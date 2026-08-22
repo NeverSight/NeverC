@@ -521,6 +521,17 @@ static void test_walk_dir(void) {
         chmod(locked, 0755);
         rmdir(locked);
     }
+
+    /* Go WalkDir: root open failure + fn returns 0 is success. */
+    if (geteuid() != 0) {
+        chmod(walkdir, 0000);
+        walk_count = 0;
+        walk_saw_null_entry = 0;
+        rc = neverc_fs_walk_dir(walkdir, walk_null_cb, NULL);
+        check("walk_root_unreadable_fn0", rc == 0);
+        check("walk_root_unreadable_notified", walk_saw_null_entry >= 1);
+        chmod(walkdir, 0755);
+    }
 #endif
 
     walk_count = 0;

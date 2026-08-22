@@ -5,6 +5,9 @@
 
 #include "neverc/std/path/filepath.h"
 #include "neverc/std/unicode/utf8.h"
+#ifdef _WIN32
+#include "neverc/std/unicode.h"
+#endif
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -518,19 +521,51 @@ const char *neverc_filepath_join(const char *a, const char *b, char *buf, size_t
 }
 
 static int same_word_n(const char *a, size_t alen, const char *b, size_t blen) {
-    if (alen != blen)
-        return 0;
 #ifdef _WIN32
-    {
-        size_t i;
-        for (i = 0; i < alen; i++) {
-            if (ascii_upper(a[i]) != ascii_upper(b[i]))
-                return 0;
+    /* Go filepath.sameWord: strings.EqualFold (SimpleFold). Lengths
+     * need not match (`k` vs U+212A Kelvin). */
+    const uint8_t *s = (const uint8_t *)a;
+    const uint8_t *t = (const uint8_t *)b;
+    while (alen > 0 && blen > 0) {
+        uint32_t sr, tr;
+        int sw, tw;
+        neverc_utf8_decode_rune(s, alen, &sr, &sw);
+        neverc_utf8_decode_rune(t, blen, &tr, &tw);
+        if (sw < 1) {
+            sr = NEVERC_UTF8_RUNE_ERROR;
+            sw = 1;
         }
-        return 1;
+        if (tw < 1) {
+            tr = NEVERC_UTF8_RUNE_ERROR;
+            tw = 1;
+        }
+        s += (size_t)sw;
+        alen -= (size_t)sw;
+        t += (size_t)tw;
+        blen -= (size_t)tw;
+        if (sr == tr)
+            continue;
+        if (tr < sr) {
+            uint32_t tmp = sr;
+            sr = tr;
+            tr = tmp;
+        }
+        if (sr >= 'A' && sr <= 'Z' && tr == sr + ('a' - 'A'))
+            continue;
+        if (tr < 0x80)
+            return 0;
+        {
+            uint32_t r = neverc_unicode_simple_fold(sr);
+            while (r != sr && r < tr)
+                r = neverc_unicode_simple_fold(r);
+            if (r == tr)
+                continue;
+        }
+        return 0;
     }
+    return alen == 0 && blen == 0;
 #else
-    return memcmp(a, b, alen) == 0;
+    return alen == blen && memcmp(a, b, alen) == 0;
 #endif
 }
 

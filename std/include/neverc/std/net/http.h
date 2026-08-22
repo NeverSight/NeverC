@@ -151,7 +151,8 @@ neverc_http_mux_t *neverc_http_new_mux(void);
 /* Register a handler for a pattern.
  * Supports Go 1.22+ style patterns:
  *   "/users/{id}"         — captures path parameter "id"
- *   "GET /api/items"      — method-specific route
+ *   "GET /api/items"      — method-specific; also serves HEAD
+ *                           unless a HEAD route exists (Go 1.22)
  *   "GET /files/{path...}" — wildcard captures rest of path
  *   "/static/"            — prefix match (trailing /)
  *   "/exact"              — exact match (no trailing /) */

@@ -780,6 +780,8 @@ static char *strndup_safe(const char *s, size_t n);
  *
  * Pattern syntax:
  *   "METHOD /path"           — method-specific (e.g. "GET /users")
+ *   GET patterns also serve HEAD (Go 1.22 ServeMux) unless a HEAD
+ *   route exists for the same path.
  *   "/path/{name}"           — captures segment as parameter
  *   "/files/{path...}"       — wildcard, captures rest of path
  *   "/static/"               — prefix match (trailing /)
@@ -1090,12 +1092,17 @@ static route_t *mux_match_ex(neverc_http_mux_t *mux,
     for (int i = 0; i < nr; i++) {
         route_t *r = &mux->routes[i];
 
-        /* Check method filter */
-        if (r->method && method && strcmp(r->method, method) != 0)
-            continue;
+        /* Check method filter. Go 1.22 ServeMux: a GET pattern also
+         * matches HEAD when no dedicated HEAD route wins. */
+        int get_serves_head = 0;
+        if (r->method && method && strcmp(r->method, method) != 0) {
+            if (strcmp(method, "HEAD") != 0 || strcmp(r->method, "GET") != 0)
+                continue;
+            get_serves_head = 1;
+        }
 
         const char *pat = r->path_pattern;
-        int specificity = r->method ? 2 : 0;
+        int specificity = r->method ? (get_serves_head ? 1 : 2) : 0;
 
         if (r->has_params) {
             memset(&tmp_params, 0, sizeof(tmp_params));
