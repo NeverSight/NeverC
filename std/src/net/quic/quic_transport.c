@@ -813,6 +813,7 @@ decrypt_complete:
     if (header.type == QUIC_PKT_HANDSHAKE)
         qt_discard_encryption_level(conn, QUIC_ENC_INITIAL);
     conn->last_activity_ms = nc_monotonic_ms();
+    conn->sent_ack_eliciting_since_recv = 0;
     if (neverc_quic_tls_is_established(conn->tls) &&
         conn->state == QUIC_CONN_HANDSHAKING) {
         quic_conn_id_entry_t *peer = &conn->peer_cids[0];
@@ -1084,10 +1085,12 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
             if (stream->reset_pending) {
                 stream->send_len = 0;
                 stream->send_fin = 0;
+                /* RFC 9000 §4.5 / Go outmaxsent: Final Size is the
+                 * largest offset sent, not the acked leftover. */
                 int result = neverc_quic_write_reset_stream(
                     output, capacity, stream->id,
                     stream->reset_error_code,
-                    stream->send_offset + stream->send_len, &position);
+                    stream->send_highest, &position);
                 nc_mutex_unlock(&stream->lock);
                 if (result != 0) return 0;
                 meta->stream_id = stream->id;
@@ -1709,8 +1712,11 @@ static int qt_send_item(struct neverc_quic_conn *conn,
         } else if (meta->kind == QUIC_TX_CONTROL) {
             qt_commit_control(conn, meta);
         }
+        if (!conn->sent_ack_eliciting_since_recv) {
+            conn->last_activity_ms = nc_monotonic_ms();
+            conn->sent_ack_eliciting_since_recv = 1;
+        }
     }
-    conn->last_activity_ms = nc_monotonic_ms();
     return 0;
 }
 

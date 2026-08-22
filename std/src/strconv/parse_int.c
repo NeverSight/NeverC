@@ -36,6 +36,40 @@ static const uint8_t digit_val[256] = {
 };
 #undef NC_X
 
+/* Go strconv.underscoreOK: '_' only between digits, or after 0x/0o/0b. */
+static int underscore_ok(const char *s) {
+    int saw = '^';
+    size_t i = 0;
+    int hex = 0;
+
+    if (s[0] == '-' || s[0] == '+')
+        s++;
+    if (s[0] == '0' && (s[1] == 'b' || s[1] == 'B' || s[1] == 'o' ||
+                        s[1] == 'O' || s[1] == 'x' || s[1] == 'X')) {
+        i = 2;
+        saw = '0';
+        hex = s[1] == 'x' || s[1] == 'X';
+    }
+    for (; s[i]; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if ((c >= '0' && c <= '9') ||
+            (hex && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))) {
+            saw = '0';
+            continue;
+        }
+        if (c == '_') {
+            if (saw != '0')
+                return 0;
+            saw = '_';
+            continue;
+        }
+        if (saw == '_')
+            return 0;
+        saw = '!';
+    }
+    return saw != '_';
+}
+
 int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *result) {
     if (!s || !result || *s == '\0')
         return NEVERC_STRCONV_ERR_SYNTAX;
@@ -45,28 +79,23 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
     const char *p = s;
     int allow_underscores = base == 0;
     int saw_digit = 0;
-    int previous_underscore = 0;
-    int after_prefix = 0;
+    int saw_underscore = 0;
 
     if (base == 0) {
         if (p[0] == '0') {
             if (p[1] == 'x' || p[1] == 'X') {
                 base = 16;
                 p += 2;
-                after_prefix = 1;
             } else if (p[1] == 'b' || p[1] == 'B') {
                 base = 2;
                 p += 2;
-                after_prefix = 1;
             } else if (p[1] == 'o' || p[1] == 'O') {
                 base = 8;
                 p += 2;
-                after_prefix = 1;
             } else {
                 base = 8;
                 p += 1;
                 saw_digit = 1; /* The leading zero is a digit and a prefix. */
-                after_prefix = 1;
             }
         } else {
             base = 10;
@@ -89,10 +118,11 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
         for (; *p; p++) {
             unsigned d = (unsigned)(unsigned char)*p - '0';
             if (d > 9) {
-                if (*p == '_' && allow_underscores &&
-                    !previous_underscore && (saw_digit || after_prefix)) {
-                    previous_underscore = 1;
-                    after_prefix = 0;
+                /* Go skips every '_' when base==0, then underscoreOK
+                 * after a successful parse. Overflow returns ErrRange
+                 * without inspecting later '_' legality. */
+                if (*p == '_' && allow_underscores) {
+                    saw_underscore = 1;
                     continue;
                 }
                 return NEVERC_STRCONV_ERR_SYNTAX;
@@ -105,8 +135,6 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
             }
             val = val * 10ULL + d;
             saw_digit = 1;
-            previous_underscore = 0;
-            after_prefix = 0;
         }
     } else {
         const unsigned long long ubase = (unsigned long long)base;
@@ -114,10 +142,8 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
         const unsigned rem = (unsigned)(NC_ULLONG_MAX % ubase);
         for (; *p; p++) {
             unsigned char c = (unsigned char)*p;
-            if (c == '_' && allow_underscores &&
-                !previous_underscore && (saw_digit || after_prefix)) {
-                previous_underscore = 1;
-                after_prefix = 0;
+            if (c == '_' && allow_underscores) {
+                saw_underscore = 1;
                 continue;
             }
 
@@ -131,12 +157,12 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
             }
             val = val * ubase + d;
             saw_digit = 1;
-            previous_underscore = 0;
-            after_prefix = 0;
         }
     }
 
-    if (!saw_digit || previous_underscore)
+    if (!saw_digit)
+        return NEVERC_STRCONV_ERR_SYNTAX;
+    if (saw_underscore && !underscore_ok(s))
         return NEVERC_STRCONV_ERR_SYNTAX;
 
     *result = val;

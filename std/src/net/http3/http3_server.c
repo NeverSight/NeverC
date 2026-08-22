@@ -578,10 +578,19 @@ static int h3_parse_request_headers(h3_conn_t *connection,
      * before treating empty as absent, or ":authority: victim" plus
      * "host: " would skip the check and later disagree between
      * request.host and the Host header. */
-    if (host && !h3_ascii_ieq(request->authority, host))
+    /* RFC 9114 §4.3.1: :authority and Host must match when both are
+     * present, including an empty Host (":authority: victim" + "host: "). */
+    if ((pseudo_seen & 4U) && host &&
+        !h3_ascii_ieq(request->authority, host))
         goto cleanup;
     if (host && !*host) host = NULL;
-    if (pseudo_seen != (1U | 2U | 4U | 8U) ||
+    /* Host-only is legal (H1→H3). Copy it so later allowlist/handlers
+     * see the same authority field. */
+    if (!(pseudo_seen & 4U) && host &&
+        h3_copy_pseudo(request->authority, sizeof(request->authority),
+                       host) != 0)
+        goto cleanup;
+    if ((pseudo_seen & (1U | 2U | 8U)) != (1U | 2U | 8U) ||
         strcmp(request->scheme, "https") != 0 ||
         !neverc_h3_method_allowed(request->method) ||
         !neverc_h3_request_path_allowed(request->method, request->path) ||

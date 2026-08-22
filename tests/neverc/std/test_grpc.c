@@ -926,6 +926,32 @@ static void grpc_fake_h2_task(void *context) {
             break;
     }
     grpc_fake_capture_bin(test, payload, header.length);
+    if (test->kind == 13) {
+        /* Hang until the client deadline closes the connection. */
+        while (grpc_h2_read_frame(conn, &header, payload, sizeof(payload)) == 0) {
+        }
+        neverc_tcp_close(conn);
+        test->result = 0;
+        return;
+    }
+    if (test->kind == 11 || test->kind == 12) {
+        uint32_t code = test->kind == 11 ? NC_H2_REFUSED_STREAM : NC_H2_CANCEL;
+        uint8_t rst[4] = {
+            (uint8_t)(code >> 24), (uint8_t)(code >> 16),
+            (uint8_t)(code >> 8), (uint8_t)code
+        };
+        if (grpc_h2_write_frame(conn, NC_H2_FRAME_RST_STREAM, 0, 1U,
+                                rst, 4) != 0) {
+            neverc_tcp_close(conn);
+            test->result = -1;
+            return;
+        }
+        while (grpc_h2_read_frame(conn, &header, payload, sizeof(payload)) == 0) {
+        }
+        neverc_tcp_close(conn);
+        test->result = 0;
+        return;
+    }
     neverc_hpack_encoder_t *encoder = neverc_hpack_encoder_create(4096);
     neverc_hpack_header_t headers[4];
     int header_count = 0;
@@ -1203,6 +1229,18 @@ static void grpc_test_status_mapping(void) {
     CHECK(empty_data && empty_data->status != NEVERC_GRPC_NOT_FOUND);
     neverc_grpc_result_free(empty_data);
 
+    neverc_grpc_result_t *refused = grpc_call_fake_h2(11);
+    CHECK(refused != NULL);
+    CHECK(refused && refused->error != NULL);
+    CHECK(refused && refused->status == NEVERC_GRPC_UNAVAILABLE);
+    neverc_grpc_result_free(refused);
+
+    neverc_grpc_result_t *rst_cancel = grpc_call_fake_h2(12);
+    CHECK(rst_cancel != NULL);
+    CHECK(rst_cancel && rst_cancel->error != NULL);
+    CHECK(rst_cancel && rst_cancel->status == NEVERC_GRPC_CANCELLED);
+    neverc_grpc_result_free(rst_cancel);
+
     neverc_grpc_status_t stream_status = NEVERC_GRPC_UNKNOWN;
     const char *stream_error = "unset";
     CHECK(grpc_stream_fake_h2(0, &stream_status, &stream_error) == 0);
@@ -1257,6 +1295,56 @@ static void grpc_test_status_mapping(void) {
     CHECK(grpc_stream_fake_h2(10, &stream_status, &stream_error) == -1);
     CHECK(stream_error != NULL);
     CHECK(stream_status != NEVERC_GRPC_NOT_FOUND);
+
+    stream_status = NEVERC_GRPC_UNKNOWN;
+    stream_error = "unset";
+    CHECK(grpc_stream_fake_h2(11, &stream_status, &stream_error) == -1);
+    CHECK(stream_status == NEVERC_GRPC_UNAVAILABLE);
+
+    stream_status = NEVERC_GRPC_UNKNOWN;
+    stream_error = "unset";
+    CHECK(grpc_stream_fake_h2(12, &stream_status, &stream_error) == -1);
+    CHECK(stream_status == NEVERC_GRPC_CANCELLED);
+
+    grpc_fake_h2_t fake;
+    neverc_thread_executor_t *executor = NULL;
+    neverc_h2_client_t *client = grpc_start_fake_h2(&fake, &executor, 8);
+    const char *cancel_error = NULL;
+    neverc_grpc_client_stream_t *cancel_stream = client
+        ? neverc_grpc_client_stream_open(
+              client, NULL, "/test.Echo/Unary", NEVERC_GRPC_UNARY,
+              NULL, 0U, 1024U, &cancel_error)
+        : NULL;
+    CHECK(cancel_stream != NULL);
+    if (cancel_stream)
+        neverc_grpc_client_stream_cancel(cancel_stream);
+    CHECK(neverc_grpc_client_stream_status(cancel_stream) ==
+          NEVERC_GRPC_CANCELLED);
+    neverc_grpc_client_stream_free(cancel_stream);
+    grpc_stop_fake_h2(&fake, executor, client);
+
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_cancel_handle_t *deadline_cancel = NULL;
+    neverc_context_t *deadline = background
+        ? neverc_context_with_timeout_handle(background, 1, &deadline_cancel)
+        : NULL;
+    neverc_h2_client_t *deadline_client =
+        grpc_start_fake_h2(&fake, &executor, 13);
+    neverc_grpc_message_t deadline_request = {(const uint8_t *)"x", 1U};
+    neverc_grpc_result_t *deadline_result = deadline_client && deadline
+        ? neverc_grpc_client_call(
+              deadline_client, deadline, "/test.Echo/Unary",
+              NEVERC_GRPC_UNARY, NULL, 0U, &deadline_request, 1U, 1024U)
+        : NULL;
+    CHECK(deadline_result != NULL);
+    CHECK(deadline_result &&
+          deadline_result->status == NEVERC_GRPC_DEADLINE_EXCEEDED);
+    neverc_grpc_result_free(deadline_result);
+    grpc_stop_fake_h2(&fake, executor, deadline_client);
+    neverc_context_cancel_handle_cancel(deadline_cancel);
+    neverc_context_cancel_handle_free(deadline_cancel);
+    neverc_context_free(deadline);
+    neverc_context_free(background);
 }
 
 static void grpc_test_binary_metadata_unpadded(void) {

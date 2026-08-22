@@ -318,6 +318,25 @@ static void test_httptest_strict_parser(void) {
         }
         neverc_httptest_close(ts);
     }
+
+    ts = neverc_httptest_new_server(echo_handler);
+    check_not_null("chunked server", ts);
+    if (ts) {
+        n = httptest_raw(neverc_httptest_addr(ts),
+            "POST / HTTP/1.1\r\nHost: localhost\r\n"
+            "Transfer-Encoding: chunked\r\n"
+            "Connection: close\r\n\r\n"
+            "5\r\nhello\r\n0\r\n\r\n",
+            buf, sizeof(buf));
+        {
+            const char *hdr_end = n > 0 ? strstr(buf, "\r\n\r\n") : NULL;
+            check_true("chunked POST is not 400",
+                       n > 0 && strstr(buf, "400") == NULL);
+            check_true("chunked POST echoes body",
+                       hdr_end && strstr(hdr_end + 4, "hello") != NULL);
+        }
+        neverc_httptest_close(ts);
+    }
 }
 #endif
 

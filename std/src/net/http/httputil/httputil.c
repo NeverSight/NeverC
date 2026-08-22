@@ -939,16 +939,26 @@ static int proxy_build_request(
             return -1;
     }
 
-    char content_length[80];
-    int content_length_size = snprintf(
-        content_length, sizeof(content_length),
-        "Content-Length: %zu\r\nConnection: close\r\n\r\n",
-        outbound->body_len);
-    if (content_length_size < 0 ||
-        (size_t)content_length_size >= sizeof(content_length) ||
-        proxy_buffer_append(
-            headers, content_length, (size_t)content_length_size,
-            PROXY_HEADER_LIMIT) != 0)
+    /* Go Request.Write / shouldSendContentLength: GET/HEAD omit CL=0;
+     * empty POST/PUT/PATCH still send Content-Length: 0. */
+    int send_content_length = outbound->body_len > 0 ||
+        (strcmp(outbound->method, "POST") == 0 ||
+         strcmp(outbound->method, "PUT") == 0 ||
+         strcmp(outbound->method, "PATCH") == 0);
+    if (send_content_length) {
+        char content_length[64];
+        int content_length_size = snprintf(
+            content_length, sizeof(content_length),
+            "Content-Length: %zu\r\n", outbound->body_len);
+        if (content_length_size < 0 ||
+            (size_t)content_length_size >= sizeof(content_length) ||
+            proxy_buffer_append(
+                headers, content_length, (size_t)content_length_size,
+                PROXY_HEADER_LIMIT) != 0)
+            return -1;
+    }
+    if (proxy_buffer_append_string(
+            headers, "Connection: close\r\n\r\n", PROXY_HEADER_LIMIT) != 0)
         return -1;
     return 0;
 }
@@ -1446,8 +1456,7 @@ static int proxy_read_response(
         if (framing->status_code >= 100 &&
             framing->status_code < 200 &&
             framing->status_code != 101) {
-            if (framing->has_content_length || framing->is_chunked ||
-                interim == 16)
+            if (framing->is_chunked || interim == 16)
                 return -1;
             continue;
         }
@@ -1457,7 +1466,7 @@ static int proxy_read_response(
     if (framing->status_code == 101 ||
         (framing->has_content_length && framing->is_chunked) ||
         ((framing->status_code < 200 || framing->status_code == 204) &&
-         (framing->has_content_length || framing->is_chunked)))
+         framing->is_chunked))
         return -1;
 
     int body_forbidden =
@@ -2077,7 +2086,14 @@ char *neverc_httputil_dump_request_out(const char *method,
         httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0)
         goto fail;
 
-    if (body_len > 0 && !httputil_headers_have_content_length(headers) &&
+    /* Go DumpRequestOut → Request.Write: empty POST/PUT/PATCH still
+     * send Content-Length: 0. GET/HEAD do not. */
+    int send_content_length = body_len > 0 ||
+        (method && (strcmp(method, "POST") == 0 ||
+                    strcmp(method, "PUT") == 0 ||
+                    strcmp(method, "PATCH") == 0));
+    if (send_content_length &&
+        !httputil_headers_have_content_length(headers) &&
         !httputil_headers_have_transfer_encoding(headers)) {
         char content_length[64];
         int content_length_size = snprintf(

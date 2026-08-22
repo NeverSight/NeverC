@@ -451,6 +451,59 @@ static void test_sscanf(void) {
         }
     }
 
+    /* Go scanNumber consumes an overflowing token; leftover starts after it. */
+    {
+        FILE *tmp = tmpfile();
+        check_true("fscanf overflow leftover fixture", tmp != NULL);
+        if (tmp) {
+            fputs("9223372036854775808 2\n", tmp);
+            rewind(tmp);
+            long long ll = 77;
+            a = 77;
+            check_int("fscanf int64 overflow leftover count",
+                      neverc_fmt_fscanf(tmp, "%lld", &ll), 0);
+            check_true("fscanf int64 overflow leftover dest", ll == 77);
+            check_int("fscanf after int64 overflow leftover",
+                      neverc_fmt_fscanf(tmp, "%d", &a), 1);
+            check_int("fscanf after int64 overflow leftover val", a, 2);
+            fclose(tmp);
+        }
+    }
+    {
+        FILE *tmp = tmpfile();
+        check_true("fscanf uint overflow leftover fixture", tmp != NULL);
+        if (tmp) {
+            fputs("18446744073709551616 2\n", tmp);
+            rewind(tmp);
+            unsigned long long ull = 77;
+            a = 77;
+            check_int("fscanf uint64 overflow leftover count",
+                      neverc_fmt_fscanf(tmp, "%llu", &ull), 0);
+            check_true("fscanf uint64 overflow leftover dest", ull == 77);
+            check_int("fscanf after uint64 overflow leftover",
+                      neverc_fmt_fscanf(tmp, "%d", &a), 1);
+            check_int("fscanf after uint64 overflow leftover val", a, 2);
+            fclose(tmp);
+        }
+    }
+    {
+        FILE *tmp = tmpfile();
+        check_true("fscanf float overflow leftover fixture", tmp != NULL);
+        if (tmp) {
+            fputs("1e309 2\n", tmp);
+            rewind(tmp);
+            double fv = 77;
+            a = 77;
+            check_int("fscanf float overflow leftover count",
+                      neverc_fmt_fscanf(tmp, "%f", &fv), 0);
+            check_true("fscanf float overflow leftover dest", fv == 77);
+            check_int("fscanf after float overflow leftover",
+                      neverc_fmt_fscanf(tmp, "%d", &a), 1);
+            check_int("fscanf after float overflow leftover val", a, 2);
+            fclose(tmp);
+        }
+    }
+
     /* A line longer than the 4096-byte fgets chunk must still count as one
      * format record, or the second conversion never sees its input. */
     {

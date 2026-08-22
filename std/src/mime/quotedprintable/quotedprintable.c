@@ -45,6 +45,7 @@ int neverc_qp_decode(const char *src, size_t src_len,
                      unsigned char *out, size_t out_cap) {
     if (!src || !out) return -1;
     size_t si = 0, di = 0;
+    int line_has_content = 0;
 
     while (si < src_len) {
         unsigned char c = (unsigned char)src[si];
@@ -56,6 +57,7 @@ int neverc_qp_decode(const char *src, size_t src_len,
                 if (hi >= 0 && lo >= 0) {
                     if (di >= out_cap) return -1;
                     out[di++] = (unsigned char)((hi << 4) | lo);
+                    line_has_content = 1;
                     si += 3;
                     continue;
                 }
@@ -68,16 +70,21 @@ int neverc_qp_decode(const char *src, size_t src_len,
             if (!qp_is_line_end(src, src_len, j))
                 return -1;
             if (j >= src_len) {
+                /* Go issue 15486: leftover '=' at EOF is a soft break
+                 * only on a non-empty line. Lone "=" is invalid. */
+                if (!line_has_content) return -1;
                 si = j;
                 continue;
             }
             if (src[j] == '\n') {
                 si = j + 1;
+                line_has_content = 0;
                 continue;
             }
             si = j + 1;
             if (si < src_len && src[si] == '\n')
                 si++;
+            line_has_content = 0;
             continue;
         }
 
@@ -93,6 +100,7 @@ int neverc_qp_decode(const char *src, size_t src_len,
             if (qp_need(di, j - si, out_cap)) return -1;
             memcpy(out + di, src + si, j - si);
             di += j - si;
+            line_has_content = 1;
             si = j;
             continue;
         }
@@ -114,6 +122,13 @@ int neverc_qp_decode(const char *src, size_t src_len,
             if (qp_need(di, j - si, out_cap)) return -1;
             memcpy(out + di, src + si, j - si);
             di += j - si;
+            /* Mid-line CR is a body byte (Go issue 13219), not a line end.
+             * Only LF / CRLF / CR-at-EOF start a new leftover-'=' line. */
+            if ((src[j - 1] == '\n' || src[j - 1] == '\r') &&
+                qp_is_line_end(src, src_len, j - 1))
+                line_has_content = 0;
+            else
+                line_has_content = 1;
             si = j;
         }
     }

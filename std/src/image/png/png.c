@@ -198,8 +198,9 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
             /* PLTE is optional for truecolor / truecolor-alpha (suggested
              * palette) and forbidden for grayscale / grayscale-alpha
              * (ISO 15948 §11.2.3). At most one PLTE is allowed. */
-            if (plte_found || idat_seen || chunk_len == 0 || chunk_len > 768 ||
-                chunk_len % 3 != 0 ||
+            /* Go image/png: PLTE is legal only before tRNS (dsSeenIHDR). */
+            if (plte_found || trns_found || idat_seen || chunk_len == 0 ||
+                chunk_len > 768 || chunk_len % 3 != 0 ||
                 img->color_type == NEVERC_PNG_COLOR_GRAYSCALE ||
                 img->color_type == NEVERC_PNG_COLOR_GRAYSCALE_ALPHA) {
                 png_decode_fail(img, idat_buf, NULL);

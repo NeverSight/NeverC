@@ -1116,6 +1116,18 @@ static void test_set_cookie_header_edges(void) {
         free(long_header);
     }
     neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/", "lead0=x; Max-Age=08; Path=/");
+    /* Go drops only the Max-Age attribute when Atoi sees a leftover
+     * leading zero (`08`); the cookie itself is still stored. */
+    check_int("leading-zero Max-Age is ignored",
+              neverc_cookiejar_count(jar), 1);
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/", "plus=y; Max-Age=+1; Path=/");
+    check_int("plus Max-Age is accepted", neverc_cookiejar_count(jar), 2);
+    neverc_cookiejar_free(jar);
 }
 
 /* ===== Cookie header generation ===== */

@@ -34,6 +34,7 @@ static int g_smtp_port = 0;
 static volatile int g_smtp_running = 1;
 static volatile int g_smtp_ehlo_starttls = 0;
 static volatile int g_smtp_login_leftover = 0;
+static volatile int g_smtp_login_first_leftover = 0;
 static volatile int g_smtp_plain_leftover = 0;
 static volatile int g_smtp_plain_challenge = 0;
 static char g_last_mail[256];
@@ -129,6 +130,11 @@ static void *mock_smtp_server(void *arg) {
                     : "535 invalid credentials\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
             } else if (strncmp(buf, "AUTH LOGIN", 10) == 0) {
+                if (g_smtp_login_first_leftover) {
+                    const char *resp = "535 invalid\r\n250 leftover\r\n";
+                    neverc_tcp_write(conn, resp, strlen(resp));
+                    continue;
+                }
                 if (g_smtp_login_leftover) {
                     const char *resp = "334 VXNlcm5hbWU6\r\n235 leftover\r\n";
                     neverc_tcp_write(conn, resp, strlen(resp));
@@ -715,6 +721,21 @@ static void test_smtp_response_leftover(void) {
         neverc_smtp_close(c);
     }
     g_smtp_login_leftover = 0;
+
+    g_smtp_login_first_leftover = 1;
+    c = neverc_smtp_dial(addr, &err);
+    check_true("dial for AUTH LOGIN first leftover", c != NULL);
+    if (c) {
+        check_true("EHLO before AUTH LOGIN first leftover",
+                   neverc_smtp_hello(c, "test.client") == 0);
+        check_true("AUTH LOGIN leftover after 535 rejected",
+                   neverc_smtp_auth(c, NEVERC_SMTP_AUTH_LOGIN,
+                                    "user", "pass") == -1);
+        check_true("MAIL after AUTH LOGIN first leftover is dead",
+                   neverc_smtp_mail(c, "ok@example.com") == -1);
+        neverc_smtp_close(c);
+    }
+    g_smtp_login_first_leftover = 0;
 
     g_smtp_plain_leftover = 1;
     c = neverc_smtp_dial(addr, &err);

@@ -1806,6 +1806,8 @@ neverc_h2_response_t *neverc_h2_client_do_context(
     }
     nc_buf_init(&stream->body);
     nc_cond_init(&stream->changed);
+    /* Same as stream_open: HEAD has no content (RFC 9113 §8.1.1). */
+    stream->head_request = strcmp(method, "HEAD") == 0;
 
     nc_mutex_lock(&client->state_lock);
     while (nc_atomic_load(&client->running) &&

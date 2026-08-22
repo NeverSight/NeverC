@@ -424,7 +424,7 @@ int neverc_time_parse_rfc3339(const char *s, neverc_time_t *out) {
     /* Go time.Parse rejects leap second 60 (unrepresentable). */
 
     int32_t nsec = 0;
-    if (*p == '.') {
+    if (*p == '.' || *p == ',') {
         p++;
         if (*p < '0' || *p > '9') return -1;
         int64_t frac = 0;
@@ -687,7 +687,7 @@ char *neverc_time_format_duration(neverc_duration_t d) {
         append_uint64(buf, &pos, magnitude);
         buf[pos++] = 'n'; buf[pos++] = 's';
     } else if (magnitude < (uint64_t)NEVERC_TIME_MILLISECOND) {
-        append_duration_decimal(buf, &pos, magnitude, 1000U, 3, "us");
+        append_duration_decimal(buf, &pos, magnitude, 1000U, 3, "µs");
     } else if (magnitude < (uint64_t)NEVERC_TIME_SECOND) {
         append_duration_decimal(buf, &pos, magnitude, 1000000U, 6, "ms");
     } else {

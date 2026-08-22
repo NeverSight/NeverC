@@ -35,6 +35,10 @@ static void test_gray_conversion(void) {
     neverc_color_rgba_t back = neverc_color_gray_to_rgba(g);
     ASSERT_INT_EQ(back.r, 0);
     ASSERT_INT_EQ(back.a, 255);
+
+    /* Go GrayModel: RGBA{1,2,3,255} → Y 1, not the 8-bit JFIF shortcut (2). */
+    g = neverc_color_rgba_to_gray(neverc_color_rgba(1, 2, 3, 255));
+    ASSERT_INT_EQ(g.y, 1);
 }
 
 static void test_nrgba_conversion(void) {
@@ -107,6 +111,13 @@ static void test_cmyk_conversion(void) {
     ASSERT_INT_EQ(black.r, 0);
     ASSERT_INT_EQ(black.g, 0);
     ASSERT_INT_EQ(black.b, 0);
+
+    /* Go CMYKToRGB: {100,0,0,50} → R 125, not 8-bit 124. */
+    neverc_color_rgba_t go_cmyk = neverc_color_cmyk_to_rgba(
+        (neverc_color_cmyk_t){100, 0, 0, 50});
+    ASSERT_INT_EQ(go_cmyk.r, 125);
+    ASSERT_INT_EQ(go_cmyk.g, 205);
+    ASSERT_INT_EQ(go_cmyk.b, 205);
 }
 
 static void test_hsl_conversion(void) {

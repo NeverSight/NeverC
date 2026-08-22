@@ -31,6 +31,10 @@ static void test_html_escape(void) {
     check_str("safe", e, "safe text");
     free(e);
 
+    e = neverc_html_escape("a+b");
+    check_str("plus", e, "a&#43;b");
+    free(e);
+
     e = neverc_html_escape("");
     check_str("empty", e, "");
     free(e);
@@ -112,7 +116,7 @@ static void test_css_escape(void) {
 static void test_url_escape(void) {
     printf("[url_escape]\n");
     char *e = neverc_html_url_query_escape("hello world&foo=bar");
-    check_str("url", e, "hello%20world%26foo%3Dbar");
+    check_str("url", e, "hello+world%26foo%3Dbar");
     free(e);
 
     e = neverc_html_url_query_escape(NULL);
@@ -129,6 +133,11 @@ static void test_template_basic(void) {
 
     char *out = neverc_html_template_render("<h1>{{.Title}}</h1><p>Hello, {{.Name}}!</p>", &data);
     check_str("basic", out, "<h1>Welcome</h1><p>Hello, Alice!</p>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Show", "yes");
+    out = neverc_html_template_render("{{if.Show}}shown{{end}}", &data);
+    check_str("if without space before selector", out, "shown");
     free(out);
     neverc_html_template_data_free(&data);
 }
@@ -1372,7 +1381,7 @@ static void test_template_parse_errors(void) {
         "{{if}}", "{{range}}", "{{if .A}}{{if .B}}x{{end}}",
         "{{range .X}}{{else}}{{end}}", "{{if .A}}{{else}}{{else}}{{end}}",
         "{{if .A}}a{{else if .B}}b{{end}}", "{{.A | html}}",
-        "{{if .Show extra}}yes{{end}}"
+        "{{if .Show extra}}yes{{end}}", "{{.A-B}}", "{{.Name-.Other}}"
     };
     for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
         neverc_html_template_t *t = neverc_html_template_parse(bad[i]);

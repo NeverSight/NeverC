@@ -112,6 +112,12 @@ static void test_parse_edges(void) {
                       (int)strlen("https://host:/api"));
         ASSERT_STR_EQ(empty_port, "https://host:/api");
     }
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://a\"b.com/"), 0);
+    ASSERT_STR_EQ(u.host, "a\"b.com");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://a<b.com/"), 0);
+    ASSERT_STR_EQ(u.host, "a<b.com");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://a>b.com/"), 0);
+    ASSERT_STR_EQ(u.host, "a>b.com");
     ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:+80/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "1nvalid://host/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, ""), -1);

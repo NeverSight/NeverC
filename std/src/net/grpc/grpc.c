@@ -801,6 +801,33 @@ static neverc_grpc_status_t grpc_status_from_http(int status_code) {
     }
 }
 
+/* grpc-go http2ErrConvTab: leftover RST / GOAWAY codes, not UNKNOWN. */
+static neverc_grpc_status_t grpc_status_from_h2(uint32_t error_code) {
+    switch (error_code) {
+    case NC_H2_NO_ERROR:
+    case NC_H2_PROTOCOL_ERROR:
+    case NC_H2_INTERNAL_ERROR:
+    case NC_H2_SETTINGS_TIMEOUT:
+    case NC_H2_STREAM_CLOSED:
+    case NC_H2_FRAME_SIZE_ERROR:
+    case NC_H2_COMPRESSION_ERROR:
+    case NC_H2_CONNECT_ERROR:
+    case NC_H2_HTTP_1_1_REQUIRED:
+        return NEVERC_GRPC_INTERNAL;
+    case NC_H2_FLOW_CONTROL_ERROR:
+    case NC_H2_ENHANCE_YOUR_CALM:
+        return NEVERC_GRPC_RESOURCE_EXHAUSTED;
+    case NC_H2_REFUSED_STREAM:
+        return NEVERC_GRPC_UNAVAILABLE;
+    case NC_H2_CANCEL:
+        return NEVERC_GRPC_CANCELLED;
+    case NC_H2_INADEQUATE_SECURITY:
+        return NEVERC_GRPC_PERMISSION_DENIED;
+    default:
+        return NEVERC_GRPC_UNKNOWN;
+    }
+}
+
 /* 1 = valid grpc-status present, 0 = absent, -1 = malformed. */
 static int grpc_extract_status(neverc_hpack_header_t *headers, size_t count,
                                neverc_grpc_status_t *status,
@@ -1108,15 +1135,21 @@ static int grpc_client_stream_next_buffered(
     return 1;
 }
 
-static int grpc_client_stream_fail(neverc_grpc_client_stream_t *stream,
-                                   const char *error) {
+static int grpc_client_stream_fail_status(neverc_grpc_client_stream_t *stream,
+                                          const char *error,
+                                          neverc_grpc_status_t status) {
     stream->error = error;
-    stream->status = NEVERC_GRPC_UNKNOWN;
+    stream->status = status;
     free(stream->status_message);
     stream->status_message = NULL;
     free(stream->header_status_message);
     stream->header_status_message = NULL;
     return -1;
+}
+
+static int grpc_client_stream_fail(neverc_grpc_client_stream_t *stream,
+                                   const char *error) {
+    return grpc_client_stream_fail_status(stream, error, NEVERC_GRPC_UNKNOWN);
 }
 
 static int grpc_client_stream_parse_trailers(
@@ -1162,9 +1195,17 @@ int neverc_grpc_client_stream_receive(
         int received = neverc_h2_client_stream_receive(
             stream->transport, context, &event);
         if (received <= 0) {
-            return grpc_client_stream_fail(
-                stream, received < 0 ? "gRPC response receive cancelled"
-                                     : "gRPC response closed without END");
+            const char *cerr = neverc_context_err(context);
+            neverc_grpc_status_t st = NEVERC_GRPC_UNKNOWN;
+            const char *msg = "gRPC response closed without END";
+            if (received < 0) {
+                int deadline = cerr && strstr(cerr, "deadline") != NULL;
+                st = deadline ? NEVERC_GRPC_DEADLINE_EXCEEDED
+                              : NEVERC_GRPC_CANCELLED;
+                msg = deadline ? "gRPC response receive deadline exceeded"
+                               : "gRPC response receive cancelled";
+            }
+            return grpc_client_stream_fail_status(stream, msg, st);
         }
         int result = 0;
         if (event->type == NEVERC_H2_CLIENT_EVENT_HEADERS) {
@@ -1236,9 +1277,10 @@ int neverc_grpc_client_stream_receive(
                 event->header_count = 0;
             }
         } else if (event->type == NEVERC_H2_CLIENT_EVENT_ERROR) {
-            result = grpc_client_stream_fail(
-                stream, event->error ? event->error
-                                     : "HTTP/2 stream failed");
+            result = grpc_client_stream_fail_status(
+                stream,
+                event->error ? event->error : "HTTP/2 stream failed",
+                grpc_status_from_h2(event->error_code));
         } else if (event->type == NEVERC_H2_CLIENT_EVENT_END) {
             if (!stream->trailers_received && stream->header_status_seen) {
                 stream->status = stream->header_status;
@@ -1310,6 +1352,7 @@ void neverc_grpc_client_stream_cancel(
     neverc_grpc_client_stream_t *stream) {
     if (!stream || !stream->transport) return;
     stream->error = "gRPC stream cancelled";
+    stream->status = NEVERC_GRPC_CANCELLED;
     neverc_h2_client_stream_cancel(stream->transport, NC_H2_CANCEL);
 }
 
@@ -1443,6 +1486,13 @@ neverc_grpc_result_t *neverc_grpc_client_call(
     }
     if (response->error) {
         result->error = response->error;
+        /* grpc-go: a local deadline is DeadlineExceeded, not the H2 CANCEL
+         * the transport uses to abort the stream. Peer RST CANCEL stays
+         * CANCELLED when the call context is still live. */
+        if (neverc_context_done(context))
+            result->status = grpc_context_status(context);
+        else if (response->stream_error)
+            result->status = grpc_status_from_h2(response->stream_error);
         neverc_h2_response_free(response);
         return result;
     }

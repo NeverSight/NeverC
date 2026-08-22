@@ -173,6 +173,25 @@ static void test_cache_dir(void) {
     ASSERT_TRUE(cache != NULL);
     ASSERT_TRUE(strlen(cache) > 0);
     printf("  cache=%s\n", cache);
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+    {
+        const char *old = getenv("XDG_CACHE_HOME");
+        char *saved = old ? strdup(old) : NULL;
+        setenv("XDG_CACHE_HOME", "rel/cache", 1);
+        cache = neverc_user_cache_dir();
+        ASSERT_TRUE(cache != NULL && cache[0] == '\0');
+        setenv("XDG_CACHE_HOME", ".", 1);
+        cache = neverc_user_cache_dir();
+        ASSERT_TRUE(cache != NULL && cache[0] == '\0');
+        if (saved) {
+            setenv("XDG_CACHE_HOME", saved, 1);
+            free(saved);
+        } else {
+            unsetenv("XDG_CACHE_HOME");
+        }
+    }
+#endif
 }
 
 static void test_config_dir(void) {
@@ -181,6 +200,22 @@ static void test_config_dir(void) {
     ASSERT_TRUE(config != NULL);
     ASSERT_TRUE(strlen(config) > 0);
     printf("  config=%s\n", config);
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+    {
+        const char *old = getenv("XDG_CONFIG_HOME");
+        char *saved = old ? strdup(old) : NULL;
+        setenv("XDG_CONFIG_HOME", "rel/config", 1);
+        config = neverc_user_config_dir();
+        ASSERT_TRUE(config != NULL && config[0] == '\0');
+        if (saved) {
+            setenv("XDG_CONFIG_HOME", saved, 1);
+            free(saved);
+        } else {
+            unsetenv("XDG_CONFIG_HOME");
+        }
+    }
+#endif
 }
 
 static void test_null_args(void) {

@@ -505,6 +505,22 @@ static void test_temp(void) {
     ASSERT_EQ(neverc_os_remove_all(dir_path), 0);
     ASSERT_EQ(neverc_os_mkdir_temp(NULL, "x", NULL, 0), -1);
 
+    ASSERT_EQ(neverc_os_mkdir_temp(
+                  NULL, "neverc_star_*.tmp", dir_path, sizeof(dir_path)), 0);
+    ASSERT_TRUE(neverc_os_is_dir(dir_path));
+    {
+        const char *leaf = strrchr(dir_path, '/');
+#if defined(_WIN32)
+        const char *wleaf = strrchr(dir_path, '\\');
+        if (!leaf || (wleaf && wleaf > leaf)) leaf = wleaf;
+#endif
+        leaf = leaf ? leaf + 1 : dir_path;
+        ASSERT_TRUE(strncmp(leaf, "neverc_star_", 12) == 0);
+        ASSERT_TRUE(strstr(leaf, ".tmp") != NULL);
+        ASSERT_TRUE(strstr(leaf, "*") == NULL);
+    }
+    ASSERT_EQ(neverc_os_remove_all(dir_path), 0);
+
     ASSERT_TRUE(neverc_os_create_temp(tmpdir, "../neverc_trav_") == NULL);
     ASSERT_TRUE(neverc_os_create_temp(tmpdir, "foo/bar_") == NULL);
     ASSERT_EQ(neverc_os_mkdir_temp(tmpdir, "../neverc_trav_", dir_path,

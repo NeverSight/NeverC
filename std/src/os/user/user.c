@@ -426,8 +426,13 @@ const char *neverc_user_cache_dir(void) {
         return "";
 #else
     const char *xdg = getenv("XDG_CACHE_HOME");
-    if (user_copy_env_path(buf, sizeof(buf), xdg) == 0)
-        return buf;
+    if (xdg && xdg[0]) {
+        /* Go UserCacheDir: relative XDG_* is an error, not a leftover cwd. */
+        if (xdg[0] != '/') return "";
+        if (user_copy_env_path(buf, sizeof(buf), xdg) == 0)
+            return buf;
+        return "";
+    }
     const char *home = neverc_user_home_dir();
     if (!home || !home[0]) return "";
     if (user_format_under(buf, sizeof(buf), "%s/.cache", home) != 0)
@@ -446,8 +451,12 @@ const char *neverc_user_config_dir(void) {
         return "";
 #else
     const char *xdg = getenv("XDG_CONFIG_HOME");
-    if (user_copy_env_path(buf, sizeof(buf), xdg) == 0)
-        return buf;
+    if (xdg && xdg[0]) {
+        if (xdg[0] != '/') return "";
+        if (user_copy_env_path(buf, sizeof(buf), xdg) == 0)
+            return buf;
+        return "";
+    }
     const char *home = neverc_user_home_dir();
     if (!home || !home[0]) return "";
     if (user_format_under(buf, sizeof(buf), "%s/.config", home) != 0)

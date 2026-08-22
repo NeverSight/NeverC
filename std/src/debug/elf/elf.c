@@ -416,6 +416,9 @@ int neverc_elf_open(neverc_elf_file_t *f, const uint8_t *data, size_t len) {
                               shstrndx) < 0)
             goto fail;
     }
+    /* Go debug/elf.NewFile: e_version must match EI_VERSION. */
+    if (f->header.version != data[6])
+        goto fail;
     return 0;
 
 fail:

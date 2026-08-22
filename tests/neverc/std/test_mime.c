@@ -590,6 +590,11 @@ static void test_qp_decode(void) {
     ASSERT_INT_EQ(neverc_mime_qp_decode("x", 1, NULL, 1, &out_len), -1);
     ASSERT_INT_EQ(neverc_mime_qp_decode("a=ZZ", 4, out, sizeof(out), &out_len), -1);
     ASSERT_INT_EQ(neverc_mime_qp_decode("=A", 2, out, sizeof(out), &out_len), -1);
+    ASSERT_INT_EQ(neverc_mime_qp_decode("=", 1, out, sizeof(out), &out_len), -1);
+    ASSERT_INT_EQ(neverc_mime_qp_decode("hello\r=", 7, out, sizeof(out), &out_len), 0);
+    ASSERT_INT_EQ((int)out_len, 6);
+    out[out_len] = '\0';
+    ASSERT_STR_EQ(out, "hello\r");
     ASSERT_INT_EQ(neverc_mime_qp_decode("hello=", 6, out, sizeof(out), &out_len), 0);
     ASSERT_INT_EQ((int)out_len, 5);
     out[out_len] = '\0';

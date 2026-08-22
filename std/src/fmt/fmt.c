@@ -859,7 +859,9 @@ static int scan_int(const char **p, int64_t *out) {
     while (**p >= '0' && **p <= '9') {
         unsigned digit = (unsigned)(**p - '0');
         if (val > (limit - digit) / 10U) {
-            *p = start;
+            /* Go scanNumber consumes the token, then ParseInt fails. */
+            while (**p >= '0' && **p <= '9')
+                (*p)++;
             return 0;
         }
         val = val * 10U + digit;
@@ -876,13 +878,13 @@ static int scan_int(const char **p, int64_t *out) {
 
 static int scan_uint(const char **p, uint64_t *out) {
     skip_ws(p);
-    const char *start = *p;
     if (**p < '0' || **p > '9') return 0;
     uint64_t val = 0;
     while (**p >= '0' && **p <= '9') {
         unsigned digit = (unsigned)(**p - '0');
         if (val > (UINT64_MAX - digit) / 10U) {
-            *p = start;
+            while (**p >= '0' && **p <= '9')
+                (*p)++;
             return 0;
         }
         val = val * 10U + digit;
@@ -1008,7 +1010,12 @@ static int scan_float(const char **p, double *out) {
         rc = neverc_strconv_parse_float(tok, &parsed);
     }
     if (tok != stackbuf) free(tok);
-    if (rc != NEVERC_STRCONV_OK) { *p = start; return 0; }
+    if (rc != NEVERC_STRCONV_OK) {
+        /* ParseFloat ErrRange still consumed the float token (Go leftover). */
+        if (rc != NEVERC_STRCONV_ERR_RANGE)
+            *p = start;
+        return 0;
+    }
     *out = parsed;
     return 1;
 }
@@ -1039,7 +1046,10 @@ static int scan_hex(const char **p, uint64_t *out) {
         else if (c >= 'A' && c <= 'F') digit = (unsigned)(c - 'A' + 10);
         else break;
         if (val > (UINT64_MAX - digit) / 16U) {
-            *p = start;
+            while ((**p >= '0' && **p <= '9') ||
+                   (**p >= 'a' && **p <= 'f') ||
+                   (**p >= 'A' && **p <= 'F'))
+                (*p)++;
             return 0;
         }
         val = val * 16U + digit;
@@ -1062,7 +1072,8 @@ static int scan_oct(const char **p, uint64_t *out) {
     while (**p >= '0' && **p <= '7') {
         unsigned digit = (unsigned)(**p - '0');
         if (val > (UINT64_MAX - digit) / 8U) {
-            *p = start;
+            while (**p >= '0' && **p <= '7')
+                (*p)++;
             return 0;
         }
         val = val * 8U + digit;
@@ -1085,7 +1096,8 @@ static int scan_bin(const char **p, uint64_t *out) {
     while (**p == '0' || **p == '1') {
         unsigned digit = (unsigned)(**p - '0');
         if (val > (UINT64_MAX - digit) / 2U) {
-            *p = start;
+            while (**p == '0' || **p == '1')
+                (*p)++;
             return 0;
         }
         val = val * 2U + digit;
@@ -1273,9 +1285,12 @@ static int scan_formatted(const char *str, const char *format, va_list args,
             int64_t value;
             char tmp[256];
             const char *q;
-            if (!scan_apply_width(&sp, width, has_width, tmp, sizeof tmp, &q) ||
-                !scan_int(&q, &value))
+            if (!scan_apply_width(&sp, width, has_width, tmp, sizeof tmp, &q))
                 goto done;
+            if (!scan_int(&q, &value)) {
+                scan_commit_width(&sp, q, tmp, has_width);
+                goto done;
+            }
             scan_commit_width(&sp, q, tmp, has_width);
             if (length == SCAN_LENGTH_LONG_LONG) {
                 long long *out = va_arg(ap, long long *);
@@ -1316,8 +1331,10 @@ static int scan_formatted(const char *str, const char *format, va_list args,
                 ok = scan_bin(&q, &value);
             else
                 ok = scan_hex(&q, &value);
-            if (!ok)
+            if (!ok) {
+                scan_commit_width(&sp, q, tmp, has_width);
                 goto done;
+            }
             scan_commit_width(&sp, q, tmp, has_width);
             if (length == SCAN_LENGTH_LONG_LONG) {
                 unsigned long long *out =
@@ -1350,9 +1367,12 @@ static int scan_formatted(const char *str, const char *format, va_list args,
             char tmp[256];
             const char *q;
             if (length == SCAN_LENGTH_LONG_LONG ||
-                !scan_apply_width(&sp, width, has_width, tmp, sizeof tmp, &q) ||
-                !scan_float(&q, &value))
+                !scan_apply_width(&sp, width, has_width, tmp, sizeof tmp, &q))
                 goto done;
+            if (!scan_float(&q, &value)) {
+                scan_commit_width(&sp, q, tmp, has_width);
+                goto done;
+            }
             scan_commit_width(&sp, q, tmp, has_width);
             double *out = va_arg(ap, double *);
             if (!out) goto done;

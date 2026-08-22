@@ -51,7 +51,11 @@ neverc_color_nrgba_t neverc_color_rgba_to_nrgba(neverc_color_rgba_t c) {
 
 neverc_color_gray_t neverc_color_rgba_to_gray(neverc_color_rgba_t c) {
     neverc_color_gray_t g;
-    g.y = (uint8_t)((19595 * (uint32_t)c.r + 38470 * (uint32_t)c.g + 7471 * (uint32_t)c.b + 32768) >> 16);
+    /* Go GrayModel: expand 8→16 via *0x101, then JFIF coefficients >> 24. */
+    uint32_t r = (uint32_t)c.r * 0x101u;
+    uint32_t gv = (uint32_t)c.g * 0x101u;
+    uint32_t b = (uint32_t)c.b * 0x101u;
+    g.y = (uint8_t)((19595u * r + 38470u * gv + 7471u * b + (1u << 15)) >> 24);
     return g;
 }
 
@@ -79,10 +83,12 @@ neverc_color_cmyk_t neverc_color_rgba_to_cmyk(neverc_color_rgba_t c) {
 
 neverc_color_rgba_t neverc_color_cmyk_to_rgba(neverc_color_cmyk_t c) {
     neverc_color_rgba_t out;
-    uint16_t w = (uint16_t)(255 - c.k);
-    out.r = (uint8_t)(w * (255 - c.c) / 255);
-    out.g = (uint8_t)(w * (255 - c.m) / 255);
-    out.b = (uint8_t)(w * (255 - c.y) / 255);
+    /* Go CMYKToRGB: 16-bit expand, then high 8 bits. 8-bit
+     * w*(255-c)/255 is off by one for some values ({100,0,0,50} → 124). */
+    uint32_t w = 0xffffu - (uint32_t)c.k * 0x101u;
+    out.r = (uint8_t)(((0xffffu - (uint32_t)c.c * 0x101u) * w / 0xffffu) >> 8);
+    out.g = (uint8_t)(((0xffffu - (uint32_t)c.m * 0x101u) * w / 0xffffu) >> 8);
+    out.b = (uint8_t)(((0xffffu - (uint32_t)c.y * 0x101u) * w / 0xffffu) >> 8);
     out.a = 255;
     return out;
 }

@@ -845,6 +845,45 @@ static void test_trns_grayscale_and_truecolor(void) {
     free(png);
 }
 
+static void test_rejects_plte_after_trns(void) {
+    printf("[rejects_plte_after_trns]\n");
+    uint8_t rgb_px[3] = {255, 0, 0};
+    neverc_png_image_t rgb;
+    memset(&rgb, 0, sizeof(rgb));
+    rgb.width = 1;
+    rgb.height = 1;
+    rgb.bit_depth = 8;
+    rgb.color_type = NEVERC_PNG_COLOR_TRUECOLOR;
+    rgb.channels = 3;
+    rgb.stride = 3;
+    rgb.pixels = rgb_px;
+
+    uint8_t *png = NULL;
+    size_t png_len = 0;
+    ASSERT_EQ(neverc_png_encode(&rgb, &png, &png_len), 0);
+    ASSERT_TRUE(png != NULL);
+
+    uint8_t pal[3] = {10, 20, 30};
+    size_t plte_len = 0;
+    uint8_t *with_plte =
+        insert_chunk(png, png_len, 33, "PLTE", pal, 3, &plte_len);
+    ASSERT_TRUE(with_plte != NULL);
+    uint8_t trns[6] = {0, 255, 0, 0, 0, 0};
+    size_t both_len = 0;
+    uint8_t *with_both = with_plte
+        ? insert_chunk(with_plte, plte_len, 33, "tRNS", trns, 6, &both_len)
+        : NULL;
+    ASSERT_TRUE(with_both != NULL);
+    if (with_both) {
+        neverc_png_image_t decoded;
+        /* IHDR, tRNS, PLTE, IDAT: Go chunkOrderError. */
+        ASSERT_EQ(neverc_png_decode(with_both, both_len, &decoded), -1);
+        free(with_both);
+    }
+    free(with_plte);
+    free(png);
+}
+
 int main(void) {
     printf("NeverC image/png tests\n");
     test_encode_decode_rgba();
@@ -866,6 +905,7 @@ int main(void) {
     test_rejects_iend_crc_corruption();
     test_rejects_illegal_and_duplicate_plte();
     test_trns_grayscale_and_truecolor();
+    test_rejects_plte_after_trns();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

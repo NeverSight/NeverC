@@ -127,6 +127,10 @@ static void test_parse_rfc3339(void) {
     check_int("parse nsec ok", err, 0);
     check_int("nsec", t.nsec, 123456789);
 
+    err = neverc_time_parse_rfc3339("2024-01-15T12:30:45,123456789Z", &t);
+    check_int("parse rfc3339 comma frac", err, 0);
+    check_int("comma nsec", t.nsec, 123456789);
+
     err = neverc_time_parse_rfc3339("invalid", &t);
     check_int("parse invalid", err, -1);
 }
@@ -233,6 +237,10 @@ static void test_format_duration(void) {
 
     s = neverc_time_format_duration(500);
     check_bool("500ns", strcmp(s, "500ns") == 0, 1);
+    free(s);
+
+    s = neverc_time_format_duration(50 * NEVERC_TIME_MICROSECOND);
+    check_bool("50µs", strcmp(s, "50µs") == 0, 1);
     free(s);
 
     s = neverc_time_format_duration(NEVERC_TIME_HOUR + 30 * NEVERC_TIME_MINUTE);

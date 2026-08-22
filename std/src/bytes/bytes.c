@@ -469,19 +469,38 @@ uint8_t *neverc_bytes_to_lower(const uint8_t *s, size_t slen, size_t *outlen) {
     return r;
 }
 
+/* Go bytes.Title / strings.Title isSeparator. */
+static int bytes_is_separator(uint32_t r) {
+    if (r <= 0x7F) {
+        if ((r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') ||
+            (r >= 'A' && r <= 'Z') || r == '_')
+            return 0;
+        return 1;
+    }
+    if (neverc_unicode_is_letter(r) || neverc_unicode_is_digit(r))
+        return 0;
+    return neverc_unicode_is_space(r);
+}
+
 uint8_t *neverc_bytes_to_title(const uint8_t *s, size_t slen, size_t *outlen) {
     if (!outlen || !bytes_span_valid(s, slen)) return NULL;
     *outlen = 0;
     uint8_t *r = bytes_alloc(slen);
     if (!r) return NULL;
-    int prev_space = 1;
-    for (size_t i = 0; i < slen; i++) {
-        uint8_t c = s[i];
-        if (prev_space && c >= 'a' && c <= 'z')
-            r[i] = c - 32;
+    int prev_sep = 1;
+    size_t i = 0;
+    while (i < slen) {
+        uint32_t rune = 0;
+        size_t n = utf8_decode(s + i, slen - i, &rune);
+        if (n == 0) n = 1;
+        if (prev_sep && n == 1 && s[i] >= 'a' && s[i] <= 'z')
+            r[i] = (uint8_t)(s[i] - 32);
         else
-            r[i] = c;
-        prev_space = (c == ' ' || c == '\t' || c == '\n' || c == '\r');
+            memcpy(r + i, s + i, n);
+        prev_sep = n == 1 && s[i] < 0x80
+            ? bytes_is_separator(s[i])
+            : bytes_is_separator(rune);
+        i += n;
     }
     *outlen = slen;
     return r;

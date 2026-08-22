@@ -550,7 +550,16 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
                             sizeof(pass_b64)) != 0)
             return -1;
         int code = smtp_cmd(c, "AUTH LOGIN");
-        if (code != 334) return -1;
+        if (code != 334) {
+            /* Same leftover class as PLAIN: extra reply lines after a
+             * finished 5xx must not become MAIL FROM. Bare 535 keeps
+             * the session. */
+            if (c->pending_len != 0 || (code >= 300 && code < 400)) {
+                c->dead = 1;
+                (void)smtp_cmd_line(c, "*", 1);
+            }
+            return -1;
+        }
         /* Same leftover class as STARTTLS: extra reply lines after 334
          * must not become the next SASL step (Go Client.Auth sends '*'). */
         if (c->pending_len != 0) {

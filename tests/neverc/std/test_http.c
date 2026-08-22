@@ -6,8 +6,10 @@
 #include <string.h>
 
 #ifndef _WIN32
+#include "neverc/std/time.h"
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <signal.h>
 #include <pthread.h>
 #endif
@@ -96,7 +98,13 @@ static void test_query_get(void) {
     check_str("query last", v, "3");
 
     v = neverc_http_query_get("x=hello%20world", "x", buf, sizeof(buf));
-    check_str("query encoded", v, "hello%20world");
+    check_str("query encoded", v, "hello world");
+
+    v = neverc_http_query_get("name=Hello+World!", "name", buf, sizeof(buf));
+    check_str("query plus", v, "Hello World!");
+
+    v = neverc_http_query_get("na%6De=John", "name", buf, sizeof(buf));
+    check_str("query encoded key", v, "John");
 
     v = neverc_http_query_get("a=1&a=2", "a", buf, sizeof(buf));
     check_str("query dup first", v, "1");
@@ -2362,6 +2370,141 @@ static void test_client_304_chunked_not_pooled(void) {
               WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
 }
 
+static void test_client_get_content_type_no_cl(void) {
+    printf("[client_get_content_type_no_cl]\n");
+
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    check_not_null("get+ct listener", listener);
+    if (!listener) return;
+
+    neverc_tcp_addr_t address;
+    if (neverc_tcp_listener_addr(listener, &address) != 0) {
+        neverc_tcp_listener_close(listener);
+        check_int("get+ct listener address", 0, 1);
+        return;
+    }
+
+    pid_t server = fork();
+    if (server == 0) {
+        neverc_tcp_conn_t *connection = neverc_tcp_accept(listener, &error);
+        if (!connection) _exit(1);
+        char request[2048];
+        int n = neverc_tcp_read(connection, request, sizeof(request) - 1);
+        if (n <= 0) _exit(1);
+        request[n] = '\0';
+        int has_type = strstr(request, "Content-Type: text/plain") != NULL;
+        int has_cl = strstr(request, "Content-Length:") != NULL;
+        static const char ok[] =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: 2\r\n"
+            "Connection: close\r\n\r\n"
+            "ok";
+        if (raw_write_all(connection, ok, sizeof(ok) - 1U) != 0)
+            _exit(1);
+        neverc_tcp_close(connection);
+        neverc_tcp_listener_close(listener);
+        _exit(has_type && !has_cl ? 0 : 2);
+    }
+    neverc_tcp_listener_close(listener);
+    if (server < 0) {
+        check_int("get+ct server fork", 0, 1);
+        return;
+    }
+
+    neverc_http_client_config_t config =
+        neverc_http_client_config_default();
+    config.timeout_ms = 5000;
+    config.max_idle_per_host = 0;
+    neverc_http_client_t *client = neverc_http_client_new(&config);
+    check_not_null("get+ct client", client);
+    if (!client) {
+        kill(server, SIGTERM);
+        waitpid(server, NULL, 0);
+        return;
+    }
+    char url[96];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/get-ct", address.port);
+    neverc_http_response_t *response =
+        neverc_http_client_do(client, "GET", url, "text/plain", NULL, 0U);
+    check_int("get+ct response success",
+              response != NULL && response->error == NULL, 1);
+    neverc_http_response_free(response);
+    neverc_http_client_free(client);
+    int status = 0;
+    waitpid(server, &status, 0);
+    check_int("GET+Content-Type omits Content-Length",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+}
+
+static void test_client_204_content_length(void) {
+    printf("[client_204_content_length]\n");
+
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    check_not_null("204 cl listener", listener);
+    if (!listener) return;
+
+    neverc_tcp_addr_t address;
+    if (neverc_tcp_listener_addr(listener, &address) != 0) {
+        neverc_tcp_listener_close(listener);
+        check_int("204 cl listener address", 0, 1);
+        return;
+    }
+
+    pid_t server = fork();
+    if (server == 0) {
+        neverc_tcp_conn_t *connection = neverc_tcp_accept(listener, &error);
+        if (!connection) _exit(1);
+        char request[1024];
+        if (neverc_tcp_read(connection, request, sizeof(request)) <= 0)
+            _exit(1);
+        static const char no_content[] =
+            "HTTP/1.1 204 No Content\r\n"
+            "Content-Length: 0\r\n"
+            "Connection: close\r\n\r\n";
+        if (raw_write_all(connection, no_content, sizeof(no_content) - 1U) != 0)
+            _exit(1);
+        neverc_tcp_close(connection);
+        neverc_tcp_listener_close(listener);
+        _exit(0);
+    }
+    neverc_tcp_listener_close(listener);
+    if (server < 0) {
+        check_int("204 cl server fork", 0, 1);
+        return;
+    }
+
+    neverc_http_client_config_t config =
+        neverc_http_client_config_default();
+    config.timeout_ms = 5000;
+    neverc_http_client_t *client = neverc_http_client_new(&config);
+    check_not_null("204 cl client", client);
+    if (!client) {
+        kill(server, SIGTERM);
+        waitpid(server, NULL, 0);
+        return;
+    }
+    char url[96];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/empty", address.port);
+    neverc_http_response_t *response =
+        neverc_http_client_do(client, "GET", url, NULL, NULL, 0U);
+    check_int("204+CL is not a framing error",
+              response != NULL && response->error == NULL, 1);
+    check_int("204+CL status",
+              response != NULL && response->status_code == 204, 1);
+    check_int("204+CL has no body",
+              response != NULL && response->body == NULL, 1);
+    neverc_http_response_free(response);
+    neverc_http_client_free(client);
+    int status = 0;
+    waitpid(server, &status, 0);
+    check_int("204 cl server status",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+}
+
 static void test_client_rejects_bare_lf_status(void) {
     printf("[client_rejects_bare_lf_status]\n");
 
@@ -2862,6 +3005,13 @@ static void cookie_handler(neverc_http_request_t *req,
     c.max_age = 3600;
     c.http_only = 1;
     c.same_site = 1; /* Lax */
+    neverc_http_cookie_t dotted = {0};
+    dotted.name = "host";
+    dotted.value = "1";
+    dotted.domain = ".example.com";
+    dotted.path = "foo";
+    neverc_http_set_cookie(w, &dotted);
+
     neverc_http_set_cookie(w, &c);
 
     neverc_http_cookie_t large = {0};
@@ -3054,6 +3204,12 @@ static void test_cookies(void) {
                      strstr(resp, "Set-Cookie: gone=x; Max-Age=0") != NULL, 1);
         check_int("delete cookie not Max-Age=-1",
                      strstr(resp, "Max-Age=-1") == NULL, 1);
+        check_int("Domain strips leading dot",
+                     strstr(resp, "Domain=example.com") != NULL, 1);
+        check_int("Domain does not keep leading dot",
+                     strstr(resp, "Domain=.example.com") == NULL, 1);
+        check_int("Path without leading slash",
+                     strstr(resp, "Path=foo") != NULL, 1);
         check_int("body has cookie value",
                      strstr(resp, "cookie=hello_world") != NULL, 1);
     }
@@ -3584,6 +3740,66 @@ static void test_serve_file(void) {
         neverc_http_memory_writer_free(w);
     }
 
+    /* Stale If-Range drops Range and sends the full entity (Go checkIfRange). */
+    w = neverc_http_memory_writer_new();
+    if (w) {
+        neverc_http_request_t req;
+        memset(&req, 0, sizeof(req));
+        req.method = "GET";
+        req.path = "/test.txt";
+        char ir_hdr[96];
+        size_t ipos = 0;
+        memcpy(ir_hdr + ipos, "Range", 6); ipos += 6;
+        memcpy(ir_hdr + ipos, "bytes=0-4", 10); ipos += 10;
+        memcpy(ir_hdr + ipos, "If-Range", 9); ipos += 9;
+        memcpy(ir_hdr + ipos, "Wed, 21 Oct 2015 07:28:00 GMT", 30);
+        req.raw_headers = ir_hdr;
+        req.nheaders = 2;
+        neverc_http_serve_file(w, &req, tmppath);
+        char *data = NULL;
+        size_t data_len = 0;
+        int status = neverc_http_memory_writer_result(w, &data, &data_len);
+        check_int("serve_file stale If-Range status", status, 200);
+        check_int("serve_file stale If-Range full body",
+                  data && data_len > 5 &&
+                  strstr(data, "Hello from served file!") != NULL, 1);
+        free(data);
+        neverc_http_memory_writer_free(w);
+    }
+
+    struct stat served_st;
+    if (stat(tmppath, &served_st) == 0) {
+        neverc_time_t modtime = neverc_time_unix((int64_t)served_st.st_mtime, 0);
+        char *lm = neverc_time_format(modtime, "Mon, 02 Jan 2006 15:04:05 GMT");
+        w = neverc_http_memory_writer_new();
+        if (w && lm) {
+            neverc_http_request_t req;
+            memset(&req, 0, sizeof(req));
+            req.method = "GET";
+            req.path = "/test.txt";
+            char ir_hdr[128];
+            size_t ipos = 0;
+            memcpy(ir_hdr + ipos, "Range", 6); ipos += 6;
+            memcpy(ir_hdr + ipos, "bytes=0-4", 10); ipos += 10;
+            memcpy(ir_hdr + ipos, "If-Range", 9); ipos += 9;
+            memcpy(ir_hdr + ipos, lm, strlen(lm) + 1);
+            req.raw_headers = ir_hdr;
+            req.nheaders = 2;
+            neverc_http_serve_file(w, &req, tmppath);
+            char *data = NULL;
+            size_t data_len = 0;
+            int status = neverc_http_memory_writer_result(w, &data, &data_len);
+            check_int("serve_file matching If-Range status", status, 206);
+            check_int("serve_file matching If-Range body",
+                      (int)data_len, 5);
+            free(data);
+            neverc_http_memory_writer_free(w);
+        } else if (w) {
+            neverc_http_memory_writer_free(w);
+        }
+        free(lm);
+    }
+
     /* Go ServeFile rejects ".." in the request path even for a safe file. */
     w = neverc_http_memory_writer_new();
     if (w) {
@@ -4094,6 +4310,18 @@ static void mux_items_handler(neverc_http_request_t *req,
     neverc_http_write_string(w, "item");
 }
 
+static void mux_item_subtree_handler(neverc_http_request_t *req,
+                                     neverc_http_response_writer_t *w) {
+    const char *v = neverc_http_path_value(req, "id");
+    neverc_http_writef(w, "id=%s", v ? v : "missing");
+}
+
+static void mux_files_handler(neverc_http_request_t *req,
+                              neverc_http_response_writer_t *w) {
+    const char *v = neverc_http_path_value(req, "path");
+    neverc_http_writef(w, "path=%s", v ? "set" : "null");
+}
+
 static void mux_static_handler(neverc_http_request_t *req,
                                neverc_http_response_writer_t *w) {
     (void)req;
@@ -4171,6 +4399,55 @@ static void test_mux_method_and_slash(void) {
               n > 0 && strstr(buf, "405") != NULL, 1);
     check_int("mux POST Allow lists HEAD",
               n > 0 && strstr(buf, "HEAD") != NULL, 1);
+    stop_test_server(pid);
+
+    port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+    pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "GET /items/{id}/",
+                                mux_item_subtree_handler);
+        neverc_http_mux_handle(mux, "GET /files/{path...}", mux_files_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+    n = do_http_request(port,
+        "GET /items/42/edit HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mux {id}/ subtree edit",
+              n > 0 && strstr(buf, "id=42") != NULL, 1);
+    n = do_http_request(port,
+        "GET /items/42/a/b HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mux {id}/ subtree nested",
+              n > 0 && strstr(buf, "id=42") != NULL, 1);
+    n = do_http_request(port,
+        "GET /items/42 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mux {id}/ slash-redirects",
+              n > 0 && strstr(buf, "301") != NULL &&
+              strstr(buf, "Location: /items/42/") != NULL, 1);
+
+    {
+        char long_req[4096];
+        static const char prefix[] = "GET /files/";
+        static const char suffix[] =
+            " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+        size_t rest = 2100;
+        memcpy(long_req, prefix, sizeof(prefix) - 1U);
+        memset(long_req + (sizeof(prefix) - 1U), 'x', rest);
+        memcpy(long_req + (sizeof(prefix) - 1U) + rest, suffix,
+               sizeof(suffix));
+        n = do_http_request(port, long_req, buf, sizeof(buf));
+        check_int("mux {path...} overflow is not a silent match",
+                  n > 0 && strstr(buf, "404") != NULL, 1);
+        check_int("mux {path...} overflow not path=null",
+                  n > 0 && strstr(buf, "path=null") == NULL, 1);
+    }
     stop_test_server(pid);
 }
 
@@ -4465,6 +4742,8 @@ int main(void) {
     test_client_chunked_response();
     test_client_many_tiny_chunks();
     test_client_304_chunked_not_pooled();
+    test_client_get_content_type_no_cl();
+    test_client_204_content_length();
     test_client_rejects_bare_lf_status();
     test_connection_limit();
     test_max_body_size_buffered();

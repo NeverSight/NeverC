@@ -135,7 +135,7 @@ static const char nc_uphex[] = "0123456789ABCDEF";
  * doubling as the "is special" predicate.  &#34; / &#39; / &amp; add 4,
  * &lt; / &gt; add 3. */
 static const uint8_t html_esc_extra[256] = {
-    ['&'] = 4, ['<'] = 3, ['>'] = 3, ['"'] = 4, ['\''] = 4,
+    ['&'] = 4, ['<'] = 3, ['>'] = 3, ['"'] = 4, ['\''] = 4, ['+'] = 4,
 };
 
 char *neverc_html_escape(const char *s) {
@@ -162,6 +162,7 @@ char *neverc_html_escape(const char *s) {
             case '>':  memcpy(r + wi, "&gt;",  4); wi += 4; break;
             case '"':  memcpy(r + wi, "&#34;", 5); wi += 5; break;
             case '\'': memcpy(r + wi, "&#39;", 5); wi += 5; break;
+            case '+':  memcpy(r + wi, "&#43;", 5); wi += 5; break;
         }
     }
     r[wi] = '\0';
@@ -308,6 +309,11 @@ char *neverc_html_url_query_escape(const char *s) {
         if (i > start) { memcpy(r + wi, s + start, i - start); wi += i - start; }
         if (i >= slen) break;
         unsigned char c = (unsigned char)s[i++];
+        /* Go url.QueryEscape / html/template urlquery: space is '+'. */
+        if (c == ' ') {
+            r[wi++] = '+';
+            continue;
+        }
         r[wi++] = '%';
         r[wi++] = nc_uphex[c >> 4];
         r[wi++] = nc_uphex[c & 0x0f];
@@ -404,6 +410,12 @@ static int is_template_ws(char c) {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
+/* Go text/template lexer atTerminator after if/range. */
+static int html_action_terminator(char c) {
+    return is_template_ws(c) || c == '.' || c == ',' || c == '|' ||
+           c == ':' || c == '(' || c == ')' || c == '[' || c == ']';
+}
+
 /* Parsing and execution both recurse once per block. */
 #define NCI_HTML_TEMPLATE_MAX_DEPTH 128
 
@@ -420,8 +432,7 @@ static node_t *new_key_node(node_type_t type, const char *start,
         *error = 1;
         return NULL;
     }
-    while (p < end && (nc_isalnum((unsigned char)*p) || *p == '_' ||
-                       *p == '-'))
+    while (p < end && (nc_isalnum((unsigned char)*p) || *p == '_'))
         p++;
     if (p != end) {
         *error = 1;
@@ -458,12 +469,13 @@ static node_t *parse_tag(const char *inner, size_t len, int *error) {
         if (!node) *error = 1;
         return node;
     }
+    /* Go atTerminator: whitespace or . , | : ( ) [ ] after if/range. */
     if (trimlen > 2 && memcmp(start, "if", 2) == 0 &&
-        is_template_ws(start[2])) {
+        html_action_terminator(start[2])) {
         return new_key_node(NODE_IF, start + 2, end, error);
     }
     if (trimlen > 5 && memcmp(start, "range", 5) == 0 &&
-        is_template_ws(start[5])) {
+        html_action_terminator(start[5])) {
         return new_key_node(NODE_RANGE, start + 5, end, error);
     }
     return new_key_node(NODE_VAR, start, end, error);

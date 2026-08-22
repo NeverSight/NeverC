@@ -1057,7 +1057,7 @@ static int http_mux_store_param(path_params_t *params,
     if (!params) return 1;
     if (params->len + (int)namelen + 1 + (int)vallen + 1
         >= (int)sizeof(params->buf))
-        return 1;
+        return 0;
     memcpy(params->buf + params->len, name, namelen);
     params->len += (int)namelen;
     params->buf[params->len++] = '\0';
@@ -1184,6 +1184,11 @@ static int pattern_match(const char *pattern, const char *path,
 
             rp = seg_end;
             pp = close + 1;
+            /* Go 1.22: a trailing `/` after `{name}` is an anonymous
+             * `{...}` subtree. `/items/42` does not match here so the
+             * mux can slash-redirect to `/items/42/`. */
+            if (*pp == '/' && pp[1] == '\0')
+                return *rp == '/';
         } else if (*pp == '/' && *rp == '/') {
             const char *pe;
             const char *re;
@@ -4571,25 +4576,9 @@ int neverc_http_listen_and_serve_tls(const char *addr, neverc_http_mux_t *mux,
 
 const char *neverc_http_query_get(const char *query, const char *key,
                                    char *buf, size_t buflen) {
-    if (!query || !key || !buf || buflen == 0) return NULL;
-    size_t klen = strlen(key);
-    const char *p = query;
-
-    while (*p) {
-        if (strncmp(p, key, klen) == 0 && p[klen] == '=') {
-            const char *val = p + klen + 1;
-            size_t i = 0;
-            while (val[i] && val[i] != '&' && i < buflen - 1) {
-                buf[i] = val[i];
-                i++;
-            }
-            buf[i] = '\0';
-            return buf;
-        }
-        while (*p && *p != '&') p++;
-        if (*p == '&') p++;
-    }
-    return NULL;
+    /* Same leftover class as form_value: Go url.ParseQuery. */
+    if (!query) return NULL;
+    return neverc_http_form_value(query, strlen(query), key, buf, buflen);
 }
 
 neverc_tcp_conn_t *neverc_http_hijack(neverc_http_response_writer_t *w) {

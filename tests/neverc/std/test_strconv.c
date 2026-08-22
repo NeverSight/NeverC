@@ -221,6 +221,18 @@ static void test_parse_uint(void) {
               neverc_strconv_parse_uint("18446744073709551616", 10, &v),
               NEVERC_STRCONV_ERR_RANGE);
     check_ull("overflow clamp", v, ULLONG_MAX);
+    check_int("illegal underscore then overflow is range",
+              neverc_strconv_parse_uint("1__18446744073709551616", 0, &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_ull("illegal underscore then overflow clamp", v, ULLONG_MAX);
+    check_int("leading underscore then overflow is range",
+              neverc_strconv_parse_uint("_18446744073709551616", 0, &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_ull("leading underscore then overflow clamp", v, ULLONG_MAX);
+    check_int("hex consecutive underscore then overflow is range",
+              neverc_strconv_parse_uint("0x__ffffffffffffffff0", 0, &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_ull("hex consecutive underscore then overflow clamp", v, ULLONG_MAX);
     check_int("uint max exact",
               neverc_strconv_parse_uint("18446744073709551615", 10, &v), 0);
     check_ull("uint max exact val", v, ULLONG_MAX);

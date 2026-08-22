@@ -127,11 +127,14 @@ static int parse_max_age(cookie_span_t span, int64_t *result) {
 
     size_t offset = 0;
     int negative = 0;
+    /* Go Cookie Max-Age: strconv.Atoi (accepts +) then drop a leftover
+     * leading-zero value (`08`) when secs != 0. `+1` is valid. */
+    int leading_zero = span.data[0] == '0';
     if (span.data[0] == '-') {
         negative = 1;
         offset = 1;
     } else if (span.data[0] == '+') {
-        return -1;
+        offset = 1;
     }
     if (offset == span.length) return -1;
 
@@ -146,6 +149,8 @@ static int parse_max_age(cookie_span_t span, int64_t *result) {
             value = value * 10U + digit;
     }
 
+    if (leading_zero && value != 0)
+        return -1;
     if (negative || value == 0)
         *result = -1;
     else

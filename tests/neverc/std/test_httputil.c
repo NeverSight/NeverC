@@ -477,6 +477,24 @@ static void test_dump_apis(void) {
         free(dump);
     }
     dump = neverc_httputil_dump_request_out(
+        "POST", "/data", "Content-Type: text/plain\r\n",
+        NULL, 0U);
+    CHECK("empty POST outbound dump allocated", dump != NULL);
+    if (dump) {
+        check_contains("empty POST dump Content-Length 0",
+                       dump, "Content-Length: 0\r\n");
+        free(dump);
+    }
+    dump = neverc_httputil_dump_request_out(
+        "GET", "/", "Content-Type: text/plain\r\n",
+        NULL, 0U);
+    CHECK("GET outbound dump allocated", dump != NULL);
+    if (dump) {
+        CHECK("GET+Content-Type dump omits Content-Length",
+              strstr(dump, "Content-Length:") == NULL);
+        free(dump);
+    }
+    dump = neverc_httputil_dump_request_out(
         "POST", "/data", "Transfer-Encoding: chunked\r\n",
         "5\r\nhello\r\n0\r\n\r\n", 16U);
     CHECK("outbound dump with TE allocated", dump != NULL);
@@ -1510,6 +1528,18 @@ static void test_live_reverse_proxy(void) {
                        response.data, "xhost=client.example");
         check_contains("request body forwarded",
                        response.data, "body=DATA");
+    }
+    raw_response_free(&response);
+
+    request_result = raw_http_request(
+        proxy_port,
+        "GET /framing HTTP/1.1\r\n"
+        "Host: client.example\r\nConnection: close\r\n\r\n",
+        256U * 1024U, &response);
+    CHECK("GET framing proxy request completed", request_result == 0);
+    if (request_result == 0) {
+        check_contains("proxied GET omits Content-Length",
+                       response.data, "cl=0");
     }
     raw_response_free(&response);
 

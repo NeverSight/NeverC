@@ -163,6 +163,7 @@ typedef struct {
     int nheaders;
     const char *query;
     const char *body;
+    char *owned_body;
     size_t body_len;
     size_t header_size;
     size_t need;
@@ -315,17 +316,100 @@ static int httptest_parse_request(const char *raw, size_t raw_length,
     if (is_http_11 && !host_seen) return -2;
     if (content_length_seen && transfer_encoding_seen) return -2;
     if (is_http_10 && transfer_encoding_seen) return -2;
-    if (transfer_encoding_seen) return -2;
     /* Same fail-closed rule as the HTTP/1 server: POST/PUT/PATCH without
-     * Content-Length used to succeed with an empty body and ignore bytes
-     * that followed the header block. */
-    if (!content_length_seen &&
+     * Content-Length or chunked used to succeed with an empty body. */
+    if (!content_length_seen && !transfer_encoding_seen &&
         (strcmp(out->method, "POST") == 0 ||
          strcmp(out->method, "PUT") == 0 ||
          strcmp(out->method, "PATCH") == 0))
         return -2;
 
     out->header_size = (size_t)(header_end + 4 - raw);
+    if (transfer_encoding_seen) {
+        const char *cursor = raw + out->header_size;
+        const char *end = raw + raw_length;
+        char *decoded = NULL;
+        size_t decoded_len = 0;
+        size_t decoded_cap = 0;
+        for (;;) {
+            const char *line_end = httptest_find_crlf(cursor, end);
+            if (!line_end) {
+                free(decoded);
+                return -1;
+            }
+            size_t chunk = 0;
+            const char *p = cursor;
+            if (p == line_end) {
+                free(decoded);
+                return -2;
+            }
+            while (p < line_end && *p != ';') {
+                unsigned char c = (unsigned char)*p++;
+                unsigned digit;
+                if (c >= '0' && c <= '9') digit = (unsigned)(c - '0');
+                else if (c >= 'a' && c <= 'f') digit = (unsigned)(c - 'a' + 10);
+                else if (c >= 'A' && c <= 'F') digit = (unsigned)(c - 'A' + 10);
+                else {
+                    free(decoded);
+                    return -2;
+                }
+                if (chunk > (65535U - digit) / 16U) {
+                    free(decoded);
+                    return -2;
+                }
+                chunk = chunk * 16U + digit;
+            }
+            cursor = line_end + 2;
+            if (chunk == 0) {
+                line_end = httptest_find_crlf(cursor, end);
+                if (!line_end) {
+                    free(decoded);
+                    return -1;
+                }
+                if (line_end != cursor) {
+                    free(decoded);
+                    return -2;
+                }
+                out->owned_body = decoded;
+                out->body = decoded;
+                out->body_len = decoded_len;
+                return 0;
+            }
+            if ((size_t)(end - cursor) < chunk + 2U) {
+                free(decoded);
+                return -1;
+            }
+            if (cursor[chunk] != '\r' || cursor[chunk + 1U] != '\n') {
+                free(decoded);
+                return -2;
+            }
+            if (decoded_len > 65535U - chunk) {
+                free(decoded);
+                return -2;
+            }
+            if (decoded_len + chunk > decoded_cap) {
+                size_t next = decoded_cap < 256U ? 256U : decoded_cap;
+                while (next < decoded_len + chunk) {
+                    if (next > 65535U / 2U) {
+                        next = decoded_len + chunk;
+                        break;
+                    }
+                    next *= 2U;
+                }
+                char *grown = (char *)realloc(decoded, next);
+                if (!grown) {
+                    free(decoded);
+                    return -2;
+                }
+                decoded = grown;
+                decoded_cap = next;
+            }
+            if (chunk > 0)
+                memcpy(decoded + decoded_len, cursor, chunk);
+            decoded_len += chunk;
+            cursor += chunk + 2U;
+        }
+    }
     out->need = out->header_size + content_length;
     if (raw_length < out->need) return -1;
     if (content_length > 0) {
@@ -455,13 +539,17 @@ static void handle_test_conn(neverc_tcp_conn_t *conn,
 
     neverc_tcp_set_timeout(conn, 5000);
 
+    int parsed_ok = 0;
     for (;;) {
         int n = neverc_tcp_read(conn, buf + total, sizeof(buf) - total - 1);
         if (n <= 0) break;
         total += (size_t)n;
         buf[total] = '\0';
         int result = httptest_parse_request(buf, total, &parsed);
-        if (result == 0) break;
+        if (result == 0) {
+            parsed_ok = 1;
+            break;
+        }
         if (result == -2) {
             httptest_write_error(conn, 400, "Bad Request");
             return;
@@ -472,7 +560,7 @@ static void handle_test_conn(neverc_tcp_conn_t *conn,
         }
     }
     if (total == 0) return;
-    if (httptest_parse_request(buf, total, &parsed) != 0) {
+    if (!parsed_ok) {
         httptest_write_error(conn, 400, "Bad Request");
         return;
     }
@@ -506,6 +594,7 @@ static void handle_test_conn(neverc_tcp_conn_t *conn,
 
     free(resp_body);
     neverc_http_memory_writer_free(w);
+    free(parsed.owned_body);
 }
 
 #ifdef _WIN32

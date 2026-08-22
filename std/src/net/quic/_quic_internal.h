@@ -479,6 +479,9 @@ struct neverc_quic_conn {
     quic_tx_record_t tx_records[QUIC_TX_RECORD_CAPACITY];
     uint64_t idle_timeout_ms;
     uint64_t last_activity_ms;
+    /* RFC 9000 §10.1: send restarts idle only for the first ack-eliciting
+     * packet after a successfully processed receive. */
+    int sent_ack_eliciting_since_recv;
     uint64_t handshake_start_ms;
     int handshake_confirmed;
     unsigned pending_key_discard;

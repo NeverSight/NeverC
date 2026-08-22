@@ -260,6 +260,12 @@ static void test_elf_malformed_tables(void) {
     if (!data) return;
 
     neverc_elf_file_t f;
+    uint8_t saved_version = data[20];
+    data[20] = 2;
+    CHECK("reject e_version mismatched with EI_VERSION",
+          neverc_elf_open(&f, data, len) < 0);
+    data[20] = saved_version;
+
     uint8_t saved_shstrndx = data[62];
     data[62] = 99;
     CHECK("reject shstrndx past section table",

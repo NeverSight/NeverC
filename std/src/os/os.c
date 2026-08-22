@@ -1173,6 +1173,28 @@ static int os_temp_pattern_ok(const char *pattern) {
     return 1;
 }
 
+/* Go prefixAndSuffix: the last '*' is replaced by the random string. */
+static void os_temp_prefix_suffix(const char *pattern,
+                                  const char **prefix, size_t *plen,
+                                  const char **suffix, size_t *slen) {
+    size_t n = strlen(pattern);
+    size_t star = (size_t)-1;
+    for (size_t i = 0; i < n; i++) {
+        if (pattern[i] == '*') star = i;
+    }
+    if (star == (size_t)-1) {
+        *prefix = pattern;
+        *plen = n;
+        *suffix = "";
+        *slen = 0;
+    } else {
+        *prefix = pattern;
+        *plen = star;
+        *suffix = pattern + star + 1;
+        *slen = n - star - 1;
+    }
+}
+
 neverc_os_file_t *neverc_os_create_temp(const char *dir, const char *pattern) {
     char path[4096];
     char tmpdir[1024];
@@ -1196,10 +1218,14 @@ neverc_os_file_t *neverc_os_create_temp(const char *dir, const char *pattern) {
         }
         hex[16] = '\0';
 
+        const char *prefix, *suffix;
+        size_t plen, slen;
+        os_temp_prefix_suffix(pattern, &prefix, &plen, &suffix, &slen);
 #if defined(NEVERC_PLATFORM_WINDOWS)
         {
             char leaf[512];
-            int leaf_n = snprintf(leaf, sizeof(leaf), "%s%s", pattern, hex);
+            int leaf_n = snprintf(leaf, sizeof(leaf), "%.*s%s%.*s",
+                                  (int)plen, prefix, hex, (int)slen, suffix);
             int n;
             if (leaf_n < 0 || (size_t)leaf_n >= sizeof(leaf))
                 return NULL;
@@ -1208,7 +1234,8 @@ neverc_os_file_t *neverc_os_create_temp(const char *dir, const char *pattern) {
                 return NULL;
         }
 #else
-        int n = snprintf(path, sizeof(path), "%s/%s%s", dir, pattern, hex);
+        int n = snprintf(path, sizeof(path), "%s/%.*s%s%.*s",
+                         dir, (int)plen, prefix, hex, (int)slen, suffix);
         if (n < 0 || (size_t)n >= sizeof(path))
             return NULL;
 #endif
@@ -1738,10 +1765,14 @@ int neverc_os_mkdir_temp(const char *dir, const char *pattern,
         }
         hex[16] = '\0';
 
+        const char *prefix, *suffix;
+        size_t plen, slen;
+        os_temp_prefix_suffix(pattern, &prefix, &plen, &suffix, &slen);
 #if defined(NEVERC_PLATFORM_WINDOWS)
         {
             char leaf[512];
-            int leaf_n = snprintf(leaf, sizeof(leaf), "%s%s", pattern, hex);
+            int leaf_n = snprintf(leaf, sizeof(leaf), "%.*s%s%.*s",
+                                  (int)plen, prefix, hex, (int)slen, suffix);
             int n;
             if (leaf_n < 0 || (size_t)leaf_n >= sizeof(leaf))
                 return -1;
@@ -1750,7 +1781,8 @@ int neverc_os_mkdir_temp(const char *dir, const char *pattern,
                 return -1;
         }
 #else
-        int n = snprintf(buf, cap, "%s/%s%s", dir, pattern, hex);
+        int n = snprintf(buf, cap, "%s/%.*s%s%.*s",
+                         dir, (int)plen, prefix, hex, (int)slen, suffix);
         if (n < 0 || (size_t)n >= cap)
             return -1;
 #endif

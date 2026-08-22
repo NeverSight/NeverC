@@ -68,6 +68,15 @@ static void test_decode_soft_break(void) {
     ASSERT_EQ(n, 5);
     ASSERT_MEMEQ(out, "hello", 5);
 
+    n = neverc_qp_decode("=", 1, out, sizeof(out));
+    ASSERT_EQ(n, -1);
+
+    /* Go issue 13219/15486: mid-line CR is content, so leftover '='
+     * on "hello\\r=" is a soft break of that same line. */
+    n = neverc_qp_decode("hello\r=", 7, out, sizeof(out));
+    ASSERT_EQ(n, 6);
+    ASSERT_MEMEQ(out, "hello\r", 6);
+
     n = neverc_qp_decode("hello=\r", 7, out, sizeof(out));
     ASSERT_EQ(n, 5);
     ASSERT_MEMEQ(out, "hello", 5);

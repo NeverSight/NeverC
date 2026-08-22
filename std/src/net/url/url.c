@@ -981,9 +981,10 @@ static int percent_decode(const char *s, char *buf, size_t cap, int flags) {
             input_offset += 3;
         } else {
             if ((flags & PCT_PLUS) && decoded == '+') decoded = ' ';
+            /* Go encodeHost: raw ASCII that shouldEscape keeps, including
+             * '"<>', is accepted; encoded %3C / %22 stay rejected. */
             if ((flags & (PCT_HOST | PCT_ZONE)) && decoded < 0x80 &&
-                decoded != '%' && decoded != ':' && decoded != '[' &&
-                decoded != ']' && !host_ascii_ok(decoded) &&
+                decoded != '%' && !host_or_zone_pct_ok(decoded) &&
                 !((flags & PCT_ZONE) && decoded == ' '))
                 goto malformed;
             input_offset++;

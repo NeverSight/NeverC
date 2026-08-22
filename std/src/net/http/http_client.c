@@ -697,8 +697,10 @@ static int build_http_request(nc_buf_t *req, const char *method,
          append_cstr(req, "\r\n") != 0))
         goto fail;
 
+    /* Go shouldSendContentLength: GET/HEAD do not send CL=0. Content-Type
+     * alone is not a body. Empty POST/PUT/PATCH still send CL=0. */
     int send_content_length =
-        body_len > 0 || body != NULL || content_type != NULL ||
+        body_len > 0 || body != NULL ||
         strcmp(method, "POST") == 0 || strcmp(method, "PUT") == 0 ||
         strcmp(method, "PATCH") == 0;
     if (send_content_length) {
@@ -1166,10 +1168,12 @@ analyze_response:
                     nc_buf_free(&resp_buf);
                     return make_error_response("invalid HTTP response framing");
                 }
+                /* Go fixLength: 204/1xx ignore Content-Length. Chunked
+                 * on a no-body status is still malformed. */
                 if ((((framing.status_code >= 100 &&
                        framing.status_code < 200) ||
                       framing.status_code == 204) &&
-                     (framing.has_content_length || framing.is_chunked))) {
+                     framing.is_chunked)) {
                     client_connection_close(conn);
                     nc_buf_free(&resp_buf);
                     return make_error_response(
@@ -1622,7 +1626,7 @@ static neverc_http_response_t *do_stream_request(
                 connection, &wire, NULL, "invalid HTTP response framing");
         if ((((framing.status_code >= 100 && framing.status_code < 200) ||
               framing.status_code == 204) &&
-             (framing.has_content_length || framing.is_chunked)))
+             framing.is_chunked))
             return stream_response_error(
                 connection, &wire, NULL,
                 "body framing is forbidden for this status");
@@ -2021,7 +2025,8 @@ static neverc_http_response_t *do_request_with_redirects(
                     free(location);
                     return resp;
                 }
-                if (redirects >= max_redirects) {
+                /* Go defaultCheckRedirect: stop after 10 requests (via). */
+                if (redirects + 1 >= max_redirects) {
                     free(location);
                     neverc_http_response_free(resp);
                     return make_error_response("too many redirects");
@@ -2202,9 +2207,10 @@ static int http_cookie_value_ok(const char *value) {
 }
 
 static int http_cookie_path_ok(const char *path) {
-    if (!path || path[0] != '/') return 0;
+    /* Go sanitizeCookiePath: any path-value byte, no leading-/ requirement. */
+    if (!path || !path[0]) return 0;
     for (const unsigned char *p = (const unsigned char *)path; *p; p++) {
-        if (*p < 0x20 || *p == 0x7f || *p == ';') return 0;
+        if (*p < 0x20 || *p > 0x7e || *p == ';') return 0;
     }
     return 1;
 }
@@ -2236,9 +2242,12 @@ void neverc_http_set_cookie(neverc_http_response_writer_t *w,
     if (!failed && c->path && c->path[0])
         failed = nc_buf_append(&value, "; Path=", 7) != 0 ||
                  nc_buf_append(&value, c->path, strlen(c->path)) != 0;
-    if (!failed && c->domain && c->domain[0])
-        failed = nc_buf_append(&value, "; Domain=", 9) != 0 ||
-                 nc_buf_append(&value, c->domain, strlen(c->domain)) != 0;
+    if (!failed && c->domain && c->domain[0]) {
+        const char *domain = c->domain[0] == '.' ? c->domain + 1 : c->domain;
+        if (domain[0])
+            failed = nc_buf_append(&value, "; Domain=", 9) != 0 ||
+                     nc_buf_append(&value, domain, strlen(domain)) != 0;
+    }
     if (!failed && c->max_age != 0) {
         char max_age[32];
         /* Go Cookie.String: MaxAge < 0 is a delete cookie (Max-Age=0). */
@@ -3277,6 +3286,14 @@ void neverc_http_serve_file(neverc_http_response_writer_t *w,
     int ranged = 0;
     if ((is_get || is_head) && req) {
         const char *range = neverc_http_request_header(req, "Range");
+        const char *if_range = neverc_http_request_header(req, "If-Range");
+        /* Go checkIfRange: a mismatched or non-date If-Range drops Range. */
+        if (range && if_range) {
+            neverc_time_t if_range_time;
+            if (http_parse_http_date(if_range, &if_range_time) != 0 ||
+                if_range_time.sec != modtime.sec)
+                range = NULL;
+        }
         if (range) {
             int range_result = http_parse_bytes_range(
                 range, fsize, &range_start, &range_length);
