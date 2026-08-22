@@ -2023,23 +2023,38 @@ void neverc_bigint_exp(neverc_bigint_t *z, const neverc_bigint_t *base,
         m = &mv;
     }
     /* Go Int.Exp: y < 0 and m == nil (or 0) yields 1. With a modulus,
-     * compute (base^|y|)^-1 mod m; leave z unchanged if not invertible. */
+     * invert x first (after reducing into [0,|m|)), raise that inverse
+     * to |y|, then apply the original negative-base sign when |y| is odd.
+     * Inverting after Exp(x,|y|,m) flips the sign for odd |y|. */
     if (exp->neg) {
         if (!m || m->len == 0) {
             neverc_bigint_set_int64(z, 1);
             return;
         }
-        neverc_bigint_t mag, pow, inv;
+        neverc_bigint_t mag, reduced, inv, pow;
         neverc_bigint_init(&mag);
-        neverc_bigint_init(&pow);
+        neverc_bigint_init(&reduced);
         neverc_bigint_init(&inv);
+        neverc_bigint_init(&pow);
         neverc_bigint_abs(&mag, exp);
-        neverc_bigint_exp(&pow, base, &mag, m);
-        if (bigint_modinv(&inv, &pow, m) == 0)
-            neverc_bigint_set(z, &inv);
+        neverc_bigint_mod(&reduced, base, m);
+        if (bigint_modinv(&inv, &reduced, m) == 0) {
+            neverc_bigint_exp(&pow, &inv, &mag, m);
+            if (base->neg && mag.len > 0 && (mag.digits[0] & 1u) &&
+                pow.len > 0) {
+                neverc_bigint_t mm;
+                neverc_bigint_init(&mm);
+                neverc_bigint_set(&mm, m);
+                mm.neg = 0;
+                neverc_bigint_sub(&pow, &mm, &pow);
+                neverc_bigint_free(&mm);
+            }
+            neverc_bigint_set(z, &pow);
+        }
         neverc_bigint_free(&mag);
-        neverc_bigint_free(&pow);
+        neverc_bigint_free(&reduced);
         neverc_bigint_free(&inv);
+        neverc_bigint_free(&pow);
         return;
     }
     int base_neg = base->neg && base->len > 0;

@@ -843,6 +843,16 @@ static void test_named_groups_and_replace_expand(void) {
     free(r);
     neverc_regexp_free(re);
 
+    /* Go extract() walks unicode.IsLetter/IsDigit. Unknown names vanish. */
+    re = neverc_regexp_compile("a", NULL);
+    r = neverc_regexp_replace_all(re, "a", "$\xc3\xa9", &outlen);
+    check_str("replace $é unknown name", r, "");
+    free(r);
+    r = neverc_regexp_replace_all(re, "a", "${\xe4\xb8\xad}", &outlen);
+    check_str("replace ${中} unknown name", r, "");
+    free(r);
+    neverc_regexp_free(re);
+
     /* Last iteration of a repeated group; unset alternative. */
     re = neverc_regexp_compile("(a)+", NULL);
     memset(m, 0, sizeof(m));

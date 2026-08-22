@@ -1963,7 +1963,15 @@ int neverc_ws_read_message(neverc_ws_conn_t *conn, char *buf, size_t buflen,
                             size_t *out_len) {
     if (!buf || buflen == 0) return -1;
     int opcode = 0;
-    return ws_read_data_message(conn, &opcode, buf, buflen - 1U, out_len, 1);
+    int rc = ws_read_data_message(conn, &opcode, buf, buflen - 1U, out_len, 1);
+    if (rc != 0) return rc;
+    /* Documented as a complete text message. BINARY (including non-UTF-8)
+     * must not be coerced into a C string. */
+    if (opcode != NC_WS_OPCODE_TEXT) {
+        if (out_len) *out_len = 0;
+        return ws_fail_protocol(conn);
+    }
+    return 0;
 }
 
 int neverc_ws_write_message(neverc_ws_conn_t *conn, const char *msg) {

@@ -176,6 +176,8 @@ typedef struct quic_fragment {
 
 typedef struct {
     uint64_t next_pn;
+    uint64_t max_sent_pn;
+    int has_sent;
     uint64_t largest_recv;
     uint64_t largest_acked;
     uint64_t acked_floor;

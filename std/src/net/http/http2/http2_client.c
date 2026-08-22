@@ -27,6 +27,7 @@ struct neverc_h2_client_stream {
     size_t header_count;
     neverc_hpack_header_t *trailers;
     size_t trailer_count;
+    int received_trailers;
     nc_buf_t body;
     size_t received_body_size;
     size_t header_list_size;
@@ -509,12 +510,13 @@ static int h2_client_store_decoded_headers(
     if (!trailers && status_code < 200) {
         h2_client_free_headers(stored, regular_count);
     } else if (trailers) {
-        if (stream->trailer_count != 0) {
+        if (stream->received_trailers) {
             h2_client_free_headers(stored, regular_count);
             return -1;
         }
         stream->trailers = stored;
         stream->trailer_count = regular_count;
+        stream->received_trailers = 1;
     } else {
         if (status_code == 204 && content_length_count != 0) {
             h2_client_free_headers(stored, regular_count);
@@ -584,8 +586,7 @@ static int h2_client_decode_pending(neverc_h2_client_t *client,
         nc_cond_broadcast(&stream->changed);
         return 0;
     }
-    if (stream->live && stream->response_started &&
-        (!was_response_started || stream->trailers)) {
+    if (stream->live && stream->response_started) {
         neverc_h2_client_event_t *event =
             (neverc_h2_client_event_t *)calloc(1, sizeof(*event));
         if (!event) {
@@ -1860,6 +1861,7 @@ neverc_h2_response_t *neverc_h2_client_do_context(
         response->header_count = stream->header_count;
         response->trailers = stream->trailers;
         response->trailer_count = stream->trailer_count;
+        response->received_trailers = stream->received_trailers;
         response->body = (uint8_t *)stream->body.data;
         response->body_length = stream->body.len;
         response->stream_error =

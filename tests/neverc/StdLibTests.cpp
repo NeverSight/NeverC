@@ -279,7 +279,8 @@ STD_TEST(path, "src/path/base.c", "src/path/dir.c", "src/path/ext.c", "src/path/
 STD_TEST(sort, "src/sort/sort.c")
 // Differential fuzz over the shared sort + substring-search engines (catches
 // structural regressions like the Timsort merge-invariant overflow).
-STD_TEST(sortsearch_fuzz, "src/sort/sort.c", "src/bytes/bytes.c")
+STD_TEST(sortsearch_fuzz, "src/sort/sort.c", "src/bytes/bytes.c",
+         "src/unicode/unicode.c")
 STD_TEST(rand, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/math/frexp.c", "src/math/ldexp.c", "src/math/floor.c", "src/math/modf.c", "src/math/trunc.c", "src/math/sqrt.c", "src/math/nan.c", "src/math/inf.c", "src/math/isinf.c")
 STD_TEST(rand_ubsan, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/math/frexp.c", "src/math/ldexp.c", "src/math/floor.c", "src/math/modf.c", "src/math/trunc.c", "src/math/sqrt.c", "src/math/nan.c", "src/math/inf.c", "src/math/isinf.c")
 #ifndef _WIN32
@@ -450,7 +451,7 @@ STD_TEST(utf16, "src/unicode/utf16/utf16.c")
 
 // ===== Core =====
 STD_TEST(cmp, "src/cmp/cmp.c")
-STD_TEST(bytes, "src/bytes/bytes.c")
+STD_TEST(bytes, "src/bytes/bytes.c", "src/unicode/unicode.c")
 TEST_F(StdLibTest, BytesAllocationFailure) {
   auto r = compileAndRunStdTest("bytes_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
@@ -503,7 +504,8 @@ TEST_F(StdLibTest, UuidEntropyFailure) {
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
-STD_TEST(regexp, "src/regexp/regexp.c")
+STD_TEST(regexp, "src/regexp/regexp.c", "src/unicode/unicode.c",
+         "src/unicode/utf8/utf8.c")
 TEST_F(StdLibTest, RegexpAllocationFailure) {
   auto r = compileAndRunStdTest("regexp_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
@@ -1082,7 +1084,8 @@ TEST_F(StdLibTest, RegexpSyntaxAllocationFailure) {
 STD_TEST(tzdata, "src/time/tzdata/tzdata.c")
 
 // ===== CString =====
-STD_TEST(cstring, "src/cstring/cstring.c", "src/bytes/bytes.c")
+STD_TEST(cstring, "src/cstring/cstring.c", "src/bytes/bytes.c",
+         "src/unicode/unicode.c")
 TEST_F(StdLibTest, CStringAllocationFailure) {
   auto r = compileAndRunStdTest("cstring_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;

@@ -18,6 +18,7 @@ static void *controlled_realloc(void *ptr, size_t size) {
     return allocation_fails() ? NULL : realloc(ptr, size);
 }
 
+#include "../../../std/src/unicode/unicode.c"
 #define malloc controlled_malloc
 #define realloc controlled_realloc
 #include "../../../std/src/bytes/bytes.c"

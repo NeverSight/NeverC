@@ -511,10 +511,14 @@ static int append_ip_address(neverc_x509_cert_t *cert,
     return 0;
 }
 
+/* Returns 1 when the SAN parsed but no dNSName/iPAddress was stored
+ * (Go crypto/x509: a critical SAN with only skipped GeneralNames is
+ * unhandled). Negative is a parse error. */
 static int parse_subject_alt_name(neverc_x509_cert_t *cert,
                                   const uint8_t *data, size_t len) {
     asn1_reader_t wrapper = {data, len, 0};
     asn1_reader_t names;
+    size_t extracted = 0;
     if (asn1_enter_sequence(&wrapper, &names) < 0 ||
         wrapper.pos != wrapper.len || names.len == 0)
         return -1;
@@ -528,12 +532,14 @@ static int parse_subject_alt_name(neverc_x509_cert_t *cert,
         if (tag == 0x82) {
             if (append_dns_name(cert, value, value_len) != 0)
                 return -1;
+            extracted++;
         } else if (tag == 0x87) {
             if (append_ip_address(cert, value, value_len) != 0)
                 return -1;
+            extracted++;
         }
     }
-    return 0;
+    return extracted > 0 ? 0 : 1;
 }
 
 static int parse_basic_constraints(neverc_x509_cert_t *cert,
@@ -860,13 +866,18 @@ static int parse_extensions(neverc_x509_cert_t *cert,
             saw_basic_constraints = 1;
         } else if (oid_equals(oid, oid_len, OID_SUBJECT_ALT_NAME,
                               sizeof(OID_SUBJECT_ALT_NAME))) {
+            int san_rc;
             if (saw_subject_alt_name ||
-                parse_subject_alt_name(cert, contents,
-                                       contents_len) != 0)
+                (san_rc = parse_subject_alt_name(cert, contents,
+                                                 contents_len)) < 0)
                 return -1;
             saw_subject_alt_name = 1;
             if (san_critical && critical_flag)
                 *san_critical = 1;
+            /* RFC 5280 §4.2 / Go processExtensions: a critical SAN that
+             * yielded no supported names is unhandled. */
+            if (san_rc > 0 && critical_flag)
+                cert->has_unhandled_critical_extension = 1;
         } else if (oid_equals(oid, oid_len, OID_KEY_USAGE,
                               sizeof(OID_KEY_USAGE))) {
             if (saw_key_usage ||

@@ -241,6 +241,26 @@ static void test_loss_packet_threshold_detection(void) {
     neverc_quic_loss_destroy(&ld);
 }
 
+static void test_loss_ack_of_unsent_does_not_raise_largest(void) {
+    quic_loss_detector_t ld;
+    neverc_quic_loss_init(&ld);
+
+    neverc_quic_loss_on_sent(&ld, 2, 0, 1000, 1200, 1);
+    neverc_quic_loss_on_sent(&ld, 2, 1, 1010, 1200, 1);
+    neverc_quic_loss_on_sent(&ld, 2, 2, 1020, 1200, 1);
+    /* ACK of sealed-but-never-sent PN 5 must not trip the threshold. */
+    neverc_quic_loss_on_ack(&ld, 2, 5, 0, 1200);
+
+    ASSERT_EQ(ld.spaces[2].has_largest_acked, 0);
+    quic_sent_packet_t *pkt = ld.spaces[2].sent_packets;
+    while (pkt) {
+        ASSERT_EQ(pkt->lost, 0);
+        pkt = pkt->next;
+    }
+
+    neverc_quic_loss_destroy(&ld);
+}
+
 static void test_loss_rtt_measurement(void) {
     quic_loss_detector_t ld;
     neverc_quic_loss_init(&ld);
@@ -420,6 +440,7 @@ int main(void) {
     test_loss_on_sent_tracking();
     test_loss_discard_space();
     test_loss_packet_threshold_detection();
+    test_loss_ack_of_unsent_does_not_raise_largest();
     test_loss_rtt_measurement();
     test_loss_cleanup();
     test_loss_timeout();

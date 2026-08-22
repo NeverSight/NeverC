@@ -150,7 +150,9 @@ static int qt_process_ack(struct neverc_quic_conn *conn, int space,
      * PROTOCOL_VIOLATION. */
     if (conn->pn[space].next_pn == 0)
         return 0;
-    if (ack->largest_acked >= conn->pn[space].next_pn) {
+    if (ack->largest_acked >= conn->pn[space].next_pn ||
+        !conn->pn[space].has_sent ||
+        ack->largest_acked > conn->pn[space].max_sent_pn) {
         (void)neverc_quic_conn_close_locked(
             conn, QUIC_ERR_PROTOCOL_VIOLATION,
             "ACK of unsent packet number", 0);
@@ -1570,6 +1572,10 @@ static int qt_send_item(struct neverc_quic_conn *conn,
     free(packet);
     if (result.status != NEVERC_NET_OK || result.transferred != packet_len)
         return result.status == NEVERC_NET_WOULD_BLOCK ? 1 : -1;
+    if (!conn->pn[space].has_sent ||
+        packet_number > conn->pn[space].max_sent_pn)
+        conn->pn[space].max_sent_pn = packet_number;
+    conn->pn[space].has_sent = 1;
     if (conn->side == QUIC_SIDE_SERVER && !conn->address_validated)
         conn->bytes_sent_before_validation += packet_len;
     if (included_ack) conn->pn[space].ack_pending = 0;

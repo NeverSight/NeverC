@@ -563,6 +563,35 @@ static void test_x509_subject_alt_name(void) {
     if (rc == 0)
         neverc_x509_cert_free(&cert);
 
+    /* Critical SAN whose only GeneralName is otherName [0]: Go records
+     * UnhandledCriticalExtensions and Verify fails. */
+    {
+        static const uint8_t othername_san[] = {
+            0xa3, 0x1e, 0x30, 0x1c, 0x30, 0x1a,
+            0x06, 0x03, 0x55, 0x1d, 0x11, 0x01, 0x01, 0xff, 0x04, 0x10,
+            0x30, 0x0e, 0xa0, 0x0c, 0x06, 0x03, 0x2b, 0x06, 0x01,
+            0xa0, 0x05, 0x0c, 0x03, 0x66, 0x6f, 0x6f
+        };
+        uint8_t der[256];
+        const size_t prefix = 125;
+        const size_t old_ext = 15;
+        size_t suffix = sizeof(empty_san_cert_der) - prefix - old_ext;
+        memcpy(der, empty_san_cert_der, prefix);
+        memcpy(der + prefix, othername_san, sizeof(othername_san));
+        memcpy(der + prefix + sizeof(othername_san),
+               empty_san_cert_der + prefix + old_ext, suffix);
+        der[2] = (uint8_t)(prefix + sizeof(othername_san) + suffix - 3);
+        der[5] = (uint8_t)(prefix + sizeof(othername_san) - 6);
+        rc = neverc_x509_parse_certificate(
+            &cert, der, prefix + sizeof(othername_san) + suffix);
+        CHECK("critical_othername_san_parses", rc == 0);
+        if (rc == 0) {
+            CHECK("critical_othername_san_unhandled",
+                  cert.has_unhandled_critical_extension != 0);
+            neverc_x509_cert_free(&cert);
+        }
+    }
+
     rc = neverc_x509_parse_certificate(
         &cert, test_cert_der, sizeof(test_cert_der));
     CHECK("legacy_cn_parse_success", rc == 0);

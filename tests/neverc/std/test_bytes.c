@@ -56,6 +56,14 @@ static void test_compare(void) {
                    B("ABCDEFGH"), B("abcdefgh")), 1);
     check_bool("equalfold punctuation is not case", neverc_bytes_equal_fold(
                    B("@@@@@@@@"), B("````````")), 0);
+    /* Go bytes.EqualFold: SimpleFold, lengths need not match. */
+    check_bool("equalfold kelvin", neverc_bytes_equal_fold(
+                   B("K"), (const uint8_t *)"\xe2\x84\xaa", 3), 1);
+    check_bool("equalfold long s", neverc_bytes_equal_fold(
+                   B("s"), (const uint8_t *)"\xc5\xbf", 2), 1);
+    check_bool("equalfold sigma", neverc_bytes_equal_fold(
+                   (const uint8_t *)"\xce\xa3", 2,
+                   (const uint8_t *)"\xcf\x83", 2), 1);
 }
 
 static void test_search(void) {

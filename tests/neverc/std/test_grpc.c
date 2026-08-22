@@ -841,7 +841,7 @@ static void grpc_fake_h2_task(void *context) {
         headers[header_count++] = (neverc_hpack_header_t){
             .name = "content-type", .value = "application/grpc"};
     } else if (test->kind == 4 || test->kind == 5 || test->kind == 6 ||
-               test->kind == 7) {
+               test->kind == 7 || test->kind == 9) {
         /* kind 7 is Trailers-Only OK. kinds 4–6 put grpc-status on
          * Response-Headers, which is valid only when there is no DATA and
          * no later trailer block. */
@@ -867,7 +867,7 @@ static void grpc_fake_h2_task(void *context) {
         encoder, headers, header_count, block, sizeof(block),
         &block_length) == 0 && block_length > 0 && block_length <= 0xffffffU;
     if (encoded && (test->kind == 3 || test->kind == 4 || test->kind == 5 ||
-                    test->kind == 6 || test->kind == 8)) {
+                    test->kind == 6 || test->kind == 8 || test->kind == 9)) {
         neverc_hpack_header_t trailers[1];
         if (test->kind == 6) {
             trailers[0] = (neverc_hpack_header_t){
@@ -879,10 +879,16 @@ static void grpc_fake_h2_task(void *context) {
             trailers[0] = (neverc_hpack_header_t){
                 .name = "x-unused", .value = "1"};
         }
-        encoded = neverc_hpack_encode(
-            encoder, trailers, 1, trailer_block, sizeof(trailer_block),
-            &trailer_length) == 0 && trailer_length > 0 &&
-            trailer_length <= 0xffffffU;
+        if (test->kind == 9) {
+            encoded = neverc_hpack_encode(
+                encoder, trailers, 0, trailer_block, sizeof(trailer_block),
+                &trailer_length) == 0 && trailer_length <= 0xffffffU;
+        } else {
+            encoded = neverc_hpack_encode(
+                encoder, trailers, 1, trailer_block, sizeof(trailer_block),
+                &trailer_length) == 0 && trailer_length > 0 &&
+                trailer_length <= 0xffffffU;
+        }
     }
     neverc_hpack_encoder_destroy(encoder);
     uint8_t header_flags = NC_H2_FLAG_END_HEADERS;
@@ -906,7 +912,7 @@ static void grpc_fake_h2_task(void *context) {
             return;
         }
     } else if (test->kind == 3 || test->kind == 4 || test->kind == 5 ||
-               test->kind == 6 || test->kind == 8) {
+               test->kind == 6 || test->kind == 8 || test->kind == 9) {
         uint8_t grpc_ok[] = {0, 0, 0, 0, 2, 'o', 'k'};
         if ((test->kind == 4 || test->kind == 8) &&
             grpc_h2_write_frame(conn, NC_H2_FRAME_DATA, 0, 1U, grpc_ok,
@@ -1062,6 +1068,12 @@ static void grpc_test_status_mapping(void) {
           conflicting_status->status != NEVERC_GRPC_PERMISSION_DENIED);
     neverc_grpc_result_free(conflicting_status);
 
+    neverc_grpc_result_t *empty_trailers = grpc_call_fake_h2(9);
+    CHECK(empty_trailers != NULL);
+    CHECK(empty_trailers && empty_trailers->error != NULL);
+    CHECK(empty_trailers && empty_trailers->status != NEVERC_GRPC_OK);
+    neverc_grpc_result_free(empty_trailers);
+
     neverc_grpc_status_t stream_status = NEVERC_GRPC_UNKNOWN;
     const char *stream_error = "unset";
     CHECK(grpc_stream_fake_h2(0, &stream_status, &stream_error) == 0);
@@ -1104,6 +1116,12 @@ static void grpc_test_status_mapping(void) {
     CHECK(stream_error != NULL);
     CHECK(stream_status != NEVERC_GRPC_OK);
     CHECK(stream_status != NEVERC_GRPC_PERMISSION_DENIED);
+
+    stream_status = NEVERC_GRPC_UNKNOWN;
+    stream_error = "unset";
+    CHECK(grpc_stream_fake_h2(9, &stream_status, &stream_error) == -1);
+    CHECK(stream_error != NULL);
+    CHECK(stream_status != NEVERC_GRPC_OK);
 }
 
 static void grpc_test_binary_metadata_unpadded(void) {

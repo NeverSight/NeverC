@@ -1368,7 +1368,8 @@ neverc_grpc_result_t *neverc_grpc_client_call(
     } else if (from_headers == 1) {
         /* grpc-status in headers is Trailers-Only. A body or a later
          * trailer block means the peer put status on Response-Headers. */
-        if (response->body_length > 0 || result->trailer_count > 0) {
+        if (response->body_length > 0 || result->trailer_count > 0 ||
+            response->received_trailers) {
             result->error = "invalid or missing gRPC status";
             result->status = NEVERC_GRPC_UNKNOWN;
             free(trailer_message);

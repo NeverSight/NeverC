@@ -190,6 +190,26 @@ static void test_look_path(void) {
     ASSERT_TRUE(p != NULL);
     ASSERT_TRUE(strlen(p) > 0);
 
+#if defined(_WIN32)
+    /* Go LookPath: a path-qualified name without an ext still tries .exe. */
+    {
+        char sysdir[MAX_PATH];
+        char notepad[MAX_PATH];
+        UINT n = GetSystemDirectoryA(sysdir, (UINT)sizeof(sysdir));
+        ASSERT_TRUE(n > 0 && n < sizeof(sysdir));
+        snprintf(notepad, sizeof(notepad), "%s\\notepad", sysdir);
+        p = neverc_exec_look_path(notepad, buf, sizeof(buf));
+        ASSERT_TRUE(p != NULL);
+        ASSERT_TRUE(strlen(p) >= 4);
+        ASSERT_TRUE(p[strlen(p) - 4] == '.' &&
+                    (p[strlen(p) - 3] == 'e' || p[strlen(p) - 3] == 'E') &&
+                    (p[strlen(p) - 2] == 'x' || p[strlen(p) - 2] == 'X') &&
+                    (p[strlen(p) - 1] == 'e' || p[strlen(p) - 1] == 'E'));
+        p = neverc_exec_look_path(".\\notepad", buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+    }
+#endif
+
     p = neverc_exec_look_path("this_command_does_not_exist_xyz", buf, sizeof(buf));
     ASSERT_TRUE(p == NULL);
     ASSERT_TRUE(neverc_exec_look_path("", buf, sizeof(buf)) == NULL);

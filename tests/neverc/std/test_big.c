@@ -618,6 +618,23 @@ static void test_exp_mod(void) {
     neverc_bigint_exp(&mod, &base, &exp, &mod);
     ASSERT_INT_EQ(neverc_bigint_int64(&mod), 1);
 
+    /* Go Int.Exp(-2, -1, 5) inverts x first: ModInverse(-2,5)=2, then
+     * 5-2=3 because the original base is negative and |y| is odd. */
+    neverc_bigint_set_int64(&base, -2);
+    neverc_bigint_set_int64(&exp, -1);
+    neverc_bigint_set_int64(&mod, 5);
+    neverc_bigint_set_int64(&result, 999);
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 3);
+    neverc_bigint_set_int64(&exp, -2);
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 4);
+    neverc_bigint_set_int64(&base, -5);
+    neverc_bigint_set_int64(&exp, -1);
+    neverc_bigint_set_int64(&mod, 7);
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 3);
+
     neverc_bigint_free(&x); neverc_bigint_free(&m); neverc_bigint_free(&z);
 
     neverc_bigint_free(&base); neverc_bigint_free(&exp);

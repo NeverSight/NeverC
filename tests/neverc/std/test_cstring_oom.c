@@ -20,6 +20,7 @@ static void controlled_free(void *ptr) {
     free(ptr);
 }
 
+#include "../../../std/src/unicode/unicode.c"
 #define malloc controlled_malloc
 #define free controlled_free
 #include "../../../std/src/bytes/bytes.c"

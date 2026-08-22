@@ -2074,6 +2074,42 @@ TEST(h2c_priority_self_dependency_closes_idle_stream) {
     ASSERT_TRUE(WIFEXITED(status));
 }
 
+TEST(h2c_priority_reset_history_does_not_forget_idle_ids) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    uint32_t id;
+    for (id = 1; id <= 511; id += 2) {
+        ASSERT_EQ(h2_send_priority_self(fd, id), 0);
+        uint32_t error_code = 0xffffffffU;
+        ASSERT_EQ(h2_read_rst_on(fd, id, &error_code), 0);
+        ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    }
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    ASSERT_EQ(h2_send_headers(fd, headers, 4, 1), 0);
+    {
+        uint32_t error_code = 0xffffffffU;
+        ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+        ASSERT_EQ(error_code, NC_H2_STREAM_CLOSED);
+    }
+    ASSERT_EQ(h2_send_priority_self(fd, 513), 0);
+    {
+        uint32_t error_code = 0xffffffffU;
+        ASSERT_EQ(h2_read_goaway(fd, &error_code), 0);
+        ASSERT_EQ(error_code, NC_H2_ENHANCE_YOUR_CALM);
+    }
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
 TEST(h2c_priority_self_dependency_aborts_open_stream) {
     neverc_tcp_conn_t *client = NULL;
     pid_t child = -1;
@@ -3467,6 +3503,7 @@ int main(void) {
     run_test_h2c_empty_data_does_not_send_zero_window_update();
     run_test_h2c_stream_window_update_overflow_is_connection_error();
     run_test_h2c_priority_self_dependency_closes_idle_stream();
+    run_test_h2c_priority_reset_history_does_not_forget_idle_ids();
     run_test_h2c_priority_self_dependency_aborts_open_stream();
     run_test_h2c_continuation_flood_is_connection_error();
     run_test_h2c_continuation_without_headers_is_connection_error();

@@ -55,6 +55,8 @@ static void test_equal_fold(void) {
     check_int("fold empty", neverc_cstring_equal_fold("", ""), 1);
     check_int("fold diff len", neverc_cstring_equal_fold("abc", "abcd"), 0);
     check_int("fold numbers", neverc_cstring_equal_fold("123", "123"), 1);
+    check_int("fold kelvin", neverc_cstring_equal_fold("K", "\xe2\x84\xaa"), 1);
+    check_int("fold sigma", neverc_cstring_equal_fold("\xce\xa3", "\xcf\x83"), 1);
 
     srand(9173);
     int mismatches = 0;

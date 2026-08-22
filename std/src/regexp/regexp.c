@@ -1,4 +1,6 @@
 #include "neverc/std/regexp.h"
+#include "neverc/std/unicode.h"
+#include "neverc/std/unicode/utf8.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -2079,14 +2081,19 @@ static int regexp_append_expand(char **buffer, size_t *length, size_t *capacity,
         const char *after_dollar = p;
         int braced = 0;
         if (*p == '{') { braced = 1; p++; }
-        /* Go extract(): one [A-Za-z0-9_]+ token, then number vs name.
-         * $1a is the name "1a", not group 1 plus a literal 'a'. */
+        /* Go extract(): one unicode.IsLetter/IsDigit/_ token, then
+         * number vs name. $1a is the name "1a", not group 1 plus 'a'. */
         const char *ns = p;
-        if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
-            (*p >= '0' && *p <= '9') || *p == '_') {
-            while ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
-                   (*p >= '0' && *p <= '9') || *p == '_')
-                p++;
+        while (*p) {
+            uint32_t rune = 0;
+            int size = 0;
+            neverc_utf8_decode_rune((const uint8_t *)p, strlen(p),
+                                    &rune, &size);
+            if (size <= 0) break;
+            if (!neverc_unicode_is_letter(rune) &&
+                !neverc_unicode_is_digit(rune) && rune != '_')
+                break;
+            p += size;
         }
         int nlen = (int)(p - ns);
         if (nlen <= 0 || (braced && *p != '}')) {

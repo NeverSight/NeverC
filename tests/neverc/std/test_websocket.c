@@ -971,6 +971,49 @@ static void test_read_message_overflow_clears_fragment(void) {
     neverc_tcp_listener_close(ln);
 }
 
+static void test_read_message_rejects_binary(void) {
+    printf("[read_message_rejects_binary]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("msg-binary listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("msg-binary client", client);
+    check_not_null("msg-binary server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("msg-binary server ws", ws);
+    if (ws) {
+        check_int("write binary frame",
+                  ws_write_masked_frame(client, NC_WS_OPCODE_BINARY,
+                                        "hi", 2),
+                  0);
+        char buf[16];
+        size_t n = 99;
+        check_int("read_message rejects binary",
+                  neverc_ws_read_message(ws, buf, sizeof(buf), &n),
+                  -1);
+        check_int("binary out_len cleared", (int)n, 0);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
 static void test_close_half_closes_write(void) {
     printf("[close_half_closes_write]\n");
     const char *err = NULL;
@@ -2080,6 +2123,7 @@ int main(void) {
     test_oversized_text_during_fragment_is_1002();
     test_oversized_stray_continuation_is_1002();
     test_read_message_overflow_clears_fragment();
+    test_read_message_rejects_binary();
     test_close_half_closes_write();
     test_frame_length_overflow();
     test_fragment_exceeds_read_limit();

@@ -474,7 +474,25 @@ static int exec_win_has_ext(const char *name) {
     const char *slash = strrchr(name, '\\');
     const char *fwd = strrchr(name, '/');
     if (fwd && (!slash || fwd > slash)) slash = fwd;
-    return dot && dot[1] != '\0' && (!slash || dot > slash);
+    /* Go filepath.Ext("file.") is "." — a trailing dot is still an ext. */
+    return dot && (!slash || dot > slash);
+}
+
+/* Go lookExtensions: try the exact name, then ".exe" when there is no ext. */
+static int exec_win_try_with_exe(const char *file, char *buf, DWORD cap) {
+    size_t n;
+    int written;
+    if (!file || !buf || cap == 0) return -1;
+    if (exec_win_is_file(file)) {
+        n = strlen(file);
+        if (n >= cap) return -1;
+        memcpy(buf, file, n + 1);
+        return 0;
+    }
+    if (exec_win_has_ext(file)) return -1;
+    written = snprintf(buf, cap, "%s.exe", file);
+    if (written < 0 || (DWORD)written >= cap) return -1;
+    return exec_win_is_file(buf) ? 0 : -1;
 }
 
 static int exec_win_is_drive_cwd(const char *dir, size_t n) {
@@ -659,7 +677,7 @@ static const char *exec_windows_resolve_app(const neverc_exec_cmd_t *cmd,
     }
     if (strchr(name, '\\') || strchr(name, '/') ||
         (name[0] && name[1] == ':'))
-        return name;
+        return exec_win_try_with_exe(name, buf, cap) == 0 ? buf : NULL;
     path_env = exec_env_path(cmd->env, cmd->env_count);
     /* Custom Env without PATH must not fall back to the process PATH
      * (Go os/exec LookPath). CreateProcessA(NULL, ...) would also search. */
@@ -986,11 +1004,11 @@ const char *neverc_exec_look_path(const char *file, char *buf, size_t cap) {
         size_t flen = strlen(file);
         /* Go LookPath: a relative / drive-relative / current-drive path is
          * ErrDot even when the file exists (".\\a.exe", "C:a.exe", "\\a.exe").
-         * UNC with ".." in the volume is also not IsAbs. */
-        if (exec_win_skip_path_dir(file, flen) || !exec_win_is_file(file))
+         * UNC with ".." in the volume is also not IsAbs. Absolute names
+         * still get ".exe" when they have no extension (lookExtensions). */
+        if (exec_win_skip_path_dir(file, flen) ||
+            exec_win_try_with_exe(file, buf, (DWORD)cap) != 0)
             return NULL;
-        if (flen >= cap) return NULL;
-        memcpy(buf, file, flen + 1);
         return buf;
     }
     n = GetEnvironmentVariableA("PATH", path_storage, (DWORD)sizeof(path_storage));

@@ -293,8 +293,10 @@ static int rpc_dispatch_inbound(neverc_rpc_client_t *client,
         neverc_rpc_status_code_t code =
             (neverc_rpc_status_code_t)frame->header.code;
         /* GOAWAY is connection shutdown, not a per-stream END. Code 0
-         * (NO_ERROR / OK) must not complete in-flight calls as success. */
-        if (code == NEVERC_RPC_STATUS_OK)
+         * (NO_ERROR / OK) and the stream's default UNKNOWN must not
+         * complete in-flight calls as success. */
+        if (code == NEVERC_RPC_STATUS_OK ||
+            code == NEVERC_RPC_STATUS_UNKNOWN)
             code = NEVERC_RPC_STATUS_UNAVAILABLE;
         rpc_client_fail_streams(client, code, "RPC peer sent GOAWAY");
         return -1;

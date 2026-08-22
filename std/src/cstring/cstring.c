@@ -132,36 +132,8 @@ int neverc_cstring_compare(const char *a, const char *b) {
 int neverc_cstring_equal_fold(const char *s, const char *t) {
     s = nc_s(s);
     t = nc_s(t);
-    size_t slen = strlen(s);
-    size_t tlen = strlen(t);
-    if (slen != tlen) return 0;
-    size_t i = 0;
-    #define NCI_FOLD_ONES  ((uint64_t)0x0101010101010101ULL)
-    #define NCI_FOLD_CASE  (NCI_FOLD_ONES * 0x20)
-    #define NCI_FOLD_HIGHS (NCI_FOLD_ONES * 0x80)
-    while (slen - i >= 8) {
-        uint64_t ws, wt;
-        memcpy(&ws, s + i, 8);
-        memcpy(&wt, t + i, 8);
-        if (ws == wt) { i += 8; continue; }
-        uint64_t ls = ws | NCI_FOLD_CASE;
-        uint64_t lt = wt | NCI_FOLD_CASE;
-        if (ls != lt) return 0;
-        uint64_t diff = ws ^ wt;
-        uint64_t lowered = ls;
-        uint64_t cleared = lowered & ~NCI_FOLD_HIGHS;
-        uint64_t below_a = cleared + NCI_FOLD_ONES * (0x80u - 'a');
-        uint64_t above_z = cleared + NCI_FOLD_ONES * (0x7fu - 'z');
-        uint64_t is_letter = ((below_a ^ above_z) & ~lowered) & NCI_FOLD_HIGHS;
-        if (diff & ~(is_letter >> 2)) return 0;
-        i += 8;
-    }
-    #undef NCI_FOLD_ONES
-    #undef NCI_FOLD_CASE
-    #undef NCI_FOLD_HIGHS
-    for (; i < slen; i++)
-        if (to_lower_ch(s[i]) != to_lower_ch(t[i])) return 0;
-    return 1;
+    return neverc_bytes_equal_fold((const uint8_t *)s, strlen(s),
+                                   (const uint8_t *)t, strlen(t));
 }
 
 /* ======================================================================

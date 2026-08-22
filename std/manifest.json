@@ -1639,6 +1639,7 @@
     "bytes": {
       "header": "include/neverc/std/bytes.h",
       "description": "Byte slice manipulation (mirrors Go bytes package)",
+      "deps": ["unicode"],
       "symbols": {
         "neverc_bytes_equal": "src/bytes/bytes.c",
         "neverc_bytes_compare": "src/bytes/bytes.c",
@@ -2133,6 +2134,7 @@
     "regexp": {
       "header": "include/neverc/std/regexp.h",
       "description": "Regular expressions \u2014 NFA engine (mirrors Go regexp package)",
+      "deps": ["unicode", "unicode/utf8"],
       "symbols": {
         "neverc_regexp_compile": "src/regexp/regexp.c",
         "neverc_regexp_match": "src/regexp/regexp.c",
@@ -3778,6 +3780,7 @@
     "cstring": {
       "header": "include/neverc/std/cstring.h",
       "description": "C-string manipulation \u2014 search, transform, split, trim, join, cut (mirrors Go strings package for null-terminated C strings)",
+      "deps": ["bytes"],
       "symbols": {
         "neverc_cstring_compare": "src/cstring/cstring.c",
         "neverc_cstring_equal_fold": "src/cstring/cstring.c",

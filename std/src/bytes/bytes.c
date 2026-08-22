@@ -1,4 +1,5 @@
 #include "neverc/std/bytes.h"
+#include "neverc/std/unicode.h"
 #include "strsearch.h"
 #include <stdlib.h>
 #include <string.h>
@@ -175,10 +176,51 @@ static uint8_t to_lower_ascii(uint8_t c) {
     return (c >= 'A' && c <= 'Z') ? c + 32 : c;
 }
 
+static int bytes_ascii_span(const uint8_t *p, size_t n) {
+    size_t i;
+    for (i = 0; i < n; i++)
+        if (p[i] >= 0x80) return 0;
+    return 1;
+}
+
+/* Go bytes.EqualFold / strings.EqualFold: walk runes and SimpleFold.
+ * Lengths need not match (K vs U+212A Kelvin). */
+static int bytes_equal_fold_runes(const uint8_t *s, size_t slen,
+                                  const uint8_t *t, size_t tlen) {
+    while (slen > 0 && tlen > 0) {
+        uint32_t sr, tr;
+        size_t sw = bytes_decode_rune(s, slen, &sr);
+        size_t tw = bytes_decode_rune(t, tlen, &tr);
+        s += sw;
+        slen -= sw;
+        t += tw;
+        tlen -= tw;
+        if (sr == tr) continue;
+        if (tr < sr) {
+            uint32_t tmp = sr;
+            sr = tr;
+            tr = tmp;
+        }
+        if (sr >= 'A' && sr <= 'Z' && tr == sr + ('a' - 'A'))
+            continue;
+        if (tr < 0x80) return 0;
+        {
+            uint32_t r = neverc_unicode_simple_fold(sr);
+            while (r != sr && r < tr)
+                r = neverc_unicode_simple_fold(r);
+            if (r == tr) continue;
+        }
+        return 0;
+    }
+    return slen == 0 && tlen == 0;
+}
+
 int neverc_bytes_equal_fold(const uint8_t *s, size_t slen,
                             const uint8_t *t, size_t tlen) {
-    if (slen != tlen) return 0;
     if (!bytes_span_valid(s, slen) || !bytes_span_valid(t, tlen)) return 0;
+    if (slen != tlen || !bytes_ascii_span(s, slen) ||
+        !bytes_ascii_span(t, tlen))
+        return bytes_equal_fold_runes(s, slen, t, tlen);
     size_t i = 0;
     /*
      * SWAR case-insensitive comparison:

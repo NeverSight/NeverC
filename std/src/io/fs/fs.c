@@ -742,13 +742,15 @@ glob_fail:
 }
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
+/* 1 = recurse, 0 = skip (file / reparse / not a dir), -1 = stat failed. */
 static int fs_is_real_dir(const char *path, const neverc_fs_dir_entry_t *entry) {
     DWORD attr;
     if (!entry || !entry->is_dir || (entry->mode & NEVERC_FS_MODE_LINK))
         return 0;
     attr = GetFileAttributesA(path);
-    return attr != INVALID_FILE_ATTRIBUTES &&
-           (attr & FILE_ATTRIBUTE_DIRECTORY) &&
+    if (attr == INVALID_FILE_ATTRIBUTES)
+        return -1;
+    return (attr & FILE_ATTRIBUTE_DIRECTORY) &&
            !(attr & FILE_ATTRIBUTE_REPARSE_POINT);
 }
 #endif
@@ -967,12 +969,22 @@ static int walk_recursive(const char *path,
             return rc;
         }
 
-        if (fs_is_real_dir(full, &entries[i])) {
-            rc = walk_recursive(full, fn, userdata);
-            if (rc != 0) {
-                free(full);
-                neverc_fs_free_entries(entries);
-                return rc;
+        {
+            int real_dir = fs_is_real_dir(full, &entries[i]);
+            if (real_dir < 0) {
+                rc = walk_notify_error(full, fn, userdata);
+                if (rc != 0) {
+                    free(full);
+                    neverc_fs_free_entries(entries);
+                    return rc;
+                }
+            } else if (real_dir) {
+                rc = walk_recursive(full, fn, userdata);
+                if (rc != 0) {
+                    free(full);
+                    neverc_fs_free_entries(entries);
+                    return rc;
+                }
             }
         }
         free(full);

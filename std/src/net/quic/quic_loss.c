@@ -315,9 +315,25 @@ void neverc_quic_loss_on_ack(quic_loss_detector_t *ld, int space,
                               uint64_t now_ms) {
     quic_loss_space_t *ls = &ld->spaces[space];
 
-    if (!ls->has_largest_acked || largest_acked > ls->largest_acked_packet) {
-        ls->largest_acked_packet = largest_acked;
-        ls->has_largest_acked = 1;
+    /* RFC 9000 §13.1 / §21.4: do not raise largest_acked for a PN that
+     * was sealed but never sent. Optimistic ACKs of that hole used to
+     * trip the packet threshold on earlier in-flight packets. */
+    {
+        const quic_sent_packet_t *seen = ls->sent_packets;
+        int acked_was_sent = 0;
+        while (seen) {
+            if (seen->pkt_number == largest_acked) {
+                acked_was_sent = 1;
+                break;
+            }
+            seen = seen->next;
+        }
+        if (acked_was_sent &&
+            (!ls->has_largest_acked ||
+             largest_acked > ls->largest_acked_packet)) {
+            ls->largest_acked_packet = largest_acked;
+            ls->has_largest_acked = 1;
+        }
     }
 
     /* Find the sent packet matching largest_acked for RTT measurement */

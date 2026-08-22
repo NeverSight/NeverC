@@ -1449,23 +1449,39 @@ static void h2_consume_idle_stream_id(h2_conn_t *conn, uint32_t id) {
 }
 
 /* PRIORITY does not open a stream (RFC 9113 §5.1 / §6.3), so recording a
- * self-dependent idle id must not raise max_stream_id and close lower ids. */
-static void h2_remember_reset_stream_id(h2_conn_t *conn, uint32_t id) {
+ * self-dependent idle id must not raise max_stream_id and close lower ids.
+ * Do not evict a reset id that is still above max_stream_id: the 256-slot
+ * ring would otherwise forget it and a later HEADERS would reopen it. */
+static int h2_remember_reset_stream_id(h2_conn_t *conn, uint32_t id) {
     size_t i;
     for (i = 0; i < conn->closed_stream_count; i++) {
         if (conn->closed_streams[i].id == id) {
             conn->closed_streams[i].reset = 1;
-            return;
+            return 0;
         }
     }
-    h2_closed_stream_t *entry =
-        &conn->closed_streams[conn->closed_stream_next];
+    size_t slot = conn->closed_stream_next;
+    if (conn->closed_stream_count == H2_CLOSED_STREAM_HISTORY) {
+        size_t n;
+        for (n = 0; n < H2_CLOSED_STREAM_HISTORY; n++) {
+            size_t j = (conn->closed_stream_next + n) %
+                       H2_CLOSED_STREAM_HISTORY;
+            if (!conn->closed_streams[j].reset ||
+                conn->closed_streams[j].id <= conn->max_stream_id) {
+                slot = j;
+                break;
+            }
+        }
+        if (n == H2_CLOSED_STREAM_HISTORY)
+            return -1;
+    }
+    h2_closed_stream_t *entry = &conn->closed_streams[slot];
     entry->id = id;
     entry->reset = 1;
-    conn->closed_stream_next =
-        (conn->closed_stream_next + 1U) % H2_CLOSED_STREAM_HISTORY;
+    conn->closed_stream_next = (slot + 1U) % H2_CLOSED_STREAM_HISTORY;
     if (conn->closed_stream_count < H2_CLOSED_STREAM_HISTORY)
         conn->closed_stream_count++;
+    return 0;
 }
 
 static h2_stream_t *h2_create_stream(h2_conn_t *conn, uint32_t id) {
@@ -2733,8 +2749,13 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                                        NC_H2_PROTOCOL_ERROR);
                 break;
             }
-            if (fhdr.stream_id > conn.max_stream_id)
-                h2_remember_reset_stream_id(&conn, fhdr.stream_id);
+            if (fhdr.stream_id > conn.max_stream_id &&
+                h2_remember_reset_stream_id(&conn, fhdr.stream_id) != 0) {
+                nc_mutex_unlock(&conn.state_lock);
+                (void)h2_conn_write_goaway(&conn, NC_H2_ENHANCE_YOUR_CALM);
+                free(payload);
+                goto cleanup;
+            }
             nc_mutex_unlock(&conn.state_lock);
             (void)h2_conn_write_rst(&conn, fhdr.stream_id,
                                     NC_H2_PROTOCOL_ERROR);
