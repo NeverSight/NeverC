@@ -256,10 +256,13 @@ static void test_look_path(void) {
         }
         n = GetEnvironmentVariableA("PATH", old_path, sizeof(old_path));
         SetEnvironmentVariableA("PATH", dir);
-        SetEnvironmentVariableA("PATHEXT", ".EXE;.BAT");
+        /* Lowercase PATHEXT so the joined name is a.exe.exe; strstr is
+         * case-sensitive even though Win32 lookup is not. */
+        SetEnvironmentVariableA("PATHEXT", ".exe;.bat");
         p = neverc_exec_look_path("a.exe", buf, sizeof(buf));
         ASSERT_TRUE(p != NULL);
-        ASSERT_TRUE(p && strstr(p, "a.exe.exe") != NULL);
+        ASSERT_TRUE(p && (strstr(p, "a.exe.exe") != NULL ||
+                          strstr(p, "a.exe.EXE") != NULL));
         if (n > 0 && n < sizeof(old_path))
             SetEnvironmentVariableA("PATH", old_path);
         else

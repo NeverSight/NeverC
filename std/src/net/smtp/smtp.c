@@ -544,9 +544,12 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
         }
         code = smtp_cmd_line(c, user_b64, 1);
         if (code != 334) {
-            c->dead = 1;
-            if (code > 0)
+            /* Go Client.Auth sends '*' only to abort an in-progress SASL
+             * challenge. 535 already finished AUTH; keep the session. */
+            if (c->pending_len != 0 || (code >= 300 && code < 400)) {
+                c->dead = 1;
                 (void)smtp_cmd_line(c, "*", 1);
+            }
             return -1;
         }
         if (c->pending_len != 0) {
@@ -555,9 +558,14 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
             return -1;
         }
         code = smtp_cmd_line(c, pass_b64, 1);
-        if (code != 235)
-            c->dead = 1;
-        return (code == 235) ? 0 : -1;
+        if (code != 235) {
+            if (c->pending_len != 0 || (code >= 300 && code < 400)) {
+                c->dead = 1;
+                (void)smtp_cmd_line(c, "*", 1);
+            }
+            return -1;
+        }
+        return 0;
     }
 
     return -1;

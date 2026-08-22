@@ -3945,13 +3945,14 @@ static void test_path_params(void) {
     check_int("path_params dedicated HEAD",
                n > 0 && strstr(buf, "200") != NULL, 1);
 
-    /* GET / is a Go-style catch-all. POST is not served by that route. */
+    /* GET / is a Go-style catch-all. POST matches the path, not the
+     * method, so ServeMux answers 405 + Allow, not 404. */
     n = do_http_request(port,
         "POST /nonexistent HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
         buf, sizeof(buf));
-    check_int("path_params 404 resp", n > 0, 1);
-    check_int("path_params 404",
-               strstr(buf, "404") != NULL, 1);
+    check_int("path_params 405 resp", n > 0, 1);
+    check_int("path_params 405",
+               strstr(buf, "405") != NULL, 1);
 
     n = do_http_request(port,
         "GET /files/a/b/c HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
@@ -3992,8 +3993,8 @@ static void test_path_params(void) {
     n = do_http_request(port,
         "POST /wild/foo/x HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
         buf, sizeof(buf));
-    check_int("mid-pattern wildcard rejected",
-               n > 0 && strstr(buf, "404") != NULL, 1);
+    check_int("mid-pattern wildcard method is 405",
+               n > 0 && strstr(buf, "405") != NULL, 1);
 
     n = do_http_request(port,
         "GET /posts/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
@@ -4129,7 +4130,7 @@ static void test_mux_method_and_slash(void) {
     }
     usleep(300000);
     n = do_http_request(port,
-        "POST /items/42 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        "POST /items/42 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
         buf, sizeof(buf));
     check_int("mux POST without / is 405",
               n > 0 && strstr(buf, "405") != NULL, 1);

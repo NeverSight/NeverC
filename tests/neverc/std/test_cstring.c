@@ -259,12 +259,12 @@ static void test_to_title(void) {
     free(r);
 
     /* Go strings.Title walks runes; CJK/Greek letters are not separators.
-     * Hex escapes keep the fixture encoding-stable on MSVC. */
-    r = neverc_cstring_to_title("a\xE4\xB8\xADb");
-    check_str("to_title utf8 letter not sep", r, "A\xE4\xB8\xADb");
+     * Split hex escapes so `\xAD` is not parsed as `\xADb`. */
+    r = neverc_cstring_to_title("a" "\xE4\xB8\xAD" "b");
+    check_str("to_title utf8 letter not sep", r, "A" "\xE4\xB8\xAD" "b");
     free(r);
-    r = neverc_cstring_to_title("x\xCE\xB2y");
-    check_str("to_title greek letter not sep", r, "X\xCE\xB2y");
+    r = neverc_cstring_to_title("x" "\xCE\xB2" "y");
+    check_str("to_title greek letter not sep", r, "X" "\xCE\xB2" "y");
     free(r);
 }
 

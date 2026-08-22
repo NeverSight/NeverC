@@ -1060,6 +1060,8 @@ static int parse_time_zone(const char *value, size_t vlen, size_t *vi,
     if (*vi >= vlen) return -1;
     const char *s = value + *vi;
     size_t rem = vlen - *vi;
+    /* Go parseTimeZone: reject before ChST/GMT/±HH. "-5" is length 2. */
+    if (rem < 3) return -1;
 
     if (rem >= 4 && (memcmp(s, "ChST", 4) == 0 || memcmp(s, "MeST", 4) == 0)) {
         if (name && ncap > 4) {
