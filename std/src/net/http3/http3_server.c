@@ -63,6 +63,8 @@ extern uint64_t neverc_h3_graceful_goaway_id(void);
 extern int neverc_h3_server_goaway_id_valid(uint64_t stream_id);
 extern int neverc_h3_request_stream_after_goaway(uint64_t goaway_id,
                                                  uint64_t stream_id);
+extern uint64_t neverc_h3_processed_goaway_id(int have_request,
+                                              uint64_t last);
 extern int neverc_h3_is_server_initiated_bidi(uint64_t stream_id);
 extern int neverc_h3_uni_stream_type_class(uint64_t type);
 extern int neverc_h3_field_section_over_limit(uint64_t size, uint64_t limit);
@@ -155,6 +157,7 @@ struct h3_conn {
     uint8_t qpack_encoder_leftover[H3_QPACK_ENCODER_LEFTOVER];
     size_t qpack_encoder_leftover_len;
     uint64_t last_request_stream_id;
+    int have_processed_request;
     nc_mutex_t lock;
     nc_cond_t settings_cond;
     nc_thread_t thread;
@@ -1400,8 +1403,8 @@ static int h3_dispatch_request_stream(h3_conn_t *connection,
                                       neverc_quic_stream_t *stream) {
     uint64_t stream_id = neverc_quic_stream_id(stream);
     nc_mutex_lock(&connection->lock);
-    /* RFC 9114 §5.2: after GOAWAY, reject only streams above the advertised
-     * identifier. In-flight requests at or below it MUST still be processed. */
+    /* RFC 9114 §5.2: after GOAWAY, reject the indicated identifier or
+     * greater. Streams below it may still be processed. */
     if (connection->goaway_sent &&
         neverc_h3_request_stream_after_goaway(connection->goaway_sent_id,
                                               stream_id)) {
@@ -1421,6 +1424,7 @@ static int h3_dispatch_request_stream(h3_conn_t *connection,
         neverc_quic_stream_free(stream);
         return active > connection->server->max_concurrent_streams ? 0 : -1;
     }
+    connection->have_processed_request = 1;
     if (stream_id > connection->last_request_stream_id)
         connection->last_request_stream_id = stream_id;
     nc_mutex_unlock(&connection->lock);
@@ -1584,8 +1588,10 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
         h3_conn_t *connection = server->connections[i];
         nc_mutex_lock(&connection->lock);
         uint64_t last = connection->last_request_stream_id;
+        int have = connection->have_processed_request;
         nc_mutex_unlock(&connection->lock);
-        h3_server_send_goaway(connection, last);
+        h3_server_send_goaway(connection,
+                              neverc_h3_processed_goaway_id(have, last));
     }
 
     unsigned drained_for_ms = 0;

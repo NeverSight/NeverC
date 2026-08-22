@@ -468,10 +468,23 @@ int neverc_h3_is_server_initiated_bidi(uint64_t stream_id) {
     return (stream_id & 3U) == 1U;
 }
 
-/* 1 if this request stream is above the advertised GOAWAY identifier. */
+/* RFC 9114 §5.2: the indicated identifier or greater is rejected.
+ * GOAWAY(0) therefore refuses the first client bidi stream. */
 int neverc_h3_request_stream_after_goaway(uint64_t goaway_id,
                                           uint64_t stream_id) {
-    return stream_id > goaway_id;
+    return stream_id >= goaway_id;
+}
+
+/* First rejected request-stream ID after a graceful drain: 0 if none
+ * were processed, otherwise last_processed + 4 (next client bidi). */
+uint64_t neverc_h3_processed_goaway_id(int have_request, uint64_t last) {
+    uint64_t max;
+    if (!have_request)
+        return 0;
+    max = neverc_h3_graceful_goaway_id();
+    if (last > max - 4U)
+        return max;
+    return last + 4U;
 }
 
 /* RFC 9114 §6.2: 0 = control/encoder/decoder, 1 = ignore unknown/GREASE,

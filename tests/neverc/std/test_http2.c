@@ -2110,6 +2110,45 @@ TEST(h2c_priority_reset_history_does_not_forget_idle_ids) {
     ASSERT_TRUE(WIFEXITED(status));
 }
 
+TEST(h2c_priority_history_not_evicted_by_completed_stream) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    uint32_t id;
+    for (id = 3; id <= 513; id += 2) {
+        ASSERT_EQ(h2_send_priority_self(fd, id), 0);
+        uint32_t error_code = 0xffffffffU;
+        ASSERT_EQ(h2_read_rst_on(fd, id, &error_code), 0);
+        ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    }
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    ASSERT_EQ(h2_send_headers_on(fd, 1, headers, 4, 1), 0);
+    /* Wait until stream 1 is fully handled so the next frame reaps it. */
+    char resp[2048];
+    size_t resp_len = 0;
+    while (resp_len < sizeof(resp) - 1) {
+        ssize_t n = read(fd, resp + resp_len, sizeof(resp) - 1 - resp_len);
+        if (n <= 0) break;
+        resp_len += (size_t)n;
+        if (buf_contains(resp, resp_len, "Hello from NeverC HTTP/2!") != NULL)
+            break;
+    }
+    ASSERT_EQ(h2_send_headers_on(fd, 3, headers, 4, 1), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst_on(fd, 3, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_STREAM_CLOSED);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
 TEST(h2c_priority_self_dependency_aborts_open_stream) {
     neverc_tcp_conn_t *client = NULL;
     pid_t child = -1;
@@ -3504,6 +3543,7 @@ int main(void) {
     run_test_h2c_stream_window_update_overflow_is_connection_error();
     run_test_h2c_priority_self_dependency_closes_idle_stream();
     run_test_h2c_priority_reset_history_does_not_forget_idle_ids();
+    run_test_h2c_priority_history_not_evicted_by_completed_stream();
     run_test_h2c_priority_self_dependency_aborts_open_stream();
     run_test_h2c_continuation_flood_is_connection_error();
     run_test_h2c_continuation_without_headers_is_connection_error();

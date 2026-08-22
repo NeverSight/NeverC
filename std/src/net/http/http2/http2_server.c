@@ -1432,8 +1432,11 @@ static int h2_closed_stream_pick_slot(h2_conn_t *conn, size_t *slot_out) {
 
 static void h2_record_closed_stream(h2_conn_t *conn, h2_stream_t *stream) {
     size_t slot;
+    /* Do not FIFO-overwrite a still-live idle reset. The completed
+     * stream is already <= max_stream_id; forgetting a PRIORITY-RST
+     * idle id would let a later HEADERS reopen it. */
     if (h2_closed_stream_pick_slot(conn, &slot) != 0)
-        slot = conn->closed_stream_next;
+        return;
     h2_closed_stream_t *entry = &conn->closed_streams[slot];
     entry->id = stream->id;
     entry->reset = nc_atomic_load(&stream->reset) != 0;
@@ -1457,18 +1460,21 @@ static int h2_closed_stream_was_reset(h2_conn_t *conn, uint32_t id,
 
 /* RFC 9113 §5.1.1: a stream identifier cannot be reused after the client
  * first uses it, even when the server refuses the stream. */
-static void h2_consume_idle_stream_id(h2_conn_t *conn, uint32_t id) {
+static int h2_consume_idle_stream_id(h2_conn_t *conn, uint32_t id) {
+    size_t slot;
+    h2_closed_stream_t *entry;
     if (id <= conn->max_stream_id)
-        return;
+        return 0;
+    if (h2_closed_stream_pick_slot(conn, &slot) != 0)
+        return -1;
     conn->max_stream_id = id;
-    h2_closed_stream_t *entry =
-        &conn->closed_streams[conn->closed_stream_next];
+    entry = &conn->closed_streams[slot];
     entry->id = id;
     entry->reset = 1;
-    conn->closed_stream_next =
-        (conn->closed_stream_next + 1U) % H2_CLOSED_STREAM_HISTORY;
+    conn->closed_stream_next = (slot + 1U) % H2_CLOSED_STREAM_HISTORY;
     if (conn->closed_stream_count < H2_CLOSED_STREAM_HISTORY)
         conn->closed_stream_count++;
+    return 0;
 }
 
 /* PRIORITY does not open a stream (RFC 9113 §5.1 / §6.3), so recording a
@@ -2292,7 +2298,12 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                     goto cleanup;
                 }
                 if (nc_atomic_load(&conn.goaway_sent)) {
-                    h2_consume_idle_stream_id(&conn, fhdr.stream_id);
+                    if (h2_consume_idle_stream_id(&conn, fhdr.stream_id) != 0) {
+                        (void)h2_conn_write_goaway(&conn,
+                                                   NC_H2_ENHANCE_YOUR_CALM);
+                        free(payload);
+                        goto cleanup;
+                    }
                     if (h2_reject_headers_keep_hpack(
                             &conn, &fhdr, payload,
                             NC_H2_REFUSED_STREAM) != 0) {
@@ -2336,7 +2347,12 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 }
                 if (nc_atomic_load(&conn.active_streams) >=
                     (int)conn.local_settings.max_concurrent_streams) {
-                    h2_consume_idle_stream_id(&conn, fhdr.stream_id);
+                    if (h2_consume_idle_stream_id(&conn, fhdr.stream_id) != 0) {
+                        (void)h2_conn_write_goaway(&conn,
+                                                   NC_H2_ENHANCE_YOUR_CALM);
+                        free(payload);
+                        goto cleanup;
+                    }
                     if (h2_reject_headers_keep_hpack(
                             &conn, &fhdr, payload,
                             NC_H2_REFUSED_STREAM) != 0) {
@@ -2347,7 +2363,12 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 }
                 stream = h2_create_stream(&conn, fhdr.stream_id);
                 if (!stream) {
-                    h2_consume_idle_stream_id(&conn, fhdr.stream_id);
+                    if (h2_consume_idle_stream_id(&conn, fhdr.stream_id) != 0) {
+                        (void)h2_conn_write_goaway(&conn,
+                                                   NC_H2_ENHANCE_YOUR_CALM);
+                        free(payload);
+                        goto cleanup;
+                    }
                     if (h2_reject_headers_keep_hpack(
                             &conn, &fhdr, payload,
                             NC_H2_REFUSED_STREAM) != 0) {

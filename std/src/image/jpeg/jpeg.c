@@ -1045,8 +1045,12 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
         } else if (marker == 0xDD) { /* DRI — define restart interval */
             if (seg_end - br.pos != 2) goto fail;
             restart_interval = br_read_u16(&br);
-        } else {
+        } else if ((marker >= 0xE0 && marker <= 0xEF) || marker == 0xFE) {
+            /* APPn / COM — same skip set as Go image/jpeg. Reserved
+             * 0x02–0xBF, DNL, and JPEG-ext must not be treated as padding. */
             br.pos = seg_end;
+        } else {
+            goto fail;
         }
         if (br.failed || br.pos != seg_end) goto fail;
     }

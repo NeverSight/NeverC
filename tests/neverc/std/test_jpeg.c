@@ -892,16 +892,46 @@ static void test_tiny_malformed_jpeg(void) {
             0xFF, 0xC2, 0x00, 0x0B, 0x08, 0x00, 0x08, 0x00, 0x08,
             0x01, 0x01, 0x11, 0x00
         };
-        size_t n = encoded_length + sizeof(sof2_seg);
-        uint8_t *mixed = (uint8_t *)malloc(n);
-        ASSERT_TRUE(mixed != NULL);
-        if (mixed) {
+        static const uint8_t reserved[] = { 0xFF, 0x02, 0x00, 0x02 };
+        static const uint8_t dnl[] = { 0xFF, 0xDC, 0x00, 0x02 };
+        static const uint8_t jpeg_ext[] = { 0xFF, 0xF0, 0x00, 0x02 };
+        static const uint8_t com[] = { 0xFF, 0xFE, 0x00, 0x02 };
+        const uint8_t *reject_segs[] = { sof2_seg, reserved, dnl, jpeg_ext };
+        const size_t reject_lens[] = {
+            sizeof(sof2_seg), sizeof(reserved), sizeof(dnl), sizeof(jpeg_ext)
+        };
+        size_t i;
+        for (i = 0; i < sizeof(reject_lens) / sizeof(reject_lens[0]); i++) {
+            size_t n = encoded_length + reject_lens[i];
+            uint8_t *mixed = (uint8_t *)malloc(n);
+            ASSERT_TRUE(mixed != NULL);
+            if (!mixed)
+                break;
             memcpy(mixed, encoded, 2); /* SOI */
-            memcpy(mixed + 2, sof2_seg, sizeof(sof2_seg));
-            memcpy(mixed + 2 + sizeof(sof2_seg), encoded + 2,
+            memcpy(mixed + 2, reject_segs[i], reject_lens[i]);
+            memcpy(mixed + 2 + reject_lens[i], encoded + 2,
                    encoded_length - 2);
             assert_jpeg_rejected(mixed, n);
             free(mixed);
+        }
+        /* COM after SOI is ignored, same as Go image/jpeg. */
+        {
+            size_t n = encoded_length + sizeof(com);
+            uint8_t *mixed = (uint8_t *)malloc(n);
+            ASSERT_TRUE(mixed != NULL);
+            if (mixed) {
+                neverc_jpeg_image_t decoded;
+                memcpy(mixed, encoded, 2);
+                memcpy(mixed + 2, com, sizeof(com));
+                memcpy(mixed + 2 + sizeof(com), encoded + 2,
+                       encoded_length - 2);
+                memset(&decoded, 0, sizeof(decoded));
+                ASSERT_EQ(neverc_jpeg_decode(mixed, n, &decoded), 0);
+                ASSERT_EQ(decoded.width, 8);
+                ASSERT_EQ(decoded.height, 8);
+                neverc_jpeg_free(&decoded);
+                free(mixed);
+            }
         }
         free(encoded);
     }

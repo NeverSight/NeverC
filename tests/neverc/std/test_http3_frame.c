@@ -822,6 +822,14 @@ static void test_goaway_and_stream_type_helpers(void) {
     ASSERT_EQ(neverc_h3_request_stream_after_goaway(4, 8), 1);
     ASSERT_EQ(neverc_h3_request_stream_after_goaway(8, 4), 0);
     ASSERT_EQ(neverc_h3_request_stream_after_goaway(max_bidi, 8), 0);
+    /* RFC 9114 §5.2: indicated identifier or greater, including 0. */
+    ASSERT_EQ(neverc_h3_request_stream_after_goaway(0, 0), 1);
+    ASSERT_EQ(neverc_h3_request_stream_after_goaway(4, 4), 1);
+    ASSERT_EQ(neverc_h3_request_stream_after_goaway(4, 0), 0);
+    ASSERT_EQ(neverc_h3_processed_goaway_id(0, 0), 0);
+    ASSERT_EQ(neverc_h3_processed_goaway_id(1, 0), 4);
+    ASSERT_EQ(neverc_h3_processed_goaway_id(1, 4), 8);
+    ASSERT_EQ(neverc_h3_processed_goaway_id(1, max_bidi), max_bidi);
 
     uint8_t buf[32];
     size_t written = 0;
