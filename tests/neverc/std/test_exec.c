@@ -271,7 +271,7 @@ static void test_look_path(void) {
     /* A too-long first PATH hit must not fall through to a later directory. */
     {
         char dir[MAX_PATH], exe[MAX_PATH], absdir[MAX_PATH], windir[MAX_PATH];
-        char pathbuf[MAX_PATH * 2], small[16];
+        char pathbuf[MAX_PATH * 2], look_buf[16];
         FILE *pf;
         DWORD n;
         size_t prefix;
@@ -293,7 +293,7 @@ static void test_look_path(void) {
         n = GetEnvironmentVariableA("PATH", old_path, sizeof(old_path));
         snprintf(pathbuf, sizeof(pathbuf), "%s;%s\\System32", dir, windir);
         SetEnvironmentVariableA("PATH", pathbuf);
-        p = neverc_exec_look_path("notepad", small, sizeof(small));
+        p = neverc_exec_look_path("notepad", look_buf, sizeof(look_buf));
         ASSERT_TRUE(p == NULL);
         if (n > 0 && n < sizeof(old_path))
             SetEnvironmentVariableA("PATH", old_path);

@@ -1192,7 +1192,7 @@ static void test_template_url_and_script(void) {
      * division and desyncs the next quote into a raw call. */
     neverc_html_template_data_set(&data, "X", "alert(1)");
     out = neverc_html_template_render(
-        "<script>return\xe2\x80\x80\"/;{{.X}}</script>", &data);
+        "<script>return\xe2\x80\x80/\";{{.X}}</script>", &data);
     check("u2000 after return does not desync into a string",
           out && strstr(out, "\"alert(1)\"") != NULL);
     check("u2000 after return is not a raw call",

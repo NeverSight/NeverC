@@ -282,7 +282,7 @@ static void test_rel(void) {
     ASSERT_TRUE(neverc_filepath_rel("C:\\a", "D:\\b", buf, sizeof(buf)) == NULL);
     ASSERT_TRUE(neverc_filepath_rel("..\\a", "b", buf, sizeof(buf)) == NULL);
     ASSERT_STR_EQ(neverc_filepath_rel("C:\\a", "c:\\a", buf, sizeof(buf)), ".");
-    ASSERT_STR_EQ(neverc_filepath_rel("café", "CAFÉ", buf, sizeof(buf)), ".");
+    ASSERT_STR_EQ(neverc_filepath_rel("caf\xc3\xa9", "CAF\xc3\x89", buf, sizeof(buf)), ".");
     ASSERT_STR_EQ(neverc_filepath_rel("k", "\xe2\x84\xaa", buf, sizeof(buf)), ".");
 #else
     char joined[256];

@@ -1055,7 +1055,7 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
             nc_mutex_unlock(&client->state_lock);
             return -1;
         }
-        if (stream) {
+        if (stream && !stream->done) {
             stream->error_code = code;
             stream->error = "HTTP/2 stream reset by peer";
             stream->done = 1;

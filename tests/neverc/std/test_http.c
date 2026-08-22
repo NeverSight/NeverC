@@ -3928,9 +3928,9 @@ static void test_path_params(void) {
     check_int("path_params dedicated HEAD",
                n > 0 && strstr(buf, "200") != NULL, 1);
 
-    /* No match → 404 */
+    /* GET / is a Go-style catch-all. POST is not served by that route. */
     n = do_http_request(port,
-        "GET /nonexistent HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        "POST /nonexistent HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
         buf, sizeof(buf));
     check_int("path_params 404 resp", n > 0, 1);
     check_int("path_params 404",
@@ -3973,7 +3973,7 @@ static void test_path_params(void) {
                n > 0 && strstr(buf, "home") != NULL, 1);
 
     n = do_http_request(port,
-        "GET /wild/foo/x HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        "POST /wild/foo/x HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
         buf, sizeof(buf));
     check_int("mid-pattern wildcard rejected",
                n > 0 && strstr(buf, "404") != NULL, 1);

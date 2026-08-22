@@ -1501,6 +1501,16 @@ static int scan_int_from_file(FILE *f, int *out_int) {
     p = buf;
     if (scan_int_literal(&p, &val) && scan_value_fits_int(val)) {
         *out_int = (int)val;
+        /* Same-line spaces stay for a later Scan. Consume a trailing
+         * newline so Fscanln can read the next line. */
+        c = getc(f);
+        if (c == '\r') {
+            int nl = getc(f);
+            if (nl != '\n' && nl != EOF)
+                ungetc(nl, f);
+        } else if (c != '\n' && c != EOF) {
+            ungetc(c, f);
+        }
         return 1;
     }
     return 0;
