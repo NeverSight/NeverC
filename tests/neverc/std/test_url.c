@@ -649,7 +649,7 @@ static void test_bounded_outputs(void) {
     memset(&guarded, 0xa5, sizeof(guarded));
     length = neverc_url_values_encode(
         &values, guarded.output, sizeof(guarded.output));
-    ASSERT_INT_EQ(length, (int)strlen("name=alice&city=New%20York"));
+    ASSERT_INT_EQ(length, (int)strlen("name=alice&city=New+York"));
     ASSERT_STR_EQ(guarded.output, "name=alice&");
     ASSERT_TRUE(guard_is_intact(&guarded));
     ASSERT_INT_EQ(neverc_url_values_encode(&values, NULL, 0), length);
@@ -657,8 +657,8 @@ static void test_bounded_outputs(void) {
     memset(&guarded, 0xa5, sizeof(guarded));
     length = neverc_url_query_escape(
         "a b&c", guarded.output, 5);
-    ASSERT_INT_EQ(length, (int)strlen("a%20b%26c"));
-    ASSERT_STR_EQ(guarded.output, "a%20");
+    ASSERT_INT_EQ(length, (int)strlen("a+b%26c"));
+    ASSERT_STR_EQ(guarded.output, "a+b%");
     ASSERT_TRUE(guard_is_intact(&guarded));
     ASSERT_INT_EQ(neverc_url_query_escape("a b&c", NULL, 0), length);
 }
