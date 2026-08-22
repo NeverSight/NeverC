@@ -481,6 +481,7 @@ struct neverc_quic_conn {
     uint64_t last_activity_ms;
     uint64_t handshake_start_ms;
     int handshake_confirmed;
+    unsigned pending_key_discard;
     int peer_completed_address_validation;
     uint64_t validation_pto_deadline_ms;
     uint64_t draining_started_ms;
@@ -668,6 +669,10 @@ int neverc_quic_transport_params_encode(
 void neverc_quic_loss_init(quic_loss_detector_t *detector);
 uint64_t neverc_quic_pto(const quic_rtt_t *rtt,
                          int include_max_ack_delay);
+/* RFC 9000 §10.1: a used idle timeout is at least three times PTO. */
+uint64_t neverc_quic_idle_period_ms(uint64_t negotiated_ms,
+                                    const quic_rtt_t *rtt,
+                                    int handshake_confirmed);
 void neverc_quic_loss_on_sent(quic_loss_detector_t *detector, int space,
                               uint64_t packet_number, uint64_t sent_time,
                               size_t sent_bytes, int ack_eliciting);

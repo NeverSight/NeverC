@@ -2020,6 +2020,18 @@ static void test_chunked_encoding(void) {
     check_int("chunked has chunk3", strstr(buf, "chunk3") != NULL, 1);
 
     n = do_http_request(port,
+        "HEAD /chunked HTTP/1.1\r\nHost: localhost\r\n"
+        "Connection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("head chunked resp", n > 0, 1);
+    check_int("head chunked no first-chunk CL",
+              n > 0 && strstr(buf, "Content-Length: 6") == NULL, 1);
+    check_int("head chunked no TE",
+              n > 0 && strstr(buf, "Transfer-Encoding") == NULL, 1);
+    check_int("head chunked discards body",
+              n > 0 && strstr(buf, "chunk1") == NULL, 1);
+
+    n = do_http_request(port,
         "GET /trailer-host HTTP/1.1\r\nHost: localhost\r\n"
         "Connection: close\r\n\r\n",
         buf, sizeof(buf));

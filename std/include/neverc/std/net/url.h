@@ -22,6 +22,10 @@ typedef struct {
     /* Set when the URL contained '?', including a trailing empty query
      * (`/path?`). Distinguishes that from `/path` (Go url.ForceQuery). */
     int  has_query;
+    /* Set when the authority contained ':', including an empty port
+     * (`http://host:/`). Distinguishes that from `http://host/` so
+     * String() can keep Go issue 12200's empty-port round-trip. */
+    int  has_port;
 } neverc_url_t;
 
 /* Parse a hierarchical URL or relative reference. Components that exceed the

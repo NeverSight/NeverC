@@ -296,6 +296,11 @@ static int rw_flush(neverc_http_response_writer_t *w) {
     int emit_content_length =
         w->status >= 200 && w->status != 204 &&
         (w->has_content_length_override || w->status != 304);
+    /* RFC 9110 §8.6 / Go chunkWriter: HEAD of a chunked GET must not
+     * advertise Content-Length or Transfer-Encoding. The first flush
+     * would otherwise publish only the first chunk's size. */
+    if (w->head_request && w->chunked)
+        emit_content_length = 0;
 
     nc_buf_t hdr;
     nc_buf_init(&hdr);

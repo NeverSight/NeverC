@@ -962,6 +962,8 @@ int neverc_quic_stream_apply_stop_sending_locked(
     nc_mutex_lock(&stream->lock);
     stream->reset_pending = 1;
     stream->reset_error_code = error_code;
+    stream->send_len = 0;
+    stream->send_fin = 0;
     nc_mutex_unlock(&stream->lock);
     return 0;
 }

@@ -705,12 +705,30 @@ static void test_stop_sending_creates_peer_bidi(void) {
     ASSERT_NOT_NULL(stream);
     ASSERT_EQ(stream->reset_pending, 1);
     ASSERT_EQ(stream->reset_error_code, 0x01);
+    ASSERT_EQ(stream->send_len, 0);
     ASSERT_EQ(conn->n_streams, 3);
     ASSERT_EQ(neverc_quic_stream_apply_stop_sending(conn, 2, 0x01), -1);
     ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
     ASSERT_EQ(conn->close_error_code, QUIC_ERR_STREAM_STATE_ERROR);
     ASSERT_EQ(neverc_quic_stream_apply_stop_sending(conn, 1, 0x01), -1);
 
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_stop_sending_clears_queued_send(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    quic_stream_t *stream = neverc_quic_conn_open_stream(conn);
+    ASSERT_NOT_NULL(stream);
+    const char *msg = "queued-then-reset";
+    ASSERT_EQ(neverc_quic_stream_write_data(stream, msg, strlen(msg)),
+              (int)strlen(msg));
+    ASSERT_EQ(stream->send_len, strlen(msg));
+    ASSERT_EQ(neverc_quic_stream_apply_stop_sending(conn, stream->id, 0x01),
+              0);
+    ASSERT_EQ(stream->reset_pending, 1);
+    ASSERT_EQ(stream->send_len, 0);
     neverc_quic_conn_destroy(conn);
 }
 
@@ -1561,6 +1579,7 @@ int main(void) {
     test_stream_receive_gap_respects_limit();
     test_max_stream_data_creates_peer_bidi();
     test_stop_sending_creates_peer_bidi();
+    test_stop_sending_clears_queued_send();
     test_stream_data_blocked_send_only_is_stream_state_error();
     test_decode_packet_number_wrap_and_limit();
     test_v1_long_header_type_bits();

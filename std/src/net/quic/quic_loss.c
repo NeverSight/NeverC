@@ -95,6 +95,16 @@ uint64_t neverc_quic_pto(const quic_rtt_t *rtt, int include_max_ack_delay) {
     return pto;
 }
 
+uint64_t neverc_quic_idle_period_ms(uint64_t negotiated_ms,
+                                    const quic_rtt_t *rtt,
+                                    int handshake_confirmed) {
+    uint64_t floor;
+    if (negotiated_ms == 0 || !rtt) return negotiated_ms;
+    floor = quic_saturating_mul(
+        neverc_quic_pto(rtt, handshake_confirmed), 3);
+    return negotiated_ms > floor ? negotiated_ms : floor;
+}
+
 void neverc_quic_congestion_init(quic_congestion_t *cc) {
     memset(cc, 0, sizeof(*cc));
     cc->max_datagram_size = 1200;

@@ -128,6 +128,17 @@ static int host_ascii_ok(unsigned char c) {
     }
 }
 
+/* Go encodeHost / encodeZone percent-decode: also allow :[]<>" */
+static int host_or_zone_pct_ok(unsigned char c) {
+    if (host_ascii_ok(c)) return 1;
+    switch (c) {
+    case ':': case '[': case ']': case '<': case '>': case '"':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 /* Reject malformed %XX and encoded NUL. Userinfo is stored raw so
  * neverc_url_string can round-trip, but RFC 3986 still forbids invalid
  * percent sequences. */
@@ -252,6 +263,50 @@ static int url_host_byte_should_escape(unsigned char c) {
         return 0;
     default:
         return 1;
+    }
+}
+
+/* Go encodeUserPassword: keep existing %XX; escape @ / ? and other
+ * reserved bytes so `user:p@ss` String()s as `user:p%40ss`. */
+static int userinfo_byte_should_escape(unsigned char c) {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9'))
+        return 0;
+    switch (c) {
+    case '-': case '_': case '.': case '~':
+    case '$': case '&': case '+': case ',':
+    case ':': case ';': case '=':
+        return 0;
+    default:
+        return 1;
+    }
+}
+
+static int is_hex_byte(unsigned char c) {
+    return hex_val[c] >= 0;
+}
+
+static void builder_append_userinfo(url_builder_t *builder, const char *field,
+                                    size_t capacity) {
+    static const char hex[] = "0123456789ABCDEF";
+    size_t length = bounded_string_length(field, capacity);
+    if (length == capacity) builder->failed = 1;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)field[i];
+        if (c == '%' && i + 2 < length &&
+            is_hex_byte((unsigned char)field[i + 1]) &&
+            is_hex_byte((unsigned char)field[i + 2])) {
+            builder_append(builder, field + i, 3);
+            i += 2;
+        } else if (userinfo_byte_should_escape(c)) {
+            char enc[3];
+            enc[0] = '%';
+            enc[1] = hex[c >> 4];
+            enc[2] = hex[c & 0xF];
+            builder_append(builder, enc, 3);
+        } else {
+            builder_append(builder, field + i, 1);
+        }
     }
 }
 
@@ -476,6 +531,7 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
                     parse_port(bracket + 2, authority_end, u->port,
                                sizeof(u->port)) != 0)
                     return -1;
+                u->has_port = 1;
             }
         } else {
             const char *colon = NULL;
@@ -501,6 +557,7 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
                 if (parse_port(colon + 1, host_end, u->port,
                                sizeof(u->port)) != 0)
                     return -1;
+                u->has_port = 1;
             }
         }
         p = authority_end;
@@ -566,10 +623,10 @@ int neverc_url_string(const neverc_url_t *u, char *buf, size_t cap) {
         builder_append_literal(&builder, "//");
     }
     if (u->user[0] || u->has_password || u->password[0]) {
-        builder_append_field(&builder, u->user, sizeof(u->user));
+        builder_append_userinfo(&builder, u->user, sizeof(u->user));
         if (u->has_password || u->password[0]) {
             builder_append_literal(&builder, ":");
-            builder_append_field(&builder, u->password, sizeof(u->password));
+            builder_append_userinfo(&builder, u->password, sizeof(u->password));
         }
         builder_append_literal(&builder, "@");
     }
@@ -580,7 +637,7 @@ int neverc_url_string(const neverc_url_t *u, char *buf, size_t cap) {
         if (is_ipv6) builder_append_literal(&builder, "[");
         builder_append_host(&builder, u->host, host_length);
         if (is_ipv6) builder_append_literal(&builder, "]");
-        if (u->port[0]) {
+        if (u->has_port || u->port[0]) {
             builder_append_literal(&builder, ":");
             builder_append_field(&builder, u->port, sizeof(u->port));
         }
@@ -748,11 +805,26 @@ void neverc_url_values_set(neverc_url_values_t *v, const char *key, const char *
     if (key_length >= sizeof(v->keys[0]) ||
         value_length >= sizeof(v->vals[0]))
         return;
+    int first = -1;
+    int write = 0;
     for (int i = 0; i < v->count; i++) {
         if (fixed_string_equal(v->keys[i], sizeof(v->keys[i]), key)) {
-            copy_exact(v->vals[i], sizeof(v->vals[0]), val, value_length);
-            return;
+            if (first < 0) {
+                first = write;
+                copy_exact(v->vals[i], sizeof(v->vals[0]), val, value_length);
+            } else {
+                continue;
+            }
         }
+        if (write != i) {
+            memcpy(v->keys[write], v->keys[i], sizeof(v->keys[0]));
+            memcpy(v->vals[write], v->vals[i], sizeof(v->vals[0]));
+        }
+        write++;
+    }
+    if (first >= 0) {
+        v->count = write;
+        return;
     }
     if (v->count < 64) {
         copy_exact(v->keys[v->count], sizeof(v->keys[0]), key, key_length);
@@ -896,7 +968,7 @@ static int percent_decode(const char *s, char *buf, size_t cap, int flags) {
             if ((flags & PCT_HOST) && decoded < 0x80 && !is_pct25)
                 goto malformed;
             if ((flags & PCT_ZONE) && !is_pct25 && decoded != ' ' &&
-                (decoded < 0x80 && !host_ascii_ok(decoded)))
+                (decoded < 0x80 && !host_or_zone_pct_ok(decoded)))
                 goto malformed;
             if (decoded == 0 && !(flags & PCT_ALLOW_NUL))
                 goto malformed;

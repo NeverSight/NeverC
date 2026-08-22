@@ -1914,8 +1914,11 @@ static void h2_dispatch_request(h2_conn_t *conn, h2_stream_t *stream) {
     const char *method = NULL, *path = NULL, *authority = NULL;
     const char *host = NULL, *content_type = NULL;
     nc_buf_t raw_headers;
+    nc_buf_t cookies;
     nc_buf_init(&raw_headers);
+    nc_buf_init(&cookies);
     int regular_headers = 0;
+    int cookie_fields = 0;
     for (int i = 0; i < stream->nheaders; i++) {
         if (strcmp(stream->headers[i].name, ":method") == 0)
             method = stream->headers[i].value;
@@ -1928,11 +1931,28 @@ static void h2_dispatch_request(h2_conn_t *conn, h2_stream_t *stream) {
                 host = stream->headers[i].value;
             if (strcmp(stream->headers[i].name, "content-type") == 0)
                 content_type = stream->headers[i].value;
+            /* RFC 9113 §8.2.3: join cookie crumbs with "; " before the
+             * HTTP/1-style header table. */
+            if (strcmp(stream->headers[i].name, "cookie") == 0) {
+                if ((cookie_fields > 0 &&
+                     nc_buf_append(&cookies, "; ", 2) != 0) ||
+                    nc_buf_append(&cookies, stream->headers[i].value,
+                                  strlen(stream->headers[i].value)) != 0) {
+                    nc_buf_free(&raw_headers);
+                    nc_buf_free(&cookies);
+                    (void)h2_conn_write_rst(conn, stream->id,
+                                            NC_H2_INTERNAL_ERROR);
+                    return;
+                }
+                cookie_fields++;
+                continue;
+            }
             if (nc_buf_append(&raw_headers, stream->headers[i].name,
                               strlen(stream->headers[i].name) + 1) != 0 ||
                 nc_buf_append(&raw_headers, stream->headers[i].value,
                               strlen(stream->headers[i].value) + 1) != 0) {
                 nc_buf_free(&raw_headers);
+                nc_buf_free(&cookies);
                 (void)h2_conn_write_rst(conn, stream->id,
                                         NC_H2_INTERNAL_ERROR);
                 return;
@@ -1940,6 +1960,20 @@ static void h2_dispatch_request(h2_conn_t *conn, h2_stream_t *stream) {
             regular_headers++;
         }
     }
+    if (cookie_fields > 0) {
+        if (nc_buf_append(&raw_headers, "cookie", 7) != 0 ||
+            nc_buf_append(&raw_headers, cookies.data ? cookies.data : "",
+                          cookies.len) != 0 ||
+            nc_buf_append(&raw_headers, "", 1) != 0) {
+            nc_buf_free(&raw_headers);
+            nc_buf_free(&cookies);
+            (void)h2_conn_write_rst(conn, stream->id,
+                                    NC_H2_INTERNAL_ERROR);
+            return;
+        }
+        regular_headers++;
+    }
+    nc_buf_free(&cookies);
     if (!method || !path) {
         nc_buf_free(&raw_headers);
         (void)h2_conn_write_rst(conn, stream->id, NC_H2_PROTOCOL_ERROR);
@@ -2022,6 +2056,18 @@ static void h2_handler_task(void *arg) {
         h2_dispatch_request(conn, stream);
     nc_mutex_lock(&conn->state_lock);
     stream->handler_active = 0;
+    /* RFC 9113 §8.1: if the handler finished before the client, keep
+     * half-closed (local) long enough to emit RST_STREAM NO_ERROR so
+     * leftover request DATA is not a STREAM_CLOSED violation. */
+    int send_no_error_rst = !nc_atomic_load(&stream->reset) &&
+        !nc_atomic_load(&stream->remote_ended) &&
+        stream->state != H2_STREAM_CLOSED;
+    if (send_no_error_rst && stream->state == H2_STREAM_OPEN)
+        stream->state = H2_STREAM_HALF_CLOSED_LOCAL;
+    nc_mutex_unlock(&conn->state_lock);
+    if (send_no_error_rst)
+        (void)h2_conn_write_rst(conn, stream->id, NC_H2_NO_ERROR);
+    nc_mutex_lock(&conn->state_lock);
     stream->state = H2_STREAM_CLOSED;
     if (stream->counted_active) {
         nc_atomic_dec(&conn->active_streams);

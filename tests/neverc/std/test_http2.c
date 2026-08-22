@@ -1003,6 +1003,12 @@ static void h2_stream_handler(neverc_http_request_t *req,
     neverc_http_writef(w, "got=%d", n);
 }
 
+static void h2_cookie_handler(neverc_http_request_t *req,
+                              neverc_http_response_writer_t *w) {
+    const char *cookie = neverc_http_request_header(req, "cookie");
+    neverc_http_write_string(w, cookie ? cookie : "missing");
+}
+
 static void h2_run_server_child(h2_serve_ctx_t *ctx) {
     neverc_http_mux_t *mux = neverc_http_new_mux();
     if (!mux) _exit(1);
@@ -1011,6 +1017,7 @@ static void h2_run_server_child(h2_serve_ctx_t *ctx) {
             mux, "POST /stream", h2_stream_handler, NULL) != 0)
         _exit(1);
     neverc_http_mux_handle(mux, "/", h2_test_handler);
+    neverc_http_mux_handle(mux, "/cookie", h2_cookie_handler);
     neverc_http_mux_handle(mux, "/cl-mismatch", h2_cl_mismatch_handler);
     neverc_http_mux_handle(mux, "/cl-short", h2_cl_short_handler);
     neverc_h2_server_t *server = neverc_h2_server_create(mux);
@@ -1580,6 +1587,59 @@ TEST(h2c_rejects_host_authority_mismatch) {
     uint32_t error_code = 0xffffffffU;
     ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
     ASSERT_EQ(error_code, NC_H2_PROTOCOL_ERROR);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
+TEST(h2c_joins_split_cookie_headers) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 0), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "GET" },
+        { .name = ":path", .value = "/cookie" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+        { .name = "cookie", .value = "a=1" },
+        { .name = "cookie", .value = "b=2" },
+    };
+    ASSERT_EQ(h2_send_headers(fd, headers, 6, 1), 0);
+    char resp[2048];
+    size_t resp_len = 0;
+    while (resp_len < sizeof(resp) - 1) {
+        ssize_t n = read(fd, resp + resp_len, sizeof(resp) - 1 - resp_len);
+        if (n <= 0)
+            break;
+        resp_len += (size_t)n;
+        if (buf_contains(resp, resp_len, "a=1; b=2") != NULL)
+            break;
+    }
+    ASSERT_TRUE(buf_contains(resp, resp_len, "a=1; b=2") != NULL);
+    neverc_tcp_close(client);
+    int status = 0;
+    ASSERT_EQ(h2_reap_child(child, &status), 0);
+    ASSERT_TRUE(WIFEXITED(status));
+}
+
+TEST(h2c_unfinished_request_sends_rst_no_error) {
+    neverc_tcp_conn_t *client = NULL;
+    pid_t child = -1;
+    ASSERT_EQ(h2_pipe_handshake(&client, &child, 1), 0);
+    int fd = neverc_tcp_conn_fd(client);
+    neverc_hpack_header_t headers[] = {
+        { .name = ":method", .value = "POST" },
+        { .name = ":path", .value = "/stream" },
+        { .name = ":scheme", .value = "http" },
+        { .name = ":authority", .value = "localhost" },
+    };
+    ASSERT_EQ(h2_send_headers(fd, headers, 4, 0), 0);
+    ASSERT_EQ(h2_send_data(fd, "hello", 5), 0);
+    uint32_t error_code = 0xffffffffU;
+    ASSERT_EQ(h2_read_rst(fd, &error_code), 0);
+    ASSERT_EQ(error_code, NC_H2_NO_ERROR);
     neverc_tcp_close(client);
     int status = 0;
     ASSERT_EQ(h2_reap_child(child, &status), 0);
@@ -3600,6 +3660,8 @@ int main(void) {
     run_test_h2c_rejects_empty_authority_with_host();
     run_test_h2c_rejects_empty_host_with_authority();
     run_test_h2c_rejects_host_authority_mismatch();
+    run_test_h2c_joins_split_cookie_headers();
+    run_test_h2c_unfinished_request_sends_rst_no_error();
     run_test_h2c_rejects_streaming_content_length_overrun();
     run_test_h2c_rejects_buffered_content_length_overrun();
     run_test_h2c_rejects_content_length_underrun();

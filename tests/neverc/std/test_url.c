@@ -105,6 +105,13 @@ static void test_parse_edges(void) {
     ASSERT_STR_EQ(u.host, "host");
     ASSERT_STR_EQ(u.port, "");
     ASSERT_STR_EQ(u.path, "/api");
+    ASSERT_INT_EQ(u.has_port, 1);
+    {
+        char empty_port[32];
+        ASSERT_INT_EQ(neverc_url_string(&u, empty_port, sizeof(empty_port)),
+                      (int)strlen("https://host:/api"));
+        ASSERT_STR_EQ(empty_port, "https://host:/api");
+    }
     ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:+80/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "1nvalid://host/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, ""), -1);
@@ -138,6 +145,8 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%eth0]/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%25eth0]/"), 0);
     ASSERT_STR_EQ(u.host, "fe80::1%eth0");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://[fe80::1%25eth0%3A1]/"), 0);
+    ASSERT_STR_EQ(u.host, "fe80::1%eth0:1");
     {
         char zoned[64];
         ASSERT_INT_EQ(neverc_url_string(&u, zoned, sizeof(zoned)),
@@ -228,6 +237,12 @@ static void test_parse_edges(void) {
     ASSERT_STR_EQ(u.user, "user");
     ASSERT_STR_EQ(u.password, "p@ss");
     ASSERT_STR_EQ(u.host, "host");
+    {
+        char userinfo[64];
+        ASSERT_INT_EQ(neverc_url_string(&u, userinfo, sizeof(userinfo)),
+                      (int)strlen("http://user:p%40ss@host/"));
+        ASSERT_STR_EQ(userinfo, "http://user:p%40ss@host/");
+    }
     ASSERT_INT_EQ(neverc_url_parse(
         &u, "//user:p%40ss@[fe80::1%25eth0]:8080/x"), 0);
     ASSERT_STR_EQ(u.user, "user");
@@ -329,6 +344,18 @@ static void test_values(void) {
     neverc_url_values_set(&v, "country", "US");
     ASSERT_STR_EQ(neverc_url_values_get(&v, "country"), "US");
     ASSERT_INT_EQ(v.count, 4);
+
+    neverc_url_values_parse(&v, "a=1&a=2");
+    ASSERT_INT_EQ(v.count, 2);
+    neverc_url_values_set(&v, "a", "3");
+    ASSERT_INT_EQ(v.count, 1);
+    ASSERT_STR_EQ(neverc_url_values_get(&v, "a"), "3");
+    {
+        char encoded[16];
+        ASSERT_INT_EQ(neverc_url_values_encode(&v, encoded, sizeof(encoded)),
+                      (int)strlen("a=3"));
+        ASSERT_STR_EQ(encoded, "a=3");
+    }
 }
 
 static void test_values_encoded(void) {

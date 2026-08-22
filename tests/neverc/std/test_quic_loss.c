@@ -90,6 +90,11 @@ static void test_pto_computation(void) {
     pto = neverc_quic_pto(&rtt, 1);
     /* 300 + 25 (max_ack_delay) = 325 */
     ASSERT_EQ(pto, 325);
+
+    /* RFC 9000 §10.1: used idle timeout is at least 3× PTO. */
+    ASSERT_EQ(neverc_quic_idle_period_ms(100, &rtt, 0), 900);
+    ASSERT_EQ(neverc_quic_idle_period_ms(5000, &rtt, 0), 5000);
+    ASSERT_EQ(neverc_quic_idle_period_ms(0, &rtt, 0), 0);
 }
 
 /* ======================================================================

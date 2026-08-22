@@ -723,6 +723,8 @@ int neverc_quic_stream_reset(neverc_quic_stream_t *stream,
     stream->reset_pending = 1;
     stream->reset_error_code = error_code;
     stream->state = QUIC_STREAM_RESET;
+    stream->send_len = 0;
+    stream->send_fin = 0;
     nc_mutex_unlock(&stream->lock);
     return neverc_quic_conn_flush(stream->conn);
 }
