@@ -1611,12 +1611,31 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
 
     for (size_t i = 0; i < server->connection_count; i++) {
         h3_conn_t *connection = server->connections[i];
+        uint64_t identifier;
+        /* Snapshot last processed id and publish GOAWAY under the same
+         * lock so a worker cannot accept a higher stream in between. */
         nc_mutex_lock(&connection->lock);
-        uint64_t last = connection->last_request_stream_id;
-        int have = connection->have_processed_request;
+        identifier = neverc_h3_processed_goaway_id(
+            connection->have_processed_request,
+            connection->last_request_stream_id);
+        if (!neverc_h3_server_goaway_id_valid(identifier))
+            identifier = 0;
+        if (!connection->control_out ||
+            (connection->goaway_sent &&
+             identifier >= connection->goaway_sent_id)) {
+            nc_mutex_unlock(&connection->lock);
+            continue;
+        }
+        connection->goaway_sent = 1;
+        connection->goaway_sent_id = identifier;
         nc_mutex_unlock(&connection->lock);
-        h3_server_send_goaway(connection,
-                              neverc_h3_processed_goaway_id(have, last));
+        {
+            uint8_t frame[32];
+            size_t length = 0;
+            if (neverc_h3_write_goaway_frame(frame, sizeof(frame), identifier,
+                                             &length) == 0)
+                (void)h3_write_all(connection->control_out, frame, length);
+        }
     }
 
     unsigned drained_for_ms = 0;

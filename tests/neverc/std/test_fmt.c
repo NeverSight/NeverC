@@ -524,6 +524,52 @@ static void test_sscanf(void) {
             fclose(tmp);
         }
     }
+    {
+        FILE *tmp = tmpfile();
+        check_true("fscanf float syntax leftover fixture", tmp != NULL);
+        if (tmp) {
+            fputs("1e 2\n", tmp);
+            rewind(tmp);
+            double fv = 77;
+            a = 77;
+            check_int("fscanf float syntax leftover count",
+                      neverc_fmt_fscanf(tmp, "%f", &fv), 0);
+            check_true("fscanf float syntax leftover dest", fv == 77);
+            check_int("fscanf after float syntax leftover",
+                      neverc_fmt_fscanf(tmp, "%d", &a), 1);
+            check_int("fscanf after float syntax leftover val", a, 2);
+            fclose(tmp);
+        }
+    }
+    {
+        FILE *tmp = tmpfile();
+        check_true("fscanf hex float syntax leftover fixture", tmp != NULL);
+        if (tmp) {
+            fputs("0x1 2\n", tmp);
+            rewind(tmp);
+            double fv = 77;
+            a = 77;
+            check_int("fscanf hex float syntax leftover count",
+                      neverc_fmt_fscanf(tmp, "%f", &fv), 0);
+            check_true("fscanf hex float syntax leftover dest", fv == 77);
+            check_int("fscanf after hex float syntax leftover",
+                      neverc_fmt_fscanf(tmp, "%d", &a), 1);
+            check_int("fscanf after hex float syntax leftover val", a, 2);
+            fclose(tmp);
+        }
+    }
+    {
+        FILE *tmp = tmpfile();
+        check_true("fscan utf8 nbsp fixture", tmp != NULL);
+        if (tmp) {
+            fputs("\xc2\xa0""42", tmp);
+            rewind(tmp);
+            a = 77;
+            check_int("fscan utf8 nbsp count", neverc_fmt_fscan(tmp, &a), 1);
+            check_int("fscan utf8 nbsp val", a, 42);
+            fclose(tmp);
+        }
+    }
 
     /* A line longer than the 4096-byte fgets chunk must still count as one
      * format record, or the second conversion never sees its input. */

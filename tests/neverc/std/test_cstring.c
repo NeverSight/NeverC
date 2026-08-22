@@ -266,6 +266,18 @@ static void test_to_title(void) {
     r = neverc_cstring_to_title("x" "\xCE\xB2" "y");
     check_str("to_title greek letter not sep", r, "X" "\xCE\xB2" "y");
     free(r);
+
+    r = neverc_cstring_to_title("\xC3\xBC" "ber");
+    check_str("to_title umlaut", r, "\xC3\x9C" "ber");
+    free(r);
+    r = neverc_cstring_to_title(
+        "\xCE\xB1" "\xCE\xB8" "\xCE\xAE" "\xCE\xBD" "\xCE\xB1");
+    check_str("to_title greek word", r,
+              "\xCE\x91" "\xCE\xB8" "\xCE\xAE" "\xCE\xBD" "\xCE\xB1");
+    free(r);
+    r = neverc_cstring_to_title("\xC5\xBF" "word");
+    check_str("to_title long s width", r, "Sword");
+    free(r);
 }
 
 static void test_repeat(void) {

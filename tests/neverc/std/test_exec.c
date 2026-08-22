@@ -474,6 +474,20 @@ static void test_look_path(void) {
         p = neverc_exec_look_path("\\\\i\\..\\c$\\neverc_missing.exe",
                                   buf, sizeof(buf));
         ASSERT_TRUE(p == NULL);
+
+        /* Go filepath.Join keeps a final ':' so \\?\C:name is not C:\name. */
+        SetEnvironmentVariableA("PATH", "\\\\?\\C:");
+        p = neverc_exec_look_path("Windows\\System32\\cmd.exe", buf,
+                                  sizeof(buf));
+        ASSERT_TRUE(p == NULL);
+        p = neverc_exec_look_path("cmd.exe", buf, sizeof(buf));
+        if (p) {
+            ASSERT_TRUE(_strnicmp(p, "\\\\?\\C:\\", 7) != 0);
+        }
+        /* `\??\C:` is not IsAbs; LookPath skips non-absolute PATH entries. */
+        SetEnvironmentVariableA("PATH", "\\??\\C:");
+        p = neverc_exec_look_path("cmd.exe", buf, sizeof(buf));
+        ASSERT_TRUE(p == NULL);
         if (n > 0 && n < sizeof(old_path))
             SetEnvironmentVariableA("PATH", old_path);
         else

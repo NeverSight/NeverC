@@ -1470,17 +1470,21 @@ static int mux_slash_redirect(neverc_http_mux_t *mux, const char *method,
         return 0;
     /* Go matchOrRedirect: an exact current match (`/posts`, `{id}`)
      * wins over a more-specific trailing-slash sibling (`/posts/{$}`,
-     * `{id}/`). `{$}`-only and prefix-only routes stay inexact, so
-     * `/posts` still 301s to `/posts/`. */
+     * `{id}/`). Multi (`{name...}` or trailing `/`) is inexact at the
+     * subtree root, so `/files` still 301s to `/files/`. */
     if (current && !mux_pattern_last_is_multi(current->path_pattern))
         return 0;
-    /* Go {$} is an exact `/path/` match, so `/path` slash-redirects to
-     * `/path/`. Do not treat `{$}` as a reason to skip the redirect. */
+    /* Go {$} and `{name...}` are exact `/path/` matches, so `/path`
+     * slash-redirects to `/path/`. */
     plen = strlen(slash->path_pattern);
     if (!(plen > 0 && slash->path_pattern[plen - 1] == '/') &&
-        !mux_pattern_ends_dollar(slash->path_pattern))
+        !mux_pattern_ends_dollar(slash->path_pattern) &&
+        !mux_pattern_last_is_multi(slash->path_pattern))
         return 0;
-    if (current && mux_route_path_rank(slash) <= mux_route_path_rank(current))
+    /* Same multi route matching both `/files` and `/files/` must still
+     * redirect; rank equality would otherwise suppress it. */
+    if (current && current != slash &&
+        mux_route_path_rank(slash) <= mux_route_path_rank(current))
         return 0;
     if (strlen(slashed) + 1 > loc_cap) return 0;
     memcpy(loc, slashed, strlen(slashed) + 1);

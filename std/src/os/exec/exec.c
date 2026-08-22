@@ -612,10 +612,9 @@ static size_t exec_win_volume_len(const char *path, size_t n) {
 static int exec_win_path_is_abs(const char *dir, size_t n) {
     size_t vol = exec_win_volume_len(dir, n);
     if (vol == 0) return 0;
+    /* Go filepath.IsAbs / neverc_filepath_isabs: two separators, or
+     * volume followed by a separator. `\??\C:` is not absolute. */
     if (n >= 2 && exec_win_is_sep(dir[0]) && exec_win_is_sep(dir[1]))
-        return 1;
-    if (n >= 4 && exec_win_is_sep(dir[0]) && dir[1] == '?' &&
-        dir[2] == '?' && exec_win_is_sep(dir[3]))
         return 1;
     return vol < n && exec_win_is_sep(dir[vol]);
 }
@@ -662,7 +661,9 @@ static const char *exec_look_in_win_path(const char *file, const char *path_env,
         if (dlen > 0 && dlen <= (size_t)INT_MAX &&
             !exec_win_skip_path_dir(dir, dlen)) {
             size_t flen = strlen(file);
+            /* Go filepath.Join: a final ':' (C: / \\?\C:) does not get '\'. */
             int trailing = dir[dlen - 1] == '\\' || dir[dlen - 1] == '/' ||
+                           dir[dlen - 1] == ':' ||
                            exec_win_is_drive_cwd(dir, dlen);
             int add_sep = !trailing;
             char *cand;

@@ -4196,10 +4196,16 @@ static void test_path_params(void) {
     n = do_http_request(port,
         "GET /files HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         buf, sizeof(buf));
-    check_int("wildcard empty remainder /files",
-               n > 0 && strstr(buf, "200") != NULL &&
-               strstr(buf, "path=") != NULL &&
-               strstr(buf, "path=NULL") == NULL, 1);
+    check_int("wildcard slash-redirects /files",
+               n > 0 && strstr(buf, "301") != NULL &&
+               strstr(buf, "Location: /files/") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /files?x=1 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("wildcard slash-redirect keeps query",
+               n > 0 && strstr(buf, "301") != NULL &&
+               strstr(buf, "Location: /files/?x=1") != NULL, 1);
 
     n = do_http_request(port,
         "GET /files/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",

@@ -951,10 +951,16 @@ static int scan_float(const char **p, double *out) {
                 }
             }
             if (!took_hex) {
-                /* 0x/0X starts a hex-float token. A bare prefix must not
-                 * fall through to decimal and silently parse as 0. */
-                *p = start;
-                return 0;
+                /* Go floatToken still consumes 0x… even when the exponent
+                 * is missing. Leave leftover after the token (SYNTAX). */
+                if (*q == 'p' || *q == 'P') {
+                    q++;
+                    if (*q == '+' || *q == '-') q++;
+                    while ((*q >= '0' && *q <= '9') || *q == '_')
+                        q++;
+                }
+                *p = q;
+                took_hex = 1;
             }
         }
         if (!took_hex) {
@@ -1012,9 +1018,8 @@ static int scan_float(const char **p, double *out) {
     }
     if (tok != stackbuf) free(tok);
     if (rc != NEVERC_STRCONV_OK) {
-        /* ParseFloat ErrRange still consumed the float token (Go leftover). */
-        if (rc != NEVERC_STRCONV_ERR_RANGE)
-            *p = start;
+        /* Go floatToken consumes the whole token before convertFloat.
+         * SYNTAX and RANGE both leave leftover after the token. */
         return 0;
     }
     *out = parsed;
@@ -1502,6 +1507,42 @@ static int scan_rewind_unused(FILE *f, long start, size_t consumed) {
     return fseek(f, start + (long)consumed, SEEK_SET);
 }
 
+/* Go Fscan SkipSpace uses the same isSpace as Sscan, including U+00A0. */
+static int scan_skip_file_space(FILE *f, int allow_nl) {
+    if (!f) return 0;
+    for (;;) {
+        long pos = ftell(f);
+        char raw[5];
+        int c = getc(f);
+        size_t got = 0;
+        unsigned char first;
+        int need = 1;
+        uint32_t rune;
+        int n;
+        if (c == EOF) return 0;
+        first = (unsigned char)c;
+        raw[0] = (char)c;
+        got = 1;
+        if ((first & 0xE0) == 0xC0) need = 2;
+        else if ((first & 0xF0) == 0xE0) need = 3;
+        else if ((first & 0xF8) == 0xF0) need = 4;
+        while ((int)got < need) {
+            c = getc(f);
+            if (c == EOF) break;
+            raw[got++] = (char)c;
+        }
+        memset(raw + got, 0, sizeof(raw) - got);
+        if (!scan_decode_rune(raw, &rune, &n) || n > (int)got ||
+            (rune == '\n' ? !allow_nl : !scan_rune_is_space(rune))) {
+            if (pos >= 0)
+                (void)fseek(f, pos, SEEK_SET);
+            else
+                (void)ungetc((unsigned char)raw[0], f);
+            return 0;
+        }
+    }
+}
+
 static int scan_int_from_file(FILE *f, int *out_int) {
     int c;
     char buf[128];
@@ -1509,18 +1550,11 @@ static int scan_int_from_file(FILE *f, int *out_int) {
     const char *p;
     int64_t val;
     if (!f || !out_int) return 0;
-    while ((c = getc(f)) != EOF) {
-        unsigned char uc = (unsigned char)c;
-        if (uc != ' ' && uc != '\t' && uc != '\n' && uc != '\r' &&
-            uc != '\f' && uc != '\v') {
-            ungetc(c, f);
-            break;
-        }
-    }
-    if (c == EOF) return 0;
+    (void)scan_skip_file_space(f, 1);
     /* Go scanNumber leaves in-token leftovers in the stream. Slurping the
      * whole whitespace token would drop the '8' in "08 9". */
     c = getc(f);
+    if (c == EOF) return 0;
     if (c == '+' || c == '-') {
         buf[n++] = (char)c;
         c = getc(f);

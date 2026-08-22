@@ -5,6 +5,7 @@
 #include <string.h>
 
 static size_t utf8_decode(const uint8_t *p, size_t remaining, uint32_t *r);
+static size_t utf8_encode(uint32_t r, uint8_t *buf);
 
 static int bytes_span_valid(const void *data, size_t len) {
     return data != NULL || len == 0;
@@ -485,24 +486,49 @@ static int bytes_is_separator(uint32_t r) {
 uint8_t *neverc_bytes_to_title(const uint8_t *s, size_t slen, size_t *outlen) {
     if (!outlen || !bytes_span_valid(s, slen)) return NULL;
     *outlen = 0;
-    uint8_t *r = bytes_alloc(slen);
-    if (!r) return NULL;
-    int prev_sep = 1;
+    /* Go strings.Title / bytes.Title: unicode.ToTitle on the current rune
+     * after a separator. That can change UTF-8 width (U+212A → 'K'). */
+    size_t need = 0;
     size_t i = 0;
+    int prev_sep = 1;
     while (i < slen) {
         uint32_t rune = 0;
         size_t n = utf8_decode(s + i, slen - i, &rune);
-        if (n == 0) n = 1;
-        if (prev_sep && n == 1 && s[i] >= 'a' && s[i] <= 'z')
-            r[i] = (uint8_t)(s[i] - 32);
-        else
-            memcpy(r + i, s + i, n);
-        prev_sep = n == 1 && s[i] < 0x80
-            ? bytes_is_separator(s[i])
-            : bytes_is_separator(rune);
+        size_t wn;
+        if (n == 0) {
+            n = 1;
+            wn = 1;
+            prev_sep = 1;
+        } else {
+            uint32_t titled = prev_sep ? neverc_unicode_to_title(rune) : rune;
+            uint8_t tmp[4];
+            wn = utf8_encode(titled, tmp);
+            prev_sep = bytes_is_separator(rune);
+        }
+        if (need > SIZE_MAX - wn) return NULL;
+        need += wn;
         i += n;
     }
-    *outlen = slen;
+    uint8_t *r = bytes_alloc(need);
+    if (!r) return NULL;
+    size_t o = 0;
+    i = 0;
+    prev_sep = 1;
+    while (i < slen) {
+        uint32_t rune = 0;
+        size_t n = utf8_decode(s + i, slen - i, &rune);
+        if (n == 0) {
+            r[o++] = s[i];
+            prev_sep = 1;
+            i += 1;
+            continue;
+        }
+        uint32_t titled = prev_sep ? neverc_unicode_to_title(rune) : rune;
+        o += utf8_encode(titled, r + o);
+        prev_sep = bytes_is_separator(rune);
+        i += n;
+    }
+    *outlen = need;
     return r;
 }
 

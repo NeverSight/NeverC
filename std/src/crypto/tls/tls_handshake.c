@@ -1753,7 +1753,6 @@ static int tls_parse_client_hello(
     int supports_ecdsa_p256_sha256 = 0;
     int saw_key_share = 0;
     int has_x25519_key_share = 0;
-    int offered_early_data = 0;
     while (extensions.pos < extensions.len) {
         uint16_t extension_type;
         tls_cursor_t extension_data;
@@ -1863,12 +1862,10 @@ static int tls_parse_client_hello(
                     &result->alpn_count, alert) != 0)
                 return -1;
         } else if (extension_type == TLS_EXT_EARLY_DATA) {
-            /* RFC 8446 §4.2.10: ClientHello early_data is empty. 0-RTT is
-             * not implemented, and this stack cannot skip 0-RTT records.
-             * Match Go's TCP crypto/tls: reject rather than ignore. */
+            /* RFC 8446 §4.2.10 / Go: if 0-RTT is not accepted, ignore an
+             * empty early_data and continue 1-RTT. Non-empty is DECODE_ERROR. */
             if (extension_data.len != 0)
                 return -1;
-            offered_early_data = 1;
         } else if (extension_type ==
                    TLS_EXT_PSK_KEY_EXCHANGE_MODES) {
             tls_cursor_t modes;
@@ -1978,10 +1975,6 @@ static int tls_parse_client_hello(
             TLS_CIPHER_CHACHA20_POLY1305_SHA256;
     } else {
         *alert = TLS_ALERT_HANDSHAKE_FAILURE;
-        return -1;
-    }
-    if (offered_early_data) {
-        *alert = TLS_ALERT_UNSUPPORTED_EXTENSION;
         return -1;
     }
     return 0;
@@ -3315,7 +3308,7 @@ int nci_tls_parse_new_session_ticket(
             nonce, nonce_len, psk) != 0)
         return -1;
     int store_result = nci_tls_store_client_session(
-        conn->config, ticket, ticket_len, psk,
+        conn->config, conn->server_name, ticket, ticket_len, psk,
         lifetime, age_add, conn->alpn,
         conn->peer_cert, conn->peer_cert_len);
     neverc_platform_secure_zero(psk, sizeof(psk));
@@ -4058,8 +4051,7 @@ int neverc_tls_test_hello_protocol_rules(void) {
             TLS_LEGACY_VERSION, 1, NEVERC_TLS_VERSION_13, 1,
             NULL, 0, NULL, 0, 1, 0) != 0 ||
         tls_parse_client_hello(
-            message, message_len, &client_hello, &alert) == 0 ||
-        alert != TLS_ALERT_UNSUPPORTED_EXTENSION)
+            message, message_len, &client_hello, &alert) != 0)
         return -1;
 
     alert = 0;

@@ -324,6 +324,7 @@ int nci_tls_load_client_psk_offer(
 void nci_tls_clear_client_psk_offer(tls_client_psk_offer_t *offer);
 int nci_tls_store_client_session(
     neverc_tls_config_t *cfg,
+    const char *server_name,
     const uint8_t *ticket, size_t ticket_len,
     const uint8_t psk[TLS_HASH_SIZE_SHA256],
     uint32_t lifetime, uint32_t age_add,

@@ -202,13 +202,15 @@ void nci_tls_clear_client_psk_offer(
 
 int nci_tls_store_client_session(
     neverc_tls_config_t *cfg,
+    const char *server_name,
     const uint8_t *ticket, size_t ticket_len,
     const uint8_t psk[TLS_HASH_SIZE_SHA256],
     uint32_t lifetime, uint32_t age_add,
     const char *alpn,
     const uint8_t *peer_cert, size_t peer_cert_len) {
     if (!cfg || !cfg->session_mutex_initialized ||
-        !cfg->server_name || !ticket || ticket_len == 0 ||
+        !server_name || server_name[0] == '\0' ||
+        !ticket || ticket_len == 0 ||
         ticket_len > TLS_MAX_SESSION_TICKET || !psk ||
         lifetime == 0 || lifetime > 604800u ||
         (alpn && (alpn[0] == '\0' ||
@@ -219,7 +221,7 @@ int nci_tls_store_client_session(
     tls_client_session_t replacement;
     memset(&replacement, 0, sizeof(replacement));
     replacement.ticket = (uint8_t *)malloc(ticket_len);
-    replacement.server_name = strdup(cfg->server_name);
+    replacement.server_name = strdup(server_name);
     if (alpn)
         replacement.alpn = strdup(alpn);
     if (peer_cert_len > 0)

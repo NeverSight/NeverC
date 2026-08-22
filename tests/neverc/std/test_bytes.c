@@ -182,6 +182,21 @@ static void test_transform(void) {
                 "A" "\xE4\xB8\xAD" "b");
     free(title);
 
+    /* Go bytes.Title: unicode.ToTitle on the first rune after a separator. */
+    title = neverc_bytes_to_title((const uint8_t *)"\xC3\xBC" "ber", 5, &outlen);
+    check_bytes("to_title umlaut", title, outlen, "\xC3\x9C" "ber");
+    free(title);
+    title = neverc_bytes_to_title(
+        (const uint8_t *)"\xCE\xB1" "\xCE\xB8" "\xCE\xAE" "\xCE\xBD" "\xCE\xB1",
+        10, &outlen);
+    check_bytes("to_title greek word", title, outlen,
+                "\xCE\x91" "\xCE\xB8" "\xCE\xAE" "\xCE\xBD" "\xCE\xB1");
+    free(title);
+    /* U+017F long s titles to 'S' and shrinks from 2 UTF-8 bytes to 1. */
+    title = neverc_bytes_to_title((const uint8_t *)"\xC5\xBF" "word", 6, &outlen);
+    check_bytes("to_title long s width", title, outlen, "Sword");
+    free(title);
+
     uint8_t *rep = neverc_bytes_repeat(B("ab"), 3, &outlen);
     check_bytes("repeat", rep, outlen, "ababab");
     free(rep);
