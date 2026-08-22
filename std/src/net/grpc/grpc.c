@@ -34,6 +34,9 @@ struct neverc_grpc_server_stream {
     int ended;
 };
 
+static int grpc_metadata_value_wire(const neverc_grpc_metadata_t *item,
+                                    char **owned);
+
 static int grpc_binary_key(const char *key) {
     size_t length;
     if (!key) return 0;
@@ -471,18 +474,36 @@ static int grpc_metadata_key_valid(const char *key) {
            strcmp(key, "te") != 0;
 }
 
+static int grpc_server_apply_metadata(neverc_http_response_writer_t *writer,
+                                      const char *name, const char *value,
+                                      int trailer) {
+    neverc_grpc_metadata_t item;
+    char *owned = NULL;
+    item.key = name;
+    item.value = (const uint8_t *)value;
+    item.value_length = strlen(value);
+    if (grpc_metadata_value_wire(&item, &owned) != 0)
+        return -1;
+    if (trailer)
+        neverc_http_set_trailer(writer, name, owned);
+    else
+        neverc_http_set_header(writer, name, owned);
+    free(owned);
+    return 0;
+}
+
 void neverc_grpc_server_stream_set_header(
     neverc_grpc_server_stream_t *stream, const char *name,
     const char *value) {
     if (stream && !stream->ended && value && grpc_metadata_key_valid(name))
-        neverc_http_set_header(stream->writer, name, value);
+        (void)grpc_server_apply_metadata(stream->writer, name, value, 0);
 }
 
 void neverc_grpc_server_stream_set_trailer(
     neverc_grpc_server_stream_t *stream, const char *name,
     const char *value) {
     if (stream && !stream->ended && value && grpc_metadata_key_valid(name))
-        neverc_http_set_trailer(stream->writer, name, value);
+        (void)grpc_server_apply_metadata(stream->writer, name, value, 1);
 }
 
 int neverc_grpc_server_stream_end(neverc_grpc_server_stream_t *stream,
@@ -515,6 +536,15 @@ int neverc_grpc_server_stream_end(neverc_grpc_server_stream_t *stream,
                 }
             }
         }
+    }
+    /* PROTOCOL-HTTP2: unary / client-streaming OK is one Length-Prefixed
+     * Message. Trailers-only is for immediate errors, not status 0. */
+    if (status == NEVERC_GRPC_OK && stream->method &&
+        (stream->method->cardinality == NEVERC_GRPC_UNARY ||
+         stream->method->cardinality == NEVERC_GRPC_CLIENT_STREAMING) &&
+        stream->sent_count != 1) {
+        status = NEVERC_GRPC_INTERNAL;
+        message = "missing response message";
     }
     char status_value[3];
     if (snprintf(status_value, sizeof(status_value), "%u",

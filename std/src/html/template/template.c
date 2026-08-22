@@ -1575,7 +1575,8 @@ static html_attr_kind_t html_attr_kind(const char *name, size_t nlen) {
     if (html_attr_name_eq(n, len, "style"))
         return HTML_ATTR_STYLE;
     if (html_attr_name_eq(n, len, "sandbox") ||
-        html_attr_name_eq(n, len, "http-equiv"))
+        html_attr_name_eq(n, len, "http-equiv") ||
+        html_attr_name_eq(n, len, "type"))
         return HTML_ATTR_UNSAFE;
     if (len > 2 && html_ci_eq_n(n, "on", 2))
         return HTML_ATTR_EVENT;

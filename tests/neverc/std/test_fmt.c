@@ -982,6 +982,22 @@ static void test_sscanln(void) {
     int n = neverc_fmt_sscanln("42 hello\nmore", "%d", &a);
     check_int("sscanln matched", n, 1);
     check_int("sscanln val", a, 42);
+
+    /* Former 4096-byte cap leftover after fscanf grew. */
+    {
+        char *long_line = (char *)malloc(4104);
+        check_true("sscanln long fixture", long_line != NULL);
+        if (long_line) {
+            memset(long_line, ' ', 4096);
+            memcpy(long_line + 4096, "42", 2);
+            long_line[4098] = '\0';
+            a = 0;
+            n = neverc_fmt_sscanln(long_line, "%d", &a);
+            check_int("sscanln long leading space", n, 1);
+            check_int("sscanln long val", a, 42);
+            free(long_line);
+        }
+    }
 }
 
 static void test_stream_scan(void) {
@@ -1028,6 +1044,22 @@ static void test_stream_scan(void) {
         check_int("fscan leftover first val", a, 0);
         check_int("fscan leftover second", neverc_fmt_fscan(tmp, &b), 1);
         check_int("fscan leftover second val", b, 8);
+        fclose(tmp);
+    }
+
+    tmp = tmpfile();
+    check_true("fscanln long space fixture", tmp != NULL);
+    if (tmp) {
+        char pad[4104];
+        memset(pad, ' ', 4096);
+        memcpy(pad + 4096, "42\n", 3);
+        pad[4099] = '\0';
+        fputs(pad, tmp);
+        rewind(tmp);
+        value = 0;
+        check_int("fscanln long leading space",
+                  neverc_fmt_fscanln(tmp, "%d", &value), 1);
+        check_int("fscanln long leading space val", value, 42);
         fclose(tmp);
     }
 }

@@ -1085,9 +1085,12 @@ static int parse_time_zone(const char *value, size_t vlen, size_t *vi,
         return 0;
     }
     if (s[0] == '+' || s[0] == '-') {
+        /* Go parseTimeZone: ±HH is an unknown zone name; offset stays 0.
+         * Only GMT±HH applies the numeric offset. */
         if (parse_signed_hour_offset(value, vlen, vi, gmt_off) != 0)
             return -1;
-        *has_gmt_off = 1;
+        *has_gmt_off = 0;
+        *gmt_off = 0;
         return 0;
     }
 

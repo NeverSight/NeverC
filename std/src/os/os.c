@@ -685,7 +685,22 @@ int neverc_os_mkdir_all(const char *path, uint32_t perm) {
 
 int neverc_os_remove(const char *name) {
     if (!name || name[0] == '\0') return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    /* Go os.Remove: DeleteFile, then RemoveDirectory, then clear readonly. */
+    if (DeleteFileA(name)) return 0;
+    if (RemoveDirectoryA(name)) return 0;
+    if (GetLastError() == ERROR_ACCESS_DENIED) {
+        DWORD attr = GetFileAttributesA(name);
+        if (attr != INVALID_FILE_ATTRIBUTES &&
+            (attr & FILE_ATTRIBUTE_READONLY)) {
+            SetFileAttributesA(name, attr & ~(DWORD)FILE_ATTRIBUTE_READONLY);
+            if (DeleteFileA(name) || RemoveDirectoryA(name)) return 0;
+        }
+    }
+    return os_win_fail();
+#else
     return remove(name) == 0 ? 0 : -1;
+#endif
 }
 
 #if !defined(NEVERC_PLATFORM_WINDOWS)
@@ -1814,7 +1829,10 @@ int neverc_os_user_cache_dir(char *buf, size_t cap) {
     return os_format_under(buf, cap, "%s/Library/Caches", home);
 #else
     const char *xdg = getenv("XDG_CACHE_HOME");
-    if (xdg && xdg[0]) return os_copy_cstr(buf, cap, xdg);
+    if (xdg && xdg[0]) {
+        if (xdg[0] != '/') return -1;
+        return os_copy_cstr(buf, cap, xdg);
+    }
     char home[1024];
     if (neverc_os_user_home_dir(home, sizeof(home)) < 0) return -1;
     return os_format_under(buf, cap, "%s/.cache", home);
@@ -1830,7 +1848,10 @@ int neverc_os_user_config_dir(char *buf, size_t cap) {
     return os_format_under(buf, cap, "%s/Library/Application Support", home);
 #else
     const char *xdg = getenv("XDG_CONFIG_HOME");
-    if (xdg && xdg[0]) return os_copy_cstr(buf, cap, xdg);
+    if (xdg && xdg[0]) {
+        if (xdg[0] != '/') return -1;
+        return os_copy_cstr(buf, cap, xdg);
+    }
     char home[1024];
     if (neverc_os_user_home_dir(home, sizeof(home)) < 0) return -1;
     return os_format_under(buf, cap, "%s/.config", home);

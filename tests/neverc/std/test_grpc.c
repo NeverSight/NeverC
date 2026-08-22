@@ -159,6 +159,19 @@ static neverc_grpc_status_t grpc_test_bidi_end_early_handler(
     return NEVERC_GRPC_OK;
 }
 
+static neverc_grpc_status_t grpc_test_unary_no_send_handler(
+    neverc_grpc_server_stream_t *stream, void *context) {
+    neverc_grpc_message_t message;
+    (void)context;
+    if (neverc_grpc_server_stream_recv(stream, &message) != 1)
+        return NEVERC_GRPC_INVALID_ARGUMENT;
+    /* PROTOCOL-HTTP2: *-bin must be Base64 on the wire. */
+    neverc_grpc_server_stream_set_header(stream, "x-reply-bin", "hello");
+    /* Unary OK with zero response messages is illegal (trailers-only
+     * is for errors, not status 0). */
+    return NEVERC_GRPC_OK;
+}
+
 static const neverc_grpc_method_t grpc_test_unary_method = {
     "/test.Echo/Unary", NEVERC_GRPC_UNARY, 1024U, 1024U,
     grpc_test_unary_handler, NULL};
@@ -194,6 +207,10 @@ static const neverc_grpc_method_t grpc_test_reserved_metadata_method = {
 static const neverc_grpc_method_t grpc_test_bin_metadata_method = {
     "/test.Echo/BinMeta", NEVERC_GRPC_UNARY, 1024U, 1024U,
     grpc_test_bin_metadata_handler, NULL};
+
+static const neverc_grpc_method_t grpc_test_unary_no_send_method = {
+    "/test.Echo/UnaryNoSend", NEVERC_GRPC_UNARY, 1024U, 1024U,
+    grpc_test_unary_no_send_handler, NULL};
 
 static void grpc_test_server_task(void *context) {
     grpc_test_server_t *test = (grpc_test_server_t *)context;
@@ -647,6 +664,26 @@ static void grpc_test_bin_metadata(neverc_h2_client_t *client) {
     neverc_grpc_result_free(result);
 }
 
+static void grpc_test_unary_no_send(neverc_h2_client_t *client) {
+    neverc_grpc_message_t request = {(const uint8_t *)"ping", 4U};
+    neverc_grpc_result_t *result = neverc_grpc_client_call(
+        client, NULL, "/test.Echo/UnaryNoSend", NEVERC_GRPC_UNARY, NULL, 0U,
+        &request, 1U, 1024U);
+    CHECK(result != NULL);
+    CHECK(result && result->error == NULL);
+    CHECK(result && result->status == NEVERC_GRPC_INTERNAL);
+    int header_seen = 0;
+    if (result) {
+        for (size_t i = 0; i < result->header_count; i++)
+            if (strcmp(result->headers[i].name, "x-reply-bin") == 0 &&
+                result->headers[i].value &&
+                strcmp(result->headers[i].value, "hello") == 0)
+                header_seen = 1;
+    }
+    CHECK(header_seen);
+    neverc_grpc_result_free(result);
+}
+
 static void grpc_test_max_request_message_size(neverc_h2_client_t *client) {
     uint8_t oversized[1025];
     memset(oversized, 'x', sizeof(oversized));
@@ -676,7 +713,9 @@ static int grpc_test_register_methods(neverc_http_mux_t *mux) {
            neverc_grpc_server_register(
                mux, &grpc_test_reserved_metadata_method) == 0 &&
            neverc_grpc_server_register(
-               mux, &grpc_test_bin_metadata_method) == 0;
+               mux, &grpc_test_bin_metadata_method) == 0 &&
+           neverc_grpc_server_register(
+               mux, &grpc_test_unary_no_send_method) == 0;
 }
 
 static void grpc_test_h2c_end_to_end(void) {
@@ -706,6 +745,7 @@ static void grpc_test_h2c_end_to_end(void) {
         grpc_test_unary_extra_frames(client);
         grpc_test_reserved_metadata(client);
         grpc_test_bin_metadata(client);
+        grpc_test_unary_no_send(client);
         grpc_test_max_request_message_size(client);
         neverc_h2_client_close(client);
         neverc_h2_client_free(client);

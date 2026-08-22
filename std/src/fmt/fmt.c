@@ -1648,48 +1648,57 @@ int neverc_fmt_fscan(FILE *f, int *out_int) {
     return scan_int_from_file(f, out_int);
 }
 
-int neverc_fmt_scanln(const char *format, ...) {
-    if (!format) return 0;
-    char line[4096];
-    if (!fgets(line, sizeof(line), stdin)) return 0;
-    size_t len = my_strlen(line);
-    if (len > 0 && line[len-1] == '\n') line[--len] = '\0';
+static int scanln_formatted(char *line, const char *format, va_list args) {
+    size_t len;
+    if (!line) return 0;
+    len = my_strlen(line);
+    if (len > 0 && line[len - 1] == '\n') line[len - 1] = '\0';
+    return scan_formatted(line, format, args, NULL);
+}
 
+int neverc_fmt_scanln(const char *format, ...) {
+    char *line;
     va_list args;
+    int matched;
+    if (!format) return 0;
+    /* Empty format: read one newline-terminated record, growing past 4096. */
+    line = scan_read_format_lines(stdin, "");
+    if (!line) return 0;
     va_start(args, format);
-    int matched = scan_formatted(line, format, args, NULL);
+    matched = scanln_formatted(line, format, args);
     va_end(args);
+    free(line);
     return matched;
 }
 
 int neverc_fmt_sscanln(const char *str, const char *format, ...) {
-    if (!str || !format) return 0;
-    char line[4096];
-    size_t slen = my_strlen(str);
-    size_t copy = slen < sizeof(line) - 1 ? slen : sizeof(line) - 1;
-    for (size_t i = 0; i < copy; i++) line[i] = str[i];
-    line[copy] = '\0';
-    for (size_t i = 0; i < copy; i++) {
-        if (line[i] == '\n') { line[i] = '\0'; break; }
-    }
-
+    size_t n = 0;
+    char *line;
     va_list args;
+    int matched;
+    if (!str || !format) return 0;
+    while (str[n] && str[n] != '\n') n++;
+    line = (char *)malloc(n + 1);
+    if (!line) return 0;
+    memcpy(line, str, n);
+    line[n] = '\0';
     va_start(args, format);
-    int matched = scan_formatted(line, format, args, NULL);
+    matched = scan_formatted(line, format, args, NULL);
     va_end(args);
+    free(line);
     return matched;
 }
 
 int neverc_fmt_fscanln(FILE *f, const char *format, ...) {
-    if (!f || !format) return 0;
-    char line[4096];
-    if (!fgets(line, sizeof(line), f)) return 0;
-    size_t len = my_strlen(line);
-    if (len > 0 && line[len-1] == '\n') line[--len] = '\0';
-
+    char *line;
     va_list args;
+    int matched;
+    if (!f || !format) return 0;
+    line = scan_read_format_lines(f, "");
+    if (!line) return 0;
     va_start(args, format);
-    int matched = scan_formatted(line, format, args, NULL);
+    matched = scanln_formatted(line, format, args);
     va_end(args);
+    free(line);
     return matched;
 }

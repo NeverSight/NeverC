@@ -334,6 +334,14 @@ static void test_mkdir(void) {
     neverc_os_remove_all(dir);
     ASSERT_TRUE(!neverc_os_exists(dir));
 
+    /* Go os.Remove deletes a file or an empty directory (Windows needs
+     * RemoveDirectory, not just DeleteFile). */
+    make_test_path(dirbuf, sizeof(dirbuf), "neverc_test_os_empty_rm");
+    neverc_os_remove_all(dirbuf);
+    ASSERT_EQ(neverc_os_mkdir(dirbuf, 0755), 0);
+    ASSERT_EQ(neverc_os_remove(dirbuf), 0);
+    ASSERT_TRUE(!neverc_os_exists(dirbuf));
+
 #if !defined(_WIN32)
     {
         char parent[1024], weird[1100], foo[1100];
@@ -836,6 +844,36 @@ static void test_user_dirs(void) {
     ASSERT_EQ(neverc_os_user_home_dir(one, 1), -1);
     ASSERT_EQ(neverc_os_user_cache_dir(NULL, 16), -1);
     ASSERT_EQ(neverc_os_user_config_dir(NULL, 16), -1);
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+    /* Go os.UserCacheDir / UserConfigDir: relative XDG_* is an error. */
+    {
+        const char *old_cache = neverc_os_getenv("XDG_CACHE_HOME");
+        const char *old_cfg = neverc_os_getenv("XDG_CONFIG_HOME");
+        char *saved_cache = old_cache ? strdup(old_cache) : NULL;
+        char *saved_cfg = old_cfg ? strdup(old_cfg) : NULL;
+        ASSERT_EQ(neverc_os_setenv("XDG_CACHE_HOME", "."), 0);
+        ASSERT_EQ(neverc_os_user_cache_dir(buf, sizeof(buf)), -1);
+        ASSERT_EQ(neverc_os_setenv("XDG_CACHE_HOME", "rel/cache"), 0);
+        ASSERT_EQ(neverc_os_user_cache_dir(buf, sizeof(buf)), -1);
+        ASSERT_EQ(neverc_os_setenv("XDG_CONFIG_HOME", "."), 0);
+        ASSERT_EQ(neverc_os_user_config_dir(buf, sizeof(buf)), -1);
+        ASSERT_EQ(neverc_os_setenv("XDG_CONFIG_HOME", "rel/config"), 0);
+        ASSERT_EQ(neverc_os_user_config_dir(buf, sizeof(buf)), -1);
+        if (saved_cache) {
+            neverc_os_setenv("XDG_CACHE_HOME", saved_cache);
+            free(saved_cache);
+        } else {
+            neverc_os_unsetenv("XDG_CACHE_HOME");
+        }
+        if (saved_cfg) {
+            neverc_os_setenv("XDG_CONFIG_HOME", saved_cfg);
+            free(saved_cfg);
+        } else {
+            neverc_os_unsetenv("XDG_CONFIG_HOME");
+        }
+    }
+#endif
 
 #if defined(_WIN32)
     const char *home_key = "USERPROFILE";

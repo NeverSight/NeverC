@@ -157,6 +157,7 @@ typedef struct {
     char path[2048];
     char query_buf[2048];
     char host[256];
+    char content_type[256];
     char version[16];
     char raw_headers[8192];
     int nheaders;
@@ -285,6 +286,11 @@ static int httptest_parse_request(const char *raw, size_t raw_length,
                     value, value_length, &content_length) != 0)
                 return -2;
             content_length_seen = 1;
+        } else if (httptest_name_is(cursor, name_length, "Content-Type")) {
+            if (value_length >= sizeof(out->content_type))
+                return -2;
+            memcpy(out->content_type, value, value_length);
+            out->content_type[value_length] = '\0';
         } else if (httptest_name_is(cursor, name_length,
                                     "Transfer-Encoding")) {
             if (transfer_encoding_seen || value_length != 7 ||
@@ -415,8 +421,8 @@ static int httptest_emit_response(neverc_tcp_conn_t *conn,
         goto fail;
 
     if (neverc_tcp_write(conn, hdr, length) < 0) goto fail;
-    int body_forbidden = w->status < 200 || w->status == 204 ||
-                         w->status == 304;
+    int body_forbidden = w->head_request || w->status < 200 ||
+                         w->status == 204 || w->status == 304;
     if (!body_forbidden && body && body_len > 0 &&
         neverc_tcp_write(conn, body, body_len) < 0)
         goto fail;
@@ -478,6 +484,7 @@ static void handle_test_conn(neverc_tcp_conn_t *conn,
     req.query = parsed.query;
     req.http_version = parsed.version;
     req.host = parsed.host[0] ? parsed.host : NULL;
+    req.content_type = parsed.content_type[0] ? parsed.content_type : NULL;
     req.body = parsed.body;
     req.body_len = parsed.body_len;
     req.raw_headers = parsed.nheaders > 0 ? parsed.raw_headers : NULL;
@@ -486,6 +493,7 @@ static void handle_test_conn(neverc_tcp_conn_t *conn,
     /* Create a memory writer for the handler to write to */
     neverc_http_response_writer_t *w = neverc_http_memory_writer_new();
     if (!w) return;
+    w->head_request = strcmp(parsed.method, "HEAD") == 0;
 
     /* Call the actual handler */
     handler(&req, w);

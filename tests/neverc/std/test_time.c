@@ -960,6 +960,14 @@ static void test_parse_layout_go_tokens(void) {
     /* 0000-01-01 00:00 GMT+8 → previous day 16:00 UTC */
     check_int("parse GMT+8 hour utc", neverc_time_hour(t), 16);
 
+    /* Go parseTimeZone: bare ±HH is an unknown zone name; offset stays 0. */
+    ok = neverc_time_parse("MST", "+08", &t);
+    check_int("parse +08 as unknown zone", ok, 0);
+    check_int("parse +08 hour utc", neverc_time_hour(t), 0);
+    check_int("parse +08 day", neverc_time_day(t), 1);
+    /* parseTimeZone requires length >= 3, so "-5" is rejected. */
+    check_int("parse -5 rejected", neverc_time_parse("MST", "-5", &t), -1);
+
     check_int("parse lowercase zone rejected",
               neverc_time_parse("MST", "est", &t), -1);
 

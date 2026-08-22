@@ -971,6 +971,23 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "http-equiv=\"refresh\"") == NULL);
     free(out);
 
+    /* Go html/template attrType: type is contentTypeUnsafe (script/style). */
+    neverc_html_template_data_set(&data, "T", "text/javascript");
+    neverc_html_template_data_set(&data, "S", "https://evil.example/x.js");
+    out = neverc_html_template_render(
+        "<script type=\"{{.T}}\" src=\"{{.S}}\"></script>", &data);
+    check("type interpolation is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    check("type text/javascript not passed through",
+          out && strstr(out, "text/javascript") == NULL);
+    free(out);
+    neverc_html_template_data_set(&data, "T", "");
+    out = neverc_html_template_render(
+        "<script type=\"{{.T}}\"></script>", &data);
+    check("empty type interpolation is replaced",
+          out && strstr(out, "ZgotmplZ") != NULL);
+    free(out);
+
     neverc_html_template_data_set(&data, "X", "*/alert(1)//");
     out = neverc_html_template_render("<script>/*{{.X}}*/</script>", &data);
     check("js block comment closer cannot break out",

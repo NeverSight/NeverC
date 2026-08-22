@@ -166,7 +166,12 @@ static void *mock_smtp_server(void *arg) {
                     : "250 OK\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
             } else if (strncmp(buf, "RCPT TO:", 8) == 0) {
-                const char *resp = "250 OK\r\n";
+                /* RFC 5321 §4.3.2 / Go smtp.Client.Rcpt: 25x is success. */
+                const char *resp = strstr(buf, "forward@")
+                    ? "251 User not local\r\n"
+                    : strstr(buf, "maybe@")
+                    ? "252 Cannot VRFY user\r\n"
+                    : "250 OK\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
             } else if (strncmp(buf, "DATA", 4) == 0) {
                 const char *resp = "354 Start mail input\r\n";
@@ -274,6 +279,10 @@ static void test_smtp_session(void) {
     /* RCPT TO */
     rc = neverc_smtp_rcpt(c, "recipient@example.com");
     check_true("RCPT TO success", rc == 0);
+    rc = neverc_smtp_rcpt(c, "forward@example.com");
+    check_true("RCPT 251 User not local", rc == 0);
+    rc = neverc_smtp_rcpt(c, "maybe@example.com");
+    check_true("RCPT 252 cannot VRFY", rc == 0);
 
     /* DATA */
     rc = neverc_smtp_data(c);

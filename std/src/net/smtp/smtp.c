@@ -578,7 +578,8 @@ int neverc_smtp_rcpt(neverc_smtp_client_t *c, const char *to) {
         return -1;
     if (ensure_hello(c) != 0) return -1;
     int code = smtp_cmdf(c, "RCPT TO:<%s>", to);
-    return (code == 250) ? 0 : -1;
+    /* RFC 5321 §4.3.2 / Go smtp.Client.Rcpt: RCPT success is 25x (250, 251). */
+    return (code >= 250 && code <= 259) ? 0 : -1;
 }
 
 int neverc_smtp_data(neverc_smtp_client_t *c) {

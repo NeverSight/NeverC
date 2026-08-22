@@ -1869,7 +1869,11 @@ void neverc_quic_conn_tick(struct neverc_quic_conn *conn, uint64_t now_ms) {
                     conn->pto_probe_pending = 0;
             } else {
                 conn->pto_probe_pending = 0;
-                for (int space = QUIC_PNS_APPLICATION;
+                /* RFC 9002 §6.2.4: do not send a 1-RTT PTO probe until
+                 * the handshake is confirmed. */
+                int top = conn->handshake_confirmed
+                    ? QUIC_PNS_APPLICATION : QUIC_PNS_HANDSHAKE;
+                for (int space = top;
                      space >= QUIC_PNS_INITIAL; space--) {
                     if (!conn->loss.spaces[space].sent_packets) continue;
                     quic_enc_level_t level =

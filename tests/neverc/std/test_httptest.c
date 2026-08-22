@@ -63,6 +63,14 @@ static void status_handler(neverc_http_request_t *req,
     neverc_http_write_string(w, "created");
 }
 
+#ifndef _WIN32
+static void content_type_handler(neverc_http_request_t *req,
+                                 neverc_http_response_writer_t *w) {
+    neverc_http_write_string(w, "ct=");
+    neverc_http_write_string(w, req->content_type ? req->content_type : "");
+}
+#endif
+
 /* ===== Tests ===== */
 
 static void test_new_server(void) {
@@ -277,6 +285,39 @@ static void test_httptest_strict_parser(void) {
     check_int("cl extra ignored", strstr(buf, "XXXX") == NULL, 1);
 
     neverc_httptest_close(ts);
+
+    ts = neverc_httptest_new_server(hello_handler);
+    check_not_null("head server", ts);
+    if (ts) {
+        n = httptest_raw(neverc_httptest_addr(ts),
+            "HEAD / HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_true("head has content-length 11",
+                   n > 0 && strstr(buf, "Content-Length: 11") != NULL);
+        {
+            const char *hdr_end = n > 0 ? strstr(buf, "\r\n\r\n") : NULL;
+            check_true("head has no body",
+                       hdr_end && strstr(hdr_end + 4, "hello world") == NULL);
+        }
+        neverc_httptest_close(ts);
+    }
+
+    ts = neverc_httptest_new_server(content_type_handler);
+    check_not_null("content-type server", ts);
+    if (ts) {
+        n = httptest_raw(neverc_httptest_addr(ts),
+            "POST / HTTP/1.1\r\nHost: localhost\r\n"
+            "Content-Type: text/plain\r\nContent-Length: 0\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        {
+            const char *hdr_end = n > 0 ? strstr(buf, "\r\n\r\n") : NULL;
+            check_true("content-type echoed",
+                       hdr_end && strstr(hdr_end + 4, "ct=text/plain") != NULL);
+        }
+        neverc_httptest_close(ts);
+    }
 }
 #endif
 

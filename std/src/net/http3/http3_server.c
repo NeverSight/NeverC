@@ -1623,6 +1623,12 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
         h3_sleep_ms(2);
     }
 
+    /* RFC 9114 §5.2: CONNECTION_CLOSE before joining the worker, or an
+     * idle keep-alive peer never FINs and stop() waits forever. */
+    for (size_t i = 0; i < server->connection_count; i++)
+        h3_protocol_error(server->connections[i], NC_H3_NO_ERROR,
+                          "server shutdown");
+
     for (size_t i = 0; i < server->connection_count; i++) {
         h3_conn_t *connection = server->connections[i];
         if (connection->thread_started) {
@@ -1630,10 +1636,6 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
             connection->thread_started = 0;
         }
     }
-
-    for (size_t i = 0; i < server->connection_count; i++)
-        h3_protocol_error(server->connections[i], NC_H3_NO_ERROR,
-                          "server shutdown");
     nc_mutex_unlock(&server->lock);
 }
 

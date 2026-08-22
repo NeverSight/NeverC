@@ -1,5 +1,6 @@
 #include "neverc/std/cstring.h"
 #include "neverc/std/bytes.h"
+#include "neverc/std/unicode.h"
 #include "../bytes/strsearch.h"
 #include <stdlib.h>
 #include <string.h>
@@ -54,6 +55,15 @@ static int is_separator(char c) {
     if (c >= 'A' && c <= 'Z') return 0;
     if (c == '_') return 0;
     return 1;
+}
+
+/* Go strings.Title isSeparator: ASCII alnum/_ stay words; for r > 0x7F,
+ * letters and digits stay words and only unicode.IsSpace is a separator. */
+static int is_separator_rune(uint32_t r) {
+    if (r <= 0x7F) return is_separator((char)r);
+    if (neverc_unicode_is_letter(r) || neverc_unicode_is_digit(r))
+        return 0;
+    return neverc_unicode_is_space(r);
 }
 
 static size_t utf8_decode(const uint8_t *p, size_t remaining, uint32_t *r) {
@@ -291,12 +301,19 @@ char *neverc_cstring_to_title(const char *s) {
     char *r = nc_alloc_string(len);
     if (!r) return NULL;
     int prev_sep = 1;
-    for (size_t i = 0; i < len; i++) {
-        if (prev_sep)
+    size_t i = 0;
+    while (i < len) {
+        uint32_t rune = 0;
+        size_t n = utf8_decode((const uint8_t *)s + i, len - i, &rune);
+        if (n == 0) n = 1;
+        if (prev_sep && n == 1)
             r[i] = to_upper_ch(s[i]);
         else
-            r[i] = s[i];
-        prev_sep = is_separator(s[i]);
+            memcpy(r + i, s + i, n);
+        prev_sep = n == 1 && (unsigned char)s[i] < 0x80
+            ? is_separator(s[i])
+            : is_separator_rune(rune);
+        i += n;
     }
     r[len] = '\0';
     return r;
