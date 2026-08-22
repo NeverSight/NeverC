@@ -173,6 +173,38 @@ static void test_mux(void) {
     check_int("null mux safe", 1, 1);
 }
 
+static void mux_ctx_nop(neverc_http_request_t *req,
+                        neverc_http_response_writer_t *w, void *ctx) {
+    (void)req;
+    (void)w;
+    (void)ctx;
+}
+
+/* Go {$} registration is host-independent and must fail closed when the
+ * wildcard is not at the end of the path. */
+static void test_mux_dollar_pattern(void) {
+    printf("[mux_dollar]\n");
+    neverc_http_mux_t *mux = neverc_http_new_mux();
+    check_not_null("mux", mux);
+    if (!mux) return;
+    check_int("{$} at end accepted",
+              neverc_http_mux_handle_context(mux, "/posts/{$}",
+                                             mux_ctx_nop, NULL), 0);
+    check_int("/{$} accepted",
+              neverc_http_mux_handle_context(mux, "/{$}",
+                                             mux_ctx_nop, NULL), 0);
+    check_int("{$} mid-pattern rejected",
+              neverc_http_mux_handle_context(mux, "/{$}/x",
+                                             mux_ctx_nop, NULL), -1);
+    check_int("empty {} rejected",
+              neverc_http_mux_handle_context(mux, "/users/{}",
+                                             mux_ctx_nop, NULL), -1);
+    check_int("empty {...} rejected",
+              neverc_http_mux_handle_context(mux, "/files/{...}",
+                                             mux_ctx_nop, NULL), -1);
+    neverc_http_mux_free(mux);
+}
+
 /* ===== Response writer null safety ===== */
 
 static void test_writer_null_safety(void) {
@@ -3821,6 +3853,12 @@ static void mux_api_prefix_handler(neverc_http_request_t *req,
     neverc_http_write_string(w, "api_prefix");
 }
 
+static void mux_posts_exact_handler(neverc_http_request_t *req,
+                                     neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_string(w, "posts_exact");
+}
+
 static void test_path_params(void) {
     printf("[path_params]\n");
 
@@ -3843,6 +3881,8 @@ static void test_path_params(void) {
                                 path_param_handler);
         neverc_http_mux_handle(mux, "GET /wild/{path...}/x",
                                 path_param_handler);
+        neverc_http_mux_handle(mux, "GET /posts/{$}",
+                                mux_posts_exact_handler);
         char addr[32];
         snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
         neverc_http_listen_and_serve(addr, mux);
@@ -3936,6 +3976,26 @@ static void test_path_params(void) {
         buf, sizeof(buf));
     check_int("mid-pattern wildcard rejected",
                n > 0 && strstr(buf, "404") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /posts/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("{$} matches /posts/ only",
+               n > 0 && strstr(buf, "posts_exact") != NULL &&
+               strstr(buf, "home") == NULL, 1);
+
+    n = do_http_request(port,
+        "GET /posts/234 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("{$} does not capture leftover /posts/234",
+               n > 0 && strstr(buf, "posts_exact") == NULL &&
+               strstr(buf, "home") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /posts HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("{$} does not match /posts without slash",
+               n > 0 && strstr(buf, "posts_exact") == NULL, 1);
 
     /* neverc_http_path_value null safety */
     check_int("path_value null req",
@@ -4206,6 +4266,7 @@ int main(void) {
     test_query_get();
     test_form_value();
     test_mux();
+    test_mux_dollar_pattern();
     test_writer_null_safety();
     test_response_free_null();
     test_detect_content_type();

@@ -154,6 +154,7 @@ neverc_http_mux_t *neverc_http_new_mux(void);
  *   "GET /api/items"      — method-specific; also serves HEAD
  *                           unless a HEAD route exists (Go 1.22)
  *   "GET /files/{path...}" — wildcard captures rest of path
+ *   "/posts/{$}"          — exact trailing slash (not /posts/123)
  *   "/static/"            — prefix match (trailing /)
  *   "/exact"              — exact match (no trailing /) */
 void neverc_http_mux_handle(neverc_http_mux_t *mux, const char *pattern,

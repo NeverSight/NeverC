@@ -866,12 +866,28 @@ static int route_parse_pattern(route_t *r, const char *pattern) {
         }
     }
 
-    /* Go-style: a {name...} wildcard may appear only at the end. */
+    /* Go-style: {$} and {name...} may appear only at the end. */
     {
         const char *cursor = path_pattern;
         while ((cursor = strchr(cursor, '{')) != NULL) {
             const char *close = strchr(cursor, '}');
             if (!close) break;
+            /* Go: empty `{}` / `{...}` are not valid wildcards. */
+            if ((size_t)(close - cursor) == 1 ||
+                ((size_t)(close - cursor) == 4 && cursor[1] == '.' &&
+                 cursor[2] == '.' && cursor[3] == '.')) {
+                free(path_pattern);
+                free(method);
+                free(pattern_copy);
+                return -1;
+            }
+            if ((size_t)(close - cursor) == 2 && cursor[1] == '$' &&
+                close[1] != '\0') {
+                free(path_pattern);
+                free(method);
+                free(pattern_copy);
+                return -1;
+            }
             if ((size_t)(close - cursor) >= 4 && close[-3] == '.' &&
                 close[-2] == '.' && close[-1] == '.' && close[1] != '\0') {
                 free(path_pattern);
@@ -1023,6 +1039,12 @@ static int pattern_match(const char *pattern, const char *path,
                            name[namelen-1] == '.');
             if (wildcard) namelen -= 3;
 
+            /* Go {$}: matches only the end of the URL. A leftover
+             * segment used to be captured as a parameter named `$`.
+             * `{$...}` is a multi wildcard, not this sentinel. */
+            if (!wildcard && namelen == 1 && name[0] == '$')
+                return close[1] == '\0' && *rp == '\0';
+
             if (wildcard) {
                 if (close[1] != '\0') return 0;
                 /* Go {name...}: remainder after the joining '/', including
@@ -1078,6 +1100,8 @@ static int pattern_match(const char *pattern, const char *path,
         if (close && close[1] == '\0') {
             const char *name = pp + 1;
             size_t namelen = (size_t)(close - name);
+            if (namelen == 1 && name[0] == '$')
+                return 1;
             if (namelen >= 3 && name[namelen - 3] == '.' &&
                 name[namelen - 2] == '.' && name[namelen - 1] == '.') {
                 namelen -= 3;
@@ -1132,6 +1156,16 @@ static int mux_path_rank_prefix(size_t plen) {
     return (int)plen;
 }
 
+/* Go {$} is an exact end-of-path match, more specific than a trailing-slash
+ * prefix of the same literal length (`/posts/{$}` vs `/posts/`). */
+static int mux_pattern_ends_dollar(const char *pat) {
+    size_t n;
+    if (!pat) return 0;
+    n = strlen(pat);
+    return n >= 3 && pat[n - 3] == '{' && pat[n - 2] == '$' &&
+           pat[n - 1] == '}';
+}
+
 static int mux_better(int path_rank, int method_rank, size_t plen,
                       int best_path, int best_method, size_t best_len) {
     if (path_rank != best_path) return path_rank > best_path;
@@ -1175,7 +1209,10 @@ static route_t *mux_match_ex(neverc_http_mux_t *mux,
             memset(&tmp_params, 0, sizeof(tmp_params));
             if (pattern_match(pat, path, &tmp_params)) {
                 size_t plen = strlen(pat);
-                int path_rank = mux_path_rank_param(pat);
+                int path_rank = mux_pattern_ends_dollar(pat)
+                    ? mux_path_rank_exact(
+                          (size_t)mux_pattern_literal_len(pat))
+                    : mux_path_rank_param(pat);
                 if (mux_better(path_rank, method_rank, plen,
                                best_path_rank, best_method_rank, best_len)) {
                     best = r;
