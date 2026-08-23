@@ -12,6 +12,7 @@
 
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/IRPrintingPasses.h"
 #include "llvm/IR/LLVMContext.h"
@@ -934,21 +935,21 @@ void PMDataManager::removeNotPreservedAnalysis(Pass *P) {
     return;
 
   const AnalysisUsage::VectorType &PreservedSet = AnUsage->getPreservedSet();
-  for (DenseMap<AnalysisID, Pass *>::iterator I = AvailableAnalysis.begin(),
-                                              E = AvailableAnalysis.end();
-       I != E;) {
-    DenseMap<AnalysisID, Pass *>::iterator Info = I++;
-    if (Info->second->getAsImmutablePass() == nullptr &&
-        !is_contained(PreservedSet, Info->first)) {
+  SmallVector<AnalysisID, 16> ToRemove;
+  for (auto &Entry : AvailableAnalysis) {
+    if (Entry.second->getAsImmutablePass() == nullptr &&
+        !is_contained(PreservedSet, Entry.first)) {
       // Remove this analysis
       if (PassDebugging >= Details) {
-        Pass *S = Info->second;
+        Pass *S = Entry.second;
         dbgs() << " -- '" << P->getPassName() << "' is not preserving '";
         dbgs() << S->getPassName() << "'\n";
       }
-      AvailableAnalysis.erase(Info);
+      ToRemove.push_back(Entry.first);
     }
   }
+  for (AnalysisID ID : ToRemove)
+    AvailableAnalysis.erase(ID);
 
   // Check inherited analysis also. If P is not preserving analysis
   // provided by parent manager then remove it here.
@@ -956,20 +957,21 @@ void PMDataManager::removeNotPreservedAnalysis(Pass *P) {
     if (!IA)
       continue;
 
-    for (DenseMap<AnalysisID, Pass *>::iterator I = IA->begin(), E = IA->end();
-         I != E;) {
-      DenseMap<AnalysisID, Pass *>::iterator Info = I++;
-      if (Info->second->getAsImmutablePass() == nullptr &&
-          !is_contained(PreservedSet, Info->first)) {
+    ToRemove.clear();
+    for (auto &Entry : *IA) {
+      if (Entry.second->getAsImmutablePass() == nullptr &&
+          !is_contained(PreservedSet, Entry.first)) {
         // Remove this analysis
         if (PassDebugging >= Details) {
-          Pass *S = Info->second;
+          Pass *S = Entry.second;
           dbgs() << " -- '" << P->getPassName() << "' is not preserving '";
           dbgs() << S->getPassName() << "'\n";
         }
-        IA->erase(Info);
+        ToRemove.push_back(Entry.first);
       }
     }
+    for (AnalysisID ID : ToRemove)
+      IA->erase(ID);
   }
 }
 

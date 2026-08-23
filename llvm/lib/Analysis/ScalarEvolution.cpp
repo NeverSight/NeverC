@@ -8376,8 +8376,9 @@ void ScalarEvolution::visitAndClearUsers(
     ValueExprMapType::iterator It =
         ValueExprMap.find_as(static_cast<Value *>(I));
     if (It != ValueExprMap.end()) {
+      const SCEV *Mapped = It->second;
       eraseValueFromMap(It->first);
-      ToForget.push_back(It->second);
+      ToForget.push_back(Mapped);
       if (PHINode *PN = dyn_cast<PHINode>(I))
         ConstantEvolutionLoopExitValue.erase(PN);
     }

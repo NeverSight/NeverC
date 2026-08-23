@@ -16,6 +16,7 @@
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
@@ -212,11 +213,12 @@ void GlobalsAAResult::DeletionCallbackHandle::deleted() {
       // remove any AllocRelatedValues for it.
       if (GAR->IndirectGlobals.erase(GV)) {
         // Remove any entries in AllocsForIndirectGlobals for this global.
-        for (auto I = GAR->AllocsForIndirectGlobals.begin(),
-                  E = GAR->AllocsForIndirectGlobals.end();
-             I != E; ++I)
-          if (I->second == GV)
-            GAR->AllocsForIndirectGlobals.erase(I);
+        SmallVector<const Value *, 4> ToRemove;
+        for (const auto &Entry : GAR->AllocsForIndirectGlobals)
+          if (Entry.second == GV)
+            ToRemove.push_back(Entry.first);
+        for (const Value *Alloc : ToRemove)
+          GAR->AllocsForIndirectGlobals.erase(Alloc);
       }
 
       // Scan the function info we have collected and remove this global

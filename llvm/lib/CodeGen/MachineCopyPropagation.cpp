@@ -208,7 +208,7 @@ public:
                   // entry also contains the definition record of other Def'
                   // registers, it cannot be cleared.
                   if (SrcCopy->second.DefRegs.empty() && !SrcCopy->second.MI) {
-                    Copies.erase(SrcCopy);
+                    Copies.erase(SrcUnit);
                   }
                   break;
                 }
@@ -217,7 +217,7 @@ public:
           }
         }
         // Now we can erase the copy.
-        Copies.erase(I);
+        Copies.erase(Unit);
       }
     }
   }

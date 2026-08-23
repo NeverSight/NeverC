@@ -15,6 +15,7 @@
 
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -224,14 +225,18 @@ bool MachineLateInstrsCleanup::processBlock(MachineBasicBlock *MBB) {
     }
 
     // Clear any entries in map that MI clobbers.
-    for (auto DefI : llvm::make_early_inc_range(MBBDefs)) {
+    SmallVector<Register, 4> Clobbered;
+    for (const auto &DefI : MBBDefs) {
       Register Reg = DefI.first;
-      if (MI.modifiesRegister(Reg, TRI)) {
-        MBBDefs.erase(Reg);
-        MBBKills.erase(Reg);
-      } else if (MI.findRegisterUseOperandIdx(Reg, true /*isKill*/, TRI) != -1)
+      if (MI.modifiesRegister(Reg, TRI))
+        Clobbered.push_back(Reg);
+      else if (MI.findRegisterUseOperandIdx(Reg, true /*isKill*/, TRI) != -1)
         // Keep track of register kills.
         MBBKills[Reg] = &MI;
+    }
+    for (Register Reg : Clobbered) {
+      MBBDefs.erase(Reg);
+      MBBKills.erase(Reg);
     }
 
     // Record this MI for potential later reuse.
