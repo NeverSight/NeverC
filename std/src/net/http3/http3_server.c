@@ -115,6 +115,7 @@ struct neverc_http3_server {
     _Atomic int running;
     _Atomic int serving;
     _Atomic int stop_requested;
+    _Atomic int shutdown_complete;
     neverc_quic_endpoint_t *endpoint;
     nc_threadpool_t *request_pool;
     h3_conn_t **connections;
@@ -1678,6 +1679,30 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
     nc_mutex_unlock(&server->lock);
 }
 
+static void h3_server_mark_shutdown_complete(neverc_http3_server_t *server) {
+    atomic_store_explicit(&server->shutdown_complete, 1,
+                          memory_order_release);
+    nc_mutex_lock(&server->lock);
+    nc_cond_broadcast(&server->serve_done);
+    nc_mutex_unlock(&server->lock);
+}
+
+static void h3_server_wait_shutdown_complete(neverc_http3_server_t *server) {
+    nc_mutex_lock(&server->lock);
+    while (!atomic_load_explicit(&server->shutdown_complete,
+                                 memory_order_acquire))
+        nc_cond_wait(&server->serve_done, &server->lock);
+    nc_mutex_unlock(&server->lock);
+}
+
+static void h3_server_close_endpoint(neverc_http3_server_t *server) {
+    nc_mutex_lock(&server->lock);
+    neverc_quic_endpoint_t *endpoint = server->endpoint;
+    server->endpoint = NULL;
+    nc_mutex_unlock(&server->lock);
+    if (endpoint) neverc_quic_endpoint_close(endpoint);
+}
+
 static void h3_server_release_connections(neverc_http3_server_t *server) {
     for (size_t i = 0; i < server->connection_count; i++) {
         h3_conn_t *connection = server->connections[i];
@@ -1727,15 +1752,41 @@ void neverc_http3_server_set_max_streams(neverc_http3_server_t *server,
 void neverc_http3_server_stop(neverc_http3_server_t *server) {
     if (!server) return;
     atomic_store_explicit(&server->stop_requested, 1, memory_order_release);
-    if (!atomic_exchange_explicit(&server->running, 0,
-                                  memory_order_acq_rel))
-        return;
-    h3_server_close_connections(server);
-    nc_mutex_lock(&server->lock);
-    neverc_quic_endpoint_t *endpoint = server->endpoint;
-    server->endpoint = NULL;
-    nc_mutex_unlock(&server->lock);
-    if (endpoint) neverc_quic_endpoint_close(endpoint);
+    for (;;) {
+        if (atomic_exchange_explicit(&server->running, 0,
+                                     memory_order_acq_rel)) {
+            /* Close connections and the UDP endpoint before the listen
+             * thread is allowed to release them. endpoint_close wakes
+             * accept(); without this handshake the listen done-path
+             * would free the same quic conns while endpoint_close still
+             * walks them — the sanitizer slow-drain test then sees an
+             * invalid HTTP/3 response. */
+            h3_server_close_connections(server);
+            h3_server_close_endpoint(server);
+            h3_server_mark_shutdown_complete(server);
+            return;
+        }
+        if (atomic_load_explicit(&server->shutdown_complete,
+                                 memory_order_acquire))
+            return;
+        nc_mutex_lock(&server->lock);
+        if (atomic_load_explicit(&server->shutdown_complete,
+                                 memory_order_acquire)) {
+            nc_mutex_unlock(&server->lock);
+            return;
+        }
+        if (atomic_load_explicit(&server->running, memory_order_acquire)) {
+            nc_mutex_unlock(&server->lock);
+            continue;
+        }
+        if (!atomic_load_explicit(&server->serving, memory_order_acquire)) {
+            nc_mutex_unlock(&server->lock);
+            h3_server_mark_shutdown_complete(server);
+            return;
+        }
+        nc_cond_wait(&server->serve_done, &server->lock);
+        nc_mutex_unlock(&server->lock);
+    }
 }
 
 int neverc_http3_server_is_running(const neverc_http3_server_t *server) {
@@ -1757,6 +1808,8 @@ int neverc_http3_listen_and_serve(const char *addr,
         errno = EINVAL;
         return -1;
     }
+    atomic_store_explicit(&server->shutdown_complete, 0,
+                          memory_order_release);
     int result = -1;
     neverc_quic_config_t config = neverc_quic_config_default();
     const char *alpn[] = {"h3", NULL};
@@ -1787,6 +1840,7 @@ int neverc_http3_listen_and_serve(const char *addr,
     }
     server->endpoint = endpoint;
     atomic_store_explicit(&server->running, 1, memory_order_release);
+    nc_cond_broadcast(&server->serve_done);
     nc_mutex_unlock(&server->lock);
     result = 0;
     while (atomic_load_explicit(&server->running, memory_order_acquire)) {
@@ -1837,9 +1891,15 @@ int neverc_http3_listen_and_serve(const char *addr,
         if (server->endpoint == endpoint) server->endpoint = NULL;
         nc_mutex_unlock(&server->lock);
         neverc_quic_endpoint_close(endpoint);
+        h3_server_mark_shutdown_complete(server);
+    } else {
+        h3_server_wait_shutdown_complete(server);
     }
 
 done:
+    if (!atomic_load_explicit(&server->shutdown_complete,
+                              memory_order_acquire))
+        h3_server_mark_shutdown_complete(server);
     h3_server_release_connections(server);
     nc_mutex_lock(&server->lock);
     server->endpoint = NULL;
