@@ -683,10 +683,111 @@ int neverc_os_mkdir_all(const char *path, uint32_t perm) {
     return -1;
 }
 
-int neverc_os_remove(const char *name) {
-    if (!name || name[0] == '\0') return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    /* Go os.Remove: DeleteFile, then RemoveDirectory, then clear readonly. */
+/* Go os.fileStat.Mode: READONLY → 0444, else 0666; directories add 0111. */
+static uint32_t os_win_mode_from_attrs(DWORD attrs, int is_dir) {
+    uint32_t mode = (attrs & FILE_ATTRIBUTE_READONLY) ? 0444U : 0666U;
+    if (is_dir)
+        mode |= NEVERC_OS_MODE_DIR | 0111U;
+    return mode;
+}
+
+/* Drive `C:` / UNC `\\server\share` after FromSlash. */
+static size_t os_win_volume_len(const char *path) {
+    if (!path || !path[0])
+        return 0;
+    if (((path[0] >= 'A' && path[0] <= 'Z') ||
+         (path[0] >= 'a' && path[0] <= 'z')) &&
+        path[1] == ':')
+        return 2;
+    if (path[0] == '\\' && path[1] == '\\') {
+        const char *p = path + 2;
+        while (*p && *p != '\\')
+            p++;
+        if (*p == '\\') {
+            p++;
+            while (*p && *p != '\\')
+                p++;
+        }
+        return (size_t)(p - path);
+    }
+    return 0;
+}
+
+/* Go os.dirname: volume + parent, or "." when the name has no separator. */
+static int os_win_dirname(const char *path, char *out, size_t cap) {
+    size_t vol;
+    size_t n;
+    if (!path || !out || cap == 0)
+        return -1;
+    vol = os_win_volume_len(path);
+    n = strlen(path);
+    while (n > vol && (path[n - 1] == '\\' || path[n - 1] == '/'))
+        n--;
+    while (n > vol && path[n - 1] != '\\' && path[n - 1] != '/')
+        n--;
+    while (n > vol && (path[n - 1] == '\\' || path[n - 1] == '/'))
+        n--;
+    if (n <= vol) {
+        if (vol > 0) {
+            if (vol >= cap)
+                return -1;
+            memcpy(out, path, vol);
+            out[vol] = '\0';
+            return 0;
+        }
+        if (cap < 2)
+            return -1;
+        out[0] = '.';
+        out[1] = '\0';
+        return 0;
+    }
+    if (n >= cap)
+        return -1;
+    memcpy(out, path, n);
+    out[n] = '\0';
+    return 0;
+}
+
+/* Go os.Symlink destpath: resolve a relative oldname against newname. */
+static int os_win_symlink_destpath(const char *oldname, const char *newname,
+                                   char *out, size_t cap) {
+    size_t old_vol;
+    if (!oldname || !newname || !out || cap == 0)
+        return -1;
+    old_vol = os_win_volume_len(oldname);
+    if (old_vol != 0) {
+        size_t n = strlen(oldname);
+        if (n >= cap)
+            return -1;
+        memcpy(out, oldname, n + 1);
+        return 0;
+    }
+    if (oldname[0] == '\\') {
+        size_t new_vol = os_win_volume_len(newname);
+        size_t n = strlen(oldname);
+        if (new_vol + n >= cap)
+            return -1;
+        if (new_vol > 0)
+            memcpy(out, newname, new_vol);
+        memcpy(out + new_vol, oldname, n + 1);
+        return 0;
+    }
+    {
+        char dir[4096];
+        int n;
+        if (os_win_dirname(newname, dir, sizeof(dir)) != 0)
+            return -1;
+        n = snprintf(out, cap, "%s\\%s", dir, oldname);
+        if (n < 0 || (size_t)n >= cap)
+            return -1;
+    }
+    return 0;
+}
+
+/* Go os.Remove / RemoveAll: ACCESS_DENIED on a readonly file or directory
+ * is retried after clearing FILE_ATTRIBUTE_READONLY. */
+static int os_win_delete_path(const char *name) {
     if (DeleteFileA(name)) return 0;
     if (RemoveDirectoryA(name)) return 0;
     if (GetLastError() == ERROR_ACCESS_DENIED) {
@@ -697,7 +798,14 @@ int neverc_os_remove(const char *name) {
             if (DeleteFileA(name) || RemoveDirectoryA(name)) return 0;
         }
     }
-    return os_win_fail();
+    return -1;
+}
+#endif
+
+int neverc_os_remove(const char *name) {
+    if (!name || name[0] == '\0') return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return os_win_delete_path(name) == 0 ? 0 : os_win_fail();
 #else
     return remove(name) == 0 ? 0 : -1;
 #endif
@@ -872,13 +980,10 @@ int neverc_os_remove_all(const char *path) {
         return (error == ERROR_FILE_NOT_FOUND ||
                 error == ERROR_PATH_NOT_FOUND) ? 0 : -1;
     }
-    if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) {
-        BOOL removed = (attrs & FILE_ATTRIBUTE_DIRECTORY)
-            ? RemoveDirectoryA(path) : DeleteFileA(path);
-        return removed ? 0 : -1;
-    }
+    if (attrs & FILE_ATTRIBUTE_REPARSE_POINT)
+        return os_win_delete_path(path) == 0 ? 0 : -1;
     if ((attrs & FILE_ATTRIBUTE_DIRECTORY) == 0)
-        return DeleteFileA(path) ? 0 : -1;
+        return os_win_delete_path(path) == 0 ? 0 : -1;
 
     WIN32_FIND_DATAA fd;
     char pattern[4096];
@@ -901,7 +1006,7 @@ int neverc_os_remove_all(const char *path) {
     FindClose(h);
     if (result != 0)
         return -1;
-    return RemoveDirectoryA(path) ? 0 : -1;
+    return os_win_delete_path(path) == 0 ? 0 : -1;
 #else
     size_t path_len = strlen(path);
     while (path_len > 1 && path[path_len - 1] == '/')
@@ -1023,21 +1128,34 @@ int neverc_os_stat(const char *name, neverc_os_fileinfo_t *info) {
     memset(info, 0, sizeof(*info));
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    struct _stat64 st;
-    if (_stat64(name, &st) != 0) return -1;
-    info->size = st.st_size;
-    info->mode = (uint32_t)(st.st_mode & NEVERC_OS_MODE_PERM);
-    info->mod_time = (int64_t)st.st_mtime;
-    info->is_dir = (st.st_mode & _S_IFDIR) != 0;
-    if (info->is_dir) info->mode |= NEVERC_OS_MODE_DIR;
-#ifdef _S_IFIFO
-    if ((st.st_mode & _S_IFMT) == _S_IFIFO)
+    /* Follow reparse points like Go os.Stat / CreateFile without
+     * FILE_FLAG_OPEN_REPARSE_POINT, then apply Win32 attributes (not CRT
+     * _stat64 0777). */
+    HANDLE h = CreateFileA(name, FILE_READ_ATTRIBUTES,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    BY_HANDLE_FILE_INFORMATION bh;
+    DWORD ftype;
+    LARGE_INTEGER sz;
+    if (h == INVALID_HANDLE_VALUE)
+        return os_win_fail();
+    if (!GetFileInformationByHandle(h, &bh)) {
+        os_win_set_errno();
+        CloseHandle(h);
+        return -1;
+    }
+    ftype = GetFileType(h);
+    CloseHandle(h);
+    sz.HighPart = (LONG)bh.nFileSizeHigh;
+    sz.LowPart = bh.nFileSizeLow;
+    info->size = sz.QuadPart;
+    info->mod_time = os_filetime_unix(bh.ftLastWriteTime);
+    info->is_dir = (bh.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    info->mode = os_win_mode_from_attrs(bh.dwFileAttributes, info->is_dir);
+    if (ftype == FILE_TYPE_PIPE)
         info->mode |= NEVERC_OS_MODE_NAMEDPIPE;
-#endif
-#ifdef _S_IFCHR
-    if ((st.st_mode & _S_IFMT) == _S_IFCHR)
+    else if (ftype == FILE_TYPE_CHAR)
         info->mode |= NEVERC_OS_MODE_DEVICE | NEVERC_OS_MODE_CHARDEVICE;
-#endif
     os_fill_base_name(info->name, sizeof(info->name), name);
     return 0;
 #else
@@ -1063,7 +1181,7 @@ int neverc_os_lstat(const char *name, neverc_os_fileinfo_t *info) {
     int reparse = (attr.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
     info->is_dir = !reparse &&
                    (attr.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-    info->mode = info->is_dir ? (NEVERC_OS_MODE_DIR | 0755U) : 0644U;
+    info->mode = os_win_mode_from_attrs(attr.dwFileAttributes, info->is_dir);
     if (reparse) info->mode |= NEVERC_OS_MODE_SYMLINK;
     os_fill_base_name(info->name, sizeof(info->name), name);
     return 0;
@@ -1495,11 +1613,36 @@ int neverc_os_link(const char *oldname, const char *newname) {
 int neverc_os_symlink(const char *oldname, const char *newname) {
     if (!oldname || !newname) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    DWORD flags = SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
-    DWORD attr = GetFileAttributesA(oldname);
-    if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
-        flags |= SYMBOLIC_LINK_FLAG_DIRECTORY;
-    return CreateSymbolicLinkA(newname, oldname, flags) ? 0 : os_win_fail();
+    {
+        char slashed[4096];
+        char destpath[4096];
+        size_t n = strlen(oldname);
+        size_t i;
+        DWORD flags = SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
+        DWORD attr;
+        if (n >= sizeof(slashed)) {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        memcpy(slashed, oldname, n + 1);
+        for (i = 0; i < n; i++) {
+            if (slashed[i] == '/')
+                slashed[i] = '\\';
+        }
+        if (os_win_symlink_destpath(slashed, newname, destpath,
+                                    sizeof(destpath)) != 0) {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        attr = GetFileAttributesA(destpath);
+        if (attr != INVALID_FILE_ATTRIBUTES &&
+            (attr & FILE_ATTRIBUTE_DIRECTORY))
+            flags |= SYMBOLIC_LINK_FLAG_DIRECTORY;
+        if (CreateSymbolicLinkA(newname, slashed, flags))
+            return 0;
+        flags &= ~(DWORD)SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
+        return CreateSymbolicLinkA(newname, slashed, flags) ? 0 : os_win_fail();
+    }
 #else
     return symlink(oldname, newname) == 0 ? 0 : -1;
 #endif

@@ -739,6 +739,52 @@ static void test_zip64_sentinels(void) {
                   -1);
         neverc_zip_reader_free(&reader);
     }
+
+    /* CVE-2024-24789 other side: a rightmost EOCD whose comment fits but
+     * does not reach EOF must still win. An earlier EOCD whose comment
+     * fills to EOF must not hide the outer directory. */
+    {
+        neverc_zip_writer_t writer;
+        neverc_zip_writer_init(&writer);
+        int built = neverc_zip_writer_add(
+                        &writer, "outer.txt", (const uint8_t *)"OUT", 3) == 0 &&
+                    neverc_zip_writer_close(&writer) == 0;
+        check_int("short-comment fixture", built, 1);
+        if (built && writer.len > 22U && writer.len < UINT16_MAX) {
+            size_t zip_len = writer.len;
+            size_t total = 22U + zip_len + 1U;
+            uint8_t *poly = (uint8_t *)malloc(total);
+            uint16_t inner_comment;
+            if (!poly) {
+                check_int("short-comment allocation", 0, 1);
+            } else {
+                memset(poly, 0, 22U);
+                poly[0] = 0x50;
+                poly[1] = 0x4b;
+                poly[2] = 0x05;
+                poly[3] = 0x06;
+                inner_comment = (uint16_t)(zip_len + 1U);
+                poly[20] = (uint8_t)inner_comment;
+                poly[21] = (uint8_t)(inner_comment >> 8);
+                memcpy(poly + 22U, writer.data, zip_len);
+                poly[22U + zip_len] = 0x58;
+                check_int("short comment keeps rightmost eocd",
+                          neverc_zip_reader_init(&reader, poly, total), 0);
+                check_int("outer file count",
+                          neverc_zip_reader_count(&reader), 1);
+                {
+                    const neverc_zip_file_header_t *f =
+                        neverc_zip_reader_file(&reader, 0);
+                    check_int("outer file exists", f != NULL, 1);
+                    if (f)
+                        check_str("outer name", f->name, "outer.txt");
+                }
+                neverc_zip_reader_free(&reader);
+                free(poly);
+            }
+        }
+        neverc_zip_writer_free(&writer);
+    }
 }
 
 int main(void) {

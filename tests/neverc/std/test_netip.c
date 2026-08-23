@@ -233,6 +233,19 @@ static void test_compare(void) {
     ASSERT_TRUE(!neverc_netip_addr_equal(&a, &b));
     ASSERT_TRUE(neverc_netip_addr_compare(&a, &b) != 0);
     ASSERT_TRUE(neverc_netip_addr_equal(&a, &a));
+
+    /* Go netip.Addr.Compare: invalid/zero sorts before :: */
+    neverc_netip_addr_t invalid;
+    memset(&invalid, 0, sizeof(invalid));
+    neverc_netip_addr_t unspecified;
+    neverc_netip_parse_addr("::", &unspecified);
+    ASSERT_TRUE(!neverc_netip_addr_is_valid(&invalid));
+    ASSERT_TRUE(neverc_netip_addr_is_valid(&unspecified));
+    ASSERT_TRUE(neverc_netip_addr_compare(&invalid, &unspecified) < 0);
+    ASSERT_TRUE(neverc_netip_addr_compare(&unspecified, &invalid) > 0);
+    ASSERT_TRUE(!neverc_netip_addr_equal(&invalid, &unspecified));
+    ASSERT_TRUE(neverc_netip_addr_compare(&invalid, &invalid) == 0);
+    ASSERT_TRUE(neverc_netip_addr_equal(&invalid, &invalid));
 }
 
 static void test_prefix(void) {

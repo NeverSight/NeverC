@@ -51,6 +51,9 @@ struct neverc_context {
     volatile int32_t refs;
     volatile int32_t cancelled;
     volatile int32_t deadline_latched;
+    /* Go WithDeadline on an already-canceled parent records Canceled
+     * first; an already-past child deadline must not replace it. */
+    int suppress_deadline_err;
 #if defined(_MSC_VER) && !defined(__clang__)
     __declspec(align(8)) volatile int64_t cancel_at;
 #else
@@ -71,6 +74,15 @@ static neverc_context_t *ctx_retain(neverc_context_t *ctx) {
     if (ctx)
         (void)NEVERC_ATOMIC_ADD32(&ctx->refs, 1);
     return ctx;
+}
+
+static const char *ctx_reason(const neverc_context_t *ctx, const char **cause_out);
+
+static int ctx_parent_canceled(const neverc_context_t *parent) {
+    /* Go WithDeadlineCause: a parent that is already done (Canceled or
+     * DeadlineExceeded) keeps its Err/Cause; the child's expired sentinel
+     * must not overwrite it. */
+    return ctx_reason(parent, NULL) != NULL;
 }
 
 static neverc_context_t *ctx_create(ctx_kind_t kind,
@@ -245,6 +257,8 @@ static neverc_context_t *ctx_with_cancel_handle(
     if (!ctx)
         return NULL;
     ctx->deadline_ms = deadline_ms;
+    if (kind == CTX_TIMEOUT && ctx_parent_canceled(parent))
+        ctx->suppress_deadline_err = 1;
 
     neverc_context_cancel_handle_t *handle =
         (neverc_context_cancel_handle_t *)calloc(1, sizeof(*handle));
@@ -302,6 +316,8 @@ neverc_context_t *neverc_context_with_timeout(neverc_context_t *parent,
         return NULL;
     }
     ctx->deadline_ms = deadline_after(timeout_ms);
+    if (ctx_parent_canceled(parent))
+        ctx->suppress_deadline_err = 1;
     if (bind_cancel_func(ctx, cancel_out) != 0) {
         neverc_context_free(ctx);
         return NULL;
@@ -320,6 +336,8 @@ neverc_context_t *neverc_context_with_deadline(neverc_context_t *parent,
     /* A non-positive absolute deadline is already in the past. Store 1 so
      * done/err/cause treat it as expired (same as with_timeout(INT64_MIN)). */
     ctx->deadline_ms = deadline_ms <= 0 ? 1 : deadline_ms;
+    if (ctx_parent_canceled(parent))
+        ctx->suppress_deadline_err = 1;
     if (bind_cancel_func(ctx, cancel_out) != 0) {
         neverc_context_free(ctx);
         return NULL;
@@ -338,6 +356,8 @@ neverc_context_t *neverc_context_with_timeout_cause(neverc_context_t *parent,
     }
     ctx->deadline_ms = deadline_after(timeout_ms);
     ctx->cause = cause;
+    if (ctx_parent_canceled(parent))
+        ctx->suppress_deadline_err = 1;
     if (bind_cancel_func(ctx, cancel_out) != 0) {
         neverc_context_free(ctx);
         return NULL;
@@ -356,6 +376,8 @@ neverc_context_t *neverc_context_with_deadline_cause(neverc_context_t *parent,
     }
     ctx->deadline_ms = deadline_ms <= 0 ? 1 : deadline_ms;
     ctx->cause = cause;
+    if (ctx_parent_canceled(parent))
+        ctx->suppress_deadline_err = 1;
     if (bind_cancel_func(ctx, cancel_out) != 0) {
         neverc_context_free(ctx);
         return NULL;
@@ -405,7 +427,8 @@ static const char *ctx_reason(const neverc_context_t *ctx, const char **cause_ou
             else
                 cause = ctx->cause ? ctx->cause : err;
         }
-        if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0) {
+        if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0 &&
+            !ctx->suppress_deadline_err) {
             neverc_context_t *mut = (neverc_context_t *)ctx;
             int latched = NEVERC_ATOMIC_LOAD32(&mut->deadline_latched);
             if (!latched && now >= ctx->deadline_ms) {

@@ -12,6 +12,14 @@
   #include <io.h>
   #include <sys/stat.h>
   #include <sys/types.h>
+
+/* Go os.fileStat.Mode: READONLY → 0444, else 0666; directories add 0111. */
+static uint32_t fs_win_mode_from_attrs(DWORD attrs, int is_dir) {
+    uint32_t mode = (attrs & FILE_ATTRIBUTE_READONLY) ? 0444U : 0666U;
+    if (is_dir)
+        mode |= (uint32_t)NEVERC_FS_MODE_DIR | 0111U;
+    return mode;
+}
 #else
   #include <sys/stat.h>
   #include <dirent.h>
@@ -385,7 +393,7 @@ static int fs_stat_win(const char *path, neverc_fs_file_info_t *info, int follow
     int reparse = (bh.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
     info->is_dir = (bh.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
                    (follow || !reparse);
-    info->mode = info->is_dir ? (uint32_t)(NEVERC_FS_MODE_DIR | 0755) : 0644U;
+    info->mode = fs_win_mode_from_attrs(bh.dwFileAttributes, info->is_dir);
     if (!follow && reparse)
         info->mode |= NEVERC_FS_MODE_LINK;
     return 0;
@@ -641,7 +649,7 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
             int reparse = (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
             e->is_dir = !reparse &&
                         (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-            e->mode = e->is_dir ? NEVERC_FS_MODE_DIR | 0755 : 0644;
+            e->mode = fs_win_mode_from_attrs(fd.dwFileAttributes, e->is_dir);
             if (reparse) e->mode |= NEVERC_FS_MODE_LINK;
         }
         (*count)++;

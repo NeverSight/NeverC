@@ -235,6 +235,74 @@ static void test_parent_cancel_outranks_later_child_deadline(void) {
     neverc_context_free(bg);
 }
 
+static void test_parent_cancel_outranks_already_expired_child_deadline(void) {
+    printf("[parent_cancel_outranks_expired_child_deadline]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_cancel_func_t cancel = NULL;
+    neverc_context_t *parent =
+        neverc_context_with_cancel_cause(bg, &cancel, "parent canceled");
+    cancel();
+    ASSERT_INT_EQ(neverc_context_done(parent), 1);
+    ASSERT_TRUE(strcmp(neverc_context_err(parent), "context canceled") == 0);
+
+    /* Go WithDeadline(already-canceled parent, past time): Err is Canceled. */
+    neverc_context_t *child =
+        neverc_context_with_deadline(parent, 1, NULL);
+    ASSERT_TRUE(child != NULL);
+    ASSERT_INT_EQ(neverc_context_done(child), 1);
+    ASSERT_TRUE(neverc_context_err(child) != NULL);
+    ASSERT_TRUE(strcmp(neverc_context_err(child), "context canceled") == 0);
+    ASSERT_TRUE(neverc_context_cause(child) != NULL);
+    ASSERT_TRUE(strcmp(neverc_context_cause(child), "parent canceled") == 0);
+
+    neverc_context_t *timed = neverc_context_with_timeout_cause(
+        parent, 1, NULL, "child timeout");
+    ASSERT_TRUE(timed != NULL);
+    ASSERT_TRUE(strcmp(neverc_context_err(timed), "context canceled") == 0);
+    ASSERT_TRUE(strcmp(neverc_context_cause(timed), "parent canceled") == 0);
+
+    neverc_context_free(timed);
+    neverc_context_free(child);
+    neverc_context_free(parent);
+    neverc_context_free(bg);
+}
+
+static void test_parent_deadline_outranks_already_expired_child_deadline(void) {
+    printf("[parent_deadline_outranks_expired_child_deadline]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_context_t *parent =
+        neverc_context_with_deadline_cause(bg, 1, NULL, "parent deadline");
+    ASSERT_TRUE(parent != NULL);
+    ASSERT_INT_EQ(neverc_context_done(parent), 1);
+    ASSERT_TRUE(strcmp(neverc_context_err(parent),
+                       "context deadline exceeded") == 0);
+    ASSERT_TRUE(strcmp(neverc_context_cause(parent), "parent deadline") == 0);
+
+    /* Go WithDeadline(already-expired parent, past time): Err stays the
+     * parent's deadline; the child's expired sentinel must not win. */
+    neverc_context_t *child =
+        neverc_context_with_deadline_cause(parent, 1, NULL, "child deadline");
+    ASSERT_TRUE(child != NULL);
+    ASSERT_INT_EQ(neverc_context_done(child), 1);
+    ASSERT_TRUE(neverc_context_err(child) != NULL);
+    ASSERT_TRUE(strcmp(neverc_context_err(child),
+                       "context deadline exceeded") == 0);
+    ASSERT_TRUE(neverc_context_cause(child) != NULL);
+    ASSERT_TRUE(strcmp(neverc_context_cause(child), "parent deadline") == 0);
+
+    neverc_context_t *timed = neverc_context_with_timeout_cause(
+        parent, -1, NULL, "child timeout");
+    ASSERT_TRUE(timed != NULL);
+    ASSERT_TRUE(strcmp(neverc_context_err(timed),
+                       "context deadline exceeded") == 0);
+    ASSERT_TRUE(strcmp(neverc_context_cause(timed), "parent deadline") == 0);
+
+    neverc_context_free(timed);
+    neverc_context_free(child);
+    neverc_context_free(parent);
+    neverc_context_free(bg);
+}
+
 static void test_deadline_outranks_later_cancel(void) {
     printf("[deadline_outranks_later_cancel]\n");
     neverc_context_t *bg = neverc_context_background();
@@ -885,6 +953,8 @@ int main(void) {
     test_with_cancel();
     test_cancel_propagates_to_child();
     test_parent_cancel_outranks_later_child_deadline();
+    test_parent_cancel_outranks_already_expired_child_deadline();
+    test_parent_deadline_outranks_already_expired_child_deadline();
     test_deadline_outranks_later_cancel();
     test_multiple_cancels();
     test_cancel_idempotent();

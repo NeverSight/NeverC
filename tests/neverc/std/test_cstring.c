@@ -219,6 +219,14 @@ static void test_to_upper(void) {
     r = neverc_cstring_to_upper("123abc");
     check_str("to_upper digits", r, "123ABC");
     free(r);
+
+    /* Go strings.ToUpper: Map through unicode, not ASCII-only. */
+    r = neverc_cstring_to_upper("\xC3\xBC" "ber");
+    check_str("to_upper umlaut", r, "\xC3\x9C" "BER");
+    free(r);
+    r = neverc_cstring_to_upper("\xFF");
+    check_str("to_upper invalid utf8", r, "\xEF\xBF\xBD");
+    free(r);
 }
 
 static void test_to_lower(void) {
@@ -235,6 +243,10 @@ static void test_to_lower(void) {
 
     r = neverc_cstring_to_lower("");
     check_str("to_lower empty", r, "");
+    free(r);
+
+    r = neverc_cstring_to_lower("\xC4\xB0");
+    check_str("to_lower dotted I", r, "i");
     free(r);
 }
 
@@ -277,6 +289,10 @@ static void test_to_title(void) {
     free(r);
     r = neverc_cstring_to_title("\xC5\xBF" "word");
     check_str("to_title long s width", r, "Sword");
+    free(r);
+    /* Split hex so `\xFF` is not parsed as `\xFFh`. */
+    r = neverc_cstring_to_title("\xFF" "hello");
+    check_str("to_title invalid utf8 not sep", r, "\xEF\xBF\xBD" "hello");
     free(r);
 }
 

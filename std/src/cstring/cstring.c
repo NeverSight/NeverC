@@ -41,14 +41,6 @@ static char *nc_strdup(const char *s, size_t len) {
     return r;
 }
 
-static char to_lower_ch(char c) {
-    return (c >= 'A' && c <= 'Z') ? (char)(c + ('a' - 'A')) : c;
-}
-
-static char to_upper_ch(char c) {
-    return (c >= 'a' && c <= 'z') ? (char)(c - ('a' - 'A')) : c;
-}
-
 static int is_separator(char c) {
     if (c >= '0' && c <= '9') return 0;
     if (c >= 'a' && c <= 'z') return 0;
@@ -295,24 +287,64 @@ int neverc_cstring_has_suffix(const char *s, const char *suffix) {
  * Transform
  * ====================================================================== */
 
-char *neverc_cstring_to_upper(const char *s) {
+/* Go strings.ToUpper/ToLower: ASCII stays in place; otherwise Map each
+ * rune through unicode.ToUpper/ToLower. Invalid UTF-8 becomes U+FFFD. */
+static char *cstring_map_case(const char *s, uint32_t (*map_fn)(uint32_t)) {
     s = nc_s(s);
     size_t len = strlen(s);
-    char *r = nc_alloc_string(len);
+    int ascii = 1;
+    for (size_t i = 0; i < len; i++) {
+        if ((unsigned char)s[i] >= 0x80) {
+            ascii = 0;
+            break;
+        }
+    }
+    if (ascii) {
+        char *r = nc_alloc_string(len);
+        if (!r) return NULL;
+        for (size_t i = 0; i < len; i++)
+            r[i] = (char)map_fn((unsigned char)s[i]);
+        r[len] = '\0';
+        return r;
+    }
+    size_t need = 0;
+    size_t i = 0;
+    while (i < len) {
+        uint32_t rune = 0;
+        size_t n = utf8_decode((const uint8_t *)s + i, len - i, &rune);
+        if (n == 0) {
+            rune = 0xFFFD;
+            n = 1;
+        }
+        uint8_t tmp[4];
+        size_t wn = cstring_utf8_encode(map_fn(rune), tmp);
+        if (!nc_size_add(need, wn, &need)) return NULL;
+        i += n;
+    }
+    char *r = nc_alloc_string(need);
     if (!r) return NULL;
-    for (size_t i = 0; i < len; i++) r[i] = to_upper_ch(s[i]);
-    r[len] = '\0';
+    size_t o = 0;
+    i = 0;
+    while (i < len) {
+        uint32_t rune = 0;
+        size_t n = utf8_decode((const uint8_t *)s + i, len - i, &rune);
+        if (n == 0) {
+            rune = 0xFFFD;
+            n = 1;
+        }
+        o += cstring_utf8_encode(map_fn(rune), (uint8_t *)r + o);
+        i += n;
+    }
+    r[need] = '\0';
     return r;
 }
 
+char *neverc_cstring_to_upper(const char *s) {
+    return cstring_map_case(s, neverc_unicode_to_upper);
+}
+
 char *neverc_cstring_to_lower(const char *s) {
-    s = nc_s(s);
-    size_t len = strlen(s);
-    char *r = nc_alloc_string(len);
-    if (!r) return NULL;
-    for (size_t i = 0; i < len; i++) r[i] = to_lower_ch(s[i]);
-    r[len] = '\0';
-    return r;
+    return cstring_map_case(s, neverc_unicode_to_lower);
 }
 
 char *neverc_cstring_to_title(const char *s) {
@@ -326,10 +358,12 @@ char *neverc_cstring_to_title(const char *s) {
         size_t n = utf8_decode((const uint8_t *)s + i, len - i, &rune);
         size_t wn;
         if (n == 0) {
+            /* Go strings.Map: invalid UTF-8 becomes U+FFFD, which is not
+             * a separator, so the next letter is not titled. */
+            rune = 0xFFFD;
             n = 1;
-            wn = 1;
-            prev_sep = 1;
-        } else {
+        }
+        {
             uint32_t titled = prev_sep ? neverc_unicode_to_title(rune) : rune;
             uint8_t tmp[4];
             wn = cstring_utf8_encode(titled, tmp);
@@ -347,15 +381,15 @@ char *neverc_cstring_to_title(const char *s) {
         uint32_t rune = 0;
         size_t n = utf8_decode((const uint8_t *)s + i, len - i, &rune);
         if (n == 0) {
-            r[o++] = s[i];
-            prev_sep = 1;
-            i += 1;
-            continue;
+            rune = 0xFFFD;
+            n = 1;
         }
-        uint32_t titled = prev_sep ? neverc_unicode_to_title(rune) : rune;
-        o += cstring_utf8_encode(titled, (uint8_t *)r + o);
-        prev_sep = is_separator_rune(rune);
-        i += n;
+        {
+            uint32_t titled = prev_sep ? neverc_unicode_to_title(rune) : rune;
+            o += cstring_utf8_encode(titled, (uint8_t *)r + o);
+            prev_sep = is_separator_rune(rune);
+            i += n;
+        }
     }
     r[need] = '\0';
     return r;

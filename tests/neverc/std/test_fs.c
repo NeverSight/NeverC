@@ -7,6 +7,11 @@
 #if !defined(_WIN32)
 #include <sys/stat.h>
 #include <unistd.h>
+#else
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #endif
 
 static int tests_run = 0, tests_passed = 0;
@@ -100,7 +105,34 @@ static void test_stat(void) {
         check("lstat_tmp", rc == 0);
         check("lstat_tmp_is_dir", linfo.is_dir == 1);
         check("lstat_tmp_name_match", strcmp(linfo.name, tmp_name) == 0);
+        check("lstat_tmp_dir_exec", (linfo.mode & 0111) == 0111);
     }
+
+#if defined(_WIN32)
+    {
+        char ropath[2048];
+        snprintf(ropath, sizeof(ropath), "%s\\neverc_test_fs_ro.txt", tmpdir);
+        FILE *rf = fopen(ropath, "wb");
+        if (rf) {
+            fputs("ro", rf);
+            fclose(rf);
+        }
+        if (SetFileAttributesA(ropath, FILE_ATTRIBUTE_NORMAL)) {
+            neverc_fs_file_info_t rw;
+            check("lstat_writable", neverc_fs_lstat(ropath, &rw) == 0);
+            check("lstat_writable_perm",
+                  (rw.mode & NEVERC_FS_PERM_MASK) == 0666);
+        }
+        if (SetFileAttributesA(ropath, FILE_ATTRIBUTE_READONLY)) {
+            neverc_fs_file_info_t ro;
+            check("lstat_readonly", neverc_fs_lstat(ropath, &ro) == 0);
+            check("lstat_readonly_perm",
+                  (ro.mode & NEVERC_FS_PERM_MASK) == 0444);
+            SetFileAttributesA(ropath, FILE_ATTRIBUTE_NORMAL);
+        }
+        DeleteFileA(ropath);
+    }
+#endif
 
     {
         char slashed[1100];
@@ -219,6 +251,48 @@ static void test_read_dir(void) {
         }
         neverc_fs_free_entries(entries);
         DeleteFileA(raw);
+        RemoveDirectoryA(parent);
+    }
+    {
+        char parent[1024], rwpath[1200], ropath[1200];
+        snprintf(parent, sizeof(parent), "%s\\neverc_fs_rd_mode_%lu",
+                 tmpdir, (unsigned long)GetCurrentProcessId());
+        CreateDirectoryA(parent, NULL);
+        snprintf(rwpath, sizeof(rwpath), "%s\\rw.txt", parent);
+        snprintf(ropath, sizeof(ropath), "%s\\ro.txt", parent);
+        {
+            FILE *wf = fopen(rwpath, "wb");
+            if (wf) { fputs("rw", wf); fclose(wf); }
+            FILE *rf = fopen(ropath, "wb");
+            if (rf) { fputs("ro", rf); fclose(rf); }
+        }
+        SetFileAttributesA(rwpath, FILE_ATTRIBUTE_NORMAL);
+        SetFileAttributesA(ropath, FILE_ATTRIBUTE_READONLY);
+        entries = NULL;
+        count = 0;
+        rc = neverc_fs_read_dir(parent, &entries, &count);
+        check("readdir_mode_ok", rc == 0);
+        {
+            int saw_rw = 0, saw_ro = 0, i;
+            for (i = 0; i < (int)count; i++) {
+                if (strcmp(entries[i].name, "rw.txt") == 0) {
+                    saw_rw = 1;
+                    check("readdir_writable_perm",
+                          (entries[i].mode & NEVERC_FS_PERM_MASK) == 0666);
+                }
+                if (strcmp(entries[i].name, "ro.txt") == 0) {
+                    saw_ro = 1;
+                    check("readdir_readonly_perm",
+                          (entries[i].mode & NEVERC_FS_PERM_MASK) == 0444);
+                }
+            }
+            check("readdir_saw_rw", saw_rw);
+            check("readdir_saw_ro", saw_ro);
+        }
+        neverc_fs_free_entries(entries);
+        SetFileAttributesA(ropath, FILE_ATTRIBUTE_NORMAL);
+        DeleteFileA(rwpath);
+        DeleteFileA(ropath);
         RemoveDirectoryA(parent);
     }
     {

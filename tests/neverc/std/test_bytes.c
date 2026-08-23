@@ -168,6 +168,17 @@ static void test_transform(void) {
     check_bytes("to_lower", lower, outlen, "hello, world!");
     free(lower);
 
+    /* Go bytes.ToUpper/ToLower: Map through unicode, not ASCII-only. */
+    upper = neverc_bytes_to_upper((const uint8_t *)"\xC3\xBC" "ber", 5, &outlen);
+    check_bytes("to_upper umlaut", upper, outlen, "\xC3\x9C" "BER");
+    free(upper);
+    lower = neverc_bytes_to_lower((const uint8_t *)"\xC4\xB0", 2, &outlen);
+    check_bytes("to_lower dotted I", lower, outlen, "i");
+    free(lower);
+    upper = neverc_bytes_to_upper((const uint8_t *)"\xFF", 1, &outlen);
+    check_bytes("to_upper invalid utf8", upper, outlen, "\xEF\xBF\xBD");
+    free(upper);
+
     uint8_t *title = neverc_bytes_to_title(B("hello world"), &outlen);
     check_bytes("to_title", title, outlen, "Hello World");
     free(title);
@@ -195,6 +206,12 @@ static void test_transform(void) {
     /* U+017F long s titles to 'S' and shrinks from 2 UTF-8 bytes to 1. */
     title = neverc_bytes_to_title((const uint8_t *)"\xC5\xBF" "word", 6, &outlen);
     check_bytes("to_title long s width", title, outlen, "Sword");
+    free(title);
+    /* Split hex so `\xFF` is not parsed as `\xFFh`. U+FFFD is not a
+     * separator, so the following letter stays lowercase. */
+    title = neverc_bytes_to_title((const uint8_t *)"\xFF" "hello", 6, &outlen);
+    check_bytes("to_title invalid utf8 not sep", title, outlen,
+                "\xEF\xBF\xBD" "hello");
     free(title);
 
     uint8_t *rep = neverc_bytes_repeat(B("ab"), 3, &outlen);

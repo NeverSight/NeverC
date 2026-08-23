@@ -338,11 +338,14 @@ static int httptest_parse_request(const char *raw, size_t raw_length,
                 return -1;
             }
             size_t chunk = 0;
+            size_t digits = 0;
             const char *p = cursor;
             if (p == line_end) {
                 free(decoded);
                 return -2;
             }
+            /* Go net/http/internal/chunked parseHexUint: a size line with
+             * no hex digits (`;ext`) is invalid, not a last-chunk of 0. */
             while (p < line_end && *p != ';') {
                 unsigned char c = (unsigned char)*p++;
                 unsigned digit;
@@ -358,6 +361,11 @@ static int httptest_parse_request(const char *raw, size_t raw_length,
                     return -2;
                 }
                 chunk = chunk * 16U + digit;
+                digits++;
+            }
+            if (digits == 0) {
+                free(decoded);
+                return -2;
             }
             cursor = line_end + 2;
             if (chunk == 0) {

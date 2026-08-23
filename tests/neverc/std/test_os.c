@@ -7,6 +7,11 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#else
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -461,6 +466,127 @@ static void test_remove_all_rejects_dot(void) {
         ASSERT_EQ(neverc_os_remove_all(parent), 0);
     }
 }
+
+#if defined(_WIN32)
+static void test_lstat_windows_perm_from_attributes(void) {
+    printf("[lstat windows perm from attributes]\n");
+    char path[1024];
+    make_test_path(path, sizeof(path), "neverc_test_os_lstat_mode.txt");
+    neverc_os_remove(path);
+    ASSERT_EQ(neverc_os_write_file(
+                  path, (const unsigned char *)"m", 1, 0666), 0);
+
+    neverc_os_fileinfo_t info;
+    ASSERT_TRUE(SetFileAttributesA(path, FILE_ATTRIBUTE_NORMAL));
+    ASSERT_EQ(neverc_os_lstat(path, &info), 0);
+    ASSERT_EQ((int)(info.mode & NEVERC_OS_MODE_PERM), 0666);
+
+    ASSERT_TRUE(SetFileAttributesA(path, FILE_ATTRIBUTE_READONLY));
+    ASSERT_EQ(neverc_os_lstat(path, &info), 0);
+    ASSERT_EQ((int)(info.mode & NEVERC_OS_MODE_PERM), 0444);
+
+    SetFileAttributesA(path, FILE_ATTRIBUTE_NORMAL);
+    neverc_os_remove(path);
+
+    char dirbuf[1024];
+    make_test_path(dirbuf, sizeof(dirbuf), "neverc_test_os_lstat_dir_mode");
+    neverc_os_remove_all(dirbuf);
+    ASSERT_EQ(neverc_os_mkdir(dirbuf, 0700), 0);
+    ASSERT_EQ(neverc_os_lstat(dirbuf, &info), 0);
+    ASSERT_TRUE((info.mode & NEVERC_OS_MODE_DIR) != 0);
+    ASSERT_TRUE((info.mode & 0111U) == 0111U);
+    neverc_os_remove_all(dirbuf);
+}
+
+static void test_stat_windows_perm_from_attributes(void) {
+    printf("[stat windows perm from attributes]\n");
+    char path[1024];
+    make_test_path(path, sizeof(path), "neverc_test_os_stat_mode.txt");
+    neverc_os_remove(path);
+    ASSERT_EQ(neverc_os_write_file(
+                  path, (const unsigned char *)"m", 1, 0666), 0);
+
+    neverc_os_fileinfo_t info;
+    ASSERT_TRUE(SetFileAttributesA(path, FILE_ATTRIBUTE_NORMAL));
+    ASSERT_EQ(neverc_os_stat(path, &info), 0);
+    ASSERT_EQ((int)(info.mode & NEVERC_OS_MODE_PERM), 0666);
+
+    ASSERT_TRUE(SetFileAttributesA(path, FILE_ATTRIBUTE_READONLY));
+    ASSERT_EQ(neverc_os_stat(path, &info), 0);
+    ASSERT_EQ((int)(info.mode & NEVERC_OS_MODE_PERM), 0444);
+
+    SetFileAttributesA(path, FILE_ATTRIBUTE_NORMAL);
+    neverc_os_remove(path);
+
+    char dirbuf[1024];
+    make_test_path(dirbuf, sizeof(dirbuf), "neverc_test_os_stat_dir_mode");
+    neverc_os_remove_all(dirbuf);
+    ASSERT_EQ(neverc_os_mkdir(dirbuf, 0700), 0);
+    ASSERT_EQ(neverc_os_stat(dirbuf, &info), 0);
+    ASSERT_TRUE((info.mode & NEVERC_OS_MODE_DIR) != 0);
+    ASSERT_TRUE((info.mode & 0111U) == 0111U);
+    neverc_os_remove_all(dirbuf);
+}
+
+static void test_symlink_windows_fromslash_and_relative_dir(void) {
+    printf("[symlink windows fromslash and relative dir]\n");
+    char parent[1024], subdir[1200], linkp[1200], slash_tgt[2048];
+    char got[2048];
+    neverc_os_fileinfo_t info;
+    size_t i;
+
+    make_test_path(parent, sizeof(parent), "neverc_test_os_sym_rel");
+    neverc_os_remove_all(parent);
+    ASSERT_EQ(neverc_os_mkdir(parent, 0700), 0);
+    snprintf(subdir, sizeof(subdir), "%s\\subdir", parent);
+    snprintf(linkp, sizeof(linkp), "%s\\link", parent);
+    ASSERT_EQ(neverc_os_mkdir(subdir, 0700), 0);
+
+    if (neverc_os_symlink("subdir", linkp) != 0) {
+        printf("  skip: symlink not permitted\n");
+        neverc_os_remove_all(parent);
+        return;
+    }
+    ASSERT_EQ(neverc_os_stat(linkp, &info), 0);
+    ASSERT_TRUE(info.is_dir);
+    ASSERT_TRUE((info.mode & NEVERC_OS_MODE_DIR) != 0);
+    neverc_os_remove(linkp);
+
+    if (strlen(subdir) >= sizeof(slash_tgt)) {
+        neverc_os_remove_all(parent);
+        return;
+    }
+    memcpy(slash_tgt, subdir, strlen(subdir) + 1);
+    for (i = 0; slash_tgt[i]; i++) {
+        if (slash_tgt[i] == '\\')
+            slash_tgt[i] = '/';
+    }
+    if (neverc_os_symlink(slash_tgt, linkp) != 0) {
+        printf("  skip: slash symlink not permitted\n");
+        neverc_os_remove_all(parent);
+        return;
+    }
+    ASSERT_EQ(neverc_os_readlink(linkp, got, sizeof(got)), 0);
+    ASSERT_TRUE(strchr(got, '/') == NULL);
+    ASSERT_TRUE(strchr(got, '\\') != NULL);
+    neverc_os_remove_all(parent);
+}
+
+static void test_remove_all_clears_readonly(void) {
+    printf("[remove all clears readonly]\n");
+    char parent[1024], filebuf[1200];
+    make_test_path(parent, sizeof(parent), "neverc_test_rm_readonly");
+    neverc_os_remove_all(parent);
+    ASSERT_EQ(neverc_os_mkdir(parent, 0700), 0);
+    snprintf(filebuf, sizeof(filebuf), "%s\\ro.txt", parent);
+    ASSERT_EQ(neverc_os_write_file(
+                  filebuf, (const unsigned char *)"ro", 2, 0600), 0);
+    ASSERT_TRUE(SetFileAttributesA(filebuf, FILE_ATTRIBUTE_READONLY));
+    ASSERT_EQ(neverc_os_remove_all(parent), 0);
+    ASSERT_TRUE(!neverc_os_exists(parent));
+    ASSERT_TRUE(!neverc_os_exists(filebuf));
+}
+#endif
 
 static void test_rename(void) {
     printf("[rename]\n");
@@ -1055,6 +1181,12 @@ int main(void) {
     test_remove_all_does_not_follow_symlinks();
 #endif
     test_remove_all_rejects_dot();
+#if defined(_WIN32)
+    test_lstat_windows_perm_from_attributes();
+    test_stat_windows_perm_from_attributes();
+    test_symlink_windows_fromslash_and_relative_dir();
+    test_remove_all_clears_readonly();
+#endif
     test_rename();
     test_process();
     test_temp();

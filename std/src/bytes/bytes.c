@@ -448,26 +448,51 @@ int neverc_bytes_has_suffix(const uint8_t *s, size_t slen,
 
 /* --- Transform --- */
 
-uint8_t *neverc_bytes_to_upper(const uint8_t *s, size_t slen, size_t *outlen) {
+/* Go bytes.ToUpper/ToLower: ASCII stays in place; otherwise Map each
+ * rune through unicode.ToUpper/ToLower. Invalid UTF-8 becomes U+FFFD. */
+static uint8_t *bytes_map_case(const uint8_t *s, size_t slen, size_t *outlen,
+                               uint32_t (*map_fn)(uint32_t)) {
     if (!outlen || !bytes_span_valid(s, slen)) return NULL;
     *outlen = 0;
-    uint8_t *r = bytes_alloc(slen);
+    if (bytes_ascii_span(s, slen)) {
+        uint8_t *r = bytes_alloc(slen);
+        if (!r) return NULL;
+        for (size_t i = 0; i < slen; i++)
+            r[i] = (uint8_t)map_fn(s[i]);
+        *outlen = slen;
+        return r;
+    }
+    size_t need = 0;
+    size_t i = 0;
+    while (i < slen) {
+        uint32_t rune;
+        size_t n = bytes_decode_rune(s + i, slen - i, &rune);
+        uint8_t tmp[4];
+        size_t wn = utf8_encode(map_fn(rune), tmp);
+        if (need > SIZE_MAX - wn) return NULL;
+        need += wn;
+        i += n;
+    }
+    uint8_t *r = bytes_alloc(need);
     if (!r) return NULL;
-    for (size_t i = 0; i < slen; i++)
-        r[i] = (s[i] >= 'a' && s[i] <= 'z') ? s[i] - 32 : s[i];
-    *outlen = slen;
+    size_t o = 0;
+    i = 0;
+    while (i < slen) {
+        uint32_t rune;
+        size_t n = bytes_decode_rune(s + i, slen - i, &rune);
+        o += utf8_encode(map_fn(rune), r + o);
+        i += n;
+    }
+    *outlen = need;
     return r;
 }
 
+uint8_t *neverc_bytes_to_upper(const uint8_t *s, size_t slen, size_t *outlen) {
+    return bytes_map_case(s, slen, outlen, neverc_unicode_to_upper);
+}
+
 uint8_t *neverc_bytes_to_lower(const uint8_t *s, size_t slen, size_t *outlen) {
-    if (!outlen || !bytes_span_valid(s, slen)) return NULL;
-    *outlen = 0;
-    uint8_t *r = bytes_alloc(slen);
-    if (!r) return NULL;
-    for (size_t i = 0; i < slen; i++)
-        r[i] = (s[i] >= 'A' && s[i] <= 'Z') ? s[i] + 32 : s[i];
-    *outlen = slen;
-    return r;
+    return bytes_map_case(s, slen, outlen, neverc_unicode_to_lower);
 }
 
 /* Go bytes.Title / strings.Title isSeparator. */
@@ -496,10 +521,12 @@ uint8_t *neverc_bytes_to_title(const uint8_t *s, size_t slen, size_t *outlen) {
         size_t n = utf8_decode(s + i, slen - i, &rune);
         size_t wn;
         if (n == 0) {
+            /* Go bytes.Map: invalid UTF-8 becomes U+FFFD, which is not
+             * a separator, so the next letter is not titled. */
+            rune = 0xFFFD;
             n = 1;
-            wn = 1;
-            prev_sep = 1;
-        } else {
+        }
+        {
             uint32_t titled = prev_sep ? neverc_unicode_to_title(rune) : rune;
             uint8_t tmp[4];
             wn = utf8_encode(titled, tmp);
@@ -518,15 +545,15 @@ uint8_t *neverc_bytes_to_title(const uint8_t *s, size_t slen, size_t *outlen) {
         uint32_t rune = 0;
         size_t n = utf8_decode(s + i, slen - i, &rune);
         if (n == 0) {
-            r[o++] = s[i];
-            prev_sep = 1;
-            i += 1;
-            continue;
+            rune = 0xFFFD;
+            n = 1;
         }
-        uint32_t titled = prev_sep ? neverc_unicode_to_title(rune) : rune;
-        o += utf8_encode(titled, r + o);
-        prev_sep = bytes_is_separator(rune);
-        i += n;
+        {
+            uint32_t titled = prev_sep ? neverc_unicode_to_title(rune) : rune;
+            o += utf8_encode(titled, r + o);
+            prev_sep = bytes_is_separator(rune);
+            i += n;
+        }
     }
     *outlen = need;
     return r;

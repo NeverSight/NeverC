@@ -121,6 +121,17 @@ static void udp_enable_packet_info(nc_sock_t fd, int family) {
     }
 }
 
+/* Go net and RFC 4007: only link-local addresses carry a zone / scope_id.
+ * IPV6_PKTINFO reports ifindex for every dest, including ::1 and globals. */
+static int udp_in6_wants_zone(const struct in6_addr *addr) {
+    const unsigned char *b = addr->s6_addr;
+    if (b[0] == 0xfe && (b[1] & 0xc0) == 0x80)
+        return 1; /* fe80::/10 link-local unicast */
+    if (b[0] == 0xff && (b[1] & 0x0f) == 0x02)
+        return 1; /* ff02::/16 link-local multicast */
+    return 0;
+}
+
 static void sa_to_udp_addr(const struct sockaddr *sa, socklen_t salen,
                             neverc_udp_addr_t *out) {
     memset(out, 0, sizeof(*out));
@@ -283,7 +294,8 @@ static void udp_parse_windows_packet_control(
             dst->sin6_family = AF_INET6;
             dst->sin6_port = port;
             dst->sin6_addr = packet->ipi6_addr;
-            dst->sin6_scope_id = packet->ipi6_ifindex;
+            if (udp_in6_wants_zone(&packet->ipi6_addr))
+                dst->sin6_scope_id = packet->ipi6_ifindex;
             destination_len = sizeof(*dst);
             info->interface_index = packet->ipi6_ifindex;
             continue;
@@ -366,7 +378,8 @@ static void udp_parse_packet_control(const neverc_udp_conn_t *conn,
             dst->sin6_family = AF_INET6;
             dst->sin6_port = port;
             dst->sin6_addr = packet->ipi6_addr;
-            dst->sin6_scope_id = packet->ipi6_ifindex;
+            if (udp_in6_wants_zone(&packet->ipi6_addr))
+                dst->sin6_scope_id = packet->ipi6_ifindex;
             destination_len = sizeof(*dst);
             info->interface_index = (uint32_t)packet->ipi6_ifindex;
             continue;
@@ -674,8 +687,12 @@ static int udp_read_from_unlocked(neverc_udp_conn_t *conn, void *buf,
                                   neverc_udp_addr_t *from) {
     neverc_udp_packet_info_t info;
     int n = udp_read_packet_unlocked(conn, buf, buflen, &info);
-    if (n >= 0 && from)
-        *from = info.source;
+    if (from) {
+        if (n >= 0)
+            *from = info.source;
+        else
+            memset(from, 0, sizeof(*from));
+    }
     return n;
 }
 
@@ -701,8 +718,8 @@ static int udp_read_packet_unlocked(
     if (!conn || !info || (!buf && buflen > 0) ||
         buflen > NEVERC_UDP_MAX_DATAGRAM_SIZE)
         return -1;
-    if (udp_refresh_read_deadline(conn) != 0) return -1;
     memset(info, 0, sizeof(*info));
+    if (udp_refresh_read_deadline(conn) != 0) return -1;
     struct sockaddr_storage sa;
     memset(&sa, 0, sizeof(sa));
     socklen_t salen = sizeof(sa);
@@ -1108,6 +1125,7 @@ int neverc_udp_read_batch(neverc_udp_conn_t *conn,
             break;
     }
     if (received < 0) {
+        udp_note_blocking_timeout(conn, 0);
         nc_mutex_unlock(&conn->read_lock);
         return -1;
     }
@@ -1200,6 +1218,8 @@ int neverc_udp_write_batch(neverc_udp_conn_t *conn,
             !udp_error_would_block(errno))
             break;
     }
+    if (sent < 0)
+        udp_note_blocking_timeout(conn, 1);
     return sent;
 #else
     int sent = 0;

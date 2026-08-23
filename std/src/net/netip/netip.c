@@ -539,6 +539,11 @@ int neverc_netip_addr_compare(const neverc_netip_addr_t *a, const neverc_netip_a
     if (!a && !b) return 0;
     if (!a) return -1;
     if (!b) return 1;
+    /* Go netip.Addr.Compare: the zero Addr is invalid and sorts before
+     * every valid address, including IPv6 unspecified. */
+    if (!a->valid && !b->valid) return 0;
+    if (!a->valid) return -1;
+    if (!b->valid) return 1;
     if (a->is_v4 != b->is_v4) return a->is_v4 ? -1 : 1;
     int start = a->is_v4 ? 12 : 0;
     int cmp = memcmp(a->addr + start, b->addr + start, a->is_v4 ? 4 : 16);

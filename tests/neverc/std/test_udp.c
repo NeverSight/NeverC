@@ -56,6 +56,70 @@ static void test_listen_close(void) {
     }
 }
 
+static void test_failed_read_clears_dest(void) {
+    printf("[failed_read_clears_dest]\n");
+    const char *err = NULL;
+    neverc_udp_conn_t *conn = neverc_udp_listen("127.0.0.1:0", &err);
+    check_not_null("listen for leftover dest", conn);
+    if (!conn)
+        return;
+
+    check_int("expired deadline",
+              neverc_udp_set_read_deadline(conn, 1), 0);
+
+    neverc_udp_addr_t from;
+    memset(&from, 0x5a, sizeof(from));
+    char buf[16];
+    int n = neverc_udp_read_from(conn, buf, sizeof(buf), &from);
+    check_int("read_from expired deadline fails", n < 0, 1);
+    check_int("read_from clears leftover port", from.port, 0);
+    check_int("read_from clears leftover addr", from.addr[0] == '\0', 1);
+
+    neverc_udp_packet_info_t info;
+    memset(&info, 0x5a, sizeof(info));
+    n = neverc_udp_read_packet(conn, buf, sizeof(buf), &info);
+    check_int("read_packet expired deadline fails", n < 0, 1);
+    check_int("read_packet clears leftover source port", info.source.port, 0);
+    check_int("read_packet clears leftover source addr",
+              info.source.addr[0] == '\0', 1);
+
+    neverc_udp_close(conn);
+}
+
+static void test_ipv6_dest_omits_global_zone(void) {
+    printf("[ipv6_dest_omits_global_zone]\n");
+    const char *err = NULL;
+    neverc_udp_conn_t *sender = neverc_udp_listen("[::1]:0", &err);
+    neverc_udp_conn_t *receiver = neverc_udp_listen("[::1]:0", &err);
+    check_not_null("zone sender", sender);
+    check_not_null("zone receiver", receiver);
+    if (!sender || !receiver) {
+        neverc_udp_close(sender);
+        neverc_udp_close(receiver);
+        return;
+    }
+
+    neverc_udp_addr_t dest;
+    check_int("zone receiver local",
+              neverc_udp_local_addr(receiver, &dest), 0);
+    check_int("zone read timeout",
+              neverc_udp_set_read_timeout(receiver, 2000), 0);
+    check_int("send loopback datagram",
+              neverc_udp_write_to(sender, "z", 1, &dest), 1);
+
+    char buf[8];
+    neverc_udp_packet_info_t info;
+    int n = neverc_udp_read_packet(receiver, buf, sizeof(buf), &info);
+    check_int("read loopback packet", n, 1);
+    check_int("loopback dest has no zone",
+              strchr(info.destination.addr, '%') == NULL, 1);
+    check_int("loopback dest is ::1",
+              strncmp(info.destination.addr, "[::1]:", 6) == 0, 1);
+
+    neverc_udp_close(sender);
+    neverc_udp_close(receiver);
+}
+
 /* ===== IPv6 listen ===== */
 
 static void test_listen_ipv6(void) {
@@ -308,6 +372,19 @@ static void test_read_timeout_errno(void) {
     int n = neverc_udp_read_from(conn, buf, sizeof(buf), &from);
     check_int("udp read timed out", n, -1);
     check_int("udp timeout errno", errno == ETIMEDOUT, 1);
+
+    check_int("set short read timeout for batch",
+              neverc_udp_set_read_timeout(conn, 50), 0);
+    {
+        char batch_buf[8];
+        neverc_udp_recv_message_t incoming;
+        memset(&incoming, 0, sizeof(incoming));
+        incoming.data = batch_buf;
+        incoming.capacity = sizeof(batch_buf);
+        n = neverc_udp_read_batch(conn, &incoming, 1);
+        check_int("udp batch read timed out", n, -1);
+        check_int("udp batch timeout errno", errno == ETIMEDOUT, 1);
+    }
     neverc_udp_close(conn);
 }
 
@@ -883,6 +960,8 @@ static void test_icmp_reset_does_not_poison_listener(void) {
 
 int main(void) {
     test_listen_close();
+    test_failed_read_clears_dest();
+    test_ipv6_dest_omits_global_zone();
     test_listen_ipv6();
     test_resolve();
     test_invalid_addr();

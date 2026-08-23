@@ -55,15 +55,14 @@ static int find_eocd(const uint8_t *data, size_t len, size_t *offset) {
     for (;;) {
         if (read32(data + pos) == 0x06054b50U) {
             uint16_t comment_length = read16(data + pos + 20U);
-            if ((size_t)comment_length == len - pos - 22U) {
-                *offset = pos;
-                return 0;
-            }
-            /* CVE-2024-24789 / Go issue 66869: a trailing EOCD whose comment
-             * is truncated must fail the archive instead of scanning inward
-             * for a hidden directory. */
+            /* Go archive/zip.findSignatureInBlock (CVE-2024-24789): the
+             * rightmost EOCD whose comment fits is authoritative. A
+             * truncated comment fails the archive; a short comment must
+             * not keep scanning for a hidden inner directory. */
             if ((size_t)comment_length > len - pos - 22U)
                 return -1;
+            *offset = pos;
+            return 0;
         }
         if (pos == earliest) break;
         pos--;
