@@ -1,6 +1,6 @@
 name: debug-win-arm64-stdlib
 
-# Manual only. Downloads the failed windows-arm64 neverc and compiles just
+# Manual only. Downloads a prebuilt windows-arm64 neverc and compiles just
 # StdLibTest.tls / http_stage5 — no toolchain rebuild.
 on:
   workflow_dispatch:
@@ -9,6 +9,10 @@ on:
         description: 'windows-arm64-neverc-build run id to pull compiler from'
         required: false
         default: '32607167492'
+      green_run_id:
+        description: 'last-green windows-arm64-neverc-build run id'
+        required: false
+        default: '32595477221'
 
 permissions:
   contents: read
@@ -19,6 +23,8 @@ jobs:
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup MSVC (native arm64)
         uses: ilammy/msvc-dev-cmd@v1
@@ -32,11 +38,28 @@ jobs:
         run: |
           set -eux
           RID="${{ github.event.inputs.run_id }}"
+          GRID="${{ github.event.inputs.green_run_id }}"
           [ -n "$RID" ] || RID=32607167492
-          gh run download "$RID" -n windows-arm64-neverc -D dl -R "${{ github.repository }}"
-          python -c "import glob,zipfile; z=glob.glob('dl/*.zip')[0]; zipfile.ZipFile(z).extractall('.')"
-          test -f install/bin/neverc.exe
-          install/bin/neverc.exe --version
+          [ -n "$GRID" ] || GRID=32595477221
+          gh run download "$RID" -n windows-arm64-neverc -D dl-new -R "${{ github.repository }}"
+          gh run download "$GRID" -n windows-arm64-neverc -D dl-green -R "${{ github.repository }}"
+          python - <<'PY'
+          import glob, zipfile, os, shutil
+          def extract(src, dest):
+              z = glob.glob(src + '/*.zip')[0]
+              os.makedirs(dest, exist_ok=True)
+              zipfile.ZipFile(z).extractall(dest)
+          extract('dl-new', 'compiler-new')
+          extract('dl-green', 'compiler-green')
+          PY
+          test -f compiler-new/install/bin/neverc.exe
+          test -f compiler-green/install/bin/neverc.exe
+          compiler-new/install/bin/neverc.exe --version
+          compiler-green/install/bin/neverc.exe --version
+          mkdir -p oldtls
+          git show 1fa02f6ecd4d2ec25af2d4223da16abc7224b64d:std/src/crypto/tls/tls_handshake.c > oldtls/tls_handshake.c
+          git show 1fa02f6ecd4d2ec25af2d4223da16abc7224b64d:std/src/crypto/tls/tls_config.c > oldtls/tls_config.c
+          git show 1fa02f6ecd4d2ec25af2d4223da16abc7224b64d:std/src/crypto/tls/tls_internal.h > oldtls/tls_internal.h
 
       - name: Enable local crash dumps
         shell: pwsh
@@ -47,7 +70,18 @@ jobs:
           New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps' -Name DumpCount -Value 10 -PropertyType DWord -Force | Out-Null
           New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\dumps" | Out-Null
 
-      - name: Patch tests with progress + unbuffered stdout
+      - name: Find cdb
+        shell: bash
+        run: |
+          set +e
+          echo "=== search cdb ==="
+          ls -la "/c/Program Files (x86)/Windows Kits/10/Debuggers/" 2>/dev/null
+          ls -la "/c/Program Files/Windows Kits/10/Debuggers/" 2>/dev/null
+          find "/c/Program Files (x86)/Windows Kits/10/Debuggers" "/c/Program Files/Windows Kits/10/Debuggers" \
+            -name 'cdb.exe' 2>/dev/null
+          find "/c/Program Files/Microsoft Visual Studio" -name 'cdb.exe' 2>/dev/null | head
+
+      - name: Patch tests with progress + crash hook
         shell: python
         run: |
           from pathlib import Path
@@ -55,17 +89,41 @@ jobs:
           #include <stdio.h>
           #ifdef _WIN32
           #include <windows.h>
-          static LONG WINAPI neverc_debug_crash(EXCEPTION_POINTERS *ep) {
-              fprintf(stderr, "CRASH code=%08lx addr=%p\n",
-                      (unsigned long)ep->ExceptionRecord->ExceptionCode,
-                      (void *)ep->ExceptionRecord->ExceptionAddress);
-              fflush(stderr);
+          static LONG neverc_debug_crash(EXCEPTION_POINTERS *ep) {
+              char buf[768];
+              int n = snprintf(buf, sizeof(buf),
+                               "CRASH code=%08lx addr=%p info0=%p info1=%p\n",
+                               (unsigned long)ep->ExceptionRecord->ExceptionCode,
+                               (void *)ep->ExceptionRecord->ExceptionAddress,
+                               (void *)ep->ExceptionRecord->ExceptionInformation[0],
+                               (void *)ep->ExceptionRecord->ExceptionInformation[1]);
+              HANDLE f = CreateFileA("crash.txt", GENERIC_WRITE, FILE_SHARE_READ,
+                                     NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+              if (f != INVALID_HANDLE_VALUE) {
+                  DWORD w = 0;
+                  if (n > 0)
+                      WriteFile(f, buf, (DWORD)n, &w, NULL);
+                  void *stack[16];
+                  USHORT frames = CaptureStackBackTrace(0, 16, stack, NULL);
+                  for (USHORT i = 0; i < frames; i++) {
+                      n = snprintf(buf, sizeof(buf), "  #%u %p\n",
+                                   (unsigned)i, stack[i]);
+                      if (n > 0)
+                          WriteFile(f, buf, (DWORD)n, &w, NULL);
+                  }
+                  CloseHandle(f);
+              }
+              HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
+              if (err && err != INVALID_HANDLE_VALUE && n > 0) {
+                  DWORD w = 0;
+                  WriteFile(err, buf, (DWORD)n, &w, NULL);
+              }
               return EXCEPTION_CONTINUE_SEARCH;
           }
           static void neverc_debug_install(void) {
               setvbuf(stdout, NULL, _IONBF, 0);
               setvbuf(stderr, NULL, _IONBF, 0);
-              SetUnhandledExceptionFilter(neverc_debug_crash);
+              AddVectoredExceptionHandler(1, neverc_debug_crash);
           }
           #else
           static void neverc_debug_install(void) {
@@ -104,6 +162,28 @@ jobs:
               'test_oversized_client_handshake_alert',
               'test_malformed_handshake_alert',
               'test_application_io_before_handshake'])
+          src = src.replace(
+              '    printf("[client_server]\\n");',
+              '    printf("[client_server]\\n"); printf("STEP enter\\n");')
+          src = src.replace(
+              '    check_int("create_tls_pipe",\n              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);',
+              '    printf("STEP pipe\\n");\n'
+              '    check_int("create_tls_pipe",\n'
+              '              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);\n'
+              '    printf("STEP pipe_done\\n");')
+          src = src.replace(
+              '    HANDLE thread = CreateThread(\n        NULL, 0, tls_server_thread, &ctx, 0, NULL);',
+              '    printf("STEP thread\\n");\n'
+              '    HANDLE thread = CreateThread(\n'
+              '        NULL, 0, tls_server_thread, &ctx, 0, NULL);\n'
+              '    printf("STEP thread_started\\n");')
+          src = src.replace(
+              '        neverc_tls_conn_t *client =\n            neverc_tls_client(client_tcp, client_config, &err);',
+              '        printf("STEP client_hs\\n");\n'
+              '        neverc_tls_conn_t *client =\n'
+              '            neverc_tls_client(client_tcp, client_config, &err);\n'
+              '        printf("STEP client_hs_done client=%p err=%s\\n",\n'
+              '               (void *)client, err ? err : "null");')
           tls.write_text(src)
           h5 = Path('tests/neverc/std/test_http_stage5.c')
           htext = hook + h5.read_text()
@@ -113,6 +193,24 @@ jobs:
           htext = wrap_calls(htext, [
               'http_stage5_plain_e2e', 'http_stage5_response_framing',
               'http_stage5_client_security', 'http_stage5_tls_e2e'])
+          htext = htext.replace(
+              '    CHECK(neverc_network_test_write_certs("http-stage5", &files) == 0);',
+              '    printf("STEP write_certs\\n");\n'
+              '    CHECK(neverc_network_test_write_certs("http-stage5", &files) == 0);\n'
+              '    printf("STEP write_certs_done\\n");')
+          htext = htext.replace(
+              '    test.server = neverc_http_server_new(mux, &server_config);',
+              '    printf("STEP server_new\\n");\n'
+              '    test.server = neverc_http_server_new(mux, &server_config);\n'
+              '    printf("STEP server_new_done\\n");')
+          htext = htext.replace(
+              '        ? http_stage5_start_server(&test) : NULL;',
+              '        ? (printf("STEP start_server\\n"), http_stage5_start_server(&test)) : NULL;')
+          htext = htext.replace(
+              '    int port = executor ? http_stage5_wait_for_port(test.server) : -1;',
+              '    printf("STEP wait_port\\n");\n'
+              '    int port = executor ? http_stage5_wait_for_port(test.server) : -1;\n'
+              '    printf("STEP wait_port_done %d\\n", port);')
           h5.write_text(htext)
           print('patched')
 
@@ -120,9 +218,10 @@ jobs:
         shell: bash
         run: |
           set +e
-          NCC=$(cygpath -m "$PWD/install/bin/neverc.exe")
           STD=$(cygpath -m "$PWD/std")
-          FLAGS="-I$STD/include -I$STD/src/net -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -O1 -fno-builtin-std -Wno-deprecated-declarations"
+          FLAGS="-I$STD/include -I$STD/src/net -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -O1 -g -fno-builtin-std -Wno-deprecated-declarations"
+          NEW_NCC=$(cygpath -m "$PWD/compiler-new/install/bin/neverc.exe")
+          GREEN_NCC=$(cygpath -m "$PWD/compiler-green/install/bin/neverc.exe")
 
           TLS_SRCS=(
             src/compress/gzip/gzip.c
@@ -170,13 +269,29 @@ jobs:
           abs_srcs() {
             local s
             for s in "$@"; do
-              echo "$(cygpath -m "$PWD/std/$s")"
+              if [ "$s" = "src/crypto/tls/tls_handshake.c" ] && [ -n "${OLD_TLS:-}" ]; then
+                echo "$(cygpath -m "$PWD/oldtls/tls_handshake.c")"
+              elif [ "$s" = "src/crypto/tls/tls_config.c" ] && [ -n "${OLD_TLS:-}" ]; then
+                echo "$(cygpath -m "$PWD/oldtls/tls_config.c")"
+              else
+                echo "$(cygpath -m "$PWD/std/$s")"
+              fi
             done
           }
+
+          CDB=""
+          for p in \
+            "/c/Program Files (x86)/Windows Kits/10/Debuggers/arm64/cdb.exe" \
+            "/c/Program Files/Windows Kits/10/Debuggers/arm64/cdb.exe"
+          do
+            if [ -x "$p" ]; then CDB="$p"; break; fi
+          done
+          echo "CDB=$CDB"
 
           run_exe() {
             local exe=$1
             local label=$2
+            rm -f crash.txt
             echo "=== run $label ==="
             python - "$exe" "$label" <<'PY'
           import subprocess, sys, os
@@ -192,49 +307,47 @@ jobs:
           print(p.stderr if p.stderr else "(empty)")
           sys.exit(0)
           PY
+            if [ -f crash.txt ]; then
+              echo "--- crash.txt ---"
+              cat crash.txt
+            else
+              echo "(no crash.txt)"
+            fi
+            if [ -n "$CDB" ] && [ -f "$exe" ]; then
+              echo "=== cdb $label ==="
+              "$CDB" -c "g; .ecxr; kn 40; q" "$exe" < /dev/null 2>&1 | tail -120
+            fi
           }
 
-          symbolize_dumps() {
-            local label=$1
-            echo "=== dumps after $label ==="
-            ls -la dumps 2>/dev/null || echo "(no dumps dir)"
-            shopt -s nullglob
-            for d in dumps/*.dmp dumps/*.DMP; do
-              echo "DUMP $d"
-              if command -v cdb.exe >/dev/null 2>&1; then
-                cdb.exe -z "$d" -c "k; r; q" 2>&1 | head -80
-              else
-                echo "(cdb.exe not on PATH)"
-              fi
-            done
+          compile_tls() {
+            local ncc=$1
+            local out=$2
+            local extra=$3
+            echo "=== compile $out extra='$extra' oldtls='${OLD_TLS:-}' ncc=$ncc ==="
+            "$ncc" $FLAGS $extra -o "$out" \
+              "$(cygpath -m "$PWD/tests/neverc/std/test_tls.c")" \
+              $(abs_srcs "${TLS_SRCS[@]}")
+            echo "compile_${out}_exit=$?"
           }
 
-          echo "=== compile tls (same flags as StdLibTest.tls) ==="
+          echo "===== A: ce296be neverc + HEAD tls source ====="
           TLS_OUT=$(cygpath -m "$PWD/test_tls.exe")
-          "$NCC" $FLAGS -o "$TLS_OUT" \
-            "$(cygpath -m "$PWD/tests/neverc/std/test_tls.c")" \
-            $(abs_srcs "${TLS_SRCS[@]}")
-          tls_cc=$?
-          echo "compile_tls_exit=$tls_cc"
-          if [ "$tls_cc" -eq 0 ]; then
-            run_exe "$TLS_OUT" tls
-            symbolize_dumps tls
-          fi
+          compile_tls "$NEW_NCC" "$TLS_OUT" ""
+          run_exe "$TLS_OUT" tls_head_newcc
 
-          echo "=== compile tls experimental (StdLibTest.TlsExperimentalTransport) ==="
-          TLSX_OUT=$(cygpath -m "$PWD/test_tls_experimental.exe")
-          "$NCC" $FLAGS -DNEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT=1 -DNEVERC_TLS_TESTING=1 \
-            -o "$TLSX_OUT" \
-            "$(cygpath -m "$PWD/tests/neverc/std/test_tls.c")" \
-            $(abs_srcs "${TLS_SRCS[@]}")
-          tlsx_cc=$?
-          echo "compile_tls_experimental_exit=$tlsx_cc"
-          if [ "$tlsx_cc" -eq 0 ]; then
-            run_exe "$TLSX_OUT" tls_experimental
-            symbolize_dumps tls_experimental
-          fi
+          echo "===== B: ce296be neverc + 1fa02f6 tls_{handshake,config,internal} ====="
+          OLD_TLS=1
+          TLS_OLD=$(cygpath -m "$PWD/test_tls_oldsrc.exe")
+          compile_tls "$NEW_NCC" "$TLS_OLD" ""
+          run_exe "$TLS_OLD" tls_oldsrc_newcc
+          unset OLD_TLS
 
-          echo "=== compile http_stage5 ==="
+          echo "===== C: 1fa02f6 neverc + HEAD tls source ====="
+          TLS_GREEN=$(cygpath -m "$PWD/test_tls_greencc.exe")
+          compile_tls "$GREEN_NCC" "$TLS_GREEN" ""
+          run_exe "$TLS_GREEN" tls_head_greencc
+
+          echo "===== D: http_stage5 HEAD / ce296be neverc ====="
           H5_OUT=$(cygpath -m "$PWD/test_http_stage5.exe")
           H5_SRCS=(
             src/net/http/http.c
@@ -247,14 +360,11 @@ jobs:
             src/net/netip/netip.c
             "${TLS_SRCS[@]}"
           )
-          "$NCC" $FLAGS -o "$H5_OUT" \
+          echo "=== compile http_stage5 ==="
+          "$NEW_NCC" $FLAGS -o "$H5_OUT" \
             "$(cygpath -m "$PWD/tests/neverc/std/test_http_stage5.c")" \
             $(abs_srcs "${H5_SRCS[@]}")
-          h5_cc=$?
-          echo "compile_http_stage5_exit=$h5_cc"
-          if [ "$h5_cc" -eq 0 ]; then
-            run_exe "$H5_OUT" http_stage5
-            symbolize_dumps http_stage5
-          fi
+          echo "compile_http_stage5_exit=$?"
+          run_exe "$H5_OUT" http_stage5
 
           echo "=== done ==="
