@@ -851,12 +851,17 @@ static void html_scan_doc(const char *buf, size_t len,
     if (!buf || len == 0) return;
 
     int state = HS_TEXT;
-    enum { JS_CODE, JS_SQ, JS_DQ, JS_TPL, JS_LINE, JS_BLOCK, JS_HTML,
-           JS_RE, JS_RE_CLASS };
+    enum { JS_CODE, JS_SQ, JS_DQ, JS_TPL, JS_TPL_EXPR, JS_LINE, JS_BLOCK,
+           JS_HTML, JS_RE, JS_RE_CLASS };
     int js = JS_CODE;
     /* Go jsCtxRegexp at the start of a script body. */
     int js_ctx_re = 1;
     size_t js_code_from = 0;
+    /* Go html/template: `${` enters stateJS (brace depth 1); nested
+     * template literals push the current depth (jsBraceDepth). */
+    int interp_depth = 0;
+    int interp_sp = 0;
+    int interp_stack[16];
     char tag[16];
     size_t tlen = 0;
     int is_end = 0;
@@ -941,6 +946,8 @@ static void html_scan_doc(const char *buf, size_t len,
             if (html_raw_end_tag(buf, i, len, "</script", 8)) {
                 state = HS_TAG;
                 js = JS_CODE;
+                interp_depth = 0;
+                interp_sp = 0;
                 js_ctx_re = 1;
                 is_end = 1;
                 seen_name = 1;
@@ -956,9 +963,32 @@ static void html_scan_doc(const char *buf, size_t len,
              * a no-op inside a comment: a closer in the value still ends it. */
             switch (js) {
             case JS_CODE:
+            case JS_TPL_EXPR:
                 if (c == '"') { js = JS_DQ; js_ctx_re = 1; i++; break; }
                 if (c == '\'') { js = JS_SQ; js_ctx_re = 1; i++; break; }
-                if (c == '`') { js = JS_TPL; js_ctx_re = 1; i++; break; }
+                if (c == '`') {
+                    if (js == JS_TPL_EXPR &&
+                        interp_sp < (int)(sizeof(interp_stack) /
+                                          sizeof(interp_stack[0])))
+                        interp_stack[interp_sp++] = interp_depth;
+                    js = JS_TPL;
+                    js_ctx_re = 1;
+                    i++;
+                    break;
+                }
+                if (js == JS_TPL_EXPR && c == '{')
+                    interp_depth++;
+                if (js == JS_TPL_EXPR && c == '}') {
+                    if (interp_depth > 0)
+                        interp_depth--;
+                    if (interp_depth == 0) {
+                        js = JS_TPL;
+                        js_ctx_re = 0;
+                        js_code_from = i + 1;
+                        i++;
+                        break;
+                    }
+                }
                 if (c == '/' && i + 1 < len && buf[i + 1] == '/') {
                     js_ctx_re = html_js_ctx_span(buf, js_code_from, i,
                                                  js_ctx_re);
@@ -1026,28 +1056,52 @@ static void html_scan_doc(const char *buf, size_t len,
                 break;
             case JS_SQ:
             case JS_DQ:
-            case JS_TPL:
                 if (c == '\\' && i + 1 < len) { i += 2; break; }
                 if ((js == JS_SQ && c == '\'') ||
-                    (js == JS_DQ && c == '"') ||
-                    (js == JS_TPL && c == '`')) {
-                    js = JS_CODE;
+                    (js == JS_DQ && c == '"')) {
+                    js = interp_depth > 0 ? JS_TPL_EXPR : JS_CODE;
                     js_ctx_re = 0;
                     js_code_from = i + 1;
+                }
+                i++;
+                break;
+            case JS_TPL:
+                if (c == '\\' && i + 1 < len) { i += 2; break; }
+                if (c == '`') {
+                    if (interp_sp > 0) {
+                        interp_depth = interp_stack[--interp_sp];
+                        js = JS_TPL_EXPR;
+                    } else {
+                        interp_depth = 0;
+                        js = JS_CODE;
+                    }
+                    js_ctx_re = 0;
+                    js_code_from = i + 1;
+                    i++;
+                    break;
+                }
+                /* Go tJS: `${` leaves stateJSTmplLit for stateJS. */
+                if (c == '$' && i + 1 < len && buf[i + 1] == '{') {
+                    interp_depth = 1;
+                    js = JS_TPL_EXPR;
+                    js_ctx_re = 1;
+                    js_code_from = i + 2;
+                    i += 2;
+                    break;
                 }
                 i++;
                 break;
             case JS_LINE:
             case JS_HTML:
                 if (html_js_is_line_term(buf, i, len)) {
-                    js = JS_CODE;
+                    js = interp_depth > 0 ? JS_TPL_EXPR : JS_CODE;
                     js_code_from = i + 1;
                 }
                 i++;
                 break;
             case JS_BLOCK:
                 if (c == '*' && i + 1 < len && buf[i + 1] == '/') {
-                    js = JS_CODE;
+                    js = interp_depth > 0 ? JS_TPL_EXPR : JS_CODE;
                     js_code_from = i + 2;
                     i += 2;
                     break;
@@ -1058,7 +1112,7 @@ static void html_scan_doc(const char *buf, size_t len,
                 if (c == '\\' && i + 1 < len) { i += 2; break; }
                 if (c == '[') { js = JS_RE_CLASS; i++; break; }
                 if (c == '/') {
-                    js = JS_CODE;
+                    js = interp_depth > 0 ? JS_TPL_EXPR : JS_CODE;
                     js_ctx_re = 0;
                     js_code_from = i + 1;
                     i++;
@@ -1194,10 +1248,12 @@ static void html_scan_doc(const char *buf, size_t len,
     *in_style = (state == HS_STYLE);
     *in_script_comment = (state == HS_SCRIPT &&
                           (js == JS_LINE || js == JS_BLOCK || js == JS_HTML));
-    /* Single/double-quoted JS strings only. Template literals keep wrapping
-     * so `${ {{.X}} }` cannot run X as code (the scanner does not track `${`).
-     * Odd trailing backslashes still fail closed: wrapping would place a
-     * quote after `\` and Go html/template reports ErrPartialEscape. */
+    /* Quoted strings use js_escape (no wrap). Template-literal text
+     * (JS_TPL) uses jsTmplLitEscaper: `$` `{` `}` as `\u0024` `\u007b`
+     * `\u007d`. `${` interpolations are JS_TPL_EXPR and wrap like
+     * JS_CODE so `${ {{.X}} }` cannot run X. Odd trailing backslashes
+     * still fail closed: wrapping would place a quote after `\`
+     * (Go ErrPartialEscape). */
     *in_js_quoted = (state == HS_SCRIPT && (js == JS_SQ || js == JS_DQ));
     *in_js_re = (state == HS_SCRIPT && (js == JS_RE || js == JS_RE_CLASS));
     *in_js_tpl = (state == HS_SCRIPT && js == JS_TPL);
@@ -1264,6 +1320,40 @@ static char *html_js_expr(const char *s) {
     lit[n + 2] = '\0';
     free(js);
     return lit;
+}
+
+/* Go jsTmplLitEscaper / jsBqStrReplacementTable: js_escape plus `{` `}`.
+ * `{{` consumes the `{` of a glued `${{`, so `hello${{.X}}` leaves a
+ * static `$` before the action; an unescaped `{` in X forms `${`. */
+static char *html_js_tpl_escape(const char *s) {
+    char *js = neverc_html_js_escape(s);
+    if (!js) return NULL;
+    size_t n = strlen(js), extra = 0, i, w;
+    for (i = 0; i < n; i++) {
+        if (js[i] == '{' || js[i] == '}') {
+            if (extra > SIZE_MAX - 5U) { free(js); return NULL; }
+            extra += 5U;
+        }
+    }
+    if (extra == 0) return js;
+    if (extra > SIZE_MAX - n - 1U) { free(js); return NULL; }
+    char *r = (char *)NC_HTML_TEMPLATE_MALLOC(n + extra + 1U);
+    if (!r) { free(js); return NULL; }
+    w = 0;
+    for (i = 0; i < n; i++) {
+        if (js[i] == '{') {
+            memcpy(r + w, "\\u007b", 6);
+            w += 6;
+        } else if (js[i] == '}') {
+            memcpy(r + w, "\\u007d", 6);
+            w += 6;
+        } else {
+            r[w++] = js[i];
+        }
+    }
+    r[w] = '\0';
+    free(js);
+    return r;
 }
 
 /* Skip ASCII whitespace and CSS comments immediately before index i. */
@@ -1988,6 +2078,8 @@ static int execute_nodes(const node_t *n,
                     escaped = neverc_html_escape("ZgotmplZ");
                 else if (in_script && !in_attr && in_js_quoted)
                     escaped = neverc_html_js_escape(val);
+                else if (in_script && !in_attr && in_js_tpl)
+                    escaped = html_js_tpl_escape(val);
                 else if (in_script && !in_attr &&
                          html_prev_non_ws_is_digit(*buf, *len))
                     escaped = neverc_html_escape("ZgotmplZ");

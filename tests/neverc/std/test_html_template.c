@@ -1235,6 +1235,93 @@ static void test_template_url_and_script(void) {
               strstr(out, "${alert(1)}") == NULL);
     free(out);
 
+    /* `${` is stateJS. A double-quoted action inside it must use
+     * js_escape only. Wrapping a second "..." closes the author's
+     * string and runs the payload (NeverC analogue of CVE-2026-32289). */
+    neverc_html_template_data_set(&data, "X", ";alert(1)//");
+    out = neverc_html_template_render(
+        "<script>var a = `${\"hello {{.X}}\"}`</script>", &data);
+    check("js tpl dq interp does not wrap a second literal",
+          out && strstr(out, "hello \";alert") == NULL &&
+              strstr(out, "hello \"\"") == NULL);
+    check("js tpl dq interp keeps the author's string",
+          out && strstr(out, "hello ;alert(1)\\/\\/") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "+alert(1)");
+    out = neverc_html_template_render(
+        "<script>var a = `${\"hello {{.X}}\"}`</script>", &data);
+    check("js tpl dq interp plus is not wrap-concat",
+          out && strstr(out, "\"\"\\u002balert") == NULL &&
+              strstr(out, "hello \\u002balert(1)") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "\";alert(1)//");
+    out = neverc_html_template_render(
+        "<script>var a = `${\"{{.X}}\"}`</script>", &data);
+    check("js tpl dq interp escapes a closer",
+          out && strstr(out, "${\"\\\";alert(1)\\/\\/\"}") != NULL);
+    check("js tpl dq interp closer does not wrap",
+          out && strstr(out, "${\"\"\"") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", ";alert(1)//");
+    out = neverc_html_template_render(
+        "<script>var a = `${'{{.X}}'}`</script>", &data);
+    check("js tpl sq interp is js-escaped not wrapped",
+          out && strstr(out, "${';alert(1)\\/\\/'}") != NULL &&
+              strstr(out, "\"\";alert") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "${alert(1)}");
+    out = neverc_html_template_render(
+        "<script>var a = `hello {{.X}}`</script>", &data);
+    check("js tpl literal does not wrap a second literal",
+          out && strstr(out, "`hello \"") == NULL);
+    check("js tpl literal escapes dollar and braces (Go jsBq)",
+          out && strstr(out, "hello \\u0024\\u007balert(1)\\u007d") != NULL);
+    free(out);
+
+    /* Go js.go jsBqStrReplacementTable / escape_test.go
+     * "JS template lit special characters". `{{` eats the `{` of `${`,
+     * so `hello${{.X}}` is static `$` plus the action (stateJSTmplLit). */
+    neverc_html_template_data_set(&data, "X", "{alert(1)}");
+    out = neverc_html_template_render(
+        "<script>var a = `hello${{.X}}`</script>", &data);
+    check("js tpl glued ${{ does not open interpolation",
+          out && strstr(out, "${alert(1)}") == NULL &&
+              strstr(out, "hello${") == NULL);
+    check("js tpl glued ${{ escapes braces after static dollar",
+          out && strstr(out, "hello$\\u007balert(1)\\u007d") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "{alert(1)}");
+    out = neverc_html_template_render(
+        "<script>var a = `hello\\\\${{.X}}`</script>", &data);
+    check("js tpl \\\\${{ does not open interpolation",
+          out && strstr(out, "${alert(1)}") == NULL);
+    check("js tpl \\\\${{ escapes braces after escaped backslash",
+          out && strstr(out, "hello\\\\$\\u007balert(1)\\u007d") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "I", "${ asd `` }");
+    out = neverc_html_template_render(
+        "<script>var a = `{{.I}}`</script>", &data);
+    check("js tpl Go jsBq specials",
+          out && strstr(out,
+              "`\\u0024\\u007b asd \\u0060\\u0060 \\u007d`") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "I", "${ asd `` }");
+    out = neverc_html_template_render(
+        "<script>var a = `${ `{{.I}}` }`</script>", &data);
+    check("js tpl nested lit Go jsBq specials",
+          out && strstr(out,
+              "${ `\\u0024\\u007b asd \\u0060\\u0060 \\u007d` }") != NULL);
+    check("js tpl nested lit still interpolates the inner literal",
+          out && strstr(out, "${ \"") == NULL);
+    free(out);
+
     /* Go CVE-2026-39826: empty / whitespace script type is still JavaScript.
      * HTML-escaping alert(1) is a no-op and would execute. */
     neverc_html_template_data_set(&data, "X", "alert(1)");

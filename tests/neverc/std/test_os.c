@@ -30,7 +30,16 @@ static void make_test_path(char *path, size_t path_size, const char *name) {
         return;
     }
 #if defined(_WIN32)
-    snprintf(path, path_size, "%s\\%s", tmpdir, name);
+    /* GetTempPathA leaves a trailing slash. Ordinary Win32 APIs collapse
+     * "Temp\\name", but \\?\ does not: CreateFileA("\\\\?\\C:\\Temp\\\\x")
+     * fails with ERROR_INVALID_NAME. The secret. RemoveAll test needs a
+     * well-formed extended path. */
+    {
+        size_t n = strlen(tmpdir);
+        while (n > 0 && (tmpdir[n - 1] == '\\' || tmpdir[n - 1] == '/'))
+            tmpdir[--n] = '\0';
+        snprintf(path, path_size, "%s\\%s", tmpdir, name);
+    }
 #else
     snprintf(path, path_size, "%s/%s", tmpdir, name);
 #endif
