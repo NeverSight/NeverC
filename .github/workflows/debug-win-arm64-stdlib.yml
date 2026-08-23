@@ -42,20 +42,14 @@ jobs:
           [ -n "$RID" ] || RID=32607167492
           [ -n "$GRID" ] || GRID=32595477221
           gh run download "$RID" -n windows-arm64-neverc -D dl-new -R "${{ github.repository }}"
-          gh run download "$GRID" -n windows-arm64-neverc -D dl-green -R "${{ github.repository }}"
           python - <<'PY'
-          import glob, zipfile, os, shutil
-          def extract(src, dest):
-              z = glob.glob(src + '/*.zip')[0]
-              os.makedirs(dest, exist_ok=True)
-              zipfile.ZipFile(z).extractall(dest)
-          extract('dl-new', 'compiler-new')
-          extract('dl-green', 'compiler-green')
+          import glob, zipfile, os
+          z = glob.glob('dl-new/*.zip')[0]
+          os.makedirs('compiler-new', exist_ok=True)
+          zipfile.ZipFile(z).extractall('compiler-new')
           PY
           test -f compiler-new/install/bin/neverc.exe
-          test -f compiler-green/install/bin/neverc.exe
           compiler-new/install/bin/neverc.exe --version
-          compiler-green/install/bin/neverc.exe --version
           mkdir -p oldtls
           git show 1fa02f6ecd4d2ec25af2d4223da16abc7224b64d:std/src/crypto/tls/tls_handshake.c > oldtls/tls_handshake.c
           git show 1fa02f6ecd4d2ec25af2d4223da16abc7224b64d:std/src/crypto/tls/tls_config.c > oldtls/tls_config.c
@@ -184,6 +178,42 @@ jobs:
               '            neverc_tls_client(client_tcp, client_config, &err);\n'
               '        printf("STEP client_hs_done client=%p err=%s\\n",\n'
               '               (void *)client, err ? err : "null");')
+          src = src.replace(
+              '    neverc_tls_conn_t *conn =\n        neverc_tls_server(ctx->tcp, ctx->config, &err);\n    if (conn) {\n        ctx->handshake_ok = 1;',
+              '    printf("STEP server_hs\\n");\n'
+              '    neverc_tls_conn_t *conn =\n'
+              '        neverc_tls_server(ctx->tcp, ctx->config, &err);\n'
+              '    printf("STEP server_hs_done conn=%p err=%s\\n",\n'
+              '           (void *)conn, err ? err : "null");\n'
+              '    if (conn) {\n'
+              '        ctx->handshake_ok = 1;')
+          src = src.replace(
+              '            check_int("client_negotiated_server_preferred_alpn",',
+              '            printf("STEP client_alpn %s\\n",\n'
+              '                   neverc_tls_alpn(client) ? neverc_tls_alpn(client) : "null");\n'
+              '            check_int("client_negotiated_server_preferred_alpn",')
+          src = src.replace(
+              '            check_int("client_outbound_sni_state",',
+              '            printf("STEP client_sni %s\\n",\n'
+              '                   neverc_tls_server_name(client) ? neverc_tls_server_name(client) : "null");\n'
+              '            check_int("client_outbound_sni_state",')
+          src = src.replace(
+              '            check_int("reject_invalid_key_update_request",\n                      neverc_tls_key_update(client, 2) != 0, 1);',
+              '            printf("STEP client_key_update2\\n");\n'
+              '            check_int("reject_invalid_key_update_request",\n'
+              '                      neverc_tls_key_update(client, 2) != 0, 1);\n'
+              '            printf("STEP client_key_update2_done\\n");')
+          src = src.replace(
+              '            check_int("client_write",\n                      neverc_tls_write(client, "ping", 4), 4);',
+              '            printf("STEP client_write\\n");\n'
+              '            check_int("client_write",\n'
+              '                      neverc_tls_write(client, "ping", 4), 4);\n'
+              '            printf("STEP client_write_done\\n");')
+          src = src.replace(
+              '        ctx->key_update_ok =\n            neverc_tls_key_update(conn, 1) == 0;',
+              '        printf("STEP server_key_update\\n");\n'
+              '        ctx->key_update_ok =\n            neverc_tls_key_update(conn, 1) == 0;\n'
+              '        printf("STEP server_key_update_done %d\\n", ctx->key_update_ok);')
           tls.write_text(src)
           h5 = Path('tests/neverc/std/test_http_stage5.c')
           htext = hook + h5.read_text()
@@ -219,9 +249,8 @@ jobs:
         run: |
           set +e
           STD=$(cygpath -m "$PWD/std")
-          FLAGS="-I$STD/include -I$STD/src/net -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -O1 -g -fno-builtin-std -Wno-deprecated-declarations"
+          FLAGS="-I$STD/include -I$STD/src/net -I$STD/src/crypto/tls -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -O1 -g -fno-builtin-std -Wno-deprecated-declarations"
           NEW_NCC=$(cygpath -m "$PWD/compiler-new/install/bin/neverc.exe")
-          GREEN_NCC=$(cygpath -m "$PWD/compiler-green/install/bin/neverc.exe")
 
           TLS_SRCS=(
             src/compress/gzip/gzip.c
@@ -280,13 +309,7 @@ jobs:
           }
 
           CDB=""
-          for p in \
-            "/c/Program Files (x86)/Windows Kits/10/Debuggers/arm64/cdb.exe" \
-            "/c/Program Files/Windows Kits/10/Debuggers/arm64/cdb.exe"
-          do
-            if [ -x "$p" ]; then CDB="$p"; break; fi
-          done
-          echo "CDB=$CDB"
+          echo "CDB=$CDB (skipped; STEPs + crash.txt are enough)"
 
           run_exe() {
             local exe=$1
@@ -341,11 +364,6 @@ jobs:
           compile_tls "$NEW_NCC" "$TLS_OLD" ""
           run_exe "$TLS_OLD" tls_oldsrc_newcc
           unset OLD_TLS
-
-          echo "===== C: 1fa02f6 neverc + HEAD tls source ====="
-          TLS_GREEN=$(cygpath -m "$PWD/test_tls_greencc.exe")
-          compile_tls "$GREEN_NCC" "$TLS_GREEN" ""
-          run_exe "$TLS_GREEN" tls_head_greencc
 
           echo "===== D: http_stage5 HEAD / ce296be neverc ====="
           H5_OUT=$(cygpath -m "$PWD/test_http_stage5.exe")
