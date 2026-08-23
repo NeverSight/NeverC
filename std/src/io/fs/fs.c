@@ -165,6 +165,25 @@ static int fs_win_is_unc_remainder(const char *p) {
            (p[3] == '\\' || p[3] == '/');
 }
 
+static int fs_win_component_needs_extended_prefix(const char *path) {
+    const char *p = path;
+    while (*p) {
+        const char *start = p;
+        while (*p && *p != '\\' && *p != '/')
+            p++;
+        size_t n = (size_t)(p - start);
+        if (n > 0 && (start[n - 1] == '.' || start[n - 1] == ' ')) {
+            int is_dot = (n == 1 && start[0] == '.');
+            int is_dotdot = (n == 2 && start[0] == '.' && start[1] == '.');
+            if (!is_dot && !is_dotdot)
+                return 1;
+        }
+        if (*p)
+            p++;
+    }
+    return 0;
+}
+
 static int fs_win_prepare_path(const char *path, char *dst, size_t dst_cap,
                                const char **out) {
     int skip = fs_win_skip_extended_prefix(path);
@@ -179,6 +198,13 @@ static int fs_win_prepare_path(const char *path, char *dst, size_t dst_cap,
     nt_prefix = path[1] == '?' && path[2] == '?';
 
     if (fs_win_is_unc_remainder(rest)) {
+        if (fs_win_component_needs_extended_prefix(rest)) {
+            n = snprintf(dst, dst_cap, "\\\\?\\%s", rest);
+            if (n < 0 || (size_t)n >= dst_cap)
+                return -1;
+            *out = dst;
+            return 0;
+        }
         n = snprintf(dst, dst_cap, "\\\\%s", rest + 4);
         if (n < 0 || (size_t)n >= dst_cap)
             return -1;
@@ -188,6 +214,13 @@ static int fs_win_prepare_path(const char *path, char *dst, size_t dst_cap,
 
     if (rest[0] != '\0' && rest[1] == ':' &&
         (rest[2] == '\\' || rest[2] == '/')) {
+        if (fs_win_component_needs_extended_prefix(rest)) {
+            n = snprintf(dst, dst_cap, "\\\\?\\%s", rest);
+            if (n < 0 || (size_t)n >= dst_cap)
+                return -1;
+            *out = dst;
+            return 0;
+        }
         *out = rest;
         return 0;
     }

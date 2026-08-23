@@ -149,6 +149,27 @@ static int os_win_path_has_dotdot_component(const char *path) {
     return 0;
 }
 
+/* Win32 without \\?\ folds a trailing '.' / ' ' on each component.
+ * "\\?\C:\temp\secret." must not become C:\temp\secret. */
+static int os_win_component_needs_extended_prefix(const char *path) {
+    const char *p = path;
+    while (*p) {
+        const char *start = p;
+        while (*p && *p != '\\' && *p != '/')
+            p++;
+        size_t n = (size_t)(p - start);
+        if (n > 0 && (start[n - 1] == '.' || start[n - 1] == ' ')) {
+            int is_dot = (n == 1 && start[0] == '.');
+            int is_dotdot = (n == 2 && start[0] == '.' && start[1] == '.');
+            if (!is_dot && !is_dotdot)
+                return 1;
+        }
+        if (*p)
+            p++;
+    }
+    return 0;
+}
+
 /* Map NT/Win32 prefixes to a path ANSI APIs can use without turning a
  * volume/device path into a cwd-relative name (Go os.normaliseLinkPath /
  * RemoveAll). Drive-absolute \\?\C:\foo may drop the prefix; \\?\C: must
@@ -168,6 +189,13 @@ static int os_win_prepare_path(const char *path, char *dst, size_t dst_cap,
     nt_prefix = path[1] == '?' && path[2] == '?';
 
     if (os_win_is_unc_remainder(rest)) {
+        if (os_win_component_needs_extended_prefix(rest)) {
+            n = snprintf(dst, dst_cap, "\\\\?\\%s", rest);
+            if (n < 0 || (size_t)n >= dst_cap)
+                return -1;
+            *out = dst;
+            return 0;
+        }
         n = snprintf(dst, dst_cap, "\\\\%s", rest + 4);
         if (n < 0 || (size_t)n >= dst_cap)
             return -1;
@@ -177,6 +205,13 @@ static int os_win_prepare_path(const char *path, char *dst, size_t dst_cap,
 
     if (rest[0] != '\0' && rest[1] == ':' &&
         (rest[2] == '\\' || rest[2] == '/')) {
+        if (os_win_component_needs_extended_prefix(rest)) {
+            n = snprintf(dst, dst_cap, "\\\\?\\%s", rest);
+            if (n < 0 || (size_t)n >= dst_cap)
+                return -1;
+            *out = dst;
+            return 0;
+        }
         *out = rest;
         return 0;
     }
@@ -692,21 +727,48 @@ static uint32_t os_win_mode_from_attrs(DWORD attrs, int is_dir) {
     return mode;
 }
 
-/* Drive `C:` / UNC `\\server\share` after FromSlash. */
+/* Drive `C:` / UNC `\\server\share` / `\\?\` / `\??\` after FromSlash.
+ * Go filepathlite.VolumeNameLen: any path[1]==':' is a volume (not only
+ * A-Z); NT prefixes; UNC with either separator. Without that, destpath
+ * prepends Dir (`1:\foo`, `//host/share`, `\??\C:\Windows`). */
 static size_t os_win_volume_len(const char *path) {
     if (!path || !path[0])
         return 0;
-    if (((path[0] >= 'A' && path[0] <= 'Z') ||
-         (path[0] >= 'a' && path[0] <= 'z')) &&
-        path[1] == ':')
+    if (path[1] == ':')
         return 2;
-    if (path[0] == '\\' && path[1] == '\\') {
+    if ((path[0] == '\\' || path[0] == '/') &&
+        ((path[1] == '?' && path[2] == '?' &&
+          (path[3] == '\\' || path[3] == '/')) ||
+         ((path[1] == '\\' || path[1] == '/') &&
+          (path[2] == '?' || path[2] == '.') &&
+          (path[3] == '\\' || path[3] == '/')))) {
+        const char *p = path + 4;
+        if ((p[0] == 'U' || p[0] == 'u') &&
+            (p[1] == 'N' || p[1] == 'n') &&
+            (p[2] == 'C' || p[2] == 'c') &&
+            (p[3] == '\\' || p[3] == '/')) {
+            const char *s = p + 4;
+            while (*s && *s != '\\' && *s != '/')
+                s++;
+            if (*s) {
+                s++;
+                while (*s && *s != '\\' && *s != '/')
+                    s++;
+            }
+            return (size_t)(s - path);
+        }
+        while (*p && *p != '\\' && *p != '/')
+            p++;
+        return (size_t)(p - path);
+    }
+    if ((path[0] == '\\' || path[0] == '/') &&
+        (path[1] == '\\' || path[1] == '/')) {
         const char *p = path + 2;
-        while (*p && *p != '\\')
+        while (*p && *p != '\\' && *p != '/')
             p++;
-        if (*p == '\\') {
+        if (*p == '\\' || *p == '/') {
             p++;
-            while (*p && *p != '\\')
+            while (*p && *p != '\\' && *p != '/')
                 p++;
         }
         return (size_t)(p - path);
@@ -714,38 +776,37 @@ static size_t os_win_volume_len(const char *path) {
     return 0;
 }
 
-/* Go os.dirname: volume + parent, or "." when the name has no separator. */
+/* Go os.dirname (path_windows.go): keep the volume-root separator so
+ * C:\file → C:\; only an empty remainder (C:file) becomes C:. */
 static int os_win_dirname(const char *path, char *out, size_t cap) {
     size_t vol;
     size_t n;
+    size_t i;
+    size_t dir_len;
     if (!path || !out || cap == 0)
         return -1;
     vol = os_win_volume_len(path);
     n = strlen(path);
-    while (n > vol && (path[n - 1] == '\\' || path[n - 1] == '/'))
-        n--;
-    while (n > vol && path[n - 1] != '\\' && path[n - 1] != '/')
-        n--;
-    while (n > vol && (path[n - 1] == '\\' || path[n - 1] == '/'))
-        n--;
-    if (n <= vol) {
-        if (vol > 0) {
-            if (vol >= cap)
-                return -1;
-            memcpy(out, path, vol);
-            out[vol] = '\0';
-            return 0;
-        }
-        if (cap < 2)
+    i = n;
+    while (i > vol && path[i - 1] != '\\' && path[i - 1] != '/')
+        i--;
+    dir_len = i - vol;
+    if (dir_len > 1 &&
+        (path[vol + dir_len - 1] == '\\' || path[vol + dir_len - 1] == '/'))
+        dir_len--;
+    if (dir_len == 0) {
+        if (vol + 2 > cap)
             return -1;
-        out[0] = '.';
-        out[1] = '\0';
+        if (vol > 0)
+            memcpy(out, path, vol);
+        out[vol] = '.';
+        out[vol + 1] = '\0';
         return 0;
     }
-    if (n >= cap)
+    if (vol + dir_len >= cap)
         return -1;
-    memcpy(out, path, n);
-    out[n] = '\0';
+    memcpy(out, path, vol + dir_len);
+    out[vol + dir_len] = '\0';
     return 0;
 }
 

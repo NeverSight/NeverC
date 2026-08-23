@@ -410,6 +410,41 @@ static void test_parse_rejects_invalid_input(void) {
                       &nparams), -1);
     ASSERT_STR_EQ(tiny, "");
     ASSERT_INT_EQ(nparams, 0);
+
+    /* Skip a malformed `=?` and still reject a later injection word.
+     * DecodeHeader would break here; header_safe must not. */
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; filename=\"=?x=?utf-8?q?=0D=0ABcc:_x?=\"",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), -1);
+    ASSERT_STR_EQ(mt, "");
+    ASSERT_INT_EQ(nparams, 0);
+
+    /* CVE-2026-42504 class: unbounded ParseMediaType value, incomplete
+     * `=?` repeat. Must stay linear (header_safe break, not mark+1). */
+    {
+        enum { CVE_N = 65536 };
+        const char prefix[] = "text/plain; filename=\"";
+        size_t prefix_len = sizeof(prefix) - 1;
+        char *src = (char *)malloc(prefix_len + CVE_N + 2);
+        ASSERT_TRUE(src != NULL);
+        if (src) {
+            size_t i;
+            memcpy(src, prefix, prefix_len);
+            for (i = 0; i + 1 < CVE_N; i += 2) {
+                src[prefix_len + i] = '=';
+                src[prefix_len + i + 1] = '?';
+            }
+            src[prefix_len + CVE_N] = '"';
+            src[prefix_len + CVE_N + 1] = '\0';
+            ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                              src, mt, sizeof(mt), keys, vals, 8,
+                              &nparams), 0);
+            ASSERT_STR_EQ(mt, "text/plain");
+            ASSERT_INT_EQ(nparams, 1);
+            free_params(keys, vals, nparams);
+            free(src);
+        }
+    }
 }
 
 static void test_format_media_type(void) {
@@ -921,6 +956,43 @@ static void test_rfc2047_decode_header(void) {
     n = 99;
     ASSERT_INT_EQ(neverc_mime_decode_header(
                       nel, strlen(nel), out, sizeof(out), &n), -1);
+
+    /* Incomplete words stay literal leftovers (Go DecodeHeader break).
+     * NeverC still fail-closes if the leftover contains `=?`. */
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      "=?UTF-8?b?QW5kcsOp", strlen("=?UTF-8?b?QW5kcsOp"),
+                      out, sizeof(out), &n),
+                  -1);
+    ASSERT_INT_EQ((int)n, 0);
+    n = 99;
+    ASSERT_INT_EQ(neverc_mime_decode_header(
+                      "=?UTF-8?x?y?=?UTF-8?x?y=?",
+                      strlen("=?UTF-8?x?y?=?UTF-8?x?y=?"),
+                      out, sizeof(out), &n),
+                  -1);
+    ASSERT_INT_EQ((int)n, 0);
+
+    /* CVE-2026-42504: `=?` repeated with no closer must be linear. */
+    {
+        enum { CVE_N = 65536 };
+        char *src = (char *)malloc(CVE_N);
+        char *dst = (char *)malloc(CVE_N);
+        size_t i, olen = 99;
+        ASSERT_TRUE(src != NULL && dst != NULL);
+        if (src && dst) {
+            for (i = 0; i + 1 < CVE_N; i += 2) {
+                src[i] = '=';
+                src[i + 1] = '?';
+            }
+            ASSERT_INT_EQ(neverc_mime_decode_header(src, CVE_N, dst,
+                                                     CVE_N, &olen),
+                          -1);
+            ASSERT_INT_EQ((int)olen, 0);
+        }
+        free(src);
+        free(dst);
+    }
 }
 
 int main(void) {

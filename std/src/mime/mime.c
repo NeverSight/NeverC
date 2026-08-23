@@ -978,49 +978,25 @@ int neverc_mime_decode_header(const char *src, size_t src_len,
         start += pos;
         size_t cur = start + 2;
         size_t q1 = mime_find(src + cur, src_len - cur, "?", 1);
-        if (q1 == SIZE_MAX) {
-            size_t lit = start + 1 - pos;
-            if (!mime_room(di, lit, out_cap)) return -1;
-            memcpy(out + di, src + pos, lit);
-            di += lit;
-            pos = start + 1;
-            between_words = 0;
-            continue;
-        }
+        /* Incomplete encoded-word: leftover (golang/go DecodeHeader break).
+         * Do not pos+=1 and rescan `=?` (O(n²), CVE-2026-42504 class).
+         * CL 774481 is the sibling path: a complete word whose Q/B decode
+         * fails skips to `end` (already `pos = end` below), not start+2. */
+        if (q1 == SIZE_MAX)
+            break;
         const char *charset = src + cur;
         size_t clen = q1;
         cur += q1 + 1;
-        if (cur + 4 > src_len) {
-            size_t lit = start + 1 - pos;
-            if (!mime_room(di, lit, out_cap)) return -1;
-            memcpy(out + di, src + pos, lit);
-            di += lit;
-            pos = start + 1;
-            between_words = 0;
-            continue;
-        }
+        if (cur + 4 > src_len)
+            break;
         unsigned char enc = (unsigned char)src[cur];
         cur++;
-        if (src[cur] != '?') {
-            size_t lit = start + 1 - pos;
-            if (!mime_room(di, lit, out_cap)) return -1;
-            memcpy(out + di, src + pos, lit);
-            di += lit;
-            pos = start + 1;
-            between_words = 0;
-            continue;
-        }
+        if (src[cur] != '?')
+            break;
         cur++;
         size_t qe = mime_find(src + cur, src_len - cur, "?=", 2);
-        if (qe == SIZE_MAX) {
-            size_t lit = start + 1 - pos;
-            if (!mime_room(di, lit, out_cap)) return -1;
-            memcpy(out + di, src + pos, lit);
-            di += lit;
-            pos = start + 1;
-            between_words = 0;
-            continue;
-        }
+        if (qe == SIZE_MAX)
+            break;
         const char *text = src + cur;
         size_t tlen = qe;
         size_t end = cur + qe + 2;
@@ -1094,8 +1070,12 @@ int neverc_mime_decode_header(const char *src, size_t src_len,
     if (mime_output_has_ctl(out, di) ||
         !nci_2047_utf8_ok((const unsigned char *)out, di))
         return -1;
-    /* Adjacent encoded-words are concatenated after the per-word `=?`
-     * check. Reject a stitch that rebuilds a nested encoded-word. */
+    /* NeverC policy (stricter than Go): leftover that still contains `=?`
+     * fail-closes. Go DecodeHeader returns undecodable/incomplete words as
+     * literals (encodedword.go after CL 774481). Do not relax this to
+     * leftover-as-literal unless a security fix requires that. Adjacent
+     * encoded-words are concatenated after the per-word `=?` check; reject
+     * a stitch that rebuilds a nested encoded-word. */
     for (size_t k = 0; k + 1 < di; k++) {
         if (out[k] == '=' && out[k + 1] == '?')
             return -1;

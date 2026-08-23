@@ -1057,18 +1057,28 @@ open_failed:
     return NULL;
 }
 
+static int rpc_stream_outbound_ready(neverc_rpc_stream_t *stream,
+                                     neverc_context_t *context) {
+    if (stream->send_closed || stream->ended ||
+        stream->generation != stream->client->generation ||
+        !nc_atomic_load(&stream->client->running))
+        return NEVERC_RPC_IO_CLOSED;
+    /* Parent/caller deadline is cancellation, not a transport close. */
+    if (neverc_context_done(stream->context) ||
+        (context && neverc_context_done(context)))
+        return NEVERC_RPC_IO_CANCELLED;
+    return NEVERC_RPC_IO_OK;
+}
+
 int neverc_rpc_stream_send(neverc_rpc_stream_t *stream,
                            neverc_context_t *context,
                            const void *data, size_t len) {
     if (!stream || (!data && len > 0) || !context)
         return NEVERC_RPC_IO_INVALID;
     nc_mutex_lock(&stream->lock);
-    int closed = stream->send_closed || stream->ended ||
-                 stream->generation != stream->client->generation ||
-                 !nc_atomic_load(&stream->client->running) ||
-                 neverc_context_done(stream->context);
+    int ready = rpc_stream_outbound_ready(stream, context);
     nc_mutex_unlock(&stream->lock);
-    if (closed) return NEVERC_RPC_IO_CLOSED;
+    if (ready != NEVERC_RPC_IO_OK) return ready;
     const uint8_t *bytes = (const uint8_t *)data;
     size_t sent = 0;
     while (sent < len) {
@@ -1093,12 +1103,10 @@ int neverc_rpc_stream_close_send(neverc_rpc_stream_t *stream,
                                  neverc_context_t *context) {
     if (!stream || !context) return NEVERC_RPC_IO_INVALID;
     nc_mutex_lock(&stream->lock);
-    if (stream->send_closed || stream->ended ||
-        stream->generation != stream->client->generation ||
-        !nc_atomic_load(&stream->client->running) ||
-        neverc_context_done(stream->context)) {
+    int ready = rpc_stream_outbound_ready(stream, context);
+    if (ready != NEVERC_RPC_IO_OK) {
         nc_mutex_unlock(&stream->lock);
-        return NEVERC_RPC_IO_CLOSED;
+        return ready;
     }
     stream->send_closed = 1;
     nc_mutex_unlock(&stream->lock);
@@ -1380,6 +1388,9 @@ int neverc_rpc_client_call_ex(
                 final_result = NEVERC_RPC_IO_OK;
             else
                 final_result = result;
+            if (final_result == NEVERC_RPC_IO_CLOSED &&
+                neverc_context_done(context))
+                final_result = NEVERC_RPC_IO_CANCELLED;
             if (final_result == NEVERC_RPC_IO_CANCELLED &&
                 (status->code == NEVERC_RPC_STATUS_UNKNOWN ||
                  status->code == NEVERC_RPC_STATUS_OK))

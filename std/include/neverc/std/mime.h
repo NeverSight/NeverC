@@ -49,8 +49,11 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
  * inject headers. The header, and a utf-8 encoded-word, must be
  * well-formed UTF-8 (overlong CR/LF and surrogate halves are rejected).
  * A well-formed word that does not fit the decode buffer is rejected
- * rather than copied through as a literal. Returns 0, or -1 with
- * *out_len zero. */
+ * rather than copied through as a literal.
+ * Incomplete words break like Go DecodeHeader (no pos+=1 rescan;
+ * CVE-2026-42504 / CL 774481 class). A leftover that still contains
+ * `=?` fail-closes: intentional NeverC policy, not leftover-as-literal.
+ * Returns 0, or -1 with *out_len zero. */
 int neverc_mime_decode_header(const char *src, size_t src_len,
                               char *out, size_t out_cap, size_t *out_len);
 

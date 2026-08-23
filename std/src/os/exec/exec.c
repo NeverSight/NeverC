@@ -770,8 +770,11 @@ static int exec_win_join_dir_and_name(const char *dir, const char *name,
             n = snprintf(buf, cap, "%s", name);
             return (n < 0 || (DWORD)n >= cap) ? -1 : n;
         }
-        /* C:foo — same-volume drive-relative (Go joinExeDirAndFName). */
-        if (dlen >= 1 &&
+        /* C:foo — same-volume only when Dir itself has a drive letter.
+         * Go joinExeDirAndFName FullPath(Dir) then compares volumes.
+         * Comparing dir[0] alone treats Dir=neverc_nvol_dir + N:payload
+         * as the same volume. */
+        if (dlen >= 2 && dir[1] == ':' &&
             ((dir[0] | 32) == (name[0] | 32))) {
             n = exec_win_is_drive_cwd(dir, dlen)
                     ? snprintf(buf, cap, "%s%s", dir, name + 2)
@@ -813,8 +816,23 @@ static const char *exec_windows_resolve_app(const neverc_exec_cmd_t *cmd,
         name = buf;
     }
     if (strchr(name, '\\') || strchr(name, '/') ||
-        (name[0] && name[1] == ':'))
-        return exec_win_try_with_exe(name, buf, cap) == 0 ? buf : NULL;
+        (name[0] && name[1] == ':')) {
+        /* Go lookExtensions / findExecutable: PATHEXT first so an
+         * extensionless sibling cannot shadow tool.exe. NeverC STD_TEST
+         * writes -o test_<name> without .exe; if PATHEXT misses, an
+         * existing explicit-path PE may still start. LookPath (no
+         * separator) still requires hasExt. */
+        if (exec_win_try_with_exe(name, buf, cap) == 0)
+            return buf;
+        if (exec_win_is_file(name)) {
+            size_t n = strlen(name);
+            if (n >= cap) return NULL;
+            if (name != buf)
+                memcpy(buf, name, n + 1);
+            return buf;
+        }
+        return NULL;
+    }
     path_env = exec_env_path(cmd->env, cmd->env_count);
     /* Custom Env without PATH must not fall back to the process PATH
      * (Go os/exec LookPath). CreateProcessA(NULL, ...) would also search. */

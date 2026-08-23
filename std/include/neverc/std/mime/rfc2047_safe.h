@@ -332,34 +332,30 @@ static int nci_rfc2047_header_safe(const char *s, size_t n) {
         const char *cur = mark + 2;
         size_t after = left - (size_t)(cur - p);
         const char *q1 = nci_2047_find(cur, after, "?", 1);
-        if (!q1) {
-            left -= (size_t)(mark + 1 - p);
-            p = mark + 1;
-            continue;
-        }
+        /* Incomplete word: leftover cannot contain a later complete
+         * encoded-word. Do not mark+1 and rescan `=?` (O(n²), same
+         * class as DecodeHeader / CVE-2026-42504). */
+        if (!q1)
+            break;
         const char *charset = cur;
         size_t clen = (size_t)(q1 - cur);
         cur = q1 + 1;
         after = left - (size_t)(cur - p);
-        if (after < 4) {
-            left -= (size_t)(mark + 1 - p);
-            p = mark + 1;
-            continue;
-        }
+        if (after < 4)
+            break;
         unsigned char enc = (unsigned char)*cur++;
         if (*cur != '?') {
-            left -= (size_t)(mark + 1 - p);
-            p = mark + 1;
+            /* Unlike DecodeHeader, keep looking: a later well-formed
+             * word may still inject. Skip this `=?`, not mark+1. */
+            left -= (size_t)(mark + 2 - p);
+            p = mark + 2;
             continue;
         }
         cur++;
         after = left - (size_t)(cur - p);
         const char *qe = nci_2047_find(cur, after, "?=", 2);
-        if (!qe) {
-            left -= (size_t)(mark + 1 - p);
-            p = mark + 1;
-            continue;
-        }
+        if (!qe)
+            break;
         const char *text = cur;
         size_t tlen = (size_t)(qe - cur);
         const char *end = qe + 2;

@@ -404,7 +404,6 @@ static void test_look_path(void) {
             char evil_dir[MAX_PATH], good_dir[MAX_PATH];
             char abs_evil[MAX_PATH], abs_good[MAX_PATH];
             char path_both[MAX_PATH * 2 + 8];
-            FILE *ef, *gf;
             CreateDirectoryA("neverc_extless_evil", NULL);
             CreateDirectoryA("neverc_extless_good", NULL);
             GetFullPathNameA("neverc_extless_evil", sizeof(abs_evil),
@@ -413,17 +412,13 @@ static void test_look_path(void) {
                              abs_good, NULL);
             snprintf(evil_dir, sizeof(evil_dir), "%s\\tool", abs_evil);
             snprintf(good_dir, sizeof(good_dir), "%s\\tool.exe", abs_good);
-            ef = fopen(evil_dir, "wb");
-            ASSERT_TRUE(ef != NULL);
-            if (ef) {
-                fputs("MZ", ef);
-                fclose(ef);
-            }
-            gf = fopen(good_dir, "wb");
-            ASSERT_TRUE(gf != NULL);
-            if (gf) {
-                fputs("MZ", gf);
-                fclose(gf);
+            {
+                char sysdir[MAX_PATH], src[MAX_PATH];
+                UINT sn = GetSystemDirectoryA(sysdir, (UINT)sizeof(sysdir));
+                ASSERT_TRUE(sn > 0 && sn < sizeof(sysdir));
+                snprintf(src, sizeof(src), "%s\\cmd.exe", sysdir);
+                ASSERT_TRUE(CopyFileA(src, evil_dir, FALSE));
+                ASSERT_TRUE(CopyFileA(src, good_dir, FALSE));
             }
             SetEnvironmentVariableA("PATH", abs_evil);
             p = neverc_exec_look_path("tool", buf, sizeof(buf));
@@ -432,7 +427,9 @@ static void test_look_path(void) {
             SetEnvironmentVariableA("PATH", path_both);
             p = neverc_exec_look_path("tool", buf, sizeof(buf));
             ASSERT_TRUE(p != NULL);
-            ASSERT_TRUE(p && strstr(p, "tool.exe") != NULL);
+            /* Default PATHEXT is ".EXE"; strstr is case-sensitive. */
+            ASSERT_TRUE(p && (strstr(p, "tool.exe") != NULL ||
+                              strstr(p, "tool.EXE") != NULL));
             DeleteFileA(evil_dir);
             DeleteFileA(good_dir);
             RemoveDirectoryA("neverc_extless_evil");
@@ -532,6 +529,61 @@ static void test_look_path(void) {
             SetEnvironmentVariableA("PATH", old_path);
         else
             SetEnvironmentVariableA("PATH", NULL);
+
+        /* Explicit path + existing PE, no PATHEXT suffix (STD_TEST -o). */
+        {
+            char sysdir[MAX_PATH], src[MAX_PATH], dest[MAX_PATH];
+            const char *true_args[] = {"/C", "exit /B 0"};
+            neverc_exec_cmd_t *extless;
+            neverc_exec_exit_status_t st = {0};
+            UINT sn = GetSystemDirectoryA(sysdir, (UINT)sizeof(sysdir));
+            ASSERT_TRUE(sn > 0 && sn < sizeof(sysdir));
+            snprintf(src, sizeof(src), "%s\\cmd.exe", sysdir);
+            ASSERT_TRUE(GetFullPathNameA("neverc_extless_argv0",
+                                         (DWORD)sizeof(dest), dest,
+                                         NULL) > 0);
+            DeleteFileA(dest);
+            ASSERT_TRUE(CopyFileA(src, dest, FALSE));
+            extless = neverc_exec_command(dest, true_args, 2);
+            ASSERT_TRUE(extless != NULL);
+            ASSERT_INT_EQ(neverc_exec_cmd_run(extless, &st), 0);
+            ASSERT_INT_EQ(st.exit_code, 0);
+            neverc_exec_cmd_free(extless);
+            DeleteFileA(dest);
+        }
+
+        /* Go lookExtensions: PATHEXT beats an extensionless sibling. */
+        {
+            char sysdir[MAX_PATH], src[MAX_PATH];
+            char hijack[MAX_PATH], hijack_exe[MAX_PATH];
+            const char *true_args[] = {"/C", "exit /B 0"};
+            neverc_exec_cmd_t *cmd;
+            neverc_exec_exit_status_t st = {0};
+            FILE *hf;
+            UINT sn = GetSystemDirectoryA(sysdir, (UINT)sizeof(sysdir));
+            ASSERT_TRUE(sn > 0 && sn < sizeof(sysdir));
+            snprintf(src, sizeof(src), "%s\\cmd.exe", sysdir);
+            ASSERT_TRUE(GetFullPathNameA("neverc_pathext_wins",
+                                         (DWORD)sizeof(hijack), hijack,
+                                         NULL) > 0);
+            snprintf(hijack_exe, sizeof(hijack_exe), "%s.exe", hijack);
+            DeleteFileA(hijack);
+            DeleteFileA(hijack_exe);
+            hf = fopen(hijack, "wb");
+            ASSERT_TRUE(hf != NULL);
+            if (hf) {
+                fputs("MZ", hf);
+                fclose(hf);
+            }
+            ASSERT_TRUE(CopyFileA(src, hijack_exe, FALSE));
+            cmd = neverc_exec_command(hijack, true_args, 2);
+            ASSERT_TRUE(cmd != NULL);
+            ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
+            ASSERT_INT_EQ(st.exit_code, 0);
+            neverc_exec_cmd_free(cmd);
+            DeleteFileA(hijack);
+            DeleteFileA(hijack_exe);
+        }
     }
 #endif
 
@@ -1123,6 +1175,31 @@ static void test_invalid_env_rejected(void) {
         ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
         ASSERT_INT_EQ(st.exit_code, 0);
         neverc_exec_cmd_free(cmd);
+    }
+
+    /* Go joinExeDirAndFName: a relative Dir's first letter is not a volume.
+     * Dir=neverc_nvol_dir + N:payload.exe must not become dir\payload.exe. */
+    {
+        char absdir[MAX_PATH], dir[MAX_PATH], payload[MAX_PATH];
+        char sysdir[MAX_PATH], src[MAX_PATH];
+        UINT n;
+        const char *hijack_args[] = {"N:payload.exe", NULL};
+        GetCurrentDirectoryA((DWORD)sizeof(absdir), absdir);
+        snprintf(dir, sizeof(dir), "%s\\neverc_nvol_dir", absdir);
+        snprintf(payload, sizeof(payload), "%s\\payload.exe", dir);
+        n = GetSystemDirectoryA(sysdir, (UINT)sizeof(sysdir));
+        ASSERT_TRUE(n > 0 && n < sizeof(sysdir));
+        snprintf(src, sizeof(src), "%s\\cmd.exe", sysdir);
+        CreateDirectoryA(dir, NULL);
+        ASSERT_TRUE(CopyFileA(src, payload, FALSE));
+        cmd = neverc_exec_command("N:payload.exe", hijack_args, 1);
+        ASSERT_TRUE(cmd != NULL);
+        neverc_exec_cmd_set_dir(cmd, "neverc_nvol_dir");
+        st.exit_code = -1;
+        ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), -1);
+        neverc_exec_cmd_free(cmd);
+        DeleteFileA(payload);
+        RemoveDirectoryA(dir);
     }
 #endif
 }

@@ -56,6 +56,7 @@ static void test_dir(void) {
     ASSERT_STR_EQ(neverc_filepath_dir("", buf, sizeof(buf)), ".");
 #ifdef _WIN32
     ASSERT_STR_EQ(neverc_filepath_dir("C:foo", buf, sizeof(buf)), "C:.");
+    ASSERT_STR_EQ(neverc_filepath_dir("C:\\file", buf, sizeof(buf)), "C:\\");
     ASSERT_STR_EQ(neverc_filepath_dir("C:\\foo\\bar\\..\\baz", buf, sizeof(buf)),
                   "C:\\foo");
 #else

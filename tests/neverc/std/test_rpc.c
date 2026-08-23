@@ -1522,13 +1522,36 @@ static void rpc_test_call_deadline(void) {
         ? rpc_test_dial(address, &client_config, &error) : NULL;
     CHECK(client != NULL);
     if (client) {
-        neverc_context_cancel_handle_t *cancel = NULL;
         neverc_context_t *background = neverc_context_background();
+        neverc_context_cancel_handle_t *send_cancel = NULL;
+        neverc_context_t *send_deadline = background
+            ? neverc_context_with_timeout_handle(background, 20, &send_cancel)
+            : NULL;
+        CHECK(send_deadline != NULL && send_cancel != NULL);
+        static const char request[] = "unary";
+        const char *open_error = NULL;
+        neverc_rpc_stream_t *expired_stream = send_deadline
+            ? neverc_rpc_stream_open(client, send_deadline, "test.Slow/Unary",
+                                     NULL, 0U, 0, &open_error)
+            : NULL;
+        CHECK(expired_stream != NULL);
+        neverc_time_sleep(40 * NEVERC_TIME_MILLISECOND);
+        int send_result = expired_stream
+            ? neverc_rpc_stream_send(expired_stream, send_deadline, request,
+                                     sizeof(request) - 1U)
+            : NEVERC_RPC_IO_CLOSED;
+        CHECK(send_result == NEVERC_RPC_IO_CANCELLED);
+        if (expired_stream)
+            neverc_rpc_stream_free(expired_stream);
+        neverc_context_cancel_handle_cancel(send_cancel);
+        neverc_context_cancel_handle_free(send_cancel);
+        neverc_context_free(send_deadline);
+
+        neverc_context_cancel_handle_t *cancel = NULL;
         neverc_context_t *deadline = background
             ? neverc_context_with_timeout_handle(background, 1, &cancel)
             : NULL;
         CHECK(deadline != NULL && cancel != NULL);
-        static const char request[] = "unary";
         char response[64];
         size_t response_length = 0;
         neverc_rpc_status_t status;

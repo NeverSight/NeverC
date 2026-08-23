@@ -570,6 +570,48 @@ static void test_symlink_windows_fromslash_and_relative_dir(void) {
     ASSERT_TRUE(strchr(got, '/') == NULL);
     ASSERT_TRUE(strchr(got, '\\') != NULL);
     neverc_os_remove_all(parent);
+
+    /* Go os.dirname("C:\\link") is "C:\\", not "C:.". destpath must Stat
+     * C:\name (directory) rather than C:.\name (the drive cwd file). */
+    {
+        char cwd[MAX_PATH], rootdir[MAX_PATH], rootlink[MAX_PATH];
+        char cwdfile[MAX_PATH], leaf[64];
+        neverc_os_fileinfo_t st;
+        DWORD pid = GetCurrentProcessId();
+        UINT n = GetCurrentDirectoryA((DWORD)sizeof(cwd), cwd);
+        if (n >= 3 && n < sizeof(cwd) && cwd[1] == ':' &&
+            (cwd[2] == '\\' || cwd[2] == '/') && cwd[3] != '\0') {
+            snprintf(leaf, sizeof(leaf), "neverc_os_dn_%lu",
+                     (unsigned long)pid);
+            snprintf(rootdir, sizeof(rootdir), "%c:\\%s", cwd[0], leaf);
+            snprintf(rootlink, sizeof(rootlink), "%c:\\%s_lnk", cwd[0], leaf);
+            snprintf(cwdfile, sizeof(cwdfile), "%s\\%s", cwd, leaf);
+            DeleteFileA(rootlink);
+            RemoveDirectoryA(rootdir);
+            DeleteFileA(cwdfile);
+            if (!CreateDirectoryA(rootdir, NULL)) {
+                printf("  skip: cannot mkdir at drive root\n");
+            } else {
+                HANDLE hf = CreateFileA(cwdfile, GENERIC_WRITE, 0, NULL,
+                                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
+                                        NULL);
+                if (hf != INVALID_HANDLE_VALUE)
+                    CloseHandle(hf);
+                if (neverc_os_symlink(leaf, rootlink) != 0) {
+                    printf("  skip: drive-root symlink not permitted\n");
+                } else {
+                    DWORD attr = GetFileAttributesA(rootlink);
+                    ASSERT_TRUE(attr != INVALID_FILE_ATTRIBUTES);
+                    ASSERT_TRUE((attr & FILE_ATTRIBUTE_DIRECTORY) != 0);
+                    ASSERT_EQ(neverc_os_stat(rootlink, &st), 0);
+                    ASSERT_TRUE(st.is_dir);
+                    neverc_os_remove(rootlink);
+                }
+                DeleteFileA(cwdfile);
+                RemoveDirectoryA(rootdir);
+            }
+        }
+    }
 }
 
 static void test_remove_all_clears_readonly(void) {
@@ -926,6 +968,21 @@ static void test_read_dir(void) {
         ASSERT_EQ(errno, EINVAL);
         ASSERT_TRUE(neverc_os_exists(keep));
         ASSERT_TRUE(neverc_os_exists(victim));
+        {
+            char secret[1200], dotted[1400];
+            HANDLE hf;
+            snprintf(secret, sizeof(secret), "%s\\secret", parent);
+            ASSERT_EQ(neverc_os_mkdir(secret, 0700), 0);
+            snprintf(dotted, sizeof(dotted), "\\\\?\\%s\\secret.", parent);
+            hf = CreateFileA(dotted, GENERIC_WRITE, 0, NULL, CREATE_NEW,
+                             FILE_ATTRIBUTE_NORMAL, NULL);
+            ASSERT_TRUE(hf != INVALID_HANDLE_VALUE);
+            if (hf != INVALID_HANDLE_VALUE)
+                CloseHandle(hf);
+            ASSERT_EQ(neverc_os_remove_all(dotted), 0);
+            ASSERT_TRUE(neverc_os_exists(secret));
+            ASSERT_TRUE(GetFileAttributesA(dotted) == INVALID_FILE_ATTRIBUTES);
+        }
         snprintf(escape, sizeof(escape), "\\\\?\\%s\\. ", parent);
         errno = 0;
         ASSERT_EQ(neverc_os_remove_all(escape), -1);
