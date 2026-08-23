@@ -323,13 +323,10 @@ int nci_tls_load_client_psk_offer(
     neverc_tls_config_t *cfg, tls_client_psk_offer_t *offer);
 void nci_tls_clear_client_psk_offer(tls_client_psk_offer_t *offer);
 int nci_tls_store_client_session(
-    neverc_tls_config_t *cfg,
-    const char *server_name,
+    neverc_tls_conn_t *conn,
     const uint8_t *ticket, size_t ticket_len,
     const uint8_t psk[TLS_HASH_SIZE_SHA256],
-    uint32_t lifetime, uint32_t age_add,
-    const char *alpn,
-    const uint8_t *peer_cert, size_t peer_cert_len);
+    uint32_t lifetime, uint32_t age_add);
 void nci_tls_store_server_session(
     neverc_tls_config_t *cfg,
     const uint8_t ticket[TLS_SERVER_TICKET_SIZE],

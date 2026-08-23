@@ -3308,9 +3308,7 @@ int nci_tls_parse_new_session_ticket(
             nonce, nonce_len, psk) != 0)
         return -1;
     int store_result = nci_tls_store_client_session(
-        conn->config, conn->server_name, ticket, ticket_len, psk,
-        lifetime, age_add, conn->alpn,
-        conn->peer_cert, conn->peer_cert_len);
+        conn, ticket, ticket_len, psk, lifetime, age_add);
     neverc_platform_secure_zero(psk, sizeof(psk));
     /* Session caching is opportunistic; allocation pressure must not turn a
      * valid post-handshake ticket into a connection failure. */
@@ -3736,6 +3734,25 @@ int neverc_tls_test_new_session_ticket_extensions(void) {
         neverc_tls_config_free(cfg);
         return -1;
     }
+
+    /* Dial-inferred SNI lives on the conn after Config.ServerName is
+     * restored. The ticket cache must still key the session by that name. */
+    if (tls_set_owned_string(&conn.server_name, "inferred.example", 16) != 0) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+    free(cfg->server_name);
+    cfg->server_name = NULL;
+    if (nci_tls_parse_new_session_ticket(
+            &conn, well_formed, sizeof(well_formed)) != 0 ||
+        !cfg->client_session.valid ||
+        !cfg->client_session.server_name ||
+        strcmp(cfg->client_session.server_name, "inferred.example") != 0) {
+        free(conn.server_name);
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+    free(conn.server_name);
 
     neverc_tls_config_free(cfg);
     return 0;

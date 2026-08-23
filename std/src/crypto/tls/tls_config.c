@@ -201,13 +201,17 @@ void nci_tls_clear_client_psk_offer(
 }
 
 int nci_tls_store_client_session(
-    neverc_tls_config_t *cfg,
-    const char *server_name,
+    neverc_tls_conn_t *conn,
     const uint8_t *ticket, size_t ticket_len,
     const uint8_t psk[TLS_HASH_SIZE_SHA256],
-    uint32_t lifetime, uint32_t age_add,
-    const char *alpn,
-    const uint8_t *peer_cert, size_t peer_cert_len) {
+    uint32_t lifetime, uint32_t age_add) {
+    neverc_tls_config_t *cfg = conn ? conn->config : NULL;
+    const char *server_name = conn ? conn->server_name : NULL;
+    const char *alpn = conn ? conn->alpn : NULL;
+    const uint8_t *peer_cert = conn ? conn->peer_cert : NULL;
+    size_t peer_cert_len = conn ? conn->peer_cert_len : 0;
+    if (!server_name || server_name[0] == '\0')
+        server_name = cfg ? cfg->server_name : NULL;
     if (!cfg || !cfg->session_mutex_initialized ||
         !server_name || server_name[0] == '\0' ||
         !ticket || ticket_len == 0 ||
