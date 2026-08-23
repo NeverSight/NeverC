@@ -47,6 +47,75 @@ jobs:
           New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps' -Name DumpCount -Value 10 -PropertyType DWord -Force | Out-Null
           New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\dumps" | Out-Null
 
+      - name: Patch tests with progress + unbuffered stdout
+        shell: python
+        run: |
+          from pathlib import Path
+          hook = r'''
+          #include <stdio.h>
+          #ifdef _WIN32
+          #include <windows.h>
+          static LONG WINAPI neverc_debug_crash(EXCEPTION_POINTERS *ep) {
+              fprintf(stderr, "CRASH code=%08lx addr=%p\n",
+                      (unsigned long)ep->ExceptionRecord->ExceptionCode,
+                      (void *)ep->ExceptionRecord->ExceptionAddress);
+              fflush(stderr);
+              return EXCEPTION_CONTINUE_SEARCH;
+          }
+          static void neverc_debug_install(void) {
+              setvbuf(stdout, NULL, _IONBF, 0);
+              setvbuf(stderr, NULL, _IONBF, 0);
+              SetUnhandledExceptionFilter(neverc_debug_crash);
+          }
+          #else
+          static void neverc_debug_install(void) {
+              setvbuf(stdout, NULL, _IONBF, 0);
+              setvbuf(stderr, NULL, _IONBF, 0);
+          }
+          #endif
+          '''
+          def wrap_calls(src, names):
+              for name in names:
+                  src = src.replace(
+                      f'    {name}();',
+                      f'    printf("BEGIN {name}\\n"); {name}(); printf("END {name}\\n");')
+              return src
+          tls = Path('tests/neverc/std/test_tls.c')
+          src = hook + tls.read_text()
+          src = src.replace(
+              'int main(void) {\n    printf("=== NeverC TLS Tests ===\\n");',
+              'int main(void) {\n    neverc_debug_install();\n    printf("=== NeverC TLS Tests ===\\n");')
+          src = wrap_calls(src, [
+              'test_config', 'test_cipher_suites',
+              'test_certificate_chain_verification',
+              'test_certificate_verify_signing', 'test_certificate_verify',
+              'test_dial_errors', 'test_client_server',
+              'test_session_resumption', 'test_alpn_no_overlap',
+              'test_concurrent_record_io', 'test_mutual_tls',
+              'test_dial_infers_sni', 'test_dial_does_not_persist_inferred_sni',
+              'test_unexpected_server_record_alert',
+              'test_malformed_server_hello_alert',
+              'test_plaintext_record_version_ignored',
+              'test_hello_retry_request_alert',
+              'test_trailing_plaintext_after_server_hello',
+              'test_oversized_server_handshake_alert',
+              'test_malformed_client_hello_alert',
+              'test_tls12_client_hello_alert',
+              'test_oversized_client_handshake_alert',
+              'test_malformed_handshake_alert',
+              'test_application_io_before_handshake'])
+          tls.write_text(src)
+          h5 = Path('tests/neverc/std/test_http_stage5.c')
+          htext = hook + h5.read_text()
+          htext = htext.replace(
+              'int main(void) {\n    puts("HTTP stage 5 production API test suite:");',
+              'int main(void) {\n    neverc_debug_install();\n    puts("HTTP stage 5 production API test suite:");')
+          htext = wrap_calls(htext, [
+              'http_stage5_plain_e2e', 'http_stage5_response_framing',
+              'http_stage5_client_security', 'http_stage5_tls_e2e'])
+          h5.write_text(htext)
+          print('patched')
+
       - name: Reproduce tls and http_stage5
         shell: bash
         run: |
