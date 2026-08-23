@@ -44,6 +44,7 @@ int neverc_tls_test_discard_ccs_before_handshake(void);
 int neverc_tls_test_reject_ccs_before_client_hello(void);
 int neverc_tls_test_discard_ccs_after_client_hello(void);
 int neverc_tls_test_encrypted_extensions_forbidden(void);
+int neverc_tls_test_user_canceled_ignored(void);
 int neverc_tls_test_hello_protocol_rules(void);
 int neverc_tls_test_certificate_request_schemes(void);
 int neverc_tls_test_certificate_entry_extensions(void);
@@ -144,6 +145,8 @@ static void test_config(void) {
               neverc_tls_test_hello_protocol_rules(), 0);
     check_int("reject_forbidden_encrypted_extensions",
               neverc_tls_test_encrypted_extensions_forbidden(), 0);
+    check_int("user_canceled_ignored",
+              neverc_tls_test_user_canceled_ignored(), 0);
     check_int("certificate_request_schemes",
               neverc_tls_test_certificate_request_schemes(), 0);
     check_int("certificate_entry_extensions",
@@ -2917,6 +2920,18 @@ static void test_dial_infers_sni(void) {
               1);
     check_str("explicit SNI on client", client_name, "sni.example");
     check_str("explicit SNI on server", server_name, "sni.example");
+
+    client_name[0] = '\0';
+    server_name[0] = '\0';
+    check_int("sni trailing dot handshake",
+              dial_sni_roundtrip("localhost.", client_name,
+                                 sizeof(client_name), server_name,
+                                 sizeof(server_name)),
+              1);
+    check_str("sni trailing dot keeps client identity",
+              client_name, "localhost.");
+    check_str("sni trailing dot is stripped on the wire",
+              server_name, "localhost");
 }
 
 static void test_dial_does_not_persist_inferred_sni(void) {

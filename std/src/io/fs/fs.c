@@ -192,6 +192,15 @@ static int fs_win_prepare_path(const char *path, char *dst, size_t dst_cap,
     int n;
 
     if (skip == 0) {
+        if (fs_win_component_needs_extended_prefix(path) &&
+            path[0] != '\0' && path[1] == ':' &&
+            (path[2] == '\\' || path[2] == '/')) {
+            n = snprintf(dst, dst_cap, "\\\\?\\%s", path);
+            if (n < 0 || (size_t)n >= dst_cap)
+                return -1;
+            *out = dst;
+            return 0;
+        }
         *out = path;
         return 0;
     }

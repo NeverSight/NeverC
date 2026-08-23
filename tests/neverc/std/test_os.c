@@ -744,6 +744,25 @@ static void test_temp(void) {
     ASSERT_TRUE(neverc_os_is_dir(dir_path));
     ASSERT_TRUE(strchr(dir_path, '/') == NULL);
     ASSERT_EQ(neverc_os_remove_all(dir_path), 0);
+    {
+        size_t tn = strlen(tmpdir);
+        int drive_root = tn == 3 && tmpdir[1] == ':' &&
+            (tmpdir[2] == '\\' || tmpdir[2] == '/');
+        if (!drive_root) {
+            char join[1200];
+            HANDLE hf;
+            ASSERT_TRUE(tn == 0 ||
+                        (tmpdir[tn - 1] != '\\' && tmpdir[tn - 1] != '/'));
+            snprintf(join, sizeof(join),
+                     "\\\\?\\%s\\neverc_tempdir_join.tmp", tmpdir);
+            hf = CreateFileA(join, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                             FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE,
+                             NULL);
+            ASSERT_TRUE(hf != INVALID_HANDLE_VALUE);
+            if (hf != INVALID_HANDLE_VALUE)
+                CloseHandle(hf);
+        }
+    }
 #endif
 
     char long_pattern[4096];
@@ -991,6 +1010,21 @@ static void test_read_dir(void) {
             ASSERT_EQ(neverc_os_remove_all(dotted), 0);
             ASSERT_TRUE(neverc_os_exists(secret));
             ASSERT_TRUE(GetFileAttributesA(dotted) == INVALID_FILE_ATTRIBUTES);
+        }
+        {
+            char secret2[1200], dotted2[1400], unprefixed[1400];
+            HANDLE hf3;
+            snprintf(secret2, sizeof(secret2), "%s\\secret", parent);
+            snprintf(dotted2, sizeof(dotted2), "\\\\?\\%s\\secret.", parent);
+            hf3 = CreateFileA(dotted2, GENERIC_WRITE, 0, NULL, CREATE_NEW,
+                              FILE_ATTRIBUTE_NORMAL, NULL);
+            ASSERT_TRUE(hf3 != INVALID_HANDLE_VALUE);
+            if (hf3 != INVALID_HANDLE_VALUE)
+                CloseHandle(hf3);
+            snprintf(unprefixed, sizeof(unprefixed), "%s\\secret.", parent);
+            ASSERT_EQ(neverc_os_remove_all(unprefixed), 0);
+            ASSERT_TRUE(neverc_os_exists(secret2));
+            ASSERT_TRUE(GetFileAttributesA(dotted2) == INVALID_FILE_ATTRIBUTES);
         }
         {
             char tree[1024], secret_dir[1200], dotted_file[1400], rmquery[1400];

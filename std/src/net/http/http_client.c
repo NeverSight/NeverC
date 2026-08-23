@@ -307,7 +307,8 @@ typedef struct {
 
 static int parse_url_port(const char *start, const char *end,
                           uint16_t *port) {
-    if (!start || start == end) return -1;
+    /* Go validOptionalPort: `host:` is an omitted port, not a syntax error. */
+    if (!start || start == end) return 0;
     unsigned value = 0;
     for (const char *p = start; p < end; p++) {
         unsigned char c = (unsigned char)*p;
@@ -322,7 +323,8 @@ static int parse_url_port(const char *start, const char *end,
 }
 
 static int client_valid_port(const char *s, size_t length) {
-    if (!s || length == 0) return 0;
+    if (!s) return 0;
+    if (length == 0) return 1;
     unsigned value = 0;
     for (size_t i = 0; i < length; i++) {
         unsigned char c = (unsigned char)s[i];
@@ -425,35 +427,47 @@ static int parse_http_url(const char *url, parsed_url_t *out) {
     }
     memcpy(out->authority, p, authority_length);
     out->authority[authority_length] = '\0';
+    /* Go validOptionalPort: a trailing `:` is an omitted port. */
+    if (authority_length > 0 &&
+        out->authority[authority_length - 1] == ':') {
+        authority_length--;
+        out->authority[authority_length] = '\0';
+    }
     if (!client_valid_host(out->authority, authority_length))
         return -1;
 
-    if (*p == '[') {
-        const char *bracket = (const char *)memchr(
-            p, ']', authority_length);
-        if (!bracket || bracket == p + 1) return -1;
-        size_t host_length = (size_t)(bracket - p - 1);
-        if (host_length >= sizeof(out->host)) return -1;
-        memcpy(out->host, p + 1, host_length);
-        out->host[host_length] = '\0';
-        if (bracket + 1 < authority_end) {
-            if (bracket[1] != ':' ||
-                parse_url_port(bracket + 2, authority_end, &out->port) != 0)
+    {
+        const char *auth = out->authority;
+        const char *auth_end = auth + authority_length;
+        if (*auth == '[') {
+            const char *bracket = (const char *)memchr(
+                auth, ']', authority_length);
+            if (!bracket || bracket == auth + 1) return -1;
+            size_t host_length = (size_t)(bracket - auth - 1);
+            if (host_length >= sizeof(out->host)) return -1;
+            memcpy(out->host, auth + 1, host_length);
+            out->host[host_length] = '\0';
+            if (bracket + 1 < auth_end) {
+                if (bracket[1] != ':' ||
+                    parse_url_port(bracket + 2, auth_end, &out->port) != 0)
+                    return -1;
+            }
+        } else {
+            const char *colon = (const char *)memchr(auth, ':',
+                                                     authority_length);
+            const char *host_end = colon ? colon : auth_end;
+            if (colon && memchr(colon + 1, ':',
+                                (size_t)(auth_end - colon - 1)))
+                return -1;
+            size_t host_length = (size_t)(host_end - auth);
+            if (host_length == 0 || host_length >= sizeof(out->host))
+                return -1;
+            memcpy(out->host, auth, host_length);
+            out->host[host_length] = '\0';
+            if (colon && parse_url_port(colon + 1, auth_end,
+                                        &out->port) != 0)
                 return -1;
         }
-    } else {
-        const char *colon = (const char *)memchr(p, ':', authority_length);
-        const char *host_end = colon ? colon : authority_end;
-        if (colon && memchr(colon + 1, ':',
-                            (size_t)(authority_end - colon - 1)))
-            return -1;
-        size_t host_length = (size_t)(host_end - p);
-        if (host_length == 0 || host_length >= sizeof(out->host)) return -1;
-        memcpy(out->host, p, host_length);
-        out->host[host_length] = '\0';
-        if (colon && parse_url_port(colon + 1, authority_end,
-                                    &out->port) != 0)
-            return -1;
     }
 
     const char *target = authority_end;

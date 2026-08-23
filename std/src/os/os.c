@@ -149,12 +149,33 @@ static int os_win_path_has_dotdot_component(const char *path) {
     return 0;
 }
 
+/* Win32 without \\?\ folds a trailing '.' / ' ' on each component.
+ * "C:\\temp\\secret." must not become C:\\temp\\secret. */
+static int os_win_component_needs_extended_prefix(const char *path) {
+    const char *p = path;
+    while (*p) {
+        const char *start = p;
+        while (*p && *p != '\\' && *p != '/')
+            p++;
+        size_t n = (size_t)(p - start);
+        if (n > 0 && (start[n - 1] == '.' || start[n - 1] == ' ')) {
+            int is_dot = (n == 1 && start[0] == '.');
+            int is_dotdot = (n == 2 && start[0] == '.' && start[1] == '.');
+            if (!is_dot && !is_dotdot)
+                return 1;
+        }
+        if (*p)
+            p++;
+    }
+    return 0;
+}
+
 /* Map NT/Win32 prefixes to a path ANSI APIs can use without turning a
  * volume/device path into a cwd-relative name (Go os.normaliseLinkPath /
  * RemoveAll). Drive-absolute and UNC keep \\?\ so walk/delete can name
  * trailing-dot/space children; \\?\C: must not become C: (the drive's
  * cwd). \??\ is converted to \\?\ otherwise so FindFirstFileA does not
- * treat '?' as a wildcard. */
+ * treat '?' as a wildcard. Unprefixed trailing-dot names also get \\?\. */
 static int os_win_prepare_path(const char *path, char *dst, size_t dst_cap,
                                const char **out) {
     int skip = os_win_skip_extended_prefix(path);
@@ -163,6 +184,15 @@ static int os_win_prepare_path(const char *path, char *dst, size_t dst_cap,
     int n;
 
     if (skip == 0) {
+        if (os_win_component_needs_extended_prefix(path) &&
+            path[0] != '\0' && path[1] == ':' &&
+            (path[2] == '\\' || path[2] == '/')) {
+            n = snprintf(dst, dst_cap, "\\\\?\\%s", path);
+            if (n < 0 || (size_t)n >= dst_cap)
+                return -1;
+            *out = dst;
+            return 0;
+        }
         *out = path;
         return 0;
     }
@@ -840,7 +870,13 @@ static int os_win_delete_path(const char *name) {
 int neverc_os_remove(const char *name) {
     if (!name || name[0] == '\0') return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    return os_win_delete_path(name) == 0 ? 0 : os_win_fail();
+    {
+        char prepared[4096];
+        const char *use = name;
+        if (os_win_prepare_path(name, prepared, sizeof(prepared), &use) != 0)
+            return os_win_fail();
+        return os_win_delete_path(use) == 0 ? 0 : os_win_fail();
+    }
 #else
     return remove(name) == 0 ? 0 : -1;
 #endif
@@ -1315,7 +1351,14 @@ int neverc_os_temp_dir(char *buf, size_t cap) {
     if (!buf || cap == 0) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     DWORD n = GetTempPathA((DWORD)cap, buf);
-    return n > 0 && (size_t)n < cap ? 0 : -1;
+    if (n == 0 || (size_t)n >= cap)
+        return -1;
+    /* GetTempPath includes a trailing slash. Go os.TempDir strips one
+     * unless the result is a drive root (`C:\`); looping would turn
+     * `C:\` into `C:` (the drive's cwd). */
+    if (n > 3 && (buf[n - 1] == '\\' || buf[n - 1] == '/'))
+        buf[n - 1] = '\0';
+    return 0;
 #else
     const char *tmp = getenv("TMPDIR");
     if (!tmp || tmp[0] == '\0') tmp = "/tmp";

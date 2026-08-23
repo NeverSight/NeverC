@@ -567,13 +567,23 @@ static int mail_parse_uint(const char **pp, int min_digits, int max_digits,
     return 0;
 }
 
+/* RFC 5234: ABNF literals are case-insensitive. Go time.Parse uses EqualFold. */
+static int mail_eq_ci(const char *a, const char *b, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        unsigned char ca = (unsigned char)a[i], cb = (unsigned char)b[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (unsigned char)(ca + 32);
+        if (cb >= 'A' && cb <= 'Z') cb = (unsigned char)(cb + 32);
+        if (ca != cb) return 0;
+    }
+    return 1;
+}
+
 static int mail_month_index(const char *p) {
     static const char *months[] = {
         "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"
     };
     for (int i = 0; i < 12; i++) {
-        if (p[0] == months[i][0] && p[1] == months[i][1] &&
-            p[2] == months[i][2])
+        if (mail_eq_ci(p, months[i], 3))
             return i;
     }
     return -1;
@@ -584,7 +594,7 @@ static int mail_dow_ok(const char *p) {
         "Mon","Tue","Wed","Thu","Fri","Sat","Sun"
     };
     for (int i = 0; i < 7; i++) {
-        if (p[0] == dows[i][0] && p[1] == dows[i][1] && p[2] == dows[i][2])
+        if (mail_eq_ci(p, dows[i], 3))
             return 1;
     }
     return 0;
@@ -600,7 +610,7 @@ static int mail_named_zone(const char *p, size_t n, int *offset) {
         {"PST", -8 * 3600}, {"PDT", -7 * 3600},
     };
     for (size_t i = 0; i < sizeof(zones) / sizeof(zones[0]); i++) {
-        if (strlen(zones[i].name) == n && memcmp(p, zones[i].name, n) == 0) {
+        if (strlen(zones[i].name) == n && mail_eq_ci(p, zones[i].name, n)) {
             *offset = zones[i].off;
             return 0;
         }

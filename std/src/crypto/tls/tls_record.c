@@ -1172,9 +1172,19 @@ int nci_tls_recv_plain_handshake_message(
         int record_result = nci_tls_recv_record(
             conn, &record_type, record_data, &record_len);
         if (record_result != 0) return record_result;
-        if (record_type == TLS_CT_ALERT)
-            return nci_tls_fail_handshake_alert(
+        if (record_type == TLS_CT_ALERT) {
+            int alert_rc = nci_tls_fail_handshake_alert(
                 conn, record_data, record_len);
+            if (alert_rc == 0) {
+                if (++conn->non_advancing_records >
+                    TLS_MAX_NON_ADVANCING_RECORDS)
+                    return nci_tls_protocol_error(
+                        conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                        "too many non-advancing TLS records");
+                continue;
+            }
+            return alert_rc;
+        }
         if (record_type == TLS_CT_CHANGE_CIPHER_SPEC) {
             if (nci_tls_handle_ccs(conn, record_data, record_len) != 0)
                 return -1;

@@ -6,6 +6,7 @@
 #include "neverc/std/compress/gzip.h"
 #include "../_net_internal.h"
 #include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -1485,6 +1486,96 @@ static int mux_path_is_multi_root(const char *pat, const char *path) {
            memcmp(slashed, pat, prefix_len) == 0;
 }
 
+/* Go net/http cleanPath: path.Clean plus a trailing slash when the
+ * original had one (except `/`). HTTP paths stay slash-separated. */
+static int mux_clean_path(const char *path, char *out, size_t cap) {
+    size_t w = 0;
+    int had_trailing;
+    const char *s;
+
+    if (!out || cap < 2)
+        return -1;
+    if (!path || path[0] == '\0') {
+        memcpy(out, "/", 2);
+        return 0;
+    }
+    had_trailing = path[strlen(path) - 1] == '/';
+    s = path;
+    out[w++] = '/';
+    if (*s == '/')
+        s++;
+    while (*s) {
+        const char *start;
+        size_t n;
+        if (*s == '/') {
+            s++;
+            continue;
+        }
+        start = s;
+        while (*s && *s != '/')
+            s++;
+        n = (size_t)(s - start);
+        if (n == 1 && start[0] == '.')
+            continue;
+        if (n == 2 && start[0] == '.' && start[1] == '.') {
+            if (w > 1) {
+                while (w > 1 && out[w - 1] != '/')
+                    w--;
+                if (w > 1)
+                    w--;
+            }
+            continue;
+        }
+        if (w > 1) {
+            if (w + 1 >= cap)
+                return -1;
+            out[w++] = '/';
+        }
+        if (w + n >= cap)
+            return -1;
+        memcpy(out + w, start, n);
+        w += n;
+    }
+    if (had_trailing && w > 1) {
+        if (w + 1 >= cap)
+            return -1;
+        out[w++] = '/';
+    }
+    out[w] = '\0';
+    return 0;
+}
+
+static void mux_redirect_location(neverc_http_response_writer_t *writer,
+                                  const char *loc, const char *query) {
+    if (query && query[0]) {
+        char locq[4096];
+        if ((size_t)snprintf(locq, sizeof(locq), "%s?%s", loc, query) <
+            sizeof(locq))
+            neverc_http_redirect(writer, locq, 301);
+        else
+            neverc_http_redirect(writer, loc, 301);
+    } else {
+        neverc_http_redirect(writer, loc, 301);
+    }
+}
+
+static const char *mux_effective_path(const char *method, const char *path,
+                                      char *cleaned, size_t cap,
+                                      int *cleaned_differs) {
+    *cleaned_differs = 0;
+    if (!path)
+        path = "";
+    if (method && strcmp(method, "CONNECT") == 0)
+        return path;
+    if (mux_clean_path(path, cleaned, cap) != 0)
+        return path;
+    if (strcmp(cleaned, path) != 0) {
+        *cleaned_differs = 1;
+        return cleaned;
+    }
+    return path;
+}
+
 static int mux_slash_redirect(neverc_http_mux_t *mux, const char *method,
                               const char *path, route_t *current,
                               char *loc, size_t loc_cap) {
@@ -1762,9 +1853,13 @@ void nc_http_mux_dispatch(neverc_http_mux_t *mux,
         mux = &default_mux;
     }
     path_params_t params;
+    char cleaned[4096];
+    int cleaned_differs = 0;
+    const char *path = mux_effective_path(
+        request->method, request->path, cleaned, sizeof(cleaned),
+        &cleaned_differs);
     memset(&params, 0, sizeof(params));
-    route_t *route = mux_match_ex(
-        mux, request->method, request->path, &params);
+    route_t *route = mux_match_ex(mux, request->method, path, &params);
     if (params.count > 0) {
         request->path_params = params.buf;
         request->nparams = params.count;
@@ -1782,18 +1877,13 @@ void nc_http_mux_dispatch(neverc_http_mux_t *mux,
     }
     {
         char loc[4096];
-        if (mux_slash_redirect(mux, request->method, request->path, route,
+        if (mux_slash_redirect(mux, request->method, path, route,
                                loc, sizeof(loc))) {
-            if (request->query && request->query[0]) {
-                char locq[4096];
-                if ((size_t)snprintf(locq, sizeof(locq), "%s?%s", loc,
-                                     request->query) < sizeof(locq))
-                    neverc_http_redirect(writer, locq, 301);
-                else
-                    neverc_http_redirect(writer, loc, 301);
-            } else {
-                neverc_http_redirect(writer, loc, 301);
-            }
+            mux_redirect_location(writer, loc, request->query);
+            return;
+        }
+        if (cleaned_differs) {
+            mux_redirect_location(writer, path, request->query);
             return;
         }
     }
@@ -1801,7 +1891,7 @@ void nc_http_mux_dispatch(neverc_http_mux_t *mux,
         route_invoke(route, request, writer);
     } else {
         char allow[256];
-        if (mux_fill_allow(mux, request->path, allow, sizeof(allow))) {
+        if (mux_fill_allow(mux, path, allow, sizeof(allow))) {
             neverc_http_set_status(writer, 405);
             neverc_http_set_header(writer, "Allow", allow);
             (void)neverc_http_write_string(writer, "Method Not Allowed\n");
@@ -1900,7 +1990,8 @@ static int http_valid_field_value(const char *s, size_t length) {
 }
 
 static int http_valid_port(const char *s, size_t length) {
-    if (!s || length == 0) return 0;
+    if (!s) return 0;
+    if (length == 0) return 1;
     unsigned value = 0;
     for (size_t i = 0; i < length; i++) {
         unsigned char c = (unsigned char)s[i];
@@ -3274,11 +3365,17 @@ static void http_conn_process(http_conn_t *hc) {
         }
         req.context = request_context;
 
-        /* Route with path parameter extraction */
+        /* Route with path parameter extraction. Go ServeMux cleanPath
+         * first so `/hello/../hello` 301s instead of 404. */
         path_params_t params;
+        char cleaned[4096];
+        int cleaned_differs = 0;
+        const char *match_path = mux_effective_path(
+            req.method, req.path, cleaned, sizeof(cleaned),
+            &cleaned_differs);
         memset(&params, 0, sizeof(params));
         route_t *route =
-            mux_match_ex(hc->mux, req.method, req.path, &params);
+            mux_match_ex(hc->mux, req.method, match_path, &params);
 
         if (params.count > 0) {
             req.path_params = params.buf;
@@ -3318,23 +3415,16 @@ static void http_conn_process(http_conn_t *hc) {
 
         {
             char loc[4096];
-            if (mux_slash_redirect(hc->mux, req.method, req.path, route,
+            if (mux_slash_redirect(hc->mux, req.method, match_path, route,
                                    loc, sizeof(loc))) {
-                if (req.query && req.query[0]) {
-                    char locq[4096];
-                    if ((size_t)snprintf(locq, sizeof(locq), "%s?%s", loc,
-                                         req.query) < sizeof(locq))
-                        neverc_http_redirect(w, locq, 301);
-                    else
-                        neverc_http_redirect(w, loc, 301);
-                } else {
-                    neverc_http_redirect(w, loc, 301);
-                }
+                mux_redirect_location(w, loc, req.query);
+            } else if (cleaned_differs) {
+                mux_redirect_location(w, match_path, req.query);
             } else if (route) {
                 route_invoke(route, &req, w);
             } else {
                 char allow[256];
-                if (mux_fill_allow(hc->mux, req.path, allow, sizeof(allow))) {
+                if (mux_fill_allow(hc->mux, match_path, allow, sizeof(allow))) {
                     neverc_http_set_status(w, 405);
                     neverc_http_set_header(w, "Allow", allow);
                     neverc_http_write_string(w, "Method Not Allowed\n");

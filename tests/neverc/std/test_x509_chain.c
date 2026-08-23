@@ -794,6 +794,22 @@ int main(void) {
     CHECK("name_constraints_excluded_ip_rejected",
           neverc_x509_verify_chain(
               nc_chain, 2, &valid_time, NULL, 0) != 0);
+    {
+        neverc_x509_ip_address_t mapped_ip;
+        memset(&mapped_ip, 0, sizeof(mapped_ip));
+        mapped_ip.bytes[10] = 0xff;
+        mapped_ip.bytes[11] = 0xff;
+        mapped_ip.bytes[12] = 10;
+        mapped_ip.bytes[13] = 1;
+        mapped_ip.bytes[14] = 2;
+        mapped_ip.bytes[15] = 3;
+        mapped_ip.len = 16;
+        nc_leaf.ip_addresses = &mapped_ip;
+        CHECK("name_constraints_mapped_ipv4_excluded",
+              neverc_x509_verify_chain(
+                  nc_chain, 2, &valid_time, NULL, 0) != 0);
+        nc_leaf.ip_addresses = &matching_ip;
+    }
 
     nc_leaf.ip_addresses = NULL;
     nc_leaf.ip_address_count = 0;

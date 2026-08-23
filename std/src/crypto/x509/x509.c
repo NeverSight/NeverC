@@ -487,9 +487,17 @@ static int append_dns_name(neverc_x509_cert_t *cert,
     return 0;
 }
 
+static int x509_ip_is_v4_mapped(const uint8_t *ip, size_t len) {
+    static const uint8_t prefix[12] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff
+    };
+    return len == 16 && ip && memcmp(ip, prefix, 12) == 0;
+}
+
 static int append_ip_address(neverc_x509_cert_t *cert,
                              const uint8_t *value, size_t len) {
     if (!cert || !value || (len != 4 && len != 16) ||
+        x509_ip_is_v4_mapped(value, len) ||
         cert->ip_address_count >= X509_MAX_SAN_ENTRIES ||
         cert->ip_address_count ==
             SIZE_MAX / sizeof(*cert->ip_addresses))
@@ -698,6 +706,7 @@ static int append_ip_network(neverc_x509_ip_network_t **networks,
                              size_t *count, const uint8_t *value,
                              size_t len) {
     if (!networks || !count || !value || (len != 8 && len != 32) ||
+        (len == 32 && x509_ip_is_v4_mapped(value, 16)) ||
         *count >= X509_MAX_SAN_ENTRIES ||
         *count == SIZE_MAX / sizeof(**networks))
         return -1;
@@ -1472,6 +1481,15 @@ static int parse_ip_literal(const char *text, size_t len,
     if (parse_ipv6_literal(text, len, out) == 0) {
         *out_len = 16;
         return 0;
+    }
+    /* Go net.ParseIP accepts a zone on IPv6 (`::1%lo0`). */
+    if (memchr(text, ':', len)) {
+        const char *pct = (const char *)memchr(text, '%', len);
+        if (pct && pct > text &&
+            parse_ipv6_literal(text, (size_t)(pct - text), out) == 0) {
+            *out_len = 16;
+            return 0;
+        }
     }
     return -1;
 }

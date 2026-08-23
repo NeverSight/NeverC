@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <limits.h>
 
 #ifndef NC_HTML_TEMPLATE_MALLOC
 #define NC_HTML_TEMPLATE_MALLOC malloc
@@ -1356,6 +1357,42 @@ static char *html_js_tpl_escape(const char *s) {
     return r;
 }
 
+/* Go jsRegexpEscaper: js_escape plus regexp metacharacters. Empty is `(?:)`. */
+static int html_js_re_meta(char c) {
+    return c == '.' || c == '*' || c == '?' || c == '(' || c == ')' ||
+           c == '[' || c == ']' || c == '{' || c == '}' || c == '|' ||
+           c == '^' || c == '-';
+}
+
+static char *html_js_re_escape(const char *s) {
+    char *js = neverc_html_js_escape(s);
+    if (!js) return NULL;
+    if (js[0] == '\0') {
+        free(js);
+        return dup_cstr("(?:)");
+    }
+    size_t n = strlen(js), extra = 0, i, w;
+    for (i = 0; i < n; i++) {
+        if (html_js_re_meta(js[i])) {
+            if (extra == SIZE_MAX) { free(js); return NULL; }
+            extra++;
+        }
+    }
+    if (extra == 0) return js;
+    if (extra > SIZE_MAX - n - 1U) { free(js); return NULL; }
+    char *r = (char *)NC_HTML_TEMPLATE_MALLOC(n + extra + 1U);
+    if (!r) { free(js); return NULL; }
+    w = 0;
+    for (i = 0; i < n; i++) {
+        if (html_js_re_meta(js[i]))
+            r[w++] = '\\';
+        r[w++] = js[i];
+    }
+    r[w] = '\0';
+    free(js);
+    return r;
+}
+
 /* Skip ASCII whitespace and CSS comments immediately before index i. */
 static size_t html_css_skip_filler_back(const char *buf, size_t i) {
     for (;;) {
@@ -1380,13 +1417,23 @@ static size_t html_css_skip_filler_back(const char *buf, size_t i) {
     }
 }
 
+/* Go isCSSNmchar: ASCII CSS ident plus non-ASCII. */
+static int html_css_nmchar(unsigned char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+           c >= 0x80;
+}
+
 /* paren_end is exclusive; buf[paren_end-1] must be '('. Allow `url (` and
  * comments between url and '(' so quoted url() interpolations stay in
- * URL context. */
+ * URL context. Go endsWithCSSKeyword: `myurl(` is not `url(`. */
 static int html_css_url_open_before(const char *buf, size_t paren_end) {
     if (paren_end == 0 || buf[paren_end - 1] != '(') return 0;
     size_t n = html_css_skip_filler_back(buf, paren_end - 1);
-    return n >= 3 && html_ci_eq_n(buf + n - 3, "url", 3);
+    if (n < 3 || !html_ci_eq_n(buf + n - 3, "url", 3)) return 0;
+    if (n > 3 && html_css_nmchar((unsigned char)buf[n - 4]))
+        return 0;
+    return 1;
 }
 
 /* `url({{.X}})`, `url("{{.X}}")`, `url( "{{.X}}")`, and the same with a
@@ -2080,6 +2127,8 @@ static int execute_nodes(const node_t *n,
                     escaped = neverc_html_js_escape(val);
                 else if (in_script && !in_attr && in_js_tpl)
                     escaped = html_js_tpl_escape(val);
+                else if (in_script && !in_attr && in_js_re)
+                    escaped = html_js_re_escape(val);
                 else if (in_script && !in_attr &&
                          html_prev_non_ws_is_digit(*buf, *len))
                     escaped = neverc_html_escape("ZgotmplZ");

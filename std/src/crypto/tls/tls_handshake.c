@@ -533,13 +533,20 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
     memcpy(ch + ch_len, my_pubkey, 32); ch_len += 32;
 
     /* Extension: server_name (SNI). Prefer the name already stashed on
-     * the conn (dial-inferred host) so a shared Config is not mutated. */
+     * the conn (dial-inferred host) so a shared Config is not mutated.
+     * Go hostnameInSNI rewrites only the wire name; conn identity and
+     * ticket keys keep the configured string. */
     {
         const char *sni = conn->server_name ? conn->server_name :
             (cfg ? cfg->server_name : NULL);
         if (sni && sni[0]) {
             size_t sni_len = strlen(sni);
-            if (sni_len == 0 || sni_len > 255) {
+            char wire[TLS_MAX_SERVER_NAME + 1];
+            size_t wire_len;
+            const char *host;
+            size_t host_len;
+            const char *pct;
+            if (sni_len == 0 || sni_len > TLS_MAX_SERVER_NAME) {
                 nci_tls_clear_client_psk_offer(&psk_offer);
                 return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
             }
@@ -548,13 +555,36 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
                 nci_tls_clear_client_psk_offer(&psk_offer);
                 return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
             }
-            if (!nci_tls_name_is_ip_literal(sni)) {
+            host = sni;
+            host_len = sni_len;
+            if (host_len >= 2 && host[0] == '[' &&
+                host[host_len - 1] == ']') {
+                host++;
+                host_len -= 2;
+            }
+            pct = (const char *)memchr(host, '%', host_len);
+            if (pct)
+                host_len = (size_t)(pct - host);
+            if (host_len >= sizeof(wire)) {
+                nci_tls_clear_client_psk_offer(&psk_offer);
+                return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
+            }
+            memcpy(wire, host, host_len);
+            wire[host_len] = '\0';
+            if (nci_tls_name_is_ip_literal(wire))
+                wire_len = 0;
+            else {
+                while (host_len > 0 && wire[host_len - 1] == '.')
+                    wire[--host_len] = '\0';
+                wire_len = host_len;
+            }
+            if (wire_len > 0) {
                 tls_put_u16(ch + ch_len, TLS_EXT_SERVER_NAME); ch_len += 2;
-                tls_put_u16(ch + ch_len, (uint16_t)(sni_len + 5)); ch_len += 2;
-                tls_put_u16(ch + ch_len, (uint16_t)(sni_len + 3)); ch_len += 2;
+                tls_put_u16(ch + ch_len, (uint16_t)(wire_len + 5)); ch_len += 2;
+                tls_put_u16(ch + ch_len, (uint16_t)(wire_len + 3)); ch_len += 2;
                 ch[ch_len++] = 0; /* host_name type */
-                tls_put_u16(ch + ch_len, (uint16_t)sni_len); ch_len += 2;
-                memcpy(ch + ch_len, sni, sni_len); ch_len += sni_len;
+                tls_put_u16(ch + ch_len, (uint16_t)wire_len); ch_len += 2;
+                memcpy(ch + ch_len, wire, wire_len); ch_len += wire_len;
             }
         }
     }
@@ -841,9 +871,19 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
                 return nci_tls_error(
                     conn, "failed to decrypt server handshake record");
             if (inner_type != TLS_CT_HANDSHAKE) {
-                if (inner_type == TLS_CT_ALERT)
-                    return nci_tls_fail_handshake_alert(
+                if (inner_type == TLS_CT_ALERT) {
+                    int alert_rc = nci_tls_fail_handshake_alert(
                         conn, record_data, record_len);
+                    if (alert_rc == 0) {
+                        if (++conn->non_advancing_records >
+                            TLS_MAX_NON_ADVANCING_RECORDS)
+                            return nci_tls_protocol_error(
+                                conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                                "too many non-advancing TLS records");
+                        continue;
+                    }
+                    return alert_rc;
+                }
                 return nci_tls_protocol_error(
                     conn, TLS_ALERT_UNEXPECTED_MESSAGE,
                     "server sent non-handshake data during handshake");
@@ -2351,9 +2391,19 @@ int nci_tls_server_handshake(neverc_tls_conn_t *conn,
                     record_data, &record_len) != 0)
                 return -1;
             if (inner_type != TLS_CT_HANDSHAKE) {
-                if (inner_type == TLS_CT_ALERT)
-                    return nci_tls_fail_handshake_alert(
+                if (inner_type == TLS_CT_ALERT) {
+                    int alert_rc = nci_tls_fail_handshake_alert(
                         conn, record_data, record_len);
+                    if (alert_rc == 0) {
+                        if (++conn->non_advancing_records >
+                            TLS_MAX_NON_ADVANCING_RECORDS)
+                            return nci_tls_protocol_error(
+                                conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                                "too many non-advancing TLS records");
+                        continue;
+                    }
+                    return alert_rc;
+                }
                 return nci_tls_protocol_error(
                     conn, TLS_ALERT_UNEXPECTED_MESSAGE,
                     "client sent non-handshake data during handshake");
@@ -2964,9 +3014,19 @@ static int tls_async_process_client_flight(
             int receive_result = nci_tls_recv_decrypt(
                 conn, &inner_type, record_data, &record_len);
             if (receive_result != 0) return receive_result;
-            if (inner_type == TLS_CT_ALERT)
-                return nci_tls_fail_handshake_alert(
+            if (inner_type == TLS_CT_ALERT) {
+                int alert_rc = nci_tls_fail_handshake_alert(
                     conn, record_data, record_len);
+                if (alert_rc == 0) {
+                    if (++conn->non_advancing_records >
+                        TLS_MAX_NON_ADVANCING_RECORDS)
+                        return nci_tls_protocol_error(
+                            conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                            "too many non-advancing TLS records");
+                    continue;
+                }
+                return alert_rc;
+            }
             if (inner_type != TLS_CT_HANDSHAKE || record_len == 0)
                 return nci_tls_protocol_error(
                     conn, TLS_ALERT_UNEXPECTED_MESSAGE,
@@ -3454,7 +3514,9 @@ int nci_tls_handle_peer_alert(
         conn->peer_closed = 1;
         return 1;
     }
-    /* RFC 8446 §6.2: user_canceled is an error alert regardless of level. */
+    /* RFC 8446 §6: close_notify and user_canceled are not fatal. */
+    if (data[1] == TLS_ALERT_USER_CANCELED)
+        return 0;
 
     conn->closed = 1;
     conn->failure_reason = "TLS peer sent a fatal alert";
@@ -3466,11 +3528,38 @@ int nci_tls_fail_handshake_alert(
     int result = nci_tls_handle_peer_alert(conn, data, data_len);
     if (result < 0)
         return -1;
+    if (result == 0)
+        return 0;
     return nci_tls_error(
         conn, "peer sent an alert during TLS handshake");
 }
 
 #if defined(NEVERC_TLS_TESTING)
+int neverc_tls_test_user_canceled_ignored(void) {
+    neverc_tls_conn_t conn;
+    uint8_t warning[] = { 1, TLS_ALERT_USER_CANCELED };
+    uint8_t fatal_level[] = { 2, TLS_ALERT_USER_CANCELED };
+    uint8_t close_notify[] = { 1, TLS_ALERT_CLOSE_NOTIFY };
+    uint8_t bad[] = { 2, TLS_ALERT_INTERNAL_ERROR };
+
+    memset(&conn, 0, sizeof(conn));
+    if (nci_tls_handle_peer_alert(&conn, warning, 2) != 0 || conn.closed)
+        return -1;
+    if (nci_tls_fail_handshake_alert(&conn, warning, 2) != 0 || conn.closed)
+        return -1;
+    if (nci_tls_handle_peer_alert(&conn, fatal_level, 2) != 0 || conn.closed)
+        return -1;
+    if (nci_tls_handle_peer_alert(&conn, close_notify, 2) != 1)
+        return -1;
+    memset(&conn, 0, sizeof(conn));
+    if (nci_tls_fail_handshake_alert(&conn, close_notify, 2) >= 0)
+        return -1;
+    memset(&conn, 0, sizeof(conn));
+    if (nci_tls_handle_peer_alert(&conn, bad, 2) >= 0 || !conn.closed)
+        return -1;
+    return 0;
+}
+
 int neverc_tls_test_encrypted_extensions_forbidden(void) {
     neverc_tls_conn_t conn;
     memset(&conn, 0, sizeof(conn));

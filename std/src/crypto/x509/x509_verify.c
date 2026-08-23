@@ -436,13 +436,31 @@ static int x509_dns_constraint_matches(const char *constraint,
         name + name_len - constraint_len, constraint, constraint_len);
 }
 
+static int x509_ip_is_v4_mapped(const uint8_t *ip, size_t len) {
+    static const uint8_t prefix[12] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff
+    };
+    return len == 16 && ip && memcmp(ip, prefix, 12) == 0;
+}
+
 static int x509_ip_constraint_matches(
     const neverc_x509_ip_network_t *network,
     const neverc_x509_ip_address_t *address) {
-    if (!network || !address || network->len != address->len)
+    const uint8_t *addr;
+    uint8_t addr_len;
+    uint8_t i;
+    if (!network || !address)
         return 0;
-    for (uint8_t i = 0; i < network->len; ++i) {
-        if ((address->bytes[i] & network->mask[i]) !=
+    addr = address->bytes;
+    addr_len = address->len;
+    if (x509_ip_is_v4_mapped(addr, addr_len)) {
+        addr += 12;
+        addr_len = 4;
+    }
+    if (network->len != addr_len)
+        return 0;
+    for (i = 0; i < addr_len; ++i) {
+        if ((addr[i] & network->mask[i]) !=
             (network->bytes[i] & network->mask[i]))
             return 0;
     }

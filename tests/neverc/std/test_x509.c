@@ -532,6 +532,10 @@ static void test_x509_subject_alt_name(void) {
           neverc_x509_verify_hostname(&cert, "127.0.0.2") != 0);
     CHECK("hostname_ipv6",
           neverc_x509_verify_hostname(&cert, "::1") == 0);
+    CHECK("hostname_ipv6_zone",
+          neverc_x509_verify_hostname(&cert, "::1%lo0") == 0);
+    CHECK("hostname_ipv6_zone_brackets",
+          neverc_x509_verify_hostname(&cert, "[::1%lo0]") == 0);
     neverc_x509_cert_free(&cert);
 
     /* RFC 5280 4.2.1.6: subjectAltName MUST contain at least one name. */

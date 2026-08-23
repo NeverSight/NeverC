@@ -378,6 +378,10 @@ static void test_parse_date(void) {
                 -1);
     ASSERT_TRUE(neverc_mail_parse_date("01 Jan 70 00:00:00 +0000") == 0);
     ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00:00 EST") == 18000LL);
+    ASSERT_TRUE(neverc_mail_parse_date("01 jan 1970 00:00:00 +0000") == 0);
+    ASSERT_TRUE(neverc_mail_parse_date("01 JAN 1970 00:00:00 +0000") == 0);
+    ASSERT_TRUE(neverc_mail_parse_date("mon, 01 Jan 1970 00:00:00 +0000") == 0);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00:00 est") == 18000LL);
     ASSERT_TRUE(neverc_mail_parse_date(
                     "01 Jan 1970 00:00:00 -0700 (MST)") == 25200LL);
     ASSERT_TRUE(neverc_mail_parse_date("Xxx, 01 Jan 1970 00:00:00 +0000") ==

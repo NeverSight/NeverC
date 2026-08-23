@@ -1214,6 +1214,32 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "return \"alert(1)\"/") == NULL);
     free(out);
 
+    neverc_html_template_data_set(&data, "X", "a.*b");
+    out = neverc_html_template_render(
+        "<script>return /{{.X}}/;</script>", &data);
+    check("js regexp interpolates as a literal",
+          out && strstr(out, "return /a\\.\\*b/") != NULL);
+    check("js regexp does not wrap a JS string",
+          out && strstr(out, "/\"") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X",
+                                 "https://example.com/a;color:red");
+    out = neverc_html_template_render(
+        "<style>p{background:myurl({{.X}})}</style>", &data);
+    check("myurl is not css url() context",
+          out && strstr(out, "color:red") == NULL);
+    check_str("myurl uses css value filter",
+              out, "<style>p{background:myurl(#)}</style>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "https://example.com/a.png");
+    out = neverc_html_template_render(
+        "<style>p{background:url({{.X}})}</style>", &data);
+    check("real url() still interpolates",
+          out && strstr(out, "https://example.com/a.png") != NULL);
+    free(out);
+
     /* U+2000 EN QUAD is in Go jsWhitespace. Missing it treats '/' as
      * division and desyncs the next quote into a raw call. */
     neverc_html_template_data_set(&data, "X", "alert(1)");

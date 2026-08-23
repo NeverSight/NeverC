@@ -666,6 +666,18 @@ static void test_http_client(void) {
         }
     }
 
+    /* `host:port:` is an omitted extra port (Go validOptionalPort). */
+    {
+        char url[64];
+        snprintf(url, sizeof(url), "http://127.0.0.1:%d:/hello", port);
+        neverc_http_response_t *resp = neverc_http_get(url);
+        check_not_null("client empty port resp", resp);
+        if (resp) {
+            check_int("client empty port status", resp->status_code, 200);
+            neverc_http_response_free(resp);
+        }
+    }
+
     /* Fragments must be stripped, not rejected: they are never sent. */
     {
         char url[80];
@@ -1412,6 +1424,12 @@ static void test_malformed_request(void) {
             "Connection: close\r\n\r\n",
             buf, sizeof(buf));
         check_int("host port 400", strstr(buf, "400 Bad Request") != NULL, 1);
+        n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: localhost:\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("host empty port ok",
+                  strstr(buf, "Hello, World!") != NULL, 1);
         n = do_http_request(port,
             "GET /hello HTTP/1.1\r\nHost: [::1\r\n"
             "Connection: close\r\n\r\n",
@@ -4077,8 +4095,9 @@ static void test_strip_prefix(void) {
     n = do_http_request(port,
         "GET /api/../secret HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         buf, sizeof(buf));
-    check_int("strip prefix rejects dot-dot remainder",
-              n > 0 && strstr(buf, "404") != NULL, 1);
+    check_int("strip prefix cleanPath redirects dot-dot",
+              n > 0 && strstr(buf, "301") != NULL &&
+              strstr(buf, "Location: /secret") != NULL, 1);
     check_int("strip prefix does not leak dot-dot path",
               strstr(buf, "stripped_path=") == NULL, 1);
 
@@ -4093,8 +4112,9 @@ static void test_strip_prefix(void) {
     n = do_http_request(port,
         "GET /api//evil.example/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         buf, sizeof(buf));
-    check_int("strip prefix rejects scheme-relative remainder",
-              n > 0 && strstr(buf, "404") != NULL, 1);
+    check_int("strip prefix cleanPath collapses empty segments",
+              n > 0 && strstr(buf, "301") != NULL &&
+              strstr(buf, "Location: /api/evil.example/") != NULL, 1);
     check_int("strip prefix does not leak scheme-relative path",
               strstr(buf, "stripped_path=") == NULL, 1);
 
@@ -4221,6 +4241,24 @@ static void test_path_params(void) {
     check_int("wildcard resp", n > 0, 1);
     check_int("wildcard captures remainder",
                strstr(buf, "path=a/b/c") != NULL, 1);
+    check_int("wildcard clean path is not a slash-redirect",
+               strstr(buf, "301") == NULL, 1);
+
+    n = do_http_request(port,
+        "GET /users/42/../42 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mux cleanPath redirects dot-dot",
+               n > 0 && strstr(buf, "301") != NULL &&
+               strstr(buf, "Location: /users/42") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /files/a/../b HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mux cleanPath does not capture raw dot-dot",
+               n > 0 && strstr(buf, "path=a/../b") == NULL, 1);
+    check_int("mux cleanPath redirects wildcard traversal",
+               n > 0 && strstr(buf, "301") != NULL &&
+               strstr(buf, "Location: /files/b") != NULL, 1);
 
     n = do_http_request(port,
         "GET /files HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
