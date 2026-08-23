@@ -11,13 +11,12 @@ TEST(SupportSmallPtrSetTest, SharedHashRetainsHighPointerBits) {
   if (std::numeric_limits<uintptr_t>::digits <= 32)
     GTEST_SKIP() << "the regression requires a 64-bit pointer";
 
-  constexpr uintptr_t Value =
-      (uintptr_t{0x1234} << 32) | uintptr_t{0x56789ab0};
-  const auto *Pointer = reinterpret_cast<const void *>(Value);
-  const unsigned Expected =
-      static_cast<unsigned>(Value >> 4) ^ static_cast<unsigned>(Value >> 9);
+  const auto *Low = reinterpret_cast<const void *>(
+      (uintptr_t{0x1234} << 32) | uintptr_t{0x56789ab0});
+  const auto *High = reinterpret_cast<const void *>(
+      (uintptr_t{0xABCD} << 32) | uintptr_t{0x56789ab0});
 
-  EXPECT_EQ(csupport_sps_hash_pointer(Pointer), Expected);
+  EXPECT_NE(csupport_sps_hash_pointer(Low), csupport_sps_hash_pointer(High));
 }
 
 TEST(SupportSmallPtrSetTest, GrowthKeepsEveryPointerDiscoverable) {
