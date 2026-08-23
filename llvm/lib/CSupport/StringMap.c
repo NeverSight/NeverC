@@ -68,9 +68,8 @@ unsigned csupport_stringmap_rehash(void ***the_table, unsigned *num_buckets,
       unsigned full_hash = old_hash[i];
       unsigned nb = full_hash & (new_size - 1);
       if (new_table[nb]) {
-        do {
-          nb = (nb + 1) & (new_size - 1);
-        } while (new_table[nb]);
+        unsigned probe = 1;
+        do { nb = (nb + probe++) & (new_size - 1); } while (new_table[nb]);
       }
       new_table[nb] = bucket;
       new_hash[nb] = full_hash;

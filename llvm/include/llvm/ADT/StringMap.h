@@ -537,7 +537,9 @@ inline unsigned StringMapImpl::LookupBucketFor(StringRef Name) {
     FullHashValue = ~FullHashValue;
   unsigned BucketNo = FullHashValue & (NumBuckets - 1);
   unsigned *HashTable = detail::getHashTableSM(TheTable, NumBuckets);
-  // Bound the probe walk by NumBuckets so a fully-occupied table
+  unsigned ProbeAmt = 1;
+  int FirstTombstone = -1;
+  // NeverC: bound the probe walk by NumBuckets so a fully-occupied table
   // forces a rehash instead of spinning forever.  The well-formed
   // contract keeps load factor <= 3/4 so this bound is never hit in
   // practice; if it is hit we explicitly grow the table and retry.
@@ -545,16 +547,27 @@ inline unsigned StringMapImpl::LookupBucketFor(StringRef Name) {
   while (ProbeLimit-- > 0) {
     StringMapEntryBase *BucketItem = TheTable[BucketNo];
     if (LLVM_LIKELY(!BucketItem)) {
+      if (FirstTombstone != -1) {
+        HashTable[FirstTombstone] = FullHashValue;
+        return FirstTombstone;
+      }
       HashTable[BucketNo] = FullHashValue;
       return BucketNo;
     }
-    if (LLVM_LIKELY(BucketItem != getTombstoneVal() &&
-                    HashTable[BucketNo] == FullHashValue)) {
+    if (BucketItem == getTombstoneVal()) {
+      if (FirstTombstone == -1)
+        FirstTombstone = BucketNo;
+    } else if (LLVM_LIKELY(HashTable[BucketNo] == FullHashValue)) {
       char *ItemStr = (char *)BucketItem + ItemSize;
       if (Name == StringRef(ItemStr, BucketItem->getKeyLength()))
         return BucketNo;
     }
-    BucketNo = (BucketNo + 1) & (NumBuckets - 1);
+    BucketNo = (BucketNo + ProbeAmt) & (NumBuckets - 1);
+    ++ProbeAmt;
+  }
+  if (FirstTombstone != -1) {
+    HashTable[FirstTombstone] = FullHashValue;
+    return FirstTombstone;
   }
 
   // We probed every bucket and found neither the key nor an empty slot.
@@ -570,7 +583,8 @@ inline int StringMapImpl::FindKey(StringRef Key) const {
     FullHashValue = ~FullHashValue;
   unsigned BucketNo = FullHashValue & (NumBuckets - 1);
   unsigned *HashTable = detail::getHashTableSM(TheTable, NumBuckets);
-  // Bound the probe walk by NumBuckets so a degenerate table
+  unsigned ProbeAmt = 1;
+  // NeverC: bound the probe walk by NumBuckets so a degenerate table
   // (all buckets occupied + key not present, e.g. if an upstream insert
   // path failed to trigger RehashTable) cannot spin forever in a
   // read-only lookup.  The well-formed contract keeps load factor <= 3/4
@@ -582,13 +596,14 @@ inline int StringMapImpl::FindKey(StringRef Key) const {
     StringMapEntryBase *BucketItem = TheTable[BucketNo];
     if (LLVM_LIKELY(!BucketItem))
       return -1;
-    if (LLVM_LIKELY(BucketItem != getTombstoneVal() &&
-                    HashTable[BucketNo] == FullHashValue)) {
+    if (BucketItem == getTombstoneVal()) {
+    } else if (LLVM_LIKELY(HashTable[BucketNo] == FullHashValue)) {
       char *ItemStr = (char *)BucketItem + ItemSize;
       if (Key == StringRef(ItemStr, BucketItem->getKeyLength()))
         return BucketNo;
     }
-    BucketNo = (BucketNo + 1) & (NumBuckets - 1);
+    BucketNo = (BucketNo + ProbeAmt) & (NumBuckets - 1);
+    ++ProbeAmt;
   }
   return -1;
 }
@@ -603,24 +618,9 @@ inline StringMapEntryBase *StringMapImpl::RemoveKey(StringRef Key) {
   if (Bucket == -1)
     return 0;
   StringMapEntryBase *Result = TheTable[Bucket];
-  unsigned *HashTable = detail::getHashTableSM(TheTable, NumBuckets);
-  const unsigned Mask = NumBuckets - 1;
-  unsigned I = (unsigned)Bucket;
-  unsigned J = I;
-  while (true) {
-    J = (J + 1) & Mask;
-    StringMapEntryBase *Item = TheTable[J];
-    if (!Item)
-      break;
-    unsigned Ideal = HashTable[J] & Mask;
-    if (((I - Ideal) & Mask) < ((J - Ideal) & Mask)) {
-      TheTable[I] = TheTable[J];
-      HashTable[I] = HashTable[J];
-      I = J;
-    }
-  }
-  TheTable[I] = nullptr;
+  TheTable[Bucket] = getTombstoneVal();
   --NumItems;
+  ++NumTombstones;
   assert(NumItems + NumTombstones <= NumBuckets);
   return Result;
 }

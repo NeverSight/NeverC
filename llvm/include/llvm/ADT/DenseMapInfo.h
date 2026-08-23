@@ -23,23 +23,20 @@
 
 namespace llvm {
 
-namespace densemap::detail {
-// Low-latency mixer (one multiply + one xorshift). The constant is from
-// splitmix64; needed so bump-allocated pointers that share high bits do not
-// collapse into a short run of buckets under linear probing.
-inline uint64_t mix(uint64_t x) {
-  x *= 0xbf58476d1ce4e5b9u;
-  x ^= x >> 31;
-  return x;
-}
-} // namespace densemap::detail
-
 namespace detail {
 
 /// Simplistic combination of 32-bit hash values into 32-bit hash values.
 static inline unsigned combineHashValue(unsigned a, unsigned b) {
   uint64_t key = (uint64_t)a << 32 | (uint64_t)b;
-  return (unsigned)densemap::detail::mix(key);
+  key += ~(key << 32);
+  key ^= (key >> 22);
+  key += ~(key << 13);
+  key ^= (key >> 8);
+  key += (key << 3);
+  key ^= (key >> 15);
+  key += ~(key << 27);
+  key ^= (key >> 31);
+  return (unsigned)key;
 }
 
 } // end namespace detail
@@ -81,7 +78,8 @@ template <typename T> struct DenseMapInfo<T *> {
   }
 
   static unsigned getHashValue(const T *PtrVal) {
-    return (unsigned)densemap::detail::mix(reinterpret_cast<uintptr_t>(PtrVal));
+    return (unsigned((uintptr_t)PtrVal) >> 4) ^
+           (unsigned((uintptr_t)PtrVal) >> 9);
   }
 
   static bool isEqual(const T *LHS, const T *RHS) { return LHS == RHS; }
@@ -135,8 +133,6 @@ template <> struct DenseMapInfo<unsigned long> {
   static inline unsigned long getTombstoneKey() { return ~0UL - 1L; }
 
   static unsigned getHashValue(const unsigned long &Val) {
-    if constexpr (sizeof(unsigned long) > sizeof(unsigned))
-      return (unsigned)densemap::detail::mix((uint64_t)Val);
     return (unsigned)(Val * 37UL);
   }
 
@@ -151,7 +147,7 @@ template <> struct DenseMapInfo<unsigned long long> {
   static inline unsigned long long getTombstoneKey() { return ~0ULL - 1ULL; }
 
   static unsigned getHashValue(const unsigned long long &Val) {
-    return (unsigned)densemap::detail::mix((uint64_t)Val);
+    return (unsigned)(Val * 37ULL);
   }
 
   static bool isEqual(const unsigned long long &LHS,

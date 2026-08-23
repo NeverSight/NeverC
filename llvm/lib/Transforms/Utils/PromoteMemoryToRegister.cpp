@@ -840,15 +840,22 @@ void PromoteMem2Reg::run() {
     // simplify and RAUW them as we go.  If it was not, we could add uses to
     // the values we replace with in a non-deterministic order, thus creating
     // non-deterministic def->use chains.
-    EliminatedAPHI = NewPhiNodes.remove_if([&](const auto &Entry) {
-      PHINode *PN = Entry.second;
+    for (DenseMap<std::pair<unsigned, unsigned>, PHINode *>::iterator
+             I = NewPhiNodes.begin(),
+             E = NewPhiNodes.end();
+         I != E;) {
+      PHINode *PN = I->second;
+
+      // If this PHI node merges one value and/or undefs, get the value.
       if (Value *V = simplifyInstruction(PN, SQ)) {
         PN->replaceAllUsesWith(V);
         PN->eraseFromParent();
-        return true;
+        NewPhiNodes.erase(I++);
+        EliminatedAPHI = true;
+        continue;
       }
-      return false;
-    });
+      ++I;
+    }
   }
 
   // At this point, the renamer has added entries to PHI nodes for all reachable
