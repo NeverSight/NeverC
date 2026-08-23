@@ -1,0 +1,191 @@
+name: debug-win-arm64-stdlib
+
+# Manual only. Downloads the failed windows-arm64 neverc and compiles just
+# StdLibTest.tls / http_stage5 — no toolchain rebuild.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'windows-arm64-neverc-build run id to pull compiler from'
+        required: false
+        default: '32607167492'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  repro:
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSVC (native arm64)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: arm64
+
+      - name: Download prebuilt neverc (no rebuild)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          RID="${{ github.event.inputs.run_id }}"
+          [ -n "$RID" ] || RID=32607167492
+          gh run download "$RID" -n windows-arm64-neverc -D dl -R "${{ github.repository }}"
+          python -c "import glob,zipfile; z=glob.glob('dl/*.zip')[0]; zipfile.ZipFile(z).extractall('.')"
+          test -f install/bin/neverc.exe
+          install/bin/neverc.exe --version
+
+      - name: Enable local crash dumps
+        shell: pwsh
+        run: |
+          New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps' -Force | Out-Null
+          New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps' -Name DumpFolder -Value "$env:GITHUB_WORKSPACE\dumps" -PropertyType ExpandString -Force | Out-Null
+          New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps' -Name DumpType -Value 2 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps' -Name DumpCount -Value 10 -PropertyType DWord -Force | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\dumps" | Out-Null
+
+      - name: Reproduce tls and http_stage5
+        shell: bash
+        run: |
+          set +e
+          NCC=$(cygpath -m "$PWD/install/bin/neverc.exe")
+          STD=$(cygpath -m "$PWD/std")
+          FLAGS="-I$STD/include -I$STD/src/net -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -O1 -fno-builtin-std -Wno-deprecated-declarations"
+
+          TLS_SRCS=(
+            src/compress/gzip/gzip.c
+            src/compress/flate/flate.c
+            src/hash/crc32/crc32.c
+            src/thread/thread.c
+            src/crypto/tls/tls.c
+            src/crypto/tls/tls_config.c
+            src/crypto/tls/tls_record.c
+            src/crypto/tls/tls_handshake.c
+            src/crypto/tls/tls_verify.c
+            src/crypto/tls/tls_key.c
+            src/crypto/tls/tls_key_schedule.c
+            src/crypto/ecdh/ecdh.c
+            src/crypto/aes/aes.c
+            src/crypto/gcm/gcm.c
+            src/crypto/chacha20/chacha20.c
+            src/crypto/poly1305/poly1305.c
+            src/crypto/chacha20poly1305/chacha20poly1305.c
+            src/crypto/sha256/sha256.c
+            src/crypto/sha512/sha512.c
+            src/crypto/sha384/sha384.c
+            src/crypto/sha1/sha1.c
+            src/crypto/md5/md5.c
+            src/crypto/hmac/hmac.c
+            src/crypto/hkdf/hkdf.c
+            src/crypto/rand/rand.c
+            src/crypto/subtle/subtle.c
+            src/crypto/x509/x509.c
+            src/crypto/x509/x509_verify.c
+            src/crypto/x509/x509_pool.c
+            src/crypto/x509/x509_system.c
+            src/crypto/rsa/rsa.c
+            src/crypto/ecdsa/ecdsa.c
+            src/crypto/ed25519/ed25519.c
+            src/crypto/elliptic/elliptic.c
+            src/math/big/big.c
+            src/encoding/base64/base64.c
+            src/encoding/pem/pem.c
+            src/net/tcp/tcp.c
+            src/net/tcp/tcp_context.c
+            src/context/context.c
+          )
+
+          abs_srcs() {
+            local s
+            for s in "$@"; do
+              echo "$(cygpath -m "$PWD/std/$s")"
+            done
+          }
+
+          run_exe() {
+            local exe=$1
+            local label=$2
+            echo "=== run $label ==="
+            python - "$exe" "$label" <<'PY'
+          import subprocess, sys, os
+          exe, label = sys.argv[1], sys.argv[2]
+          env = os.environ.copy()
+          env["PYTHONUNBUFFERED"] = "1"
+          p = subprocess.run([exe], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             text=True, errors="replace", env=env)
+          print(f"run_{label}_exit={p.returncode} unsigned={p.returncode & 0xffffffff:#x}")
+          print("--- stdout ---")
+          print(p.stdout if p.stdout else "(empty)")
+          print("--- stderr ---")
+          print(p.stderr if p.stderr else "(empty)")
+          sys.exit(0)
+          PY
+          }
+
+          symbolize_dumps() {
+            local label=$1
+            echo "=== dumps after $label ==="
+            ls -la dumps 2>/dev/null || echo "(no dumps dir)"
+            shopt -s nullglob
+            for d in dumps/*.dmp dumps/*.DMP; do
+              echo "DUMP $d"
+              if command -v cdb.exe >/dev/null 2>&1; then
+                cdb.exe -z "$d" -c "k; r; q" 2>&1 | head -80
+              else
+                echo "(cdb.exe not on PATH)"
+              fi
+            done
+          }
+
+          echo "=== compile tls (same flags as StdLibTest.tls) ==="
+          TLS_OUT=$(cygpath -m "$PWD/test_tls.exe")
+          "$NCC" $FLAGS -o "$TLS_OUT" \
+            "$(cygpath -m "$PWD/tests/neverc/std/test_tls.c")" \
+            $(abs_srcs "${TLS_SRCS[@]}")
+          tls_cc=$?
+          echo "compile_tls_exit=$tls_cc"
+          if [ "$tls_cc" -eq 0 ]; then
+            run_exe "$TLS_OUT" tls
+            symbolize_dumps tls
+          fi
+
+          echo "=== compile tls experimental (StdLibTest.TlsExperimentalTransport) ==="
+          TLSX_OUT=$(cygpath -m "$PWD/test_tls_experimental.exe")
+          "$NCC" $FLAGS -DNEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT=1 -DNEVERC_TLS_TESTING=1 \
+            -o "$TLSX_OUT" \
+            "$(cygpath -m "$PWD/tests/neverc/std/test_tls.c")" \
+            $(abs_srcs "${TLS_SRCS[@]}")
+          tlsx_cc=$?
+          echo "compile_tls_experimental_exit=$tlsx_cc"
+          if [ "$tlsx_cc" -eq 0 ]; then
+            run_exe "$TLSX_OUT" tls_experimental
+            symbolize_dumps tls_experimental
+          fi
+
+          echo "=== compile http_stage5 ==="
+          H5_OUT=$(cygpath -m "$PWD/test_http_stage5.exe")
+          H5_SRCS=(
+            src/net/http/http.c
+            src/net/http/http_client.c
+            src/net/http/http2/http2.c
+            src/net/http/http2/http2_server.c
+            src/net/http/http2/http2_client.c
+            src/time/time.c
+            src/net/url/url.c
+            src/net/netip/netip.c
+            "${TLS_SRCS[@]}"
+          )
+          "$NCC" $FLAGS -o "$H5_OUT" \
+            "$(cygpath -m "$PWD/tests/neverc/std/test_http_stage5.c")" \
+            $(abs_srcs "${H5_SRCS[@]}")
+          h5_cc=$?
+          echo "compile_http_stage5_exit=$h5_cc"
+          if [ "$h5_cc" -eq 0 ]; then
+            run_exe "$H5_OUT" http_stage5
+            symbolize_dumps http_stage5
+          fi
+
+          echo "=== done ==="
