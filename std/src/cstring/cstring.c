@@ -92,7 +92,7 @@ static size_t utf8_decode(const uint8_t *p, size_t remaining, uint32_t *r) {
     return 0;
 }
 
-static size_t utf8_encode(uint32_t r, uint8_t *buf) {
+static size_t cstring_utf8_encode(uint32_t r, uint8_t *buf) {
     if (r < 0x80) { buf[0] = (uint8_t)r; return 1; }
     if (r < 0x800) {
         buf[0] = (uint8_t)(0xC0 | (r >> 6));
@@ -332,7 +332,7 @@ char *neverc_cstring_to_title(const char *s) {
         } else {
             uint32_t titled = prev_sep ? neverc_unicode_to_title(rune) : rune;
             uint8_t tmp[4];
-            wn = utf8_encode(titled, tmp);
+            wn = cstring_utf8_encode(titled, tmp);
             prev_sep = is_separator_rune(rune);
         }
         if (!nc_size_add(need, wn, &need)) return NULL;
@@ -353,7 +353,7 @@ char *neverc_cstring_to_title(const char *s) {
             continue;
         }
         uint32_t titled = prev_sep ? neverc_unicode_to_title(rune) : rune;
-        o += utf8_encode(titled, (uint8_t *)r + o);
+        o += cstring_utf8_encode(titled, (uint8_t *)r + o);
         prev_sep = is_separator_rune(rune);
         i += n;
     }

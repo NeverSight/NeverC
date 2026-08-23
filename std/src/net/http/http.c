@@ -1455,6 +1455,28 @@ static int mux_route_path_matches(const route_t *r, const char *path) {
              http_mux_unescaped_compare(pat, path, 1)));
 }
 
+/* True when `path` is the directory root of a multi pattern: `/files`
+ * for `/files/{path...}`, or `/api` for `/api/`. `/files/a/b/c` and
+ * `/api/foo` are not roots and must not 301 to add a slash. */
+static int mux_path_is_multi_root(const char *pat, const char *path) {
+    char slashed[4096];
+    const char *brace;
+    size_t prefix_len, n;
+    if (!pat || !path || !mux_pattern_last_is_multi(pat))
+        return 0;
+    if (mux_with_trailing_slash(path, slashed, sizeof(slashed)) != 0)
+        return 0;
+    n = strlen(pat);
+    if (n > 0 && pat[n - 1] == '/')
+        return strcmp(slashed, pat) == 0;
+    brace = strrchr(pat, '{');
+    if (!brace)
+        return 0;
+    prefix_len = (size_t)(brace - pat);
+    return strlen(slashed) == prefix_len &&
+           memcmp(slashed, pat, prefix_len) == 0;
+}
+
 static int mux_slash_redirect(neverc_http_mux_t *mux, const char *method,
                               const char *path, route_t *current,
                               char *loc, size_t loc_cap) {
@@ -1482,9 +1504,14 @@ static int mux_slash_redirect(neverc_http_mux_t *mux, const char *method,
         !mux_pattern_last_is_multi(slash->path_pattern))
         return 0;
     /* Same multi route matching both `/files` and `/files/` must still
-     * redirect; rank equality would otherwise suppress it. */
+     * redirect; rank equality would otherwise suppress it. Do not skip
+     * the rank check for `/files/a/b/c` or `/static/file` — those are
+     * not the subtree root. */
     if (current && current != slash &&
         mux_route_path_rank(slash) <= mux_route_path_rank(current))
+        return 0;
+    if (current && current == slash &&
+        !mux_path_is_multi_root(current->path_pattern, path))
         return 0;
     if (strlen(slashed) + 1 > loc_cap) return 0;
     memcpy(loc, slashed, strlen(slashed) + 1);
