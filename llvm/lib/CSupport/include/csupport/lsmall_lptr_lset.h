@@ -7,8 +7,10 @@ extern "C" {
 #endif
 
 static inline unsigned csupport_sps_hash_pointer(const void *ptr) {
-  uintptr_t value = (uintptr_t)ptr;
-  return (unsigned)(value >> 4) ^ (unsigned)(value >> 9);
+  uint64_t x = (uint64_t)(uintptr_t)ptr;
+  x *= 0xbf58476d1ce4e5b9ull;
+  x ^= x >> 31;
+  return (unsigned)x;
 }
 
 void csupport_sps_erase_from_bucket(const void **cur_array,

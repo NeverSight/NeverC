@@ -465,7 +465,6 @@ void SmallVectorTemplateBase<T, TriviallyCopyable>::moveElementsForGrow(
   destroy_range(this->begin(), this->end());
 }
 
-// Define this out-of-line to dissuade the C++ compiler from inlining it.
 template <typename T, bool TriviallyCopyable>
 void SmallVectorTemplateBase<T, TriviallyCopyable>::takeAllocationForGrow(
     T *NewElts, size_t NewCapacity) {
@@ -567,15 +566,29 @@ protected:
     return this->back();
   }
 
+  /// Out-of-line grow+store so the inlined push_back fast path stays tiny
+  /// (compare, memcpy, bump size) and this cold path can tail-call grow.
+  LLVM_ATTRIBUTE_NOINLINE void growAndPushBack(ValueParamT Elt);
+
 public:
   void push_back(ValueParamT Elt) {
-    const T *EltPtr = reserveForParamAndGetAddress(Elt);
-    memcpy(reinterpret_cast<void *>(this->end()), EltPtr, sizeof(T));
-    this->set_size(this->size() + 1);
+    if (LLVM_LIKELY(this->size() < this->capacity())) {
+      memcpy(reinterpret_cast<void *>(this->end()), &Elt, sizeof(T));
+      this->set_size(this->size() + 1);
+      return;
+    }
+    growAndPushBack(Elt);
   }
 
   void pop_back() { this->set_size(this->size() - 1); }
 };
+
+template <typename T>
+void SmallVectorTemplateBase<T, true>::growAndPushBack(ValueParamT Elt) {
+  const T *EltPtr = reserveForParamAndGetAddress(Elt);
+  memcpy(reinterpret_cast<void *>(this->end()), EltPtr, sizeof(T));
+  this->set_size(this->size() + 1);
+}
 
 /// This class consists of common code factored out of the SmallVector class to
 /// reduce code duplication based on the SmallVector 'N' template parameter.

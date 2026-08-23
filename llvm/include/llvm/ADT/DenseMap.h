@@ -9,6 +9,11 @@
 /// \file
 /// This file defines the DenseMap class.
 ///
+/// Open addressing, power-of-two capacity, 3/4 max load. Probe is linear.
+/// Deletion closes the hole (Knuth TAOCP 6.4 Algorithm R) so the table has
+/// no tombstone state. Empty and tombstone sentinel keys are still reserved
+/// by DenseMapInfo for occupancy tests.
+///
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_ADT_DENSEMAP_H
@@ -331,23 +336,61 @@ public:
     return try_emplace(Key).first->second;
   }
 
+  void eraseFromFilledBucket(BucketT *TheBucket) {
+    eraseFromFilledBucket(TheBucket, [](BucketT &) {});
+  }
+
   bool erase(const KeyT &Val) {
     BucketT *TheBucket = doFind(Val);
     if (!TheBucket)
       return false; // not in map.
 
-    TheBucket->getSecond().~ValueT();
-    TheBucket->getFirst() = getTombstoneKey();
-    decrementNumEntries();
-    incrementNumTombstones();
+    eraseFromFilledBucket(TheBucket);
     return true;
   }
-  void erase(iterator I) {
-    BucketT *TheBucket = &*I;
-    TheBucket->getSecond().~ValueT();
-    TheBucket->getFirst() = getTombstoneKey();
-    decrementNumEntries();
-    incrementNumTombstones();
+  void erase(iterator I) { eraseFromFilledBucket(&*I); }
+
+  /// Erase \p Val and close the hole, invoking \p OnMoved for each bucket
+  /// that Algorithm R relocates. Needed by callers that cache pointers into
+  /// the bucket array (ValueHandleBase).
+  template <typename OnMovedT>
+  bool erase(const KeyT &Val, OnMovedT &&OnMoved) {
+    BucketT *TheBucket = doFind(Val);
+    if (!TheBucket)
+      return false;
+    eraseFromFilledBucket(TheBucket, std::forward<OnMovedT>(OnMoved));
+    return true;
+  }
+
+  /// Drop every live bucket for which \p Pred returns true. \p Pred must not
+  /// touch this map. Closing many holes with Algorithm R would scramble the
+  /// remaining buckets, so matching entries are cleared first and the table
+  /// is then rehashed. Returns whether anything was removed.
+  template <typename Predicate> bool remove_if(Predicate Pred) {
+    const unsigned NumBuckets = getNumBuckets();
+    if (NumBuckets == 0)
+      return false;
+
+    BucketT *B = getBuckets();
+    const KeyT EmptyKey = getEmptyKey();
+    const KeyT TombstoneKey = getTombstoneKey();
+    bool Removed = false;
+    for (unsigned I = 0; I != NumBuckets; ++I) {
+      if (KeyInfoT::isEqual(B[I].getFirst(), EmptyKey) ||
+          KeyInfoT::isEqual(B[I].getFirst(), TombstoneKey))
+        continue;
+      if (!Pred(B[I]))
+        continue;
+      B[I].getSecond().~ValueT();
+      B[I].getFirst() = EmptyKey;
+      decrementNumEntries();
+      Removed = true;
+    }
+    if (Removed) {
+      incrementEpoch();
+      this->grow(NumBuckets);
+    }
+    return Removed;
   }
 
   value_type &FindAndConstruct(const KeyT &Key) {
@@ -583,25 +626,13 @@ private:
                                 BucketT *TheBucket) {
     incrementEpoch();
 
-    // If the load of the hash table is more than 3/4, or if fewer than 1/8 of
-    // the buckets are empty (meaning that many are filled with tombstones),
-    // grow the table.
-    //
-    // The later case is tricky.  For example, if we had one empty bucket with
-    // tons of tombstones, failing lookups (e.g. for insertion) would have to
-    // probe almost the entire table until it found the empty bucket.  If the
-    // table completely filled with tombstones, no lookup would ever succeed,
-    // causing infinite loops in lookup.
+    // Grow if the load factor would exceed 3/4 after insertion. Linear
+    // probing with gap-closing deletion keeps every chain compact, so no
+    // tombstone-driven resize is needed.
     unsigned NewNumEntries = getNumEntries() + 1;
     unsigned NumBuckets = getNumBuckets();
     if (LLVM_UNLIKELY(NewNumEntries * 4 >= NumBuckets * 3)) {
       this->grow(NumBuckets * 2);
-      LookupBucketFor(Lookup, TheBucket);
-      NumBuckets = getNumBuckets();
-    } else if (LLVM_UNLIKELY(NumBuckets -
-                                 (NewNumEntries + getNumTombstones()) <=
-                             NumBuckets / 8)) {
-      this->grow(NumBuckets);
       LookupBucketFor(Lookup, TheBucket);
     }
     assert(TheBucket);
@@ -610,12 +641,42 @@ private:
     // so that when growing buckets we have self-consistent entry count.
     incrementNumEntries();
 
-    // If we are writing over a tombstone, remember this.
-    const KeyT EmptyKey = getEmptyKey();
-    if (!KeyInfoT::isEqual(TheBucket->getFirst(), EmptyKey))
-      decrementNumTombstones();
-
     return TheBucket;
+  }
+
+  /// Erase the entry at \p TheBucket and close the hole via Knuth TAOCP 6.4
+  /// Algorithm R. \p OnMoved is invoked for each shifted bucket.
+  template <typename OnMovedT>
+  LLVM_ATTRIBUTE_NOINLINE void eraseFromFilledBucket(BucketT *TheBucket,
+                                                     OnMovedT &&OnMoved) {
+    incrementEpoch();
+    TheBucket->getSecond().~ValueT();
+    decrementNumEntries();
+
+    BucketT *BucketsPtr = getBuckets();
+    const unsigned Mask = getNumBuckets() - 1;
+    unsigned I = (unsigned)(TheBucket - BucketsPtr);
+    const KeyT EmptyKey = getEmptyKey();
+
+    unsigned J = I;
+    while (true) {
+      J = (J + 1) & Mask;
+      BucketT &BJ = BucketsPtr[J];
+      if (LLVM_LIKELY(KeyInfoT::isEqual(BJ.getFirst(), EmptyKey)))
+        break;
+      unsigned Ideal = getHashValue(BJ.getFirst());
+      // If the hole (I) lies on the linear-probe chain from the home bucket
+      // (Ideal) to J, shift J into the hole and make J the new hole.
+      if (((I - Ideal) & Mask) < ((J - Ideal) & Mask)) {
+        BucketT &BI = BucketsPtr[I];
+        BI.getFirst() = std::move(BJ.getFirst());
+        ::new (&BI.getSecond()) ValueT(std::move(BJ.getSecond()));
+        BJ.getSecond().~ValueT();
+        OnMoved(BI);
+        I = J;
+      }
+    }
+    BucketsPtr[I].getFirst() = EmptyKey;
   }
 
   template <typename LookupKeyT>
@@ -626,8 +687,8 @@ private:
       return nullptr;
 
     const KeyT EmptyKey = KeyInfoT::getEmptyKey();
-    unsigned BucketNo = KeyInfoT::getHashValue(Val) & (NumBuckets - 1);
-    unsigned ProbeAmt = 1;
+    const unsigned Mask = NumBuckets - 1;
+    unsigned BucketNo = KeyInfoT::getHashValue(Val) & Mask;
     while (true) {
       const BucketT *Bucket = BucketsPtr + BucketNo;
       if (LLVM_LIKELY(KeyInfoT::isEqual(Val, Bucket->getFirst())))
@@ -635,8 +696,7 @@ private:
       if (LLVM_LIKELY(KeyInfoT::isEqual(Bucket->getFirst(), EmptyKey)))
         return nullptr;
 
-      BucketNo += ProbeAmt++;
-      BucketNo &= NumBuckets - 1;
+      BucketNo = (BucketNo + 1) & Mask;
     }
   }
 
@@ -660,16 +720,14 @@ private:
       return false;
     }
 
-    // FoundTombstone - Keep track of whether we find a tombstone while probing.
-    const BucketT *FoundTombstone = nullptr;
     const KeyT EmptyKey = getEmptyKey();
     const KeyT TombstoneKey = getTombstoneKey();
     assert(!KeyInfoT::isEqual(Val, EmptyKey) &&
            !KeyInfoT::isEqual(Val, TombstoneKey) &&
            "Empty/Tombstone value shouldn't be inserted into map!");
 
-    unsigned BucketNo = getHashValue(Val) & (NumBuckets - 1);
-    unsigned ProbeAmt = 1;
+    const unsigned Mask = NumBuckets - 1;
+    unsigned BucketNo = getHashValue(Val) & Mask;
     while (true) {
       const BucketT *ThisBucket = BucketsPtr + BucketNo;
       // Found Val's bucket?  If so, return it.
@@ -678,25 +736,13 @@ private:
         return true;
       }
 
-      // If we found an empty bucket, the key doesn't exist in the set.
-      // Insert it and return the default value.
+      // Empty bucket ends the probe: the key is not present.
       if (LLVM_LIKELY(KeyInfoT::isEqual(ThisBucket->getFirst(), EmptyKey))) {
-        // If we've already seen a tombstone while probing, fill it in instead
-        // of the empty bucket we eventually probed to.
-        FoundBucket = FoundTombstone ? FoundTombstone : ThisBucket;
+        FoundBucket = ThisBucket;
         return false;
       }
 
-      // If this is a tombstone, remember it.  If Val ends up not in the map, we
-      // prefer to return it than something that would require more probing.
-      if (KeyInfoT::isEqual(ThisBucket->getFirst(), TombstoneKey) &&
-          !FoundTombstone)
-        FoundTombstone = ThisBucket; // Remember the first tombstone found.
-
-      // Otherwise, it's a hash collision or a tombstone, continue quadratic
-      // probing.
-      BucketNo += ProbeAmt++;
-      BucketNo &= (NumBuckets - 1);
+      BucketNo = (BucketNo + 1) & Mask;
     }
   }
 
