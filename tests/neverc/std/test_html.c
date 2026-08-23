@@ -192,6 +192,14 @@ static void test_unescape(void) {
               "&apos onclick=alert(1)");
     free(r26);
 
+    char *r_eacute = neverc_html_unescape_string("caf&eacute;", &outlen);
+    check_str("eacute named", r_eacute, "caf\xc3\xa9");
+    free(r_eacute);
+
+    char *r_latin1 = neverc_html_unescape_string("&Eacute;&szlig;", &outlen);
+    check_str("latin-1 named extras", r_latin1, "\xc3\x89" "\xc3\x9f");
+    free(r_latin1);
+
     char *r27 = neverc_html_unescape_string("javascript&colon;alert(1)", &outlen);
     check_str("colon named entity", r27, "javascript:alert(1)");
     free(r27);

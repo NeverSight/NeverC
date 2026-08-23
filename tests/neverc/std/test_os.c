@@ -992,6 +992,27 @@ static void test_read_dir(void) {
             ASSERT_TRUE(neverc_os_exists(secret));
             ASSERT_TRUE(GetFileAttributesA(dotted) == INVALID_FILE_ATTRIBUTES);
         }
+        {
+            char tree[1024], secret_dir[1200], dotted_file[1400], rmquery[1400];
+            HANDLE hf2;
+            make_test_path(tree, sizeof(tree), "neverc_os_win_rm_secret_dot");
+            neverc_os_remove_all(tree);
+            ASSERT_EQ(neverc_os_mkdir(tree, 0700), 0);
+            snprintf(secret_dir, sizeof(secret_dir), "%s\\secret", tree);
+            ASSERT_EQ(neverc_os_mkdir(secret_dir, 0700), 0);
+            snprintf(dotted_file, sizeof(dotted_file),
+                     "\\\\?\\%s\\secret.", tree);
+            hf2 = CreateFileA(dotted_file, GENERIC_WRITE, 0, NULL, CREATE_NEW,
+                              FILE_ATTRIBUTE_NORMAL, NULL);
+            ASSERT_TRUE(hf2 != INVALID_HANDLE_VALUE);
+            if (hf2 != INVALID_HANDLE_VALUE)
+                CloseHandle(hf2);
+            snprintf(rmquery, sizeof(rmquery), "\\\\?\\%s", tree);
+            ASSERT_EQ(neverc_os_remove_all(rmquery), 0);
+            ASSERT_TRUE(!neverc_os_exists(tree));
+            ASSERT_TRUE(GetFileAttributesA(dotted_file) ==
+                        INVALID_FILE_ATTRIBUTES);
+        }
         snprintf(escape, sizeof(escape), "\\\\?\\%s\\. ", parent);
         errno = 0;
         ASSERT_EQ(neverc_os_remove_all(escape), -1);

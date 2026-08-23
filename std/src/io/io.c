@@ -296,7 +296,10 @@ int neverc_io_read_at_least(neverc_io_reader_t *r, uint8_t *buf,
         }
         if (rc != 0) { if (n) *n = total; return rc; }
         if (got == 0) {
-            if (++empty_reads >= NCI_IO_MAX_EMPTY_READS) break;
+            if (++empty_reads >= NCI_IO_MAX_EMPTY_READS) {
+                if (n) *n = total;
+                return NEVERC_IO_ERR_UNEXP;
+            }
             continue;
         }
         empty_reads = 0;
@@ -467,8 +470,14 @@ int neverc_io_multi_writer_write(void *ctx, const uint8_t *buf, size_t len, size
         size_t nw = 0;
         int rc = mw->writers[i].write(mw->writers[i].ctx, buf, len, &nw);
         if (nw > len) return NEVERC_IO_ERR_UNEXP;
-        if (rc != 0) return rc;
-        if (nw != len) return NEVERC_IO_ERR_SHORT;
+        if (rc != 0) {
+            *n = nw;
+            return rc;
+        }
+        if (nw != len) {
+            *n = nw;
+            return NEVERC_IO_ERR_SHORT;
+        }
     }
     *n = len;
     return 0;

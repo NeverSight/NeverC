@@ -1089,8 +1089,14 @@ int neverc_quic_conn_add_peer_cid(struct neverc_quic_conn *conn,
             active++;
     }
     if (active > QUIC_MAX_PEER_CONN_IDS ||
-        (uint64_t)active > conn->local_params.active_connection_id_limit)
+        (uint64_t)active > conn->local_params.active_connection_id_limit) {
+        /* RFC 9000 §5.1.1: exceeding the advertised limit is
+         * CONNECTION_ID_LIMIT_ERROR, not a frame encoding error. */
+        (void)neverc_quic_conn_close_locked(
+            conn, QUIC_ERR_CONNECTION_ID_LIMIT_ERROR,
+            "too many active connection IDs", 0);
         return -1;
+    }
     quic_conn_id_entry_t *entry = NULL;
     if (conn->n_peer_cids < QUIC_MAX_PEER_CONN_IDS) {
         entry = &conn->peer_cids[conn->n_peer_cids++];

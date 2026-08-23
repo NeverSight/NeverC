@@ -417,6 +417,27 @@ static void test_directory_extra_and_descriptor(void) {
         neverc_zip_reader_free(&reader);
     }
 
+    {
+        uint8_t prefixed[264];
+        memset(prefixed, 'S', 8);
+        n = build_stored_zip(prefixed + 8, sizeof(prefixed) - 8, "pref.txt",
+                             payload, sizeof(payload) - 1U, 0, 0, 0);
+        check_int("prefix fixture", n > 0, 1);
+        if (n > 0) {
+            neverc_zip_reader_t reader;
+            check_int("accept zip with leading prefix",
+                      neverc_zip_reader_init(&reader, prefixed, n + 8), 0);
+            check_int("prefix zip file count",
+                      neverc_zip_reader_count(&reader), 1);
+            const neverc_zip_file_header_t *file =
+                neverc_zip_reader_file(&reader, 0);
+            check_int("prefix file", file != NULL, 1);
+            if (file)
+                check_str("prefix name", file->name, "pref.txt");
+            neverc_zip_reader_free(&reader);
+        }
+    }
+
     n = build_stored_zip(crafted, sizeof(crafted), "desc.txt",
                          payload, sizeof(payload) - 1U, 0x0008, 0, 1);
     check_int("descriptor fixture", n > 0, 1);

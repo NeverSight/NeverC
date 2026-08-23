@@ -500,10 +500,11 @@ int neverc_netip_addr_is_global_unicast(const neverc_netip_addr_t *addr) {
             (v4[0] == 255 && v4[1] == 255 && v4[2] == 255 && v4[3] == 255))
             return 0;
     }
+    /* Go netip.Addr.IsGlobalUnicast: RFC 1918 / ULA are still global.
+     * SSRF-style "internal" checks use is_internal. */
     return !neverc_netip_addr_is_loopback(addr) &&
            !neverc_netip_addr_is_multicast(addr) &&
            !neverc_netip_addr_is_link_local_unicast(addr) &&
-           !neverc_netip_addr_is_private(addr) &&
            !neverc_netip_addr_is_unspecified(addr);
 }
 
@@ -621,7 +622,9 @@ void neverc_netip_addr_ipv6_loopback(neverc_netip_addr_t *out) {
 }
 
 int neverc_netip_addr_as4(const neverc_netip_addr_t *addr, uint8_t out[4]) {
-    if (!addr || !addr->valid || !addr->is_v4 || !out) return -1;
+    if (!addr || !addr->valid || !out) return -1;
+    /* Go netip.Addr.As4: IPv4 and IPv4-mapped IPv6 both yield 4 octets. */
+    if (!addr->is_v4 && !addr_is_4in6(addr)) return -1;
     memcpy(out, addr->addr + 12, 4);
     return 4;
 }

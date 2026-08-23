@@ -729,9 +729,10 @@ static int h3_read_request(h3_conn_t *connection,
             return -1;
         }
     }
-    if (!initial_headers ||
-        (request->content_length_present &&
-         request->content_length != request->body_len))
+    if (!initial_headers)
+        return -5;
+    if (request->content_length_present &&
+        request->content_length != request->body_len)
         return -1;
     return 0;
 }
@@ -945,6 +946,9 @@ static void h3_request_task(h3_stream_task_t *task) {
         } else if (read_status == -4) {
             h3_protocol_error(connection, NC_H3_FRAME_UNEXPECTED,
                               "unexpected HTTP/3 frame on request stream");
+        } else if (read_status == -5) {
+            /* RFC 9114 §4.1: FIN before HEADERS is H3_REQUEST_INCOMPLETE. */
+            h3_abort_request_stream(stream, NC_H3_REQUEST_INCOMPLETE);
         } else {
             h3_abort_request_stream(stream, NC_H3_MESSAGE_ERROR);
         }

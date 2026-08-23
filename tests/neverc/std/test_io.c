@@ -151,6 +151,14 @@ static void test_multi_reader(void) {
     free(data);
 }
 
+static int fail_after_accept_write(void *ctx, const uint8_t *buf,
+                                   size_t len, size_t *n) {
+    (void)ctx;
+    (void)buf;
+    *n = len;
+    return NEVERC_IO_ERR_UNEXP;
+}
+
 static void test_multi_writer(void) {
     printf("[multi_writer]\n");
     neverc_io_mem_writer_t mw1, mw2;
@@ -172,6 +180,21 @@ static void test_multi_writer(void) {
     check_size("multi_writer w2 len", mw2.len, 4);
     check_int("multi_writer w1 data", memcmp(mw1.data, "test", 4) == 0, 1);
     check_int("multi_writer w2 data", memcmp(mw2.data, "test", 4) == 0, 1);
+
+    {
+        neverc_io_writer_t mixed[2] = {
+            { &mw1, neverc_io_mem_writer_write },
+            { NULL, fail_after_accept_write }
+        };
+        neverc_io_multi_writer_t failing;
+        neverc_io_multi_writer_init(&failing, mixed, 2);
+        n = 0;
+        check_int("multi_writer failure rc",
+                  neverc_io_multi_writer_write(&failing,
+                                               (const uint8_t *)"ab", 2, &n),
+                  NEVERC_IO_ERR_UNEXP);
+        check_size("multi_writer failure reports accepted n", n, 2);
+    }
     neverc_io_mem_writer_free(&mw1);
     neverc_io_mem_writer_free(&mw2);
 }
@@ -285,6 +308,11 @@ static void test_no_progress_guards(void) {
     check_int("read_full rejects no progress",
               neverc_io_read_full(&reader, &byte, 1),
               NEVERC_IO_ERR_UNEXP);
+    size_t stalled = 99;
+    check_int("read_at_least rejects no progress",
+              neverc_io_read_at_least(&reader, &byte, 1, 1, &stalled),
+              NEVERC_IO_ERR_UNEXP);
+    check_size("read_at_least no progress n", stalled, 0);
 
     neverc_io_writer_t discard;
     neverc_io_discard_init(&discard);

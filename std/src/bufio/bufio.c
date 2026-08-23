@@ -670,26 +670,37 @@ void neverc_bufio_writer_init_size(neverc_bufio_writer_t *bw,
     bw->buf_cap = size;
     bw->buf = (uint8_t *)malloc(size);
     bw->n = 0;
+    bw->err = 0;
 }
 
 int neverc_bufio_writer_flush(neverc_bufio_writer_t *bw) {
     if (!bw || bw->n > bw->buf_cap) return NEVERC_IO_ERR_UNEXP;
+    if (bw->err != 0) return bw->err;
     if (bw->n == 0) return 0;
     if (!bw->buf || !bw->writer.write) return NEVERC_IO_ERR_UNEXP;
     size_t nw = 0;
     int err = bw->writer.write(bw->writer.ctx, bw->buf, bw->n, &nw);
-    if (nw > bw->n) return NEVERC_IO_ERR_SHORT;
-    if (nw == 0)
-        return err < 0 ? err : NEVERC_IO_ERR_SHORT;
+    if (nw > bw->n) {
+        bw->err = NEVERC_IO_ERR_SHORT;
+        return bw->err;
+    }
+    if (nw == 0) {
+        bw->err = err < 0 ? err : NEVERC_IO_ERR_SHORT;
+        return bw->err;
+    }
     if (nw < bw->n) {
         size_t remaining = bw->n - nw;
         memmove(bw->buf, bw->buf + nw, remaining);
         bw->n = remaining;
-        return err != 0 ? err : NEVERC_IO_ERR_SHORT;
-    } else {
-        bw->n = 0;
+        bw->err = err != 0 ? err : NEVERC_IO_ERR_SHORT;
+        return bw->err;
     }
-    return err;
+    bw->n = 0;
+    if (err != 0) {
+        bw->err = err;
+        return err;
+    }
+    return 0;
 }
 
 int neverc_bufio_writer_write(neverc_bufio_writer_t *bw,
@@ -700,6 +711,7 @@ int neverc_bufio_writer_write(neverc_bufio_writer_t *bw,
     if (!bw || !bw->buf || bw->buf_cap == 0 || !data ||
         bw->n > bw->buf_cap)
         return NEVERC_IO_ERR_UNEXP;
+    if (bw->err != 0) return bw->err;
     while (*n < len) {
         size_t avail = bw->buf_cap - bw->n;
         size_t copy = (len - *n) < avail ? (len - *n) : avail;
@@ -717,6 +729,7 @@ int neverc_bufio_writer_write(neverc_bufio_writer_t *bw,
 int neverc_bufio_writer_write_byte(neverc_bufio_writer_t *bw, uint8_t c) {
     if (!bw || !bw->buf || bw->buf_cap == 0 || bw->n > bw->buf_cap)
         return NEVERC_IO_ERR_UNEXP;
+    if (bw->err != 0) return bw->err;
     if (bw->n >= bw->buf_cap) {
         int err = neverc_bufio_writer_flush(bw);
         if (err != 0) return err;
@@ -730,4 +743,5 @@ void neverc_bufio_writer_free(neverc_bufio_writer_t *bw) {
     free(bw->buf);
     bw->buf = NULL;
     bw->buf_cap = bw->n = 0;
+    bw->err = 0;
 }

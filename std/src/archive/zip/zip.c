@@ -70,10 +70,6 @@ static int find_eocd(const uint8_t *data, size_t len, size_t *offset) {
     return -1;
 }
 
-static int zip_cd_at(const uint8_t *data, size_t len, uint64_t off) {
-    return off + 46U <= len && read32(data + (size_t)off) == 0x02014b50U;
-}
-
 int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t len) {
     if (!r) return -1;
     memset(r, 0, sizeof(*r));
@@ -102,11 +98,10 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
 
     /* Go archive/zip.readDirectoryEnd: directoryOffset is relative to the
      * start of the zip payload. A prefix (SFX stub, polyglot) becomes
-     * baseOffset so CD/local records still resolve. If the unadjusted
-     * offset already points at a central header, trust it (baseOffset=0). */
+     * baseOffset so CD/local records still resolve. Do not "trust" an
+     * unadjusted offset that happens to look like a central header — that
+     * zeros base and then fails the size identity on every prefixed zip. */
     size_t base = eocd_offset - (size_t)central_size - (size_t)central_offset;
-    if (base > 0 && zip_cd_at(data, len, central_offset))
-        base = 0;
     if (base + (uint64_t)central_offset + central_size != eocd_offset)
         return -1;
     size_t cd_offset = base + (size_t)central_offset;

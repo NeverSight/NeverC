@@ -127,8 +127,9 @@ static int udp_in6_wants_zone(const struct in6_addr *addr) {
     const unsigned char *b = addr->s6_addr;
     if (b[0] == 0xfe && (b[1] & 0xc0) == 0x80)
         return 1; /* fe80::/10 link-local unicast */
-    if (b[0] == 0xff && (b[1] & 0x0f) == 0x02)
-        return 1; /* ff02::/16 link-local multicast */
+    if (b[0] == 0xff &&
+        ((b[1] & 0x0f) == 0x01 || (b[1] & 0x0f) == 0x02))
+        return 1; /* ff01::/16 interface-local, ff02::/16 link-local */
     return 0;
 }
 

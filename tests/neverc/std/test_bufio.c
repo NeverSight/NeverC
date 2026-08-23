@@ -403,6 +403,16 @@ static void test_partial_write_error(void) {
     check_size("partial write accepted input", n, 4);
     check_size("partial write keeps remainder", bw.n, 2);
     check_bytes("partial write remainder", bw.buf, bw.n, "cd");
+    size_t leftover = bw.n;
+    size_t n2 = 99;
+    check_int("sticky write returns prior error",
+              neverc_bufio_writer_write(&bw, (const uint8_t *)"xy", 2, &n2),
+              NEVERC_IO_ERR_UNEXP);
+    check_size("sticky write accepts nothing", n2, 0);
+    check_size("sticky write keeps remainder", bw.n, leftover);
+    check_int("sticky write_byte returns prior error",
+              neverc_bufio_writer_write_byte(&bw, 'z'),
+              NEVERC_IO_ERR_UNEXP);
     neverc_bufio_writer_free(&bw);
 }
 

@@ -447,10 +447,11 @@ int neverc_rpc_server_stream_send(
     neverc_rpc_server_stream_t *stream, const void *data, size_t len) {
     if (!stream || (!data && len > 0)) return NEVERC_RPC_IO_INVALID;
     nc_mutex_lock(&stream->lock);
-    int closed = stream->ended || stream->peer_cancelled ||
-                 neverc_context_done(stream->context);
+    int closed = stream->ended || stream->peer_cancelled;
+    int cancelled = neverc_context_done(stream->context);
     nc_mutex_unlock(&stream->lock);
     if (closed) return NEVERC_RPC_IO_CLOSED;
+    if (cancelled) return NEVERC_RPC_IO_CANCELLED;
     size_t sent = 0;
     while (sent < len) {
         size_t chunk = len - sent;
@@ -502,8 +503,10 @@ static int rpc_server_stream_end_internal(
 int neverc_rpc_server_stream_end(
     neverc_rpc_server_stream_t *stream, neverc_rpc_status_code_t code,
     const char *message) {
-    return rpc_server_stream_end_internal(stream, code, message,
-                                          stream ? stream->context : NULL);
+    /* END must not use a already-done stream context: send_context then
+     * cancels and the status frame is dropped. try_send (NULL) matches
+     * the other server teardown paths. */
+    return rpc_server_stream_end_internal(stream, code, message, NULL);
 }
 
 static void rpc_server_handler_task(void *arg) {

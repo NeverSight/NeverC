@@ -83,6 +83,7 @@ struct neverc_h2_client {
     int pending_active;
     int pending_end_stream;
     int pending_continuations;
+    int pending_self_dep;
     uint32_t settings_ack_owed;
 };
 
@@ -364,6 +365,7 @@ static void h2_client_clear_pending(neverc_h2_client_t *client) {
     client->pending_active = 0;
     client->pending_end_stream = 0;
     client->pending_continuations = 0;
+    client->pending_self_dep = 0;
 }
 
 static int h2_client_name_valid(const char *name) {
@@ -551,23 +553,37 @@ static int h2_client_decode_pending(neverc_h2_client_t *client,
     int result = decode_result;
     int was_response_started = stream ? stream->response_started : 0;
     int already_done = stream && stream->done;
-    if (result == 0 && stream && !already_done)
+    int self_dep = client->pending_self_dep;
+    if (result == 0 && stream && !already_done && !self_dep)
         result = h2_client_store_decoded_headers(
             client, stream, decoded, count);
-    if (result == 0 && stream && was_response_started && !end_stream)
-        result = -1;
-    if (result == 0 && stream && end_stream &&
-        !stream->response_started)
-        result = -1;
-    if (result == 0 && stream && end_stream &&
-        h2_client_response_length_valid(stream) != 0)
-        result = -1;
+    if (!self_dep) {
+        if (result == 0 && stream && was_response_started && !end_stream)
+            result = -1;
+        if (result == 0 && stream && end_stream &&
+            !stream->response_started)
+            result = -1;
+        if (result == 0 && stream && end_stream &&
+            h2_client_response_length_valid(stream) != 0)
+            result = -1;
+    }
     for (int i = 0; i < count; i++) {
         free(decoded[i].name);
         free(decoded[i].value);
     }
     h2_client_clear_pending(client);
     if (decode_result < 0) return -1;
+    if (self_dep) {
+        if (stream && !already_done) {
+            stream->error = "HTTP/2 HEADERS self-dependency";
+            stream->error_code = NC_H2_PROTOCOL_ERROR;
+            stream->done = 1;
+            h2_client_push_terminal_event(stream, stream->error,
+                                          stream->error_code);
+            nc_cond_broadcast(&stream->changed);
+        }
+        return 0;
+    }
     /* RFC 9113 §5.1 / §8.1: HEADERS after remote END_STREAM is not a
      * trailer. Keep HPACK aligned and leave the existing stream error. */
     if (already_done)
@@ -646,21 +662,23 @@ static int h2_client_header_fragment(
         if (header->length < 1) return -1;
         padding = payload[offset++];
     }
+    int self_dep = 0;
     if (header->flags & NC_H2_FLAG_PRIORITY) {
         if (header->length - offset < 5) return -1;
         uint32_t dependency = ((uint32_t)(payload[offset] & 0x7f) << 24) |
                               ((uint32_t)payload[offset + 1] << 16) |
                               ((uint32_t)payload[offset + 2] << 8) |
                               (uint32_t)payload[offset + 3];
-        /* RFC 9113 §6.2: a HEADERS priority that depends on itself is
-         * a connection error of type PROTOCOL_ERROR. */
-        if (dependency == header->stream_id) return -1;
+        /* RFC 9113 §6.2: self-dependency is a stream PROTOCOL_ERROR.
+         * Keep parsing so HPACK can stay in sync. */
+        if (dependency == header->stream_id)
+            self_dep = 1;
         offset += 5;
     }
     if (padding > header->length - offset) return -1;
     *fragment = payload ? payload + offset : NULL;
     *fragment_length = header->length - offset - padding;
-    return 0;
+    return self_dep ? -2 : 0;
 }
 
 static int h2_client_data_fragment(
@@ -862,8 +880,9 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
         if (header->stream_id == 0) return -1;
         const uint8_t *fragment = NULL;
         size_t fragment_length = 0;
-        if (h2_client_header_fragment(header, payload, &fragment,
-                                      &fragment_length) != 0)
+        int frag_rc = h2_client_header_fragment(header, payload, &fragment,
+                                                &fragment_length);
+        if (frag_rc != 0 && frag_rc != -2)
             return -1;
         nc_mutex_lock(&client->state_lock);
         if ((header->stream_id & 1U) == 0 ||
@@ -885,6 +904,8 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
         client->pending_end_stream =
             (header->flags & NC_H2_FLAG_END_STREAM) != 0;
         client->pending_continuations = 0;
+        client->pending_self_dep = (frag_rc == -2);
+        int self_dep = client->pending_self_dep;
         int result = 0;
         if (!client->pending_active)
             result = h2_client_decode_pending(
@@ -894,6 +915,12 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
             (void)h2_client_write_u32(client, NC_H2_FRAME_RST_STREAM,
                                       header->stream_id,
                                       NC_H2_STREAM_CLOSED);
+            return 0;
+        }
+        if (self_dep && result == 0) {
+            (void)h2_client_write_u32(client, NC_H2_FRAME_RST_STREAM,
+                                      header->stream_id,
+                                      NC_H2_PROTOCOL_ERROR);
             return 0;
         }
         return result;
@@ -914,6 +941,7 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
         }
         int result = 0;
         int already_done = 0;
+        int self_dep = client->pending_self_dep;
         if (header->flags & NC_H2_FLAG_END_HEADERS) {
             h2_client_stream_t *cont_stream =
                 h2_client_find_stream(client, header->stream_id);
@@ -926,6 +954,13 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
             (void)h2_client_write_u32(client, NC_H2_FRAME_RST_STREAM,
                                       header->stream_id,
                                       NC_H2_STREAM_CLOSED);
+            return 0;
+        }
+        if (self_dep && (header->flags & NC_H2_FLAG_END_HEADERS) &&
+            result == 0) {
+            (void)h2_client_write_u32(client, NC_H2_FRAME_RST_STREAM,
+                                      header->stream_id,
+                                      NC_H2_PROTOCOL_ERROR);
             return 0;
         }
         return result;

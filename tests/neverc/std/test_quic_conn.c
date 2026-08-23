@@ -1184,6 +1184,34 @@ static void test_new_conn_id_rejects_zero_length_dcid(void) {
     neverc_quic_conn_destroy(conn);
 }
 
+static void test_new_conn_id_over_limit_is_connection_id_limit(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    quic_conn_id_t peer;
+    memset(&peer, 0, sizeof(peer));
+    peer.len = 8;
+    memset(peer.data, 0x11, 8);
+    ASSERT_EQ(quic_copy_peer_cid(conn, &peer), 0);
+    ASSERT_EQ(conn->local_params.active_connection_id_limit, 2);
+
+    quic_frame_new_conn_id_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.sequence = 1;
+    frame.retire_prior_to = 0;
+    frame.conn_id_len = 8;
+    memset(frame.conn_id, 0x22, 8);
+    memset(frame.stateless_reset_token, 0x33, 16);
+    ASSERT_EQ(neverc_quic_conn_add_peer_cid(conn, &frame), 0);
+
+    frame.sequence = 2;
+    memset(frame.conn_id, 0x44, 8);
+    memset(frame.stateless_reset_token, 0x55, 16);
+    ASSERT_EQ(neverc_quic_conn_add_peer_cid(conn, &frame), -1);
+    ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_CONNECTION_ID_LIMIT_ERROR);
+    neverc_quic_conn_destroy(conn);
+}
+
 static void test_new_conn_id_below_retire_prior_to_is_retired(void) {
     struct neverc_quic_conn *conn =
         neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
@@ -1596,6 +1624,7 @@ int main(void) {
     test_stream_overlapping_data_must_match();
     test_new_conn_id_retire_prior_to_marks_unsent();
     test_new_conn_id_rejects_zero_length_dcid();
+    test_new_conn_id_over_limit_is_connection_id_limit();
     test_new_conn_id_below_retire_prior_to_is_retired();
     test_apply_max_data_raises_window();
     test_version_negotiation_roundtrip();

@@ -149,32 +149,12 @@ static int os_win_path_has_dotdot_component(const char *path) {
     return 0;
 }
 
-/* Win32 without \\?\ folds a trailing '.' / ' ' on each component.
- * "\\?\C:\temp\secret." must not become C:\temp\secret. */
-static int os_win_component_needs_extended_prefix(const char *path) {
-    const char *p = path;
-    while (*p) {
-        const char *start = p;
-        while (*p && *p != '\\' && *p != '/')
-            p++;
-        size_t n = (size_t)(p - start);
-        if (n > 0 && (start[n - 1] == '.' || start[n - 1] == ' ')) {
-            int is_dot = (n == 1 && start[0] == '.');
-            int is_dotdot = (n == 2 && start[0] == '.' && start[1] == '.');
-            if (!is_dot && !is_dotdot)
-                return 1;
-        }
-        if (*p)
-            p++;
-    }
-    return 0;
-}
-
 /* Map NT/Win32 prefixes to a path ANSI APIs can use without turning a
  * volume/device path into a cwd-relative name (Go os.normaliseLinkPath /
- * RemoveAll). Drive-absolute \\?\C:\foo may drop the prefix; \\?\C: must
- * not become C: (the drive's cwd). \??\ is converted to \\?\ otherwise so
- * FindFirstFileA does not treat '?' as a wildcard. */
+ * RemoveAll). Drive-absolute and UNC keep \\?\ so walk/delete can name
+ * trailing-dot/space children; \\?\C: must not become C: (the drive's
+ * cwd). \??\ is converted to \\?\ otherwise so FindFirstFileA does not
+ * treat '?' as a wildcard. */
 static int os_win_prepare_path(const char *path, char *dst, size_t dst_cap,
                                const char **out) {
     int skip = os_win_skip_extended_prefix(path);
@@ -189,14 +169,7 @@ static int os_win_prepare_path(const char *path, char *dst, size_t dst_cap,
     nt_prefix = path[1] == '?' && path[2] == '?';
 
     if (os_win_is_unc_remainder(rest)) {
-        if (os_win_component_needs_extended_prefix(rest)) {
-            n = snprintf(dst, dst_cap, "\\\\?\\%s", rest);
-            if (n < 0 || (size_t)n >= dst_cap)
-                return -1;
-            *out = dst;
-            return 0;
-        }
-        n = snprintf(dst, dst_cap, "\\\\%s", rest + 4);
+        n = snprintf(dst, dst_cap, "\\\\?\\%s", rest);
         if (n < 0 || (size_t)n >= dst_cap)
             return -1;
         *out = dst;
@@ -205,14 +178,10 @@ static int os_win_prepare_path(const char *path, char *dst, size_t dst_cap,
 
     if (rest[0] != '\0' && rest[1] == ':' &&
         (rest[2] == '\\' || rest[2] == '/')) {
-        if (os_win_component_needs_extended_prefix(rest)) {
-            n = snprintf(dst, dst_cap, "\\\\?\\%s", rest);
-            if (n < 0 || (size_t)n >= dst_cap)
-                return -1;
-            *out = dst;
-            return 0;
-        }
-        *out = rest;
+        n = snprintf(dst, dst_cap, "\\\\?\\%s", rest);
+        if (n < 0 || (size_t)n >= dst_cap)
+            return -1;
+        *out = dst;
         return 0;
     }
 

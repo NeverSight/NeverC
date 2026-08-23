@@ -104,6 +104,7 @@ typedef struct {
     uint8_t            *buf;
     size_t              buf_cap;
     size_t              n;
+    int                 err; /* sticky; Go bufio.Writer.err */
 } neverc_bufio_writer_t;
 
 void neverc_bufio_writer_init(neverc_bufio_writer_t *bw,
