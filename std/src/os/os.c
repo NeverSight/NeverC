@@ -786,11 +786,16 @@ static int os_win_symlink_destpath(const char *oldname, const char *newname,
 }
 
 /* Go os.Remove / RemoveAll: ACCESS_DENIED on a readonly file or directory
- * is retried after clearing FILE_ATTRIBUTE_READONLY. */
+ * is retried after clearing FILE_ATTRIBUTE_READONLY. Save each last-error:
+ * DeleteFileA on a readonly file returns ACCESS_DENIED, then
+ * RemoveDirectoryA on that same file overwrites it with ERROR_DIRECTORY. */
 static int os_win_delete_path(const char *name) {
+    DWORD file_err = 0, dir_err = 0;
     if (DeleteFileA(name)) return 0;
+    file_err = GetLastError();
     if (RemoveDirectoryA(name)) return 0;
-    if (GetLastError() == ERROR_ACCESS_DENIED) {
+    dir_err = GetLastError();
+    if (file_err == ERROR_ACCESS_DENIED || dir_err == ERROR_ACCESS_DENIED) {
         DWORD attr = GetFileAttributesA(name);
         if (attr != INVALID_FILE_ATTRIBUTES &&
             (attr & FILE_ATTRIBUTE_READONLY)) {

@@ -1217,7 +1217,7 @@ int neverc_net_pipe_write(neverc_net_pipe_t *p, const void *data, size_t len) {
 
         if (r->closed) {
             pipe_mutex_unlock(&r->lock);
-            return -1;  /* broken pipe */
+            return written > 0 ? (int)written : -1;
         }
 
         while (r->count == PIPE_BUF_SIZE && !r->closed) {
@@ -1226,7 +1226,7 @@ int neverc_net_pipe_write(neverc_net_pipe_t *p, const void *data, size_t len) {
 
         if (r->closed) {
             pipe_mutex_unlock(&r->lock);
-            return -1;
+            return written > 0 ? (int)written : -1;
         }
 
         size_t space = PIPE_BUF_SIZE - r->count;

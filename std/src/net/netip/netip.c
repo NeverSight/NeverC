@@ -263,7 +263,8 @@ done_parse:
             /* Zone IDs are interface names or decimal indices. CTL in a
              * zone interpolates into URL/log lines as header injection.
              * Space (0x20) is allowed: Windows names like "Ethernet 2". */
-            if (c < 0x20 || c == 0x7f || c == ']' || c == '/' || c == '@')
+            if (c < 0x20 || c == 0x7f || c == ']' || c == '/' ||
+                c == '@' || c == '#' || c == '?' || c == '\\')
                 return -1;
         }
         memcpy(out->zone, zone_start, zlen);
@@ -529,9 +530,13 @@ int neverc_netip_addr_is_internal(const neverc_netip_addr_t *addr) {
         neverc_netip_addr_is_unspecified(&unmapped))
         return 1;
     uint8_t v4[4];
-    if (neverc_netip_addr_as4(&unmapped, v4) == 4 &&
-        v4[0] == 255 && v4[1] == 255 && v4[2] == 255 && v4[3] == 255)
-        return 1;
+    if (neverc_netip_addr_as4(&unmapped, v4) == 4) {
+        /* 0.0.0.0/8 is this-host on Linux and is used for SSRF via
+         * 0.0.0.1. Unspecified 0.0.0.0 is already covered above. */
+        if (v4[0] == 0 ||
+            (v4[0] == 255 && v4[1] == 255 && v4[2] == 255 && v4[3] == 255))
+            return 1;
+    }
     return 0;
 }
 

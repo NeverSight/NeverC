@@ -228,6 +228,12 @@ static void test_addr_internal(void) {
               neverc_net_addr_is_internal("localhost"), 1);
     check_int("localhost suffix internal",
               neverc_net_addr_is_internal("foo.localhost"), 1);
+    check_int("this-host 0.0.0.1 internal",
+              neverc_net_addr_is_internal("0.0.0.1"), 1);
+    check_int("this-host 0.1.2.3 internal",
+              neverc_net_addr_is_internal("0.1.2.3"), 1);
+    check_int("mapped this-host internal",
+              neverc_net_addr_is_internal("::ffff:0.0.0.1"), 1);
     check_int("public ipv4 not internal",
               neverc_net_addr_is_internal("8.8.8.8"), 0);
     check_int("mapped public not internal",

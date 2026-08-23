@@ -42,7 +42,13 @@ static const char k_tls_allocation_failed[] =
 neverc_tls_conn_t *nci_tls_start_handshake(
     neverc_tcp_conn_t *tcp, neverc_tls_config_t *cfg,
     int from_server, int owns_tcp, neverc_context_t *ctx,
+    const char *inferred_server_name,
     const char **errp) {
+    const char *effective_name = NULL;
+    if (inferred_server_name && inferred_server_name[0])
+        effective_name = inferred_server_name;
+    else if (cfg && cfg->server_name && cfg->server_name[0])
+        effective_name = cfg->server_name;
     if (errp)
         *errp = NULL;
     if (!tcp || !cfg ||
@@ -52,8 +58,7 @@ neverc_tls_conn_t *nci_tls_start_handshake(
          cfg->client_auth ==
              NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY &&
          !cfg->root_certificates) ||
-        (!from_server && !cfg->skip_verify &&
-         (!cfg->server_name || cfg->server_name[0] == '\0')) ||
+        (!from_server && !cfg->skip_verify && !effective_name) ||
         (ctx && neverc_context_done(ctx))) {
         if (errp)
             *errp = ctx && neverc_context_done(ctx)
@@ -66,6 +71,16 @@ neverc_tls_conn_t *nci_tls_start_handshake(
         if (errp)
             *errp = k_tls_allocation_failed;
         return NULL;
+    }
+    if (!from_server && effective_name) {
+        conn->server_name = strdup(effective_name);
+        if (!conn->server_name) {
+            conn->owns_tcp = 0;
+            neverc_tls_close(conn);
+            if (errp)
+                *errp = k_tls_allocation_failed;
+            return NULL;
+        }
     }
     conn->is_server = from_server != 0;
     nci_tls_config_retain(cfg);
@@ -135,34 +150,25 @@ neverc_tls_conn_t *neverc_tls_dial(const char *addr,
             *errp = k_tls_invalid_argument;
         return NULL;
     }
-    int inferred_sni = 0;
+    /* Go dial() clones Config before filling ServerName. Keep the inferred
+     * host on the conn only so a shared cfg is not mutated and a later
+     * set_server_name cannot wipe a just-stored ticket. */
+    char inferred[TLS_MAX_SERVER_NAME + 1];
+    const char *inferred_name = NULL;
     if (!cfg->server_name || cfg->server_name[0] == '\0') {
-        char host[TLS_MAX_SERVER_NAME + 1];
-        if (tls_split_dial_host(addr, host, sizeof(host)) == 0 &&
-            host[0] != '\0') {
-            neverc_tls_config_set_server_name(cfg, host);
-            inferred_sni = cfg->server_name && cfg->server_name[0];
-        }
+        if (tls_split_dial_host(addr, inferred, sizeof(inferred)) == 0 &&
+            inferred[0] != '\0')
+            inferred_name = inferred;
     }
     const char *tcp_error = NULL;
     neverc_tcp_conn_t *tcp = neverc_tcp_dial(addr, &tcp_error);
     if (!tcp) {
-        if (inferred_sni) {
-            free(cfg->server_name);
-            cfg->server_name = NULL;
-        }
         if (errp)
             *errp = tcp_error ? tcp_error : k_tls_handshake_failed;
         return NULL;
     }
     neverc_tls_conn_t *conn =
-        nci_tls_start_handshake(tcp, cfg, 0, 1, NULL, errp);
-    /* Go clones Config before filling ServerName. Restore the caller's
-     * empty name so a later dial cannot verify against the leftover host. */
-    if (inferred_sni) {
-        free(cfg->server_name);
-        cfg->server_name = NULL;
-    }
+        nci_tls_start_handshake(tcp, cfg, 0, 1, NULL, inferred_name, errp);
     if (!conn)
         neverc_tcp_close(tcp);
     return conn;
@@ -178,7 +184,7 @@ neverc_tls_conn_t *neverc_tls_server(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp) {
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
-    return nci_tls_start_handshake(tcp, cfg, 1, 0, NULL, errp);
+    return nci_tls_start_handshake(tcp, cfg, 1, 0, NULL, NULL, errp);
 #else
     (void)tcp;
     (void)cfg;
@@ -191,7 +197,7 @@ neverc_tls_conn_t *neverc_tls_client(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp) {
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
-    return nci_tls_start_handshake(tcp, cfg, 0, 0, NULL, errp);
+    return nci_tls_start_handshake(tcp, cfg, 0, 0, NULL, NULL, errp);
 #else
     (void)tcp;
     (void)cfg;
@@ -208,7 +214,7 @@ neverc_tls_conn_t *neverc_tls_client_context(
         if (errp) *errp = k_tls_invalid_argument;
         return NULL;
     }
-    return nci_tls_start_handshake(tcp, cfg, 0, 0, ctx, errp);
+    return nci_tls_start_handshake(tcp, cfg, 0, 0, ctx, NULL, errp);
 #else
     (void)tcp;
     (void)cfg;
@@ -751,7 +757,7 @@ neverc_tls_conn_t *neverc_tls_accept(neverc_tls_listener_t *ln,
     if (!tcp)
         return NULL;
     neverc_tls_conn_t *conn =
-        nci_tls_start_handshake(tcp, ln->cfg, 1, 1, NULL, errp);
+        nci_tls_start_handshake(tcp, ln->cfg, 1, 1, NULL, NULL, errp);
     if (!conn)
         neverc_tcp_close(tcp);
     return conn;

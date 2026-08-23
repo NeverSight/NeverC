@@ -70,6 +70,9 @@ static void test_parse_ipv6(void) {
     ASSERT_STREQ(addr.zone, "eth0");
     neverc_netip_addr_string(&addr, buf, sizeof(buf));
     ASSERT_STREQ(buf, "fe80::1%eth0");
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%eth0#x", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%eth0?x", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%eth0\\x", &addr), -1);
     ASSERT_EQ(neverc_netip_parse_addr("fe80::1%Ethernet 2", &addr), 0);
     ASSERT_STREQ(addr.zone, "Ethernet 2");
     neverc_netip_addr_string(&addr, buf, sizeof(buf));
@@ -178,6 +181,13 @@ static void test_properties(void) {
 
     neverc_netip_parse_addr("0.0.0.0", &addr);
     ASSERT_TRUE(neverc_netip_addr_is_unspecified(&addr));
+    ASSERT_TRUE(neverc_netip_addr_is_internal(&addr));
+    neverc_netip_parse_addr("0.0.0.1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_internal(&addr));
+    neverc_netip_parse_addr("0.1.2.3", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_internal(&addr));
+    neverc_netip_parse_addr("::ffff:0.0.0.1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_internal(&addr));
 
     neverc_netip_parse_addr("8.8.8.8", &addr);
     ASSERT_TRUE(neverc_netip_addr_is_global_unicast(&addr));

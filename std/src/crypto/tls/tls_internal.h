@@ -320,7 +320,8 @@ void nci_tls_config_retain(neverc_tls_config_t *cfg);
 void nci_tls_config_invalidate_client_session(neverc_tls_config_t *cfg);
 void nci_tls_config_invalidate_all_sessions(neverc_tls_config_t *cfg);
 int nci_tls_load_client_psk_offer(
-    neverc_tls_config_t *cfg, tls_client_psk_offer_t *offer);
+    neverc_tls_config_t *cfg, const char *server_name,
+    tls_client_psk_offer_t *offer);
 void nci_tls_clear_client_psk_offer(tls_client_psk_offer_t *offer);
 int nci_tls_store_client_session(
     neverc_tls_conn_t *conn,
@@ -432,6 +433,7 @@ int nci_tls_fail_handshake_alert(
 neverc_tls_conn_t *nci_tls_start_handshake(
     neverc_tcp_conn_t *tcp, neverc_tls_config_t *cfg,
     int from_server, int owns_tcp, neverc_context_t *ctx,
+    const char *inferred_server_name,
     const char **errp);
 #endif
 

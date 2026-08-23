@@ -246,6 +246,13 @@ static void hello_handler(neverc_http_request_t *req,
     neverc_http_write_string(w, "Hello, World!");
 }
 
+static void date_handler(neverc_http_request_t *req,
+                          neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_set_header(w, "Date", "Wed, 01 Jan 2020 00:00:00 GMT");
+    neverc_http_write_string(w, "dated");
+}
+
 static void echo_handler(neverc_http_request_t *req,
                           neverc_http_response_writer_t *w) {
     neverc_http_set_header(w, "Content-Type", "application/json");
@@ -438,6 +445,7 @@ static pid_t start_test_server(int port) {
     if (pid == 0) {
         neverc_http_mux_t *mux = neverc_http_new_mux();
         neverc_http_mux_handle(mux, "/hello", hello_handler);
+        neverc_http_mux_handle(mux, "/date", date_handler);
         neverc_http_mux_handle(mux, "/echo", echo_handler);
         neverc_http_mux_handle(mux, "/post", post_handler);
         neverc_http_mux_handle(mux, "/query", query_handler);
@@ -509,6 +517,26 @@ static void test_http_server(void) {
         check_int("hello 200", strstr(buf, "200 OK") != NULL, 1);
         check_int("hello body", strstr(buf, "Hello, World!") != NULL, 1);
         check_int("hello custom", strstr(buf, "X-Custom: test") != NULL, 1);
+        check_int("hello has Date", strstr(buf, "Date: ") != NULL, 1);
+        {
+            const char *d1 = strstr(buf, "Date: ");
+            const char *d2 = d1 ? strstr(d1 + 6, "Date: ") : NULL;
+            check_int("hello Date is unique", d2 == NULL, 1);
+        }
+    }
+
+    {
+        int n = do_http_request(port,
+            "GET /date HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("date resp", n > 0, 1);
+        check_int("date keeps handler value",
+                  strstr(buf, "Date: Wed, 01 Jan 2020 00:00:00 GMT") != NULL, 1);
+        {
+            const char *d1 = strstr(buf, "Date: ");
+            const char *d2 = d1 ? strstr(d1 + 6, "Date: ") : NULL;
+            check_int("date is not duplicated", d2 == NULL, 1);
+        }
     }
 
     /* Test 2: GET /echo */
@@ -2023,6 +2051,7 @@ static void test_chunked_encoding(void) {
         buf, sizeof(buf));
     check_int("chunked resp", n > 0, 1);
     check_int("chunked has TE", strstr(buf, "chunked") != NULL, 1);
+    check_int("chunked has Date", n > 0 && strstr(buf, "Date: ") != NULL, 1);
     check_int("chunked has chunk1", strstr(buf, "chunk1") != NULL, 1);
     check_int("chunked has chunk2", strstr(buf, "chunk2") != NULL, 1);
     check_int("chunked has chunk3", strstr(buf, "chunk3") != NULL, 1);

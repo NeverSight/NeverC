@@ -277,6 +277,46 @@ static void rw_apply_gzip(neverc_http_response_writer_t *w) {
     free(compressed);
 }
 
+/* Go net/http chunkWriter.writeHeader: emit Date only if the handler
+ * did not set one. Cached and double-buffered so concurrent flushes
+ * never observe a torn timestamp. */
+static int rw_append_cached_date(nc_buf_t *hdr) {
+    static char   date_bufs[2][64];
+    static int    date_lens[2] = {0, 0};
+    static volatile int date_idx = 0;
+    static volatile time_t date_time = 0;
+
+    time_t now = time(NULL);
+    if (now != date_time) {
+        int wi = 1 - date_idx;
+        struct tm gmt;
+#ifdef _WIN32
+        gmtime_s(&gmt, &now);
+#else
+        gmtime_r(&now, &gmt);
+#endif
+        date_lens[wi] = (int)strftime(date_bufs[wi],
+            sizeof(date_bufs[wi]),
+            "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", &gmt);
+#if defined(__GNUC__) || defined(__clang__)
+        __atomic_thread_fence(__ATOMIC_RELEASE);
+#elif defined(_WIN32)
+        MemoryBarrier();
+#endif
+        date_idx = wi;
+        date_time = now;
+    }
+    int ri = date_idx;
+#if defined(__GNUC__) || defined(__clang__)
+    __atomic_thread_fence(__ATOMIC_ACQUIRE);
+#elif defined(_WIN32)
+    MemoryBarrier();
+#endif
+    if (date_lens[ri] <= 0)
+        return 0;
+    return nc_buf_append(hdr, date_bufs[ri], (size_t)date_lens[ri]);
+}
+
 static int rw_flush(neverc_http_response_writer_t *w) {
     if (!w || w->hijacked || w->aborted) return -1;
     if (w->headers_sent) return 0;
@@ -331,6 +371,7 @@ static int rw_flush(neverc_http_response_writer_t *w) {
     }
 
     int has_content_type = 0;
+    int has_date = 0;
     char line[256];
     int n;
 
@@ -349,6 +390,8 @@ static int rw_flush(neverc_http_response_writer_t *w) {
 
         if (strcasecmp(w->header_names[i], "Content-Type") == 0)
             has_content_type = 1;
+        if (strcasecmp(w->header_names[i], "Date") == 0)
+            has_date = 1;
     }
 
     if (!has_content_type) {
@@ -369,47 +412,8 @@ static int rw_flush(neverc_http_response_writer_t *w) {
         : "Connection: close\r\n";
     if (nc_buf_append(&hdr, conn_val, strlen(conn_val)) != 0) goto fail;
 
-    {
-        /* Cache the Date header — update once per second.
-         * Double-buffer to avoid reader/writer races: we write into the
-         * inactive slot, then atomically flip the index. Readers always
-         * see a fully-formed string. */
-        static char   date_bufs[2][64];
-        static int    date_lens[2] = {0, 0};
-        static volatile int date_idx = 0;
-        static volatile time_t date_time = 0;
-
-        time_t now = time(NULL);
-        if (now != date_time) {
-            int wi = 1 - date_idx; /* write to inactive slot */
-            struct tm gmt;
-#ifdef _WIN32
-            gmtime_s(&gmt, &now);
-#else
-            gmtime_r(&now, &gmt);
-#endif
-            date_lens[wi] = (int)strftime(date_bufs[wi],
-                sizeof(date_bufs[wi]),
-                "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", &gmt);
-#if defined(__GNUC__) || defined(__clang__)
-            __atomic_thread_fence(__ATOMIC_RELEASE);
-#elif defined(_WIN32)
-            MemoryBarrier();
-#endif
-            date_idx = wi;
-            date_time = now;
-        }
-        int ri = date_idx;
-#if defined(__GNUC__) || defined(__clang__)
-        __atomic_thread_fence(__ATOMIC_ACQUIRE);
-#elif defined(_WIN32)
-        MemoryBarrier();
-#endif
-        if (date_lens[ri] > 0 &&
-            nc_buf_append(&hdr, date_bufs[ri],
-                          (size_t)date_lens[ri]) != 0)
-            goto fail;
-    }
+    if (!has_date && rw_append_cached_date(&hdr) != 0)
+        goto fail;
 
     if (nc_buf_append(&hdr, "\r\n", 2) != 0) goto fail;
 
@@ -652,6 +656,7 @@ static int rw_send_chunked_headers(neverc_http_response_writer_t *w) {
         goto fail;
 
     int has_content_type = 0;
+    int has_date = 0;
     for (int i = 0; i < w->nheaders; i++) {
         if (strcasecmp(w->header_names[i], "Content-Length") == 0 ||
             strcasecmp(w->header_names[i], "Transfer-Encoding") == 0 ||
@@ -667,6 +672,8 @@ static int rw_send_chunked_headers(neverc_http_response_writer_t *w) {
 
         if (strcasecmp(w->header_names[i], "Content-Type") == 0)
             has_content_type = 1;
+        if (strcasecmp(w->header_names[i], "Date") == 0)
+            has_date = 1;
     }
 
     if (!has_content_type) {
@@ -689,6 +696,7 @@ static int rw_send_chunked_headers(neverc_http_response_writer_t *w) {
         ? "Connection: keep-alive\r\n"
         : "Connection: close\r\n";
     if (nc_buf_append(&hdr, conn_val, strlen(conn_val)) != 0) goto fail;
+    if (!has_date && rw_append_cached_date(&hdr) != 0) goto fail;
 
     if (nc_buf_append(&hdr, "\r\n", 2) != 0 ||
         rw_write_all(w, hdr.data, hdr.len) != 0)

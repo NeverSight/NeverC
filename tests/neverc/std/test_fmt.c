@@ -472,6 +472,25 @@ static void test_sscanf(void) {
         }
     }
 
+    /* Go accept(sign) consumes a lone '+' / '-'; leftover starts after it. */
+    {
+        FILE *tmp = tmpfile();
+        check_true("fscanf lone plus leftover fixture", tmp != NULL);
+        if (tmp) {
+            fputs("+ 2\n", tmp);
+            rewind(tmp);
+            a = 77;
+            b = 77;
+            n = neverc_fmt_fscanf(tmp, "%d", &a);
+            check_int("fscanf lone plus first count", n, 0);
+            check_int("fscanf lone plus dest unchanged", a, 77);
+            n = neverc_fmt_fscanf(tmp, "%d", &b);
+            check_int("fscanf after lone plus count", n, 1);
+            check_int("fscanf after lone plus val", b, 2);
+            fclose(tmp);
+        }
+    }
+
     /* Go scanNumber consumes an overflowing token; leftover starts after it. */
     {
         FILE *tmp = tmpfile();

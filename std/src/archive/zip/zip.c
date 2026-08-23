@@ -70,6 +70,10 @@ static int find_eocd(const uint8_t *data, size_t len, size_t *offset) {
     return -1;
 }
 
+static int zip_cd_at(const uint8_t *data, size_t len, uint64_t off) {
+    return off + 46U <= len && read32(data + (size_t)off) == 0x02014b50U;
+}
+
 int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t len) {
     if (!r) return -1;
     memset(r, 0, sizeof(*r));
@@ -91,9 +95,21 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         total_entries == UINT16_MAX ||
         central_size == UINT32_MAX ||
         central_offset == UINT32_MAX ||
-        (uint64_t)central_offset + central_size != eocd_offset ||
+        (uint64_t)central_offset > eocd_offset ||
+        (uint64_t)central_size > eocd_offset - central_offset ||
         (uint64_t)total_entries * 46U > central_size)
         return -1;
+
+    /* Go archive/zip.readDirectoryEnd: directoryOffset is relative to the
+     * start of the zip payload. A prefix (SFX stub, polyglot) becomes
+     * baseOffset so CD/local records still resolve. If the unadjusted
+     * offset already points at a central header, trust it (baseOffset=0). */
+    size_t base = eocd_offset - (size_t)central_size - (size_t)central_offset;
+    if (base > 0 && zip_cd_at(data, len, central_offset))
+        base = 0;
+    if (base + (uint64_t)central_offset + central_size != eocd_offset)
+        return -1;
+    size_t cd_offset = base + (size_t)central_offset;
 
     zip_range_t *ranges = NULL;
     if (total_entries > 0) {
@@ -109,7 +125,7 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         if (!ranges) return zip_reader_error(r);
     }
 
-    size_t cursor = central_offset;
+    size_t cursor = cd_offset;
     size_t central_end = cursor + central_size;
     for (uint16_t i = 0; i < total_entries; i++) {
         if (central_end - cursor < 46U ||
@@ -141,10 +157,10 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
             memchr(central + 46U, '\0', name_length) != NULL)
             return zip_reader_fail(r, ranges);
 
-        if ((uint64_t)local_offset + 30U > central_offset ||
-            read32(data + local_offset) != 0x04034b50U)
+        if ((uint64_t)base + local_offset + 30U > cd_offset ||
+            read32(data + base + local_offset) != 0x04034b50U)
             return zip_reader_fail(r, ranges);
-        const uint8_t *local = data + local_offset;
+        const uint8_t *local = data + base + local_offset;
         uint16_t local_flags = read16(local + 6U);
         uint16_t local_method = read16(local + 8U);
         uint32_t local_crc = read32(local + 14U);
@@ -153,12 +169,12 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         uint16_t local_name_length = read16(local + 26U);
         uint16_t local_extra_length = read16(local + 28U);
         uint64_t data_offset =
-            (uint64_t)local_offset + 30U +
+            (uint64_t)base + local_offset + 30U +
             local_name_length + local_extra_length;
         if (local_flags != flags || local_method != method ||
             local_name_length != name_length ||
-            data_offset > central_offset ||
-            compressed_size > central_offset - data_offset ||
+            data_offset > cd_offset ||
+            compressed_size > cd_offset - data_offset ||
             memcmp(local + 30U, central + 46U, name_length) != 0)
             return zip_reader_fail(r, ranges);
         if ((flags & 0x0008U) == 0) {
@@ -184,12 +200,12 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
          * header cannot overlap a truncated descriptor. */
         uint64_t record_end = data_offset + compressed_size;
         if (flags & 0x0008U) {
-            if (record_end > central_offset ||
-                central_offset - record_end < 12U)
+            if (record_end > cd_offset ||
+                cd_offset - record_end < 12U)
                 return zip_reader_fail(r, ranges);
             size_t desc = (size_t)record_end;
             uint64_t desc_len = 12U;
-            if (central_offset - record_end >= 16U &&
+            if (cd_offset - record_end >= 16U &&
                 read32(data + desc) == 0x08074b50U) {
                 desc += 4U;
                 desc_len = 16U;
@@ -215,7 +231,7 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         file->mod_date = mod_date;
         r->file_data[i] = file_data;
         if (ranges) {
-            ranges[i].start = local_offset;
+            ranges[i].start = (uint64_t)base + local_offset;
             ranges[i].end = record_end;
         }
         r->nfiles++;

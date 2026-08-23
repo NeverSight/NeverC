@@ -130,11 +130,14 @@ static int tls_session_peer_cert_current(const uint8_t *der, size_t der_len) {
 }
 
 int nci_tls_load_client_psk_offer(
-    neverc_tls_config_t *cfg, tls_client_psk_offer_t *offer) {
+    neverc_tls_config_t *cfg, const char *server_name,
+    tls_client_psk_offer_t *offer) {
     if (!offer)
         return 0;
     memset(offer, 0, sizeof(*offer));
-    if (!cfg || !cfg->server_name ||
+    if (!server_name || server_name[0] == '\0')
+        server_name = cfg ? cfg->server_name : NULL;
+    if (!cfg || !server_name || server_name[0] == '\0' ||
         !cfg->session_mutex_initialized)
         return 0;
     uint64_t now_ms = nci_tls_wall_time_ms();
@@ -147,7 +150,7 @@ int nci_tls_load_client_psk_offer(
         session->ticket && session->ticket_len > 0 &&
         session->ticket_len <= sizeof(offer->ticket) &&
         session->server_name &&
-        strcmp(session->server_name, cfg->server_name) == 0 &&
+        strcmp(session->server_name, server_name) == 0 &&
         session->lifetime > 0 &&
         now_ms >= session->received_at_ms &&
         now_ms - session->received_at_ms <

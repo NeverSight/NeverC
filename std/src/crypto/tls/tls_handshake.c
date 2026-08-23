@@ -456,7 +456,7 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
 
     tls_client_psk_offer_t psk_offer;
     int psk_offered =
-        nci_tls_load_client_psk_offer(cfg, &psk_offer);
+        nci_tls_load_client_psk_offer(cfg, conn->server_name, &psk_offer);
 
     /* Build ClientHello */
     uint8_t ch[TLS_CLIENT_HELLO_CAPACITY];
@@ -532,26 +532,30 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
     tls_put_u16(ch + ch_len, 32); ch_len += 2; /* key_exchange len */
     memcpy(ch + ch_len, my_pubkey, 32); ch_len += 32;
 
-    /* Extension: server_name (SNI) */
-    if (cfg && cfg->server_name) {
-        size_t sni_len = strlen(cfg->server_name);
-        if (sni_len == 0 || sni_len > 255) {
-            nci_tls_clear_client_psk_offer(&psk_offer);
-            return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
-        }
-        if (tls_set_owned_string(
-                &conn->server_name, cfg->server_name,
-                sni_len) != 0) {
-            nci_tls_clear_client_psk_offer(&psk_offer);
-            return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
-        }
-        if (!nci_tls_name_is_ip_literal(cfg->server_name)) {
-            tls_put_u16(ch + ch_len, TLS_EXT_SERVER_NAME); ch_len += 2;
-            tls_put_u16(ch + ch_len, (uint16_t)(sni_len + 5)); ch_len += 2;
-            tls_put_u16(ch + ch_len, (uint16_t)(sni_len + 3)); ch_len += 2;
-            ch[ch_len++] = 0; /* host_name type */
-            tls_put_u16(ch + ch_len, (uint16_t)sni_len); ch_len += 2;
-            memcpy(ch + ch_len, cfg->server_name, sni_len); ch_len += sni_len;
+    /* Extension: server_name (SNI). Prefer the name already stashed on
+     * the conn (dial-inferred host) so a shared Config is not mutated. */
+    {
+        const char *sni = conn->server_name ? conn->server_name :
+            (cfg ? cfg->server_name : NULL);
+        if (sni && sni[0]) {
+            size_t sni_len = strlen(sni);
+            if (sni_len == 0 || sni_len > 255) {
+                nci_tls_clear_client_psk_offer(&psk_offer);
+                return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
+            }
+            if (!conn->server_name &&
+                tls_set_owned_string(&conn->server_name, sni, sni_len) != 0) {
+                nci_tls_clear_client_psk_offer(&psk_offer);
+                return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
+            }
+            if (!nci_tls_name_is_ip_literal(sni)) {
+                tls_put_u16(ch + ch_len, TLS_EXT_SERVER_NAME); ch_len += 2;
+                tls_put_u16(ch + ch_len, (uint16_t)(sni_len + 5)); ch_len += 2;
+                tls_put_u16(ch + ch_len, (uint16_t)(sni_len + 3)); ch_len += 2;
+                ch[ch_len++] = 0; /* host_name type */
+                tls_put_u16(ch + ch_len, (uint16_t)sni_len); ch_len += 2;
+                memcpy(ch + ch_len, sni, sni_len); ch_len += sni_len;
+            }
         }
     }
 

@@ -651,11 +651,14 @@ neverc_ws_conn_t *neverc_ws_dial(const char *url,
                       ? config->handshake_timeout_ms
                       : WS_DEFAULT_HANDSHAKE_TIMEOUT_MS;
     neverc_context_cancel_handle_t *cancel = NULL;
-    neverc_context_t *ctx = neverc_context_with_timeout_handle(
-        neverc_context_background(), timeout, &cancel);
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *ctx = background
+        ? neverc_context_with_timeout_handle(background, timeout, &cancel)
+        : NULL;
     if (!ctx || !cancel) {
         if (ctx) neverc_context_free(ctx);
         if (cancel) neverc_context_cancel_handle_free(cancel);
+        if (background) neverc_context_free(background);
         ws_set_error(errp, "failed to create WebSocket handshake context");
         return NULL;
     }
@@ -668,6 +671,7 @@ neverc_ws_conn_t *neverc_ws_dial(const char *url,
         neverc_context_cancel_handle_cancel(cancel);
         neverc_context_free(ctx);
         neverc_context_cancel_handle_free(cancel);
+        neverc_context_free(background);
         ws_set_error(errp, "WebSocket TCP dial failed");
         return NULL;
     }
@@ -714,6 +718,7 @@ neverc_ws_conn_t *neverc_ws_dial(const char *url,
     neverc_context_cancel_handle_cancel(cancel);
     neverc_context_free(ctx);
     neverc_context_cancel_handle_free(cancel);
+    neverc_context_free(background);
     if (parsed.secure &&
         (neverc_tcp_set_read_deadline(tcp, 0) != 0 ||
          neverc_tcp_set_write_deadline(tcp, 0) != 0)) {
@@ -753,6 +758,7 @@ dial_failed:
     neverc_context_cancel_handle_cancel(cancel);
     neverc_context_free(ctx);
     neverc_context_cancel_handle_free(cancel);
+    neverc_context_free(background);
     return NULL;
 }
 
@@ -1598,13 +1604,17 @@ static int write_frame_timeout(neverc_ws_conn_t *conn, int opcode,
                          ? timeout_override_ms
                          : conn->write_timeout_ms;
     neverc_context_t *ctx = NULL;
+    neverc_context_t *background = NULL;
     neverc_context_cancel_handle_t *cancel = NULL;
     if (timeout_ms > 0) {
-        ctx = neverc_context_with_timeout_handle(
-            neverc_context_background(), timeout_ms, &cancel);
+        background = neverc_context_background();
+        ctx = background
+            ? neverc_context_with_timeout_handle(background, timeout_ms, &cancel)
+            : NULL;
         if (!ctx || !cancel) {
             if (ctx) neverc_context_free(ctx);
             if (cancel) neverc_context_cancel_handle_free(cancel);
+            if (background) neverc_context_free(background);
             nc_mutex_unlock(&conn->write_lock);
             return -1;
         }
@@ -1675,6 +1685,7 @@ static int write_frame_timeout(neverc_ws_conn_t *conn, int opcode,
     if (ctx) neverc_context_cancel_handle_cancel(cancel);
     if (ctx) neverc_context_free(ctx);
     if (cancel) neverc_context_cancel_handle_free(cancel);
+    if (background) neverc_context_free(background);
     nc_mutex_unlock(&conn->write_lock);
     return 0;
 
@@ -1682,6 +1693,7 @@ done:
     if (ctx) neverc_context_cancel_handle_cancel(cancel);
     if (ctx) neverc_context_free(ctx);
     if (cancel) neverc_context_cancel_handle_free(cancel);
+    if (background) neverc_context_free(background);
     nc_mutex_unlock(&conn->write_lock);
     return -1;
 }

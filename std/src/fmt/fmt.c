@@ -846,12 +846,13 @@ static int scan_advance_format_space(const char **sp, const char **fp) {
 
 static int scan_int(const char **p, int64_t *out) {
     skip_ws(p);
-    const char *start = *p;
     if (**p == '\0') return 0;
     int neg = 0;
     if (**p == '-') { neg = 1; (*p)++; }
     else if (**p == '+') { (*p)++; }
-    if (**p < '0' || **p > '9') { *p = start; return 0; }
+    /* Go accept(sign) consumes '+' / '-'. A lone sign leaves leftover
+     * after the sign so the next scan can read the following token. */
+    if (**p < '0' || **p > '9') return 0;
 
     uint64_t val = 0;
     const uint64_t limit = neg
@@ -908,7 +909,7 @@ static int scan_float(const char **p, double *out) {
             (*p)++;
     } else {
         if ((**p < '0' || **p > '9') && **p != '.') {
-            *p = start;
+            (void)start;
             return 0;
         }
 
