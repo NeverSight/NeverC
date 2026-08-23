@@ -939,12 +939,18 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
                     conn, TLS_ALERT_DECRYPT_ERROR,
                     "server CertificateVerify validation failed");
             if (!cfg || !cfg->skip_verify) {
-                int chain_result =
-                    neverc_tls_verify_server_certificate_chain(
+                /* Dial may infer the hostname onto conn only. Do not read
+                 * cfg->server_name alone or write the inferred name back. */
+                const char *hostname =
+                    (conn && conn->server_name && conn->server_name[0])
+                        ? conn->server_name
+                        : (cfg && cfg->server_name ? cfg->server_name : NULL);
+                if (!hostname || !hostname[0] ||
+                    nci_tls_verify_certificate_chain(
                         cfg, conn->peer_cert,
                         conn->peer_cert_len,
-                        conn->peer_intermediates, NULL);
-                if (chain_result != 0)
+                        conn->peer_intermediates, NULL, hostname,
+                        NEVERC_X509_EXT_KEY_USAGE_SERVER_AUTH, 1) != 0)
                     return nci_tls_protocol_error(
                         conn, TLS_ALERT_BAD_CERTIFICATE,
                         "server certificate chain validation failed");

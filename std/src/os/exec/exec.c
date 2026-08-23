@@ -164,6 +164,46 @@ static int exec_look_path_name_ok(const char *file) {
     return 1;
 }
 
+/* Go dedupEnv: key is bytes before the first '='. Windows "=C:=C:\\path"
+ * uses the second '=' so the key is "=C:". */
+static int exec_env_key_span(const char *entry, size_t *klen) {
+    const char *eq;
+    if (!entry || !klen) return -1;
+    eq = strchr(entry, '=');
+    if (!eq) return -1;
+    if (eq == entry) {
+        eq = strchr(entry + 1, '=');
+        if (!eq) return -1;
+    }
+    *klen = (size_t)(eq - entry);
+    return 0;
+}
+
+static int exec_env_key_same(const char *a, size_t alen,
+                             const char *b, size_t blen) {
+    if (alen != blen) return 0;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return _strnicmp(a, b, (int)alen) == 0;
+#else
+    return memcmp(a, b, alen) == 0;
+#endif
+}
+
+static int exec_env_superseded(char **env, int count, int i) {
+    size_t klen;
+    int j;
+    if (!env || !env[i] || exec_env_key_span(env[i], &klen) != 0)
+        return 0;
+    for (j = i + 1; j < count; j++) {
+        size_t later;
+        if (!env[j] || exec_env_key_span(env[j], &later) != 0)
+            continue;
+        if (exec_env_key_same(env[i], klen, env[j], later))
+            return 1;
+    }
+    return 0;
+}
+
 static const char *exec_env_path(char **env, int env_count) {
     const char *found = NULL;
     int i;
@@ -382,7 +422,10 @@ static char *exec_windows_environment(const neverc_exec_cmd_t *cmd) {
         length += extra_len + 1;
     }
     for (i = 0; i < cmd->env_count; i++) {
-        size_t item_length = strlen(cmd->env[i]);
+        size_t item_length;
+        if (exec_env_superseded(cmd->env, cmd->env_count, i))
+            continue;
+        item_length = strlen(cmd->env[i]);
         if (item_length > SIZE_MAX - length - 1) return NULL;
         length += item_length + 1;
     }
@@ -394,7 +437,10 @@ static char *exec_windows_environment(const neverc_exec_cmd_t *cmd) {
         position += extra_len + 1;
     }
     for (i = 0; i < cmd->env_count; i++) {
-        size_t item_length = strlen(cmd->env[i]);
+        size_t item_length;
+        if (exec_env_superseded(cmd->env, cmd->env_count, i))
+            continue;
+        item_length = strlen(cmd->env[i]);
         memcpy(block + position, cmd->env[i], item_length + 1);
         position += item_length + 1;
     }
@@ -481,15 +527,32 @@ static const char *exec_win_pathext(char *buf, DWORD cap) {
     return buf;
 }
 
-/* Go findExecutable: exact name, then each PATHEXT entry even when the
- * name already has an extension ("a.exe" → "a.exe.exe").
+/* Go hasExt: a '.' after the last volume/path separator. */
+static int exec_win_has_ext(const char *file) {
+    const char *dot;
+    const char *sep = NULL;
+    const char *p;
+    if (!file) return 0;
+    dot = strrchr(file, '.');
+    if (!dot) return 0;
+    for (p = file; *p; p++) {
+        if (*p == ':' || *p == '\\' || *p == '/')
+            sep = p;
+    }
+    return !sep || sep < dot;
+}
+
+/* Go findExecutable: accept the exact name only when it has an extension,
+ * then each PATHEXT entry even when the name already has one
+ * ("a.exe" → "a.exe.exe"). Extensionless PATH hits are ignored so a
+ * file named "tool" cannot shadow "tool.exe" (Go lookpath_windows_test).
  * 0 = copied into buf, -2 = exists but does not fit, -1 = not found. */
 static int exec_win_try_with_exe(const char *file, char *buf, DWORD cap) {
     size_t n;
     const char *exts;
     char pathext[4096];
     if (!file || !buf || cap == 0) return -1;
-    if (exec_win_is_file(file)) {
+    if (exec_win_has_ext(file) && exec_win_is_file(file)) {
         n = strlen(file);
         if (n >= cap) return -2;
         memcpy(buf, file, n + 1);
@@ -1236,17 +1299,33 @@ static void exec_mark_cloexec_from(int minfd) {
 #endif
 }
 
+static char **exec_env_child_array(char **env, int count) {
+    char **out;
+    int i, n = 0;
+    if (!env) return NULL;
+    out = (char **)calloc((size_t)count + 1, sizeof(char *));
+    if (!out) return NULL;
+    for (i = 0; i < count; i++) {
+        if (env[i] && !exec_env_superseded(env, count, i))
+            out[n++] = env[i];
+    }
+    return out;
+}
+
 static void exec_posix_do_exec(neverc_exec_cmd_t *cmd) {
     if (cmd->env) {
+        char **child_env = exec_env_child_array(cmd->env, cmd->env_count);
+        if (!child_env) return;
         if (strchr(cmd->name, '/')) {
-            execve(cmd->name, cmd->argv, cmd->env);
+            execve(cmd->name, cmd->argv, child_env);
         } else {
             char resolved[4096];
             const char *path = exec_env_path(cmd->env, cmd->env_count);
             if (path &&
                 exec_look_in_path(cmd->name, path, resolved, sizeof(resolved)))
-                execve(resolved, cmd->argv, cmd->env);
+                execve(resolved, cmd->argv, child_env);
         }
+        free(child_env);
     } else {
         execvp(cmd->name, cmd->argv);
     }

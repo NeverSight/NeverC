@@ -600,6 +600,39 @@ static void test_rename(void) {
     ASSERT_TRUE(!neverc_os_exists(old));
     ASSERT_TRUE(neverc_os_exists(new_path));
     neverc_os_remove(new_path);
+
+    /* POSIX rename and Go os.Rename replace an existing destination file. */
+    neverc_os_write_file(old, (const unsigned char *)"new-data", 8, 0644);
+    neverc_os_write_file(new_path, (const unsigned char *)"old-dest", 8, 0644);
+    ASSERT_EQ(neverc_os_rename(old, new_path), 0);
+    ASSERT_TRUE(!neverc_os_exists(old));
+    {
+        unsigned char *out = NULL;
+        size_t out_len = 0;
+        ASSERT_EQ(neverc_os_read_file(new_path, &out, &out_len), 0);
+        ASSERT_TRUE(out != NULL && out_len == 8 &&
+                    memcmp(out, "new-data", 8) == 0);
+        free(out);
+    }
+    neverc_os_remove(new_path);
+
+    ASSERT_EQ(neverc_os_rename("", new_path), -1);
+    ASSERT_EQ(neverc_os_rename(old, ""), -1);
+    ASSERT_EQ(neverc_os_rename(NULL, new_path), -1);
+    ASSERT_EQ(neverc_os_rename(old, NULL), -1);
+
+    {
+        char dirbuf[1024];
+        make_test_path(dirbuf, sizeof(dirbuf), "neverc_test_rename_dir");
+        neverc_os_remove_all(dirbuf);
+        ASSERT_EQ(neverc_os_mkdir(dirbuf, 0700), 0);
+        neverc_os_write_file(old, (const unsigned char *)"keep", 4, 0644);
+        ASSERT_EQ(neverc_os_rename(old, dirbuf), -1);
+        ASSERT_TRUE(neverc_os_exists(old));
+        ASSERT_TRUE(neverc_os_exists(dirbuf));
+        neverc_os_remove(old);
+        neverc_os_remove_all(dirbuf);
+    }
 }
 
 static void test_process(void) {

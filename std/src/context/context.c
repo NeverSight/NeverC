@@ -435,7 +435,7 @@ static const char *ctx_reason(const neverc_context_t *ctx, const char **cause_ou
                 NEVERC_ATOMIC_STORE32(&mut->deadline_latched, 1);
                 latched = 1;
             }
-            if (latched && ctx->deadline_ms < best) {
+            if (latched && ctx->deadline_ms <= best) {
                 best = ctx->deadline_ms;
                 err = "context deadline exceeded";
                 cause = ctx->cause ? ctx->cause : err;

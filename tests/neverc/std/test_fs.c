@@ -37,6 +37,16 @@ static void test_valid_path(void) {
     check("dotdot_backslash", neverc_fs_valid_path("..\\etc\\passwd") == 0);
     check("reserved_con", neverc_fs_valid_path("CON") == 0);
     check("reserved_con_txt", neverc_fs_valid_path("CON.txt") == 0);
+    check("reserved_con_space_txt", neverc_fs_valid_path("CON .txt") == 0);
+    check("reserved_con_spaces_txt", neverc_fs_valid_path("CON  .txt") == 0);
+    check("reserved_com1_space_log", neverc_fs_valid_path("COM1 .log") == 0);
+    check("reserved_nul_space_ext", neverc_fs_valid_path("NUL .x") == 0);
+    check("reserved_conin_space_txt", neverc_fs_valid_path("CONIN$ .txt") == 0);
+    check("reserved_com_sup1_space_txt",
+          neverc_fs_valid_path("COM\xC2\xB9 .txt") == 0);
+    check("reserved_nested_con_space",
+          neverc_fs_valid_path("dir/CON .txt") == 0);
+    check("conlike_space_txt", neverc_fs_valid_path("console .txt") == 1);
     check("reserved_nul", neverc_fs_valid_path("nul") == 0);
     check("reserved_com1", neverc_fs_valid_path("dir/COM1") == 0);
     check("reserved_lpt9", neverc_fs_valid_path("LPT9.log") == 0);

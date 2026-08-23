@@ -354,6 +354,47 @@ static void test_deadline_outranks_later_cancel(void) {
     neverc_context_free(bg);
 }
 
+static void test_zero_timeout_outranks_immediate_cancel(void) {
+    printf("[zero_timeout_outranks_immediate_cancel]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_cancel_func_t cancel = NULL;
+    neverc_context_t *ctx = neverc_context_with_timeout(bg, 0, &cancel);
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_TRUE(cancel != NULL);
+    ASSERT_INT_EQ(neverc_context_done(ctx), 1);
+    ASSERT_TRUE(neverc_context_err(ctx) != NULL);
+    ASSERT_TRUE(strcmp(neverc_context_err(ctx),
+                       "context deadline exceeded") == 0);
+    cancel();
+    ASSERT_TRUE(strcmp(neverc_context_err(ctx),
+                       "context deadline exceeded") == 0);
+    ASSERT_TRUE(strcmp(neverc_context_cause(ctx),
+                       "context deadline exceeded") == 0);
+
+    neverc_cancel_func_t cancel2 = NULL;
+    neverc_context_t *caused =
+        neverc_context_with_timeout_cause(bg, 0, &cancel2, "already late");
+    ASSERT_TRUE(caused != NULL && cancel2 != NULL);
+    cancel2();
+    ASSERT_TRUE(strcmp(neverc_context_err(caused),
+                       "context deadline exceeded") == 0);
+    ASSERT_TRUE(strcmp(neverc_context_cause(caused), "already late") == 0);
+
+    neverc_context_cancel_handle_t *handle = NULL;
+    neverc_context_t *handled =
+        neverc_context_with_timeout_handle(bg, 0, &handle);
+    ASSERT_TRUE(handled != NULL && handle != NULL);
+    neverc_context_cancel_handle_cancel(handle);
+    ASSERT_TRUE(strcmp(neverc_context_err(handled),
+                       "context deadline exceeded") == 0);
+
+    neverc_context_cancel_handle_free(handle);
+    neverc_context_free(handled);
+    neverc_context_free(caused);
+    neverc_context_free(ctx);
+    neverc_context_free(bg);
+}
+
 static void test_multiple_cancels(void) {
     printf("[multiple_cancels]\n");
     neverc_context_t *bg = neverc_context_background();
@@ -956,6 +997,7 @@ int main(void) {
     test_parent_cancel_outranks_already_expired_child_deadline();
     test_parent_deadline_outranks_already_expired_child_deadline();
     test_deadline_outranks_later_cancel();
+    test_zero_timeout_outranks_immediate_cancel();
     test_multiple_cancels();
     test_cancel_idempotent();
     test_cancel_handle_not_rebound_while_context_alive();

@@ -449,6 +449,10 @@ static int fs_win_reserved_component(const char *p, size_t elen) {
     };
     size_t stem = 0, i;
     while (stem < elen && p[stem] != '.') stem++;
+    /* filepath.IsLocal strips trailing spaces on the stem so "CON .txt"
+     * is still the CON device. ValidPath must not be weaker. */
+    while (stem > 0 && p[stem - 1] == ' ')
+        stem--;
     for (i = 0; i < sizeof(reserved) / sizeof(reserved[0]); i++) {
         if (fs_ci_eq(p, stem, reserved[i])) return 1;
     }

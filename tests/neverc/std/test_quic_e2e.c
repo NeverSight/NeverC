@@ -3,6 +3,7 @@
 #include "neverc/std/thread.h"
 #include "neverc/std/time.h"
 #include "network_test_support.h"
+#include "../../../std/src/net/quic/_quic_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -263,6 +264,34 @@ static void quic_test_roundtrip(void) {
     neverc_network_test_remove_certs(&files);
 }
 
+static void quic_test_clienthello_legacy_session_id_empty(void) {
+    neverc_quic_config_t config = neverc_quic_config_default();
+    config.insecure_skip_verify = 1;
+    config.server_name = "localhost";
+    quic_transport_params_t local;
+    quic_transport_params_t peer;
+    neverc_quic_transport_params_default(&local);
+    neverc_quic_transport_params_default(&peer);
+    quic_tls_t *tls = neverc_quic_tls_create(0);
+    CHECK(tls != NULL);
+    if (!tls)
+        return;
+    CHECK(neverc_quic_tls_configure(tls, &config, "localhost",
+                                    &local, &peer) == 0);
+    CHECK(neverc_quic_tls_start(tls) == 0);
+    uint64_t offset = 0;
+    const uint8_t *data = NULL;
+    size_t len = 0;
+    CHECK(neverc_quic_tls_get_crypto_data(tls, QUIC_ENC_INITIAL,
+                                          &offset, &data, &len) == 0);
+    CHECK(data != NULL && len >= 39);
+    if (data && len >= 39) {
+        CHECK(data[0] == 1); /* ClientHello */
+        CHECK(data[4 + 2 + 32] == 0); /* empty legacy_session_id */
+    }
+    neverc_quic_tls_destroy(tls);
+}
+
 static void quic_test_rejects_unimplemented_options(void) {
     const char *error = NULL;
     neverc_quic_config_t config = neverc_quic_config_default();
@@ -289,6 +318,7 @@ static void quic_test_rejects_unimplemented_options(void) {
 int main(void) {
     printf("QUIC end-to-end test suite:\n");
     quic_test_rejects_unimplemented_options();
+    quic_test_clienthello_legacy_session_id_empty();
     quic_test_roundtrip();
     printf("quic-e2e: %d checks, %d failed\n", tests_run, tests_failed);
     if (tests_failed == 0) puts("passed");

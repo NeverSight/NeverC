@@ -1067,7 +1067,15 @@ int neverc_os_remove_all(const char *path) {
 int neverc_os_rename(const char *oldpath, const char *newpath) {
     if (!oldpath || !newpath || oldpath[0] == '\0' || newpath[0] == '\0')
         return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    /* CRT rename() fails when the destination exists. Go os.Rename uses
+     * MoveFileExW + MOVEFILE_REPLACE_EXISTING so Windows matches POSIX. */
+    if (MoveFileExA(oldpath, newpath, MOVEFILE_REPLACE_EXISTING))
+        return 0;
+    return os_win_fail();
+#else
     return rename(oldpath, newpath) == 0 ? 0 : -1;
+#endif
 }
 
 /* ---- File Info ---- */

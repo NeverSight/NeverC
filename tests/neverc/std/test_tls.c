@@ -25,6 +25,14 @@ static const char *MISMATCHED_KEY_PEM;
 static const char *TEST_CLIENT_CERT_PEM;
 static const char *TEST_CLIENT_KEY_PEM;
 
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+neverc_tls_conn_t *nci_tls_start_handshake(
+    neverc_tcp_conn_t *tcp, neverc_tls_config_t *cfg,
+    int from_server, int owns_tcp, neverc_context_t *ctx,
+    const char *inferred_server_name,
+    const char **errp);
+#endif
+
 #if defined(NEVERC_TLS_TESTING)
 int neverc_tls_test_config_set_handshake_fragment_size(
     neverc_tls_config_t *cfg, size_t fragment_size);
@@ -3005,6 +3013,95 @@ static void test_dial_does_not_persist_inferred_sni(void) {
     neverc_tls_config_free(server_config);
     neverc_tls_config_free(client_config);
 }
+
+#ifdef _WIN32
+static DWORD WINAPI tls_handshake_only_server(LPVOID arg) {
+#else
+static void *tls_handshake_only_server(void *arg) {
+#endif
+    server_ctx_t *ctx = (server_ctx_t *)arg;
+    const char *err = NULL;
+    neverc_tls_conn_t *conn =
+        neverc_tls_server(ctx->tcp, ctx->config, &err);
+    if (conn) {
+        ctx->handshake_ok = 1;
+        neverc_tls_close(conn);
+    }
+    return 0;
+}
+
+static int inferred_verify_handshake(const char *inferred_name) {
+    neverc_tls_config_t *server_config = neverc_tls_config_new();
+    neverc_tls_config_t *client_config = neverc_tls_config_new();
+    if (!server_config || !client_config ||
+        neverc_tls_config_load_cert_mem(
+            server_config, TEST_CERT_PEM, TEST_KEY_PEM) != 0 ||
+        neverc_tls_config_add_root_certificates_mem(
+            client_config, TEST_CERT_PEM, strlen(TEST_CERT_PEM)) != 0) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return 0;
+    }
+
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    if (neverc_tcp_pipe(&client_tcp, &server_tcp) != 0 ||
+        !client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return 0;
+    }
+
+    server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.config = server_config;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, tls_handshake_only_server, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, tls_handshake_only_server, &ctx) == 0;
+#endif
+    if (!thread_started) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return 0;
+    }
+
+    const char *err = NULL;
+    neverc_tls_conn_t *client = nci_tls_start_handshake(
+        client_tcp, client_config, 0, 0, NULL, inferred_name, &err);
+    int ok = client != NULL &&
+             (neverc_tls_config_server_name(client_config) == NULL ||
+              neverc_tls_config_server_name(client_config)[0] == '\0');
+    if (client)
+        neverc_tls_close(client);
+    neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    neverc_tls_config_free(server_config);
+    neverc_tls_config_free(client_config);
+    return ok;
+}
+
+static void test_inferred_sni_is_used_for_verify(void) {
+    printf("[inferred_sni_is_used_for_verify]\n");
+    check_int("inferred localhost matches test cert",
+              inferred_verify_handshake("localhost"), 1);
+    check_int("inferred other.example is rejected",
+              inferred_verify_handshake("other.example"), 0);
+}
 #endif
 
 /* ===== Dial error test ===== */
@@ -3084,6 +3181,7 @@ int main(void) {
     test_mutual_tls();
     test_dial_infers_sni();
     test_dial_does_not_persist_inferred_sni();
+    test_inferred_sni_is_used_for_verify();
     test_unexpected_server_record_alert();
     test_malformed_server_hello_alert();
     test_plaintext_record_version_ignored();

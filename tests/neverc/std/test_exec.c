@@ -399,6 +399,46 @@ static void test_look_path(void) {
         DeleteFileA("neverc_lp_dir\\neverc_noext_hijack");
         RemoveDirectoryA("neverc_lp_dir");
 
+        /* Absolute PATH: extensionless "tool" must not shadow tool.exe. */
+        {
+            char evil_dir[MAX_PATH], good_dir[MAX_PATH];
+            char abs_evil[MAX_PATH], abs_good[MAX_PATH];
+            char path_both[MAX_PATH * 2 + 8];
+            FILE *ef, *gf;
+            CreateDirectoryA("neverc_extless_evil", NULL);
+            CreateDirectoryA("neverc_extless_good", NULL);
+            GetFullPathNameA("neverc_extless_evil", sizeof(abs_evil),
+                             abs_evil, NULL);
+            GetFullPathNameA("neverc_extless_good", sizeof(abs_good),
+                             abs_good, NULL);
+            snprintf(evil_dir, sizeof(evil_dir), "%s\\tool", abs_evil);
+            snprintf(good_dir, sizeof(good_dir), "%s\\tool.exe", abs_good);
+            ef = fopen(evil_dir, "wb");
+            ASSERT_TRUE(ef != NULL);
+            if (ef) {
+                fputs("MZ", ef);
+                fclose(ef);
+            }
+            gf = fopen(good_dir, "wb");
+            ASSERT_TRUE(gf != NULL);
+            if (gf) {
+                fputs("MZ", gf);
+                fclose(gf);
+            }
+            SetEnvironmentVariableA("PATH", abs_evil);
+            p = neverc_exec_look_path("tool", buf, sizeof(buf));
+            ASSERT_TRUE(p == NULL);
+            snprintf(path_both, sizeof(path_both), "%s;%s", abs_evil, abs_good);
+            SetEnvironmentVariableA("PATH", path_both);
+            p = neverc_exec_look_path("tool", buf, sizeof(buf));
+            ASSERT_TRUE(p != NULL);
+            ASSERT_TRUE(p && strstr(p, "tool.exe") != NULL);
+            DeleteFileA(evil_dir);
+            DeleteFileA(good_dir);
+            RemoveDirectoryA("neverc_extless_evil");
+            RemoveDirectoryA("neverc_extless_good");
+        }
+
         /* Relative PATH with a real component is still cwd-relative (ErrDot). */
         CreateDirectoryA("neverc_lp_rel", NULL);
         pf = fopen("neverc_lp_rel\\neverc_rel_hijack.exe", "wb");
@@ -851,7 +891,7 @@ static void test_env_path_last_wins(void) {
     neverc_exec_cmd_t *cmd;
     neverc_exec_output_t out = {0};
     neverc_exec_exit_status_t st = {0};
-    const char *env[2];
+    const char *env[4];
     int pid = (int)getpid();
 
     snprintf(gooddir, sizeof(gooddir), "/tmp/neverc_exec_last_good_%d", pid);
@@ -864,7 +904,7 @@ static void test_env_path_last_wins(void) {
     f = fopen(goodbin, "w");
     ASSERT_TRUE(f != NULL);
     if (f) {
-        fputs("#!/bin/sh\necho GOOD\n", f);
+        fputs("#!/bin/sh\necho GOOD\necho MARK=$NEVERC_MARK\n", f);
         fclose(f);
     }
     chmod(goodbin, 0755);
@@ -880,13 +920,17 @@ static void test_env_path_last_wins(void) {
     snprintf(good_env, sizeof(good_env), "PATH=%s", gooddir);
     env[0] = evil_env;
     env[1] = good_env;
+    env[2] = "NEVERC_MARK=evil";
+    env[3] = "NEVERC_MARK=good";
     cmd = neverc_exec_command("nctool", NULL, 0);
     ASSERT_TRUE(cmd != NULL);
-    neverc_exec_cmd_set_env(cmd, env, 2);
+    neverc_exec_cmd_set_env(cmd, env, 4);
     ASSERT_INT_EQ(neverc_exec_cmd_output(cmd, &out, &st), 0);
     ASSERT_INT_EQ(st.exit_code, 0);
     ASSERT_TRUE(memmem(out.data, out.len, "GOOD", 4) != NULL);
     ASSERT_TRUE(memmem(out.data, out.len, "EVIL", 4) == NULL);
+    ASSERT_TRUE(memmem(out.data, out.len, "MARK=good", 9) != NULL);
+    ASSERT_TRUE(memmem(out.data, out.len, "MARK=evil", 9) == NULL);
 
     neverc_exec_output_free(&out);
     neverc_exec_cmd_free(cmd);

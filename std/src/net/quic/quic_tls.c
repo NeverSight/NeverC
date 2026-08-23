@@ -618,13 +618,10 @@ static int qt_build_client_hello(quic_tls_t *tls) {
     if (neverc_crypto_rand_read(message + position, 32) != 0)
         return qt_fail(tls, "failed to generate ClientHello random");
     position += 32;
-    tls->session_id_len = sizeof(tls->session_id);
-    if (neverc_crypto_rand_read(tls->session_id,
-                                tls->session_id_len) != 0)
-        return qt_fail(tls, "failed to generate TLS session id");
-    message[position++] = (uint8_t)tls->session_id_len;
-    memcpy(message + position, tls->session_id, tls->session_id_len);
-    position += tls->session_id_len;
+    /* RFC 9001 §8.4 / Go crypto/tls: QUIC clients MUST NOT request TLS 1.3
+     * middlebox compatibility mode, so legacy_session_id is empty. */
+    tls->session_id_len = 0;
+    message[position++] = 0;
     qt_put_u16(message + position, 2);
     position += 2;
     qt_put_u16(message + position, NEVERC_TLS_AES_128_GCM_SHA256);
