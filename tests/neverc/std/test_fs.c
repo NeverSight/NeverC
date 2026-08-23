@@ -105,7 +105,19 @@ static void test_stat(void) {
         check("lstat_tmp", rc == 0);
         check("lstat_tmp_is_dir", linfo.is_dir == 1);
         check("lstat_tmp_name_match", strcmp(linfo.name, tmp_name) == 0);
+#if !defined(_WIN32)
+        /* TMPDIR itself is often 0700 on macOS (per-user /var/folders). */
+        char execdir[2048];
+        snprintf(execdir, sizeof(execdir), "%s/neverc_test_fs_execdir", tmpdir);
+        mkdir(execdir, 0755);
+        chmod(execdir, 0755);
+        rc = neverc_fs_lstat(execdir, &linfo);
+        check("lstat_execdir", rc == 0);
+        check("lstat_tmp_dir_exec", rc == 0 && (linfo.mode & 0111) == 0111);
+        rmdir(execdir);
+#else
         check("lstat_tmp_dir_exec", (linfo.mode & 0111) == 0111);
+#endif
     }
 
 #if defined(_WIN32)
