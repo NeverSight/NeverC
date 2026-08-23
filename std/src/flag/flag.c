@@ -2,6 +2,7 @@
 #include "neverc/std/strconv.h"
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 enum { FLAG_STRING, FLAG_INT, FLAG_BOOL, FLAG_DOUBLE, FLAG_INT64, FLAG_UINT64 };
@@ -336,11 +337,18 @@ int neverc_flag_lookup(const char *name, const char **usage_out) {
     return 0;
 }
 
+static int flag_name_cmp(const void *a, const void *b) {
+    return strcmp(((const flag_entry_t *)a)->name,
+                  ((const flag_entry_t *)b)->name);
+}
+
 void neverc_flag_visit(neverc_flag_visit_fn fn, void *ctx) {
     if (!fn) return;
     flag_entry_t snapshot[NEVERC_FLAG_MAX];
     int count = flag_count;
     memcpy(snapshot, flags, (size_t)count * sizeof(snapshot[0]));
+    /* Go flag.Visit: lexicographical order of flags that were set. */
+    qsort(snapshot, (size_t)count, sizeof(snapshot[0]), flag_name_cmp);
     for (int i = 0; i < count; i++) {
         if (snapshot[i].was_set)
             fn(snapshot[i].name, snapshot[i].usage, ctx);
@@ -352,6 +360,7 @@ void neverc_flag_visit_all(neverc_flag_visit_fn fn, void *ctx) {
     flag_entry_t snapshot[NEVERC_FLAG_MAX];
     int count = flag_count;
     memcpy(snapshot, flags, (size_t)count * sizeof(snapshot[0]));
+    qsort(snapshot, (size_t)count, sizeof(snapshot[0]), flag_name_cmp);
     for (int i = 0; i < count; i++)
         fn(snapshot[i].name, snapshot[i].usage, ctx);
 }

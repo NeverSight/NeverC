@@ -348,6 +348,12 @@ static int atof_hex(uint64_t mantissa, int exp, int neg, int trunc, double *out)
     return overflow ? NEVERC_STRCONV_ERR_RANGE : NEVERC_STRCONV_OK;
 }
 
+/* Go ParseFloat: syntax errors return 0, not the caller's leftover dest. */
+static int float_syntax(double *result) {
+    if (result) *result = 0.0;
+    return NEVERC_STRCONV_ERR_SYNTAX;
+}
+
 static int parse_hex_float(const char *s, int neg, double *result) {
     const char *orig = s;
     s += 2; /* skip 0x / 0X */
@@ -380,19 +386,19 @@ static int parse_hex_float(const char *s, int neg, double *result) {
         }
     }
     if (!sawdigits)
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return float_syntax(result);
     if (!sawdot) dp = nd;
     dp *= 4;
     nd_mant *= 4;
 
     if (*s != 'p' && *s != 'P')
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return float_syntax(result);
     s++;
     int exp_sign = 1;
     if (*s == '+') s++;
     else if (*s == '-') { exp_sign = -1; s++; }
     if (!is_digit(*s))
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return float_syntax(result);
     int exp_val = 0;
     while (is_digit(*s) || *s == '_') {
         if (*s == '_') { s++; continue; }
@@ -401,9 +407,9 @@ static int parse_hex_float(const char *s, int neg, double *result) {
     }
     dp += exp_sign * exp_val;
     if (*s != '\0')
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return float_syntax(result);
     if (!consumed_underscores_ok(orig, s))
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return float_syntax(result);
 
     int exp10 = 0;
     if (mantissa != 0)
@@ -416,10 +422,10 @@ static int parse_hex_float(const char *s, int neg, double *result) {
  * ------------------------------------------------------------------ */
 int neverc_strconv_parse_float(const char *s, double *result) {
     if (!s || !result)
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return float_syntax(result);
 
     if (*s == '\0')
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return float_syntax(result);
 
     const char *orig = s;
     int sign = 1;
@@ -437,7 +443,7 @@ int neverc_strconv_parse_float(const char *s, double *result) {
             (s[3] == 't' || s[3] == 'T') &&
             (s[4] == 'y' || s[4] == 'Y'))
             s += 5;
-        if (*s != '\0') return NEVERC_STRCONV_ERR_SYNTAX;
+        if (*s != '\0') return float_syntax(result);
         *result = nc_make_inf(sign < 0);
         return NEVERC_STRCONV_OK;
     }
@@ -445,9 +451,9 @@ int neverc_strconv_parse_float(const char *s, double *result) {
         (s[1] == 'a' || s[1] == 'A') &&
         (s[2] == 'n' || s[2] == 'N')) {
         /* Go: signed Inf is valid; signed NaN is a syntax error (#73163). */
-        if (saw_sign) return NEVERC_STRCONV_ERR_SYNTAX;
+        if (saw_sign) return float_syntax(result);
         s += 3;
-        if (*s != '\0') return NEVERC_STRCONV_ERR_SYNTAX;
+        if (*s != '\0') return float_syntax(result);
         *result = nc_make_nan(0);
         return NEVERC_STRCONV_OK;
     }
@@ -456,7 +462,7 @@ int neverc_strconv_parse_float(const char *s, double *result) {
         return parse_hex_float(s, sign < 0, result);
 
     if (!is_digit(*s) && *s != '.')
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return float_syntax(result);
 
     /* ---- scan mantissa (capped at 19 significant digits) ---- */
     const char *lit = s;          /* start of numeric literal (for fallback) */
@@ -487,7 +493,7 @@ int neverc_strconv_parse_float(const char *s, double *result) {
         break;
     }
     if (!sawdigits)
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return float_syntax(result);
     if (!sawdot) dp = nd;
 
     if (*s == 'e' || *s == 'E') {
@@ -496,7 +502,7 @@ int neverc_strconv_parse_float(const char *s, double *result) {
         if (*s == '+') s++;
         else if (*s == '-') { exp_sign = -1; s++; }
         if (!is_digit(*s))
-            return NEVERC_STRCONV_ERR_SYNTAX;
+            return float_syntax(result);
         int exp_val = 0;
         while (is_digit(*s) || *s == '_') {
             if (*s == '_') { s++; continue; }
@@ -509,9 +515,9 @@ int neverc_strconv_parse_float(const char *s, double *result) {
     const char *lit_end = s;      /* one past the numeric literal */
 
     if (*s != '\0')
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return float_syntax(result);
     if (!consumed_underscores_ok(orig, s))
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return float_syntax(result);
 
     int neg = (sign < 0);
 

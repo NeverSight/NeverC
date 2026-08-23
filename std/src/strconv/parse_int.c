@@ -71,10 +71,16 @@ static int underscore_ok(const char *s) {
 }
 
 int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *result) {
-    if (!s || !result || *s == '\0')
+    /* Go ParseUint: syntax and bad-base paths return 0, not the caller's
+     * leftover dest. Range still clamps to the max magnitude. */
+    if (!s || !result || *s == '\0') {
+        if (result) *result = 0;
         return NEVERC_STRCONV_ERR_SYNTAX;
-    if (base != 0 && (base < 2 || base > 36))
+    }
+    if (base != 0 && (base < 2 || base > 36)) {
+        *result = 0;
         return NEVERC_STRCONV_ERR_BASE;
+    }
 
     const char *p = s;
     int allow_underscores = base == 0;
@@ -102,8 +108,10 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
         }
     }
 
-    if (*p == '\0' && !saw_digit)
+    if (*p == '\0' && !saw_digit) {
+        *result = 0;
         return NEVERC_STRCONV_ERR_SYNTAX;
+    }
 
     unsigned long long val = 0;
 
@@ -125,6 +133,7 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
                     saw_underscore = 1;
                     continue;
                 }
+                *result = 0;
                 return NEVERC_STRCONV_ERR_SYNTAX;
             }
             /* Go ParseUint returns ErrRange immediately on overflow and
@@ -148,8 +157,10 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
             }
 
             unsigned d = digit_val[c];
-            if (d >= (unsigned)base)
+            if (d >= (unsigned)base) {
+                *result = 0;
                 return NEVERC_STRCONV_ERR_SYNTAX;
+            }
 
             if (val > cutoff || (val == cutoff && d > rem)) {
                 *result = NC_ULLONG_MAX;
@@ -160,18 +171,24 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
         }
     }
 
-    if (!saw_digit)
+    if (!saw_digit) {
+        *result = 0;
         return NEVERC_STRCONV_ERR_SYNTAX;
-    if (saw_underscore && !underscore_ok(s))
+    }
+    if (saw_underscore && !underscore_ok(s)) {
+        *result = 0;
         return NEVERC_STRCONV_ERR_SYNTAX;
+    }
 
     *result = val;
     return NEVERC_STRCONV_OK;
 }
 
 int neverc_strconv_parse_int(const char *s, int base, long long *result) {
-    if (!s || !result || *s == '\0')
+    if (!s || !result || *s == '\0') {
+        if (result) *result = 0;
         return NEVERC_STRCONV_ERR_SYNTAX;
+    }
 
     const char *p = s;
     int neg = 0;

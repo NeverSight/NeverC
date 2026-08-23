@@ -381,6 +381,14 @@ static void visit_counter(const char *name, const char *usage, void *ctx) {
     visit_count_ctx++;
 }
 
+static const char *visit_names[4];
+static int visit_n;
+static void visit_record(const char *name, const char *usage, void *ctx) {
+    (void)usage;
+    (void)ctx;
+    if (visit_n < 4) visit_names[visit_n++] = name;
+}
+
 static void test_bad_syntax(void) {
     printf("[bad syntax]\n");
     neverc_flag_reset();
@@ -486,6 +494,28 @@ static void test_visit(void) {
     visit_count_ctx = 0;
     neverc_flag_visit_all(visit_counter, NULL);
     check_int("visit_all count", visit_count_ctx, 2);
+
+    /* Go flag.Visit / VisitAll: lexicographical order, not registration order. */
+    neverc_flag_reset();
+    {
+        int z = 0, aa = 0, m = 0;
+        neverc_flag_int("z", 0, "z", &z);
+        neverc_flag_int("a", 0, "a", &aa);
+        neverc_flag_int("m", 0, "m", &m);
+        char *lex[] = {"prog", "-z=1", "-a=2"};
+        neverc_flag_parse(3, lex);
+        visit_n = 0;
+        neverc_flag_visit(visit_record, NULL);
+        check_int("visit lex count", visit_n, 2);
+        check_str("visit lex 0", visit_names[0], "a");
+        check_str("visit lex 1", visit_names[1], "z");
+        visit_n = 0;
+        neverc_flag_visit_all(visit_record, NULL);
+        check_int("visit_all lex count", visit_n, 3);
+        check_str("visit_all lex 0", visit_names[0], "a");
+        check_str("visit_all lex 1", visit_names[1], "m");
+        check_str("visit_all lex 2", visit_names[2], "z");
+    }
 }
 
 static void test_parse_edge_cases(void) {

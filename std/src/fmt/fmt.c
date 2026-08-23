@@ -1397,7 +1397,8 @@ static int scan_formatted(const char *str, const char *format, va_list args,
             break;
         }
         case 'c': {
-            if (has_width || length != SCAN_LENGTH_NONE || *sp == '\0')
+            /* Go scanRune: a width only caps this arg; still one rune/byte. */
+            if (length != SCAN_LENGTH_NONE || *sp == '\0')
                 goto done;
             char *out = va_arg(ap, char *);
             if (!out) goto done;
@@ -1583,12 +1584,15 @@ static int scan_int_from_file(FILE *f, int *out_int) {
                 digits = "01234567";
             }
         }
-        while (n + 1U < sizeof(buf) && (c = getc(f)) != EOF) {
+        while ((c = getc(f)) != EOF) {
             if (c != '_' && !strchr(digits, c)) {
                 ungetc(c, f);
                 break;
             }
-            buf[n++] = (char)c;
+            /* Keep consuming past buf[] so leftover starts after the token
+             * (Go scanNumber), not in the middle of a 128+ digit integer. */
+            if (n + 1U < sizeof(buf))
+                buf[n++] = (char)c;
         }
     }
     buf[n] = '\0';

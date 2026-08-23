@@ -407,6 +407,17 @@ static void test_sscanf(void) {
     check_int("sscanf string count", n, 1);
     check_str("sscanf string val", s, "hello");
 
+    {
+        char ch = 0;
+        n = neverc_fmt_sscanf("AB", "%1c", &ch);
+        check_int("sscanf %1c count", n, 1);
+        check_int("sscanf %1c val", (int)(unsigned char)ch, 'A');
+        ch = 0;
+        n = neverc_fmt_sscanf(" Z", "%c", &ch);
+        check_int("sscanf %c keeps space", n, 1);
+        check_int("sscanf %c space val", (int)(unsigned char)ch, ' ');
+    }
+
     struct {
         char text[4];
         unsigned char canary;
@@ -1189,6 +1200,21 @@ static void test_stream_scan(void) {
         check_int("fscan leftover first val", a, 0);
         check_int("fscan leftover second", neverc_fmt_fscan(tmp, &b), 1);
         check_int("fscan leftover second val", b, 8);
+        fclose(tmp);
+    }
+
+    tmp = tmpfile();
+    check_true("fscan long-token leftover fixture", tmp != NULL);
+    if (tmp) {
+        int i, a = 77, b = 77;
+        for (i = 0; i < 127; i++)
+            fputc('9', tmp);
+        fputs("8 2", tmp);
+        rewind(tmp);
+        check_int("fscan 128-digit overflow fails", neverc_fmt_fscan(tmp, &a), 0);
+        check_int("fscan 128-digit leaves dest", a, 77);
+        check_int("fscan leftover after full token", neverc_fmt_fscan(tmp, &b), 1);
+        check_int("fscan leftover is 2 not 8", b, 2);
         fclose(tmp);
     }
 

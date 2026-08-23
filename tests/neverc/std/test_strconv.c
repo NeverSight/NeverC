@@ -64,6 +64,10 @@ static void test_parse_bool(void) {
     check_int("parse 0",     neverc_strconv_parse_bool("0", &v), 0);     check_int("val", v, 0);
     check_int("parse bad",   neverc_strconv_parse_bool("yes", &v), NEVERC_STRCONV_ERR_SYNTAX);
     check_int("parse empty", neverc_strconv_parse_bool("", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    v = 1;
+    check_int("bool syntax zeros dest",
+              neverc_strconv_parse_bool("yes", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("bool syntax dest is 0", v, 0);
 }
 
 /* ===== Atoi ===== */
@@ -154,6 +158,10 @@ static void test_parse_int(void) {
     check_int("sign after prefix is syntax",
               neverc_strconv_parse_int("0x+f", 0, &v),
               NEVERC_STRCONV_ERR_SYNTAX);
+    v = 99;
+    check_int("int empty zeros dest",
+              neverc_strconv_parse_int("", 10, &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_ll("int empty dest is 0", v, 0);
 }
 
 /* ===== ParseUint ===== */
@@ -236,6 +244,11 @@ static void test_parse_uint(void) {
     check_int("uint max exact",
               neverc_strconv_parse_uint("18446744073709551615", 10, &v), 0);
     check_ull("uint max exact val", v, ULLONG_MAX);
+    v = 42;
+    check_int("uint syntax zeros dest",
+              neverc_strconv_parse_uint("12x", 10, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_ull("uint syntax dest is 0", v, 0);
 }
 
 /* ===== ParseFloat ===== */
@@ -253,6 +266,10 @@ static void test_parse_float(void) {
 
     check_int("float bad",    neverc_strconv_parse_float("abc", &v), NEVERC_STRCONV_ERR_SYNTAX);
     check_int("float empty",  neverc_strconv_parse_float("", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    v = 1.5;
+    check_int("float syntax zeros dest",
+              neverc_strconv_parse_float("abc", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_true("float syntax dest is 0", v == 0.0);
 
     /* Regression: trailing chars after inf/nan were not detected */
     check_int("float inf",       neverc_strconv_parse_float("inf", &v), 0);
