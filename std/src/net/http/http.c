@@ -1567,9 +1567,9 @@ static const char *mux_effective_path(const char *method, const char *path,
         path = "";
     if (method && strcmp(method, "CONNECT") == 0)
         return path;
-    /* OPTIONS / rewrite `*` is a request-target, not a path. Go
-     * ServeHTTP rejects RequestURI `*` before cleanPath; NeverC
-     * serves a registered `*` route and must not 301 it to `/*`. */
+    /* OPTIONS / rewrite "*" is a request-target, not a path. Go
+     * ServeHTTP rejects RequestURI "*" before cleanPath; NeverC
+     * serves a registered "*" route and must not 301 it to "/*". */
     if (path[0] == '*' && path[1] == '\0')
         return path;
     if (mux_clean_path(path, cleaned, cap) != 0)
