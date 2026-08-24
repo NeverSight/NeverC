@@ -41,6 +41,25 @@ static void check_double(const char *name, double got, double expected) {
     }
 }
 
+static void check_rel_tol(const char *name, double got, double expected,
+                          double tolerance) {
+    tests_run++;
+    if (neverc_math_isnan(got) || neverc_math_isnan(expected)) {
+        tests_failed++;
+        printf("  FAIL: %s: NaN is not a finite oracle result\n", name);
+        return;
+    }
+    double diff = neverc_math_abs(got - expected);
+    double scale = neverc_math_abs(expected);
+    if (diff <= tolerance * scale || (scale == 0.0 && diff <= tolerance)) {
+        tests_passed++;
+    } else {
+        tests_failed++;
+        printf("  FAIL: %s: got %.17g, expected %.17g (rel=%.3g)\n",
+               name, got, expected, diff / scale);
+    }
+}
+
 static void check_int(const char *name, int got, int expected) {
     tests_run++;
     if (got == expected) { tests_passed++; }
@@ -1012,6 +1031,260 @@ static void test_jn_yn(void) {
     check_double("jn(INT_MIN,1)=0", neverc_math_jn(NEVERC_MATH_MIN_INT, 1.0), 0.0);
     check_double("yn(INT_MIN,1)=-Inf", neverc_math_yn(NEVERC_MATH_MIN_INT, 1.0), NC_NEGINF);
     check_double("jn(INT_MIN,NaN)", neverc_math_jn(NEVERC_MATH_MIN_INT, NC_NAN), NC_NAN);
+
+    /* Fixed transition-region oracles evaluated at 160 digits with mpmath
+     * 1.3.0 from AMS 55 9.3.23, then independently cross-checked with SciPy
+     * 1.15.1 special.jv/yv (the AMOS zbesj/zbesy implementation).  Besides
+     * accuracy, the INT_MAX calls are a complexity regression: the old
+     * implementation attempted about 2^31 recurrence steps. */
+    {
+        static const double x_min[3] = {
+            2147483647.0, 2147483648.0, 2147483649.0
+        };
+        static const double j_min[3] = {
+            3.4646025454286411e-4,
+            3.4670708387481988e-4,
+            3.4695391320662240e-4
+        };
+        static const double y_min[3] = {
+           -6.0094180585726228e-4,
+           -6.0051428461523794e-4,
+           -6.0008676337347903e-4
+        };
+        static const double x_max[3] = {
+            2147483646.0, 2147483647.0, 2147483648.0
+        };
+        static const double j_max[3] = {
+            3.4646025459660351e-4,
+            3.4670708392863590e-4,
+            3.4695391326051505e-4
+        };
+        static const double y_max[3] = {
+           -6.0094180595060709e-4,
+           -6.0051428470845002e-4,
+           -6.0008676346655839e-4
+        };
+        char name[96];
+        for (int i = 0; i < 3; i++) {
+            snprintf(name, sizeof(name), "jn(INT_MIN,|n|%+d) oracle", i - 1);
+            check_rel_tol(name, neverc_math_jn(NEVERC_MATH_MIN_INT, x_min[i]),
+                          j_min[i], 2e-10);
+            snprintf(name, sizeof(name), "yn(INT_MIN,|n|%+d) oracle", i - 1);
+            check_rel_tol(name, neverc_math_yn(NEVERC_MATH_MIN_INT, x_min[i]),
+                          y_min[i], 2e-10);
+            snprintf(name, sizeof(name), "jn(INT_MAX,n%+d) oracle", i - 1);
+            check_rel_tol(name, neverc_math_jn(NEVERC_MATH_MAX_INT, x_max[i]),
+                          j_max[i], 2e-10);
+            snprintf(name, sizeof(name), "yn(INT_MAX,n%+d) oracle", i - 1);
+            check_rel_tol(name, neverc_math_yn(NEVERC_MATH_MAX_INT, x_max[i]),
+                          y_max[i], 2e-10);
+        }
+    }
+
+    /* These are the first two integer offsets beyond
+     * ceil(0.7*cbrt(n))=904 on both sides of each turning point.  They force
+     * the Olver path (including GSL 2.8's cancellation-free |1-z|<0.02
+     * series) instead of the central transition polynomial.  Oracles were
+     * generated with the same 160-digit AMS computation above and
+     * cross-checked against SciPy 1.15.1/AMOS; the latter agreed within
+     * 6e-10 relative at all sixteen finite values. */
+    {
+        static const int offsets[4] = {-906, -905, 905, 906};
+        static const double j_min[4] = {
+            1.5091270583036774e-4, 1.5107951627606308e-4,
+            5.1846677544038216e-4, 5.1853197402644374e-4
+        };
+        static const double y_min[4] = {
+           -1.0815113992872940e-3, -1.0807424650201999e-3,
+           -1.6798612638267970e-4, -1.6743547092766137e-4
+        };
+        static const double j_max[4] = {
+            1.5091270583034292e-4, 1.5107951627607215e-4,
+            5.1846677553004822e-4, 5.1853197411606859e-4
+        };
+        static const double y_max[4] = {
+           -1.0815113995633659e-3, -1.0807424652959049e-3,
+           -1.6798612633141149e-4, -1.6743547087620233e-4
+        };
+        char name[96];
+        for (int i = 0; i < 4; i++) {
+            double xmin = 2147483648.0 + (double)offsets[i];
+            double xmax = 2147483647.0 + (double)offsets[i];
+            snprintf(name, sizeof(name), "jn(INT_MIN,|n|%+d) Olver edge",
+                     offsets[i]);
+            check_rel_tol(name, neverc_math_jn(NEVERC_MATH_MIN_INT, xmin),
+                          j_min[i], 2e-8);
+            snprintf(name, sizeof(name), "yn(INT_MIN,|n|%+d) Olver edge",
+                     offsets[i]);
+            check_rel_tol(name, neverc_math_yn(NEVERC_MATH_MIN_INT, xmin),
+                          y_min[i], 2e-8);
+            snprintf(name, sizeof(name), "jn(INT_MAX,n%+d) Olver edge",
+                     offsets[i]);
+            check_rel_tol(name, neverc_math_jn(NEVERC_MATH_MAX_INT, xmax),
+                          j_max[i], 2e-8);
+            snprintf(name, sizeof(name), "yn(INT_MAX,n%+d) Olver edge",
+                     offsets[i]);
+            check_rel_tol(name, neverc_math_yn(NEVERC_MATH_MAX_INT, xmax),
+                          y_max[i], 2e-8);
+        }
+    }
+
+    /* Positive Airy arguments just beyond Cephes 2.8's MAXAIRY=103.892.
+     * The fixed values come from a 160-digit mpmath 1.3.0 evaluation of the
+     * GSL 2.8 Olver A/B sums.  At d=-107000 the unscaled Bi and Bi' exceed
+     * DBL_MAX, while the Bessel normalization still leaves a finite Y.  At
+     * d=-110000 the 160-digit magnitudes are respectively below half the
+     * least subnormal and above DBL_MAX, hence binary64 0 and -Inf. */
+    check_rel_tol("jn(INT_MIN,n-106500) scaled-Airy subnormal",
+                  neverc_math_jn(NEVERC_MATH_MIN_INT, 2147377148.0),
+                  6.8806251016064095e-312, 2e-6);
+    check_rel_tol("yn(INT_MIN,n-106500) scaled-Airy finite",
+                  neverc_math_yn(NEVERC_MATH_MIN_INT, 2147377148.0),
+                 -2.1630817948753252e303, 2e-6);
+    check_rel_tol("jn(INT_MIN,n-107000) scaled-Airy subnormal",
+                  neverc_math_jn(NEVERC_MATH_MIN_INT, 2147376648.0),
+                  4.6977269728446726e-314, 3e-6);
+    check_rel_tol("yn(INT_MIN,n-107000) scaled-Airy finite",
+                  neverc_math_yn(NEVERC_MATH_MIN_INT, 2147376648.0),
+                 -3.1607926350537217e305, 3e-6);
+    check_double("jn(INT_MIN,n-110000) scaled-Airy underflow",
+                 neverc_math_jn(NEVERC_MATH_MIN_INT, 2147373648.0), 0.0);
+    check_double("yn(INT_MIN,n-110000) scaled-Airy overflow",
+                 neverc_math_yn(NEVERC_MATH_MIN_INT, 2147373648.0), NC_NEGINF);
+
+    /* Direct arbitrary-precision Bessel oracles exercise both sides of the
+     * transition, the uniform/Hankel boundary, and the multi-term Hankel path.
+     * They were generated by mpmath 1.3.0 besselj/bessely at 160 digits and
+     * cross-checked with SciPy 1.15.1/AMOS. */
+    {
+        struct large_order_case {
+            double x;
+            double j;
+            double y;
+        };
+        static const struct large_order_case cases[] = {
+            {400.0, 1.3647281100289631e-22, -7.7749314170929932e18},
+            {750.0, 2.9059486609735708e-2, -1.7156987149187841e-2},
+            {1000.0, -1.9033209321675450e-2, 1.9309109280363545e-2},
+            {75000.0, 2.0103888886390800e-4, -2.9065504693557211e-3},
+            {100000.0, -2.2946668473481830e-3, -1.0491812818769816e-3}
+        };
+        char name[80];
+        for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            snprintf(name, sizeof(name), "jn(500,%.0f) large-order oracle", cases[i].x);
+            check_rel_tol(name, neverc_math_jn(500, cases[i].x), cases[i].j, 2e-9);
+            snprintf(name, sizeof(name), "yn(500,%.0f) large-order oracle", cases[i].x);
+            check_rel_tol(name, neverc_math_yn(500, cases[i].x), cases[i].y, 2e-9);
+        }
+    }
+
+    /* Cephes selects Hankel only when x/n^2 > 0.3.  The first input is the
+     * exactly representable boundary; the second is its immediate binary64
+     * successor (bit pattern +1), so this pair also checks continuity across
+     * the uniform/Hankel dispatcher.  mpmath 1.3.0, 160-digit oracles. */
+    {
+        double boundary_next =
+            neverc_math_float64frombits(0x40F24F8000000001ULL);
+        check_rel_tol("jn(500,0.3*n^2) boundary",
+                      neverc_math_jn(500, 75000.0),
+                      2.0103888886390800e-4, 2e-9);
+        check_rel_tol("yn(500,0.3*n^2) boundary",
+                      neverc_math_yn(500, 75000.0),
+                     -2.9065504693557211e-3, 2e-9);
+        check_rel_tol("jn(500,nextafter(0.3*n^2,+Inf))",
+                      neverc_math_jn(500, boundary_next),
+                      2.0103888890620292e-4, 2e-9);
+        check_rel_tol("yn(500,nextafter(0.3*n^2,+Inf))",
+                      neverc_math_yn(500, boundary_next),
+                     -2.9065504693527954e-3, 2e-9);
+    }
+
+    /* Large negative-Airy phase oracles.  Every x below was decoded from the
+     * stated binary64 bit pattern to an exact integer, then passed to mpmath
+     * 1.3.0 besselj/bessely at mp.dps=160.  The interior points use
+     * x=0.25*n^2 (after binary64 rounding); the other pairs are exactly the
+     * last input for which (x/n)/n <= 0.3 and its bitwise successor, the first
+     * Hankel input.  Each result is checked independently: adjacent x values
+     * are 256 apart and are not a continuity assertion.  Orders 2^31-1 and
+     * 2^31 cover the exact phase rotations n mod 4 = 3 and 0. */
+    {
+        struct huge_phase_case {
+            const char *name;
+            int n;
+            uint64_t x_bits;
+            double j;
+            double y;
+        };
+        static const struct huge_phase_case cases[] = {
+            {"INT_MAX uniform interior", NEVERC_MATH_MAX_INT,
+             0x43AFFFFFFF800000ULL,
+             2.0634076499063572e-10,  7.1386491818541118e-10},
+            {"INT_MAX last uniform", NEVERC_MATH_MAX_INT,
+             0x43B3333332E66667ULL,
+             3.9614245314135432e-10,  5.5065492892234272e-10},
+            {"INT_MAX first Hankel", NEVERC_MATH_MAX_INT,
+             0x43B3333332E66668ULL,
+             5.3445601974837071e-10, -4.1773969991137963e-10},
+            {"INT_MIN uniform interior", NEVERC_MATH_MIN_INT,
+             0x43B0000000000000ULL,
+             4.3422301102256359e-10, -6.0301742006100107e-10},
+            {"INT_MIN last uniform", NEVERC_MATH_MIN_INT,
+             0x43B3333333333333ULL,
+             6.7230219484988749e-10, -9.0329686697101944e-11},
+            {"INT_MIN first Hankel", NEVERC_MATH_MIN_INT,
+             0x43B3333333333334ULL,
+            -1.1700956390258061e-10, -6.6817546756379832e-10}
+        };
+        char name[96];
+        for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            double x = neverc_math_float64frombits(cases[i].x_bits);
+            snprintf(name, sizeof(name), "jn(%s) phase oracle", cases[i].name);
+            check_rel_tol(name, neverc_math_jn(cases[i].n, x),
+                          cases[i].j, 2e-7);
+            snprintf(name, sizeof(name), "yn(%s) phase oracle", cases[i].name);
+            check_rel_tol(name, neverc_math_yn(cases[i].n, x),
+                          cases[i].y, 2e-7);
+        }
+    }
+
+    /* x=100000 is in the Hankel branch for n=500..503.  Consecutive orders
+     * cover all four exact n mod 4 rotations in the phase reduction.  Values
+     * are mpmath 1.3.0/160-digit oracles, cross-checked with AMOS. */
+    {
+        struct hankel_quadrant_case {
+            int n;
+            double j;
+            double y;
+        };
+        static const struct hankel_quadrant_case cases[] = {
+            {500, -2.2946668473481830e-3, -1.0491812818769816e-3},
+            {501, -1.0606529748999246e-3,  2.2893870114150610e-3},
+            {502,  2.2840391045396858e-3,  1.0721209397313605e-3},
+            {503,  1.0835847275095030e-3, -2.2786229171801581e-3}
+        };
+        char name[80];
+        for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            snprintf(name, sizeof(name), "jn(%d,100000) Hankel quadrant",
+                     cases[i].n);
+            check_rel_tol(name, neverc_math_jn(cases[i].n, 100000.0),
+                          cases[i].j, 2e-9);
+            snprintf(name, sizeof(name), "yn(%d,100000) Hankel quadrant",
+                     cases[i].n);
+            check_rel_tol(name, neverc_math_yn(cases[i].n, 100000.0),
+                          cases[i].y, 2e-9);
+        }
+    }
+
+    /* Negative-order parity is checked against fixed values, not against a
+     * second call to the same order-reduction path. */
+    check_rel_tol("jn(-500,500) even-order sign",
+                  neverc_math_jn(-500, 500.0), 5.6357003281836941e-2, 2e-9);
+    check_rel_tol("yn(-500,500) even-order sign",
+                  neverc_math_yn(-500, 500.0), -9.7613838541039510e-2, 2e-9);
+    check_rel_tol("jn(-501,501) odd-order sign",
+                  neverc_math_jn(-501, 501.0), -5.6319482463041413e-2, 2e-9);
+    check_rel_tol("yn(-501,501) odd-order sign",
+                  neverc_math_yn(-501, 501.0), 9.7548848430620085e-2, 2e-9);
     /* |n|=2^31 with x ≥ 2^302 is the oscillatory 1/√x regime, not a pole. */
     {
         double huge = 1e300;
@@ -1038,6 +1311,16 @@ static void test_jn_yn(void) {
                    neverc_math_abs(j) > 1e-25 && neverc_math_abs(j) < 1e-18);
         check_true("yn(INT_MIN,1e40) ~ 1/sqrt(pi x)",
                    neverc_math_abs(y) > 1e-25 && neverc_math_abs(y) < 1e-18);
+        /* Exact-binary64 x reduced at 120 decimal digits.  n=500 and 2^31
+         * are both 0 mod 4; n^2/x corrections round away at this precision. */
+        check_rel_tol("jn(INT_MIN,1e40) phase oracle", j,
+                      -6.538288347442137e-22, 2e-12);
+        check_rel_tol("yn(INT_MIN,1e40) phase oracle", y,
+                      7.952011386537066e-21, 2e-12);
+        check_rel_tol("jn(500,1e40) phase oracle", neverc_math_jn(500, x),
+                      -6.538288347442137e-22, 2e-12);
+        check_rel_tol("yn(500,1e40) phase oracle", neverc_math_yn(500, x),
+                      7.952011386537066e-21, 2e-12);
     }
 }
 
