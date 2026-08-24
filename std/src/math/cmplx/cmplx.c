@@ -23,9 +23,44 @@ static double cmplx_reduce_pi(double x) {
     return ((x - t * pi1) - t * pi2) - t * pi3;
 }
 
+static double cmplx_exponential_overflow_threshold(void) {
+    return (double)(int)(((double)DBL_MAX_EXP - 1.0) *
+                         NEVERC_MATH_LN2);
+}
+
 static double cmplx_hyperbolic_overflow_threshold(void) {
     return (double)(int)(((double)DBL_MAX_EXP - 1.0) *
                          NEVERC_MATH_LN2 / 2.0);
+}
+
+/* Computes both factor*exp(magnitude)/2 products without first forming an
+ * overflowing exponential. This preserves finite components when a tiny
+ * trigonometric factor offsets a large finite hyperbolic magnitude. */
+static void cmplx_scale_by_half_exp(double first_factor,
+                                    double second_factor,
+                                    double magnitude,
+                                    double *first,
+                                    double *second) {
+    double threshold = cmplx_exponential_overflow_threshold();
+    double exp_threshold = neverc_math_exp(threshold);
+    magnitude -= threshold;
+    first_factor *= exp_threshold / 2.0;
+    second_factor *= exp_threshold / 2.0;
+
+    if (magnitude > threshold) {
+        magnitude -= threshold;
+        first_factor *= exp_threshold;
+        second_factor *= exp_threshold;
+    }
+
+    if (magnitude > threshold) {
+        *first = DBL_MAX * first_factor;
+        *second = DBL_MAX * second_factor;
+    } else {
+        double scale = neverc_math_exp(magnitude);
+        *first = scale * first_factor;
+        *second = scale * second_factor;
+    }
 }
 
 /* Computes value/exp(2*magnitude) without forming the overflowing
@@ -111,8 +146,7 @@ neverc_cmplx_t neverc_cmplx_exp(neverc_cmplx_t z) {
 
     /* Scale before multiplying by sin/cos so a finite large real part does
      * not turn an exact zero component into Inf*0 = NaN. */
-    double threshold =
-        (double)(int)(((double)DBL_MAX_EXP - 1.0) * NEVERC_MATH_LN2);
+    double threshold = cmplx_exponential_overflow_threshold();
     if (re > threshold) {
         double exp_threshold = neverc_math_exp(threshold);
         re -= threshold;
@@ -234,6 +268,15 @@ neverc_cmplx_t neverc_cmplx_sin(neverc_cmplx_t z) {
 
     double s, c;
     neverc_math_sincos(re, &s, &c);
+    if (neverc_math_abs(im) >
+        cmplx_exponential_overflow_threshold()) {
+        double imag_factor = c * neverc_math_copysign(1.0, im);
+        double real_part, imag_part;
+        cmplx_scale_by_half_exp(s, imag_factor,
+                                neverc_math_abs(im),
+                                &real_part, &imag_part);
+        return MK(real_part, imag_part);
+    }
     double sh = neverc_math_sinh(im);
     double ch = neverc_math_cosh(im);
     return MK(s * ch, c * sh);
@@ -258,6 +301,15 @@ neverc_cmplx_t neverc_cmplx_cos(neverc_cmplx_t z) {
 
     double s, c;
     neverc_math_sincos(re, &s, &c);
+    if (neverc_math_abs(im) >
+        cmplx_exponential_overflow_threshold()) {
+        double imag_factor = -s * neverc_math_copysign(1.0, im);
+        double real_part, imag_part;
+        cmplx_scale_by_half_exp(c, imag_factor,
+                                neverc_math_abs(im),
+                                &real_part, &imag_part);
+        return MK(real_part, imag_part);
+    }
     double sh = neverc_math_sinh(im);
     double ch = neverc_math_cosh(im);
     return MK(c * ch, -s * sh);
@@ -316,6 +368,15 @@ neverc_cmplx_t neverc_cmplx_sinh(neverc_cmplx_t z) {
 
     double s, c;
     neverc_math_sincos(im, &s, &c);
+    if (neverc_math_abs(re) >
+        cmplx_exponential_overflow_threshold()) {
+        double real_factor = c * neverc_math_copysign(1.0, re);
+        double real_part, imag_part;
+        cmplx_scale_by_half_exp(real_factor, s,
+                                neverc_math_abs(re),
+                                &real_part, &imag_part);
+        return MK(real_part, imag_part);
+    }
     double sh = neverc_math_sinh(re);
     double ch = neverc_math_cosh(re);
     return MK(sh * c, ch * s);
@@ -340,6 +401,15 @@ neverc_cmplx_t neverc_cmplx_cosh(neverc_cmplx_t z) {
 
     double s, c;
     neverc_math_sincos(im, &s, &c);
+    if (neverc_math_abs(re) >
+        cmplx_exponential_overflow_threshold()) {
+        double imag_factor = s * neverc_math_copysign(1.0, re);
+        double real_part, imag_part;
+        cmplx_scale_by_half_exp(c, imag_factor,
+                                neverc_math_abs(re),
+                                &real_part, &imag_part);
+        return MK(real_part, imag_part);
+    }
     double sh = neverc_math_sinh(re);
     double ch = neverc_math_cosh(re);
     return MK(ch * c, sh * s);

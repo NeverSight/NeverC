@@ -3,6 +3,7 @@
  * Verifies mathematical identities, known values, and special case handling.
  */
 #include "neverc/std/math/cmplx.h"
+#include <float.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -529,7 +530,7 @@ static void test_special(void) {
     check_cmplx("tanh(NaN+0i)", neverc_cmplx_tanh(C(NC_NAN, 0.0)), NC_NAN, 0.0);
 
     /* Finite inputs can overflow only the algebraic intermediates. Keep
-     * exact axes and the tan/tanh attractors instead of producing NaN. */
+     * exact axes, tiny finite components, and the tan/tanh attractors. */
     {
         double nz = neverc_math_copysign(0.0, -1.0);
         neverc_cmplx_t w = neverc_cmplx_exp(C(800.0, 0.0));
@@ -556,6 +557,39 @@ static void test_special(void) {
                     neverc_cmplx_tanh(C(-400.0, 0.0)), -1.0, 0.0);
         check_cmplx("cot(0+400i)",
                     neverc_cmplx_cot(C(0.0, 400.0)), 0.0, -1.0);
+
+        /* A tiny nonzero factor multiplied by exp(720)/2 is finite. Direct
+         * sin/cos times sinh/cosh first overflows the large factor and loses
+         * that finite component. Exercise every sign in all four formulas. */
+        double tail = 0.5 * neverc_math_exp(
+            720.0 + neverc_math_log(DBL_MIN));
+        w = neverc_cmplx_sin(C(DBL_MIN, 720.0));
+        check_cmplx("sin(DBL_MIN+720i)", w, tail, NC_INF);
+        w = neverc_cmplx_sin(C(-DBL_MIN, 720.0));
+        check_cmplx("sin(-DBL_MIN+720i)", w, -tail, NC_INF);
+        w = neverc_cmplx_sin(C(DBL_MIN, -720.0));
+        check_cmplx("sin(DBL_MIN-720i)", w, tail, -NC_INF);
+
+        w = neverc_cmplx_cos(C(DBL_MIN, 720.0));
+        check_cmplx("cos(DBL_MIN+720i)", w, NC_INF, -tail);
+        w = neverc_cmplx_cos(C(-DBL_MIN, 720.0));
+        check_cmplx("cos(-DBL_MIN+720i)", w, NC_INF, tail);
+        w = neverc_cmplx_cos(C(DBL_MIN, -720.0));
+        check_cmplx("cos(DBL_MIN-720i)", w, NC_INF, tail);
+
+        w = neverc_cmplx_sinh(C(720.0, DBL_MIN));
+        check_cmplx("sinh(720+DBL_MIN*i)", w, NC_INF, tail);
+        w = neverc_cmplx_sinh(C(-720.0, DBL_MIN));
+        check_cmplx("sinh(-720+DBL_MIN*i)", w, -NC_INF, tail);
+        w = neverc_cmplx_sinh(C(720.0, -DBL_MIN));
+        check_cmplx("sinh(720-DBL_MIN*i)", w, NC_INF, -tail);
+
+        w = neverc_cmplx_cosh(C(720.0, DBL_MIN));
+        check_cmplx("cosh(720+DBL_MIN*i)", w, NC_INF, tail);
+        w = neverc_cmplx_cosh(C(-720.0, DBL_MIN));
+        check_cmplx("cosh(-720+DBL_MIN*i)", w, NC_INF, -tail);
+        w = neverc_cmplx_cosh(C(720.0, -DBL_MIN));
+        check_cmplx("cosh(720-DBL_MIN*i)", w, NC_INF, -tail);
     }
 
     /* Double-angle tan stays on the ±i attractor for large (but finite) imag. */
