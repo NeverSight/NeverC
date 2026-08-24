@@ -1,5 +1,6 @@
 #include "neverc/std/os.h"
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -280,6 +281,30 @@ static void test_stat(void) {
     ASSERT_EQ((int)info.size, 5);
     ASSERT_TRUE(!info.is_dir);
     ASSERT_TRUE(strcmp(info.name, "neverc_test_os_stat.txt") == 0);
+
+#if defined(_WIN32)
+    {
+        HANDLE h = CreateFileA(path, FILE_WRITE_ATTRIBUTES,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE |
+                                   FILE_SHARE_DELETE,
+                               NULL, OPEN_EXISTING, 0, NULL);
+        ASSERT_TRUE(h != INVALID_HANDLE_VALUE);
+        if (h != INVALID_HANDLE_VALUE) {
+            ULARGE_INTEGER ticks;
+            FILETIME ft;
+            ticks.QuadPart = 116444736000000000ULL -
+                             315619200ULL * 10000000ULL;
+            ft.dwLowDateTime = ticks.LowPart;
+            ft.dwHighDateTime = ticks.HighPart;
+            ASSERT_TRUE(SetFileTime(h, NULL, NULL, &ft) != 0);
+            CloseHandle(h);
+            ASSERT_EQ(neverc_os_stat(path, &info), 0);
+            ASSERT_TRUE(info.mod_time == -INT64_C(315619200));
+            ASSERT_EQ(neverc_os_lstat(path, &info), 0);
+            ASSERT_TRUE(info.mod_time == -INT64_C(315619200));
+        }
+    }
+#endif
 
     neverc_os_remove(path);
 
