@@ -1,6 +1,7 @@
 #include "MIRBridgeInternal.h"
 #include "neverc/Plugin/Host/PluginHandleArena.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstr.h"
@@ -318,17 +319,14 @@ NevercStatus
 MIRPluginBridge::invalidateInstruction(llvm::MachineInstr &Instruction) {
   if (Instruction.getParent() && Instruction.getMF() != &Function)
     return mirStatus(NEVERC_STATUS_WRONG_SCOPE);
-  for (auto It = OperandHandles.begin(); It != OperandHandles.end();) {
-    if (It->first.first != &Instruction) {
-      ++It;
-      continue;
-    }
-    auto Current = It++;
-    NevercStatus Status = Task.handles().release(Current->second.Handle,
-                                                 PluginMIROperandHandleKind);
+  llvm::SmallVector<unsigned, 8> OperandIndices;
+  for (const auto &Entry : OperandHandles)
+    if (Entry.first.first == &Instruction)
+      OperandIndices.push_back(Entry.first.second);
+  for (unsigned Index : OperandIndices) {
+    NevercStatus Status = invalidateOperand(Instruction, Index);
     if (Status.Code != NEVERC_STATUS_OK)
       return Status;
-    OperandHandles.erase(Current);
   }
   auto Existing = InstructionHandles.find(&Instruction);
   if (Existing == InstructionHandles.end())
