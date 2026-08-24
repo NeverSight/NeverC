@@ -391,12 +391,17 @@ static int fs_win_fail(void) {
 }
 
 static time_t fs_filetime_to_time(FILETIME ft) {
+    static const uint64_t unix_epoch_ticks = 116444736000000000ULL;
+    static const uint64_t ticks_per_second = 10000000ULL;
     ULARGE_INTEGER ull;
     ull.LowPart = ft.dwLowDateTime;
     ull.HighPart = ft.dwHighDateTime;
-    if (ull.QuadPart < 116444736000000000ULL)
-        return (time_t)0;
-    return (time_t)((ull.QuadPart - 116444736000000000ULL) / 10000000ULL);
+    if (ull.QuadPart >= unix_epoch_ticks)
+        return (time_t)((ull.QuadPart - unix_epoch_ticks) /
+                        ticks_per_second);
+    uint64_t before_epoch = unix_epoch_ticks - ull.QuadPart;
+    return (time_t)-(int64_t)((before_epoch + ticks_per_second - 1) /
+                              ticks_per_second);
 }
 
 static int fs_stat_win(const char *path, neverc_fs_file_info_t *info, int follow) {

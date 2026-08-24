@@ -132,6 +132,34 @@ static void test_stat(void) {
 
 #if defined(_WIN32)
     {
+        char timepath[2048];
+        snprintf(timepath, sizeof(timepath),
+                 "%s\\neverc_test_fs_pre_epoch.txt", tmpdir);
+        HANDLE h = CreateFileA(timepath, FILE_WRITE_ATTRIBUTES,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE |
+                                   FILE_SHARE_DELETE,
+                               NULL, CREATE_ALWAYS, 0, NULL);
+        check("create_pre_epoch_file", h != INVALID_HANDLE_VALUE);
+        if (h != INVALID_HANDLE_VALUE) {
+            ULARGE_INTEGER ticks;
+            FILETIME ft;
+            ticks.QuadPart = 116444736000000000ULL -
+                             315619200ULL * 10000000ULL;
+            ft.dwLowDateTime = ticks.LowPart;
+            ft.dwHighDateTime = ticks.HighPart;
+            check("set_pre_epoch_filetime",
+                  SetFileTime(h, NULL, NULL, &ft) != 0);
+            CloseHandle(h);
+            check("stat_pre_epoch_filetime",
+                  neverc_fs_stat(timepath, &info) == 0 &&
+                  info.mod_time == (time_t)-315619200);
+            check("lstat_pre_epoch_filetime",
+                  neverc_fs_lstat(timepath, &info) == 0 &&
+                  info.mod_time == (time_t)-315619200);
+            DeleteFileA(timepath);
+        }
+    }
+    {
         char ropath[2048];
         snprintf(ropath, sizeof(ropath), "%s\\neverc_test_fs_ro.txt", tmpdir);
         FILE *rf = fopen(ropath, "wb");
