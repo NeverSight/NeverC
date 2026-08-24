@@ -215,34 +215,12 @@ static void h3_sleep_ms(unsigned milliseconds) {
 #endif
 }
 
-static int h3_conn_allows_client_read(const neverc_quic_conn_t *conn) {
-    if (!conn) return 0;
-    return conn->state == QUIC_CONN_HANDSHAKING ||
-           conn->state == QUIC_CONN_ESTABLISHED ||
-           conn->state == QUIC_CONN_DRAINING;
-}
-
 static int h3_stream_read(neverc_quic_stream_t *stream, void *buffer,
                           size_t length) {
-    for (unsigned attempt = 0; attempt < 240U; attempt++) {
-        int count = neverc_quic_stream_try_read(stream, buffer, length);
-        if (count >= 0) return count;
-        if (count != -2) {
-            if (!stream || !stream->conn ||
-                !h3_conn_allows_client_read(stream->conn))
-                return -1;
-        }
-        if (stream && stream->conn) {
-            (void)neverc_quic_conn_flush(stream->conn);
-            neverc_quic_conn_tick(stream->conn, nc_monotonic_ms());
-        }
-        unsigned delay_ms = 50U;
-        if (stream && stream->conn &&
-            stream->conn->state == QUIC_CONN_DRAINING)
-            delay_ms = 10U;
-        h3_sleep_ms(delay_ms);
-    }
-    return -1;
+    /* The QUIC layer keeps reads valid while draining and wakes them on
+     * data, FIN, RESET, or idle/final close.  A second fixed retry budget
+     * here can expire first under sanitizer load and reject a valid stream. */
+    return neverc_quic_stream_read(stream, buffer, length);
 }
 
 /* Returns 1 for a value, 0 for clean FIN (no byte of this varint),
@@ -1606,6 +1584,13 @@ static void h3_server_send_goaway(h3_conn_t *connection, uint64_t identifier) {
 static void h3_server_close_connections(neverc_http3_server_t *server) {
     nc_mutex_lock(&server->lock);
 
+    /* Do not include connections whose workers have already exited in the
+     * graceful-drain budget.  In particular, a one-shot client may have sent
+     * CONNECTION_CLOSE after its response while the accept loop was blocked;
+     * sending GOAWAY to that dead peer can never be acknowledged and can
+     * starve a concurrently draining request until the absolute timeout. */
+    h3_server_reap_connections(server);
+
     /* RFC 9114 §5.2: send GOAWAY with the largest client bidi ID first so
      * in-flight requests are still accepted, then drain, then advertise the
      * last processed stream. */
@@ -1616,7 +1601,6 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
     for (unsigned waited = 0; waited < H3_SHUTDOWN_ABSOLUTE_MAX_MS;
          waited += 2U) {
         int pending = 0;
-        uint64_t now = nc_monotonic_ms();
         for (size_t i = 0; i < server->connection_count; i++) {
             h3_conn_t *connection = server->connections[i];
             if (atomic_load_explicit(&connection->active_requests,
@@ -1624,12 +1608,14 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
                 atomic_load_explicit(&connection->task_count,
                                      memory_order_acquire) != 0)
                 pending = 1;
-            (void)neverc_quic_conn_flush(connection->quic);
-            neverc_quic_conn_tick(connection->quic, now);
         }
         if (!pending) break;
         h3_sleep_ms(2);
     }
+
+    /* A peer can finish closing after the first GOAWAY while an active
+     * request drains.  Reap it before queuing the final GOAWAY. */
+    h3_server_reap_connections(server);
 
     for (size_t i = 0; i < server->connection_count; i++) {
         h3_conn_t *connection = server->connections[i];
@@ -1663,14 +1649,12 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
     unsigned drained_for_ms = 0;
     for (unsigned waited = 0; waited < H3_SHUTDOWN_ABSOLUTE_MAX_MS;
          waited += 2U) {
+        h3_server_reap_connections(server);
         int idle = 1;
-        uint64_t now = nc_monotonic_ms();
         for (size_t i = 0; i < server->connection_count; i++) {
             h3_conn_t *connection = server->connections[i];
             if (h3_connection_needs_worker(connection))
                 idle = 0;
-            (void)neverc_quic_conn_flush(connection->quic);
-            neverc_quic_conn_tick(connection->quic, now);
         }
         if (!idle) {
             drained_for_ms = 0;

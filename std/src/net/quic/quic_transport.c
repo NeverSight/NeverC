@@ -1259,6 +1259,10 @@ static int qt_build_pto_probe(struct neverc_quic_conn *conn,
     int crypto = qt_build_crypto(conn, conn->pto_probe_level, output,
                                  capacity, meta, written);
     if (crypto > 0) return crypto;
+    if (conn->pto_probe_level == QUIC_ENC_APPLICATION) {
+        int stream = qt_build_stream(conn, output, capacity, meta, written);
+        if (stream > 0) return stream;
+    }
     if (neverc_quic_write_ping(output, capacity, written) != 0)
         return 0;
     meta->kind = QUIC_TX_CONTROL;
