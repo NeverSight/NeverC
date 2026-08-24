@@ -241,11 +241,11 @@ static void cryptBlock(const uint64_t subkeys[16], uint8_t dst[8],
 }
 
 static int des_ready(const neverc_des_cipher_t *c) {
-    return c && c->ready;
+    return c && c->ready == 1;
 }
 
 static int tdes_ready(const neverc_3des_cipher_t *c) {
-    return c && c->c1.ready && c->c2.ready && c->c3.ready;
+    return c && c->c1.ready == 1 && c->c2.ready == 1 && c->c3.ready == 1;
 }
 
 int neverc_des_is_weak_key(const uint8_t key[8]) {

@@ -346,6 +346,41 @@ static void test_null_inputs(void) {
     }
 }
 
+static void test_invalid_ready_state(void) {
+    printf("[DES invalid ready state]\n");
+
+    const uint8_t key8[8] = {0};
+    const uint8_t key24[24] = {0};
+    const uint8_t input[8] = {0};
+    uint8_t out[8], expected[8];
+    neverc_des_cipher_t des;
+    neverc_3des_cipher_t tdes;
+
+    memset(expected, 0xAA, sizeof(expected));
+
+    neverc_des_init(&des, key8);
+    des.ready = 2;
+    memset(out, 0xAA, sizeof(out));
+    neverc_des_encrypt_block(&des, out, input);
+    check_bytes("des rejects non-canonical ready state", out, expected,
+                sizeof(out));
+    memset(out, 0xAA, sizeof(out));
+    neverc_des_decrypt_block(&des, out, input);
+    check_bytes("des decrypt rejects non-canonical ready state", out, expected,
+                sizeof(out));
+
+    neverc_3des_init(&tdes, key24);
+    tdes.c2.ready = 2;
+    memset(out, 0xAA, sizeof(out));
+    neverc_3des_encrypt_block(&tdes, out, input);
+    check_bytes("3des rejects non-canonical ready state", out, expected,
+                sizeof(out));
+    memset(out, 0xAA, sizeof(out));
+    neverc_3des_decrypt_block(&tdes, out, input);
+    check_bytes("3des decrypt rejects non-canonical ready state", out, expected,
+                sizeof(out));
+}
+
 static void test_des_parity_ignored(void) {
     printf("[DES parity bits ignored]\n");
 
@@ -399,6 +434,7 @@ int main(void) {
     test_des_weak_keys();
     test_des_different_keys();
     test_null_inputs();
+    test_invalid_ready_state();
     test_des_parity_ignored();
     test_3des_two_key();
 
