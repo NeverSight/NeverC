@@ -1099,6 +1099,16 @@ int neverc_net_addrs_any_internal(const neverc_net_addrs_t *addrs) {
 
 #define PIPE_BUF_SIZE 65536
 
+#ifdef NEVERC_NET_PIPE_TESTING
+/* Defined by test_resolve.c only in dedicated lifecycle-test builds. The hook
+ * runs with the ring mutex held immediately before a blocking wait. */
+void neverc_net_pipe_test_waiting(int writing);
+/* Runs after the ring mutex is released and immediately before the operation
+ * drops its active-operation reference. It may block to make reclamation
+ * tests deterministic, so it must never run with a pipe mutex held. */
+void neverc_net_pipe_test_releasing(int writing);
+#endif
+
 typedef struct {
     char          data[PIPE_BUF_SIZE];
     size_t        head;
@@ -1111,15 +1121,19 @@ typedef struct {
 } pipe_ring_t;
 
 typedef struct {
-    pipe_ring_t  *rings[2];
-    pipe_mutex_t  lock;
-    int           refs;
+    pipe_ring_t        *rings[2];
+    neverc_net_pipe_t  *endpoints[2];
+    pipe_mutex_t        lock;
+    size_t              open_endpoints;
+    size_t              active_ops;
+    int                 reaping;
 } pipe_shared_t;
 
 struct neverc_net_pipe {
     pipe_ring_t *read_ring;   /* ring buffer this endpoint reads from */
     pipe_ring_t *write_ring;  /* ring buffer this endpoint writes to */
     pipe_shared_t *shared;
+    int closed;               /* guarded by shared->lock */
 };
 
 static void ring_init(pipe_ring_t *r) {
@@ -1135,8 +1149,69 @@ static void ring_destroy(pipe_ring_t *r) {
     pipe_cond_destroy(&r->not_full);
 }
 
+static void pipe_shared_reap(pipe_shared_t *shared) {
+    ring_destroy(shared->rings[0]);
+    ring_destroy(shared->rings[1]);
+    free(shared->rings[0]);
+    free(shared->rings[1]);
+    free(shared->endpoints[0]);
+    free(shared->endpoints[1]);
+    pipe_mutex_destroy(&shared->lock);
+    free(shared);
+}
+
+/* Called with shared->lock held. Exactly one closer or operation releaser
+ * becomes the reaper after both endpoint owners and all registered I/O calls
+ * are gone. */
+static int pipe_shared_claim_reaper(pipe_shared_t *shared) {
+    if (shared->open_endpoints != 0 || shared->active_ops != 0 ||
+        shared->reaping)
+        return 0;
+    shared->reaping = 1;
+    return 1;
+}
+
+/* Register the operation before reading either ring pointer. Close keeps the
+ * endpoint and shared allocation alive until every registered operation has
+ * released its ownership. Returns 1 when registered and 0 when closed. */
+static int pipe_op_acquire(neverc_net_pipe_t *p, int writing,
+                           pipe_shared_t **shared_out,
+                           pipe_ring_t **ring_out) {
+    pipe_shared_t *shared = p->shared;
+    pipe_mutex_lock(&shared->lock);
+    if (p->closed || shared->reaping) {
+        pipe_mutex_unlock(&shared->lock);
+        return 0;
+    }
+    shared->active_ops++;
+    *shared_out = shared;
+    *ring_out = writing ? p->write_ring : p->read_ring;
+    pipe_mutex_unlock(&shared->lock);
+    return 1;
+}
+
+static void pipe_op_release(pipe_shared_t *shared) {
+    int reap;
+    pipe_mutex_lock(&shared->lock);
+    shared->active_ops--;
+    reap = pipe_shared_claim_reaper(shared);
+    pipe_mutex_unlock(&shared->lock);
+    if (reap) {
+        pipe_shared_reap(shared);
+        /* shared, both rings, and both endpoints are invalid from here. */
+    }
+}
+
+static void ring_close(pipe_ring_t *r) {
+    pipe_mutex_lock(&r->lock);
+    r->closed = 1;
+    pipe_cond_broadcast(&r->not_empty);
+    pipe_cond_broadcast(&r->not_full);
+    pipe_mutex_unlock(&r->lock);
+}
+
 int neverc_net_pipe(neverc_net_pipe_t **end1, neverc_net_pipe_t **end2) {
-    if (!end1 || !end2) return -1;
+    if (!end1 || !end2 || end1 == end2) return -1;
 
     pipe_ring_t *r1 = (pipe_ring_t *)calloc(1, sizeof(pipe_ring_t));
     pipe_ring_t *r2 = (pipe_ring_t *)calloc(1, sizeof(pipe_ring_t));
@@ -1154,7 +1229,9 @@ int neverc_net_pipe(neverc_net_pipe_t **end1, neverc_net_pipe_t **end2) {
     pipe_mutex_init(&shared->lock);
     shared->rings[0] = r1;
     shared->rings[1] = r2;
-    shared->refs = 2;
+    shared->endpoints[0] = p1;
+    shared->endpoints[1] = p2;
+    shared->open_endpoints = 2;
 
     /* p1 writes to r1, p2 reads from r1
      * p2 writes to r2, p1 reads from r2 */
@@ -1175,33 +1252,50 @@ int neverc_net_pipe_read(neverc_net_pipe_t *p, void *buf, size_t len) {
     if (!p || (!buf && len > 0) || len > (size_t)INT_MAX) return -1;
     if (len == 0) return 0;
 
-    pipe_ring_t *r = p->read_ring;
+    pipe_shared_t *shared;
+    pipe_ring_t *r;
+    if (!pipe_op_acquire(p, 0, &shared, &r))
+        return 0;
     pipe_mutex_lock(&r->lock);
 
+#ifdef NEVERC_NET_PIPE_TESTING
+    int wait_reported = 0;
+#endif
     while (r->count == 0 && !r->closed) {
+#ifdef NEVERC_NET_PIPE_TESTING
+        if (!wait_reported) {
+            wait_reported = 1;
+            neverc_net_pipe_test_waiting(0);
+        }
+#endif
         pipe_cond_wait(&r->not_empty, &r->lock);
     }
 
+    int result;
     if (r->count == 0 && r->closed) {
-        pipe_mutex_unlock(&r->lock);
-        return 0;  /* EOF */
+        result = 0;  /* EOF */
+    } else {
+        size_t to_read = len < r->count ? len : r->count;
+        size_t first = PIPE_BUF_SIZE - r->head;
+        if (first > to_read) first = to_read;
+
+        memcpy(buf, r->data + r->head, first);
+        if (to_read > first)
+            memcpy((char *)buf + first, r->data, to_read - first);
+
+        r->head = (r->head + to_read) % PIPE_BUF_SIZE;
+        r->count -= to_read;
+
+        pipe_cond_signal(&r->not_full);
+        result = (int)to_read;
     }
-
-    size_t to_read = len < r->count ? len : r->count;
-    size_t first = PIPE_BUF_SIZE - r->head;
-    if (first > to_read) first = to_read;
-
-    memcpy(buf, r->data + r->head, first);
-    if (to_read > first)
-        memcpy((char *)buf + first, r->data, to_read - first);
-
-    r->head = (r->head + to_read) % PIPE_BUF_SIZE;
-    r->count -= to_read;
-
-    pipe_cond_signal(&r->not_full);
     pipe_mutex_unlock(&r->lock);
-
-    return (int)to_read;
+    /* This release may reap p, r, and shared; it must be the final action. */
+#ifdef NEVERC_NET_PIPE_TESTING
+    neverc_net_pipe_test_releasing(0);
+#endif
+    pipe_op_release(shared);
+    return result;
 }
 
 int neverc_net_pipe_write(neverc_net_pipe_t *p, const void *data, size_t len) {
@@ -1209,24 +1303,39 @@ int neverc_net_pipe_write(neverc_net_pipe_t *p, const void *data, size_t len) {
         return -1;
     if (len == 0) return 0;
 
-    pipe_ring_t *r = p->write_ring;
+    pipe_shared_t *shared;
+    pipe_ring_t *r;
+    if (!pipe_op_acquire(p, 1, &shared, &r))
+        return -1;
     size_t written = 0;
+    int result;
+#ifdef NEVERC_NET_PIPE_TESTING
+    int wait_reported = 0;
+#endif
 
     while (written < len) {
         pipe_mutex_lock(&r->lock);
 
         if (r->closed) {
             pipe_mutex_unlock(&r->lock);
-            return written > 0 ? (int)written : -1;
+            result = written > 0 ? (int)written : -1;
+            goto release;
         }
 
         while (r->count == PIPE_BUF_SIZE && !r->closed) {
+#ifdef NEVERC_NET_PIPE_TESTING
+            if (!wait_reported) {
+                wait_reported = 1;
+                neverc_net_pipe_test_waiting(1);
+            }
+#endif
             pipe_cond_wait(&r->not_full, &r->lock);
         }
 
         if (r->closed) {
             pipe_mutex_unlock(&r->lock);
-            return written > 0 ? (int)written : -1;
+            result = written > 0 ? (int)written : -1;
+            goto release;
         }
 
         size_t space = PIPE_BUF_SIZE - r->count;
@@ -1248,48 +1357,40 @@ int neverc_net_pipe_write(neverc_net_pipe_t *p, const void *data, size_t len) {
         pipe_mutex_unlock(&r->lock);
     }
 
-    return (int)written;
+    result = (int)written;
+release:
+    /* This release may reap p, r, and shared; it must be the final action. */
+#ifdef NEVERC_NET_PIPE_TESTING
+    neverc_net_pipe_test_releasing(1);
+#endif
+    pipe_op_release(shared);
+    return result;
 }
 
 void neverc_net_pipe_close(neverc_net_pipe_t *p) {
     if (!p) return;
 
-    /* Close both directions and wake every waiter. Signal would leave a
-     * second blocked reader/writer parked after the first consumes EOF. */
-    if (p->write_ring) {
-        pipe_mutex_lock(&p->write_ring->lock);
-        p->write_ring->closed = 1;
-        pipe_cond_broadcast(&p->write_ring->not_empty);
-        pipe_cond_broadcast(&p->write_ring->not_full);
-        pipe_mutex_unlock(&p->write_ring->lock);
-    }
-    if (p->read_ring) {
-        pipe_mutex_lock(&p->read_ring->lock);
-        p->read_ring->closed = 1;
-        pipe_cond_broadcast(&p->read_ring->not_empty);
-        pipe_cond_broadcast(&p->read_ring->not_full);
-        pipe_mutex_unlock(&p->read_ring->lock);
-    }
-
     pipe_shared_t *shared = p->shared;
-    int last = 0;
-    if (shared) {
-        pipe_mutex_lock(&shared->lock);
-        if (shared->refs > 0) shared->refs--;
-        last = (shared->refs == 0);
+    int reap;
+    pipe_mutex_lock(&shared->lock);
+    if (p->closed) {
         pipe_mutex_unlock(&shared->lock);
-        if (last) {
-            if (shared->rings[0]) {
-                ring_destroy(shared->rings[0]);
-                free(shared->rings[0]);
-            }
-            if (shared->rings[1]) {
-                ring_destroy(shared->rings[1]);
-                free(shared->rings[1]);
-            }
-            pipe_mutex_destroy(&shared->lock);
-            free(shared);
-        }
+        return;
     }
-    free(p);
+    p->closed = 1;
+    shared->open_endpoints--;
+
+    /* Keep shared->lock while closing both rings so concurrent endpoint
+     * closers cannot reap mutexes/condition variables before this closer has
+     * finished using them. Broadcast is required for every blocked reader and
+     * writer to leave its registered operation. */
+    ring_close(p->write_ring);
+    ring_close(p->read_ring);
+    reap = pipe_shared_claim_reaper(shared);
+    pipe_mutex_unlock(&shared->lock);
+
+    if (reap) {
+        pipe_shared_reap(shared);
+        /* p and shared are invalid; return without touching either. */
+    }
 }

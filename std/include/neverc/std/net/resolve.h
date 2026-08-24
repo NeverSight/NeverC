@@ -133,7 +133,12 @@ int neverc_net_pipe_read(neverc_net_pipe_t *p, void *buf, size_t len);
 /* Write to a pipe endpoint. */
 int neverc_net_pipe_write(neverc_net_pipe_t *p, const void *data, size_t len);
 
-/* Close a pipe endpoint. */
+/* Close a pipe endpoint. Read/write calls already registered inside the pipe
+ * (including blocked calls) are woken and may finish concurrently with close;
+ * the two connected endpoints may also be closed concurrently. The caller
+ * must synchronize function entry with close so each read/write is registered
+ * before close can begin. Once close begins for an endpoint, do not start
+ * another read, write, or close using that endpoint pointer. */
 void neverc_net_pipe_close(neverc_net_pipe_t *p);
 
 

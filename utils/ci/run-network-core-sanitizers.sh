@@ -50,6 +50,12 @@ build_cases() {
     "$std_root/src/thread/thread.c" \
     "$std_root/src/context/context.c" \
     -pthread -lm -o "$work_dir/net-transport-$label"
+  "$compiler" "${common_flags[@]}" "$@" \
+    -DNEVERC_NET_PIPE_TESTING=1 \
+    "$test_root/test_resolve.c" \
+    "$std_root/src/net/resolve/resolve.c" \
+    "$std_root/src/net/netip/netip.c" \
+    -pthread -lm -lresolv -o "$work_dir/resolve-$label"
 }
 
 build_cases asan-ubsan -fsanitize=address,undefined
@@ -67,6 +73,9 @@ UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
 ASAN_OPTIONS=$asan_options \
 UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
   "$work_dir/net-transport-asan-ubsan"
+ASAN_OPTIONS=$asan_options \
+UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
+  "$work_dir/resolve-asan-ubsan"
 
 build_cases tsan -fsanitize=thread
 TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1:history_size=7} \
@@ -75,6 +84,8 @@ TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1:history_size=7} \
   "$work_dir/net-internals-tsan"
 TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1:history_size=7} \
   "$work_dir/net-transport-tsan"
+TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1:history_size=7} \
+  "$work_dir/resolve-tsan"
 
 protocol_flags=(
   -O1

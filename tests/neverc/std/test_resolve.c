@@ -1,13 +1,11 @@
 #include "neverc/std/net/resolve.h"
 #include <limits.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
 #ifndef _WIN32
 #include <pthread.h>
-#include <unistd.h>
 #endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -586,6 +584,11 @@ static void *pipe_reader_thread(void *arg) {
 static void test_pipe(void) {
     printf("[pipe]\n");
 
+    neverc_net_pipe_t *aliased = NULL;
+    check_int("pipe rejects aliased outputs",
+              neverc_net_pipe(&aliased, &aliased), -1);
+    check_true("aliased output remains null", aliased == NULL);
+
     neverc_net_pipe_t *end1, *end2;
     check_int("pipe create", neverc_net_pipe(&end1, &end2), 0);
 
@@ -645,12 +648,106 @@ static void test_pipe(void) {
     neverc_net_pipe_close(end2);
 }
 
-#ifndef _WIN32
+#if !defined(_WIN32) && defined(NEVERC_NET_PIPE_TESTING)
+typedef struct {
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    int readers_waiting;
+    int writers_waiting;
+    int readers_releasing;
+    int writers_releasing;
+    int release_allowed;
+} pipe_wait_gate_t;
+
+static pipe_wait_gate_t *pipe_active_wait_gate;
+
+static void pipe_wait_gate_init(pipe_wait_gate_t *gate) {
+    pthread_mutex_init(&gate->lock, NULL);
+    pthread_cond_init(&gate->cond, NULL);
+    gate->readers_waiting = 0;
+    gate->writers_waiting = 0;
+    gate->readers_releasing = 0;
+    gate->writers_releasing = 0;
+    gate->release_allowed = 0;
+}
+
+/* Called by resolve.c with its ring mutex held immediately before cond-wait.
+ * Waiting for this notification makes close deterministic: if the worker has
+ * not released the ring mutex into cond-wait yet, close blocks on that mutex
+ * until it does. */
+void neverc_net_pipe_test_waiting(int writing);
+void neverc_net_pipe_test_waiting(int writing) {
+    pipe_wait_gate_t *gate = pipe_active_wait_gate;
+    if (!gate)
+        return;
+    pthread_mutex_lock(&gate->lock);
+    if (writing)
+        gate->writers_waiting++;
+    else
+        gate->readers_waiting++;
+    pthread_cond_broadcast(&gate->cond);
+    pthread_mutex_unlock(&gate->lock);
+}
+
+/* This hook runs after the worker has released the pipe ring mutex, but before
+ * it drops active_ops. Holding it here proves that the final close returns
+ * while the blocked operations still own the shared pipe state. */
+void neverc_net_pipe_test_releasing(int writing);
+void neverc_net_pipe_test_releasing(int writing) {
+    pipe_wait_gate_t *gate = pipe_active_wait_gate;
+    if (!gate)
+        return;
+    pthread_mutex_lock(&gate->lock);
+    if (writing)
+        gate->writers_releasing++;
+    else
+        gate->readers_releasing++;
+    pthread_cond_broadcast(&gate->cond);
+    while (!gate->release_allowed)
+        pthread_cond_wait(&gate->cond, &gate->lock);
+    pthread_mutex_unlock(&gate->lock);
+}
+
+static void pipe_wait_gate_wait(pipe_wait_gate_t *gate, int readers,
+                                int writers) {
+    pthread_mutex_lock(&gate->lock);
+    while (gate->readers_waiting < readers ||
+           gate->writers_waiting < writers)
+        pthread_cond_wait(&gate->cond, &gate->lock);
+    pthread_mutex_unlock(&gate->lock);
+}
+
+static void pipe_wait_gate_wait_releasing(pipe_wait_gate_t *gate, int readers,
+                                          int writers) {
+    pthread_mutex_lock(&gate->lock);
+    while (gate->readers_releasing < readers ||
+           gate->writers_releasing < writers)
+        pthread_cond_wait(&gate->cond, &gate->lock);
+    pthread_mutex_unlock(&gate->lock);
+}
+
+static void pipe_wait_gate_allow_release(pipe_wait_gate_t *gate) {
+    pthread_mutex_lock(&gate->lock);
+    gate->release_allowed = 1;
+    pthread_cond_broadcast(&gate->cond);
+    pthread_mutex_unlock(&gate->lock);
+}
+
+static void pipe_wait_gate_destroy(pipe_wait_gate_t *gate) {
+    pthread_cond_destroy(&gate->cond);
+    pthread_mutex_destroy(&gate->lock);
+}
+
+typedef struct {
+    neverc_net_pipe_t *p;
+    int result;
+} pipe_blocked_reader_arg_t;
+
 static void *pipe_eof_waiter(void *arg) {
-    neverc_net_pipe_t *p = (neverc_net_pipe_t *)arg;
+    pipe_blocked_reader_arg_t *a = (pipe_blocked_reader_arg_t *)arg;
     char buf[8];
-    int n = neverc_net_pipe_read(p, buf, sizeof(buf));
-    return (void *)(intptr_t)n;
+    a->result = neverc_net_pipe_read(a->p, buf, sizeof(buf));
+    return NULL;
 }
 
 static void test_pipe_close_wakes_all(void) {
@@ -658,18 +755,101 @@ static void test_pipe_close_wakes_all(void) {
     neverc_net_pipe_t *end1, *end2;
     check_int("wake-all pipe create", neverc_net_pipe(&end1, &end2), 0);
 
-    pthread_t t1, t2;
-    pthread_create(&t1, NULL, pipe_eof_waiter, end2);
-    pthread_create(&t2, NULL, pipe_eof_waiter, end2);
-    usleep(50000);
-    neverc_net_pipe_close(end1);
+    enum { READER_COUNT = 8 };
+    pthread_t threads[READER_COUNT];
+    pipe_blocked_reader_arg_t args[READER_COUNT];
+    pipe_wait_gate_t gate;
+    pipe_wait_gate_init(&gate);
+    pipe_active_wait_gate = &gate;
 
-    void *r1 = (void *)(intptr_t)-2, *r2 = (void *)(intptr_t)-2;
-    pthread_join(t1, &r1);
-    pthread_join(t2, &r2);
-    check_int("first waiter eof", (int)(intptr_t)r1, 0);
-    check_int("second waiter eof", (int)(intptr_t)r2, 0);
+    int started = 0;
+    for (int i = 0; i < READER_COUNT; i++) {
+        args[started].p = end2;
+        args[started].result = -2;
+        int rc = pthread_create(&threads[started], NULL, pipe_eof_waiter,
+                                &args[started]);
+        check_int("create blocked reader", rc, 0);
+        if (rc == 0)
+            started++;
+    }
+
+    pipe_wait_gate_wait(&gate, started, 0);
+    neverc_net_pipe_close(end1);
+    pipe_wait_gate_wait_releasing(&gate, started, 0);
+    /* The final close must return while every blocked call still owns its
+     * active-operation reference. */
     neverc_net_pipe_close(end2);
+    pipe_wait_gate_allow_release(&gate);
+
+    for (int i = 0; i < started; i++) {
+        pthread_join(threads[i], NULL);
+        check_int("blocked reader eof", args[i].result, 0);
+    }
+    pipe_active_wait_gate = NULL;
+    pipe_wait_gate_destroy(&gate);
+}
+
+typedef struct {
+    neverc_net_pipe_t *p;
+    const char *data;
+    size_t len;
+    int result;
+} pipe_blocked_writer_arg_t;
+
+static void *pipe_full_ring_writer(void *arg) {
+    pipe_blocked_writer_arg_t *a = (pipe_blocked_writer_arg_t *)arg;
+    a->result = neverc_net_pipe_write(a->p, a->data, a->len);
+    return NULL;
+}
+
+static void test_pipe_close_with_blocked_writer(void) {
+    printf("[pipe_close_with_blocked_writer]\n");
+    neverc_net_pipe_t *end1, *end2;
+    check_int("blocked-writer pipe create", neverc_net_pipe(&end1, &end2), 0);
+
+    /* The wait hook fires only after this write has filled the ring and is
+     * about to block on not_full, so no sleep or progress guess is needed. */
+    enum { BLOCKED_WRITE_SIZE = 1024 * 1024 };
+    char *payload = (char *)malloc(BLOCKED_WRITE_SIZE);
+    check_true("allocate blocked write", payload != NULL);
+    if (!payload) {
+        neverc_net_pipe_close(end1);
+        neverc_net_pipe_close(end2);
+        return;
+    }
+    memset(payload, 'W', BLOCKED_WRITE_SIZE);
+
+    pipe_wait_gate_t gate;
+    pipe_wait_gate_init(&gate);
+    pipe_active_wait_gate = &gate;
+    pipe_blocked_writer_arg_t arg = {
+        end1, payload, BLOCKED_WRITE_SIZE, -2
+    };
+    pthread_t writer;
+    int rc = pthread_create(&writer, NULL, pipe_full_ring_writer, &arg);
+    check_int("create blocked writer", rc, 0);
+    if (rc != 0) {
+        neverc_net_pipe_close(end1);
+        neverc_net_pipe_close(end2);
+        pipe_active_wait_gate = NULL;
+        pipe_wait_gate_destroy(&gate);
+        free(payload);
+        return;
+    }
+
+    pipe_wait_gate_wait(&gate, 0, 1);
+    neverc_net_pipe_close(end2);
+    pipe_wait_gate_wait_releasing(&gate, 0, 1);
+    /* Closing the writer endpoint last used to destroy its waiter state. Keep
+     * the writer's active-operation reference until both closes return. */
+    neverc_net_pipe_close(end1);
+    pipe_wait_gate_allow_release(&gate);
+    pthread_join(writer, NULL);
+    check_true("blocked writer returns partial progress",
+               arg.result > 0 && arg.result < BLOCKED_WRITE_SIZE);
+    pipe_active_wait_gate = NULL;
+    pipe_wait_gate_destroy(&gate);
+    free(payload);
 }
 #endif
 
@@ -747,8 +927,9 @@ int main(void) {
     test_lookup_port();
     test_lookup_cname();
     test_pipe();
-#ifndef _WIN32
+#if !defined(_WIN32) && defined(NEVERC_NET_PIPE_TESTING)
     test_pipe_close_wakes_all();
+    test_pipe_close_with_blocked_writer();
 #endif
     test_pipe_large();
 
