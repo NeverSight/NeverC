@@ -1,4 +1,5 @@
 #include "neverc/std/regexp_syntax.h"
+#include "neverc/std/unicode.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
@@ -113,9 +114,16 @@ static int add_rune(parser_t *p, neverc_regexp_syntax_node_t *n, int r) {
     return 1;
 }
 
+static int min_fold_rune(int rune);
+
 static neverc_regexp_syntax_node_t *literal_node(parser_t *p, int rune) {
     neverc_regexp_syntax_node_t *n = mk_node(p, NC_RE_OP_LITERAL);
-    if (!n || !add_rune(p, n, rune)) {
+    if (!n) return NULL;
+    if (p->flags & NC_RE_FLAG_FOLD_CASE) {
+        rune = min_fold_rune(rune);
+        n->flags |= NC_RE_FLAG_FOLD_CASE;
+    }
+    if (!add_rune(p, n, rune)) {
         neverc_regexp_syntax_free(n);
         return NULL;
     }
@@ -150,6 +158,159 @@ static int add_escape_class(parser_t *p, neverc_regexp_syntax_node_t *n,
 #ifndef NCI_RE_MAX_REPEAT
 #define NCI_RE_MAX_REPEAT 1000
 #endif
+
+/* Minimum and maximum runes participating in Unicode simple folding. These
+ * match Go regexp/syntax for Unicode 17.0.0. Keeping the bounds avoids walking
+ * every scalar value for a class such as [\x00-\x{10FFFF}]. */
+#define NCI_RE_MIN_FOLD 0x0041
+#define NCI_RE_MAX_FOLD 0x1E943
+
+static int add_range(parser_t *p, neverc_regexp_syntax_node_t *n,
+                     int lo, int hi) {
+    if (lo < 0 || hi < lo || hi > NCI_RE_MAX_RUNE) {
+        p->err = "invalid character class range";
+        return 0;
+    }
+
+    /* As in Go appendRange, checking the last two ranges coalesces the two
+     * interleaved alphabets produced by simple folding without quadratic
+     * insertion work. A final sort/merge makes the complete class canonical. */
+    for (int back = 2; back <= 4; back += 2) {
+        if (n->nrunes >= back) {
+            int *rlo = &n->runes[n->nrunes - back];
+            int *rhi = rlo + 1;
+            if (lo <= *rhi + 1 && *rlo <= hi + 1) {
+                if (lo < *rlo) *rlo = lo;
+                if (hi > *rhi) *rhi = hi;
+                return 1;
+            }
+        }
+    }
+    return add_rune(p, n, lo) && add_rune(p, n, hi);
+}
+
+static int range_pair_compare(const void *ap, const void *bp) {
+    const int *a = (const int *)ap;
+    const int *b = (const int *)bp;
+    if (a[0] < b[0]) return -1;
+    if (a[0] > b[0]) return 1;
+    if (a[1] > b[1]) return -1;
+    if (a[1] < b[1]) return 1;
+    return 0;
+}
+
+static int clean_char_class(parser_t *p, neverc_regexp_syntax_node_t *n) {
+    if (!n || n->nrunes < 0 || (n->nrunes & 1)) {
+        p->err = "invalid character class";
+        return 0;
+    }
+    if (n->nrunes < 4) return 1;
+
+    qsort(n->runes, (size_t)n->nrunes / 2, 2 * sizeof(*n->runes),
+          range_pair_compare);
+    int write = 2;
+    for (int read = 2; read < n->nrunes; read += 2) {
+        int lo = n->runes[read];
+        int hi = n->runes[read + 1];
+        if (lo <= n->runes[write - 1] + 1) {
+            if (hi > n->runes[write - 1]) n->runes[write - 1] = hi;
+        } else {
+            n->runes[write++] = lo;
+            n->runes[write++] = hi;
+        }
+    }
+    n->nrunes = write;
+    return 1;
+}
+
+static int min_fold_rune(int rune) {
+    if (rune < NCI_RE_MIN_FOLD || rune > NCI_RE_MAX_FOLD) return rune;
+    uint32_t start = (uint32_t)rune;
+    uint32_t folded = neverc_unicode_simple_fold(start);
+    uint32_t minimum = start;
+    while (folded != start) {
+        if (folded < minimum) minimum = folded;
+        folded = neverc_unicode_simple_fold(folded);
+    }
+    return (int)minimum;
+}
+
+static int add_folded_range(parser_t *p, neverc_regexp_syntax_node_t *n,
+                            int lo, int hi) {
+    if (lo <= NCI_RE_MIN_FOLD && hi >= NCI_RE_MAX_FOLD)
+        return add_range(p, n, lo, hi);
+    if (hi < NCI_RE_MIN_FOLD || lo > NCI_RE_MAX_FOLD)
+        return add_range(p, n, lo, hi);
+
+    if (lo < NCI_RE_MIN_FOLD) {
+        if (!add_range(p, n, lo, NCI_RE_MIN_FOLD - 1)) return 0;
+        lo = NCI_RE_MIN_FOLD;
+    }
+    if (hi > NCI_RE_MAX_FOLD) {
+        if (!add_range(p, n, NCI_RE_MAX_FOLD + 1, hi)) return 0;
+        hi = NCI_RE_MAX_FOLD;
+    }
+
+    for (int c = lo; c <= hi; c++) {
+        if (!add_range(p, n, c, c)) return 0;
+        uint32_t folded = neverc_unicode_simple_fold((uint32_t)c);
+        while (folded != (uint32_t)c) {
+            if (!add_range(p, n, (int)folded, (int)folded)) return 0;
+            folded = neverc_unicode_simple_fold(folded);
+        }
+    }
+    return 1;
+}
+
+static int fold_char_class(parser_t *p, neverc_regexp_syntax_node_t *n) {
+    neverc_regexp_syntax_node_t folded;
+    memset(&folded, 0, sizeof(folded));
+    folded.op = NC_RE_OP_CHAR_CLASS;
+
+    for (int i = 0; i + 1 < n->nrunes; i += 2) {
+        if (!add_folded_range(p, &folded, n->runes[i], n->runes[i + 1])) {
+            free(folded.runes);
+            return 0;
+        }
+    }
+    if (!clean_char_class(p, &folded)) {
+        free(folded.runes);
+        return 0;
+    }
+    free(n->runes);
+    n->runes = folded.runes;
+    n->nrunes = folded.nrunes;
+    n->flags |= NC_RE_FLAG_FOLD_CASE;
+    return 1;
+}
+
+static int append_class(parser_t *p, neverc_regexp_syntax_node_t *dst,
+                        const neverc_regexp_syntax_node_t *src) {
+    for (int i = 0; i + 1 < src->nrunes; i += 2) {
+        if (!add_rune(p, dst, src->runes[i]) ||
+            !add_rune(p, dst, src->runes[i + 1]))
+            return 0;
+    }
+    return 1;
+}
+
+static int append_negated_class(parser_t *p,
+                                neverc_regexp_syntax_node_t *dst,
+                                const neverc_regexp_syntax_node_t *src) {
+    int next_lo = 0;
+    for (int i = 0; i + 1 < src->nrunes; i += 2) {
+        int lo = src->runes[i];
+        int hi = src->runes[i + 1];
+        if (next_lo < lo &&
+            (!add_rune(p, dst, next_lo) || !add_rune(p, dst, lo - 1)))
+            return 0;
+        if (hi == NCI_RE_MAX_RUNE) return 1;
+        next_lo = hi + 1;
+    }
+    return next_lo > NCI_RE_MAX_RUNE ||
+           (add_rune(p, dst, next_lo) &&
+            add_rune(p, dst, NCI_RE_MAX_RUNE));
+}
 
 /* Go regexp/syntax nextRune: invalid UTF-8 in the pattern is ErrInvalidUTF8. */
 static int utf8_decode(const unsigned char *s, size_t n, int *rune) {
@@ -282,29 +443,36 @@ static int is_perl_class_escape(int escape) {
     return lower == 'd' || lower == 'w' || lower == 's';
 }
 
-/* Complement of \d/\w/\s as range pairs, for use inside a character class.
- * Standalone \D is a negated class; [\D] is a union of the non-digit ranges. */
-static int add_escape_class_complement(parser_t *p, neverc_regexp_syntax_node_t *n,
-                                       int escape) {
-    switch (escape | 0x20) {
-    case 'd':
-        return add_rune(p, n, 0) && add_rune(p, n, '0' - 1) &&
-               add_rune(p, n, '9' + 1) && add_rune(p, n, NCI_RE_MAX_RUNE);
-    case 'w':
-        return add_rune(p, n, 0) && add_rune(p, n, '0' - 1) &&
-               add_rune(p, n, '9' + 1) && add_rune(p, n, 'A' - 1) &&
-               add_rune(p, n, 'Z' + 1) && add_rune(p, n, '_' - 1) &&
-               add_rune(p, n, '_' + 1) && add_rune(p, n, 'a' - 1) &&
-               add_rune(p, n, 'z' + 1) && add_rune(p, n, NCI_RE_MAX_RUNE);
-    case 's':
-        /* Complement of [\t\n\f\r ]. [\t-\r] would still include \v. */
-        return add_rune(p, n, 0) && add_rune(p, n, '\t' - 1) &&
-               add_rune(p, n, '\n' + 1) && add_rune(p, n, '\f' - 1) &&
-               add_rune(p, n, '\r' + 1) && add_rune(p, n, ' ' - 1) &&
-               add_rune(p, n, ' ' + 1) && add_rune(p, n, NCI_RE_MAX_RUNE);
-    default:
+/* Append a Perl class escape as one member of [...]. Uppercase escapes are
+ * complements, so under FoldCase the positive class must be closed over its
+ * simple-fold orbits before complementing it. Folding the complement itself
+ * would be wrong for \W: Kelvin sign is outside ASCII \w but folds to k. */
+static int add_escape_class_member(parser_t *p,
+                                   neverc_regexp_syntax_node_t *n,
+                                   int escape) {
+    neverc_regexp_syntax_node_t tmp;
+    memset(&tmp, 0, sizeof(tmp));
+    tmp.op = NC_RE_OP_CHAR_CLASS;
+
+    if (!add_escape_class(p, &tmp, escape)) {
+        free(tmp.runes);
         return 0;
     }
+    int negate = (escape == 'D' || escape == 'W' || escape == 'S');
+    if (p->flags & NC_RE_FLAG_FOLD_CASE) {
+        if (!fold_char_class(p, &tmp)) {
+            free(tmp.runes);
+            return 0;
+        }
+    } else if (negate && !clean_char_class(p, &tmp)) {
+        free(tmp.runes);
+        return 0;
+    }
+
+    int ok = negate ? append_negated_class(p, n, &tmp)
+                    : append_class(p, n, &tmp);
+    free(tmp.runes);
+    return ok;
 }
 
 /* ======================================================================
@@ -375,7 +543,11 @@ static neverc_regexp_syntax_node_t *parse_escape(parser_t *p) {
             neverc_regexp_syntax_free(n);
             return NULL;
         }
-        if (negate) n->flags |= NC_RE_FLAG_FOLD_CASE; /* reuse flag to mark negation */
+        if ((p->flags & NC_RE_FLAG_FOLD_CASE) && !fold_char_class(p, n)) {
+            neverc_regexp_syntax_free(n);
+            return NULL;
+        }
+        if (negate) n->flags |= NC_RE_FLAG_CLASS_NEGATED;
         return n;
     }
     case 'b': return mk_node(p, NC_RE_OP_WORD_BOUNDARY);
@@ -404,44 +576,10 @@ static neverc_regexp_syntax_node_t *parse_escape(parser_t *p) {
     }
 }
 
-static int add_posix_class(parser_t *p, neverc_regexp_syntax_node_t *n,
-                           const char *name, int nlen) {
+static int add_posix_class_base(parser_t *p,
+                                neverc_regexp_syntax_node_t *n,
+                                const char *name, int nlen) {
     if (!name || nlen <= 0) return 0;
-    if (nlen > 1 && name[0] == '^') {
-        neverc_regexp_syntax_node_t tmp;
-        memset(&tmp, 0, sizeof(tmp));
-        tmp.op = NC_RE_OP_CHAR_CLASS;
-        if (!add_posix_class(p, &tmp, name + 1, nlen - 1)) {
-            free(tmp.runes);
-            return 0;
-        }
-        unsigned char bits[32];
-        memset(bits, 0, sizeof(bits));
-        for (int i = 0; i + 1 < tmp.nrunes; i += 2) {
-            int lo = tmp.runes[i], hi = tmp.runes[i + 1];
-            if (lo < 0) lo = 0;
-            if (hi > 255) hi = 255;
-            if (lo > 255) continue;
-            for (int c = lo; c <= hi; c++)
-                bits[c >> 3] |= (unsigned char)(1u << (c & 7));
-        }
-        free(tmp.runes);
-        int start = -1;
-        for (int i = 0; i < 256; i++) {
-            int on = (bits[i >> 3] & (unsigned char)(1u << (i & 7))) == 0;
-            if (on) {
-                if (start < 0) start = i;
-            } else if (start >= 0) {
-                if (!add_rune(p, n, start) || !add_rune(p, n, i - 1))
-                    return 0;
-                start = -1;
-            }
-        }
-        if (start >= 0 &&
-            (!add_rune(p, n, start) || !add_rune(p, n, 255)))
-            return 0;
-        return add_rune(p, n, 256) && add_rune(p, n, NCI_RE_MAX_RUNE);
-    }
 #define NCI_SY_EQ(s) (nlen == (int)(sizeof(s) - 1) && \
                       memcmp(name, s, (size_t)nlen) == 0)
     if (NCI_SY_EQ("alnum"))
@@ -491,17 +629,58 @@ static int add_posix_class(parser_t *p, neverc_regexp_syntax_node_t *n,
     return 0;
 }
 
+static int add_posix_class(parser_t *p, neverc_regexp_syntax_node_t *n,
+                           const char *name, int nlen) {
+    if (!name || nlen <= 0) return 0;
+    int negate = nlen > 1 && name[0] == '^';
+    if (negate) {
+        name++;
+        nlen--;
+    }
+
+    neverc_regexp_syntax_node_t tmp;
+    memset(&tmp, 0, sizeof(tmp));
+    tmp.op = NC_RE_OP_CHAR_CLASS;
+    if (!add_posix_class_base(p, &tmp, name, nlen)) {
+        free(tmp.runes);
+        return 0;
+    }
+    if (p->flags & NC_RE_FLAG_FOLD_CASE) {
+        if (!fold_char_class(p, &tmp)) {
+            free(tmp.runes);
+            return 0;
+        }
+    } else if (negate && !clean_char_class(p, &tmp)) {
+        free(tmp.runes);
+        return 0;
+    }
+
+    int ok = negate ? append_negated_class(p, n, &tmp)
+                    : append_class(p, n, &tmp);
+    free(tmp.runes);
+    return ok;
+}
+
 static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
     neverc_regexp_syntax_node_t *n = mk_node(p, NC_RE_OP_CHAR_CLASS);
     if (!n) return NULL;
     int negate = 0;
     if (peek(p) == '^') { next(p); negate = 1; }
-    if (negate) n->flags |= NC_RE_FLAG_FOLD_CASE;
+    n->flags |= p->flags & NC_RE_FLAG_FOLD_CASE;
+    if (negate) n->flags |= NC_RE_FLAG_CLASS_NEGATED;
 
     int first = 1;
     while (p->pos < p->len) {
         int c = peek(p);
-        if (c == ']' && !first) { next(p); return n; }
+        if (c == ']' && !first) {
+            next(p);
+            if ((p->flags & NC_RE_FLAG_FOLD_CASE) &&
+                !clean_char_class(p, n)) {
+                neverc_regexp_syntax_free(n);
+                return NULL;
+            }
+            return n;
+        }
         first = 0;
 
         if (c == '[' && p->pos + 1 < p->len && p->src[p->pos + 1] == ':') {
@@ -531,13 +710,8 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
             if (esc < 0) { p->err = "bad escape in char class"; neverc_regexp_syntax_free(n); return NULL; }
             switch (esc) {
             case 'd': case 'w': case 's':
-                if (!add_escape_class(p, n, esc)) {
-                    neverc_regexp_syntax_free(n);
-                    return NULL;
-                }
-                continue;
             case 'D': case 'W': case 'S':
-                if (!add_escape_class_complement(p, n, esc)) {
+                if (!add_escape_class_member(p, n, esc)) {
                     neverc_regexp_syntax_free(n);
                     return NULL;
                 }
@@ -613,12 +787,18 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
                 neverc_regexp_syntax_free(n);
                 return NULL;
             }
-            if (!add_rune(p, n, c) || !add_rune(p, n, hi)) {
+            int ok = (p->flags & NC_RE_FLAG_FOLD_CASE)
+                         ? add_folded_range(p, n, c, hi)
+                         : (add_rune(p, n, c) && add_rune(p, n, hi));
+            if (!ok) {
                 neverc_regexp_syntax_free(n);
                 return NULL;
             }
         } else {
-            if (!add_rune(p, n, c) || !add_rune(p, n, c)) {
+            int ok = (p->flags & NC_RE_FLAG_FOLD_CASE)
+                         ? add_folded_range(p, n, c, c)
+                         : (add_rune(p, n, c) && add_rune(p, n, c));
+            if (!ok) {
                 neverc_regexp_syntax_free(n);
                 return NULL;
             }
@@ -636,6 +816,24 @@ static neverc_regexp_syntax_node_t *parse_group(parser_t *p) {
         return NULL;
     }
     neverc_regexp_syntax_node_t *result = NULL;
+    if (p->pos + 2 < p->len && p->src[p->pos] == '?' &&
+        p->src[p->pos + 1] == 'i' && p->src[p->pos + 2] == ':') {
+        int saved_flags = p->flags;
+        p->pos += 3;
+        p->flags = saved_flags | NC_RE_FLAG_FOLD_CASE;
+        neverc_regexp_syntax_node_t *inner = parse_alternation(p);
+        /* Parser flags are lexical scope, not state carried past the group.
+         * Restore them before every success or error exit from this branch. */
+        p->flags = saved_flags;
+        if (!inner) goto done;
+        if (next(p) != ')') {
+            p->err = "unclosed group";
+            neverc_regexp_syntax_free(inner);
+            goto done;
+        }
+        result = inner;
+        goto done;
+    }
     if (p->pos + 1 < p->len && p->src[p->pos] == '?' && p->src[p->pos + 1] == ':') {
         p->pos += 2;
         neverc_regexp_syntax_node_t *inner = parse_alternation(p);
@@ -994,7 +1192,7 @@ neverc_regexp_syntax_node_t *neverc_regexp_syntax_parse(
     p.src = pattern;
     p.pos = 0;
     p.len = (int)pattern_len;
-    p.flags = flags;
+    p.flags = flags & ~NC_RE_FLAG_CLASS_NEGATED;
     p.ncap = 0;
     p.depth = 0;
     p.err = NULL;
@@ -1135,12 +1333,18 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
     switch (n->op) {
     case NC_RE_OP_NO_MATCH: sb_puts(sb, "[^\\x00-\\x{10FFFF}]"); break;
     case NC_RE_OP_EMPTY_MATCH: break;
-    case NC_RE_OP_LITERAL:
+    case NC_RE_OP_LITERAL: {
+        int folded = (n->flags & NC_RE_FLAG_FOLD_CASE) != 0;
+        if (folded) sb_puts(sb, "(?i:");
         for (int i = 0; i < n->nrunes; i++)
             sb_putrune(sb, n->runes[i], 0);
+        if (folded) sb_putc(sb, ')');
         break;
+    }
     case NC_RE_OP_CHAR_CLASS: {
-        int negate = (n->flags & NC_RE_FLAG_FOLD_CASE) != 0;
+        int folded = (n->flags & NC_RE_FLAG_FOLD_CASE) != 0;
+        int negate = (n->flags & NC_RE_FLAG_CLASS_NEGATED) != 0;
+        if (folded) sb_puts(sb, "(?i:");
         sb_putc(sb, '[');
         if (negate) sb_putc(sb, '^');
         for (int i = 0; i + 1 < n->nrunes; i += 2) {
@@ -1154,6 +1358,7 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
             }
         }
         sb_putc(sb, ']');
+        if (folded) sb_putc(sb, ')');
         break;
     }
     case NC_RE_OP_ANY_CHAR_NOT_NL: sb_putc(sb, '.'); break;
@@ -1280,11 +1485,21 @@ int neverc_regexp_syntax_equal(const neverc_regexp_syntax_node_t *a,
 
     switch (a->op) {
     case NC_RE_OP_LITERAL:
-    case NC_RE_OP_CHAR_CLASS:
         if (a->nrunes != b->nrunes) return 0;
         for (int i = 0; i < a->nrunes; i++)
             if (a->runes[i] != b->runes[i]) return 0;
         if ((a->flags & NC_RE_FLAG_FOLD_CASE) != (b->flags & NC_RE_FLAG_FOLD_CASE)) return 0;
+        return 1;
+    case NC_RE_OP_CHAR_CLASS:
+        if (a->nrunes != b->nrunes) return 0;
+        for (int i = 0; i < a->nrunes; i++)
+            if (a->runes[i] != b->runes[i]) return 0;
+        if ((a->flags & NC_RE_FLAG_FOLD_CASE) !=
+            (b->flags & NC_RE_FLAG_FOLD_CASE))
+            return 0;
+        if ((a->flags & NC_RE_FLAG_CLASS_NEGATED) !=
+            (b->flags & NC_RE_FLAG_CLASS_NEGATED))
+            return 0;
         return 1;
     case NC_RE_OP_BEGIN_TEXT:
         return (a->flags & NC_RE_FLAG_WAS_CARET) == (b->flags & NC_RE_FLAG_WAS_CARET);

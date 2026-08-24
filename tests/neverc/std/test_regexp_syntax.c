@@ -48,6 +48,18 @@ static void check_null(const char *name, void *ptr) {
     else { tests_failed++; printf("  FAIL: %s: expected NULL\n", name); }
 }
 
+static int class_contains(const neverc_regexp_syntax_node_t *node, int rune) {
+    if (!node || node->op != NC_RE_OP_CHAR_CLASS) return 0;
+    int contained = 0;
+    for (int i = 0; i + 1 < node->nrunes; i += 2) {
+        if (rune >= node->runes[i] && rune <= node->runes[i + 1]) {
+            contained = 1;
+            break;
+        }
+    }
+    return (node->flags & NC_RE_FLAG_CLASS_NEGATED) ? !contained : contained;
+}
+
 /* ===== Parse basic patterns ===== */
 
 static void test_parse_literal(void) {
@@ -391,7 +403,10 @@ static void test_parse_charclass(void) {
 
     n = neverc_regexp_syntax_parse("[^0-9]", 0, &err);
     check_not_null("[^0-9]", n);
-    check_int("[^0-9] negated", n ? (n->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 0, 1);
+    check_int("[^0-9] negated",
+              n ? (n->flags & NC_RE_FLAG_CLASS_NEGATED) != 0 : 0, 1);
+    check_int("[^0-9] is not folded",
+              n ? (n->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 1, 0);
     neverc_regexp_syntax_free(n);
 
     n = neverc_regexp_syntax_parse("[\\D]", 0, &err);
@@ -402,7 +417,8 @@ static void test_parse_charclass(void) {
     check_int("[\\D] hi0", (n && n->nrunes >= 2) ? n->runes[1] : -1, '0' - 1);
     check_int("[\\D] lo1", (n && n->nrunes >= 4) ? n->runes[2] : -1, '9' + 1);
     check_int("[\\D] hi1", (n && n->nrunes >= 4) ? n->runes[3] : -1, 0x10FFFF);
-    check_int("[\\D] not negated", n ? (n->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 1, 0);
+    check_int("[\\D] not outer-negated",
+              n ? (n->flags & NC_RE_FLAG_CLASS_NEGATED) != 0 : 1, 0);
     neverc_regexp_syntax_free(n);
 
     n = neverc_regexp_syntax_parse("[a-\\d]", 0, &err);
@@ -417,7 +433,8 @@ static void test_parse_charclass(void) {
 
     n = neverc_regexp_syntax_parse("[^é]", 0, &err);
     check_not_null("[^é] syntax accepts negated rune", n);
-    check_int("[^é] negated", n ? (n->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 0, 1);
+    check_int("[^é] negated",
+              n ? (n->flags & NC_RE_FLAG_CLASS_NEGATED) != 0 : 0, 1);
     check_int("[^é] nrunes", n ? n->nrunes : 0, 2);
     neverc_regexp_syntax_free(n);
 
@@ -459,6 +476,188 @@ static void test_parse_charclass(void) {
     neverc_regexp_syntax_free(n);
 }
 
+static void test_fold_case(void) {
+    printf("[fold_case]\n");
+    const char *err = NULL;
+    neverc_regexp_syntax_node_t *n, *a, *b;
+    char *s;
+
+    /* Preserve every previously published bit while assigning class
+     * negation its own AST-only bit. */
+    check_int("fold flag ABI value", NC_RE_FLAG_FOLD_CASE, 1 << 0);
+    check_int("was-caret flag ABI value", NC_RE_FLAG_WAS_CARET, 1 << 7);
+    check_int("class-negated flag value", NC_RE_FLAG_CLASS_NEGATED, 1 << 8);
+
+    n = neverc_regexp_syntax_parse("[a]", NC_RE_FLAG_CLASS_NEGATED, &err);
+    check_not_null("AST-only class flag is ignored as parse input", n);
+    check_int("AST-only class flag does not negate input",
+              n ? (n->flags & NC_RE_FLAG_CLASS_NEGATED) != 0 : 1, 0);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("(?i:a)b", 0, &err);
+    check_not_null("scoped fold group", n);
+    check_op("scoped fold concat", n, NC_RE_OP_CONCAT);
+    check_int("scoped fold first literal",
+              (n && n->nsubs == 2) ?
+                  (n->subs[0]->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 0,
+              1);
+    check_int("scoped fold restores following literal",
+              (n && n->nsubs == 2) ?
+                  (n->subs[1]->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 1,
+              0);
+    check_int("scoped fold following rune unchanged",
+              (n && n->nsubs == 2 && n->subs[1]->nrunes == 1) ?
+                  n->subs[1]->runes[0] : -1,
+              'b');
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("(?i:a", 0, &err);
+    check_null("unclosed scoped fold group", n);
+
+    n = neverc_regexp_syntax_parse("a", NC_RE_FLAG_FOLD_CASE, &err);
+    check_not_null("fold literal a", n);
+    check_op("fold literal a op", n, NC_RE_OP_LITERAL);
+    check_int("fold literal flag",
+              n ? (n->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 0, 1);
+    check_int("fold literal canonical rune",
+              (n && n->nrunes == 1) ? n->runes[0] : -1, 'A');
+    s = neverc_regexp_syntax_string(n);
+    check_str("fold literal string", s, "(?i:A)");
+    free(s);
+    neverc_regexp_syntax_free(n);
+
+    /* Kelvin sign participates in the Unicode K/k simple-fold orbit. */
+    n = neverc_regexp_syntax_parse("\xE2\x84\xAA", NC_RE_FLAG_FOLD_CASE, &err);
+    check_not_null("fold Kelvin literal", n);
+    check_int("fold Kelvin canonical rune",
+              (n && n->nrunes == 1) ? n->runes[0] : -1, 'K');
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("\\x{1e943}", NC_RE_FLAG_FOLD_CASE, &err);
+    check_not_null("fold highest Unicode orbit member", n);
+    check_int("fold highest Unicode orbit canonical rune",
+              (n && n->nrunes == 1) ? n->runes[0] : -1, 0x1E921);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[\\x{1e943}]", NC_RE_FLAG_FOLD_CASE, &err);
+    check_not_null("fold highest Unicode class orbit", n);
+    check_int("fold highest Unicode class contains uppercase",
+              class_contains(n, 0x1E921), 1);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[a-z]", NC_RE_FLAG_FOLD_CASE, &err);
+    check_not_null("fold ASCII range", n);
+    check_int("fold range flag",
+              n ? (n->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 0, 1);
+    check_int("fold range is not negated",
+              n ? (n->flags & NC_RE_FLAG_CLASS_NEGATED) != 0 : 1, 0);
+    check_int("fold range contains A", class_contains(n, 'A'), 1);
+    check_int("fold range contains z", class_contains(n, 'z'), 1);
+    check_int("fold range contains long s", class_contains(n, 0x017F), 1);
+    check_int("fold range contains Kelvin", class_contains(n, 0x212A), 1);
+    check_int("fold range excludes digit", class_contains(n, '0'), 0);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[^k]", NC_RE_FLAG_FOLD_CASE, &err);
+    check_not_null("fold negated class", n);
+    check_int("fold negated class fold flag",
+              n ? (n->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 0, 1);
+    check_int("fold negated class marker",
+              n ? (n->flags & NC_RE_FLAG_CLASS_NEGATED) != 0 : 0, 1);
+    check_int("fold negated class excludes K", class_contains(n, 'K'), 0);
+    check_int("fold negated class excludes k", class_contains(n, 'k'), 0);
+    check_int("fold negated class excludes Kelvin", class_contains(n, 0x212A), 0);
+    check_int("fold negated class contains q", class_contains(n, 'q'), 1);
+    s = neverc_regexp_syntax_string(n);
+    check_str("fold negated class string", s, "(?i:[^Kk\\x{212a}])");
+    free(s);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("\\w", NC_RE_FLAG_FOLD_CASE, &err);
+    check_not_null("fold \\w", n);
+    check_int("fold \\w contains long s", class_contains(n, 0x017F), 1);
+    check_int("fold \\w contains Kelvin", class_contains(n, 0x212A), 1);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("\\W", NC_RE_FLAG_FOLD_CASE, &err);
+    check_not_null("fold \\W", n);
+    check_int("fold \\W is compactly negated",
+              n ? (n->flags & NC_RE_FLAG_CLASS_NEGATED) != 0 : 0, 1);
+    check_int("fold \\W excludes K", class_contains(n, 'K'), 0);
+    check_int("fold \\W excludes Kelvin", class_contains(n, 0x212A), 0);
+    check_int("fold \\W contains punctuation", class_contains(n, '!'), 1);
+    neverc_regexp_syntax_free(n);
+
+    /* A complemented escape inside [] is a union member, not an outer class
+     * negation. Fold the positive class before taking its complement. */
+    n = neverc_regexp_syntax_parse("[\\W]", NC_RE_FLAG_FOLD_CASE, &err);
+    check_not_null("fold [\\W]", n);
+    check_int("fold [\\W] is not outer-negated",
+              n ? (n->flags & NC_RE_FLAG_CLASS_NEGATED) != 0 : 1, 0);
+    check_int("fold [\\W] excludes k", class_contains(n, 'k'), 0);
+    check_int("fold [\\W] excludes Kelvin", class_contains(n, 0x212A), 0);
+    check_int("fold [\\W] contains punctuation", class_contains(n, '!'), 1);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[[:^lower:]]", NC_RE_FLAG_FOLD_CASE, &err);
+    check_not_null("fold negated POSIX lower", n);
+    check_int("fold negated POSIX lower excludes A", class_contains(n, 'A'), 0);
+    check_int("fold negated POSIX lower excludes long s",
+              class_contains(n, 0x017F), 0);
+    check_int("fold negated POSIX lower excludes Kelvin",
+              class_contains(n, 0x212A), 0);
+    check_int("fold negated POSIX lower contains digit", class_contains(n, '0'), 1);
+    neverc_regexp_syntax_free(n);
+
+    a = neverc_regexp_syntax_parse("A", NC_RE_FLAG_FOLD_CASE, &err);
+    b = neverc_regexp_syntax_parse("a", NC_RE_FLAG_FOLD_CASE, &err);
+    check_int("fold-equivalent literals equal",
+              neverc_regexp_syntax_equal(a, b), 1);
+    neverc_regexp_syntax_free(a);
+    neverc_regexp_syntax_free(b);
+
+    a = neverc_regexp_syntax_parse("A", NC_RE_FLAG_FOLD_CASE, &err);
+    b = neverc_regexp_syntax_parse("A", 0, &err);
+    check_int("folded and exact literals differ",
+              neverc_regexp_syntax_equal(a, b), 0);
+    neverc_regexp_syntax_free(a);
+    neverc_regexp_syntax_free(b);
+
+    a = neverc_regexp_syntax_parse("[a]", NC_RE_FLAG_FOLD_CASE, &err);
+    b = neverc_regexp_syntax_parse("[A]", NC_RE_FLAG_FOLD_CASE, &err);
+    check_int("fold-equivalent classes equal",
+              neverc_regexp_syntax_equal(a, b), 1);
+    neverc_regexp_syntax_free(a);
+    neverc_regexp_syntax_free(b);
+
+    a = neverc_regexp_syntax_parse("[a]", NC_RE_FLAG_FOLD_CASE, &err);
+    b = neverc_regexp_syntax_parse("[^a]", NC_RE_FLAG_FOLD_CASE, &err);
+    check_int("positive and negated folded classes differ",
+              neverc_regexp_syntax_equal(a, b), 0);
+    neverc_regexp_syntax_free(a);
+    neverc_regexp_syntax_free(b);
+
+    a = neverc_regexp_syntax_parse("[^k]", NC_RE_FLAG_FOLD_CASE, &err);
+    s = neverc_regexp_syntax_string(a);
+    b = neverc_regexp_syntax_parse(s, 0, &err);
+    check_not_null("folded class string reparses", b);
+    check_int("folded class string round trip",
+              neverc_regexp_syntax_equal(a, b), 1);
+    free(s);
+    neverc_regexp_syntax_free(a);
+    neverc_regexp_syntax_free(b);
+
+    a = neverc_regexp_syntax_parse("a", NC_RE_FLAG_FOLD_CASE, &err);
+    s = neverc_regexp_syntax_string(a);
+    b = neverc_regexp_syntax_parse(s, 0, &err);
+    check_not_null("folded literal string reparses", b);
+    check_int("folded literal string round trip",
+              neverc_regexp_syntax_equal(a, b), 1);
+    free(s);
+    neverc_regexp_syntax_free(a);
+    neverc_regexp_syntax_free(b);
+}
+
 /* ===== Escapes ===== */
 
 static void test_parse_escapes(void) {
@@ -475,6 +674,14 @@ static void test_parse_escapes(void) {
     n = neverc_regexp_syntax_parse("\\w", 0, &err);
     check_not_null("\\w", n);
     check_int("\\w nrunes", n ? n->nrunes : 0, 8);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("\\D", 0, &err);
+    check_not_null("\\D", n);
+    check_int("\\D negated marker",
+              n ? (n->flags & NC_RE_FLAG_CLASS_NEGATED) != 0 : 0, 1);
+    check_int("\\D is not folded",
+              n ? (n->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 1, 0);
     neverc_regexp_syntax_free(n);
 
     n = neverc_regexp_syntax_parse("\\b", 0, &err);
@@ -573,6 +780,12 @@ static void test_string(void) {
     n = neverc_regexp_syntax_parse("[a-z]", 0, &err);
     s = neverc_regexp_syntax_string(n);
     check_str("string [a-z]", s, "[a-z]");
+    free(s);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[^0-9]", 0, &err);
+    s = neverc_regexp_syntax_string(n);
+    check_str("string [^0-9] is not fold-scoped", s, "[^0-9]");
     free(s);
     neverc_regexp_syntax_free(n);
 
@@ -794,6 +1007,7 @@ int main(void) {
     test_parse_group();
     test_parse_charclass();
     test_parse_escapes();
+    test_fold_case();
     test_string();
     test_equal();
     test_op_string();

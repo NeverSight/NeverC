@@ -3872,6 +3872,7 @@
     "regexp/syntax": {
       "header": "include/neverc/std/regexp_syntax.h",
       "description": "Regex parse tree \u2014 parses regex patterns into ASTs (mirrors Go regexp/syntax)",
+      "deps": ["unicode"],
       "symbols": {
         "neverc_regexp_syntax_parse": "src/regexp/syntax/syntax.c",
         "neverc_regexp_syntax_free": "src/regexp/syntax/syntax.c",

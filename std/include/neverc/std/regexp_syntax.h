@@ -7,7 +7,8 @@
  * Parses regular expression patterns into abstract syntax trees.
  * Invalid UTF-8 in the pattern is an error (Go ErrInvalidUTF8).
  * `{01}` is a literal, not a repeat (Go parseInt).
- * Supports: literal, char class, ., *, +, ?, {n,m}, |, (), (?:),
+ * Supports: literal, Unicode simple-folded literal/character classes,
+ *           char class, ., *, +, ?, {n,m}, |, (), (?:), (?i:),
  *           anchors (^ $ \b \B \A \z), escapes (\d \w \s \D \W \S \xHH \x{H+}).
  */
 
@@ -41,18 +42,24 @@ typedef enum {
 } neverc_regexp_op_t;
 
 typedef enum {
-    NC_RE_FLAG_FOLD_CASE   = 1 << 0,
-    NC_RE_FLAG_NON_GREEDY  = 1 << 1,
-    NC_RE_FLAG_DOT_NL      = 1 << 2,
-    NC_RE_FLAG_MULTI_LINE  = 1 << 3,
-    NC_RE_FLAG_PERL        = 1 << 4,
-    NC_RE_FLAG_POSIX       = 1 << 5,
-    NC_RE_FLAG_WAS_DOLLAR  = 1 << 6,
-    NC_RE_FLAG_WAS_CARET   = 1 << 7
+    NC_RE_FLAG_FOLD_CASE       = 1 << 0,
+    NC_RE_FLAG_NON_GREEDY      = 1 << 1,
+    NC_RE_FLAG_DOT_NL          = 1 << 2,
+    NC_RE_FLAG_MULTI_LINE      = 1 << 3,
+    NC_RE_FLAG_PERL            = 1 << 4,
+    NC_RE_FLAG_POSIX           = 1 << 5,
+    NC_RE_FLAG_WAS_DOLLAR      = 1 << 6,
+    NC_RE_FLAG_WAS_CARET       = 1 << 7,
+
+    /* AST marker for a complemented OpCharClass. This is intentionally
+     * separate from FoldCase; passing it to parse() has no effect. Existing
+     * flag values remain unchanged for source and binary compatibility. */
+    NC_RE_FLAG_CLASS_NEGATED   = 1 << 8
 } neverc_regexp_flags_t;
 
 typedef struct neverc_regexp_syntax_node {
     neverc_regexp_op_t    op;
+    /* Parser context flags plus AST-only markers such as ClassNegated. */
     int                   flags;
 
     struct neverc_regexp_syntax_node **subs;

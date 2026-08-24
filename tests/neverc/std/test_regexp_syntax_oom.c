@@ -49,7 +49,7 @@ int main(void) {
     const char *err = NULL;
     reset_allocator(0);
     neverc_regexp_syntax_node_t *tree =
-        neverc_regexp_syntax_parse(pattern, 0, &err);
+        neverc_regexp_syntax_parse(pattern, NC_RE_FLAG_FOLD_CASE, &err);
     CHECK(tree != NULL);
     size_t parse_allocations = allocation_count;
     neverc_regexp_syntax_free(tree);
@@ -57,13 +57,13 @@ int main(void) {
     for (size_t failure = 1; failure <= parse_allocations; failure++) {
         reset_allocator(failure);
         err = NULL;
-        tree = neverc_regexp_syntax_parse(pattern, 0, &err);
+        tree = neverc_regexp_syntax_parse(pattern, NC_RE_FLAG_FOLD_CASE, &err);
         CHECK(tree == NULL);
         CHECK(err != NULL);
     }
 
     reset_allocator(0);
-    tree = neverc_regexp_syntax_parse(pattern, 0, &err);
+    tree = neverc_regexp_syntax_parse(pattern, NC_RE_FLAG_FOLD_CASE, &err);
     CHECK(tree != NULL);
     reset_allocator(0);
     char *text = neverc_regexp_syntax_string(tree);

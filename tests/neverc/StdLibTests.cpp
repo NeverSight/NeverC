@@ -1093,9 +1093,10 @@ TEST_F(StdLibTest, EmbeddedTlsCertificateVerifyDotSyntax) {
 }
 
 // ===== Regexp =====
-STD_TEST(regexp_syntax, "src/regexp/syntax/syntax.c")
+STD_TEST(regexp_syntax, "src/regexp/syntax/syntax.c", "src/unicode/unicode.c")
 TEST_F(StdLibTest, RegexpSyntaxAllocationFailure) {
-  auto r = compileAndRunStdTest("regexp_syntax_oom", {},
+  auto r = compileAndRunStdTest("regexp_syntax_oom",
+                                {"src/unicode/unicode.c"},
                                 {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
