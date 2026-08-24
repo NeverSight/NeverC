@@ -117,9 +117,13 @@ static void test_is_local_and_volume(void) {
     ASSERT_FALSE(neverc_filepath_is_local("\\??\\C:\\foo"));
     ASSERT_FALSE(neverc_filepath_is_local("NUL"));
     ASSERT_FALSE(neverc_filepath_is_local("con"));
-    ASSERT_FALSE(neverc_filepath_is_local("COM0"));
-    ASSERT_FALSE(neverc_filepath_is_local("COM10"));
-    ASSERT_FALSE(neverc_filepath_is_local("LPT0"));
+    ASSERT_TRUE(neverc_filepath_is_local("COM0"));
+    ASSERT_TRUE(neverc_filepath_is_local("COM10"));
+    ASSERT_TRUE(neverc_filepath_is_local("LPT0"));
+    ASSERT_FALSE(neverc_filepath_is_local("COM1"));
+    ASSERT_FALSE(neverc_filepath_is_local("COM9"));
+    ASSERT_FALSE(neverc_filepath_is_local("LPT1"));
+    ASSERT_FALSE(neverc_filepath_is_local("LPT9"));
     ASSERT_FALSE(neverc_filepath_is_local("CONIN$"));
     ASSERT_FALSE(neverc_filepath_is_local("CONOUT$"));
     ASSERT_FALSE(neverc_filepath_is_local("COM\xC2\xB9"));

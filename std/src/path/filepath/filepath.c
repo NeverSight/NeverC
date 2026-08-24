@@ -204,15 +204,7 @@ static int reserved_device_name(const char *name, size_t n) {
         return 1;
     if (blen >= 4 &&
         (memcmp(base, "COM", 3) == 0 || memcmp(base, "LPT", 3) == 0)) {
-        size_t d;
-        int all_digits = 1;
-        for (d = 3; d < blen; d++) {
-            if (base[d] < '0' || base[d] > '9') {
-                all_digits = 0;
-                break;
-            }
-        }
-        if (all_digits)
+        if (blen == 4 && base[3] >= '1' && base[3] <= '9')
             return 1;
         /* CVE-2023-45284: Windows treats ¹ ² ³ as DOS device digits. */
         if (blen == 5 &&
