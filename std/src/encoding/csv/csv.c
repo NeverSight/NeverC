@@ -567,8 +567,9 @@ int neverc_csv_write_record(const char **fields, int nfields,
          * Prefix formula cells with ' so they are stored as text. Interior
          * ',' / ';' / tab start a new spreadsheet cell (Issue / OWASP split). */
         if (csv_formula_prefix(f) || csv_has_interior_formula(f, delim)) {
+            int quote = needs_quoting(f, delim, crlf) || delim == '\'';
             if (csv_write_sanitized_field(dst, dst_len, &pos, f, delim, crlf,
-                                          needs_quoting(f, delim, crlf)) != 0)
+                                          quote) != 0)
                 return -1;
             continue;
         }
