@@ -454,6 +454,70 @@ static void test_netscape_loop_count(void) {
     free(frame.indices);
 }
 
+static void test_plain_text_consumes_gce(void) {
+    printf("[plain_text_consumes_gce]\n");
+    neverc_gif_frame_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.width = 1;
+    frame.height = 1;
+    frame.delay_centiseconds = 7;
+    frame.disposal_method = 2;
+    frame.has_transparency = 1;
+    frame.transparent_index = 1;
+    frame.palette_size = 2;
+    frame.palette[0] = (neverc_gif_color_t){0, 0, 0};
+    frame.palette[1] = (neverc_gif_color_t){255, 255, 255};
+    frame.indices = (uint8_t *)calloc(1, 1);
+    ASSERT_TRUE(frame.indices != NULL);
+    if (!frame.indices) return;
+
+    uint8_t *gif = NULL;
+    size_t gif_len = 0;
+    ASSERT_EQ(neverc_gif_encode(&frame, &gif, &gif_len), 0);
+    ASSERT_TRUE(gif != NULL);
+    if (!gif) { free(frame.indices); return; }
+
+    size_t descriptor = 13U + 2U * 3U;
+    while (descriptor < gif_len && gif[descriptor] != 0x2C)
+        descriptor++;
+    ASSERT_TRUE(descriptor < gif_len);
+
+    /* GIF89a Plain Text Extension: fixed 12-byte grid header, one byte of
+     * text data, then the sub-block terminator. It is a graphic-rendering
+     * block, so the preceding GCE belongs to it rather than the image. */
+    static const uint8_t plain_text[] = {
+        0x21, 0x01, 0x0c,
+        0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1,
+        0x01, 'A', 0x00
+    };
+    if (descriptor < gif_len) {
+        uint8_t *with_text =
+            (uint8_t *)malloc(gif_len + sizeof(plain_text));
+        ASSERT_TRUE(with_text != NULL);
+        if (with_text) {
+            memcpy(with_text, gif, descriptor);
+            memcpy(with_text + descriptor, plain_text, sizeof(plain_text));
+            memcpy(with_text + descriptor + sizeof(plain_text),
+                   gif + descriptor, gif_len - descriptor);
+
+            neverc_gif_image_t decoded;
+            ASSERT_EQ(neverc_gif_decode(
+                          with_text, gif_len + sizeof(plain_text), &decoded), 0);
+            ASSERT_EQ(decoded.num_frames, 1);
+            if (decoded.num_frames == 1) {
+                ASSERT_EQ(decoded.frames[0].delay_centiseconds, 0);
+                ASSERT_EQ(decoded.frames[0].disposal_method, 0);
+                ASSERT_EQ(decoded.frames[0].has_transparency, 0);
+            }
+            neverc_gif_free(&decoded);
+            free(with_text);
+        }
+    }
+
+    free(gif);
+    free(frame.indices);
+}
+
 static void test_rejects_truncated_and_oversize_lzw(void) {
     printf("[rejects_truncated_and_oversize_lzw]\n");
     neverc_gif_frame_t frame;
@@ -668,6 +732,7 @@ int main(void) {
     test_large_roundtrip();
     test_interlaced_decode();
     test_netscape_loop_count();
+    test_plain_text_consumes_gce();
     test_rejects_truncated_and_oversize_lzw();
     test_failed_decode_clears_geometry();
     test_frame_to_rgba_and_transparency();

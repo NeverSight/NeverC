@@ -386,6 +386,15 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                     app_idx++;
                 }
                 if (!terminated) goto decode_failed;
+                /* A Graphic Control Extension applies to the next graphic
+                 * rendering block. Plain Text is such a block even though we
+                 * do not render it, so its control state must not leak into a
+                 * later Image Descriptor. */
+                if (label == 0x01) {
+                    pending_delay = 0;
+                    pending_transparent = -1;
+                    pending_disposal = 0;
+                }
             }
             continue;
         }
