@@ -89,7 +89,9 @@ jobs:
             neverc-plugin-io-tests \
             neverc-plugin-frontend-tests \
             neverc-plugin-ir-tests \
+            neverc-plugin-target-mc-tests \
             neverc-plugin-dyncode-tests \
+            neverc-plugin-object-merge-tests \
             neverc-plugin-conformance
 
       - name: Run plugin tests under ${{ matrix.label }}
