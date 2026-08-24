@@ -14,6 +14,9 @@ extern "C" {
  * Encode: writes "-----BEGIN <type>-----\n<base64>\n-----END <type>-----\n"
  * Decode: extracts type string and raw binary data from the next valid PEM
  * block, skipping malformed armor the same way as Go encoding/pem.Decode.
+ * Encode accepts at most 200 printable ASCII type characters and rejects ':'
+ * because a colon-bearing type is parsed as an encapsulated header in an
+ * empty block and therefore cannot reliably round-trip.
  *
  * Unlike Go's version, this C API uses caller-provided buffers rather than
  * allocating memory. Encode returns the payload length (no trailing NUL in

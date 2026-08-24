@@ -97,6 +97,28 @@ static void test_empty_data(void) {
     check_int("empty decoded len", (int)bytes_written, 0);
 }
 
+static void test_encode_rejects_colon_type(void) {
+    printf("[pem encode type validation]\n");
+
+    char out[64];
+    char expected[64];
+    memset(out, 0x5a, sizeof(out));
+    memcpy(expected, out, sizeof(out));
+
+    int rc = neverc_pem_encode(
+        out, sizeof(out), "FOO:BAR", NULL, 0);
+    check_int("encode rejects colon type with empty body", rc, -1);
+    check_mem("empty colon type preserves output",
+              (const uint8_t *)out, (const uint8_t *)expected, sizeof(out));
+
+    const uint8_t data[] = {'a'};
+    rc = neverc_pem_encode(
+        out, sizeof(out), "FOO:BAR", data, sizeof(data));
+    check_int("encode rejects colon type with nonempty body", rc, -1);
+    check_mem("nonempty colon type preserves output",
+              (const uint8_t *)out, (const uint8_t *)expected, sizeof(out));
+}
+
 static void test_binary_data(void) {
     printf("[pem binary data]\n");
 
@@ -416,19 +438,56 @@ static void test_invalid_pem(void) {
         "YQ==\n"
         "-----END FOO-----\n";
     {
-        char tiny_type[2];
+        char tiny_type[2] = {'X', '\0'};
+        const char expected_type[2] = {'X', '\0'};
         uint8_t sentinel[8] = {0xaa, 0xbb, 0xcc, 0xdd,
                                0xee, 0xff, 0x11, 0x22};
+        const uint8_t expected[8] = {0xaa, 0xbb, 0xcc, 0xdd,
+                                     0xee, 0xff, 0x11, 0x22};
+        size_t failure_rest = 0;
         bytes_written = 99;
         rc = neverc_pem_decode(ok_block, strlen(ok_block),
                                 tiny_type, sizeof(tiny_type),
                                 sentinel, sizeof(sentinel),
-                                &bytes_written, NULL);
+                                &bytes_written, &failure_rest);
         check_int("type cap too small", rc, -1);
         check_int("type cap failure leaves bytes_written 0",
                   (int)bytes_written, 0);
-        check_int("type cap failure does not write body", sentinel[0], 0xaa);
-        check_int("type cap failure leaves rest", sentinel[1], 0xbb);
+        check_mem("type cap failure preserves type",
+                  (const uint8_t *)tiny_type,
+                  (const uint8_t *)expected_type, sizeof(tiny_type));
+        check_mem("type cap failure does not write body",
+                  sentinel, expected, sizeof(sentinel));
+        check_int("type cap failure rest at input end",
+                  (int)failure_rest, (int)strlen(ok_block));
+    }
+
+    const char *three_byte_block =
+        "-----BEGIN FOO-----\n"
+        "QUFB\n"
+        "-----END FOO-----\n";
+    {
+        char type_sentinel[8] = {'T', 'Y', 'P', 'E', '!', '!', '!', '\0'};
+        const char expected_type[8] =
+            {'T', 'Y', 'P', 'E', '!', '!', '!', '\0'};
+        uint8_t out_sentinel[3] = {0xaa, 0xbb, 0xcc};
+        const uint8_t expected_out[3] = {0xaa, 0xbb, 0xcc};
+        size_t failure_rest = 0;
+        bytes_written = 99;
+        rc = neverc_pem_decode(three_byte_block, strlen(three_byte_block),
+                                type_sentinel, sizeof(type_sentinel),
+                                out_sentinel, 2,
+                                &bytes_written, &failure_rest);
+        check_int("valid block out cap too small", rc, -1);
+        check_int("out cap failure leaves bytes_written 0",
+                  (int)bytes_written, 0);
+        check_mem("out cap failure preserves type",
+                  (const uint8_t *)type_sentinel,
+                  (const uint8_t *)expected_type, sizeof(type_sentinel));
+        check_mem("out cap failure preserves output",
+                  out_sentinel, expected_out, sizeof(out_sentinel));
+        check_int("out cap failure rest at input end",
+                  (int)failure_rest, (int)strlen(three_byte_block));
     }
 }
 
@@ -695,6 +754,61 @@ static void test_go_armor(void) {
         check_int("skip prefix-then-corrupt payload", sentinel[0], 'a');
         check_int("skip prefix-then-corrupt no leftover", sentinel[1], 0xbb);
     }
+
+    /* Candidate validity must be established independently of caller
+     * capacity. The corrupt BAD block has a valid 3-byte prefix, which is
+     * larger than the one-byte destination needed by the later GOOD block. */
+    const char *oversized_prefix_then_valid =
+        "-----BEGIN BAD-----\n"
+        "QUFB!!!!\n"
+        "-----END BAD-----\n"
+        "-----BEGIN GOOD-----\n"
+        "YQ==\n"
+        "-----END GOOD-----\n";
+    {
+        char small_type[8] = {0};
+        uint8_t one_byte[1] = {0xaa};
+        bytes_written = 99;
+        rest_offset = 0;
+        rc = neverc_pem_decode(oversized_prefix_then_valid,
+                                strlen(oversized_prefix_then_valid),
+                                small_type, sizeof(small_type),
+                                one_byte, sizeof(one_byte),
+                                &bytes_written, &rest_offset);
+        check_int("skip over-cap prefix then corrupt", rc, 0);
+        check_str("skip over-cap prefix type", small_type, "GOOD");
+        check_int("skip over-cap prefix len", (int)bytes_written, 1);
+        check_int("skip over-cap prefix payload", one_byte[0], 'a');
+        check_int("skip over-cap prefix rest", (int)rest_offset,
+                  (int)strlen(oversized_prefix_then_valid));
+    }
+
+    /* A malformed candidate with an over-capacity type must be skipped before
+     * caller type capacity is considered for the later valid candidate. */
+    const char *long_type_corrupt_then_valid =
+        "-----BEGIN TOO-LONG-----\n"
+        "!!!!\n"
+        "-----END TOO-LONG-----\n"
+        "-----BEGIN OK-----\n"
+        "YQ==\n"
+        "-----END OK-----\n";
+    {
+        char small_type[3] = {0};
+        uint8_t one_byte[1] = {0xaa};
+        bytes_written = 99;
+        rest_offset = 0;
+        rc = neverc_pem_decode(long_type_corrupt_then_valid,
+                                strlen(long_type_corrupt_then_valid),
+                                small_type, sizeof(small_type),
+                                one_byte, sizeof(one_byte),
+                                &bytes_written, &rest_offset);
+        check_int("skip over-cap type with corrupt body", rc, 0);
+        check_str("skip over-cap type result type", small_type, "OK");
+        check_int("skip over-cap type result len", (int)bytes_written, 1);
+        check_int("skip over-cap type result payload", one_byte[0], 'a');
+        check_int("skip over-cap type result rest", (int)rest_offset,
+                  (int)strlen(long_type_corrupt_then_valid));
+    }
 }
 
 static void test_utf8_bom(void) {
@@ -778,6 +892,7 @@ int main(void) {
     test_encode_decode_roundtrip();
     test_known_pem();
     test_empty_data();
+    test_encode_rejects_colon_type();
     test_binary_data();
     test_rfc1421_headers();
     test_invalid_pem();

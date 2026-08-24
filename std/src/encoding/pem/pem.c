@@ -31,7 +31,7 @@ int neverc_pem_encode(char *out, size_t out_cap,
         return -1;
     for (size_t i = 0; i < type_len; ++i) {
         unsigned char c = (unsigned char)type_str[i];
-        if (c < 0x20 || c > 0x7e)
+        if (c < 0x20 || c > 0x7e || c == ':')
             return -1;
     }
 
@@ -201,9 +201,11 @@ static const char *pem_find_last_begin(const char *search, const char *end_line)
 }
 
 /*
- * Scan a PEM base64 body. out_buf == NULL counts only. Returns 1 on
- * success, 0 if the body is corrupt (caller skips this block), and -1
- * if the block is valid but out_cap is too small.
+ * Scan a PEM base64 body. out_buf == NULL validates and counts without
+ * consulting out_cap, so caller capacity cannot change which candidate is
+ * considered the next valid block. Returns 1 on success, 0 if the body is
+ * corrupt (caller skips this block), and -1 on size overflow or, while
+ * writing, if out_cap is too small.
  */
 static int pem_scan_body(uint8_t *out_buf, size_t out_cap,
                          const char *body_start, const char *end,
@@ -239,7 +241,9 @@ static int pem_scan_body(uint8_t *out_buf, size_t out_cap,
         if ((emit == 1 && (quartet[1] & 0x0f) != 0) ||
             (emit == 2 && (quartet[2] & 0x03) != 0))
             return 0;
-        if (emit > out_cap - n)
+        if (emit > SIZE_MAX - n)
+            return -1;
+        if (out_buf && (n > out_cap || emit > out_cap - n))
             return -1;
 
         if (out_buf) {
@@ -264,29 +268,6 @@ static int pem_scan_body(uint8_t *out_buf, size_t out_cap,
         return 0;
 
     *decoded_len = n;
-    return 1;
-}
-
-/*
- * Decode the PEM base64 body. Validate (and size-check) before writing so a
- * skipped corrupt candidate cannot clobber dst, and a later shorter valid
- * block cannot leave leftover bytes from the failed one (Go allocates a
- * fresh Block.Bytes per candidate).
- */
-static int pem_decode_body(uint8_t *out_buf, size_t out_cap,
-                           const char *body_start, const char *end,
-                           size_t *decoded_len) {
-    size_t need = 0;
-    int rc = pem_scan_body(NULL, out_cap, body_start, end, &need);
-    if (rc != 1)
-        return rc;
-    if (need != 0) {
-        rc = pem_scan_body(out_buf, out_cap, body_start, end, decoded_len);
-        if (rc != 1)
-            return rc;
-    } else {
-        *decoded_len = 0;
-    }
     return 1;
 }
 
@@ -400,21 +381,33 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
         }
         const char *after_end = eol ? eol + 1 : pem_end;
 
-        /* Caller buffer limits are not a reason to skip the block: report
-         * them as errors. Check type_cap before decoding so a too-small
-         * type buffer cannot clobber out_buf. */
-        if (type_len >= type_cap)
-            return -1;
-
+        /* Validate and count the entire body before consulting caller
+         * capacities. Otherwise a malformed candidate with a large valid
+         * prefix (or long type) can hide a later valid block. This first pass
+         * never writes to caller buffers. */
         size_t decoded_len = 0;
-        int body = pem_decode_body(
-            out_buf, out_cap, body_start, end_line, &decoded_len);
+        int body = pem_scan_body(
+            NULL, 0, body_start, end_line, &decoded_len);
         if (body == 0) {
             search = end_line + 9;
             continue;
         }
         if (body < 0)
             return -1;
+
+        /* Caller buffer limits are errors for the first fully valid block,
+         * not reasons to skip it. Check both before the second, writing pass
+         * so every invalid/capacity failure remains atomic. */
+        if (type_len >= type_cap || decoded_len > out_cap)
+            return -1;
+
+        if (decoded_len != 0) {
+            size_t written = 0;
+            body = pem_scan_body(
+                out_buf, out_cap, body_start, end_line, &written);
+            if (body != 1 || written != decoded_len)
+                return -1;
+        }
 
         memcpy(type_buf, type_start, type_len);
         type_buf[type_len] = '\0';
