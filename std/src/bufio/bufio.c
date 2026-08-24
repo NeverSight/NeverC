@@ -542,23 +542,31 @@ int neverc_bufio_reader_read(neverc_bufio_reader_t *br,
                 br->err = NEVERC_IO_ERR_UNEXP;
                 return NEVERC_IO_ERR_UNEXP;
             }
-            size_t nr = 0;
-            int err = br->reader.read(br->reader.ctx, buf, len, &nr);
-            if (nr > len) {
-                br->eof = 1;
-                br->err = NEVERC_IO_ERR_UNEXP;
-                return NEVERC_IO_ERR_UNEXP;
+            for (unsigned empty_reads = 0;
+                 empty_reads < NCI_BUFIO_MAX_EMPTY_READS;
+                 empty_reads++) {
+                size_t nr = 0;
+                int err = br->reader.read(br->reader.ctx, buf, len, &nr);
+                if (nr > len) {
+                    br->eof = 1;
+                    br->err = NEVERC_IO_ERR_UNEXP;
+                    return NEVERC_IO_ERR_UNEXP;
+                }
+                *n = nr;
+                if (nr > 0) br->last_byte = buf[nr - 1];
+                if (err != 0) {
+                    br->eof = 1;
+                    br->err = err;
+                    if (nr == 0)
+                        return bufio_reader_terminal_error(br);
+                    return err;
+                }
+                if (nr != 0)
+                    return 0;
             }
-            *n = nr;
-            if (nr > 0) br->last_byte = buf[nr - 1];
-            if (err != 0) {
-                br->eof = 1;
-                br->err = err;
-                if (nr == 0)
-                    return bufio_reader_terminal_error(br);
-                return err;
-            }
-            return 0;
+            br->eof = 1;
+            br->err = NEVERC_IO_ERR_UNEXP;
+            return NEVERC_IO_ERR_UNEXP;
         }
         bufio_fill(br);
         if (br->r >= br->w)

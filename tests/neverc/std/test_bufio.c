@@ -533,6 +533,15 @@ static void test_reader_no_progress(void) {
               NEVERC_IO_ERR_UNEXP);
     neverc_bufio_reader_free(&br);
 
+    neverc_bufio_reader_init_size(&br, r, 8);
+    uint8_t direct[8] = {0};
+    size_t n = 99;
+    check_int("direct persistent no progress becomes error",
+              neverc_bufio_reader_read(&br, direct, sizeof(direct), &n),
+              NEVERC_IO_ERR_UNEXP);
+    check_size("direct persistent no progress count", n, 0);
+    neverc_bufio_reader_free(&br);
+
     neverc_bufio_scanner_t scanner;
     neverc_bufio_scanner_init(&scanner, r);
     check_int("scanner persistent no progress stops",
@@ -556,6 +565,20 @@ static void test_reader_transient_no_progress(void) {
     check_int("reader retries transient empty read",
               neverc_bufio_reader_read_byte(&br, &byte), 0);
     check_int("reader gets data after transient empty read", byte, 'z');
+    neverc_bufio_reader_free(&br);
+
+    transient_empty_reader_t direct_reader = {
+        byte_data, sizeof(byte_data) - 1, 0, 1
+    };
+    r.ctx = &direct_reader;
+    neverc_bufio_reader_init_size(&br, r, 8);
+    uint8_t direct[8] = {0};
+    size_t direct_n = 0;
+    check_int("direct read retries transient empty read",
+              neverc_bufio_reader_read(&br, direct, sizeof(direct), &direct_n),
+              NEVERC_IO_EOF);
+    check_size("direct read gets data count", direct_n, 1);
+    check_int("direct read gets data after transient empty read", direct[0], 'z');
     neverc_bufio_reader_free(&br);
 
     static const uint8_t line_data[] = "line\n";
