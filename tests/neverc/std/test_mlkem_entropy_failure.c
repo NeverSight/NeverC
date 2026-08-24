@@ -67,8 +67,8 @@ int main(void) {
     CHECK(all_zero(shared768, sizeof(shared768)));
     CHECK(all_zero(ciphertext768, sizeof(ciphertext768)));
 
-    /* All-zero ek is rejected before RAND. A canonical non-zero ek must
-     * still fail closed when entropy acquisition returns -1. */
+    /* Both an all-zero canonical ek and a canonical non-zero ek must fail
+     * closed when entropy acquisition returns -1. */
     ek768.ek[0] = 1;
     memset(shared768, 0x5a, sizeof(shared768));
     memset(ciphertext768, 0x5a, sizeof(ciphertext768));

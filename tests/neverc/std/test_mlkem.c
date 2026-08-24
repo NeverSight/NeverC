@@ -102,6 +102,8 @@ static void test_768_ek_encode_decode(void) {
            "reject non-canonical coefficient");
     ASSERT(all_zero(ek2.ek, sizeof(ek2.ek)),
            "failed key parse clears output");
+    ek2.ek[0] = 0xFF;
+    ek2.ek[1] = 0x0F;
     memset(sk, 0x5A, sizeof(sk));
     memset(ct, 0x5A, sizeof(ct));
     ASSERT(neverc_mlkem768_encapsulate(&ek2, sk, ct) == -1,
@@ -123,6 +125,32 @@ static void test_768_ek_encode_decode(void) {
            "1024 parser rejects 768 encapsulation key");
     ASSERT(all_zero(ek1024.ek, sizeof(ek1024.ek)),
            "wrong parameter set clears 1024 ek");
+    printf("ok\n");
+}
+
+static void test_canonical_zero_encapsulation_keys(void) {
+    printf("  canonical all-zero encapsulation keys ... ");
+    uint8_t encoded[NEVERC_MLKEM1024_EK_SIZE] = {0};
+    uint8_t roundtrip[NEVERC_MLKEM1024_EK_SIZE];
+    size_t roundtrip_len = 0;
+
+    neverc_mlkem768_ek_t ek768;
+    ASSERT(neverc_mlkem768_new_ek(
+               &ek768, encoded, NEVERC_MLKEM768_EK_SIZE) == 0,
+           "accept canonical zero ML-KEM-768 key");
+    neverc_mlkem768_ek_bytes(&ek768, roundtrip, &roundtrip_len);
+    ASSERT(roundtrip_len == NEVERC_MLKEM768_EK_SIZE &&
+               memcmp(roundtrip, encoded, roundtrip_len) == 0,
+           "zero ML-KEM-768 key round-trips");
+
+    neverc_mlkem1024_ek_t ek1024;
+    ASSERT(neverc_mlkem1024_new_ek(
+               &ek1024, encoded, NEVERC_MLKEM1024_EK_SIZE) == 0,
+           "accept canonical zero ML-KEM-1024 key");
+    neverc_mlkem1024_ek_bytes(&ek1024, roundtrip, &roundtrip_len);
+    ASSERT(roundtrip_len == NEVERC_MLKEM1024_EK_SIZE &&
+               memcmp(roundtrip, encoded, roundtrip_len) == 0,
+           "zero ML-KEM-1024 key round-trips");
     printf("ok\n");
 }
 
@@ -398,6 +426,7 @@ int main(void) {
     test_768_roundtrip();
     test_768_seed_deterministic();
     test_768_ek_encode_decode();
+    test_canonical_zero_encapsulation_keys();
     test_768_nist_acvp_keygen_vector();
     test_768_wrong_key();
     test_768_implicit_rejection_value();
