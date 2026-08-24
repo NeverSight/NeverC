@@ -342,6 +342,7 @@ TEST_F(StdLibTest, crc_concurrency) {
 }
 #endif
 STD_TEST(adler32, "src/hash/adler32/adler32.c")
+STD_TEST(wyhash_final3)
 STD_TEST(maphash, "src/hash/maphash/maphash.c")
 TEST_F(StdLibTest, MaphashEntropyFailure) {
   auto r = compileAndRunStdTest(

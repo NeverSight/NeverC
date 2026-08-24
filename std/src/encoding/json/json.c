@@ -5,6 +5,7 @@
 
 #include "neverc/std/encoding/json.h"
 #include "neverc/std/strconv.h"
+#include "../../hash/_wyhash_final3.h"
 #include <limits.h>
 #include <math.h>
 #include <stdlib.h>
@@ -405,89 +406,10 @@ typedef struct {
     int       cnt;
 } keymap_t;
 
-/*
- * wyhash (final v3) over the key bytes — the same hash family maps.c, sync.c,
- * unique.c and hash/maphash use, so the whole std library now shares one hash.
- * JSON is routinely parsed from untrusted input: a byte-at-a-time FNV-1a lets an
- * attacker pick keys whose low bits all collide, and linear probing then turns
- * this index back into the O(n^2) duplicate scan it exists to prevent. wyhash's
- * avalanche scatters keys across the table far better (and folds 8 bytes per
- * step, so long keys hash faster too). The stored hash only pre-filters before
- * the length/memcmp re-verify in km_lookup, so swapping the function cannot change
- * which keys are treated as duplicates — semantics are identical. memcpy reads
- * avoid unaligned-access UB and nci_wymix has a portable 64x64 fallback when
- * __int128 is unavailable, so the result is identical on Windows / Linux /
- * macOS / Android / iOS (the index is in-memory only, never serialized, so
- * endianness affecting the hash value is harmless).
- */
-static inline uint64_t jkm_read8(const uint8_t *p) {
-    uint64_t v; memcpy(&v, p, 8); return v;
-}
-static inline uint64_t jkm_read4(const uint8_t *p) {
-    uint32_t v; memcpy(&v, p, 4); return (uint64_t)v;
-}
-static inline uint64_t jkm_wymix(uint64_t a, uint64_t b) {
-#ifdef __SIZEOF_INT128__
-    __uint128_t r = (__uint128_t)a * b;
-    return (uint64_t)r ^ (uint64_t)(r >> 64);
-#else
-    uint64_t ha = a >> 32, la = (uint32_t)a;
-    uint64_t hb = b >> 32, lb = (uint32_t)b;
-    uint64_t rh = ha * hb, rl = la * lb;
-    uint64_t rm0 = ha * lb, rm1 = hb * la;
-    uint64_t t = rl + (rm0 << 32), c = (t < rl);
-    uint64_t lo = t + (rm1 << 32); c += (lo < t);
-    return lo ^ (rh + (rm0 >> 32) + (rm1 >> 32) + c);
-#endif
-}
-
-#define JKM_WY_S0 0xa0761d6478bd642fULL
-#define JKM_WY_S1 0xe7037ed1a0b428dbULL
-#define JKM_WY_S2 0x8ebc6af09c88c6e3ULL
-
+/* The compact index intentionally stores final-v3's low 32 bits. km_lookup()
+ * re-verifies length and bytes, so a hash collision cannot change semantics. */
 static uint32_t km_hash(const char *s, size_t len) {
-    const uint8_t *p = (const uint8_t *)s;
-    uint64_t seed = JKM_WY_S0;
-    uint64_t a, b;
-
-    if (len <= 16) {
-        if (len >= 4) {
-            /* wyhash-style 4..16 mix can index before p for len 9..11.
-             * Hash a 16-byte zero-padded copy so every read stays in-bounds. */
-            uint8_t tmp[16];
-            memset(tmp, 0, sizeof(tmp));
-            memcpy(tmp, p, len);
-            a = (jkm_read4(tmp) << 32) | jkm_read4(tmp + ((len >> 3) << 2));
-            b = (jkm_read4(tmp + len - 4) << 32)
-              | jkm_read4(tmp + len - 4 - ((len >> 3) << 2));
-        } else if (len > 0) {
-            a = ((uint64_t)p[0] << 16) | ((uint64_t)p[len >> 1] << 8) | p[len - 1];
-            b = 0;
-        } else {
-            a = 0; b = 0;
-        }
-    } else if (len <= 48) {
-        /* len >= 17 here, so len-16 cannot wrap. */
-        size_t i = 0;
-        for (; i <= len - 16; i += 16)
-            seed = jkm_wymix(jkm_read8(p + i) ^ JKM_WY_S1, jkm_read8(p + i + 8) ^ seed);
-        a = jkm_read8(p + len - 16);
-        b = jkm_read8(p + len - 8);
-    } else {
-        uint64_t s1 = seed, s2 = seed;
-        size_t i = 0;
-        for (; i <= len - 48; i += 48) {
-            seed = jkm_wymix(jkm_read8(p + i)      ^ JKM_WY_S0, jkm_read8(p + i + 8)  ^ seed);
-            s1   = jkm_wymix(jkm_read8(p + i + 16) ^ JKM_WY_S1, jkm_read8(p + i + 24) ^ s1);
-            s2   = jkm_wymix(jkm_read8(p + i + 32) ^ JKM_WY_S2, jkm_read8(p + i + 40) ^ s2);
-        }
-        seed ^= s1 ^ s2;
-        for (; i <= len - 16; i += 16)
-            seed = jkm_wymix(jkm_read8(p + i) ^ JKM_WY_S1, jkm_read8(p + i + 8) ^ seed);
-        a = jkm_read8(p + len - 16);
-        b = jkm_read8(p + len - 8);
-    }
-    return (uint32_t)jkm_wymix(JKM_WY_S1 ^ len, jkm_wymix(a ^ JKM_WY_S1, b ^ seed));
+    return (uint32_t)nci_wyhash_final3(s, len, 0);
 }
 
 static int km_init(keymap_t *km) {
