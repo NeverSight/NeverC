@@ -245,7 +245,8 @@ static int h3_stream_read(neverc_quic_stream_t *stream, void *buffer,
     return -1;
 }
 
-/* Returns 1 for a value, 0 for clean FIN, and -1 for a truncated/error read. */
+/* Returns 1 for a value, 0 for clean FIN (no byte of this varint),
+ * -6 when FIN truncates a varint already started, and -1 for RESET. */
 static int h3_read_varint(neverc_quic_stream_t *stream, uint64_t *value) {
     uint8_t encoded[8];
     int first = h3_stream_read(stream, encoded, 1);
@@ -256,7 +257,8 @@ static int h3_read_varint(neverc_quic_stream_t *stream, uint64_t *value) {
     while (position < width) {
         int count = h3_stream_read(stream, encoded + position,
                                    width - position);
-        if (count <= 0) return -1;
+        if (count == 0) return -6;
+        if (count < 0) return -1;
         position += (size_t)count;
     }
     size_t consumed = 0;
@@ -270,7 +272,8 @@ static int h3_read_exact(neverc_quic_stream_t *stream, uint8_t *buffer,
     while (position < length) {
         int count = h3_stream_read(stream, buffer + position,
                                    length - position);
-        if (count <= 0) return -1;
+        if (count == 0) return -6;
+        if (count < 0) return -1;
         position += (size_t)count;
     }
     return 0;
@@ -281,7 +284,8 @@ static int h3_skip_exact(neverc_quic_stream_t *stream, uint64_t length) {
     while (length) {
         size_t chunk = length > sizeof(scratch) ? sizeof(scratch) :
                                                   (size_t)length;
-        if (h3_read_exact(stream, scratch, chunk) != 0) return -1;
+        int read_status = h3_read_exact(stream, scratch, chunk);
+        if (read_status != 0) return read_status;
         length -= chunk;
     }
     return 0;
@@ -294,10 +298,11 @@ static int h3_read_payload(neverc_quic_stream_t *stream, uint64_t length,
     if (length == 0) return 0;
     *payload = (uint8_t *)malloc((size_t)length);
     if (!*payload) return -1;
-    if (h3_read_exact(stream, *payload, (size_t)length) != 0) {
+    int read_status = h3_read_exact(stream, *payload, (size_t)length);
+    if (read_status != 0) {
         free(*payload);
         *payload = NULL;
-        return -1;
+        return read_status;
     }
     return 0;
 }
@@ -645,16 +650,20 @@ static int h3_read_request(h3_conn_t *connection,
         uint64_t type;
         int status = h3_read_varint(stream, &type);
         if (status == 0) break;
-        if (status < 0) return -1;
+        if (status < 0) return status;
         uint64_t length;
-        if (h3_read_varint(stream, &length) != 1) return -1;
+        int length_status = h3_read_varint(stream, &length);
+        if (length_status == 0) return -6;
+        if (length_status < 0) return length_status;
         if (h3_http2_reserved_frame(type))
             return -4;
         if (type == NC_H3_FRAME_HEADERS) {
             uint8_t *payload = NULL;
-            if (h3_read_payload(stream, length, H3_MAX_HEADER_SECTION,
-                                &payload) != 0)
-                return -1;
+            int payload_status = h3_read_payload(stream, length,
+                                                 H3_MAX_HEADER_SECTION,
+                                                 &payload);
+            if (payload_status != 0)
+                return payload_status;
             if (!initial_headers) {
                 int parsed = h3_parse_request_headers(
                     connection, payload, (size_t)length, request);
@@ -706,9 +715,11 @@ static int h3_read_request(h3_conn_t *connection,
                 length > H3_MAX_REQUEST_BODY - request->body_len)
                 return -1;
             uint8_t *payload = NULL;
-            if (h3_read_payload(stream, length, H3_MAX_REQUEST_BODY,
-                                &payload) != 0)
-                return -1;
+            int payload_status = h3_read_payload(stream, length,
+                                                 H3_MAX_REQUEST_BODY,
+                                                 &payload);
+            if (payload_status != 0)
+                return payload_status;
             int appended = h3_append_bytes(&request->body,
                                             &request->body_len,
                                             H3_MAX_REQUEST_BODY,
@@ -725,8 +736,9 @@ static int h3_read_request(h3_conn_t *connection,
             /* RFC 9114 §9: unknown/GREASE frames are ignored. Refusing to
              * buffer a huge skip is a load limit, not H3_MESSAGE_ERROR. */
             return -3;
-        } else if (h3_skip_exact(stream, length) != 0) {
-            return -1;
+        } else {
+            int skip_status = h3_skip_exact(stream, length);
+            if (skip_status != 0) return skip_status;
         }
     }
     if (!initial_headers)
@@ -949,6 +961,11 @@ static void h3_request_task(h3_stream_task_t *task) {
         } else if (read_status == -5) {
             /* RFC 9114 §4.1: FIN before HEADERS is H3_REQUEST_INCOMPLETE. */
             h3_abort_request_stream(stream, NC_H3_REQUEST_INCOMPLETE);
+        } else if (read_status == -6) {
+            /* RFC 9114 §7.1: a frame truncated by a clean FIN is a
+             * connection error of type H3_FRAME_ERROR. */
+            h3_protocol_error(connection, NC_H3_FRAME_ERROR,
+                              "truncated HTTP/3 frame");
         } else {
             h3_abort_request_stream(stream, NC_H3_MESSAGE_ERROR);
         }
@@ -2086,16 +2103,20 @@ static int h3_client_read_response(h3_conn_t *connection,
         uint64_t type;
         int status = h3_read_varint(stream, &type);
         if (status == 0) break;
-        if (status < 0) return -1;
+        if (status < 0) return status;
         uint64_t length;
-        if (h3_read_varint(stream, &length) != 1) return -1;
+        int length_status = h3_read_varint(stream, &length);
+        if (length_status == 0) return -6;
+        if (length_status < 0) return length_status;
         if (h3_http2_reserved_frame(type))
             return -1;
         if (type == NC_H3_FRAME_HEADERS) {
             uint8_t *payload = NULL;
-            if (h3_read_payload(stream, length, H3_MAX_HEADER_SECTION,
-                                &payload) != 0)
-                return -1;
+            int payload_status = h3_read_payload(stream, length,
+                                                 H3_MAX_HEADER_SECTION,
+                                                 &payload);
+            if (payload_status != 0)
+                return payload_status;
             if (trailers) {
                 free(payload);
                 return -4;
@@ -2126,9 +2147,11 @@ static int h3_client_read_response(h3_conn_t *connection,
                 length > H3_MAX_RESPONSE_BODY - response->body_len)
                 return -1;
             uint8_t *payload = NULL;
-            if (h3_read_payload(stream, length, H3_MAX_RESPONSE_BODY,
-                                &payload) != 0)
-                return -1;
+            int payload_status = h3_read_payload(stream, length,
+                                                 H3_MAX_RESPONSE_BODY,
+                                                 &payload);
+            if (payload_status != 0)
+                return payload_status;
             int appended = h3_append_bytes((uint8_t **)&response->body,
                                             &response->body_len,
                                             H3_MAX_RESPONSE_BODY,
@@ -2141,9 +2164,11 @@ static int h3_client_read_response(h3_conn_t *connection,
                    type == NC_H3_FRAME_CANCEL_PUSH ||
                    type == NC_H3_FRAME_PUSH_PROMISE) {
             return -1;
-        } else if (length > H3_MAX_HEADER_SECTION ||
-                   h3_skip_exact(stream, length) != 0) {
+        } else if (length > H3_MAX_HEADER_SECTION) {
             return -1;
+        } else {
+            int skip_status = h3_skip_exact(stream, length);
+            if (skip_status != 0) return skip_status;
         }
     }
     return final_headers &&
@@ -2279,10 +2304,17 @@ static neverc_http_response_t *h3_client_request(
     response = (neverc_http_response_t *)calloc(1, sizeof(*response));
     if (!response) goto client_failed;
     request_error = "HTTP/3 response is invalid";
-    if (h3_client_read_response(&connection, stream, response) != 0) {
-        neverc_http_response_free(response);
-        response = NULL;
-        goto client_failed;
+    {
+        int response_status = h3_client_read_response(&connection, stream,
+                                                      response);
+        if (response_status != 0) {
+            if (response_status == -6)
+                h3_protocol_error(&connection, NC_H3_FRAME_ERROR,
+                                  "truncated HTTP/3 frame");
+            neverc_http_response_free(response);
+            response = NULL;
+            goto client_failed;
+        }
     }
     neverc_quic_stream_free(stream);
     h3_conn_teardown(&connection);

@@ -40,7 +40,9 @@ static void test_public_error_codes(void) {
     CHECK(NC_H3_STREAM_CREATION_ERROR == 0x0103);
     CHECK(NC_H3_CLOSED_CRITICAL_STREAM == 0x0104);
     CHECK(NC_H3_FRAME_UNEXPECTED == 0x0105);
+    CHECK(NC_H3_FRAME_ERROR == 0x0106);
     CHECK(NC_H3_EXCESSIVE_LOAD == 0x0107);
+    CHECK(NC_H3_MESSAGE_ERROR == 0x010E);
 }
 
 static void test_invalid_server_inputs(void) {

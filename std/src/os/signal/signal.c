@@ -33,7 +33,10 @@ static void win_mark_pending(int signum) {
 
 static BOOL WINAPI win_ctrl_handler(DWORD type) {
     switch (type) {
-        case CTRL_C_EVENT: {
+        /* Go runtime/os_windows.go ctrlHandler: CTRL_C and CTRL_BREAK
+         * are SIGINT; close / logoff / shutdown are SIGTERM. */
+        case CTRL_C_EVENT:
+        case CTRL_BREAK_EVENT: {
             neverc_signal_handler_t handler = g_win_handlers[NEVERC_SIGINT];
             win_mark_pending(NEVERC_SIGINT);
             if (handler) {
@@ -42,8 +45,9 @@ static BOOL WINAPI win_ctrl_handler(DWORD type) {
             }
             break;
         }
-        case CTRL_BREAK_EVENT:
-        case CTRL_CLOSE_EVENT: {
+        case CTRL_CLOSE_EVENT:
+        case CTRL_LOGOFF_EVENT:
+        case CTRL_SHUTDOWN_EVENT: {
             neverc_signal_handler_t handler = g_win_handlers[NEVERC_SIGTERM];
             win_mark_pending(NEVERC_SIGTERM);
             if (handler) {

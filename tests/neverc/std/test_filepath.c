@@ -180,6 +180,12 @@ static void test_clean(void) {
     ASSERT_STR_EQ(neverc_filepath_clean("C:", buf, sizeof(buf)), "C:.");
     ASSERT_STR_EQ(neverc_filepath_clean("C:foo\\..", buf, sizeof(buf)), "C:.");
     ASSERT_STR_EQ(neverc_filepath_clean("a\\..\\c:", buf, sizeof(buf)), ".\\c:");
+    /* Go wincleantests: an already-clean ADS name is not rewritten. */
+    ASSERT_STR_EQ(neverc_filepath_clean("foo:bar", buf, sizeof(buf)), "foo:bar");
+    ASSERT_STR_EQ(neverc_filepath_clean("foo:bar\\baz", buf, sizeof(buf)),
+                  "foo:bar\\baz");
+    ASSERT_STR_EQ(neverc_filepath_clean("foo:bar/baz", buf, sizeof(buf)),
+                  ".\\foo:bar\\baz");
     ASSERT_STR_EQ(neverc_filepath_clean("//host/share/foo/../baz", buf, sizeof(buf)),
                   "\\\\host\\share\\baz");
     ASSERT_STR_EQ(neverc_filepath_clean("\\\\i\\..\\c$", buf, sizeof(buf)), "\\c$");

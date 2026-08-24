@@ -416,14 +416,28 @@ const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
     }
 
 #ifdef _WIN32
-    /* postClean: do not turn a relative path into a drive or \??\ device path. */
+    /* Go postClean: skipped when lazybuf never allocated (the cleaned
+     * bytes are the original path). A colon in an already-clean name
+     * such as foo:bar must stay; a rewritten result like a\..\c: still
+     * gets .\ so it cannot become a drive volume. */
     if (vol == 0 && opos >= 2) {
         size_t i;
+        int rewritten = (opos != len);
         int has_colon = 0;
-        for (i = 0; i < opos && !is_sep(out[i]); i++) {
-            if (out[i] == ':') {
-                has_colon = 1;
-                break;
+        if (!rewritten) {
+            for (i = 0; i < opos; i++) {
+                if (out[i] != path[i]) {
+                    rewritten = 1;
+                    break;
+                }
+            }
+        }
+        if (rewritten) {
+            for (i = 0; i < opos && !is_sep(out[i]); i++) {
+                if (out[i] == ':') {
+                    has_colon = 1;
+                    break;
+                }
             }
         }
         if (has_colon) {
