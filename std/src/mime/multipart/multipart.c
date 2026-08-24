@@ -297,8 +297,13 @@ static int ci_str_equal_key(const char *key, size_t key_cap, const char *want) {
 
 const char *neverc_multipart_part_header(const neverc_multipart_part_t *part,
                                          const char *key) {
-    if (!part || !key) return NULL;
+    if (!part || !key || part->header_count < 0 ||
+        part->header_count > NEVERC_MULTIPART_MAX_HEADERS)
+        return NULL;
     for (int i = 0; i < part->header_count; i++) {
+        if (!memchr(part->headers[i].value, '\0',
+                    sizeof(part->headers[i].value)))
+            return NULL;
         if (ci_str_equal_key(part->headers[i].key,
                              sizeof(part->headers[i].key), key))
             return part->headers[i].value;

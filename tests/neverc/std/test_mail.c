@@ -357,6 +357,26 @@ static void test_parse_message(void) {
     ASSERT_EQ(neverc_mail_parse_message(ew_inject, strlen(ew_inject), &m), -1);
 }
 
+static void test_header_get_rejects_invalid_public_state(void) {
+    printf("[header getter invalid public state]\n");
+    neverc_mail_message_t msg;
+    memset(&msg, 0, sizeof(msg));
+
+    msg.header_count = NEVERC_MAIL_MAX_HEADERS + 1;
+    ASSERT_TRUE(neverc_mail_header_get(&msg, "X-Test") == NULL);
+    msg.header_count = -1;
+    ASSERT_TRUE(neverc_mail_header_get(&msg, "X-Test") == NULL);
+
+    msg.header_count = 1;
+    memset(msg.headers[0].key, 'X', sizeof(msg.headers[0].key));
+    strcpy(msg.headers[0].value, "value");
+    ASSERT_TRUE(neverc_mail_header_get(&msg, "X-Test") == NULL);
+
+    strcpy(msg.headers[0].key, "X-Test");
+    memset(msg.headers[0].value, 'V', sizeof(msg.headers[0].value));
+    ASSERT_TRUE(neverc_mail_header_get(&msg, "X-Test") == NULL);
+}
+
 static void test_parse_date(void) {
     printf("[parse date]\n");
     /* Mon, 02 Jan 2006 15:04:05 -0700 */
@@ -409,6 +429,7 @@ int main(void) {
     test_parse_address_list();
     test_format_address();
     test_parse_message();
+    test_header_get_rejects_invalid_public_state();
     test_parse_date();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");

@@ -66,6 +66,26 @@ static void test_parse_multiple_headers(void) {
     free(reader);
 }
 
+static void test_header_get_rejects_invalid_public_state(void) {
+    printf("[header getter invalid public state]\n");
+    neverc_multipart_part_t part;
+    memset(&part, 0, sizeof(part));
+
+    part.header_count = NEVERC_MULTIPART_MAX_HEADERS + 1;
+    ASSERT_TRUE(neverc_multipart_part_header(&part, "X-Test") == NULL);
+    part.header_count = -1;
+    ASSERT_TRUE(neverc_multipart_part_header(&part, "X-Test") == NULL);
+
+    part.header_count = 1;
+    memset(part.headers[0].key, 'X', sizeof(part.headers[0].key));
+    strcpy(part.headers[0].value, "value");
+    ASSERT_TRUE(neverc_multipart_part_header(&part, "X-Test") == NULL);
+
+    strcpy(part.headers[0].key, "X-Test");
+    memset(part.headers[0].value, 'V', sizeof(part.headers[0].value));
+    ASSERT_TRUE(neverc_multipart_part_header(&part, "X-Test") == NULL);
+}
+
 static void test_write_roundtrip(void) {
     printf("[write roundtrip]\n");
     neverc_multipart_part_t parts[2];
@@ -632,6 +652,7 @@ int main(void) {
     printf("=== NeverC mime/multipart Tests ===\n");
     test_parse_basic();
     test_parse_multiple_headers();
+    test_header_get_rejects_invalid_public_state();
     test_parse_empty_parts_and_preamble();
     test_delimiter_requires_line_end();
     test_write_roundtrip();

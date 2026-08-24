@@ -473,20 +473,31 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
     return -1;
 }
 
+static int mail_header_key_equal(const char *stored, size_t stored_cap,
+                                 const char *want) {
+    size_t i = 0;
+    while (i < stored_cap && stored[i] != '\0' && want[i] != '\0') {
+        unsigned char a = (unsigned char)stored[i];
+        unsigned char b = (unsigned char)want[i];
+        if (a >= 'A' && a <= 'Z') a = (unsigned char)(a + 32);
+        if (b >= 'A' && b <= 'Z') b = (unsigned char)(b + 32);
+        if (a != b) return 0;
+        i++;
+    }
+    return i < stored_cap && stored[i] == '\0' && want[i] == '\0';
+}
+
 const char *neverc_mail_header_get(const neverc_mail_message_t *msg, const char *key) {
-    if (!msg || !key) return NULL;
-    size_t klen = strlen(key);
+    if (!msg || !key || msg->header_count < 0 ||
+        msg->header_count > NEVERC_MAIL_MAX_HEADERS)
+        return NULL;
     for (int i = 0; i < msg->header_count; i++) {
-        if (strlen(msg->headers[i].key) == klen) {
-            int match = 1;
-            for (size_t j = 0; j < klen; j++) {
-                char a = msg->headers[i].key[j], b = key[j];
-                if (a >= 'A' && a <= 'Z') a += 32;
-                if (b >= 'A' && b <= 'Z') b += 32;
-                if (a != b) { match = 0; break; }
-            }
-            if (match) return msg->headers[i].value;
-        }
+        if (!memchr(msg->headers[i].value, '\0',
+                    sizeof(msg->headers[i].value)))
+            return NULL;
+        if (mail_header_key_equal(msg->headers[i].key,
+                                  sizeof(msg->headers[i].key), key))
+            return msg->headers[i].value;
     }
     return NULL;
 }
