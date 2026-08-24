@@ -214,6 +214,29 @@ static void test_pixel_at_bounds(void) {
     ASSERT_TRUE(neverc_png_pixel_at(NULL, 0, 0) == NULL);
 
     free(img.pixels);
+
+    uint8_t under_stride[8];
+    memset(under_stride, 0xAA, sizeof(under_stride));
+    img.width = 2;
+    img.height = 2;
+    img.channels = 4;
+    img.stride = 4;
+    img.pixels = under_stride;
+    ASSERT_TRUE(neverc_png_pixel_at(&img, 0, 0) == under_stride);
+    ASSERT_TRUE(neverc_png_pixel_at(&img, 1, 0) == NULL);
+    {
+        const uint8_t replacement[4] = {1, 2, 3, 4};
+        neverc_png_pixel_set(&img, 1, 0, replacement);
+        for (size_t i = 0; i < sizeof(under_stride); i++)
+            ASSERT_EQ(under_stride[i], 0xAA);
+    }
+
+    img.width = 1;
+    img.height = 1;
+    img.channels = 1;
+    img.stride = 0;
+    img.pixels = under_stride;
+    ASSERT_TRUE(neverc_png_pixel_at(&img, 0, 0) == NULL);
 }
 
 static void test_pixel_offset_overflow(void) {

@@ -160,6 +160,44 @@ static void test_gray_image(void) {
     check("free", img.pix == NULL);
 }
 
+static void test_under_stride_images(void) {
+    printf("[under-stride images]\n");
+
+    uint8_t rgba_pix[8];
+    memset(rgba_pix, 0xAA, sizeof(rgba_pix));
+    neverc_image_rgba_t rgba = {
+        rgba_pix, 4, {{0, 0}, {2, 2}}
+    };
+    check("rgba under-stride second pixel has no offset",
+          neverc_image_rgba_pixel_offset(&rgba, 1, 0) == -1);
+    neverc_image_rgba_set(&rgba, 1, 0, 1, 2, 3, 4);
+    {
+        uint8_t expected[8];
+        memset(expected, 0xAA, sizeof(expected));
+        check("rgba under-stride setter preserves next row",
+              memcmp(rgba_pix, expected, sizeof(expected)) == 0);
+    }
+    {
+        uint8_t r = 1, g = 1, b = 1, a = 1;
+        neverc_image_rgba_at(&rgba, 1, 0, &r, &g, &b, &a);
+        check("rgba under-stride getter returns transparent black",
+              r == 0 && g == 0 && b == 0 && a == 0);
+    }
+
+    uint8_t gray_pix[2];
+    memset(gray_pix, 0xAA, sizeof(gray_pix));
+    neverc_image_gray_t gray = {
+        gray_pix, 1, {{0, 0}, {2, 2}}
+    };
+    check("gray under-stride second pixel has no offset",
+          neverc_image_gray_pixel_offset(&gray, 1, 0) == -1);
+    neverc_image_gray_set(&gray, 1, 0, 0x11);
+    check("gray under-stride setter preserves next row",
+          gray_pix[0] == 0xAA && gray_pix[1] == 0xAA);
+    check("gray under-stride getter returns zero",
+          neverc_image_gray_at(&gray, 1, 0) == 0);
+}
+
 static void test_invalid_image_sizes(void) {
     printf("[invalid image sizes]\n");
 
@@ -194,6 +232,7 @@ int main(void) {
     test_rect();
     test_rgba_image();
     test_gray_image();
+    test_under_stride_images();
     test_invalid_image_sizes();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

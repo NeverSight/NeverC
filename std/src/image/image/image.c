@@ -211,14 +211,28 @@ void neverc_image_rgba_free(neverc_image_rgba_t *img) {
     if (img && img->pix) { free(img->pix); img->pix = NULL; }
 }
 
-int neverc_image_rgba_pixel_offset(const neverc_image_rgba_t *img, int x, int y) {
-    if (!img || !img->pix || img->stride < 4 ||
-        !neverc_point_in(neverc_pt(x, y), img->rect))
+static int image_pixel_offset(const uint8_t *pix, int stride,
+                              neverc_rect_t rect, int x, int y,
+                              int bytes_per_pixel) {
+    if (!pix || stride < bytes_per_pixel ||
+        !neverc_point_in(neverc_pt(x, y), rect))
         return -1;
-    int64_t off = ((int64_t)y - img->rect.min.y) * img->stride +
-                  ((int64_t)x - img->rect.min.x) * 4;
-    if (off < 0 || off > INT_MAX) return -1;
-    return (int)off;
+
+    int64_t column = (int64_t)x - (int64_t)rect.min.x;
+    int64_t row = (int64_t)y - (int64_t)rect.min.y;
+    if (column > (int64_t)(stride - bytes_per_pixel) / bytes_per_pixel)
+        return -1;
+
+    int64_t xoff = column * bytes_per_pixel;
+    int64_t max_start = (int64_t)INT_MAX - (bytes_per_pixel - 1);
+    if (row > (max_start - xoff) / stride)
+        return -1;
+    return (int)(row * stride + xoff);
+}
+
+int neverc_image_rgba_pixel_offset(const neverc_image_rgba_t *img, int x, int y) {
+    if (!img) return -1;
+    return image_pixel_offset(img->pix, img->stride, img->rect, x, y, 4);
 }
 
 void neverc_image_rgba_set(neverc_image_rgba_t *img, int x, int y,
@@ -272,13 +286,8 @@ void neverc_image_gray_free(neverc_image_gray_t *img) {
 }
 
 int neverc_image_gray_pixel_offset(const neverc_image_gray_t *img, int x, int y) {
-    if (!img || !img->pix || img->stride < 1 ||
-        !neverc_point_in(neverc_pt(x, y), img->rect))
-        return -1;
-    int64_t off = ((int64_t)y - img->rect.min.y) * img->stride +
-                  ((int64_t)x - img->rect.min.x);
-    if (off < 0 || off > INT_MAX) return -1;
-    return (int)off;
+    if (!img) return -1;
+    return image_pixel_offset(img->pix, img->stride, img->rect, x, y, 1);
 }
 
 void neverc_image_gray_set(neverc_image_gray_t *img, int x, int y, uint8_t v) {

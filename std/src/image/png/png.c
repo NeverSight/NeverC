@@ -637,12 +637,11 @@ static int png_pixel_offset(const neverc_png_image_t *img, uint32_t x, uint32_t 
     if ((size_t)x > SIZE_MAX / (size_t)img->channels)
         return -1;
     size_t xoff = (size_t)x * img->channels;
-    if (img->stride == 0) {
-        if (y != 0) return -1;
-        *out_off = xoff;
-        return 0;
-    }
-    if ((size_t)y > (SIZE_MAX - xoff) / img->stride)
+    if (img->stride < (size_t)img->channels ||
+        xoff > img->stride - (size_t)img->channels)
+        return -1;
+    size_t tail = (size_t)img->channels - 1U;
+    if ((size_t)y > (SIZE_MAX - xoff - tail) / img->stride)
         return -1;
     *out_off = (size_t)y * img->stride + xoff;
     return 0;
