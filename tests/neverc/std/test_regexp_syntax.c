@@ -131,6 +131,7 @@ static void test_parse_star(void) {
     printf("[parse_star]\n");
     const char *err = NULL;
     neverc_regexp_syntax_node_t *n;
+    char *s;
 
     n = neverc_regexp_syntax_parse("a*", 0, &err);
     check_not_null("a*", n);
@@ -144,6 +145,24 @@ static void test_parse_star(void) {
     check_not_null("a*?", n);
     check_op("a*? op", n, NC_RE_OP_STAR);
     check_int("a*? non-greedy", n ? (n->flags & NC_RE_FLAG_NON_GREEDY) != 0 : 0, 1);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("a*", NC_RE_FLAG_NON_GREEDY, &err);
+    check_not_null("a* default non-greedy", n);
+    check_int("a* default non-greedy flag",
+              n ? (n->flags & NC_RE_FLAG_NON_GREEDY) != 0 : 0, 1);
+    s = neverc_regexp_syntax_string(n);
+    check_str("a* default non-greedy string", s, "a*?");
+    free(s);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("a*?", NC_RE_FLAG_NON_GREEDY, &err);
+    check_not_null("a*? flips default non-greedy", n);
+    check_int("a*? default non-greedy becomes greedy",
+              n ? (n->flags & NC_RE_FLAG_NON_GREEDY) != 0 : 1, 0);
+    s = neverc_regexp_syntax_string(n);
+    check_str("a*? default non-greedy string", s, "a*");
+    free(s);
     neverc_regexp_syntax_free(n);
 }
 
@@ -196,6 +215,18 @@ static void test_parse_repeat(void) {
     n = neverc_regexp_syntax_parse("a{3}?", 0, &err);
     check_not_null("a{3}?", n);
     check_int("a{3}? non-greedy", n ? (n->flags & NC_RE_FLAG_NON_GREEDY) != 0 : 0, 1);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse(
+        "a{1,2}", NC_RE_FLAG_NON_GREEDY, &err);
+    check_not_null("a{1,2} default non-greedy", n);
+    check_int("a{1,2} default non-greedy flag",
+              n ? (n->flags & NC_RE_FLAG_NON_GREEDY) != 0 : 0, 1);
+    {
+        char *s = neverc_regexp_syntax_string(n);
+        check_str("a{1,2} default non-greedy string", s, "a{1,2}?");
+        free(s);
+    }
     neverc_regexp_syntax_free(n);
 
     n = neverc_regexp_syntax_parse("{", 0, &err);

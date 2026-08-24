@@ -870,9 +870,11 @@ static neverc_regexp_syntax_node_t *parse_repeat(parser_t *p) {
         return NULL;
     }
 
+    rep->flags |= p->flags & NC_RE_FLAG_NON_GREEDY;
+
     if (peek(p) == '?') {
         next(p);
-        rep->flags |= NC_RE_FLAG_NON_GREEDY;
+        rep->flags ^= NC_RE_FLAG_NON_GREEDY;
     }
 
     /* Go/Perl: a second *+? or a complete {n}/{n,}/{n,m} after a quantifier
