@@ -202,6 +202,38 @@ static void test_draw_src_self_overlap(void) {
     neverc_image_rgba_free(&img);
 }
 
+/* Different image views may share one allocation while their pix pointers
+ * differ.  A top-to-bottom copy would overwrite the second source row before
+ * reading it. */
+static void test_draw_offset_view_overlap(void) {
+    printf("[draw_offset_view_overlap]\n");
+    uint8_t backing[3 * 8] = {
+        10, 1, 2, 255, 11, 1, 2, 255,
+        20, 3, 4, 255, 21, 3, 4, 255,
+        30, 5, 6, 255, 31, 5, 6, 255,
+    };
+    neverc_image_rgba_t src = {
+        backing, 8, {{0, 0}, {2, 2}}
+    };
+    neverc_image_rgba_t dst = {
+        backing + 8, 8, {{0, 1}, {2, 3}}
+    };
+
+    neverc_draw(&dst, dst.rect, &src, neverc_pt(0, 0), NEVERC_DRAW_SRC);
+    check("offset_src_row1", backing[8] == 10 && backing[12] == 11);
+    check("offset_src_row2", backing[16] == 20 && backing[20] == 21);
+
+    const uint8_t over_initial[3 * 8] = {
+        20, 0, 0, 128, 21, 0, 0, 128,
+        40, 0, 0, 128, 41, 0, 0, 128,
+        200, 0, 0, 255, 201, 0, 0, 255,
+    };
+    memcpy(backing, over_initial, sizeof(backing));
+    neverc_draw(&dst, dst.rect, &src, neverc_pt(0, 0), NEVERC_DRAW_OVER);
+    check("offset_over_row2_uses_original_source",
+          backing[16] == 140 && backing[20] == 141);
+}
+
 /* Opaque OVER is a copy; same-buffer shift-down/right must not reread
  * pixels already written (Go drawCopyOver walks bottom-to-top / right-to-left). */
 static void test_draw_over_self_overlap(void) {
@@ -468,6 +500,7 @@ int main(void) {
     test_draw_gray_clip();
     test_draw_clip_int_overflow();
     test_draw_src_self_overlap();
+    test_draw_offset_view_overlap();
     test_draw_over_self_overlap();
     test_draw_over_src_exceeds_alpha();
     test_draw_gray_over_transparent();

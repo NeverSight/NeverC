@@ -1,6 +1,7 @@
 #include "neverc/std/image/draw.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 /*
@@ -99,6 +100,20 @@ static int blit_ptr_ok(int64_t row, int64_t col, size_t stride,
     return 1;
 }
 
+/* Image views may start at different offsets in the same allocation (as with
+ * a sub-image), so pointer equality is not enough to detect aliasing.  Treat
+ * the touched rows as enclosing byte spans.  This can conservatively report
+ * overlap through stride padding, which only costs a temporary snapshot. */
+static int byte_spans_overlap(const uint8_t *a, size_t aspan,
+                              const uint8_t *b, size_t bspan) {
+    if (aspan == 0 || bspan == 0) return 0;
+    uintptr_t au = (uintptr_t)a;
+    uintptr_t bu = (uintptr_t)b;
+    if (au > UINTPTR_MAX - aspan || bu > UINTPTR_MAX - bspan)
+        return 1;
+    return au < bu + bspan && bu < au + aspan;
+}
+
 /*
  * Hot paths below walk one row pointer at a time (incrementing by 4 bytes per
  * pixel) instead of recomputing `(y-miny)*stride + (x-minx)*4` and going through
@@ -164,6 +179,25 @@ void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
     int over_backward = same_buf &&
         (drow > srow || (drow == srow && dcol > scol));
 
+    /* For offset views (or views with different strides), logical row/column
+     * comparisons do not describe the physical copy direction.  Snapshot the
+     * clipped source before writing so both SRC and OVER observe the original
+     * pixels.  Keep the allocation-free directional fast path for identical
+     * base/stride images. */
+    uint8_t *snapshot = NULL;
+    size_t dst_span = (rows - 1U) * dst_stride + row_bytes;
+    size_t src_span = (rows - 1U) * src_stride + row_bytes;
+    if (!same_buf && byte_spans_overlap(dbase, dst_span, sbase, src_span)) {
+        if (rows > SIZE_MAX / row_bytes) return;
+        snapshot = (uint8_t *)malloc(rows * row_bytes);
+        if (!snapshot) return;
+        for (size_t n = 0; n < rows; n++)
+            memcpy(snapshot + n * row_bytes, sbase + n * src_stride,
+                   row_bytes);
+        sbase = snapshot;
+        src_stride = row_bytes;
+    }
+
     if (op == NEVERC_DRAW_SRC) {
         if (y_backward) {
             dbase += (rows - 1U) * dst_stride;
@@ -180,6 +214,7 @@ void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
                 sbase += src_stride;
             }
         }
+        free(snapshot);
         return;
     }
 
@@ -197,6 +232,7 @@ void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
             dbase -= dst_stride;
             sbase -= src_stride;
         }
+        free(snapshot);
         return;
     }
 
@@ -211,6 +247,7 @@ void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
         dbase += dst_stride;
         sbase += src_stride;
     }
+    free(snapshot);
 }
 
 void neverc_draw_uniform(neverc_image_rgba_t *dst, neverc_rect_t r,
