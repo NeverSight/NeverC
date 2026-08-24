@@ -4,6 +4,7 @@
  * All functions use neverc_math_* — zero libc math dependency.
  */
 #include "neverc/std/math/cmplx.h"
+#include <float.h>
 #include <stdint.h>
 
 #define RE(z) ((z).re)
@@ -20,6 +21,26 @@ static double cmplx_reduce_pi(double x) {
     t += 0.5;
     t = (double)(int64_t)t;
     return ((x - t * pi1) - t * pi2) - t * pi3;
+}
+
+static double cmplx_hyperbolic_overflow_threshold(void) {
+    return (double)(int)(((double)DBL_MAX_EXP - 1.0) *
+                         NEVERC_MATH_LN2 / 2.0);
+}
+
+/* Computes value/exp(2*magnitude) without forming the overflowing
+ * exponential. Callers use this only above the hyperbolic overflow
+ * threshold, where the omitted terms are below double precision. */
+static double cmplx_large_decay(double value, double magnitude) {
+    double threshold = cmplx_hyperbolic_overflow_threshold();
+    double exp_twice_threshold = neverc_math_exp(2.0 * threshold);
+    magnitude -= threshold;
+    value /= exp_twice_threshold;
+    if (magnitude > threshold)
+        value /= exp_twice_threshold;
+    else
+        value /= neverc_math_exp(2.0 * magnitude);
+    return value;
 }
 
 /* ===== Basic ===== */
@@ -85,9 +106,27 @@ neverc_cmplx_t neverc_cmplx_exp(neverc_cmplx_t z) {
     if (neverc_math_isnan(re) && im == 0.0)
         return MK(neverc_math_nan(), im);
 
-    double r = neverc_math_exp(re);
     double s, c;
     neverc_math_sincos(im, &s, &c);
+
+    /* Scale before multiplying by sin/cos so a finite large real part does
+     * not turn an exact zero component into Inf*0 = NaN. */
+    double threshold =
+        (double)(int)(((double)DBL_MAX_EXP - 1.0) * NEVERC_MATH_LN2);
+    if (re > threshold) {
+        double exp_threshold = neverc_math_exp(threshold);
+        re -= threshold;
+        s *= exp_threshold;
+        c *= exp_threshold;
+        if (re > threshold) {
+            re -= threshold;
+            s *= exp_threshold;
+            c *= exp_threshold;
+        }
+    }
+    if (re > threshold)
+        return MK(DBL_MAX * c, DBL_MAX * s);
+    double r = neverc_math_exp(re);
     return MK(r * c, r * s);
 }
 
@@ -190,6 +229,9 @@ neverc_cmplx_t neverc_cmplx_sin(neverc_cmplx_t z) {
     } else if (re == 0.0 && neverc_math_isnan(im))
         return z;
 
+    if (re == 0.0)
+        return MK(re, neverc_math_sinh(im));
+
     double s, c;
     neverc_math_sincos(re, &s, &c);
     double sh = neverc_math_sinh(im);
@@ -210,6 +252,10 @@ neverc_cmplx_t neverc_cmplx_cos(neverc_cmplx_t z) {
     } else if (re == 0.0 && neverc_math_isnan(im))
         return MK(neverc_math_nan(), 0.0);
 
+    if (re == 0.0)
+        return MK(neverc_math_cosh(im),
+                  -re * neverc_math_copysign(0.0, im));
+
     double s, c;
     neverc_math_sincos(re, &s, &c);
     double sh = neverc_math_sinh(im);
@@ -229,6 +275,15 @@ neverc_cmplx_t neverc_cmplx_tan(neverc_cmplx_t z) {
     }
     if (re == 0.0 && neverc_math_isnan(im))
         return z;
+
+    if (!neverc_math_isinf(re, 0) && !neverc_math_isnan(re) &&
+        neverc_math_abs(im) > cmplx_hyperbolic_overflow_threshold()) {
+        double s, c;
+        neverc_math_sincos(re, &s, &c);
+        return MK(cmplx_large_decay(
+                      4.0 * s * c, neverc_math_abs(im)),
+                  neverc_math_copysign(1.0, im));
+    }
 
     /* cos(2x)+cosh(2y) = 2(cos²x + sinh²y). The sum-of-trig form
      * cancels to 0 in float64 near the real poles (odd multiples of
@@ -256,6 +311,9 @@ neverc_cmplx_t neverc_cmplx_sinh(neverc_cmplx_t z) {
     } else if (im == 0.0 && neverc_math_isnan(re))
         return MK(neverc_math_nan(), im);
 
+    if (im == 0.0)
+        return MK(neverc_math_sinh(re), im);
+
     double s, c;
     neverc_math_sincos(im, &s, &c);
     double sh = neverc_math_sinh(re);
@@ -276,6 +334,10 @@ neverc_cmplx_t neverc_cmplx_cosh(neverc_cmplx_t z) {
     } else if (im == 0.0 && neverc_math_isnan(re))
         return MK(neverc_math_nan(), im);
 
+    if (im == 0.0)
+        return MK(neverc_math_cosh(re),
+                  im * neverc_math_copysign(0.0, re));
+
     double s, c;
     neverc_math_sincos(im, &s, &c);
     double sh = neverc_math_sinh(re);
@@ -294,6 +356,15 @@ neverc_cmplx_t neverc_cmplx_tanh(neverc_cmplx_t z) {
     }
     if (im == 0.0 && neverc_math_isnan(re))
         return z;
+
+    if (!neverc_math_isinf(im, 0) && !neverc_math_isnan(im) &&
+        neverc_math_abs(re) > cmplx_hyperbolic_overflow_threshold()) {
+        double s, c;
+        neverc_math_sincos(im, &s, &c);
+        return MK(neverc_math_copysign(1.0, re),
+                  cmplx_large_decay(
+                      4.0 * s * c, neverc_math_abs(re)));
+    }
 
     double d = neverc_math_cosh(2.0 * re) + neverc_math_cos(2.0 * im);
     if (d == 0.0)
@@ -428,6 +499,15 @@ neverc_cmplx_t neverc_cmplx_cot(neverc_cmplx_t z) {
     /* Go math/cmplx.Cot: (sin 2x - i sinh 2y) / (cosh 2y - cos 2x).
      * Identity 2(sin²x + sinh²y) avoids the same 1-1 cancellation as tan. */
     double re = RE(z), im = IM(z);
+    if (!neverc_math_isinf(re, 0) && !neverc_math_isnan(re) &&
+        !neverc_math_isinf(im, 0) && !neverc_math_isnan(im) &&
+        neverc_math_abs(im) > cmplx_hyperbolic_overflow_threshold()) {
+        double s, c;
+        neverc_math_sincos(re, &s, &c);
+        return MK(cmplx_large_decay(
+                      4.0 * s * c, neverc_math_abs(im)),
+                  -neverc_math_copysign(1.0, im));
+    }
     double s = neverc_math_sin(re);
     double sh = neverc_math_sinh(im);
     double d = 2.0 * (s * s + sh * sh);

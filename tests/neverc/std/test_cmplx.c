@@ -528,6 +528,36 @@ static void test_special(void) {
     check_cmplx("tanh(Inf+i*Inf)", neverc_cmplx_tanh(C(NC_INF, NC_INF)), 1.0, 0.0);
     check_cmplx("tanh(NaN+0i)", neverc_cmplx_tanh(C(NC_NAN, 0.0)), NC_NAN, 0.0);
 
+    /* Finite inputs can overflow only the algebraic intermediates. Keep
+     * exact axes and the tan/tanh attractors instead of producing NaN. */
+    {
+        double nz = neverc_math_copysign(0.0, -1.0);
+        neverc_cmplx_t w = neverc_cmplx_exp(C(800.0, 0.0));
+        check_cmplx("exp(800+0i)", w, NC_INF, 0.0);
+        check_signbit("exp(800+0i).im pos", w.im, 0);
+        w = neverc_cmplx_exp(C(800.0, nz));
+        check_cmplx("exp(800-0i)", w, NC_INF, 0.0);
+        check_signbit("exp(800-0i).im neg", w.im, 1);
+
+        check_cmplx("sin(0+800i)",
+                    neverc_cmplx_sin(C(0.0, 800.0)), 0.0, NC_INF);
+        check_cmplx("cos(0+800i)",
+                    neverc_cmplx_cos(C(0.0, 800.0)), NC_INF, -0.0);
+        check_cmplx("sinh(800+0i)",
+                    neverc_cmplx_sinh(C(800.0, 0.0)), NC_INF, 0.0);
+        check_cmplx("cosh(800+0i)",
+                    neverc_cmplx_cosh(C(800.0, 0.0)), NC_INF, 0.0);
+
+        check_cmplx("tan(0+400i)",
+                    neverc_cmplx_tan(C(0.0, 400.0)), 0.0, 1.0);
+        check_cmplx("tanh(400+0i)",
+                    neverc_cmplx_tanh(C(400.0, 0.0)), 1.0, 0.0);
+        check_cmplx("tanh(-400+0i)",
+                    neverc_cmplx_tanh(C(-400.0, 0.0)), -1.0, 0.0);
+        check_cmplx("cot(0+400i)",
+                    neverc_cmplx_cot(C(0.0, 400.0)), 0.0, -1.0);
+    }
+
     /* Double-angle tan stays on the ±i attractor for large (but finite) imag. */
     {
         neverc_cmplx_t t = neverc_cmplx_tan(C(1.0, 40.0));
