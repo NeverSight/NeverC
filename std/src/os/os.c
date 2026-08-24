@@ -522,23 +522,6 @@ int neverc_os_sync(neverc_os_file_t *f) {
 
 /* ---- Convenience File Operations ---- */
 
-static int os_file_size64(FILE *fp, uint64_t *size) {
-#if defined(NEVERC_PLATFORM_WINDOWS)
-    if (_fseeki64(fp, 0, SEEK_END) != 0) return -1;
-    __int64 sz = _ftelli64(fp);
-    if (sz < 0) return -1;
-    if (_fseeki64(fp, 0, SEEK_SET) != 0) return -1;
-    *size = (uint64_t)sz;
-#else
-    if (fseeko(fp, 0, SEEK_END) != 0) return -1;
-    off_t sz = ftello(fp);
-    if (sz < 0) return -1;
-    if (fseeko(fp, 0, SEEK_SET) != 0) return -1;
-    *size = (uint64_t)sz;
-#endif
-    return 0;
-}
-
 /* Go os.ReadFile: st_size is a hint. Size-0 files (/proc, sysfs) still have
  * contents; keep reading until EOF. */
 static int os_read_fp_all(FILE *fp, uint64_t hint, unsigned char **out,
@@ -599,9 +582,6 @@ int neverc_os_read_file(const char *name, unsigned char **out, size_t *out_len) 
     }
     if ((st.st_mode & _S_IFREG) && st.st_size >= 0) {
         sz = (uint64_t)st.st_size;
-    } else if (os_file_size64(fp, &sz) != 0) {
-        fclose(fp);
-        return -1;
     }
 #else
     struct stat st;
@@ -615,9 +595,6 @@ int neverc_os_read_file(const char *name, unsigned char **out, size_t *out_len) 
     }
     if (S_ISREG(st.st_mode) && st.st_size >= 0) {
         sz = (uint64_t)st.st_size;
-    } else if (os_file_size64(fp, &sz) != 0) {
-        fclose(fp);
-        return -1;
     }
 #endif
     if (os_read_fp_all(fp, sz, out, out_len) != 0) {

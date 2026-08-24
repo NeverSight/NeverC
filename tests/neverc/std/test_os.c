@@ -5,6 +5,7 @@
 #include <errno.h>
 #if !defined(_WIN32)
 #include <fcntl.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #else
@@ -227,6 +228,35 @@ static void test_read_write_file(void) {
         ASSERT_EQ(neverc_os_read_file("/proc/self/status", &proc, &proc_len), 0);
         ASSERT_TRUE(proc != NULL && proc_len > 0);
         free(proc);
+    }
+#endif
+#if !defined(_WIN32)
+    {
+        char fifopath[1024];
+        make_test_path(fifopath, sizeof(fifopath), "neverc_test_os_read_fifo");
+        neverc_os_remove(fifopath);
+        ASSERT_EQ(mkfifo(fifopath, 0600), 0);
+
+        pid_t writer = fork();
+        ASSERT_TRUE(writer >= 0);
+        if (writer == 0) {
+            int fd = open(fifopath, O_WRONLY);
+            ssize_t written = fd >= 0 ? write(fd, "fifo", 4) : -1;
+            if (fd >= 0) close(fd);
+            _exit(written == 4 ? 0 : 1);
+        }
+        if (writer > 0) {
+            unsigned char *fifo_data = NULL;
+            size_t fifo_len = 0;
+            ASSERT_EQ(neverc_os_read_file(fifopath, &fifo_data, &fifo_len), 0);
+            ASSERT_TRUE(fifo_len == 4 && memcmp(fifo_data, "fifo", 4) == 0);
+            free(fifo_data);
+
+            int status = 0;
+            ASSERT_EQ(waitpid(writer, &status, 0), writer);
+            ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+        }
+        neverc_os_remove(fifopath);
     }
 #endif
 #if defined(_WIN32)
