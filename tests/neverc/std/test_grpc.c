@@ -1199,14 +1199,21 @@ static int grpc_stream_fake_h2(int kind, neverc_grpc_status_t *status,
               NULL, 0U, 1024U, &error)
         : NULL;
     int receive = -1;
-    if (stream &&
-        neverc_grpc_client_stream_send(stream, NULL, "x", 1U) == 0 &&
-        neverc_grpc_client_stream_close_send(stream, NULL) == 0) {
-        neverc_grpc_message_t message;
+    neverc_grpc_message_t message;
+    if (stream && (kind == 11 || kind == 12)) {
+        /* The fake peer resets as soon as it receives request HEADERS.  Read
+         * that terminal event directly instead of racing a request DATA
+         * write against it; both orderings are valid on a real connection. */
         receive = neverc_grpc_client_stream_receive(stream, NULL, &message);
-        if (status) *status = neverc_grpc_client_stream_status(stream);
-        if (error_out) *error_out = neverc_grpc_client_stream_error(stream);
+    } else if (stream &&
+               neverc_grpc_client_stream_send(stream, NULL, "x", 1U) == 0 &&
+               neverc_grpc_client_stream_close_send(stream, NULL) == 0) {
+        receive = neverc_grpc_client_stream_receive(stream, NULL, &message);
     }
+    if (stream && status)
+        *status = neverc_grpc_client_stream_status(stream);
+    if (stream && error_out)
+        *error_out = neverc_grpc_client_stream_error(stream);
     neverc_grpc_client_stream_free(stream);
     grpc_stop_fake_h2(&fake, executor, client);
     return receive;
