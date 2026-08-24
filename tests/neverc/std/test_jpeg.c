@@ -1072,6 +1072,146 @@ static void test_sos_scan_order_swaps_chroma(void) {
     free(img.pixels);
 }
 
+/* Encode a 16x16 solid red so YCbCr conversion vs RGB plane-copy diverge. */
+static int encode_solid_red(uint8_t **out, size_t *out_len) {
+    neverc_jpeg_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 16;
+    img.height = 16;
+    img.channels = 3;
+    img.stride = 16 * 3;
+    img.pixels = (uint8_t *)calloc(1, img.height * img.stride);
+    if (!img.pixels) return -1;
+    for (uint32_t i = 0; i < 16 * 16; i++)
+        img.pixels[i * 3] = 255;
+    int rc = neverc_jpeg_encode(&img, 90, out, out_len);
+    free(img.pixels);
+    return rc;
+}
+
+static int strip_marker_segment(uint8_t *data, size_t *len, uint8_t marker) {
+    size_t off = find_marker(data, *len, marker);
+    if (off == SIZE_MAX || off + 4 > *len) return -1;
+    size_t seglen = 2 + ((size_t)data[off + 2] << 8) + data[off + 3];
+    if (off + seglen > *len) return -1;
+    memmove(data + off, data + off + seglen, *len - off - seglen);
+    *len -= seglen;
+    return 0;
+}
+
+static int set_component_ids(uint8_t *data, size_t len,
+                             uint8_t a, uint8_t b, uint8_t c) {
+    size_t sof = find_marker(data, len, 0xC0);
+    size_t sos = find_marker(data, len, 0xDA);
+    if (sof == SIZE_MAX || sos == SIZE_MAX) return -1;
+    if (sof + 17 >= len || sos + 10 >= len) return -1;
+    if (data[sof + 9] != 3 || data[sos + 4] != 3) return -1;
+    data[sof + 10] = a;
+    data[sof + 13] = b;
+    data[sof + 16] = c;
+    data[sos + 5] = a;
+    data[sos + 7] = b;
+    data[sos + 9] = c;
+    return 0;
+}
+
+static int insert_adobe_app14(const uint8_t *src, size_t src_len,
+                              uint8_t transform, uint8_t **out, size_t *out_len) {
+    if (src_len < 2) return -1;
+    uint8_t *dst = (uint8_t *)malloc(src_len + 16);
+    if (!dst) return -1;
+    dst[0] = src[0];
+    dst[1] = src[1];
+    dst[2] = 0xFF;
+    dst[3] = 0xEE;
+    dst[4] = 0x00;
+    dst[5] = 0x0E;
+    dst[6] = 'A'; dst[7] = 'd'; dst[8] = 'o'; dst[9] = 'b'; dst[10] = 'e';
+    dst[11] = 0x00; dst[12] = 0x64;
+    dst[13] = 0x00; dst[14] = 0x00;
+    dst[15] = 0x00; dst[16] = 0x00;
+    dst[17] = transform;
+    memcpy(dst + 18, src + 2, src_len - 2);
+    *out = dst;
+    *out_len = src_len + 16;
+    return 0;
+}
+
+/* Center of a YCbCr-encoded red, after RGB plane-copy: ~Y,Cb,Cr not ~255,0,0. */
+static void assert_rgb_planes_not_ycbcr_red(const neverc_jpeg_image_t *decoded) {
+    ASSERT_EQ(decoded->channels, 3);
+    ASSERT_TRUE(decoded->pixels != NULL);
+    if (!decoded->pixels) return;
+    uint8_t *p = decoded->pixels + 8 * decoded->stride + 8 * 3;
+    /* Y of 255,0,0 is ~76; Cr is high. YCbCr convert would recover red. */
+    ASSERT_TRUE(p[0] < 160);
+    ASSERT_TRUE(p[2] > 180);
+}
+
+static void test_rgb_component_ids(void) {
+    printf("[rgb_component_ids]\n");
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(encode_solid_red(&encoded, &encoded_length), 0);
+    ASSERT_TRUE(encoded != NULL);
+    if (!encoded) return;
+    ASSERT_EQ(strip_marker_segment(encoded, &encoded_length, 0xE0), 0);
+    ASSERT_EQ(set_component_ids(encoded, encoded_length, 'R', 'G', 'B'), 0);
+    neverc_jpeg_image_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length, &decoded), 0);
+    assert_rgb_planes_not_ycbcr_red(&decoded);
+    neverc_jpeg_free(&decoded);
+    free(encoded);
+}
+
+static void test_adobe_app14_rgb(void) {
+    printf("[adobe_app14_rgb]\n");
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(encode_solid_red(&encoded, &encoded_length), 0);
+    ASSERT_TRUE(encoded != NULL);
+    if (!encoded) return;
+    ASSERT_EQ(strip_marker_segment(encoded, &encoded_length, 0xE0), 0);
+    uint8_t *adobe = NULL;
+    size_t adobe_len = 0;
+    ASSERT_EQ(insert_adobe_app14(encoded, encoded_length, 0, &adobe, &adobe_len), 0);
+    ASSERT_TRUE(adobe != NULL);
+    if (!adobe) {
+        free(encoded);
+        return;
+    }
+    neverc_jpeg_image_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_jpeg_decode(adobe, adobe_len, &decoded), 0);
+    assert_rgb_planes_not_ycbcr_red(&decoded);
+    neverc_jpeg_free(&decoded);
+    free(adobe);
+    free(encoded);
+}
+
+static void test_jfif_overrides_rgb_ids(void) {
+    printf("[jfif_overrides_rgb_ids]\n");
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    ASSERT_EQ(encode_solid_red(&encoded, &encoded_length), 0);
+    ASSERT_TRUE(encoded != NULL);
+    if (!encoded) return;
+    ASSERT_EQ(set_component_ids(encoded, encoded_length, 'R', 'G', 'B'), 0);
+    neverc_jpeg_image_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_jpeg_decode(encoded, encoded_length, &decoded), 0);
+    ASSERT_TRUE(decoded.pixels != NULL);
+    if (decoded.pixels) {
+        uint8_t *p = decoded.pixels + 8 * decoded.stride + 8 * 3;
+        ASSERT_NEAR(p[0], 255, 20);
+        ASSERT_NEAR(p[1], 0, 20);
+        ASSERT_NEAR(p[2], 0, 20);
+    }
+    neverc_jpeg_free(&decoded);
+    free(encoded);
+}
+
 int main(void) {
     printf("NeverC image/jpeg tests\n");
     test_encode_decode_rgb();
@@ -1095,6 +1235,9 @@ int main(void) {
     test_rejects_baseline_sos_table_and_factor3();
     test_rejects_duplicate_sof();
     test_sos_scan_order_swaps_chroma();
+    test_rgb_component_ids();
+    test_adobe_app14_rgb();
+    test_jfif_overrides_rgb_ids();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

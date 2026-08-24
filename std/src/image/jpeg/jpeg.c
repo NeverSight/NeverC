@@ -862,6 +862,17 @@ static void idct_block(const float *input, int *output) {
     }
 }
 
+/* Go image/jpeg decoder.isRGB: a JFIF APP0 means YCbCr even if the SOF
+ * IDs spell RGB. Adobe APP14 transform 0 is RGB/CMYK; we only accept
+ * 3-component frames, so that is RGB. Otherwise SOF IDs R/G/B. */
+static int jpeg_is_rgb(int jfif, int adobe_valid, int adobe_tf,
+                       int ncomp, const int *comp_id) {
+    if (ncomp != 3) return 0;
+    if (jfif) return 0;
+    if (adobe_valid && adobe_tf == 0) return 1;
+    return comp_id[0] == 'R' && comp_id[1] == 'G' && comp_id[2] == 'B';
+}
+
 int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img) {
     if (!img) return -1;
     /* Always clear the out-param first. Returning -1 with a poisoned/stale
@@ -896,6 +907,9 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     int scan_order[4] = {0, 1, 2, 3};
     int scan_found = 0;
     int sof_found = 0;
+    int saw_jfif = 0;
+    int adobe_transform_valid = 0;
+    int adobe_transform = 0;
 
     while (br.pos < br.len - 1) {
         if (br.data[br.pos] != 0xFF) { br.pos++; continue; }
@@ -1045,9 +1059,27 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
         } else if (marker == 0xDD) { /* DRI — define restart interval */
             if (seg_end - br.pos != 2) goto fail;
             restart_interval = br_read_u16(&br);
-        } else if ((marker >= 0xE0 && marker <= 0xEF) || marker == 0xFE) {
-            /* APPn / COM — same skip set as Go image/jpeg. Reserved
-             * 0x02–0xBF, DNL, and JPEG-ext must not be treated as padding. */
+        } else if (marker == 0xE0) {
+            /* APP0: Go processApp0Marker — JFIF\0 in the first 5 bytes. */
+            if (seg_end - br.pos >= 5 &&
+                br.data[br.pos] == 'J' && br.data[br.pos + 1] == 'F' &&
+                br.data[br.pos + 2] == 'I' && br.data[br.pos + 3] == 'F' &&
+                br.data[br.pos + 4] == 0)
+                saw_jfif = 1;
+            br.pos = seg_end;
+        } else if (marker == 0xEE) {
+            /* APP14: Go processApp14Marker — "Adobe" + transform at [11]. */
+            if (seg_end - br.pos >= 12 &&
+                br.data[br.pos] == 'A' && br.data[br.pos + 1] == 'd' &&
+                br.data[br.pos + 2] == 'o' && br.data[br.pos + 3] == 'b' &&
+                br.data[br.pos + 4] == 'e') {
+                adobe_transform_valid = 1;
+                adobe_transform = br.data[br.pos + 11];
+            }
+            br.pos = seg_end;
+        } else if ((marker >= 0xE1 && marker <= 0xEF) || marker == 0xFE) {
+            /* Remaining APPn / COM — same skip set as Go image/jpeg.
+             * Reserved 0x02–0xBF, DNL, and JPEG-ext are not padding. */
             br.pos = seg_end;
         } else {
             goto fail;
@@ -1250,9 +1282,11 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     if (marker_pos + 2 != br.len)
         goto decode_fail;
 
-    /* Compose the output: box-upsample each component to full resolution (sample
-     * c at px*comp_h[c]/Hmax, py*comp_v[c]/Vmax), then YCbCr->RGB. The row index
-     * is hoisted out of the inner loop. */
+    /* Compose the output: box-upsample each component to full resolution
+     * (sample c at px*comp_h[c]/Hmax, py*comp_v[c]/Vmax). RGB frames copy
+     * the three planes; YCbCr goes through the libjpeg matrix. */
+    int as_rgb = jpeg_is_rgb(saw_jfif, adobe_transform_valid, adobe_transform,
+                             ncomp, comp_id);
     for (uint32_t py = 0; py < height; py++) {
         if (ncomp == 1) {
             memcpy(img->pixels + (size_t)py * img->stride,
@@ -1264,15 +1298,22 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
         const uint8_t *crrow = plane[2] + (size_t)(py * (uint32_t)comp_v[2] / (uint32_t)Vmax) * plane_w[2];
         uint8_t *out = img->pixels + (size_t)py * img->stride;
         for (uint32_t px = 0; px < width; px++) {
-            int Y  = yrow [px * (uint32_t)comp_h[0] / (uint32_t)Hmax];
-            int Cb = cbrow[px * (uint32_t)comp_h[1] / (uint32_t)Hmax];
-            int Cr = crrow[px * (uint32_t)comp_h[2] / (uint32_t)Hmax];
-            int r = Y + ycc_cr_r[Cr];
-            int g = Y + ((ycc_cb_g[Cb] + ycc_cr_g[Cr]) >> 16);
-            int b = Y + ycc_cb_b[Cb];
-            if (r < 0) r = 0; else if (r > 255) r = 255;
-            if (g < 0) g = 0; else if (g > 255) g = 255;
-            if (b < 0) b = 0; else if (b > 255) b = 255;
+            int s0 = yrow [px * (uint32_t)comp_h[0] / (uint32_t)Hmax];
+            int s1 = cbrow[px * (uint32_t)comp_h[1] / (uint32_t)Hmax];
+            int s2 = crrow[px * (uint32_t)comp_h[2] / (uint32_t)Hmax];
+            int r, g, b;
+            if (as_rgb) {
+                r = s0;
+                g = s1;
+                b = s2;
+            } else {
+                r = s0 + ycc_cr_r[s2];
+                g = s0 + ((ycc_cb_g[s1] + ycc_cr_g[s2]) >> 16);
+                b = s0 + ycc_cb_b[s1];
+                if (r < 0) r = 0; else if (r > 255) r = 255;
+                if (g < 0) g = 0; else if (g > 255) g = 255;
+                if (b < 0) b = 0; else if (b > 255) b = 255;
+            }
             out[px * 3 + 0] = (uint8_t)r;
             out[px * 3 + 1] = (uint8_t)g;
             out[px * 3 + 2] = (uint8_t)b;

@@ -18,7 +18,8 @@ typedef struct {
 
 /*
  * Decode a JPEG from memory.
- * Only supports baseline DCT, 8-bit, YCbCr→RGB and Grayscale.
+ * Only supports baseline DCT, 8-bit, YCbCr→RGB, RGB (Adobe APP14 /
+ * SOF R-G-B IDs), and Grayscale.
  * Returns 0 on success. Caller must call neverc_jpeg_free().
  */
 int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img);
