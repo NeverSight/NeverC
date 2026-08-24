@@ -504,6 +504,12 @@ static void test_format_float(void) {
     check_int("huge exponent precision rejected",
               neverc_strconv_format_float(
                   1.0, 'e', INT_MAX, buf, sizeof(buf)), -1);
+    check_int("huge lower hex precision rejected",
+              neverc_strconv_format_float(
+                  1.0, 'x', INT_MAX, buf, sizeof(buf)), -1);
+    check_int("huge upper hex precision rejected",
+              neverc_strconv_format_float(
+                  1.0, 'X', INT_MAX, buf, sizeof(buf)), -1);
 
     neverc_strconv_format_float(0.1, 'g', -1, buf, sizeof(buf));
     check_str("g shortest 0.1", buf, "0.1");

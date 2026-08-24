@@ -431,7 +431,9 @@ int neverc_strconv_format_float(double f, char fmt, int prec, char *buf, size_t 
 
     int sp = write_special(f, buf, bufsize);
     if (sp != 0) return sp > 0 ? sp : -1;
-    if (prec >= 0 && (fmt == 'e' || fmt == 'E' || fmt == 'f') &&
+    if (prec >= 0 &&
+        (fmt == 'e' || fmt == 'E' || fmt == 'f' ||
+         fmt == 'x' || fmt == 'X') &&
         (size_t)prec >= bufsize)
         return -1;
 
