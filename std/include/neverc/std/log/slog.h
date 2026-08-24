@@ -73,6 +73,10 @@ void neverc_slog_info(const char *msg, const neverc_slog_attr_t *attrs, int natt
 void neverc_slog_warn(const char *msg, const neverc_slog_attr_t *attrs, int nattrs);
 void neverc_slog_error(const char *msg, const neverc_slog_attr_t *attrs, int nattrs);
 
+/* Return the Go slog spelling for level, including offsets such as INFO+1.
+ * Named levels return string literals. Other levels use per-thread scratch;
+ * copy the result if it must survive the next custom-level call on the same
+ * thread or the originating thread's exit. */
 const char *neverc_slog_level_name(neverc_slog_level_t level);
 
 #ifdef __cplusplus

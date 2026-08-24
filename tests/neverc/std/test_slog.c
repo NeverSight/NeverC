@@ -1,4 +1,5 @@
 #include "neverc/std/log/slog.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,10 +27,81 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
 static void test_level_names(void) {
     printf("[level_names]\n");
+    char expected[64];
     ASSERT_STR_EQ(neverc_slog_level_name(NEVERC_SLOG_DEBUG), "DEBUG");
     ASSERT_STR_EQ(neverc_slog_level_name(NEVERC_SLOG_INFO), "INFO");
     ASSERT_STR_EQ(neverc_slog_level_name(NEVERC_SLOG_WARN), "WARN");
     ASSERT_STR_EQ(neverc_slog_level_name(NEVERC_SLOG_ERROR), "ERROR");
+    ASSERT_STR_EQ(neverc_slog_level_name(
+                      (neverc_slog_level_t)(NEVERC_SLOG_DEBUG - 1)),
+                  "DEBUG-1");
+    ASSERT_STR_EQ(neverc_slog_level_name(
+                      (neverc_slog_level_t)(NEVERC_SLOG_INFO + 1)),
+                  "INFO+1");
+    ASSERT_STR_EQ(neverc_slog_level_name(
+                      (neverc_slog_level_t)(NEVERC_SLOG_ERROR + 4)),
+                  "ERROR+4");
+    ASSERT_STR_EQ(neverc_slog_level_name(
+                      (neverc_slog_level_t)(NEVERC_SLOG_ERROR - 2)),
+                  "WARN+2");
+    ASSERT_STR_EQ(neverc_slog_level_name(
+                      (neverc_slog_level_t)(NEVERC_SLOG_INFO - 3)),
+                  "DEBUG+1");
+    snprintf(expected, sizeof(expected), "DEBUG%+d",
+             INT_MIN - NEVERC_SLOG_DEBUG);
+    ASSERT_STR_EQ(neverc_slog_level_name((neverc_slog_level_t)INT_MIN),
+                  expected);
+    snprintf(expected, sizeof(expected), "ERROR%+d",
+             INT_MAX - NEVERC_SLOG_ERROR);
+    ASSERT_STR_EQ(neverc_slog_level_name((neverc_slog_level_t)INT_MAX),
+                  expected);
+}
+
+static void test_custom_level_output(void) {
+    printf("[custom_level_output]\n");
+    char buf[4096] = {0};
+    neverc_slog_handler_t h;
+    neverc_slog_level_t minimum =
+        (neverc_slog_level_t)(NEVERC_SLOG_DEBUG - 1);
+
+    FILE *f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    if (!f) return;
+    neverc_slog_init(&h, f, minimum, NEVERC_SLOG_FORMAT_TEXT);
+    neverc_slog_log(&h, minimum, "below debug", NULL, 0);
+    neverc_slog_log(&h,
+                    (neverc_slog_level_t)(NEVERC_SLOG_INFO + 1),
+                    "above info", NULL, 0);
+    neverc_slog_log(&h,
+                    (neverc_slog_level_t)(NEVERC_SLOG_ERROR + 4),
+                    "above error", NULL, 0);
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+    ASSERT_TRUE(strstr(buf, "level=DEBUG-1") != NULL);
+    ASSERT_TRUE(strstr(buf, "level=INFO+1") != NULL);
+    ASSERT_TRUE(strstr(buf, "level=ERROR+4") != NULL);
+
+    memset(buf, 0, sizeof(buf));
+    f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    if (!f) return;
+    neverc_slog_init(&h, f, minimum, NEVERC_SLOG_FORMAT_JSON);
+    neverc_slog_log(&h, minimum, "below debug", NULL, 0);
+    neverc_slog_log(&h,
+                    (neverc_slog_level_t)(NEVERC_SLOG_INFO + 1),
+                    "above info", NULL, 0);
+    neverc_slog_log(&h,
+                    (neverc_slog_level_t)(NEVERC_SLOG_ERROR + 4),
+                    "above error", NULL, 0);
+    rewind(f);
+    n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+    ASSERT_TRUE(strstr(buf, "\"level\":\"DEBUG-1\"") != NULL);
+    ASSERT_TRUE(strstr(buf, "\"level\":\"INFO+1\"") != NULL);
+    ASSERT_TRUE(strstr(buf, "\"level\":\"ERROR+4\"") != NULL);
 }
 
 static void test_attr_constructors(void) {
@@ -550,6 +622,7 @@ static void test_null_safety(void) {
 int main(void) {
     printf("=== NeverC log/slog Tests ===\n");
     test_level_names();
+    test_custom_level_output();
     test_attr_constructors();
     test_handler_init();
     test_level_filtering();

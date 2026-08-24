@@ -126,11 +126,46 @@ void neverc_slog_set_level(neverc_slog_handler_t *h, neverc_slog_level_t level) 
     handler_unlock(h);
 }
 
+enum { SLOG_LEVEL_NAME_MAX = 32 };
+
+static const char *format_level_name(neverc_slog_level_t level,
+                                     char *buf, size_t n) {
+    const char *base;
+    int base_level;
+    int value = (int)level;
+
+    if (value < NEVERC_SLOG_INFO) {
+        base = "DEBUG";
+        base_level = NEVERC_SLOG_DEBUG;
+    } else if (value < NEVERC_SLOG_WARN) {
+        base = "INFO";
+        base_level = NEVERC_SLOG_INFO;
+    } else if (value < NEVERC_SLOG_ERROR) {
+        base = "WARN";
+        base_level = NEVERC_SLOG_WARN;
+    } else {
+        base = "ERROR";
+        base_level = NEVERC_SLOG_ERROR;
+    }
+
+    int offset = value - base_level;
+    if (offset == 0)
+        return base;
+    if (!buf || n == 0)
+        return base;
+
+    int written = snprintf(buf, n, "%s%+d", base, offset);
+    if (written < 0 || (size_t)written >= n)
+        return base;
+    return buf;
+}
+
 const char *neverc_slog_level_name(neverc_slog_level_t level) {
-    if (level < NEVERC_SLOG_INFO)  return "DEBUG";
-    if (level < NEVERC_SLOG_WARN)  return "INFO";
-    if (level < NEVERC_SLOG_ERROR) return "WARN";
-    return "ERROR";
+    /* Exact names are string literals. A custom level uses per-thread scratch
+     * so concurrent callers never race; its pointer is replaced by the next
+     * custom-level call on the same thread. */
+    static _Thread_local char buf[SLOG_LEVEL_NAME_MAX];
+    return format_level_name(level, buf, sizeof(buf));
 }
 
 static int is_utf8_continuation(unsigned char c) {
@@ -339,12 +374,15 @@ void neverc_slog_log(neverc_slog_handler_t *h, neverc_slog_level_t level,
 
     char ts[64];
     get_timestamp(ts, sizeof(ts));
+    char level_buf[SLOG_LEVEL_NAME_MAX];
+    const char *level_name =
+        format_level_name(level, level_buf, sizeof(level_buf));
     output_lock(config.output);
 
     size_t n = (size_t)nattrs;
     if (config.format == NEVERC_SLOG_FORMAT_JSON) {
         fprintf(config.output, "{\"time\":\"%s\",\"level\":\"%s\",\"msg\":",
-                ts, neverc_slog_level_name(level));
+                ts, level_name);
         write_json_string(config.output, msg);
         for (size_t i = 0; i < n; i++) {
             if (!slog_attr_emit(&attrs[i])) continue;
@@ -353,7 +391,7 @@ void neverc_slog_log(neverc_slog_handler_t *h, neverc_slog_level_t level,
         fputs("}\n", config.output);
     } else {
         fprintf(config.output, "time=%s level=%s msg=",
-                ts, neverc_slog_level_name(level));
+                ts, level_name);
         write_json_string(config.output, msg);
         for (size_t i = 0; i < n; i++) {
             if (!slog_attr_emit(&attrs[i])) continue;
