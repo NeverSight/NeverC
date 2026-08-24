@@ -44,12 +44,15 @@ typedef enum {
 typedef struct neverc_syslog neverc_syslog_t;
 
 /* Open a syslog connection. tag is the program identifier.
- * Returns handle, or NULL on error. */
+ * Returns handle, or NULL on error. On POSIX, NeverC serializes its own
+ * handles around libc's process-global syslog state; direct openlog/syslog/
+ * closelog calls elsewhere in the process remain outside that coordination. */
 neverc_syslog_t *neverc_syslog_open(const char *tag,
                                      neverc_syslog_facility_t facility,
                                      neverc_syslog_priority_t min_priority);
 
-/* Close syslog connection. */
+/* Close syslog connection. The caller must ensure no operation is concurrently
+ * using this same handle. */
 void neverc_syslog_close(neverc_syslog_t *log);
 
 /* RFC 5424 PRI = facility | severity. Facility must be 0..23 inclusive,

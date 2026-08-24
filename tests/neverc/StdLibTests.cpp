@@ -926,6 +926,14 @@ TEST_F(StdLibTest, FsAllocationFailure) {
 
 // ===== Log =====
 STD_TEST(syslog, "src/log/syslog/syslog.c")
+#ifndef _WIN32
+TEST_F(StdLibTest, SyslogPosixHandleIsolation) {
+  auto r = compileAndRunStdTest("syslog_posix_handles", {},
+                                {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+#endif
 
 // ===== Debug =====
 STD_TEST(elf, "src/debug/elf/elf.c")

@@ -161,6 +161,31 @@ int neverc_syslog_write(neverc_syslog_t *log,
       defined(NEVERC_PLATFORM_POSIX)
 #include <syslog.h>
 
+#ifndef NCI_SYSLOG_OPEN
+#define NCI_SYSLOG_OPEN openlog
+#endif
+#ifndef NCI_SYSLOG_WRITE
+#define NCI_SYSLOG_WRITE syslog
+#endif
+#ifndef NCI_SYSLOG_CLOSE
+#define NCI_SYSLOG_CLOSE closelog
+#endif
+
+/* POSIX openlog/closelog configure process-global state. This lock and owner
+ * coordinate only NeverC handles; code that calls the libc syslog API directly
+ * remains outside this boundary and can still change that global state. */
+static int posix_syslog_state_lock;
+static neverc_syslog_t *posix_syslog_owner;
+
+static void posix_syslog_lock(void) {
+    while (__atomic_exchange_n(&posix_syslog_state_lock, 1,
+                               __ATOMIC_ACQUIRE)) {}
+}
+
+static void posix_syslog_unlock(void) {
+    __atomic_store_n(&posix_syslog_state_lock, 0, __ATOMIC_RELEASE);
+}
+
 neverc_syslog_t *neverc_syslog_open(const char *tag,
                                      neverc_syslog_facility_t facility,
                                      neverc_syslog_priority_t min_priority) {
@@ -173,13 +198,21 @@ neverc_syslog_t *neverc_syslog_open(const char *tag,
     log->min_priority = min_priority;
     /* Per-handle min_priority is enforced in write(); do not call setlogmask,
      * which is process-global and would leak across handles. */
-    openlog(log->tag, LOG_PID | LOG_NDELAY, (int)facility);
+    posix_syslog_lock();
+    NCI_SYSLOG_OPEN(log->tag, LOG_PID | LOG_NDELAY, (int)facility);
+    posix_syslog_owner = log;
+    posix_syslog_unlock();
     return log;
 }
 
 void neverc_syslog_close(neverc_syslog_t *log) {
     if (!log) return;
-    closelog();
+    posix_syslog_lock();
+    if (posix_syslog_owner == log) {
+        NCI_SYSLOG_CLOSE();
+        posix_syslog_owner = NULL;
+    }
+    posix_syslog_unlock();
     free(log);
 }
 
@@ -189,7 +222,14 @@ int neverc_syslog_write(neverc_syslog_t *log,
     if (!write_allowed(log, priority, msg)) return -1;
     char msgbuf[SYSLOG_MSG_MAX];
     sanitize_msg(msgbuf, sizeof(msgbuf), msg);
-    syslog(neverc_syslog_pri(log->facility, priority), "%s", msgbuf);
+    /* Rebind the process-global ident for every record. Keeping this call and
+     * syslog() in one NeverC critical section prevents two NeverC handles from
+     * attributing each other's records. */
+    posix_syslog_lock();
+    NCI_SYSLOG_OPEN(log->tag, LOG_PID | LOG_NDELAY, (int)log->facility);
+    posix_syslog_owner = log;
+    NCI_SYSLOG_WRITE(neverc_syslog_pri(log->facility, priority), "%s", msgbuf);
+    posix_syslog_unlock();
     return 0;
 }
 
