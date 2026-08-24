@@ -178,6 +178,22 @@ static void test_encode_basic(void) {
     n = neverc_qp_encode((const unsigned char *)"a\r\nb", 4, out, sizeof(out), 76);
     ASSERT_EQ(n, 4);
     ASSERT_MEMEQ(out, "a\r\nb", 4);
+
+    for (int width = 1; width <= 3; width++)
+        ASSERT_EQ(neverc_qp_encode((const unsigned char *)"\x00", 1,
+                                   out, sizeof(out), width), -1);
+    {
+        const unsigned char binary[2] = {0x00, 0xFF};
+        n = neverc_qp_encode(binary, sizeof(binary), out, sizeof(out), 4);
+        ASSERT_EQ(n > 0, 1);
+        if (n > 0) {
+            unsigned char decoded[2];
+            int dn = neverc_qp_decode(out, (size_t)n, decoded,
+                                      sizeof(decoded));
+            ASSERT_EQ(dn, 2);
+            ASSERT_MEMEQ(decoded, binary, sizeof(binary));
+        }
+    }
 }
 
 static void test_roundtrip(void) {

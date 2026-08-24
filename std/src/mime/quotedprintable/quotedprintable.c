@@ -178,6 +178,7 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
     int wrap = 1;
     if (max_line < 0) max_line = 76;
     if (max_line == 0) wrap = 0;
+    if (max_line > 0 && max_line < 4) return -1;
     size_t di = 0, line_len = 0;
     const size_t line_cap = wrap ? (size_t)(max_line - 1) : SIZE_MAX;
 
@@ -209,7 +210,7 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
         }
 
         if (need_encode) {                 /* c is never '\r'/'\n' here */
-            if (wrap && (int)(line_len + 3) > max_line - 1) {
+            if (wrap && line_len > line_cap - 3U) {
                 if (qp_need(di, 3, out_cap)) return -1;
                 out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
                 line_len = 0;
@@ -280,7 +281,7 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
         }
 
         /* Single literal byte. */
-        if (wrap && (int)(line_len + 1) > max_line - 1) {
+        if (wrap && line_len >= line_cap) {
             if (qp_need(di, 3, out_cap)) return -1;
             out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
             line_len = 0;

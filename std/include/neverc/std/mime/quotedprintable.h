@@ -18,11 +18,12 @@ int neverc_qp_decode(const char *src, size_t src_len,
 
 /* Encode data as quoted-printable.
  * Returns bytes written to out, or -1 on error.
- * Lines are wrapped at max_line (76 if max_line < 0, 0 = no wrap). */
+ * Lines are wrapped at max_line (76 if max_line < 0, 0 = no wrap).
+ * Positive widths below 4 cannot hold an encoded byte and are rejected. */
 int neverc_qp_encode(const unsigned char *src, size_t src_len,
                      char *out, size_t out_cap, int max_line);
 
-/* Calculate maximum encoded length. */
+/* Calculate maximum encoded length for the default 76-column encoding. */
 size_t neverc_qp_max_encoded_len(size_t src_len);
 
 #ifdef __cplusplus
