@@ -87,15 +87,9 @@ void neverc_slices_reverse(void *slice, size_t len, size_t elem_size) {
     if (!slice || len <= 1 || elem_size == 0 || len > SIZE_MAX / elem_size)
         return;
     char *p = (char *)slice;
-    char stack_buf[256];
-    char *tmp = elem_size <= sizeof(stack_buf) ? stack_buf : (char *)malloc(elem_size);
-    if (!tmp) return;
     for (size_t i = 0, j = len - 1; i < j; i++, j--) {
-        memcpy(tmp, p + i * elem_size, elem_size);
-        memcpy(p + i * elem_size, p + j * elem_size, elem_size);
-        memcpy(p + j * elem_size, tmp, elem_size);
+        nci_swap_chunked(p + i * elem_size, p + j * elem_size, elem_size);
     }
-    if (tmp != stack_buf) free(tmp);
 }
 
 void neverc_slices_sort(void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {

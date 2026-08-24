@@ -29,6 +29,15 @@ static void *failing_realloc(void *ptr, size_t size) {
     } while (0)
 
 int main(void) {
+    unsigned char wide[2][300];
+    memset(wide[0], 0x11, sizeof(wide[0]));
+    memset(wide[1], 0x22, sizeof(wide[1]));
+    neverc_slices_reverse(wide, 2, sizeof(wide[0]));
+    for (size_t i = 0; i < sizeof(wide[0]); i++) {
+        CHECK(wide[0][i] == 0x22);
+        CHECK(wide[1][i] == 0x11);
+    }
+
     int insert_values[8] = {1, 2, 3, 4};
     int insert_original[] = {1, 2, 3, 4};
     size_t len = neverc_slices_insert(insert_values, 4, sizeof(int), 1,
