@@ -196,6 +196,17 @@ static int dsa_q_divides_p_minus_1(const neverc_dsa_public_key_t *key) {
     return ok;
 }
 
+/* The package supports the FIPS L1024N160 floor and larger parameter sets.
+ * Keep this shared by Sign and Verify so Sign cannot emit a signature that
+ * the matching Verify rejects solely because the group is undersized. */
+static int dsa_parameters_usable(const neverc_dsa_public_key_t *key) {
+    if (!key)
+        return 0;
+    int qbits = neverc_bigint_bit_len(&key->q);
+    return qbits >= 160 && (qbits & 7) == 0 &&
+           neverc_bigint_bit_len(&key->p) >= 1024;
+}
+
 static int dsa_group_valid(const neverc_dsa_public_key_t *key) {
     if (!key || neverc_bigint_sign(&key->p) <= 0 ||
         neverc_bigint_sign(&key->q) <= 0 ||
@@ -272,7 +283,8 @@ int neverc_dsa_sign(const neverc_dsa_private_key_t *key,
     neverc_bigint_set_int64(&sig->s, 0);
     if (!key || !hash || hash_len == 0)
         return -1;
-    if (!dsa_group_valid(&key->pub) ||
+    if (!dsa_parameters_usable(&key->pub) ||
+        !dsa_group_valid(&key->pub) ||
         neverc_bigint_sign(&key->x) <= 0 ||
         neverc_bigint_cmp(&key->x, &key->pub.q) >= 0)
         return -1;
@@ -327,16 +339,9 @@ int neverc_dsa_sign(const neverc_dsa_private_key_t *key,
 int neverc_dsa_verify(const neverc_dsa_public_key_t *key,
                        const unsigned char *hash, size_t hash_len,
                        const neverc_dsa_signature_t *sig) {
-    if (!key || !hash || hash_len == 0 || !sig || !dsa_public_valid(key))
+    if (!key || !hash || hash_len == 0 || !sig ||
+        !dsa_parameters_usable(key) || !dsa_public_valid(key))
         return -1;
-    /* Go crypto/dsa.Verify requires Q.BitLen()%8==0. Tiny primes such as
-     * q=3 otherwise make verify a forgery oracle (FIPS L1024N160 minimum). */
-    {
-        int qbits = neverc_bigint_bit_len(&key->q);
-        if (qbits < 160 || (qbits & 7) != 0 ||
-            neverc_bigint_bit_len(&key->p) < 1024)
-            return -1;
-    }
     if (neverc_bigint_sign(&sig->r) <= 0 || neverc_bigint_sign(&sig->s) <= 0)
         return -1;
     if (neverc_bigint_cmp(&sig->r, &key->q) >= 0 ||

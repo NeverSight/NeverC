@@ -41,7 +41,8 @@ void neverc_dsa_signature_free(neverc_dsa_signature_t *sig);
 
 /*
  * Sign a non-empty message digest. Returns -1 for invalid inputs, allocation
- * failure, or entropy-source failure; sig is set to zero on failure.
+ * failure, an undersized parameter set below L1024N160, or entropy-source
+ * failure; sig is set to zero on failure.
  */
 int  neverc_dsa_sign(const neverc_dsa_private_key_t *key,
                      const unsigned char *hash, size_t hash_len,
@@ -49,7 +50,7 @@ int  neverc_dsa_sign(const neverc_dsa_private_key_t *key,
 
 /* Rejects r,s outside (0,q), s not invertible mod q, degenerate keys
  * (g or y <= 1 or >= p), composite p or q, q that does not divide p-1,
- * oversized p or q, and g or y outside the order-q subgroup. */
+ * undersized or oversized p or q, and g or y outside the order-q subgroup. */
 int  neverc_dsa_verify(const neverc_dsa_public_key_t *key,
                         const unsigned char *hash, size_t hash_len,
                         const neverc_dsa_signature_t *sig);
