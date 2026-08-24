@@ -114,10 +114,10 @@ static int tar_type_supported(int typeflag) {
            typeflag == NEVERC_TAR_DIR;
 }
 
-/* POSIX typeflags 1, 2, and 5 carry no file body even when size is set. */
+/* Symlinks and directories carry no file body even when size is set. POSIX
+ * pax linkdata permits typeflag 1 hard links to carry a real data section. */
 static int tar_type_header_only(int typeflag) {
-    return typeflag == NEVERC_TAR_LINK ||
-           typeflag == NEVERC_TAR_SYM ||
+    return typeflag == NEVERC_TAR_SYM ||
            typeflag == NEVERC_TAR_DIR;
 }
 
@@ -178,10 +178,10 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
     }
     if (all_zero) {
         size_t remaining = r->len - r->pos;
-        if (remaining < NEVERC_TAR_BLOCK_SIZE * 2U ||
-            remaining % NEVERC_TAR_BLOCK_SIZE != 0)
+        if (remaining < NEVERC_TAR_BLOCK_SIZE * 2U)
             return -1;
-        for (size_t i = NEVERC_TAR_BLOCK_SIZE; i < remaining; i++) {
+        for (size_t i = NEVERC_TAR_BLOCK_SIZE;
+             i < NEVERC_TAR_BLOCK_SIZE * 2U; i++) {
             if (block[i] != 0)
                 return -1;
         }

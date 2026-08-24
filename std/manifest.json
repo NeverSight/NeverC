@@ -2178,7 +2178,7 @@
     },
     "archive/tar": {
       "header": "include/neverc/std/archive/tar.h",
-      "description": "POSIX tar archive format reader/writer (mirrors Go archive/tar package)",
+      "description": "POSIX ustar regular/hard-link/symlink/directory reader/writer with pax linkdata bodies; rejects device/FIFO, PAX x/g, GNU L/K long-name/link and S sparse metadata, and base-256 numeric fields",
       "deps": ["io/fs"],
       "symbols": {
         "neverc_tar_reader_init": "src/archive/tar/tar.c",

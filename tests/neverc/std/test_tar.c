@@ -449,13 +449,33 @@ static void test_malformed_headers(void) {
               neverc_tar_reader_next(&reader, &decoded), 0);
     check_int("stable archive end",
               neverc_tar_reader_next(&reader, &decoded), 0);
-    padded_archive[sizeof(padded_archive) - 1U] = 1;
+    /* POSIX permits undefined logical records after the two zero end blocks
+     * when a blocking factor pads the final physical record. */
+    memset(padded_archive + NEVERC_TAR_BLOCK_SIZE * 3U, 0xA5,
+           NEVERC_TAR_BLOCK_SIZE);
     neverc_tar_reader_init(
         &reader, padded_archive, sizeof(padded_archive));
-    check_int("trailing-data entry header",
+    check_int("physical-padding entry header",
               neverc_tar_reader_next(&reader, &decoded), 1);
-    check_int("reject data after end blocks",
-              neverc_tar_reader_next(&reader, &decoded), -1);
+    check_int("accept undefined data after end blocks",
+              neverc_tar_reader_next(&reader, &decoded), 0);
+    check_int("stable padded archive end",
+              neverc_tar_reader_next(&reader, &decoded), 0);
+
+    /* Go archive/tar also treats a partial trailing record after the two
+     * zero blocks as EOF. This specifically guards removal of the former
+     * remaining-length modulo-512 check. */
+    uint8_t short_tail_archive[NEVERC_TAR_BLOCK_SIZE * 3U + 1U];
+    memcpy(short_tail_archive, writer.data, NEVERC_TAR_BLOCK_SIZE * 3U);
+    short_tail_archive[sizeof(short_tail_archive) - 1U] = 0xA5;
+    neverc_tar_reader_init(
+        &reader, short_tail_archive, sizeof(short_tail_archive));
+    check_int("short-tail entry header",
+              neverc_tar_reader_next(&reader, &decoded), 1);
+    check_int("accept one-byte tail after end blocks",
+              neverc_tar_reader_next(&reader, &decoded), 0);
+    check_int("stable short-tail archive end",
+              neverc_tar_reader_next(&reader, &decoded), 0);
     neverc_tar_writer_free(&writer);
 }
 
@@ -584,11 +604,111 @@ static void test_gnu_magic_ignores_prefix(void) {
     check_str("gnu name ignores atime field", header.name, "hello.txt");
 }
 
+static void test_pax_linkdata_hardlink(void) {
+    printf("[pax linkdata hardlink]\n");
+
+    /* POSIX pax -o linkdata permits a typeflag '1' hard link to carry a
+     * non-empty data section. Keep a following member in the fixture so an
+     * incorrect header-only interpretation cannot hide a boundary error. */
+    uint8_t archive[NEVERC_TAR_BLOCK_SIZE * 5U] = {0};
+    test_fill_header(archive, "alias", NEVERC_TAR_LINK, 3, "target.txt");
+    memcpy(archive + NEVERC_TAR_BLOCK_SIZE, "abc", 3);
+    test_fill_header(archive + NEVERC_TAR_BLOCK_SIZE * 2U,
+                     "visible.txt", NEVERC_TAR_REG, 0, NULL);
+
+    neverc_tar_reader_t reader;
+    neverc_tar_header_t header = {0};
+    uint8_t body[8] = {0};
+    size_t count = 0;
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    int result = neverc_tar_reader_next(&reader, &header);
+    check_int("fixed linkdata header", result, 1);
+    if (result == 1) {
+        check_str("fixed linkdata name", header.name, "alias");
+        check_str("fixed linkdata target", header.linkname, "target.txt");
+        check_int("fixed linkdata type", header.typeflag, NEVERC_TAR_LINK);
+        check_int("fixed linkdata size", (int)header.size, 3);
+        check_int("fixed linkdata read",
+                  neverc_tar_reader_read(
+                      &reader, &header, body, sizeof(body), &count), 0);
+        check_size("fixed linkdata read size", count, 3);
+        check_int("fixed linkdata body", memcmp(body, "abc", 3), 0);
+        result = neverc_tar_reader_next(&reader, &header);
+        check_int("fixed linkdata next member", result, 1);
+        if (result == 1)
+            check_str("fixed linkdata next name", header.name, "visible.txt");
+        check_int("fixed linkdata archive end",
+                  neverc_tar_reader_next(&reader, &header), 0);
+    }
+
+    /* next() must also skip an unread linkdata body plus its block padding. */
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    result = neverc_tar_reader_next(&reader, &header);
+    check_int("unread linkdata header", result, 1);
+    if (result == 1) {
+        result = neverc_tar_reader_next(&reader, &header);
+        check_int("skip unread linkdata", result, 1);
+        if (result == 1)
+            check_str("unread linkdata next name", header.name, "visible.txt");
+    }
+
+    neverc_tar_writer_t writer;
+    neverc_tar_writer_init(&writer);
+    neverc_tar_header_t link = {0};
+    strcpy(link.name, "alias");
+    strcpy(link.linkname, "target.txt");
+    link.size = 3;
+    link.mode = 0644;
+    link.typeflag = NEVERC_TAR_LINK;
+    int header_result = neverc_tar_writer_write_header(&writer, &link);
+    check_int("writer linkdata header", header_result, 0);
+    if (header_result != 0) {
+        neverc_tar_writer_free(&writer);
+        return;
+    }
+    check_int("writer linkdata body",
+              neverc_tar_writer_write(
+                  &writer, (const uint8_t *)"abc", 3), 0);
+
+    neverc_tar_header_t following = {0};
+    strcpy(following.name, "visible.txt");
+    following.mode = 0600;
+    following.typeflag = NEVERC_TAR_REG;
+    check_int("writer linkdata following header",
+              neverc_tar_writer_write_header(&writer, &following), 0);
+    int close_result = neverc_tar_writer_close(&writer);
+    check_int("writer linkdata close", close_result, 0);
+    if (close_result == 0) {
+        memset(&header, 0, sizeof(header));
+        memset(body, 0, sizeof(body));
+        neverc_tar_reader_init(&reader, writer.data, writer.len);
+        result = neverc_tar_reader_next(&reader, &header);
+        check_int("roundtrip linkdata header", result, 1);
+        if (result == 1) {
+            check_int("roundtrip linkdata size", (int)header.size, 3);
+            check_int("roundtrip linkdata read",
+                      neverc_tar_reader_read(
+                          &reader, &header, body, sizeof(body), &count), 0);
+            check_size("roundtrip linkdata read size", count, 3);
+            check_int("roundtrip linkdata body", memcmp(body, "abc", 3), 0);
+            result = neverc_tar_reader_next(&reader, &header);
+            check_int("roundtrip linkdata next member", result, 1);
+            if (result == 1)
+                check_str("roundtrip linkdata next name",
+                          header.name, "visible.txt");
+            check_int("roundtrip linkdata archive end",
+                      neverc_tar_reader_next(&reader, &header), 0);
+        }
+    }
+    neverc_tar_writer_free(&writer);
+}
+
 static void test_header_only_does_not_swallow(const char *label, const char *name,
-                                              int typeflag, const char *linkname) {
+                                              int typeflag, uint64_t size,
+                                              const char *linkname) {
     uint8_t archive[NEVERC_TAR_BLOCK_SIZE * 4U];
     memset(archive, 0, sizeof(archive));
-    test_fill_header(archive, name, typeflag, 512, linkname);
+    test_fill_header(archive, name, typeflag, size, linkname);
     test_fill_header(archive + NEVERC_TAR_BLOCK_SIZE, "visible.txt",
                      NEVERC_TAR_REG, 0, NULL);
 
@@ -612,11 +732,13 @@ static void test_header_only_does_not_swallow(const char *label, const char *nam
 static void test_header_only_and_typeflags(void) {
     printf("[header-only members and typeflags]\n");
     test_header_only_does_not_swallow(
-        "symlink does not swallow next", "link", NEVERC_TAR_SYM, "target.txt");
+        "symlink does not swallow next", "link", NEVERC_TAR_SYM, 512,
+        "target.txt");
     test_header_only_does_not_swallow(
-        "hardlink does not swallow next", "alias", NEVERC_TAR_LINK, "target.txt");
+        "zero-size hardlink does not swallow next", "alias", NEVERC_TAR_LINK,
+        0, "target.txt");
     test_header_only_does_not_swallow(
-        "directory does not swallow next", "dir", NEVERC_TAR_DIR, NULL);
+        "directory does not swallow next", "dir", NEVERC_TAR_DIR, 512, NULL);
 
     uint8_t short_archive[NEVERC_TAR_BLOCK_SIZE * 3U];
     memset(short_archive, 0, sizeof(short_archive));
@@ -831,6 +953,7 @@ int main(void) {
     test_malformed_headers();
     test_reject_unsafe_paths();
     test_gnu_magic_ignores_prefix();
+    test_pax_linkdata_hardlink();
     test_header_only_and_typeflags();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");

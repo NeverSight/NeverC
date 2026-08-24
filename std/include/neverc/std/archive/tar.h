@@ -2,11 +2,15 @@
 #define NEVERC_ARCHIVE_TAR_H
 
 /*
- * NeverC archive/tar — POSIX tar format (mirrors Go archive/tar).
+ * NeverC archive/tar — POSIX tar format.
  *
- * Supports reading and writing POSIX (ustar) tar archives. Readers accept
- * the POSIX unsigned header checksum and the historical signed checksum,
- * and reject a stored value that matches neither.
+ * Supports reading and writing regular files, hard links, symbolic links,
+ * and directories in POSIX ustar archives, plus pax linkdata hard-link
+ * bodies. Readers accept the POSIX unsigned header checksum and the
+ * historical signed checksum, and reject a stored value that matches
+ * neither. Character/block devices, FIFOs, PAX x/g extended headers, GNU
+ * L/K long-name/link and S sparse metadata, and GNU base-256 numeric fields
+ * are not supported.
  */
 
 #include <stddef.h>
@@ -46,8 +50,11 @@ typedef struct {
 } neverc_tar_reader_t;
 
 void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t len);
-/* Returns 1 for an entry, 0 after the required two zero end blocks, or -1 for
- * malformed, unterminated, or non-zero trailing input. */
+/* Returns 1 for an entry, 0 after the required two consecutive zero end
+ * blocks, or -1 for malformed or unterminated input. All bytes after the
+ * second zero block are ignored. POSIX permits undefined complete 512-byte
+ * logical records as physical-record padding; ignoring a final partial
+ * record also matches Go archive/tar EOF behavior. */
 int  neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr);
 /* Reads the current entry incrementally; unread bytes are skipped by next(). */
 int  neverc_tar_reader_read(neverc_tar_reader_t *r, const neverc_tar_header_t *hdr,
@@ -67,7 +74,8 @@ typedef struct {
 
 void neverc_tar_writer_init(neverc_tar_writer_t *w);
 /* Starts an entry. The preceding entry must have received exactly header.size
- * bytes; names over 100 bytes are encoded with the ustar prefix when possible. */
+ * bytes; a hard link may have a non-zero pax linkdata body. Names over 100
+ * bytes are encoded with the ustar prefix when possible. */
 int  neverc_tar_writer_write_header(neverc_tar_writer_t *w,
                                     const neverc_tar_header_t *hdr);
 /* Writes entry data without implicit truncation; exceeding header.size fails. */
