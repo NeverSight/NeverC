@@ -62,6 +62,9 @@ void neverc_rsa_private_key_free(neverc_rsa_private_key_t *k) {
     rsa_bigint_secure_free(&k->qinv);
 }
 
+static int bytes_to_bigint(neverc_bigint_t *r,
+                           const unsigned char *data, size_t len);
+
 static int random_bigint(neverc_bigint_t *r, int bits) {
     if (!r || bits < 2) return -1;
     int bytes = (bits + 7) / 8;
@@ -107,30 +110,69 @@ static int random_bigint(neverc_bigint_t *r, int bits) {
     return result;
 }
 
+/* FIPS 186-5 B.3.1 samples every Miller-Rabin base independently from
+ * 1 < a < n - 1.  Candidate primes have their top two bits set, so masking
+ * to n's bit length gives an acceptance probability of approximately 3/4 or
+ * better.  Bound the loop so a broken entropy source cannot hang keygen. */
+static int random_miller_rabin_witness(neverc_bigint_t *a,
+                                       const neverc_bigint_t *n,
+                                       const neverc_bigint_t *nm1,
+                                       const neverc_bigint_t *one) {
+    if (!a || !n || !nm1 || !one) return -1;
+    int bits = neverc_bigint_bit_len(n);
+    if (bits < 3 || bits > INT_MAX - 7) return -1;
+    int bytes = (bits + 7) / 8;
+    unsigned char *buf = (unsigned char *)malloc((size_t)bytes);
+    if (!buf) return -1;
+    unsigned excess_bits = (unsigned)(bytes * 8 - bits);
+    int result = -1;
+
+    for (int attempt = 0; attempt < 128; ++attempt) {
+        if (NCI_RSA_RANDOM(buf, (size_t)bytes) != 0)
+            break;
+        buf[0] &= (unsigned char)(0xffU >> excess_bits);
+        if (bytes_to_bigint(a, buf, (size_t)bytes) != 0)
+            break;
+        if (neverc_bigint_cmp(a, one) > 0 &&
+            neverc_bigint_cmp(a, nm1) < 0) {
+            result = 0;
+            break;
+        }
+    }
+
+    neverc_platform_secure_zero(buf, (size_t)bytes);
+    free(buf);
+    return result;
+}
+
+/* Returns 1 for probably prime, 0 for composite, and -1 for invalid input or
+ * when a random witness cannot be obtained. */
 static int miller_rabin(const neverc_bigint_t *n, int rounds) {
-    neverc_bigint_t one, two, nm1, d, a, x;
-    neverc_bigint_init(&one); neverc_bigint_init(&two);
+    if (!n || rounds <= 0 || neverc_bigint_sign(n) <= 0)
+        return -1;
+    int bits = neverc_bigint_bit_len(n);
+    if (bits < 2) return 0;
+    if (bits == 2) return 1;
+    if (neverc_bigint_bit(n, 0) == 0) return 0;
+    neverc_bigint_t one, nm1, d, a, x;
+    neverc_bigint_init(&one);
     neverc_bigint_init(&nm1); neverc_bigint_init(&d);
     neverc_bigint_init(&a); neverc_bigint_init(&x);
 
     neverc_bigint_set_int64(&one, 1);
-    neverc_bigint_set_int64(&two, 2);
     neverc_bigint_sub(&nm1, n, &one);
 
-    neverc_bigint_set(&d, &nm1);
     int r = 0;
-    while (neverc_bigint_bit(&d, 0) == 0) {
-        neverc_bigint_rsh(&d, &d, 1);
+    while (neverc_bigint_bit(&nm1, (unsigned)r) == 0)
         r++;
-    }
+    neverc_bigint_rsh(&d, &nm1, (unsigned)r);
 
     int result = 1;
-    int witnesses[] = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37};
-    int nw = rounds < 12 ? rounds : 12;
-
-    for (int i = 0; i < nw && result; i++) {
-        neverc_bigint_set_int64(&a, witnesses[i]);
-        if (neverc_bigint_cmp(&a, &nm1) >= 0) continue;
+    for (int i = 0; i < rounds && result; i++) {
+        if (random_miller_rabin_witness(&a, n, &nm1, &one) != 0) {
+            result = -1;
+            break;
+        }
 
         neverc_bigint_exp(&x, &a, &d, n);
 
@@ -146,9 +188,9 @@ static int miller_rabin(const neverc_bigint_t *n, int rounds) {
         if (!found) result = 0;
     }
 
-    neverc_bigint_free(&one); neverc_bigint_free(&two);
-    neverc_bigint_free(&nm1); neverc_bigint_free(&d);
-    neverc_bigint_free(&a); neverc_bigint_free(&x);
+    neverc_bigint_free(&one);
+    rsa_bigint_secure_free(&nm1); rsa_bigint_secure_free(&d);
+    rsa_bigint_secure_free(&a); rsa_bigint_secure_free(&x);
     return result;
 }
 
@@ -194,7 +236,9 @@ static int gen_prime(neverc_bigint_t *p, int bits) {
             neverc_bigint_free(&one);
         }
         if (has_small_factor(p)) continue;   /* cheap pre-screen before Miller-Rabin */
-        if (miller_rabin(p, 12)) return 0;
+        int primality = miller_rabin(p, 12);
+        if (primality < 0) return -1;
+        if (primality > 0) return 0;
     }
     return -1;
 }
