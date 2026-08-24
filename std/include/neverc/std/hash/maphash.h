@@ -26,6 +26,9 @@ typedef struct {
     int      used; /* 1 after any byte is written; empty still mixes the seed */
 } neverc_maphash_t;
 
+/* Returns a fresh OS-random seed on every call. Returns 0 if the platform
+ * entropy source fails; callers using the seed for hostile keys should treat
+ * that as an error rather than silently continuing with a predictable seed. */
 uint64_t neverc_maphash_make_seed(void);
 
 /* seed 0 is valid and must match neverc_maphash_bytes(0, ...).

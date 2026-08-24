@@ -343,6 +343,12 @@ TEST_F(StdLibTest, crc_concurrency) {
 #endif
 STD_TEST(adler32, "src/hash/adler32/adler32.c")
 STD_TEST(maphash, "src/hash/maphash/maphash.c")
+TEST_F(StdLibTest, MaphashEntropyFailure) {
+  auto r = compileAndRunStdTest(
+      "maphash_entropy_failure", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Crypto =====
 STD_TEST(sha256, "src/crypto/sha256/sha256.c")

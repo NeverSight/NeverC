@@ -2,13 +2,17 @@
  * NeverC hash/maphash — fast non-cryptographic hash for hash tables.
  * Mirrors Go hash/maphash.
  *
- * Uses wyhash v4 internally — passes SMHasher, excellent distribution,
+ * Uses wyhash final v3 internally — passes SMHasher, excellent distribution,
  * and very fast on modern hardware.
  */
 
 #include "neverc/std/hash/maphash.h"
 #include "neverc/std/_platform.h"
 #include <string.h>
+
+#ifndef NCI_MAPHASH_RANDOM
+#define NCI_MAPHASH_RANDOM neverc_platform_random
+#endif
 
 /* ---- wyhash core ---- */
 
@@ -102,44 +106,13 @@ static uint64_t wyhash(const void *key, size_t len, uint64_t seed) {
     return wy_mix(WY_P1 ^ len, wy_mix(a ^ WY_P1, b ^ seed));
 }
 
-/* ---- seed generation (LCG, not crypto-secure) ---- */
-
-static uint64_t g_rng_state = 0;
-
-static uint64_t splitmix64(uint64_t *state) {
-    uint64_t z = (*state += 0x9e3779b97f4a7c15ull);
-    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
-    z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
-    return z ^ (z >> 31);
-}
+/* ---- seed generation ---- */
 
 uint64_t neverc_maphash_make_seed(void) {
-    uint64_t state = __atomic_load_n(&g_rng_state, __ATOMIC_RELAXED);
-    if (state == 0) {
-        uint64_t v = 0;
-        if (neverc_platform_random((unsigned char *)&v, sizeof(v)) != 0 || v == 0) {
-            v = (uint64_t)(uintptr_t)&g_rng_state;
-            v ^= 0xdeadbeefcafebabeull;
-            if (v == 0) v = 1;
-        }
-        uint64_t expected = 0;
-        if (!__atomic_compare_exchange_n(&g_rng_state, &expected, v, 0,
-                                         __ATOMIC_RELAXED, __ATOMIC_RELAXED))
-            state = expected;
-        else
-            state = v;
-    }
-    uint64_t s;
-    for (;;) {
-        uint64_t cur = __atomic_load_n(&g_rng_state, __ATOMIC_RELAXED);
-        uint64_t next = cur;
-        s = splitmix64(&next);
-        if (__atomic_compare_exchange_n(&g_rng_state, &cur, next, 0,
-                                        __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
-            if (s != 0)
-                return s;
-        }
-    }
+    uint64_t seed = 0;
+    if (NCI_MAPHASH_RANDOM((unsigned char *)&seed, sizeof(seed)) != 0)
+        return 0;
+    return seed;
 }
 
 /* ---- streaming API ---- */
