@@ -41,6 +41,124 @@ static void test_identifiers(void) {
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
 }
 
+static void test_unicode_identifiers_and_positions(void) {
+    printf("[unicode_identifiers_and_positions]\n");
+    neverc_scanner_t s;
+    const char *src = "本語9 α_2\n本 x";
+    neverc_scanner_init(&s, src, strlen(src));
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "本語9");
+    neverc_scanner_pos_t p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.offset, 0);
+    ASSERT_INT_EQ(p.line, 1);
+    ASSERT_INT_EQ(p.column, 1);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "α_2");
+    p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.offset, 8);
+    ASSERT_INT_EQ(p.line, 1);
+    ASSERT_INT_EQ(p.column, 5);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "本");
+    p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.offset, 13);
+    ASSERT_INT_EQ(p.line, 2);
+    ASSERT_INT_EQ(p.column, 1);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "x");
+    p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.offset, 17);
+    ASSERT_INT_EQ(p.line, 2);
+    ASSERT_INT_EQ(p.column, 3);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+
+    /* Unicode digits continue identifiers, but cannot start one. */
+    src = "x६४ ६x";
+    neverc_scanner_init(&s, src, strlen(src));
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "x६४");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), 0x096c);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "६");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "x");
+}
+
+static void test_unicode_rune_tokens_and_columns(void) {
+    printf("[unicode_rune_tokens_and_columns]\n");
+    neverc_scanner_t s;
+    const char rune_src[] = "本";
+    neverc_scanner_init(&s, rune_src, sizeof(rune_src) - 1);
+    neverc_scanner_set_mode(&s, 0);
+
+    ASSERT_INT_EQ(neverc_scanner_peek(&s), 0x672c);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), 0x672c);
+    size_t len = 0;
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, &len), rune_src);
+    ASSERT_INT_EQ((int)len, 3);
+    neverc_scanner_pos_t p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.offset, 0);
+    ASSERT_INT_EQ(p.line, 1);
+    ASSERT_INT_EQ(p.column, 1);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.offset, 3);
+    ASSERT_INT_EQ(p.line, 1);
+    ASSERT_INT_EQ(p.column, 2);
+
+    /* Strings and skipped comments must advance columns by runes too. */
+    const char *src = "\"本\" x /*語*/ y";
+    neverc_scanner_init(&s, src, strlen(src));
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"本\"");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "x");
+    p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.offset, 6);
+    ASSERT_INT_EQ(p.column, 5);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "y");
+    p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.offset, 16);
+    ASSERT_INT_EQ(p.column, 13);
+}
+
+static void test_invalid_utf8_rune(void) {
+    printf("[invalid_utf8_rune]\n");
+    neverc_scanner_t s;
+    const char src[] = {'a', (char)0xff, 'b'};
+    neverc_scanner_init(&s, src, sizeof(src));
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "a");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), 0xfffd);
+    size_t len = 0;
+    const char *text = neverc_scanner_token_text(&s, &len);
+    ASSERT_INT_EQ((int)len, 1);
+    ASSERT_INT_EQ((unsigned char)text[0], 0xff);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    neverc_scanner_pos_t p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.offset, 1);
+    ASSERT_INT_EQ(p.column, 2);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "b");
+    p = neverc_scanner_position(&s);
+    ASSERT_INT_EQ(p.offset, 2);
+    ASSERT_INT_EQ(p.column, 3);
+
+    /* A valid encoding of RuneError is data, not an encoding error. */
+    const char rune_error[] = "\xef\xbf\xbd";
+    neverc_scanner_init(&s, rune_error, sizeof(rune_error) - 1);
+    neverc_scanner_set_mode(&s, 0);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), 0xfffd);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, &len), rune_error);
+    ASSERT_INT_EQ((int)len, 3);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 0);
+}
+
 static void test_integers(void) {
     printf("[integers]\n");
     neverc_scanner_t s;
@@ -480,6 +598,9 @@ static void test_mixed(void) {
 int main(void) {
     printf("=== NeverC text/scanner Tests ===\n");
     test_identifiers();
+    test_unicode_identifiers_and_positions();
+    test_unicode_rune_tokens_and_columns();
+    test_invalid_utf8_rune();
     test_integers();
     test_floats();
     test_strings();

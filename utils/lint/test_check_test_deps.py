@@ -191,6 +191,12 @@ STD_TEST(tcp, TCP_DEPS)
         self.assertIn("public std API 'neverc_fmt_print'", output)
         self.assertIn("is not registered in manifest.json", output)
 
+    def test_scanner_test_maps_to_nested_manifest_module(self):
+        self.assertEqual(
+            CHECK_TEST_DEPS.normalise_test_name("scanner"),
+            "text/scanner",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

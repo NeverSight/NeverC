@@ -54,7 +54,7 @@ typedef struct {
 
     int line;
     int col;
-    int errors;       /* tokens truncated to tok_buf (Go ErrorCount) */
+    int errors;       /* invalid UTF-8 and tokens truncated to tok_buf */
     int tok_overflow; /* set while the current token exceeds tok_buf */
 } neverc_scanner_t;
 

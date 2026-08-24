@@ -6,11 +6,10 @@
  *      peek_ch / next_ch / emit per byte (each a bounds check, and next_ch a
  *      newline branch + column update).
  *
- *  - neverc_scanner_scan (library) — the new scanner: an identifier run is
- *      located with a 256-entry continuation table and copied with a single
- *      memcpy; a "//" line comment is delimited with memchr and copied in one
- *      shot. Neither token kind can contain '\n', so only the column advances,
- *      computed once from the run length. All other token kinds are unchanged.
+ *  - neverc_scanner_scan (library) — the current UTF-8 scanner. ASCII
+ *      identifier runs still use the 256-entry continuation table and one
+ *      memcpy; non-ASCII input is decoded as runes so identifiers, token text,
+ *      and rune-based columns match the public scanner contract.
  *
  * The token stream must be bit-for-bit identical, so every case asserts that
  * both scanners yield the same sequence of (type, text, line, column, offset)
@@ -18,7 +17,8 @@
  *
  * Build:
  *   cc -O2 -std=c11 -I std/include -o /tmp/scanner_bench \
- *      tests/neverc/std/scanner_bench.c std/src/text/scanner/scanner.c
+ *      tests/neverc/std/scanner_bench.c std/src/text/scanner/scanner.c \
+ *      std/src/unicode/unicode.c std/src/unicode/utf8/utf8.c
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -419,7 +419,7 @@ static void correctness_extra(void) {
 }
 
 int main(void) {
-    printf("=== text/scanner: table+memchr bulk scan (new) vs per-byte (old) ===\n");
+    printf("=== text/scanner: UTF-8 current vs ASCII per-byte baseline ===\n");
     printf("%-18s  %10s  %10s  %8s\n", "case", "old", "new", "speedup");
 
     size_t l1, l2, l3, l4, l5;

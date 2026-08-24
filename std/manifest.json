@@ -2488,6 +2488,7 @@
     "text/scanner": {
       "header": "include/neverc/std/text/scanner.h",
       "description": "UTF-8 text scanner/tokenizer \u2014 identifiers, numbers, strings, comments (mirrors Go text/scanner package)",
+      "deps": ["unicode", "unicode/utf8"],
       "symbols": {
         "neverc_scanner_init": "src/text/scanner/scanner.c",
         "neverc_scanner_set_mode": "src/text/scanner/scanner.c",

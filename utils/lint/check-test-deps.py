@@ -282,6 +282,7 @@ def normalise_test_name(name):
         "net_interface": "net/interface",
         "tls": "crypto/tls",
         "cookiejar": "net/cookiejar",
+        "scanner": "text/scanner",
     }
     return mapping.get(name, name)
 

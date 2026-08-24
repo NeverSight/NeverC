@@ -1,13 +1,20 @@
 #include "neverc/std/text/scanner.h"
+#include "neverc/std/unicode.h"
+#include "neverc/std/unicode/utf8.h"
 #include <limits.h>
 #include <string.h>
 
-static int is_letter(int ch) {
-    return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_';
-}
-
 static int is_digit(int ch) {
     return ch >= '0' && ch <= '9';
+}
+
+/* Go text/scanner's default identifier predicate. The first rune must be an
+ * underscore or Unicode letter; Unicode digits are accepted thereafter. */
+static int is_ident_rune(int ch, size_t index) {
+    if (ch < 0) return 0;
+    uint32_t rune = (uint32_t)ch;
+    return rune == '_' || neverc_unicode_is_letter(rune) ||
+           (index > 0 && neverc_unicode_is_digit(rune));
 }
 
 static int is_hex_digit(int ch) {
@@ -56,14 +63,37 @@ static void add_col(neverc_scanner_t *s, size_t n) {
         s->col += (int)n;
 }
 
-static int peek_ch(neverc_scanner_t *s) {
+static int peek_rune(const neverc_scanner_t *s, size_t *width) {
+    if (width) *width = 0;
     if (s->pos >= s->src_len) return NEVERC_SCANNER_EOF;
-    return (unsigned char)s->src[s->pos];
+
+    unsigned char first = (unsigned char)s->src[s->pos];
+    if (first < NEVERC_UTF8_RUNE_SELF) {
+        if (width) *width = 1;
+        return (int)first;
+    }
+
+    uint32_t rune;
+    int decoded_width;
+    neverc_utf8_decode_rune((const uint8_t *)s->src + s->pos,
+                            s->src_len - s->pos, &rune, &decoded_width);
+    if (decoded_width <= 0)
+        decoded_width = 1;
+    if (width) *width = (size_t)decoded_width;
+    return (int)rune;
+}
+
+static int peek_ch(neverc_scanner_t *s) {
+    return peek_rune(s, NULL);
 }
 
 static int next_ch(neverc_scanner_t *s) {
-    if (s->pos >= s->src_len) return NEVERC_SCANNER_EOF;
-    int ch = (unsigned char)s->src[s->pos++];
+    size_t width;
+    int ch = peek_rune(s, &width);
+    if (ch == NEVERC_SCANNER_EOF) return ch;
+    s->pos += width;
+    if (ch == NEVERC_UTF8_RUNE_ERROR && width == 1 && s->errors < INT_MAX)
+        s->errors++;
     if (ch == '\n') {
         if (s->line < INT_MAX) s->line++;
         s->col = 1;
@@ -73,11 +103,28 @@ static int next_ch(neverc_scanner_t *s) {
     return ch;
 }
 
-static void emit(neverc_scanner_t *s, int ch) {
-    if (s->tok_len < sizeof(s->tok_buf) - 1)
-        s->tok_buf[s->tok_len++] = (char)ch;
-    else
+static void emit_bytes(neverc_scanner_t *s, const char *data, size_t len) {
+    size_t cap = sizeof(s->tok_buf) - 1;
+    size_t space = s->tok_len < cap ? cap - s->tok_len : 0;
+    size_t copy = len < space ? len : space;
+    if (copy > 0) {
+        memcpy(s->tok_buf + s->tok_len, data, copy);
+        s->tok_len += copy;
+    }
+    if (copy < len)
         s->tok_overflow = 1;
+}
+
+/* ASCII-only scanner paths use emit(); rune paths copy source bytes with
+ * emit_bytes() so TokenText remains byte-exact even for invalid UTF-8. */
+static void emit(neverc_scanner_t *s, int ch) {
+    char byte = (char)ch;
+    emit_bytes(s, &byte, 1);
+}
+
+static void emit_consumed(neverc_scanner_t *s, size_t start) {
+    if (s->pos > start)
+        emit_bytes(s, s->src + start, s->pos - start);
 }
 
 static int is_whitespace(int ch) {
@@ -119,26 +166,32 @@ static void skip_one_comment(neverc_scanner_t *s) {
 static int scan_identifier(neverc_scanner_t *s) {
     const char *src = s->src;
     size_t len = s->src_len;
-    size_t start = s->pos;
-    size_t i = start;
-    while (i < len && nci_ident_char[(unsigned char)src[i]])
-        i++;
+    size_t rune_index = 1; /* The caller already consumed rune zero. */
 
-    size_t run = i - start;
-    /* Bulk-copy the run, preserving the per-byte emit() cap (sizeof-1). */
-    size_t cap = sizeof(s->tok_buf) - 1;
-    size_t ncopy = 0;
-    if (s->tok_len < cap) {
-        size_t space = cap - s->tok_len;
-        ncopy = run < space ? run : space;
-        memcpy(s->tok_buf + s->tok_len, src + start, ncopy);
-        s->tok_len += ncopy;
+    while (s->pos < len) {
+        /* Preserve the old branch-light ASCII fast path. */
+        size_t start = s->pos;
+        size_t i = start;
+        while (i < len && (unsigned char)src[i] < 0x80 &&
+               nci_ident_char[(unsigned char)src[i]])
+            i++;
+        if (i > start) {
+            size_t run = i - start;
+            emit_bytes(s, src + start, run);
+            s->pos = i;
+            add_col(s, run);
+            rune_index += run;
+            continue;
+        }
+
+        int ch = peek_ch(s);
+        if (!is_ident_rune(ch, rune_index))
+            break;
+        start = s->pos;
+        next_ch(s);
+        emit_consumed(s, start);
+        rune_index++;
     }
-    if (ncopy < run)
-        s->tok_overflow = 1;
-    /* Identifier bytes never include '\n', so only the column advances. */
-    s->pos = i;
-    add_col(s, run);
     return NEVERC_SCANNER_IDENT;
 }
 
@@ -215,9 +268,10 @@ static int scan_number(neverc_scanner_t *s, int first) {
 /* Returns the byte after '\\'. A source newline is not part of the literal
  * (Go: "literal not terminated") and must not be emitted into tok_buf. */
 static int scan_escape(neverc_scanner_t *s, int quote) {
+    size_t start = s->pos;
     int ch = next_ch(s);
     if (ch == NEVERC_SCANNER_EOF || ch == '\n') return ch;
-    emit(s, ch);
+    emit_consumed(s, start);
     if (ch == 'x') {
         for (int i = 0; i < 2 && s->pos < s->src_len && is_hex_digit(peek_ch(s)); i++)
             emit(s, next_ch(s));
@@ -238,15 +292,16 @@ static int scan_escape(neverc_scanner_t *s, int quote) {
 static int scan_string(neverc_scanner_t *s, int quote) {
     emit(s, quote);
     while (s->pos < s->src_len) {
+        size_t start = s->pos;
         int ch = next_ch(s);
-        if (ch == quote) { emit(s, ch); break; }
+        if (ch == quote) { emit_consumed(s, start); break; }
         if (ch == '\\') {
-            emit(s, ch);
+            emit_consumed(s, start);
             if (scan_escape(s, quote) == '\n') break;
             continue;
         }
         if (ch == '\n') break;
-        emit(s, ch);
+        emit_consumed(s, start);
     }
     return (quote == '\'') ? NEVERC_SCANNER_CHAR : NEVERC_SCANNER_STRING;
 }
@@ -254,9 +309,10 @@ static int scan_string(neverc_scanner_t *s, int quote) {
 static int scan_raw_string(neverc_scanner_t *s) {
     emit(s, '`');
     while (s->pos < s->src_len) {
+        size_t start = s->pos;
         int ch = next_ch(s);
-        if (ch == '`') { emit(s, ch); break; }
-        emit(s, ch);
+        emit_consumed(s, start);
+        if (ch == '`') break;
     }
     return NEVERC_SCANNER_RAWSTRING;
 }
@@ -265,33 +321,34 @@ static int scan_comment(neverc_scanner_t *s, int second) {
     emit(s, '/');
     emit(s, second);
     if (second == '/') {
-        /* Line comment: bulk-copy up to the next '\n' (none of which it can
-         * contain) instead of emitting one byte at a time. */
-        const char *src = s->src;
-        size_t cur = s->pos;
-        size_t len = s->src_len;
-        const char *nl = (const char *)memchr(src + cur, '\n', len - cur);
-        size_t end = nl ? (size_t)(nl - src) : len;
-        size_t run = end - cur;
-        size_t cap = sizeof(s->tok_buf) - 1;
-        size_t ncopy = 0;
-        if (s->tok_len < cap) {
-            size_t space = cap - s->tok_len;
-            ncopy = run < space ? run : space;
-            memcpy(s->tok_buf + s->tok_len, src + cur, ncopy);
-            s->tok_len += ncopy;
+        while (s->pos < s->src_len && peek_ch(s) != '\n') {
+            /* Preserve the common ASCII comment fast path while falling back
+             * to rune decoding for non-ASCII text so columns stay rune-based. */
+            size_t start = s->pos;
+            size_t i = start;
+            while (i < s->src_len &&
+                   (unsigned char)s->src[i] < NEVERC_UTF8_RUNE_SELF &&
+                   s->src[i] != '\n')
+                i++;
+            if (i > start) {
+                emit_bytes(s, s->src + start, i - start);
+                s->pos = i;
+                add_col(s, i - start);
+                continue;
+            }
+            next_ch(s);
+            emit_consumed(s, start);
         }
-        if (ncopy < run)
-            s->tok_overflow = 1;
-        s->pos = end;
-        add_col(s, run);
     } else {
         /* C/Go block comments are not nested: the first * / ends the comment. */
         while (s->pos < s->src_len) {
+            size_t start = s->pos;
             int ch = next_ch(s);
-            emit(s, ch);
+            emit_consumed(s, start);
             if (ch == '*' && s->pos < s->src_len && peek_ch(s) == '/') {
-                emit(s, next_ch(s));
+                start = s->pos;
+                next_ch(s);
+                emit_consumed(s, start);
                 break;
             }
         }
@@ -345,10 +402,11 @@ again:
     s->tok_pos.column = s->col;
     s->tok_pos.offset = pos_offset(s->pos);
 
+    size_t ch_start = s->pos;
     int ch = next_ch(s);
 
-    if ((s->mode & NEVERC_SCAN_IDENTS) && is_letter(ch)) {
-        emit(s, ch);
+    if ((s->mode & NEVERC_SCAN_IDENTS) && is_ident_rune(ch, 0)) {
+        emit_consumed(s, ch_start);
         s->tok_type = scan_identifier(s);
     } else if ((s->mode & (NEVERC_SCAN_INTS | NEVERC_SCAN_FLOATS)) && is_digit(ch)) {
         s->tok_type = scan_number(s, ch);
@@ -374,11 +432,11 @@ again:
                 goto again;
             }
         } else {
-            emit(s, ch);
+            emit_consumed(s, ch_start);
             s->tok_type = ch;
         }
     } else {
-        emit(s, ch);
+        emit_consumed(s, ch_start);
         s->tok_type = ch;
     }
 
@@ -410,6 +468,7 @@ int neverc_scanner_peek(neverc_scanner_t *s) {
     if (!s || s->pos >= s->src_len) return NEVERC_SCANNER_EOF;
     size_t saved_pos = s->pos;
     int saved_line = s->line, saved_col = s->col;
+    int saved_errors = s->errors;
     skip_whitespace(s);
     /* Match Scan(): skipped comments are whitespace, not the next token. */
     if ((s->mode & NEVERC_SCAN_COMMENTS) && (s->mode & NEVERC_SCAN_SKIP_COMMENTS)) {
@@ -418,10 +477,11 @@ int neverc_scanner_peek(neverc_scanner_t *s) {
             skip_whitespace(s);
         }
     }
-    int ch = (s->pos < s->src_len) ? (unsigned char)s->src[s->pos] : NEVERC_SCANNER_EOF;
+    int ch = peek_ch(s);
     s->pos = saved_pos;
     s->line = saved_line;
     s->col = saved_col;
+    s->errors = saved_errors;
     return ch;
 }
 
