@@ -423,18 +423,33 @@ int neverc_asn1_encode_bit_string(uint8_t *buf, size_t cap,
     return (int)(prefix + value_len);
 }
 
-static int oid_write_subidentifier(uint8_t *out, size_t cap, size_t *len,
-                                   uint64_t value) {
+static size_t oid_subidentifier_size(uint64_t value) {
+    size_t size = 1;
+    while (value >= 128U) {
+        size++;
+        value >>= 7;
+    }
+    return size;
+}
+
+static int oid_add_subidentifier_size(size_t *len, uint64_t value) {
+    size_t size = oid_subidentifier_size(value);
+    if (*len > SIZE_MAX - size) return -1;
+    *len += size;
+    return 0;
+}
+
+/* The caller has already validated the complete OID and output capacity. */
+static void oid_write_subidentifier(uint8_t *out, size_t *len,
+                                    uint64_t value) {
     uint8_t tmp[10];
     int n = 0;
     do {
         tmp[n++] = (uint8_t)(value & 0x7fU);
         value >>= 7;
     } while (value != 0);
-    if (*len > cap || (size_t)n > cap - *len) return -1;
     for (int i = n - 1; i >= 0; i--)
         out[(*len)++] = (uint8_t)(tmp[i] | (i > 0 ? 0x80U : 0U));
-    return 0;
 }
 
 static int oid_parse_arc(const char *oid, size_t *offset, uint64_t *arc) {
@@ -454,10 +469,21 @@ static int oid_parse_arc(const char *oid, size_t *offset, uint64_t *arc) {
     return 0;
 }
 
+/* Re-read an arc after oid_parse_arc validated the entire immutable input. */
+static uint64_t oid_parse_validated_arc(const char *oid, size_t *offset) {
+    size_t i = *offset;
+    uint64_t value = 0;
+    while (oid[i] >= '0' && oid[i] <= '9') {
+        value = value * 10U + (uint64_t)(oid[i] - '0');
+        i++;
+    }
+    *offset = i;
+    return value;
+}
+
 int neverc_asn1_encode_oid(uint8_t *buf, size_t cap, const char *oid) {
     if (!buf || !oid || oid[0] == '\0') return -1;
 
-    uint8_t payload[1280];
     size_t payload_len = 0;
     size_t offset = 0;
     uint64_t first = 0, second = 0;
@@ -470,21 +496,42 @@ int neverc_asn1_encode_oid(uint8_t *buf, size_t cap, const char *oid) {
     if ((first < 2U && second > 39U) ||
         (first == 2U && second > UINT64_MAX - 80U))
         return -1;
-    if (oid_write_subidentifier(payload, sizeof(payload), &payload_len,
-                                first * 40U + second) != 0)
+    uint64_t combined = first * 40U + second;
+    if (oid_add_subidentifier_size(&payload_len, combined) != 0)
         return -1;
+    size_t remaining_offset = offset;
 
     while (oid[offset] == '.') {
         offset++;
         uint64_t arc = 0;
         if (oid_parse_arc(oid, &offset, &arc) != 0 ||
-            oid_write_subidentifier(payload, sizeof(payload), &payload_len,
-                                    arc) != 0)
+            oid_add_subidentifier_size(&payload_len, arc) != 0)
             return -1;
     }
-    if (oid[offset] != '\0') return -1;
-    return asn1_encode_primitive(buf, cap, NEVERC_ASN1_OID,
-                                 payload, payload_len);
+    if (oid[offset] != '\0' || !asn1_tlv_fits(cap, payload_len)) return -1;
+
+    /* Build the prefix off-buffer so no possible failure can partially modify
+     * the caller's buffer. The second pass only replays validated arcs. */
+    uint8_t prefix[16];
+    int tlen = neverc_asn1_encode_tag(prefix, sizeof(prefix),
+                                      NEVERC_ASN1_UNIVERSAL, 0,
+                                      NEVERC_ASN1_OID);
+    if (tlen < 0) return -1;
+    int llen = neverc_asn1_encode_length(
+        prefix + tlen, sizeof(prefix) - (size_t)tlen, payload_len);
+    if (llen < 0) return -1;
+    size_t prefix_len = (size_t)tlen + (size_t)llen;
+    memcpy(buf, prefix, prefix_len);
+
+    size_t written = 0;
+    oid_write_subidentifier(buf + prefix_len, &written, combined);
+    offset = remaining_offset;
+    while (oid[offset] == '.') {
+        offset++;
+        uint64_t arc = oid_parse_validated_arc(oid, &offset);
+        oid_write_subidentifier(buf + prefix_len, &written, arc);
+    }
+    return (int)(prefix_len + payload_len);
 }
 
 int neverc_asn1_decode_utf8_string(const neverc_asn1_element_t *elem,

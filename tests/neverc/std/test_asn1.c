@@ -529,6 +529,82 @@ static void test_oid_bit_string_and_text(void) {
     check_int("element stops before trailing data", n, 3);
 }
 
+static void test_long_oid_boundary(void) {
+    printf("[long OID boundary]\n");
+    static const size_t extra_arc_counts[] = {1279U, 1280U, 1281U};
+    for (size_t boundary = 0;
+         boundary < sizeof(extra_arc_counts) / sizeof(extra_arc_counts[0]);
+         boundary++) {
+        size_t extra_arcs = extra_arc_counts[boundary];
+        size_t oid_len = 3U + extra_arcs * 2U;
+        size_t payload_len = 1U + extra_arcs;
+        size_t encoded_len = 4U + payload_len;
+        char *oid = (char *)malloc(oid_len + 1U);
+        uint8_t *buf = (uint8_t *)malloc(encoded_len);
+        char name[96];
+        snprintf(name, sizeof(name), "allocate long OID %zu buffers",
+                 extra_arcs);
+        check_int(name, oid != NULL && buf != NULL, 1);
+        if (!oid || !buf) {
+            free(oid);
+            free(buf);
+            continue;
+        }
+
+        memcpy(oid, "1.2", 3U);
+        for (size_t i = 0; i < extra_arcs; i++) {
+            oid[3U + i * 2U] = '.';
+            oid[4U + i * 2U] = '1';
+        }
+        oid[oid_len] = '\0';
+
+        int n = neverc_asn1_encode_oid(buf, encoded_len, oid);
+        snprintf(name, sizeof(name), "encode long OID %zu", extra_arcs);
+        check_int(name, n, (int)encoded_len);
+        if (n == (int)encoded_len) {
+            snprintf(name, sizeof(name), "long OID %zu tag", extra_arcs);
+            check_int(name, buf[0], NEVERC_ASN1_OID);
+            snprintf(name, sizeof(name), "long OID %zu length marker",
+                     extra_arcs);
+            check_int(name, buf[1], 0x82);
+            snprintf(name, sizeof(name), "long OID %zu length high",
+                     extra_arcs);
+            check_int(name, buf[2], (int)(payload_len >> 8));
+            snprintf(name, sizeof(name), "long OID %zu length low",
+                     extra_arcs);
+            check_int(name, buf[3], (int)(payload_len & 0xffU));
+
+            neverc_asn1_element_t elem;
+            int consumed = neverc_asn1_decode_element(
+                buf, encoded_len, &elem);
+            snprintf(name, sizeof(name), "decode long OID %zu", extra_arcs);
+            check_int(name, consumed, (int)encoded_len);
+            if (consumed == (int)encoded_len) {
+                char *decoded = neverc_asn1_decode_oid(&elem);
+                snprintf(name, sizeof(name), "roundtrip long OID %zu",
+                         extra_arcs);
+                check_str(name, decoded, oid);
+                free(decoded);
+            }
+        }
+
+        memset(buf, 0xa5, encoded_len);
+        snprintf(name, sizeof(name), "reject short OID %zu capacity",
+                 extra_arcs);
+        check_int(name,
+                  neverc_asn1_encode_oid(buf, encoded_len - 1U, oid), -1);
+        int unchanged = 1;
+        for (size_t i = 0; i < encoded_len; i++)
+            if (buf[i] != 0xa5) unchanged = 0;
+        snprintf(name, sizeof(name), "short OID %zu cap is fail-closed",
+                 extra_arcs);
+        check_int(name, unchanged, 1);
+
+        free(buf);
+        free(oid);
+    }
+}
+
 int main(void) {
     printf("=== NeverC Encoding/ASN1 Module Tests ===\n\n");
     test_decode_integer();
@@ -541,6 +617,7 @@ int main(void) {
     test_encode_null();
     test_helpers_and_invalid_api();
     test_oid_bit_string_and_text();
+    test_long_oid_boundary();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }
