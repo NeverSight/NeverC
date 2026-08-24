@@ -31,6 +31,8 @@ typedef struct {
 neverc_exec_cmd_t *neverc_exec_command(const char *name, const char **args, int argc);
 void               neverc_exec_cmd_set_dir(neverc_exec_cmd_t *cmd, const char *dir);
 void               neverc_exec_cmd_set_env(neverc_exec_cmd_t *cmd, const char **env, int env_count);
+/* A non-NULL data pointer configures child stdin even when len is zero; an
+ * empty input therefore supplies immediate EOF instead of inheriting stdin. */
 void               neverc_exec_cmd_set_stdin(neverc_exec_cmd_t *cmd, const void *data, size_t len);
 
 int  neverc_exec_cmd_run(neverc_exec_cmd_t *cmd, neverc_exec_exit_status_t *st);

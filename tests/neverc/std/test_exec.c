@@ -148,6 +148,96 @@ static int run_bidirectional_child(void) {
     return printf("\nstdin=%zu\n", input_length) < 0 ? 1 : 0;
 }
 
+static int run_stdin_eof_child(void) {
+    unsigned char byte;
+    if (fread(&byte, 1, 1, stdin) != 0)
+        return 42;
+    return feof(stdin) ? 0 : 43;
+}
+
+static void test_empty_stdin_case(const char *executable, int use_start) {
+    neverc_exec_exit_status_t st = {0};
+    int run_rc = -1;
+#if defined(_WIN32)
+    SECURITY_ATTRIBUTES sa = {sizeof(sa), NULL, TRUE};
+    HANDLE read_handle = NULL, write_handle = NULL;
+    HANDLE saved_stdin = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD written = 0;
+    int setup_ok =
+        saved_stdin != NULL && saved_stdin != INVALID_HANDLE_VALUE &&
+        CreatePipe(&read_handle, &write_handle, &sa, 0) &&
+        WriteFile(write_handle, "X", 1, &written, NULL) && written == 1;
+    ASSERT_TRUE(setup_ok);
+    if (!setup_ok) {
+        if (read_handle) CloseHandle(read_handle);
+        if (write_handle) CloseHandle(write_handle);
+        return;
+    }
+    CloseHandle(write_handle);
+    write_handle = NULL;
+    int redirected = SetStdHandle(STD_INPUT_HANDLE, read_handle) != 0;
+    ASSERT_TRUE(redirected);
+    if (!redirected) {
+        CloseHandle(read_handle);
+        return;
+    }
+#else
+    int saved_stdin = dup(STDIN_FILENO);
+    int inherited_input[2] = {-1, -1};
+    int setup_ok = saved_stdin >= 0 && pipe(inherited_input) == 0;
+    ASSERT_TRUE(setup_ok);
+    if (!setup_ok) {
+        if (saved_stdin >= 0) close(saved_stdin);
+        if (inherited_input[0] >= 0) close(inherited_input[0]);
+        if (inherited_input[1] >= 0) close(inherited_input[1]);
+        return;
+    }
+    ASSERT_INT_EQ((int)write(inherited_input[1], "X", 1), 1);
+    close(inherited_input[1]);
+    inherited_input[1] = -1;
+    int redirected = dup2(inherited_input[0], STDIN_FILENO);
+    ASSERT_INT_EQ(redirected, STDIN_FILENO);
+    if (redirected != STDIN_FILENO) {
+        close(inherited_input[0]);
+        close(saved_stdin);
+        return;
+    }
+    close(inherited_input[0]);
+    inherited_input[0] = -1;
+#endif
+
+    const char *args[] = {"--stdin-eof-child"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command(executable, args, 1);
+    ASSERT_TRUE(cmd != NULL);
+    if (cmd) {
+        neverc_exec_cmd_set_stdin(cmd, "", 0);
+        if (use_start) {
+            run_rc = neverc_exec_cmd_start(cmd);
+            if (run_rc == 0)
+                run_rc = neverc_exec_cmd_wait(cmd, &st);
+        } else {
+            run_rc = neverc_exec_cmd_run(cmd, &st);
+        }
+        neverc_exec_cmd_free(cmd);
+    }
+
+#if defined(_WIN32)
+    ASSERT_TRUE(SetStdHandle(STD_INPUT_HANDLE, saved_stdin) != 0);
+    CloseHandle(read_handle);
+#else
+    ASSERT_INT_EQ(dup2(saved_stdin, STDIN_FILENO), STDIN_FILENO);
+    close(saved_stdin);
+#endif
+    ASSERT_INT_EQ(run_rc, 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+}
+
+static void test_empty_stdin_is_eof(const char *executable) {
+    printf("[empty_stdin_is_eof]\n");
+    test_empty_stdin_case(executable, 0);
+    test_empty_stdin_case(executable, 1);
+}
+
 static void test_bidirectional_pipes(const char *executable) {
     printf("[bidirectional_pipes]\n");
     const char *args[] = {"--bidirectional-child"};
@@ -1414,6 +1504,8 @@ int main(int argc, char **argv) {
         return run_bidirectional_child();
     if (argc == 2 && strcmp(argv[1], "--pause") == 0)
         return run_pause_child();
+    if (argc == 2 && strcmp(argv[1], "--stdin-eof-child") == 0)
+        return run_stdin_eof_child();
 #if !defined(_WIN32)
     if (argc == 2 && strcmp(argv[1], "--print-blocked-usr1") == 0)
         return run_print_blocked_usr1();
@@ -1440,6 +1532,7 @@ int main(int argc, char **argv) {
     test_command_stdin();
 #endif
     test_bidirectional_pipes(argv[0]);
+    test_empty_stdin_is_eof(argv[0]);
     test_argv_quoting(argv[0]);
     test_look_path();
     test_combined_output();

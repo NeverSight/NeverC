@@ -889,7 +889,7 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
         if (!CreatePipe(&hStdoutRd, &hStdoutWr, &sa, 0) ||
             !SetHandleInformation(hStdoutRd, HANDLE_FLAG_INHERIT, 0)) goto setup_error;
     }
-    if (cmd->stdin_data && cmd->stdin_len > 0) {
+    if (cmd->stdin_data) {
         if (!CreatePipe(&hStdinRd, &hStdinWr, &sa, 0) ||
             !SetHandleInformation(hStdinWr, HANDLE_FLAG_INHERIT, 0)) goto setup_error;
     }
@@ -1026,7 +1026,7 @@ int neverc_exec_cmd_start(neverc_exec_cmd_t *cmd) {
     exec_windows_stdin_writer_t *writer = NULL;
     if (exec_prepare(cmd, 0, NULL, NULL) != 0) return -1;
 
-    if (cmd->stdin_data && cmd->stdin_len > 0) {
+    if (cmd->stdin_data) {
         if (!CreatePipe(&hStdinRd, &hStdinWr, &sa, 0) ||
             !SetHandleInformation(hStdinWr, HANDLE_FLAG_INHERIT, 0))
             goto setup_error;
@@ -1492,7 +1492,7 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
             return -1;
         }
     }
-    if (cmd->stdin_data && cmd->stdin_len > 0) {
+    if (cmd->stdin_data) {
         if (exec_pipe(stdin_pipe) < 0) {
             close(err_pipe[0]); close(err_pipe[1]);
             if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
@@ -1596,7 +1596,7 @@ int neverc_exec_cmd_start(neverc_exec_cmd_t *cmd) {
         cmd->name = saved_name;
         return -1;
     }
-    if (cmd->stdin_data && cmd->stdin_len > 0) {
+    if (cmd->stdin_data) {
         if (exec_pipe(stdin_pipe) < 0) {
             close(err_pipe[0]); close(err_pipe[1]);
             cmd->name = saved_name;
