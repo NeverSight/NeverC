@@ -445,19 +445,13 @@ int neverc_time_parse_rfc3339(const char *s, neverc_time_t *out) {
         int sign = (*p == '-') ? -1 : 1;
         p++;
         int tzh = parse_digits(&p, 2);
-        /* Go time.Parse(RFC3339) uses parseRFC3339 (hour 0-23) and falls
-         * back to the Z07:00 layout parser, which rejects only hour > 24
-         * and minute > 60 so that 24h / 60min offsets in the wild parse. */
-        if (tzh < 0 || tzh > 24) return -1;
-        int tzm = 0;
-        if (*p == ':') {
-            p++;
-            tzm = parse_digits(&p, 2);
-            if (tzm < 0 || tzm > 60) return -1;
-        } else if (*p >= '0' && *p <= '9') {
-            tzm = parse_digits(&p, 2);
-            if (tzm < 0 || tzm > 60) return -1;
-        }
+        /* Go time.Parse(RFC3339) falls back to the Z07:00 layout parser,
+         * which keeps the colon mandatory but rejects only hour > 24 and
+         * minute > 60 so that 24h / 60min offsets in the wild parse. */
+        if (tzh < 0 || tzh > 24 || *p != ':') return -1;
+        p++;
+        int tzm = parse_digits(&p, 2);
+        if (tzm < 0 || tzm > 60) return -1;
         tz_offset = sign * (tzh * 3600 + tzm * 60);
     } else return -1;
     if (*p != '\0') return -1;

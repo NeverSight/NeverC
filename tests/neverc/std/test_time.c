@@ -631,6 +631,8 @@ static void test_strict_rfc3339(void) {
         "2024-01-15T12:30:45.Z",
         "2024-01-15T12:30:45+25:00",
         "2024-01-15T12:30:45+08:61",
+        "2024-01-15T12:30:45+0800",
+        "2024-01-15T12:30:45+08",
         "2024-01-15 12:30:45Z",
         "2024-01-15t12:30:45z",
         "2024-01-15T12:30:61Z",
@@ -677,20 +679,6 @@ static void test_strict_rfc3339(void) {
                                             &out), 0);
         check_bool("rfc3339/layout +23:59 same instant",
                    out.sec == layout_out.sec && out.nsec == layout_out.nsec, 1);
-    }
-    check_int("accept compact +0800",
-              neverc_time_parse_rfc3339("2024-01-15T12:30:45+0800", &out), 0);
-    {
-        neverc_time_t hour_only, with_minutes;
-        check_int("accept hour-only +08",
-                  neverc_time_parse_rfc3339("2024-01-15T12:00:00+08",
-                                            &hour_only), 0);
-        check_int("hour-only matches +08:00",
-                  neverc_time_parse_rfc3339("2024-01-15T12:00:00+08:00",
-                                            &with_minutes), 0);
-        check_bool("hour-only offset equals +08:00",
-                   hour_only.sec == with_minutes.sec &&
-                   hour_only.nsec == with_minutes.nsec, 1);
     }
     check_int("reject leap second 60",
               neverc_time_parse_rfc3339("2024-01-15T12:30:60Z", &out), -1);
