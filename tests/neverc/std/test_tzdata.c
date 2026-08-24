@@ -1114,6 +1114,10 @@ static void test_zip_tzif(void) {
     neverc_tzdata_zone_t *fixed = neverc_tzdata_fixed_zone("UTC+8", 28800);
     neverc_tzdata_zone_free(fixed);
     check_int("zone_free fixed does not crash", 1, 1);
+    const neverc_tzdata_zone_t *builtin = neverc_tzdata_lookup("UTC");
+    neverc_tzdata_zone_free((neverc_tzdata_zone_t *)builtin);
+    check_int("zone_free built-in is a no-op",
+              neverc_tzdata_lookup("UTC") == builtin, 1);
     neverc_tzdata_zone_free(NULL);
 }
 

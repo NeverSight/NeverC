@@ -1384,7 +1384,9 @@ neverc_tzdata_zone_t *neverc_tzdata_load_from_zip(const uint8_t *zip,
 
 void neverc_tzdata_zone_free(neverc_tzdata_zone_t *zone) {
     if (!zone) return;
-    if (zone >= g_zones && zone < g_zones + tz_count) return;
+    for (int i = 0; i < tz_count; i++) {
+        if (zone == &g_zones[i]) return;
+    }
     posix_lock();
     if (posix_find_locked(zone)) {
         posix_unlock();
