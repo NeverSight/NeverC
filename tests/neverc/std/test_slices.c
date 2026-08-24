@@ -343,6 +343,12 @@ static void test_null_guards(void) {
     int arr[] = {1, 2, 3};
     int v = 1;
     ASSERT_TRUE(neverc_slices_compare(NULL, 3, arr, 3, sizeof(int), cmp_int) != 0);
+    ASSERT_TRUE(neverc_slices_compare(NULL, 3, NULL, 3,
+                                      sizeof(int), cmp_int) != 0);
+    ASSERT_TRUE(neverc_slices_compare(NULL, 3, NULL, 0,
+                                      sizeof(int), cmp_int) != 0);
+    ASSERT_TRUE(neverc_slices_compare(NULL, 0, NULL, 3,
+                                      sizeof(int), cmp_int) != 0);
     ASSERT_INT_EQ(neverc_slices_index(NULL, 3, &v, sizeof(int), eq_int), -1);
     ASSERT_TRUE(!neverc_slices_contains(NULL, 3, &v, sizeof(int), eq_int));
     ASSERT_INT_EQ((int)neverc_slices_delete(NULL, 5, sizeof(int), 0, 1), 5);

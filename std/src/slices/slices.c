@@ -53,8 +53,7 @@ int neverc_slices_compare(const void *s1, size_t len1, const void *s2, size_t le
     if ((len1 > 0 && len1 > SIZE_MAX / elem_size) ||
         (len2 > 0 && len2 > SIZE_MAX / elem_size))
         return 1;
-    if (len1 > 0 && !s1) len1 = 0;
-    if (len2 > 0 && !s2) len2 = 0;
+    if ((len1 > 0 && !s1) || (len2 > 0 && !s2)) return 1;
     size_t minlen = len1 < len2 ? len1 : len2;
     const char *p1 = (const char *)s1;
     const char *p2 = (const char *)s2;
