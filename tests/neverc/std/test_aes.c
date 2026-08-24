@@ -162,6 +162,38 @@ static void test_failed_reinit_wipes_key(void) {
                memcmp(leftover, ct, 16) != 0);
 }
 
+static void test_successful_reinit_wipes_unused_schedule(void) {
+    printf("[AES successful re-init wipes unused schedule]\n");
+    neverc_aes_ctx_t ctx;
+    uint8_t key256[32], key128[16], plain[16], expected[16], out[16];
+    hex_to_bytes(
+        "603deb1015ca71be2b73aef0857d77811"
+        "1f352c073b6108d72d9810a30914dff4",
+        key256, 32);
+    hex_to_bytes("2b7e151628aed2a6abf7158809cf4f3c", key128, 16);
+    hex_to_bytes("6bc1bee22e409f96e93d7e117393172a", plain, 16);
+    hex_to_bytes("3ad77bb40d7a3660a89ecaf32466ef97", expected, 16);
+
+    memset(&ctx, 0xA5, sizeof(ctx));
+    check_true("init AES-256 before downgrade",
+               neverc_aes_init(&ctx, key256, 32) == 0);
+    check_true("AES-256 uses tail of encryption schedule",
+               ctx.enc_key[NEVERC_AES_MAX_RK - 1] != 0);
+
+    check_true("re-init AES-128", neverc_aes_init(&ctx, key128, 16) == 0);
+    int tail_zero = 1;
+    for (int i = 44; i < NEVERC_AES_MAX_RK; i++) {
+        if (ctx.enc_key[i] != 0 || ctx.dec_key[i] != 0) {
+            tail_zero = 0;
+            break;
+        }
+    }
+    check_true("AES-128 unused schedules are wiped", tail_zero);
+    neverc_aes_encrypt_block(&ctx, out, plain);
+    check_true("AES-128 still matches NIST after re-init",
+               memcmp(out, expected, sizeof(out)) == 0);
+}
+
 static void test_round_trip(void) {
     printf("[AES round-trip]\n");
 
@@ -195,6 +227,7 @@ int main(void) {
     test_aes256();
     test_invalid_key();
     test_failed_reinit_wipes_key();
+    test_successful_reinit_wipes_unused_schedule();
     test_round_trip();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

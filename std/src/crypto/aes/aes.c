@@ -133,6 +133,12 @@ int neverc_aes_init(neverc_aes_ctx_t *ctx, const uint8_t *key, int key_len) {
                             Td3[sbox[(w      ) & 0xff]];
         }
     }
+    if (total < NEVERC_AES_MAX_RK) {
+        size_t tail_bytes =
+            (size_t)(NEVERC_AES_MAX_RK - total) * sizeof(*ek);
+        neverc_platform_secure_zero(ek + total, tail_bytes);
+        neverc_platform_secure_zero(dk + total, tail_bytes);
+    }
 
     return 0;
 }
