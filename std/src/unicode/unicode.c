@@ -3,7 +3,7 @@
 
 /*
  * Unicode classification and case mapping — tables and lookup rules match
- * Go's unicode package (Unicode 15.0.0 / Go 1.23). Latin-1 uses the same
+ * Go's unicode package (Unicode 17.0.0 / Go 1.27.0). Latin-1 uses the same
  * property bitmap fast path; everything else is a range-table search.
  */
 

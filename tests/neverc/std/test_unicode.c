@@ -304,14 +304,18 @@ static void test_unicode_conformance_edges(void) {
               neverc_unicode_simple_fold(0x03C2), 0x03C3);
     check_u32("fold small sigma to capital sigma",
               neverc_unicode_simple_fold(0x03C3), 0x03A3);
-    check_u32("fold iota-dialytika-tonos stays",
-              neverc_unicode_simple_fold(0x0390), 0x0390);
-    check_u32("fold iota-dialytika-oxia stays",
-              neverc_unicode_simple_fold(0x1FD3), 0x1FD3);
-    check_u32("fold upsilon-dialytika-tonos stays",
-              neverc_unicode_simple_fold(0x03B0), 0x03B0);
-    check_u32("fold st ligature stays",
-              neverc_unicode_simple_fold(0xFB05), 0xFB05);
+    check_u32("fold iota-dialytika-tonos to oxia",
+              neverc_unicode_simple_fold(0x0390), 0x1FD3);
+    check_u32("fold iota-dialytika-oxia to tonos",
+              neverc_unicode_simple_fold(0x1FD3), 0x0390);
+    check_u32("fold upsilon-dialytika-tonos to oxia",
+              neverc_unicode_simple_fold(0x03B0), 0x1FE3);
+    check_u32("fold upsilon-dialytika-oxia to tonos",
+              neverc_unicode_simple_fold(0x1FE3), 0x03B0);
+    check_u32("fold long-s-t ligature to st ligature",
+              neverc_unicode_simple_fold(0xFB05), 0xFB06);
+    check_u32("fold st ligature to long-s-t ligature",
+              neverc_unicode_simple_fold(0xFB06), 0xFB05);
     check_u32("fold capital I with dot to itself",
               neverc_unicode_simple_fold(0x0130), 0x0130);
     check_u32("fold dotless i to itself",
@@ -436,6 +440,42 @@ static void test_unicode_go_tables(void) {
               !neverc_unicode_is_print(0xD800), 1);
 }
 
+static void test_unicode_17_boundaries(void) {
+    printf("[Unicode 17 boundaries]\n");
+
+    /* Todhri was unassigned in the previous Unicode 15 snapshot. */
+    check_int("unassigned before Todhri is not letter",
+              !neverc_unicode_is_letter(0x105BF) &&
+              !neverc_unicode_is_print(0x105BF), 1);
+    check_int("Todhri letter A is an uncased printable letter",
+              neverc_unicode_is_letter(0x105C0) &&
+              neverc_unicode_is_print(0x105C0) &&
+              neverc_unicode_is_graphic(0x105C0) &&
+              !neverc_unicode_is_upper(0x105C0) &&
+              !neverc_unicode_is_lower(0x105C0) &&
+              !neverc_unicode_is_title(0x105C0), 1);
+    check_int("Todhri letter OO closes the letter range",
+              neverc_unicode_is_letter(0x105F3) &&
+              neverc_unicode_is_print(0x105F3), 1);
+    check_int("unassigned after Todhri is not letter",
+              !neverc_unicode_is_letter(0x105F4) &&
+              !neverc_unicode_is_print(0x105F4), 1);
+
+    /* Beria Erfe directly exercises a new supplementary-plane CaseRange. */
+    check_int("Beria Erfe capital Arkab is an uppercase letter",
+              neverc_unicode_is_letter(0x16EA0) &&
+              neverc_unicode_is_upper(0x16EA0) &&
+              !neverc_unicode_is_lower(0x16EA0), 1);
+    check_int("Beria Erfe small Arkab is a lowercase letter",
+              neverc_unicode_is_letter(0x16EBB) &&
+              neverc_unicode_is_lower(0x16EBB) &&
+              !neverc_unicode_is_upper(0x16EBB), 1);
+    check_u32("Beria Erfe capital Arkab lowercase",
+              neverc_unicode_to_lower(0x16EA0), 0x16EBB);
+    check_u32("Beria Erfe small Arkab uppercase",
+              neverc_unicode_to_upper(0x16EBB), 0x16EA0);
+}
+
 int main(void) {
     printf("=== NeverC Unicode Library Tests ===\n\n");
     test_ascii_classification();
@@ -448,6 +488,7 @@ int main(void) {
     test_simple_fold();
     test_unicode_conformance_edges();
     test_unicode_go_tables();
+    test_unicode_17_boundaries();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

@@ -57,10 +57,19 @@ static void test_equal_fold(void) {
     check_int("fold numbers", neverc_cstring_equal_fold("123", "123"), 1);
     check_int("fold kelvin", neverc_cstring_equal_fold("K", "\xe2\x84\xaa"), 1);
     check_int("fold sigma", neverc_cstring_equal_fold("\xce\xa3", "\xcf\x83"), 1);
-    check_int("fold ΐ/ΐ",
-              neverc_cstring_equal_fold("\xce\x90", "\xe1\xbf\x93"), 0);
-    check_int("fold ﬅ/ﬆ",
-              neverc_cstring_equal_fold("\xef\xac\x85", "\xef\xac\x86"), 0);
+    /* Go 1.27 / Unicode 17 snapshot SimpleFold orbits, in both directions. */
+    check_int("fold ΐ/ΐ forward",
+              neverc_cstring_equal_fold("\xce\x90", "\xe1\xbf\x93"), 1);
+    check_int("fold ΐ/ΐ reverse",
+              neverc_cstring_equal_fold("\xe1\xbf\x93", "\xce\x90"), 1);
+    check_int("fold ΰ/ΰ forward",
+              neverc_cstring_equal_fold("\xce\xb0", "\xe1\xbf\xa3"), 1);
+    check_int("fold ΰ/ΰ reverse",
+              neverc_cstring_equal_fold("\xe1\xbf\xa3", "\xce\xb0"), 1);
+    check_int("fold ﬅ/ﬆ forward",
+              neverc_cstring_equal_fold("\xef\xac\x85", "\xef\xac\x86"), 1);
+    check_int("fold ﬅ/ﬆ reverse",
+              neverc_cstring_equal_fold("\xef\xac\x86", "\xef\xac\x85"), 1);
 
     srand(9173);
     int mismatches = 0;

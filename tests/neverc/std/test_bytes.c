@@ -64,13 +64,25 @@ static void test_compare(void) {
     check_bool("equalfold sigma", neverc_bytes_equal_fold(
                    (const uint8_t *)"\xce\xa3", 2,
                    (const uint8_t *)"\xcf\x83", 2), 1);
-    /* Go 1.23 SimpleFold has no ΐ/ΐ or ﬅ/ﬆ orbit. */
-    check_bool("equalfold iota dialytika", neverc_bytes_equal_fold(
+    /* Go 1.27 / Unicode 17 snapshot SimpleFold orbits. */
+    check_bool("equalfold iota dialytika forward", neverc_bytes_equal_fold(
                    (const uint8_t *)"\xce\x90", 2,
-                   (const uint8_t *)"\xe1\xbf\x93", 3), 0);
-    check_bool("equalfold st ligatures", neverc_bytes_equal_fold(
+                   (const uint8_t *)"\xe1\xbf\x93", 3), 1);
+    check_bool("equalfold iota dialytika reverse", neverc_bytes_equal_fold(
+                   (const uint8_t *)"\xe1\xbf\x93", 3,
+                   (const uint8_t *)"\xce\x90", 2), 1);
+    check_bool("equalfold upsilon dialytika forward", neverc_bytes_equal_fold(
+                   (const uint8_t *)"\xce\xb0", 2,
+                   (const uint8_t *)"\xe1\xbf\xa3", 3), 1);
+    check_bool("equalfold upsilon dialytika reverse", neverc_bytes_equal_fold(
+                   (const uint8_t *)"\xe1\xbf\xa3", 3,
+                   (const uint8_t *)"\xce\xb0", 2), 1);
+    check_bool("equalfold st ligatures forward", neverc_bytes_equal_fold(
                    (const uint8_t *)"\xef\xac\x85", 3,
-                   (const uint8_t *)"\xef\xac\x86", 3), 0);
+                   (const uint8_t *)"\xef\xac\x86", 3), 1);
+    check_bool("equalfold st ligatures reverse", neverc_bytes_equal_fold(
+                   (const uint8_t *)"\xef\xac\x86", 3,
+                   (const uint8_t *)"\xef\xac\x85", 3), 1);
 }
 
 static void test_search(void) {
