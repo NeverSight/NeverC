@@ -271,10 +271,6 @@ int neverc_flag_parse(int argc, char **argv) {
                 fprintf(stderr, "flag -%s needs value\n", f->name);
                 return flag_parse_fail();
             }
-            if (strcmp(argv[i], "--") == 0) {
-                fprintf(stderr, "flag -%s needs value\n", f->name);
-                return flag_parse_fail();
-            }
             value = argv[i];
         }
         if (set_entry_value(f, value, implicit_bool) != 0) {

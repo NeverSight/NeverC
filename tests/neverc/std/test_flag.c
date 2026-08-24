@@ -162,14 +162,16 @@ static void test_double_dash(void) {
     check_str("arg0 after --", neverc_flag_arg(0), "-other");
 }
 
-static void test_value_cannot_be_terminator(void) {
-    printf("[value cannot be terminator]\n");
+static void test_double_dash_as_value(void) {
+    printf("[double dash as value]\n");
     neverc_flag_reset();
     const char *name = "def";
     neverc_flag_string("name", "def", "user", &name);
     char *argv[] = {"prog", "-name", "--", "file.txt"};
-    check_int("missing value before --", neverc_flag_parse(4, argv), -1);
-    check_str("name unchanged", name, "def");
+    check_int("-- consumed as value", neverc_flag_parse(4, argv), 0);
+    check_str("name is --", name, "--");
+    check_int("one arg remains", neverc_flag_narg(), 1);
+    check_str("remaining file", neverc_flag_arg(0), "file.txt");
 }
 
 static void test_int64_uint64(void) {
@@ -751,7 +753,7 @@ int main(void) {
     test_lone_dash();
     test_base_prefixes();
     test_double_dash();
-    test_value_cannot_be_terminator();
+    test_double_dash_as_value();
     test_int64_uint64();
     test_numeric_limits();
     test_invalid_values();
