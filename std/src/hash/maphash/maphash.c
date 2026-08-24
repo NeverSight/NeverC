@@ -110,8 +110,10 @@ static uint64_t wyhash(const void *key, size_t len, uint64_t seed) {
 
 uint64_t neverc_maphash_make_seed(void) {
     uint64_t seed = 0;
-    if (NCI_MAPHASH_RANDOM((unsigned char *)&seed, sizeof(seed)) != 0)
-        return 0;
+    do {
+        if (NCI_MAPHASH_RANDOM((unsigned char *)&seed, sizeof(seed)) != 0)
+            return 0;
+    } while (seed == 0);
     return seed;
 }
 
