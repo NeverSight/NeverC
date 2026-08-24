@@ -809,6 +809,15 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
     return NULL;
 }
 
+static int scoped_flag_bit(int c) {
+    switch (c) {
+    case 'i': return NC_RE_FLAG_FOLD_CASE;
+    case 's': return NC_RE_FLAG_DOT_NL;
+    case 'm': return NC_RE_FLAG_MULTI_LINE;
+    default: return 0;
+    }
+}
+
 static neverc_regexp_syntax_node_t *parse_group(parser_t *p) {
     if (++p->depth > NCI_REGEXP_SYNTAX_MAX_DEPTH) {
         p->err = "expression nested too deeply";
@@ -816,11 +825,35 @@ static neverc_regexp_syntax_node_t *parse_group(parser_t *p) {
         return NULL;
     }
     neverc_regexp_syntax_node_t *result = NULL;
-    if (p->pos + 2 < p->len && p->src[p->pos] == '?' &&
-        p->src[p->pos + 1] == 'i' && p->src[p->pos + 2] == ':') {
+    if (p->pos + 1 < p->len && p->src[p->pos] == '?' &&
+        scoped_flag_bit((unsigned char)p->src[p->pos + 1]) != 0) {
         int saved_flags = p->flags;
-        p->pos += 3;
-        p->flags = saved_flags | NC_RE_FLAG_FOLD_CASE;
+        int scoped_flags = 0;
+        p->pos++; /* skip '?' */
+        while (p->pos < p->len && p->src[p->pos] != ':') {
+            int c = (unsigned char)p->src[p->pos];
+            if (c == ')') {
+                p->err = "scoped flags require ':'";
+                goto done;
+            }
+            int bit = scoped_flag_bit(c);
+            if (!bit) {
+                p->err = "invalid scoped flag";
+                goto done;
+            }
+            if (scoped_flags & bit) {
+                p->err = "duplicate scoped flag";
+                goto done;
+            }
+            scoped_flags |= bit;
+            p->pos++;
+        }
+        if (p->pos >= p->len) {
+            p->err = "scoped flags require ':'";
+            goto done;
+        }
+        p->pos++; /* skip ':' */
+        p->flags = saved_flags | scoped_flags;
         neverc_regexp_syntax_node_t *inner = parse_alternation(p);
         /* Parser flags are lexical scope, not state carried past the group.
          * Restore them before every success or error exit from this branch. */
@@ -1332,7 +1365,7 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
     if (!n) return;
     switch (n->op) {
     case NC_RE_OP_NO_MATCH: sb_puts(sb, "[^\\x00-\\x{10FFFF}]"); break;
-    case NC_RE_OP_EMPTY_MATCH: break;
+    case NC_RE_OP_EMPTY_MATCH: sb_puts(sb, "(?:)"); break;
     case NC_RE_OP_LITERAL: {
         int folded = (n->flags & NC_RE_FLAG_FOLD_CASE) != 0;
         if (folded) sb_puts(sb, "(?i:");
@@ -1363,8 +1396,8 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
     }
     case NC_RE_OP_ANY_CHAR_NOT_NL: sb_putc(sb, '.'); break;
     case NC_RE_OP_ANY_CHAR: sb_puts(sb, "(?s:.)"); break;
-    case NC_RE_OP_BEGIN_LINE: sb_putc(sb, '^'); break;
-    case NC_RE_OP_END_LINE: sb_putc(sb, '$'); break;
+    case NC_RE_OP_BEGIN_LINE: sb_puts(sb, "(?m:^)"); break;
+    case NC_RE_OP_END_LINE: sb_puts(sb, "(?m:$)"); break;
     case NC_RE_OP_BEGIN_TEXT:
         sb_puts(sb, (n->flags & NC_RE_FLAG_WAS_CARET) ? "^" : "\\A");
         break;
@@ -1443,7 +1476,8 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
         break;
     case NC_RE_OP_CONCAT:
         for (int i = 0; i < n->nsubs; i++) {
-            if (n->subs[i]->op == NC_RE_OP_ALTERNATE) {
+            if (n->subs[i]->op == NC_RE_OP_CONCAT ||
+                n->subs[i]->op == NC_RE_OP_ALTERNATE) {
                 sb_puts(sb, "(?:");
                 node_to_str(n->subs[i], sb);
                 sb_putc(sb, ')');
@@ -1455,7 +1489,13 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
     case NC_RE_OP_ALTERNATE:
         for (int i = 0; i < n->nsubs; i++) {
             if (i > 0) sb_putc(sb, '|');
-            node_to_str(n->subs[i], sb);
+            if (n->subs[i]->op == NC_RE_OP_ALTERNATE) {
+                sb_puts(sb, "(?:");
+                node_to_str(n->subs[i], sb);
+                sb_putc(sb, ')');
+            } else {
+                node_to_str(n->subs[i], sb);
+            }
         }
         break;
     }

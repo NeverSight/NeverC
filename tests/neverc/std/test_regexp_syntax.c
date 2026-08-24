@@ -60,6 +60,18 @@ static int class_contains(const neverc_regexp_syntax_node_t *node, int rune) {
     return (node->flags & NC_RE_FLAG_CLASS_NEGATED) ? !contained : contained;
 }
 
+static int node_round_trips(const neverc_regexp_syntax_node_t *node) {
+    char *text = neverc_regexp_syntax_string(node);
+    if (!text) return 0;
+    const char *err = NULL;
+    neverc_regexp_syntax_node_t *copy =
+        neverc_regexp_syntax_parse(text, 0, &err);
+    int equal = copy && neverc_regexp_syntax_equal(node, copy);
+    free(text);
+    neverc_regexp_syntax_free(copy);
+    return equal;
+}
+
 /* ===== Parse basic patterns ===== */
 
 static void test_parse_literal(void) {
@@ -379,6 +391,60 @@ static void test_parse_group(void) {
     check_not_null("(?'name')", n);
     check_str("(?'name') name", n ? n->name : NULL, "name");
     neverc_regexp_syntax_free(n);
+}
+
+static void test_scoped_flags(void) {
+    printf("[scoped_flags]\n");
+    const char *err = NULL;
+    neverc_regexp_syntax_node_t *n;
+
+    /* All supported flags may be combined in any order. Their effects are
+     * lexical: none may leak into the atoms following the scoped group. */
+    n = neverc_regexp_syntax_parse("(?mis:a.$)b.^$", 0, &err);
+    check_not_null("combined scoped flags", n);
+    check_op("combined scope outer concat", n, NC_RE_OP_CONCAT);
+    check_int("combined scope outer arity", n ? n->nsubs : 0, 5);
+    neverc_regexp_syntax_node_t *inner =
+        (n && n->nsubs == 5) ? n->subs[0] : NULL;
+    check_op("combined scope inner concat", inner, NC_RE_OP_CONCAT);
+    check_int("combined scope inner arity", inner ? inner->nsubs : 0, 3);
+    check_int("combined scope folds literal",
+              (inner && inner->nsubs == 3) ?
+                  (inner->subs[0]->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 0,
+              1);
+    check_int("combined scope canonical literal",
+              (inner && inner->nsubs == 3 && inner->subs[0]->nrunes == 1) ?
+                  inner->subs[0]->runes[0] : -1,
+              'A');
+    check_op("combined scope dot matches newline",
+             (inner && inner->nsubs == 3) ? inner->subs[1] : NULL,
+             NC_RE_OP_ANY_CHAR);
+    check_op("combined scope dollar is line anchor",
+             (inner && inner->nsubs == 3) ? inner->subs[2] : NULL,
+             NC_RE_OP_END_LINE);
+    check_int("combined scope restores literal folding",
+              (n && n->nsubs == 5) ?
+                  (n->subs[1]->flags & NC_RE_FLAG_FOLD_CASE) != 0 : 1,
+              0);
+    check_op("combined scope restores dot",
+             (n && n->nsubs == 5) ? n->subs[2] : NULL,
+             NC_RE_OP_ANY_CHAR_NOT_NL);
+    check_op("combined scope restores caret",
+             (n && n->nsubs == 5) ? n->subs[3] : NULL,
+             NC_RE_OP_BEGIN_TEXT);
+    check_op("combined scope restores dollar",
+             (n && n->nsubs == 5) ? n->subs[4] : NULL,
+             NC_RE_OP_END_TEXT);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("(?ii:a)", 0, &err);
+    check_null("duplicate scoped flag rejected", n);
+    n = neverc_regexp_syntax_parse("(?ix:a)", 0, &err);
+    check_null("unknown scoped flag rejected", n);
+    n = neverc_regexp_syntax_parse("(?x:a)", 0, &err);
+    check_null("unknown initial scoped flag rejected", n);
+    n = neverc_regexp_syntax_parse("(?i)", 0, &err);
+    check_null("scoped flags require colon", n);
 }
 
 /* ===== Char class ===== */
@@ -795,6 +861,55 @@ static void test_string(void) {
     free(s);
     neverc_regexp_syntax_free(n);
 
+    n = neverc_regexp_syntax_parse(".", NC_RE_FLAG_DOT_NL, &err);
+    s = neverc_regexp_syntax_string(n);
+    check_str("string dot-all is self-contained", s, "(?s:.)");
+    check_int("dot-all string round trip", node_round_trips(n), 1);
+    free(s);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("^", NC_RE_FLAG_MULTI_LINE, &err);
+    s = neverc_regexp_syntax_string(n);
+    check_str("string begin-line is self-contained", s, "(?m:^)");
+    check_int("begin-line string round trip", node_round_trips(n), 1);
+    free(s);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("$", NC_RE_FLAG_MULTI_LINE, &err);
+    s = neverc_regexp_syntax_string(n);
+    check_str("string end-line is self-contained", s, "(?m:$)");
+    check_int("end-line string round trip", node_round_trips(n), 1);
+    free(s);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse(
+        "(?i:a)(?s:.)(?m:^)(?m:$)b", 0, &err);
+    check_not_null("mixed scoped nodes", n);
+    check_int("mixed scoped nodes string round trip", node_round_trips(n), 1);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("(?:)*", 0, &err);
+    s = neverc_regexp_syntax_string(n);
+    check_str("string repeated empty match", s, "(?:)*");
+    check_int("repeated empty match string round trip",
+              node_round_trips(n), 1);
+    free(s);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("(?:ab)c", 0, &err);
+    s = neverc_regexp_syntax_string(n);
+    check_str("string nested concat preserves node", s, "(?:ab)c");
+    check_int("nested concat string round trip", node_round_trips(n), 1);
+    free(s);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("(?:a|b)|c", 0, &err);
+    s = neverc_regexp_syntax_string(n);
+    check_str("string nested alternate preserves node", s, "(?:a|b)|c");
+    check_int("nested alternate string round trip", node_round_trips(n), 1);
+    free(s);
+    neverc_regexp_syntax_free(n);
+
     n = neverc_regexp_syntax_parse("a{2,5}", 0, &err);
     s = neverc_regexp_syntax_string(n);
     check_str("string a{2,5}", s, "a{2,5}");
@@ -1005,6 +1120,7 @@ int main(void) {
     test_parse_repeat();
     test_parse_alternate();
     test_parse_group();
+    test_scoped_flags();
     test_parse_charclass();
     test_parse_escapes();
     test_fold_case();

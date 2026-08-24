@@ -8,7 +8,8 @@
  * Invalid UTF-8 in the pattern is an error (Go ErrInvalidUTF8).
  * `{01}` is a literal, not a repeat (Go parseInt).
  * Supports: literal, Unicode simple-folded literal/character classes,
- *           char class, ., *, +, ?, {n,m}, |, (), (?:), (?i:),
+ *           char class, ., *, +, ?, {n,m}, |, (), (?:), scoped (?i:),
+ *           (?s:), and (?m:) flags (unique flags may be combined),
  *           anchors (^ $ \b \B \A \z), escapes (\d \w \s \D \W \S \xHH \x{H+}).
  */
 
