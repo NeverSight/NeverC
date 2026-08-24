@@ -638,6 +638,63 @@ static size_t build_two_locals(uint8_t *out, size_t cap,
     return pos + 22U;
 }
 
+static void test_unsigned_descriptor_crc_signature_collision(void) {
+    printf("[unsigned descriptor CRC/signature collision]\n");
+    static const uint8_t collision_payload[] = {
+        0xac, 0x0a, 0x7a, 0xd5
+    };
+    const uint32_t descriptor_signature = 0x08074b50U;
+    const size_t first_data = 30U + 1U;
+    const size_t descriptor = first_data + sizeof(collision_payload);
+    const uint32_t second_local = (uint32_t)(descriptor + 12U);
+    uint8_t crafted[256];
+    size_t n = build_two_locals(
+        crafted, sizeof(crafted), 0, "a", sizeof(collision_payload),
+        second_local, "b", 1);
+    check_int("CRC/signature collision fixture", n > 0, 1);
+    if (n == 0)
+        return;
+
+    check_int("collision payload CRC",
+              neverc_crc32_ieee(collision_payload,
+                                sizeof(collision_payload)) ==
+                  descriptor_signature,
+              1);
+    memcpy(crafted + first_data, collision_payload,
+           sizeof(collision_payload));
+
+    /* Streamed first entry with an unsigned 12-byte descriptor.  Its CRC is
+     * numerically identical to the optional descriptor signature, and a
+     * second local record follows immediately. */
+    put16(crafted + 6U, 0x0008U);
+    put32(crafted + 14U, 0);
+    put32(crafted + 18U, 0);
+    put32(crafted + 22U, 0);
+    put32(crafted + descriptor, descriptor_signature);
+    put32(crafted + descriptor + 4U, (uint32_t)sizeof(collision_payload));
+    put32(crafted + descriptor + 8U, (uint32_t)sizeof(collision_payload));
+
+    size_t eocd = n - 22U;
+    uint32_t central = get32(crafted + eocd + 16U);
+    put16(crafted + central + 8U, 0x0008U);
+    put32(crafted + central + 16U, descriptor_signature);
+
+    neverc_zip_reader_t reader;
+    check_int("accept unsigned descriptor whose CRC equals signature",
+              neverc_zip_reader_init(&reader, crafted, n), 0);
+    check_int("collision archive file count",
+              neverc_zip_reader_count(&reader), 2);
+    size_t data_len = 0;
+    const uint8_t *file_data =
+        neverc_zip_reader_file_data(&reader, 0, &data_len);
+    check_int("collision archive first payload",
+              file_data != NULL && data_len == sizeof(collision_payload) &&
+                  memcmp(file_data, collision_payload,
+                         sizeof(collision_payload)) == 0,
+              1);
+    neverc_zip_reader_free(&reader);
+}
+
 static void test_overlapping_entries(void) {
     printf("[overlapping entries]\n");
     neverc_zip_writer_t writer;
@@ -817,6 +874,7 @@ int main(void) {
     test_invalid_args();
     test_reject_unsafe_paths();
     test_directory_extra_and_descriptor();
+    test_unsigned_descriptor_crc_signature_collision();
     test_overlapping_entries();
     test_zip64_sentinels();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);

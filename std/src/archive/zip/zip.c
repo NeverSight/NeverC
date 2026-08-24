@@ -199,15 +199,25 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
                 cd_offset - record_end < 12U)
                 return zip_reader_fail(r, ranges);
             size_t desc = (size_t)record_end;
-            uint64_t desc_len = 12U;
-            if (cd_offset - record_end >= 16U &&
-                read32(data + desc) == 0x08074b50U) {
-                desc += 4U;
+            uint64_t available = cd_offset - record_end;
+            /* An unsigned descriptor's CRC can itself equal the optional
+             * signature.  Disambiguate the two layouts using all three
+             * values already known from the central directory. */
+            int signed_ok = available >= 16U &&
+                read32(data + desc) == 0x08074b50U &&
+                read32(data + desc + 4U) == crc &&
+                read32(data + desc + 8U) == compressed_size &&
+                read32(data + desc + 12U) == uncompressed_size;
+            int unsigned_ok =
+                read32(data + desc) == crc &&
+                read32(data + desc + 4U) == compressed_size &&
+                read32(data + desc + 8U) == uncompressed_size;
+            uint64_t desc_len;
+            if (signed_ok)
                 desc_len = 16U;
-            }
-            if (read32(data + desc) != crc ||
-                read32(data + desc + 4U) != compressed_size ||
-                read32(data + desc + 8U) != uncompressed_size)
+            else if (unsigned_ok)
+                desc_len = 12U;
+            else
                 return zip_reader_fail(r, ranges);
             record_end += desc_len;
         }
