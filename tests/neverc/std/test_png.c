@@ -1,4 +1,5 @@
 #include "neverc/std/image/png.h"
+#include "neverc/std/hash/adler32.h"
 #include "neverc/std/hash/crc32.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,6 +57,167 @@ static uint8_t *insert_empty_chunk(const uint8_t *png, size_t png_len,
                                    size_t offset, const char type[4],
                                    size_t *result_len) {
     return insert_chunk(png, png_len, offset, type, NULL, 0, result_len);
+}
+
+static void png_test_put_bits(uint8_t *buffer, size_t *bit_offset,
+                              unsigned value, unsigned count) {
+    for (unsigned bit = 0; bit < count; bit++) {
+        if ((value >> bit) & 1U)
+            buffer[*bit_offset / 8U] |=
+                (uint8_t)(1U << (*bit_offset % 8U));
+        (*bit_offset)++;
+    }
+}
+
+static uint32_t png_test_bit_reverse(uint32_t code, unsigned nbits) {
+    uint32_t rev = 0;
+    for (unsigned i = 0; i < nbits; i++)
+        rev |= ((code >> i) & 1U) << (nbits - 1U - i);
+    return rev;
+}
+
+static void png_test_put_fixed_litlen(uint8_t *buffer, size_t *bit_offset,
+                                      unsigned sym) {
+    uint32_t code;
+    unsigned nbits;
+    if (sym <= 143U) {
+        code = sym + 0x30U;
+        nbits = 8;
+    } else if (sym <= 255U) {
+        code = sym - 144U + 0x190U;
+        nbits = 9;
+    } else if (sym <= 279U) {
+        code = sym - 256U;
+        nbits = 7;
+    } else {
+        code = sym - 280U + 0xC0U;
+        nbits = 8;
+    }
+    png_test_put_bits(buffer, bit_offset,
+                      png_test_bit_reverse(code, nbits), nbits);
+}
+
+static void png_test_put_fixed_distance(uint8_t *buffer, size_t *bit_offset,
+                                        unsigned distance) {
+    static const uint16_t base[30] = {
+        1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,
+        1025,1537,2049,3073,4097,6145,8193,12289,16385,24577
+    };
+    static const uint8_t extra[30] = {
+        0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13
+    };
+    unsigned dsym = 0;
+    uint32_t rev = 0;
+    while (dsym + 1U < 30U && base[dsym + 1U] <= distance)
+        dsym++;
+    for (unsigned i = 0; i < 5U; i++)
+        rev |= ((dsym >> i) & 1U) << (4U - i);
+    png_test_put_bits(buffer, bit_offset, rev, 5U);
+    if (extra[dsym] > 0)
+        png_test_put_bits(buffer, bit_offset,
+                          distance - base[dsym], extra[dsym]);
+}
+
+static int png_test_wrap_zlib(uint8_t *zlib, size_t *zlib_len,
+                              unsigned cinfo, const uint8_t *raw,
+                              size_t raw_len, const uint8_t *plain,
+                              size_t plain_len) {
+    if (*zlib_len < raw_len + 6U) return -1;
+    uint8_t cmf = (uint8_t)((cinfo << 4) | 8U);
+    uint8_t flg = 0;
+    for (unsigned candidate = 0; candidate < 32U; candidate++) {
+        if ((((unsigned)cmf * 256U + candidate) % 31U) == 0) {
+            flg = (uint8_t)candidate;
+            break;
+        }
+    }
+    zlib[0] = cmf;
+    zlib[1] = flg;
+    memcpy(zlib + 2, raw, raw_len);
+    uint32_t adler = neverc_adler32_checksum(plain, plain_len);
+    zlib[2 + raw_len] = (uint8_t)(adler >> 24);
+    zlib[3 + raw_len] = (uint8_t)(adler >> 16);
+    zlib[4 + raw_len] = (uint8_t)(adler >> 8);
+    zlib[5 + raw_len] = (uint8_t)adler;
+    *zlib_len = raw_len + 6U;
+    return 0;
+}
+
+static uint8_t *png_test_build_grayscale(uint32_t width,
+                                         const uint8_t *zlib,
+                                         size_t zlib_len,
+                                         size_t *png_len) {
+    static const uint8_t signature[8] = {137,80,78,71,13,10,26,10};
+    uint8_t ihdr[13] = {0};
+    wr_be32(ihdr, width);
+    wr_be32(ihdr + 4, 1);
+    ihdr[8] = 8;
+    ihdr[9] = NEVERC_PNG_COLOR_GRAYSCALE;
+
+    size_t len = 0;
+    uint8_t *png = insert_chunk(signature, sizeof(signature),
+                                sizeof(signature), "IHDR", ihdr,
+                                sizeof(ihdr), &len);
+    if (!png) return NULL;
+    size_t next_len = 0;
+    uint8_t *next = insert_chunk(png, len, len, "IDAT", zlib,
+                                 (uint32_t)zlib_len, &next_len);
+    free(png);
+    if (!next) return NULL;
+    png = insert_empty_chunk(next, next_len, next_len, "IEND", png_len);
+    free(next);
+    return png;
+}
+
+static void test_zlib_window_bits(void) {
+    printf("[zlib_window_bits]\n");
+
+    /* The decoded scanline is filter byte 0 plus 259 grayscale pixels.
+     * Its final length-3 match has distance 257: legal with CINFO=1's
+     * 512-byte window, but invalid with CINFO=0's 256-byte window. */
+    uint8_t raw[512] = {0};
+    size_t bit_offset = 0;
+    png_test_put_bits(raw, &bit_offset, 1U, 1U); /* final block */
+    png_test_put_bits(raw, &bit_offset, 1U, 2U); /* fixed Huffman */
+    for (unsigned i = 0; i < 257U; i++)
+        png_test_put_fixed_litlen(raw, &bit_offset, i & 0xFFU);
+    png_test_put_fixed_litlen(raw, &bit_offset, 257U); /* length 3 */
+    png_test_put_fixed_distance(raw, &bit_offset, 257U);
+    png_test_put_fixed_litlen(raw, &bit_offset, 256U); /* end */
+    size_t raw_len = (bit_offset + 7U) / 8U;
+
+    uint8_t scanline[260];
+    for (unsigned i = 0; i < 257U; i++)
+        scanline[i] = (uint8_t)(i & 0xFFU);
+    scanline[257] = 0;
+    scanline[258] = 1;
+    scanline[259] = 2;
+
+    for (unsigned cinfo = 0; cinfo <= 1; cinfo++) {
+        uint8_t zlib[520];
+        size_t zlib_len = sizeof(zlib);
+        ASSERT_EQ(png_test_wrap_zlib(zlib, &zlib_len, cinfo, raw, raw_len,
+                                     scanline, sizeof(scanline)), 0);
+        size_t png_len = 0;
+        uint8_t *png = png_test_build_grayscale(259, zlib, zlib_len, &png_len);
+        ASSERT_TRUE(png != NULL);
+        if (!png) continue;
+
+        neverc_png_image_t decoded;
+        int rc = neverc_png_decode(png, png_len, &decoded);
+        if (cinfo == 0) {
+            ASSERT_EQ(rc, -1);
+        } else {
+            ASSERT_EQ(rc, 0);
+            if (rc == 0) {
+                ASSERT_EQ(decoded.width, 259);
+                ASSERT_EQ(decoded.height, 1);
+                ASSERT_TRUE(memcmp(decoded.pixels, scanline + 1, 259) == 0);
+                neverc_png_free(&decoded);
+            }
+        }
+        free(png);
+    }
 }
 
 static void test_encode_decode_rgba(void) {
@@ -922,6 +1084,7 @@ int main(void) {
     test_large_image();
     test_chunk_crc_valid();
     test_zlib_fcheck_valid();
+    test_zlib_window_bits();
     test_rejects_huge_ihdr();
     test_rejects_truncated_stream();
     test_truncated_header_clears_geometry();

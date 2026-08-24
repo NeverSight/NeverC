@@ -329,11 +329,16 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
     }
 
     size_t decompressed_len = raw_size;
-    int rc = neverc_flate_decompress(idat_buf + 2, idat_len - 6, raw, &decompressed_len);
+    size_t compressed_used = 0;
+    unsigned window = 1u << ((cmf >> 4) + 8);
+    int rc = neverc_flate_decompress_consumed_window(
+        idat_buf + 2, idat_len - 6, raw, &decompressed_len,
+        &compressed_used, window);
     free(idat_buf);
     idat_buf = NULL;
 
-    if (rc != 0 || decompressed_len != raw_size ||
+    if (rc != 0 || compressed_used != idat_len - 6 ||
+        decompressed_len != raw_size ||
         neverc_adler32_checksum(raw, raw_size) != expected_adler) {
         png_decode_fail(img, NULL, raw);
         return -1;
