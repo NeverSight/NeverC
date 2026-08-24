@@ -122,9 +122,10 @@ ObjectReaderProvider::read(
 #endif
   };
 
-  Expected<NevercStatus> Invoked = neverc_status_ok();
-  if (Match->Format->Owner) {
-    Invoked = Task.invokeCallback(
+  Expected<NevercStatus> Invoked = [&]() -> Expected<NevercStatus> {
+    if (!Match->Format->Owner)
+      return InvokeReader();
+    return Task.invokeCallback(
         Match->Format->PluginID,
         "object-reader:" + Match->Format->CanonicalName,
         [&] {
@@ -139,9 +140,7 @@ ObjectReaderProvider::read(
           return InvokeReader();
         },
         true, nullptr, false, Match->Format);
-  } else {
-    Invoked = InvokeReader();
-  }
+  }();
   if (!Invoked) {
     if (Bridge.hasActiveMutation())
       (void)Bridge.abandonMutation(*Mutation);

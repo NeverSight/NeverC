@@ -123,11 +123,10 @@ executeObjectMergeProvider(
     return Provider.Merge(Provider.UserData, Task.handle(), &Request,
                           &Candidate);
   };
-  Expected<NevercStatus> Invoked = neverc_status_ok();
-  if (Provider.Builtin) {
-    Invoked = Invoke();
-  } else {
-    Invoked = Task.invokeCallback(
+  Expected<NevercStatus> Invoked = [&]() -> Expected<NevercStatus> {
+    if (Provider.Builtin)
+      return Invoke();
+    return Task.invokeCallback(
         Provider.PluginID, "object-merge:" + Provider.ProviderID,
         [&] {
           auto Capability = Task.currentArtifactMutationCapability(&Provider);
@@ -141,7 +140,7 @@ executeObjectMergeProvider(
           return Invoke();
         },
         true, nullptr, false, &Provider);
-  }
+  }();
   if (!Invoked) {
     if (OutputBridge.hasActiveMutation())
       (void)OutputBridge.abandonMutation(*Mutation);
