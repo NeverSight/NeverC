@@ -832,7 +832,7 @@ static void html_scan_doc(const char *buf, size_t len,
                           const char **aname, size_t *nlen,
                           const char **aprefix, size_t *aplen,
                           int *in_meta, int *meta_refresh,
-                          int *in_comment) {
+                          int *in_comment, int *invalid_context) {
     *in_script = 0;
     *in_style = 0;
     *in_script_comment = 0;
@@ -849,6 +849,7 @@ static void html_scan_doc(const char *buf, size_t len,
     *in_meta = 0;
     *meta_refresh = 0;
     *in_comment = 0;
+    *invalid_context = 0;
     if (!buf || len == 0) return;
 
     int state = HS_TEXT;
@@ -968,10 +969,14 @@ static void html_scan_doc(const char *buf, size_t len,
                 if (c == '"') { js = JS_DQ; js_ctx_re = 1; i++; break; }
                 if (c == '\'') { js = JS_SQ; js_ctx_re = 1; i++; break; }
                 if (c == '`') {
-                    if (js == JS_TPL_EXPR &&
-                        interp_sp < (int)(sizeof(interp_stack) /
-                                          sizeof(interp_stack[0])))
+                    if (js == JS_TPL_EXPR) {
+                        if (interp_sp >= (int)(sizeof(interp_stack) /
+                                               sizeof(interp_stack[0]))) {
+                            *invalid_context = 1;
+                            return;
+                        }
                         interp_stack[interp_sp++] = interp_depth;
+                    }
                     js = JS_TPL;
                     js_ctx_re = 1;
                     i++;
@@ -1986,11 +1991,18 @@ static int execute_nodes(const node_t *n,
                 int in_js_quoted = 0, in_js_re = 0, in_js_tpl = 0;
                 int in_open_tag = 0;
                 int in_meta = 0, meta_refresh = 0, in_comment = 0;
+                int invalid_context = 0;
                 html_scan_doc(*buf, *len, &in_script, &in_style_tag,
                               &in_script_comment, &in_js_quoted, &in_js_re,
                               &in_js_tpl, &in_open_tag, &in_attr, &quoted,
                               &aname, &nlen, &aprefix, &aplen,
-                              &in_meta, &meta_refresh, &in_comment);
+                              &in_meta, &meta_refresh, &in_comment,
+                              &invalid_context);
+                if (invalid_context) {
+                    if (buf_append(buf, len, cap, "ZgotmplZ", 8) != 0)
+                        return -1;
+                    break;
+                }
                 if (in_comment)
                     break;
                 if (!val) {

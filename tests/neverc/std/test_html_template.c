@@ -1350,6 +1350,39 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "${ \"") == NULL);
     free(out);
 
+    /* A fixed-depth interpolation stack used to silently discard the 17th
+     * nested template literal, then misclassify JS code after the unwind as
+     * template text. Values such as alert(1) are unchanged by the template
+     * text escaper and therefore became executable statements. */
+    {
+        char deep[256];
+        size_t pos = 0;
+        static const char prefix[] = "<script>let x=";
+        static const char suffix[] = ";{{.X}}</script>";
+        memcpy(deep + pos, prefix, sizeof(prefix) - 1U);
+        pos += sizeof(prefix) - 1U;
+        for (int i = 0; i < 18; i++) {
+            memcpy(deep + pos, "`${", 3);
+            pos += 3;
+        }
+        deep[pos++] = '0';
+        for (int i = 0; i < 18; i++) {
+            memcpy(deep + pos, "}`", 2);
+            pos += 2;
+        }
+        memcpy(deep + pos, suffix, sizeof(suffix) - 1U);
+        pos += sizeof(suffix) - 1U;
+        deep[pos] = '\0';
+
+        neverc_html_template_data_set(&data, "X", "alert(1)");
+        out = neverc_html_template_render(deep, &data);
+        check("deep js template nesting fails closed",
+              out && strstr(out, "ZgotmplZ") != NULL);
+        check("deep js template nesting does not emit a raw call",
+              out && strstr(out, ";alert(1)</script>") == NULL);
+        free(out);
+    }
+
     /* Go CVE-2026-39826: empty / whitespace script type is still JavaScript.
      * HTML-escaping alert(1) is a no-op and would execute. */
     neverc_html_template_data_set(&data, "X", "alert(1)");
