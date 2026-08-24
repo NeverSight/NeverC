@@ -1397,7 +1397,7 @@
     },
     "compress/lzw": {
       "header": "include/neverc/std/compress/lzw.h",
-      "description": "LZW compression \u2014 GIF/TIFF/PDF compatible (mirrors Go compress/lzw package)",
+      "description": "LZW compression \u2014 GIF, late-change MSB, and TIFF early-change profiles",
       "symbols": {
         "neverc_lzw_compress": "src/compress/lzw/lzw.c",
         "neverc_lzw_decompress": "src/compress/lzw/lzw.c"

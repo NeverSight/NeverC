@@ -41,6 +41,7 @@ static void test_empty(void) {
     uint8_t empty[] = {};
     test_roundtrip("empty_lsb", empty, 0, NEVERC_LZW_LSB, 8);
     test_roundtrip("empty_msb", empty, 0, NEVERC_LZW_MSB, 8);
+    test_roundtrip("empty_tiff_msb", empty, 0, NEVERC_LZW_TIFF_MSB, 8);
 }
 
 static void test_simple(void) {
@@ -96,6 +97,9 @@ static void test_invalid_params(void) {
     ASSERT_INT_EQ(neverc_lzw_compress((uint8_t*)"a", 1, buf, &len, NEVERC_LZW_LSB, 9), -1);
     len = sizeof(buf);
     ASSERT_INT_EQ(neverc_lzw_compress((uint8_t*)"a", 1, buf, &len, 5, 8), -1);
+    len = sizeof(buf);
+    ASSERT_INT_EQ(neverc_lzw_compress((uint8_t*)"a", 1, buf, &len,
+                                     NEVERC_LZW_TIFF_MSB, 7), -1);
 
     len = sizeof(buf);
     ASSERT_INT_EQ(neverc_lzw_compress(NULL, 1, buf, &len, NEVERC_LZW_LSB, 8), -1);
@@ -113,6 +117,9 @@ static void test_invalid_params(void) {
     len = sizeof(buf);
     ASSERT_INT_EQ(neverc_lzw_decompress(NULL, 1, buf, &len,
                                        NEVERC_LZW_LSB, 8), -1);
+    len = sizeof(buf);
+    ASSERT_INT_EQ(neverc_lzw_decompress(buf, 1, buf, &len,
+                                       NEVERC_LZW_TIFF_MSB, 7), -1);
     ASSERT_INT_EQ(neverc_lzw_decompress(buf, 1, buf, NULL,
                                        NEVERC_LZW_LSB, 8), -1);
     len = sizeof(buf);
@@ -230,6 +237,123 @@ static void test_leftover_bytes(void) {
     }
 }
 
+/* A complete TIFF LZW strip produced by libtiff 4.7.1
+ * (commit 5fe20d0e9aba49a6a350ed533459d1505203838f) from the 256 bytes
+ * 0xff, 0xfe, ..., 0x00 with Predictor disabled. Every adjacent pair is
+ * unique, so the strip crosses the TIFF 9-to-10-bit early-change boundary
+ * without dictionary-code shortcuts. This fixture is deliberately external
+ * to NeverC's encoder and catches the one-code-late Go compress/lzw profile. */
+static const uint8_t tiff_9_to_10_reference[] = {
+    0x80, 0x3f, 0xdf, 0xcf, 0xd7, 0xe3, 0xed, 0xf4, 0xf9, 0x7c, 0x3d, 0xde,
+    0xcf, 0x57, 0xa3, 0xcd, 0xe4, 0xf1, 0x78, 0x3b, 0xdd, 0xce, 0xd7, 0x63,
+    0xad, 0xd4, 0xe9, 0x74, 0x39, 0xdc, 0xce, 0x57, 0x23, 0x8d, 0xc4, 0xe1,
+    0x70, 0x37, 0xdb, 0xcd, 0xd6, 0xe3, 0x6d, 0xb4, 0xd9, 0x6c, 0x35, 0xda,
+    0xcd, 0x56, 0xa3, 0x4d, 0xa4, 0xd1, 0x68, 0x33, 0xd9, 0xcc, 0xd6, 0x63,
+    0x2d, 0x94, 0xc9, 0x64, 0x31, 0xd8, 0xcc, 0x56, 0x23, 0x0d, 0x84, 0xc1,
+    0x60, 0x2f, 0xd7, 0xcb, 0xd5, 0xe2, 0xed, 0x74, 0xb9, 0x5c, 0x2d, 0xd6,
+    0xcb, 0x55, 0xa2, 0xcd, 0x64, 0xb1, 0x58, 0x2b, 0xd5, 0xca, 0xd5, 0x62,
+    0xad, 0x54, 0xa9, 0x54, 0x29, 0xd4, 0xca, 0x55, 0x22, 0x8d, 0x44, 0xa1,
+    0x50, 0x27, 0xd3, 0xc9, 0xd4, 0xe2, 0x6d, 0x34, 0x99, 0x4c, 0x25, 0xd2,
+    0xc9, 0x54, 0xa2, 0x4d, 0x24, 0x91, 0x48, 0x23, 0xd1, 0xc8, 0xd4, 0x62,
+    0x2d, 0x14, 0x89, 0x44, 0x21, 0xd0, 0xc8, 0x54, 0x22, 0x0d, 0x04, 0x81,
+    0x40, 0x1f, 0xcf, 0xc7, 0xd3, 0xe1, 0xec, 0xf4, 0x79, 0x3c, 0x1d, 0xce,
+    0xc7, 0x53, 0xa1, 0xcc, 0xe4, 0x71, 0x38, 0x1b, 0xcd, 0xc6, 0xd3, 0x61,
+    0xac, 0xd4, 0x69, 0x34, 0x19, 0xcc, 0xc6, 0x53, 0x21, 0x8c, 0xc4, 0x61,
+    0x30, 0x17, 0xcb, 0xc5, 0xd2, 0xe1, 0x6c, 0xb4, 0x59, 0x2c, 0x15, 0xca,
+    0xc5, 0x52, 0xa1, 0x4c, 0xa4, 0x51, 0x28, 0x13, 0xc9, 0xc4, 0xd2, 0x61,
+    0x2c, 0x94, 0x49, 0x24, 0x11, 0xc8, 0xc4, 0x52, 0x21, 0x0c, 0x84, 0x41,
+    0x20, 0x0f, 0xc7, 0xc3, 0xd1, 0xe0, 0xec, 0x74, 0x39, 0x1c, 0x0d, 0xc6,
+    0xc3, 0x51, 0xa0, 0xcc, 0x64, 0x31, 0x18, 0x0b, 0xc5, 0xc2, 0xd1, 0x60,
+    0xac, 0x54, 0x29, 0x14, 0x09, 0xc4, 0xc2, 0x51, 0x20, 0x8c, 0x44, 0x21,
+    0x10, 0x07, 0xc3, 0xc1, 0xd0, 0xe0, 0x6c, 0x34, 0x19, 0x0c, 0x05, 0xc2,
+    0xc1, 0x50, 0xa0, 0x4c, 0x24, 0x11, 0x08, 0x03, 0xc1, 0xc0, 0xd0, 0x60,
+    0x2c, 0x14, 0x09, 0x04, 0x01, 0xc0, 0xc0, 0x50, 0x20, 0x0c, 0x04, 0x00,
+    0x80, 0x08, 0x08
+};
+
+static uint64_t fnv1a64(const uint8_t *data, size_t len) {
+    uint64_t hash = UINT64_C(0xcbf29ce484222325);
+    for (size_t i = 0; i < len; i++) {
+        hash ^= data[i];
+        hash *= UINT64_C(0x100000001b3);
+    }
+    return hash;
+}
+
+static void test_tiff_reference_boundary(void) {
+    printf("[tiff_reference_9_to_10]\n");
+    uint8_t expected[256], decoded[256], encoded[sizeof(tiff_9_to_10_reference)];
+    for (int i = 0; i < 256; i++) expected[i] = (uint8_t)(255 - i);
+
+    size_t decoded_len = sizeof(decoded);
+    ASSERT_INT_EQ(neverc_lzw_decompress(tiff_9_to_10_reference,
+                                        sizeof(tiff_9_to_10_reference),
+                                        decoded, &decoded_len,
+                                        NEVERC_LZW_TIFF_MSB, 8), 0);
+    ASSERT_TRUE(decoded_len == sizeof(expected));
+    ASSERT_TRUE(memcmp(decoded, expected, sizeof(expected)) == 0);
+
+    size_t encoded_len = sizeof(encoded);
+    ASSERT_INT_EQ(neverc_lzw_compress(expected, sizeof(expected),
+                                      encoded, &encoded_len,
+                                      NEVERC_LZW_TIFF_MSB, 8), 0);
+    ASSERT_TRUE(encoded_len == sizeof(tiff_9_to_10_reference));
+    ASSERT_TRUE(memcmp(encoded, tiff_9_to_10_reference, encoded_len) == 0);
+
+    /* The legacy MSB profile must remain late-change and therefore cannot
+     * silently accept a TIFF early-change stream at the width boundary. */
+    decoded_len = sizeof(decoded);
+    ASSERT_TRUE(neverc_lzw_decompress(tiff_9_to_10_reference,
+                                      sizeof(tiff_9_to_10_reference),
+                                      decoded, &decoded_len,
+                                      NEVERC_LZW_MSB, 8) != 0);
+}
+
+static void test_tiff_libtiff_full_table(void) {
+    printf("[tiff_libtiff_full_table]\n");
+    uint8_t input[8192], encoded[16384], decoded[8192];
+    uint32_t state = UINT32_C(0x12345678);
+    for (size_t i = 0; i < sizeof(input); i++) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        input[i] = (uint8_t)state;
+    }
+
+    /* These independent fingerprints come from the same pinned libtiff 4.7.1
+     * build with Predictor disabled. The 11,146-byte strip crosses 9->10,
+     * 10->11, and 11->12 bits,
+     * then emits two full-table clear codes. Checking the exact compressed
+     * fingerprint before decoding prevents an encoder/decoder roundtrip from
+     * hiding a shared transition bug. */
+    ASSERT_TRUE(fnv1a64(input, sizeof(input)) ==
+                UINT64_C(0xf7c01728342d75c1));
+    size_t encoded_len = sizeof(encoded);
+    ASSERT_INT_EQ(neverc_lzw_compress(input, sizeof(input), encoded,
+                                      &encoded_len, NEVERC_LZW_TIFF_MSB, 8), 0);
+    ASSERT_TRUE(encoded_len == 11146);
+    ASSERT_TRUE(fnv1a64(encoded, encoded_len) ==
+                UINT64_C(0x5d6ff370c0028d8e));
+
+    size_t decoded_len = sizeof(decoded);
+    ASSERT_INT_EQ(neverc_lzw_decompress(encoded, encoded_len, decoded,
+                                        &decoded_len,
+                                        NEVERC_LZW_TIFF_MSB, 8), 0);
+    ASSERT_TRUE(decoded_len == sizeof(input));
+    ASSERT_TRUE(memcmp(decoded, input, sizeof(input)) == 0);
+
+    /* The first 3,946 source bytes end exactly when libtiff advances its final
+     * pending code to the full-table threshold. LZWPostEncode emits CLEAR and
+     * then the 9-bit EOI; this fingerprint catches an encoder that writes EOI
+     * directly with the stale 12-bit width. */
+    encoded_len = sizeof(encoded);
+    ASSERT_INT_EQ(neverc_lzw_compress(input, 3946, encoded, &encoded_len,
+                                      NEVERC_LZW_TIFF_MSB, 8), 0);
+    ASSERT_TRUE(encoded_len == 5407);
+    ASSERT_TRUE(fnv1a64(encoded, encoded_len) ==
+                UINT64_C(0x5c0ac006b1e99e7e));
+}
+
 int main(void) {
     printf("=== NeverC compress/lzw Tests ===\n");
     test_empty();
@@ -241,6 +365,8 @@ int main(void) {
     test_invalid_params();
     test_clear_code();
     test_leftover_bytes();
+    test_tiff_reference_boundary();
+    test_tiff_libtiff_full_table();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

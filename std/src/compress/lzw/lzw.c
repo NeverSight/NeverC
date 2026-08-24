@@ -1,7 +1,7 @@
 /*
  * NeverC compress/lzw — LZW compression & decompression.
- * Ported from Go compress/lzw (GIF/TIFF/PDF compatible).
- * Variable-width codes up to 12 bits, with clear and EOF codes.
+ * Ported from Go compress/lzw, with a separate TIFF/Aldus early-change
+ * profile. Variable-width codes use clear and EOF codes and grow to 12 bits.
  */
 
 #include "neverc/std/compress/lzw.h"
@@ -14,6 +14,29 @@
 #define TABLE_SIZE      (4 * (1 << MAX_WIDTH))
 #define TABLE_MASK      (TABLE_SIZE - 1)
 #define FLUSH_BUF       (1 << MAX_WIDTH)
+
+static int valid_profile(int order, int lit_width) {
+    if (lit_width < 2 || lit_width > 8) return 0;
+    if (order == NEVERC_LZW_TIFF_MSB) return lit_width == 8;
+    return order == NEVERC_LZW_LSB || order == NEVERC_LZW_MSB;
+}
+
+static unsigned early_change(int order) {
+    return order == NEVERC_LZW_TIFF_MSB ? 1u : 0u;
+}
+
+/* Advance the encoder dictionary state after emitting a data code. Return 1
+ * when the profile requires a clear before another data/EOF code is written. */
+static int advance_encoder(unsigned early, uint32_t *hi,
+                           unsigned *width, uint32_t *overflow) {
+    (*hi)++;
+    if (*width < MAX_WIDTH && *hi + early == *overflow) {
+        (*width)++;
+        *overflow <<= 1;
+    }
+    return *hi == (early ? (uint32_t)MAX_CODE - 2u
+                         : (uint32_t)MAX_CODE);
+}
 
 /* ---- Bit writer ---- */
 
@@ -66,7 +89,7 @@ static int bw_write_code(bit_writer_t *w, uint32_t code, unsigned width) {
 static int bw_flush(bit_writer_t *w) {
     if (w->nbits > 0) {
         uint8_t b;
-        if (w->order == NEVERC_LZW_MSB)
+        if (w->order != NEVERC_LZW_LSB)
             b = (uint8_t)(w->bits >> 24);
         else
             b = (uint8_t)w->bits;
@@ -127,13 +150,13 @@ int neverc_lzw_compress(const uint8_t *src, size_t src_len,
                         int order, int lit_width) {
     if (!dst_len || (!src && src_len != 0) ||
         (!dst && *dst_len != 0)) return -1;
-    if (lit_width < 2 || lit_width > 8) return -1;
-    if (order != NEVERC_LZW_LSB && order != NEVERC_LZW_MSB) return -1;
+    if (!valid_profile(order, lit_width)) return -1;
 
     bit_writer_t bw;
     bw_init(&bw, dst, *dst_len, order);
 
     unsigned lw = (unsigned)lit_width;
+    unsigned early = early_change(order);
     uint32_t clear_code = 1u << lw;
     uint32_t eof_code = clear_code + 1;
     unsigned width = lw + 1;
@@ -176,12 +199,13 @@ int neverc_lzw_compress(const uint8_t *src, size_t src_len,
         if (bw_write_code(&bw, code, width) < 0) return -1;
         code = literal;
 
-        hi++;
-        if (hi == overflow) {
-            width++;
-            overflow <<= 1;
-        }
-        if (hi == (uint32_t)MAX_CODE) {
+        /* libtiff clears its TIFF table after 3836 data codes, when its next
+         * free entry becomes CODE_MAX-1. In this Go-style `hi` accounting that
+         * is the emission for which hi becomes MAX_CODE-2. The entry that
+         * would receive that number is immediately discarded by the clear,
+         * so skipping its insertion is observably identical. Keep the legacy
+         * profiles' Go-compatible MAX_CODE threshold unchanged. */
+        if (advance_encoder(early, &hi, &width, &overflow)) {
             if (bw_write_code(&bw, clear_code, width) < 0) return -1;
             width = lw + 1;
             hi = eof_code;
@@ -197,8 +221,15 @@ int neverc_lzw_compress(const uint8_t *src, size_t src_len,
     }
 
     if (bw_write_code(&bw, code, width) < 0) return -1;
-    hi++;
-    if (hi == overflow) width++;
+    if (advance_encoder(early, &hi, &width, &overflow)) {
+        /* Go's Writer.Close and libtiff's LZWPostEncode both advance the
+         * dictionary for the final pending code. If that fills the table, the
+         * clear precedes EOF and EOF is packed at the reset width. */
+        if (bw_write_code(&bw, clear_code, width) < 0) return -1;
+        width = lw + 1;
+        hi = eof_code;
+        overflow = clear_code << 1;
+    }
     if (bw_write_code(&bw, eof_code, width) < 0) return -1;
     if (bw_flush(&bw) < 0) return -1;
 
@@ -213,13 +244,13 @@ int neverc_lzw_decompress(const uint8_t *src, size_t src_len,
                           int order, int lit_width) {
     if (!dst_len || (!src && src_len != 0) ||
         (!dst && *dst_len != 0)) return -1;
-    if (lit_width < 2 || lit_width > 8) return -1;
-    if (order != NEVERC_LZW_LSB && order != NEVERC_LZW_MSB) return -1;
+    if (!valid_profile(order, lit_width)) return -1;
 
     bit_reader_t br;
     br_init(&br, src, src_len, order);
 
     unsigned lw = (unsigned)lit_width;
+    unsigned early = early_change(order);
     uint16_t clear_code = (uint16_t)(1u << lw);
     uint16_t eof_code = clear_code + 1;
     unsigned width = lw + 1;
@@ -314,9 +345,14 @@ int neverc_lzw_decompress(const uint8_t *src, size_t src_len,
         last = code;
         last_first = cur_first;
         hi++;
-        if (hi >= overflow_val) {
+        if ((uint32_t)hi + early >= (uint32_t)overflow_val) {
             if (width == MAX_WIDTH) {
                 last = INVALID_CODE16;
+                /* `hi` names the highest defined code while the dictionary is
+                 * frozen. TIFF reaches the limit one entry earlier than the
+                 * late-change profiles, so undoing the increment is required
+                 * for both profiles and prevents accepting an uninitialized
+                 * top entry. */
                 hi--;
             } else {
                 width++;
