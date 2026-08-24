@@ -22,6 +22,13 @@
 
 #define SMTP_BUF_SIZE 4096
 
+enum {
+    SMTP_DATA_BEGIN = 0,
+    SMTP_DATA_BEGIN_LINE,
+    SMTP_DATA_CR,
+    SMTP_DATA_MIDDLE
+};
+
 struct neverc_smtp_client {
     neverc_tcp_conn_t *conn;
     neverc_tls_conn_t *tls;
@@ -35,7 +42,7 @@ struct neverc_smtp_client {
     int  supports_8bitmime;
     int  supports_smtputf8;
     int  supports_starttls;
-    int  data_at_line_start;
+    int  data_state;
     int  in_data;
     int  dead;
 };
@@ -627,7 +634,7 @@ int neverc_smtp_data(neverc_smtp_client_t *c) {
     if (ensure_hello(c) != 0) return -1;
     int code = smtp_cmd(c, "DATA");
     if (code == 354) {
-        c->data_at_line_start = 1;
+        c->data_state = SMTP_DATA_BEGIN;
         c->in_data = 1;
     }
     return (code == 354) ? 0 : -1;
@@ -638,15 +645,31 @@ static int smtp_write_data_stuffed(neverc_smtp_client_t *c,
     const uint8_t *bytes = (const uint8_t *)data;
     for (size_t i = 0; i < len; i++) {
         uint8_t ch = bytes[i];
-        if (c->data_at_line_start && ch == '.') {
-            if (smtp_write_all(c, ".", 1) != 0)
+        switch (c->data_state) {
+        case SMTP_DATA_BEGIN:
+        case SMTP_DATA_BEGIN_LINE:
+            c->data_state = SMTP_DATA_MIDDLE;
+            if (ch == '.' && smtp_write_all(c, ".", 1) != 0)
                 return -1;
+            /* fall through */
+        case SMTP_DATA_MIDDLE:
+            if (ch == '\r') {
+                c->data_state = SMTP_DATA_CR;
+            } else if (ch == '\n') {
+                if (smtp_write_all(c, "\r", 1) != 0)
+                    return -1;
+                c->data_state = SMTP_DATA_BEGIN_LINE;
+            }
+            break;
+        case SMTP_DATA_CR:
+            c->data_state =
+                ch == '\n' ? SMTP_DATA_BEGIN_LINE : SMTP_DATA_MIDDLE;
+            break;
+        default:
+            return -1;
         }
         if (smtp_write_all(c, &ch, 1) != 0)
             return -1;
-        /* Go net/textproto dotWriter: only LF returns to line start.
-         * A lone CR is wstateCR, so Close writes "\r\n.\r\n". */
-        c->data_at_line_start = (ch == '\n');
     }
     return 0;
 }
@@ -661,8 +684,14 @@ int neverc_smtp_write_data(neverc_smtp_client_t *c,
 
 int neverc_smtp_data_close(neverc_smtp_client_t *c) {
     if (!c || !c->in_data) return -1;
-    const char *term = c->data_at_line_start ? ".\r\n" : "\r\n.\r\n";
-    if (smtp_write_all(c, term, strlen(term)) != 0)
+    if (c->data_state == SMTP_DATA_CR) {
+        if (smtp_write_all(c, "\n", 1) != 0)
+            return -1;
+    } else if (c->data_state != SMTP_DATA_BEGIN_LINE) {
+        if (smtp_write_all(c, "\r\n", 2) != 0)
+            return -1;
+    }
+    if (smtp_write_all(c, ".\r\n", 3) != 0)
         return -1;
     int code = smtp_read_response(c);
     c->in_data = 0;

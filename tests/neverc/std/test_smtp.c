@@ -438,10 +438,38 @@ static void test_lone_cr_terminator(void) {
     check_true("write lone CR body",
                neverc_smtp_write_data(c, "hello\r", 6) == 0);
     check_true("DATA close after lone CR", neverc_smtp_data_close(c) == 0);
-    check_true("lone CR uses CRLF then dot",
-               g_last_data_len >= 11 &&
-               memcmp(g_last_data + g_last_data_len - 11,
-                      "hello\r\r\n.\r\n", 11) == 0);
+    check_true("lone CR is completed without duplication",
+               g_last_data_len == 10 &&
+               memcmp(g_last_data, "hello\r\n.\r\n", 10) == 0);
+    neverc_smtp_close(c);
+}
+
+static void test_data_newline_state_across_writes(void) {
+    printf("[data_newline_state_across_writes]\n");
+
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_smtp_port);
+    const char *err = NULL;
+    neverc_smtp_client_t *c = neverc_smtp_dial(addr, &err);
+    check_true("dial for DATA newline states", c != NULL);
+    if (!c) return;
+
+    check_true("EHLO", neverc_smtp_hello(c, "test.client") == 0);
+    check_true("MAIL FROM", neverc_smtp_mail(c, "sender@example.com") == 0);
+    check_true("RCPT TO", neverc_smtp_rcpt(c, "recipient@example.com") == 0);
+    check_true("DATA", neverc_smtp_data(c) == 0);
+    check_true("write chunk ending CR",
+               neverc_smtp_write_data(c, "first\r", 6) == 0);
+    check_true("write LF, dotted line, and bare LF",
+               neverc_smtp_write_data(c, "\n.second\nthird", 14) == 0);
+    check_true("DATA close after split newlines",
+               neverc_smtp_data_close(c) == 0);
+
+    static const char expected[] =
+        "first\r\n..second\r\nthird\r\n.\r\n";
+    check_true("DATA normalizes and dot-stuffs across writes",
+               g_last_data_len == sizeof(expected) - 1U &&
+               memcmp(g_last_data, expected, sizeof(expected) - 1U) == 0);
     neverc_smtp_close(c);
 }
 
@@ -837,6 +865,7 @@ int main(void) {
     test_send_mail();
     test_dot_stuffing();
     test_lone_cr_terminator();
+    test_data_newline_state_across_writes();
     test_smtp_reject_injection();
     test_smtp_starttls_fail_closed();
     test_smtp_auth_plaintext_non_localhost();
