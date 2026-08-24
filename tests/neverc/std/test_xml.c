@@ -259,6 +259,8 @@ static void test_entities_cdata_and_well_formedness(void) {
         "<!DOCTYPE root><root/>",
         "<first/><second/>",
         "text<root/>",
+        "<![CDATA[ ]]><root/>",
+        "<root/><![CDATA[\n]]>",
         "<root/><!-- bad--comment -->",
         "<?xml version=\"1.1\"?><root/>",
         "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><root/>",

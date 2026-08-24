@@ -766,8 +766,12 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
 
     neverc_xml_token_t tok;
     int decode_result;
+    size_t token_start = d.pos;
     while ((decode_result = neverc_xml_decode_token(&d, &tok)) > 0) {
         int failed = 0;
+        int token_is_cdata =
+            token_start <= d.len && d.len - token_start >= 9 &&
+            memcmp(d.src + token_start, "<![CDATA[", 9) == 0;
         switch (tok.type) {
         case NEVERC_XML_START_ELEMENT: {
             if (!tok.name) {
@@ -821,6 +825,10 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
         case NEVERC_XML_CHAR_DATA: {
             int si = stack_top - 1;
             if (si == 0) {
+                if (token_is_cdata) {
+                    failed = 1;
+                    break;
+                }
                 for (size_t i = 0; i < tok.data_len; i++) {
                     char c = tok.data[i];
                     if (c != ' ' && c != '\t' &&
@@ -869,6 +877,7 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
         }
         neverc_xml_token_free(&tok);
         if (failed) goto parse_fail;
+        token_start = d.pos;
     }
 
     if (decode_result < 0 || stack_top != 1 || document_elements != 1)
