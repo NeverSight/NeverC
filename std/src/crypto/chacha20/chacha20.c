@@ -76,6 +76,7 @@ void neverc_chacha20_init(neverc_chacha20_ctx *ctx,
     ctx->state[13] = get_u32le(nonce);
     ctx->state[14] = get_u32le(nonce + 4);
     ctx->state[15] = get_u32le(nonce + 8);
+    neverc_platform_secure_zero(ctx->buf, sizeof(ctx->buf));
     ctx->buf_used = 64;
 }
 

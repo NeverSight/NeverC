@@ -141,6 +141,32 @@ static void test_incremental(void) {
     check_true("byte-by-byte == one-shot", memcmp(out1, out2, 100) == 0);
 }
 
+static void test_reinit_wipes_buffered_keystream(void) {
+    printf("[ChaCha20 re-init wipes buffered keystream]\n");
+
+    uint8_t old_key[32], new_key[32];
+    uint8_t old_nonce[12], new_nonce[12];
+    uint8_t input = 0, output;
+    neverc_chacha20_ctx ctx;
+
+    memset(old_key, 0x11, sizeof(old_key));
+    memset(new_key, 0x22, sizeof(new_key));
+    memset(old_nonce, 0x33, sizeof(old_nonce));
+    memset(new_nonce, 0x44, sizeof(new_nonce));
+
+    neverc_chacha20_init(&ctx, old_key, old_nonce, 7);
+    neverc_chacha20_xor(&ctx, &output, &input, 1);
+    check_true("partial xor leaves buffered keystream", ctx.buf_used == 1);
+
+    neverc_chacha20_init(&ctx, new_key, new_nonce, 9);
+    {
+        uint8_t zero[64] = {0};
+        check_true("successful re-init wipes old buffered keystream",
+                   memcmp(ctx.buf, zero, sizeof(zero)) == 0);
+    }
+    check_true("successful re-init resets buffer cursor", ctx.buf_used == 64);
+}
+
 static void test_counter_wrap(void) {
     printf("[ChaCha20 counter wrap]\n");
     uint8_t key[32] = {0}, nonce[12] = {0}, in[128] = {0}, out[128];
@@ -355,6 +381,7 @@ int main(void) {
     test_rfc7539_encrypt();
     test_round_trip();
     test_incremental();
+    test_reinit_wipes_buffered_keystream();
     test_counter_wrap();
     test_counter_wrap_leftover();
     test_null_inputs();
