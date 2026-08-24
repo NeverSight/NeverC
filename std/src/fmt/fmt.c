@@ -896,6 +896,36 @@ static int scan_uint(const char **p, uint64_t *out) {
     return 1;
 }
 
+/* Shared by the memory and non-seekable tokenizers so syntax/range
+ * conversion cannot drift between the two input paths. tok is mutable. */
+static int scan_convert_float_token(char *tok, size_t len, double *out) {
+    double parsed;
+    int rc = NEVERC_STRCONV_ERR_SYNTAX;
+    char *pmark = NULL;
+    int has_hex = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (tok[i] == 'x' || tok[i] == 'X') has_hex = 1;
+        if (!pmark && tok[i] == 'p') pmark = tok + i;
+    }
+    if (pmark && !has_hex) {
+        double mant;
+        long long exp;
+        *pmark = '\0';
+        if (neverc_strconv_parse_float(tok, &mant) == NEVERC_STRCONV_OK &&
+            neverc_strconv_parse_int(pmark + 1, 10, &exp) ==
+                NEVERC_STRCONV_OK &&
+            exp >= INT_MIN && exp <= INT_MAX) {
+            parsed = ldexp(mant, (int)exp);
+            rc = NEVERC_STRCONV_OK;
+        }
+    } else {
+        rc = neverc_strconv_parse_float(tok, &parsed);
+    }
+    if (rc != NEVERC_STRCONV_OK) return 0;
+    *out = parsed;
+    return 1;
+}
+
 static int scan_float(const char **p, double *out) {
     skip_ws(p);
     const char *start = *p;
@@ -996,34 +1026,13 @@ static int scan_float(const char **p, double *out) {
     /* Match Go fmt.convertFloat: ParseFloat ErrRange (±Inf overflow) is a
      * scan failure. Explicit "Inf"/"NaN" still succeed (strconv returns OK).
      * Decimal+p is not a strconv hex float — split and ldexp like Go. */
-    double parsed;
-    int rc = NEVERC_STRCONV_ERR_SYNTAX;
-    char *pmark = NULL;
-    int has_hex = 0;
-    for (size_t i = 0; i < len; i++) {
-        if (tok[i] == 'x' || tok[i] == 'X') has_hex = 1;
-        if (!pmark && tok[i] == 'p') pmark = tok + i;
-    }
-    if (pmark && !has_hex) {
-        *pmark = '\0';
-        double mant;
-        long long exp;
-        if (neverc_strconv_parse_float(tok, &mant) == NEVERC_STRCONV_OK &&
-            neverc_strconv_parse_int(pmark + 1, 10, &exp) == NEVERC_STRCONV_OK &&
-            exp >= INT_MIN && exp <= INT_MAX) {
-            parsed = ldexp(mant, (int)exp);
-            rc = NEVERC_STRCONV_OK;
-        }
-    } else {
-        rc = neverc_strconv_parse_float(tok, &parsed);
-    }
+    int ok = scan_convert_float_token(tok, len, out);
     if (tok != stackbuf) free(tok);
-    if (rc != NEVERC_STRCONV_OK) {
+    if (!ok) {
         /* Go floatToken consumes the whole token before convertFloat.
          * SYNTAX and RANGE both leave leftover after the token. */
         return 0;
     }
-    *out = parsed;
     return 1;
 }
 
@@ -1119,31 +1128,56 @@ static int scan_bin(const char **p, uint64_t *out) {
     return 1;
 }
 
-/* Go Scanf: SkipSpace, then at most `width` bytes of the token. */
+typedef struct {
+    char local[256];
+    char *allocated;
+} scan_width_window_t;
+
+/* Go Scanf: SkipSpace, then expose at most `width` bytes to the converter.
+ * The old fixed 256-byte copy made otherwise valid scans depend on whether
+ * the FILE happened to be seekable. Keep the common case on the stack, but
+ * allow every width representable by size_t when the input is that long. */
 static int scan_apply_width(const char **sp, size_t width, int has_width,
-                            char *tmp, size_t cap, const char **q) {
+                            scan_width_window_t *window, const char **q) {
+    char *dst;
+    size_t n;
+    window->allocated = NULL;
     skip_ws(sp);
     if (!has_width) {
         *q = *sp;
         return 1;
     }
-    size_t n = 0;
+    n = 0;
     while (n < width && (*sp)[n])
         n++;
-    if (n >= cap)
-        return 0;
-    memcpy(tmp, *sp, n);
-    tmp[n] = '\0';
-    *q = tmp;
+    if (n < sizeof(window->local)) {
+        dst = window->local;
+    } else {
+        if (n == SIZE_MAX) return 0;
+        dst = (char *)malloc(n + 1U);
+        if (!dst) return 0;
+        window->allocated = dst;
+    }
+    memcpy(dst, *sp, n);
+    dst[n] = '\0';
+    *q = dst;
     return 1;
 }
 
-static void scan_commit_width(const char **sp, const char *q, const char *tmp,
+static void scan_commit_width(const char **sp, const char *q,
+                              const scan_width_window_t *window,
                               int has_width) {
     if (has_width)
-        *sp += (size_t)(q - tmp);
+        *sp += (size_t)(q - (window->allocated
+                                 ? window->allocated
+                                 : window->local));
     else
         *sp = q;
+}
+
+static void scan_width_window_destroy(scan_width_window_t *window) {
+    free(window->allocated);
+    window->allocated = NULL;
 }
 
 /* Go unformatted Scan/Sscan: 0x/0b/0o/leading-0 prefixes and underscores.
@@ -1290,15 +1324,17 @@ static int scan_formatted(const char *str, const char *format, va_list args,
         case 'd':
         case 'i': {
             int64_t value;
-            char tmp[256];
+            scan_width_window_t window;
             const char *q;
-            if (!scan_apply_width(&sp, width, has_width, tmp, sizeof tmp, &q))
+            if (!scan_apply_width(&sp, width, has_width, &window, &q))
                 goto done;
             if (!scan_int(&q, &value)) {
-                scan_commit_width(&sp, q, tmp, has_width);
+                scan_commit_width(&sp, q, &window, has_width);
+                scan_width_window_destroy(&window);
                 goto done;
             }
-            scan_commit_width(&sp, q, tmp, has_width);
+            scan_commit_width(&sp, q, &window, has_width);
+            scan_width_window_destroy(&window);
             if (length == SCAN_LENGTH_LONG_LONG) {
                 long long *out = va_arg(ap, long long *);
                 if (!out) goto done;
@@ -1325,10 +1361,10 @@ static int scan_formatted(const char *str, const char *format, va_list args,
         case 'o':
         case 'b': {
             uint64_t value;
-            char tmp[256];
+            scan_width_window_t window;
             const char *q;
             int ok;
-            if (!scan_apply_width(&sp, width, has_width, tmp, sizeof tmp, &q))
+            if (!scan_apply_width(&sp, width, has_width, &window, &q))
                 goto done;
             if (*fp == 'u')
                 ok = scan_uint(&q, &value);
@@ -1339,10 +1375,12 @@ static int scan_formatted(const char *str, const char *format, va_list args,
             else
                 ok = scan_hex(&q, &value);
             if (!ok) {
-                scan_commit_width(&sp, q, tmp, has_width);
+                scan_commit_width(&sp, q, &window, has_width);
+                scan_width_window_destroy(&window);
                 goto done;
             }
-            scan_commit_width(&sp, q, tmp, has_width);
+            scan_commit_width(&sp, q, &window, has_width);
+            scan_width_window_destroy(&window);
             if (length == SCAN_LENGTH_LONG_LONG) {
                 unsigned long long *out =
                     va_arg(ap, unsigned long long *);
@@ -1371,16 +1409,19 @@ static int scan_formatted(const char *str, const char *format, va_list args,
         case 'e':
         case 'E': {
             double value;
-            char tmp[256];
+            scan_width_window_t window;
             const char *q;
-            if (length == SCAN_LENGTH_LONG_LONG ||
-                !scan_apply_width(&sp, width, has_width, tmp, sizeof tmp, &q))
+            if (length == SCAN_LENGTH_LONG_LONG)
+                goto done;
+            if (!scan_apply_width(&sp, width, has_width, &window, &q))
                 goto done;
             if (!scan_float(&q, &value)) {
-                scan_commit_width(&sp, q, tmp, has_width);
+                scan_commit_width(&sp, q, &window, has_width);
+                scan_width_window_destroy(&window);
                 goto done;
             }
-            scan_commit_width(&sp, q, tmp, has_width);
+            scan_commit_width(&sp, q, &window, has_width);
+            scan_width_window_destroy(&window);
             double *out = va_arg(ap, double *);
             if (!out) goto done;
             *out = value;
@@ -1509,7 +1550,559 @@ static int scan_rewind_unused(FILE *f, long start, size_t consumed) {
     return fseek(f, start + (long)consumed, SEEK_SET);
 }
 
-/* Go Fscan SkipSpace uses the same isSpace as Sscan, including U+00A0. */
+/* A non-seekable FILE cannot support the line-sized lookahead used by the
+ * string scanner above. Keep exactly one byte pending instead: C guarantees
+ * one byte of pushback, so scan_stream_finish() can make that byte visible to
+ * a later libc getc() without a process-global FILE* side table.
+ *
+ * The byte cursor deliberately recognizes ASCII input whitespace only. A
+ * UTF-8 whitespace decision can require two or three bytes before discovering
+ * that the rune is not whitespace; a pipe cannot portably put all of those
+ * bytes back. Seekable streams keep using scan_formatted() and therefore keep
+ * the full Unicode whitespace behavior. */
+typedef struct {
+    FILE *file;
+    int lookahead;
+    int has_lookahead;
+} scan_stream_cursor_t;
+
+typedef struct {
+    scan_stream_cursor_t *stream;
+    size_t remaining;
+    int limited;
+} scan_stream_field_t;
+
+static int scan_stream_peek(scan_stream_cursor_t *stream) {
+    int c;
+    if (!stream || !stream->file) return EOF;
+    if (stream->has_lookahead) return stream->lookahead;
+    c = getc(stream->file);
+    if (c == EOF) return EOF;
+    stream->lookahead = c;
+    stream->has_lookahead = 1;
+    return c;
+}
+
+static int scan_stream_take(scan_stream_cursor_t *stream) {
+    int c = scan_stream_peek(stream);
+    if (c != EOF)
+        stream->has_lookahead = 0;
+    return c;
+}
+
+static void scan_stream_finish(scan_stream_cursor_t *stream) {
+    if (stream && stream->has_lookahead) {
+        /* Only one byte is ever pending, which is the portable ungetc limit. */
+        (void)ungetc(stream->lookahead, stream->file);
+        stream->has_lookahead = 0;
+    }
+}
+
+static int scan_ascii_is_space(int c, int allow_nl) {
+    if (c == '\n') return allow_nl;
+    return c == ' ' || c == '\t' || c == '\r' || c == '\v' || c == '\f';
+}
+
+static void scan_stream_skip_space(scan_stream_cursor_t *stream,
+                                   int allow_nl) {
+    int c;
+    while ((c = scan_stream_peek(stream)) != EOF &&
+           scan_ascii_is_space(c, allow_nl))
+        (void)scan_stream_take(stream);
+}
+
+static void scan_stream_field_init(scan_stream_field_t *field,
+                                   scan_stream_cursor_t *stream,
+                                   size_t width, int has_width) {
+    field->stream = stream;
+    field->remaining = width;
+    field->limited = has_width;
+}
+
+static int scan_stream_field_peek(scan_stream_field_t *field) {
+    if (!field || (field->limited && field->remaining == 0))
+        return EOF;
+    return scan_stream_peek(field->stream);
+}
+
+static int scan_stream_field_take(scan_stream_field_t *field) {
+    int c = scan_stream_field_peek(field);
+    if (c != EOF) {
+        (void)scan_stream_take(field->stream);
+        if (field->limited)
+            field->remaining--;
+    }
+    return c;
+}
+
+static int scan_stream_advance_format_space(scan_stream_cursor_t *stream,
+                                            const char **fp) {
+    int newlines = 0;
+    int trailing_space = 0;
+    int c;
+    while (**fp) {
+        int n = scan_space_bytes(*fp, 1);
+        if (n == 0) break;
+        if (**fp == '\n') {
+            newlines++;
+            trailing_space = 0;
+        } else {
+            trailing_space = 1;
+        }
+        (*fp) += n;
+    }
+    for (int j = 0; j < newlines; j++) {
+        scan_stream_skip_space(stream, 0);
+        c = scan_stream_peek(stream);
+        if (c == '\n')
+            (void)scan_stream_take(stream);
+        else if (c != EOF)
+            return 0;
+    }
+    if (trailing_space) {
+        if (newlines == 0) {
+            c = scan_stream_peek(stream);
+            if (c == '\n')
+                return 0;
+            if (c != EOF && !scan_ascii_is_space(c, 0))
+                return 0;
+        }
+        scan_stream_skip_space(stream, 0);
+    }
+    return 1;
+}
+
+static int scan_stream_int(scan_stream_field_t *field, int64_t *out) {
+    int c = scan_stream_field_peek(field);
+    int neg = 0;
+    uint64_t val = 0;
+    int overflow = 0;
+    uint64_t limit;
+    if (c == '-' || c == '+') {
+        neg = c == '-';
+        (void)scan_stream_field_take(field);
+        c = scan_stream_field_peek(field);
+    }
+    /* Match Go accept(sign): a sign is consumed even without a digit. */
+    if (c < '0' || c > '9') return 0;
+    limit = neg ? (uint64_t)INT64_MAX + 1U : (uint64_t)INT64_MAX;
+    while ((c = scan_stream_field_peek(field)) >= '0' && c <= '9') {
+        unsigned digit = (unsigned)(c - '0');
+        (void)scan_stream_field_take(field);
+        if (!overflow) {
+            if (val > (limit - digit) / 10U)
+                overflow = 1;
+            else
+                val = val * 10U + digit;
+        }
+    }
+    if (overflow) return 0;
+    if (neg)
+        *out = val == (uint64_t)INT64_MAX + 1U
+            ? INT64_MIN
+            : -(int64_t)val;
+    else
+        *out = (int64_t)val;
+    return 1;
+}
+
+static int scan_stream_digit_value(int c, unsigned base, unsigned *digit) {
+    unsigned value;
+    if (c >= '0' && c <= '9')
+        value = (unsigned)(c - '0');
+    else if (c >= 'a' && c <= 'f')
+        value = (unsigned)(c - 'a' + 10);
+    else if (c >= 'A' && c <= 'F')
+        value = (unsigned)(c - 'A' + 10);
+    else
+        return 0;
+    if (value >= base) return 0;
+    *digit = value;
+    return 1;
+}
+
+static int scan_stream_uint(scan_stream_field_t *field, unsigned base,
+                            uint64_t *out) {
+    int c;
+    unsigned digit;
+    uint64_t val = 0;
+    int found = 0;
+    int overflow = 0;
+    while ((c = scan_stream_field_peek(field)) != EOF &&
+           scan_stream_digit_value(c, base, &digit)) {
+        (void)scan_stream_field_take(field);
+        found = 1;
+        if (!overflow) {
+            if (val > (UINT64_MAX - digit) / base)
+                overflow = 1;
+            else
+                val = val * base + digit;
+        }
+    }
+    if (!found || overflow) return 0;
+    *out = val;
+    return 1;
+}
+
+typedef struct {
+    char local[128];
+    char *data;
+    size_t len;
+    size_t cap;
+    int storage_failed;
+} scan_stream_token_t;
+
+static void scan_stream_token_init(scan_stream_token_t *token) {
+    token->data = token->local;
+    token->len = 0;
+    token->cap = sizeof(token->local);
+    token->storage_failed = 0;
+}
+
+static void scan_stream_token_destroy(scan_stream_token_t *token) {
+    if (token->data != token->local)
+        free(token->data);
+}
+
+static int scan_stream_token_reserve(scan_stream_token_t *token,
+                                     size_t need) {
+    size_t next;
+    char *grown;
+    if (need <= token->cap) return 1;
+    next = token->cap;
+    while (next < need) {
+        if (next > SIZE_MAX / 2U) {
+            next = need;
+            break;
+        }
+        next *= 2U;
+    }
+    if (token->data == token->local) {
+        grown = (char *)malloc(next);
+        if (grown)
+            memcpy(grown, token->local, token->len);
+    } else {
+        grown = (char *)realloc(token->data, next);
+    }
+    if (!grown) return 0;
+    token->data = grown;
+    token->cap = next;
+    return 1;
+}
+
+static int scan_stream_token_take(scan_stream_field_t *field,
+                                  scan_stream_token_t *token) {
+    int c = scan_stream_field_peek(field);
+    if (c == EOF) return 0;
+    /* Allocation failure changes only whether bytes are retained, not where
+     * tokenization stops. The caller's existing lexical loops therefore drain
+     * the exact same token to its delimiter before reporting the failure. */
+    if (!token->storage_failed &&
+        (token->len > SIZE_MAX - 2U ||
+         !scan_stream_token_reserve(token, token->len + 2U)))
+        token->storage_failed = 1;
+    (void)scan_stream_field_take(field);
+    if (!token->storage_failed)
+        token->data[token->len++] = (char)c;
+    return 1;
+}
+
+static int scan_ascii_is_alpha(int c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+static int scan_ascii_is_digit(int c) {
+    return c >= '0' && c <= '9';
+}
+
+static int scan_ascii_is_hex(int c) {
+    return scan_ascii_is_digit(c) || (c >= 'a' && c <= 'f') ||
+           (c >= 'A' && c <= 'F');
+}
+
+static int scan_stream_float(scan_stream_field_t *field, double *out) {
+    scan_stream_token_t token;
+    int c;
+    int hex = 0;
+    double parsed = 0.0;
+    scan_stream_token_init(&token);
+
+#define SCAN_STREAM_TAKE_TOKEN()                                             \
+    do {                                                                      \
+        if (!scan_stream_token_take(field, &token)) goto done;                \
+    } while (0)
+
+    c = scan_stream_field_peek(field);
+    if (c == '-' || c == '+') {
+        SCAN_STREAM_TAKE_TOKEN();
+        c = scan_stream_field_peek(field);
+    }
+
+    if (c == 'i' || c == 'I' || c == 'n' || c == 'N') {
+        while (scan_ascii_is_alpha(scan_stream_field_peek(field)))
+            SCAN_STREAM_TAKE_TOKEN();
+    } else {
+        if (!scan_ascii_is_digit(c) && c != '.')
+            goto done;
+
+        if (c == '0') {
+            SCAN_STREAM_TAKE_TOKEN();
+            c = scan_stream_field_peek(field);
+            if (c == 'x' || c == 'X') {
+                SCAN_STREAM_TAKE_TOKEN();
+                hex = 1;
+            }
+        }
+
+        if (hex) {
+            while ((c = scan_stream_field_peek(field)) != EOF &&
+                   (scan_ascii_is_hex(c) || c == '_')) {
+                SCAN_STREAM_TAKE_TOKEN();
+            }
+            if (scan_stream_field_peek(field) == '.') {
+                SCAN_STREAM_TAKE_TOKEN();
+                while ((c = scan_stream_field_peek(field)) != EOF &&
+                       (scan_ascii_is_hex(c) || c == '_')) {
+                    SCAN_STREAM_TAKE_TOKEN();
+                }
+            }
+            c = scan_stream_field_peek(field);
+            if (c == 'p' || c == 'P') {
+                SCAN_STREAM_TAKE_TOKEN();
+                c = scan_stream_field_peek(field);
+                if (c == '-' || c == '+')
+                    SCAN_STREAM_TAKE_TOKEN();
+                while ((c = scan_stream_field_peek(field)) != EOF &&
+                       (scan_ascii_is_digit(c) || c == '_'))
+                    SCAN_STREAM_TAKE_TOKEN();
+            }
+        } else {
+            while ((c = scan_stream_field_peek(field)) != EOF &&
+                   (scan_ascii_is_digit(c) || c == '_'))
+                SCAN_STREAM_TAKE_TOKEN();
+            if (scan_stream_field_peek(field) == '.') {
+                SCAN_STREAM_TAKE_TOKEN();
+                while ((c = scan_stream_field_peek(field)) != EOF &&
+                       (scan_ascii_is_digit(c) || c == '_'))
+                    SCAN_STREAM_TAKE_TOKEN();
+            }
+            c = scan_stream_field_peek(field);
+            if (c == 'e' || c == 'E') {
+                SCAN_STREAM_TAKE_TOKEN();
+                c = scan_stream_field_peek(field);
+                if (c == '-' || c == '+')
+                    SCAN_STREAM_TAKE_TOKEN();
+                while ((c = scan_stream_field_peek(field)) != EOF &&
+                       (scan_ascii_is_digit(c) || c == '_'))
+                    SCAN_STREAM_TAKE_TOKEN();
+            }
+            c = scan_stream_field_peek(field);
+            if (c == 'p' || c == 'P') {
+                SCAN_STREAM_TAKE_TOKEN();
+                c = scan_stream_field_peek(field);
+                if (c == '-' || c == '+')
+                    SCAN_STREAM_TAKE_TOKEN();
+                while ((c = scan_stream_field_peek(field)) != EOF &&
+                       (scan_ascii_is_digit(c) || c == '_'))
+                    SCAN_STREAM_TAKE_TOKEN();
+            }
+        }
+    }
+
+    if (token.storage_failed || token.len == SIZE_MAX ||
+        !scan_stream_token_reserve(&token, token.len + 1U))
+        goto done;
+    token.data[token.len] = '\0';
+    if (scan_convert_float_token(token.data, token.len, &parsed)) {
+        *out = parsed;
+        scan_stream_token_destroy(&token);
+        return 1;
+    }
+
+done:
+    scan_stream_token_destroy(&token);
+#undef SCAN_STREAM_TAKE_TOKEN
+    return 0;
+}
+
+static int scan_stream_string(scan_stream_field_t *field, char *out) {
+    size_t n = 0;
+    int c = scan_stream_field_peek(field);
+    if (!out || c == EOF || scan_ascii_is_space(c, 1)) return 0;
+    do {
+        out[n++] = (char)scan_stream_field_take(field);
+        c = scan_stream_field_peek(field);
+    } while (c != EOF && !scan_ascii_is_space(c, 1));
+    out[n] = '\0';
+    return 1;
+}
+
+static int scan_formatted_stream(FILE *f, const char *format, va_list args) {
+    scan_stream_cursor_t stream = {f, 0, 0};
+    const char *fp = format;
+    va_list ap;
+    int matched = 0;
+    va_copy(ap, args);
+
+    while (*fp) {
+        int c;
+        if (*fp != '%') {
+            if (scan_space_bytes(fp, 1) > 0) {
+                if (!scan_stream_advance_format_space(&stream, &fp))
+                    break;
+                continue;
+            }
+            c = scan_stream_peek(&stream);
+            if (c == EOF || c != (unsigned char)*fp)
+                break;
+            (void)scan_stream_take(&stream);
+            fp++;
+            continue;
+        }
+
+        fp++;
+        if (*fp == '%') {
+            scan_stream_skip_space(&stream, 0);
+            if (scan_stream_peek(&stream) != '%')
+                break;
+            (void)scan_stream_take(&stream);
+            fp++;
+            continue;
+        }
+
+        size_t width;
+        int has_width;
+        if (!scan_parse_size(&fp, &width, &has_width))
+            break;
+
+        scan_length_t length = SCAN_LENGTH_NONE;
+        if (*fp == 'l') {
+            length = SCAN_LENGTH_LONG;
+            fp++;
+            if (*fp == 'l') {
+                length = SCAN_LENGTH_LONG_LONG;
+                fp++;
+            }
+        }
+
+        switch (*fp) {
+        case 'd':
+        case 'i': {
+            int64_t value;
+            scan_stream_field_t field;
+            scan_stream_skip_space(&stream, 0);
+            scan_stream_field_init(&field, &stream, width, has_width);
+            if (!scan_stream_int(&field, &value)) goto done;
+            if (length == SCAN_LENGTH_LONG_LONG) {
+                long long *out = va_arg(ap, long long *);
+                if (!out) goto done;
+                *out = (long long)value;
+            } else if (length == SCAN_LENGTH_LONG) {
+                long *out;
+                if (value < (int64_t)LONG_MIN || value > (int64_t)LONG_MAX)
+                    goto done;
+                out = va_arg(ap, long *);
+                if (!out) goto done;
+                *out = (long)value;
+            } else {
+                int *out;
+                if (!scan_value_fits_int(value)) goto done;
+                out = va_arg(ap, int *);
+                if (!out) goto done;
+                *out = (int)value;
+            }
+            matched++;
+            break;
+        }
+        case 'u':
+        case 'x':
+        case 'X':
+        case 'o':
+        case 'b': {
+            uint64_t value;
+            unsigned base = *fp == 'u' ? 10U :
+                            *fp == 'o' ? 8U :
+                            *fp == 'b' ? 2U : 16U;
+            scan_stream_field_t field;
+            scan_stream_skip_space(&stream, 0);
+            scan_stream_field_init(&field, &stream, width, has_width);
+            if (!scan_stream_uint(&field, base, &value)) goto done;
+            if (length == SCAN_LENGTH_LONG_LONG) {
+                unsigned long long *out =
+                    va_arg(ap, unsigned long long *);
+                if (!out) goto done;
+                *out = (unsigned long long)value;
+            } else if (length == SCAN_LENGTH_LONG) {
+                unsigned long *out;
+                if (value > (uint64_t)ULONG_MAX) goto done;
+                out = va_arg(ap, unsigned long *);
+                if (!out) goto done;
+                *out = (unsigned long)value;
+            } else {
+                unsigned int *out;
+                if (!scan_value_fits_uint(value)) goto done;
+                out = va_arg(ap, unsigned int *);
+                if (!out) goto done;
+                *out = (unsigned int)value;
+            }
+            matched++;
+            break;
+        }
+        case 'f':
+        case 'F':
+        case 'g':
+        case 'G':
+        case 'e':
+        case 'E': {
+            double value;
+            double *out;
+            scan_stream_field_t field;
+            if (length == SCAN_LENGTH_LONG_LONG) goto done;
+            scan_stream_skip_space(&stream, 0);
+            scan_stream_field_init(&field, &stream, width, has_width);
+            if (!scan_stream_float(&field, &value)) goto done;
+            out = va_arg(ap, double *);
+            if (!out) goto done;
+            *out = value;
+            matched++;
+            break;
+        }
+        case 's': {
+            char *out;
+            scan_stream_field_t field;
+            if (!has_width || length != SCAN_LENGTH_NONE) goto done;
+            out = va_arg(ap, char *);
+            scan_stream_skip_space(&stream, 0);
+            if (!out) goto done;
+            scan_stream_field_init(&field, &stream, width, has_width);
+            if (!scan_stream_string(&field, out)) goto done;
+            matched++;
+            break;
+        }
+        case 'c': {
+            char *out;
+            if (length != SCAN_LENGTH_NONE || scan_stream_peek(&stream) == EOF)
+                goto done;
+            out = va_arg(ap, char *);
+            if (!out) goto done;
+            *out = (char)scan_stream_take(&stream);
+            matched++;
+            break;
+        }
+        default:
+            goto done;
+        }
+        fp++;
+    }
+
+done:
+    scan_stream_finish(&stream);
+    va_end(ap);
+    return matched;
+}
+
+/* Seekable Go Fscan SkipSpace uses the same isSpace as Sscan, including
+ * U+00A0. Non-seekable streams use the documented byte-exact ASCII subset. */
 static int scan_skip_file_space(FILE *f, int allow_nl) {
     if (!f) return 0;
     for (;;) {
@@ -1522,6 +2115,14 @@ static int scan_skip_file_space(FILE *f, int allow_nl) {
         uint32_t rune;
         int n;
         if (c == EOF) return 0;
+        if (pos < 0) {
+            /* A pipe cannot restore a multi-byte non-space rune. Keep this
+             * path byte-exact and use only the one-byte pushback C promises. */
+            if (scan_ascii_is_space(c, allow_nl))
+                continue;
+            (void)ungetc(c, f);
+            return 0;
+        }
         first = (unsigned char)c;
         raw[0] = (char)c;
         got = 1;
@@ -1536,10 +2137,7 @@ static int scan_skip_file_space(FILE *f, int allow_nl) {
         memset(raw + got, 0, sizeof(raw) - got);
         if (!scan_decode_rune(raw, &rune, &n) || n > (int)got ||
             (rune == '\n' ? !allow_nl : !scan_rune_is_space(rune))) {
-            if (pos >= 0)
-                (void)fseek(f, pos, SEEK_SET);
-            else
-                (void)ungetc((unsigned char)raw[0], f);
+            (void)fseek(f, pos, SEEK_SET);
             return 0;
         }
     }
@@ -1614,19 +2212,28 @@ static int scan_int_from_file(FILE *f, int *out_int) {
     return 0;
 }
 
+static int scan_vfscanf(FILE *f, const char *format, va_list args) {
+    long start = ftell(f);
+    char *input;
+    int matched;
+    size_t consumed = 0;
+    if (start < 0)
+        return scan_formatted_stream(f, format, args);
+    input = scan_read_format_lines(f, format);
+    if (!input) return 0;
+    matched = scan_formatted(input, format, args, &consumed);
+    (void)scan_rewind_unused(f, start, consumed);
+    free(input);
+    return matched;
+}
+
 int neverc_fmt_scanf(const char *format, ...) {
-    if (!format) return 0;
-    long start = ftell(stdin);
-    char *input = scan_read_format_lines(stdin, format);
     int matched;
     va_list args;
-    size_t consumed = 0;
-    if (!input) return 0;
+    if (!format) return 0;
     va_start(args, format);
-    matched = scan_formatted(input, format, args, &consumed);
+    matched = scan_vfscanf(stdin, format, args);
     va_end(args);
-    (void)scan_rewind_unused(stdin, start, consumed);
-    free(input);
     return matched;
 }
 
@@ -1635,18 +2242,12 @@ int neverc_fmt_scan(int *out_int) {
 }
 
 int neverc_fmt_fscanf(FILE *f, const char *format, ...) {
-    if (!f || !format) return 0;
-    long start = ftell(f);
-    char *input = scan_read_format_lines(f, format);
     int matched;
     va_list args;
-    size_t consumed = 0;
-    if (!input) return 0;
+    if (!f || !format) return 0;
     va_start(args, format);
-    matched = scan_formatted(input, format, args, &consumed);
+    matched = scan_vfscanf(f, format, args);
     va_end(args);
-    (void)scan_rewind_unused(f, start, consumed);
-    free(input);
     return matched;
 }
 

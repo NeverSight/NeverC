@@ -37,7 +37,14 @@ char *neverc_fmt_errorf(const char *format, ...);
  * "%31s" for a 32-byte destination) so the terminating NUL always fits.
  * neverc_fmt_sscan reads only its first integer destination; trailing
  * arguments are accepted for source compatibility but intentionally ignored.
- * Use neverc_fmt_sscan_ints for an explicitly bounded output array. */
+ * Use neverc_fmt_sscan_ints for an explicitly bounded output array.
+ *
+ * Scan/Fscan/Scanf/Fscanf preserve unread input on non-seekable FILE streams
+ * using the one byte of pushback guaranteed by C. In that mode input
+ * whitespace is ASCII-only; bytes >= 0x80 are ordinary input bytes. Sscan,
+ * Sscanf, and seekable FILE streams retain Unicode whitespace recognition.
+ * Full Unicode scanning on a non-seekable stream requires a caller-owned
+ * cursor API so unread UTF-8 can outlive a call. */
 int neverc_fmt_sscanf(const char *str, const char *format, ...);
 int neverc_fmt_sscan(const char *str, ...);
 int neverc_fmt_sscan_ints(const char *str, int *outputs,

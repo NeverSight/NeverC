@@ -1,3 +1,9 @@
+#ifndef _WIN32
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#endif
+
 #include "neverc/std/fmt.h"
 #include <limits.h>
 #include <math.h>
@@ -5,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 #ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
 #include <process.h>
 #include <windows.h>
 #else
@@ -1156,8 +1164,242 @@ static void test_sscanln(void) {
     }
 }
 
+enum { FMT_WIDE_SCAN_INPUT_SIZE = 300 };
+
+static void make_wide_scan_input(unsigned char *input) {
+    input[0] = '1';
+    memset(input + 1, 'x', FMT_WIDE_SCAN_INPUT_SIZE - 1);
+}
+
+static FILE *open_fmt_input_pipe(const unsigned char *data, size_t len) {
+    int fds[2];
+    size_t offset = 0;
+    FILE *input;
+    if (!data || len > 4096U) return NULL;
+#ifdef _WIN32
+    if (_pipe(fds, 4096, _O_BINARY) != 0) return NULL;
+    while (offset < len) {
+        int written = _write(fds[1], data + offset,
+                             (unsigned int)(len - offset));
+        if (written <= 0) {
+            _close(fds[0]);
+            _close(fds[1]);
+            return NULL;
+        }
+        offset += (size_t)written;
+    }
+    _close(fds[1]);
+    input = _fdopen(fds[0], "rb");
+    if (!input) _close(fds[0]);
+#else
+    if (pipe(fds) != 0) return NULL;
+    while (offset < len) {
+        ssize_t written = write(fds[1], data + offset, len - offset);
+        if (written <= 0) {
+            close(fds[0]);
+            close(fds[1]);
+            return NULL;
+        }
+        offset += (size_t)written;
+    }
+    close(fds[1]);
+    input = fdopen(fds[0], "rb");
+    if (!input) close(fds[0]);
+#endif
+    return input;
+}
+
+static void test_nonseekable_fscanf(void) {
+    FILE *input;
+    int a, b;
+
+    input = open_fmt_input_pipe((const unsigned char *)"10 20\n", 6);
+    check_true("fscanf pipe fixture", input != NULL);
+    if (input) {
+        a = b = 0;
+        check_int("fscanf pipe first count",
+                  neverc_fmt_fscanf(input, "%d", &a), 1);
+        check_int("fscanf pipe first value", a, 10);
+        check_int("fscanf pipe second count",
+                  neverc_fmt_fscanf(input, "%d", &b), 1);
+        check_int("fscanf pipe second value", b, 20);
+        check_int("fscanf pipe leaves newline for getc", getc(input), '\n');
+        fclose(input);
+    }
+
+    input = open_fmt_input_pipe((const unsigned char *)"7xyz", 4);
+    check_true("fscanf pipe suffix fixture", input != NULL);
+    if (input) {
+        a = 0;
+        check_int("fscanf pipe suffix count",
+                  neverc_fmt_fscanf(input, "%d", &a), 1);
+        check_int("fscanf pipe suffix value", a, 7);
+        check_int("fscanf pipe native getc x", getc(input), 'x');
+        check_int("fscanf pipe native getc y", getc(input), 'y');
+        check_int("fscanf pipe native getc z", getc(input), 'z');
+        fclose(input);
+    }
+
+    {
+        unsigned char wide_input[FMT_WIDE_SCAN_INPUT_SIZE];
+        char suffix = '\0';
+        make_wide_scan_input(wide_input);
+        input = open_fmt_input_pipe(wide_input, sizeof(wide_input));
+        check_true("fscanf pipe wide-width fixture", input != NULL);
+        if (input) {
+            a = 0;
+            check_int("fscanf pipe wide-width count",
+                      neverc_fmt_fscanf(input, "%300d%c", &a, &suffix), 2);
+            check_int("fscanf pipe wide-width value", a, 1);
+            check_int("fscanf pipe wide-width suffix", suffix, 'x');
+            fclose(input);
+        }
+    }
+
+    {
+        const unsigned char high_bytes[] = {' ', 0xC2, 0xA1, '9'};
+        input = open_fmt_input_pipe(high_bytes, sizeof(high_bytes));
+        check_true("fscanf pipe high-byte fixture", input != NULL);
+        if (input) {
+            a = 77;
+            check_int("fscanf pipe high-byte rejected",
+                      neverc_fmt_fscanf(input, "%d", &a), 0);
+            check_int("fscanf pipe high-byte leaves output", a, 77);
+            check_int("fscanf pipe preserves first high byte",
+                      getc(input), 0xC2);
+            check_int("fscanf pipe preserves high-byte suffix",
+                      getc(input), 0xA1);
+            check_int("fscanf pipe preserves suffix digit",
+                      getc(input), '9');
+            fclose(input);
+        }
+    }
+
+    {
+        const unsigned char high_bytes[] = {'\t', 0xC2, 0xA1, '8'};
+        input = open_fmt_input_pipe(high_bytes, sizeof(high_bytes));
+        check_true("fscan pipe high-byte fixture", input != NULL);
+        if (input) {
+            a = 77;
+            check_int("fscan pipe high-byte rejected",
+                      neverc_fmt_fscan(input, &a), 0);
+            check_int("fscan pipe high-byte leaves output", a, 77);
+            check_int("fscan pipe preserves first high byte",
+                      getc(input), 0xC2);
+            check_int("fscan pipe preserves high-byte suffix",
+                      getc(input), 0xA1);
+            check_int("fscan pipe preserves suffix digit", getc(input), '8');
+            fclose(input);
+        }
+    }
+
+    input = open_fmt_input_pipe(
+        (const unsigned char *)"12 1.5 hi !\n34Z",
+        strlen("12 1.5 hi !\n34Z"));
+    check_true("fscanf pipe formatted fixture", input != NULL);
+    if (input) {
+        double f = 0.0;
+        char word[3] = {0};
+        char mark = '\0';
+        a = b = 0;
+        check_int("fscanf pipe formatted count",
+                  neverc_fmt_fscanf(input, "%2d %f %2s %c\n%d",
+                                    &a, &f, word, &mark, &b), 5);
+        check_true("fscanf pipe formatted values",
+                   a == 12 && f == 1.5 && strcmp(word, "hi") == 0 &&
+                   mark == '!' && b == 34);
+        check_int("fscanf pipe formatted suffix", getc(input), 'Z');
+        fclose(input);
+    }
+
+    input = open_fmt_input_pipe((const unsigned char *)"  %abQ", 6);
+    check_true("fscanf pipe literal fixture", input != NULL);
+    if (input) {
+        char word[3] = {0};
+        check_int("fscanf pipe percent width count",
+                  neverc_fmt_fscanf(input, "%%%2sX", word), 1);
+        check_str("fscanf pipe percent width value", word, "ab");
+        check_int("fscanf pipe literal mismatch suffix", getc(input), 'Q');
+        fclose(input);
+    }
+
+    {
+        const char *all_numbers =
+            "-12 34 ff 10 11 9223372036854775807 "
+            "18446744073709551615X";
+        long lv = 0;
+        unsigned int uv = 0, xv = 0, ov = 0, bv = 0;
+        long long llv = 0;
+        unsigned long long ullv = 0;
+        input = open_fmt_input_pipe((const unsigned char *)all_numbers,
+                                    strlen(all_numbers));
+        check_true("fscanf pipe numeric verbs fixture", input != NULL);
+        if (input) {
+            check_int("fscanf pipe numeric verbs count",
+                      neverc_fmt_fscanf(input,
+                          "%li %u %x %o %b %lld %llu",
+                          &lv, &uv, &xv, &ov, &bv, &llv, &ullv), 7);
+            check_true("fscanf pipe numeric verbs values",
+                       lv == -12L && uv == 34U && xv == 255U && ov == 8U &&
+                       bv == 3U && llv == LLONG_MAX && ullv == ULLONG_MAX);
+            check_int("fscanf pipe numeric verbs suffix", getc(input), 'X');
+            fclose(input);
+        }
+    }
+
+    input = open_fmt_input_pipe(
+        (const unsigned char *)"2147483648 9", 12);
+    check_true("fscanf pipe overflow fixture", input != NULL);
+    if (input) {
+        a = 77;
+        b = 0;
+        check_int("fscanf pipe overflow rejected",
+                  neverc_fmt_fscanf(input, "%d", &a), 0);
+        check_int("fscanf pipe overflow leaves output", a, 77);
+        check_int("fscanf pipe overflow consumes token",
+                  neverc_fmt_fscanf(input, "%d", &b), 1);
+        check_int("fscanf pipe overflow suffix value", b, 9);
+        fclose(input);
+    }
+
+    input = open_fmt_input_pipe((const unsigned char *)"1e+ 9", 5);
+    check_true("fscanf pipe float-syntax fixture", input != NULL);
+    if (input) {
+        double f = 7.0;
+        b = 0;
+        check_int("fscanf pipe float syntax rejected",
+                  neverc_fmt_fscanf(input, "%f", &f), 0);
+        check_true("fscanf pipe float syntax leaves output", f == 7.0);
+        check_int("fscanf pipe float syntax consumes token",
+                  neverc_fmt_fscanf(input, "%d", &b), 1);
+        check_int("fscanf pipe float syntax suffix value", b, 9);
+        fclose(input);
+    }
+}
+
 static void test_stream_scan(void) {
     printf("[stream scan]\n");
+    test_nonseekable_fscanf();
+    {
+        unsigned char wide_input[FMT_WIDE_SCAN_INPUT_SIZE];
+        FILE *wide_tmp = tmpfile();
+        char suffix = '\0';
+        int wide_value = 0;
+        make_wide_scan_input(wide_input);
+        check_true("fscanf seekable wide-width fixture", wide_tmp != NULL);
+        if (wide_tmp) {
+            check_true("fscanf seekable wide-width write",
+                       fwrite(wide_input, 1, sizeof(wide_input), wide_tmp) ==
+                           sizeof(wide_input));
+            rewind(wide_tmp);
+            check_int("fscanf seekable wide-width count",
+                      neverc_fmt_fscanf(wide_tmp, "%300d%c",
+                                        &wide_value, &suffix), 2);
+            check_int("fscanf seekable wide-width value", wide_value, 1);
+            check_int("fscanf seekable wide-width suffix", suffix, 'x');
+            fclose(wide_tmp);
+        }
+    }
     FILE *tmp = tmpfile();
     check_true("stream fixture", tmp != NULL);
     if (!tmp) return;
