@@ -3759,6 +3759,7 @@
       "symbols": {
         "neverc_x509_parse_certificate": "src/crypto/x509/x509.c",
         "neverc_x509_cert_free": "src/crypto/x509/x509.c",
+        "neverc_x509_has_name_constraints": "src/crypto/x509/x509.c",
         "neverc_x509_cert_pool_new": "src/crypto/x509/x509_pool.c",
         "neverc_x509_cert_pool_free": "src/crypto/x509/x509_pool.c",
         "neverc_x509_cert_pool_add_der": "src/crypto/x509/x509_pool.c",
@@ -3780,6 +3781,7 @@
       "dot_methods": {
         "parse_certificate": "neverc_x509_parse_certificate",
         "cert_free": "neverc_x509_cert_free",
+        "has_name_constraints": "neverc_x509_has_name_constraints",
         "cert_pool_new": "neverc_x509_cert_pool_new",
         "cert_pool_free": "neverc_x509_cert_pool_free",
         "cert_pool_add_der": "neverc_x509_cert_pool_add_der",

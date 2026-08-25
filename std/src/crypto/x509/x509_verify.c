@@ -5,6 +5,7 @@
  * DER parser so parse-only callers do not pull the public-key implementations.
  */
 #include "neverc/std/crypto/x509.h"
+#include "x509_internal.h"
 #include "neverc/std/crypto/ecdsa.h"
 #include "neverc/std/crypto/ed25519.h"
 #include "neverc/std/crypto/elliptic.h"
@@ -757,38 +758,39 @@ static int x509_cn_parse_ipv4(const char *cn, neverc_x509_ip_address_t *out) {
 }
 
 static int x509_cert_satisfies_name_constraints(
-    const neverc_x509_cert_t *subject, const neverc_x509_cert_t *issuer) {
-    if (!subject || !issuer)
+    const neverc_x509_cert_t *subject,
+    const neverc_x509_name_constraints_t *constraints) {
+    if (!subject || !constraints)
         return 0;
-    if (!issuer->name_constraints_present)
+    if (!constraints->present)
         return 1;
     if (x509_dns_names_excluded(subject->dns_names, subject->dns_name_count,
-                                issuer->excluded_dns_names,
-                                issuer->excluded_dns_name_count) ||
+                                constraints->excluded_dns_names,
+                                constraints->excluded_dns_name_count) ||
         x509_ip_addresses_excluded(subject->ip_addresses,
                                    subject->ip_address_count,
-                                   issuer->excluded_ip_networks,
-                                   issuer->excluded_ip_network_count))
+                                   constraints->excluded_ip_networks,
+                                   constraints->excluded_ip_network_count))
         return 0;
     if (!x509_dns_names_permitted(subject->dns_names,
                                   subject->dns_name_count,
-                                  issuer->permitted_dns_names,
-                                  issuer->permitted_dns_name_count) ||
+                                  constraints->permitted_dns_names,
+                                  constraints->permitted_dns_name_count) ||
         !x509_ip_addresses_permitted(subject->ip_addresses,
                                      subject->ip_address_count,
-                                     issuer->permitted_ip_networks,
-                                     issuer->permitted_ip_network_count))
+                                     constraints->permitted_ip_networks,
+                                     constraints->permitted_ip_network_count))
         return 0;
 
     if (subject->dns_name_count == 0 &&
         x509_cn_looks_like_dns(subject->subject.common_name)) {
         char *cn_name = (char *)subject->subject.common_name;
         if (x509_dns_names_excluded(&cn_name, 1,
-                                    issuer->excluded_dns_names,
-                                    issuer->excluded_dns_name_count) ||
+                                    constraints->excluded_dns_names,
+                                    constraints->excluded_dns_name_count) ||
             !x509_dns_names_permitted(&cn_name, 1,
-                                      issuer->permitted_dns_names,
-                                      issuer->permitted_dns_name_count))
+                                      constraints->permitted_dns_names,
+                                      constraints->permitted_dns_name_count))
             return 0;
     }
 
@@ -799,16 +801,16 @@ static int x509_cert_satisfies_name_constraints(
         neverc_x509_ip_address_t cn_ip;
         if (x509_cn_parse_ipv4(subject->subject.common_name, &cn_ip)) {
             if (x509_ip_addresses_excluded(
-                    &cn_ip, 1, issuer->excluded_ip_networks,
-                    issuer->excluded_ip_network_count) ||
+                    &cn_ip, 1, constraints->excluded_ip_networks,
+                    constraints->excluded_ip_network_count) ||
                 !x509_ip_addresses_permitted(
-                    &cn_ip, 1, issuer->permitted_ip_networks,
-                    issuer->permitted_ip_network_count))
+                    &cn_ip, 1, constraints->permitted_ip_networks,
+                    constraints->permitted_ip_network_count))
                 return 0;
         } else if ((x509_cn_looks_like_ipv4(subject->subject.common_name) ||
                     x509_cn_looks_like_ipv6(subject->subject.common_name)) &&
-                   (issuer->permitted_ip_network_count > 0 ||
-                    issuer->excluded_ip_network_count > 0)) {
+                   (constraints->permitted_ip_network_count > 0 ||
+                    constraints->excluded_ip_network_count > 0)) {
             return 0;
         }
     }
@@ -862,10 +864,17 @@ int neverc_x509_verify_chain(const neverc_x509_cert_t *const *chain,
         if (neverc_x509_check_signature_from(child, parent) != 0)
             return -1;
 
+        neverc_x509_name_constraints_t constraints;
+        if (neverc_x509_extract_name_constraints(parent, &constraints) != 0)
+            return -1;
         for (size_t j = 0; j <= i; ++j) {
-            if (!x509_cert_satisfies_name_constraints(chain[j], parent))
+            if (!x509_cert_satisfies_name_constraints(
+                    chain[j], &constraints)) {
+                neverc_x509_name_constraints_clear(&constraints);
                 return -1;
+            }
         }
+        neverc_x509_name_constraints_clear(&constraints);
 
         if (i > 0 && child->is_ca &&
             !x509_names_equal(

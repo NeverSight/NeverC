@@ -978,6 +978,7 @@ STD_TEST(plan9obj, "src/debug/plan9obj/plan9obj.c")
 
 STD_TEST(x509, X509_VERIFY_DEPS)
 STD_TEST(x509_chain, X509_VERIFY_DEPS)
+STD_TEST(x509_cert_abi, "src/crypto/x509/x509.c")
 TEST_F(StdLibTest, EmbeddedX509SignatureDotSyntax) {
   auto r = compileAndRunStdTest("x509_builtin", {}, {"-fbuiltin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;

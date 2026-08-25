@@ -4,6 +4,7 @@
  * Self-contained implementation without external ASN.1 library dependency.
  */
 #include "neverc/std/crypto/x509.h"
+#include "x509_internal.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -729,7 +730,7 @@ static int append_ip_network(neverc_x509_ip_network_t **networks,
 }
 
 static int parse_general_subtrees(asn1_reader_t *trees,
-                                  neverc_x509_cert_t *cert,
+                                  neverc_x509_name_constraints_t *constraints,
                                   int excluded) {
     if (!trees || trees->len == 0)
         return -1;
@@ -750,18 +751,20 @@ static int parse_general_subtrees(asn1_reader_t *trees,
             return -1;
 
         if (tag == 0x82) {
-            char ***names = excluded ? &cert->excluded_dns_names
-                                     : &cert->permitted_dns_names;
-            size_t *count = excluded ? &cert->excluded_dns_name_count
-                                     : &cert->permitted_dns_name_count;
+            char ***names = excluded ? &constraints->excluded_dns_names
+                                     : &constraints->permitted_dns_names;
+            size_t *count = excluded
+                                ? &constraints->excluded_dns_name_count
+                                : &constraints->permitted_dns_name_count;
             if (append_constraint_dns(names, count, value, value_len) != 0)
                 return -1;
         } else if (tag == 0x87) {
             neverc_x509_ip_network_t **networks =
-                excluded ? &cert->excluded_ip_networks
-                         : &cert->permitted_ip_networks;
-            size_t *count = excluded ? &cert->excluded_ip_network_count
-                                     : &cert->permitted_ip_network_count;
+                excluded ? &constraints->excluded_ip_networks
+                         : &constraints->permitted_ip_networks;
+            size_t *count = excluded
+                                ? &constraints->excluded_ip_network_count
+                                : &constraints->permitted_ip_network_count;
             if (append_ip_network(networks, count, value, value_len) != 0)
                 return -1;
         } else {
@@ -774,35 +777,35 @@ static int parse_general_subtrees(asn1_reader_t *trees,
     return 0;
 }
 
-static int parse_name_constraints(neverc_x509_cert_t *cert,
+static int parse_name_constraints(neverc_x509_name_constraints_t *constraints,
                                   const uint8_t *data, size_t len) {
     asn1_reader_t wrapper = {data, len, 0};
-    asn1_reader_t constraints;
-    if (asn1_enter_sequence(&wrapper, &constraints) != 0 ||
-        wrapper.pos != wrapper.len || constraints.len == 0)
+    asn1_reader_t sequence;
+    if (asn1_enter_sequence(&wrapper, &sequence) != 0 ||
+        wrapper.pos != wrapper.len || sequence.len == 0)
         return -1;
 
     int saw_permitted = 0;
     int saw_excluded = 0;
-    while (constraints.pos < constraints.len) {
+    while (sequence.pos < sequence.len) {
         uint8_t tag;
         const uint8_t *value;
         size_t value_len;
-        if (asn1_read_tlv(&constraints, &tag, &value, &value_len) != 0)
+        if (asn1_read_tlv(&sequence, &tag, &value, &value_len) != 0)
             return -1;
         asn1_reader_t trees = {value, value_len, 0};
         if (tag == ASN1_TAG_CONTEXT_0) {
             if (saw_permitted || saw_excluded)
                 return -1;
             saw_permitted = 1;
-            if (parse_general_subtrees(&trees, cert, 0) != 0 ||
+            if (parse_general_subtrees(&trees, constraints, 0) != 0 ||
                 trees.pos != trees.len)
                 return -1;
         } else if (tag == ASN1_TAG_CONTEXT_1) {
             if (saw_excluded)
                 return -1;
             saw_excluded = 1;
-            if (parse_general_subtrees(&trees, cert, 1) != 0 ||
+            if (parse_general_subtrees(&trees, constraints, 1) != 0 ||
                 trees.pos != trees.len)
                 return -1;
         } else {
@@ -811,8 +814,22 @@ static int parse_name_constraints(neverc_x509_cert_t *cert,
     }
     if (!saw_permitted && !saw_excluded)
         return -1;
-    cert->name_constraints_present = 1;
+    constraints->present = 1;
     return 0;
+}
+
+void neverc_x509_name_constraints_clear(
+    neverc_x509_name_constraints_t *constraints) {
+    if (!constraints) return;
+    for (size_t i = 0; i < constraints->permitted_dns_name_count; ++i)
+        free(constraints->permitted_dns_names[i]);
+    free(constraints->permitted_dns_names);
+    for (size_t i = 0; i < constraints->excluded_dns_name_count; ++i)
+        free(constraints->excluded_dns_names[i]);
+    free(constraints->excluded_dns_names);
+    free(constraints->permitted_ip_networks);
+    free(constraints->excluded_ip_networks);
+    memset(constraints, 0, sizeof(*constraints));
 }
 
 static int parse_extensions(neverc_x509_cert_t *cert,
@@ -902,9 +919,12 @@ static int parse_extensions(neverc_x509_cert_t *cert,
             saw_ext_key_usage = 1;
         } else if (oid_equals(oid, oid_len, OID_NAME_CONSTRAINTS,
                               sizeof(OID_NAME_CONSTRAINTS))) {
-            if (saw_name_constraints ||
-                parse_name_constraints(cert, contents,
-                                       contents_len) != 0)
+            neverc_x509_name_constraints_t constraints;
+            memset(&constraints, 0, sizeof(constraints));
+            int constraint_rc =
+                parse_name_constraints(&constraints, contents, contents_len);
+            neverc_x509_name_constraints_clear(&constraints);
+            if (saw_name_constraints || constraint_rc != 0)
                 return -1;
             saw_name_constraints = 1;
         } else {
@@ -916,9 +936,161 @@ static int parse_extensions(neverc_x509_cert_t *cert,
     /* RFC 5280 4.2.1.10: nameConstraints MUST be used only in a CA
      * certificate. A critical leaf constraint is otherwise "handled"
      * and never applied to a subsequent certificate. */
-    if (cert->name_constraints_present && !cert->is_ca)
+    if (saw_name_constraints && !cert->is_ca)
         return -1;
     return 0;
+}
+
+static int skip_expected_tlv(asn1_reader_t *reader, uint8_t expected_tag) {
+    uint8_t tag;
+    const uint8_t *value;
+    size_t value_len;
+    return asn1_read_tlv(reader, &tag, &value, &value_len) == 0 &&
+                   tag == expected_tag
+               ? 0
+               : -1;
+}
+
+/* Locate the extension without retaining any pointer outside cert->raw. The
+ * certificate parser already validates full DER; this strict walk also makes
+ * the public presence accessor fail closed for caller-constructed objects. */
+static int find_name_constraints_extension(
+    const neverc_x509_cert_t *cert, const uint8_t **contents_out,
+    size_t *contents_len_out) {
+    if (contents_out) *contents_out = NULL;
+    if (contents_len_out) *contents_len_out = 0;
+    if (!cert || !cert->raw || cert->raw_len == 0)
+        return 0;
+
+    asn1_reader_t root = {cert->raw, cert->raw_len, 0};
+    asn1_reader_t certificate;
+    asn1_reader_t tbs;
+    if (asn1_enter_sequence(&root, &certificate) != 0 ||
+        root.pos != root.len || asn1_enter_sequence(&certificate, &tbs) != 0)
+        return -1;
+
+    if (tbs.pos < tbs.len && tbs.data[tbs.pos] == ASN1_TAG_CONTEXT_0) {
+        if (skip_expected_tlv(&tbs, ASN1_TAG_CONTEXT_0) != 0)
+            return -1;
+    }
+    if (skip_expected_tlv(&tbs, ASN1_TAG_INTEGER) != 0 ||
+        skip_expected_tlv(&tbs, ASN1_TAG_SEQUENCE) != 0 ||
+        skip_expected_tlv(&tbs, ASN1_TAG_SEQUENCE) != 0 ||
+        skip_expected_tlv(&tbs, ASN1_TAG_SEQUENCE) != 0 ||
+        skip_expected_tlv(&tbs, ASN1_TAG_SEQUENCE) != 0 ||
+        skip_expected_tlv(&tbs, ASN1_TAG_SEQUENCE) != 0)
+        return -1;
+
+    int found = 0;
+    int saw_issuer_unique_id = 0;
+    int saw_subject_unique_id = 0;
+    int saw_extensions = 0;
+    while (tbs.pos < tbs.len) {
+        uint8_t tag;
+        const uint8_t *value;
+        size_t value_len;
+        if (asn1_read_tlv(&tbs, &tag, &value, &value_len) != 0)
+            return -1;
+        if (tag == ASN1_TAG_CONTEXT_1_IMPLICIT) {
+            if (saw_issuer_unique_id || saw_subject_unique_id ||
+                saw_extensions || !valid_implicit_bit_string(value, value_len))
+                return -1;
+            saw_issuer_unique_id = 1;
+            continue;
+        }
+        if (tag == ASN1_TAG_CONTEXT_2_IMPLICIT) {
+            if (saw_subject_unique_id || saw_extensions ||
+                !valid_implicit_bit_string(value, value_len))
+                return -1;
+            saw_subject_unique_id = 1;
+            continue;
+        }
+        if (tag != ASN1_TAG_CONTEXT_3 || saw_extensions)
+            return -1;
+        saw_extensions = 1;
+
+        asn1_reader_t wrapper = {value, value_len, 0};
+        asn1_reader_t extensions;
+        if (asn1_enter_sequence(&wrapper, &extensions) != 0 ||
+            wrapper.pos != wrapper.len || extensions.len == 0)
+            return -1;
+        while (extensions.pos < extensions.len) {
+            asn1_reader_t extension;
+            if (asn1_enter_sequence(&extensions, &extension) != 0)
+                return -1;
+            const uint8_t *oid;
+            size_t oid_len;
+            if (asn1_read_tlv(&extension, &tag, &oid, &oid_len) != 0 ||
+                tag != ASN1_TAG_OID)
+                return -1;
+            if (extension.pos < extension.len &&
+                extension.data[extension.pos] == ASN1_TAG_BOOLEAN) {
+                const uint8_t *critical;
+                size_t critical_len;
+                if (asn1_read_tlv(&extension, &tag, &critical,
+                                  &critical_len) != 0 ||
+                    critical_len != 1 ||
+                    (critical[0] != 0x00 && critical[0] != 0xff))
+                    return -1;
+            }
+            const uint8_t *contents;
+            size_t contents_len;
+            if (asn1_read_tlv(&extension, &tag, &contents,
+                              &contents_len) != 0 ||
+                tag != ASN1_TAG_OCTET_STRING ||
+                extension.pos != extension.len)
+                return -1;
+            if (oid_equals(oid, oid_len, OID_NAME_CONSTRAINTS,
+                           sizeof(OID_NAME_CONSTRAINTS))) {
+                if (found)
+                    return -1;
+                found = 1;
+                if (contents_out) *contents_out = contents;
+                if (contents_len_out) *contents_len_out = contents_len;
+            }
+        }
+    }
+    int signature_algorithm = 0;
+    uint8_t signature_tag;
+    const uint8_t *signature;
+    size_t signature_len;
+    if (parse_signature_algorithm(&certificate, &signature_algorithm,
+                                  NULL, NULL) != 0 ||
+        asn1_read_tlv(&certificate, &signature_tag, &signature,
+                      &signature_len) != 0 ||
+        signature_tag != ASN1_TAG_BIT_STRING || signature_len < 2 ||
+        signature[0] != 0 || certificate.pos != certificate.len)
+        return -1;
+    return found;
+}
+
+int neverc_x509_extract_name_constraints(
+    const neverc_x509_cert_t *cert,
+    neverc_x509_name_constraints_t *constraints) {
+    if (!constraints) return -1;
+    memset(constraints, 0, sizeof(*constraints));
+    const uint8_t *contents;
+    size_t contents_len;
+    int found = find_name_constraints_extension(
+        cert, &contents, &contents_len);
+    if (found < 0)
+        return -1;
+    if (found == 0)
+        return 0;
+    if (parse_name_constraints(constraints, contents, contents_len) != 0) {
+        neverc_x509_name_constraints_clear(constraints);
+        return -1;
+    }
+    return 0;
+}
+
+int neverc_x509_has_name_constraints(const neverc_x509_cert_t *cert) {
+    neverc_x509_name_constraints_t constraints;
+    if (neverc_x509_extract_name_constraints(cert, &constraints) != 0)
+        return -1;
+    int present = constraints.present;
+    neverc_x509_name_constraints_clear(&constraints);
+    return present;
 }
 
 /* ===== Name Parsing ===== */
@@ -1325,23 +1497,6 @@ void neverc_x509_cert_free(neverc_x509_cert_t *cert) {
     free(cert->ip_addresses);
     cert->ip_addresses = NULL;
     cert->ip_address_count = 0;
-    for (size_t i = 0; i < cert->permitted_dns_name_count; ++i)
-        free(cert->permitted_dns_names[i]);
-    free(cert->permitted_dns_names);
-    cert->permitted_dns_names = NULL;
-    cert->permitted_dns_name_count = 0;
-    for (size_t i = 0; i < cert->excluded_dns_name_count; ++i)
-        free(cert->excluded_dns_names[i]);
-    free(cert->excluded_dns_names);
-    cert->excluded_dns_names = NULL;
-    cert->excluded_dns_name_count = 0;
-    free(cert->permitted_ip_networks);
-    cert->permitted_ip_networks = NULL;
-    cert->permitted_ip_network_count = 0;
-    free(cert->excluded_ip_networks);
-    cert->excluded_ip_networks = NULL;
-    cert->excluded_ip_network_count = 0;
-    cert->name_constraints_present = 0;
     cert->raw_tbs = NULL;
     cert->raw_tbs_len = 0;
     cert->signature = NULL;

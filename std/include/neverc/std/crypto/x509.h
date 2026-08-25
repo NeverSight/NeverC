@@ -146,24 +146,6 @@ typedef struct {
     neverc_x509_ip_address_t   *ip_addresses;
     size_t                      ip_address_count;
 
-    /* RFC 5280 nameConstraints. Absent when name_constraints_present is 0.
-     * Permitted entries of a given type restrict that type; omitted types
-     * remain unrestricted. Any excluded match is always forbidden. A
-     * DNS-like Common Name is constrained when the certificate has no
-     * dNSName SAN; an IPv4-literal Common Name is constrained when there
-     * is no iPAddress SAN. Wildcard dNSNames are constrained against the
-     * hostnames they can match, not the literal "*.suffix" string.
-     * Hostname verification still does not fall back to CN. */
-    int                         name_constraints_present;
-    char                      **permitted_dns_names;
-    size_t                      permitted_dns_name_count;
-    char                      **excluded_dns_names;
-    size_t                      excluded_dns_name_count;
-    neverc_x509_ip_network_t   *permitted_ip_networks;
-    size_t                      permitted_ip_network_count;
-    neverc_x509_ip_network_t   *excluded_ip_networks;
-    size_t                      excluded_ip_network_count;
-
     /* Raw DER bytes (not owned by this struct) */
     const uint8_t *raw;
     size_t         raw_len;
@@ -179,6 +161,13 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
 
 /* Free all fields allocated by neverc_x509_parse_certificate. */
 void neverc_x509_cert_free(neverc_x509_cert_t *cert);
+
+/* Return 1 when the raw certificate contains an RFC 5280 nameConstraints
+ * extension, 0 when absent (including NULL/no raw DER), and -1 when raw DER is
+ * malformed or constraints cannot be extracted. Constraint contents remain
+ * private and are extracted on demand by chain verification, preserving the
+ * released certificate layout. */
+int neverc_x509_has_name_constraints(const neverc_x509_cert_t *cert);
 
 /* Check that issuer == subject and the certificate signature verifies. */
 int neverc_x509_is_self_signed(const neverc_x509_cert_t *cert);

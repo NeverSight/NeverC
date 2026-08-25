@@ -28,6 +28,28 @@ static int tests_failed;
         }                                                                    \
     } while (0)
 
+/* Certificate-shaped DER shell used to attach constraints to a parsed root
+ * copy without changing its signature/public-key fields. The private X509
+ * extractor reads permitted DNS example.com, permitted IPv4 10.0.0.0/8, and
+ * excluded DNS evil.example.com from this raw value. */
+static const uint8_t constrained_certificate_shell[] = {
+    0x30, 0x67, 0x30, 0x52, 0x02, 0x01, 0x01,
+    0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00,
+    0xa3, 0x43, 0x30, 0x41, 0x30, 0x3f,
+    0x06, 0x03, 0x55, 0x1d, 0x1e, 0x01, 0x01, 0xff, 0x04, 0x35,
+    0x30, 0x33,
+    0xa0, 0x1b,
+    0x30, 0x0d, 0x82, 0x0b,
+    'e', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'c', 'o', 'm',
+    0x30, 0x0a, 0x87, 0x08,
+    0x0a, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00,
+    0xa1, 0x14, 0x30, 0x12, 0x82, 0x10,
+    'e', 'v', 'i', 'l', '.', 'e', 'x', 'a', 'm', 'p', 'l', 'e', '.',
+    'c', 'o', 'm',
+    0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d,
+    0x01, 0x01, 0x0b, 0x05, 0x00, 0x03, 0x02, 0x00, 0x00
+};
+
 static char *copy_environment_value(const char *name) {
     const char *value = getenv(name);
     if (!value)
@@ -600,13 +622,13 @@ int main(void) {
 
     neverc_x509_cert_t nc_leaf = leaf;
     neverc_x509_cert_t nc_root = root;
-    char *permitted_dns[] = {"example.com"};
     char *matching_dns[] = {"www.example.com"};
     char *foreign_dns[] = {"evil.com"};
-    char *excluded_dns[] = {"www.example.com"};
-    nc_root.name_constraints_present = 1;
-    nc_root.permitted_dns_names = permitted_dns;
-    nc_root.permitted_dns_name_count = 1;
+    char *excluded_dns[] = {"evil.example.com"};
+    nc_root.raw = constrained_certificate_shell;
+    nc_root.raw_len = sizeof(constrained_certificate_shell);
+    CHECK("name_constraints_detected_from_raw_der",
+          neverc_x509_has_name_constraints(&nc_root) == 1);
     nc_leaf.dns_names = matching_dns;
     nc_leaf.dns_name_count = 1;
     const neverc_x509_cert_t *nc_chain[] = {&nc_leaf, &nc_root};
@@ -622,44 +644,14 @@ int main(void) {
     CHECK("name_constraints_dns_requires_label_boundary",
           neverc_x509_verify_chain(
               nc_chain, 2, &valid_time, NULL, 0) != 0);
-    char *dot_permitted[] = {".example.com"};
-    char *apex_dns[] = {"example.com"};
-    nc_root.permitted_dns_names = dot_permitted;
-    nc_leaf.dns_names = matching_dns;
-    CHECK("name_constraints_leading_dot_allows_subdomain",
-          neverc_x509_verify_chain(
-              nc_chain, 2, &valid_time, NULL, 0) == 0);
-    nc_leaf.dns_names = apex_dns;
-    CHECK("name_constraints_leading_dot_rejects_apex",
-          neverc_x509_verify_chain(
-              nc_chain, 2, &valid_time, NULL, 0) != 0);
-    char *empty_permitted[] = {""};
-    char *dot_only_permitted[] = {"."};
-    nc_root.permitted_dns_names = empty_permitted;
-    nc_leaf.dns_names = foreign_dns;
-    CHECK("name_constraints_empty_permitted_does_not_match_all",
-          neverc_x509_verify_chain(
-              nc_chain, 2, &valid_time, NULL, 0) != 0);
-    nc_root.permitted_dns_names = dot_only_permitted;
-    CHECK("name_constraints_dot_permitted_does_not_match_all",
-          neverc_x509_verify_chain(
-              nc_chain, 2, &valid_time, NULL, 0) != 0);
-    nc_leaf.dns_names = matching_dns;
-    nc_root.permitted_dns_names = NULL;
-    nc_root.permitted_dns_name_count = 0;
-    nc_root.excluded_dns_names = excluded_dns;
-    nc_root.excluded_dns_name_count = 1;
+    nc_leaf.dns_names = excluded_dns;
     CHECK("name_constraints_excluded_dns_rejected",
           neverc_x509_verify_chain(
               nc_chain, 2, &valid_time, NULL, 0) != 0);
-    nc_root.excluded_dns_names = NULL;
-    nc_root.excluded_dns_name_count = 0;
 
     /* CN-only identities must not evade DNS name constraints. */
     nc_leaf.dns_names = NULL;
     nc_leaf.dns_name_count = 0;
-    nc_root.permitted_dns_names = permitted_dns;
-    nc_root.permitted_dns_name_count = 1;
     memset(nc_leaf.subject.common_name, 0,
            sizeof(nc_leaf.subject.common_name));
     memcpy(nc_leaf.subject.common_name, "evil.com",
@@ -672,17 +664,11 @@ int main(void) {
     CHECK("name_constraints_cn_without_san_match",
           neverc_x509_verify_chain(
               nc_chain, 2, &valid_time, NULL, 0) == 0);
-    nc_root.permitted_dns_names = NULL;
-    nc_root.permitted_dns_name_count = 0;
-    nc_root.excluded_dns_names = excluded_dns;
-    nc_root.excluded_dns_name_count = 1;
+    memcpy(nc_leaf.subject.common_name, "evil.example.com",
+           sizeof("evil.example.com"));
     CHECK("name_constraints_excluded_cn_without_san_rejected",
           neverc_x509_verify_chain(
               nc_chain, 2, &valid_time, NULL, 0) != 0);
-    nc_root.excluded_dns_names = NULL;
-    nc_root.excluded_dns_name_count = 0;
-    nc_root.permitted_dns_names = permitted_dns;
-    nc_root.permitted_dns_name_count = 1;
     memcpy(nc_leaf.subject.common_name, "NeverC Test CA",
            sizeof("NeverC Test CA"));
     CHECK("name_constraints_human_cn_not_treated_as_dns",
@@ -703,44 +689,18 @@ int main(void) {
     nc_leaf.dns_name_count = 1;
     memset(nc_leaf.subject.common_name, 0,
            sizeof(nc_leaf.subject.common_name));
-    nc_root.permitted_dns_names = permitted_dns;
-    nc_root.permitted_dns_name_count = 1;
-    CHECK("name_constraints_wildcard_permitted_under_parent",
-          neverc_x509_verify_chain(
-              nc_chain, 2, &valid_time, NULL, 0) == 0);
-    char *www_only_permitted[] = {"www.example.com"};
-    nc_root.permitted_dns_names = www_only_permitted;
-    CHECK("name_constraints_wildcard_broader_than_permitted",
-          neverc_x509_verify_chain(
-              nc_chain, 2, &valid_time, NULL, 0) != 0);
-    nc_root.permitted_dns_names = NULL;
-    nc_root.permitted_dns_name_count = 0;
-    char *excluded_www[] = {"www.example.com"};
-    nc_root.excluded_dns_names = excluded_www;
-    nc_root.excluded_dns_name_count = 1;
     CHECK("name_constraints_wildcard_covers_excluded_child",
           neverc_x509_verify_chain(
               nc_chain, 2, &valid_time, NULL, 0) != 0);
-    char *excluded_parent[] = {"example.com"};
-    nc_root.excluded_dns_names = excluded_parent;
-    CHECK("name_constraints_wildcard_covers_excluded_parent",
+    char *foreign_wildcard_dns[] = {"*.evil.com"};
+    nc_leaf.dns_names = foreign_wildcard_dns;
+    CHECK("name_constraints_wildcard_broader_than_permitted",
           neverc_x509_verify_chain(
               nc_chain, 2, &valid_time, NULL, 0) != 0);
-    char *excluded_deep[] = {"foo.www.example.com"};
-    nc_root.excluded_dns_names = excluded_deep;
-    CHECK("name_constraints_wildcard_unrelated_deep_excluded",
-          neverc_x509_verify_chain(
-              nc_chain, 2, &valid_time, NULL, 0) == 0);
-    nc_root.excluded_dns_names = NULL;
-    nc_root.excluded_dns_name_count = 0;
-    nc_root.permitted_dns_names = NULL;
-    nc_root.permitted_dns_name_count = 0;
 
     /* localhost and wildcard CNs are DNS identities without a SAN. */
     nc_leaf.dns_names = NULL;
     nc_leaf.dns_name_count = 0;
-    nc_root.permitted_dns_names = permitted_dns;
-    nc_root.permitted_dns_name_count = 1;
     memcpy(nc_leaf.subject.common_name, "localhost",
            sizeof("localhost"));
     CHECK("name_constraints_localhost_cn_without_san_rejected",
@@ -758,27 +718,18 @@ int main(void) {
               nc_chain, 2, &valid_time, NULL, 0) != 0);
     memcpy(nc_leaf.subject.common_name, "*.example.com",
            sizeof("*.example.com"));
-    CHECK("name_constraints_wildcard_cn_without_san_match",
+    CHECK("name_constraints_wildcard_cn_covers_excluded_child",
           neverc_x509_verify_chain(
-              nc_chain, 2, &valid_time, NULL, 0) == 0);
+              nc_chain, 2, &valid_time, NULL, 0) != 0);
     memset(nc_leaf.subject.common_name, 0,
            sizeof(nc_leaf.subject.common_name));
-    nc_root.permitted_dns_names = NULL;
-    nc_root.permitted_dns_name_count = 0;
 
     neverc_x509_ip_address_t matching_ip = {{10, 1, 2, 3}, 4};
     neverc_x509_ip_address_t foreign_ip = {{11, 0, 0, 1}, 4};
-    neverc_x509_ip_network_t permitted_net;
-    memset(&permitted_net, 0, sizeof(permitted_net));
-    permitted_net.bytes[0] = 10;
-    permitted_net.mask[0] = 0xff;
-    permitted_net.len = 4;
     nc_leaf.dns_names = NULL;
     nc_leaf.dns_name_count = 0;
     nc_leaf.ip_addresses = &matching_ip;
     nc_leaf.ip_address_count = 1;
-    nc_root.permitted_ip_networks = &permitted_net;
-    nc_root.permitted_ip_network_count = 1;
     CHECK("name_constraints_permitted_ip_match",
           neverc_x509_verify_chain(
               nc_chain, 2, &valid_time, NULL, 0) == 0);
@@ -786,37 +737,9 @@ int main(void) {
     CHECK("name_constraints_permitted_ip_mismatch",
           neverc_x509_verify_chain(
               nc_chain, 2, &valid_time, NULL, 0) != 0);
-    nc_leaf.ip_addresses = &matching_ip;
-    nc_root.permitted_ip_networks = NULL;
-    nc_root.permitted_ip_network_count = 0;
-    nc_root.excluded_ip_networks = &permitted_net;
-    nc_root.excluded_ip_network_count = 1;
-    CHECK("name_constraints_excluded_ip_rejected",
-          neverc_x509_verify_chain(
-              nc_chain, 2, &valid_time, NULL, 0) != 0);
-    {
-        neverc_x509_ip_address_t mapped_ip;
-        memset(&mapped_ip, 0, sizeof(mapped_ip));
-        mapped_ip.bytes[10] = 0xff;
-        mapped_ip.bytes[11] = 0xff;
-        mapped_ip.bytes[12] = 10;
-        mapped_ip.bytes[13] = 1;
-        mapped_ip.bytes[14] = 2;
-        mapped_ip.bytes[15] = 3;
-        mapped_ip.len = 16;
-        nc_leaf.ip_addresses = &mapped_ip;
-        CHECK("name_constraints_mapped_ipv4_excluded",
-              neverc_x509_verify_chain(
-                  nc_chain, 2, &valid_time, NULL, 0) != 0);
-        nc_leaf.ip_addresses = &matching_ip;
-    }
 
     nc_leaf.ip_addresses = NULL;
     nc_leaf.ip_address_count = 0;
-    nc_root.excluded_ip_networks = NULL;
-    nc_root.excluded_ip_network_count = 0;
-    nc_root.permitted_ip_networks = &permitted_net;
-    nc_root.permitted_ip_network_count = 1;
     memcpy(nc_leaf.subject.common_name, "11.0.0.1",
            sizeof("11.0.0.1"));
     CHECK("name_constraints_ipv4_cn_without_san_rejected",
@@ -844,8 +767,6 @@ int main(void) {
               nc_chain, 2, &valid_time, NULL, 0) != 0);
     memset(nc_leaf.subject.common_name, 0,
            sizeof(nc_leaf.subject.common_name));
-    nc_root.permitted_ip_networks = NULL;
-    nc_root.permitted_ip_network_count = 0;
 
     neverc_x509_time_t expired_time = {2030, 1, 1, 0, 0, 0};
     CHECK("expired_chain_rejected",

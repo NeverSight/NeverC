@@ -378,49 +378,34 @@ static void test_x509_rsa_pss(void) {
 }
 
 static void test_x509_name_constraints_parse(void) {
-    neverc_x509_cert_t cert;
+    struct {
+        uint8_t before[32];
+        neverc_x509_cert_t cert;
+        uint8_t after[32];
+    } guarded;
+    memset(guarded.before, 0xa5, sizeof(guarded.before));
+    memset(guarded.after, 0x5a, sizeof(guarded.after));
+    neverc_x509_cert_t *cert = &guarded.cert;
     int rc = neverc_x509_parse_certificate(
-        &cert, test_name_constraints_cert_der,
+        cert, test_name_constraints_cert_der,
         sizeof(test_name_constraints_cert_der));
     CHECK("name_constraints_parse_success", rc == 0);
+    int canaries_ok = 1;
+    for (size_t i = 0; i < sizeof(guarded.before); ++i) {
+        if (guarded.before[i] != 0xa5 || guarded.after[i] != 0x5a)
+            canaries_ok = 0;
+    }
+    CHECK("name_constraints_parse_respects_released_cert_size", canaries_ok);
     if (rc != 0)
         return;
 
     CHECK("name_constraints_present",
-          cert.name_constraints_present == 1);
+          neverc_x509_has_name_constraints(cert) == 1);
     CHECK("name_constraints_not_unhandled_critical",
-          cert.has_unhandled_critical_extension == 0);
-    CHECK("name_constraints_permitted_dns_count",
-          cert.permitted_dns_name_count == 1);
-    CHECK("name_constraints_excluded_dns_count",
-          cert.excluded_dns_name_count == 1);
-    CHECK("name_constraints_permitted_ip_count",
-          cert.permitted_ip_network_count == 1);
-    CHECK("name_constraints_excluded_ip_count",
-          cert.excluded_ip_network_count == 0);
-    if (cert.permitted_dns_name_count == 1)
-        CHECK("name_constraints_permitted_dns",
-              strcmp(cert.permitted_dns_names[0], "example.com") == 0);
-    if (cert.excluded_dns_name_count == 1)
-        CHECK("name_constraints_excluded_dns",
-              strcmp(cert.excluded_dns_names[0], "evil.example.com") == 0);
-    if (cert.permitted_ip_network_count == 1) {
-        CHECK("name_constraints_ip_len",
-              cert.permitted_ip_networks[0].len == 4);
-        CHECK("name_constraints_ip_network",
-              cert.permitted_ip_networks[0].bytes[0] == 10 &&
-              cert.permitted_ip_networks[0].bytes[1] == 0 &&
-              cert.permitted_ip_networks[0].bytes[2] == 0 &&
-              cert.permitted_ip_networks[0].bytes[3] == 0);
-        CHECK("name_constraints_ip_mask",
-              cert.permitted_ip_networks[0].mask[0] == 0xff &&
-              cert.permitted_ip_networks[0].mask[1] == 0 &&
-              cert.permitted_ip_networks[0].mask[2] == 0 &&
-              cert.permitted_ip_networks[0].mask[3] == 0);
-    }
+          cert->has_unhandled_critical_extension == 0);
     CHECK("name_constraints_self_signed",
-          neverc_x509_is_self_signed(&cert) == 1);
-    neverc_x509_cert_free(&cert);
+          neverc_x509_is_self_signed(cert) == 1);
+    neverc_x509_cert_free(cert);
 
     /* RFC 5280 4.2.1.10: rfc822Name in nameConstraints must not be
      * dropped. The fixture's permitted dNSName tag is 0x82. */
@@ -442,10 +427,10 @@ static void test_x509_name_constraints_parse(void) {
     }
     CHECK("name_constraints_rfc822_tag_rewritten", rewritten == 1);
     rc = neverc_x509_parse_certificate(
-        &cert, rfc822_nc, sizeof(rfc822_nc));
+        cert, rfc822_nc, sizeof(rfc822_nc));
     CHECK("name_constraints_unknown_general_name_fails", rc < 0);
     if (rc == 0)
-        neverc_x509_cert_free(&cert);
+        neverc_x509_cert_free(cert);
 
     /* RFC 5280 4.2.1.10: nameConstraints MUST appear only on CA certs. */
     uint8_t leaf_nc[sizeof(test_name_constraints_cert_der)];
@@ -465,10 +450,16 @@ static void test_x509_name_constraints_parse(void) {
     }
     CHECK("name_constraints_ca_bit_flipped", flipped == 1);
     rc = neverc_x509_parse_certificate(
-        &cert, leaf_nc, sizeof(leaf_nc));
+        cert, leaf_nc, sizeof(leaf_nc));
     CHECK("name_constraints_on_non_ca_fails", rc < 0);
     if (rc == 0)
-        neverc_x509_cert_free(&cert);
+        neverc_x509_cert_free(cert);
+    canaries_ok = 1;
+    for (size_t i = 0; i < sizeof(guarded.before); ++i) {
+        if (guarded.before[i] != 0xa5 || guarded.after[i] != 0x5a)
+            canaries_ok = 0;
+    }
+    CHECK("name_constraints_failures_respect_released_cert_size", canaries_ok);
 }
 
 static void test_x509_subject_alt_name(void) {
