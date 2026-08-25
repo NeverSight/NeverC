@@ -7,16 +7,23 @@
 #define NCI_SCANNER_OVERFLOW UINT32_C(0x80000000)
 #define NCI_SCANNER_ERROR_MASK UINT32_C(0x7fffffff)
 
-/* v3389 exposed the scanner by value. Preserve that exact layout and keep
- * the later error/overflow bookkeeping in its four bytes of padding after
- * mode. memcpy avoids creating an unaligned or aliased uint32_t object. */
+/* v3389 exposed the scanner by value. Every shipped target is 64-bit, where
+ * tok_len's 8-byte alignment leaves four ABI-private bytes immediately after
+ * tok_buf. mode is followed directly by tok_pos and has no padding. memcpy
+ * avoids creating an unaligned or aliased uint32_t object. */
 #define NCI_SCANNER_STATE_OFFSET                                           \
-    (offsetof(neverc_scanner_t, mode) +                                   \
-     sizeof(((neverc_scanner_t *)0)->mode))
+    (offsetof(neverc_scanner_t, tok_buf) +                                \
+     sizeof(((neverc_scanner_t *)0)->tok_buf))
 
-_Static_assert(offsetof(neverc_scanner_t, tok_pos) >=
+_Static_assert(sizeof(size_t) == 8,
+               "32-bit scanner needs out-of-struct private state");
+_Static_assert(offsetof(neverc_scanner_t, tok_pos) ==
+                   offsetof(neverc_scanner_t, mode) +
+                       sizeof(((neverc_scanner_t *)0)->mode),
+               "neverc_scanner_t unexpectedly has padding after mode");
+_Static_assert(offsetof(neverc_scanner_t, tok_len) ==
                    NCI_SCANNER_STATE_OFFSET + sizeof(uint32_t),
-               "neverc_scanner_t no longer has ABI-private state padding");
+               "neverc_scanner_t lost its 64-bit ABI-private padding");
 
 static uint32_t scanner_state_load(const neverc_scanner_t *s) {
     uint32_t state = 0;
