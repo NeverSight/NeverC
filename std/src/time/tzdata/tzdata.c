@@ -753,6 +753,8 @@ static const neverc_tzdata_zone_t *parse_posix_tz(const char *tz) {
     return &e->zone;
 }
 
+static int tzdata_zone_hemisphere(const neverc_tzdata_zone_t *zone);
+
 static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
     if (!zone || !zone->has_dst) return 0;
 
@@ -767,7 +769,6 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
     tz_civil_from_days(days, &year, &month, &day);
 
     int posix_has_rules = 0;
-    int posix_southern = 0;
     posix_rule_t posix_start = {0}, posix_end = {0};
     int utc_off = 0, dst_off = 0;
     posix_extra_t *pe = NULL;
@@ -777,7 +778,6 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
         posix_has_rules = pe->parsed.has_rules;
         posix_start = pe->parsed.start;
         posix_end = pe->parsed.end;
-        posix_southern = posix_dst_wraps(&pe->parsed);
         utc_off = pe->zone.utc_offset;
         dst_off = pe->zone.dst_offset;
     }
@@ -795,7 +795,7 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
                             nc_streq(zone->name, "Pacific/Chatham"));
     int cl = zone->name && nc_streq(zone->name, "America/Santiago");
 
-    if (posix_southern || nz || cl) {
+    if (tzdata_zone_hemisphere(zone) == 2 || nz || cl) {
         int64_t start, end;
         if (nz) {
             /* Auckland 02:00/03:00; Chatham is 45 minutes ahead, so 02:45/03:45. */

@@ -350,11 +350,12 @@ static void test_offset_at(void) {
     const neverc_tzdata_zone_t *ny = neverc_tzdata_lookup("America/New_York");
     const neverc_tzdata_zone_t *lon = neverc_tzdata_lookup("Europe/London");
     const neverc_tzdata_zone_t *syd = neverc_tzdata_lookup("Australia/Sydney");
+    const neverc_tzdata_zone_t *mel = neverc_tzdata_lookup("Australia/Melbourne");
     const neverc_tzdata_zone_t *akl = neverc_tzdata_lookup("Pacific/Auckland");
     const neverc_tzdata_zone_t *cht = neverc_tzdata_lookup("Pacific/Chatham");
     const neverc_tzdata_zone_t *scl = neverc_tzdata_lookup("America/Santiago");
     const neverc_tzdata_zone_t *utc = neverc_tzdata_utc();
-    if (!ny || !lon || !syd || !akl || !cht || !scl || !utc) {
+    if (!ny || !lon || !syd || !mel || !akl || !cht || !scl || !utc) {
         printf("  SKIP: required zone missing\n");
         return;
     }
@@ -389,6 +390,13 @@ static void test_offset_at(void) {
               neverc_tzdata_offset_at(syd, SYD_START_2024 - 1), 36000);
     check_int("Sydney at spring-forward AEDT",
               neverc_tzdata_offset_at(syd, SYD_START_2024), 39600);
+
+    /* All built-in Australian zones use the private table hemisphere metadata,
+     * rather than a Sydney-only name special case. */
+    check_int("Melbourne at autumn-back AEST",
+              neverc_tzdata_offset_at(mel, SYD_END_2024), 36000);
+    check_int("Melbourne before spring-forward AEST",
+              neverc_tzdata_offset_at(mel, SYD_START_2024 - 1), 36000);
 
     check_int("Auckland before autumn-back NZDT",
               neverc_tzdata_offset_at(akl, NZ_END_2024 - 1), 46800);

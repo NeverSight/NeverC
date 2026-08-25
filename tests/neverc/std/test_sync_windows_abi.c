@@ -2,7 +2,10 @@
 
 #if !defined(_WIN32)
 
+#include <stdio.h>
+
 int main(void) {
+    puts("passed");
     return 0;
 }
 
