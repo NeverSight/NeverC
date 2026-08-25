@@ -648,6 +648,7 @@ STD_TEST(suffixarray, "src/index/suffixarray/suffixarray.c")
 
 // ===== Sync =====
 STD_TEST(sync, "src/sync/sync.c")
+STD_TEST(sync_windows_abi, "src/sync/sync.c")
 STD_TEST(thread, "src/thread/thread.c", "src/context/context.c")
 TEST_F(StdLibTest, SyncMapAllocationFailure) {
   auto r = compileAndRunStdTest("sync_oom", {}, {"-fno-builtin-std"});

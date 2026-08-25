@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #if !defined(_WIN32)
 #include <errno.h>
 #include <pthread.h>
@@ -113,6 +114,26 @@ int main(void) {
     CHECK(neverc_cond_init(&failed_cond, &cond_mu) == -1);
     fail_sync_init = 0;
     neverc_mutex_destroy(&cond_mu);
+#if defined(_WIN32)
+    CHECK(neverc_windows_mutex_states == NULL);
+#endif
+
+#if defined(_WIN32)
+    /* Restored Windows ABI keeps bookkeeping out of the public objects, so
+     * allocation failure for that private state must remain transactional. */
+    unsigned char failed_mu_before[sizeof(failed_mu)];
+    unsigned char failed_once_before[sizeof(failed_once)];
+    memset(&failed_mu, 0xa5, sizeof(failed_mu));
+    memset(&failed_once, 0xa5, sizeof(failed_once));
+    memcpy(failed_mu_before, &failed_mu, sizeof(failed_mu));
+    memcpy(failed_once_before, &failed_once, sizeof(failed_once));
+    fail_key_allocation = 1;
+    CHECK(neverc_mutex_init(&failed_mu) == -1);
+    CHECK(neverc_once_init(&failed_once) == -1);
+    CHECK(memcmp(failed_mu_before, &failed_mu, sizeof(failed_mu)) == 0);
+    CHECK(memcmp(failed_once_before, &failed_once, sizeof(failed_once)) == 0);
+    fail_key_allocation = 0;
+#endif
 
 #if !defined(_WIN32)
     /* The documented wrong-owner no-op requires ERRORCHECK semantics. Never
@@ -141,6 +162,9 @@ int main(void) {
     neverc_once_do(&once, oom_once_func);
     CHECK(once_runs == 1);
     neverc_once_destroy(&once);
+#if defined(_WIN32)
+    CHECK(neverc_windows_once_states == NULL);
+#endif
 
     neverc_waitgroup_t wg;
     CHECK(neverc_waitgroup_init(&wg) == 0);

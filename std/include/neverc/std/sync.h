@@ -14,10 +14,7 @@ extern "C" {
 #endif
 
 #if defined(_WIN32)
-typedef struct {
-    SRWLOCK srw;
-    volatile LONG owner; /* atomic; 0 or GetCurrentThreadId() while held */
-} neverc_mutex_t;
+typedef struct { SRWLOCK srw; } neverc_mutex_t;
 #else
 typedef struct { pthread_mutex_t mu; } neverc_mutex_t;
 #endif
@@ -97,7 +94,7 @@ void neverc_sync_waitgroup_wait(neverc_waitgroup_t *wg);
 #define neverc_waitgroup_wait         neverc_sync_waitgroup_wait
 
 #if defined(_WIN32)
-typedef struct { volatile int32_t done; SRWLOCK mu; } neverc_once_t;
+typedef struct { volatile int32_t done; CRITICAL_SECTION mu; } neverc_once_t;
 #else
 typedef struct { volatile int32_t done; pthread_mutex_t mu; } neverc_once_t;
 #endif
@@ -112,7 +109,7 @@ void neverc_sync_once_do(neverc_once_t *o, void (*f)(void));
 #define neverc_once_do      neverc_sync_once_do
 
 #if defined(_WIN32)
-typedef struct { CONDITION_VARIABLE cond; neverc_mutex_t *m; } neverc_cond_t;
+typedef struct { CONDITION_VARIABLE cond; SRWLOCK *srw; } neverc_cond_t;
 #else
 typedef struct { pthread_cond_t cond; pthread_mutex_t *mu; } neverc_cond_t;
 #endif

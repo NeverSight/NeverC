@@ -60,6 +60,21 @@ static void test_mutex_unlock_unlocked(void) {
     neverc_mutex_destroy(&m);
 }
 
+static void test_mutex_destroy_reinit(void) {
+    printf("[mutex_destroy_reinit]\n");
+    neverc_mutex_t m;
+    ASSERT_INT_EQ(neverc_mutex_init(&m), 0);
+    neverc_mutex_lock(&m);
+    neverc_mutex_unlock(&m);
+    neverc_mutex_destroy(&m);
+
+    ASSERT_INT_EQ(neverc_mutex_init(&m), 0);
+    neverc_mutex_unlock(&m);
+    ASSERT_TRUE(neverc_mutex_trylock(&m));
+    neverc_mutex_unlock(&m);
+    neverc_mutex_destroy(&m);
+}
+
 static neverc_mutex_t g_wrong_thread_mu;
 
 #if defined(_WIN32)
@@ -946,6 +961,7 @@ int main(void) {
     test_mutex_basic();
     test_mutex_trylock();
     test_mutex_unlock_unlocked();
+    test_mutex_destroy_reinit();
     test_mutex_unlock_wrong_thread();
     test_mutex_concurrent();
     test_rwmutex();

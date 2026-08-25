@@ -1,6 +1,8 @@
 #include "neverc/std/sync.h"
 #include "neverc/std/_platform.h"
 #include "../hash/_wyhash_final3.h"
+#include <stdlib.h>
+#include <string.h>
 
 #ifndef NEVERC_SYNC_INIT_SHOULD_FAIL
 #define NEVERC_SYNC_INIT_SHOULD_FAIL() 0
@@ -20,32 +22,171 @@
 #ifndef NCI_SYNC_MUTEX_INIT
 #define NCI_SYNC_MUTEX_INIT pthread_mutex_init
 #endif
+#ifndef NC_SYNC_MALLOC
+#define NC_SYNC_MALLOC malloc
+#endif
+#ifndef NC_SYNC_CALLOC
+#define NC_SYNC_CALLOC calloc
+#endif
+#ifndef NC_SYNC_FREE
+#define NC_SYNC_FREE free
+#endif
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
+
+/* SRWLOCK deliberately remains the complete public mutex representation for
+ * compatibility with v3389.  Windows does not expose its owner, so the
+ * wrong-owner-unlock guard lives in a private registry.  Registry references
+ * pin nodes across blocking operations; destroy unlinks the node before
+ * dropping the registry reference, preventing stale-node ABA and leaks when
+ * an address is destroyed and initialized again. */
+typedef struct neverc_windows_mutex_state {
+    SRWLOCK *srw;
+    volatile LONG owner;
+    volatile LONG refs;
+    struct neverc_windows_mutex_state *next;
+} neverc_windows_mutex_state_t;
+
+typedef struct neverc_windows_once_state {
+    neverc_once_t *once;
+    SRWLOCK mu;
+    volatile LONG refs;
+    struct neverc_windows_once_state *next;
+} neverc_windows_once_state_t;
+
+static SRWLOCK neverc_windows_sync_registry_lock = SRWLOCK_INIT;
+static neverc_windows_mutex_state_t *neverc_windows_mutex_states;
+static neverc_windows_once_state_t *neverc_windows_once_states;
+
+static void neverc_windows_mutex_state_release(
+    neverc_windows_mutex_state_t *state) {
+    if (state && InterlockedDecrement(&state->refs) == 0)
+        NC_SYNC_FREE(state);
+}
+
+static neverc_windows_mutex_state_t *neverc_windows_mutex_state_acquire(
+    SRWLOCK *srw) {
+    if (!srw)
+        return NULL;
+    AcquireSRWLockShared(&neverc_windows_sync_registry_lock);
+    neverc_windows_mutex_state_t *state = neverc_windows_mutex_states;
+    while (state && state->srw != srw)
+        state = state->next;
+    if (state)
+        InterlockedIncrement(&state->refs);
+    ReleaseSRWLockShared(&neverc_windows_sync_registry_lock);
+    return state;
+}
+
+static void neverc_windows_once_state_release(
+    neverc_windows_once_state_t *state) {
+    if (state && InterlockedDecrement(&state->refs) == 0)
+        NC_SYNC_FREE(state);
+}
+
+static neverc_windows_once_state_t *neverc_windows_once_state_acquire(
+    neverc_once_t *once) {
+    if (!once)
+        return NULL;
+    AcquireSRWLockShared(&neverc_windows_sync_registry_lock);
+    neverc_windows_once_state_t *state = neverc_windows_once_states;
+    while (state && state->once != once)
+        state = state->next;
+    if (state)
+        InterlockedIncrement(&state->refs);
+    ReleaseSRWLockShared(&neverc_windows_sync_registry_lock);
+    return state;
+}
 
 int neverc_mutex_init(neverc_mutex_t *m) {
     if (!m || NEVERC_SYNC_INIT_SHOULD_FAIL())
         return -1;
+
+    neverc_windows_mutex_state_t *state =
+        (neverc_windows_mutex_state_t *)NC_SYNC_MALLOC(sizeof(*state));
+    if (!state)
+        return -1;
+    state->srw = &m->srw;
+    state->owner = 0;
+    state->refs = 1; /* registry reference */
+
+    AcquireSRWLockExclusive(&neverc_windows_sync_registry_lock);
+    neverc_windows_mutex_state_t *existing = neverc_windows_mutex_states;
+    while (existing && existing->srw != &m->srw)
+        existing = existing->next;
+    if (existing) {
+        ReleaseSRWLockExclusive(&neverc_windows_sync_registry_lock);
+        NC_SYNC_FREE(state);
+        return -1;
+    }
     InitializeSRWLock(&m->srw);
-    InterlockedExchange(&m->owner, 0);
+    state->next = neverc_windows_mutex_states;
+    neverc_windows_mutex_states = state;
+    ReleaseSRWLockExclusive(&neverc_windows_sync_registry_lock);
     return 0;
 }
-void neverc_mutex_destroy(neverc_mutex_t *m) { (void)m; }
-void neverc_mutex_lock(neverc_mutex_t *m) {
-    AcquireSRWLockExclusive(&m->srw);
-    InterlockedExchange(&m->owner, (LONG)GetCurrentThreadId());
-}
-void neverc_mutex_unlock(neverc_mutex_t *m) {
-    if (!m || InterlockedCompareExchange(&m->owner, 0, 0) !=
-                  (LONG)GetCurrentThreadId())
+
+void neverc_mutex_destroy(neverc_mutex_t *m) {
+    if (!m)
         return;
-    InterlockedExchange(&m->owner, 0);
-    ReleaseSRWLockExclusive(&m->srw);
+    neverc_windows_mutex_state_t *removed = NULL;
+    AcquireSRWLockExclusive(&neverc_windows_sync_registry_lock);
+    neverc_windows_mutex_state_t **link = &neverc_windows_mutex_states;
+    while (*link && (*link)->srw != &m->srw)
+        link = &(*link)->next;
+    if (*link) {
+        removed = *link;
+        *link = removed->next;
+        /* SRWLOCK has no destroy operation.  Resetting it makes a subsequent
+         * successful init at this address independent of the old lifetime. */
+        InitializeSRWLock(&m->srw);
+    }
+    ReleaseSRWLockExclusive(&neverc_windows_sync_registry_lock);
+    neverc_windows_mutex_state_release(removed);
 }
+
+void neverc_mutex_lock(neverc_mutex_t *m) {
+    if (!m)
+        return;
+    neverc_windows_mutex_state_t *state =
+        neverc_windows_mutex_state_acquire(&m->srw);
+    if (!state)
+        return;
+    AcquireSRWLockExclusive(&m->srw);
+    InterlockedExchange(&state->owner, (LONG)GetCurrentThreadId());
+    neverc_windows_mutex_state_release(state);
+}
+
+void neverc_mutex_unlock(neverc_mutex_t *m) {
+    if (!m)
+        return;
+    neverc_windows_mutex_state_t *state =
+        neverc_windows_mutex_state_acquire(&m->srw);
+    if (!state)
+        return;
+    LONG self = (LONG)GetCurrentThreadId();
+    if (InterlockedCompareExchange(&state->owner, 0, self) != self) {
+        neverc_windows_mutex_state_release(state);
+        return;
+    }
+    ReleaseSRWLockExclusive(&m->srw);
+    neverc_windows_mutex_state_release(state);
+}
+
 int neverc_mutex_trylock(neverc_mutex_t *m) {
-    if (!TryAcquireSRWLockExclusive(&m->srw))
+    if (!m)
         return 0;
-    InterlockedExchange(&m->owner, (LONG)GetCurrentThreadId());
+    neverc_windows_mutex_state_t *state =
+        neverc_windows_mutex_state_acquire(&m->srw);
+    if (!state)
+        return 0;
+    if (!TryAcquireSRWLockExclusive(&m->srw))
+    {
+        neverc_windows_mutex_state_release(state);
+        return 0;
+    }
+    InterlockedExchange(&state->owner, (LONG)GetCurrentThreadId());
+    neverc_windows_mutex_state_release(state);
     return 1;
 }
 
@@ -107,39 +248,106 @@ void neverc_waitgroup_wait(neverc_waitgroup_t *wg) {
 int neverc_once_init(neverc_once_t *o) {
     if (!o || NEVERC_SYNC_INIT_SHOULD_FAIL())
         return -1;
+
+    neverc_windows_once_state_t *state =
+        (neverc_windows_once_state_t *)NC_SYNC_MALLOC(sizeof(*state));
+    if (!state)
+        return -1;
+    state->once = o;
+    state->refs = 1; /* registry reference */
+    InitializeSRWLock(&state->mu);
+
+    AcquireSRWLockExclusive(&neverc_windows_sync_registry_lock);
+    neverc_windows_once_state_t *existing = neverc_windows_once_states;
+    while (existing && existing->once != o)
+        existing = existing->next;
+    if (existing) {
+        ReleaseSRWLockExclusive(&neverc_windows_sync_registry_lock);
+        NC_SYNC_FREE(state);
+        return -1;
+    }
+    if (!InitializeCriticalSectionAndSpinCount(&o->mu, 4000)) {
+        ReleaseSRWLockExclusive(&neverc_windows_sync_registry_lock);
+        NC_SYNC_FREE(state);
+        return -1;
+    }
     o->done = 0;
-    /* SRWLOCK is non-recursive, matching Go Once.Do (re-entry deadlocks).
-     * CRITICAL_SECTION is recursive and would run f twice. */
-    InitializeSRWLock(&o->mu);
+    state->next = neverc_windows_once_states;
+    neverc_windows_once_states = state;
+    ReleaseSRWLockExclusive(&neverc_windows_sync_registry_lock);
     return 0;
 }
-void neverc_once_destroy(neverc_once_t *o) { (void)o; }
+
+void neverc_once_destroy(neverc_once_t *o) {
+    if (!o)
+        return;
+    neverc_windows_once_state_t *removed = NULL;
+    AcquireSRWLockExclusive(&neverc_windows_sync_registry_lock);
+    neverc_windows_once_state_t **link = &neverc_windows_once_states;
+    while (*link && (*link)->once != o)
+        link = &(*link)->next;
+    if (*link) {
+        removed = *link;
+        *link = removed->next;
+        DeleteCriticalSection(&o->mu);
+    }
+    ReleaseSRWLockExclusive(&neverc_windows_sync_registry_lock);
+    neverc_windows_once_state_release(removed);
+}
+
 void neverc_once_do(neverc_once_t *o, void (*f)(void)) {
     if (!o || !f) return;
     if (InterlockedCompareExchange((volatile long*)&o->done, 0, 0)) return;
-    AcquireSRWLockExclusive(&o->mu);
+    neverc_windows_once_state_t *state =
+        neverc_windows_once_state_acquire(o);
+    if (!state)
+        return;
+    /* The private SRWLOCK keeps current non-recursive Once semantics while
+     * the published CRITICAL_SECTION remains present solely for ABI. */
+    AcquireSRWLockExclusive(&state->mu);
     if (!InterlockedCompareExchange((volatile long*)&o->done, 0, 0)) {
         f();
         InterlockedExchange((volatile long*)&o->done, 1);
     }
-    ReleaseSRWLockExclusive(&o->mu);
+    ReleaseSRWLockExclusive(&state->mu);
+    neverc_windows_once_state_release(state);
 }
 
 int neverc_cond_init(neverc_cond_t *c, neverc_mutex_t *m) {
     if (!c || !m || NEVERC_SYNC_INIT_SHOULD_FAIL())
         return -1;
+    neverc_windows_mutex_state_t *state =
+        neverc_windows_mutex_state_acquire(&m->srw);
+    if (!state)
+        return -1;
     InitializeConditionVariable(&c->cond);
-    c->m = m;
+    c->srw = &m->srw;
+    neverc_windows_mutex_state_release(state);
     return 0;
 }
 void neverc_cond_destroy(neverc_cond_t *c) { (void)c; }
 void neverc_cond_wait(neverc_cond_t *c) {
-    LONG self = InterlockedExchange(&c->m->owner, 0);
-    SleepConditionVariableSRW(&c->cond, &c->m->srw, INFINITE, 0);
-    InterlockedExchange(&c->m->owner, self);
+    if (!c || !c->srw)
+        return;
+    neverc_windows_mutex_state_t *state =
+        neverc_windows_mutex_state_acquire(c->srw);
+    if (!state)
+        return;
+    LONG self = (LONG)GetCurrentThreadId();
+    if (InterlockedCompareExchange(&state->owner, 0, self) != self) {
+        neverc_windows_mutex_state_release(state);
+        return;
+    }
+    (void)SleepConditionVariableSRW(&c->cond, c->srw, INFINITE, 0);
+    InterlockedExchange(&state->owner, self);
+    neverc_windows_mutex_state_release(state);
 }
-void neverc_cond_signal(neverc_cond_t *c) { WakeConditionVariable(&c->cond); }
-void neverc_cond_broadcast(neverc_cond_t *c) { WakeAllConditionVariable(&c->cond); }
+void neverc_cond_signal(neverc_cond_t *c) {
+    if (c) WakeConditionVariable(&c->cond);
+}
+void neverc_cond_broadcast(neverc_cond_t *c) {
+    if (c) WakeAllConditionVariable(&c->cond);
+}
 
 #else /* POSIX */
 
@@ -337,17 +545,6 @@ void neverc_cond_broadcast(neverc_cond_t *c) {
 /* ================================================================
  * sync.Pool — thread-safe object pool
  * ================================================================ */
-#include <stdlib.h>
-#include <string.h>
-
-#ifndef NC_SYNC_MALLOC
-#define NC_SYNC_MALLOC malloc
-#endif
-
-#ifndef NC_SYNC_CALLOC
-#define NC_SYNC_CALLOC calloc
-#endif
-
 #define POOL_CAP 256
 
 struct neverc_sync_pool {
