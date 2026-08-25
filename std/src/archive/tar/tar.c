@@ -5,11 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int tar_path_is_safe(const char *name) {
+static int tar_path_is_safe(const char *name, size_t capacity) {
     if (!name || !name[0]) return 0;
-    size_t len = strlen(name);
-    if (len >= sizeof(((neverc_tar_header_t *)0)->name)) return 0;
-    char trimmed[sizeof(((neverc_tar_header_t *)0)->name)];
+    size_t len = 0;
+    while (len < capacity && name[len] != '\0') len++;
+    if (len == capacity || capacity > sizeof(((neverc_tar_header_v2_t *)0)->name))
+        return 0;
+    char trimmed[sizeof(((neverc_tar_header_v2_t *)0)->name)];
     memcpy(trimmed, name, len + 1);
     while (len > 0 && trimmed[len - 1] == '/')
         trimmed[--len] = '\0';
@@ -141,34 +143,29 @@ void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t 
     r->len = len;
 }
 
-static int reader_finish_entry(neverc_tar_reader_t *r) {
-    if (!r->entry_active) return 0;
-    if (r->entry_read > r->entry_size || r->pos > r->len) return -1;
-    size_t padded = 0;
-    if (tar_padded_size(r->entry_size, &padded) != 0) return -1;
-    size_t unread = r->entry_size - r->entry_read;
-    size_t padding = padded - r->entry_size;
-    if (unread > r->len - r->pos) return -1;
-    r->pos += unread;
-    if (padding > r->len - r->pos) return -1;
-    r->pos += padding;
-    r->entry_read = r->entry_size;
-    r->entry_active = 0;
-    return 0;
-}
+/* The released reader has only data/len/pos. The archive is immutable by
+ * contract, so entry state can be reconstructed from its beginning without a
+ * side table, allocation, hidden pointer, or public-layout change. */
+typedef struct {
+    size_t data_pos;
+    size_t entry_size;
+    size_t padded_size;
+    size_t entry_read;
+    size_t previous_size;
+    int entry_active;
+    int has_previous;
+    int ended;
+} tar_reader_state_t;
 
-int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
-    if (!r || !hdr)
+/* 1 = entry, 0 = two-block terminator, -1 = malformed. */
+static int tar_parse_header_at(const neverc_tar_reader_t *r, size_t position,
+                               neverc_tar_header_v2_t *hdr,
+                               size_t *payload_out, size_t *padded_out) {
+    if (!r || !hdr || !payload_out || !padded_out || position > r->len ||
+        r->len - position < NEVERC_TAR_BLOCK_SIZE)
         return -1;
     memset(hdr, 0, sizeof(*hdr));
-    if ((!r->data && r->len != 0) || r->pos > r->len)
-        return -1;
-    if (r->ended) return 0;
-    if (reader_finish_entry(r) != 0) return -1;
-    if (r->pos == r->len) return -1;
-    if (r->len - r->pos < NEVERC_TAR_BLOCK_SIZE) return -1;
-
-    const uint8_t *block = r->data + r->pos;
+    const uint8_t *block = r->data + position;
     int all_zero = 1;
     for (size_t i = 0; i < NEVERC_TAR_BLOCK_SIZE; i++) {
         if (block[i] != 0) {
@@ -177,7 +174,7 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
         }
     }
     if (all_zero) {
-        size_t remaining = r->len - r->pos;
+        size_t remaining = r->len - position;
         if (remaining < NEVERC_TAR_BLOCK_SIZE * 2U)
             return -1;
         for (size_t i = NEVERC_TAR_BLOCK_SIZE;
@@ -185,8 +182,6 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
             if (block[i] != 0)
                 return -1;
         }
-        r->pos = r->len;
-        r->ended = 1;
         return 0;
     }
 
@@ -224,7 +219,7 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
     }
     memcpy(hdr->name + offset, block, name_length);
     hdr->name[full_length] = '\0';
-    if (!tar_path_is_safe(hdr->name))
+    if (!tar_path_is_safe(hdr->name, sizeof(hdr->name)))
         return -1;
 
     int typeflag = tar_resolve_typeflag((int)block[156], hdr->name);
@@ -233,7 +228,7 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
     uint64_t payload = tar_type_header_only(typeflag) ? 0 : size;
     size_t padded = 0;
     if (tar_padded_size((size_t)payload, &padded) != 0 ||
-        padded > r->len - r->pos - NEVERC_TAR_BLOCK_SIZE)
+        padded > r->len - position - NEVERC_TAR_BLOCK_SIZE)
         return -1;
 
     hdr->mode = (uint32_t)mode;
@@ -245,60 +240,231 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
     if ((hdr->typeflag == NEVERC_TAR_SYM ||
          hdr->typeflag == NEVERC_TAR_LINK) &&
         (hdr->linkname[0] == '\0' ||
-         !tar_path_is_safe(hdr->linkname)))
+         !tar_path_is_safe(hdr->linkname, sizeof(hdr->linkname))))
         return -1;
     copy_tar_field(hdr->uname, sizeof(hdr->uname), block + 265, 32);
     copy_tar_field(hdr->gname, sizeof(hdr->gname), block + 297, 32);
 
-    r->pos += NEVERC_TAR_BLOCK_SIZE;
-    r->entry_size = (size_t)payload;
-    r->entry_read = 0;
-    r->entry_active = payload > 0;
+    *payload_out = (size_t)payload;
+    *padded_out = padded;
     return 1;
 }
 
-int neverc_tar_reader_read(neverc_tar_reader_t *r, const neverc_tar_header_t *hdr,
-                           uint8_t *buf, size_t len, size_t *nread) {
+static int tar_reader_replay(const neverc_tar_reader_t *r,
+                             tar_reader_state_t *state) {
+    if (!r || !state || (!r->data && r->len != 0) || r->pos > r->len)
+        return -1;
+    memset(state, 0, sizeof(*state));
+    size_t cursor = 0;
+    for (;;) {
+        if (cursor == r->pos) return 0;
+        neverc_tar_header_v2_t ignored;
+        size_t payload = 0, padded = 0;
+        int parsed = tar_parse_header_at(r, cursor, &ignored,
+                                         &payload, &padded);
+        if (parsed < 0) return -1;
+        if (parsed == 0) {
+            if (r->pos != r->len) return -1;
+            state->ended = 1;
+            return 0;
+        }
+        size_t data_pos = cursor + NEVERC_TAR_BLOCK_SIZE;
+        size_t padded_end = data_pos + padded;
+        if (r->pos >= data_pos && r->pos < data_pos + payload) {
+            state->data_pos = data_pos;
+            state->entry_size = payload;
+            state->padded_size = padded;
+            state->entry_read = r->pos - data_pos;
+            state->entry_active = 1;
+            return 0;
+        }
+        if (r->pos > data_pos && r->pos < padded_end) return -1;
+        if (r->pos < data_pos) return -1;
+        state->previous_size = payload;
+        state->has_previous = 1;
+        cursor = padded_end;
+        if (cursor > r->pos) return -1;
+    }
+}
+
+static int tar_reader_prepare_next(const neverc_tar_reader_t *r,
+                                   neverc_tar_header_v2_t *hdr,
+                                   size_t *next_position) {
+    tar_reader_state_t state;
+    if (!r || !hdr || !next_position || tar_reader_replay(r, &state) != 0)
+        return -1;
+    if (state.ended) {
+        *next_position = r->len;
+        return 0;
+    }
+    size_t position = state.entry_active
+        ? state.data_pos + state.padded_size : r->pos;
+    size_t payload = 0, padded = 0;
+    int parsed = tar_parse_header_at(r, position, hdr, &payload, &padded);
+    if (parsed < 0) return -1;
+    *next_position = parsed == 0
+        ? r->len : position + NEVERC_TAR_BLOCK_SIZE;
+    return parsed;
+}
+
+static int tar_header_v2_to_legacy(const neverc_tar_header_v2_t *source,
+                                   neverc_tar_header_t *destination) {
+    size_t name_length = strlen(source->name);
+    size_t link_length = strlen(source->linkname);
+    size_t uname_length = strlen(source->uname);
+    size_t gname_length = strlen(source->gname);
+    if (name_length >= sizeof(destination->name) ||
+        link_length >= sizeof(destination->linkname) ||
+        uname_length >= sizeof(destination->uname) ||
+        gname_length >= sizeof(destination->gname))
+        return -1;
+    memset(destination, 0, sizeof(*destination));
+    memcpy(destination->name, source->name, name_length + 1U);
+    memcpy(destination->linkname, source->linkname, link_length + 1U);
+    memcpy(destination->uname, source->uname, uname_length + 1U);
+    memcpy(destination->gname, source->gname, gname_length + 1U);
+    destination->size = source->size;
+    destination->mode = source->mode;
+    destination->mtime = source->mtime;
+    destination->typeflag = source->typeflag;
+    return 0;
+}
+
+int neverc_tar_reader_next_v2(neverc_tar_reader_t *r,
+                              neverc_tar_header_v2_t *hdr) {
+    if (!hdr) return -1;
+    memset(hdr, 0, sizeof(*hdr));
+    size_t next_position = 0;
+    int result = tar_reader_prepare_next(r, hdr, &next_position);
+    if (result >= 0) r->pos = next_position;
+    return result;
+}
+
+int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
+    if (!hdr) return -1;
+    memset(hdr, 0, sizeof(*hdr));
+    neverc_tar_header_v2_t parsed;
+    size_t next_position = 0;
+    int result = tar_reader_prepare_next(r, &parsed, &next_position);
+    if (result <= 0) {
+        if (result == 0) r->pos = next_position;
+        return result;
+    }
+    if (tar_header_v2_to_legacy(&parsed, hdr) != 0) return -1;
+    r->pos = next_position;
+    return 1;
+}
+
+static int tar_reader_read_size(neverc_tar_reader_t *r, int64_t header_size,
+                                uint8_t *buf, size_t len, size_t *nread) {
     if (!nread) return -1;
     *nread = 0;
-    if (!r || !hdr || hdr->size < 0 || (!buf && len != 0) ||
-        !tar_size_fits((uint64_t)hdr->size) ||
-        (!r->data && r->len != 0) || r->pos > r->len ||
-        (size_t)hdr->size != r->entry_size ||
-        r->entry_read > r->entry_size)
+    if (!r || header_size < 0 || (!buf && len != 0) ||
+        !tar_size_fits((uint64_t)header_size))
         return -1;
-    size_t remaining = r->entry_size - r->entry_read;
+    tar_reader_state_t state;
+    if (tar_reader_replay(r, &state) != 0) return -1;
+    if (!state.entry_active) {
+        if (header_size == 0 ||
+            (state.has_previous &&
+             (size_t)header_size == state.previous_size))
+            return 0;
+        return -1;
+    }
+    if ((size_t)header_size != state.entry_size ||
+        state.entry_read > state.entry_size)
+        return -1;
+    size_t remaining = state.entry_size - state.entry_read;
     if (remaining == 0) return 0;
     size_t amount = remaining < len ? remaining : len;
     if (amount > r->len - r->pos) return -1;
     if (amount > 0) memcpy(buf, r->data + r->pos, amount);
     r->pos += amount;
-    r->entry_read += amount;
     *nread = amount;
-    if (r->entry_read == r->entry_size) {
-        size_t padded = 0;
-        if (tar_padded_size(r->entry_size, &padded) != 0) return -1;
-        size_t padding = padded - r->entry_size;
-        if (padding > r->len - r->pos) return -1;
-        r->pos += padding;
-        r->entry_active = 0;
-    }
+    if (state.entry_read + amount == state.entry_size)
+        r->pos = state.data_pos + state.padded_size;
     return 0;
 }
 
+int neverc_tar_reader_read(neverc_tar_reader_t *r,
+                           const neverc_tar_header_t *hdr,
+                           uint8_t *buf, size_t len, size_t *nread) {
+    if (!hdr) {
+        if (nread) *nread = 0;
+        return -1;
+    }
+    return tar_reader_read_size(r, hdr->size, buf, len, nread);
+}
+
+int neverc_tar_reader_read_v2(neverc_tar_reader_t *r,
+                              const neverc_tar_header_v2_t *hdr,
+                              uint8_t *buf, size_t len, size_t *nread) {
+    if (!hdr) {
+        if (nread) *nread = 0;
+        return -1;
+    }
+    return tar_reader_read_size(r, hdr->size, buf, len, nread);
+}
+
 /* Writer */
+#define NCI_TAR_WRITER_META_MAGIC UINT32_C(0x54415257)
+
+typedef struct {
+    size_t current_size;
+    size_t current_written;
+    uint32_t magic;
+    uint8_t entry_open;
+    uint8_t closed;
+    uint8_t failed;
+} tar_writer_meta_t;
+
+static tar_writer_meta_t tar_writer_meta_default(void) {
+    tar_writer_meta_t meta;
+    memset(&meta, 0, sizeof(meta));
+    meta.magic = NCI_TAR_WRITER_META_MAGIC;
+    return meta;
+}
+
+/* data+cap need not satisfy tar_writer_meta_t alignment. Keep the allocation
+ * trailer as bytes and copy through aligned local objects. */
+static int tar_writer_meta_load(const neverc_tar_writer_t *w,
+                                tar_writer_meta_t *meta) {
+    if (!w || !meta || !w->data ||
+        w->cap > SIZE_MAX - sizeof(*meta))
+        return 0;
+    memcpy(meta, w->data + w->cap, sizeof(*meta));
+    return meta->magic == NCI_TAR_WRITER_META_MAGIC;
+}
+
+static int tar_writer_meta_store(neverc_tar_writer_t *w,
+                                 const tar_writer_meta_t *meta) {
+    if (!w || !meta || !w->data ||
+        w->cap > SIZE_MAX - sizeof(*meta))
+        return 0;
+    memcpy(w->data + w->cap, meta, sizeof(*meta));
+    return 1;
+}
+
 void neverc_tar_writer_init(neverc_tar_writer_t *w) {
     if (!w) return;
     memset(w, 0, sizeof(*w));
     w->cap = 4096;
-    w->data = (uint8_t *)malloc(w->cap);
+    w->data = w->cap <= SIZE_MAX - sizeof(tar_writer_meta_t)
+        ? (uint8_t *)malloc(w->cap + sizeof(tar_writer_meta_t)) : NULL;
     if (!w->data) w->cap = 0;
+    else {
+        tar_writer_meta_t meta = tar_writer_meta_default();
+        (void)tar_writer_meta_store(w, &meta);
+    }
 }
 
 static int writer_grow(neverc_tar_writer_t *w, size_t need) {
-    if (!w || need > SIZE_MAX - w->len) return 0;
+    tar_writer_meta_t meta;
+    if (!w || need > SIZE_MAX - w->len ||
+        !tar_writer_meta_load(w, &meta))
+        return 0;
     size_t required = w->len + need;
-    if (w->data && required <= w->cap) return 1;
+    if (required <= w->cap) return 1;
     size_t next = w->cap < 4096 ? 4096 : w->cap;
     while (next < required) {
         if (next > SIZE_MAX / 2) {
@@ -307,11 +473,17 @@ static int writer_grow(neverc_tar_writer_t *w, size_t need) {
         }
         next *= 2;
     }
-    uint8_t *grown = (uint8_t *)realloc(w->data, next);
+    if (next > SIZE_MAX - sizeof(meta)) return 0;
+    size_t old_cap = w->cap;
+    uint8_t *grown = (uint8_t *)realloc(
+        w->data, next + sizeof(meta));
     if (!grown) return 0;
     w->data = grown;
     w->cap = next;
-    return 1;
+    size_t clear = sizeof(meta);
+    if (clear > next - old_cap) clear = next - old_cap;
+    memset(grown + old_cap, 0, clear);
+    return tar_writer_meta_store(w, &meta);
 }
 
 static int bounded_string_length(const char *string, size_t capacity,
@@ -345,9 +517,11 @@ static int split_ustar_name(const char *name, size_t length,
     return -1;
 }
 
-int neverc_tar_writer_write_header(neverc_tar_writer_t *w,
-                                   const neverc_tar_header_t *hdr) {
-    if (!w || !hdr || w->closed || w->failed || w->entry_open ||
+static int tar_writer_write_header_common(neverc_tar_writer_t *w,
+                                          const neverc_tar_header_v2_t *hdr) {
+    tar_writer_meta_t meta;
+    if (!w || !hdr || !tar_writer_meta_load(w, &meta) ||
+        meta.closed || meta.failed || meta.entry_open ||
         hdr->size < 0 || hdr->mtime < 0 ||
         !tar_size_fits((uint64_t)hdr->size) ||
         hdr->typeflag < 0 || hdr->typeflag > UCHAR_MAX)
@@ -365,14 +539,15 @@ int neverc_tar_writer_write_header(neverc_tar_writer_t *w,
         bounded_string_length(
             hdr->gname, sizeof(hdr->gname), &gname_length) != 0)
         return -1;
-    if (!tar_path_is_safe(hdr->name))
+    if (!tar_path_is_safe(hdr->name, sizeof(hdr->name)))
         return -1;
     int typeflag = tar_resolve_typeflag(hdr->typeflag, hdr->name);
     if (!tar_type_supported(typeflag) ||
         (tar_type_header_only(typeflag) && hdr->size != 0))
         return -1;
     if ((typeflag == NEVERC_TAR_SYM || typeflag == NEVERC_TAR_LINK) &&
-        (link_length == 0 || !tar_path_is_safe(hdr->linkname)))
+        (link_length == 0 ||
+         !tar_path_is_safe(hdr->linkname, sizeof(hdr->linkname))))
         return -1;
 
     uint8_t block[NEVERC_TAR_BLOCK_SIZE] = {0};
@@ -398,55 +573,98 @@ int neverc_tar_writer_write_header(neverc_tar_writer_t *w,
     if (write_octal(block + 148, 7, block_checksum) != 0) return -1;
     block[155] = ' ';
 
+    /* hdr may alias the writer's allocation. Snapshot every value that is
+     * still needed before writer_grow can move that allocation. */
+    size_t current_size = (size_t)hdr->size;
     if (!writer_grow(w, NEVERC_TAR_BLOCK_SIZE)) {
-        w->failed = 1;
+        meta.failed = 1;
+        (void)tar_writer_meta_store(w, &meta);
         return -1;
     }
     memcpy(w->data + w->len, block, sizeof(block));
     w->len += sizeof(block);
-    w->current_size = (size_t)hdr->size;
-    w->current_written = 0;
-    w->entry_open = hdr->size > 0;
-    return 0;
+    meta.current_size = current_size;
+    meta.current_written = 0;
+    meta.entry_open = hdr->size > 0;
+    return tar_writer_meta_store(w, &meta) ? 0 : -1;
+}
+
+int neverc_tar_writer_write_header_v2(neverc_tar_writer_t *w,
+                                      const neverc_tar_header_v2_t *hdr) {
+    return tar_writer_write_header_common(w, hdr);
+}
+
+int neverc_tar_writer_write_header(neverc_tar_writer_t *w,
+                                   const neverc_tar_header_t *hdr) {
+    if (!hdr) return -1;
+    neverc_tar_header_v2_t converted;
+    memset(&converted, 0, sizeof(converted));
+    size_t name_length = 0, link_length = 0;
+    size_t uname_length = 0, gname_length = 0;
+    if (bounded_string_length(
+            hdr->name, sizeof(hdr->name), &name_length) != 0 ||
+        bounded_string_length(
+            hdr->linkname, sizeof(hdr->linkname), &link_length) != 0 ||
+        bounded_string_length(
+            hdr->uname, sizeof(hdr->uname), &uname_length) != 0 ||
+        bounded_string_length(
+            hdr->gname, sizeof(hdr->gname), &gname_length) != 0)
+        return -1;
+    memcpy(converted.name, hdr->name, name_length + 1U);
+    memcpy(converted.linkname, hdr->linkname, link_length + 1U);
+    memcpy(converted.uname, hdr->uname, uname_length + 1U);
+    memcpy(converted.gname, hdr->gname, gname_length + 1U);
+    converted.size = hdr->size;
+    converted.mode = hdr->mode;
+    converted.mtime = hdr->mtime;
+    converted.typeflag = hdr->typeflag;
+    return tar_writer_write_header_common(w, &converted);
 }
 
 int neverc_tar_writer_write(neverc_tar_writer_t *w,
                             const uint8_t *data, size_t len) {
-    if (!w || w->closed || w->failed || (!data && len != 0))
+    tar_writer_meta_t meta;
+    if (!w || !tar_writer_meta_load(w, &meta) ||
+        meta.closed || meta.failed || (!data && len != 0))
         return -1;
-    if (!w->entry_open) return len == 0 ? 0 : -1;
-    if (w->current_written > w->current_size ||
-        len > w->current_size - w->current_written)
+    if (!meta.entry_open) return len == 0 ? 0 : -1;
+    if (meta.current_written > meta.current_size ||
+        len > meta.current_size - meta.current_written)
         return -1;
     int completes_entry =
-        len == w->current_size - w->current_written;
+        len == meta.current_size - meta.current_written;
     size_t padded = 0;
-    if (tar_padded_size(w->current_size, &padded) != 0) return -1;
-    size_t padding = completes_entry ? padded - w->current_size : 0;
+    if (tar_padded_size(meta.current_size, &padded) != 0) return -1;
+    size_t padding = completes_entry ? padded - meta.current_size : 0;
     if (len > SIZE_MAX - padding || !writer_grow(w, len + padding)) {
-        w->failed = 1;
+        meta.failed = 1;
+        (void)tar_writer_meta_store(w, &meta);
         return -1;
     }
     if (len > 0) memcpy(w->data + w->len, data, len);
     if (padding > 0)
         memset(w->data + w->len + len, 0, padding);
     w->len += len + padding;
-    w->current_written += len;
-    if (completes_entry) w->entry_open = 0;
-    return 0;
+    meta.current_written += len;
+    if (completes_entry) meta.entry_open = 0;
+    return tar_writer_meta_store(w, &meta) ? 0 : -1;
 }
 
 int neverc_tar_writer_close(neverc_tar_writer_t *w) {
-    if (!w || w->failed || w->entry_open) return -1;
-    if (w->closed) return 0;
+    tar_writer_meta_t meta;
+    if (!w || !tar_writer_meta_load(w, &meta) ||
+        meta.failed || meta.entry_open)
+        return -1;
+    if (meta.closed) return 0;
     if (!writer_grow(w, NEVERC_TAR_BLOCK_SIZE * 2U)) {
-        w->failed = 1;
+        meta.failed = 1;
+        (void)tar_writer_meta_store(w, &meta);
         return -1;
     }
     memset(w->data + w->len, 0, NEVERC_TAR_BLOCK_SIZE * 2);
     w->len += NEVERC_TAR_BLOCK_SIZE * 2;
-    w->closed = 1;
-    return 0;
+    meta.closed = 1;
+    return tar_writer_meta_store(w, &meta) ? 0 : -1;
 }
 
 void neverc_tar_writer_free(neverc_tar_writer_t *w) {

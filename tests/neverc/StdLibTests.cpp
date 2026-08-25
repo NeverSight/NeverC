@@ -586,6 +586,8 @@ STD_TEST(bzip2, "src/compress/bzip2/bzip2.c")
 // ===== Archive =====
 STD_TEST(tar, "src/archive/tar/tar.c", "src/io/fs/fs.c",
          "src/path/match.c", "src/unicode/utf8/utf8.c")
+STD_TEST(tar_ctx_abi, "src/archive/tar/tar.c", "src/io/fs/fs.c",
+         "src/path/match.c", "src/unicode/utf8/utf8.c")
 TEST_F(StdLibTest, TarAllocationFailure) {
   auto r = compileAndRunStdTest(
       "tar_oom",

@@ -23,6 +23,21 @@ extern "C" {
 #define NEVERC_TAR_BLOCK_SIZE 512
 
 typedef struct {
+    char     name[256];
+    int64_t  size;
+    uint32_t mode;
+    int64_t  mtime;
+    int      typeflag;
+    char     linkname[100];
+    char     uname[32];
+    char     gname[32];
+} neverc_tar_header_t;
+
+/* Additive full-width ustar API. The released header above safely represents
+ * NUL-terminated strings up to 255/99/31/31 bytes. V2 retains all
+ * 256/100/32/32 bytes from fixed-width ustar fields without changing that
+ * released type's layout. */
+typedef struct {
     char     name[257];
     int64_t  size;
     uint32_t mode;
@@ -31,7 +46,7 @@ typedef struct {
     char     linkname[101];
     char     uname[33];
     char     gname[33];
-} neverc_tar_header_t;
+} neverc_tar_header_v2_t;
 
 #define NEVERC_TAR_REG  '0'
 #define NEVERC_TAR_LINK '1'
@@ -43,10 +58,6 @@ typedef struct {
     const uint8_t *data;
     size_t         len;
     size_t         pos;
-    size_t         entry_size;
-    size_t         entry_read;
-    int            entry_active;
-    int            ended;
 } neverc_tar_reader_t;
 
 /* The reader borrows data; it must remain unchanged and alive until the last
@@ -58,20 +69,20 @@ void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t 
  * logical records as physical-record padding; ignoring a final partial
  * record also matches Go archive/tar EOF behavior. */
 int  neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr);
+int  neverc_tar_reader_next_v2(neverc_tar_reader_t *r,
+                               neverc_tar_header_v2_t *hdr);
 /* Reads the current entry incrementally; unread bytes are skipped by next(). */
 int  neverc_tar_reader_read(neverc_tar_reader_t *r, const neverc_tar_header_t *hdr,
                             uint8_t *buf, size_t len, size_t *nread);
+int  neverc_tar_reader_read_v2(neverc_tar_reader_t *r,
+                               const neverc_tar_header_v2_t *hdr,
+                               uint8_t *buf, size_t len, size_t *nread);
 
 /* --- Writer --- */
 typedef struct {
     uint8_t *data;
     size_t   len;
     size_t   cap;
-    size_t   current_size;
-    size_t   current_written;
-    int      entry_open;
-    int      closed;
-    int      failed;
 } neverc_tar_writer_t;
 
 /* The writer owns its data buffer. Its bytes remain available through w->data
@@ -82,6 +93,8 @@ void neverc_tar_writer_init(neverc_tar_writer_t *w);
  * bytes are encoded with the ustar prefix when possible. */
 int  neverc_tar_writer_write_header(neverc_tar_writer_t *w,
                                     const neverc_tar_header_t *hdr);
+int  neverc_tar_writer_write_header_v2(neverc_tar_writer_t *w,
+                                       const neverc_tar_header_v2_t *hdr);
 /* Writes entry data without implicit truncation; exceeding header.size fails. */
 int  neverc_tar_writer_write(neverc_tar_writer_t *w,
                              const uint8_t *data, size_t len);

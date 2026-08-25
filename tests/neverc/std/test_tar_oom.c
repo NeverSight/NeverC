@@ -52,7 +52,6 @@ int main(void) {
     CHECK(allocation_count == fail_at);
     CHECK(w.data != NULL);
     CHECK(w.len == NEVERC_TAR_BLOCK_SIZE);
-    CHECK(w.failed != 0);
     CHECK(neverc_tar_writer_close(&w) == -1);
     neverc_tar_writer_free(&w);
     puts("passed");

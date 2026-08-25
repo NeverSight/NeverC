@@ -155,8 +155,8 @@ static void test_invalid_lengths(void) {
     neverc_tar_writer_free(&w);
 }
 
-static void test_full_width_linkname(void) {
-    printf("[full-width linkname]\n");
+static void test_legacy_rejects_full_width_linkname(void) {
+    printf("[legacy rejects full-width linkname]\n");
     uint8_t block[NEVERC_TAR_BLOCK_SIZE] = {0};
     memcpy(block, "link", 4);
     block[156] = NEVERC_TAR_SYM;
@@ -167,10 +167,7 @@ static void test_full_width_linkname(void) {
     neverc_tar_reader_init(&reader, block, sizeof(block));
     neverc_tar_header_t header = {0};
     int result = neverc_tar_reader_next(&reader, &header);
-    check_int("read full-width link", result, 1);
-    if (result != 1) return;
-    check_size("preserve full-width link", strlen(header.linkname), 100);
-    check_int("terminate full-width link", header.linkname[100], '\0');
+    check_int("legacy rejects unrepresentable full-width link", result, -1);
 }
 
 static void test_incremental_io_and_state(void) {
@@ -293,34 +290,38 @@ static void test_ustar_metadata_and_long_name(void) {
     neverc_tar_writer_free(&writer);
 
     neverc_tar_writer_init(&writer);
-    memset(&header, 0, sizeof(header));
-    memset(header.name, 'p', 155);
-    header.name[155] = '/';
-    memset(header.name + 156, 'n', 100);
-    header.name[256] = '\0';
-    memset(header.linkname, 'l', 100);
-    header.linkname[100] = '\0';
-    memset(header.uname, 'u', 32);
-    header.uname[32] = '\0';
-    memset(header.gname, 'g', 32);
-    header.gname[32] = '\0';
-    header.typeflag = NEVERC_TAR_REG;
+    neverc_tar_header_v2_t full_header = {0};
+    neverc_tar_header_v2_t full_decoded = {0};
+    memset(full_header.name, 'p', 155);
+    full_header.name[155] = '/';
+    memset(full_header.name + 156, 'n', 100);
+    full_header.name[256] = '\0';
+    memset(full_header.linkname, 'l', 100);
+    full_header.linkname[100] = '\0';
+    memset(full_header.uname, 'u', 32);
+    full_header.uname[32] = '\0';
+    memset(full_header.gname, 'g', 32);
+    full_header.gname[32] = '\0';
+    full_header.typeflag = NEVERC_TAR_REG;
     check_int("max ustar path header",
-              neverc_tar_writer_write_header(&writer, &header), 0);
+              neverc_tar_writer_write_header_v2(&writer, &full_header), 0);
     check_int("max ustar path close",
               neverc_tar_writer_close(&writer), 0);
     neverc_tar_reader_init(&reader, writer.data, writer.len);
-    memset(&decoded, 0, sizeof(decoded));
     check_int("max ustar path read",
-              neverc_tar_reader_next(&reader, &decoded), 1);
-    check_size("max ustar path length", strlen(decoded.name), 256);
-    check_str("max ustar path roundtrip", decoded.name, header.name);
-    check_size("max linkname length", strlen(decoded.linkname), 100);
-    check_str("max linkname roundtrip", decoded.linkname, header.linkname);
-    check_size("max uname length", strlen(decoded.uname), 32);
-    check_str("max uname roundtrip", decoded.uname, header.uname);
-    check_size("max gname length", strlen(decoded.gname), 32);
-    check_str("max gname roundtrip", decoded.gname, header.gname);
+              neverc_tar_reader_next_v2(&reader, &full_decoded), 1);
+    check_size("max ustar path length", strlen(full_decoded.name), 256);
+    check_str("max ustar path roundtrip",
+              full_decoded.name, full_header.name);
+    check_size("max linkname length", strlen(full_decoded.linkname), 100);
+    check_str("max linkname roundtrip",
+              full_decoded.linkname, full_header.linkname);
+    check_size("max uname length", strlen(full_decoded.uname), 32);
+    check_str("max uname roundtrip",
+              full_decoded.uname, full_header.uname);
+    check_size("max gname length", strlen(full_decoded.gname), 32);
+    check_str("max gname roundtrip",
+              full_decoded.gname, full_header.gname);
     neverc_tar_writer_free(&writer);
 
     neverc_tar_writer_init(&writer);
@@ -947,7 +948,7 @@ int main(void) {
     test_write_read_roundtrip();
     test_empty_tar();
     test_invalid_lengths();
-    test_full_width_linkname();
+    test_legacy_rejects_full_width_linkname();
     test_incremental_io_and_state();
     test_ustar_metadata_and_long_name();
     test_malformed_headers();
