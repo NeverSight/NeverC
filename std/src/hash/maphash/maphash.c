@@ -32,15 +32,15 @@ void neverc_maphash_init(neverc_maphash_t *h, uint64_t seed) {
     if (!h) return;
     h->seed = seed;
     h->state = h->seed;
-    h->n = 0;
-    h->used = 0;
+    /* Preserve the released object layout: -1 distinguishes a fresh empty
+     * hash from a written stream whose complete buffer was just flushed. */
+    h->n = -1;
 }
 
 void neverc_maphash_reset(neverc_maphash_t *h) {
     if (!h) return;
     h->state = h->seed;
-    h->n = 0;
-    h->used = 0;
+    h->n = -1;
 }
 
 static void maphash_flush(neverc_maphash_t *h) {
@@ -50,9 +50,10 @@ static void maphash_flush(neverc_maphash_t *h) {
 
 size_t neverc_maphash_write_byte(neverc_maphash_t *h, uint8_t b) {
     if (!h) return 0;
+    if (h->n == -1) h->n = 0;
+    if (h->n < 0 || h->n > NEVERC_MAPHASH_BUF_SIZE) return 0;
     if (h->n == NEVERC_MAPHASH_BUF_SIZE) maphash_flush(h);
     h->buf[h->n++] = b;
-    h->used = 1;
     return 1;
 }
 
@@ -60,9 +61,10 @@ size_t neverc_maphash_write(neverc_maphash_t *h, const void *data, size_t len) {
     if (!h) return 0;
     if (len == 0) return 0;
     if (!data) return 0;
+    if (h->n == -1) h->n = 0;
+    if (h->n < 0 || h->n > NEVERC_MAPHASH_BUF_SIZE) return 0;
     const uint8_t *p = (const uint8_t *)data;
     size_t remaining = len;
-    h->used = 1;
 
     if (h->n > 0) {
         size_t space = (size_t)(NEVERC_MAPHASH_BUF_SIZE - h->n);
@@ -93,9 +95,10 @@ size_t neverc_maphash_write_string(neverc_maphash_t *h, const char *s) {
 uint64_t neverc_maphash_sum64(const neverc_maphash_t *h) {
     if (!h) return 0;
     /* Empty input still mixes the seed so the digest does not leak it.
-     * After a full-buffer flush, n==0 but used==1: state already holds the mix. */
-    if (!h->used)
+     * After a full-buffer flush, n==0 and state already holds the mix. */
+    if (h->n == -1)
         return nci_wyhash_final3(NULL, 0, h->seed);
+    if (h->n < 0 || h->n > NEVERC_MAPHASH_BUF_SIZE) return 0;
     if (h->n == 0) return h->state;
     return nci_wyhash_final3(h->buf, (size_t)h->n, h->state);
 }

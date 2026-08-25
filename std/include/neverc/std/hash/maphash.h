@@ -23,7 +23,6 @@ typedef struct {
     uint64_t state;
     uint8_t  buf[NEVERC_MAPHASH_BUF_SIZE];
     int      n;
-    int      used; /* 1 after any byte is written; empty still mixes the seed */
 } neverc_maphash_t;
 
 /* Returns a fresh OS-random seed on every call. Returns 0 if the platform
