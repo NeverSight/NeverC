@@ -62,11 +62,13 @@ static void test_mime_header(void) {
     neverc_mime_header_t h;
     neverc_mime_header_init(&h);
 
-    neverc_mime_header_set(&h, "content-type", "text/html");
+    check("try_set succeeds",
+          neverc_mime_header_try_set(&h, "content-type", "text/html") == 0);
     check_str("get_ci", neverc_mime_header_get(&h, "Content-Type"), "text/html");
     check("len_1", neverc_mime_header_len(&h) == 1);
 
-    neverc_mime_header_add(&h, "Accept", "application/json");
+    check("try_add succeeds",
+          neverc_mime_header_try_add(&h, "Accept", "application/json") == 0);
     check("len_2", neverc_mime_header_len(&h) == 2);
 
     neverc_mime_header_set(&h, "content-type", "text/plain");
@@ -466,6 +468,10 @@ static void test_trim(void) {
     check_str("empty", out, "");
     check("zero trim capacity rejected",
           neverc_textproto_trim_string("x", out, 0) == -1);
+    char small[5] = "xxxx";
+    check("small trim capacity rejected",
+          neverc_textproto_trim_string(" hello ", small, sizeof(small)) == -1);
+    check_str("small trim result cleared", small, "");
 }
 
 static void test_null_safety(void) {
@@ -474,6 +480,10 @@ static void test_null_safety(void) {
     neverc_mime_header_free(NULL);
     neverc_mime_header_add(NULL, "Key", "Value");
     neverc_mime_header_set(NULL, "Key", "Value");
+    check("NULL header try_add rejected",
+          neverc_mime_header_try_add(NULL, "Key", "Value") == -1);
+    check("NULL header try_set rejected",
+          neverc_mime_header_try_set(NULL, "Key", "Value") == -1);
     neverc_mime_header_del(NULL, "Key");
     check("NULL header get", neverc_mime_header_get(NULL, "Key") == NULL);
     check("NULL header len", neverc_mime_header_len(NULL) == 0);

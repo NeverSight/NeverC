@@ -6,11 +6,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #if !defined(_WIN32)
 #include <unistd.h>
 #include <sys/stat.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #else
 #include <windows.h>
 #endif
@@ -1180,6 +1183,12 @@ static int run_check_extra_fd(int fd) {
     int open_now = fcntl(fd, F_GETFD) >= 0;
     return printf("%d\n", open_now) < 0 ? 1 : 0;
 }
+#else
+static int run_check_extra_handle(uintptr_t value) {
+    DWORD flags = 0;
+    int inherited = GetHandleInformation((HANDLE)value, &flags) != 0;
+    return printf("%d\n", inherited) < 0 ? 1 : 0;
+}
 #endif
 
 static void test_missing_executable(void) {
@@ -1496,6 +1505,134 @@ static void test_child_cloexec(const char *executable) {
     close(fds[0]);
     close(fds[1]);
 }
+
+static void test_child_cloexec_above_65536(const char *executable) {
+    printf("[child_cloexec_above_65536]\n");
+    const int high_fd = 70000;
+    long maxfd = sysconf(_SC_OPEN_MAX);
+    if (maxfd <= high_fd) {
+        tests_run++;
+        tests_passed++;
+        return;
+    }
+
+    int fds[2];
+    ASSERT_INT_EQ(pipe(fds), 0);
+    if (dup2(fds[0], high_fd) != high_fd) {
+        ASSERT_TRUE(0);
+        close(fds[0]);
+        close(fds[1]);
+        return;
+    }
+    char fdstr[16];
+    snprintf(fdstr, sizeof(fdstr), "%d", high_fd);
+    const char *args[] = {"--check-extra-fd", fdstr};
+    neverc_exec_cmd_t *cmd = neverc_exec_command(executable, args, 2);
+    ASSERT_TRUE(cmd != NULL);
+    neverc_exec_output_t out = {0};
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_output(cmd, &out, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+    ASSERT_TRUE(out.len >= 1 && out.data[0] == '0');
+    neverc_exec_output_free(&out);
+    neverc_exec_cmd_free(cmd);
+    close(high_fd);
+    close(fds[0]);
+    close(fds[1]);
+}
+
+static atomic_int exec_allocator_stress_stop;
+
+static void *exec_allocator_stress_worker(void *argument) {
+    uintptr_t state = (uintptr_t)argument + 1U;
+    while (!atomic_load_explicit(&exec_allocator_stress_stop,
+                                 memory_order_relaxed)) {
+        state = state * (uintptr_t)1103515245U + (uintptr_t)12345U;
+        size_t size = 32U + (size_t)(state % 16384U);
+        void *allocation = malloc(size);
+        if (allocation) {
+            memset(allocation, (int)(state & 0xffU), size);
+            free(allocation);
+        }
+    }
+    return NULL;
+}
+
+static void test_multithreaded_exec_is_fork_safe(const char *executable) {
+    printf("[multithreaded_exec_is_fork_safe]\n");
+    char absolute_executable[4096];
+    const char *resolved_executable = executable;
+    if (executable[0] != '/') {
+        char working_directory[2048];
+        int written = getcwd(working_directory, sizeof(working_directory))
+            ? snprintf(absolute_executable, sizeof(absolute_executable),
+                       "%s/%s", working_directory, executable)
+            : -1;
+        ASSERT_TRUE(written > 0 &&
+                    (size_t)written < sizeof(absolute_executable));
+        if (written <= 0 ||
+            (size_t)written >= sizeof(absolute_executable))
+            return;
+        resolved_executable = absolute_executable;
+    }
+    pthread_t workers[4];
+    size_t started = 0;
+    atomic_store_explicit(&exec_allocator_stress_stop, 0,
+                          memory_order_relaxed);
+    for (size_t i = 0; i < sizeof(workers) / sizeof(workers[0]); i++) {
+        int created = pthread_create(&workers[started], NULL,
+                                     exec_allocator_stress_worker,
+                                     (void *)(uintptr_t)i);
+        ASSERT_INT_EQ(created, 0);
+        if (created != 0) break;
+        started++;
+    }
+    for (int i = 0; i < 200; i++) {
+        const char *args[] = {"--print-argv", "fork-safe"};
+        const char *env[] = {
+            "NEVERC_EXEC_STRESS=old", "NEVERC_EXEC_STRESS=new"};
+        neverc_exec_cmd_t *cmd = neverc_exec_command(
+            resolved_executable, args, 2);
+        ASSERT_TRUE(cmd != NULL);
+        if (!cmd) break;
+        ASSERT_INT_EQ(neverc_exec_cmd_set_env(cmd, env, 2), 0);
+        neverc_exec_output_t output = {0};
+        neverc_exec_exit_status_t status = {0};
+        ASSERT_INT_EQ(neverc_exec_cmd_output(cmd, &output, &status), 0);
+        ASSERT_INT_EQ(status.exit_code, 0);
+        ASSERT_TRUE(output.len == 10U &&
+                    memcmp(output.data, "fork-safe\n", 10U) == 0);
+        neverc_exec_output_free(&output);
+        neverc_exec_cmd_free(cmd);
+    }
+    atomic_store_explicit(&exec_allocator_stress_stop, 1,
+                          memory_order_relaxed);
+    for (size_t i = 0; i < started; i++)
+        ASSERT_INT_EQ(pthread_join(workers[i], NULL), 0);
+}
+#else
+static void test_child_handle_allowlist(const char *executable) {
+    printf("[child_handle_allowlist]\n");
+    SECURITY_ATTRIBUTES sa = {sizeof(sa), NULL, TRUE};
+    HANDLE extra = CreateEventA(&sa, TRUE, FALSE, NULL);
+    ASSERT_TRUE(extra != NULL);
+    if (!extra) return;
+
+    char value[32];
+    snprintf(value, sizeof(value), "%llu",
+             (unsigned long long)(uintptr_t)extra);
+    const char *args[] = {"--check-extra-handle", value};
+    neverc_exec_cmd_t *cmd = neverc_exec_command(executable, args, 2);
+    ASSERT_TRUE(cmd != NULL);
+    neverc_exec_output_t out = {0};
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_output(cmd, &out, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+    ASSERT_TRUE(out.len >= 1 && out.data[0] == '0');
+    neverc_exec_output_free(&out);
+    neverc_exec_cmd_free(cmd);
+    CloseHandle(extra);
+}
 #endif
 
 int main(int argc, char **argv) {
@@ -1511,6 +1648,9 @@ int main(int argc, char **argv) {
         return run_print_blocked_usr1();
     if (argc == 3 && strcmp(argv[1], "--check-extra-fd") == 0)
         return run_check_extra_fd(atoi(argv[2]));
+#else
+    if (argc == 3 && strcmp(argv[1], "--check-extra-handle") == 0)
+        return run_check_extra_handle((uintptr_t)_strtoui64(argv[2], NULL, 10));
 #endif
     if (argc >= 2 && strcmp(argv[1], "--print-argv") == 0) {
         int i;
@@ -1543,6 +1683,8 @@ int main(int argc, char **argv) {
     test_start_kill_wait(argv[0]);
 #if !defined(_WIN32)
     test_child_cloexec(argv[0]);
+    test_child_cloexec_above_65536(argv[0]);
+    test_multithreaded_exec_is_fork_safe(argv[0]);
     test_unread_stdin_is_not_failure();
     test_signaled_status();
     test_exec_resets_signal_mask(argv[0]);
@@ -1552,6 +1694,8 @@ int main(int argc, char **argv) {
     test_set_dir_does_not_research_path();
     test_env_path_last_wins();
     test_look_path_overflow_does_not_skip();
+#else
+    test_child_handle_allowlist(argv[0]);
 #endif
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

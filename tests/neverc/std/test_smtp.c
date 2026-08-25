@@ -293,6 +293,17 @@ static void test_smtp_session(void) {
     rc = neverc_smtp_auth(c, NEVERC_SMTP_AUTH_PLAIN, "user", "pass");
     check_true("AUTH PLAIN success", rc == 0);
 
+    /* RFC 6531 envelope paths are accepted when EHLO advertised SMTPUTF8. */
+    rc = neverc_smtp_mail(c, "\xc3\xbcser@example.com");
+    check_true("SMTPUTF8 MAIL FROM success", rc == 0);
+    check_true("SMTPUTF8 parameter present",
+               strstr(g_last_mail, " SMTPUTF8") != NULL);
+    rc = neverc_smtp_rcpt(c, "dest@\xe4\xbe\x8b.example");
+    check_true("SMTPUTF8 RCPT TO success", rc == 0);
+    check_true("reset SMTPUTF8 transaction", neverc_smtp_reset(c) == 0);
+    check_true("invalid UTF-8 envelope rejected",
+               neverc_smtp_mail(c, "\xc0\xaf@example.com") == -1);
+
     /* MAIL FROM */
     rc = neverc_smtp_mail(c, "sender@example.com");
     check_true("MAIL FROM success", rc == 0);
@@ -747,7 +758,65 @@ static void test_smtp_multiline_code_mismatch(void) {
                neverc_smtp_hello(c, "test.client") == 0);
     check_true("MAIL rejects 250- then 550",
                neverc_smtp_mail(c, "mismatch@example.com") == -1);
+    check_true("malformed reply is sticky",
+               neverc_smtp_noop(c) == -1);
     neverc_smtp_close(c);
+}
+
+static void test_smtp_extensions_and_lifecycle(void) {
+    printf("[smtp_extensions_and_lifecycle]\n");
+
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_smtp_port);
+    const char *err = NULL;
+    neverc_smtp_client_t *c = neverc_smtp_dial(addr, &err);
+    check_true("dial without SMTPUTF8", c != NULL);
+    if (c) {
+        check_true("EHLO without SMTPUTF8",
+                   neverc_smtp_hello(c, "noauth.local") == 0);
+        check_true("UTF-8 envelope requires SMTPUTF8",
+                   neverc_smtp_mail(c, "\xc3\xbcser@example.com") == -1);
+        check_true("ASCII MAIL survives rejected UTF-8 envelope",
+                   neverc_smtp_mail(c, "sender@example.com") == 0);
+        check_true("ASCII RCPT", neverc_smtp_rcpt(
+                       c, "recipient@example.com") == 0);
+        check_true("DATA without SMTPUTF8", neverc_smtp_data(c) == 0);
+        check_true("UTF-8 header requires SMTPUTF8",
+                   neverc_smtp_write_data(
+                       c, "Subject: caf\xc3\xa9\r\n\r\nbody", 22) == -1);
+        check_true("capability failure is terminal",
+                   neverc_smtp_noop(c) == -1);
+        neverc_smtp_close(c);
+    }
+
+    c = neverc_smtp_dial(addr, &err);
+    check_true("dial for 8BITMIME enforcement", c != NULL);
+    if (c) {
+        check_true("EHLO no 8BITMIME",
+                   neverc_smtp_hello(c, "starttls.local") == 0);
+        check_true("MAIL before body capability test",
+                   neverc_smtp_mail(c, "sender@example.com") == 0);
+        check_true("RCPT before body capability test",
+                   neverc_smtp_rcpt(c, "recipient@example.com") == 0);
+        check_true("DATA before body capability test",
+                   neverc_smtp_data(c) == 0);
+        check_true("ASCII headers accepted",
+                   neverc_smtp_write_data(c, "Subject: x\r\n\r\n", 14) == 0);
+        check_true("8-bit body requires 8BITMIME",
+                   neverc_smtp_write_data(c, "\xc3\xa9", 2) == -1);
+        neverc_smtp_close(c);
+    }
+
+    c = neverc_smtp_dial(addr, &err);
+    check_true("dial for automatic hello", c != NULL);
+    if (c) {
+        check_true("NOOP automatically sends hello", neverc_smtp_noop(c) == 0);
+        check_true("RSET after automatic hello", neverc_smtp_reset(c) == 0);
+        check_true("QUIT succeeds once", neverc_smtp_quit(c) == 0);
+        check_true("client is terminal after QUIT", neverc_smtp_noop(c) == -1);
+        check_true("second QUIT rejected", neverc_smtp_quit(c) == -1);
+        neverc_smtp_close(c);
+    }
 }
 
 static void test_smtp_response_leftover(void) {
@@ -871,6 +940,7 @@ int main(void) {
     test_smtp_auth_plaintext_non_localhost();
     test_smtp_auth_requires_advertised();
     test_smtp_multiline_code_mismatch();
+    test_smtp_extensions_and_lifecycle();
     test_smtp_response_leftover();
 
     g_smtp_running = 0;

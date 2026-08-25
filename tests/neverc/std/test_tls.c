@@ -38,6 +38,8 @@ int neverc_tls_test_config_set_handshake_fragment_size(
     neverc_tls_config_t *cfg, size_t fragment_size);
 int neverc_tls_test_handshake_reassembly(void);
 int neverc_tls_test_key_schedule_failures(void);
+int neverc_tls_test_config_preserves_certificate_chain(
+    const char *cert_pem, const char *key_pem);
 int neverc_tls_test_record_write_failure(void);
 int neverc_tls_test_reject_ccs_after_handshake(void);
 int neverc_tls_test_discard_ccs_before_handshake(void);
@@ -50,6 +52,8 @@ int neverc_tls_test_certificate_request_schemes(void);
 int neverc_tls_test_certificate_entry_extensions(void);
 int neverc_tls_test_new_session_ticket_extensions(void);
 int neverc_tls_test_reject_post_handshake_key_update_flood(void);
+int neverc_tls_test_reject_post_handshake_ticket_flood(void);
+int neverc_tls_test_max_plaintext_application_record(void);
 int neverc_tls_test_reject_plaintext_record_overflow(void);
 int neverc_tls_test_did_resume(neverc_tls_conn_t *conn);
 int neverc_tls_test_corrupt_client_session(
@@ -155,6 +159,10 @@ static void test_config(void) {
               neverc_tls_test_new_session_ticket_extensions(), 0);
     check_int("reject_post_handshake_key_update_flood",
               neverc_tls_test_reject_post_handshake_key_update_flood(), 0);
+    check_int("reject_post_handshake_ticket_flood",
+              neverc_tls_test_reject_post_handshake_ticket_flood(), 0);
+    check_int("max_plaintext_application_record",
+              neverc_tls_test_max_plaintext_application_record(), 0);
     check_int("reject_plaintext_record_overflow",
               neverc_tls_test_reject_plaintext_record_overflow(), 0);
     check_int("reject_oversized_test_fragment",
@@ -171,6 +179,12 @@ static void test_config(void) {
               neverc_tls_config_load_cert_mem(
                   cfg, TEST_CERT_PEM, TEST_PKCS8_KEY_PEM),
               0);
+#if defined(NEVERC_TLS_TESTING)
+    check_int("preserve_local_certificate_chain",
+              neverc_tls_test_config_preserves_certificate_chain(
+                  TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+#endif
     check_int("reject_mismatched_private_key",
               neverc_tls_config_load_cert_mem(
                   cfg, TEST_CERT_PEM, MISMATCHED_KEY_PEM) != 0,
@@ -2932,6 +2946,18 @@ static void test_dial_infers_sni(void) {
               client_name, "localhost.");
     check_str("sni trailing dot is stripped on the wire",
               server_name, "localhost");
+
+    client_name[0] = '\0';
+    server_name[0] = '\0';
+    check_int("invalid dotted host is sent as SNI",
+              dial_sni_roundtrip("999.999.999.999", client_name,
+                                 sizeof(client_name), server_name,
+                                 sizeof(server_name)),
+              1);
+    check_str("invalid dotted host stays client identity",
+              client_name, "999.999.999.999");
+    check_str("invalid dotted host stays SNI",
+              server_name, "999.999.999.999");
 }
 
 static void test_dial_does_not_persist_inferred_sni(void) {

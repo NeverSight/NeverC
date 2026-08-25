@@ -144,6 +144,25 @@ static void test_draw_gray_clip(void) {
     neverc_image_rgba_free(&dst);
 }
 
+static void test_draw_gray_offset_view_overlap(void) {
+    printf("[draw_gray_offset_view_overlap]\n");
+    uint8_t backing[8] = {0, 255, 255, 0, 0, 0, 0, 0};
+    neverc_image_rgba_t dst = {
+        backing, 8, {{0, 0}, {2, 1}}
+    };
+    neverc_image_gray_t mask = {
+        backing + 1, 2, {{0, 0}, {2, 1}}
+    };
+    neverc_draw_gray_over(&dst, dst.rect, &mask, neverc_pt(0, 0),
+                           255, 0, 0, 255);
+    check("gray alias first pixel",
+          backing[0] == 255 && backing[1] == 0 &&
+          backing[2] == 0 && backing[3] == 255);
+    check("gray alias second pixel uses original mask",
+          backing[4] == 255 && backing[5] == 0 &&
+          backing[6] == 0 && backing[7] == 255);
+}
+
 /* Regression: translating src/mask by (r.min - origin) can overflow 32-bit
  * int and wrap into dst, so a mapping that is actually off-image looks
  * in-bounds and the row loops read off the source buffer. */
@@ -498,6 +517,7 @@ int main(void) {
     test_draw_clipping();
     test_draw_source_clip();
     test_draw_gray_clip();
+    test_draw_gray_offset_view_overlap();
     test_draw_clip_int_overflow();
     test_draw_src_self_overlap();
     test_draw_offset_view_overlap();

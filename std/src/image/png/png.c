@@ -251,13 +251,6 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
                     return -1;
                 }
                 size_t need = idat_len + chunk_len;
-                uint64_t raw_need =
-                    ((uint64_t)img->stride + 1u) * (uint64_t)img->height;
-                uint64_t idat_limit = raw_need * 2u + 64u;
-                if (need > idat_limit) {
-                    png_decode_fail(img, idat_buf, NULL);
-                    return -1;
-                }
                 if (need > idat_cap) {
                     size_t new_cap =
                         need > SIZE_MAX / 2 ? need : need * 2;
@@ -661,5 +654,5 @@ const uint8_t *neverc_png_pixel_at(const neverc_png_image_t *img, uint32_t x, ui
 void neverc_png_pixel_set(neverc_png_image_t *img, uint32_t x, uint32_t y, const uint8_t *src) {
     size_t off;
     if (!src || png_pixel_offset(img, x, y, &off) != 0) return;
-    memcpy(img->pixels + off, src, img->channels);
+    memmove(img->pixels + off, src, img->channels);
 }

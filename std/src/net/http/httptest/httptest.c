@@ -316,14 +316,6 @@ static int httptest_parse_request(const char *raw, size_t raw_length,
     if (is_http_11 && !host_seen) return -2;
     if (content_length_seen && transfer_encoding_seen) return -2;
     if (is_http_10 && transfer_encoding_seen) return -2;
-    /* Same fail-closed rule as the HTTP/1 server: POST/PUT/PATCH without
-     * Content-Length or chunked used to succeed with an empty body. */
-    if (!content_length_seen && !transfer_encoding_seen &&
-        (strcmp(out->method, "POST") == 0 ||
-         strcmp(out->method, "PUT") == 0 ||
-         strcmp(out->method, "PATCH") == 0))
-        return -2;
-
     out->header_size = (size_t)(header_end + 4 - raw);
     if (transfer_encoding_seen) {
         const char *cursor = raw + out->header_size;
@@ -454,6 +446,19 @@ static int httptest_buf_append(char **buf, size_t *length, size_t *capacity,
     return 0;
 }
 
+static int httptest_write_all(neverc_tcp_conn_t *conn, const void *data,
+                              size_t length) {
+    const char *bytes = (const char *)data;
+    size_t offset = 0;
+    while (offset < length) {
+        int written = neverc_tcp_write(
+            conn, bytes + offset, length - offset);
+        if (written <= 0) return -1;
+        offset += (size_t)written;
+    }
+    return 0;
+}
+
 static int httptest_emit_response(neverc_tcp_conn_t *conn,
                                   neverc_http_response_writer_t *w,
                                   const char *body, size_t body_len) {
@@ -512,11 +517,11 @@ static int httptest_emit_response(neverc_tcp_conn_t *conn,
                             sizeof(close_end) - 1U) != 0)
         goto fail;
 
-    if (neverc_tcp_write(conn, hdr, length) < 0) goto fail;
+    if (httptest_write_all(conn, hdr, length) != 0) goto fail;
     int body_forbidden = w->head_request || w->status < 200 ||
                          w->status == 204 || w->status == 304;
     if (!body_forbidden && body && body_len > 0 &&
-        neverc_tcp_write(conn, body, body_len) < 0)
+        httptest_write_all(conn, body, body_len) != 0)
         goto fail;
     free(hdr);
     return 0;
@@ -535,7 +540,7 @@ static void httptest_write_error(neverc_tcp_conn_t *conn, int status,
                           "Connection: close\r\n\r\n",
                           status, text);
     if (length > 0 && (size_t)length < sizeof(header))
-        neverc_tcp_write(conn, header, (size_t)length);
+        (void)httptest_write_all(conn, header, (size_t)length);
 }
 
 static void handle_test_conn(neverc_tcp_conn_t *conn,

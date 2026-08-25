@@ -811,6 +811,11 @@ Sema::OnStdModuleMethodCall(Scope *S, Expr *Base, SourceLocation OpLoc,
   if (!MethodII)
     return ExprError();
 
+  if (!StdModule::isModuleMethod(ModName, MethodII->getName())) {
+    Diag(OpLoc, diag::err_no_member) << MethodII << RT->getDecl();
+    return ExprError();
+  }
+
   std::string FuncName =
       StdModule::getModuleFunctionName(ModName, MethodII->getName());
 

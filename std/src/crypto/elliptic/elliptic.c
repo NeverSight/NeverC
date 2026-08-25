@@ -1,4 +1,6 @@
 #include "neverc/std/crypto/elliptic.h"
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 static neverc_elliptic_curve_t g_p256;
@@ -18,101 +20,91 @@ static void mod_inv(neverc_bigint_t *r, const neverc_bigint_t *a, const neverc_b
     neverc_bigint_free(&two);
 }
 
+static void elliptic_curve_free(neverc_elliptic_curve_t *curve) {
+    neverc_bigint_free(&curve->p);
+    neverc_bigint_free(&curve->n);
+    neverc_bigint_free(&curve->b);
+    neverc_bigint_free(&curve->gx);
+    neverc_bigint_free(&curve->gy);
+    memset(curve, 0, sizeof(*curve));
+}
+
+static int elliptic_curve_init(
+    neverc_elliptic_curve_t *curve,
+    const char *p, const char *n, const char *b,
+    const char *gx, const char *gy, int bit_size, const char *name) {
+    memset(curve, 0, sizeof(*curve));
+    neverc_bigint_init(&curve->p);
+    neverc_bigint_init(&curve->n);
+    neverc_bigint_init(&curve->b);
+    neverc_bigint_init(&curve->gx);
+    neverc_bigint_init(&curve->gy);
+    if (neverc_bigint_set_string(&curve->p, p, 16) != 0 ||
+        neverc_bigint_set_string(&curve->n, n, 16) != 0 ||
+        neverc_bigint_set_string(&curve->b, b, 16) != 0 ||
+        neverc_bigint_set_string(&curve->gx, gx, 16) != 0 ||
+        neverc_bigint_set_string(&curve->gy, gy, 16) != 0) {
+        elliptic_curve_free(curve);
+        return -1;
+    }
+    curve->bit_size = bit_size;
+    curve->name = name;
+    return 0;
+}
+
+static const neverc_elliptic_curve_t *elliptic_get_curve(
+    neverc_elliptic_curve_t *global, int *state,
+    const char *p, const char *n, const char *b,
+    const char *gx, const char *gy, int bit_size, const char *name) {
+    for (;;) {
+        int current = __atomic_load_n(state, __ATOMIC_ACQUIRE);
+        if (current == 2)
+            return global;
+        if (current != 0)
+            continue;
+        int expected = 0;
+        if (!__atomic_compare_exchange_n(
+                state, &expected, 1, 0,
+                __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+            continue;
+
+        neverc_elliptic_curve_t initialized;
+        if (elliptic_curve_init(
+                &initialized, p, n, b, gx, gy, bit_size, name) != 0) {
+            __atomic_store_n(state, 0, __ATOMIC_RELEASE);
+            return NULL;
+        }
+        *global = initialized;
+        __atomic_store_n(state, 2, __ATOMIC_RELEASE);
+        return global;
+    }
+}
+
 const neverc_elliptic_curve_t *neverc_elliptic_p256(void) {
-    if (__atomic_load_n(&g_p256_init, __ATOMIC_ACQUIRE) == 2)
-        return &g_p256;
-
-    int expected = 0;
-    if (__atomic_compare_exchange_n(&g_p256_init, &expected, 1, 0,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-        memset(&g_p256, 0, sizeof(g_p256));
-        neverc_bigint_init(&g_p256.p);
-        neverc_bigint_init(&g_p256.n);
-        neverc_bigint_init(&g_p256.b);
-        neverc_bigint_init(&g_p256.gx);
-        neverc_bigint_init(&g_p256.gy);
-
-        neverc_bigint_set_string(
-            &g_p256.p,
-            "FFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF",
-            16);
-        neverc_bigint_set_string(
-            &g_p256.n,
-            "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",
-            16);
-        neverc_bigint_set_string(
-            &g_p256.b,
-            "5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B",
-            16);
-        neverc_bigint_set_string(
-            &g_p256.gx,
-            "6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296",
-            16);
-        neverc_bigint_set_string(
-            &g_p256.gy,
-            "4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5",
-            16);
-
-        g_p256.bit_size = 256;
-        g_p256.name = "P-256";
-        __atomic_store_n(&g_p256_init, 2, __ATOMIC_RELEASE);
-        return &g_p256;
-    }
-
-    while (__atomic_load_n(&g_p256_init, __ATOMIC_ACQUIRE) != 2) {
-    }
-    return &g_p256;
+    return elliptic_get_curve(
+        &g_p256, &g_p256_init,
+        "FFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF",
+        "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",
+        "5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B",
+        "6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296",
+        "4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5",
+        256, "P-256");
 }
 
 const neverc_elliptic_curve_t *neverc_elliptic_p384(void) {
-    if (__atomic_load_n(&g_p384_init, __ATOMIC_ACQUIRE) == 2)
-        return &g_p384;
-
-    int expected = 0;
-    if (__atomic_compare_exchange_n(&g_p384_init, &expected, 1, 0,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-        memset(&g_p384, 0, sizeof(g_p384));
-        neverc_bigint_init(&g_p384.p);
-        neverc_bigint_init(&g_p384.n);
-        neverc_bigint_init(&g_p384.b);
-        neverc_bigint_init(&g_p384.gx);
-        neverc_bigint_init(&g_p384.gy);
-
-        neverc_bigint_set_string(
-            &g_p384.p,
-            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE"
-            "FFFFFFFF0000000000000000FFFFFFFF",
-            16);
-        neverc_bigint_set_string(
-            &g_p384.n,
-            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC7634D81F4372DDF"
-            "581A0DB248B0A77AECEC196ACCC52973",
-            16);
-        neverc_bigint_set_string(
-            &g_p384.b,
-            "B3312FA7E23EE7E4988E056BE3F82D19181D9C6EFE8141120314088F5013875A"
-            "C656398D8A2ED19D2A85C8EDD3EC2AEF",
-            16);
-        neverc_bigint_set_string(
-            &g_p384.gx,
-            "AA87CA22BE8B05378EB1C71EF320AD746E1D3B628BA79B9859F741E082542A38"
-            "5502F25DBF55296C3A545E3872760AB7",
-            16);
-        neverc_bigint_set_string(
-            &g_p384.gy,
-            "3617DE4A96262C6F5D9E98BF9292DC29F8F41DBD289A147CE9DA3113B5F0B8C0"
-            "0A60B1CE1D7E819D7A431D7C90EA0E5F",
-            16);
-
-        g_p384.bit_size = 384;
-        g_p384.name = "P-384";
-        __atomic_store_n(&g_p384_init, 2, __ATOMIC_RELEASE);
-        return &g_p384;
-    }
-
-    while (__atomic_load_n(&g_p384_init, __ATOMIC_ACQUIRE) != 2) {
-    }
-    return &g_p384;
+    return elliptic_get_curve(
+        &g_p384, &g_p384_init,
+        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE"
+        "FFFFFFFF0000000000000000FFFFFFFF",
+        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC7634D81F4372DDF"
+        "581A0DB248B0A77AECEC196ACCC52973",
+        "B3312FA7E23EE7E4988E056BE3F82D19181D9C6EFE8141120314088F5013875A"
+        "C656398D8A2ED19D2A85C8EDD3EC2AEF",
+        "AA87CA22BE8B05378EB1C71EF320AD746E1D3B628BA79B9859F741E082542A38"
+        "5502F25DBF55296C3A545E3872760AB7",
+        "3617DE4A96262C6F5D9E98BF9292DC29F8F41DBD289A147CE9DA3113B5F0B8C0"
+        "0A60B1CE1D7E819D7A431D7C90EA0E5F",
+        384, "P-384");
 }
 
 void neverc_elliptic_point_init(neverc_elliptic_point_t *pt) {
@@ -509,81 +501,113 @@ void neverc_elliptic_scalar_base_mult(const neverc_elliptic_curve_t *curve,
     neverc_elliptic_point_free(&g);
 }
 
+static int elliptic_encoding_sizes(const neverc_elliptic_curve_t *curve,
+                                   size_t *byte_len, size_t *encoded_len,
+                                   size_t *hex_cap) {
+    if (!curve || curve->bit_size <= 0)
+        return -1;
+    size_t bytes = ((size_t)curve->bit_size + 7) / 8;
+    if (bytes > (SIZE_MAX - 1) / 2 || bytes > (SIZE_MAX - 2) / 2)
+        return -1;
+    *byte_len = bytes;
+    *encoded_len = 1 + bytes * 2;
+    *hex_cap = bytes * 2 + 2;
+    return 0;
+}
+
 int neverc_elliptic_marshal(const neverc_elliptic_curve_t *curve,
                              const neverc_elliptic_point_t *pt,
                              unsigned char *out, size_t out_cap, size_t *out_len) {
     if (out_len) *out_len = 0;
-    if (!curve || !pt || !out || !neverc_elliptic_is_on_curve(curve, pt))
+    if (!curve || !pt || !out)
         return -1;
-    int byte_len = (curve->bit_size + 7) / 8;
-    size_t needed = 1 + (size_t)byte_len * 2;
+    size_t byte_len, needed, hex_cap;
+    if (elliptic_encoding_sizes(curve, &byte_len, &needed, &hex_cap) != 0 ||
+        !neverc_elliptic_is_on_curve(curve, pt))
+        return -1;
     if (out_cap < needed) return -1;
 
     out[0] = 0x04;
-    char hex[256];
-    if (neverc_bigint_string(&pt->x, 16, hex, sizeof(hex)) < 0)
+    char *hex = (char *)malloc(hex_cap);
+    if (!hex)
         return -1;
+    if (neverc_bigint_string(&pt->x, 16, hex, hex_cap) < 0) {
+        free(hex);
+        return -1;
+    }
     size_t hlen = strlen(hex);
-    memset(out + 1, 0, (size_t)byte_len);
-    for (size_t i = 0; i < hlen && i < (size_t)byte_len * 2; i++) {
+    memset(out + 1, 0, byte_len);
+    for (size_t i = 0; i < hlen && i < byte_len * 2; i++) {
         int v;
         char c = hex[hlen - 1 - i];
         if (c >= '0' && c <= '9') v = c - '0';
         else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
         else v = c - 'A' + 10;
-        out[1 + byte_len - 1 - (int)(i / 2)] |= (unsigned char)(v << ((i % 2) * 4));
+        out[1 + byte_len - 1 - i / 2] |= (unsigned char)(v << ((i % 2) * 4));
     }
 
-    if (neverc_bigint_string(&pt->y, 16, hex, sizeof(hex)) < 0)
+    if (neverc_bigint_string(&pt->y, 16, hex, hex_cap) < 0) {
+        free(hex);
         return -1;
+    }
     hlen = strlen(hex);
-    memset(out + 1 + byte_len, 0, (size_t)byte_len);
-    for (size_t i = 0; i < hlen && i < (size_t)byte_len * 2; i++) {
+    memset(out + 1 + byte_len, 0, byte_len);
+    for (size_t i = 0; i < hlen && i < byte_len * 2; i++) {
         int v;
         char c = hex[hlen - 1 - i];
         if (c >= '0' && c <= '9') v = c - '0';
         else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
         else v = c - 'A' + 10;
-        out[1 + byte_len + byte_len - 1 - (int)(i / 2)] |= (unsigned char)(v << ((i % 2) * 4));
+        out[1 + byte_len + byte_len - 1 - i / 2] |=
+            (unsigned char)(v << ((i % 2) * 4));
     }
+    free(hex);
 
     if (out_len) *out_len = needed;
     return 0;
 }
 
 int neverc_elliptic_unmarshal(const neverc_elliptic_curve_t *curve,
-                               neverc_elliptic_point_t *pt,
+    neverc_elliptic_point_t *pt,
                                const unsigned char *data, size_t data_len) {
     if (!curve || !pt || !data) return -1;
-    int byte_len = (curve->bit_size + 7) / 8;
-    size_t expected = 1 + (size_t)byte_len * 2;
+    size_t byte_len, expected, hex_cap;
+    if (elliptic_encoding_sizes(curve, &byte_len, &expected, &hex_cap) != 0)
+        return -1;
     if (data_len != expected || data[0] != 0x04) return -1;
 
     neverc_elliptic_point_t parsed;
     neverc_elliptic_point_init(&parsed);
 
-    char hex[256];
-    int pos = 0;
-    for (int i = 0; i < byte_len; i++) {
+    char *hex = (char *)malloc(hex_cap);
+    if (!hex) {
+        neverc_elliptic_point_free(&parsed);
+        return -1;
+    }
+    size_t pos = 0;
+    for (size_t i = 0; i < byte_len; i++) {
         hex[pos++] = "0123456789abcdef"[data[1 + i] >> 4];
         hex[pos++] = "0123456789abcdef"[data[1 + i] & 0x0F];
     }
     hex[pos] = '\0';
     if (neverc_bigint_set_string(&parsed.x, hex, 16) != 0) {
+        free(hex);
         neverc_elliptic_point_free(&parsed);
         return -1;
     }
 
     pos = 0;
-    for (int i = 0; i < byte_len; i++) {
+    for (size_t i = 0; i < byte_len; i++) {
         hex[pos++] = "0123456789abcdef"[data[1 + byte_len + i] >> 4];
         hex[pos++] = "0123456789abcdef"[data[1 + byte_len + i] & 0x0F];
     }
     hex[pos] = '\0';
     if (neverc_bigint_set_string(&parsed.y, hex, 16) != 0) {
+        free(hex);
         neverc_elliptic_point_free(&parsed);
         return -1;
     }
+    free(hex);
 
     if (!neverc_elliptic_is_on_curve(curve, &parsed)) {
         neverc_elliptic_point_free(&parsed);

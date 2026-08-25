@@ -95,21 +95,24 @@ static inline int nci_tls_name_is_ip_literal(const char *name) {
         return 1;
     int dots = 0;
     int group = 0;
+    unsigned int value = 0;
     for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
         if (*p == '.') {
-            if (group == 0 || dots >= 3)
+            if (group == 0 || value > 255 || dots >= 3)
                 return 0;
             dots++;
             group = 0;
+            value = 0;
         } else if (*p >= '0' && *p <= '9') {
             group++;
             if (group > 3)
                 return 0;
+            value = value * 10U + (unsigned int)(*p - '0');
         } else {
             return 0;
         }
     }
-    return dots == 3 && group > 0;
+    return dots == 3 && group > 0 && value <= 255;
 }
 
 #define TLS_SIG_ECDSA_SHA256 \
@@ -198,6 +201,8 @@ struct neverc_tls_config {
     int session_mutex_initialized;
     uint8_t *cert_der;
     size_t   cert_der_len;
+    uint8_t *cert_chain;
+    size_t   cert_chain_len;
     uint8_t *key_der;
     size_t   key_der_len;
     int      key_type; /* 0=unknown, 1=RSA, 2=ECDSA, 3=Ed25519 */

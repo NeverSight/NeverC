@@ -231,6 +231,8 @@ static void test_pow(void) {
     check_cmplx("pow(Inf+Inf i,0)=1", neverc_cmplx_pow(C(NC_INF, NC_INF), C(0.0, 0.0)), 1.0, 0.0);
     check_cmplx("pow(NaN,0)=1", neverc_cmplx_pow(C(NC_NAN, 0.0), C(0.0, 0.0)), 1.0, 0.0);
     check_cmplx("pow(NaN+NaN i,0)=1", neverc_cmplx_pow(C(NC_NAN, NC_NAN), C(0.0, 0.0)), 1.0, 0.0);
+    check_cmplx("pow(2,+Inf)=NaN", neverc_cmplx_pow(C(2.0, 0.0), C(NC_INF, 0.0)), NC_NAN, NC_NAN);
+    check_cmplx("pow(2,-Inf)=NaN", neverc_cmplx_pow(C(2.0, 0.0), C(-NC_INF, 0.0)), NC_NAN, NC_NAN);
 }
 
 /* ===== Trigonometric ===== */

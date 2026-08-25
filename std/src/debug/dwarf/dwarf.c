@@ -588,12 +588,7 @@ static int read_form_string_depth(uint16_t form,
                 return -1;
             *value = (const char *)(d->debug_str + (size_t)off);
         } else if (resolved_form == NEVERC_DW_FORM_line_strp) {
-            if (!d->debug_line_str && d->debug_line_str_len == 0) {
-                /* The ABI-compatible initializer predates .debug_line_str.
-                 * Consume the form safely even when that optional section was
-                 * not attached by the caller. */
-                *value = "";
-            } else if (d->debug_line_str &&
+            if (d->debug_line_str &&
                        off < d->debug_line_str_len &&
                        memchr(d->debug_line_str + (size_t)off, 0,
                               d->debug_line_str_len - (size_t)off) != NULL) {
@@ -602,9 +597,10 @@ static int read_form_string_depth(uint16_t form,
                 return -1;
             }
         } else {
-            /* Supplementary and indexed strings need sections that are not
-             * part of this compact API. Consume them safely and leave empty. */
-            *value = "";
+            /* Supplementary and indexed strings need tables that are not
+             * part of this compact API. Returning an invented empty string
+             * would make missing data indistinguishable from a real value. */
+            return -1;
         }
         return 1;
     }
@@ -657,6 +653,14 @@ static void set_entry_uint_attr(neverc_dwarf_entry_t *entry,
     default:
         break;
     }
+}
+
+static int dwarf_form_is_cu_relative_ref(uint16_t form) {
+    return form == NEVERC_DW_FORM_ref1 ||
+           form == NEVERC_DW_FORM_ref2 ||
+           form == NEVERC_DW_FORM_ref4 ||
+           form == NEVERC_DW_FORM_ref8 ||
+           form == NEVERC_DW_FORM_ref_udata;
 }
 
 int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
@@ -786,6 +790,14 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
                     return -1;
                 }
                 if (rc > 0) {
+                    if (attr == NEVERC_DW_AT_type &&
+                        dwarf_form_is_cu_relative_ref(resolved_form)) {
+                        if (val > UINT64_MAX - (uint64_t)cu_offset) {
+                            free_abbrevs(&local);
+                            return -1;
+                        }
+                        val += (uint64_t)cu_offset;
+                    }
                     set_entry_uint_attr(
                         &entry, attr, resolved_form, val);
                 } else {

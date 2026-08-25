@@ -63,6 +63,15 @@ static void status_handler(neverc_http_request_t *req,
     neverc_http_write_string(w, "created");
 }
 
+static void large_handler(neverc_http_request_t *req,
+                          neverc_http_response_writer_t *w) {
+    (void)req;
+    char block[4096];
+    memset(block, 'L', sizeof(block));
+    for (int i = 0; i < 512; i++)
+        if (neverc_http_write(w, block, sizeof(block)) != 0) return;
+}
+
 #ifndef _WIN32
 static void content_type_handler(neverc_http_request_t *req,
                                  neverc_http_response_writer_t *w) {
@@ -140,6 +149,25 @@ static void test_server_status_code(void) {
         neverc_http_response_free(resp);
     }
 
+    neverc_httptest_close(ts);
+}
+
+static void test_large_response_write_all(void) {
+    printf("[large_response_write_all]\n");
+
+    neverc_httptest_server_t *ts = neverc_httptest_new_server(large_handler);
+    check_not_null("large response server", ts);
+    if (!ts) return;
+    neverc_http_response_t *resp = neverc_http_get(neverc_httptest_url(ts));
+    check_not_null("large response", resp);
+    if (resp) {
+        check_true("large response is complete",
+                   resp->error == NULL && resp->body &&
+                   resp->body_len == 512U * 4096U &&
+                   resp->body[0] == 'L' &&
+                   resp->body[resp->body_len - 1U] == 'L');
+        neverc_http_response_free(resp);
+    }
     neverc_httptest_close(ts);
 }
 
@@ -269,12 +297,11 @@ static void test_httptest_strict_parser(void) {
 
     n = httptest_raw(addr,
         "POST / HTTP/1.1\r\nHost: localhost\r\n"
-        "Connection: close\r\n\r\nhello",
+        "Connection: close\r\n\r\n",
         buf, sizeof(buf));
-    check_int("post without cl 400",
-              n > 0 && strstr(buf, "400 Bad Request") != NULL, 1);
-    check_int("post without cl not silent empty body",
-              n > 0 && strstr(buf, "no body") == NULL, 1);
+    check_int("post without cl is empty body",
+              n > 0 && strstr(buf, "400 Bad Request") == NULL &&
+              strstr(buf, "no body") != NULL, 1);
 
     n = httptest_raw(addr,
         "POST / HTTP/1.1\r\nHost: localhost\r\n"
@@ -366,6 +393,7 @@ int main(void) {
     test_new_server();
     test_server_with_path();
     test_server_status_code();
+    test_large_response_write_all();
 #ifndef _WIN32
     test_httptest_strict_parser();
 #endif

@@ -24,8 +24,6 @@ static char *dup_range(const char *s, size_t n) {
 }
 
 static int xml_char_is_valid(uint32_t codepoint) {
-    if (codepoint >= 0xfdd0 && codepoint <= 0xfdef) return 0;
-    if ((codepoint & 0xfffeU) == 0xfffeU) return 0;
     return codepoint == 0x09 || codepoint == 0x0a ||
            codepoint == 0x0d ||
            (codepoint >= 0x20 && codepoint <= 0xd7ff) ||
@@ -517,6 +515,8 @@ int neverc_xml_decode_token(neverc_xml_decoder_t *d, neverc_xml_token_t *tok) {
 
     if (d->pos >= d->len) { tok->type = NEVERC_XML_EOF; return 0; }
 
+    size_t token_start = d->pos;
+
     if (d->src[d->pos] != '<') {
         size_t start = d->pos;
         /* Character data runs until the next '<'; memchr scans it in bulk
@@ -621,9 +621,19 @@ int neverc_xml_decode_token(neverc_xml_decoder_t *d, neverc_xml_token_t *tok) {
         if (!tok->data) goto error;
         d->pos += 2;
         if (target_length == 3 &&
-            xml_memieq(d->src + target_start, 3, "xml") &&
-            !xml_decl_ok(tok->data, tok->data_len))
-            goto error;
+            xml_memieq(d->src + target_start, 3, "xml")) {
+            size_t document_start =
+                d->len >= 3 &&
+                (unsigned char)d->src[0] == 0xef &&
+                (unsigned char)d->src[1] == 0xbb &&
+                (unsigned char)d->src[2] == 0xbf ? 3 : 0;
+            /* XML reserves the target in every case combination, while the
+             * declaration itself must be lowercase and start the document. */
+            if (token_start != document_start ||
+                memcmp(d->src + target_start, "xml", 3) != 0 ||
+                !xml_decl_ok(tok->data, tok->data_len))
+                goto error;
+        }
         return 1;
     }
 

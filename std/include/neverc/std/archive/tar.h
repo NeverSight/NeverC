@@ -49,6 +49,8 @@ typedef struct {
     int            ended;
 } neverc_tar_reader_t;
 
+/* The reader borrows data; it must remain unchanged and alive until the last
+ * next/read call. Reinitializing a reader is safe and releases no storage. */
 void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t len);
 /* Returns 1 for an entry, 0 after the required two consecutive zero end
  * blocks, or -1 for malformed or unterminated input. All bytes after the
@@ -72,6 +74,8 @@ typedef struct {
     int      failed;
 } neverc_tar_writer_t;
 
+/* The writer owns its data buffer. Its bytes remain available through w->data
+ * until free; call free before reinitializing a writer that has been used. */
 void neverc_tar_writer_init(neverc_tar_writer_t *w);
 /* Starts an entry. The preceding entry must have received exactly header.size
  * bytes; a hard link may have a non-zero pax linkdata body. Names over 100

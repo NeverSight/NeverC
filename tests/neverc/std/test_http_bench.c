@@ -581,8 +581,8 @@ int main(void) {
 #endif
 
     if (wait_for_http_ready(g_server_port, 30) != 0) {
-        printf("  SKIP: server did not become ready\n");
-        printf("0/0 benchmarks passed\n");
+        printf("  FAIL: server did not become ready\n");
+        printf("0/0 benchmarks passed, startup FAILED\n");
         neverc_http_shutdown();
 #ifdef _WIN32
         WaitForSingleObject(srv, 3000);
@@ -590,7 +590,7 @@ int main(void) {
 #else
         pthread_join(srv, NULL);
 #endif
-        return 0;
+        return 1;
     }
 
     test_connection_rate();

@@ -162,7 +162,7 @@ int nci_tls_send_encrypted_unlocked(
     neverc_tls_conn_t *conn, uint8_t inner_type,
     const uint8_t *data, size_t len) {
     if (!conn || !conn->tcp || (!data && len != 0) ||
-        len >= TLS_MAX_PLAINTEXT || conn->write_closed)
+        len > TLS_MAX_PLAINTEXT || conn->write_closed)
         return -1;
     tls_traffic_keys_t *keys = &conn->write_keys;
     if (keys->seq == UINT64_MAX) {
@@ -766,6 +766,79 @@ int neverc_tls_test_reject_post_handshake_key_update_flood(void) {
         strstr(reason, "too many non-advancing TLS records") == NULL)
         return -1;
     return 0;
+}
+
+int neverc_tls_test_reject_post_handshake_ticket_flood(void) {
+    static const uint8_t ticket[] = {
+        TLS_HS_NEW_SESSION_TICKET, 0x00, 0x00, 0x0e,
+        0x00, 0x00, 0x00, 0x00, /* lifetime: valid, not cacheable */
+        0x00, 0x00, 0x00, 0x00, /* age_add */
+        0x00,                   /* nonce */
+        0x00, 0x01, 0xff,       /* ticket */
+        0x00, 0x00              /* extensions */
+    };
+    neverc_tls_conn_t *reader_conn = NULL;
+    neverc_tls_conn_t *writer_conn = NULL;
+    neverc_tls_config_t *config = neverc_tls_config_new();
+    if (!config || tls_test_post_handshake_key_update_pipe(
+            &reader_conn, &writer_conn) != 0) {
+        neverc_tls_config_free(config);
+        return -1;
+    }
+    reader_conn->config = config;
+    unsigned int i;
+    for (i = 0; i < TLS_MAX_NON_ADVANCING_RECORDS + 1; i++) {
+        if (nci_tls_send_encrypted(
+                writer_conn, TLS_CT_HANDSHAKE,
+                ticket, sizeof(ticket)) != 0) {
+            neverc_tls_close(reader_conn);
+            neverc_tls_close(writer_conn);
+            return -1;
+        }
+    }
+    static const uint8_t payload[] = {'o', 'k'};
+    (void)nci_tls_send_encrypted(
+        writer_conn, TLS_CT_APPLICATION_DATA, payload, sizeof(payload));
+    uint8_t buf[sizeof(payload)];
+    int got = neverc_tls_read(reader_conn, buf, sizeof(buf));
+    const char *reason = reader_conn->failure_reason;
+    int valid = got == -1 && reason &&
+        strstr(reason, "too many non-advancing TLS records") != NULL;
+    neverc_tls_close(reader_conn);
+    neverc_tls_close(writer_conn);
+    return valid ? 0 : -1;
+}
+
+int neverc_tls_test_max_plaintext_application_record(void) {
+    neverc_tls_conn_t *reader_conn = NULL;
+    neverc_tls_conn_t *writer_conn = NULL;
+    if (tls_test_post_handshake_key_update_pipe(
+            &reader_conn, &writer_conn) != 0)
+        return -1;
+
+    uint8_t *sent = (uint8_t *)malloc(TLS_MAX_PLAINTEXT);
+    uint8_t *received = (uint8_t *)malloc(TLS_MAX_PLAINTEXT);
+    if (!sent || !received) {
+        free(sent);
+        free(received);
+        neverc_tls_close(reader_conn);
+        neverc_tls_close(writer_conn);
+        return -1;
+    }
+    for (size_t i = 0; i < TLS_MAX_PLAINTEXT; i++)
+        sent[i] = (uint8_t)i;
+    int written = neverc_tls_write(
+        writer_conn, sent, TLS_MAX_PLAINTEXT);
+    int read = neverc_tls_read(
+        reader_conn, received, TLS_MAX_PLAINTEXT);
+    int valid = written == TLS_MAX_PLAINTEXT &&
+        read == TLS_MAX_PLAINTEXT &&
+        memcmp(sent, received, TLS_MAX_PLAINTEXT) == 0;
+    free(sent);
+    free(received);
+    neverc_tls_close(reader_conn);
+    neverc_tls_close(writer_conn);
+    return valid ? 0 : -1;
 }
 
 int neverc_tls_test_reject_plaintext_record_overflow(void) {

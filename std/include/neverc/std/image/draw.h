@@ -12,6 +12,10 @@ typedef enum {
     NEVERC_DRAW_OVER = 1,
 } neverc_draw_op_t;
 
+/* RGBA inputs use premultiplied-alpha channels: r, g, and b must each be no
+ * greater than alpha. `neverc_draw_gray_over` applies mask coverage to the
+ * supplied premultiplied color before compositing. */
+
 void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
                  const neverc_image_rgba_t *src, neverc_point_t sp,
                  neverc_draw_op_t op);

@@ -29,8 +29,10 @@ int neverc_cipher_cbc_decrypt(
  * AES-CTR: Counter mode.
  * Encrypts/decrypts arbitrary-length data (CTR is its own inverse).
  * IV is 16 bytes (nonce || counter); modified in-place.
- * Invalid keys, spans, or a request that would wrap the 32-bit counter
- * leave IV and output unchanged.
+ * Invalid keys, spans, or a request that would consume/wrap the terminal
+ * 32-bit counter value leave IV and output unchanged. Because IV is the full
+ * caller-visible state, counter 0xffffffff is retained as the terminal IV and
+ * is not consumed; this avoids reserving a legitimate IV as a hidden sentinel.
  */
 void neverc_cipher_ctr(
     const uint8_t *key, int key_len,

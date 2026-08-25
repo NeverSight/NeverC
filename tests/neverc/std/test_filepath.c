@@ -117,6 +117,8 @@ static void test_is_local_and_volume(void) {
     ASSERT_FALSE(neverc_filepath_is_local("\\??\\C:\\foo"));
     ASSERT_FALSE(neverc_filepath_is_local("NUL"));
     ASSERT_FALSE(neverc_filepath_is_local("con"));
+    ASSERT_TRUE(neverc_filepath_is_local("CON            X"));
+    ASSERT_FALSE(neverc_filepath_is_local("CON            .txt"));
     ASSERT_TRUE(neverc_filepath_is_local("COM0"));
     ASSERT_TRUE(neverc_filepath_is_local("COM10"));
     ASSERT_TRUE(neverc_filepath_is_local("LPT0"));

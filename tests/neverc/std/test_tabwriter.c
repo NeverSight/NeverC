@@ -363,6 +363,27 @@ static void test_max_lines_sets_failed(neverc_tabwriter_t *w) {
     neverc_tabwriter_reset(w);
 }
 
+static void test_exact_max_lines_preserves_final_newline(
+    neverc_tabwriter_t *w) {
+    printf("[exact_max_lines_preserves_final_newline]\n");
+    neverc_tabwriter_init(w, 1, 8, 1, ' ', 0);
+    size_t n = (size_t)NEVERC_TABWRITER_MAX_LINES;
+    char *buf = (char *)malloc(n);
+    ASSERT_INT_EQ(buf != NULL, 1);
+    if (!buf) return;
+    memset(buf, '\n', n);
+    neverc_tabwriter_write(w, buf, n);
+    neverc_tabwriter_flush(w);
+    size_t out_len = 0;
+    const char *out = neverc_tabwriter_output(w, &out_len);
+    int valid = out != NULL && out_len == n;
+    for (size_t i = 0; valid && i < out_len; i++)
+        valid = out[i] == '\n';
+    ASSERT_INT_EQ(valid, 1);
+    free(buf);
+    neverc_tabwriter_reset(w);
+}
+
 static void test_max_cols_sets_failed(neverc_tabwriter_t *w) {
     printf("[max_cols_sets_failed]\n");
     neverc_tabwriter_init(w, 1, 0, 0, '.', 0);
@@ -447,6 +468,8 @@ int main(void) {
     test_filter_html_entity_width(w);
     neverc_tabwriter_reset(w);
     test_full_buf_tab_ends_cell(w);
+    neverc_tabwriter_reset(w);
+    test_exact_max_lines_preserves_final_newline(w);
     neverc_tabwriter_reset(w);
     test_max_lines_sets_failed(w);
     neverc_tabwriter_reset(w);

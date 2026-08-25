@@ -76,6 +76,7 @@ static int html_is_name_char(unsigned char c) {
            (c >= '0' && c <= '9');
 }
 
+#if 0
 /* Consumed length including '&', or 0.
  * need_semi == 0: HTML4 names may omit ';' even when the next byte is
  * alphanumeric (Go: `&notin` is `&not` + `in`).
@@ -104,6 +105,7 @@ static int match_amp_entity(const char *s, size_t slen, size_t i) {
         return 0;
     return n;
 }
+#endif
 
 /* HTML numeric references 0x80..0x9F are decoded as Windows-1252, like Go. */
 static const uint32_t html_win1252[32] = {
@@ -154,10 +156,14 @@ static int html_append_rune(char *r, size_t *wi, size_t cap, uint32_t val) {
 
 typedef struct {
     const char *name;
-    uint32_t    rune;
-    uint8_t     need_semi;
+    uint8_t     name_len;
+    uint32_t    rune1;
+    uint32_t    rune2;
 } html_named_entity_t;
 
+#include "html_entities.h"
+
+#if 0
 /* Longer names first so &notin; is not consumed as &not;.
  * need_semi: 0 = HTML4 (semicolon optional), 1 = HTML5 (required). */
 static const html_named_entity_t html_named[] = {
@@ -285,6 +291,32 @@ static const html_named_entity_t html_named[] = {
     {"ast",     0x002A, 1},
     {"not",     0x00AC, 0},
 };
+#endif
+
+static int html_entity_name_compare(
+    const char *name, size_t name_len, const html_named_entity_t *entry) {
+    size_t common = name_len < entry->name_len ? name_len : entry->name_len;
+    int compared = memcmp(name, entry->name, common);
+    if (compared != 0) return compared;
+    if (name_len < entry->name_len) return -1;
+    if (name_len > entry->name_len) return 1;
+    return 0;
+}
+
+static const html_named_entity_t *html_entity_lookup(
+    const char *name, size_t name_len) {
+    size_t lo = 0;
+    size_t hi = sizeof(html_named_entities) / sizeof(html_named_entities[0]);
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2U;
+        int compared = html_entity_name_compare(
+            name, name_len, &html_named_entities[mid]);
+        if (compared == 0) return &html_named_entities[mid];
+        if (compared < 0) hi = mid;
+        else lo = mid + 1U;
+    }
+    return NULL;
+}
 
 char *neverc_html_unescape_string(const char *s, size_t *outlen) {
     if (!outlen) return NULL;
@@ -314,46 +346,42 @@ char *neverc_html_unescape_string(const char *s, size_t *outlen) {
     while (i < slen) {
         if (s[i] == '&') {
             {
-                int n;
-                if ((n = match_amp_entity(s, slen, i))) {
-                    r[wi++] = '&'; i += (size_t)n; continue;
-                }
-                /* Longer HTML5 names before HTML4 lt/gt/quot so
-                 * `&ltimes;` is U+22C9, not `<` + `imes;`. */
-                int named_hit = 0;
-                for (size_t e = 0; e < sizeof(html_named) / sizeof(html_named[0]); e++) {
-                    const char *name = html_named[e].name;
-                    size_t nlen = strlen(name);
-                    n = match_named_entity(s, slen, i, name, nlen,
-                                           (int)html_named[e].need_semi);
-                    if (n) {
-                        if (html_append_rune(r, &wi, cap, html_named[e].rune) != 0) {
-                            free(r);
-                            return NULL;
+                size_t name_start = i + 1U;
+                size_t name_end = name_start;
+                while (name_end < slen &&
+                       html_is_name_char((unsigned char)s[name_end]))
+                    name_end++;
+                if (name_end < slen && s[name_end] == ';')
+                    name_end++;
+                size_t matched_len = name_end - name_start;
+                const html_named_entity_t *entity = matched_len > 0
+                    ? html_entity_lookup(s + name_start, matched_len) : NULL;
+                if (!entity && matched_len > 1U) {
+                    /* Go html.UnescapeString falls back to the longest legacy
+                     * semicolon-less prefix, whose maximum length is six. */
+                    size_t candidate_len = matched_len - 1U;
+                    if (candidate_len > 6U) candidate_len = 6U;
+                    while (candidate_len > 1U) {
+                        entity = html_entity_lookup(
+                            s + name_start, candidate_len);
+                        if (entity) {
+                            matched_len = candidate_len;
+                            break;
                         }
-                        i += (size_t)n;
-                        named_hit = 1;
-                        break;
+                        candidate_len--;
                     }
                 }
-                if (named_hit) continue;
-                if ((n = match_named_entity(s, slen, i, "lt", 2, 0)) ||
-                    (n = match_named_entity(s, slen, i, "LT", 2, 0))) {
-                    r[wi++] = '<'; i += (size_t)n; continue;
+                if (entity) {
+                    if (html_append_rune(
+                            r, &wi, cap, entity->rune1) != 0 ||
+                        (entity->rune2 != 0 && html_append_rune(
+                            r, &wi, cap, entity->rune2) != 0)) {
+                        free(r);
+                        return NULL;
+                    }
+                    i += matched_len + 1U;
+                    continue;
                 }
-                if ((n = match_named_entity(s, slen, i, "gt", 2, 0)) ||
-                    (n = match_named_entity(s, slen, i, "GT", 2, 0))) {
-                    r[wi++] = '>'; i += (size_t)n; continue;
-                }
-                if ((n = match_named_entity(s, slen, i, "quot", 4, 0)) ||
-                    (n = match_named_entity(s, slen, i, "QUOT", 4, 0))) {
-                    r[wi++] = '"'; i += (size_t)n; continue;
-                }
-                if ((n = match_named_entity(s, slen, i, "apos", 4, 1))) {
-                    r[wi++] = '\''; i += (size_t)n; continue;
-                }
-                if (starts_with(s + i, "&#34;"))  { r[wi++] = '"';  i += 5; continue; }
-                if (starts_with(s + i, "&#39;"))  { r[wi++] = '\''; i += 5; continue; }
             }
 
             if (starts_with(s + i, "&#")) {

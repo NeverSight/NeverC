@@ -28,10 +28,11 @@ bool isSubModule(llvm::StringRef CatName, llvm::StringRef SubName);
 /// Returns true for any known module name (top-level or submodule).
 bool isModuleName(llvm::StringRef Name);
 
+/// Returns true only when the manifest registers this exact marker/method.
 bool isModuleMethod(llvm::StringRef ModuleName, llvm::StringRef MethodName);
 
-/// ("math", "sqrt") → "neverc_math_sqrt"
-/// ("sha256", "sum") → "neverc_sha256_sum"
+/// Resolve the exact manifest target, including non-prefix mappings such as
+/// ("big", "init") → "neverc_bigint_init". Returns empty when unregistered.
 std::string getModuleFunctionName(llvm::StringRef ModuleName,
                                   llvm::StringRef MethodName);
 

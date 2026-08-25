@@ -261,12 +261,15 @@ static void test_invalid_pem(void) {
     }
 
     const char *noncanonical =
-        "-----BEGIN FOO-----\nYR==\n-----END FOO-----\n";
+        "-----BEGIN FOO-----\n/x==\n-----END FOO-----\n";
     rc = neverc_pem_decode(noncanonical, strlen(noncanonical),
                             type_buf, sizeof(type_buf),
                             out_buf, sizeof(out_buf),
                             &bytes_written, NULL);
-    check_int("noncanonical base64 tail bits", rc, -1);
+    check_int("Go-compatible nonzero base64 tail bits", rc, 0);
+    check_str("noncanonical base64 type", type_buf, "FOO");
+    check_int("noncanonical base64 length", (int)bytes_written, 1);
+    check_int("noncanonical base64 byte", out_buf[0], 0xff);
 
     const char *unpadded_one =
         "-----BEGIN FOO-----\nZg\n-----END FOO-----\n";

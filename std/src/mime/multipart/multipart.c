@@ -64,12 +64,20 @@ static int multipart_header_value_valid(const unsigned char *s, size_t n) {
     return 1;
 }
 
+enum multipart_newline_mode {
+    MULTIPART_NL_ANY = 0,
+    MULTIPART_NL_FIRST,
+    MULTIPART_NL_CRLF,
+    MULTIPART_NL_LF
+};
+
 /* True when `--boundary` at suffix_offset is a whole delimiter line.
  * extra_crlf: pretend a CRLF follows `data` (write appends `\r\n` after the
  * body, so a body that is exactly `--bnd` / `--bnd--` / `--bnd` + LWSP would
  * become a real delimiter on the wire). A prefix such as `--bndX` is not. */
 static int delimiter_after_marker(const unsigned char *data, size_t length,
                                   size_t suffix_offset, int extra_crlf,
+                                  enum multipart_newline_mode newline_mode,
                                   int *closing, const unsigned char **after) {
     size_t k = suffix_offset;
     int is_close = (k + 1 < length && data[k] == '-' && data[k + 1] == '-');
@@ -87,18 +95,16 @@ static int delimiter_after_marker(const unsigned char *data, size_t length,
         return 0;
     }
     if (k + 1 < length && data[k] == '\r' && data[k + 1] == '\n') {
+        if (newline_mode == MULTIPART_NL_LF)
+            return 0;
         if (closing) *closing = is_close;
         if (after) *after = data + k + 2;
         return 1;
     }
     if (data[k] == '\n') {
-        if (closing) *closing = is_close;
-        if (after) *after = data + k + 1;
-        return 1;
-    }
-    /* Lone CR is a line ending only at EOF of the message, not when the
-     * writer will append another `\r\n` (`--bnd\r` + `\r\n` is `\r\r\n`). */
-    if (k + 1 == length && data[k] == '\r' && !extra_crlf) {
+        if (newline_mode == MULTIPART_NL_CRLF ||
+            (newline_mode == MULTIPART_NL_FIRST && is_close))
+            return 0;
         if (closing) *closing = is_close;
         if (after) *after = data + k + 1;
         return 1;
@@ -108,8 +114,9 @@ static int delimiter_after_marker(const unsigned char *data, size_t length,
 
 static const unsigned char *find_boundary_line(
     const nci_ss_finder_t *finder, const unsigned char *data, size_t length,
-    size_t marker_length, int *closing, const unsigned char **after) {
-    size_t search_offset = 0;
+    size_t marker_length, size_t search_offset,
+    enum multipart_newline_mode newline_mode, int *closing,
+    const unsigned char **after) {
     while (search_offset <= length) {
         const unsigned char *candidate = find_boundary_f(
             finder, data + search_offset, length - search_offset);
@@ -118,6 +125,7 @@ static const unsigned char *find_boundary_line(
         int line_start = offset == 0 || data[offset - 1] == '\n';
         if (line_start &&
             delimiter_after_marker(data, length, offset + marker_length, 0,
+                                   newline_mode,
                                    closing, after))
             return candidate;
         search_offset = offset + 1;
@@ -133,9 +141,11 @@ static int body_injects_boundary(const unsigned char *body, size_t body_len,
     if (!body || body_len < dlen)
         return 0;
     for (size_t i = 0; i + dlen <= body_len; i++) {
-        if ((i == 0 || body[i - 1] == '\n') &&
+        if ((i == 0 ||
+             (i >= 2 && body[i - 2] == '\r' && body[i - 1] == '\n')) &&
             memcmp(body + i, delim, dlen) == 0 &&
-            delimiter_after_marker(body, body_len, i + dlen, 1, NULL, NULL))
+            delimiter_after_marker(body, body_len, i + dlen, 1,
+                                   MULTIPART_NL_CRLF, NULL, NULL))
             return 1;
     }
     return 0;
@@ -240,36 +250,75 @@ int neverc_multipart_parse(const unsigned char *data, size_t data_len,
     int closing = 0;
     const unsigned char *pos = NULL;
     const unsigned char *first = find_boundary_line(
-        &df, data, data_len, dlen, &closing, &pos);
+        &df, data, data_len, dlen, 0, MULTIPART_NL_FIRST, &closing, &pos);
     if (!first) return -1;
     if (closing) return 0;
 
+    /* Go starts in CRLF mode and switches to LF only when the first ordinary
+     * boundary itself ends in LF. All following boundary prefixes and line
+     * endings are matched against this recorded Reader.nl. */
+    enum multipart_newline_mode newline_mode =
+        pos >= data + 2 && pos[-2] == '\r' && pos[-1] == '\n'
+            ? MULTIPART_NL_CRLF
+            : MULTIPART_NL_LF;
+
     while (pos < data + data_len) {
         if (out->part_count >= NEVERC_MULTIPART_MAX_PARTS) goto fail;
+        neverc_multipart_part_t *part = &out->parts[out->part_count];
         const unsigned char *after = NULL;
         size_t remaining = data_len - (size_t)(pos - data);
-        const unsigned char *next = find_boundary_line(
-            &df, pos, remaining, dlen, &closing, &after);
-        if (!next) goto fail;
-
-        /* Headers + body sit between pos and the next dash-boundary. Do not
-         * strip the delimiter's preceding CRLF before parsing headers: when
-         * the body is empty that CRLF is also the header terminator
-         * (Go: "--b\\r\\nH: v\\r\\n\\r\\n--b--"). */
-        size_t part_len = (size_t)(next - pos);
-
-        neverc_multipart_part_t *part = &out->parts[out->part_count];
+        const unsigned char *next = NULL;
+        size_t part_len = 0;
         size_t body_offset = 0;
-        if (parse_headers(pos, part_len, part, &body_offset) != 0)
-            goto fail;
+        size_t search_offset = 0;
+        for (;;) {
+            next = find_boundary_line(&df, pos, remaining, dlen,
+                                      search_offset, MULTIPART_NL_ANY, &closing,
+                                      &after);
+            if (!next) goto fail;
+
+            /* Headers + body sit between pos and the next dash-boundary. Do
+             * not strip the delimiter's preceding CRLF before parsing headers:
+             * when the body is empty that CRLF is also the header terminator
+             * (Go: "--b\\r\\nH: v\\r\\n\\r\\n--b--"). */
+            part_len = (size_t)(next - pos);
+            int prefix_matches = newline_mode != MULTIPART_NL_CRLF ||
+                                 next == pos ||
+                                 (part_len >= 2 && next[-2] == '\r' &&
+                                  next[-1] == '\n');
+            if (parse_headers(pos, part_len, part, &body_offset) != 0)
+                goto fail;
+
+            /* partReader normally searches for r.nl + "--boundary". Its
+             * total==0 exception also accepts a boundary directly at body
+             * start, so an LF-only header terminator can precede an empty body
+             * even when the multipart boundary mode is CRLF. Otherwise a
+             * marker after LF-only body data is ordinary body text; keep
+             * searching for a CRLF-prefixed delimiter. */
+            if (!prefix_matches && body_offset != part_len) {
+                search_offset = part_len + 1;
+                continue;
+            }
+
+            /* Once the recorded prefix (or total==0 exception) identifies a
+             * boundary, its own line ending must also equal Reader.nl. Go
+             * stops at that candidate and reports an error; it does not turn a
+             * newline-style mismatch into body text and seek a later close. */
+            if (!delimiter_after_marker(pos, remaining, part_len + dlen, 0,
+                                        newline_mode, &closing, &after))
+                goto fail;
+            break;
+        }
         part->body = pos + body_offset;
         size_t body_len = part_len - body_offset;
         /* RFC 2046: the line break immediately before the next dash-boundary
          * belongs to the delimiter, not the body. */
-        if (body_len >= 2 && part->body[body_len - 2] == '\r' &&
+        if (newline_mode == MULTIPART_NL_CRLF && body_len >= 2 &&
+            part->body[body_len - 2] == '\r' &&
             part->body[body_len - 1] == '\n')
             body_len -= 2;
-        else if (body_len >= 1 && part->body[body_len - 1] == '\n')
+        else if (newline_mode == MULTIPART_NL_LF && body_len >= 1 &&
+                 part->body[body_len - 1] == '\n')
             body_len -= 1;
         part->body_len = body_len;
         out->part_count++;
@@ -312,7 +361,7 @@ const char *neverc_multipart_part_header(const neverc_multipart_part_t *part,
 }
 
 int neverc_multipart_generate_boundary(char *buf, size_t cap) {
-    if (!buf || cap < 40) return -1;
+    if (!buf || cap < 33) return -1;
     unsigned char rnd[16];
     if (NCI_MULTIPART_RANDOM(rnd, sizeof(rnd)) != 0) {
         neverc_platform_secure_zero(rnd, sizeof(rnd));

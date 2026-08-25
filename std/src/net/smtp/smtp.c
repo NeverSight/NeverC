@@ -33,6 +33,7 @@ struct neverc_smtp_client {
     neverc_tcp_conn_t *conn;
     neverc_tls_conn_t *tls;
     char server_name[256];
+    char hello_name[256];
     char last_response[SMTP_BUF_SIZE];
     char pending[SMTP_BUF_SIZE];
     size_t pending_len;
@@ -43,6 +44,8 @@ struct neverc_smtp_client {
     int  supports_smtputf8;
     int  supports_starttls;
     int  data_state;
+    int  data_in_headers;
+    int  data_line_has_data;
     int  in_data;
     int  dead;
 };
@@ -54,7 +57,10 @@ static int smtp_write_all(neverc_smtp_client_t *c, const void *data, size_t len)
         int n = c->tls
             ? neverc_tls_write(c->tls, p + sent, len - sent)
             : neverc_tcp_write(c->conn, p + sent, len - sent);
-        if (n <= 0) return -1;
+        if (n <= 0) {
+            c->dead = 1;
+            return -1;
+        }
         sent += (size_t)n;
     }
     return 0;
@@ -131,20 +137,32 @@ static int smtp_read_response(neverc_smtp_client_t *c) {
             }
             line_start = crlf + 2;
         }
-        if (malformed) return -1;
+        if (malformed) {
+            c->dead = 1;
+            return -1;
+        }
         if (complete) break;
 
-        if (total >= SMTP_BUF_SIZE - 1) return -1;
+        if (total >= SMTP_BUF_SIZE - 1) {
+            c->dead = 1;
+            return -1;
+        }
         int n = smtp_read_some(c, c->last_response + total,
                                SMTP_BUF_SIZE - total - 1);
-        if (n <= 0) return -1;
+        if (n <= 0) {
+            c->dead = 1;
+            return -1;
+        }
         total += (size_t)n;
         c->last_response[total] = '\0';
     }
 
     if (consumed < total) {
         size_t leftover = total - consumed;
-        if (leftover >= sizeof(c->pending)) return -1;
+        if (leftover >= sizeof(c->pending)) {
+            c->dead = 1;
+            return -1;
+        }
         memcpy(c->pending, c->last_response + consumed, leftover);
         c->pending_len = leftover;
     }
@@ -189,6 +207,74 @@ static int smtp_safe_atom(const char *s) {
     return !in_literal;
 }
 
+/* Validate one non-ASCII UTF-8 sequence and return its byte length. */
+static int smtp_utf8_sequence_len(const unsigned char *p) {
+    if (p[0] >= 0xc2 && p[0] <= 0xdf)
+        return (p[1] >= 0x80 && p[1] <= 0xbf) ? 2 : -1;
+    if (p[0] == 0xe0)
+        return (p[1] >= 0xa0 && p[1] <= 0xbf &&
+                p[2] >= 0x80 && p[2] <= 0xbf) ? 3 : -1;
+    if ((p[0] >= 0xe1 && p[0] <= 0xec) ||
+        (p[0] >= 0xee && p[0] <= 0xef))
+        return (p[1] >= 0x80 && p[1] <= 0xbf &&
+                p[2] >= 0x80 && p[2] <= 0xbf) ? 3 : -1;
+    if (p[0] == 0xed)
+        return (p[1] >= 0x80 && p[1] <= 0x9f &&
+                p[2] >= 0x80 && p[2] <= 0xbf) ? 3 : -1;
+    if (p[0] == 0xf0)
+        return (p[1] >= 0x90 && p[1] <= 0xbf &&
+                p[2] >= 0x80 && p[2] <= 0xbf &&
+                p[3] >= 0x80 && p[3] <= 0xbf) ? 4 : -1;
+    if (p[0] >= 0xf1 && p[0] <= 0xf3)
+        return (p[1] >= 0x80 && p[1] <= 0xbf &&
+                p[2] >= 0x80 && p[2] <= 0xbf &&
+                p[3] >= 0x80 && p[3] <= 0xbf) ? 4 : -1;
+    if (p[0] == 0xf4)
+        return (p[1] >= 0x80 && p[1] <= 0x8f &&
+                p[2] >= 0x80 && p[2] <= 0xbf &&
+                p[3] >= 0x80 && p[3] <= 0xbf) ? 4 : -1;
+    return -1;
+}
+
+/* RFC 6531 extends SMTP paths with UTF-8, but only after SMTPUTF8 was
+ * advertised. Keep the existing command/path injection restrictions. */
+static int smtp_safe_path(const char *s, int allow_utf8) {
+    const unsigned char *p = (const unsigned char *)s;
+    size_t n = 0;
+    int in_literal = 0;
+    int at_count = 0;
+    if (!s || !s[0] || s[0] == '@') return 0;
+    while (*p) {
+        unsigned char ch = *p;
+        if (ch >= 0x80) {
+            int width;
+            if (!allow_utf8 || (width = smtp_utf8_sequence_len(p)) < 0 ||
+                n + (size_t)width > 255)
+                return 0;
+            p += width;
+            n += (size_t)width;
+            continue;
+        }
+        if (n >= 255 || ch <= 32 || ch == 127 || ch == '<' || ch == '>' ||
+            ch == ',' || ch == ';' || ch == '%' || ch == '!')
+            return 0;
+        if (ch == '[') {
+            if (in_literal) return 0;
+            in_literal = 1;
+        } else if (ch == ']') {
+            if (!in_literal || p[1] != '\0') return 0;
+            in_literal = 0;
+        } else if (ch == ':' && !in_literal) {
+            return 0;
+        } else if (ch == '@' && ++at_count > 1) {
+            return 0;
+        }
+        p++;
+        n++;
+    }
+    return !in_literal;
+}
+
 static int smtp_line_has_break(const char *s, size_t len) {
     for (size_t i = 0; i < len; i++) {
         unsigned char ch = (unsigned char)s[i];
@@ -210,6 +296,7 @@ static int smtp_is_localhost(const char *name) {
  * is a blank CRLF line). Ordinary SMTP commands must not be. */
 static int smtp_cmd_line(neverc_smtp_client_t *c, const char *cmd,
                          int allow_empty) {
+    if (!c || c->dead) return -1;
     size_t len = strlen(cmd);
     char sendbuf[SMTP_BUF_SIZE];
     if ((len == 0 && !allow_empty) || len >= sizeof(sendbuf) - 3 ||
@@ -408,6 +495,7 @@ int neverc_smtp_hello(neverc_smtp_client_t *c, const char *local_name) {
     int code = smtp_cmdf(c, "EHLO %s", local_name);
     if (code == 250) {
         c->did_hello = 1;
+        memcpy(c->hello_name, local_name, strlen(local_name) + 1U);
         c->supports_auth_plain = 0;
         c->supports_auth_login = 0;
         c->supports_8bitmime = 0;
@@ -429,6 +517,7 @@ int neverc_smtp_hello(neverc_smtp_client_t *c, const char *local_name) {
     code = smtp_cmdf(c, "HELO %s", local_name);
     if (code == 250) {
         c->did_hello = 1;
+        memcpy(c->hello_name, local_name, strlen(local_name) + 1U);
         c->supports_auth_plain = 0;
         c->supports_auth_login = 0;
         c->supports_8bitmime = 0;
@@ -453,6 +542,11 @@ int neverc_smtp_starttls(neverc_smtp_client_t *c,
         return -1;
     if (ensure_hello(c) != 0) return -1;
     if (!c->supports_starttls) return -1;
+
+    /* RFC 3207 requires a fresh EHLO after TLS. Preserve an explicitly
+     * selected client identity instead of silently changing it. */
+    char hello_name[sizeof(c->hello_name)];
+    memcpy(hello_name, c->hello_name, sizeof(hello_name));
 
     /* RFC 3207: 220 Ready to start TLS, then the handshake immediately. */
     int code = smtp_cmd(c, "STARTTLS");
@@ -488,7 +582,7 @@ int neverc_smtp_starttls(neverc_smtp_client_t *c,
     c->supports_8bitmime = 0;
     c->supports_smtputf8 = 0;
     c->supports_starttls = 0;
-    if (neverc_smtp_hello(c, "localhost") != 0) {
+    if (neverc_smtp_hello(c, hello_name[0] ? hello_name : "localhost") != 0) {
         c->dead = 1;
         return -1;
     }
@@ -537,10 +631,10 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
         if (code != 235) {
             /* Same leftover class as LOGIN: a 334 challenge or extra reply
              * lines after AUTH must not become MAIL FROM (Go Client.Auth
-             * sends '*'). Bare 535 already finished AUTH; keep the session. */
+            * sends '*'). Bare 535 already finished AUTH; keep the session. */
             if (c->pending_len != 0 || (code >= 300 && code < 400)) {
-                c->dead = 1;
                 (void)smtp_cmd_line(c, "*", 1);
+                c->dead = 1;
             }
             return -1;
         }
@@ -560,40 +654,40 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
         if (code != 334) {
             /* Same leftover class as PLAIN: extra reply lines after a
              * finished 5xx must not become MAIL FROM. Bare 535 keeps
-             * the session. */
+            * the session. */
             if (c->pending_len != 0 || (code >= 300 && code < 400)) {
-                c->dead = 1;
                 (void)smtp_cmd_line(c, "*", 1);
+                c->dead = 1;
             }
             return -1;
         }
         /* Same leftover class as STARTTLS: extra reply lines after 334
          * must not become the next SASL step (Go Client.Auth sends '*'). */
         if (c->pending_len != 0) {
-            c->dead = 1;
             (void)smtp_cmd_line(c, "*", 1);
+            c->dead = 1;
             return -1;
         }
         code = smtp_cmd_line(c, user_b64, 1);
         if (code != 334) {
             /* Go Client.Auth sends '*' only to abort an in-progress SASL
-             * challenge. 535 already finished AUTH; keep the session. */
+            * challenge. 535 already finished AUTH; keep the session. */
             if (c->pending_len != 0 || (code >= 300 && code < 400)) {
-                c->dead = 1;
                 (void)smtp_cmd_line(c, "*", 1);
+                c->dead = 1;
             }
             return -1;
         }
         if (c->pending_len != 0) {
-            c->dead = 1;
             (void)smtp_cmd_line(c, "*", 1);
+            c->dead = 1;
             return -1;
         }
         code = smtp_cmd_line(c, pass_b64, 1);
         if (code != 235) {
             if (c->pending_len != 0 || (code >= 300 && code < 400)) {
-                c->dead = 1;
                 (void)smtp_cmd_line(c, "*", 1);
+                c->dead = 1;
             }
             return -1;
         }
@@ -605,10 +699,9 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
 
 int neverc_smtp_mail(neverc_smtp_client_t *c, const char *from) {
     /* RFC 5321 / Go smtp.Client.Mail: a null reverse-path is "<>". */
-    if (smtp_require_command_phase(c) != 0 || !from ||
-        (from[0] && !smtp_safe_atom(from)))
-        return -1;
+    if (smtp_require_command_phase(c) != 0 || !from) return -1;
     if (ensure_hello(c) != 0) return -1;
+    if (from[0] && !smtp_safe_path(from, c->supports_smtputf8)) return -1;
     /* Go smtp.Client.Mail: advertise BODY=8BITMIME / SMTPUTF8 when EHLO
      * listed those extensions. */
     char extra[32] = "";
@@ -621,9 +714,9 @@ int neverc_smtp_mail(neverc_smtp_client_t *c, const char *from) {
 }
 
 int neverc_smtp_rcpt(neverc_smtp_client_t *c, const char *to) {
-    if (smtp_require_command_phase(c) != 0 || !to || !smtp_safe_atom(to))
-        return -1;
+    if (smtp_require_command_phase(c) != 0 || !to) return -1;
     if (ensure_hello(c) != 0) return -1;
+    if (!smtp_safe_path(to, c->supports_smtputf8)) return -1;
     int code = smtp_cmdf(c, "RCPT TO:<%s>", to);
     /* RFC 5321 §4.3.2 / Go smtp.Client.Rcpt: RCPT success is 25x (250, 251). */
     return (code >= 250 && code <= 259) ? 0 : -1;
@@ -635,6 +728,8 @@ int neverc_smtp_data(neverc_smtp_client_t *c) {
     int code = smtp_cmd(c, "DATA");
     if (code == 354) {
         c->data_state = SMTP_DATA_BEGIN;
+        c->data_in_headers = 1;
+        c->data_line_has_data = 0;
         c->in_data = 1;
     }
     return (code == 354) ? 0 : -1;
@@ -645,32 +740,58 @@ static int smtp_write_data_stuffed(neverc_smtp_client_t *c,
     const uint8_t *bytes = (const uint8_t *)data;
     for (size_t i = 0; i < len; i++) {
         uint8_t ch = bytes[i];
+        uint8_t out[2];
+        size_t out_len = 0;
+        int next_state;
         switch (c->data_state) {
         case SMTP_DATA_BEGIN:
         case SMTP_DATA_BEGIN_LINE:
-            c->data_state = SMTP_DATA_MIDDLE;
-            if (ch == '.' && smtp_write_all(c, ".", 1) != 0)
-                return -1;
+            if (ch == '.') out[out_len++] = '.';
             /* fall through */
         case SMTP_DATA_MIDDLE:
             if (ch == '\r') {
-                c->data_state = SMTP_DATA_CR;
+                next_state = SMTP_DATA_CR;
             } else if (ch == '\n') {
-                if (smtp_write_all(c, "\r", 1) != 0)
-                    return -1;
-                c->data_state = SMTP_DATA_BEGIN_LINE;
-            }
+                out[out_len++] = '\r';
+                next_state = SMTP_DATA_BEGIN_LINE;
+            } else
+                next_state = SMTP_DATA_MIDDLE;
             break;
         case SMTP_DATA_CR:
-            c->data_state =
-                ch == '\n' ? SMTP_DATA_BEGIN_LINE : SMTP_DATA_MIDDLE;
+            next_state = ch == '\n' ? SMTP_DATA_BEGIN_LINE : SMTP_DATA_MIDDLE;
             break;
         default:
             return -1;
         }
-        if (smtp_write_all(c, &ch, 1) != 0)
-            return -1;
+        out[out_len++] = ch;
+        if (smtp_write_all(c, out, out_len) != 0) return -1;
+        c->data_state = next_state;
     }
+    return 0;
+}
+
+static int smtp_validate_data_capabilities(const neverc_smtp_client_t *c,
+                                           const uint8_t *bytes, size_t len,
+                                           int *in_headers_out,
+                                           int *line_has_data_out) {
+    int in_headers = c->data_in_headers;
+    int line_has_data = c->data_line_has_data;
+    for (size_t i = 0; i < len; i++) {
+        uint8_t ch = bytes[i];
+        if (ch == '\n') {
+            if (in_headers && !line_has_data) in_headers = 0;
+            line_has_data = 0;
+            continue;
+        }
+        if (ch == '\r') continue;
+        if (ch >= 0x80 &&
+            ((in_headers && !c->supports_smtputf8) ||
+             (!in_headers && !c->supports_8bitmime)))
+            return -1;
+        line_has_data = 1;
+    }
+    *in_headers_out = in_headers;
+    *line_has_data_out = line_has_data;
     return 0;
 }
 
@@ -679,7 +800,19 @@ int neverc_smtp_write_data(neverc_smtp_client_t *c,
     if (!c || !c->in_data) return -1;
     if (len == 0) return 0;
     if (!data) return -1;
-    return smtp_write_data_stuffed(c, data, len);
+    int in_headers;
+    int line_has_data;
+    if (smtp_validate_data_capabilities(c, (const uint8_t *)data, len,
+                                        &in_headers, &line_has_data) != 0) {
+        /* Earlier chunks may already be on the wire. Fail closed rather than
+         * letting a later command be interpreted as the rest of DATA. */
+        c->dead = 1;
+        return -1;
+    }
+    if (smtp_write_data_stuffed(c, data, len) != 0) return -1;
+    c->data_in_headers = in_headers;
+    c->data_line_has_data = line_has_data;
+    return 0;
 }
 
 int neverc_smtp_data_close(neverc_smtp_client_t *c) {
@@ -700,19 +833,23 @@ int neverc_smtp_data_close(neverc_smtp_client_t *c) {
 
 int neverc_smtp_reset(neverc_smtp_client_t *c) {
     if (smtp_require_command_phase(c) != 0) return -1;
+    if (ensure_hello(c) != 0) return -1;
     int code = smtp_cmd(c, "RSET");
     return (code == 250) ? 0 : -1;
 }
 
 int neverc_smtp_noop(neverc_smtp_client_t *c) {
     if (smtp_require_command_phase(c) != 0) return -1;
+    if (ensure_hello(c) != 0) return -1;
     int code = smtp_cmd(c, "NOOP");
     return (code == 250) ? 0 : -1;
 }
 
 int neverc_smtp_quit(neverc_smtp_client_t *c) {
     if (smtp_require_command_phase(c) != 0 || !c->conn) return -1;
+    if (ensure_hello(c) != 0) return -1;
     int code = smtp_cmd(c, "QUIT");
+    c->dead = 1;
     return (code == 221) ? 0 : -1;
 }
 
@@ -728,11 +865,11 @@ int neverc_smtp_send_mail(const char *addr,
                             const char **to, int nto,
                             const void *msg, size_t msg_len,
                             const char **errp) {
-    if (!from || (from[0] && !smtp_safe_atom(from)) || nto < 0 ||
+    if (!from || (from[0] && !smtp_safe_path(from, 1)) || nto < 0 ||
         (nto > 0 && !to))
         return -1;
     for (int i = 0; i < nto; i++) {
-        if (!smtp_safe_atom(to[i])) return -1;
+        if (!smtp_safe_path(to[i], 1)) return -1;
     }
 
     neverc_smtp_client_t *c = neverc_smtp_dial(addr, errp);

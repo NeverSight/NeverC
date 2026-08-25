@@ -238,9 +238,6 @@ static int pem_scan_body(uint8_t *out_buf, size_t out_cap,
             return 0;
         size_t emit = quartet[2] < 0 ? 1 :
                       quartet[3] < 0 ? 2 : 3;
-        if ((emit == 1 && (quartet[1] & 0x0f) != 0) ||
-            (emit == 2 && (quartet[2] & 0x03) != 0))
-            return 0;
         if (emit > SIZE_MAX - n)
             return -1;
         if (out_buf && (n > out_cap || emit > out_cap - n))

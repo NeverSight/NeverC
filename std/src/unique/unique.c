@@ -14,8 +14,9 @@
  * the SwissTable in maps.c relies on.
  *
  * Each interned value is allocated as a [size_t len][data...] block and the
- * handle points at the data, so a handle can recover its own length in O(1)
- * (header read) instead of scanning the whole table.
+ * handle points at the data. Accessors first locate that pointer in the table;
+ * this is required because the public handle struct can otherwise be forged to
+ * make an allocation-header read through an arbitrary address.
  */
 
 typedef enum { UK_EMPTY = 0, UK_STRING, UK_INT64, UK_UINT64, UK_BYTES } uk_kind_t;
@@ -57,9 +58,8 @@ static uint64_t intern_hash(const void *data, size_t len) {
 
 /*
  * Value storage: [size_t len][data bytes]. The returned/stored pointer is the
- * data, so the length is recoverable in O(1) from any handle via intern_len().
- * Reads/writes of the header use memcpy so unaligned size_t access is never an
- * issue (the block is malloc-aligned, but this keeps it portable regardless).
+ * data. The prefix keeps empty values backed by a distinct non-NULL allocation
+ * and lets intern_free recover the allocation base.
  */
 static void *intern_alloc(const void *data, size_t len) {
     if (len > SIZE_MAX - sizeof(size_t)) return NULL;
@@ -72,12 +72,6 @@ static void *intern_alloc(const void *data, size_t len) {
 static void intern_free(void *dataptr) {
     if (dataptr) free((unsigned char *)dataptr - sizeof(size_t));
 }
-static size_t intern_len(const void *dataptr) {
-    size_t len;
-    memcpy(&len, (const unsigned char *)dataptr - sizeof(size_t), sizeof(size_t));
-    return len;
-}
-
 void neverc_unique_init(void) {
     LOCK();
     if (!g_table) {
@@ -214,15 +208,30 @@ neverc_unique_handle_t neverc_unique_make_bytes(const void *data, size_t len) {
     return intern(UK_BYTES, data, len);
 }
 
+/* Handles are public value structs, so callers can construct one containing an
+ * arbitrary pointer and the current epoch. Validate membership using pointer
+ * comparisons only before reading either the allocation header or value. */
+static const intern_entry_t *intern_entry_for_handle(
+        neverc_unique_handle_t h) {
+    if (!h.ptr || h.epoch != g_epoch || !g_table)
+        return NULL;
+    for (size_t i = 0; i < g_cap; i++) {
+        if (g_table[i].kind != UK_EMPTY && g_table[i].data == h.ptr)
+            return &g_table[i];
+    }
+    return NULL;
+}
+
 static int intern_live(neverc_unique_handle_t h) {
-    return h.ptr && h.epoch == g_epoch && g_table != NULL;
+    return intern_entry_for_handle(h) != NULL;
 }
 
 const char *neverc_unique_string_value(neverc_unique_handle_t h) {
     const char *result = NULL;
     LOCK();
-    if (intern_live(h)) {
-        size_t n = intern_len(h.ptr);
+    const intern_entry_t *entry = intern_entry_for_handle(h);
+    if (entry) {
+        size_t n = entry->len;
         if (n > 0) {
             const unsigned char *p = (const unsigned char *)h.ptr;
             if (p[n - 1] == '\0')
@@ -236,7 +245,8 @@ const char *neverc_unique_string_value(neverc_unique_handle_t h) {
 int64_t neverc_unique_int64_value(neverc_unique_handle_t h) {
     int64_t v = 0;
     LOCK();
-    if (intern_live(h) && intern_len(h.ptr) == sizeof(v))
+    const intern_entry_t *entry = intern_entry_for_handle(h);
+    if (entry && entry->len == sizeof(v))
         memcpy(&v, h.ptr, sizeof(v));
     UNLOCK();
     return v;
@@ -245,7 +255,8 @@ int64_t neverc_unique_int64_value(neverc_unique_handle_t h) {
 uint64_t neverc_unique_uint64_value(neverc_unique_handle_t h) {
     uint64_t v = 0;
     LOCK();
-    if (intern_live(h) && intern_len(h.ptr) == sizeof(v))
+    const intern_entry_t *entry = intern_entry_for_handle(h);
+    if (entry && entry->len == sizeof(v))
         memcpy(&v, h.ptr, sizeof(v));
     UNLOCK();
     return v;
@@ -255,8 +266,9 @@ const void *neverc_unique_bytes_value(neverc_unique_handle_t h, size_t *len) {
     const void *result = NULL;
     size_t n = 0;
     LOCK();
-    if (intern_live(h)) {
-        n = intern_len(h.ptr);
+    const intern_entry_t *entry = intern_entry_for_handle(h);
+    if (entry) {
+        n = entry->len;
         result = h.ptr;
     }
     UNLOCK();

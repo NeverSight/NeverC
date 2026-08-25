@@ -64,17 +64,21 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
                       const char *username,
                       const char *password);
 
-/* Start a mail transaction. Returns 0 on success. */
+/* Start a mail transaction. UTF-8 envelope paths require the server's
+ * SMTPUTF8 extension. Returns 0 on success. */
 int neverc_smtp_mail(neverc_smtp_client_t *c, const char *from);
 
-/* Add a recipient. Can be called multiple times. Returns 0 on success. */
+/* Add a recipient. UTF-8 envelope paths require SMTPUTF8. Can be called
+ * multiple times. Returns 0 on success. */
 int neverc_smtp_rcpt(neverc_smtp_client_t *c, const char *to);
 
 /* Start the DATA phase. After this, write the message body with
  * neverc_smtp_write_data, then call neverc_smtp_data_close. */
 int neverc_smtp_data(neverc_smtp_client_t *c);
 
-/* Write message data (can be called multiple times). */
+/* Write message data (can be called multiple times). Non-ASCII header bytes
+ * require SMTPUTF8; non-ASCII body bytes require 8BITMIME. A capability
+ * violation after DATA fails closed because earlier chunks may be on wire. */
 int neverc_smtp_write_data(neverc_smtp_client_t *c,
                              const void *data, size_t len);
 
@@ -87,7 +91,7 @@ int neverc_smtp_reset(neverc_smtp_client_t *c);
 /* Send NOOP. */
 int neverc_smtp_noop(neverc_smtp_client_t *c);
 
-/* Send QUIT. */
+/* Send QUIT. A successful or attempted QUIT makes the client terminal. */
 int neverc_smtp_quit(neverc_smtp_client_t *c);
 
 /* Get the last server response message. */

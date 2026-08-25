@@ -65,7 +65,8 @@ int neverc_syslog_pri(neverc_syslog_facility_t facility,
  * CR/LF in the message are replaced so one call cannot emit a second
  * record. TAG is restricted to [A-Za-z0-9._-]; other characters
  * (space, ':', '<', '>', controls) are replaced with '_'. Returns 0
- * on success, -1 on error. */
+ * only if the complete sanitized message fits; returns -1 on error or
+ * insufficient output capacity and never silently truncates. */
 int neverc_syslog_format(neverc_syslog_t *log,
                          neverc_syslog_priority_t priority,
                          const char *msg, char *buf, size_t n);

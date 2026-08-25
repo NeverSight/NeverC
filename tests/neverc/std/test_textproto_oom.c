@@ -42,7 +42,7 @@ int main(void) {
     neverc_mime_header_t h;
     reset_allocator(0);
     neverc_mime_header_init(&h);
-    neverc_mime_header_add(&h, "content-type", "text/plain");
+    CHECK(neverc_mime_header_try_add(&h, "content-type", "text/plain") == 0);
     CHECK(neverc_mime_header_len(&h) == 1);
     size_t add_allocations = allocation_count;
     neverc_mime_header_free(&h);
@@ -50,17 +50,18 @@ int main(void) {
     for (size_t i = 1; i <= add_allocations; i++) {
         reset_allocator(i);
         neverc_mime_header_init(&h);
-        neverc_mime_header_add(&h, "content-type", "text/plain");
+        CHECK(neverc_mime_header_try_add(
+                  &h, "content-type", "text/plain") == -1);
         CHECK(neverc_mime_header_len(&h) == 0);
         neverc_mime_header_free(&h);
     }
 
     reset_allocator(0);
     neverc_mime_header_init(&h);
-    neverc_mime_header_set(&h, "X-Test", "old");
+    CHECK(neverc_mime_header_try_set(&h, "X-Test", "old") == 0);
     CHECK(strcmp(neverc_mime_header_get(&h, "X-Test"), "old") == 0);
     reset_allocator(1);
-    neverc_mime_header_set(&h, "X-Test", "new");
+    CHECK(neverc_mime_header_try_set(&h, "X-Test", "new") == -1);
     CHECK(strcmp(neverc_mime_header_get(&h, "X-Test"), "old") == 0);
     neverc_mime_header_free(&h);
 

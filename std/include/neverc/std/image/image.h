@@ -53,6 +53,10 @@ int           neverc_rect_overlaps(neverc_rect_t r, neverc_rect_t s);
 int           neverc_rect_in(neverc_rect_t r, neverc_rect_t s);
 neverc_rect_t neverc_rect_canon(neverc_rect_t r);
 
+/* init allocates an owned pixel buffer. `img` must be uninitialized, zeroed,
+ * or previously released with the matching free function; reinitializing a
+ * live image without freeing it first leaks its buffer. free resets all fields
+ * to zero and may be called repeatedly. */
 int  neverc_image_rgba_init(neverc_image_rgba_t *img, neverc_rect_t r);
 void neverc_image_rgba_free(neverc_image_rgba_t *img);
 void neverc_image_rgba_set(neverc_image_rgba_t *img, int x, int y,

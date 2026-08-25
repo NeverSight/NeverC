@@ -208,7 +208,9 @@ int neverc_image_rgba_init(neverc_image_rgba_t *img, neverc_rect_t r) {
 }
 
 void neverc_image_rgba_free(neverc_image_rgba_t *img) {
-    if (img && img->pix) { free(img->pix); img->pix = NULL; }
+    if (!img) return;
+    free(img->pix);
+    memset(img, 0, sizeof(*img));
 }
 
 static int image_pixel_offset(const uint8_t *pix, int stride,
@@ -282,7 +284,9 @@ int neverc_image_gray_init(neverc_image_gray_t *img, neverc_rect_t r) {
 }
 
 void neverc_image_gray_free(neverc_image_gray_t *img) {
-    if (img && img->pix) { free(img->pix); img->pix = NULL; }
+    if (!img) return;
+    free(img->pix);
+    memset(img, 0, sizeof(*img));
 }
 
 int neverc_image_gray_pixel_offset(const neverc_image_gray_t *img, int x, int y) {

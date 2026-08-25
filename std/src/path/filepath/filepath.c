@@ -188,35 +188,49 @@ int neverc_filepath_isabs(const char *path) {
 
 #ifdef _WIN32
 static int reserved_device_name(const char *name, size_t n) {
-    char base[16];
-    size_t i, blen = 0;
-    for (i = 0; i < n && blen < sizeof(base) - 1; i++) {
-        if (name[i] == '.' || name[i] == ':')
+    size_t blen = 0;
+    while (blen < n) {
+        if (name[blen] == '.' || name[blen] == ':')
             break;
-        base[blen++] = ascii_upper(name[i]);
+        blen++;
     }
-    while (blen > 0 && base[blen - 1] == ' ')
+    while (blen > 0 && name[blen - 1] == ' ')
         blen--;
-    base[blen] = '\0';
     if (blen == 3 &&
-        (memcmp(base, "CON", 3) == 0 || memcmp(base, "PRN", 3) == 0 ||
-         memcmp(base, "AUX", 3) == 0 || memcmp(base, "NUL", 3) == 0))
+        ((ascii_upper(name[0]) == 'C' && ascii_upper(name[1]) == 'O' &&
+          ascii_upper(name[2]) == 'N') ||
+         (ascii_upper(name[0]) == 'P' && ascii_upper(name[1]) == 'R' &&
+          ascii_upper(name[2]) == 'N') ||
+         (ascii_upper(name[0]) == 'A' && ascii_upper(name[1]) == 'U' &&
+          ascii_upper(name[2]) == 'X') ||
+         (ascii_upper(name[0]) == 'N' && ascii_upper(name[1]) == 'U' &&
+          ascii_upper(name[2]) == 'L')))
         return 1;
     if (blen >= 4 &&
-        (memcmp(base, "COM", 3) == 0 || memcmp(base, "LPT", 3) == 0)) {
-        if (blen == 4 && base[3] >= '1' && base[3] <= '9')
+        ((ascii_upper(name[0]) == 'C' && ascii_upper(name[1]) == 'O' &&
+          ascii_upper(name[2]) == 'M') ||
+         (ascii_upper(name[0]) == 'L' && ascii_upper(name[1]) == 'P' &&
+          ascii_upper(name[2]) == 'T'))) {
+        if (blen == 4 && name[3] >= '1' && name[3] <= '9')
             return 1;
         /* CVE-2023-45284: Windows treats ¹ ² ³ as DOS device digits. */
         if (blen == 5 &&
-            (unsigned char)base[3] == 0xC2 &&
-            ((unsigned char)base[4] == 0xB9 ||
-             (unsigned char)base[4] == 0xB2 ||
-             (unsigned char)base[4] == 0xB3))
+            (unsigned char)name[3] == 0xC2 &&
+            ((unsigned char)name[4] == 0xB9 ||
+             (unsigned char)name[4] == 0xB2 ||
+             (unsigned char)name[4] == 0xB3))
             return 1;
     }
-    if (blen == 6 && memcmp(base, "CONIN$", 6) == 0)
+    if (blen == 6 &&
+        ascii_upper(name[0]) == 'C' && ascii_upper(name[1]) == 'O' &&
+        ascii_upper(name[2]) == 'N' && ascii_upper(name[3]) == 'I' &&
+        ascii_upper(name[4]) == 'N' && name[5] == '$')
         return 1;
-    if (blen == 7 && memcmp(base, "CONOUT$", 7) == 0)
+    if (blen == 7 &&
+        ascii_upper(name[0]) == 'C' && ascii_upper(name[1]) == 'O' &&
+        ascii_upper(name[2]) == 'N' && ascii_upper(name[3]) == 'O' &&
+        ascii_upper(name[4]) == 'U' && ascii_upper(name[5]) == 'T' &&
+        name[6] == '$')
         return 1;
     return 0;
 }

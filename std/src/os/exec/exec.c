@@ -2,7 +2,7 @@
  * NeverC os/exec — process execution.
  * Mirrors Go os/exec package.
  *
- * POSIX: fork() + execvp() with pipe-based I/O capture.
+ * POSIX: parent-prepared fork() + execve() with pipe-based I/O capture.
  * Windows: CreateProcess() with redirected handles.
  */
 
@@ -854,6 +854,109 @@ typedef struct {
     int failed;
 } exec_windows_stdin_writer_t;
 
+typedef struct {
+    STARTUPINFOEXA info;
+    LPPROC_THREAD_ATTRIBUTE_LIST attributes;
+    int attributes_initialized;
+    HANDLE owned_std[3];
+    HANDLE inherited[3];
+    DWORD inherited_count;
+} exec_windows_startup_t;
+
+static HANDLE exec_windows_inheritable_std(HANDLE supplied, DWORD std_id,
+                                           DWORD null_access,
+                                           HANDLE *owned) {
+    if (supplied)
+        return supplied;
+    HANDLE source = GetStdHandle(std_id);
+    HANDLE duplicate = NULL;
+    if (source && source != INVALID_HANDLE_VALUE &&
+        DuplicateHandle(GetCurrentProcess(), source, GetCurrentProcess(),
+                        &duplicate, 0, TRUE, DUPLICATE_SAME_ACCESS)) {
+        *owned = duplicate;
+        return duplicate;
+    }
+    SECURITY_ATTRIBUTES sa = {sizeof(sa), NULL, TRUE};
+    duplicate = CreateFileA("NUL", null_access,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE,
+                            &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (duplicate == INVALID_HANDLE_VALUE)
+        return NULL;
+    *owned = duplicate;
+    return duplicate;
+}
+
+static void exec_windows_startup_free(exec_windows_startup_t *startup) {
+    if (!startup) return;
+    if (startup->attributes) {
+        if (startup->attributes_initialized)
+            DeleteProcThreadAttributeList(startup->attributes);
+        free(startup->attributes);
+        startup->attributes = NULL;
+        startup->attributes_initialized = 0;
+    }
+    for (int i = 0; i < 3; i++) {
+        if (startup->owned_std[i]) {
+            CloseHandle(startup->owned_std[i]);
+            startup->owned_std[i] = NULL;
+        }
+    }
+}
+
+static int exec_windows_startup_init(exec_windows_startup_t *startup,
+                                     HANDLE input, HANDLE output,
+                                     HANDLE error) {
+    memset(startup, 0, sizeof(*startup));
+    startup->info.StartupInfo.cb = sizeof(startup->info);
+    startup->info.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup->info.StartupInfo.hStdInput = exec_windows_inheritable_std(
+        input, STD_INPUT_HANDLE, GENERIC_READ, &startup->owned_std[0]);
+    startup->info.StartupInfo.hStdOutput = exec_windows_inheritable_std(
+        output, STD_OUTPUT_HANDLE, GENERIC_WRITE, &startup->owned_std[1]);
+    startup->info.StartupInfo.hStdError = exec_windows_inheritable_std(
+        error, STD_ERROR_HANDLE, GENERIC_WRITE, &startup->owned_std[2]);
+    if (!startup->info.StartupInfo.hStdInput ||
+        !startup->info.StartupInfo.hStdOutput ||
+        !startup->info.StartupInfo.hStdError)
+        goto error;
+
+    HANDLE std_handles[3] = {
+        startup->info.StartupInfo.hStdInput,
+        startup->info.StartupInfo.hStdOutput,
+        startup->info.StartupInfo.hStdError
+    };
+    for (int i = 0; i < 3; i++) {
+        int duplicate = 0;
+        for (DWORD j = 0; j < startup->inherited_count; j++)
+            if (startup->inherited[j] == std_handles[i]) duplicate = 1;
+        if (!duplicate)
+            startup->inherited[startup->inherited_count++] = std_handles[i];
+    }
+
+    SIZE_T bytes = 0;
+    (void)InitializeProcThreadAttributeList(NULL, 1, 0, &bytes);
+    if (bytes == 0)
+        goto error;
+    startup->attributes =
+        (LPPROC_THREAD_ATTRIBUTE_LIST)malloc((size_t)bytes);
+    if (!startup->attributes ||
+        !InitializeProcThreadAttributeList(startup->attributes, 1, 0, &bytes))
+        goto error;
+    startup->attributes_initialized = 1;
+    if (!UpdateProcThreadAttribute(
+            startup->attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            startup->inherited,
+            (SIZE_T)startup->inherited_count * sizeof(HANDLE),
+            NULL, NULL))
+        goto error;
+    startup->info.lpAttributeList = startup->attributes;
+    return 0;
+
+error:
+    exec_windows_startup_free(startup);
+    return -1;
+}
+
 static DWORD WINAPI exec_windows_write_stdin(LPVOID argument) {
     exec_windows_stdin_writer_t *writer =
         (exec_windows_stdin_writer_t *)argument;
@@ -884,6 +987,7 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
     SECURITY_ATTRIBUTES sa = {sizeof(sa), NULL, TRUE};
     HANDLE hStdoutRd = NULL, hStdoutWr = NULL;
     HANDLE hStdinRd = NULL, hStdinWr = NULL;
+    exec_windows_startup_t startup = {0};
 
     if (capture_stdout || capture_stderr) {
         if (!CreatePipe(&hStdoutRd, &hStdoutWr, &sa, 0) ||
@@ -916,15 +1020,19 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
         goto setup_error;
     }
 
-    STARTUPINFOA si = {sizeof(si)};
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdOutput = hStdoutWr ? hStdoutWr : GetStdHandle(STD_OUTPUT_HANDLE);
-    si.hStdError = (capture_stderr && hStdoutWr) ? hStdoutWr : GetStdHandle(STD_ERROR_HANDLE);
-    si.hStdInput = hStdinRd ? hStdinRd : GetStdHandle(STD_INPUT_HANDLE);
+    if (exec_windows_startup_init(
+            &startup, hStdinRd, hStdoutWr,
+            capture_stderr ? hStdoutWr : NULL) != 0) {
+        free(environment);
+        free(cmdline);
+        goto setup_error;
+    }
 
     PROCESS_INFORMATION pi = {0};
-    BOOL ok = CreateProcessA(app, cmdline, NULL, NULL, TRUE, 0,
-                             environment, cmd->dir, &si, &pi);
+    BOOL ok = CreateProcessA(
+        app, cmdline, NULL, NULL, TRUE, EXTENDED_STARTUPINFO_PRESENT,
+        environment, cmd->dir, &startup.info.StartupInfo, &pi);
+    exec_windows_startup_free(&startup);
     free(environment);
     free(cmdline);
     if (!ok) {
@@ -997,6 +1105,7 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
     return 0;
 
 setup_error:
+    exec_windows_startup_free(&startup);
     if (hStdoutRd) CloseHandle(hStdoutRd);
     if (hStdoutWr) CloseHandle(hStdoutWr);
     if (hStdinRd) CloseHandle(hStdinRd);
@@ -1021,7 +1130,7 @@ int neverc_exec_cmd_start(neverc_exec_cmd_t *cmd) {
     char *environment;
     char resolved[32768];
     const char *app;
-    STARTUPINFOA si = {sizeof(si)};
+    exec_windows_startup_t startup = {0};
     PROCESS_INFORMATION pi = {0};
     exec_windows_stdin_writer_t *writer = NULL;
     if (exec_prepare(cmd, 0, NULL, NULL) != 0) return -1;
@@ -1048,17 +1157,21 @@ int neverc_exec_cmd_start(neverc_exec_cmd_t *cmd) {
         goto setup_error;
     }
 
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-    si.hStdInput = hStdinRd ? hStdinRd : GetStdHandle(STD_INPUT_HANDLE);
-
-    if (!CreateProcessA(app, cmdline, NULL, NULL, TRUE, 0,
-                        environment, cmd->dir, &si, &pi)) {
+    if (exec_windows_startup_init(&startup, hStdinRd, NULL, NULL) != 0) {
         free(environment);
         free(cmdline);
         goto setup_error;
     }
+
+    if (!CreateProcessA(
+            app, cmdline, NULL, NULL, TRUE, EXTENDED_STARTUPINFO_PRESENT,
+            environment, cmd->dir, &startup.info.StartupInfo, &pi)) {
+        exec_windows_startup_free(&startup);
+        free(environment);
+        free(cmdline);
+        goto setup_error;
+    }
+    exec_windows_startup_free(&startup);
     free(environment);
     free(cmdline);
     if (hStdinRd) { CloseHandle(hStdinRd); hStdinRd = NULL; }
@@ -1096,6 +1209,7 @@ int neverc_exec_cmd_start(neverc_exec_cmd_t *cmd) {
     return 0;
 
 setup_error:
+    exec_windows_startup_free(&startup);
     if (hStdinRd) CloseHandle(hStdinRd);
     if (hStdinWr) CloseHandle(hStdinWr);
     return -1;
@@ -1179,6 +1293,13 @@ const char *neverc_exec_look_path(const char *file, char *buf, size_t cap) {
 #include <fcntl.h>
 #include <errno.h>
 #include <signal.h>
+#include <sys/resource.h>
+#if defined(NEVERC_PLATFORM_LINUX) || defined(NEVERC_PLATFORM_ANDROID)
+#include <sys/syscall.h>
+#ifndef CLOSE_RANGE_CLOEXEC
+#define CLOSE_RANGE_CLOEXEC (1U << 2)
+#endif
+#endif
 
 static int exec_is_exe_file(const char *path) {
     if (access(path, X_OK) != 0) return 0;
@@ -1304,20 +1425,41 @@ static void exec_posix_reset_signals(void) {
 #undef EXEC_NSIG
 }
 
-static void exec_mark_cloexec_from(int minfd) {
+static int exec_parent_fd_limit(void) {
+    long open_max = sysconf(_SC_OPEN_MAX);
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_NOFILE, &limit) == 0 &&
+        limit.rlim_cur != RLIM_INFINITY) {
+        if (limit.rlim_cur > (rlim_t)INT_MAX)
+            return INT_MAX;
+        return (int)limit.rlim_cur;
+    }
+    if (open_max >= 0 && open_max <= INT_MAX)
+        return (int)open_max;
+    /* An unknown or infinite limit must never turn the post-fork fallback
+     * into an INT_MAX-sized loop. Modern Linux uses close_range below; this
+     * bound is only the last-resort path on older kernels/platforms. */
+    return 65536;
+}
+
+static void exec_mark_cloexec_from(int minfd, int maxfd) {
 #ifdef FD_CLOEXEC
-    long maxfd = sysconf(_SC_OPEN_MAX);
-    int fd;
-    if (maxfd < (long)minfd) return;
-    if (maxfd > 65536) maxfd = 65536;
-    for (fd = minfd; fd < (int)maxfd; fd++)
+#if (defined(NEVERC_PLATFORM_LINUX) || defined(NEVERC_PLATFORM_ANDROID)) && \
+    defined(SYS_close_range)
+    if (syscall(SYS_close_range, (unsigned int)minfd, UINT_MAX,
+                CLOSE_RANGE_CLOEXEC) == 0)
+        return;
+#endif
+    if (maxfd < minfd) return;
+    for (int fd = minfd; fd < maxfd; fd++)
         (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
 #else
     (void)minfd;
+    (void)maxfd;
 #endif
 }
 
-static char **exec_env_child_array(char **env, int count) {
+static char **exec_env_parent_array(char **env, int count) {
     char **out;
     int i, n = 0;
     if (!env) return NULL;
@@ -1330,28 +1472,17 @@ static char **exec_env_child_array(char **env, int count) {
     return out;
 }
 
-static void exec_posix_do_exec(neverc_exec_cmd_t *cmd) {
-    if (cmd->env) {
-        char **child_env = exec_env_child_array(cmd->env, cmd->env_count);
-        if (!child_env) return;
-        if (strchr(cmd->name, '/')) {
-            execve(cmd->name, cmd->argv, child_env);
-        } else {
-            char resolved[4096];
-            const char *path = exec_env_path(cmd->env, cmd->env_count);
-            if (path &&
-                exec_look_in_path(cmd->name, path, resolved, sizeof(resolved)))
-                execve(resolved, cmd->argv, child_env);
-        }
-        free(child_env);
-    } else {
-        execvp(cmd->name, cmd->argv);
-    }
+extern char **environ;
+
+static void exec_posix_do_exec(neverc_exec_cmd_t *cmd,
+                               const char *executable, char *const envp[]) {
+    execve(executable, cmd->argv, envp);
 }
 
 static void exec_posix_child(neverc_exec_cmd_t *cmd,
+                             const char *executable, char *const envp[],
                              int stdout_wr, int capture_stderr,
-                             int stdin_rd, int err_wr) {
+                             int stdin_rd, int err_wr, int maxfd) {
     int err;
     sigset_t empty;
     exec_posix_reset_signals();
@@ -1367,8 +1498,8 @@ static void exec_posix_child(neverc_exec_cmd_t *cmd,
     if (stdin_rd >= 0) {
         if (dup2(stdin_rd, STDIN_FILENO) < 0) goto exec_fail;
     }
-    exec_mark_cloexec_from(3);
-    exec_posix_do_exec(cmd);
+    exec_mark_cloexec_from(3, maxfd);
+    exec_posix_do_exec(cmd, executable, envp);
 exec_fail:
     err = errno ? errno : ENOENT;
     if (err_wr >= 0) {
@@ -1472,23 +1603,33 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
     int run_error = 0;
     int wstatus = 0;
     char resolved[4096];
-    char *saved_name;
+    const char *executable;
+    char **prepared_env = NULL;
+    char *const *child_env;
+    int maxfd;
     int resolved_rc;
     if (exec_prepare(cmd, capture_stdout || capture_stderr, out, st) != 0) return -1;
 
-    saved_name = cmd->name;
     resolved_rc = exec_posix_resolve_pathless(cmd, resolved, sizeof(resolved));
     if (resolved_rc < 0) return -1;
-    if (resolved_rc > 0) cmd->name = resolved;
+    executable = resolved_rc > 0 ? resolved : cmd->name;
+    if (cmd->env) {
+        prepared_env = exec_env_parent_array(cmd->env, cmd->env_count);
+        if (!prepared_env) return -1;
+        child_env = prepared_env;
+    } else {
+        child_env = environ;
+    }
+    maxfd = exec_parent_fd_limit();
 
     if (exec_pipe(err_pipe) < 0) {
-        cmd->name = saved_name;
+        free(prepared_env);
         return -1;
     }
     if (capture_stdout || capture_stderr) {
         if (exec_pipe(stdout_pipe) < 0) {
             close(err_pipe[0]); close(err_pipe[1]);
-            cmd->name = saved_name;
+            free(prepared_env);
             return -1;
         }
     }
@@ -1496,15 +1637,14 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
         if (exec_pipe(stdin_pipe) < 0) {
             close(err_pipe[0]); close(err_pipe[1]);
             if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
-            cmd->name = saved_name;
+            free(prepared_env);
             return -1;
         }
     }
 
     pid = fork();
-    if (pid != 0)
-        cmd->name = saved_name;
     if (pid < 0) {
+        free(prepared_env);
         close(err_pipe[0]); close(err_pipe[1]);
         if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
         if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
@@ -1515,9 +1655,10 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
         close(err_pipe[0]);
         if (stdout_pipe[0] >= 0) close(stdout_pipe[0]);
         if (stdin_pipe[1] >= 0) close(stdin_pipe[1]);
-        exec_posix_child(cmd, stdout_pipe[1], capture_stderr,
-                         stdin_pipe[0], err_pipe[1]);
+        exec_posix_child(cmd, executable, child_env, stdout_pipe[1],
+                         capture_stderr, stdin_pipe[0], err_pipe[1], maxfd);
     }
+    free(prepared_env);
 
     close(err_pipe[1]);
     err_pipe[1] = -1;
@@ -1585,28 +1726,37 @@ int neverc_exec_cmd_start(neverc_exec_cmd_t *cmd) {
     pid_t pid;
     pid_t stdin_writer = -1;
     char resolved[4096];
-    char *saved_name;
+    const char *executable;
+    char **prepared_env = NULL;
+    char *const *child_env;
+    int maxfd;
     int resolved_rc;
     if (exec_prepare(cmd, 0, NULL, NULL) != 0) return -1;
-    saved_name = cmd->name;
     resolved_rc = exec_posix_resolve_pathless(cmd, resolved, sizeof(resolved));
     if (resolved_rc < 0) return -1;
-    if (resolved_rc > 0) cmd->name = resolved;
+    executable = resolved_rc > 0 ? resolved : cmd->name;
+    if (cmd->env) {
+        prepared_env = exec_env_parent_array(cmd->env, cmd->env_count);
+        if (!prepared_env) return -1;
+        child_env = prepared_env;
+    } else {
+        child_env = environ;
+    }
+    maxfd = exec_parent_fd_limit();
     if (exec_pipe(err_pipe) < 0) {
-        cmd->name = saved_name;
+        free(prepared_env);
         return -1;
     }
     if (cmd->stdin_data) {
         if (exec_pipe(stdin_pipe) < 0) {
             close(err_pipe[0]); close(err_pipe[1]);
-            cmd->name = saved_name;
+            free(prepared_env);
             return -1;
         }
     }
     pid = fork();
-    if (pid != 0)
-        cmd->name = saved_name;
     if (pid < 0) {
+        free(prepared_env);
         close(err_pipe[0]); close(err_pipe[1]);
         if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
         return -1;
@@ -1614,8 +1764,10 @@ int neverc_exec_cmd_start(neverc_exec_cmd_t *cmd) {
     if (pid == 0) {
         close(err_pipe[0]);
         if (stdin_pipe[1] >= 0) close(stdin_pipe[1]);
-        exec_posix_child(cmd, -1, 0, stdin_pipe[0], err_pipe[1]);
+        exec_posix_child(cmd, executable, child_env, -1, 0,
+                         stdin_pipe[0], err_pipe[1], maxfd);
     }
+    free(prepared_env);
     close(err_pipe[1]);
     if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); stdin_pipe[0] = -1; }
     if (stdin_pipe[1] >= 0 && cmd->stdin_data) {

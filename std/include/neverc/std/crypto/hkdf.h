@@ -10,7 +10,8 @@ extern "C" {
 
 /* NULL input pointers are accepted only for zero-length spans. Extract and
  * expand return -1 for invalid spans, an RFC 5869 output-length violation, or
- * a salt/IKM/info length that would overflow the hash length field. */
+ * a salt/IKM/info length that would overflow the hash length field. Expand
+ * supports okm overlapping info; allocation failure leaves okm unchanged. */
 int neverc_hkdf_sha256(uint8_t *okm, size_t okm_len,
                        const uint8_t *ikm, size_t ikm_len,
                        const uint8_t *salt, size_t salt_len,

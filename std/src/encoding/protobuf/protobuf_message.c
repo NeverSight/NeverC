@@ -58,6 +58,11 @@ static neverc_protobuf_wire_type_t protobuf_scalar_wire(
     }
 }
 
+static int protobuf_ranges_overlap(size_t a_offset, size_t a_size,
+                                   size_t b_offset, size_t b_size) {
+    return a_offset < b_offset + b_size && b_offset < a_offset + a_size;
+}
+
 static int protobuf_descriptor_valid(
     const neverc_protobuf_message_descriptor_t *descriptor) {
     if (!descriptor || descriptor->struct_size == 0 ||
@@ -76,8 +81,34 @@ static int protobuf_descriptor_valid(
               sizeof(int) > descriptor->struct_size -
                                 field->presence_offset)))
             return 0;
-        for (size_t j = 0; j < i; j++)
-            if (descriptor->fields[j].number == field->number) return 0;
+        if (field->presence_offset != SIZE_MAX &&
+            protobuf_ranges_overlap(field->value_offset, value_size,
+                                    field->presence_offset, sizeof(int)))
+            return 0;
+        for (size_t j = 0; j < i; j++) {
+            const neverc_protobuf_field_descriptor_t *previous =
+                &descriptor->fields[j];
+            size_t previous_size = protobuf_scalar_size(previous->type);
+            if (previous->number == field->number ||
+                protobuf_ranges_overlap(field->value_offset, value_size,
+                                        previous->value_offset,
+                                        previous_size) ||
+                (previous->presence_offset != SIZE_MAX &&
+                 protobuf_ranges_overlap(field->value_offset, value_size,
+                                         previous->presence_offset,
+                                         sizeof(int))) ||
+                (field->presence_offset != SIZE_MAX &&
+                 (protobuf_ranges_overlap(field->presence_offset,
+                                          sizeof(int),
+                                          previous->value_offset,
+                                          previous_size) ||
+                  (previous->presence_offset != SIZE_MAX &&
+                   protobuf_ranges_overlap(field->presence_offset,
+                                           sizeof(int),
+                                           previous->presence_offset,
+                                           sizeof(int))))))
+                return 0;
+        }
     }
     return 1;
 }

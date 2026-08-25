@@ -274,17 +274,26 @@ static void test_ctr_low32_wrap_no_reuse(void) {
 
     memset(iv, 0, 16);
     iv[12] = iv[13] = iv[14] = iv[15] = 0xFF;
-    check_int("CTR last counter block allowed",
-              neverc_cipher_ctr_checked(key, 16, iv, ct, pt, 16), 0);
-    check_int("CTR follow-up after wrap rejected",
+    check_int("CTR terminal counter block rejected",
               neverc_cipher_ctr_checked(key, 16, iv, ct, pt, 16), -1);
 
     memset(iv, 0, 16);
-    iv[15] = 0xFE;
+    iv[15] = 0xFD;
     check_int("CTR two blocks before wrap allowed",
               neverc_cipher_ctr_checked(key, 16, iv, ct, pt, 32), 0);
     check_int("adjacent counters do not reuse keystream",
-              memcmp(ct, ct + 16, 16) != 0, 1);
+               memcmp(ct, ct + 16, 16) != 0, 1);
+
+    /* Every 128-bit IV remains a valid input. The former exhausted-state
+     * marker collided with this nonce and counter zero. */
+    const uint8_t former_marker[16] = {
+        0x4e, 0x43, 0x49, 0x43, 0x54, 0x52, 0x58, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00
+    };
+    memcpy(iv, former_marker, sizeof(iv));
+    check_int("CTR former sentinel IV accepted",
+              neverc_cipher_ctr_checked(key, 16, iv, ct, pt, 1), 0);
+    check_int("CTR former sentinel advances counter", iv[15], 1);
 
 #if SIZE_MAX > UINT32_MAX
     memset(iv, 0, 16);

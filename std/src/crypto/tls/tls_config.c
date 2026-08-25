@@ -75,6 +75,7 @@ void neverc_tls_config_free(neverc_tls_config_t *cfg) {
         cfg->session_mutex_initialized = 0;
     }
     free(cfg->cert_der);
+    free(cfg->cert_chain);
     tls_free_private_key(cfg->key_der, cfg->key_der_len);
     free(cfg->server_name);
     neverc_x509_cert_pool_free(cfg->root_certificates);
@@ -433,6 +434,70 @@ static int pem_decode_first(const char *pem, const char *label,
     return -1;
 }
 
+/* Serialize every CERTIFICATE block as a TLS 1.3 CertificateEntry. The leaf
+ * remains separately available for public-key validation, while this buffer
+ * preserves the caller-provided intermediate chain for the wire message. */
+static int pem_decode_certificate_chain(
+    const char *pem, uint8_t **out_chain, size_t *out_chain_len) {
+    if (!pem || !out_chain || !out_chain_len)
+        return -1;
+    *out_chain = NULL;
+    *out_chain_len = 0;
+    size_t pem_len = strlen(pem);
+    if (pem_len == 0)
+        return -1;
+    uint8_t *der = (uint8_t *)malloc(pem_len);
+    if (!der)
+        return -1;
+
+    uint8_t *chain = NULL;
+    size_t chain_len = 0;
+    size_t offset = 0;
+    size_t count = 0;
+    while (offset < pem_len) {
+        char label[64];
+        size_t der_len = 0;
+        size_t rest_offset = 0;
+        if (neverc_pem_decode(
+                pem + offset, pem_len - offset,
+                label, sizeof(label), der, pem_len,
+                &der_len, &rest_offset) != 0)
+            break;
+        if (rest_offset == 0 || rest_offset > pem_len - offset)
+            goto fail;
+        offset += rest_offset;
+        if (strcmp(label, "CERTIFICATE") != 0)
+            continue;
+        if (der_len == 0 || der_len > 0xFFFFFFu ||
+            der_len > SIZE_MAX - 5U ||
+            chain_len > SIZE_MAX - (der_len + 5U))
+            goto fail;
+        size_t required = chain_len + der_len + 5U;
+        uint8_t *resized = (uint8_t *)realloc(chain, required);
+        if (!resized)
+            goto fail;
+        chain = resized;
+        tls_put_u24(chain + chain_len, (uint32_t)der_len);
+        memcpy(chain + chain_len + 3U, der, der_len);
+        tls_put_u16(chain + chain_len + 3U + der_len, 0);
+        chain_len = required;
+        count++;
+    }
+    free(der);
+    if (count == 0) {
+        free(chain);
+        return -1;
+    }
+    *out_chain = chain;
+    *out_chain_len = chain_len;
+    return 0;
+
+fail:
+    free(der);
+    free(chain);
+    return -1;
+}
+
 int neverc_tls_config_load_cert(neverc_tls_config_t *cfg,
                                  const char *cert_path,
                                  const char *key_path) {
@@ -461,6 +526,8 @@ int neverc_tls_config_load_cert_mem(neverc_tls_config_t *cfg,
 
     uint8_t *cert_der = NULL;
     size_t cert_der_len = 0;
+    uint8_t *cert_chain = NULL;
+    size_t cert_chain_len = 0;
     uint8_t *key_der = NULL;
     size_t key_der_len = 0;
     int key_type = NCI_TLS_KEY_ECDSA_P256;
@@ -468,6 +535,9 @@ int neverc_tls_config_load_cert_mem(neverc_tls_config_t *cfg,
     int cert_result =
         pem_decode_first(cert_pem, "CERTIFICATE",
                          &cert_der, &cert_der_len);
+    int chain_result =
+        pem_decode_certificate_chain(
+            cert_pem, &cert_chain, &cert_chain_len);
     int key_result =
         pem_decode_first(key_pem, "EC PRIVATE KEY",
                          &key_der, &key_der_len);
@@ -476,25 +546,80 @@ int neverc_tls_config_load_cert_mem(neverc_tls_config_t *cfg,
             pem_decode_first(key_pem, "PRIVATE KEY",
                              &key_der, &key_der_len);
 
-    if (cert_result != 0 || key_result != 0 ||
+    if (cert_result != 0 || chain_result != 0 || key_result != 0 ||
         nci_tls_validate_certificate_key_pair(
             cert_der, cert_der_len, key_der, key_der_len,
             key_type) != 0) {
         free(cert_der);
+        free(cert_chain);
         tls_free_private_key(key_der, key_der_len);
         return -1;
     }
 
     nci_tls_config_invalidate_all_sessions(cfg);
     free(cfg->cert_der);
+    free(cfg->cert_chain);
     tls_free_private_key(cfg->key_der, cfg->key_der_len);
     cfg->cert_der = cert_der;
     cfg->cert_der_len = cert_der_len;
+    cfg->cert_chain = cert_chain;
+    cfg->cert_chain_len = cert_chain_len;
     cfg->key_der = key_der;
     cfg->key_der_len = key_der_len;
     cfg->key_type = key_type;
     return 0;
 }
+
+#if defined(NEVERC_TLS_TESTING)
+int neverc_tls_test_config_preserves_certificate_chain(
+    const char *cert_pem, const char *key_pem) {
+    if (!cert_pem || !key_pem)
+        return -1;
+    size_t cert_len = strlen(cert_pem);
+    if (cert_len == 0 || cert_len > (SIZE_MAX - 1U) / 2U)
+        return -1;
+    char *chain_pem = (char *)malloc(cert_len * 2U + 1U);
+    if (!chain_pem)
+        return -1;
+    memcpy(chain_pem, cert_pem, cert_len);
+    memcpy(chain_pem + cert_len, cert_pem, cert_len);
+    chain_pem[cert_len * 2U] = '\0';
+
+    neverc_tls_config_t *cfg = neverc_tls_config_new();
+    if (!cfg) {
+        free(chain_pem);
+        return -1;
+    }
+    int result = neverc_tls_config_load_cert_mem(
+        cfg, chain_pem, key_pem);
+    free(chain_pem);
+    if (result != 0) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    size_t pos = 0;
+    unsigned int count = 0;
+    while (pos < cfg->cert_chain_len) {
+        if (cfg->cert_chain_len - pos < 5U)
+            break;
+        size_t der_len = tls_get_u24(cfg->cert_chain + pos);
+        pos += 3U;
+        if (der_len == 0 || der_len > cfg->cert_chain_len - pos - 2U ||
+            der_len != cfg->cert_der_len ||
+            memcmp(cfg->cert_chain + pos, cfg->cert_der, der_len) != 0)
+            break;
+        pos += der_len;
+        if (cfg->cert_chain[pos] != 0 || cfg->cert_chain[pos + 1U] != 0)
+            break;
+        pos += 2U;
+        count++;
+    }
+    int valid = pos == cfg->cert_chain_len && count == 2U;
+    neverc_tls_config_free(cfg);
+    return valid ? 0 : -1;
+}
+#endif
 
 int neverc_tls_config_add_root_certificates_mem(
     neverc_tls_config_t *cfg, const char *pem, size_t pem_len) {

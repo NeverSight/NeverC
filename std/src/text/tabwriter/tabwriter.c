@@ -276,11 +276,19 @@ static int format_block(neverc_tabwriter_t *w, size_t *buf_pos,
 }
 
 static int flush_lines(neverc_tabwriter_t *w) {
+    int all_lines_terminated =
+        w->nlines == NEVERC_TABWRITER_MAX_LINES;
     int n_lines = (w->nlines < NEVERC_TABWRITER_MAX_LINES)
         ? w->nlines + 1 : NEVERC_TABWRITER_MAX_LINES;
     size_t buf_pos = 0;
     w->ncols = 0;
-    return format_block(w, &buf_pos, 0, n_lines, n_lines);
+    if (format_block(w, &buf_pos, 0, n_lines, n_lines) != 0)
+        return -1;
+    /* At the exact line-table limit there is no slot for the usual empty
+     * trailing line, so write_lines cannot infer the final delimiter. */
+    if (all_lines_terminated && out_append(w, "\n", 1) != 0)
+        return -1;
+    return 0;
 }
 
 static int out_terminate(neverc_tabwriter_t *w) {

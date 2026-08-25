@@ -177,6 +177,30 @@ static void test_format_and_injection(void) {
     neverc_syslog_close(log);
 }
 
+static void test_format_long_message_is_not_truncated(void) {
+    printf("[format long message]\n");
+    neverc_syslog_t *log = neverc_syslog_open(
+        "long", NEVERC_SYSLOG_USER, NEVERC_SYSLOG_DEBUG);
+    ASSERT_TRUE(log != NULL);
+    if (!log) return;
+    char message[3001];
+    char formatted[4096];
+    memset(message, 'x', sizeof(message) - 1U);
+    message[sizeof(message) - 1U] = '\0';
+    ASSERT_EQ(neverc_syslog_format(
+                  log, NEVERC_SYSLOG_INFO, message,
+                  formatted, sizeof(formatted)),
+              0);
+    const char *body = strstr(formatted, ": ");
+    ASSERT_TRUE(body != NULL);
+    if (body) {
+        body += 2;
+        ASSERT_TRUE(strlen(body) == sizeof(message) - 1U);
+        ASSERT_TRUE(memcmp(body, message, sizeof(message)) == 0);
+    }
+    neverc_syslog_close(log);
+}
+
 int main(void) {
     printf("=== NeverC log/syslog Tests ===\n");
     test_open_close();
@@ -186,6 +210,7 @@ int main(void) {
     test_long_tag();
     test_null_safety();
     test_format_and_injection();
+    test_format_long_message_is_not_truncated();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

@@ -471,9 +471,11 @@ void neverc_time_sleep(neverc_duration_t d) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
     uint64_t millis = (uint64_t)(d / NEVERC_TIME_MILLISECOND);
     if (d % NEVERC_TIME_MILLISECOND != 0) millis++;
-    while (millis > UINT32_MAX) {
-        Sleep(UINT32_MAX);
-        millis -= UINT32_MAX;
+    /* 0xffffffff is INFINITE, not a finite 49.7-day delay. */
+    const uint64_t max_finite_wait = (uint64_t)UINT32_MAX - 1U;
+    while (millis > max_finite_wait) {
+        Sleep((DWORD)max_finite_wait);
+        millis -= max_finite_wait;
     }
     Sleep((DWORD)millis);
 #else

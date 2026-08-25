@@ -12,20 +12,12 @@ static void xor_block(uint8_t *dst, const uint8_t *a, const uint8_t *b) {
     for (int i = 0; i < 16; i++) dst[i] = a[i] ^ b[i];
 }
 
-/* Increment only the documented 32-bit counter (nonce || counter).
- * Returns 1 when the counter wraps; the caller must poison the IV so a
- * follow-up call cannot emit nonce+1 || 0 (alias of the next nonce). */
-static int increment_counter_low32(uint8_t ctr[16]) {
+/* Increment only the documented 32-bit counter (nonce || counter). */
+static void increment_counter_low32(uint8_t ctr[16]) {
     for (int i = 15; i >= 12; i--) {
-        if (++ctr[i] != 0) return 0;
+        if (++ctr[i] != 0) return;
     }
-    return 1;
 }
-
-static const uint8_t k_ctr_exhausted[16] = {
-    0x4e, 0x43, 0x49, 0x43, 0x54, 0x52, 0x58, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00
-};
 
 /* dst after src with overlap: a later block would read source bytes that
  * an earlier write already clobbered. Slide into dst, then treat as in-place. */
@@ -108,8 +100,6 @@ int neverc_cipher_ctr_checked(
 {
     if (!key || !iv || (!dst && len != 0) || (!src && len != 0))
         return -1;
-    if (memcmp(iv, k_ctr_exhausted, 16) == 0)
-        return -1;
     if (len > 0) {
         uint32_t ctr = ((uint32_t)iv[12] << 24) | ((uint32_t)iv[13] << 16) |
                        ((uint32_t)iv[14] << 8) | (uint32_t)iv[15];
@@ -117,7 +107,11 @@ int neverc_cipher_ctr_checked(
          * into the nonce collides with another 96-bit nonce's block 0.
          * Compare byte length to remaining*16; (len+15)/16 wraps at
          * SIZE_MAX and would accept a request that reuses keystream. */
-        uint64_t remaining_blocks = (uint64_t)(0xFFFFFFFFu - ctr) + 1u;
+        /* The caller-visible IV is the entire API state, so consuming counter
+         * 0xffffffff would leave no representable successor.  Reserve that
+         * value as the terminal IV instead of poisoning a legitimate IV value
+         * with an out-of-band byte pattern. */
+        uint64_t remaining_blocks = (uint64_t)(0xFFFFFFFFu - ctr);
         if ((uint64_t)len > remaining_blocks * 16u)
             return -1;
     }
@@ -133,22 +127,13 @@ int neverc_cipher_ctr_checked(
     uint8_t keystream[16];
     while (off < len) {
         neverc_aes_encrypt_block(&ctx, keystream, iv);
-        int wrapped = increment_counter_low32(iv);
+        increment_counter_low32(iv);
 
         size_t chunk = len - off;
         if (chunk > 16) chunk = 16;
         for (size_t i = 0; i < chunk; i++)
             dst[off + i] = src[off + i] ^ keystream[i];
         off += chunk;
-        if (wrapped) {
-            memcpy(iv, k_ctr_exhausted, 16);
-            if (off < len) {
-                neverc_platform_secure_zero(keystream, sizeof(keystream));
-                neverc_platform_secure_zero(&ctx, sizeof(ctx));
-                return -1;
-            }
-            break;
-        }
     }
     neverc_platform_secure_zero(keystream, sizeof(keystream));
     neverc_platform_secure_zero(&ctx, sizeof(ctx));

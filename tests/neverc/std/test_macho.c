@@ -367,8 +367,8 @@ static void test_fat(void) {
      * Open used to return the first slice without looking at the rest. */
     {
         size_t two_off0 = 48;
-        size_t stub_off = two_off0 + thin_len;
-        size_t two_total = stub_off + 8;
+        size_t two_off1 = two_off0 + thin_len;
+        size_t two_total = two_off1 + thin_len;
         uint8_t *two = (uint8_t *)calloc(two_total, 1);
         CHECK("build two-arch fat", two != NULL);
         if (two) {
@@ -381,17 +381,24 @@ static void test_fat(void) {
             put32be(two + 36, (uint32_t)(two_total + 16));
             put32be(two + 40, 64);
             memcpy(two + two_off0, thin, thin_len);
-            put32(two + stub_off, NEVERC_MH_MAGIC_64);
+            memcpy(two + two_off1, thin, thin_len);
             CHECK("reject fat with later arch past EOF",
                   neverc_macho_open(&f, two, two_total) == -1);
-            put32be(two + 36, (uint32_t)two_off0);
+            put32be(two + 36, (uint32_t)two_off1);
             put32be(two + 40, (uint32_t)thin_len);
             CHECK("open fat when every arch is in range",
                   neverc_macho_open(&f, two, two_total) == 0);
             neverc_macho_close(&f);
+            put32be(two + 28, (uint32_t)NEVERC_CPU_TYPE_ARM64);
+            CHECK("reject duplicate fat architecture",
+                  neverc_macho_open(&f, two, two_total) == -1);
+            put32be(two + 28, (uint32_t)NEVERC_CPU_TYPE_X86_64);
+            put32(two + two_off1 + 12, NEVERC_MH_OBJECT);
+            CHECK("reject fat with inconsistent slice file types",
+                  neverc_macho_open(&f, two, two_total) == -1);
+            put32(two + two_off1 + 12, NEVERC_MH_EXECUTE);
             /* Second arch is inside the file but only an 8-byte magic stub.
              * Bounds-checking fat_arch is not enough: the slice is truncated. */
-            put32be(two + 36, (uint32_t)stub_off);
             put32be(two + 40, 8);
             CHECK("reject fat with truncated later thin image",
                   neverc_macho_open(&f, two, two_total) == -1);

@@ -346,10 +346,8 @@ static void test_dwarf_line_string(void) {
     CHECK("line string init",
           neverc_dwarf_init(&d, info, sizeof(info),
                             abbrev, sizeof(abbrev), NULL, 0) == 0);
-    CHECK("missing optional line string is consumed",
-          neverc_dwarf_walk_entries(&d, walk_cb, &ctx) == 0);
-    CHECK("missing optional line string is empty",
-          ctx.cu_name && ctx.cu_name[0] == '\0');
+    CHECK("missing line string table is rejected",
+          neverc_dwarf_walk_entries(&d, walk_cb, &ctx) < 0);
 
     static const uint8_t line_str[] = "line.c";
     d.debug_line_str = line_str;
@@ -365,6 +363,63 @@ static void test_dwarf_line_string(void) {
     d.debug_line_str_len = sizeof(bad_line_str);
     CHECK("unterminated line string rejected",
           neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+
+    static const uint8_t indexed_abbrev[] = {
+        1, NEVERC_DW_TAG_compile_unit, 0,
+        NEVERC_DW_AT_name, NEVERC_DW_FORM_strx1,
+        0, 0, 0
+    };
+    uint8_t indexed_info[14] = {0};
+    build_v5_compile_header(indexed_info, 10);
+    indexed_info[12] = 1;
+    indexed_info[13] = 0;
+    CHECK("indexed string fixture initializes",
+          neverc_dwarf_init(&d, indexed_info, sizeof(indexed_info),
+                            indexed_abbrev, sizeof(indexed_abbrev),
+                            NULL, 0) == 0);
+    CHECK("indexed string without offsets table is rejected",
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+    neverc_dwarf_free(&d);
+}
+
+typedef struct {
+    uint64_t refs[2];
+    int count;
+} ref_walk_ctx_t;
+
+static int ref_walk_cb(const neverc_dwarf_entry_t *entry, void *user) {
+    ref_walk_ctx_t *ctx = (ref_walk_ctx_t *)user;
+    if (entry->tag == NEVERC_DW_TAG_compile_unit && ctx->count < 2)
+        ctx->refs[ctx->count++] = entry->type_ref;
+    return 0;
+}
+
+static void test_dwarf_cu_relative_refs(void) {
+    printf("[cu_relative_refs]\n");
+    static const uint8_t abbrev[] = {
+        1, NEVERC_DW_TAG_compile_unit, 0,
+        NEVERC_DW_AT_type, NEVERC_DW_FORM_ref4,
+        0, 0, 0
+    };
+    uint8_t info[32] = {0};
+    build_v4_header(info, 12);
+    info[11] = 1;
+    put32(info + 12, 11);
+    build_v4_header(info + 16, 12);
+    info[27] = 1;
+    put32(info + 28, 11);
+
+    neverc_dwarf_data_t d;
+    ref_walk_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    CHECK("two-CU reference fixture initializes",
+          neverc_dwarf_init(&d, info, sizeof(info),
+                            abbrev, sizeof(abbrev), NULL, 0) == 0);
+    CHECK("two-CU references walk",
+          neverc_dwarf_walk_entries(&d, ref_walk_cb, &ctx) == 0);
+    CHECK("CU-relative references include each CU base",
+          ctx.count == 2 && ctx.refs[0] == 11 && ctx.refs[1] == 27);
+    neverc_dwarf_free(&d);
 }
 
 static void test_dwarf_malformed(void) {
@@ -747,6 +802,7 @@ int main(void) {
     test_dwarf_empty();
     test_dwarf_implicit_const();
     test_dwarf_line_string();
+    test_dwarf_cu_relative_refs();
     test_dwarf_malformed();
     test_dwarf_v5_type_header();
     test_dwarf_big_endian();

@@ -154,6 +154,7 @@ typedef struct {
     neverc_regexp_t *re;
     const char *err;
     int depth;
+    int posix;
 } parser_t;
 
 static frag_t parse_expr(parser_t *par);
@@ -594,6 +595,10 @@ static frag_t parse_atom(parser_t *par) {
         par->p++;
         int capturing = 1;
         int cap = 0;
+        if (par->posix && par->p[0] == '?') {
+            par->err = "invalid POSIX syntax";
+            return frag(NULL, NULL);
+        }
         if (par->p[0] == '?' && par->p[1] == ':') {
             par->p += 2;
             capturing = 0;
@@ -690,6 +695,11 @@ static frag_t parse_atom(parser_t *par) {
             }
             if (lo == '\\' && *par->p) {
                 char esc = *par->p++;
+                if (par->posix &&
+                    (esc == 'b' || is_perl_class_escape(esc))) {
+                    par->err = "invalid POSIX escape";
+                    goto class_fail;
+                }
                 if (esc == 'd') {
                     for (int i = '0'; i <= '9'; i++) cc_set(cc, i);
                     entries++; continue;
@@ -778,6 +788,11 @@ static frag_t parse_atom(parser_t *par) {
                 if (*par->p == '\\' && par->p[1]) {
                     par->p++;
                     char esc = *par->p++;
+                    if (par->posix &&
+                        (esc == 'b' || is_perl_class_escape(esc))) {
+                        par->err = "invalid POSIX escape";
+                        goto class_fail;
+                    }
                     if (is_perl_class_escape(esc)) {
                         par->err = "invalid character class range";
                         goto class_fail;
@@ -917,6 +932,12 @@ static frag_t parse_atom(parser_t *par) {
     if (c == '\\' && par->p[1]) {
         par->p++;
         char esc = *par->p++;
+        if (par->posix &&
+            (esc == 'A' || esc == 'b' || esc == 'B' || esc == 'z' ||
+             is_perl_class_escape(esc))) {
+            par->err = "invalid POSIX escape";
+            return frag(NULL, NULL);
+        }
         if (esc == 'x') {
             int r, braced = 0;
             if (!parse_hex_escape(par, &r, &braced)) return frag(NULL, NULL);
@@ -1198,7 +1219,13 @@ static frag_t parse_repeat(parser_t *par) {
             if (par->re->oom) { par->err = "out of memory"; return f; }
             repeated = 1;
             /* Go: a single '?' after a quantifier is the non-greedy flag. */
-            if (*par->p == '?') par->p++;
+            if (*par->p == '?') {
+                if (par->posix) {
+                    par->err = "invalid POSIX repetition";
+                    return f;
+                }
+                par->p++;
+            }
             continue;
         }
         if (repeated) {
@@ -1226,7 +1253,13 @@ static frag_t parse_repeat(parser_t *par) {
             f = frag(split, end);
         }
         repeated = 1;
-        if (*par->p == '?') par->p++;
+        if (*par->p == '?') {
+            if (par->posix) {
+                par->err = "invalid POSIX repetition";
+                return f;
+            }
+            par->p++;
+        }
     }
     return f;
 }
@@ -1267,7 +1300,8 @@ static frag_t parse_expr(parser_t *par) {
     return f;
 }
 
-neverc_regexp_t *neverc_regexp_compile(const char *pattern, const char **errp) {
+static neverc_regexp_t *regexp_compile(const char *pattern, const char **errp,
+                                       int posix) {
     if (!pattern) {
         if (errp) *errp = "invalid pattern";
         return NULL;
@@ -1281,7 +1315,8 @@ neverc_regexp_t *neverc_regexp_compile(const char *pattern, const char **errp) {
     if (!re) { if (errp) *errp = "out of memory"; return NULL; }
     re->dummy.id = -1;                          /* never collide with state 0 */
 
-    parser_t par = { pattern, re, NULL, 0 };
+    re->posix = posix;
+    parser_t par = { pattern, re, NULL, 0, posix };
     frag_t f = parse_expr(&par);
 
     if (!par.err && *par.p != '\0') par.err = "unexpected character";
@@ -1303,6 +1338,10 @@ neverc_regexp_t *neverc_regexp_compile(const char *pattern, const char **errp) {
     }
     if (errp) *errp = NULL;
     return re;
+}
+
+neverc_regexp_t *neverc_regexp_compile(const char *pattern, const char **errp) {
+    return regexp_compile(pattern, errp, 0);
 }
 
 void neverc_regexp_free(neverc_regexp_t *re) {
@@ -2359,9 +2398,7 @@ int neverc_regexp_subexp_index(neverc_regexp_t *re, const char *name) {
 }
 
 neverc_regexp_t *neverc_regexp_compile_posix(const char *pattern, const char **errp) {
-    neverc_regexp_t *re = neverc_regexp_compile(pattern, errp);
-    if (re) re->posix = 1;
-    return re;
+    return regexp_compile(pattern, errp, 1);
 }
 
 neverc_regexp_t *neverc_regexp_must_compile(const char *pattern) {

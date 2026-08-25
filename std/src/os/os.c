@@ -2068,7 +2068,7 @@ int neverc_os_executable(char *buf, size_t cap) {
 #elif defined(NEVERC_PLATFORM_APPLE)
     uint32_t size = (uint32_t)cap;
     return _NSGetExecutablePath(buf, &size) == 0 ? 0 : -1;
-#elif defined(NEVERC_PLATFORM_LINUX)
+#elif defined(NEVERC_PLATFORM_LINUX) || defined(NEVERC_PLATFORM_ANDROID)
     ssize_t n = readlink("/proc/self/exe", buf, cap);
     if (n < 0 || (size_t)n >= cap) return -1;
     buf[n] = '\0';

@@ -1670,7 +1670,9 @@ static void test_post_no_content_length(void) {
         "POST /post HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         buf, sizeof(buf));
     check_int("post no cl resp", n > 0, 1);
-    check_int("post no cl rejected", strstr(buf, "400 Bad Request") != NULL, 1);
+    check_int("post no cl is empty body",
+              strstr(buf, "201") != NULL &&
+              strstr(buf, "no body") != NULL, 1);
 
     stop_test_server(server_pid);
 }
@@ -1684,12 +1686,31 @@ static void test_post_no_content_length_keepalive(void) {
     pid_t server_pid = start_test_server(port);
     char buf[4096];
 
-    int n = do_http_request(port,
-        "POST /post HTTP/1.1\r\nHost: localhost\r\n\r\n",
-        buf, sizeof(buf));
-    check_int("post keepalive no cl resp", n > 0, 1);
-    check_int("post keepalive no cl rejected",
-              strstr(buf, "400 Bad Request") != NULL, 1);
+    const char *err = NULL;
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+    check_not_null("post keepalive pipeline conn", conn);
+    if (conn) {
+        neverc_tcp_set_timeout(conn, 5000);
+        const char *requests =
+            "POST /post HTTP/1.1\r\nHost: localhost\r\n\r\n"
+            "GET /hello HTTP/1.1\r\nHost: localhost\r\n"
+            "Connection: close\r\n\r\n";
+        neverc_tcp_write(conn, requests, strlen(requests));
+        int total = 0;
+        int got;
+        while (total < (int)sizeof(buf) - 1 &&
+               (got = neverc_tcp_read(
+                    conn, buf + total, sizeof(buf) - 1U - (size_t)total)) > 0)
+            total += got;
+        buf[total] = '\0';
+        check_int("empty POST and pipelined GET both served",
+                  strstr(buf, "201") != NULL &&
+                  strstr(buf, "no body") != NULL &&
+                  strstr(buf, "Hello, World!") != NULL, 1);
+        neverc_tcp_close(conn);
+    }
 
     stop_test_server(server_pid);
 }
@@ -1708,29 +1729,26 @@ static void test_post_http10_keepalive_no_cl(void) {
         "Connection: keep-alive\r\n\r\n",
         buf, sizeof(buf));
     check_int("http10 ka post resp", n > 0, 1);
-    check_int("http10 ka post rejected",
-              strstr(buf, "400 Bad Request") != NULL, 1);
+    check_int("http10 ka post has empty body",
+              strstr(buf, "201") != NULL &&
+              strstr(buf, "no body") != NULL, 1);
 
     n = do_http_request(port,
         "POST /post HTTP/1.0\r\nHost: localhost\r\n"
-        "Connection: close\r\n\r\nhello",
+        "Connection: close\r\n\r\n",
         buf, sizeof(buf));
     check_int("http10 close post resp", n > 0, 1);
-    check_int("http10 close post rejected",
-              strstr(buf, "400 Bad Request") != NULL, 1);
-    check_int("http10 close post not silent empty body",
-              strstr(buf, "no body") == NULL &&
-              strstr(buf, "201") == NULL, 1);
+    check_int("http10 close post has empty body",
+              strstr(buf, "no body") != NULL &&
+              strstr(buf, "201") != NULL, 1);
 
     n = do_http_request(port,
-        "POST /post HTTP/1.0\r\nHost: localhost\r\n\r\nhello",
+        "POST /post HTTP/1.0\r\nHost: localhost\r\n\r\n",
         buf, sizeof(buf));
     check_int("http10 default close post resp", n > 0, 1);
-    check_int("http10 default close post rejected",
-              strstr(buf, "400 Bad Request") != NULL, 1);
-    check_int("http10 default close post not silent empty body",
-              strstr(buf, "no body") == NULL &&
-              strstr(buf, "201") == NULL, 1);
+    check_int("http10 default close post has empty body",
+              strstr(buf, "no body") != NULL &&
+              strstr(buf, "201") != NULL, 1);
 
     stop_test_server(server_pid);
 }
@@ -2549,6 +2567,85 @@ static void test_client_204_content_length(void) {
     int status = 0;
     waitpid(server, &status, 0);
     check_int("204 cl server status",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+}
+
+static void test_client_metadata_content_length_ignores_body_limit(void) {
+    printf("[client_metadata_content_length_ignores_body_limit]\n");
+
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    check_not_null("metadata cl listener", listener);
+    if (!listener) return;
+
+    neverc_tcp_addr_t address;
+    if (neverc_tcp_listener_addr(listener, &address) != 0) {
+        neverc_tcp_listener_close(listener);
+        check_int("metadata cl listener address", 0, 1);
+        return;
+    }
+
+    pid_t server = fork();
+    if (server == 0) {
+        static const char *responses[] = {
+            "HTTP/1.1 200 OK\r\nContent-Length: 4096\r\n"
+            "Connection: close\r\n\r\n",
+            "HTTP/1.1 304 Not Modified\r\nContent-Length: 4096\r\n"
+            "Connection: close\r\n\r\n",
+        };
+        for (size_t i = 0; i < sizeof(responses) / sizeof(responses[0]); i++) {
+            neverc_tcp_conn_t *connection =
+                neverc_tcp_accept(listener, &error);
+            if (!connection) _exit(1);
+            char request[1024];
+            if (neverc_tcp_read(connection, request, sizeof(request)) <= 0)
+                _exit(1);
+            if (raw_write_all(connection, responses[i],
+                              strlen(responses[i])) != 0)
+                _exit(1);
+            neverc_tcp_close(connection);
+        }
+        neverc_tcp_listener_close(listener);
+        _exit(0);
+    }
+    neverc_tcp_listener_close(listener);
+    if (server < 0) {
+        check_int("metadata cl server fork", 0, 1);
+        return;
+    }
+
+    neverc_http_client_config_t config = neverc_http_client_config_default();
+    config.timeout_ms = 5000;
+    config.max_idle_per_host = 0;
+    config.max_response_body_size = 8;
+    neverc_http_client_t *client = neverc_http_client_new(&config);
+    check_not_null("metadata cl client", client);
+    if (!client) {
+        kill(server, SIGTERM);
+        waitpid(server, NULL, 0);
+        return;
+    }
+    char url[96];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/value", address.port);
+    neverc_http_response_t *head =
+        neverc_http_client_do(client, "HEAD", url, NULL, NULL, 0U);
+    check_int("HEAD metadata length does not exceed body limit",
+              head && !head->error && head->status_code == 200 &&
+              head->body_len == 0, 1);
+    neverc_http_response_t *not_modified =
+        neverc_http_client_do(client, "GET", url, NULL, NULL, 0U);
+    check_int("304 metadata length does not exceed body limit",
+              not_modified && !not_modified->error &&
+              not_modified->status_code == 304 &&
+              not_modified->body_len == 0, 1);
+    neverc_http_response_free(head);
+    neverc_http_response_free(not_modified);
+    neverc_http_client_free(client);
+
+    int status = 0;
+    waitpid(server, &status, 0);
+    check_int("metadata cl server status",
               WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
 }
 
@@ -4881,6 +4978,7 @@ int main(void) {
     test_client_304_chunked_not_pooled();
     test_client_get_content_type_no_cl();
     test_client_204_content_length();
+    test_client_metadata_content_length_ignores_body_limit();
     test_client_rejects_bare_lf_status();
     test_connection_limit();
     test_max_body_size_buffered();

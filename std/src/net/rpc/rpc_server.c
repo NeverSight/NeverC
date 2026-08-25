@@ -59,6 +59,8 @@ struct neverc_rpc_server_stream {
     neverc_thread_channel_t *receive_queue;
     neverc_context_t *context;
     neverc_context_cancel_handle_t *cancel;
+    /* Serializes response DATA and END without blocking under state lock. */
+    nc_mutex_t send_lock;
     nc_mutex_t lock;
     int receive_closed;
     int ended;
@@ -368,6 +370,7 @@ static void rpc_server_stream_destroy(neverc_rpc_server_stream_t *stream) {
     neverc_context_free(stream->context);
     neverc_thread_channel_free(stream->receive_queue);
     nc_mutex_destroy(&stream->lock);
+    nc_mutex_destroy(&stream->send_lock);
     free(stream->metadata);
     free(stream->open_payload);
     free(stream->method);
@@ -446,12 +449,19 @@ int neverc_rpc_server_stream_recv(
 int neverc_rpc_server_stream_send(
     neverc_rpc_server_stream_t *stream, const void *data, size_t len) {
     if (!stream || (!data && len > 0)) return NEVERC_RPC_IO_INVALID;
+    nc_mutex_lock(&stream->send_lock);
     nc_mutex_lock(&stream->lock);
     int closed = stream->ended || stream->peer_cancelled;
     int cancelled = neverc_context_done(stream->context);
     nc_mutex_unlock(&stream->lock);
-    if (closed) return NEVERC_RPC_IO_CLOSED;
-    if (cancelled) return NEVERC_RPC_IO_CANCELLED;
+    if (closed) {
+        nc_mutex_unlock(&stream->send_lock);
+        return NEVERC_RPC_IO_CLOSED;
+    }
+    if (cancelled) {
+        nc_mutex_unlock(&stream->send_lock);
+        return NEVERC_RPC_IO_CANCELLED;
+    }
     size_t sent = 0;
     while (sent < len) {
         size_t chunk = len - sent;
@@ -467,9 +477,13 @@ int neverc_rpc_server_stream_send(
         int result = rpc_server_queue_frame(stream->connection,
                                              stream->context, &header,
                                              (const uint8_t *)data + sent);
-        if (result != NEVERC_RPC_IO_OK) return result;
+        if (result != NEVERC_RPC_IO_OK) {
+            nc_mutex_unlock(&stream->send_lock);
+            return result;
+        }
         sent += chunk;
     }
+    nc_mutex_unlock(&stream->send_lock);
     return NEVERC_RPC_IO_OK;
 }
 
@@ -480,12 +494,13 @@ static int rpc_server_stream_end_internal(
     if (!stream || !neverc_rpc_status_code_valid((uint32_t)code) ||
         message_length > stream->connection->server->config.max_frame_size)
         return NEVERC_RPC_IO_INVALID;
+    nc_mutex_lock(&stream->send_lock);
     nc_mutex_lock(&stream->lock);
     if (stream->ended) {
         nc_mutex_unlock(&stream->lock);
+        nc_mutex_unlock(&stream->send_lock);
         return NEVERC_RPC_IO_CLOSED;
     }
-    stream->ended = 1;
     nc_mutex_unlock(&stream->lock);
     neverc_rpc_frame_header_t header;
     memset(&header, 0, sizeof(header));
@@ -496,8 +511,15 @@ static int rpc_server_stream_end_internal(
     header.payload_length = (uint32_t)message_length;
     header.request_id = stream->request_id;
     header.code = (uint32_t)code;
-    return rpc_server_queue_frame(stream->connection, queue_context,
-                                  &header, message);
+    int result = rpc_server_queue_frame(stream->connection, queue_context,
+                                        &header, message);
+    if (result == NEVERC_RPC_IO_OK) {
+        nc_mutex_lock(&stream->lock);
+        stream->ended = 1;
+        nc_mutex_unlock(&stream->lock);
+    }
+    nc_mutex_unlock(&stream->send_lock);
+    return result;
 }
 
 int neverc_rpc_server_stream_end(
@@ -648,6 +670,7 @@ static int rpc_server_dispatch_open(rpc_server_connection_t *connection,
         free(stream);
         return -1;
     }
+    nc_mutex_init(&stream->send_lock);
     nc_mutex_init(&stream->lock);
     rpc_method_t *method = rpc_server_find_method(
         server, stream->method, strlen(stream->method));

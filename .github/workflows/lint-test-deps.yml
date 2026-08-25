@@ -4,20 +4,32 @@ on:
   push:
     paths:
       - 'std/manifest.json'
+      - 'neverc/include/neverc/Foundation/Std/StdModuleMethods.def'
+      - 'neverc/lib/Foundation/Std/StdModule.cpp'
+      - 'neverc/lib/Analyze/Expr/SemaExprMember.cpp'
       - 'std/include/**/*.h'
       - 'std/src/**/*.c'
+      - 'tests/neverc/std/test_*.c'
       - 'tests/neverc/StdLibTests.cpp'
       - 'utils/lint/check-test-deps.py'
       - 'utils/lint/test_check_test_deps.py'
+      - 'utils/lint/gen_std_module_methods.py'
+      - 'utils/lint/test_gen_std_module_methods.py'
       - '.github/workflows/lint-test-deps.yml'
   pull_request:
     paths:
       - 'std/manifest.json'
+      - 'neverc/include/neverc/Foundation/Std/StdModuleMethods.def'
+      - 'neverc/lib/Foundation/Std/StdModule.cpp'
+      - 'neverc/lib/Analyze/Expr/SemaExprMember.cpp'
       - 'std/include/**/*.h'
       - 'std/src/**/*.c'
+      - 'tests/neverc/std/test_*.c'
       - 'tests/neverc/StdLibTests.cpp'
       - 'utils/lint/check-test-deps.py'
       - 'utils/lint/test_check_test_deps.py'
+      - 'utils/lint/gen_std_module_methods.py'
+      - 'utils/lint/test_gen_std_module_methods.py'
       - '.github/workflows/lint-test-deps.yml'
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
@@ -39,7 +51,13 @@ jobs:
           python-version: '3.x'
 
       - name: Test standard-library registration validator
-        run: python3 -m unittest utils/lint/test_check_test_deps.py
+        run: |
+          python3 -m unittest \
+            utils/lint/test_check_test_deps.py \
+            utils/lint/test_gen_std_module_methods.py
+
+      - name: Verify generated std dot-method dispatch table
+        run: python3 utils/lint/gen_std_module_methods.py --check
 
       - name: Validate standard-library registration and test deps
         run: |

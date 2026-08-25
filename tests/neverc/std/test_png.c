@@ -220,6 +220,48 @@ static void test_zlib_window_bits(void) {
     }
 }
 
+static void test_legal_long_deflate_stream(void) {
+    printf("[legal_long_deflate_stream]\n");
+
+    /* RFC 1951 permits any number of non-final empty stored blocks. Their
+     * encoded size is unrelated to the two-byte decoded scanline. */
+    uint8_t raw[67];
+    size_t pos = 0;
+    for (unsigned i = 0; i < 12; i++) {
+        raw[pos++] = 0x00; /* non-final stored block */
+        raw[pos++] = 0x00; raw[pos++] = 0x00;
+        raw[pos++] = 0xff; raw[pos++] = 0xff;
+    }
+    raw[pos++] = 0x01; /* final stored block */
+    raw[pos++] = 0x02; raw[pos++] = 0x00;
+    raw[pos++] = 0xfd; raw[pos++] = 0xff;
+    raw[pos++] = 0x00; /* PNG filter */
+    raw[pos++] = 0x7f; /* grayscale pixel */
+    ASSERT_EQ(pos, sizeof(raw));
+
+    static const uint8_t plain[] = {0x00, 0x7f};
+    uint8_t zlib[73];
+    size_t zlib_len = sizeof(zlib);
+    ASSERT_EQ(png_test_wrap_zlib(zlib, &zlib_len, 7, raw, sizeof(raw),
+                                 plain, sizeof(plain)), 0);
+    ASSERT_EQ(zlib_len, sizeof(zlib));
+
+    size_t png_len = 0;
+    uint8_t *png = png_test_build_grayscale(1, zlib, zlib_len, &png_len);
+    ASSERT_TRUE(png != NULL);
+    if (!png) return;
+    neverc_png_image_t decoded;
+    int rc = neverc_png_decode(png, png_len, &decoded);
+    ASSERT_EQ(rc, 0);
+    if (rc == 0) {
+        const uint8_t *pixel = neverc_png_pixel_at(&decoded, 0, 0);
+        ASSERT_TRUE(pixel != NULL);
+        if (pixel) ASSERT_EQ(pixel[0], 0x7f);
+        neverc_png_free(&decoded);
+    }
+    free(png);
+}
+
 static void test_encode_decode_rgba(void) {
     printf("[encode_decode_rgba]\n");
     neverc_png_image_t img;
@@ -399,6 +441,21 @@ static void test_pixel_at_bounds(void) {
     img.stride = 0;
     img.pixels = under_stride;
     ASSERT_TRUE(neverc_png_pixel_at(&img, 0, 0) == NULL);
+}
+
+static void test_pixel_set_overlap(void) {
+    printf("[pixel_set_overlap]\n");
+    uint8_t pixels[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    neverc_png_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 2;
+    img.height = 1;
+    img.channels = 4;
+    img.stride = sizeof(pixels);
+    img.pixels = pixels;
+    static const uint8_t expected[] = {2, 3, 4, 5};
+    neverc_png_pixel_set(&img, 1, 0, pixels + 1);
+    ASSERT_TRUE(memcmp(pixels + 4, expected, sizeof(expected)) == 0);
 }
 
 static void test_pixel_offset_overflow(void) {
@@ -1076,6 +1133,7 @@ int main(void) {
     test_encode_decode_grayscale();
     test_encode_decode_grayscale_alpha();
     test_pixel_at_bounds();
+    test_pixel_set_overlap();
     test_pixel_offset_overflow();
     test_invalid_data();
     test_rejects_trailing_bytes();
@@ -1085,6 +1143,7 @@ int main(void) {
     test_chunk_crc_valid();
     test_zlib_fcheck_valid();
     test_zlib_window_bits();
+    test_legal_long_deflate_stream();
     test_rejects_huge_ihdr();
     test_rejects_truncated_stream();
     test_truncated_header_clears_geometry();

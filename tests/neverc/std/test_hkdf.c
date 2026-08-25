@@ -305,6 +305,39 @@ static void test_invalid_spans_and_lengths(void) {
 #endif
 }
 
+static void test_expand_info_overlap(void) {
+    printf("[HKDF overlapping info/output]\n");
+    uint8_t prk256[32], prk512[64];
+    uint8_t info[16];
+    for (int i = 0; i < 16; i++) info[i] = (uint8_t)(0xa0 + i);
+    for (int i = 0; i < 32; i++) prk256[i] = (uint8_t)i;
+    for (int i = 0; i < 64; i++) prk512[i] = (uint8_t)(0x40 + i);
+
+    uint8_t expected256[64], aliased256[64] = {0};
+    memcpy(aliased256, info, sizeof(info));
+    check_true("SHA-256 disjoint overlap oracle succeeds",
+               neverc_hkdf_expand_sha256(expected256, sizeof(expected256),
+                                         prk256, info, sizeof(info)) == 0);
+    check_true("SHA-256 overlapping info succeeds",
+               neverc_hkdf_expand_sha256(aliased256, sizeof(aliased256),
+                                         prk256, aliased256,
+                                         sizeof(info)) == 0);
+    check_true("SHA-256 overlapping info matches disjoint",
+               memcmp(aliased256, expected256, sizeof(expected256)) == 0);
+
+    uint8_t expected512[128], aliased512[128] = {0};
+    memcpy(aliased512, info, sizeof(info));
+    check_true("SHA-512 disjoint overlap oracle succeeds",
+               neverc_hkdf_expand_sha512(expected512, sizeof(expected512),
+                                         prk512, info, sizeof(info)) == 0);
+    check_true("SHA-512 overlapping info succeeds",
+               neverc_hkdf_expand_sha512(aliased512, sizeof(aliased512),
+                                         prk512, aliased512,
+                                         sizeof(info)) == 0);
+    check_true("SHA-512 overlapping info matches disjoint",
+               memcmp(aliased512, expected512, sizeof(expected512)) == 0);
+}
+
 int main(void) {
     printf("=== NeverC HKDF Tests ===\n\n");
     test_rfc5869_case1();
@@ -315,6 +348,7 @@ int main(void) {
     test_large_info_sha256_sha512();
     test_sha512_extract_and_full();
     test_invalid_spans_and_lengths();
+    test_expand_info_overlap();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

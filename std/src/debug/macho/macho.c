@@ -78,8 +78,16 @@ static int macho_fat_first_slice(const uint8_t *data, size_t len,
      * calls NewFile on every architecture, so we do the same. */
     uint32_t slice_off = 0;
     uint32_t slice_size = 0;
+    uint32_t first_type = 0;
     for (uint32_t i = 0; i < narch; i++) {
         const uint8_t *arch = data + 8 + (size_t)i * 20U;
+        uint32_t cpu = r32(arch);
+        uint32_t subcpu = r32(arch + 4);
+        for (uint32_t j = 0; j < i; j++) {
+            const uint8_t *previous = data + 8 + (size_t)j * 20U;
+            if (r32(previous) == cpu && r32(previous + 4) == subcpu)
+                return -1;
+        }
         uint32_t offset = r32(arch + 8);
         uint32_t size = r32(arch + 12);
         if (!macho_range_in_file(offset, size, len) || size < 4)
@@ -97,10 +105,14 @@ static int macho_fat_first_slice(const uint8_t *data, size_t len,
         neverc_macho_file_t extra;
         if (neverc_macho_open(&extra, data + offset, size) < 0)
             return -1;
+        uint32_t slice_type = extra.header.type;
         neverc_macho_close(&extra);
         if (i == 0) {
             slice_off = offset;
             slice_size = size;
+            first_type = slice_type;
+        } else if (slice_type != first_type) {
+            return -1;
         }
     }
     *thin = data + slice_off;

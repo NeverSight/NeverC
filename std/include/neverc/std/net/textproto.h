@@ -16,6 +16,13 @@ typedef struct {
 
 void neverc_mime_header_init(neverc_mime_header_t *h);
 void neverc_mime_header_free(neverc_mime_header_t *h);
+/* Checked mutators return 0 on success and -1 for invalid input or allocation
+ * failure.  On failure the header is left unchanged. */
+int neverc_mime_header_try_add(neverc_mime_header_t *h, const char *key,
+                               const char *value);
+int neverc_mime_header_try_set(neverc_mime_header_t *h, const char *key,
+                               const char *value);
+/* Compatibility wrappers ignore the checked mutator result. */
 void neverc_mime_header_add(neverc_mime_header_t *h, const char *key, const char *value);
 void neverc_mime_header_set(neverc_mime_header_t *h, const char *key, const char *value);
 const char *neverc_mime_header_get(const neverc_mime_header_t *h, const char *key);
@@ -37,6 +44,9 @@ int neverc_textproto_read_dot_lines(const char *data, size_t len,
 int neverc_textproto_read_code_line(const char *line, int *code,
                                      const char **msg);
 
+/* Trims leading/trailing SP and HTAB.  Returns -1 and writes an empty string
+ * when cap cannot hold the complete result; successful output is never
+ * silently truncated. */
 int neverc_textproto_trim_string(const char *s, char *out, size_t cap);
 
 #ifdef __cplusplus

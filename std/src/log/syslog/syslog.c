@@ -1,6 +1,7 @@
 #include "neverc/std/log/syslog.h"
 #include "neverc/std/_platform.h"
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -72,15 +73,15 @@ static int write_allowed(neverc_syslog_t *log,
     return 1;
 }
 
-enum { SYSLOG_MSG_MAX = 2048 };
-
-static void sanitize_msg(char *dst, size_t dstsz, const char *msg) {
-    if (!dst || dstsz == 0) return;
-    size_t n = msg ? strlen(msg) : 0;
-    if (n >= dstsz) n = dstsz - 1;
-    if (n > 0 && msg) memcpy(dst, msg, n);
-    dst[n] = '\0';
-    replace_record_breaks(dst);
+static char *sanitize_msg_copy(const char *msg) {
+    if (!msg) return NULL;
+    size_t len = strlen(msg);
+    if (len == SIZE_MAX) return NULL;
+    char *copy = (char *)malloc(len + 1U);
+    if (!copy) return NULL;
+    memcpy(copy, msg, len + 1U);
+    replace_record_breaks(copy);
+    return copy;
 }
 
 int neverc_syslog_format(neverc_syslog_t *log,
@@ -88,26 +89,32 @@ int neverc_syslog_format(neverc_syslog_t *log,
                          const char *msg, char *buf, size_t n) {
     if (!write_allowed(log, priority, msg) || !buf || n == 0)
         return -1;
-    char msgbuf[SYSLOG_MSG_MAX];
-    sanitize_msg(msgbuf, sizeof(msgbuf), msg);
     /* RFC 3164 / Go log/syslog: "<PRI>tag: message" with no extra fields. */
-    int written = snprintf(buf, n, "<%d>%s: %s",
+    int written = snprintf(buf, n, "<%d>%s: ",
                            neverc_syslog_pri(log->facility, priority),
-                           log->tag, msgbuf);
+                           log->tag);
     if (written < 0 || (size_t)written >= n)
         return -1;
+    size_t prefix_len = (size_t)written;
+    size_t msg_len = strlen(msg);
+    if (msg_len >= n - prefix_len)
+        return -1;
+    memcpy(buf + prefix_len, msg, msg_len + 1U);
+    replace_record_breaks(buf + prefix_len);
     return 0;
 }
 
 static int write_pri_fallback(neverc_syslog_t *log,
                               neverc_syslog_priority_t priority,
                               const char *msg) {
-    char line[SYSLOG_MSG_MAX + 160];
-    if (neverc_syslog_format(log, priority, msg, line, sizeof(line)) != 0)
+    char *clean = sanitize_msg_copy(msg);
+    if (!clean)
         return -1;
-    if (fprintf(stderr, "%s\n", line) < 0)
-        return -1;
-    return 0;
+    int written = fprintf(
+        stderr, "<%d>%s: %s\n",
+        neverc_syslog_pri(log->facility, priority), log->tag, clean);
+    free(clean);
+    return written < 0 ? -1 : 0;
 }
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
@@ -143,16 +150,19 @@ int neverc_syslog_write(neverc_syslog_t *log,
     WORD etype = EVENTLOG_INFORMATION_TYPE;
     if (priority <= NEVERC_SYSLOG_ERR) etype = EVENTLOG_ERROR_TYPE;
     else if (priority <= NEVERC_SYSLOG_WARNING) etype = EVENTLOG_WARNING_TYPE;
-    char msgbuf[SYSLOG_MSG_MAX];
-    sanitize_msg(msgbuf, sizeof(msgbuf), msg);
+    char *msgbuf = sanitize_msg_copy(msg);
+    if (!msgbuf) return -1;
     /* RegisterEventSource without a message-table registration still treats
      * insertion specs (%1, %n, %%) in the payload. Neutralize them. */
     for (char *p = msgbuf; *p; p++)
         if (*p == '%')
             *p = '_';
     const char *msgs[1] = { msgbuf };
-    if (!ReportEventA(log->event_log, etype, 0, 0, NULL, 1, 0, msgs, NULL))
+    if (!ReportEventA(log->event_log, etype, 0, 0, NULL, 1, 0, msgs, NULL)) {
+        free(msgbuf);
         return -1;
+    }
+    free(msgbuf);
     return 0;
 }
 
@@ -220,8 +230,8 @@ int neverc_syslog_write(neverc_syslog_t *log,
                         neverc_syslog_priority_t priority,
                         const char *msg) {
     if (!write_allowed(log, priority, msg)) return -1;
-    char msgbuf[SYSLOG_MSG_MAX];
-    sanitize_msg(msgbuf, sizeof(msgbuf), msg);
+    char *msgbuf = sanitize_msg_copy(msg);
+    if (!msgbuf) return -1;
     /* Rebind the process-global ident for every record. Keeping this call and
      * syslog() in one NeverC critical section prevents two NeverC handles from
      * attributing each other's records. */
@@ -230,6 +240,7 @@ int neverc_syslog_write(neverc_syslog_t *log,
     posix_syslog_owner = log;
     NCI_SYSLOG_WRITE(neverc_syslog_pri(log->facility, priority), "%s", msgbuf);
     posix_syslog_unlock();
+    free(msgbuf);
     return 0;
 }
 

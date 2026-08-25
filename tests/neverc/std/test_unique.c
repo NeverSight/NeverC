@@ -234,6 +234,24 @@ static void test_stale_handle_after_destroy(void) {
     ASSERT_STR_EQ(neverc_unique_string_value(again), "hello");
 }
 
+static void test_forged_handle(void) {
+    printf("[forged_handle]\n");
+    neverc_unique_destroy();
+    neverc_unique_init();
+
+    neverc_unique_handle_t live = neverc_unique_make_string("live");
+    uint64_t attacker_data = UINT64_C(0x1122334455667788);
+    neverc_unique_handle_t forged = {&attacker_data, live.epoch};
+
+    ASSERT_TRUE(!neverc_unique_handle_valid(forged));
+    ASSERT_TRUE(neverc_unique_string_value(forged) == NULL);
+    ASSERT_INT_EQ(neverc_unique_int64_value(forged), 0);
+    ASSERT_INT_EQ((long long)neverc_unique_uint64_value(forged), 0);
+    size_t len = 99;
+    ASSERT_TRUE(neverc_unique_bytes_value(forged, &len) == NULL);
+    ASSERT_INT_EQ((long long)len, 0);
+}
+
 static void test_count(void) {
     printf("[count]\n");
     neverc_unique_destroy();
@@ -280,6 +298,7 @@ int main(void) {
     test_kind_isolation();
     test_typed_accessors_reject_wrong_shape();
     test_stale_handle_after_destroy();
+    test_forged_handle();
     test_count();
     test_many_strings();
     neverc_unique_destroy();

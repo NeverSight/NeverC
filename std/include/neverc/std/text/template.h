@@ -6,7 +6,8 @@
  *
  * Supports literal text, {{.Key}}, {{if .Key}}...{{else}}...{{end}}, and
  * {{range .Key}}...{{end}}. {{- and -}} trim adjacent whitespace like Go.
- * Data values are borrowed strings. Since the data model has no collection
+ * Data keys are copied and owned by the data object; values are borrowed
+ * strings. Since the data model has no collection
  * type, range executes its body once when the named value exists; pipelines
  * and template functions are rejected as invalid syntax rather than treated
  * as key names. Selectors require a leading '.' (unlike html/template).
@@ -37,6 +38,8 @@ neverc_template_t *neverc_template_parse(const char *text, const char **errp);
 void               neverc_template_free(neverc_template_t *tmpl);
 
 void neverc_template_data_init(neverc_template_data_t *d);
+/* Copies key and borrows value. Updating an existing key only replaces the
+ * borrowed value. */
 void neverc_template_data_set(neverc_template_data_t *d,
                                const char *key, const char *value);
 const char *neverc_template_data_get(const neverc_template_data_t *d,

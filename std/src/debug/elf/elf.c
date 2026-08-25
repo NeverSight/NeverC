@@ -185,7 +185,7 @@ static int elf_resolve_layout(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
     }
 
     if (*shnum == 0) {
-        if (sh_size == 0 || sh_size > UINT32_MAX)
+        if (sh_size < NEVERC_SHN_LORESERVE || sh_size > UINT32_MAX)
             return -1;
         *shnum = (uint32_t)sh_size;
     }
@@ -197,8 +197,11 @@ static int elf_resolve_layout(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
             return -1;
         *phnum = sh_info;
     }
-    if (*shstrndx == NEVERC_SHN_XINDEX)
+    if (*shstrndx == NEVERC_SHN_XINDEX) {
+        if (sh_link < NEVERC_SHN_LORESERVE)
+            return -1;
         *shstrndx = sh_link;
+    }
     return 0;
 }
 

@@ -1,10 +1,37 @@
 #include <stdio.h>
 #include <stdlib.h>
+#if !defined(_WIN32)
+#include <errno.h>
+#include <pthread.h>
+#endif
 
 static int fail_key_allocation;
 static int fail_bucket_allocation;
 static int fail_sync_init;
 static int fail_sync_lock_remaining;
+#if !defined(_WIN32)
+static int fail_mutexattr_init;
+static int fail_mutexattr_settype;
+static int fail_mutex_init_remaining;
+
+static int controlled_mutexattr_init(pthread_mutexattr_t *attr) {
+    return fail_mutexattr_init ? EAGAIN : pthread_mutexattr_init(attr);
+}
+
+static int controlled_mutexattr_settype(pthread_mutexattr_t *attr, int type) {
+    return fail_mutexattr_settype ? EINVAL :
+           pthread_mutexattr_settype(attr, type);
+}
+
+static int controlled_mutex_init(pthread_mutex_t *mu,
+                                 const pthread_mutexattr_t *attr) {
+    if (fail_mutex_init_remaining > 0) {
+        fail_mutex_init_remaining--;
+        return EAGAIN;
+    }
+    return pthread_mutex_init(mu, attr);
+}
+#endif
 
 static int sync_init_should_fail(void) {
     return fail_sync_init;
@@ -34,6 +61,11 @@ static void *controlled_calloc(size_t count, size_t size) {
 #define NC_SYNC_CALLOC controlled_calloc
 #define NEVERC_SYNC_INIT_SHOULD_FAIL() sync_init_should_fail()
 #define NEVERC_SYNC_LOCK_SHOULD_FAIL() sync_lock_should_fail()
+#if !defined(_WIN32)
+#define NCI_SYNC_MUTEXATTR_INIT controlled_mutexattr_init
+#define NCI_SYNC_MUTEXATTR_SETTYPE controlled_mutexattr_settype
+#define NCI_SYNC_MUTEX_INIT controlled_mutex_init
+#endif
 #include "../../../std/src/sync/sync.c"
 
 #define CHECK(condition)                                                     \
@@ -81,6 +113,23 @@ int main(void) {
     CHECK(neverc_cond_init(&failed_cond, &cond_mu) == -1);
     fail_sync_init = 0;
     neverc_mutex_destroy(&cond_mu);
+
+#if !defined(_WIN32)
+    /* The documented wrong-owner no-op requires ERRORCHECK semantics. Never
+     * silently fall back to a default mutex if any attribute step fails. */
+    neverc_mutex_t attr_mu;
+    fail_mutexattr_init = 1;
+    CHECK(neverc_mutex_init(&attr_mu) == -1);
+    fail_mutexattr_init = 0;
+    fail_mutexattr_settype = 1;
+    CHECK(neverc_mutex_init(&attr_mu) == -1);
+    fail_mutexattr_settype = 0;
+    fail_mutex_init_remaining = 1;
+    CHECK(neverc_mutex_init(&attr_mu) == -1);
+    CHECK(fail_mutex_init_remaining == 0);
+    CHECK(neverc_mutex_init(&attr_mu) == 0);
+    neverc_mutex_destroy(&attr_mu);
+#endif
 
     neverc_once_t once;
     CHECK(neverc_once_init(&once) == 0);

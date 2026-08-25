@@ -613,6 +613,23 @@ static void test_must_compile(void) {
     check_bool("must_compile_posix ok", re != NULL, 1);
     check_bool("must_compile_posix match", neverc_regexp_match(re, "123"), 1);
     neverc_regexp_free(re);
+
+    re = neverc_regexp_compile_posix("[[:digit:]]+", &err);
+    check_bool("compile_posix POSIX class", re != NULL, 1);
+    if (re) check_bool("compile_posix POSIX class match",
+                       neverc_regexp_match(re, "123"), 1);
+    neverc_regexp_free(re);
+
+    static const char *perl_only[] = {
+        "\\d+", "(?:a)", "(?P<name>a)", "a+?", "[\\w]", "\\bword\\b"
+    };
+    for (size_t i = 0; i < sizeof(perl_only) / sizeof(perl_only[0]); i++) {
+        err = NULL;
+        re = neverc_regexp_compile_posix(perl_only[i], &err);
+        check_bool("compile_posix rejects Perl syntax", re == NULL, 1);
+        check_bool("compile_posix Perl syntax error", err != NULL, 1);
+        neverc_regexp_free(re);
+    }
 }
 
 /* ---- differential test: optimized search vs brute-force reference ----

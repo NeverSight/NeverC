@@ -13,7 +13,8 @@ extern "C" {
 
 typedef struct {
     uint64_t state[8];
-    uint64_t count;
+    uint64_t count;    /* low 64 bits of the byte count */
+    uint64_t count_hi; /* high 64 bits; valid byte lengths are below 2^125 */
     uint8_t  buf[128];
     int      finalized;
 } neverc_sha512_ctx;

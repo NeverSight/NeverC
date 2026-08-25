@@ -2570,11 +2570,12 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 if ((int64_t)conn.conn_recv_window +
                         (int64_t)fhdr.length <= INT32_MAX)
                     conn.conn_recv_window += (int32_t)fhdr.length;
-                nc_mutex_unlock(&conn.state_lock);
-                (void)h2_conn_write_goaway(&conn,
-                                           NC_H2_FLOW_CONTROL_ERROR);
-                free(payload);
-                goto cleanup;
+                h2_abort_stream_locked(&conn, stream,
+                                       NC_H2_FLOW_CONTROL_ERROR);
+                if (fhdr.length > 0)
+                    (void)h2_conn_write_window_update(&conn, 0,
+                                                      fhdr.length);
+                break;
             }
             stream->recv_window -= (int32_t)fhdr.length;
             nc_mutex_unlock(&conn.state_lock);

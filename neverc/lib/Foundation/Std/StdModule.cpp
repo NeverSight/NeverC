@@ -18,6 +18,37 @@ struct SubModuleEntry {
   llvm::StringLiteral Name;
 };
 
+struct ModuleMethodEntry {
+  llvm::StringLiteral Module;
+  llvm::StringLiteral Method;
+  llvm::StringLiteral Function;
+};
+
+static constexpr ModuleMethodEntry ModuleMethods[] = {
+#define STD_MODULE_METHOD(module, method, target) {#module, #method, #target},
+#include "neverc/Foundation/Std/StdModuleMethods.def"
+};
+
+static const ModuleMethodEntry *
+lookupModuleMethod(llvm::StringRef ModuleName, llvm::StringRef MethodName) {
+  size_t First = 0;
+  size_t Last = sizeof(ModuleMethods) / sizeof(ModuleMethods[0]);
+  while (First < Last) {
+    size_t Middle = First + (Last - First) / 2;
+    const ModuleMethodEntry &Entry = ModuleMethods[Middle];
+    int ModuleOrder = ModuleName.compare(Entry.Module);
+    int MethodOrder = ModuleOrder == 0 ? MethodName.compare(Entry.Method) : 0;
+    if (ModuleOrder < 0 || (ModuleOrder == 0 && MethodOrder < 0)) {
+      Last = Middle;
+    } else if (ModuleOrder > 0 || MethodOrder > 0) {
+      First = Middle + 1;
+    } else {
+      return &Entry;
+    }
+  }
+  return nullptr;
+}
+
 static constexpr SubModuleEntry SubModules[] = {
 #define STD_SUBMODULE(cat, name) {#cat, #name},
 #include "neverc/Foundation/Std/StdSubModules.def"
@@ -55,13 +86,14 @@ bool StdModule::isModuleName(llvm::StringRef Name) {
 
 bool StdModule::isModuleMethod(llvm::StringRef ModuleName,
                                llvm::StringRef MethodName) {
-  (void)MethodName;
-  return isModuleName(ModuleName);
+  return lookupModuleMethod(ModuleName, MethodName) != nullptr;
 }
 
 std::string StdModule::getModuleFunctionName(llvm::StringRef ModuleName,
                                              llvm::StringRef MethodName) {
-  return (llvm::Twine(FuncPrefix) + ModuleName + "_" + MethodName).str();
+  const ModuleMethodEntry *Entry =
+      lookupModuleMethod(ModuleName, MethodName);
+  return Entry ? Entry->Function.str() : std::string();
 }
 
 std::string StdModule::getModuleTypeName(llvm::StringRef ModuleName) {

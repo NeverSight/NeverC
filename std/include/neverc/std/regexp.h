@@ -63,7 +63,8 @@ void neverc_regexp_free_strings(char **strs, int count);
 /* QuoteMeta: escape all regex metacharacters in s.  Caller frees result. */
 char *neverc_regexp_quote_meta(const char *s);
 
-/* CompilePOSIX: the supported syntax subset with leftmost-longest semantics. */
+/* CompilePOSIX: restrict the supported subset to POSIX ERE syntax and use
+ * leftmost-longest semantics. */
 neverc_regexp_t *neverc_regexp_compile_posix(const char *pattern, const char **errp);
 
 /* MustCompile: like Compile but aborts on error */

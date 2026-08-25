@@ -8,6 +8,18 @@
 #ifndef NEVERC_SYNC_LOCK_SHOULD_FAIL
 #define NEVERC_SYNC_LOCK_SHOULD_FAIL() 0
 #endif
+#ifndef NCI_SYNC_MUTEXATTR_INIT
+#define NCI_SYNC_MUTEXATTR_INIT pthread_mutexattr_init
+#endif
+#ifndef NCI_SYNC_MUTEXATTR_SETTYPE
+#define NCI_SYNC_MUTEXATTR_SETTYPE pthread_mutexattr_settype
+#endif
+#ifndef NCI_SYNC_MUTEXATTR_DESTROY
+#define NCI_SYNC_MUTEXATTR_DESTROY pthread_mutexattr_destroy
+#endif
+#ifndef NCI_SYNC_MUTEX_INIT
+#define NCI_SYNC_MUTEX_INIT pthread_mutex_init
+#endif
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 
@@ -15,24 +27,25 @@ int neverc_mutex_init(neverc_mutex_t *m) {
     if (!m || NEVERC_SYNC_INIT_SHOULD_FAIL())
         return -1;
     InitializeSRWLock(&m->srw);
-    m->owner = 0;
+    InterlockedExchange(&m->owner, 0);
     return 0;
 }
 void neverc_mutex_destroy(neverc_mutex_t *m) { (void)m; }
 void neverc_mutex_lock(neverc_mutex_t *m) {
     AcquireSRWLockExclusive(&m->srw);
-    m->owner = GetCurrentThreadId();
+    InterlockedExchange(&m->owner, (LONG)GetCurrentThreadId());
 }
 void neverc_mutex_unlock(neverc_mutex_t *m) {
-    if (!m || m->owner != GetCurrentThreadId())
+    if (!m || InterlockedCompareExchange(&m->owner, 0, 0) !=
+                  (LONG)GetCurrentThreadId())
         return;
-    m->owner = 0;
+    InterlockedExchange(&m->owner, 0);
     ReleaseSRWLockExclusive(&m->srw);
 }
 int neverc_mutex_trylock(neverc_mutex_t *m) {
     if (!TryAcquireSRWLockExclusive(&m->srw))
         return 0;
-    m->owner = GetCurrentThreadId();
+    InterlockedExchange(&m->owner, (LONG)GetCurrentThreadId());
     return 1;
 }
 
@@ -121,10 +134,9 @@ int neverc_cond_init(neverc_cond_t *c, neverc_mutex_t *m) {
 }
 void neverc_cond_destroy(neverc_cond_t *c) { (void)c; }
 void neverc_cond_wait(neverc_cond_t *c) {
-    DWORD self = c->m->owner;
-    c->m->owner = 0;
+    LONG self = InterlockedExchange(&c->m->owner, 0);
     SleepConditionVariableSRW(&c->cond, &c->m->srw, INFINITE, 0);
-    c->m->owner = self;
+    InterlockedExchange(&c->m->owner, self);
 }
 void neverc_cond_signal(neverc_cond_t *c) { WakeConditionVariable(&c->cond); }
 void neverc_cond_broadcast(neverc_cond_t *c) { WakeAllConditionVariable(&c->cond); }
@@ -150,15 +162,15 @@ int neverc_mutex_init(neverc_mutex_t *m) {
     if (!m || NEVERC_SYNC_INIT_SHOULD_FAIL())
         return -1;
     pthread_mutexattr_t attr;
-    if (pthread_mutexattr_init(&attr) == 0) {
-        (void)pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK);
-        if (pthread_mutex_init(&m->mu, &attr) == 0) {
-            pthread_mutexattr_destroy(&attr);
-            return 0;
-        }
-        pthread_mutexattr_destroy(&attr);
+    if (NCI_SYNC_MUTEXATTR_INIT(&attr) != 0)
+        return -1;
+    if (NCI_SYNC_MUTEXATTR_SETTYPE(&attr, PTHREAD_MUTEX_ERRORCHECK) != 0) {
+        NCI_SYNC_MUTEXATTR_DESTROY(&attr);
+        return -1;
     }
-    return pthread_mutex_init(&m->mu, NULL) == 0 ? 0 : -1;
+    int rc = NCI_SYNC_MUTEX_INIT(&m->mu, &attr);
+    NCI_SYNC_MUTEXATTR_DESTROY(&attr);
+    return rc == 0 ? 0 : -1;
 }
 void neverc_mutex_destroy(neverc_mutex_t *m) {
     pthread_mutex_destroy(&m->mu);

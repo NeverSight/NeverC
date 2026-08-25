@@ -53,7 +53,7 @@ jobs:
         run: |
           cmake -S llvm -B build -G Ninja \
             -C neverc/cmake/caches/NeverC.cmake \
-            -DNEVERC_INCLUDE_TESTS=OFF \
+            -DNEVERC_INCLUDE_TESTS=ON \
             -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
             -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
             -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON \
@@ -91,6 +91,10 @@ jobs:
               -c /tmp/plugin_test.c -o /tmp/plugin_test.obj
             echo "--- $plugin OK ---"
           done
+
+      - name: Gate release on std library tests
+        shell: bash
+        run: cmake --build build --config Release --target check-neverc-std
 
       - name: Install neverc
         shell: bash

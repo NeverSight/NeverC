@@ -408,18 +408,32 @@ void neverc_template_data_set(neverc_template_data_t *d,
             return;
         }
     }
+    size_t key_len = strlen(key);
+    if (key_len == SIZE_MAX) return;
+    char *owned_key = (char *)NC_TEMPLATE_MALLOC(key_len + 1U);
+    if (!owned_key) return;
+    memcpy(owned_key, key, key_len + 1U);
     if (d->nvars >= d->cap) {
-        if (d->cap > INT_MAX / 2) return;
+        if (d->cap > INT_MAX / 2) {
+            free(owned_key);
+            return;
+        }
         int new_cap = d->cap == 0 ? 8 : d->cap * 2;
-        if ((size_t)new_cap > SIZE_MAX / sizeof(neverc_template_var_t)) return;
+        if ((size_t)new_cap > SIZE_MAX / sizeof(neverc_template_var_t)) {
+            free(owned_key);
+            return;
+        }
         neverc_template_var_t *new_vars =
             (neverc_template_var_t *)NC_TEMPLATE_REALLOC(
                 d->vars, (size_t)new_cap * sizeof(neverc_template_var_t));
-        if (!new_vars) return;
+        if (!new_vars) {
+            free(owned_key);
+            return;
+        }
         d->vars = new_vars;
         d->cap = new_cap;
     }
-    d->vars[d->nvars].key = key;
+    d->vars[d->nvars].key = owned_key;
     d->vars[d->nvars].value = value;
     d->nvars++;
 }
@@ -436,6 +450,10 @@ const char *neverc_template_data_get(const neverc_template_data_t *d,
 
 void neverc_template_data_free(neverc_template_data_t *d) {
     if (!d) return;
+    if (d->vars && d->nvars >= 0 && d->nvars <= d->cap) {
+        for (int i = 0; i < d->nvars; i++)
+            free((void *)d->vars[i].key);
+    }
     free(d->vars);
     d->vars = NULL;
     d->nvars = d->cap = 0;

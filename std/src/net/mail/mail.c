@@ -68,8 +68,11 @@ static int mail_address_safe(const char *s) {
     return 1;
 }
 
-/* RFC 5322 atext: printable US-ASCII except specials. */
+/* RFC 5322 atext, extended by RFC 6532 with UTF8-non-ascii. Public entry
+ * points validate the complete input as well-formed UTF-8 before success. */
 static int mail_atext(unsigned char c) {
+    if (c >= 0x80)
+        return 1;
     if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
         (c >= '0' && c <= '9'))
         return 1;
@@ -333,7 +336,13 @@ int neverc_mail_parse_address_list(const char *s,
 }
 
 int neverc_mail_format_address(const neverc_mail_address_t *addr, char *buf, size_t cap) {
-    if (!addr || !buf || cap == 0 || !mail_addr_spec_ok(addr->address))
+    if (!addr || !buf || cap == 0)
+        return -1;
+    /* These are caller-populated public fixed arrays. Bound both before any
+     * helper can reach strchr/strlen or otherwise scan them as C strings. */
+    if (!memchr(addr->address, '\0', sizeof(addr->address)) ||
+        !memchr(addr->name, '\0', sizeof(addr->name)) ||
+        !mail_addr_spec_ok(addr->address))
         return -1;
     if (mail_field_has_ctl(addr->name, strlen(addr->name))) return -1;
     if (!addr->name[0]) {
@@ -600,15 +609,15 @@ static int mail_month_index(const char *p) {
     return -1;
 }
 
-static int mail_dow_ok(const char *p) {
+static int mail_dow_index(const char *p) {
     static const char *dows[] = {
-        "Mon","Tue","Wed","Thu","Fri","Sat","Sun"
+        "Sun","Mon","Tue","Wed","Thu","Fri","Sat"
     };
     for (int i = 0; i < 7; i++) {
         if (mail_eq_ci(p, dows[i], 3))
-            return 1;
+            return i;
     }
-    return 0;
+    return -1;
 }
 
 /* RFC 5322 obs-zone plus UT/UTC/GMT. Military 1-letter zones are -0000. */
@@ -626,17 +635,19 @@ static int mail_named_zone(const char *p, size_t n, int *offset) {
             return 0;
         }
     }
-    if (n == 1 && mail_is_alpha((unsigned char)p[0])) {
+    if (n == 1 && mail_is_alpha((unsigned char)p[0]) &&
+        p[0] != 'J' && p[0] != 'j') {
         *offset = 0;
         return 0;
     }
     return -1;
 }
 
-long long neverc_mail_parse_date(const char *s) {
-    if (!s || !s[0]) return -1;
+int neverc_mail_parse_date_ex(const char *s, long long *timestamp) {
+    if (!s || !s[0] || !timestamp) return -1;
 
     const char *p = s;
+    int stated_dow = -1;
     if (mail_skip_cfws(&p) != 0) return -1;
 
     /* Optional day-of-week "," — only if the token is 3 letters and a comma
@@ -648,7 +659,8 @@ long long neverc_mail_parse_date(const char *s) {
         const char *q = p + 3;
         if (mail_skip_cfws(&q) != 0) return -1;
         if (*q == ',') {
-            if (!mail_dow_ok(p)) return -1;
+            stated_dow = mail_dow_index(p);
+            if (stated_dow < 0) return -1;
             p = q + 1;
             if (mail_skip_cfws(&p) != 0) return -1;
         }
@@ -673,24 +685,30 @@ long long neverc_mail_parse_date(const char *s) {
     const char *y0 = p;
     if (mail_parse_uint(&p, 2, 4, &year) != 0) return -1;
     int ydigits = (int)(p - y0);
-    if (ydigits == 3) return -1;
     if (ydigits == 2) year += (year < 50) ? 2000 : 1900;
+    else if (ydigits == 3) year += 1900;
     if (year < 1 || year > 9999) return -1;
     if (mail_skip_cfws(&p) != 0) return -1;
 
     int hour = 0, min = 0, sec = 0;
-    if (mail_parse_uint(&p, 1, 2, &hour) != 0 || *p != ':') return -1;
+    if (mail_parse_uint(&p, 2, 2, &hour) != 0 || *p != ':') return -1;
     p++;
-    if (mail_parse_uint(&p, 1, 2, &min) != 0) return -1;
+    if (mail_parse_uint(&p, 2, 2, &min) != 0) return -1;
     if (*p == ':') {
         p++;
-        if (mail_parse_uint(&p, 1, 2, &sec) != 0) return -1;
+        if (mail_parse_uint(&p, 2, 2, &sec) != 0) return -1;
     }
+    const char *zone_cfws = p;
     if (mail_skip_cfws(&p) != 0) return -1;
 
     /* zone is required (RFC 5322 time = time-of-day zone). */
     int zone_offset = 0;
     if (*p == '+' || *p == '-') {
+        /* The numeric branch is FWS ("+" / "-") 4DIGIT. Obsolete named
+         * zones may be adjacent, but a comment alone cannot supply this FWS.
+         * FWS always ends in SP/HTAB, including its folded form. */
+        if (p == zone_cfws || (p[-1] != ' ' && p[-1] != '\t'))
+            return -1;
         char sign = *p++;
         int zh = 0, zm = 0;
         if (p[0] < '0' || p[0] > '9' || p[1] < '0' || p[1] > '9' ||
@@ -732,6 +750,19 @@ long long neverc_mail_parse_date(const char *s) {
     long long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;          /* [0, 146096] */
     long long days = era * 146097 + doe - 719468;
 
-    return days * 86400 + (long long)hour * 3600 +
-           (long long)min * 60 + sec - zone_offset;
+    if (stated_dow >= 0) {
+        int actual_dow = (int)((days + 4) % 7);
+        if (actual_dow < 0) actual_dow += 7;
+        if (stated_dow != actual_dow) return -1;
+    }
+
+    *timestamp = days * 86400 + (long long)hour * 3600 +
+                 (long long)min * 60 + sec - zone_offset;
+    return 0;
+}
+
+long long neverc_mail_parse_date(const char *s) {
+    long long timestamp = 0;
+    if (neverc_mail_parse_date_ex(s, &timestamp) != 0) return -1;
+    return timestamp;
 }

@@ -1479,9 +1479,8 @@ void *neverc_vector_rbegin(const neverc_vector_t *v) {
 }
 
 void *neverc_vector_rend(const neverc_vector_t *v) {
-    if (!v || !v->data)
-        return NULL;
-    return (char *)v->data - v->elem_size;
+    (void)v;
+    return NULL;
 }
 
 /* ===== Comparison ===== */

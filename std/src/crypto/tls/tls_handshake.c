@@ -352,15 +352,15 @@ static int tls_send_local_certificate(
     if (!conn || !transcript || !sent_nonempty)
         return -1;
     int has_certificate =
-        cfg && cfg->cert_der && cfg->cert_der_len > 0;
+        cfg && cfg->cert_der && cfg->cert_der_len > 0 &&
+        cfg->cert_chain && cfg->cert_chain_len > 0;
     if (!has_certificate && !allow_empty)
         return -1;
-    if (has_certificate &&
-        cfg->cert_der_len > 0xFFFFFFu - 5u)
+    if (has_certificate && cfg->cert_chain_len > 0xFFFFFFu)
         return -1;
 
     size_t certificate_list_len = has_certificate ?
-        3 + cfg->cert_der_len + 2 : 0;
+        cfg->cert_chain_len : 0;
     size_t message_len =
         4 + 1 + 3 + certificate_list_len;
     if (message_len > TLS_MAX_PLAINTEXT)
@@ -377,12 +377,8 @@ static int tls_send_local_certificate(
     tls_put_u24(message + pos, (uint32_t)certificate_list_len);
     pos += 3;
     if (has_certificate) {
-        tls_put_u24(message + pos, (uint32_t)cfg->cert_der_len);
-        pos += 3;
-        memcpy(message + pos, cfg->cert_der, cfg->cert_der_len);
-        pos += cfg->cert_der_len;
-        tls_put_u16(message + pos, 0);
-        pos += 2;
+        memcpy(message + pos, cfg->cert_chain, cfg->cert_chain_len);
+        pos += cfg->cert_chain_len;
     }
     if (pos != message_len) {
         free(message);
@@ -1598,9 +1594,12 @@ static int tls_parse_server_hello(
     if (tls_cursor_read_u16(&body, &legacy_version) != 0 ||
         tls_cursor_read_bytes(&body, 32, &random) != 0)
         return -1;
-    (void)legacy_version;
-    /* RFC 8446 §4.1.3: clients MUST ignore legacy_version and use
-     * supported_versions. This random means HelloRetryRequest. */
+    /* RFC 8446 section 4.1.3 requires legacy_version to be 0x0303. */
+    if (legacy_version != TLS_LEGACY_VERSION) {
+        *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+        return -1;
+    }
+    /* This random means HelloRetryRequest. */
     static const uint8_t hello_retry_request_random[32] = {
         0xCF, 0x21, 0xAD, 0x74, 0xE5, 0x9A, 0x61, 0x11,
         0xBE, 0x1D, 0x8C, 0x02, 0x1E, 0x65, 0xB8, 0x91,
@@ -3486,6 +3485,11 @@ int nci_tls_handle_post_handshake(
                 return nci_tls_protocol_error(
                     conn, TLS_ALERT_DECODE_ERROR,
                     "malformed TLS NewSessionTicket");
+            if (++conn->non_advancing_records >
+                TLS_MAX_NON_ADVANCING_RECORDS)
+                return nci_tls_protocol_error(
+                    conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                    "too many non-advancing TLS records");
         } else {
             return nci_tls_protocol_error(
                 conn, TLS_ALERT_UNEXPECTED_MESSAGE,
@@ -4196,7 +4200,8 @@ int neverc_tls_test_hello_protocol_rules(void) {
             0x0301, 1) != 0 ||
         tls_parse_server_hello(
             message, message_len, empty_session_id, 0,
-            &server_hello, &alert) != 0)
+            &server_hello, &alert) == 0 ||
+        alert != TLS_ALERT_ILLEGAL_PARAMETER)
         return -1;
     return 0;
 }

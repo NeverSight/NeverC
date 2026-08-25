@@ -36,6 +36,22 @@ static void test_simple_var(void) {
     neverc_template_data_free(&data);
 }
 
+static void test_data_key_is_owned(void) {
+    printf("[data key is owned]\n");
+    neverc_template_data_t data;
+    neverc_template_data_init(&data);
+    char key[] = "Name";
+    neverc_template_data_set(&data, key, "Ada");
+    memcpy(key, "Else", sizeof(key));
+    check_str("mutating caller key keeps original mapping",
+              neverc_template_data_get(&data, "Name"), "Ada");
+    size_t outlen = 0;
+    char *rendered = neverc_template_render("{{.Name}}", &data, &outlen);
+    check_str("render uses owned key", rendered, "Ada");
+    free(rendered);
+    neverc_template_data_free(&data);
+}
+
 static void test_multiple_vars(void) {
     printf("[multiple vars]\n");
     neverc_template_data_t data;
@@ -361,6 +377,7 @@ static void test_null_safety(void) {
 int main(void) {
     printf("=== NeverC Text/Template Module Tests ===\n\n");
     test_simple_var();
+    test_data_key_is_owned();
     test_multiple_vars();
     test_missing_var();
     test_if_true();

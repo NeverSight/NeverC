@@ -3,6 +3,7 @@
  * Tests wyhash-based non-cryptographic hash: determinism, distribution, streaming.
  */
 #include "neverc/std/hash/maphash.h"
+#include "../../../std/src/hash/_wyhash_final3.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -36,6 +37,21 @@ static void test_determinism(void) {
 
     uint64_t h3 = neverc_maphash_string(seed, "hello");
     ASSERT_U64_EQ(h1, h3);
+}
+
+static void test_pinned_core_parity(void) {
+    printf("[pinned_core_parity]\n");
+    uint8_t data[128];
+    for (size_t i = 0; i < sizeof(data); i++)
+        data[i] = (uint8_t)(i * 37U + 11U);
+    static const size_t sizes[] = {0, 1, 3, 4, 16, 17, 48, 49, 127, 128};
+    static const uint64_t seeds[] = {0, UINT64_C(0x0123456789abcdef)};
+    for (size_t s = 0; s < sizeof(seeds) / sizeof(seeds[0]); s++) {
+        for (size_t n = 0; n < sizeof(sizes) / sizeof(sizes[0]); n++) {
+            ASSERT_U64_EQ(neverc_maphash_bytes(seeds[s], data, sizes[n]),
+                          nci_wyhash_final3(data, sizes[n], seeds[s]));
+        }
+    }
 }
 
 static void test_different_seeds(void) {
@@ -290,6 +306,7 @@ static void test_distribution(void) {
 int main(void) {
     printf("=== NeverC hash/maphash Tests ===\n");
     test_determinism();
+    test_pinned_core_parity();
     test_different_seeds();
     test_different_data();
     test_streaming();

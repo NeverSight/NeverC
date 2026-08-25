@@ -273,6 +273,8 @@ static void test_entities_cdata_and_well_formedness(void) {
         "<?xml encoding=\"UTF-8\"?><root/>",
         "<?xml version=\"1.0\" encoding=\"\"?><root/>",
         "<?xml version=\"1.0\"encoding=\"ISO-8859-1\"?><root/>",
+        "<root><?xml version=\"1.0\"?></root>",
+        "<?XML version=\"1.0\"?><root/>",
         "<root>&#0;</root>",
         "<root>&#x0;</root>",
         "<root>\v</root>"
@@ -304,11 +306,17 @@ static void test_entities_cdata_and_well_formedness(void) {
     check_bool("reject UTF-8 above U+10FFFF",
                neverc_xml_parse(too_large, sizeof(too_large) - 1) == NULL,
                1);
-    static const char noncharacter[] = "<root>\xef\xb7\x90</root>"; /* U+FDD0 */
-    check_bool("reject XML noncharacter U+FDD0",
-               neverc_xml_parse(
-                   noncharacter, sizeof(noncharacter) - 1) == NULL,
-               1);
+    static const char noncharacter[] =
+        "<root>\xef\xb7\x90&#x1FFFE;</root>"; /* U+FDD0, U+1FFFE */
+    tree = neverc_xml_parse(noncharacter, sizeof(noncharacter) - 1);
+    check_bool("accept XML Char noncharacters", tree != NULL, 1);
+    if (tree) {
+        neverc_xml_node_t *element = neverc_xml_node_child(tree, "root");
+        check_str("preserve XML Char noncharacters",
+                  element ? element->text : NULL,
+                  "\xef\xb7\x90\xf0\x9f\xbf\xbe");
+    }
+    neverc_xml_node_free(tree);
     static const char bom_document[] = "\xef\xbb\xbf<root/>";
     tree = neverc_xml_parse(
         bom_document, sizeof(bom_document) - 1);

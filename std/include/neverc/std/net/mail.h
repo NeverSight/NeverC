@@ -45,7 +45,13 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
 /* Get a header value by key (case-insensitive). Returns NULL if not found. */
 const char *neverc_mail_header_get(const neverc_mail_message_t *msg, const char *key);
 
-/* Parse RFC 5322 date string. Returns Unix timestamp, or -1 on error. */
+/* Parse an RFC 5322 date into *timestamp. Returns 0 on success and -1 on
+ * error.  This form can represent the valid Unix timestamp -1 without
+ * confusing it with the error result. */
+int neverc_mail_parse_date_ex(const char *s, long long *timestamp);
+
+/* Compatibility API. Returns the Unix timestamp, or -1 on error. A valid
+ * timestamp of -1 is therefore ambiguous; new code should use parse_date_ex. */
 long long neverc_mail_parse_date(const char *s);
 
 #ifdef __cplusplus

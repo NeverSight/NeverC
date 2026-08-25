@@ -383,6 +383,21 @@ static int h2_client_name_valid(const char *name) {
     return 1;
 }
 
+static int h2_client_method_valid(const char *method) {
+    if (!method || !method[0]) return 0;
+    for (const unsigned char *cursor = (const unsigned char *)method;
+         *cursor; cursor++) {
+        unsigned char c = *cursor;
+        if (!(c >= 'A' && c <= 'Z') && !(c >= 'a' && c <= 'z') &&
+            !(c >= '0' && c <= '9') &&
+            c != '!' && c != '#' && c != '$' && c != '%' && c != '&' &&
+            c != '\'' && c != '*' && c != '+' && c != '-' && c != '.' &&
+            c != '^' && c != '_' && c != 0x60 && c != '|' && c != '~')
+            return 0;
+    }
+    return 1;
+}
+
 static int h2_client_value_valid(const char *value) {
     if (!value) return 0;
     for (const unsigned char *cursor = (const unsigned char *)value;
@@ -708,7 +723,9 @@ static int h2_client_apply_settings(neverc_h2_client_t *client,
                          ((uint32_t)payload[offset + 3] << 16) |
                          ((uint32_t)payload[offset + 4] << 8) |
                          payload[offset + 5];
-        if (id == NC_H2_SETTINGS_ENABLE_PUSH && value != 0) {
+        /* RFC 9113 section 6.5.2: a server MUST NOT send ENABLE_PUSH,
+         * including with value zero. */
+        if (id == NC_H2_SETTINGS_ENABLE_PUSH) {
             nc_mutex_unlock(&client->state_lock);
             return -1;
         }
@@ -1020,9 +1037,9 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
                          ? (uint64_t)stream->received_body_size
                          : stream->content_length))
             length_invalid = 1;
-        int invalid = !stream->response_started ||
-            stream->recv_window < 0 ||
-            header->length > (uint32_t)stream->recv_window ||
+        int flow_invalid = stream->recv_window < 0 ||
+            header->length > (uint32_t)stream->recv_window;
+        int invalid = !stream->response_started || flow_invalid ||
             data_length > client->config.max_response_body_size ||
             stream->received_body_size >
                 client->config.max_response_body_size - data_length ||
@@ -1058,11 +1075,15 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
         if (!invalid)
             stream->received_data = 1;
         if (invalid) {
-            stream->error = length_invalid
-                ? "invalid HTTP/2 response content length"
-                : "invalid or oversized HTTP/2 response body";
-            stream->error_code = length_invalid
-                ? NC_H2_PROTOCOL_ERROR : NC_H2_ENHANCE_YOUR_CALM;
+            stream->error = flow_invalid
+                ? "HTTP/2 response exceeds stream flow-control window"
+                : (length_invalid
+                       ? "invalid HTTP/2 response content length"
+                       : "invalid or oversized HTTP/2 response body");
+            stream->error_code = flow_invalid
+                ? NC_H2_FLOW_CONTROL_ERROR
+                : (length_invalid
+                       ? NC_H2_PROTOCOL_ERROR : NC_H2_ENHANCE_YOUR_CALM);
             stream->done = 1;
             h2_client_push_terminal_event(
                 stream, stream->error, stream->error_code);
@@ -1352,18 +1373,12 @@ neverc_h2_client_stream_t *neverc_h2_client_stream_open(
     const neverc_hpack_header_t *extra_headers, size_t extra_count,
     int end_stream, const char **error) {
     if (error) *error = NULL;
-    if (!client || !method || !method[0] || !h2_client_path_valid(path) ||
+    if (!client || !h2_client_method_valid(method) ||
+        !h2_client_path_valid(path) ||
         extra_count > 64 || (extra_count && !extra_headers) ||
         (end_stream != 0 && end_stream != 1)) {
         if (error) *error = "invalid HTTP/2 stream request";
         return NULL;
-    }
-    for (const unsigned char *cursor = (const unsigned char *)method;
-         *cursor; cursor++) {
-        if (*cursor <= 0x20 || *cursor >= 0x7f) {
-            if (error) *error = "invalid HTTP method";
-            return NULL;
-        }
     }
     for (size_t i = 0; i < extra_count; i++) {
         const char *name = extra_headers[i].name;
@@ -1805,14 +1820,11 @@ neverc_h2_response_t *neverc_h2_client_do_context(
     const char *method, const char *path,
     const neverc_hpack_header_t *extra_headers, size_t extra_count,
     const void *body, size_t body_length) {
-    if (!client || !method || !method[0] || !h2_client_path_valid(path) ||
+    if (!client || !h2_client_method_valid(method) ||
+        !h2_client_path_valid(path) ||
         (body_length > 0 && !body) || extra_count > 64 ||
         (extra_count > 0 && !extra_headers))
         return h2_client_error_response("invalid HTTP/2 request", 0);
-    for (const unsigned char *cursor = (const unsigned char *)method;
-         *cursor; cursor++)
-        if (*cursor <= 0x20 || *cursor >= 0x7f)
-            return h2_client_error_response("invalid HTTP method", 0);
     for (size_t i = 0; i < extra_count; i++) {
         const char *name = extra_headers[i].name;
         const char *value = extra_headers[i].value;

@@ -117,6 +117,62 @@ static void test_descriptor_roundtrip(void) {
     CHECK(output.active == 1);
 }
 
+static void test_descriptor_rejects_overlapping_storage(void) {
+    typedef struct {
+        uint64_t first;
+        uint64_t second;
+        int first_present;
+        int second_present;
+    } overlap_message_t;
+    overlap_message_t message;
+    memset(&message, 0, sizeof(message));
+    uint8_t encoded[32];
+    size_t encoded_length = 99U;
+
+    static const neverc_protobuf_field_descriptor_t self_overlap[] = {
+        {1U, NEVERC_PROTOBUF_TYPE_UINT64,
+         offsetof(overlap_message_t, first),
+         offsetof(overlap_message_t, first) + 1U},
+    };
+    static const neverc_protobuf_field_descriptor_t value_overlap[] = {
+        {1U, NEVERC_PROTOBUF_TYPE_UINT64,
+         offsetof(overlap_message_t, first), SIZE_MAX},
+        {2U, NEVERC_PROTOBUF_TYPE_UINT32,
+         offsetof(overlap_message_t, first) + 4U, SIZE_MAX},
+    };
+    static const neverc_protobuf_field_descriptor_t value_presence_overlap[] = {
+        {1U, NEVERC_PROTOBUF_TYPE_UINT64,
+         offsetof(overlap_message_t, first),
+         offsetof(overlap_message_t, first_present)},
+        {2U, NEVERC_PROTOBUF_TYPE_UINT64,
+         offsetof(overlap_message_t, second),
+         offsetof(overlap_message_t, first)},
+    };
+    static const neverc_protobuf_field_descriptor_t presence_overlap[] = {
+        {1U, NEVERC_PROTOBUF_TYPE_UINT64,
+         offsetof(overlap_message_t, first),
+         offsetof(overlap_message_t, first_present)},
+        {2U, NEVERC_PROTOBUF_TYPE_UINT64,
+         offsetof(overlap_message_t, second),
+         offsetof(overlap_message_t, first_present)},
+    };
+    const neverc_protobuf_field_descriptor_t *field_sets[] = {
+        self_overlap, value_overlap, value_presence_overlap, presence_overlap};
+    const size_t field_counts[] = {1U, 2U, 2U, 2U};
+    for (size_t i = 0; i < sizeof(field_sets) / sizeof(field_sets[0]); i++) {
+        neverc_protobuf_message_descriptor_t descriptor = {
+            sizeof(overlap_message_t), field_sets[i], field_counts[i]};
+        encoded_length = 99U;
+        CHECK(neverc_protobuf_message_encode(
+                  &descriptor, &message, encoded, sizeof(encoded),
+                  &encoded_length) == -1);
+        CHECK(encoded_length == 0U);
+        CHECK(neverc_protobuf_message_decode(
+                  &descriptor, NULL, 0U, 64U, &message,
+                  sizeof(message)) == -1);
+    }
+}
+
 static void test_malformed_inputs(void) {
     neverc_protobuf_reader_t reader;
     neverc_protobuf_field_t field;
@@ -480,6 +536,7 @@ int main(void) {
     test_wire_golden();
     test_scalar_writers();
     test_descriptor_roundtrip();
+    test_descriptor_rejects_overlapping_storage();
     test_malformed_inputs();
     test_skip_groups();
     test_truncated_does_not_desync();

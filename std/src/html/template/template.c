@@ -174,6 +174,61 @@ char *neverc_html_attr_escape(const char *s) {
     return neverc_html_escape(s);
 }
 
+/* Apply the additional HTML unquoted-attribute escapes after contextual
+ * escaping. Ampersand is intentionally preserved because `s` may already
+ * contain entities such as &#39; emitted by the contextual escaper. */
+static char *html_nospace_normalize(const char *s) {
+    if (!s) return dup_cstr("");
+    size_t len = strlen(s);
+    size_t extra = 0;
+    for (size_t i = 0; i < len; i++) {
+        size_t add = 0;
+        switch ((unsigned char)s[i]) {
+        case '\t': add = 3; break;  /* &#9; */
+        case '\n': case '\v': case '\f': case '\r': add = 4; break;
+        case ' ': case '"': case '\'': case '+': case '=': case '`':
+            add = 4;
+            break;
+        case '<': case '>': add = 3; break;
+        default: break;
+        }
+        if (extra > SIZE_MAX - add) return NULL;
+        extra += add;
+    }
+    if (extra > SIZE_MAX - len - 1U) return NULL;
+    char *out = (char *)NC_HTML_TEMPLATE_MALLOC(len + extra + 1U);
+    if (!out) return NULL;
+    size_t pos = 0;
+    for (size_t i = 0; i < len; i++) {
+        const char *replacement = NULL;
+        size_t replacement_len = 0;
+        switch ((unsigned char)s[i]) {
+        case '\t': replacement = "&#9;"; replacement_len = 4; break;
+        case '\n': replacement = "&#10;"; replacement_len = 5; break;
+        case '\v': replacement = "&#11;"; replacement_len = 5; break;
+        case '\f': replacement = "&#12;"; replacement_len = 5; break;
+        case '\r': replacement = "&#13;"; replacement_len = 5; break;
+        case ' ': replacement = "&#32;"; replacement_len = 5; break;
+        case '"': replacement = "&#34;"; replacement_len = 5; break;
+        case '\'': replacement = "&#39;"; replacement_len = 5; break;
+        case '+': replacement = "&#43;"; replacement_len = 5; break;
+        case '<': replacement = "&lt;"; replacement_len = 4; break;
+        case '=': replacement = "&#61;"; replacement_len = 5; break;
+        case '>': replacement = "&gt;"; replacement_len = 4; break;
+        case '`': replacement = "&#96;"; replacement_len = 5; break;
+        default: break;
+        }
+        if (replacement) {
+            memcpy(out + pos, replacement, replacement_len);
+            pos += replacement_len;
+        } else {
+            out[pos++] = s[i];
+        }
+    }
+    out[pos] = '\0';
+    return out;
+}
+
 /* \ ' " / \n \r \t escape to 2 chars (extra 1); < > & ` $ = + and other
  * controls escape to \u00XX (extra 5). U+2028/U+2029 are handled in the
  * scanner: 3 UTF-8 bytes become 6-char \u2028/\u2029 (extra 3). */
@@ -2159,21 +2214,17 @@ static int execute_nodes(const node_t *n,
                     escaped = neverc_html_escape(val);
                 free(decoded_prefix);
                 if (!escaped) return -1;
-                /* Quote a whole unquoted value so spaces cannot start a new
-                 * attribute. Skip when a prefix is already in the value. */
-                if (unquoted && aplen == 0 &&
-                    buf_append(buf, len, cap, "\"", 1) != 0) {
+                if (unquoted) {
+                    char *normalized = html_nospace_normalize(escaped);
                     free(escaped);
-                    return -1;
+                    if (!normalized) return -1;
+                    escaped = normalized;
                 }
                 if (buf_append(buf, len, cap, escaped, strlen(escaped)) != 0) {
                     free(escaped);
                     return -1;
                 }
                 free(escaped);
-                if (unquoted && aplen == 0 &&
-                    buf_append(buf, len, cap, "\"", 1) != 0)
-                    return -1;
             }
             break;
         }

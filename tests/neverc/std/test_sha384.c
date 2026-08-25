@@ -139,18 +139,20 @@ static void test_128bit_length(void) {
 }
 
 static void test_byte_count_wrap(void) {
-    printf("[SHA-384 byte-count wrap fails closed]\n");
+    printf("[SHA-384 byte-count carry into high word]\n");
     neverc_sha384_ctx ctx;
     neverc_sha384_init(&ctx);
     neverc_sha384_update(&ctx, (const uint8_t *)"abc", 3);
     ctx.count = UINT64_MAX - 2;
     neverc_sha384_update(&ctx, (const uint8_t *)"xxxxx", 5);
+    check_true("wrapped byte count carries into high word",
+               ctx.count == 2 && ctx.count_hi == 1 && !ctx.finalized);
     uint8_t digest[48];
     memset(digest, 0xa5, sizeof(digest));
     neverc_sha384_final(&ctx, digest);
     uint8_t zeros[48] = {0};
-    check_true("wrapped byte count must not collide with a short message",
-               memcmp(digest, zeros, 48) == 0);
+    check_true("carried byte count remains hashable",
+               memcmp(digest, zeros, 48) != 0);
 }
 
 static void test_invalid_span(void) {
@@ -192,7 +194,9 @@ static void test_reset_and_clone(void) {
     int dirty = 0;
     for (size_t i = 0; i < sizeof(ctx.buf); i++)
         if (ctx.buf[i] != 0) dirty = 1;
-    check_true("re-init wipes buf", !dirty && ctx.count == 0 && ctx.finalized == 0);
+    check_true("re-init wipes buf",
+               !dirty && ctx.count == 0 && ctx.count_hi == 0 &&
+               ctx.finalized == 0);
 
     neverc_sha384_ctx clone;
     uint8_t d1[48], d2[48], expected[48];

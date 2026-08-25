@@ -272,6 +272,15 @@ static void test_null_inputs(void) {
     check_true("zeroed ctx leaves output unmodified",
                memcmp(leaked, aa32, sizeof(aa32)) == 0);
 
+    neverc_chacha20_init(&ctx, key, nonce, 0);
+    ctx.buf_used = 65;
+    memset(leaked, 0xAA, sizeof(leaked));
+    check_true("out-of-range buffer cursor is rejected",
+               neverc_chacha20_xor_checked(
+                   &ctx, leaked, secret, sizeof(secret)) == -1);
+    check_true("invalid buffer cursor leaves output unmodified",
+               memcmp(leaked, aa32, sizeof(aa32)) == 0);
+
     neverc_chacha20_ctx z;
     memset(&z, 0, sizeof(z));
     neverc_chacha20_init(&z, NULL, nonce, 0);

@@ -568,33 +568,43 @@ char *neverc_cstring_join(const char **strs, size_t count, const char *sep) {
 
 char *neverc_cstring_trim_left(const char *s, const char *cutset) {
     size_t outlen = 0;
+    uint8_t *trimmed;
     s = nc_s(s);
     cutset = nc_s(cutset);
-    return cstr_from_bytes(neverc_bytes_trim_left(
-        (const uint8_t *)s, strlen(s), cutset, &outlen), outlen);
+    /* Keep the helper call in a separate full expression. C leaves argument
+     * evaluation order unspecified, so combining this call with the outlen
+     * read in cstr_from_bytes makes the returned length order-dependent. */
+    trimmed = neverc_bytes_trim_left((const uint8_t *)s, strlen(s), cutset,
+                                     &outlen);
+    return cstr_from_bytes(trimmed, outlen);
 }
 
 char *neverc_cstring_trim_right(const char *s, const char *cutset) {
     size_t outlen = 0;
+    uint8_t *trimmed;
     s = nc_s(s);
     cutset = nc_s(cutset);
-    return cstr_from_bytes(neverc_bytes_trim_right(
-        (const uint8_t *)s, strlen(s), cutset, &outlen), outlen);
+    trimmed = neverc_bytes_trim_right((const uint8_t *)s, strlen(s), cutset,
+                                      &outlen);
+    return cstr_from_bytes(trimmed, outlen);
 }
 
 char *neverc_cstring_trim(const char *s, const char *cutset) {
     size_t outlen = 0;
+    uint8_t *trimmed;
     s = nc_s(s);
     cutset = nc_s(cutset);
-    return cstr_from_bytes(neverc_bytes_trim(
-        (const uint8_t *)s, strlen(s), cutset, &outlen), outlen);
+    trimmed = neverc_bytes_trim((const uint8_t *)s, strlen(s), cutset,
+                                &outlen);
+    return cstr_from_bytes(trimmed, outlen);
 }
 
 char *neverc_cstring_trim_space(const char *s) {
     size_t outlen = 0;
+    uint8_t *trimmed;
     s = nc_s(s);
-    return cstr_from_bytes(neverc_bytes_trim_space(
-        (const uint8_t *)s, strlen(s), &outlen), outlen);
+    trimmed = neverc_bytes_trim_space((const uint8_t *)s, strlen(s), &outlen);
+    return cstr_from_bytes(trimmed, outlen);
 }
 
 char *neverc_cstring_trim_prefix(const char *s, const char *prefix) {

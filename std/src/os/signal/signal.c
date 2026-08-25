@@ -16,8 +16,10 @@
 
 static neverc_signal_handler_t g_win_handlers[32] = {0};
 static volatile LONG g_win_pending[32] = {0};
+static volatile LONG g_win_ignored[32] = {0};
 static HANDLE g_win_event = NULL;
 static int g_win_ctrl_registered = 0;
+static BOOL WINAPI win_ctrl_handler(DWORD type);
 
 static void win_ensure_event(void) {
     if (!g_win_event)
@@ -31,12 +33,24 @@ static void win_mark_pending(int signum) {
     if (g_win_event) SetEvent(g_win_event);
 }
 
+static int win_is_ignored(int signum) {
+    return signum >= 0 && signum < 32 &&
+           InterlockedCompareExchange(&g_win_ignored[signum], 0, 0) != 0;
+}
+
+static void win_ensure_ctrl_handler(void) {
+    if (!g_win_ctrl_registered &&
+        SetConsoleCtrlHandler(win_ctrl_handler, TRUE))
+        g_win_ctrl_registered = 1;
+}
+
 static BOOL WINAPI win_ctrl_handler(DWORD type) {
     switch (type) {
         /* Go runtime/os_windows.go ctrlHandler: CTRL_C and CTRL_BREAK
          * are SIGINT; close / logoff / shutdown are SIGTERM. */
         case CTRL_C_EVENT:
         case CTRL_BREAK_EVENT: {
+            if (win_is_ignored(NEVERC_SIGINT)) return TRUE;
             neverc_signal_handler_t handler = g_win_handlers[NEVERC_SIGINT];
             win_mark_pending(NEVERC_SIGINT);
             if (handler) {
@@ -48,6 +62,7 @@ static BOOL WINAPI win_ctrl_handler(DWORD type) {
         case CTRL_CLOSE_EVENT:
         case CTRL_LOGOFF_EVENT:
         case CTRL_SHUTDOWN_EVENT: {
+            if (win_is_ignored(NEVERC_SIGTERM)) return TRUE;
             neverc_signal_handler_t handler = g_win_handlers[NEVERC_SIGTERM];
             win_mark_pending(NEVERC_SIGTERM);
             if (handler) {
@@ -89,12 +104,11 @@ void neverc_signal_notify(int signum, neverc_signal_handler_t handler) {
         return;
     }
     g_win_handlers[signum] = handler;
+    InterlockedExchange(&g_win_ignored[signum], 0);
     win_ensure_event();
     if ((signum == NEVERC_SIGINT || signum == NEVERC_SIGTERM) &&
-        !g_win_ctrl_registered) {
-        if (SetConsoleCtrlHandler(win_ctrl_handler, TRUE))
-            g_win_ctrl_registered = 1;
-    }
+        !g_win_ctrl_registered)
+        win_ensure_ctrl_handler();
     if (win_crt_supported(signum))
         signal(signum, win_crt_handler);
 }
@@ -102,10 +116,13 @@ void neverc_signal_notify(int signum, neverc_signal_handler_t handler) {
 void neverc_signal_stop(int signum) {
     if (signum < 0 || signum >= 32) return;
     g_win_handlers[signum] = NULL;
+    InterlockedExchange(&g_win_ignored[signum], 0);
     InterlockedExchange(&g_win_pending[signum], 0);
     if (win_crt_supported(signum))
         signal(signum, SIG_DFL);
     if (!g_win_handlers[NEVERC_SIGINT] && !g_win_handlers[NEVERC_SIGTERM] &&
+        !win_is_ignored(NEVERC_SIGINT) &&
+        !win_is_ignored(NEVERC_SIGTERM) &&
         g_win_ctrl_registered) {
         SetConsoleCtrlHandler(win_ctrl_handler, FALSE);
         g_win_ctrl_registered = 0;
@@ -119,7 +136,10 @@ void neverc_signal_reset(int signum) {
 void neverc_signal_ignore(int signum) {
     if (signum < 0 || signum >= 32) return;
     g_win_handlers[signum] = NULL;
+    InterlockedExchange(&g_win_ignored[signum], 1);
     InterlockedExchange(&g_win_pending[signum], 0);
+    if (signum == NEVERC_SIGINT || signum == NEVERC_SIGTERM)
+        win_ensure_ctrl_handler();
     if (win_crt_supported(signum))
         signal(signum, SIG_IGN);
 }

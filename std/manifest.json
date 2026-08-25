@@ -927,7 +927,10 @@
       "dot_methods": {
         "sha256": "neverc_hkdf_sha256",
         "extract_sha256": "neverc_hkdf_extract_sha256",
-        "expand_sha256": "neverc_hkdf_expand_sha256"
+        "expand_sha256": "neverc_hkdf_expand_sha256",
+        "sha512": "neverc_hkdf_sha512",
+        "extract_sha512": "neverc_hkdf_extract_sha512",
+        "expand_sha512": "neverc_hkdf_expand_sha512"
       }
     },
     "crypto/pbkdf2": {
@@ -1131,23 +1134,7 @@
         "shake128_squeeze": "neverc_shake128_squeeze",
         "shake256_init": "neverc_shake256_init",
         "shake256_update": "neverc_shake256_update",
-        "shake256_squeeze": "neverc_shake256_squeeze",
-        "224_init": "neverc_sha3_224_init",
-        "224_update": "neverc_sha3_224_update",
-        "224_final": "neverc_sha3_224_final",
-        "224_sum": "neverc_sha3_224_sum",
-        "256_init": "neverc_sha3_256_init",
-        "256_update": "neverc_sha3_256_update",
-        "256_final": "neverc_sha3_256_final",
-        "256_sum": "neverc_sha3_256_sum",
-        "384_init": "neverc_sha3_384_init",
-        "384_update": "neverc_sha3_384_update",
-        "384_final": "neverc_sha3_384_final",
-        "384_sum": "neverc_sha3_384_sum",
-        "512_init": "neverc_sha3_512_init",
-        "512_update": "neverc_sha3_512_update",
-        "512_final": "neverc_sha3_512_final",
-        "512_sum": "neverc_sha3_512_sum"
+        "shake256_squeeze": "neverc_shake256_squeeze"
       }
     },
     "crypto/gcm": {
@@ -2253,6 +2240,7 @@
       }
     },
     "crypto/rand": {
+      "dot_marker": "crypto_rand",
       "header": "include/neverc/std/crypto/rand.h",
       "description": "Cryptographic random number generator using OS entropy (mirrors Go crypto/rand package)",
       "symbols": {
@@ -2957,6 +2945,7 @@
         "neverc_mail_format_address": "src/net/mail/mail.c",
         "neverc_mail_parse_message": "src/net/mail/mail.c",
         "neverc_mail_header_get": "src/net/mail/mail.c",
+        "neverc_mail_parse_date_ex": "src/net/mail/mail.c",
         "neverc_mail_parse_date": "src/net/mail/mail.c"
       },
       "dot_methods": {
@@ -2965,6 +2954,7 @@
         "format_address": "neverc_mail_format_address",
         "parse_message": "neverc_mail_parse_message",
         "header_get": "neverc_mail_header_get",
+        "parse_date_ex": "neverc_mail_parse_date_ex",
         "parse_date": "neverc_mail_parse_date"
       }
     },
@@ -3481,6 +3471,7 @@
       }
     },
     "html/template": {
+      "dot_marker": "html_template",
       "header": "include/neverc/std/html/template.h",
       "description": "HTML template engine with auto-escaping (mirrors Go html/template package)",
       "symbols": {
@@ -3516,6 +3507,8 @@
       "symbols": {
         "neverc_mime_header_init": "src/net/textproto/textproto.c",
         "neverc_mime_header_free": "src/net/textproto/textproto.c",
+        "neverc_mime_header_try_add": "src/net/textproto/textproto.c",
+        "neverc_mime_header_try_set": "src/net/textproto/textproto.c",
         "neverc_mime_header_add": "src/net/textproto/textproto.c",
         "neverc_mime_header_set": "src/net/textproto/textproto.c",
         "neverc_mime_header_get": "src/net/textproto/textproto.c",
@@ -3538,6 +3531,8 @@
         "read_dot_lines": "neverc_textproto_read_dot_lines",
         "mime_header_init": "neverc_mime_header_init",
         "mime_header_free": "neverc_mime_header_free",
+        "mime_header_try_add": "neverc_mime_header_try_add",
+        "mime_header_try_set": "neverc_mime_header_try_set",
         "mime_header_add": "neverc_mime_header_add",
         "mime_header_set": "neverc_mime_header_set",
         "mime_header_get": "neverc_mime_header_get",
@@ -3870,6 +3865,7 @@
       }
     },
     "regexp/syntax": {
+      "dot_marker": "regexp_syntax",
       "header": "include/neverc/std/regexp_syntax.h",
       "description": "Regex parse tree \u2014 parses regex patterns into ASTs (mirrors Go regexp/syntax)",
       "deps": ["unicode"],
@@ -4541,6 +4537,7 @@
       }
     },
     "net/websocket": {
+      "dot_marker": "ws",
       "header": "include/neverc/std/net/websocket.h",
       "description": "RFC 6455 WebSocket client/server module",
       "deps": ["http", "net/tcp", "crypto/tls", "crypto/rand", "crypto/sha1", "encoding/base64"],
@@ -4660,6 +4657,7 @@
       }
     },
     "net/http2": {
+      "dot_marker": "h2",
       "header": "include/neverc/std/net/http2.h",
       "description": "HTTP/2 framing, bounded HPACK, multiplexed server, and graceful lifecycle",
       "deps": ["http", "net/tcp", "crypto/tls", "thread"],

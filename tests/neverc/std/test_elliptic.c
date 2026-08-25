@@ -230,6 +230,20 @@ static void test_invalid_affine_points(void) {
     neverc_bigint_set_int64(&point.y, 1);
     ASSERT_TRUE(!neverc_elliptic_is_on_curve(c, &point));
 
+    /* bit_size is public curve metadata.  It must not turn unmarshal's
+     * coordinate scratch space into a fixed-size stack overflow. */
+    neverc_elliptic_curve_t oversized = *c;
+    oversized.bit_size = 1024;
+    unsigned char oversized_encoded[257] = {0x04};
+    neverc_bigint_set(&point.x, &c->gx);
+    neverc_bigint_set(&point.y, &c->gy);
+    ASSERT_INT_EQ(neverc_elliptic_unmarshal(
+                      &oversized, &point, oversized_encoded,
+                      sizeof(oversized_encoded)),
+                  -1);
+    ASSERT_TRUE(neverc_bigint_cmp(&point.x, &c->gx) == 0);
+    ASSERT_TRUE(neverc_bigint_cmp(&point.y, &c->gy) == 0);
+
     unsigned char p_encoded[65] = {0x04};
     static const unsigned char p256_p[32] = {
         0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x01,

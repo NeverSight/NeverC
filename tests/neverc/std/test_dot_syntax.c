@@ -246,6 +246,106 @@ static void test_crypto_sha256_dot_syntax(void) {
     CHECK("crypto.md5.sum_known", md5_out[0] == 0x5d && md5_out[1] == 0x41);
 }
 
+static void test_crypto_hkdf_sha512_dot_syntax(void) {
+    uint8_t ikm[16] = {1, 2, 3};
+    uint8_t salt[8] = {4, 5, 6};
+    uint8_t info[8] = {7, 8, 9};
+    uint8_t dot[80], direct[80], prk_dot[64], prk_direct[64];
+
+    CHECK("crypto.hkdf.sha512",
+          crypto.hkdf.sha512(dot, sizeof(dot), ikm, sizeof(ikm),
+                             salt, sizeof(salt), info, sizeof(info)) == 0 &&
+          neverc_hkdf_sha512(direct, sizeof(direct), ikm, sizeof(ikm),
+                             salt, sizeof(salt), info, sizeof(info)) == 0 &&
+          memcmp(dot, direct, sizeof(dot)) == 0);
+    CHECK("crypto.hkdf.extract_sha512",
+          crypto.hkdf.extract_sha512(prk_dot, salt, sizeof(salt),
+                                     ikm, sizeof(ikm)) == 0 &&
+          neverc_hkdf_extract_sha512(prk_direct, salt, sizeof(salt),
+                                     ikm, sizeof(ikm)) == 0 &&
+          memcmp(prk_dot, prk_direct, sizeof(prk_dot)) == 0);
+    CHECK("crypto.hkdf.expand_sha512",
+          crypto.hkdf.expand_sha512(dot, sizeof(dot), prk_dot,
+                                    info, sizeof(info)) == 0 &&
+          neverc_hkdf_expand_sha512(direct, sizeof(direct), prk_direct,
+                                    info, sizeof(info)) == 0 &&
+          memcmp(dot, direct, sizeof(dot)) == 0);
+}
+
+/*
+ * Keep one compile-time call for every family whose public dot method does
+ * not mechanically match neverc_<marker>_<method>.  The branch is never
+ * executed (some calls would perform I/O or expensive key generation), but
+ * NeverC must still resolve and type-check every call.  This catches drift
+ * between std/manifest.json and the compiler's generated dispatch table.
+ */
+static void test_manifest_dot_method_resolution(void) {
+    if (0) {
+        neverc_bigint_t big;
+        neverc_sha3_ctx sha3;
+        neverc_rsa_public_key_t rsa_public;
+        neverc_net_interface_list_t interfaces;
+        neverc_hpack_decoder_t *hpack;
+        neverc_plan9_file_t plan9;
+        neverc_mldsa44_sk_t mldsa;
+        neverc_mlkem768_dk_t mlkem;
+        neverc_netip_addr_t addr;
+        neverc_image_rgba_t rgba;
+        neverc_exec_exit_status_t status;
+        neverc_exec_cmd_t *cmd;
+        neverc_sse_t *sse;
+        const char *syntax_error = NULL;
+        unsigned char byte = 0;
+        unsigned char triple_key[24] = {0};
+        char text[64];
+        char *owned;
+        size_t out_len = 0;
+
+        math.big.init(&big);
+        math.big.free(&big);
+        crypto.sha3.sha3_256_init(&sha3);
+        (void)crypto.des.triple_is_weak_key(triple_key);
+        (void)crypto.rsa.encrypt(&rsa_public, &byte, 1, &byte, 1,
+                                 &out_len);
+        (void)crypto.rand.read(&byte, 1);
+
+        (void)image.pt(1, 2);
+        image.draw.draw(&rgba, image.rect(0, 0, 1, 1), &rgba,
+                        image.pt(0, 0), NEVERC_DRAW_SRC);
+        owned = html.template_mod.escape("<");
+        free(owned);
+
+        owned = net.textproto.canonical_key("content-type");
+        free(owned);
+        (void)net.resolve.join_host_port("::1", "80", text,
+                                         sizeof(text));
+        (void)net.interface.interfaces(&interfaces);
+        hpack = net.http2.hpack_decoder_create(0);
+        net.http2.hpack_decoder_destroy(hpack);
+        (void)debug.plan9obj.valid_magic(NEVERC_PLAN9_MAGIC386);
+
+        sse = net.http.sse_start(NULL);
+        (void)net.http.sse_retry(sse, 1000);
+        net.http.sse_close(sse);
+        (void)crypto.mldsa.generate_key44(&mldsa);
+        (void)crypto.mlkem.generate_key768(&mlkem);
+        (void)net.netip.is_loopback(&addr);
+        (void)mime.quotedprintable.max_encoded_len(1);
+
+        cmd = os.exec.command("never", NULL, 0);
+        (void)os.exec.run(cmd, &status);
+        os.exec.cmd_free(cmd);
+
+        owned = regexp.syntax.string(
+            regexp.syntax.parse("x", 0, &syntax_error));
+        free(owned);
+        (void)net.websocket.compute_accept(
+            "dGhlIHNhbXBsZSBub25jZQ==", text, sizeof(text));
+    }
+
+    CHECK("manifest_irregular_dot_methods_compile", 1);
+}
+
 static void test_bytes_dot_syntax(void) {
     const uint8_t a[] = {1, 2, 3};
     const uint8_t b[] = {1, 2, 3};
@@ -1075,6 +1175,8 @@ static void test_rand_dot_syntax(void) { CHECK("dot_syntax_unavailable_rand", 1)
 static void test_cmp_dot_syntax(void) { CHECK("dot_syntax_unavailable_cmp", 1); }
 static void test_errors_dot_syntax(void) { CHECK("dot_syntax_unavailable_errors", 1); }
 static void test_crypto_sha256_dot_syntax(void) { CHECK("dot_syntax_unavailable_crypto", 1); }
+static void test_crypto_hkdf_sha512_dot_syntax(void) { CHECK("dot_syntax_unavailable_hkdf_sha512", 1); }
+static void test_manifest_dot_method_resolution(void) { CHECK("dot_syntax_unavailable_manifest_methods", 1); }
 static void test_bytes_dot_syntax(void) { CHECK("dot_syntax_unavailable_bytes", 1); }
 static void test_unicode_dot_syntax(void) { CHECK("dot_syntax_unavailable_unicode", 1); }
 static void test_html_dot_syntax(void) { CHECK("dot_syntax_unavailable_html", 1); }
@@ -1124,6 +1226,8 @@ int main(void) {
     test_cmp_dot_syntax();
     test_errors_dot_syntax();
     test_crypto_sha256_dot_syntax();
+    test_crypto_hkdf_sha512_dot_syntax();
+    test_manifest_dot_method_resolution();
     test_bytes_dot_syntax();
     test_unicode_dot_syntax();
     test_html_dot_syntax();

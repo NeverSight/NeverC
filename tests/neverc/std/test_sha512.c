@@ -214,7 +214,7 @@ int main(void) {
         }
     }
 
-    printf("[byte-count wrap fails closed]\n");
+    printf("[byte-count carry into high word]\n");
     {
         tests_run++;
         neverc_sha512_ctx ctx;
@@ -222,13 +222,21 @@ int main(void) {
         neverc_sha512_update(&ctx, (const uint8_t *)"abc", 3);
         ctx.count = UINT64_MAX - 2;
         neverc_sha512_update(&ctx, (const uint8_t *)"xxxxx", 5);
-        uint8_t digest[64];
-        memset(digest, 0xa5, sizeof(digest));
-        neverc_sha512_final(&ctx, digest);
-        uint8_t zeros[64] = {0};
-        if (memcmp(digest, zeros, 64) == 0)
-            tests_passed++;
-        else { tests_failed++; printf("  FAIL: wrapped byte count must not collide with a short message\n"); }
+        if (ctx.count == 2 && ctx.count_hi == 1 && !ctx.finalized) {
+            uint8_t digest[64];
+            memset(digest, 0xa5, sizeof(digest));
+            neverc_sha512_final(&ctx, digest);
+            uint8_t zeros[64] = {0};
+            if (memcmp(digest, zeros, 64) != 0)
+                tests_passed++;
+            else {
+                tests_failed++;
+                printf("  FAIL: carried byte count must remain hashable\n");
+            }
+        } else {
+            tests_failed++;
+            printf("  FAIL: wrapped byte count must carry into high word\n");
+        }
     }
 
     printf("[invalid data span ignored]\n");
@@ -299,7 +307,8 @@ int main(void) {
         int dirty = 0;
         for (size_t i = 0; i < sizeof(ctx.buf); i++)
             if (ctx.buf[i] != 0) dirty = 1;
-        if (!dirty && ctx.count == 0 && ctx.finalized == 0)
+        if (!dirty && ctx.count == 0 && ctx.count_hi == 0 &&
+            ctx.finalized == 0)
             tests_passed++;
         else { tests_failed++; printf("  FAIL: re-init must wipe buf\n"); }
     }

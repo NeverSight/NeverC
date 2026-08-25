@@ -1763,9 +1763,11 @@ static void proxy_legacy_dispatch(
     proxy_legacy_lock();
     neverc_httputil_reverse_proxy_t *proxy = atomic_load_explicit(
         &g_legacy_slots[slot], memory_order_acquire);
+    /* Pin while the slot/free lock is still held. Otherwise proxy_free can
+     * clear the slot and release the object between this load and proxy_pin. */
+    if (proxy) proxy->legacy_active++;
     proxy_legacy_unlock();
 
-    proxy_pin(proxy);
     reverse_proxy_serve(proxy, request, writer);
     if (proxy_unpin(proxy))
         free(proxy);

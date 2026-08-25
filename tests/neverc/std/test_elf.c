@@ -375,34 +375,43 @@ static void test_elf_extended_and_truncated(void) {
     size_t shdr_off = (size_t)data[40] | ((size_t)data[41] << 8) |
                       ((size_t)data[42] << 16) | ((size_t)data[43] << 24);
 
-    /* e_shnum == 0 with a real table: count lives in section 0 sh_size. */
+    /* Extended-numbering sentinels are only legal for values in the reserved
+     * range; small ordinary values must stay in the ELF header fields. */
     data[60] = 0; data[61] = 0;
     data[shdr_off + 32] = 3;
-    CHECK("extended e_shnum from section 0",
-          neverc_elf_open(&f, data, len) == 0);
-    CHECK("extended numbering keeps three sections",
-          f.section_count == 3 && neverc_elf_section(&f, ".text") != NULL);
-    {
-        uint8_t *sec_data = (uint8_t *)1;
-        size_t sec_len = 99;
-        CHECK("SHT_NULL section 0 has no file bytes",
-              neverc_elf_section_data(&f, &f.sections[0], &sec_data,
-                                      &sec_len) == 0 &&
-                  sec_data == NULL && sec_len == 0);
-    }
-    neverc_elf_close(&f);
+    CHECK("small e_shnum escape value rejected",
+          neverc_elf_open(&f, data, len) < 0);
     data[60] = 3;
     data[shdr_off + 32] = 0;
 
     data[62] = 0xFF; data[63] = 0xFF;
     data[shdr_off + 40] = 2; /* sh_link holds the real shstrndx */
-    CHECK("SHN_XINDEX resolved from section 0",
-          neverc_elf_open(&f, data, len) == 0);
-    CHECK("SHN_XINDEX still names .text",
-          neverc_elf_section(&f, ".text") != NULL);
-    neverc_elf_close(&f);
+    CHECK("small SHN_XINDEX escape value rejected",
+          neverc_elf_open(&f, data, len) < 0);
     data[62] = 2; data[63] = 0;
     data[shdr_off + 40] = 0;
+
+    {
+        const uint32_t count = NEVERC_SHN_LORESERVE;
+        size_t large_len = 64U + (size_t)count * 64U;
+        uint8_t *large = (uint8_t *)calloc(large_len, 1);
+        CHECK("allocate legal extended section table", large != NULL);
+        if (large) {
+            memcpy(large, data, 64U);
+            put64le(large + 40, 64U);
+            large[60] = 0;
+            large[61] = 0;
+            large[62] = 0;
+            large[63] = 0;
+            put64le(large + 64U + 32U, count);
+            CHECK("legal extended e_shnum is accepted",
+                  neverc_elf_open(&f, large, large_len) == 0);
+            CHECK("legal extended section count preserved",
+                  f.section_count == count);
+            neverc_elf_close(&f);
+            free(large);
+        }
+    }
 
     /* PN_XNUM with no section table cannot be resolved. */
     data[56] = 0xFF; data[57] = 0xFF;

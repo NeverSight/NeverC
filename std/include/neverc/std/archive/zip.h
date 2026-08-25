@@ -39,7 +39,10 @@ typedef struct {
     const uint8_t **file_data;
 } neverc_zip_reader_t;
 
-/* Returns 0 on success or -1 for malformed/unsupported archives. */
+/* The reader borrows data for its entire lifetime. File-header and file-data
+ * pointers are reader-owned views invalidated by reader_free. Call
+ * reader_free before reinitializing a reader that completed successfully.
+ * Returns 0 on success or -1 for malformed/unsupported archives. */
 int  neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t len);
 int  neverc_zip_reader_count(const neverc_zip_reader_t *r);
 const neverc_zip_file_header_t *neverc_zip_reader_file(const neverc_zip_reader_t *r, int idx);
@@ -59,6 +62,10 @@ typedef struct {
     int      failed;
 } neverc_zip_writer_t;
 
+/* The writer owns its output and entry arrays. The completed archive remains
+ * available through w->data until writer_free; call writer_free before
+ * reinitializing a writer that has been used. Input name/data passed to add are
+ * copied and need only remain valid for the duration of that call. */
 void neverc_zip_writer_init(neverc_zip_writer_t *w);
 int  neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
                            const uint8_t *data, size_t len);

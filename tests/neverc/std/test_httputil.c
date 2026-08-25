@@ -295,6 +295,100 @@ static void test_target_validation(void) {
     neverc_tcp_close(peer_tcp);
 }
 
+typedef struct {
+    neverc_http_handler_func_t handler;
+    atomic_int *ready;
+    atomic_int *go;
+    int status;
+} legacy_race_arg_t;
+
+#if defined(_WIN32)
+static DWORD WINAPI legacy_race_thread(LPVOID argument) {
+#else
+static void *legacy_race_thread(void *argument) {
+#endif
+    legacy_race_arg_t *arg = (legacy_race_arg_t *)argument;
+    neverc_http_request_t request;
+    memset(&request, 0, sizeof(request));
+    request.method = "GET";
+    request.path = "/";
+    neverc_http_response_writer_t *writer = neverc_http_memory_writer_new();
+    atomic_fetch_add_explicit(arg->ready, 1, memory_order_release);
+    while (!atomic_load_explicit(arg->go, memory_order_acquire)) {
+    }
+    if (writer) {
+        char *body = NULL;
+        size_t body_length = 0;
+        arg->handler(&request, writer);
+        arg->status = neverc_http_memory_writer_result(
+            writer, &body, &body_length);
+        free(body);
+        neverc_http_memory_writer_free(writer);
+    }
+#if defined(_WIN32)
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+static void test_legacy_free_race(void) {
+    enum { THREAD_COUNT = 16 };
+    neverc_httputil_reverse_proxy_t *proxy =
+        neverc_httputil_new_single_host_reverse_proxy(
+            "http://127.0.0.1:1");
+    neverc_http_handler_func_t handler = neverc_httputil_proxy_handler(proxy);
+    CHECK("legacy race proxy and handler created", proxy && handler);
+    if (!proxy || !handler) {
+        neverc_httputil_proxy_free(proxy);
+        return;
+    }
+
+    atomic_int ready;
+    atomic_int go;
+    atomic_init(&ready, 0);
+    atomic_init(&go, 0);
+    legacy_race_arg_t args[THREAD_COUNT];
+#if defined(_WIN32)
+    HANDLE threads[THREAD_COUNT];
+#else
+    pthread_t threads[THREAD_COUNT];
+#endif
+    int started = 0;
+    for (int i = 0; i < THREAD_COUNT; i++) {
+        args[i].handler = handler;
+        args[i].ready = &ready;
+        args[i].go = &go;
+        args[i].status = 0;
+#if defined(_WIN32)
+        threads[i] = CreateThread(
+            NULL, 0, legacy_race_thread, &args[i], 0, NULL);
+        if (!threads[i]) break;
+#else
+        if (pthread_create(&threads[i], NULL, legacy_race_thread,
+                           &args[i]) != 0)
+            break;
+#endif
+        started++;
+    }
+    CHECK("legacy race threads created", started == THREAD_COUNT);
+    while (atomic_load_explicit(&ready, memory_order_acquire) < started) {
+    }
+    atomic_store_explicit(&go, 1, memory_order_release);
+    neverc_httputil_proxy_free(proxy);
+
+    for (int i = 0; i < started; i++) {
+#if defined(_WIN32)
+        WaitForSingleObject(threads[i], INFINITE);
+        CloseHandle(threads[i]);
+#else
+        pthread_join(threads[i], NULL);
+#endif
+        CHECK("concurrent legacy invocation safely returns 502",
+              args[i].status == 502);
+    }
+}
+
 static void test_legacy_handler_binding(void) {
     puts("[legacy_handler_binding]");
     neverc_httputil_reverse_proxy_t *first =
@@ -357,6 +451,7 @@ static void test_legacy_handler_binding(void) {
     neverc_context_free(request.context);
     neverc_context_cancel_handle_free(cancel_handle);
     neverc_httputil_proxy_free(second);
+    test_legacy_free_race();
 }
 
 /* ---------------------------------------------------------------------- */

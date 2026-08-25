@@ -271,7 +271,15 @@ bool   neverc_vector_next_permutation(neverc_vector_t *v,
 bool   neverc_vector_prev_permutation(neverc_vector_t *v,
                                        neverc_vector_cmp_fn cmp);
 
-/* ===== Iterators (pointer-based) ===== */
+/* ===== Iterators (pointer-based) =====
+ *
+ * rend is a NULL sentinel because C pointer arithmetic cannot form the
+ * one-before-begin pointer used by a naive reverse loop. Stop at begin before
+ * decrementing it, for example:
+ *
+ *   for (char *p = rbegin, *b = begin; p;
+ *        p = p == b ? NULL : p - elem_size) { ... }
+ */
 
 void  *neverc_vector_begin(const neverc_vector_t *v);
 void  *neverc_vector_end(const neverc_vector_t *v);

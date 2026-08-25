@@ -16,7 +16,7 @@ extern "C" {
 #if defined(_WIN32)
 typedef struct {
     SRWLOCK srw;
-    DWORD owner; /* 0 = unlocked; GetCurrentThreadId() while held */
+    volatile LONG owner; /* atomic; 0 or GetCurrentThreadId() while held */
 } neverc_mutex_t;
 #else
 typedef struct { pthread_mutex_t mu; } neverc_mutex_t;

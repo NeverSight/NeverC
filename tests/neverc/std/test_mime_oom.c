@@ -66,6 +66,40 @@ static int fail_every_alloc(const char *input, size_t nkeys) {
     return 0;
 }
 
+static int fail_every_decode_header_alloc(void) {
+    /* 262 unpadded base64 bytes force both DecodeHeader's decoded scratch
+     * buffer and the padding scratch in mime_2047_b_decode onto the heap. */
+    char input[300];
+    char output[300];
+    const char prefix[] = "=?utf-8?b?";
+    size_t pos = sizeof(prefix) - 1;
+    memcpy(input, prefix, pos);
+    for (int i = 0; i < 65; i++) {
+        memcpy(input + pos, "YWFh", 4);
+        pos += 4;
+    }
+    memcpy(input + pos, "YQ?=", 4);
+    pos += 4;
+    input[pos] = '\0';
+
+    size_t out_len = 0;
+    reset_allocator(0);
+    CHECK(neverc_mime_decode_header(input, pos, output, sizeof(output),
+                                    &out_len) == 0);
+    CHECK(out_len == 196);
+    size_t successful_allocations = allocation_count;
+    CHECK(successful_allocations == 2);
+
+    for (size_t i = 1; i <= successful_allocations; i++) {
+        reset_allocator(i);
+        out_len = 99;
+        CHECK(neverc_mime_decode_header(input, pos, output, sizeof(output),
+                                        &out_len) == -1);
+        CHECK(out_len == 0);
+    }
+    return 0;
+}
+
 int main(void) {
     CHECK(fail_every_alloc(
               "text/plain; charset=utf-8; boundary=example", 2) == 0);
@@ -82,6 +116,8 @@ int main(void) {
               "application/octet-stream; "
               "filename*0*=utf-8''foo; filename*1=.txt",
               2) == 0);
+
+    CHECK(fail_every_decode_header_alloc() == 0);
 
     puts("passed");
     return 0;

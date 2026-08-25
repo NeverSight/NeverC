@@ -222,15 +222,22 @@ static void test_template_url_and_script(void) {
 
     neverc_html_template_data_set(&data, "Cls", "x onmouseover=alert(1)");
     out = neverc_html_template_render("<div class={{.Cls}}>", &data);
-    check_str("unquoted attr wrapped", out,
-              "<div class=\"x onmouseover=alert(1)\">");
+    check_str("unquoted attr no-space escaped", out,
+              "<div class=x&#32;onmouseover&#61;alert(1)>");
     free(out);
 
     neverc_html_template_data_set(&data, "Name", "alert(1)");
     out = neverc_html_template_render("<img onclick={{.Name}}>", &data);
-    check("unquoted onclick quoted", out && strstr(out, "onclick=\"") != NULL);
+    check("unquoted onclick remains one attribute",
+          out && strstr(out, "onclick=&#39;") != NULL);
     check("unquoted onclick is js string",
           out && strstr(out, "&#39;alert(1)&#39;") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "x y");
+    out = neverc_html_template_render("<div class={{.X}}-world>", &data);
+    check_str("unquoted action keeps static suffix in value", out,
+              "<div class=x&#32;y-world>");
     free(out);
 
     neverc_html_template_data_set(&data, "P", "+alert(1)//");

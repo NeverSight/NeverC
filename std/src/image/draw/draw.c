@@ -354,6 +354,22 @@ void neverc_draw_gray_over(neverc_image_rgba_t *dst, neverc_rect_t r,
     uint8_t *dbase = dst->pix + doff;
     const uint8_t *mbase = mask->pix + moff;
 
+    /* A gray view may share the destination's backing allocation at any byte
+     * offset. Snapshot the mask before painting so earlier RGBA writes cannot
+     * alter coverage bytes that later pixels still need to read. */
+    uint8_t *snapshot = NULL;
+    size_t dst_span = (rows - 1U) * dst_stride + row_bytes;
+    size_t mask_span = (rows - 1U) * mask_stride + w;
+    if (byte_spans_overlap(dbase, dst_span, mbase, mask_span)) {
+        if (rows > SIZE_MAX / w) return;
+        snapshot = (uint8_t *)malloc(rows * w);
+        if (!snapshot) return;
+        for (size_t n = 0; n < rows; n++)
+            memcpy(snapshot + n * w, mbase + n * mask_stride, w);
+        mbase = snapshot;
+        mask_stride = w;
+    }
+
     for (size_t n = 0; n < rows; n++) {
         uint8_t *drow = dbase;
         const uint8_t *mrow = mbase;
@@ -374,4 +390,5 @@ void neverc_draw_gray_over(neverc_image_rgba_t *dst, neverc_rect_t r,
         dbase += dst_stride;
         mbase += mask_stride;
     }
+    free(snapshot);
 }

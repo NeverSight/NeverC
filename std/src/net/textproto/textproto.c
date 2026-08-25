@@ -194,14 +194,20 @@ static int mime_header_add_checked(neverc_mime_header_t *h, const char *key,
 
 void neverc_mime_header_add(neverc_mime_header_t *h, const char *key,
                             const char *value) {
-    (void)mime_header_add_checked(h, key, value);
+    (void)neverc_mime_header_try_add(h, key, value);
 }
 
-void neverc_mime_header_set(neverc_mime_header_t *h, const char *key, const char *value) {
+int neverc_mime_header_try_add(neverc_mime_header_t *h, const char *key,
+                               const char *value) {
+    return mime_header_add_checked(h, key, value);
+}
+
+int neverc_mime_header_try_set(neverc_mime_header_t *h, const char *key,
+                               const char *value) {
     if (!h || !key || !textproto_field_name_ok(key) ||
         !textproto_field_value_ok(value ? value : "") ||
         h->count > h->capacity ||
-        (h->capacity > 0 && (!h->keys || !h->values))) return;
+        (h->capacity > 0 && (!h->keys || !h->values))) return -1;
     int replaced = 0;
     for (size_t i = 0; i < h->count; ) {
         if (!canon_eq(h->keys[i], key)) {
@@ -210,7 +216,7 @@ void neverc_mime_header_set(neverc_mime_header_t *h, const char *key, const char
         }
         if (!replaced) {
             char *value_copy = textproto_dup(value);
-            if (!value_copy) return;
+            if (!value_copy) return -1;
             free(h->values[i]);
             h->values[i] = value_copy;
             replaced = 1;
@@ -226,7 +232,13 @@ void neverc_mime_header_set(neverc_mime_header_t *h, const char *key, const char
         }
     }
     if (!replaced)
-        neverc_mime_header_add(h, key, value);
+        return mime_header_add_checked(h, key, value);
+    return 0;
+}
+
+void neverc_mime_header_set(neverc_mime_header_t *h, const char *key,
+                            const char *value) {
+    (void)neverc_mime_header_try_set(h, key, value);
 }
 
 const char *neverc_mime_header_get(const neverc_mime_header_t *h, const char *key) {
@@ -444,7 +456,10 @@ int neverc_textproto_trim_string(const char *s, char *out, size_t cap) {
     while (*s == ' ' || *s == '\t') s++;
     size_t len = strlen(s);
     while (len > 0 && (s[len-1] == ' ' || s[len-1] == '\t')) len--;
-    if (len >= cap) len = cap - 1;
+    if (len >= cap) {
+        out[0] = '\0';
+        return -1;
+    }
     memcpy(out, s, len);
     out[len] = '\0';
     return 0;

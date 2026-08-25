@@ -242,10 +242,22 @@ neverc_cmplx_t neverc_cmplx_pow(neverc_cmplx_t x, neverc_cmplx_t y) {
         }
         return MK(0.0, 0.0);
     }
-    neverc_cmplx_t modarg = neverc_cmplx_log(x);
-    double rr = RE(modarg) * RE(y) - IM(modarg) * IM(y);
-    double ri = RE(modarg) * IM(y) + IM(modarg) * RE(y);
-    return neverc_cmplx_exp(MK(rr, ri));
+    /* Keep the polar decomposition used by Go's math/cmplx.Pow instead of
+     * exp(y*log(x)). Besides avoiding needless intermediate overflow, this
+     * preserves NaN+NaN for finite nonzero bases raised to +/-Inf. */
+    double modulus = neverc_cmplx_abs(x);
+    if (modulus == 0.0)
+        return MK(0.0, 0.0);
+    double r = neverc_math_pow(modulus, RE(y));
+    double arg = neverc_cmplx_phase(x);
+    double theta = RE(y) * arg;
+    if (IM(y) != 0.0) {
+        r *= neverc_math_exp(-IM(y) * arg);
+        theta += IM(y) * neverc_math_log(modulus);
+    }
+    double s, c;
+    neverc_math_sincos(theta, &s, &c);
+    return MK(r * c, r * s);
 }
 
 /* ===== Trigonometric ===== */

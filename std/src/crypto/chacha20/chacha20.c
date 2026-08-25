@@ -163,7 +163,7 @@ static void xor_keystream(uint8_t *dst, const uint8_t *src,
 int neverc_chacha20_xor_checked(neverc_chacha20_ctx *ctx,
                                 uint8_t *dst, const uint8_t *src, size_t len) {
     size_t off = 0;
-    if (!ctx || ctx->buf_used <= 0) return -1;
+    if (!ctx || ctx->buf_used <= 0 || ctx->buf_used > 64) return -1;
     if (len == 0) return 0;
     if (!dst || !src) return -1;
 

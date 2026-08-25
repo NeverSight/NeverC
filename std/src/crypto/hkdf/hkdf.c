@@ -13,7 +13,17 @@
 #include "neverc/std/crypto/sha512.h"
 #include "neverc/std/_platform.h"
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+
+static int hkdf_spans_overlap(const void *a, size_t a_len,
+                              const void *b, size_t b_len) {
+    if (a_len == 0 || b_len == 0)
+        return 0;
+    uintptr_t ap = (uintptr_t)a;
+    uintptr_t bp = (uintptr_t)b;
+    return ap <= bp ? bp - ap < a_len : ap - bp < b_len;
+}
 
 /* Inner HMAC absorbs a block-sized ipad first. A wrapping info/IKM length
  * would make SHA wipe the midstate and finalize to a PRK/OKM that no longer
@@ -162,6 +172,13 @@ int neverc_hkdf_expand_sha256(uint8_t *okm, size_t okm_len,
         okm_len > 255 * 32 || !hkdf_sha256_expand_info_ok(info_len))
         return -1;
 
+    uint8_t *target = okm;
+    if (hkdf_spans_overlap(okm, okm_len, info, info_len)) {
+        target = (uint8_t *)malloc(okm_len);
+        if (!target)
+            return -1;
+    }
+
     hmac256_pre pre;
     hmac256_pre_init(&pre, prk, 32);
 
@@ -176,13 +193,18 @@ int neverc_hkdf_expand_sha256(uint8_t *okm, size_t okm_len,
 
         size_t n = okm_len - off;
         if (n > 32) n = 32;
-        memcpy(okm + off, t, n);
+        memcpy(target + off, t, n);
         off += n;
         counter++;
     }
 
     neverc_platform_secure_zero(t, sizeof(t));
     neverc_platform_secure_zero(&pre, sizeof(pre));
+    if (target != okm) {
+        memmove(okm, target, okm_len);
+        neverc_platform_secure_zero(target, okm_len);
+        free(target);
+    }
     return 0;
 }
 
@@ -231,6 +253,13 @@ int neverc_hkdf_expand_sha512(uint8_t *okm, size_t okm_len,
         okm_len > 255 * 64 || !hkdf_sha512_expand_info_ok(info_len))
         return -1;
 
+    uint8_t *target = okm;
+    if (hkdf_spans_overlap(okm, okm_len, info, info_len)) {
+        target = (uint8_t *)malloc(okm_len);
+        if (!target)
+            return -1;
+    }
+
     hmac512_pre pre;
     hmac512_pre_init(&pre, prk, 64);
 
@@ -245,13 +274,18 @@ int neverc_hkdf_expand_sha512(uint8_t *okm, size_t okm_len,
 
         size_t n = okm_len - off;
         if (n > 64) n = 64;
-        memcpy(okm + off, t, n);
+        memcpy(target + off, t, n);
         off += n;
         counter++;
     }
 
     neverc_platform_secure_zero(t, sizeof(t));
     neverc_platform_secure_zero(&pre, sizeof(pre));
+    if (target != okm) {
+        memmove(okm, target, okm_len);
+        neverc_platform_secure_zero(target, okm_len);
+        free(target);
+    }
     return 0;
 }
 

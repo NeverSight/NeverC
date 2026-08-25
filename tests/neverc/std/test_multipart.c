@@ -300,7 +300,7 @@ static void test_delimiter_requires_line_end(void) {
     ASSERT_EQ((int)reader->parts[1].body_len, 3);
     ASSERT_TRUE(memcmp(reader->parts[1].body, "two", 3) == 0);
 
-    /* Closing delimiter may still end with a lone CR at EOF. */
+    /* A lone CR is neither RFC 2046 CRLF nor Go's accepted no-EOL close. */
     const char *close_cr_eof =
         "--b\r\n"
         "\r\n"
@@ -309,10 +309,131 @@ static void test_delimiter_requires_line_end(void) {
     ASSERT_EQ(neverc_multipart_parse(
                   (const unsigned char *)close_cr_eof, strlen(close_cr_eof),
                   "b", reader),
+              -1);
+    ASSERT_EQ(reader->part_count, 0);
+
+    /* Reader.nl starts as CRLF. Before any ordinary boundary can switch it to
+     * LF mode, an LF-only final boundary is not a valid empty multipart. The
+     * same close with CRLF or with no final line ending is valid. */
+    const char *first_lf_close = "--b--\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)first_lf_close,
+                  strlen(first_lf_close), "b", reader),
+              -1);
+    ASSERT_EQ(reader->part_count, 0);
+
+    const char *first_crlf_close = "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)first_crlf_close,
+                  strlen(first_crlf_close), "b", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 0);
+
+    const char *first_eof_close = "--b--";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)first_eof_close,
+                  strlen(first_eof_close), "b", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 0);
+
+    /* Go locks Reader.nl from the first ordinary boundary line. A CRLF
+     * multipart cannot terminate on an LF-only delimiter (whether the
+     * mismatch is before or after the marker), and vice versa. */
+    const char *crlf_then_lf_prefix =
+        "--b\r\n"
+        "\r\n"
+        "body\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)crlf_then_lf_prefix,
+                  strlen(crlf_then_lf_prefix), "b", reader),
+              -1);
+    ASSERT_EQ(reader->part_count, 0);
+
+    /* An LF-prefixed boundary-looking line is body text in locked CRLF mode.
+     * A later CRLF-prefixed close still completes the part. */
+    const char *crlf_fake_lf_then_real_close =
+        "--b\r\n"
+        "\r\n"
+        "body\n"
+        "--b--\r\n"
+        "tail\r\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)crlf_fake_lf_then_real_close,
+                  strlen(crlf_fake_lf_then_real_close), "b", reader),
               0);
     ASSERT_EQ(reader->part_count, 1);
-    ASSERT_EQ((int)reader->parts[0].body_len, 2);
-    ASSERT_TRUE(memcmp(reader->parts[0].body, "ok", 2) == 0);
+    ASSERT_EQ((int)reader->parts[0].body_len,
+              (int)strlen("body\n--b--\r\ntail"));
+    ASSERT_TRUE(memcmp(reader->parts[0].body, "body\n--b--\r\ntail",
+                       reader->parts[0].body_len) == 0);
+
+    /* Go's partReader has a total==0 exception: after an LF-only empty header
+     * section, a closing boundary starts the body directly and remains valid
+     * even though Reader.nl was locked to CRLF by the first boundary. */
+    const char *crlf_with_lf_empty_headers =
+        "--b\r\n"
+        "\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)crlf_with_lf_empty_headers,
+                  strlen(crlf_with_lf_empty_headers), "b", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_EQ((int)reader->parts[0].body_len, 0);
+
+    const char *crlf_then_lf_suffix =
+        "--b\r\n"
+        "\r\n"
+        "body\r\n"
+        "--b--\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)crlf_then_lf_suffix,
+                  strlen(crlf_then_lf_suffix), "b", reader),
+              -1);
+    ASSERT_EQ(reader->part_count, 0);
+
+    /* A suffix mismatch after a correctly prefixed candidate is a hard error;
+     * Go does not skip it as body and recover at a later valid close. */
+    const char *crlf_bad_suffix_then_real_close =
+        "--b\r\n"
+        "\r\n"
+        "body\r\n"
+        "--b--\n"
+        "tail\r\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)crlf_bad_suffix_then_real_close,
+                  strlen(crlf_bad_suffix_then_real_close), "b", reader),
+              -1);
+    ASSERT_EQ(reader->part_count, 0);
+
+    const char *lf_then_crlf_suffix =
+        "--b\n"
+        "\n"
+        "body\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)lf_then_crlf_suffix,
+                  strlen(lf_then_crlf_suffix), "b", reader),
+              -1);
+    ASSERT_EQ(reader->part_count, 0);
+
+    /* In LF mode Go searches for "\n--boundary". A CR immediately before
+     * that LF remains part of the body; only the recorded LF is stripped. */
+    const char *lf_with_cr_body_tail =
+        "--b\n"
+        "\n"
+        "body\r\n"
+        "--b--\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)lf_with_cr_body_tail,
+                  strlen(lf_with_cr_body_tail), "b", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_EQ((int)reader->parts[0].body_len, 5);
+    ASSERT_TRUE(memcmp(reader->parts[0].body, "body\r", 5) == 0);
 
     free(reader);
 }
@@ -324,6 +445,14 @@ static void test_generate_boundary(void) {
     ASSERT_TRUE(neverc_multipart_generate_boundary(b2, sizeof(b2)) == 32);
     ASSERT_TRUE(strlen(b1) == 32);
     ASSERT_TRUE(strcmp(b1, b2) != 0);
+
+    /* Sixteen random bytes render as 32 hex bytes plus the terminator. */
+    char exact[33];
+    char short_buf[32];
+    ASSERT_EQ(neverc_multipart_generate_boundary(exact, sizeof(exact)), 32);
+    ASSERT_EQ((int)strlen(exact), 32);
+    ASSERT_EQ(neverc_multipart_generate_boundary(short_buf, sizeof(short_buf)),
+              -1);
 }
 
 static void test_rejects_malformed_input(void) {
@@ -445,8 +574,17 @@ static void test_rejects_malformed_input(void) {
               -1);
     inject.body = (const unsigned char *)"ok\n--inj";
     inject.body_len = 8;
-    ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
-              -1);
+    int injected_len = neverc_multipart_write(
+        &inject, 1, "inj", output, sizeof(output));
+    ASSERT_TRUE(injected_len > 0);
+    if (injected_len > 0) {
+        ASSERT_EQ(neverc_multipart_parse(
+                      output, (size_t)injected_len, "inj", reader),
+                  0);
+        ASSERT_EQ(reader->part_count, 1);
+        ASSERT_EQ((int)reader->parts[0].body_len, 8);
+        ASSERT_TRUE(memcmp(reader->parts[0].body, "ok\n--inj", 8) == 0);
+    }
     inject.body = (const unsigned char *)"--inj ";
     inject.body_len = 6;
     ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),

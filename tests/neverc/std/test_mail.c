@@ -107,6 +107,26 @@ static void test_parse_address(void) {
               0);
     ASSERT_STREQ(addr.name, "=?utf-8?q?Hello?=");
     ASSERT_STREQ(addr.address, "user@x.com");
+
+    /* RFC 6532 extends atext with UTF8-non-ascii in display names,
+     * local-parts, and domains (the same cases covered by Go net/mail). */
+    ASSERT_EQ(neverc_mail_parse_address(
+                  "\xC2\xB5 <micro@example.com>", &addr),
+              0);
+    ASSERT_STREQ(addr.name, "\xC2\xB5");
+    ASSERT_STREQ(addr.address, "micro@example.com");
+    ASSERT_EQ(neverc_mail_parse_address(
+                  "Micro <\xC2\xB5@example.com>", &addr),
+              0);
+    ASSERT_STREQ(addr.name, "Micro");
+    ASSERT_STREQ(addr.address, "\xC2\xB5@example.com");
+    ASSERT_EQ(neverc_mail_parse_address(
+                  "Micro <micro@\xC2\xB5.example.com>", &addr),
+              0);
+    ASSERT_STREQ(addr.address, "micro@\xC2\xB5.example.com");
+    ASSERT_EQ(neverc_mail_parse_address(
+                  "Micro <\xC0\xAF@example.com>", &addr),
+              -1);
 }
 
 static void test_parse_address_list(void) {
@@ -208,6 +228,21 @@ static void test_format_address(void) {
     ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)),
               (int)strlen("=?utf-8?q?Hello?= <user@x.com>"));
     ASSERT_STREQ(buf, "=?utf-8?q?Hello?= <user@x.com>");
+
+    /* Both fields are public fixed arrays. Formatting must reject a missing
+     * terminator before any strchr/strlen-style string operation can escape
+     * the corresponding array. */
+    {
+        char large[1024];
+        memset(&addr, 0, sizeof(addr));
+        strcpy(addr.address, "user@x.com");
+        memset(addr.name, 'N', sizeof(addr.name));
+        ASSERT_EQ(neverc_mail_format_address(&addr, large, sizeof(large)), -1);
+
+        memset(&addr, 0, sizeof(addr));
+        memset(addr.address, 'a', sizeof(addr.address));
+        ASSERT_EQ(neverc_mail_format_address(&addr, large, sizeof(large)), -1);
+    }
 }
 
 static void test_parse_message(void) {
@@ -400,7 +435,8 @@ static void test_parse_date(void) {
     ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00:00 EST") == 18000LL);
     ASSERT_TRUE(neverc_mail_parse_date("01 jan 1970 00:00:00 +0000") == 0);
     ASSERT_TRUE(neverc_mail_parse_date("01 JAN 1970 00:00:00 +0000") == 0);
-    ASSERT_TRUE(neverc_mail_parse_date("mon, 01 Jan 1970 00:00:00 +0000") == 0);
+    ASSERT_TRUE(neverc_mail_parse_date("Thu, 01 Jan 1970 00:00:00 +0000") == 0);
+    ASSERT_TRUE(neverc_mail_parse_date("Mon, 01 Jan 1970 00:00:00 +0000") == -1);
     ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00:00 est") == 18000LL);
     ASSERT_TRUE(neverc_mail_parse_date(
                     "01 Jan 1970 00:00:00 -0700 (MST)") == 25200LL);
@@ -421,6 +457,41 @@ static void test_parse_date(void) {
                     "01 Jan 1970 00:00:00 +0000 (\r comment)") == -1);
     ASSERT_TRUE(neverc_mail_parse_date(
                     "01 Jan 1970 00:00:00 +0000 (\r\n comment)") == 0);
+
+    /* hour/minute/second are 2DIGIT in both the current and obsolete RFC
+     * productions. A numeric zone additionally has a mandatory leading FWS;
+     * obs-zone does not, so the adjacent GMT case remains valid. */
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 1:00:00 +0000") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:1:00 +0000") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00:1 +0000") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 1:00:00GMT") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00:00+0000") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date(
+                    "01 Jan 1970 00:00:00 (comment)+0000") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date(
+                    "01 Jan 1970 00:00:00 (comment) +0000") == 0);
+    ASSERT_TRUE(neverc_mail_parse_date(
+                    "01 Jan 1970 00:00:00\r\n +0000") == 0);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00:00GMT") == 0);
+
+    /* RFC 5322 obs-zone deliberately excludes the military letter J/j. */
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00:00 J") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 00:00:00 j") == -1);
+
+    /* RFC 5322 obs-year: three digits denote the year plus 1900. */
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 100 00:00:00 +0000") ==
+                946684800LL);
+
+    /* The checked API distinguishes a valid timestamp of -1 from failure. */
+    long long timestamp = 123;
+    ASSERT_TRUE(neverc_mail_parse_date_ex(
+                    "Wed, 31 Dec 1969 23:59:59 +0000", &timestamp) == 0);
+    ASSERT_TRUE(timestamp == -1);
+    timestamp = 123;
+    ASSERT_TRUE(neverc_mail_parse_date_ex("invalid", &timestamp) == -1);
+    ASSERT_TRUE(timestamp == 123);
+    ASSERT_TRUE(neverc_mail_parse_date_ex(
+                    "01 Jan 1970 00:00:00 +0000", NULL) == -1);
 }
 
 int main(void) {

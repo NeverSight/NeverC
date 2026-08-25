@@ -1206,7 +1206,11 @@ analyze_response:
                     if (resp_buf.len > 0) goto analyze_response;
                     continue;
                 }
-                if (framing.has_content_length &&
+                if (framing.has_content_length && !is_head &&
+                    !(framing.status_code >= 100 &&
+                      framing.status_code < 200) &&
+                    framing.status_code != 204 &&
+                    framing.status_code != 304 &&
                     framing.content_length > body_limit) {
                     client_connection_close(conn);
                     nc_buf_free(&resp_buf);

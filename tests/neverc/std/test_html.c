@@ -154,7 +154,7 @@ static void test_unescape(void) {
     free(r17);
 
     char *r18 = neverc_html_unescape_string("&ampfoo", &outlen);
-    check_str("amp prefix stays literal", r18, "&ampfoo");
+    check_str("amp legacy prefix", r18, "&foo");
     free(r18);
 
     char *r19 = neverc_html_unescape_string("A&nbsp B", &outlen);
@@ -171,7 +171,7 @@ static void test_unescape(void) {
     free(r21);
 
     char *r22 = neverc_html_unescape_string("&AMPfoo", &outlen);
-    check_str("AMP prefix stays literal", r22, "&AMPfoo");
+    check_str("AMP legacy prefix", r22, "&foo");
     free(r22);
 
     char *r23 = neverc_html_unescape_string("&#xFFFD;&#65533;", &outlen);
@@ -247,10 +247,10 @@ static void test_unescape(void) {
     check_true("packed numeric NUL length", outlen == 6);
     free(r34);
 
-    /* Leftover-hole: `&amp` + name char must not become `&` that a later
-     * parse can consume as `&lt;`. `&amp;lt;` is one-pass leftover by spec. */
+    /* Unescape is one pass: the legacy amp prefix leaves `&lt;`, which is not
+     * recursively decoded during the same call. */
     char *r35 = neverc_html_unescape_string("&amplt;", &outlen);
-    check_str("leftover hole amplt stays literal", r35, "&amplt;");
+    check_str("legacy amp prefix leaves lt entity", r35, "&lt;");
     free(r35);
 
     char *r36 = neverc_html_unescape_string("&amp;lt;", &outlen);
@@ -264,6 +264,17 @@ static void test_unescape(void) {
     char *r38 = neverc_html_unescape_string("&ltimes;", &outlen);
     check_str("ltimes is not lt leftover", r38, "\xE2\x8B\x89");
     free(r38);
+
+    char *r39 = neverc_html_unescape_string(
+        "&Alpha;&CounterClockwiseContourIntegral;", &outlen);
+    check_str("complete HTML5 single-rune entities", r39,
+              "\xCE\x91\xE2\x88\xB3");
+    free(r39);
+
+    char *r40 = neverc_html_unescape_string("&NotEqualTilde;", &outlen);
+    check_str("HTML5 two-rune entity", r40, "\xE2\x89\x82\xCC\xB8");
+    check_true("two-rune entity output length", outlen == 5);
+    free(r40);
 
     outlen = 123;
     check_true("unescape rejects NULL input",

@@ -1605,10 +1605,12 @@ static void test_rbegin_rend(void) {
     ASSERT(rb != NULL && *rb == 3, "rbegin == 3");
 
     int *re = (int *)neverc_vector_rend(v);
-    ASSERT(re != NULL, "rend non-null");
+    ASSERT(re == NULL, "rend is safe NULL sentinel");
 
     int sum = 0;
-    for (int *p = rb; p != re; p--)
+    int *begin = (int *)neverc_vector_begin(v);
+    for (int *p = rb; p != re;
+         p = p == begin ? re : p - 1)
         sum += *p;
     ASSERT(sum == 6, "reverse iteration sum == 6");
 

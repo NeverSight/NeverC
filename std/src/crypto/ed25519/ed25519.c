@@ -15,33 +15,48 @@ static int g_init = 0; /* 0 = uninitialized, 1 = initializing, 2 = ready */
 
 typedef struct { neverc_bigint_t x, y, z, t; } edpt;
 
-static void ensure_init(void) {
-    if (__atomic_load_n(&g_init, __ATOMIC_ACQUIRE) == 2)
-        return;
+static int ensure_init(void) {
+    for (;;) {
+        int state = __atomic_load_n(&g_init, __ATOMIC_ACQUIRE);
+        if (state == 2)
+            return 0;
+        if (state != 0)
+            continue;
 
-    int expected = 0;
-    if (__atomic_compare_exchange_n(&g_init, &expected, 1, 0,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-        neverc_bigint_init(&g_p);
-        neverc_bigint_init(&g_d);
-        neverc_bigint_init(&g_L);
-        neverc_bigint_set_string(
-            &g_p,
+        int expected = 0;
+        if (!__atomic_compare_exchange_n(
+                &g_init, &expected, 1, 0,
+                __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+            continue;
+
+        neverc_bigint_t p, d, order;
+        neverc_bigint_init(&p);
+        neverc_bigint_init(&d);
+        neverc_bigint_init(&order);
+        int ok = neverc_bigint_set_string(
+            &p,
             "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed",
-            16);
-        neverc_bigint_set_string(
-            &g_d,
+            16) == 0 &&
+            neverc_bigint_set_string(
+            &d,
             "52036cee2b6ffe738cc740797779e89800700a4d4141d8ab75eb4dca135978a3",
-            16);
-        neverc_bigint_set_string(
-            &g_L,
+            16) == 0 &&
+            neverc_bigint_set_string(
+            &order,
             "1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed",
-            16);
+            16) == 0;
+        if (!ok) {
+            neverc_bigint_free(&p);
+            neverc_bigint_free(&d);
+            neverc_bigint_free(&order);
+            __atomic_store_n(&g_init, 0, __ATOMIC_RELEASE);
+            return -1;
+        }
+        g_p = p;
+        g_d = d;
+        g_L = order;
         __atomic_store_n(&g_init, 2, __ATOMIC_RELEASE);
-        return;
-    }
-
-    while (__atomic_load_n(&g_init, __ATOMIC_ACQUIRE) != 2) {
+        return 0;
     }
 }
 
@@ -280,7 +295,8 @@ static int edpt_encoding_is_canonical(const unsigned char encoded[32]) {
 static int edpt_decode(edpt *r, const unsigned char s[32]) {
     if (!edpt_encoding_is_canonical(s))
         return -1;
-    ensure_init();
+    if (ensure_init() != 0)
+        return -1;
     unsigned char scopy[32];
     memcpy(scopy, s, 32);
     int x_sign = (scopy[31] >> 7) & 1;
@@ -404,14 +420,18 @@ static int edpt_has_small_order(const edpt *point) {
     return small_order;
 }
 
-static void get_basepoint(edpt *B) {
-    ensure_init();
-    neverc_bigint_set_string(&B->x,
-        "216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a", 16);
-    neverc_bigint_set_string(&B->y,
-        "6666666666666666666666666666666666666666666666666666666666666658", 16);
-    neverc_bigint_set_int64(&B->z, 1);
+static int get_basepoint(edpt *B) {
+    if (!B || ensure_init() != 0 ||
+        neverc_bigint_set_string(&B->x,
+            "216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a",
+            16) != 0 ||
+        neverc_bigint_set_string(&B->y,
+            "6666666666666666666666666666666666666666666666666666666666666658",
+            16) != 0 ||
+        neverc_bigint_set_string(&B->z, "1", 16) != 0)
+        return -1;
     fmul(&B->t, &B->x, &B->y);
+    return 0;
 }
 
 static void ed_bigint_secure_free(neverc_bigint_t *value) {
@@ -491,7 +511,10 @@ int neverc_ed25519_new_key_from_seed(const unsigned char seed[32],
                                       unsigned char priv[64]) {
     if (!seed || !pub || !priv)
         return -1;
-    ensure_init();
+    memset(pub, 0, 32);
+    memset(priv, 0, 64);
+    if (ensure_init() != 0)
+        return -1;
     unsigned char h[64];
     neverc_sha512_sum(seed, 32, h);
     h[0] &= 248;
@@ -500,7 +523,11 @@ int neverc_ed25519_new_key_from_seed(const unsigned char seed[32],
 
     edpt B, A;
     edpt_init(&B); edpt_init(&A);
-    get_basepoint(&B);
+    if (get_basepoint(&B) != 0) {
+        edpt_free(&B); edpt_free(&A);
+        neverc_platform_secure_zero(h, sizeof(h));
+        return -1;
+    }
     scalar_mult_ed(&A, h, &B);
     int result = edpt_encode(pub, &A);
     if (result == 0) {
@@ -557,7 +584,9 @@ static int ed25519_sign_ex(const unsigned char priv[64],
         memset(sig, 0, 64);
         return -1;
     }
-    ensure_init();
+    memset(sig, 0, 64);
+    if (ensure_init() != 0)
+        return -1;
     unsigned char h[64];
     neverc_sha512_sum(priv, 32, h);
     unsigned char a[32];
@@ -583,7 +612,10 @@ static int ed25519_sign_ex(const unsigned char priv[64],
 
     edpt B, R;
     edpt_init(&B); edpt_init(&R);
-    get_basepoint(&B);
+    if (get_basepoint(&B) != 0) {
+        edpt_free(&B); edpt_free(&R);
+        goto sign_cleanup;
+    }
     scalar_mult_ed(&R, nonce, &B);
     if (edpt_encode(sig, &R) != 0) {
         edpt_free(&B); edpt_free(&R);
@@ -674,7 +706,8 @@ static int ed25519_verify_ex(const unsigned char pub[32],
     if (use_dom2 && phflag == 1 &&
         (msg_len != NEVERC_SHA512_DIGEST_SIZE || !msg))
         return -1;
-    ensure_init();
+    if (ensure_init() != 0)
+        return -1;
     edpt A, R;
     edpt_init(&A);
     edpt_init(&R);
@@ -703,7 +736,12 @@ static int ed25519_verify_ex(const unsigned char pub[32],
 
     edpt B, sB;
     edpt_init(&B); edpt_init(&sB);
-    get_basepoint(&B);
+    if (get_basepoint(&B) != 0) {
+        edpt_free(&A); edpt_free(&B); edpt_free(&sB);
+        neverc_platform_secure_zero(hram, sizeof(hram));
+        neverc_platform_secure_zero(h_scalar, sizeof(h_scalar));
+        return -1;
+    }
     scalar_mult_ed(&sB, sig + 32, &B);
 
     neverc_bigint_sub(&A.x, &g_p, &A.x);
