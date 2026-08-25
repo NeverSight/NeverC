@@ -48,7 +48,10 @@ typedef struct {
 
 typedef struct neverc_os_file neverc_os_file_t;
 
-/* Environment */
+/* Environment. getenv returns a borrowed, read-only pointer: do not free or
+ * modify it. A later environment lookup, any environment mutation, or thread
+ * exit may invalidate it. Concurrent environment mutation requires external
+ * synchronization. lookup_env returns the same kind of borrowed pointer. */
 const char *neverc_os_getenv(const char *key);
 int         neverc_os_setenv(const char *key, const char *value);
 int         neverc_os_unsetenv(const char *key);
@@ -99,12 +102,14 @@ void neverc_os_exit(int code);
 int  neverc_os_temp_dir(char *buf, size_t cap);
 neverc_os_file_t *neverc_os_create_temp(const char *dir, const char *pattern);
 
-/* Stdin/Stdout/Stderr */
+/* Stdin/Stdout/Stderr are borrowed process-lifetime wrappers. Initialization
+ * is thread-safe, and passing these wrappers to neverc_os_close is a no-op. */
 neverc_os_file_t *neverc_os_stdin(void);
 neverc_os_file_t *neverc_os_stdout(void);
 neverc_os_file_t *neverc_os_stderr(void);
 
-/* Extended environment */
+/* Extended environment; lookup_env's value follows getenv's borrowed-pointer
+ * lifetime contract above. */
 int         neverc_os_lookup_env(const char *key, const char **value);
 char      **neverc_os_environ(int *count);
 void        neverc_os_clearenv(void);

@@ -177,6 +177,33 @@ static uint64_t unpack(uint64_t x) {
            ((x >> (6*6)) & 0xff) << (8*7);
 }
 
+/* Feistel consumes only the low six bits of each packed subkey byte. Use the
+ * other two bits as an in-band readiness marker so the released context layout
+ * stays unchanged and an all-zero DES key remains distinguishable from a
+ * wiped context. */
+#define DES_READY_MASK UINT64_C(0xC0C0C0C0C0C0C0C0)
+#define DES_READY_BITS UINT64_C(0x8080808080808080)
+
+static void des_mark_ready(neverc_des_cipher_t *c) {
+    for (int i = 0; i < 16; i++)
+        c->subkeys[i] =
+            (c->subkeys[i] & ~DES_READY_MASK) | DES_READY_BITS;
+}
+
+static int des_ready(const neverc_des_cipher_t *c) {
+    if (!c) return 0;
+    for (int i = 0; i < 16; i++) {
+        if ((c->subkeys[i] & DES_READY_MASK) != DES_READY_BITS)
+            return 0;
+    }
+    return 1;
+}
+
+static int tdes_ready(const neverc_3des_cipher_t *c) {
+    return c && des_ready(&c->c1) && des_ready(&c->c2) &&
+           des_ready(&c->c3);
+}
+
 static uint64_t beU64(const uint8_t b[8]) {
     return ((uint64_t)b[0]<<56)|((uint64_t)b[1]<<48)|((uint64_t)b[2]<<40)|
            ((uint64_t)b[3]<<32)|((uint64_t)b[4]<<24)|((uint64_t)b[5]<<16)|
@@ -240,14 +267,6 @@ static void cryptBlock(const uint64_t subkeys[16], uint8_t dst[8],
     bePut64(dst, permuteFinalBlock(preOutput));
 }
 
-static int des_ready(const neverc_des_cipher_t *c) {
-    return c && c->ready == 1;
-}
-
-static int tdes_ready(const neverc_3des_cipher_t *c) {
-    return c && c->c1.ready == 1 && c->c2.ready == 1 && c->c3.ready == 1;
-}
-
 int neverc_des_is_weak_key(const uint8_t key[8]) {
     if (!key) return -1;
     for (size_t i = 0; i < sizeof(des_weak_keys) / sizeof(des_weak_keys[0]); i++) {
@@ -277,7 +296,7 @@ int neverc_des_init(neverc_des_cipher_t *c, const uint8_t key[8]) {
         return -1;
     }
     generateSubkeys(c->subkeys, key);
-    c->ready = 1;
+    des_mark_ready(c);
     return 0;
 }
 
@@ -302,9 +321,9 @@ int neverc_3des_init(neverc_3des_cipher_t *c, const uint8_t key[24]) {
     generateSubkeys(c->c1.subkeys, key);
     generateSubkeys(c->c2.subkeys, key + 8);
     generateSubkeys(c->c3.subkeys, key + 16);
-    c->c1.ready = 1;
-    c->c2.ready = 1;
-    c->c3.ready = 1;
+    des_mark_ready(&c->c1);
+    des_mark_ready(&c->c2);
+    des_mark_ready(&c->c3);
     return 0;
 }
 

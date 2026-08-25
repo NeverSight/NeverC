@@ -313,14 +313,20 @@ static int64_t os_filetime_unix(FILETIME ft) {
 static neverc_os_file_t g_stdin  = { NULL, 0, 1 };
 static neverc_os_file_t g_stdout = { NULL, 1, 1 };
 static neverc_os_file_t g_stderr = { NULL, 2, 1 };
-static int g_std_init = 0;
+/* 0 = uninitialized, 1 = initializing, 2 = safely published. */
+static volatile int32_t g_std_init = 0;
 
 static void init_std(void) {
-    if (!g_std_init) {
+    if (NEVERC_ATOMIC_LOAD32(&g_std_init) == 2)
+        return;
+    if (NEVERC_ATOMIC_CAS32(&g_std_init, 0, 1)) {
         g_stdin.fp = stdin;
         g_stdout.fp = stdout;
         g_stderr.fp = stderr;
-        g_std_init = 1;
+        NEVERC_ATOMIC_STORE32(&g_std_init, 2);
+        return;
+    }
+    while (NEVERC_ATOMIC_LOAD32(&g_std_init) != 2) {
     }
 }
 
@@ -342,7 +348,11 @@ static int os_env_key_ok(const char *key) {
 /* getenv() reads a CRT snapshot; SetEnvironmentVariableA updates the process
    environment block directly.  Route all NeverC os env reads through Win32 so
    neverc_os_setenv/unsetenv are immediately visible to neverc_os_getenv. */
-static char neverc_os_getenv_buf[32768];
+#if defined(_MSC_VER) && !defined(__clang__) && !defined(__neverc__)
+static __declspec(thread) char neverc_os_getenv_buf[32768];
+#else
+static _Thread_local char neverc_os_getenv_buf[32768];
+#endif
 #endif
 
 const char *neverc_os_getenv(const char *key) {

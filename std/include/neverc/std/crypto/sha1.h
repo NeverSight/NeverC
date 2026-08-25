@@ -15,11 +15,12 @@ typedef struct {
     uint32_t state[5];
     uint64_t count;
     uint8_t  buf[64];
-    int      finalized;
 } neverc_sha1_ctx;
 
 void neverc_sha1_init(neverc_sha1_ctx *ctx);
 void neverc_sha1_update(neverc_sha1_ctx *ctx, const uint8_t *data, size_t len);
+/* Final consumes ctx: later updates are ignored and repeated final returns the
+ * same digest. digest must not overlap ctx. */
 void neverc_sha1_final(neverc_sha1_ctx *ctx, uint8_t digest[20]);
 void neverc_sha1_sum(const uint8_t *data, size_t len, uint8_t digest[20]);
 

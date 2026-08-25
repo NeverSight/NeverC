@@ -199,7 +199,7 @@ int main(void) {
         int dirty = 0;
         for (size_t i = 0; i < sizeof(ctx.buf); i++)
             if (ctx.buf[i] != 0) dirty = 1;
-        if (!dirty && ctx.count == 0 && ctx.finalized == 0) tests_passed++;
+        if (!dirty && ctx.count == 0) tests_passed++;
         else { tests_failed++; printf("  FAIL: re-init must wipe buf\n"); }
     }
 

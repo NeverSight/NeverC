@@ -49,6 +49,29 @@ UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
   -Wall \
   -Wextra \
   -Werror \
+  -fsanitize=address,undefined \
+  "-I$std_root/include" \
+  "$test_root/test_crypto_ctx_abi.c" \
+  "$std_root/src/crypto/des/des.c" \
+  "$std_root/src/crypto/md5/md5.c" \
+  "$std_root/src/crypto/sha1/sha1.c" \
+  "$std_root/src/crypto/sha224/sha224.c" \
+  "$std_root/src/crypto/sha256/sha256.c" \
+  "$std_root/src/crypto/sha3/sha3.c" \
+  -o "$work_dir/crypto-ctx-abi-asan-ubsan"
+
+ASAN_OPTIONS=${ASAN_OPTIONS:-halt_on_error=1:detect_leaks=1} \
+UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
+  "$work_dir/crypto-ctx-abi-asan-ubsan"
+
+"$compiler" \
+  -std=gnu11 \
+  -O1 \
+  -g \
+  -fno-omit-frame-pointer \
+  -Wall \
+  -Wextra \
+  -Werror \
   -fsanitize=thread \
   "-I$std_root/include" \
   "$test_root/test_rand_concurrency.c" \
@@ -109,6 +132,24 @@ TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1} \
 
 TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1} \
   "$work_dir/mldsa-tsan"
+
+"$compiler" \
+  -std=gnu11 \
+  -O1 \
+  -g \
+  -fno-omit-frame-pointer \
+  -Wall \
+  -Wextra \
+  -Werror \
+  -fsanitize=thread \
+  "-I$std_root/include" \
+  "$test_root/test_os_concurrency.c" \
+  "$std_root/src/os/os.c" \
+  -pthread \
+  -o "$work_dir/os-tsan"
+
+TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1} \
+  "$work_dir/os-tsan"
 
 "$compiler" \
   -std=gnu11 \

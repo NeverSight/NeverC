@@ -262,6 +262,9 @@ TEST_F(StdLibTest, EmbeddedRuntimeKeepsModuleLocalsDistinct) {
     EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;  \
   }
 
+// Cross-module regression suite for optimized standard-library algorithms.
+STD_TEST(algo)
+
 // ===== Math =====
 STD_TEST(math, "src/math/abs.c", "src/math/acos.c", "src/math/acosh.c", "src/math/asin.c", "src/math/asinh.c", "src/math/atan.c", "src/math/atan2.c", "src/math/atanh.c", "src/math/cbrt.c", "src/math/ceil.c", "src/math/copysign.c", "src/math/cos.c", "src/math/cosh.c", "src/math/dim.c", "src/math/erf.c", "src/math/erfc.c", "src/math/erfcinv.c", "src/math/erfinv.c", "src/math/exp.c", "src/math/exp2.c", "src/math/expm1.c", "src/math/float32bits.c", "src/math/float64bits.c", "src/math/floor.c", "src/math/fma.c", "src/math/fmod.c", "src/math/frexp.c", "src/math/gamma.c", "src/math/hypot.c", "src/math/ilogb.c", "src/math/inf.c", "src/math/isinf.c", "src/math/isnan.c", "src/math/j0.c", "src/math/j1.c", "src/math/jn.c", "src/math/ldexp.c", "src/math/lgamma.c", "src/math/log.c", "src/math/log10.c", "src/math/log1p.c", "src/math/log2.c", "src/math/logb.c", "src/math/max.c", "src/math/min.c", "src/math/modf.c", "src/math/nan.c", "src/math/nextafter.c", "src/math/nextafter32.c", "src/math/pow.c", "src/math/pow10.c", "src/math/remainder.c", "src/math/round.c", "src/math/roundtoeven.c", "src/math/signbit.c", "src/math/sin.c", "src/math/sincos.c", "src/math/sinh.c", "src/math/sqrt.c", "src/math/tan.c", "src/math/tanh.c", "src/math/trunc.c")
 STD_TEST(strconv, "src/strconv/format_bool.c", "src/strconv/format_float.c", "src/strconv/format_int.c", "src/strconv/parse_bool.c", "src/strconv/parse_float.c", "src/strconv/parse_int.c", "src/strconv/quote.c", "src/unicode/utf8/utf8.c", "src/unicode/unicode.c")
@@ -362,6 +365,9 @@ STD_TEST(sha512_variants, "src/crypto/sha512_224/sha512_224.c", "src/crypto/sha5
 STD_TEST(md5, "src/crypto/md5/md5.c")
 STD_TEST(aes, "src/crypto/aes/aes.c")
 STD_TEST(des, "src/crypto/des/des.c")
+STD_TEST(crypto_ctx_abi, "src/crypto/des/des.c", "src/crypto/md5/md5.c",
+    "src/crypto/sha1/sha1.c", "src/crypto/sha224/sha224.c",
+    "src/crypto/sha256/sha256.c", "src/crypto/sha3/sha3.c")
 STD_TEST(rc4, "src/crypto/rc4/rc4.c")
 STD_TEST(chacha20, "src/crypto/chacha20/chacha20.c")
 STD_TEST(poly1305, "src/crypto/poly1305/poly1305.c", "src/crypto/subtle/subtle.c")
@@ -887,6 +893,7 @@ STD_TEST(palette, "src/image/color/palette/palette.c")
 
 // ===== OS =====
 STD_TEST(os, "src/os/os.c")
+STD_TEST(os_concurrency, "src/os/os.c")
 STD_TEST(os_entropy_failure)
 TEST_F(StdLibTest, OsAllocationFailure) {
   auto r = compileAndRunStdTest("os_oom", {}, {"-fno-builtin-std"});

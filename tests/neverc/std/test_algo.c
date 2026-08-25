@@ -1,5 +1,5 @@
 /*
- * Quick correctness tests for optimized std algorithms:
+ * Cross-module correctness tests for optimized std algorithms:
  * - bytes: memcpy/memcmp + BMH substring search + auto-vectorized case conversion
  * - cstring: libc functions + BMH substring search + auto-vectorized case conversion
  * - suffixarray: SA-IS construction

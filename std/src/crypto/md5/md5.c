@@ -87,14 +87,14 @@ void neverc_md5_init(neverc_md5_ctx *ctx) {
 }
 
 void neverc_md5_update(neverc_md5_ctx *ctx, const uint8_t *data, size_t len) {
-    if (!ctx || ctx->finalized || len == 0) return;
+    if (!ctx || ctx->count == UINT64_MAX || len == 0) return;
     if (!data) return;
     /* MD5's length field is 64 bits; refuse a wrap that would collide
      * with a short message (count*8 overflowing uint64_t). */
     if (ctx->count > UINT64_MAX / 8 ||
         len > UINT64_MAX / 8 - ctx->count) {
         memset(ctx, 0, sizeof(*ctx));
-        ctx->finalized = 1;
+        ctx->count = UINT64_MAX;
         return;
     }
     size_t buffered = (size_t)(ctx->count & 63);
@@ -126,7 +126,7 @@ void neverc_md5_final(neverc_md5_ctx *ctx, uint8_t digest[16]) {
         memset(digest, 0, 16);
         return;
     }
-    if (ctx->finalized) {
+    if (ctx->count == UINT64_MAX) {
         for (int i = 0; i < 4; i++)
             put_le32(digest + 4 * i, ctx->state[i]);
         return;
@@ -134,7 +134,7 @@ void neverc_md5_final(neverc_md5_ctx *ctx, uint8_t digest[16]) {
     if (ctx->count > UINT64_MAX / 8) {
         memset(digest, 0, 16);
         memset(ctx, 0, sizeof(*ctx));
-        ctx->finalized = 1;
+        ctx->count = UINT64_MAX;
         return;
     }
     uint64_t bits = ctx->count << 3;
@@ -152,7 +152,7 @@ void neverc_md5_final(neverc_md5_ctx *ctx, uint8_t digest[16]) {
 
     for (int i = 0; i < 4; i++)
         put_le32(digest + 4 * i, ctx->state[i]);
-    ctx->finalized = 1;
+    ctx->count = UINT64_MAX;
 }
 
 void neverc_md5_sum(const uint8_t *data, size_t len, uint8_t digest[16]) {

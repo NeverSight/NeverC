@@ -291,7 +291,6 @@ static void test_null_inputs(void) {
         for (int i = 0; i < 16; i++)
             if (des.subkeys[i] != 0) wiped = 0;
         check_true("des null key wipes subkeys", wiped);
-        check_true("des null key clears ready", des.ready == 0);
     }
 
     neverc_3des_init(&tdes, key24);
@@ -302,9 +301,6 @@ static void test_null_inputs(void) {
             if (tdes.c1.subkeys[i] || tdes.c2.subkeys[i] || tdes.c3.subkeys[i])
                 wiped = 0;
         check_true("3des null key wipes subkeys", wiped);
-        check_true("3des null key clears ready",
-                   tdes.c1.ready == 0 && tdes.c2.ready == 0 &&
-                   tdes.c3.ready == 0);
     }
 
     {
@@ -346,8 +342,8 @@ static void test_null_inputs(void) {
     }
 }
 
-static void test_invalid_ready_state(void) {
-    printf("[DES invalid ready state]\n");
+static void test_invalid_ready_marker(void) {
+    printf("[DES invalid ready marker]\n");
 
     const uint8_t key8[8] = {0};
     const uint8_t key24[24] = {0};
@@ -359,25 +355,25 @@ static void test_invalid_ready_state(void) {
     memset(expected, 0xAA, sizeof(expected));
 
     neverc_des_init(&des, key8);
-    des.ready = 2;
+    des.subkeys[0] ^= UINT64_C(0x4000000000000000);
     memset(out, 0xAA, sizeof(out));
     neverc_des_encrypt_block(&des, out, input);
-    check_bytes("des rejects non-canonical ready state", out, expected,
+    check_bytes("des rejects corrupted ready marker", out, expected,
                 sizeof(out));
     memset(out, 0xAA, sizeof(out));
     neverc_des_decrypt_block(&des, out, input);
-    check_bytes("des decrypt rejects non-canonical ready state", out, expected,
+    check_bytes("des decrypt rejects corrupted ready marker", out, expected,
                 sizeof(out));
 
     neverc_3des_init(&tdes, key24);
-    tdes.c2.ready = 2;
+    tdes.c2.subkeys[0] ^= UINT64_C(0x4000000000000000);
     memset(out, 0xAA, sizeof(out));
     neverc_3des_encrypt_block(&tdes, out, input);
-    check_bytes("3des rejects non-canonical ready state", out, expected,
+    check_bytes("3des rejects corrupted ready marker", out, expected,
                 sizeof(out));
     memset(out, 0xAA, sizeof(out));
     neverc_3des_decrypt_block(&tdes, out, input);
-    check_bytes("3des decrypt rejects non-canonical ready state", out, expected,
+    check_bytes("3des decrypt rejects corrupted ready marker", out, expected,
                 sizeof(out));
 }
 
@@ -434,7 +430,7 @@ int main(void) {
     test_des_weak_keys();
     test_des_different_keys();
     test_null_inputs();
-    test_invalid_ready_state();
+    test_invalid_ready_marker();
     test_des_parity_ignored();
     test_3des_two_key();
 

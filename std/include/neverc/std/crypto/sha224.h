@@ -16,6 +16,8 @@ typedef neverc_sha256_ctx neverc_sha224_ctx;
 
 void neverc_sha224_init(neverc_sha224_ctx *ctx);
 void neverc_sha224_update(neverc_sha224_ctx *ctx, const uint8_t *data, size_t len);
+/* Final consumes ctx: later updates are ignored and repeated final returns the
+ * same digest. digest must not overlap ctx. */
 void neverc_sha224_final(neverc_sha224_ctx *ctx, uint8_t digest[28]);
 void neverc_sha224_sum(const uint8_t *data, size_t len, uint8_t digest[28]);
 

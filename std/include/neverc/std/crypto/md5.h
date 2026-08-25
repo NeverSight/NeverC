@@ -15,11 +15,12 @@ typedef struct {
     uint32_t state[4];
     uint64_t count;
     uint8_t  buf[64];
-    int      finalized;
 } neverc_md5_ctx;
 
 void neverc_md5_init(neverc_md5_ctx *ctx);
 void neverc_md5_update(neverc_md5_ctx *ctx, const uint8_t *data, size_t len);
+/* Final consumes ctx: later updates are ignored and repeated final returns the
+ * same digest. digest must not overlap ctx. */
 void neverc_md5_final(neverc_md5_ctx *ctx, uint8_t digest[16]);
 
 /* One-shot: compute MD5 of data into digest */

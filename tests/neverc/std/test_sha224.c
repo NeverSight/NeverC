@@ -200,7 +200,7 @@ int main(void) {
         for (size_t i = 0; i < sizeof(ctx.buf); i++)
             if (ctx.buf[i] != 0) dirty = 1;
         tests_run++;
-        if (!dirty && ctx.count == 0 && ctx.finalized == 0) { tests_passed++; }
+        if (!dirty && ctx.count == 0) { tests_passed++; }
         else { tests_failed++; printf("  FAIL: SHA-224 re-init must wipe buf\n"); }
     }
 

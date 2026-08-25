@@ -566,10 +566,10 @@ static void test_sha3_lifecycle(void) {
         neverc_shake128_init(&raw);
         neverc_shake128_update(&raw, (const uint8_t *)"abc", 3);
         neverc_shake128_squeeze(&raw, shake, 1);
-        raw.squeeze_pos = raw.rate + 1;
+        raw.buf_len = raw.rate + 1;
         memset(shake, 0xa5, sizeof(shake));
         neverc_shake128_squeeze(&raw, shake, 32);
-        check_true("SHAKE squeeze_pos past rate fails closed",
+        check_true("SHAKE squeeze cursor past rate fails closed",
                    memcmp(shake, zeros, 32) == 0);
     }
 

@@ -20,7 +20,6 @@ extern "C" {
 
 typedef struct {
     uint64_t subkeys[16];
-    int ready; /* 1 after a successful init; 0 after wipe / failed init */
 } neverc_des_cipher_t;
 
 typedef struct {
