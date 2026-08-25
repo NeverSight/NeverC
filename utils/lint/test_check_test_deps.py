@@ -148,6 +148,38 @@ STD_TEST(tcp, TCP_DEPS)
             },
         )
 
+    def test_standalone_test_sources_rejects_only_true_orphans(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            test_dir = repo / "tests" / "neverc" / "std"
+            workflow_dir = repo / ".github" / "workflows"
+            test_dir.mkdir(parents=True)
+            workflow_dir.mkdir(parents=True)
+            registry = 'STD_TEST(registered, "src/registered.c")\n'
+            (repo / "tests" / "neverc" / "StdLibTests.cpp").write_text(
+                registry
+            )
+            (test_dir / "test_registered.c").write_text(
+                "int main(void) { return 0; }\n"
+            )
+            (test_dir / "test_scripted.c").write_text(
+                "int main(void) { return 0; }\n"
+            )
+            (test_dir / "stale_test.c").write_text(
+                "int main(void) { return 0; }\n"
+            )
+            (test_dir / "test_fixture.c").write_text(
+                "int helper(void) { return 0; }\n"
+            )
+            (workflow_dir / "direct.yml").write_text(
+                "run: cc tests/neverc/std/test_scripted.c\n"
+            )
+
+            self.assertEqual(
+                CHECK_TEST_DEPS.standalone_test_sources(repo, registry),
+                [Path("tests/neverc/std/stale_test.c")],
+            )
+
     def test_main_rejects_missing_header_for_non_network_module(self):
         result, output = self.run_validation_fixture(
             {

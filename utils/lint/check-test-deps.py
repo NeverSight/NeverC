@@ -5,6 +5,7 @@ Checks that:
 * every manifest symbol is defined by the source file that registers it;
 * every manifest dependency names an existing module;
 * each STD_TEST() source list covers the transitive manifest dependencies;
+* every standalone std test source is consumed by the test registry or CI;
 * every manifest module names an existing public header;
 * every function declared by a public standard-library header has a definition
   and a manifest registration.
@@ -266,6 +267,45 @@ def parse_tests(text):
     return tests
 
 
+def standalone_test_sources(repo, registry_text):
+    """Return standalone std test sources with no known test consumer."""
+    test_dir = repo / "tests" / "neverc" / "std"
+    if not test_dir.is_dir():
+        return []
+
+    registered_names = set(parse_tests(registry_text))
+    registered_names.update(
+        re.findall(
+            r'compileAndRunStdTest\s*\(\s*"([^"]+)"', registry_text
+        )
+    )
+    registered_files = {f"test_{name}.c" for name in registered_names}
+
+    consumer_paths = [repo / "tests" / "neverc" / "StdLibTests.cpp"]
+    for root in (repo / "utils" / "ci", repo / ".github" / "workflows"):
+        if root.is_dir():
+            consumer_paths.extend(
+                path for path in root.rglob("*") if path.is_file()
+            )
+    consumer_text = "\n".join(
+        path.read_text(errors="replace")
+        for path in consumer_paths
+        if path.is_file()
+    )
+
+    unconsumed = []
+    for path in sorted(test_dir.glob("*.c")):
+        if not (path.name.startswith("test_") or path.name.endswith("_test.c")):
+            continue
+        source = strip_c_comments_and_literals(path.read_text())
+        if not re.search(r"(?m)^\s*(?:int|void)\s+main\s*\(", source):
+            continue
+        if path.name in registered_files or path.name in consumer_text:
+            continue
+        unconsumed.append(path.relative_to(repo))
+    return unconsumed
+
+
 def normalise_test_name(name):
     """Map test name variants to manifest module keys."""
     mapping = {
@@ -297,6 +337,11 @@ def main():
     errors = []
     definition_cache = {}
     function_aliases = load_function_aliases()
+
+    for path in standalone_test_sources(REPO, text):
+        errors.append(
+            f"  {path}: standalone std test has no registry or CI consumer"
+        )
 
     for module_key, mod in sorted(modules.items()):
         header = mod.get("header")
