@@ -1241,8 +1241,17 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
     tz_cur_read(&c, nstd);
     tz_cur_read(&c, nutc);
     if (c.err) return NULL;
+    {
+        uint32_t ti;
+        for (ti = 0; ti < ntime; ti++) {
+            if ((uint32_t)txidx[ti] >= nzone)
+                return NULL;
+        }
+    }
 
     posix_tz_parsed_t footer;
+    char footer_std[16] = {0};
+    char footer_dst[16] = {0};
     int has_footer = 0;
     memset(&footer, 0, sizeof(footer));
     if (version > 1 && c.n >= 2 && c.p[0] == '\n') {
@@ -1253,12 +1262,10 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
             char tz[96];
             memcpy(tz, fs, (size_t)(nl - fs));
             tz[nl - fs] = '\0';
-            {
-                char stdn[16], dstn[16];
-                if (parse_posix_tz_fields(tz, &footer, stdn, sizeof(stdn),
-                                          dstn, sizeof(dstn)) == 0)
-                    has_footer = 1;
-            }
+            if (parse_posix_tz_fields(tz, &footer,
+                                      footer_std, sizeof(footer_std),
+                                      footer_dst, sizeof(footer_dst)) == 0)
+                has_footer = 1;
         }
     }
 
@@ -1293,6 +1300,50 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
         if (tz_chararray_strlen(abbrev, nchar, ab, &slen) != 0)
             return NULL;
         std_ab = (const char *)(abbrev + ab);
+    }
+
+    /* The type table is historical, not ordered by present-day relevance.
+     * Real TZif files commonly put local mean time first. Prefer an extension
+     * footer when present; otherwise use the most recently referenced
+     * standard and DST types, retaining the valid table fallback for a class
+     * that no transition references. Transition lookup itself is unchanged. */
+    if (has_footer) {
+        std_off = footer.std_off;
+        std_ab = footer_std;
+        slen = nc_slen(footer_std);
+        has_dst = footer.has_dst;
+        if (footer.has_dst) {
+            dst_off = footer.dst_off;
+            dst_ab = footer_dst;
+            dlen = nc_slen(footer_dst);
+        } else {
+            dst_off = 0;
+            dst_ab = NULL;
+            dlen = 0;
+        }
+    } else if (ntime > 0) {
+        int have_recent_std = 0, have_recent_dst = 0;
+        uint32_t ti = ntime;
+        while (ti > 0 && (!have_recent_std || !have_recent_dst)) {
+            uint8_t idx = txidx[--ti];
+            const uint8_t *zd = zdata + (size_t)idx * 6;
+            int isdst = zd[4] != 0;
+            uint8_t ab = zd[5];
+            size_t alen = 0;
+            if (tz_chararray_strlen(abbrev, nchar, ab, &alen) != 0)
+                return NULL;
+            if (isdst && !have_recent_dst) {
+                dst_off = (int)(int32_t)tz_be32(zd);
+                dst_ab = (const char *)(abbrev + ab);
+                dlen = alen;
+                have_recent_dst = 1;
+            } else if (!isdst && !have_recent_std) {
+                std_off = (int)(int32_t)tz_be32(zd);
+                std_ab = (const char *)(abbrev + ab);
+                slen = alen;
+                have_recent_std = 1;
+            }
+        }
     }
 
     tzif_extra_t *e = (tzif_extra_t *)calloc(1, sizeof(*e));

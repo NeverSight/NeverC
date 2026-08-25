@@ -796,6 +796,49 @@ static size_t build_tzif_ny_footer(uint8_t *buf, size_t cap) {
     return n;
 }
 
+/* Real TZif files commonly keep an old local-mean-time type first. */
+static size_t build_tzif_ny_historical(uint8_t *buf, size_t cap) {
+    size_t n = 0;
+    uint8_t zmeta[2] = {0, 0};
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 0, 1, 4);
+    append_be32(buf, &n, cap, 0);
+    append_bytes(buf, &n, cap, zmeta, 2);
+    append_bytes(buf, &n, cap, "UTC\0", 4);
+    tzif_header(buf, &n, cap);
+    tzif_counts(buf, &n, cap, 3, 3, 12);
+    append_be64(buf, &n, cap, 0);
+    append_be64(buf, &n, cap, (uint64_t)NY_SPRING_2024);
+    append_be64(buf, &n, cap, (uint64_t)NY_FALL_2024);
+    {
+        uint8_t idx[3] = {2, 1, 2};
+        append_bytes(buf, &n, cap, idx, 3);
+    }
+    append_be32(buf, &n, cap, (uint32_t)-17762);
+    {
+        uint8_t lmt[2] = {0, 0};
+        append_bytes(buf, &n, cap, lmt, 2);
+    }
+    append_be32(buf, &n, cap, (uint32_t)-14400);
+    {
+        uint8_t edt[2] = {1, 4};
+        append_bytes(buf, &n, cap, edt, 2);
+    }
+    append_be32(buf, &n, cap, (uint32_t)-18000);
+    {
+        uint8_t est[2] = {0, 8};
+        append_bytes(buf, &n, cap, est, 2);
+    }
+    append_bytes(buf, &n, cap, "LMT\0EDT\0EST\0", 12);
+    return n;
+}
+
+static size_t build_tzif_ny_historical_footer(uint8_t *buf, size_t cap) {
+    size_t n = build_tzif_ny_historical(buf, cap);
+    append_bytes(buf, &n, cap, "\nEST5EDT,M3.2.0,M11.1.0\n", 24);
+    return n;
+}
+
 /* Southern POSIX footer (Oct→Apr) so zip/tzif-loaded zones are not
  * forced onto the northern rule path. */
 static size_t build_tzif_syd_footer(uint8_t *buf, size_t cap) {
@@ -1005,6 +1048,20 @@ static void test_zip_tzif(void) {
               neverc_tzdata_offset_at(z, NY_FALL_2024), -18000);
     neverc_tzdata_zone_free(z);
 
+    uint8_t nyh[512];
+    size_t nhlen = build_tzif_ny_historical(nyh, sizeof(nyh));
+    z = neverc_tzdata_load_tzif("America/New_York", nyh, nhlen);
+    check_not_null("load historical ny tzif without footer", z);
+    check_str("historical no-footer representative std abbrev",
+              z ? z->abbrev : NULL, "EST");
+    check_int("historical no-footer representative std offset",
+              z ? z->utc_offset : 0, -18000);
+    check_str("historical no-footer representative dst abbrev",
+              z ? z->abbrev_dst : NULL, "EDT");
+    check_int("historical no-footer representative dst offset",
+              z ? z->dst_offset : 0, -14400);
+    neverc_tzdata_zone_free(z);
+
     uint8_t nyf[512];
     size_t nflen = build_tzif_ny_footer(nyf, sizeof(nyf));
     z = neverc_tzdata_load_tzif("America/New_York", nyf, nflen);
@@ -1013,6 +1070,24 @@ static void test_zip_tzif(void) {
               neverc_tzdata_offset_at(z, NY_SPRING_2025), -14400);
     check_int("ny footer mid-summer 2025",
               neverc_tzdata_offset_at(z, JUL_2025), -14400);
+    neverc_tzdata_zone_free(z);
+
+    uint8_t nyhf[512];
+    size_t nhflen = build_tzif_ny_historical_footer(nyhf, sizeof(nyhf));
+    z = neverc_tzdata_load_tzif("America/New_York", nyhf, nhflen);
+    check_not_null("load historical ny tzif with footer", z);
+    check_str("historical ny representative std abbrev",
+              z ? z->abbrev : NULL, "EST");
+    check_int("historical ny representative std offset",
+              z ? z->utc_offset : 0, -18000);
+    check_str("historical ny representative dst abbrev",
+              z ? z->abbrev_dst : NULL, "EDT");
+    check_int("historical ny representative dst offset",
+              z ? z->dst_offset : 0, -14400);
+    check_int("historical ny January representative offset",
+              neverc_tzdata_offset_for_month(z, 1), -18000);
+    check_int("historical ny footer instant offset",
+              neverc_tzdata_offset_at(z, NY_SPRING_2025), -14400);
     neverc_tzdata_zone_free(z);
 
     uint8_t sydf[512];

@@ -479,10 +479,26 @@ void neverc_time_sleep(neverc_duration_t d) {
     }
     Sleep((DWORD)millis);
 #else
-    struct timespec ts;
-    ts.tv_sec = (time_t)(d / NEVERC_TIME_SECOND);
-    ts.tv_nsec = (long)(d % NEVERC_TIME_SECOND);
-    while (nanosleep(&ts, &ts) != 0 && errno == EINTR) {}
+    int64_t seconds = d / NEVERC_TIME_SECOND;
+    long nanoseconds = (long)(d % NEVERC_TIME_SECOND);
+    while (seconds > 0 || nanoseconds > 0) {
+        /* time_t is still 32-bit on supported legacy POSIX targets. Avoid
+         * narrowing a duration of 2^31 seconds or more into a negative or
+         * otherwise truncated tv_sec. INT_MAX is representable by every
+         * such time_t, and an int64 duration needs at most a handful of
+         * chunks on the common 32-bit ABI. */
+        int64_t chunk = seconds > (int64_t)INT_MAX ? (int64_t)INT_MAX
+                                                   : seconds;
+        struct timespec ts;
+        ts.tv_sec = (time_t)chunk;
+        ts.tv_nsec = nanoseconds;
+        while (nanosleep(&ts, &ts) != 0) {
+            if (errno != EINTR)
+                return;
+        }
+        seconds -= chunk;
+        nanoseconds = 0;
+    }
 #endif
 }
 
