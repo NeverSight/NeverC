@@ -238,7 +238,6 @@ static void fill_zone(neverc_tzdata_zone_t *z, const tz_entry_t *e) {
     z->utc_offset = e->off;
     z->dst_offset = e->off_dst;
     z->has_dst = (e->hemi != 0) ? 1 : 0;
-    z->dst_hemi = e->hemi;
 }
 
 /* Process-wide zone cache. g_zones_init: 0 = empty, 1 = filling, 2 = ready. */
@@ -740,7 +739,6 @@ static const neverc_tzdata_zone_t *parse_posix_tz(const char *tz) {
     e->zone.utc_offset = std_off;
     e->zone.dst_offset = has_dst ? dst_off : 0;
     e->zone.has_dst = has_dst;
-    e->zone.dst_hemi = !has_dst ? 0 : posix_dst_wraps(&parsed) ? 2 : 1;
 
     posix_lock();
     exist = posix_find_tz_locked(tz);
@@ -769,6 +767,7 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
     tz_civil_from_days(days, &year, &month, &day);
 
     int posix_has_rules = 0;
+    int posix_southern = 0;
     posix_rule_t posix_start = {0}, posix_end = {0};
     int utc_off = 0, dst_off = 0;
     posix_extra_t *pe = NULL;
@@ -778,6 +777,7 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
         posix_has_rules = pe->parsed.has_rules;
         posix_start = pe->parsed.start;
         posix_end = pe->parsed.end;
+        posix_southern = posix_dst_wraps(&pe->parsed);
         utc_off = pe->zone.utc_offset;
         dst_off = pe->zone.dst_offset;
     }
@@ -795,7 +795,7 @@ static int tz_dst_active(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
                             nc_streq(zone->name, "Pacific/Chatham"));
     int cl = zone->name && nc_streq(zone->name, "America/Santiago");
 
-    if (zone->dst_hemi == 2 || nz || cl) {
+    if (posix_southern || nz || cl) {
         int64_t start, end;
         if (nz) {
             /* Auckland 02:00/03:00; Chatham is 45 minutes ahead, so 02:45/03:45. */
@@ -874,19 +874,6 @@ static void tzif_unlock(void) {
     __atomic_store_n(&g_tzif_lock, 0, __ATOMIC_RELEASE);
 }
 
-static tzif_extra_t *tzif_find(const neverc_tzdata_zone_t *zone) {
-    tzif_extra_t *e;
-    tzif_lock();
-    for (e = g_tzif_list; e; e = e->next) {
-        if (&e->zone == zone) {
-            tzif_unlock();
-            return e;
-        }
-    }
-    tzif_unlock();
-    return NULL;
-}
-
 static int tzif_offset_at(const tzif_extra_t *e, int64_t unix_sec) {
     if (!e) return 0;
     /* Go LoadLocationFromTZData synthesizes tx={alpha, index:0} when the
@@ -915,26 +902,63 @@ static int tzif_offset_at(const tzif_extra_t *e, int64_t unix_sec) {
 
 int neverc_tzdata_offset_at(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
     if (!zone) return 0;
-    tzif_extra_t *e = tzif_find(zone);
-    if (e)
-        return tzif_offset_at(e, unix_sec);
+    tzif_lock();
+    for (tzif_extra_t *e = g_tzif_list; e; e = e->next) {
+        if (&e->zone == zone) {
+            int offset = tzif_offset_at(e, unix_sec);
+            tzif_unlock();
+            return offset;
+        }
+    }
+    tzif_unlock();
     if (!zone->has_dst) return zone->utc_offset;
     return tz_dst_active(zone, unix_sec) ? zone->dst_offset : zone->utc_offset;
+}
+
+/* Hemisphere is implementation metadata, not part of the released zone
+ * layout. Derive it from the owning table/sidecar so old callers' tail
+ * padding is never interpreted as state. */
+static int tzdata_zone_hemisphere(const neverc_tzdata_zone_t *zone) {
+    int hemi = 0;
+    if (!zone) return 0;
+
+    posix_lock();
+    posix_extra_t *pe = posix_find_locked(zone);
+    if (pe && pe->parsed.has_dst)
+        hemi = posix_dst_wraps(&pe->parsed) ? 2 : 1;
+    posix_unlock();
+    if (hemi != 0) return hemi;
+
+    tzif_lock();
+    for (tzif_extra_t *e = g_tzif_list; e; e = e->next) {
+        if (&e->zone == zone) {
+            if (e->has_posix && e->posix.has_dst)
+                hemi = posix_dst_wraps(&e->posix) ? 2 : 1;
+            break;
+        }
+    }
+    tzif_unlock();
+    if (hemi != 0) return hemi;
+
+    for (int i = 0; i < tz_count; i++) {
+        if (zone->name && nc_streq(tz_table[i].name, zone->name)) {
+            hemi = tz_table[i].hemi;
+            break;
+        }
+    }
+    return hemi;
+}
+
+int neverc_tzdata_dst_hemisphere(const neverc_tzdata_zone_t *zone) {
+    if (!zone || !zone->has_dst) return 0;
+    return tzdata_zone_hemisphere(zone);
 }
 
 int neverc_tzdata_offset_for_month(const neverc_tzdata_zone_t *zone, int month) {
     if (!zone) return 0;
     if (!zone->has_dst || month < 1 || month > 12) return zone->utc_offset;
 
-    int hemi = zone->dst_hemi;
-    if (hemi == 0) {
-        for (int i = 0; i < tz_count; i++) {
-            if (zone->name && nc_streq(tz_table[i].name, zone->name)) {
-                hemi = tz_table[i].hemi;
-                break;
-            }
-        }
-    }
+    int hemi = tzdata_zone_hemisphere(zone);
     if (hemi == 0) hemi = 1; /* POSIX / unknown: northern */
 
     int is_dst = 0;
@@ -1351,17 +1375,6 @@ neverc_tzdata_zone_t *neverc_tzdata_load_tzif(const char *name,
     e->zone.utc_offset = std_off;
     e->zone.dst_offset = has_dst ? dst_off : 0;
     e->zone.has_dst = has_dst;
-    /* Footer wrap-around rules (Oct→Apr, J260→J90) are southern. With no
-     * footer, leave hemi 0 so offset_for_month can fill from the named table. */
-    if (!has_dst)
-        e->zone.dst_hemi = 0;
-    else if (has_footer && posix_dst_wraps(&footer))
-        e->zone.dst_hemi = 2;
-    else if (has_footer)
-        e->zone.dst_hemi = 1;
-    else
-        e->zone.dst_hemi = 0;
-
     tzif_lock();
     e->next = g_tzif_list;
     g_tzif_list = e;

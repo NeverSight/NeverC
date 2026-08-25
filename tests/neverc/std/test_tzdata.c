@@ -148,7 +148,7 @@ static void test_lookup(void) {
     z = neverc_tzdata_lookup("Europe/Kyiv");
     check_not_null("Kyiv", z);
     check_int("Kyiv offset", z ? z->utc_offset : 0, 7200);
-    check_int("Kyiv dst hemi north", z ? z->dst_hemi : 0, 1);
+    check_int("Kyiv dst hemi north", neverc_tzdata_dst_hemisphere(z), 1);
 
     z = neverc_tzdata_lookup("Europe/Kiev");
     check_not_null("Kiev alias", z);
@@ -596,7 +596,7 @@ static void test_local_tz(void) {
     check_int("posix EST offset", z ? z->utc_offset : 0, -18000);
     check_int("posix EDT offset", z ? z->dst_offset : 0, -14400);
     check_int("posix has dst", z ? z->has_dst : 0, 1);
-    check_int("posix EST dst hemi north", z ? z->dst_hemi : 0, 1);
+    check_int("posix EST dst hemi north", neverc_tzdata_dst_hemisphere(z), 1);
     check_int("posix spring-forward",
               neverc_tzdata_offset_at(z, NY_SPRING_2024), -14400);
     check_int("posix before spring-forward",
@@ -607,7 +607,7 @@ static void test_local_tz(void) {
     check_not_null("posix NZ", z);
     check_int("posix NZ offset", z ? z->utc_offset : 0, 43200);
     check_int("posix NZ dst offset", z ? z->dst_offset : 0, 46800);
-    check_int("posix NZ dst hemi south", z ? z->dst_hemi : 0, 2);
+    check_int("posix NZ dst hemi south", neverc_tzdata_dst_hemisphere(z), 2);
     check_int("posix NZ July month std",
               neverc_tzdata_offset_for_month(z, 7), 43200);
     check_int("posix NZ January month dst",
@@ -673,7 +673,8 @@ static void test_local_tz(void) {
     tzdata_set_tz("NZST-12NZDT,J260,J90");
     z = neverc_tzdata_local();
     check_not_null("posix Julian wrap TZ", z);
-    check_int("posix Julian wrap hemi south", z ? z->dst_hemi : 0, 2);
+    check_int("posix Julian wrap hemi south",
+              neverc_tzdata_dst_hemisphere(z), 2);
     check_int("posix Julian wrap January DST month",
               neverc_tzdata_offset_for_month(z, 1), 46800);
     check_int("posix Julian wrap July STD month",
@@ -686,7 +687,8 @@ static void test_local_tz(void) {
     tzdata_set_tz("NZST-12NZDT,259,89");
     z = neverc_tzdata_local();
     check_not_null("posix n-form wrap TZ", z);
-    check_int("posix n-form wrap hemi south", z ? z->dst_hemi : 0, 2);
+    check_int("posix n-form wrap hemi south",
+              neverc_tzdata_dst_hemisphere(z), 2);
     check_int("posix n-form wrap January DST month",
               neverc_tzdata_offset_for_month(z, 1), 46800);
 
@@ -787,7 +789,7 @@ static size_t build_tzif_ny_footer(uint8_t *buf, size_t cap) {
 }
 
 /* Southern POSIX footer (Oct→Apr) so zip/tzif-loaded zones are not
- * forced onto the northern dst_hemi=1 path. */
+ * forced onto the northern rule path. */
 static size_t build_tzif_syd_footer(uint8_t *buf, size_t cap) {
     size_t n = 0;
     uint8_t zmeta[2] = {0, 0};
@@ -835,7 +837,7 @@ static size_t build_tzif_posix_no_tx(uint8_t *buf, size_t cap) {
     return n;
 }
 
-/* Julian wrap-around footer (day 260 → day 90). dst_hemi must not use
+/* Julian wrap-around footer (day 260 → day 90). Hemisphere must not use
  * start.month, which is 0 for Jn rules. */
 static size_t build_tzif_julian_south_footer(uint8_t *buf, size_t cap) {
     size_t n = 0;
@@ -1009,7 +1011,8 @@ static void test_zip_tzif(void) {
     size_t sflen = build_tzif_syd_footer(sydf, sizeof(sydf));
     z = neverc_tzdata_load_tzif("Custom/South", sydf, sflen);
     check_not_null("load southern tzif with footer", z);
-    check_int("southern tzif dst hemi", z ? z->dst_hemi : 0, 2);
+    check_int("southern tzif dst hemi",
+              neverc_tzdata_dst_hemisphere(z), 2);
     check_int("southern tzif July std",
               neverc_tzdata_offset_for_month(z, 7), 36000);
     check_int("southern tzif January dst",
@@ -1030,7 +1033,8 @@ static void test_zip_tzif(void) {
     size_t jslen = build_tzif_julian_south_footer(jsf, sizeof(jsf));
     z = neverc_tzdata_load_tzif("Custom/JulianSouth", jsf, jslen);
     check_not_null("load julian-south tzif with footer", z);
-    check_int("julian-south tzif dst hemi", z ? z->dst_hemi : 0, 2);
+    check_int("julian-south tzif dst hemi",
+              neverc_tzdata_dst_hemisphere(z), 2);
     check_int("julian-south tzif January dst",
               neverc_tzdata_offset_for_month(z, 1), 46800);
     check_int("julian-south tzif July std",

@@ -25,7 +25,6 @@ typedef struct {
     int         utc_offset; /* standard offset from UTC in seconds */
     int         dst_offset; /* DST offset from UTC in seconds (0 if no DST) */
     int         has_dst;    /* 1 if timezone observes DST */
-    int         dst_hemi;   /* 1 northern, 2 southern, 0 none */
 } neverc_tzdata_zone_t;
 
 /* Look up a timezone by IANA name. Returns NULL if not found. */
@@ -57,6 +56,10 @@ const neverc_tzdata_zone_t *neverc_tzdata_local(void);
  * Accounts for DST based on month (simplified: DST Mar-Nov in northern,
  * Oct-Apr in southern hemisphere). */
 int neverc_tzdata_offset_for_month(const neverc_tzdata_zone_t *zone, int month);
+
+/* Return 1 for northern DST rules, 2 for southern rules, or 0 when the
+ * zone has no DST/its rule family is unknown. */
+int neverc_tzdata_dst_hemisphere(const neverc_tzdata_zone_t *zone);
 
 /* Offset from UTC in seconds at unix_sec. Uses US/EU/AU/NZ transition
  * rules (not a full tzif database), or TZif transitions when the zone

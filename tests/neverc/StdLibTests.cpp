@@ -1122,6 +1122,7 @@ TEST_F(StdLibTest, RegexpSyntaxAllocationFailure) {
 
 // ===== Time =====
 STD_TEST(tzdata, "src/time/tzdata/tzdata.c")
+STD_TEST(tzdata_zone_abi, "src/time/tzdata/tzdata.c")
 
 // ===== CString =====
 STD_TEST(cstring, "src/cstring/cstring.c", "src/bytes/bytes.c",
