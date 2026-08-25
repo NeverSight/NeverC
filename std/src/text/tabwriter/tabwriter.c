@@ -4,39 +4,137 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* Keep the released writer object layout fixed.  The output allocation owns
+ * a private trailer containing state added after v3389.1.4 and the allocation
+ * for cells beyond the released 256-cell inline table:
+ *
+ *     [ output bytes (out_cap, size_t-aligned) ][ tabwriter_private_t ]
+ *
+ * The trailer moves with the output allocation.  This makes state lifetime
+ * exactly match out_buf, needs no process-global registry, and keeps distinct
+ * writers independent when used by different threads. */
+#define TABWRITER_INLINE_CELLS NEVERC_TABWRITER_MAX_COLS
+#define TABWRITER_EXTRA_CELLS \
+    (NEVERC_TABWRITER_MAX_CELLS - TABWRITER_INLINE_CELLS)
+#define TABWRITER_META_MAGIC UINT64_C(0x5441425752495445)
+
+typedef struct {
+    uint64_t magic;
+    int failed;
+    unsigned char end_char; /* ESCAPE, '>', or ';' while inside a segment */
+    int cell_width;
+    size_t width_pos;
+    int ncells;
+    neverc_tabwriter_cell_t *extra_cells;
+    size_t extra_capacity;
+} tabwriter_private_t;
+
+static tabwriter_private_t *writer_private(neverc_tabwriter_t *w) {
+    if (!w || !w->out_buf || w->out_cap == SIZE_MAX)
+        return NULL;
+    return (tabwriter_private_t *)(void *)(w->out_buf + w->out_cap);
+}
+
+static const tabwriter_private_t *writer_private_const(
+    const neverc_tabwriter_t *w) {
+    if (!w || !w->out_buf || w->out_cap == SIZE_MAX)
+        return NULL;
+    return (const tabwriter_private_t *)(const void *)(w->out_buf + w->out_cap);
+}
+
+static int writer_ensure_private(neverc_tabwriter_t *w) {
+    if (!w || w->out_cap == SIZE_MAX)
+        return -1;
+    tabwriter_private_t *state = writer_private(w);
+    if (state)
+        return state->magic == TABWRITER_META_MAGIC ? 0 : -1;
+
+    /* Use an aligned initial output capacity so the following trailer remains
+     * correctly aligned on every supported data model. */
+    const size_t cap = _Alignof(tabwriter_private_t);
+    if (sizeof(tabwriter_private_t) > SIZE_MAX - cap) {
+        w->out_cap = SIZE_MAX;
+        return -1;
+    }
+    char *block = (char *)realloc(NULL, cap + sizeof(tabwriter_private_t));
+    if (!block) {
+        w->out_cap = SIZE_MAX; /* allocation-free sticky failure sentinel */
+        return -1;
+    }
+    w->out_buf = block;
+    w->out_cap = cap;
+    state = writer_private(w);
+    memset(state, 0, sizeof(*state));
+    state->magic = TABWRITER_META_MAGIC;
+    return 0;
+}
+
+static int writer_failed(const neverc_tabwriter_t *w) {
+    const tabwriter_private_t *state = writer_private_const(w);
+    return !w || w->out_cap == SIZE_MAX ||
+           (state && (state->magic != TABWRITER_META_MAGIC || state->failed));
+}
+
+static void writer_fail(neverc_tabwriter_t *w) {
+    if (!w) return;
+    tabwriter_private_t *state = writer_private(w);
+    if (state && state->magic == TABWRITER_META_MAGIC)
+        state->failed = 1;
+    else if (!w->out_buf)
+        w->out_cap = SIZE_MAX;
+}
+
 static int out_reserve(neverc_tabwriter_t *w, size_t extra) {
-    if (w->failed) return -1;
+    if (writer_ensure_private(w) != 0 || writer_failed(w)) return -1;
     if (w->out_len == SIZE_MAX ||
         extra > SIZE_MAX - w->out_len - 1U) {
-        w->failed = 1;
+        writer_fail(w);
         return -1;
     }
     size_t needed = w->out_len + extra + 1U;
     if (needed <= w->out_cap) return 0;
 
-    size_t newcap = w->out_cap ? w->out_cap : 1024U;
+    const size_t maxcap = SIZE_MAX - sizeof(tabwriter_private_t);
+    if (needed > maxcap) {
+        writer_fail(w);
+        return -1;
+    }
+    size_t newcap = w->out_cap;
     while (newcap < needed) {
-        if (newcap > SIZE_MAX / 2U) {
+        if (newcap > maxcap / 2U) {
             newcap = needed;
+            const size_t alignment = _Alignof(tabwriter_private_t);
+            size_t rem = newcap % alignment;
+            if (rem != 0) {
+                size_t add = alignment - rem;
+                if (newcap > maxcap - add) {
+                    writer_fail(w);
+                    return -1;
+                }
+                newcap += add;
+            }
             break;
         }
         newcap *= 2U;
     }
 
-    char *nb = (char *)realloc(w->out_buf, newcap);
+    size_t oldcap = w->out_cap;
+    char *nb = (char *)realloc(
+        w->out_buf, newcap + sizeof(tabwriter_private_t));
     if (!nb) {
-        w->failed = 1;
+        writer_fail(w);
         return -1;
     }
+    memmove(nb + newcap, nb + oldcap, sizeof(tabwriter_private_t));
     w->out_buf = nb;
     w->out_cap = newcap;
     return 0;
 }
 
 static int out_append(neverc_tabwriter_t *w, const char *data, size_t len) {
-    if (len == 0) return w->failed ? -1 : 0;
+    if (len == 0) return writer_failed(w) ? -1 : 0;
     if (!data || out_reserve(w, len) != 0) {
-        w->failed = 1;
+        writer_fail(w);
         return -1;
     }
     memcpy(w->out_buf + w->out_len, data, len);
@@ -45,7 +143,7 @@ static int out_append(neverc_tabwriter_t *w, const char *data, size_t len) {
 }
 
 static int out_pad(neverc_tabwriter_t *w, size_t count, char ch) {
-    if (count == 0) return w->failed ? -1 : 0;
+    if (count == 0) return writer_failed(w) ? -1 : 0;
     if (out_reserve(w, count) != 0) return -1;
     memset(w->out_buf + w->out_len, ch, count);
     w->out_len += count;
@@ -84,76 +182,157 @@ static int rune_width(const char *s, size_t len) {
     return w;
 }
 
+static int total_cells(const neverc_tabwriter_t *w) {
+    const tabwriter_private_t *state = writer_private_const(w);
+    return state && state->magic == TABWRITER_META_MAGIC
+        ? state->ncells : w->ncells;
+}
+
+static neverc_tabwriter_cell_t *cell_at(neverc_tabwriter_t *w, int index) {
+    if (index < 0 || index >= NEVERC_TABWRITER_MAX_CELLS)
+        return NULL;
+    if (index < TABWRITER_INLINE_CELLS)
+        return &w->cells[index];
+    tabwriter_private_t *state = writer_private(w);
+    if (!state || state->magic != TABWRITER_META_MAGIC)
+        return NULL;
+    size_t extra_index = (size_t)(index - TABWRITER_INLINE_CELLS);
+    return extra_index < state->extra_capacity
+        ? &state->extra_cells[extra_index] : NULL;
+}
+
+static neverc_tabwriter_cell_t *cell_for_append(
+    neverc_tabwriter_t *w, int index) {
+    if (index < TABWRITER_INLINE_CELLS)
+        return cell_at(w, index);
+    if (index < 0 || index >= NEVERC_TABWRITER_MAX_CELLS)
+        return NULL;
+    tabwriter_private_t *state = writer_private(w);
+    if (!state || state->magic != TABWRITER_META_MAGIC)
+        return NULL;
+    size_t extra_index = (size_t)(index - TABWRITER_INLINE_CELLS);
+    if (extra_index >= state->extra_capacity) {
+        size_t new_capacity = state->extra_capacity
+            ? state->extra_capacity * 2U : TABWRITER_INLINE_CELLS;
+        if (new_capacity > TABWRITER_EXTRA_CELLS)
+            new_capacity = TABWRITER_EXTRA_CELLS;
+        if (new_capacity <= extra_index ||
+            new_capacity > SIZE_MAX / sizeof(*state->extra_cells)) {
+            writer_fail(w);
+            return NULL;
+        }
+        neverc_tabwriter_cell_t *cells =
+            (neverc_tabwriter_cell_t *)realloc(
+                state->extra_cells,
+                new_capacity * sizeof(*state->extra_cells));
+        if (!cells) {
+            writer_fail(w);
+            return NULL;
+        }
+        state->extra_cells = cells;
+        state->extra_capacity = new_capacity;
+    }
+    return &state->extra_cells[extra_index];
+}
+
 static void begin_line(neverc_tabwriter_t *w) {
     if (w->nlines < NEVERC_TABWRITER_MAX_LINES) {
-        w->lines_start[w->nlines] = w->ncells;
+        w->lines_start[w->nlines] = total_cells(w);
         w->lines_ncells[w->nlines] = 0;
     }
 }
 
 static void update_width(neverc_tabwriter_t *w) {
-    if (w->width_pos < w->buf_len) {
-        w->cell_width += rune_width(w->buf + w->width_pos,
-                                    w->buf_len - w->width_pos);
-        w->width_pos = w->buf_len;
+    tabwriter_private_t *state = writer_private(w);
+    if (!state || state->magic != TABWRITER_META_MAGIC) {
+        writer_fail(w);
+        return;
+    }
+    if (state->width_pos < w->buf_len) {
+        state->cell_width += rune_width(w->buf + state->width_pos,
+                                       w->buf_len - state->width_pos);
+        state->width_pos = w->buf_len;
     }
 }
 
 static void end_escape(neverc_tabwriter_t *w) {
-    switch (w->end_char) {
+    tabwriter_private_t *state = writer_private(w);
+    if (!state || state->magic != TABWRITER_META_MAGIC) {
+        writer_fail(w);
+        return;
+    }
+    switch (state->end_char) {
     case (unsigned char)NEVERC_TABWRITER_ESCAPE:
         update_width(w);
         /* Escape bytes are in the buffer unless StripEscape; never count them. */
         if ((w->flags & NEVERC_TABWRITER_STRIP_ESCAPE) == 0) {
-            w->cell_width -= 2;
-            if (w->cell_width < 0) w->cell_width = 0;
+            state->cell_width -= 2;
+            if (state->cell_width < 0) state->cell_width = 0;
         }
         break;
     case '>':
-        w->width_pos = w->buf_len;
+        state->width_pos = w->buf_len;
         break;
     case ';':
-        w->cell_width += 1;
-        w->width_pos = w->buf_len;
+        state->cell_width += 1;
+        state->width_pos = w->buf_len;
         break;
     default:
         break;
     }
-    w->end_char = 0;
+    state->end_char = 0;
 }
 
 static void end_cell(neverc_tabwriter_t *w, int htab) {
-    if (w->failed) return;
-    if (w->ncells >= NEVERC_TABWRITER_MAX_CELLS ||
-        w->nlines >= NEVERC_TABWRITER_MAX_LINES) {
-        w->failed = 1;
+    if (writer_failed(w)) return;
+    tabwriter_private_t *state = writer_private(w);
+    if (!state || state->magic != TABWRITER_META_MAGIC) {
+        writer_fail(w);
         return;
     }
-    neverc_tabwriter_cell_t *cell = &w->cells[w->ncells];
+    if (state->ncells >= NEVERC_TABWRITER_MAX_CELLS ||
+        w->nlines >= NEVERC_TABWRITER_MAX_LINES) {
+        writer_fail(w);
+        return;
+    }
+    neverc_tabwriter_cell_t *cell = cell_for_append(w, state->ncells);
+    if (!cell) {
+        writer_fail(w);
+        return;
+    }
     /* Cells partition w->buf contiguously, so the start of this cell is the
      * sum of all previously carved cell sizes. Track that running total in
      * buf_carved instead of re-summing every cell on each call. */
     int start = w->buf_carved;
     update_width(w);
+    if (writer_failed(w)) return;
     cell->size = (int)w->buf_len - start;
-    cell->width = w->cell_width;
+    cell->width = state->cell_width;
     cell->htab = htab;
     w->buf_carved += cell->size;
-    w->ncells++;
+    state->ncells++;
+    w->ncells = state->ncells < TABWRITER_INLINE_CELLS
+        ? state->ncells : TABWRITER_INLINE_CELLS;
     w->lines_ncells[w->nlines]++;
-    w->cell_width = 0;
-    w->width_pos = w->buf_len;
+    state->cell_width = 0;
+    state->width_pos = w->buf_len;
 }
 
 static void reset_cells(neverc_tabwriter_t *w) {
+    tabwriter_private_t *state = writer_private(w);
+    if (!state || state->magic != TABWRITER_META_MAGIC) {
+        writer_fail(w);
+        return;
+    }
     w->buf_len = 0;
     w->buf_carved = 0;
     w->ncells = 0;
     w->nlines = 0;
     w->ncols = 0;
-    w->cell_width = 0;
-    w->width_pos = 0;
-    w->end_char = 0;
+    state->ncells = 0;
+    state->cell_width = 0;
+    state->width_pos = 0;
+    state->end_char = 0;
     begin_line(w);
 }
 
@@ -197,7 +376,12 @@ static int write_lines(neverc_tabwriter_t *w, size_t *buf_pos,
         int nc = line_ncells(w, i);
         int use_tabs = (w->flags & NEVERC_TABWRITER_TAB_INDENT) != 0;
         for (int j = 0; j < nc; j++) {
-            neverc_tabwriter_cell_t *c = &w->cells[start + j];
+            neverc_tabwriter_cell_t *stored = cell_at(w, start + j);
+            if (!stored) return -1;
+            /* Output growth relocates the private trailer, so never retain a
+             * pointer to an overflow cell across out_append/out_pad. */
+            neverc_tabwriter_cell_t cell = *stored;
+            const neverc_tabwriter_cell_t *c = &cell;
             if (j > 0 && (w->flags & NEVERC_TABWRITER_DEBUG)) {
                 if (out_append(w, "|", 1) != 0) return -1;
             }
@@ -252,8 +436,9 @@ static int format_block(neverc_tabwriter_t *w, size_t *buf_pos,
             int nc = line_ncells(w, this);
             if (column >= nc - 1)
                 break;
-            neverc_tabwriter_cell_t *c =
-                &w->cells[line_start(w, this) + column];
+            neverc_tabwriter_cell_t *c = cell_at(
+                w, line_start(w, this) + column);
+            if (!c) return -1;
             if (pad > 0 && c->width > INT_MAX - pad)
                 return -1;
             int ww = c->width + pad;
@@ -337,8 +522,8 @@ static size_t find_special(const char *p, size_t n, unsigned flags, char *which)
 }
 
 static int append_run(neverc_tabwriter_t *w, const char *data, size_t run) {
-    if (!run) return w->failed ? -1 : 0;
-    if (w->failed) return -1;
+    if (!run) return writer_failed(w) ? -1 : 0;
+    if (writer_failed(w)) return -1;
     size_t space = (w->buf_len < NEVERC_TABWRITER_MAX_BUF)
                  ? (size_t)NEVERC_TABWRITER_MAX_BUF - w->buf_len : 0;
     size_t take = run < space ? run : space;
@@ -347,7 +532,7 @@ static int append_run(neverc_tabwriter_t *w, const char *data, size_t run) {
         w->buf_len += take;
     }
     if (take < run) {
-        w->failed = 1;
+        writer_fail(w);
         return -1;
     }
     return 0;
@@ -355,18 +540,18 @@ static int append_run(neverc_tabwriter_t *w, const char *data, size_t run) {
 
 static void finish_line(neverc_tabwriter_t *w, char delim) {
     end_cell(w, 0);
-    if (w->failed) return;
+    if (writer_failed(w)) return;
     w->nlines++;
     if (w->nlines < NEVERC_TABWRITER_MAX_LINES)
         begin_line(w);
     if (delim != '\f') return;
     if (flush_lines(w) != 0) {
-        w->failed = 1;
+        writer_fail(w);
         return;
     }
     if ((w->flags & NEVERC_TABWRITER_DEBUG) &&
         out_append(w, "---\n", 4) != 0) {
-        w->failed = 1;
+        writer_fail(w);
         return;
     }
     if (out_terminate(w) != 0) return;
@@ -375,8 +560,9 @@ static void finish_line(neverc_tabwriter_t *w, char delim) {
 
 void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len) {
     if (!w) return;
-    if ((!data && len != 0) || w->failed) {
-        w->failed = 1;
+    if (writer_ensure_private(w) != 0) return;
+    if ((!data && len != 0) || writer_failed(w)) {
+        writer_fail(w);
         return;
     }
     /* Go: '\t' hard tab, '\v' soft tab, '\n'/'\f' line breaks. '\f' flushes.
@@ -385,16 +571,21 @@ void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len)
     while (i < len) {
         char special = 0;
         size_t rel;
-        if (w->end_char) {
+        tabwriter_private_t *state = writer_private(w);
+        if (!state || state->magic != TABWRITER_META_MAGIC) {
+            writer_fail(w);
+            return;
+        }
+        if (state->end_char) {
             const char *hit = (const char *)memchr(
-                data + i, (char)w->end_char, len - i);
+                data + i, (char)state->end_char, len - i);
             rel = hit ? (size_t)(hit - (data + i)) : (len - i);
-            special = hit ? (char)w->end_char : 0;
+            special = hit ? (char)state->end_char : 0;
         } else {
             rel = find_special(data + i, len - i, w->flags, &special);
         }
 
-        if (w->end_char) {
+        if (state->end_char) {
             size_t take = rel;
             if (special) {
                 if (!(special == NEVERC_TABWRITER_ESCAPE &&
@@ -416,11 +607,11 @@ void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len)
         if (special == '\t' || special == '\v') {
             update_width(w);
             end_cell(w, special == '\t');
-            if (w->failed) return;
+            if (writer_failed(w)) return;
         } else if (special == '\n' || special == '\f') {
             update_width(w);
             finish_line(w, special);
-            if (w->failed) return;
+            if (writer_failed(w)) return;
         } else if (special == NEVERC_TABWRITER_ESCAPE) {
             update_width(w);
             /* Consume the opener here. Searching from it would treat it as
@@ -429,12 +620,22 @@ void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len)
                 append_run(w, data + i, 1) != 0)
                 return;
             i++;
-            w->end_char = (unsigned char)NEVERC_TABWRITER_ESCAPE;
+            state = writer_private(w);
+            if (!state || state->magic != TABWRITER_META_MAGIC) {
+                writer_fail(w);
+                return;
+            }
+            state->end_char = (unsigned char)NEVERC_TABWRITER_ESCAPE;
             continue;
         } else {
             update_width(w);
-            w->end_char = (special == '<') ? (unsigned char)'>'
-                                           : (unsigned char)';';
+            state = writer_private(w);
+            if (!state || state->magic != TABWRITER_META_MAGIC) {
+                writer_fail(w);
+                return;
+            }
+            state->end_char = (special == '<') ? (unsigned char)'>'
+                                                : (unsigned char)';';
             continue;
         }
         i++;
@@ -442,15 +643,20 @@ void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len)
 }
 
 void neverc_tabwriter_flush(neverc_tabwriter_t *w) {
-    if (!w || w->failed) return;
-    if (w->end_char)
+    if (!w || writer_ensure_private(w) != 0 || writer_failed(w)) return;
+    tabwriter_private_t *state = writer_private(w);
+    if (!state || state->magic != TABWRITER_META_MAGIC) {
+        writer_fail(w);
+        return;
+    }
+    if (state->end_char)
         end_escape(w);
     /* Go flush: only terminate the incomplete cell when it has bytes.
      * A trailing htab must remain the last cell of the line (not a column). */
     if (w->buf_len > (size_t)w->buf_carved)
         end_cell(w, 0);
     if (flush_lines(w) != 0) {
-        w->failed = 1;
+        writer_fail(w);
         return;
     }
     if (out_terminate(w) != 0)
@@ -459,8 +665,9 @@ void neverc_tabwriter_flush(neverc_tabwriter_t *w) {
 }
 
 const char *neverc_tabwriter_output(const neverc_tabwriter_t *w, size_t *len) {
-    if (len) *len = (!w || w->failed) ? 0 : w->out_len;
-    return (!w || w->failed) ? NULL : w->out_buf;
+    int failed = writer_failed(w);
+    if (len) *len = failed ? 0 : w->out_len;
+    return failed ? NULL : w->out_buf;
 }
 
 void neverc_tabwriter_reset(neverc_tabwriter_t *w) {
@@ -468,6 +675,15 @@ void neverc_tabwriter_reset(neverc_tabwriter_t *w) {
     int mw = w->minwidth, tw = w->tabwidth, p = w->padding;
     char pc = w->padchar;
     unsigned f = w->flags;
-    if (w->out_buf) free(w->out_buf);
+    if (w->out_buf) {
+        tabwriter_private_t *state = writer_private(w);
+        if (state && state->magic == TABWRITER_META_MAGIC) {
+            free(state->extra_cells);
+            state->extra_cells = NULL;
+            state->extra_capacity = 0;
+            state->magic = 0;
+        }
+        free(w->out_buf);
+    }
     neverc_tabwriter_init(w, mw, tw, p, pc, f);
 }

@@ -44,20 +44,15 @@ typedef struct {
     size_t  buf_len;
     int     buf_carved;   /* running total of carved cell sizes (= next cell start) */
 
-    neverc_tabwriter_cell_t cells[NEVERC_TABWRITER_MAX_CELLS];
+    neverc_tabwriter_cell_t cells[NEVERC_TABWRITER_MAX_COLS];
     int     ncells;
 
     int     col_widths[NEVERC_TABWRITER_MAX_COLS];
     int     ncols;
 
-    int     lines_start[NEVERC_TABWRITER_MAX_LINES];
-    int     lines_ncells[NEVERC_TABWRITER_MAX_LINES];
+    int     lines_start[4096];
+    int     lines_ncells[4096];
     int     nlines;
-    int     failed;       /* sticky allocation/input error; output() returns NULL */
-
-    unsigned char end_char; /* 0, ESCAPE, '>', or ';' while inside a segment */
-    int     cell_width;   /* rune width of the incomplete cell */
-    size_t  width_pos;    /* buf index already counted in cell_width */
 } neverc_tabwriter_t;
 
 void neverc_tabwriter_init(neverc_tabwriter_t *w, int minwidth, int tabwidth,

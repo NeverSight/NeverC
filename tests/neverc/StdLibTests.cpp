@@ -635,6 +635,7 @@ TEST_F(StdLibTest, ScannerBuiltinDependencies) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(tabwriter, "src/text/tabwriter/tabwriter.c")
+STD_TEST(tabwriter_abi, "src/text/tabwriter/tabwriter.c")
 TEST_F(StdLibTest, TabwriterAllocationFailure) {
   auto r = compileAndRunStdTest("tabwriter_oom", {},
                                 {"-fno-builtin-std"});

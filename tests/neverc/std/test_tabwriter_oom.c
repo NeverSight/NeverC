@@ -28,12 +28,40 @@ static void *controlled_realloc(void *ptr, size_t size) {
 int main(void) {
     neverc_tabwriter_t writer;
     neverc_tabwriter_init(&writer, 1, 8, 1, ' ', 0);
-    neverc_tabwriter_write(&writer, "left\tright", 10);
+
+    /* The ABI-private state is allocated lazily.  Its first-allocation
+     * failure must be sticky without needing an added public error field. */
+    allocation_count = 0;
+    fail_at = 1;
+    neverc_tabwriter_write(&writer, "private", 7);
+    size_t length = 123;
+    CHECK(neverc_tabwriter_output(&writer, &length) == NULL);
+    CHECK(length == 0);
+    neverc_tabwriter_reset(&writer);
+
+    /* Growing past the released inline 256-cell table has its own allocation
+     * and must use the same sticky failure contract. */
+    char tabs[NEVERC_TABWRITER_MAX_COLS];
+    memset(tabs, '\t', sizeof(tabs));
+    fail_at = 0;
+    neverc_tabwriter_write(&writer, tabs, sizeof(tabs));
+    allocation_count = 0;
+    fail_at = 1;
+    neverc_tabwriter_write(&writer, "\t", 1);
+    length = 123;
+    CHECK(neverc_tabwriter_output(&writer, &length) == NULL);
+    CHECK(length == 0);
+    neverc_tabwriter_reset(&writer);
+
+    fail_at = 0;
+    char wide[128];
+    memset(wide, 'x', sizeof(wide));
+    neverc_tabwriter_write(&writer, wide, sizeof(wide));
 
     allocation_count = 0;
     fail_at = 1;
     neverc_tabwriter_flush(&writer);
-    size_t length = 123;
+    length = 123;
     CHECK(neverc_tabwriter_output(&writer, &length) == NULL);
     CHECK(length == 0);
 
