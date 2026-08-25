@@ -5,13 +5,142 @@
 
 #define NCI_BUFIO_MAX_EMPTY_READS 100
 
+#define NCI_BUFIO_SCANNER_META_MAGIC UINT32_C(0x53434e31)
+#define NCI_BUFIO_READER_META_MAGIC  UINT32_C(0x52445231)
+#define NCI_BUFIO_WRITER_META_MAGIC  UINT32_C(0x57545231)
+
+typedef struct {
+    neverc_bufio_split_func_t split;
+    size_t text_saved_at;
+    uint32_t magic;
+    uint8_t text_saved_byte;
+    uint8_t text_saved;
+} nci_bufio_scanner_meta_t;
+
+typedef struct {
+    uint32_t magic;
+    int last_byte;
+} nci_bufio_reader_meta_t;
+
+typedef struct {
+    uint32_t magic;
+    int err;
+} nci_bufio_writer_meta_t;
+
+static void *bufio_alloc_with_trailer(size_t capacity, size_t trailer_size) {
+    if (capacity > SIZE_MAX - trailer_size) return NULL;
+    return malloc(capacity + trailer_size);
+}
+
+/* Trailer objects may start at an address with only byte alignment. Always
+ * copy them through aligned locals; never cast buf+buf_cap to a struct. */
+static int bufio_scanner_meta_load(const neverc_bufio_scanner_t *s,
+                                   nci_bufio_scanner_meta_t *meta) {
+    if (!s || !meta || !s->buf ||
+        s->buf_cap > SIZE_MAX - sizeof(*meta))
+        return 0;
+    memcpy(meta, s->buf + s->buf_cap, sizeof(*meta));
+    return meta->magic == NCI_BUFIO_SCANNER_META_MAGIC && meta->split;
+}
+
+static int bufio_scanner_meta_store(neverc_bufio_scanner_t *s,
+                                    const nci_bufio_scanner_meta_t *meta) {
+    if (!s || !meta || !s->buf ||
+        s->buf_cap > SIZE_MAX - sizeof(*meta))
+        return 0;
+    memcpy(s->buf + s->buf_cap, meta, sizeof(*meta));
+    return 1;
+}
+
+static int bufio_scanner_grow(neverc_bufio_scanner_t *s, size_t new_cap) {
+    nci_bufio_scanner_meta_t meta;
+    if (!s || new_cap <= s->buf_cap ||
+        new_cap > SIZE_MAX - sizeof(meta) ||
+        !bufio_scanner_meta_load(s, &meta))
+        return 0;
+    size_t old_cap = s->buf_cap;
+    uint8_t *new_buf = (uint8_t *)realloc(
+        s->buf, new_cap + sizeof(meta));
+    if (!new_buf) return 0;
+    s->buf = new_buf;
+    s->buf_cap = new_cap;
+    /* The old trailer is ordinary spare buffer space after a grow. Clear it
+     * so private function pointers/state can never become scanner input. */
+    size_t clear = sizeof(meta);
+    if (clear > new_cap - old_cap) clear = new_cap - old_cap;
+    memset(new_buf + old_cap, 0, clear);
+    return bufio_scanner_meta_store(s, &meta);
+}
+
+static int bufio_reader_meta_load(const neverc_bufio_reader_t *br,
+                                  nci_bufio_reader_meta_t *meta) {
+    if (!br || !meta || !br->buf ||
+        br->buf_cap > SIZE_MAX - sizeof(*meta))
+        return 0;
+    memcpy(meta, br->buf + br->buf_cap, sizeof(*meta));
+    return meta->magic == NCI_BUFIO_READER_META_MAGIC;
+}
+
+static int bufio_reader_meta_store(neverc_bufio_reader_t *br,
+                                   const nci_bufio_reader_meta_t *meta) {
+    if (!br || !meta || !br->buf ||
+        br->buf_cap > SIZE_MAX - sizeof(*meta))
+        return 0;
+    memcpy(br->buf + br->buf_cap, meta, sizeof(*meta));
+    return 1;
+}
+
+static int bufio_reader_last_byte(const neverc_bufio_reader_t *br) {
+    nci_bufio_reader_meta_t meta;
+    return bufio_reader_meta_load(br, &meta) ? meta.last_byte : -1;
+}
+
+static int bufio_reader_set_last_byte(neverc_bufio_reader_t *br, int value) {
+    nci_bufio_reader_meta_t meta;
+    if (!bufio_reader_meta_load(br, &meta)) return 0;
+    meta.last_byte = value;
+    return bufio_reader_meta_store(br, &meta);
+}
+
+static int bufio_writer_meta_load(const neverc_bufio_writer_t *bw,
+                                  nci_bufio_writer_meta_t *meta) {
+    if (!bw || !meta || !bw->buf ||
+        bw->buf_cap > SIZE_MAX - sizeof(*meta))
+        return 0;
+    memcpy(meta, bw->buf + bw->buf_cap, sizeof(*meta));
+    return meta->magic == NCI_BUFIO_WRITER_META_MAGIC;
+}
+
+static int bufio_writer_meta_store(neverc_bufio_writer_t *bw,
+                                   const nci_bufio_writer_meta_t *meta) {
+    if (!bw || !meta || !bw->buf ||
+        bw->buf_cap > SIZE_MAX - sizeof(*meta))
+        return 0;
+    memcpy(bw->buf + bw->buf_cap, meta, sizeof(*meta));
+    return 1;
+}
+
+static int bufio_writer_error(const neverc_bufio_writer_t *bw) {
+    nci_bufio_writer_meta_t meta;
+    return bufio_writer_meta_load(bw, &meta) ? meta.err : 0;
+}
+
+static int bufio_writer_set_error(neverc_bufio_writer_t *bw, int err) {
+    nci_bufio_writer_meta_t meta;
+    if (!bufio_writer_meta_load(bw, &meta)) return 0;
+    meta.err = err;
+    return bufio_writer_meta_store(bw, &meta);
+}
+
 /* --- Scanner --- */
 
 static void bufio_scanner_restore_text(neverc_bufio_scanner_t *s) {
-    if (!s->text_saved) return;
-    if (s->buf && s->text_saved_at < s->buf_cap)
-        s->buf[s->text_saved_at] = s->text_saved_byte;
-    s->text_saved = 0;
+    nci_bufio_scanner_meta_t meta;
+    if (!bufio_scanner_meta_load(s, &meta) || !meta.text_saved) return;
+    if (meta.text_saved_at < s->buf_cap)
+        s->buf[meta.text_saved_at] = meta.text_saved_byte;
+    meta.text_saved = 0;
+    (void)bufio_scanner_meta_store(s, &meta);
 }
 
 static void bufio_scanner_fail(neverc_bufio_scanner_t *s, int err) {
@@ -217,28 +346,34 @@ void neverc_bufio_scanner_init(neverc_bufio_scanner_t *s,
     if (!s) return;
     s->reader = reader;
     s->buf_cap = NEVERC_BUFIO_DEFAULT_SIZE;
-    s->buf = (uint8_t *)malloc(s->buf_cap);
+    s->buf = (uint8_t *)bufio_alloc_with_trailer(
+        s->buf_cap, sizeof(nci_bufio_scanner_meta_t));
     s->buf_len = 0;
     s->start = 0;
     s->token = NULL;
     s->token_len = 0;
     s->done = 0;
     s->err = 0;
-    s->split = neverc_bufio_scan_lines;
-    s->text_saved = 0;
-    s->text_saved_byte = 0;
-    s->text_saved_at = 0;
     if (!s->buf) {
         s->buf_cap = 0;
         s->done = 1;
         s->err = NEVERC_IO_ERR_UNEXP;
+        return;
     }
+    nci_bufio_scanner_meta_t meta;
+    memset(&meta, 0, sizeof(meta));
+    meta.split = neverc_bufio_scan_lines;
+    meta.magic = NCI_BUFIO_SCANNER_META_MAGIC;
+    (void)bufio_scanner_meta_store(s, &meta);
 }
 
 void neverc_bufio_scanner_split(neverc_bufio_scanner_t *s,
                                 neverc_bufio_split_func_t split) {
     if (!s) return;
-    s->split = split ? split : neverc_bufio_scan_lines;
+    nci_bufio_scanner_meta_t meta;
+    if (!bufio_scanner_meta_load(s, &meta)) return;
+    meta.split = split ? split : neverc_bufio_scan_lines;
+    (void)bufio_scanner_meta_store(s, &meta);
 }
 
 int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
@@ -251,8 +386,12 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
         return 0;
     }
 
-    neverc_bufio_split_func_t split =
-        s->split ? s->split : neverc_bufio_scan_lines;
+    nci_bufio_scanner_meta_t meta;
+    if (!bufio_scanner_meta_load(s, &meta)) {
+        bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
+        return 0;
+    }
+    neverc_bufio_split_func_t split = meta.split;
     unsigned empty_reads = 0;
 
     for (;;) {
@@ -292,10 +431,14 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
                 s->token_len = token_len;
                 size_t token_end = (size_t)(token - s->buf) + token_len;
                 if (token_end < s->buf_cap) {
-                    s->text_saved_byte = s->buf[token_end];
-                    s->text_saved_at = token_end;
-                    s->text_saved = 1;
+                    meta.text_saved_byte = s->buf[token_end];
+                    meta.text_saved_at = token_end;
+                    meta.text_saved = 1;
                     s->buf[token_end] = '\0';
+                    if (!bufio_scanner_meta_store(s, &meta)) {
+                        bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
+                        return 0;
+                    }
                 }
                 s->start += advance;
                 return 1;
@@ -358,13 +501,10 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
                 bufio_scanner_fail(s, NEVERC_BUFIO_ERR_TOO_LONG);
                 return 0;
             }
-            uint8_t *new_buf = (uint8_t *)realloc(s->buf, new_cap);
-            if (!new_buf) {
+            if (!bufio_scanner_grow(s, new_cap)) {
                 bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
                 return 0;
             }
-            s->buf = new_buf;
-            s->buf_cap = new_cap;
         }
 
         size_t available = s->buf_cap - s->buf_len - 1;
@@ -412,7 +552,7 @@ int neverc_bufio_scanner_err(const neverc_bufio_scanner_t *s) {
 
 void neverc_bufio_scanner_free(neverc_bufio_scanner_t *s) {
     if (!s) return;
-    s->text_saved = 0;
+    bufio_scanner_restore_text(s);
     free(s->buf);
     s->buf = NULL;
     s->buf_len = s->buf_cap = s->start = 0;
@@ -434,11 +574,18 @@ void neverc_bufio_reader_init_size(neverc_bufio_reader_t *br,
     if (size == 0) size = 1;
     br->reader = reader;
     br->buf_cap = size;
-    br->buf = (uint8_t *)malloc(size);
+    br->buf = (uint8_t *)bufio_alloc_with_trailer(
+        size, sizeof(nci_bufio_reader_meta_t));
     br->r = br->w = 0;
     br->eof = br->buf ? 0 : 1;
     br->err = br->buf ? 0 : NEVERC_IO_ERR_UNEXP;
-    br->last_byte = -1;
+    if (br->buf) {
+        nci_bufio_reader_meta_t meta;
+        memset(&meta, 0, sizeof(meta));
+        meta.magic = NCI_BUFIO_READER_META_MAGIC;
+        meta.last_byte = -1;
+        (void)bufio_reader_meta_store(br, &meta);
+    }
 }
 
 static size_t bufio_fill(neverc_bufio_reader_t *br) {
@@ -492,25 +639,26 @@ int neverc_bufio_reader_read_byte(neverc_bufio_reader_t *br, uint8_t *b) {
         if (br->r >= br->w) return bufio_reader_terminal_error(br);
     }
     *b = br->buf[br->r++];
-    br->last_byte = *b;
+    (void)bufio_reader_set_last_byte(br, *b);
     return 0;
 }
 
 int neverc_bufio_reader_unread_byte(neverc_bufio_reader_t *br) {
-    if (!br || !br->buf || br->last_byte < 0 || br->r > br->w ||
+    int last_byte = bufio_reader_last_byte(br);
+    if (!br || !br->buf || last_byte < 0 || br->r > br->w ||
         br->w > br->buf_cap)
         return NEVERC_IO_ERR_UNEXP;
     if (br->r == 0 && br->w > 0) return NEVERC_IO_ERR_UNEXP;
     if (br->r > 0) {
         br->r--;
-        br->buf[br->r] = (uint8_t)br->last_byte;
+        br->buf[br->r] = (uint8_t)last_byte;
     } else {
         if (br->buf_cap == 0) return NEVERC_IO_ERR_UNEXP;
-        br->buf[0] = (uint8_t)br->last_byte;
+        br->buf[0] = (uint8_t)last_byte;
         br->w = 1;
         br->r = 0;
     }
-    br->last_byte = -1;
+    (void)bufio_reader_set_last_byte(br, -1);
     return 0;
 }
 
@@ -553,7 +701,8 @@ int neverc_bufio_reader_read(neverc_bufio_reader_t *br,
                     return NEVERC_IO_ERR_UNEXP;
                 }
                 *n = nr;
-                if (nr > 0) br->last_byte = buf[nr - 1];
+                if (nr > 0)
+                    (void)bufio_reader_set_last_byte(br, buf[nr - 1]);
                 if (err != 0) {
                     br->eof = 1;
                     br->err = err;
@@ -578,7 +727,8 @@ int neverc_bufio_reader_read(neverc_bufio_reader_t *br,
     memcpy(buf, br->buf + br->r, copy);
     br->r += copy;
     *n = copy;
-    if (copy > 0) br->last_byte = buf[copy - 1];
+    if (copy > 0)
+        (void)bufio_reader_set_last_byte(br, buf[copy - 1]);
     return 0;
 }
 
@@ -642,7 +792,7 @@ int neverc_bufio_reader_peek(neverc_bufio_reader_t *br,
                              uint8_t *buf, size_t n) {
     if (!br || (!buf && n > 0) || br->r > br->w || br->w > br->buf_cap)
         return NEVERC_IO_ERR_UNEXP;
-    br->last_byte = -1;
+    (void)bufio_reader_set_last_byte(br, -1);
     if (n == 0) return 0;
     while (br->w - br->r < n && !br->eof)
         if (bufio_fill(br) == 0) break;
@@ -660,7 +810,6 @@ void neverc_bufio_reader_free(neverc_bufio_reader_t *br) {
     br->buf_cap = br->r = br->w = 0;
     br->eof = 1;
     br->err = NEVERC_IO_EOF;
-    br->last_byte = -1;
 }
 
 /* --- Buffered Writer --- */
@@ -676,36 +825,45 @@ void neverc_bufio_writer_init_size(neverc_bufio_writer_t *bw,
     if (size == 0) size = 1;
     bw->writer = writer;
     bw->buf_cap = size;
-    bw->buf = (uint8_t *)malloc(size);
+    bw->buf = (uint8_t *)bufio_alloc_with_trailer(
+        size, sizeof(nci_bufio_writer_meta_t));
     bw->n = 0;
-    bw->err = 0;
+    if (bw->buf) {
+        nci_bufio_writer_meta_t meta;
+        memset(&meta, 0, sizeof(meta));
+        meta.magic = NCI_BUFIO_WRITER_META_MAGIC;
+        (void)bufio_writer_meta_store(bw, &meta);
+    }
 }
 
 int neverc_bufio_writer_flush(neverc_bufio_writer_t *bw) {
     if (!bw || bw->n > bw->buf_cap) return NEVERC_IO_ERR_UNEXP;
-    if (bw->err != 0) return bw->err;
+    int sticky_error = bufio_writer_error(bw);
+    if (sticky_error != 0) return sticky_error;
     if (bw->n == 0) return 0;
     if (!bw->buf || !bw->writer.write) return NEVERC_IO_ERR_UNEXP;
     size_t nw = 0;
     int err = bw->writer.write(bw->writer.ctx, bw->buf, bw->n, &nw);
     if (nw > bw->n) {
-        bw->err = NEVERC_IO_ERR_SHORT;
-        return bw->err;
+        (void)bufio_writer_set_error(bw, NEVERC_IO_ERR_SHORT);
+        return NEVERC_IO_ERR_SHORT;
     }
     if (nw == 0) {
-        bw->err = err < 0 ? err : NEVERC_IO_ERR_SHORT;
-        return bw->err;
+        sticky_error = err < 0 ? err : NEVERC_IO_ERR_SHORT;
+        (void)bufio_writer_set_error(bw, sticky_error);
+        return sticky_error;
     }
     if (nw < bw->n) {
         size_t remaining = bw->n - nw;
         memmove(bw->buf, bw->buf + nw, remaining);
         bw->n = remaining;
-        bw->err = err != 0 ? err : NEVERC_IO_ERR_SHORT;
-        return bw->err;
+        sticky_error = err != 0 ? err : NEVERC_IO_ERR_SHORT;
+        (void)bufio_writer_set_error(bw, sticky_error);
+        return sticky_error;
     }
     bw->n = 0;
     if (err != 0) {
-        bw->err = err;
+        (void)bufio_writer_set_error(bw, err);
         return err;
     }
     return 0;
@@ -719,7 +877,8 @@ int neverc_bufio_writer_write(neverc_bufio_writer_t *bw,
     if (!bw || !bw->buf || bw->buf_cap == 0 || !data ||
         bw->n > bw->buf_cap)
         return NEVERC_IO_ERR_UNEXP;
-    if (bw->err != 0) return bw->err;
+    int sticky_error = bufio_writer_error(bw);
+    if (sticky_error != 0) return sticky_error;
     while (*n < len) {
         size_t avail = bw->buf_cap - bw->n;
         size_t copy = (len - *n) < avail ? (len - *n) : avail;
@@ -737,7 +896,8 @@ int neverc_bufio_writer_write(neverc_bufio_writer_t *bw,
 int neverc_bufio_writer_write_byte(neverc_bufio_writer_t *bw, uint8_t c) {
     if (!bw || !bw->buf || bw->buf_cap == 0 || bw->n > bw->buf_cap)
         return NEVERC_IO_ERR_UNEXP;
-    if (bw->err != 0) return bw->err;
+    int sticky_error = bufio_writer_error(bw);
+    if (sticky_error != 0) return sticky_error;
     if (bw->n >= bw->buf_cap) {
         int err = neverc_bufio_writer_flush(bw);
         if (err != 0) return err;
@@ -751,5 +911,4 @@ void neverc_bufio_writer_free(neverc_bufio_writer_t *bw) {
     free(bw->buf);
     bw->buf = NULL;
     bw->buf_cap = bw->n = 0;
-    bw->err = 0;
 }

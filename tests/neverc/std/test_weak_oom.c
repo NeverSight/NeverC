@@ -75,7 +75,10 @@ int main(void) {
     neverc_weak_strong_t strong =
         neverc_weak_new(&value, sizeof(value));
     CHECK(strong._ctrl != NULL);
-    ctrl_block_t *cb = (ctrl_block_t *)strong._ctrl;
+    LOCK();
+    ctrl_block_t *cb = ctrl_for_strong_locked(strong);
+    UNLOCK();
+    CHECK(cb != NULL);
 
     reset_allocator(1);
     CHECK(neverc_weak_make(strong) == NULL);

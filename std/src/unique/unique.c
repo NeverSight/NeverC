@@ -13,10 +13,11 @@
  * (`& (cap - 1)`) instead of a `% cap` division on every step — the same trick
  * the SwissTable in maps.c relies on.
  *
- * Each interned value is allocated as a [size_t len][data...] block and the
- * handle points at the data. Accessors first locate that pointer in the table;
- * this is required because the public handle struct can otherwise be forged to
- * make an allocation-header read through an arbitrary address.
+ * Each interned value is allocated as a [size_t len][data...] block. Public
+ * handles contain a monotonically assigned opaque token rather than the data
+ * address; accessors locate that token before reading intern storage. This both
+ * rejects forged pointers and prevents a stale handle from becoming valid if
+ * malloc reuses an address after destroy.
  */
 
 typedef enum { UK_EMPTY = 0, UK_STRING, UK_INT64, UK_UINT64, UK_BYTES } uk_kind_t;
@@ -26,6 +27,7 @@ typedef struct {
     uint64_t  hash;
     void     *data;
     size_t    len;
+    uintptr_t handle_token;
 } intern_entry_t;
 
 #define INTERN_INIT_CAP 256
@@ -33,7 +35,8 @@ typedef struct {
 static intern_entry_t *g_table = NULL;
 static size_t          g_cap   = 0;
 static size_t          g_count = 0;
-static uint64_t        g_epoch = 1;
+static uintptr_t       g_next_handle_token = 1;
+static int             g_handle_tokens_exhausted = 0;
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 #include <windows.h>
@@ -54,6 +57,19 @@ static void unique_lock(void) {
 /* Hash only selects a probe bucket; entry_matches() re-verifies full equality. */
 static uint64_t intern_hash(const void *data, size_t len) {
     return nci_wyhash_final3(data, len, 0);
+}
+
+/* Tokens are never dereferenced and never reused. Exhaustion permanently
+ * fails closed instead of wrapping a stale public value back to life. */
+static uintptr_t next_handle_token_locked(void) {
+    uintptr_t token;
+    if (g_handle_tokens_exhausted) return 0;
+    token = g_next_handle_token;
+    if (g_next_handle_token == UINTPTR_MAX)
+        g_handle_tokens_exhausted = 1;
+    else
+        g_next_handle_token++;
+    return token;
 }
 
 /*
@@ -92,8 +108,6 @@ void neverc_unique_destroy(void) {
         g_cap = 0;
         g_count = 0;
     }
-    g_epoch++;
-    if (g_epoch == 0) g_epoch = 1;
     UNLOCK();
 }
 
@@ -123,10 +137,9 @@ static int entry_matches(const intern_entry_t *e, uk_kind_t kind, uint64_t hash,
            (len == 0 || memcmp(e->data, data, len) == 0);
 }
 
-static neverc_unique_handle_t intern_ok(const void *ptr) {
+static neverc_unique_handle_t intern_ok(uintptr_t token) {
     neverc_unique_handle_t h = {0};
-    h.ptr = ptr;
-    h.epoch = g_epoch;
+    h.ptr = (const void *)token;
     return h;
 }
 
@@ -147,7 +160,7 @@ static neverc_unique_handle_t intern(uk_kind_t kind, const void *data, size_t le
     size_t idx = (size_t)(hash & mask);
     while (g_table[idx].kind != UK_EMPTY) {
         if (entry_matches(&g_table[idx], kind, hash, data, len)) {
-            h = intern_ok(g_table[idx].data);
+            h = intern_ok(g_table[idx].handle_token);
             UNLOCK();
             return h;
         }
@@ -177,13 +190,20 @@ static neverc_unique_handle_t intern(uk_kind_t kind, const void *data, size_t le
 
     void *copy = intern_alloc(data, len);
     if (!copy) { UNLOCK(); return h; }            /* OOM: invalid handle */
+    uintptr_t handle_token = next_handle_token_locked();
+    if (handle_token == 0) {
+        intern_free(copy);
+        UNLOCK();
+        return h;
+    }
     g_table[idx].kind = kind;
     g_table[idx].hash = hash;
     g_table[idx].data = copy;
     g_table[idx].len = len;
+    g_table[idx].handle_token = handle_token;
     g_count++;
 
-    h = intern_ok(copy);
+    h = intern_ok(handle_token);
     UNLOCK();
     return h;
 }
@@ -208,15 +228,17 @@ neverc_unique_handle_t neverc_unique_make_bytes(const void *data, size_t len) {
     return intern(UK_BYTES, data, len);
 }
 
-/* Handles are public value structs, so callers can construct one containing an
- * arbitrary pointer and the current epoch. Validate membership using pointer
- * comparisons only before reading either the allocation header or value. */
+/* Handles are public value structs, so callers can construct an arbitrary
+ * token. Validate membership using integer equality only before reading the
+ * associated entry or value. */
 static const intern_entry_t *intern_entry_for_handle(
         neverc_unique_handle_t h) {
-    if (!h.ptr || h.epoch != g_epoch || !g_table)
+    uintptr_t token = (uintptr_t)h.ptr;
+    if (token == 0 || !g_table)
         return NULL;
     for (size_t i = 0; i < g_cap; i++) {
-        if (g_table[i].kind != UK_EMPTY && g_table[i].data == h.ptr)
+        if (g_table[i].kind != UK_EMPTY &&
+            g_table[i].handle_token == token)
             return &g_table[i];
     }
     return NULL;
@@ -233,9 +255,10 @@ const char *neverc_unique_string_value(neverc_unique_handle_t h) {
     if (entry) {
         size_t n = entry->len;
         if (n > 0) {
-            const unsigned char *p = (const unsigned char *)h.ptr;
+            const unsigned char *p =
+                (const unsigned char *)entry->data;
             if (p[n - 1] == '\0')
-                result = (const char *)h.ptr;
+                result = (const char *)entry->data;
         }
     }
     UNLOCK();
@@ -247,7 +270,7 @@ int64_t neverc_unique_int64_value(neverc_unique_handle_t h) {
     LOCK();
     const intern_entry_t *entry = intern_entry_for_handle(h);
     if (entry && entry->len == sizeof(v))
-        memcpy(&v, h.ptr, sizeof(v));
+        memcpy(&v, entry->data, sizeof(v));
     UNLOCK();
     return v;
 }
@@ -257,7 +280,7 @@ uint64_t neverc_unique_uint64_value(neverc_unique_handle_t h) {
     LOCK();
     const intern_entry_t *entry = intern_entry_for_handle(h);
     if (entry && entry->len == sizeof(v))
-        memcpy(&v, h.ptr, sizeof(v));
+        memcpy(&v, entry->data, sizeof(v));
     UNLOCK();
     return v;
 }
@@ -269,7 +292,7 @@ const void *neverc_unique_bytes_value(neverc_unique_handle_t h, size_t *len) {
     const intern_entry_t *entry = intern_entry_for_handle(h);
     if (entry) {
         n = entry->len;
-        result = h.ptr;
+        result = entry->data;
     }
     UNLOCK();
     if (len) *len = n;
@@ -277,7 +300,7 @@ const void *neverc_unique_bytes_value(neverc_unique_handle_t h, size_t *len) {
 }
 
 int neverc_unique_handle_equal(neverc_unique_handle_t a, neverc_unique_handle_t b) {
-    return a.ptr == b.ptr && a.epoch == b.epoch;
+    return a.ptr == b.ptr;
 }
 
 int neverc_unique_handle_valid(neverc_unique_handle_t h) {

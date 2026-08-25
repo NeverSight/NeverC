@@ -495,6 +495,12 @@ TEST_F(StdLibTest, IoAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(bufio, "src/bufio/bufio.c", "src/io/io.c")
+TEST_F(StdLibTest, BufioContextAbi) {
+  auto r =
+      compileAndRunStdTest("bufio_ctx_abi", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 TEST_F(StdLibTest, BufioAllocationFailure) {
   auto r = compileAndRunStdTest("bufio_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
@@ -1144,6 +1150,7 @@ TEST_F(StdLibTest, UniqueAllocationFailure) {
 
 // ===== Weak =====
 STD_TEST(weak, "src/weak/weak.c")
+STD_TEST(weak_unique_abi, "src/weak/weak.c", "src/unique/unique.c")
 TEST_F(StdLibTest, WeakRetainLifecycle) {
   auto r = compileAndRunStdTest("weak_retain", {"src/weak/weak.c"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;

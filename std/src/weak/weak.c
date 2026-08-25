@@ -1,5 +1,6 @@
 #include "neverc/std/weak.h"
 #include "neverc/std/_platform.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -9,11 +10,15 @@ typedef struct ctrl_block {
     void *data;
     void (*free_fn)(void *);
     int   owns_data;
-    uint64_t epoch;
+    uintptr_t token;
+    struct ctrl_block *next_active;
     struct ctrl_block *next_free;
 } ctrl_block_t;
 
+static ctrl_block_t *g_active = NULL;
 static ctrl_block_t *g_freelist = NULL;
+static uintptr_t g_next_token = 1;
+static int g_tokens_exhausted = 0;
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 #include <windows.h>
@@ -48,51 +53,101 @@ static int32_t release_count(volatile int32_t *count) {
     }
 }
 
-static int ctrl_matches(const ctrl_block_t *cb, uint64_t epoch) {
-    return cb && epoch != 0 && cb->epoch == epoch;
+static uintptr_t next_token_locked(void) {
+    uintptr_t token;
+    if (g_tokens_exhausted) return 0;
+    token = g_next_token;
+    if (g_next_token == UINTPTR_MAX)
+        g_tokens_exhausted = 1;
+    else
+        g_next_token++;
+    return token;
+}
+
+static int ctrl_matches(const ctrl_block_t *cb, uintptr_t token) {
+    return cb && token != 0 && cb->token == token;
+}
+
+static ctrl_block_t *ctrl_for_strong_locked(neverc_weak_strong_t s) {
+    uintptr_t token = (uintptr_t)s._ctrl;
+    if (token == 0) return NULL;
+    for (ctrl_block_t *cb = g_active; cb; cb = cb->next_active) {
+        if (cb->token == token)
+            return cb->data == s.ptr ? cb : NULL;
+    }
+    return NULL;
+}
+
+static void ctrl_activate_locked(ctrl_block_t *cb) {
+    cb->next_active = g_active;
+    g_active = cb;
+}
+
+static void ctrl_deactivate_locked(ctrl_block_t *cb) {
+    ctrl_block_t **link = &g_active;
+    while (*link && *link != cb)
+        link = &(*link)->next_active;
+    if (*link == cb)
+        *link = cb->next_active;
 }
 
 static void ctrl_retire_locked(ctrl_block_t *cb) {
-    cb->epoch++;
-    if (cb->epoch == 0) cb->epoch = 1;
+    ctrl_deactivate_locked(cb);
     cb->strong = 0;
     cb->weak = 0;
     cb->data = NULL;
     cb->free_fn = NULL;
     cb->owns_data = 0;
+    cb->token = 0;
+    cb->next_active = NULL;
     cb->next_free = g_freelist;
     g_freelist = cb;
 }
 
 static void ctrl_publish(ctrl_block_t *cb, void *data, void (*free_fn)(void *),
-                         int owns, uint64_t epoch) {
+                         int owns, uintptr_t token) {
     memset(cb, 0, sizeof(*cb));
-    cb->epoch = epoch;
+    cb->token = token;
     cb->strong = 1;
     cb->weak = 1;
     cb->data = data;
     cb->free_fn = free_fn;
     cb->owns_data = owns;
+    ctrl_activate_locked(cb);
 }
 
 static ctrl_block_t *ctrl_new(void *data, void (*free_fn)(void *), int owns) {
     ctrl_block_t *cb;
+    uintptr_t token;
     LOCK();
     if (g_freelist) {
         cb = g_freelist;
         g_freelist = cb->next_free;
-        uint64_t epoch = cb->epoch;
-        /* Publish epoch/strong/weak/data before dropping the lock so a
-         * stale release that already observed the previous epoch cannot
-         * decrement this new life. */
-        ctrl_publish(cb, data, free_fn, owns, epoch);
+        token = next_token_locked();
+        if (token == 0) {
+            cb->next_free = g_freelist;
+            g_freelist = cb;
+            UNLOCK();
+            return NULL;
+        }
+        /* Publish the new token and payload before dropping the lock. A stale
+         * released value names the old token, not this recycled allocation. */
+        ctrl_publish(cb, data, free_fn, owns, token);
         UNLOCK();
         return cb;
     }
     UNLOCK();
     cb = (ctrl_block_t *)calloc(1, sizeof(*cb));
     if (!cb) return NULL;
-    ctrl_publish(cb, data, free_fn, owns, 1);
+    LOCK();
+    token = next_token_locked();
+    if (token == 0) {
+        UNLOCK();
+        free(cb);
+        return NULL;
+    }
+    ctrl_publish(cb, data, free_fn, owns, token);
+    UNLOCK();
     return cb;
 }
 
@@ -100,8 +155,7 @@ static neverc_weak_strong_t strong_from_cb(ctrl_block_t *cb) {
     neverc_weak_strong_t s = {0};
     if (!cb) return s;
     s.ptr = cb->data;
-    s._ctrl = cb;
-    s._epoch = cb->epoch;
+    s._ctrl = (void *)cb->token;
     return s;
 }
 
@@ -125,9 +179,9 @@ neverc_weak_strong_t neverc_weak_new_with_free(void *data, void (*free_fn)(void 
 
 neverc_weak_strong_t neverc_weak_strong_retain(neverc_weak_strong_t s) {
     neverc_weak_strong_t retained = {0};
-    ctrl_block_t *cb = (ctrl_block_t *)s._ctrl;
     LOCK();
-    if (ctrl_matches(cb, s._epoch) && retain_count(&cb->strong))
+    ctrl_block_t *cb = ctrl_for_strong_locked(s);
+    if (cb && retain_count(&cb->strong))
         retained = s;
     UNLOCK();
     return retained;
@@ -135,11 +189,9 @@ neverc_weak_strong_t neverc_weak_strong_retain(neverc_weak_strong_t s) {
 
 void neverc_weak_strong_release(neverc_weak_strong_t *s) {
     if (!s || !s->_ctrl) return;
-    ctrl_block_t *cb = (ctrl_block_t *)s->_ctrl;
-    uint64_t epoch = s->_epoch;
+    neverc_weak_strong_t value = *s;
     s->ptr = NULL;
     s->_ctrl = NULL;
-    s->_epoch = 0;
 
     void *data = NULL;
     void (*free_fn)(void *) = NULL;
@@ -147,7 +199,8 @@ void neverc_weak_strong_release(neverc_weak_strong_t *s) {
     int drop_payload = 0;
 
     LOCK();
-    if (ctrl_matches(cb, epoch)) {
+    ctrl_block_t *cb = ctrl_for_strong_locked(value);
+    if (cb) {
         int32_t remaining = release_count(&cb->strong);
         if (remaining == 0) {
             data = cb->data;
@@ -173,16 +226,16 @@ void neverc_weak_strong_release(neverc_weak_strong_t *s) {
 
 struct neverc_weak_ref {
     ctrl_block_t *cb;
-    uint64_t epoch;
+    uintptr_t token;
     volatile int32_t refs;
 };
 
 neverc_weak_ref_t *neverc_weak_make(neverc_weak_strong_t s) {
-    ctrl_block_t *cb = (ctrl_block_t *)s._ctrl;
     neverc_weak_ref_t *w = (neverc_weak_ref_t *)malloc(sizeof(*w));
     if (!w) return NULL;
     LOCK();
-    if (!ctrl_matches(cb, s._epoch) ||
+    ctrl_block_t *cb = ctrl_for_strong_locked(s);
+    if (!cb ||
         NEVERC_ATOMIC_LOAD32(&cb->strong) <= 0 ||
         !retain_count(&cb->weak)) {
         UNLOCK();
@@ -190,7 +243,7 @@ neverc_weak_ref_t *neverc_weak_make(neverc_weak_strong_t s) {
         return NULL;
     }
     w->cb = cb;
-    w->epoch = cb->epoch;
+    w->token = cb->token;
     w->refs = 1;
     UNLOCK();
     return w;
@@ -202,7 +255,7 @@ neverc_weak_ref_t *neverc_weak_ref_retain(neverc_weak_ref_t *w) {
     /* Pin the control block first. Incrementing refs before weak left a
      * window where last-strong could retire (and recycle) the block while
      * this handle still had refs > 0. */
-    if (!ctrl_matches(w->cb, w->epoch) ||
+    if (!ctrl_matches(w->cb, w->token) ||
         NEVERC_ATOMIC_LOAD32(&w->refs) <= 0 ||
         !retain_count(&w->cb->weak)) {
         UNLOCK();
@@ -220,7 +273,7 @@ neverc_weak_ref_t *neverc_weak_ref_retain(neverc_weak_ref_t *w) {
 
 void neverc_weak_ref_release(neverc_weak_ref_t *w) {
     ctrl_block_t *cb;
-    uint64_t epoch;
+    uintptr_t token;
     int32_t refs;
     if (!w) return;
     LOCK();
@@ -229,7 +282,7 @@ void neverc_weak_ref_release(neverc_weak_ref_t *w) {
         return;
     }
     cb = w->cb;
-    epoch = w->epoch;
+    token = w->token;
     refs = release_count(&w->refs);
     if (refs < 0) {
         UNLOCK();
@@ -237,9 +290,9 @@ void neverc_weak_ref_release(neverc_weak_ref_t *w) {
     }
     if (refs == 0) {
         w->cb = NULL;
-        w->epoch = 0;
+        w->token = 0;
     }
-    if (ctrl_matches(cb, epoch) && release_count(&cb->weak) == 0)
+    if (ctrl_matches(cb, token) && release_count(&cb->weak) == 0)
         ctrl_retire_locked(cb);
     UNLOCK();
     if (refs == 0) free(w);
@@ -249,7 +302,7 @@ void *neverc_weak_value(neverc_weak_ref_t *w) {
     void *data = NULL;
     if (!w) return NULL;
     LOCK();
-    if (ctrl_matches(w->cb, w->epoch) &&
+    if (ctrl_matches(w->cb, w->token) &&
         NEVERC_ATOMIC_LOAD32(&w->cb->strong) > 0)
         data = w->cb->data;
     UNLOCK();
@@ -260,7 +313,7 @@ neverc_weak_strong_t neverc_weak_upgrade(neverc_weak_ref_t *w) {
     neverc_weak_strong_t s = {0};
     if (!w) return s;
     LOCK();
-    if (ctrl_matches(w->cb, w->epoch) && retain_count(&w->cb->strong))
+    if (ctrl_matches(w->cb, w->token) && retain_count(&w->cb->strong))
         s = strong_from_cb(w->cb);
     UNLOCK();
     return s;
@@ -269,14 +322,14 @@ neverc_weak_strong_t neverc_weak_upgrade(neverc_weak_ref_t *w) {
 int neverc_weak_ref_equal(const neverc_weak_ref_t *a, const neverc_weak_ref_t *b) {
     if (!a && !b) return 1;
     if (!a || !b) return 0;
-    return a->cb == b->cb && a->epoch == b->epoch;
+    return a->cb == b->cb && a->token == b->token;
 }
 
 int neverc_weak_strong_count(neverc_weak_strong_t s) {
-    ctrl_block_t *cb = (ctrl_block_t *)s._ctrl;
     int n = 0;
     LOCK();
-    if (ctrl_matches(cb, s._epoch))
+    ctrl_block_t *cb = ctrl_for_strong_locked(s);
+    if (cb)
         n = NEVERC_ATOMIC_LOAD32(&cb->strong);
     UNLOCK();
     return n;
@@ -286,7 +339,7 @@ int neverc_weak_ref_count(neverc_weak_ref_t *w) {
     int n = 0;
     if (!w) return 0;
     LOCK();
-    if (ctrl_matches(w->cb, w->epoch))
+    if (ctrl_matches(w->cb, w->token))
         n = NEVERC_ATOMIC_LOAD32(&w->cb->weak);
     UNLOCK();
     return n;

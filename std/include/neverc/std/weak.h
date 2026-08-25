@@ -2,7 +2,6 @@
 #define NEVERC_WEAK_H
 
 #include <stddef.h>
-#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,8 +18,9 @@ extern "C" {
  *
  * Thread-safe: all ref-count operations are atomic. Retain returns an
  * independently releasable reference and fails with an empty/NULL result if
- * its count cannot be increased. Strong handles carry an epoch so a bitwise
- * copy of a released strong does not touch a recycled control block.
+ * its count cannot be increased. The opaque control token is generation
+ * specific, so a bitwise copy of a released strong does not touch a recycled
+ * control block.
  */
 
 typedef struct neverc_weak_ref neverc_weak_ref_t;
@@ -28,7 +28,6 @@ typedef struct neverc_weak_ref neverc_weak_ref_t;
 typedef struct {
     void *ptr;
     void *_ctrl;
-    uint64_t _epoch;
 } neverc_weak_strong_t;
 
 neverc_weak_strong_t neverc_weak_new(void *data, size_t size);

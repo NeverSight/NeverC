@@ -56,13 +56,10 @@ typedef struct {
     size_t              token_len;
     int                 done;
     int                 err;
-    neverc_bufio_split_func_t split;
-    /* In-place NUL for scanner_text(); restored on the next scan. */
-    int                 text_saved;
-    uint8_t             text_saved_byte;
-    size_t              text_saved_at;
 } neverc_bufio_scanner_t;
 
+/* Scanner owns its buffer. Do not copy an initialized scanner by value; call
+ * scanner_free before reinitializing it. */
 void neverc_bufio_scanner_init(neverc_bufio_scanner_t *s,
                                neverc_io_reader_t reader);
 void neverc_bufio_scanner_split(neverc_bufio_scanner_t *s,
@@ -82,9 +79,10 @@ typedef struct {
     size_t              r, w;
     int                 eof;
     int                 err;
-    int                 last_byte; /* -1 if UnreadByte is invalid */
 } neverc_bufio_reader_t;
 
+/* Reader owns its buffer. Do not copy an initialized reader by value; call
+ * reader_free before reinitializing it. */
 void    neverc_bufio_reader_init(neverc_bufio_reader_t *br,
                                  neverc_io_reader_t reader);
 void    neverc_bufio_reader_init_size(neverc_bufio_reader_t *br,
@@ -104,9 +102,10 @@ typedef struct {
     uint8_t            *buf;
     size_t              buf_cap;
     size_t              n;
-    int                 err; /* sticky; Go bufio.Writer.err */
 } neverc_bufio_writer_t;
 
+/* Writer owns its buffer. Do not copy an initialized writer by value; call
+ * writer_free before reinitializing it. */
 void neverc_bufio_writer_init(neverc_bufio_writer_t *bw,
                               neverc_io_writer_t writer);
 void neverc_bufio_writer_init_size(neverc_bufio_writer_t *bw,

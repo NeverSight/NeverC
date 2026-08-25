@@ -240,8 +240,9 @@ static void test_forged_handle(void) {
     neverc_unique_init();
 
     neverc_unique_handle_t live = neverc_unique_make_string("live");
+    ASSERT_TRUE(neverc_unique_handle_valid(live));
     uint64_t attacker_data = UINT64_C(0x1122334455667788);
-    neverc_unique_handle_t forged = {&attacker_data, live.epoch};
+    neverc_unique_handle_t forged = {&attacker_data};
 
     ASSERT_TRUE(!neverc_unique_handle_valid(forged));
     ASSERT_TRUE(neverc_unique_string_value(forged) == NULL);
