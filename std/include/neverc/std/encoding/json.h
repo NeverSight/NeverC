@@ -30,8 +30,6 @@ typedef struct neverc_json_value neverc_json_value_t;
 typedef struct neverc_json_pair {
     char                *key;
     neverc_json_value_t *value;
-    /* Byte length of key, allowing escaped U+0000 in object member names. */
-    size_t               key_len;
 } neverc_json_pair_t;
 
 struct neverc_json_value {
@@ -51,10 +49,6 @@ struct neverc_json_value {
             int                 cap;
         } obj;
     } u;
-    /* Byte length of u.str_val for string values, including embedded NULs. */
-    size_t string_len;
-    /* Internal ownership link used to reject cycles and shared child nodes. */
-    neverc_json_value_t *parent;
 };
 
 /*
@@ -65,8 +59,8 @@ struct neverc_json_value {
 neverc_json_value_t *neverc_json_parse(const char *text, size_t len);
 
 /*
- * Free a root JSON value tree (recursive). Passing an attached child is a
- * safe no-op because its parent owns it.
+ * Free a root JSON value tree (recursive). Passing an attached child or a
+ * value not allocated by this library instance is a safe no-op.
  */
 void neverc_json_free(neverc_json_value_t *v);
 
@@ -97,8 +91,9 @@ neverc_json_value_t  *neverc_json_object_get_n(const neverc_json_value_t *v,
 
 /*
  * Value constructors.
- * array_append/object_set take ownership of `val` on success. A value can have
- * only one parent; attempts to share a child or create a cycle return -1.
+ * array_append/object_set take ownership of a library-allocated `val` on
+ * success. A value can have only one parent; attempts to transfer an external
+ * public struct, share a child, or create a cycle return -1.
  */
 neverc_json_value_t *neverc_json_new_null(void);
 neverc_json_value_t *neverc_json_new_bool(int val);

@@ -8,6 +8,7 @@
 #include "../../hash/_wyhash_final3.h"
 #include <limits.h>
 #include <math.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,10 +22,169 @@
 
 /* ---- internal helpers ---- */
 
+typedef struct {
+    char *owned_key;
+    char *key_view;
+    size_t key_len;
+    neverc_json_value_t *value;
+} json_pair_meta_t;
+
+typedef struct json_owned_value {
+    /* The released public object is the first member: its address and the
+     * library allocation address are identical without changing public ABI. */
+    neverc_json_value_t public_value;
+    neverc_json_type_t owned_type;
+    neverc_json_value_t *parent;
+    char *owned_string;
+    char *string_view;
+    size_t string_len;
+    void *public_storage;
+    int private_len;
+    int private_cap;
+    union {
+        neverc_json_value_t **array_values;
+        json_pair_meta_t *object_pairs;
+    } children;
+    struct json_owned_value *registry_next;
+} json_owned_value_t;
+
+/* Public JSON structs can be supplied by old callers and are therefore not
+ * allowed to contain a hidden cookie or trailer pointer. A private registry
+ * identifies library allocations before any wrapper-only byte is read. */
+static atomic_flag json_registry_lock_flag = ATOMIC_FLAG_INIT;
+static json_owned_value_t *json_registry_initial_buckets[64];
+static json_owned_value_t **json_registry_buckets =
+    json_registry_initial_buckets;
+static size_t json_registry_capacity =
+    sizeof(json_registry_initial_buckets) /
+    sizeof(json_registry_initial_buckets[0]);
+static size_t json_registry_count;
+
+static void json_registry_lock(void) {
+    while (atomic_flag_test_and_set_explicit(
+               &json_registry_lock_flag, memory_order_acquire)) {
+    }
+}
+
+static void json_registry_unlock(void) {
+    atomic_flag_clear_explicit(&json_registry_lock_flag, memory_order_release);
+}
+
+static size_t json_pointer_hash(const void *pointer) {
+    uintptr_t value = (uintptr_t)pointer;
+    value ^= value >> 7;
+    value ^= value >> 17;
+    value ^= value >> 3;
+    return (size_t)value;
+}
+
+static json_owned_value_t *json_owned_find_locked(
+    const neverc_json_value_t *value) {
+    if (!value || json_registry_capacity == 0) return NULL;
+    size_t bucket = json_pointer_hash(value) & (json_registry_capacity - 1U);
+    for (json_owned_value_t *owned = json_registry_buckets[bucket]; owned;
+         owned = owned->registry_next) {
+        if (&owned->public_value == value) return owned;
+    }
+    return NULL;
+}
+
+static int json_registry_grow_locked(size_t capacity) {
+    if (capacity < 64U) capacity = 64U;
+    if (capacity > SIZE_MAX / sizeof(*json_registry_buckets)) return -1;
+    json_owned_value_t **buckets = (json_owned_value_t **)calloc(
+        capacity, sizeof(*buckets));
+    if (!buckets) return -1;
+    for (size_t i = 0; i < json_registry_capacity; i++) {
+        json_owned_value_t *owned = json_registry_buckets[i];
+        while (owned) {
+            json_owned_value_t *next = owned->registry_next;
+            size_t bucket = json_pointer_hash(&owned->public_value) &
+                            (capacity - 1U);
+            owned->registry_next = buckets[bucket];
+            buckets[bucket] = owned;
+            owned = next;
+        }
+    }
+    if (json_registry_buckets != json_registry_initial_buckets)
+        free(json_registry_buckets);
+    json_registry_buckets = buckets;
+    json_registry_capacity = capacity;
+    return 0;
+}
+
+static int json_registry_add(json_owned_value_t *owned) {
+    json_registry_lock();
+    if (json_registry_count >= json_registry_capacity &&
+        json_registry_capacity <= SIZE_MAX / 2U) {
+        /* Growth is an optimization. If it fails, the existing chained table
+         * remains correct and allocation can still succeed. */
+        (void)json_registry_grow_locked(json_registry_capacity * 2U);
+    }
+    size_t bucket = json_pointer_hash(&owned->public_value) &
+                    (json_registry_capacity - 1U);
+    owned->registry_next = json_registry_buckets[bucket];
+    json_registry_buckets[bucket] = owned;
+    json_registry_count++;
+    json_registry_unlock();
+    return 0;
+}
+
+static json_owned_value_t *json_owned_find(
+    const neverc_json_value_t *value) {
+    json_registry_lock();
+    json_owned_value_t *owned = json_owned_find_locked(value);
+    json_registry_unlock();
+    return owned;
+}
+
+static json_owned_value_t *json_registry_remove(
+    neverc_json_value_t *value) {
+    json_owned_value_t *found = NULL;
+    json_registry_lock();
+    if (value && json_registry_capacity != 0) {
+        size_t bucket = json_pointer_hash(value) &
+                        (json_registry_capacity - 1U);
+        json_owned_value_t **link = &json_registry_buckets[bucket];
+        while (*link && &(*link)->public_value != value)
+            link = &(*link)->registry_next;
+        if (*link) {
+            found = *link;
+            *link = found->registry_next;
+            found->registry_next = NULL;
+            json_registry_count--;
+            if (json_registry_count == 0 &&
+                json_registry_buckets != json_registry_initial_buckets) {
+                free(json_registry_buckets);
+                memset(json_registry_initial_buckets, 0,
+                       sizeof(json_registry_initial_buckets));
+                json_registry_buckets = json_registry_initial_buckets;
+                json_registry_capacity =
+                    sizeof(json_registry_initial_buckets) /
+                    sizeof(json_registry_initial_buckets[0]);
+            }
+        }
+    }
+    json_registry_unlock();
+    return found;
+}
+
 static neverc_json_value_t *alloc_val(neverc_json_type_t type) {
-    neverc_json_value_t *v = (neverc_json_value_t *)calloc(1, sizeof(*v));
-    if (v) v->type = type;
-    return v;
+    json_owned_value_t *owned =
+        (json_owned_value_t *)calloc(1, sizeof(*owned));
+    if (!owned) return NULL;
+    owned->public_value.type = type;
+    owned->owned_type = type;
+    if (json_registry_add(owned) != 0) {
+        free(owned);
+        return NULL;
+    }
+    return &owned->public_value;
+}
+
+static void json_free_single_allocation(neverc_json_value_t *value) {
+    json_owned_value_t *owned = json_registry_remove(value);
+    free(owned);
 }
 
 static char *dup_str(const char *s, size_t len) {
@@ -288,9 +448,14 @@ static NCI_JSON_NOINLINE neverc_json_value_t *parse_string(parser_t *p) {
     neverc_json_value_t *v = alloc_val(NEVERC_JSON_STRING);
     if (!v) { sb_free(&b); return NULL; }
     v->u.str_val = dup_str(b.p, b.len);
-    v->string_len = b.len;
+    json_owned_value_t *owned = json_owned_find(v);
+    if (owned) {
+        owned->owned_string = v->u.str_val;
+        owned->string_view = v->u.str_val;
+        owned->string_len = b.len;
+    }
     sb_free(&b);
-    if (!v->u.str_val) { free(v); return NULL; }
+    if (!v->u.str_val) { json_free_single_allocation(v); return NULL; }
     return v;
 }
 
@@ -406,6 +571,20 @@ typedef struct {
     int       cnt;
 } keymap_t;
 
+static size_t json_pair_key_length(const neverc_json_value_t *object,
+                                   int index,
+                                   const neverc_json_pair_t *pair) {
+    json_owned_value_t *owned = json_owned_find(object);
+    if (owned && owned->owned_type == NEVERC_JSON_OBJECT &&
+        object->u.obj.pairs == owned->public_storage &&
+        index >= 0 && index < owned->private_len) {
+        const json_pair_meta_t *meta = &owned->children.object_pairs[index];
+        if (pair->key == meta->key_view)
+            return meta->key_len;
+    }
+    return pair->key ? strlen(pair->key) : 0;
+}
+
 /* The compact index intentionally stores final-v3's low 32 bits. km_lookup()
  * re-verifies length and bytes, so a hash collision cannot change semantics. */
 static uint32_t km_hash(const char *s, size_t len) {
@@ -431,9 +610,8 @@ static int km_lookup(const keymap_t *km, const neverc_json_value_t *obj,
     while (km->slots[i] != -1) {
         const neverc_json_pair_t *pair =
             &obj->u.obj.pairs[km->slots[i]];
-        size_t pair_len = pair->key_len;
-        if (pair_len == 0 && pair->key && pair->key[0] != '\0')
-            pair_len = strlen(pair->key);
+        size_t pair_len = json_pair_key_length(
+            obj, km->slots[i], pair);
         if (km->hashes[i] == hash && pair_len == key_len &&
             (key_len == 0 || memcmp(pair->key, key, key_len) == 0))
             return km->slots[i];
@@ -475,26 +653,134 @@ static int km_insert(keymap_t *km, uint32_t hash, int pair_idx) {
     return 0;
 }
 
+static int json_array_storage_valid(const neverc_json_value_t *array,
+                                    const json_owned_value_t *owned) {
+    if (!array || !owned || owned->owned_type != NEVERC_JSON_ARRAY ||
+        array->type != NEVERC_JSON_ARRAY ||
+        array->u.arr.items != owned->public_storage ||
+        array->u.arr.len != owned->private_len ||
+        array->u.arr.cap != owned->private_cap)
+        return 0;
+    return 1;
+}
+
+static int json_array_shape_valid(const neverc_json_value_t *array,
+                                  const json_owned_value_t *owned) {
+    if (!json_array_storage_valid(array, owned)) return 0;
+    for (int i = 0; i < owned->private_len; i++) {
+        if (array->u.arr.items[i] != owned->children.array_values[i])
+            return 0;
+    }
+    return 1;
+}
+
+static int json_object_storage_valid(const neverc_json_value_t *object,
+                                     const json_owned_value_t *owned) {
+    if (!object || !owned || owned->owned_type != NEVERC_JSON_OBJECT ||
+        object->type != NEVERC_JSON_OBJECT ||
+        object->u.obj.pairs != owned->public_storage ||
+        object->u.obj.len != owned->private_len ||
+        object->u.obj.cap != owned->private_cap)
+        return 0;
+    return 1;
+}
+
+static int json_object_shape_valid(const neverc_json_value_t *object,
+                                   const json_owned_value_t *owned) {
+    if (!json_object_storage_valid(object, owned)) return 0;
+    for (int i = 0; i < owned->private_len; i++) {
+        const neverc_json_pair_t *pair = &object->u.obj.pairs[i];
+        const json_pair_meta_t *meta = &owned->children.object_pairs[i];
+        if (pair->key != meta->key_view || pair->value != meta->value)
+            return 0;
+    }
+    return 1;
+}
+
+static int json_array_grow(neverc_json_value_t *array,
+                           json_owned_value_t *owned, int capacity) {
+    if (capacity <= owned->private_cap || capacity < owned->private_len ||
+        (size_t)capacity > SIZE_MAX / sizeof(neverc_json_value_t *))
+        return -1;
+    neverc_json_value_t **items = (neverc_json_value_t **)calloc(
+        (size_t)capacity, sizeof(*items));
+    neverc_json_value_t **children = (neverc_json_value_t **)calloc(
+        (size_t)capacity, sizeof(*children));
+    if (!items || !children) {
+        free(items);
+        free(children);
+        return -1;
+    }
+    if (owned->private_len > 0) {
+        size_t bytes = (size_t)owned->private_len * sizeof(*items);
+        memcpy(items, owned->public_storage, bytes);
+        memcpy(children, owned->children.array_values, bytes);
+    }
+    free(owned->public_storage);
+    free(owned->children.array_values);
+    owned->public_storage = items;
+    owned->children.array_values = children;
+    owned->private_cap = capacity;
+    array->u.arr.items = items;
+    array->u.arr.cap = capacity;
+    return 0;
+}
+
+static int json_object_grow(neverc_json_value_t *object,
+                            json_owned_value_t *owned, int capacity) {
+    if (capacity <= owned->private_cap || capacity < owned->private_len ||
+        (size_t)capacity > SIZE_MAX / sizeof(neverc_json_pair_t) ||
+        (size_t)capacity > SIZE_MAX / sizeof(json_pair_meta_t))
+        return -1;
+    neverc_json_pair_t *pairs = (neverc_json_pair_t *)calloc(
+        (size_t)capacity, sizeof(*pairs));
+    json_pair_meta_t *metadata = (json_pair_meta_t *)calloc(
+        (size_t)capacity, sizeof(*metadata));
+    if (!pairs || !metadata) {
+        free(pairs);
+        free(metadata);
+        return -1;
+    }
+    if (owned->private_len > 0) {
+        memcpy(pairs, owned->public_storage,
+               (size_t)owned->private_len * sizeof(*pairs));
+        memcpy(metadata, owned->children.object_pairs,
+               (size_t)owned->private_len * sizeof(*metadata));
+    }
+    free(owned->public_storage);
+    free(owned->children.object_pairs);
+    owned->public_storage = pairs;
+    owned->children.object_pairs = metadata;
+    owned->private_cap = capacity;
+    object->u.obj.pairs = pairs;
+    object->u.obj.cap = capacity;
+    return 0;
+}
+
 /* Append a pair, taking ownership of key_owned (no extra dup). */
 static int json_obj_append(neverc_json_value_t *obj, char *key_owned,
                            size_t key_len, neverc_json_value_t *val) {
-    if (obj->u.obj.len >= obj->u.obj.cap) {
-        if (obj->u.obj.cap > INT_MAX / 2) return -1;
-        int nc = obj->u.obj.cap * 2;
-        if (nc < 4) nc = 4;
-        if ((size_t)nc > SIZE_MAX / sizeof(neverc_json_pair_t))
-            return -1;
-        neverc_json_pair_t *np = (neverc_json_pair_t *)realloc(
-            obj->u.obj.pairs, (size_t)nc * sizeof(neverc_json_pair_t));
-        if (!np) return -1;
-        obj->u.obj.pairs = np;
-        obj->u.obj.cap = nc;
+    json_owned_value_t *object_owned = json_owned_find(obj);
+    json_owned_value_t *value_owned = json_owned_find(val);
+    if (!json_object_storage_valid(obj, object_owned) || !value_owned ||
+        value_owned->parent)
+        return -1;
+    if (object_owned->private_len >= object_owned->private_cap) {
+        if (object_owned->private_cap > INT_MAX / 2) return -1;
+        int capacity = object_owned->private_cap == 0
+            ? 4 : object_owned->private_cap * 2;
+        if (json_object_grow(obj, object_owned, capacity) != 0) return -1;
     }
-    obj->u.obj.pairs[obj->u.obj.len].key = key_owned;
-    obj->u.obj.pairs[obj->u.obj.len].value = val;
-    obj->u.obj.pairs[obj->u.obj.len].key_len = key_len;
-    val->parent = obj;
-    obj->u.obj.len++;
+    int index = object_owned->private_len;
+    obj->u.obj.pairs[index].key = key_owned;
+    obj->u.obj.pairs[index].value = val;
+    object_owned->children.object_pairs[index].owned_key = key_owned;
+    object_owned->children.object_pairs[index].key_view = key_owned;
+    object_owned->children.object_pairs[index].key_len = key_len;
+    object_owned->children.object_pairs[index].value = val;
+    object_owned->private_len++;
+    obj->u.obj.len = object_owned->private_len;
+    value_owned->parent = obj;
     return 0;
 }
 
@@ -516,8 +802,14 @@ static NCI_JSON_NOINLINE neverc_json_value_t *parse_object(parser_t *p) {
         neverc_json_value_t *ks = parse_string(p);
         if (!ks) goto err;
         char *key = ks->u.str_val;
-        size_t key_len = ks->string_len;
+        json_owned_value_t *key_owned = json_owned_find(ks);
+        size_t key_len = key_owned ? key_owned->string_len : strlen(key);
         ks->u.str_val = NULL;
+        if (key_owned) {
+            key_owned->owned_string = NULL;
+            key_owned->string_view = NULL;
+            key_owned->string_len = 0;
+        }
         neverc_json_free(ks);
 
         if (consume(p, ':') < 0) { free(key); goto err; }
@@ -529,10 +821,20 @@ static NCI_JSON_NOINLINE neverc_json_value_t *parse_object(parser_t *p) {
             uint32_t h = km_hash(key, key_len);
             int ex = km_lookup(&km, obj, key, key_len, h);
             if (ex >= 0) {                       /* duplicate key: last wins */
-                obj->u.obj.pairs[ex].value->parent = NULL;
-                neverc_json_free(obj->u.obj.pairs[ex].value);
+                json_owned_value_t *object_owned = json_owned_find(obj);
+                neverc_json_value_t *old = obj->u.obj.pairs[ex].value;
+                json_owned_value_t *old_owned = json_owned_find(old);
+                json_owned_value_t *value_owned = json_owned_find(val);
+                if (!object_owned || !old_owned || !value_owned) {
+                    free(key);
+                    neverc_json_free(val);
+                    goto err;
+                }
+                old_owned->parent = NULL;
+                neverc_json_free(old);
                 obj->u.obj.pairs[ex].value = val;
-                val->parent = obj;
+                object_owned->children.object_pairs[ex].value = val;
+                value_owned->parent = obj;
                 free(key);
             } else {
                 if (json_obj_append(obj, key, key_len, val) < 0 ||
@@ -617,41 +919,64 @@ neverc_json_value_t *neverc_json_parse(const char *text, size_t len) {
 static void json_free_owned(neverc_json_value_t *root) {
     neverc_json_value_t *cur = root;
     while (cur) {
-        if (cur->type == NEVERC_JSON_ARRAY && cur->u.arr.len > 0) {
-            neverc_json_value_t *child = cur->u.arr.items[--cur->u.arr.len];
-            if (child) {
-                child->parent = cur;
+        json_owned_value_t *owned = json_owned_find(cur);
+        if (!owned) return;
+        if (owned->owned_type == NEVERC_JSON_ARRAY &&
+            owned->private_len > 0) {
+            int index = --owned->private_len;
+            neverc_json_value_t *child = owned->children.array_values[index];
+            owned->children.array_values[index] = NULL;
+            if (cur->u.arr.items == owned->public_storage &&
+                cur->u.arr.len > index) {
+                cur->u.arr.items[index] = NULL;
+                cur->u.arr.len = index;
+            }
+            json_owned_value_t *child_owned = json_owned_find(child);
+            if (child_owned && child_owned->parent == cur) {
                 cur = child;
+                continue;
             }
             continue;
         }
-        if (cur->type == NEVERC_JSON_OBJECT && cur->u.obj.len > 0) {
-            neverc_json_pair_t *pair = &cur->u.obj.pairs[--cur->u.obj.len];
-            free(pair->key);
-            pair->key = NULL;
+        if (owned->owned_type == NEVERC_JSON_OBJECT &&
+            owned->private_len > 0) {
+            int index = --owned->private_len;
+            json_pair_meta_t *pair = &owned->children.object_pairs[index];
+            free(pair->owned_key);
+            pair->owned_key = NULL;
+            pair->key_view = NULL;
             neverc_json_value_t *child = pair->value;
             pair->value = NULL;
-            if (child) {
-                child->parent = cur;
+            if (cur->u.obj.pairs == owned->public_storage &&
+                cur->u.obj.len > index) {
+                cur->u.obj.pairs[index].key = NULL;
+                cur->u.obj.pairs[index].value = NULL;
+                cur->u.obj.len = index;
+            }
+            json_owned_value_t *child_owned = json_owned_find(child);
+            if (child_owned && child_owned->parent == cur) {
                 cur = child;
+                continue;
             }
             continue;
         }
 
-        neverc_json_value_t *parent = (cur == root) ? NULL : cur->parent;
-        if (cur->type == NEVERC_JSON_STRING)
-            free(cur->u.str_val);
-        else if (cur->type == NEVERC_JSON_ARRAY)
-            free(cur->u.arr.items);
-        else if (cur->type == NEVERC_JSON_OBJECT)
-            free(cur->u.obj.pairs);
-        free(cur);
+        neverc_json_value_t *parent = (cur == root) ? NULL : owned->parent;
+        free(owned->owned_string);
+        free(owned->public_storage);
+        if (owned->owned_type == NEVERC_JSON_ARRAY)
+            free(owned->children.array_values);
+        else if (owned->owned_type == NEVERC_JSON_OBJECT)
+            free(owned->children.object_pairs);
+        (void)json_registry_remove(cur);
+        free(owned);
         cur = parent;
     }
 }
 
 void neverc_json_free(neverc_json_value_t *v) {
-    if (!v || v->parent) return;
+    json_owned_value_t *owned = json_owned_find(v);
+    if (!owned || owned->parent) return;
     json_free_owned(v);
 }
 
@@ -771,6 +1096,8 @@ static NCI_JSON_NOINLINE int marshal_number(marshal_t *m, double val) {
 static NCI_JSON_NOINLINE int marshal_value(
     marshal_t *m, const neverc_json_value_t *v) {
     if (!v) return -1;
+    json_owned_value_t *owned = json_owned_find(v);
+    if (owned && v->type != owned->owned_type) return -1;
     switch (v->type) {
         case NEVERC_JSON_NULL:
             return mw(m, "null", 4);
@@ -778,13 +1105,14 @@ static NCI_JSON_NOINLINE int marshal_value(
             return v->u.bool_val ? mw(m, "true", 4) : mw(m, "false", 5);
         case NEVERC_JSON_NUMBER:
             return marshal_number(m, v->u.num_val);
-        case NEVERC_JSON_STRING:
-            return marshal_string(m, v->u.str_val,
-                                  v->string_len == 0 && v->u.str_val &&
-                                          v->u.str_val[0] != '\0'
-                                      ? strlen(v->u.str_val)
-                                      : v->string_len);
+        case NEVERC_JSON_STRING: {
+            if (owned && v->u.str_val != owned->string_view) return -1;
+            size_t length = owned ? owned->string_len
+                                  : (v->u.str_val ? strlen(v->u.str_val) : 0U);
+            return marshal_string(m, v->u.str_val, length);
+        }
         case NEVERC_JSON_ARRAY: {
+            if (owned && !json_array_shape_valid(v, owned)) return -1;
             if (v->u.arr.len < 0 || v->u.arr.cap < 0 ||
                 v->u.arr.len > v->u.arr.cap ||
                 (v->u.arr.len > 0 && !v->u.arr.items) ||
@@ -802,6 +1130,7 @@ static NCI_JSON_NOINLINE int marshal_value(
             return mw_char(m, ']');
         }
         case NEVERC_JSON_OBJECT: {
+            if (owned && !json_object_shape_valid(v, owned)) return -1;
             if (v->u.obj.len < 0 || v->u.obj.cap < 0 ||
                 v->u.obj.len > v->u.obj.cap ||
                 (v->u.obj.len > 0 && !v->u.obj.pairs) ||
@@ -813,9 +1142,7 @@ static NCI_JSON_NOINLINE int marshal_value(
                 if (i > 0) { if (mw_char(m, ',') < 0) return -1; }
                 if (m->indent) { if (mw_indent(m) < 0) return -1; }
                 const neverc_json_pair_t *pair = &v->u.obj.pairs[i];
-                size_t key_len = pair->key_len;
-                if (key_len == 0 && pair->key && pair->key[0] != '\0')
-                    key_len = strlen(pair->key);
+                size_t key_len = json_pair_key_length(v, i, pair);
                 if (marshal_string(m, pair->key, key_len) < 0) return -1;
                 if (mw_char(m, ':') < 0) return -1;
                 if (m->indent) { if (mw_char(m, ' ') < 0) return -1; }
@@ -861,39 +1188,62 @@ double neverc_json_number(const neverc_json_value_t *v) {
 }
 
 const char *neverc_json_string(const neverc_json_value_t *v) {
-    return (v && v->type == NEVERC_JSON_STRING) ? v->u.str_val : "";
+    if (!v || v->type != NEVERC_JSON_STRING) return "";
+    json_owned_value_t *owned = json_owned_find(v);
+    if (owned && (owned->owned_type != NEVERC_JSON_STRING ||
+                  v->u.str_val != owned->string_view))
+        return "";
+    return v->u.str_val ? v->u.str_val : "";
 }
 
 size_t neverc_json_string_len(const neverc_json_value_t *v) {
     if (!v || v->type != NEVERC_JSON_STRING || !v->u.str_val) return 0;
-    if (v->string_len == 0 && v->u.str_val[0] != '\0')
-        return strlen(v->u.str_val);
-    return v->string_len;
+    json_owned_value_t *owned = json_owned_find(v);
+    if (owned) {
+        if (owned->owned_type != NEVERC_JSON_STRING ||
+            v->u.str_val != owned->string_view)
+            return 0;
+        return owned->string_len;
+    }
+    return strlen(v->u.str_val);
 }
 
 int neverc_json_array_len(const neverc_json_value_t *v) {
-    return (v && v->type == NEVERC_JSON_ARRAY) ? v->u.arr.len : 0;
+    if (!v || v->type != NEVERC_JSON_ARRAY) return 0;
+    json_owned_value_t *owned = json_owned_find(v);
+    if (owned && !json_array_shape_valid(v, owned)) return 0;
+    return v->u.arr.len >= 0 ? v->u.arr.len : 0;
 }
 
 neverc_json_value_t *neverc_json_array_get(const neverc_json_value_t *v, int idx) {
-    if (!v || v->type != NEVERC_JSON_ARRAY || idx < 0 || idx >= v->u.arr.len)
+    if (!v || v->type != NEVERC_JSON_ARRAY || idx < 0 ||
+        v->u.arr.len < 0 || v->u.arr.cap < 0 ||
+        v->u.arr.len > v->u.arr.cap || idx >= v->u.arr.len ||
+        !v->u.arr.items)
         return NULL;
+    json_owned_value_t *owned = json_owned_find(v);
+    if (owned && !json_array_shape_valid(v, owned)) return NULL;
     return v->u.arr.items[idx];
 }
 
 int neverc_json_object_len(const neverc_json_value_t *v) {
-    return (v && v->type == NEVERC_JSON_OBJECT) ? v->u.obj.len : 0;
+    if (!v || v->type != NEVERC_JSON_OBJECT) return 0;
+    json_owned_value_t *owned = json_owned_find(v);
+    if (owned && !json_object_shape_valid(v, owned)) return 0;
+    return v->u.obj.len >= 0 ? v->u.obj.len : 0;
 }
 
 neverc_json_value_t *neverc_json_object_get_n(
     const neverc_json_value_t *v, const char *key, size_t key_len) {
     if (!v || v->type != NEVERC_JSON_OBJECT ||
-        (!key && key_len > 0)) return NULL;
+        (!key && key_len > 0) || v->u.obj.len < 0 || v->u.obj.cap < 0 ||
+        v->u.obj.len > v->u.obj.cap ||
+        (v->u.obj.len > 0 && !v->u.obj.pairs)) return NULL;
+    json_owned_value_t *owned = json_owned_find(v);
+    if (owned && !json_object_shape_valid(v, owned)) return NULL;
     for (int i = 0; i < v->u.obj.len; i++) {
         const neverc_json_pair_t *pair = &v->u.obj.pairs[i];
-        size_t pair_len = pair->key_len;
-        if (pair_len == 0 && pair->key && pair->key[0] != '\0')
-            pair_len = strlen(pair->key);
+        size_t pair_len = json_pair_key_length(v, i, pair);
         if (pair->key && pair_len == key_len &&
             (key_len == 0 || memcmp(pair->key, key, key_len) == 0))
             return pair->value;
@@ -927,8 +1277,11 @@ neverc_json_value_t *neverc_json_new_string_n(const char *s, size_t len) {
     neverc_json_value_t *v = alloc_val(NEVERC_JSON_STRING);
     if (v) {
         v->u.str_val = dup_str(s, len);
-        if (!v->u.str_val) { free(v); return NULL; }
-        v->string_len = len;
+        if (!v->u.str_val) { json_free_single_allocation(v); return NULL; }
+        json_owned_value_t *owned = json_owned_find(v);
+        owned->owned_string = v->u.str_val;
+        owned->string_view = v->u.str_val;
+        owned->string_len = len;
     }
     return v;
 }
@@ -940,9 +1293,11 @@ neverc_json_value_t *neverc_json_new_string(const char *s) {
 neverc_json_value_t *neverc_json_new_array(void) {
     neverc_json_value_t *v = alloc_val(NEVERC_JSON_ARRAY);
     if (v) {
-        v->u.arr.cap = 8;
-        v->u.arr.items = (neverc_json_value_t **)calloc((size_t)v->u.arr.cap, sizeof(neverc_json_value_t *));
-        if (!v->u.arr.items) { free(v); return NULL; }
+        json_owned_value_t *owned = json_owned_find(v);
+        if (!owned || json_array_grow(v, owned, 8) != 0) {
+            json_free_single_allocation(v);
+            return NULL;
+        }
     }
     return v;
 }
@@ -950,87 +1305,100 @@ neverc_json_value_t *neverc_json_new_array(void) {
 neverc_json_value_t *neverc_json_new_object(void) {
     neverc_json_value_t *v = alloc_val(NEVERC_JSON_OBJECT);
     if (v) {
-        v->u.obj.cap = 8;
-        v->u.obj.pairs = (neverc_json_pair_t *)calloc((size_t)v->u.obj.cap, sizeof(neverc_json_pair_t));
-        if (!v->u.obj.pairs) { free(v); return NULL; }
+        json_owned_value_t *owned = json_owned_find(v);
+        if (!owned || json_object_grow(v, owned, 8) != 0) {
+            json_free_single_allocation(v);
+            return NULL;
+        }
     }
     return v;
 }
 
 static int json_would_create_cycle(const neverc_json_value_t *container,
                                    const neverc_json_value_t *child) {
-    for (const neverc_json_value_t *p = container; p; p = p->parent)
+    const neverc_json_value_t *p = container;
+    while (p) {
         if (p == child) return 1;
+        json_owned_value_t *owned = json_owned_find(p);
+        if (!owned) return 1;
+        p = owned->parent;
+    }
     return 0;
 }
 
 int neverc_json_array_append(neverc_json_value_t *arr, neverc_json_value_t *val) {
-    if (!arr || arr->type != NEVERC_JSON_ARRAY || !val ||
-        val->parent || json_would_create_cycle(arr, val) ||
-        arr->u.arr.len < 0 || arr->u.arr.cap < 0 ||
-        arr->u.arr.len > arr->u.arr.cap ||
-        (arr->u.arr.cap > 0 && !arr->u.arr.items)) return -1;
-    if (arr->u.arr.len >= arr->u.arr.cap) {
-        if (arr->u.arr.cap > INT_MAX / 2) return -1;
-        int nc = arr->u.arr.cap == 0 ? 8 : arr->u.arr.cap * 2;
-        if ((size_t)nc > SIZE_MAX / sizeof(neverc_json_value_t *))
-            return -1;
-        neverc_json_value_t **ni = (neverc_json_value_t **)realloc(arr->u.arr.items, (size_t)nc * sizeof(neverc_json_value_t *));
-        if (!ni) return -1;
-        arr->u.arr.items = ni;
-        arr->u.arr.cap = nc;
+    json_owned_value_t *array_owned = json_owned_find(arr);
+    json_owned_value_t *value_owned = json_owned_find(val);
+    if (!json_array_storage_valid(arr, array_owned) || !value_owned ||
+        value_owned->parent || json_would_create_cycle(arr, val))
+        return -1;
+    if (array_owned->private_len >= array_owned->private_cap) {
+        if (array_owned->private_cap > INT_MAX / 2) return -1;
+        int capacity = array_owned->private_cap == 0
+            ? 8 : array_owned->private_cap * 2;
+        if (json_array_grow(arr, array_owned, capacity) != 0) return -1;
     }
-    arr->u.arr.items[arr->u.arr.len++] = val;
-    val->parent = arr;
+    int index = array_owned->private_len++;
+    arr->u.arr.items[index] = val;
+    arr->u.arr.len = array_owned->private_len;
+    array_owned->children.array_values[index] = val;
+    value_owned->parent = arr;
     return 0;
 }
 
 int neverc_json_object_set_n(neverc_json_value_t *obj,
                              const char *key, size_t key_len,
                              neverc_json_value_t *val) {
-    if (!obj || obj->type != NEVERC_JSON_OBJECT ||
-        (!key && key_len > 0) || key_len == SIZE_MAX || !val ||
-        !valid_utf8(key, key_len) ||
-        obj->u.obj.len < 0 || obj->u.obj.cap < 0 ||
-        obj->u.obj.len > obj->u.obj.cap ||
-        (obj->u.obj.cap > 0 && !obj->u.obj.pairs)) return -1;
+    json_owned_value_t *object_owned = json_owned_find(obj);
+    json_owned_value_t *value_owned = json_owned_find(val);
+    if (!json_object_storage_valid(obj, object_owned) ||
+        (!key && key_len > 0) || key_len == SIZE_MAX || !value_owned ||
+        !valid_utf8(key, key_len))
+        return -1;
     /* overwrite existing key */
-    for (int i = 0; i < obj->u.obj.len; i++) {
+    for (int i = 0; i < object_owned->private_len; i++) {
         neverc_json_pair_t *pair = &obj->u.obj.pairs[i];
-        size_t pair_len = pair->key_len;
-        if (pair_len == 0 && pair->key && pair->key[0] != '\0')
-            pair_len = strlen(pair->key);
+        json_pair_meta_t *pair_meta =
+            &object_owned->children.object_pairs[i];
+        if (pair->key != pair_meta->key_view ||
+            pair->value != pair_meta->value)
+            return -1;
+        size_t pair_len = pair_meta->key_len;
         if (pair->key && pair_len == key_len &&
             (key_len == 0 || memcmp(pair->key, key, key_len) == 0)) {
             if (pair->value == val) return 0;
-            if (val->parent || json_would_create_cycle(obj, val)) return -1;
+            if (value_owned->parent || json_would_create_cycle(obj, val))
+                return -1;
             if (pair->value) {
-                pair->value->parent = NULL;
+                json_owned_value_t *old_owned = json_owned_find(pair->value);
+                if (!old_owned || old_owned->parent != obj) return -1;
+                old_owned->parent = NULL;
                 neverc_json_free(pair->value);
             }
             pair->value = val;
-            val->parent = obj;
+            pair_meta->value = val;
+            value_owned->parent = obj;
             return 0;
         }
     }
-    if (val->parent || json_would_create_cycle(obj, val)) return -1;
-    if (obj->u.obj.len >= obj->u.obj.cap) {
-        if (obj->u.obj.cap > INT_MAX / 2) return -1;
-        int nc = obj->u.obj.cap == 0 ? 8 : obj->u.obj.cap * 2;
-        if ((size_t)nc > SIZE_MAX / sizeof(neverc_json_pair_t))
-            return -1;
-        neverc_json_pair_t *np = (neverc_json_pair_t *)realloc(obj->u.obj.pairs, (size_t)nc * sizeof(neverc_json_pair_t));
-        if (!np) return -1;
-        obj->u.obj.pairs = np;
-        obj->u.obj.cap = nc;
+    if (value_owned->parent || json_would_create_cycle(obj, val)) return -1;
+    if (object_owned->private_len >= object_owned->private_cap) {
+        if (object_owned->private_cap > INT_MAX / 2) return -1;
+        int capacity = object_owned->private_cap == 0
+            ? 8 : object_owned->private_cap * 2;
+        if (json_object_grow(obj, object_owned, capacity) != 0) return -1;
     }
     char *owned_key = dup_str(key, key_len);
     if (!owned_key) return -1;
-    obj->u.obj.pairs[obj->u.obj.len].key = owned_key;
-    obj->u.obj.pairs[obj->u.obj.len].value = val;
-    obj->u.obj.pairs[obj->u.obj.len].key_len = key_len;
-    obj->u.obj.len++;
-    val->parent = obj;
+    int index = object_owned->private_len++;
+    obj->u.obj.pairs[index].key = owned_key;
+    obj->u.obj.pairs[index].value = val;
+    object_owned->children.object_pairs[index].owned_key = owned_key;
+    object_owned->children.object_pairs[index].key_view = owned_key;
+    object_owned->children.object_pairs[index].key_len = key_len;
+    object_owned->children.object_pairs[index].value = val;
+    obj->u.obj.len = object_owned->private_len;
+    value_owned->parent = obj;
     return 0;
 }
 

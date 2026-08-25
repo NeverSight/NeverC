@@ -308,6 +308,8 @@ STD_TEST(protobuf, "src/encoding/protobuf/protobuf.c",
          "src/encoding/protobuf/protobuf_message.c")
 STD_TEST(pem, "src/encoding/pem/pem.c", "src/encoding/base64/base64.c")
 STD_TEST(json, "src/encoding/json/json.c", "src/strconv/format_float.c", "src/strconv/parse_float.c")
+STD_TEST(json_abi, "src/encoding/json/json.c",
+         "src/strconv/format_float.c", "src/strconv/parse_float.c")
 TEST_F(StdLibTest, JsonAllocationFailure) {
   auto r = compileAndRunStdTest(
       "json_oom",
