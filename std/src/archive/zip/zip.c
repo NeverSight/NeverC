@@ -283,11 +283,72 @@ void neverc_zip_reader_free(neverc_zip_reader_t *r) {
 }
 
 /* Writer */
+typedef struct {
+    uint32_t magic;
+    uint8_t closed;
+    uint8_t failed;
+} zip_writer_meta_t;
+
+#define ZIP_WRITER_META_MAGIC UINT32_C(0x5a495057)
+
+static zip_writer_meta_t zip_writer_meta_default(void) {
+    zip_writer_meta_t meta;
+    memset(&meta, 0, sizeof(meta));
+    meta.magic = ZIP_WRITER_META_MAGIC;
+    return meta;
+}
+
+static int zip_writer_meta_load(const neverc_zip_writer_t *w,
+                                zip_writer_meta_t *meta) {
+    if (!meta) return 0;
+    *meta = zip_writer_meta_default();
+    if (!w || !w->data || w->cap > SIZE_MAX - sizeof(*meta)) return 0;
+    memcpy(meta, w->data + w->cap, sizeof(*meta));
+    if (meta->magic != ZIP_WRITER_META_MAGIC) {
+        *meta = zip_writer_meta_default();
+        return 0;
+    }
+    return 1;
+}
+
+static void zip_writer_meta_store(neverc_zip_writer_t *w,
+                                  const zip_writer_meta_t *meta) {
+    if (!w || !w->data || !meta ||
+        w->cap > SIZE_MAX - sizeof(*meta))
+        return;
+    memcpy(w->data + w->cap, meta, sizeof(*meta));
+}
+
+static int zip_writer_is_closed(const neverc_zip_writer_t *w) {
+    zip_writer_meta_t meta;
+    return zip_writer_meta_load(w, &meta) && meta.closed != 0;
+}
+
+static int zip_writer_has_failed(const neverc_zip_writer_t *w) {
+    zip_writer_meta_t meta;
+    return zip_writer_meta_load(w, &meta) && meta.failed != 0;
+}
+
+static void zip_writer_set_failed(neverc_zip_writer_t *w) {
+    zip_writer_meta_t meta;
+    (void)zip_writer_meta_load(w, &meta);
+    meta.failed = 1;
+    zip_writer_meta_store(w, &meta);
+}
+
+static void zip_writer_set_closed(neverc_zip_writer_t *w) {
+    zip_writer_meta_t meta;
+    (void)zip_writer_meta_load(w, &meta);
+    meta.closed = 1;
+    zip_writer_meta_store(w, &meta);
+}
+
 void neverc_zip_writer_init(neverc_zip_writer_t *w) {
     if (!w) return;
     memset(w, 0, sizeof(*w));
     w->cap = 4096;
-    w->data = (uint8_t *)malloc(w->cap);
+    w->data = w->cap <= SIZE_MAX - sizeof(zip_writer_meta_t)
+        ? (uint8_t *)malloc(w->cap + sizeof(zip_writer_meta_t)) : NULL;
     w->entries_cap = 16;
     w->entries = (neverc_zip_file_header_t *)malloc(w->entries_cap * sizeof(neverc_zip_file_header_t));
     w->offsets = (uint32_t *)malloc(w->entries_cap * sizeof(uint32_t));
@@ -300,6 +361,9 @@ void neverc_zip_writer_init(neverc_zip_writer_t *w) {
         w->offsets = NULL;
         w->cap = 0;
         w->entries_cap = 0;
+    } else {
+        zip_writer_meta_t meta = zip_writer_meta_default();
+        zip_writer_meta_store(w, &meta);
     }
 }
 
@@ -315,10 +379,22 @@ static int wgrow(neverc_zip_writer_t *w, size_t need) {
         }
         next *= 2;
     }
-    uint8_t *grown = (uint8_t *)realloc(w->data, next);
+    if (next > SIZE_MAX - sizeof(zip_writer_meta_t)) return 0;
+    size_t old_cap = w->cap;
+    zip_writer_meta_t meta;
+    (void)zip_writer_meta_load(w, &meta);
+    uint8_t *grown = (uint8_t *)realloc(
+        w->data, next + sizeof(zip_writer_meta_t));
     if (!grown) return 0;
     w->data = grown;
     w->cap = next;
+    if (old_cap < next) {
+        size_t cleared = next - old_cap;
+        if (cleared > sizeof(zip_writer_meta_t))
+            cleared = sizeof(zip_writer_meta_t);
+        memset(w->data + old_cap, 0, cleared);
+    }
+    zip_writer_meta_store(w, &meta);
     return 1;
 }
 
@@ -353,7 +429,8 @@ static int wentries_grow(neverc_zip_writer_t *w) {
 
 int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
                           const uint8_t *data, size_t len) {
-    if (!w || !name || w->closed || w->failed ||
+    if (!w || !name || zip_writer_is_closed(w) ||
+        zip_writer_has_failed(w) ||
         (!data && len != 0) || len > UINT32_MAX ||
         w->len > UINT32_MAX || w->nentries < 0 ||
         w->nentries >= UINT16_MAX - 1 ||
@@ -403,12 +480,12 @@ int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
 }
 
 int neverc_zip_writer_close(neverc_zip_writer_t *w) {
-    if (!w || w->failed || w->nentries < 0 ||
+    if (!w || zip_writer_has_failed(w) || w->nentries < 0 ||
         w->nentries >= UINT16_MAX || w->nentries > w->entries_cap ||
         (w->nentries > 0 && (!w->entries || !w->offsets)) ||
         w->len > UINT32_MAX)
         return -1;
-    if (w->closed) return 0;
+    if (zip_writer_is_closed(w)) return 0;
 
     size_t central_bytes = 0;
     for (int i = 0; i < w->nentries; i++) {
@@ -423,7 +500,7 @@ int neverc_zip_writer_close(neverc_zip_writer_t *w) {
         w->len > UINT32_MAX - central_bytes - 22U ||
         central_bytes > SIZE_MAX - 22U ||
         !wgrow(w, central_bytes + 22U)) {
-        w->failed = 1;
+        zip_writer_set_failed(w);
         return -1;
     }
     uint32_t cd_start = (uint32_t)w->len;
@@ -467,7 +544,7 @@ int neverc_zip_writer_close(neverc_zip_writer_t *w) {
     write32(p + 16, cd_start);
     write16(p + 20, 0);
     w->len += 22;
-    w->closed = 1;
+    zip_writer_set_closed(w);
 
     return 0;
 }

@@ -590,6 +590,9 @@ TEST_F(StdLibTest, TarAllocationFailure) {
 }
 STD_TEST(zip, "src/archive/zip/zip.c", "src/hash/crc32/crc32.c",
          "src/io/fs/fs.c", "src/path/match.c", "src/unicode/utf8/utf8.c")
+STD_TEST(zip_writer_abi, "src/archive/zip/zip.c",
+         "src/hash/crc32/crc32.c", "src/io/fs/fs.c", "src/path/match.c",
+         "src/unicode/utf8/utf8.c")
 TEST_F(StdLibTest, ZipAllocationFailure) {
   auto r = compileAndRunStdTest(
       "zip_oom",

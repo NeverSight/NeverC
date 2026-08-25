@@ -72,6 +72,28 @@ UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
   -Wall \
   -Wextra \
   -Werror \
+  -fsanitize=address,undefined \
+  "-I$std_root/include" \
+  "$test_root/test_zip_writer_abi.c" \
+  "$std_root/src/archive/zip/zip.c" \
+  "$std_root/src/hash/crc32/crc32.c" \
+  "$std_root/src/io/fs/fs.c" \
+  "$std_root/src/path/match.c" \
+  "$std_root/src/unicode/utf8/utf8.c" \
+  -o "$work_dir/zip-writer-abi-asan-ubsan"
+
+ASAN_OPTIONS=${ASAN_OPTIONS:-halt_on_error=1:detect_leaks=1} \
+UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
+  "$work_dir/zip-writer-abi-asan-ubsan"
+
+"$compiler" \
+  -std=gnu11 \
+  -O1 \
+  -g \
+  -fno-omit-frame-pointer \
+  -Wall \
+  -Wextra \
+  -Werror \
   -fsanitize=thread \
   "-I$std_root/include" \
   "$test_root/test_rand_concurrency.c" \

@@ -58,8 +58,6 @@ typedef struct {
     neverc_zip_file_header_t *entries;
     int      nentries;
     int      entries_cap;
-    int      closed;
-    int      failed;
 } neverc_zip_writer_t;
 
 /* The writer owns its output and entry arrays. The completed archive remains
