@@ -181,10 +181,6 @@ typedef struct {
 
     neverc_dwarf_abbrev_t *abbrevs;
     int                    abbrev_count;
-
-    /* 0 = little-endian (default after init), 1 = big-endian. DWARF follows
-     * the object file's EI_DATA / equivalent; LEB128 is still little-endian. */
-    int big_endian;
 } neverc_dwarf_data_t;
 
 /* ===== Functions ===== */
@@ -194,6 +190,13 @@ int neverc_dwarf_init(neverc_dwarf_data_t *d,
                        const uint8_t *debug_info, size_t info_len,
                        const uint8_t *debug_abbrev, size_t abbrev_len,
                        const uint8_t *debug_str, size_t str_len);
+
+/* DWARF follows the object file's byte order; LEB128 remains little-endian.
+ * Initialized data defaults to little-endian. These return -1 for invalid
+ * values or data not initialized by this library instance. */
+int neverc_dwarf_set_big_endian(neverc_dwarf_data_t *d, int big_endian);
+int neverc_dwarf_get_big_endian(const neverc_dwarf_data_t *d,
+                                 int *big_endian);
 
 void neverc_dwarf_free(neverc_dwarf_data_t *d);
 

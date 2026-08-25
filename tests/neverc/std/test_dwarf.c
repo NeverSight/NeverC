@@ -326,6 +326,7 @@ static void test_dwarf_implicit_const(void) {
           neverc_dwarf_init(&d, v4_info, sizeof(v4_info),
                             abbrev, sizeof(abbrev), NULL, 0) == 0 &&
           neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+    neverc_dwarf_free(&d);
 }
 
 static void test_dwarf_line_string(void) {
@@ -642,6 +643,7 @@ static void test_dwarf_malformed(void) {
                             unterminated_str,
                             sizeof(unterminated_str)) == 0 &&
           neverc_dwarf_get_string(&d, 0) == NULL);
+    neverc_dwarf_free(&d);
 }
 
 static void test_dwarf_v5_type_header(void) {
@@ -681,6 +683,7 @@ static void test_dwarf_v5_type_header(void) {
           legacy.header.address_size == 8);
     CHECK("legacy header size preserved",
           legacy.canary == UINT64_C(0xa5a5a5a5a5a5a5a5));
+    neverc_dwarf_free(&d);
 }
 
 static void put16be(uint8_t *p, uint16_t v) {
@@ -719,7 +722,7 @@ static void test_dwarf_big_endian(void) {
     CHECK("LE parse rejects BE header",
           neverc_dwarf_parse_comp_unit(&d, 0, &hdr) < 0);
 
-    d.big_endian = 1;
+    CHECK("BE mode set", neverc_dwarf_set_big_endian(&d, 1) == 0);
     CHECK("BE header parse",
           neverc_dwarf_parse_comp_unit(&d, 0, &hdr) == 0);
     CHECK("BE version and addr size",

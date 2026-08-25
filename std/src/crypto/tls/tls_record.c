@@ -809,6 +809,29 @@ int neverc_tls_test_reject_post_handshake_ticket_flood(void) {
     return valid ? 0 : -1;
 }
 
+typedef struct {
+    neverc_tls_conn_t *conn;
+    uint8_t *buffer;
+    size_t buffer_len;
+    int result;
+} tls_test_max_record_reader_t;
+
+#ifdef _WIN32
+static DWORD WINAPI tls_test_max_record_reader_thread(LPVOID arg) {
+#else
+static void *tls_test_max_record_reader_thread(void *arg) {
+#endif
+    tls_test_max_record_reader_t *reader =
+        (tls_test_max_record_reader_t *)arg;
+    reader->result = neverc_tls_read(
+        reader->conn, reader->buffer, reader->buffer_len);
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
 int neverc_tls_test_max_plaintext_application_record(void) {
     neverc_tls_conn_t *reader_conn = NULL;
     neverc_tls_conn_t *writer_conn = NULL;
@@ -827,12 +850,47 @@ int neverc_tls_test_max_plaintext_application_record(void) {
     }
     for (size_t i = 0; i < TLS_MAX_PLAINTEXT; i++)
         sent[i] = (uint8_t)i;
+
+    /* Keep this as one maximum-sized TLS record, but drain it concurrently.
+     * A 16 KiB plaintext record plus TLS framing is larger than the default
+     * buffer of some socketpair implementations (notably macOS AF_UNIX), so
+     * writing the complete record before starting the reader can deadlock. */
+    tls_test_max_record_reader_t reader = {
+        reader_conn, received, TLS_MAX_PLAINTEXT, -1
+    };
+#ifdef _WIN32
+    HANDLE reader_thread = CreateThread(
+        NULL, 0, tls_test_max_record_reader_thread, &reader, 0, NULL);
+    int reader_started = reader_thread != NULL;
+#else
+    pthread_t reader_thread;
+    int reader_started = pthread_create(
+        &reader_thread, NULL, tls_test_max_record_reader_thread, &reader) == 0;
+#endif
+    if (!reader_started) {
+        free(sent);
+        free(received);
+        neverc_tls_close(reader_conn);
+        neverc_tls_close(writer_conn);
+        return -1;
+    }
+
     int written = neverc_tls_write(
         writer_conn, sent, TLS_MAX_PLAINTEXT);
-    int read = neverc_tls_read(
-        reader_conn, received, TLS_MAX_PLAINTEXT);
+    if (written != TLS_MAX_PLAINTEXT) {
+        /* Wake a reader that is waiting for the remainder of a failed write
+         * before joining it. */
+        neverc_tls_close(writer_conn);
+        writer_conn = NULL;
+    }
+#ifdef _WIN32
+    WaitForSingleObject(reader_thread, INFINITE);
+    CloseHandle(reader_thread);
+#else
+    pthread_join(reader_thread, NULL);
+#endif
     int valid = written == TLS_MAX_PLAINTEXT &&
-        read == TLS_MAX_PLAINTEXT &&
+        reader.result == TLS_MAX_PLAINTEXT &&
         memcmp(sent, received, TLS_MAX_PLAINTEXT) == 0;
     free(sent);
     free(received);

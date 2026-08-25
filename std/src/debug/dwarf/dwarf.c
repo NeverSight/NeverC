@@ -5,8 +5,119 @@
  */
 #include "neverc/std/debug/dwarf.h"
 #include <limits.h>
+#include <stdatomic.h>
 #include <string.h>
 #include <stdlib.h>
+
+#ifndef NEVERC_DWARF_CALLOC
+#define NEVERC_DWARF_CALLOC calloc
+#endif
+
+/* The v3389 public data structure has no spare bytes on 32-bit targets.
+ * Lifecycle-bound byte-order state therefore lives in a registry keyed by
+ * the initialized public object's address. Registry operations copy the flag
+ * while locked and never return a state pointer that free could invalidate. */
+typedef struct dwarf_data_state {
+    uintptr_t key;
+    int big_endian;
+    struct dwarf_data_state *next;
+} dwarf_data_state_t;
+
+#define DWARF_STATE_BUCKET_COUNT 64U
+
+static atomic_flag dwarf_state_lock_flag = ATOMIC_FLAG_INIT;
+static dwarf_data_state_t *dwarf_state_buckets[DWARF_STATE_BUCKET_COUNT];
+
+static void dwarf_state_lock(void) {
+    while (atomic_flag_test_and_set_explicit(
+               &dwarf_state_lock_flag, memory_order_acquire)) {
+    }
+}
+
+static void dwarf_state_unlock(void) {
+    atomic_flag_clear_explicit(&dwarf_state_lock_flag, memory_order_release);
+}
+
+static size_t dwarf_state_hash(uintptr_t value) {
+    value ^= value >> 7;
+    value ^= value >> 17;
+    value ^= value >> 3;
+    return (size_t)value & (DWARF_STATE_BUCKET_COUNT - 1U);
+}
+
+static dwarf_data_state_t **dwarf_state_find_link_locked(
+    const neverc_dwarf_data_t *d) {
+    uintptr_t key = (uintptr_t)d;
+    dwarf_data_state_t **link = &dwarf_state_buckets[dwarf_state_hash(key)];
+    while (*link && (*link)->key != key)
+        link = &(*link)->next;
+    return link;
+}
+
+static int dwarf_state_register(neverc_dwarf_data_t *d) {
+    dwarf_data_state_t *state =
+        (dwarf_data_state_t *)NEVERC_DWARF_CALLOC(1, sizeof(*state));
+    if (!state)
+        return -1;
+    state->key = (uintptr_t)d;
+
+    dwarf_state_lock();
+    dwarf_data_state_t **link = dwarf_state_find_link_locked(d);
+    if (*link) {
+        dwarf_state_unlock();
+        free(state);
+        return -1;
+    }
+    size_t bucket = dwarf_state_hash(state->key);
+    state->next = dwarf_state_buckets[bucket];
+    dwarf_state_buckets[bucket] = state;
+    dwarf_state_unlock();
+    return 0;
+}
+
+static int dwarf_state_unregister(neverc_dwarf_data_t *d) {
+    if (!d)
+        return -1;
+    dwarf_state_lock();
+    dwarf_data_state_t **link = dwarf_state_find_link_locked(d);
+    dwarf_data_state_t *state = *link;
+    if (state)
+        *link = state->next;
+    dwarf_state_unlock();
+    if (!state)
+        return -1;
+    free(state);
+    return 0;
+}
+
+static int dwarf_state_get_big_endian(const neverc_dwarf_data_t *d,
+                                      int *big_endian) {
+    if (!big_endian)
+        return -1;
+    *big_endian = 0;
+    if (!d)
+        return -1;
+    dwarf_state_lock();
+    dwarf_data_state_t *state = *dwarf_state_find_link_locked(d);
+    if (state)
+        *big_endian = state->big_endian;
+    int found = state != NULL;
+    dwarf_state_unlock();
+    return found ? 0 : -1;
+}
+
+static int dwarf_state_set_big_endian(neverc_dwarf_data_t *d,
+                                      int big_endian) {
+    if (!d || (big_endian != 0 && big_endian != 1))
+        return -1;
+    dwarf_state_lock();
+    dwarf_data_state_t *state = *dwarf_state_find_link_locked(d);
+    if (state)
+        state->big_endian = big_endian;
+    int found = state != NULL;
+    dwarf_state_unlock();
+    return found ? 0 : -1;
+}
 
 /* ===== LEB128 decoding ===== */
 
@@ -192,6 +303,11 @@ int neverc_dwarf_init(neverc_dwarf_data_t *d,
                        const uint8_t *debug_str, size_t str_len) {
     if (!d)
         return -1;
+    /* A registered object owns the abbreviation cache in its public fields.
+     * Release it before replacing that lifetime. If no state exists, never
+     * inspect the public bytes: they may be foreign or uninitialized. */
+    if (dwarf_state_unregister(d) == 0)
+        free_abbrevs(d);
     memset(d, 0, sizeof(*d));
     if ((!debug_info && info_len != 0) ||
         (!debug_abbrev && abbrev_len != 0) ||
@@ -203,18 +319,38 @@ int neverc_dwarf_init(neverc_dwarf_data_t *d,
     d->debug_abbrev_len = abbrev_len;
     d->debug_str = debug_str;
     d->debug_str_len = str_len;
+    if (dwarf_state_register(d) < 0) {
+        memset(d, 0, sizeof(*d));
+        return -1;
+    }
     return 0;
+}
+
+int neverc_dwarf_set_big_endian(neverc_dwarf_data_t *d, int big_endian) {
+    return dwarf_state_set_big_endian(d, big_endian);
+}
+
+int neverc_dwarf_get_big_endian(const neverc_dwarf_data_t *d,
+                                int *big_endian) {
+    return dwarf_state_get_big_endian(d, big_endian);
 }
 
 void neverc_dwarf_free(neverc_dwarf_data_t *d) {
     if (!d) return;
+    /* A foreign or already-freed public object has no owned state. Do not
+     * inspect its pointers or write its storage. */
+    if (dwarf_state_unregister(d) < 0)
+        return;
     free_abbrevs(d);
     memset(d, 0, sizeof(*d));
 }
 
 const char *neverc_dwarf_get_string(const neverc_dwarf_data_t *d,
                                      uint64_t offset) {
-    if (!d || !d->debug_str || offset >= d->debug_str_len) return NULL;
+    int big_endian;
+    if (dwarf_state_get_big_endian(d, &big_endian) < 0 ||
+        !d->debug_str || offset >= d->debug_str_len)
+        return NULL;
     /* debug_str is file data and may lack a NUL before its end; require one
      * within the table bounds so callers' strlen() cannot read past it. */
     if (memchr(d->debug_str + (size_t)offset, 0,
@@ -226,7 +362,9 @@ const char *neverc_dwarf_get_string(const neverc_dwarf_data_t *d,
 int neverc_dwarf_parse_comp_unit_ex(
     const neverc_dwarf_data_t *d, size_t offset,
     neverc_dwarf_comp_unit_header_ex_t *hdr) {
-    if (!d || !hdr || !d->debug_info ||
+    int be;
+    if (dwarf_state_get_big_endian(d, &be) < 0 ||
+        !hdr || !d->debug_info ||
         offset > d->debug_info_len ||
         d->debug_info_len - offset < 4)
         return -1;
@@ -234,7 +372,6 @@ int neverc_dwarf_parse_comp_unit_ex(
 
     const uint8_t *p = d->debug_info + offset;
     const uint8_t *end = d->debug_info + d->debug_info_len;
-    int be = d->big_endian;
 
     uint32_t init_len = rd32(p, be);
     if (init_len == 0xFFFFFFFF) {
@@ -554,7 +691,8 @@ static int read_form_uint(uint16_t form, uint8_t addr_size, int dwarf64,
 static int read_form_string_depth(uint16_t form,
                                   const neverc_dwarf_data_t *d,
                                   uint8_t addr_size, int dwarf64,
-                                  uint16_t version, const uint8_t **p,
+                                  uint16_t version, int be,
+                                  const uint8_t **p,
                                   const uint8_t *end, const char **value,
                                   unsigned depth) {
     if (depth > 8) return -1;
@@ -579,7 +717,7 @@ static int read_form_string_depth(uint16_t form,
         uint64_t off;
         uint16_t resolved_form = form;
         int rc = read_form_uint(form, addr_size, dwarf64, version,
-                                d->big_endian, p, end, &off, &resolved_form);
+                                be, p, end, &off, &resolved_form);
         if (rc <= 0) return rc;
         if (resolved_form == NEVERC_DW_FORM_strp) {
             if (!d->debug_str || off >= d->debug_str_len ||
@@ -610,7 +748,7 @@ static int read_form_string_depth(uint16_t form,
             actual == 0 || actual > UINT16_MAX)
             return -1;
         return read_form_string_depth(
-            (uint16_t)actual, d, addr_size, dwarf64, version, p, end,
+            (uint16_t)actual, d, addr_size, dwarf64, version, be, p, end,
             value, depth + 1);
     }
     default:
@@ -620,9 +758,9 @@ static int read_form_string_depth(uint16_t form,
 
 static int read_form_string(uint16_t form, const neverc_dwarf_data_t *d,
                             uint8_t addr_size, int dwarf64,
-                            uint16_t version, const uint8_t **p,
+                            uint16_t version, int be, const uint8_t **p,
                             const uint8_t *end, const char **value) {
-    return read_form_string_depth(form, d, addr_size, dwarf64, version,
+    return read_form_string_depth(form, d, addr_size, dwarf64, version, be,
                                   p, end, value, 0);
 }
 
@@ -665,7 +803,8 @@ static int dwarf_form_is_cu_relative_ref(uint16_t form) {
 
 int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
                                neverc_dwarf_entry_cb cb, void *user) {
-    if (!d || !cb) return -1;
+    int be;
+    if (dwarf_state_get_big_endian(d, &be) < 0 || !cb) return -1;
     if (d->debug_info_len == 0) return 0;
     if (!d->debug_info) return -1;
 
@@ -681,7 +820,7 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
             }
             break;
         }
-        uint32_t init_len = rd32(d->debug_info + cu_offset, d->big_endian);
+        uint32_t init_len = rd32(d->debug_info + cu_offset, be);
         if (init_len == 0) {
             /* DWARF32 unit_length 0 is alignment padding, not a CU. */
             cu_offset += 4;
@@ -766,7 +905,7 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
                     const char *s = NULL;
                     int rc = read_form_string(
                         form, d, hdr.address_size, hdr.is_64bit,
-                        hdr.version, &p, end, &s);
+                        hdr.version, be, &p, end, &s);
                     if (rc < 0) {
                         free_abbrevs(&local);
                         return -1;
@@ -784,7 +923,7 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
                 uint16_t resolved_form = form;
                 int rc = read_form_uint(
                     form, hdr.address_size, hdr.is_64bit, hdr.version,
-                    d->big_endian, &p, end, &val, &resolved_form);
+                    be, &p, end, &val, &resolved_form);
                 if (rc < 0) {
                     free_abbrevs(&local);
                     return -1;
@@ -803,7 +942,7 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
                 } else {
                     p = before;
                     if (!skip_form(form, hdr.address_size, hdr.is_64bit,
-                                   hdr.version, d->big_endian, &p, end)) {
+                                   hdr.version, be, &p, end)) {
                         free_abbrevs(&local);
                         return -1;
                     }

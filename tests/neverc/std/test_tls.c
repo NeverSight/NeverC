@@ -2388,36 +2388,36 @@ static void test_session_resumption(void) {
     check_int("resumption_rotated_ticket_server",
               server_resumed, 1);
 
-    check_int("resumption_additional_root_invalidates_client_ticket",
+    check_int("resumption_frozen_config_rejects_additional_root",
               neverc_tls_config_add_root_certificates_mem(
                   client_config, TEST_CLIENT_CERT_PEM,
                   strlen(TEST_CLIENT_CERT_PEM)),
-              0);
+              -1);
     client_resumed = server_resumed = -1;
-    check_int("resumption_root_change_falls_back",
+    check_int("resumption_rejected_root_change_keeps_ticket",
               run_resumption_exchange(
                   server_config, client_config,
                   &client_resumed, &server_resumed),
               1);
-    check_int("resumption_root_change_client_full",
-              client_resumed, 0);
-    check_int("resumption_root_change_server_full",
-              server_resumed, 0);
+    check_int("resumption_rejected_root_change_client_resumes",
+              client_resumed, 1);
+    check_int("resumption_rejected_root_change_server_resumes",
+              server_resumed, 1);
 
-    check_int("resumption_reload_server_identity",
+    check_int("resumption_frozen_config_rejects_identity_reload",
               neverc_tls_config_load_cert_mem(
                   server_config, TEST_CERT_PEM, TEST_KEY_PEM),
-              0);
+              -1);
     client_resumed = server_resumed = -1;
-    check_int("resumption_identity_change_falls_back",
+    check_int("resumption_rejected_identity_change_keeps_ticket",
               run_resumption_exchange(
                   server_config, client_config,
                   &client_resumed, &server_resumed),
               1);
-    check_int("resumption_identity_change_client_full",
-              client_resumed, 0);
-    check_int("resumption_identity_change_server_full",
-              server_resumed, 0);
+    check_int("resumption_rejected_identity_change_client_resumes",
+              client_resumed, 1);
+    check_int("resumption_rejected_identity_change_server_resumes",
+              server_resumed, 1);
 
     check_int("resumption_expire_server_ticket",
               neverc_tls_test_expire_server_sessions(

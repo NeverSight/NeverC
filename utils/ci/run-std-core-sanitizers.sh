@@ -94,6 +94,23 @@ UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
   -Wall \
   -Wextra \
   -Werror \
+  -fsanitize=address,undefined \
+  "-I$std_root/include" \
+  "$test_root/test_dwarf_data_abi.c" \
+  -o "$work_dir/dwarf-data-abi-asan-ubsan"
+
+ASAN_OPTIONS=${ASAN_OPTIONS:-halt_on_error=1:detect_leaks=1} \
+UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
+  "$work_dir/dwarf-data-abi-asan-ubsan"
+
+"$compiler" \
+  -std=gnu11 \
+  -O1 \
+  -g \
+  -fno-omit-frame-pointer \
+  -Wall \
+  -Wextra \
+  -Werror \
   -fsanitize=thread \
   "-I$std_root/include" \
   "$test_root/test_rand_concurrency.c" \
@@ -172,6 +189,25 @@ TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1} \
 
 TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1} \
   "$work_dir/os-tsan"
+
+"$compiler" \
+  -std=gnu11 \
+  -O1 \
+  -g \
+  -fno-omit-frame-pointer \
+  -Wall \
+  -Wextra \
+  -Werror \
+  -fsanitize=thread \
+  -DNEVERC_SIGNAL_SKIP_FORK=1 \
+  "-I$std_root/include" \
+  "$test_root/test_signal_concurrency.c" \
+  "$std_root/src/os/signal/signal.c" \
+  -pthread \
+  -o "$work_dir/signal-tsan"
+
+TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1} \
+  "$work_dir/signal-tsan"
 
 "$compiler" \
   -std=gnu11 \

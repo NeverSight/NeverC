@@ -6,6 +6,9 @@
 #include <stdio.h>
 #include <signal.h>
 #if !defined(_WIN32)
+#include <errno.h>
+#include <pthread.h>
+#include <time.h>
 #include <unistd.h>
 #endif
 
@@ -23,13 +26,79 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
     else { tests_failed++; printf("  FAIL: %s (line %d)\n", #expr, __LINE__); } \
 } while(0)
 
-static volatile int g_received_sig = 0;
-static volatile int g_handler_called = 0;
-
+#if defined(_WIN32)
+static volatile int g_received_sig;
+static volatile int g_handler_called;
 static void test_handler(int signum) {
     g_received_sig = signum;
     g_handler_called = 1;
 }
+#else
+static pthread_mutex_t g_handler_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_handler_changed = PTHREAD_COND_INITIALIZER;
+static int g_received_sig;
+static int g_handler_called;
+
+static void test_handler(int signum) {
+    pthread_mutex_lock(&g_handler_lock);
+    g_received_sig = signum;
+    ++g_handler_called;
+    pthread_cond_broadcast(&g_handler_changed);
+    pthread_mutex_unlock(&g_handler_lock);
+}
+
+static void reset_handler_state(void) {
+    pthread_mutex_lock(&g_handler_lock);
+    g_received_sig = 0;
+    g_handler_called = 0;
+    pthread_mutex_unlock(&g_handler_lock);
+}
+
+static void clear_received_signal(void) {
+    pthread_mutex_lock(&g_handler_lock);
+    g_received_sig = 0;
+    pthread_mutex_unlock(&g_handler_lock);
+}
+
+static int wait_for_handler_calls(int expected) {
+    struct timespec deadline;
+    if (clock_gettime(CLOCK_REALTIME, &deadline) != 0)
+        return 0;
+    deadline.tv_sec += 5;
+
+    pthread_mutex_lock(&g_handler_lock);
+    while (g_handler_called < expected) {
+        int rc = pthread_cond_timedwait(&g_handler_changed, &g_handler_lock,
+                                        &deadline);
+        if (rc == ETIMEDOUT) {
+            pthread_mutex_unlock(&g_handler_lock);
+            return 0;
+        }
+        if (rc != 0) {
+            pthread_mutex_unlock(&g_handler_lock);
+            return 0;
+        }
+    }
+    pthread_mutex_unlock(&g_handler_lock);
+    return 1;
+}
+
+static int read_received_signal(void) {
+    int signum;
+    pthread_mutex_lock(&g_handler_lock);
+    signum = g_received_sig;
+    pthread_mutex_unlock(&g_handler_lock);
+    return signum;
+}
+
+static int read_handler_calls(void) {
+    int count;
+    pthread_mutex_lock(&g_handler_lock);
+    count = g_handler_called;
+    pthread_mutex_unlock(&g_handler_lock);
+    return count;
+}
+#endif
 
 #if defined(_WIN32)
 
@@ -93,63 +162,64 @@ static void test_constants(void) {
 
 static void test_notify_and_raise(void) {
     printf("[notify_and_raise]\n");
-    g_received_sig = 0;
-    g_handler_called = 0;
+    reset_handler_state();
 
-    neverc_signal_notify(SIGUSR1, test_handler);
+    neverc_signal_notify(NEVERC_SIGUSR1, test_handler);
     raise(SIGUSR1);
 
-    ASSERT_INT_EQ(g_handler_called, 1);
-    ASSERT_INT_EQ(g_received_sig, SIGUSR1);
+    ASSERT_TRUE(wait_for_handler_calls(1));
+    ASSERT_INT_EQ(read_received_signal(), NEVERC_SIGUSR1);
 
-    neverc_signal_stop(SIGUSR1);
+    neverc_signal_stop(NEVERC_SIGUSR1);
 }
 
 static void test_ignore(void) {
     printf("[ignore]\n");
-    neverc_signal_ignore(SIGUSR2);
+    neverc_signal_ignore(NEVERC_SIGUSR2);
     raise(SIGUSR2);
     tests_run++;
     tests_passed++;
-    neverc_signal_reset(SIGUSR2);
+    neverc_signal_reset(NEVERC_SIGUSR2);
 }
 
 static void test_reset(void) {
     printf("[reset]\n");
-    g_handler_called = 0;
-    neverc_signal_notify(SIGUSR1, test_handler);
-    neverc_signal_reset(SIGUSR1);
+    reset_handler_state();
+    neverc_signal_notify(NEVERC_SIGUSR1, test_handler);
+    neverc_signal_reset(NEVERC_SIGUSR1);
 
     tests_run++;
     tests_passed++;
 
-    neverc_signal_ignore(SIGUSR1);
-    neverc_signal_reset(SIGUSR1);
+    neverc_signal_ignore(NEVERC_SIGUSR1);
+    neverc_signal_reset(NEVERC_SIGUSR1);
 }
 
 static void test_multiple_signals(void) {
     printf("[multiple_signals]\n");
-    g_received_sig = 0;
+    reset_handler_state();
 
-    neverc_signal_notify(SIGUSR1, test_handler);
+    neverc_signal_notify(NEVERC_SIGUSR1, test_handler);
 
     raise(SIGUSR1);
-    ASSERT_INT_EQ(g_received_sig, SIGUSR1);
+    ASSERT_TRUE(wait_for_handler_calls(1));
+    ASSERT_INT_EQ(read_received_signal(), NEVERC_SIGUSR1);
 
-    g_received_sig = 0;
+    clear_received_signal();
     raise(SIGUSR1);
-    ASSERT_INT_EQ(g_received_sig, SIGUSR1);
+    ASSERT_TRUE(wait_for_handler_calls(2));
+    ASSERT_INT_EQ(read_received_signal(), NEVERC_SIGUSR1);
 
-    neverc_signal_stop(SIGUSR1);
+    neverc_signal_stop(NEVERC_SIGUSR1);
 }
 
 static void test_constants(void) {
     printf("[constants]\n");
-    ASSERT_INT_EQ(NEVERC_SIGINT, SIGINT);
-    ASSERT_INT_EQ(NEVERC_SIGTERM, SIGTERM);
-    ASSERT_INT_EQ(NEVERC_SIGHUP, SIGHUP);
-    ASSERT_INT_EQ(NEVERC_SIGUSR1, SIGUSR1);
-    ASSERT_INT_EQ(NEVERC_SIGUSR2, SIGUSR2);
+    ASSERT_INT_EQ(NEVERC_SIGINT, 2);
+    ASSERT_INT_EQ(NEVERC_SIGTERM, 15);
+    ASSERT_INT_EQ(NEVERC_SIGHUP, 1);
+    ASSERT_INT_EQ(NEVERC_SIGUSR1, 10);
+    ASSERT_INT_EQ(NEVERC_SIGUSR2, 12);
 }
 
 #endif
@@ -209,13 +279,13 @@ static void test_wait_null(void) {
 #if !defined(_WIN32)
 static void test_wait_after_raise(void) {
     printf("[wait_after_raise]\n");
-    g_handler_called = 0;
-    neverc_signal_notify(SIGUSR1, test_handler);
+    reset_handler_state();
+    neverc_signal_notify(NEVERC_SIGUSR1, test_handler);
     raise(SIGUSR1);
-    ASSERT_INT_EQ(g_handler_called, 1);
-    int sig = SIGUSR1;
-    ASSERT_INT_EQ(neverc_signal_wait(&sig, 1), SIGUSR1);
-    neverc_signal_stop(SIGUSR1);
+    int sig = NEVERC_SIGUSR1;
+    ASSERT_INT_EQ(neverc_signal_wait(&sig, 1), NEVERC_SIGUSR1);
+    ASSERT_TRUE(wait_for_handler_calls(1));
+    neverc_signal_stop(NEVERC_SIGUSR1);
 }
 
 static void test_wait_invalid_and_pending(void) {
@@ -227,64 +297,63 @@ static void test_wait_invalid_and_pending(void) {
     int stop_sig = SIGSTOP;
     ASSERT_INT_EQ(neverc_signal_wait(&stop_sig, 1), -1);
 
-    sigset_t block, saved, before_wait, after, empty;
-    sigemptyset(&block);
-    sigemptyset(&empty);
-    sigaddset(&block, SIGUSR1);
-    ASSERT_INT_EQ(sigprocmask(SIG_BLOCK, &block, &saved), 0);
+    sigset_t before_wait, after;
+    ASSERT_INT_EQ(pthread_sigmask(SIG_SETMASK, NULL, &before_wait), 0);
+    reset_handler_state();
+    neverc_signal_notify(NEVERC_SIGUSR1, test_handler);
     raise(SIGUSR1);
-    ASSERT_INT_EQ(sigprocmask(SIG_BLOCK, &empty, &before_wait), 0);
-    int usr1 = SIGUSR1;
-    ASSERT_INT_EQ(neverc_signal_wait(&usr1, 1), SIGUSR1);
-    ASSERT_INT_EQ(sigprocmask(SIG_BLOCK, &empty, &after), 0);
-    ASSERT_TRUE(sigismember(&after, SIGUSR1) ==
-                sigismember(&before_wait, SIGUSR1));
-    sigprocmask(SIG_SETMASK, &saved, NULL);
+    int usr1 = NEVERC_SIGUSR1;
+    ASSERT_INT_EQ(neverc_signal_wait(&usr1, 1), NEVERC_SIGUSR1);
+    ASSERT_TRUE(wait_for_handler_calls(1));
+    ASSERT_INT_EQ(pthread_sigmask(SIG_SETMASK, NULL, &after), 0);
+    for (int sig = 1; sig < NSIG; ++sig)
+        ASSERT_TRUE(sigismember(&after, sig) ==
+                    sigismember(&before_wait, sig));
+    neverc_signal_stop(NEVERC_SIGUSR1);
 }
 
 static void test_stop_clears_pending(void) {
     printf("[stop_clears_pending]\n");
-    g_handler_called = 0;
-    neverc_signal_notify(SIGUSR1, test_handler);
-    neverc_signal_notify(SIGUSR2, test_handler);
+    reset_handler_state();
+    neverc_signal_notify(NEVERC_SIGUSR1, test_handler);
+    neverc_signal_notify(NEVERC_SIGUSR2, test_handler);
     raise(SIGUSR1);
-    ASSERT_INT_EQ(g_handler_called, 1);
-    neverc_signal_stop(SIGUSR1);
-    g_handler_called = 0;
+    ASSERT_TRUE(wait_for_handler_calls(1));
+    neverc_signal_stop(NEVERC_SIGUSR1);
+    reset_handler_state();
     raise(SIGUSR2);
-    ASSERT_INT_EQ(g_handler_called, 1);
-    int sigs[2] = { SIGUSR1, SIGUSR2 };
-    ASSERT_INT_EQ(neverc_signal_wait(sigs, 2), SIGUSR2);
-    neverc_signal_stop(SIGUSR2);
+    ASSERT_TRUE(wait_for_handler_calls(1));
+    int sigs[2] = { NEVERC_SIGUSR1, NEVERC_SIGUSR2 };
+    ASSERT_INT_EQ(neverc_signal_wait(sigs, 2), NEVERC_SIGUSR2);
+    neverc_signal_stop(NEVERC_SIGUSR2);
 }
 
 static void test_notify_null_clears_handler(void) {
     printf("[notify_null]\n");
-    g_handler_called = 0;
+    reset_handler_state();
     neverc_signal_notify(SIGCONT, test_handler);
     raise(SIGCONT);
-    ASSERT_INT_EQ(g_handler_called, 1);
-    g_handler_called = 0;
+    ASSERT_TRUE(wait_for_handler_calls(1));
+    reset_handler_state();
     neverc_signal_notify(SIGCONT, NULL);
     raise(SIGCONT);
-    ASSERT_INT_EQ(g_handler_called, 0);
+    ASSERT_INT_EQ(read_handler_calls(), 0);
     neverc_signal_reset(SIGCONT);
 }
 
 #if defined(SIGRTMAX)
 static void test_rtmax_notify(void) {
     printf("[rtmax_notify]\n");
-    g_handler_called = 0;
-    g_received_sig = 0;
+    reset_handler_state();
     /* Default SIGRTMAX terminates. Ignore first so a silent notify no-op
      * fails the assertion instead of killing the process. */
     signal(SIGRTMAX, SIG_IGN);
     neverc_signal_notify(SIGRTMAX, test_handler);
     raise(SIGRTMAX);
-    ASSERT_INT_EQ(g_handler_called, 1);
-    ASSERT_INT_EQ(g_received_sig, SIGRTMAX);
     int rt = SIGRTMAX;
     ASSERT_INT_EQ(neverc_signal_wait(&rt, 1), SIGRTMAX);
+    ASSERT_TRUE(wait_for_handler_calls(1));
+    ASSERT_INT_EQ(read_received_signal(), SIGRTMAX);
     neverc_signal_stop(SIGRTMAX);
 }
 #endif

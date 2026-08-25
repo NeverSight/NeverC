@@ -3738,6 +3738,8 @@
       "description": "DWARF debug info parser (v2-v5) \u2014 abbreviations, DIE trees, string tables (mirrors Go debug/dwarf)",
       "symbols": {
         "neverc_dwarf_init": "src/debug/dwarf/dwarf.c",
+        "neverc_dwarf_set_big_endian": "src/debug/dwarf/dwarf.c",
+        "neverc_dwarf_get_big_endian": "src/debug/dwarf/dwarf.c",
         "neverc_dwarf_free": "src/debug/dwarf/dwarf.c",
         "neverc_dwarf_parse_comp_unit": "src/debug/dwarf/dwarf.c",
         "neverc_dwarf_parse_comp_unit_ex": "src/debug/dwarf/dwarf.c",
@@ -3748,6 +3750,8 @@
       },
       "dot_methods": {
         "init": "neverc_dwarf_init",
+        "set_big_endian": "neverc_dwarf_set_big_endian",
+        "get_big_endian": "neverc_dwarf_get_big_endian",
         "free": "neverc_dwarf_free",
         "parse_comp_unit": "neverc_dwarf_parse_comp_unit",
         "parse_comp_unit_ex": "neverc_dwarf_parse_comp_unit_ex",

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
+#include <limits.h>
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
   #include <windows.h>
@@ -13,12 +14,10 @@
   #include <sys/stat.h>
   #include <sys/types.h>
 
-/* Go os.fileStat.Mode: READONLY → 0444, else 0666; directories add 0111. */
+/* Released v3389.1.4 Windows behavior: synthetic 0644/0755 modes. */
 static uint32_t fs_win_mode_from_attrs(DWORD attrs, int is_dir) {
-    uint32_t mode = (attrs & FILE_ATTRIBUTE_READONLY) ? 0444U : 0666U;
-    if (is_dir)
-        mode |= (uint32_t)NEVERC_FS_MODE_DIR | 0111U;
-    return mode;
+    (void)attrs;
+    return is_dir ? ((uint32_t)NEVERC_FS_MODE_DIR | 0755U) : 0644U;
 }
 #else
   #include <sys/stat.h>
@@ -843,20 +842,6 @@ glob_fail:
     return -1;
 }
 
-#if defined(NEVERC_PLATFORM_WINDOWS)
-/* 1 = recurse, 0 = skip (file / reparse / not a dir), -1 = stat failed. */
-static int fs_is_real_dir(const char *path, const neverc_fs_dir_entry_t *entry) {
-    DWORD attr;
-    if (!entry || !entry->is_dir || (entry->mode & NEVERC_FS_MODE_LINK))
-        return 0;
-    attr = GetFileAttributesA(path);
-    if (attr == INVALID_FILE_ATTRIBUTES)
-        return -1;
-    return (attr & FILE_ATTRIBUTE_DIRECTORY) &&
-           !(attr & FILE_ATTRIBUTE_REPARSE_POINT);
-}
-#endif
-
 /* Go io/fs.WalkDir: a nested ReadDir/open failure is reported to fn
  * (NULL entry here) and does not abort the walk unless fn asks it to. */
 static int walk_notify_error(
@@ -1003,7 +988,10 @@ static int walk_from_fd(int dir_fd, const char *path,
             return rc;
         }
 
-        if (entries[i].is_dir && !(entries[i].mode & NEVERC_FS_MODE_LINK)) {
+        /* is_dir came from fstatat(..., AT_SYMLINK_NOFOLLOW). Revalidate at
+         * open time with O_NOFOLLOW instead of consulting overlapping mode
+         * bits from the released ABI. */
+        if (entries[i].is_dir) {
             int flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW;
             int child;
 #ifdef O_CLOEXEC
@@ -1036,62 +1024,285 @@ static int walk_from_fd(int dir_fd, const char *path,
 #endif
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
-static int walk_recursive(const char *path,
-                          int (*fn)(const char *, const neverc_fs_dir_entry_t *, void *),
-                          void *userdata) {
+static HANDLE fs_win_open_walk_root(const char *path) {
+    char prepared[4096];
+    const char *use;
+    HANDLE h;
+    BY_HANDLE_FILE_INFORMATION info;
+    if (fs_win_prepare_path(path, prepared, sizeof(prepared), &use) != 0) {
+        errno = ENAMETOOLONG;
+        return INVALID_HANDLE_VALUE;
+    }
+    if (fs_win_path_has_dotdot_component(use)) {
+        errno = EINVAL;
+        return INVALID_HANDLE_VALUE;
+    }
+    h = CreateFileA(use, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS |
+                        FILE_FLAG_OPEN_REPARSE_POINT,
+                    NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        fs_win_fail();
+        return INVALID_HANDLE_VALUE;
+    }
+    if (!GetFileInformationByHandle(h, &info) ||
+        !(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
+        (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+        CloseHandle(h);
+        SetLastError(ERROR_REPARSE_TAG_INVALID);
+        fs_win_fail();
+        return INVALID_HANDLE_VALUE;
+    }
+    return h;
+}
+
+/* 1 = usable name, 0 = dot entry to skip, -1 = conversion/validation error. */
+static int fs_win_name_from_handle_entry(char *dst, size_t cap,
+                                         const WCHAR *name,
+                                         DWORD name_bytes) {
+    BOOL used_default = FALSE;
+    UINT code_page;
+    DWORD flags;
+    int wlen, n;
+    if (!dst || cap == 0 || !name || name_bytes == 0 ||
+        (name_bytes % sizeof(WCHAR)) != 0 ||
+        name_bytes / sizeof(WCHAR) > (DWORD)INT_MAX || cap > (size_t)INT_MAX) {
+        errno = EINVAL;
+        return -1;
+    }
+    wlen = (int)(name_bytes / sizeof(WCHAR));
+    code_page = GetACP();
+    if (code_page == CP_UTF8 || code_page == 54936) {
+        flags = WC_ERR_INVALID_CHARS;
+        n = WideCharToMultiByte(code_page, flags, name, wlen, dst,
+                                (int)cap - 1, NULL, NULL);
+    } else {
+        /* File names are security-sensitive identifiers. Best-fit/default
+         * conversion could collapse distinct WCHAR names onto one ANSI path. */
+        flags = WC_NO_BEST_FIT_CHARS;
+        n = WideCharToMultiByte(code_page, flags, name, wlen, dst,
+                                (int)cap - 1, NULL, &used_default);
+    }
+    if (n <= 0 || used_default || (size_t)n >= cap) {
+        if (n <= 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+            errno = ENAMETOOLONG;
+        else if ((size_t)(n > 0 ? n : 0) >= cap)
+            errno = ENAMETOOLONG;
+        else
+            errno = EINVAL;
+        return -1;
+    }
+    dst[n] = '\0';
+    if (strcmp(dst, ".") == 0 || strcmp(dst, "..") == 0)
+        return 0;
+    if (!fs_entry_name_ok(dst)) {
+        errno = EINVAL;
+        return -1;
+    }
+    return 1;
+}
+
+/* Enumerate the exact directory object represented by dir_handle. Path-based
+ * FindFirstFile cannot provide this property when an attacker can replace the
+ * checked path with a junction between validation and enumeration. */
+static int fs_win_read_dir_handle(HANDLE dir_handle,
+                                  neverc_fs_dir_entry_t **entries,
+                                  size_t *count) {
+    const DWORD buffer_size = 64U * 1024U;
+    unsigned char *buffer;
+    neverc_fs_dir_entry_t *result = NULL;
+    size_t cap = 0;
+    int restart = 1;
+    *entries = NULL;
+    *count = 0;
+    buffer = (unsigned char *)malloc(buffer_size);
+    if (!buffer) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    for (;;) {
+        FILE_INFO_BY_HANDLE_CLASS cls = restart
+            ? FileFullDirectoryRestartInfo
+            : FileFullDirectoryInfo;
+        if (!GetFileInformationByHandleEx(dir_handle, cls, buffer,
+                                          buffer_size)) {
+            DWORD error = GetLastError();
+            if (error == ERROR_NO_MORE_FILES)
+                break;
+            free(result);
+            free(buffer);
+            SetLastError(error);
+            return fs_win_fail();
+        }
+        restart = 0;
+
+        {
+            size_t offset = 0;
+            for (;;) {
+                FILE_FULL_DIR_INFO *raw;
+                size_t header = offsetof(FILE_FULL_DIR_INFO, FileName);
+                neverc_fs_dir_entry_t *out;
+                if (offset > buffer_size - header) {
+                    errno = EINVAL;
+                    free(result);
+                    free(buffer);
+                    return -1;
+                }
+                raw = (FILE_FULL_DIR_INFO *)(buffer + offset);
+                if ((size_t)raw->FileNameLength >
+                    buffer_size - offset - header) {
+                    errno = EINVAL;
+                    free(result);
+                    free(buffer);
+                    return -1;
+                }
+                if (!fs_entries_reserve(&result, &cap, *count + 1)) {
+                    errno = ENOMEM;
+                    free(result);
+                    free(buffer);
+                    return -1;
+                }
+                out = &result[*count];
+                memset(out, 0, sizeof(*out));
+                {
+                    int name_rc = fs_win_name_from_handle_entry(
+                        out->name, sizeof(out->name),
+                        raw->FileName, raw->FileNameLength);
+                    if (name_rc > 0) {
+                        int reparse = (raw->FileAttributes &
+                                       FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+                        out->is_dir = !reparse &&
+                            (raw->FileAttributes &
+                             FILE_ATTRIBUTE_DIRECTORY) != 0;
+                        out->mode = fs_win_mode_from_attrs(
+                            raw->FileAttributes, out->is_dir);
+                        if (reparse)
+                            out->mode |= NEVERC_FS_MODE_LINK;
+                        (*count)++;
+                    } else if (name_rc < 0) {
+                        free(result);
+                        free(buffer);
+                        return -1;
+                    }
+                }
+                if (raw->NextEntryOffset == 0)
+                    break;
+                if (raw->NextEntryOffset < header ||
+                    raw->NextEntryOffset > buffer_size - offset) {
+                    errno = EINVAL;
+                    free(result);
+                    free(buffer);
+                    return -1;
+                }
+                offset += raw->NextEntryOffset;
+            }
+        }
+    }
+    free(buffer);
+    if (*count > 1)
+        qsort(result, *count, sizeof(*result), fs_dir_entry_cmp);
+    *entries = result;
+    return 0;
+}
+
+static HANDLE fs_win_open_walk_child(const char *path) {
+    char prepared[4096];
+    const char *use;
+    BY_HANDLE_FILE_INFORMATION attrs;
+    HANDLE child;
+    if (fs_win_prepare_path(path, prepared, sizeof(prepared), &use) != 0) {
+        errno = ENAMETOOLONG;
+        return INVALID_HANDLE_VALUE;
+    }
+    child = CreateFileA(use, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                        OPEN_EXISTING,
+                        FILE_FLAG_BACKUP_SEMANTICS |
+                            FILE_FLAG_OPEN_REPARSE_POINT,
+                        NULL);
+    if (child == INVALID_HANDLE_VALUE) {
+        fs_win_fail();
+        return INVALID_HANDLE_VALUE;
+    }
+    if (!GetFileInformationByHandle(child, &attrs) ||
+        !(attrs.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
+        (attrs.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+        CloseHandle(child);
+        SetLastError(ERROR_REPARSE_TAG_INVALID);
+        fs_win_fail();
+        return INVALID_HANDLE_VALUE;
+    }
+    return child;
+}
+
+static int walk_from_handle(
+    HANDLE dir_handle, const char *path,
+    int (*fn)(const char *, const neverc_fs_dir_entry_t *, void *),
+    void *userdata) {
     neverc_fs_dir_entry_t *entries = NULL;
     size_t count = 0;
-    if (neverc_fs_read_dir(path, &entries, &count) != 0)
+    if (fs_win_read_dir_handle(dir_handle, &entries, &count) != 0)
         return walk_notify_error(path, fn, userdata);
 
     for (size_t i = 0; i < count; i++) {
-        if (!fs_entry_name_ok(entries[i].name))
-            continue;
-        char *full = fs_join_path(path, entries[i].name);
+        neverc_fs_dir_entry_t *current = &entries[i];
+        HANDLE child = INVALID_HANDLE_VALUE;
+        char *full = fs_join_path(path, current->name);
         if (!full) {
-            neverc_fs_free_entries(entries);
+            free(entries);
             return -1;
         }
+        /* Bind the child identity before invoking attacker-controlled fn.
+         * Omitting FILE_SHARE_DELETE prevents replacement until recursion
+         * finishes; FILE_FLAG_OPEN_REPARSE_POINT makes validation fail closed. */
+        if (current->is_dir)
+            child = fs_win_open_walk_child(full);
 
-        int rc = fn(full, &entries[i], userdata);
+        int rc = fn(full, current, userdata);
         if (rc == NEVERC_FS_SKIP_ALL) {
+            if (child != INVALID_HANDLE_VALUE) CloseHandle(child);
             free(full);
-            neverc_fs_free_entries(entries);
+            free(entries);
             return NEVERC_FS_SKIP_ALL;
         }
         if (rc == NEVERC_FS_SKIP_DIR) {
-            int skip_rest = !entries[i].is_dir;
+            int skip_rest = !current->is_dir;
+            if (child != INVALID_HANDLE_VALUE) CloseHandle(child);
             free(full);
             if (skip_rest) break;
             continue;
         }
         if (rc != 0) {
+            if (child != INVALID_HANDLE_VALUE) CloseHandle(child);
             free(full);
-            neverc_fs_free_entries(entries);
+            free(entries);
             return rc;
         }
 
-        {
-            int real_dir = fs_is_real_dir(full, &entries[i]);
-            if (real_dir < 0) {
+        if (current->is_dir) {
+            if (child == INVALID_HANDLE_VALUE) {
                 rc = walk_notify_error(full, fn, userdata);
                 if (rc != 0) {
                     free(full);
-                    neverc_fs_free_entries(entries);
+                    free(entries);
                     return rc;
                 }
-            } else if (real_dir) {
-                rc = walk_recursive(full, fn, userdata);
+            } else {
+                rc = walk_from_handle(child, full, fn, userdata);
+                if (!CloseHandle(child) && rc == 0)
+                    rc = -1;
                 if (rc != 0) {
                     free(full);
-                    neverc_fs_free_entries(entries);
+                    free(entries);
                     return rc;
                 }
             }
         }
         free(full);
     }
-    neverc_fs_free_entries(entries);
+    free(entries);
     return 0;
 }
 #endif
@@ -1114,12 +1325,35 @@ int neverc_fs_walk_dir(const char *root,
     memcpy(root_entry.name, info.name, sizeof(root_entry.name));
     root_entry.is_dir = info.is_dir;
     root_entry.mode = info.mode;
-    int rc = fn(root, &root_entry, userdata);
-    if (rc == NEVERC_FS_SKIP_DIR || rc == NEVERC_FS_SKIP_ALL) return 0;
-    if (rc != 0) return rc;
-    if (!info.is_dir || (info.mode & NEVERC_FS_MODE_LINK)) return 0;
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    rc = walk_recursive(root, fn, userdata);
+    HANDLE root_handle = INVALID_HANDLE_VALUE;
+    if (info.is_dir)
+        root_handle = fs_win_open_walk_root(root);
+#endif
+    int rc = fn(root, &root_entry, userdata);
+    if (rc == NEVERC_FS_SKIP_DIR || rc == NEVERC_FS_SKIP_ALL) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+        if (root_handle != INVALID_HANDLE_VALUE) CloseHandle(root_handle);
+#endif
+        return 0;
+    }
+    if (rc != 0) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+        if (root_handle != INVALID_HANDLE_VALUE) CloseHandle(root_handle);
+#endif
+        return rc;
+    }
+    /* lstat/reparse handling makes a symlink root non-directory. The released
+     * MODE_LINK bit overlaps permissions and is not traversal metadata. */
+    if (!info.is_dir) return 0;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    if (root_handle == INVALID_HANDLE_VALUE)
+        rc = walk_notify_error(root, fn, userdata);
+    else {
+        rc = walk_from_handle(root_handle, root, fn, userdata);
+        if (!CloseHandle(root_handle) && rc == 0)
+            rc = -1;
+    }
 #else
     {
         struct stat st, opened;

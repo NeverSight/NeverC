@@ -8,9 +8,12 @@
 typedef struct {
     uint64_t seed;
     uint64_t state;
-    uint8_t buf[NEVERC_MAPHASH_BUF_SIZE];
+    uint8_t buf[128];
     int n;
 } v3389_maphash_t;
+
+_Static_assert(NEVERC_MAPHASH_BUF_SIZE == 128,
+               "v3389.1.4 maphash buffer size changed");
 
 #define ABI_FIELD_EQ(field)                                                \
     _Static_assert(offsetof(neverc_maphash_t, field) ==                    \
@@ -62,6 +65,16 @@ int main(void) {
 
     neverc_maphash_reset(&guarded.hash);
     if (neverc_maphash_sum64(&guarded.hash) != empty) return 1;
+
+    guarded.hash.n = -2;
+    if (neverc_maphash_write(&guarded.hash, input, 1) != 0) return 1;
+    if (neverc_maphash_write_byte(&guarded.hash, input[0]) != 0) return 1;
+    if (neverc_maphash_sum64(&guarded.hash) != 0) return 1;
+    guarded.hash.n = 129;
+    if (neverc_maphash_write(&guarded.hash, input, 1) != 0) return 1;
+    if (neverc_maphash_write_byte(&guarded.hash, input[0]) != 0) return 1;
+    if (neverc_maphash_sum64(&guarded.hash) != 0) return 1;
+
     if (!canary_ok(guarded.before, sizeof(guarded.before)) ||
         !canary_ok(guarded.after, sizeof(guarded.after))) return 1;
 

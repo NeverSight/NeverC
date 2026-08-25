@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <errno.h>
+#include <limits.h>
 #if !defined(_WIN32)
 #include <sys/stat.h>
 #include <unistd.h>
@@ -12,7 +13,37 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <winioctl.h>
 #endif
+
+_Static_assert(NEVERC_FS_MODE_DIR == (1 << 0),
+               "v3389.1.4 FS_MODE_DIR value changed");
+_Static_assert(NEVERC_FS_MODE_APPEND == (1 << 1),
+               "v3389.1.4 FS_MODE_APPEND value changed");
+_Static_assert(NEVERC_FS_MODE_EXCL == (1 << 2),
+               "v3389.1.4 FS_MODE_EXCL value changed");
+_Static_assert(NEVERC_FS_MODE_TEMP == (1 << 3),
+               "v3389.1.4 FS_MODE_TEMP value changed");
+_Static_assert(NEVERC_FS_MODE_LINK == (1 << 4),
+               "v3389.1.4 FS_MODE_LINK value changed");
+_Static_assert(NEVERC_FS_MODE_PIPE == (1 << 5),
+               "v3389.1.4 FS_MODE_PIPE value changed");
+_Static_assert(NEVERC_FS_MODE_SOCKET == (1 << 6),
+               "v3389.1.4 FS_MODE_SOCKET value changed");
+_Static_assert(NEVERC_FS_MODE_DEVICE == (1 << 7),
+               "v3389.1.4 FS_MODE_DEVICE value changed");
+_Static_assert(NEVERC_FS_MODE_CHAR_DEVICE == (1 << 8),
+               "v3389.1.4 FS_MODE_CHAR_DEVICE value changed");
+_Static_assert(NEVERC_FS_MODE_IRREGULAR == (1 << 9),
+               "v3389.1.4 FS_MODE_IRREGULAR value changed");
+_Static_assert(NEVERC_FS_MODE_SETUID == (1 << 10),
+               "v3389.1.4 FS_MODE_SETUID value changed");
+_Static_assert(NEVERC_FS_MODE_SETGID == (1 << 11),
+               "v3389.1.4 FS_MODE_SETGID value changed");
+_Static_assert(NEVERC_FS_MODE_STICKY == (1 << 12),
+               "v3389.1.4 FS_MODE_STICKY value changed");
+_Static_assert(NEVERC_FS_PERM_MASK == 0777,
+               "v3389.1.4 FS_PERM_MASK value changed");
 
 static int tests_run = 0, tests_passed = 0;
 
@@ -171,13 +202,13 @@ static void test_stat(void) {
             neverc_fs_file_info_t rw;
             check("lstat_writable", neverc_fs_lstat(ropath, &rw) == 0);
             check("lstat_writable_perm",
-                  (rw.mode & NEVERC_FS_PERM_MASK) == 0666);
+                  (rw.mode & NEVERC_FS_PERM_MASK) == 0644);
         }
         if (SetFileAttributesA(ropath, FILE_ATTRIBUTE_READONLY)) {
             neverc_fs_file_info_t ro;
             check("lstat_readonly", neverc_fs_lstat(ropath, &ro) == 0);
             check("lstat_readonly_perm",
-                  (ro.mode & NEVERC_FS_PERM_MASK) == 0444);
+                  (ro.mode & NEVERC_FS_PERM_MASK) == 0644);
             SetFileAttributesA(ropath, FILE_ATTRIBUTE_NORMAL);
         }
         DeleteFileA(ropath);
@@ -328,12 +359,12 @@ static void test_read_dir(void) {
                 if (strcmp(entries[i].name, "rw.txt") == 0) {
                     saw_rw = 1;
                     check("readdir_writable_perm",
-                          (entries[i].mode & NEVERC_FS_PERM_MASK) == 0666);
+                          (entries[i].mode & NEVERC_FS_PERM_MASK) == 0644);
                 }
                 if (strcmp(entries[i].name, "ro.txt") == 0) {
                     saw_ro = 1;
                     check("readdir_readonly_perm",
-                          (entries[i].mode & NEVERC_FS_PERM_MASK) == 0444);
+                          (entries[i].mode & NEVERC_FS_PERM_MASK) == 0644);
                 }
             }
             check("readdir_saw_rw", saw_rw);
@@ -545,6 +576,112 @@ static int walk_skip_after;
 static int walk_saw_null_entry;
 static int walk_null_nested;
 
+#if defined(_WIN32)
+typedef struct {
+    ULONG reparse_tag;
+    USHORT reparse_data_length;
+    USHORT reserved;
+    USHORT substitute_name_offset;
+    USHORT substitute_name_length;
+    USHORT print_name_offset;
+    USHORT print_name_length;
+    WCHAR path_buffer[4096];
+} test_mount_point_reparse_buffer_t;
+
+_Static_assert(offsetof(test_mount_point_reparse_buffer_t, path_buffer) == 16,
+               "mount-point reparse buffer layout changed");
+
+static int create_test_junction(const char *junction, const char *target) {
+    WCHAR target_w[2048];
+    static const WCHAR nt_prefix[] = L"\\??\\";
+    test_mount_point_reparse_buffer_t data;
+    size_t prefix_len = sizeof(nt_prefix) / sizeof(nt_prefix[0]) - 1;
+    size_t target_len, substitute_len, total_chars, input_size;
+    DWORD returned = 0;
+    HANDLE h;
+    int target_chars;
+
+    target_chars = MultiByteToWideChar(CP_ACP, 0, target, -1, target_w,
+                                       (int)(sizeof(target_w) /
+                                             sizeof(target_w[0])));
+    if (target_chars <= 1)
+        return 0;
+    target_len = (size_t)target_chars - 1;
+    substitute_len = prefix_len + target_len;
+    total_chars = substitute_len + 1 + target_len + 1;
+    if (total_chars > sizeof(data.path_buffer) / sizeof(data.path_buffer[0]) ||
+        substitute_len * sizeof(WCHAR) > USHRT_MAX ||
+        target_len * sizeof(WCHAR) > USHRT_MAX)
+        return 0;
+    if (!CreateDirectoryA(junction, NULL))
+        return 0;
+    h = CreateFileA(junction, GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
+                    FILE_FLAG_OPEN_REPARSE_POINT |
+                        FILE_FLAG_BACKUP_SEMANTICS,
+                    NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        RemoveDirectoryA(junction);
+        return 0;
+    }
+
+    memset(&data, 0, sizeof(data));
+    data.reparse_tag = IO_REPARSE_TAG_MOUNT_POINT;
+    data.substitute_name_offset = 0;
+    data.substitute_name_length =
+        (USHORT)(substitute_len * sizeof(WCHAR));
+    data.print_name_offset =
+        (USHORT)((substitute_len + 1) * sizeof(WCHAR));
+    data.print_name_length = (USHORT)(target_len * sizeof(WCHAR));
+    memcpy(data.path_buffer, nt_prefix, prefix_len * sizeof(WCHAR));
+    memcpy(data.path_buffer + prefix_len, target_w,
+           target_len * sizeof(WCHAR));
+    memcpy(data.path_buffer + substitute_len + 1, target_w,
+           target_len * sizeof(WCHAR));
+    input_size = offsetof(test_mount_point_reparse_buffer_t, path_buffer) +
+                 total_chars * sizeof(WCHAR);
+    data.reparse_data_length = (USHORT)(input_size - 8);
+    int ok = DeviceIoControl(h, FSCTL_SET_REPARSE_POINT, &data,
+                             (DWORD)input_size, NULL, 0, &returned, NULL) != 0;
+    CloseHandle(h);
+    if (!ok)
+        RemoveDirectoryA(junction);
+    return ok;
+}
+
+static char walk_win_junction_target[2048];
+static int walk_win_replace_attempted;
+static int walk_win_replace_blocked;
+static int walk_win_replace_error;
+static int walk_win_saw_secret;
+static int walk_win_saw_junction;
+
+static int walk_windows_reparse_cb(const char *path,
+                                   const neverc_fs_dir_entry_t *entry,
+                                   void *ud) {
+    (void)ud;
+    if (path && strstr(path, "outside_secret"))
+        walk_win_saw_secret = 1;
+    if (entry && strcmp(entry->name, "link") == 0) {
+        walk_win_saw_junction = 1;
+        if (entry->is_dir)
+            walk_win_saw_secret = 1;
+    }
+    if (entry && strcmp(entry->name, "swap") == 0) {
+        walk_win_replace_attempted = 1;
+        SetLastError(ERROR_SUCCESS);
+        if (!RemoveDirectoryA(path)) {
+            walk_win_replace_blocked = 1;
+            walk_win_replace_error = (int)GetLastError();
+        } else if (create_test_junction(path, walk_win_junction_target)) {
+            /* A path-only walker would now be exposed to a junction at the
+             * exact point where it decides whether to recurse. */
+            walk_win_replace_blocked = 0;
+        }
+    }
+    return 0;
+}
+#endif
+
 static int walk_nested_err_cb(const char *path,
                               const neverc_fs_dir_entry_t *entry, void *ud) {
     (void)ud;
@@ -663,7 +800,8 @@ static void test_walk_dir(void) {
     check("walk_found_files", walk_count >= 3);
     check("walk_root_is_dir", walk_root_is_dir == 1);
 #if !defined(_WIN32)
-    /* 0775 sets group-write, which used to overlap MODE_LINK and skip kids. */
+    /* In the released ABI, 0775 group-write sets the MODE_LINK bit too.
+     * WalkDir must use lstat/is_dir metadata and still visit the children. */
     chmod(walkdir, 0775);
     chmod(subdir, 0775);
     walk_count = 0;
@@ -901,6 +1039,51 @@ static void test_walk_dir(void) {
         unlink(linkroot);
         rmdir(subdir);
         rmdir(walkdir);
+    }
+#endif
+
+#if defined(_WIN32)
+    {
+        char outside[2048], secret[2048], linkpath[2048], swappath[2048];
+        unsigned long pid = (unsigned long)GetCurrentProcessId();
+        snprintf(outside, sizeof(outside), "%s\\neverc_walk_outside_%lu",
+                 tmpdir, pid);
+        snprintf(secret, sizeof(secret), "%s\\outside_secret", outside);
+        snprintf(walkdir, sizeof(walkdir), "%s\\neverc_walk_reparse_%lu",
+                 tmpdir, pid);
+        snprintf(linkpath, sizeof(linkpath), "%s\\link", walkdir);
+        snprintf(swappath, sizeof(swappath), "%s\\swap", walkdir);
+        CreateDirectoryA(outside, NULL);
+        CreateDirectoryA(walkdir, NULL);
+        CreateDirectoryA(swappath, NULL);
+        FILE *secret_file = fopen(secret, "w");
+        if (secret_file) { fprintf(secret_file, "x"); fclose(secret_file); }
+
+        int junction_ok = create_test_junction(linkpath, outside);
+        check("walk_windows_junction_create", junction_ok == 1);
+        snprintf(walk_win_junction_target, sizeof(walk_win_junction_target),
+                 "%s", outside);
+        walk_win_replace_attempted = 0;
+        walk_win_replace_blocked = 0;
+        walk_win_replace_error = ERROR_SUCCESS;
+        walk_win_saw_secret = 0;
+        walk_win_saw_junction = 0;
+        rc = neverc_fs_walk_dir(walkdir, walk_windows_reparse_cb, NULL);
+        check("walk_windows_reparse_ok", rc == 0);
+        check("walk_windows_saw_junction", walk_win_saw_junction == 1);
+        check("walk_windows_skips_junction", walk_win_saw_secret == 0);
+        check("walk_windows_swap_attempted",
+              walk_win_replace_attempted == 1);
+        check("walk_windows_swap_blocked", walk_win_replace_blocked == 1);
+        check("walk_windows_swap_block_reason",
+              walk_win_replace_error == ERROR_SHARING_VIOLATION ||
+              walk_win_replace_error == ERROR_ACCESS_DENIED);
+
+        RemoveDirectoryA(linkpath);
+        RemoveDirectoryA(swappath);
+        remove(secret);
+        RemoveDirectoryA(outside);
+        RemoveDirectoryA(walkdir);
     }
 #endif
 }

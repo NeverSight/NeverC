@@ -938,6 +938,8 @@ TEST_F(StdLibTest, ExecAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(signal, "src/os/signal/signal.c")
+STD_TEST(signal_compat, "src/os/signal/signal.c")
+STD_TEST(signal_concurrency, "src/os/signal/signal.c")
 STD_TEST(user, "src/os/user/user.c")
 
 // ===== HTML =====
@@ -956,6 +958,8 @@ STD_TEST(multipart_entropy_failure)
 
 // ===== IO =====
 STD_TEST(fs, "src/io/fs/fs.c", "src/path/match.c", "src/unicode/utf8/utf8.c")
+STD_TEST(fs_v3389_consumer, "src/io/fs/fs.c", "src/path/match.c",
+         "src/unicode/utf8/utf8.c")
 TEST_F(StdLibTest, FsAllocationFailure) {
   auto r = compileAndRunStdTest("fs_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
@@ -980,6 +984,12 @@ STD_TEST(debug_section_abi, "src/debug/pe/pe.c",
     "src/debug/plan9obj/plan9obj.c")
 STD_TEST(macho, "src/debug/macho/macho.c")
 STD_TEST(dwarf, "src/debug/dwarf/dwarf.c")
+TEST_F(StdLibTest, DwarfDataABI) {
+  auto r = compileAndRunStdTest(
+      "dwarf_data_abi", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(plan9obj, "src/debug/plan9obj/plan9obj.c")
 
 // ===== Crypto (x509) =====
