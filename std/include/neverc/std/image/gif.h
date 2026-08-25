@@ -15,18 +15,22 @@ typedef struct {
 } neverc_gif_color_t;
 
 typedef struct {
-    uint32_t left;              /* frame origin in the logical screen */
-    uint32_t top;
     uint32_t width;
     uint32_t height;
     uint8_t *indices;           /* palette indices, width*height */
     neverc_gif_color_t palette[NEVERC_GIF_MAX_PALETTE];
     int palette_size;
     int delay_centiseconds;     /* frame delay in 1/100s */
-    int disposal_method;        /* GIF disposal method (0-3 are defined) */
     uint8_t transparent_index;
     int has_transparency;
 } neverc_gif_frame_t;
+
+/* Per-frame wire metadata kept outside the released frame layout. */
+typedef struct {
+    uint32_t left;              /* frame origin in the logical screen */
+    uint32_t top;
+    int disposal_method;        /* GIF disposal method (0-3 are defined) */
+} neverc_gif_frame_info_t;
 
 typedef struct {
     uint32_t width;
@@ -50,6 +54,17 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img);
  */
 int neverc_gif_encode(const neverc_gif_frame_t *frame,
                       uint8_t **out_data, size_t *out_len);
+
+/* Encode with explicit frame origin/disposal metadata. A NULL info uses the
+ * same zero origin/disposal defaults as neverc_gif_encode(). */
+int neverc_gif_encode_ex(const neverc_gif_frame_t *frame,
+                         const neverc_gif_frame_info_t *info,
+                         uint8_t **out_data, size_t *out_len);
+
+/* Read metadata for a frame in an image returned by neverc_gif_decode().
+ * Returns 0 on success. On error, a non-NULL output is entirely zeroed. */
+int neverc_gif_frame_info(const neverc_gif_image_t *img, int frame_index,
+                          neverc_gif_frame_info_t *info);
 
 void neverc_gif_free(neverc_gif_image_t *img);
 

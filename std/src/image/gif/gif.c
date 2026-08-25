@@ -7,6 +7,120 @@
 #define GIF_MAX_PIXELS (UINT64_C(1) << 28)
 #define GIF_MAX_FRAMES 1024
 
+#define GIF_FRAME_BLOCK_MAGIC UINT64_C(0x4e43474946414249)
+
+/* Decoded frame metadata lives in the same owned allocation as the public
+ * frame array: [aligned header][released frames][private infos]. This keeps
+ * neverc_gif_image_t and neverc_gif_frame_t byte-for-byte ABI compatible. */
+typedef union {
+    max_align_t alignment;
+    struct {
+        uint64_t magic;
+        size_t capacity;
+    } fields;
+} gif_frame_block_header_t;
+
+_Static_assert(sizeof(neverc_gif_frame_t) %
+                       _Alignof(neverc_gif_frame_info_t) == 0,
+               "GIF frame sidecar alignment changed");
+
+static int gif_frame_block_size(size_t capacity, size_t *size_out) {
+    size_t item_size = sizeof(neverc_gif_frame_t) +
+                       sizeof(neverc_gif_frame_info_t);
+    if (!size_out || capacity == 0 ||
+        capacity > (SIZE_MAX - sizeof(gif_frame_block_header_t)) / item_size)
+        return -1;
+    *size_out = sizeof(gif_frame_block_header_t) + capacity * item_size;
+    return 0;
+}
+
+static gif_frame_block_header_t *gif_frame_block_header(
+    neverc_gif_frame_t *frames) {
+    return frames ? ((gif_frame_block_header_t *)frames) - 1 : NULL;
+}
+
+static const gif_frame_block_header_t *gif_frame_block_header_const(
+    const neverc_gif_frame_t *frames) {
+    return frames ? ((const gif_frame_block_header_t *)frames) - 1 : NULL;
+}
+
+static neverc_gif_frame_info_t *gif_frame_block_infos(
+    neverc_gif_frame_t *frames) {
+    gif_frame_block_header_t *header = gif_frame_block_header(frames);
+    return header ? (neverc_gif_frame_info_t *)(
+                        frames + header->fields.capacity)
+                  : NULL;
+}
+
+static const neverc_gif_frame_info_t *gif_frame_block_infos_const(
+    const neverc_gif_frame_t *frames) {
+    const gif_frame_block_header_t *header =
+        gif_frame_block_header_const(frames);
+    return header ? (const neverc_gif_frame_info_t *)(
+                        frames + header->fields.capacity)
+                  : NULL;
+}
+
+static neverc_gif_frame_t *gif_frame_block_alloc(size_t capacity) {
+    size_t size;
+    if (gif_frame_block_size(capacity, &size) != 0)
+        return NULL;
+    gif_frame_block_header_t *header =
+        (gif_frame_block_header_t *)calloc(1, size);
+    if (!header)
+        return NULL;
+    header->fields.magic = GIF_FRAME_BLOCK_MAGIC;
+    header->fields.capacity = capacity;
+    return (neverc_gif_frame_t *)(header + 1);
+}
+
+static int gif_frame_block_grow(neverc_gif_frame_t **frames_ptr,
+                                size_t new_capacity) {
+    if (!frames_ptr || !*frames_ptr)
+        return -1;
+    gif_frame_block_header_t *old_header =
+        gif_frame_block_header(*frames_ptr);
+    if (old_header->fields.magic != GIF_FRAME_BLOCK_MAGIC ||
+        new_capacity <= old_header->fields.capacity)
+        return -1;
+
+    size_t old_capacity = old_header->fields.capacity;
+    size_t new_size;
+    if (gif_frame_block_size(new_capacity, &new_size) != 0)
+        return -1;
+    size_t old_info_offset = sizeof(*old_header) +
+        old_capacity * sizeof(neverc_gif_frame_t);
+    size_t new_info_offset = sizeof(*old_header) +
+        new_capacity * sizeof(neverc_gif_frame_t);
+    gif_frame_block_header_t *new_header =
+        (gif_frame_block_header_t *)realloc(old_header, new_size);
+    if (!new_header)
+        return -1;
+
+    uint8_t *bytes = (uint8_t *)new_header;
+    memmove(bytes + new_info_offset, bytes + old_info_offset,
+            old_capacity * sizeof(neverc_gif_frame_info_t));
+    neverc_gif_frame_t *frames =
+        (neverc_gif_frame_t *)(new_header + 1);
+    memset(frames + old_capacity, 0,
+           (new_capacity - old_capacity) * sizeof(*frames));
+    memset(bytes + new_info_offset +
+               old_capacity * sizeof(neverc_gif_frame_info_t),
+           0, (new_capacity - old_capacity) *
+                  sizeof(neverc_gif_frame_info_t));
+    new_header->fields.capacity = new_capacity;
+    new_header->fields.magic = GIF_FRAME_BLOCK_MAGIC;
+    *frames_ptr = frames;
+    return 0;
+}
+
+static void gif_frame_block_free(neverc_gif_frame_t *frames) {
+    if (!frames) return;
+    gif_frame_block_header_t *header = gif_frame_block_header(frames);
+    header->fields.magic = 0;
+    free(header);
+}
+
 /* =========================================================================
  * GIF Encoder/Decoder
  * Implements GIF87a/89a with LZW compression
@@ -189,20 +303,29 @@ flush:
 
 int neverc_gif_encode(const neverc_gif_frame_t *frame,
                       uint8_t **out_data, size_t *out_len) {
+    return neverc_gif_encode_ex(frame, NULL, out_data, out_len);
+}
+
+int neverc_gif_encode_ex(const neverc_gif_frame_t *frame,
+                         const neverc_gif_frame_info_t *info,
+                         uint8_t **out_data, size_t *out_len) {
     if (!out_data || !out_len) return -1;
     *out_data = NULL;
     *out_len = 0;
     if (!frame || !frame->indices) return -1;
     if (frame->width == 0 || frame->height == 0) return -1;
-    uint64_t screen_width = (uint64_t)frame->left + frame->width;
-    uint64_t screen_height = (uint64_t)frame->top + frame->height;
+    uint32_t left = info ? info->left : 0;
+    uint32_t top = info ? info->top : 0;
+    int disposal_method = info ? info->disposal_method : 0;
+    uint64_t screen_width = (uint64_t)left + frame->width;
+    uint64_t screen_height = (uint64_t)top + frame->height;
     if (screen_width == 0 || screen_width > UINT16_MAX ||
         screen_height == 0 || screen_height > UINT16_MAX)
         return -1;
     if (frame->palette_size < 2 || frame->palette_size > 256) return -1;
     if (frame->delay_centiseconds < 0 ||
         frame->delay_centiseconds > UINT16_MAX ||
-        frame->disposal_method < 0 || frame->disposal_method > 3)
+        disposal_method < 0 || disposal_method > 3)
         return -1;
     if (frame->has_transparency &&
         (int)frame->transparent_index >= frame->palette_size)
@@ -250,12 +373,12 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
 
     /* Graphic Control Extension (for transparency) */
     if (frame->has_transparency || frame->delay_centiseconds > 0 ||
-        frame->disposal_method != 0) {
+        disposal_method != 0) {
         gw_byte(&w, 0x21); /* extension introducer */
         gw_byte(&w, 0xF9); /* graphic control */
         gw_byte(&w, 4);    /* block size */
         uint8_t gce_packed =
-            (uint8_t)((frame->disposal_method << 2) |
+            (uint8_t)((disposal_method << 2) |
                       (frame->has_transparency ? 0x01 : 0x00));
         gw_byte(&w, gce_packed);
         gw_u16le(&w, (uint16_t)frame->delay_centiseconds);
@@ -265,8 +388,8 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
 
     /* Image Descriptor */
     gw_byte(&w, 0x2C);
-    gw_u16le(&w, (uint16_t)frame->left);
-    gw_u16le(&w, (uint16_t)frame->top);
+    gw_u16le(&w, (uint16_t)left);
+    gw_u16le(&w, (uint16_t)top);
     gw_u16le(&w, (uint16_t)frame->width);
     gw_u16le(&w, (uint16_t)frame->height);
     gw_byte(&w, 0); /* packed (no local color table) */
@@ -331,7 +454,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
 
     /* Parse blocks */
     int frame_cap = 4;
-    img->frames = (neverc_gif_frame_t *)calloc((size_t)frame_cap, sizeof(neverc_gif_frame_t));
+    img->frames = gif_frame_block_alloc((size_t)frame_cap);
     img->num_frames = 0;
     if (!img->frames) return -1;
     uint64_t decoded_pixels = 0;
@@ -669,28 +792,32 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             /* Store frame */
             if (img->num_frames >= frame_cap) {
                 if (frame_cap > INT_MAX / 2 ||
-                    (size_t)frame_cap * 2 > SIZE_MAX / sizeof(*img->frames)) {
+                    frame_cap * 2 > GIF_MAX_FRAMES) {
                     free(indices);
                     goto decode_failed;
                 }
                 int new_cap = frame_cap * 2;
-                neverc_gif_frame_t *grown = (neverc_gif_frame_t *)realloc(
-                    img->frames, (size_t)new_cap * sizeof(*img->frames));
-                if (!grown) { free(indices); goto decode_failed; }
-                img->frames = grown;
+                if (gif_frame_block_grow(
+                        &img->frames, (size_t)new_cap) != 0) {
+                    free(indices);
+                    goto decode_failed;
+                }
                 frame_cap = new_cap;
             }
-            neverc_gif_frame_t *f = &img->frames[img->num_frames++];
+            int frame_index = img->num_frames++;
+            neverc_gif_frame_t *f = &img->frames[frame_index];
+            neverc_gif_frame_info_t *frame_info =
+                &gif_frame_block_infos(img->frames)[frame_index];
             memset(f, 0, sizeof(*f));
-            f->left = left;
-            f->top = top;
+            frame_info->left = left;
+            frame_info->top = top;
             f->width = fw;
             f->height = fh;
             f->indices = indices;
             f->palette_size = pal_size;
             memcpy(f->palette, palette, sizeof(neverc_gif_color_t) * (size_t)(pal_size < 256 ? pal_size : 256));
             f->delay_centiseconds = pending_delay;
-            f->disposal_method = pending_disposal;
+            frame_info->disposal_method = pending_disposal;
             if (pending_transparent >= 0) {
                 f->has_transparency = 1;
                 f->transparent_index = (uint8_t)pending_transparent;
@@ -722,8 +849,23 @@ void neverc_gif_free(neverc_gif_image_t *img) {
     if (!img) return;
     for (int i = 0; i < img->num_frames; i++)
         free(img->frames[i].indices);
-    free(img->frames);
+    gif_frame_block_free(img->frames);
     memset(img, 0, sizeof(*img));
+}
+
+int neverc_gif_frame_info(const neverc_gif_image_t *img, int frame_index,
+                          neverc_gif_frame_info_t *info) {
+    if (info) memset(info, 0, sizeof(*info));
+    if (!img || !info || !img->frames || frame_index < 0 ||
+        frame_index >= img->num_frames)
+        return -1;
+    const gif_frame_block_header_t *header =
+        gif_frame_block_header_const(img->frames);
+    if (!header || header->fields.magic != GIF_FRAME_BLOCK_MAGIC ||
+        (size_t)frame_index >= header->fields.capacity)
+        return -1;
+    *info = gif_frame_block_infos_const(img->frames)[frame_index];
+    return 0;
 }
 
 int neverc_gif_frame_to_rgba(const neverc_gif_frame_t *frame,

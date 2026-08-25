@@ -891,6 +891,7 @@ TEST_F(StdLibTest, JpegAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(gif, "src/image/gif/gif.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/lzw/lzw.c")
+STD_TEST(gif_frame_abi, "src/image/gif/gif.c")
 TEST_F(StdLibTest, GifAllocationFailure) {
   auto r = compileAndRunStdTest("gif_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;

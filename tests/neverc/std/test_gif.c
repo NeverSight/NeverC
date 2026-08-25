@@ -22,13 +22,11 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 static void test_encode_decode(void) {
     printf("[encode_decode]\n");
     neverc_gif_frame_t frame;
+    neverc_gif_frame_info_t frame_info = {2, 3, 2};
     memset(&frame, 0, sizeof(frame));
-    frame.left = 2;
-    frame.top = 3;
     frame.width = 4;
     frame.height = 4;
     frame.delay_centiseconds = 5;
-    frame.disposal_method = 2;
     frame.palette_size = 4;
     frame.palette[0] = (neverc_gif_color_t){255, 0, 0};   /* red */
     frame.palette[1] = (neverc_gif_color_t){0, 255, 0};   /* green */
@@ -42,7 +40,8 @@ static void test_encode_decode(void) {
 
     uint8_t *gif_data = NULL;
     size_t gif_len = 0;
-    int rc = neverc_gif_encode(&frame, &gif_data, &gif_len);
+    int rc = neverc_gif_encode_ex(
+        &frame, &frame_info, &gif_data, &gif_len);
     ASSERT_EQ(rc, 0);
     ASSERT_TRUE(gif_data != NULL);
     ASSERT_TRUE(gif_len > 0);
@@ -59,12 +58,14 @@ static void test_encode_decode(void) {
     ASSERT_EQ(img.num_frames, 1);
 
     neverc_gif_frame_t *f = &img.frames[0];
-    ASSERT_EQ(f->left, 2);
-    ASSERT_EQ(f->top, 3);
+    neverc_gif_frame_info_t decoded_info = {0, 0, 0};
+    ASSERT_EQ(neverc_gif_frame_info(&img, 0, &decoded_info), 0);
+    ASSERT_EQ(decoded_info.left, 2);
+    ASSERT_EQ(decoded_info.top, 3);
     ASSERT_EQ(f->width, 4);
     ASSERT_EQ(f->height, 4);
     ASSERT_EQ(f->delay_centiseconds, 5);
-    ASSERT_EQ(f->disposal_method, 2);
+    ASSERT_EQ(decoded_info.disposal_method, 2);
 
     /* Verify first 4 pixels map to correct colors */
     ASSERT_EQ(f->indices[0], 0);
@@ -105,8 +106,11 @@ static void test_encode_decode(void) {
                           gif_len + sizeof(transparent_gce),
                           &replaced), 0);
             if (replaced.num_frames == 1) {
+                neverc_gif_frame_info_t replaced_info = {0, 0, 0};
                 ASSERT_EQ(replaced.frames[0].has_transparency, 0);
-                ASSERT_EQ(replaced.frames[0].disposal_method, 2);
+                ASSERT_EQ(neverc_gif_frame_info(
+                              &replaced, 0, &replaced_info), 0);
+                ASSERT_EQ(replaced_info.disposal_method, 2);
             }
             neverc_gif_free(&replaced);
             free(double_gce);
@@ -172,12 +176,13 @@ static void test_invalid_data(void) {
     ASSERT_EQ(neverc_gif_encode(&frame, &output, &output_length), -1);
 
     frame.width = 1;
-    frame.left = UINT16_MAX;
-    ASSERT_EQ(neverc_gif_encode(&frame, &output, &output_length), -1);
-    frame.left = 0;
-    frame.disposal_method = 4;
-    ASSERT_EQ(neverc_gif_encode(&frame, &output, &output_length), -1);
-    frame.disposal_method = 0;
+    neverc_gif_frame_info_t info = {UINT16_MAX, 0, 0};
+    ASSERT_EQ(neverc_gif_encode_ex(
+                  &frame, &info, &output, &output_length), -1);
+    info.left = 0;
+    info.disposal_method = 4;
+    ASSERT_EQ(neverc_gif_encode_ex(
+                  &frame, &info, &output, &output_length), -1);
     frame.width = 1;
     frame.height = 1;
     frame.palette_size = 2;
@@ -457,11 +462,11 @@ static void test_netscape_loop_count(void) {
 static void test_plain_text_consumes_gce(void) {
     printf("[plain_text_consumes_gce]\n");
     neverc_gif_frame_t frame;
+    neverc_gif_frame_info_t frame_info = {0, 0, 2};
     memset(&frame, 0, sizeof(frame));
     frame.width = 1;
     frame.height = 1;
     frame.delay_centiseconds = 7;
-    frame.disposal_method = 2;
     frame.has_transparency = 1;
     frame.transparent_index = 1;
     frame.palette_size = 2;
@@ -473,7 +478,8 @@ static void test_plain_text_consumes_gce(void) {
 
     uint8_t *gif = NULL;
     size_t gif_len = 0;
-    ASSERT_EQ(neverc_gif_encode(&frame, &gif, &gif_len), 0);
+    ASSERT_EQ(neverc_gif_encode_ex(
+                  &frame, &frame_info, &gif, &gif_len), 0);
     ASSERT_TRUE(gif != NULL);
     if (!gif) { free(frame.indices); return; }
 
@@ -505,8 +511,11 @@ static void test_plain_text_consumes_gce(void) {
                           with_text, gif_len + sizeof(plain_text), &decoded), 0);
             ASSERT_EQ(decoded.num_frames, 1);
             if (decoded.num_frames == 1) {
+                neverc_gif_frame_info_t decoded_info = {0, 0, 0};
                 ASSERT_EQ(decoded.frames[0].delay_centiseconds, 0);
-                ASSERT_EQ(decoded.frames[0].disposal_method, 0);
+                ASSERT_EQ(neverc_gif_frame_info(
+                              &decoded, 0, &decoded_info), 0);
+                ASSERT_EQ(decoded_info.disposal_method, 0);
                 ASSERT_EQ(decoded.frames[0].has_transparency, 0);
             }
             neverc_gif_free(&decoded);
@@ -680,10 +689,10 @@ static void test_from_rgba_full_palette_transparency(void) {
 static void test_reserved_disposal_treated_as_none(void) {
     printf("[reserved_disposal_treated_as_none]\n");
     neverc_gif_frame_t frame;
+    neverc_gif_frame_info_t frame_info = {0, 0, 2};
     memset(&frame, 0, sizeof(frame));
     frame.width = 2;
     frame.height = 2;
-    frame.disposal_method = 2;
     frame.palette_size = 2;
     frame.palette[0] = (neverc_gif_color_t){0, 0, 0};
     frame.palette[1] = (neverc_gif_color_t){255, 255, 255};
@@ -692,7 +701,8 @@ static void test_reserved_disposal_treated_as_none(void) {
 
     uint8_t *gif_data = NULL;
     size_t gif_len = 0;
-    ASSERT_EQ(neverc_gif_encode(&frame, &gif_data, &gif_len), 0);
+    ASSERT_EQ(neverc_gif_encode_ex(
+                  &frame, &frame_info, &gif_data, &gif_len), 0);
     ASSERT_TRUE(gif_data != NULL);
     if (!gif_data) {
         free(frame.indices);
@@ -713,8 +723,11 @@ static void test_reserved_disposal_treated_as_none(void) {
         neverc_gif_image_t img;
         ASSERT_EQ(neverc_gif_decode(gif_data, gif_len, &img), 0);
         ASSERT_EQ(img.num_frames, 1);
-        if (img.num_frames == 1)
-            ASSERT_EQ(img.frames[0].disposal_method, 0);
+        if (img.num_frames == 1) {
+            neverc_gif_frame_info_t decoded_info = {0, 0, 0};
+            ASSERT_EQ(neverc_gif_frame_info(&img, 0, &decoded_info), 0);
+            ASSERT_EQ(decoded_info.disposal_method, 0);
+        }
         neverc_gif_free(&img);
     }
 

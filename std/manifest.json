@@ -3623,6 +3623,8 @@
       "symbols": {
         "neverc_gif_decode": "src/image/gif/gif.c",
         "neverc_gif_encode": "src/image/gif/gif.c",
+        "neverc_gif_encode_ex": "src/image/gif/gif.c",
+        "neverc_gif_frame_info": "src/image/gif/gif.c",
         "neverc_gif_free": "src/image/gif/gif.c",
         "neverc_gif_from_rgba": "src/image/gif/gif.c",
         "neverc_gif_frame_to_rgba": "src/image/gif/gif.c"
@@ -3630,6 +3632,8 @@
       "dot_methods": {
         "decode": "neverc_gif_decode",
         "encode": "neverc_gif_encode",
+        "encode_ex": "neverc_gif_encode_ex",
+        "frame_info": "neverc_gif_frame_info",
         "free": "neverc_gif_free",
         "from_rgba": "neverc_gif_from_rgba",
         "frame_to_rgba": "neverc_gif_frame_to_rgba"
