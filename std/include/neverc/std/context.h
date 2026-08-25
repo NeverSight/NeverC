@@ -6,7 +6,7 @@
  * Mirrors Go context package (simplified for C).
  *
  * Supports: Background, WithCancel, WithTimeout, WithValue.
- * Thread-safe via atomics.
+ * Thread-safe via atomics and internal event synchronization.
  */
 
 #include <stddef.h>

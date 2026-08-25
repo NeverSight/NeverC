@@ -211,6 +211,17 @@ static size_t map_ideal_cap(size_t len) {
     return cap;
 }
 
+/* Plan a rehash for the live entries plus one pending insertion.  The final
+ * load check also detects the case where map_ideal_cap cannot double again. */
+static int map_ideal_cap_for_insert(size_t len, size_t *cap_out) {
+    if (!cap_out || len == SIZE_MAX) return 0;
+    size_t required_len = len + 1;
+    size_t cap = map_ideal_cap(required_len);
+    if (required_len > map_max_load(cap)) return 0;
+    *cap_out = cap;
+    return 1;
+}
+
 /* Rebuild the table at new_cap, dropping every tombstone. Used to grow, to
  * reclaim tombstones in place, and to shrink after bulk deletes. */
 static int map_resize(neverc_map_t *m, size_t new_cap) {
@@ -371,20 +382,28 @@ int neverc_maps_set(neverc_map_t *m, const char *key, void *value) {
         pos = (pos + stride) & mask;
     }
 
+    if (m->len == SIZE_MAX) return -1;
+
     char *dup = (char *)malloc(klen + 1);
     if (!dup) return -1;
     memcpy(dup, key, klen + 1);
 
     size_t target;
     int was_empty;
-    if (m->len + m->tombstones >= map_max_load(m->cap)) {
+    size_t max_load = map_max_load(m->cap);
+    int occupancy_full =
+        m->len >= max_load || m->tombstones >= max_load - m->len;
+    if (occupancy_full) {
         /* Occupancy includes tombstones. If live keys still fit, drop them
          * in place (or shrink) instead of growing — otherwise a handful of
          * DELETED slots at high live-load forces a 2x table (and can OOM
          * when a same-cap rehash would have succeeded). */
         size_t new_cap;
-        if (m->len < map_max_load(m->cap)) {
-            new_cap = map_ideal_cap(m->len);
+        if (m->len < max_load) {
+            if (!map_ideal_cap_for_insert(m->len, &new_cap)) {
+                free(dup);
+                return -1;
+            }
         } else if (m->cap > (SIZE_MAX >> 1)) {
             free(dup);
             return -1;

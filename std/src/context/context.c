@@ -1,7 +1,7 @@
 /*
  * NeverC context — cancellation and deadline propagation.
  * Simplified C implementation of Go's context package.
- * Thread-safe using atomics.
+ * Thread-safe using atomics and internal event synchronization.
  */
 
 #include "neverc/std/context.h"
@@ -11,30 +11,95 @@
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
   #include <windows.h>
-  static int64_t now_ms(void) {
+  static int64_t context_system_wall_now_ms(void) {
       FILETIME ft; GetSystemTimeAsFileTime(&ft);
       uint64_t t = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
       return (int64_t)(t / 10000 - 11644473600000LL);
   }
+  static int64_t context_system_monotonic_now_ms(void) {
+      ULONGLONG value = GetTickCount64();
+      return value > (ULONGLONG)INT64_MAX ? INT64_MAX : (int64_t)value;
+  }
 #else
   #include <pthread.h>
   #include <sys/time.h>
-  static int64_t now_ms(void) {
+  #include <time.h>
+  static int64_t context_posix_monotonic_ms(uint64_t seconds,
+                                             uint64_t nanoseconds) {
+      uint64_t millis = nanoseconds / 1000000;
+      uint64_t limit = (uint64_t)INT64_MAX;
+      /* This also covers seconds == INT64_MAX/1000 with a millisecond
+       * remainder greater than INT64_MAX%1000. */
+      if (millis > limit || seconds > (limit - millis) / 1000)
+          return INT64_MAX;
+      return (int64_t)(seconds * 1000 + millis);
+  }
+  static int64_t context_system_wall_now_ms(void) {
       struct timeval tv;
       gettimeofday(&tv, NULL);
       return (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
   }
+  static int64_t context_system_monotonic_now_ms(void) {
+      struct timespec ts;
+      if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+          return 0;
+      if (ts.tv_sec < 0 || ts.tv_nsec < 0)
+          return 0;
+      return context_posix_monotonic_ms((uint64_t)ts.tv_sec,
+                                        (uint64_t)ts.tv_nsec);
+  }
 #endif
 
-static int64_t deadline_after(int64_t timeout_ms) {
+#ifndef NEVERC_CONTEXT_TEST_WALL_NOW_MS
+#define NEVERC_CONTEXT_TEST_WALL_NOW_MS context_system_wall_now_ms
+#endif
+#ifndef NEVERC_CONTEXT_TEST_MONOTONIC_NOW_MS
+#define NEVERC_CONTEXT_TEST_MONOTONIC_NOW_MS context_system_monotonic_now_ms
+#endif
+#ifndef NEVERC_CONTEXT_TEST_REASON_SNAPSHOT
+#define NEVERC_CONTEXT_TEST_REASON_SNAPSHOT(context, sequence, monotonic_ms) \
+    ((void)0)
+#endif
+#ifndef NEVERC_CONTEXT_TEST_REASON_VISIT
+#define NEVERC_CONTEXT_TEST_REASON_VISIT(context) ((void)0)
+#endif
+
+static int64_t context_wall_now_ms(void) {
+    return NEVERC_CONTEXT_TEST_WALL_NOW_MS();
+}
+
+static int64_t context_monotonic_now_ms(void) {
+    int64_t value = NEVERC_CONTEXT_TEST_MONOTONIC_NOW_MS();
+    return value < 0 ? 0 : value;
+}
+
+static int64_t context_add_duration(int64_t start_ms,
+                                    int64_t duration_ms) {
+    if (duration_ms <= 0)
+        return start_ms;
+    if (start_ms > INT64_MAX - duration_ms)
+        return INT64_MAX;
+    return start_ms + duration_ms;
+}
+
+static int64_t context_wall_deadline_after(int64_t wall_now_ms,
+                                           int64_t timeout_ms) {
     /* Negative timeouts are already expired; INT64_MIN cannot be added. */
     if (timeout_ms < 0)
         return 1;
-    int64_t now = now_ms();
-    if (timeout_ms > 0 && now > INT64_MAX - timeout_ms)
-        return INT64_MAX;
-    int64_t deadline = now + timeout_ms;
+    int64_t deadline = context_add_duration(wall_now_ms, timeout_ms);
     return deadline > 0 ? deadline : 1;
+}
+
+static int64_t context_remaining_duration(int64_t deadline_ms,
+                                          int64_t wall_now_ms) {
+    if (deadline_ms <= wall_now_ms)
+        return 0;
+    /* deadline_ms is positive. Avoid overflow when a test/platform exposes
+     * a pre-epoch (negative) wall-clock value. */
+    if (wall_now_ms < deadline_ms - INT64_MAX)
+        return INT64_MAX;
+    return deadline_ms - wall_now_ms;
 }
 
 typedef enum {
@@ -49,17 +114,18 @@ struct neverc_context {
     ctx_kind_t kind;
     neverc_context_t *parent;
     volatile int32_t refs;
-    volatile int32_t cancelled;
     volatile int32_t deadline_latched;
     /* Go WithDeadline on an already-canceled parent records Canceled
      * first; an already-past child deadline must not replace it. */
     int suppress_deadline_err;
 #if defined(_MSC_VER) && !defined(__clang__)
-    __declspec(align(8)) volatile int64_t cancel_at;
+    __declspec(align(8)) volatile int64_t cancel_sequence;
 #else
-    _Alignas(8) volatile int64_t cancel_at;
+    _Alignas(8) volatile int64_t cancel_sequence;
 #endif
+    int64_t cancel_monotonic_ms;
     int64_t deadline_ms;
+    int64_t deadline_monotonic_ms;
     const char *key;
     const void *value;
     const char *cause;
@@ -77,6 +143,22 @@ static neverc_context_t *ctx_retain(neverc_context_t *ctx) {
 }
 
 static const char *ctx_reason(const neverc_context_t *ctx, const char **cause_out);
+
+/* Sequence allocation and publication share one lock.  A cancellation with
+ * sequence N is fully published before N+1 can be assigned, so readers can
+ * use an atomic sequence load without serializing every parent-chain walk. */
+static volatile int32_t g_cancel_order_lock;
+static int64_t g_last_cancel_sequence;
+
+static void cancel_order_lock(void) {
+    while (!NEVERC_ATOMIC_CAS32(&g_cancel_order_lock, 0, 1)) {
+        /* A first cancellation performs only constant-time publication. */
+    }
+}
+
+static void cancel_order_unlock(void) {
+    NEVERC_ATOMIC_STORE32(&g_cancel_order_lock, 0);
+}
 
 static int ctx_parent_canceled(const neverc_context_t *parent) {
     /* Go WithDeadlineCause: a parent that is already done (Canceled or
@@ -96,21 +178,46 @@ static neverc_context_t *ctx_create(ctx_kind_t kind,
     return ctx;
 }
 
+static void ctx_set_timeout(neverc_context_t *ctx, int64_t timeout_ms) {
+    int64_t wall_now_ms = context_wall_now_ms();
+    int64_t monotonic_now_ms = context_monotonic_now_ms();
+    ctx->deadline_ms = context_wall_deadline_after(wall_now_ms, timeout_ms);
+    ctx->deadline_monotonic_ms = context_add_duration(
+        monotonic_now_ms, timeout_ms < 0 ? 0 : timeout_ms);
+}
+
+static void ctx_set_deadline(neverc_context_t *ctx, int64_t deadline_ms) {
+    if (deadline_ms <= 0) {
+        ctx->deadline_ms = 1;
+        ctx->deadline_monotonic_ms = context_monotonic_now_ms();
+        return;
+    }
+
+    int64_t wall_now_ms = context_wall_now_ms();
+    int64_t monotonic_now_ms = context_monotonic_now_ms();
+    int64_t remaining_ms = context_remaining_duration(deadline_ms,
+                                                      wall_now_ms);
+    ctx->deadline_ms = deadline_ms;
+    ctx->deadline_monotonic_ms =
+        context_add_duration(monotonic_now_ms, remaining_ms);
+}
+
 static void ctx_cancel_impl(neverc_context_t *ctx) {
     if (!ctx)
         return;
-    int64_t ts = now_ms();
-    if (ts < 1)
-        ts = 1;
-    /* Publish cancel_at before cancelled so a reader that observes
-     * cancelled=1 always sees a non-zero timestamp. CAS64 is required on
-     * 32-bit hosts where a plain 64-bit store can tear. */
-    if (NEVERC_ATOMIC_CAS64(&ctx->cancel_at, (int64_t)0, ts))
-        NEVERC_ATOMIC_STORE32(&ctx->cancelled, 1);
-}
 
-static int64_t ctx_load_cancel_at(const neverc_context_t *ctx) {
-    return NEVERC_ATOMIC_LOAD64((int64_t *)&ctx->cancel_at);
+    cancel_order_lock();
+    if (NEVERC_ATOMIC_LOAD64(&ctx->cancel_sequence) == 0) {
+        /* Wrapping would make a later cancellation compare earlier.  A
+         * process cannot realistically issue 2^63 first cancellations, but
+         * fail before violating the strict-order invariant if it ever does. */
+        if (g_last_cancel_sequence == INT64_MAX)
+            abort();
+        ctx->cancel_monotonic_ms = context_monotonic_now_ms();
+        NEVERC_ATOMIC_STORE64(&ctx->cancel_sequence,
+                              ++g_last_cancel_sequence);
+    }
+    cancel_order_unlock();
 }
 
 /*
@@ -247,7 +354,8 @@ neverc_context_t *neverc_context_with_cancel_cause(neverc_context_t *parent,
 }
 
 static neverc_context_t *ctx_with_cancel_handle(
-    ctx_kind_t kind, neverc_context_t *parent, int64_t deadline_ms,
+    ctx_kind_t kind, neverc_context_t *parent, int64_t deadline_value,
+    int deadline_is_duration,
     neverc_context_cancel_handle_t **cancel_out) {
     if (!cancel_out)
         return NULL;
@@ -256,9 +364,14 @@ static neverc_context_t *ctx_with_cancel_handle(
     neverc_context_t *ctx = ctx_create(kind, parent);
     if (!ctx)
         return NULL;
-    ctx->deadline_ms = deadline_ms;
-    if (kind == CTX_TIMEOUT && ctx_parent_canceled(parent))
-        ctx->suppress_deadline_err = 1;
+    if (kind == CTX_TIMEOUT) {
+        if (deadline_is_duration)
+            ctx_set_timeout(ctx, deadline_value);
+        else
+            ctx_set_deadline(ctx, deadline_value);
+        if (ctx_parent_canceled(parent))
+            ctx->suppress_deadline_err = 1;
+    }
 
     neverc_context_cancel_handle_t *handle =
         (neverc_context_cancel_handle_t *)calloc(1, sizeof(*handle));
@@ -273,21 +386,20 @@ static neverc_context_t *ctx_with_cancel_handle(
 
 neverc_context_t *neverc_context_with_cancel_handle(
     neverc_context_t *parent, neverc_context_cancel_handle_t **cancel_out) {
-    return ctx_with_cancel_handle(CTX_CANCEL, parent, 0, cancel_out);
+    return ctx_with_cancel_handle(CTX_CANCEL, parent, 0, 0, cancel_out);
 }
 
 neverc_context_t *neverc_context_with_timeout_handle(
     neverc_context_t *parent, int64_t timeout_ms,
     neverc_context_cancel_handle_t **cancel_out) {
-    return ctx_with_cancel_handle(CTX_TIMEOUT, parent, deadline_after(timeout_ms),
+    return ctx_with_cancel_handle(CTX_TIMEOUT, parent, timeout_ms, 1,
                                   cancel_out);
 }
 
 neverc_context_t *neverc_context_with_deadline_handle(
     neverc_context_t *parent, int64_t deadline_ms,
     neverc_context_cancel_handle_t **cancel_out) {
-    return ctx_with_cancel_handle(CTX_TIMEOUT, parent,
-                                  deadline_ms <= 0 ? 1 : deadline_ms,
+    return ctx_with_cancel_handle(CTX_TIMEOUT, parent, deadline_ms, 0,
                                   cancel_out);
 }
 
@@ -315,7 +427,7 @@ neverc_context_t *neverc_context_with_timeout(neverc_context_t *parent,
         if (cancel_out) *cancel_out = NULL;
         return NULL;
     }
-    ctx->deadline_ms = deadline_after(timeout_ms);
+    ctx_set_timeout(ctx, timeout_ms);
     if (ctx_parent_canceled(parent))
         ctx->suppress_deadline_err = 1;
     if (bind_cancel_func(ctx, cancel_out) != 0) {
@@ -333,9 +445,8 @@ neverc_context_t *neverc_context_with_deadline(neverc_context_t *parent,
         if (cancel_out) *cancel_out = NULL;
         return NULL;
     }
-    /* A non-positive absolute deadline is already in the past. Store 1 so
-     * done/err/cause treat it as expired (same as with_timeout(INT64_MIN)). */
-    ctx->deadline_ms = deadline_ms <= 0 ? 1 : deadline_ms;
+    /* A non-positive absolute deadline is already in the past. */
+    ctx_set_deadline(ctx, deadline_ms);
     if (ctx_parent_canceled(parent))
         ctx->suppress_deadline_err = 1;
     if (bind_cancel_func(ctx, cancel_out) != 0) {
@@ -354,7 +465,7 @@ neverc_context_t *neverc_context_with_timeout_cause(neverc_context_t *parent,
         if (cancel_out) *cancel_out = NULL;
         return NULL;
     }
-    ctx->deadline_ms = deadline_after(timeout_ms);
+    ctx_set_timeout(ctx, timeout_ms);
     ctx->cause = cause;
     if (ctx_parent_canceled(parent))
         ctx->suppress_deadline_err = 1;
@@ -374,7 +485,7 @@ neverc_context_t *neverc_context_with_deadline_cause(neverc_context_t *parent,
         if (cancel_out) *cancel_out = NULL;
         return NULL;
     }
-    ctx->deadline_ms = deadline_ms <= 0 ? 1 : deadline_ms;
+    ctx_set_deadline(ctx, deadline_ms);
     ctx->cause = cause;
     if (ctx_parent_canceled(parent))
         ctx->suppress_deadline_err = 1;
@@ -400,48 +511,74 @@ neverc_context_t *neverc_context_without_cancel(neverc_context_t *parent) {
     return ctx;
 }
 
-/*
- * Go records the first cancel/deadline that fires and never overwrites Err.
- * Walk the chain and pick the earliest event so a later child deadline cannot
- * replace a parent cancel, and a later cancel() cannot replace a deadline.
- */
+/* Go records the first cancel/deadline that fires and never overwrites Err.
+ * Cancellation order comes from a strict process-wide sequence. Deadline
+ * order comes from monotonic targets; wall-clock values are reporting only.
+ * The global lock protects only the constant-time snapshot, never the chain
+ * walk: every accepted sequence was fully published before this query's now. */
 static const char *ctx_reason(const neverc_context_t *ctx, const char **cause_out) {
-    const char *err = NULL;
-    const char *cause = NULL;
-    int64_t best = INT64_MAX;
-    int64_t now = now_ms();
+    const neverc_context_t *cancel_context = NULL;
+    const neverc_context_t *deadline_context = NULL;
+    int64_t earliest_cancel_sequence = INT64_MAX;
+    int64_t earliest_cancel_ms = INT64_MAX;
+    int64_t earliest_deadline_ms = INT64_MAX;
+
+    cancel_order_lock();
+    int64_t snapshot_cancel_sequence = g_last_cancel_sequence;
+    int64_t snapshot_now_ms = context_monotonic_now_ms();
+    cancel_order_unlock();
+    NEVERC_CONTEXT_TEST_REASON_SNAPSHOT(ctx, snapshot_cancel_sequence,
+                                        snapshot_now_ms);
 
     while (ctx) {
         if (ctx->kind == CTX_WITHOUT_CANCEL)
             break;
 
-        int64_t cancel_at = ctx_load_cancel_at(ctx);
-        if (cancel_at > 0 && cancel_at < best) {
-            best = cancel_at;
-            err = "context canceled";
-            /* Go WithTimeoutCause/WithDeadlineCause: CancelFunc does not
-             * attach the timeout cause. CTX_CANCEL still uses ctx->cause
-             * (WithCancelCause). */
-            if (ctx->kind == CTX_TIMEOUT)
-                cause = err;
-            else
-                cause = ctx->cause ? ctx->cause : err;
+        int64_t cancel_sequence = NEVERC_ATOMIC_LOAD64(
+            (int64_t *)&ctx->cancel_sequence);
+        if (cancel_sequence > 0 &&
+            cancel_sequence <= snapshot_cancel_sequence &&
+            cancel_sequence < earliest_cancel_sequence) {
+            earliest_cancel_sequence = cancel_sequence;
+            earliest_cancel_ms = ctx->cancel_monotonic_ms;
+            cancel_context = ctx;
         }
-        if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0 &&
+        if (ctx->kind == CTX_TIMEOUT &&
             !ctx->suppress_deadline_err) {
             neverc_context_t *mut = (neverc_context_t *)ctx;
-            int latched = NEVERC_ATOMIC_LOAD32(&mut->deadline_latched);
-            if (!latched && now >= ctx->deadline_ms) {
+            int expired_at_snapshot =
+                ctx->deadline_monotonic_ms <= snapshot_now_ms;
+            if (expired_at_snapshot &&
+                !NEVERC_ATOMIC_LOAD32(&mut->deadline_latched))
                 NEVERC_ATOMIC_STORE32(&mut->deadline_latched, 1);
-                latched = 1;
-            }
-            if (latched && ctx->deadline_ms <= best) {
-                best = ctx->deadline_ms;
-                err = "context deadline exceeded";
-                cause = ctx->cause ? ctx->cause : err;
+            /* The walk is child-to-parent. <= preserves the established rule
+             * that an equal parent deadline supplies the propagated cause.
+             * Latch publication by a later reader is not deadline evidence
+             * for this query; eligibility always uses snapshot_now_ms. */
+            if (expired_at_snapshot &&
+                ctx->deadline_monotonic_ms <= earliest_deadline_ms) {
+                earliest_deadline_ms = ctx->deadline_monotonic_ms;
+                deadline_context = ctx;
             }
         }
+        NEVERC_CONTEXT_TEST_REASON_VISIT(ctx);
         ctx = ctx->parent;
+    }
+
+    const char *err = NULL;
+    const char *cause = NULL;
+    if (deadline_context &&
+        (!cancel_context || earliest_deadline_ms <= earliest_cancel_ms)) {
+        err = "context deadline exceeded";
+        cause = deadline_context->cause ? deadline_context->cause : err;
+    } else if (cancel_context) {
+        err = "context canceled";
+        /* Go WithTimeoutCause/WithDeadlineCause: CancelFunc does not attach
+         * the timeout cause. CTX_CANCEL still uses WithCancelCause's cause. */
+        if (cancel_context->kind == CTX_TIMEOUT)
+            cause = err;
+        else
+            cause = cancel_context->cause ? cancel_context->cause : err;
     }
     if (cause_out)
         *cause_out = cause;

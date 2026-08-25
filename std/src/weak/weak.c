@@ -12,11 +12,9 @@ typedef struct ctrl_block {
     int   owns_data;
     uintptr_t token;
     struct ctrl_block *next_active;
-    struct ctrl_block *next_free;
 } ctrl_block_t;
 
 static ctrl_block_t *g_active = NULL;
-static ctrl_block_t *g_freelist = NULL;
 static uintptr_t g_next_token = 1;
 static int g_tokens_exhausted = 0;
 
@@ -93,15 +91,7 @@ static void ctrl_deactivate_locked(ctrl_block_t *cb) {
 
 static void ctrl_retire_locked(ctrl_block_t *cb) {
     ctrl_deactivate_locked(cb);
-    cb->strong = 0;
-    cb->weak = 0;
-    cb->data = NULL;
-    cb->free_fn = NULL;
-    cb->owns_data = 0;
-    cb->token = 0;
-    cb->next_active = NULL;
-    cb->next_free = g_freelist;
-    g_freelist = cb;
+    free(cb);
 }
 
 static void ctrl_publish(ctrl_block_t *cb, void *data, void (*free_fn)(void *),
@@ -117,27 +107,8 @@ static void ctrl_publish(ctrl_block_t *cb, void *data, void (*free_fn)(void *),
 }
 
 static ctrl_block_t *ctrl_new(void *data, void (*free_fn)(void *), int owns) {
-    ctrl_block_t *cb;
+    ctrl_block_t *cb = (ctrl_block_t *)calloc(1, sizeof(*cb));
     uintptr_t token;
-    LOCK();
-    if (g_freelist) {
-        cb = g_freelist;
-        g_freelist = cb->next_free;
-        token = next_token_locked();
-        if (token == 0) {
-            cb->next_free = g_freelist;
-            g_freelist = cb;
-            UNLOCK();
-            return NULL;
-        }
-        /* Publish the new token and payload before dropping the lock. A stale
-         * released value names the old token, not this recycled allocation. */
-        ctrl_publish(cb, data, free_fn, owns, token);
-        UNLOCK();
-        return cb;
-    }
-    UNLOCK();
-    cb = (ctrl_block_t *)calloc(1, sizeof(*cb));
     if (!cb) return NULL;
     LOCK();
     token = next_token_locked();

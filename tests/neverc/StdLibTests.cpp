@@ -551,15 +551,32 @@ TEST_F(StdLibTest, ContextAllocationFailure) {
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
+TEST_F(StdLibTest, ContextClockAndCancelOrdering) {
+  auto r = compileAndRunStdTest("context_clock", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(maps, "src/maps/maps.c")
 TEST_F(StdLibTest, MapsAllocationFailure) {
   auto r = compileAndRunStdTest("maps_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
+TEST_F(StdLibTest, MapsTombstoneLoadInvariant) {
+  auto r =
+      compileAndRunStdTest("maps_tombstone_load", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(slices, "src/slices/slices.c")
 TEST_F(StdLibTest, SlicesAllocationFailure) {
   auto r = compileAndRunStdTest("slices_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+TEST_F(StdLibTest, SlicesIntSpanBounds) {
+  auto r =
+      compileAndRunStdTest("slices_int_bounds", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }

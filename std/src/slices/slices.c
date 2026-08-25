@@ -16,6 +16,17 @@ static int slices_byte_size(size_t len, size_t elem_size, size_t *bytes) {
     return 1;
 }
 
+/* Parameterizing the size limit lets the white-box test exercise the exact
+ * ILP32 boundary without allocating or falsely describing a huge object. */
+static int slices_int_span_valid_for_limit(size_t len, size_t size_limit) {
+    return len <= size_limit / sizeof(int);
+}
+
+/* Keep every int convenience wrapper on the same byte-span boundary. */
+static int slices_int_span_valid(size_t len) {
+    return slices_int_span_valid_for_limit(len, SIZE_MAX);
+}
+
 /* Go slices.Compact/Delete/Replace clear discarded tail slots so leftover
  * values (including pointers) cannot be observed past the new length. */
 static void slices_clear_tail(char *p, size_t new_len, size_t old_len,
@@ -200,34 +211,37 @@ int neverc_slices_max(const void *slice, size_t len, size_t elem_size, neverc_cm
 
 /* Type-specific convenience */
 int neverc_slices_equal_ints(const int *s1, size_t len1, const int *s2, size_t len2) {
+    if (!slices_int_span_valid(len1) || !slices_int_span_valid(len2)) return 0;
     return neverc_slices_equal(s1, len1, s2, len2, sizeof(int));
 }
 
 int neverc_slices_index_int(const int *slice, size_t len, int val) {
-    if (!slice || len > (size_t)INT_MAX) return -1;
+    if (!slices_int_span_valid(len) || !slice || len > (size_t)INT_MAX)
+        return -1;
     for (size_t i = 0; i < len; i++)
         if (slice[i] == val) return (int)i;
     return -1;
 }
 
 int neverc_slices_contains_int(const int *slice, size_t len, int val) {
+    if (!slices_int_span_valid(len)) return 0;
     return neverc_slices_index_int(slice, len, val) >= 0;
 }
 
 void neverc_slices_reverse_ints(int *slice, size_t len) {
-    if (!slice || len <= 1) return;
+    if (!slices_int_span_valid(len) || !slice || len <= 1) return;
     for (size_t i = 0, j = len - 1; i < j; i++, j--) {
         int tmp = slice[i]; slice[i] = slice[j]; slice[j] = tmp;
     }
 }
 
 void neverc_slices_sort_ints(int *slice, size_t len) {
-    if (!slice || len <= 1) return;
+    if (!slices_int_span_valid(len) || !slice || len <= 1) return;
     nci_pdqsort_int(slice, len);
 }
 
 int neverc_slices_binary_search_int(const int *slice, size_t len, int target, int *found) {
-    if (!slice || len > (size_t)INT_MAX) {
+    if (!slices_int_span_valid(len) || !slice || len > (size_t)INT_MAX) {
         if (found) *found = 0;
         return 0;
     }
@@ -243,7 +257,9 @@ int neverc_slices_binary_search_int(const int *slice, size_t len, int target, in
 }
 
 int neverc_slices_min_int(const int *slice, size_t len) {
-    if (!slice || len == 0 || len > (size_t)INT_MAX) return -1;
+    if (!slices_int_span_valid(len) || !slice || len == 0 ||
+        len > (size_t)INT_MAX)
+        return -1;
     int mi = 0;
     int mv = slice[0];
     for (size_t i = 1; i < len; i++) {
@@ -253,7 +269,9 @@ int neverc_slices_min_int(const int *slice, size_t len) {
 }
 
 int neverc_slices_max_int(const int *slice, size_t len) {
-    if (!slice || len == 0 || len > (size_t)INT_MAX) return -1;
+    if (!slices_int_span_valid(len) || !slice || len == 0 ||
+        len > (size_t)INT_MAX)
+        return -1;
     int mi = 0;
     int mv = slice[0];
     for (size_t i = 1; i < len; i++) {
@@ -263,6 +281,7 @@ int neverc_slices_max_int(const int *slice, size_t len) {
 }
 
 int neverc_slices_is_sorted_ints(const int *slice, size_t len) {
+    if (!slices_int_span_valid(len)) return 0;
     if (len <= 1) return 1;
     if (!slice) return 0;
     for (size_t i = 1; i < len; i++) {
