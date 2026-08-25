@@ -4,6 +4,53 @@
 #include <limits.h>
 #include <string.h>
 
+#define NCI_SCANNER_OVERFLOW UINT32_C(0x80000000)
+#define NCI_SCANNER_ERROR_MASK UINT32_C(0x7fffffff)
+
+/* v3389 exposed the scanner by value. Preserve that exact layout and keep
+ * the later error/overflow bookkeeping in its four bytes of padding after
+ * mode. memcpy avoids creating an unaligned or aliased uint32_t object. */
+#define NCI_SCANNER_STATE_OFFSET                                           \
+    (offsetof(neverc_scanner_t, mode) +                                   \
+     sizeof(((neverc_scanner_t *)0)->mode))
+
+_Static_assert(offsetof(neverc_scanner_t, tok_pos) >=
+                   NCI_SCANNER_STATE_OFFSET + sizeof(uint32_t),
+               "neverc_scanner_t no longer has ABI-private state padding");
+
+static uint32_t scanner_state_load(const neverc_scanner_t *s) {
+    uint32_t state = 0;
+    memcpy(&state, (const unsigned char *)s + NCI_SCANNER_STATE_OFFSET,
+           sizeof(state));
+    return state;
+}
+
+static void scanner_state_store(neverc_scanner_t *s, uint32_t state) {
+    memcpy((unsigned char *)s + NCI_SCANNER_STATE_OFFSET, &state,
+           sizeof(state));
+}
+
+static int scanner_error_count_value(const neverc_scanner_t *s) {
+    return (int)(scanner_state_load(s) & NCI_SCANNER_ERROR_MASK);
+}
+
+static void scanner_add_error(neverc_scanner_t *s) {
+    uint32_t state = scanner_state_load(s);
+    uint32_t errors = state & NCI_SCANNER_ERROR_MASK;
+    if (errors != NCI_SCANNER_ERROR_MASK) errors++;
+    scanner_state_store(s, (state & NCI_SCANNER_OVERFLOW) | errors);
+}
+
+static int scanner_token_overflow(const neverc_scanner_t *s) {
+    return (scanner_state_load(s) & NCI_SCANNER_OVERFLOW) != 0;
+}
+
+static void scanner_set_token_overflow(neverc_scanner_t *s, int overflow) {
+    uint32_t state = scanner_state_load(s) & NCI_SCANNER_ERROR_MASK;
+    if (overflow) state |= NCI_SCANNER_OVERFLOW;
+    scanner_state_store(s, state);
+}
+
 static int is_digit(int ch) {
     return ch >= '0' && ch <= '9';
 }
@@ -92,8 +139,8 @@ static int next_ch(neverc_scanner_t *s) {
     int ch = peek_rune(s, &width);
     if (ch == NEVERC_SCANNER_EOF) return ch;
     s->pos += width;
-    if (ch == NEVERC_UTF8_RUNE_ERROR && width == 1 && s->errors < INT_MAX)
-        s->errors++;
+    if (ch == NEVERC_UTF8_RUNE_ERROR && width == 1)
+        scanner_add_error(s);
     if (ch == '\n') {
         if (s->line < INT_MAX) s->line++;
         s->col = 1;
@@ -112,7 +159,7 @@ static void emit_bytes(neverc_scanner_t *s, const char *data, size_t len) {
         s->tok_len += copy;
     }
     if (copy < len)
-        s->tok_overflow = 1;
+        scanner_set_token_overflow(s, 1);
 }
 
 /* ASCII-only scanner paths use emit(); rune paths copy source bytes with
@@ -384,7 +431,7 @@ void neverc_scanner_set_mode(neverc_scanner_t *s, unsigned mode) {
 int neverc_scanner_scan(neverc_scanner_t *s) {
     if (!s) return NEVERC_SCANNER_EOF;
     s->tok_len = 0;
-    s->tok_overflow = 0;
+    scanner_set_token_overflow(s, 0);
 
 again:
     skip_whitespace(s);
@@ -425,10 +472,10 @@ again:
             next_ch(s);
             s->tok_type = scan_comment(s, nxt);
             if (s->mode & NEVERC_SCAN_SKIP_COMMENTS) {
-                if (s->tok_overflow && s->errors < INT_MAX)
-                    s->errors++;
+                if (scanner_token_overflow(s))
+                    scanner_add_error(s);
                 s->tok_len = 0;
-                s->tok_overflow = 0;
+                scanner_set_token_overflow(s, 0);
                 goto again;
             }
         } else {
@@ -441,8 +488,8 @@ again:
     }
 
     s->tok_buf[s->tok_len] = '\0';
-    if (s->tok_overflow && s->errors < INT_MAX)
-        s->errors++;
+    if (scanner_token_overflow(s))
+        scanner_add_error(s);
     return s->tok_type;
 }
 
@@ -461,14 +508,14 @@ neverc_scanner_pos_t neverc_scanner_position(const neverc_scanner_t *s) {
 }
 
 int neverc_scanner_error_count(const neverc_scanner_t *s) {
-    return s ? s->errors : 0;
+    return s ? scanner_error_count_value(s) : 0;
 }
 
 int neverc_scanner_peek(neverc_scanner_t *s) {
     if (!s || s->pos >= s->src_len) return NEVERC_SCANNER_EOF;
     size_t saved_pos = s->pos;
     int saved_line = s->line, saved_col = s->col;
-    int saved_errors = s->errors;
+    uint32_t saved_state = scanner_state_load(s);
     skip_whitespace(s);
     /* Match Scan(): skipped comments are whitespace, not the next token. */
     if ((s->mode & NEVERC_SCAN_COMMENTS) && (s->mode & NEVERC_SCAN_SKIP_COMMENTS)) {
@@ -481,7 +528,7 @@ int neverc_scanner_peek(neverc_scanner_t *s) {
     s->pos = saved_pos;
     s->line = saved_line;
     s->col = saved_col;
-    s->errors = saved_errors;
+    scanner_state_store(s, saved_state);
     return ch;
 }
 

@@ -625,6 +625,8 @@ TEST_F(StdLibTest, TextTemplateAllocationFailure) {
 }
 STD_TEST(scanner, "src/text/scanner/scanner.c", "src/unicode/utf8/utf8.c",
          "src/unicode/unicode.c")
+STD_TEST(scanner_abi, "src/text/scanner/scanner.c",
+         "src/unicode/utf8/utf8.c", "src/unicode/unicode.c")
 TEST_F(StdLibTest, ScannerBuiltinDependencies) {
   auto r = compileAndRunStdTest("scanner", {}, {"-fbuiltin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
