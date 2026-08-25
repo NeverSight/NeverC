@@ -124,7 +124,6 @@ int main(void) {
         float_input[162] = '9';
         input = open_fmt_oom_input_pipe(float_input, sizeof(float_input));
         CHECK(input != NULL);
-        CHECK(ftell(input) < 0);
         reset_allocator(1);
         CHECK(neverc_fmt_fscanf(input, "%f", &value) == 0);
         CHECK(allocation_count == 1);

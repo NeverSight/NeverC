@@ -491,6 +491,24 @@ static void test_sscanf(void) {
         }
     }
 
+    /* A seekability probe must not use fseek: ISO C makes any successful
+     * positioning operation discard bytes supplied by ungetc. */
+    {
+        FILE *tmp = tmpfile();
+        check_true("fscanf caller pushback fixture", tmp != NULL);
+        if (tmp) {
+            fputs("x", tmp);
+            rewind(tmp);
+            check_int("fscanf caller pushback underlying", getc(tmp), 'x');
+            check_int("fscanf caller pushback install", ungetc('7', tmp), '7');
+            a = 0;
+            n = neverc_fmt_fscanf(tmp, "%d", &a);
+            check_int("fscanf caller pushback count", n, 1);
+            check_int("fscanf caller pushback value", a, 7);
+            fclose(tmp);
+        }
+    }
+
     /* Go accept(sign) consumes a lone '+' / '-'; leftover starts after it. */
     {
         FILE *tmp = tmpfile();

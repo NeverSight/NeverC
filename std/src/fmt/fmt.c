@@ -5,6 +5,10 @@
 #include <string.h>
 #include <limits.h>
 #include <math.h>
+#ifdef _WIN32
+#include <io.h>
+#include <windows.h>
+#endif
 
 /* Dynamic buffer for building formatted strings */
 typedef struct {
@@ -1550,6 +1554,31 @@ static int scan_rewind_unused(FILE *f, long start, size_t consumed) {
     return fseek(f, start + (long)consumed, SEEK_SET);
 }
 
+/* ftell alone is not a portability-safe seekability probe. In particular,
+ * the Windows CRT can report a non-negative position for a pipe even though
+ * repositioning that stream is impossible. Inspect the native Windows handle
+ * without calling fseek: even a no-op fseek would discard caller pushback from
+ * ungetc before the scanner gets a chance to consume it. */
+static int scan_file_position(FILE *f, long *position) {
+    long current;
+    if (!f || !position) return 0;
+#ifdef _WIN32
+    {
+        int fd = _fileno(f);
+        intptr_t raw_handle;
+        if (fd < 0) return 0;
+        raw_handle = _get_osfhandle(fd);
+        if (raw_handle == (intptr_t)-1 ||
+            GetFileType((HANDLE)raw_handle) != FILE_TYPE_DISK)
+            return 0;
+    }
+#endif
+    current = ftell(f);
+    if (current < 0) return 0;
+    *position = current;
+    return 1;
+}
+
 /* A non-seekable FILE cannot support the line-sized lookahead used by the
  * string scanner above. Keep exactly one byte pending instead: C guarantees
  * one byte of pushback, so scan_stream_finish() can make that byte visible to
@@ -2104,10 +2133,18 @@ done:
 /* Seekable Go Fscan SkipSpace uses the same isSpace as Sscan, including
  * U+00A0. Non-seekable streams use the documented byte-exact ASCII subset. */
 static int scan_skip_file_space(FILE *f, int allow_nl) {
+    long initial_position;
+    int seekable;
     if (!f) return 0;
+    seekable = scan_file_position(f, &initial_position);
     for (;;) {
-        long pos = ftell(f);
+        long pos = -1;
         char raw[5];
+        if (seekable) {
+            pos = ftell(f);
+            if (pos < 0)
+                seekable = 0;
+        }
         int c = getc(f);
         size_t got = 0;
         unsigned char first;
@@ -2115,7 +2152,7 @@ static int scan_skip_file_space(FILE *f, int allow_nl) {
         uint32_t rune;
         int n;
         if (c == EOF) return 0;
-        if (pos < 0) {
+        if (!seekable) {
             /* A pipe cannot restore a multi-byte non-space rune. Keep this
              * path byte-exact and use only the one-byte pushback C promises. */
             if (scan_ascii_is_space(c, allow_nl))
@@ -2213,11 +2250,11 @@ static int scan_int_from_file(FILE *f, int *out_int) {
 }
 
 static int scan_vfscanf(FILE *f, const char *format, va_list args) {
-    long start = ftell(f);
+    long start;
     char *input;
     int matched;
     size_t consumed = 0;
-    if (start < 0)
+    if (!scan_file_position(f, &start))
         return scan_formatted_stream(f, format, args);
     input = scan_read_format_lines(f, format);
     if (!input) return 0;
