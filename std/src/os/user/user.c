@@ -46,11 +46,14 @@ static int user_copy_field(char *dst, size_t cap, const char *src) {
 #pragma comment(lib, "shell32.lib")
 
 int neverc_user_current(neverc_user_t *u) {
+    int invalid = 0;
     if (!u) return -1;
     memset(u, 0, sizeof(*u));
+    neverc_user_t tmp;
+    memset(&tmp, 0, sizeof(tmp));
 
-    DWORD size = sizeof(u->username);
-    if (!GetUserNameA(u->username, &size)) return -1;
+    DWORD size = sizeof(tmp.username);
+    if (!GetUserNameA(tmp.username, &size)) return -1;
 
     HANDLE token;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return -1;
@@ -63,8 +66,8 @@ int neverc_user_current(neverc_user_t *u) {
     if (GetTokenInformation(token, TokenUser, tok_user, tok_len, &tok_len)) {
         char *sid_str = NULL;
         if (ConvertSidToStringSidA(tok_user->User.Sid, &sid_str)) {
-            if (user_copy_field(u->uid, sizeof(u->uid), sid_str) != 0)
-                u->uid[0] = '\0';
+            if (user_copy_field(tmp.uid, sizeof(tmp.uid), sid_str) != 0)
+                invalid = 1;
             LocalFree(sid_str);
         }
     }
@@ -76,24 +79,27 @@ int neverc_user_current(neverc_user_t *u) {
     if (tok_group && GetTokenInformation(token, TokenPrimaryGroup, tok_group, tok_len, &tok_len)) {
         char *gid_str = NULL;
         if (ConvertSidToStringSidA(tok_group->PrimaryGroup, &gid_str)) {
-            if (user_copy_field(u->gid, sizeof(u->gid), gid_str) != 0)
-                u->gid[0] = '\0';
+            if (user_copy_field(tmp.gid, sizeof(tmp.gid), gid_str) != 0)
+                invalid = 1;
             LocalFree(gid_str);
         }
     }
     free(tok_group);
     CloseHandle(token);
 
-    if (user_copy_field(u->name, sizeof(u->name), u->username) != 0)
-        u->name[0] = '\0';
+    if (user_copy_field(tmp.name, sizeof(tmp.name), tmp.username) != 0)
+        invalid = 1;
 
     char home[MAX_PATH];
     if (SHGetFolderPathA(NULL, CSIDL_PROFILE, NULL, 0, home) == S_OK) {
-        if (user_copy_field(u->home_dir, sizeof(u->home_dir), home) != 0)
-            u->home_dir[0] = '\0';
+        if (user_copy_field(tmp.home_dir, sizeof(tmp.home_dir), home) != 0)
+            invalid = 1;
     }
 
-    return (u->username[0] && u->uid[0]) ? 0 : -1;
+    if (invalid || !tmp.username[0] || !tmp.uid[0])
+        return -1;
+    *u = tmp;
+    return 0;
 }
 
 static int user_windows_lookup_account(const char *account, char *sid_buf,
@@ -133,28 +139,31 @@ done:
 
 int neverc_user_lookup(const char *username, neverc_user_t *u) {
     neverc_user_t current;
+    neverc_user_t tmp;
     SID_NAME_USE use = SidTypeUnknown;
     int have_current;
     if (!u) return -1;
     memset(u, 0, sizeof(*u));
     if (!username || username[0] == '\0') return -1;
+    memset(&tmp, 0, sizeof(tmp));
     have_current = neverc_user_current(&current) == 0;
     if (have_current && _stricmp(current.username, username) == 0) {
         *u = current;
         return 0;
     }
-    if (user_windows_lookup_account(username, u->uid, sizeof(u->uid),
-                                    u->username, sizeof(u->username),
+    if (user_windows_lookup_account(username, tmp.uid, sizeof(tmp.uid),
+                                    tmp.username, sizeof(tmp.username),
                                     &use) != 0)
         return -1;
     if (use != SidTypeUser && use != SidTypeDeletedAccount)
         return -1;
-    if (have_current && _stricmp(current.uid, u->uid) == 0) {
+    if (have_current && _stricmp(current.uid, tmp.uid) == 0) {
         *u = current;
         return 0;
     }
-    if (user_copy_field(u->name, sizeof(u->name), u->username) != 0)
+    if (user_copy_field(tmp.name, sizeof(tmp.name), tmp.username) != 0)
         return -1;
+    *u = tmp;
     return 0;
 }
 

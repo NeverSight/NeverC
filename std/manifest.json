@@ -2376,6 +2376,9 @@
       "symbols": {
         "neverc_url_parse": "src/net/url/url.c",
         "neverc_url_parse_request_uri": "src/net/url/url.c",
+        "neverc_url_has_password": "src/net/url/url.c",
+        "neverc_url_has_query": "src/net/url/url.c",
+        "neverc_url_has_port": "src/net/url/url.c",
         "neverc_url_string": "src/net/url/url.c",
         "neverc_url_hostname": "src/net/url/url.c",
         "neverc_url_request_uri": "src/net/url/url.c",
@@ -2395,6 +2398,9 @@
       "dot_methods": {
         "parse": "neverc_url_parse",
         "parse_request_uri": "neverc_url_parse_request_uri",
+        "has_password": "neverc_url_has_password",
+        "has_query": "neverc_url_has_query",
+        "has_port": "neverc_url_has_port",
         "string": "neverc_url_string",
         "hostname": "neverc_url_hostname",
         "request_uri": "neverc_url_request_uri",

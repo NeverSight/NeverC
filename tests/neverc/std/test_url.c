@@ -106,7 +106,7 @@ static void test_parse_edges(void) {
     ASSERT_STR_EQ(u.host, "host");
     ASSERT_STR_EQ(u.port, "");
     ASSERT_STR_EQ(u.path, "/api");
-    ASSERT_INT_EQ(u.has_port, 1);
+    ASSERT_INT_EQ(neverc_url_has_port(&u), 1);
     {
         char empty_port[32];
         ASSERT_INT_EQ(neverc_url_string(&u, empty_port, sizeof(empty_port)),
@@ -199,12 +199,12 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://user:@host/x"), 0);
     ASSERT_STR_EQ(u.user, "user");
     ASSERT_STR_EQ(u.password, "");
-    ASSERT_INT_EQ(u.has_password, 1);
+    ASSERT_INT_EQ(neverc_url_has_password(&u), 1);
     ASSERT_STR_EQ(u.host, "host");
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://:@host/x"), 0);
     ASSERT_STR_EQ(u.user, "");
     ASSERT_STR_EQ(u.password, "");
-    ASSERT_INT_EQ(u.has_password, 1);
+    ASSERT_INT_EQ(neverc_url_has_password(&u), 1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://evil.com\\@good.com/"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://evil.com\\@good.com/x"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "//evil.com\\@good.com/path"), -1);
@@ -284,16 +284,16 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/ok#bad%zz"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/?q=%zz"), 0);
     ASSERT_STR_EQ(u.raw_query, "q=%zz");
-    ASSERT_INT_EQ(u.has_query, 1);
+    ASSERT_INT_EQ(neverc_url_has_query(&u), 1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/path?"), 0);
     ASSERT_STR_EQ(u.path, "/path");
     ASSERT_STR_EQ(u.raw_query, "");
-    ASSERT_INT_EQ(u.has_query, 1);
+    ASSERT_INT_EQ(neverc_url_has_query(&u), 1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com/path"), 0);
-    ASSERT_INT_EQ(u.has_query, 0);
+    ASSERT_INT_EQ(neverc_url_has_query(&u), 0);
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://example.com?#frag"), 0);
     ASSERT_STR_EQ(u.raw_query, "");
-    ASSERT_INT_EQ(u.has_query, 1);
+    ASSERT_INT_EQ(neverc_url_has_query(&u), 1);
     ASSERT_STR_EQ(u.fragment, "frag");
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://b\xc3\xbc""cher.de/"), 0);
     ASSERT_STR_EQ(u.host, "xn--bcher-kva.de");

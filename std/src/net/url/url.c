@@ -46,6 +46,43 @@ static int copy_exact(char *dst, size_t cap, const char *src, size_t len) {
     return 0;
 }
 
+/* The released URL layout has no spare flag fields. Presence only needs
+ * separate storage when the corresponding component is empty, so keep a
+ * cookie after its leading NUL. Non-empty components derive presence from the
+ * first byte and retain their full published capacity. */
+static const unsigned char url_presence_cookie[4] = {
+    0x4e, 0x43, 0xa5, 0x5a
+};
+
+static void mark_empty_component_present(char *component, size_t capacity) {
+    if (!component || capacity < sizeof(url_presence_cookie) ||
+        component[0] != '\0')
+        return;
+    memcpy(component + capacity - sizeof(url_presence_cookie),
+           url_presence_cookie, sizeof(url_presence_cookie));
+}
+
+static int component_is_present(const char *component, size_t capacity) {
+    if (!component || capacity < sizeof(url_presence_cookie))
+        return 0;
+    if (component[0] != '\0')
+        return 1;
+    return memcmp(component + capacity - sizeof(url_presence_cookie),
+                  url_presence_cookie, sizeof(url_presence_cookie)) == 0;
+}
+
+int neverc_url_has_password(const neverc_url_t *u) {
+    return u && component_is_present(u->password, sizeof(u->password));
+}
+
+int neverc_url_has_query(const neverc_url_t *u) {
+    return u && component_is_present(u->raw_query, sizeof(u->raw_query));
+}
+
+int neverc_url_has_port(const neverc_url_t *u) {
+    return u && component_is_present(u->port, sizeof(u->port));
+}
+
 #define PCT_PLUS 1
 #define PCT_HOST 2
 #define PCT_ZONE 4
@@ -499,7 +536,8 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
                     copy_exact(u->password, sizeof(u->password), colon + 1,
                                pass_len) != 0)
                     return -1;
-                u->has_password = 1;
+                mark_empty_component_present(u->password,
+                                             sizeof(u->password));
             } else {
                 size_t user_len = (size_t)(at - p);
                 if (!valid_pct_encoded(p, user_len) ||
@@ -532,7 +570,7 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
                     parse_port(bracket + 2, authority_end, u->port,
                                sizeof(u->port)) != 0)
                     return -1;
-                u->has_port = 1;
+                mark_empty_component_present(u->port, sizeof(u->port));
             }
         } else {
             const char *colon = NULL;
@@ -558,7 +596,7 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
                 if (parse_port(colon + 1, host_end, u->port,
                                sizeof(u->port)) != 0)
                     return -1;
-                u->has_port = 1;
+                mark_empty_component_present(u->port, sizeof(u->port));
             }
         }
         p = authority_end;
@@ -581,10 +619,10 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
     if (query) {
         /* Go ForceQuery: a '?' is kept even when RawQuery is empty so
          * `http://host/path?` does not round-trip as `http://host/path`. */
-        u->has_query = 1;
         if (copy_exact(u->raw_query, sizeof(u->raw_query), query + 1,
                        (size_t)(before_fragment - query - 1)) != 0)
             return -1;
+        mark_empty_component_present(u->raw_query, sizeof(u->raw_query));
     }
     if (fragment) {
         size_t frag_len = (size_t)(raw_end - fragment - 1);
@@ -597,7 +635,8 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
 
     if (via_request && !u->scheme[0] && !u->host[0] &&
         u->path[0] != '/' &&
-        !(u->path[0] == '*' && u->path[1] == '\0' && !u->has_query &&
+        !(u->path[0] == '*' && u->path[1] == '\0' &&
+          !neverc_url_has_query(u) &&
           raw_length == 1 && raw_url[0] == '*'))
         return -1;
 
@@ -614,18 +653,21 @@ int neverc_url_parse_request_uri(neverc_url_t *u, const char *raw_url) {
 
 int neverc_url_string(const neverc_url_t *u, char *buf, size_t cap) {
     if (!u) return -1;
+    int has_password = neverc_url_has_password(u);
+    int has_port = neverc_url_has_port(u);
+    int has_query = neverc_url_has_query(u);
     url_builder_t builder;
     builder_init(&builder, buf, cap);
     if (u->scheme[0]) {
         builder_append_field(&builder, u->scheme, sizeof(u->scheme));
         builder_append_literal(&builder, "://");
-    } else if (u->host[0] || u->user[0] || u->has_password ||
+    } else if (u->host[0] || u->user[0] || has_password ||
                u->password[0]) {
         builder_append_literal(&builder, "//");
     }
-    if (u->user[0] || u->has_password || u->password[0]) {
+    if (u->user[0] || has_password || u->password[0]) {
         builder_append_userinfo(&builder, u->user, sizeof(u->user));
-        if (u->has_password || u->password[0]) {
+        if (has_password || u->password[0]) {
             builder_append_literal(&builder, ":");
             builder_append_userinfo(&builder, u->password, sizeof(u->password));
         }
@@ -638,13 +680,13 @@ int neverc_url_string(const neverc_url_t *u, char *buf, size_t cap) {
         if (is_ipv6) builder_append_literal(&builder, "[");
         builder_append_host(&builder, u->host, host_length);
         if (is_ipv6) builder_append_literal(&builder, "]");
-        if (u->has_port || u->port[0]) {
+        if (has_port || u->port[0]) {
             builder_append_literal(&builder, ":");
             builder_append_field(&builder, u->port, sizeof(u->port));
         }
     }
     builder_append_field(&builder, u->path, sizeof(u->path));
-    if (u->has_query || u->raw_query[0]) {
+    if (has_query || u->raw_query[0]) {
         builder_append_literal(&builder, "?");
         builder_append_field(&builder, u->raw_query, sizeof(u->raw_query));
     }
@@ -665,6 +707,7 @@ int neverc_url_hostname(const neverc_url_t *u, char *buf, size_t cap) {
 
 int neverc_url_request_uri(const neverc_url_t *u, char *buf, size_t cap) {
     if (!u) return -1;
+    int has_query = neverc_url_has_query(u);
     url_builder_t builder;
     builder_init(&builder, buf, cap);
     if (u->path[0]) {
@@ -682,7 +725,7 @@ int neverc_url_request_uri(const neverc_url_t *u, char *buf, size_t cap) {
         builder_append(&builder, u->path, path_length);
     } else
         builder_append_literal(&builder, "/");
-    if (u->has_query || u->raw_query[0]) {
+    if (has_query || u->raw_query[0]) {
         builder_append_literal(&builder, "?");
         builder_append_field(&builder, u->raw_query, sizeof(u->raw_query));
     }
@@ -709,7 +752,7 @@ int neverc_url_is_safe_redirect(const char *raw_url, const char *allowed_host) {
     neverc_url_t u;
     if (neverc_url_parse(&u, raw_url) != 0)
         return 0;
-    if (u.user[0] || u.has_password || u.password[0])
+    if (u.user[0] || neverc_url_has_password(&u) || u.password[0])
         return 0;
     if (strchr(raw_url, '\\'))
         return 0;

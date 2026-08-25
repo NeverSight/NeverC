@@ -16,21 +16,18 @@ typedef struct {
     char path[1024];
     char raw_query[2048];
     char fragment[256];
-    /* Set when userinfo contained a colon, including an empty password
-     * (`user:@host`). Distinguishes that from `user@host` (no password). */
-    int  has_password;
-    /* Set when the URL contained '?', including a trailing empty query
-     * (`/path?`). Distinguishes that from `/path` (Go url.ForceQuery). */
-    int  has_query;
-    /* Set when the authority contained ':', including an empty port
-     * (`http://host:/`). Distinguishes that from `http://host/` so
-     * String() can keep Go issue 12200's empty-port round-trip. */
-    int  has_port;
 } neverc_url_t;
 
 /* Parse a hierarchical URL or relative reference. Components that exceed the
  * fixed fields are rejected rather than truncated. Returns 0 or -1. */
 int  neverc_url_parse(neverc_url_t *u, const char *raw_url);
+
+/* Presence accessors return nonzero for delimiter distinctions that an empty
+ * component cannot express by itself: `user:@host`, `/path?`, and `host:`.
+ * A NULL URL returns zero. */
+int  neverc_url_has_password(const neverc_url_t *u);
+int  neverc_url_has_query(const neverc_url_t *u);
+int  neverc_url_has_port(const neverc_url_t *u);
 
 /* ParseRequestURI: absolute URI or absolute path only (Go url.ParseRequestURI).
  * Rejects fragments and relative paths such as "foo". "*" is allowed. */

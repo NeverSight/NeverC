@@ -9,10 +9,10 @@ extern "C" {
 #endif
 
 typedef struct {
-    char uid[256];
-    char gid[256];
-    char username[260];
-    char name[260];
+    char uid[64];
+    char gid[64];
+    char username[256];
+    char name[256];
     char home_dir[1024];
 } neverc_user_t;
 
@@ -21,13 +21,16 @@ typedef struct {
     char name[256];
 } neverc_group_t;
 
-/* Current returns the current user. Returns 0 on success, -1 on failure. */
+/* Current returns the current user. Returns 0 on success, -1 on failure.
+ * When u is non-NULL, failure leaves the entire output zeroed. */
 int neverc_user_current(neverc_user_t *u);
 
-/* Lookup looks up a user by username. Returns 0 on success, -1 if not found. */
+/* Lookup looks up a user by username. Returns 0 on success, -1 if not found.
+ * When u is non-NULL, failure leaves the entire output zeroed. */
 int neverc_user_lookup(const char *username, neverc_user_t *u);
 
-/* LookupId looks up a user by numeric UID. Returns 0 on success. */
+/* LookupId looks up a user by numeric UID. Returns 0 on success. When u is
+ * non-NULL, failure leaves the entire output zeroed. */
 int neverc_user_lookup_id(int uid, neverc_user_t *u);
 
 /* LookupGroup looks up a group by name. Returns 0 on success. */

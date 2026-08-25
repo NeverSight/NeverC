@@ -219,7 +219,7 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
         ws_set_error(errp, "WebSocket URL must use ws:// or wss://");
         return -1;
     }
-    if (u.user[0] || u.has_password) {
+    if (u.user[0] || neverc_url_has_password(&u)) {
         ws_set_error(errp, "WebSocket URL userinfo is not allowed");
         return -1;
     }
@@ -276,7 +276,7 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
     }
 
     path_len = strlen(u.path);
-    query_len = u.has_query ? strlen(u.raw_query) : 0;
+    query_len = neverc_url_has_query(&u) ? strlen(u.raw_query) : 0;
     if (path_len == 0) {
         parsed->target[0] = '/';
         parsed->target[1] = '\0';
@@ -289,7 +289,7 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
         memcpy(parsed->target, u.path, path_len + 1);
         target_len = path_len;
     }
-    if (u.has_query) {
+    if (neverc_url_has_query(&u)) {
         if (target_len + 1 + query_len >= sizeof(parsed->target)) {
             ws_set_error(errp, "WebSocket request target is too long");
             return -1;
