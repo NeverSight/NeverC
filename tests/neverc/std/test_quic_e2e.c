@@ -204,6 +204,62 @@ static int quic_test_certificate_flight_has_chain(
     return -1;
 }
 
+static void quic_test_preserves_clienthello_parser_error(void) {
+    neverc_network_test_files_t files = {0};
+    int files_written = neverc_network_test_write_certs("quic-tls-error",
+                                                         &files);
+    CHECK(files_written == 0);
+    if (files_written != 0) {
+        neverc_network_test_remove_certs(&files);
+        return;
+    }
+
+    quic_transport_params_t client_local;
+    quic_transport_params_t client_peer;
+    quic_transport_params_t server_local;
+    quic_transport_params_t server_peer;
+    neverc_quic_transport_params_default(&client_local);
+    neverc_quic_transport_params_default(&client_peer);
+    neverc_quic_transport_params_default(&server_local);
+    neverc_quic_transport_params_default(&server_peer);
+    neverc_quic_config_t client_config = neverc_quic_config_default();
+    client_config.insecure_skip_verify = 1;
+    client_config.server_name = "localhost";
+    neverc_quic_config_t server_config = neverc_quic_config_default();
+    server_config.cert_file = files.server_cert;
+    server_config.key_file = files.server_key;
+    quic_tls_t *client = neverc_quic_tls_create(0);
+    quic_tls_t *server = neverc_quic_tls_create(1);
+    CHECK(client != NULL && server != NULL);
+    if (client && server) {
+        int client_configured = neverc_quic_tls_configure(
+            client, &client_config, "localhost", &client_local,
+            &client_peer);
+        int server_configured = neverc_quic_tls_configure(
+            server, &server_config, NULL, &server_local, &server_peer);
+        CHECK(client_configured == 0 && server_configured == 0);
+        if (client_configured == 0 && server_configured == 0) {
+            CHECK(neverc_quic_tls_start(client) == 0);
+            uint64_t offset = 0;
+            const uint8_t *data = NULL;
+            size_t len = 0;
+            CHECK(neverc_quic_tls_get_crypto_data(
+                      client, QUIC_ENC_INITIAL, &offset, &data, &len) == 0);
+            CHECK(offset == 0 && data != NULL && len != 0);
+            CHECK(neverc_quic_tls_receive_crypto(
+                      server, QUIC_ENC_INITIAL, offset, data, len) == 0);
+            CHECK(neverc_quic_tls_process(server) == -1);
+            const char *tls_error = neverc_quic_tls_error(server);
+            CHECK(tls_error &&
+                  strcmp(tls_error,
+                         "invalid client QUIC transport parameters") == 0);
+        }
+    }
+    neverc_quic_tls_destroy(client);
+    neverc_quic_tls_destroy(server);
+    neverc_network_test_remove_certs(&files);
+}
+
 static void quic_test_server_flight_preserves_certificate_chain(void) {
     neverc_network_test_files_t files = {0};
     int files_written = neverc_network_test_write_certs("quic-chain", &files);
@@ -234,6 +290,15 @@ static void quic_test_server_flight_preserves_certificate_chain(void) {
     neverc_quic_transport_params_default(&client_peer);
     neverc_quic_transport_params_default(&server_local);
     neverc_quic_transport_params_default(&server_peer);
+    client_local.initial_scid[0] = 0xc1U;
+    client_local.initial_scid_len = 1U;
+    client_local.has_initial_scid = 1;
+    server_local.original_dcid[0] = 0xd1U;
+    server_local.original_dcid_len = 1U;
+    server_local.has_original_dcid = 1;
+    server_local.initial_scid[0] = 0x51U;
+    server_local.initial_scid_len = 1U;
+    server_local.has_initial_scid = 1;
     neverc_quic_config_t client_config = neverc_quic_config_default();
     client_config.insecure_skip_verify = 1;
     client_config.server_name = "localhost";
@@ -257,7 +322,11 @@ static void quic_test_server_flight_preserves_certificate_chain(void) {
         CHECK(offset == 0 && data != NULL && len != 0);
         CHECK(neverc_quic_tls_receive_crypto(server, QUIC_ENC_INITIAL,
                                              offset, data, len) == 0);
-        CHECK(neverc_quic_tls_process(server) == 0);
+        int process_result = neverc_quic_tls_process(server);
+        if (process_result != 0)
+            fprintf(stderr, "server flight error: %s\n",
+                    neverc_quic_tls_error(server));
+        CHECK(process_result == 0);
         offset = 0;
         data = NULL;
         len = 0;
@@ -449,6 +518,7 @@ int main(void) {
     printf("QUIC end-to-end test suite:\n");
     quic_test_rejects_unimplemented_options();
     quic_test_clienthello_legacy_session_id_empty();
+    quic_test_preserves_clienthello_parser_error();
     quic_test_server_flight_preserves_certificate_chain();
     quic_test_roundtrip();
     printf("quic-e2e: %d checks, %d failed\n", tests_run, tests_failed);

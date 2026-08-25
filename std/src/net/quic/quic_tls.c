@@ -1002,7 +1002,11 @@ static int qt_parse_encrypted_extensions(quic_tls_t *tls,
 
 static int qt_parse_certificate(quic_tls_t *tls, const uint8_t *body,
                                 size_t body_len) {
-    if (!tls || !body || body_len < 4 || tls->peer_cert_der) return -1;
+    if (!tls) return -1;
+    if (!body || body_len < 4)
+        return qt_fail(tls, "malformed server Certificate");
+    if (tls->peer_cert_der)
+        return qt_fail(tls, "duplicate server Certificate");
     size_t position = 0;
     size_t context_len = body[position++];
     if (context_len != 0 || context_len > body_len - position)
@@ -1144,36 +1148,41 @@ static int qt_process_client(quic_tls_t *tls) {
         size_t body_len = message_len - 4;
         if (tls->phase == QT_PHASE_CLIENT_WAIT_SERVER_HELLO) {
             uint8_t server_public_key[32];
-            if (type != TLS_HS_SERVER_HELLO ||
-                qt_parse_server_hello(tls, message, message_len,
-                                      server_public_key) != 0)
+            if (type != TLS_HS_SERVER_HELLO)
                 return qt_fail(tls, "expected a valid ServerHello");
+            if (qt_parse_server_hello(tls, message, message_len,
+                                      server_public_key) != 0)
+                return -1;
             neverc_sha256_update(&tls->transcript, message, message_len);
             if (qt_derive_handshake_keys(tls, server_public_key) != 0)
                 return -1;
             tls->phase = QT_PHASE_CLIENT_WAIT_ENCRYPTED_EXTENSIONS;
         } else if (tls->phase == QT_PHASE_CLIENT_WAIT_ENCRYPTED_EXTENSIONS) {
-            if (type != TLS_HS_ENCRYPTED_EXT ||
-                qt_parse_encrypted_extensions(tls, body, body_len) != 0)
+            if (type != TLS_HS_ENCRYPTED_EXT)
                 return qt_fail(tls, "expected valid EncryptedExtensions");
+            if (qt_parse_encrypted_extensions(tls, body, body_len) != 0)
+                return -1;
             neverc_sha256_update(&tls->transcript, message, message_len);
             tls->phase = QT_PHASE_CLIENT_WAIT_CERTIFICATE;
         } else if (tls->phase == QT_PHASE_CLIENT_WAIT_CERTIFICATE) {
-            if (type != TLS_HS_CERTIFICATE ||
-                qt_parse_certificate(tls, body, body_len) != 0)
+            if (type != TLS_HS_CERTIFICATE)
                 return qt_fail(tls, "expected a valid server Certificate");
+            if (qt_parse_certificate(tls, body, body_len) != 0)
+                return -1;
             neverc_sha256_update(&tls->transcript, message, message_len);
             tls->phase = QT_PHASE_CLIENT_WAIT_CERTIFICATE_VERIFY;
         } else if (tls->phase == QT_PHASE_CLIENT_WAIT_CERTIFICATE_VERIFY) {
-            if (type != TLS_HS_CERT_VERIFY ||
-                qt_verify_certificate_verify(tls, body, body_len) != 0)
+            if (type != TLS_HS_CERT_VERIFY)
                 return qt_fail(tls, "expected valid CertificateVerify");
+            if (qt_verify_certificate_verify(tls, body, body_len) != 0)
+                return -1;
             neverc_sha256_update(&tls->transcript, message, message_len);
             tls->phase = QT_PHASE_CLIENT_WAIT_FINISHED;
         } else if (tls->phase == QT_PHASE_CLIENT_WAIT_FINISHED) {
-            if (type != TLS_HS_FINISHED ||
-                qt_verify_finished(tls, body, body_len, 1) != 0)
+            if (type != TLS_HS_FINISHED)
                 return qt_fail(tls, "expected a valid server Finished");
+            if (qt_verify_finished(tls, body, body_len, 1) != 0)
+                return -1;
             neverc_sha256_update(&tls->transcript, message, message_len);
             uint8_t server_finished_hash[32];
             qt_transcript_hash(tls, server_finished_hash);
@@ -1214,19 +1223,21 @@ static int qt_process_server(quic_tls_t *tls) {
         if (available == 0) return 0;
         if (tls->phase == QT_PHASE_SERVER_WAIT_CLIENT_HELLO) {
             uint8_t client_public_key[32];
-            if (message[0] != TLS_HS_CLIENT_HELLO ||
-                qt_parse_client_hello(tls, message, message_len,
-                                      client_public_key) != 0)
+            if (message[0] != TLS_HS_CLIENT_HELLO)
                 return qt_fail(tls, "expected a valid ClientHello");
+            if (qt_parse_client_hello(tls, message, message_len,
+                                      client_public_key) != 0)
+                return -1;
             neverc_sha256_update(&tls->transcript, message, message_len);
             if (qt_build_server_flight(tls, client_public_key) != 0)
                 return -1;
             tls->phase = QT_PHASE_SERVER_WAIT_FINISHED;
         } else if (tls->phase == QT_PHASE_SERVER_WAIT_FINISHED) {
-            if (message[0] != TLS_HS_FINISHED || message_len != 36 ||
-                qt_verify_finished(tls, message + 4,
-                                   message_len - 4, 0) != 0)
+            if (message[0] != TLS_HS_FINISHED || message_len != 36)
                 return qt_fail(tls, "expected a valid client Finished");
+            if (qt_verify_finished(tls, message + 4,
+                                   message_len - 4, 0) != 0)
+                return -1;
             neverc_sha256_update(&tls->transcript, message, message_len);
             qt_consume_message(tls, level, message_len);
             /* Same contiguous-vs-len rule as the client Finished path. */
