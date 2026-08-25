@@ -32,20 +32,31 @@ static int addr_is_4in6(const neverc_netip_addr_t *addr) {
     return addr->addr[10] == 0xff && addr->addr[11] == 0xff;
 }
 
-static int append_zone(const neverc_netip_addr_t *addr, char *out, int pos) {
-    if (!addr->zone[0]) return pos;
+static int zone_length(const neverc_netip_addr_t *addr, size_t *len) {
+    const char *end = memchr(addr->zone, '\0', sizeof(addr->zone));
+    if (!end) return -1;
+    *len = (size_t)(end - addr->zone);
+    return 0;
+}
+
+static int append_zone(const neverc_netip_addr_t *addr, size_t zone_len,
+                       char *out, int pos) {
+    if (zone_len == 0) return pos;
     out[pos++] = '%';
-    size_t zl = strlen(addr->zone);
-    memcpy(out + pos, addr->zone, zl);
-    return pos + (int)zl;
+    memcpy(out + pos, addr->zone, zone_len);
+    return pos + (int)zone_len;
 }
 
 /*
  * Format an address into out (caller guarantees >= 110 bytes of room).
- * Returns the number of bytes written (no NUL terminator). IPv4-mapped
- * IPv6 uses Go netip form "::ffff:a.b.c.d" rather than hex groups.
+ * Returns the number of bytes written (no NUL terminator), or -1 if the
+ * public zone array is not NUL-terminated. IPv4-mapped IPv6 uses Go netip
+ * form "::ffff:a.b.c.d" rather than hex groups.
  */
 static int format_addr_raw(const neverc_netip_addr_t *addr, char *out) {
+    size_t zone_len;
+    if (zone_length(addr, &zone_len) != 0) return -1;
+
     if (addr->is_v4) {
         int pos = 0;
         pos += fmt_u32_dec(out + pos, addr->addr[12]); out[pos++] = '.';
@@ -63,7 +74,7 @@ static int format_addr_raw(const neverc_netip_addr_t *addr, char *out) {
         pos += fmt_u32_dec(out + pos, addr->addr[13]); out[pos++] = '.';
         pos += fmt_u32_dec(out + pos, addr->addr[14]); out[pos++] = '.';
         pos += fmt_u32_dec(out + pos, addr->addr[15]);
-        return append_zone(addr, out, pos);
+        return append_zone(addr, zone_len, out, pos);
     }
 
     uint16_t groups[8];
@@ -93,7 +104,7 @@ static int format_addr_raw(const neverc_netip_addr_t *addr, char *out) {
         if (i > 0 && i != best_start + best_len) out[pos++] = ':';
         pos += fmt_u16_hex(out + pos, groups[i]);
     }
-    return append_zone(addr, out, pos);
+    return append_zone(addr, zone_len, out, pos);
 }
 
 /*
@@ -315,6 +326,7 @@ int neverc_netip_addr_string(const neverc_netip_addr_t *addr, char *buf, size_t 
     if (!addr || !addr->valid || (cap > 0 && !buf)) return -1;
     char tmp[120];
     int len = format_addr_raw(addr, tmp);
+    if (len < 0) return -1;
     return emit_str(buf, cap, tmp, len);
 }
 
@@ -373,12 +385,16 @@ int neverc_netip_addrport_string(const neverc_netip_addrport_t *ap, char *buf, s
     char tmp[144];
     int pos = 0;
     if (ap->addr.is_v4) {
-        pos += format_addr_raw(&ap->addr, tmp + pos);
+        int addr_len = format_addr_raw(&ap->addr, tmp + pos);
+        if (addr_len < 0) return -1;
+        pos += addr_len;
         tmp[pos++] = ':';
         pos += fmt_u32_dec(tmp + pos, ap->port);
     } else {
         tmp[pos++] = '[';
-        pos += format_addr_raw(&ap->addr, tmp + pos);
+        int addr_len = format_addr_raw(&ap->addr, tmp + pos);
+        if (addr_len < 0) return -1;
+        pos += addr_len;
         tmp[pos++] = ']';
         tmp[pos++] = ':';
         pos += fmt_u32_dec(tmp + pos, ap->port);
@@ -422,6 +438,7 @@ int neverc_netip_prefix_string(const neverc_netip_prefix_t *pfx, char *buf, size
     if (!pfx || !pfx->valid || (cap > 0 && !buf)) return -1;
     char tmp[144];
     int pos = format_addr_raw(&pfx->addr, tmp);
+    if (pos < 0) return -1;
     tmp[pos++] = '/';
     pos += fmt_u32_dec(tmp + pos, pfx->bits);
     return emit_str(buf, cap, tmp, pos);
@@ -554,7 +571,7 @@ int neverc_netip_addr_compare(const neverc_netip_addr_t *a, const neverc_netip_a
     int start = a->is_v4 ? 12 : 0;
     int cmp = memcmp(a->addr + start, b->addr + start, a->is_v4 ? 4 : 16);
     if (cmp != 0) return cmp;
-    return strcmp(a->zone, b->zone);
+    return strncmp(a->zone, b->zone, sizeof(a->zone));
 }
 
 int neverc_netip_addr_equal(const neverc_netip_addr_t *a, const neverc_netip_addr_t *b) {

@@ -12,6 +12,8 @@ typedef struct {
     uint8_t  addr[16];
     uint8_t  is_v4;
     uint8_t  valid;
+    /* Empty or NUL-terminated within this array. Directly constructed
+     * addresses without a terminator are invalid. */
     char     zone[64];
 } neverc_netip_addr_t;
 

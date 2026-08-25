@@ -1,5 +1,6 @@
 #include "neverc/std/net/netip.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -263,6 +264,72 @@ static void test_compare(void) {
     ASSERT_TRUE(neverc_netip_addr_equal(&invalid, &invalid));
 }
 
+static void test_unterminated_zone(void) {
+    printf("[unterminated zone]\n");
+
+    neverc_netip_addr_t *addr = malloc(sizeof(*addr));
+    neverc_netip_addrport_t *ap = malloc(sizeof(*ap));
+    neverc_netip_prefix_t *pfx = malloc(sizeof(*pfx));
+    neverc_netip_addr_t *same = malloc(sizeof(*same));
+    neverc_netip_addr_t *different = malloc(sizeof(*different));
+    ASSERT_TRUE(addr != NULL);
+    ASSERT_TRUE(ap != NULL);
+    ASSERT_TRUE(pfx != NULL);
+    ASSERT_TRUE(same != NULL);
+    ASSERT_TRUE(different != NULL);
+    if (!addr || !ap || !pfx || !same || !different) {
+        free(addr);
+        free(ap);
+        free(pfx);
+        free(same);
+        free(different);
+        return;
+    }
+
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%eth0", addr), 0);
+    memset(addr->zone, 'z', sizeof(addr->zone));
+    char buf[128], original[sizeof(buf)];
+    memset(buf, 0xa5, sizeof(buf));
+    memcpy(original, buf, sizeof(buf));
+    ASSERT_EQ(neverc_netip_addr_string(addr, buf, sizeof(buf)), -1);
+    ASSERT_TRUE(memcmp(buf, original, sizeof(buf)) == 0);
+    ASSERT_EQ(neverc_netip_addr_string(addr, NULL, 0), -1);
+
+    ASSERT_EQ(neverc_netip_parse_addrport("[fe80::1%eth0]:443", ap), 0);
+    memset(ap->addr.zone, 'z', sizeof(ap->addr.zone));
+    ASSERT_EQ(neverc_netip_addrport_string(ap, buf, sizeof(buf)), -1);
+    ASSERT_TRUE(memcmp(buf, original, sizeof(buf)) == 0);
+
+    ASSERT_EQ(neverc_netip_parse_prefix("fe80::/64", pfx), 0);
+    memset(pfx->addr.zone, 'z', sizeof(pfx->addr.zone));
+    ASSERT_EQ(neverc_netip_prefix_string(pfx, buf, sizeof(buf)), -1);
+    ASSERT_TRUE(memcmp(buf, original, sizeof(buf)) == 0);
+
+    *same = *addr;
+    *different = *addr;
+    ASSERT_EQ(neverc_netip_addr_compare(addr, same), 0);
+    ASSERT_TRUE(neverc_netip_addr_equal(addr, same));
+    different->zone[sizeof(different->zone) - 1] = 'y';
+    ASSERT_TRUE(neverc_netip_addr_compare(addr, different) > 0);
+    ASSERT_TRUE(neverc_netip_addr_compare(different, addr) < 0);
+    ASSERT_TRUE(!neverc_netip_addr_equal(addr, different));
+
+    /* Normal strings still stop at their first NUL, even if unused tail
+     * bytes differ. */
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%eth0", addr), 0);
+    *same = *addr;
+    memset(addr->zone + 5, 'a', sizeof(addr->zone) - 5);
+    memset(same->zone + 5, 'b', sizeof(same->zone) - 5);
+    ASSERT_EQ(neverc_netip_addr_compare(addr, same), 0);
+    ASSERT_TRUE(neverc_netip_addr_equal(addr, same));
+
+    free(addr);
+    free(ap);
+    free(pfx);
+    free(same);
+    free(different);
+}
+
 static void test_prefix(void) {
     printf("[prefix]\n");
     neverc_netip_prefix_t pfx;
@@ -478,6 +545,7 @@ int main(void) {
     test_addr_from4();
     test_properties();
     test_compare();
+    test_unterminated_zone();
     test_prefix();
     test_addrport();
     test_wellknown();
