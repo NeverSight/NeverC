@@ -1,6 +1,7 @@
 #include "neverc/std/net/url.h"
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -667,6 +668,23 @@ static void test_bounded_outputs(void) {
     ASSERT_STR_EQ(guarded.output, "a+b%");
     ASSERT_TRUE(guard_is_intact(&guarded));
     ASSERT_INT_EQ(neverc_url_query_escape("a b&c", NULL, 0), length);
+
+    /* The URL fields are public fixed arrays. RequestURI must reject a path
+     * without an in-bounds terminator rather than letting strlen walk through
+     * the remaining fields and beyond an exact-size allocation. */
+    neverc_url_t *unterminated = malloc(sizeof(*unterminated));
+    ASSERT_TRUE(unterminated != NULL);
+    if (unterminated) {
+        memset(unterminated, 0x01, sizeof(*unterminated));
+        unterminated->path[0] = '/';
+        memset(&guarded, 0xa5, sizeof(guarded));
+        ASSERT_INT_EQ(neverc_url_request_uri(
+            unterminated, guarded.output, sizeof(guarded.output)), -1);
+        ASSERT_STR_EQ(guarded.output, "");
+        ASSERT_TRUE(guard_is_intact(&guarded));
+        ASSERT_INT_EQ(neverc_url_request_uri(unterminated, NULL, 0), -1);
+        free(unterminated);
+    }
 }
 
 static void test_invalid_arguments(void) {

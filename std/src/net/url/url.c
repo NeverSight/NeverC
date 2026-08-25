@@ -668,12 +668,18 @@ int neverc_url_request_uri(const neverc_url_t *u, char *buf, size_t cap) {
     url_builder_t builder;
     builder_init(&builder, buf, cap);
     if (u->path[0]) {
+        size_t path_length = bounded_string_length(
+            u->path, sizeof(u->path));
+        if (path_length == sizeof(u->path)) {
+            builder.failed = 1;
+            return builder_result(&builder);
+        }
         /* origin-form `//host` is protocol-relative. Prefix so a
          * Request-URI cannot retarget a different authority. Encoded
          * `/%2f...` / `/%5c...` decode to the same form. */
-        if (neverc_url_path_is_protocol_relative(u->path))
+        if (neverc_url_path_n_is_protocol_relative(u->path, path_length))
             builder_append_literal(&builder, "/.");
-        builder_append_field(&builder, u->path, sizeof(u->path));
+        builder_append(&builder, u->path, path_length);
     } else
         builder_append_literal(&builder, "/");
     if (u->has_query || u->raw_query[0]) {
