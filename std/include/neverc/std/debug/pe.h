@@ -95,7 +95,7 @@ typedef struct {
 } neverc_pe_optional_header_t;
 
 typedef struct {
-    char     name[256];
+    char     name[9]; /* Raw COFF name; use neverc_pe_section_name(). */
     uint32_t virtual_size;
     uint32_t virtual_address;
     uint32_t size_of_raw_data;
@@ -135,6 +135,10 @@ int neverc_pe_is_valid(const uint8_t *data, size_t len);
 
 const neverc_pe_section_t *neverc_pe_section(const neverc_pe_file_t *f,
                                               const char *name);
+/* Returns the full COFF section name. The returned string is borrowed from
+ * the file and remains valid until neverc_pe_close(). */
+const char *neverc_pe_section_name(const neverc_pe_file_t *f,
+                                   const neverc_pe_section_t *s);
 int neverc_pe_section_data(const neverc_pe_file_t *f,
                             const neverc_pe_section_t *s,
                             uint8_t **out, size_t *out_len);

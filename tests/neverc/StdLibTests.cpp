@@ -967,6 +967,8 @@ TEST_F(StdLibTest, SyslogPosixHandleIsolation) {
 // ===== Debug =====
 STD_TEST(elf, "src/debug/elf/elf.c")
 STD_TEST(pe, "src/debug/pe/pe.c")
+STD_TEST(debug_section_abi, "src/debug/pe/pe.c",
+    "src/debug/plan9obj/plan9obj.c")
 STD_TEST(macho, "src/debug/macho/macho.c")
 STD_TEST(dwarf, "src/debug/dwarf/dwarf.c")
 STD_TEST(plan9obj, "src/debug/plan9obj/plan9obj.c")

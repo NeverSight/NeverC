@@ -3679,6 +3679,7 @@
         "neverc_pe_close": "src/debug/pe/pe.c",
         "neverc_pe_open_file": "src/debug/pe/pe.c",
         "neverc_pe_section": "src/debug/pe/pe.c",
+        "neverc_pe_section_name": "src/debug/pe/pe.c",
         "neverc_pe_section_data": "src/debug/pe/pe.c",
         "neverc_pe_symbols": "src/debug/pe/pe.c",
         "neverc_pe_imported_symbols": "src/debug/pe/pe.c",
@@ -3691,6 +3692,7 @@
         "close": "neverc_pe_close",
         "open_file": "neverc_pe_open_file",
         "section": "neverc_pe_section",
+        "section_name": "neverc_pe_section_name",
         "section_data": "neverc_pe_section_data",
         "symbols": "neverc_pe_symbols",
         "imported_symbols": "neverc_pe_imported_symbols",
@@ -5258,6 +5260,7 @@
         "neverc_plan9_open": "src/debug/plan9obj/plan9obj.c",
         "neverc_plan9_parse": "src/debug/plan9obj/plan9obj.c",
         "neverc_plan9_section": "src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_section_offset64": "src/debug/plan9obj/plan9obj.c",
         "neverc_plan9_section_data": "src/debug/plan9obj/plan9obj.c",
         "neverc_plan9_symbols": "src/debug/plan9obj/plan9obj.c",
         "neverc_plan9_valid_magic": "src/debug/plan9obj/plan9obj.c"
@@ -5267,6 +5270,7 @@
         "open": "neverc_plan9_open",
         "parse": "neverc_plan9_parse",
         "section": "neverc_plan9_section",
+        "section_offset64": "neverc_plan9_section_offset64",
         "section_data": "neverc_plan9_section_data",
         "symbols": "neverc_plan9_symbols",
         "valid_magic": "neverc_plan9_valid_magic"

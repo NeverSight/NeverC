@@ -31,6 +31,112 @@ static int pe_range_in_file(size_t len, uint64_t offset, uint64_t size) {
     return offset <= len && size <= (uint64_t)len - offset;
 }
 
+/* Keep ABI-extending section state after the public section array.  The
+ * trailer is deliberately accessed through memcpy so its address never needs
+ * to satisfy the alignment of either this header or size_t. */
+typedef struct {
+    uint32_t magic;
+    uint32_t count;
+} pe_section_meta_header_t;
+
+#define PE_SECTION_META_MAGIC UINT32_C(0x50454e4d)
+
+static int pe_section_public_bytes(uint32_t count, size_t *bytes) {
+    if (!bytes || (size_t)count > SIZE_MAX / sizeof(neverc_pe_section_t))
+        return -1;
+    *bytes = (size_t)count * sizeof(neverc_pe_section_t);
+    return 0;
+}
+
+static int pe_alloc_sections(neverc_pe_file_t *f, uint32_t count) {
+    size_t public_bytes;
+    size_t offsets_bytes;
+    if (!f || pe_section_public_bytes(count, &public_bytes) < 0 ||
+        (size_t)count > SIZE_MAX / sizeof(size_t))
+        return -1;
+    offsets_bytes = (size_t)count * sizeof(size_t);
+    if (public_bytes > SIZE_MAX - sizeof(pe_section_meta_header_t) ||
+        public_bytes + sizeof(pe_section_meta_header_t) >
+            SIZE_MAX - offsets_bytes)
+        return -1;
+
+    size_t total = public_bytes + sizeof(pe_section_meta_header_t) +
+                   offsets_bytes;
+    neverc_pe_section_t *sections =
+        (neverc_pe_section_t *)calloc(1, total);
+    if (!sections)
+        return -1;
+
+    pe_section_meta_header_t header = {PE_SECTION_META_MAGIC, count};
+    uint8_t *trailer = (uint8_t *)sections + public_bytes;
+    memcpy(trailer, &header, sizeof(header));
+    trailer += sizeof(header);
+    for (uint32_t i = 0; i < count; i++) {
+        size_t no_long_name = SIZE_MAX;
+        memcpy(trailer + (size_t)i * sizeof(no_long_name), &no_long_name,
+               sizeof(no_long_name));
+    }
+
+    f->sections = sections;
+    f->section_count = count;
+    return 0;
+}
+
+static int pe_section_metadata(const neverc_pe_file_t *f,
+                               const uint8_t **offsets) {
+    size_t public_bytes;
+    if (!f || !offsets || f->section_count == 0 || !f->sections ||
+        pe_section_public_bytes(f->section_count, &public_bytes) < 0)
+        return -1;
+    const uint8_t *trailer = (const uint8_t *)f->sections + public_bytes;
+    pe_section_meta_header_t header;
+    memcpy(&header, trailer, sizeof(header));
+    if (header.magic != PE_SECTION_META_MAGIC ||
+        header.count != f->section_count)
+        return -1;
+    *offsets = trailer + sizeof(header);
+    return 0;
+}
+
+static int pe_section_index(const neverc_pe_file_t *f,
+                            const neverc_pe_section_t *section,
+                            uint32_t *index) {
+    size_t public_bytes;
+    if (!f || !section || !index || f->section_count == 0 || !f->sections ||
+        pe_section_public_bytes(f->section_count, &public_bytes) < 0)
+        return -1;
+    uintptr_t base = (uintptr_t)f->sections;
+    uintptr_t address = (uintptr_t)section;
+    if (address < base)
+        return -1;
+    uintptr_t delta = address - base;
+    if (delta >= public_bytes ||
+        delta % sizeof(neverc_pe_section_t) != 0)
+        return -1;
+    size_t candidate = (size_t)(delta / sizeof(neverc_pe_section_t));
+    if (candidate >= f->section_count)
+        return -1;
+    *index = (uint32_t)candidate;
+    return 0;
+}
+
+static int pe_set_section_long_name_offset(neverc_pe_file_t *f,
+                                           uint32_t index,
+                                           size_t offset) {
+    const uint8_t *offsets;
+    if (!f || index >= f->section_count ||
+        pe_section_metadata(f, &offsets) < 0)
+        return -1;
+    size_t public_bytes;
+    if (pe_section_public_bytes(f->section_count, &public_bytes) < 0)
+        return -1;
+    uint8_t *mutable_offsets = (uint8_t *)f->sections + public_bytes +
+                               sizeof(pe_section_meta_header_t);
+    memcpy(mutable_offsets + (size_t)index * sizeof(offset), &offset,
+           sizeof(offset));
+    return 0;
+}
+
 /* IMAGE_DIRECTORY_ENTRY_SECURITY is a file offset (Authenticode overlay), not
  * an RVA. Mapping it through pe_rva_to_file_offset would look it up in the
  * section table and miss or mis-parse a truncated certificate table. */
@@ -156,9 +262,8 @@ int neverc_pe_open(neverc_pe_file_t *f, const uint8_t *data, size_t len) {
     if ((size_t)nsec * 40 > len - (size_t)(sec_start - data))
         return pe_open_fail(f);
 
-    f->sections = (neverc_pe_section_t *)calloc(nsec, sizeof(neverc_pe_section_t));
-    if (nsec > 0 && !f->sections) return pe_open_fail(f);
-    f->section_count = nsec;
+    if (nsec > 0 && pe_alloc_sections(f, nsec) < 0)
+        return pe_open_fail(f);
 
     for (uint16_t i = 0; i < nsec; i++) {
         const uint8_t *s = sec_start + i * 40;
@@ -231,11 +336,9 @@ int neverc_pe_open(neverc_pe_file_t *f, const uint8_t *data, size_t len) {
             const char *nul = (const char *)memchr(str, 0, maxn);
             if (!nul)
                 return pe_open_fail(f);
-            size_t slen = (size_t)(nul - str);
-            if (slen >= sizeof(f->sections[i].name))
-                slen = sizeof(f->sections[i].name) - 1;
-            memcpy(f->sections[i].name, str, slen);
-            f->sections[i].name[slen] = '\0';
+            if (pe_set_section_long_name_offset(
+                    f, i, (size_t)strtab_pos + off) < 0)
+                return pe_open_fail(f);
         }
     }
 
@@ -282,10 +385,34 @@ const neverc_pe_section_t *neverc_pe_section(const neverc_pe_file_t *f,
     if (!f || !name || (f->section_count != 0 && !f->sections))
         return NULL;
     for (uint32_t i = 0; i < f->section_count; i++) {
-        if (strcmp(f->sections[i].name, name) == 0)
+        const char *section_name =
+            neverc_pe_section_name(f, &f->sections[i]);
+        if (section_name && strcmp(section_name, name) == 0)
             return &f->sections[i];
     }
     return NULL;
+}
+
+const char *neverc_pe_section_name(const neverc_pe_file_t *f,
+                                   const neverc_pe_section_t *s) {
+    const uint8_t *offsets;
+    uint32_t index;
+    if (pe_section_index(f, s, &index) < 0 ||
+        pe_section_metadata(f, &offsets) < 0)
+        return NULL;
+
+    size_t offset;
+    memcpy(&offset, offsets + (size_t)index * sizeof(offset),
+           sizeof(offset));
+    if (offset == SIZE_MAX) {
+        if (!memchr(s->name, 0, sizeof(s->name)))
+            return NULL;
+        return s->name;
+    }
+    if (!f->data || offset >= f->data_len ||
+        !memchr(f->data + offset, 0, f->data_len - offset))
+        return NULL;
+    return (const char *)(f->data + offset);
 }
 
 int neverc_pe_section_data(const neverc_pe_file_t *f,

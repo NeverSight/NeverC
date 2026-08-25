@@ -21,6 +21,106 @@ static char *plan9_strdup(const char *s) {
     return copy;
 }
 
+/* The public section layout is frozen at the v3389.1.4 ABI.  Full-width
+ * offsets live after the public array and are accessed via memcpy so the
+ * trailer has no alignment or effective-type requirements. */
+typedef struct {
+    uint32_t magic;
+    uint32_t count;
+} plan9_section_meta_header_t;
+
+#define PLAN9_SECTION_META_MAGIC UINT32_C(0x50394f46)
+
+static int plan9_section_public_bytes(int count, size_t *bytes) {
+    if (!bytes || count <= 0 ||
+        (size_t)count > SIZE_MAX / sizeof(neverc_plan9_section_t))
+        return -1;
+    *bytes = (size_t)count * sizeof(neverc_plan9_section_t);
+    return 0;
+}
+
+static int plan9_alloc_sections(neverc_plan9_file_t *f, int count) {
+    size_t public_bytes;
+    if (!f || plan9_section_public_bytes(count, &public_bytes) < 0 ||
+        (size_t)count > SIZE_MAX / sizeof(uint64_t))
+        return -1;
+    size_t offsets_bytes = (size_t)count * sizeof(uint64_t);
+    if (public_bytes > SIZE_MAX - sizeof(plan9_section_meta_header_t) ||
+        public_bytes + sizeof(plan9_section_meta_header_t) >
+            SIZE_MAX - offsets_bytes)
+        return -1;
+
+    size_t total = public_bytes + sizeof(plan9_section_meta_header_t) +
+                   offsets_bytes;
+    neverc_plan9_section_t *sections =
+        (neverc_plan9_section_t *)calloc(1, total);
+    if (!sections)
+        return -1;
+    plan9_section_meta_header_t header = {
+        PLAN9_SECTION_META_MAGIC, (uint32_t)count};
+    uint8_t *trailer = (uint8_t *)sections + public_bytes;
+    memcpy(trailer, &header, sizeof(header));
+
+    f->sections = sections;
+    f->num_sections = count;
+    return 0;
+}
+
+static int plan9_section_metadata(const neverc_plan9_file_t *f,
+                                  const uint8_t **offsets) {
+    size_t public_bytes;
+    if (!f || !offsets || !f->sections ||
+        plan9_section_public_bytes(f->num_sections, &public_bytes) < 0)
+        return -1;
+    const uint8_t *trailer = (const uint8_t *)f->sections + public_bytes;
+    plan9_section_meta_header_t header;
+    memcpy(&header, trailer, sizeof(header));
+    if (header.magic != PLAN9_SECTION_META_MAGIC ||
+        header.count != (uint32_t)f->num_sections)
+        return -1;
+    *offsets = trailer + sizeof(header);
+    return 0;
+}
+
+static int plan9_section_index(const neverc_plan9_file_t *f,
+                               const neverc_plan9_section_t *section,
+                               uint32_t *index) {
+    size_t public_bytes;
+    if (!f || !section || !index || !f->sections ||
+        plan9_section_public_bytes(f->num_sections, &public_bytes) < 0)
+        return -1;
+    uintptr_t base = (uintptr_t)f->sections;
+    uintptr_t address = (uintptr_t)section;
+    if (address < base)
+        return -1;
+    uintptr_t delta = address - base;
+    if (delta >= public_bytes ||
+        delta % sizeof(neverc_plan9_section_t) != 0)
+        return -1;
+    size_t candidate =
+        (size_t)(delta / sizeof(neverc_plan9_section_t));
+    if (candidate >= (size_t)f->num_sections)
+        return -1;
+    *index = (uint32_t)candidate;
+    return 0;
+}
+
+static int plan9_set_section_offset64(neverc_plan9_file_t *f,
+                                      uint32_t index, uint64_t offset) {
+    const uint8_t *offsets;
+    if (!f || index >= (uint32_t)f->num_sections ||
+        plan9_section_metadata(f, &offsets) < 0)
+        return -1;
+    size_t public_bytes;
+    if (plan9_section_public_bytes(f->num_sections, &public_bytes) < 0)
+        return -1;
+    uint8_t *mutable_offsets = (uint8_t *)f->sections + public_bytes +
+                               sizeof(plan9_section_meta_header_t);
+    memcpy(mutable_offsets + (size_t)index * sizeof(offset), &offset,
+           sizeof(offset));
+    return 0;
+}
+
 int neverc_plan9_valid_magic(uint32_t magic) {
     return magic == NEVERC_PLAN9_MAGIC386 ||
            magic == NEVERC_PLAN9_MAGICAMD64 ||
@@ -80,9 +180,7 @@ int neverc_plan9_parse(neverc_plan9_file_t *f, const uint8_t *buf, size_t len) {
     memcpy(f->data, buf, len);
     f->data_len = len;
 
-    f->num_sections = 5;
-    f->sections = (neverc_plan9_section_t *)calloc(5, sizeof(neverc_plan9_section_t));
-    if (!f->sections)
+    if (plan9_alloc_sections(f, 5) < 0)
         goto fail;
 
     off = f->hdr_size;
@@ -91,7 +189,13 @@ int neverc_plan9_parse(neverc_plan9_file_t *f, const uint8_t *buf, size_t len) {
         if (!f->sections[i].name)
             goto fail;
         f->sections[i].size   = sect_sizes[i];
-        f->sections[i].offset = off;
+        if (plan9_set_section_offset64(f, (uint32_t)i, off) < 0)
+            goto fail;
+        /* UINT32_MAX is the legacy field's non-representable sentinel.  New
+         * code must use neverc_plan9_section_offset64(); library consumers do
+         * so and never use this lossy view for I/O. */
+        f->sections[i].offset =
+            off > UINT32_MAX ? UINT32_MAX : (uint32_t)off;
         off += sect_sizes[i];
     }
 
@@ -161,6 +265,27 @@ neverc_plan9_section_t *neverc_plan9_section(neverc_plan9_file_t *f, const char 
     return NULL;
 }
 
+int neverc_plan9_section_offset64(const neverc_plan9_file_t *f,
+                                  const neverc_plan9_section_t *sect,
+                                  uint64_t *offset) {
+    if (!offset)
+        return -1;
+    *offset = 0;
+    const uint8_t *offsets;
+    uint32_t index;
+    if (!f || !f->data || plan9_section_index(f, sect, &index) < 0 ||
+        plan9_section_metadata(f, &offsets) < 0)
+        return -1;
+    uint64_t full_offset;
+    memcpy(&full_offset, offsets + (size_t)index * sizeof(full_offset),
+           sizeof(full_offset));
+    if (full_offset > f->data_len ||
+        sect->size > (uint64_t)f->data_len - full_offset)
+        return -1;
+    *offset = full_offset;
+    return 0;
+}
+
 int neverc_plan9_section_data(neverc_plan9_file_t *f,
                                neverc_plan9_section_t *sect,
                                uint8_t *buf, size_t cap) {
@@ -169,11 +294,11 @@ int neverc_plan9_section_data(neverc_plan9_file_t *f,
         return -1;
     if (cap < sect->size)
         return -1;
-    if (sect->offset > f->data_len ||
-        sect->size > (uint64_t)f->data_len - sect->offset)
+    uint64_t offset;
+    if (neverc_plan9_section_offset64(f, sect, &offset) < 0)
         return -1;
     if (sect->size != 0)
-        memcpy(buf, f->data + (size_t)sect->offset, sect->size);
+        memcpy(buf, f->data + (size_t)offset, sect->size);
     return 0;
 }
 
@@ -302,11 +427,11 @@ int neverc_plan9_symbols(neverc_plan9_file_t *f) {
     neverc_plan9_section_t *syms = neverc_plan9_section(f, "syms");
     if (!syms)
         return -1;
-    if (syms->offset > f->data_len ||
-        syms->size > (uint64_t)f->data_len - syms->offset)
+    uint64_t syms_offset;
+    if (neverc_plan9_section_offset64(f, syms, &syms_offset) < 0)
         return -1;
 
-    const uint8_t *p = f->data + (size_t)syms->offset;
+    const uint8_t *p = f->data + (size_t)syms_offset;
     const uint8_t *end = p + syms->size;
     const uint8_t *scan = p;
     size_t count = 0;

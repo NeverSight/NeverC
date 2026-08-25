@@ -35,7 +35,7 @@ typedef struct {
 typedef struct {
     char    *name;
     uint32_t size;
-    uint64_t offset;
+    uint32_t offset; /* Saturates at UINT32_MAX; use offset64 accessor. */
 } neverc_plan9_section_t;
 
 typedef struct {
@@ -73,6 +73,12 @@ void neverc_plan9_close(neverc_plan9_file_t *f);
 
 /* Find a section by name. Returns NULL if not found. */
 neverc_plan9_section_t *neverc_plan9_section(neverc_plan9_file_t *f, const char *name);
+
+/* Retrieves the non-truncated section offset owned by the parsed file.
+ * Returns -1 for a foreign/copied section or invalid metadata. */
+int neverc_plan9_section_offset64(const neverc_plan9_file_t *f,
+                                  const neverc_plan9_section_t *sect,
+                                  uint64_t *offset);
 
 /* Read section data. Caller must provide buf of at least sect->size bytes.
  * Returns 0 on success, -1 on failure. */
