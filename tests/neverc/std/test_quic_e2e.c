@@ -2,6 +2,7 @@
 #include "neverc/std/net/udp.h"
 #include "neverc/std/thread.h"
 #include "neverc/std/time.h"
+#include "neverc/std/encoding/pem.h"
 #include "network_test_support.h"
 #include "../../../std/src/net/quic/_quic_internal.h"
 
@@ -140,6 +141,135 @@ static int quic_test_free_udp_port(void) {
         ? (int)local.port : -1;
     neverc_udp_close(probe);
     return port;
+}
+
+static uint32_t quic_test_get_u24(const uint8_t *input) {
+    return ((uint32_t)input[0] << 16) | ((uint32_t)input[1] << 8) |
+           input[2];
+}
+
+static int quic_test_decode_certificate(const char *pem, uint8_t *der,
+                                        size_t der_cap, size_t *der_len) {
+    char label[32];
+    size_t rest_offset = 0;
+    return neverc_pem_decode(pem, strlen(pem), label, sizeof(label),
+                            der, der_cap, der_len, &rest_offset) == 0 &&
+           strcmp(label, "CERTIFICATE") == 0 && *der_len != 0 &&
+           rest_offset != 0 ? 0 : -1;
+}
+
+static int quic_test_certificate_flight_has_chain(
+    const uint8_t *flight, size_t flight_len,
+    const uint8_t *leaf_der, size_t leaf_len,
+    const uint8_t *ca_der, size_t ca_len) {
+    size_t message_offset = 0;
+    while (message_offset <= flight_len &&
+           flight_len - message_offset >= 4U) {
+        const uint8_t *message = flight + message_offset;
+        size_t body_len = quic_test_get_u24(message + 1U);
+        if (body_len > flight_len - message_offset - 4U)
+            return -1;
+        if (message[0] == 11U) {
+            const uint8_t *body = message + 4U;
+            if (body_len < 4U || body[0] != 0U ||
+                quic_test_get_u24(body + 1U) != body_len - 4U)
+                return -1;
+            const uint8_t *expected_der[] = {leaf_der, ca_der};
+            const size_t expected_len[] = {leaf_len, ca_len};
+            size_t position = 4U;
+            size_t entry = 0;
+            while (position < body_len) {
+                if (body_len - position < 5U || entry >= 2U)
+                    return -1;
+                size_t der_len = quic_test_get_u24(body + position);
+                position += 3U;
+                if (der_len == 0 || der_len > body_len - position - 2U ||
+                    der_len != expected_len[entry] ||
+                    memcmp(body + position, expected_der[entry], der_len) != 0)
+                    return -1;
+                position += der_len;
+                size_t extensions_len =
+                    ((size_t)body[position] << 8) | body[position + 1U];
+                position += 2U;
+                if (extensions_len != 0 ||
+                    extensions_len > body_len - position)
+                    return -1;
+                position += extensions_len;
+                entry++;
+            }
+            return position == body_len && entry == 2U ? 0 : -1;
+        }
+        message_offset += 4U + body_len;
+    }
+    return -1;
+}
+
+static void quic_test_server_flight_preserves_certificate_chain(void) {
+    neverc_network_test_files_t files = {0};
+    int files_written = neverc_network_test_write_certs("quic-chain", &files);
+    CHECK(files_written == 0);
+    if (files_written != 0) {
+        neverc_network_test_remove_certs(&files);
+        return;
+    }
+    CHECK(neverc_network_test_write_file(
+              files.server_cert,
+              NEVERC_TEST_SERVER_CERT_PEM NEVERC_TEST_CA_CERT_PEM) == 0);
+
+    uint8_t leaf_der[4096];
+    uint8_t ca_der[4096];
+    size_t leaf_len = 0;
+    size_t ca_len = 0;
+    CHECK(quic_test_decode_certificate(NEVERC_TEST_SERVER_CERT_PEM,
+                                       leaf_der, sizeof(leaf_der),
+                                       &leaf_len) == 0);
+    CHECK(quic_test_decode_certificate(NEVERC_TEST_CA_CERT_PEM,
+                                       ca_der, sizeof(ca_der), &ca_len) == 0);
+
+    quic_transport_params_t client_local;
+    quic_transport_params_t client_peer;
+    quic_transport_params_t server_local;
+    quic_transport_params_t server_peer;
+    neverc_quic_transport_params_default(&client_local);
+    neverc_quic_transport_params_default(&client_peer);
+    neverc_quic_transport_params_default(&server_local);
+    neverc_quic_transport_params_default(&server_peer);
+    neverc_quic_config_t client_config = neverc_quic_config_default();
+    client_config.insecure_skip_verify = 1;
+    client_config.server_name = "localhost";
+    neverc_quic_config_t server_config = neverc_quic_config_default();
+    server_config.cert_file = files.server_cert;
+    server_config.key_file = files.server_key;
+    quic_tls_t *client = neverc_quic_tls_create(0);
+    quic_tls_t *server = neverc_quic_tls_create(1);
+    CHECK(client != NULL && server != NULL);
+    if (client && server) {
+        CHECK(neverc_quic_tls_configure(client, &client_config, "localhost",
+                                        &client_local, &client_peer) == 0);
+        CHECK(neverc_quic_tls_configure(server, &server_config, NULL,
+                                        &server_local, &server_peer) == 0);
+        CHECK(neverc_quic_tls_start(client) == 0);
+        uint64_t offset = 0;
+        const uint8_t *data = NULL;
+        size_t len = 0;
+        CHECK(neverc_quic_tls_get_crypto_data(client, QUIC_ENC_INITIAL,
+                                              &offset, &data, &len) == 0);
+        CHECK(offset == 0 && data != NULL && len != 0);
+        CHECK(neverc_quic_tls_receive_crypto(server, QUIC_ENC_INITIAL,
+                                             offset, data, len) == 0);
+        CHECK(neverc_quic_tls_process(server) == 0);
+        offset = 0;
+        data = NULL;
+        len = 0;
+        CHECK(neverc_quic_tls_get_crypto_data(server, QUIC_ENC_HANDSHAKE,
+                                              &offset, &data, &len) == 0);
+        CHECK(offset == 0 && data != NULL && len != 0);
+        CHECK(quic_test_certificate_flight_has_chain(
+                  data, len, leaf_der, leaf_len, ca_der, ca_len) == 0);
+    }
+    neverc_quic_tls_destroy(client);
+    neverc_quic_tls_destroy(server);
+    neverc_network_test_remove_certs(&files);
 }
 
 static void quic_test_roundtrip(void) {
@@ -319,6 +449,7 @@ int main(void) {
     printf("QUIC end-to-end test suite:\n");
     quic_test_rejects_unimplemented_options();
     quic_test_clienthello_legacy_session_id_empty();
+    quic_test_server_flight_preserves_certificate_chain();
     quic_test_roundtrip();
     printf("quic-e2e: %d checks, %d failed\n", tests_run, tests_failed);
     if (tests_failed == 0) puts("passed");

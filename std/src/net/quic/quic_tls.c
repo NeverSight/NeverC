@@ -811,11 +811,12 @@ static int qt_build_server_flight(quic_tls_t *tls,
     free(encrypted_extensions);
     if (result != 0) return -1;
 
-    size_t certificate_list_len = 3U + tls->config->cert_der_len + 2U;
-    size_t certificate_len = 4U + 1U + 3U + certificate_list_len;
-    if (tls->config->cert_der_len == 0 ||
-        certificate_len > QT_HANDSHAKE_LIMIT)
+    size_t certificate_list_len = tls->config->cert_chain_len;
+    if (!tls->config->cert_der || tls->config->cert_der_len == 0 ||
+        !tls->config->cert_chain || certificate_list_len == 0 ||
+        certificate_list_len > QT_HANDSHAKE_LIMIT - 8U)
         return qt_fail(tls, "server certificate is missing or too large");
+    size_t certificate_len = 8U + certificate_list_len;
     uint8_t *certificate = (uint8_t *)calloc(1, certificate_len);
     if (!certificate) return qt_fail(tls, "failed to allocate Certificate message");
     position = 0;
@@ -825,13 +826,13 @@ static int qt_build_server_flight(quic_tls_t *tls,
     certificate[position++] = 0;
     qt_put_u24(certificate + position, (uint32_t)certificate_list_len);
     position += 3;
-    qt_put_u24(certificate + position, (uint32_t)tls->config->cert_der_len);
-    position += 3;
-    memcpy(certificate + position, tls->config->cert_der,
-           tls->config->cert_der_len);
-    position += tls->config->cert_der_len;
-    qt_put_u16(certificate + position, 0);
-    position += 2;
+    memcpy(certificate + position, tls->config->cert_chain,
+           certificate_list_len);
+    position += certificate_list_len;
+    if (position != certificate_len) {
+        free(certificate);
+        return qt_fail(tls, "failed to serialize server certificate chain");
+    }
     result = qt_append_handshake_message(tls, QUIC_ENC_HANDSHAKE,
                                          certificate, position, 1);
     free(certificate);
