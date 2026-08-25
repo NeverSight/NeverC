@@ -69,7 +69,9 @@ static void large_handler(neverc_http_request_t *req,
     char block[4096];
     memset(block, 'L', sizeof(block));
     for (int i = 0; i < 512; i++)
-        if (neverc_http_write(w, block, sizeof(block)) != 0) return;
+        if (neverc_http_write(w, block, sizeof(block)) !=
+            (int)sizeof(block))
+            return;
 }
 
 #ifndef _WIN32

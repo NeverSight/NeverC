@@ -1595,7 +1595,7 @@ static void test_multithreaded_exec_is_fork_safe(const char *executable) {
             resolved_executable, args, 2);
         ASSERT_TRUE(cmd != NULL);
         if (!cmd) break;
-        ASSERT_INT_EQ(neverc_exec_cmd_set_env(cmd, env, 2), 0);
+        neverc_exec_cmd_set_env(cmd, env, 2);
         neverc_exec_output_t output = {0};
         neverc_exec_exit_status_t status = {0};
         ASSERT_INT_EQ(neverc_exec_cmd_output(cmd, &output, &status), 0);

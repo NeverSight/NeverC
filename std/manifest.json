@@ -318,7 +318,8 @@
         "strings": "neverc_sort_strings",
         "strings_are_sorted": "neverc_sort_strings_are_sorted",
         "search_strings": "neverc_sort_search_strings",
-        "reverse": "neverc_sort_reverse"
+        "reverse": "neverc_sort_reverse",
+        "ints_are_sorted": "neverc_sort_ints_are_sorted"
       }
     },
     "encoding/hex": {
@@ -1865,6 +1866,7 @@
         "tee_reader_init": "neverc_io_tee_reader_init",
         "mem_reader_init": "neverc_io_mem_reader_init",
         "mem_writer_init": "neverc_io_mem_writer_init",
+        "mem_writer_free": "neverc_io_mem_writer_free",
         "multi_reader_read": "neverc_io_multi_reader_read",
         "multi_writer_write": "neverc_io_multi_writer_write"
       }
@@ -1954,7 +1956,8 @@
         "narg": "neverc_flag_narg",
         "print_defaults": "neverc_flag_print_defaults",
         "reset": "neverc_flag_reset",
-        "arg": "neverc_flag_arg"
+        "arg": "neverc_flag_arg",
+        "parsed": "neverc_flag_parsed"
       }
     },
     "log": {
@@ -3320,7 +3323,12 @@
         "min": "neverc_slices_min",
         "max": "neverc_slices_max",
         "clip": "neverc_slices_clip",
-        "grow": "neverc_slices_grow"
+        "grow": "neverc_slices_grow",
+        "equal_ints": "neverc_slices_equal_ints",
+        "contains_int": "neverc_slices_contains_int",
+        "index_int": "neverc_slices_index_int",
+        "reverse_ints": "neverc_slices_reverse_ints",
+        "sort_ints": "neverc_slices_sort_ints"
       }
     },
     "maps": {
