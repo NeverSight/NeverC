@@ -50,6 +50,25 @@ static void *raise_signals(void *unused) {
     return NULL;
 }
 
+static int wait_for_callback_delivery(void) {
+    struct timespec deadline;
+    struct timespec now;
+    const struct timespec retry_delay = {0, 1000000L};
+    if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0)
+        return 0;
+    deadline.tv_sec += 5;
+    while (atomic_load_explicit(&callback_count,
+                                memory_order_relaxed) == 0) {
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0 ||
+            now.tv_sec > deadline.tv_sec ||
+            (now.tv_sec == deadline.tv_sec &&
+             now.tv_nsec >= deadline.tv_nsec))
+            return 0;
+        (void)nanosleep(&retry_delay, NULL);
+    }
+    return 1;
+}
+
 static int test_concurrent_notify_and_delivery(void) {
     pthread_t replacer;
     pthread_t raiser;
@@ -75,8 +94,9 @@ static int test_concurrent_notify_and_delivery(void) {
     pthread_join(replacer, NULL);
     pthread_join(raiser, NULL);
 
-    /* Make completion deterministic: wait consumes the final event and stop
-     * waits for a callback that the dispatcher has already started. */
+    /* Make completion deterministic: wait consumes the final event, then an
+     * explicit bounded wait proves that a callback worker actually ran before
+     * stop is allowed to invalidate queued work. */
     neverc_signal_notify(NEVERC_SIGUSR1, stable_handler);
     raise(SIGUSR1);
     int usr1 = NEVERC_SIGUSR1;
@@ -85,13 +105,14 @@ static int test_concurrent_notify_and_delivery(void) {
         neverc_signal_stop(NEVERC_SIGUSR1);
         return 1;
     }
+    int callback_observed = wait_for_callback_delivery();
     neverc_signal_stop(NEVERC_SIGUSR1);
     if (atomic_load_explicit(&callback_mismatch, memory_order_relaxed) != 0) {
         fputs("handler/signum registration was observed inconsistently\n",
               stderr);
         return 1;
     }
-    if (atomic_load_explicit(&callback_count, memory_order_relaxed) == 0) {
+    if (!callback_observed) {
         fputs("no callback was dispatched\n", stderr);
         return 1;
     }
