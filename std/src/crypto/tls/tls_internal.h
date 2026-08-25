@@ -197,6 +197,9 @@ typedef struct {
 
 struct neverc_tls_config {
     _Atomic unsigned int ref_count;
+    tls_mutex_t config_mutex;
+    int config_mutex_initialized;
+    int frozen;
     tls_mutex_t session_mutex;
     int session_mutex_initialized;
     uint8_t *cert_der;
@@ -322,6 +325,7 @@ static inline uint32_t tls_get_u32(const uint8_t *p) {
 
 /* --- config/session (tls_config.c) --- */
 void nci_tls_config_retain(neverc_tls_config_t *cfg);
+int nci_tls_config_freeze(neverc_tls_config_t *cfg);
 void nci_tls_config_invalidate_client_session(neverc_tls_config_t *cfg);
 void nci_tls_config_invalidate_all_sessions(neverc_tls_config_t *cfg);
 int nci_tls_load_client_psk_offer(

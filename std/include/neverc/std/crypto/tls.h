@@ -64,11 +64,21 @@ typedef struct neverc_tls_config neverc_tls_config_t;
 #define NEVERC_TLS_CLIENT_AUTH_NONE               0
 #define NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY 1
 
-/* Create a new TLS config. Default: TLS 1.3, X25519, AES-128-GCM-SHA256. */
+/* Create a new TLS config and return one owned reference.
+ * Default: TLS 1.3, X25519, AES-128-GCM-SHA256. */
 neverc_tls_config_t *neverc_tls_config_new(void);
 
-/* Free a TLS config. */
+/* Release the caller's reference. Do not use cfg or pointers borrowed from it
+ * after this call, and do not release the same reference concurrently with an
+ * API call that is still using it. Successful connections/listeners retain
+ * their own reference. */
 void neverc_tls_config_free(neverc_tls_config_t *cfg);
+
+/* A config becomes immutable when first passed to a dial, connection, or
+ * listener function. Finish all certificate, root, ALPN, SNI, verification,
+ * and client-auth setup first. Later int-returning setters fail with -1 and
+ * void setters leave the frozen config unchanged. This makes one configured
+ * instance safe to reuse concurrently without configuration data races. */
 
 /* Load a local certificate and P-256 private key from PEM files.
  * SEC1 "EC PRIVATE KEY" and unencrypted PKCS#8 "PRIVATE KEY" are accepted.
@@ -102,7 +112,11 @@ void neverc_tls_config_insecure_skip_verify(neverc_tls_config_t *cfg);
 void neverc_tls_config_set_server_name(neverc_tls_config_t *cfg,
                                         const char *name);
 
-/* Current configured SNI. Empty/NULL means tls_dial should infer. */
+/* Current configured SNI. Empty/NULL means tls_dial should infer. The result
+ * is borrowed from cfg: before first use, callers must synchronize this getter
+ * with set_server_name, and the next successful setter immediately invalidates
+ * the old result. After cfg is frozen, the result remains stable only while the
+ * caller keeps its cfg reference alive. */
 const char *neverc_tls_config_server_name(const neverc_tls_config_t *cfg);
 
 /* Set the server-side client certificate policy. REQUIRE_AND_VERIFY sends a

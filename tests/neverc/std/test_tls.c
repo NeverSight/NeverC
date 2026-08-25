@@ -1,7 +1,9 @@
 #include "neverc/std/crypto/tls.h"
 #include "neverc/std/crypto/ed25519.h"
+#include "neverc/std/context.h"
 #include "neverc/std/encoding/base64.h"
 #include "neverc/std/net/tcp.h"
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +38,9 @@ neverc_tls_conn_t *nci_tls_start_handshake(
 #if defined(NEVERC_TLS_TESTING)
 int neverc_tls_test_config_set_handshake_fragment_size(
     neverc_tls_config_t *cfg, size_t fragment_size);
+int neverc_tls_test_config_freezes_on_retain(
+    const char *cert_pem, const char *key_pem,
+    const char *additional_root_pem);
 int neverc_tls_test_handshake_reassembly(void);
 int neverc_tls_test_key_schedule_failures(void);
 int neverc_tls_test_config_preserves_certificate_chain(
@@ -131,6 +136,11 @@ static void test_config(void) {
                   cfg, NEVERC_TLS_CLIENT_AUTH_NONE),
               0);
 #if defined(NEVERC_TLS_TESTING)
+    check_int("config_freezes_on_retain",
+              neverc_tls_test_config_freezes_on_retain(
+                  TEST_CERT_PEM, TEST_KEY_PEM,
+                  TEST_CLIENT_CERT_PEM),
+              0);
     check_int("handshake_fragment_and_coalescing_reassembly",
               neverc_tls_test_handshake_reassembly(), 0);
     check_int("key_schedule_failure_paths_are_atomic",
@@ -285,6 +295,264 @@ static int decode_certificate_pem(uint8_t *der, size_t der_capacity) {
     if (neverc_base64_decoded_len(base64_len) > der_capacity)
         return -1;
     return neverc_base64_decode(der, base64, base64_len);
+}
+
+#define TLS_CONFIG_RACE_ITERATIONS 32
+
+typedef struct {
+    neverc_tls_config_t *cfg;
+    _Atomic int *ready;
+    _Atomic int *start;
+    int ok;
+} tls_config_writer_race_ctx_t;
+
+typedef struct {
+    neverc_tls_config_t *cfg;
+    const uint8_t *certificate_der;
+    size_t certificate_der_len;
+    neverc_x509_time_t verification_time;
+    _Atomic int *ready;
+    _Atomic int *start;
+    int ok;
+} tls_config_reader_race_ctx_t;
+
+static void tls_config_race_wait(
+    _Atomic int *ready, _Atomic int *start) {
+    (void)atomic_fetch_add_explicit(ready, 1, memory_order_release);
+    while (!atomic_load_explicit(start, memory_order_acquire)) {
+    }
+}
+
+#ifdef _WIN32
+static DWORD WINAPI tls_config_writer_race_thread(LPVOID arg) {
+#else
+static void *tls_config_writer_race_thread(void *arg) {
+#endif
+    tls_config_writer_race_ctx_t *ctx =
+        (tls_config_writer_race_ctx_t *)arg;
+    tls_config_race_wait(ctx->ready, ctx->start);
+    ctx->ok = 1;
+    for (int i = 0; i < TLS_CONFIG_RACE_ITERATIONS; ++i) {
+        neverc_tls_config_set_server_name(ctx->cfg, "localhost");
+        if (neverc_tls_config_load_cert_mem(
+                ctx->cfg, TEST_CERT_PEM, TEST_KEY_PEM) != 0 ||
+            (i == 0 && neverc_tls_config_add_root_certificates_mem(
+                ctx->cfg, TEST_CLIENT_CERT_PEM,
+                strlen(TEST_CLIENT_CERT_PEM)) != 0)) {
+            ctx->ok = 0;
+            break;
+        }
+    }
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+#ifdef _WIN32
+static DWORD WINAPI tls_config_reader_race_thread(LPVOID arg) {
+#else
+static void *tls_config_reader_race_thread(void *arg) {
+#endif
+    tls_config_reader_race_ctx_t *ctx =
+        (tls_config_reader_race_ctx_t *)arg;
+    tls_config_race_wait(ctx->ready, ctx->start);
+    ctx->ok = 1;
+    uint8_t transcript_hash[32] = {0};
+    for (int i = 0; i < TLS_CONFIG_RACE_ITERATIONS; ++i) {
+        uint8_t signature[80];
+        size_t signature_len = 0;
+        uint16_t signature_scheme = 0;
+        if (neverc_tls_sign_certificate_verify(
+                ctx->cfg, 1, transcript_hash, sizeof(transcript_hash),
+                &signature_scheme, signature, sizeof(signature),
+                &signature_len) != 0 ||
+            neverc_tls_verify_server_certificate_chain(
+                ctx->cfg, ctx->certificate_der,
+                ctx->certificate_der_len, NULL,
+                &ctx->verification_time) != 0) {
+            ctx->ok = 0;
+            break;
+        }
+    }
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+static void test_config_reader_writer_race(void) {
+    printf("[config_reader_writer_race]\n");
+    neverc_tls_config_t *cfg = neverc_tls_config_new();
+    check_not_null("config_race_new", cfg);
+    if (!cfg)
+        return;
+    neverc_tls_config_set_server_name(cfg, "localhost");
+    int configured =
+        neverc_tls_config_load_cert_mem(
+            cfg, TEST_CERT_PEM, TEST_KEY_PEM) == 0 &&
+        neverc_tls_config_add_root_certificates_mem(
+            cfg, TEST_CERT_PEM, strlen(TEST_CERT_PEM)) == 0;
+    check_int("config_race_setup", configured, 1);
+
+    uint8_t certificate_der[512];
+    int certificate_der_len =
+        decode_certificate_pem(certificate_der, sizeof(certificate_der));
+    check_int("config_race_decode_certificate",
+              certificate_der_len > 0, 1);
+    if (!configured || certificate_der_len <= 0) {
+        neverc_tls_config_free(cfg);
+        return;
+    }
+
+    _Atomic int ready;
+    _Atomic int start;
+    atomic_init(&ready, 0);
+    atomic_init(&start, 0);
+    tls_config_writer_race_ctx_t writer = {
+        cfg, &ready, &start, 0};
+    tls_config_reader_race_ctx_t reader = {
+        cfg, certificate_der, (size_t)certificate_der_len,
+        {2026, 1, 1, 0, 0, 0}, &ready, &start, 0};
+
+#ifdef _WIN32
+    HANDLE writer_thread = CreateThread(
+        NULL, 0, tls_config_writer_race_thread, &writer, 0, NULL);
+    HANDLE reader_thread = CreateThread(
+        NULL, 0, tls_config_reader_race_thread, &reader, 0, NULL);
+    int writer_started = writer_thread != NULL;
+    int reader_started = reader_thread != NULL;
+#else
+    pthread_t writer_thread;
+    pthread_t reader_thread;
+    int writer_started = pthread_create(
+        &writer_thread, NULL, tls_config_writer_race_thread, &writer) == 0;
+    int reader_started = pthread_create(
+        &reader_thread, NULL, tls_config_reader_race_thread, &reader) == 0;
+#endif
+    check_int("config_race_threads_started",
+              writer_started && reader_started, 1);
+    if (writer_started && reader_started) {
+        while (atomic_load_explicit(&ready, memory_order_acquire) < 2) {
+        }
+    }
+    atomic_store_explicit(&start, 1, memory_order_release);
+#ifdef _WIN32
+    if (writer_started) {
+        WaitForSingleObject(writer_thread, INFINITE);
+        CloseHandle(writer_thread);
+    }
+    if (reader_started) {
+        WaitForSingleObject(reader_thread, INFINITE);
+        CloseHandle(reader_thread);
+    }
+#else
+    if (writer_started)
+        pthread_join(writer_thread, NULL);
+    if (reader_started)
+        pthread_join(reader_thread, NULL);
+#endif
+    if (writer_started && reader_started) {
+        check_int("config_race_writer_ok", writer.ok, 1);
+        check_int("config_race_reader_ok", reader.ok, 1);
+    }
+    neverc_tls_config_free(cfg);
+}
+
+static void test_config_public_entries_freeze(void) {
+    printf("[config_public_entries_freeze]\n");
+
+    neverc_tls_config_t *client_cfg = neverc_tls_config_new();
+    neverc_context_cancel_handle_t *cancel = NULL;
+    neverc_context_t *cancelled =
+        neverc_context_with_cancel_handle(NULL, &cancel);
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    int client_setup = client_cfg && cancelled && cancel &&
+        neverc_tcp_pipe(&client_tcp, &server_tcp) == 0 &&
+        client_tcp && server_tcp;
+    check_int("client_entry_freeze_setup", client_setup, 1);
+    if (client_setup) {
+        neverc_tls_config_insecure_skip_verify(client_cfg);
+        neverc_context_cancel_handle_cancel(cancel);
+        const char *err = NULL;
+        neverc_tls_conn_t *client = neverc_tls_client_context(
+            client_tcp, client_cfg, cancelled, &err);
+        check_null("cancelled_client_entry", client);
+        check_int("client_entry_freezes_config",
+                  neverc_tls_config_set_client_auth(
+                      client_cfg,
+                      NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY),
+                  -1);
+    }
+    neverc_tcp_close(client_tcp);
+    neverc_tcp_close(server_tcp);
+    neverc_context_free(cancelled);
+    neverc_context_cancel_handle_free(cancel);
+    neverc_tls_config_free(client_cfg);
+
+    neverc_tls_config_t *server_cfg = neverc_tls_config_new();
+    client_tcp = NULL;
+    server_tcp = NULL;
+    int server_setup = server_cfg &&
+        neverc_tls_config_load_cert_mem(
+            server_cfg, TEST_CERT_PEM, TEST_KEY_PEM) == 0 &&
+        neverc_tcp_pipe(&client_tcp, &server_tcp) == 0 &&
+        client_tcp && server_tcp;
+    check_int("server_begin_freeze_setup", server_setup, 1);
+    if (server_setup) {
+        const char *err = NULL;
+        neverc_tls_conn_t *server =
+            neverc_tls_server_begin(server_tcp, server_cfg, &err);
+        check_not_null("server_begin_entry", server);
+        check_int("server_begin_freezes_config",
+                  neverc_tls_config_set_client_auth(
+                      server_cfg,
+                      NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY),
+                  -1);
+        neverc_tls_close(server);
+    }
+    neverc_tcp_close(client_tcp);
+    neverc_tcp_close(server_tcp);
+    neverc_tls_config_free(server_cfg);
+
+    neverc_tls_config_t *dial_cfg = neverc_tls_config_new();
+    check_not_null("dial_entry_config", dial_cfg);
+    if (dial_cfg) {
+        neverc_tls_config_insecure_skip_verify(dial_cfg);
+        const char *err = NULL;
+        neverc_tls_conn_t *dialed = neverc_tls_dial(
+            "not-an-address", dial_cfg, &err);
+        check_null("invalid_dial_entry", dialed);
+        check_int("dial_entry_freezes_config",
+                  neverc_tls_config_set_client_auth(
+                      dial_cfg,
+                      NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY),
+                  -1);
+        neverc_tls_close(dialed);
+    }
+    neverc_tls_config_free(dial_cfg);
+
+    neverc_tls_config_t *listen_cfg = neverc_tls_config_new();
+    int listen_setup = listen_cfg &&
+        neverc_tls_config_load_cert_mem(
+            listen_cfg, TEST_CERT_PEM, TEST_KEY_PEM) == 0;
+    check_int("listen_entry_freeze_setup", listen_setup, 1);
+    if (listen_setup) {
+        const char *err = NULL;
+        neverc_tls_listener_t *listener = neverc_tls_listen(
+            "127.0.0.1:0", listen_cfg, &err);
+        check_not_null("listen_entry", listener);
+        check_int("listen_entry_freezes_config",
+                  neverc_tls_config_set_client_auth(
+                      listen_cfg,
+                      NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY),
+                  -1);
+        neverc_tls_listener_close(listener);
+    }
+    neverc_tls_config_free(listen_cfg);
 }
 
 static void test_certificate_chain_verification(void) {
@@ -3203,11 +3471,25 @@ static void test_cipher_suites(void) {
 
 /* ===== Main ===== */
 
+#if defined(NEVERC_TLS_CONFIG_RACE_ONLY)
+int main(void) {
+    printf("=== NeverC TLS Config Race Test ===\n");
+    test_config_reader_writer_race();
+    test_config_public_entries_freeze();
+    printf("\n%d/%d tests passed", tests_passed, tests_run);
+    if (tests_failed > 0)
+        printf(", %d FAILED", tests_failed);
+    printf("\n");
+    return tests_failed > 0 ? 1 : 0;
+}
+#else
 int main(void) {
     printf("=== NeverC TLS Tests ===\n");
 
     test_config();
     test_cipher_suites();
+    test_config_reader_writer_race();
+    test_config_public_entries_freeze();
     test_certificate_chain_verification();
     test_certificate_verify_signing();
     test_certificate_verify();
@@ -3243,3 +3525,4 @@ int main(void) {
 
     return tests_failed > 0 ? 1 : 0;
 }
+#endif

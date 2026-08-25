@@ -38,8 +38,44 @@ static void tls_clear_client_session(
     neverc_platform_secure_zero(session, sizeof(*session));
 }
 
+static int tls_config_begin_mutation(neverc_tls_config_t *cfg) {
+    if (!cfg || !cfg->config_mutex_initialized)
+        return -1;
+    tls_mutex_lock(&cfg->config_mutex);
+    if (cfg->frozen) {
+        tls_mutex_unlock(&cfg->config_mutex);
+        return -1;
+    }
+    return 0;
+}
+
+static void tls_config_end_mutation(neverc_tls_config_t *cfg) {
+    tls_mutex_unlock(&cfg->config_mutex);
+}
+
+static int tls_config_begin_read(const neverc_tls_config_t *cfg) {
+    if (!cfg || !cfg->config_mutex_initialized)
+        return -1;
+    tls_mutex_lock((tls_mutex_t *)&cfg->config_mutex);
+    return 0;
+}
+
+static void tls_config_end_read(const neverc_tls_config_t *cfg) {
+    tls_mutex_unlock((tls_mutex_t *)&cfg->config_mutex);
+}
+
+int nci_tls_config_freeze(neverc_tls_config_t *cfg) {
+    if (!cfg || !cfg->config_mutex_initialized)
+        return -1;
+    tls_mutex_lock(&cfg->config_mutex);
+    cfg->frozen = 1;
+    tls_mutex_unlock(&cfg->config_mutex);
+    return 0;
+}
+
 void nci_tls_config_retain(neverc_tls_config_t *cfg) {
     if (cfg) {
+        (void)nci_tls_config_freeze(cfg);
         (void)atomic_fetch_add_explicit(
             &cfg->ref_count, 1, memory_order_relaxed);
     }
@@ -51,9 +87,17 @@ neverc_tls_config_t *neverc_tls_config_new(void) {
         return NULL;
     atomic_init(&cfg->ref_count, 1);
 #ifdef _WIN32
+    tls_mutex_init(&cfg->config_mutex);
+    cfg->config_mutex_initialized = 1;
     tls_mutex_init(&cfg->session_mutex);
 #else
+    if (tls_mutex_init(&cfg->config_mutex) != 0) {
+        free(cfg);
+        return NULL;
+    }
+    cfg->config_mutex_initialized = 1;
     if (tls_mutex_init(&cfg->session_mutex) != 0) {
+        tls_mutex_destroy(&cfg->config_mutex);
         free(cfg);
         return NULL;
     }
@@ -73,6 +117,10 @@ void neverc_tls_config_free(neverc_tls_config_t *cfg) {
     if (cfg->session_mutex_initialized) {
         tls_mutex_destroy(&cfg->session_mutex);
         cfg->session_mutex_initialized = 0;
+    }
+    if (cfg->config_mutex_initialized) {
+        tls_mutex_destroy(&cfg->config_mutex);
+        cfg->config_mutex_initialized = 0;
     }
     free(cfg->cert_der);
     free(cfg->cert_chain);
@@ -556,6 +604,12 @@ int neverc_tls_config_load_cert_mem(neverc_tls_config_t *cfg,
         return -1;
     }
 
+    if (tls_config_begin_mutation(cfg) != 0) {
+        free(cert_der);
+        free(cert_chain);
+        tls_free_private_key(key_der, key_der_len);
+        return -1;
+    }
     nci_tls_config_invalidate_all_sessions(cfg);
     free(cfg->cert_der);
     free(cfg->cert_chain);
@@ -567,6 +621,7 @@ int neverc_tls_config_load_cert_mem(neverc_tls_config_t *cfg,
     cfg->key_der = key_der;
     cfg->key_der_len = key_der_len;
     cfg->key_type = key_type;
+    tls_config_end_mutation(cfg);
     return 0;
 }
 
@@ -625,12 +680,16 @@ int neverc_tls_config_add_root_certificates_mem(
     neverc_tls_config_t *cfg, const char *pem, size_t pem_len) {
     if (!cfg || !pem || pem_len == 0)
         return -1;
+    if (tls_config_begin_mutation(cfg) != 0)
+        return -1;
 
     int created_pool = 0;
     if (!cfg->root_certificates) {
         cfg->root_certificates = neverc_x509_cert_pool_new();
-        if (!cfg->root_certificates)
+        if (!cfg->root_certificates) {
+            tls_config_end_mutation(cfg);
             return -1;
+        }
         created_pool = 1;
     }
 
@@ -641,9 +700,11 @@ int neverc_tls_config_add_root_certificates_mem(
             neverc_x509_cert_pool_free(cfg->root_certificates);
             cfg->root_certificates = NULL;
         }
+        tls_config_end_mutation(cfg);
         return -1;
     }
     nci_tls_config_invalidate_client_session(cfg);
+    tls_config_end_mutation(cfg);
     return 0;
 }
 
@@ -691,12 +752,15 @@ void neverc_tls_config_set_alpn(neverc_tls_config_t *cfg,
         }
     }
 
+    if (tls_config_begin_mutation(cfg) != 0)
+        goto fail;
     nci_tls_config_invalidate_all_sessions(cfg);
     for (int i = 0; i < cfg->alpn_count; i++)
         free(cfg->alpn_protos[i]);
     free(cfg->alpn_protos);
     cfg->alpn_protos = copies;
     cfg->alpn_count = count;
+    tls_config_end_mutation(cfg);
     return;
 
 fail:
@@ -708,10 +772,15 @@ fail:
 }
 
 void neverc_tls_config_insecure_skip_verify(neverc_tls_config_t *cfg) {
-    if (!cfg || cfg->skip_verify)
+    if (tls_config_begin_mutation(cfg) != 0)
         return;
+    if (cfg->skip_verify) {
+        tls_config_end_mutation(cfg);
+        return;
+    }
     nci_tls_config_invalidate_client_session(cfg);
     cfg->skip_verify = 1;
+    tls_config_end_mutation(cfg);
 }
 
 void neverc_tls_config_set_server_name(neverc_tls_config_t *cfg,
@@ -726,9 +795,14 @@ void neverc_tls_config_set_server_name(neverc_tls_config_t *cfg,
         if (!copy)
             return;
     }
+    if (tls_config_begin_mutation(cfg) != 0) {
+        free(copy);
+        return;
+    }
     nci_tls_config_invalidate_client_session(cfg);
     free(cfg->server_name);
     cfg->server_name = copy;
+    tls_config_end_mutation(cfg);
 }
 
 const char *neverc_tls_config_server_name(const neverc_tls_config_t *cfg) {
@@ -741,10 +815,15 @@ int neverc_tls_config_set_client_auth(
         (mode != NEVERC_TLS_CLIENT_AUTH_NONE &&
          mode != NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY))
         return -1;
-    if (cfg->client_auth == mode)
+    if (tls_config_begin_mutation(cfg) != 0)
+        return -1;
+    if (cfg->client_auth == mode) {
+        tls_config_end_mutation(cfg);
         return 0;
+    }
     nci_tls_config_invalidate_all_sessions(cfg);
     cfg->client_auth = mode;
+    tls_config_end_mutation(cfg);
     return 0;
 }
 
@@ -753,8 +832,61 @@ int neverc_tls_test_config_set_handshake_fragment_size(
     neverc_tls_config_t *cfg, size_t fragment_size) {
     if (!cfg || fragment_size > TLS_MAX_PLAINTEXT)
         return -1;
+    if (tls_config_begin_mutation(cfg) != 0)
+        return -1;
     cfg->test_handshake_fragment_size = fragment_size;
+    tls_config_end_mutation(cfg);
     return 0;
+}
+
+int neverc_tls_test_config_freezes_on_retain(
+    const char *cert_pem, const char *key_pem,
+    const char *additional_root_pem) {
+    if (!cert_pem || !key_pem || !additional_root_pem)
+        return -1;
+    neverc_tls_config_t *cfg = neverc_tls_config_new();
+    if (!cfg)
+        return -1;
+    const char *initial_alpn[] = {"h2"};
+    const char *replacement_alpn[] = {"http/1.1"};
+    neverc_tls_config_set_server_name(cfg, "before.example");
+    neverc_tls_config_set_alpn(cfg, initial_alpn, 1);
+    if (neverc_tls_config_load_cert_mem(cfg, cert_pem, key_pem) != 0 ||
+        neverc_tls_config_add_root_certificates_mem(
+            cfg, cert_pem, strlen(cert_pem)) != 0) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+    uint8_t *cert_der = cfg->cert_der;
+    neverc_x509_cert_pool_t *roots = cfg->root_certificates;
+    size_t root_count = neverc_x509_cert_pool_count(roots);
+    nci_tls_config_retain(cfg);
+
+    neverc_tls_config_set_server_name(cfg, "after.example");
+    neverc_tls_config_set_alpn(cfg, replacement_alpn, 1);
+    neverc_tls_config_insecure_skip_verify(cfg);
+    int cert_result = neverc_tls_config_load_cert_mem(
+        cfg, cert_pem, key_pem);
+    int root_result = neverc_tls_config_add_root_certificates_mem(
+        cfg, additional_root_pem, strlen(additional_root_pem));
+    int auth_result = neverc_tls_config_set_client_auth(
+        cfg, NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY);
+    int fragment_result =
+        neverc_tls_test_config_set_handshake_fragment_size(cfg, 1);
+    int valid = cfg->frozen && cfg->server_name &&
+        strcmp(cfg->server_name, "before.example") == 0 &&
+        cfg->alpn_count == 1 && cfg->alpn_protos &&
+        strcmp(cfg->alpn_protos[0], "h2") == 0 &&
+        !cfg->skip_verify &&
+        cfg->cert_der == cert_der &&
+        cfg->root_certificates == roots &&
+        neverc_x509_cert_pool_count(roots) == root_count &&
+        cfg->client_auth == NEVERC_TLS_CLIENT_AUTH_NONE &&
+        cert_result == -1 && root_result == -1 &&
+        auth_result == -1 && fragment_result == -1;
+    neverc_tls_config_free(cfg);
+    neverc_tls_config_free(cfg);
+    return valid ? 0 : -1;
 }
 
 int neverc_tls_test_did_resume(neverc_tls_conn_t *conn) {
@@ -943,13 +1075,17 @@ int neverc_tls_verify_server_certificate_chain(
     size_t leaf_der_len,
     const neverc_x509_cert_pool_t *intermediates,
     const neverc_x509_time_t *moment) {
-    if (!config || !config->server_name ||
-        config->server_name[0] == '\0')
+    if (tls_config_begin_read(config) != 0)
         return -1;
-    return nci_tls_verify_certificate_chain(
-        config, leaf_der, leaf_der_len, intermediates, moment,
-        config->server_name,
-        NEVERC_X509_EXT_KEY_USAGE_SERVER_AUTH, 1);
+    int result = -1;
+    if (config->server_name && config->server_name[0] != '\0') {
+        result = nci_tls_verify_certificate_chain(
+            config, leaf_der, leaf_der_len, intermediates, moment,
+            config->server_name,
+            NEVERC_X509_EXT_KEY_USAGE_SERVER_AUTH, 1);
+    }
+    tls_config_end_read(config);
+    return result;
 }
 
 int neverc_tls_sign_certificate_verify(
@@ -965,12 +1101,17 @@ int neverc_tls_sign_certificate_verify(
         "TLS 1.3, server CertificateVerify";
     static const char client_context[] =
         "TLS 1.3, client CertificateVerify";
-    if (!config || config->key_type != NCI_TLS_KEY_ECDSA_P256 ||
-        !config->key_der || config->key_der_len == 0 ||
-        (from_server != 0 && from_server != 1) ||
+    if ((from_server != 0 && from_server != 1) ||
         !transcript_hash || transcript_hash_len != 32 ||
         !signature_scheme || !signature || !signature_len)
         return -1;
+    if (tls_config_begin_read(config) != 0)
+        return -1;
+    if (config->key_type != NCI_TLS_KEY_ECDSA_P256 ||
+        !config->key_der || config->key_der_len == 0) {
+        tls_config_end_read(config);
+        return -1;
+    }
 
     const char *context = from_server ?
                           server_context : client_context;
@@ -996,5 +1137,6 @@ int neverc_tls_sign_certificate_verify(
         *signature_scheme =
             NEVERC_TLS_SIGNATURE_ECDSA_SECP256R1_SHA256;
     }
+    tls_config_end_read(config);
     return result;
 }

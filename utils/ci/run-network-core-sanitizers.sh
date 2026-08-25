@@ -173,6 +173,21 @@ for name in "${full_stack_tests[@]}"; do
       "./$name-asan-ubsan")
 done
 
+tls_config_race_flags=(
+  -DNEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT=1
+  -DNEVERC_TLS_TESTING=1
+  -DNEVERC_TLS_CONFIG_RACE_ONLY=1
+)
+"$compiler" -std=gnu11 "${protocol_flags[@]}" \
+  "${tls_config_race_flags[@]}" \
+  "$test_root/test_tls.c" "${full_std_sources[@]}" \
+  "${full_platform_libraries[@]}" \
+  -o "$work_dir/tls-config-race-asan-ubsan"
+(cd "$work_dir" && \
+  ASAN_OPTIONS=$asan_options \
+  UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
+    ./tls-config-race-asan-ubsan)
+
 full_tsan_flags=(
   -O1
   -g
@@ -195,5 +210,13 @@ for name in "${full_stack_tests[@]}"; do
     TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1:history_size=7} \
       "./$name-tsan")
 done
+"$compiler" -std=gnu11 "${full_tsan_flags[@]}" \
+  "${tls_config_race_flags[@]}" \
+  "$test_root/test_tls.c" "${full_std_sources[@]}" \
+  "${full_platform_libraries[@]}" \
+  -o "$work_dir/tls-config-race-tsan"
+(cd "$work_dir" && \
+  TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1:history_size=7} \
+    ./tls-config-race-tsan)
 
 echo "network-core sanitizer gates passed"

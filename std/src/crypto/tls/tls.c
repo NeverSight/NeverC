@@ -44,15 +44,19 @@ neverc_tls_conn_t *nci_tls_start_handshake(
     int from_server, int owns_tcp, neverc_context_t *ctx,
     const char *inferred_server_name,
     const char **errp) {
+    if (errp)
+        *errp = NULL;
+    if (!tcp || !cfg || nci_tls_config_freeze(cfg) != 0) {
+        if (errp)
+            *errp = k_tls_invalid_argument;
+        return NULL;
+    }
     const char *effective_name = NULL;
     if (inferred_server_name && inferred_server_name[0])
         effective_name = inferred_server_name;
-    else if (cfg && cfg->server_name && cfg->server_name[0])
+    else if (cfg->server_name && cfg->server_name[0])
         effective_name = cfg->server_name;
-    if (errp)
-        *errp = NULL;
-    if (!tcp || !cfg ||
-        (from_server &&
+    if ((from_server &&
          (!cfg->cert_der || !cfg->key_der)) ||
         (from_server &&
          cfg->client_auth ==
@@ -150,6 +154,10 @@ neverc_tls_conn_t *neverc_tls_dial(const char *addr,
             *errp = k_tls_invalid_argument;
         return NULL;
     }
+    if (nci_tls_config_freeze(cfg) != 0) {
+        if (errp) *errp = k_tls_invalid_argument;
+        return NULL;
+    }
     /* Go dial() clones Config before filling ServerName. Keep the inferred
      * host on the conn only so a shared cfg is not mutated and a later
      * set_server_name cannot wipe a just-stored ticket. */
@@ -228,7 +236,8 @@ neverc_tls_conn_t *neverc_tls_server_begin(
     neverc_tcp_conn_t *tcp, neverc_tls_config_t *cfg, const char **errp) {
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
     if (errp) *errp = NULL;
-    if (!tcp || !cfg || !cfg->cert_der || !cfg->key_der ||
+    if (!tcp || !cfg || nci_tls_config_freeze(cfg) != 0 ||
+        !cfg->cert_der || !cfg->key_der ||
         (cfg->client_auth ==
              NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY &&
          !cfg->root_certificates)) {
@@ -710,7 +719,8 @@ neverc_tls_listener_t *neverc_tls_listen(const char *addr,
                                           neverc_tls_config_t *cfg,
                                           const char **errp) {
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
-    if (!addr || !cfg || !cfg->cert_der || !cfg->key_der ||
+    if (!addr || !cfg || nci_tls_config_freeze(cfg) != 0 ||
+        !cfg->cert_der || !cfg->key_der ||
         (cfg->client_auth ==
              NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY &&
          !cfg->root_certificates)) {
