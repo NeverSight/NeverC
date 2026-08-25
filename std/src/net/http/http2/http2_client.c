@@ -7,6 +7,7 @@
 #include "../../_net_thread.h"
 
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -86,6 +87,117 @@ struct neverc_h2_client {
     int pending_self_dep;
     uint32_t settings_ack_owed;
 };
+
+typedef struct h2_owned_response {
+    /* Keep the released response at offset zero. The two post-release flags
+     * live only in this library-owned tail. */
+    neverc_h2_response_t public_response;
+    int received_trailers;
+    int received_data;
+    struct h2_owned_response *next;
+} h2_owned_response_t;
+
+/* Accessors and free must not blindly cast an arbitrary released-size public
+ * response to the larger private wrapper. The live registry validates the
+ * public address before any tail byte is read. */
+static atomic_flag h2_response_registry_lock_flag = ATOMIC_FLAG_INIT;
+static h2_owned_response_t *h2_response_initial_buckets[64];
+static h2_owned_response_t **h2_response_buckets =
+    h2_response_initial_buckets;
+static size_t h2_response_bucket_count =
+    sizeof(h2_response_initial_buckets) /
+    sizeof(h2_response_initial_buckets[0]);
+static size_t h2_response_count;
+
+static void h2_response_registry_lock(void) {
+    while (atomic_flag_test_and_set_explicit(
+               &h2_response_registry_lock_flag, memory_order_acquire)) {
+    }
+}
+
+static void h2_response_registry_unlock(void) {
+    atomic_flag_clear_explicit(
+        &h2_response_registry_lock_flag, memory_order_release);
+}
+
+static size_t h2_response_pointer_hash(const void *pointer) {
+    uintptr_t value = (uintptr_t)pointer;
+    value ^= value >> 7;
+    value ^= value >> 17;
+    value ^= value >> 3;
+    return (size_t)value;
+}
+
+static void h2_response_registry_grow_locked(void) {
+    if (h2_response_bucket_count > SIZE_MAX / 2U ||
+        h2_response_bucket_count * 2U >
+            SIZE_MAX / sizeof(*h2_response_buckets))
+        return;
+    size_t count = h2_response_bucket_count * 2U;
+    h2_owned_response_t **buckets =
+        (h2_owned_response_t **)calloc(count, sizeof(*buckets));
+    if (!buckets) return;
+    for (size_t i = 0; i < h2_response_bucket_count; i++) {
+        h2_owned_response_t *owned = h2_response_buckets[i];
+        while (owned) {
+            h2_owned_response_t *next = owned->next;
+            size_t bucket = h2_response_pointer_hash(
+                &owned->public_response) & (count - 1U);
+            owned->next = buckets[bucket];
+            buckets[bucket] = owned;
+            owned = next;
+        }
+    }
+    if (h2_response_buckets != h2_response_initial_buckets)
+        free(h2_response_buckets);
+    h2_response_buckets = buckets;
+    h2_response_bucket_count = count;
+}
+
+static h2_owned_response_t *h2_response_alloc(void) {
+    h2_owned_response_t *owned =
+        (h2_owned_response_t *)calloc(1, sizeof(*owned));
+    if (!owned) return NULL;
+    h2_response_registry_lock();
+    if (h2_response_count >= h2_response_bucket_count)
+        h2_response_registry_grow_locked();
+    size_t bucket = h2_response_pointer_hash(&owned->public_response) &
+                    (h2_response_bucket_count - 1U);
+    owned->next = h2_response_buckets[bucket];
+    h2_response_buckets[bucket] = owned;
+    h2_response_count++;
+    h2_response_registry_unlock();
+    return owned;
+}
+
+static h2_owned_response_t *h2_response_remove(
+    neverc_h2_response_t *response) {
+    h2_owned_response_t *found = NULL;
+    h2_response_registry_lock();
+    size_t bucket = h2_response_pointer_hash(response) &
+                    (h2_response_bucket_count - 1U);
+    h2_owned_response_t **link = &h2_response_buckets[bucket];
+    while (*link && &(*link)->public_response != response)
+        link = &(*link)->next;
+    if (*link) {
+        found = *link;
+        *link = found->next;
+        found->next = NULL;
+        h2_response_count--;
+        if (h2_response_count == 0 &&
+            h2_response_buckets != h2_response_initial_buckets) {
+            free(h2_response_buckets);
+            memset(h2_response_initial_buckets, 0,
+                   sizeof(h2_response_initial_buckets));
+            h2_response_buckets = h2_response_initial_buckets;
+            h2_response_bucket_count =
+                sizeof(h2_response_initial_buckets) /
+                sizeof(h2_response_initial_buckets[0]);
+        }
+    }
+    h2_response_registry_unlock();
+    return found;
+}
 
 static int h2_client_transport_read_all(neverc_h2_client_t *client,
                                         void *output, size_t length) {
@@ -1806,8 +1918,9 @@ neverc_h2_client_t *neverc_h2_client_dial(
 
 static neverc_h2_response_t *h2_client_error_response(
     const char *error, uint32_t code) {
+    h2_owned_response_t *owned = h2_response_alloc();
     neverc_h2_response_t *response =
-        (neverc_h2_response_t *)calloc(1, sizeof(*response));
+        owned ? &owned->public_response : NULL;
     if (response) {
         response->error = error;
         response->stream_error = code;
@@ -1945,16 +2058,17 @@ neverc_h2_response_t *neverc_h2_client_do_context(
         (void)h2_client_write_u32(client, NC_H2_FRAME_RST_STREAM,
                                   stream->id, NC_H2_CANCEL);
 
+    h2_owned_response_t *owned = h2_response_alloc();
     neverc_h2_response_t *response =
-        (neverc_h2_response_t *)calloc(1, sizeof(*response));
+        owned ? &owned->public_response : NULL;
     if (response) {
         response->status_code = (int)stream->status_code;
         response->headers = stream->headers;
         response->header_count = stream->header_count;
         response->trailers = stream->trailers;
         response->trailer_count = stream->trailer_count;
-        response->received_trailers = stream->received_trailers;
-        response->received_data = stream->received_data;
+        owned->received_trailers = stream->received_trailers;
+        owned->received_data = stream->received_data;
         response->body = (uint8_t *)stream->body.data;
         response->body_length = stream->body.len;
         response->stream_error =
@@ -1983,12 +2097,41 @@ neverc_h2_response_t *neverc_h2_client_do(
         body, body_length);
 }
 
+static int h2_response_flag(const neverc_h2_response_t *response,
+                            int data_flag) {
+    int result = 0;
+    h2_response_registry_lock();
+    size_t bucket = h2_response_pointer_hash(response) &
+                    (h2_response_bucket_count - 1U);
+    for (h2_owned_response_t *owned = h2_response_buckets[bucket]; owned;
+         owned = owned->next) {
+        if (&owned->public_response == response) {
+            result = data_flag ? owned->received_data
+                               : owned->received_trailers;
+            break;
+        }
+    }
+    h2_response_registry_unlock();
+    return result != 0;
+}
+
+int neverc_h2_response_received_trailers(
+    const neverc_h2_response_t *response) {
+    return h2_response_flag(response, 0);
+}
+
+int neverc_h2_response_received_data(
+    const neverc_h2_response_t *response) {
+    return h2_response_flag(response, 1);
+}
+
 void neverc_h2_response_free(neverc_h2_response_t *response) {
-    if (!response) return;
+    h2_owned_response_t *owned = h2_response_remove(response);
+    if (!owned) return;
     h2_client_free_headers(response->headers, response->header_count);
     h2_client_free_headers(response->trailers, response->trailer_count);
     free(response->body);
-    free(response);
+    free(owned);
 }
 
 void neverc_h2_client_close(neverc_h2_client_t *client) {

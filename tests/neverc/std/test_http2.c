@@ -3071,6 +3071,29 @@ static void h2_run_adversarial_response_child(
         _exit(0);
     }
 
+    if (response_kind == 19) {
+        /* Both events are semantically present although their public lengths
+         * are zero: empty DATA followed by an empty trailer block. */
+        uint8_t final_headers[10] = {
+            0, 0, 1, NC_H2_FRAME_HEADERS, NC_H2_FLAG_END_HEADERS,
+            0, 0, 0, 1, 0x88};
+        uint8_t empty_data[NC_H2_FRAME_HEADER_SIZE] = {
+            0, 0, 0, NC_H2_FRAME_DATA, 0, 0, 0, 0, 1};
+        uint8_t empty_trailers[NC_H2_FRAME_HEADER_SIZE] = {
+            0, 0, 0, NC_H2_FRAME_HEADERS,
+            (uint8_t)(NC_H2_FLAG_END_HEADERS | NC_H2_FLAG_END_STREAM),
+            0, 0, 0, 1};
+        if (sock_write_all(fd, final_headers, sizeof(final_headers)) != 0 ||
+            sock_write_all(fd, empty_data, sizeof(empty_data)) != 0 ||
+            sock_write_all(fd, empty_trailers, sizeof(empty_trailers)) != 0)
+            _exit(1);
+        char drain[256];
+        while (read(fd, drain, sizeof(drain)) > 0) { }
+        neverc_tcp_close(connection);
+        neverc_tcp_listener_close(listener);
+        _exit(0);
+    }
+
     uint8_t response_header[NC_H2_FRAME_HEADER_SIZE] = {
         0, 0, 1, NC_H2_FRAME_HEADERS, NC_H2_FLAG_END_HEADERS,
         0, 0, 0, 1};
@@ -3318,6 +3341,17 @@ TEST(h2_client_do_get_204_rejects_data_body) {
     neverc_h2_response_t *response = h2_client_do_kind(15, "GET");
     ASSERT_TRUE(response != NULL);
     ASSERT_TRUE(response->error != NULL);
+    neverc_h2_response_free(response);
+}
+
+TEST(h2_client_response_accessors_preserve_empty_events) {
+    neverc_h2_response_t *response = h2_client_do_kind(19, "GET");
+    ASSERT_TRUE(response != NULL);
+    ASSERT_TRUE(response->error == NULL);
+    ASSERT_EQ(response->body_length, 0);
+    ASSERT_EQ(response->trailer_count, 0);
+    ASSERT_EQ(neverc_h2_response_received_data(response), 1);
+    ASSERT_EQ(neverc_h2_response_received_trailers(response), 1);
     neverc_h2_response_free(response);
 }
 
@@ -3988,6 +4022,7 @@ int main(void) {
     run_test_h2_client_do_get_rejects_content_length_without_body();
     run_test_h2_client_do_get_204_allows_content_length_without_body();
     run_test_h2_client_do_get_204_rejects_data_body();
+    run_test_h2_client_response_accessors_preserve_empty_events();
     run_test_h2_client_do_head_rejects_data_body();
     run_test_h2_client_stream_flow_error_uses_flow_control_code();
     run_test_h2_client_rejects_non_token_method();

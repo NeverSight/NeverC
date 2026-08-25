@@ -243,8 +243,6 @@ typedef struct {
     size_t header_count;
     neverc_hpack_header_t *trailers;
     size_t trailer_count;
-    int received_trailers; /* 1 if a trailer HEADERS block arrived, even empty */
-    int received_data;     /* 1 if a DATA frame arrived, including empty */
     uint8_t *body;
     size_t body_length;
     uint32_t stream_error;
@@ -314,6 +312,13 @@ void neverc_h2_client_stream_cancel(neverc_h2_client_stream_t *stream,
 /* Cancel if necessary, unlink, drain events, and release the stream. */
 void neverc_h2_client_stream_free(neverc_h2_client_stream_t *stream);
 
+/* These preserve distinctions that counts/lengths cannot express: an empty
+ * trailer HEADERS block and a zero-length DATA frame. They return 0 for NULL
+ * or for a response not allocated by this library instance. */
+int neverc_h2_response_received_trailers(
+    const neverc_h2_response_t *response);
+int neverc_h2_response_received_data(
+    const neverc_h2_response_t *response);
 void neverc_h2_response_free(neverc_h2_response_t *response);
 void neverc_h2_client_close(neverc_h2_client_t *client);
 /* The caller must ensure no client_do call is active. */

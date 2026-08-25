@@ -774,6 +774,10 @@ STD_TEST(io_uring, TCP_DEPS, "src/net/http/http.c", "src/net/http/http_client.c"
 // ===== HTTP/2 =====
 STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/net/http/http.c", "src/net/http/http_client.c", TCP_DEPS,
     "src/time/time.c", URL_DEPS, HTTP_TLS_DEPS)
+STD_TEST(http2_response_abi, "src/net/http/http2/http2.c",
+    "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c",
+    "src/net/http/http.c", "src/net/http/http_client.c", TCP_DEPS,
+    "src/time/time.c", URL_DEPS, HTTP_TLS_DEPS)
 STD_TEST(http2_oom, "src/net/http/http2/http2.c", "src/net/http/http.c",
     "src/net/http/http_client.c", "src/time/time.c", TCP_DEPS, URL_DEPS, HTTP_TLS_DEPS)
 TEST_F(StdLibTest, HpackAllocationFailure) {
