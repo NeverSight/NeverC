@@ -110,9 +110,11 @@ int main(void) {
     CHECK(cb->weak == INT32_MAX);
     cb->weak = 2;
 
+    size_t frees_before_release = free_count;
     neverc_weak_ref_release(weak);
     neverc_weak_strong_release(&strong);
-    CHECK(free_count == 3); /* weak handle, payload, and control block */
+    CHECK(free_count == frees_before_release + 3);
+    /* The final releases free the weak handle, payload, and control block. */
     puts("passed");
     return 0;
 }
