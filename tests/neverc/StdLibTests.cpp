@@ -319,6 +319,12 @@ TEST_F(StdLibTest, JsonAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(csv, "src/encoding/csv/csv.c")
+TEST_F(StdLibTest, CsvReadAllABI) {
+  auto r = compileAndRunStdTest(
+      "csv_read_all_abi", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(xml, "src/encoding/xml/xml.c")
 TEST_F(StdLibTest, XmlAllocationFailure) {
   auto r = compileAndRunStdTest("xml_oom", {}, {"-fno-builtin-std"});

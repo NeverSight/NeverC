@@ -377,7 +377,7 @@ static void test_read_all(void) {
     const char **records[] = {row0, row1};
     int field_counts[2] = {0, 0};
     char work[256];
-    int n = neverc_csv_read_all(
+    int n = neverc_csv_read_all_into(
         data, sizeof(data) - 1U, records, field_counts, 2,
         work, sizeof(work), NULL);
     ASSERT_INT_EQ(n, 2);
@@ -400,13 +400,13 @@ static void test_read_all(void) {
     const char *limited_row[NEVERC_CSV_MAX_FIELDS];
     const char **limited_records[] = {limited_row};
     int limited_count[1] = {0};
-    ASSERT_INT_EQ(neverc_csv_read_all(
+    ASSERT_INT_EQ(neverc_csv_read_all_into(
                       "a\nb\n", 4U, limited_records, limited_count, 1,
                       work, sizeof(work), NULL),
                   -1);
 
     neverc_csv_reader_opts_t comment_opts = {.comment = '#'};
-    ASSERT_INT_EQ(neverc_csv_read_all(
+    ASSERT_INT_EQ(neverc_csv_read_all_into(
                       "#,\"ignored\nok,value\n", 20U,
                       limited_records, limited_count, 1,
                       work, sizeof(work), &comment_opts),
@@ -415,7 +415,7 @@ static void test_read_all(void) {
     ASSERT_STR_EQ(limited_records[0][1], "value");
 
     neverc_csv_reader_opts_t lazy_opts = {.lazy_quotes = 1};
-    ASSERT_INT_EQ(neverc_csv_read_all(
+    ASSERT_INT_EQ(neverc_csv_read_all_into(
                       "\"a\"b\nc\",d\n", 10U,
                       limited_records, limited_count, 1,
                       work, sizeof(work), &lazy_opts),
@@ -429,7 +429,7 @@ static void test_read_all(void) {
         const char **cr_records[] = {cr_row};
         int cr_count[1] = {0};
         static const char lone_cr[] = {'a', '\r', 'b'};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           lone_cr, sizeof(lone_cr),
                           cr_records, cr_count, 1,
                           work, sizeof(work), NULL),
@@ -442,7 +442,7 @@ static void test_read_all(void) {
         const char *crlf1[NEVERC_CSV_MAX_FIELDS];
         const char **crlf_records[] = {crlf0, crlf1};
         int crlf_counts[2] = {0, 0};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           "a\r\nb\n", 5U,
                           crlf_records, crlf_counts, 2,
                           work, sizeof(work), NULL),
@@ -458,12 +458,12 @@ static void test_read_all(void) {
         static const char comment_cr[] = {
             '#', 'x', '\r', 'k', 'e', 'p', 't'
         };
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           comment_cr, sizeof(comment_cr),
                           cmt_records, cmt_count, 1,
                           work, sizeof(work), &cr_comment),
                       0);
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           "#comment\r\nnext\n", 15U,
                           cmt_records, cmt_count, 1,
                           work, sizeof(work), &cr_comment),
@@ -475,7 +475,7 @@ static void test_read_all(void) {
         const char **eof_records[] = {eof_row};
         int eof_count[1] = {0};
         static const char eof_cr[] = {'a', '\r'};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           eof_cr, sizeof(eof_cr),
                           eof_records, eof_count, 1,
                           work, sizeof(work), NULL),
@@ -488,7 +488,7 @@ static void test_read_all(void) {
         const char **dbl_records[] = {dbl0, dbl1};
         int dbl_counts[2] = {0, 0};
         static const char cr_before_crlf[] = {'a', '\r', '\r', '\n', 'b'};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           cr_before_crlf, sizeof(cr_before_crlf),
                           dbl_records, dbl_counts, 2,
                           work, sizeof(work), NULL),
@@ -500,7 +500,7 @@ static void test_read_all(void) {
         const char *qrow[NEVERC_CSV_MAX_FIELDS];
         const char **qrecords[] = {qrow};
         int qcount[1] = {0};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           "\"a\rb\"\n", 6U,
                           qrecords, qcount, 1,
                           work, sizeof(work), NULL),
@@ -512,7 +512,7 @@ static void test_read_all(void) {
         const char *crlf_qrow[NEVERC_CSV_MAX_FIELDS];
         const char **crlf_qrecords[] = {crlf_qrow};
         int crlf_qcount[1] = {0};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           "\"a\r\nb\",c\n", 9U,
                           crlf_qrecords, crlf_qcount, 1,
                           work, sizeof(work), NULL),
@@ -525,7 +525,7 @@ static void test_read_all(void) {
         const char *go_crlf[NEVERC_CSV_MAX_FIELDS];
         const char **go_records[] = {go_crlf};
         int go_count[1] = {0};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           "A,\"Hello\r\nHi\",B\r\n", 17U,
                           go_records, go_count, 1,
                           work, sizeof(work), NULL),
@@ -541,7 +541,7 @@ static void test_read_all(void) {
         const char **eof_qrecords[] = {eof_qrow};
         int eof_qcount[1] = {0};
         static const char quoted_nl_eof[] = {'"', 'a', '\n', 'b', '"'};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           quoted_nl_eof, sizeof(quoted_nl_eof),
                           eof_qrecords, eof_qcount, 1,
                           work, sizeof(work), NULL),
@@ -582,7 +582,7 @@ static void test_invalid_inputs(void) {
         const char *row[NEVERC_CSV_MAX_FIELDS];
         const char **records[] = {row};
         int field_count = 0;
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           embedded_nul, sizeof(embedded_nul),
                           records, &field_count, 1,
                           work, sizeof(work), NULL),
@@ -596,29 +596,29 @@ static void test_invalid_inputs(void) {
         const char **records[] = {row};
         int field_count = 0;
         neverc_csv_reader_opts_t comma_comment = {.comment = ','};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           "", 0U, records, &field_count, 1,
                           work, sizeof(work), &comma_comment),
                       -1);
         neverc_csv_reader_opts_t quote_comment = {.comment = '"'};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           "a,b\n", 4U, records, &field_count, 1,
                           work, sizeof(work), &quote_comment),
                       -1);
         neverc_csv_reader_opts_t nl_delim = {.delimiter = '\n'};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           "", 0U, records, &field_count, 1,
                           work, sizeof(work), &nl_delim),
                       -1);
         neverc_csv_reader_opts_t cr_comment = {.comment = '\r'};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           "a,b\n", 4U, records, &field_count, 1,
                           work, sizeof(work), &cr_comment),
                       -1);
         /* comment == delimiter would previously skip every record that
          * started with the delimiter (silent data loss). */
         neverc_csv_reader_opts_t same = {.delimiter = ';', .comment = ';'};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           ";a;b\n", 5U, records, &field_count, 1,
                           work, sizeof(work), &same),
                       -1);
@@ -649,7 +649,7 @@ static void test_invalid_inputs(void) {
         const char *row[NEVERC_CSV_MAX_FIELDS];
         const char **records[] = {row};
         int count[1] = {0};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           "\"foo\"bar\"\r\n", 11U,
                           records, count, 1, work, sizeof(work), &lazy),
                       1);
@@ -670,7 +670,7 @@ static void test_invalid_inputs(void) {
         const char *row[NEVERC_CSV_MAX_FIELDS];
         const char **records[] = {row};
         int count[1] = {0};
-        ASSERT_INT_EQ(neverc_csv_read_all(
+        ASSERT_INT_EQ(neverc_csv_read_all_into(
                           "\"foo\" \n", 7U,
                           records, count, 1, work, sizeof(work), &lazy),
                       1);

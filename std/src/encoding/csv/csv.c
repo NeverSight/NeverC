@@ -328,12 +328,16 @@ int neverc_csv_read_line(const char *line, size_t line_len,
     return nfields;
 }
 
-int neverc_csv_read_all(const char *data, size_t data_len,
-                        const char ***records, int *field_counts,
-                        int max_records,
-                        char *work_buf, size_t work_buf_len,
-                        const neverc_csv_reader_opts_t *opts) {
-    if ((!data && data_len > 0) || !records || !field_counts ||
+static int csv_read_all_impl(const char *data, size_t data_len,
+                             const char ***records,
+                             int **field_count_ptrs,
+                             int *field_counts,
+                             int max_records,
+                             char *work_buf, size_t work_buf_len,
+                             const neverc_csv_reader_opts_t *opts) {
+    int pointer_counts = field_count_ptrs != NULL;
+    if ((!data && data_len > 0) || !records ||
+        (!field_count_ptrs && !field_counts) ||
         max_records < 0 || (!work_buf && data_len > 0))
         return -1;
     char comment = (opts && opts->comment) ? opts->comment : 0;
@@ -425,7 +429,9 @@ int neverc_csv_read_all(const char *data, size_t data_len,
         if (pos < data_len && data[pos] == '\n') pos++;
         size_t line_len = pos - line_start;
 
-        if (nrecords >= max_records || !records[nrecords]) return -1;
+        if (nrecords >= max_records || !records[nrecords] ||
+            (pointer_counts && !field_count_ptrs[nrecords]))
+            return -1;
 
         int nf = neverc_csv_read_line(data + line_start, line_len,
                                        records[nrecords],
@@ -436,7 +442,10 @@ int neverc_csv_read_all(const char *data, size_t data_len,
          * physical line. Go encoding/csv skips those blank lines. */
         if (nf == 0) continue;
 
-        field_counts[nrecords] = nf;
+        if (pointer_counts)
+            *field_count_ptrs[nrecords] = nf;
+        else
+            field_counts[nrecords] = nf;
         nrecords++;
 
         /* advance work_buf */
@@ -451,6 +460,24 @@ int neverc_csv_read_all(const char *data, size_t data_len,
     }
 
     return nrecords;
+}
+
+int neverc_csv_read_all(const char *data, size_t data_len,
+                        const char ***records, int **field_counts,
+                        int max_records,
+                        char *work_buf, size_t work_buf_len,
+                        const neverc_csv_reader_opts_t *opts) {
+    return csv_read_all_impl(data, data_len, records, field_counts, NULL,
+                             max_records, work_buf, work_buf_len, opts);
+}
+
+int neverc_csv_read_all_into(const char *data, size_t data_len,
+                             const char ***records, int *field_counts,
+                             int max_records,
+                             char *work_buf, size_t work_buf_len,
+                             const neverc_csv_reader_opts_t *opts) {
+    return csv_read_all_impl(data, data_len, records, NULL, field_counts,
+                             max_records, work_buf, work_buf_len, opts);
 }
 
 /* ---- Writer ---- */

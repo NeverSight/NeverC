@@ -1543,12 +1543,14 @@
       "symbols": {
         "neverc_csv_read_line": "src/encoding/csv/csv.c",
         "neverc_csv_read_all": "src/encoding/csv/csv.c",
+        "neverc_csv_read_all_into": "src/encoding/csv/csv.c",
         "neverc_csv_write_record": "src/encoding/csv/csv.c",
         "neverc_csv_write_all": "src/encoding/csv/csv.c"
       },
       "dot_methods": {
         "read_line": "neverc_csv_read_line",
         "read_all": "neverc_csv_read_all",
+        "read_all_into": "neverc_csv_read_all_into",
         "write_record": "neverc_csv_write_record",
         "write_all": "neverc_csv_write_all"
       }
