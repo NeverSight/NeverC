@@ -2,8 +2,24 @@
  * AES-GCM test suite — NIST SP 800-38D test vectors.
  */
 #include "neverc/std/crypto/gcm.h"
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+
+_Static_assert(sizeof(neverc_aes_ctx_t) == 484,
+               "neverc_aes_ctx_t v3389 ABI changed");
+_Static_assert(sizeof(neverc_gcm_ctx) == 888,
+               "neverc_gcm_ctx v3389 ABI changed");
+_Static_assert(_Alignof(neverc_gcm_ctx) == 8,
+               "neverc_gcm_ctx v3389 alignment changed");
+_Static_assert(offsetof(neverc_gcm_ctx, aes) == 0,
+               "neverc_gcm_ctx.aes v3389 offset changed");
+_Static_assert(offsetof(neverc_gcm_ctx, h) == 484,
+               "neverc_gcm_ctx.h v3389 offset changed");
+_Static_assert(offsetof(neverc_gcm_ctx, htab) == 504,
+               "neverc_gcm_ctx.htab v3389 offset changed");
+_Static_assert(offsetof(neverc_gcm_ctx, rem4) == 760,
+               "neverc_gcm_ctx.rem4 v3389 offset changed");
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 

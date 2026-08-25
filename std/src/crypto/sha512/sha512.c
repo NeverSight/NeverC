@@ -90,21 +90,18 @@ void neverc_sha512_init(neverc_sha512_ctx *ctx) {
 }
 
 void neverc_sha512_update(neverc_sha512_ctx *ctx, const uint8_t *data, size_t len) {
-    if (!ctx || ctx->finalized || len == 0) return;
+    if (!ctx || ctx->count == UINT64_MAX || len == 0) return;
     if (!data) return;
-    size_t buffered = (size_t)(ctx->count & 127);
-    uint64_t old_count = ctx->count;
-    ctx->count += (uint64_t)len;
-    if (ctx->count < old_count)
-        ctx->count_hi++;
-    /* FIPS 180-4 permits messages shorter than 2^128 bits, i.e. fewer than
-     * 2^125 bytes. Fail closed only when the full 128-bit byte count reaches
-     * that boundary. */
-    if (ctx->count_hi >= (UINT64_C(1) << 61)) {
+    /* Preserve the released v3389 context layout. UINT64_MAX is reserved as
+     * the finalized/fail-closed sentinel, so cumulative input must remain
+     * below it. A versioned opaque context is required for wider counters. */
+    if (len >= UINT64_MAX - ctx->count) {
         memset(ctx, 0, sizeof(*ctx));
-        ctx->finalized = 1;
+        ctx->count = UINT64_MAX;
         return;
     }
+    size_t buffered = (size_t)(ctx->count & 127);
+    ctx->count += (uint64_t)len;
     if (buffered > 0) {
         size_t need = 128 - buffered;
         if (len < need) { memcpy(ctx->buf + buffered, data, len); return; }
@@ -122,13 +119,13 @@ void neverc_sha512_final(neverc_sha512_ctx *ctx, uint8_t digest[64]) {
         memset(digest, 0, 64);
         return;
     }
-    if (ctx->finalized) {
+    if (ctx->count == UINT64_MAX) {
         for (int i = 0; i < 8; i++)
             put_be64(digest + 8 * i, ctx->state[i]);
         return;
     }
-    /* FIPS 180-4: convert the full 128-bit byte count to bits. */
-    uint64_t bits_hi = (ctx->count_hi << 3) | (ctx->count >> 61);
+    /* FIPS 180-4: convert the 64-bit byte count to a 128-bit bit count. */
+    uint64_t bits_hi = ctx->count >> 61;
     uint64_t bits_lo = ctx->count << 3;
     size_t buffered = (size_t)(ctx->count & 127);
     ctx->buf[buffered++] = 0x80;
@@ -143,7 +140,7 @@ void neverc_sha512_final(neverc_sha512_ctx *ctx, uint8_t digest[64]) {
     sha512_block(ctx->state, ctx->buf);
     for (int i = 0; i < 8; i++)
         put_be64(digest + 8 * i, ctx->state[i]);
-    ctx->finalized = 1;
+    ctx->count = UINT64_MAX;
 }
 
 void neverc_sha512_sum(const uint8_t *data, size_t len, uint8_t digest[64]) {

@@ -4,9 +4,28 @@
 #include "neverc/std/crypto/sha512.h"
 #include "neverc/std/crypto/sha512_224.h"
 #include "neverc/std/crypto/sha512_256.h"
+#include "neverc/std/crypto/sha384.h"
 #include "neverc/std/crypto/sha256.h"
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+
+_Static_assert(sizeof(neverc_sha512_ctx) == 200,
+               "neverc_sha512_ctx v3389 ABI changed");
+_Static_assert(_Alignof(neverc_sha512_ctx) == 8,
+               "neverc_sha512_ctx v3389 alignment changed");
+_Static_assert(offsetof(neverc_sha512_ctx, state) == 0,
+               "neverc_sha512_ctx.state v3389 offset changed");
+_Static_assert(offsetof(neverc_sha512_ctx, count) == 64,
+               "neverc_sha512_ctx.count v3389 offset changed");
+_Static_assert(offsetof(neverc_sha512_ctx, buf) == 72,
+               "neverc_sha512_ctx.buf v3389 offset changed");
+_Static_assert(sizeof(neverc_sha384_ctx) == 200,
+               "neverc_sha384_ctx v3389 ABI changed");
+_Static_assert(sizeof(neverc_sha512_224_ctx) == 200,
+               "neverc_sha512_224_ctx v3389 ABI changed");
+_Static_assert(sizeof(neverc_sha512_256_ctx) == 200,
+               "neverc_sha512_256_ctx v3389 ABI changed");
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -214,28 +233,40 @@ int main(void) {
         }
     }
 
-    printf("[byte-count carry into high word]\n");
+    printf("[byte-count wrap fails closed]\n");
     {
+        neverc_sha512_ctx accepted;
+        neverc_sha512_init(&accepted);
+        accepted.count = UINT64_MAX - 2;
+        neverc_sha512_update(&accepted, (const uint8_t *)"x", 1);
+        tests_run++;
+        if (accepted.count == UINT64_MAX - 1)
+            tests_passed++;
+        else {
+            tests_failed++;
+            printf("  FAIL: maximum supported byte count must be accepted\n");
+        }
+
         tests_run++;
         neverc_sha512_ctx ctx;
         neverc_sha512_init(&ctx);
         neverc_sha512_update(&ctx, (const uint8_t *)"abc", 3);
         ctx.count = UINT64_MAX - 2;
-        neverc_sha512_update(&ctx, (const uint8_t *)"xxxxx", 5);
-        if (ctx.count == 2 && ctx.count_hi == 1 && !ctx.finalized) {
-            uint8_t digest[64];
-            memset(digest, 0xa5, sizeof(digest));
-            neverc_sha512_final(&ctx, digest);
-            uint8_t zeros[64] = {0};
-            if (memcmp(digest, zeros, 64) != 0)
-                tests_passed++;
-            else {
-                tests_failed++;
-                printf("  FAIL: carried byte count must remain hashable\n");
-            }
-        } else {
+        neverc_sha512_update(&ctx, (const uint8_t *)"xx", 2);
+        neverc_sha512_update(&ctx, (const uint8_t *)"ignored", 7);
+        uint8_t digest[64], repeated[64];
+        memset(digest, 0xa5, sizeof(digest));
+        memset(repeated, 0xa5, sizeof(repeated));
+        neverc_sha512_final(&ctx, digest);
+        neverc_sha512_final(&ctx, repeated);
+        uint8_t zeros[64] = {0};
+        if (ctx.count == UINT64_MAX &&
+            memcmp(digest, zeros, 64) == 0 &&
+            memcmp(repeated, zeros, 64) == 0)
+            tests_passed++;
+        else {
             tests_failed++;
-            printf("  FAIL: wrapped byte count must carry into high word\n");
+            printf("  FAIL: wrapped byte count must not collide with a short message\n");
         }
     }
 
@@ -266,7 +297,7 @@ int main(void) {
         neverc_sha512_final(&ctx, d1);
         neverc_sha512_update(&ctx, (const uint8_t *)"x", 1);
         neverc_sha512_final(&ctx, d2);
-        if (memcmp(d1, d2, 64) == 0)
+        if (ctx.count == UINT64_MAX && memcmp(d1, d2, 64) == 0)
             tests_passed++;
         else { tests_failed++; printf("  FAIL: update after final must not length-extend\n"); }
     }
@@ -307,8 +338,7 @@ int main(void) {
         int dirty = 0;
         for (size_t i = 0; i < sizeof(ctx.buf); i++)
             if (ctx.buf[i] != 0) dirty = 1;
-        if (!dirty && ctx.count == 0 && ctx.count_hi == 0 &&
-            ctx.finalized == 0)
+        if (!dirty && ctx.count == 0)
             tests_passed++;
         else { tests_failed++; printf("  FAIL: re-init must wipe buf\n"); }
     }

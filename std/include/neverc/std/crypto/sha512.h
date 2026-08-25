@@ -13,14 +13,18 @@ extern "C" {
 
 typedef struct {
     uint64_t state[8];
-    uint64_t count;    /* low 64 bits of the byte count */
-    uint64_t count_hi; /* high 64 bits; valid byte lengths are below 2^125 */
+    uint64_t count; /* byte count; UINT64_MAX is reserved after final/failure */
     uint8_t  buf[128];
-    int      finalized;
 } neverc_sha512_ctx;
 
 void neverc_sha512_init(neverc_sha512_ctx *ctx);
+/* Cumulative input must stay below UINT64_MAX bytes. Reaching that reserved
+ * value wipes ctx and fails closed: later updates are ignored and final emits
+ * an all-zero digest until ctx is reinitialized. */
 void neverc_sha512_update(neverc_sha512_ctx *ctx, const uint8_t *data, size_t len);
+/* final consumes ctx; later updates are ignored and repeated final calls return
+ * the same digest. count becomes UINT64_MAX. The digest output must not
+ * overlap ctx. */
 void neverc_sha512_final(neverc_sha512_ctx *ctx, uint8_t digest[64]);
 void neverc_sha512_sum(const uint8_t *data, size_t len, uint8_t digest[64]);
 

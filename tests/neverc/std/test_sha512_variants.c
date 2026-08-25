@@ -134,12 +134,11 @@ static void test_sha512_224(void) {
         neverc_sha512_224_final(&ctx, overflowed);
         uint8_t zeros[28] = {0};
         tests_run++;
-        if (ctx.count == 2 && ctx.count_hi == 1 &&
-            memcmp(overflowed, zeros, 28) != 0) {
+        if (memcmp(overflowed, zeros, 28) == 0) {
             tests_passed++;
         } else {
             tests_failed++;
-            printf("  FAIL: SHA-512/224 byte count must carry and remain hashable\n");
+            printf("  FAIL: SHA-512/224 byte-count wrap must fail closed\n");
         }
     }
 
@@ -171,8 +170,7 @@ static void test_sha512_224(void) {
         for (size_t i = 0; i < sizeof(ctx.buf); i++)
             if (ctx.buf[i] != 0) dirty = 1;
         tests_run++;
-        if (!dirty && ctx.count == 0 && ctx.count_hi == 0 &&
-            ctx.finalized == 0) { tests_passed++; }
+        if (!dirty && ctx.count == 0) { tests_passed++; }
         else { tests_failed++; printf("  FAIL: SHA-512/224 re-init must wipe buf\n"); }
 
         neverc_sha512_224_init(&ctx);
@@ -300,12 +298,11 @@ static void test_sha512_256(void) {
         neverc_sha512_256_final(&ctx, overflowed);
         uint8_t zeros[32] = {0};
         tests_run++;
-        if (ctx.count == 2 && ctx.count_hi == 1 &&
-            memcmp(overflowed, zeros, 32) != 0) {
+        if (memcmp(overflowed, zeros, 32) == 0) {
             tests_passed++;
         } else {
             tests_failed++;
-            printf("  FAIL: SHA-512/256 byte count must carry and remain hashable\n");
+            printf("  FAIL: SHA-512/256 byte-count wrap must fail closed\n");
         }
     }
 
@@ -337,8 +334,7 @@ static void test_sha512_256(void) {
         for (size_t i = 0; i < sizeof(ctx.buf); i++)
             if (ctx.buf[i] != 0) dirty = 1;
         tests_run++;
-        if (!dirty && ctx.count == 0 && ctx.count_hi == 0 &&
-            ctx.finalized == 0) { tests_passed++; }
+        if (!dirty && ctx.count == 0) { tests_passed++; }
         else { tests_failed++; printf("  FAIL: SHA-512/256 re-init must wipe buf\n"); }
 
         neverc_sha512_256_init(&ctx);

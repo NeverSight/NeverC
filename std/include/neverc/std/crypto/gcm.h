@@ -19,6 +19,10 @@ extern "C" {
 typedef struct {
     neverc_aes_ctx_t aes;
     uint8_t h[16]; /* hash subkey H = AES_K(0^128) */
+    /* Retained for v3389 ABI/source compatibility. The constant-time GHASH
+     * implementation does not index these legacy tables; init clears them. */
+    uint64_t htab[16][2];
+    uint64_t rem4[16];
 } neverc_gcm_ctx;
 
 int neverc_gcm_init(neverc_gcm_ctx *ctx, const uint8_t *key, int key_len);
