@@ -585,7 +585,7 @@ static int tar_writer_write_header_common(neverc_tar_writer_t *w,
     w->len += sizeof(block);
     meta.current_size = current_size;
     meta.current_written = 0;
-    meta.entry_open = hdr->size > 0;
+    meta.entry_open = current_size > 0;
     return tar_writer_meta_store(w, &meta) ? 0 : -1;
 }
 
