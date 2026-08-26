@@ -92,6 +92,10 @@ static size_t volume_name_len(const char *path) {
             return 3;
         if (path_has_prefix_fold(path + 4, len - 4, "UNC", 3))
             return valid_volume_name_len(path, unc_len(path, len, 8));
+        /* GLOBALROOT exposes the NT object namespace. Preserve the canonical
+         * Device\<volume> pair as the volume so Clean keeps its root slash. */
+        if (path_has_prefix_fold(path + 4, len - 4, "GLOBALROOT", 10))
+            return valid_volume_name_len(path, unc_len(path, len, 15));
         /* Next component after the prefix is part of the volume. */
         for (i = 0; i < len - 4; i++) {
             if (is_sep(path[4 + i]))
@@ -337,6 +341,21 @@ const char *neverc_filepath_volume_name(const char *path, char *buf, size_t buf_
     return buf;
 }
 
+static void filepath_clean_note_write(const char *path, size_t path_len,
+                                      size_t pos, char value,
+                                      int *rewritten) {
+#ifdef _WIN32
+    if (!*rewritten && (pos >= path_len || path[pos] != value))
+        *rewritten = 1;
+#else
+    (void)path;
+    (void)path_len;
+    (void)pos;
+    (void)value;
+    (void)rewritten;
+#endif
+}
+
 const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
     if (!buf || buf_len == 0) return NULL;
     if (!path || *path == '\0') {
@@ -355,6 +374,7 @@ const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
     char *out = (char *)malloc(out_cap);
     if (!out) return NULL;
     size_t opos = 0;
+    int rewritten = 0;
 
 #ifdef _WIN32
     {
@@ -369,6 +389,8 @@ const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
 
     if (rooted) {
         if (opos >= out_cap) goto clean_failed;
+        filepath_clean_note_write(path, len, opos, NEVERC_FILEPATH_SEP,
+                                  &rewritten);
         out[opos++] = NEVERC_FILEPATH_SEP;
     }
 
@@ -391,20 +413,30 @@ const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
             } else if (!rooted) {
                 if (opos > vol) {
                     if (opos >= out_cap) goto clean_failed;
+                    filepath_clean_note_write(path, len, opos,
+                                              NEVERC_FILEPATH_SEP,
+                                              &rewritten);
                     out[opos++] = NEVERC_FILEPATH_SEP;
                 }
                 if (opos + 2 > out_cap) goto clean_failed;
+                filepath_clean_note_write(path, len, opos, '.', &rewritten);
                 out[opos++] = '.';
+                filepath_clean_note_write(path, len, opos, '.', &rewritten);
                 out[opos++] = '.';
                 dotdot = opos;
             }
         } else {
             if ((rooted && opos != vol + 1) || (!rooted && opos > vol)) {
                 if (opos >= out_cap) goto clean_failed;
+                filepath_clean_note_write(path, len, opos,
+                                          NEVERC_FILEPATH_SEP,
+                                          &rewritten);
                 out[opos++] = NEVERC_FILEPATH_SEP;
             }
             while (r < len && !is_sep(path[r])) {
                 if (opos >= out_cap) goto clean_failed;
+                filepath_clean_note_write(path, len, opos, path[r],
+                                          &rewritten);
                 out[opos++] = path[r++];
             }
         }
@@ -414,30 +446,22 @@ const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
         /* Empty after volume: C: -> C:.; UNC volume stays as-is. */
         if (!(vol > 1 && is_sep(path[0]))) {
             if (opos >= out_cap) goto clean_failed;
+            filepath_clean_note_write(path, len, opos, '.', &rewritten);
             out[opos++] = '.';
         }
     } else if (opos == 0) {
         if (out_cap < 1) goto clean_failed;
+        filepath_clean_note_write(path, len, opos, '.', &rewritten);
         out[opos++] = '.';
     }
 
 #ifdef _WIN32
-    /* Go postClean: skipped when lazybuf never allocated (the cleaned
-     * bytes are the original path). A colon in an already-clean name
-     * such as foo:bar must stay; a rewritten result like a\..\c: still
-     * gets .\ so it cannot become a drive volume. */
+    /* Go postClean: skipped when lazybuf never observed a changed write.
+     * Merely shortening the path does not allocate lazybuf, so names such
+     * as foo:bar/ stay unprefixed after the trailing slash is removed. */
     if (vol == 0 && opos >= 2) {
         size_t i;
-        int rewritten = (opos != len);
         int has_colon = 0;
-        if (!rewritten) {
-            for (i = 0; i < opos; i++) {
-                if (out[i] != path[i]) {
-                    rewritten = 1;
-                    break;
-                }
-            }
-        }
         if (rewritten) {
             for (i = 0; i < opos && !is_sep(out[i]); i++) {
                 if (out[i] == ':') {
@@ -452,7 +476,8 @@ const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
             out[0] = '.';
             out[1] = NEVERC_FILEPATH_SEP;
             opos += 2;
-        } else if (opos >= 3 && is_sep(out[0]) && out[1] == '?' && out[2] == '?') {
+        } else if (rewritten && opos >= 3 && is_sep(out[0]) &&
+                   out[1] == '?' && out[2] == '?') {
             if (opos + 2 > out_cap) goto clean_failed;
             memmove(out + 2, out, opos);
             out[0] = NEVERC_FILEPATH_SEP;

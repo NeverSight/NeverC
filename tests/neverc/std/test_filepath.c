@@ -142,6 +142,10 @@ static void test_is_local_and_volume(void) {
                   "\\??\\C:");
     ASSERT_STR_EQ(neverc_filepath_volume_name("\\\\host\\share\\x", buf, sizeof(buf)),
                   "\\\\host\\share");
+    ASSERT_STR_EQ(neverc_filepath_volume_name(
+                      "\\\\?\\GLOBALROOT\\Device\\HarddiskVolume1\\Windows",
+                      buf, sizeof(buf)),
+                  "\\\\?\\GLOBALROOT\\Device\\HarddiskVolume1");
     ASSERT_STR_EQ(neverc_filepath_volume_name("//host/share/x", buf, sizeof(buf)),
                   "\\\\host\\share");
 #else
@@ -188,6 +192,10 @@ static void test_clean(void) {
     ASSERT_STR_EQ(neverc_filepath_clean("a\\..\\c:", buf, sizeof(buf)), ".\\c:");
     /* Go wincleantests: an already-clean ADS name is not rewritten. */
     ASSERT_STR_EQ(neverc_filepath_clean("foo:bar", buf, sizeof(buf)), "foo:bar");
+    ASSERT_STR_EQ(neverc_filepath_clean("foo:bar/", buf, sizeof(buf)), "foo:bar");
+    ASSERT_STR_EQ(neverc_filepath_clean("foo:bar/.", buf, sizeof(buf)), "foo:bar");
+    ASSERT_STR_EQ(neverc_filepath_clean("foo:bar/../foo:bar", buf, sizeof(buf)),
+                  "foo:bar");
     ASSERT_STR_EQ(neverc_filepath_clean("foo:bar\\baz", buf, sizeof(buf)),
                   "foo:bar\\baz");
     ASSERT_STR_EQ(neverc_filepath_clean("foo:bar/baz", buf, sizeof(buf)),
@@ -196,8 +204,13 @@ static void test_clean(void) {
                   "\\\\host\\share\\baz");
     ASSERT_STR_EQ(neverc_filepath_clean("\\\\i\\..\\c$", buf, sizeof(buf)), "\\c$");
     ASSERT_STR_EQ(neverc_filepath_clean("/a/../??/a", buf, sizeof(buf)), "\\.\\??\\a");
+    ASSERT_STR_EQ(neverc_filepath_clean("\\??foo", buf, sizeof(buf)), "\\??foo");
     ASSERT_STR_EQ(neverc_filepath_clean("\\\\?\\C:\\", buf, sizeof(buf)), "\\\\?\\C:\\");
     ASSERT_STR_EQ(neverc_filepath_clean("\\??\\C:\\", buf, sizeof(buf)), "\\??\\C:\\");
+    ASSERT_STR_EQ(neverc_filepath_clean(
+                      "\\\\?\\GLOBALROOT\\Device\\HarddiskVolume1\\",
+                      buf, sizeof(buf)),
+                  "\\\\?\\GLOBALROOT\\Device\\HarddiskVolume1\\");
 #else
     ASSERT_STR_EQ(neverc_filepath_clean("abc/def/../..", buf, sizeof(buf)), ".");
     ASSERT_STR_EQ(neverc_filepath_clean("/abc/def/../../..", buf, sizeof(buf)), "/");
@@ -298,6 +311,7 @@ static void test_rel(void) {
     ASSERT_STR_EQ(neverc_filepath_rel("caf\xc3\xa9", "CAF\xc3\x89", buf, sizeof(buf)), ".");
     ASSERT_STR_EQ(neverc_filepath_rel("k", "\xe2\x84\xaa", buf, sizeof(buf)), ".");
     ASSERT_STR_EQ(neverc_filepath_rel("foo", "foo\\c:", buf, sizeof(buf)), "c:");
+    ASSERT_STR_EQ(neverc_filepath_rel("foo:bar/", "foo:bar", buf, sizeof(buf)), ".");
 #else
     char joined[256];
     ASSERT_STR_EQ(neverc_filepath_rel("/a/b", "/a/b/c", buf, sizeof(buf)), "c");
