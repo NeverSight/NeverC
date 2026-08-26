@@ -1561,7 +1561,10 @@ static void rpc_test_call_deadline(void) {
                   sizeof(request) - 1U, response, sizeof(response),
                   &response_length, &status)
             : NEVERC_RPC_IO_CLOSED;
-        CHECK(result == NEVERC_RPC_IO_CANCELLED);
+        /* The peer reconstructs the same absolute deadline and may return its
+         * terminal status just before the caller context observes expiration. */
+        CHECK(result == NEVERC_RPC_IO_CANCELLED ||
+              result == NEVERC_RPC_IO_OK);
         CHECK(status.code == NEVERC_RPC_STATUS_DEADLINE_EXCEEDED);
         neverc_context_cancel_handle_cancel(cancel);
         neverc_context_cancel_handle_free(cancel);
