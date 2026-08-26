@@ -39,7 +39,10 @@ jobs:
 
           path = Path("neverc/tests/neverc/std/test_rpc.c")
           source = path.read_text()
-          assertion = "        CHECK(result == NEVERC_RPC_IO_CANCELLED);\n"
+          assertion = (
+              "        CHECK(status.code == "
+              "NEVERC_RPC_STATUS_DEADLINE_EXCEEDED);\n"
+          )
           diagnostic = (
               "        fprintf(stderr, \"RPC_DEADLINE_RESULT result=%d "
               "status=%d done=%d\\n\", result, (int)status.code, "
