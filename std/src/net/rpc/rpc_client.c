@@ -5,6 +5,7 @@
 #include "neverc/std/net/quic.h"
 #include "neverc/std/net/tcp.h"
 #include "neverc/std/thread.h"
+#include "_rpc_client_epoch.h"
 #include "../_net_buffer.h"
 #include "../_net_thread.h"
 
@@ -53,7 +54,7 @@ struct neverc_rpc_client {
     neverc_tls_conn_t *tls;
     neverc_quic_conn_t *quic;
     neverc_quic_stream_t *quic_stream;
-    neverc_thread_channel_t *send_queue;
+    nc_rpc_client_epoch_t epoch;
     nc_thread_t reader_thread;
     nc_thread_t writer_thread;
     nc_thread_t keepalive_thread;
@@ -63,7 +64,7 @@ struct neverc_rpc_client {
     volatile int running;
     volatile int closing;
     nc_mutex_t lifecycle_lock;
-    uint64_t generation;
+    uint64_t last_generation;
     nc_mutex_t keepalive_lock;
     int awaiting_pong;
     uint64_t next_ping_ms;
@@ -204,6 +205,8 @@ static void rpc_client_fail_streams(neverc_rpc_client_t *client,
 static void rpc_client_stop_transport(neverc_rpc_client_t *client,
                                       neverc_rpc_status_code_t code,
                                       const char *message) {
+    neverc_thread_channel_t *send_queue =
+        nc_rpc_client_epoch_stop(&client->epoch);
     if (!nc_atomic_cas(&client->running, 1, 0)) return;
     if (client->tcp) {
         (void)neverc_tcp_shutdown_read(client->tcp);
@@ -211,15 +214,16 @@ static void rpc_client_stop_transport(neverc_rpc_client_t *client,
     }
     if (client->quic)
         neverc_quic_conn_close(client->quic, 0, "RPC transport stopped");
-    neverc_thread_channel_close(client->send_queue);
+    if (send_queue) neverc_thread_channel_close(send_queue);
     rpc_client_fail_streams(client, code, message);
 }
 
-static int rpc_queue_encoded(neverc_rpc_client_t *client,
-                             neverc_context_t *context,
-                             const neverc_rpc_frame_header_t *header,
-                             const void *payload) {
-    if (!client || !header || !nc_atomic_load(&client->running))
+static int rpc_queue_encoded(
+    const nc_rpc_client_epoch_lease_t *lease,
+    neverc_context_t *context,
+    const neverc_rpc_frame_header_t *header,
+    const void *payload) {
+    if (!lease || !lease->held || !lease->send_queue || !header)
         return NEVERC_RPC_IO_CLOSED;
     size_t total = NEVERC_RPC_FRAME_HEADER_SIZE +
                    (size_t)header->payload_length;
@@ -235,9 +239,9 @@ static int rpc_queue_encoded(neverc_rpc_client_t *client,
         return NEVERC_RPC_IO_INVALID;
     }
     int result = context
-        ? neverc_thread_channel_send_context(client->send_queue, context,
+        ? neverc_thread_channel_send_context(lease->send_queue, context,
                                              outbound)
-        : neverc_thread_channel_try_send(client->send_queue, outbound);
+        : neverc_thread_channel_try_send(lease->send_queue, outbound);
     if (result != NEVERC_THREAD_OK) free(outbound);
     if (result == NEVERC_THREAD_CANCELLED) return NEVERC_RPC_IO_CANCELLED;
     if (result == NEVERC_THREAD_WOULD_BLOCK)
@@ -250,7 +254,8 @@ static void *rpc_writer_main(void *arg) {
     neverc_rpc_client_t *client = (neverc_rpc_client_t *)arg;
     for (;;) {
         void *value = NULL;
-        int result = neverc_thread_channel_receive(client->send_queue, &value);
+        int result = neverc_thread_channel_receive(
+            client->epoch.send_queue, &value);
         if (result == NEVERC_THREAD_CLOSED) break;
         if (result != NEVERC_THREAD_OK) continue;
         rpc_outbound_t *outbound = (rpc_outbound_t *)value;
@@ -270,12 +275,17 @@ static void *rpc_writer_main(void *arg) {
 
 static int rpc_queue_control(neverc_rpc_client_t *client, uint8_t type,
                              const void *payload, size_t payload_length) {
+    nc_rpc_client_epoch_lease_t lease;
+    if (nc_rpc_client_epoch_pin(&client->epoch, 0, &lease) != 0)
+        return NEVERC_RPC_IO_CLOSED;
     neverc_rpc_frame_header_t header;
     memset(&header, 0, sizeof(header));
     header.version = NEVERC_RPC_VERSION_1;
     header.type = type;
     header.payload_length = (uint32_t)payload_length;
-    return rpc_queue_encoded(client, NULL, &header, payload);
+    int result = rpc_queue_encoded(&lease, NULL, &header, payload);
+    nc_rpc_client_epoch_unpin(&lease);
+    return result;
 }
 
 static int rpc_dispatch_inbound(neverc_rpc_client_t *client,
@@ -624,6 +634,10 @@ static int rpc_dial_transport(
     return 0;
 }
 
+static void rpc_client_join_pumps(neverc_rpc_client_t *client);
+static void rpc_client_release_transport(neverc_rpc_client_t *client);
+static int rpc_client_start_pumps(neverc_rpc_client_t *client);
+
 neverc_rpc_client_t *neverc_rpc_client_dial(
     const char *addr, const neverc_rpc_client_config_t *config,
     const char **errp) {
@@ -664,72 +678,60 @@ neverc_rpc_client_t *neverc_rpc_client_dial(
     client->config.root_ca_file = NULL;
     client->config.client_cert_file = NULL;
     client->config.client_key_file = NULL;
-    client->tcp = transport.tcp;
-    client->tls = transport.tls;
-    client->quic = transport.quic;
-    client->quic_stream = transport.quic_stream;
     client->next_request_id = 1;
     client->streams = (neverc_rpc_stream_t **)calloc(
         effective.max_inflight_streams, sizeof(*client->streams));
-    client->send_queue = neverc_thread_channel_create(
+    neverc_thread_channel_t *send_queue = neverc_thread_channel_create(
         effective.send_queue_capacity);
     if (!client->addr ||
         (effective.server_name && !client->server_name) ||
         (effective.root_ca_file && !client->root_ca_file) ||
         (effective.client_cert_file && !client->client_cert_file) ||
         (effective.client_key_file && !client->client_key_file) ||
-        !client->streams || !client->send_queue) {
+        !client->streams || !send_queue) {
         free(client->client_key_file);
         free(client->client_cert_file);
         free(client->root_ca_file);
         free(client->server_name);
         free(client->addr);
         free(client->streams);
-        if (client->send_queue)
-            neverc_thread_channel_free(client->send_queue);
+        neverc_thread_channel_free(send_queue);
         free(client);
         goto allocation_failed;
     }
     nc_mutex_init(&client->lifecycle_lock);
     nc_mutex_init(&client->streams_lock);
     nc_mutex_init(&client->keepalive_lock);
+    nc_rpc_client_epoch_init(&client->epoch);
     client->next_ping_ms = nc_monotonic_ms() +
         (uint64_t)effective.ping_interval_ms;
-    client->generation = 1;
+    client->last_generation = 1;
+    client->tcp = transport.tcp;
+    client->tls = transport.tls;
+    client->quic = transport.quic;
+    client->quic_stream = transport.quic_stream;
+    memset(&transport, 0, sizeof(transport));
     nc_atomic_store(&client->running, 1);
-    if (nc_thread_create(&client->writer_thread, rpc_writer_main, client) !=
-        0)
+    if (nc_rpc_client_epoch_prepare(
+            &client->epoch, send_queue, client->last_generation) != 0) {
+        nc_atomic_store(&client->running, 0);
+        neverc_thread_channel_free(send_queue);
         goto start_failed;
-    client->writer_started = 1;
-    if (nc_thread_create(&client->reader_thread, rpc_reader_main, client) !=
-        0)
+    }
+    if (rpc_client_start_pumps(client) != 0)
         goto start_failed;
-    client->reader_started = 1;
-    if (effective.ping_interval_ms > 0 &&
-        nc_thread_create(&client->keepalive_thread, rpc_keepalive_main,
-                         client) != 0)
-        goto start_failed;
-    client->keepalive_started = effective.ping_interval_ms > 0;
     neverc_context_free(background);
     return client;
 
 start_failed:
-    nc_atomic_store(&client->running, 0);
-    neverc_thread_channel_close(client->send_queue);
-    if (client->tcp) {
-        (void)neverc_tcp_shutdown_read(client->tcp);
-        (void)neverc_tcp_shutdown_write(client->tcp);
-    }
-    if (client->quic)
-        neverc_quic_conn_close(client->quic, 0,
-                               "RPC client startup failed");
-    if (client->keepalive_started) nc_thread_join(client->keepalive_thread);
-    if (client->reader_started) nc_thread_join(client->reader_thread);
-    if (client->writer_started) nc_thread_join(client->writer_thread);
+    rpc_client_stop_transport(client, NEVERC_RPC_STATUS_UNAVAILABLE,
+                              "RPC client startup failed");
+    rpc_client_join_pumps(client);
+    rpc_client_release_transport(client);
+    (void)nc_rpc_client_epoch_destroy(&client->epoch);
     nc_mutex_destroy(&client->keepalive_lock);
     nc_mutex_destroy(&client->streams_lock);
     nc_mutex_destroy(&client->lifecycle_lock);
-    neverc_thread_channel_free(client->send_queue);
     free(client->streams);
     free(client->client_key_file);
     free(client->client_cert_file);
@@ -737,19 +739,21 @@ start_failed:
     free(client->server_name);
     free(client->addr);
     free(client);
+    rpc_set_error(errp, "failed to start RPC client");
 allocation_failed:
     neverc_context_free(background);
     rpc_close_dialed_transport(&transport);
-    rpc_set_error(errp, "failed to allocate RPC client");
+    if (errp && !*errp)
+        rpc_set_error(errp, "failed to allocate RPC client");
     return NULL;
 }
 
-static void rpc_client_drain_send_queue(neverc_rpc_client_t *client) {
-    if (!client->send_queue) return;
+static void rpc_client_drain_send_queue(
+    neverc_thread_channel_t *send_queue) {
+    if (!send_queue) return;
     for (;;) {
         void *value = NULL;
-        int result = neverc_thread_channel_try_receive(client->send_queue,
-                                                        &value);
+        int result = neverc_thread_channel_try_receive(send_queue, &value);
         if (result != NEVERC_THREAD_OK) break;
         free(value);
     }
@@ -771,7 +775,13 @@ static void rpc_client_join_pumps(neverc_rpc_client_t *client) {
 }
 
 static void rpc_client_release_transport(neverc_rpc_client_t *client) {
-    rpc_client_drain_send_queue(client);
+    /* stop_transport has already closed the queue. Pump joins cover direct
+     * pump access; this wait covers public operations holding queue leases. */
+    nc_rpc_client_epoch_wait_idle(&client->epoch);
+    neverc_thread_channel_t *send_queue = NULL;
+    if (nc_rpc_client_epoch_clear(&client->epoch, &send_queue) != 0)
+        return;
+    rpc_client_drain_send_queue(send_queue);
     if (client->tls) {
         neverc_tls_close(client->tls);
         client->tls = NULL;
@@ -788,10 +798,7 @@ static void rpc_client_release_transport(neverc_rpc_client_t *client) {
         neverc_quic_conn_free(client->quic);
         client->quic = NULL;
     }
-    if (client->send_queue) {
-        neverc_thread_channel_free(client->send_queue);
-        client->send_queue = NULL;
-    }
+    neverc_thread_channel_free(send_queue);
 }
 
 static int rpc_client_start_pumps(neverc_rpc_client_t *client) {
@@ -810,6 +817,8 @@ static int rpc_client_start_pumps(neverc_rpc_client_t *client) {
             goto failed;
         client->keepalive_started = 1;
     }
+    if (!nc_atomic_load(&client->running))
+        goto failed;
     return 0;
 
 failed:
@@ -845,16 +854,23 @@ int neverc_rpc_client_reconnect(neverc_rpc_client_t *client,
         rpc_set_error(errp, "RPC client is closing");
         return NEVERC_RPC_IO_CLOSED;
     }
-    if (nc_atomic_load(&client->running)) {
+    if (nc_rpc_client_epoch_is_active(&client->epoch)) {
         nc_mutex_unlock(&client->lifecycle_lock);
         return NEVERC_RPC_IO_OK;
     }
+    rpc_client_stop_transport(client, NEVERC_RPC_STATUS_UNAVAILABLE,
+                              "RPC transport reconnecting");
     rpc_client_join_pumps(client);
     rpc_client_release_transport(client);
     if (rpc_client_backoff(client, context) != 0) {
         nc_mutex_unlock(&client->lifecycle_lock);
         rpc_set_error(errp, "RPC reconnect cancelled");
         return NEVERC_RPC_IO_CANCELLED;
+    }
+    if (client->last_generation == UINT64_MAX) {
+        nc_mutex_unlock(&client->lifecycle_lock);
+        rpc_set_error(errp, "RPC transport generation exhausted");
+        return NEVERC_RPC_IO_CLOSED;
     }
 
     neverc_rpc_client_config_t dial_config = client->config;
@@ -880,14 +896,27 @@ int neverc_rpc_client_reconnect(neverc_rpc_client_t *client,
     client->tls = transport.tls;
     client->quic = transport.quic;
     client->quic_stream = transport.quic_stream;
-    client->send_queue = send_queue;
-    client->generation++;
+    memset(&transport, 0, sizeof(transport));
+    client->last_generation++;
     nc_mutex_lock(&client->keepalive_lock);
     client->awaiting_pong = 0;
     client->next_ping_ms = nc_monotonic_ms() +
         (uint64_t)client->config.ping_interval_ms;
     nc_mutex_unlock(&client->keepalive_lock);
+    nc_atomic_store(&client->running, 1);
+    if (nc_rpc_client_epoch_prepare(
+            &client->epoch, send_queue, client->last_generation) != 0) {
+        nc_atomic_store(&client->running, 0);
+        neverc_thread_channel_free(send_queue);
+        rpc_client_release_transport(client);
+        nc_mutex_unlock(&client->lifecycle_lock);
+        rpc_set_error(errp, "failed to prepare RPC reconnect epoch");
+        return NEVERC_RPC_IO_CLOSED;
+    }
     if (rpc_client_start_pumps(client) != 0) {
+        rpc_client_stop_transport(client, NEVERC_RPC_STATUS_UNAVAILABLE,
+                                  "failed to restart RPC connection pumps");
+        rpc_client_join_pumps(client);
         rpc_client_release_transport(client);
         nc_mutex_unlock(&client->lifecycle_lock);
         rpc_set_error(errp, "failed to restart RPC connection pumps");
@@ -942,7 +971,7 @@ neverc_rpc_stream_t *neverc_rpc_stream_open_codec(
         rpc_set_error(errp, "invalid or closed RPC stream");
         return NULL;
     }
-    if (!nc_atomic_load(&client->running)) {
+    if (!nc_rpc_client_epoch_is_active(&client->epoch)) {
         if (!client->config.reconnect_enabled) {
             rpc_set_error(errp, "RPC transport is closed");
             return NULL;
@@ -970,7 +999,6 @@ neverc_rpc_stream_t *neverc_rpc_stream_open_codec(
         return NULL;
     }
     stream->client = client;
-    stream->generation = client->generation;
     stream->status_code = NEVERC_RPC_STATUS_UNKNOWN;
     stream->receive_queue = neverc_thread_channel_create(
         client->config.receive_queue_capacity);
@@ -990,27 +1018,6 @@ neverc_rpc_stream_t *neverc_rpc_stream_open_codec(
     nc_mutex_init(&stream->send_lock);
     nc_mutex_init(&stream->lock);
 
-    nc_mutex_lock(&client->streams_lock);
-    size_t slot = client->config.max_inflight_streams;
-    for (size_t i = 0; i < client->config.max_inflight_streams; i++) {
-        if (!client->streams[i]) {
-            slot = i;
-            break;
-        }
-    }
-    if (slot == client->config.max_inflight_streams ||
-        client->next_request_id > UINT64_MAX - 2) {
-        nc_mutex_unlock(&client->streams_lock);
-        rpc_set_error(errp, "RPC connection stream limit reached");
-        free(payload);
-        goto open_failed;
-    }
-    stream->request_id = client->next_request_id;
-    client->next_request_id += 2;
-    client->streams[slot] = stream;
-    client->stream_count++;
-    nc_mutex_unlock(&client->streams_lock);
-
     neverc_rpc_open_t open;
     memset(&open, 0, sizeof(open));
     open.method = method;
@@ -1023,8 +1030,39 @@ neverc_rpc_stream_t *neverc_rpc_stream_open_codec(
     if (neverc_rpc_open_encode(&open, payload, payload_size,
                                &encoded_size) != 0) {
         rpc_set_error(errp, "invalid RPC method or metadata");
-        goto registered_open_failed;
+        free(payload);
+        goto open_failed;
     }
+
+    nc_rpc_client_epoch_lease_t lease;
+    if (nc_rpc_client_epoch_pin(&client->epoch, 0, &lease) != 0) {
+        rpc_set_error(errp, "RPC transport is closed");
+        free(payload);
+        goto open_failed;
+    }
+    stream->generation = lease.generation;
+    nc_mutex_lock(&client->streams_lock);
+    size_t slot = client->config.max_inflight_streams;
+    for (size_t i = 0; i < client->config.max_inflight_streams; i++) {
+        if (!client->streams[i]) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == client->config.max_inflight_streams ||
+        client->next_request_id > UINT64_MAX - 2) {
+        nc_mutex_unlock(&client->streams_lock);
+        rpc_set_error(errp, "RPC connection stream limit reached");
+        nc_rpc_client_epoch_unpin(&lease);
+        free(payload);
+        goto open_failed;
+    }
+    stream->request_id = client->next_request_id;
+    client->next_request_id += 2;
+    client->streams[slot] = stream;
+    client->stream_count++;
+    nc_mutex_unlock(&client->streams_lock);
+
     neverc_rpc_frame_header_t header;
     memset(&header, 0, sizeof(header));
     header.version = NEVERC_RPC_VERSION_1;
@@ -1032,7 +1070,8 @@ neverc_rpc_stream_t *neverc_rpc_stream_open_codec(
     header.flags = idempotent ? NEVERC_RPC_FLAG_IDEMPOTENT : 0;
     header.payload_length = (uint32_t)encoded_size;
     header.request_id = stream->request_id;
-    int queued = rpc_queue_encoded(client, context, &header, payload);
+    int queued = rpc_queue_encoded(&lease, context, &header, payload);
+    nc_rpc_client_epoch_unpin(&lease);
     free(payload);
     if (queued != NEVERC_RPC_IO_OK) {
         rpc_set_error(errp, "RPC send queue rejected OPEN");
@@ -1040,8 +1079,6 @@ neverc_rpc_stream_t *neverc_rpc_stream_open_codec(
     }
     return stream;
 
-registered_open_failed:
-    free(payload);
 registered_open_failed_no_payload:
     nc_mutex_lock(&client->streams_lock);
     for (size_t i = 0; i < client->config.max_inflight_streams; i++)
@@ -1062,16 +1099,9 @@ open_failed:
     return NULL;
 }
 
-static int rpc_stream_outbound_ready(neverc_rpc_stream_t *stream,
-                                     neverc_context_t *context) {
-    if (stream->send_closed || stream->ended ||
-        stream->generation != stream->client->generation ||
-        !nc_atomic_load(&stream->client->running))
+static int rpc_stream_outbound_ready(neverc_rpc_stream_t *stream) {
+    if (stream->send_closed || stream->ended)
         return NEVERC_RPC_IO_CLOSED;
-    /* Parent/caller deadline is cancellation, not a transport close. */
-    if (neverc_context_done(stream->context) ||
-        (context && neverc_context_done(context)))
-        return NEVERC_RPC_IO_CANCELLED;
     return NEVERC_RPC_IO_OK;
 }
 
@@ -1082,11 +1112,24 @@ int neverc_rpc_stream_send(neverc_rpc_stream_t *stream,
         return NEVERC_RPC_IO_INVALID;
     nc_mutex_lock(&stream->send_lock);
     nc_mutex_lock(&stream->lock);
-    int ready = rpc_stream_outbound_ready(stream, context);
+    int ready = rpc_stream_outbound_ready(stream);
     nc_mutex_unlock(&stream->lock);
     if (ready != NEVERC_RPC_IO_OK) {
         nc_mutex_unlock(&stream->send_lock);
         return ready;
+    }
+    nc_rpc_client_epoch_lease_t lease;
+    if (nc_rpc_client_epoch_pin(
+            &stream->client->epoch, stream->generation, &lease) != 0) {
+        nc_mutex_unlock(&stream->send_lock);
+        return NEVERC_RPC_IO_CLOSED;
+    }
+    /* Parent/caller deadline is cancellation, not a transport close. */
+    if (neverc_context_done(stream->context) ||
+        neverc_context_done(context)) {
+        nc_rpc_client_epoch_unpin(&lease);
+        nc_mutex_unlock(&stream->send_lock);
+        return NEVERC_RPC_IO_CANCELLED;
     }
     const uint8_t *bytes = (const uint8_t *)data;
     size_t sent = 0;
@@ -1100,14 +1143,16 @@ int neverc_rpc_stream_send(neverc_rpc_stream_t *stream,
         header.type = NEVERC_RPC_FRAME_DATA;
         header.payload_length = (uint32_t)chunk;
         header.request_id = stream->request_id;
-        int result = rpc_queue_encoded(stream->client, context, &header,
-                                       bytes + sent);
+        int result = rpc_queue_encoded(
+            &lease, context, &header, bytes + sent);
         if (result != NEVERC_RPC_IO_OK) {
+            nc_rpc_client_epoch_unpin(&lease);
             nc_mutex_unlock(&stream->send_lock);
             return result;
         }
         sent += chunk;
     }
+    nc_rpc_client_epoch_unpin(&lease);
     nc_mutex_unlock(&stream->send_lock);
     return NEVERC_RPC_IO_OK;
 }
@@ -1117,11 +1162,23 @@ int neverc_rpc_stream_close_send(neverc_rpc_stream_t *stream,
     if (!stream || !context) return NEVERC_RPC_IO_INVALID;
     nc_mutex_lock(&stream->send_lock);
     nc_mutex_lock(&stream->lock);
-    int ready = rpc_stream_outbound_ready(stream, context);
+    int ready = rpc_stream_outbound_ready(stream);
     nc_mutex_unlock(&stream->lock);
     if (ready != NEVERC_RPC_IO_OK) {
         nc_mutex_unlock(&stream->send_lock);
         return ready;
+    }
+    nc_rpc_client_epoch_lease_t lease;
+    if (nc_rpc_client_epoch_pin(
+            &stream->client->epoch, stream->generation, &lease) != 0) {
+        nc_mutex_unlock(&stream->send_lock);
+        return NEVERC_RPC_IO_CLOSED;
+    }
+    if (neverc_context_done(stream->context) ||
+        neverc_context_done(context)) {
+        nc_rpc_client_epoch_unpin(&lease);
+        nc_mutex_unlock(&stream->send_lock);
+        return NEVERC_RPC_IO_CANCELLED;
     }
     neverc_rpc_frame_header_t header;
     memset(&header, 0, sizeof(header));
@@ -1129,7 +1186,8 @@ int neverc_rpc_stream_close_send(neverc_rpc_stream_t *stream,
     header.type = NEVERC_RPC_FRAME_DATA;
     header.flags = NEVERC_RPC_FLAG_END_STREAM;
     header.request_id = stream->request_id;
-    int result = rpc_queue_encoded(stream->client, context, &header, NULL);
+    int result = rpc_queue_encoded(&lease, context, &header, NULL);
+    nc_rpc_client_epoch_unpin(&lease);
     if (result == NEVERC_RPC_IO_OK) {
         nc_mutex_lock(&stream->lock);
         stream->send_closed = 1;
@@ -1248,9 +1306,12 @@ int neverc_rpc_stream_cancel(neverc_rpc_stream_t *stream,
     header.request_id = stream->request_id;
     header.code = (uint32_t)code;
     header.payload_length = message ? (uint32_t)strlen(message) : 0;
-    int result = stream->generation == stream->client->generation
-        ? rpc_queue_encoded(stream->client, NULL, &header, message)
+    nc_rpc_client_epoch_lease_t lease;
+    int result = nc_rpc_client_epoch_pin(
+            &stream->client->epoch, stream->generation, &lease) == 0
+        ? rpc_queue_encoded(&lease, NULL, &header, message)
         : NEVERC_RPC_IO_CLOSED;
+    nc_rpc_client_epoch_unpin(&lease);
     rpc_stream_set_terminal(stream, code, message);
     return result;
 }
@@ -1311,8 +1372,6 @@ void neverc_rpc_client_close(neverc_rpc_client_t *client) {
     nc_atomic_store(&client->closing, 1);
     rpc_client_stop_transport(client, NEVERC_RPC_STATUS_CANCELLED,
                               "RPC client closed");
-    if (client->send_queue)
-        neverc_thread_channel_close(client->send_queue);
     if (client->tcp) {
         (void)neverc_tcp_shutdown_read(client->tcp);
         (void)neverc_tcp_shutdown_write(client->tcp);
@@ -1322,6 +1381,7 @@ void neverc_rpc_client_close(neverc_rpc_client_t *client) {
     rpc_client_join_pumps(client);
     rpc_client_release_transport(client);
     nc_mutex_unlock(&client->lifecycle_lock);
+    (void)nc_rpc_client_epoch_destroy(&client->epoch);
     nc_mutex_destroy(&client->keepalive_lock);
     nc_mutex_destroy(&client->streams_lock);
     nc_mutex_destroy(&client->lifecycle_lock);
