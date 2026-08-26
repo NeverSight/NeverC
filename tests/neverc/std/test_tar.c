@@ -125,6 +125,53 @@ static void test_write_read_roundtrip(void) {
     neverc_tar_writer_free(&w);
 }
 
+static void test_dot_component_paths(void) {
+    printf("[dot component paths]\n");
+
+    neverc_tar_writer_t writer;
+    neverc_tar_writer_init(&writer);
+    neverc_tar_header_t header = {0};
+
+    strcpy(header.name, "./");
+    header.mode = 0755;
+    header.typeflag = NEVERC_TAR_DIR;
+    check_int("write dot root directory",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+
+    memset(&header, 0, sizeof(header));
+    strcpy(header.name, "./file");
+    header.mode = 0644;
+    header.typeflag = NEVERC_TAR_REG;
+    check_int("write leading dot component",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+
+    memset(&header, 0, sizeof(header));
+    strcpy(header.name, "foo/./bar");
+    header.mode = 0644;
+    header.typeflag = NEVERC_TAR_REG;
+    check_int("write interior dot component",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+    check_int("close dot component archive",
+              neverc_tar_writer_close(&writer), 0);
+
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, writer.data, writer.len);
+    memset(&header, 0, sizeof(header));
+    check_int("read dot root directory",
+              neverc_tar_reader_next(&reader, &header), 1);
+    check_str("preserve dot root directory", header.name, "./");
+    check_int("dot root directory type", header.typeflag, NEVERC_TAR_DIR);
+    check_int("read leading dot component",
+              neverc_tar_reader_next(&reader, &header), 1);
+    check_str("preserve leading dot component", header.name, "./file");
+    check_int("read interior dot component",
+              neverc_tar_reader_next(&reader, &header), 1);
+    check_str("preserve interior dot component", header.name, "foo/./bar");
+    check_int("dot component archive end",
+              neverc_tar_reader_next(&reader, &header), 0);
+    neverc_tar_writer_free(&writer);
+}
+
 static void test_empty_tar(void) {
     printf("[empty tar]\n");
     neverc_tar_writer_t w;
@@ -153,6 +200,25 @@ static void test_invalid_lengths(void) {
     check_int("negative header size",
               neverc_tar_writer_write_header(&w, &hdr), -1);
     neverc_tar_writer_free(&w);
+
+#if SIZE_MAX == UINT32_MAX
+    neverc_tar_writer_t boundary_writer;
+    neverc_tar_writer_init(&boundary_writer);
+    memset(&hdr, 0, sizeof(hdr));
+    strcpy(hdr.name, "largest-padded-size");
+    hdr.typeflag = NEVERC_TAR_REG;
+    hdr.size = (int64_t)(SIZE_MAX - (NEVERC_TAR_BLOCK_SIZE - 1U));
+    check_int("accept largest 32-bit padded size",
+              neverc_tar_writer_write_header(&boundary_writer, &hdr), 0);
+    neverc_tar_writer_free(&boundary_writer);
+
+    neverc_tar_writer_init(&boundary_writer);
+    hdr.size = (int64_t)(SIZE_MAX - (NEVERC_TAR_BLOCK_SIZE - 2U));
+    check_int("reject overflowing 32-bit padded size",
+              neverc_tar_writer_write_header(&boundary_writer, &hdr), -1);
+    check_size("overflowing size writes no header", boundary_writer.len, 0);
+    neverc_tar_writer_free(&boundary_writer);
+#endif
 }
 
 static void test_legacy_rejects_full_width_linkname(void) {
@@ -509,6 +575,16 @@ static void test_reject_unsafe_paths(void) {
     unsafe.typeflag = NEVERC_TAR_REG;
     check_int("writer rejects dot name",
               neverc_tar_writer_write_header(&writer, &unsafe), -1);
+    unsafe.typeflag = NEVERC_TAR_DIR;
+    check_int("writer rejects bare dot directory",
+              neverc_tar_writer_write_header(&writer, &unsafe), -1);
+    strcpy(unsafe.name, "./../escape");
+    unsafe.typeflag = NEVERC_TAR_REG;
+    check_int("writer rejects dot parent traversal",
+              neverc_tar_writer_write_header(&writer, &unsafe), -1);
+    strcpy(unsafe.name, "foo/./../escape");
+    check_int("writer rejects interior dot parent traversal",
+              neverc_tar_writer_write_header(&writer, &unsafe), -1);
     memcpy(unsafe.name, "C:foo", 6);
     check_int("writer rejects drive prefix",
               neverc_tar_writer_write_header(&writer, &unsafe), -1);
@@ -541,6 +617,20 @@ static void test_reject_unsafe_paths(void) {
     test_finish_header(block);
     neverc_tar_reader_init(&reader, block, sizeof(block));
     check_int("reject dot name",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(block, 0, sizeof(block));
+    memcpy(block, "./../escape", 11);
+    test_finish_header(block);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject dot parent traversal",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(block, 0, sizeof(block));
+    memcpy(block, "foo/./../escape", 15);
+    test_finish_header(block);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject interior dot parent traversal",
               neverc_tar_reader_next(&reader, &header), -1);
 
     memset(block, 0, sizeof(block));
@@ -946,6 +1036,7 @@ static void test_header_only_and_typeflags(void) {
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
+    test_dot_component_paths();
     test_empty_tar();
     test_invalid_lengths();
     test_legacy_rejects_full_width_linkname();

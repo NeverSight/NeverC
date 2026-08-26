@@ -5,19 +5,40 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int tar_path_is_safe(const char *name, size_t capacity) {
+static int tar_path_is_safe(const char *name, size_t capacity,
+                            int allow_root_directory) {
     if (!name || !name[0]) return 0;
     size_t len = 0;
     while (len < capacity && name[len] != '\0') len++;
     if (len == capacity || capacity > sizeof(((neverc_tar_header_v2_t *)0)->name))
         return 0;
-    char trimmed[sizeof(((neverc_tar_header_v2_t *)0)->name)];
-    memcpy(trimmed, name, len + 1);
-    while (len > 0 && trimmed[len - 1] == '/')
-        trimmed[--len] = '\0';
-    if (len == 0 || strcmp(trimmed, ".") == 0) return 0;
-    if (strchr(trimmed, ':') != NULL) return 0;
-    return neverc_fs_valid_path(trimmed);
+    if (allow_root_directory && len == 2U &&
+        name[0] == '.' && name[1] == '/')
+        return 1;
+    while (len > 0 && name[len - 1U] == '/') len--;
+    if (len == 0 || memchr(name, ':', len) != NULL) return 0;
+
+    /* Dot components are lexical no-ops and cannot escape an extraction
+     * root. Validate a dot-free spelling while preserving the archive's
+     * original name bytes for interoperability. */
+    char normalized[sizeof(((neverc_tar_header_v2_t *)0)->name)];
+    size_t input = 0;
+    size_t output = 0;
+    while (input < len) {
+        size_t start = input;
+        while (input < len && name[input] != '/') input++;
+        size_t component_len = input - start;
+        if (component_len == 0) return 0;
+        if (!(component_len == 1U && name[start] == '.')) {
+            if (output > 0) normalized[output++] = '/';
+            memcpy(normalized + output, name + start, component_len);
+            output += component_len;
+        }
+        if (input < len) input++;
+    }
+    if (output == 0) return 0;
+    normalized[output] = '\0';
+    return neverc_fs_valid_path(normalized);
 }
 
 static int parse_octal(const uint8_t *field, size_t width, uint64_t *value) {
@@ -95,8 +116,9 @@ static void copy_tar_field(char *destination, size_t capacity,
 
 static int tar_padded_size(size_t size, size_t *padded) {
     if (size > SIZE_MAX - (NEVERC_TAR_BLOCK_SIZE - 1U)) return -1;
-    *padded = (size + NEVERC_TAR_BLOCK_SIZE - 1U) &
-              ~(size_t)(NEVERC_TAR_BLOCK_SIZE - 1U);
+    if (padded)
+        *padded = (size + NEVERC_TAR_BLOCK_SIZE - 1U) &
+                  ~(size_t)(NEVERC_TAR_BLOCK_SIZE - 1U);
     return 0;
 }
 
@@ -219,11 +241,10 @@ static int tar_parse_header_at(const neverc_tar_reader_t *r, size_t position,
     }
     memcpy(hdr->name + offset, block, name_length);
     hdr->name[full_length] = '\0';
-    if (!tar_path_is_safe(hdr->name, sizeof(hdr->name)))
-        return -1;
-
     int typeflag = tar_resolve_typeflag((int)block[156], hdr->name);
-    if (!tar_type_supported(typeflag))
+    if (!tar_type_supported(typeflag) ||
+        !tar_path_is_safe(hdr->name, sizeof(hdr->name),
+                          typeflag == NEVERC_TAR_DIR))
         return -1;
     uint64_t payload = tar_type_header_only(typeflag) ? 0 : size;
     size_t padded = 0;
@@ -240,7 +261,7 @@ static int tar_parse_header_at(const neverc_tar_reader_t *r, size_t position,
     if ((hdr->typeflag == NEVERC_TAR_SYM ||
          hdr->typeflag == NEVERC_TAR_LINK) &&
         (hdr->linkname[0] == '\0' ||
-         !tar_path_is_safe(hdr->linkname, sizeof(hdr->linkname))))
+         !tar_path_is_safe(hdr->linkname, sizeof(hdr->linkname), 0)))
         return -1;
     copy_tar_field(hdr->uname, sizeof(hdr->uname), block + 265, 32);
     copy_tar_field(hdr->gname, sizeof(hdr->gname), block + 297, 32);
@@ -526,6 +547,9 @@ static int tar_writer_write_header_common(neverc_tar_writer_t *w,
         !tar_size_fits((uint64_t)hdr->size) ||
         hdr->typeflag < 0 || hdr->typeflag > UCHAR_MAX)
         return -1;
+    size_t current_size = (size_t)hdr->size;
+    if (tar_padded_size(current_size, NULL) != 0)
+        return -1;
 
     size_t name_length = 0, link_length = 0;
     size_t uname_length = 0, gname_length = 0;
@@ -539,15 +563,15 @@ static int tar_writer_write_header_common(neverc_tar_writer_t *w,
         bounded_string_length(
             hdr->gname, sizeof(hdr->gname), &gname_length) != 0)
         return -1;
-    if (!tar_path_is_safe(hdr->name, sizeof(hdr->name)))
-        return -1;
     int typeflag = tar_resolve_typeflag(hdr->typeflag, hdr->name);
     if (!tar_type_supported(typeflag) ||
+        !tar_path_is_safe(hdr->name, sizeof(hdr->name),
+                          typeflag == NEVERC_TAR_DIR) ||
         (tar_type_header_only(typeflag) && hdr->size != 0))
         return -1;
     if ((typeflag == NEVERC_TAR_SYM || typeflag == NEVERC_TAR_LINK) &&
         (link_length == 0 ||
-         !tar_path_is_safe(hdr->linkname, sizeof(hdr->linkname))))
+         !tar_path_is_safe(hdr->linkname, sizeof(hdr->linkname), 0)))
         return -1;
 
     uint8_t block[NEVERC_TAR_BLOCK_SIZE] = {0};
@@ -575,7 +599,6 @@ static int tar_writer_write_header_common(neverc_tar_writer_t *w,
 
     /* hdr may alias the writer's allocation. Snapshot every value that is
      * still needed before writer_grow can move that allocation. */
-    size_t current_size = (size_t)hdr->size;
     if (!writer_grow(w, NEVERC_TAR_BLOCK_SIZE)) {
         meta.failed = 1;
         (void)tar_writer_meta_store(w, &meta);
