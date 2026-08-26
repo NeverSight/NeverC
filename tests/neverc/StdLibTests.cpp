@@ -741,6 +741,12 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
+TEST_F(StdLibTest, NetBufferAliasedAppend) {
+  auto r = compileAndRunStdTest("net_buffer_alias", {},
+                                {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // http.c embeds HTTPS support; the COFF linker (Windows) requires all
 // referenced TLS symbols to be present at link time even when the test

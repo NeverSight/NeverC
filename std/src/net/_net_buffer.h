@@ -49,10 +49,27 @@ static inline int nc_buf_append(nc_buf_t *b, const void *data, size_t len) {
     if (!b || (len > 0 && !data) || b->len == SIZE_MAX ||
         len > SIZE_MAX - b->len - 1)
         return -1;
+    size_t data_offset = 0;
+    int data_aliases_buffer = 0;
+    if (len > 0 && b->data) {
+        uintptr_t base = (uintptr_t)(const void *)b->data;
+        uintptr_t source = (uintptr_t)data;
+        if (source >= base) {
+            uintptr_t distance = source - base;
+            if (distance < (uintptr_t)b->cap) {
+                data_offset = (size_t)distance;
+                if (len > b->cap - data_offset)
+                    return -1;
+                data_aliases_buffer = 1;
+            }
+        }
+    }
     if (nc_buf_grow(b, b->len + len + 1) != 0)
         return -1;
+    if (data_aliases_buffer)
+        data = b->data + data_offset;
     if (len > 0)
-        memcpy(b->data + b->len, data, len);
+        memmove(b->data + b->len, data, len);
     b->len += len;
     b->data[b->len] = '\0';
     return 0;
