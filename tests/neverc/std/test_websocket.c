@@ -1,6 +1,7 @@
 #include "neverc/std/net/websocket.h"
 #include "neverc/std/net/http.h"
 #include "neverc/std/net/tcp.h"
+#include "../../../std/src/net/websocket/_websocket_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -269,18 +270,18 @@ static void test_handshake_rejects(void) {
                                          strlen(unpadded_key), &consumed),
               -1);
 
-    const char *dup_upgrade =
+    const char *dup_version =
         "GET /ws HTTP/1.1\r\n"
         "Host: localhost\r\n"
         "Upgrade: websocket\r\n"
-        "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
         "Sec-WebSocket-Version: 13\r\n"
         "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
         "\r\n";
-    check_int("reject duplicate Upgrade",
-              neverc_ws_handshake_server(server, dup_upgrade,
-                                         strlen(dup_upgrade), &consumed),
+    check_int("reject duplicate WebSocket version",
+              neverc_ws_handshake_server(server, dup_version,
+                                         strlen(dup_version), &consumed),
               -1);
 
     const char *with_body =
@@ -312,15 +313,45 @@ static void test_handshake_rejects(void) {
                                          &consumed),
               -1);
 
-    const char *good =
+    const char *bad_upgrade_list =
         "GET /ws HTTP/1.1\r\n"
         "Host: localhost\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade , keep-alive\r\n"
+        "Upgrade: bad protocol, websocket\r\n"
+        "Connection: Upgrade\r\n"
         "Sec-WebSocket-Version: 13\r\n"
         "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
         "\r\n";
-    check_int("accept Connection token list",
+    check_int("reject malformed Upgrade list member",
+              neverc_ws_handshake_server(
+                  server, bad_upgrade_list, strlen(bad_upgrade_list),
+                  &consumed),
+              -1);
+
+    const char *bad_connection_list =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: bad option, Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("reject malformed Connection list member",
+              neverc_ws_handshake_server(
+                  server, bad_connection_list, strlen(bad_connection_list),
+                  &consumed),
+              -1);
+
+    const char *good =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: h2c\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: keep-alive\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("accept repeated Upgrade and Connection lists",
               neverc_ws_handshake_server(server, good, strlen(good),
                                          &consumed),
               0);
@@ -1509,11 +1540,38 @@ static void test_client_dial_and_masking(void) {
         check_int("client target",
                   strstr(request, "GET /chat?mode=test HTTP/1.1\r\n") != NULL,
                   1);
-        size_t consumed = 0;
-        check_int("client handshake",
-                  neverc_ws_handshake_server(conn, request, (size_t)total,
-                                              &consumed),
-                  0);
+        const char *key_line = strstr(request, "Sec-WebSocket-Key: ");
+        char accept[64];
+        int have_accept = 0;
+        if (key_line) {
+            const char *key = key_line + 19;
+            if ((size_t)(request + total - key) >= 24) {
+                char key_buf[25];
+                memcpy(key_buf, key, 24);
+                key_buf[24] = '\0';
+                have_accept = neverc_ws_compute_accept(
+                    key_buf, accept, sizeof(accept)) == 0;
+            }
+        }
+        check_int("client repeated-list key", have_accept, 1);
+        if (have_accept) {
+            char response[512];
+            int response_length = snprintf(
+                response, sizeof(response),
+                "HTTP/1.1 101 Switching Protocols\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: keep-alive\r\n"
+                "Connection: Upgrade\r\n"
+                "Sec-WebSocket-Accept: %s\r\n"
+                "\r\n",
+                accept);
+            check_int("write repeated-list response",
+                      response_length > 0 &&
+                      neverc_tcp_write(
+                          conn, response, (size_t)response_length) ==
+                          response_length,
+                      1);
+        }
 
         uint8_t header[2];
         check_int("client frame header", tcp_read_exact(conn, header, 2), 0);
@@ -1682,6 +1740,79 @@ static void test_reject_server_extensions(void) {
     int status = 0;
     waitpid(pid, &status, 0);
     check_int("client rejected server extensions",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+    neverc_tcp_listener_close(ln);
+}
+
+static void test_reject_unoffered_upgrade_protocol(void) {
+    printf("[reject_unoffered_upgrade_protocol]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("upgrade-protocol listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    pid_t pid = fork();
+    if (pid == 0) {
+        char url[128];
+        snprintf(url, sizeof(url), "ws://127.0.0.1:%u/ws",
+                 (unsigned)laddr.port);
+        neverc_ws_conn_t *ws = neverc_ws_dial(url, NULL, &err);
+        if (ws) {
+            neverc_ws_conn_free(ws);
+            _exit(1);
+        }
+        _exit(0);
+    }
+
+    neverc_tcp_conn_t *conn = neverc_tcp_accept(ln, &err);
+    check_not_null("upgrade-protocol accept", conn);
+    if (conn) {
+        neverc_tcp_set_timeout(conn, 5000);
+        char request[4096];
+        int total = 0;
+        while (total < (int)sizeof(request) - 1) {
+            int n = neverc_tcp_read(conn, request + total,
+                                    sizeof(request) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+            request[total] = '\0';
+            if (strstr(request, "\r\n\r\n")) break;
+        }
+        const char *key_line = strstr(request, "Sec-WebSocket-Key: ");
+        char accept[64];
+        int have_accept = 0;
+        if (key_line) {
+            const char *key = key_line + 19;
+            if ((size_t)(request + total - key) >= 24) {
+                char key_buf[25];
+                memcpy(key_buf, key, 24);
+                key_buf[24] = '\0';
+                have_accept = neverc_ws_compute_accept(
+                    key_buf, accept, sizeof(accept)) == 0;
+            }
+        }
+        check_int("upgrade-protocol client key", have_accept, 1);
+        if (have_accept) {
+            char response[512];
+            int n = snprintf(
+                response, sizeof(response),
+                "HTTP/1.1 101 Switching Protocols\r\n"
+                "Upgrade: h2c, websocket\r\n"
+                "Connection: Upgrade\r\n"
+                "Sec-WebSocket-Accept: %s\r\n"
+                "\r\n",
+                accept);
+            if (n > 0)
+                neverc_tcp_write(conn, response, (size_t)n);
+        }
+        neverc_tcp_close(conn);
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    check_int("client rejected unoffered Upgrade protocol",
               WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
     neverc_tcp_listener_close(ln);
 }
@@ -2270,50 +2401,203 @@ static void test_http_ws_upgrade(void) {
         neverc_tcp_close(c);
     }
 
+    c = neverc_tcp_dial(addr, &err);
+    check_not_null("dial http repeated list fields", c);
+    if (c) {
+        neverc_tcp_set_timeout(c, 5000);
+        const char *repeated_lists =
+            "GET /ws HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            "Upgrade: h2c\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: keep-alive\r\n"
+            "Connection: Upgrade\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+            "\r\n";
+        check_int("write repeated list upgrade",
+                  neverc_tcp_write(c, repeated_lists,
+                                   strlen(repeated_lists)) ==
+                      (int)strlen(repeated_lists),
+                  1);
+        total = 0;
+        memset(resp, 0, sizeof(resp));
+        while (total < (int)sizeof(resp) - 1) {
+            int n = neverc_tcp_read(c, resp + total,
+                                    sizeof(resp) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+            resp[total] = '\0';
+            if (strstr(resp, "\r\n\r\n")) break;
+        }
+        check_int("complete repeated list response",
+                  strstr(resp, "\r\n\r\n") != NULL, 1);
+        check_int("accept repeated Upgrade and Connection fields",
+                  strncmp(resp, "HTTP/1.1 101 ", 13) == 0, 1);
+        neverc_tcp_close(c);
+    }
+
+    c = neverc_tcp_dial(addr, &err);
+    check_not_null("dial http duplicate version", c);
+    if (c) {
+        neverc_tcp_set_timeout(c, 5000);
+        const char *duplicate_version =
+            "GET /ws HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+            "\r\n";
+        check_int("write duplicate version upgrade",
+                  neverc_tcp_write(c, duplicate_version,
+                                   strlen(duplicate_version)) ==
+                      (int)strlen(duplicate_version),
+                  1);
+        total = 0;
+        memset(resp, 0, sizeof(resp));
+        while (total < (int)sizeof(resp) - 1) {
+            int n = neverc_tcp_read(c, resp + total,
+                                    sizeof(resp) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+            resp[total] = '\0';
+            if (strstr(resp, "\r\n\r\n")) break;
+        }
+        check_int("complete duplicate version rejection",
+                  strstr(resp, "\r\n\r\n") != NULL, 1);
+        check_int("reject duplicate WebSocket version in HTTP adapter",
+                  strncmp(resp, "HTTP/1.1 400 ", 13) == 0, 1);
+        neverc_tcp_close(c);
+    }
+
     kill(server_pid, SIGTERM);
     waitpid(server_pid, NULL, 0);
 }
 
 #endif /* _WIN32 */
 
-static void test_upgrade_http_rejects_body(void) {
-    printf("[upgrade_http_rejects_body]\n");
-    static const char raw[] =
+static void test_upgrade_http_validation(void) {
+    printf("[upgrade_http_validation]\n");
+    static const char valid[] =
+        "Host" "\0" "localhost" "\0"
+        "Upgrade" "\0" "websocket" "\0"
+        "Connection" "\0" "Upgrade" "\0"
+        "Sec-WebSocket-Version" "\0" "13" "\0"
+        "Sec-WebSocket-Key" "\0" "dGhlIHNhbXBsZSBub25jZQ==" "\0";
+    static const char repeated_lists[] =
+        "Host" "\0" "localhost" "\0"
+        "Upgrade" "\0" "h2c" "\0"
+        "Upgrade" "\0" "websocket" "\0"
+        "Connection" "\0" "keep-alive" "\0"
+        "Connection" "\0" "Upgrade" "\0"
+        "Sec-WebSocket-Version" "\0" "13" "\0"
+        "Sec-WebSocket-Key" "\0" "dGhlIHNhbXBsZSBub25jZQ==" "\0";
+    static const char duplicate_version[] =
+        "Host" "\0" "localhost" "\0"
+        "Upgrade" "\0" "websocket" "\0"
+        "Connection" "\0" "Upgrade" "\0"
+        "Sec-WebSocket-Version" "\0" "13" "\0"
+        "Sec-WebSocket-Version" "\0" "13" "\0"
+        "Sec-WebSocket-Key" "\0" "dGhlIHNhbXBsZSBub25jZQ==" "\0";
+    static const char malformed_upgrade[] =
+        "Host" "\0" "localhost" "\0"
+        "Upgrade" "\0" "bad protocol, websocket" "\0"
+        "Connection" "\0" "Upgrade" "\0"
+        "Sec-WebSocket-Version" "\0" "13" "\0"
+        "Sec-WebSocket-Key" "\0" "dGhlIHNhbXBsZSBub25jZQ==" "\0";
+    static const char malformed_connection[] =
+        "Host" "\0" "localhost" "\0"
+        "Upgrade" "\0" "websocket" "\0"
+        "Connection" "\0" "bad option, Upgrade" "\0"
+        "Sec-WebSocket-Version" "\0" "13" "\0"
+        "Sec-WebSocket-Key" "\0" "dGhlIHNhbXBsZSBub25jZQ==" "\0";
+    static const char with_content_length[] =
+        "Host" "\0" "localhost" "\0"
         "Upgrade" "\0" "websocket" "\0"
         "Connection" "\0" "Upgrade" "\0"
         "Sec-WebSocket-Version" "\0" "13" "\0"
         "Sec-WebSocket-Key" "\0" "dGhlIHNhbXBsZSBub25jZQ==" "\0"
         "Content-Length" "\0" "8" "\0";
+    static const char missing_host[] =
+        "Upgrade" "\0" "websocket" "\0"
+        "Connection" "\0" "Upgrade" "\0"
+        "Sec-WebSocket-Version" "\0" "13" "\0"
+        "Sec-WebSocket-Key" "\0" "dGhlIHNhbXBsZSBub25jZQ==" "\0";
     neverc_http_request_t req;
     memset(&req, 0, sizeof(req));
     req.method = "GET";
     req.path = "/ws";
     req.http_version = "HTTP/1.1";
-    req.raw_headers = raw;
+    req.host = "localhost";
+    req.raw_headers = valid;
     req.nheaders = 5;
-    neverc_http_response_writer_t *w = neverc_http_memory_writer_new();
-    check_not_null("memory writer", w);
-    if (!w) return;
-    check_int("upgrade with content-length",
-              neverc_ws_upgrade_http(&req, w) == NULL, 1);
+    char key[64];
+    check_int("valid HTTP upgrade headers",
+              nc_ws_validate_http_upgrade(&req, key, sizeof(key)), 0);
+    check_str("validated HTTP upgrade key", key,
+              "dGhlIHNhbXBsZSBub25jZQ==");
+    char short_key[24];
+    check_int("reject short HTTP upgrade key buffer",
+              nc_ws_validate_http_upgrade(
+                  &req, short_key, sizeof(short_key)),
+              -1);
+    char exact_key[25];
+    check_int("accept exact HTTP upgrade key buffer",
+              nc_ws_validate_http_upgrade(
+                  &req, exact_key, sizeof(exact_key)),
+              0);
+    check_str("exact HTTP upgrade key", exact_key,
+              "dGhlIHNhbXBsZSBub25jZQ==");
 
+    req.raw_headers = repeated_lists;
+    req.nheaders = 7;
+    check_int("repeated HTTP list fields",
+              nc_ws_validate_http_upgrade(&req, key, sizeof(key)), 0);
+
+    req.raw_headers = duplicate_version;
+    req.nheaders = 6;
+    check_int("duplicate HTTP WebSocket version",
+              nc_ws_validate_http_upgrade(&req, key, sizeof(key)), -1);
+
+    req.raw_headers = malformed_upgrade;
+    req.nheaders = 5;
+    check_int("malformed HTTP Upgrade list",
+              nc_ws_validate_http_upgrade(&req, key, sizeof(key)), -1);
+
+    req.raw_headers = malformed_connection;
+    req.nheaders = 5;
+    check_int("malformed HTTP Connection list",
+              nc_ws_validate_http_upgrade(&req, key, sizeof(key)), -1);
+
+    req.raw_headers = with_content_length;
+    req.nheaders = 6;
+    check_int("upgrade with content-length",
+              nc_ws_validate_http_upgrade(&req, key, sizeof(key)), -1);
+
+    req.raw_headers = missing_host;
     req.nheaders = 4;
+    check_int("upgrade missing Host",
+              nc_ws_validate_http_upgrade(&req, key, sizeof(key)), -1);
+
+    req.raw_headers = valid;
+    req.nheaders = 5;
     req.body_len = 4;
     req.body = "ping";
     check_int("upgrade with body_len",
-              neverc_ws_upgrade_http(&req, w) == NULL, 1);
+              nc_ws_validate_http_upgrade(&req, key, sizeof(key)), -1);
     req.body_len = 0;
     req.body = NULL;
     req.http_version = "HTTP/1.0";
     check_int("upgrade http/1.0",
-              neverc_ws_upgrade_http(&req, w) == NULL, 1);
-    neverc_http_memory_writer_free(w);
+              nc_ws_validate_http_upgrade(&req, key, sizeof(key)), -1);
 }
 
 int main(void) {
     test_compute_accept();
     test_null_safety();
-    test_upgrade_http_rejects_body();
+    test_upgrade_http_validation();
     test_utf8_prefix_validation();
     test_handshake_rejects();
     test_reject_unmasked_client_frame();
@@ -2337,6 +2621,7 @@ int main(void) {
     test_client_dial_and_masking();
     test_reject_masked_server_frame();
     test_reject_server_extensions();
+    test_reject_unoffered_upgrade_protocol();
     test_reject_101_body();
     test_reject_101_transfer_encoding();
     test_oversized_first_fragment_fails_closed();

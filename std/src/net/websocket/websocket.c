@@ -5,6 +5,7 @@
 #include "neverc/std/crypto/rand.h"
 #include "neverc/std/crypto/sha1.h"
 #include "neverc/std/encoding/base64.h"
+#include "_websocket_internal.h"
 #include "../_net_buffer.h"
 #include "../_net_thread.h"
 #include "../http/_http_internal.h"
@@ -97,23 +98,29 @@ static int ws_contains_ctl(const char *s) {
     return 0;
 }
 
-static int ws_is_token(const char *s) {
-    if (!s || !s[0]) return 0;
-    for (; *s; s++) {
-        unsigned char c = (unsigned char)*s;
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9'))
-            continue;
-        switch (c) {
-        case '!': case '#': case '$': case '%': case '&': case '\'':
-        case '*': case '+': case '-': case '.': case '^': case '_':
-        case '`': case '|': case '~':
-            continue;
-        default:
-            return 0;
-        }
+static int ws_is_token_char(unsigned char c) {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9'))
+        return 1;
+    switch (c) {
+    case '!': case '#': case '$': case '%': case '&': case '\'':
+    case '*': case '+': case '-': case '.': case '^': case '_':
+    case '`': case '|': case '~':
+        return 1;
+    default:
+        return 0;
     }
+}
+
+static int ws_is_token_n(const char *s, size_t length) {
+    if (!s || length == 0) return 0;
+    for (size_t i = 0; i < length; i++)
+        if (!ws_is_token_char((unsigned char)s[i])) return 0;
     return 1;
+}
+
+static int ws_is_token(const char *s) {
+    return s && ws_is_token_n(s, strlen(s));
 }
 
 static int ws_parse_port(const char *s, size_t len, unsigned *port) {
@@ -373,23 +380,100 @@ static int ws_headers_reject_obs_fold_and_bare_lf(const char *raw,
     return 0;
 }
 
-static int ws_value_has_token(const char *value, const char *token) {
-    if (!value || !token) return 0;
-    size_t token_len = strlen(token);
-    for (size_t i = 0; value[i]; ) {
-        while (value[i] == ' ' || value[i] == '\t' || value[i] == ',') i++;
-        size_t start = i;
-        while (value[i] && value[i] != ',') i++;
-        size_t end = i;
+typedef enum {
+    WS_HEADER_LIST_TOKEN = 0,
+    WS_HEADER_LIST_PROTOCOL = 1
+} ws_header_list_kind_t;
+
+typedef struct {
+    size_t members;
+    int has_target;
+    int all_target;
+} ws_header_list_result_t;
+
+static int ws_protocol_n_valid(const char *value, size_t length) {
+    const char *slash = (const char *)memchr(value, '/', length);
+    if (!slash) return ws_is_token_n(value, length);
+    size_t name_length = (size_t)(slash - value);
+    size_t version_length = length - name_length - 1U;
+    return !memchr(slash + 1, '/', version_length) &&
+           ws_is_token_n(value, name_length) &&
+           ws_is_token_n(slash + 1, version_length);
+}
+
+static int ws_header_list_add_value(
+    const char *value, size_t value_length, const char *target,
+    ws_header_list_kind_t kind, ws_header_list_result_t *result) {
+    if (!value || !target || !result) return -1;
+    size_t target_length = strlen(target);
+    size_t position = 0;
+    for (;;) {
+        size_t start = position;
+        while (position < value_length && value[position] != ',') position++;
+        size_t end = position;
+        while (start < end &&
+               (value[start] == ' ' || value[start] == '\t'))
+            start++;
         while (end > start &&
                (value[end - 1] == ' ' || value[end - 1] == '\t'))
             end--;
-        if (end - start == token_len &&
-            strcasecmp_n(value + start, token, token_len) == 0)
-            return 1;
-        if (value[i] == ',') i++;
+        if (end > start) {
+            size_t member_length = end - start;
+            int valid = kind == WS_HEADER_LIST_PROTOCOL
+                ? ws_protocol_n_valid(value + start, member_length)
+                : ws_is_token_n(value + start, member_length);
+            if (!valid) return -1;
+            int matches =
+                member_length == target_length &&
+                strcasecmp_n(value + start, target, target_length) == 0;
+            result->members++;
+            if (matches)
+                result->has_target = 1;
+            else
+                result->all_target = 0;
+        }
+        if (position == value_length) break;
+        position++;
     }
     return 0;
+}
+
+static int ws_raw_header_list_valid(
+    const char *raw, const char *hdr_end, const char *name,
+    const char *target, ws_header_list_kind_t kind,
+    int require_only_target) {
+    if (!raw || !hdr_end || !name || !target) return 0;
+    size_t name_len = strlen(name);
+    ws_header_list_result_t result = {0, 0, 1};
+    const char *p = raw;
+    while (p + 1 < hdr_end && !(p[0] == '\r' && p[1] == '\n')) p++;
+    if (p + 1 >= hdr_end) return 0;
+    p += 2;
+    while (p < hdr_end) {
+        const char *line_end = p;
+        while (line_end + 1 < hdr_end &&
+               !(line_end[0] == '\r' && line_end[1] == '\n'))
+            line_end++;
+        if (line_end + 1 >= hdr_end || line_end == p) break;
+        const char *colon = memchr(p, ':', (size_t)(line_end - p));
+        if (colon && (size_t)(colon - p) == name_len &&
+            strcasecmp_n(p, name, name_len) == 0) {
+            const char *value = colon + 1;
+            while (value < line_end && (*value == ' ' || *value == '\t'))
+                value++;
+            const char *value_end = line_end;
+            while (value_end > value &&
+                   (value_end[-1] == ' ' || value_end[-1] == '\t'))
+                value_end--;
+            if (ws_header_list_add_value(
+                    value, (size_t)(value_end - value), target, kind,
+                    &result) != 0)
+                return 0;
+        }
+        p = line_end + 2;
+    }
+    return result.members > 0 && result.has_target &&
+           (!require_only_target || result.all_target);
 }
 
 static int tcp_write_all(neverc_tcp_conn_t *conn, const void *data, size_t len) {
@@ -519,16 +603,16 @@ static int ws_read_client_handshake(neverc_tcp_conn_t *tcp,
         return -1;
     }
     char value[256];
-    if (copy_unique_header_value(response, header_scan_end, "Upgrade",
-                                 value, sizeof(value)) != 1 ||
-        strcasecmp(value, "websocket") != 0) {
+    if (!ws_raw_header_list_valid(
+            response, header_scan_end, "Upgrade", "websocket",
+            WS_HEADER_LIST_PROTOCOL, 1)) {
         free(response);
         ws_set_error(errp, "invalid WebSocket Upgrade response header");
         return -1;
     }
-    if (copy_unique_header_value(response, header_scan_end, "Connection",
-                                 value, sizeof(value)) != 1 ||
-        !ws_value_has_token(value, "upgrade")) {
+    if (!ws_raw_header_list_valid(
+            response, header_scan_end, "Connection", "upgrade",
+            WS_HEADER_LIST_TOKEN, 0)) {
         free(response);
         ws_set_error(errp, "invalid WebSocket Connection response header");
         return -1;
@@ -828,21 +912,19 @@ int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
         return -1;
 
     char host[256];
-    char upgrade[32];
-    char connection[128];
     char version[16];
     char key_buf[64];
     if (copy_unique_header_value(raw_request, hdr_scan_end, "Host",
                                  host, sizeof(host)) != 1 || !host[0] ||
         !ws_valid_host(host, strlen(host)))
         return -1;
-    if (copy_unique_header_value(raw_request, hdr_scan_end, "Upgrade",
-                                 upgrade, sizeof(upgrade)) != 1 ||
-        strcasecmp(upgrade, "websocket") != 0)
+    if (!ws_raw_header_list_valid(
+            raw_request, hdr_scan_end, "Upgrade", "websocket",
+            WS_HEADER_LIST_PROTOCOL, 0))
         return -1;
-    if (copy_unique_header_value(raw_request, hdr_scan_end, "Connection",
-                                 connection, sizeof(connection)) != 1 ||
-        !ws_value_has_token(connection, "upgrade"))
+    if (!ws_raw_header_list_valid(
+            raw_request, hdr_scan_end, "Connection", "upgrade",
+            WS_HEADER_LIST_TOKEN, 0))
         return -1;
     if (copy_unique_header_value(raw_request, hdr_scan_end,
                                  "Sec-WebSocket-Version", version,
@@ -910,24 +992,53 @@ static int ws_header_count(const neverc_http_request_t *req, const char *name) {
     return count;
 }
 
-static int ws_validate_http_upgrade(const neverc_http_request_t *req,
-                                     char *key_buf, size_t key_cap) {
-    if (!req || !key_buf || key_cap < 2) return -1;
+static int ws_request_header_list_valid(
+    const neverc_http_request_t *req, const char *name, const char *target,
+    ws_header_list_kind_t kind) {
+    if (!req || !req->raw_headers || !name || !target) return 0;
+    ws_header_list_result_t result = {0, 0, 1};
+    const char *p = req->raw_headers;
+    for (int i = 0; i < req->nheaders; i++) {
+        const char *header_name = p;
+        while (*p) p++;
+        p++;
+        const char *header_value = p;
+        while (*p) p++;
+        p++;
+        if (strcasecmp(header_name, name) == 0 &&
+            ws_header_list_add_value(
+                header_value, strlen(header_value), target, kind,
+                &result) != 0)
+            return 0;
+    }
+    return result.members > 0 && result.has_target;
+}
+
+int nc_ws_validate_http_upgrade(const neverc_http_request_t *req,
+                                char *key_buf, size_t key_cap) {
+    if (!req || !key_buf || key_cap < 25U) return -1;
     if (!req->method || strcmp(req->method, "GET") != 0) return -1;
     if (!req->http_version || strcmp(req->http_version, "HTTP/1.1") != 0)
         return -1;
     if (req->body_len > 0) return -1;
 
-    const char *upgrade = neverc_http_request_header(req, "Upgrade");
-    if (!upgrade || strcasecmp(upgrade, "websocket") != 0) return -1;
+    if (ws_header_count(req, "Host") != 1 ||
+        ws_header_count(req, "Sec-WebSocket-Version") != 1 ||
+        ws_header_count(req, "Sec-WebSocket-Key") != 1)
+        return -1;
 
-    const char *conn_hdr = neverc_http_request_header(req, "Connection");
-    if (!ws_value_has_token(conn_hdr, "upgrade")) return -1;
+    const char *host = neverc_http_request_header(req, "Host");
+    if (!host || !host[0] || !ws_valid_host(host, strlen(host))) return -1;
+
+    if (!ws_request_header_list_valid(
+            req, "Upgrade", "websocket", WS_HEADER_LIST_PROTOCOL) ||
+        !ws_request_header_list_valid(
+            req, "Connection", "upgrade", WS_HEADER_LIST_TOKEN))
+        return -1;
 
     const char *version = neverc_http_request_header(req, "Sec-WebSocket-Version");
     if (!version || strcmp(version, "13") != 0) return -1;
 
-    if (ws_header_count(req, "Sec-WebSocket-Key") != 1) return -1;
     const char *ws_key = neverc_http_request_header(req, "Sec-WebSocket-Key");
     if (!ws_key || strlen(ws_key) != 24) return -1;
     uint8_t decoded_key[32];
@@ -942,12 +1053,7 @@ static int ws_validate_http_upgrade(const neverc_http_request_t *req,
     }
     if (ws_header_count(req, "Transfer-Encoding") != 0) return -1;
 
-    size_t ki = 0;
-    while (ws_key[ki] && ki < key_cap - 1) {
-        key_buf[ki] = ws_key[ki];
-        ki++;
-    }
-    key_buf[ki] = '\0';
+    memcpy(key_buf, ws_key, 25U);
     return 0;
 }
 
@@ -956,7 +1062,7 @@ neverc_ws_conn_t *neverc_ws_upgrade_http(neverc_http_request_t *req,
     if (!req || !w) return NULL;
 
     char key_buf[64];
-    if (ws_validate_http_upgrade(req, key_buf, sizeof(key_buf)) != 0)
+    if (nc_ws_validate_http_upgrade(req, key_buf, sizeof(key_buf)) != 0)
         return NULL;
 
     char accept[64];
