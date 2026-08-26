@@ -1,0 +1,33 @@
+name: debug-tar-32bit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tar-ilp32:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install 32-bit C toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib libc6-dev-i386
+
+      - name: Build and run tar tests as ILP32
+        run: |
+          gcc -m32 -std=gnu11 -O2 -Wall -Wextra \
+            -Istd/include \
+            tests/neverc/std/test_tar.c \
+            std/src/archive/tar/tar.c \
+            std/src/io/fs/fs.c \
+            std/src/path/match.c \
+            std/src/unicode/utf8/utf8.c \
+            -o test-tar-32
+          file test-tar-32
+          ./test-tar-32
