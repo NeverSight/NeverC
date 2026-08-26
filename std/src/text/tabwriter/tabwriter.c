@@ -538,6 +538,21 @@ static int append_run(neverc_tabwriter_t *w, const char *data, size_t run) {
     return 0;
 }
 
+static int writer_output_offset(
+    const neverc_tabwriter_t *w, const char *data, size_t len,
+    size_t *offset) {
+    if (!w || !w->out_buf || !data || !offset) return 0;
+    uintptr_t base = (uintptr_t)(const void *)w->out_buf;
+    uintptr_t source = (uintptr_t)(const void *)data;
+    if (source < base) return 0;
+    uintptr_t distance = source - base;
+    if (distance > (uintptr_t)w->out_len) return 0;
+    size_t source_offset = (size_t)distance;
+    if (len > w->out_len - source_offset) return 0;
+    *offset = source_offset;
+    return 1;
+}
+
 static void finish_line(neverc_tabwriter_t *w, char delim) {
     end_cell(w, 0);
     if (writer_failed(w)) return;
@@ -565,10 +580,16 @@ void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len)
         writer_fail(w);
         return;
     }
+    size_t data_offset = 0;
+    int data_aliases_output =
+        writer_output_offset(w, data, len, &data_offset);
     /* Go: '\t' hard tab, '\v' soft tab, '\n'/'\f' line breaks. '\f' flushes.
      * Escape (\xff) and, with FilterHTML, <tags> / &entities; hide delimiters. */
     size_t i = 0;
     while (i < len) {
+        /* A form feed can flush and relocate out_buf partway through this
+         * call. Rebase input returned by output() before reading it again. */
+        if (data_aliases_output) data = w->out_buf + data_offset;
         char special = 0;
         size_t rel;
         tabwriter_private_t *state = writer_private(w);

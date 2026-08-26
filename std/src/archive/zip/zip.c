@@ -427,6 +427,21 @@ static int wentries_grow(neverc_zip_writer_t *w) {
     return 1;
 }
 
+static int zip_writer_data_offset(
+    const neverc_zip_writer_t *w, const uint8_t *data, size_t len,
+    size_t *offset) {
+    if (!w || !w->data || !data || !offset) return 0;
+    uintptr_t base = (uintptr_t)(const void *)w->data;
+    uintptr_t source = (uintptr_t)(const void *)data;
+    if (source < base) return 0;
+    uintptr_t distance = source - base;
+    if (distance > (uintptr_t)w->cap) return 0;
+    size_t source_offset = (size_t)distance;
+    if (len > w->cap - source_offset) return 0;
+    *offset = source_offset;
+    return 1;
+}
+
 int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
                           const uint8_t *data, size_t len) {
     if (!w || !name || zip_writer_is_closed(w) ||
@@ -443,24 +458,21 @@ int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
         return -1;
     uint16_t name_len = (uint16_t)name_size;
     size_t record_len = 30U + name_size + len;
-    if (record_len > UINT32_MAX - w->len ||
-        !wentries_grow(w) || !wgrow(w, record_len))
+    if (record_len > UINT32_MAX - w->len)
         return -1;
+    char name_copy[sizeof(((neverc_zip_file_header_t *)0)->name)];
+    memcpy(name_copy, name, name_size + 1U);
+    size_t data_offset = 0;
+    int data_aliases_output =
+        zip_writer_data_offset(w, data, len, &data_offset);
     uint32_t crc = neverc_crc32_ieee(data, len);
+    if (!wgrow(w, record_len)) return -1;
+    if (data_aliases_output) data = w->data + data_offset;
 
-    w->offsets[w->nentries] = (uint32_t)w->len;
-
-    neverc_zip_file_header_t *e = &w->entries[w->nentries];
-    memset(e, 0, sizeof(*e));
-    memcpy(e->name, name, name_len < 255 ? name_len : 255);
-    e->method = NEVERC_ZIP_STORED;
-    e->crc32 = crc;
-    e->compressed_size = len;
-    e->uncompressed_size = len;
-    w->nentries++;
-
-    /* Local file header */
+    /* Copy data before writing its header so even an overlapping view into the
+     * writer allocation observes the bytes supplied at call entry. */
     uint8_t *p = w->data + w->len;
+    if (len > 0) memmove(p + 30 + name_len, data, len);
     write32(p, 0x04034b50);
     write16(p + 4, 20);
     write16(p + 6, 0);
@@ -472,8 +484,20 @@ int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
     write32(p + 22, (uint32_t)len);
     write16(p + 26, name_len);
     write16(p + 28, 0);
-    memcpy(p + 30, name, name_len);
-    if (len > 0) memcpy(p + 30 + name_len, data, len);
+    memcpy(p + 30, name_copy, name_len);
+
+    /* Grow entry metadata only after all caller-owned input has been copied:
+     * name/data may themselves be views into the old metadata arrays. */
+    if (!wentries_grow(w)) return -1;
+    w->offsets[w->nentries] = (uint32_t)w->len;
+    neverc_zip_file_header_t *e = &w->entries[w->nentries];
+    memset(e, 0, sizeof(*e));
+    memcpy(e->name, name_copy, name_len < 255 ? name_len : 255);
+    e->method = NEVERC_ZIP_STORED;
+    e->crc32 = crc;
+    e->compressed_size = len;
+    e->uncompressed_size = len;
+    w->nentries++;
     w->len += 30 + name_len + len;
 
     return 0;
