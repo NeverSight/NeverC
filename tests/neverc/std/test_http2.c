@@ -2770,6 +2770,16 @@ static void h2_run_adversarial_response_child(
         h2_drain_frame_payload(fd, length) != 0)
         _exit(1);
 
+    /* This case exercises request validation performed before any stream is
+     * sent. Do not race the client's immediate close by writing server frames. */
+    if (response_kind == 18) {
+        char drain[256];
+        while (read(fd, drain, sizeof(drain)) > 0) { }
+        neverc_tcp_close(connection);
+        neverc_tcp_listener_close(listener);
+        _exit(0);
+    }
+
     if (response_kind == 2 || response_kind == 16) {
         uint8_t forbidden_settings[NC_H2_FRAME_HEADER_SIZE] = {
             0, 0, 6, NC_H2_FRAME_SETTINGS, 0, 0, 0, 0, 0};
@@ -2937,14 +2947,6 @@ static void h2_run_adversarial_response_child(
     if (sock_write_all(fd, server_settings, sizeof(server_settings)) != 0 ||
         sock_write_all(fd, settings_ack, sizeof(settings_ack)) != 0)
         _exit(1);
-
-    if (response_kind == 18) {
-        char drain[256];
-        while (read(fd, drain, sizeof(drain)) > 0) { }
-        neverc_tcp_close(connection);
-        neverc_tcp_listener_close(listener);
-        _exit(0);
-    }
 
     int request_headers_seen = 0;
     while (!request_headers_seen) {
