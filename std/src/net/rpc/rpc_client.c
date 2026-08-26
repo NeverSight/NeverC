@@ -1355,6 +1355,10 @@ int neverc_rpc_client_call_ex(
     neverc_rpc_status_t *status,
     const neverc_rpc_call_options_t *options) {
     if (response_length) *response_length = 0;
+    if (status) {
+        status->code = NEVERC_RPC_STATUS_UNKNOWN;
+        status->message = NULL;
+    }
     neverc_rpc_call_options_t effective = options
         ? *options : neverc_rpc_call_options_default();
     if (!client || !context || !response_length || !status ||
@@ -1367,8 +1371,6 @@ int neverc_rpc_client_call_ex(
         effective.max_attempts == 0 || effective.max_attempts > 16 ||
         (!effective.idempotent && effective.max_attempts != 1))
         return NEVERC_RPC_IO_INVALID;
-    status->code = NEVERC_RPC_STATUS_UNKNOWN;
-    status->message = NULL;
     int final_result = NEVERC_RPC_IO_CLOSED;
     for (size_t attempt = 0; attempt < effective.max_attempts; attempt++) {
         *response_length = 0;

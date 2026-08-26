@@ -843,6 +843,7 @@ TEST_F(StdLibTest, HpackAllocationFailure) {
 
 // ===== Native RPC / gRPC =====
 STD_TEST(rpc)
+STD_TEST(rpc_server_queue, "src/thread/thread.c", "src/context/context.c")
 STD_TEST(grpc)
 
 // ===== QUIC / HTTP/3 experimental components =====

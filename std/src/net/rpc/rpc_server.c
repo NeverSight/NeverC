@@ -4,6 +4,7 @@
 #include "neverc/std/net/quic.h"
 #include "neverc/std/net/tcp.h"
 #include "neverc/std/thread.h"
+#include "_rpc_server_queue.h"
 #include "../_net_buffer.h"
 #include "../_net_platform.h"
 #include "../_net_thread.h"
@@ -262,8 +263,9 @@ static neverc_rpc_server_stream_t *rpc_server_find_stream_locked(
 }
 
 static int rpc_server_queue_frame(
-    rpc_server_connection_t *connection, neverc_context_t *context,
-    const neverc_rpc_frame_header_t *header, const void *payload) {
+    rpc_server_connection_t *connection, nc_rpc_server_queue_mode_t mode,
+    neverc_context_t *context, const neverc_rpc_frame_header_t *header,
+    const void *payload) {
     if (!connection || !header || !nc_atomic_load(&connection->running))
         return NEVERC_RPC_IO_CLOSED;
     size_t total = NEVERC_RPC_FRAME_HEADER_SIZE +
@@ -279,15 +281,15 @@ static int rpc_server_queue_frame(
         free(outbound);
         return NEVERC_RPC_IO_INVALID;
     }
-    int queued = context
-        ? neverc_thread_channel_send_context(connection->send_queue, context,
-                                             outbound)
-        : neverc_thread_channel_try_send(connection->send_queue, outbound);
+    int queued = nc_rpc_server_queue_send(
+        connection->send_queue, context, mode, outbound);
     if (queued != NEVERC_THREAD_OK) free(outbound);
     if (queued == NEVERC_THREAD_CANCELLED)
         return NEVERC_RPC_IO_CANCELLED;
     if (queued == NEVERC_THREAD_WOULD_BLOCK)
         return NEVERC_RPC_IO_WOULD_BLOCK;
+    if (queued == NEVERC_THREAD_INVALID)
+        return NEVERC_RPC_IO_INVALID;
     return queued == NEVERC_THREAD_OK ? NEVERC_RPC_IO_OK
                                      : NEVERC_RPC_IO_CLOSED;
 }
@@ -434,9 +436,20 @@ int neverc_rpc_server_stream_recv(
     }
     if (received != NEVERC_THREAD_OK) return NEVERC_RPC_IO_CLOSED;
     rpc_server_inbound_t *inbound = (rpc_server_inbound_t *)value;
-    if (inbound->header.type != NEVERC_RPC_FRAME_DATA ||
-        inbound->header.payload_length > buflen) {
+    if (inbound->header.type != NEVERC_RPC_FRAME_DATA) {
         free(inbound);
+        return NEVERC_RPC_IO_INVALID;
+    }
+    if (inbound->header.payload_length > buflen) {
+        free(inbound);
+        (void)neverc_rpc_server_stream_end(
+            stream, NEVERC_RPC_STATUS_RESOURCE_EXHAUSTED,
+            "RPC receive buffer is too small");
+        nc_mutex_lock(&stream->lock);
+        stream->receive_closed = 1;
+        neverc_context_cancel_handle_cancel(stream->cancel);
+        neverc_thread_channel_close(stream->receive_queue);
+        nc_mutex_unlock(&stream->lock);
         return NEVERC_RPC_IO_INVALID;
     }
     if (inbound->header.payload_length > 0)
@@ -474,9 +487,9 @@ int neverc_rpc_server_stream_send(
         header.flags = NEVERC_RPC_FLAG_RESPONSE;
         header.payload_length = (uint32_t)chunk;
         header.request_id = stream->request_id;
-        int result = rpc_server_queue_frame(stream->connection,
-                                             stream->context, &header,
-                                             (const uint8_t *)data + sent);
+        int result = rpc_server_queue_frame(
+            stream->connection, NC_RPC_SERVER_QUEUE_STREAM,
+            stream->context, &header, (const uint8_t *)data + sent);
         if (result != NEVERC_RPC_IO_OK) {
             nc_mutex_unlock(&stream->send_lock);
             return result;
@@ -489,7 +502,7 @@ int neverc_rpc_server_stream_send(
 
 static int rpc_server_stream_end_internal(
     neverc_rpc_server_stream_t *stream, neverc_rpc_status_code_t code,
-    const char *message, neverc_context_t *queue_context) {
+    const char *message) {
     size_t message_length = message ? strlen(message) : 0;
     if (!stream || !neverc_rpc_status_code_valid((uint32_t)code) ||
         message_length > stream->connection->server->config.max_frame_size)
@@ -511,8 +524,9 @@ static int rpc_server_stream_end_internal(
     header.payload_length = (uint32_t)message_length;
     header.request_id = stream->request_id;
     header.code = (uint32_t)code;
-    int result = rpc_server_queue_frame(stream->connection, queue_context,
-                                        &header, message);
+    int result = rpc_server_queue_frame(
+        stream->connection, NC_RPC_SERVER_QUEUE_TERMINAL, NULL,
+        &header, message);
     if (result == NEVERC_RPC_IO_OK) {
         nc_mutex_lock(&stream->lock);
         stream->ended = 1;
@@ -522,13 +536,26 @@ static int rpc_server_stream_end_internal(
     return result;
 }
 
+static int rpc_server_terminal_missing(
+    neverc_rpc_server_stream_t *stream, int result) {
+    if (!stream || result == NEVERC_RPC_IO_OK ||
+        result == NEVERC_RPC_IO_INVALID)
+        return 0;
+    nc_mutex_lock(&stream->lock);
+    int missing = !stream->ended;
+    nc_mutex_unlock(&stream->lock);
+    return missing;
+}
+
 int neverc_rpc_server_stream_end(
     neverc_rpc_server_stream_t *stream, neverc_rpc_status_code_t code,
     const char *message) {
-    /* END must not use a already-done stream context: send_context then
-     * cancels and the status frame is dropped. try_send (NULL) matches
-     * the other server teardown paths. */
-    return rpc_server_stream_end_internal(stream, code, message, NULL);
+    /* END must outlive the request context and acquire FIFO ownership.
+     * Connection shutdown closes the queue and wakes a blocked enqueue. */
+    int result = rpc_server_stream_end_internal(stream, code, message);
+    if (rpc_server_terminal_missing(stream, result))
+        rpc_server_stop_connection(stream->connection);
+    return result;
 }
 
 static void rpc_server_handler_task(void *arg) {
@@ -706,10 +733,9 @@ static int rpc_server_dispatch_open(rpc_server_connection_t *connection,
         neverc_rpc_status_code_t status = !method
             ? NEVERC_RPC_STATUS_NOT_FOUND
             : NEVERC_RPC_STATUS_DEADLINE_EXCEEDED;
-        (void)rpc_server_stream_end_internal(
+        (void)neverc_rpc_server_stream_end(
             stream, status,
-            !method ? "RPC method not found" : "RPC deadline expired",
-            NULL);
+            !method ? "RPC method not found" : "RPC deadline expired");
         rpc_server_stream_destroy(stream);
         return 0;
     }
@@ -725,9 +751,9 @@ static int rpc_server_dispatch_open(rpc_server_connection_t *connection,
         if (connection->active_handlers == 0)
             nc_cond_broadcast(&connection->handlers_done);
         nc_mutex_unlock(&connection->handlers_lock);
-        (void)rpc_server_stream_end_internal(
+        (void)neverc_rpc_server_stream_end(
             stream, NEVERC_RPC_STATUS_RESOURCE_EXHAUSTED,
-            "RPC handler queue is full", NULL);
+            "RPC handler queue is full");
         rpc_server_stream_destroy(stream);
     }
     return 0;
@@ -757,6 +783,7 @@ static int rpc_server_dispatch_request_frame(
                    frame->header.payload_length);
     }
 
+    int stop_connection_after_unlock = 0;
     nc_mutex_lock(&connection->streams_lock);
     neverc_rpc_server_stream_t *stream = rpc_server_find_stream_locked(
         connection, frame->header.request_id);
@@ -773,10 +800,14 @@ static int rpc_server_dispatch_request_frame(
         /* Hold streams_lock across END so destroy cannot free `stream`
          * after we drop the table lock. DATA after END is a stream error,
          * not a connection kill, so a bidi handler can still finish. */
-        (void)rpc_server_stream_end_internal(
+        int end_result = rpc_server_stream_end_internal(
             stream, NEVERC_RPC_STATUS_DATA_LOSS,
-            "RPC DATA after end of stream", NULL);
+            "RPC DATA after end of stream");
+        int stop_connection =
+            rpc_server_terminal_missing(stream, end_result);
         nc_mutex_unlock(&connection->streams_lock);
+        if (stop_connection)
+            rpc_server_stop_connection(connection);
         return 0;
     }
     if (frame->header.type == NEVERC_RPC_FRAME_CANCEL) {
@@ -794,9 +825,11 @@ static int rpc_server_dispatch_request_frame(
                 free(inbound);
                 inbound = NULL;
                 if (queued == NEVERC_THREAD_WOULD_BLOCK) {
-                    (void)rpc_server_stream_end_internal(
+                    int end_result = rpc_server_stream_end_internal(
                         stream, NEVERC_RPC_STATUS_RESOURCE_EXHAUSTED,
-                        "RPC request receive queue is full", NULL);
+                        "RPC request receive queue is full");
+                    if (rpc_server_terminal_missing(stream, end_result))
+                        stop_connection_after_unlock = 1;
                     neverc_context_cancel_handle_cancel(stream->cancel);
                     neverc_thread_channel_close(stream->receive_queue);
                 }
@@ -810,6 +843,8 @@ static int rpc_server_dispatch_request_frame(
         }
     }
     nc_mutex_unlock(&connection->streams_lock);
+    if (stop_connection_after_unlock)
+        rpc_server_stop_connection(connection);
     return 0;
 }
 
@@ -821,8 +856,9 @@ static int rpc_server_dispatch_frame(rpc_server_connection_t *connection,
         header.version = NEVERC_RPC_VERSION_1;
         header.type = NEVERC_RPC_FRAME_PONG;
         header.payload_length = frame->header.payload_length;
-        return rpc_server_queue_frame(connection, NULL, &header,
-                                      frame->payload) == NEVERC_RPC_IO_OK
+        return rpc_server_queue_frame(
+                   connection, NC_RPC_SERVER_QUEUE_CONTROL, NULL,
+                   &header, frame->payload) == NEVERC_RPC_IO_OK
                    ? 0 : -1;
     }
     if (frame->header.type == NEVERC_RPC_FRAME_PONG) return 0;

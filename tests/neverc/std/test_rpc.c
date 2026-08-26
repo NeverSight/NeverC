@@ -37,6 +37,8 @@ typedef struct {
     atomic_int hook_state;
     atomic_int hook_errors;
     atomic_int last_recv_result;
+    atomic_int first_short_recv_result;
+    atomic_int second_short_recv_result;
 } rpc_test_server_t;
 
 static void rpc_test_echo_handler(neverc_rpc_server_stream_t *stream,
@@ -73,6 +75,25 @@ static void rpc_test_slow_handler(neverc_rpc_server_stream_t *stream,
     (void)stream;
     (void)context;
     neverc_time_sleep(1000 * NEVERC_TIME_MILLISECOND);
+}
+
+static void rpc_test_short_buffer_handler(
+    neverc_rpc_server_stream_t *stream, void *context) {
+    rpc_test_server_t *test = (rpc_test_server_t *)context;
+    while (atomic_load_explicit(&test->hook_state,
+                                memory_order_acquire) == 0)
+        neverc_time_sleep(1 * NEVERC_TIME_MILLISECOND);
+    uint8_t byte = 0;
+    size_t length = 0;
+    int first = neverc_rpc_server_stream_recv(
+        stream, &byte, sizeof(byte), &length);
+    int second = neverc_rpc_server_stream_recv(
+        stream, &byte, sizeof(byte), &length);
+    atomic_store_explicit(&test->first_short_recv_result, first,
+                          memory_order_relaxed);
+    atomic_store_explicit(&test->second_short_recv_result, second,
+                          memory_order_relaxed);
+    atomic_store_explicit(&test->hook_state, 2, memory_order_release);
 }
 
 static void rpc_test_retry_handler(neverc_rpc_server_stream_t *stream,
@@ -296,8 +317,11 @@ static int rpc_test_stream_roundtrip(neverc_rpc_client_t *client) {
         memcmp(response, second, length) != 0)
         goto stream_done;
     if (neverc_rpc_stream_recv(stream, context, response, sizeof(response),
-                               &length) != NEVERC_RPC_IO_END ||
-        neverc_rpc_stream_status(stream).code != NEVERC_RPC_STATUS_OK)
+                               &length) != NEVERC_RPC_IO_END)
+        goto stream_done;
+    neverc_rpc_status_t stream_status = neverc_rpc_stream_status(stream);
+    if (stream_status.code != NEVERC_RPC_STATUS_OK ||
+        !stream_status.message || stream_status.message[0] != '\0')
         goto stream_done;
     result = 0;
 
@@ -341,6 +365,7 @@ static int rpc_test_unary_call(
               &response_length, &status);
     int valid = result == NEVERC_RPC_IO_OK &&
                 status.code == expected_status &&
+                status.message == NULL &&
                 (expected_status != NEVERC_RPC_STATUS_OK ||
                  (response_length == sizeof(request) - 1U &&
                   memcmp(response, request, response_length) == 0));
@@ -575,9 +600,17 @@ static void rpc_test_frame_codec(void) {
     end.header.request_id = 1U;
     CHECK(neverc_rpc_frame_encode(&end, encoded, sizeof(encoded),
                                   &encoded_length) == -1);
+    end.header.flags = NEVERC_RPC_FLAG_END_STREAM;
+    CHECK(neverc_rpc_frame_encode(&end, encoded, sizeof(encoded),
+                                  &encoded_length) == -1);
     end.header.flags = NEVERC_RPC_FLAG_END_STREAM | NEVERC_RPC_FLAG_RESPONSE;
     CHECK(neverc_rpc_frame_encode(&end, encoded, sizeof(encoded),
                                   &encoded_length) == 0);
+    encoded[6] = 0;
+    encoded[7] = NEVERC_RPC_FLAG_END_STREAM;
+    CHECK(neverc_rpc_frame_decode(encoded, encoded_length, 1024U, &output,
+                                  &consumed) == -1);
+    encoded[7] = NEVERC_RPC_FLAG_END_STREAM | NEVERC_RPC_FLAG_RESPONSE;
 
     neverc_rpc_frame_t ping;
     memset(&ping, 0, sizeof(ping));
@@ -807,12 +840,132 @@ static void rpc_test_receive_backpressure(void) {
     neverc_rpc_server_free(test.server);
 }
 
+static void rpc_test_server_short_buffer_is_terminal(void) {
+    neverc_rpc_server_config_t server_config =
+        neverc_rpc_server_config_default();
+    server_config.receive_queue_capacity = 8U;
+    server_config.send_queue_capacity = 8U;
+    server_config.connection_workers = 1U;
+    server_config.connection_queue_capacity = 2U;
+    server_config.handler_workers = 1U;
+    server_config.handler_queue_capacity = 2U;
+    server_config.max_connections = 2U;
+
+    rpc_test_server_t test;
+    memset(&test, 0, sizeof(test));
+    test.result = -1;
+    test.server = neverc_rpc_server_new(&server_config);
+    CHECK(test.server != NULL);
+    if (!test.server) return;
+    CHECK(neverc_rpc_server_register(
+              test.server, "test.Buffer/Short",
+              rpc_test_short_buffer_handler, &test) ==
+          NEVERC_RPC_IO_OK);
+    neverc_thread_executor_t *executor =
+        neverc_thread_executor_create(1U, 1U);
+    CHECK(executor != NULL);
+    if (!executor) {
+        neverc_rpc_server_free(test.server);
+        return;
+    }
+    CHECK(neverc_thread_executor_submit(executor, rpc_test_server_task,
+                                         &test) == NEVERC_THREAD_OK);
+    int port = rpc_test_wait_ready(test.server);
+    CHECK(port > 0);
+    char address[64];
+    (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
+
+    neverc_rpc_client_config_t client_config =
+        neverc_rpc_client_config_default();
+    client_config.send_queue_capacity = 8U;
+    const char *error = NULL;
+    neverc_rpc_client_t *client = rpc_test_dial(
+        address, &client_config, &error);
+    CHECK(client != NULL);
+    if (client) {
+        neverc_context_cancel_handle_t *cancel = NULL;
+        neverc_context_t *background = neverc_context_background();
+        neverc_context_t *context = background
+            ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+            : NULL;
+        CHECK(context != NULL && cancel != NULL);
+        neverc_rpc_stream_t *stream = context
+            ? neverc_rpc_stream_open(client, context,
+                                     "test.Buffer/Short", NULL, 0U, 0,
+                                     &error)
+            : NULL;
+        CHECK(stream != NULL);
+        if (stream) {
+            static const uint8_t oversized[] = {0xa5U, 0x5aU};
+            static const uint8_t following[] = {0x11U};
+            CHECK(neverc_rpc_stream_send(
+                      stream, context, oversized, sizeof(oversized)) ==
+                  NEVERC_RPC_IO_OK);
+            CHECK(neverc_rpc_stream_send(
+                      stream, context, following, sizeof(following)) ==
+                  NEVERC_RPC_IO_OK);
+            CHECK(neverc_rpc_stream_close_send(stream, context) ==
+                  NEVERC_RPC_IO_OK);
+            atomic_store_explicit(&test.hook_state, 1,
+                                  memory_order_release);
+
+            uint8_t response[8];
+            size_t response_length = 0;
+            CHECK(neverc_rpc_stream_recv(
+                      stream, context, response, sizeof(response),
+                      &response_length) == NEVERC_RPC_IO_END);
+            CHECK(neverc_rpc_stream_status(stream).code ==
+                  NEVERC_RPC_STATUS_RESOURCE_EXHAUSTED);
+            for (int attempt = 0; attempt < 500; attempt++) {
+                if (atomic_load_explicit(&test.hook_state,
+                                         memory_order_acquire) == 2)
+                    break;
+                neverc_time_sleep(1 * NEVERC_TIME_MILLISECOND);
+            }
+            CHECK(atomic_load_explicit(&test.hook_state,
+                                       memory_order_acquire) == 2);
+            CHECK(atomic_load_explicit(&test.first_short_recv_result,
+                                       memory_order_relaxed) ==
+                  NEVERC_RPC_IO_INVALID);
+            CHECK(atomic_load_explicit(&test.second_short_recv_result,
+                                       memory_order_relaxed) ==
+                  NEVERC_RPC_IO_CANCELLED);
+            neverc_rpc_stream_free(stream);
+        }
+        if (cancel) {
+            neverc_context_cancel_handle_cancel(cancel);
+            neverc_context_cancel_handle_free(cancel);
+        }
+        neverc_context_free(context);
+        neverc_context_free(background);
+        neverc_rpc_client_close(client);
+    }
+    neverc_rpc_server_shutdown(test.server);
+    CHECK(neverc_thread_executor_shutdown(executor) == NEVERC_THREAD_OK);
+    CHECK(test.result == 0);
+    neverc_thread_executor_free(executor);
+    neverc_rpc_server_free(test.server);
+}
+
 static void rpc_test_invalid_mtls_config(void) {
     neverc_rpc_client_config_t config = neverc_rpc_client_config_default();
     config.client_cert_file = "client.pem";
     const char *error = NULL;
     CHECK(neverc_rpc_client_dial("127.0.0.1:1", &config, &error) == NULL);
     CHECK(error != NULL && strstr(error, "invalid") != NULL);
+}
+
+static void rpc_test_invalid_unary_status(void) {
+    neverc_rpc_status_t status = {
+        NEVERC_RPC_STATUS_OK, "sentinel"};
+    size_t response_length = SIZE_MAX;
+    CHECK(neverc_rpc_client_call_ex(
+              NULL, NULL, "test.Invalid/Call", NULL, 0U, NULL, 0U,
+              NULL, 0U, &response_length, &status, NULL) ==
+          NEVERC_RPC_IO_INVALID);
+    CHECK(response_length == 0U);
+    CHECK(status.code == NEVERC_RPC_STATUS_UNKNOWN);
+    CHECK(status.message == NULL);
 }
 
 static void rpc_test_tenant_rate_limit(void) {
@@ -1586,9 +1739,11 @@ int main(void) {
     rpc_test_goaway_ok_not_success();
     rpc_test_goaway_unknown_not_success();
     rpc_test_invalid_mtls_config();
+    rpc_test_invalid_unary_status();
     rpc_test_peer_cancel_is_not_eof();
     rpc_test_call_deadline();
     rpc_test_receive_backpressure();
+    rpc_test_server_short_buffer_is_terminal();
     rpc_test_tenant_rate_limit();
     rpc_test_reconnect_roundtrip();
     rpc_test_roundtrip(0, 0);

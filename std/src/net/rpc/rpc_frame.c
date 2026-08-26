@@ -61,7 +61,7 @@ static int rpc_frame_header_valid(const neverc_rpc_frame_header_t *header) {
     case NEVERC_RPC_FRAME_END:
         allowed_flags = NEVERC_RPC_FLAG_END_STREAM |
                         NEVERC_RPC_FLAG_RESPONSE;
-        if ((header->flags & NEVERC_RPC_FLAG_END_STREAM) == 0) return 0;
+        if ((header->flags & allowed_flags) != allowed_flags) return 0;
         break;
     case NEVERC_RPC_FRAME_CANCEL:
         allowed_flags = NEVERC_RPC_FLAG_RESPONSE;

@@ -153,7 +153,8 @@ typedef struct {
 
 typedef struct {
     neverc_rpc_status_code_t code;
-    const char *message; /* stream-owned; valid until stream_free */
+    const char *message; /* Stream API: stream-owned until stream_free.
+                          * Unary API: always NULL when status is non-NULL. */
 } neverc_rpc_status_t;
 
 typedef struct {
@@ -226,7 +227,9 @@ uint64_t neverc_rpc_stream_id(neverc_rpc_stream_t *stream);
 void neverc_rpc_stream_free(neverc_rpc_stream_t *stream);
 
 /* Unary raw/JSON call primitive. The request is sent as one logical message;
- * the response must fit response_capacity. */
+ * the response must fit response_capacity. The internal stream is released
+ * before return, so status.message is always NULL; status.code is preserved.
+ * Use the stream API when the peer's status text is required. */
 int neverc_rpc_client_call(
     neverc_rpc_client_t *client, neverc_context_t *context,
     const char *method, const neverc_rpc_metadata_t *metadata,
@@ -342,11 +345,15 @@ neverc_rpc_codec_t neverc_rpc_server_stream_codec(
  * view remains valid for the lifetime of the server stream. */
 const uint8_t *neverc_rpc_server_stream_peer_certificate(
     neverc_rpc_server_stream_t *stream, size_t *out_len);
+/* Receives one complete request DATA frame. buflen must fit that frame;
+ * otherwise the stream ends with RESOURCE_EXHAUSTED and INVALID is returned. */
 int neverc_rpc_server_stream_recv(
     neverc_rpc_server_stream_t *stream, void *buf, size_t buflen,
     size_t *out_len);
 int neverc_rpc_server_stream_send(
     neverc_rpc_server_stream_t *stream, const void *data, size_t len);
+/* Queues the terminal status in FIFO order. This may block on bounded
+ * connection backpressure until the writer drains or the connection closes. */
 int neverc_rpc_server_stream_end(
     neverc_rpc_server_stream_t *stream, neverc_rpc_status_code_t code,
     const char *message);
