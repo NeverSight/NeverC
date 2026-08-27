@@ -184,18 +184,28 @@ static int udp_prepare_send_addr(const neverc_udp_conn_t *conn,
                                  const struct sockaddr **sa,
                                  socklen_t *salen,
                                  struct sockaddr_storage *scratch) {
-    const struct sockaddr *src = (const struct sockaddr *)destination->_sa;
+    /* _sa starts at an odd offset inside the released neverc_udp_addr_t
+     * layout, so reading it through a sockaddr pointer is a misaligned
+     * access. Work from an aligned copy instead. */
+    struct sockaddr_storage source;
+    if (destination->_sa_len <= 0 ||
+        (size_t)destination->_sa_len > sizeof(source))
+        return -1;
+    memset(&source, 0, sizeof(source));
+    memcpy(&source, destination->_sa, (size_t)destination->_sa_len);
+
     int sock_family = conn->local.ss_family;
-    int dest_family = src->sa_family;
+    int dest_family = source.ss_family;
 
     if (dest_family == sock_family) {
-        *sa = src;
+        memcpy(scratch, &source, sizeof(*scratch));
+        *sa = (const struct sockaddr *)scratch;
         *salen = (socklen_t)destination->_sa_len;
         return 0;
     }
 
     if (sock_family == AF_INET6 && dest_family == AF_INET) {
-        const struct sockaddr_in *in4 = (const struct sockaddr_in *)src;
+        const struct sockaddr_in *in4 = (const struct sockaddr_in *)&source;
         struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)scratch;
         memset(in6, 0, sizeof(*in6));
         in6->sin6_family = AF_INET6;
@@ -213,7 +223,7 @@ static int udp_prepare_send_addr(const neverc_udp_conn_t *conn,
     }
 
     if (sock_family == AF_INET && dest_family == AF_INET6) {
-        const struct sockaddr_in6 *in6 = (const struct sockaddr_in6 *)src;
+        const struct sockaddr_in6 *in6 = (const struct sockaddr_in6 *)&source;
         if (!nc_in6_is_addr_v4mapped(&in6->sin6_addr))
             return -1;
         struct sockaddr_in *in4 = (struct sockaddr_in *)scratch;
