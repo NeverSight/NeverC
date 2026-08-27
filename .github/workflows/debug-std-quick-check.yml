@@ -14,6 +14,10 @@ on:
         description: 'space-separated extra -D macros'
         required: false
         default: ''
+      timeout:
+        description: 'per-test run timeout in seconds'
+        required: false
+        default: '60'
 
 permissions:
   contents: read
@@ -21,7 +25,7 @@ permissions:
 jobs:
   quick-check:
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,6 +40,7 @@ jobs:
           QUICK_TESTS: ${{ inputs.tests }}
           QUICK_SANITIZE: ${{ inputs.sanitize }}
           QUICK_DEFINES: ${{ inputs.defines }}
+          QUICK_TIMEOUT: ${{ inputs.timeout }}
         run: |
           define_args=()
           for macro in $QUICK_DEFINES; do
@@ -44,5 +49,6 @@ jobs:
           python3 utils/ci/std-quick-check.py \
             --cc clang \
             --sanitize "$QUICK_SANITIZE" \
+            --timeout "$QUICK_TIMEOUT" \
             --tests "$QUICK_TESTS" \
             "${define_args[@]}"
