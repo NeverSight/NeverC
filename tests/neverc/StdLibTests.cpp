@@ -741,7 +741,8 @@ STD_TEST(atomic, "src/sync/atomic/atomic.c")
     "src/context/context.c"
 
 #define URL_DEPS \
-    "src/net/url/url.c", "src/net/netip/netip.c"
+    "src/net/url/url.c", "src/net/netip/netip.c", \
+    "src/unicode/unicode.c"
 
 STD_TEST(tcp, TCP_DEPS)
 STD_TEST(udp, "src/net/udp/udp.c", "src/net/udp/udp_context.c",
@@ -829,9 +830,8 @@ TEST_F(StdLibTest, HttpClientAllocationFailure) {
 #endif
 STD_TEST(websocket, "src/net/websocket/websocket.c", TCP_DEPS,
     "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", URL_DEPS, HTTP_TLS_DEPS)
-STD_TEST(url, "src/net/url/url.c", "src/net/netip/netip.c")
-STD_TEST(url_user_abi, "src/net/url/url.c", "src/net/netip/netip.c",
-    "src/os/user/user.c")
+STD_TEST(url, URL_DEPS)
+STD_TEST(url_user_abi, URL_DEPS, "src/os/user/user.c")
 STD_TEST(netip, "src/net/netip/netip.c")
 STD_TEST(mail, "src/net/mail/mail.c", "src/net/netip/netip.c")
 STD_TEST(textproto, "src/net/textproto/textproto.c")
@@ -897,21 +897,21 @@ STD_TEST(httputil, "src/net/http/httputil/httputil.c",
     "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", URL_DEPS, "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
 
 // ===== Cookie Jar =====
-STD_TEST(cookiejar, "src/net/http/cookiejar/cookiejar.c",
-         "src/net/url/url.c", "src/net/netip/netip.c")
+STD_TEST(cookiejar, "src/net/http/cookiejar/cookiejar.c", URL_DEPS)
 #ifndef _WIN32
 TEST_F(StdLibTest, CookieJarConcurrency) {
   auto r = compileAndRunStdTest(
       "cookiejar_concurrency", {"src/net/http/cookiejar/cookiejar.c",
                                 "src/net/url/url.c",
-                                "src/net/netip/netip.c"});
+                                "src/net/netip/netip.c",
+                                "src/unicode/unicode.c"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 #endif
 TEST_F(StdLibTest, CookieJarAllocationFailure) {
   auto r = compileAndRunStdTest(
-      "cookiejar_oom", {"src/net/url/url.c"},
+      "cookiejar_oom", {"src/net/url/url.c", "src/unicode/unicode.c"},
       {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
@@ -921,7 +921,8 @@ TEST_F(StdLibTest, CookieJarAllocationFailure) {
 STD_TEST(smtp, "src/net/smtp/smtp.c", TCP_DEPS, HTTP_TLS_DEPS)
 
 // ===== Net Core (DNS, Pipe, SplitHostPort) =====
-STD_TEST(resolve, "src/net/resolve/resolve.c", "src/net/netip/netip.c")
+STD_TEST(resolve, "src/net/resolve/resolve.c", "src/net/netip/netip.c",
+         "src/unicode/unicode.c")
 STD_TEST(net_interface, "src/net/interface/interface.c")
 
 // ===== Net Internals (Timer Wheel, Buffer Pool, Poller, Event Loop) =====
@@ -1296,7 +1297,6 @@ STD_TEST(dot_syntax,
     "src/cmp/cmp.c",
     "src/errors/errors.c",
     "src/bytes/bytes.c",
-    "src/unicode/unicode.c",
     "src/html/html.c",
     "src/path/base.c", "src/path/dir.c", "src/path/ext.c", "src/path/isabs.c", "src/path/clean.c",
     "src/slices/slices.c",
