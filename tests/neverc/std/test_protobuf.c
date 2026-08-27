@@ -80,7 +80,8 @@ static void test_negative_zero_is_encoded(void) {
 
     protobuf_float_message_t output;
     CHECK(neverc_protobuf_message_decode(&protobuf_float_descriptor, encoded,
-                                         encoded_length, 64U, &output) == 0);
+                                         encoded_length, 64U, &output,
+                                         sizeof(output)) == 0);
     uint32_t single_bits = 0;
     uint64_t double_bits = 0;
     memcpy(&single_bits, &output.single, sizeof(single_bits));
@@ -117,7 +118,7 @@ static void test_bool_nonzero_encodes_as_true(void) {
         protobuf_test_message_t output;
         CHECK(neverc_protobuf_message_decode(&protobuf_test_descriptor,
                                              encoded, encoded_length, 64U,
-                                             &output) == 0);
+                                             &output, sizeof(output)) == 0);
         CHECK(output.active == 1);
     }
 
