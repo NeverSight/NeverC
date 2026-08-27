@@ -1184,10 +1184,9 @@ static int run_check_extra_fd(int fd) {
     return printf("%d\n", open_now) < 0 ? 1 : 0;
 }
 #else
-static int run_check_extra_handle(uintptr_t value) {
-    DWORD flags = 0;
-    int inherited = GetHandleInformation((HANDLE)value, &flags) != 0;
-    return printf("%d\n", inherited) < 0 ? 1 : 0;
+static int run_signal_extra_handle(uintptr_t value) {
+    (void)SetEvent((HANDLE)value);
+    return 0;
 }
 #endif
 
@@ -1621,15 +1620,13 @@ static void test_child_handle_allowlist(const char *executable) {
     char value[32];
     snprintf(value, sizeof(value), "%llu",
              (unsigned long long)(uintptr_t)extra);
-    const char *args[] = {"--check-extra-handle", value};
+    const char *args[] = {"--signal-extra-handle", value};
     neverc_exec_cmd_t *cmd = neverc_exec_command(executable, args, 2);
     ASSERT_TRUE(cmd != NULL);
-    neverc_exec_output_t out = {0};
     neverc_exec_exit_status_t st = {0};
-    ASSERT_INT_EQ(neverc_exec_cmd_output(cmd, &out, &st), 0);
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
     ASSERT_INT_EQ(st.exit_code, 0);
-    ASSERT_TRUE(out.len >= 1 && out.data[0] == '0');
-    neverc_exec_output_free(&out);
+    ASSERT_INT_EQ(WaitForSingleObject(extra, 0), WAIT_TIMEOUT);
     neverc_exec_cmd_free(cmd);
     CloseHandle(extra);
 }
@@ -1649,8 +1646,9 @@ int main(int argc, char **argv) {
     if (argc == 3 && strcmp(argv[1], "--check-extra-fd") == 0)
         return run_check_extra_fd(atoi(argv[2]));
 #else
-    if (argc == 3 && strcmp(argv[1], "--check-extra-handle") == 0)
-        return run_check_extra_handle((uintptr_t)_strtoui64(argv[2], NULL, 10));
+    if (argc == 3 && strcmp(argv[1], "--signal-extra-handle") == 0)
+        return run_signal_extra_handle(
+            (uintptr_t)_strtoui64(argv[2], NULL, 10));
 #endif
     if (argc >= 2 && strcmp(argv[1], "--print-argv") == 0) {
         int i;
