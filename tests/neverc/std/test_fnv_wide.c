@@ -208,6 +208,57 @@ static int test_incremental_and_null(void) {
   return failed;
 }
 
+static int check_serialized_sequence(const char *name, const uint8_t *be,
+                                     const uint8_t *le, size_t len,
+                                     unsigned first) {
+  for (size_t i = 0; i < len; ++i) {
+    uint8_t expected_be = (uint8_t)(first + i);
+    uint8_t expected_le = (uint8_t)(first + len - i - 1);
+    if (be[i] != expected_be || le[i] != expected_le) {
+      printf("FAIL: %s byte %zu: got {%02x, %02x}, "
+             "expected {%02x, %02x}\n",
+             name, i, be[i], le[i], expected_be, expected_le);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int test_serialization_layout(void) {
+  neverc_fnv_256_t h256 = {
+      {UINT64_C(0x0001020304050607), UINT64_C(0x08090a0b0c0d0e0f),
+       UINT64_C(0x1011121314151617), UINT64_C(0x18191a1b1c1d1e1f)}};
+  neverc_fnv_512_t h512 = {
+      {UINT64_C(0x2021222324252627), UINT64_C(0x28292a2b2c2d2e2f),
+       UINT64_C(0x3031323334353637), UINT64_C(0x38393a3b3c3d3e3f),
+       UINT64_C(0x4041424344454647), UINT64_C(0x48494a4b4c4d4e4f),
+       UINT64_C(0x5051525354555657), UINT64_C(0x58595a5b5c5d5e5f)}};
+  neverc_fnv_1024_t h1024 = {
+      {UINT64_C(0x8081828384858687), UINT64_C(0x88898a8b8c8d8e8f),
+       UINT64_C(0x9091929394959697), UINT64_C(0x98999a9b9c9d9e9f),
+       UINT64_C(0xa0a1a2a3a4a5a6a7), UINT64_C(0xa8a9aaabacadaeaf),
+       UINT64_C(0xb0b1b2b3b4b5b6b7), UINT64_C(0xb8b9babbbcbdbebf),
+       UINT64_C(0xc0c1c2c3c4c5c6c7), UINT64_C(0xc8c9cacbcccdcecf),
+       UINT64_C(0xd0d1d2d3d4d5d6d7), UINT64_C(0xd8d9dadbdcdddedf),
+       UINT64_C(0xe0e1e2e3e4e5e6e7), UINT64_C(0xe8e9eaebecedeeef),
+       UINT64_C(0xf0f1f2f3f4f5f6f7), UINT64_C(0xf8f9fafbfcfdfeff)}};
+  uint8_t be[128], le[128];
+
+  neverc_fnv_store256_be(be, h256);
+  neverc_fnv_store256_le(le, h256);
+  if (check_serialized_sequence("fnv256 serialization", be, le, 32, 0))
+    return 1;
+
+  neverc_fnv_store512_be(be, h512);
+  neverc_fnv_store512_le(le, h512);
+  if (check_serialized_sequence("fnv512 serialization", be, le, 64, 0x20))
+    return 1;
+
+  neverc_fnv_store1024_be(be, h1024);
+  neverc_fnv_store1024_le(le, h1024);
+  return check_serialized_sequence("fnv1024 serialization", be, le, 128, 0x80);
+}
+
 int main(void) {
   static const uint64_t fnv256_offset[4] = {
       UINT64_C(0xdd268dbcaac55036), UINT64_C(0x2d98c384c4e576cc),
@@ -340,7 +391,8 @@ int main(void) {
     }
   }
 
-  if (test_additional_vectors() || test_incremental_and_null())
+  if (test_serialization_layout() || test_additional_vectors() ||
+      test_incremental_and_null())
     return 1;
 
   if (sizeof(neverc_fnv_256_t) != 32 || sizeof(neverc_fnv_512_t) != 64 ||
