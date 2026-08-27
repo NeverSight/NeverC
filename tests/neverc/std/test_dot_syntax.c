@@ -487,6 +487,7 @@ static void test_hash_fnv_dot_syntax(void) {
 
     uint64_t h64 = hash.fnv.sum64a("hello", 5);
     CHECK("hash.fnv.sum64a_nonzero", h64 != 0);
+    CHECK("hash.fnv.sum64a_known", h64 == 0xa430d84680aabd0bULL);
 
     uint32_t h32_update =
         hash.fnv.update32(NEVERC_FNV32_OFFSET_BASIS, "he", 2);

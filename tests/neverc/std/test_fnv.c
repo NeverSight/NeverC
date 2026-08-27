@@ -138,6 +138,45 @@ static void test_binary_inputs(void) {
               0x089be207b544f1e4ULL);
 }
 
+static void test_long_vectors(void) {
+    printf("[long vectors]\n");
+    static const struct {
+        const char *name;
+        const char *data;
+        size_t len;
+        uint32_t fnv32;
+        uint32_t fnv32a;
+        uint64_t fnv64;
+        uint64_t fnv64a;
+    } vectors[] = {
+        {"len8", "12345678", 8, 0x043ef075U, 0x0aa8abcdU,
+         0x30d2b8e185b11fd5ULL, 0x173932c41a90a42dULL},
+        {"len9", "123456789", 9, 0x24148816U, 0xbb86b11cU,
+         0xa72ffc362bf916d6ULL, 0x06d5573923c6cdfcULL},
+        {"len16", "0123456789abcdef", 16, 0x9e1b6f41U, 0x87bc333dU,
+         0x4fa333c33b82ecc1ULL, 0x2e373913e5ad677dULL},
+        {"fox", "The quick brown fox jumps over the lazy dog", 43,
+         0xe9c86c6eU, 0x048fff90U, 0xa8b2f3117de37aceULL,
+         0xf3f9b7f5e7e47110ULL}
+    };
+
+    for (size_t i = 0; i < sizeof(vectors) / sizeof(vectors[0]); i++) {
+        char label[64];
+        snprintf(label, sizeof(label), "fnv32(%s)", vectors[i].name);
+        check_u32(label, neverc_fnv_sum32(vectors[i].data, vectors[i].len),
+                  vectors[i].fnv32);
+        snprintf(label, sizeof(label), "fnv32a(%s)", vectors[i].name);
+        check_u32(label, neverc_fnv_sum32a(vectors[i].data, vectors[i].len),
+                  vectors[i].fnv32a);
+        snprintf(label, sizeof(label), "fnv64(%s)", vectors[i].name);
+        check_u64(label, neverc_fnv_sum64(vectors[i].data, vectors[i].len),
+                  vectors[i].fnv64);
+        snprintf(label, sizeof(label), "fnv64a(%s)", vectors[i].name);
+        check_u64(label, neverc_fnv_sum64a(vectors[i].data, vectors[i].len),
+                  vectors[i].fnv64a);
+    }
+}
+
 static void test_incremental(void) {
     printf("[incremental]\n");
     static const uint8_t data[] = {
@@ -261,6 +300,7 @@ int main(void) {
     test_fnv128();
     test_fnv128a();
     test_binary_inputs();
+    test_long_vectors();
     test_incremental();
     test_consistency();
     test_null_data();
