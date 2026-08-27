@@ -72,7 +72,7 @@ def load_registry():
     return registry
 
 
-def compile_command(cc, name, sources, sanitize, defines, out):
+def compile_command(cc, name, sources, sanitize, defines, extra, out):
     args = [
         cc,
         "-std=gnu11",
@@ -88,6 +88,7 @@ def compile_command(cc, name, sources, sanitize, defines, out):
     ]
     if sanitize and sanitize != "none":
         args.append(f"-fsanitize={sanitize}")
+    args.extend(extra)
     args.extend(f"-D{d}" for d in defines)
     args.append(str(TEST_DIR / f"test_{name}.c"))
     args.extend(str(REPO / "std" / source) for source in sorted(sources))
@@ -95,10 +96,10 @@ def compile_command(cc, name, sources, sanitize, defines, out):
     return args
 
 
-def run_one(cc, name, sources, sanitize, defines, timeout, workdir):
+def run_one(cc, name, sources, sanitize, defines, extra, timeout, workdir):
     binary = os.path.join(workdir, f"test_{name}")
     build = subprocess.run(
-        compile_command(cc, name, sources, sanitize, defines, binary),
+        compile_command(cc, name, sources, sanitize, defines, extra, binary),
         capture_output=True,
         text=True,
     )
@@ -147,6 +148,12 @@ def main():
         default=[],
         help="extra -D macro, repeatable",
     )
+    parser.add_argument(
+        "--extra",
+        action="append",
+        default=[],
+        help="extra compiler flag, repeatable",
+    )
     parser.add_argument("--timeout", type=int, default=120)
     parser.add_argument(
         "--list", action="store_true", help="print the registry and exit"
@@ -185,6 +192,7 @@ def main():
                 sources,
                 args.sanitize,
                 args.define + defines,
+                args.extra,
                 args.timeout,
                 workdir,
             )

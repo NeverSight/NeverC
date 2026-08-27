@@ -18,6 +18,10 @@ on:
         description: 'per-test run timeout in seconds'
         required: false
         default: '60'
+      extra:
+        description: 'space-separated extra compiler flags'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -41,10 +45,14 @@ jobs:
           QUICK_SANITIZE: ${{ inputs.sanitize }}
           QUICK_DEFINES: ${{ inputs.defines }}
           QUICK_TIMEOUT: ${{ inputs.timeout }}
+          QUICK_EXTRA: ${{ inputs.extra }}
         run: |
           define_args=()
           for macro in $QUICK_DEFINES; do
             define_args+=(--define "$macro")
+          done
+          for flag in $QUICK_EXTRA; do
+            define_args+=(--extra "$flag")
           done
           python3 utils/ci/std-quick-check.py \
             --cc clang \
