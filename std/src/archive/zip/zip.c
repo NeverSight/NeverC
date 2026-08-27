@@ -13,13 +13,42 @@ static int zip_path_is_safe(const char *name) {
     if (!name || !name[0]) return 0;
     size_t len = strlen(name);
     if (len >= sizeof(((neverc_zip_file_header_t *)0)->name)) return 0;
-    char trimmed[sizeof(((neverc_zip_file_header_t *)0)->name)];
-    memcpy(trimmed, name, len + 1);
-    while (len > 0 && trimmed[len - 1] == '/')
-        trimmed[--len] = '\0';
-    if (len == 0 || strcmp(trimmed, ".") == 0) return 0;
-    if (strchr(trimmed, ':') != NULL) return 0;
-    return neverc_fs_valid_path(trimmed);
+    while (len > 0 && name[len - 1U] == '/') len--;
+    if (len == 0 || memchr(name, ':', len) != NULL) return 0;
+
+    /* Dot components are lexical no-ops and cannot escape an extraction
+     * root. Validate a dot-free spelling while preserving the archive's
+     * original name bytes for interoperability (mirrors archive/tar). */
+    char normalized[sizeof(((neverc_zip_file_header_t *)0)->name)];
+    size_t input = 0;
+    size_t output = 0;
+    while (input < len) {
+        size_t start = input;
+        while (input < len && name[input] != '/') input++;
+        size_t component_len = input - start;
+        if (component_len == 0) return 0;
+        if (!(component_len == 1U && name[start] == '.')) {
+            if (output > 0) normalized[output++] = '/';
+            memcpy(normalized + output, name + start, component_len);
+            output += component_len;
+        }
+        if (input < len) input++;
+    }
+    if (output == 0) return 0;
+    normalized[output] = '\0';
+    return neverc_fs_valid_path(normalized);
+}
+
+/* Go archive/zip detectUTF8: a name outside the CP-437-compatible ASCII
+ * subset must be announced with general-purpose bit 11, or readers decode
+ * the UTF-8 bytes as CP437 and show mojibake. Names reaching the writer are
+ * already validated UTF-8, so a byte test matches Go's rune test. */
+static uint16_t zip_name_flags(const char *name, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)name[i];
+        if (c < 0x20U || c > 0x7dU) return 0x0800U;
+    }
+    return 0;
 }
 
 static int zip_reader_error(neverc_zip_reader_t *r) {
@@ -86,9 +115,14 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
     uint16_t total_entries = read16(eocd + 10U);
     uint32_t central_size = read32(eocd + 12U);
     uint32_t central_offset = read32(eocd + 16U);
+    /* APPNOTE 4.4.21: 0xFFFF only means "see ZIP64" when a ZIP64 locator
+     * precedes the EOCD. Go readDirectoryEnd keeps the 16-bit count when
+     * findDirectory64End finds no locator, so 65535 entries stay readable. */
+    int zip64_locator = eocd_offset >= 20U &&
+        read32(data + eocd_offset - 20U) == 0x07064b50U;
     if (disk != 0 || central_disk != 0 ||
         disk_entries != total_entries ||
-        total_entries == UINT16_MAX ||
+        (total_entries == UINT16_MAX && zip64_locator) ||
         central_size == UINT32_MAX ||
         central_offset == UINT32_MAX ||
         (uint64_t)central_offset > eocd_offset ||
@@ -227,6 +261,11 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         memcpy(file->name, central + 46U, name_length);
         file->name[name_length] = '\0';
         if (!zip_path_is_safe(file->name))
+            return zip_reader_fail(r, ranges);
+        /* APPNOTE 4.3.16 / Go archive/zip File.Open: a name ending in '/' is
+         * a directory and must not carry a data section, otherwise one side
+         * sees an empty directory while the other extracts smuggled bytes. */
+        if (file->name[name_length - 1U] == '/' && uncompressed_size != 0)
             return zip_reader_fail(r, ranges);
         file->method = method;
         file->crc32 = crc;
@@ -454,7 +493,8 @@ int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
     size_t name_size = strlen(name);
     if (name_size == 0 || name_size > 255 ||
         name_size > SIZE_MAX - 30U ||
-        len > SIZE_MAX - 30U - name_size)
+        len > SIZE_MAX - 30U - name_size ||
+        (name[name_size - 1U] == '/' && len != 0))
         return -1;
     uint16_t name_len = (uint16_t)name_size;
     size_t record_len = 30U + name_size + len;
@@ -475,7 +515,7 @@ int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
     if (len > 0) memmove(p + 30 + name_len, data, len);
     write32(p, 0x04034b50);
     write16(p + 4, 20);
-    write16(p + 6, 0);
+    write16(p + 6, zip_name_flags(name_copy, name_size));
     write16(p + 8, NEVERC_ZIP_STORED);
     write16(p + 10, 0);
     write16(p + 12, 0);
@@ -537,7 +577,7 @@ int neverc_zip_writer_close(neverc_zip_writer_t *w) {
         write32(p, 0x02014b50);
         write16(p + 4, 20);
         write16(p + 6, 20);
-        write16(p + 8, 0);
+        write16(p + 8, zip_name_flags(e->name, name_len));
         write16(p + 10, e->method);
         write16(p + 12, e->mod_time);
         write16(p + 14, e->mod_date);

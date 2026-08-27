@@ -281,6 +281,82 @@ static void test_reject_unsafe_paths(void) {
     check_int("writer rejects backslash",
               neverc_zip_writer_add(
                   &w, "foo\\..\\bar", payload, sizeof(payload) - 1), -1);
+    check_int("writer rejects dot then traversal",
+              neverc_zip_writer_add(
+                  &w, "a/./../b", payload, sizeof(payload) - 1), -1);
+    check_int("writer rejects dot only path",
+              neverc_zip_writer_add(
+                  &w, "./.", payload, sizeof(payload) - 1), -1);
+    check_int("writer rejects directory with data",
+              neverc_zip_writer_add(
+                  &w, "dir/", payload, sizeof(payload) - 1), -1);
+    neverc_zip_writer_free(&w);
+}
+
+/* Dot components are lexical no-ops, so archive/tar accepts them; zip kept an
+ * older spelling that rejected the whole archive instead. */
+static void test_dot_component_paths(void) {
+    printf("[dot_component_paths]\n");
+    neverc_zip_writer_t w;
+    neverc_zip_writer_init(&w);
+    check_int("writer accepts leading dot",
+              neverc_zip_writer_add(&w, "./a.txt", (const uint8_t *)"x", 1), 0);
+    check_int("writer accepts interior dot",
+              neverc_zip_writer_add(&w, "b/./c.txt", (const uint8_t *)"y", 1),
+              0);
+    check_int("writer closes", neverc_zip_writer_close(&w), 0);
+
+    neverc_zip_reader_t r;
+    check_int("reader accepts dot components",
+              neverc_zip_reader_init(&r, w.data, w.len), 0);
+    check_int("dot component count", neverc_zip_reader_count(&r), 2);
+    {
+        const neverc_zip_file_header_t *first = neverc_zip_reader_file(&r, 0);
+        const neverc_zip_file_header_t *second = neverc_zip_reader_file(&r, 1);
+        check_int("dot entries exist", first != NULL && second != NULL, 1);
+        if (first) check_str("preserve leading dot", first->name, "./a.txt");
+        if (second) check_str("preserve interior dot", second->name,
+                              "b/./c.txt");
+    }
+    neverc_zip_reader_free(&r);
+    neverc_zip_writer_free(&w);
+}
+
+/* APPNOTE APPENDIX D: without general-purpose bit 11 a name is CP437, so
+ * UTF-8 bytes render as mojibake in every mainstream extractor. */
+static void test_utf8_name_flag(void) {
+    printf("[utf8_name_flag]\n");
+    neverc_zip_writer_t w;
+    neverc_zip_writer_init(&w);
+    const char *utf8_name = "caf\xc3\xa9.txt";
+    check_int("writer accepts utf8 name",
+              neverc_zip_writer_add(&w, utf8_name, (const uint8_t *)"x", 1), 0);
+    check_int("writer accepts ascii name",
+              neverc_zip_writer_add(&w, "plain.txt", (const uint8_t *)"y", 1),
+              0);
+    check_int("writer closes", neverc_zip_writer_close(&w), 0);
+
+    check_int("local header marks utf8",
+              (int)(w.data[6] | (w.data[7] << 8)), 0x0800);
+    {
+        size_t cd = (size_t)get32(w.data + w.len - 22U + 16U);
+        size_t ascii_cd = cd + 46U + strlen(utf8_name);
+        check_int("central header marks utf8",
+                  (int)(w.data[cd + 8U] | (w.data[cd + 9U] << 8)), 0x0800);
+        check_int("ascii name stays cp437",
+                  (int)(w.data[ascii_cd + 8U] | (w.data[ascii_cd + 9U] << 8)),
+                  0);
+    }
+
+    neverc_zip_reader_t r;
+    check_int("utf8 archive round-trips",
+              neverc_zip_reader_init(&r, w.data, w.len), 0);
+    {
+        const neverc_zip_file_header_t *f = neverc_zip_reader_file(&r, 0);
+        check_int("utf8 entry exists", f != NULL, 1);
+        if (f) check_str("utf8 name", f->name, utf8_name);
+    }
+    neverc_zip_reader_free(&r);
     neverc_zip_writer_free(&w);
 }
 
@@ -393,6 +469,20 @@ static void test_directory_extra_and_descriptor(void) {
         neverc_zip_reader_free(&reader);
     }
     neverc_zip_writer_free(&writer);
+
+    {
+        uint8_t smuggled[256];
+        neverc_zip_reader_t reader;
+        size_t crafted_len = build_stored_zip(
+            smuggled, sizeof(smuggled), "dir/", (const uint8_t *)"boom", 4,
+            0, 0, 0);
+        check_int("directory data fixture", crafted_len > 0, 1);
+        if (crafted_len > 0)
+            check_int("reject directory carrying data",
+                      neverc_zip_reader_init(&reader, smuggled, crafted_len),
+                      -1);
+        neverc_zip_reader_free(&reader);
+    }
 
     uint8_t crafted[256];
     const uint8_t payload[] = "xyz";
@@ -873,6 +963,8 @@ int main(void) {
     test_central_directory_and_writer_state();
     test_invalid_args();
     test_reject_unsafe_paths();
+    test_dot_component_paths();
+    test_utf8_name_flag();
     test_directory_extra_and_descriptor();
     test_unsigned_descriptor_crc_signature_collision();
     test_overlapping_entries();
