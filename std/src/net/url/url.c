@@ -588,6 +588,8 @@ static int parse_url(neverc_url_t *u, const char *raw_url, int via_request) {
                 char idna[256];
                 if (neverc_idna_to_ascii(hostbuf, idna, sizeof(idna)) != 0)
                     return -1;
+                for (size_t i = 0; idna[i]; i++)
+                    idna[i] = (char)nc_tolower((unsigned char)idna[i]);
                 if (!valid_host_text(idna, strlen(idna)) ||
                     copy_exact(u->host, sizeof(u->host), idna, strlen(idna)) != 0)
                     return -1;
