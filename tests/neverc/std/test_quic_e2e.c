@@ -377,6 +377,40 @@ static size_t quic_amp_drain(neverc_udp_conn_t *victim, size_t *largest_out) {
     return total;
 }
 
+static int quic_amp_address_validated(struct neverc_quic_conn *conn) {
+    nc_mutex_lock(&conn->lock);
+    int validated = conn->address_validated;
+    nc_mutex_unlock(&conn->lock);
+    return validated;
+}
+
+static int quic_amp_flush_candidate_path(
+    neverc_quic_endpoint_t *endpoint, struct neverc_quic_conn *conn,
+    const neverc_udp_addr_t *candidate, uint64_t bytes_received,
+    uint64_t bytes_sent) {
+    nc_mutex_lock(&endpoint->lock);
+    nc_mutex_lock(&conn->lock);
+    if (candidate) conn->candidate_addr = *candidate;
+    conn->candidate_bytes_received = bytes_received;
+    conn->candidate_bytes_sent = bytes_sent;
+    conn->path_validation_pending = 1;
+    conn->path_challenge_pending = 1;
+    nc_mutex_unlock(&conn->lock);
+    int result = neverc_quic_conn_flush(conn);
+    nc_mutex_unlock(&endpoint->lock);
+    return result;
+}
+
+static void quic_amp_clear_candidate_path(
+    neverc_quic_endpoint_t *endpoint, struct neverc_quic_conn *conn) {
+    nc_mutex_lock(&endpoint->lock);
+    nc_mutex_lock(&conn->lock);
+    conn->path_validation_pending = 0;
+    conn->path_challenge_pending = 0;
+    nc_mutex_unlock(&conn->lock);
+    nc_mutex_unlock(&endpoint->lock);
+}
+
 /* RFC 9000 §8 / §9.3.1: the three-times budget is per path. A connection
  * validated on its original path must not fund PATH_CHALLENGE datagrams to a
  * spoofed migration candidate, or a 29-byte forged packet turns the server
@@ -437,39 +471,29 @@ static void quic_test_migration_respects_anti_amplification(void) {
     if (server && victim &&
         neverc_udp_local_addr(victim, &victim_addr) == 0) {
         (void)neverc_udp_set_read_timeout(victim, 200);
-        CHECK(server->address_validated == 1);
+        CHECK(quic_amp_address_validated(server) == 1);
 
         /* A forged packet from the victim address opens a candidate path
          * whose own budget is still zero. */
-        server->candidate_addr = victim_addr;
-        server->candidate_bytes_received = 0;
-        server->candidate_bytes_sent = 0;
-        server->path_validation_pending = 1;
-        server->path_challenge_pending = 1;
-        (void)neverc_quic_conn_flush(server);
+        (void)quic_amp_flush_candidate_path(endpoint, server, &victim_addr,
+                                             0, 0);
         size_t largest = 0;
         CHECK(quic_amp_drain(victim, &largest) == 0);
 
         /* With 29 bytes credited the challenge may go out, but unexpanded:
          * 3 * 29 = 87 bytes, far below the 1200-byte expansion. */
-        server->candidate_bytes_received = 29;
-        server->path_challenge_pending = 1;
-        (void)neverc_quic_conn_flush(server);
+        (void)quic_amp_flush_candidate_path(endpoint, server, NULL, 29, 0);
         size_t sent = quic_amp_drain(victim, &largest);
         CHECK(sent <= 87U);
         CHECK(largest < 1200U);
 
         /* RFC 9000 §8.2.1 expansion still happens once the path has paid
          * for it. */
-        server->candidate_bytes_received = 4096;
-        server->candidate_bytes_sent = 0;
-        server->path_challenge_pending = 1;
-        (void)neverc_quic_conn_flush(server);
+        (void)quic_amp_flush_candidate_path(endpoint, server, NULL, 4096, 0);
         (void)quic_amp_drain(victim, &largest);
         CHECK(largest == 1200U);
 
-        server->path_validation_pending = 0;
-        server->path_challenge_pending = 0;
+        quic_amp_clear_candidate_path(endpoint, server);
     }
     if (victim) neverc_udp_close(victim);
 

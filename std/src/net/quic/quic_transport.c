@@ -1753,10 +1753,12 @@ static int qt_send_item(struct neverc_quic_conn *conn,
 }
 
 int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
-    if (!conn || !conn->udp || !conn->tls ||
-        conn->state == QUIC_CONN_CLOSED)
-        return -1;
+    if (!conn) return -1;
     nc_mutex_lock(&conn->lock);
+    if (!conn->udp || !conn->tls || conn->state == QUIC_CONN_CLOSED) {
+        nc_mutex_unlock(&conn->lock);
+        return -1;
+    }
     int result = 0;
     for (int attempts = 0; attempts < 32; attempts++) {
         size_t maximum = qt_packet_maximum(conn);
