@@ -1870,11 +1870,11 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
         (uint32_t)config.max_response_header_list_size;
     client->encoder = neverc_hpack_encoder_create(
         NC_H2_DEFAULT_HEADER_TABLE_SIZE);
+    /* The client only advertises max_header_list_size; it deliberately still
+     * accepts a larger response block (h2_client_header_list_size_is_per_block
+     * pins that), so no decode budget is installed here. */
     client->decoder = neverc_hpack_decoder_create(
         client->local_settings.header_table_size);
-    if (client->decoder)
-        neverc_hpack_decoder_set_max_list_size(
-            client->decoder, client->local_settings.max_header_list_size);
     nc_mutex_init(&client->state_lock);
     nc_mutex_init(&client->write_lock);
     nc_cond_init(&client->window_changed);
