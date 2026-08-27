@@ -340,6 +340,16 @@ TEST_F(StdLibTest, Asn1AllocationFailure) {
 
 // ===== Hash =====
 STD_TEST(fnv, "src/hash/fnv/fnv.c")
+STD_TEST(fnv_wide, "src/hash/fnv/fnv_wide.c")
+TEST_F(StdLibTest, EmbeddedFnvFamily) {
+  for (const char *name : {"fnv", "fnv_wide"}) {
+    auto r = compileAndRunStdTest(name, {}, {"-fbuiltin-std"});
+    ASSERT_TRUE(r.ok()) << "test: " << name << "\nstdout: " << r.out
+                        << "\nstderr: " << r.err;
+    EXPECT_TRUE(r.contains("passed")) << "test: " << name
+                                      << "\nstdout: " << r.out;
+  }
+}
 STD_TEST(crc32, "src/hash/crc32/crc32.c")
 STD_TEST(crc64, "src/hash/crc64/crc64.c")
 STD_TEST(xxhash, "src/hash/xxhash/xxhash.c")
@@ -1290,7 +1300,7 @@ STD_TEST(dot_syntax,
     "src/strconv/format_float.c", "src/strconv/parse_float.c",
     "src/strconv/parse_bool.c",
     "src/encoding/hex/encode.c", "src/encoding/hex/decode.c",
-    "src/hash/fnv/fnv.c",
+    "src/hash/fnv/fnv.c", "src/hash/fnv/fnv_wide.c",
     "src/hash/adler32/adler32.c",
     "src/container/vector/vector.c",
     "src/sort/sort.c",

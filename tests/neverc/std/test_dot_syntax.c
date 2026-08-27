@@ -530,6 +530,37 @@ static void test_hash_fnv_dot_syntax(void) {
     neverc_fnv_128_t full128a = hash.fnv.sum128a("hello", 5);
     CHECK("hash.fnv.update128a",
           h128a.hi == full128a.hi && h128a.lo == full128a.lo);
+
+    neverc_fnv_256_t h256 = NEVERC_FNV256_OFFSET_BASIS_INITIALIZER;
+    h256 = hash.fnv.update256a(h256, "he", 2);
+    h256 = hash.fnv.update256a(h256, "llo", 3);
+    neverc_fnv_256_t full256a = hash.fnv.sum256a("hello", 5);
+    CHECK("hash.fnv.update256a",
+          memcmp(h256.words, full256a.words, sizeof(h256.words)) == 0);
+
+    neverc_fnv_512_t h512 = NEVERC_FNV512_OFFSET_BASIS_INITIALIZER;
+    h512 = hash.fnv.update512(h512, "he", 2);
+    h512 = hash.fnv.update512(h512, "llo", 3);
+    neverc_fnv_512_t full512 = hash.fnv.sum512("hello", 5);
+    CHECK("hash.fnv.update512",
+          memcmp(h512.words, full512.words, sizeof(h512.words)) == 0);
+
+    neverc_fnv_1024_t h1024 = NEVERC_FNV1024_OFFSET_BASIS_INITIALIZER;
+    h1024 = hash.fnv.update1024a(h1024, "he", 2);
+    h1024 = hash.fnv.update1024a(h1024, "llo", 3);
+    neverc_fnv_1024_t full1024a = hash.fnv.sum1024a("hello", 5);
+    CHECK("hash.fnv.update1024a",
+          memcmp(h1024.words, full1024a.words, sizeof(h1024.words)) == 0);
+
+    CHECK("hash.fnv.sum0_64",
+          hash.fnv.sum0_64("foobar", 6) ==
+              UINT64_C(0x0b91ae3f7ccdc5ef));
+
+    uint8_t serialized[32];
+    hash.fnv.store256_be(serialized, full256a);
+    CHECK("hash.fnv.store256_be",
+          serialized[0] == (uint8_t)(full256a.words[0] >> 56) &&
+          serialized[31] == (uint8_t)full256a.words[3]);
 }
 
 static void test_hash_adler32_dot_syntax(void) {

@@ -73,6 +73,30 @@ static void check_128(const char *name, neverc_fnv_128_t got, uint64_t exp_hi, u
     }
 }
 
+static void check_bytes(const char *name, const uint8_t *got,
+                        const uint8_t *expected, size_t len) {
+    tests_run++;
+    if (memcmp(got, expected, len) == 0) {
+        tests_passed++;
+    } else {
+        tests_failed++;
+        printf("  FAIL: %s\n", name);
+    }
+}
+
+static void check_reversed(const char *name, const uint8_t *forward,
+                           const uint8_t *reverse, size_t len) {
+    tests_run++;
+    for (size_t i = 0; i < len; i++) {
+        if (forward[i] != reverse[len - i - 1]) {
+            tests_failed++;
+            printf("  FAIL: %s at byte %zu\n", name, i);
+            return;
+        }
+    }
+    tests_passed++;
+}
+
 static void test_fnv128(void) {
     printf("[fnv128]\n");
     neverc_fnv_128_t h0 = neverc_fnv_sum128("", 0);
@@ -123,6 +147,55 @@ static void test_fnv128a(void) {
     check_128("fnv128a(fox)",
               neverc_fnv_sum128a("The quick brown fox jumps over the lazy dog", 43),
               0x68cce4cd885ea042ULL, 0x39f02af30e297870ULL);
+}
+
+static void test_fnv0(void) {
+    printf("[fnv0]\n");
+    check_u32("fnv0-32(empty)", neverc_fnv0_sum32("", 0), 0);
+    check_u32("fnv0-32(foobar)", neverc_fnv0_sum32("foobar", 6),
+              0xb74bb5efU);
+    check_u64("fnv0-64(empty)", neverc_fnv0_sum64("", 0), 0);
+    check_u64("fnv0-64(foobar)", neverc_fnv0_sum64("foobar", 6),
+              UINT64_C(0x0b91ae3f7ccdc5ef));
+    check_128("fnv0-128(empty)", neverc_fnv0_sum128("", 0), 0, 0);
+    check_128("fnv0-128(foobar)", neverc_fnv0_sum128("foobar", 6),
+              UINT64_C(0x9438ff4bea000000),
+              UINT64_C(0x000120ab5188d04f));
+}
+
+static void test_serialization(void) {
+    printf("[serialization]\n");
+    uint8_t be32[4], le32[4], be64[8], le64[8], be128[16], le128[16];
+    uint32_t h32 = UINT32_C(0x01234567);
+    uint64_t h64 = UINT64_C(0x0123456789abcdef);
+    neverc_fnv_128_t h128 = {
+        UINT64_C(0x0123456789abcdef),
+        UINT64_C(0xfedcba9876543210)
+    };
+    neverc_fnv_store32_be(be32, h32);
+    neverc_fnv_store32_le(le32, h32);
+    neverc_fnv_store64_be(be64, h64);
+    neverc_fnv_store64_le(le64, h64);
+    neverc_fnv_store128_be(be128, h128);
+    neverc_fnv_store128_le(le128, h128);
+    neverc_fnv_store32_be(NULL, h32);
+    neverc_fnv_store64_le(NULL, h64);
+    neverc_fnv_store128_be(NULL, h128);
+
+    static const uint8_t expected32[] = {0x01, 0x23, 0x45, 0x67};
+    static const uint8_t expected64[] = {
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef
+    };
+    static const uint8_t expected128[] = {
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
+        0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10
+    };
+    check_bytes("fnv32 big-endian", be32, expected32, sizeof(be32));
+    check_bytes("fnv64 big-endian", be64, expected64, sizeof(be64));
+    check_bytes("fnv128 big-endian", be128, expected128, sizeof(be128));
+    check_reversed("fnv32 little-endian", be32, le32, sizeof(be32));
+    check_reversed("fnv64 little-endian", be64, le64, sizeof(be64));
+    check_reversed("fnv128 little-endian", be128, le128, sizeof(be128));
 }
 
 static void test_binary_inputs(void) {
@@ -299,6 +372,8 @@ int main(void) {
     test_fnv64a();
     test_fnv128();
     test_fnv128a();
+    test_fnv0();
+    test_serialization();
     test_binary_inputs();
     test_long_vectors();
     test_incremental();

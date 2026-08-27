@@ -187,17 +187,68 @@ uint64_t neverc_fnv_sum64a(const void *data, size_t len) {
 }
 
 neverc_fnv_128_t neverc_fnv_sum128(const void *data, size_t len) {
-    neverc_fnv_128_t hash = {
-        NEVERC_FNV128_OFFSET_BASIS_HI,
-        NEVERC_FNV128_OFFSET_BASIS_LO
-    };
+    neverc_fnv_128_t hash = NEVERC_FNV128_OFFSET_BASIS_INITIALIZER;
     return neverc_fnv_update128(hash, data, len);
 }
 
 neverc_fnv_128_t neverc_fnv_sum128a(const void *data, size_t len) {
-    neverc_fnv_128_t hash = {
-        NEVERC_FNV128_OFFSET_BASIS_HI,
-        NEVERC_FNV128_OFFSET_BASIS_LO
-    };
+    neverc_fnv_128_t hash = NEVERC_FNV128_OFFSET_BASIS_INITIALIZER;
     return neverc_fnv_update128a(hash, data, len);
+}
+
+uint32_t neverc_fnv0_sum32(const void *data, size_t len) {
+    return neverc_fnv_update32(0, data, len);
+}
+
+uint64_t neverc_fnv0_sum64(const void *data, size_t len) {
+    return neverc_fnv_update64(0, data, len);
+}
+
+neverc_fnv_128_t neverc_fnv0_sum128(const void *data, size_t len) {
+    neverc_fnv_128_t hash = {0, 0};
+    return neverc_fnv_update128(hash, data, len);
+}
+
+static void store_uint_be(uint8_t *out, uint64_t value, size_t size) {
+    if (!out)
+        return;
+    for (size_t i = 0; i < size; ++i)
+        out[i] = (uint8_t)(value >> (8 * (size - i - 1)));
+}
+
+static void store_uint_le(uint8_t *out, uint64_t value, size_t size) {
+    if (!out)
+        return;
+    for (size_t i = 0; i < size; ++i)
+        out[i] = (uint8_t)(value >> (8 * i));
+}
+
+void neverc_fnv_store32_be(uint8_t out[4], uint32_t hash) {
+    store_uint_be(out, hash, 4);
+}
+
+void neverc_fnv_store32_le(uint8_t out[4], uint32_t hash) {
+    store_uint_le(out, hash, 4);
+}
+
+void neverc_fnv_store64_be(uint8_t out[8], uint64_t hash) {
+    store_uint_be(out, hash, 8);
+}
+
+void neverc_fnv_store64_le(uint8_t out[8], uint64_t hash) {
+    store_uint_le(out, hash, 8);
+}
+
+void neverc_fnv_store128_be(uint8_t out[16], neverc_fnv_128_t hash) {
+    if (!out)
+        return;
+    store_uint_be(out, hash.hi, 8);
+    store_uint_be(out + 8, hash.lo, 8);
+}
+
+void neverc_fnv_store128_le(uint8_t out[16], neverc_fnv_128_t hash) {
+    if (!out)
+        return;
+    store_uint_le(out, hash.lo, 8);
+    store_uint_le(out + 8, hash.hi, 8);
 }
