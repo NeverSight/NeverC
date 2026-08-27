@@ -488,6 +488,8 @@ int main(int a, int b) {
             return 113;
         if (a.hash() == c.hash())
             return 114;
+        if (("alpha" + "").hash() != 0x8ac625bb85ed202bULL)
+            return 201;
         if (("" + "").hash() != 0xcbf29ce484222325ULL)
             return 115;
 

@@ -30,10 +30,10 @@ static int global_arr[4] = {10, 20, 30, 40};
 
 static uint64_t compute_hash(const void *data, size_t len) {
     const uint8_t *p = (const uint8_t *)data;
-    uint64_t h = 0x811c9dc5;
+    uint64_t h = 0xcbf29ce484222325ULL;
     for (size_t i = 0; i < len; i++) {
         h ^= p[i];
-        h *= 0x01000193;
+        h *= 0x100000001b3ULL;
     }
     return h;
 }

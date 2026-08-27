@@ -256,6 +256,8 @@ int dyncode_entry(int seed) {
         string b = "ring0" + "";
         if (a.hash() != b.hash())
             return seed + 63;
+        if (("ring0" + "").hash() != 0xb43095537a2e0541ULL)
+            return seed + 78;
         if (("" + "").hash() != 0xcbf29ce484222325ULL)
             return seed + 64;
         if (!neverc_string_eq(("knkn" + "").reverse(), "nknk"))

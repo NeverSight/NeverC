@@ -27,8 +27,7 @@ using stable_hash = uint64_t;
 namespace hashing {
 namespace detail {
 
-// Stable hashes are based on the 64-bit FNV-1 hash:
-// https://en.wikipedia.org/wiki/Fowler-Noll-Vo_hash_function
+// Stable hashes are based on the 64-bit FNV-1a hash.
 
 const uint64_t FNV_PRIME_64 = 1099511628211u;
 const uint64_t FNV_OFFSET_64 = 14695981039346656037u;
