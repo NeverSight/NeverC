@@ -193,10 +193,16 @@ static const char *pem_find_last_begin(const char *search, const char *end_line)
     const char *found = NULL;
     const char *p = search;
     while ((p = pem_find_bounded(p, end_line, BEGIN_PREFIX, 11)) != NULL) {
-        if (p == search || p[-1] == '\n')
-            found = p;
+        found = p;
         ++p;
     }
+    /* Go takes the last occurrence anywhere and only then requires it to
+     * start a line, so a later mid-line marker kills the candidate instead
+     * of falling back to an earlier line-start one. Falling back accepts
+     * armor that Go rejects, which is a parser difference on the cert and
+     * key loading paths. */
+    if (found && found != search && found[-1] != '\n')
+        return NULL;
     return found;
 }
 

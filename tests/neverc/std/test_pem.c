@@ -494,6 +494,55 @@ static void test_invalid_pem(void) {
     }
 }
 
+/* Go's Decode takes the last "-----BEGIN " anywhere before the END line and
+ * only then requires it to start a line; falling back to an earlier
+ * line-start marker accepts armor Go rejects. */
+static void test_mid_line_begin_kills_candidate(void) {
+    printf("[pem mid-line BEGIN]\n");
+
+    char type_buf[64];
+    uint8_t out_buf[64];
+    size_t bytes_written = 0;
+
+    const char *begin_in_header =
+        "-----BEGIN CERTIFICATE-----\n"
+        "Comment: -----BEGIN CERTIFICATE-----\n"
+        "\n"
+        "aGVsbG8=\n"
+        "-----END CERTIFICATE-----\n";
+    check_int("mid-line BEGIN in header rejected",
+              neverc_pem_decode(begin_in_header, strlen(begin_in_header),
+                                type_buf, sizeof(type_buf), out_buf,
+                                sizeof(out_buf), &bytes_written, NULL),
+              -1);
+
+    const char *begin_inside_type =
+        "-----BEGIN -----BEGIN X-----\n"
+        "aGVsbG8=\n"
+        "-----END -----BEGIN X-----\n";
+    check_int("mid-line BEGIN inside type rejected",
+              neverc_pem_decode(begin_inside_type, strlen(begin_inside_type),
+                                type_buf, sizeof(type_buf), out_buf,
+                                sizeof(out_buf), &bytes_written, NULL),
+              -1);
+
+    /* A line-start marker after a mid-line one still wins. */
+    const char *line_start_wins =
+        "-----BEGIN A-----\n"
+        "x -----BEGIN B-----\n"
+        "-----BEGIN C-----\n"
+        "aGVsbG8=\n"
+        "-----END C-----\n";
+    bytes_written = 0;
+    check_int("line-start BEGIN after mid-line one accepted",
+              neverc_pem_decode(line_start_wins, strlen(line_start_wins),
+                                type_buf, sizeof(type_buf), out_buf,
+                                sizeof(out_buf), &bytes_written, NULL),
+              0);
+    check_str("line-start BEGIN wins", type_buf, "C");
+    check_int("line-start BEGIN len", (int)bytes_written, 5);
+}
+
 static void test_go_armor(void) {
     printf("[pem Go armor skip]\n");
 
@@ -899,6 +948,7 @@ int main(void) {
     test_binary_data();
     test_rfc1421_headers();
     test_invalid_pem();
+    test_mid_line_begin_kills_candidate();
     test_go_armor();
     test_utf8_bom();
     test_large_data();

@@ -114,12 +114,19 @@ neverc_ascii85_result_t neverc_ascii85_decode(unsigned char *dst, size_t dst_len
             v = v * 85 + (unsigned int)(b - '!');
             nb++;
         } else {
+            /* Go returns (0, 0, CorruptInputError): a corrupt byte discards
+             * the counts for the groups already decoded, so a streaming
+             * caller cannot emit a prefix of a broken stream. */
+            result.ndst = 0;
+            result.nsrc = 0;
             result.error = 1;
             return result;
         }
 
         if (nb == 5) {
             if (v > UINT32_MAX) {
+                result.ndst = 0;
+                result.nsrc = 0;
                 result.error = 1;
                 return result;
             }
@@ -139,14 +146,16 @@ neverc_ascii85_result_t neverc_ascii85_decode(unsigned char *dst, size_t dst_len
     if (flush) {
         if (nb > 0) {
             if (nb == 1) {
-                result.nsrc = src_len;
+                result.ndst = 0;
+                result.nsrc = 0;
                 result.error = 1;
                 return result;
             }
             for (int i = nb; i < 5; i++)
                 v = v * 85 + 84;
             if (v > UINT32_MAX) {
-                result.nsrc = src_len;
+                result.ndst = 0;
+                result.nsrc = 0;
                 result.error = 1;
                 return result;
             }

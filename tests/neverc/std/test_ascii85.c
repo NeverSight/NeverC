@@ -164,6 +164,37 @@ static void test_decode_errors(void) {
         check_true("overflowing partial group writes nothing", r.ndst == 0);
     }
 
+    /* Go returns (0, 0, CorruptInputError) whatever was decoded first, so a
+     * streaming caller never emits a prefix of a broken stream. dst is sized
+     * past one group so the "no room left" early return cannot mask this. */
+    {
+        const unsigned char bad[] = "9jqo^{";
+        unsigned char dec[8];
+        neverc_ascii85_result_t r =
+            neverc_ascii85_decode(dec, sizeof(dec), bad, 6, 0);
+        check_true("corrupt byte after a group errors", r.error == 1);
+        check_true("corrupt byte reports no progress",
+                   r.ndst == 0 && r.nsrc == 0);
+    }
+    {
+        const unsigned char bad[] = "9jqo^!";
+        unsigned char dec[8];
+        neverc_ascii85_result_t r =
+            neverc_ascii85_decode(dec, sizeof(dec), bad, 6, 1);
+        check_true("flushed 1-digit tail after a group errors", r.error == 1);
+        check_true("flushed 1-digit tail reports no progress",
+                   r.ndst == 0 && r.nsrc == 0);
+    }
+    {
+        const unsigned char bad[] = "9jqo^uuuuu";
+        unsigned char dec[16];
+        neverc_ascii85_result_t r =
+            neverc_ascii85_decode(dec, sizeof(dec), bad, 10, 1);
+        check_true("overflowing later group errors", r.error == 1);
+        check_true("overflowing later group reports no progress",
+                   r.ndst == 0 && r.nsrc == 0);
+    }
+
     /* Whitespace skipped */
     {
         const unsigned char spaced[] = "9j qo ^";
