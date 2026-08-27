@@ -2238,6 +2238,7 @@ add_executable(neverc-support-tests
   SupportCOMTests.cpp
   SupportDenseMapTests.cpp
   SupportFileSystemSecurityTests.cpp
+  SupportFoldingSetTests.cpp
   SupportHashTests.cpp
   SupportJSONTests.cpp
   SupportMemoryTests.cpp
