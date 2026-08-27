@@ -623,6 +623,13 @@ static void test_qp_decode(void) {
     ASSERT_INT_EQ(neverc_mime_qp_decode(NULL, 1, out,
                                         sizeof(out), &out_len), -1);
     ASSERT_INT_EQ(neverc_mime_qp_decode("x", 1, NULL, 1, &out_len), -1);
+    /* golang/go#22597: raw bytes >= 0x80 pass through; DEL still fails. */
+    ASSERT_INT_EQ(neverc_mime_qp_decode("caf\xC3\xA9", 5, out,
+                                        sizeof(out), &out_len), 0);
+    ASSERT_INT_EQ((int)out_len, 5);
+    ASSERT_INT_EQ(memcmp(out, "caf\xC3\xA9", 5), 0);
+    ASSERT_INT_EQ(neverc_mime_qp_decode("a\x7f" "b", 3, out,
+                                        sizeof(out), &out_len), -1);
     ASSERT_INT_EQ(neverc_mime_qp_decode("a=ZZ", 4, out, sizeof(out), &out_len), -1);
     ASSERT_INT_EQ(neverc_mime_qp_decode("=A", 2, out, sizeof(out), &out_len), -1);
     ASSERT_INT_EQ(neverc_mime_qp_decode("=", 1, out, sizeof(out), &out_len), -1);

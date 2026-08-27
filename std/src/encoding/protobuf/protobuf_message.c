@@ -153,15 +153,18 @@ static int protobuf_value_present(
         memcpy(&scalar, value, sizeof(scalar));
         return scalar != 0;
     }
+    /* IEEE-754 makes -0.0 compare equal to 0.0, so a value comparison would
+     * drop negative zero as if the field were unset. protobuf-go compensates
+     * with math.Signbit and C++ compares the raw bits; do the latter. */
     case NEVERC_PROTOBUF_TYPE_FLOAT: {
-        float scalar;
-        memcpy(&scalar, value, sizeof(scalar));
-        return scalar != 0.0f;
+        uint32_t bits;
+        memcpy(&bits, value, sizeof(bits));
+        return bits != 0;
     }
     case NEVERC_PROTOBUF_TYPE_DOUBLE: {
-        double scalar;
-        memcpy(&scalar, value, sizeof(scalar));
-        return scalar != 0.0;
+        uint64_t bits;
+        memcpy(&bits, value, sizeof(bits));
+        return bits != 0;
     }
     case NEVERC_PROTOBUF_TYPE_SFIXED64: {
         int64_t scalar;
@@ -221,8 +224,11 @@ static int protobuf_encode_field(
     case NEVERC_PROTOBUF_TYPE_BOOL: {
         int scalar;
         memcpy(&scalar, value, sizeof(scalar));
+        /* Wire format: any nonzero varint is true, and the decoder already
+         * normalises that way. The low-level writer keeps its strict 0/1
+         * contract for direct callers. */
         return neverc_protobuf_write_bool(writer, field->number,
-                                           scalar);
+                                           scalar != 0);
     }
     case NEVERC_PROTOBUF_TYPE_FIXED32: {
         uint32_t scalar;

@@ -1184,7 +1184,9 @@ int neverc_mime_qp_decode(const char *src, size_t src_len,
             continue;
         }
 
-        if ((c < 0x20 && c != '\t' && c != '\r' && c != '\n') || c > 0x7e)
+        /* Go accepts unescaped bytes >= 0x80 as an extension to RFC 2045 6.7
+         * (golang/go#22597); DEL stays rejected. */
+        if ((c < 0x20 && c != '\t' && c != '\r' && c != '\n') || c == 0x7f)
             return -1;
         if (di >= dst_cap) return -1;
         dst[di++] = src[si++];

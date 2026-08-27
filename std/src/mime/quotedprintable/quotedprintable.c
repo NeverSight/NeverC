@@ -105,9 +105,11 @@ int neverc_qp_decode(const char *src, size_t src_len,
             continue;
         }
 
-        /* RFC 2045 6.7 / Go quotedprintable: unescaped bytes must be
-         * TAB, CR, LF, or printable ASCII. Encoded =00 stays legal. */
-        if ((c < 0x20 && c != '\t' && c != '\r' && c != '\n') || c > 0x7e)
+        /* RFC 2045 6.7 keeps unescaped bytes in TAB/CR/LF/printable ASCII,
+         * but Go accepts >= 0x80 as an extension (golang/go#22597) because
+         * real 8BITMIME gateways emit them. DEL stays rejected. Encoded =00
+         * stays legal. */
+        if ((c < 0x20 && c != '\t' && c != '\r' && c != '\n') || c == 0x7f)
             return -1;
         {
             size_t j = si + 1;
@@ -115,7 +117,7 @@ int neverc_qp_decode(const char *src, size_t src_len,
                 unsigned char u = (unsigned char)src[j];
                 if (u == '=' || u == ' ' || u == '\t')
                     break;
-                if ((u < 0x20 && u != '\r' && u != '\n') || u > 0x7e)
+                if ((u < 0x20 && u != '\r' && u != '\n') || u == 0x7f)
                     return -1;
                 j++;
             }

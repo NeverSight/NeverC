@@ -45,6 +45,19 @@ static void test_decode_basic(void) {
     ASSERT_EQ(n, -1);
     n = neverc_qp_decode("foo=00bar", 9, out, sizeof(out));
     ASSERT_EQ(n, 7);
+
+    /* golang/go#22597: raw bytes >= 0x80 pass through, because 8BITMIME
+     * gateways emit them without re-encoding. */
+    n = neverc_qp_decode("caf\xC3\xA9", 5, out, sizeof(out));
+    ASSERT_EQ(n, 5);
+    ASSERT_MEMEQ(out, "caf\xC3\xA9", 5);
+    n = neverc_qp_decode("a\xFF" "b", 3, out, sizeof(out));
+    ASSERT_EQ(n, 3);
+    ASSERT_MEMEQ(out, "a\xFF" "b", 3);
+    /* Mixed with a soft break so the bulk-copy scan is exercised too. */
+    n = neverc_qp_decode("\xE4\xBD\xA0=\r\n\xE5\xA5\xBD", 9, out, sizeof(out));
+    ASSERT_EQ(n, 6);
+    ASSERT_MEMEQ(out, "\xE4\xBD\xA0\xE5\xA5\xBD", 6);
 }
 
 static void test_decode_soft_break(void) {

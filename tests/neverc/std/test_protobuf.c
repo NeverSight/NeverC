@@ -42,6 +42,92 @@ static const neverc_protobuf_message_descriptor_t protobuf_test_descriptor = {
     sizeof(protobuf_test_message_t), protobuf_test_fields,
     sizeof(protobuf_test_fields) / sizeof(protobuf_test_fields[0])};
 
+typedef struct {
+    float single;
+    double dbl;
+} protobuf_float_message_t;
+
+static const neverc_protobuf_field_descriptor_t protobuf_float_fields[] = {
+    {1U, NEVERC_PROTOBUF_TYPE_FLOAT,
+     offsetof(protobuf_float_message_t, single), SIZE_MAX},
+    {2U, NEVERC_PROTOBUF_TYPE_DOUBLE,
+     offsetof(protobuf_float_message_t, dbl), SIZE_MAX},
+};
+
+static const neverc_protobuf_message_descriptor_t protobuf_float_descriptor = {
+    sizeof(protobuf_float_message_t), protobuf_float_fields,
+    sizeof(protobuf_float_fields) / sizeof(protobuf_float_fields[0])};
+
+/* IEEE-754 makes -0.0 == 0.0, so a value-based presence test drops the sign
+ * bit; protobuf-go and C++ both keep it. */
+static void test_negative_zero_is_encoded(void) {
+    protobuf_float_message_t input;
+    memset(&input, 0, sizeof(input));
+    input.single = -0.0f;
+    input.dbl = -0.0;
+
+    uint8_t encoded[64];
+    size_t encoded_length = 0;
+    CHECK(neverc_protobuf_message_encode(&protobuf_float_descriptor, &input,
+                                         encoded, sizeof(encoded),
+                                         &encoded_length) == 0);
+    static const uint8_t expected[] = {
+        0x0d, 0x00, 0x00, 0x00, 0x80,
+        0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80,
+    };
+    CHECK(encoded_length == sizeof(expected));
+    CHECK(memcmp(encoded, expected, sizeof(expected)) == 0);
+
+    protobuf_float_message_t output;
+    CHECK(neverc_protobuf_message_decode(&protobuf_float_descriptor, encoded,
+                                         encoded_length, 64U, &output) == 0);
+    uint32_t single_bits = 0;
+    uint64_t double_bits = 0;
+    memcpy(&single_bits, &output.single, sizeof(single_bits));
+    memcpy(&double_bits, &output.dbl, sizeof(double_bits));
+    CHECK(single_bits == 0x80000000U);
+    CHECK(double_bits == 0x8000000000000000ULL);
+
+    /* Positive zero is still an absent field. */
+    memset(&input, 0, sizeof(input));
+    encoded_length = 0;
+    CHECK(neverc_protobuf_message_encode(&protobuf_float_descriptor, &input,
+                                         encoded, sizeof(encoded),
+                                         &encoded_length) == 0);
+    CHECK(encoded_length == 0);
+}
+
+/* Any nonzero varint is true on the wire and the decoder normalises that
+ * way, so a bool field holding e.g. `flags & MASK` must not fail encoding. */
+static void test_bool_nonzero_encodes_as_true(void) {
+    static const int values[] = {2, -1, 255};
+    for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+        protobuf_test_message_t input;
+        memset(&input, 0, sizeof(input));
+        input.active = values[i];
+
+        uint8_t encoded[64];
+        size_t encoded_length = 0;
+        CHECK(neverc_protobuf_message_encode(&protobuf_test_descriptor, &input,
+                                             encoded, sizeof(encoded),
+                                             &encoded_length) == 0);
+        CHECK(encoded_length == 2U);
+        CHECK(encoded[0] == 0x20 && encoded[1] == 0x01);
+
+        protobuf_test_message_t output;
+        CHECK(neverc_protobuf_message_decode(&protobuf_test_descriptor,
+                                             encoded, encoded_length, 64U,
+                                             &output) == 0);
+        CHECK(output.active == 1);
+    }
+
+    /* The low-level writer keeps its strict 0/1 contract. */
+    uint8_t buffer[16];
+    neverc_protobuf_writer_t writer;
+    neverc_protobuf_writer_init(&writer, buffer, sizeof(buffer));
+    CHECK(neverc_protobuf_write_bool(&writer, 1U, 2) == -1);
+}
+
 static void test_wire_golden(void) {
     uint8_t encoded[128];
     neverc_protobuf_writer_t writer;
@@ -533,6 +619,8 @@ static void test_utf8_and_bounds(void) {
 
 int main(void) {
     printf("Protobuf test suite:\n");
+    test_negative_zero_is_encoded();
+    test_bool_nonzero_encodes_as_true();
     test_wire_golden();
     test_scalar_writers();
     test_descriptor_roundtrip();

@@ -577,6 +577,87 @@ static void test_close_code_message_too_big(void) {
     neverc_tcp_listener_close(ln);
 }
 
+/* RFC 6455 §5.5 caps control payloads at 125 in the frame parser, and 1009
+ * is about a message being too big. Applying the message read limit to a
+ * PING would break the mandatory PONG and the closing handshake. */
+static void test_control_frame_ignores_read_limit(void) {
+    printf("[control_frame_ignores_read_limit]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("control-limit listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("control-limit client", client);
+    check_not_null("control-limit server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    neverc_ws_conn_t *ws = ws_test_server_handshake(server, client);
+    check_not_null("control-limit server ws", ws);
+    if (ws) {
+        check_int("set read limit", neverc_ws_set_read_limit(ws, 8), 0);
+        check_int("write oversized ping",
+                  ws_write_masked_frame(client, NC_WS_OPCODE_PING,
+                                        "0123456789", 10),
+                  0);
+        int opcode = 0;
+        char buf[32];
+        size_t n = 0;
+        check_int("ping accepted past read limit",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  0);
+        check_int("ping opcode", opcode, NC_WS_OPCODE_PING);
+        check_int("ping length", (int)n, 10);
+        uint8_t pong[12];
+        check_int("read pong",
+                  ws_tcp_read_exact(client, pong, sizeof(pong)), 0);
+        check_int("pong opcode", pong[0], 0x8a);
+        check_int("pong unmasked len 10", pong[1], 0x0a);
+        check_int("pong echoes payload",
+                  memcmp(pong + 2, "0123456789", 10) == 0, 1);
+
+        /* A close frame longer than the limit must still echo 1000, not
+         * replace it with 1009. */
+        char close_payload[19];
+        close_payload[0] = 0x03;
+        close_payload[1] = (char)0xe8;
+        memcpy(close_payload + 2, "shutting down now", 17);
+        check_int("write oversized close",
+                  ws_write_masked_frame(client, NC_WS_OPCODE_CLOSE,
+                                        close_payload,
+                                        sizeof(close_payload)),
+                  0);
+        check_int("close accepted past read limit",
+                  neverc_ws_read_frame(ws, &opcode, NULL, buf, sizeof(buf),
+                                       &n),
+                  0);
+        check_int("close opcode", opcode, NC_WS_OPCODE_CLOSE);
+        uint8_t close_hdr[4];
+        check_int("read close echo",
+                  ws_tcp_read_exact(client, close_hdr, sizeof(close_hdr)), 0);
+        check_int("close echo opcode", close_hdr[0], 0x88);
+        uint16_t code = (uint16_t)(((uint16_t)close_hdr[2] << 8) |
+                                   close_hdr[3]);
+        check_int("close echoes 1000", code, 1000);
+        neverc_ws_conn_free(ws);
+    } else {
+        neverc_tcp_close(server);
+    }
+    neverc_tcp_close(client);
+    neverc_tcp_listener_close(ln);
+}
+
 static void test_close_invalid_utf8_reason_is_1007(void) {
     printf("[close_invalid_utf8_reason]\n");
     const char *err = NULL;
@@ -2602,6 +2683,7 @@ int main(void) {
     test_handshake_rejects();
     test_reject_unmasked_client_frame();
     test_close_code_message_too_big();
+    test_control_frame_ignores_read_limit();
     test_close_invalid_utf8_reason_is_1007();
     test_reserved_close_code_is_1002();
     test_local_buffer_too_small_keeps_stream();

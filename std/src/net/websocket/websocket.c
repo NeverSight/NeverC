@@ -1833,14 +1833,20 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
     int frame_fin = header.fin;
     int masked = header.masked;
     uint64_t plen = header.payload_length;
-    if ((conn->read_limit && plen > conn->read_limit) ||
-        (!conn->read_limit && plen > WS_MAX_DISCARD && plen > buflen)) {
+    /* RFC 6455 §5.5 already caps control payloads at 125 in the frame
+     * parser, and 1009 is defined for a *message* that is too big, so the
+     * read limit must not reject a legal PING/PONG/CLOSE - doing so breaks
+     * the mandatory PONG response and the closing handshake. */
+    int control_frame = ws_control_opcode(frame_opcode);
+    if (!control_frame &&
+        ((conn->read_limit && plen > conn->read_limit) ||
+         (!conn->read_limit && plen > WS_MAX_DISCARD && plen > buflen))) {
         return ws_fail_too_big(conn);
     }
 
     uint8_t control_storage[125];
     void *payload_buf = buf;
-    if (ws_control_opcode(frame_opcode) && plen > buflen) {
+    if (control_frame && plen > buflen) {
         payload_buf = control_storage;
     } else if (plen > buflen) {
         if (plen > WS_MAX_DISCARD)
