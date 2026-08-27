@@ -64,6 +64,7 @@ build_cases() {
     "$test_root/test_resolve.c" \
     "$std_root/src/net/resolve/resolve.c" \
     "$std_root/src/net/netip/netip.c" \
+    "$std_root/src/unicode/unicode.c" \
     -pthread -lm -lresolv -o "$work_dir/resolve-$label"
 }
 
@@ -129,6 +130,7 @@ protocol_sources=(
   "$std_root/src/net/websocket/websocket.c"
   "$std_root/src/net/url/url.c"
   "$std_root/src/net/netip/netip.c"
+  "$std_root/src/unicode/unicode.c"
   "$std_root/src/net/http/http2/http2.c"
   "$std_root/src/net/http/http2/http2_server.c"
   "$std_root/src/net/http3/http3_frame.c"
