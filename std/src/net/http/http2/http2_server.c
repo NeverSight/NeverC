@@ -2055,7 +2055,10 @@ static void h2_handler_task(void *arg) {
         nc_atomic_load(&conn->running))
         h2_dispatch_request(conn, stream);
     nc_mutex_lock(&conn->state_lock);
-    stream->handler_active = 0;
+    /* handler_active is what tells the reader thread the stream is still
+     * owned here, so it stays set until after the last dereference below.
+     * Clearing it before the blocking RST write let the reader run
+     * h2_remove_stream and free the stream out from under us. */
     /* RFC 9113 §8.1: if the handler finished before the client, keep
      * half-closed (local) long enough to emit RST_STREAM NO_ERROR so
      * leftover request DATA is not a STREAM_CLOSED violation. */
@@ -2068,24 +2071,31 @@ static void h2_handler_task(void *arg) {
      * not GOAWAY STREAM_CLOSED (RFC 9113 §8.1 / §5.1). */
     if (send_no_error_rst)
         nc_atomic_store(&stream->reset, 1);
+    uint32_t stream_id = stream->id;
     nc_mutex_unlock(&conn->state_lock);
     if (send_no_error_rst)
-        (void)h2_conn_write_rst(conn, stream->id, NC_H2_NO_ERROR);
+        (void)h2_conn_write_rst(conn, stream_id, NC_H2_NO_ERROR);
     nc_mutex_lock(&conn->state_lock);
     stream->state = H2_STREAM_CLOSED;
     if (stream->counted_active) {
         nc_atomic_dec(&conn->active_streams);
         stream->counted_active = 0;
     }
+    stream->handler_active = 0;
     nc_atomic_store(&stream->handler_done, 1);
-    conn->active_handlers--;
     int finish_draining = nc_atomic_load(&conn->goaway_sent) &&
                           nc_atomic_load(&conn->active_streams) == 0;
-    nc_cond_broadcast(&conn->handlers_done);
     nc_cond_broadcast(&conn->window_changed);
     nc_mutex_unlock(&conn->state_lock);
     if (finish_draining)
         h2_io_shutdown(&conn->io);
+    /* active_handlers is the connection's reference count: cleanup waits on
+     * it before destroying conn, which lives on h2_serve_io's stack, so it
+     * can only be released after the last access to conn above. */
+    nc_mutex_lock(&conn->state_lock);
+    conn->active_handlers--;
+    nc_cond_broadcast(&conn->handlers_done);
+    nc_mutex_unlock(&conn->state_lock);
 }
 
 static int h2_submit_request(h2_conn_t *conn, h2_stream_t *stream) {
