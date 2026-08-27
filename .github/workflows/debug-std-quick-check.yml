@@ -1,0 +1,48 @@
+name: debug-std-quick-check
+
+on:
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: 'space-separated STD_TEST names'
+        required: true
+      sanitize:
+        description: "-fsanitize= value, or 'none'"
+        required: false
+        default: 'address,undefined'
+      defines:
+        description: 'space-separated extra -D macros'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  quick-check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Compile and run std tests with clang
+        env:
+          QUICK_TESTS: ${{ inputs.tests }}
+          QUICK_SANITIZE: ${{ inputs.sanitize }}
+          QUICK_DEFINES: ${{ inputs.defines }}
+        run: |
+          define_args=()
+          for macro in $QUICK_DEFINES; do
+            define_args+=(--define "$macro")
+          done
+          python3 utils/ci/std-quick-check.py \
+            --cc clang \
+            --sanitize "$QUICK_SANITIZE" \
+            --tests "$QUICK_TESTS" \
+            "${define_args[@]}"
