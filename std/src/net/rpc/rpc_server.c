@@ -1,6 +1,7 @@
 #include "neverc/std/net/rpc.h"
 
 #include "neverc/std/crypto/tls.h"
+#include "neverc/std/hash/fnv.h"
 #include "neverc/std/net/quic.h"
 #include "neverc/std/net/tcp.h"
 #include "neverc/std/thread.h"
@@ -134,11 +135,7 @@ static neverc_rpc_status_code_t rpc_server_call_interceptor(
 }
 
 static uint64_t rpc_tenant_hash(const uint8_t *key, size_t length) {
-    uint64_t hash = UINT64_C(1469598103934665603);
-    for (size_t i = 0; i < length; i++) {
-        hash ^= key[i];
-        hash *= UINT64_C(1099511628211);
-    }
+    uint64_t hash = neverc_fnv_sum64a(key, length);
     return hash ? hash : 1;
 }
 

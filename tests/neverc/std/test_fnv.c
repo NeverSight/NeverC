@@ -27,10 +27,6 @@ static void check_u64(const char *name, uint64_t got, uint64_t expected) {
     }
 }
 
-/*
- * Reference values computed from the FNV spec / Go hash/fnv test vectors.
- * See http://www.isthe.com/chongo/tech/comp/fnv/
- */
 static void test_fnv32(void) {
     printf("[fnv32]\n");
     check_u32("fnv32(empty)", neverc_fnv_32("", 0), 0x811c9dc5);
@@ -43,7 +39,6 @@ static void test_fnv32a(void) {
     printf("[fnv32a]\n");
     check_u32("fnv32a(empty)", neverc_fnv_32a("", 0), 0x811c9dc5);
     check_u32("fnv32a(a)",     neverc_fnv_32a("a", 1), 0xe40c292c);
-    /* Go hash/fnv golden32a */
     check_u32("fnv32a(ab)",    neverc_fnv_32a("ab", 2), 0x4d2505ca);
     check_u32("fnv32a(abc)",   neverc_fnv_32a("abc", 3), 0x1a47e90b);
     check_u32("fnv32a(foobar)", neverc_fnv_32a("foobar", 6), 0xbf9cf968);
@@ -61,7 +56,6 @@ static void test_fnv64a(void) {
     printf("[fnv64a]\n");
     check_u64("fnv64a(empty)", neverc_fnv_64a("", 0), 0xcbf29ce484222325ULL);
     check_u64("fnv64a(a)",     neverc_fnv_64a("a", 1), 0xaf63dc4c8601ec8cULL);
-    /* Go hash/fnv golden64a */
     check_u64("fnv64a(ab)",    neverc_fnv_64a("ab", 2), 0x089c4407b545986aULL);
     check_u64("fnv64a(abc)",   neverc_fnv_64a("abc", 3), 0xe71fa2190541574bULL);
     check_u64("fnv64a(foobar)", neverc_fnv_64a("foobar", 6), 0x85944171f73967e8ULL);
@@ -84,7 +78,6 @@ static void test_fnv128(void) {
     neverc_fnv_128_t h0 = neverc_fnv_sum128("", 0);
     check_128("fnv128(empty)", h0, 0x6c62272e07bb0142ULL, 0x62b821756295c58dULL);
 
-    /* Go hash/fnv golden128 */
     check_128("fnv128(a)", neverc_fnv_sum128("a", 1),
               0xd228cb69101a8cafULL, 0x78912b704e4a141eULL);
     check_128("fnv128(ab)", neverc_fnv_sum128("ab", 2),
@@ -92,9 +85,7 @@ static void test_fnv128(void) {
     check_128("fnv128(abc)", neverc_fnv_sum128("abc", 3),
               0xa68bb2a4348b5822ULL, 0x836dbc78c6aee73bULL);
 
-    /* Longer than 8 bytes: exercises the unrolled loop and 128-bit mul carry.
-     * Independent of this implementation: FNV-1-128 with offset/prime from
-     * Go hash/fnv (prime = 2^88 + 0x13b). */
+    /* Longer than 8 bytes exercises the unrolled loop and multiply carry. */
     static const uint8_t ff32[32] = {
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -113,7 +104,6 @@ static void test_fnv128a(void) {
     neverc_fnv_128_t h0 = neverc_fnv_sum128a("", 0);
     check_128("fnv128a(empty)", h0, 0x6c62272e07bb0142ULL, 0x62b821756295c58dULL);
 
-    /* Go hash/fnv golden128a */
     check_128("fnv128a(a)", neverc_fnv_sum128a("a", 1),
               0xd228cb696f1a8cafULL, 0x78912b704e4a8964ULL);
     check_128("fnv128a(ab)", neverc_fnv_sum128a("ab", 2),
@@ -133,6 +123,83 @@ static void test_fnv128a(void) {
     check_128("fnv128a(fox)",
               neverc_fnv_sum128a("The quick brown fox jumps over the lazy dog", 43),
               0x68cce4cd885ea042ULL, 0x39f02af30e297870ULL);
+}
+
+static void test_binary_inputs(void) {
+    printf("[binary inputs]\n");
+    static const uint8_t a_nul[] = {'a', 0};
+    check_u32("fnv32(a\\0)", neverc_fnv_sum32(a_nul, sizeof(a_nul)),
+              0x70772d5aU);
+    check_u32("fnv32a(a\\0)", neverc_fnv_sum32a(a_nul, sizeof(a_nul)),
+              0x2b24d044U);
+    check_u64("fnv64(a\\0)", neverc_fnv_sum64(a_nul, sizeof(a_nul)),
+              0x08326707b4eb37daULL);
+    check_u64("fnv64a(a\\0)", neverc_fnv_sum64a(a_nul, sizeof(a_nul)),
+              0x089be207b544f1e4ULL);
+}
+
+static void test_incremental(void) {
+    printf("[incremental]\n");
+    static const uint8_t data[] = {
+        'f', 'o', 'o', 0, 'b', 'a', 'r', 0xff, 0x80,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
+    };
+    const size_t first = 3;
+    const size_t second = 6;
+
+    uint32_t h32 = NEVERC_FNV32_OFFSET_BASIS;
+    h32 = neverc_fnv_update32(h32, data, first);
+    h32 = neverc_fnv_update32(h32, data + first, second);
+    h32 = neverc_fnv_update32(h32, data + first + second,
+                              sizeof(data) - first - second);
+    check_u32("fnv32 incremental", h32,
+              neverc_fnv_sum32(data, sizeof(data)));
+
+    uint32_t h32a = NEVERC_FNV32_OFFSET_BASIS;
+    h32a = neverc_fnv_update32a(h32a, data, first);
+    h32a = neverc_fnv_update32a(h32a, data + first, second);
+    h32a = neverc_fnv_update32a(h32a, data + first + second,
+                                sizeof(data) - first - second);
+    check_u32("fnv32a incremental", h32a,
+              neverc_fnv_sum32a(data, sizeof(data)));
+
+    uint64_t h64 = NEVERC_FNV64_OFFSET_BASIS;
+    h64 = neverc_fnv_update64(h64, data, first);
+    h64 = neverc_fnv_update64(h64, data + first, second);
+    h64 = neverc_fnv_update64(h64, data + first + second,
+                              sizeof(data) - first - second);
+    check_u64("fnv64 incremental", h64,
+              neverc_fnv_sum64(data, sizeof(data)));
+
+    uint64_t h64a = NEVERC_FNV64_OFFSET_BASIS;
+    h64a = neverc_fnv_update64a(h64a, data, first);
+    h64a = neverc_fnv_update64a(h64a, data + first, second);
+    h64a = neverc_fnv_update64a(h64a, data + first + second,
+                                sizeof(data) - first - second);
+    check_u64("fnv64a incremental", h64a,
+              neverc_fnv_sum64a(data, sizeof(data)));
+
+    neverc_fnv_128_t h128 = {
+        NEVERC_FNV128_OFFSET_BASIS_HI,
+        NEVERC_FNV128_OFFSET_BASIS_LO
+    };
+    h128 = neverc_fnv_update128(h128, data, first);
+    h128 = neverc_fnv_update128(h128, data + first, second);
+    h128 = neverc_fnv_update128(h128, data + first + second,
+                                sizeof(data) - first - second);
+    neverc_fnv_128_t full128 = neverc_fnv_sum128(data, sizeof(data));
+    check_128("fnv128 incremental", h128, full128.hi, full128.lo);
+
+    neverc_fnv_128_t h128a = {
+        NEVERC_FNV128_OFFSET_BASIS_HI,
+        NEVERC_FNV128_OFFSET_BASIS_LO
+    };
+    h128a = neverc_fnv_update128a(h128a, data, first);
+    h128a = neverc_fnv_update128a(h128a, data + first, second);
+    h128a = neverc_fnv_update128a(h128a, data + first + second,
+                                  sizeof(data) - first - second);
+    neverc_fnv_128_t full128a = neverc_fnv_sum128a(data, sizeof(data));
+    check_128("fnv128a incremental", h128a, full128a.hi, full128a.lo);
 }
 
 static void test_consistency(void) {
@@ -164,6 +231,24 @@ static void test_null_data(void) {
     z = neverc_fnv_sum128a(NULL, 8);
     e = neverc_fnv_sum128a("", 0);
     check_128("fnv128a(null)", z, e.hi, e.lo);
+
+    check_u32("fnv32 update null",
+              neverc_fnv_update32(0x12345678U, NULL, 8), 0x12345678U);
+    check_u32("fnv32a update null",
+              neverc_fnv_update32a(0x12345678U, NULL, 8), 0x12345678U);
+    check_u64("fnv64 update null",
+              neverc_fnv_update64(0x123456789abcdef0ULL, NULL, 8),
+              0x123456789abcdef0ULL);
+    check_u64("fnv64a update null",
+              neverc_fnv_update64a(0x123456789abcdef0ULL, NULL, 8),
+              0x123456789abcdef0ULL);
+    neverc_fnv_128_t seed = {
+        0x0123456789abcdefULL, 0xfedcba9876543210ULL
+    };
+    z = neverc_fnv_update128(seed, NULL, 8);
+    check_128("fnv128 update null", z, seed.hi, seed.lo);
+    z = neverc_fnv_update128a(seed, NULL, 8);
+    check_128("fnv128a update null", z, seed.hi, seed.lo);
 }
 
 int main(void) {
@@ -175,6 +260,8 @@ int main(void) {
     test_fnv64a();
     test_fnv128();
     test_fnv128a();
+    test_binary_inputs();
+    test_incremental();
     test_consistency();
     test_null_data();
 

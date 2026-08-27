@@ -122,6 +122,34 @@ TEST(PluginDiagnosticTest, PreservesStructuredWarningAndNotes) {
   EXPECT_FALSE(Services.shutdown());
 }
 
+TEST(PluginDiagnosticTest, UsesCanonicalUnknownPhaseOrder) {
+  constexpr const char *PluginID = "org.neverc.test.scope.session";
+  PluginProcessServices Services("neverc-plugin-diagnostic-tests",
+                                 LLVM_VERSION_MAJOR);
+  auto Session = createSession(
+      Services, NEVERC_TEST_SCOPE_SESSION_PLUGIN, PluginID);
+  ASSERT_NE(Session, nullptr);
+
+  NevercDiagnosticDescriptor Diagnostic = descriptor(
+      NEVERC_DIAGNOSTIC_WARNING, 1207, PluginID,
+      "neverc.extension.custom", "extension warning");
+  NevercDiagnosticHandle Handle{};
+  auto Result = Session->invokeCallback(
+      PluginID, "neverc.extension.custom/provider", [&] {
+        return Services.coreAPI().EmitDiagnostic(
+            Services.coreAPI().Context, &Diagnostic, &Handle);
+      });
+  ASSERT_TRUE(static_cast<bool>(Result));
+  ASSERT_EQ(Result->Code, NEVERC_STATUS_OK);
+
+  auto Records = Session->diagnostics().takeSorted();
+  ASSERT_EQ(Records.size(), 1U);
+  EXPECT_EQ(Records[0].PhaseOrder, 0x1034bd4a2ULL);
+
+  EXPECT_FALSE(Session->end());
+  EXPECT_FALSE(Services.shutdown());
+}
+
 TEST(PluginDiagnosticTest, RejectsDiagnosticForAnotherPlugin) {
   constexpr const char *PluginID = "org.neverc.test.scope.session";
   PluginProcessServices Services("neverc-plugin-diagnostic-tests",

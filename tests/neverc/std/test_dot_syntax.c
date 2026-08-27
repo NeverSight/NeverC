@@ -487,6 +487,48 @@ static void test_hash_fnv_dot_syntax(void) {
 
     uint64_t h64 = hash.fnv.sum64a("hello", 5);
     CHECK("hash.fnv.sum64a_nonzero", h64 != 0);
+
+    uint32_t h32_update =
+        hash.fnv.update32(NEVERC_FNV32_OFFSET_BASIS, "he", 2);
+    h32_update = hash.fnv.update32(h32_update, "llo", 3);
+    CHECK("hash.fnv.update32",
+          h32_update == hash.fnv.sum32("hello", 5));
+
+    uint32_t h32a_update =
+        hash.fnv.update32a(NEVERC_FNV32_OFFSET_BASIS, "he", 2);
+    h32a_update = hash.fnv.update32a(h32a_update, "llo", 3);
+    CHECK("hash.fnv.update32a", h32a_update == h);
+
+    uint64_t h64_update =
+        hash.fnv.update64(NEVERC_FNV64_OFFSET_BASIS, "he", 2);
+    h64_update = hash.fnv.update64(h64_update, "llo", 3);
+    CHECK("hash.fnv.update64",
+          h64_update == hash.fnv.sum64("hello", 5));
+
+    uint64_t h64a_update =
+        hash.fnv.update64a(NEVERC_FNV64_OFFSET_BASIS, "he", 2);
+    h64a_update = hash.fnv.update64a(h64a_update, "llo", 3);
+    CHECK("hash.fnv.update64a", h64a_update == h64);
+
+    neverc_fnv_128_t h128 = {
+        NEVERC_FNV128_OFFSET_BASIS_HI,
+        NEVERC_FNV128_OFFSET_BASIS_LO
+    };
+    h128 = hash.fnv.update128(h128, "he", 2);
+    h128 = hash.fnv.update128(h128, "llo", 3);
+    neverc_fnv_128_t full128 = hash.fnv.sum128("hello", 5);
+    CHECK("hash.fnv.update128",
+          h128.hi == full128.hi && h128.lo == full128.lo);
+
+    neverc_fnv_128_t h128a = {
+        NEVERC_FNV128_OFFSET_BASIS_HI,
+        NEVERC_FNV128_OFFSET_BASIS_LO
+    };
+    h128a = hash.fnv.update128a(h128a, "he", 2);
+    h128a = hash.fnv.update128a(h128a, "llo", 3);
+    neverc_fnv_128_t full128a = hash.fnv.sum128a("hello", 5);
+    CHECK("hash.fnv.update128a",
+          h128a.hi == full128a.hi && h128a.lo == full128a.lo);
 }
 
 static void test_hash_adler32_dot_syntax(void) {

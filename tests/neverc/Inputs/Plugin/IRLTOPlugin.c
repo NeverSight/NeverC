@@ -60,7 +60,7 @@ module_definition_fingerprint(const NevercIRPassInvocation *Invocation,
                               uint64_t *OutFingerprint) {
   NevercIRValueHandle Functions[128];
   uint64_t FunctionCount = 0;
-  uint64_t Hash = UINT64_C(1469598103934665603);
+  uint64_t Hash = UINT64_C(0xcbf29ce484222325);
   NevercStatus Result = collect_values(Invocation, Invocation->Module,
                                        NEVERC_IR_COLLECTION_MODULE_FUNCTIONS,
                                        Functions, 128, &FunctionCount);

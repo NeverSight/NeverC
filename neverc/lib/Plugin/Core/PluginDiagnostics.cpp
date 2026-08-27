@@ -49,7 +49,7 @@ uint64_t phaseOrder(StringRef PhaseID) {
           .Default(0);
   if (Known != 0)
     return Known;
-  uint64_t Hash = UINT64_C(1469598103934665603);
+  uint64_t Hash = UINT64_C(0xcbf29ce484222325);
   for (unsigned char Byte : PhaseID.bytes()) {
     Hash ^= Byte;
     Hash *= UINT64_C(1099511628211);

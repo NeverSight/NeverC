@@ -117,7 +117,7 @@ static double now_ms(void) {
 }
 
 static uint64_t checksum(const uint8_t *p, size_t n) {
-    uint64_t h = 1469598103934665603ULL;
+    uint64_t h = 0xcbf29ce484222325ULL;
     for (size_t i = 0; i < n; i++) { h ^= p[i]; h *= 1099511628211ULL; }
     return h;
 }

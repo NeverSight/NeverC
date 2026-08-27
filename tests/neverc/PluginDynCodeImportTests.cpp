@@ -5,6 +5,7 @@
 // IR API) and confirm the conflict/idempotency rules the host relies on at route
 // freeze and final verification.
 
+#include "neverc/DynCode/Import/KernelImportABI.h"
 #include "neverc/DynCode/Pipeline/ExternalReferenceLedger.h"
 
 #include "DynCodeImportRegistry.h"
@@ -23,6 +24,17 @@ using namespace llvm;
 using namespace neverc::dyncode;
 
 namespace {
+
+TEST(KernelResolverABITest, HashNameUsesFNV1a64) {
+  EXPECT_EQ(KernelResolverABI::hashName(""), UINT64_C(0xcbf29ce484222325));
+  EXPECT_EQ(KernelResolverABI::hashName("a"), UINT64_C(0xaf63dc4c8601ec8c));
+  EXPECT_EQ(KernelResolverABI::hashName("foobar"),
+            UINT64_C(0x85944171f73967e8));
+
+  const char HighByte[] = {static_cast<char>(0xff)};
+  EXPECT_EQ(KernelResolverABI::hashName(StringRef(HighByte, 1)),
+            UINT64_C(0xaf64724c8602eb6e));
+}
 
 FunctionType *i32Fn(LLVMContext &C) {
   return FunctionType::get(Type::getInt32Ty(C), false);

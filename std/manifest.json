@@ -340,8 +340,14 @@
     },
     "hash/fnv": {
       "header": "include/neverc/std/hash/fnv.h",
-      "description": "FNV-1 and FNV-1a non-cryptographic hash functions (mirrors Go hash/fnv package)",
+      "description": "FNV-1 and FNV-1a non-cryptographic hash functions",
       "symbols": {
+        "neverc_fnv_update32": "src/hash/fnv/fnv.c",
+        "neverc_fnv_update32a": "src/hash/fnv/fnv.c",
+        "neverc_fnv_update64": "src/hash/fnv/fnv.c",
+        "neverc_fnv_update64a": "src/hash/fnv/fnv.c",
+        "neverc_fnv_update128": "src/hash/fnv/fnv.c",
+        "neverc_fnv_update128a": "src/hash/fnv/fnv.c",
         "neverc_fnv_sum32": "src/hash/fnv/fnv.c",
         "neverc_fnv_sum32a": "src/hash/fnv/fnv.c",
         "neverc_fnv_sum64": "src/hash/fnv/fnv.c",
@@ -350,6 +356,12 @@
         "neverc_fnv_sum128a": "src/hash/fnv/fnv.c"
       },
       "dot_methods": {
+        "update32": "neverc_fnv_update32",
+        "update32a": "neverc_fnv_update32a",
+        "update64": "neverc_fnv_update64",
+        "update64a": "neverc_fnv_update64a",
+        "update128": "neverc_fnv_update128",
+        "update128a": "neverc_fnv_update128a",
         "sum32": "neverc_fnv_sum32",
         "sum32a": "neverc_fnv_sum32a",
         "sum64": "neverc_fnv_sum64",

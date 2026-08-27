@@ -1,14 +1,7 @@
 #include "neverc/std/hash/fnv.h"
 
-/*
- * FNV-1 and FNV-1a hash functions.
- * See https://en.wikipedia.org/wiki/Fowler-Noll-Vo_hash_function
- */
-
-#define FNV_OFFSET_32 2166136261U
-#define FNV_PRIME_32  16777619U
-#define FNV_OFFSET_64 14695981039346656037ULL
-#define FNV_PRIME_64  1099511628211ULL
+#define FNV_PRIME_32 UINT32_C(16777619)
+#define FNV_PRIME_64 UINT64_C(1099511628211)
 
 static const uint8_t *fnv_bytes(const void *data, size_t *len) {
     if (!data) {
@@ -18,9 +11,8 @@ static const uint8_t *fnv_bytes(const void *data, size_t *len) {
     return (const uint8_t *)data;
 }
 
-uint32_t neverc_fnv_sum32(const void *data, size_t len) {
+uint32_t neverc_fnv_update32(uint32_t hash, const void *data, size_t len) {
     const uint8_t *p = fnv_bytes(data, &len);
-    uint32_t hash = FNV_OFFSET_32;
     size_t i = 0;
     for (; i < len && len - i >= 8; i += 8) {
         hash *= FNV_PRIME_32; hash ^= p[i  ];
@@ -39,9 +31,8 @@ uint32_t neverc_fnv_sum32(const void *data, size_t len) {
     return hash;
 }
 
-uint32_t neverc_fnv_sum32a(const void *data, size_t len) {
+uint32_t neverc_fnv_update32a(uint32_t hash, const void *data, size_t len) {
     const uint8_t *p = fnv_bytes(data, &len);
-    uint32_t hash = FNV_OFFSET_32;
     size_t i = 0;
     for (; i < len && len - i >= 8; i += 8) {
         hash ^= p[i  ]; hash *= FNV_PRIME_32;
@@ -60,9 +51,8 @@ uint32_t neverc_fnv_sum32a(const void *data, size_t len) {
     return hash;
 }
 
-uint64_t neverc_fnv_sum64(const void *data, size_t len) {
+uint64_t neverc_fnv_update64(uint64_t hash, const void *data, size_t len) {
     const uint8_t *p = fnv_bytes(data, &len);
-    uint64_t hash = FNV_OFFSET_64;
     size_t i = 0;
     for (; i < len && len - i >= 8; i += 8) {
         hash *= FNV_PRIME_64; hash ^= p[i  ];
@@ -81,9 +71,8 @@ uint64_t neverc_fnv_sum64(const void *data, size_t len) {
     return hash;
 }
 
-uint64_t neverc_fnv_sum64a(const void *data, size_t len) {
+uint64_t neverc_fnv_update64a(uint64_t hash, const void *data, size_t len) {
     const uint8_t *p = fnv_bytes(data, &len);
-    uint64_t hash = FNV_OFFSET_64;
     size_t i = 0;
     for (; i < len && len - i >= 8; i += 8) {
         hash ^= p[i  ]; hash *= FNV_PRIME_64;
@@ -108,9 +97,7 @@ uint64_t neverc_fnv_sum64a(const void *data, size_t len) {
  * lower word matters for the multiply: prime128Lower = 0x13b,
  * and the upper contribution is s[1] << 24.
  */
-#define FNV_OFFSET_128_HI 0x6c62272e07bb0142ULL
-#define FNV_OFFSET_128_LO 0x62b821756295c58dULL
-#define FNV_PRIME_128_LO  0x13bULL
+#define FNV_PRIME_128_LO UINT64_C(0x13b)
 #define FNV_PRIME_128_SHIFT 24
 
 static inline void mul128(uint64_t *hi, uint64_t *lo) {
@@ -139,9 +126,10 @@ static inline void mul128(uint64_t *hi, uint64_t *lo) {
     *hi = s0;
 }
 
-neverc_fnv_128_t neverc_fnv_sum128(const void *data, size_t len) {
+neverc_fnv_128_t neverc_fnv_update128(neverc_fnv_128_t hash,
+                                      const void *data, size_t len) {
     const uint8_t *p = fnv_bytes(data, &len);
-    uint64_t hi = FNV_OFFSET_128_HI, lo = FNV_OFFSET_128_LO;
+    uint64_t hi = hash.hi, lo = hash.lo;
     size_t i = 0;
     for (; i < len && len - i >= 8; i += 8) {
         mul128(&hi, &lo); lo ^= p[i  ];
@@ -160,9 +148,10 @@ neverc_fnv_128_t neverc_fnv_sum128(const void *data, size_t len) {
     return (neverc_fnv_128_t){hi, lo};
 }
 
-neverc_fnv_128_t neverc_fnv_sum128a(const void *data, size_t len) {
+neverc_fnv_128_t neverc_fnv_update128a(neverc_fnv_128_t hash,
+                                       const void *data, size_t len) {
     const uint8_t *p = fnv_bytes(data, &len);
-    uint64_t hi = FNV_OFFSET_128_HI, lo = FNV_OFFSET_128_LO;
+    uint64_t hi = hash.hi, lo = hash.lo;
     size_t i = 0;
     for (; i < len && len - i >= 8; i += 8) {
         lo ^= p[i  ]; mul128(&hi, &lo);
@@ -179,4 +168,36 @@ neverc_fnv_128_t neverc_fnv_sum128a(const void *data, size_t len) {
         mul128(&hi, &lo);
     }
     return (neverc_fnv_128_t){hi, lo};
+}
+
+uint32_t neverc_fnv_sum32(const void *data, size_t len) {
+    return neverc_fnv_update32(NEVERC_FNV32_OFFSET_BASIS, data, len);
+}
+
+uint32_t neverc_fnv_sum32a(const void *data, size_t len) {
+    return neverc_fnv_update32a(NEVERC_FNV32_OFFSET_BASIS, data, len);
+}
+
+uint64_t neverc_fnv_sum64(const void *data, size_t len) {
+    return neverc_fnv_update64(NEVERC_FNV64_OFFSET_BASIS, data, len);
+}
+
+uint64_t neverc_fnv_sum64a(const void *data, size_t len) {
+    return neverc_fnv_update64a(NEVERC_FNV64_OFFSET_BASIS, data, len);
+}
+
+neverc_fnv_128_t neverc_fnv_sum128(const void *data, size_t len) {
+    neverc_fnv_128_t hash = {
+        NEVERC_FNV128_OFFSET_BASIS_HI,
+        NEVERC_FNV128_OFFSET_BASIS_LO
+    };
+    return neverc_fnv_update128(hash, data, len);
+}
+
+neverc_fnv_128_t neverc_fnv_sum128a(const void *data, size_t len) {
+    neverc_fnv_128_t hash = {
+        NEVERC_FNV128_OFFSET_BASIS_HI,
+        NEVERC_FNV128_OFFSET_BASIS_LO
+    };
+    return neverc_fnv_update128a(hash, data, len);
 }

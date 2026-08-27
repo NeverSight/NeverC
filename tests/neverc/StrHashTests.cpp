@@ -194,3 +194,16 @@ TEST_F(StrHashTest, RuntimeMatch_CompileClean) {
   EXPECT_EQ(r.exitCode, 0)
       << "runtime match pattern failed\n" << r.err;
 }
+
+TEST_F(StrHashTest, RuntimeMatchesCompileTimeForBuiltinAlgorithms) {
+  auto Src = strHashDir() / "nc_strhash_runtime_parity.c";
+  if (!fs::exists(Src))
+    GTEST_SKIP() << Src << " not found";
+
+  for (const char *Algorithm : {"fnv32a", "fnv64a", "xxhash64"}) {
+    SCOPED_TRACE(Algorithm);
+    compileRunAndCheck(
+        std::string("strhash_runtime_parity_") + Algorithm, Src.string(),
+        std::string("-std=c11 -fstrhash-algo=") + Algorithm, 0);
+  }
+}

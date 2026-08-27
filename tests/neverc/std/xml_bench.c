@@ -174,7 +174,7 @@ static uint64_t mix(uint64_t h, const char *s, size_t n) {
 /* Tokenize fully, return token count and a content checksum. */
 static size_t tokenize_old(const char *doc, size_t len, uint64_t *csum) {
     neverc_xml_decoder_t d; neverc_xml_decoder_init(&d, doc, len);
-    neverc_xml_token_t tok; size_t cnt = 0; uint64_t h = 1469598103934665603ULL;
+    neverc_xml_token_t tok; size_t cnt = 0; uint64_t h = 0xcbf29ce484222325ULL;
     while (o_decode_token(&d, &tok) > 0) {
         h = (h ^ (uint64_t)tok.type) * 1099511628211ULL;
         if (tok.name) h = mix(h, tok.name, strlen(tok.name));
@@ -186,7 +186,7 @@ static size_t tokenize_old(const char *doc, size_t len, uint64_t *csum) {
 }
 static size_t tokenize_new(const char *doc, size_t len, uint64_t *csum) {
     neverc_xml_decoder_t d; neverc_xml_decoder_init(&d, doc, len);
-    neverc_xml_token_t tok; size_t cnt = 0; uint64_t h = 1469598103934665603ULL;
+    neverc_xml_token_t tok; size_t cnt = 0; uint64_t h = 0xcbf29ce484222325ULL;
     while (neverc_xml_decode_token(&d, &tok) > 0) {
         h = (h ^ (uint64_t)tok.type) * 1099511628211ULL;
         if (tok.name) h = mix(h, tok.name, strlen(tok.name));
