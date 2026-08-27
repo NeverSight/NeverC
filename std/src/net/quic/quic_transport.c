@@ -542,6 +542,8 @@ static void qt_start_path_validation(struct neverc_quic_conn *conn,
          qt_address_equal(source, &conn->candidate_addr)))
         return;
     conn->candidate_addr = *source;
+    conn->candidate_bytes_received = 0;
+    conn->candidate_bytes_sent = 0;
     if (neverc_crypto_rand_read(conn->path_challenge, 8) != 0) {
         (void)neverc_quic_conn_close_locked(conn, QUIC_ERR_NO_VIABLE_PATH,
                                             "path challenge RNG failed", 0);
@@ -762,9 +764,15 @@ decrypt_complete:
     if (conn->side == QUIC_SIDE_SERVER &&
         header.type == QUIC_PKT_HANDSHAKE)
         conn->address_validated = 1;
-    if (!is_long) qt_start_path_validation(conn, source);
     int duplicate = neverc_quic_pn_already_received(&conn->pn[space],
                                                     packet_number);
+    /* RFC 9000 §9.3: only the highest-numbered non-probing packet may move
+     * the peer address, so replayed and reordered packets must not each open
+     * a fresh candidate path. */
+    if (!is_long && !duplicate &&
+        (!conn->pn[space].has_recv ||
+         packet_number > conn->pn[space].largest_recv))
+        qt_start_path_validation(conn, source);
     if (!duplicate) {
         int ack_eliciting = 0;
         size_t plaintext_len = header.payload_len - 16U;
@@ -915,6 +923,14 @@ int neverc_quic_conn_process_datagram(struct neverc_quic_conn *conn,
         position += consumed;
         if ((packet[position - consumed] & 0x80U) == 0) break;
     }
+    /* Credited after the loop so the datagram that opened the validation
+     * funds the PATH_CHALLENGE reply, and no earlier so bytes from the old
+     * path never land in the candidate's budget. */
+    if (conn->path_validation_pending &&
+        qt_address_equal(source, &conn->candidate_addr))
+        conn->candidate_bytes_received =
+            conn->candidate_bytes_received > UINT64_MAX - length
+                ? UINT64_MAX : conn->candidate_bytes_received + length;
     int closed = conn->state == QUIC_CONN_CLOSED;
     nc_mutex_unlock(&conn->lock);
     if (closed) return 0;
@@ -1493,16 +1509,27 @@ static int qt_write_short_header(struct neverc_quic_conn *conn,
     return 0;
 }
 
+/* RFC 9000 §8 / §9.3.1: the three-times budget is per path. Sends to an
+ * unvalidated migration candidate draw on that path's own receive count, so
+ * a spoofed source address cannot turn the connection into a reflector. */
 static int qt_anti_amp_allows(const struct neverc_quic_conn *conn,
+                              const neverc_udp_addr_t *destination,
                               size_t packet_len) {
-    if (conn->side != QUIC_SIDE_SERVER || conn->address_validated)
+    uint64_t received, sent;
+    if (destination && conn->path_validation_pending &&
+        qt_address_equal(destination, &conn->candidate_addr)) {
+        received = conn->candidate_bytes_received;
+        sent = conn->candidate_bytes_sent;
+    } else if (conn->side == QUIC_SIDE_SERVER && !conn->address_validated) {
+        received = conn->bytes_received_before_validation;
+        sent = conn->bytes_sent_before_validation;
+    } else {
         return 1;
-    uint64_t limit =
-        conn->bytes_received_before_validation > UINT64_MAX / 3U ?
-        UINT64_MAX : conn->bytes_received_before_validation * 3U;
-    if (conn->bytes_sent_before_validation > limit)
+    }
+    uint64_t limit = received > UINT64_MAX / 3U ? UINT64_MAX : received * 3U;
+    if (sent > limit)
         return 0;
-    return packet_len <= limit - conn->bytes_sent_before_validation;
+    return packet_len <= limit - sent;
 }
 
 static int qt_send_item(struct neverc_quic_conn *conn,
@@ -1609,7 +1636,8 @@ static int qt_send_item(struct neverc_quic_conn *conn,
         QUIC_MIN_INITIAL_SIZE <= maximum) {
         size_t pad = QUIC_MIN_INITIAL_SIZE - (header_len + payload_len + 16U);
         if (payload_len + pad <= maximum &&
-            qt_anti_amp_allows(conn, QUIC_MIN_INITIAL_SIZE)) {
+            qt_anti_amp_allows(conn, meta->destination,
+                               QUIC_MIN_INITIAL_SIZE)) {
             memset(payload + payload_len, 0, pad);
             payload_len += pad;
         }
@@ -1643,14 +1671,9 @@ static int qt_send_item(struct neverc_quic_conn *conn,
         free(packet);
         return -1;
     }
-    if (conn->side == QUIC_SIDE_SERVER && !conn->address_validated) {
-        uint64_t limit = conn->bytes_received_before_validation > UINT64_MAX / 3U ?
-            UINT64_MAX : conn->bytes_received_before_validation * 3U;
-        if (conn->bytes_sent_before_validation > limit ||
-            packet_len > limit - conn->bytes_sent_before_validation) {
-            free(packet);
-            return 1;
-        }
+    if (!qt_anti_amp_allows(conn, meta->destination, packet_len)) {
+        free(packet);
+        return 1;
     }
     quic_tx_record_t *record = NULL;
     int ack_eliciting = !meta->ack_only;
@@ -1670,6 +1693,11 @@ static int qt_send_item(struct neverc_quic_conn *conn,
     conn->pn[space].has_sent = 1;
     if (conn->side == QUIC_SIDE_SERVER && !conn->address_validated)
         conn->bytes_sent_before_validation += packet_len;
+    if (meta->destination && conn->path_validation_pending &&
+        qt_address_equal(meta->destination, &conn->candidate_addr))
+        conn->candidate_bytes_sent =
+            conn->candidate_bytes_sent > UINT64_MAX - packet_len
+                ? UINT64_MAX : conn->candidate_bytes_sent + packet_len;
     if (included_ack) {
         conn->pn[space].ack_pending = 0;
         if (conn->pending_key_discard & (1u << meta->level))

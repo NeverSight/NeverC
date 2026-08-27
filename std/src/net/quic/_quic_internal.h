@@ -511,6 +511,11 @@ struct neverc_quic_conn {
     size_t send_datagram_tail;
     size_t send_datagram_count;
     neverc_udp_addr_t candidate_addr;
+    /* RFC 9000 §8 makes the anti-amplification budget per path, not per
+     * connection: a validated original path must not fund sends to an
+     * unvalidated migration candidate. */
+    uint64_t candidate_bytes_received;
+    uint64_t candidate_bytes_sent;
     neverc_udp_addr_t path_response_addr;
     neverc_udp_addr_t path_response_addr_queue[QUIC_MAX_PATH_RESPONSES];
     uint8_t path_challenge[8];

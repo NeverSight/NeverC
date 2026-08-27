@@ -341,6 +341,154 @@ static void quic_test_server_flight_preserves_certificate_chain(void) {
     neverc_network_test_remove_certs(&files);
 }
 
+typedef struct {
+    neverc_quic_endpoint_t *endpoint;
+    neverc_quic_conn_t *accepted;
+    neverc_thread_channel_t *ready;
+    neverc_thread_channel_t *release;
+} quic_amp_server_t;
+
+static void quic_amp_server_task(void *context) {
+    quic_amp_server_t *test = (quic_amp_server_t *)context;
+    const char *error = NULL;
+    test->accepted = neverc_quic_accept(test->endpoint, &error);
+    (void)neverc_thread_channel_send(test->ready, test);
+    void *ignored = NULL;
+    (void)neverc_thread_channel_receive(test->release, &ignored);
+    if (test->accepted) {
+        neverc_quic_conn_close(test->accepted, 0U, "amplification test done");
+        neverc_quic_conn_free(test->accepted);
+    }
+}
+
+/* Drains whatever the server sent to the candidate address and returns the
+ * total byte count plus the largest single datagram. */
+static size_t quic_amp_drain(neverc_udp_conn_t *victim, size_t *largest_out) {
+    uint8_t buffer[2048];
+    size_t total = 0;
+    *largest_out = 0;
+    for (;;) {
+        neverc_udp_addr_t from;
+        int n = neverc_udp_read_from(victim, buffer, sizeof(buffer), &from);
+        if (n <= 0) break;
+        total += (size_t)n;
+        if ((size_t)n > *largest_out) *largest_out = (size_t)n;
+    }
+    return total;
+}
+
+/* RFC 9000 §8 / §9.3.1: the three-times budget is per path. A connection
+ * validated on its original path must not fund PATH_CHALLENGE datagrams to a
+ * spoofed migration candidate, or a 29-byte forged packet turns the server
+ * into a 41x reflector. */
+static void quic_test_migration_respects_anti_amplification(void) {
+    neverc_network_test_files_t files;
+    CHECK(neverc_network_test_write_certs("quic-amp", &files) == 0);
+    int port = quic_test_free_udp_port();
+    CHECK(port > 0);
+    char address[64];
+    (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
+    const char *alpn[] = {"neverc-quic-amp/1", NULL};
+    neverc_quic_config_t server_config = neverc_quic_config_default();
+    server_config.cert_file = files.server_cert;
+    server_config.key_file = files.server_key;
+    server_config.alpn = alpn;
+    server_config.max_idle_timeout_ms = 10000U;
+    server_config.max_udp_payload_size = 1200U;
+    const char *error = NULL;
+    neverc_quic_endpoint_t *endpoint = neverc_quic_listen(
+        address, &server_config, &error);
+    CHECK(endpoint != NULL);
+    if (!endpoint) {
+        neverc_network_test_remove_certs(&files);
+        return;
+    }
+
+    quic_amp_server_t test = {endpoint, NULL,
+                              neverc_thread_channel_create(1),
+                              neverc_thread_channel_create(1)};
+    neverc_thread_executor_t *executor =
+        neverc_thread_executor_create(1U, 1U);
+    CHECK(test.ready != NULL);
+    CHECK(test.release != NULL);
+    CHECK(executor != NULL);
+    CHECK(neverc_thread_executor_submit(executor, quic_amp_server_task,
+                                         &test) == NEVERC_THREAD_OK);
+
+    neverc_quic_config_t client_config = neverc_quic_config_default();
+    client_config.alpn = alpn;
+    client_config.server_name = "localhost";
+    client_config.root_cert_file = files.ca;
+    client_config.max_idle_timeout_ms = 10000U;
+    client_config.max_udp_payload_size = 1200U;
+    neverc_quic_conn_t *client = neverc_quic_dial(address, &client_config,
+                                                    &error);
+    CHECK(client != NULL);
+
+    void *ignored = NULL;
+    CHECK(neverc_thread_channel_receive(test.ready, &ignored) ==
+          NEVERC_THREAD_OK);
+    struct neverc_quic_conn *server = test.accepted;
+    CHECK(server != NULL);
+
+    neverc_udp_conn_t *victim = neverc_udp_listen("127.0.0.1:0", &error);
+    neverc_udp_addr_t victim_addr;
+    CHECK(victim != NULL);
+    if (server && victim &&
+        neverc_udp_local_addr(victim, &victim_addr) == 0) {
+        (void)neverc_udp_set_read_timeout(victim, 200);
+        CHECK(server->address_validated == 1);
+
+        /* A forged packet from the victim address opens a candidate path
+         * whose own budget is still zero. */
+        server->candidate_addr = victim_addr;
+        server->candidate_bytes_received = 0;
+        server->candidate_bytes_sent = 0;
+        server->path_validation_pending = 1;
+        server->path_challenge_pending = 1;
+        (void)neverc_quic_conn_flush(server);
+        size_t largest = 0;
+        CHECK(quic_amp_drain(victim, &largest) == 0);
+
+        /* With 29 bytes credited the challenge may go out, but unexpanded:
+         * 3 * 29 = 87 bytes, far below the 1200-byte expansion. */
+        server->candidate_bytes_received = 29;
+        server->path_challenge_pending = 1;
+        (void)neverc_quic_conn_flush(server);
+        size_t sent = quic_amp_drain(victim, &largest);
+        CHECK(sent <= 87U);
+        CHECK(largest < 1200U);
+
+        /* RFC 9000 §8.2.1 expansion still happens once the path has paid
+         * for it. */
+        server->candidate_bytes_received = 4096;
+        server->candidate_bytes_sent = 0;
+        server->path_challenge_pending = 1;
+        (void)neverc_quic_conn_flush(server);
+        (void)quic_amp_drain(victim, &largest);
+        CHECK(largest == 1200U);
+
+        server->path_validation_pending = 0;
+        server->path_challenge_pending = 0;
+    }
+    if (victim) neverc_udp_close(victim);
+
+    CHECK(neverc_thread_channel_send(test.release, &test) ==
+          NEVERC_THREAD_OK);
+    if (client) {
+        neverc_quic_conn_close(client, 0U, "amplification test done");
+        neverc_quic_conn_free(client);
+    }
+    if (executor) {
+        (void)neverc_thread_executor_shutdown(executor);
+        neverc_thread_executor_free(executor);
+    }
+    neverc_thread_channel_free(test.ready);
+    neverc_thread_channel_free(test.release);
+    neverc_quic_endpoint_close(endpoint);
+    neverc_network_test_remove_certs(&files);
+}
+
 static void quic_test_roundtrip(void) {
     neverc_network_test_files_t files;
     CHECK(neverc_network_test_write_certs("quic-e2e", &files) == 0);
@@ -521,6 +669,7 @@ int main(void) {
     quic_test_preserves_clienthello_parser_error();
     quic_test_server_flight_preserves_certificate_chain();
     quic_test_roundtrip();
+    quic_test_migration_respects_anti_amplification();
     printf("quic-e2e: %d checks, %d failed\n", tests_run, tests_failed);
     if (tests_failed == 0) puts("passed");
     return tests_failed == 0 ? 0 : 1;
