@@ -457,7 +457,58 @@ static void test_parse_charclass(void) {
     n = neverc_regexp_syntax_parse("[abc]", 0, &err);
     check_not_null("[abc]", n);
     check_op("[abc] op", n, NC_RE_OP_CHAR_CLASS);
-    check_int("[abc] nrunes", n ? n->nrunes : 0, 6);
+    /* Go cleanClass merges adjacent singletons, so [abc] canonicalises to
+     * the single range a-c. */
+    check_int("[abc] nrunes", n ? n->nrunes : 0, 2);
+    check_int("[abc] lo", (n && n->nrunes >= 2) ? n->runes[0] : 0, 'a');
+    check_int("[abc] hi", (n && n->nrunes >= 2) ? n->runes[1] : 0, 'c');
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("[b-da-c]", 0, &err);
+    check_not_null("[b-da-c]", n);
+    check_int("[b-da-c] merged nrunes", n ? n->nrunes : 0, 2);
+    check_int("[b-da-c] lo", (n && n->nrunes >= 2) ? n->runes[0] : 0, 'a');
+    check_int("[b-da-c] hi", (n && n->nrunes >= 2) ? n->runes[1] : 0, 'd');
+    neverc_regexp_syntax_free(n);
+
+    {
+        neverc_regexp_syntax_node_t *a = neverc_regexp_syntax_parse(
+            "[a-c]", 0, &err);
+        neverc_regexp_syntax_node_t *b = neverc_regexp_syntax_parse(
+            "[abc]", 0, &err);
+        check_int("equivalent classes compare equal",
+                  neverc_regexp_syntax_equal(a, b), 1);
+        neverc_regexp_syntax_free(a);
+        neverc_regexp_syntax_free(b);
+    }
+
+    /* Complementing a class only works on sorted, disjoint ranges, so every
+     * class node must already be in that form. \W used to store '_' after
+     * a-z, which put a-z and '_' inside the complement. */
+    {
+        static const char *patterns[] = {
+            "\\w", "\\W", "\\s", "\\S", "\\d", "\\D",
+            "[\\w-]", "[[:word:]]", "[z-ya-b_]",
+        };
+        for (size_t i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
+            neverc_regexp_syntax_node_t *c =
+                neverc_regexp_syntax_parse(patterns[i], 0, &err);
+            int canonical = c && c->op == NC_RE_OP_CHAR_CLASS &&
+                            (c->nrunes % 2) == 0;
+            for (int k = 0; canonical && k + 3 < c->nrunes; k += 2)
+                if (c->runes[k] > c->runes[k + 1] ||
+                    c->runes[k + 2] <= c->runes[k + 1] + 1)
+                    canonical = 0;
+            check_int("class ranges are canonical", canonical, 1);
+            neverc_regexp_syntax_free(c);
+        }
+    }
+
+    n = neverc_regexp_syntax_parse("\\W", 0, &err);
+    check_not_null("\\W", n);
+    check_int("\\W excludes lowercase", class_contains(n, 'a'), 0);
+    check_int("\\W excludes underscore", class_contains(n, '_'), 0);
+    check_int("\\W includes punctuation", class_contains(n, '!'), 1);
     neverc_regexp_syntax_free(n);
 
     n = neverc_regexp_syntax_parse("[a-z]", 0, &err);
@@ -895,6 +946,49 @@ static void test_string(void) {
               node_round_trips(n), 1);
     free(s);
     neverc_regexp_syntax_free(n);
+
+    /* Go TestToStringEquivalentParse: a quantifier applied to a quantifier
+     * must print with (?: ), or the text reparses to a different tree. */
+    {
+        static const struct {
+            const char *pattern;
+            const char *want;
+        } quantified[] = {
+            {"(?:a+)?", "(?:a+)?"},
+            {"(?:a*)*", "(?:a*)*"},
+            {"(?:a*)+", "(?:a*)+"},
+            {"(?:a?){2}", "(?:a?){2}"},
+            {"(?:a{2}){3}", "(?:a{2}){3}"},
+            {"(?:a{2,})?", "(?:a{2,})?"},
+            {"(a+)?", "(a+)?"},
+            {"(?:ab)*", "(?:ab)*"},
+        };
+        for (size_t i = 0; i < sizeof(quantified) / sizeof(quantified[0]);
+             i++) {
+            neverc_regexp_syntax_node_t *q =
+                neverc_regexp_syntax_parse(quantified[i].pattern, 0, &err);
+            check_not_null("quantified quantifier parses", q);
+            char *text = neverc_regexp_syntax_string(q);
+            check_str("quantified quantifier string", text,
+                      quantified[i].want);
+            check_int("quantified quantifier round trip",
+                      node_round_trips(q), 1);
+            free(text);
+            neverc_regexp_syntax_free(q);
+        }
+    }
+
+    {
+        neverc_regexp_syntax_node_t *quest =
+            neverc_regexp_syntax_parse("(?:a+)?", 0, &err);
+        neverc_regexp_syntax_node_t *lazy =
+            neverc_regexp_syntax_parse("a+?", 0, &err);
+        check_op("(?:a+)? top op is quest", quest, NC_RE_OP_QUEST);
+        check_int("(?:a+)? is not a+?",
+                  neverc_regexp_syntax_equal(quest, lazy), 0);
+        neverc_regexp_syntax_free(quest);
+        neverc_regexp_syntax_free(lazy);
+    }
 
     n = neverc_regexp_syntax_parse("(?:ab)c", 0, &err);
     s = neverc_regexp_syntax_string(n);

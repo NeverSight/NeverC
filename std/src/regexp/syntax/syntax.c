@@ -136,10 +136,12 @@ static int add_escape_class(parser_t *p, neverc_regexp_syntax_node_t *n,
     case 'd':
         return add_rune(p, n, '0') && add_rune(p, n, '9');
     case 'w':
+        /* Go's perlGroup order: complementing a class requires sorted,
+         * disjoint ranges, and '_' sorts before 'a'. */
         return add_rune(p, n, '0') && add_rune(p, n, '9') &&
                add_rune(p, n, 'A') && add_rune(p, n, 'Z') &&
-               add_rune(p, n, 'a') && add_rune(p, n, 'z') &&
-               add_rune(p, n, '_') && add_rune(p, n, '_');
+               add_rune(p, n, '_') && add_rune(p, n, '_') &&
+               add_rune(p, n, 'a') && add_rune(p, n, 'z');
     case 's':
         /* RE2/Go: \s is [\t\n\f\r ], not \v (issue 22057). */
         return add_rune(p, n, '\t') && add_rune(p, n, '\t') &&
@@ -543,7 +545,10 @@ static neverc_regexp_syntax_node_t *parse_escape(parser_t *p) {
             neverc_regexp_syntax_free(n);
             return NULL;
         }
-        if ((p->flags & NC_RE_FLAG_FOLD_CASE) && !fold_char_class(p, n)) {
+        /* A ClassNegated node's ranges are the input to whatever complement
+         * the consumer computes, so they have to be canonical either way. */
+        if ((p->flags & NC_RE_FLAG_FOLD_CASE) ? !fold_char_class(p, n)
+                                              : !clean_char_class(p, n)) {
             neverc_regexp_syntax_free(n);
             return NULL;
         }
@@ -674,8 +679,9 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
         int c = peek(p);
         if (c == ']' && !first) {
             next(p);
-            if ((p->flags & NC_RE_FLAG_FOLD_CASE) &&
-                !clean_char_class(p, n)) {
+            /* Go parseClass always ends with cleanClass, so sorted, merged,
+             * duplicate-free ranges are the canonical form of every class. */
+            if (!clean_char_class(p, n)) {
                 neverc_regexp_syntax_free(n);
                 return NULL;
             }
@@ -1361,6 +1367,15 @@ static int is_meta(int c) {
            c == '}' || c == '|' || c == '^' || c == '$';
 }
 
+/* Go writeRegexp: a quantified operand needs (?: ) whenever its operator
+ * binds more loosely than the quantifier, which the op order makes a single
+ * comparison. Enumerating only concat and alternate dropped the quantifiers
+ * themselves, so (?:a+)? printed as a+? - a non-greedy plus. */
+static int quant_needs_paren(const neverc_regexp_syntax_node_t *sub) {
+    return sub->op > NC_RE_OP_CAPTURE ||
+           (sub->op == NC_RE_OP_LITERAL && sub->nrunes > 1);
+}
+
 static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
     if (!n) return;
     switch (n->op) {
@@ -1418,10 +1433,7 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
         break;
     case NC_RE_OP_STAR:
         if (n->nsubs > 0) {
-            int need_paren = (n->subs[0]->op == NC_RE_OP_CONCAT ||
-                              n->subs[0]->op == NC_RE_OP_ALTERNATE ||
-                              (n->subs[0]->op == NC_RE_OP_LITERAL &&
-                               n->subs[0]->nrunes > 1));
+            int need_paren = quant_needs_paren(n->subs[0]);
             if (need_paren) sb_puts(sb, "(?:");
             node_to_str(n->subs[0], sb);
             if (need_paren) sb_putc(sb, ')');
@@ -1431,10 +1443,7 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
         break;
     case NC_RE_OP_PLUS:
         if (n->nsubs > 0) {
-            int need_paren = (n->subs[0]->op == NC_RE_OP_CONCAT ||
-                              n->subs[0]->op == NC_RE_OP_ALTERNATE ||
-                              (n->subs[0]->op == NC_RE_OP_LITERAL &&
-                               n->subs[0]->nrunes > 1));
+            int need_paren = quant_needs_paren(n->subs[0]);
             if (need_paren) sb_puts(sb, "(?:");
             node_to_str(n->subs[0], sb);
             if (need_paren) sb_putc(sb, ')');
@@ -1444,10 +1453,7 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
         break;
     case NC_RE_OP_QUEST:
         if (n->nsubs > 0) {
-            int need_paren = (n->subs[0]->op == NC_RE_OP_CONCAT ||
-                              n->subs[0]->op == NC_RE_OP_ALTERNATE ||
-                              (n->subs[0]->op == NC_RE_OP_LITERAL &&
-                               n->subs[0]->nrunes > 1));
+            int need_paren = quant_needs_paren(n->subs[0]);
             if (need_paren) sb_puts(sb, "(?:");
             node_to_str(n->subs[0], sb);
             if (need_paren) sb_putc(sb, ')');
@@ -1457,10 +1463,7 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
         break;
     case NC_RE_OP_REPEAT:
         if (n->nsubs > 0) {
-            int need_paren = (n->subs[0]->op == NC_RE_OP_CONCAT ||
-                              n->subs[0]->op == NC_RE_OP_ALTERNATE ||
-                              (n->subs[0]->op == NC_RE_OP_LITERAL &&
-                               n->subs[0]->nrunes > 1));
+            int need_paren = quant_needs_paren(n->subs[0]);
             if (need_paren) sb_puts(sb, "(?:");
             node_to_str(n->subs[0], sb);
             if (need_paren) sb_putc(sb, ')');

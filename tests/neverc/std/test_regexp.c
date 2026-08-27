@@ -386,17 +386,48 @@ static void test_find_anchors(void) {
     check_str("digits$ tail", find_str(re, "a1b22c333", buf), "333");
     neverc_regexp_free(re);
 
-    /* RE2/Go: $ also matches before a final trailing newline */
+    /* RE2 doc/syntax.txt: $ is \z, not Perl's \Z - a trailing newline is not
+     * a match position, so ^...$ validation cannot be bypassed by appending
+     * one. */
     re = neverc_regexp_compile("a$", NULL);
-    check_str("a$ before final NL", find_str(re, "a\n", buf), "a");
+    check_bool("a$ not before final NL",
+               neverc_regexp_find(re, "a\n", &mlen) == NULL, 1);
     check_bool("a$ not before mid NL",
                neverc_regexp_find(re, "a\nb", &mlen) == NULL, 1);
     neverc_regexp_free(re);
 
-    check_bool("$\\n matches NL", neverc_regexp_match_string("$\n", "\n"), 1);
-    check_bool("a$\\n matches aNL", neverc_regexp_match_string("a$\n", "a\n"), 1);
+    check_bool("$\\n never matches", neverc_regexp_match_string("$\n", "\n"), 0);
+    check_bool("a$\\n never matches",
+               neverc_regexp_match_string("a$\n", "a\n"), 0);
     check_bool("a$ does not consume NL",
                neverc_regexp_match_string("a$", "a\n"), 0);
+
+    re = neverc_regexp_compile("^[a-z]+$", NULL);
+    check_bool("^[a-z]+$ rejects trailing NL",
+               neverc_regexp_find(re, "abc\n", &mlen) == NULL, 1);
+    check_str("^[a-z]+$ plain", find_str(re, "abc", buf), "abc");
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("a$", NULL);
+    char *kept = neverc_regexp_replace_all(re, "a\n", "X", &outlen);
+    check_str("a$ leaves trailing NL text alone", kept, "a\n");
+    free(kept);
+    neverc_regexp_free(re);
+
+    /* $ and \z must be indistinguishable on every input. */
+    static const char *anchor_texts[] = {"a", "a\n", "a\nb", "ba\n", "\n", ""};
+    neverc_regexp_t *dollar = neverc_regexp_compile("a$", NULL);
+    neverc_regexp_t *endtext = neverc_regexp_compile("a\\z", NULL);
+    for (size_t i = 0; i < sizeof(anchor_texts) / sizeof(anchor_texts[0]);
+         i++) {
+        size_t dlen = 0, zlen = 0;
+        const char *dm = neverc_regexp_find(dollar, anchor_texts[i], &dlen);
+        const char *zm = neverc_regexp_find(endtext, anchor_texts[i], &zlen);
+        check_bool("$ agrees with \\z",
+                   (dm == NULL) == (zm == NULL) && dlen == zlen, 1);
+    }
+    neverc_regexp_free(dollar);
+    neverc_regexp_free(endtext);
 }
 
 /* Bounded repetition {n}, {n,}, {n,m}: previously parsed but silently ignored
@@ -746,7 +777,8 @@ static void test_word_bounds_and_text_anchors(void) {
     neverc_regexp_free(re);
 
     re = neverc_regexp_compile("a$", NULL);
-    check_str("a$ still before final NL", find_str(re, "a\n", buf), "a");
+    check_bool("a$ matches \\z not \\Z",
+               neverc_regexp_find(re, "a\n", &mlen) == NULL, 1);
     neverc_regexp_free(re);
 
     check_bool("[\\b] backspace", neverc_regexp_match_string("[\\b]", "\b"), 1);

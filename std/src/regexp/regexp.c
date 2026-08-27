@@ -422,9 +422,12 @@ static int is_unknown_ident_escape(int esc) {
            (esc >= 'A' && esc <= 'Z') || (esc >= 'a' && esc <= 'z');
 }
 
-/* RE2/Go: $ matches at end of text, or immediately before a final newline. */
+/* RE2 doc/syntax.txt: "$ at end of text (like \z not \Z)". Perl's \Z, which
+ * also matches before a final newline, is deliberately not supported, and the
+ * parser already maps both `$` and `\z` onto END_TEXT. */
 static int anchor_end_at(const char *s, size_t slen, size_t pos) {
-    return pos == slen || (pos + 1 == slen && s[pos] == '\n');
+    (void)s;
+    return pos == slen;
 }
 
 static void cc_set_ws(charclass_t *cc) {
