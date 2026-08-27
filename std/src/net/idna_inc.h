@@ -162,6 +162,15 @@ static int neverc_idna_puny_encode(const uint32_t *cps, int n, char *out,
     return 0;
 }
 
+/* RFC 3490 3.1 / UTS #46 4.5: these separate labels wherever U+002E does.
+ * Splitting on the ASCII dot alone folds "good.com\u3002evil.com" into one
+ * label, so the host produced here is not the one a browser or x/net/idna
+ * resolves - an allow/deny list checked against it can be bypassed. */
+static int neverc_idna_label_dot(uint32_t rune) {
+    return rune == 0x2EU || rune == 0x3002U || rune == 0xFF0EU ||
+           rune == 0xFF61U;
+}
+
 /* Returns 0 on success. out is always NUL-terminated on success. */
 static int neverc_idna_to_ascii(const char *in, char *out, size_t cap) {
     if (!in || !out || cap == 0)
@@ -186,22 +195,27 @@ static int neverc_idna_to_ascii(const char *in, char *out, size_t cap) {
     const unsigned char *end = p + inlen;
     while (p < end) {
         const unsigned char *label_start = p;
-        while (p < end && *p != '.')
-            p++;
         const unsigned char *label_end = p;
+        int saw_separator = 0;
         int has_unicode = 0;
-        const unsigned char *q = label_start;
         uint32_t cps[64];
         int ncp = 0;
-        while (q < label_end) {
+        while (p < end) {
+            const unsigned char *rune_start = p;
             uint32_t r;
-            if (neverc_idna_utf8_next(&q, label_end, &r) != 0)
+            if (neverc_idna_utf8_next(&p, end, &r) != 0)
                 return -1;
+            if (neverc_idna_label_dot(r)) {
+                label_end = rune_start;
+                saw_separator = 1;
+                break;
+            }
             if (r >= 0x80)
                 has_unicode = 1;
             if (ncp >= 63)
                 return -1;
             cps[ncp++] = r;
+            label_end = p;
         }
         size_t label_out_start = used;
         if (has_unicode) {
@@ -223,11 +237,10 @@ static int neverc_idna_to_ascii(const char *in, char *out, size_t cap) {
             if (alen == 0 || alen > 63)
                 return -1;
         }
-        if (p < end && *p == '.') {
+        if (saw_separator) {
             if (used + 1 >= cap)
                 return -1;
             out[used++] = '.';
-            p++;
         }
     }
     if (used >= cap)

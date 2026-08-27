@@ -299,6 +299,22 @@ static void test_parse_edges(void) {
     ASSERT_STR_EQ(u.host, "xn--bcher-kva.de");
     ASSERT_INT_EQ(neverc_url_parse(&u, "http://\xff.com/"), -1);
 
+    /* RFC 3490 3.1: U+3002, U+FF0E and U+FF61 are label separators, so a
+     * lookalike dot must not fold two labels into one punycoded label. */
+    ASSERT_INT_EQ(
+        neverc_url_parse(&u, "http://good.com\xe3\x80\x82""evil.com/"), 0);
+    ASSERT_STR_EQ(u.host, "good.com.evil.com");
+    ASSERT_INT_EQ(
+        neverc_url_parse(&u, "http://good.com\xef\xbc\x8e""evil.com/"), 0);
+    ASSERT_STR_EQ(u.host, "good.com.evil.com");
+    ASSERT_INT_EQ(
+        neverc_url_parse(&u, "http://good.com\xef\xbd\xa1""evil.com/"), 0);
+    ASSERT_STR_EQ(u.host, "good.com.evil.com");
+    /* Each label still punycodes independently across a lookalike dot. */
+    ASSERT_INT_EQ(
+        neverc_url_parse(&u, "http://b\xc3\xbc""cher\xe3\x80\x82""de/"), 0);
+    ASSERT_STR_EQ(u.host, "xn--bcher-kva.de");
+
     char long_url[400];
     memcpy(long_url, "https://", 8);
     memset(long_url + 8, 'h', 300);

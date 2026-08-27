@@ -488,7 +488,7 @@ static void test_parse_charclass(void) {
     {
         static const char *patterns[] = {
             "\\w", "\\W", "\\s", "\\S", "\\d", "\\D",
-            "[\\w-]", "[[:word:]]", "[z-ya-b_]",
+            "[\\w-]", "[[:word:]]", "[c-ea-b_]", "[abc]", "[a-cb-d]",
         };
         for (size_t i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
             neverc_regexp_syntax_node_t *c =
@@ -499,7 +499,10 @@ static void test_parse_charclass(void) {
                 if (c->runes[k] > c->runes[k + 1] ||
                     c->runes[k + 2] <= c->runes[k + 1] + 1)
                     canonical = 0;
-            check_int("class ranges are canonical", canonical, 1);
+            char label[64];
+            snprintf(label, sizeof(label), "canonical class ranges: %s",
+                     patterns[i]);
+            check_int(label, canonical, 1);
             neverc_regexp_syntax_free(c);
         }
     }
