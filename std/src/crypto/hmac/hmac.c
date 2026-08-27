@@ -20,12 +20,14 @@ static int hmac_sha256_family_len_ok(size_t key_len, size_t data_len) {
 
 /* SHA-512's implementation refuses a wrapping 64-bit byte counter. A wrapping
  * key is hashed on a fresh ctx (count=0) whose `>` check does not treat
- * SIZE_MAX as overflow, so reject it here; after the 128-byte ipad,
- * data_len > UINT64_MAX-128 would wipe the inner midstate. */
+ * SIZE_MAX as overflow, so reject it here. Unlike the SHA-256 family, the
+ * SHA-512 update wipes the midstate once `count + len` *reaches* UINT64_MAX
+ * (the finalized sentinel), so after the 128-byte ipad the inner chain must
+ * stay strictly below UINT64_MAX - 128. */
 static int hmac_sha512_len_ok(size_t key_len, size_t data_len) {
-    if ((uint64_t)key_len > UINT64_MAX - 128)
+    if ((uint64_t)key_len > UINT64_MAX - 129)
         return 0;
-    return (uint64_t)data_len <= UINT64_MAX - 128;
+    return (uint64_t)data_len <= UINT64_MAX - 129;
 }
 
 /*

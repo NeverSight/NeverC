@@ -42,8 +42,9 @@ static int hkdf_sha256_expand_info_ok(size_t info_len) {
 }
 
 static int hkdf_sha512_expand_info_ok(size_t info_len) {
-    /* Worst expand block: 128-byte ipad + 64-byte T + info + 1-byte counter. */
-    return (uint64_t)info_len <= UINT64_MAX - 193;
+    /* Worst expand block: 128-byte ipad + 64-byte T + info + 1-byte counter,
+     * and the inner chain must stay strictly below the UINT64_MAX sentinel. */
+    return (uint64_t)info_len <= UINT64_MAX - 194;
 }
 
 /* ---- HMAC-SHA256 with precomputed key midstates ---- */
@@ -235,8 +236,8 @@ int neverc_hkdf_extract_sha512(uint8_t prk[64],
         salt = default_salt;
         salt_len = 64;
     }
-    if ((uint64_t)ikm_len > UINT64_MAX - 128 ||
-        (uint64_t)salt_len > UINT64_MAX - 128) {
+    if ((uint64_t)ikm_len > UINT64_MAX - 129 ||
+        (uint64_t)salt_len > UINT64_MAX - 129) {
         neverc_platform_secure_zero(default_salt, sizeof(default_salt));
         neverc_platform_secure_zero(prk, 64);
         return -1;

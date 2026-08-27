@@ -302,6 +302,25 @@ static void test_invalid_spans_and_lengths(void) {
     check_true("SHA-512 full rejects wrapping salt",
                neverc_hkdf_sha512(
                    okm, 64, &byte, 1, &byte, SIZE_MAX, &byte, 0) == -1);
+    {
+        /* UINT64_MAX-128 is the first length that makes the inner HMAC chain
+         * reach SHA-512's finalized sentinel, so extract must refuse it rather
+         * than hand back a PRK derived from a wiped midstate. */
+        uint8_t sentinel[64];
+        uint8_t zeros[64] = {0};
+        memset(sentinel, 0xa5, sizeof(sentinel));
+        memcpy(prk512, sentinel, sizeof(prk512));
+        check_true("SHA-512 extract rejects sentinel IKM",
+                   neverc_hkdf_extract_sha512(
+                       prk512, &byte, 1, &byte,
+                       (size_t)(UINT64_MAX - 128)) == -1);
+        check_true("SHA-512 sentinel IKM wipes PRK",
+                   memcmp(prk512, zeros, sizeof(prk512)) == 0);
+        check_true("SHA-512 full rejects sentinel IKM",
+                   neverc_hkdf_sha512(
+                       okm, 64, &byte, (size_t)(UINT64_MAX - 128),
+                       &byte, 1, &byte, 0) == -1);
+    }
 #endif
 }
 

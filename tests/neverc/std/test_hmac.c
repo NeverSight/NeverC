@@ -442,6 +442,14 @@ static void test_hmac_wrapping_lengths(void) {
         neverc_hmac_sha512(&dummy, SIZE_MAX, &key, 1, mac);
         check_int("sha512 wrapping key_len clears output",
                   memcmp(mac, zeros, 64) == 0, 1);
+
+        /* The inner ctx already holds the 128-byte ipad, and SHA-512 wipes
+         * itself once count + len *reaches* the UINT64_MAX sentinel, so this
+         * length is the first one that must be rejected. */
+        memset(mac, 0xa5, sizeof(mac));
+        neverc_hmac_sha512(&key, 1, &dummy, (size_t)(UINT64_MAX - 128), mac);
+        check_int("sha512 sentinel data_len clears output",
+                  memcmp(mac, zeros, 64) == 0, 1);
     }
 #endif
 }
