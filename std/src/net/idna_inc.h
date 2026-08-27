@@ -7,6 +7,8 @@
  * (matching Go idnaASCII); non-ASCII labels become xn-- A-labels.
  */
 
+#include "neverc/std/unicode.h"
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -194,28 +196,28 @@ static int neverc_idna_to_ascii(const char *in, char *out, size_t cap) {
     const unsigned char *p = (const unsigned char *)in;
     const unsigned char *end = p + inlen;
     while (p < end) {
-        const unsigned char *label_start = p;
-        const unsigned char *label_end = p;
         int saw_separator = 0;
         int has_unicode = 0;
         uint32_t cps[64];
         int ncp = 0;
         while (p < end) {
-            const unsigned char *rune_start = p;
             uint32_t r;
             if (neverc_idna_utf8_next(&p, end, &r) != 0)
                 return -1;
             if (neverc_idna_label_dot(r)) {
-                label_end = rune_start;
                 saw_separator = 1;
                 break;
             }
+            /* UTS #46 4 maps before encoding, so "Ä.com" and "ä.com" are
+             * one name. Without it the delta fed to Punycode differs and
+             * "Ä.com" becomes xn--7ba.com instead of xn--4ca.com - a
+             * different registrable domain than a browser resolves. */
+            r = neverc_unicode_to_lower(r);
             if (r >= 0x80)
                 has_unicode = 1;
             if (ncp >= 63)
                 return -1;
             cps[ncp++] = r;
-            label_end = p;
         }
         size_t label_out_start = used;
         if (has_unicode) {
@@ -226,11 +228,12 @@ static int neverc_idna_to_ascii(const char *in, char *out, size_t cap) {
             if (neverc_idna_puny_encode(cps, ncp, out, cap, &used) != 0)
                 return -1;
         } else {
-            size_t lab = (size_t)(label_end - label_start);
-            if (used + lab >= cap)
+            /* Go runs the whole host through idna.Lookup once any label is
+             * non-ASCII, so the ASCII labels are lowercased too. */
+            if (used + (size_t)ncp >= cap)
                 return -1;
-            memcpy(out + used, label_start, lab);
-            used += lab;
+            for (int i = 0; i < ncp; i++)
+                out[used++] = (char)cps[i];
         }
         if (has_unicode) {
             size_t alen = used - label_out_start;

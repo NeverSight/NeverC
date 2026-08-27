@@ -315,6 +315,24 @@ static void test_parse_edges(void) {
         neverc_url_parse(&u, "http://b\xc3\xbc""cher\xe3\x80\x82""de/"), 0);
     ASSERT_STR_EQ(u.host, "xn--bcher-kva.de");
 
+    /* UTS #46 4 case-maps before Punycode. Skipping it changes the delta,
+     * so "Ä.com" would encode to xn--7ba.com - a different registrable
+     * domain than the xn--4ca.com a browser resolves. */
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://\xc3\x84.com/"), 0);
+    ASSERT_STR_EQ(u.host, "xn--4ca.com");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://\xc3\xa4.com/"), 0);
+    ASSERT_STR_EQ(u.host, "xn--4ca.com");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://\xc3\x84RZTE.example/"), 0);
+    ASSERT_STR_EQ(u.host, "xn--rzte-koa.example");
+    /* Go sends the whole host through idna.Lookup once any label is
+     * non-ASCII, so ASCII labels lowercase too. */
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://B\xc3\xbc""cher.DE/"), 0);
+    ASSERT_STR_EQ(u.host, "xn--bcher-kva.de");
+    /* An all-ASCII host keeps its case, matching Go's idnaASCII fast path
+     * (the URL parser lowercases the host separately). */
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://EXAMPLE.com/"), 0);
+    ASSERT_STR_EQ(u.host, "example.com");
+
     char long_url[400];
     memcpy(long_url, "https://", 8);
     memset(long_url + 8, 'h', 300);

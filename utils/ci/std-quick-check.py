@@ -72,7 +72,7 @@ def load_registry():
     return registry
 
 
-def compile_command(cc, name, sources, sanitize, defines, extra, out):
+def base_flags(cc, sanitize, extra):
     args = [
         cc,
         "-std=gnu11",
@@ -85,21 +85,67 @@ def compile_command(cc, name, sources, sanitize, defines, extra, out):
         "-Wno-unused-function",
         f"-I{REPO}/std/include",
         f"-I{REPO}/std/src/net",
+        f"-I{TEST_DIR}",
     ]
     if sanitize and sanitize != "none":
         args.append(f"-fsanitize={sanitize}")
     args.extend(extra)
+    return args
+
+
+def build_archive(cc, sanitize, extra, workdir):
+    """Whole-library archive for tests registered without explicit sources.
+
+    Those tests link the full std library in CMake. The archive is only
+    appended to their link line, so white-box tests that include .c files
+    directly keep their own definitions and their stubs.
+    """
+    objdir = os.path.join(workdir, "stdlib")
+    os.makedirs(objdir, exist_ok=True)
+    archive = os.path.join(objdir, "libneverc_std_quick.a")
+    if os.path.exists(archive):
+        return archive, ""
+    objects = []
+    for source in sorted((REPO / "std" / "src").rglob("*.c")):
+        obj = os.path.join(objdir, f"{len(objects)}_{source.stem}.o")
+        build = subprocess.run(
+            base_flags(cc, sanitize, extra) + ["-c", str(source), "-o", obj],
+            capture_output=True,
+            text=True,
+        )
+        if build.returncode != 0:
+            return None, build.stdout + build.stderr
+        objects.append(obj)
+    archived = subprocess.run(
+        ["ar", "rcs", archive] + objects, capture_output=True, text=True
+    )
+    if archived.returncode != 0:
+        return None, archived.stdout + archived.stderr
+    return archive, ""
+
+
+def compile_command(cc, name, sources, sanitize, defines, extra, out,
+                    archive=None):
+    args = base_flags(cc, sanitize, extra)
     args.extend(f"-D{d}" for d in defines)
     args.append(str(TEST_DIR / f"test_{name}.c"))
     args.extend(str(REPO / "std" / source) for source in sorted(sources))
+    if archive:
+        args.append(archive)
     args.extend(["-lm", "-pthread", "-lresolv", "-o", out])
     return args
 
 
 def run_one(cc, name, sources, sanitize, defines, extra, timeout, workdir):
     binary = os.path.join(workdir, f"test_{name}")
+    archive = None
+    if not sources:
+        archive, error = build_archive(cc, sanitize, extra, workdir)
+        if not archive:
+            return "COMPILE-FAIL", error
     build = subprocess.run(
-        compile_command(cc, name, sources, sanitize, defines, extra, binary),
+        compile_command(cc, name, sources, sanitize, defines, extra, binary,
+                        archive),
         capture_output=True,
         text=True,
     )

@@ -179,9 +179,17 @@ static void test_unescape(void) {
               "\xef\xbf\xbd" "\xef\xbf\xbd");
     free(r23);
 
-    char *r24 = neverc_html_unescape_string("&#x81;", &outlen);
-    check_str("undefined win1252 is replacement", r24, "\xef\xbf\xbd");
+    /* The WHATWG numeric character reference end state has no row for
+     * 0x81/0x8D/0x8F/0x90/0x9D, so those keep their own code point. */
+    char *r24 = neverc_html_unescape_string("&#x81;&#x8d;&#x8f;&#x90;&#x9d;",
+                                            &outlen);
+    check_str("unmapped C1 refs stay themselves", r24,
+              "\xc2\x81\xc2\x8d\xc2\x8f\xc2\x90\xc2\x9d");
     free(r24);
+
+    char *r24b = neverc_html_unescape_string("&#128;&#153;", &outlen);
+    check_str("mapped C1 refs use win1252", r24b, "\xe2\x82\xac\xe2\x84\xa2");
+    free(r24b);
 
     char *r25 = neverc_html_unescape_string("&apos;ok&apos", &outlen);
     check_str("apos requires semicolon", r25, "'ok&apos");
