@@ -2943,6 +2943,7 @@ if(NEVERC_ENABLE_NETWORK_PROTOCOL_FUZZER)
     ${_neverc_network_fuzzer_std_root}/net/websocket/websocket.c
     ${_neverc_network_fuzzer_std_root}/net/url/url.c
     ${_neverc_network_fuzzer_std_root}/net/netip/netip.c
+    ${_neverc_network_fuzzer_std_root}/unicode/unicode.c
     ${_neverc_network_fuzzer_std_root}/net/http/http2/http2.c
     ${_neverc_network_fuzzer_std_root}/net/http/http2/http2_server.c
     ${_neverc_network_fuzzer_std_root}/net/http3/http3_frame.c
