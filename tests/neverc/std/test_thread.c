@@ -295,6 +295,92 @@ static int test_channel_context_cancel(void) {
     return 0;
 }
 
+typedef struct {
+    neverc_thread_channel_t *data;
+    neverc_thread_channel_t *done;
+} patient_receiver_arg_t;
+
+static void patient_receiver_task(void *opaque) {
+    patient_receiver_arg_t *arg = (patient_receiver_arg_t *)opaque;
+    void *value = NULL;
+    int result = neverc_thread_channel_receive(arg->data, &value);
+    intptr_t report = result == NEVERC_THREAD_OK ? (intptr_t)value : -1;
+    (void)neverc_thread_channel_send(arg->done, (void *)report);
+}
+
+typedef struct {
+    neverc_thread_channel_t *data;
+    neverc_context_t *ctx;
+    neverc_thread_channel_t *done;
+} cancelled_receiver_arg_t;
+
+static void cancelled_receiver_task(void *opaque) {
+    cancelled_receiver_arg_t *arg = (cancelled_receiver_arg_t *)opaque;
+    void *value = NULL;
+    (void)neverc_thread_channel_receive_context(arg->data, arg->ctx, &value);
+    (void)neverc_thread_channel_send(arg->done, (void *)(intptr_t)1);
+}
+
+/* Producers signal not_empty for exactly one waiter. If the chosen waiter
+ * gives up because its context was cancelled, the item stays queued and an
+ * uncancelled receiver blocks forever. Which waiter the signal picks is up
+ * to the scheduler, so repeat until both orders have been exercised. */
+static int test_cancelled_receiver_forwards_wakeup(void) {
+    for (int attempt = 0; attempt < 24; attempt++) {
+        neverc_thread_executor_t *executor =
+            neverc_thread_executor_create(2, 4);
+        neverc_thread_channel_t *data = neverc_thread_channel_create(1);
+        neverc_thread_channel_t *patient_done =
+            neverc_thread_channel_create(1);
+        neverc_thread_channel_t *cancelled_done =
+            neverc_thread_channel_create(1);
+        neverc_context_t *background = neverc_context_background();
+        neverc_context_cancel_handle_t *cancel = NULL;
+        neverc_context_t *ctx =
+            neverc_context_with_cancel_handle(background, &cancel);
+        CHECK(executor != NULL);
+        CHECK(data != NULL);
+        CHECK(patient_done != NULL);
+        CHECK(cancelled_done != NULL);
+        CHECK(background != NULL);
+        CHECK(ctx != NULL);
+        CHECK(cancel != NULL);
+
+        patient_receiver_arg_t patient = {data, patient_done};
+        cancelled_receiver_arg_t cancelled = {data, ctx, cancelled_done};
+        CHECK(neverc_thread_executor_submit(
+                  executor, patient_receiver_task, &patient) ==
+              NEVERC_THREAD_OK);
+        CHECK(neverc_thread_executor_submit(
+                  executor, cancelled_receiver_task, &cancelled) ==
+              NEVERC_THREAD_OK);
+        /* Long enough for both receivers to park on not_empty; the context
+         * poll interval is 10ms and the context is not cancelled yet. */
+        sleep_ms(60);
+
+        neverc_context_cancel_handle_cancel(cancel);
+        CHECK(neverc_thread_channel_send(data, (void *)(intptr_t)7) ==
+              NEVERC_THREAD_OK);
+
+        void *value = NULL;
+        CHECK(receive_with_timeout(patient_done, &value) ==
+              NEVERC_THREAD_OK);
+        CHECK((intptr_t)value == 7);
+        CHECK(receive_with_timeout(cancelled_done, &value) ==
+              NEVERC_THREAD_OK);
+
+        CHECK(neverc_thread_executor_shutdown(executor) == NEVERC_THREAD_OK);
+        neverc_thread_executor_free(executor);
+        neverc_thread_channel_free(data);
+        neverc_thread_channel_free(patient_done);
+        neverc_thread_channel_free(cancelled_done);
+        neverc_context_cancel_handle_free(cancel);
+        neverc_context_free(ctx);
+        neverc_context_free(background);
+    }
+    return 0;
+}
+
 static int test_executor_runs_tasks(void) {
     neverc_thread_executor_t *executor =
         neverc_thread_executor_create(2, 8);
@@ -572,6 +658,7 @@ int main(void) {
     CHECK(test_channel_fifo_and_close() == 0);
     CHECK(test_channel_wait_cancel_and_close() == 0);
     CHECK(test_channel_context_cancel() == 0);
+    CHECK(test_cancelled_receiver_forwards_wakeup() == 0);
     CHECK(test_executor_runs_tasks() == 0);
     CHECK(test_executor_backpressure() == 0);
     CHECK(test_executor_context_waits() == 0);

@@ -494,6 +494,9 @@ static int executor_submit_impl(
         return NEVERC_THREAD_CLOSED;
     }
     if (context_is_done(ctx)) {
+        /* Workers signal not_full for one submitter; forward it so another
+         * blocked submitter is not stranded. */
+        thread_cond_signal(&executor->not_full);
         thread_mutex_unlock(&executor->mutex);
         return NEVERC_THREAD_CANCELLED;
     }
@@ -737,6 +740,9 @@ static int channel_send_impl(
         return NEVERC_THREAD_CLOSED;
     }
     if (context_is_done(ctx)) {
+        /* Same hand-off as the receive path: the not_full signal that woke
+         * this sender has to reach another blocked sender. */
+        thread_cond_signal(&channel->not_full);
         thread_mutex_unlock(&channel->mutex);
         return NEVERC_THREAD_CANCELLED;
     }
@@ -796,6 +802,10 @@ static int channel_receive_impl(
         return NEVERC_THREAD_CLOSED;
     }
     if (context_is_done(ctx)) {
+        /* Producers signal not_empty for one waiter. Abandoning the item
+         * after being chosen would strand it, and an uncancelled receiver
+         * blocked on the same condition would never wake up. */
+        thread_cond_signal(&channel->not_empty);
         thread_mutex_unlock(&channel->mutex);
         return NEVERC_THREAD_CANCELLED;
     }
