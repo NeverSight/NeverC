@@ -454,6 +454,7 @@ static void dyn_table_free(hpack_dyn_table_t *t) {
 struct neverc_hpack_decoder {
     hpack_dyn_table_t dyn;
     uint32_t max_table_size;
+    uint64_t max_list_size;
 };
 
 neverc_hpack_decoder_t *neverc_hpack_decoder_create(uint32_t max_table_size) {
@@ -463,6 +464,20 @@ neverc_hpack_decoder_t *neverc_hpack_decoder_create(uint32_t max_table_size) {
     dyn_table_init(&dec->dyn, max_table_size);
     dec->max_table_size = max_table_size;
     return dec;
+}
+
+void neverc_hpack_decoder_set_max_list_size(neverc_hpack_decoder_t *dec,
+                                            uint64_t max_list_size) {
+    if (!dec) return;
+    dec->max_list_size = max_list_size;
+}
+
+/* RFC 9113 §6.5.2 measures a field line as name + value + 32 octets, all
+ * uncompressed. A one-byte indexed reference can name a 4096-byte dynamic
+ * table entry, so budgeting only the compressed block still lets a 64 KB
+ * request drive hundreds of megabytes of copying. */
+static uint64_t hpack_field_cost(const char *name, const char *value) {
+    return (uint64_t)strlen(name) + (uint64_t)strlen(value) + 32U;
 }
 
 void neverc_hpack_decoder_destroy(neverc_hpack_decoder_t *dec) {
@@ -548,6 +563,7 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
     size_t pos = 0;
     int saw_header = 0;
     int overflow = 0;
+    uint64_t budget = dec->max_list_size ? dec->max_list_size : UINT64_MAX;
 
     while (pos < len) {
         uint8_t byte = data[pos];
@@ -568,6 +584,16 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
             if (index > INT_MAX ||
                 hpack_lookup(dec, (int)index, &name, &value) != 0)
                 return -1;
+            saw_header = 1;
+            /* Keep parsing so the dynamic table stays in sync, but stop
+             * copying once the peer has overrun the advertised list size. */
+            uint64_t cost = hpack_field_cost(name, value);
+            if (overflow || cost > budget) {
+                overflow = 1;
+                budget = 0;
+                continue;
+            }
+            budget -= cost;
             alloc_name = strdup(name);
             alloc_value = strdup(value);
             if (!alloc_name || !alloc_value) {
@@ -575,7 +601,6 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
                 free(alloc_value);
                 return -1;
             }
-            saw_header = 1;
         } else if ((byte & 0xc0) == 0x40) {
             /* Literal with Incremental Indexing (§6.2.1) */
             uint64_t index;
@@ -654,7 +679,17 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
             return -1;
         }
 
-        if (*nheaders < max_headers) {
+        if (alloc_name && alloc_value) {
+            uint64_t cost = hpack_field_cost(alloc_name, alloc_value);
+            if (cost > budget) {
+                overflow = 1;
+                budget = 0;
+            } else {
+                budget -= cost;
+            }
+        }
+
+        if (!overflow && *nheaders < max_headers) {
             headers[*nheaders].name = alloc_name;
             headers[*nheaders].value = alloc_value;
             headers[*nheaders].sensitive = sensitive;

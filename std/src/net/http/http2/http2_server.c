@@ -2240,6 +2240,8 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
     conn.hpack_enc = neverc_hpack_encoder_create(conn.peer_settings.header_table_size);
     if (!conn.hpack_dec || !conn.hpack_enc)
         goto cleanup;
+    neverc_hpack_decoder_set_max_list_size(
+        conn.hpack_dec, conn.local_settings.max_header_list_size);
 
     if (h2_write_settings(&conn.io, &conn.local_settings) != 0)
         goto cleanup;

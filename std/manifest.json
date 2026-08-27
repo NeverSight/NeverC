@@ -4737,6 +4737,7 @@
         "neverc_h2_settings_init": "src/net/http/http2/http2_server.c",
         "neverc_hpack_decode": "src/net/http/http2/http2.c",
         "neverc_hpack_decoder_create": "src/net/http/http2/http2.c",
+        "neverc_hpack_decoder_set_max_list_size": "src/net/http/http2/http2.c",
         "neverc_hpack_decoder_destroy": "src/net/http/http2/http2.c",
         "neverc_hpack_encode": "src/net/http/http2/http2.c",
         "neverc_hpack_encoder_create": "src/net/http/http2/http2.c",

@@ -108,6 +108,12 @@ typedef struct neverc_hpack_encoder neverc_hpack_encoder_t;
 #define NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE 8192U
 
 neverc_hpack_decoder_t *neverc_hpack_decoder_create(uint32_t max_table_size);
+/* Budget for the uncompressed field-list size (RFC 9113 section 6.5.2:
+ * name + value + 32 per field). Decoding stays in sync with the peer's
+ * dynamic table past the budget but stops copying, so a block of one-byte
+ * indexed references cannot expand into unbounded work. 0 disables it. */
+void neverc_hpack_decoder_set_max_list_size(neverc_hpack_decoder_t *dec,
+                                            uint64_t max_list_size);
 void neverc_hpack_decoder_destroy(neverc_hpack_decoder_t *dec);
 /* 0 = decoded into headers; 1 = HPACK synced but more fields than
  * max_headers (overflow is a stream error, not COMPRESSION_ERROR);

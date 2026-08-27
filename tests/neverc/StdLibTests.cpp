@@ -503,6 +503,12 @@ TEST_F(StdLibTest, IoAllocationFailure) {
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
+TEST_F(StdLibTest, HpackHeaderListBudget) {
+  auto r = compileAndRunStdTest("hpack_list_budget", {},
+                                {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 TEST_F(StdLibTest, IoWriterAliasedInputGrowth) {
   auto r = compileAndRunStdTest("io_writer_alias", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;

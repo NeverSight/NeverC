@@ -818,7 +818,9 @@ static int h2_client_data_fragment(
         padding = payload[offset++];
     }
     if (padding > header->length - offset) return -1;
-    *data = payload + offset;
+    /* A zero-length DATA frame has no payload allocation, and even a zero
+     * offset from a null pointer is undefined. */
+    *data = payload ? payload + offset : NULL;
     *data_length = header->length - offset - padding;
     return 0;
 }
@@ -1870,6 +1872,9 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
         NC_H2_DEFAULT_HEADER_TABLE_SIZE);
     client->decoder = neverc_hpack_decoder_create(
         client->local_settings.header_table_size);
+    if (client->decoder)
+        neverc_hpack_decoder_set_max_list_size(
+            client->decoder, client->local_settings.max_header_list_size);
     nc_mutex_init(&client->state_lock);
     nc_mutex_init(&client->write_lock);
     nc_cond_init(&client->window_changed);
