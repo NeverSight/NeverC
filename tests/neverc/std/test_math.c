@@ -381,6 +381,38 @@ static void test_hyp_vectors(void) {
     }
 }
 
+/* check_double also passes on absolute error, which hides the small-argument
+ * cancellation entirely, so these have to be relative-only. */
+static void test_tanh_small_arguments(void) {
+    printf("[tanh small arguments]\n");
+    static const struct {
+        const char *name;
+        double x;
+        double expected;
+    } cases[] = {
+        {"tanh(1e-7)", 1e-7, 9.9999999999999665e-08},
+        {"tanh(5e-7)", 5e-7, 4.9999999999995837e-07},
+        {"tanh(1e-6)", 1e-6, 9.9999999999966665e-07},
+        {"tanh(1e-5)", 1e-5, 9.9999999996666662e-06},
+        {"tanh(1e-4)", 1e-4, 9.9999999666666668e-05},
+        {"tanh(1e-3)", 1e-3, 9.9999966666680000e-04},
+        {"tanh(0.01)", 0.01, 9.9996666799994603e-03},
+        {"tanh(0.05)", 0.05, 4.9958374957879970e-02},
+        {"tanh(0.1)", 0.1, 9.9667994624955819e-02},
+        {"tanh(0.25)", 0.25, 2.4491866240370913e-01},
+        {"tanh(0.624)", 0.624, 5.5390691920391455e-01},
+        {"tanh(0.625)", 0.625, 5.5459972234938226e-01},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+        check_rel_tol(cases[i].name, neverc_math_tanh(cases[i].x),
+                      cases[i].expected, 1e-15);
+
+    check_true("tanh odd at 1e-7",
+               neverc_math_tanh(-1e-7) == -neverc_math_tanh(1e-7));
+    check_true("tanh(1e-20) preserves tiny value",
+               neverc_math_tanh(1e-20) == 1e-20);
+}
+
 static void test_inv_hyp_vectors(void) {
     char buf[128];
     printf("[inv hyperbolic vectors - asinh/acosh/atanh]\n");
@@ -2478,6 +2510,7 @@ int main(void) {
     test_trig_vectors();
     test_inv_trig_vectors();
     test_hyp_vectors();
+    test_tanh_small_arguments();
     test_inv_hyp_vectors();
     test_hyperbolic_extreme_arguments();
     test_exp_vectors();
