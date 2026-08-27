@@ -1,9 +1,28 @@
 #include "neverc/std/io.h"
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define NCI_IO_MAX_EMPTY_READS 100
+
+/* Both buffers below are public struct fields, so a caller can legitimately
+ * write a slice of the writer back into itself. realloc may move the block,
+ * which would leave `buf` dangling, so record the offset up front and rebase
+ * after growth. */
+static int io_alias_offset(const uint8_t *base, size_t base_cap,
+                           const uint8_t *buf, size_t len, size_t *offset) {
+    if (!base || !buf) return 0;
+    uintptr_t base_address = (uintptr_t)(const void *)base;
+    uintptr_t source = (uintptr_t)(const void *)buf;
+    if (source < base_address) return 0;
+    uintptr_t distance = source - base_address;
+    if (distance > (uintptr_t)base_cap) return 0;
+    size_t source_offset = (size_t)distance;
+    if (len > base_cap - source_offset) return 0;
+    *offset = source_offset;
+    return 1;
+}
 
 static int ensure_capacity(uint8_t **data, size_t *cap, size_t required) {
     if (required == 0 || (*data && *cap >= required)) return 0;
@@ -253,9 +272,13 @@ int neverc_io_mem_writer_write(void *ctx, const uint8_t *buf, size_t len,
     if (len == 0) return 0;
     if (len > SIZE_MAX - mw->len) return NEVERC_IO_ERR_UNEXP;
     size_t required = mw->len + len;
+    size_t alias_offset = 0;
+    int input_aliases_buffer =
+        io_alias_offset(mw->data, mw->cap, buf, len, &alias_offset);
     int err = ensure_capacity(&mw->data, &mw->cap, required);
     if (err != 0) return err;
-    memcpy(mw->data + mw->len, buf, len);
+    if (input_aliases_buffer) buf = mw->data + alias_offset;
+    memmove(mw->data + mw->len, buf, len);
     mw->len = required;
     *n = len;
     return 0;
@@ -520,9 +543,13 @@ static int pipe_write(void *ctx, const uint8_t *buf, size_t len, size_t *n) {
     if (len == 0) return 0;
     if (len > SIZE_MAX - p->len) return NEVERC_IO_ERR_UNEXP;
     size_t required = p->len + len;
+    size_t alias_offset = 0;
+    int input_aliases_buffer =
+        io_alias_offset(p->buf, p->cap, buf, len, &alias_offset);
     int err = ensure_capacity(&p->buf, &p->cap, required);
     if (err != 0) return err;
-    memcpy(p->buf + p->len, buf, len);
+    if (input_aliases_buffer) buf = p->buf + alias_offset;
+    memmove(p->buf + p->len, buf, len);
     p->len = required;
     *n = len;
     return 0;

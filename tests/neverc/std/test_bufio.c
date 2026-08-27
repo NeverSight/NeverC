@@ -629,6 +629,52 @@ static void test_scanner_missing_reader(void) {
     neverc_bufio_scanner_free(&sc);
 }
 
+/* The NUL that terminated the previous token is restored at the top of Scan,
+ * so a stale token pointer is no longer a terminated string; leaving it
+ * visible lets text() run off the token into uninitialised buffer bytes and
+ * the private trailer behind them. */
+static void test_scanner_token_cleared_when_scan_stops(void) {
+    printf("[scanner token cleared when scan stops]\n");
+
+    const char *data = "hello\nworld\n";
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)data, strlen(data));
+    neverc_io_reader_t r = { &mr, neverc_io_mem_reader_read };
+    neverc_bufio_scanner_t sc;
+    neverc_bufio_scanner_init(&sc, r);
+
+    check_int("eof scan 1", neverc_bufio_scanner_scan(&sc), 1);
+    check_int("eof scan 2", neverc_bufio_scanner_scan(&sc), 1);
+    check_int("eof scan stops", neverc_bufio_scanner_scan(&sc), 0);
+    size_t len = 99;
+    check_int("eof token cleared",
+              neverc_bufio_scanner_bytes(&sc, &len) == NULL, 1);
+    check_size("eof token len cleared", len, 0);
+    check_int("eof text cleared",
+              neverc_bufio_scanner_text(&sc) == NULL, 1);
+    check_int("eof is not an error", neverc_bufio_scanner_err(&sc), 0);
+
+    check_int("eof stays stopped", neverc_bufio_scanner_scan(&sc), 0);
+    len = 99;
+    check_int("eof token still cleared",
+              neverc_bufio_scanner_bytes(&sc, &len) == NULL, 1);
+    check_size("eof token len still cleared", len, 0);
+    neverc_bufio_scanner_free(&sc);
+
+    /* ScanWords reaches the same exit with a non-zero advance. */
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"word ", 5);
+    neverc_io_reader_t wr = { &mr, neverc_io_mem_reader_read };
+    neverc_bufio_scanner_init(&sc, wr);
+    neverc_bufio_scanner_split(&sc, neverc_bufio_scan_words);
+    check_int("words scan 1", neverc_bufio_scanner_scan(&sc), 1);
+    check_int("words scan stops", neverc_bufio_scanner_scan(&sc), 0);
+    len = 99;
+    check_int("words token cleared",
+              neverc_bufio_scanner_bytes(&sc, &len) == NULL, 1);
+    check_size("words token len cleared", len, 0);
+    neverc_bufio_scanner_free(&sc);
+}
+
 static void test_scanner_token_too_long(void) {
     printf("[scanner token too long]\n");
 
@@ -1057,6 +1103,7 @@ int main(void) {
     test_reader_peek_larger_than_buffer();
     test_reader_rejects_invalid_count();
     test_scanner_missing_reader();
+    test_scanner_token_cleared_when_scan_stops();
     test_scanner_token_too_long();
     test_scanner_split_empty_contract();
     test_scanner_split_func();

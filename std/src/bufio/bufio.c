@@ -379,6 +379,11 @@ void neverc_bufio_scanner_split(neverc_bufio_scanner_t *s,
 int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
     if (!s) return 0;
     bufio_scanner_restore_text(s);
+    /* Go assigns s.token on every split call, so a scan that reports false
+     * never leaves the previous token visible. The NUL written for it was
+     * just restored, so the stale pointer is no longer terminated either. */
+    s->token = NULL;
+    s->token_len = 0;
     if (s->done && s->start >= s->buf_len) return 0;
     if (!s->buf || s->buf_cap == 0 || !s->reader.read ||
         s->start > s->buf_len || s->buf_len >= s->buf_cap) {
@@ -485,7 +490,12 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
                     if (perr != 0) {
                         s->err = perr;
                         s->done = 1;
-                        return 0;
+                        /* Go records the error and lets the split function
+                         * recover the buffered final token on this same
+                         * Scan. Returning here drops it and leaves the
+                         * scanner resumable, so the next Scan reports true
+                         * after this one reported false. */
+                        continue;
                     }
                 }
                 bufio_scanner_fail(s, NEVERC_BUFIO_ERR_TOO_LONG);
