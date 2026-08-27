@@ -13,6 +13,7 @@ syntax) cannot build here; name them explicitly only when they are portable.
 import argparse
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -22,15 +23,53 @@ REPO = Path(__file__).resolve().parents[2]
 REGISTRY = REPO / "tests" / "neverc" / "StdLibTests.cpp"
 TEST_DIR = REPO / "tests" / "neverc" / "std"
 
+DIRECT_CALL = re.compile(
+    r'compileAndRunStdTest\s*\(\s*"(?P<name>[^"]+)"\s*'
+    r'(?:,\s*\{(?P<srcs>[^{}]*)\}\s*)?'
+    r'(?:,\s*\{(?P<flags>[^{}]*)\}\s*)?\)'
+)
+
+
+def expand_dependency_macros(text):
+    """Inline the multiline *_DEPS macros the registry uses for source lists."""
+    macro = re.compile(
+        r"#define\s+([A-Z][A-Z0-9_]*_DEPS)\s*\\\n((?:.*\\\n)*.*?\n)"
+    )
+    for match in macro.finditer(text):
+        files = sorted(set(re.findall(r'"([^"]+)"', match.group(2))))
+        replacement = ", ".join(f'"{f}"' for f in files)
+        text = re.sub(rf"\b{re.escape(match.group(1))}\b", replacement, text)
+    return text
+
 
 def load_registry():
-    """Return {test_name: {source paths}} parsed from the C++ test registry."""
+    """Return {test_name: (sources, defines)} for every registered std test.
+
+    ``STD_TEST`` covers most of the suite, but tests whose name collides with a
+    C++ keyword are wired up through a bare ``compileAndRunStdTest`` call, so
+    both spellings have to be recognised.
+    """
     spec = importlib.util.spec_from_file_location(
         "check_test_deps", REPO / "utils" / "lint" / "check-test-deps.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.parse_tests(REGISTRY.read_text())
+
+    text = REGISTRY.read_text()
+    registry = {
+        name: (sources, [])
+        for name, sources in module.parse_tests(text).items()
+    }
+
+    for match in DIRECT_CALL.finditer(expand_dependency_macros(text)):
+        sources = set(re.findall(r'"([^"]+)"', match.group("srcs") or ""))
+        defines = [
+            flag[2:]
+            for flag in re.findall(r'"([^"]+)"', match.group("flags") or "")
+            if flag.startswith("-D")
+        ]
+        registry.setdefault(match.group("name"), (sources, defines))
+    return registry
 
 
 def compile_command(cc, name, sources, sanitize, defines, out):
@@ -139,12 +178,13 @@ def main():
     failures = []
     with tempfile.TemporaryDirectory() as workdir:
         for name in names:
+            sources, defines = registry[name]
             status, output = run_one(
                 args.cc,
                 name,
-                registry[name],
+                sources,
                 args.sanitize,
-                args.define,
+                args.define + defines,
                 args.timeout,
                 workdir,
             )
