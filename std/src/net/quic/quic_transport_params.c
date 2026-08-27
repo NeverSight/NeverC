@@ -288,7 +288,9 @@ static int write_tp_bytes(uint8_t *buf, size_t cap, size_t *pos,
     size_t w;
     neverc_quic_varint_encode(param_id, buf + *pos, cap - *pos, &w); *pos += w;
     neverc_quic_varint_encode(dlen, buf + *pos, cap - *pos, &w); *pos += w;
-    memcpy(buf + *pos, data, dlen);
+    /* Zero-length parameters such as disable_active_migration pass a null
+     * pointer, which memcpy rejects even for a zero count. */
+    if (dlen) memcpy(buf + *pos, data, dlen);
     *pos += dlen;
     return 0;
 }
