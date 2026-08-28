@@ -117,6 +117,12 @@
       "justification": "`static std::shared_mutex Gate` -- the process-serial gate guarding LLVM cl::opt install/restore. A lock, not compilation state; the spec explicitly permits sync primitives without compilation state."
     },
     {
+      "symbol": "neverc::plugin::(anonymous namespace)::ExclusiveWaitEpoch",
+      "owner": "plugin PluginLLVMOptionSnapshot",
+      "kind": "synchronization diagnostic counter (no compilation state)",
+      "justification": "Monotonic atomic counter used only to observe entry into the option gate's blocking path in concurrency tests. It carries no option, session, task, graph, artifact, or compiler payload and never affects compilation behavior."
+    },
+    {
       "symbol": "neverc::plugin::(anonymous namespace)::InterpreterOnce",
       "owner": "PythonPluginLoader",
       "kind": "synchronization primitive (no compilation state)",
