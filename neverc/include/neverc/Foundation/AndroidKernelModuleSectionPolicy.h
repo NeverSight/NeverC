@@ -19,7 +19,7 @@ inline constexpr bool rejectsReleaseInputType(uint32_t Type) {
 /// Index-independent metadata consumed or replaced while producing one
 /// canonical release object. Non-leading SHT_NULL entries are inactive slots
 /// and are dropped; the selected symbol table, relocation tables, and LLVM
-/// index metadata are rebuilt or discarded as appropriate.
+/// linker metadata are rebuilt or discarded as appropriate.
 ///
 /// SHT_STRTAB is deliberately absent: a string table is metadata only when its
 /// section index is exactly e_shstrndx or the selected SHT_SYMTAB's sh_link.
@@ -29,7 +29,7 @@ inline constexpr bool rejectsReleaseInputType(uint32_t Type) {
 inline constexpr bool regeneratesReleaseInputType(uint32_t Type) {
   using namespace llvm::ELF;
   return Type == SHT_NULL || Type == SHT_SYMTAB || Type == SHT_RELA ||
-         Type == SHT_REL || Type == SHT_LLVM_ADDRSIG ||
+         Type == SHT_REL || Type == SHT_LLVM_LTO || Type == SHT_LLVM_ADDRSIG ||
          Type == SHT_LLVM_CALL_GRAPH_PROFILE;
 }
 
@@ -49,7 +49,7 @@ inline constexpr bool rejectsReleaseOutputTypeAtIndex(uint32_t Type,
   if (IsSectionZero)
     return Type != SHT_NULL;
   return Type == SHT_NULL || Type == SHT_GROUP || Type == SHT_SYMTAB_SHNDX ||
-         Type == SHT_REL || Type == SHT_LLVM_ADDRSIG ||
+         Type == SHT_REL || Type == SHT_LLVM_LTO || Type == SHT_LLVM_ADDRSIG ||
          Type == SHT_LLVM_CALL_GRAPH_PROFILE;
 }
 

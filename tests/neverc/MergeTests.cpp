@@ -6674,6 +6674,7 @@ TEST(MergeELFSemantic,
   };
   constexpr Case Cases[] = {
       {".inactive", SHT_NULL, 0},
+      {".llvm.lto", SHT_LLVM_LTO, 8},
       {".llvm_addrsig", SHT_LLVM_ADDRSIG, 4},
       {".llvm.call-graph-profile", SHT_LLVM_CALL_GRAPH_PROFILE, 8},
   };
@@ -6718,6 +6719,7 @@ TEST(MergeELFSemantic,
       {"SHT_NULL outside section zero", SHT_NULL},
       {"SHT_GROUP", SHT_GROUP},
       {"SHT_SYMTAB_SHNDX", SHT_SYMTAB_SHNDX},
+      {"SHT_LLVM_LTO", SHT_LLVM_LTO},
       {"SHT_LLVM_ADDRSIG", SHT_LLVM_ADDRSIG},
       {"SHT_LLVM_CALL_GRAPH_PROFILE", SHT_LLVM_CALL_GRAPH_PROFILE},
   };

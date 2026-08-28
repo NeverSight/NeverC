@@ -568,6 +568,7 @@ bool isExcludedInputSection(const RawSec &S, const Options &Opts) {
   case SHT_RELA:
   case SHT_REL:
   case SHT_GROUP:
+  case SHT_LLVM_LTO:
   case SHT_LLVM_ADDRSIG:
   case SHT_LLVM_CALL_GRAPH_PROFILE:
     return true;

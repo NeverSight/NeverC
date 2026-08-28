@@ -21,10 +21,35 @@ llvm::Expected<uint64_t> findELFSymbolAddress(llvm::StringRef Bytes,
       return SymbolName.takeError();
     if (*SymbolName != Name)
       continue;
+    llvm::Expected<uint32_t> Flags = Symbol.getFlags();
+    if (!Flags)
+      return Flags.takeError();
+    if (*Flags & llvm::object::SymbolRef::SF_Undefined)
+      continue;
     return Symbol.getAddress();
   }
   return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                  "ELF symbol not found: " + Name);
+}
+
+llvm::Expected<bool> hasELFSection(llvm::StringRef Bytes,
+                                   llvm::StringRef Name) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "elf-linker-test"));
+  if (!Object)
+    return Object.takeError();
+  if (!(*Object)->isELF())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected an ELF image");
+
+  for (const llvm::object::SectionRef &Section : (*Object)->sections()) {
+    llvm::Expected<llvm::StringRef> SectionName = Section.getName();
+    if (!SectionName)
+      return SectionName.takeError();
+    if (*SectionName == Name)
+      return true;
+  }
+  return false;
 }
 
 } // namespace
@@ -82,6 +107,66 @@ TEST_F(LinkerTest, EmbeddedLinkerDefault) {
   auto all = dr.err + dr.out;
   EXPECT_TRUE(all.find("(in-process)") != std::string::npos)
       << "embedded linker: missing (in-process) marker\n" << all;
+}
+
+TEST_F(LinkerTest, ElfRelocatableDropsUnusedFatLTOSections) {
+  const fs::path firstSource = tmpFile("fat_lto_first.s");
+  const fs::path secondSource = tmpFile("fat_lto_second.s");
+  const fs::path firstObject = tmpFile("fat_lto_first.o");
+  const fs::path secondObject = tmpFile("fat_lto_second.o");
+  const fs::path output = tmpFile("fat_lto_combined.o");
+
+  writeFile(firstSource, R"(
+.section .text.first,"ax",@progbits
+.globl fat_lto_first
+.type fat_lto_first,@function
+fat_lto_first:
+  ret
+.section .llvm.lto,"e",@llvm_lto
+  .byte 0x42, 0x43, 0xc0, 0xde
+)");
+  writeFile(secondSource, R"(
+.section .text.second,"ax",@progbits
+.globl fat_lto_second
+.type fat_lto_second,@function
+fat_lto_second:
+  ret
+.section .llvm.lto,"e",@llvm_lto
+  .byte 0xde, 0xc0, 0x43, 0x42
+)");
+
+  for (const std::pair<fs::path, fs::path> &input :
+       {std::pair{firstSource, firstObject},
+        std::pair{secondSource, secondObject}}) {
+    CmdResult assemble =
+        ncc({"--target=x86_64-linux-gnu", "-x", "assembler", "-c",
+             input.first.string(), "-o", input.second.string()});
+    ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+  }
+
+  CmdResult link =
+      ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-fno-lto", "-r",
+           firstObject.string(), secondObject.string(), "-o", output.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  const std::string bytes = readFile(output);
+  llvm::Expected<bool> hasText = hasELFSection(bytes, ".text");
+  ASSERT_TRUE(static_cast<bool>(hasText))
+      << llvm::toString(hasText.takeError()).str().str();
+  EXPECT_TRUE(*hasText);
+  llvm::Expected<uint64_t> firstAddress =
+      findELFSymbolAddress(bytes, "fat_lto_first");
+  ASSERT_TRUE(static_cast<bool>(firstAddress))
+      << llvm::toString(firstAddress.takeError()).str().str();
+  llvm::Expected<uint64_t> secondAddress =
+      findELFSymbolAddress(bytes, "fat_lto_second");
+  ASSERT_TRUE(static_cast<bool>(secondAddress))
+      << llvm::toString(secondAddress.takeError()).str().str();
+  llvm::Expected<bool> hasFatLTO = hasELFSection(bytes, ".llvm.lto");
+  ASSERT_TRUE(static_cast<bool>(hasFatLTO))
+      << llvm::toString(hasFatLTO.takeError()).str().str();
+  EXPECT_FALSE(*hasFatLTO)
+      << "unused raw FatLTO payloads must not be concatenated by -r";
 }
 
 TEST_F(LinkerTest, AutorouteObjectInput) {
