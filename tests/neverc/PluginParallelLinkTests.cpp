@@ -1,8 +1,20 @@
+#include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
+#include "Linker/ELF/Driver.h"
 #include "ProcessResourceBrokerInternal.h"
 #include "neverc/Foundation/Core/ProcessResourceBroker.h"
+#include "neverc/Invoke/InMemoryFileStore.h"
+#include "neverc/Plugin/Host/BuiltinLLVMAsmParser.h"
+#include "neverc/Plugin/Host/BuiltinTargetProvider.h"
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/Object/ArchiveWriter.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/FileUtilities.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/TargetSelect.h"
 #include "gtest/gtest.h"
 #include <algorithm>
 #include <atomic>
@@ -17,6 +29,9 @@
 #endif
 
 using namespace linker;
+using namespace linker::elf;
+
+LINKER_HAS_DRIVER(elf)
 
 namespace {
 
@@ -50,6 +65,16 @@ makeResourceBroker(unsigned Tokens) {
   Config.Enabled = true;
   Config.CpuTokens = Tokens;
   return neverc::ProcessResourceBrokerTestAccess::create(Config);
+}
+
+void initializeAssemblyTargets() {
+  static std::once_flag Once;
+  std::call_once(Once, [] {
+    llvm::InitializeAllTargetInfos();
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmParsers();
+  });
 }
 
 #if LLVM_ENABLE_ZSTD
@@ -100,6 +125,141 @@ compressStreamingWithZstdWorkers(const std::vector<uint8_t> &Input,
 #endif
 
 } // namespace
+
+TEST(PluginParallelLinkTest, AutomaticLinkThreadsKeepSmallWorkloadsSerial) {
+  constexpr uint64_t MiB = 1024ULL * 1024ULL;
+  EXPECT_EQ(selectLinkThreadCount(/*RequestedThreads=*/0,
+                                  /*AvailableThreads=*/16,
+                                  /*InputBytes=*/8 * MiB,
+                                  /*InputFiles=*/2),
+            1U);
+}
+
+TEST(PluginParallelLinkTest, AutomaticLinkThreadsScaleDenseWorkloadsGradually) {
+  constexpr uint64_t MiB = 1024ULL * 1024ULL;
+  EXPECT_EQ(selectLinkThreadCount(/*RequestedThreads=*/0,
+                                  /*AvailableThreads=*/16,
+                                  /*InputBytes=*/34 * MiB,
+                                  /*InputFiles=*/1024),
+            3U);
+}
+
+TEST(PluginParallelLinkTest, AutomaticLinkThreadsRespectAvailableCapacity) {
+  constexpr uint64_t MiB = 1024ULL * 1024ULL;
+  EXPECT_EQ(selectLinkThreadCount(/*RequestedThreads=*/0,
+                                  /*AvailableThreads=*/4,
+                                  /*InputBytes=*/141 * MiB,
+                                  /*InputFiles=*/4096),
+            4U);
+}
+
+TEST(PluginParallelLinkTest, AutomaticLinkThreadsHandleSaturatedInputSize) {
+  EXPECT_EQ(selectLinkThreadCount(/*RequestedThreads=*/0,
+                                  /*AvailableThreads=*/16,
+                                  /*InputBytes=*/UINT64_MAX,
+                                  /*InputFiles=*/1),
+            16U);
+}
+
+TEST(PluginParallelLinkTest, AutomaticLinkThreadsAvoidFineGrainedFanout) {
+  constexpr uint64_t MiB = 1024ULL * 1024ULL;
+  EXPECT_EQ(selectLinkThreadCount(/*RequestedThreads=*/0,
+                                  /*AvailableThreads=*/16,
+                                  /*InputBytes=*/37 * MiB,
+                                  /*InputFiles=*/32768),
+            1U);
+}
+
+TEST(PluginParallelLinkTest, ExplicitLinkThreadCountOverridesAutomaticPolicy) {
+  EXPECT_EQ(selectLinkThreadCount(/*RequestedThreads=*/7,
+                                  /*AvailableThreads=*/16,
+                                  /*InputBytes=*/0,
+                                  /*InputFiles=*/0),
+            7U);
+}
+
+TEST(PluginParallelLinkTest,
+     AutomaticLinkThreadsIncludeEntryExtractedArchiveMembers) {
+  llvm::ThreadPoolStrategy Strategy = llvm::hardware_concurrency();
+  if (Strategy.compute_thread_count() < 2)
+    GTEST_SKIP() << "automatic worker selection needs two available threads";
+
+  initializeAssemblyTargets();
+  const neverc::plugin::BuiltinTargetRoute *Route =
+      neverc::plugin::findBuiltinTargetRoute("x86_64-unknown-linux-gnu");
+  ASSERT_NE(Route, nullptr);
+  auto Target = neverc::plugin::lookupBuiltinLLVMTarget(*Route);
+  ASSERT_TRUE(static_cast<bool>(Target))
+      << llvm::toString(Target.takeError()).str().str();
+
+  constexpr uint64_t MiB = 1024ULL * 1024ULL;
+  const std::string Assembly = ".text\n"
+                               ".globl late_archive_entry\n"
+                               ".type late_archive_entry,@function\n"
+                               "late_archive_entry:\n"
+                               "  ret\n"
+                               ".section .rodata.large,\"a\",@progbits\n"
+                               ".zero 17825792\n";
+  llvm::SmallVector<char, 0> Object;
+  llvm::raw_svector_ostream ObjectStream(Object);
+  neverc::plugin::BuiltinLLVMAsmParserRequest Request;
+  Request.Target = *Target;
+  Request.TargetTriple =
+      llvm::Triple(llvm::Triple::normalize(Route->CanonicalTriple));
+  Request.CPU = Route->DefaultCPU;
+  Request.Input = llvm::MemoryBufferRef(Assembly, "late-archive-member.s");
+  Request.Output = &ObjectStream;
+  if (llvm::Error Error = neverc::plugin::runBuiltinLLVMAsmParser(Request))
+    FAIL() << llvm::toString(std::move(Error)).str().str();
+  ASSERT_GT(Object.size(), 16 * MiB);
+
+  llvm::SmallVector<llvm::NewArchiveMember, 1> Members;
+  Members.emplace_back(llvm::MemoryBufferRef(
+      llvm::StringRef(Object.data(), Object.size()), "late-member.o"));
+  auto Archive = llvm::writeArchiveToBuffer(
+      Members, llvm::SymtabWritingMode::NormalSymtab,
+      llvm::object::Archive::K_GNU, /*Deterministic=*/true, /*Thin=*/false);
+  ASSERT_TRUE(static_cast<bool>(Archive))
+      << llvm::toString(Archive.takeError()).str().str();
+
+  neverc::InMemoryFileStore &Store = neverc::InMemoryFileStore::instance();
+  Store.clear();
+  auto ClearStore = llvm::make_scope_exit([&] { Store.clear(); });
+  constexpr llvm::StringLiteral ArchivePath = "/virtual/late-extract.a";
+  llvm::SmallString<0> &ArchiveBytes =
+      Store.create(ArchivePath, (*Archive)->getBufferSize());
+  ArchiveBytes.append((*Archive)->getBuffer().begin(),
+                      (*Archive)->getBuffer().end());
+  Store.freeze();
+
+  llvm::SmallString<128> OutputPath;
+  std::error_code EC = llvm::sys::fs::createTemporaryFile("neverc-late-extract",
+                                                          "elf", OutputPath);
+  ASSERT_FALSE(EC) << EC.message();
+  llvm::FileRemover RemoveOutput(OutputPath);
+
+  LinkerExecutionContext Execution;
+  LinkerDriverConfig Config;
+  Config.executionContext = &Execution;
+  Config.outputFile = OutputPath.str().str();
+  Config.emulation = "elf_x86_64";
+  Config.endianness = 1;
+  Config.staticLink = true;
+  Config.noDynamicLinker = true;
+  Config.ehFrameHdr = false;
+  const char *Args[] = {"neverc-test-linker", "-e", "late_archive_entry",
+                        ArchivePath.data()};
+  std::string Stdout;
+  std::string Stderr;
+  llvm::raw_string_ostream StdoutStream(Stdout);
+  llvm::raw_string_ostream StderrStream(Stderr);
+  ASSERT_TRUE(linker::elf::link(Args, StdoutStream, StderrStream,
+                                /*exitEarly=*/false,
+                                /*disableOutput=*/false, Config))
+      << Stderr;
+  ASSERT_NE(Execution.common(), nullptr);
+  EXPECT_EQ(Execution.common()->parallelThreadCount(), 2U);
+}
 
 TEST(PluginParallelLinkTest,
      ConcurrentExecutionsKeepBudgetsAndWorkersIsolated) {

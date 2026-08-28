@@ -4,9 +4,16 @@
 #include "Linker/Core/Support/LlvmAliases.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Option/ArgList.h"
+#include <cstdint>
 #include <optional>
 
 namespace linker::elf {
+/// Select a worker budget after the materialized ELF workload is known.
+/// An explicit request is preserved; zero requests an automatic budget.
+unsigned selectLinkThreadCount(unsigned RequestedThreads,
+                               unsigned AvailableThreads, uint64_t InputBytes,
+                               uint64_t InputFiles);
+
 // Parses command line options.
 class ELFOptTable : public llvm::opt::GenericOptTable {
 public:

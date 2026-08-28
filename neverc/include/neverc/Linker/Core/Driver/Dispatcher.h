@@ -66,7 +66,7 @@ struct LinkerDriverConfig {
   unsigned timeTraceGranularity = 500;
   uint64_t errorLimit = 20;
   bool verbose = false;
-  unsigned threadCount = 0; // 0 = use hardware default
+  unsigned threadCount = 0; // 0 = use the backend-selected default
   bool demangle = true;
   bool nostdlib = false;
   bool suppressWarnings = false;

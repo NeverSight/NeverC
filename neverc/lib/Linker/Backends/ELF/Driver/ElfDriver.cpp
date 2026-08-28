@@ -41,10 +41,13 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/GlobPattern.h"
 #include "llvm/Support/LEB128.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/Threading.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <tuple>
 #include <utility>
 
@@ -72,6 +75,25 @@ void elf::errorOrWarn(const Twine &msg) {
     warn(msg);
   else
     error(msg);
+}
+
+unsigned elf::selectLinkThreadCount(unsigned RequestedThreads,
+                                    unsigned AvailableThreads,
+                                    uint64_t InputBytes, uint64_t InputFiles) {
+  if (RequestedThreads != 0)
+    return RequestedThreads;
+  constexpr uint64_t MinParallelBytes = 16ULL * 1024ULL * 1024ULL;
+  constexpr uint64_t BytesPerAdditionalThread = 32ULL * 1024ULL * 1024ULL;
+  constexpr uint64_t MinAverageFileBytes = 4ULL * 1024ULL;
+  if (InputBytes < MinParallelBytes || AvailableThreads <= 1)
+    return 1;
+  if (InputFiles != 0 && InputBytes / InputFiles < MinAverageFileBytes)
+    return 1;
+  const uint64_t AdditionalThreads =
+      InputBytes / BytesPerAdditionalThread +
+      (InputBytes % BytesPerAdditionalThread != 0);
+  return static_cast<unsigned>(
+      std::min<uint64_t>(AvailableThreads, 1 + AdditionalThreads));
 }
 
 void Ctx::reset() {
@@ -117,7 +139,6 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
       driverCfg.executionContext ? *driverCfg.executionContext : LocalExecution;
   ELFLinkerContext &Backend = Execution.createBackend<ELFLinkerContext>();
   CommonLinkerContext &Common = Backend;
-  Common.configureParallel(driverCfg.threadCount, 16);
 
   Common.e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
   Common.e.errorLimit = driverCfg.errorLimit;
@@ -2290,6 +2311,35 @@ void finalizeObjectFile(ELFFileBase *file) {
 }
 } // namespace
 
+namespace {
+void configureParallelismForMaterializedInputs(
+    const LinkerDriverConfig &driverCfg) {
+  uint64_t inputBytes = 0;
+  uint64_t inputFiles = 0;
+  auto accountFiles = [&](const auto &inputRange) {
+    for (const InputFile *file : inputRange) {
+      inputBytes =
+          SaturatingAdd<uint64_t>(inputBytes, file->mb.getBufferSize());
+      ++inputFiles;
+    }
+  };
+  // Shared objects participate in resolution but their contents are not copied
+  // into the output. Counting their full file sizes would overestimate the
+  // post-parse work that this pool serves.
+  accountFiles(elfState().objectFiles);
+  accountFiles(elfState().bitcodeFiles);
+  accountFiles(elfState().binaryFiles);
+
+  ThreadPoolStrategy strategy = hardware_concurrency();
+  unsigned availableThreads = std::max(1U, strategy.compute_thread_count());
+  availableThreads = std::min(availableThreads, 16U);
+  const unsigned selectedThreads = selectLinkThreadCount(
+      driverCfg.threadCount, availableThreads, inputBytes, inputFiles);
+  commonContext().configureParallel(selectedThreads);
+  config->threadCount = commonContext().parallelThreadCount();
+}
+} // namespace
+
 // Do actual linking. Note that when this function is called,
 // all linker scripts have already been parsed.
 void LinkerDriver::execute(opt::InputArgList &args) {
@@ -2377,6 +2427,12 @@ void LinkerDriver::execute(opt::InputArgList &args) {
 
   // Archive members defining __wrap symbols may be extracted.
   std::vector<WrappedSymbol> wrapped = addWrappedSymbols(args);
+
+  // Input parsing and all command-line-driven archive extraction above are
+  // serial. Delay pool creation until the complete materialized workload is
+  // known so small links avoid worker startup and larger links scale to the
+  // archive members they actually selected.
+  configureParallelismForMaterializedInputs(*config->driverCfg);
 
   parallelForEach(elfState().objectFiles, [](ELFFileBase *file) {
     prepareSectionsAndLocals(file, /*ignoreComdats=*/false);
