@@ -41,16 +41,14 @@
 namespace llvm {
 
 // ScalarEvolution already grants this ABI test helper friendship. Pin the
-// first private-field offsets as well as the constructor surface: the removed
+// first private-field offset as well as the constructor surface: the removed
 // threshold member fit inside existing padding, so sizeof alone could not
-// detect that layout regression.
+// detect that layout regression. Avoid applying offsetof to reference members,
+// whose physical storage is not a portable C++ contract.
 class ScalarEvolutionsTest {
 public:
   static constexpr std::size_t hasGuardsOffset() {
     return offsetof(ScalarEvolution, HasGuards);
-  }
-  static constexpr std::size_t targetLibraryInfoOffset() {
-    return offsetof(ScalarEvolution, TLI);
   }
 };
 
@@ -68,8 +66,6 @@ static_assert(
                              AssumptionCache &, DominatorTree &, LoopInfo &,
                              std::optional<unsigned>>);
 static_assert(ScalarEvolutionsTest::hasGuardsOffset() == sizeof(void *));
-static_assert(ScalarEvolutionsTest::targetLibraryInfoOffset() ==
-              2 * sizeof(void *));
 
 namespace {
 
