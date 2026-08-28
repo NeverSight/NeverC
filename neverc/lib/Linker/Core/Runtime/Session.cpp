@@ -19,7 +19,9 @@ thread_local unsigned CurrentWorkerSlot = 0;
 } // namespace
 
 CommonLinkerContext::CommonLinkerContext()
-    : PreviousContext(ActiveLinkerContext) {
+    : ResourceSession(neverc::currentResourceSession()),
+      PreviousContext(ActiveLinkerContext),
+      PreviousWorkerSlot(CurrentWorkerSlot) {
   ActiveLinkerContext = this;
   CurrentWorkerSlot = 0;
   WorkerSlots.emplace(std::this_thread::get_id(), 0);
@@ -30,7 +32,7 @@ CommonLinkerContext::~CommonLinkerContext() {
          "linker context destroyed outside its active scope");
   finalizeOwnedState();
   ActiveLinkerContext = PreviousContext;
-  CurrentWorkerSlot = 0;
+  CurrentWorkerSlot = PreviousWorkerSlot;
 }
 
 void CommonLinkerContext::finalizeOwnedState() noexcept {
@@ -101,7 +103,8 @@ bool linker::hasContext() { return ActiveLinkerContext != nullptr; }
 
 LinkerContextGuard::LinkerContextGuard(CommonLinkerContext &Context,
                                        unsigned WorkerSlot)
-    : Previous(ActiveLinkerContext), PreviousWorkerSlot(CurrentWorkerSlot) {
+    : ResourceScope(Context.resourceSession()), Previous(ActiveLinkerContext),
+      PreviousWorkerSlot(CurrentWorkerSlot) {
   ActiveLinkerContext = &Context;
   CurrentWorkerSlot = WorkerSlot;
 }

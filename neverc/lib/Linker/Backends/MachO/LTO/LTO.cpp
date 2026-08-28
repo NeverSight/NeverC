@@ -134,6 +134,7 @@ std::vector<ObjFile *> BitcodeCompiler::compile() {
   if (hasFiles)
     runLTOWithCache(*ltoObj, cacheKey, cacheUsable, *config->driverCfg,
                     ltoCacheBackendTag, emitAddrsig(), buf);
+  ltoObj.reset();
 
   const auto &D = *config->driverCfg;
   std::vector<ObjFile *> ret;

@@ -100,10 +100,24 @@ public:
   void addLibrary(StringRef name);
 
 private:
+  struct LibraryDeduplicationKey {
+    llvm::StringRef resolvedPath;
+    uint16_t readerStateBit;
+  };
+  enum class AddedFileKind {
+    NotDeduplicable,
+    LazyArchiveDeduplicable,
+  };
+
   void createFiles(llvm::opt::InputArgList &args);
   void inferMachineType();
   void execute(llvm::opt::InputArgList &args);
   template <class ELFT> void compileBitcodeFiles();
+  std::optional<LibraryDeduplicationKey>
+  getLibraryDeduplicationKey(llvm::StringRef resolvedPath) const;
+  AddedFileKind addFileAndClassify(llvm::StringRef path, bool withLOption);
+  bool hasSeenLibrary(const LibraryDeduplicationKey &key) const;
+  void rememberLibrary(const LibraryDeduplicationKey &key);
   // True if we are in --whole-archive and --no-whole-archive.
   bool inWholeArchive = false;
 
@@ -112,6 +126,7 @@ private:
 
   std::unique_ptr<BitcodeCompiler> lto;
   std::vector<InputFile *> files;
+  llvm::StringMap<uint16_t> visitedLibraryStates;
 
 public:
   SmallVector<std::pair<StringRef, unsigned>, 0> archiveFiles;
@@ -213,6 +228,7 @@ struct Config {
   bool isStatic = false;
   bool sysvHash = false;
   bool trace;
+  bool traceSymbols = false;
   bool undefinedVersion;
   bool unique;
   bool useAndroidRelrTags = false;

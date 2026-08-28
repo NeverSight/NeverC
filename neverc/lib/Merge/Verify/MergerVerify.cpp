@@ -4293,6 +4293,12 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
     for (const RawMachoSym &S : In.Syms) {
       if (S.Name.empty() || (S.Type & MO::N_STAB))
         continue;
+      // A weak definition can resolve to another partition's copy.  Its
+      // output n_value therefore does not identify this input contribution's
+      // section base and cannot predict where this contribution's relocation
+      // sites land (the ELF verifier applies the same exclusion).
+      if (S.isCoalescible())
+        continue;
       if ((S.Type & MO::N_TYPE) != MO::N_SECT || S.Sect == 0 ||
           S.Sect > In.Secs.size())
         continue;
@@ -4335,11 +4341,16 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                                  "\x01" + Twine(R.Type))
                                     .str());
       if (MIt == OutRelocs.end() || !MIt->second.count(Expected))
-        return fail(Err, "verify: Mach-O relocation against '" + SymN +
-                             "' in (" + InSec.Seg + "," + WantSect +
-                             ") expected at merged offset 0x" +
-                             Twine::utohexstr(Expected) +
-                             " is missing (offset collapsed or mis-routed)");
+        return fail(
+            Err,
+            "verify: Mach-O relocation against '" + SymN + "' in (" +
+                InSec.Seg + "," + WantSect + ") expected at merged offset 0x" +
+                Twine::utohexstr(Expected) + " using input anchor '" +
+                Best->second + "' at offset 0x" +
+                Twine::utohexstr(Best->first) + " mapped to output offset 0x" +
+                Twine::utohexstr(OutAnchor.Value - OutAnchorSec.Addr) +
+                " in partition " + Twine(p) +
+                " is missing (offset collapsed or mis-routed)");
     }
 
     // Section-relative (non-extern) relocation site check.  These targets are

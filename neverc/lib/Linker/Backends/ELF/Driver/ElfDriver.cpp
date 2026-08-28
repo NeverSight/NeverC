@@ -1,7 +1,6 @@
 #include "ELF/ELFLinkGraphAdapter.h"
 #include "Link/LinkPhaseExecutor.h"
 #include "Linker/Core/Driver/ArgList.h"
-#include "Linker/Core/Driver/CommonLTOConfig.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Driver/LinkExecutionHooks.h"
 #include "Linker/Core/Runtime/Allocator.h"
@@ -220,22 +219,27 @@ bool isBitcode(MemoryBufferRef mb) {
 // ===----------------------------------------------------------------------===
 
 void LinkerDriver::addFile(StringRef path, bool withLOption) {
+  (void)addFileAndClassify(path, withLOption);
+}
+
+LinkerDriver::AddedFileKind LinkerDriver::addFileAndClassify(StringRef path,
+                                                             bool withLOption) {
   using namespace sys::fs;
 
   std::optional<MemoryBufferRef> buffer = readFile(path);
   if (!buffer)
-    return;
+    return AddedFileKind::NotDeduplicable;
   MemoryBufferRef mbref = *buffer;
 
   if (config->formatBinary) {
     files.push_back(make<BinaryFile>(mbref));
-    return;
+    return AddedFileKind::NotDeduplicable;
   }
 
   switch (identify_magic(mbref.getBuffer())) {
   case file_magic::unknown:
     readLinkerScript(mbref);
-    return;
+    return AddedFileKind::NotDeduplicable;
   case file_magic::archive: {
     auto members = getArchiveMembers(mbref);
     if (inWholeArchive) {
@@ -245,7 +249,7 @@ void LinkerDriver::addFile(StringRef path, bool withLOption) {
         else
           files.push_back(createObjFile(p.first, path));
       }
-      return;
+      return AddedFileKind::NotDeduplicable;
     }
 
     archiveFiles.emplace_back(path, members.size());
@@ -262,6 +266,7 @@ void LinkerDriver::addFile(StringRef path, bool withLOption) {
     //
     // All files within the archive get the same group ID to allow mutual
     // references for --warn-backrefs.
+    bool canDeduplicate = true;
     bool saved = elfInputFileIsInGroup();
     elfInputFileIsInGroup() = true;
     for (const std::pair<MemoryBufferRef, uint64_t> &p : members) {
@@ -270,19 +275,22 @@ void LinkerDriver::addFile(StringRef path, bool withLOption) {
         files.push_back(createObjFile(p.first, path, true));
       } else if (magic == file_magic::bitcode)
         files.push_back(make<BitcodeFile>(p.first, path, p.second, true));
-      else
+      else {
+        canDeduplicate = false;
         warn(path + ": archive member '" + p.first.getBufferIdentifier() +
              "' is neither ET_REL nor LLVM bitcode");
+      }
     }
     elfInputFileIsInGroup() = saved;
     if (!saved)
       ++elfNextGroupId();
-    return;
+    return canDeduplicate ? AddedFileKind::LazyArchiveDeduplicable
+                          : AddedFileKind::NotDeduplicable;
   }
   case file_magic::elf_shared_object: {
     if (config->isStatic || config->relocatable) {
       error("attempted static link of dynamic object " + path);
-      return;
+      return AddedFileKind::NotDeduplicable;
     }
 
     // Shared objects are identified by soname. soname is (if specified)
@@ -294,7 +302,10 @@ void LinkerDriver::addFile(StringRef path, bool withLOption) {
         make<SharedFile>(mbref, withLOption ? path::filename(path) : path);
     f->init();
     files.push_back(f);
-    return;
+    // Shared-library as-needed and symbol-resolution behavior is more subtle
+    // than NeverC's eager lazy-archive registration.  Keep repeated DSOs until
+    // they have a separately proved equivalence rule.
+    return AddedFileKind::NotDeduplicable;
   }
   case file_magic::bitcode:
     files.push_back(make<BitcodeFile>(mbref, "", 0, inLib));
@@ -305,14 +316,69 @@ void LinkerDriver::addFile(StringRef path, bool withLOption) {
   default:
     error(path + ": unknown file type");
   }
+  return AddedFileKind::NotDeduplicable;
+}
+
+std::optional<LinkerDriver::LibraryDeduplicationKey>
+LinkerDriver::getLibraryDeduplicationKey(StringRef resolvedPath) const {
+  // Normal archives are registered eagerly as lazy objects: addFile creates a
+  // LazyObject for every member, and execute() visits every lazy symbol table.
+  // A later occurrence of the same resolved library in the same reader state
+  // therefore cannot make another definition available. Keep this invariant
+  // local to the tracker instead of teaching every input reader about it.
+  //
+  // Some modes deliberately expose input occurrences or change their meaning.
+  // They must retain the uncoalesced stream. Map files and --cref do not need a
+  // fallback: their emitters only traverse materialized files and symbols, not
+  // archiveFiles or unextracted lazy occurrences.
+  const LinkerDriverConfig &driverCfg = *config->driverCfg;
+  const bool hasObservablePluginSession =
+      driverCfg.executionHooks || driverCfg.pluginSession ||
+      driverCfg.pluginTask || !driverCfg.nevercPluginPaths.empty();
+  if (inWholeArchive || config->formatBinary || config->trace ||
+      config->traceSymbols || config->warnBackrefs || errorHandler().verbose ||
+      !config->printArchiveStats.empty() || !config->whyExtract.empty() ||
+      hasObservablePluginSession)
+    return std::nullopt;
+
+  unsigned state = static_cast<unsigned>(config->asNeeded) |
+                   (static_cast<unsigned>(config->isStatic) << 1) |
+                   (static_cast<unsigned>(elfInputFileIsInGroup()) << 2) |
+                   (static_cast<unsigned>(inLib) << 3);
+  return LibraryDeduplicationKey{resolvedPath,
+                                 static_cast<uint16_t>(1U << state)};
+}
+
+bool LinkerDriver::hasSeenLibrary(const LibraryDeduplicationKey &key) const {
+  auto it = visitedLibraryStates.find(key.resolvedPath);
+  return it != visitedLibraryStates.end() &&
+         (it->second & key.readerStateBit) != 0;
+}
+
+void LinkerDriver::rememberLibrary(const LibraryDeduplicationKey &key) {
+  visitedLibraryStates[key.resolvedPath] |= key.readerStateBit;
 }
 
 // Add a given library by searching it from input search paths.
 void LinkerDriver::addLibrary(StringRef name) {
-  if (std::optional<std::string> path = searchLibrary(name))
-    addFile(saver().save(*path), /*withLOption=*/true);
-  else
+  if (std::optional<std::string> path = searchLibrary(name)) {
+    std::optional<LibraryDeduplicationKey> key =
+        getLibraryDeduplicationKey(*path);
+    // Only entries classified by an earlier successful addFile call are ever
+    // recorded.  In particular, a text file found through -l may be a GNU
+    // linker script with positional side effects and is never recorded here.
+    if (key && hasSeenLibrary(*key))
+      return;
+
+    const uint64_t errorsBeforeLoad = errorCount();
+    const AddedFileKind addedKind =
+        addFileAndClassify(saver().save(*path), /*withLOption=*/true);
+    if (key && addedKind == AddedFileKind::LazyArchiveDeduplicable &&
+        errorCount() == errorsBeforeLoad)
+      rememberLibrary(*key);
+  } else {
     error("unable to find library -l" + name, ErrorTag::LibNotFound, {name});
+  }
 }
 
 namespace {
@@ -1116,6 +1182,7 @@ void readConfigs(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   config->strip = getStripFromDriver(driverCfg);
   config->sysroot = driverCfg.sysroot;
   config->trace = driverCfg.traceFiles;
+  config->traceSymbols = args.hasArg(OPT_trace_symbol);
   config->undefined = args::getStrings(args, OPT_undefined);
   config->undefinedVersion =
       args.hasFlag(OPT_undefined_version, OPT_no_undefined_version, false);
@@ -1233,8 +1300,6 @@ void readConfigs(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     else
       error(errPrefix + toString(pat.takeError()) + ": " + kv.first);
   }
-
-  parseMllvmOptions(driverCfg);
 
   config->threadCount = commonContext().parallelThreadCount();
 

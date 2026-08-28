@@ -15,7 +15,6 @@
 #include "Linker/MachO/UnwindInfoSection.h"
 
 #include "Linker/Core/Driver/ArgList.h"
-#include "Linker/Core/Driver/CommonLTOConfig.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
@@ -1586,8 +1585,6 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       for (const Arg *arg : args.filtered(OPT_sub_library))
         reexportHandler(arg, extensions);
     }
-
-    parseMllvmOptions(driverCfg);
 
     createSyntheticSections();
     createSyntheticSymbols();

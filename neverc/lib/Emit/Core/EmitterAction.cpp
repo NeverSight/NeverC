@@ -127,8 +127,6 @@ EmitterConsumer::EmitterConsumer(
                             PPOpts, CodeGenOpts, C)),
       LinkModules(std::move(LinkModules)) {
   TimerIsEnabled = CodeGenOpts.TimePasses;
-  llvm::TimePassesIsEnabled = CodeGenOpts.TimePasses;
-  llvm::TimePassesPerRun = CodeGenOpts.TimePassesPerRun;
 }
 
 /// Lightweight constructor for IR-input diagnostic handling (no output stream).
@@ -148,8 +146,6 @@ EmitterConsumer::EmitterConsumer(
                             CodeGenOpts, C)),
       LinkModules(std::move(LinkModules)), CurLinkModule(Module) {
   TimerIsEnabled = CodeGenOpts.TimePasses;
-  llvm::TimePassesIsEnabled = CodeGenOpts.TimePasses;
-  llvm::TimePassesPerRun = CodeGenOpts.TimePassesPerRun;
 }
 
 EmitterConsumer::~EmitterConsumer() = default;

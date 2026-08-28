@@ -10,7 +10,6 @@
 #include "Linker/COFF/SymbolTable.h"
 #include "Linker/COFF/Symbols.h"
 #include "Linker/Core/Driver/ArgList.h"
-#include "Linker/Core/Driver/CommonLTOConfig.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "Linker/Core/Runtime/Session.h"
@@ -1024,8 +1023,6 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
     timeTraceProfilerInitialize(driverCfg.timeTraceGranularity, argsArr[0]);
 
   llvm::TimeTraceScope timeScope("COFF link");
-
-  parseMllvmOptions(driverCfg);
 
   config->vfs = getVFS(args);
 

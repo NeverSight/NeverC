@@ -19,10 +19,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/IPO/ModuleInliner.h"
+#include "NevercInlinePolicy.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/BlockFrequencyInfo.h"
@@ -39,9 +42,9 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/NevercPipelineTuning.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include <queue>
@@ -255,6 +258,23 @@ PreservedAnalyses ModuleInlinerPass::run(Module &M,
   SmallVector<Function *> DeadFunctions;
   DenseSet<Function *> DeadFunctionSet;
 
+  // The flat module inliner is selected for the largest auto-LTO modules,
+  // where the loop-density brake matters most. Keep the same request-local
+  // policy as the CGSCC inliner while adapting its accounting to a worklist
+  // that interleaves callers across the whole module.
+  const unsigned NevercInlineMaxCallerLoops =
+      M.getContext().getNevercPipelineTuningOptions().InlineMaxCallerLoops;
+  const bool NevercLoopCapActive =
+      NevercInlineMaxCallerLoops != 0 &&
+      LTOPhase == ThinOrFullLTOPhase::FullLTOPostLink;
+  DenseMap<const Function *, unsigned> NevercFunctionLoops;
+  auto NevercGetFunctionLoops = [&](const Function &F) -> unsigned {
+    auto [It, Inserted] = NevercFunctionLoops.try_emplace(&F, 0);
+    if (Inserted)
+      It->second = nevercCountFunctionLoops(F);
+    return It->second;
+  };
+
   // Loop forward over all of the calls.
   std::pair<CallBase *, int> P;
   while (Calls.pop(P, DeadFunctionSet)) {
@@ -275,6 +295,18 @@ PreservedAnalyses ModuleInlinerPass::run(Module &M,
     if (InlineHistoryID != -1 &&
         inlineHistoryIncludes(&Callee, InlineHistoryID, InlineHistory)) {
       setInlineRemark(*CB, "recursive");
+      continue;
+    }
+
+    const unsigned NevercCallerLoops =
+        NevercLoopCapActive ? NevercGetFunctionLoops(F) : 0;
+    const unsigned NevercCalleeLoops =
+        NevercLoopCapActive ? NevercGetFunctionLoops(Callee) : 0;
+    if (NevercLoopCapActive &&
+        NevercCallerLoops >= NevercInlineMaxCallerLoops &&
+        !Callee.hasFnAttribute(Attribute::AlwaysInline) &&
+        NevercCalleeLoops != 0) {
+      setInlineRemark(*CB, "neverc loop-density cap");
       continue;
     }
 
@@ -302,6 +334,9 @@ PreservedAnalyses ModuleInlinerPass::run(Module &M,
 
     Changed = true;
     ++NumInlined;
+
+    if (NevercLoopCapActive)
+      NevercFunctionLoops[&F] = NevercCallerLoops + NevercCalleeLoops;
 
     LLVM_DEBUG(dbgs() << "    Size after inlining: " << F.getInstructionCount()
                       << "\n");

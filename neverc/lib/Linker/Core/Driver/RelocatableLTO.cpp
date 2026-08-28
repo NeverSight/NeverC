@@ -75,9 +75,6 @@ runPluginRelocatableLTO(const LinkerDriverConfig &Config,
   Context.e.errorLimit = Config.errorLimit;
   Context.e.logName = "neverc";
 
-  // Mirror the native LTO setup: register any -mllvm options before building
-  // the config (near-zero cost when there are none).
-  parseMllvmOptions(Config);
   lto::Config LtoConfig = createLTOConfig(Config, diagnosticHandler, EmitAddrsig);
   auto Lto = std::make_unique<lto::LTO>(std::move(LtoConfig),
                                         Config.ltoPartitions);
@@ -157,6 +154,7 @@ runPluginRelocatableLTO(const LinkerDriverConfig &Config,
   LTOCacheKey CacheKey;
   runLTOWithCache(*Lto, CacheKey, /*usable=*/false, Config, BackendTag,
                   EmitAddrsig, Buffers);
+  Lto.reset();
 
   std::vector<SmallString<0>> Objects;
   Objects.reserve(Buffers.size());

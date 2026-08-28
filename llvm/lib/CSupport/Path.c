@@ -1,4 +1,8 @@
 /*===- Path.c - File path manipulation (pure C) -----------------*- C -*-===*/
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+
 #include "include/csupport/lpath.h"
 #include "include/csupport/allocation.h"
 #include "include/csupport/buffer.h"
@@ -1859,6 +1863,48 @@ int csupport_resize_file(int fd, uint64_t size) {
   return 0;
 }
 #endif
+
+int csupport_preallocate_file(int fd, uint64_t size) {
+#if defined(__linux__)
+  off_t length = (off_t)size;
+  if (length < 0 || (uint64_t)length != size)
+    return EFBIG;
+
+  struct statfs fs;
+  int stat_result;
+  do {
+    stat_result = fstatfs(fd, &fs);
+  } while (stat_result != 0 && errno == EINTR);
+  if (stat_result != 0)
+    return errno;
+
+#ifndef TMPFS_MAGIC
+#define TMPFS_MAGIC 0x01021994
+#endif
+  if ((unsigned long)fs.f_type == (unsigned long)TMPFS_MAGIC)
+    return EOPNOTSUPP;
+
+  int result;
+  do {
+    result = fallocate(fd, 0, 0, length);
+  } while (result != 0 && errno == EINTR);
+  if (result != 0)
+    return errno;
+  return 0;
+#elif defined(ENOTSUP)
+  (void)fd;
+  (void)size;
+  return ENOTSUP;
+#elif defined(EOPNOTSUPP)
+  (void)fd;
+  (void)size;
+  return EOPNOTSUPP;
+#else
+  (void)fd;
+  (void)size;
+  return EINVAL;
+#endif
+}
 
 /* -- open() with EINTR retry + O_CLOEXEC fallback -- */
 

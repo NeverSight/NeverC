@@ -30,6 +30,13 @@ TEST(SupportSignalTest, RegistrationFailureRollsBackEarlierHandlers) {
   if (Child == 0) {
     struct sigaction Before;
     struct sigaction After;
+
+    // Earlier tests may legitimately register LLVM's process-wide handlers
+    // (for example TempFile does so for signal cleanup).  fork() copies that
+    // registration count into the child, which would make the API return the
+    // existing count without exercising this test's failing transaction.
+    // Establish the premise locally before taking the handler snapshot.
+    csupport_unix_unregister_all_handlers();
     if (::sigaction(SIGUSR1, nullptr, &Before) != 0)
       ::_exit(2);
 

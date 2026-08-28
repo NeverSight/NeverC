@@ -2,6 +2,7 @@
 #define LINKER_CORE_RUNTIME_LINKEREXECUTIONCONTEXT_H
 
 #include "Linker/Core/Runtime/Session.h"
+#include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <memory>
 #include <type_traits>
@@ -12,22 +13,19 @@ namespace linker {
 /// Owns all runtime state for exactly one in-process link invocation.
 class LinkerExecutionContext {
 public:
-  LinkerExecutionContext() = default;
+  LinkerExecutionContext();
   LinkerExecutionContext(const LinkerExecutionContext &) = delete;
-  LinkerExecutionContext &
-  operator=(const LinkerExecutionContext &) = delete;
+  LinkerExecutionContext &operator=(const LinkerExecutionContext &) = delete;
   ~LinkerExecutionContext();
 
   template <typename BackendContext, typename... Args>
   BackendContext &createBackend(Args &&...Arguments) {
-    static_assert(
-        std::is_base_of_v<CommonLinkerContext, BackendContext>,
-        "linker backend context must own CommonLinkerContext state");
+    static_assert(std::is_base_of_v<CommonLinkerContext, BackendContext>,
+                  "linker backend context must own CommonLinkerContext state");
     if (Backend)
-      llvm::report_fatal_error(
-          "LinkerExecutionContext already owns a backend");
-    auto Created = std::make_unique<BackendContext>(
-        std::forward<Args>(Arguments)...);
+      llvm::report_fatal_error("LinkerExecutionContext already owns a backend");
+    auto Created =
+        std::make_unique<BackendContext>(std::forward<Args>(Arguments)...);
     BackendContext &Result = *Created;
     Backend = std::move(Created);
     return Result;
@@ -38,6 +36,9 @@ public:
   void destroyBackend();
 
 private:
+  // Declared before Backend so the backend and its worker pool are destroyed
+  // before the top-level progress token is returned.
+  neverc::ResourceSessionPermit ResourcePermit;
   std::unique_ptr<CommonLinkerContext> Backend;
 };
 

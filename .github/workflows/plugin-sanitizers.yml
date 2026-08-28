@@ -1,12 +1,14 @@
 # ASan/UBSan and TSan coverage for the plugin runtime.
 #
-# The address/undefined job builds the plugin unit tests, the standalone
-# conformance suite and the fuzz smoke corpus under ASan+UBSan.  The thread job
-# builds the plugin unit tests and conformance suite under TSan to catch data
-# races in the multi-Session frontend / LTO / link / dyncode paths and in the
-# shared/exclusive LLVMOption lease.  Intentional process-lifetime allocations
-# in third-party runtimes use a small, commented suppression file rather than a
-# blanket suppression.
+# The address/undefined job builds the plugin and resource-budget unit tests,
+# the standalone conformance suite, and the fuzz smoke corpus under ASan+UBSan.
+# The thread job builds the plugin and resource-budget tests plus conformance
+# under TSan to catch data races in the multi-Session frontend / LTO / link /
+# dyncode paths, the process-wide resource broker, and the shared/exclusive
+# LLVMOption lease.  The focused resource-budget gate also covers linker task
+# groups and parallel codegen without expanding the broad plugin CTest
+# selection.  Intentional process-lifetime allocations in third-party runtimes
+# use a small, commented suppression file rather than a blanket suppression.
 name: plugin-sanitizers
 
 permissions:
@@ -21,7 +23,21 @@ on:
       - "neverc/lib/Plugin/**"
       - "neverc/lib/DynCode/**"
       - "neverc/lib/Linker/**"
+      - "neverc/include/neverc/Linker/**"
       - "neverc/include/neverc/Plugin/**"
+      - "neverc/include/neverc/Foundation/Core/ProcessResourceBroker.h"
+      - "neverc/lib/Foundation/Core/ProcessResourceBroker.cpp"
+      - "neverc/lib/Foundation/Core/ProcessResourceBrokerInternal.h"
+      - "neverc/lib/Foundation/CMakeLists.txt"
+      - "neverc/include/neverc/Emit/Backend/ParallelCodeGenMerge.h"
+      - "neverc/lib/Emit/Backend/ParallelCodeGenMerge*"
+      - "neverc/lib/Emit/CMakeLists.txt"
+      - "tests/neverc/ConcurrentLTOOptionIsolationTests.cpp"
+      - "tests/neverc/ParallelCodeGenCacheTests.cpp"
+      - "tests/neverc/PluginLinkContextTests.cpp"
+      - "tests/neverc/PluginParallelLinkTests.cpp"
+      - "tests/neverc/ProcessResourceBudgetTests.cpp"
+      - "tests/neverc/CMakeLists.txt"
       - "tests/plugin-conformance/**"
       - ".github/workflows/plugin-sanitizers.yml"
       - ".github/plugin-sanitizers.lsan"
@@ -109,6 +125,30 @@ jobs:
           ctest --test-dir build \
             -R 'Plugin|PluginConformance' -E 'PluginFuzzSmoke' \
             -LE plugin-meta --output-on-failure
+
+      # Build these after the broad Plugin CTest selection above.  Otherwise
+      # its `-R Plugin` expression would also execute every test in the much
+      # larger neverc-plugin-link-tests binary instead of just the concurrency
+      # and resource-budget cases below.
+      - name: Build process resource budget tests
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }} --target \
+            neverc-foundation-tests \
+            neverc-plugin-link-tests \
+            neverc-merge-tests
+
+      - name: Run process resource budget tests under ${{ matrix.label }}
+        env:
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/neverc/.github/plugin-sanitizers.lsan
+        run: |
+          build/bin/neverc-foundation-tests \
+            --gtest_color=no
+          build/bin/neverc-plugin-link-tests \
+            --gtest_filter='ConcurrentLTOOptionIsolationTest.*:PluginLinkContextTest.NestedExecutionRestoresOuterWorkerSlot:PluginParallelLinkTest.*' \
+            --gtest_color=no
+          build/bin/neverc-merge-tests \
+            --gtest_filter='ParallelCodeGenCacheTest.ProcessBudgetClampsPhysicalWorkersWithoutChangingObject' \
+            --gtest_color=no
 
       - name: Build and smoke fuzzers under ${{ matrix.label }}
         if: matrix.enable_fuzzers == 'ON'

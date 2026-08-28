@@ -263,6 +263,7 @@ private:
   template <typename T> void checkLoadConfigGuardData(const T *loadConfig);
 
   std::unique_ptr<FileOutputBuffer> &buffer;
+  bool outputBufferIsFileBacked = false;
   std::map<PartialSectionKey, PartialSection *> partialSections;
   std::vector<char> strtab;
   std::vector<llvm::object::coff_symbol16> outputSymtab;
@@ -1730,9 +1731,12 @@ template <typename PEHeaderTy> void OutputWriter::writeHeader() {
 
 void OutputWriter::allocateOutputBuffer(StringRef path) {
   buffer = CHECK(
-      FileOutputBuffer::create(path, fileSize, FileOutputBuffer::F_executable),
+      FileOutputBuffer::createWithFileBacking(
+          path, fileSize,
+          FileOutputBuffer::F_executable | FileOutputBuffer::F_preallocate,
+          outputBufferIsFileBacked),
       "failed to open " + path);
-  prefaultBuffer(buffer->getBufferStart(), fileSize);
+  prefaultBuffer(buffer->getBufferStart(), fileSize, outputBufferIsFileBacked);
 }
 
 // Add a symbol to an RVA set. Two symbols may have the same RVA, but an RVA set
@@ -2043,7 +2047,8 @@ void markChunkAsDontNeed(ArrayRef<uint8_t> arr) {
 #endif
 }
 
-uint64_t computeChunkedBLAKE3Hash64(ArrayRef<uint8_t> data) {
+uint64_t computeChunkedBLAKE3Hash64(ArrayRef<uint8_t> data,
+                                    bool releaseChunkPages) {
   constexpr size_t chunkSize = 1024 * 1024;
   if (data.empty())
     return read64le(BLAKE3::hash<8>(ArrayRef<uint8_t>()).data());
@@ -2057,7 +2062,8 @@ uint64_t computeChunkedBLAKE3Hash64(ArrayRef<uint8_t> data) {
     ArrayRef<uint8_t> chunk = data.slice(begin, end - begin);
     auto digest = BLAKE3::hash<8>(chunk);
     memcpy(chunkHashes.get() + i * 8, digest.data(), 8);
-    markChunkAsDontNeed(chunk);
+    if (releaseChunkPages)
+      markChunkAsDontNeed(chunk);
   });
 
   auto digest =
@@ -2092,7 +2098,7 @@ void OutputWriter::computeContentHash() {
   uint64_t hash = 0;
 
   if (config->repro || generateSyntheticBuildId)
-    hash = computeChunkedBLAKE3Hash64(outputFileData);
+    hash = computeChunkedBLAKE3Hash64(outputFileData, outputBufferIsFileBacked);
 
   if (config->repro)
     timestamp = static_cast<uint32_t>(hash);

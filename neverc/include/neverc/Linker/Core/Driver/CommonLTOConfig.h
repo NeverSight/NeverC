@@ -14,16 +14,21 @@ struct LinkerDriverConfig;
 /// files are read from disk by createLTOConfig().
 bool ltoBasicBlockSectionsIsListFile(llvm::StringRef bbs);
 
-/// Build an lto::Config directly from LinkerDriverConfig.
+/// Build an lto::Config directly from LinkerDriverConfig. The returned config
+/// owns a snapshot-backed process-global LLVM option profile for its complete
+/// lifetime, so it and the lto::LTO that consumes it must be destroyed on the
+/// creating thread. Concurrent profiles are serialized; same-thread nesting
+/// must unwind in strict LIFO order.
 /// Each backend only needs to supply its DiagHandler and EmitAddrsig
 /// preference.
 llvm::lto::Config createLTOConfig(const LinkerDriverConfig &Cfg,
                                   llvm::DiagnosticHandlerFunction DiagHandler,
                                   bool EmitAddrsig = true);
 
-/// Parse Cfg.mllvmOpts into the global cl::opt registry.
-/// Must be called before createLTOConfig().  When mllvmOpts is empty
-/// (the common case), this is a near-zero-cost fast path.
+/// Legacy compatibility entry point. New callers should use createLTOConfig(),
+/// which owns and restores the parsed LLVM option profile for the complete LTO
+/// lifetime. This function intentionally preserves the old process-global
+/// parse behavior for existing lockstep C++ callers.
 void parseMllvmOptions(const LinkerDriverConfig &Cfg);
 
 } // namespace linker

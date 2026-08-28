@@ -131,6 +131,7 @@ add_llvm_component_library(LLVMSupport
   ${CMAKE_CURRENT_SOURCE_DIR}/../CSupportHost/support_cpp.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../CSupportHost/SmallVectorInst.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../CSupportHost/COM.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../CSupportHost/NevercPipelineTuning.cpp
 
   $<TARGET_OBJECTS:LLVMSupportBlake3>
 
@@ -200,4 +201,3 @@ if(LLVM_ENABLE_TERMINFO)
 endif()
 
 set_property(TARGET LLVMSupport PROPERTY LLVM_SYSTEM_LIBS "${llvm_system_libs}")
-

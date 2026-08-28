@@ -2049,6 +2049,7 @@ gtest_discover_tests(neverc-plugin-dyncode-tests
 )
 
 add_executable(neverc-plugin-link-tests
+  ConcurrentLTOOptionIsolationTests.cpp
   Inputs/Plugin/GCICFPlugin.c
   Inputs/Plugin/InvalidLinkMutationPlugin.c
   Inputs/Plugin/LinkLayoutPlugin.c
@@ -2078,16 +2079,22 @@ add_executable(neverc-plugin-link-tests
 target_link_libraries(neverc-plugin-link-tests PRIVATE
   GTest::gtest
   GTest::gtest_main
+  LLVMBitWriter
+  LLVMObject
   linkerCOFF
   linkerCore
   linkerELF
   linkerMachO
+  nevercFoundation
   nevercPluginIO
+  nevercPluginIR
   nevercPluginLink
 )
 target_include_directories(neverc-plugin-link-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include/neverc
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Emit
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Foundation/Core
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Plugin
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Linker/Backends/COFF
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Linker/Backends/ELF
@@ -2096,6 +2103,7 @@ target_include_directories(neverc-plugin-link-tests PRIVATE
 target_compile_features(neverc-plugin-link-tests PRIVATE cxx_std_17)
 target_compile_definitions(neverc-plugin-link-tests PRIVATE
   NEVERC_TEST_LINK_ROUTE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-link-route>"
+  NEVERC_TEST_MIR_PASS_PLUGIN="$<TARGET_FILE:neverc-test-plugin-mir-pass>"
   NEVERC_TEST_VIRTUAL_ARCHIVE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-virtual-archive>"
 )
 add_dependencies(neverc-plugin-link-tests
@@ -2104,6 +2112,7 @@ add_dependencies(neverc-plugin-link-tests
   neverc-plugin-lto-abi-compile-c11
   neverc-plugin-lto-abi-compile-c23
   neverc-test-plugin-link-route
+  neverc-test-plugin-mir-pass
   neverc-test-plugin-virtual-archive
 )
 gtest_discover_tests(neverc-plugin-link-tests
@@ -2237,6 +2246,7 @@ add_executable(neverc-support-tests
   SupportCommandLineTests.cpp
   SupportCOMTests.cpp
   SupportDenseMapTests.cpp
+  SupportFileOutputBufferTests.cpp
   SupportFileSystemSecurityTests.cpp
   SupportFoldingSetTests.cpp
   SupportHashTests.cpp
@@ -2264,6 +2274,23 @@ gtest_discover_tests(neverc-support-tests
   PROPERTIES
     TIMEOUT 60
     DISCOVERY_TIMEOUT 300
+)
+
+# This must remain a standalone opt-like client linked only to the static
+# LLVMSupport archive.  Adding a NeverC library (or calling its capture API)
+# would mask missing archive-member extraction for NeverC's hidden cl::opts.
+add_executable(neverc-pipeline-option-registration-smoke
+  NevercPipelineOptionRegistrationSmoke.cpp
+)
+target_link_libraries(neverc-pipeline-option-registration-smoke PRIVATE
+  LLVMSupport
+)
+target_compile_features(
+  neverc-pipeline-option-registration-smoke PRIVATE cxx_std_17
+)
+add_test(
+  NAME NevercPipelineOptionRegistrationSmoke
+  COMMAND $<TARGET_FILE:neverc-pipeline-option-registration-smoke>
 )
 
 add_executable(neverc-plugin-io-tests
@@ -2788,18 +2815,56 @@ gtest_discover_tests(neverc-run-tests
   DISCOVERY_TIMEOUT 300
 )
 
-# Object merger unit tests (ELF, COFF, MachO fuzzing + edge cases)
-add_executable(neverc-merge-tests MergeTests.cpp)
+# Focused process-wide resource arbitration tests. Keep these independent of
+# Emit/Merge so the broker's lock and lifetime invariants have a small target.
+add_executable(neverc-foundation-tests
+  ProcessResourceBudgetTests.cpp
+)
+
+target_link_libraries(neverc-foundation-tests PRIVATE
+  GTest::gtest GTest::gtest_main
+  nevercFoundation
+  LLVMSupport
+  ${LLVM_PTHREAD_LIB}
+)
+
+target_include_directories(neverc-foundation-tests PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Foundation/Core
+)
+
+target_compile_features(neverc-foundation-tests PRIVATE cxx_std_17)
+
+gtest_discover_tests(neverc-foundation-tests
+  PROPERTIES
+    TIMEOUT 30
+  DISCOVERY_TIMEOUT 300
+)
+
+# Object merger and aggregate parallel-codegen transaction tests.
+add_executable(neverc-merge-tests
+  MergeTests.cpp
+  NevercPipelinePolicyTests.cpp
+  ParallelCodeGenCacheTests.cpp
+)
 
 target_link_libraries(neverc-merge-tests PRIVATE
   GTest::gtest GTest::gtest_main
+  nevercEmit
   nevercFoundation
   nevercMerge
+  LLVMBitReader
+  LLVMObject
+  LLVM${LLVM_NATIVE_ARCH}CodeGen
+  LLVM${LLVM_NATIVE_ARCH}Desc
+  LLVM${LLVM_NATIVE_ARCH}Info
   ${NEVERC_COMPILER_RT_BUILTINS}
 )
 
 target_include_directories(neverc-merge-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Emit
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Foundation/Core
   # The merger's internal helpers, so the suite can check that a fact stated
   # both there and in the object-graph layer still agrees across the two.
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Merge
@@ -3032,6 +3097,8 @@ set(_neverc_llvm_test_targets
   neverc-plugin-object-merge-tests
   neverc-plugin-lto-input-tests
   neverc-support-tests
+  neverc-foundation-tests
+  neverc-pipeline-option-registration-smoke
   neverc-plugin-io-tests
   neverc-build-tests
   neverc-run-tests

@@ -3,6 +3,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include <atomic>
 
 using namespace llvm;
 
@@ -17,6 +18,7 @@ struct ThreadGateOwnership {
 };
 
 thread_local ThreadGateOwnership GateOwnership;
+std::atomic<std::uint64_t> ExclusiveWaitEpoch{0};
 
 } // namespace
 
@@ -35,6 +37,10 @@ bool pluginLLVMOptionGateHeldSharedByCurrentThread() {
          GateOwnership.SharedDepth != 0;
 }
 
+std::uint64_t pluginLLVMOptionExclusiveWaitEpoch() {
+  return ExclusiveWaitEpoch.load(std::memory_order_acquire);
+}
+
 PluginLLVMOptionExclusiveLease::PluginLLVMOptionExclusiveLease(
     std::shared_mutex &GateValue)
     : Gate(&GateValue), Lock(GateValue, std::defer_lock) {
@@ -47,7 +53,11 @@ PluginLLVMOptionExclusiveLease::PluginLLVMOptionExclusiveLease(
   }
   if (GateOwnership.SharedDepth != 0 && GateOwnership.SharedGate == Gate)
     llvm::report_fatal_error("cannot upgrade a shared LLVM option lease");
-  Lock.lock();
+  if (!Lock.try_lock()) {
+    if (Gate == &pluginLLVMOptionGate())
+      ExclusiveWaitEpoch.fetch_add(1, std::memory_order_release);
+    Lock.lock();
+  }
   GateOwnership.ExclusiveGate = Gate;
   GateOwnership.ExclusiveDepth = 1;
 }

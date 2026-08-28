@@ -427,6 +427,17 @@ inline std::error_code resize_file(int FD, uint64_t Size) {
   return std::error_code();
 }
 
+/// Request physical storage for a file that has already been resized to
+/// \p Size. Unsupported platforms, filesystems, and Linux tmpfs report an
+/// error without changing file contents. Callers must decide which errors are
+/// safe policy fallbacks and which hard allocation failures to propagate.
+inline std::error_code preallocate_file(int FD, uint64_t Size) {
+  int Err = csupport_preallocate_file(FD, Size);
+  if (Err)
+    return std::error_code(Err, std::generic_category());
+  return std::error_code();
+}
+
 /// Resize \p FD to \p Size before mapping \a mapped_file_region::readwrite. On
 /// non-Windows, this calls \a resize_file(). On Windows, this is a no-op,
 /// since the subsequent mapping (via \c CreateFileMapping) automatically

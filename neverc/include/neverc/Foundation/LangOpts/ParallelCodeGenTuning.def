@@ -1,0 +1,36 @@
+#ifndef NEVERC_PARALLEL_CODEGEN_TUNING_OPTION
+#error Define NEVERC_PARALLEL_CODEGEN_TUNING_OPTION before including this file
+#endif
+
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(MinDefinedFunctions, PcgMinFuncs,
+                                      "neverc-pcg-min-funcs", 8)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(MinInstructionWeight, PcgWeightFloor,
+                                      "neverc-pcg-weight-floor", 10000)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(MinLoopCount, PcgLoopFloor,
+                                      "neverc-pcg-loop-floor", 56)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(OptInstructionsPerPartition,
+                                      PcgOptWeightDiv,
+                                      "neverc-pcg-opt-weight-div", 12000)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(OptLoopsPerPartition, PcgOptLoopDiv,
+                                      "neverc-pcg-opt-loop-div", 16)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(OptMaxPartitions, PcgOptMaxParts,
+                                      "neverc-pcg-opt-max-parts", 16)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(CodeGenInstructionsPerPartition,
+                                      PcgCgWeightDiv,
+                                      "neverc-pcg-cg-weight-div", 5000)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(CodeGenLoopsPerPartition, PcgCgLoopDiv,
+                                      "neverc-pcg-cg-loop-div", 0)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(CodeGenMaxPartitions, PcgCgMaxParts,
+                                      "neverc-pcg-cg-max-parts", 16)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(
+    IndVarWidenMaxFunctionLoops, PcgIndVarWidenMaxFunctionLoops,
+    "neverc-auto-lto-indvars-widen-max-function-loops", 0)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(
+    SCEVHugeExprThreshold, PcgScevHugeExprThreshold,
+    "neverc-auto-lto-scev-huge-expr-threshold", 64)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(LoopsPerWorker, PcgLoopsPerThread,
+                                      "neverc-pcg-loops-per-thread", 96)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(InstructionsPerWorker, PcgWeightPerThread,
+                                      "neverc-pcg-weight-per-thread", 10000)
+NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(MinWorkerThreads, PcgWorkThreadFloor,
+                                      "neverc-pcg-work-thread-floor", 6)

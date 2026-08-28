@@ -39,6 +39,11 @@ public:
     /// Don't use mmap and instead write an in-memory buffer to a file when this
     /// buffer is closed.
     F_no_mmap = 2,
+
+    /// Request physical allocation before mapping the output file. Unsupported
+    /// platforms/filesystems fall back to ordinary sparse output; hard
+    /// allocation failures are reported by create().
+    F_preallocate = 4,
   };
 
   /// Factory method to create an OutputBuffer object which manages a read/write
@@ -52,6 +57,12 @@ public:
   /// does not exist.
   static Expected<std::unique_ptr<FileOutputBuffer>>
   create(StringRef FilePath, size_t Size, unsigned Flags = 0);
+
+  /// Equivalent to create(), and sets \p IsFileBacked to whether the returned
+  /// buffer directly maps its temporary output file.
+  static Expected<std::unique_ptr<FileOutputBuffer>>
+  createWithFileBacking(StringRef FilePath, size_t Size, unsigned Flags,
+                        bool &IsFileBacked);
 
   /// Returns a pointer to the start of the buffer.
   virtual uint8_t *getBufferStart() const = 0;
@@ -156,7 +167,8 @@ createInMemoryBuffer(StringRef Path, size_t Size, unsigned Mode) {
 }
 
 inline Expected<std::unique_ptr<FileOutputBuffer>>
-createOnDiskBuffer(StringRef Path, size_t Size, unsigned Mode) {
+createOnDiskBuffer(StringRef Path, size_t Size, unsigned Mode, unsigned Flags,
+                   bool *IsFileBacked) {
   Expected<sys::fs::TempFile> FileOrErr =
       sys::fs::TempFile::create(Path + ".tmp%%%%%%%", Mode);
   if (!FileOrErr)
@@ -166,6 +178,17 @@ createOnDiskBuffer(StringRef Path, size_t Size, unsigned Mode) {
     consumeError(File.discard());
     return errorCodeToError(EC);
   }
+  if (Flags & FileOutputBuffer::F_preallocate) {
+    std::error_code EC = sys::fs::preallocate_file(File.FD, Size);
+    const bool Unsupported =
+        EC == errc::not_supported || EC == errc::function_not_supported ||
+        EC == errc::invalid_argument || EC == errc::operation_not_permitted ||
+        EC == errc::permission_denied;
+    if (EC && !Unsupported) {
+      consumeError(File.discard());
+      return errorCodeToError(EC);
+    }
+  }
   std::error_code EC;
   sys::fs::mapped_file_region MappedFile = sys::fs::mapped_file_region(
       sys::fs::convertFDToNativeFile(File.FD),
@@ -174,6 +197,8 @@ createOnDiskBuffer(StringRef Path, size_t Size, unsigned Mode) {
     consumeError(File.discard());
     return createInMemoryBuffer(Path, Size, Mode);
   }
+  if (IsFileBacked)
+    *IsFileBacked = true;
   return std::unique_ptr<OnDiskBuffer>(
       new OnDiskBuffer(Path, std::move(File), std::move(MappedFile)));
 }
@@ -181,6 +206,15 @@ createOnDiskBuffer(StringRef Path, size_t Size, unsigned Mode) {
 
 inline Expected<std::unique_ptr<FileOutputBuffer>>
 FileOutputBuffer::create(StringRef Path, size_t Size, unsigned Flags) {
+  bool Ignored = false;
+  return createWithFileBacking(Path, Size, Flags, Ignored);
+}
+
+inline Expected<std::unique_ptr<FileOutputBuffer>>
+FileOutputBuffer::createWithFileBacking(StringRef Path, size_t Size,
+                                        unsigned Flags, bool &BackingResult) {
+  bool *IsFileBacked = &BackingResult;
+  *IsFileBacked = false;
   if (Path == "-")
     return llvm::detail::createInMemoryBuffer("-", Size, 0);
   unsigned Mode = sys::fs::all_read | sys::fs::all_write;
@@ -198,7 +232,8 @@ FileOutputBuffer::create(StringRef Path, size_t Size, unsigned Flags) {
   case sys::fs::file_type::status_error:
     if (Flags & F_no_mmap)
       return llvm::detail::createInMemoryBuffer(Path, Size, Mode);
-    return llvm::detail::createOnDiskBuffer(Path, Size, Mode);
+    return llvm::detail::createOnDiskBuffer(Path, Size, Mode, Flags,
+                                            IsFileBacked);
   default:
     return llvm::detail::createInMemoryBuffer(Path, Size, Mode);
   }

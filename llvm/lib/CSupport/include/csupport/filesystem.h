@@ -56,6 +56,9 @@ enum {
 
 unsigned csupport_get_umask(void);
 int csupport_resize_file(int fd, uint64_t size);
+/* Physical allocation for an already-resized file. Returns zero on success
+ * and an errno-style value on failure or when unsupported. */
+int csupport_preallocate_file(int fd, uint64_t size);
 
 #ifdef __cplusplus
 }

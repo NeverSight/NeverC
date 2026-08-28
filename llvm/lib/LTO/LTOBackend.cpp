@@ -28,6 +28,7 @@
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/NevercPipelineTuning.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
@@ -59,12 +60,6 @@ using namespace lto;
 // -mllvm -neverc-module-inliner-threshold=N on the link (the driver
 // forwards -mllvm to the link job); size-sensitive huge projects can raise
 // it or pass 0.
-static cl::opt<unsigned> NevercModuleInlinerThreshold(
-    "neverc-module-inliner-threshold", cl::init(6000), cl::Hidden,
-    cl::desc("Number of defined functions in the merged LTO module above "
-             "which the module inliner replaces the CGSCC inliner "
-             "(0 = never)"));
-
 // Auto-LTO compiles the frontend at -O0 (with SROA only), producing IR
 // whose functions appear smaller to the inliner cost model than the same
 // functions compiled at -O2 with full loop rotation/unrolling.  The default
@@ -80,11 +75,6 @@ static cl::opt<unsigned> NevercModuleInlinerThreshold(
 // t=150 maximises the speed/size Pareto front: equal or faster than
 // clang-22 full LTO at 14% smaller code.
 // 0 = use the standard opt-level default (225 at O2).
-static cl::opt<int> NevercAutoLTOInlineThreshold(
-    "neverc-auto-lto-inline-threshold", cl::init(150), cl::Hidden,
-    cl::desc("Inliner threshold for the auto-LTO serial phase "
-             "(0 = use the standard opt-level default)"));
-
 // Whether the LTO ParallelOpt serial phase uses the trimmed per-SCC
 // function simplification (SROA + InstCombine + LoopRotate/LICM + ADCE)
 // instead of the full O2/O3 function simplification pipeline.
@@ -103,12 +93,6 @@ static cl::opt<int> NevercAutoLTOInlineThreshold(
 // -mllvm -neverc-inliner-lite-fsimpl=0 on the link to run the full
 // pipeline when the last percent of binary size matters more than link
 // time.
-static cl::opt<bool> NevercInlinerLiteFSimplOpt(
-    "neverc-inliner-lite-fsimpl", cl::init(true), cl::Hidden,
-    cl::desc("Use the trimmed per-SCC function simplification pipeline in "
-             "the LTO ParallelOpt serial phase (0 = full O2 function "
-             "simplification: slower link, slightly smaller binary)"));
-
 #define DEBUG_TYPE "lto-backend"
 
 [[noreturn]] static void reportOpenError(StringRef Path, Twine Msg) {
@@ -261,11 +245,13 @@ static void runNewPMPasses(const Config &Conf, Module &Mod, TargetMachine *TM,
                               Conf.VerifyEach);
   SI.registerCallbacks(PIC, &MAM);
   PipelineTuningOptions LocalPTO = Conf.PTO;
+  const NevercPipelineTuningOptions &NevercTuning =
+      Mod.getContext().getNevercPipelineTuningOptions();
   if (Conf.LTOParallelOpt && Conf.ParallelOptCodeGenHook) {
     LocalPTO.NevercFastIPO = true;
-    LocalPTO.NevercInlinerLiteFSimpl = NevercInlinerLiteFSimplOpt;
-    if (NevercAutoLTOInlineThreshold != 0)
-      LocalPTO.InlinerThreshold = NevercAutoLTOInlineThreshold;
+    LocalPTO.NevercInlinerLiteFSimpl = NevercTuning.InlinerLiteFSimpl;
+    if (NevercTuning.AutoLTOInlineThreshold != 0)
+      LocalPTO.InlinerThreshold = NevercTuning.AutoLTOInlineThreshold;
     // The CGSCC inliner's incremental call-graph maintenance is superlinear
     // in the merged module's call-graph size (measured 99% of a 145s link on
     // a 1000-module project, vs 0.15% spent in actual inlining).  Switch to
@@ -273,12 +259,13 @@ static void runNewPMPasses(const Config &Conf, Module &Mod, TargetMachine *TM,
     // overhead to dominate; below the threshold the CGSCC inliner's
     // interleaved per-SCC simplification yields slightly better code at
     // negligible framework cost.
-    if (NevercModuleInlinerThreshold != 0) {
+    if (NevercTuning.ModuleInlinerThreshold != 0) {
       unsigned DefinedFns = 0;
       for (Function &F : Mod)
         if (!F.isDeclaration())
           ++DefinedFns;
-      LocalPTO.NevercModuleInliner = DefinedFns >= NevercModuleInlinerThreshold;
+      LocalPTO.NevercModuleInliner =
+          DefinedFns >= NevercTuning.ModuleInlinerThreshold;
     }
   }
   PassBuilder PB(TM, LocalPTO, /*PGOOpt=*/std::nullopt, &PIC);
@@ -451,7 +438,7 @@ Error lto::backend(const Config &C, AddStreamFn AddStream,
   }
 
   auto RunDeferredFuncOpt = [&]() {
-    PipelineTuningOptions PTO;
+    PipelineTuningOptions PTO = C.PTO;
     PTO.NevercFastIPO = true;
     PTO.LoopUnrolling = C.OptLevel >= 2;
     PTO.LoopInterleaving = C.OptLevel >= 2;

@@ -14,12 +14,14 @@
 #ifndef LINKER_CORE_DRIVER_DISPATCHER_H
 #define LINKER_CORE_DRIVER_DISPATCHER_H
 
+#include "neverc/Foundation/LangOpts/ParallelCodeGenTuning.h"
 #include "neverc/Linker/Core/Driver/LinkExecutionHooks.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBufferRef.h"
+#include "llvm/Support/NevercPipelineTuning.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstdint>
 #include <functional>
@@ -200,9 +202,10 @@ struct LinkerDriverConfig {
   bool printICFSections = false; // --print-icf-sections
   bool traceFiles = false;       // --trace/-t (print loaded input files)
 
-  // Set to 2 by the driver to enable ParallelCodeGenHook /
-  // ParallelOptCodeGenHook. The hooks auto-detect the actual partition count
-  // from hardware_concurrency().
+  // LLVM hook-enablement sentinel. Set to 2 by the driver so LLVM invokes
+  // ParallelCodeGenHook / ParallelOptCodeGenHook; NeverC intentionally ignores
+  // the sentinel value and resolves the actual partition count from module work
+  // and parallelCodeGenTuning.
   unsigned ltoPartitions = 0;
 
   // Call-graph profile-guided section reordering (unified from per-backend
@@ -218,6 +221,12 @@ struct LinkerDriverConfig {
   // Diagnostic output: print symbol order produced by call-graph profile sort.
   // Replaces per-backend --print-symbol-order / /print-symbol-order.
   std::string printSymbolOrder;
+
+  // Lockstep-only typed extensions stay at the end so every pre-existing
+  // member retains its offset. The supported out-of-tree plugin contract is
+  // the versioned pure-C API, not this in-process C++ aggregate.
+  neverc::ParallelCodeGenTuning parallelCodeGenTuning;
+  llvm::NevercPipelineTuningOptions ltoPipelineTuning;
 };
 
 using Driver = bool (*)(llvm::ArrayRef<const char *>, llvm::raw_ostream &,

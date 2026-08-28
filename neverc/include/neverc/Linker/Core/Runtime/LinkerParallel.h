@@ -18,30 +18,27 @@ template <typename T, typename = void>
 struct HasRangeBegin : std::false_type {};
 
 template <typename T>
-struct HasRangeBegin<
-    T, std::void_t<decltype(std::begin(std::declval<T &>()))>>
+struct HasRangeBegin<T, std::void_t<decltype(std::begin(std::declval<T &>()))>>
     : std::true_type {};
 
-template <typename Function>
-auto bindLinkerContext(Function &&Fn) {
+template <typename Function> auto bindLinkerContext(Function &&Fn) {
   CommonLinkerContext *Context = currentLinkerContext();
   auto Bound =
       std::make_shared<std::decay_t<Function>>(std::forward<Function>(Fn));
-  return [Context, Bound](
-             auto &&...Arguments) -> decltype(auto) {
+  return [Context, Bound](auto &&...Arguments) -> decltype(auto) {
     if (!Context)
       return std::invoke(*Bound,
                          std::forward<decltype(Arguments)>(Arguments)...);
-    LinkerContextGuard Guard(*Context,
-                             Context->workerSlotForCurrentThread());
-    return std::invoke(*Bound,
-                       std::forward<decltype(Arguments)>(Arguments)...);
+    LinkerContextGuard Guard(*Context, Context->workerSlotForCurrentThread());
+    return std::invoke(*Bound, std::forward<decltype(Arguments)>(Arguments)...);
   };
 }
 
 class LinkerTaskGroup {
 public:
-  LinkerTaskGroup() : Context(currentLinkerContext()) {
+  explicit LinkerTaskGroup(
+      neverc::ResourcePhase Phase = neverc::ResourcePhase::LinkParseResolve)
+      : Context(currentLinkerContext()), Phase(Phase) {
     if (Context && Context->parallelPool())
       Group =
           std::make_unique<llvm::ThreadPoolTaskGroup>(*Context->parallelPool());
@@ -57,7 +54,32 @@ public:
       Bound();
       return;
     }
-    Group->async(std::move(Bound));
+
+    neverc::ProcessResourceBroker &Broker =
+        neverc::ProcessResourceBroker::global();
+    if (!Broker.enabled()) {
+      Group->async(std::move(Bound));
+      return;
+    }
+
+    // A pool worker must never enqueue into the same pool and then wait for
+    // it: with a fully occupied pool that is a classic nested-task deadlock.
+    if (currentLinkerWorkerSlot() != 0) {
+      Bound();
+      return;
+    }
+
+    neverc::ResourceWorkerGrant Grant = Broker.grantWorkers(
+        Context->resourceSession(), Phase, /*DesiredWorkers=*/2);
+    if (Grant.workerCount() < 2) {
+      Bound();
+      return;
+    }
+
+    auto GrantOwner =
+        std::make_shared<neverc::ResourceWorkerGrant>(std::move(Grant));
+    Group->async([Bound = std::move(Bound),
+                  GrantOwner = std::move(GrantOwner)]() mutable { Bound(); });
   }
 
   void sync() {
@@ -68,12 +90,25 @@ public:
 
 private:
   CommonLinkerContext *Context = nullptr;
+  neverc::ResourcePhase Phase;
   std::unique_ptr<llvm::ThreadPoolTaskGroup> Group;
 };
 
 inline unsigned parallelThreadCount() {
   CommonLinkerContext *Context = currentLinkerContext();
   return Context ? Context->parallelThreadCount() : 1;
+}
+
+/// Return the worker count for a compression library called from one already
+/// broker-accounted linker task. Zstd treats zero as a different, synchronous
+/// compression mode, so retain at least one asynchronous worker to preserve
+/// the existing frame construction while preventing an outer-task x inner-pool
+/// multiplication. The budget-disabled path is deliberately byte-for-byte
+/// compatible with the previous logical thread-count choice.
+inline unsigned nestedCompressionWorkerCount(unsigned DesiredWorkers) {
+  if (!neverc::ProcessResourceBroker::global().enabled())
+    return DesiredWorkers;
+  return std::min(DesiredWorkers, 1U);
 }
 
 inline bool parallelEnabled() {
@@ -122,8 +157,7 @@ void parallelForEachWithContext(Range &&Values, Function &&Fn) {
                              std::forward<Function>(Fn));
 }
 
-template <typename Range>
-void parallelSortWithContext(Range &&Values) {
+template <typename Range> void parallelSortWithContext(Range &&Values) {
   llvm::sort(std::begin(Values), std::end(Values));
 }
 
@@ -132,8 +166,7 @@ void parallelSortWithContext(First &&FirstValue, Second &&SecondValue) {
   if constexpr (HasRangeBegin<std::decay_t<First>>::value) {
     using Element =
         decltype(*std::begin(std::declval<std::decay_t<First> &>()));
-    if constexpr (std::is_invocable_v<std::decay_t<Second>, Element,
-                                      Element>) {
+    if constexpr (std::is_invocable_v<std::decay_t<Second>, Element, Element>) {
       llvm::sort(std::begin(FirstValue), std::end(FirstValue),
                  std::forward<Second>(SecondValue));
     } else {
@@ -154,11 +187,8 @@ void parallelSortWithContext(Iterator Begin, Iterator End,
 
 } // namespace linker
 
-#define parallelFor(...)                                                      \
-  ::linker::parallelForWithContext(__VA_ARGS__)
-#define parallelForEach(...)                                                  \
-  ::linker::parallelForEachWithContext(__VA_ARGS__)
-#define parallelSort(...)                                                     \
-  ::linker::parallelSortWithContext(__VA_ARGS__)
+#define parallelFor(...) ::linker::parallelForWithContext(__VA_ARGS__)
+#define parallelForEach(...) ::linker::parallelForEachWithContext(__VA_ARGS__)
+#define parallelSort(...) ::linker::parallelSortWithContext(__VA_ARGS__)
 
 #endif

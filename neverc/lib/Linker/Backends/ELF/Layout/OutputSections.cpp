@@ -323,8 +323,9 @@ template <class ELFT> void OutputSection::maybeCompress() {
 
     ZSTD_CCtx *cctx = ZSTD_createCCtx();
     // Ignore error if zstd was not built with ZSTD_MULTITHREAD.
-    (void)ZSTD_CCtx_setParameter(cctx, ZSTD_c_nbWorkers,
-                                 parallelThreadCount());
+    (void)ZSTD_CCtx_setParameter(
+        cctx, ZSTD_c_nbWorkers,
+        nestedCompressionWorkerCount(parallelThreadCount()));
     ZSTD_outBuffer zob = {out.data(), out.size(), 0};
     ZSTD_EndDirective directive = ZSTD_e_continue;
     const size_t blockSize = ZSTD_CStreamInSize();

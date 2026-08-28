@@ -852,28 +852,27 @@ static void GroupByComplexity(SmallVectorImpl<const SCEV *> &Ops, LoopInfo *LI,
 }
 
 /// Returns true if \p Ops contains a huge SCEV (the subtree of S contains at
-/// least HugeExprThreshold nodes).
-static bool hasHugeExpression(ArrayRef<const SCEV *> Ops) {
-  return any_of(Ops, [](const SCEV *S) {
-    return S->getExpressionSize() >= HugeExprThreshold;
+/// least \p HugeExpressionThreshold nodes).
+static bool hasHugeExpression(ArrayRef<const SCEV *> Ops,
+                              unsigned HugeExpressionThreshold) {
+  return any_of(Ops, [HugeExpressionThreshold](const SCEV *S) {
+    return S->getExpressionSize() >= HugeExpressionThreshold;
   });
 }
 
-// NeverC: programmatic get/set for HugeExprThreshold (declared in
-// ScalarEvolution.h).  Cross-module ("last call to static") inlining at full
-// LTO folds many loop-bearing leaves into one body, so post-IPO functions are
-// far larger than any single TU's; their SCEV expressions blow past the default
-// threshold and trigger getAddExpr/getMulExpr's superlinear simplification --
-// measured as the dominant auto-LTO link cost (IndVarSimplify -> getRangeRef).
-// Lowering the threshold makes those huge expressions fall back to the
-// conservative, already-correct *unsimplified* form sooner -- the exact same
-// withdrawal the MaxArithDepth check one line up performs -- so it only bounds
-// compile cost and can never change a computed result.  The auto-LTO driver
-// sets it before the partition workers start and restores it after they join,
-// so the concurrent hasHugeExpression readers only ever observe a stable value.
+// NeverC: preserve the original ambient compatibility API. Concurrent NeverC
+// requests install a resolved override in each LLVMContext before launching
+// workers, so those worker queries do not consult this process-global option.
 unsigned llvm::getScevHugeExprThreshold() { return HugeExprThreshold; }
 void llvm::setScevHugeExprThreshold(unsigned Threshold) {
   HugeExprThreshold = Threshold;
+}
+
+unsigned ScalarEvolution::getHugeExpressionThreshold() const {
+  if (std::optional<unsigned> Threshold =
+          getContext().getNevercSCEVHugeExpressionThreshold())
+    return *Threshold;
+  return HugeExprThreshold;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2585,7 +2584,8 @@ const SCEV *ScalarEvolution::getAddExpr(SmallVectorImpl<const SCEV *> &Ops,
   };
 
   // Limit recursion calls depth.
-  if (Depth > MaxArithDepth || hasHugeExpression(Ops))
+  if (Depth > MaxArithDepth ||
+      hasHugeExpression(Ops, getHugeExpressionThreshold()))
     return getOrCreateAddExpr(Ops, ComputeFlags(Ops));
 
   if (SCEV *S = findExistingSCEVInCache(scAddExpr, Ops)) {
@@ -3191,7 +3191,8 @@ const SCEV *ScalarEvolution::getMulExpr(SmallVectorImpl<const SCEV *> &Ops,
   };
 
   // Limit recursion calls depth.
-  if (Depth > MaxArithDepth || hasHugeExpression(Ops))
+  if (Depth > MaxArithDepth ||
+      hasHugeExpression(Ops, getHugeExpressionThreshold()))
     return getOrCreateMulExpr(Ops, ComputeFlags(Ops));
 
   if (SCEV *S = findExistingSCEVInCache(scMulExpr, Ops)) {
@@ -3373,7 +3374,8 @@ const SCEV *ScalarEvolution::getMulExpr(SmallVectorImpl<const SCEV *> &Ops,
       // SCEVAddRecs with very complex operands.
       if (AddRec->getNumOperands() + OtherAddRec->getNumOperands() - 1 >
               MaxAddRecSize ||
-          hasHugeExpression({AddRec, OtherAddRec}))
+          hasHugeExpression({AddRec, OtherAddRec},
+                            getHugeExpressionThreshold()))
         continue;
 
       bool Overflow = false;

@@ -1,6 +1,6 @@
+#include "neverc/Compiler/AssembleAction.h"
 #include "neverc/Compiler/CompilerInstance.h"
 #include "neverc/Compiler/CompilerInvocation.h"
-#include "neverc/Compiler/AssembleAction.h"
 #include "neverc/Compiler/FrontendActions.h"
 #include "neverc/Compiler/FrontendDiag.h"
 #include "neverc/Compiler/FrontendOptions.h"
@@ -18,9 +18,11 @@
 #include "neverc/Scan/HeaderIndexOptions.h"
 #include "neverc/Scan/PrepOptions.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
+#include "llvm/Pass.h"
 #include "llvm/Support/BuryPointer.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -109,6 +111,11 @@ bool ExecuteCompilerInvocation(CompilerInstance *CI) {
 }
 
 namespace {
+struct PassTimingGlobalState {
+  bool Enabled;
+  bool PerRun;
+};
+
 void directLLVMErrorHandler(void *UserData, const char *Message,
                             bool GenCrashDiag) {
   DiagnosticsEngine &Diags = *static_cast<DiagnosticsEngine *>(UserData);
@@ -154,6 +161,15 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
   bool parallelSafe = DirectOpts && DirectOpts->ParallelSafe;
   std::optional<plugin::PluginLLVMOptionExclusiveLease> LLVMOptionWriteLease;
   std::optional<plugin::PluginLLVMOptionSharedLease> LLVMOptionReadLease;
+  std::optional<PassTimingGlobalState> SavedPassTimingState;
+  auto RestorePassTimingState = llvm::make_scope_exit([&]() {
+    if (!SavedPassTimingState)
+      return;
+    assert(plugin::pluginLLVMOptionGateHeldExclusivelyByCurrentThread() &&
+           "pass timing globals must be restored under the exclusive lease");
+    llvm::TimePassesIsEnabled = SavedPassTimingState->Enabled;
+    llvm::TimePassesPerRun = SavedPassTimingState->PerRun;
+  });
 
   std::unique_ptr<plugin::PluginTaskContext> PluginInvocationTask;
   std::unique_ptr<CompilerInstance> CI(new CompilerInstance());
@@ -229,11 +245,15 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
   // action. Parse it here and clear the deferred list so
   // ExecuteCompilerInvocation does not recursively acquire the same gate.
   auto &LLVMArgs = CI->getFrontendOpts().LLVMArgs;
-  bool MutatesLLVMOptions = !LLVMArgs.empty() ||
-                            !CI->getCodeGenOpts().DebugPass.empty() ||
-                            !CI->getCodeGenOpts().LimitFloatPrecision.empty();
+  const bool ConfiguresPassTiming =
+      CI->getCodeGenOpts().TimePasses || CI->getCodeGenOpts().TimePassesPerRun;
+  bool MutatesLLVMOptions =
+      !LLVMArgs.empty() || !CI->getCodeGenOpts().DebugPass.empty() ||
+      !CI->getCodeGenOpts().LimitFloatPrecision.empty() || ConfiguresPassTiming;
   if (!parallelSafe || MutatesLLVMOptions) {
     LLVMOptionWriteLease.emplace(plugin::pluginLLVMOptionGate());
+    SavedPassTimingState.emplace(PassTimingGlobalState{
+        llvm::TimePassesIsEnabled, llvm::TimePassesPerRun});
     if (!LLVMArgs.empty()) {
       std::vector<const char *> Args;
       Args.reserve(LLVMArgs.size() + 1);
@@ -246,6 +266,17 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
       llvm::cl::ResetAllOptionOccurrences();
   } else {
     LLVMOptionReadLease.emplace(plugin::pluginLLVMOptionGate());
+  }
+
+  // LLVM's legacy timing switches are process globals. Configure them only
+  // while holding the option gate exclusively; parallel-safe frontends that
+  // do not request timing keep a shared lease and never write this state.
+  // Preserve an equivalent -mllvm timing request parsed immediately above.
+  if (LLVMOptionWriteLease) {
+    llvm::TimePassesIsEnabled =
+        llvm::TimePassesIsEnabled || CI->getCodeGenOpts().TimePasses;
+    if (ConfiguresPassTiming)
+      llvm::TimePassesPerRun = CI->getCodeGenOpts().TimePassesPerRun;
   }
 
   if (!parallelSafe && !CI->getFrontendOpts().TimeTracePath.empty())

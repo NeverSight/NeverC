@@ -1,6 +1,8 @@
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
+#include "ProcessResourceBrokerInternal.h"
+#include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "gtest/gtest.h"
 #include <atomic>
 #include <thread>
@@ -54,6 +56,50 @@ TEST(PluginLinkContextTest, NestedExecutionRestoresOuterContext) {
   }
 
   EXPECT_EQ(currentLinkerContext(), &Outer);
+}
+
+TEST(PluginLinkContextTest, NestedExecutionRestoresOuterWorkerSlot) {
+  neverc::ProcessResourceBrokerConfig Config;
+  Config.Enabled = true;
+  Config.CpuTokens = 2;
+  auto Broker = neverc::ProcessResourceBrokerTestAccess::create(Config);
+  neverc::ScopedProcessResourceBrokerOverride Override(*Broker);
+
+  LinkerExecutionContext OuterExecution;
+  CommonLinkerContext &Outer =
+      OuterExecution.createBackend<CommonLinkerContext>();
+  Outer.configureParallel(/*RequestedThreads=*/2);
+
+  unsigned BeforeNested = 0;
+  unsigned InsideNested = 1;
+  unsigned AfterNested = 0;
+  std::thread::id OuterWorker;
+  std::thread::id NestedTaskWorker;
+  unsigned NestedTaskSlot = 0;
+  LinkerTaskGroup Group;
+  Group.spawn([&] {
+    OuterWorker = std::this_thread::get_id();
+    BeforeNested = currentLinkerWorkerSlot();
+    {
+      LinkerExecutionContext InnerExecution;
+      InnerExecution.createBackend<CommonLinkerContext>();
+      InsideNested = currentLinkerWorkerSlot();
+    }
+    AfterNested = currentLinkerWorkerSlot();
+    LinkerTaskGroup NestedGroup;
+    NestedGroup.spawn([&] {
+      NestedTaskWorker = std::this_thread::get_id();
+      NestedTaskSlot = currentLinkerWorkerSlot();
+    });
+    NestedGroup.sync();
+  });
+  Group.sync();
+
+  EXPECT_GT(BeforeNested, 0U);
+  EXPECT_EQ(InsideNested, 0U);
+  EXPECT_EQ(AfterNested, BeforeNested);
+  EXPECT_EQ(NestedTaskWorker, OuterWorker);
+  EXPECT_EQ(NestedTaskSlot, BeforeNested);
 }
 
 TEST(PluginLinkContextTest, WorkerBindingRestoresReusedThreadTLS) {

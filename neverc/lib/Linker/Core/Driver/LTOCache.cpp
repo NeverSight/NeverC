@@ -88,6 +88,7 @@ void linker::LTOCacheKey::appendConfig(const LinkerDriverConfig &cfg) {
   // files, strip level, build-id, ...) are deliberately excluded; fields
   // that trigger a cache bypass (remarks, save-temps, plugins) never reach
   // this point with interesting values.
+  appendStr(material, "neverc-lto-config-schema-v3");
   appendStr(material, cfg.cpu);
   appendU64(material, uint64_t(int64_t(cfg.ltoOptLevel)));
   appendU64(material, uint64_t(int64_t(cfg.ltoCGOLevel)));
@@ -101,6 +102,23 @@ void linker::LTOCacheKey::appendConfig(const LinkerDriverConfig &cfg) {
   appendU64(material, cfg.jmcInstrument);
   appendU64(material, cfg.emulatedTLS);
   appendU64(material, cfg.stackSizeSection);
+  // Encode the schema field names and values explicitly. Never hash the struct
+  // representation: padding, layout, and addresses are not stable cache
+  // material. Keep raw -mllvm argv below as an independent, ordered input so
+  // distinct spellings can over-key but never alias.
+#define NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(Field, PcgVariable, Spelling,    \
+                                              Default)                         \
+  appendStr(material, #Field);                                                 \
+  appendU64(material, cfg.parallelCodeGenTuning.Field);
+#include "neverc/Foundation/LangOpts/ParallelCodeGenTuning.def"
+#undef NEVERC_PARALLEL_CODEGEN_TUNING_OPTION
+#define LLVM_NEVERC_PIPELINE_TUNING_OPTION(Type, Field, Option, Default,       \
+                                           Spelling, Description)              \
+  appendStr(material, #Field);                                                 \
+  appendU64(material, static_cast<uint64_t>(                                   \
+                          static_cast<int64_t>(cfg.ltoPipelineTuning.Field)));
+#include "llvm/Support/NevercPipelineTuning.def"
+#undef LLVM_NEVERC_PIPELINE_TUNING_OPTION
   appendU64(material, cfg.mllvmOpts.size());
   for (const std::string &opt : cfg.mllvmOpts)
     appendStr(material, opt);
@@ -137,7 +155,7 @@ std::string linker::ltoPartitionCacheSalt(const LinkerDriverConfig &cfg,
   // already covers.
   LTOCacheKey k;
   k.appendConfig(cfg);
-  appendStr(k.material, "neverc-pcg-salt-v1");
+  appendStr(k.material, "neverc-pcg-salt-v3");
   appendU64(k.material, emitAddrsig);
   return hexKeyFromMaterial(k.material);
 }

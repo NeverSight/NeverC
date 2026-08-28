@@ -19,7 +19,7 @@
 
 namespace linker {
 
-void prefaultBuffer(uint8_t *buf, size_t size);
+void prefaultBuffer(uint8_t *buf, size_t size, bool fileBacked);
 void unlinkAsync(llvm::StringRef path);
 std::error_code tryCreateFile(llvm::StringRef path);
 std::unique_ptr<llvm::raw_fd_ostream> openFile(llvm::StringRef file);

@@ -941,6 +941,120 @@ TEST_F(LTOTest, AArch64UnalignedCrossCcTailCallFallsBack) {
                            << result.err;
 }
 
+// AArch64's "this return" shortcut is only valid when the first argument is
+// marked returned.  A returned pointer in any later slot is ordinary ABI
+// information: the call result must still be copied from x0.  SQLite's
+// sqlite3_snprintf(int, char *returned, ...) exercises exactly this shape.
+TEST_F(LTOTest, AArch64NonFirstReturnedArgumentUsesCallResult) {
+  auto src = tmpFile("aarch64_nonfirst_returned_argument.bc");
+  auto obj = tmpFile("aarch64_nonfirst_returned_argument.o");
+  llvm::LLVMContext context;
+  llvm::Module module("aarch64_nonfirst_returned_argument", context);
+  module.setTargetTriple("aarch64-unknown-linux-gnu");
+
+  llvm::Type *i32Ty = llvm::Type::getInt32Ty(context);
+  llvm::Type *ptrTy = llvm::PointerType::getUnqual(context);
+  llvm::Function *callee = llvm::Function::Create(
+      llvm::FunctionType::get(ptrTy, {i32Ty, ptrTy, ptrTy}, true),
+      llvm::Function::ExternalLinkage, "variadic_returned", module);
+  callee->addParamAttr(1, llvm::Attribute::Returned);
+
+  llvm::Function *caller = llvm::Function::Create(
+      llvm::FunctionType::get(ptrTy, {i32Ty, ptrTy, ptrTy}, false),
+      llvm::Function::ExternalLinkage, "caller", module);
+  llvm::IRBuilder<> builder(llvm::BasicBlock::Create(context, "entry", caller));
+  llvm::CallInst *call =
+      builder.CreateCall(callee, {caller->getArg(0), caller->getArg(1),
+                                  caller->getArg(1), caller->getArg(2)});
+  call->addParamAttr(1, llvm::Attribute::Returned);
+  call->setTailCallKind(llvm::CallInst::TCK_NoTail);
+  builder.CreateRet(call);
+
+  llvm::SmallVector<char, 0> bitcode;
+  llvm::raw_svector_ostream bitcodeStream(bitcode);
+  llvm::WriteBitcodeToFile(module, bitcodeStream);
+  writeFile(src, std::string(bitcode.begin(), bitcode.end()));
+
+  auto result = ncc({"--target=aarch64-unknown-linux-gnu", "-fno-lto", "-c",
+                     src.string(), "-o", obj.string()});
+  EXPECT_TRUE(result.ok())
+      << "AArch64 codegen treated a non-first returned argument as the call "
+         "result:\n"
+      << result.err;
+}
+
+// The type-mismatched case above trips an assertion in debug builds.  Keep a
+// native semantic oracle too: with two pointer arguments the same bug is type
+// correct and silently substitutes the pre-call first argument for x0.
+TEST_F(LTOTest, AArch64NonFirstReturnedArgumentRuntimeSemantics) {
+  if (!isArm64())
+    GTEST_SKIP() << "requires a native AArch64 runtime oracle";
+
+  auto src = tmpFile("aarch64_nonfirst_returned_runtime.bc");
+  auto obj = tmpFile("aarch64_nonfirst_returned_runtime.o");
+  auto exe = tmpFile("aarch64_nonfirst_returned_runtime");
+  llvm::LLVMContext context;
+  llvm::Module module("aarch64_nonfirst_returned_runtime", context);
+  module.setTargetTriple(hostTriple());
+
+  llvm::Type *i8Ty = llvm::Type::getInt8Ty(context);
+  llvm::Type *i32Ty = llvm::Type::getInt32Ty(context);
+  llvm::Type *ptrTy = llvm::PointerType::getUnqual(context);
+  llvm::Function *callee = llvm::Function::Create(
+      llvm::FunctionType::get(ptrTy, {ptrTy, ptrTy}, false),
+      llvm::Function::ExternalLinkage, "returned_second", module);
+  callee->addParamAttr(1, llvm::Attribute::Returned);
+  callee->addFnAttr(llvm::Attribute::NoInline);
+  callee->addFnAttr(llvm::Attribute::OptimizeNone);
+  llvm::IRBuilder<> calleeBuilder(
+      llvm::BasicBlock::Create(context, "entry", callee));
+  calleeBuilder.CreateRet(callee->getArg(1));
+
+  llvm::Function *mainFn =
+      llvm::Function::Create(llvm::FunctionType::get(i32Ty, false),
+                             llvm::Function::ExternalLinkage, "main", module);
+  llvm::IRBuilder<> mainBuilder(
+      llvm::BasicBlock::Create(context, "entry", mainFn));
+  llvm::Value *wrong = mainBuilder.CreateAlloca(i8Ty, nullptr, "wrong");
+  llvm::Value *right = mainBuilder.CreateAlloca(i8Ty, nullptr, "right");
+  llvm::CallInst *call = mainBuilder.CreateCall(callee, {wrong, right});
+  call->addParamAttr(1, llvm::Attribute::Returned);
+  call->setTailCallKind(llvm::CallInst::TCK_NoTail);
+  llvm::Value *matches = mainBuilder.CreateICmpEQ(call, right);
+  mainBuilder.CreateRet(
+      mainBuilder.CreateSelect(matches, llvm::ConstantInt::get(i32Ty, 0),
+                               llvm::ConstantInt::get(i32Ty, 1)));
+
+  llvm::SmallVector<char, 0> bitcode;
+  llvm::raw_svector_ostream bitcodeStream(bitcode);
+  llvm::WriteBitcodeToFile(module, bitcodeStream);
+  writeFile(src, std::string(bitcode.begin(), bitcode.end()));
+
+  std::vector<std::string> compileArgs = {"-O0", "-fno-lto", "-c"};
+  for (const auto &flag : sysrootFlags())
+    compileArgs.push_back(flag);
+  for (const auto &flag : archFlags())
+    compileArgs.push_back(flag);
+  compileArgs.insert(compileArgs.end(), {src.string(), "-o", obj.string()});
+  auto compile = ncc(compileArgs);
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+
+  std::vector<std::string> linkArgs;
+  for (const auto &flag : sysrootFlags())
+    linkArgs.push_back(flag);
+  for (const auto &flag : archFlags())
+    linkArgs.push_back(flag);
+  for (const auto &flag : linkFlags())
+    linkArgs.push_back(flag);
+  linkArgs.insert(linkArgs.end(), {obj.string(), "-o", exe.string()});
+  auto link = ncc(linkArgs);
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  auto run = exec(exe.string(), {});
+  EXPECT_EQ(run.exitCode, 0)
+      << "AArch64 returned the first argument instead of the callee's x0";
+}
+
 TEST_F(LTOTest, MultiTU_AB) {
   auto ltoDir = testDir() / "lto";
   auto objA = tmpFile("lto_a.o");
@@ -979,7 +1093,8 @@ TEST_F(LTOTest, MultiTU_AB) {
 
 // Guards the driver forwarding of user -mllvm flags into the link job
 // (populateLinkerDriverConfig -> LinkerDriverConfig::mllvmOpts ->
-// parseMllvmOptions).  Under (auto-)LTO the optimizer runs at link time,
+// createLTOConfig's scoped profile). Under (auto-)LTO the optimizer runs at
+// link time,
 // so flags like -neverc-module-inliner-threshold are meaningless unless
 // they reach the linker's cl::opt parsing.
 TEST_F(LTOTest, MllvmReachesLinkJob) {
@@ -1216,10 +1331,10 @@ TEST_F(LTOTest, LtoPartitionCache) {
   auto exe = tmpFile("pcache_exe");
   link.insert(link.end(), {"-o", exe.string()});
 
-  auto countEntries = [&] {
+  auto countEntries = [](const fs::path &dir) {
     size_t n = 0;
     std::error_code ec;
-    for (fs::directory_iterator it(cacheDir, ec), e; !ec && it != e;
+    for (fs::directory_iterator it(dir, ec), e; !ec && it != e;
          it.increment(ec))
       if (it->path().filename().string().rfind(linker::ltoCacheEntryPrefix,
                                                0) == 0 &&
@@ -1230,7 +1345,7 @@ TEST_F(LTOTest, LtoPartitionCache) {
 
   // Cold link: one full-link entry + one entry per partition.
   ASSERT_EQ(ncc(link).exitCode, 0);
-  size_t afterCold = countEntries();
+  size_t afterCold = countEntries(cacheDir);
   ASSERT_GE(afterCold, 3u) << "expected partitioned codegen (>= 2 partitions)";
   auto r1 = exec(exe.string(), {});
   ASSERT_EQ(r1.exitCode, 0);
@@ -1241,7 +1356,7 @@ TEST_F(LTOTest, LtoPartitionCache) {
   writeUnit(3, 2);
   compileUnit("u3");
   ASSERT_EQ(ncc(link).exitCode, 0);
-  size_t afterEdit = countEntries();
+  size_t afterEdit = countEntries(cacheDir);
   EXPECT_EQ(afterEdit, afterCold + 2)
       << "an edit to one function must add exactly one full-link entry and "
          "one partition entry; more means partition assignment is unstable";
@@ -1265,25 +1380,30 @@ TEST_F(LTOTest, LtoPartitionCache) {
   // buffer.  That object is invalid and must not be committed to the cache.
   writeUnit(3, 3, /*emitCodegenError=*/true);
   compileUnit("u3");
-  CmdResult firstFailure = ncc(link);
-  EXPECT_NE(firstFailure.exitCode, 0);
-  EXPECT_TRUE(firstFailure.stderrContains(".error directive invoked"))
-      << "link did not reach the intentional backend diagnostic:\n"
-      << firstFailure.err;
+  auto failureCacheDir = tmpFile("pcache_failure_dir");
+  ASSERT_TRUE(fs::create_directory(failureCacheDir));
+  ASSERT_EQ(countEntries(failureCacheDir), 0u);
+  {
+    ScopedEnvVar FailureCacheDir(linker::ltoCacheDirEnvVar,
+                                 failureCacheDir.string().c_str());
+    CmdResult firstFailure = ncc(link);
+    EXPECT_NE(firstFailure.exitCode, 0);
+    EXPECT_TRUE(firstFailure.stderrContains(".error directive invoked"))
+        << "link did not reach the intentional backend diagnostic:\n"
+        << firstFailure.err;
+    EXPECT_EQ(countEntries(failureCacheDir), 0u)
+        << "a failed partitioned link must not commit successful sibling "
+           "partitions";
 
-  // Other successful partitions may legitimately populate the fallback
-  // pipeline's cache.  On retry those are hits, while the failed partition
-  // must miss and reproduce its diagnostic.  Caching the failed object would
-  // instead let the retry consume a condemned artifact.
-  size_t afterFirstFailure = countEntries();
-  CmdResult secondFailure = ncc(link);
-  EXPECT_NE(secondFailure.exitCode, 0)
-      << "a cached failed partition made an invalid link succeed";
-  EXPECT_TRUE(secondFailure.stderrContains(".error directive invoked"))
-      << "retry did not regenerate the failed partition:\n"
-      << secondFailure.err;
-  EXPECT_EQ(countEntries(), afterFirstFailure)
-      << "retry added another entry for a partition that cannot codegen";
+    CmdResult secondFailure = ncc(link);
+    EXPECT_NE(secondFailure.exitCode, 0)
+        << "a cached failed partition made an invalid link succeed";
+    EXPECT_TRUE(secondFailure.stderrContains(".error directive invoked"))
+        << "retry did not regenerate the failed partition:\n"
+        << secondFailure.err;
+    EXPECT_EQ(countEntries(failureCacheDir), 0u)
+        << "retry of a failed partitioned link must leave the cache empty";
+  }
 }
 
 TEST_F(LTOTest, ParallelCodegenPreservesAliasUsers) {

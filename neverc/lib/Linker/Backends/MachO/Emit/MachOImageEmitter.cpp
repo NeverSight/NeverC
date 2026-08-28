@@ -1111,14 +1111,19 @@ void OutputWriter::layoutSegment(OutputSegment *seg) {
 }
 
 void OutputWriter::allocateOutputBuffer() {
+  bool fileBacked = false;
   Expected<std::unique_ptr<FileOutputBuffer>> bufferOrErr =
-      FileOutputBuffer::create(config->outputFile, fileOff,
-                               FileOutputBuffer::F_executable);
+      FileOutputBuffer::createWithFileBacking(
+          config->outputFile, fileOff,
+          FileOutputBuffer::F_executable | FileOutputBuffer::F_preallocate,
+          fileBacked);
 
   if (!bufferOrErr) {
     unlinkAsync(config->outputFile);
-    bufferOrErr = FileOutputBuffer::create(config->outputFile, fileOff,
-                                           FileOutputBuffer::F_executable);
+    bufferOrErr = FileOutputBuffer::createWithFileBacking(
+        config->outputFile, fileOff,
+        FileOutputBuffer::F_executable | FileOutputBuffer::F_preallocate,
+        fileBacked);
   }
 
   if (!bufferOrErr)
@@ -1127,7 +1132,7 @@ void OutputWriter::allocateOutputBuffer() {
   buffer = std::move(*bufferOrErr);
   in.bufferStart = buffer->getBufferStart();
 
-  prefaultBuffer(buffer->getBufferStart(), fileOff);
+  prefaultBuffer(buffer->getBufferStart(), fileOff, fileBacked);
 }
 
 void OutputWriter::writeSections() {

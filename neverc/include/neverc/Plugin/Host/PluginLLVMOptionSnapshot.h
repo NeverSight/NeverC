@@ -1,6 +1,7 @@
 #ifndef NEVERC_PLUGIN_HOST_PLUGINLLVMOPTIONSNAPSHOT_H
 #define NEVERC_PLUGIN_HOST_PLUGINLLVMOPTIONSNAPSHOT_H
 
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <shared_mutex>
@@ -11,6 +12,10 @@ namespace neverc::plugin {
 std::shared_mutex &pluginLLVMOptionGate();
 bool pluginLLVMOptionGateHeldExclusivelyByCurrentThread();
 bool pluginLLVMOptionGateHeldSharedByCurrentThread();
+
+/// Monotonic diagnostic epoch incremented whenever an exclusive lease enters
+/// the blocking acquisition path for the process-global LLVM option gate.
+std::uint64_t pluginLLVMOptionExclusiveWaitEpoch();
 
 class PluginLLVMOptionExclusiveLease {
 public:
@@ -43,7 +48,8 @@ private:
 };
 
 /// Serializes access to LLVM's process-global command-line registry and
-/// restores every registered option to its exact entry state on destruction.
+/// restores every option registered at construction to its exact value and
+/// occurrence metadata on destruction.
 class PluginLLVMOptionSnapshot {
 public:
   explicit PluginLLVMOptionSnapshot(std::shared_mutex &Gate);

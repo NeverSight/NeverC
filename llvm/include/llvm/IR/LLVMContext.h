@@ -28,6 +28,7 @@ class Function;
 class Instruction;
 class LLVMContextImpl;
 class Module;
+struct NevercPipelineTuningOptions;
 class OptPassGate;
 template <typename T> class SmallVectorImpl;
 template <typename T> class StringMapEntry;
@@ -69,6 +70,19 @@ public:
   LLVMContext(const LLVMContext &) = delete;
   LLVMContext &operator=(const LLVMContext &) = delete;
   ~LLVMContext();
+
+  /// Request-local NeverC optimization policy associated with IR in this
+  /// context. LLVMContext already requires external synchronization, so the
+  /// value is replaced before a pipeline starts and then read without locks.
+  const NevercPipelineTuningOptions &getNevercPipelineTuningOptions() const;
+  void
+  setNevercPipelineTuningOptions(const NevercPipelineTuningOptions &Tuning);
+
+  /// Optional request-local override for ScalarEvolution's huge-expression
+  /// cost bound. An unset value preserves the ordinary command-line option;
+  /// NeverC installs a resolved value before starting concurrent pipelines.
+  std::optional<unsigned> getNevercSCEVHugeExpressionThreshold() const;
+  void setNevercSCEVHugeExpressionThreshold(std::optional<unsigned> Threshold);
 
   // Pinned metadata names, which always have the same value.  This is a
   // compile-time performance optimization, not a correctness optimization.

@@ -496,8 +496,8 @@ void tools::populateLinkerDriverConfig(const ToolChain &TC,
 
     // Forward user -mllvm flags.  Under (auto-)LTO the mid-level optimizer
     // and codegen run at link time, so flags like
-    // -neverc-module-inliner-threshold must reach the linker's cl::opt
-    // parsing (parseMllvmOptions), not just the compile jobs.  Appended
+    // -neverc-module-inliner-threshold must reach createLTOConfig's scoped
+    // cl::opt profile, not just the compile jobs.  Appended
     // last so explicit user flags override the driver-derived mappings
     // above.  -disable-llvm-optzns is a cc1-only pseudo flag (translated
     // in the compile job, see NeverC.cpp); it is not a registered cl::opt,

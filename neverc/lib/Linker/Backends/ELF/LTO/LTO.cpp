@@ -174,6 +174,7 @@ std::vector<InputFile *> BitcodeCompiler::compile() {
   if (!elfState().bitcodeFiles.empty())
     runLTOWithCache(*ltoObj, cacheKey, cacheUsable, *config->driverCfg,
                     ltoCacheBackendTag, emitAddrsig, buf);
+  ltoObj.reset();
 
   std::vector<InputFile *> ret;
   for (unsigned i = 0; i != maxTasks; ++i) {

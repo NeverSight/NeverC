@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/IPO/Inliner.h"
+#include "NevercInlinePolicy.h"
 #include "llvm/ADT/PriorityWorklist.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -25,7 +26,6 @@
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/BasicAliasAnalysis.h"
 #include "llvm/Analysis/BlockFrequencyInfo.h"
-#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/Analysis/InlineAdvisor.h"
 #include "llvm/Analysis/InlineCost.h"
@@ -53,6 +53,7 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/NevercPipelineTuning.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/CallPromotionUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
@@ -108,21 +109,22 @@ static cl::opt<bool> KeepAdvisorForPrinting("keep-inline-advisor-for-printing",
 // well in its own function as inlined -- the kept call overhead is negligible
 // next to the loop body, and the smaller hot caller is gentler on the icache.
 //
+// clang-format off
 // Why 32 and not lower:  this cap is the *partitionability* valve, and that is
 // now its primary job.  The compile-cost cliff is defended in depth by two more
 // targeted valves that withdraw the same way (LoopUnrollPass's
 // NevercFullUnrollMaxLoopsPerFunc=100 bounds full-unroll trip-count machinery;
-// ParallelCodeGenMerge's PcgScevHugeExprThreshold=512 bounds SCEV
+// ParallelCodeGenMerge's PcgScevHugeExprThreshold=64 bounds SCEV
 // huge-expression simplification).  But both of those only help once the module
-// is *partitioned*: PcgScevHugeExprThreshold is applied solely on the parallel
-// per-partition path, and a module that has collapsed to one giant function
-// declines parallel codegen (FuncCount < min) and falls back to *serial*
+// enters PCG: PcgScevHugeExprThreshold is applied to its per-partition pipelines
+// and reassembled whole-module barrier, while a module that has collapsed to one
+// giant function declines PCG (FuncCount < min) and falls back to *serial*
 // optimization, which never sets the SCEV bound.  So the inline cap is what
 // keeps the module splittable enough for the other two valves to engage at all.
 // Measured (this build, caches off), variable-trip "bench_b" SCEV cliff,
 // N=480 single-call loop leaves:
-//   cap=0  + scev=512 -> TIMEOUT(>120s)   (collapsed -> serial -> no SCEV bound)
-//   cap=12 + scev=512 -> 0.43s            cap=32 + scev=512 -> 0.47s
+//   cap=0  + scev=64 -> TIMEOUT(>120s)   (collapsed -> serial -> no SCEV bound)
+//   cap=12 + scev=64 -> 0.43s            cap=32 + scev=64 -> 0.47s
 // and the constant-trip full-unroll cliff, N=240:
 //   cap=0 -> 3.7s   cap=32 -> 0.72s   cap=12 -> 0.33s   (full cliff, all off: 26s)
 // i.e. once the cap holds the module partitionable, 12 vs 32 is a sub-second
@@ -142,25 +144,7 @@ static cl::opt<bool> KeepAdvisorForPrinting("keep-inline-advisor-for-printing",
 // This is a pure *withdrawal*: it never forces an inline, never blocks an
 // always-inline/mandatory inline, and is gated to the FullLTOPostLink phase so
 // ordinary -O2/-O3 (and ThinLTO) compiles never enter this path.  0 disables it.
-static cl::opt<unsigned> NevercInlineMaxCallerLoops(
-    "neverc-inline-max-caller-loops", cl::init(32), cl::Hidden,
-    cl::desc("Auto-LTO (FullLTOPostLink) only: stop inlining loop-bearing "
-             "callees into a caller that already contains more than this many "
-             "loops (back-edges), bounding superlinear ScalarEvolution cost and "
-             "preserving partitionability of the giant functions that "
-             "last-call-to-static inlining would otherwise form "
-             "(0 = no limit)"));
-
-// Back-edge count is a cheap (DFS-only, no dominator tree) proxy for the loop
-// count; we only need to tell a loop-dense function from a sparse one.
-static unsigned nevercCountFunctionLoops(const Function &F) {
-  if (F.isDeclaration())
-    return 0;
-  SmallVector<std::pair<const BasicBlock *, const BasicBlock *>, 16> BackEdges;
-  FindFunctionBackedges(F, BackEdges);
-  return BackEdges.size();
-}
-
+// clang-format on
 /// Return true if the specified inline history ID
 /// indicates an inline history that includes the specified function.
 static bool inlineHistoryIncludes(
@@ -304,6 +288,8 @@ PreservedAnalyses InlinerPass::run(LazyCallGraph::SCC &InitialC,
 
   // NeverC loop-density inline cap (auto-LTO only).  Enabled only in the
   // FullLTOPostLink phase so ordinary compiles never pay for it or change.
+  const unsigned NevercInlineMaxCallerLoops =
+      M.getContext().getNevercPipelineTuningOptions().InlineMaxCallerLoops;
   const bool NevercLoopCapActive =
       NevercInlineMaxCallerLoops != 0 &&
       LTOPhase == ThinOrFullLTOPhase::FullLTOPostLink;
@@ -385,15 +371,14 @@ PreservedAnalyses InlinerPass::run(LazyCallGraph::SCC &InitialC,
       // NeverC loop-density cap: if this caller is already loop-dense, withdraw
       // inlining of further loop-bearing callees into it (see
       // NevercInlineMaxCallerLoops).  OnlyMandatory and always-inline callees
-      // are exempt -- those inlines are required, never cost-driven.  Mark the
-      // site noinline so the decision is not revisited in later CGSCC
-      // iterations, mirroring the recursive-skip handling above.
+      // are exempt -- those inlines are required, never cost-driven. The cap
+      // is re-evaluated if a later CGSCC iteration revisits the call; do not
+      // persist a noinline attribute for this request-local heuristic.
       if (NevercLoopCapActive && !OnlyMandatory &&
           NevercCallerLoops >= NevercInlineMaxCallerLoops &&
           !Callee.hasFnAttribute(Attribute::AlwaysInline) &&
           nevercGetCalleeLoops(Callee) != 0) {
         setInlineRemark(*CB, "neverc loop-density cap");
-        CB->setIsNoInline();
         continue;
       }
 

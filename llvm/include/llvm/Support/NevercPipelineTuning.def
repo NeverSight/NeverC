@@ -1,0 +1,38 @@
+//===- NevercPipelineTuning.def - NeverC pipeline options -------*- C++ -*-===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef LLVM_NEVERC_PIPELINE_TUNING_OPTION
+#error "define LLVM_NEVERC_PIPELINE_TUNING_OPTION before including this file"
+#endif
+
+LLVM_NEVERC_PIPELINE_TUNING_OPTION(
+    unsigned, ModuleInlinerThreshold, NevercModuleInlinerThresholdOpt, 6000,
+    "neverc-module-inliner-threshold",
+    "Number of defined functions in the merged auto-LTO module above which "
+    "the module inliner replaces the CGSCC inliner (0 = never)")
+LLVM_NEVERC_PIPELINE_TUNING_OPTION(
+    int, AutoLTOInlineThreshold, NevercAutoLTOInlineThresholdOpt, 150,
+    "neverc-auto-lto-inline-threshold",
+    "Inliner threshold for the auto-LTO serial phase "
+    "(0 = use the standard opt-level default)")
+LLVM_NEVERC_PIPELINE_TUNING_OPTION(
+    bool, InlinerLiteFSimpl, NevercInlinerLiteFSimplOpt, true,
+    "neverc-inliner-lite-fsimpl",
+    "Use the trimmed per-SCC function simplification pipeline in the auto-LTO "
+    "serial phase (0 = full optimization)")
+LLVM_NEVERC_PIPELINE_TUNING_OPTION(
+    unsigned, InlineMaxCallerLoops, NevercInlineMaxCallerLoopsOpt, 32,
+    "neverc-inline-max-caller-loops",
+    "Auto-LTO only: stop cost-driven inlining of loop-bearing callees into a "
+    "caller at this loop count (0 = no limit)")
+LLVM_NEVERC_PIPELINE_TUNING_OPTION(
+    unsigned, FullUnrollMaxLoopsPerFunction,
+    NevercFullUnrollMaxLoopsPerFunctionOpt, 100,
+    "neverc-full-unroll-max-loops-per-function",
+    "Suppress automatic full unrolling in functions above this loop count "
+    "(0 = no limit)")

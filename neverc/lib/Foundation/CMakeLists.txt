@@ -490,6 +490,7 @@ add_neverc_library(nevercFoundation
   Core/OutputDigest.cpp
   Core/OutputPathLease.cpp
   Core/OutputPlatform.cpp
+  Core/ProcessResourceBroker.cpp
   Core/OutputTransaction.cpp
   Core/Version.cpp
 
@@ -525,6 +526,7 @@ target_include_directories(nevercFoundation
 target_link_libraries(nevercFoundation
   PRIVATE
   ${LLVM_ATOMIC_LIB}
+  ${LLVM_PTHREAD_LIB}
 )
 
 if(WIN32)

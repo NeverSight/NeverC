@@ -20,6 +20,28 @@ bool hasPEMagic(const std::string &Bytes) {
          Bytes[PEOffset + 2] == '\0' && Bytes[PEOffset + 3] == '\0';
 }
 
+TEST_F(PluginCOFFLinkAdapterTest, StdoutReproHashPreservesInMemoryPE) {
+  const fs::path Source = tmpFile("coff-stdout-repro.c");
+  writeFile(Source,
+            "volatile unsigned char payload[2 * 1024 * 1024 + 257] = {1};\n"
+            "void _start(void) {\n"
+            "  for (;;) payload[sizeof(payload) - 1]++;\n"
+            "}\n");
+
+  CmdResult Result =
+      ncc({"--no-default-config", "--target=x86_64-pc-windows-msvc", "-O0",
+           "-fno-lto", "-nostdlib", "-mno-incremental-linker-compatible",
+           "-Wl,-nodefaultlib", "-Wl,--entry=_start", "-Wl,--subsystem=console",
+           Source.string(), "-o", "-"});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  // The Unix fixture captures command output as text, so the first NUL in the
+  // binary ends the retained string.  The prefix is still sufficient:
+  // discarding anonymous output pages zeroes the MZ header before commit.
+  ASSERT_GE(Result.out.size(), 2U);
+  EXPECT_EQ(Result.out.substr(0, 2), "MZ")
+      << "reproducible PE written through an in-memory output lost its header";
+}
+
 TEST_F(PluginCOFFLinkAdapterTest,
        ActivatedSessionPreservesBuiltinPELinkOutput) {
   const fs::path Source = tmpFile("plugin-coff-adapter.c");

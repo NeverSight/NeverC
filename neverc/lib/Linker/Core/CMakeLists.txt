@@ -71,9 +71,14 @@ linker_add_library(linkerCore
 
   LINK_LIBS
   nevercEmit
+  nevercFoundation
   ${LLVM_PTHREAD_LIB}
   ${LLVM_ATOMIC_LIB}
 
   DEPENDS
   intrinsics_gen
+)
+
+target_include_directories(linkerCore PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../Emit
 )

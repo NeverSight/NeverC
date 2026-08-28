@@ -13,6 +13,7 @@
 #include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
 #include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
 #include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
+#include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 #include "neverc/Merge/Merger.h"
 #include "neverc/Plugin/Host/NativeRelocationFacts.h"
 
@@ -35,6 +36,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SHA256.h"
+#include "llvm/Support/thread.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
 
@@ -3042,6 +3044,7 @@ struct MachoParsedSec {
   std::string Seg, Sect;
   uint64_t Addr = 0;
   uint64_t Size = 0;
+  std::vector<uint32_t> RelocAddresses;
 };
 struct MachoParsedSym {
   std::string Name;
@@ -3099,6 +3102,12 @@ MachoView parseMachO(ArrayRef<char> Buf) {
         PS.Sect = cstr16(S->sectname);
         PS.Addr = S->addr;
         PS.Size = S->size;
+        if ((uint64_t)S->reloff + (uint64_t)S->nreloc * 8 <= Buf.size())
+          for (unsigned R = 0; R < S->nreloc; ++R) {
+            uint32_t Address = 0;
+            memcpy(&Address, Buf.data() + S->reloff + R * 8, 4);
+            PS.RelocAddresses.push_back(Address);
+          }
         V.Secs.push_back(std::move(PS));
       }
     } else if (LC->cmd == MO::LC_SYMTAB) {
@@ -10905,6 +10914,73 @@ TEST(MergeMachOVerify, AcceptsIndependentlyCoalescedWeakDefinitions) {
       << "verifier accepted a corrupted surviving weak definition";
 }
 
+TEST(MergeMachOVerify, AcceptsRelocationAfterCoalescedWeakAnchor) {
+  namespace MO = llvm::MachO;
+  // A weak inline function can be emitted into every partition.  The merger
+  // keeps one definition, but it still concatenates every partition's section
+  // bytes and relocations.  Therefore the discarded weak definition in O1 is
+  // not a fixed anchor for O1's relocation: its output n_value names O0's
+  // survivor while the relocation correctly lands after O0's whole __text.
+  // This is the minimal shape of a false rejection found with the real
+  // CalledValuePropagation.cpp.o + Inliner.cpp.o pair.
+  uint32_t TextFlags =
+      MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
+  MachoSecSpec S0{"__TEXT", "__text", 0x40, 4, TextFlags, 0xAA};
+  MachoSecSpec S1{"__TEXT", "__text", 0x40, 4, TextFlags, 0xBB};
+  uint8_t DefWeak = MO::N_SECT | MO::N_EXT | MO::N_PEXT;
+  uint8_t DefExt = MO::N_SECT | MO::N_EXT;
+  uint8_t UndefExt = MO::N_EXT;
+  MachoSymSpec W0{"_weak_inline", DefWeak, 1, 0, MO::N_WEAK_DEF};
+  MachoSymSpec Owner1{"_owner1", DefExt, 1, 0, 0};
+  MachoSymSpec W1{"_weak_inline", DefWeak, 1, 0x8, MO::N_WEAK_DEF};
+  MachoSymSpec Ext{"_ext", UndefExt, 0, 0, 0};
+  MachoRelSpec R1{0, 0x10, "_ext", (uint8_t)MO::ARM64_RELOC_BRANCH26, 2};
+  auto O0 =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0}, {W0});
+  auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1},
+                       {Owner1, W1, Ext}, {R1});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(std::move(O0));
+  Bufs.push_back(std::move(O1));
+
+  // Separate merger correctness from verifier correctness: with verification
+  // disabled, the candidate is produced; the public verifier must accept it.
+  Options NoVerify;
+  NoVerify.verify = false;
+  SmallVector<char, 0> Candidate;
+  raw_svector_ostream CandidateOS(Candidate);
+  ASSERT_TRUE(mergeObjects(Bufs, CandidateOS, Format::MachO64, NoVerify));
+  MachoView CandidateView = parseMachO(Candidate);
+  ASSERT_TRUE(CandidateView.Ok);
+  const MachoParsedSec *CandidateText =
+      CandidateView.findSec("__TEXT", "__text");
+  ASSERT_NE(CandidateText, nullptr);
+  ASSERT_EQ(CandidateText->RelocAddresses.size(), 1u);
+  EXPECT_EQ(CandidateText->RelocAddresses.front(), 0x50u);
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Candidate), Format::MachO64, {}, &Err))
+      << Err;
+
+  // Skipping the coalesced weak symbol must fall back to the unique owner
+  // anchor, not disable relocation auditing.  A collapsed site is still
+  // rejected.
+  auto Collapsed = Candidate;
+  ASSERT_TRUE(patchAllMachoRelocAddrs(Collapsed, 0x10));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Collapsed), Format::MachO64, {},
+                           &Err))
+      << "verifier stopped auditing relocations after a weak anchor";
+
+  // The default integrated path must likewise avoid a spurious serial-codegen
+  // fallback / hard failure.
+  SmallVector<char, 0> Checked;
+  raw_svector_ostream CheckedOS(Checked);
+  EXPECT_TRUE(mergeObjects(Bufs, CheckedOS, Format::MachO64));
+}
+
 TEST(MergeMachOVerify, CatchesCollapsedDuplicateNamedSymbol) {
   namespace MO = llvm::MachO;
   uint32_t TextFlags =
@@ -11746,6 +11822,23 @@ struct ScratchDir {
   }
 };
 
+// Real multi-TU compiler/linker tests normally finish well inside two minutes.
+// Sanitizer builds can be several times slower, so allow dedicated validation
+// jobs to raise the child-process budget without weakening the normal CI cap.
+unsigned nevercTestSpawnTimeoutSeconds() {
+  constexpr unsigned DefaultTimeoutSeconds = 120;
+  constexpr unsigned MaxTimeoutSeconds = 3600;
+  const char *Value = ::getenv("NEVERC_TEST_SPAWN_TIMEOUT_SECONDS");
+  if (!Value)
+    return DefaultTimeoutSeconds;
+
+  unsigned Parsed = 0;
+  if (StringRef(Value).getAsInteger(10, Parsed) || Parsed == 0 ||
+      Parsed > MaxTimeoutSeconds)
+    return DefaultTimeoutSeconds;
+  return Parsed;
+}
+
 // Spawn the bundled neverc with Args (argv[0] is prepended automatically).
 // stdout+stderr are routed to a scratch log so a skipped/failed cross-compile
 // does not pollute test output.  Returns the child exit code, or -1 if the
@@ -11760,7 +11853,7 @@ int runNeverc(const ScratchDir &Dir, ArrayRef<StringRef> Args) {
                             StringRef(LogPath)};
   bool Failed = false;
   int RC = sys::ExecuteAndWait(StringRef(NEVERC_BINARY), Argv, /*Env=*/{},
-                               Redirects, /*SecondsToWait=*/120,
+                               Redirects, nevercTestSpawnTimeoutSeconds(),
                                /*MemoryLimit=*/0, /*ErrMsg=*/nullptr, &Failed);
   return Failed ? -1 : RC;
 }
@@ -12392,6 +12485,21 @@ struct ScopedUnsetEnv {
   }
 };
 
+size_t countLTOCacheEntries(StringRef CacheDir) {
+  size_t Count = 0;
+  std::error_code EC;
+  for (sys::fs::directory_iterator It(CacheDir, EC), End; !EC && It != End;
+       It.increment(EC)) {
+    StringRef Name = sys::path::filename(It->path());
+    if (Name.starts_with(linker::ltoCacheEntryPrefix) &&
+        !Name.ends_with(linker::ltoCacheTmpSuffix))
+      ++Count;
+  }
+  EXPECT_FALSE(EC) << "could not inspect LTO cache directory "
+                   << CacheDir.str();
+  return Count;
+}
+
 // One module of `NumFns` noinline, deliberately heavy functions.  noinline
 // keeps them distinct after whole-program inlining, so the post-IPO module
 // still clears the parallel thresholds (FuncCount>=8, TotalWeight>=10000) and
@@ -12454,6 +12562,62 @@ bool compileLinkMulti(const ScratchDir &Dir, ArrayRef<std::string> Srcs,
   Args.push_back("-o");
   Args.push_back(OutExe);
   return runNeverc(Dir, Args) == 0;
+}
+
+// The in-process driver normally compiles independent TUs concurrently. LLVM's
+// legacy pass-timing switches are process globals, so -ftime-report must take
+// the exclusive option lease for the complete frontend action. Under TSan this
+// is also a regression test for concurrent EmitterConsumer writes.
+TEST(ParallelFrontendTiming, MultiFileTimePassesUsesExclusiveOptionLease) {
+  Triple Host(sys::getProcessTriple());
+  if (!Host.isOSBinFormatMachO() && !Host.isOSBinFormatELF())
+    GTEST_SKIP() << "host object format not exercised by this test";
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "parallel frontend requires at least two hardware threads";
+
+  ScratchDir Dir;
+  if (!Dir.Ok)
+    GTEST_SKIP() << "could not create scratch directory";
+  ScopedEnv ParallelTrace("NEVERC_TEST_PARALLEL_COMPILE_TRACE", "1");
+
+  const std::array<std::pair<StringRef, StringRef>, 3> Sources = {{
+      {"timing_a.c", "int timing_a(int x) { return x + 3; }\n"},
+      {"timing_b.c", "int timing_b(int x) { return x * 5; }\n"},
+      {"timing_main.c",
+       "int timing_a(int); int timing_b(int);\n"
+       "int main(void) { return timing_a(1) + timing_b(2) == 14 ? 0 : 1; }\n"},
+  }};
+
+  SmallVector<std::string, 3> Paths;
+  for (const auto &[Name, Contents] : Sources) {
+    std::string Path = Dir.file(Name);
+    ASSERT_TRUE(
+        writeBytes(Path, ArrayRef<char>(Contents.data(), Contents.size())));
+    Paths.push_back(std::move(Path));
+  }
+
+  auto CheckTimingLog = [&]() {
+    SmallVector<char, 0> LogBytes;
+    ASSERT_TRUE(readObj(Dir.file("spawn.log"), LogBytes));
+    StringRef Log(LogBytes.data(), LogBytes.size());
+    EXPECT_TRUE(Log.contains("[parallel compile: 3 jobs, ")) << Log.str();
+    EXPECT_TRUE(Log.contains(" threads, in-process]")) << Log.str();
+    EXPECT_TRUE(Log.contains("Pass execution timing report")) << Log.str();
+  };
+
+  std::string Exe = Dir.file("timing_exe");
+  StringRef Args[] = {"-O0", "-ftime-report"};
+  ASSERT_TRUE(compileLinkMulti(Dir, Paths, Args, Exe));
+  CheckTimingLog();
+  std::string Output;
+  EXPECT_EQ(runExeCapture(Dir, Exe, Output), 0);
+
+  std::string LLVMExe = Dir.file("llvm_timing_exe");
+  StringRef LLVMArgs[] = {"-O0", "-mllvm", "-time-passes"};
+  ASSERT_TRUE(compileLinkMulti(Dir, Paths, LLVMArgs, LLVMExe));
+  CheckTimingLog();
+  Output.clear();
+  EXPECT_EQ(runExeCapture(Dir, LLVMExe, Output), 0);
 }
 
 // A module that, beyond heavy .text, defines a cross-module-referenced
@@ -13118,19 +13282,27 @@ TEST(MergeParallelCodegenStrict,
   ASSERT_FALSE(OutRef.empty());
 
   std::string ExeLto = Dir.file("exe_lto");
+  std::string CacheDir = Dir.file("lto-cache");
+  ASSERT_FALSE(sys::fs::create_directory(CacheDir));
+  ASSERT_EQ(countLTOCacheEntries(CacheDir), 0u);
   {
     // Strict OFF (CI sets it globally, so explicitly unset for the duration)
-    // so the forced failure is allowed to fall back; caches OFF so the
-    // partitioned merge path is really entered and then forced to fail.
+    // so the forced failure is allowed to fall back.  Both cache layers are
+    // enabled in a fresh directory: only the validated serial fallback may be
+    // committed, never the partition objects rejected by the forced failure.
     ScopedUnsetEnv NoStrict("NEVERC_PCG_STRICT");
     ScopedEnv ForceFail("NEVERC_PCG_FORCE_MERGE_FAIL", "1");
-    ScopedEnv NoCache("NEVERC_LTO_CACHE", "0");
-    ScopedEnv NoPCache("NEVERC_LTO_PCACHE", "0");
+    ScopedEnv CacheDirectory(linker::ltoCacheDirEnvVar, CacheDir.c_str());
+    ScopedEnv CacheEnabled(linker::ltoCacheEnvVar, "1");
+    ScopedEnv PartitionCacheEnabled(linker::ltoPartitionCacheEnvVar, "1");
     StringRef LtoArgs[] = {"-O2"};
     ASSERT_TRUE(compileLinkMulti(Dir, Srcs, LtoArgs, ExeLto))
         << "auto-LTO link did not recover via serial codegen when the merge "
            "was forced to fail — the safety net is broken";
   }
+  EXPECT_EQ(countLTOCacheEntries(CacheDir), 1u)
+      << "forced merge failure may cache only the valid full-link serial "
+         "fallback result, not eager partition entries";
   std::string OutLto;
   ASSERT_EQ(runExeCapture(Dir, ExeLto, OutLto), 0)
       << "serial-fallback executable did not exit cleanly";

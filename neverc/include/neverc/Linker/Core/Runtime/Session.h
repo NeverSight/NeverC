@@ -15,6 +15,7 @@
 
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "llvm/Support/StringSaver.h"
 #include <map>
 #include <memory>
@@ -32,6 +33,9 @@ namespace linker {
 struct SpecificAllocBase;
 
 class CommonLinkerContext {
+private:
+  neverc::ResourceSessionView ResourceSession;
+
 public:
   CommonLinkerContext();
   virtual ~CommonLinkerContext();
@@ -46,6 +50,9 @@ public:
   }
   bool parallelEnabled() const { return ParallelPool != nullptr; }
   llvm::ThreadPool *parallelPool() const { return ParallelPool.get(); }
+  neverc::ResourceSessionView resourceSession() const {
+    return ResourceSession;
+  }
   unsigned workerSlotForCurrentThread();
   SpecificAllocBase *
   getOrCreateWorkerAllocator(const void *Tag, size_t Size, size_t Alignment,
@@ -60,6 +67,7 @@ public:
 
 private:
   CommonLinkerContext *PreviousContext = nullptr;
+  unsigned PreviousWorkerSlot = 0;
   bool Finalized = false;
   std::mutex WorkerMutex;
   std::map<std::thread::id, unsigned> WorkerSlots;
@@ -79,6 +87,7 @@ public:
   ~LinkerContextGuard();
 
 private:
+  neverc::ResourceSessionScope ResourceScope;
   CommonLinkerContext *Previous = nullptr;
   unsigned PreviousWorkerSlot = 0;
 };

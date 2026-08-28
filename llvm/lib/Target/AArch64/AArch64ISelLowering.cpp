@@ -7823,7 +7823,7 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
     }
 
     if (VA.isRegLoc()) {
-      if (Outs[i].Flags.isReturned() && Outs[i].VT == MVT::i64) {
+      if (i == 0 && Flags.isReturned() && Outs[0].VT == MVT::i64) {
         assert(VA.getLocVT() == MVT::i64 &&
                "unexpected calling convention register assignment");
         assert(!Ins.empty() && Ins[0].VT == MVT::i64 &&

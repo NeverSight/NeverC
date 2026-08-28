@@ -1,4 +1,5 @@
 #include "Linker/Core/Driver/Dispatcher.h"
+#include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Error.h"
@@ -10,6 +11,8 @@ namespace linker {
 int dispatchLink(ArrayRef<DriverDef> Drivers, Flavor RequestedFlavor,
                  ArrayRef<const char *> Args, raw_ostream &Stdout,
                  raw_ostream &Stderr, const LinkerDriverConfig &Config) {
+  auto ResourceSession = neverc::ProcessResourceBroker::global().acquireSession(
+      neverc::ResourcePhase::LinkParseResolve);
   bool Success = false;
   auto Finish = make_scope_exit([&] {
     if (Config.executionHooks)
@@ -21,8 +24,8 @@ int dispatchLink(ArrayRef<DriverDef> Drivers, Flavor RequestedFlavor,
       Stderr << "neverc: error: linker hooks have no typed request\n";
       return 1;
     }
-    auto Result = Config.executionHooks->execute(
-        *Config.executionRequest, Config, Stdout, Stderr);
+    auto Result = Config.executionHooks->execute(*Config.executionRequest,
+                                                 Config, Stdout, Stderr);
     if (!Result) {
       Stderr << "neverc: error: linker hook failed: "
              << toString(Result.takeError()) << "\n";

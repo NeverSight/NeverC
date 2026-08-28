@@ -110,6 +110,7 @@ std::vector<InputFile *> BitcodeCompiler::compile() {
 
   runLTOWithCache(*ltoObj, cacheKey, cacheUsable, *ctx.config.driverCfg,
                   ltoCacheBackendTag, emitAddrsig, buf);
+  ltoObj.reset();
 
   const auto &D = *ctx.config.driverCfg;
   std::vector<InputFile *> ret;

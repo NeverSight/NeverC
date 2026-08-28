@@ -27,6 +27,7 @@
 #include "llvm/Support/thread.h"
 
 #if LLVM_ON_UNIX
+#include <sys/mman.h>
 #include <unistd.h>
 #endif
 #include <condition_variable>
@@ -39,10 +40,16 @@ using namespace linker;
 // Pre-fault mapped output buffer
 //===----------------------------------------------------------------------===//
 
-void linker::prefaultBuffer(uint8_t *buf, size_t size) {
-#if defined(__unix__) || defined(__APPLE__)
+void linker::prefaultBuffer(uint8_t *buf, size_t size, bool fileBacked) {
+#if LLVM_ON_UNIX
   if (!buf || size == 0)
     return;
+#if defined(MADV_HUGEPAGE)
+  if (fileBacked)
+    (void)::madvise(buf, size, MADV_HUGEPAGE);
+#else
+  (void)fileBacked;
+#endif
   static const size_t pageSize = [] {
     long p = ::sysconf(_SC_PAGESIZE);
     return p > 0 ? static_cast<size_t>(p) : size_t(4096);
@@ -58,6 +65,7 @@ void linker::prefaultBuffer(uint8_t *buf, size_t size) {
 #else
   (void)buf;
   (void)size;
+  (void)fileBacked;
 #endif
 }
 

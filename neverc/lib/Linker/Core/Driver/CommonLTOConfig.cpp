@@ -1,11 +1,11 @@
 #include "Linker/Core/Driver/CommonLTOConfig.h"
+#include "Backend/ParallelCodeGenMergeInternal.h"
 #include "Linker/Core/Driver/ArgList.h"
 #include "Linker/Core/Driver/CodegenFlags.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Driver/LTOCache.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "neverc/Emit/AndroidKernelKCFI.h"
-#include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
 #include "neverc/Emit/NvkKernelRuntimeLinker.h"
 #include "neverc/Foundation/AndroidKernelRuntimeContract.h"
 #include "neverc/Plugin/Host/IROptimizationProvider.h"
@@ -17,6 +17,7 @@
 #include "neverc/Transforms/XorStr/EncryptCallStringsPass.h"
 #include "neverc/Transforms/XorStr/XorStrCleanupPass.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
@@ -61,6 +62,73 @@ struct LTOPluginContext {
   }
 };
 
+// LLVM's command-line registry contains code-generation and optimization
+// options that are read long after lto::Config is constructed.  Own one exact
+// option profile for the complete lifetime of the LTO engine instead of only
+// serializing the parse.  Registration must happen before the snapshot so a
+// first-ever LTO invocation can restore those lazily registered options too.
+class LTOGlobalOptionProfile {
+public:
+  explicit LTOGlobalOptionProfile(const linker::LinkerDriverConfig &Cfg)
+      : RegistrationLease(neverc::plugin::pluginLLVMOptionGate()) {
+    static llvm::codegen::RegisterCodeGenFlags CodeGenFlags;
+    (void)CodeGenFlags;
+
+    Snapshot.emplace(neverc::plugin::pluginLLVMOptionGate());
+
+    SmallVector<const char *, 16> Argv;
+    Argv.reserve(Cfg.mllvmOpts.size() + 2);
+    Argv.push_back("neverc");
+    Argv.push_back("-enable-linkonceodr-outlining");
+    for (const std::string &Option : Cfg.mllvmOpts)
+      Argv.push_back(Option.c_str());
+    cl::ResetAllOptionOccurrences();
+    cl::ParseCommandLineOptions(static_cast<int>(Argv.size()), Argv.data());
+  }
+
+  LTOGlobalOptionProfile(const LTOGlobalOptionProfile &) = delete;
+  LTOGlobalOptionProfile &operator=(const LTOGlobalOptionProfile &) = delete;
+
+private:
+  // Members destruct in reverse order: restore the registry while the outer
+  // lease is still held, then release the gate.
+  neverc::plugin::PluginLLVMOptionExclusiveLease RegistrationLease;
+  std::optional<neverc::plugin::PluginLLVMOptionSnapshot> Snapshot;
+};
+
+struct LTOHostContext {
+  explicit LTOHostContext(const linker::LinkerDriverConfig &Cfg)
+      : OptionProfile(Cfg),
+        PCGTuning(neverc::overlayOccurredParallelCodeGenTuning(
+            Cfg.parallelCodeGenTuning)),
+        PipelineTuning(llvm::overlayOccurredNevercPipelineTuningOptions(
+            Cfg.ltoPipelineTuning)),
+        ResolvedSCEVHugeExprThreshold(PCGTuning.SCEVHugeExprThreshold != 0
+                                          ? PCGTuning.SCEVHugeExprThreshold
+                                          : llvm::getScevHugeExprThreshold()) {}
+
+  ~LTOHostContext() {
+    // BackendDoneHook covers normal codegen, but cache hits and pre-backend
+    // exits do not reach it.  finish() is idempotent, so this is the complete
+    // lifetime fallback while the LLVM option profile is still installed.
+    if (Plugin)
+      Plugin->finish();
+  }
+
+  // Declaration order is part of the lifetime contract: parse and install the
+  // complete raw LLVM option profile first, freeze the occurred PCG overlay
+  // second, then construct plugin state. Destruction runs in reverse, so the
+  // plugin dies before the option snapshot is restored and the lease released.
+  LTOGlobalOptionProfile OptionProfile;
+  const neverc::ParallelCodeGenTuning PCGTuning;
+  const llvm::NevercPipelineTuningOptions PipelineTuning;
+  // Resolve PCG's zero sentinel while OptionProfile still owns the parsed
+  // process-global option lease. Every later serial, partition, cache-hit, and
+  // nested-codegen context receives this exact value.
+  const unsigned ResolvedSCEVHugeExprThreshold;
+  std::shared_ptr<LTOPluginContext> Plugin;
+};
+
 NevercIROptimizationLevel pluginOptimizationLevel(unsigned Level) {
   switch (Level) {
   case 0:
@@ -83,7 +151,9 @@ bool linker::ltoBasicBlockSectionsIsListFile(StringRef BBS) {
 lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
                                     DiagnosticHandlerFunction DiagHandler,
                                     bool EmitAddrsig) {
+  auto HostContext = std::make_shared<LTOHostContext>(Cfg);
   lto::Config c;
+  c.HostContext = HostContext;
 
   // Fast path: build TargetOptions directly from LinkerDriverConfig
   // without reading cl::opt globals.  Only fall back to the cl::opt-based
@@ -142,6 +212,22 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
         [&](StringRef Feature) { c.MAttrs.push_back(Feature.str()); });
   }
 
+  // The combined LTO module owns a request-specific LLVMContext. Install the
+  // already-resolved policy before any IPO/codegen pipeline is constructed;
+  // Inliner and LoopUnroll read only this context snapshot during execution.
+  const auto InstallPipelineTuning =
+      [PipelineTuning = HostContext->PipelineTuning,
+       ResolvedSCEVHugeExprThreshold =
+           HostContext->ResolvedSCEVHugeExprThreshold](const Module &M) {
+        M.getContext().setNevercPipelineTuningOptions(PipelineTuning);
+        M.getContext().setNevercSCEVHugeExpressionThreshold(
+            ResolvedSCEVHugeExprThreshold);
+      };
+  c.PreOptModuleHook = [InstallPipelineTuning](unsigned, const Module &M) {
+    InstallPipelineTuning(M);
+    return true;
+  };
+
   // An Android kernel link may consume precompiled full-LTO inputs.  If none
   // of them were compiled in Android kernel mode, the merged module has no
   // profile flag and the otherwise idempotent KCFI finalizer would treat it as
@@ -156,7 +242,8 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
           "Android kernel LTO input is missing the profile contract; "
           "recompile it with -fandroid-kernel-driver-mode");
     };
-    c.PreOptModuleHook = [](unsigned, const Module &M) {
+    c.PreOptModuleHook = [InstallPipelineTuning](unsigned, const Module &M) {
+      InstallPipelineTuning(M);
       if (neverc::Emit::AndroidKernel::getContract(M))
         return true;
       linker::error("Android kernel LTO input is missing the profile contract; "
@@ -174,7 +261,9 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
     if (!Task) {
       error("failed to create LTO plugin task: " + toString(Task.takeError()));
     } else {
-      PluginContext = std::make_shared<LTOPluginContext>();
+      HostContext->Plugin = std::make_shared<LTOPluginContext>();
+      PluginContext = std::shared_ptr<LTOPluginContext>(
+          HostContext, HostContext->Plugin.get());
       PluginContext->Task =
           std::shared_ptr<neverc::plugin::PluginTaskContext>(std::move(*Task));
 
@@ -194,10 +283,10 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
       } else {
         PluginContext->MIRPasses = std::move(*MIRPlan);
         if (!PluginContext->MIRPasses->empty())
-          c.MachinePassHooks = PluginContext->MIRPasses;
+          c.MachinePassHooks = std::shared_ptr<MachinePipelineHooks>(
+              HostContext, PluginContext->MIRPasses.get());
       }
-      c.HostContext = PluginContext;
-      c.ModuleOptimizeHook = [PluginContext, OptLevel,
+      c.ModuleOptimizeHook = [PluginContext, OptLevel, InstallPipelineTuning,
                               AndroidKernelModule = Cfg.androidKernelModule,
                               XorStrKeySeed = Cfg.xorStrKeySeed,
                               EncryptCallStrings = Cfg.encryptCallStrings,
@@ -243,6 +332,10 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
           ModuleValue = (*Runtime)->releaseOwnedModule();
         if (!ModuleValue)
           return false;
+        // A provider may publish a module backed by a different LLVMContext.
+        // Reinstall the immutable request snapshot before either its builtin
+        // continuation or deferred fallback constructs ScalarEvolution.
+        InstallPipelineTuning(*ModuleValue);
         if (RequiredAndroidContract) {
           const std::optional<neverc::Emit::AndroidKernel::Contract>
               PublishedContract =
@@ -354,7 +447,7 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
                            NEVERC_PHASE_IR_PASS_PRE_CODEGEN_LOW},
                           PluginLevel);
     };
-    c.PreOptPassHook = [AddPreOpt,
+    c.PreOptPassHook = [PluginContext, AddPreOpt,
                         AddNvkWholeModuleLowering](ModulePassManager &MPM) {
       AddPreOpt(MPM);
       // Semantic lowering stays on the intact module.  This also catches NVK
@@ -362,7 +455,7 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
       AddNvkWholeModuleLowering(MPM);
     };
     c.PostOptPassHook =
-        [AddOptimizerLast, AddPostOpt, AddNvkWholeModuleLowering,
+        [PluginContext, AddOptimizerLast, AddPostOpt, AddNvkWholeModuleLowering,
          AddPostOptimizationFinalPasses](ModulePassManager &MPM) {
           AddOptimizerLast(MPM);
           AddPostOpt(MPM);
@@ -412,26 +505,35 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
     };
     pcgCache->Store = ltoPartitionCacheStore;
   }
-  c.ParallelCodeGenHook = [pcgCache,
+  c.ParallelCodeGenHook = [HostContext, pcgCache,
                            PluginContext](Module &M, TargetMachine &TM,
                                           raw_pwrite_stream &OS, unsigned NP) {
+    // LLVM passes ltoPartitions as a hook-enablement sentinel. NeverC derives
+    // the real deterministic partition count from the frozen request policy.
+    (void)NP;
     if (PluginContext && PluginContext->MIRPasses &&
         PluginContext->MIRPasses->requiresSerialCodeGen())
       return false;
-    return neverc::runParallelCodeGen(M, TM, neverc::ParallelCodeGenOutputs{OS},
-                                      NP, pcgCache.get());
+    return neverc::runParallelCodeGenWithTunings(
+        M, TM, neverc::ParallelCodeGenOutputs{OS}, HostContext->PCGTuning,
+        HostContext->PipelineTuning, pcgCache.get(),
+        HostContext->ResolvedSCEVHugeExprThreshold);
   };
-  c.ParallelOptCodeGenHook = [pcgCache, PluginContext,
+  c.ParallelOptCodeGenHook = [HostContext, pcgCache, PluginContext,
                               ParallelHooks](Module &M, TargetMachine &TM,
                                              raw_pwrite_stream &OS, unsigned NP,
                                              unsigned OL) {
+    // See ParallelCodeGenHook: NP selects the hook, not NeverC's partition
+    // count. Both hooks consume the same immutable per-LTO tuning snapshot.
+    (void)NP;
     if (PluginContext && PluginContext->MIRPasses &&
         PluginContext->MIRPasses->requiresSerialCodeGen())
       return false;
     const neverc::ParallelOptimizationHooks *Hooks = ParallelHooks.get();
-    return neverc::runParallelOptAndCodeGen(M, TM,
-                                            neverc::ParallelCodeGenOutputs{OS},
-                                            NP, OL, pcgCache.get(), Hooks);
+    return neverc::runParallelOptAndCodeGenWithTunings(
+        M, TM, neverc::ParallelCodeGenOutputs{OS}, OL, HostContext->PCGTuning,
+        HostContext->PipelineTuning, pcgCache.get(), Hooks,
+        /*Observers=*/nullptr, HostContext->ResolvedSCEVHugeExprThreshold);
   };
   c.LTOParallelOpt = true;
 

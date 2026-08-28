@@ -105,6 +105,26 @@ LLVMContext::LLVMContext() : pImpl(new LLVMContextImpl(*this)) {
 
 LLVMContext::~LLVMContext() { delete pImpl; }
 
+const NevercPipelineTuningOptions &
+LLVMContext::getNevercPipelineTuningOptions() const {
+  return pImpl->NevercPipelineTuning;
+}
+
+void LLVMContext::setNevercPipelineTuningOptions(
+    const NevercPipelineTuningOptions &Tuning) {
+  pImpl->NevercPipelineTuning = Tuning;
+}
+
+std::optional<unsigned>
+LLVMContext::getNevercSCEVHugeExpressionThreshold() const {
+  return pImpl->NevercSCEVHugeExpressionThreshold;
+}
+
+void LLVMContext::setNevercSCEVHugeExpressionThreshold(
+    std::optional<unsigned> Threshold) {
+  pImpl->NevercSCEVHugeExpressionThreshold = Threshold;
+}
+
 void LLVMContext::addModule(Module *M) { pImpl->OwnedModules.insert(M); }
 
 void LLVMContext::removeModule(Module *M) { pImpl->OwnedModules.erase(M); }

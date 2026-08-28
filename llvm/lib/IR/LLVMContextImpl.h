@@ -39,6 +39,7 @@
 #include "llvm/IR/Value.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/NevercPipelineTuning.h"
 #include "llvm/Support/StringSaver.h"
 #include <algorithm>
 #include <cassert>
@@ -1408,6 +1409,9 @@ public:
 
 class LLVMContextImpl {
 public:
+  NevercPipelineTuningOptions NevercPipelineTuning;
+  std::optional<unsigned> NevercSCEVHugeExpressionThreshold;
+
   /// OwnedModules - The set of modules instantiated in this context, and which
   /// will be automatically deleted if this context is deleted.
   SmallPtrSet<Module *, 4> OwnedModules;

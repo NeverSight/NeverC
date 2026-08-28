@@ -78,6 +78,7 @@ private:
   void computeContentHash();
 
   std::unique_ptr<FileOutputBuffer> &buffer;
+  bool outputBufferIsFileBacked = false;
 
   void addRelIpltSymbols();
   void addStartEndSymbols();
@@ -2349,16 +2350,19 @@ template <class ELFT> void OutputWriter<ELFT>::allocateOutputBuffer() {
     return;
   }
 
-  unsigned flags = FileOutputBuffer::F_executable;
+  unsigned flags =
+      FileOutputBuffer::F_executable | FileOutputBuffer::F_preallocate;
   if (!config->mmapOutputFile)
     flags |= FileOutputBuffer::F_no_mmap;
 
   Expected<std::unique_ptr<FileOutputBuffer>> bufferOrErr =
-      FileOutputBuffer::create(config->outputFile, fileSize, flags);
+      FileOutputBuffer::createWithFileBacking(config->outputFile, fileSize,
+                                              flags, outputBufferIsFileBacked);
 
   if (!bufferOrErr) {
     unlinkAsync(config->outputFile);
-    bufferOrErr = FileOutputBuffer::create(config->outputFile, fileSize, flags);
+    bufferOrErr = FileOutputBuffer::createWithFileBacking(
+        config->outputFile, fileSize, flags, outputBufferIsFileBacked);
   }
 
   if (!bufferOrErr) {
@@ -2369,7 +2373,7 @@ template <class ELFT> void OutputWriter<ELFT>::allocateOutputBuffer() {
   buffer = std::move(*bufferOrErr);
   elfOut().bufferStart = buffer->getBufferStart();
 
-  prefaultBuffer(elfOut().bufferStart, fileSize);
+  prefaultBuffer(elfOut().bufferStart, fileSize, outputBufferIsFileBacked);
 }
 
 template <class ELFT> void OutputWriter<ELFT>::writeSectionsBinary() {
@@ -2516,7 +2520,7 @@ template <class ELFT> void OutputWriter<ELFT>::computeContentHash() {
         [](uint8_t *dest, ArrayRef<uint8_t> arr) {
           write64le(dest, xxh3_64bits(arr));
         },
-        /*releaseChunkPages=*/true);
+        /*releaseChunkPages=*/outputBufferIsFileBacked);
     break;
   case BuildIdStyle::Md5:
     computeHash(
@@ -2524,7 +2528,7 @@ template <class ELFT> void OutputWriter<ELFT>::computeContentHash() {
         [&](uint8_t *dest, ArrayRef<uint8_t> arr) {
           memcpy(dest, BLAKE3::hash<16>(arr).data(), hashSize);
         },
-        /*releaseChunkPages=*/true);
+        /*releaseChunkPages=*/outputBufferIsFileBacked);
     break;
   case BuildIdStyle::Sha1:
     computeHash(
@@ -2532,7 +2536,7 @@ template <class ELFT> void OutputWriter<ELFT>::computeContentHash() {
         [&](uint8_t *dest, ArrayRef<uint8_t> arr) {
           memcpy(dest, BLAKE3::hash<20>(arr).data(), hashSize);
         },
-        /*releaseChunkPages=*/true);
+        /*releaseChunkPages=*/outputBufferIsFileBacked);
     break;
   case BuildIdStyle::Uuid:
     if (int ec = llvm::getRandomBytes(buildId.get(), hashSize))

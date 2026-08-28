@@ -21,6 +21,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/Memory.h"
+#include "llvm/Support/NevercPipelineTuning.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/Signals.h"
@@ -232,6 +233,7 @@ void twine_print_formatv_repr_to_stream(raw_ostream &OS,
 
 namespace cl {
 void initCommonOptions() {
+  llvm::detail::anchorNevercPipelineTuningOptions();
   *CommonOptions;
   initDebugCounterOptions();
   initGraphWriterOptions();

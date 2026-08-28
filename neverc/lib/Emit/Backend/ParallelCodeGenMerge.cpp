@@ -1,5 +1,6 @@
-#include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
+#include "Backend/ParallelCodeGenMergeInternal.h"
 #include "neverc/Foundation/Builtin/XorStrNames.h"
+#include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "neverc/Merge/Merger.h"
 
 #include "llvm/ADT/DenseMap.h"
@@ -41,6 +42,7 @@
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/thread.h"
 
 #include <atomic>
@@ -56,6 +58,29 @@
 using namespace llvm;
 
 namespace neverc {
+
+void accumulateParallelCodeGenWorkEstimate(
+    ParallelCodeGenWorkEstimate &Estimate, std::uint64_t InstructionWeight,
+    std::uint64_t LoopCount) {
+  Estimate.InstructionWeight =
+      llvm::SaturatingAdd(Estimate.InstructionWeight, InstructionWeight);
+  Estimate.LoopCount = llvm::SaturatingAdd(Estimate.LoopCount, LoopCount);
+}
+
+std::uint64_t
+scoreParallelCodeGenWork(const ParallelCodeGenWorkEstimate &Estimate,
+                         unsigned WeightDiv, unsigned LoopDiv) {
+  if (WeightDiv != 0 && LoopDiv != 0)
+    return std::max(
+        llvm::SaturatingMultiply(Estimate.InstructionWeight,
+                                 std::uint64_t(LoopDiv)),
+        llvm::SaturatingMultiply(Estimate.LoopCount, std::uint64_t(WeightDiv)));
+  if (WeightDiv != 0)
+    return Estimate.InstructionWeight;
+  if (LoopDiv != 0)
+    return Estimate.LoopCount;
+  return 0;
+}
 
 namespace {
 
@@ -81,20 +106,26 @@ bool containsXorStrSupport(const Module &M) {
 // optimization path and get *enough* partitions to actually spread the SCEV
 // work across cores.
 //
-// Every knob is exposed for -mllvm tuning and CI bisection.  Correctness is
-// independent of all of them: any partition count produces a byte-correct merge
-// (the independent verifier + serial-codegen fallback + NEVERC_PCG_STRICT
-// tripwire guarantee it), so these only trade compile wall-time, never output.
+// Every knob is exposed for -mllvm tuning and CI bisection.  The engagement and
+// partition knobs may alter object layout, while the IndVar/SCEV bounds may
+// alter optimized code shape. Only the final three worker-sizing knobs are
+// scheduling-only. All 14 are therefore frozen per request before PCG starts.
 static llvm::cl::opt<unsigned> PcgMinFuncs(
-    "neverc-pcg-min-funcs", llvm::cl::init(8), llvm::cl::Hidden,
+    ParallelCodeGenTuningOptionSpelling::MinDefinedFunctions,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::MinDefinedFunctions),
+    llvm::cl::Hidden,
     llvm::cl::desc("Minimum number of defined functions in a merged LTO module "
                    "before parallel codegen is considered"));
 static llvm::cl::opt<unsigned> PcgWeightFloor(
-    "neverc-pcg-weight-floor", llvm::cl::init(10000), llvm::cl::Hidden,
+    ParallelCodeGenTuningOptionSpelling::MinInstructionWeight,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::MinInstructionWeight),
+    llvm::cl::Hidden,
     llvm::cl::desc("Engage parallel codegen when the post-IPO instruction "
                    "count reaches this floor"));
 static llvm::cl::opt<unsigned> PcgLoopFloor(
-    "neverc-pcg-loop-floor", llvm::cl::init(56), llvm::cl::Hidden,
+    ParallelCodeGenTuningOptionSpelling::MinLoopCount,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::MinLoopCount),
+    llvm::cl::Hidden,
     llvm::cl::desc(
         "Engage parallel codegen when the module's loop (back-edge) "
         "count reaches this floor, even if the instruction count is "
@@ -102,29 +133,42 @@ static llvm::cl::opt<unsigned> PcgLoopFloor(
         "SCEV-superlinear and benefit from parallelism despite a low "
         "instruction count (0 = disable the loop signal)"));
 static llvm::cl::opt<unsigned> PcgOptWeightDiv(
-    "neverc-pcg-opt-weight-div", llvm::cl::init(12000), llvm::cl::Hidden,
+    ParallelCodeGenTuningOptionSpelling::OptInstructionsPerPartition,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::OptInstructionsPerPartition),
+    llvm::cl::Hidden,
     llvm::cl::desc("Parallel opt+codegen: one partition per this many "
                    "instructions"));
 static llvm::cl::opt<unsigned> PcgOptLoopDiv(
-    "neverc-pcg-opt-loop-div", llvm::cl::init(16), llvm::cl::Hidden,
+    ParallelCodeGenTuningOptionSpelling::OptLoopsPerPartition,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::OptLoopsPerPartition),
+    llvm::cl::Hidden,
     llvm::cl::desc("Parallel opt+codegen: one partition per this many loops "
                    "(back-edges); takes the max with the instruction-based "
                    "count so loop-dense modules get more partitions "
                    "(0 = disable)"));
 static llvm::cl::opt<unsigned> PcgOptMaxParts(
-    "neverc-pcg-opt-max-parts", llvm::cl::init(16), llvm::cl::Hidden,
+    ParallelCodeGenTuningOptionSpelling::OptMaxPartitions,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::OptMaxPartitions),
+    llvm::cl::Hidden,
     llvm::cl::desc("Parallel opt+codegen: maximum partition count"));
 static llvm::cl::opt<unsigned> PcgCgWeightDiv(
-    "neverc-pcg-cg-weight-div", llvm::cl::init(5000), llvm::cl::Hidden,
+    ParallelCodeGenTuningOptionSpelling::CodeGenInstructionsPerPartition,
+    llvm::cl::init(
+        ParallelCodeGenTuningDefaults::CodeGenInstructionsPerPartition),
+    llvm::cl::Hidden,
     llvm::cl::desc("Parallel codegen-only: one partition per this many "
                    "instructions"));
 static llvm::cl::opt<unsigned> PcgCgLoopDiv(
-    "neverc-pcg-cg-loop-div", llvm::cl::init(0), llvm::cl::Hidden,
+    ParallelCodeGenTuningOptionSpelling::CodeGenLoopsPerPartition,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::CodeGenLoopsPerPartition),
+    llvm::cl::Hidden,
     llvm::cl::desc("Parallel codegen-only: one partition per this many loops "
                    "(0 = disable; codegen is not SCEV-bound so the loop signal "
                    "is off by default here)"));
 static llvm::cl::opt<unsigned> PcgCgMaxParts(
-    "neverc-pcg-cg-max-parts", llvm::cl::init(16), llvm::cl::Hidden,
+    ParallelCodeGenTuningOptionSpelling::CodeGenMaxPartitions,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::CodeGenMaxPartitions),
+    llvm::cl::Hidden,
     llvm::cl::desc(
         "Parallel codegen-only: maximum partition count.  A fixed "
         "ceiling (not the host core count) so the partition count -- "
@@ -141,7 +185,8 @@ static llvm::cl::opt<unsigned> PcgCgMaxParts(
 // universally. Setting 31 is the diagnosed pathological-workload mode: the
 // inliner stops at 32 loops, so 32 is the first shape it must cover.
 static llvm::cl::opt<unsigned> PcgIndVarWidenMaxFunctionLoops(
-    "neverc-auto-lto-indvars-widen-max-function-loops", llvm::cl::init(0),
+    ParallelCodeGenTuningOptionSpelling::IndVarWidenMaxFunctionLoops,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::IndVarWidenMaxFunctionLoops),
     llvm::cl::Hidden,
     llvm::cl::desc(
         "Auto-LTO only: disable IndVarSimplify IV widening for functions "
@@ -157,35 +202,14 @@ static llvm::cl::opt<unsigned> PcgIndVarWidenMaxFunctionLoops(
 // code shape, but a fixed setting remains deterministic and never affects
 // partition count or assignment. Zero leaves ScalarEvolution's own default.
 static llvm::cl::opt<unsigned> PcgScevHugeExprThreshold(
-    "neverc-auto-lto-scev-huge-expr-threshold", llvm::cl::init(64),
+    ParallelCodeGenTuningOptionSpelling::SCEVHugeExprThreshold,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::SCEVHugeExprThreshold),
     llvm::cl::Hidden,
     llvm::cl::desc("Auto-LTO only: SCEV huge-expression node threshold applied "
-                   "during per-partition optimization to bound superlinear "
-                   "ScalarEvolution simplification on whole-program functions "
+                   "throughout the parallel optimization pipeline to bound "
+                   "superlinear ScalarEvolution simplification on "
+                   "whole-program functions "
                    "(0 = leave ScalarEvolution's default)"));
-
-// RAII: tighten ScalarEvolution's huge-expression threshold for the lifetime of
-// the per-partition optimization phase, then restore it.  Set on the driver
-// thread before the workers start and restored after they join, so the workers
-// (which only ever read the threshold) never observe it changing -- no race.
-// Because the value is established before any worker runs and is identical for
-// all of them, it cannot make the output depend on thread scheduling.
-struct ScevHugeThresholdGuard {
-  unsigned Saved = 0;
-  bool Active;
-  explicit ScevHugeThresholdGuard(unsigned NewVal) : Active(NewVal != 0) {
-    if (Active) {
-      Saved = llvm::getScevHugeExprThreshold();
-      llvm::setScevHugeExprThreshold(NewVal);
-    }
-  }
-  ~ScevHugeThresholdGuard() {
-    if (Active)
-      llvm::setScevHugeExprThreshold(Saved);
-  }
-  ScevHugeThresholdGuard(const ScevHugeThresholdGuard &) = delete;
-  ScevHugeThresholdGuard &operator=(const ScevHugeThresholdGuard &) = delete;
-};
 
 // Worker-pool work proportioning (execution parallelism only; see
 // pcgWorkerThreads / pcgWorkCapThreads).  A light parallel workload is
@@ -205,20 +229,26 @@ struct ScevHugeThresholdGuard {
 // workload that does need parallelism is never starved); NEVERC_PCG_THREADS
 // overrides everything.
 static llvm::cl::opt<unsigned> PcgLoopsPerThread(
-    "neverc-pcg-loops-per-thread", llvm::cl::init(96), llvm::cl::Hidden,
+    ParallelCodeGenTuningOptionSpelling::LoopsPerWorker,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::LoopsPerWorker),
+    llvm::cl::Hidden,
     llvm::cl::desc(
         "Auto-LTO parallel opt: target loop (back-edge) count per "
         "worker thread; the pool is sized to the module's loop work "
         "and clamped to the performance-core count "
         "(0 = disable work proportioning, use the full core count)"));
 static llvm::cl::opt<unsigned> PcgWeightPerThread(
-    "neverc-pcg-weight-per-thread", llvm::cl::init(10000), llvm::cl::Hidden,
+    ParallelCodeGenTuningOptionSpelling::InstructionsPerWorker,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::InstructionsPerWorker),
+    llvm::cl::Hidden,
     llvm::cl::desc("Auto-LTO parallel opt: target instruction count per worker "
                    "thread; taken as the max with the loop-based estimate so a "
                    "loop-light but instruction-heavy module still gets enough "
                    "threads for its codegen"));
 static llvm::cl::opt<unsigned> PcgWorkThreadFloor(
-    "neverc-pcg-work-thread-floor", llvm::cl::init(6), llvm::cl::Hidden,
+    ParallelCodeGenTuningOptionSpelling::MinWorkerThreads,
+    llvm::cl::init(ParallelCodeGenTuningDefaults::MinWorkerThreads),
+    llvm::cl::Hidden,
     llvm::cl::desc("Auto-LTO parallel opt: minimum worker threads work "
                    "proportioning may choose (still clamped by the partition "
                    "count) so a parallel-worthy workload is never starved"));
@@ -267,12 +297,15 @@ unsigned pcgPerformanceCoreCount() {
 // output -- depend on the host or on scheduling.  Returns the larger of the
 // loop- and instruction-based estimates, floored so a parallel-worthy module is
 // never starved; the caller clamps it down to the performance-core ceiling.
-unsigned pcgWorkCapThreads(unsigned LoopCount, unsigned TotalWeight) {
-  if (PcgLoopsPerThread == 0)
+unsigned pcgWorkCapThreads(unsigned LoopCount, unsigned TotalWeight,
+                           const ParallelCodeGenTuning &Tuning) {
+  if (Tuning.LoopsPerWorker == 0)
     return 0; // work proportioning disabled -> caller uses the full core count
-  unsigned ByLoops = LoopCount / PcgLoopsPerThread;
-  unsigned ByWeight = PcgWeightPerThread ? TotalWeight / PcgWeightPerThread : 0;
-  return std::max({ByLoops, ByWeight, (unsigned)PcgWorkThreadFloor});
+  unsigned ByLoops = LoopCount / Tuning.LoopsPerWorker;
+  unsigned ByWeight = Tuning.InstructionsPerWorker
+                          ? TotalWeight / Tuning.InstructionsPerWorker
+                          : 0;
+  return std::max({ByLoops, ByWeight, Tuning.MinWorkerThreads});
 }
 
 unsigned pcgWorkerThreads(unsigned NumPartitions, unsigned WorkCap) {
@@ -303,8 +336,7 @@ unsigned pcgWorkerThreads(unsigned NumPartitions, unsigned WorkCap) {
   return std::min(N, NumPartitions);
 }
 
-bool mergePartitionObjects(const Triple &TT,
-                           ArrayRef<SmallVector<char, 0>> Bufs,
+bool mergePartitionObjects(const Triple &TT, ArrayRef<StringRef> Bufs,
                            SmallVectorImpl<char> &Output,
                            const merge::Options &Opts = {}) {
   using namespace neverc::merge;
@@ -342,7 +374,8 @@ std::optional<merge::Format> mergeFormatForTriple(const Triple &TT) {
 
 struct FuncEntry {
   Function *Fn;
-  unsigned Weight;
+  std::uint64_t Weight;
+  std::uint64_t LoopCount;
 };
 
 struct LinkageEntry {
@@ -415,15 +448,43 @@ struct PreparedPartition {
   SmallVector<char, 0> *ObjBuf = nullptr;
   SmallVector<char, 0> *DwoBuf = nullptr;
   /// Partition cache entry key; empty when caching is off or the key
-  /// could not be computed.  Set by preparePartitions on a miss, consumed
-  /// by the codegen worker to store the produced object.
+  /// could not be computed.  Set by preparePartitions on a miss and retained
+  /// for the coordinator to consume only after aggregate validation succeeds.
   std::string CacheKey;
+  /// Newly optimized bitcode staged for the whole-module cache mode.  Cache
+  /// hits leave this empty; the coordinator commits it only after reassembly,
+  /// verification, and final parallel codegen all succeed.
+  SmallVector<char, 0> PendingOptimizedIR;
   /// The cache payload is already optimized bitcode.  The worker still owns
   /// this partition for reassembly, but must not replay its optimization or
   /// plugin callbacks.
   bool SkipOptimization = false;
   PreparedPartition() = default;
+
+  void releaseTargetMachine() { PTM.reset(); }
+
+  void releaseIRAndTarget() {
+    // Module owns values uniqued by its LLVMContext, while pass configuration
+    // may retain TargetMachine analyses until its manager is destroyed. Callers
+    // invoke this only after those managers have left scope, in this order.
+    M.reset();
+    PTM.reset();
+    Ctx.reset();
+  }
 };
+
+static void releaseSmallVectorStorage(SmallVectorImpl<char> &Buffer) {
+  if (Buffer.capacity() == 0)
+    return;
+  // SmallVector's move constructor intentionally ignores an empty source,
+  // even when that source still owns remote storage. Make the steal path
+  // unambiguous, then let Retired free the allocation at scope exit.
+  if (Buffer.empty())
+    Buffer.push_back(0);
+  SmallVector<char, 0> Retired(std::move(Buffer));
+  assert(Buffer.empty() && Buffer.capacity() == 0 &&
+         "moved-from SmallVector must release remote storage");
+}
 
 // ===----------------------------------------------------------------------===
 // Module-wide constructs
@@ -549,7 +610,92 @@ static void stripUnreferencedDeclarations(Module &M) {
       GV.eraseFromParent();
 }
 
+static bool eagerlyReclaimPCGIntermediates() {
+  const char *Value = ::getenv("NEVERC_PCG_BENCH_EAGER_RECLAIM");
+  if (!Value || StringRef(Value) == "1")
+    return true;
+  if (StringRef(Value) == "0")
+    return false;
+  report_fatal_error(
+      "neverc: NEVERC_PCG_BENCH_EAGER_RECLAIM must be either 0 or 1",
+      /*gen_crash_diag=*/false);
+}
+
+/// Fully resolved policy for one public PCG request. A tuning value of zero
+/// inherits LLVM's ambient SCEV setting, so resolve that sentinel exactly once
+/// before any worker or nested final-codegen context exists.
+struct ParallelCodeGenRequestSnapshot {
+  const ParallelCodeGenTuning Tuning;
+  const NevercPipelineTuningOptions PipelineTuning;
+  const unsigned ResolvedSCEVHugeExprThreshold;
+  const bool EagerReclaim;
+  const ResourceSessionView ResourceSession;
+
+  explicit ParallelCodeGenRequestSnapshot(
+      const ParallelCodeGenTuning &RequestTuning,
+      const NevercPipelineTuningOptions &RequestPipelineTuning,
+      std::optional<unsigned> ResolvedThreshold = std::nullopt)
+      : Tuning(RequestTuning), PipelineTuning(RequestPipelineTuning),
+        ResolvedSCEVHugeExprThreshold(
+            ResolvedThreshold ? *ResolvedThreshold
+                              : (RequestTuning.SCEVHugeExprThreshold != 0
+                                     ? RequestTuning.SCEVHugeExprThreshold
+                                     : llvm::getScevHugeExprThreshold())),
+        EagerReclaim(eagerlyReclaimPCGIntermediates()),
+        ResourceSession(currentResourceSession()) {
+    assert((!ResolvedThreshold || RequestTuning.SCEVHugeExprThreshold == 0 ||
+            RequestTuning.SCEVHugeExprThreshold == *ResolvedThreshold) &&
+           "resolved SCEV threshold disagrees with explicit request tuning");
+  }
+};
+
+static void
+installRequestTuning(LLVMContext &Context,
+                     const ParallelCodeGenRequestSnapshot &Request) {
+  Context.setNevercPipelineTuningOptions(Request.PipelineTuning);
+  Context.setNevercSCEVHugeExpressionThreshold(
+      Request.ResolvedSCEVHugeExprThreshold);
+}
+
+static std::string
+buildParallelCodeGenPipeTag(StringRef Base,
+                            const ParallelCodeGenRequestSnapshot &Request,
+                            std::optional<unsigned> OptLevel = std::nullopt) {
+  std::string Tag;
+  raw_string_ostream OS(Tag);
+  OS << Base << ";neverc-pcg-policy-v3";
+  if (OptLevel)
+    OS << ";OptLevel=" << *OptLevel;
+#define NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(Field, PcgVariable, Spelling,    \
+                                              Default)                         \
+  OS << ';' << #Field << '=' << Request.Tuning.Field;
+#include "neverc/Foundation/LangOpts/ParallelCodeGenTuning.def"
+#undef NEVERC_PARALLEL_CODEGEN_TUNING_OPTION
+  OS << ";ResolvedSCEVHugeExprThreshold="
+     << Request.ResolvedSCEVHugeExprThreshold;
+#define LLVM_NEVERC_PIPELINE_TUNING_OPTION(Type, Field, Option, Default,       \
+                                           Spelling, Description)              \
+  OS << ';' << #Field << '='                                                   \
+     << static_cast<std::int64_t>(Request.PipelineTuning.Field);
+#include "llvm/Support/NevercPipelineTuning.def"
+#undef LLVM_NEVERC_PIPELINE_TUNING_OPTION
+  OS.flush();
+  return Tag;
+}
+
 struct ParallelCGContext {
+  const ParallelCodeGenTuning Tuning;
+  const NevercPipelineTuningOptions PipelineTuning;
+  const unsigned ResolvedSCEVHugeExprThreshold;
+  const bool EagerReclaim;
+  const ResourceSessionView ResourceSession;
+
+  explicit ParallelCGContext(const ParallelCodeGenRequestSnapshot &Request)
+      : Tuning(Request.Tuning), PipelineTuning(Request.PipelineTuning),
+        ResolvedSCEVHugeExprThreshold(Request.ResolvedSCEVHugeExprThreshold),
+        EagerReclaim(Request.EagerReclaim),
+        ResourceSession(Request.ResourceSession) {}
+
   const Target *TheTarget;
   std::string TripleStr;
   Triple TT;
@@ -558,6 +704,13 @@ struct ParallelCGContext {
   unsigned LoopCount = 0;
   unsigned FuncCount = 0;
   unsigned NumPartitions = 0;
+  // The same request-local work model that chose NumPartitions also ranks the
+  // immutable worker queue. Neither divisor, the estimates, nor the order feed
+  // ownership, cache material, result indexing, or merge order.
+  unsigned ScheduleWeightDiv = 0;
+  unsigned ScheduleLoopDiv = 0;
+  SmallVector<ParallelCodeGenWorkEstimate, 8> PartitionWork;
+  SmallVector<unsigned, 8> ExecutionOrder;
   // Worker-pool ceiling this module's parallel work justifies; 0 = no
   // proportioning (the codegen-only path, which does not estimate work).  Set
   // by the opt+codegen path after the work signals are known; consumed by every
@@ -591,21 +744,44 @@ struct ParallelCGContext {
 
   std::unique_ptr<TargetLibraryInfoImpl> SharedTLII;
   std::vector<std::unique_ptr<PreparedPartition>> Parts;
+  std::atomic<unsigned> LivePreparedPartitions{0};
+  std::atomic<unsigned> MaxLivePreparedPartitions{0};
 
   /// Optional per-partition object cache (linker-injected) and the
   /// pipeline tag distinguishing the two public entry points, whose
   /// outputs differ for identical partition bitcode.
   const PartitionCacheHooks *Cache = nullptr;
+  std::string PipeTagStorage;
   StringRef PipeTag;
   bool CacheStoresOptimizedIR = false;
 
   bool init(Module &Mod, TargetMachine &TM, bool WithSplitDwarf);
   bool resolvePartitions(unsigned WeightDiv, unsigned LoopDiv,
                          unsigned MaxParts);
+  void buildExecutionOrder();
   bool externalizeAndSerialize(Module &Mod);
-  void preparePartitions(StringRef BCRef, TargetMachine &TM);
+  void
+  preparePartitions(StringRef BCRef, TargetMachine &TM,
+                    const ParallelCodeGenObservers *Observers,
+                    const std::function<void(unsigned, PreparedPartition &)>
+                        &ProcessPreparedPartition = {},
+                    ResourcePhase GrantPhase = ResourcePhase::PCGPrepare,
+                    ParallelCodeGenWorkerPhase WorkerPhase =
+                        ParallelCodeGenWorkerPhase::Prepare);
+  void notePreparedPartitionLive();
+  void notePreparedPartitionReleased();
+  void releaseFullBitcode();
+  void releaseObjectBuffers();
+  void releaseSplitDwarfBuffers();
+  void releasePendingOptimizedIRBuffers();
+  ParallelCodeGenRetentionSnapshot retentionSnapshot() const;
+  void observeRetention(const ParallelCodeGenObservers *Observers,
+                        ParallelCodeGenRetentionPoint Point) const;
   std::unique_ptr<Module> reassembleOptimizedPartitions(Module &Mod);
-  bool finalizeResults(Module &Mod, ParallelCodeGenOutputs Outputs);
+  void commitObjectCacheEntries() const;
+  void commitOptimizedIRCacheEntries() const;
+  bool finalizeResults(Module &Mod, ParallelCodeGenOutputs Outputs,
+                       const ParallelCodeGenObservers *Observers);
   void restoreLinkage(Module &Mod);
 };
 
@@ -646,12 +822,16 @@ bool ParallelCGContext::init(Module &Mod, TargetMachine &TM,
   for (auto &F : Mod)
     if (!F.isDeclaration()) {
       unsigned W = 0;
-      for (auto &BB : F)
+      std::uint64_t ScheduleWeight = 0;
+      for (auto &BB : F) {
         W += BB.size();
-      TotalWeight += W;
-      FuncList.push_back({&F, W});
+        ScheduleWeight =
+            llvm::SaturatingAdd(ScheduleWeight, std::uint64_t(BB.size()));
+      }
       BackEdges.clear();
       FindFunctionBackedges(F, BackEdges);
+      TotalWeight += W;
+      FuncList.push_back({&F, ScheduleWeight, std::uint64_t(BackEdges.size())});
       LoopCount += BackEdges.size();
     }
   FuncCount = FuncList.size();
@@ -660,10 +840,10 @@ bool ParallelCGContext::init(Module &Mod, TargetMachine &TM,
   // (LoopCount).  The loop floor catches SCEV-superlinear modules whose
   // instruction count alone would (wrongly) decline parallelism and run the
   // expensive optimization serially.
-  if (FuncCount < PcgMinFuncs)
+  if (FuncCount < Tuning.MinDefinedFunctions)
     return false;
-  bool WeightOK = TotalWeight >= PcgWeightFloor;
-  bool LoopsOK = PcgLoopFloor != 0 && LoopCount >= PcgLoopFloor;
+  bool WeightOK = TotalWeight >= Tuning.MinInstructionWeight;
+  bool LoopsOK = Tuning.MinLoopCount != 0 && LoopCount >= Tuning.MinLoopCount;
   if (!WeightOK && !LoopsOK)
     return false;
 
@@ -682,8 +862,26 @@ bool ParallelCGContext::init(Module &Mod, TargetMachine &TM,
   return true;
 }
 
+void ParallelCGContext::notePreparedPartitionLive() {
+  const unsigned Live =
+      LivePreparedPartitions.fetch_add(1, std::memory_order_relaxed) + 1;
+  unsigned Previous = MaxLivePreparedPartitions.load(std::memory_order_relaxed);
+  while (Previous < Live && !MaxLivePreparedPartitions.compare_exchange_weak(
+                                Previous, Live, std::memory_order_relaxed,
+                                std::memory_order_relaxed)) {
+  }
+}
+
+void ParallelCGContext::notePreparedPartitionReleased() {
+  const unsigned Previous =
+      LivePreparedPartitions.fetch_sub(1, std::memory_order_relaxed);
+  assert(Previous != 0 && "prepared partition live count underflow");
+}
+
 bool ParallelCGContext::resolvePartitions(unsigned WeightDiv, unsigned LoopDiv,
                                           unsigned MaxParts) {
+  ScheduleWeightDiv = WeightDiv;
+  ScheduleLoopDiv = LoopDiv;
   // Desired partition count from the work estimate: the larger of the
   // instruction-based and loop-based counts.  Loops drive the superlinear SCEV
   // cost, so a loop-dense module gets more partitions than its instruction
@@ -723,6 +921,31 @@ bool ParallelCGContext::resolvePartitions(unsigned WeightDiv, unsigned LoopDiv,
     return false;
   Results.resize(NumPartitions);
   return true;
+}
+
+void ParallelCGContext::buildExecutionOrder() {
+  PartitionWork.clear();
+  PartitionWork.resize(NumPartitions);
+  for (const FuncEntry &FE : FuncList) {
+    auto It = FuncPartition.find(FE.Fn->getName());
+    assert(It != FuncPartition.end() &&
+           "every defined function must retain a final partition owner");
+    ParallelCodeGenWorkEstimate &Estimate = PartitionWork[It->second];
+    accumulateParallelCodeGenWorkEstimate(Estimate, FE.Weight, FE.LoopCount);
+  }
+
+  ExecutionOrder.clear();
+  ExecutionOrder.reserve(NumPartitions);
+  for (unsigned Partition = 0; Partition != NumPartitions; ++Partition)
+    ExecutionOrder.push_back(Partition);
+
+  llvm::sort(ExecutionOrder, [&](unsigned LHS, unsigned RHS) {
+    const std::uint64_t LHSScore = scoreParallelCodeGenWork(
+        PartitionWork[LHS], ScheduleWeightDiv, ScheduleLoopDiv);
+    const std::uint64_t RHSScore = scoreParallelCodeGenWork(
+        PartitionWork[RHS], ScheduleWeightDiv, ScheduleLoopDiv);
+    return LHSScore != RHSScore ? LHSScore > RHSScore : LHS < RHS;
+  });
 }
 
 bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
@@ -925,6 +1148,10 @@ bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
       for (auto &N : Assignments[p])
         FuncPartition[N] = p;
   }
+  // Assignment is now final, including empty-bin compaction. Build a separate
+  // permutation for execution only; every owner/result/cache slot remains
+  // indexed by the stable partition id above.
+  buildExecutionOrder();
 
   Mod.dropTriviallyDeadConstantArrays();
   // Every partition context reads this buffer with value names discarded, so
@@ -961,10 +1188,27 @@ bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
   return true;
 }
 
-void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
+void ParallelCGContext::preparePartitions(
+    StringRef BCRef, TargetMachine &TM,
+    const ParallelCodeGenObservers *Observers,
+    const std::function<void(unsigned, PreparedPartition &)>
+        &ProcessPreparedPartition,
+    ResourcePhase GrantPhase, ParallelCodeGenWorkerPhase WorkerPhase) {
   Parts.resize(NumPartitions);
-  unsigned PrepThreadCount = pcgWorkerThreads(NumPartitions, WorkerThreadCap);
-  std::atomic<unsigned> PrepNextPart{0};
+  const unsigned DesiredPrepThreadCount =
+      pcgWorkerThreads(NumPartitions, WorkerThreadCap);
+  ResourceWorkerGrant PrepGrant = ProcessResourceBroker::global().grantWorkers(
+      ResourceSession, GrantPhase, DesiredPrepThreadCount);
+  const unsigned PrepThreadCount = PrepGrant.workerCount();
+  if (Observers && Observers->ObserveResourceWorkerGrant)
+    Observers->ObserveResourceWorkerGrant(WorkerPhase, DesiredPrepThreadCount,
+                                          PrepThreadCount);
+  std::atomic<unsigned> PrepNextWork{0};
+  const bool ObserveClaims =
+      Observers && Observers->ObservePartitionExecutionOrder;
+  SmallVector<unsigned, 8> ClaimedOrder;
+  if (ObserveClaims)
+    ClaimedOrder.resize(ExecutionOrder.size());
   // Use llvm::thread, not std::thread: these workers run lazy bitcode
   // materialization and (in the opt path) the full optimization + codegen
   // pipeline, all of which recurse deeply (InstCombine, SCEV, value tracking,
@@ -978,17 +1222,25 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
   // thread.
   std::vector<llvm::thread> PrepWorkers;
   PrepWorkers.reserve(PrepThreadCount);
+  const ResourceSessionView WorkerSession = ResourceSession;
 
-  auto PrepWorker = [&]() {
+  auto PrepWorker = [&, WorkerSession]() {
+    ResourceSessionScope ResourceScope(WorkerSession);
     while (true) {
-      unsigned p = PrepNextPart.fetch_add(1, std::memory_order_relaxed);
-      if (p >= NumPartitions)
+      unsigned WorkIndex = PrepNextWork.fetch_add(1, std::memory_order_relaxed);
+      if (WorkIndex >= ExecutionOrder.size())
         break;
+      const unsigned p = ExecutionOrder[WorkIndex];
+      if (ObserveClaims)
+        ClaimedOrder[WorkIndex] = p;
       auto PP = std::make_unique<PreparedPartition>();
       PP->ObjBuf = &Results[p].ObjBuffer;
       if (EmitSplitDwarf)
         PP->DwoBuf = &Results[p].DwoBuffer;
       PP->Ctx = std::make_unique<LLVMContext>();
+      PP->Ctx->setNevercPipelineTuningOptions(PipelineTuning);
+      PP->Ctx->setNevercSCEVHugeExpressionThreshold(
+          ResolvedSCEVHugeExprThreshold);
       PP->Ctx->setDiscardValueNames(true);
       PP->Ctx->setDiagnosticHandler(
           std::make_unique<PartitionDiagnosticHandler>(Results[p]));
@@ -1203,6 +1455,9 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
           }
 
           auto CachedContext = std::make_unique<LLVMContext>();
+          CachedContext->setNevercPipelineTuningOptions(PipelineTuning);
+          CachedContext->setNevercSCEVHugeExpressionThreshold(
+              ResolvedSCEVHugeExprThreshold);
           CachedContext->setDiscardValueNames(true);
           CachedContext->setDiagnosticHandler(
               std::make_unique<PartitionDiagnosticHandler>(Results[p]));
@@ -1223,6 +1478,12 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
           }
         }
       }
+      notePreparedPartitionLive();
+      if (ProcessPreparedPartition) {
+        ProcessPreparedPartition(p, *PP);
+        assert(!PP->M && !PP->Ctx && !PP->PTM &&
+               "fused direct worker retained prepared state");
+      }
       Parts[p] = std::move(PP);
     }
   };
@@ -1230,6 +1491,71 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
     PrepWorkers.emplace_back(PrepWorker);
   for (auto &T : PrepWorkers)
     T.join();
+  if (ObserveClaims)
+    Observers->ObservePartitionExecutionOrder(WorkerPhase, ClaimedOrder);
+}
+
+void ParallelCGContext::releaseFullBitcode() {
+  if (!EagerReclaim)
+    return;
+  releaseSmallVectorStorage(FullBC);
+}
+
+void ParallelCGContext::releaseObjectBuffers() {
+  if (!EagerReclaim)
+    return;
+  for (PartitionResult &Result : Results)
+    releaseSmallVectorStorage(Result.ObjBuffer);
+}
+
+void ParallelCGContext::releaseSplitDwarfBuffers() {
+  if (!EagerReclaim)
+    return;
+  for (PartitionResult &Result : Results)
+    releaseSmallVectorStorage(Result.DwoBuffer);
+}
+
+void ParallelCGContext::releasePendingOptimizedIRBuffers() {
+  if (!EagerReclaim)
+    return;
+  for (const std::unique_ptr<PreparedPartition> &Part : Parts) {
+    if (!Part)
+      continue;
+    releaseSmallVectorStorage(Part->PendingOptimizedIR);
+  }
+}
+
+ParallelCodeGenRetentionSnapshot ParallelCGContext::retentionSnapshot() const {
+  ParallelCodeGenRetentionSnapshot Snapshot;
+  Snapshot.MaxLivePreparedPartitions =
+      MaxLivePreparedPartitions.load(std::memory_order_relaxed);
+  Snapshot.FullBitcodeCapacityBytes = FullBC.capacity();
+  auto AddCapacity = [](std::uint64_t &Total, std::size_t Capacity) {
+    Total = llvm::SaturatingAdd(Total, static_cast<std::uint64_t>(Capacity));
+  };
+  for (const std::unique_ptr<PreparedPartition> &Part : Parts) {
+    if (!Part)
+      continue;
+    Snapshot.LiveModules += Part->M != nullptr;
+    Snapshot.LiveContexts += Part->Ctx != nullptr;
+    Snapshot.LiveTargetMachines += Part->PTM != nullptr;
+    AddCapacity(Snapshot.PendingOptimizedIRCapacityBytes,
+                Part->PendingOptimizedIR.capacity());
+  }
+  for (const PartitionResult &Result : Results) {
+    AddCapacity(Snapshot.ObjectBufferCapacityBytes,
+                Result.ObjBuffer.capacity());
+    AddCapacity(Snapshot.SplitDwarfBufferCapacityBytes,
+                Result.DwoBuffer.capacity());
+  }
+  return Snapshot;
+}
+
+void ParallelCGContext::observeRetention(
+    const ParallelCodeGenObservers *Observers,
+    ParallelCodeGenRetentionPoint Point) const {
+  if (Observers && Observers->ObserveRetention)
+    Observers->ObserveRetention(Point, retentionSnapshot());
 }
 
 std::unique_ptr<Module>
@@ -1260,6 +1586,10 @@ ParallelCGContext::reassembleOptimizedPartitions(Module &Mod) {
       raw_svector_ostream Stream(Bitcode);
       WriteBitcodeToFile(*Parts[I]->M, Stream, false);
     }
+    if (EagerReclaim)
+      Parts[I]->releaseIRAndTarget();
+    if (EagerReclaim)
+      notePreparedPartitionReleased();
     auto Parsed = parseBitcodeFile(
         MemoryBufferRef(StringRef(Bitcode.data(), Bitcode.size()),
                         "lto-pcg-optimized"),
@@ -1318,8 +1648,43 @@ ParallelCGContext::reassembleOptimizedPartitions(Module &Mod) {
   return Combined;
 }
 
-bool ParallelCGContext::finalizeResults(Module &Mod,
-                                        ParallelCodeGenOutputs Outputs) {
+void ParallelCGContext::commitObjectCacheEntries() const {
+  if (!Cache || !Cache->enabled() || CacheStoresOptimizedIR || EmitSplitDwarf)
+    return;
+
+  for (unsigned I = 0; I != NumPartitions; ++I) {
+    // An object-cache hit leaves Parts[I] null: its bytes are valid merge input
+    // but are read-only and must not be stored again.
+    if (!Results[I].Success || !Parts[I])
+      continue;
+    const PreparedPartition &PP = *Parts[I];
+    const SmallVector<char, 0> &Artifact = Results[I].ObjBuffer;
+    if (PP.SkipOptimization || PP.CacheKey.empty() || Artifact.empty())
+      continue;
+    Cache->Store(PP.CacheKey, Artifact);
+  }
+}
+
+void ParallelCGContext::commitOptimizedIRCacheEntries() const {
+  if (!Cache || !Cache->enabled() || !CacheStoresOptimizedIR || EmitSplitDwarf)
+    return;
+
+  for (unsigned I = 0; I != NumPartitions; ++I) {
+    if (!Results[I].Success || !Parts[I])
+      continue;
+    const PreparedPartition &PP = *Parts[I];
+    // SkipOptimization identifies a usable optimized-IR cache hit.  The hit
+    // participates in reassembly but is never restaged or rewritten.
+    if (PP.SkipOptimization || PP.CacheKey.empty() ||
+        PP.PendingOptimizedIR.empty())
+      continue;
+    Cache->Store(PP.CacheKey, PP.PendingOptimizedIR);
+  }
+}
+
+bool ParallelCGContext::finalizeResults(
+    Module &Mod, ParallelCodeGenOutputs Outputs,
+    const ParallelCodeGenObservers *Observers) {
   bool Dbg = ::getenv("NEVERC_PCG_DEBUG") != nullptr;
 
   // Bail out of the parallel path *after* we have committed to it (the module
@@ -1395,9 +1760,17 @@ bool ParallelCGContext::finalizeResults(Module &Mod,
     // empty object, fall back (or, under strict mode, surface the anomaly).
     return bail("every partition succeeded but produced no object bytes");
 
-  SmallVector<SmallVector<char, 0>, 8> ObjectBufs;
-  for (unsigned i = 0; i < NumPartitions; ++i)
-    ObjectBufs.push_back(std::move(Results[i].ObjBuffer));
+  observeRetention(Observers, ParallelCodeGenRetentionPoint::BeforeObjectMerge);
+
+  // Keep the owning buffers in Results until the aggregate merge has been
+  // validated: they are both the merge inputs and the pending cache artifacts.
+  // StringRef views let the merger consume them without a copy or an early
+  // move that would destroy the pending payload.
+  SmallVector<StringRef, 8> ObjectBufs;
+  for (unsigned i = 0; i < NumPartitions; ++i) {
+    const SmallVector<char, 0> &Buf = Results[i].ObjBuffer;
+    ObjectBufs.emplace_back(Buf.data(), Buf.size());
+  }
 
   // A merge/verify failure must leave the module exactly as lto::backend's
   // serial fallback expects: every symbol externalized for cross-partition
@@ -1414,30 +1787,41 @@ bool ParallelCGContext::finalizeResults(Module &Mod,
   if (NonEmpty == 1 && !EmitSplitDwarf && !FinalizeDebugCompression) {
     // No cross-partition references exist, and this partition was already
     // compressed (if requested) by its object writer.
-    MergedObject = std::move(ObjectBufs[SingleIdx]);
+    commitObjectCacheEntries();
+    MergedObject = std::move(Results[SingleIdx].ObjBuffer);
   } else if (!mergePartitionObjects(TT, ObjectBufs, MergedObject, ObjectOpts)) {
     return bail("partition object merge/self-verify failed");
+  } else {
+    commitObjectCacheEntries();
   }
+  // Cache stores are synchronous; the validated aggregate now owns every byte
+  // needed by the caller and by split-DWARF pair verification.
+  releaseObjectBuffers();
 
   SmallVector<char, 0> DwarfPackage;
   if (EmitSplitDwarf) {
     if (!Outputs.DwarfPackage)
       return bail("split-DWARF mode has no destination stream");
 
-    SmallVector<SmallVector<char, 0>, 8> DwoBufs;
+    SmallVector<StringRef, 8> DwoBufs;
     unsigned NonEmptyDwo = 0;
     for (unsigned I = 0; I < NumPartitions; ++I) {
       NonEmptyDwo += !Results[I].DwoBuffer.empty();
-      DwoBufs.push_back(std::move(Results[I].DwoBuffer));
+      const SmallVector<char, 0> &Buf = Results[I].DwoBuffer;
+      DwoBufs.emplace_back(Buf.data(), Buf.size());
     }
     if (NonEmptyDwo == 0)
       return bail("every partition omitted its split-DWARF object");
+
+    observeRetention(Observers,
+                     ParallelCodeGenRetentionPoint::BeforeSplitDwarfMerge);
 
     merge::Options DwoOpts;
     DwoOpts.artifact = merge::ArtifactKind::SplitDwarf;
     DwoOpts.debugCompression = FinalDebugCompression;
     if (!mergePartitionObjects(TT, DwoBufs, DwarfPackage, DwoOpts))
       return bail("partition split-DWARF merge/self-verify failed");
+    releaseSplitDwarfBuffers();
 
     std::optional<merge::Format> Fmt = mergeFormatForTriple(TT);
     if (!Fmt)
@@ -1459,6 +1843,7 @@ bool ParallelCGContext::finalizeResults(Module &Mod,
   if (Dbg)
     errs() << "[pcg] SUCCESS: merged " << NonEmpty << " partition objects"
            << (EmitSplitDwarf ? " and split-DWARF contributions" : "") << "\n";
+  observeRetention(Observers, ParallelCodeGenRetentionPoint::Complete);
   return true;
 }
 
@@ -1482,6 +1867,27 @@ void ParallelCGContext::restoreLinkage(Module &Mod) {
 }
 
 } // namespace
+
+ParallelCodeGenTuning captureParallelCodeGenTuning() {
+  ParallelCodeGenTuning Captured;
+#define NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(Field, Variable, Spelling,       \
+                                              Default)                         \
+  Captured.Field = Variable.getValue();
+#include "neverc/Foundation/LangOpts/ParallelCodeGenTuning.def"
+#undef NEVERC_PARALLEL_CODEGEN_TUNING_OPTION
+  return Captured;
+}
+
+ParallelCodeGenTuning
+overlayOccurredParallelCodeGenTuning(ParallelCodeGenTuning Base) {
+#define NEVERC_PARALLEL_CODEGEN_TUNING_OPTION(Field, Variable, Spelling,       \
+                                              Default)                         \
+  if (Variable.getNumOccurrences() != 0)                                       \
+    Base.Field = Variable.getValue();
+#include "neverc/Foundation/LangOpts/ParallelCodeGenTuning.def"
+#undef NEVERC_PARALLEL_CODEGEN_TUNING_OPTION
+  return Base;
+}
 
 bool finalizeSplitDwarfArtifacts(const Triple &Target, ArrayRef<char> Object,
                                  ArrayRef<char> Dwo,
@@ -1598,11 +2004,14 @@ runSerialCodeGenAfterWholeModuleBarrier(Module &Mod, TargetMachine &TM,
   return true;
 }
 
-bool runParallelCodeGen(Module &Mod, TargetMachine &TM,
-                        ParallelCodeGenOutputs Outputs,
-                        unsigned /*NumPartitions*/,
-                        const PartitionCacheHooks *Cache) {
-  ParallelCGContext Ctx;
+static bool
+runParallelCodeGenImpl(Module &Mod, TargetMachine &TM,
+                       ParallelCodeGenOutputs Outputs,
+                       const ParallelCodeGenRequestSnapshot &Request,
+                       const PartitionCacheHooks *Cache,
+                       const ParallelCodeGenObservers *Observers) {
+  installRequestTuning(Mod.getContext(), Request);
+  ParallelCGContext Ctx(Request);
   if (!Ctx.init(Mod, TM, Outputs.DwarfPackage != nullptr))
     return false;
   // The partition cache stores only one object image. A cache hit in fission
@@ -1611,84 +2020,215 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM,
   if (Ctx.Cache && Ctx.Cache->BypassForUnseededXorStr &&
       (Ctx.Cache->AutomaticXorStrEnabled || containsXorStrSupport(Mod)))
     Ctx.Cache = nullptr;
-  Ctx.PipeTag = "p-cg";
+  Ctx.PipeTagStorage = buildParallelCodeGenPipeTag("p-cg", Request);
+  Ctx.PipeTag = Ctx.PipeTagStorage;
 
-  if (!Ctx.resolvePartitions(/*WeightDiv=*/PcgCgWeightDiv,
-                             /*LoopDiv=*/PcgCgLoopDiv,
-                             /*MaxParts=*/PcgCgMaxParts))
+  if (!Ctx.resolvePartitions(
+          /*WeightDiv=*/Ctx.Tuning.CodeGenInstructionsPerPartition,
+          /*LoopDiv=*/Ctx.Tuning.CodeGenLoopsPerPartition,
+          /*MaxParts=*/Ctx.Tuning.CodeGenMaxPartitions))
     return false;
+  if (Observers && Observers->ObserveResolvedFinalCodeGenSCEVThreshold)
+    Observers->ObserveResolvedFinalCodeGenSCEVThreshold(
+        Ctx.ResolvedSCEVHugeExprThreshold);
 
   if (!Ctx.externalizeAndSerialize(Mod))
     return false;
-  StringRef BCRef(Ctx.FullBC.data(), Ctx.FullBC.size());
-  Ctx.preparePartitions(BCRef, TM);
+  // externalizeAndSerialize removes empty name-hash bins. Report the count
+  // only after that compaction so "final" agrees with Parts, Results, and the
+  // execution-order observations that follow.
+  if (Observers && Observers->ObserveResolvedFinalCodeGenPartitions)
+    Observers->ObserveResolvedFinalCodeGenPartitions(Ctx.NumPartitions);
+  {
+    StringRef BCRef(Ctx.FullBC.data(), Ctx.FullBC.size());
+    Ctx.preparePartitions(BCRef, TM, Observers);
+  }
+  // materializeAll() consumed and destroyed every lazy reader before the
+  // prepare workers joined, so no partition references the shared bitcode.
+  Ctx.releaseFullBitcode();
+  if (Observers && Observers->ObserveFinalCodeGenPartitionPipelineTuning) {
+    for (unsigned Partition = 0; Partition != Ctx.Parts.size(); ++Partition) {
+      const std::unique_ptr<PreparedPartition> &Part = Ctx.Parts[Partition];
+      if (Part && Part->Ctx)
+        Observers->ObserveFinalCodeGenPartitionPipelineTuning(
+            Partition, Part->Ctx->getNevercPipelineTuningOptions());
+    }
+  }
+  Ctx.observeRetention(Observers, ParallelCodeGenRetentionPoint::AfterPrepare);
 
   {
     // Codegen-only path: no per-partition optimization runs here, so leave
     // WorkerThreadCap at 0 (no work proportioning) and use the full P-core/HW
     // pool -- codegen is the cheap half and is not the over-threading risk the
     // proportioning targets.
-    unsigned ThreadCount =
+    const unsigned DesiredThreadCount =
         pcgWorkerThreads(Ctx.NumPartitions, Ctx.WorkerThreadCap);
-    std::atomic<unsigned> NextPart{0};
+    ResourceWorkerGrant WorkerGrant =
+        ProcessResourceBroker::global().grantWorkers(
+            Ctx.ResourceSession, ResourcePhase::PCGCodeGen, DesiredThreadCount);
+    const unsigned ThreadCount = WorkerGrant.workerCount();
+    if (Observers && Observers->ObserveResourceWorkerGrant)
+      Observers->ObserveResourceWorkerGrant(ParallelCodeGenWorkerPhase::CodeGen,
+                                            DesiredThreadCount, ThreadCount);
+    std::atomic<unsigned> NextWork{0};
+    const bool ObserveClaims =
+        Observers && Observers->ObservePartitionExecutionOrder;
+    SmallVector<unsigned, 8> ClaimedOrder;
+    if (ObserveClaims)
+      ClaimedOrder.resize(Ctx.ExecutionOrder.size());
     // llvm::thread (DefaultStackSize: 8 MiB Linux/macOS, 64 MiB Windows), not
     // std::thread (512 KiB on macOS): see the rationale in preparePartitions --
     // the codegen/opt pipeline recurses deeply and overflows a small stack on
     // adversarial IR.
     std::vector<llvm::thread> Workers;
     Workers.reserve(ThreadCount);
-    auto Worker = [&]() {
+    const ResourceSessionView WorkerSession = Ctx.ResourceSession;
+    auto Worker = [&, WorkerSession]() {
+      ResourceSessionScope ResourceScope(WorkerSession);
       while (true) {
-        unsigned p = NextPart.fetch_add(1, std::memory_order_relaxed);
-        if (p >= Ctx.NumPartitions)
+        unsigned WorkIndex = NextWork.fetch_add(1, std::memory_order_relaxed);
+        if (WorkIndex >= Ctx.ExecutionOrder.size())
           break;
+        const unsigned p = Ctx.ExecutionOrder[WorkIndex];
+        if (ObserveClaims)
+          ClaimedOrder[WorkIndex] = p;
         if (!Ctx.Parts[p])
           continue;
         auto &PP = *Ctx.Parts[p];
         raw_svector_ostream ObjOS(*PP.ObjBuf);
         SmallVector<char, 0> UnusedDwo;
         raw_svector_ostream DwoOS(PP.DwoBuf ? *PP.DwoBuf : UnusedDwo);
-        legacy::PassManager PM;
+        bool CanEmit = true;
         {
-          std::lock_guard<std::mutex> Lock(PassConfigMutex);
-          PM.add(createTargetTransformInfoWrapperPass(
-              PP.PTM->getTargetIRAnalysis()));
-          PM.add(new TargetLibraryInfoWrapperPass(*Ctx.SharedTLII));
-          if (PP.PTM->addPassesToEmitFile(PM, ObjOS,
-                                          PP.DwoBuf ? &DwoOS : nullptr,
-                                          CodeGenFileType::ObjectFile, true))
-            continue;
+          legacy::PassManager PM;
+          {
+            std::lock_guard<std::mutex> Lock(PassConfigMutex);
+            PM.add(createTargetTransformInfoWrapperPass(
+                PP.PTM->getTargetIRAnalysis()));
+            PM.add(new TargetLibraryInfoWrapperPass(*Ctx.SharedTLII));
+            CanEmit = !PP.PTM->addPassesToEmitFile(
+                PM, ObjOS, PP.DwoBuf ? &DwoOS : nullptr,
+                CodeGenFileType::ObjectFile, true);
+          }
+          if (CanEmit)
+            PM.run(*PP.M);
         }
-        PM.run(*PP.M);
         // A recorded error condemns whatever the pipeline went on to produce,
         // however finished the object looks.
-        Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
-        if (Ctx.Results[p].Success && Ctx.Cache && !PP.CacheKey.empty())
-          Ctx.Cache->Store(PP.CacheKey, *PP.ObjBuf);
+        if (CanEmit)
+          Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
+        if (Ctx.EagerReclaim)
+          PP.releaseIRAndTarget();
+        if (Ctx.EagerReclaim)
+          Ctx.notePreparedPartitionReleased();
       }
     };
     for (unsigned i = 0; i < ThreadCount; ++i)
       Workers.emplace_back(Worker);
     for (auto &T : Workers)
       T.join();
+    if (ObserveClaims)
+      Observers->ObservePartitionExecutionOrder(
+          ParallelCodeGenWorkerPhase::CodeGen, ClaimedOrder);
+  }
+  Ctx.observeRetention(
+      Observers, ParallelCodeGenRetentionPoint::AfterPartitionWorkReclaim);
+
+  return Ctx.finalizeResults(Mod, Outputs, Observers);
+}
+
+bool runParallelCodeGenWithTunings(
+    Module &Mod, TargetMachine &TM, ParallelCodeGenOutputs Outputs,
+    const ParallelCodeGenTuning &Tuning,
+    const NevercPipelineTuningOptions &PipelineTuning,
+    const PartitionCacheHooks *Cache,
+    std::optional<unsigned> ResolvedSCEVHugeExprThreshold,
+    const ParallelCodeGenObservers *Observers) {
+  auto ResourcePermit = ProcessResourceBroker::global().acquireSession(
+      ResourcePhase::PCGCodeGen, ResourceAdmissionMode::DoNotWait);
+  const ParallelCodeGenRequestSnapshot Request(Tuning, PipelineTuning,
+                                               ResolvedSCEVHugeExprThreshold);
+  installRequestTuning(Mod.getContext(), Request);
+  return runParallelCodeGenImpl(Mod, TM, Outputs, Request, Cache, Observers);
+}
+
+bool runParallelCodeGenWithTuning(Module &Mod, TargetMachine &TM,
+                                  ParallelCodeGenOutputs Outputs,
+                                  const ParallelCodeGenTuning &Tuning,
+                                  const PartitionCacheHooks *Cache,
+                                  const ParallelCodeGenObservers *Observers) {
+  std::optional<unsigned> ContextSCEVThreshold;
+  if (Tuning.SCEVHugeExprThreshold == 0)
+    ContextSCEVThreshold =
+        Mod.getContext().getNevercSCEVHugeExpressionThreshold();
+  return runParallelCodeGenWithTunings(
+      Mod, TM, Outputs, Tuning,
+      Mod.getContext().getNevercPipelineTuningOptions(), Cache,
+      ContextSCEVThreshold, Observers);
+}
+
+bool runParallelCodeGen(Module &Mod, TargetMachine &TM,
+                        ParallelCodeGenOutputs Outputs,
+                        unsigned /*NumPartitions*/,
+                        const PartitionCacheHooks *Cache) {
+  return runParallelCodeGenWithTunings(
+      Mod, TM, Outputs, captureParallelCodeGenTuning(),
+      captureNevercPipelineTuningOptions(), Cache);
+}
+
+struct WholeModulePipelineState {
+  LoopAnalysisManager LAM;
+  FunctionAnalysisManager FAM;
+  CGSCCAnalysisManager CGAM;
+  ModuleAnalysisManager MAM;
+  PassInstrumentationCallbacks PIC;
+  StandardInstrumentations SI;
+  PassBuilder PB;
+  ModulePassManager MPM;
+
+  WholeModulePipelineState(Module &Mod, TargetMachine &TM,
+                           const PipelineTuningOptions &PTO,
+                           TargetLibraryInfoImpl &SharedTLII,
+                           const ParallelOptimizationHooks &Hooks)
+      : SI(Mod.getContext(), false, false), PB(&TM, PTO, std::nullopt, &PIC) {
+    SI.registerCallbacks(PIC, &MAM);
+    FAM.registerPass(
+        [TLII = &SharedTLII] { return TargetLibraryAnalysis(*TLII); });
+    PB.registerModuleAnalyses(MAM);
+    PB.registerCGSCCAnalyses(CGAM);
+    PB.registerFunctionAnalyses(FAM);
+    PB.registerLoopAnalyses(LAM);
+    PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+    Hooks.WholeModulePostOpt(MPM);
+    MPM.addPass(VerifierPass());
   }
 
-  return Ctx.finalizeResults(Mod, Outputs);
-}
+  void run(Module &Mod) { MPM.run(Mod, MAM); }
+};
 
 // ===----------------------------------------------------------------------===
 // Public API: parallel optimization + codegen
 // ===----------------------------------------------------------------------===
 
-bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
-                              ParallelCodeGenOutputs Outputs,
-                              unsigned /*NumPartitions*/, unsigned OptLevel,
-                              const PartitionCacheHooks *Cache,
-                              const ParallelOptimizationHooks *Hooks) {
+bool runParallelOptAndCodeGenWithTunings(
+    Module &Mod, TargetMachine &TM, ParallelCodeGenOutputs Outputs,
+    unsigned OptLevel, const ParallelCodeGenTuning &Tuning,
+    const NevercPipelineTuningOptions &PipelineTuning,
+    const PartitionCacheHooks *Cache, const ParallelOptimizationHooks *Hooks,
+    const ParallelCodeGenObservers *Observers,
+    std::optional<unsigned> ResolvedSCEVHugeExprThreshold) {
+  auto ResourcePermit = ProcessResourceBroker::global().acquireSession(
+      ResourcePhase::PCGOptCodeGen, ResourceAdmissionMode::DoNotWait);
+  const ParallelCodeGenRequestSnapshot Request(Tuning, PipelineTuning,
+                                               ResolvedSCEVHugeExprThreshold);
+  installRequestTuning(Mod.getContext(), Request);
   if (OptLevel == 0)
     return false;
 
-  ParallelCGContext Ctx;
+  const unsigned NormalizedOptLevel = OptLevel >= 3 ? 3 : OptLevel;
+
+  ParallelCGContext Ctx(Request);
   if (!Ctx.init(Mod, TM, Outputs.DwarfPackage != nullptr)) {
     if (::getenv("NEVERC_PCG_DEBUG"))
       errs() << "[pcg] p-opt declined (FuncCount=" << Ctx.FuncCount
@@ -1707,18 +2247,23 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
   if (Ctx.Cache && Ctx.Cache->BypassForUnseededXorStr &&
       (Ctx.Cache->AutomaticXorStrEnabled || containsXorStrSupport(Mod)))
     Ctx.Cache = nullptr;
-  Ctx.PipeTag = NeedsWholeModuleBarrier ? "p-opt-ir-v1" : "p-opt";
+  Ctx.PipeTagStorage = buildParallelCodeGenPipeTag(
+      NeedsWholeModuleBarrier ? "p-opt-ir-v2" : "p-opt-v2", Request,
+      NormalizedOptLevel);
+  Ctx.PipeTag = Ctx.PipeTagStorage;
 
-  if (!Ctx.resolvePartitions(/*WeightDiv=*/PcgOptWeightDiv,
-                             /*LoopDiv=*/PcgOptLoopDiv,
-                             /*MaxParts=*/PcgOptMaxParts))
+  if (!Ctx.resolvePartitions(
+          /*WeightDiv=*/Ctx.Tuning.OptInstructionsPerPartition,
+          /*LoopDiv=*/Ctx.Tuning.OptLoopsPerPartition,
+          /*MaxParts=*/Ctx.Tuning.OptMaxPartitions))
     return false;
   // Size the worker pool to the parallel work this module justifies (loop- and
   // instruction-driven), clamped to the performance-core ceiling inside
   // pcgWorkerThreads.  Set before prepare so prepare and opt/codegen agree.
   // Pure compile-wall-time knob: the cap feeds only thread counts, never the
   // partition count or assignment, so the merged object stays byte-identical.
-  Ctx.WorkerThreadCap = pcgWorkCapThreads(Ctx.LoopCount, Ctx.TotalWeight);
+  Ctx.WorkerThreadCap =
+      pcgWorkCapThreads(Ctx.LoopCount, Ctx.TotalWeight, Ctx.Tuning);
 
   if (::getenv("NEVERC_PCG_DEBUG"))
     errs() << "[pcg] p-opt engaged: FuncCount=" << Ctx.FuncCount
@@ -1727,15 +2272,10 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
            << " NumPartitions=" << Ctx.NumPartitions
            << " WorkerThreadCap=" << Ctx.WorkerThreadCap
            << " WholeModuleBarrier=" << (NeedsWholeModuleBarrier ? "yes" : "no")
-           << "\n";
-
-  if (!Ctx.externalizeAndSerialize(Mod))
-    return false;
-  StringRef BCRef(Ctx.FullBC.data(), Ctx.FullBC.size());
-  Ctx.preparePartitions(BCRef, TM);
+           << " EagerReclaim=" << (Ctx.EagerReclaim ? "yes" : "no") << "\n";
 
   OptimizationLevel OL;
-  switch (OptLevel) {
+  switch (NormalizedOptLevel) {
   case 1:
     OL = OptimizationLevel::O1;
     break;
@@ -1748,108 +2288,168 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
   }
 
   PipelineTuningOptions SharedPTO;
-  SharedPTO.LoopUnrolling = OptLevel >= 2;
-  SharedPTO.LoopInterleaving = OptLevel >= 2;
-  SharedPTO.LoopVectorization = OptLevel >= 2;
-  SharedPTO.SLPVectorization = OptLevel >= 2;
+  SharedPTO.LoopUnrolling = NormalizedOptLevel >= 2;
+  SharedPTO.LoopInterleaving = NormalizedOptLevel >= 2;
+  SharedPTO.LoopVectorization = NormalizedOptLevel >= 2;
+  SharedPTO.SLPVectorization = NormalizedOptLevel >= 2;
   SharedPTO.CallGraphProfile = false;
   SharedPTO.NevercFastIPO = true;
-  SharedPTO.NevercIndVarWidenMaxFunctionLoops = PcgIndVarWidenMaxFunctionLoops;
+  SharedPTO.NevercIndVarWidenMaxFunctionLoops =
+      Ctx.Tuning.IndVarWidenMaxFunctionLoops;
 
-  // Bound SCEV's huge-expression cost for every partition's optimization (see
-  // PcgScevHugeExprThreshold).  Established here, before any worker starts, and
-  // restored when this guard leaves scope after the workers below have joined.
-  ScevHugeThresholdGuard ScevGuard(PcgScevHugeExprThreshold);
+  auto ProcessPartition = [&](unsigned p, PreparedPartition &PP) {
+    auto &MPart = *PP.M;
+    MPart.getContext().setNevercPipelineTuningOptions(Ctx.PipelineTuning);
+    MPart.getContext().setNevercSCEVHugeExpressionThreshold(
+        Ctx.ResolvedSCEVHugeExprThreshold);
 
-  // Phase 2: per-partition optimization + codegen.
+    if (!PP.SkipOptimization) {
+      LoopAnalysisManager LAM;
+      FunctionAnalysisManager FAM;
+      CGSCCAnalysisManager CGAM;
+      ModuleAnalysisManager MAM;
+      PassInstrumentationCallbacks PIC;
+      StandardInstrumentations SI(MPart.getContext(), false, false);
+      SI.registerCallbacks(PIC, &MAM);
+      PassBuilder PB(PP.PTM.get(), SharedPTO, std::nullopt, &PIC);
+      if (Hooks && Hooks->ConfigurePassBuilder)
+        Hooks->ConfigurePassBuilder(PB);
+      FAM.registerPass([&] { return TargetLibraryAnalysis(*Ctx.SharedTLII); });
+      PB.registerModuleAnalyses(MAM);
+      PB.registerCGSCCAnalyses(CGAM);
+      PB.registerFunctionAnalyses(FAM);
+      PB.registerLoopAnalyses(LAM);
+      PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+      ModulePassManager MPM;
+      if (Hooks && Hooks->PreOpt)
+        Hooks->PreOpt(MPM);
+      MPM.addPass(PB.buildModuleOptimizationPipeline(
+          OL, ThinOrFullLTOPhase::FullLTOPostLink));
+      if (Hooks && Hooks->PostOpt)
+        Hooks->PostOpt(MPM);
+      MPM.run(MPart, MAM);
+    }
+
+    if (NeedsWholeModuleBarrier) {
+      Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
+      if (Ctx.Results[p].Success && Ctx.Cache && !PP.CacheKey.empty() &&
+          !PP.SkipOptimization) {
+        raw_svector_ostream Stream(PP.PendingOptimizedIR);
+        WriteBitcodeToFile(MPart, Stream, false);
+      }
+      if (Ctx.EagerReclaim)
+        PP.releaseTargetMachine();
+      return;
+    }
+
+    raw_svector_ostream ObjOS(*PP.ObjBuf);
+    SmallVector<char, 0> UnusedDwo;
+    raw_svector_ostream DwoOS(PP.DwoBuf ? *PP.DwoBuf : UnusedDwo);
+    bool CanEmit = true;
+    {
+      legacy::PassManager PM;
+      {
+        std::lock_guard<std::mutex> Lock(PassConfigMutex);
+        PM.add(createTargetTransformInfoWrapperPass(
+            PP.PTM->getTargetIRAnalysis()));
+        PM.add(new TargetLibraryInfoWrapperPass(*Ctx.SharedTLII));
+        CanEmit = !PP.PTM->addPassesToEmitFile(
+            PM, ObjOS, PP.DwoBuf ? &DwoOS : nullptr,
+            CodeGenFileType::ObjectFile, true);
+      }
+      if (CanEmit)
+        PM.run(MPart);
+    }
+    // A recorded error condemns whatever the pipeline went on to produce,
+    // however finished the object looks.
+    if (CanEmit)
+      Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
+    if (Ctx.EagerReclaim) {
+      PP.releaseIRAndTarget();
+      Ctx.notePreparedPartitionReleased();
+    }
+  };
+
+  // The cold direct path has no cross-partition consumer between preparation
+  // and optimization/codegen. Keep each prepared state worker-local through
+  // its complete lifecycle instead of materializing every partition before
+  // any work can begin. Cache-bearing and whole-module-barrier requests retain
+  // the established two-phase transaction for this first bounded-in-flight
+  // slice.
+  const bool FuseDirectColdPartitions = Ctx.EagerReclaim &&
+                                        !NeedsWholeModuleBarrier &&
+                                        (!Ctx.Cache || !Ctx.Cache->enabled());
+
+  if (!Ctx.externalizeAndSerialize(Mod))
+    return false;
   {
-    unsigned ThreadCount =
+    StringRef BCRef(Ctx.FullBC.data(), Ctx.FullBC.size());
+    if (FuseDirectColdPartitions)
+      Ctx.preparePartitions(BCRef, TM, Observers, ProcessPartition,
+                            ResourcePhase::PCGOptCodeGen,
+                            ParallelCodeGenWorkerPhase::OptCodeGen);
+    else
+      Ctx.preparePartitions(BCRef, TM, Observers);
+  }
+  // Every prepare worker has joined. On the fused path each lazy reader was
+  // drained before its optimization began; on the two-phase path this is the
+  // original all-prepared barrier. Either way no partition references FullBC.
+  Ctx.releaseFullBitcode();
+  Ctx.observeRetention(Observers, ParallelCodeGenRetentionPoint::AfterPrepare);
+
+  // The fused queue already completed direct optimization and codegen under
+  // the physical worker grant acquired by preparePartitions.
+  if (!FuseDirectColdPartitions) {
+    // Phase 2: per-partition optimization + codegen.
+    const unsigned DesiredThreadCount =
         pcgWorkerThreads(Ctx.NumPartitions, Ctx.WorkerThreadCap);
-    std::atomic<unsigned> NextPart{0};
+    ResourceWorkerGrant WorkerGrant =
+        ProcessResourceBroker::global().grantWorkers(
+            Ctx.ResourceSession, ResourcePhase::PCGOptCodeGen,
+            DesiredThreadCount);
+    const unsigned ThreadCount = WorkerGrant.workerCount();
+    if (Observers && Observers->ObserveResourceWorkerGrant)
+      Observers->ObserveResourceWorkerGrant(
+          ParallelCodeGenWorkerPhase::OptCodeGen, DesiredThreadCount,
+          ThreadCount);
+    std::atomic<unsigned> NextWork{0};
+    const bool ObserveClaims =
+        Observers && Observers->ObservePartitionExecutionOrder;
+    SmallVector<unsigned, 8> ClaimedOrder;
+    if (ObserveClaims)
+      ClaimedOrder.resize(Ctx.ExecutionOrder.size());
     // llvm::thread (DefaultStackSize: 8 MiB Linux/macOS, 64 MiB Windows), not
     // std::thread (512 KiB on macOS): see the rationale in preparePartitions --
     // the codegen/opt pipeline recurses deeply and overflows a small stack on
     // adversarial IR.
     std::vector<llvm::thread> Workers;
     Workers.reserve(ThreadCount);
-    auto Worker = [&]() {
+    const ResourceSessionView WorkerSession = Ctx.ResourceSession;
+    auto Worker = [&, WorkerSession]() {
+      ResourceSessionScope ResourceScope(WorkerSession);
       while (true) {
-        unsigned p = NextPart.fetch_add(1, std::memory_order_relaxed);
-        if (p >= Ctx.NumPartitions)
+        unsigned WorkIndex = NextWork.fetch_add(1, std::memory_order_relaxed);
+        if (WorkIndex >= Ctx.ExecutionOrder.size())
           break;
+        const unsigned p = Ctx.ExecutionOrder[WorkIndex];
+        if (ObserveClaims)
+          ClaimedOrder[WorkIndex] = p;
         if (!Ctx.Parts[p])
           continue;
-        auto &PP = *Ctx.Parts[p];
-        auto &MPart = *PP.M;
-
-        if (!PP.SkipOptimization) {
-          LoopAnalysisManager LAM;
-          FunctionAnalysisManager FAM;
-          CGSCCAnalysisManager CGAM;
-          ModuleAnalysisManager MAM;
-          PassInstrumentationCallbacks PIC;
-          StandardInstrumentations SI(MPart.getContext(), false, false);
-          SI.registerCallbacks(PIC, &MAM);
-          PassBuilder PB(PP.PTM.get(), SharedPTO, std::nullopt, &PIC);
-          if (Hooks && Hooks->ConfigurePassBuilder)
-            Hooks->ConfigurePassBuilder(PB);
-          FAM.registerPass(
-              [&] { return TargetLibraryAnalysis(*Ctx.SharedTLII); });
-          PB.registerModuleAnalyses(MAM);
-          PB.registerCGSCCAnalyses(CGAM);
-          PB.registerFunctionAnalyses(FAM);
-          PB.registerLoopAnalyses(LAM);
-          PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
-
-          ModulePassManager MPM;
-          if (Hooks && Hooks->PreOpt)
-            Hooks->PreOpt(MPM);
-          MPM.addPass(PB.buildModuleOptimizationPipeline(
-              OL, ThinOrFullLTOPhase::FullLTOPostLink));
-          if (Hooks && Hooks->PostOpt)
-            Hooks->PostOpt(MPM);
-          MPM.run(MPart, MAM);
-        }
-
-        if (NeedsWholeModuleBarrier) {
-          Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
-          if (Ctx.Results[p].Success && Ctx.Cache && !PP.CacheKey.empty() &&
-              !PP.SkipOptimization) {
-            SmallVector<char, 0> OptimizedBitcode;
-            raw_svector_ostream Stream(OptimizedBitcode);
-            WriteBitcodeToFile(MPart, Stream, false);
-            Ctx.Cache->Store(PP.CacheKey, OptimizedBitcode);
-          }
-          continue;
-        }
-
-        raw_svector_ostream ObjOS(*PP.ObjBuf);
-        SmallVector<char, 0> UnusedDwo;
-        raw_svector_ostream DwoOS(PP.DwoBuf ? *PP.DwoBuf : UnusedDwo);
-        legacy::PassManager PM;
-        {
-          std::lock_guard<std::mutex> Lock(PassConfigMutex);
-          PM.add(createTargetTransformInfoWrapperPass(
-              PP.PTM->getTargetIRAnalysis()));
-          PM.add(new TargetLibraryInfoWrapperPass(*Ctx.SharedTLII));
-          if (PP.PTM->addPassesToEmitFile(PM, ObjOS,
-                                          PP.DwoBuf ? &DwoOS : nullptr,
-                                          CodeGenFileType::ObjectFile, true))
-            continue;
-        }
-        PM.run(MPart);
-        // A recorded error condemns whatever the pipeline went on to produce,
-        // however finished the object looks.
-        Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
-        if (Ctx.Results[p].Success && Ctx.Cache && !PP.CacheKey.empty())
-          Ctx.Cache->Store(PP.CacheKey, *PP.ObjBuf);
+        ProcessPartition(p, *Ctx.Parts[p]);
       }
     };
     for (unsigned i = 0; i < ThreadCount; ++i)
       Workers.emplace_back(Worker);
     for (auto &T : Workers)
       T.join();
+    if (ObserveClaims)
+      Observers->ObservePartitionExecutionOrder(
+          ParallelCodeGenWorkerPhase::OptCodeGen, ClaimedOrder);
   }
+  Ctx.observeRetention(
+      Observers, ParallelCodeGenRetentionPoint::AfterPartitionWorkReclaim);
 
   if (NeedsWholeModuleBarrier) {
     std::unique_ptr<Module> Combined = Ctx.reassembleOptimizedPartitions(Mod);
@@ -1857,39 +2457,41 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
       Ctx.restoreLinkage(Mod);
       return false;
     }
+    Combined->getContext().setNevercPipelineTuningOptions(Ctx.PipelineTuning);
+    Combined->getContext().setNevercSCEVHugeExpressionThreshold(
+        Ctx.ResolvedSCEVHugeExprThreshold);
+    Ctx.observeRetention(
+        Observers, ParallelCodeGenRetentionPoint::BeforeWholeModulePostOpt);
 
-    LoopAnalysisManager LAM;
-    FunctionAnalysisManager FAM;
-    CGSCCAnalysisManager CGAM;
-    ModuleAnalysisManager MAM;
-    PassInstrumentationCallbacks PIC;
-    StandardInstrumentations SI(Combined->getContext(), false, false);
-    SI.registerCallbacks(PIC, &MAM);
-    PassBuilder PB(&TM, PipelineTuningOptions(), std::nullopt, &PIC);
-    FAM.registerPass([&] { return TargetLibraryAnalysis(*Ctx.SharedTLII); });
-    PB.registerModuleAnalyses(MAM);
-    PB.registerCGSCCAnalyses(CGAM);
-    PB.registerFunctionAnalyses(FAM);
-    PB.registerLoopAnalyses(LAM);
-    PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
-
-    ModulePassManager WholeModulePasses;
-    Hooks->WholeModulePostOpt(WholeModulePasses);
-    WholeModulePasses.addPass(VerifierPass());
-    WholeModulePasses.run(*Combined, MAM);
+    // Keep the state address-stable: PassBuilder and proxy analyses retain
+    // references to sibling members. Declaring it after Combined also makes
+    // every cached analysis die before the module it inspected.
+    std::optional<WholeModulePipelineState> WholeModulePipeline;
+    WholeModulePipeline.emplace(*Combined, TM, SharedPTO, *Ctx.SharedTLII,
+                                *Hooks);
+    WholeModulePipeline->run(*Combined);
+    if (Ctx.EagerReclaim)
+      WholeModulePipeline.reset();
 
     // Module-scope plugins and finalizers may create new functions or global
     // state.  Split the resulting complete graph afresh for code generation so
     // every definition receives exactly one deterministic owner.
-    if (runParallelCodeGen(*Combined, TM, Outputs, Ctx.NumPartitions,
-                           /*Cache=*/nullptr))
+    if (runParallelCodeGenImpl(*Combined, TM, Outputs, Request,
+                               /*Cache=*/nullptr, Observers)) {
+      Ctx.commitOptimizedIRCacheEntries();
+      Ctx.releasePendingOptimizedIRBuffers();
+      Ctx.observeRetention(Observers, ParallelCodeGenRetentionPoint::Complete);
       return true;
+    }
 
     // Do not return to lto::backend after any whole-module plugin callback has
     // run: its generic fallback would optimize the mother module and replay
     // those callbacks.  Codegen the sealed combined IR directly instead.
-    if (runSerialCodeGenAfterWholeModuleBarrier(*Combined, TM, Outputs))
+    if (runSerialCodeGenAfterWholeModuleBarrier(*Combined, TM, Outputs)) {
+      Ctx.releasePendingOptimizedIRBuffers();
+      Ctx.observeRetention(Observers, ParallelCodeGenRetentionPoint::Complete);
       return true;
+    }
 
     // A false return would make lto::backend optimize the original mother
     // module and replay every externally visible plugin callback.  Both
@@ -1902,7 +2504,33 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
         /*gen_crash_diag=*/false);
   }
 
-  return Ctx.finalizeResults(Mod, Outputs);
+  return Ctx.finalizeResults(Mod, Outputs, Observers);
+}
+
+bool runParallelOptAndCodeGenWithTuning(
+    Module &Mod, TargetMachine &TM, ParallelCodeGenOutputs Outputs,
+    unsigned OptLevel, const ParallelCodeGenTuning &Tuning,
+    const PartitionCacheHooks *Cache, const ParallelOptimizationHooks *Hooks,
+    const ParallelCodeGenObservers *Observers) {
+  std::optional<unsigned> ContextSCEVThreshold;
+  if (Tuning.SCEVHugeExprThreshold == 0)
+    ContextSCEVThreshold =
+        Mod.getContext().getNevercSCEVHugeExpressionThreshold();
+  return runParallelOptAndCodeGenWithTunings(
+      Mod, TM, Outputs, OptLevel, Tuning,
+      Mod.getContext().getNevercPipelineTuningOptions(), Cache, Hooks,
+      Observers, ContextSCEVThreshold);
+}
+
+bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
+                              ParallelCodeGenOutputs Outputs,
+                              unsigned /*NumPartitions*/, unsigned OptLevel,
+                              const PartitionCacheHooks *Cache,
+                              const ParallelOptimizationHooks *Hooks) {
+  return runParallelOptAndCodeGenWithTunings(
+      Mod, TM, Outputs, OptLevel, captureParallelCodeGenTuning(),
+      captureNevercPipelineTuningOptions(), Cache, Hooks,
+      /*Observers=*/nullptr);
 }
 
 } // namespace neverc

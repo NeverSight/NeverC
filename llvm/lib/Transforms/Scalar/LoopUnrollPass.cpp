@@ -50,6 +50,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/NevercPipelineTuning.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/LoopPassManager.h"
@@ -149,13 +150,6 @@ static cl::opt<unsigned> UnrollFullMaxCount(
 // produced a byte-for-byte identical __text section with the cap at 100 vs
 // disabled, i.e. no real function is loop-dense enough to be gated, while
 // Lua's LTO runtime win (~1.6x vs -fno-lto) is fully preserved.
-static cl::opt<unsigned> NevercFullUnrollMaxLoopsPerFunc(
-    "neverc-full-unroll-max-loops-per-function", cl::init(100), cl::Hidden,
-    cl::desc("Suppress *automatic* full loop unrolling in functions that "
-             "contain more than this many loops, bounding superlinear "
-             "ScalarEvolution cost on loop-dense (e.g. auto-LTO collapsed) "
-             "functions (0 = no limit)"));
-
 static cl::opt<bool>
     UnrollAllowPartial("unroll-allow-partial", cl::Hidden,
                        cl::desc("Allows loops to be partially unrolled until "
@@ -1231,6 +1225,11 @@ tryToUnrollLoop(Loop *L, DominatorTree &DT, LoopInfo *LI, ScalarEvolution &SE,
   // which disables exact and bounded full unrolling only; partial/runtime
   // unrolling and peeling are unaffected, and pragma/metadata-forced unrolling
   // is decided earlier in computeUnrollCount and therefore still honored.
+  const unsigned NevercFullUnrollMaxLoopsPerFunc =
+      L->getHeader()
+          ->getContext()
+          .getNevercPipelineTuningOptions()
+          .FullUnrollMaxLoopsPerFunction;
   if (NevercFullUnrollMaxLoopsPerFunc != 0 && LI &&
       countLoopsAtMost(*LI, NevercFullUnrollMaxLoopsPerFunc + 1) >
           NevercFullUnrollMaxLoopsPerFunc)

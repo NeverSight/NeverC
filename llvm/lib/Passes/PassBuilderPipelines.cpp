@@ -388,7 +388,7 @@ PassBuilder::buildFunctionSimplificationPipeline(OptimizationLevel Level,
   // LoopVectorize/SLP with loop-invariant loads/stores still in the body,
   // which defeats vectorization outright (measured 2.2x runtime regression
   // on FP-reduction kernels vs explicit -flto=full -O2).
-  if (PTO.NevercInlinerLiteFSimpl) {
+  if (PTO.NevercFastIPO && PTO.NevercInlinerLiteFSimpl) {
     FPM.addPass(SROAPass(SROAOptions::ModifyCFG));
     FPM.addPass(InstCombinePass());
     LoopPassManager LiteLPM;

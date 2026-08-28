@@ -889,6 +889,7 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
     neverc-build-tests
     neverc-update-tests
     neverc-run-tests
+    neverc-foundation-tests
     neverc-merge-tests
     neverc-std-tests
   )

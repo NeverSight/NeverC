@@ -1,13 +1,13 @@
 #include "neverc/Emit/Backend/BackendUtil.h"
 #include "Backend/BackendConsumer.h"
 #include "Backend/LinkInModulesPass.h"
+#include "Backend/ParallelCodeGenMergeInternal.h"
 #include "Backend/Runtime/MimallocRuntimeLinker.h"
 #include "Backend/Runtime/StdRuntimeLinker.h"
 #include "Backend/Runtime/StringRuntimeLinker.h"
 #include "Core/AndroidKernelEmitter.h"
 #include "neverc/Compiler/Utils.h"
 #include "neverc/DynCode/Pipeline/Pipeline.h"
-#include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
 #include "neverc/Emit/NvkKernelRuntimeLinker.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
@@ -1438,6 +1438,14 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
                                     std::unique_ptr<raw_pwrite_stream> OS,
                                     EmitterConsumer *BC) {
   TimeRegion Region(CodeGenOpts.TimePasses ? &CodeGenerationTime : nullptr);
+  // setCommandLineOpts may reset option occurrences while reparsing backend
+  // diagnostics controls. Freeze PCG's complete request policy first so no
+  // later phase reads those process-global options.
+  const neverc::ParallelCodeGenTuning PCGTuning =
+      neverc::captureParallelCodeGenTuning();
+  const NevercPipelineTuningOptions PipelineTuning =
+      captureNevercPipelineTuningOptions();
+  TheModule->getContext().setNevercPipelineTuningOptions(PipelineTuning);
   setCommandLineOpts(CodeGenOpts);
 
   bool RequiresCodeGen = actionRequiresCodeGen(Action);
@@ -1456,9 +1464,9 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
 
   cl::PrintOptionValues();
 
-  // Parallel codegen: 0 = auto-detect, 1 = off, >=2 = explicit N.
-  // The threshold/partition logic lives inside runParallelCodeGen() —
-  // no need to scan the module here.
+  // Parallel codegen: 0 = auto-detect, 1 = off, >=2 = enable the hook. The
+  // deterministic partition count comes from module work and PCGTuning; this
+  // legacy numeric setting is only the frontend-side enablement sentinel.
   unsigned ParallelN = CodeGenOpts.ParallelCodeGen;
   const bool EmbedsSplitDwarf = CodeGenOpts.SplitDwarfOutput.empty() &&
                                 !CodeGenOpts.SplitDwarfFile.empty();
@@ -1559,7 +1567,8 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
   if (UseParallel) {
     neverc::ParallelCodeGenOutputs Outputs{
         *OS, WritesDwarfPackage ? &SplitDwarfOS->os() : nullptr};
-    if (!neverc::runParallelCodeGen(*TheModule, *TM, Outputs, ParallelN)) {
+    if (!neverc::runParallelCodeGenWithTunings(*TheModule, *TM, Outputs,
+                                               PCGTuning, PipelineTuning)) {
       if (!RunSerialCodegen())
         return;
     }

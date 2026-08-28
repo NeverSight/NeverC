@@ -490,6 +490,10 @@ public:
 
   LLVMContext &getContext() const { return F.getContext(); }
 
+  /// Return the request-local huge-expression threshold when the function's
+  /// context has one, otherwise the ambient command-line value.
+  unsigned getHugeExpressionThreshold() const;
+
   /// Test if values of the given type are analyzable within the SCEV
   /// framework. This primarily includes integer types, and it can optionally
   /// include pointer types if the ScalarEvolution class has access to
@@ -2386,15 +2390,11 @@ template <> struct DenseMapInfo<ScalarEvolution::FoldID> {
   }
 };
 
-/// NeverC: get/set the SCEV "huge expression" size threshold -- the point past
+/// NeverC: get/set the ambient SCEV "huge expression" size threshold, past
 /// which getAddExpr/getMulExpr stop folding and return the conservative,
 /// already-correct unsimplified expression (see HugeExprThreshold in
-/// ScalarEvolution.cpp).  The auto-LTO backend lowers it around its
-/// whole-program optimization to bound SCEV's superlinear simplification cost
-/// on the giant functions cross-module inlining forms; ordinary -c/-O2 compiles
-/// never call these.  This is a pure compile-cost knob (a smaller threshold can
-/// only withdraw simplification, never change a result), but it must not be
-/// changed concurrently with in-flight SCEV queries.
+/// ScalarEvolution.cpp). A request-local LLVMContext override takes precedence
+/// without mutating this process-wide compatibility setting.
 unsigned getScevHugeExprThreshold();
 void setScevHugeExprThreshold(unsigned Threshold);
 

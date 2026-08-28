@@ -1,4 +1,6 @@
 #include "neverc/Invoke/Compilation.h"
+#include "Plugin/JobExecutionBridge.h"
+#include "Plugin/JobGraph.h"
 #include "neverc/Invoke/Action.h"
 #include "neverc/Invoke/Driver.h"
 #include "neverc/Invoke/DriverDiagnostic.h"
@@ -8,10 +10,8 @@
 #include "neverc/Invoke/Tool.h"
 #include "neverc/Invoke/ToolChain.h"
 #include "neverc/Invoke/Util.h"
-#include "Plugin/JobExecutionBridge.h"
-#include "Plugin/JobGraph.h"
-#include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 #include "neverc/Plugin/Host/LinkExecutionHooksBridge.h"
+#include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Option/ArgList.h"
@@ -24,6 +24,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/thread.h"
 #include <cassert>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <string>
@@ -477,9 +478,13 @@ void Compilation::ExecuteJobs(const JobList &Jobs,
   if (NumThreads < 2)
     return ExecuteJobsSingle(Jobs, FailingCommands, LogOnly);
 
-  if (getArgs().hasArg(options::OPT_v))
+  bool ReportParallelCompile = getArgs().hasArg(options::OPT_v);
+  if (const char *Trace = ::getenv("NEVERC_TEST_PARALLEL_COMPILE_TRACE"))
+    ReportParallelCompile |= Trace[0] != '\0' && llvm::StringRef(Trace) != "0";
+  if (ReportParallelCompile)
     llvm::errs() << " [parallel compile: " << CompileJobs.size() << " jobs, "
-                 << NumThreads << " threads]\n";
+                 << NumThreads << " threads, "
+                 << (allInMemory ? "in-process" : "subprocess") << "]\n";
 
   struct CompileResult {
     int ExitCode = 0;
