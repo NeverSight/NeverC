@@ -24,7 +24,7 @@ class EhReader {
 public:
   EhReader(InputSectionBase *s, ArrayRef<uint8_t> d) : isec(s), d(d) {}
   uint8_t getFdeEncoding();
-  bool hasLSDA();
+  bool hasLSDAOrPersonality();
 
 private:
   template <class P> void failOn(const P *loc, const Twine &msg) {
@@ -128,8 +128,8 @@ uint8_t elf::getFdeEncoding(EhSectionPiece *p) {
   return EhReader(p->sec, p->data()).getFdeEncoding();
 }
 
-bool elf::hasLSDA(const EhSectionPiece &p) {
-  return EhReader(p.sec, p.data()).hasLSDA();
+bool elf::hasLSDAOrPersonality(const EhSectionPiece &p) {
+  return EhReader(p.sec, p.data()).hasLSDAOrPersonality();
 }
 
 StringRef EhReader::getAugmentation() {
@@ -174,19 +174,22 @@ uint8_t EhReader::getFdeEncoding() {
   return DW_EH_PE_absptr;
 }
 
-bool EhReader::hasLSDA() {
+bool EhReader::hasLSDAOrPersonality() {
   StringRef aug = getAugmentation();
+  bool result = false;
   for (char c : aug) {
-    if (c == 'L')
-      return true;
     if (c == 'z')
       skipLeb128();
-    else if (c == 'P')
+    else if (c == 'L') {
+      readByte();
+      result = true;
+    } else if (c == 'P') {
       skipAugP();
-    else if (c == 'R')
+      result = true;
+    } else if (c == 'R')
       readByte();
     else if (c != 'B' && c != 'S' && c != 'G')
       failOn(aug.data(), "unknown .eh_frame augmentation string: " + aug);
   }
-  return false;
+  return result;
 }

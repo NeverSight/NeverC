@@ -1,8 +1,46 @@
 #include "NeverCTestFixture.h"
+#include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
+
+namespace {
+
+llvm::Expected<uint64_t> findELFSymbolAddress(llvm::StringRef Bytes,
+                                              llvm::StringRef Name) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "elf-linker-test"));
+  if (!Object)
+    return Object.takeError();
+  if (!(*Object)->isELF())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected an ELF image");
+
+  for (const llvm::object::SymbolRef &Symbol : (*Object)->symbols()) {
+    llvm::Expected<llvm::StringRef> SymbolName = Symbol.getName();
+    if (!SymbolName)
+      return SymbolName.takeError();
+    if (*SymbolName != Name)
+      continue;
+    return Symbol.getAddress();
+  }
+  return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                 "ELF symbol not found: " + Name);
+}
+
+} // namespace
 
 class LinkerTest : public NeverCTest {
 protected:
+  uint64_t requireELFSymbolAddress(llvm::StringRef Bytes,
+                                   llvm::StringRef Name) const {
+    llvm::Expected<uint64_t> Address = findELFSymbolAddress(Bytes, Name);
+    if (!Address) {
+      ADD_FAILURE() << llvm::toString(Address.takeError()).str().str();
+      return 0;
+    }
+    return *Address;
+  }
+
   CmdResult compileObject(const fs::path &source,
                           const fs::path &object) const {
     std::vector<std::string> args;
@@ -67,6 +105,347 @@ TEST_F(LinkerTest, AutorouteObjectInput) {
 
   auto r = exec(exe.string(), {});
   EXPECT_EQ(r.exitCode, 0);
+}
+
+TEST_F(LinkerTest, IcfPreservesDistinctExceptionPersonalities) {
+  const fs::path source = tmpFile("icf_personality.s");
+  const fs::path object = tmpFile("icf_personality.o");
+  const fs::path image = tmpFile("icf_personality.elf");
+
+  writeFile(source, R"(
+.text
+.hidden personality_a
+.type personality_a,@function
+personality_a:
+  ret
+.hidden personality_b
+.type personality_b,@function
+personality_b:
+  ret
+
+.section .text.exception_a,"ax",@progbits
+.globl exception_a
+.type exception_a,@function
+exception_a:
+.cfi_startproc
+.cfi_personality 0x1b, personality_a
+  ret
+.cfi_endproc
+
+.section .text.exception_b,"ax",@progbits
+.globl exception_b
+.type exception_b,@function
+exception_b:
+.cfi_startproc
+.cfi_personality 0x1b, personality_b
+  ret
+.cfi_endproc
+
+.section .text.plain_a,"ax",@progbits
+.globl plain_a
+.type plain_a,@function
+plain_a:
+.cfi_startproc
+  ret
+.cfi_endproc
+
+.section .text.plain_b,"ax",@progbits
+.globl plain_b
+.type plain_b,@function
+plain_b:
+.cfi_startproc
+  ret
+.cfi_endproc
+)");
+
+  CmdResult assemble = ncc({"--target=aarch64-linux-gnu", "-x", "assembler",
+                            "-c", source.string(), "-o", object.string()});
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+  CmdResult link =
+      ncc({"--target=aarch64-linux-gnu", "-nostdlib", "-fno-lto", "-ficf=all",
+           "-Wl,-e,exception_a", object.string(), "-o", image.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  const std::string bytes = readFile(image);
+  const uint64_t exceptionA = requireELFSymbolAddress(bytes, "exception_a");
+  const uint64_t exceptionB = requireELFSymbolAddress(bytes, "exception_b");
+  const uint64_t plainA = requireELFSymbolAddress(bytes, "plain_a");
+  const uint64_t plainB = requireELFSymbolAddress(bytes, "plain_b");
+
+  EXPECT_NE(exceptionA, exceptionB)
+      << "functions with distinct unwind personalities must not be folded";
+  EXPECT_EQ(plainA, plainB)
+      << "ordinary FDEs must remain eligible for identical-code folding";
+}
+
+TEST_F(LinkerTest, IcfPreservesAbsoluteExceptionPersonalities) {
+  const fs::path source = tmpFile("icf_absolute_personality.s");
+  const fs::path object = tmpFile("icf_absolute_personality.o");
+  const fs::path image = tmpFile("icf_absolute_personality.elf");
+
+  writeFile(source, R"(
+.set personality_absolute_a, 1
+.set personality_absolute_b, 2
+
+.section .text.absolute_a,"ax",@progbits
+.globl absolute_a
+.type absolute_a,@function
+absolute_a:
+.cfi_startproc
+.cfi_personality 0x00, personality_absolute_a
+  ret
+.cfi_endproc
+
+.section .text.absolute_b,"ax",@progbits
+.globl absolute_b
+.type absolute_b,@function
+absolute_b:
+.cfi_startproc
+.cfi_personality 0x00, personality_absolute_b
+  ret
+.cfi_endproc
+
+.section .text.absolute_plain_a,"ax",@progbits
+.globl absolute_plain_a
+.type absolute_plain_a,@function
+absolute_plain_a:
+.cfi_startproc
+  ret
+.cfi_endproc
+
+.section .text.absolute_plain_b,"ax",@progbits
+.globl absolute_plain_b
+.type absolute_plain_b,@function
+absolute_plain_b:
+.cfi_startproc
+  ret
+.cfi_endproc
+)");
+
+  CmdResult assemble = ncc({"--target=x86_64-linux-gnu", "-x", "assembler",
+                            "-c", source.string(), "-o", object.string()});
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+  CmdResult link =
+      ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-fno-lto", "-ficf=all",
+           "-Wl,-e,absolute_a", object.string(), "-o", image.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  const std::string bytes = readFile(image);
+  const uint64_t absoluteA = requireELFSymbolAddress(bytes, "absolute_a");
+  const uint64_t absoluteB = requireELFSymbolAddress(bytes, "absolute_b");
+  const uint64_t plainA = requireELFSymbolAddress(bytes, "absolute_plain_a");
+  const uint64_t plainB = requireELFSymbolAddress(bytes, "absolute_plain_b");
+
+  EXPECT_NE(absoluteA, absoluteB)
+      << "absolute unwind personalities must not be folded";
+  EXPECT_EQ(plainA, plainB)
+      << "ordinary FDEs must remain eligible for identical-code folding";
+}
+
+TEST_F(LinkerTest, IcfPreservesDistinctLSDAs) {
+  const fs::path source = tmpFile("icf_lsda.s");
+  const fs::path object = tmpFile("icf_lsda.o");
+  const fs::path image = tmpFile("icf_lsda.elf");
+
+  writeFile(source, R"(
+.section .gcc_except_table.lsda_a,"a",@progbits
+lsda_a:
+  .byte 0
+
+.section .gcc_except_table.lsda_b,"a",@progbits
+lsda_b:
+  .byte 1
+
+.section .text.lsda_function_a,"ax",@progbits
+.globl lsda_function_a
+.type lsda_function_a,@function
+lsda_function_a:
+.cfi_startproc
+.cfi_lsda 0x1b, lsda_a
+  ret
+.cfi_endproc
+
+.section .text.lsda_function_b,"ax",@progbits
+.globl lsda_function_b
+.type lsda_function_b,@function
+lsda_function_b:
+.cfi_startproc
+.cfi_lsda 0x1b, lsda_b
+  ret
+.cfi_endproc
+
+.section .text.lsda_plain_a,"ax",@progbits
+.globl lsda_plain_a
+.type lsda_plain_a,@function
+lsda_plain_a:
+.cfi_startproc
+  ret
+.cfi_endproc
+
+.section .text.lsda_plain_b,"ax",@progbits
+.globl lsda_plain_b
+.type lsda_plain_b,@function
+lsda_plain_b:
+.cfi_startproc
+  ret
+.cfi_endproc
+)");
+
+  CmdResult assemble = ncc({"--target=x86_64-linux-gnu", "-x", "assembler",
+                            "-c", source.string(), "-o", object.string()});
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+  CmdResult link =
+      ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-fno-lto", "-ficf=all",
+           "-Wl,-e,lsda_function_a", object.string(), "-o", image.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  const std::string bytes = readFile(image);
+  const uint64_t functionA = requireELFSymbolAddress(bytes, "lsda_function_a");
+  const uint64_t functionB = requireELFSymbolAddress(bytes, "lsda_function_b");
+  const uint64_t plainA = requireELFSymbolAddress(bytes, "lsda_plain_a");
+  const uint64_t plainB = requireELFSymbolAddress(bytes, "lsda_plain_b");
+
+  EXPECT_NE(functionA, functionB)
+      << "functions with distinct exception tables must not be folded";
+  EXPECT_EQ(plainA, plainB)
+      << "ordinary FDEs must remain eligible for identical-code folding";
+}
+
+TEST_F(LinkerTest, IcfKeepsStrictestFoldedAlignment) {
+  const fs::path source = tmpFile("icf_alignment.s");
+  const fs::path object = tmpFile("icf_alignment.o");
+  const fs::path image = tmpFile("icf_alignment.elf");
+
+  writeFile(source, R"(
+.section .text.00_prefix,"ax",@progbits
+.globl prefix
+prefix:
+  nop
+
+.section .text.10_low_alignment,"ax",@progbits
+.p2align 2
+.globl low_alignment
+.type low_alignment,@function
+low_alignment:
+  ret
+
+.section .text.20_strict_alignment,"ax",@progbits
+.p2align 12
+.globl strict_alignment
+.type strict_alignment,@function
+strict_alignment:
+  ret
+)");
+
+  CmdResult assemble = ncc({"--target=aarch64-linux-gnu", "-x", "assembler",
+                            "-c", source.string(), "-o", object.string()});
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+  CmdResult link =
+      ncc({"--target=aarch64-linux-gnu", "-nostdlib", "-fno-lto", "-ficf=all",
+           "-Wl,-e,prefix", object.string(), "-o", image.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  const std::string bytes = readFile(image);
+  const uint64_t low = requireELFSymbolAddress(bytes, "low_alignment");
+  const uint64_t strict = requireELFSymbolAddress(bytes, "strict_alignment");
+  const uint64_t prefix = requireELFSymbolAddress(bytes, "prefix");
+
+  ASSERT_EQ(low, strict) << "the inputs must form one ICF class";
+  EXPECT_EQ(low % 4096, 0u)
+      << "the folded address must retain the strictest input alignment";
+  EXPECT_LT(prefix, low);
+  EXPECT_GE(low - prefix, 4096u)
+      << "the strict alignment must affect placement after prior text";
+}
+
+TEST_F(LinkerTest, IcfDistinguishesPreemptibleRelocations) {
+  const fs::path source = tmpFile("icf_preemptible.s");
+  const fs::path object = tmpFile("icf_preemptible.o");
+  const fs::path image = tmpFile("icf_preemptible.so");
+
+  writeFile(source, R"(
+.section .text.targets,"ax",@progbits
+.hidden fixed_target
+.globl fixed_target
+.type fixed_target,@function
+.globl dynamic_target
+.type dynamic_target,@function
+fixed_target:
+dynamic_target:
+  ret
+
+.section .text.call_fixed,"ax",@progbits
+.globl call_fixed
+.type call_fixed,@function
+call_fixed:
+  b fixed_target
+
+.section .text.call_dynamic,"ax",@progbits
+.globl call_dynamic
+.type call_dynamic,@function
+call_dynamic:
+  b dynamic_target
+
+.section .text.control_targets,"ax",@progbits
+.hidden control_target_a
+.globl control_target_a
+.type control_target_a,@function
+.hidden control_target_b
+.globl control_target_b
+.type control_target_b,@function
+control_target_a:
+control_target_b:
+  ret
+
+.section .text.call_control_a,"ax",@progbits
+.globl call_control_a
+.type call_control_a,@function
+call_control_a:
+  b control_target_a
+
+.section .text.call_control_b,"ax",@progbits
+.globl call_control_b
+.type call_control_b,@function
+call_control_b:
+  b control_target_b
+)");
+
+  CmdResult assemble = ncc({"--target=aarch64-linux-gnu", "-x", "assembler",
+                            "-c", source.string(), "-o", object.string()});
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+  CmdResult link =
+      ncc({"--target=aarch64-linux-gnu", "-nostdlib", "-shared", "-fno-lto",
+           "-ficf=all", object.string(), "-o", image.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  const std::string bytes = readFile(image);
+  const uint64_t fixedTarget = requireELFSymbolAddress(bytes, "fixed_target");
+  const uint64_t dynamicTarget =
+      requireELFSymbolAddress(bytes, "dynamic_target");
+  const uint64_t callFixed = requireELFSymbolAddress(bytes, "call_fixed");
+  const uint64_t callDynamic = requireELFSymbolAddress(bytes, "call_dynamic");
+  const uint64_t controlTargetA =
+      requireELFSymbolAddress(bytes, "control_target_a");
+  const uint64_t controlTargetB =
+      requireELFSymbolAddress(bytes, "control_target_b");
+  const uint64_t callControlA =
+      requireELFSymbolAddress(bytes, "call_control_a");
+  const uint64_t callControlB =
+      requireELFSymbolAddress(bytes, "call_control_b");
+
+  ASSERT_EQ(fixedTarget, dynamicTarget)
+      << "the targets must differ only in preemptibility";
+  EXPECT_NE(callFixed, callDynamic)
+      << "a preemptible target must keep relocation identity distinct";
+  ASSERT_EQ(controlTargetA, controlTargetB)
+      << "the control targets must differ only by hidden symbol identity";
+  EXPECT_EQ(callControlA, callControlB)
+      << "equivalent non-preemptible relocations must remain foldable";
 }
 
 TEST_F(LinkerTest, DuplicateLazyLibraryIsLoadedOnce) {

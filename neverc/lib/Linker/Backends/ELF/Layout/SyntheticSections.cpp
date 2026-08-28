@@ -228,21 +228,24 @@ template <class ELFT> void EhFrameSection::addSectionAux(EhInputSection *sec) {
     addRecords<ELFT>(sec, rels.relas);
 }
 
-// Used by ICF<ELFT>::handleLSDA(). This function is very similar to
-// EhFrameSection::addRecords().
+// Used by ICF before equivalence classes are built. This function is very
+// similar to EhFrameSection::addRecords().
 template <class ELFT, class RelTy>
-void EhFrameSection::iterateFDEWithLSDAAux(
-    EhInputSection &sec, ArrayRef<RelTy> rels, DenseSet<size_t> &ciesWithLSDA,
+void EhFrameSection::forEachFDEWithLSDAOrPersonalityAux(
+    EhInputSection &sec, ArrayRef<RelTy> rels, DenseSet<size_t> &matchingCIEs,
     llvm::function_ref<void(InputSection &)> fn) {
   for (EhSectionPiece &cie : sec.cies)
-    if (hasLSDA(cie))
-      ciesWithLSDA.insert(cie.inputOff);
+    // An LSDA can give byte-identical functions different catch behavior. A
+    // personality changes which routine interprets the unwind state even when
+    // no LSDA is present. Until ICF compares the complete CIE and FDE identity,
+    // keep both forms out of folding.
+    if (hasLSDAOrPersonality(cie))
+      matchingCIEs.insert(cie.inputOff);
   for (EhSectionPiece &fde : sec.fdes) {
     uint32_t id = endian::read32<ELFT::TargetEndianness>(fde.data().data() + 4);
-    if (!ciesWithLSDA.contains(fde.inputOff + 4 - id))
+    if (!matchingCIEs.contains(fde.inputOff + 4 - id))
       continue;
 
-    // The CIE has a LSDA argument. Call fn with d's section.
     if (Defined *d = isFdeLive<ELFT>(fde, rels))
       if (auto *s = dyn_cast_or_null<InputSection>(d->section))
         fn(*s);
@@ -250,16 +253,18 @@ void EhFrameSection::iterateFDEWithLSDAAux(
 }
 
 template <class ELFT>
-void EhFrameSection::iterateFDEWithLSDA(
+void EhFrameSection::forEachFDEWithLSDAOrPersonality(
     llvm::function_ref<void(InputSection &)> fn) {
-  DenseSet<size_t> ciesWithLSDA;
+  DenseSet<size_t> matchingCIEs;
   for (EhInputSection *sec : sections) {
-    ciesWithLSDA.clear();
+    matchingCIEs.clear();
     const RelsOrRelas<ELFT> rels = sec->template relsOrRelas<ELFT>();
     if (rels.areRelocsRel())
-      iterateFDEWithLSDAAux<ELFT>(*sec, rels.rels, ciesWithLSDA, fn);
+      forEachFDEWithLSDAOrPersonalityAux<ELFT>(*sec, rels.rels, matchingCIEs,
+                                               fn);
     else
-      iterateFDEWithLSDAAux<ELFT>(*sec, rels.relas, ciesWithLSDA, fn);
+      forEachFDEWithLSDAOrPersonalityAux<ELFT>(*sec, rels.relas, matchingCIEs,
+                                               fn);
   }
 }
 
@@ -2838,9 +2843,9 @@ template GdbIndexSection *GdbIndexSection::create<ELF64BE>();
 template void elf::splitSections<ELF64LE>();
 template void elf::splitSections<ELF64BE>();
 
-template void EhFrameSection::iterateFDEWithLSDA<ELF64LE>(
+template void EhFrameSection::forEachFDEWithLSDAOrPersonality<ELF64LE>(
     function_ref<void(InputSection &)>);
-template void EhFrameSection::iterateFDEWithLSDA<ELF64BE>(
+template void EhFrameSection::forEachFDEWithLSDAOrPersonality<ELF64BE>(
     function_ref<void(InputSection &)>);
 
 template class elf::DynamicSection<ELF64LE>;

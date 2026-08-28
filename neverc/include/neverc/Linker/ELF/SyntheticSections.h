@@ -49,7 +49,8 @@ public:
   SmallVector<FdeData, 0> getFdeData() const;
   ArrayRef<CieRecord *> getCieRecords() const { return cieRecords; }
   template <class ELFT>
-  void iterateFDEWithLSDA(llvm::function_ref<void(InputSection &)> fn);
+  void
+  forEachFDEWithLSDAOrPersonality(llvm::function_ref<void(InputSection &)> fn);
 
 private:
   // This is used only when parsing EhInputSection. We keep it here to avoid
@@ -62,9 +63,10 @@ private:
   void addRecords(EhInputSection *s, llvm::ArrayRef<RelTy> rels);
   template <class ELFT> void addSectionAux(EhInputSection *s);
   template <class ELFT, class RelTy>
-  void iterateFDEWithLSDAAux(EhInputSection &sec, ArrayRef<RelTy> rels,
-                             llvm::DenseSet<size_t> &ciesWithLSDA,
-                             llvm::function_ref<void(InputSection &)> fn);
+  void forEachFDEWithLSDAOrPersonalityAux(
+      EhInputSection &sec, ArrayRef<RelTy> rels,
+      llvm::DenseSet<size_t> &matchingCIEs,
+      llvm::function_ref<void(InputSection &)> fn);
 
   template <class ELFT, class RelTy>
   CieRecord *addCie(EhSectionPiece &piece, ArrayRef<RelTy> rels);

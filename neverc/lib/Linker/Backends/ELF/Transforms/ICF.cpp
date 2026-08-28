@@ -506,16 +506,17 @@ template <class ELFT> void ICF<ELFT>::run() {
       sym->isPreemptible = computeIsPreemptible(*sym);
 
   // Two text sections may have identical content and relocations but different
-  // LSDA, e.g. the two functions may have catch blocks of different types. If a
-  // text section is referenced by a .eh_frame FDE with LSDA, it is not
-  // eligible. This is implemented by iterating over CIE/FDE and setting
-  // eqClass[0] to the referenced text section from a live FDE.
+  // unwind semantics. An LSDA can describe different catch behavior, while a
+  // personality routine interprets the unwind state even without an LSDA. If a
+  // text section is referenced by an FDE carrying either form, it is not
+  // eligible. This is implemented by assigning the referenced section a unique
+  // equivalence class before the ordinary ICF candidates are collected.
   //
   // If two .gcc_except_table have identical semantics (usually identical
   // content with PC-relative encoding), we will lose folding opportunity.
   uint32_t uniqueId = 0;
   for (Partition &part : partitions)
-    part.ehFrame->iterateFDEWithLSDA<ELFT>(
+    part.ehFrame->forEachFDEWithLSDAOrPersonality<ELFT>(
         [&](InputSection &s) { s.eqClass[0] = s.eqClass[1] = ++uniqueId; });
 
   // Collect sections to merge.

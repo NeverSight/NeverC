@@ -7,7 +7,7 @@ namespace linker::elf {
 struct EhSectionPiece;
 
 uint8_t getFdeEncoding(EhSectionPiece *p);
-bool hasLSDA(const EhSectionPiece &p);
+bool hasLSDAOrPersonality(const EhSectionPiece &p);
 } // namespace linker::elf
 
 #endif
