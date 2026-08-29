@@ -1472,7 +1472,7 @@ CodeSignatureSection::CodeSignatureSection()
   else
     fileName = config->outputFile;
 
-  size_t slashIndex = fileName.rfind("/");
+  size_t slashIndex = fileName.find_last_of("/\\");
   if (slashIndex != std::string::npos)
     fileName = fileName.drop_front(slashIndex + 1);
 
