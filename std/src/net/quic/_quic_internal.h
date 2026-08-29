@@ -20,6 +20,8 @@
 #define QUIC_MAX_PATH_RESPONSES 8
 #define QUIC_TX_RECORD_CAPACITY 512
 #define QUIC_STREAM_SEND_BUFFER_LIMIT (1024U * 1024U)
+#define QUIC_MAX_RECV_FRAGMENTS_PER_STREAM 1024U
+#define QUIC_MAX_RECV_FRAGMENTS_PER_CONN 4096U
 #define QUIC_MIN_INITIAL_SIZE 1200
 #define QUIC_DEFAULT_MAX_PACKET_SIZE 1200
 #define QUIC_MAX_PACKET_SIZE 65527
@@ -171,7 +173,9 @@ typedef struct {
 typedef struct quic_fragment {
     uint64_t offset;
     size_t len;
-    uint8_t *data;
+    uint8_t *data; /* allocation base; active bytes start at begin */
+    size_t cap;
+    size_t begin;
     struct quic_fragment *next;
 } quic_fragment_t;
 
@@ -217,6 +221,7 @@ typedef struct neverc_quic_stream {
     int recv_fin;
     int recv_reset_retired;
     quic_fragment_t *recv_fragments;
+    size_t recv_fragment_count;
     uint8_t *send_buf;
     size_t send_buf_cap;
     size_t send_len;
@@ -465,6 +470,7 @@ struct neverc_quic_conn {
     quic_pn_state_t pn[QUIC_PNS_COUNT];
     quic_stream_t *streams[QUIC_MAX_STREAMS];
     int n_streams;
+    size_t recv_fragment_count;
     uint64_t next_bidi_stream_id;
     uint64_t next_uni_stream_id;
     uint64_t peer_max_streams_bidi;

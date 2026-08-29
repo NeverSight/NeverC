@@ -1362,6 +1362,14 @@ static void test_zip_tzif(void) {
               1);
     free(extracted);
 
+    uint8_t authoritative_empty[sizeof(zip) + 22] = {0};
+    memcpy(authoritative_empty, zip, zlen);
+    store_le32(authoritative_empty + zlen, 0x06054b50u);
+    store_le32(authoritative_empty + zlen + 16, (uint32_t)zlen);
+    check_zip_rejected("valid final empty EOCD hides earlier archive",
+                       authoritative_empty, zlen + 22,
+                       "America/New_York");
+
     uint8_t bad_comment[sizeof(commented)];
     memcpy(bad_comment, commented, commented_len);
     bad_comment[zlen - 2] = (uint8_t)(sizeof(comment) + 1);

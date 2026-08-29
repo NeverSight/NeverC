@@ -88,11 +88,28 @@ static int tz_chararray_strlen(const uint8_t *chars, uint32_t nchar,
  * has_dst=1 for zones that observe daylight saving time.
  * ====================================================================== */
 
-/* Latitude categories for DST: N = northern hemisphere, S = southern */
-#define N 1  /* DST Mar-Nov */
-#define S 2  /* DST Oct-Apr */
+/* Private built-in rules.  Values 1 and 2 retain the historical hemisphere
+ * encoding used by the compact table. */
+enum {
+    TZ_RULE_NONE = 0,
+    TZ_RULE_NORTH = 1,
+    TZ_RULE_SOUTH = 2,
+    TZ_RULE_EGYPT = 3,
+    TZ_RULE_MOROCCO = 4,
+    TZ_RULE_VANCOUVER = 5,
+    TZ_RULE_EDMONTON = 6,
+};
+#define N TZ_RULE_NORTH
+#define S TZ_RULE_SOUTH
 
-typedef struct { const char *name; const char *abbr; const char *abbr_dst; int off; int off_dst; int hemi; } tz_entry_t;
+typedef struct {
+    const char *name;
+    const char *abbr;
+    const char *abbr_dst;
+    int off;
+    int off_dst;
+    int rule_id;
+} tz_entry_t;
 
 static const tz_entry_t tz_table[] = {
     /* UTC / GMT */
@@ -116,9 +133,9 @@ static const tz_entry_t tz_table[] = {
     {"America/Honolulu",        "HST",  NULL,   -36000, 0,      0},
     {"America/Phoenix",         "MST",  NULL,   -25200, 0,      0},
     {"America/Toronto",         "EST",  "EDT",  -18000, -14400, N},
-    {"America/Vancouver",       "PST",  "PDT",  -28800, -25200, N},
+    {"America/Vancouver",       "PST",  "PDT",  -28800, -25200, TZ_RULE_VANCOUVER},
     {"America/Winnipeg",        "CST",  "CDT",  -21600, -18000, N},
-    {"America/Edmonton",        "MST",  "MDT",  -25200, -21600, N},
+    {"America/Edmonton",        "MST",  "MDT",  -25200, -21600, TZ_RULE_EDMONTON},
     {"America/Halifax",         "AST",  "ADT",  -14400, -10800, N},
     {"America/St_Johns",        "NST",  "NDT",  -12600, -9000,  N},
     {"America/Mexico_City",     "CST",  NULL,   -21600, 0,      0},
@@ -204,11 +221,11 @@ static const tz_entry_t tz_table[] = {
     {"Pacific/Midway",          "SST",  NULL,   -39600, 0,      0},
 
     /* Africa */
-    {"Africa/Cairo",            "EET",  "EEST", 7200,   10800,  N},
+    {"Africa/Cairo",            "EET",  "EEST", 7200,   10800,  TZ_RULE_EGYPT},
     {"Africa/Lagos",            "WAT",  NULL,   3600,   0,      0},
     {"Africa/Johannesburg",     "SAST", NULL,   7200,   0,      0},
     {"Africa/Nairobi",          "EAT",  NULL,   10800,  0,      0},
-    {"Africa/Casablanca",       "+01",  NULL,   3600,   0,      0},
+    {"Africa/Casablanca",       "+01",  NULL,   3600,   0,      TZ_RULE_MOROCCO},
     {"Africa/Algiers",          "CET",  NULL,   3600,   0,      0},
     {"Africa/Tunis",            "CET",  NULL,   3600,   0,      0},
     {"Africa/Addis_Ababa",      "EAT",  NULL,   10800,  0,      0},
@@ -237,7 +254,11 @@ static void fill_zone(neverc_tzdata_zone_t *z, const tz_entry_t *e) {
     z->abbrev_dst = e->abbr_dst;
     z->utc_offset = e->off;
     z->dst_offset = e->off_dst;
-    z->has_dst = (e->hemi != 0) ? 1 : 0;
+    z->has_dst = (e->rule_id == TZ_RULE_NORTH ||
+                  e->rule_id == TZ_RULE_SOUTH ||
+                  e->rule_id == TZ_RULE_EGYPT ||
+                  e->rule_id == TZ_RULE_VANCOUVER ||
+                  e->rule_id == TZ_RULE_EDMONTON) ? 1 : 0;
 }
 
 /* Process-wide zone cache. g_zones_init: 0 = empty, 1 = filling, 2 = ready. */
@@ -900,6 +921,100 @@ static int tzif_offset_at(const tzif_extra_t *e, int64_t unix_sec) {
     return e->off[lo - 1];
 }
 
+static int tz_builtin_rule_id(const neverc_tzdata_zone_t *zone) {
+    if (!zone) return TZ_RULE_NONE;
+    for (int i = 0; i < tz_count; i++) {
+        if (zone == &g_zones[i])
+            return tz_table[i].rule_id;
+    }
+    return TZ_RULE_NONE;
+}
+
+static int64_t tz_unix_year(int64_t unix_sec) {
+    int64_t days = unix_sec / 86400;
+    if (unix_sec % 86400 < 0) days--;
+    int64_t year;
+    int month, day;
+    tz_civil_from_days(days, &year, &month, &day);
+    (void)month;
+    (void)day;
+    return year;
+}
+
+static int tz_builtin_special_offset_at(const neverc_tzdata_zone_t *zone,
+                                        int64_t unix_sec, int *offset) {
+    int rule_id = tz_builtin_rule_id(zone);
+    if (rule_id == TZ_RULE_EGYPT) {
+        int64_t year = tz_unix_year(unix_sec);
+        if (year < 2023) {
+            *offset = 7200;
+            return 1;
+        }
+        int64_t start = tz_add_sat(
+            tz_unix_civil(year, 4, tz_last_wday(year, 4, 5), 0, 0, 0),
+            -7200);
+        int64_t end = tz_add_sat(
+            tz_unix_civil(year, 10, tz_last_wday(year, 10, 4), 0, 0, 0),
+            86400 - 10800);
+        *offset = tz_in_span(unix_sec, start, end) ? 10800 : 7200;
+        return 1;
+    }
+
+    if (rule_id == TZ_RULE_MOROCCO) {
+        static const struct {
+            int year;
+            int start_month, start_day;
+            int end_month, end_day;
+        } ramadan[] = {
+            {2019, 5, 5, 6, 9},
+            {2020, 4, 19, 5, 31},
+            {2021, 4, 11, 5, 16},
+            {2022, 3, 27, 5, 8},
+            {2023, 3, 19, 4, 23},
+            {2024, 3, 10, 4, 14},
+            {2025, 2, 23, 4, 6},
+            {2026, 2, 15, 3, 22},
+        };
+        const int64_t permanent_utc =
+            tz_unix_civil(2026, 9, 20, 1, 0, 0);
+        if (unix_sec >= permanent_utc) {
+            *offset = 0;
+            return 1;
+        }
+        int64_t year = tz_unix_year(unix_sec);
+        for (size_t i = 0; i < sizeof(ramadan) / sizeof(ramadan[0]); i++) {
+            if (year != ramadan[i].year) continue;
+            int64_t start = tz_unix_civil(year, ramadan[i].start_month,
+                                          ramadan[i].start_day, 2, 0, 0);
+            int64_t end = tz_unix_civil(year, ramadan[i].end_month,
+                                        ramadan[i].end_day, 2, 0, 0);
+            *offset = (unix_sec >= start && unix_sec < end) ? 0 : 3600;
+            return 1;
+        }
+        *offset = 3600;
+        return 1;
+    }
+    if (rule_id == TZ_RULE_VANCOUVER) {
+        /* tzdb 2026c: the last modeled transition is 2026-11-01
+         * 02:00 PDT (09:00 UTC), after which UTC-07 is permanent. */
+        if (unix_sec >= tz_unix_civil(2026, 11, 1, 9, 0, 0)) {
+            *offset = -25200;
+            return 1;
+        }
+        return 0;
+    }
+    if (rule_id == TZ_RULE_EDMONTON) {
+        /* tzdb 2026c: the last modeled transition is 2026-11-01
+         * 02:00 MDT (08:00 UTC), after which UTC-06 is permanent. */
+        if (unix_sec >= tz_unix_civil(2026, 11, 1, 8, 0, 0)) {
+            *offset = -21600;
+            return 1;
+        }
+        return 0;
+    }
+    return 0;
+}
+
 int neverc_tzdata_offset_at(const neverc_tzdata_zone_t *zone, int64_t unix_sec) {
     if (!zone) return 0;
     tzif_lock();
@@ -911,6 +1026,9 @@ int neverc_tzdata_offset_at(const neverc_tzdata_zone_t *zone, int64_t unix_sec) 
         }
     }
     tzif_unlock();
+    int special_offset;
+    if (tz_builtin_special_offset_at(zone, unix_sec, &special_offset))
+        return special_offset;
     if (!zone->has_dst) return zone->utc_offset;
     return tz_dst_active(zone, unix_sec) ? zone->dst_offset : zone->utc_offset;
 }
@@ -940,12 +1058,15 @@ static int tzdata_zone_hemisphere(const neverc_tzdata_zone_t *zone) {
     tzif_unlock();
     if (hemi != 0) return hemi;
 
-    for (int i = 0; i < tz_count; i++) {
-        if (zone->name && nc_streq(tz_table[i].name, zone->name)) {
-            hemi = tz_table[i].hemi;
-            break;
-        }
-    }
+    int rule_id = tz_builtin_rule_id(zone);
+    if (rule_id == TZ_RULE_SOUTH)
+        hemi = 2;
+    else if (rule_id == TZ_RULE_NORTH || rule_id == TZ_RULE_EGYPT ||
+             rule_id == TZ_RULE_VANCOUVER ||
+             rule_id == TZ_RULE_EDMONTON)
+        hemi = 1;
+    else
+        hemi = 0;
     return hemi;
 }
 
@@ -1046,6 +1167,16 @@ static uint16_t tz_le16(const uint8_t *p) {
     return (uint16_t)((uint32_t)p[0] | ((uint32_t)p[1] << 8));
 }
 
+static uint32_t tz_crc32(const uint8_t *data, size_t len) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; bit++)
+            crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    return ~crc;
+}
+
 static uint32_t tz_be32(const uint8_t *p) {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
@@ -1055,65 +1186,165 @@ static int64_t tz_be64(const uint8_t *p) {
     return (int64_t)(((uint64_t)tz_be32(p) << 32) | (uint64_t)tz_be32(p + 4));
 }
 
-uint8_t *neverc_tzdata_zip_extract(const uint8_t *zip, size_t zip_len,
-                                   const char *name, size_t *out_len) {
-    if (out_len) *out_len = 0;
-    if (!zip || !name || zip_len < 22) return NULL;
+enum {
+    TZ_ZIP_CANDIDATE_INVALID = 0,
+    TZ_ZIP_CANDIDATE_REJECT = 1,
+    TZ_ZIP_CANDIDATE_SUCCESS = 2,
+    TZ_ZIP_CANDIDATE_OOM = -1,
+};
 
-    const uint8_t *eocd = zip + zip_len - 22;
-    if (tz_le32(eocd) != 0x06054b50u) return NULL;
-    uint32_t n = tz_le16(eocd + 10);
-    uint32_t cd_size = tz_le32(eocd + 12);
-    uint32_t cd_off = tz_le32(eocd + 16);
-    /* Zip64 sentinels: fail closed, matching Go's 32-bit zip reader. */
-    if (n == 0xFFFFu || cd_size == 0xFFFFFFFFu || cd_off == 0xFFFFFFFFu)
-        return NULL;
-    if ((size_t)cd_off > zip_len || (size_t)cd_size > zip_len - (size_t)cd_off)
-        return NULL;
-
+/* Distinguish a malformed EOCD-like sequence (which can occur in arbitrary
+ * comment bytes) from a structurally valid final archive that authoritatively
+ * lacks or rejects the requested entry. */
+static int tz_zip_try_extract(const uint8_t *zip, uint32_t cd_off,
+                              uint32_t cd_size, uint32_t n,
+                              const char *name, size_t want,
+                              uint8_t **out, size_t *out_len) {
     const uint8_t *cd = zip + cd_off;
     size_t remain = cd_size;
-    size_t want = nc_slen(name);
+    int found = 0;
+    int duplicate = 0;
+    int unsupported = 0;
+    uint16_t target_flags = 0, target_method = 0;
+    uint32_t target_crc = 0, target_comp_size = 0;
+    uint32_t target_unc_size = 0, target_off = 0;
     uint32_t i;
     for (i = 0; i < n; i++) {
-        if (remain < 46) return NULL;
-        if (tz_le32(cd) != 0x02014b50u) return NULL;
+        if (remain < 46 || tz_le32(cd) != 0x02014b50u)
+            return TZ_ZIP_CANDIDATE_INVALID;
+        uint32_t flags = tz_le16(cd + 8);
         uint32_t meth = tz_le16(cd + 10);
+        uint32_t crc = tz_le32(cd + 16);
+        uint32_t compsize = tz_le32(cd + 20);
         uint32_t uncsize = tz_le32(cd + 24);
         uint32_t namelen = tz_le16(cd + 28);
         uint32_t xlen = tz_le16(cd + 30);
         uint32_t fclen = tz_le16(cd + 32);
+        uint32_t disk_start = tz_le16(cd + 34);
         uint32_t off = tz_le32(cd + 42);
         if (namelen > remain - 46 || xlen > remain - 46 - namelen ||
             fclen > remain - 46 - namelen - xlen)
-            return NULL;
+            return TZ_ZIP_CANDIDATE_INVALID;
+        if (compsize == 0xFFFFFFFFu || uncsize == 0xFFFFFFFFu ||
+            off == 0xFFFFFFFFu || disk_start != 0)
+            unsupported = 1;
         const uint8_t *zname = cd + 46;
         cd += 46 + namelen + xlen + fclen;
         remain -= 46 + namelen + xlen + fclen;
         if (namelen != want || memcmp(zname, name, namelen) != 0)
             continue;
-        if (meth != 0) return NULL;
-        if ((size_t)off > zip_len || zip_len - (size_t)off < 30)
-            return NULL;
-        const uint8_t *lh = zip + off;
-        if (tz_le32(lh) != 0x04034b50u) return NULL;
-        if (tz_le16(lh + 8) != meth) return NULL;
-        uint32_t lname = tz_le16(lh + 26);
-        uint32_t lxlen = tz_le16(lh + 28);
-        if (lname != namelen) return NULL;
-        if (lname > zip_len - (size_t)off - 30 ||
-            lxlen > zip_len - (size_t)off - 30 - lname)
-            return NULL;
-        if (memcmp(lh + 30, name, namelen) != 0) return NULL;
-        size_t data_off = (size_t)off + 30 + lname + lxlen;
-        if (data_off > zip_len || (size_t)uncsize > zip_len - data_off)
-            return NULL;
-        uint8_t *buf = (uint8_t *)malloc(uncsize ? uncsize : 1);
-        if (!buf) return NULL;
-        if (uncsize)
-            memcpy(buf, zip + data_off, uncsize);
-        if (out_len) *out_len = uncsize;
-        return buf;
+        if (found) {
+            duplicate = 1;
+        } else {
+            found = 1;
+            target_flags = (uint16_t)flags;
+            target_method = (uint16_t)meth;
+            target_crc = crc;
+            target_comp_size = compsize;
+            target_unc_size = uncsize;
+            target_off = off;
+        }
+    }
+    if (remain != 0) return TZ_ZIP_CANDIDATE_INVALID;
+    if (unsupported || duplicate || !found)
+        return TZ_ZIP_CANDIDATE_REJECT;
+
+    /* This intentionally small reader supports only unencrypted stored
+     * entries with sizes in the headers.  UTF-8 naming is the sole flag
+     * relevant to this ASCII path that the subset accepts. */
+    if (target_method != 0 || target_comp_size != target_unc_size ||
+        (target_flags & ~0x0800u) != 0)
+        return TZ_ZIP_CANDIDATE_REJECT;
+    if ((size_t)target_off > (size_t)cd_off ||
+        (size_t)cd_off - (size_t)target_off < 30)
+        return TZ_ZIP_CANDIDATE_REJECT;
+    const uint8_t *lh = zip + target_off;
+    if (tz_le32(lh) != 0x04034b50u)
+        return TZ_ZIP_CANDIDATE_REJECT;
+    if (tz_le16(lh + 6) != target_flags ||
+        tz_le16(lh + 8) != target_method ||
+        tz_le32(lh + 14) != target_crc ||
+        tz_le32(lh + 18) != target_comp_size ||
+        tz_le32(lh + 22) != target_unc_size)
+        return TZ_ZIP_CANDIDATE_REJECT;
+    uint32_t lname = tz_le16(lh + 26);
+    uint32_t lxlen = tz_le16(lh + 28);
+    if ((size_t)lname != want ||
+        (size_t)lname > (size_t)cd_off - (size_t)target_off - 30 ||
+        (size_t)lxlen >
+            (size_t)cd_off - (size_t)target_off - 30 - (size_t)lname)
+        return TZ_ZIP_CANDIDATE_REJECT;
+    if (memcmp(lh + 30, name, want) != 0)
+        return TZ_ZIP_CANDIDATE_REJECT;
+    size_t data_off = (size_t)target_off + 30 + lname + lxlen;
+    if (data_off > (size_t)cd_off ||
+        (size_t)target_comp_size > (size_t)cd_off - data_off)
+        return TZ_ZIP_CANDIDATE_REJECT;
+    if (tz_crc32(zip + data_off, target_unc_size) != target_crc)
+        return TZ_ZIP_CANDIDATE_REJECT;
+    uint8_t *buf = (uint8_t *)malloc(target_unc_size ? target_unc_size : 1);
+    if (!buf) return TZ_ZIP_CANDIDATE_OOM;
+    if (target_unc_size)
+        memcpy(buf, zip + data_off, target_unc_size);
+    *out = buf;
+    *out_len = target_unc_size;
+    return TZ_ZIP_CANDIDATE_SUCCESS;
+}
+
+uint8_t *neverc_tzdata_zip_extract(const uint8_t *zip, size_t zip_len,
+                                   const char *name, size_t *out_len) {
+    if (out_len) *out_len = 0;
+    if (!zip || !name || zip_len < 22) return NULL;
+
+    const size_t search_window = 22u + 0xFFFFu;
+    size_t lower = zip_len > search_window ? zip_len - search_window : 0;
+    size_t eocd_off = zip_len - 22;
+    size_t want = nc_slen(name);
+    for (;;) {
+        const uint8_t *candidate = zip + eocd_off;
+        if (tz_le32(candidate) == 0x06054b50u &&
+            (size_t)tz_le16(candidate + 20) == zip_len - eocd_off - 22) {
+            uint32_t disk = tz_le16(candidate + 4);
+            uint32_t cd_disk = tz_le16(candidate + 6);
+            uint32_t disk_entries = tz_le16(candidate + 8);
+            uint32_t total_entries = tz_le16(candidate + 10);
+            uint32_t candidate_size = tz_le32(candidate + 12);
+            uint32_t candidate_off = tz_le32(candidate + 16);
+            /* Multi-disk and Zip64 archives are outside this stored-entry
+             * subset.  A candidate is accepted only after its complete
+             * directory and requested local entry validate. */
+            int has_zip64_sentinel = total_entries == 0xFFFFu ||
+                candidate_size == 0xFFFFFFFFu ||
+                candidate_off == 0xFFFFFFFFu;
+            if (has_zip64_sentinel && eocd_off >= 20 &&
+                tz_le32(zip + eocd_off - 20) == 0x07064b50u)
+                return NULL;
+            int adjacent = candidate_size != 0xFFFFFFFFu &&
+                candidate_off != 0xFFFFFFFFu &&
+                (size_t)candidate_off <= eocd_off &&
+                (size_t)candidate_size ==
+                    eocd_off - (size_t)candidate_off;
+            if (adjacent) {
+                if (disk != 0 || cd_disk != 0 ||
+                    disk_entries != total_entries ||
+                    total_entries == 0xFFFFu)
+                    return NULL;
+                uint8_t *result = NULL;
+                size_t result_len = 0;
+                int status = tz_zip_try_extract(
+                    zip, candidate_off, candidate_size, total_entries,
+                    name, want, &result, &result_len);
+                if (status == TZ_ZIP_CANDIDATE_OOM ||
+                    status == TZ_ZIP_CANDIDATE_REJECT)
+                    return NULL;
+                if (status == TZ_ZIP_CANDIDATE_SUCCESS) {
+                    if (out_len) *out_len = result_len;
+                    return result;
+                }
+            }
+        }
+        if (eocd_off == lower) break;
+        eocd_off--;
     }
     return NULL;
 }

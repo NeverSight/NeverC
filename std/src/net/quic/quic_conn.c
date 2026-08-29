@@ -29,8 +29,12 @@ static int quic_add_u64(uint64_t left, uint64_t right, uint64_t *result) {
 static int quic_reserve(uint8_t **buffer, size_t *capacity, size_t needed,
                         size_t limit) {
     if (!buffer || !capacity || needed > limit) return -1;
+    if (*capacity > limit) return -1;
     if (*capacity >= needed) return 0;
-    size_t next = *capacity ? *capacity : QUIC_STREAM_BUFFER_MIN;
+    size_t next = *capacity;
+    if (next == 0)
+        next = limit < QUIC_STREAM_BUFFER_MIN ? limit :
+                                                QUIC_STREAM_BUFFER_MIN;
     while (next < needed) {
         if (next > limit / 2) {
             next = limit;
@@ -119,21 +123,32 @@ static quic_stream_t *stream_create(struct neverc_quic_conn *conn,
     return stream;
 }
 
-static void fragment_list_destroy(quic_fragment_t *fragment) {
-    while (fragment) {
-        quic_fragment_t *next = fragment->next;
-        free(fragment->data);
-        free(fragment);
-        fragment = next;
+static void fragment_release(quic_stream_t *stream,
+                             quic_fragment_t *fragment) {
+    if (!stream || !fragment) return;
+    if (stream->recv_fragment_count > 0)
+        stream->recv_fragment_count--;
+    if (stream->conn && stream->conn->recv_fragment_count > 0)
+        stream->conn->recv_fragment_count--;
+    free(fragment->data);
+    free(fragment);
+}
+
+static void fragment_list_destroy(quic_stream_t *stream) {
+    if (!stream) return;
+    while (stream->recv_fragments) {
+        quic_fragment_t *fragment = stream->recv_fragments;
+        stream->recv_fragments = fragment->next;
+        fragment_release(stream, fragment);
     }
 }
 
 static void stream_destroy(quic_stream_t *stream) {
     if (!stream) return;
+    fragment_list_destroy(stream);
     nc_mutex_destroy(&stream->lock);
     nc_cond_destroy(&stream->read_cond);
     nc_cond_destroy(&stream->write_cond);
-    fragment_list_destroy(stream->recv_fragments);
     if (stream->recv_buf) memset(stream->recv_buf, 0, stream->recv_buf_cap);
     if (stream->send_buf) memset(stream->send_buf, 0, stream->send_buf_cap);
     free(stream->recv_buf);
@@ -538,13 +553,23 @@ int neverc_quic_stream_close_write_side(quic_stream_t *stream) {
     return 0;
 }
 
-static int stream_overlap_matches(quic_stream_t *stream, uint64_t offset,
-                                  const uint8_t *data, size_t length) {
+typedef enum {
+    QUIC_FRAGMENT_OK = 0,
+    QUIC_FRAGMENT_CONFLICT,
+    QUIC_FRAGMENT_INTERNAL,
+} quic_fragment_result_t;
+
+static quic_fragment_result_t stream_overlap_matches(
+    quic_stream_t *stream, uint64_t offset, const uint8_t *data,
+    size_t length) {
     uint64_t end;
     if (!stream || (!data && length != 0) ||
         quic_add_u64(offset, (uint64_t)length, &end) != 0)
-        return -1;
-    if (stream->recv_len > 0 && stream->recv_offset >= stream->recv_len) {
+        return QUIC_FRAGMENT_INTERNAL;
+    if (stream->recv_len > stream->recv_offset ||
+        (stream->recv_len != 0 && !stream->recv_buf))
+        return QUIC_FRAGMENT_INTERNAL;
+    if (stream->recv_len > 0) {
         uint64_t buf_start = stream->recv_offset - stream->recv_len;
         uint64_t start = offset > buf_start ? offset : buf_start;
         uint64_t stop = end < stream->recv_offset ? end : stream->recv_offset;
@@ -552,98 +577,211 @@ static int stream_overlap_matches(quic_stream_t *stream, uint64_t offset,
             if (memcmp(stream->recv_buf + (size_t)(start - buf_start),
                        data + (size_t)(start - offset),
                        (size_t)(stop - start)) != 0)
-                return -1;
+                return QUIC_FRAGMENT_CONFLICT;
         }
     }
+    size_t count = 0;
+    uint64_t previous_end = 0;
+    int have_previous = 0;
     for (quic_fragment_t *fragment = stream->recv_fragments; fragment;
          fragment = fragment->next) {
         uint64_t fragment_end;
-        if (quic_add_u64(fragment->offset, (uint64_t)fragment->len,
-                         &fragment_end) != 0)
-            return -1;
+        if (!fragment->data || fragment->len == 0 ||
+            fragment->begin > fragment->cap ||
+            fragment->len > fragment->cap - fragment->begin ||
+            fragment->offset < stream->recv_offset ||
+            quic_add_u64(fragment->offset, (uint64_t)fragment->len,
+                         &fragment_end) != 0 ||
+            (have_previous && previous_end >= fragment->offset) ||
+            count == SIZE_MAX)
+            return QUIC_FRAGMENT_INTERNAL;
+        previous_end = fragment_end;
+        have_previous = 1;
+        count++;
         uint64_t start = offset > fragment->offset ? offset : fragment->offset;
         uint64_t stop = end < fragment_end ? end : fragment_end;
         if (start < stop) {
-            if (memcmp(fragment->data + (size_t)(start - fragment->offset),
+            if (memcmp(fragment->data + fragment->begin +
+                           (size_t)(start - fragment->offset),
                        data + (size_t)(start - offset),
                        (size_t)(stop - start)) != 0)
-                return -1;
+                return QUIC_FRAGMENT_CONFLICT;
         }
     }
-    return 0;
+    if (!stream->conn || count != stream->recv_fragment_count ||
+        count > stream->conn->recv_fragment_count ||
+        count > QUIC_MAX_RECV_FRAGMENTS_PER_STREAM ||
+        stream->conn->recv_fragment_count >
+            QUIC_MAX_RECV_FRAGMENTS_PER_CONN)
+        return QUIC_FRAGMENT_INTERNAL;
+    return QUIC_FRAGMENT_OK;
 }
 
-static int fragment_insert(quic_stream_t *stream, uint64_t offset,
-                           const uint8_t *data, size_t length) {
-    if (length == 0) return 0;
+static size_t fragment_capacity(size_t length, size_t floor) {
+    size_t capacity = length;
+    if (length <= (SIZE_MAX - 1) / 2)
+        capacity = length * 2 + 1;
+    if (capacity < floor) capacity = floor;
+    return capacity;
+}
+
+static quic_fragment_result_t fragment_insert(
+    quic_stream_t *stream, uint64_t offset, const uint8_t *data,
+    size_t length) {
     uint64_t end;
-    if (quic_add_u64(offset, (uint64_t)length, &end) != 0) return -1;
-    if (stream_overlap_matches(stream, offset, data, length) != 0)
-        return -1;
-    if (end <= stream->recv_offset) return 0;
+    if (!stream || (!data && length != 0) ||
+        quic_add_u64(offset, (uint64_t)length, &end) != 0)
+        return QUIC_FRAGMENT_INTERNAL;
+    quic_fragment_result_t overlap =
+        stream_overlap_matches(stream, offset, data, length);
+    if (overlap != QUIC_FRAGMENT_OK) return overlap;
+    if (length == 0 || end <= stream->recv_offset)
+        return QUIC_FRAGMENT_OK;
     if (offset < stream->recv_offset) {
         size_t skip = (size_t)(stream->recv_offset - offset);
         data += skip;
         length -= skip;
         offset = stream->recv_offset;
     }
+
     quic_fragment_t **position = &stream->recv_fragments;
-    while (*position && (*position)->offset < offset)
+    while (*position) {
+        uint64_t fragment_end;
+        if (quic_add_u64((*position)->offset, (*position)->len,
+                         &fragment_end) != 0)
+            return QUIC_FRAGMENT_INTERNAL;
+        if (fragment_end >= offset) break;
         position = &(*position)->next;
-    if (*position && (*position)->offset == offset &&
-        (*position)->len >= length)
-        return 0;
-    quic_fragment_t *fragment =
-        (quic_fragment_t *)calloc(1, sizeof(*fragment));
-    if (!fragment) return -1;
-    fragment->data = (uint8_t *)malloc(length);
-    if (!fragment->data) {
-        free(fragment);
-        return -1;
     }
-    memcpy(fragment->data, data, length);
-    fragment->offset = offset;
-    fragment->len = length;
-    fragment->next = *position;
-    *position = fragment;
-    return 0;
+
+    uint64_t union_start = offset;
+    uint64_t union_end = end;
+    quic_fragment_t *first = *position;
+    quic_fragment_t *after = first;
+    size_t merged = 0;
+    while (after && after->offset <= union_end) {
+        uint64_t fragment_end;
+        if (quic_add_u64(after->offset, after->len, &fragment_end) != 0 ||
+            merged == SIZE_MAX)
+            return QUIC_FRAGMENT_INTERNAL;
+        if (after->offset < union_start) union_start = after->offset;
+        if (fragment_end > union_end) union_end = fragment_end;
+        merged++;
+        after = after->next;
+    }
+    if (merged == 1 && first->offset == union_start) {
+        uint64_t first_end;
+        if (quic_add_u64(first->offset, first->len, &first_end) != 0)
+            return QUIC_FRAGMENT_INTERNAL;
+        if (first_end == union_end) return QUIC_FRAGMENT_OK;
+    }
+    if (union_end < union_start || union_end - union_start > SIZE_MAX)
+        return QUIC_FRAGMENT_INTERNAL;
+    size_t union_len = (size_t)(union_end - union_start);
+    if (stream->recv_fragment_count < merged ||
+        stream->conn->recv_fragment_count < merged)
+        return QUIC_FRAGMENT_INTERNAL;
+    size_t post_stream = stream->recv_fragment_count - merged;
+    size_t post_conn = stream->conn->recv_fragment_count - merged;
+    if (post_stream == SIZE_MAX || post_conn == SIZE_MAX)
+        return QUIC_FRAGMENT_INTERNAL;
+    post_stream++;
+    post_conn++;
+    if (post_stream > QUIC_MAX_RECV_FRAGMENTS_PER_STREAM ||
+        post_conn > QUIC_MAX_RECV_FRAGMENTS_PER_CONN)
+        return QUIC_FRAGMENT_INTERNAL;
+
+    quic_fragment_t *candidate = first;
+    uint8_t *candidate_data = NULL;
+    size_t candidate_cap = 0;
+    size_t candidate_begin = 0;
+    int replace_data = 0;
+    if (merged == 0) {
+        candidate = (quic_fragment_t *)calloc(1, sizeof(*candidate));
+        if (!candidate) return QUIC_FRAGMENT_INTERNAL;
+        candidate_cap = fragment_capacity(union_len, 0);
+        candidate_data = (uint8_t *)malloc(candidate_cap);
+        if (!candidate_data) {
+            free(candidate);
+            return QUIC_FRAGMENT_INTERNAL;
+        }
+        candidate_begin = (candidate_cap - union_len) / 2;
+    } else {
+        size_t left = (size_t)(first->offset - union_start);
+        if (left <= first->begin &&
+            union_len <= first->cap - (first->begin - left)) {
+            candidate_data = first->data;
+            candidate_cap = first->cap;
+            candidate_begin = first->begin - left;
+        } else {
+            candidate_cap = fragment_capacity(union_len, first->cap);
+            candidate_data = (uint8_t *)malloc(candidate_cap);
+            if (!candidate_data) return QUIC_FRAGMENT_INTERNAL;
+            candidate_begin = (candidate_cap - union_len) / 2;
+            replace_data = 1;
+        }
+    }
+
+    uint8_t *destination = candidate_data + candidate_begin;
+    memmove(destination + (size_t)(offset - union_start), data, length);
+    for (quic_fragment_t *fragment = first; fragment != after;
+         fragment = fragment->next) {
+        memmove(destination + (size_t)(fragment->offset - union_start),
+                fragment->data + fragment->begin, fragment->len);
+    }
+
+    quic_fragment_t *discard = merged ? first->next : NULL;
+    if (replace_data) free(first->data);
+    candidate->offset = union_start;
+    candidate->len = union_len;
+    candidate->data = candidate_data;
+    candidate->cap = candidate_cap;
+    candidate->begin = candidate_begin;
+    candidate->next = after;
+    *position = candidate;
+    while (discard != after) {
+        quic_fragment_t *next = discard->next;
+        free(discard->data);
+        free(discard);
+        discard = next;
+    }
+    stream->recv_fragment_count = post_stream;
+    stream->conn->recv_fragment_count = post_conn;
+    return QUIC_FRAGMENT_OK;
 }
 
 static int fragment_drain(quic_stream_t *stream) {
-    for (;;) {
-        quic_fragment_t **position = &stream->recv_fragments;
-        while (*position) {
-            quic_fragment_t *fragment = *position;
-            uint64_t fragment_end;
-            if (quic_add_u64(fragment->offset, fragment->len,
-                             &fragment_end) != 0)
-                return -1;
-            if (fragment_end <= stream->recv_offset) {
-                *position = fragment->next;
-                free(fragment->data);
-                free(fragment);
-                continue;
-            }
-            if (fragment->offset > stream->recv_offset) break;
-            size_t skip = (size_t)(stream->recv_offset - fragment->offset);
-            size_t append = fragment->len - skip;
-            uint64_t unread_limit = stream->recv_max_data;
-            size_t limit = unread_limit > SIZE_MAX ? SIZE_MAX :
-                                                   (size_t)unread_limit;
-            if (append > SIZE_MAX - stream->recv_len ||
-                quic_reserve(&stream->recv_buf, &stream->recv_buf_cap,
-                             stream->recv_len + append, limit) != 0)
-                return -1;
-            memcpy(stream->recv_buf + stream->recv_len,
-                   fragment->data + skip, append);
-            stream->recv_len += append;
-            stream->recv_offset += append;
-            *position = fragment->next;
-            free(fragment->data);
-            free(fragment);
-            break;
+    if (!stream) return -1;
+    while (stream->recv_fragments) {
+        quic_fragment_t *fragment = stream->recv_fragments;
+        uint64_t fragment_end;
+        if (!fragment->data || fragment->len == 0 ||
+            fragment->begin > fragment->cap ||
+            fragment->len > fragment->cap - fragment->begin ||
+            quic_add_u64(fragment->offset, fragment->len,
+                         &fragment_end) != 0)
+            return -1;
+        if (fragment_end <= stream->recv_offset) {
+            stream->recv_fragments = fragment->next;
+            fragment_release(stream, fragment);
+            continue;
         }
-        if (!*position || (*position)->offset > stream->recv_offset) break;
+        if (fragment->offset > stream->recv_offset) break;
+        size_t skip = (size_t)(stream->recv_offset - fragment->offset);
+        size_t append = fragment->len - skip;
+        uint64_t unread_limit = stream->recv_max_data;
+        size_t limit = unread_limit > SIZE_MAX ? SIZE_MAX :
+                                               (size_t)unread_limit;
+        if (append > SIZE_MAX - stream->recv_len ||
+            quic_reserve(&stream->recv_buf, &stream->recv_buf_cap,
+                         stream->recv_len + append, limit) != 0)
+            return -1;
+        memcpy(stream->recv_buf + stream->recv_len,
+               fragment->data + fragment->begin + skip, append);
+        stream->recv_len += append;
+        stream->recv_offset = fragment_end;
+        stream->recv_fragments = fragment->next;
+        fragment_release(stream, fragment);
     }
     if (stream->recv_final_known &&
         stream->recv_offset == stream->recv_final_size &&
@@ -752,37 +890,55 @@ int neverc_quic_stream_receive_locked(struct neverc_quic_conn *conn,
                                       "STREAM final size mismatch", 0);
         return -1;
     }
-    if (frame->fin) {
-        stream->recv_final_known = 1;
-        stream->recv_final_size = end;
-    }
-    if (end > stream->recv_highest) stream->recv_highest = end;
-    uint64_t delta = stream->recv_highest - previous_highest;
+    uint64_t next_highest = end > previous_highest ? end : previous_highest;
+    uint64_t delta = next_highest - previous_highest;
     if (delta > conn->flow.max_data_local -
                     (conn->flow.data_received > conn->flow.max_data_local ?
                          conn->flow.max_data_local :
                          conn->flow.data_received)) {
-        stream->recv_highest = previous_highest;
         nc_mutex_unlock(&stream->lock);
         neverc_quic_conn_close_locked(conn, QUIC_ERR_FLOW_CONTROL_ERROR,
                                       "connection flow control exceeded", 0);
         return -1;
     }
-    conn->flow.data_received += delta;
     /* RFC 9000 §3.2: STREAM after RESET_STREAM MAY be ignored. Delivering
      * the bytes would let fragment_drain turn a reset into a clean FIN. */
     if (stream->state == QUIC_STREAM_RESET) {
+        conn->flow.data_received += delta;
+        stream->recv_highest = next_highest;
+        if (frame->fin) {
+            stream->recv_final_known = 1;
+            stream->recv_final_size = end;
+        }
         nc_mutex_unlock(&stream->lock);
         return 0;
     }
-    int result = fragment_insert(stream, frame->offset, frame->data,
-                                 frame->data_len);
-    if (result == 0) result = fragment_drain(stream);
-    if (result == 0) nc_cond_broadcast(&stream->read_cond);
+    quic_fragment_result_t insert =
+        fragment_insert(stream, frame->offset, frame->data, frame->data_len);
+    if (insert != QUIC_FRAGMENT_OK) {
+        nc_mutex_unlock(&stream->lock);
+        if (insert == QUIC_FRAGMENT_CONFLICT) {
+            neverc_quic_conn_close_locked(conn, QUIC_ERR_PROTOCOL_VIOLATION,
+                                          "conflicting STREAM data", 0);
+        } else {
+            neverc_quic_conn_close_locked(conn, QUIC_ERR_INTERNAL_ERROR,
+                                          "STREAM reassembly limit", 0);
+        }
+        return -1;
+    }
+    conn->flow.data_received += delta;
+    stream->recv_highest = next_highest;
+    if (frame->fin) {
+        stream->recv_final_known = 1;
+        stream->recv_final_size = end;
+    }
+    int result = fragment_drain(stream);
+    if (result == 0)
+        nc_cond_broadcast(&stream->read_cond);
     nc_mutex_unlock(&stream->lock);
     if (result != 0)
-        neverc_quic_conn_close_locked(conn, QUIC_ERR_PROTOCOL_VIOLATION,
-                                      "conflicting STREAM data", 0);
+        neverc_quic_conn_close_locked(conn, QUIC_ERR_INTERNAL_ERROR,
+                                      "STREAM reassembly failed", 0);
     return result;
 }
 
@@ -860,29 +1016,34 @@ int neverc_quic_stream_receive_reset_locked(
     stream->recv_final_size = frame->final_size;
     stream->reset_error_code = frame->error_code;
     stream->state = QUIC_STREAM_RESET;
+    /* Out-of-order bytes can never be delivered after RESET_STREAM.  Release
+     * their storage and both fragment budgets immediately. */
+    fragment_list_destroy(stream);
     /* RFC 9000 §4.1: data dropped after RESET_STREAM still counts as
      * received, but the receiver retires it so MAX_DATA can advance.
      * Bytes already in recv_buf (recv_len) were charged on STREAM arrival
      * and must be retired even when final_size == recv_offset. */
-    uint64_t abandoned = stream->recv_len;
-    if (frame->final_size > stream->recv_offset) {
-        uint64_t unread_gap = frame->final_size - stream->recv_offset;
-        if (abandoned <= UINT64_MAX - unread_gap)
-            abandoned += unread_gap;
-        else
-            abandoned = UINT64_MAX;
-    }
-    if (abandoned > 0) {
-        if (conn->flow.data_consumed <= UINT64_MAX - abandoned)
-            conn->flow.data_consumed += abandoned;
-        uint64_t new_conn_limit;
-        if (quic_add_u64(conn->flow.max_data_local, abandoned,
-                         &new_conn_limit) == 0 &&
-            new_conn_limit <= QUIC_VARINT_MAX) {
-            conn->flow.max_data_local = new_conn_limit;
-            conn->max_data_pending = 1;
+    if (!stream->recv_reset_retired) {
+        uint64_t abandoned = stream->recv_len;
+        if (frame->final_size > stream->recv_offset) {
+            uint64_t unread_gap = frame->final_size - stream->recv_offset;
+            if (abandoned <= UINT64_MAX - unread_gap)
+                abandoned += unread_gap;
+            else
+                abandoned = UINT64_MAX;
         }
-        stream->recv_reset_retired = 1;
+        if (abandoned > 0) {
+            if (conn->flow.data_consumed <= UINT64_MAX - abandoned)
+                conn->flow.data_consumed += abandoned;
+            uint64_t new_conn_limit;
+            if (quic_add_u64(conn->flow.max_data_local, abandoned,
+                             &new_conn_limit) == 0 &&
+                new_conn_limit <= QUIC_VARINT_MAX) {
+                conn->flow.max_data_local = new_conn_limit;
+                conn->max_data_pending = 1;
+            }
+            stream->recv_reset_retired = 1;
+        }
     }
     nc_cond_broadcast(&stream->read_cond);
     nc_mutex_unlock(&stream->lock);

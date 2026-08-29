@@ -1060,6 +1060,11 @@ static void test_reset_retires_connection_window(void) {
     ASSERT_EQ(conn->flow.data_consumed, before_consumed + 1000);
     ASSERT_EQ(conn->flow.max_data_local, before_max + 1000);
     ASSERT_EQ(conn->max_data_pending, 1);
+    uint64_t after_consumed = conn->flow.data_consumed;
+    uint64_t after_max = conn->flow.max_data_local;
+    ASSERT_EQ(neverc_quic_stream_receive_reset(conn, &reset), 0);
+    ASSERT_EQ(conn->flow.data_consumed, after_consumed);
+    ASSERT_EQ(conn->flow.max_data_local, after_max);
     neverc_quic_conn_destroy(conn);
 
     conn = neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
@@ -1144,15 +1149,16 @@ static void test_stream_overlaps_do_not_amplify_fragment_storage(void) {
     ASSERT_NOT_NULL(conn);
     conn->state = QUIC_CONN_ESTABLISHED;
 
-    uint8_t data[1024];
-    memset(data, 'A', sizeof(data));
+    uint8_t expected[1152];
+    for (size_t i = 0; i < sizeof(expected); i++)
+        expected[i] = (uint8_t)(i * 131U + 17U);
     quic_frame_stream_t frame;
     memset(&frame, 0, sizeof(frame));
     frame.stream_id = 0;
-    frame.data = data;
-    frame.data_len = sizeof(data);
+    frame.data_len = 1024;
     for (uint64_t i = 0; i < 128; i++) {
         frame.offset = 1 + i;
+        frame.data = expected + frame.offset;
         ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
     }
 
@@ -1170,6 +1176,87 @@ static void test_stream_overlaps_do_not_amplify_fragment_storage(void) {
     ASSERT_EQ(conn->flow.data_received, 1152);
     ASSERT_EQ(fragment_count, 1);
     ASSERT_EQ(stored_bytes, 1151);
+    ASSERT_NOT_NULL(stream->recv_fragments);
+    if (stream->recv_fragments) {
+        ASSERT_TRUE(stream->recv_fragments->begin <=
+                    stream->recv_fragments->cap);
+        ASSERT_TRUE(stream->recv_fragments->len <=
+                    stream->recv_fragments->cap -
+                        stream->recv_fragments->begin);
+        ASSERT_TRUE(stream->recv_fragments->cap <=
+                    stream->recv_fragments->len * 2 + 1);
+    }
+
+    frame.offset = 0;
+    frame.data = expected;
+    frame.data_len = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    ASSERT_NULL(stream->recv_fragments);
+    ASSERT_EQ(stream->recv_fragment_count, 0);
+    ASSERT_EQ(conn->recv_fragment_count, 0);
+    ASSERT_EQ(stream->recv_offset, 1152);
+    ASSERT_EQ(stream->recv_len, 1152);
+    ASSERT_TRUE(memcmp(stream->recv_buf, expected, sizeof(expected)) == 0);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_stream_fragments_bridge_and_grow_left(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    ASSERT_NOT_NULL(conn);
+    conn->state = QUIC_CONN_ESTABLISHED;
+
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    uint8_t right[] = { 'I', 'J', 'K', 'L' };
+    frame.offset = 8;
+    frame.data = right;
+    frame.data_len = sizeof(right);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+
+    uint8_t left_gap[] = { 'C', 'D', 'E', 'F' };
+    frame.offset = 2;
+    frame.data = left_gap;
+    frame.data_len = sizeof(left_gap);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, 0);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_EQ(stream->recv_fragment_count, 2);
+
+    uint8_t bridge[] = { 'F', 'G', 'H', 'I' };
+    frame.offset = 5;
+    frame.data = bridge;
+    frame.data_len = sizeof(bridge);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    ASSERT_EQ(stream->recv_fragment_count, 1);
+    ASSERT_EQ(conn->recv_fragment_count, 1);
+    ASSERT_NOT_NULL(stream->recv_fragments);
+    uint8_t *allocation = stream->recv_fragments ?
+        stream->recv_fragments->data : NULL;
+    if (stream->recv_fragments) {
+        ASSERT_EQ(stream->recv_fragments->offset, 2);
+        ASSERT_EQ(stream->recv_fragments->len, 10);
+        ASSERT_TRUE(memcmp(stream->recv_fragments->data +
+                               stream->recv_fragments->begin,
+                           "CDEFGHIJKL", 10) == 0);
+    }
+
+    uint8_t grow_left[] = { 'B', 'C' };
+    frame.offset = 1;
+    frame.data = grow_left;
+    frame.data_len = sizeof(grow_left);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    ASSERT_EQ(stream->recv_fragment_count, 1);
+    ASSERT_NOT_NULL(stream->recv_fragments);
+    if (stream->recv_fragments) {
+        ASSERT_TRUE(stream->recv_fragments->data == allocation);
+        ASSERT_EQ(stream->recv_fragments->offset, 1);
+        ASSERT_EQ(stream->recv_fragments->len, 11);
+        ASSERT_TRUE(memcmp(stream->recv_fragments->data +
+                               stream->recv_fragments->begin,
+                           "BCDEFGHIJKL", 11) == 0);
+    }
 
     uint8_t first = 'A';
     frame.offset = 0;
@@ -1177,10 +1264,302 @@ static void test_stream_overlaps_do_not_amplify_fragment_storage(void) {
     frame.data_len = 1;
     ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
     ASSERT_NULL(stream->recv_fragments);
-    ASSERT_EQ(stream->recv_offset, 1152);
-    ASSERT_EQ(stream->recv_len, 1152);
-    for (size_t i = 0; i < stream->recv_len; i++)
-        ASSERT_EQ(stream->recv_buf[i], 'A');
+    ASSERT_EQ(stream->recv_fragment_count, 0);
+    ASSERT_EQ(conn->recv_fragment_count, 0);
+    ASSERT_EQ(stream->recv_len, 12);
+    ASSERT_TRUE(memcmp(stream->recv_buf, "ABCDEFGHIJKL", 12) == 0);
+    ASSERT_EQ(conn->flow.data_received, 12);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_stream_fragment_prepend_growth_is_amortized(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    ASSERT_NOT_NULL(conn);
+    conn->state = QUIC_CONN_ESTABLISHED;
+
+    uint8_t expected[513];
+    for (size_t i = 0; i < sizeof(expected); i++)
+        expected[i] = (uint8_t)(i * 157U + 43U);
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.offset = 512;
+    frame.data = expected + 512;
+    frame.data_len = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, 0);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_NOT_NULL(stream ? stream->recv_fragments : NULL);
+    if (!stream || !stream->recv_fragments) {
+        neverc_quic_conn_destroy(conn);
+        return;
+    }
+
+    size_t previous_cap = stream->recv_fragments->cap;
+    size_t cap_changes = 0;
+    for (size_t offset = 511; offset > 0; offset--) {
+        frame.offset = offset;
+        frame.data = expected + offset;
+        ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+        if (!stream->recv_fragments) break;
+        if (stream->recv_fragments->cap != previous_cap) {
+            previous_cap = stream->recv_fragments->cap;
+            cap_changes++;
+        }
+    }
+    ASSERT_EQ(stream->recv_fragment_count, 1);
+    ASSERT_EQ(conn->recv_fragment_count, 1);
+    ASSERT_TRUE(cap_changes <= 16);
+    ASSERT_NOT_NULL(stream->recv_fragments);
+    if (!stream->recv_fragments) {
+        neverc_quic_conn_destroy(conn);
+        return;
+    }
+    ASSERT_EQ(stream->recv_fragments->offset, 1);
+    ASSERT_EQ(stream->recv_fragments->len, 512);
+    ASSERT_TRUE(memcmp(stream->recv_fragments->data +
+                           stream->recv_fragments->begin,
+                       expected + 1, 512) == 0);
+
+    frame.offset = 0;
+    frame.data = expected;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    ASSERT_NULL(stream->recv_fragments);
+    ASSERT_EQ(stream->recv_fragment_count, 0);
+    ASSERT_EQ(conn->recv_fragment_count, 0);
+    ASSERT_EQ(stream->recv_len, sizeof(expected));
+    ASSERT_TRUE(memcmp(stream->recv_buf, expected, sizeof(expected)) == 0);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_queued_stream_conflict_is_atomic(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    ASSERT_NOT_NULL(conn);
+    conn->state = QUIC_CONN_ESTABLISHED;
+
+    uint8_t original[] = { 'A', 'B', 'C', 'D' };
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.offset = 4;
+    frame.data = original;
+    frame.data_len = sizeof(original);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+
+    uint8_t later[] = { 'W', 'X', 'Y', 'Z' };
+    frame.offset = 12;
+    frame.data = later;
+    frame.data_len = sizeof(later);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, 0);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_EQ(stream->recv_fragment_count, 2);
+    ASSERT_EQ(conn->recv_fragment_count, 2);
+    ASSERT_EQ(stream->recv_highest, 16);
+    ASSERT_EQ(conn->flow.data_received, 16);
+
+    uint8_t conflict[] = { 'W', 'X', 'Y', 'Q' };
+    frame.data = conflict;
+    frame.fin = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), -1);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_PROTOCOL_VIOLATION);
+    ASSERT_EQ(stream->recv_final_known, 0);
+    ASSERT_EQ(stream->recv_highest, 16);
+    ASSERT_EQ(conn->flow.data_received, 16);
+    ASSERT_EQ(stream->recv_fragment_count, 2);
+    ASSERT_EQ(conn->recv_fragment_count, 2);
+    ASSERT_NOT_NULL(stream->recv_fragments);
+    if (stream->recv_fragments) {
+        ASSERT_TRUE(memcmp(stream->recv_fragments->data +
+                               stream->recv_fragments->begin,
+                           original, sizeof(original)) == 0);
+        ASSERT_NOT_NULL(stream->recv_fragments->next);
+        if (stream->recv_fragments->next)
+            ASSERT_TRUE(memcmp(stream->recv_fragments->next->data +
+                                   stream->recv_fragments->next->begin,
+                               later, sizeof(later)) == 0);
+    }
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_stream_fragment_cap_is_bounded_and_atomic(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    ASSERT_NOT_NULL(conn);
+    conn->state = QUIC_CONN_ESTABLISHED;
+
+    uint8_t byte = 'A';
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.data = &byte;
+    frame.data_len = 1;
+    for (size_t i = 0; i < QUIC_MAX_RECV_FRAGMENTS_PER_STREAM; i++) {
+        frame.offset = 1 + (uint64_t)i * 2;
+        ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    }
+
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, 0);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_EQ(stream->recv_fragment_count,
+              QUIC_MAX_RECV_FRAGMENTS_PER_STREAM);
+    ASSERT_EQ(conn->recv_fragment_count,
+              QUIC_MAX_RECV_FRAGMENTS_PER_STREAM);
+    uint64_t previous_highest = stream->recv_highest;
+    uint64_t previous_received = conn->flow.data_received;
+
+    frame.offset = 1 + (uint64_t)QUIC_MAX_RECV_FRAGMENTS_PER_STREAM * 2;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), -1);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_INTERNAL_ERROR);
+    ASSERT_EQ(stream->recv_highest, previous_highest);
+    ASSERT_EQ(conn->flow.data_received, previous_received);
+    ASSERT_EQ(stream->recv_fragment_count,
+              QUIC_MAX_RECV_FRAGMENTS_PER_STREAM);
+    ASSERT_EQ(conn->recv_fragment_count,
+              QUIC_MAX_RECV_FRAGMENTS_PER_STREAM);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_stream_fragment_cap_allows_canonical_merge(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    ASSERT_NOT_NULL(conn);
+    conn->state = QUIC_CONN_ESTABLISHED;
+
+    uint8_t payload[QUIC_MAX_RECV_FRAGMENTS_PER_STREAM * 2];
+    for (size_t i = 0; i < sizeof(payload); i++)
+        payload[i] = (uint8_t)(i * 193U + 29U);
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.data_len = 1;
+    for (size_t i = 0; i < QUIC_MAX_RECV_FRAGMENTS_PER_STREAM; i++) {
+        frame.offset = 1 + (uint64_t)i * 2;
+        frame.data = payload + frame.offset;
+        ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    }
+
+    frame.offset = 1;
+    frame.data = payload + 1;
+    frame.data_len = sizeof(payload) - 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, 0);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_EQ(stream->recv_fragment_count, 1);
+    ASSERT_EQ(conn->recv_fragment_count, 1);
+    ASSERT_NOT_NULL(stream->recv_fragments);
+    if (stream->recv_fragments) {
+        ASSERT_EQ(stream->recv_fragments->offset, 1);
+        ASSERT_EQ(stream->recv_fragments->len, sizeof(payload) - 1);
+        ASSERT_TRUE(memcmp(stream->recv_fragments->data +
+                               stream->recv_fragments->begin,
+                           payload + 1, sizeof(payload) - 1) == 0);
+    }
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_connection_fragment_cap_is_bounded(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    ASSERT_NOT_NULL(conn);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    conn->local_params.initial_max_streams_bidi = QUIC_MAX_STREAMS;
+
+    uint8_t byte = 'A';
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.data = &byte;
+    frame.data_len = 1;
+    size_t remaining = QUIC_MAX_RECV_FRAGMENTS_PER_CONN;
+    size_t stream_index = 0;
+    while (remaining > 0) {
+        size_t take = remaining < QUIC_MAX_RECV_FRAGMENTS_PER_STREAM ?
+            remaining : QUIC_MAX_RECV_FRAGMENTS_PER_STREAM;
+        frame.stream_id = (uint64_t)stream_index * 4;
+        for (size_t i = 0; i < take; i++) {
+            frame.offset = 1 + (uint64_t)i * 2;
+            ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+        }
+        remaining -= take;
+        stream_index++;
+    }
+    ASSERT_EQ(conn->recv_fragment_count,
+              QUIC_MAX_RECV_FRAGMENTS_PER_CONN);
+    uint64_t previous_received = conn->flow.data_received;
+    frame.stream_id = (uint64_t)stream_index * 4;
+    frame.offset = 1;
+    frame.fin = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), -1);
+    ASSERT_EQ(conn->close_error_code, QUIC_ERR_INTERNAL_ERROR);
+    ASSERT_EQ(conn->state, QUIC_CONN_DRAINING);
+    ASSERT_EQ(conn->flow.data_received, previous_received);
+    ASSERT_EQ(conn->recv_fragment_count,
+              QUIC_MAX_RECV_FRAGMENTS_PER_CONN);
+    quic_stream_t *rejected =
+        neverc_quic_conn_find_stream(conn, frame.stream_id);
+    ASSERT_NOT_NULL(rejected);
+    if (rejected) {
+        ASSERT_NULL(rejected->recv_fragments);
+        ASSERT_EQ(rejected->recv_fragment_count, 0);
+        ASSERT_EQ(rejected->recv_highest, 0);
+        ASSERT_EQ(rejected->recv_final_known, 0);
+    }
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_reset_releases_queued_fragments(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    ASSERT_NOT_NULL(conn);
+    conn->state = QUIC_CONN_ESTABLISHED;
+
+    uint8_t byte = 'A';
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.offset = 2;
+    frame.data = &byte;
+    frame.data_len = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, 0);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_EQ(stream->recv_fragment_count, 1);
+    ASSERT_EQ(conn->recv_fragment_count, 1);
+
+    quic_frame_reset_stream_t reset;
+    memset(&reset, 0, sizeof(reset));
+    reset.stream_id = 0;
+    reset.final_size = 3;
+    ASSERT_EQ(neverc_quic_stream_receive_reset(conn, &reset), 0);
+    ASSERT_NULL(stream->recv_fragments);
+    ASSERT_EQ(stream->recv_fragment_count, 0);
+    ASSERT_EQ(conn->recv_fragment_count, 0);
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_small_receive_window_never_overallocates(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    ASSERT_NOT_NULL(conn);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    conn->local_params.initial_max_stream_data_bidi_remote = 7;
+
+    uint8_t data[7];
+    memset(data, 'A', sizeof(data));
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.data = data;
+    frame.data_len = sizeof(data);
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, 0);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_EQ(stream->recv_len, sizeof(data));
+    ASSERT_EQ(stream->recv_buf_cap, sizeof(data));
     neverc_quic_conn_destroy(conn);
 }
 
@@ -1669,6 +2048,14 @@ int main(void) {
     test_reset_final_size_below_highest();
     test_stream_overlapping_data_must_match();
     test_stream_overlaps_do_not_amplify_fragment_storage();
+    test_stream_fragments_bridge_and_grow_left();
+    test_stream_fragment_prepend_growth_is_amortized();
+    test_queued_stream_conflict_is_atomic();
+    test_stream_fragment_cap_is_bounded_and_atomic();
+    test_stream_fragment_cap_allows_canonical_merge();
+    test_connection_fragment_cap_is_bounded();
+    test_reset_releases_queued_fragments();
+    test_small_receive_window_never_overallocates();
     test_new_conn_id_retire_prior_to_marks_unsent();
     test_new_conn_id_rejects_zero_length_dcid();
     test_new_conn_id_over_limit_is_connection_id_limit();
