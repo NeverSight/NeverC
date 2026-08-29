@@ -32,6 +32,55 @@ static int macho_allocation_fits(uint32_t count, size_t element_size) {
 typedef uint32_t (*rd32_fn)(const uint8_t *);
 typedef uint64_t (*rd64_fn)(const uint8_t *);
 
+static int macho_fat_architectures_unique(const uint8_t *data,
+                                          uint32_t narch, rd32_fn r32) {
+    if (narch < 2) return 1;
+    if (!macho_allocation_fits(narch, 2U * sizeof(uint64_t))) return 0;
+
+    size_t count = (size_t)narch;
+    uint64_t *storage = (uint64_t *)malloc(
+        count * (2U * sizeof(uint64_t)));
+    if (!storage) return 0;
+    uint64_t *source = storage;
+    uint64_t *scratch = storage + count;
+
+    for (size_t i = 0; i < count; i++) {
+        const uint8_t *arch = data + 8U + i * 20U;
+        source[i] = ((uint64_t)r32(arch) << 32) | r32(arch + 4);
+    }
+
+    for (unsigned shift = 0; shift < 64; shift += 8) {
+        size_t buckets[256] = {0};
+        for (size_t i = 0; i < count; i++)
+            buckets[(source[i] >> shift) & 0xffU]++;
+
+        size_t offset = 0;
+        for (size_t i = 0; i < 256; i++) {
+            size_t bucket_size = buckets[i];
+            buckets[i] = offset;
+            offset += bucket_size;
+        }
+        for (size_t i = 0; i < count; i++) {
+            unsigned bucket = (unsigned)((source[i] >> shift) & 0xffU);
+            scratch[buckets[bucket]++] = source[i];
+        }
+
+        uint64_t *swap = source;
+        source = scratch;
+        scratch = swap;
+    }
+
+    int unique = 1;
+    for (size_t i = 1; i < count; i++) {
+        if (source[i - 1] == source[i]) {
+            unique = 0;
+            break;
+        }
+    }
+    free(storage);
+    return unique;
+}
+
 static int macho_open_fail(neverc_macho_file_t *f) {
     neverc_macho_close(f);
     return -1;
@@ -72,6 +121,8 @@ static int macho_fat_first_slice(const uint8_t *data, size_t len,
     uint32_t narch = r32(data + 4);
     if (narch == 0 || (uint64_t)narch * 20U > len - 8)
         return -1;
+    if (!macho_fat_architectures_unique(data, narch, r32))
+        return -1;
 
     /* Validate every fat_arch before selecting a slice. Offset/size/magic
      * checks still accept a truncated later thin image; Go's NewFatFile
@@ -81,13 +132,6 @@ static int macho_fat_first_slice(const uint8_t *data, size_t len,
     uint32_t first_type = 0;
     for (uint32_t i = 0; i < narch; i++) {
         const uint8_t *arch = data + 8 + (size_t)i * 20U;
-        uint32_t cpu = r32(arch);
-        uint32_t subcpu = r32(arch + 4);
-        for (uint32_t j = 0; j < i; j++) {
-            const uint8_t *previous = data + 8 + (size_t)j * 20U;
-            if (r32(previous) == cpu && r32(previous + 4) == subcpu)
-                return -1;
-        }
         uint32_t offset = r32(arch + 8);
         uint32_t size = r32(arch + 12);
         if (!macho_range_in_file(offset, size, len) || size < 4)
