@@ -477,6 +477,47 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "href=\"java#\"") != NULL);
     free(out);
 
+    /* A zero-output control node must not hide the static suffix from the
+     * URL scheme filter. The browser concatenates all three pieces into
+     * "javascript:" even though the action's immediate next node is IF. */
+    neverc_html_template_data_set(&data, "X", "java");
+    neverc_html_template_data_set(&data, "Noop", "false");
+    out = neverc_html_template_render(
+        "<a href=\"{{.X}}{{if .Noop}}{{end}}script:alert(1)\">x</a>",
+        &data);
+    check("control node split scheme neutralized",
+          out && strstr(out, "javascript:") == NULL);
+    check_str("control node split scheme becomes hash", out,
+              "<a href=\"#script:alert(1)\">x</a>");
+    free(out);
+
+    /* The action can also be the final node of a selected child list. Its
+     * effective continuation is the text after the parent control node. */
+    neverc_html_template_data_set(&data, "On", "1");
+    out = neverc_html_template_render(
+        "<a href=\"{{if .On}}{{.X}}{{end}}script:alert(1)\">x</a>",
+        &data);
+    check_str("parent continuation split scheme becomes hash", out,
+              "<a href=\"#script:alert(1)\">x</a>");
+    free(out);
+
+    out = neverc_html_template_render(
+        "<a href=\"{{.X}}{{range .Missing}}{{end}}script:alert(1)\">x</a>",
+        &data);
+    check_str("empty range split scheme becomes hash", out,
+              "<a href=\"#script:alert(1)\">x</a>");
+    free(out);
+
+    /* Meta refresh detection also needs the effective continuation rather
+     * than only the immediate text node. */
+    neverc_html_template_data_set(&data, "X", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<meta content=\"{{.X}}{{if .Noop}}{{end}}\" "
+        "http-equiv=\"refresh\">", &data);
+    check_str("control node meta refresh becomes hash", out,
+              "<meta content=\"#\" http-equiv=\"refresh\">");
+    free(out);
+
     neverc_html_template_data_set(&data, "Name", "alert(1)");
     out = neverc_html_template_render("<img onclick=\"{{.Name}}\">", &data);
     check("quoted onclick is js string",

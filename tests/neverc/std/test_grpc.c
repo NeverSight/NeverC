@@ -9,12 +9,14 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static int tests_run;
 static int tests_failed;
+static _Atomic int grpc_http1_handler_calls;
 
 #define CHECK(condition)                                                     \
     do {                                                                     \
@@ -46,6 +48,18 @@ static neverc_grpc_status_t grpc_test_unary_handler(
         return NEVERC_GRPC_INTERNAL;
     return neverc_grpc_server_stream_recv(stream, &message) == 0
         ? NEVERC_GRPC_OK : NEVERC_GRPC_INVALID_ARGUMENT;
+}
+
+static neverc_grpc_status_t grpc_test_http1_rejected_handler(
+    neverc_grpc_server_stream_t *stream, void *context) {
+    (void)stream;
+    (void)context;
+    atomic_fetch_add_explicit(&grpc_http1_handler_calls, 1,
+                              memory_order_relaxed);
+    /* Reaching any gRPC handler for HTTP/1 is already a protocol error. Keep
+     * this gate regression deterministic instead of entering the historical
+     * HTTP/1-object-as-HTTP/2-stream undefined behaviour. */
+    return NEVERC_GRPC_INVALID_ARGUMENT;
 }
 
 static neverc_grpc_status_t grpc_test_bidi_handler(
@@ -211,6 +225,10 @@ static const neverc_grpc_method_t grpc_test_bin_metadata_method = {
 static const neverc_grpc_method_t grpc_test_unary_no_send_method = {
     "/test.Echo/UnaryNoSend", NEVERC_GRPC_UNARY, 1024U, 1024U,
     grpc_test_unary_no_send_handler, NULL};
+
+static const neverc_grpc_method_t grpc_test_http1_rejected_method = {
+    "/test.Echo/Http1Rejected", NEVERC_GRPC_BIDI_STREAMING, 1024U, 1024U,
+    grpc_test_http1_rejected_handler, NULL};
 
 static void grpc_test_server_task(void *context) {
     grpc_test_server_t *test = (grpc_test_server_t *)context;
@@ -758,7 +776,9 @@ static int grpc_test_register_methods(neverc_http_mux_t *mux) {
            neverc_grpc_server_register(
                mux, &grpc_test_bin_metadata_method) == 0 &&
            neverc_grpc_server_register(
-               mux, &grpc_test_unary_no_send_method) == 0;
+               mux, &grpc_test_unary_no_send_method) == 0 &&
+           neverc_grpc_server_register(
+               mux, &grpc_test_http1_rejected_method) == 0;
 }
 
 static void grpc_test_h2c_end_to_end(void) {
@@ -875,6 +895,123 @@ static int grpc_tcp_read_all(neverc_tcp_conn_t *conn, void *data,
         offset += (size_t)count;
     }
     return 0;
+}
+
+typedef struct {
+    neverc_http_server_t *server;
+    int result;
+} grpc_http1_server_t;
+
+static void grpc_http1_server_task(void *context) {
+    grpc_http1_server_t *test = (grpc_http1_server_t *)context;
+    test->result = neverc_http_server_listen_and_serve(
+        test->server, "127.0.0.1:0");
+}
+
+static void grpc_http1_health_handler(
+    neverc_http_request_t *request,
+    neverc_http_response_writer_t *writer) {
+    (void)request;
+    (void)neverc_http_write_string(writer, "healthy");
+}
+
+static int grpc_http1_round_trip(int port, const void *request,
+                                 size_t request_length,
+                                 char *response, size_t response_capacity) {
+    if (!request || !response || response_capacity == 0) return -1;
+    char address[64];
+    (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
+    const char *error = NULL;
+    neverc_tcp_conn_t *connection = neverc_tcp_dial(address, &error);
+    if (!connection) return -1;
+    (void)neverc_tcp_set_read_timeout(connection, 2000);
+    (void)neverc_tcp_set_write_timeout(connection, 2000);
+    if (grpc_tcp_write_all(connection, request, request_length) != 0) {
+        neverc_tcp_close(connection);
+        return -1;
+    }
+    size_t length = 0;
+    while (length + 1U < response_capacity) {
+        int count = neverc_tcp_read(
+            connection, response + length, response_capacity - length - 1U);
+        if (count <= 0) break;
+        length += (size_t)count;
+    }
+    response[length] = '\0';
+    neverc_tcp_close(connection);
+    return (int)length;
+}
+
+static void grpc_test_http1_transport_rejected(void) {
+    neverc_http_mux_t *mux = neverc_http_new_mux();
+    CHECK(mux != NULL);
+    CHECK(mux && grpc_test_register_methods(mux));
+    if (!mux) return;
+    neverc_http_mux_handle(mux, "GET /health", grpc_http1_health_handler);
+
+    neverc_http_server_config_t config =
+        neverc_http_server_config_default();
+    config.workers = 1;
+    grpc_http1_server_t test = {
+        .server = neverc_http_server_new(mux, &config),
+        .result = -1};
+    CHECK(test.server != NULL);
+    neverc_thread_executor_t *executor =
+        neverc_thread_executor_create(1U, 1U);
+    CHECK(executor != NULL);
+    if (!test.server || !executor) {
+        neverc_thread_executor_free(executor);
+        neverc_http_server_free(test.server);
+        neverc_http_mux_free(mux);
+        return;
+    }
+    CHECK(neverc_thread_executor_submit(
+              executor, grpc_http1_server_task, &test) == NEVERC_THREAD_OK);
+
+    int port = 0;
+    for (int attempt = 0; attempt < 500 && port <= 0; attempt++) {
+        port = neverc_http_server_bound_port(test.server);
+        if (port <= 0)
+            neverc_time_sleep(10 * NEVERC_TIME_MILLISECOND);
+    }
+    CHECK(port > 0);
+
+    static const char header[] =
+        "POST /test.Echo/Http1Rejected HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Content-Type: application/grpc\r\n"
+        "TE: trailers\r\n"
+        "Content-Length: 5\r\n"
+        "Connection: close\r\n\r\n";
+    uint8_t request[sizeof(header) - 1U + 5U];
+    memcpy(request, header, sizeof(header) - 1U);
+    memset(request + sizeof(header) - 1U, 0, 5U);
+    char response[1024] = {0};
+    atomic_store_explicit(&grpc_http1_handler_calls, 0,
+                          memory_order_relaxed);
+    CHECK(port > 0 && grpc_http1_round_trip(
+              port, request, sizeof(request), response,
+              sizeof(response)) > 0);
+    CHECK(strstr(response, "505 HTTP Version Not Supported") != NULL);
+    CHECK(atomic_load_explicit(&grpc_http1_handler_calls,
+                               memory_order_relaxed) == 0);
+
+    static const char health_request[] =
+        "GET /health HTTP/1.1\r\nHost: localhost\r\n"
+        "Connection: close\r\n\r\n";
+    response[0] = '\0';
+    CHECK(port > 0 && grpc_http1_round_trip(
+              port, health_request, sizeof(health_request) - 1U,
+              response, sizeof(response)) > 0);
+    CHECK(strstr(response, "200 OK") != NULL);
+    CHECK(strstr(response, "healthy") != NULL);
+
+    neverc_http_server_shutdown(test.server);
+    CHECK(neverc_thread_executor_shutdown(executor) == NEVERC_THREAD_OK);
+    CHECK(test.result == 0);
+    neverc_thread_executor_free(executor);
+    neverc_http_server_free(test.server);
+    neverc_http_mux_free(mux);
 }
 
 static int grpc_h2_write_frame(neverc_tcp_conn_t *conn, uint8_t type,
@@ -1470,6 +1607,7 @@ int main(void) {
     grpc_test_metadata_limits();
     grpc_test_status_mapping();
     grpc_test_binary_metadata_unpadded();
+    grpc_test_http1_transport_rejected();
     grpc_test_h2c_end_to_end();
     grpc_test_tls_end_to_end();
     printf("grpc: %d checks, %d failed\n", tests_run, tests_failed);

@@ -163,6 +163,56 @@ static void test_scanner_full_buffer_with_eof(void) {
 }
 
 typedef struct {
+    size_t remaining;
+    unsigned terminal_empty_reads;
+} delayed_eof_reader_t;
+
+static int delayed_eof_reader_read(void *ctx, uint8_t *buf, size_t len,
+                                   size_t *n) {
+    delayed_eof_reader_t *reader = (delayed_eof_reader_t *)ctx;
+    size_t take = reader->remaining < len ? reader->remaining : len;
+    if (take > 0) {
+        memset(buf, 'y', take);
+        reader->remaining -= take;
+        *n = take;
+        /* Readers may report the terminal EOF on a later call. */
+        return 0;
+    }
+    *n = 0;
+    if (reader->terminal_empty_reads > 0) {
+        reader->terminal_empty_reads--;
+        return 0;
+    }
+    return NEVERC_IO_EOF;
+}
+
+static void test_scanner_full_buffer_after_transient_empty_read(void) {
+    printf("[scanner full buffer after transient empty read]\n");
+
+    delayed_eof_reader_t reader = {
+        NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE, 1
+    };
+    neverc_io_reader_t r = { &reader, delayed_eof_reader_read };
+    neverc_bufio_scanner_t sc;
+    neverc_bufio_scanner_init(&sc, r);
+
+    check_int("full delayed eof scan", neverc_bufio_scanner_scan(&sc), 1);
+    size_t len = 0;
+    const uint8_t *token = neverc_bufio_scanner_bytes(&sc, &len);
+    check_size("full delayed eof token length", len,
+               NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE);
+    check_int("full delayed eof token first byte",
+              token && len > 0 && token[0] == 'y', 1);
+    check_int("full delayed eof token last byte",
+              token && len > 0 && token[len - 1] == 'y', 1);
+    check_int("full delayed eof has no scanner error",
+              neverc_bufio_scanner_err(&sc), 0);
+    check_int("full delayed eof stops", neverc_bufio_scanner_scan(&sc), 0);
+
+    neverc_bufio_scanner_free(&sc);
+}
+
+typedef struct {
     const uint8_t *data;
     size_t len;
     int err;
@@ -1088,6 +1138,7 @@ int main(void) {
     test_scanner_crlf();
     test_scanner_empty_lines();
     test_scanner_full_buffer_with_eof();
+    test_scanner_full_buffer_after_transient_empty_read();
     test_scanner_data_with_terminal_error();
     test_buffered_reader();
     test_buffered_reader_short_read();

@@ -91,6 +91,34 @@ int main(void) {
     neverc_tar_writer_free(&writer);
     free(retired_allocation);
     retired_allocation = NULL;
+
+    /* Entry data can also be a view into the writer allocation. Growing the
+     * destination must rebase that view before copying the payload. */
+    neverc_tar_writer_init(&writer);
+    CHECK(writer.data != NULL);
+    neverc_tar_header_v2_t header;
+    memset(&header, 0, sizeof(header));
+    strcpy(header.name, "body-alias.bin");
+    header.size = 1;
+    header.mode = 0600;
+    header.typeflag = NEVERC_TAR_REG;
+    CHECK(neverc_tar_writer_write_header_v2(&writer, &header) == 0);
+
+    initial_cap = writer.cap;
+    writer.data[0] = 0x5A;
+    const uint8_t *body_alias = writer.data;
+    writer.len = writer.cap;
+    force_move = 1;
+    CHECK(neverc_tar_writer_write(&writer, body_alias, 1) == 0);
+    force_move = 0;
+    CHECK(retired_allocation != NULL);
+    CHECK(writer.data != retired_allocation);
+    CHECK(writer.cap > initial_cap);
+    CHECK(writer.data[initial_cap] == 0x5A);
+
+    neverc_tar_writer_free(&writer);
+    free(retired_allocation);
+    retired_allocation = NULL;
     puts("passed");
     return 0;
 }
