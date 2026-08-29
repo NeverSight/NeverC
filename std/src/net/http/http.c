@@ -3141,14 +3141,17 @@ static int http_conn_start_streaming(http_conn_t *connection,
     task->parsed = *parsed;
     memset(parsed, 0, sizeof(*parsed));
 
+    neverc_context_t *background = neverc_context_background();
+    if (!background) goto fail;
     if (connection->handler_timeout_ms > 0) {
         task->context = neverc_context_with_timeout_handle(
-            neverc_context_background(), connection->handler_timeout_ms,
+            background, connection->handler_timeout_ms,
             &task->cancel);
     } else {
         task->context = neverc_context_with_cancel_handle(
-            neverc_context_background(), &task->cancel);
+            background, &task->cancel);
     }
+    neverc_context_free(background);
     if (!task->context || !task->cancel) goto fail;
 
     if (fill_request(&task->parsed, &task->request,
@@ -4862,6 +4865,7 @@ const char *neverc_http_status_text(int code) {
     if (code == 502) return "Bad Gateway";
     if (code == 503) return "Service Unavailable";
     if (code == 504) return "Gateway Timeout";
+    if (code == 505) return "HTTP Version Not Supported";
     return "Unknown";
 }
 

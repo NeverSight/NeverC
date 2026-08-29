@@ -70,6 +70,8 @@ static void test_status_text(void) {
     check_str("502", neverc_http_status_text(502), "Bad Gateway");
     check_str("503", neverc_http_status_text(503), "Service Unavailable");
     check_str("504", neverc_http_status_text(504), "Gateway Timeout");
+    check_str("505", neverc_http_status_text(505),
+              "HTTP Version Not Supported");
     check_str("999", neverc_http_status_text(999), "Unknown");
 }
 

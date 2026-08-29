@@ -590,6 +590,17 @@ static void grpc_server_dispatch(neverc_http_request_t *request,
                                  void *context) {
     const neverc_grpc_method_t *method =
         (const neverc_grpc_method_t *)context;
+    /* gRPC's transport is HTTP/2. In particular, protocol_stream is an
+     * opaque transport object shared by HTTP/1 and HTTP/2 streaming routes;
+     * treating any non-NULL value as h2_stream_t is a type confusion. */
+    if (!request->http_version ||
+        strcmp(request->http_version, "HTTP/2.0") != 0) {
+        neverc_http_set_status(writer, 505);
+        neverc_http_set_header(writer, "content-type",
+                               "text/plain; charset=utf-8");
+        (void)neverc_http_write_string(writer, "gRPC requires HTTP/2\n");
+        return;
+    }
     if (!grpc_content_type_valid(request->content_type)) {
         neverc_http_set_status(writer, 415);
         return;
