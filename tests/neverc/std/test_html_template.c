@@ -518,6 +518,16 @@ static void test_template_url_and_script(void) {
               "<meta content=\"#\" http-equiv=\"refresh\">");
     free(out);
 
+    /* A later dynamic value is not allowed to hide the static meta marker
+     * from an earlier value in the same content attribute. */
+    neverc_html_template_data_set(&data, "X", "javascript:");
+    out = neverc_html_template_render(
+        "<meta content=\"{{.X}}{{.Missing}}{{if .Noop}}{{end}}\" "
+        "http-equiv=\"refresh\">", &data);
+    check_str("dynamic gap meta refresh becomes hash", out,
+              "<meta content=\"#\" http-equiv=\"refresh\">");
+    free(out);
+
     neverc_html_template_data_set(&data, "Name", "alert(1)");
     out = neverc_html_template_render("<img onclick=\"{{.Name}}\">", &data);
     check("quoted onclick is js string",
