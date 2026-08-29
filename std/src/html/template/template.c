@@ -114,7 +114,7 @@ static int buf_append(char **buf, size_t *len, size_t *cap,
     if ((!s && slen > 0) || *len > SIZE_MAX - slen - 1U) return -1;
     size_t required = *len + slen + 1U;
     if (required > *cap) {
-        size_t new_cap = *cap;
+        size_t new_cap = *cap ? *cap : 64U;
         while (new_cap < required) {
             if (new_cap > SIZE_MAX / 2U) { new_cap = required; break; }
             new_cap *= 2U;
@@ -432,6 +432,17 @@ typedef struct node {
     struct node *else_branch;
 } node_t;
 
+typedef struct html_exec_cont {
+    const node_t *nodes;
+    const struct html_exec_cont *outer;
+} html_exec_cont_t;
+
+typedef struct {
+    int valid;
+    size_t value_start_offset;
+    int future_refresh;
+} html_meta_future_cache_t;
+
 struct neverc_html_template {
     node_t *root;
 };
@@ -657,7 +668,7 @@ static int html_ci_eq_n(const char *a, const char *b, size_t n) {
 
 static int html_is_ascii_ws(unsigned char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
-           c == '\f' || c == '\v';
+           c == '\f';
 }
 
 static int html_attr_name_eq(const char *name, size_t nlen, const char *want) {
@@ -701,21 +712,61 @@ static int html_contains_ci_n(const char *s, size_t n, const char *needle) {
     return 0;
 }
 
-static int html_value_is_refresh(const char *buf, size_t start, size_t end) {
+enum { HTML_META_RAW_VALUE_LIMIT = 256 };
+
+/* Attribute values are compared after HTML tokenization, which decodes
+ * character references. Keep the normal no-entity path allocation-free and
+ * bound entity work; an overlong encoded spelling is treated conservatively
+ * as refresh context. */
+static int html_value_is_refresh(const char *buf, size_t start, size_t end,
+                                 int *failed) {
+    if (failed) *failed = 0;
     while (start < end && html_is_ascii_ws((unsigned char)buf[start]))
         start++;
     while (end > start && html_is_ascii_ws((unsigned char)buf[end - 1]))
         end--;
-    return end > start && html_tag_is(buf + start, end - start, "refresh");
+    size_t raw_len = end - start;
+    if (raw_len == 0) return 0;
+    if (!memchr(buf + start, '&', raw_len))
+        return html_tag_is(buf + start, raw_len, "refresh");
+    if (raw_len > HTML_META_RAW_VALUE_LIMIT)
+        return 1;
+
+    char raw[HTML_META_RAW_VALUE_LIMIT + 1U];
+    memcpy(raw, buf + start, raw_len);
+    raw[raw_len] = '\0';
+    size_t decoded_len = 0;
+    char *decoded = neverc_html_unescape_string(raw, &decoded_len);
+    if (!decoded) {
+        if (failed) *failed = 1;
+        return 0;
+    }
+    size_t decoded_start = 0;
+    while (decoded_start < decoded_len &&
+           html_is_ascii_ws((unsigned char)decoded[decoded_start]))
+        decoded_start++;
+    while (decoded_len > decoded_start &&
+           html_is_ascii_ws((unsigned char)decoded[decoded_len - 1U]))
+        decoded_len--;
+    int is_refresh = decoded_len > decoded_start &&
+        html_tag_is(decoded + decoded_start,
+                    decoded_len - decoded_start, "refresh");
+    free(decoded);
+    return is_refresh;
 }
 
-static void html_note_http_equiv(const char *buf, size_t value_start,
-                                 size_t value_end, const char *attr,
-                                 size_t alen, int *saw_refresh) {
-    if (!saw_refresh || *saw_refresh || !attr) return;
-    if (html_attr_name_eq(attr, alen, "http-equiv") &&
-        html_value_is_refresh(buf, value_start, value_end))
-        *saw_refresh = 1;
+static int html_note_http_equiv(const char *buf, size_t value_start,
+                                size_t value_end, const char *attr,
+                                size_t alen, int *saw_refresh) {
+    if (!saw_refresh || *saw_refresh || !attr) return 0;
+    if (html_attr_name_eq(attr, alen, "http-equiv")) {
+        int failed = 0;
+        int is_refresh = html_value_is_refresh(
+            buf, value_start, value_end, &failed);
+        if (failed) return -1;
+        if (is_refresh) *saw_refresh = 1;
+    }
+    return 0;
 }
 
 static int html_raw_end_tag(const char *buf, size_t i, size_t len,
@@ -887,7 +938,8 @@ static void html_scan_doc(const char *buf, size_t len,
                           const char **aname, size_t *nlen,
                           const char **aprefix, size_t *aplen,
                           int *in_meta, int *meta_refresh,
-                          int *in_comment, int *invalid_context) {
+                          int *in_comment, int *invalid_context,
+                          int *hard_error) {
     *in_script = 0;
     *in_style = 0;
     *in_script_comment = 0;
@@ -905,6 +957,7 @@ static void html_scan_doc(const char *buf, size_t len,
     *meta_refresh = 0;
     *in_comment = 0;
     *invalid_context = 0;
+    *hard_error = 0;
     if (!buf || len == 0) return;
 
     int state = HS_TEXT;
@@ -1206,8 +1259,11 @@ static void html_scan_doc(const char *buf, size_t len,
 
         case HS_ATTR_DQ:
             if (c == '"') {
-                html_note_http_equiv(buf, value_start, i, attr, alen,
-                                     &saw_refresh);
+                if (html_note_http_equiv(buf, value_start, i, attr, alen,
+                                         &saw_refresh) != 0) {
+                    *hard_error = 1;
+                    return;
+                }
                 state = HS_TAG;
                 attr = NULL;
                 alen = 0;
@@ -1217,8 +1273,11 @@ static void html_scan_doc(const char *buf, size_t len,
 
         case HS_ATTR_SQ:
             if (c == '\'') {
-                html_note_http_equiv(buf, value_start, i, attr, alen,
-                                     &saw_refresh);
+                if (html_note_http_equiv(buf, value_start, i, attr, alen,
+                                         &saw_refresh) != 0) {
+                    *hard_error = 1;
+                    return;
+                }
                 state = HS_TAG;
                 attr = NULL;
                 alen = 0;
@@ -1228,8 +1287,11 @@ static void html_scan_doc(const char *buf, size_t len,
 
         case HS_ATTR_UQ:
             if (html_is_ascii_ws(c)) {
-                html_note_http_equiv(buf, value_start, i, attr, alen,
-                                     &saw_refresh);
+                if (html_note_http_equiv(buf, value_start, i, attr, alen,
+                                         &saw_refresh) != 0) {
+                    *hard_error = 1;
+                    return;
+                }
                 state = HS_TAG;
                 attr = NULL;
                 alen = 0;
@@ -1237,8 +1299,11 @@ static void html_scan_doc(const char *buf, size_t len,
                 break;
             }
             if (c == '>') {
-                html_note_http_equiv(buf, value_start, i, attr, alen,
-                                     &saw_refresh);
+                if (html_note_http_equiv(buf, value_start, i, attr, alen,
+                                         &saw_refresh) != 0) {
+                    *hard_error = 1;
+                    return;
+                }
                 state = HS_TAG;
                 attr = NULL;
                 alen = 0;
@@ -1279,8 +1344,6 @@ static void html_scan_doc(const char *buf, size_t len,
                 i++;
                 break;
             }
-            if (c == '"') { state = HS_ATTR_DQ; value_start = i + 1; i++; break; }
-            if (c == '\'') { state = HS_ATTR_SQ; value_start = i + 1; i++; break; }
             if (c == '=') {
                 size_t e = i;
                 while (e > 0 && html_is_ascii_ws((unsigned char)buf[e - 1]))
@@ -1664,16 +1727,356 @@ static int html_is_safe_srcset_spans(const html_span_t *in, int n) {
     return 1;
 }
 
-static size_t html_url_follow_len(const char *s, size_t n) {
-    size_t i = 0;
-    while (i < n && html_is_ascii_ws((unsigned char)s[i])) i++;
-    for (; i < n; i++) {
-        unsigned char c = (unsigned char)s[i];
-        if (c == '"' || c == '\'' || c == '>' || c == '<' ||
-            html_is_ascii_ws(c))
+static int html_template_truthy(
+    const neverc_html_template_data_t *data, const char *key) {
+    const char *value = neverc_html_template_data_get(data, key);
+    return value && value[0] != '\0' &&
+           strcmp(value, "0") != 0 && strcmp(value, "false") != 0;
+}
+
+typedef struct {
+    const node_t *nodes;
+    const html_exec_cont_t *continuation;
+    const node_t *pending[NCI_HTML_TEMPLATE_MAX_DEPTH + 1U];
+    size_t pending_count;
+} html_future_iter_t;
+
+enum {
+    HTML_FUTURE_END = 0,
+    HTML_FUTURE_TEXT = 1,
+    HTML_FUTURE_VAR = 2
+};
+
+static void html_future_iter_init(html_future_iter_t *it,
+                                  const node_t *nodes,
+                                  const html_exec_cont_t *continuation) {
+    memset(it, 0, sizeof(*it));
+    it->nodes = nodes;
+    it->continuation = continuation;
+}
+
+/* Walk the exact branch execute_nodes will take. Returned text spans borrow
+ * the parsed template; the fixed stack keeps lookahead allocation-free. */
+static int html_future_next(html_future_iter_t *it,
+                            const neverc_html_template_data_t *data,
+                            const char **text, size_t *text_len) {
+    if (!it || !text || !text_len) return -1;
+    *text = NULL;
+    *text_len = 0;
+
+    for (;;) {
+        if (!it->nodes) {
+            if (it->pending_count > 0) {
+                it->nodes = it->pending[--it->pending_count];
+                continue;
+            }
+            while (it->continuation && !it->continuation->nodes)
+                it->continuation = it->continuation->outer;
+            if (!it->continuation) return HTML_FUTURE_END;
+            it->nodes = it->continuation->nodes;
+            it->continuation = it->continuation->outer;
+            continue;
+        }
+
+        const node_t *node = it->nodes;
+        it->nodes = node->next;
+        switch (node->type) {
+        case NODE_TEXT:
+            *text = node->text;
+            *text_len = node->text_len;
+            return HTML_FUTURE_TEXT;
+        case NODE_VAR:
+            return HTML_FUTURE_VAR;
+        case NODE_IF: {
+            const node_t *branch = html_template_truthy(data, node->text)
+                ? node->children : node->else_branch;
+            if (branch) {
+                if (it->nodes) {
+                    if (it->pending_count >=
+                        sizeof(it->pending) / sizeof(it->pending[0]))
+                        return -1;
+                    it->pending[it->pending_count++] = it->nodes;
+                }
+                it->nodes = branch;
+            }
             break;
+        }
+        case NODE_RANGE:
+            if (neverc_html_template_data_get(data, node->text) &&
+                node->children) {
+                if (it->nodes) {
+                    if (it->pending_count >=
+                        sizeof(it->pending) / sizeof(it->pending[0]))
+                        return -1;
+                    it->pending[it->pending_count++] = it->nodes;
+                }
+                it->nodes = node->children;
+            }
+            break;
+        default:
+            break;
+        }
     }
-    return i;
+}
+
+/* Collect only the next static URL token. A following action is a boundary:
+ * it will validate itself using the prefix already emitted. Quotes, tag
+ * delimiters, and post-token whitespace stop without copying the document
+ * remainder. CSS punctuation is retained before stopping so split entities
+ * such as &colon; still decode correctly. */
+static int html_collect_url_future(
+    const node_t *nodes,
+    const neverc_html_template_data_t *data,
+    const html_exec_cont_t *continuation,
+    int css_context,
+    char **out, size_t *out_len, size_t *out_cap) {
+    html_future_iter_t it;
+    int started = 0;
+    html_future_iter_init(&it, nodes, continuation);
+
+    for (;;) {
+        const char *text = NULL;
+        size_t text_len = 0;
+        size_t take = 0;
+        int stop = 0;
+        int event = html_future_next(&it, data, &text, &text_len);
+        if (event < 0) return -1;
+        if (event == HTML_FUTURE_END || event == HTML_FUTURE_VAR)
+            return 0;
+        for (size_t i = 0; i < text_len; i++) {
+            unsigned char c = (unsigned char)text[i];
+            if (c == '"' || c == '\'' || c == '>' || c == '<' ||
+                (started && html_is_ascii_ws(c))) {
+                stop = 1;
+                break;
+            }
+            take = i + 1U;
+            if (!html_is_ascii_ws(c)) started = 1;
+            if (css_context &&
+                (c == ')' || c == ';' || c == '{' || c == '}')) {
+                stop = 1;
+                break;
+            }
+        }
+        if (take && buf_append(out, out_len, out_cap, text, take) != 0)
+            return -1;
+        if (stop) return 0;
+    }
+}
+
+enum {
+    HTML_META_CURRENT_DQ,
+    HTML_META_CURRENT_SQ,
+    HTML_META_CURRENT_UQ,
+    HTML_META_BETWEEN,
+    HTML_META_NAME,
+    HTML_META_AFTER_NAME,
+    HTML_META_BEFORE_VALUE,
+    HTML_META_VALUE_DQ,
+    HTML_META_VALUE_SQ,
+    HTML_META_VALUE_UQ,
+    HTML_META_DONE
+};
+
+enum {
+    HTML_META_HTTP_EQUIV_LEN = sizeof("http-equiv") - 1U
+};
+
+typedef struct {
+    int state;
+    size_t name_pos;
+    int name_bad;
+    int target_attr;
+    char value_raw[HTML_META_RAW_VALUE_LIMIT + 1U];
+    size_t value_raw_len;
+    int value_overflow;
+    int found;
+    int error;
+} html_meta_future_t;
+
+static int html_ci_char_eq(unsigned char c, char want) {
+    if (c >= 'A' && c <= 'Z') c = (unsigned char)(c + 32);
+    if (want >= 'A' && want <= 'Z') want = (char)(want + 32);
+    return c == (unsigned char)want;
+}
+
+static void html_meta_name_start(html_meta_future_t *m,
+                                 unsigned char c) {
+    static const char want[] = "http-equiv";
+    m->state = HTML_META_NAME;
+    m->name_pos = 1U;
+    m->name_bad = !html_ci_char_eq(c, want[0]);
+}
+
+static void html_meta_name_finish(html_meta_future_t *m) {
+    m->target_attr = !m->name_bad &&
+        m->name_pos == HTML_META_HTTP_EQUIV_LEN;
+}
+
+static void html_meta_value_start(html_meta_future_t *m) {
+    m->value_raw_len = 0;
+    m->value_overflow = 0;
+}
+
+static void html_meta_value_char(html_meta_future_t *m,
+                                 unsigned char c) {
+    if (!m->target_attr) return;
+    if (m->value_raw_len >= HTML_META_RAW_VALUE_LIMIT) {
+        m->value_overflow = 1;
+        return;
+    }
+    m->value_raw[m->value_raw_len++] = (char)c;
+}
+
+static void html_meta_value_finish(html_meta_future_t *m) {
+    if (m->target_attr) {
+        if (m->value_overflow) {
+            m->found = 1;
+        } else {
+            int failed = 0;
+            if (html_value_is_refresh(m->value_raw, 0,
+                                      m->value_raw_len, &failed))
+                m->found = 1;
+            if (failed) m->error = 1;
+        }
+    }
+    m->target_attr = 0;
+    m->state = HTML_META_BETWEEN;
+}
+
+/* Parse attributes after the current content action. This deliberately
+ * recognizes an exact http-equiv=refresh pair instead of matching unrelated
+ * substrings, and only treats '>' as a tag delimiter outside quotes. */
+static void html_meta_future_char(html_meta_future_t *m,
+                                  unsigned char c) {
+    static const char name[] = "http-equiv";
+    if (!m || m->found || m->state == HTML_META_DONE) return;
+
+    switch (m->state) {
+    case HTML_META_CURRENT_DQ:
+        if (c == '"') m->state = HTML_META_BETWEEN;
+        break;
+    case HTML_META_CURRENT_SQ:
+        if (c == '\'') m->state = HTML_META_BETWEEN;
+        break;
+    case HTML_META_CURRENT_UQ:
+        if (c == '>') m->state = HTML_META_DONE;
+        else if (html_is_ascii_ws(c)) m->state = HTML_META_BETWEEN;
+        break;
+    case HTML_META_BETWEEN:
+        if (c == '>') m->state = HTML_META_DONE;
+        else if (!html_is_ascii_ws(c) && c != '/')
+            html_meta_name_start(m, c);
+        break;
+    case HTML_META_NAME:
+        if (c == '=') {
+            html_meta_name_finish(m);
+            html_meta_value_start(m);
+            m->state = HTML_META_BEFORE_VALUE;
+        } else if (html_is_ascii_ws(c)) {
+            html_meta_name_finish(m);
+            m->state = HTML_META_AFTER_NAME;
+        } else if (c == '/') {
+            m->target_attr = 0;
+            m->state = HTML_META_BETWEEN;
+        } else if (c == '>') {
+            m->state = HTML_META_DONE;
+        } else {
+            if (m->name_pos >= HTML_META_HTTP_EQUIV_LEN ||
+                !html_ci_char_eq(c, name[m->name_pos]))
+                m->name_bad = 1;
+            if (m->name_pos < HTML_META_HTTP_EQUIV_LEN) m->name_pos++;
+        }
+        break;
+    case HTML_META_AFTER_NAME:
+        if (c == '=') {
+            html_meta_value_start(m);
+            m->state = HTML_META_BEFORE_VALUE;
+        } else if (c == '>') {
+            m->state = HTML_META_DONE;
+        } else if (c == '/') {
+            m->target_attr = 0;
+            m->state = HTML_META_BETWEEN;
+        } else if (!html_is_ascii_ws(c) && c != '/') {
+            m->target_attr = 0;
+            html_meta_name_start(m, c);
+        }
+        break;
+    case HTML_META_BEFORE_VALUE:
+        if (c == '"') m->state = HTML_META_VALUE_DQ;
+        else if (c == '\'') m->state = HTML_META_VALUE_SQ;
+        else if (c == '>') m->state = HTML_META_DONE;
+        else if (!html_is_ascii_ws(c)) {
+            m->state = HTML_META_VALUE_UQ;
+            html_meta_value_char(m, c);
+        }
+        break;
+    case HTML_META_VALUE_DQ:
+        if (c == '"') html_meta_value_finish(m);
+        else html_meta_value_char(m, c);
+        break;
+    case HTML_META_VALUE_SQ:
+        if (c == '\'') html_meta_value_finish(m);
+        else html_meta_value_char(m, c);
+        break;
+    case HTML_META_VALUE_UQ:
+        if (c == '>') {
+            html_meta_value_finish(m);
+            if (!m->found) m->state = HTML_META_DONE;
+        } else if (html_is_ascii_ws(c)) {
+            html_meta_value_finish(m);
+        } else {
+            html_meta_value_char(m, c);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+/* Dynamic output cannot contain a raw quote or '>' after contextual
+ * escaping. Feed an opaque token so actions cannot splice an attribute name
+ * or value, but keep scanning through them to find later static attributes. */
+static int html_future_has_meta_refresh(
+    const node_t *nodes,
+    const neverc_html_template_data_t *data,
+    const html_exec_cont_t *continuation,
+    char current_quote,
+    int *has_refresh) {
+    static const char opaque[] = "ZgotmplZ";
+    html_future_iter_t it;
+    html_meta_future_t meta;
+    if (!has_refresh) return -1;
+    *has_refresh = 0;
+    memset(&meta, 0, sizeof(meta));
+    meta.state = current_quote == '"' ? HTML_META_CURRENT_DQ :
+                 current_quote == '\'' ? HTML_META_CURRENT_SQ :
+                 HTML_META_CURRENT_UQ;
+    html_future_iter_init(&it, nodes, continuation);
+
+    while (!meta.found && !meta.error && meta.state != HTML_META_DONE) {
+        const char *text = NULL;
+        size_t text_len = 0;
+        int event = html_future_next(&it, data, &text, &text_len);
+        if (event < 0) return -1;
+        if (event == HTML_FUTURE_END) {
+            if (meta.state == HTML_META_VALUE_DQ ||
+                meta.state == HTML_META_VALUE_SQ ||
+                meta.state == HTML_META_VALUE_UQ)
+                html_meta_value_finish(&meta);
+            break;
+        }
+        if (event == HTML_FUTURE_VAR) {
+            text = opaque;
+            text_len = sizeof(opaque) - 1U;
+        }
+        for (size_t i = 0; i < text_len && !meta.found && !meta.error &&
+             meta.state != HTML_META_DONE; i++)
+            html_meta_future_char(&meta, (unsigned char)text[i]);
+    }
+    if (meta.error) return -1;
+    *has_refresh = meta.found;
+    return 0;
 }
 
 static int html_url_is_query_or_frag(const char *p, size_t n) {
@@ -2027,7 +2430,9 @@ static int html_unescaped_css_scheme_unsafe(const char *prefix, size_t plen,
 
 static int execute_nodes(const node_t *n,
                          const neverc_html_template_data_t *data,
-                         char **buf, size_t *len, size_t *cap) {
+                         char **buf, size_t *len, size_t *cap,
+                         const html_exec_cont_t *continuation,
+                         html_meta_future_cache_t *meta_cache) {
     while (n) {
         switch (n->type) {
         case NODE_TEXT:
@@ -2046,13 +2451,14 @@ static int execute_nodes(const node_t *n,
                 int in_js_quoted = 0, in_js_re = 0, in_js_tpl = 0;
                 int in_open_tag = 0;
                 int in_meta = 0, meta_refresh = 0, in_comment = 0;
-                int invalid_context = 0;
+                int invalid_context = 0, hard_error = 0;
                 html_scan_doc(*buf, *len, &in_script, &in_style_tag,
                               &in_script_comment, &in_js_quoted, &in_js_re,
                               &in_js_tpl, &in_open_tag, &in_attr, &quoted,
                               &aname, &nlen, &aprefix, &aplen,
                               &in_meta, &meta_refresh, &in_comment,
-                              &invalid_context);
+                              &invalid_context, &hard_error);
+                if (hard_error) return -1;
                 if (invalid_context) {
                     if (buf_append(buf, len, cap, "ZgotmplZ", 8) != 0)
                         return -1;
@@ -2097,16 +2503,50 @@ static int execute_nodes(const node_t *n,
                 }
                 int in_css_url = (in_style_tag || in_style_attr) &&
                     html_in_css_url(css_buf, css_len, &uprefix, &uplen);
-                int in_refresh_url = in_attr && in_meta &&
-                    html_attr_name_eq(aname, nlen, "content") &&
-                    (meta_refresh ||
-                     html_prefix_has_url_eq(aprefix, aplen) ||
-                     (n->next && n->next->type == NODE_TEXT &&
-                      n->next->text &&
-                      html_contains_ci_n(n->next->text, n->next->text_len,
-                                         "http-equiv") &&
-                      html_contains_ci_n(n->next->text, n->next->text_len,
-                                         "refresh")));
+                int meta_content = in_attr && in_meta &&
+                    html_attr_name_eq(aname, nlen, "content");
+                int prefix_refresh = meta_content &&
+                    html_prefix_has_url_eq(aprefix, aplen);
+                int future_refresh = 0;
+                if (meta_content && !meta_refresh && !prefix_refresh) {
+                    char current_quote = 0;
+                    size_t value_start_offset = SIZE_MAX;
+                    int cacheable = raw_aprefix && raw_aprefix >= *buf &&
+                        raw_aprefix <= *buf + *len;
+                    if (cacheable)
+                        value_start_offset = (size_t)(raw_aprefix - *buf);
+                    if (quoted) {
+                        if (!cacheable || value_start_offset == 0U ||
+                            ((*buf)[value_start_offset - 1U] != '"' &&
+                             (*buf)[value_start_offset - 1U] != '\'')) {
+                            /* The scanner says this is quoted, so an
+                             * unresolvable delimiter is an invalid context.
+                             * Treat it as refresh URL context to fail closed. */
+                            future_refresh = 1;
+                        } else {
+                            current_quote = (*buf)[value_start_offset - 1U];
+                        }
+                    }
+                    if (!future_refresh && meta_cache && cacheable &&
+                        meta_cache->valid &&
+                        meta_cache->value_start_offset == value_start_offset) {
+                        future_refresh = meta_cache->future_refresh;
+                    } else if (!future_refresh) {
+                        if (html_future_has_meta_refresh(
+                                n->next, data, continuation, current_quote,
+                                &future_refresh) != 0) {
+                            free(decoded_prefix);
+                            return -1;
+                        }
+                        if (meta_cache && cacheable) {
+                            meta_cache->valid = 1;
+                            meta_cache->value_start_offset = value_start_offset;
+                            meta_cache->future_refresh = future_refresh;
+                        }
+                    }
+                }
+                int in_refresh_url = meta_content &&
+                    (meta_refresh || prefix_refresh || future_refresh);
                 if (in_refresh_url) {
                     html_meta_refresh_url_span(aprefix, aplen,
                                                &aprefix, &aplen);
@@ -2124,13 +2564,20 @@ static int execute_nodes(const node_t *n,
                 const char *dprefix = in_css_url ? uprefix :
                     (in_url ? aprefix : NULL);
                 size_t dplen = in_css_url ? uplen : (in_url ? aplen : 0);
-                const char *dsuffix = NULL;
-                size_t dslen = 0;
+                char *future = NULL;
+                size_t future_len = 0, future_cap = 0;
                 if ((in_url || in_style_tag || in_style_attr) &&
-                    n->next && n->next->type == NODE_TEXT && n->next->text)
-                    dslen = html_url_follow_len(n->next->text,
-                                                n->next->text_len);
-                if (dslen) dsuffix = n->next->text;
+                    html_collect_url_future(
+                        n->next, data, continuation,
+                        in_style_tag || in_style_attr,
+                        &future, &future_len, &future_cap) != 0) {
+                    free(future);
+                    free(decoded_prefix);
+                    return -1;
+                }
+                const char *dsuffix = NULL;
+                size_t dslen = future_len;
+                if (dslen) dsuffix = future;
                 int is_srcset = in_attr && !in_css_url &&
                     akind == HTML_ATTR_SRCSET;
                 int in_query = in_attr && in_url && !in_css_url &&
@@ -2213,6 +2660,7 @@ static int execute_nodes(const node_t *n,
                 else
                     escaped = neverc_html_escape(val);
                 free(decoded_prefix);
+                free(future);
                 if (!escaped) return -1;
                 if (unquoted) {
                     char *normalized = html_nospace_normalize(escaped);
@@ -2229,20 +2677,25 @@ static int execute_nodes(const node_t *n,
             break;
         }
         case NODE_IF: {
-            const char *val = neverc_html_template_data_get(data, n->text);
-            int truthy = (val && val[0] != '\0' &&
-                          strcmp(val, "0") != 0 &&
-                          strcmp(val, "false") != 0);
-            if (truthy)
-                { if (execute_nodes(n->children, data, buf, len, cap) != 0) return -1; }
-            else if (n->else_branch)
-                { if (execute_nodes(n->else_branch, data, buf, len, cap) != 0) return -1; }
+            const node_t *branch = html_template_truthy(data, n->text)
+                ? n->children : n->else_branch;
+            if (branch) {
+                html_exec_cont_t child_continuation = {
+                    n->next, continuation};
+                if (execute_nodes(branch, data, buf, len, cap,
+                                  &child_continuation, meta_cache) != 0)
+                    return -1;
+            }
             break;
         }
         case NODE_RANGE:
-            if (neverc_html_template_data_get(data, n->text) &&
-                execute_nodes(n->children, data, buf, len, cap) != 0)
-                return -1;
+            if (neverc_html_template_data_get(data, n->text) && n->children) {
+                html_exec_cont_t child_continuation = {
+                    n->next, continuation};
+                if (execute_nodes(n->children, data, buf, len, cap,
+                                  &child_continuation, meta_cache) != 0)
+                    return -1;
+            }
             break;
         default:
             break;
@@ -2259,7 +2712,10 @@ char *neverc_html_template_execute(const neverc_html_template_t *t,
     char *buf = (char *)NC_HTML_TEMPLATE_MALLOC(cap);
     if (!buf) return NULL;
     buf[0] = '\0';
-    if (execute_nodes(t->root, data, &buf, &len, &cap) != 0) {
+    html_meta_future_cache_t meta_cache;
+    memset(&meta_cache, 0, sizeof(meta_cache));
+    if (execute_nodes(t->root, data, &buf, &len, &cap, NULL,
+                      &meta_cache) != 0) {
         free(buf);
         return NULL;
     }

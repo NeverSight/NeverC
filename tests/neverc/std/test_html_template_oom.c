@@ -74,7 +74,9 @@ static void reset_allocator(size_t failure) {
 int main(void) {
     static const char source[] =
         "<p>{{.Name}}</p>{{if .Show}}yes{{else}}no{{end}}"
-        "{{range .Items}}item{{end}}";
+        "{{range .Items}}item{{end}}"
+        "<a href=\"{{.Name}}{{if .Missing}}{{end}}script:\">x</a>"
+        "<meta http-equiv=\"ref&#114;esh\" content=\"{{.Name}}\">";
 
     reset_allocator(0);
     neverc_html_template_t *t = neverc_html_template_parse(source);
