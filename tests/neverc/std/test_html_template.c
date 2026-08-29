@@ -520,12 +520,29 @@ static void test_template_url_and_script(void) {
 
     /* A later dynamic value is not allowed to hide the static meta marker
      * from an earlier value in the same content attribute. */
-    neverc_html_template_data_set(&data, "X", "javascript:");
+    neverc_html_template_data_set(&data, "X", "javascript:alert(1)//");
     out = neverc_html_template_render(
         "<meta content=\"{{.X}}{{.Missing}}{{if .Noop}}{{end}}\" "
         "http-equiv=\"refresh\">", &data);
     check_str("dynamic gap meta refresh becomes hash", out,
               "<meta content=\"#\" http-equiv=\"refresh\">");
+    free(out);
+
+    /* A '>' inside another quoted attribute is not the end of the meta tag. */
+    out = neverc_html_template_render(
+        "<meta content=\"{{.X}}\" title=\">\" http-equiv=\"refresh\">",
+        &data);
+    check_str("quoted greater-than keeps meta refresh context", out,
+              "<meta content=\"#\" title=\">\" http-equiv=\"refresh\">");
+    free(out);
+
+    /* CSS URL schemes can also be split by a zero-output control node. */
+    neverc_html_template_data_set(&data, "X", "java");
+    out = neverc_html_template_render(
+        "<div style=\"background:url({{.X}}{{if .Noop}}{{end}}"
+        "script:alert(1))\"></div>", &data);
+    check_str("control node CSS URL scheme becomes hash", out,
+              "<div style=\"background:url(#script:alert(1))\"></div>");
     free(out);
 
     neverc_html_template_data_set(&data, "Name", "alert(1)");
