@@ -6,7 +6,7 @@
       "symbol": "ActivePhases",
       "owner": "PluginPhaseExecutor",
       "lifetime": "stack-scoped per callback dynamic extent",
-      "justification": "Callback ancestry / re-entrancy depth stack. Pushed/popped by RAII around each phase invocation; empty between invocations. Carries no Session/Task/artifact payload.",
+      "justification": "Callback ancestry / re-entrancy depth stack held by a trivially destructible thread-local wrapper. Existing invocation-scope RAII explicitly releases stored elements as it unwinds through the outermost pop; empty between invocations. Carries no Session/Task/artifact payload.",
       "cleared_by_test": "PluginConcurrencyTests re-entrancy suite"
     },
     {
@@ -14,7 +14,7 @@
       "symbol": "CallbackScopes",
       "owner": "PluginProcessServices",
       "lifetime": "stack-scoped per callback dynamic extent",
-      "justification": "Callback scope stack used only to detect nested callback ancestry; RAII push/pop, empty at rest.",
+      "justification": "Callback scope stack used only to detect nested callback ancestry and held by a trivially destructible thread-local wrapper. Existing callback-scope RAII explicitly releases stored elements as it unwinds through the outermost pop; empty at rest.",
       "cleared_by_test": "PluginConcurrencyTests"
     },
     {
@@ -22,7 +22,7 @@
       "symbol": "ActivePluginCallbacks",
       "owner": "PluginSession",
       "lifetime": "stack-scoped per callback dynamic extent",
-      "justification": "Active-plugin re-entrancy stack; RAII managed, empty at rest, no compilation payload.",
+      "justification": "Active-plugin re-entrancy stack held by a trivially destructible thread-local wrapper. Existing callback-scope RAII explicitly releases stored elements as it unwinds through the outermost pop; empty at rest and carries no compilation payload.",
       "cleared_by_test": "PluginConcurrencyTests"
     },
     {
@@ -30,7 +30,7 @@
       "symbol": "ActiveRoutes",
       "owner": "PluginFileSystem",
       "lifetime": "stack-scoped per VFS query dynamic extent",
-      "justification": "VFS route/recursion-budget frame; RAII push/pop, empty at rest, prevents infinite provider recursion. No cached FS state.",
+      "justification": "VFS route/recursion-budget stack held by a trivially destructible thread-local wrapper. Existing query-scope RAII explicitly releases stored elements as it unwinds through the outermost pop; empty at rest and prevents infinite provider recursion. No cached FS state.",
       "cleared_by_test": "PluginVFSTest.DeniesSamePathRecursiveRouting"
     },
     {

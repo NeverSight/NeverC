@@ -1,4 +1,5 @@
 #include "PluginFileSystem.h"
+#include "neverc/Foundation/Core/ThreadLocalStorage.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
@@ -10,6 +11,7 @@
 #include <cstring>
 #include <limits>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 
 using namespace llvm;
@@ -25,7 +27,8 @@ struct ActiveRoute {
   std::string Path;
 };
 
-thread_local std::vector<ActiveRoute> ActiveRoutes;
+thread_local ScopedThreadLocalStack<ActiveRoute, 4> ActiveRoutes;
+static_assert(std::is_trivially_destructible_v<decltype(ActiveRoutes)>);
 
 class RouteGuard {
 public:
@@ -33,11 +36,11 @@ public:
              StringRef Path) {
     if (ActiveRoutes.size() >= MaximumRouteDepth)
       return;
-    for (const ActiveRoute &Route : ActiveRoutes) {
-      if (Route.View == &View && StringRef(Route.Operation) == Operation &&
-          Route.Path == Path)
-        return;
-    }
+    if (ActiveRoutes.any_of([&](const ActiveRoute &Route) {
+          return Route.View == &View &&
+                 StringRef(Route.Operation) == Operation && Route.Path == Path;
+        }))
+      return;
     ActiveRoutes.push_back({&View, Operation, Path.str()});
     Entered = true;
   }

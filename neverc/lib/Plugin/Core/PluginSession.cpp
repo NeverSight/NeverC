@@ -1,4 +1,5 @@
 #include "neverc/Plugin/Host/PluginSession.h"
+#include "neverc/Foundation/Core/ThreadLocalStorage.h"
 #include "neverc/Plugin/Host/PluginHandleArena.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
@@ -9,6 +10,7 @@
 #include "llvm/Support/TimeProfiler.h"
 #include <algorithm>
 #include <chrono>
+#include <type_traits>
 #include <utility>
 
 using namespace llvm;
@@ -16,7 +18,9 @@ using namespace llvm;
 namespace neverc::plugin {
 namespace {
 
-thread_local std::vector<const PluginModule *> ActivePluginCallbacks;
+thread_local ScopedThreadLocalStack<const PluginModule *> ActivePluginCallbacks;
+static_assert(
+    std::is_trivially_destructible_v<decltype(ActivePluginCallbacks)>);
 
 Error sessionError(const Twine &Message) {
   return createStringError(inconvertibleErrorCode(), Message);
@@ -298,7 +302,9 @@ Expected<NevercStatus> PluginSession::invokeCallback(
 
   const PluginDescriptorRecord &Descriptor = State->Module->descriptor();
   bool IsReentrant =
-      llvm::is_contained(ActivePluginCallbacks, State->Module.get());
+      ActivePluginCallbacks.any_of([&](const PluginModule *Active) {
+        return Active == State->Module.get();
+      });
   if (IsReentrant && Descriptor.Reentrancy != NEVERC_REENTRANCY_ALLOWED)
     return sessionStatus(NEVERC_STATUS_REENTRANCY_DENIED);
 

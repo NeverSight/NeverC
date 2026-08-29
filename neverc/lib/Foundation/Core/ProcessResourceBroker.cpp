@@ -1,5 +1,6 @@
 #include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "ProcessResourceBrokerInternal.h"
+#include "neverc/Foundation/Core/ThreadLocalStorage.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -14,6 +15,7 @@
 #include <cstdlib>
 #include <deque>
 #include <mutex>
+#include <type_traits>
 #include <utility>
 
 namespace neverc::resource_broker_detail {
@@ -53,9 +55,24 @@ using neverc::resource_broker_detail::SessionState;
 namespace neverc {
 namespace {
 
-thread_local ResourceSessionView CurrentSession;
+thread_local ScopedThreadLocalValue<ResourceSessionView> CurrentSession;
+static_assert(std::is_trivially_destructible_v<decltype(CurrentSession)>);
 thread_local unsigned ObserverDepth = 0;
 std::atomic<bool> GlobalOverrideActive{false};
+
+ResourceSessionView installedResourceSession() noexcept {
+  if (!CurrentSession.hasValue())
+    return {};
+  return CurrentSession.get();
+}
+
+void installResourceSession(ResourceSessionView Session) {
+  if (!Session) {
+    CurrentSession.reset();
+    return;
+  }
+  CurrentSession.set(std::move(Session));
+}
 
 bool sameSession(const ResourceSessionView &Left,
                  const ResourceSessionView &Right) {
@@ -167,22 +184,24 @@ bool ResourceSessionView::refersToSameSession(
          Bypass == Other.Bypass && Constrained == Other.Constrained;
 }
 
-ResourceSessionView currentResourceSession() noexcept { return CurrentSession; }
+ResourceSessionView currentResourceSession() noexcept {
+  return installedResourceSession();
+}
 
 ResourceSessionScope::ResourceSessionScope(ResourceSessionView Session)
-    : Installed(std::move(Session)), Previous(CurrentSession),
+    : Installed(std::move(Session)), Previous(installedResourceSession()),
       OwnerThread(std::this_thread::get_id()) {
-  CurrentSession = Installed;
+  installResourceSession(Installed);
 }
 
 ResourceSessionScope::~ResourceSessionScope() {
   if (OwnerThread != std::this_thread::get_id())
     llvm::report_fatal_error(
         "resource session scope destroyed on a different thread");
-  if (!sameSession(CurrentSession, Installed))
+  if (!sameSession(installedResourceSession(), Installed))
     llvm::report_fatal_error(
         "resource session scopes must be destroyed in nesting order");
-  CurrentSession = Previous;
+  installResourceSession(Previous);
 }
 
 ResourceSessionPermit::ResourceSessionPermit(
@@ -201,10 +220,10 @@ void ResourceSessionPermit::reset() noexcept {
   if (OwnerThread != std::this_thread::get_id())
     llvm::report_fatal_error(
         "resource session permit destroyed on a different thread");
-  if (!sameSession(CurrentSession, View))
+  if (!sameSession(installedResourceSession(), View))
     llvm::report_fatal_error(
         "resource session permits must be destroyed in nesting order");
-  CurrentSession = Previous;
+  installResourceSession(Previous);
   Active = false;
   if (RetainsSession && View.Session) {
     const std::shared_ptr<SessionState> Session = View.Session;
@@ -296,12 +315,12 @@ ProcessResourceBroker::acquireSession(ResourcePhase Phase,
                                       ResourceAdmissionMode Mode) {
   const std::shared_ptr<BrokerState> State =
       std::atomic_load_explicit(&this->State, std::memory_order_acquire);
-  const ResourceSessionView Previous = CurrentSession;
+  const ResourceSessionView Previous = installedResourceSession();
   if (Previous.Broker == State) {
     const bool Retained =
         Previous.Session && retainSessionUser(Previous.Session);
     if (!Previous.Session || Retained) {
-      CurrentSession = Previous;
+      installResourceSession(Previous);
       return ResourceSessionPermit(Previous, Previous,
                                    /*OwnsAdmission=*/false,
                                    /*RetainsSession=*/Retained);
@@ -311,7 +330,7 @@ ProcessResourceBroker::acquireSession(ResourcePhase Phase,
   if (!State->Enabled) {
     ResourceSessionView View(State, nullptr, /*Bypass=*/true,
                              /*Constrained=*/false);
-    CurrentSession = View;
+    installResourceSession(View);
     return ResourceSessionPermit(std::move(View), Previous,
                                  /*OwnsAdmission=*/false);
   }
@@ -319,7 +338,7 @@ ProcessResourceBroker::acquireSession(ResourcePhase Phase,
   auto Constrained = [&] {
     ResourceSessionView View(State, nullptr, /*Bypass=*/false,
                              /*Constrained=*/true);
-    CurrentSession = View;
+    installResourceSession(View);
     return ResourceSessionPermit(std::move(View), Previous,
                                  /*OwnsAdmission=*/false);
   };
@@ -373,7 +392,7 @@ ProcessResourceBroker::acquireSession(ResourcePhase Phase,
 
   ResourceSessionView View(State, std::move(Session), /*Bypass=*/false,
                            /*Constrained=*/false);
-  CurrentSession = View;
+  installResourceSession(View);
   return ResourceSessionPermit(std::move(View), Previous,
                                /*OwnsAdmission=*/true);
 }
@@ -381,7 +400,7 @@ ProcessResourceBroker::acquireSession(ResourcePhase Phase,
 ResourceWorkerGrant
 ProcessResourceBroker::grantWorkers(ResourcePhase Phase,
                                     unsigned DesiredWorkers) noexcept {
-  return grantWorkers(CurrentSession, Phase, DesiredWorkers);
+  return grantWorkers(installedResourceSession(), Phase, DesiredWorkers);
 }
 
 ResourceWorkerGrant

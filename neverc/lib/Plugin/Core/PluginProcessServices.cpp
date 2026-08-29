@@ -1,4 +1,5 @@
 #include "neverc/Plugin/Host/PluginProcessServices.h"
+#include "neverc/Foundation/Core/ThreadLocalStorage.h"
 #include "neverc/Plugin/Host/CoreAPIBridge.h"
 #include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 #include "neverc/Plugin/Host/PluginSession.h"
@@ -7,6 +8,7 @@
 #include "llvm/Support/Errc.h"
 #include <limits>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -36,7 +38,8 @@ struct CallbackScope {
   uint64_t ArtifactMutationToken = 0;
 };
 
-thread_local std::vector<CallbackScope> CallbackScopes;
+thread_local ScopedThreadLocalStack<CallbackScope, 4> CallbackScopes;
+static_assert(std::is_trivially_destructible_v<decltype(CallbackScopes)>);
 
 const CallbackScope *
 currentCallbackScope(const PluginProcessServices &ProcessServices) {

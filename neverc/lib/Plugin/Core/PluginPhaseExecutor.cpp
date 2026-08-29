@@ -1,4 +1,5 @@
 #include "neverc/Plugin/Host/PluginPhaseExecutor.h"
+#include "neverc/Foundation/Core/ThreadLocalStorage.h"
 #include "neverc/Plugin/Host/PluginHandleArena.h"
 #include "neverc/Plugin/Host/PluginRegistration.h"
 #include "neverc/Plugin/Host/PluginSession.h"
@@ -13,6 +14,7 @@
 #include <iterator>
 #include <limits>
 #include <thread>
+#include <type_traits>
 #include <utility>
 
 using namespace llvm;
@@ -130,7 +132,8 @@ struct ActivePhaseInvocation {
   NevercInterfaceID Phase{};
 };
 
-thread_local std::vector<ActivePhaseInvocation> ActivePhases;
+thread_local ScopedThreadLocalStack<ActivePhaseInvocation, 4> ActivePhases;
+static_assert(std::is_trivially_destructible_v<decltype(ActivePhases)>);
 
 } // namespace
 
@@ -1072,7 +1075,7 @@ Error PluginPhaseExecutor::execute(PluginSession &Session,
     return RouteKey.takeError();
   if (!samePluginInterfaceID(OutputSlot.expectedType(), Phase->OutputArtifact))
     return executionError("phase output slot has the wrong artifact type");
-  if (llvm::any_of(ActivePhases, [&](const ActivePhaseInvocation &Active) {
+  if (ActivePhases.any_of([&](const ActivePhaseInvocation &Active) {
         return Active.Task == &Task &&
                samePluginInterfaceID(Active.Phase, PhaseID);
       }))
@@ -1322,7 +1325,7 @@ Error PluginPhaseExecutor::notify(PluginSession &Session,
   auto RouteKey = copyRouteIdentity(Route);
   if (!RouteKey)
     return RouteKey.takeError();
-  if (llvm::any_of(ActivePhases, [&](const ActivePhaseInvocation &Active) {
+  if (ActivePhases.any_of([&](const ActivePhaseInvocation &Active) {
         return Active.Task == &Task &&
                samePluginInterfaceID(Active.Phase, PhaseID);
       }))

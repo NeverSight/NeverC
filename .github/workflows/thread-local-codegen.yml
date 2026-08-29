@@ -1,0 +1,52 @@
+name: thread-local-codegen
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "neverc/include/neverc/Foundation/Core/ThreadLocalStorage.h"
+      - "tests/neverc/ThreadLocalStorageTests.cpp"
+      - "tests/neverc/CMakeLists.txt"
+      - "utils/ci/check-thread-local-storage-codegen.py"
+      - ".github/workflows/thread-local-codegen.yml"
+  pull_request:
+    paths:
+      - "neverc/include/neverc/Foundation/Core/ThreadLocalStorage.h"
+      - "tests/neverc/ThreadLocalStorageTests.cpp"
+      - "tests/neverc/CMakeLists.txt"
+      - "utils/ci/check-thread-local-storage-codegen.py"
+      - ".github/workflows/thread-local-codegen.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install MinGW cross-compilers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            g++-mingw-w64-i686-posix \
+            g++-mingw-w64-x86-64-posix
+
+      - name: Check 32-bit code generation
+        run: |
+          python3 utils/ci/check-thread-local-storage-codegen.py \
+            --cxx i686-w64-mingw32-g++-posix \
+            --include-dir neverc/include
+
+      - name: Check 64-bit code generation
+        run: |
+          python3 utils/ci/check-thread-local-storage-codegen.py \
+            --cxx x86_64-w64-mingw32-g++-posix \
+            --include-dir neverc/include

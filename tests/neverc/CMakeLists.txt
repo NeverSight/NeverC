@@ -2819,7 +2819,20 @@ gtest_discover_tests(neverc-run-tests
 # Emit/Merge so the broker's lock and lifetime invariants have a small target.
 add_executable(neverc-foundation-tests
   ProcessResourceBudgetTests.cpp
+  ThreadLocalStorageTests.cpp
 )
+
+if(MSVC)
+  set_source_files_properties(
+    ThreadLocalStorageTests.cpp
+    PROPERTIES COMPILE_OPTIONS "/EHsc"
+  )
+else()
+  set_source_files_properties(
+    ThreadLocalStorageTests.cpp
+    PROPERTIES COMPILE_OPTIONS "-fexceptions;-funwind-tables"
+  )
+endif()
 
 target_link_libraries(neverc-foundation-tests PRIVATE
   GTest::gtest GTest::gtest_main
@@ -2840,6 +2853,36 @@ gtest_discover_tests(neverc-foundation-tests
     TIMEOUT 30
   DISCOVERY_TIMEOUT 300
 )
+
+function(add_neverc_thread_local_codegen_test test_name compiler)
+  add_test(
+    NAME ${test_name}
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/ci/check-thread-local-storage-codegen.py
+            --cxx ${compiler}
+            --include-dir ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  )
+  set_tests_properties(${test_name} PROPERTIES
+    TIMEOUT 30
+    LABELS "foundation;codegen"
+  )
+endfunction()
+
+find_program(_NEVERC_MINGW_I686_CXX NAMES i686-w64-mingw32-g++)
+if(_NEVERC_MINGW_I686_CXX)
+  add_neverc_thread_local_codegen_test(
+    ThreadLocalStorageCodegenI686
+    ${_NEVERC_MINGW_I686_CXX}
+  )
+endif()
+
+find_program(_NEVERC_MINGW_X86_64_CXX NAMES x86_64-w64-mingw32-g++)
+if(_NEVERC_MINGW_X86_64_CXX)
+  add_neverc_thread_local_codegen_test(
+    ThreadLocalStorageCodegenX86_64
+    ${_NEVERC_MINGW_X86_64_CXX}
+  )
+endif()
 
 # Object merger and aggregate parallel-codegen transaction tests.
 add_executable(neverc-merge-tests
