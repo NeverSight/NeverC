@@ -331,6 +331,52 @@ static void test_macho_invalid(void) {
           neverc_macho_open(&f, hdr31, sizeof(hdr31)) == -1);
 }
 
+static void test_fat_many_architectures(void) {
+    const uint32_t narch = UINT32_C(131072);
+    const size_t table_end = 8U + (size_t)narch * 20U;
+    const size_t slice_size = 32U;
+    const size_t total = table_end + (size_t)narch * slice_size;
+    uint8_t *fat = (uint8_t *)calloc(total, 1);
+    CHECK("build many-arch fat container", fat != NULL);
+    if (!fat) return;
+
+    fat[0] = 0xCA;
+    fat[1] = 0xFE;
+    fat[2] = 0xBA;
+    fat[3] = 0xBE;
+    put32be(fat + 4, narch);
+
+    for (uint32_t i = 0; i < narch; i++) {
+        uint8_t *arch = fat + 8U + (size_t)i * 20U;
+        uint8_t *slice = fat + table_end + (size_t)i * slice_size;
+        put32be(arch, (uint32_t)NEVERC_CPU_TYPE_X86_64);
+        put32be(arch + 4, i);
+        put32be(arch + 8, (uint32_t)(slice - fat));
+        put32be(arch + 12, (uint32_t)slice_size);
+
+        put32(slice, NEVERC_MH_MAGIC_64);
+        put32(slice + 4, (uint32_t)NEVERC_CPU_TYPE_X86_64);
+        put32(slice + 8, i);
+        put32(slice + 12, NEVERC_MH_OBJECT);
+    }
+
+    neverc_macho_file_t f;
+    int rc = neverc_macho_open(&f, fat, total);
+    CHECK("open fat with many unique architectures",
+          rc == 0);
+    if (rc == 0) neverc_macho_close(&f);
+
+    uint8_t *last_arch = fat + 8U + (size_t)(narch - 1U) * 20U;
+    uint8_t *last_slice = fat + table_end + (size_t)(narch - 1U) * slice_size;
+    put32be(last_arch + 4, 0);
+    put32(last_slice + 8, 0);
+    rc = neverc_macho_open(&f, fat, total);
+    CHECK("reject late duplicate in many-arch fat container",
+          rc == -1);
+    if (rc == 0) neverc_macho_close(&f);
+    free(fat);
+}
+
 static void test_fat(void) {
     size_t thin_len = 0;
     uint8_t *thin = build_minimal_macho64(&thin_len);
@@ -454,6 +500,7 @@ int main(void) {
     test_metadata();
     test_header_variants();
     test_macho_invalid();
+    test_fat_many_architectures();
     test_fat();
 #ifdef __APPLE__
     test_macho_self_binary();
