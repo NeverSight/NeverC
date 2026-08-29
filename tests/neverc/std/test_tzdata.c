@@ -351,6 +351,14 @@ static void test_dst_offset(void) {
 /* Morocco suspends +01 during Ramadan; transition instants are in UTC. */
 #define CASA_START_2024  1710036000LL
 #define CASA_END_2024    1713060000LL
+#define CAIRO_START_2023 1682632800LL
+#define CAIRO_END_2023   1698354000LL
+#define CASA_START_2025  1740276000LL
+#define CASA_END_2025    1743904800LL
+#define CASA_UTC_2026    1789866000LL
+#define EDMONTON_PERMANENT_2026 1793520000LL
+#define VANCOUVER_PERMANENT_2026 1793523600LL
+#define CANADA_WINTER_2027       1800014400LL
 
 static void test_offset_at(void) {
     printf("[offset_at]\n");
@@ -363,9 +371,11 @@ static void test_offset_at(void) {
     const neverc_tzdata_zone_t *scl = neverc_tzdata_lookup("America/Santiago");
     const neverc_tzdata_zone_t *cai = neverc_tzdata_lookup("Africa/Cairo");
     const neverc_tzdata_zone_t *casa = neverc_tzdata_lookup("Africa/Casablanca");
+    const neverc_tzdata_zone_t *edm = neverc_tzdata_lookup("America/Edmonton");
+    const neverc_tzdata_zone_t *van = neverc_tzdata_lookup("America/Vancouver");
     const neverc_tzdata_zone_t *utc = neverc_tzdata_utc();
     if (!ny || !lon || !syd || !mel || !akl || !cht || !scl || !cai ||
-        !casa || !utc) {
+        !casa || !edm || !van || !utc) {
         printf("  SKIP: required zone missing\n");
         return;
     }
@@ -447,6 +457,14 @@ static void test_offset_at(void) {
               neverc_tzdata_offset_at(cai, CAIRO_END_2024 - 1), 10800);
     check_int("Cairo at 2024 DST end is EET",
               neverc_tzdata_offset_at(cai, CAIRO_END_2024), 7200);
+    check_int("Cairo before 2023 DST start is EET",
+              neverc_tzdata_offset_at(cai, CAIRO_START_2023 - 1), 7200);
+    check_int("Cairo at 2023 DST start is EEST",
+              neverc_tzdata_offset_at(cai, CAIRO_START_2023), 10800);
+    check_int("Cairo before 2023 DST end is EEST",
+              neverc_tzdata_offset_at(cai, CAIRO_END_2023 - 1), 10800);
+    check_int("Cairo at 2023 DST end is EET",
+              neverc_tzdata_offset_at(cai, CAIRO_END_2023), 7200);
 
     check_int("Casablanca before 2024 Ramadan is +01",
               neverc_tzdata_offset_at(casa, CASA_START_2024 - 1), 3600);
@@ -456,6 +474,47 @@ static void test_offset_at(void) {
               neverc_tzdata_offset_at(casa, CASA_END_2024 - 1), 0);
     check_int("Casablanca after 2024 Ramadan is +01",
               neverc_tzdata_offset_at(casa, CASA_END_2024), 3600);
+    check_int("Casablanca before 2025 Ramadan is +01",
+              neverc_tzdata_offset_at(casa, CASA_START_2025 - 1), 3600);
+    check_int("Casablanca during 2025 Ramadan is UTC",
+              neverc_tzdata_offset_at(casa, CASA_START_2025), 0);
+    check_int("Casablanca before 2025 Ramadan end is UTC",
+              neverc_tzdata_offset_at(casa, CASA_END_2025 - 1), 0);
+    check_int("Casablanca after 2025 Ramadan is +01",
+              neverc_tzdata_offset_at(casa, CASA_END_2025), 3600);
+    check_int("Casablanca before permanent UTC is +01",
+              neverc_tzdata_offset_at(casa, CASA_UTC_2026 - 1), 3600);
+    check_int("Casablanca at permanent UTC is UTC",
+              neverc_tzdata_offset_at(casa, CASA_UTC_2026), 0);
+
+    check_int("Edmonton before permanent UTC-06 is MDT",
+              neverc_tzdata_offset_at(edm, EDMONTON_PERMANENT_2026 - 1),
+              -21600);
+    check_int("Edmonton at permanent UTC-06 remains MDT offset",
+              neverc_tzdata_offset_at(edm, EDMONTON_PERMANENT_2026),
+              -21600);
+    check_int("Edmonton winter 2027 remains UTC-06",
+              neverc_tzdata_offset_at(edm, CANADA_WINTER_2027), -21600);
+    check_int("Vancouver before permanent UTC-07 is PDT",
+              neverc_tzdata_offset_at(van, VANCOUVER_PERMANENT_2026 - 1),
+              -25200);
+    check_int("Vancouver at permanent UTC-07 remains PDT offset",
+              neverc_tzdata_offset_at(van, VANCOUVER_PERMANENT_2026),
+              -25200);
+    check_int("Vancouver winter 2027 remains UTC-07",
+              neverc_tzdata_offset_at(van, CANADA_WINTER_2027), -25200);
+
+    neverc_tzdata_zone_t *same_name =
+        neverc_tzdata_fixed_zone("Africa/Cairo", 1234);
+    check_not_null("fixed Cairo-name zone", same_name);
+    check_int("fixed Cairo-name zone ignores builtin rules",
+              neverc_tzdata_offset_at(same_name, CAIRO_START_2024), 1234);
+    neverc_tzdata_zone_free(same_name);
+    same_name = neverc_tzdata_fixed_zone("Africa/Casablanca", 1234);
+    check_not_null("fixed Casablanca-name zone", same_name);
+    check_int("fixed Casablanca-name zone ignores builtin rules",
+              neverc_tzdata_offset_at(same_name, CASA_START_2024), 1234);
+    neverc_tzdata_zone_free(same_name);
 
     /* Extreme unix_sec must not overflow civil math. */
     check_int("NY offset_at INT64_MAX",
@@ -761,6 +820,28 @@ static void append_le32(uint8_t *buf, size_t *n, size_t cap, uint32_t v) {
     append_bytes(buf, n, cap, b, 4);
 }
 
+static uint32_t test_crc32(const uint8_t *data, size_t len) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; bit++)
+            crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    return ~crc;
+}
+
+static void store_le16(uint8_t *p, uint16_t value) {
+    p[0] = (uint8_t)value;
+    p[1] = (uint8_t)(value >> 8);
+}
+
+static void store_le32(uint8_t *p, uint32_t value) {
+    p[0] = (uint8_t)value;
+    p[1] = (uint8_t)(value >> 8);
+    p[2] = (uint8_t)(value >> 16);
+    p[3] = (uint8_t)(value >> 24);
+}
+
 static void tzif_header(uint8_t *buf, size_t *n, size_t cap) {
     append_bytes(buf, n, cap, "TZif2", 5);
     uint8_t pad[15] = {0};
@@ -994,13 +1075,14 @@ static size_t build_stored_zip(uint8_t *out, size_t cap, const char *name,
                                const uint8_t *data, size_t dlen) {
     size_t n = 0;
     size_t namelen = strlen(name);
+    uint32_t crc = test_crc32(data, dlen);
     append_le32(out, &n, cap, 0x04034b50u);
     append_le16(out, &n, cap, 0);
     append_le16(out, &n, cap, 0);
     append_le16(out, &n, cap, 0);
     append_le16(out, &n, cap, 0);
     append_le16(out, &n, cap, 0);
-    append_le32(out, &n, cap, 0);
+    append_le32(out, &n, cap, crc);
     append_le32(out, &n, cap, (uint32_t)dlen);
     append_le32(out, &n, cap, (uint32_t)dlen);
     append_le16(out, &n, cap, (uint16_t)namelen);
@@ -1015,7 +1097,7 @@ static size_t build_stored_zip(uint8_t *out, size_t cap, const char *name,
     append_le16(out, &n, cap, 0);
     append_le16(out, &n, cap, 0);
     append_le16(out, &n, cap, 0);
-    append_le32(out, &n, cap, 0);
+    append_le32(out, &n, cap, crc);
     append_le32(out, &n, cap, (uint32_t)dlen);
     append_le32(out, &n, cap, (uint32_t)dlen);
     append_le16(out, &n, cap, (uint16_t)namelen);
@@ -1049,6 +1131,24 @@ static void test_zip_tzif(void) {
     check_str("tzif utc name", z ? z->name : NULL, "UTC");
     check_int("tzif utc offset", z ? z->utc_offset : -1, 0);
     check_int("tzif utc no dst", z ? z->has_dst : -1, 0);
+    neverc_tzdata_zone_free(z);
+
+    z = neverc_tzdata_load_tzif("Africa/Cairo", tzif, tlen);
+    check_not_null("load Cairo-name UTC tzif", z);
+    check_int("Cairo-name TZif overrides builtin rules",
+              neverc_tzdata_offset_at(z, CAIRO_START_2024), 0);
+    neverc_tzdata_zone_free(z);
+
+    z = neverc_tzdata_load_tzif("America/Edmonton", tzif, tlen);
+    check_not_null("load Edmonton-name UTC tzif", z);
+    check_int("Edmonton-name TZif overrides builtin rules",
+              neverc_tzdata_offset_at(z, CANADA_WINTER_2027), 0);
+    neverc_tzdata_zone_free(z);
+
+    z = neverc_tzdata_load_tzif("America/Vancouver", tzif, tlen);
+    check_not_null("load Vancouver-name UTC tzif", z);
+    check_int("Vancouver-name TZif overrides builtin rules",
+              neverc_tzdata_offset_at(z, CANADA_WINTER_2027), 0);
     neverc_tzdata_zone_free(z);
 
     if (tlen > 4 && tlen <= sizeof(tzif)) {
@@ -1182,12 +1282,12 @@ static void test_zip_tzif(void) {
     check_int("zip extract size", (int)extracted_len, (int)nlen);
     free(extracted);
 
-    uint8_t commented[1024];
     static const uint8_t comment[] = {
         'z', 0x50, 0x4b, 0x05, 0x06, 'f', 'a', 'k', 'e',
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         't', 'a', 'i', 'l'
     };
+    uint8_t commented[sizeof(zip) + sizeof(comment)];
     memcpy(commented, zip, zlen);
     commented[zlen - 2] = (uint8_t)sizeof(comment);
     commented[zlen - 1] = 0;
@@ -1199,9 +1299,36 @@ static void test_zip_tzif(void) {
                                            &extracted_len);
     check_not_null("zip extract with EOCD comment and fake signature", extracted);
     check_int("commented zip extract size", (int)extracted_len, (int)nlen);
+    check_int("commented zip extract content",
+              extracted && extracted_len == nlen &&
+                  memcmp(extracted, ny, nlen) == 0,
+              1);
     free(extracted);
 
-    uint8_t bad_comment[1024];
+    uint8_t empty_eocd_comment[22] = {0};
+    empty_eocd_comment[0] = 0x50;
+    empty_eocd_comment[1] = 0x4b;
+    empty_eocd_comment[2] = 0x05;
+    empty_eocd_comment[3] = 0x06;
+    uint8_t nested_eocd[sizeof(zip) + sizeof(empty_eocd_comment)];
+    memcpy(nested_eocd, zip, zlen);
+    nested_eocd[zlen - 2] = (uint8_t)sizeof(empty_eocd_comment);
+    nested_eocd[zlen - 1] = 0;
+    memcpy(nested_eocd + zlen, empty_eocd_comment,
+           sizeof(empty_eocd_comment));
+    extracted_len = 0;
+    extracted = neverc_tzdata_zip_extract(
+        nested_eocd, zlen + sizeof(empty_eocd_comment),
+        "America/New_York", &extracted_len);
+    check_not_null("zip comment with structurally valid fake EOCD", extracted);
+    check_int("nested EOCD zip extract size", (int)extracted_len, (int)nlen);
+    check_int("nested EOCD zip extract content",
+              extracted && extracted_len == nlen &&
+                  memcmp(extracted, ny, nlen) == 0,
+              1);
+    free(extracted);
+
+    uint8_t bad_comment[sizeof(commented)];
     memcpy(bad_comment, commented, commented_len);
     bad_comment[zlen - 2] = (uint8_t)(sizeof(comment) + 1);
     check_null("zip EOCD comment length mismatch rejected",
@@ -1215,6 +1342,9 @@ static void test_zip_tzif(void) {
                                          "America/New_York", NULL));
     check_null("zip null", neverc_tzdata_zip_extract(NULL, zlen, "x", NULL));
 
+    size_t namelen = strlen("America/New_York");
+    size_t cd = 30 + namelen + nlen;
+
     uint8_t zip64[1024];
     memcpy(zip64, zip, zlen);
     /* EOCD number-of-entries zip64 sentinel. */
@@ -1223,14 +1353,73 @@ static void test_zip_tzif(void) {
     check_null("zip64 rejected",
                neverc_tzdata_zip_extract(zip64, zlen, "America/New_York", NULL));
 
+    uint8_t zip64_entry[sizeof(zip)];
+    memcpy(zip64_entry, zip, zlen);
+    store_le32(zip64_entry + cd + 20, 0xFFFFFFFFu);
+    check_null("zip64 central entry sentinel rejected",
+               neverc_tzdata_zip_extract(zip64_entry, zlen,
+                                         "America/New_York", NULL));
+
+    uint8_t multidisk_entry[sizeof(zip)];
+    memcpy(multidisk_entry, zip, zlen);
+    store_le16(multidisk_entry + cd + 34, 1);
+    check_null("multi-disk central entry rejected",
+               neverc_tzdata_zip_extract(multidisk_entry, zlen,
+                                         "America/New_York", NULL));
+
+    uint8_t mismatched_flags[sizeof(zip)];
+    memcpy(mismatched_flags, zip, zlen);
+    store_le16(mismatched_flags + 6, 0x0800);
+    check_null("local and central flags mismatch rejected",
+               neverc_tzdata_zip_extract(mismatched_flags, zlen,
+                                         "America/New_York", NULL));
+
+    uint8_t data_descriptor[sizeof(zip)];
+    memcpy(data_descriptor, zip, zlen);
+    store_le16(data_descriptor + 6, 0x0008);
+    store_le16(data_descriptor + cd + 8, 0x0008);
+    check_null("unsupported data descriptor rejected",
+               neverc_tzdata_zip_extract(data_descriptor, zlen,
+                                         "America/New_York", NULL));
+
+    uint8_t mismatched_size[sizeof(zip)];
+    memcpy(mismatched_size, zip, zlen);
+    store_le32(mismatched_size + 22, (uint32_t)nlen + 1);
+    check_null("local and central size mismatch rejected",
+               neverc_tzdata_zip_extract(mismatched_size, zlen,
+                                         "America/New_York", NULL));
+
+    uint8_t overlaps_directory[sizeof(zip)];
+    memcpy(overlaps_directory, zip, zlen);
+    store_le32(overlaps_directory + 18, (uint32_t)nlen + 1);
+    store_le32(overlaps_directory + 22, (uint32_t)nlen + 1);
+    store_le32(overlaps_directory + cd + 20, (uint32_t)nlen + 1);
+    store_le32(overlaps_directory + cd + 24, (uint32_t)nlen + 1);
+    check_null("stored data overlapping central directory rejected",
+               neverc_tzdata_zip_extract(overlaps_directory, zlen,
+                                         "America/New_York", NULL));
+
+    uint8_t bad_entry_count[sizeof(zip)];
+    memcpy(bad_entry_count, zip, zlen);
+    store_le16(bad_entry_count + zlen - 14, 2);
+    store_le16(bad_entry_count + zlen - 12, 2);
+    check_null("central directory entry count mismatch rejected",
+               neverc_tzdata_zip_extract(bad_entry_count, zlen,
+                                         "America/New_York", NULL));
+
+    uint8_t bad_crc[sizeof(zip)];
+    memcpy(bad_crc, zip, zlen);
+    bad_crc[30 + namelen] ^= 1;
+    check_null("stored entry CRC mismatch rejected",
+               neverc_tzdata_zip_extract(bad_crc, zlen,
+                                         "America/New_York", NULL));
+
     uint8_t compressed[1024];
     memcpy(compressed, zip, zlen);
     /* local method at offset 8, central method at cd+10. */
     compressed[8] = 8;
     compressed[8 + 1] = 0;
     /* central dir starts after local header 30 + namelen + data */
-    size_t namelen = strlen("America/New_York");
-    size_t cd = 30 + namelen + nlen;
     compressed[cd + 10] = 8;
     check_null("compressed zip rejected",
                neverc_tzdata_zip_extract(compressed, zlen, "America/New_York",
