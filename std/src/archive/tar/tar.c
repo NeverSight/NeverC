@@ -507,6 +507,21 @@ static int writer_grow(neverc_tar_writer_t *w, size_t need) {
     return tar_writer_meta_store(w, &meta);
 }
 
+static int tar_writer_data_offset(
+    const neverc_tar_writer_t *w, const uint8_t *data, size_t len,
+    size_t *offset) {
+    if (!w || !w->data || !data || !offset) return 0;
+    uintptr_t base = (uintptr_t)(const void *)w->data;
+    uintptr_t source = (uintptr_t)(const void *)data;
+    if (source < base) return 0;
+    uintptr_t distance = source - base;
+    if (distance > (uintptr_t)w->cap) return 0;
+    size_t source_offset = (size_t)distance;
+    if (len > w->cap - source_offset) return 0;
+    *offset = source_offset;
+    return 1;
+}
+
 static int bounded_string_length(const char *string, size_t capacity,
                                  size_t *length) {
     for (size_t i = 0; i < capacity; i++) {
@@ -659,12 +674,16 @@ int neverc_tar_writer_write(neverc_tar_writer_t *w,
     size_t padded = 0;
     if (tar_padded_size(meta.current_size, &padded) != 0) return -1;
     size_t padding = completes_entry ? padded - meta.current_size : 0;
+    size_t data_offset = 0;
+    int data_aliases_output =
+        tar_writer_data_offset(w, data, len, &data_offset);
     if (len > SIZE_MAX - padding || !writer_grow(w, len + padding)) {
         meta.failed = 1;
         (void)tar_writer_meta_store(w, &meta);
         return -1;
     }
-    if (len > 0) memcpy(w->data + w->len, data, len);
+    if (data_aliases_output) data = w->data + data_offset;
+    if (len > 0) memmove(w->data + w->len, data, len);
     if (padding > 0)
         memset(w->data + w->len + len, 0, padding);
     w->len += len + padding;

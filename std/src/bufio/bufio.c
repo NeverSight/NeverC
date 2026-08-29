@@ -476,13 +476,22 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
             size_t max_cap = (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE + 1;
             if (s->buf_cap >= max_cap) {
                 /* Go: a max-sized token at EOF is allowed. The extra
-                 * slot used to be a stored probe byte; a 0-byte Read
-                 * distinguishes EOF from "more data remains". */
+                 * slot is reserved for scanner_text's NUL terminator, so
+                 * probe into a local byte. A zero-length Read cannot
+                 * distinguish EOF from temporary lack of progress. */
                 if (!s->done) {
+                    uint8_t probe_byte = 0;
                     size_t probe = 0;
                     int perr = s->reader.read(s->reader.ctx,
-                                              s->buf + s->buf_len,
-                                              0, &probe);
+                                              &probe_byte, 1, &probe);
+                    if (probe > 1) {
+                        bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
+                        return 0;
+                    }
+                    if (probe > 0) {
+                        bufio_scanner_fail(s, NEVERC_BUFIO_ERR_TOO_LONG);
+                        return 0;
+                    }
                     if (perr == NEVERC_IO_EOF) {
                         s->done = 1;
                         continue;
@@ -497,6 +506,11 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
                          * after this one reported false. */
                         continue;
                     }
+                    if (++empty_reads >= NCI_BUFIO_MAX_EMPTY_READS) {
+                        bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
+                        return 0;
+                    }
+                    continue;
                 }
                 bufio_scanner_fail(s, NEVERC_BUFIO_ERR_TOO_LONG);
                 return 0;
