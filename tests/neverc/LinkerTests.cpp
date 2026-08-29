@@ -1,7 +1,10 @@
 #include "NeverCTestFixture.h"
+#include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Endian.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
+#include <cstdlib>
 
 namespace {
 
@@ -51,6 +54,87 @@ llvm::Expected<bool> hasELFSection(llvm::StringRef Bytes,
   }
   return false;
 }
+
+llvm::Expected<std::string> findELFBuildId(llvm::StringRef Bytes) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "elf-linker-test"));
+  if (!Object)
+    return Object.takeError();
+  if (!(*Object)->isELF())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected an ELF image");
+
+  for (const llvm::object::SectionRef &Section : (*Object)->sections()) {
+    llvm::Expected<llvm::StringRef> SectionName = Section.getName();
+    if (!SectionName)
+      return SectionName.takeError();
+    if (*SectionName != ".note.gnu.build-id")
+      continue;
+
+    llvm::Expected<llvm::StringRef> Contents = Section.getContents();
+    if (!Contents)
+      return Contents.takeError();
+    if (Contents->size() < 16)
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "truncated GNU build-id note");
+    auto read32 = [&](const char *Data) {
+      return (*Object)->isLittleEndian()
+                 ? llvm::support::endian::read32le(Data)
+                 : llvm::support::endian::read32be(Data);
+    };
+    const uint32_t NameSize = read32(Contents->data());
+    const uint32_t DescSize = read32(Contents->data() + 4);
+    const uint32_t Type = read32(Contents->data() + 8);
+    const uint64_t DescOffset = (12ULL + NameSize + 3) & ~3ULL;
+    if (NameSize != 4 || Type != llvm::ELF::NT_GNU_BUILD_ID ||
+        Contents->substr(12, 4) != llvm::StringRef("GNU\0", 4) ||
+        DescOffset > Contents->size() ||
+        DescSize > Contents->size() - DescOffset)
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "malformed GNU build-id note");
+    return Contents->substr(DescOffset, DescSize).str();
+  }
+  return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                 "GNU build-id note not found");
+}
+
+class ScopedEnvironmentVariable {
+public:
+  ScopedEnvironmentVariable(const char *Name, const char *Value) : Name(Name) {
+    if (const char *Previous = ::getenv(Name)) {
+      HadPrevious = true;
+      PreviousValue = Previous;
+    }
+#ifdef _WIN32
+    ::_putenv_s(Name, Value ? Value : "");
+#else
+    if (Value)
+      ::setenv(Name, Value, 1);
+    else
+      ::unsetenv(Name);
+#endif
+  }
+
+  ScopedEnvironmentVariable(const ScopedEnvironmentVariable &) = delete;
+  ScopedEnvironmentVariable &
+  operator=(const ScopedEnvironmentVariable &) = delete;
+
+  ~ScopedEnvironmentVariable() {
+#ifdef _WIN32
+    ::_putenv_s(Name.c_str(), HadPrevious ? PreviousValue.c_str() : "");
+#else
+    if (HadPrevious)
+      ::setenv(Name.c_str(), PreviousValue.c_str(), 1);
+    else
+      ::unsetenv(Name.c_str());
+#endif
+  }
+
+private:
+  std::string Name;
+  std::string PreviousValue;
+  bool HadPrevious = false;
+};
 
 } // namespace
 
@@ -1028,6 +1112,67 @@ int main(void) {
   EXPECT_TRUE(readFile(bufferedExe) == readFile(mappedExe))
       << "buffered and mmap output bytes differ";
   EXPECT_EQ(exec(bufferedExe.string(), {}).exitCode, 23);
+}
+
+TEST_F(LinkerTest, BuildIdHashIsDeterministicAcrossResourceBudgets) {
+  if (!isLinux())
+    GTEST_SKIP() << "ELF build-id execution is Linux-only";
+
+  const fs::path source = tmpFile("build_id_parallel.c");
+  const fs::path object = tmpFile("build_id_parallel.o");
+  const fs::path serialExe = tmpFile("build_id_serial");
+  const fs::path parallelExe = tmpFile("build_id_parallel");
+  writeFile(source, R"(
+volatile unsigned char payload[4 * 1024 * 1024 + 257] = {1};
+int main(void) {
+  return payload[0] == 1 && payload[sizeof(payload) / 2] == 0 &&
+                 payload[sizeof(payload) - 1] == 0
+             ? 23
+             : 1;
+}
+)");
+
+  CmdResult compile = compileObject(source, object);
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+
+  auto link = [&](const fs::path &output) {
+    std::vector<std::string> args = baseLinkArgs();
+    args.insert(args.end(),
+                {"-fbuild-id=sha1", object.string(), "-o", output.string()});
+    return ncc(args);
+  };
+
+  ScopedEnvironmentVariable budget("NEVERC_RESOURCE_BUDGET", "1");
+  {
+    ScopedEnvironmentVariable tokens("NEVERC_RESOURCE_CPU_TOKENS", "1");
+    CmdResult serialLink = link(serialExe);
+    ASSERT_EQ(serialLink.exitCode, 0) << serialLink.err;
+  }
+  {
+    ScopedEnvironmentVariable tokens("NEVERC_RESOURCE_CPU_TOKENS", "4");
+    CmdResult parallelLink = link(parallelExe);
+    ASSERT_EQ(parallelLink.exitCode, 0) << parallelLink.err;
+  }
+
+  const std::string serialBytes = readFile(serialExe);
+  const std::string parallelBytes = readFile(parallelExe);
+  ASSERT_GT(serialBytes.size(), 4U * 1024U * 1024U);
+  EXPECT_TRUE(serialBytes == parallelBytes)
+      << "build-id hashing changed output bytes under a larger worker grant";
+
+  llvm::Expected<std::string> serialBuildId = findELFBuildId(serialBytes);
+  ASSERT_TRUE(static_cast<bool>(serialBuildId))
+      << llvm::toString(serialBuildId.takeError()).str().str();
+  llvm::Expected<std::string> parallelBuildId = findELFBuildId(parallelBytes);
+  ASSERT_TRUE(static_cast<bool>(parallelBuildId))
+      << llvm::toString(parallelBuildId.takeError()).str().str();
+  EXPECT_EQ(serialBuildId->size(), 20U)
+      << "sha1-style GNU build-id must retain its 20-byte descriptor";
+  EXPECT_EQ(*serialBuildId, *parallelBuildId)
+      << "build-id descriptor changed under a larger worker grant";
+
+  EXPECT_EQ(exec(serialExe.string(), {}).exitCode, 23);
+  EXPECT_EQ(exec(parallelExe.string(), {}).exitCode, 23);
 }
 
 TEST_F(LinkerTest, EmitStaticLib) {

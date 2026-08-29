@@ -1,14 +1,16 @@
 # ASan/UBSan and TSan coverage for the plugin runtime.
 #
-# The address/undefined job builds the plugin and resource-budget unit tests,
-# the standalone conformance suite, and the fuzz smoke corpus under ASan+UBSan.
-# The thread job builds the plugin and resource-budget tests plus conformance
-# under TSan to catch data races in the multi-Session frontend / LTO / link /
-# dyncode paths, the process-wide resource broker, and the shared/exclusive
-# LLVMOption lease.  The focused resource-budget gate also covers linker task
-# groups and parallel codegen without expanding the broad plugin CTest
-# selection.  Intentional process-lifetime allocations in third-party runtimes
-# use a small, commented suppression file rather than a blanket suppression.
+# The address/undefined job builds the plugin, support-threading, and
+# resource-budget unit tests, the standalone conformance suite, and the fuzz
+# smoke corpus under ASan+UBSan.
+# The thread job builds the same focused support/plugin/resource tests plus
+# conformance under TSan to catch races in thread startup, hash dispatch, the
+# multi-Session frontend / LTO / link / dyncode paths, the process-wide resource
+# broker, and the shared/exclusive LLVMOption lease. The focused gate also
+# covers linker task groups and parallel codegen without expanding the broad
+# plugin CTest selection. Intentional process-lifetime allocations in
+# third-party runtimes use a small, commented suppression file rather than a
+# blanket suppression.
 name: plugin-sanitizers
 
 permissions:
@@ -29,6 +31,10 @@ on:
       - "neverc/lib/Foundation/Core/ProcessResourceBroker.cpp"
       - "neverc/lib/Foundation/Core/ProcessResourceBrokerInternal.h"
       - "neverc/lib/Foundation/CMakeLists.txt"
+      - "llvm/include/llvm/Support/thread.h"
+      - "llvm/lib/CSupport/Threading.c"
+      - "llvm/lib/CSupport/BLAKE3/**"
+      - "llvm/lib/CSupport/include/csupport/lthreading.h"
       - "neverc/include/neverc/Emit/Backend/ParallelCodeGenMerge.h"
       - "neverc/lib/Emit/Backend/ParallelCodeGenMerge*"
       - "neverc/lib/Emit/CMakeLists.txt"
@@ -37,6 +43,7 @@ on:
       - "tests/neverc/PluginLinkContextTests.cpp"
       - "tests/neverc/PluginParallelLinkTests.cpp"
       - "tests/neverc/ProcessResourceBudgetTests.cpp"
+      - "tests/neverc/SupportThreadTests.cpp"
       - "tests/neverc/CMakeLists.txt"
       - "tests/plugin-conformance/**"
       - ".github/workflows/plugin-sanitizers.yml"
@@ -134,6 +141,7 @@ jobs:
         run: |
           cmake --build build --config ${{ env.BUILD_TYPE }} --target \
             neverc-foundation-tests \
+            neverc-support-tests \
             neverc-plugin-link-tests \
             neverc-merge-tests
 
@@ -143,8 +151,14 @@ jobs:
         run: |
           build/bin/neverc-foundation-tests \
             --gtest_color=no
+          build/bin/neverc-support-tests \
+            --gtest_filter='SupportThreadTest.TryCreateHandlesMoveOnlyCallable:SupportThreadTest.ConcurrentBLAKE3DispatchIsStable:SupportThreadTest.TryCreateFailureDoesNotRunOrLeakCallable' \
+            --gtest_color=no
           build/bin/neverc-plugin-link-tests \
             --gtest_filter='ConcurrentLTOOptionIsolationTest.*:PluginLinkContextTest.NestedExecutionRestoresOuterWorkerSlot:PluginParallelLinkTest.*' \
+            --gtest_color=no
+          build/bin/neverc-plugin-link-tests \
+            --gtest_filter='PluginBinaryImageTest.MainPublishFailureRestoresTheOldBundle:PluginBinaryImageTest.AbortReportsStagingCleanupFailure:PluginBinaryImageTest.PrepareFailureDiscardsEveryStagedOutput' \
             --gtest_color=no
           build/bin/neverc-merge-tests \
             --gtest_filter='ParallelCodeGenCacheTest.ProcessBudgetClampsPhysicalWorkersWithoutChangingObject' \

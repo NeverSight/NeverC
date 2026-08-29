@@ -70,6 +70,36 @@ uint64_t csupport_thread_execute(csupport_thread_func_t func, void *arg,
   return (uint64_t)(uintptr_t)thread;
 }
 
+int csupport_thread_try_execute(csupport_thread_func_t func, void *arg,
+                                unsigned stack_size, uint64_t *out_thread) {
+  int errnum;
+  pthread_attr_t attr;
+  pthread_t thread;
+
+  if (out_thread == NULL)
+    return EINVAL;
+  *out_thread = 0;
+  if ((errnum = pthread_attr_init(&attr)) != 0)
+    return errnum;
+
+  if (stack_size > 0 &&
+      (errnum = pthread_attr_setstacksize(&attr, stack_size)) != 0) {
+    (void)pthread_attr_destroy(&attr);
+    return errnum;
+  }
+
+  errnum = pthread_create(&thread, &attr, func, arg);
+  /* Once pthread_create succeeds, the callback owns arg and may already be
+   * running.  An attribute-cleanup anomaly must therefore not be reported as
+   * a start failure: doing so would let the caller free arg a second time. */
+  (void)pthread_attr_destroy(&attr);
+  if (errnum != 0)
+    return errnum;
+
+  *out_thread = (uint64_t)(uintptr_t)thread;
+  return 0;
+}
+
 void csupport_thread_detach(uint64_t thread) {
   int errnum;
   if ((errnum = pthread_detach((pthread_t)(uintptr_t)thread)) != 0)
@@ -505,6 +535,34 @@ uint64_t csupport_thread_execute(csupport_thread_func_t func, void *arg,
   return (uint64_t)handle;
 }
 
+int csupport_thread_try_execute(csupport_thread_func_t func, void *arg,
+                                unsigned stack_size, uint64_t *out_thread) {
+  struct csupport_win_thread_start *start;
+  uintptr_t handle;
+  unsigned init_flags;
+  int error;
+
+  if (out_thread == NULL)
+    return EINVAL;
+  *out_thread = 0;
+  start = (struct csupport_win_thread_start *)malloc(sizeof(*start));
+  if (start == NULL)
+    return ENOMEM;
+  start->func = func;
+  start->arg = arg;
+  init_flags = (stack_size != 0) ? STACK_SIZE_PARAM_IS_A_RESERVATION : 0u;
+  errno = 0;
+  handle = _beginthreadex(NULL, stack_size, csupport_win_thread_trampoline,
+                          start, init_flags, NULL);
+  error = errno;
+  if (handle == 0) {
+    free(start);
+    return error != 0 ? error : EAGAIN;
+  }
+  *out_thread = (uint64_t)handle;
+  return 0;
+}
+
 void csupport_thread_detach(uint64_t thread) {
   CloseHandle((HANDLE)(uintptr_t)thread);
 }
@@ -698,6 +756,15 @@ uint64_t csupport_thread_execute(csupport_thread_func_t func, void *arg,
    * callee tuple, so a 0 return would make the constructor free it a second
    * time.  join()/detach() below are no-ops on this handle. */
   return 1;
+}
+int csupport_thread_try_execute(csupport_thread_func_t func, void *arg,
+                                unsigned stack_size, uint64_t *out_thread) {
+  (void)stack_size;
+  if (out_thread == NULL)
+    return EINVAL;
+  *out_thread = 1;
+  func(arg);
+  return 0;
 }
 void csupport_thread_detach(uint64_t t) { (void)t; }
 void csupport_thread_join(uint64_t t) { (void)t; }

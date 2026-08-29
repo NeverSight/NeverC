@@ -26,6 +26,11 @@ void csupport_apply_thread_strategy_noop(unsigned thread_pool_num);
 typedef void *(*csupport_thread_func_t)(void *);
 uint64_t csupport_thread_execute(csupport_thread_func_t func, void *arg,
                                  unsigned stack_size);
+/* Try to start a thread without terminating the process when the platform
+ * refuses the request.  A non-zero return guarantees that func was not called,
+ * arg remains owned by the caller, and *out_thread is zero. */
+int csupport_thread_try_execute(csupport_thread_func_t func, void *arg,
+                                unsigned stack_size, uint64_t *out_thread);
 void csupport_thread_detach(uint64_t thread);
 void csupport_thread_join(uint64_t thread);
 uint64_t csupport_thread_get_id(uint64_t thread);

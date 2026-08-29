@@ -1,3 +1,4 @@
+#include "Emit/BuildIdHashWorkers.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
@@ -17,6 +18,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "gtest/gtest.h"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -59,12 +61,14 @@ struct ParallelRunResult {
   unsigned ThreadBudget = 0;
 };
 
-std::unique_ptr<neverc::ProcessResourceBroker>
-makeResourceBroker(unsigned Tokens) {
+std::unique_ptr<neverc::ProcessResourceBroker> makeResourceBroker(
+    unsigned Tokens,
+    neverc::ProcessResourceBrokerTestAccess::Observer Observer = {}) {
   neverc::ProcessResourceBrokerConfig Config;
   Config.Enabled = true;
   Config.CpuTokens = Tokens;
-  return neverc::ProcessResourceBrokerTestAccess::create(Config);
+  return neverc::ProcessResourceBrokerTestAccess::create(Config,
+                                                         std::move(Observer));
 }
 
 void initializeAssemblyTargets() {
@@ -176,6 +180,210 @@ TEST(PluginParallelLinkTest, ExplicitLinkThreadCountOverridesAutomaticPolicy) {
                                   /*InputBytes=*/0,
                                   /*InputFiles=*/0),
             7U);
+}
+
+TEST(PluginParallelLinkTest, BuildIdHashKeepsSmallOutputsSerial) {
+  constexpr uint64_t MiB = 1024ULL * 1024ULL;
+  EXPECT_EQ(linker::elf::detail::selectBuildIdHashWorkerCount(
+                /*OutputBytes=*/MiB,
+                /*ChunkCount=*/2,
+                /*AvailableWorkers=*/16),
+            1U);
+}
+
+TEST(PluginParallelLinkTest, BuildIdHashUsesBoundedGrantedWorkers) {
+  constexpr uint64_t MiB = 1024ULL * 1024ULL;
+  EXPECT_EQ(linker::elf::detail::selectBuildIdHashWorkerCount(
+                /*OutputBytes=*/2 * MiB,
+                /*ChunkCount=*/2,
+                /*AvailableWorkers=*/16),
+            2U);
+  EXPECT_EQ(linker::elf::detail::selectBuildIdHashWorkerCount(
+                /*OutputBytes=*/8 * MiB,
+                /*ChunkCount=*/8,
+                /*AvailableWorkers=*/16),
+            4U);
+  EXPECT_EQ(linker::elf::detail::selectBuildIdHashWorkerCount(
+                /*OutputBytes=*/8 * MiB,
+                /*ChunkCount=*/8,
+                /*AvailableWorkers=*/2),
+            2U);
+  EXPECT_EQ(linker::elf::detail::selectBuildIdHashWorkerCount(
+                /*OutputBytes=*/8 * MiB,
+                /*ChunkCount=*/8,
+                /*AvailableWorkers=*/1),
+            1U);
+  EXPECT_EQ(linker::elf::detail::selectBuildIdHashWorkerCount(
+                /*OutputBytes=*/8 * MiB,
+                /*ChunkCount=*/8,
+                /*AvailableWorkers=*/0),
+            1U);
+}
+
+TEST(PluginParallelLinkTest,
+     BuildIdHashChunkStripesSurviveEveryWorkerStartFailure) {
+#if LLVM_ENABLE_THREADS && !LLVM_ON_UNIX && !defined(_WIN32)
+  GTEST_SKIP() << "this std::thread fallback deliberately declines optional "
+                  "worker starts";
+#endif
+  constexpr size_t ChunkCount = 37;
+  constexpr unsigned WorkerCount = 4;
+
+  // Zero means all starts are attempted.  One through three inject failure at
+  // each optional worker position, including after earlier helpers are live.
+  for (unsigned FailureAt : {0U, 1U, 2U, 3U}) {
+    std::array<std::atomic<unsigned>, ChunkCount> Visits{};
+    unsigned StartAttempts = 0;
+    linker::elf::detail::runBuildIdHashChunks(
+        ChunkCount, WorkerCount,
+        [&](size_t I) { Visits[I].fetch_add(1, std::memory_order_relaxed); },
+        [&](llvm::thread &Worker, auto HashWorkerStripe) {
+          ++StartAttempts;
+          if (FailureAt != 0 && StartAttempts == FailureAt)
+            return false;
+          return Worker.try_create(/*StackSizeInBytes=*/0,
+                                   std::move(HashWorkerStripe));
+        });
+
+    const unsigned ExpectedAttempts =
+        FailureAt == 0 ? WorkerCount - 1 : FailureAt;
+    EXPECT_EQ(StartAttempts, ExpectedAttempts)
+        << "did not reach the requested injected failure, or continued after "
+           "it";
+    for (size_t I = 0; I < ChunkCount; ++I)
+      EXPECT_EQ(Visits[I].load(std::memory_order_relaxed), 1U)
+          << "chunk " << I << " was lost or repeated when start " << FailureAt
+          << " failed";
+  }
+}
+
+TEST(PluginParallelLinkTest,
+     BuildIdHashUsesLinkWriteGrantAndHonorsExplicitSerialMode) {
+  const unsigned availableWorkers =
+      std::min(4U, llvm::thread::hardware_concurrency());
+  if (availableWorkers < 2)
+    GTEST_SKIP() << "transient hash workers need two available CPUs";
+
+  initializeAssemblyTargets();
+  const neverc::plugin::BuiltinTargetRoute *Route =
+      neverc::plugin::findBuiltinTargetRoute("x86_64-unknown-linux-gnu");
+  ASSERT_NE(Route, nullptr);
+  auto Target = neverc::plugin::lookupBuiltinLLVMTarget(*Route);
+  ASSERT_TRUE(static_cast<bool>(Target))
+      << llvm::toString(Target.takeError()).str().str();
+
+  const std::string Assembly = R"(
+.text
+.globl build_id_entry
+.type build_id_entry,@function
+build_id_entry:
+  ret
+.section .rodata.large,"a",@progbits
+.zero 4194561
+)";
+  llvm::SmallVector<char, 0> Object;
+  llvm::raw_svector_ostream ObjectStream(Object);
+  neverc::plugin::BuiltinLLVMAsmParserRequest Request;
+  Request.Target = *Target;
+  Request.TargetTriple =
+      llvm::Triple(llvm::Triple::normalize(Route->CanonicalTriple));
+  Request.CPU = Route->DefaultCPU;
+  Request.Input = llvm::MemoryBufferRef(Assembly, "build-id-hash.s");
+  Request.Output = &ObjectStream;
+  if (llvm::Error Error = neverc::plugin::runBuiltinLLVMAsmParser(Request))
+    FAIL() << llvm::toString(std::move(Error)).str().str();
+  ASSERT_LT(Object.size(), 16U * 1024U * 1024U);
+
+  neverc::InMemoryFileStore &Store = neverc::InMemoryFileStore::instance();
+  Store.clear();
+  auto ClearStore = llvm::make_scope_exit([&] { Store.clear(); });
+  constexpr llvm::StringLiteral ObjectPath = "/virtual/build-id-hash.o";
+  llvm::SmallString<0> &ObjectBytes = Store.create(ObjectPath, Object.size());
+  ObjectBytes.append(Object.begin(), Object.end());
+  Store.freeze();
+
+  llvm::SmallString<128> ParallelOutput;
+  llvm::SmallString<128> SerialOutput;
+  std::error_code EC = llvm::sys::fs::createTemporaryFile(
+      "neverc-build-id-parallel", "elf", ParallelOutput);
+  ASSERT_FALSE(EC) << EC.message();
+  EC = llvm::sys::fs::createTemporaryFile("neverc-build-id-serial", "elf",
+                                          SerialOutput);
+  ASSERT_FALSE(EC) << EC.message();
+  llvm::FileRemover RemoveParallelOutput(ParallelOutput);
+  llvm::FileRemover RemoveSerialOutput(SerialOutput);
+
+  std::atomic<unsigned> LinkWriteGrants{0};
+  std::atomic<unsigned> LinkWriteReleases{0};
+  std::atomic<unsigned> RequestedWorkers{0};
+  std::atomic<unsigned> GrantedWorkers{0};
+  auto Broker = makeResourceBroker(
+      availableWorkers, [&](const neverc::ProcessResourceBrokerEvent &Event) {
+        if (Event.Phase != neverc::ResourcePhase::LinkWrite)
+          return;
+        if (Event.Kind ==
+            neverc::ProcessResourceBrokerEventKind::WorkersGranted) {
+          LinkWriteGrants.fetch_add(1, std::memory_order_relaxed);
+          RequestedWorkers.store(Event.RequestedWorkers,
+                                 std::memory_order_relaxed);
+          GrantedWorkers.store(Event.GrantedWorkers, std::memory_order_relaxed);
+        } else if (Event.Kind ==
+                   neverc::ProcessResourceBrokerEventKind::WorkersReleased) {
+          LinkWriteReleases.fetch_add(1, std::memory_order_relaxed);
+        }
+      });
+  neverc::ScopedProcessResourceBrokerOverride Override(*Broker);
+
+  auto link = [&](llvm::StringRef OutputPath, unsigned ThreadCount) {
+    LinkerExecutionContext Execution;
+    LinkerDriverConfig Config;
+    Config.executionContext = &Execution;
+    Config.outputFile = OutputPath.str();
+    Config.emulation = "elf_x86_64";
+    Config.endianness = 1;
+    Config.staticLink = true;
+    Config.noDynamicLinker = true;
+    Config.ehFrameHdr = false;
+    Config.buildId = "sha1";
+    Config.threadCount = ThreadCount;
+    const char *Args[] = {"neverc-test-linker", "-e", "build_id_entry",
+                          ObjectPath.data()};
+    std::string Stdout;
+    std::string Stderr;
+    llvm::raw_string_ostream StdoutStream(Stdout);
+    llvm::raw_string_ostream StderrStream(Stderr);
+    EXPECT_TRUE(linker::elf::link(Args, StdoutStream, StderrStream,
+                                  /*exitEarly=*/false,
+                                  /*disableOutput=*/false, Config))
+        << Stderr;
+  };
+
+  link(ParallelOutput, /*ThreadCount=*/0);
+  EXPECT_EQ(LinkWriteGrants.load(std::memory_order_relaxed), 1U);
+  EXPECT_EQ(LinkWriteReleases.load(std::memory_order_relaxed), 1U);
+  EXPECT_EQ(RequestedWorkers.load(std::memory_order_relaxed), availableWorkers);
+  EXPECT_EQ(GrantedWorkers.load(std::memory_order_relaxed), availableWorkers);
+
+  link(SerialOutput, /*ThreadCount=*/1);
+  EXPECT_EQ(LinkWriteGrants.load(std::memory_order_relaxed), 1U)
+      << "an explicit one-thread link must not request transient workers";
+  EXPECT_EQ(LinkWriteReleases.load(std::memory_order_relaxed), 1U);
+
+  auto ParallelBytes = llvm::MemoryBuffer::getFile(ParallelOutput);
+  ASSERT_TRUE(static_cast<bool>(ParallelBytes))
+      << ParallelBytes.getError().message();
+  auto SerialBytes = llvm::MemoryBuffer::getFile(SerialOutput);
+  ASSERT_TRUE(static_cast<bool>(SerialBytes))
+      << SerialBytes.getError().message();
+  ASSERT_GT((*ParallelBytes)->getBufferSize(), 4U * 1024U * 1024U);
+  EXPECT_TRUE((*ParallelBytes)->getBuffer() == (*SerialBytes)->getBuffer())
+      << "transient hash workers changed the emitted ELF bytes";
+
+  const neverc::ProcessResourceBrokerSnapshot Snapshot =
+      neverc::ProcessResourceBrokerTestAccess::snapshot(*Broker);
+  EXPECT_EQ(Snapshot.ActiveTokens, 0U);
+  EXPECT_EQ(Snapshot.ActiveSessions, 0U);
+  EXPECT_EQ(Snapshot.HighWaterTokens, availableWorkers);
 }
 
 TEST(PluginParallelLinkTest,

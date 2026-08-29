@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "csupport/lpath.h"
+#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/thread.h"
@@ -29,8 +30,7 @@ namespace {
 #if LLVM_ENABLE_THREADS
 constexpr size_t ConcurrentCallers = 16;
 
-template <typename Callable>
-void runConcurrently(Callable &&Call) {
+template <typename Callable> void runConcurrently(Callable &&Call) {
   std::atomic<size_t> Ready{0};
   std::atomic<bool> Start{false};
   std::vector<thread> Threads;
@@ -98,6 +98,78 @@ TEST(SupportThreadTest, AcceptsMoveOnlyCallableAndArguments) {
 
   EXPECT_EQ(Result.load(std::memory_order_acquire), 50);
 }
+
+TEST(SupportThreadTest, TryCreateHandlesMoveOnlyCallable) {
+  std::atomic<int> Result{0};
+  auto Payload = std::make_unique<int>(37);
+  thread Worker;
+
+  const bool Started = Worker.try_create([Value = std::move(Payload), &Result] {
+    Result.store(*Value, std::memory_order_release);
+  });
+  EXPECT_EQ(Payload, nullptr);
+#if LLVM_ENABLE_THREADS && !LLVM_ON_UNIX && !defined(_WIN32)
+  // The std::thread fallback has no non-throwing creation primitive. Optional
+  // workers must decline safely so the caller can complete the work itself.
+  EXPECT_FALSE(Started);
+  EXPECT_EQ(Result.load(std::memory_order_acquire), 0);
+#else
+  ASSERT_TRUE(Started);
+#if LLVM_ENABLE_THREADS
+  EXPECT_TRUE(Worker.joinable());
+#endif
+  Worker.join();
+#if LLVM_ENABLE_THREADS
+  EXPECT_FALSE(Worker.joinable());
+#endif
+  EXPECT_EQ(Result.load(std::memory_order_acquire), 37);
+#endif
+}
+
+#if LLVM_ENABLE_THREADS
+TEST(SupportThreadTest, ConcurrentBLAKE3DispatchIsStable) {
+  std::array<uint8_t, 4096> Input{};
+  for (size_t I = 0; I < Input.size(); ++I)
+    Input[I] = static_cast<uint8_t>((I * 37U + 11U) & 0xffU);
+
+  std::array<BLAKE3Result<>, ConcurrentCallers> Results{};
+  runConcurrently([&](size_t I) { Results[I] = BLAKE3::hash(Input); });
+
+  for (size_t I = 1; I < Results.size(); ++I)
+    EXPECT_EQ(Results[I], Results[0])
+        << "concurrent BLAKE3 dispatch produced a different digest at worker "
+        << I;
+}
+#endif
+
+#if LLVM_ENABLE_THREADS && LLVM_ON_UNIX
+TEST(SupportThreadTest, TryCreateFailureDoesNotRunOrLeakCallable) {
+  struct CountingDelete {
+    std::atomic<unsigned> *Destructions;
+    void operator()(int *Value) const {
+      delete Value;
+      Destructions->fetch_add(1, std::memory_order_release);
+    }
+  };
+
+  std::atomic<unsigned> Calls{0};
+  std::atomic<unsigned> Destructions{0};
+  std::unique_ptr<int, CountingDelete> Payload(new int(11), {&Destructions});
+  thread Worker;
+
+  // A one-byte pthread stack is invalid on every supported Unix host.  The
+  // recoverable API must leave ownership with the caller-side tuple, without
+  // starting the callback or making the thread joinable.
+  EXPECT_FALSE(Worker.try_create(
+      /*StackSizeInBytes=*/1, [Value = std::move(Payload), &Calls] {
+        Calls.fetch_add(*Value, std::memory_order_release);
+      }));
+  EXPECT_EQ(Payload, nullptr);
+  EXPECT_FALSE(Worker.joinable());
+  EXPECT_EQ(Calls.load(std::memory_order_acquire), 0U);
+  EXPECT_EQ(Destructions.load(std::memory_order_acquire), 1U);
+}
+#endif
 
 #if LLVM_ENABLE_THREADS
 TEST(SupportThreadTest, ConcurrentLazyInitializationIsRaceFree) {

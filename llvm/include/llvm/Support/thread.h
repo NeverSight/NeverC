@@ -103,6 +103,36 @@ public:
   explicit thread(unsigned StackSizeInBytes, Function &&f, Args &&...args);
   thread(const thread &) = delete;
 
+  /// Try to start an optional worker without invoking LLVM's fatal
+  /// thread-start path. Calling this on a joinable object returns false without
+  /// consuming the arguments. If a start attempt fails, the callable has not
+  /// run, this object remains non-joinable, and any callable state captured for
+  /// that attempt is destroyed before this function returns.
+  template <class Function, class... Args>
+  bool try_create(unsigned StackSizeInBytes, Function &&f, Args &&...args) {
+    if (joinable())
+      return false;
+    using CalleeTuple =
+        std::tuple<std::decay_t<Function>, std::decay_t<Args>...>;
+    std::unique_ptr<CalleeTuple> Callee(new CalleeTuple(
+        std::forward<Function>(f), std::forward<Args>(args)...));
+    uint64_t RawThread = 0;
+    if (csupport_thread_try_execute(ThreadProxy<CalleeTuple>, Callee.get(),
+                                    StackSizeInBytes, &RawThread) != 0)
+      return false;
+    Thread = (native_handle_type)(uintptr_t)RawThread;
+    Callee.release();
+    return true;
+  }
+
+  template <
+      class Function, class... Args,
+      std::enable_if_t<!std::is_integral_v<std::decay_t<Function>>, int> = 0>
+  bool try_create(Function &&f, Args &&...args) {
+    return try_create(DefaultStackSize, std::forward<Function>(f),
+                      std::forward<Args>(args)...);
+  }
+
   ~thread() {
     if (joinable())
       std::terminate();
@@ -268,6 +298,20 @@ public:
 
   thread(const thread &) = delete;
 
+  // This fallback backend has no non-throwing thread creation primitive.
+  // Refuse optional workers so callers can complete the work synchronously.
+  template <class Function, class... Args>
+  bool try_create(unsigned StackSizeInBytes, Function &&f, Args &&...args) {
+    return false;
+  }
+
+  template <
+      class Function, class... Args,
+      std::enable_if_t<!std::is_integral_v<std::decay_t<Function>>, int> = 0>
+  bool try_create(Function &&f, Args &&...args) {
+    return false;
+  }
+
   ~thread() {}
 
   thread &operator=(thread &&Other) noexcept {
@@ -306,6 +350,7 @@ inline thread::id get_id() { return std::this_thread::get_id(); }
 #else // !LLVM_ENABLE_THREADS
 
 #include <functional>
+#include <type_traits>
 #include <utility>
 
 namespace llvm {
@@ -322,6 +367,19 @@ struct thread {
     std::invoke(std::forward<Function>(f), std::forward<Args>(args)...);
   }
   thread(const thread &) = delete;
+
+  template <class Function, class... Args>
+  bool try_create(unsigned StackSizeInBytes, Function &&f, Args &&...args) {
+    std::invoke(std::forward<Function>(f), std::forward<Args>(args)...);
+    return true;
+  }
+  template <
+      class Function, class... Args,
+      std::enable_if_t<!std::is_integral_v<std::decay_t<Function>>, int> = 0>
+  bool try_create(Function &&f, Args &&...args) {
+    return try_create(/*StackSizeInBytes=*/0, std::forward<Function>(f),
+                      std::forward<Args>(args)...);
+  }
 
   void detach() {
     report_fatal_error("Detaching from a thread does not make sense with no "
