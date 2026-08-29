@@ -494,6 +494,20 @@ static void test_template_url_and_script(void) {
               "<meta content=\"#\" \"junk http-equiv=refresh>");
     free(out);
 
+    out = neverc_html_template_render(
+        "<meta \"junk http-equiv=refresh content=\"{{.Link}}\">", &data);
+    check_str("leading bare quote meta refresh becomes hash", out,
+              "<meta \"junk http-equiv=refresh content=\"#\">");
+    free(out);
+
+    /* U+000B is C whitespace, but not WHATWG HTML whitespace. It starts the
+     * unquoted x value; the following space then starts a new attribute. */
+    out = neverc_html_template_render(
+        "<meta content=\"{{.Link}}\"x=\v http-equiv=refresh>", &data);
+    check_str("vertical-tab meta refresh becomes hash", out,
+              "<meta content=\"#\"x=\v http-equiv=refresh>");
+    free(out);
+
     neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
     out = neverc_html_template_render("<a href=\" {{.Link}}\">x</a>", &data);
     check("space after href quote neutralized",
