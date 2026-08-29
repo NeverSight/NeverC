@@ -730,7 +730,7 @@ static quic_fragment_result_t fragment_insert(
                 fragment->data + fragment->begin, fragment->len);
     }
 
-    quic_fragment_t *discard = merged ? first->next : NULL;
+    quic_fragment_t *discard = merged ? first->next : after;
     if (replace_data) free(first->data);
     candidate->offset = union_start;
     candidate->len = union_len;
