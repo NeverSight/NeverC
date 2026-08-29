@@ -14,6 +14,7 @@
 #include "Linker/MachO/UnwindInfoSection.h"
 
 #include "Linker/Core/Driver/Dispatcher.h"
+#include "Linker/Core/Runtime/ContentHashWorkers.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Chunks.h"
@@ -1161,13 +1162,20 @@ void OutputWriter::applyARM64Hints() {
 void OutputWriter::computeContentHash() {
   TimeTraceScope timeScope("Content hash");
 
+  // XXH3 chunks are cheap enough that an existing pool pays off as soon as
+  // there is more than one chunk. Keep the generic size gate disabled here.
+  constexpr uint64_t MinParallelUuidBytes = 0;
   ArrayRef<uint8_t> data{buffer->getBufferStart(), buffer->getBufferEnd()};
   static constexpr size_t kChunkSize = 512 * 1024;
   std::vector<ArrayRef<uint8_t>> chunks = splitIntoChunks(data, kChunkSize);
   std::vector<uint64_t> hashes(chunks.size() + 1);
 
-  parallelFor(0, chunks.size(),
-              [&](size_t i) { hashes[i] = xxh3_64bits(chunks[i]); });
+  const bool explicitlySerial =
+      config->driverCfg && config->driverCfg->threadCount == 1;
+  linker::detail::runContentHashChunks(
+      data.size(), chunks.size(), explicitlySerial,
+      [&](size_t i) { hashes[i] = xxh3_64bits(chunks[i]); },
+      MinParallelUuidBytes);
 
   hashes[chunks.size()] = xxh3_64bits(sys::path::filename(config->finalOutput));
   uint64_t digest = xxh3_64bits({reinterpret_cast<uint8_t *>(hashes.data()),

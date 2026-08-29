@@ -18,6 +18,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Linker/COFF/TestSign.h"
+#include "PEChecksum.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
@@ -31,6 +32,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 using namespace llvm;
@@ -577,27 +579,6 @@ Bytes buildSignedData(ArrayRef<uint8_t> spcContent) {
   return tlv(TagSequence, outer);
 }
 
-/// PE checksum, per the algorithm the loader uses: 16-bit ones-complement sum
-/// of the whole file with the checksum field itself read as zero, plus the
-/// file size.
-uint32_t computeChecksum(ArrayRef<uint8_t> image, size_t checksumOffset) {
-  uint64_t sum = 0;
-  size_t n = image.size();
-  for (size_t i = 0; i + 1 < n; i += 2) {
-    // The checksum field reads as zero while it is being computed.
-    if (i >= checksumOffset && i < checksumOffset + 4)
-      continue;
-    sum += support::endian::read16le(image.data() + i);
-    sum = (sum & 0xffff) + (sum >> 16);
-  }
-  if (n & 1) {
-    sum += image[n - 1];
-    sum = (sum & 0xffff) + (sum >> 16);
-  }
-  sum = (sum & 0xffff) + (sum >> 16);
-  return static_cast<uint32_t>(sum) + static_cast<uint32_t>(n);
-}
-
 } // namespace
 
 Error testSignImage(StringRef path) {
@@ -622,6 +603,11 @@ Error testSignImage(StringRef path) {
                              "test signing: image already has a certificate "
                              "table");
 
+  constexpr size_t MaxPEFileSize = std::numeric_limits<uint32_t>::max();
+  if (image.size() > MaxPEFileSize - 7)
+    return createStringError(inconvertibleErrorCode(),
+                             "test signing: image is too large to align");
+
   // The attribute certificate must start 8-byte aligned.
   while (image.size() % 8)
     image.push_back(0);
@@ -632,22 +618,31 @@ Error testSignImage(StringRef path) {
 
   // WIN_CERTIFICATE { dwLength, wRevision = 0x0200, wCertificateType = 0x0002,
   //                   bCertificate[] }, the whole thing padded to 8 bytes.
-  const uint32_t headerSize = 8;
-  uint32_t certLength = headerSize + static_cast<uint32_t>(pkcs7.size());
-  uint32_t padded = (certLength + 7) & ~7u;
+  constexpr size_t HeaderSize = 8;
+  if (pkcs7.size() > MaxPEFileSize - HeaderSize - 7)
+    return createStringError(inconvertibleErrorCode(),
+                             "test signing: certificate is too large");
+  const size_t CertLength = HeaderSize + pkcs7.size();
+  const size_t Padded = (CertLength + 7) & ~size_t(7);
+  if (image.size() > MaxPEFileSize - Padded)
+    return createStringError(inconvertibleErrorCode(),
+                             "test signing: signed image is too large");
 
-  Bytes entry(padded, 0);
-  support::endian::write32le(entry.data(), certLength);
+  Bytes entry(Padded, 0);
+  support::endian::write32le(entry.data(), static_cast<uint32_t>(CertLength));
   support::endian::write16le(entry.data() + 4, 0x0200);
   support::endian::write16le(entry.data() + 6, 0x0002);
-  std::copy(pkcs7.begin(), pkcs7.end(), entry.begin() + headerSize);
+  std::copy(pkcs7.begin(), pkcs7.end(), entry.begin() + HeaderSize);
   image.insert(image.end(), entry.begin(), entry.end());
 
   // Point the certificate table at it, then checksum the finished image.
   support::endian::write32le(image.data() + layout->certDirOffset, certOffset);
-  support::endian::write32le(image.data() + layout->certDirOffset + 4, padded);
-  support::endian::write32le(image.data() + layout->checksumOffset,
-                             computeChecksum(image, layout->checksumOffset));
+  support::endian::write32le(image.data() + layout->certDirOffset + 4,
+                             static_cast<uint32_t>(Padded));
+  support::endian::write32le(
+      image.data() + layout->checksumOffset,
+      detail::computePEChecksum(image, layout->checksumOffset,
+                                /*ExplicitlySerial=*/true));
 
   std::error_code ec;
   raw_fd_ostream os(path, ec, sys::fs::OF_None);

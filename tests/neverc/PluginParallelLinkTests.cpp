@@ -1,5 +1,6 @@
-#include "Emit/BuildIdHashWorkers.h"
+#include "Emit/PEChecksum.h"
 #include "Linker/Core/Driver/Dispatcher.h"
+#include "Linker/Core/Runtime/ContentHashWorkers.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/ELF/Driver.h"
@@ -12,6 +13,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Object/ArchiveWriter.h"
+#include "llvm/Support/Endian.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -22,6 +24,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -184,7 +187,7 @@ TEST(PluginParallelLinkTest, ExplicitLinkThreadCountOverridesAutomaticPolicy) {
 
 TEST(PluginParallelLinkTest, BuildIdHashKeepsSmallOutputsSerial) {
   constexpr uint64_t MiB = 1024ULL * 1024ULL;
-  EXPECT_EQ(linker::elf::detail::selectBuildIdHashWorkerCount(
+  EXPECT_EQ(linker::detail::selectContentHashWorkerCount(
                 /*OutputBytes=*/MiB,
                 /*ChunkCount=*/2,
                 /*AvailableWorkers=*/16),
@@ -193,27 +196,27 @@ TEST(PluginParallelLinkTest, BuildIdHashKeepsSmallOutputsSerial) {
 
 TEST(PluginParallelLinkTest, BuildIdHashUsesBoundedGrantedWorkers) {
   constexpr uint64_t MiB = 1024ULL * 1024ULL;
-  EXPECT_EQ(linker::elf::detail::selectBuildIdHashWorkerCount(
+  EXPECT_EQ(linker::detail::selectContentHashWorkerCount(
                 /*OutputBytes=*/2 * MiB,
                 /*ChunkCount=*/2,
                 /*AvailableWorkers=*/16),
             2U);
-  EXPECT_EQ(linker::elf::detail::selectBuildIdHashWorkerCount(
+  EXPECT_EQ(linker::detail::selectContentHashWorkerCount(
                 /*OutputBytes=*/8 * MiB,
                 /*ChunkCount=*/8,
                 /*AvailableWorkers=*/16),
             4U);
-  EXPECT_EQ(linker::elf::detail::selectBuildIdHashWorkerCount(
+  EXPECT_EQ(linker::detail::selectContentHashWorkerCount(
                 /*OutputBytes=*/8 * MiB,
                 /*ChunkCount=*/8,
                 /*AvailableWorkers=*/2),
             2U);
-  EXPECT_EQ(linker::elf::detail::selectBuildIdHashWorkerCount(
+  EXPECT_EQ(linker::detail::selectContentHashWorkerCount(
                 /*OutputBytes=*/8 * MiB,
                 /*ChunkCount=*/8,
                 /*AvailableWorkers=*/1),
             1U);
-  EXPECT_EQ(linker::elf::detail::selectBuildIdHashWorkerCount(
+  EXPECT_EQ(linker::detail::selectContentHashWorkerCount(
                 /*OutputBytes=*/8 * MiB,
                 /*ChunkCount=*/8,
                 /*AvailableWorkers=*/0),
@@ -234,7 +237,7 @@ TEST(PluginParallelLinkTest,
   for (unsigned FailureAt : {0U, 1U, 2U, 3U}) {
     std::array<std::atomic<unsigned>, ChunkCount> Visits{};
     unsigned StartAttempts = 0;
-    linker::elf::detail::runBuildIdHashChunks(
+    linker::detail::runContentHashChunkStripes(
         ChunkCount, WorkerCount,
         [&](size_t I) { Visits[I].fetch_add(1, std::memory_order_relaxed); },
         [&](llvm::thread &Worker, auto HashWorkerStripe) {
@@ -255,6 +258,112 @@ TEST(PluginParallelLinkTest,
           << "chunk " << I << " was lost or repeated when start " << FailureAt
           << " failed";
   }
+}
+
+namespace {
+
+uint32_t referencePEChecksum(llvm::ArrayRef<uint8_t> Image,
+                             size_t ChecksumOffset) {
+  uint64_t Sum = 0;
+  for (size_t I = 0; I + 1 < Image.size(); I += 2) {
+    if (I >= ChecksumOffset && I < ChecksumOffset + 4)
+      continue;
+    Sum += llvm::support::endian::read16le(Image.data() + I);
+    Sum = (Sum & 0xffff) + (Sum >> 16);
+  }
+  if ((Image.size() & 1) != 0) {
+    Sum += Image.back();
+    Sum = (Sum & 0xffff) + (Sum >> 16);
+  }
+  Sum = (Sum & 0xffff) + (Sum >> 16);
+  return static_cast<uint32_t>(Sum) + static_cast<uint32_t>(Image.size());
+}
+
+} // namespace
+
+TEST(PluginParallelLinkTest,
+     PEChecksumMatchesReferenceAcrossChunkAndOddByteBoundaries) {
+  constexpr size_t MiB = 1024 * 1024;
+  for (size_t Size : {size_t(64), size_t(65), MiB - 1, MiB, MiB + 1, MiB + 2,
+                      2 * MiB + 257}) {
+    SCOPED_TRACE(Size);
+    std::vector<uint8_t> Image(Size);
+    for (size_t I = 0; I < Image.size(); ++I)
+      Image[I] = static_cast<uint8_t>((I * 131 + I / 17 + 29) & 0xff);
+
+    const size_t ChecksumOffset = Size >= MiB + 2 ? MiB - 2 : 24;
+    ASSERT_LE(ChecksumOffset + 4, Image.size());
+    Image[ChecksumOffset + 0] = 0xde;
+    Image[ChecksumOffset + 1] = 0xad;
+    Image[ChecksumOffset + 2] = 0xbe;
+    Image[ChecksumOffset + 3] = 0xef;
+
+    EXPECT_EQ(linker::coff::detail::computePEChecksum(
+                  Image, ChecksumOffset, /*ExplicitlySerial=*/true),
+              referencePEChecksum(Image, ChecksumOffset));
+  }
+}
+
+TEST(PluginParallelLinkTest,
+     PEChecksumChunkEndDoesNotOverflowAtAddressSpaceLimit) {
+  constexpr size_t MaxSize = std::numeric_limits<size_t>::max();
+  constexpr size_t ChunkBytes = 1024 * 1024;
+  EXPECT_EQ(linker::coff::detail::peChecksumChunkEnd(MaxSize, MaxSize - 7,
+                                                     ChunkBytes),
+            MaxSize);
+  EXPECT_EQ(linker::coff::detail::peChecksumChunkEnd(
+                MaxSize, MaxSize - ChunkBytes, ChunkBytes),
+            MaxSize);
+}
+
+TEST(PluginParallelLinkTest,
+     ContentHashPoolWorkUsesLinkWriteBudgetAndReturnsEveryToken) {
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "persistent hash work needs two available CPUs";
+
+  std::atomic<unsigned> LinkWriteGrants{0};
+  std::atomic<unsigned> LinkWriteReleases{0};
+  auto Broker = makeResourceBroker(
+      /*Tokens=*/2, [&](const neverc::ProcessResourceBrokerEvent &Event) {
+        if (Event.Phase != neverc::ResourcePhase::LinkWrite)
+          return;
+        if (Event.Kind ==
+            neverc::ProcessResourceBrokerEventKind::WorkersGranted)
+          LinkWriteGrants.fetch_add(1, std::memory_order_relaxed);
+        else if (Event.Kind ==
+                 neverc::ProcessResourceBrokerEventKind::WorkersReleased)
+          LinkWriteReleases.fetch_add(1, std::memory_order_relaxed);
+      });
+  neverc::ScopedProcessResourceBrokerOverride Override(*Broker);
+
+  constexpr size_t ChunkCount = 8;
+  std::array<std::atomic<unsigned>, ChunkCount> Visits{};
+  {
+    neverc::ResourceSessionPermit Permit =
+        Broker->acquireSession(neverc::ResourcePhase::LinkParseResolve);
+    {
+      CommonLinkerContext Context;
+      Context.configureParallel(/*RequestedThreads=*/2);
+      linker::detail::runContentHashChunks(
+          /*OutputBytes=*/8ULL * 1024ULL * 1024ULL, ChunkCount,
+          /*ExplicitlySerial=*/false,
+          [&](size_t I) { Visits[I].fetch_add(1, std::memory_order_relaxed); });
+
+      // Returning from the phase must also mean its grants are gone; waiting
+      // for the pool destructor here would hide a late-release race.
+      EXPECT_GE(LinkWriteGrants.load(std::memory_order_relaxed), 1U);
+      EXPECT_EQ(LinkWriteReleases.load(std::memory_order_relaxed),
+                LinkWriteGrants.load(std::memory_order_relaxed));
+    }
+  }
+
+  for (size_t I = 0; I < ChunkCount; ++I)
+    EXPECT_EQ(Visits[I].load(std::memory_order_relaxed), 1U);
+
+  const neverc::ProcessResourceBrokerSnapshot Snapshot =
+      neverc::ProcessResourceBrokerTestAccess::snapshot(*Broker);
+  EXPECT_EQ(Snapshot.ActiveTokens, 0U);
+  EXPECT_EQ(Snapshot.ActiveSessions, 0U);
 }
 
 TEST(PluginParallelLinkTest,

@@ -3,6 +3,7 @@
 
 #include "Linker/Core/Runtime/Session.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Parallel.h"
 #include "llvm/Support/ThreadPool.h"
 #include <algorithm>
@@ -79,7 +80,10 @@ public:
     auto GrantOwner =
         std::make_shared<neverc::ResourceWorkerGrant>(std::move(Grant));
     Group->async([Bound = std::move(Bound),
-                  GrantOwner = std::move(GrantOwner)]() mutable { Bound(); });
+                  GrantOwner = std::move(GrantOwner)]() mutable {
+      auto ReleaseGrant = llvm::make_scope_exit([&] { GrantOwner.reset(); });
+      Bound();
+    });
   }
 
   void sync() {

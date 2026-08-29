@@ -1,5 +1,5 @@
-#include "BuildIdHashWorkers.h"
 #include "ELF/ELFLinkGraphAdapter.h"
+#include "Linker/Core/Runtime/ContentHashWorkers.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Chunks.h"
@@ -24,10 +24,8 @@
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/RandomNumberGenerator.h"
 #include "llvm/Support/TimeProfiler.h"
-#include "llvm/Support/thread.h"
 #include "llvm/Support/xxhash.h"
 #include <algorithm>
-#include <limits>
 #include <random>
 #include <vector>
 #if defined(__unix__) || defined(__APPLE__)
@@ -2498,54 +2496,12 @@ void computeHash(
       markDontNeed(chunks[i]);
   };
 
-  bool chunksHashed = false;
-  if (allowTransientWorkers && !parallelEnabled() &&
-      currentLinkerWorkerSlot() == 0) {
-    const unsigned chunkCount = static_cast<unsigned>(
-        std::min<size_t>(chunks.size(), std::numeric_limits<unsigned>::max()));
-    const bool explicitlySerial =
-        config->driverCfg && config->driverCfg->threadCount == 1;
-    unsigned desiredWorkers = 1;
-    // Avoid even querying platform affinity for small or explicitly serial
-    // links.  Two available workers are enough to ask whether the size policy
-    // permits transient parallelism at all.
-    if (!explicitlySerial &&
-        linker::elf::detail::selectBuildIdHashWorkerCount(
-            data.size(), chunkCount, /*AvailableWorkers=*/2) > 1) {
-      const unsigned availableWorkers =
-          std::min(4U, llvm::thread::hardware_concurrency());
-      desiredWorkers = linker::elf::detail::selectBuildIdHashWorkerCount(
-          data.size(), chunkCount, availableWorkers);
-    }
-    if (desiredWorkers > 1) {
-      neverc::ResourceWorkerGrant grant =
-          neverc::ProcessResourceBroker::global().grantWorkers(
-              commonContext().resourceSession(),
-              neverc::ResourcePhase::LinkWrite, desiredWorkers);
-      const unsigned workerCount =
-          linker::elf::detail::selectBuildIdHashWorkerCount(
-              data.size(), chunkCount, grant.workerCount());
-      if (workerCount > 1) {
-        // Worker zero is this thread. Optional helpers use the platform's
-        // default stack because hashing has shallow stacks. They only touch
-        // disjoint hash/output ranges, so they do not bind context-owned
-        // allocator state. If the OS refuses any start, the main thread takes
-        // every unstarted stripe.
-        linker::elf::detail::runBuildIdHashChunks(
-            chunks.size(), workerCount, hashChunk,
-            [&](llvm::thread &worker, auto hashWorkerStripe) {
-              return worker.try_create(
-                  /*StackSizeInBytes=*/0, std::move(hashWorkerStripe));
-            });
-        chunksHashed = true;
-      }
-    }
-  }
-
-  // Reuse the persistent linker pool when one already exists; otherwise keep
-  // small or resource-constrained hashes serial.
-  if (!chunksHashed)
-    parallelFor(0, chunks.size(), hashChunk);
+  const bool explicitlySerial =
+      config->driverCfg && config->driverCfg->threadCount == 1;
+  linker::detail::runContentHashChunks(
+      data.size(), chunks.size(), explicitlySerial, hashChunk,
+      linker::detail::DefaultMinParallelContentHashBytes,
+      allowTransientWorkers);
 
   // Write to the final output buffer.
   hashFn(hashBuf.data(), ArrayRef(hashes.get(), hashesSize));

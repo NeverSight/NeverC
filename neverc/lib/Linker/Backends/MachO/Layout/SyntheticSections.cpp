@@ -8,10 +8,12 @@
 #include "Linker/MachO/SymbolTable.h"
 #include "Linker/MachO/Symbols.h"
 
+#include "Linker/Core/Driver/Dispatcher.h"
+#include "Linker/Core/Runtime/ContentHashWorkers.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/EndianStream.h"
 #include "llvm/Support/FileSystem.h"
@@ -1487,12 +1489,22 @@ uint64_t CodeSignatureSection::getRawSize() const {
 }
 
 void CodeSignatureSection::writeHashes(uint8_t *buf) const {
+  // A page SHA-256 is dense enough that an existing pool pays off whenever
+  // more than one page is present. Keep the generic size gate disabled here.
+  constexpr uint64_t MinParallelCodeSignatureBytes = 0;
   uint8_t *hashes = buf + fileOff + allHeadersSize;
-  parallelFor(0, getBlockCount(), [&](size_t i) {
-    sha256(buf + i * blockSize,
-           std::min(static_cast<size_t>(fileOff - i * blockSize), blockSize),
-           hashes + i * hashSize);
-  });
+  const size_t blockCount = getBlockCount();
+  const bool explicitlySerial =
+      config->driverCfg && config->driverCfg->threadCount == 1;
+  linker::detail::runContentHashChunks(
+      fileOff, blockCount, explicitlySerial,
+      [&](size_t i) {
+        sha256(
+            buf + i * blockSize,
+            std::min(static_cast<size_t>(fileOff - i * blockSize), blockSize),
+            hashes + i * hashSize);
+      },
+      MinParallelCodeSignatureBytes);
 #if defined(__APPLE__)
   // Invalidate stale kernel signature cache created at mmap time.
   msync(buf, fileOff + getSize(), MS_INVALIDATE);

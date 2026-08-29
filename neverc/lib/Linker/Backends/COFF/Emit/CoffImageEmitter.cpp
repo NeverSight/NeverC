@@ -1,4 +1,5 @@
 #include "COFF/COFFLinkGraphAdapter.h"
+#include "Emit/PEChecksum.h"
 #include "Linker/COFF/COFFLinkerContext.h"
 #include "Linker/COFF/CallGraphSort.h"
 #include "Linker/COFF/Config.h"
@@ -10,6 +11,7 @@
 #include "Linker/COFF/Symbols.h"
 #include "Linker/COFF/TestSign.h"
 #include "Linker/Core/Runtime/Allocator.h"
+#include "Linker/Core/Runtime/ContentHashWorkers.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/Core/Runtime/Stopwatch.h"
 #include "Linker/Core/Support/FileIO.h"
@@ -637,46 +639,19 @@ void OutputWriter::writePEChecksum() {
   llvm::TimeTraceScope timeScope("PE checksum");
 
   // https://docs.microsoft.com/en-us/windows/win32/debug/pe-format#checksum
-  uint32_t checkSum = 0;
-  uint32_t *buf = (uint32_t *)buffer->getBufferStart();
-  uint32_t size = (uint32_t)(buffer->getBufferSize());
+  uint8_t *buf = buffer->getBufferStart();
 
   coff_file_header *coffHeader =
-      (coff_file_header *)((uint8_t *)buf + dosStubSize + sizeof(PEMagic));
-  pe32plus_header *peHeader =
-      (pe32plus_header *)((uint8_t *)coffHeader + sizeof(coff_file_header));
-  uint32_t oldCheckSum = peHeader->CheckSum;
-
-  auto CalcCheckSum = [](uint32_t StartValue, void *BaseAddress,
-                         uint32_t WordCount) -> uint16_t {
-    uint16_t *p = (uint16_t *)BaseAddress;
-    uint32_t sum = StartValue;
-    for (uint32_t i = 0; i < WordCount; i++) {
-      sum += *p;
-      if (((sum >> 16) & 0xffff) != 0) {
-        sum = (sum & 0xffff) + ((sum >> 16) & 0xffff);
-      }
-      p++;
-    }
-    return (uint16_t)((sum & 0xffff) + ((sum >> 16) & 0xffff));
-  };
-
-  checkSum = CalcCheckSum(0, buf, (size + 1) / sizeof(uint16_t));
-  if ((checkSum & 0xffff) >= (oldCheckSum & 0xffff)) {
-    checkSum -= (oldCheckSum & 0xffff);
-  } else {
-    checkSum = (((checkSum & 0xffff) - (oldCheckSum & 0xffff)) & 0xFFFF) - 1;
-  }
-
-  if ((checkSum & 0xffff) >= ((oldCheckSum >> 16) & 0xffff)) {
-    checkSum -= ((oldCheckSum >> 16) & 0xffff);
-  } else {
-    checkSum =
-        (((checkSum & 0xffff) - ((oldCheckSum >> 16) & 0xffff)) & 0xFFFF) - 1;
-  }
-
-  checkSum += size;
-  peHeader->CheckSum = checkSum;
+      reinterpret_cast<coff_file_header *>(buf + dosStubSize + sizeof(PEMagic));
+  pe32plus_header *peHeader = reinterpret_cast<pe32plus_header *>(
+      reinterpret_cast<uint8_t *>(coffHeader) + sizeof(coff_file_header));
+  const size_t ChecksumOffset =
+      reinterpret_cast<uint8_t *>(&peHeader->CheckSum) - buf;
+  const bool ExplicitlySerial =
+      ctx.config.driverCfg && ctx.config.driverCfg->threadCount == 1;
+  peHeader->CheckSum = linker::coff::detail::computePEChecksum(
+      llvm::ArrayRef<uint8_t>(buf, buffer->getBufferSize()), ChecksumOffset,
+      ExplicitlySerial);
 }
 
 void OutputWriter::commitPreFixes() {
@@ -2048,7 +2023,8 @@ void markChunkAsDontNeed(ArrayRef<uint8_t> arr) {
 }
 
 uint64_t computeChunkedBLAKE3Hash64(ArrayRef<uint8_t> data,
-                                    bool releaseChunkPages) {
+                                    bool releaseChunkPages,
+                                    bool explicitlySerial) {
   constexpr size_t chunkSize = 1024 * 1024;
   if (data.empty())
     return read64le(BLAKE3::hash<8>(ArrayRef<uint8_t>()).data());
@@ -2056,15 +2032,16 @@ uint64_t computeChunkedBLAKE3Hash64(ArrayRef<uint8_t> data,
   size_t numChunks = (data.size() + chunkSize - 1) / chunkSize;
   std::unique_ptr<uint8_t[]> chunkHashes(new uint8_t[numChunks * 8]);
 
-  parallelFor(0, numChunks, [&](size_t i) {
-    size_t begin = i * chunkSize;
-    size_t end = std::min(begin + chunkSize, data.size());
-    ArrayRef<uint8_t> chunk = data.slice(begin, end - begin);
-    auto digest = BLAKE3::hash<8>(chunk);
-    memcpy(chunkHashes.get() + i * 8, digest.data(), 8);
-    if (releaseChunkPages)
-      markChunkAsDontNeed(chunk);
-  });
+  linker::detail::runContentHashChunks(
+      data.size(), numChunks, explicitlySerial, [&](size_t i) {
+        size_t begin = i * chunkSize;
+        size_t end = std::min(begin + chunkSize, data.size());
+        ArrayRef<uint8_t> chunk = data.slice(begin, end - begin);
+        auto digest = BLAKE3::hash<8>(chunk);
+        memcpy(chunkHashes.get() + i * 8, digest.data(), 8);
+        if (releaseChunkPages)
+          markChunkAsDontNeed(chunk);
+      });
 
   auto digest =
       BLAKE3::hash<8>(ArrayRef<uint8_t>(chunkHashes.get(), numChunks * 8));
@@ -2097,8 +2074,12 @@ void OutputWriter::computeContentHash() {
   uint32_t timestamp = config->timestamp;
   uint64_t hash = 0;
 
-  if (config->repro || generateSyntheticBuildId)
-    hash = computeChunkedBLAKE3Hash64(outputFileData, outputBufferIsFileBacked);
+  if (config->repro || generateSyntheticBuildId) {
+    const bool explicitlySerial =
+        config->driverCfg && config->driverCfg->threadCount == 1;
+    hash = computeChunkedBLAKE3Hash64(outputFileData, outputBufferIsFileBacked,
+                                      explicitlySerial);
+  }
 
   if (config->repro)
     timestamp = static_cast<uint32_t>(hash);
