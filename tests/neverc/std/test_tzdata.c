@@ -344,6 +344,13 @@ static void test_dst_offset(void) {
 #define JUL_2025       1751328000LL
 #define JAN_2024       1705320000LL
 #define JUL_2024       1719835200LL
+/* 2024-04-25 22:00:00 UTC = Egypt's last-Friday-in-April transition. */
+#define CAIRO_START_2024 1714082400LL
+/* 2024-10-31 21:00:00 UTC = Egypt's last-Thursday-at-24:00 transition. */
+#define CAIRO_END_2024   1730408400LL
+/* Morocco suspends +01 during Ramadan; transition instants are in UTC. */
+#define CASA_START_2024  1710036000LL
+#define CASA_END_2024    1713060000LL
 
 static void test_offset_at(void) {
     printf("[offset_at]\n");
@@ -354,8 +361,11 @@ static void test_offset_at(void) {
     const neverc_tzdata_zone_t *akl = neverc_tzdata_lookup("Pacific/Auckland");
     const neverc_tzdata_zone_t *cht = neverc_tzdata_lookup("Pacific/Chatham");
     const neverc_tzdata_zone_t *scl = neverc_tzdata_lookup("America/Santiago");
+    const neverc_tzdata_zone_t *cai = neverc_tzdata_lookup("Africa/Cairo");
+    const neverc_tzdata_zone_t *casa = neverc_tzdata_lookup("Africa/Casablanca");
     const neverc_tzdata_zone_t *utc = neverc_tzdata_utc();
-    if (!ny || !lon || !syd || !mel || !akl || !cht || !scl || !utc) {
+    if (!ny || !lon || !syd || !mel || !akl || !cht || !scl || !cai ||
+        !casa || !utc) {
         printf("  SKIP: required zone missing\n");
         return;
     }
@@ -428,6 +438,24 @@ static void test_offset_at(void) {
               neverc_tzdata_offset_at(scl, 1712404800), -10800);
     check_int("Santiago after Apr Sunday 00:00 is CLT",
               neverc_tzdata_offset_at(scl, 1712458800), -14400);
+
+    check_int("Cairo before 2024 DST start is EET",
+              neverc_tzdata_offset_at(cai, CAIRO_START_2024 - 1), 7200);
+    check_int("Cairo at 2024 DST start is EEST",
+              neverc_tzdata_offset_at(cai, CAIRO_START_2024), 10800);
+    check_int("Cairo before 2024 DST end is EEST",
+              neverc_tzdata_offset_at(cai, CAIRO_END_2024 - 1), 10800);
+    check_int("Cairo at 2024 DST end is EET",
+              neverc_tzdata_offset_at(cai, CAIRO_END_2024), 7200);
+
+    check_int("Casablanca before 2024 Ramadan is +01",
+              neverc_tzdata_offset_at(casa, CASA_START_2024 - 1), 3600);
+    check_int("Casablanca during 2024 Ramadan is UTC",
+              neverc_tzdata_offset_at(casa, CASA_START_2024), 0);
+    check_int("Casablanca before 2024 Ramadan end is UTC",
+              neverc_tzdata_offset_at(casa, CASA_END_2024 - 1), 0);
+    check_int("Casablanca after 2024 Ramadan is +01",
+              neverc_tzdata_offset_at(casa, CASA_END_2024), 3600);
 
     /* Extreme unix_sec must not overflow civil math. */
     check_int("NY offset_at INT64_MAX",
@@ -1153,6 +1181,32 @@ static void test_zip_tzif(void) {
     check_not_null("zip extract", extracted);
     check_int("zip extract size", (int)extracted_len, (int)nlen);
     free(extracted);
+
+    uint8_t commented[1024];
+    static const uint8_t comment[] = {
+        'z', 0x50, 0x4b, 0x05, 0x06, 'f', 'a', 'k', 'e',
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        't', 'a', 'i', 'l'
+    };
+    memcpy(commented, zip, zlen);
+    commented[zlen - 2] = (uint8_t)sizeof(comment);
+    commented[zlen - 1] = 0;
+    memcpy(commented + zlen, comment, sizeof(comment));
+    size_t commented_len = zlen + sizeof(comment);
+    extracted_len = 0;
+    extracted = neverc_tzdata_zip_extract(commented, commented_len,
+                                           "America/New_York",
+                                           &extracted_len);
+    check_not_null("zip extract with EOCD comment and fake signature", extracted);
+    check_int("commented zip extract size", (int)extracted_len, (int)nlen);
+    free(extracted);
+
+    uint8_t bad_comment[1024];
+    memcpy(bad_comment, commented, commented_len);
+    bad_comment[zlen - 2] = (uint8_t)(sizeof(comment) + 1);
+    check_null("zip EOCD comment length mismatch rejected",
+               neverc_tzdata_zip_extract(bad_comment, commented_len,
+                                         "America/New_York", NULL));
 
     check_null("zip missing name",
                neverc_tzdata_zip_extract(zip, zlen, "Europe/Paris", NULL));
