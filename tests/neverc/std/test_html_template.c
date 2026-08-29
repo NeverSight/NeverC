@@ -461,6 +461,20 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "javascript:") == NULL);
     free(out);
 
+    out = neverc_html_template_render(
+        "<meta http-equiv=\"ref&#114;esh\" content=\"{{.Link}}\">",
+        &data);
+    check_str("entity-decoded leading meta refresh becomes hash", out,
+              "<meta http-equiv=\"ref&#114;esh\" content=\"#\">");
+    free(out);
+
+    out = neverc_html_template_render(
+        "<meta content=\"{{.Link}}\" http-equiv=\"ref&#x72;esh\">",
+        &data);
+    check_str("entity-decoded trailing meta refresh becomes hash", out,
+              "<meta content=\"#\" http-equiv=\"ref&#x72;esh\">");
+    free(out);
+
     neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
     out = neverc_html_template_render("<a href=\" {{.Link}}\">x</a>", &data);
     check("space after href quote neutralized",
