@@ -475,6 +475,25 @@ static void test_template_url_and_script(void) {
               "<meta content=\"#\" http-equiv=\"ref&#x72;esh\">");
     free(out);
 
+    out = neverc_html_template_render(
+        "<meta content=\"{{.Link}}\" data-x/http-equiv=refresh>", &data);
+    check_str("solidus-resynchronized meta refresh becomes hash", out,
+              "<meta content=\"#\" data-x/http-equiv=refresh>");
+    free(out);
+
+    out = neverc_html_template_render(
+        "<meta content=\"{{.Link}}\" {{.Missing}}/http-equiv=refresh>",
+        &data);
+    check_str("dynamic solidus meta refresh becomes hash", out,
+              "<meta content=\"#\" ZgotmplZ/http-equiv=refresh>");
+    free(out);
+
+    out = neverc_html_template_render(
+        "<meta content=\"{{.Link}}\" \"junk http-equiv=refresh>", &data);
+    check_str("bare quote meta refresh becomes hash", out,
+              "<meta content=\"#\" \"junk http-equiv=refresh>");
+    free(out);
+
     neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
     out = neverc_html_template_render("<a href=\" {{.Link}}\">x</a>", &data);
     check("space after href quote neutralized",
