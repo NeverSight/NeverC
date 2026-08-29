@@ -1120,6 +1120,14 @@ static size_t build_stored_zip(uint8_t *out, size_t cap, const char *name,
     return n;
 }
 
+static void check_zip_rejected(const char *label, const uint8_t *zip,
+                               size_t zip_len, const char *name) {
+    uint8_t *unexpected =
+        neverc_tzdata_zip_extract(zip, zip_len, name, NULL);
+    check_null(label, unexpected);
+    free(unexpected);
+}
+
 static void test_zip_tzif(void) {
     printf("[zip/tzif]\n");
     uint8_t tzif[256];
@@ -1356,38 +1364,33 @@ static void test_zip_tzif(void) {
     uint8_t zip64_entry[sizeof(zip)];
     memcpy(zip64_entry, zip, zlen);
     store_le32(zip64_entry + cd + 20, 0xFFFFFFFFu);
-    check_null("zip64 central entry sentinel rejected",
-               neverc_tzdata_zip_extract(zip64_entry, zlen,
-                                         "America/New_York", NULL));
+    check_zip_rejected("zip64 central entry sentinel rejected", zip64_entry,
+                       zlen, "America/New_York");
 
     uint8_t multidisk_entry[sizeof(zip)];
     memcpy(multidisk_entry, zip, zlen);
     store_le16(multidisk_entry + cd + 34, 1);
-    check_null("multi-disk central entry rejected",
-               neverc_tzdata_zip_extract(multidisk_entry, zlen,
-                                         "America/New_York", NULL));
+    check_zip_rejected("multi-disk central entry rejected", multidisk_entry,
+                       zlen, "America/New_York");
 
     uint8_t mismatched_flags[sizeof(zip)];
     memcpy(mismatched_flags, zip, zlen);
     store_le16(mismatched_flags + 6, 0x0800);
-    check_null("local and central flags mismatch rejected",
-               neverc_tzdata_zip_extract(mismatched_flags, zlen,
-                                         "America/New_York", NULL));
+    check_zip_rejected("local and central flags mismatch rejected",
+                       mismatched_flags, zlen, "America/New_York");
 
     uint8_t data_descriptor[sizeof(zip)];
     memcpy(data_descriptor, zip, zlen);
     store_le16(data_descriptor + 6, 0x0008);
     store_le16(data_descriptor + cd + 8, 0x0008);
-    check_null("unsupported data descriptor rejected",
-               neverc_tzdata_zip_extract(data_descriptor, zlen,
-                                         "America/New_York", NULL));
+    check_zip_rejected("unsupported data descriptor rejected", data_descriptor,
+                       zlen, "America/New_York");
 
     uint8_t mismatched_size[sizeof(zip)];
     memcpy(mismatched_size, zip, zlen);
     store_le32(mismatched_size + 22, (uint32_t)nlen + 1);
-    check_null("local and central size mismatch rejected",
-               neverc_tzdata_zip_extract(mismatched_size, zlen,
-                                         "America/New_York", NULL));
+    check_zip_rejected("local and central size mismatch rejected",
+                       mismatched_size, zlen, "America/New_York");
 
     uint8_t overlaps_directory[sizeof(zip)];
     memcpy(overlaps_directory, zip, zlen);
@@ -1395,24 +1398,21 @@ static void test_zip_tzif(void) {
     store_le32(overlaps_directory + 22, (uint32_t)nlen + 1);
     store_le32(overlaps_directory + cd + 20, (uint32_t)nlen + 1);
     store_le32(overlaps_directory + cd + 24, (uint32_t)nlen + 1);
-    check_null("stored data overlapping central directory rejected",
-               neverc_tzdata_zip_extract(overlaps_directory, zlen,
-                                         "America/New_York", NULL));
+    check_zip_rejected("stored data overlapping central directory rejected",
+                       overlaps_directory, zlen, "America/New_York");
 
     uint8_t bad_entry_count[sizeof(zip)];
     memcpy(bad_entry_count, zip, zlen);
     store_le16(bad_entry_count + zlen - 14, 2);
     store_le16(bad_entry_count + zlen - 12, 2);
-    check_null("central directory entry count mismatch rejected",
-               neverc_tzdata_zip_extract(bad_entry_count, zlen,
-                                         "America/New_York", NULL));
+    check_zip_rejected("central directory entry count mismatch rejected",
+                       bad_entry_count, zlen, "America/New_York");
 
     uint8_t bad_crc[sizeof(zip)];
     memcpy(bad_crc, zip, zlen);
     bad_crc[30 + namelen] ^= 1;
-    check_null("stored entry CRC mismatch rejected",
-               neverc_tzdata_zip_extract(bad_crc, zlen,
-                                         "America/New_York", NULL));
+    check_zip_rejected("stored entry CRC mismatch rejected", bad_crc, zlen,
+                       "America/New_York");
 
     uint8_t compressed[1024];
     memcpy(compressed, zip, zlen);
