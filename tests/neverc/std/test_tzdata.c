@@ -1336,6 +1336,32 @@ static void test_zip_tzif(void) {
               1);
     free(extracted);
 
+    uint8_t shadow_comment[68] = {0};
+    store_le32(shadow_comment, 0x02014b50u);
+    /* The fake directory claims a one-byte name outside its 46-byte span. */
+    store_le16(shadow_comment + 28, 1);
+    store_le32(shadow_comment + 46, 0x06054b50u);
+    store_le16(shadow_comment + 46 + 8, 1);
+    store_le16(shadow_comment + 46 + 10, 1);
+    store_le32(shadow_comment + 46 + 12, 46);
+    store_le32(shadow_comment + 46 + 16, (uint32_t)zlen);
+    uint8_t shadowed_eocd[sizeof(zip) + sizeof(shadow_comment)];
+    memcpy(shadowed_eocd, zip, zlen);
+    store_le16(shadowed_eocd + zlen - 2,
+               (uint16_t)sizeof(shadow_comment));
+    memcpy(shadowed_eocd + zlen, shadow_comment, sizeof(shadow_comment));
+    extracted_len = 0;
+    extracted = neverc_tzdata_zip_extract(
+        shadowed_eocd, zlen + sizeof(shadow_comment),
+        "America/New_York", &extracted_len);
+    check_not_null("invalid deep fake EOCD does not shadow real EOCD",
+                   extracted);
+    check_int("shadowed EOCD zip extract content",
+              extracted && extracted_len == nlen &&
+                  memcmp(extracted, ny, nlen) == 0,
+              1);
+    free(extracted);
+
     uint8_t bad_comment[sizeof(commented)];
     memcpy(bad_comment, commented, commented_len);
     bad_comment[zlen - 2] = (uint8_t)(sizeof(comment) + 1);
@@ -1385,6 +1411,13 @@ static void test_zip_tzif(void) {
     store_le16(data_descriptor + cd + 8, 0x0008);
     check_zip_rejected("unsupported data descriptor rejected", data_descriptor,
                        zlen, "America/New_York");
+
+    uint8_t reserved_flags[sizeof(zip)];
+    memcpy(reserved_flags, zip, zlen);
+    store_le16(reserved_flags + 6, 0x0002);
+    store_le16(reserved_flags + cd + 8, 0x0002);
+    check_zip_rejected("unsupported stored-entry flags rejected",
+                       reserved_flags, zlen, "America/New_York");
 
     uint8_t mismatched_size[sizeof(zip)];
     memcpy(mismatched_size, zip, zlen);
