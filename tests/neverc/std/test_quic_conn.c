@@ -1138,6 +1138,52 @@ static void test_stream_overlapping_data_must_match(void) {
     neverc_quic_conn_destroy(conn);
 }
 
+static void test_stream_overlaps_do_not_amplify_fragment_storage(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    ASSERT_NOT_NULL(conn);
+    conn->state = QUIC_CONN_ESTABLISHED;
+
+    uint8_t data[1024];
+    memset(data, 'A', sizeof(data));
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = 0;
+    frame.data = data;
+    frame.data_len = sizeof(data);
+    for (uint64_t i = 0; i < 128; i++) {
+        frame.offset = 1 + i;
+        ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    }
+
+    quic_stream_t *stream = neverc_quic_conn_find_stream(conn, 0);
+    ASSERT_NOT_NULL(stream);
+    size_t fragment_count = 0;
+    size_t stored_bytes = 0;
+    for (quic_fragment_t *fragment = stream->recv_fragments; fragment;
+         fragment = fragment->next) {
+        fragment_count++;
+        stored_bytes += fragment->len;
+    }
+    ASSERT_EQ(stream->recv_offset, 0);
+    ASSERT_EQ(stream->recv_highest, 1152);
+    ASSERT_EQ(conn->flow.data_received, 1152);
+    ASSERT_EQ(fragment_count, 1);
+    ASSERT_EQ(stored_bytes, 1151);
+
+    uint8_t first = 'A';
+    frame.offset = 0;
+    frame.data = &first;
+    frame.data_len = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+    ASSERT_NULL(stream->recv_fragments);
+    ASSERT_EQ(stream->recv_offset, 1152);
+    ASSERT_EQ(stream->recv_len, 1152);
+    for (size_t i = 0; i < stream->recv_len; i++)
+        ASSERT_EQ(stream->recv_buf[i], 'A');
+    neverc_quic_conn_destroy(conn);
+}
+
 static void test_new_conn_id_retire_prior_to_marks_unsent(void) {
     struct neverc_quic_conn *conn =
         neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
@@ -1622,6 +1668,7 @@ int main(void) {
     test_reset_retires_connection_window();
     test_reset_final_size_below_highest();
     test_stream_overlapping_data_must_match();
+    test_stream_overlaps_do_not_amplify_fragment_storage();
     test_new_conn_id_retire_prior_to_marks_unsent();
     test_new_conn_id_rejects_zero_length_dcid();
     test_new_conn_id_over_limit_is_connection_id_limit();
