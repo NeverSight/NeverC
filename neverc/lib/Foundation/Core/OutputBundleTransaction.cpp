@@ -218,19 +218,18 @@ Error OutputBundleTransaction::discardStaging(Entry &EntryValue) {
     return Error::success();
 
   const std::string Path = EntryValue.Staging->TmpName.str().str();
-  Error Failure = Error::success();
-  if (std::error_code Injected =
-          fault(OutputBundleOperation::DiscardStaging, Path)) {
-    Failure = errorCodeToError(Injected);
-    Error Preserve = EntryValue.Staging->keep();
-    if (Preserve) {
-      Error Discard = EntryValue.Staging->discard();
-      Preserve = joinErrors(std::move(Preserve), std::move(Discard));
+  Error Failure = [&]() -> Error {
+    if (std::error_code Injected =
+            fault(OutputBundleOperation::DiscardStaging, Path)) {
+      Error Preserve = EntryValue.Staging->keep();
+      if (Preserve)
+        return joinErrors(
+            errorCodeToError(Injected),
+            joinErrors(std::move(Preserve), EntryValue.Staging->discard()));
+      return errorCodeToError(Injected);
     }
-    Failure = joinErrors(std::move(Failure), std::move(Preserve));
-  } else {
-    Failure = EntryValue.Staging->discard();
-  }
+    return EntryValue.Staging->discard();
+  }();
   EntryValue.Staging.reset();
   if (!Failure)
     return Error::success();
@@ -404,7 +403,7 @@ Error OutputBundleTransaction::prepare() {
       if (EC)
         return Fail(errorCodeToError(EC));
     }
-    Error WriteFailure = Error::success();
+    std::error_code WriteFailure;
     {
       raw_fd_ostream Stream(EntryValue.Staging->FD, false);
       Stream.write(
@@ -412,13 +411,13 @@ Error OutputBundleTransaction::prepare() {
           EntryValue.Output.Bytes.size());
       Stream.flush();
       if (Stream.has_error()) {
-        WriteFailure = joinErrors(bundleError("could not write staged output"),
-                                  errorCodeToError(Stream.error()));
+        WriteFailure = Stream.error();
         Stream.clear_error();
       }
     }
     if (WriteFailure)
-      return Fail(std::move(WriteFailure));
+      return Fail(joinErrors(bundleError("could not write staged output"),
+                             errorCodeToError(WriteFailure)));
     if (EntryValue.Output.Executable || EntryValue.Output.OwnerOnly) {
       const sys::fs::perms Permissions =
           EntryValue.Output.OwnerOnly

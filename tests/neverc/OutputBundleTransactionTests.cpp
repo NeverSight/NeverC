@@ -456,8 +456,10 @@ TEST(PluginBinaryImageTest,
       neverc::OutputBundleTransaction::create(SecondCoordinator, SecondOutputs);
   ASSERT_TRUE(static_cast<bool>(Second)) << errorText(Second.takeError());
   SecondTransaction = std::move(*Second);
-  ASSERT_FALSE(FirstTransaction->get()->prepare());
-  ASSERT_FALSE(SecondTransaction->prepare());
+  if (Error E = FirstTransaction->get()->prepare())
+    FAIL() << errorText(std::move(E));
+  if (Error E = SecondTransaction->prepare())
+    FAIL() << errorText(std::move(E));
 
   auto FirstCommitted = FirstTransaction->get()->commit();
   EXPECT_TRUE(static_cast<bool>(FirstCommitted))
@@ -520,8 +522,10 @@ TEST(PluginBinaryImageTest,
   ASSERT_TRUE(static_cast<bool>(CleanerOrErr))
       << errorText(CleanerOrErr.takeError());
   Cleaner = std::move(*CleanerOrErr);
-  ASSERT_FALSE((*Publisher)->prepare());
-  ASSERT_FALSE(Cleaner->prepare());
+  if (Error E = (*Publisher)->prepare())
+    FAIL() << errorText(std::move(E));
+  if (Error E = Cleaner->prepare())
+    FAIL() << errorText(std::move(E));
 
   auto Published = (*Publisher)->commit();
   EXPECT_TRUE(static_cast<bool>(Published)) << errorText(Published.takeError());
@@ -583,8 +587,10 @@ TEST(PluginBinaryImageTest, PublicationLockWaitHonorsCancellation) {
       });
   ASSERT_TRUE(static_cast<bool>(Second)) << errorText(Second.takeError());
   SecondTransaction = std::move(*Second);
-  ASSERT_FALSE(FirstTransaction->get()->prepare());
-  ASSERT_FALSE(SecondTransaction->prepare());
+  if (Error E = FirstTransaction->get()->prepare())
+    FAIL() << errorText(std::move(E));
+  if (Error E = SecondTransaction->prepare())
+    FAIL() << errorText(std::move(E));
 
   auto FirstCommitted = FirstTransaction->get()->commit();
   EXPECT_TRUE(static_cast<bool>(FirstCommitted))
@@ -598,7 +604,8 @@ TEST(PluginBinaryImageTest, PublicationLockWaitHonorsCancellation) {
   EXPECT_FALSE(ConcurrentFailure.empty());
   EXPECT_EQ(SecondTransaction->summary().State,
             neverc::OutputBundleState::Prepared);
-  EXPECT_FALSE(SecondTransaction->abort());
+  if (Error E = SecondTransaction->abort())
+    ADD_FAILURE() << errorText(std::move(E));
   EXPECT_EQ(readFile(Main), "first");
 }
 
@@ -639,7 +646,8 @@ TEST(PluginBinaryImageTest,
   };
   auto Bundle = neverc::OutputBundleTransaction::create(Coordinator, Outputs);
   ASSERT_TRUE(static_cast<bool>(Bundle)) << errorText(Bundle.takeError());
-  ASSERT_FALSE((*Bundle)->prepare());
+  if (Error E = (*Bundle)->prepare())
+    FAIL() << errorText(std::move(E));
 
   const std::string Journal = (*Bundle)->summary().JournalPath;
   ASSERT_FALSE(Journal.empty());
@@ -812,7 +820,8 @@ TEST(PluginBinaryImageTest, AbortReportsStagingCleanupFailure) {
         return std::make_error_code(std::errc::io_error);
       });
   ASSERT_TRUE(static_cast<bool>(Bundle)) << errorText(Bundle.takeError());
-  ASSERT_FALSE((*Bundle)->prepare());
+  if (Error E = (*Bundle)->prepare())
+    FAIL() << errorText(std::move(E));
 
   Error Aborted = (*Bundle)->abort();
   ASSERT_TRUE(static_cast<bool>(Aborted));
@@ -1299,7 +1308,8 @@ TEST(PluginBinaryImageTest, MissingJournalIsNotSilentlyRecreated) {
         return EC;
       });
   ASSERT_TRUE(static_cast<bool>(Bundle)) << errorText(Bundle.takeError());
-  ASSERT_FALSE((*Bundle)->prepare());
+  if (Error E = (*Bundle)->prepare())
+    FAIL() << errorText(std::move(E));
   Journal = (*Bundle)->summary().JournalPath;
   ASSERT_FALSE(Journal.empty());
 
@@ -1395,7 +1405,8 @@ TEST(PluginBinaryImageTest,
   Observer.Points = NEVERC_OBSERVER_AFTER;
   Observer.Callback = neverc_test_after_commit_observer;
   Observer.UserData = &Trace;
-  ASSERT_FALSE((*Pipeline)->addObserver(LinkTestPluginID, Observer));
+  if (Error E = (*Pipeline)->addObserver(LinkTestPluginID, Observer))
+    FAIL() << errorText(std::move(E));
   auto Output = (*Pipeline)->execute(
       *Image, Main, {}, [](neverc::OutputBundleOperation Operation, StringRef) {
         return Operation == neverc::OutputBundleOperation::CleanupJournal
