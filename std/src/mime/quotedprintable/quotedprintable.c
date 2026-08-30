@@ -26,14 +26,14 @@ static const signed char qp_hex_val[256] = {
     -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
 };
 
-/* RFC 2045 line ending for soft breaks / trailing WSP: LF, CRLF, or a
- * CR only at EOF. A bare CR in the middle of a line is not a break, so
- * `=\rX` is not a soft line break (Go quotedprintable: issue 13219). */
+/* RFC 2045 line ending for soft breaks / trailing WSP: LF or CRLF. A bare
+ * CR is not a break, so neither `=\rX` nor a terminal `=\r` is accepted
+ * (Go quotedprintable: issue 13219). */
 static int qp_is_line_end(const char *src, size_t src_len, size_t j) {
     if (j >= src_len) return 1;
     if (src[j] == '\n') return 1;
     if (src[j] == '\r')
-        return j + 1 >= src_len || src[j + 1] == '\n';
+        return j + 1 < src_len && src[j + 1] == '\n';
     return 0;
 }
 
@@ -62,7 +62,7 @@ int neverc_qp_decode(const char *src, size_t src_len,
                     continue;
                 }
             }
-            /* Soft break: '=' WSP* (CRLF | LF | CR-at-EOF | EOF). Transport
+            /* Soft break: '=' WSP* (CRLF | LF | EOF). Transport
              * may insert spaces between '=' and the line ending (RFC 2045 6.7). */
             size_t j = si + 1;
             while (j < src_len && (src[j] == ' ' || src[j] == '\t'))
@@ -124,8 +124,8 @@ int neverc_qp_decode(const char *src, size_t src_len,
             if (qp_need(di, j - si, out_cap)) return -1;
             memcpy(out + di, src + si, j - si);
             di += j - si;
-            /* Mid-line CR is a body byte (Go issue 13219), not a line end.
-             * Only LF / CRLF / CR-at-EOF start a new leftover-'=' line. */
+            /* A bare CR is a body byte (Go issue 13219), not a line end.
+             * Only LF / CRLF start a new leftover-'=' line. */
             if ((src[j - 1] == '\n' || src[j - 1] == '\r') &&
                 qp_is_line_end(src, src_len, j - 1))
                 line_has_content = 0;

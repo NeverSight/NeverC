@@ -9,10 +9,9 @@ extern "C" {
 
 /* Decode quoted-printable data.
  * Returns bytes written to out, or -1 on error.
- * Soft line breaks (=\r\n, =\n, =\r at EOF, '=' plus trailing WSP, and a
- * trailing '=') are stripped. A bare CR after '=' in the middle of a line
- * is not a soft break. Per RFC 2045, trailing spaces/tabs on a line are
- * discarded as transport padding. */
+ * Soft line breaks (=\r\n, =\n, '=' plus trailing WSP, and a trailing '=')
+ * are stripped. A bare CR after '=' is not a soft break. Per RFC 2045,
+ * trailing spaces/tabs on a line are discarded as transport padding. */
 int neverc_qp_decode(const char *src, size_t src_len,
                      unsigned char *out, size_t out_cap);
 
