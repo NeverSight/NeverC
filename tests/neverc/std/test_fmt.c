@@ -473,6 +473,66 @@ static void test_sscanf(void) {
         }
     }
 
+    /* FILE input is a byte stream: an interior NUL is data for %c, not an
+     * implicit end-of-input marker. */
+    {
+        static const unsigned char input[] = {'1', '2', 0, '3', '4', 'X'};
+        FILE *tmp = tmpfile();
+        check_true("fscanf interior NUL fixture", tmp != NULL);
+        if (tmp) {
+            char zero = 'Q';
+            check_true("fscanf interior NUL write",
+                       fwrite(input, 1, sizeof(input), tmp) == sizeof(input));
+            rewind(tmp);
+            a = b = 0;
+            n = neverc_fmt_fscanf(tmp, "%d%c%d", &a, &zero, &b);
+            check_int("fscanf interior NUL count", n, 3);
+            check_int("fscanf interior NUL first", a, 12);
+            check_int("fscanf interior NUL byte",
+                      (int)(unsigned char)zero, 0);
+            check_int("fscanf interior NUL second", b, 34);
+            check_int("fscanf interior NUL suffix", getc(tmp), 'X');
+            fclose(tmp);
+        }
+    }
+
+    /* A unified FILE cursor must retain the seekable scanner's Unicode
+     * whitespace behavior and leave a non-space UTF-8 sequence untouched. */
+    {
+        static const unsigned char input[] = {0xC2, 0xA0, '4', '2', 'X'};
+        FILE *tmp = tmpfile();
+        check_true("fscanf UTF-8 space fixture", tmp != NULL);
+        if (tmp) {
+            check_true("fscanf UTF-8 space write",
+                       fwrite(input, 1, sizeof(input), tmp) == sizeof(input));
+            rewind(tmp);
+            a = 0;
+            check_int("fscanf UTF-8 space count",
+                      neverc_fmt_fscanf(tmp, "%d", &a), 1);
+            check_int("fscanf UTF-8 space value", a, 42);
+            check_int("fscanf UTF-8 space suffix", getc(tmp), 'X');
+            fclose(tmp);
+        }
+    }
+    {
+        static const unsigned char input[] = {0xC2, 0xA1, '9'};
+        FILE *tmp = tmpfile();
+        check_true("fscanf UTF-8 non-space fixture", tmp != NULL);
+        if (tmp) {
+            check_true("fscanf UTF-8 non-space write",
+                       fwrite(input, 1, sizeof(input), tmp) == sizeof(input));
+            rewind(tmp);
+            a = 77;
+            check_int("fscanf UTF-8 non-space rejected",
+                      neverc_fmt_fscanf(tmp, "%d", &a), 0);
+            check_int("fscanf UTF-8 non-space leaves output", a, 77);
+            check_int("fscanf UTF-8 non-space first byte", getc(tmp), 0xC2);
+            check_int("fscanf UTF-8 non-space second byte", getc(tmp), 0xA1);
+            check_int("fscanf UTF-8 non-space suffix", getc(tmp), '9');
+            fclose(tmp);
+        }
+    }
+
     {
         FILE *tmp = tmpfile();
         check_true("fscanf leftover fixture", tmp != NULL);
