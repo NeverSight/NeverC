@@ -14,10 +14,10 @@ jobs:
       matrix:
         include:
           - runner: windows-2022
-            source-run: "33286338651"
+            source_run: "33286338651"
             artifact: windows-x64-neverc
           - runner: windows-11-arm
-            source-run: "33286338615"
+            source_run: "33286338615"
             artifact: windows-arm64-neverc
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -33,7 +33,7 @@ jobs:
           name: ${{ matrix.artifact }}
           path: artifact
           repository: NeverSight/NeverC
-          run-id: ${{ matrix.source-run }}
+          run-id: ${{ matrix.source_run }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Expand relocated compiler
