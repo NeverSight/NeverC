@@ -337,14 +337,20 @@ static int scan_escape(neverc_scanner_t *s, int quote) {
             emit(s, next_ch(s));
         if (digits != 2) scanner_add_error(s);
     } else if (ch == 'u') {
-        for (int i = 0; i < 4 && s->pos < s->src_len && is_hex_digit(peek_ch(s)); i++)
+        int digits = 0;
+        for (; digits < 4 && s->pos < s->src_len && is_hex_digit(peek_ch(s)); digits++)
             emit(s, next_ch(s));
+        if (digits != 4) scanner_add_error(s);
     } else if (ch == 'U') {
-        for (int i = 0; i < 8 && s->pos < s->src_len && is_hex_digit(peek_ch(s)); i++)
+        int digits = 0;
+        for (; digits < 8 && s->pos < s->src_len && is_hex_digit(peek_ch(s)); digits++)
             emit(s, next_ch(s));
+        if (digits != 8) scanner_add_error(s);
     } else if (is_oct_digit(ch)) {
-        for (int i = 0; i < 2 && s->pos < s->src_len && is_oct_digit(peek_ch(s)); i++)
+        int digits = 1;
+        for (; digits < 3 && s->pos < s->src_len && is_oct_digit(peek_ch(s)); digits++)
             emit(s, next_ch(s));
+        if (digits != 3) scanner_add_error(s);
     } else {
         switch (ch) {
         case 'a': case 'b': case 'f': case 'n':
