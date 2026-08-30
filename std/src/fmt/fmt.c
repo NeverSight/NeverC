@@ -1581,8 +1581,10 @@ static int scan_file_position(FILE *f, long *position) {
  * byte-exact without arithmetic on text-mode FILE positions. */
 typedef struct {
     FILE *file;
+    fpos_t lookahead_position;
     int lookahead;
     int has_lookahead;
+    int has_lookahead_position;
     int unicode_space;
     int io_failed;
 } scan_stream_cursor_t;
@@ -1597,8 +1599,18 @@ static int scan_stream_peek(scan_stream_cursor_t *stream) {
     int c;
     if (!stream || !stream->file || stream->io_failed) return EOF;
     if (stream->has_lookahead) return stream->lookahead;
+    if (stream->unicode_space) {
+        if (fgetpos(stream->file, &stream->lookahead_position) != 0) {
+            stream->io_failed = 1;
+            return EOF;
+        }
+        stream->has_lookahead_position = 1;
+    }
     c = getc(stream->file);
-    if (c == EOF) return EOF;
+    if (c == EOF) {
+        stream->has_lookahead_position = 0;
+        return EOF;
+    }
     stream->lookahead = c;
     stream->has_lookahead = 1;
     return c;
@@ -1606,16 +1618,25 @@ static int scan_stream_peek(scan_stream_cursor_t *stream) {
 
 static int scan_stream_take(scan_stream_cursor_t *stream) {
     int c = scan_stream_peek(stream);
-    if (c != EOF)
+    if (c != EOF) {
         stream->has_lookahead = 0;
+        stream->has_lookahead_position = 0;
+    }
     return c;
 }
 
 static void scan_stream_finish(scan_stream_cursor_t *stream) {
     if (stream && stream->has_lookahead) {
-        /* Only one byte is ever pending, which is the portable ungetc limit. */
-        (void)ungetc(stream->lookahead, stream->file);
+        /* Prefer the portable one-byte pushback so caller-owned pushback keeps
+         * its libc semantics. Some Windows text streams reject a high byte
+         * here; restore the opaque checkpoint rather than doing offset math. */
+        if (!stream->io_failed &&
+            ungetc(stream->lookahead, stream->file) == EOF &&
+            stream->has_lookahead_position &&
+            fsetpos(stream->file, &stream->lookahead_position) != 0)
+            stream->io_failed = 1;
         stream->has_lookahead = 0;
+        stream->has_lookahead_position = 0;
     }
 }
 
@@ -2039,7 +2060,10 @@ done:
 static int scan_formatted_stream(FILE *f, const char *format, va_list args) {
     long initial_position;
     int unicode_space = scan_file_position(f, &initial_position);
-    scan_stream_cursor_t stream = {f, 0, 0, unicode_space, 0};
+    scan_stream_cursor_t stream = {
+        .file = f,
+        .unicode_space = unicode_space,
+    };
     const char *fp = format;
     va_list ap;
     int matched = 0;
