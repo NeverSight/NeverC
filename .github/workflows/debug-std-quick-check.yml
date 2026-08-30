@@ -2,108 +2,61 @@ name: debug-std-quick-check
 
 on:
   workflow_dispatch:
+    inputs:
+      tests:
+        description: 'space-separated STD_TEST names'
+        required: true
+      sanitize:
+        description: "-fsanitize= value, or 'none'"
+        required: false
+        default: 'address,undefined'
+      defines:
+        description: 'space-separated extra -D macros'
+        required: false
+        default: ''
+      timeout:
+        description: 'per-test run timeout in seconds'
+        required: false
+        default: '60'
+      extra:
+        description: 'space-separated extra compiler flags'
+        required: false
+        default: ''
 
 permissions:
-  actions: read
   contents: read
 
 jobs:
-  windows-contracts:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-2022
-            source_run: "33286338651"
-            artifact: windows-x64-neverc
-          - runner: windows-11-arm
-            source_run: "33286338615"
-            artifact: windows-arm64-neverc
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+  quick-check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
     steps:
-      - name: Checkout exact test source
-        uses: actions/checkout@v4
-        with:
-          path: neverc
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Download exact d4 compiler artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: artifact
-          repository: NeverSight/NeverC
-          run-id: ${{ matrix.source_run }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Expand relocated compiler
-        shell: pwsh
+      - name: Install toolchain
         run: |
-          $archive = Get-ChildItem artifact -Filter '*.zip' | Select-Object -First 1
-          if (-not $archive) {
-            throw 'downloaded artifact does not contain the compiler archive'
-          }
-          Expand-Archive $archive.FullName toolchain -Force
+          sudo apt-get update
+          sudo apt-get install -y clang
 
-      - name: Verify universal Darwin sysroot with escaped -### output
-        shell: pwsh
+      - name: Compile and run std tests with clang
+        env:
+          QUICK_TESTS: ${{ inputs.tests }}
+          QUICK_SANITIZE: ${{ inputs.sanitize }}
+          QUICK_DEFINES: ${{ inputs.defines }}
+          QUICK_TIMEOUT: ${{ inputs.timeout }}
+          QUICK_EXTRA: ${{ inputs.extra }}
         run: |
-          $ncc = Get-ChildItem toolchain -Recurse -Filter neverc.exe |
-            Where-Object { $_.FullName -match '\\install\\bin\\neverc\.exe$' } |
-            Select-Object -First 1
-          if (-not $ncc) {
-            throw 'relocated neverc.exe not found'
-          }
-          $install = Split-Path (Split-Path $ncc.FullName -Parent) -Parent
-          $source = Join-Path $env:RUNNER_TEMP 'darwin-sysroot.c'
-          Set-Content $source 'int probe(void) { return 0; }' -Encoding ascii
-
-          $driverArgs = @('-###', '-c',
-                          '--target=x86_64-apple-macosx11.0', $source)
-          $output = (& $ncc.FullName @driverArgs 2>&1 | Out-String)
-          $exitCode = $LASTEXITCODE
-          Write-Host $output
-          if ($exitCode -ne 0) {
-            throw "neverc -### failed with exit code $exitCode"
-          }
-
-          $normalized = $output -replace '\\+', '/'
-          $universal = (Join-Path $install 'runtime/macos/arm64').Replace('\', '/')
-          $legacy = (Join-Path $install 'runtime/macos/x64').Replace('\', '/')
-          if (-not $normalized.Contains($universal)) {
-            throw "missing universal sysroot $universal"
-          }
-          if ($normalized.Contains($legacy)) {
-            throw "unexpected legacy sysroot $legacy"
-          }
-
-      - name: Compile Windows net.interface include-order probe
-        shell: pwsh
-        run: |
-          $ncc = Get-ChildItem toolchain -Recurse -Filter neverc.exe |
-            Where-Object { $_.FullName -match '\\install\\bin\\neverc\.exe$' } |
-            Select-Object -First 1
-          if (-not $ncc) {
-            throw 'relocated neverc.exe not found'
-          }
-          $include = Join-Path $env:GITHUB_WORKSPACE 'neverc/std/include'
-          $source = Join-Path $env:RUNNER_TEMP 'net-interface-order.c'
-          Set-Content $source @'
-          #include <neverc/std/net/tcp.h>
-          #include <neverc/std/sync.h>
-          #include <neverc/std/net.h>
-          int probe(neverc_net_interface_list_t *out) {
-            return net.interface.interfaces(out);
-          }
-          '@ -Encoding ascii
-
-          foreach ($target in @('x86_64-pc-windows-msvc',
-                                 'aarch64-pc-windows-msvc')) {
-            $probeArgs = @('--no-default-config', '-std=gnu11',
-                           '-fno-builtin-std', '-fsyntax-only',
-                           "--target=$target", "-I$include", $source)
-            & $ncc.FullName @probeArgs
-            if ($LASTEXITCODE -ne 0) {
-              throw "net.interface probe failed for $target"
-            }
-          }
+          define_args=()
+          for macro in $QUICK_DEFINES; do
+            define_args+=(--define "$macro")
+          done
+          for flag in $QUICK_EXTRA; do
+            define_args+=("--extra=$flag")
+          done
+          python3 utils/ci/std-quick-check.py \
+            --cc clang \
+            --sanitize "$QUICK_SANITIZE" \
+            --timeout "$QUICK_TIMEOUT" \
+            --tests "$QUICK_TESTS" \
+            "${define_args[@]}"
