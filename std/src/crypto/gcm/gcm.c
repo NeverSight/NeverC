@@ -196,6 +196,9 @@ int neverc_gcm_seal(const neverc_gcm_ctx *ctx,
         gcm_spans_overlap(ciphertext, pt_len, tag, 16))
         return -1;
 
+    uint8_t nonce_copy[12];
+    memcpy(nonce_copy, nonce, sizeof(nonce_copy));
+
     /* Hash AAD before writing ciphertext so an overlapping AAD/output
      * layout cannot clobber the bytes that must be authenticated. */
     uint8_t ghash_val[16];
@@ -204,13 +207,16 @@ int neverc_gcm_seal(const neverc_gcm_ctx *ctx,
         ghash_update(ctx, ghash_val, aad, aad_len);
 
     if (pt_len > 0) {
-        if (gcm_ctr_encrypt(ctx, nonce, plaintext, pt_len, ciphertext) != 0) {
+        if (gcm_ctr_encrypt(ctx, nonce_copy, plaintext,
+                            pt_len, ciphertext) != 0) {
+            neverc_platform_secure_zero(nonce_copy, sizeof(nonce_copy));
             neverc_platform_secure_zero(ghash_val, sizeof(ghash_val));
             return -1;
         }
         ghash_update(ctx, ghash_val, ciphertext, pt_len);
     }
-    gcm_finish_tag(ctx, nonce, ghash_val, aad_len, pt_len, tag);
+    gcm_finish_tag(ctx, nonce_copy, ghash_val, aad_len, pt_len, tag);
+    neverc_platform_secure_zero(nonce_copy, sizeof(nonce_copy));
     neverc_platform_secure_zero(ghash_val, sizeof(ghash_val));
     return 0;
 }
