@@ -343,8 +343,16 @@ static int scan_escape(neverc_scanner_t *s, int quote) {
     } else if (is_oct_digit(ch)) {
         for (int i = 0; i < 2 && s->pos < s->src_len && is_oct_digit(peek_ch(s)); i++)
             emit(s, next_ch(s));
+    } else {
+        switch (ch) {
+        case 'a': case 'b': case 'f': case 'n':
+        case 'r': case 't': case 'v': case '\\':
+            break;
+        default:
+            if (ch != quote) scanner_add_error(s);
+            break;
+        }
     }
-    (void)quote;
     return ch;
 }
 
