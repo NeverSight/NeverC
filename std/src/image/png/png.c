@@ -304,9 +304,8 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
         png_decode_fail(img, idat_buf, NULL);
         return -1;
     }
-    uint32_t expected_adler = read_u32be(idat_buf + idat_len - 4U);
-
-    /* Skip zlib header (2 bytes) and checksum (4 bytes at end). */
+    /* Skip the zlib header. The Adler-32 follows the actual DEFLATE stream;
+     * PNG decoders must ignore unused trailing bytes in the final IDAT. */
     if (img->stride > SIZE_MAX - 1U ||
         (size_t)img->height > SIZE_MAX / (img->stride + 1U) ||
         (img->stride != 0 &&
@@ -323,16 +322,23 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
 
     size_t decompressed_len = raw_size;
     size_t compressed_used = 0;
+    size_t compressed_available = idat_len - 2U;
     unsigned window = 1u << ((cmf >> 4) + 8);
     int rc = neverc_flate_decompress_consumed_window(
-        idat_buf + 2, idat_len - 6, raw, &decompressed_len,
+        idat_buf + 2, compressed_available, raw, &decompressed_len,
         &compressed_used, window);
+
+    if (rc != 0 || compressed_used > compressed_available ||
+        compressed_available - compressed_used < 4U ||
+        decompressed_len != raw_size) {
+        png_decode_fail(img, idat_buf, raw);
+        return -1;
+    }
+    uint32_t expected_adler = read_u32be(idat_buf + 2U + compressed_used);
     free(idat_buf);
     idat_buf = NULL;
 
-    if (rc != 0 || compressed_used != idat_len - 6 ||
-        decompressed_len != raw_size ||
-        neverc_adler32_checksum(raw, raw_size) != expected_adler) {
+    if (neverc_adler32_checksum(raw, raw_size) != expected_adler) {
         png_decode_fail(img, NULL, raw);
         return -1;
     }
