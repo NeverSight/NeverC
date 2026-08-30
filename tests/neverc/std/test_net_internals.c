@@ -133,6 +133,63 @@ static void test_timer_wheel_multiple(void) {
     #undef N_TIMERS
 }
 
+static void test_timer_wheel_deadline_saturates(void) {
+    printf("[timer_wheel_deadline_saturates]\n");
+
+    tw_fake_now_ms = UINT64_MAX - 2;
+    nc_timer_wheel_t tw;
+    nc_tw_init(&tw);
+
+    nc_timer_t timer;
+    nc_timer_init(&timer, tw_callback, NULL);
+    tw_fire_count = 0;
+
+    nc_tw_add(&tw, &timer, 4);
+    check_true("overflowing deadline saturates",
+               timer.expire_ms == UINT64_MAX);
+
+    tw_fake_now_ms = UINT64_MAX;
+    nc_tw_tick(&tw);
+    check_int("saturated timer fired", tw_fire_count, 1);
+    check_int("saturated timer inactive after fire", timer.active, 0);
+}
+
+static nc_timer_wheel_t *tw_readd_wheel;
+static int tw_readd_count;
+
+static void tw_readd_zero_cb(nc_timer_t *timer, void *data) {
+    (void)data;
+    tw_readd_count++;
+    if (tw_readd_count == 1)
+        nc_tw_add(tw_readd_wheel, timer, 0);
+}
+
+static void test_timer_wheel_callback_readd_zero(void) {
+    printf("[timer_wheel_callback_readd_zero]\n");
+
+    tw_fake_now_ms = 3500;
+    nc_timer_wheel_t tw;
+    nc_timer_t timer;
+    nc_tw_init(&tw);
+    nc_timer_init(&timer, tw_readd_zero_cb, NULL);
+    tw_readd_wheel = &tw;
+    tw_readd_count = 0;
+
+    nc_tw_add(&tw, &timer, 1);
+    tw_fake_now_ms = 3501;
+    nc_tw_tick(&tw);
+    check_int("callback re-add fired once", tw_readd_count, 1);
+    check_int("callback re-add remains active", timer.active, 1);
+    check_true("callback re-add is after processed cursor",
+               timer.expire_ms > tw.last_ms);
+
+    tw_fake_now_ms = 3502;
+    nc_tw_tick(&tw);
+    check_int("callback re-add fired on next tick", tw_readd_count, 2);
+    check_int("callback re-add inactive after second fire", timer.active, 0);
+    tw_readd_wheel = NULL;
+}
+
 static void test_timer_wheel_reschedule(void) {
     printf("[timer_wheel_reschedule]\n");
 
@@ -789,6 +846,8 @@ int main(void) {
     test_timer_wheel_basic();
     test_timer_wheel_cancel();
     test_timer_wheel_multiple();
+    test_timer_wheel_deadline_saturates();
+    test_timer_wheel_callback_readd_zero();
     test_timer_wheel_reschedule();
     test_timer_wheel_callback_cancel();
     test_bufpool();
