@@ -249,9 +249,9 @@ static int scan_identifier(neverc_scanner_t *s) {
     return NEVERC_SCANNER_IDENT;
 }
 
-/* Go text/scanner digits(): '_' and, for base<=10, every decimal digit stay
- * in the token (invalid digits for 0b/0o are still consumed). */
-static void scan_digits(neverc_scanner_t *s, int base) {
+/* Go text/scanner digits(): '_' and, for base<=10, every decimal digit stays
+ * in the token. Record the first digit outside the radix when requested. */
+static void scan_digits(neverc_scanner_t *s, int base, int *invalid_digit) {
     for (;;) {
         int ch = peek_ch(s);
         if (ch == NEVERC_SCANNER_EOF) return;
@@ -261,8 +261,10 @@ static void scan_digits(neverc_scanner_t *s, int base) {
         }
         if (base > 10) {
             if (!is_hex_digit(ch)) return;
-        } else if (!is_digit(ch)) {
-            return;
+        } else {
+            if (!is_digit(ch)) return;
+            if (invalid_digit && *invalid_digit == 0 && ch >= '0' + base)
+                *invalid_digit = ch;
         }
         emit(s, next_ch(s));
     }
@@ -271,6 +273,7 @@ static void scan_digits(neverc_scanner_t *s, int base) {
 static int scan_number(neverc_scanner_t *s, int first) {
     int is_float = (first == '.');
     int base = 10;
+    int invalid_digit = 0;
     emit(s, first);
 
     if (!is_float && first == '0' && s->pos < s->src_len) {
@@ -290,7 +293,7 @@ static int scan_number(neverc_scanner_t *s, int first) {
     }
 
     if (!is_float)
-        scan_digits(s, base);
+        scan_digits(s, base, &invalid_digit);
 
     /* Go: '.' after the mantissa starts a float whenever ScanFloats is set,
      * including 0b/0o prefixes and with no fractional digits ("1.", "0b1.0"). */
@@ -301,7 +304,7 @@ static int scan_number(neverc_scanner_t *s, int first) {
     }
 
     if (is_float)
-        scan_digits(s, base);
+        scan_digits(s, base, NULL);
 
     /* Go accepts e/E and p/P exponents under ScanFloats for every prefix
      * (invalid combinations are still one Float token). */
@@ -312,10 +315,12 @@ static int scan_number(neverc_scanner_t *s, int first) {
             emit(s, next_ch(s));
             if (s->pos < s->src_len && (peek_ch(s) == '+' || peek_ch(s) == '-'))
                 emit(s, next_ch(s));
-            scan_digits(s, 10);
+            scan_digits(s, 10, NULL);
         }
     }
 
+    if (!is_float && invalid_digit != 0)
+        scanner_add_error(s);
     return is_float ? NEVERC_SCANNER_FLOAT : NEVERC_SCANNER_INT;
 }
 
