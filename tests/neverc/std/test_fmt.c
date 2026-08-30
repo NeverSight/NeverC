@@ -532,6 +532,33 @@ static void test_sscanf(void) {
             fclose(tmp);
         }
     }
+    /* A byte width limits copied data; it must not turn a wider UTF-8
+     * delimiter into data or split that delimiter in the FILE stream. */
+    {
+        static const unsigned char input[] = {'A', 0xC2, 0xA0, 'Z'};
+        struct {
+            char text[3];
+            unsigned char canary;
+        } bounded = {{0}, 0xA5};
+        FILE *tmp = tmpfile();
+        check_true("fscanf UTF-8 width fixture", tmp != NULL);
+        if (tmp) {
+            check_true("fscanf UTF-8 width write",
+                       fwrite(input, 1, sizeof(input), tmp) == sizeof(input));
+            rewind(tmp);
+            check_int("fscanf UTF-8 width count",
+                      neverc_fmt_fscanf(tmp, "%2s", bounded.text), 1);
+            check_str("fscanf UTF-8 width value", bounded.text, "A");
+            check_int("fscanf UTF-8 width preserves canary",
+                      bounded.canary, 0xA5);
+            check_int("fscanf UTF-8 width first delimiter byte",
+                      getc(tmp), 0xC2);
+            check_int("fscanf UTF-8 width second delimiter byte",
+                      getc(tmp), 0xA0);
+            check_int("fscanf UTF-8 width suffix", getc(tmp), 'Z');
+            fclose(tmp);
+        }
+    }
 
     {
         FILE *tmp = tmpfile();
