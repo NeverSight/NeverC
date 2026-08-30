@@ -25,7 +25,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
   quick-check:
@@ -38,109 +37,16 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang p7zip-full
+          sudo apt-get install -y clang
 
       - name: Compile and run std tests with clang
         env:
-          GH_TOKEN: ${{ github.token }}
           QUICK_TESTS: ${{ inputs.tests }}
           QUICK_SANITIZE: ${{ inputs.sanitize }}
           QUICK_DEFINES: ${{ inputs.defines }}
           QUICK_TIMEOUT: ${{ inputs.timeout }}
           QUICK_EXTRA: ${{ inputs.extra }}
         run: |
-          if [[ "$QUICK_TESTS" = "bitcode_generator_unit" ]]; then
-            unset GH_TOKEN
-            python3 tests/neverc/BuildStdBitcodeTests.py -v
-            exit
-          fi
-
-          if [[ "$QUICK_TESTS" = "header_contract" ||
-                "$QUICK_TESTS" = "bitcode_darwin_x64" ]]; then
-            compiler_run_id="$QUICK_DEFINES"
-            [[ "$compiler_run_id" =~ ^[1-9][0-9]*$ ]] || {
-              echo "invalid compiler run id: $compiler_run_id" >&2
-              exit 2
-            }
-            mapfile -t run_metadata < <(gh api \
-              "repos/$GITHUB_REPOSITORY/actions/runs/$compiler_run_id" \
-              --jq '.status, .conclusion, .event, .path, .head_repository.full_name, .head_branch')
-            [[ "${run_metadata[*]}" = \
-              "completed success push .github/workflows/build-linux-x64.yml $GITHUB_REPOSITORY dev" ]] || {
-              echo "untrusted compiler run metadata: ${run_metadata[*]}" >&2
-              exit 1
-            }
-
-            artifact_dir="$RUNNER_TEMP/neverc-artifact"
-            compiler_dir="$RUNNER_TEMP/neverc-compiler"
-            mkdir -p "$artifact_dir" "$compiler_dir"
-            gh run download "$compiler_run_id" \
-              --repo "$GITHUB_REPOSITORY" \
-              --name linux-x64-neverc \
-              --dir "$artifact_dir"
-            7z x -y "$artifact_dir/linux-x64-neverc.zip" \
-              "-o$compiler_dir" >/dev/null
-            ncc="$compiler_dir/install/bin/neverc"
-            chmod +x "$ncc"
-            unset GH_TOKEN
-            "$ncc" --version
-
-            if [[ "$QUICK_TESTS" = "header_contract" ]]; then
-              header_failures=0
-              for probe in $(seq 1 10); do
-                if ! "$ncc" --no-default-config \
-                    -std=gnu11 -fno-builtin-std -fsyntax-only \
-                    -I"$GITHUB_WORKSPACE/std/include" \
-                    -DNEVERC_HEADER_PROBE="$probe" \
-                    "$GITHUB_WORKSPACE/tests/neverc/std/header_dot_syntax_probe.c"; then
-                  echo "header contract probe $probe failed" >&2
-                  header_failures=$((header_failures + 1))
-                fi
-              done
-              [[ "$header_failures" = 0 ]]
-              exit
-            fi
-
-            bitcode_dir="$RUNNER_TEMP/std-bitcode"
-            mkdir -p "$bitcode_dir"
-            generator_args=()
-            if [[ "$QUICK_EXTRA" = "with-sysroot" ]]; then
-              generator_args+=(
-                --sysroot "$compiler_dir/install/runtime/macos/arm64")
-            elif [[ -n "$QUICK_EXTRA" ]]; then
-              echo "invalid bitcode mode: $QUICK_EXTRA" >&2
-              exit 2
-            fi
-            python3 neverc/lib/Foundation/Std/build_std_bitcode.py \
-              "$ncc" std/src std/include \
-              --target x86_64-apple-macosx11.0 \
-              --tag darwin_x64 \
-              "${generator_args[@]}" \
-              -o "$bitcode_dir/first.h" \
-              2> >(tee "$bitcode_dir/first.log" >&2)
-            expected=$(find std/src -type f -name '*.c' | wc -l | tr -d ' ')
-            actual=$(sed -n \
-              's/^static const unsigned int kStdBitcodeEntryCount_darwin_x64 = \([0-9][0-9]*\);$/\1/p' \
-              "$bitcode_dir/first.h")
-            [[ -n "$actual" && "$actual" = "$expected" ]] || {
-              echo "darwin_x64 std bitcode incomplete: $actual/$expected" >&2
-              exit 1
-            }
-            ! grep -q 'module(s) unavailable' "$bitcode_dir/first.log"
-
-            if [[ "$QUICK_EXTRA" = "with-sysroot" ]]; then
-              python3 neverc/lib/Foundation/Std/build_std_bitcode.py \
-                "$ncc" std/src std/include \
-                --target x86_64-apple-macosx11.0 \
-                --tag darwin_x64 \
-                "${generator_args[@]}" \
-                -o "$bitcode_dir/second.h"
-              cmp "$bitcode_dir/first.h" "$bitcode_dir/second.h"
-              sha256sum "$bitcode_dir/first.h"
-            fi
-            exit 0
-          fi
-
           define_args=()
           for macro in $QUICK_DEFINES; do
             define_args+=(--define "$macro")
