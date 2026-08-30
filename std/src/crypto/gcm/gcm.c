@@ -71,6 +71,15 @@ static int gcm_ctx_ready(const neverc_gcm_ctx *ctx) {
     return nr == 10 || nr == 12 || nr == 14;
 }
 
+static int gcm_spans_overlap(const void *a, size_t a_len,
+                             const void *b, size_t b_len) {
+    if (a_len == 0 || b_len == 0)
+        return 0;
+    uintptr_t ap = (uintptr_t)a;
+    uintptr_t bp = (uintptr_t)b;
+    return ap <= bp ? bp - ap < a_len : ap - bp < b_len;
+}
+
 int neverc_gcm_init(neverc_gcm_ctx *ctx, const uint8_t *key, int key_len) {
     if (!ctx) return -1;
     if (!key) {
@@ -183,7 +192,8 @@ int neverc_gcm_seal(const neverc_gcm_ctx *ctx,
         (!plaintext && pt_len != 0) || (!ciphertext && pt_len != 0) ||
         (!aad && aad_len != 0) ||
         (uint64_t)pt_len > NEVERC_GCM_MAX_TEXT_BYTES ||
-        (uint64_t)aad_len > NEVERC_GCM_MAX_AAD_BYTES)
+        (uint64_t)aad_len > NEVERC_GCM_MAX_AAD_BYTES ||
+        gcm_spans_overlap(ciphertext, pt_len, tag, 16))
         return -1;
 
     /* Hash AAD before writing ciphertext so an overlapping AAD/output

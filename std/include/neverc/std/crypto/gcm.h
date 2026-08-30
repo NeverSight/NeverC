@@ -34,6 +34,8 @@ int neverc_gcm_init(neverc_gcm_ctx *ctx, const uint8_t *key, int key_len);
  * Requires a context from a successful neverc_gcm_init.
  * AAD is hashed before ciphertext is written, so AAD may overlap the output.
  * dest-after-src plaintext/ciphertext overlap is slid before CTR XOR.
+ * The ciphertext and detached 16-byte tag output spans must not overlap;
+ * overlap is rejected before either output is modified. Adjacent spans work.
  * Returns 0 on success, -1 on error.
  */
 int neverc_gcm_seal(const neverc_gcm_ctx *ctx,
