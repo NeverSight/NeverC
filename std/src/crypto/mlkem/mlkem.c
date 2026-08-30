@@ -713,7 +713,12 @@ int neverc_mlkem768_new_ek(neverc_mlkem768_ek_t *ek,
 int neverc_mlkem768_encapsulate(const neverc_mlkem768_ek_t *ek,
                                 uint8_t shared_key[32],
                                 uint8_t ciphertext[NEVERC_MLKEM768_CT_SIZE]) {
-    if (!shared_key || !ciphertext) return -1;
+    if (!shared_key || !ciphertext) {
+        if (shared_key) neverc_platform_secure_zero(shared_key, 32);
+        if (ciphertext)
+            neverc_platform_secure_zero(ciphertext, NEVERC_MLKEM768_CT_SIZE);
+        return -1;
+    }
     if (!ek || validate_encapsulation_key(
             3, ek->ek, NEVERC_MLKEM768_EK_SIZE) != 0) {
         neverc_platform_secure_zero(shared_key, 32);
@@ -809,7 +814,12 @@ int neverc_mlkem1024_new_ek(neverc_mlkem1024_ek_t *ek,
 int neverc_mlkem1024_encapsulate(const neverc_mlkem1024_ek_t *ek,
                                  uint8_t shared_key[32],
                                  uint8_t ciphertext[NEVERC_MLKEM1024_CT_SIZE]) {
-    if (!shared_key || !ciphertext) return -1;
+    if (!shared_key || !ciphertext) {
+        if (shared_key) neverc_platform_secure_zero(shared_key, 32);
+        if (ciphertext)
+            neverc_platform_secure_zero(ciphertext, NEVERC_MLKEM1024_CT_SIZE);
+        return -1;
+    }
     if (!ek || validate_encapsulation_key(
             4, ek->ek, NEVERC_MLKEM1024_EK_SIZE) != 0) {
         neverc_platform_secure_zero(shared_key, 32);
