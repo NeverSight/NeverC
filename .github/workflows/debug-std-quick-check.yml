@@ -4,79 +4,106 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
-  linker-contracts:
+  windows-contracts:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - sanitizer: "Address;Undefined"
-            label: asan-ubsan
-          - sanitizer: "Thread"
-            label: tsan
-    runs-on: ubuntu-22.04
-    timeout-minutes: 120
-    env:
-      BUILD_TYPE: RelWithDebInfo
-      LLVM_APT_VER: "22"
+          - runner: windows-2022
+            source-run: "33286338651"
+            artifact: windows-x64-neverc
+          - runner: windows-11-arm
+            source-run: "33286338615"
+            artifact: windows-arm64-neverc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     steps:
-      - name: Checkout Repo
+      - name: Checkout exact test source
         uses: actions/checkout@v4
         with:
           path: neverc
 
-      - name: Setup build deps
-        run: |
-          bash neverc/.github/scripts/configure-apt-ubuntu.sh
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh "$LLVM_APT_VER"
-          echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
-          echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+      - name: Download exact d4 compiler artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: artifact
+          repository: NeverSight/NeverC
+          run-id: ${{ matrix.source-run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check global-state policy source contracts
+      - name: Expand relocated compiler
+        shell: pwsh
         run: |
-          python3 neverc/utils/plugin-api/tests/test-check-global-state.py
-          python3 neverc/utils/plugin-api/check-global-state.py --strict
+          $archive = Get-ChildItem artifact -Filter '*.zip' | Select-Object -First 1
+          if (-not $archive) {
+            throw 'downloaded artifact does not contain the compiler archive'
+          }
+          Expand-Archive $archive.FullName toolchain -Force
 
-      - name: Configure (${{ matrix.label }})
+      - name: Verify universal Darwin sysroot with escaped -### output
+        shell: pwsh
         run: |
-          cmake -GNinja -Bbuild \
-            -DCMAKE_C_COMPILER=$CC \
-            -DCMAKE_CXX_COMPILER=$CXX \
-            -DLLVM_ENABLE_ASSERTIONS=ON \
-            -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
-            -DLLVM_USE_SANITIZER="${{ matrix.sanitizer }}" \
-            -DNEVERC_INCLUDE_TESTS=ON \
-            -DNEVERC_ENABLE_PLUGIN_FUZZERS=OFF \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -C neverc/neverc/cmake/caches/NeverC.cmake \
-            neverc/llvm
+          $ncc = Get-ChildItem toolchain -Recurse -Filter neverc.exe |
+            Where-Object { $_.FullName -match '\\install\\bin\\neverc\.exe$' } |
+            Select-Object -First 1
+          if (-not $ncc) {
+            throw 'relocated neverc.exe not found'
+          }
+          $install = Split-Path (Split-Path $ncc.FullName -Parent) -Parent
+          $source = Join-Path $env:RUNNER_TEMP 'darwin-sysroot.c'
+          Set-Content $source 'int probe(void) { return 0; }' -Encoding ascii
 
-      - name: Build focused test binaries
-        run: |
-          cmake --build build --config ${{ env.BUILD_TYPE }} --target \
-            neverc-tests \
-            neverc-plugin-link-tests \
-            neverc-merge-tests
+          $driverArgs = @('-###', '-c',
+                          '--target=x86_64-apple-macosx11.0', $source)
+          $output = (& $ncc.FullName @driverArgs 2>&1 | Out-String)
+          $exitCode = $LASTEXITCODE
+          Write-Host $output
+          if ($exitCode -ne 0) {
+            throw "neverc -### failed with exit code $exitCode"
+          }
 
-      - name: Run focused contracts under ${{ matrix.label }}
-        env:
-          LSAN_OPTIONS: suppressions=${{ github.workspace }}/neverc/.github/plugin-sanitizers.lsan
-          NEVERC_PCG_STRICT: "1"
+          $normalized = $output -replace '\\+', '/'
+          $universal = (Join-Path $install 'runtime/macos/arm64').Replace('\', '/')
+          $legacy = (Join-Path $install 'runtime/macos/x64').Replace('\', '/')
+          if (-not $normalized.Contains($universal)) {
+            throw "missing universal sysroot $universal"
+          }
+          if ($normalized.Contains($legacy)) {
+            throw "unexpected legacy sysroot $legacy"
+          }
+
+      - name: Compile Windows net.interface include-order probe
+        shell: pwsh
         run: |
-          build/bin/neverc-merge-tests \
-            --gtest_filter='ParallelCodeGenCacheTest.ExhaustedWholeModuleCodeGenRoutesReportErrorWithoutAborting:ParallelCodeGenCacheTest.WholeModuleBarrierRunsStatefulMachineHooksExactlyOnce' \
-            --gtest_color=no
-          build/bin/neverc-plugin-link-tests \
-            --gtest_filter='PluginMachOContextIsolationTest.AutomaticThreadsIncludeLateAutoLinkedAndCommandLineArchives' \
-            --gtest_color=no
-          build/bin/neverc-tests \
-            --gtest_filter='DriverTest.DarwinWarningPolicyUsesStructuredLinkerConfig' \
-            --gtest_color=no
-          python3 neverc/utils/plugin-api/tests/test-check-global-state.py
-          python3 neverc/utils/plugin-api/check-global-state.py --strict
+          $ncc = Get-ChildItem toolchain -Recurse -Filter neverc.exe |
+            Where-Object { $_.FullName -match '\\install\\bin\\neverc\.exe$' } |
+            Select-Object -First 1
+          if (-not $ncc) {
+            throw 'relocated neverc.exe not found'
+          }
+          $include = Join-Path $env:GITHUB_WORKSPACE 'neverc/std/include'
+          $source = Join-Path $env:RUNNER_TEMP 'net-interface-order.c'
+          Set-Content $source @'
+#include <neverc/std/net/tcp.h>
+#include <neverc/std/sync.h>
+#include <neverc/std/net.h>
+int probe(neverc_net_interface_list_t *out) {
+  return net.interface.interfaces(out);
+}
+'@ -Encoding ascii
+
+          foreach ($target in @('x86_64-pc-windows-msvc',
+                                 'aarch64-pc-windows-msvc')) {
+            $probeArgs = @('--no-default-config', '-std=gnu11',
+                           '-fno-builtin-std', '-fsyntax-only',
+                           "--target=$target", "-I$include", $source)
+            & $ncc.FullName @probeArgs
+            if ($LASTEXITCODE -ne 0) {
+              throw "net.interface probe failed for $target"
+            }
+          }
