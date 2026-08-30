@@ -482,11 +482,11 @@ int neverc_protobuf_message_decode(
     const neverc_protobuf_message_descriptor_t *descriptor,
     const void *input, size_t input_length, size_t max_field_size,
     void *message, size_t message_size) {
-    if (!protobuf_descriptor_valid(descriptor) ||
-        (!input && input_length > 0) || !message ||
+    if (!protobuf_descriptor_valid(descriptor) || !message ||
         message_size < descriptor->struct_size)
         return -1;
     memset(message, 0, descriptor->struct_size);
+    if (!input && input_length > 0) return -1;
     neverc_protobuf_reader_t reader;
     neverc_protobuf_reader_init(&reader, input, input_length, max_field_size);
     for (;;) {
