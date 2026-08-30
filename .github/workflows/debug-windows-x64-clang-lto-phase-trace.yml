@@ -1,0 +1,267 @@
+name: debug-windows-x64-clang-lto-phase-trace
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "debug-win-x64-clang-lto-phase-trace-*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: Reproduce phase-trace crash and capture WinDbg evidence
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      BASELINE_SHA: 0479fe6ba33efde8bdb96c8e58c0f645118e58d0
+      LLVM_VER: 22.1.8
+    steps:
+      - name: Checkout exact failing revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          fetch-depth: 1
+
+      - name: Verify diagnostic revision
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:BASELINE_SHA) {
+            throw "expected $env:BASELINE_SHA, checked out $actual"
+          }
+          "BASELINE_SHA=$actual" | Tee-Object -FilePath "$env:RUNNER_TEMP\baseline-sha.txt"
+
+      - name: Set up CPython 3.12.10
+        id: python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12.10"
+
+      - name: Set up pinned build dependencies
+        shell: pwsh
+        run: |
+          choco install ninja 7zip -y --no-progress
+
+          $cmakeVer = '3.31.11'
+          Invoke-WebRequest `
+            "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-x86_64.zip" `
+            -OutFile cmake.zip
+          Expand-Archive cmake.zip C:\tools -Force
+          Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-x86_64\bin"
+
+      - name: Cache LLVM toolchain
+        uses: actions/cache@v4
+        with:
+          path: C:\LLVM
+          key: llvm-${{ env.LLVM_VER }}-win64
+
+      - name: Install the formal-run LLVM toolchain
+        shell: pwsh
+        run: ./.github/scripts/install-llvm-windows.ps1
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up sccache
+        uses: mozilla/sccache-action@v0.0.7
+
+      - name: Configure exact Release and ThinLTO reproduction
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake -S llvm -B build -G Ninja \
+            -C neverc/cmake/caches/NeverC.cmake \
+            -DNEVERC_INCLUDE_TESTS=ON \
+            -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+            -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
+            -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
+            -DCMAKE_EXE_LINKER_FLAGS="-Wl,//debug"
+
+      - name: Build only the failing test binary
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake --build build --target neverc-plugin-link-tests \
+            --parallel "$NUMBER_OF_PROCESSORS"
+          ls -l build/bin/neverc-plugin-link-tests.exe \
+            build/bin/neverc-plugin-link-tests.pdb
+
+      - name: Register full WER LocalDumps
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dumpDir = 'C:\crashdumps'
+          New-Item -ItemType Directory -Force -Path $dumpDir | Out-Null
+
+          $werRoot = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting'
+          New-Item -Path $werRoot -Force | Out-Null
+          New-ItemProperty -Path $werRoot -Name DontShowUI -Value 1 `
+            -PropertyType DWord -Force | Out-Null
+
+          $localDumps = Join-Path $werRoot 'LocalDumps'
+          New-Item -Path $localDumps -Force | Out-Null
+          New-ItemProperty -Path $localDumps -Name DumpFolder -Value $dumpDir `
+            -PropertyType ExpandString -Force | Out-Null
+          New-ItemProperty -Path $localDumps -Name DumpCount -Value 20 `
+            -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -Path $localDumps -Name DumpType -Value 2 `
+            -PropertyType DWord -Force | Out-Null
+
+      - name: Reproduce both failures in independent processes
+        id: reproduce
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $testExe = (Resolve-Path 'build\bin\neverc-plugin-link-tests.exe').Path
+          $diagDir = Join-Path $PWD 'diagnostics'
+          New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
+
+          $filters = [ordered]@{
+            dispatcher = 'PluginCOFFContextIsolationTest.DispatcherFatalTimeTraceDoesNotPoisonNextLink'
+            direct = 'PluginCOFFContextIsolationTest.DirectFatalTimeTraceDoesNotPoisonNextLink'
+          }
+
+          foreach ($entry in $filters.GetEnumerator()) {
+            for ($round = 1; $round -le 3; ++$round) {
+              $stdout = Join-Path $diagDir "$($entry.Key)-$round.stdout.txt"
+              $stderr = Join-Path $diagDir "$($entry.Key)-$round.stderr.txt"
+              $process = Start-Process -FilePath $testExe `
+                -ArgumentList @("--gtest_filter=$($entry.Value)", '--gtest_color=no') `
+                -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
+                -Wait -PassThru
+              $unsignedExit = [uint64]([int64]$process.ExitCode -band 0xffffffffL)
+              $result = '{0} round={1} exit={2} hex=0x{3:X8}' -f `
+                $entry.Key, $round, $process.ExitCode, $unsignedExit
+              $result | Tee-Object -FilePath (Join-Path $diagDir 'exit-codes.txt') -Append
+              Get-Content $stdout -ErrorAction SilentlyContinue
+              Get-Content $stderr -ErrorAction SilentlyContinue
+            }
+          }
+
+          Start-Sleep -Seconds 3
+          Get-ChildItem 'C:\crashdumps' -Filter *.dmp -ErrorAction SilentlyContinue |
+            Format-Table Name, Length, LastWriteTime | Out-String | Tee-Object `
+              -FilePath (Join-Path $diagDir 'wer-dumps.txt')
+
+      - name: Capture live cdb exception context and stacks
+        id: cdb
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $testExe = (Resolve-Path 'build\bin\neverc-plugin-link-tests.exe').Path
+          $diagDir = Join-Path $PWD 'diagnostics'
+          New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
+
+          $cdb = Get-Item `
+            'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe' `
+            -ErrorAction SilentlyContinue
+          if (-not $cdb) {
+            $cdb = Get-ChildItem 'C:\Program Files (x86)\Windows Kits' `
+              -Recurse -Filter cdb.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\x64\\' } |
+              Select-Object -First 1
+          }
+          if (-not $cdb) {
+            'cdb.exe not found on windows-2022' |
+              Tee-Object -FilePath (Join-Path $diagDir 'cdb-not-found.txt')
+            exit 1
+          }
+
+          $binDir = (Resolve-Path 'build\bin').Path
+          $env:_NT_SYMBOL_PATH = "$binDir;srv*C:\symcache*https://msdl.microsoft.com/download/symbols"
+          "cdb=$($cdb.FullName)" | Tee-Object -FilePath (Join-Path $diagDir 'cdb-path.txt')
+          "symbols=$env:_NT_SYMBOL_PATH" | Add-Content (Join-Path $diagDir 'cdb-path.txt')
+
+          $filters = [ordered]@{
+            dispatcher = 'PluginCOFFContextIsolationTest.DispatcherFatalTimeTraceDoesNotPoisonNextLink'
+            direct = 'PluginCOFFContextIsolationTest.DirectFatalTimeTraceDoesNotPoisonNextLink'
+          }
+
+          foreach ($entry in $filters.GetEnumerator()) {
+            $dumpPath = Join-Path $diagDir "$($entry.Key)-cdb-full.dmp"
+            $logPath = Join-Path $diagDir "$($entry.Key)-cdb.txt"
+            $commands = @(
+              'sxd 0xe0000001',
+              'sxe 0xc0000409',
+              'g',
+              '.exr -1',
+              '.ecxr',
+              '!analyze -v',
+              'kP 160',
+              '~*kb 80',
+              'lm',
+              ".dump /ma $dumpPath",
+              'q'
+            ) -join '; '
+
+            & $cdb.FullName -o -lines -y $env:_NT_SYMBOL_PATH `
+              -c $commands $testExe "--gtest_filter=$($entry.Value)" `
+              '--gtest_color=no' 2>&1 |
+              Tee-Object -FilePath $logPath
+            "cdb exit=$LASTEXITCODE" | Add-Content $logPath
+          }
+
+      - name: Analyze WER dumps with cdb
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $diagDir = Join-Path $PWD 'diagnostics'
+          New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
+          $cdb = Get-Item `
+            'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe' `
+            -ErrorAction SilentlyContinue
+          if (-not $cdb) {
+            exit 0
+          }
+          $binDir = (Resolve-Path 'build\bin').Path
+          $env:_NT_SYMBOL_PATH = "$binDir;srv*C:\symcache*https://msdl.microsoft.com/download/symbols"
+          foreach ($dump in Get-ChildItem 'C:\crashdumps' -Filter *.dmp `
+              -ErrorAction SilentlyContinue) {
+            $log = Join-Path $diagDir "$($dump.BaseName)-analysis.txt"
+            & $cdb.FullName -z $dump.FullName -y $env:_NT_SYMBOL_PATH `
+              -c '.reload /f; .exr -1; .ecxr; !analyze -v; kP 160; ~*kb 80; lm; q' `
+              2>&1 | Tee-Object -FilePath $log
+          }
+
+      - name: Record binaries and diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          $diagDir = Join-Path $PWD 'diagnostics'
+          New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\baseline-sha.txt" $diagDir -Force
+          Get-ChildItem build\bin\neverc-plugin-link-tests* -ErrorAction SilentlyContinue |
+            Format-Table FullName, Length, LastWriteTime | Out-String |
+            Set-Content (Join-Path $diagDir 'binary-inventory.txt')
+          Get-ChildItem 'C:\crashdumps' -Filter *.dmp -ErrorAction SilentlyContinue |
+            Copy-Item -Destination $diagDir -Force
+
+      - name: Upload focused binary, symbols, dumps, and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-clang-lto-phase-trace-${{ github.run_id }}
+          path: |
+            diagnostics
+            build/bin/neverc-plugin-link-tests.exe
+            build/bin/neverc-plugin-link-tests.pdb
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Show sccache statistics
+        if: always()
+        shell: bash
+        run: sccache --show-stats || true
