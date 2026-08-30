@@ -817,6 +817,19 @@ static int contract_scan_lines(const uint8_t *data, size_t data_len, int at_eof,
                                    token_len, err);
 }
 
+static int eof_empty_token_split(const uint8_t *data, size_t data_len,
+                                 int at_eof, size_t *advance,
+                                 const uint8_t **token, size_t *token_len,
+                                 int *err) {
+    if (advance) *advance = 0;
+    if (token) *token = NULL;
+    if (token_len) *token_len = 0;
+    if (err) *err = 0;
+    if (!at_eof) return 0;
+    *token = data + data_len;
+    return 1;
+}
+
 static void test_scanner_split_empty_contract(void) {
     printf("[scanner split empty contract]\n");
 
@@ -856,6 +869,37 @@ static void test_scanner_split_empty_contract(void) {
     check_int("contract scan 2", neverc_bufio_scanner_scan(&sc), 1);
     check_int("contract scan eof", neverc_bufio_scanner_scan(&sc), 0);
     check_int("split not called with empty !atEOF", g_split_empty_non_eof, 0);
+    neverc_bufio_scanner_free(&sc);
+}
+
+static void test_scanner_eof_empty_token_limit(void) {
+    printf("[scanner eof empty token limit]\n");
+
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)"x", 1);
+    neverc_io_reader_t r = { &mr, neverc_io_mem_reader_read };
+    neverc_bufio_scanner_t sc;
+    neverc_bufio_scanner_init(&sc, r);
+    neverc_bufio_scanner_split(&sc, eof_empty_token_split);
+
+    int delivered = 0;
+    int tokens_valid = 1;
+    for (; delivered < 100; delivered++) {
+        if (!neverc_bufio_scanner_scan(&sc)) break;
+        size_t len = 1;
+        const uint8_t *token = neverc_bufio_scanner_bytes(&sc, &len);
+        if (!token || len != 0 ||
+            strcmp(neverc_bufio_scanner_text(&sc), "") != 0)
+            tokens_valid = 0;
+    }
+    check_int("one hundred EOF empty tokens delivered", delivered, 100);
+    check_int("EOF empty tokens are non-NULL empty strings", tokens_valid, 1);
+    check_int("one hundred and first EOF empty token fails closed",
+              neverc_bufio_scanner_scan(&sc), 0);
+    check_int("excess EOF empty token reports unexpected progress",
+              neverc_bufio_scanner_err(&sc), NEVERC_IO_ERR_UNEXP);
+    check_int("failed EOF empty scanner remains stopped",
+              neverc_bufio_scanner_scan(&sc), 0);
     neverc_bufio_scanner_free(&sc);
 }
 
@@ -1157,6 +1201,7 @@ int main(void) {
     test_scanner_token_cleared_when_scan_stops();
     test_scanner_token_too_long();
     test_scanner_split_empty_contract();
+    test_scanner_eof_empty_token_limit();
     test_scanner_split_func();
     test_peek_after_unread();
     test_invalid_arguments();
