@@ -204,6 +204,18 @@ static void test_descriptor_roundtrip(void) {
     CHECK(output.active == 1);
 }
 
+static void test_decode_invalid_input_zeroes_output(void) {
+    protobuf_test_message_t output;
+    protobuf_test_message_t zero;
+    memset(&output, 0xa5, sizeof(output));
+    memset(&zero, 0, sizeof(zero));
+
+    CHECK(neverc_protobuf_message_decode(
+              &protobuf_test_descriptor, NULL, 1U, 64U,
+              &output, sizeof(output)) == -1);
+    CHECK(memcmp(&output, &zero, sizeof(output)) == 0);
+}
+
 static void test_descriptor_rejects_overlapping_storage(void) {
     typedef struct {
         uint64_t first;
@@ -625,6 +637,7 @@ int main(void) {
     test_wire_golden();
     test_scalar_writers();
     test_descriptor_roundtrip();
+    test_decode_invalid_input_zeroes_output();
     test_descriptor_rejects_overlapping_storage();
     test_malformed_inputs();
     test_skip_groups();
