@@ -512,6 +512,22 @@ static void test_escaped_newline_terminates_string(void) {
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
 }
 
+static void test_unknown_escape_reports_error(void) {
+    printf("[unknown_escape_reports_error]\n");
+    neverc_scanner_t s;
+    const char *src = "\"\\n\" \"\\q\"";
+    neverc_scanner_init(&s, src, strlen(src));
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\n\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 0);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\q\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+}
+
 static void test_unterminated_literals_report_errors(void) {
     printf("[unterminated_literals_report_errors]\n");
     neverc_scanner_t s;
@@ -660,6 +676,7 @@ int main(void) {
     test_mode_zero_digits_are_chars();
     test_eof_position();
     test_escaped_newline_terminates_string();
+    test_unknown_escape_reports_error();
     test_unterminated_literals_report_errors();
     test_peek_skips_comments();
     test_leading_bom_is_discarded();
