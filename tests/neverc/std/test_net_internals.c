@@ -321,6 +321,8 @@ static void test_timer_wheel_callback_reschedule_next(void) {
     check_int("callback-rescheduled timer remains active", target.active, 1);
     check_true("callback-rescheduled timer moved to a later slot",
                target.expire_ms == 6003);
+    check_true("callback-rescheduled source slot empty",
+               wheel.slots[6001 % NC_TW_SLOTS] == NULL);
 
     tw_fake_now_ms = 6003;
     nc_tw_tick(&wheel);
