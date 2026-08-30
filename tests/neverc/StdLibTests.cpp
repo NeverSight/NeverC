@@ -130,6 +130,33 @@ TEST_F(StdLibTest, WindowsModulesCompileWithBundledSdk) {
   }
 }
 
+TEST_F(StdLibTest, WindowsNetInterfaceDotSyntaxSurvivesSdkMacroIncludeOrder) {
+  const fs::path source = tmpFile("windows-net-interface-dot-syntax.c");
+  writeFile(source,
+            "#include <neverc/std/net/tcp.h>\n"
+            "#include <neverc/std/sync.h>\n"
+            "#include <neverc/std/net.h>\n"
+            "int probe(neverc_net_interface_list_t *out) {\n"
+            "  return net.interface.interfaces(out);\n"
+            "}\n");
+
+  for (const char *target : {"x86_64-pc-windows-msvc",
+                             "aarch64-pc-windows-msvc"}) {
+    SCOPED_TRACE(target);
+    const CmdResult result = ncc({
+        "--no-default-config",
+        "-std=gnu11",
+        "-fno-builtin-std",
+        "-fsyntax-only",
+        std::string("--target=") + target,
+        "-I" + stdSrcDir() + "/include",
+        source.string(),
+    });
+    EXPECT_EQ(result.exitCode, 0)
+        << "stdout:\n" << result.out << "\nstderr:\n" << result.err;
+  }
+}
+
 TEST_F(StdLibTest, NetIocpCompilesWithBundledSdk) {
   const std::string sd = stdSrcDir();
   const fs::path source = fs::path(stdTestDir()) / "test_net_iocp.c";

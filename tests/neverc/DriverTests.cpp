@@ -3,7 +3,21 @@
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
 
+#include <algorithm>
+
 namespace {
+
+// `-###` renders quoted arguments and escapes each separator, so a Windows
+// path comes back doubled. Compare paths on a separator-insensitive form.
+std::string collapseSeparators(std::string Text) {
+  std::replace(Text.begin(), Text.end(), '\\', '/');
+  Text.erase(std::unique(Text.begin(), Text.end(),
+                         [](char Left, char Right) {
+                           return Left == '/' && Right == '/';
+                         }),
+             Text.end());
+  return Text;
+}
 
 struct ReleaseMetadata {
   bool HasDebugSections = false;
@@ -446,13 +460,16 @@ TEST_F(DriverTest, DarwinX64UsesUniversalMacOSSysroot) {
   ASSERT_EQ(Result.exitCode, 0) << Result.err;
 
   const std::string Commands = Result.err + Result.out;
-  EXPECT_NE(Commands.find(UniversalSysroot.string()), std::string::npos)
+  const std::string NormalizedCommands = collapseSeparators(Commands);
+  EXPECT_NE(NormalizedCommands.find(collapseSeparators(UniversalSysroot.string())),
+            std::string::npos)
       << "x86_64 Darwin must use the bundled universal macOS SDK\n"
       << Commands;
 
   const auto LegacyX64Sysroot =
       neverc().parent_path().parent_path() / "runtime/macos/x64";
-  EXPECT_EQ(Commands.find(LegacyX64Sysroot.string()), std::string::npos)
+  EXPECT_EQ(NormalizedCommands.find(collapseSeparators(LegacyX64Sysroot.string())),
+            std::string::npos)
       << "x86_64 Darwin must not use the removed x64-only macOS SDK\n"
       << Commands;
 }
