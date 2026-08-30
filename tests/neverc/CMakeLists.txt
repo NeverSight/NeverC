@@ -2356,6 +2356,14 @@ gtest_discover_tests(neverc-plugin-io-tests
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(
+  NAME StdLibTest.BuildStdBitcodeGenerator
+  COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/BuildStdBitcodeTests.py
+)
+set_tests_properties(StdLibTest.BuildStdBitcodeGenerator PROPERTIES
+  TIMEOUT 300
+)
+add_test(
   NAME PythonPluginPackageVerifierUnitTests
   COMMAND ${Python3_EXECUTABLE}
           ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/release/test-python-plugin-package-unit.py

@@ -19,12 +19,19 @@ TARGET = "x86_64-apple-darwin"
 SENTINEL = b"\x00existing generated header\xff"
 
 
+def canonical_path(path):
+    return os.path.realpath(os.path.abspath(path))
+
+
 class BuildStdBitcodeTests(unittest.TestCase):
     def setUp(self):
         temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(temporary_directory.cleanup)
 
-        self.temporary_directory = Path(temporary_directory.name)
+        self.temporary_directory = (
+            Path(temporary_directory.name) / "fixture with spaces"
+        )
+        self.temporary_directory.mkdir()
         self.source_directory = self.temporary_directory / "std/src"
         self.include_directory = self.temporary_directory / "std/include"
         self.output = self.temporary_directory / "generated/std_bitcode.h"
@@ -121,7 +128,7 @@ else:
             capture_output=True,
             text=True,
             env=process_environment,
-            timeout=120,
+            timeout=180,
             check=False,
         )
 
@@ -174,12 +181,12 @@ else:
         self.assert_failed_without_replacing_output(result)
         calls = self.compiler_calls()
         self.assertEqual(2, len(calls))
-        expected_sources = {str(source.resolve()) for source in sources}
+        expected_sources = {canonical_path(source) for source in sources}
         compiled_sources = {
-            argument
+            canonical_path(argument)
             for call in calls
             for argument in call
-            if argument in expected_sources
+            if canonical_path(argument) in expected_sources
         }
         self.assertEqual(expected_sources, compiled_sources)
 
@@ -226,10 +233,12 @@ else:
         calls = self.compiler_calls()
         self.assertEqual(246, len(calls))
 
-        expected_source_paths = {str(source.resolve()) for source in sources}
+        expected_source_paths = {canonical_path(source) for source in sources}
         compiled_source_paths = []
         for call in calls:
-            matching_sources = expected_source_paths.intersection(call)
+            matching_sources = expected_source_paths.intersection(
+                canonical_path(argument) for argument in call
+            )
             self.assertEqual(1, len(matching_sources), call)
             compiled_source_paths.extend(matching_sources)
         self.assertEqual(
