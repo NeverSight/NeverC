@@ -500,8 +500,8 @@ static void test_open_output_may_overlap_nonce(void) {
                rc == 0 && memcmp(layout + 4, pt, sizeof(pt)) == 0);
 }
 
-static void test_seal_rejects_tag_ciphertext_overlap(void) {
-    printf("[seal rejects tag/ciphertext overlap]\n");
+static void test_seal_detached_output_boundaries(void) {
+    printf("[seal detached output boundaries]\n");
     uint8_t key[16] = {0x42};
     uint8_t nonce[12] = {0x13};
     uint8_t pt[32];
@@ -519,6 +519,32 @@ static void test_seal_rejects_tag_ciphertext_overlap(void) {
     check_true("seal rejects tag overlapping ciphertext", rc == -1);
     check_true("rejected tag overlap leaves output untouched",
                memcmp(output, unchanged, sizeof(output)) == 0);
+
+    memset(output, 0xA5, sizeof(output));
+    rc = neverc_gcm_seal(&ctx, nonce, pt, sizeof(pt), NULL, 0,
+                         output + 8, output);
+    check_true("seal rejects ciphertext overlapping tag", rc == -1);
+    check_true("rejected reverse overlap leaves output untouched",
+               memcmp(output, unchanged, sizeof(output)) == 0);
+
+    uint8_t ct_ref[32], tag_ref[16];
+    check_true("detached boundary reference",
+               neverc_gcm_seal(&ctx, nonce, pt, sizeof(pt), NULL, 0,
+                               ct_ref, tag_ref) == 0);
+
+    memset(output, 0, sizeof(output));
+    rc = neverc_gcm_seal(&ctx, nonce, pt, sizeof(pt), NULL, 0,
+                         output, output + 32);
+    check_true("tag immediately after ciphertext succeeds",
+               rc == 0 && memcmp(output, ct_ref, sizeof(ct_ref)) == 0 &&
+               memcmp(output + 32, tag_ref, sizeof(tag_ref)) == 0);
+
+    memset(output, 0, sizeof(output));
+    rc = neverc_gcm_seal(&ctx, nonce, pt, sizeof(pt), NULL, 0,
+                         output + 16, output);
+    check_true("tag immediately before ciphertext succeeds",
+               rc == 0 && memcmp(output + 16, ct_ref, sizeof(ct_ref)) == 0 &&
+               memcmp(output, tag_ref, sizeof(tag_ref)) == 0);
 }
 
 static void test_seal_output_may_overlap_nonce(void) {
@@ -585,7 +611,7 @@ int main(void) {
     test_aad_only();
     test_aad_overlap_with_output();
     test_open_output_may_overlap_nonce();
-    test_seal_rejects_tag_ciphertext_overlap();
+    test_seal_detached_output_boundaries();
     test_seal_output_may_overlap_nonce();
     test_null_nonce_rejected();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
