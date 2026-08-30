@@ -403,6 +403,37 @@ static void test_1024_seed_is_decaps_source_of_truth(void) {
     printf("ok\n");
 }
 
+static void test_encaps_clears_surviving_output_on_null(void) {
+    printf("  encapsulate clears surviving output on NULL ... ");
+    neverc_mlkem768_ek_t ek768 = {{0}};
+    neverc_mlkem1024_ek_t ek1024 = {{0}};
+    uint8_t shared768[NEVERC_MLKEM_SHARED_KEY_SIZE];
+    uint8_t shared1024[NEVERC_MLKEM_SHARED_KEY_SIZE];
+    uint8_t ct768[NEVERC_MLKEM768_CT_SIZE];
+    uint8_t ct1024[NEVERC_MLKEM1024_CT_SIZE];
+
+    memset(shared768, 0x5A, sizeof(shared768));
+    memset(shared1024, 0x5A, sizeof(shared1024));
+    memset(ct768, 0x5A, sizeof(ct768));
+    memset(ct1024, 0x5A, sizeof(ct1024));
+
+    int rc768_shared = neverc_mlkem768_encapsulate(&ek768, shared768, NULL);
+    int rc768_ciphertext = neverc_mlkem768_encapsulate(&ek768, NULL, ct768);
+    int rc1024_shared = neverc_mlkem1024_encapsulate(&ek1024, shared1024, NULL);
+    int rc1024_ciphertext =
+        neverc_mlkem1024_encapsulate(&ek1024, NULL, ct1024);
+
+    ASSERT(rc768_shared == -1 && rc768_ciphertext == -1 &&
+               rc1024_shared == -1 && rc1024_ciphertext == -1,
+           "NULL encapsulation outputs are rejected");
+    ASSERT(all_zero(shared768, sizeof(shared768)) &&
+               all_zero(shared1024, sizeof(shared1024)) &&
+               all_zero(ct768, sizeof(ct768)) &&
+               all_zero(ct1024, sizeof(ct1024)),
+           "NULL output clears every surviving encapsulation buffer");
+    printf("ok\n");
+}
+
 static void test_decaps_clears_on_null(void) {
     printf("  decapsulate clears shared key on NULL ... ");
     uint8_t ct768[NEVERC_MLKEM768_CT_SIZE];
@@ -436,6 +467,7 @@ int main(void) {
     test_1024_seed_deterministic();
     test_768_seed_is_decaps_source_of_truth();
     test_1024_seed_is_decaps_source_of_truth();
+    test_encaps_clears_surviving_output_on_null();
     test_decaps_clears_on_null();
     printf("%d/%d passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
