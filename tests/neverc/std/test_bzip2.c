@@ -137,6 +137,40 @@ static void test_leftover_bytes(void) {
                     extra, sizeof(extra), out, &out_len) != 0);
 }
 
+static void test_rle_run_requires_count_byte(void) {
+    printf("[rle_run_requires_count_byte]\n");
+    /* Four repeated bytes are followed by a mandatory count byte, even when
+     * the count is zero. Both streams carry the correct CRC for "AAAA". */
+    static const uint8_t valid[] = {
+        0x42, 0x5a, 0x68, 0x31, 0x31, 0x41, 0x59, 0x26,
+        0x53, 0x59, 0xe1, 0x6e, 0x65, 0x71, 0x00, 0x00,
+        0x02, 0x44, 0x00, 0x40, 0x00, 0x20, 0x00, 0x20,
+        0x00, 0x21, 0x00, 0x82, 0x0b, 0x17, 0x72, 0x45,
+        0x38, 0x50, 0x90, 0xe1, 0x6e, 0x65, 0x71
+    };
+    static const uint8_t missing_count[] = {
+        0x42, 0x5a, 0x68, 0x31, 0x31, 0x41, 0x59, 0x26,
+        0x53, 0x59, 0xe1, 0x6e, 0x65, 0x71, 0x00, 0x00,
+        0x00, 0x04, 0x00, 0x20, 0x00, 0x20, 0x00, 0x21,
+        0x01, 0x04, 0x85, 0xdc, 0x91, 0x4e, 0x14, 0x24,
+        0x38, 0x5b, 0x99, 0x5c, 0x40
+    };
+    uint8_t out[8];
+    size_t out_len = sizeof(out);
+
+    int rc = neverc_bzip2_decompress(valid, sizeof(valid), out, &out_len);
+    ASSERT_INT_EQ(rc, 0);
+    if (rc == 0) {
+        ASSERT_INT_EQ((int)out_len, 4);
+        ASSERT_TRUE(memcmp(out, "AAAA", 4) == 0);
+    }
+
+    out_len = sizeof(out);
+    ASSERT_INT_EQ(neverc_bzip2_decompress(
+                      missing_count, sizeof(missing_count), out, &out_len),
+                  -1);
+}
+
 int main(void) {
     printf("=== NeverC bzip2 Tests ===\n");
     test_hello_decompress();
@@ -148,6 +182,7 @@ int main(void) {
     test_randomized_block();
     test_invalid_spans();
     test_leftover_bytes();
+    test_rle_run_requires_count_byte();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
