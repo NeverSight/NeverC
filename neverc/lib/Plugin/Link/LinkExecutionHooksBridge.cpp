@@ -33,6 +33,22 @@
 using namespace llvm;
 
 namespace neverc::plugin {
+
+namespace detail {
+
+bool relocatableLTOEmitsAddrsig(
+    Triple::ObjectFormatType ObjectFormat,
+    const linker::LinkerDriverConfig &Config) {
+  if (ObjectFormat == Triple::MachO) {
+    // MachODriver maps 1 to ICFLevel::safe and only that mode asks LTO for an
+    // address-significance table. None and aggressive/all ICF do not use it.
+    return Config.icfLevel == 1;
+  }
+  return true;
+}
+
+} // namespace detail
+
 namespace {
 
 bool nonzero(linker::LinkExecutionID ID) { return ID.High != 0 || ID.Low != 0; }
@@ -298,8 +314,9 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
         BitcodeBuffers.push_back(*Buffer);
       }
       StringRef BackendTag;
-      bool EmitAddrsig = true;
-      switch (Triple(Request.TargetTriple).getObjectFormat()) {
+      const Triple::ObjectFormatType ObjectFormat =
+          Triple(Request.TargetTriple).getObjectFormat();
+      switch (ObjectFormat) {
       case Triple::ELF:
         BackendTag = "elf";
         break;
@@ -308,12 +325,13 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
         break;
       case Triple::MachO:
         BackendTag = "macho";
-        EmitAddrsig = false;
         break;
       default:
         return bridgeError(
             "relocatable LTO is unsupported for this object format");
       }
+      const bool EmitAddrsig =
+          detail::relocatableLTOEmitsAddrsig(ObjectFormat, Config);
       auto Compiled = Config.compileRelocatableLTO(Config, BitcodeBuffers,
                                                    BackendTag, EmitAddrsig);
       if (!Compiled)

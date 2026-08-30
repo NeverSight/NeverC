@@ -18,6 +18,29 @@ thread_local CommonLinkerContext *ActiveLinkerContext = nullptr;
 thread_local unsigned CurrentWorkerSlot = 0;
 } // namespace
 
+unsigned linker::selectAdaptiveLinkThreadCount(unsigned RequestedThreads,
+                                               unsigned AvailableThreads,
+                                               uint64_t InputBytes,
+                                               uint64_t InputFiles,
+                                               LinkThreadPolicy Policy) {
+  if (RequestedThreads != 0)
+    return RequestedThreads;
+  if (Policy.MaxAutoThreads != 0)
+    AvailableThreads = std::min(AvailableThreads, Policy.MaxAutoThreads);
+  if (InputBytes < Policy.MinParallelBytes || AvailableThreads <= 1)
+    return 1;
+  if (InputFiles != 0 && InputBytes / InputFiles < Policy.MinAverageFileBytes)
+    return 1;
+  if (Policy.BytesPerAdditionalThread == 0)
+    return AvailableThreads;
+  const uint64_t AdditionalThreads =
+      InputBytes / Policy.BytesPerAdditionalThread +
+      (InputBytes % Policy.BytesPerAdditionalThread != 0);
+  if (AdditionalThreads >= static_cast<uint64_t>(AvailableThreads - 1))
+    return AvailableThreads;
+  return 1 + static_cast<unsigned>(AdditionalThreads);
+}
+
 CommonLinkerContext::CommonLinkerContext()
     : ResourceSession(neverc::currentResourceSession()),
       PreviousContext(ActiveLinkerContext),
@@ -36,9 +59,9 @@ CommonLinkerContext::~CommonLinkerContext() {
 }
 
 void CommonLinkerContext::finalizeOwnedState() noexcept {
-  if (Finalized)
+  if ((StateFlags & FinalizedFlag) != 0)
     return;
-  Finalized = true;
+  StateFlags |= FinalizedFlag;
   ParallelPool.reset();
   e.runCleanup();
   for (auto It = instanceOrder.rbegin(); It != instanceOrder.rend(); ++It)
@@ -50,7 +73,12 @@ void CommonLinkerContext::finalizeOwnedState() noexcept {
 
 void CommonLinkerContext::configureParallel(unsigned RequestedThreads,
                                             unsigned DefaultThreadLimit) {
-  assert(!ParallelPool && "parallel runtime already configured");
+  // Selection is intentionally monotonic.  Several backends discover inputs
+  // in phases, and a defensive repeated call must not tear down a live pool or
+  // change the worker budget underneath already-created per-worker state.
+  if (parallelConfigured())
+    return;
+  StateFlags |= ParallelConfiguredFlag;
   ThreadPoolStrategy Strategy = hardware_concurrency(RequestedThreads);
   unsigned ThreadCount = std::max(1U, Strategy.compute_thread_count());
   if (RequestedThreads == 0 && DefaultThreadLimit != 0 &&
@@ -61,6 +89,22 @@ void CommonLinkerContext::configureParallel(unsigned RequestedThreads,
   ParallelThreadCount = ThreadCount;
   if (ThreadCount > 1)
     ParallelPool = std::make_unique<ThreadPool>(Strategy);
+}
+
+unsigned CommonLinkerContext::configureParallelForInputWorkload(
+    unsigned RequestedThreads, uint64_t InputBytes, uint64_t InputFiles,
+    LinkThreadPolicy Policy, bool FinalizeSerial) {
+  if (parallelConfigured())
+    return ParallelThreadCount;
+  ThreadPoolStrategy Strategy = hardware_concurrency();
+  unsigned AvailableThreads = std::max(1U, Strategy.compute_thread_count());
+  if (Policy.MaxAutoThreads != 0)
+    AvailableThreads = std::min(AvailableThreads, Policy.MaxAutoThreads);
+  const unsigned SelectedThreads = selectAdaptiveLinkThreadCount(
+      RequestedThreads, AvailableThreads, InputBytes, InputFiles, Policy);
+  if (RequestedThreads != 0 || SelectedThreads > 1 || FinalizeSerial)
+    configureParallel(SelectedThreads);
+  return SelectedThreads;
 }
 
 unsigned CommonLinkerContext::workerSlotForCurrentThread() {

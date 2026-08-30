@@ -1,3 +1,4 @@
+#include "Driver/ELFInputWorkload.h"
 #include "Emit/PEChecksum.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/ContentHashWorkers.h"
@@ -166,6 +167,57 @@ TEST(PluginParallelLinkTest, AutomaticLinkThreadsHandleSaturatedInputSize) {
                                   /*InputBytes=*/UINT64_MAX,
                                   /*InputFiles=*/1),
             16U);
+  // The legacy ELF-only wrapper predates the cross-backend automatic cap and
+  // must continue to honor the caller-supplied capacity exactly.
+  EXPECT_EQ(selectLinkThreadCount(/*RequestedThreads=*/0,
+                                  /*AvailableThreads=*/64,
+                                  /*InputBytes=*/UINT64_MAX,
+                                  /*InputFiles=*/1),
+            64U);
+}
+
+TEST(PluginParallelLinkTest,
+     AutomaticLinkThreadsHandleSaturatedOneByteDivisor) {
+  LinkThreadPolicy Policy;
+  Policy.MinParallelBytes = 1;
+  Policy.BytesPerAdditionalThread = 1;
+  Policy.MinAverageFileBytes = 0;
+  EXPECT_EQ(linker::selectAdaptiveLinkThreadCount(
+                /*RequestedThreads=*/0,
+                /*AvailableThreads=*/16,
+                /*InputBytes=*/UINT64_MAX,
+                /*InputFiles=*/1, Policy),
+            16U);
+}
+
+TEST(PluginParallelLinkTest, AutomaticLinkThreadsHonorPolicyCapDirectly) {
+  LinkThreadPolicy Policy;
+  Policy.MinParallelBytes = 1;
+  Policy.BytesPerAdditionalThread = 0;
+  Policy.MinAverageFileBytes = 0;
+  Policy.MaxAutoThreads = 16;
+  EXPECT_EQ(linker::selectAdaptiveLinkThreadCount(
+                /*RequestedThreads=*/0,
+                /*AvailableThreads=*/64,
+                /*InputBytes=*/UINT64_MAX,
+                /*InputFiles=*/1, Policy),
+            16U);
+
+  Policy.MaxAutoThreads = 0;
+  EXPECT_EQ(linker::selectAdaptiveLinkThreadCount(
+                /*RequestedThreads=*/0,
+                /*AvailableThreads=*/64,
+                /*InputBytes=*/UINT64_MAX,
+                /*InputFiles=*/1, Policy),
+            64U);
+
+  Policy.MaxAutoThreads = 16;
+  EXPECT_EQ(linker::selectAdaptiveLinkThreadCount(
+                /*RequestedThreads=*/48,
+                /*AvailableThreads=*/64,
+                /*InputBytes=*/0,
+                /*InputFiles=*/0, Policy),
+            48U);
 }
 
 TEST(PluginParallelLinkTest, AutomaticLinkThreadsAvoidFineGrainedFanout) {
@@ -183,6 +235,145 @@ TEST(PluginParallelLinkTest, ExplicitLinkThreadCountOverridesAutomaticPolicy) {
                                   /*InputBytes=*/0,
                                   /*InputFiles=*/0),
             7U);
+}
+
+TEST(PluginParallelLinkTest, RepeatedParallelConfigurationIsIdempotent) {
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "parallel configuration needs two available CPUs";
+
+  CommonLinkerContext Context;
+  Context.configureParallel(/*RequestedThreads=*/2);
+  ASSERT_EQ(Context.parallelThreadCount(), 2U);
+
+  Context.configureParallel(/*RequestedThreads=*/7);
+  EXPECT_EQ(Context.parallelThreadCount(), 2U);
+  EXPECT_EQ(Context.configureParallelForInputWorkload(
+                /*RequestedThreads=*/0, /*InputBytes=*/UINT64_MAX,
+                /*InputFiles=*/1),
+            2U);
+  EXPECT_EQ(Context.parallelThreadCount(), 2U);
+}
+
+TEST(PluginParallelLinkTest,
+     ProvisionalSerialDecisionCanGrowAfterMaterialization) {
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "automatic worker selection needs two available CPUs";
+
+  CommonLinkerContext Context;
+  LinkThreadPolicy Policy;
+  Policy.MinParallelBytes = 8ULL * 1024ULL * 1024ULL;
+  Policy.BytesPerAdditionalThread = 0;
+  Policy.MinAverageFileBytes = 0;
+
+  EXPECT_EQ(Context.configureParallelForInputWorkload(
+                /*RequestedThreads=*/0, /*InputBytes=*/1024,
+                /*InputFiles=*/1, Policy, /*FinalizeSerial=*/false),
+            1U);
+  EXPECT_FALSE(Context.parallelConfigured());
+
+  EXPECT_EQ(Context.configureParallelForInputWorkload(
+                /*RequestedThreads=*/0,
+                /*InputBytes=*/9ULL * 1024ULL * 1024ULL,
+                /*InputFiles=*/1, Policy, /*FinalizeSerial=*/true),
+            std::min(16U, llvm::thread::hardware_concurrency()));
+  EXPECT_TRUE(Context.parallelConfigured());
+}
+
+TEST(PluginParallelLinkTest,
+     ELFPostLTOWorkloadReplacesBitcodeWithNativeObjects) {
+  constexpr uint64_t MiB = 1024ULL * 1024ULL;
+  const auto PreLTO = linker::elf::detail::mergeMaterializedInputWorkload(
+      /*NativeBytes=*/0, /*NativeFiles=*/0,
+      /*BitcodeBytes=*/MiB, /*BitcodeFiles=*/1,
+      /*BinaryBytes=*/0, /*BinaryFiles=*/0,
+      /*IncludeBitcode=*/true);
+  const auto PostLTO = linker::elf::detail::mergeMaterializedInputWorkload(
+      /*NativeBytes=*/64 * MiB, /*NativeFiles=*/2,
+      /*BitcodeBytes=*/MiB, /*BitcodeFiles=*/1,
+      /*BinaryBytes=*/0, /*BinaryFiles=*/0,
+      /*IncludeBitcode=*/false);
+
+  EXPECT_EQ(selectLinkThreadCount(/*RequestedThreads=*/0,
+                                  /*AvailableThreads=*/16, PreLTO.first,
+                                  PreLTO.second),
+            1U);
+  EXPECT_EQ(PostLTO.first, 64 * MiB);
+  EXPECT_EQ(PostLTO.second, 2U);
+  EXPECT_EQ(selectLinkThreadCount(/*RequestedThreads=*/0,
+                                  /*AvailableThreads=*/16, PostLTO.first,
+                                  PostLTO.second),
+            3U);
+}
+
+TEST(PluginParallelLinkTest,
+     ELFDefersAutomaticPoolUntilBitcodeHasMaterialized) {
+  EXPECT_FALSE(linker::elf::detail::shouldConfigureProvisionalLinkPool(
+      /*RequestedThreads=*/0, /*BitcodeFiles=*/1,
+      /*NativeCandidateThreads=*/3, /*MaximumAutoThreads=*/16));
+  EXPECT_TRUE(linker::elf::detail::shouldConfigureProvisionalLinkPool(
+      /*RequestedThreads=*/4, /*BitcodeFiles=*/1,
+      /*NativeCandidateThreads=*/1, /*MaximumAutoThreads=*/16));
+  EXPECT_TRUE(linker::elf::detail::shouldConfigureProvisionalLinkPool(
+      /*RequestedThreads=*/0, /*BitcodeFiles=*/0,
+      /*NativeCandidateThreads=*/3, /*MaximumAutoThreads=*/16));
+  EXPECT_TRUE(linker::elf::detail::shouldConfigureProvisionalLinkPool(
+      /*RequestedThreads=*/0, /*BitcodeFiles=*/1,
+      /*NativeCandidateThreads=*/16, /*MaximumAutoThreads=*/16));
+}
+
+TEST(PluginParallelLinkTest,
+     ELFMaximumNativeCandidateIsNotDilutedByTinySourceBitcode) {
+  constexpr uint64_t MiB = 1024ULL * 1024ULL;
+  LinkThreadPolicy Policy;
+  const auto Native = linker::elf::detail::mergeMaterializedInputWorkload(
+      /*NativeBytes=*/512 * MiB, /*NativeFiles=*/1,
+      /*BitcodeBytes=*/0, /*BitcodeFiles=*/0,
+      /*BinaryBytes=*/0, /*BinaryFiles=*/0,
+      /*IncludeBitcode=*/false);
+  const auto WithSourceBitcode =
+      linker::elf::detail::mergeMaterializedInputWorkload(
+          /*NativeBytes=*/512 * MiB, /*NativeFiles=*/1,
+          /*BitcodeBytes=*/MiB, /*BitcodeFiles=*/1'000'000,
+          /*BinaryBytes=*/0, /*BinaryFiles=*/0,
+          /*IncludeBitcode=*/true);
+  const unsigned NativeCandidate = selectAdaptiveLinkThreadCount(
+      /*RequestedThreads=*/0, /*AvailableThreads=*/16, Native.first,
+      Native.second, Policy);
+  const unsigned DilutedCandidate = selectAdaptiveLinkThreadCount(
+      /*RequestedThreads=*/0, /*AvailableThreads=*/16,
+      WithSourceBitcode.first, WithSourceBitcode.second, Policy);
+
+  ASSERT_EQ(NativeCandidate, 16u);
+  ASSERT_EQ(DilutedCandidate, 1u)
+      << "the fixture must reproduce source-bitcode average dilution";
+  EXPECT_EQ(linker::elf::detail::selectProvisionalLinkPoolThreads(
+                /*RequestedThreads=*/0, /*BitcodeFiles=*/1'000'000,
+                NativeCandidate, /*MaximumAutoThreads=*/16),
+            std::optional<unsigned>(16u));
+}
+
+TEST(PluginParallelLinkTest,
+     DenseOutputThreadPolicyUsesFullBudgetAtItsThreshold) {
+  constexpr uint64_t MiB = 1024ULL * 1024ULL;
+  LinkThreadPolicy Policy;
+  Policy.MinParallelBytes = 8 * MiB;
+  Policy.BytesPerAdditionalThread = 0;
+  Policy.MinAverageFileBytes = 0;
+  EXPECT_EQ(linker::selectAdaptiveLinkThreadCount(
+                /*RequestedThreads=*/0,
+                /*AvailableThreads=*/16,
+                /*InputBytes=*/8 * MiB,
+                /*InputFiles=*/1, Policy),
+            16U);
+
+  // Dense output work is driven by total bytes. A large payload plus many
+  // tiny contributors must not accidentally fall back to one thread.
+  EXPECT_EQ(linker::selectAdaptiveLinkThreadCount(
+                /*RequestedThreads=*/0,
+                /*AvailableThreads=*/16,
+                /*InputBytes=*/8 * MiB,
+                /*InputFiles=*/4097, Policy),
+            16U);
 }
 
 TEST(PluginParallelLinkTest, BuildIdHashKeepsSmallOutputsSerial) {

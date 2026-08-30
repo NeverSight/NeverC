@@ -129,7 +129,11 @@ struct RawSym {
   uint32_t NameOffset = 0;
   uint64_t Value = 0;
   uint64_t Size = 0;
-  uint16_t Shndx = 0;
+  uint32_t Shndx = 0;
+  // True when Shndx is a real section index. This remains unambiguous even
+  // when an SHT_SYMTAB_SHNDX entry has the same numeric value as SHN_ABS or
+  // another 16-bit reserved code.
+  bool IsSectionIndex = false;
   uint8_t Info = 0;
   uint8_t Other = 0;
   uint8_t bind() const { return Info >> 4; }
@@ -243,6 +247,7 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out, uint64_t MaxDecompressedBytes,
   using Ehdr = Elf64_Ehdr;
   using Shdr = Elf64_Shdr;
   using Sym = Elf64_Sym;
+  using Word = Elf64_Word;
 
   Out.Buf = Buf;
   if (Buf.size() < sizeof(Ehdr))
@@ -264,12 +269,30 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out, uint64_t MaxDecompressedBytes,
   Out.OSABI = H.e_ident[EI_OSABI];
   Out.ABIVersion = H.e_ident[EI_ABIVERSION];
 
-  uint64_t ShOff = H.e_shoff;
-  unsigned ShNum = H.e_shnum;
-  if (ShOff == 0 || ShNum == 0)
+  const uint64_t ShOff = H.e_shoff;
+  if (ShOff == 0 || ShOff > Buf.size() || sizeof(Shdr) > Buf.size() - ShOff)
     return false;
-  if (ShOff > Buf.size() || (uint64_t)ShNum * sizeof(Shdr) > Buf.size() - ShOff)
+  const Shdr NullSection = readPOD<Shdr>(Buf, ShOff);
+  if (NullSection.sh_type != SHT_NULL)
     return false;
+  // The merger consumes and emits only canonical ET_REL images. Program
+  // headers, including the gABI PN_XNUM count carried in shdr[0].sh_info, are
+  // outside that contract and must not be silently discarded or normalized.
+  if (H.e_type != ET_REL || H.e_phoff != 0 || H.e_phentsize != 0 ||
+      H.e_phnum != 0 || NullSection.sh_info != 0)
+    return false;
+  uint64_t ShNum64 = H.e_shnum;
+  if (ShNum64 == 0) {
+    if (NullSection.sh_size < SHN_LORESERVE)
+      return false;
+    ShNum64 = NullSection.sh_size;
+  } else if (ShNum64 >= SHN_LORESERVE || NullSection.sh_size != 0) {
+    return false;
+  }
+  if (ShNum64 > std::numeric_limits<unsigned>::max() ||
+      ShNum64 > (Buf.size() - ShOff) / sizeof(Shdr))
+    return false;
+  const unsigned ShNum = ShNum64;
 
   // Copy every section header out through memcpy: they sit at an
   // attacker-controlled e_shoff that need not be 8-aligned, so a typed-pointer
@@ -279,13 +302,21 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out, uint64_t MaxDecompressedBytes,
   for (unsigned I = 0; I < ShNum; ++I)
     SH.push_back(readPOD<Shdr>(Buf, ShOff + (uint64_t)I * sizeof(Shdr)));
 
-  if (H.e_shstrndx >= ShNum)
+  uint32_t ShStrIndex = H.e_shstrndx;
+  if (ShStrIndex == SHN_XINDEX) {
+    if (NullSection.sh_link < SHN_LORESERVE)
+      return false;
+    ShStrIndex = NullSection.sh_link;
+  } else if (ShStrIndex >= SHN_LORESERVE || NullSection.sh_link != 0) {
     return false;
-  Out.SectionStringTableIndex = H.e_shstrndx;
-  if (StrictRelease && SH[H.e_shstrndx].sh_type != SHT_STRTAB)
+  }
+  if (ShStrIndex >= ShNum)
     return false;
-  uint64_t ShStrBase = SH[H.e_shstrndx].sh_offset;
-  uint64_t ShStrSize = SH[H.e_shstrndx].sh_size;
+  Out.SectionStringTableIndex = ShStrIndex;
+  if (StrictRelease && SH[ShStrIndex].sh_type != SHT_STRTAB)
+    return false;
+  uint64_t ShStrBase = SH[ShStrIndex].sh_offset;
+  uint64_t ShStrSize = SH[ShStrIndex].sh_size;
   if (StrictRelease &&
       (ShStrBase > Buf.size() || ShStrSize > Buf.size() - ShStrBase))
     return false;
@@ -370,6 +401,19 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out, uint64_t MaxDecompressedBytes,
     Out.Secs.push_back(RS);
   }
 
+  // The canonical schema represents one selected symbol table and at most one
+  // SHT_SYMTAB_SHNDX companion.  Account every such section up front so an
+  // orphan or a companion for an ignored symbol table cannot disappear merely
+  // because the parser below selects the first SHT_SYMTAB.
+  std::optional<unsigned> ShndxSectionIndex;
+  for (unsigned I = 0; I < ShNum; ++I) {
+    if (SH[I].sh_type != SHT_SYMTAB_SHNDX)
+      continue;
+    if (ShndxSectionIndex)
+      return false;
+    ShndxSectionIndex = I;
+  }
+
   // First SYMTAB + its linked STRTAB.
   if (StrictRelease && llvm::count_if(SH, [](const Shdr &Section) {
                          return Section.sh_type == SHT_SYMTAB;
@@ -404,6 +448,18 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out, uint64_t MaxDecompressedBytes,
     unsigned N = SymSize / sizeof(Sym);
     if (StrictRelease && SH[I].sh_info > N)
       return false;
+    if (ShndxSectionIndex && SH[*ShndxSectionIndex].sh_link != I)
+      return false;
+    uint64_t ShndxOffset = 0;
+    if (ShndxSectionIndex) {
+      const Shdr &Shndx = SH[*ShndxSectionIndex];
+      if (StrictRelease || Shndx.sh_entsize != sizeof(Word) ||
+          Shndx.sh_size != uint64_t(N) * sizeof(Word) ||
+          Shndx.sh_offset > Buf.size() ||
+          Shndx.sh_size > Buf.size() - Shndx.sh_offset)
+        return false;
+      ShndxOffset = Shndx.sh_offset;
+    }
     Out.SymtabInfo = SH[I].sh_info;
     Out.HasSymtab = true;
     SelectedSymtabIndex = I;
@@ -417,22 +473,44 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out, uint64_t MaxDecompressedBytes,
         if (!Name)
           return false;
         PS.Name = *Name;
-        if (Sy.st_shndx != SHN_UNDEF && Sy.st_shndx < SHN_LORESERVE &&
-            Sy.st_shndx >= ShNum)
-          return false;
       } else {
         PS.Name = cstrAt(Buf, StrBase, StrSize, Sy.st_name);
       }
       PS.Value = Sy.st_value;
       PS.NameOffset = Sy.st_name;
       PS.Size = Sy.st_size;
-      PS.Shndx = Sy.st_shndx;
+      const uint16_t RawSectionIndex = Sy.st_shndx;
+      if (RawSectionIndex != SHN_UNDEF && RawSectionIndex < SHN_LORESERVE &&
+          RawSectionIndex >= ShNum)
+        return false;
+      if (RawSectionIndex == SHN_XINDEX) {
+        if (!ShndxSectionIndex)
+          return false;
+        const Word Extended =
+            readPOD<Word>(Buf, ShndxOffset + uint64_t(k) * sizeof(Word));
+        if (Extended < SHN_LORESERVE || Extended >= ShNum)
+          return false;
+        PS.Shndx = Extended;
+        PS.IsSectionIndex = true;
+      } else {
+        if (ShndxSectionIndex) {
+          const Word Extended =
+              readPOD<Word>(Buf, ShndxOffset + uint64_t(k) * sizeof(Word));
+          if (Extended != 0)
+            return false;
+        }
+        PS.Shndx = RawSectionIndex;
+        PS.IsSectionIndex =
+            RawSectionIndex != SHN_UNDEF && RawSectionIndex < SHN_LORESERVE;
+      }
       PS.Info = Sy.st_info;
       PS.Other = Sy.st_other;
       Out.Syms.push_back(PS);
     }
     break;
   }
+  if (ShndxSectionIndex && !Out.HasSymtab)
+    return false;
 
   if (StrictRelease) {
     // Determine string-table provenance from raw section indices, independently
@@ -444,7 +522,7 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out, uint64_t MaxDecompressedBytes,
     for (unsigned I = 0; I < ShNum; ++I) {
       if (SH[I].sh_type != SHT_STRTAB)
         continue;
-      const bool IsSectionNames = I == H.e_shstrndx;
+      const bool IsSectionNames = I == ShStrIndex;
       const bool IsSymbolNames =
           Out.HasSymtab && I == Out.SymbolStringTableIndex;
       if (!IsSectionNames && !IsSymbolNames)
@@ -537,6 +615,8 @@ StringRef mergedSectionName(const RawSec &Sec, const Options &Opts) {
 AndroidKernelModuleSymbolPolicy::SymbolClass
 classifyAndroidKernelReleaseSymbol(const RawSym &Symbol) {
   using Policy = AndroidKernelModuleSymbolPolicy::SymbolClass;
+  if (Symbol.IsSectionIndex)
+    return Policy::Defined;
   if (Symbol.Shndx == ELF::SHN_UNDEF)
     return Policy::Undefined;
   if (Symbol.Shndx == ELF::SHN_COMMON)
@@ -557,13 +637,14 @@ bool hasLivePatchModInfo(const RawELF &Image) {
   return false;
 }
 
-// Sections the merger does not fold into the output as addressable content
-// (so a symbol defined there is legitimately re-homed to SHN_UNDEF=0 and
-// must be excluded from the content anchor to avoid false positives).
+// Sections the merger does not fold into the output as addressable content.
+// Symbols tied to regenerated or discarded metadata are excluded from the
+// content anchor so the verifier does not demand an output byte range for it.
 bool isExcludedInputSection(const RawSec &S, const Options &Opts) {
   using namespace ELF;
   switch (S.Type) {
   case SHT_SYMTAB:
+  case SHT_SYMTAB_SHNDX:
   case SHT_STRTAB:
   case SHT_RELA:
   case SHT_REL:
@@ -655,7 +736,8 @@ bool auditAndroidKernelReleaseStringTableReachability(const RawELF &Out,
     return fail(Err, "verify: Android release symbol table has no null record");
   const RawSym &Null = Out.Syms.front();
   if (!Null.Name.empty() || Null.NameOffset != 0 || Null.Value != 0 ||
-      Null.Size != 0 || Null.Shndx != 0 || Null.Info != 0 || Null.Other != 0)
+      Null.Size != 0 || Null.Shndx != 0 || Null.IsSectionIndex ||
+      Null.Info != 0 || Null.Other != 0)
     return fail(Err, "verify: Android release symbol[0] is not entirely zero");
 
   auto AuditTable = [&](unsigned TableIndex, auto &&Entries,
@@ -1261,9 +1343,9 @@ Expected<ReleaseInputNamePlan> reconstructAndroidKernelReleaseInputNames(
   LocalSymbols.push_back({RawSym{}});
 
   auto Priority = [](const RawSym &Symbol) {
-    if (Symbol.Shndx == SHN_UNDEF)
+    if (!Symbol.IsSectionIndex && Symbol.Shndx == SHN_UNDEF)
       return Symbol.bind() == STB_WEAK ? 0u : 1u;
-    if (Symbol.Shndx == SHN_COMMON)
+    if (!Symbol.IsSectionIndex && Symbol.Shndx == SHN_COMMON)
       return 2u;
     if (Symbol.bind() == STB_WEAK)
       return 3u;
@@ -1278,7 +1360,7 @@ Expected<ReleaseInputNamePlan> reconstructAndroidKernelReleaseInputNames(
     for (unsigned I = 1; I < Input.Syms.size(); ++I) {
       const RawSym &InputSymbol = Input.Syms[I];
       RawSym Symbol = InputSymbol;
-      if (Symbol.Shndx < SHN_LORESERVE) {
+      if (Symbol.IsSectionIndex) {
         if (Symbol.Shndx < Placements[P].size() &&
             Placements[P][Symbol.Shndx].Dropped)
           continue;
@@ -1294,6 +1376,7 @@ Expected<ReleaseInputNamePlan> reconstructAndroidKernelReleaseInputNames(
           Symbol.Value += Placement.Offset;
         } else {
           Symbol.Shndx = SHN_UNDEF;
+          Symbol.IsSectionIndex = false;
         }
       }
       if (Opts.finalizeAndroidKernelModule &&
@@ -1342,11 +1425,14 @@ Expected<ReleaseInputNamePlan> reconstructAndroidKernelReleaseInputNames(
     auto Existing = GlobalOwners.find(Name.str());
     if (Existing != GlobalOwners.end()) {
       RawSym &Symbol = GlobalSymbols[Existing->second.Slot].Symbol;
-      if (Symbol.Shndx != SHN_UNDEF &&
-          (Symbol.Shndx != *AllocTags + 1 || Symbol.Value != Value))
-        return createStringError(inconvertibleErrorCode(),
-                                 "conflicting Android release boundary");
+      if (Symbol.IsSectionIndex || Symbol.Shndx != SHN_UNDEF) {
+        if (!Symbol.IsSectionIndex || Symbol.Shndx != *AllocTags + 1 ||
+            Symbol.Value != Value)
+          return createStringError(inconvertibleErrorCode(),
+                                   "conflicting Android release boundary");
+      }
       Symbol.Shndx = *AllocTags + 1;
+      Symbol.IsSectionIndex = true;
       Symbol.Value = Value;
       Symbol.Size = 0;
       Symbol.Info = (STB_GLOBAL << 4) | STT_NOTYPE;
@@ -1357,6 +1443,7 @@ Expected<ReleaseInputNamePlan> reconstructAndroidKernelReleaseInputNames(
     RawSym Symbol;
     Symbol.Name = Name;
     Symbol.Shndx = *AllocTags + 1;
+    Symbol.IsSectionIndex = true;
     Symbol.Value = Value;
     Symbol.Info = (STB_GLOBAL << 4) | STT_NOTYPE;
     const unsigned Slot = GlobalSymbols.size();
@@ -1410,8 +1497,7 @@ Expected<ReleaseInputNamePlan> reconstructAndroidKernelReleaseInputNames(
     OldToReordered[I] = I;
   for (unsigned I = 0; I < GlobalSymbols.size(); ++I) {
     RawSym &Symbol = GlobalSymbols[I].Symbol;
-    if (Symbol.Shndx != SHN_UNDEF && Symbol.Shndx != SHN_COMMON &&
-        Symbol.Name.contains(PcgSymbolMarker)) {
+    if (Symbol.IsSectionIndex && Symbol.Name.contains(PcgSymbolMarker)) {
       Symbol.Info = (STB_LOCAL << 4) | Symbol.type();
       OldToReordered[FirstGlobal + I] = ReorderedLocals.size();
       ReorderedLocals.push_back({Symbol});
@@ -1443,7 +1529,8 @@ Expected<ReleaseInputNamePlan> reconstructAndroidKernelReleaseInputNames(
       std::numeric_limits<unsigned>::max());
   auto KeepSymbol = [&](const RawSym &Symbol, unsigned Index) {
     return Index == 0 || ReferencedSymbols.contains(Index) ||
-           (Symbol.bind() != STB_LOCAL && Symbol.Shndx != SHN_UNDEF);
+           (Symbol.bind() != STB_LOCAL &&
+            (Symbol.IsSectionIndex || Symbol.Shndx != SHN_UNDEF));
   };
   for (unsigned I = 0; I < ReorderedLocals.size(); ++I) {
     if (!KeepSymbol(ReorderedLocals[I].Symbol, I))
@@ -1539,8 +1626,9 @@ Expected<ReleaseInputNamePlan> reconstructAndroidKernelReleaseInputNames(
     const std::vector<std::string> &AllowedNames =
         ExchangeClasses[ClassID].Names;
     if (Expected.Value != Actual.Value || Expected.Size != Actual.Size ||
-        Expected.Shndx != Actual.Shndx || Expected.Info != Actual.Info ||
-        Expected.Other != Actual.Other ||
+        Expected.Shndx != Actual.Shndx ||
+        Expected.IsSectionIndex != Actual.IsSectionIndex ||
+        Expected.Info != Actual.Info || Expected.Other != Actual.Other ||
         !std::binary_search(AllowedNames.begin(), AllowedNames.end(),
                             Actual.Name.str()))
       return createStringError(
@@ -2280,16 +2368,18 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       }
 
       for (const RawSym &Symbol : Input.Syms) {
-        if (Symbol.Shndx == SHN_COMMON)
+        if (!Symbol.IsSectionIndex && Symbol.Shndx == SHN_COMMON)
           return fail(Err, "verify: Android module release strip refuses "
                            "COMMON symbol '" +
                                Symbol.Name + "'");
-        if (Symbol.Shndx ==
-            AndroidKernelModuleSymbolPolicy::LivePatchSectionIndex)
+        if (!Symbol.IsSectionIndex &&
+            Symbol.Shndx ==
+                AndroidKernelModuleSymbolPolicy::LivePatchSectionIndex)
           return fail(Err, "verify: Android module release strip does not "
                            "support livepatch symbol '" +
                                Symbol.Name + "'");
-        if (Symbol.Shndx >= SHN_LORESERVE && Symbol.Shndx != SHN_ABS)
+        if (!Symbol.IsSectionIndex && Symbol.Shndx >= SHN_LORESERVE &&
+            Symbol.Shndx != SHN_ABS)
           return fail(Err, "verify: Android module release strip refuses "
                            "symbol '" +
                                Symbol.Name +
@@ -2408,8 +2498,9 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                              Section.Name + "'");
     }
     for (const RawSym &Symbol : Out.Syms)
-      if (Symbol.Shndx ==
-          AndroidKernelModuleSymbolPolicy::LivePatchSectionIndex)
+      if (!Symbol.IsSectionIndex &&
+          Symbol.Shndx ==
+              AndroidKernelModuleSymbolPolicy::LivePatchSectionIndex)
         return fail(Err, "verify: release Android kernel module retains "
                          "unsupported livepatch symbol '" +
                              Symbol.Name + "'");
@@ -2441,21 +2532,23 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
     }
     for (unsigned I = 1; I < Out.Syms.size(); ++I) {
       const RawSym &Symbol = Out.Syms[I];
-      if (Symbol.Shndx == SHN_COMMON)
+      if (!Symbol.IsSectionIndex && Symbol.Shndx == SHN_COMMON)
         return fail(Err, "verify: release Android kernel module retains "
                          "unsupported COMMON symbol '" +
                              Symbol.Name + "'");
-      if (Symbol.Shndx >= SHN_LORESERVE && Symbol.Shndx != SHN_ABS)
+      if (!Symbol.IsSectionIndex && Symbol.Shndx >= SHN_LORESERVE &&
+          Symbol.Shndx != SHN_ABS)
         return fail(Err, "verify: release Android kernel module symbol '" +
                              Symbol.Name +
                              "' uses an unsupported reserved section index");
-      if ((Symbol.bind() == STB_LOCAL || Symbol.Shndx == SHN_UNDEF) &&
+      if ((Symbol.bind() == STB_LOCAL ||
+           (!Symbol.IsSectionIndex && Symbol.Shndx == SHN_UNDEF)) &&
           !ReferencedSymbols.contains(I))
         return fail(Err, "verify: release Android kernel module retains "
                          "relocation-unneeded symbol '" +
                              Symbol.Name + "'");
 
-      if (Symbol.Shndx != SHN_UNDEF && Symbol.Shndx < SHN_LORESERVE) {
+      if (Symbol.IsSectionIndex) {
         if (Symbol.Shndx >= Out.Secs.size())
           return fail(Err, "verify: release Android kernel module symbol '" +
                                Symbol.Name +
@@ -2520,7 +2613,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
     StringRef SecN = Out.Secs[R.TargetSec].Name;
     if (R.Sym < Out.Syms.size() && Out.Syms[R.Sym].type() == STT_SECTION) {
       const RawSym &TS = Out.Syms[R.Sym];
-      if (TS.Shndx != 0 && TS.Shndx < Out.Secs.size())
+      if (TS.IsSectionIndex && TS.Shndx < Out.Secs.size())
         OutSecRelocs[(SecN + "\x01" + Out.Secs[TS.Shndx].Name + "\x01" +
                       Twine(R.Type))
                          .str()]
@@ -2648,10 +2741,8 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       const RawSym &S = In.Syms[SymbolIndex];
       if (S.Name.empty() || S.type() == STT_SECTION)
         continue;
-      // Defined-in-section only (skip UNDEF, COMMON, ABS, reserved).
-      if (S.Shndx == 0 || S.Shndx >= SHN_LORESERVE)
-        continue;
-      if (S.Shndx >= In.Secs.size())
+      // Defined-in-section only (including SHT_SYMTAB_SHNDX-backed indices).
+      if (!S.IsSectionIndex || S.Shndx >= In.Secs.size())
         continue;
       const RawSec &InSec = In.Secs[S.Shndx];
       if (isExcludedInputSection(InSec, Opts))
@@ -2689,8 +2780,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         if (MIt != OutByNameMulti.end())
           for (int Idx : MIt->second) {
             const RawSym &Cand = Out.Syms[(unsigned)Idx];
-            if (Cand.Shndx != 0 && Cand.Shndx < SHN_LORESERVE &&
-                Cand.Shndx < Out.Secs.size()) {
+            if (Cand.IsSectionIndex && Cand.Shndx < Out.Secs.size()) {
               HasDefinition = true;
               const RawSec &CandSec = Out.Secs[Cand.Shndx];
               StringRef Expected = mergedSectionName(InSec, Opts);
@@ -2738,8 +2828,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                                "') missing from merged output");
         for (int Idx : MIt->second) {
           const RawSym &Cand = Out.Syms[(unsigned)Idx];
-          if (Cand.Shndx == 0 || Cand.Shndx >= SHN_LORESERVE ||
-              Cand.Shndx >= Out.Secs.size())
+          if (!Cand.IsSectionIndex || Cand.Shndx >= Out.Secs.size())
             continue;
           const RawSec &CSec = Out.Secs[Cand.Shndx];
           if (CSec.Name != Expected || CSec.Type == SHT_NOBITS ||
@@ -2770,7 +2859,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       const RawSym &OutSym = Out.Syms[(unsigned)It->second];
 
       // An input definition must remain a definition in the output.
-      if (OutSym.Shndx == 0 || OutSym.Shndx >= SHN_LORESERVE)
+      if (!OutSym.IsSectionIndex)
         return fail(Err, "verify: symbol '" + S.Name +
                              "' was defined in input but is undefined/absolute "
                              "in the merged output");
@@ -2825,8 +2914,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
           continue;
         if (isCoalescibleDefinition(S))
           continue;
-        if (S.Shndx == 0 || S.Shndx >= SHN_LORESERVE ||
-            S.Shndx >= In.Secs.size())
+        if (!S.IsSectionIndex || S.Shndx >= In.Secs.size())
           continue;
         const RawSec &InSec = In.Secs[S.Shndx];
         if (isExcludedInputSection(InSec, Opts) || (InSec.Flags & SHF_MERGE))
@@ -2838,8 +2926,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         if (It == OutByName.end() || It->second < 0)
           continue;
         const RawSym &OutSym = Out.Syms[(unsigned)It->second];
-        if (OutSym.Shndx == 0 || OutSym.Shndx >= SHN_LORESERVE ||
-            OutSym.Shndx >= Out.Secs.size())
+        if (!OutSym.IsSectionIndex || OutSym.Shndx >= Out.Secs.size())
           continue;
         int64_t Delta = (int64_t)OutSym.Value - (int64_t)S.Value;
         auto [DIt, Inserted] = Shift.try_emplace(
@@ -2874,8 +2961,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
           continue;
         if (isCoalescibleDefinition(S))
           continue;
-        if (S.Shndx == 0 || S.Shndx >= SHN_LORESERVE ||
-            S.Shndx >= In.Secs.size())
+        if (!S.IsSectionIndex || S.Shndx >= In.Secs.size())
           continue;
         const RawSec &InSec = In.Secs[S.Shndx];
         if (isExcludedInputSection(InSec, Opts) || (InSec.Flags & SHF_MERGE))
@@ -2889,8 +2975,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         if (It == OutByName.end() || It->second < 0)
           continue; // not anchorable from this symbol; another may serve
         const RawSym &OutSym = Out.Syms[(unsigned)It->second];
-        if (OutSym.Shndx == 0 || OutSym.Shndx >= SHN_LORESERVE ||
-            OutSym.Shndx >= Out.Secs.size())
+        if (!OutSym.IsSectionIndex || OutSym.Shndx >= Out.Secs.size())
           continue;
         // A defined symbol can never move *before* its own section offset in a
         // concatenating -r merge (the section base is >= 0), so this alone is a
@@ -2922,7 +3007,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         continue;
       if (isCoalescibleDefinition(S))
         continue;
-      if (S.Shndx == 0 || S.Shndx >= SHN_LORESERVE || S.Shndx >= In.Secs.size())
+      if (!S.IsSectionIndex || S.Shndx >= In.Secs.size())
         continue;
       const std::string OutputName = SelectOutputName(p, In, S);
       auto It = OutByName.find(OutputName);
@@ -2958,7 +3043,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       // has no name) is "section base + addend".  It is keyed by the target
       // section, defined-in-section only, so the merged section base is known.
       bool IsSecTarget = !HasNamedTarget && Tgt.type() == STT_SECTION &&
-                         Tgt.Shndx != 0 && Tgt.Shndx < In.Secs.size() &&
+                         Tgt.IsSectionIndex && Tgt.Shndx < In.Secs.size() &&
                          !isExcludedInputSection(In.Secs[Tgt.Shndx], Opts);
       if (!HasNamedTarget && !IsSecTarget)
         continue; // genuinely unnameable target — can't key it cleanly

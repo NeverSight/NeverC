@@ -48,17 +48,24 @@ struct Config {
   std::vector<std::string> MAttrs;
   std::vector<std::string> MllvmArgs;
   std::vector<std::string> PassPlugins;
-  /// For adding passes that run right before codegen.
+  /// For adding legacy passes that run right before codegen in the same pass
+  /// manager as native emission. Configurations using this hook select the
+  /// serial native-emission boundary so pass-manager state and analyses remain
+  /// available to target code generation.
   std::function<void(legacy::PassManager &)> PreCodeGenPassesHook;
 
   /// Optional parallel codegen hook: given (Module, TargetMachine,
   /// OutputStream, NumPartitions), run parallel codegen and return true on
   /// success. When set and successful, replaces LLVM's default splitCodeGen.
+  /// Returning false without reporting an LLVM error declines the request and
+  /// permits the serial fallback. Returning false after reporting an LLVM
+  /// error is a handled failure and suppresses that fallback.
   std::function<bool(Module &, TargetMachine &, raw_pwrite_stream &, unsigned)>
       ParallelCodeGenHook;
 
-  /// Optional parallel opt+codegen hook: like ParallelCodeGenHook but also
-  /// runs function-level optimization on each partition.
+  /// Optional parallel opt+codegen hook: like ParallelCodeGenHook (including
+  /// its decline-versus-reported-error contract) but also runs function-level
+  /// optimization on each partition.
   std::function<bool(Module &, TargetMachine &, raw_pwrite_stream &, unsigned,
                      unsigned)>
       ParallelOptCodeGenHook;
@@ -217,7 +224,9 @@ struct Config {
 
   /// This module hook is called before code generation. It is similar to the
   /// PostOptModuleHook, but for parallel code generation it is called after
-  /// splitting the module.
+  /// splitting the module. A custom parallel-codegen configuration selects the
+  /// serial native-emission boundary when this hook is present so its abort
+  /// contract cannot be bypassed.
   ModuleHookFn PreCodeGenModuleHook;
 
   /// A combined index hook is called after all per-module indexes have been

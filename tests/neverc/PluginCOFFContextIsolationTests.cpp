@@ -1,3 +1,4 @@
+#include "Driver/InputWorkload.h"
 #include "Linker/COFF/COFFLinkerContext.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
@@ -7,15 +8,20 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Object/WindowsResource.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
 #include "gtest/gtest.h"
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -80,6 +86,40 @@ uint32_t recomputePEChecksum(llvm::StringRef Image, size_t ChecksumOffset) {
   return static_cast<uint32_t>(Sum) + static_cast<uint32_t>(Image.size());
 }
 
+llvm::SmallVector<char, 0> createWindowsResource(size_t PayloadSize) {
+  const size_t ResourceSize = llvm::alignTo(
+      llvm::object::WIN_RES_MAGIC_SIZE + llvm::object::WIN_RES_NULL_ENTRY_SIZE +
+          sizeof(llvm::object::WinResHeaderPrefix) +
+          sizeof(llvm::object::WinResIDs) +
+          sizeof(llvm::object::WinResHeaderSuffix) + PayloadSize,
+      llvm::object::WIN_RES_DATA_ALIGNMENT);
+  llvm::SmallVector<char, 0> Resource(ResourceSize, 0);
+  char *Cursor = Resource.data();
+
+  std::memcpy(Cursor, llvm::COFF::WinResMagic, sizeof(llvm::COFF::WinResMagic));
+  Cursor += sizeof(llvm::COFF::WinResMagic);
+  Cursor += llvm::object::WIN_RES_NULL_ENTRY_SIZE;
+
+  auto *Prefix = reinterpret_cast<llvm::object::WinResHeaderPrefix *>(Cursor);
+  Prefix->DataSize = PayloadSize;
+  Prefix->HeaderSize = sizeof(llvm::object::WinResHeaderPrefix) +
+                       sizeof(llvm::object::WinResIDs) +
+                       sizeof(llvm::object::WinResHeaderSuffix);
+  Cursor += sizeof(llvm::object::WinResHeaderPrefix);
+
+  auto *IDs = reinterpret_cast<llvm::object::WinResIDs *>(Cursor);
+  IDs->setType(/*RCDATA=*/10);
+  IDs->setName(/*ID=*/1);
+  Cursor += sizeof(llvm::object::WinResIDs);
+
+  auto *Suffix = reinterpret_cast<llvm::object::WinResHeaderSuffix *>(Cursor);
+  Suffix->MemoryFlags = llvm::object::WIN_RES_PURE_MOVEABLE;
+  Suffix->Language = 0x0409;
+  Cursor += sizeof(llvm::object::WinResHeaderSuffix);
+  std::fill_n(Cursor, PayloadSize, '\x5a');
+  return Resource;
+}
+
 } // namespace
 
 TEST(PluginCOFFContextIsolationTest, ConcurrentStateDoesNotCrossContexts) {
@@ -89,8 +129,7 @@ TEST(PluginCOFFContextIsolationTest, ConcurrentStateDoesNotCrossContexts) {
   auto Run = [&](llvm::COFF::MachineTypes Machine, llvm::StringRef Name) {
     {
       LinkerExecutionContext Execution;
-      COFFLinkerContext &Context =
-          Execution.createBackend<COFFLinkerContext>();
+      COFFLinkerContext &Context = Execution.createBackend<COFFLinkerContext>();
       Context.config.machine = Machine;
       Context.config.outputFile = Name.str();
       Context.overrideSymbols.try_emplace(Name, nullptr);
@@ -118,6 +157,332 @@ TEST(PluginCOFFContextIsolationTest, ConcurrentStateDoesNotCrossContexts) {
   Second.join();
 
   EXPECT_FALSE(Failed.load(std::memory_order_relaxed));
+}
+
+TEST(PluginCOFFContextIsolationTest,
+     AutomaticThreadsKeepSmallDirectLinksSerial) {
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "automatic worker selection needs two available CPUs";
+
+  initializeAssemblyTargets();
+  const neverc::plugin::BuiltinTargetRoute *Route =
+      neverc::plugin::findBuiltinTargetRoute("x86_64-pc-windows-msvc");
+  ASSERT_NE(Route, nullptr);
+  auto Target = neverc::plugin::lookupBuiltinLLVMTarget(*Route);
+  ASSERT_TRUE(static_cast<bool>(Target))
+      << llvm::toString(Target.takeError()).str().str();
+
+  constexpr llvm::StringLiteral Assembly = R"(
+.text
+.globl coff_tiny_entry
+coff_tiny_entry:
+  ret
+)";
+  llvm::SmallVector<char, 0> Object;
+  llvm::raw_svector_ostream ObjectStream(Object);
+  neverc::plugin::BuiltinLLVMAsmParserRequest Request;
+  Request.Target = *Target;
+  Request.TargetTriple =
+      llvm::Triple(llvm::Triple::normalize(Route->CanonicalTriple));
+  Request.CPU = Route->DefaultCPU;
+  Request.Input = llvm::MemoryBufferRef(Assembly, "coff-tiny-link.s");
+  Request.Output = &ObjectStream;
+  if (llvm::Error Error = neverc::plugin::runBuiltinLLVMAsmParser(Request))
+    FAIL() << llvm::toString(std::move(Error)).str().str();
+  ASSERT_LT(Object.size(), 16U * 1024U * 1024U);
+
+  neverc::InMemoryFileStore &Store = neverc::InMemoryFileStore::instance();
+  Store.clear();
+  auto ClearStore = llvm::make_scope_exit([&] { Store.clear(); });
+  constexpr llvm::StringLiteral ObjectPath = "/virtual/coff-tiny-link.obj";
+  llvm::SmallString<0> &ObjectBytes = Store.create(ObjectPath, Object.size());
+  ObjectBytes.append(Object.begin(), Object.end());
+  Store.freeze();
+
+  llvm::SmallString<128> OutputPath;
+  std::error_code EC = llvm::sys::fs::createTemporaryFile(
+      "neverc-coff-tiny-link", "exe", OutputPath);
+  ASSERT_FALSE(EC) << EC.message();
+  llvm::FileRemover RemoveOutput(OutputPath);
+
+  const char *Args[] = {"neverc-test-linker",      "--machine=x64",
+                        "--entry=coff_tiny_entry", "--subsystem=console",
+                        "--nodefaultlib",          ObjectPath.data()};
+  auto Link = [&](unsigned RequestedThreads, unsigned &SelectedThreads,
+                  std::string &Image) {
+    LinkerExecutionContext Execution;
+    LinkerDriverConfig Config;
+    Config.executionContext = &Execution;
+    Config.outputFile = OutputPath.str().str();
+    Config.threadCount = RequestedThreads;
+    Config.repro = true;
+    std::string Stdout;
+    std::string Stderr;
+    llvm::raw_string_ostream StdoutStream(Stdout);
+    llvm::raw_string_ostream StderrStream(Stderr);
+    if (!linker::coff::link(Args, StdoutStream, StderrStream,
+                            /*exitEarly=*/false,
+                            /*disableOutput=*/false, Config)) {
+      ADD_FAILURE() << Stderr;
+      return false;
+    }
+    if (!Execution.common()) {
+      ADD_FAILURE() << "COFF execution did not retain its linker context";
+      return false;
+    }
+    SelectedThreads = Execution.common()->parallelThreadCount();
+    auto Buffer = llvm::MemoryBuffer::getFile(OutputPath);
+    if (!Buffer) {
+      ADD_FAILURE() << Buffer.getError().message();
+      return false;
+    }
+    Image = (*Buffer)->getBuffer().str();
+    return true;
+  };
+
+  unsigned AutoThreads = 0;
+  unsigned ExplicitThreads = 0;
+  std::string AutoImage;
+  std::string ExplicitImage;
+  ASSERT_TRUE(Link(/*RequestedThreads=*/0, AutoThreads, AutoImage));
+  ASSERT_TRUE(Link(/*RequestedThreads=*/2, ExplicitThreads, ExplicitImage));
+  EXPECT_EQ(AutoThreads, 1U);
+  EXPECT_EQ(ExplicitThreads, 2U);
+  EXPECT_EQ(AutoImage, ExplicitImage)
+      << "COFF output changed when the selected worker budget changed";
+
+  constexpr llvm::StringLiteral LargeAssembly = R"(
+.text
+.globl coff_tiny_entry
+coff_tiny_entry:
+  ret
+.data
+.zero 17825792
+)";
+  llvm::SmallVector<char, 0> LargeObject;
+  llvm::raw_svector_ostream LargeObjectStream(LargeObject);
+  Request.Input = llvm::MemoryBufferRef(LargeAssembly, "coff-large-link.s");
+  Request.Output = &LargeObjectStream;
+  if (llvm::Error Error = neverc::plugin::runBuiltinLLVMAsmParser(Request))
+    FAIL() << llvm::toString(std::move(Error)).str().str();
+  ASSERT_GT(LargeObject.size(), 16U * 1024U * 1024U);
+
+  Store.clear();
+  llvm::SmallString<0> &LargeObjectBytes =
+      Store.create(ObjectPath, LargeObject.size());
+  LargeObjectBytes.append(LargeObject.begin(), LargeObject.end());
+  Store.freeze();
+
+  unsigned LargeThreads = 0;
+  std::string LargeImage;
+  ASSERT_TRUE(Link(/*RequestedThreads=*/0, LargeThreads, LargeImage));
+  EXPECT_EQ(LargeThreads, std::min(16U, llvm::thread::hardware_concurrency()));
+}
+
+TEST(PluginCOFFContextIsolationTest,
+     ExplicitThreadsConfigureDefOnlyExecutionContext) {
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "explicit two-thread configuration needs two CPUs";
+
+  llvm::SmallString<128> DefPath;
+  int DefFD = -1;
+  std::error_code EC = llvm::sys::fs::createTemporaryFile(
+      "neverc-coff-def-only", "def", DefFD, DefPath);
+  ASSERT_FALSE(EC) << EC.message();
+  llvm::FileRemover RemoveDef(DefPath);
+  {
+    llvm::raw_fd_ostream DefStream(DefFD, /*shouldClose=*/true);
+    DefStream << "LIBRARY neverc_def_only\nEXPORTS\n  neverc_export\n";
+  }
+
+  LinkerExecutionContext Execution;
+  LinkerDriverConfig Config;
+  Config.executionContext = &Execution;
+  Config.threadCount = 2;
+  const std::string DefArg = (llvm::Twine("--def=") + DefPath).str();
+  const char *Args[] = {"neverc-test-linker", "--machine=x64",
+                        "--noimplib", DefArg.c_str()};
+  std::string Stdout;
+  std::string Stderr;
+  llvm::raw_string_ostream StdoutStream(Stdout);
+  llvm::raw_string_ostream StderrStream(Stderr);
+  ASSERT_TRUE(linker::coff::link(Args, StdoutStream, StderrStream,
+                                 /*exitEarly=*/false,
+                                 /*disableOutput=*/true, Config))
+      << Stderr;
+  ASSERT_NE(Execution.common(), nullptr);
+  EXPECT_TRUE(Execution.common()->parallelConfigured());
+  EXPECT_EQ(Execution.common()->parallelThreadCount(), 2u);
+}
+
+TEST(PluginCOFFContextIsolationTest,
+     AutomaticThreadsIncludeMaterializedResourcePayload) {
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "automatic worker selection needs two available CPUs";
+
+  initializeAssemblyTargets();
+  const neverc::plugin::BuiltinTargetRoute *Route =
+      neverc::plugin::findBuiltinTargetRoute("x86_64-pc-windows-msvc");
+  ASSERT_NE(Route, nullptr);
+  auto Target = neverc::plugin::lookupBuiltinLLVMTarget(*Route);
+  ASSERT_TRUE(static_cast<bool>(Target))
+      << llvm::toString(Target.takeError()).str().str();
+
+  constexpr llvm::StringLiteral Assembly = R"(
+.text
+.globl coff_resource_entry
+coff_resource_entry:
+  ret
+)";
+  llvm::SmallVector<char, 0> Object;
+  llvm::raw_svector_ostream ObjectStream(Object);
+  neverc::plugin::BuiltinLLVMAsmParserRequest Request;
+  Request.Target = *Target;
+  Request.TargetTriple =
+      llvm::Triple(llvm::Triple::normalize(Route->CanonicalTriple));
+  Request.CPU = Route->DefaultCPU;
+  Request.Input = llvm::MemoryBufferRef(Assembly, "coff-resource-link.s");
+  Request.Output = &ObjectStream;
+  if (llvm::Error Error = neverc::plugin::runBuiltinLLVMAsmParser(Request))
+    FAIL() << llvm::toString(std::move(Error)).str().str();
+
+  constexpr size_t ResourcePayloadSize = 9U * 1024U * 1024U;
+  llvm::SmallVector<char, 0> Resource =
+      createWindowsResource(ResourcePayloadSize);
+  ASSERT_GT(Resource.size(), 8U * 1024U * 1024U);
+
+  neverc::InMemoryFileStore &Store = neverc::InMemoryFileStore::instance();
+  Store.clear();
+  auto ClearStore = llvm::make_scope_exit([&] { Store.clear(); });
+  constexpr llvm::StringLiteral ObjectPath = "/virtual/coff-resource-link.obj";
+  constexpr llvm::StringLiteral ResourcePath =
+      "/virtual/coff-resource-link.res";
+  llvm::SmallString<0> &ObjectBytes = Store.create(ObjectPath, Object.size());
+  ObjectBytes.append(Object.begin(), Object.end());
+  llvm::SmallString<0> &ResourceBytes =
+      Store.create(ResourcePath, Resource.size());
+  ResourceBytes.append(Resource.begin(), Resource.end());
+  Store.freeze();
+
+  llvm::SmallString<128> OutputPath;
+  std::error_code EC = llvm::sys::fs::createTemporaryFile(
+      "neverc-coff-resource-link", "exe", OutputPath);
+  ASSERT_FALSE(EC) << EC.message();
+  llvm::FileRemover RemoveOutput(OutputPath);
+
+  const char *Args[] = {
+      "neverc-test-linker",  "--machine=x64",  "--entry=coff_resource_entry",
+      "--subsystem=console", "--nodefaultlib", ObjectPath.data(),
+      ResourcePath.data()};
+  auto Link = [&](unsigned RequestedThreads, unsigned &SelectedThreads,
+                  std::string &Image) {
+    LinkerExecutionContext Execution;
+    LinkerDriverConfig Config;
+    Config.executionContext = &Execution;
+    Config.outputFile = OutputPath.str().str();
+    Config.threadCount = RequestedThreads;
+    Config.repro = true;
+    std::string Stdout;
+    std::string Stderr;
+    llvm::raw_string_ostream StdoutStream(Stdout);
+    llvm::raw_string_ostream StderrStream(Stderr);
+    if (!linker::coff::link(Args, StdoutStream, StderrStream,
+                            /*exitEarly=*/false,
+                            /*disableOutput=*/false, Config)) {
+      ADD_FAILURE() << Stderr;
+      return false;
+    }
+    if (!Execution.common()) {
+      ADD_FAILURE() << "COFF execution did not retain its linker context";
+      return false;
+    }
+    SelectedThreads = Execution.common()->parallelThreadCount();
+    auto Buffer = llvm::MemoryBuffer::getFile(OutputPath);
+    if (!Buffer) {
+      ADD_FAILURE() << Buffer.getError().message();
+      return false;
+    }
+    Image = (*Buffer)->getBuffer().str();
+    return true;
+  };
+
+  unsigned AutoThreads = 0;
+  unsigned SerialThreads = 0;
+  std::string AutoImage;
+  std::string SerialImage;
+  ASSERT_TRUE(Link(/*RequestedThreads=*/0, AutoThreads, AutoImage));
+  ASSERT_TRUE(Link(/*RequestedThreads=*/1, SerialThreads, SerialImage));
+  EXPECT_EQ(AutoThreads, std::min(16U, llvm::thread::hardware_concurrency()));
+  EXPECT_EQ(SerialThreads, 1U);
+  ASSERT_GT(AutoImage.size(), ResourcePayloadSize)
+      << "the materialized resource payload was not emitted";
+  EXPECT_EQ(AutoImage, SerialImage)
+      << "COFF resource conversion changed with the worker budget";
+
+  // Embedded manifests are materialized only after LTO. Exercise that exact
+  // late-resource path without invoking external mt.exe: manifest dependency
+  // text is emitted directly into the default XML and deliberately follows
+  // link.exe's no-validation behavior.
+  std::string LargeDependency(ResourcePayloadSize, 'x');
+  std::string ManifestDependencyArg =
+      "--manifestdependency=" + LargeDependency;
+  const char *ManifestArgs[] = {
+      "neverc-test-linker",  "--machine=x64",
+      "--entry=coff_resource_entry", "--subsystem=console",
+      "--nodefaultlib",      "--manifest=embed",
+      ManifestDependencyArg.c_str(), ObjectPath.data()};
+  LinkerExecutionContext ManifestExecution;
+  LinkerDriverConfig ManifestConfig;
+  ManifestConfig.executionContext = &ManifestExecution;
+  ManifestConfig.outputFile = OutputPath.str().str();
+  ManifestConfig.threadCount = 0;
+  ManifestConfig.repro = true;
+  std::string ManifestStdout;
+  std::string ManifestStderr;
+  llvm::raw_string_ostream ManifestStdoutStream(ManifestStdout);
+  llvm::raw_string_ostream ManifestStderrStream(ManifestStderr);
+  ASSERT_TRUE(linker::coff::link(ManifestArgs, ManifestStdoutStream,
+                                 ManifestStderrStream,
+                                 /*exitEarly=*/false,
+                                 /*disableOutput=*/false, ManifestConfig))
+      << ManifestStderr;
+  ASSERT_NE(ManifestExecution.common(), nullptr);
+  EXPECT_EQ(ManifestExecution.common()->parallelThreadCount(),
+            std::min(16U, llvm::thread::hardware_concurrency()));
+}
+
+TEST(PluginCOFFContextIsolationTest,
+     PostLTOWorkloadExcludesBitcodeRepresentation) {
+  constexpr uint64_t MiB = 1024ULL * 1024ULL;
+  constexpr uint64_t KiB = 1024ULL;
+
+  const auto Included = detail::mergeMaterializedInputWorkload(
+      /*NativeBytes=*/7 * MiB, /*NativeFiles=*/1,
+      /*BitcodeBytes=*/MiB, /*BitcodeFiles=*/1,
+      /*ResourceBytes=*/512 * KiB, /*ResourceFiles=*/1,
+      /*IncludeBitcode=*/true);
+  const auto PostLTO = detail::mergeMaterializedInputWorkload(
+      /*NativeBytes=*/7 * MiB, /*NativeFiles=*/1,
+      /*BitcodeBytes=*/MiB, /*BitcodeFiles=*/1,
+      /*ResourceBytes=*/512 * KiB, /*ResourceFiles=*/1,
+      /*IncludeBitcode=*/false);
+
+  LinkThreadPolicy Policy;
+  Policy.MinParallelBytes = 8 * MiB;
+  Policy.BytesPerAdditionalThread = 0;
+  Policy.MinAverageFileBytes = 0;
+  EXPECT_EQ(Included.first, 8 * MiB + 512 * KiB);
+  EXPECT_EQ(Included.second, 3U);
+  EXPECT_EQ(linker::selectAdaptiveLinkThreadCount(
+                /*RequestedThreads=*/0, /*AvailableThreads=*/16, Included.first,
+                Included.second, Policy),
+            16U);
+  EXPECT_EQ(PostLTO.first, 7 * MiB + 512 * KiB);
+  EXPECT_EQ(PostLTO.second, 2U);
+  EXPECT_EQ(linker::selectAdaptiveLinkThreadCount(
+                /*RequestedThreads=*/0, /*AvailableThreads=*/16, PostLTO.first,
+                PostLTO.second, Policy),
+            1U);
 }
 
 TEST(PluginCOFFContextIsolationTest,

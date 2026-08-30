@@ -42,6 +42,7 @@
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/Analysis/TypeMetadataUtils.h"
 #include "llvm/Bitcode/BitcodeAutoGeneratorPass.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/Bitcode/BitcodeWriterPass.h"
@@ -233,7 +234,6 @@ getCodeModel(const CodeGenOptions &CodeGenOpts) {
     return std::nullopt;
   return static_cast<llvm::CodeModel::Model>(CodeModel);
 }
-
 CodeGenFileType getCodeGenFileType(BackendAction Action) {
   if (Action == Backend_EmitObj)
     return CodeGenFileType::ObjectFile;
@@ -1496,6 +1496,17 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
   // main thread and only parallelize codegen.
   if (!runOptimizationPipeline(Action, OS, BC))
     return;
+
+  if (RequiresCodeGen) {
+    if (const Function *F = findUnloweredTypeMetadataIntrinsic(*TheModule)) {
+      Diags.Report(diag::err_fe_error_backend)
+          << ("unlowered LLVM intrinsic '" + F->getName() +
+              "' reached native code generation; CFI requires whole-program "
+              "type metadata lowering; refusing unsafe code generation")
+                 .str();
+      return;
+    }
+  }
 
   if (UseCoarseObjectProvider) {
     (void)runCoarseObjectCodeGen(*OS);

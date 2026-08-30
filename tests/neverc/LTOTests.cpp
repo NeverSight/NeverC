@@ -5,12 +5,18 @@
 #include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Analysis/TypeMetadataUtils.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CallingConv.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Object/ELF.h"
@@ -18,6 +24,7 @@
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
 
 #include <algorithm>
 #include <cassert>
@@ -904,6 +911,261 @@ TEST_F(LTOTest, HelloLTO) {
 
   auto r = exec(exe.string(), {});
   EXPECT_EQ(r.exitCode, 3) << "hello_lto should exit 3";
+}
+
+TEST_F(LTOTest, DarwinSaveTempsLTOProducesUsableDsym) {
+  if (!isDarwin())
+    GTEST_SKIP() << "dsymutil is a Darwin-host packaging tool";
+
+  const auto Source = tmpFile("darwin_lto_save_temps_debug.c");
+  const auto Image = tmpFile("darwin-lto-save-temps.macho");
+  writeFile(Source,
+            "__attribute__((noinline)) int lto_saved_debug_marker(void) { "
+            "return 42; }\n"
+            "int main(void) { return lto_saved_debug_marker(); }\n");
+
+  const CmdResult Build =
+      ncc({"--target=arm64-apple-macos", "-flto=full", "-g",
+           "-save-temps=obj", "-nostdlib", "-fno-stack-protector",
+           Source.string(), "-o", Image.string()});
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+  const fs::path NativeObject = Image.string() + ".lto.o";
+  const fs::path DwarfImage = fs::path(Image.string() + ".dSYM") /
+                              "Contents/Resources/DWARF" / Image.filename();
+  ASSERT_TRUE(fs::is_regular_file(NativeObject));
+  ASSERT_TRUE(fs::is_regular_file(DwarfImage)) << Build.err;
+
+  const std::string DwarfBytes = readFile(DwarfImage);
+  auto DwarfObject = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(DwarfBytes, DwarfImage.string()));
+  ASSERT_TRUE(static_cast<bool>(DwarfObject))
+      << llvm::toString(DwarfObject.takeError()).str().str();
+
+  bool HasDebugInfo = false;
+  for (const llvm::object::SectionRef &Section : (*DwarfObject)->sections()) {
+    llvm::Expected<llvm::StringRef> Name = Section.getName();
+    ASSERT_TRUE(static_cast<bool>(Name))
+        << llvm::toString(Name.takeError()).str().str();
+    HasDebugInfo |= Name->starts_with(".debug_info") ||
+                    Name->starts_with(".zdebug_info") ||
+                    Name->starts_with("__debug_info") ||
+                    Name->starts_with("__zdebug_info");
+  }
+  EXPECT_TRUE(HasDebugInfo) << Build.err;
+}
+
+TEST_F(LTOTest, RejectsUnloweredTypeMetadataBeforeNativeCodegen) {
+  struct Target {
+    const char *Name;
+    const char *Triple;
+    const char *DriverTarget;
+    const char *DataLayout;
+  };
+  const Target Targets[] = {
+      {"aarch64", "aarch64-unknown-linux-gnu", "aarch64-linux-gnu",
+       "e-m:e-i64:64-i128:128-n32:64-S128"},
+      {"x86_64", "x86_64-unknown-linux-gnu", "x86_64-linux-gnu",
+       "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-"
+       "n8:16:32:64-S128"},
+  };
+  enum class PipelineKind {
+    SerialFallback,
+    AutoLTO,
+    DirectCodeGen,
+  };
+  struct Pipeline {
+    const char *Name;
+    PipelineKind Kind;
+  };
+  const Pipeline Pipelines[] = {
+      {"serial_fallback", PipelineKind::SerialFallback},
+      {"auto_lto", PipelineKind::AutoLTO},
+      {"direct_codegen", PipelineKind::DirectCodeGen},
+  };
+
+  for (const Target &Target : Targets) {
+    auto Input =
+        tmpFile(std::string("unlowered_type_test_") + Target.Name + ".bc");
+    llvm::LLVMContext Context;
+    llvm::Module Module("unlowered_type_test", Context);
+    Module.setTargetTriple(Target.Triple);
+    Module.setDataLayout(Target.DataLayout);
+
+    llvm::FunctionType *VoidType =
+        llvm::FunctionType::get(llvm::Type::getVoidTy(Context), false);
+    llvm::Function *Good = llvm::Function::Create(
+        VoidType, llvm::GlobalValue::ExternalLinkage, "good", Module);
+    llvm::IRBuilder<> GoodBuilder(
+        llvm::BasicBlock::Create(Context, "entry", Good));
+    GoodBuilder.CreateRetVoid();
+
+    llvm::Metadata *TypeMetadata[] = {
+        llvm::ConstantAsMetadata::get(
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(Context), 0)),
+        llvm::MDString::get(Context, "kernel.cfi.icall")};
+    Good->setMetadata(llvm::LLVMContext::MD_type,
+                      llvm::MDNode::get(Context, TypeMetadata));
+    llvm::appendToUsed(Module, {Good});
+
+    llvm::Type *PointerType = llvm::PointerType::getUnqual(Context);
+    llvm::Function *Accepts = llvm::Function::Create(
+        llvm::FunctionType::get(llvm::Type::getInt1Ty(Context), {PointerType},
+                                false),
+        llvm::GlobalValue::ExternalLinkage, "accepts", Module);
+    llvm::IRBuilder<> AcceptsBuilder(
+        llvm::BasicBlock::Create(Context, "entry", Accepts));
+    llvm::Function *TypeTest =
+        llvm::Intrinsic::getDeclaration(&Module, llvm::Intrinsic::type_test);
+    llvm::Value *TypeID = llvm::MetadataAsValue::get(
+        Context, llvm::MDString::get(Context, "kernel.cfi.icall"));
+    llvm::Value *Result =
+        AcceptsBuilder.CreateCall(TypeTest, {Accepts->getArg(0), TypeID});
+    AcceptsBuilder.CreateRet(Result);
+
+    llvm::SmallVector<char, 0> Bitcode;
+    llvm::raw_svector_ostream BitcodeStream(Bitcode);
+    llvm::WriteBitcodeToFile(Module, BitcodeStream);
+    writeFile(Input, std::string(Bitcode.begin(), Bitcode.end()));
+
+    for (int OptLevel : {0, 2}) {
+      for (const Pipeline &Pipeline : Pipelines) {
+        SCOPED_TRACE(std::string(Target.Name) + "/O" +
+                     std::to_string(OptLevel) + "/" + Pipeline.Name);
+        auto Output =
+            tmpFile(std::string("unlowered_type_test_") + Target.Name + "_O" +
+                    std::to_string(OptLevel) + "_" + Pipeline.Name + ".o");
+        std::vector<std::string> Args = {std::string("--target=") +
+                                             Target.DriverTarget,
+                                         "-O" + std::to_string(OptLevel)};
+        if (Pipeline.Kind == PipelineKind::DirectCodeGen) {
+          Args.insert(Args.end(), {"-fno-lto", "-c"});
+        } else if (Pipeline.Kind == PipelineKind::AutoLTO) {
+          Args.insert(Args.end(), {"-nostdlib", "-r"});
+          Args.insert(Args.end(), {"-mllvm", "-neverc-pcg-min-funcs=1",
+                                   "-mllvm", "-neverc-pcg-weight-floor=0",
+                                   "-mllvm", "-neverc-pcg-opt-weight-div=1"});
+        } else {
+          Args.insert(Args.end(), {"-nostdlib", "-r"});
+          Args.insert(Args.end(), {"-flto=full", "-mllvm",
+                                   "-neverc-pcg-min-funcs=1000000"});
+        }
+        Args.insert(Args.end(), {Input.string(), "-o", Output.string()});
+        CmdResult Build = ncc(Args);
+        EXPECT_EQ(Build.exitCode, 1)
+            << "unsupported CFI lowering did not fail cleanly";
+        EXPECT_TRUE(Build.stderrContains("llvm.type.test")) << Build.err;
+        EXPECT_TRUE(Build.stderrContains(
+            "CFI requires whole-program type metadata lowering"))
+            << Build.err;
+        EXPECT_TRUE(Build.stderrContains("refusing unsafe code generation"))
+            << Build.err;
+      }
+    }
+  }
+}
+
+TEST_F(LTOTest, AllowsNativeICallBranchFunnelCodegen) {
+  auto Bitcode = tmpFile("icall_branch_funnel.bc");
+  llvm::LLVMContext Context;
+  llvm::Module Module("icall_branch_funnel", Context);
+  Module.setTargetTriple("x86_64-unknown-linux-gnu");
+  Module.setDataLayout("e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-"
+                       "n8:16:32:64-S128");
+
+  llvm::Type *VoidType = llvm::Type::getVoidTy(Context);
+  llvm::Type *PointerType = llvm::PointerType::getUnqual(Context);
+  llvm::FunctionType *TargetType = llvm::FunctionType::get(VoidType, false);
+  llvm::Function *F0 = llvm::Function::Create(
+      TargetType, llvm::GlobalValue::ExternalLinkage, "f0", Module);
+  llvm::Function *F1 = llvm::Function::Create(
+      TargetType, llvm::GlobalValue::ExternalLinkage, "f1", Module);
+
+  llvm::ArrayType *TargetsType =
+      llvm::ArrayType::get(llvm::Type::getInt8Ty(Context), 2);
+  auto *Targets = new llvm::GlobalVariable(Module, TargetsType, false,
+                                           llvm::GlobalValue::ExternalLinkage,
+                                           nullptr, "targets");
+  llvm::Constant *Zero =
+      llvm::ConstantInt::get(llvm::Type::getInt64Ty(Context), 0);
+  llvm::Constant *One =
+      llvm::ConstantInt::get(llvm::Type::getInt64Ty(Context), 1);
+  llvm::Constant *Target0Indices[] = {Zero, Zero};
+  llvm::Constant *Target1Indices[] = {Zero, One};
+  llvm::Constant *Target0 = llvm::ConstantExpr::getInBoundsGetElementPtr(
+      TargetsType, Targets, Target0Indices);
+  llvm::Constant *Target1 = llvm::ConstantExpr::getInBoundsGetElementPtr(
+      TargetsType, Targets, Target1Indices);
+
+  llvm::Function *Funnel = llvm::Function::Create(
+      llvm::FunctionType::get(VoidType, {PointerType}, true),
+      llvm::GlobalValue::ExternalLinkage, "funnel", Module);
+  Funnel->addParamAttr(0, llvm::Attribute::Nest);
+  llvm::IRBuilder<> Builder(llvm::BasicBlock::Create(Context, "entry", Funnel));
+  llvm::Function *BranchFunnel = llvm::Intrinsic::getDeclaration(
+      &Module, llvm::Intrinsic::icall_branch_funnel);
+  llvm::CallInst *Call = Builder.CreateCall(
+      BranchFunnel, {Funnel->getArg(0), Target0, F0, Target1, F1});
+  Call->setTailCallKind(llvm::CallInst::TCK_MustTail);
+  Builder.CreateRetVoid();
+
+  llvm::SmallVector<char, 0> Bytes;
+  llvm::raw_svector_ostream Stream(Bytes);
+  llvm::WriteBitcodeToFile(Module, Stream);
+  writeFile(Bitcode, std::string(Bytes.begin(), Bytes.end()));
+
+  struct Pipeline {
+    const char *Name;
+    std::vector<std::string> Args;
+  };
+  const Pipeline Pipelines[] = {
+      {"direct_codegen", {"-fno-lto", "-c"}},
+      {"serial_fallback",
+       {"-nostdlib", "-r", "-flto=full", "-mllvm",
+        "-neverc-pcg-min-funcs=1000000"}},
+      {"auto_lto",
+       {"-nostdlib", "-r", "-mllvm", "-neverc-pcg-min-funcs=1", "-mllvm",
+        "-neverc-pcg-weight-floor=0", "-mllvm",
+        "-neverc-pcg-opt-weight-div=1"}},
+  };
+
+  for (int OptLevel : {0, 2}) {
+    for (const Pipeline &Pipeline : Pipelines) {
+      SCOPED_TRACE("O" + std::to_string(OptLevel) + "/" + Pipeline.Name);
+      auto Output = tmpFile("icall_branch_funnel_O" + std::to_string(OptLevel) +
+                            "_" + Pipeline.Name + ".o");
+      std::vector<std::string> Args = {"--target=x86_64-linux-gnu",
+                                       "-O" + std::to_string(OptLevel)};
+      Args.insert(Args.end(), Pipeline.Args.begin(), Pipeline.Args.end());
+      Args.insert(Args.end(), {Bitcode.string(), "-o", Output.string()});
+      CmdResult Build = ncc(Args);
+      ASSERT_TRUE(Build.ok()) << Build.err;
+      EXPECT_GT(fileSize(Output), 0u);
+    }
+  }
+}
+
+TEST(TypeMetadataUtilsTest, FindsEveryUnloweredTypeMetadataIntrinsic) {
+  static constexpr llvm::Intrinsic::ID MustBeLowered[] = {
+      llvm::Intrinsic::type_test,
+      llvm::Intrinsic::public_type_test,
+      llvm::Intrinsic::type_checked_load,
+      llvm::Intrinsic::type_checked_load_relative,
+  };
+
+  for (llvm::Intrinsic::ID ID : MustBeLowered) {
+    SCOPED_TRACE(llvm::Intrinsic::getBaseName(ID).str());
+    llvm::LLVMContext Context;
+    llvm::Module Module("unlowered_type_metadata_intrinsic", Context);
+    llvm::Function *Intrinsic = llvm::Function::Create(
+        llvm::FunctionType::get(llvm::Type::getVoidTy(Context), false),
+        llvm::GlobalValue::ExternalLinkage, llvm::Intrinsic::getBaseName(ID),
+        Module);
+    llvm::appendToUsed(Module, {Intrinsic});
+
+    EXPECT_EQ(Intrinsic->getIntrinsicID(), ID);
+    EXPECT_EQ(llvm::findUnloweredTypeMetadataIntrinsic(Module), Intrinsic);
+  }
 }
 
 TEST_F(LTOTest, AArch64UnalignedCrossCcTailCallFallsBack) {

@@ -1,4 +1,13 @@
 #include "NeverCTestFixture.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Support/raw_ostream.h"
 #include "gtest/gtest.h"
 #include <cstdint>
 #include <future>
@@ -48,6 +57,47 @@ TEST_F(PluginNewBackendTest,
   EXPECT_EQ(static_cast<uint8_t>(Bytes[12]), UINT8_C(0x2a));
   EXPECT_EQ(static_cast<uint8_t>(Bytes[13]), UINT8_C(0xc3));
   EXPECT_EQ(Bytes.substr(14), std::string("answer\0", 7));
+}
+
+TEST_F(PluginNewBackendTest,
+       RejectsUnloweredTypeMetadataBeforeCoarseProviderCodegen) {
+  const fs::path Source = tmpFile("unlowered-type-test.bc");
+  const fs::path Object = tmpFile("unlowered-type-test.nobj");
+  llvm::LLVMContext Context;
+  llvm::Module Module("unlowered_type_test", Context);
+  Module.setTargetTriple("neverc-test");
+  Module.setDataLayout("e-p:64:64-i64:64-n32:64-S128");
+  llvm::Type *PointerType = llvm::PointerType::getUnqual(Context);
+  llvm::Function *Accepts = llvm::Function::Create(
+      llvm::FunctionType::get(llvm::Type::getInt1Ty(Context), {PointerType},
+                              false),
+      llvm::GlobalValue::ExternalLinkage, "accepts", Module);
+  llvm::IRBuilder<> Builder(
+      llvm::BasicBlock::Create(Context, "entry", Accepts));
+  llvm::Function *TypeTest =
+      llvm::Intrinsic::getDeclaration(&Module, llvm::Intrinsic::type_test);
+  llvm::Value *TypeID = llvm::MetadataAsValue::get(
+      Context, llvm::MDString::get(Context, "type.id"));
+  Builder.CreateRet(Builder.CreateCall(TypeTest, {Accepts->getArg(0), TypeID}));
+  llvm::SmallVector<char, 0> Bitcode;
+  llvm::raw_svector_ostream BitcodeStream(Bitcode);
+  llvm::WriteBitcodeToFile(Module, BitcodeStream);
+  writeFile(Source, std::string(Bitcode.begin(), Bitcode.end()));
+
+  const std::string Plugin =
+      std::string("-fplugin=") + NEVERC_TEST_NEW_BACKEND_PLUGIN;
+  const std::string OptimizationPlugin =
+      std::string("-fplugin=") + NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH_PLUGIN;
+  CmdResult Result = ncc({"--no-default-config", Plugin, OptimizationPlugin,
+                          "--target=neverc-test-none", "-O0", "-fno-lto", "-c",
+                          Source.string(), "-o", Object.string()});
+  EXPECT_NE(Result.exitCode, 0);
+  EXPECT_NE(Result.err.find("llvm.type.test"), std::string::npos) << Result.err;
+  EXPECT_NE(
+      Result.err.find("CFI requires whole-program type metadata lowering"),
+      std::string::npos)
+      << Result.err;
+  EXPECT_FALSE(fs::exists(Object));
 }
 
 TEST_F(PluginNewBackendTest,

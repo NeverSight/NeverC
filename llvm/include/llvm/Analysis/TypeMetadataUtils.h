@@ -27,6 +27,12 @@ class DominatorTree;
 class Instruction;
 class Module;
 
+/// Return the first used intrinsic that must be consumed by whole-program
+/// type-metadata lowering before native code generation. These intrinsics are
+/// valid in pre-link IR, but reaching SelectionDAG with one still live is an
+/// unsupported and potentially unsafe pipeline state.
+const Function *findUnloweredTypeMetadataIntrinsic(const Module &M);
+
 /// The type of CFI jumptable needed for a function.
 enum CfiFunctionLinkage {
   CFL_Definition = 0,

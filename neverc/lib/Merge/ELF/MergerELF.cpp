@@ -23,6 +23,7 @@
 
 #include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
+#include "ELF/ExtendedSectionNumbering.h"
 #include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
 #include "neverc/Foundation/AndroidKernelModuleRelocationPolicy.h"
 #include "neverc/Foundation/AndroidKernelModuleSectionPolicy.h"
@@ -178,6 +179,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   using Ehdr = typename ELFT::Ehdr;
   using Shdr = typename ELFT::Shdr;
   using Sym = typename ELFT::Sym;
+  using Word = typename ELFT::Word;
   using Rela = typename ELFT::Rela;
   using Rel = typename ELFT::Rel;
 
@@ -292,8 +294,15 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   // Symbol table: locals first, then globals (ELF convention).
   // In -r mode LLD does NOT recompute bindings (ElfImageEmitter.cpp:1829).
   SmallVector<Sym, 64> LocalSyms, GlobalSyms;
+  // A real section index can exceed the 16-bit st_shndx field and can even
+  // have the same numeric value as one of the reserved SHN_* constants. Keep
+  // that semantic distinction out-of-band until serialization; nullopt means
+  // the raw st_shndx is a special value such as UNDEF/ABS/COMMON.
+  SmallVector<std::optional<uint32_t>, 64> LocalSymbolSections,
+      GlobalSymbolSections;
   LocalSyms.push_back({});
   memset(&LocalSyms[0], 0, sizeof(Sym));
+  LocalSymbolSections.push_back(std::nullopt);
   struct SymbolPlacementOrigin {
     unsigned Partition;
     unsigned InputSection;
@@ -431,6 +440,35 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       return false;
     }
     ArrayRef<Shdr> Secs = *SecsOrErr;
+
+    // This is a relocatable-object merger and the canonical writer never
+    // emits a program-header table. Do not silently normalize either a real
+    // table or the gABI PN_XNUM payload stored in section zero. Requiring all
+    // four fields to be zero also rejects stale escape state when e_phnum is
+    // already direct zero.
+    if (Hdr.e_type != ET_REL || Hdr.e_phoff != 0 || Hdr.e_phentsize != 0 ||
+        Hdr.e_phnum != 0 || Secs.empty() || Secs[0].sh_info != 0) {
+      errs() << "neverc: relocatable merge: input has unsupported program-"
+                "header metadata\n";
+      return false;
+    }
+
+    // LLVM resolves the gABI escapes for callers, but deliberately accepts
+    // non-canonical low values in the escape fields.  This merger rewrites the
+    // section table, so accepting those encodings would silently normalize a
+    // malformed input when verification is disabled.  Reject every reserved
+    // direct value and require an escape to carry a genuinely extended value.
+    if (Secs.empty() || Secs[0].sh_type != SHT_NULL ||
+        (Hdr.e_shnum == 0 && Secs.size() < SHN_LORESERVE) ||
+        (Hdr.e_shnum != 0 && Hdr.e_shnum >= SHN_LORESERVE) ||
+        (Hdr.e_shnum != 0 && Secs[0].sh_size != 0) ||
+        (Hdr.e_shstrndx == SHN_XINDEX && Secs[0].sh_link < SHN_LORESERVE) ||
+        (Hdr.e_shstrndx != SHN_XINDEX &&
+         (Hdr.e_shstrndx >= SHN_LORESERVE || Secs[0].sh_link != 0))) {
+      errs() << "neverc: relocatable merge: input has non-canonical extended "
+                "section numbering\n";
+      return false;
+    }
 
     // Drop-debug is a metadata filter, not permission to remove memory-backed
     // content. A debug spelling carrying SHF_ALLOC may participate in runtime
@@ -709,6 +747,92 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       }
     }
 
+    // The current canonical output has one selected symbol table and can
+    // regenerate at most one extended-index companion for it.  Reject orphan,
+    // duplicate, or alternate-symbol-table companions instead of dropping
+    // them as generic regenerated metadata in Phase 1.
+    const Shdr *ShndxHeader = nullptr;
+    for (const Shdr &Section : Secs) {
+      if (Section.sh_type != SHT_SYMTAB_SHNDX)
+        continue;
+      if (ShndxHeader) {
+        errs() << "neverc: relocatable merge: input has multiple "
+                  "SHT_SYMTAB_SHNDX sections\n";
+        return false;
+      }
+      ShndxHeader = &Section;
+    }
+    if (ShndxHeader && (!SymTabHdr || ShndxHeader->sh_link !=
+                                          unsigned(SymTabHdr - Secs.data()))) {
+      errs() << "neverc: relocatable merge: SHT_SYMTAB_SHNDX does not "
+                "describe the selected symbol table\n";
+      return false;
+    }
+
+    ArrayRef<Sym> InputSyms;
+    ArrayRef<Word> InputSymtabShndx;
+    SmallVector<std::optional<uint32_t>, 0> InputSymbolSections;
+    if (SymTabHdr) {
+      auto SymsOrErr = EF.symbols(SymTabHdr);
+      if (!SymsOrErr) {
+        consumeError(SymsOrErr.takeError());
+        return false;
+      }
+      InputSyms = *SymsOrErr;
+
+      if (ShndxHeader) {
+        if (ShndxHeader->sh_entsize != sizeof(Word)) {
+          errs() << "neverc: relocatable merge: SHT_SYMTAB_SHNDX has an "
+                    "invalid entry size\n";
+          return false;
+        }
+        auto TableOrErr = EF.getSHNDXTable(*ShndxHeader, Secs);
+        if (!TableOrErr) {
+          consumeError(TableOrErr.takeError());
+          return false;
+        }
+        InputSymtabShndx = *TableOrErr;
+      }
+
+      InputSymbolSections.reserve(InputSyms.size());
+      for (unsigned I = 0; I < InputSyms.size(); ++I) {
+        const uint16_t RawIndex = InputSyms[I].st_shndx;
+        if (RawIndex == SHN_XINDEX) {
+          if (InputSymtabShndx.empty() || I >= InputSymtabShndx.size()) {
+            errs() << "neverc: relocatable merge: SHN_XINDEX symbol has no "
+                      "SHT_SYMTAB_SHNDX entry\n";
+            return false;
+          }
+          const uint32_t ExtendedIndex = InputSymtabShndx[I];
+          if (ExtendedIndex < SHN_LORESERVE || ExtendedIndex >= Secs.size()) {
+            errs() << "neverc: relocatable merge: symbol has an invalid "
+                      "extended section index\n";
+            return false;
+          }
+          InputSymbolSections.push_back(ExtendedIndex);
+        } else if (RawIndex != SHN_UNDEF && RawIndex < SHN_LORESERVE) {
+          if (RawIndex >= Secs.size()) {
+            errs() << "neverc: relocatable merge: symbol has an invalid "
+                      "direct section index\n";
+            return false;
+          }
+          if (!InputSymtabShndx.empty() && InputSymtabShndx[I] != 0) {
+            errs() << "neverc: relocatable merge: SHT_SYMTAB_SHNDX has a "
+                      "nonzero entry for a direct-index symbol\n";
+            return false;
+          }
+          InputSymbolSections.push_back(RawIndex);
+        } else {
+          if (!InputSymtabShndx.empty() && InputSymtabShndx[I] != 0) {
+            errs() << "neverc: relocatable merge: SHT_SYMTAB_SHNDX has a "
+                      "nonzero entry for a non-section symbol\n";
+            return false;
+          }
+          InputSymbolSections.push_back(std::nullopt);
+        }
+      }
+    }
+
     // Section indices that some SHT_RELA/SHT_REL targets via sh_info.  Used
     // only to make the SHT_NOTE dedup below reloc-safe: a relocated note must
     // never be folded onto an earlier byte-identical copy, because Phase 3
@@ -814,8 +938,8 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
                  AndroidKernelModuleSectionPolicy::regeneratesReleaseInputType(
                      S.sh_type))
               : S.sh_type == SHT_SYMTAB || S.sh_type == SHT_STRTAB ||
-                    S.sh_type == SHT_RELA || S.sh_type == SHT_REL ||
-                    S.sh_type == SHT_LLVM_LTO ||
+                    S.sh_type == SHT_SYMTAB_SHNDX || S.sh_type == SHT_RELA ||
+                    S.sh_type == SHT_REL || S.sh_type == SHT_LLVM_LTO ||
                     S.sh_type == SHT_LLVM_ADDRSIG ||
                     S.sh_type == SHT_LLVM_CALL_GRAPH_PROFILE;
       if (IsRegeneratedMetadata)
@@ -1066,15 +1190,11 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     // hardening rejects it below because the module loader requires
     // -fno-common semantics.
     if (SymTabHdr) {
-      auto SymsOrErr = EF.symbols(SymTabHdr);
-      if (!SymsOrErr) {
-        consumeError(SymsOrErr.takeError());
-        return false;
-      }
-      ArrayRef<Sym> Syms = *SymsOrErr;
+      ArrayRef<Sym> Syms = InputSyms;
 
       for (unsigned i = 1; i < Syms.size(); ++i) {
         Sym OutS = Syms[i];
+        std::optional<uint32_t> OutputSection = InputSymbolSections[i];
         std::optional<SymbolPlacementOrigin> PlacementOrigin;
 
         // strnlen-bound the name to the string table extent.  llvm's
@@ -1112,18 +1232,21 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         }
 
         // Remap section index and adjust value.
-        if (OutS.st_shndx < SHN_LORESERVE) {
-          if (PM.DroppedSecs.contains(OutS.st_shndx))
+        if (OutputSection) {
+          const uint32_t InputSection = *OutputSection;
+          if (PM.DroppedSecs.contains(InputSection))
             continue;
-          auto It = PM.SecMap.find(OutS.st_shndx);
+          auto It = PM.SecMap.find(InputSection);
           if (It != PM.SecMap.end()) {
-            unsigned origShndx = OutS.st_shndx;
-            OutS.st_shndx = It->second;
+            OutputSection = It->second;
+            OutS.st_shndx = It->second >= SHN_LORESERVE
+                                ? SHN_XINDEX
+                                : static_cast<uint16_t>(It->second);
             if (It->second != 0) {
-              auto OffIt = PM.SecOff.find(origShndx);
+              auto OffIt = PM.SecOff.find(InputSection);
               if (OffIt != PM.SecOff.end()) {
                 PlacementOrigin =
-                    SymbolPlacementOrigin{p, origShndx, OutS.st_value};
+                    SymbolPlacementOrigin{p, InputSection, OutS.st_value};
                 if (OutS.st_value >
                     std::numeric_limits<uint64_t>::max() - OffIt->second) {
                   errs() << "neverc: Android module release strip: symbol '"
@@ -1134,7 +1257,14 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
               }
             }
           } else {
-            OutS.st_shndx = 0;
+            // The defining section is regenerated linker metadata (for
+            // example .llvm_addrsig) and therefore has no output SecMap
+            // entry. Re-emitting its STT_SECTION symbol as SHN_UNDEF creates
+            // an invalid-looking section symbol and can turn a relocation to
+            // discarded metadata into a relocation against symbol zero.
+            // Drop the symbol; Phase 3 independently refuses any retained
+            // relocation that still references its discarded section.
+            continue;
           }
         }
         // SHN_COMMON: preserved as-is in -r mode (LLD behavior).
@@ -1149,6 +1279,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         if (Syms[i].getBinding() == STB_LOCAL) {
           PM.SymMap[i] = LocalSyms.size();
           LocalSyms.push_back(OutS);
+          LocalSymbolSections.push_back(OutputSection);
           LocalSymbolOrigins.push_back(PlacementOrigin);
         } else {
           // Global symbol dedup: same-name globals are resolved by
@@ -1167,6 +1298,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           if (Inserted) {
             unsigned Slot = GlobalSyms.size();
             GlobalSyms.push_back(OutS);
+            GlobalSymbolSections.push_back(OutputSection);
             GlobalSymbolOrigins.push_back(PlacementOrigin);
             // Record slot; will add FirstGlobal offset after the loop.
             PM.SymMap[i] = Slot | 0x80000000u;
@@ -1190,6 +1322,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
             unsigned Slot = It->second.SlotIdx;
             if (Pri > It->second.Pri) {
               GlobalSyms[Slot] = OutS;
+              GlobalSymbolSections[Slot] = OutputSection;
               GlobalSymbolOrigins[Slot] = PlacementOrigin;
               It->second.Pri = Pri;
               It->second.Strong = Strong;
@@ -1204,22 +1337,19 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     // In -r mode LLD skips scanRelocations() entirely
     // (ElfImageEmitter.cpp:1773) and just copies relocs with remapped
     // indices (copyRelocs path).
-    ArrayRef<Sym> RelocSyms;
-    if (SymTabHdr) {
-      auto SymsOrErr = EF.symbols(SymTabHdr);
-      if (!SymsOrErr) {
-        consumeError(SymsOrErr.takeError());
-        return false;
-      }
-      RelocSyms = *SymsOrErr;
-    }
+    ArrayRef<Sym> RelocSyms = InputSyms;
     auto ReferencesDroppedSymbol = [&](unsigned SymIdx) {
       if (SymIdx >= RelocSyms.size())
         return false;
       const Sym &Target = RelocSyms[SymIdx];
-      if (Target.st_shndx < SHN_LORESERVE &&
-          PM.DroppedSecs.contains(Target.st_shndx))
-        return true;
+      if (InputSymbolSections[SymIdx]) {
+        const uint32_t InputSection = *InputSymbolSections[SymIdx];
+        if (PM.DroppedSecs.contains(InputSection))
+          return true;
+        auto OutputSection = PM.SecMap.find(InputSection);
+        if (OutputSection == PM.SecMap.end() || OutputSection->second == 0)
+          return true;
+      }
       if (!Opts.finalizeAndroidKernelModule || Target.st_name >= SymStr.size())
         return false;
       StringRef Name(SymStr.data() + Target.st_name,
@@ -1255,8 +1385,8 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         }
         for (const Rela &Re : *R) {
           if (ReferencesDroppedSymbol(Re.getSymbol())) {
-            errs() << "neverc: Android module finalization: retained section "
-                      "has a relocation to the dropped profile contract\n";
+            errs() << "neverc: relocatable merge: retained section has a "
+                      "relocation to a discarded input section or symbol\n";
             return false;
           }
           Rela Adjusted = Re;
@@ -1564,14 +1694,17 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       }
       auto Existing = GlobalMap.find(Name);
       if (Existing != GlobalMap.end()) {
-        Sym &Symbol = GlobalSyms[Existing->second.SlotIdx];
+        const unsigned Slot = Existing->second.SlotIdx;
+        Sym &Symbol = GlobalSyms[Slot];
         if (Symbol.st_shndx != SHN_UNDEF &&
-            (Symbol.st_shndx != *AllocTags + 1 || Symbol.st_value != Value)) {
+            (GlobalSymbolSections[Slot] != *AllocTags + 1 ||
+             Symbol.st_value != Value)) {
           errs() << "neverc: Android module merge: symbol '" << Name
                  << "' conflicts with the alloc_tags boundary\n";
           return false;
         }
         Symbol.st_shndx = *AllocTags + 1;
+        GlobalSymbolSections[Slot] = *AllocTags + 1;
         Symbol.st_value = Value;
         Symbol.st_size = 0;
         Symbol.setBindingAndType(STB_GLOBAL, STT_NOTYPE);
@@ -1587,6 +1720,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       Symbol.setBindingAndType(STB_GLOBAL, STT_NOTYPE);
       const unsigned Slot = GlobalSyms.size();
       GlobalSyms.push_back(Symbol);
+      GlobalSymbolSections.push_back(*AllocTags + 1);
       GlobalMap.try_emplace(Name, GlobalDedup{Slot, PRI_GLOBAL_DEF, true});
       return true;
     };
@@ -1669,17 +1803,21 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
     if (!DemoteSlots.empty()) {
       SmallVector<Sym, 64> NewLocals, NewGlobals;
+      SmallVector<std::optional<uint32_t>, 64> NewLocalSections,
+          NewGlobalSections;
       DenseMap<unsigned, unsigned> ReorderMap;
       // Identity-map existing locals.
       for (unsigned i = 0; i < LocalSyms.size(); ++i)
         ReorderMap[i] = i;
       NewLocals = std::move(LocalSyms);
+      NewLocalSections = std::move(LocalSymbolSections);
       // Append demoted globals into the local section.
       for (unsigned i = 0; i < GlobalSyms.size(); ++i) {
         unsigned OldIdx = FirstGlobal + i;
         if (DemoteSlots.count(i)) {
           ReorderMap[OldIdx] = NewLocals.size();
           NewLocals.push_back(GlobalSyms[i]);
+          NewLocalSections.push_back(GlobalSymbolSections[i]);
         }
       }
       unsigned NewFirstGlobal = NewLocals.size();
@@ -1688,10 +1826,13 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         if (!DemoteSlots.count(i)) {
           ReorderMap[OldIdx] = NewFirstGlobal + NewGlobals.size();
           NewGlobals.push_back(GlobalSyms[i]);
+          NewGlobalSections.push_back(GlobalSymbolSections[i]);
         }
       }
       LocalSyms = std::move(NewLocals);
       GlobalSyms = std::move(NewGlobals);
+      LocalSymbolSections = std::move(NewLocalSections);
+      GlobalSymbolSections = std::move(NewGlobalSections);
       FirstGlobal = NewFirstGlobal;
       // Remap relocation symbol indices to match the new ordering.
       for (auto &MS : MergedSections)
@@ -1889,8 +2030,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
 
     for (const RetainedSymbol &Entry : Retained) {
-      const StringRef Original =
-          ReleaseSymbols[Entry.FinalIndex].OriginalName;
+      const StringRef Original = ReleaseSymbols[Entry.FinalIndex].OriginalName;
       const StringRef Release = PlannedNames[Entry.FinalIndex];
       if (!Original.empty() && Original != Release)
         PendingReleaseSymbolMap.Symbols.push_back(
@@ -1901,15 +2041,21 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     // symbol/string tables and then commit the relocation-index remap.
     detail::DedupStrTab PrunedStrTab;
     SmallVector<Sym, 64> PrunedLocals, PrunedGlobals;
+    SmallVector<std::optional<uint32_t>, 64> PrunedLocalSections,
+        PrunedGlobalSections;
     DenseMap<unsigned, unsigned> PrunedIndex;
     for (const RetainedSymbol &Entry : Retained) {
       Sym Copy = *Entry.Symbol;
       Copy.st_name = PrunedStrTab.add(PlannedNames[Entry.FinalIndex]);
       PrunedIndex[Entry.OldIndex] = Entry.FinalIndex;
-      if (Entry.IsLocal)
+      if (Entry.IsLocal) {
         PrunedLocals.push_back(Copy);
-      else
+        PrunedLocalSections.push_back(LocalSymbolSections[Entry.OldIndex]);
+      } else {
         PrunedGlobals.push_back(Copy);
+        PrunedGlobalSections.push_back(
+            GlobalSymbolSections[Entry.OldIndex - FirstGlobal]);
+      }
     }
 
     for (MergedSection &MS : MergedSections) {
@@ -1927,14 +2073,21 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
     LocalSyms = std::move(PrunedLocals);
     GlobalSyms = std::move(PrunedGlobals);
+    LocalSymbolSections = std::move(PrunedLocalSections);
+    GlobalSymbolSections = std::move(PrunedGlobalSections);
     FirstGlobal = PrunedFirstGlobal;
     SymStrTab = std::move(PrunedStrTab);
   }
 
   // ----- Build output sections -----
   SmallVector<Sym, 64> FinalSyms;
+  SmallVector<std::optional<uint32_t>, 64> FinalSymbolSections;
   FinalSyms.append(LocalSyms.begin(), LocalSyms.end());
   FinalSyms.append(GlobalSyms.begin(), GlobalSyms.end());
+  FinalSymbolSections.append(LocalSymbolSections.begin(),
+                             LocalSymbolSections.end());
+  FinalSymbolSections.append(GlobalSymbolSections.begin(),
+                             GlobalSymbolSections.end());
 
   struct OutSection {
     Shdr Hdr;
@@ -2059,6 +2212,26 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     OutSections[m + 1].Hdr.sh_link = *FinalTarget;
   }
 
+  SmallVector<Word, 0> FinalSymtabShndx;
+  bool NeedsSymtabShndx = false;
+  if (FinalSyms.size() != FinalSymbolSections.size())
+    return false;
+  for (unsigned I = 0; I < FinalSyms.size(); ++I) {
+    if (!FinalSymbolSections[I])
+      continue;
+    const uint32_t SectionIndex = *FinalSymbolSections[I];
+    if (SectionIndex >= SHN_LORESERVE) {
+      if (!NeedsSymtabShndx) {
+        FinalSymtabShndx.resize(FinalSyms.size());
+        NeedsSymtabShndx = true;
+      }
+      FinalSyms[I].st_shndx = SHN_XINDEX;
+      FinalSymtabShndx[I] = SectionIndex;
+    } else {
+      FinalSyms[I].st_shndx = static_cast<uint16_t>(SectionIndex);
+    }
+  }
+
   unsigned SymTabIdx = OutSections.size();
   {
     OutSection S;
@@ -2068,6 +2241,20 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     S.Data.assign(reinterpret_cast<const char *>(FinalSyms.data()),
                   reinterpret_cast<const char *>(FinalSyms.data()) +
                       FinalSyms.size() * sizeof(Sym));
+    OutSections.push_back(std::move(S));
+  }
+
+  if (NeedsSymtabShndx) {
+    OutSection S;
+    memset(&S.Hdr, 0, sizeof(S.Hdr));
+    S.Hdr.sh_name = ShStrTab.add(".symtab_shndx");
+    S.Hdr.sh_type = SHT_SYMTAB_SHNDX;
+    S.Hdr.sh_link = SymTabIdx;
+    S.Hdr.sh_addralign = sizeof(Word);
+    S.Hdr.sh_entsize = sizeof(Word);
+    S.Data.assign(reinterpret_cast<const char *>(FinalSymtabShndx.data()),
+                  reinterpret_cast<const char *>(FinalSymtabShndx.data()) +
+                      FinalSymtabShndx.size() * sizeof(Word));
     OutSections.push_back(std::move(S));
   }
 
@@ -2112,23 +2299,18 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     OutSections.push_back(std::move(S));
   }
 
-  // e_shnum is a 16-bit field; a section count >= SHN_LORESERVE requires the
-  // SHN_XINDEX escape (e_shnum=0, real count in section[0].sh_size) which this
-  // -r merge does not emit.  Writing the count straight into the 16-bit field
-  // would silently truncate and produce a corrupt object — the same
-  // valid-looking-but-wrong failure class the verifier exists to stop, but at a
-  // layer the verifier (which trusts the parsed header) cannot see.  Refuse
-  // instead so the caller falls back to serial codegen / a real linker.  Only
-  // reachable on a single link of tens of thousands of per-function sections
-  // (FunctionSections); the kernel-module mergeSections path folds to a
-  // handful.
-  if (OutSections.size() >= ELF::SHN_LORESERVE) {
-    errs() << "neverc: relocatable merge produced " << OutSections.size()
-           << " sections, exceeding the ELF e_shnum limit ("
-           << ELF::SHN_LORESERVE << "); refusing to emit a truncated object\n";
+  const bool ExtendedSectionCount = OutSections.size() >= SHN_LORESERVE;
+  const bool ExtendedSectionNames = ShStrTabIdx >= SHN_LORESERVE;
+  // Delivered Android release artifacts intentionally retain the pre-existing
+  // canonical metadata contract: no extended section numbering and no
+  // SHT_SYMTAB_SHNDX suffix. Enforce that producer-side even when the optional
+  // verifier is disabled; general relocatable links support the extensions.
+  if (Opts.stripUnneededSymbols &&
+      (ExtendedSectionCount || ExtendedSectionNames || NeedsSymtabShndx)) {
+    errs() << "neverc: Android module release output requires unsupported "
+              "extended section numbering\n";
     return false;
   }
-
   // ----- Layout -----
   // All section addresses are 0 in -r mode (ElfImageEmitter.cpp:1552).
   uint64_t Off = sizeof(Ehdr);
@@ -2182,8 +2364,9 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   H->e_ehsize = sizeof(Ehdr);
   H->e_shentsize = sizeof(Shdr);
   H->e_shoff = ShOff;
-  H->e_shnum = OutSections.size();
-  H->e_shstrndx = ShStrTabIdx;
+  if (!detail::encodeELFSectionHeaderNumbers<ELFT>(
+          *H, OutSections[0].Hdr, OutSections.size(), ShStrTabIdx))
+    return false;
   H->e_flags = EFlags;
   // No e_phoff / e_phentsize / e_phnum — ET_REL has no program headers
   // (LLD: ElfImageEmitter.cpp:2625 skips these when config->relocatable).

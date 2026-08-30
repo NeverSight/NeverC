@@ -8,8 +8,9 @@
 #include <optional>
 
 namespace linker::elf {
-/// Select a worker budget after the materialized ELF workload is known.
-/// An explicit request is preserved; zero requests an automatic budget.
+/// Source-compatible forwarding entry point retained for callers of the
+/// original ELF-only selector. New backends use
+/// linker::selectAdaptiveLinkThreadCount.
 unsigned selectLinkThreadCount(unsigned RequestedThreads,
                                unsigned AvailableThreads, uint64_t InputBytes,
                                uint64_t InputFiles);

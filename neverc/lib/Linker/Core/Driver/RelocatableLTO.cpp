@@ -74,10 +74,18 @@ runPluginRelocatableLTO(const LinkerDriverConfig &Config,
                        /*disableOutput=*/false);
   Context.e.errorLimit = Config.errorLimit;
   Context.e.logName = "neverc";
+  Context.e.verbose = Config.verbose;
+  Context.e.fatalWarnings = Config.fatalWarnings;
+  Context.e.suppressWarnings = Config.suppressWarnings;
 
-  lto::Config LtoConfig = createLTOConfig(Config, diagnosticHandler, EmitAddrsig);
-  auto Lto = std::make_unique<lto::LTO>(std::move(LtoConfig),
-                                        Config.ltoPartitions);
+  lto::Config LtoConfig =
+      createLTOConfig(Config, diagnosticHandler, EmitAddrsig);
+  if (Context.e.errorCount != 0)
+    return createStringError(
+        inconvertibleErrorCode(),
+        "relocatable LTO configuration reported linker diagnostics");
+  auto Lto =
+      std::make_unique<lto::LTO>(std::move(LtoConfig), Config.ltoPartitions);
 
   // Parse every bitcode input up front so prevailing selection can see all
   // definitions before any InputFile is handed (moved) to lto::LTO::add.
@@ -155,6 +163,16 @@ runPluginRelocatableLTO(const LinkerDriverConfig &Config,
   runLTOWithCache(*Lto, CacheKey, /*usable=*/false, Config, BackendTag,
                   EmitAddrsig, Buffers);
   Lto.reset();
+  if (Context.e.errorCount != 0) {
+    // The output callback owns these buffers only inside this helper.  Destroy
+    // every native image before returning the propagated diagnostic so no
+    // caller can accidentally publish a codegen result produced alongside an
+    // error (including a warning promoted by --fatal-warnings/-Werror).
+    Buffers.clear();
+    return createStringError(
+        inconvertibleErrorCode(),
+        "relocatable LTO failed after reporting linker diagnostics");
+  }
 
   std::vector<SmallString<0>> Objects;
   Objects.reserve(Buffers.size());

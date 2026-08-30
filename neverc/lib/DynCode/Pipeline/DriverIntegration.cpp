@@ -1,6 +1,6 @@
 #include "neverc/DynCode/Pipeline/DriverIntegration.h"
-#include "neverc/Invoke/Options.h"
 #include "neverc/DynCode/Pipeline/Pipeline.h"
+#include "neverc/Invoke/Options.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
@@ -14,6 +14,8 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
+
+#include <cstring>
 
 using llvm::ArrayRef;
 using llvm::SmallString;
@@ -212,8 +214,7 @@ const char *saveCStr(std::set<std::string> &Pool, StringRef S) {
   return Pool.insert(std::string(S)).first->c_str();
 }
 
-bool collectOptions(const llvm::opt::InputArgList &Args,
-                    DynCodeOptions &Out) {
+bool collectOptions(const llvm::opt::InputArgList &Args, DynCodeOptions &Out) {
   Out.Enabled = Args.hasFlag(opts::OPT_fdyncode, opts::OPT_fno_dyncode,
                              /*Default=*/false);
   Out.AllBlr = Args.hasArg(opts::OPT_fdyncode_all_blr);
@@ -349,10 +350,27 @@ void appendInjectArgs(DynCodeDriverSetup &Setup,
     Args.push_back(saveCStr(Pool, F));
 }
 
+bool hasDriverDynCodeOptionToken(ArrayRef<const char *> Args) {
+  for (const char *Arg : Args) {
+    if (!Arg)
+      continue;
+    if (std::strcmp(Arg, "-fdyncode") == 0 ||
+        std::strncmp(Arg, "-fdyncode-", 10) == 0 ||
+        std::strcmp(Arg, "-fno-dyncode") == 0 ||
+        std::strncmp(Arg, "-fno-dyncode-", 13) == 0 ||
+        std::strncmp(Arg, "-mdyncode-", 10) == 0)
+      return true;
+  }
+  return false;
+}
+
 } // namespace
 
 int prepareDriverDynCode(SmallVectorImpl<const char *> &Args,
                          DynCodeDriverSetup &Setup) {
+  if (!hasDriverDynCodeOptionToken(Args))
+    return 0;
+
   const llvm::opt::OptTable &OptTbl = neverc::driver::getDriverOptTable();
   llvm::opt::Visibility VisMask(opts::NeverCOption);
   unsigned MissingIdx = 0, MissingCnt = 0;

@@ -16,6 +16,7 @@
 #define LLVM_LTO_LTO_H
 
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/ModuleSummaryIndex.h"
@@ -24,6 +25,8 @@
 #include "llvm/Support/Caching.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Transforms/IPO/FunctionAttrs.h"
+
+#include <functional>
 
 namespace llvm {
 
@@ -36,6 +39,17 @@ class raw_pwrite_stream;
 class ToolOutputFile;
 
 namespace lto {
+
+/// Adds a completed native object to the link by transferring ownership of
+/// its storage. Unlike AddStreamFn, the callback can report publication
+/// failure without relying on a stream destructor to commit the output.
+///
+/// The callback is synchronous. ModuleName and the Output object are valid only
+/// for the duration of the call; a successful callback must move from Output or
+/// otherwise persist its bytes before returning. Callbacks must be safe to call
+/// from an LTO backend worker thread.
+using AddOwnedOutputFn = std::function<Error(
+    unsigned Task, const Twine &ModuleName, SmallVector<char, 0> &&Output)>;
 
 /// Setup optimization remarks.
 Expected<std::unique_ptr<ToolOutputFile>> setupLLVMOptimizationRemarks(
@@ -197,6 +211,11 @@ public:
   /// Cache) for each task identifier.
   Error run(AddStreamFn AddStream, FileCache Cache = nullptr);
 
+  /// Runs the LTO pipeline and transfers each completed native object to the
+  /// client without an intermediate output stream. This is an opt-in path for
+  /// in-memory linkers; the callback must publish atomically or return Error.
+  Error runBuffered(AddOwnedOutputFn AddOutput);
+
   /// Static method that returns a list of libcall symbols that can be generated
   /// by LTO but might not be visible from bitcode symbol table.
   static ArrayRef<const char *> getRuntimeLibcallSymbols();
@@ -314,6 +333,11 @@ public:
 
   // Diagnostic optimization remarks file
   std::unique_ptr<ToolOutputFile> DiagnosticOutputFile;
+
+private:
+  Error runRegularLTOBuffered(AddOwnedOutputFn AddOutput);
+  Error runRegularLTOImpl(AddStreamFn *AddStream,
+                          AddOwnedOutputFn *AddOutput);
 };
 
 /// The resolution for a symbol. The linker must provide a SymbolResolution for

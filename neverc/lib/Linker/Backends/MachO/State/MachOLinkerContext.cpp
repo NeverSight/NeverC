@@ -1,3 +1,4 @@
+#include "Driver/Parallelism.h"
 #include "Linker/MachO/MachOLinkerContext.h"
 #include "Linker/MachO/Config.h"
 #include "Linker/MachO/MachOContextAccess.h"
@@ -31,6 +32,7 @@ struct MachOLinkerContext::Impl {
   llvm::DenseSet<StringRef> LoadedObjectFrameworks;
   llvm::DenseMap<llvm::CachedHashStringRef, DylibFile *> LoadedDylibs;
   std::unique_ptr<MachOLinkGraphAdapter> PluginLinkAdapter;
+  detail::IncrementalInputWorkload AdaptiveInputWorkload;
   int NextInputFileId = 0;
   uint32_t LCDylibCount = 0;
 };
@@ -118,6 +120,10 @@ uint32_t &machoLCDylibCount() {
 }
 std::unique_ptr<MachOLinkGraphAdapter> &machoPluginLinkAdapter() {
   return machoContext().state().PluginLinkAdapter;
+}
+
+detail::IncrementalInputWorkload &detail::incrementalInputWorkload() {
+  return machoContext().state().AdaptiveInputWorkload;
 }
 
 } // namespace linker::macho

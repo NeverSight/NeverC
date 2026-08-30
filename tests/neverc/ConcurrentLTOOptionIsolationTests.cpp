@@ -3,6 +3,7 @@
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Driver/LTOCache.h"
 #include "Linker/Core/Runtime/Session.h"
+#include "TransactionalOutputStream.h"
 #include "neverc/Plugin/Host/IRGenProvider.h"
 #include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
@@ -14,17 +15,30 @@
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalAlias.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/LTO/LTO.h"
+#include "llvm/LTO/LTOBackend.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/NevercPipelineTuning.h"
 #include "llvm/Support/TargetSelect.h"
@@ -335,6 +349,168 @@ SmallString<0> createLTOBitcode(TargetMachine &Machine) {
   return Bitcode;
 }
 
+class LowerTypeTestForBackendContractPass final : public ModulePass {
+public:
+  static char ID;
+
+  explicit LowerTypeTestForBackendContractPass(bool &Ran)
+      : ModulePass(ID), Ran(Ran) {}
+
+  bool runOnModule(Module &M) override {
+    SmallVector<Function *, 2> TypeTestDeclarations;
+    SmallVector<CallBase *, 4> TypeTests;
+    for (Function &F : M) {
+      if (F.getIntrinsicID() != Intrinsic::type_test)
+        continue;
+      TypeTestDeclarations.push_back(&F);
+      for (User *U : F.users())
+        if (auto *Call = dyn_cast<CallBase>(U))
+          TypeTests.push_back(Call);
+    }
+
+    Ran = true;
+    for (CallBase *Call : TypeTests) {
+      Call->replaceAllUsesWith(ConstantInt::getTrue(M.getContext()));
+      Call->eraseFromParent();
+    }
+    for (Function *F : TypeTestDeclarations)
+      if (F->use_empty())
+        F->eraseFromParent();
+    return !TypeTests.empty();
+  }
+
+private:
+  bool &Ran;
+};
+
+char LowerTypeTestForBackendContractPass::ID = 0;
+
+class LegacyPreCodeGenMarkerPass final : public ImmutablePass {
+public:
+  static char ID;
+
+  explicit LegacyPreCodeGenMarkerPass(uint64_t Marker = 0)
+      : ImmutablePass(ID), Marker(Marker) {}
+
+  uint64_t marker() const { return Marker; }
+
+private:
+  uint64_t Marker;
+};
+
+char LegacyPreCodeGenMarkerPass::ID = 0;
+static RegisterPass<LegacyPreCodeGenMarkerPass>
+    LegacyPreCodeGenMarkerRegistration(
+        "neverc-test-lto-pre-codegen-marker",
+        "NeverC test legacy pre-codegen analysis marker",
+        /*CFGOnly=*/false, /*is_analysis=*/true);
+
+struct LegacyPreCodeGenMarkerObservation {
+  bool Ran = false;
+  uint64_t Marker = 0;
+};
+
+class ObserveLegacyPreCodeGenMarkerPass final : public MachineFunctionPass {
+public:
+  static char ID;
+
+  explicit ObserveLegacyPreCodeGenMarkerPass(
+      LegacyPreCodeGenMarkerObservation &Observation)
+      : MachineFunctionPass(ID), Observation(Observation) {}
+
+private:
+  bool runOnMachineFunction(MachineFunction &) override {
+    Observation.Ran = true;
+    Observation.Marker = getAnalysis<LegacyPreCodeGenMarkerPass>().marker();
+    return false;
+  }
+
+  void getAnalysisUsage(AnalysisUsage &Usage) const override {
+    MachineFunctionPass::getAnalysisUsage(Usage);
+    Usage.addRequired<LegacyPreCodeGenMarkerPass>();
+    Usage.setPreservesAll();
+  }
+
+  LegacyPreCodeGenMarkerObservation &Observation;
+};
+
+char ObserveLegacyPreCodeGenMarkerPass::ID = 0;
+
+class ObserveLegacyPreCodeGenMarkerHooks final : public MachinePipelineHooks {
+public:
+  explicit ObserveLegacyPreCodeGenMarkerHooks(
+      LegacyPreCodeGenMarkerObservation &Observation)
+      : Observation(Observation) {}
+
+  void addPasses(TargetPassConfig &TPC,
+                 MachinePipelineHookPoint Point) override {
+    if (Point == MachinePipelineHookPoint::Final)
+      TPC.addExternalPass(new ObserveLegacyPreCodeGenMarkerPass(Observation));
+  }
+
+private:
+  LegacyPreCodeGenMarkerObservation &Observation;
+};
+
+class ReportCodeGenErrorPass final : public MachineFunctionPass {
+public:
+  static char ID;
+
+  ReportCodeGenErrorPass() : MachineFunctionPass(ID) {}
+
+private:
+  bool runOnMachineFunction(MachineFunction &MF) override {
+    if (!Reported) {
+      MF.getFunction().getContext().emitError(
+          "test machine-code generation failure");
+      Reported = true;
+    }
+    return false;
+  }
+
+  bool Reported = false;
+};
+
+char ReportCodeGenErrorPass::ID = 0;
+
+class ReportPostOptErrorPass final
+    : public PassInfoMixin<ReportPostOptErrorPass> {
+public:
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+    M.getContext().emitError("test deferred post-optimization failure");
+    return PreservedAnalyses::all();
+  }
+};
+
+class ReportCodeGenErrorHooks final : public MachinePipelineHooks {
+public:
+  void addPasses(TargetPassConfig &TPC,
+                 MachinePipelineHookPoint Point) override {
+    if (Point == MachinePipelineHookPoint::Final)
+      TPC.addExternalPass(new ReportCodeGenErrorPass());
+  }
+};
+
+SmallString<128> createSpoolTestDirectory() {
+  SmallString<128> Directory;
+  std::error_code EC =
+      sys::fs::createUniqueDirectory("neverc-lto-spool-test", Directory);
+  EXPECT_FALSE(EC) << EC.message();
+  return Directory;
+}
+
+bool isDirectoryEmpty(StringRef Directory) {
+  std::error_code EC;
+  sys::fs::directory_iterator Current(Directory, EC);
+  EXPECT_FALSE(EC) << EC.message();
+  return !EC && Current == sys::fs::directory_iterator();
+}
+
+void countErrorDiagnostic(const DiagnosticInfo &DI, void *Opaque) {
+  auto *Count = static_cast<unsigned *>(Opaque);
+  *Count += DI.getSeverity() == DS_Error;
+}
+
 SmallString<0> serializeLTOFixture(Module &M) {
   SmallString<0> Bitcode;
   raw_svector_ostream Stream(Bitcode);
@@ -522,11 +698,40 @@ public:
     return Engine->run(
         [this](unsigned Task,
                const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+          ++AddStreamCalls;
           if (Task >= Outputs.size())
             return createStringError(inconvertibleErrorCode(),
                                      "LTO task index is out of range");
           return std::make_unique<CachedFileStream>(
               std::make_unique<raw_svector_ostream>(Outputs[Task]));
+        });
+  }
+
+  Error runBuffered(bool FailPublisher = false) {
+    linker::CommonLinkerContext Context;
+    linker::LinkerContextGuard ContextGuard(Context);
+    Context.configureParallel(/*RequestedThreads=*/2,
+                              /*DefaultThreadLimit=*/2);
+    Context.e.initialize(outs(), errs(), /*exitEarly=*/false,
+                         /*disableOutput=*/false);
+    Context.e.errorLimit = 20;
+    Context.e.logName = "neverc-lto-buffered-output-test";
+
+    Outputs.resize(Engine->getMaxTasks());
+    return Engine->runBuffered(
+        [this, FailPublisher](unsigned Task, const Twine &,
+                              SmallVector<char, 0> &&Output) -> Error {
+          ++OwnedOutputCalls;
+          if (FailPublisher)
+            return createStringError(
+                std::make_error_code(std::errc::no_space_on_device),
+                "test buffered backend publisher failure");
+          if (Task >= Outputs.size())
+            return createStringError(inconvertibleErrorCode(),
+                                     "LTO task index is out of range");
+          static_cast<SmallVector<char, 0> &>(Outputs[Task]) =
+              std::move(Output);
+          return Error::success();
         });
   }
 
@@ -561,6 +766,22 @@ public:
     return Error::success();
   }
 
+  unsigned addStreamCalls() const { return AddStreamCalls; }
+  unsigned ownedOutputCalls() const { return OwnedOutputCalls; }
+
+  unsigned emittedArtifactCount() const {
+    unsigned Count = 0;
+    for (const SmallString<0> &Output : Outputs)
+      Count += !Output.empty();
+    return Count;
+  }
+
+  StringRef output(unsigned Task) const {
+    if (Task >= Outputs.size())
+      return {};
+    return Outputs[Task];
+  }
+
   bool machineHooksAliasHostContext() const {
     const auto &Hooks = Engine->Conf.MachinePassHooks;
     const auto &Host = Engine->Conf.HostContext;
@@ -574,6 +795,8 @@ private:
 
   std::unique_ptr<lto::LTO> Engine;
   std::vector<SmallString<0>> Outputs;
+  unsigned AddStreamCalls = 0;
+  unsigned OwnedOutputCalls = 0;
 };
 
 std::string errorText(Error E) {
@@ -656,24 +879,18 @@ Expected<DeferredSerialObservation> observeDeferredSerialOptimization(
                 Module &M, TargetMachine &TM, raw_pwrite_stream &OS,
                 unsigned Partitions) {
               Observation.ParallelCodeGenCalled = true;
+              // The ordinary parallel-codegen hook runs after deferred
+              // optimization. Observe that boundary here rather than by
+              // installing a PreCodeGenModuleHook: the latter has mandatory
+              // abort semantics and therefore deliberately selects the
+              // standard serial native boundary before either custom hook.
+              Observation.PreCodeGenObserved = true;
+              Observation.PreCodeGenBackedges = countFunctionBackedges(
+                  M, "neverc_serial_ipo_loop_probe");
               Observation.ParallelCodeGenAccepted =
                   Original && Original(M, TM, OS, Partitions);
               return Observation.ParallelCodeGenAccepted;
             };
-
-        auto OriginalPreCodeGen = std::move(Config.PreCodeGenModuleHook);
-        Config.PreCodeGenModuleHook = [&, OriginalPreCodeGen =
-                                              std::move(OriginalPreCodeGen)](
-                                          unsigned Task, const Module &M) {
-          if (OriginalPreCodeGen && !OriginalPreCodeGen(Task, M))
-            return false;
-          Observation.PreCodeGenObserved = true;
-          Observation.PreCodeGenBackedges =
-              countFunctionBackedges(M, "neverc_serial_ipo_loop_probe");
-          // The deferred pipeline has completed. Avoid native codegen;
-          // this test owns only the optimizer observation boundary.
-          return false;
-        };
       });
   if (!PreparedOrError)
     return PreparedOrError.takeError();
@@ -907,6 +1124,1042 @@ TEST(ParallelCodeGenABICompatibilityTest,
   EXPECT_TRUE(&linker::parseMllvmOptions != nullptr);
   EXPECT_TRUE(&callLegacyParallelCodeGenWithBracedPartitionCount != nullptr);
   EXPECT_TRUE(&callLegacyParallelOptAndCodeGenWithBracedArguments != nullptr);
+}
+
+TEST(LTOParallelHookContractTest,
+     ReportedParallelOptFailureDoesNotReplayCodeGenFallbacks) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+  SmallString<0> Bitcode = createLTOBitcode(*Machine);
+  MemoryBufferRef BitcodeRef(StringRef(Bitcode.data(), Bitcode.size()),
+                             "parallel-opt-handled-error.bc");
+
+  bool ParallelOptCalled = false;
+  bool ParallelCodeGenCalled = false;
+  unsigned ErrorDiagnostics = 0;
+  Expected<std::unique_ptr<PreparedLTO>> PreparedOrError = PreparedLTO::create(
+      createDriverConfig(/*Marker=*/17,
+                         /*ScevThreshold=*/64),
+      BitcodeRef, [&](lto::Config &Config) {
+        Config.DiagHandler = [&](const DiagnosticInfo &DI) {
+          ErrorDiagnostics += DI.getSeverity() == DS_Error;
+        };
+        Config.ParallelOptCodeGenHook = [&](Module &M, TargetMachine &,
+                                            raw_pwrite_stream &OS, unsigned,
+                                            unsigned) {
+          ParallelOptCalled = true;
+          OS << "rejected parallel output";
+          M.getContext().emitError("test parallel optimization failure");
+          return true;
+        };
+        Config.ParallelCodeGenHook = [&](Module &, TargetMachine &,
+                                         raw_pwrite_stream &, unsigned) {
+          ParallelCodeGenCalled = true;
+          return false;
+        };
+      });
+  ASSERT_TRUE(static_cast<bool>(PreparedOrError))
+      << errorText(PreparedOrError.takeError());
+
+  std::unique_ptr<PreparedLTO> Prepared = std::move(*PreparedOrError);
+  EXPECT_FALSE(static_cast<bool>(Prepared->run()));
+  EXPECT_TRUE(ParallelOptCalled);
+  EXPECT_EQ(ErrorDiagnostics, 1u);
+  EXPECT_FALSE(ParallelCodeGenCalled);
+  EXPECT_EQ(Prepared->addStreamCalls(), 0u);
+  EXPECT_EQ(Prepared->emittedArtifactCount(), 0u);
+}
+
+TEST(LTOParallelHookContractTest,
+     DeclinedHookBytesAreDiscardedBeforeSerialFallback) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+  SmallString<0> Bitcode = createLTOBitcode(*Machine);
+  MemoryBufferRef BitcodeRef(StringRef(Bitcode.data(), Bitcode.size()),
+                             "parallel-hook-decline-transaction.bc");
+
+  bool ParallelOptCalled = false;
+  bool ParallelCodeGenCalled = false;
+  Expected<std::unique_ptr<PreparedLTO>> PreparedOrError = PreparedLTO::create(
+      createDriverConfig(/*Marker=*/17,
+                         /*ScevThreshold=*/64),
+      BitcodeRef, [&](lto::Config &Config) {
+        Config.ParallelOptCodeGenHook = [&](Module &, TargetMachine &,
+                                            raw_pwrite_stream &OS, unsigned,
+                                            unsigned) {
+          ParallelOptCalled = true;
+          OS << "discarded parallel-opt bytes";
+          return false;
+        };
+        Config.ParallelCodeGenHook = [&](Module &, TargetMachine &,
+                                         raw_pwrite_stream &OS, unsigned) {
+          ParallelCodeGenCalled = true;
+          OS << "discarded parallel-codegen bytes";
+          return false;
+        };
+      });
+  ASSERT_TRUE(static_cast<bool>(PreparedOrError))
+      << errorText(PreparedOrError.takeError());
+
+  std::unique_ptr<PreparedLTO> Prepared = std::move(*PreparedOrError);
+  ASSERT_FALSE(static_cast<bool>(Prepared->run()));
+  EXPECT_TRUE(ParallelOptCalled);
+  EXPECT_TRUE(ParallelCodeGenCalled);
+  EXPECT_EQ(Prepared->addStreamCalls(), 1u);
+  EXPECT_EQ(Prepared->emittedArtifactCount(), 1u);
+  EXPECT_FALSE(static_cast<bool>(Prepared->validateObjects()));
+}
+
+TEST(LTOParallelHookContractTest, AcceptedHookPublishesItsExactBytesOnce) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+  SmallString<0> Bitcode = createLTOBitcode(*Machine);
+  MemoryBufferRef BitcodeRef(StringRef(Bitcode.data(), Bitcode.size()),
+                             "parallel-hook-success-transaction.bc");
+  static constexpr char ExpectedData[] = "\0neverc-parallel-object\xff";
+  const std::string ExpectedBytes(ExpectedData, sizeof(ExpectedData) - 1);
+
+  bool ParallelCodeGenCalled = false;
+  Expected<std::unique_ptr<PreparedLTO>> PreparedOrError = PreparedLTO::create(
+      createDriverConfig(/*Marker=*/17,
+                         /*ScevThreshold=*/64),
+      BitcodeRef, [&](lto::Config &Config) {
+        Config.ParallelOptCodeGenHook = [&](Module &, TargetMachine &,
+                                            raw_pwrite_stream &OS, unsigned,
+                                            unsigned) {
+          OS.write(ExpectedBytes.data(), ExpectedBytes.size());
+          return true;
+        };
+        Config.ParallelCodeGenHook = [&](Module &, TargetMachine &,
+                                         raw_pwrite_stream &, unsigned) {
+          ParallelCodeGenCalled = true;
+          return false;
+        };
+      });
+  ASSERT_TRUE(static_cast<bool>(PreparedOrError))
+      << errorText(PreparedOrError.takeError());
+
+  std::unique_ptr<PreparedLTO> Prepared = std::move(*PreparedOrError);
+  ASSERT_FALSE(static_cast<bool>(Prepared->run()));
+  EXPECT_FALSE(ParallelCodeGenCalled);
+  EXPECT_EQ(Prepared->addStreamCalls(), 1u);
+  EXPECT_EQ(Prepared->emittedArtifactCount(), 1u);
+  EXPECT_EQ(Prepared->output(0), StringRef(ExpectedBytes));
+}
+
+TEST(LTOBufferedOutputTest, NativeBackendTransfersAValidObject) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+  SmallString<0> Bitcode = createLTOBitcode(*Machine);
+  MemoryBufferRef BitcodeRef(StringRef(Bitcode.data(), Bitcode.size()),
+                             "buffered-native-backend.bc");
+
+  Expected<std::unique_ptr<PreparedLTO>> PreparedOrError =
+      PreparedLTO::create(createDriverConfig(/*Marker=*/17,
+                                             /*ScevThreshold=*/64),
+                          BitcodeRef);
+  ASSERT_TRUE(static_cast<bool>(PreparedOrError))
+      << errorText(PreparedOrError.takeError());
+  std::unique_ptr<PreparedLTO> Prepared = std::move(*PreparedOrError);
+
+  ASSERT_FALSE(static_cast<bool>(Prepared->runBuffered()));
+  EXPECT_EQ(Prepared->ownedOutputCalls(), 1u);
+  EXPECT_EQ(Prepared->addStreamCalls(), 0u);
+  EXPECT_EQ(Prepared->emittedArtifactCount(), 1u);
+  EXPECT_FALSE(static_cast<bool>(Prepared->validateObjects()));
+}
+
+TEST(LTOBufferedOutputTest,
+     DeclinedParallelHooksFallBackToOneOwnedNativeObject) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+  SmallString<0> Bitcode = createLTOBitcode(*Machine);
+  MemoryBufferRef BitcodeRef(StringRef(Bitcode.data(), Bitcode.size()),
+                             "buffered-parallel-hook-decline.bc");
+
+  bool ParallelOptCalled = false;
+  bool ParallelCodeGenCalled = false;
+  unsigned BackendDoneCalls = 0;
+  Expected<std::unique_ptr<PreparedLTO>> PreparedOrError = PreparedLTO::create(
+      createDriverConfig(/*Marker=*/17, /*ScevThreshold=*/64), BitcodeRef,
+      [&](lto::Config &Config) {
+        Config.ParallelOptCodeGenHook =
+            [&](Module &, TargetMachine &, raw_pwrite_stream &OS, unsigned,
+                unsigned) {
+              ParallelOptCalled = true;
+              OS << "discarded buffered parallel-opt bytes";
+              return false;
+            };
+        Config.ParallelCodeGenHook =
+            [&](Module &, TargetMachine &, raw_pwrite_stream &OS, unsigned) {
+              ParallelCodeGenCalled = true;
+              OS << "discarded buffered parallel-codegen bytes";
+              return false;
+            };
+        Config.BackendDoneHook = [&] { ++BackendDoneCalls; };
+      });
+  ASSERT_TRUE(static_cast<bool>(PreparedOrError))
+      << errorText(PreparedOrError.takeError());
+  std::unique_ptr<PreparedLTO> Prepared = std::move(*PreparedOrError);
+
+  ASSERT_FALSE(static_cast<bool>(Prepared->runBuffered()));
+  EXPECT_TRUE(ParallelOptCalled);
+  EXPECT_TRUE(ParallelCodeGenCalled);
+  EXPECT_EQ(BackendDoneCalls, 1u);
+  EXPECT_EQ(Prepared->ownedOutputCalls(), 1u);
+  EXPECT_EQ(Prepared->addStreamCalls(), 0u);
+  EXPECT_EQ(Prepared->emittedArtifactCount(), 1u);
+  EXPECT_FALSE(static_cast<bool>(Prepared->validateObjects()));
+}
+
+TEST(LTOBufferedOutputTest,
+     ReportedParallelErrorPublishesNothingAndFinishesBackendOnce) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+  SmallString<0> Bitcode = createLTOBitcode(*Machine);
+  MemoryBufferRef BitcodeRef(StringRef(Bitcode.data(), Bitcode.size()),
+                             "buffered-parallel-reported-error.bc");
+
+  unsigned ErrorDiagnostics = 0;
+  unsigned BackendDoneCalls = 0;
+  bool ParallelCodeGenCalled = false;
+  Expected<std::unique_ptr<PreparedLTO>> PreparedOrError = PreparedLTO::create(
+      createDriverConfig(/*Marker=*/17, /*ScevThreshold=*/64), BitcodeRef,
+      [&](lto::Config &Config) {
+        Config.DiagHandler = [&](const DiagnosticInfo &DI) {
+          ErrorDiagnostics += DI.getSeverity() == DS_Error;
+        };
+        Config.ParallelOptCodeGenHook =
+            [&](Module &M, TargetMachine &, raw_pwrite_stream &OS, unsigned,
+                unsigned) {
+              OS << "rejected buffered parallel output";
+              M.getContext().emitError(
+                  "test buffered parallel optimization failure");
+              return true;
+            };
+        Config.ParallelCodeGenHook =
+            [&](Module &, TargetMachine &, raw_pwrite_stream &, unsigned) {
+              ParallelCodeGenCalled = true;
+              return false;
+            };
+        Config.BackendDoneHook = [&] { ++BackendDoneCalls; };
+      });
+  ASSERT_TRUE(static_cast<bool>(PreparedOrError))
+      << errorText(PreparedOrError.takeError());
+  std::unique_ptr<PreparedLTO> Prepared = std::move(*PreparedOrError);
+
+  EXPECT_FALSE(static_cast<bool>(Prepared->runBuffered()));
+  EXPECT_EQ(ErrorDiagnostics, 1u);
+  EXPECT_FALSE(ParallelCodeGenCalled);
+  EXPECT_EQ(BackendDoneCalls, 1u);
+  EXPECT_EQ(Prepared->ownedOutputCalls(), 0u);
+  EXPECT_EQ(Prepared->addStreamCalls(), 0u);
+  EXPECT_EQ(Prepared->emittedArtifactCount(), 0u);
+}
+
+TEST(LTOBufferedOutputTest, PublisherFailurePropagatesWithoutAnArtifact) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+  SmallString<0> Bitcode = createLTOBitcode(*Machine);
+  MemoryBufferRef BitcodeRef(StringRef(Bitcode.data(), Bitcode.size()),
+                             "buffered-publisher-failure.bc");
+
+  Expected<std::unique_ptr<PreparedLTO>> PreparedOrError =
+      PreparedLTO::create(createDriverConfig(/*Marker=*/17,
+                                             /*ScevThreshold=*/64),
+                          BitcodeRef);
+  ASSERT_TRUE(static_cast<bool>(PreparedOrError))
+      << errorText(PreparedOrError.takeError());
+  std::unique_ptr<PreparedLTO> Prepared = std::move(*PreparedOrError);
+
+  const std::string Message = errorText(Prepared->runBuffered(
+      /*FailPublisher=*/true));
+  EXPECT_NE(Message.find("test buffered backend publisher failure"),
+            std::string::npos)
+      << Message;
+  EXPECT_EQ(Prepared->ownedOutputCalls(), 1u);
+  EXPECT_EQ(Prepared->addStreamCalls(), 0u);
+  EXPECT_EQ(Prepared->emittedArtifactCount(), 0u);
+}
+
+TEST(LTOBufferedOutputTest, PublisherFailureFinalizesRemarksBeforeReturn) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+  SmallString<0> Bitcode = createLTOBitcode(*Machine);
+  MemoryBufferRef BitcodeRef(StringRef(Bitcode.data(), Bitcode.size()),
+                             "buffered-publisher-remarks.bc");
+
+  SmallString<128> RemarksPath;
+  ASSERT_FALSE(sys::fs::createTemporaryFile(
+      "neverc-buffered-publisher", "yaml", RemarksPath));
+  auto Cleanup = make_scope_exit(
+      [&] { EXPECT_FALSE(sys::fs::remove(RemarksPath)); });
+
+  unsigned BackendDoneCalls = 0;
+  Expected<std::unique_ptr<PreparedLTO>> PreparedOrError =
+      PreparedLTO::create(
+          createDriverConfig(/*Marker=*/17, /*ScevThreshold=*/64), BitcodeRef,
+          [&](lto::Config &Config) {
+            Config.RemarksFilename = RemarksPath.str().str();
+            Config.RemarksPasses = "neverc-buffered-output-test";
+            Config.RemarksFormat = "yaml";
+            Config.PreCodeGenModuleHook =
+                [](unsigned, const Module &M) {
+                  const Function *F =
+                      M.getFunction("concurrent_lto_function_0");
+                  if (!F)
+                    return false;
+                  OptimizationRemark Remark("neverc-buffered-output-test",
+                                            "PublisherFailure", F);
+                  Remark << "buffered remarks finalized before return";
+                  M.getContext().diagnose(Remark);
+                  return true;
+                };
+            Config.BackendDoneHook = [&] { ++BackendDoneCalls; };
+          });
+  ASSERT_TRUE(static_cast<bool>(PreparedOrError))
+      << errorText(PreparedOrError.takeError());
+  std::unique_ptr<PreparedLTO> Prepared = std::move(*PreparedOrError);
+
+  const std::string Message = errorText(Prepared->runBuffered(
+      /*FailPublisher=*/true));
+  EXPECT_NE(Message.find("test buffered backend publisher failure"),
+            std::string::npos)
+      << Message;
+  EXPECT_EQ(BackendDoneCalls, 1u);
+
+  ErrorOr<std::unique_ptr<MemoryBuffer>> Remarks =
+      MemoryBuffer::getFile(RemarksPath);
+  ASSERT_TRUE(static_cast<bool>(Remarks)) << Remarks.getError().message();
+  EXPECT_NE((*Remarks)->getBuffer().find(
+                "buffered remarks finalized before return"),
+            StringRef::npos)
+      << (*Remarks)->getBuffer().str();
+}
+
+TEST(LTOTransactionalSpoolTest,
+     AcceptedSpilledHookPublishesPatchedBytesAndCleansTemporaryFile) {
+  SmallString<128> Directory = createSpoolTestDirectory();
+  ASSERT_FALSE(Directory.empty());
+  auto Cleanup = make_scope_exit([&] {
+    EXPECT_FALSE(sys::fs::remove_directories(Directory))
+        << Directory.str().str();
+  });
+
+  LLVMContext Context;
+  Module M("accepted-spilled-hook", Context);
+  unsigned AddStreamCalls = 0;
+  SmallString<0> Published;
+  AddStreamFn AddStream =
+      [&](unsigned Task,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+    EXPECT_EQ(Task, 0u);
+    ++AddStreamCalls;
+    return std::make_unique<CachedFileStream>(
+        std::make_unique<raw_svector_ostream>(Published));
+  };
+
+  Expected<llvm::lto::detail::TransactionalHookResult> Result =
+      llvm::lto::detail::runTransactionalOutputHook(
+          AddStream, 0, M,
+          [&](auto &OS) {
+            OS.SetBufferSize(64);
+            OS << "abcdefghijkl";
+            OS.pwrite("HEAD", 4, 0);
+            EXPECT_TRUE(OS.spilled());
+            EXPECT_EQ(OS.memoryCapacityForTesting(), 0u);
+            return true;
+          },
+          /*MemoryLimit=*/8, Directory);
+  ASSERT_TRUE(static_cast<bool>(Result)) << errorText(Result.takeError());
+  EXPECT_EQ(*Result, llvm::lto::detail::TransactionalHookResult::Accepted);
+  EXPECT_EQ(AddStreamCalls, 1u);
+  EXPECT_EQ(StringRef(Published), "HEADefghijkl");
+  EXPECT_TRUE(isDirectoryEmpty(Directory));
+}
+
+TEST(LTOTransactionalSpoolTest,
+     LargeLegacyStreamSpillsAndPublishesExactBytes) {
+  SmallString<128> Directory = createSpoolTestDirectory();
+  ASSERT_FALSE(Directory.empty());
+  auto Cleanup = make_scope_exit([&] {
+    EXPECT_FALSE(sys::fs::remove_directories(Directory))
+        << Directory.str().str();
+  });
+
+  LLVMContext Context;
+  Module M("large-legacy-spill", Context);
+  unsigned AddStreamCalls = 0;
+  SmallString<0> Published;
+  AddStreamFn AddStream =
+      [&](unsigned Task,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+    EXPECT_EQ(Task, 0u);
+    ++AddStreamCalls;
+    return std::make_unique<CachedFileStream>(
+        std::make_unique<raw_svector_ostream>(Published));
+  };
+
+  constexpr size_t ChunkSize = 1024 * 1024;
+  std::string Chunk(ChunkSize, 'x');
+  Expected<llvm::lto::detail::TransactionalHookResult> Result =
+      llvm::lto::detail::runTransactionalOutputHook(
+          AddStream, 0, M,
+          [&](auto &OS) {
+            for (unsigned I = 0; I != 65; ++I)
+              OS.write(Chunk.data(), Chunk.size());
+            OS.pwrite("HEAD", 4, 0);
+            EXPECT_TRUE(OS.spilled());
+            return true;
+          },
+          llvm::lto::detail::DefaultTransactionalOutputMemoryLimit, Directory);
+  ASSERT_TRUE(static_cast<bool>(Result)) << errorText(Result.takeError());
+  EXPECT_EQ(*Result, llvm::lto::detail::TransactionalHookResult::Accepted);
+  EXPECT_EQ(AddStreamCalls, 1u);
+  ASSERT_EQ(Published.size(), 65 * ChunkSize);
+  EXPECT_EQ(StringRef(Published.data(), 4), "HEAD");
+  EXPECT_EQ(Published.back(), 'x');
+  EXPECT_TRUE(isDirectoryEmpty(Directory));
+}
+
+TEST(LTOTransactionalSpoolTest,
+     DeclinedSpilledHookPublishesNothingAndCleansTemporaryFile) {
+  SmallString<128> Directory = createSpoolTestDirectory();
+  ASSERT_FALSE(Directory.empty());
+  auto Cleanup = make_scope_exit([&] {
+    EXPECT_FALSE(sys::fs::remove_directories(Directory))
+        << Directory.str().str();
+  });
+
+  LLVMContext Context;
+  Module M("declined-spilled-hook", Context);
+  unsigned AddStreamCalls = 0;
+  AddStreamFn AddStream =
+      [&](unsigned,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+    ++AddStreamCalls;
+    return createStringError(inconvertibleErrorCode(),
+                             "declined hook unexpectedly published output");
+  };
+
+  Expected<llvm::lto::detail::TransactionalHookResult> Result =
+      llvm::lto::detail::runTransactionalOutputHook(
+          AddStream, 0, M,
+          [&](auto &OS) {
+            OS << "discard this spilled output";
+            EXPECT_TRUE(OS.spilled());
+            return false;
+          },
+          /*MemoryLimit=*/8, Directory);
+  ASSERT_TRUE(static_cast<bool>(Result)) << errorText(Result.takeError());
+  EXPECT_EQ(*Result, llvm::lto::detail::TransactionalHookResult::Declined);
+  EXPECT_EQ(AddStreamCalls, 0u);
+  EXPECT_TRUE(isDirectoryEmpty(Directory));
+}
+
+TEST(LTOTransactionalSpoolTest,
+     ReportedErrorSpilledHookPublishesNothingAndCleansTemporaryFile) {
+  SmallString<128> Directory = createSpoolTestDirectory();
+  ASSERT_FALSE(Directory.empty());
+  auto Cleanup = make_scope_exit([&] {
+    EXPECT_FALSE(sys::fs::remove_directories(Directory))
+        << Directory.str().str();
+  });
+
+  LLVMContext Context;
+  unsigned ErrorDiagnostics = 0;
+  Context.setDiagnosticHandlerCallBack(countErrorDiagnostic, &ErrorDiagnostics);
+  Module M("reported-error-spilled-hook", Context);
+  unsigned AddStreamCalls = 0;
+  AddStreamFn AddStream =
+      [&](unsigned,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+    ++AddStreamCalls;
+    return createStringError(inconvertibleErrorCode(),
+                             "failed hook unexpectedly published output");
+  };
+
+  Expected<llvm::lto::detail::TransactionalHookResult> Result =
+      llvm::lto::detail::runTransactionalOutputHook(
+          AddStream, 0, M,
+          [&](auto &OS) {
+            OS << "reject this spilled output";
+            EXPECT_TRUE(OS.spilled());
+            M.getContext().emitError("test spilled hook failure");
+            return true;
+          },
+          /*MemoryLimit=*/8, Directory);
+  ASSERT_TRUE(static_cast<bool>(Result)) << errorText(Result.takeError());
+  EXPECT_EQ(*Result, llvm::lto::detail::TransactionalHookResult::ReportedError);
+  EXPECT_EQ(ErrorDiagnostics, 1u);
+  EXPECT_EQ(AddStreamCalls, 0u);
+  EXPECT_TRUE(isDirectoryEmpty(Directory));
+}
+
+TEST(LTOTransactionalSpoolTest,
+     AddStreamFailurePropagatesAfterSpilledInputIsCleaned) {
+  SmallString<128> Directory = createSpoolTestDirectory();
+  ASSERT_FALSE(Directory.empty());
+  auto Cleanup = make_scope_exit([&] {
+    EXPECT_FALSE(sys::fs::remove_directories(Directory))
+        << Directory.str().str();
+  });
+
+  LLVMContext Context;
+  Module M("add-stream-error-spilled-hook", Context);
+  unsigned AddStreamCalls = 0;
+  AddStreamFn AddStream =
+      [&](unsigned,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+    ++AddStreamCalls;
+    return createStringError(inconvertibleErrorCode(),
+                             "test AddStream failure");
+  };
+
+  Expected<llvm::lto::detail::TransactionalHookResult> Result =
+      llvm::lto::detail::runTransactionalOutputHook(
+          AddStream, 0, M,
+          [&](auto &OS) {
+            OS << "accepted but unpublishable output";
+            EXPECT_TRUE(OS.spilled());
+            return true;
+          },
+          /*MemoryLimit=*/8, Directory);
+  ASSERT_FALSE(static_cast<bool>(Result));
+  EXPECT_NE(errorText(Result.takeError()).find("test AddStream failure"),
+            std::string::npos);
+  EXPECT_EQ(AddStreamCalls, 1u);
+  EXPECT_TRUE(isDirectoryEmpty(Directory));
+}
+
+TEST(LTOTransactionalOwnedOutputTest,
+     LargeAcceptedHookMovesPatchedBytesWithoutSpilling) {
+  LLVMContext Context;
+  Module M("owned-large-hook", Context);
+  unsigned PublishCalls = 0;
+  SmallString<0> Published;
+  lto::AddOwnedOutputFn Publish =
+      [&](unsigned Task, const Twine &,
+          SmallVector<char, 0> &&Bytes) -> Error {
+    EXPECT_EQ(Task, 0u);
+    ++PublishCalls;
+    const char *OriginalStorage = Bytes.data();
+    static_cast<SmallVector<char, 0> &>(Published) = std::move(Bytes);
+    EXPECT_EQ(Published.data(), OriginalStorage);
+    return Error::success();
+  };
+
+  constexpr size_t ChunkSize = 1024 * 1024;
+  std::string Chunk(ChunkSize, 'x');
+  const char *StagingStorage = nullptr;
+  Expected<llvm::lto::detail::TransactionalHookResult> Result =
+      llvm::lto::detail::runTransactionalOwnedOutputHook(
+          Publish, 0, M, [&](auto &OS) {
+            for (unsigned I = 0; I != 65; ++I)
+              OS.write(Chunk.data(), Chunk.size());
+            OS.pwrite("HEAD", 4, 0);
+            EXPECT_FALSE(OS.spilled());
+            StagingStorage = OS.memoryDataForTesting();
+            return true;
+          });
+  ASSERT_TRUE(static_cast<bool>(Result)) << errorText(Result.takeError());
+  EXPECT_EQ(*Result, llvm::lto::detail::TransactionalHookResult::Accepted);
+  EXPECT_EQ(PublishCalls, 1u);
+  EXPECT_EQ(Published.data(), StagingStorage);
+  ASSERT_EQ(Published.size(), 65 * ChunkSize);
+  EXPECT_EQ(StringRef(Published.data(), 4), "HEAD");
+  EXPECT_EQ(Published.back(), 'x');
+}
+
+TEST(LTOTransactionalOwnedOutputTest,
+     DiscardReleasesLargeRemoteStorageWithoutSwapCopy) {
+  llvm::lto::detail::TransactionalOutputStream Output(
+      llvm::lto::detail::OwnedTransactionalOutputMemoryLimit);
+  constexpr size_t ChunkSize = 1024 * 1024;
+  std::string Chunk(ChunkSize, 'x');
+  for (unsigned I = 0; I != 65; ++I)
+    Output.write(Chunk.data(), Chunk.size());
+  ASSERT_GE(Output.memoryCapacityForTesting(), 65 * ChunkSize);
+
+  EXPECT_FALSE(static_cast<bool>(Output.discard()));
+  EXPECT_EQ(Output.memoryCapacityForTesting(), 0u);
+}
+
+TEST(LTOTransactionalOwnedOutputTest,
+     SizeLimitFailsWithoutCreatingATemporarySpool) {
+  SmallString<128> Directory = createSpoolTestDirectory();
+  ASSERT_FALSE(Directory.empty());
+  auto Cleanup = make_scope_exit([&] {
+    EXPECT_FALSE(sys::fs::remove_directories(Directory))
+        << Directory.str().str();
+  });
+
+  llvm::lto::detail::TransactionalOutputStream Output(
+      /*MemoryLimit=*/8, Directory, /*AllowSpill=*/false);
+  Output << "abcdefghijkl";
+  EXPECT_TRUE(Output.failed());
+  EXPECT_FALSE(Output.spilled());
+  Error Failure = Output.discard();
+  ASSERT_TRUE(static_cast<bool>(Failure));
+  const std::string Message = errorText(std::move(Failure));
+  EXPECT_NE(Message.find("transactional LTO output spool failed"),
+            std::string::npos)
+      << Message;
+  EXPECT_TRUE(isDirectoryEmpty(Directory));
+}
+
+TEST(LTOTransactionalOwnedOutputTest,
+     DeclinedAndReportedHooksNeverInvokePublisher) {
+  LLVMContext DeclinedContext;
+  Module DeclinedModule("owned-declined-hook", DeclinedContext);
+  unsigned PublishCalls = 0;
+  lto::AddOwnedOutputFn Publish =
+      [&](unsigned, const Twine &, SmallVector<char, 0> &&) -> Error {
+    ++PublishCalls;
+    return Error::success();
+  };
+
+  Expected<llvm::lto::detail::TransactionalHookResult> Declined =
+      llvm::lto::detail::runTransactionalOwnedOutputHook(
+          Publish, 0, DeclinedModule, [&](auto &OS) {
+            OS << "declined owned bytes";
+            return false;
+          });
+  ASSERT_TRUE(static_cast<bool>(Declined)) << errorText(Declined.takeError());
+  EXPECT_EQ(*Declined, llvm::lto::detail::TransactionalHookResult::Declined);
+
+  LLVMContext ReportedContext;
+  unsigned ErrorDiagnostics = 0;
+  ReportedContext.setDiagnosticHandlerCallBack(countErrorDiagnostic,
+                                                &ErrorDiagnostics);
+  Module ReportedModule("owned-reported-hook", ReportedContext);
+  Expected<llvm::lto::detail::TransactionalHookResult> Reported =
+      llvm::lto::detail::runTransactionalOwnedOutputHook(
+          Publish, 0, ReportedModule, [&](auto &OS) {
+            OS << "reported owned bytes";
+            ReportedContext.emitError("test owned hook failure");
+            return true;
+          });
+  ASSERT_TRUE(static_cast<bool>(Reported)) << errorText(Reported.takeError());
+  EXPECT_EQ(*Reported,
+            llvm::lto::detail::TransactionalHookResult::ReportedError);
+  EXPECT_EQ(ErrorDiagnostics, 1u);
+  EXPECT_EQ(PublishCalls, 0u);
+}
+
+TEST(LTOTransactionalOwnedOutputTest,
+     PublisherErrorPropagatesWithoutCreatingAStream) {
+  LLVMContext Context;
+  Module M("owned-publisher-error", Context);
+  unsigned PublishCalls = 0;
+  lto::AddOwnedOutputFn Publish =
+      [&](unsigned, const Twine &, SmallVector<char, 0> &&) -> Error {
+    ++PublishCalls;
+    return createStringError(
+        std::make_error_code(std::errc::no_space_on_device),
+        "test owned publisher failure");
+  };
+
+  Expected<llvm::lto::detail::TransactionalHookResult> Result =
+      llvm::lto::detail::runTransactionalOwnedOutputHook(
+          Publish, 0, M, [&](auto &OS) {
+            OS << "accepted owned bytes";
+            return true;
+          });
+  ASSERT_FALSE(static_cast<bool>(Result));
+  EXPECT_NE(errorText(Result.takeError()).find("test owned publisher failure"),
+            std::string::npos);
+  EXPECT_EQ(PublishCalls, 1u);
+}
+
+TEST(LTOBackendSafetyBoundaryTest,
+     PreCodeGenPassMayLowerTypeTestBeforeFinalNativeGuard) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+
+  LLVMContext Context;
+  Module M("pre-codegen-type-test-lowering", Context);
+  M.setTargetTriple(Machine->getTargetTriple().str());
+  M.setDataLayout(Machine->createDataLayout());
+  Type *Pointer = PointerType::getUnqual(Context);
+  Function *Probe = Function::Create(
+      FunctionType::get(Type::getInt1Ty(Context), {Pointer}, false),
+      GlobalValue::ExternalLinkage, "pre_codegen_type_test_probe", M);
+  IRBuilder<> Builder(BasicBlock::Create(Context, "entry", Probe));
+  Function *TypeTest = Intrinsic::getDeclaration(&M, Intrinsic::type_test);
+  Value *TypeID = MetadataAsValue::get(
+      Context, MDString::get(Context, "pre-codegen-contract-type"));
+  Builder.CreateRet(Builder.CreateCall(TypeTest, {Probe->getArg(0), TypeID}));
+
+  bool LoweringRan = false;
+  lto::Config Config;
+  Config.CodeGenOnly = true;
+  Config.PreCodeGenPassesHook = [&](legacy::PassManager &Passes) {
+    Passes.add(new LowerTypeTestForBackendContractPass(LoweringRan));
+  };
+  unsigned AddStreamCalls = 0;
+  SmallString<0> Output;
+  ModuleSummaryIndex CombinedIndex(/*HaveGVs=*/false);
+  Error BackendError = lto::backend(
+      Config,
+      [&](unsigned Task,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+        EXPECT_EQ(Task, 0u);
+        ++AddStreamCalls;
+        return std::make_unique<CachedFileStream>(
+            std::make_unique<raw_svector_ostream>(Output));
+      },
+      /*ParallelCodeGenParallelismLevel=*/1, M, CombinedIndex,
+      /*SkipOptimization=*/true);
+  ASSERT_FALSE(static_cast<bool>(BackendError))
+      << errorText(std::move(BackendError));
+
+  EXPECT_TRUE(LoweringRan);
+  EXPECT_EQ(AddStreamCalls, 1u);
+  auto Object = object::ObjectFile::createObjectFile(MemoryBufferRef(
+      StringRef(Output.data(), Output.size()), "pre-codegen-lowered.o"));
+  ASSERT_TRUE(static_cast<bool>(Object)) << errorText(Object.takeError());
+  EXPECT_TRUE((*Object)->isRelocatableObject());
+}
+
+TEST(LTOBackendSafetyBoundaryTest,
+     PreCodeGenPassesShareLegacyAnalysisWithNativeEmission) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+
+  LLVMContext Context;
+  Module M("pre-codegen-legacy-analysis-sharing", Context);
+  M.setTargetTriple(Machine->getTargetTriple().str());
+  M.setDataLayout(Machine->createDataLayout());
+  Function *Probe = Function::Create(
+      FunctionType::get(Type::getVoidTy(Context), false),
+      GlobalValue::ExternalLinkage, "pre_codegen_analysis_probe", M);
+  IRBuilder<>(BasicBlock::Create(Context, "entry", Probe)).CreateRetVoid();
+
+  constexpr uint64_t ExpectedMarker = 0x4e65766572434c54ULL;
+  LegacyPreCodeGenMarkerObservation Observation;
+  lto::Config Config;
+  Config.CodeGenOnly = true;
+  Config.PreCodeGenPassesHook = [&](legacy::PassManager &Passes) {
+    Passes.add(new LegacyPreCodeGenMarkerPass(ExpectedMarker));
+  };
+  Config.MachinePassHooks =
+      std::make_shared<ObserveLegacyPreCodeGenMarkerHooks>(Observation);
+  unsigned AddStreamCalls = 0;
+  SmallString<0> Output;
+  ModuleSummaryIndex CombinedIndex(/*HaveGVs=*/false);
+  Error BackendError = lto::backend(
+      Config,
+      [&](unsigned Task,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+        EXPECT_EQ(Task, 0u);
+        ++AddStreamCalls;
+        return std::make_unique<CachedFileStream>(
+            std::make_unique<raw_svector_ostream>(Output));
+      },
+      /*ParallelCodeGenParallelismLevel=*/1, M, CombinedIndex,
+      /*SkipOptimization=*/true);
+  ASSERT_FALSE(static_cast<bool>(BackendError))
+      << errorText(std::move(BackendError));
+
+  EXPECT_TRUE(Observation.Ran);
+  EXPECT_EQ(Observation.Marker, ExpectedMarker);
+  EXPECT_EQ(AddStreamCalls, 1u);
+  auto Object = object::ObjectFile::createObjectFile(MemoryBufferRef(
+      StringRef(Output.data(), Output.size()), "pre-codegen-analysis.o"));
+  ASSERT_TRUE(static_cast<bool>(Object)) << errorText(Object.takeError());
+  EXPECT_TRUE((*Object)->isRelocatableObject());
+}
+
+TEST(LTOBackendSafetyBoundaryTest,
+     ParallelRequestPreservesPreCodeGenTypeTestLowering) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+
+  LLVMContext Context;
+  Module M("parallel-pre-codegen-type-test-lowering", Context);
+  M.setTargetTriple(Machine->getTargetTriple().str());
+  M.setDataLayout(Machine->createDataLayout());
+  Type *Pointer = PointerType::getUnqual(Context);
+  Function *Probe = Function::Create(
+      FunctionType::get(Type::getInt1Ty(Context), {Pointer}, false),
+      GlobalValue::ExternalLinkage, "parallel_pre_codegen_type_test_probe", M);
+  IRBuilder<> Builder(BasicBlock::Create(Context, "entry", Probe));
+  Function *TypeTest = Intrinsic::getDeclaration(&M, Intrinsic::type_test);
+  Value *TypeID = MetadataAsValue::get(
+      Context, MDString::get(Context, "parallel-pre-codegen-contract-type"));
+  Builder.CreateRet(Builder.CreateCall(TypeTest, {Probe->getArg(0), TypeID}));
+
+  bool LoweringRan = false;
+  bool ParallelHookCalled = false;
+  lto::Config Config;
+  Config.CodeGenOnly = true;
+  Config.PreCodeGenPassesHook = [&](legacy::PassManager &Passes) {
+    Passes.add(new LowerTypeTestForBackendContractPass(LoweringRan));
+  };
+  Config.ParallelCodeGenHook = [&](Module &, TargetMachine &,
+                                   raw_pwrite_stream &, unsigned) {
+    ParallelHookCalled = true;
+    return false;
+  };
+  unsigned AddStreamCalls = 0;
+  SmallString<0> Output;
+  ModuleSummaryIndex CombinedIndex(/*HaveGVs=*/false);
+  Error BackendError = lto::backend(
+      Config,
+      [&](unsigned Task,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+        EXPECT_EQ(Task, 0u);
+        ++AddStreamCalls;
+        return std::make_unique<CachedFileStream>(
+            std::make_unique<raw_svector_ostream>(Output));
+      },
+      /*ParallelCodeGenParallelismLevel=*/2, M, CombinedIndex,
+      /*SkipOptimization=*/true);
+  ASSERT_FALSE(static_cast<bool>(BackendError))
+      << errorText(std::move(BackendError));
+
+  EXPECT_TRUE(LoweringRan);
+  // A legacy pre-codegen pass manager cannot transfer its analyses into a
+  // custom parallel hook, so preserving that API contract may select the
+  // serial native boundary instead.
+  EXPECT_FALSE(ParallelHookCalled);
+  EXPECT_EQ(AddStreamCalls, 1u);
+  auto Object = object::ObjectFile::createObjectFile(
+      MemoryBufferRef(StringRef(Output.data(), Output.size()),
+                      "parallel-pre-codegen-lowered.o"));
+  ASSERT_TRUE(static_cast<bool>(Object)) << errorText(Object.takeError());
+  EXPECT_TRUE((*Object)->isRelocatableObject());
+}
+
+TEST(LTOBackendSafetyBoundaryTest,
+     ParallelRequestPreservesPreCodeGenModuleAbort) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+
+  LLVMContext Context;
+  Module M("parallel-pre-codegen-module-abort", Context);
+  M.setTargetTriple(Machine->getTargetTriple().str());
+  M.setDataLayout(Machine->createDataLayout());
+  Function *Probe = Function::Create(
+      FunctionType::get(Type::getVoidTy(Context), false),
+      GlobalValue::ExternalLinkage, "parallel_pre_codegen_module_abort", M);
+  IRBuilder<>(BasicBlock::Create(Context, "entry", Probe)).CreateRetVoid();
+
+  bool PreCodeGenModuleCalled = false;
+  bool ParallelHookCalled = false;
+  lto::Config Config;
+  Config.CodeGenOnly = true;
+  Config.PreCodeGenModuleHook = [&](unsigned Task, const Module &HookModule) {
+    EXPECT_EQ(Task, 0u);
+    EXPECT_EQ(&HookModule, &M);
+    PreCodeGenModuleCalled = true;
+    return false;
+  };
+  Config.ParallelCodeGenHook = [&](Module &, TargetMachine &,
+                                   raw_pwrite_stream &OS, unsigned) {
+    ParallelHookCalled = true;
+    OS << "must not publish parallel bytes";
+    return true;
+  };
+  unsigned AddStreamCalls = 0;
+  SmallString<0> Output;
+  ModuleSummaryIndex CombinedIndex(/*HaveGVs=*/false);
+  Error BackendError = lto::backend(
+      Config,
+      [&](unsigned,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+        ++AddStreamCalls;
+        return std::make_unique<CachedFileStream>(
+            std::make_unique<raw_svector_ostream>(Output));
+      },
+      /*ParallelCodeGenParallelismLevel=*/2, M, CombinedIndex,
+      /*SkipOptimization=*/true);
+  ASSERT_FALSE(static_cast<bool>(BackendError))
+      << errorText(std::move(BackendError));
+
+  EXPECT_TRUE(PreCodeGenModuleCalled);
+  EXPECT_FALSE(ParallelHookCalled);
+  EXPECT_EQ(AddStreamCalls, 0u);
+  EXPECT_TRUE(Output.empty());
+}
+
+TEST(LTOBackendSafetyBoundaryTest,
+     UnloweredTypeTestAfterPreCodeGenHookIsRejectedTransactionally) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+
+  LLVMContext Context;
+  Module M("unlowered-after-pre-codegen-hook", Context);
+  M.setTargetTriple(Machine->getTargetTriple().str());
+  M.setDataLayout(Machine->createDataLayout());
+  Type *Pointer = PointerType::getUnqual(Context);
+  Function *Probe = Function::Create(
+      FunctionType::get(Type::getInt1Ty(Context), {Pointer}, false),
+      GlobalValue::ExternalLinkage, "unlowered_after_pre_codegen_hook", M);
+  GlobalAlias *ProbeAlias =
+      GlobalAlias::create("unlowered_after_pre_codegen_alias", Probe);
+  const GlobalValue::LinkageTypes OriginalLinkage = Probe->getLinkage();
+  IRBuilder<> Builder(BasicBlock::Create(Context, "entry", Probe));
+  Function *TypeTest = Intrinsic::getDeclaration(&M, Intrinsic::type_test);
+  Value *TypeID = MetadataAsValue::get(
+      Context, MDString::get(Context, "unlowered-pre-codegen-contract-type"));
+  Builder.CreateRet(Builder.CreateCall(TypeTest, {Probe->getArg(0), TypeID}));
+
+  lto::Config Config;
+  Config.CodeGenOnly = true;
+  Config.PreCodeGenPassesHook = [](legacy::PassManager &) {};
+  unsigned AddStreamCalls = 0;
+  SmallString<0> Output;
+  ModuleSummaryIndex CombinedIndex(/*HaveGVs=*/false);
+  Error BackendError = lto::backend(
+      Config,
+      [&](unsigned,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+        ++AddStreamCalls;
+        return std::make_unique<CachedFileStream>(
+            std::make_unique<raw_svector_ostream>(Output));
+      },
+      /*ParallelCodeGenParallelismLevel=*/1, M, CombinedIndex,
+      /*SkipOptimization=*/true);
+  ASSERT_TRUE(static_cast<bool>(BackendError));
+  EXPECT_NE(errorText(std::move(BackendError))
+                .find("unlowered LLVM intrinsic 'llvm.type.test'"),
+            std::string::npos);
+  EXPECT_EQ(AddStreamCalls, 0u);
+  EXPECT_TRUE(Output.empty());
+  EXPECT_FALSE(verifyModule(M));
+  EXPECT_EQ(Probe->getLinkage(), OriginalLinkage);
+  ASSERT_FALSE(Probe->isDeclaration());
+  ASSERT_EQ(Probe->size(), 1u);
+  EXPECT_TRUE(isa<UnreachableInst>(Probe->getEntryBlock().getTerminator()));
+  EXPECT_EQ(ProbeAlias->getAliaseeObject(), Probe);
+}
+
+TEST(LTOBackendSafetyBoundaryTest,
+     ReportedPreCodeGenModuleErrorDoesNotAcquireOutputStream) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+
+  LLVMContext Context;
+  unsigned ErrorDiagnostics = 0;
+  Context.setDiagnosticHandlerCallBack(countErrorDiagnostic, &ErrorDiagnostics);
+  Module M("reported-pre-codegen-error", Context);
+  M.setTargetTriple(Machine->getTargetTriple().str());
+  M.setDataLayout(Machine->createDataLayout());
+  Function *Probe = Function::Create(
+      FunctionType::get(Type::getVoidTy(Context), false),
+      GlobalValue::ExternalLinkage, "reported_pre_codegen_error", M);
+  IRBuilder<>(BasicBlock::Create(Context, "entry", Probe)).CreateRetVoid();
+
+  lto::Config Config;
+  Config.CodeGenOnly = true;
+  Config.PreCodeGenModuleHook = [&](unsigned, const Module &HookModule) {
+    HookModule.getContext().emitError("test pre-codegen module failure");
+    return true;
+  };
+  unsigned AddStreamCalls = 0;
+  SmallString<0> Output;
+  ModuleSummaryIndex CombinedIndex(/*HaveGVs=*/false);
+  Error BackendError = lto::backend(
+      Config,
+      [&](unsigned,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+        ++AddStreamCalls;
+        return std::make_unique<CachedFileStream>(
+            std::make_unique<raw_svector_ostream>(Output));
+      },
+      /*ParallelCodeGenParallelismLevel=*/1, M, CombinedIndex,
+      /*SkipOptimization=*/true);
+  EXPECT_FALSE(static_cast<bool>(BackendError));
+  EXPECT_EQ(ErrorDiagnostics, 1u);
+  EXPECT_EQ(AddStreamCalls, 0u);
+  EXPECT_TRUE(Output.empty());
+}
+
+TEST(LTOBackendSafetyBoundaryTest,
+     DeferredOptimizationErrorSkipsPreCodeGenModuleHookAndOutput) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+
+  LLVMContext Context;
+  unsigned ErrorDiagnostics = 0;
+  Context.setDiagnosticHandlerCallBack(countErrorDiagnostic, &ErrorDiagnostics);
+  Module M("deferred-optimization-error", Context);
+  M.setTargetTriple(Machine->getTargetTriple().str());
+  M.setDataLayout(Machine->createDataLayout());
+  Function *Probe = Function::Create(
+      FunctionType::get(Type::getVoidTy(Context), false),
+      GlobalValue::ExternalLinkage, "deferred_optimization_error", M);
+  IRBuilder<>(BasicBlock::Create(Context, "entry", Probe)).CreateRetVoid();
+
+  unsigned PreCodeGenModuleCalls = 0;
+  lto::Config Config;
+  Config.LTOParallelOpt = true;
+  Config.PostOptPassHook = [](ModulePassManager &Passes) {
+    Passes.addPass(ReportPostOptErrorPass());
+  };
+  Config.PreCodeGenModuleHook =
+      [&](unsigned, const Module &) {
+        ++PreCodeGenModuleCalls;
+        return true;
+      };
+  unsigned AddStreamCalls = 0;
+  SmallString<0> Output;
+  ModuleSummaryIndex CombinedIndex(/*HaveGVs=*/false);
+  Error BackendError = lto::backend(
+      Config,
+      [&](unsigned,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+        ++AddStreamCalls;
+        return std::make_unique<CachedFileStream>(
+            std::make_unique<raw_svector_ostream>(Output));
+      },
+      /*ParallelCodeGenParallelismLevel=*/1, M, CombinedIndex,
+      /*SkipOptimization=*/false);
+  EXPECT_FALSE(static_cast<bool>(BackendError));
+  EXPECT_EQ(ErrorDiagnostics, 1u);
+  EXPECT_EQ(PreCodeGenModuleCalls, 0u);
+  EXPECT_EQ(AddStreamCalls, 0u);
+  EXPECT_TRUE(Output.empty());
+}
+
+TEST(LTOBackendSafetyBoundaryTest,
+     ReportedCodeGenErrorDoesNotPublishPartialArtifact) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+
+  LLVMContext Context;
+  unsigned ErrorDiagnostics = 0;
+  Context.setDiagnosticHandlerCallBack(countErrorDiagnostic, &ErrorDiagnostics);
+  Module M("reported-codegen-error", Context);
+  M.setTargetTriple(Machine->getTargetTriple().str());
+  M.setDataLayout(Machine->createDataLayout());
+  Function *Probe = Function::Create(
+      FunctionType::get(Type::getVoidTy(Context), false),
+      GlobalValue::ExternalLinkage, "reported_codegen_error", M);
+  IRBuilder<>(BasicBlock::Create(Context, "entry", Probe)).CreateRetVoid();
+
+  lto::Config Config;
+  Config.CodeGenOnly = true;
+  Config.MachinePassHooks = std::make_shared<ReportCodeGenErrorHooks>();
+  unsigned AddStreamCalls = 0;
+  SmallString<0> Output;
+  ModuleSummaryIndex CombinedIndex(/*HaveGVs=*/false);
+  Error BackendError = lto::backend(
+      Config,
+      [&](unsigned,
+          const Twine &) -> Expected<std::unique_ptr<CachedFileStream>> {
+        ++AddStreamCalls;
+        return std::make_unique<CachedFileStream>(
+            std::make_unique<raw_svector_ostream>(Output));
+      },
+      /*ParallelCodeGenParallelismLevel=*/1, M, CombinedIndex,
+      /*SkipOptimization=*/true);
+  EXPECT_FALSE(static_cast<bool>(BackendError));
+  EXPECT_EQ(ErrorDiagnostics, 1u);
+  EXPECT_EQ(AddStreamCalls, 0u);
+  EXPECT_TRUE(Output.empty());
 }
 
 TEST(LTOSerialIPOPolicyTest,

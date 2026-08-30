@@ -155,13 +155,13 @@ jobs:
             --gtest_filter='SupportThreadTest.TryCreateHandlesMoveOnlyCallable:SupportThreadTest.ConcurrentBLAKE3DispatchIsStable:SupportThreadTest.TryCreateFailureDoesNotRunOrLeakCallable' \
             --gtest_color=no
           build/bin/neverc-plugin-link-tests \
-            --gtest_filter='ConcurrentLTOOptionIsolationTest.*:PluginLinkContextTest.NestedExecutionRestoresOuterWorkerSlot:PluginParallelLinkTest.*' \
+            --gtest_filter='ConcurrentLTOOptionIsolationTest.*:LTOParallelHookContractTest.*:LTOBufferedOutputTest.*:LTOTransactionalSpoolTest.*:LTOTransactionalOwnedOutputTest.*:LTOBackendSafetyBoundaryTest.*:PluginLinkContextTest.NestedExecutionRestoresOuterWorkerSlot:PluginParallelLinkTest.*:PluginCOFFContextIsolationTest.*:PluginMachOContextIsolationTest.*' \
             --gtest_color=no
           build/bin/neverc-plugin-link-tests \
             --gtest_filter='PluginBinaryImageTest.MainPublishFailureRestoresTheOldBundle:PluginBinaryImageTest.AbortReportsStagingCleanupFailure:PluginBinaryImageTest.PrepareFailureDiscardsEveryStagedOutput' \
             --gtest_color=no
           build/bin/neverc-merge-tests \
-            --gtest_filter='ParallelCodeGenCacheTest.ProcessBudgetClampsPhysicalWorkersWithoutChangingObject' \
+            --gtest_filter='ParallelCodeGenCacheTest.ProcessBudgetClampsPhysicalWorkersWithoutChangingObject:ParallelCodeGenCacheTest.RejectsTypeMetadataIntrinsicInjectedByPartitionPostOptHook:ParallelCodeGenCacheTest.WholeModuleBarrierMayLegitimatelyLowerTypeMetadataIntrinsic:ParallelCodeGenCacheTest.WholeModuleDiagnosticDoesNotPublishObjectOrOptimizedIRCache:ParallelCodeGenCacheTest.ExhaustedWholeModuleCodeGenRoutesReportErrorWithoutAborting:ParallelCodeGenCacheTest.WholeModuleBarrierRunsStatefulMachineHooksExactlyOnce:ParallelCodeGenCacheTest.PreExistingDiagnosticDoesNotRunHooksOrPublishObjectCache' \
             --gtest_color=no
 
       - name: Build and smoke fuzzers under ${{ matrix.label }}

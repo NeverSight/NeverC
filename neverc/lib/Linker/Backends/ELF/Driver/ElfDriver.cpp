@@ -1,3 +1,4 @@
+#include "Driver/ELFInputWorkload.h"
 #include "ELF/ELFLinkGraphAdapter.h"
 #include "Link/LinkPhaseExecutor.h"
 #include "Linker/Core/Driver/ArgList.h"
@@ -80,20 +81,15 @@ void elf::errorOrWarn(const Twine &msg) {
 unsigned elf::selectLinkThreadCount(unsigned RequestedThreads,
                                     unsigned AvailableThreads,
                                     uint64_t InputBytes, uint64_t InputFiles) {
-  if (RequestedThreads != 0)
-    return RequestedThreads;
-  constexpr uint64_t MinParallelBytes = 16ULL * 1024ULL * 1024ULL;
-  constexpr uint64_t BytesPerAdditionalThread = 32ULL * 1024ULL * 1024ULL;
-  constexpr uint64_t MinAverageFileBytes = 4ULL * 1024ULL;
-  if (InputBytes < MinParallelBytes || AvailableThreads <= 1)
-    return 1;
-  if (InputFiles != 0 && InputBytes / InputFiles < MinAverageFileBytes)
-    return 1;
-  const uint64_t AdditionalThreads =
-      InputBytes / BytesPerAdditionalThread +
-      (InputBytes % BytesPerAdditionalThread != 0);
-  return static_cast<unsigned>(
-      std::min<uint64_t>(AvailableThreads, 1 + AdditionalThreads));
+  LinkThreadPolicy LegacyPolicy;
+  // This exported ELF compatibility wrapper historically treated the
+  // caller-provided capacity as the complete automatic ceiling. The new
+  // cross-backend default cap belongs to backend-owned policy, not this old
+  // function's ABI contract.
+  LegacyPolicy.MaxAutoThreads = 0;
+  return linker::selectAdaptiveLinkThreadCount(
+      RequestedThreads, AvailableThreads, InputBytes, InputFiles,
+      LegacyPolicy);
 }
 
 void Ctx::reset() {
@@ -2052,6 +2048,13 @@ void markBuffersAsDontNeed() {
 }
 } // namespace
 
+namespace {
+void configureParallelismForMaterializedInputs(
+    const LinkerDriverConfig &driverCfg, bool IncludeBitcode,
+    bool FinalizeSerial, ArrayRef<InputFile *> AdditionalNativeFiles = {},
+    bool DeferAutomaticForBitcode = false);
+} // namespace
+
 // ===----------------------------------------------------------------------===
 // LTO compilation & symbol resolution
 // ===----------------------------------------------------------------------===
@@ -2071,6 +2074,13 @@ template <class ELFT> void LinkerDriver::compileBitcodeFiles() {
   markBuffersAsDontNeed();
 
   auto Compiled = lto->compile();
+
+  // A compact bitcode module can expand into a large native object. Select the
+  // post-LTO worker budget from every generated buffer before parsing the first
+  // one, and do not count the source bitcode representation a second time.
+  configureParallelismForMaterializedInputs(*config->driverCfg,
+                                            /*IncludeBitcode=*/false,
+                                            /*FinalizeSerial=*/true, Compiled);
 
   for (InputFile *file : Compiled) {
     auto *obj = cast<ObjFile<ELFT>>(file);
@@ -2313,29 +2323,66 @@ void finalizeObjectFile(ELFFileBase *file) {
 
 namespace {
 void configureParallelismForMaterializedInputs(
-    const LinkerDriverConfig &driverCfg) {
-  uint64_t inputBytes = 0;
-  uint64_t inputFiles = 0;
-  auto accountFiles = [&](const auto &inputRange) {
+    const LinkerDriverConfig &driverCfg, bool IncludeBitcode,
+    bool FinalizeSerial, ArrayRef<InputFile *> AdditionalNativeFiles,
+    bool DeferAutomaticForBitcode) {
+  auto measureFiles = [&](const auto &inputRange) {
+    uint64_t bytes = 0;
+    uint64_t fileCount = 0;
     for (const InputFile *file : inputRange) {
-      inputBytes =
-          SaturatingAdd<uint64_t>(inputBytes, file->mb.getBufferSize());
-      ++inputFiles;
+      bytes = SaturatingAdd<uint64_t>(bytes, file->mb.getBufferSize());
+      fileCount = SaturatingAdd<uint64_t>(fileCount, 1);
     }
+    return std::pair<uint64_t, uint64_t>{bytes, fileCount};
   };
   // Shared objects participate in resolution but their contents are not copied
   // into the output. Counting their full file sizes would overestimate the
   // post-parse work that this pool serves.
-  accountFiles(elfState().objectFiles);
-  accountFiles(elfState().bitcodeFiles);
-  accountFiles(elfState().binaryFiles);
+  auto native = measureFiles(elfState().objectFiles);
+  const auto additionalNative = measureFiles(AdditionalNativeFiles);
+  native.first = SaturatingAdd<uint64_t>(native.first, additionalNative.first);
+  native.second =
+      SaturatingAdd<uint64_t>(native.second, additionalNative.second);
+  const auto bitcode = measureFiles(elfState().bitcodeFiles);
+  const auto binary = measureFiles(elfState().binaryFiles);
+  const auto [inputBytes, inputFiles] =
+      linker::elf::detail::mergeMaterializedInputWorkload(
+          native.first, native.second, bitcode.first, bitcode.second,
+          binary.first, binary.second, IncludeBitcode);
 
-  ThreadPoolStrategy strategy = hardware_concurrency();
-  unsigned availableThreads = std::max(1U, strategy.compute_thread_count());
-  availableThreads = std::min(availableThreads, 16U);
-  const unsigned selectedThreads = selectLinkThreadCount(
-      driverCfg.threadCount, availableThreads, inputBytes, inputFiles);
-  commonContext().configureParallel(selectedThreads);
+  LinkThreadPolicy Policy;
+  if (DeferAutomaticForBitcode && driverCfg.threadCount == 0 &&
+      bitcode.second != 0) {
+    ThreadPoolStrategy Strategy = hardware_concurrency();
+    unsigned MaximumAutoThreads = std::max(1U, Strategy.compute_thread_count());
+    if (Policy.MaxAutoThreads != 0)
+      MaximumAutoThreads = std::min(MaximumAutoThreads, Policy.MaxAutoThreads);
+    const auto [nativeBytes, nativeFiles] =
+        linker::elf::detail::mergeMaterializedInputWorkload(
+            native.first, native.second, bitcode.first, bitcode.second,
+            binary.first, binary.second, /*IncludeBitcode=*/false);
+    const unsigned NativeCandidateThreads = selectAdaptiveLinkThreadCount(
+        /*RequestedThreads=*/0, MaximumAutoThreads, nativeBytes, nativeFiles,
+        Policy);
+    const std::optional<unsigned> ProvisionalThreads =
+        linker::elf::detail::selectProvisionalLinkPoolThreads(
+            /*RequestedThreads=*/0, bitcode.second, NativeCandidateThreads,
+            MaximumAutoThreads);
+    if (!ProvisionalThreads) {
+      config->threadCount = commonContext().parallelThreadCount();
+      return;
+    }
+    // Native materialized work has already justified the complete automatic
+    // budget. Configure that proven value directly: compact source-bitcode
+    // files are placeholders for later native objects and must not lower the
+    // native-only decision through the average-file-size guard.
+    commonContext().configureParallel(*ProvisionalThreads);
+    config->threadCount = commonContext().parallelThreadCount();
+    return;
+  }
+
+  commonContext().configureParallelForInputWorkload(
+      driverCfg.threadCount, inputBytes, inputFiles, Policy, FinalizeSerial);
   config->threadCount = commonContext().parallelThreadCount();
 }
 } // namespace
@@ -2432,7 +2479,10 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   // serial. Delay pool creation until the complete materialized workload is
   // known so small links avoid worker startup and larger links scale to the
   // archive members they actually selected.
-  configureParallelismForMaterializedInputs(*config->driverCfg);
+  configureParallelismForMaterializedInputs(
+      *config->driverCfg, /*IncludeBitcode=*/true,
+      /*FinalizeSerial=*/false, /*AdditionalNativeFiles=*/{},
+      /*DeferAutomaticForBitcode=*/true);
 
   parallelForEach(elfState().objectFiles, [](ELFFileBase *file) {
     prepareSectionsAndLocals(file, /*ignoreComdats=*/false);
@@ -2473,6 +2523,13 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   const size_t numObjsBeforeLTO = elfState().objectFiles.size();
   dispatchByFormat(compileBitcodeFiles);
 
+  // No-bitcode and empty-codegen links do not pass through the native-output
+  // hook above. Finalize their automatic serial decision here; for real LTO
+  // links this is an idempotent no-op after the generated buffers were sized.
+  configureParallelismForMaterializedInputs(*config->driverCfg,
+                                            /*IncludeBitcode=*/false,
+                                            /*FinalizeSerial=*/true);
+
   reportBackrefs();
   writeArchiveStats();
   writeWhyExtract();
@@ -2506,9 +2563,8 @@ void LinkerDriver::execute(opt::InputArgList &args) {
     // narrower --strip-unneeded-style policy.
     mergeOpts.dropDebugInfo = config->finalizeAndroidKernelModule &&
                               config->driverCfg->stripsDebugInfo();
-    mergeOpts.stripUnneededSymbols =
-        config->finalizeAndroidKernelModule &&
-        config->driverCfg->stripsSymbols();
+    mergeOpts.stripUnneededSymbols = config->finalizeAndroidKernelModule &&
+                                     config->driverCfg->stripsSymbols();
     if (mergeOpts.stripUnneededSymbols)
       mergeOpts.releaseSymbolMap = &releaseSymbolMap;
     if (config->androidKernelModule) {
@@ -2550,8 +2606,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
             message += " (journal: " + finalSummary.JournalPath + ")";
         }
         error(message);
-      } else if (published->Flags &
-                 neverc::OutputDurabilityUnconfirmed) {
+      } else if (published->Flags & neverc::OutputDurabilityUnconfirmed) {
         warn("Android kernel output was published, but output-directory "
              "durability could not be confirmed; verify image_sha256 after an "
              "unexpected shutdown");

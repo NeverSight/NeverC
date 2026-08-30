@@ -555,6 +555,31 @@ Error LTO::run(AddStreamFn AddStream, FileCache Cache) {
 }
 
 Error LTO::runRegularLTO(AddStreamFn AddStream) {
+  return runRegularLTOImpl(&AddStream, nullptr);
+}
+
+Error LTO::runBuffered(AddOwnedOutputFn AddOutput) {
+  auto StatsFileOrErr = setupStatsFile(Conf.StatsFile);
+  if (!StatsFileOrErr)
+    return StatsFileOrErr.takeError();
+  std::unique_ptr<ToolOutputFile> StatsFile = std::move(StatsFileOrErr.get());
+
+  Error Result = runRegularLTOBuffered(std::move(AddOutput));
+
+  if (StatsFile)
+    PrintStatisticsJSON(StatsFile->os());
+
+  return Result;
+}
+
+Error LTO::runRegularLTOBuffered(AddOwnedOutputFn AddOutput) {
+  return runRegularLTOImpl(nullptr, &AddOutput);
+}
+
+Error LTO::runRegularLTOImpl(AddStreamFn *AddStream,
+                             AddOwnedOutputFn *AddOutput) {
+  assert((AddStream != nullptr) != (AddOutput != nullptr) &&
+         "exactly one regular LTO output callback is required");
   // Setup optimization remarks.
   auto DiagFileOrErr = lto::setupLLVMOptimizationRemarks(
       RegularLTO.CombinedModule->getContext(), Conf.RemarksFilename,
@@ -564,17 +589,22 @@ Error LTO::runRegularLTO(AddStreamFn AddStream) {
   if (!DiagFileOrErr)
     return DiagFileOrErr.takeError();
   DiagnosticOutputFile = std::move(*DiagFileOrErr);
+  auto FinishRemarks = [&](Error Result) {
+    return joinErrors(
+        std::move(Result),
+        finalizeOptimizationRemarks(std::move(DiagnosticOutputFile)));
+  };
 
   // Finalize linking of regular LTO modules containing summaries now that
   // we have computed liveness information.
   for (auto &M : RegularLTO.ModsWithSummaries)
     if (Error Err = linkRegularLTO(std::move(M),
                                    /*LivenessFromIndex=*/true))
-      return Err;
+      return FinishRemarks(std::move(Err));
 
   // Ensure we don't have inconsistently split LTO units with type tests.
   if (Error Err = checkPartiallySplit())
-    return Err;
+    return FinishRemarks(std::move(Err));
 
   // Make sure commons have the right size/alignment: we kept the largest from
   // all the prevailing when adding the inputs, and we apply it here.
@@ -611,7 +641,7 @@ Error LTO::runRegularLTO(AddStreamFn AddStream) {
 
   if (Conf.PreOptModuleHook &&
       !Conf.PreOptModuleHook(0, *RegularLTO.CombinedModule))
-    return finalizeOptimizationRemarks(std::move(DiagnosticOutputFile));
+    return FinishRemarks(Error::success());
 
   if (!Conf.CodeGenOnly) {
     for (const auto &R : GlobalResolutions) {
@@ -648,7 +678,7 @@ Error LTO::runRegularLTO(AddStreamFn AddStream) {
 
     if (Conf.PostInternalizeModuleHook &&
         !Conf.PostInternalizeModuleHook(0, *RegularLTO.CombinedModule))
-      return finalizeOptimizationRemarks(std::move(DiagnosticOutputFile));
+      return FinishRemarks(Error::success());
   }
 
   if (!RegularLTO.EmptyCombinedModule || Conf.AlwaysEmitRegularLTOObj) {
@@ -656,17 +686,24 @@ Error LTO::runRegularLTO(AddStreamFn AddStream) {
     if (Conf.ModuleOptimizeHook &&
         !Conf.ModuleOptimizeHook(RegularLTO.CombinedModule,
                                  SkipBuiltinOptimization))
-      return createStringError(inconvertibleErrorCode(),
-                               "host LTO optimization transition failed");
-    if (Error Err =
-            backend(Conf, AddStream,
-                    RegularLTO.ParallelCodeGenParallelismLevel,
-                    *RegularLTO.CombinedModule, CombinedIndex,
-                    SkipBuiltinOptimization))
-      return std::move(Err);
+      return FinishRemarks(createStringError(
+          inconvertibleErrorCode(),
+          "host LTO optimization transition failed"));
+    Error Err = AddOutput
+                    ? backendBuffered(
+                          Conf, *AddOutput,
+                          RegularLTO.ParallelCodeGenParallelismLevel,
+                          *RegularLTO.CombinedModule, CombinedIndex,
+                          SkipBuiltinOptimization)
+                    : backend(Conf, *AddStream,
+                              RegularLTO.ParallelCodeGenParallelismLevel,
+                              *RegularLTO.CombinedModule, CombinedIndex,
+                              SkipBuiltinOptimization);
+    if (Err)
+      return FinishRemarks(std::move(Err));
   }
 
-  return finalizeOptimizationRemarks(std::move(DiagnosticOutputFile));
+  return FinishRemarks(Error::success());
 }
 
 static const char *libcallRoutineNames[] = {

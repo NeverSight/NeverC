@@ -8,10 +8,16 @@
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Bitcode/BitcodeReader.h"
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
@@ -105,9 +111,9 @@ std::unique_ptr<TargetMachine> createNativeTargetMachine() {
                                      std::nullopt, CodeGenOptLevel::Default));
 }
 
-std::unique_ptr<Module> createLoopDenseModule(LLVMContext &Context,
-                                              TargetMachine &Machine,
-                                              StringRef Identifier) {
+std::unique_ptr<Module>
+createLoopDenseModule(LLVMContext &Context, TargetMachine &Machine,
+                      StringRef Identifier, bool AddUnloweredTypeTest = false) {
   auto M = std::make_unique<Module>(Identifier, Context);
   M->setTargetTriple(Machine.getTargetTriple().str());
   M->setDataLayout(Machine.createDataLayout());
@@ -151,8 +157,101 @@ std::unique_ptr<Module> createLoopDenseModule(LLVMContext &Context,
     Result->setVolatile(true);
     Builder.CreateRet(Result);
   }
+
+  if (AddUnloweredTypeTest) {
+    Type *PointerTy = PointerType::getUnqual(Context);
+    Function *Probe = Function::Create(
+        FunctionType::get(Type::getInt1Ty(Context), {PointerTy}, false),
+        GlobalValue::ExternalLinkage, "pcg_live_type_test", *M);
+    IRBuilder<> Builder(BasicBlock::Create(Context, "entry", Probe));
+    Function *TypeTest =
+        Intrinsic::getDeclaration(M.get(), Intrinsic::type_test);
+    Value *TypeID = MetadataAsValue::get(
+        Context, MDString::get(Context, "neverc.test.pcg.type"));
+    Value *Result = Builder.CreateCall(TypeTest, {Probe->getArg(0), TypeID});
+    Builder.CreateRet(Result);
+  }
   return M;
 }
+
+class InjectUnloweredTypeTestPass
+    : public PassInfoMixin<InjectUnloweredTypeTestPass> {
+public:
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+    LLVMContext &Context = M.getContext();
+    Function *Probe = Function::Create(
+        FunctionType::get(Type::getInt1Ty(Context),
+                          {PointerType::getUnqual(Context)}, false),
+        GlobalValue::ExternalLinkage, "pcg_late_type_test", M);
+    IRBuilder<> Builder(BasicBlock::Create(Context, "entry", Probe));
+    Function *TypeTest = Intrinsic::getDeclaration(&M, Intrinsic::type_test);
+    Value *TypeID = MetadataAsValue::get(
+        Context, MDString::get(Context, "neverc.test.pcg.late.type"));
+    Value *Result = Builder.CreateCall(TypeTest, {Probe->getArg(0), TypeID});
+    Builder.CreateRet(Result);
+    return PreservedAnalyses::none();
+  }
+};
+
+class LowerTypeTestForCodeGenPass
+    : public PassInfoMixin<LowerTypeTestForCodeGenPass> {
+public:
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+    Function *TypeTest = M.getFunction("llvm.type.test");
+    if (!TypeTest)
+      return PreservedAnalyses::all();
+    while (!TypeTest->use_empty()) {
+      auto *Call = dyn_cast<CallBase>(*TypeTest->user_begin());
+      if (!Call)
+        return PreservedAnalyses::none();
+      Call->replaceAllUsesWith(ConstantInt::getFalse(M.getContext()));
+      Call->eraseFromParent();
+    }
+    return PreservedAnalyses::none();
+  }
+};
+
+class ReportWholeModuleOptimizationErrorPass
+    : public PassInfoMixin<ReportWholeModuleOptimizationErrorPass> {
+public:
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+    M.getContext().emitError("test whole-module optimization failure");
+    return PreservedAnalyses::all();
+  }
+};
+
+class CountFinalMachineFunctionsPass final : public MachineFunctionPass {
+public:
+  static char ID;
+
+  explicit CountFinalMachineFunctionsPass(std::atomic<unsigned> &Runs)
+      : MachineFunctionPass(ID), Runs(Runs) {}
+
+private:
+  bool runOnMachineFunction(MachineFunction &) override {
+    Runs.fetch_add(1, std::memory_order_relaxed);
+    return false;
+  }
+
+  std::atomic<unsigned> &Runs;
+};
+
+char CountFinalMachineFunctionsPass::ID = 0;
+
+class CountFinalMachineFunctionsHooks final : public MachinePipelineHooks {
+public:
+  explicit CountFinalMachineFunctionsHooks(std::atomic<unsigned> &Runs)
+      : Runs(Runs) {}
+
+  void addPasses(TargetPassConfig &TPC,
+                 MachinePipelineHookPoint Point) override {
+    if (Point == MachinePipelineHookPoint::Final)
+      TPC.addExternalPass(new CountFinalMachineFunctionsPass(Runs));
+  }
+
+private:
+  std::atomic<unsigned> &Runs;
+};
 
 std::string functionNameForPartition(StringRef Prefix, unsigned Partition,
                                      unsigned NumPartitions) {
@@ -778,6 +877,7 @@ neverc::ParallelCodeGenTuning overlapTuning(unsigned MaxPartitions,
 
 struct DirectPCGRunResult {
   bool Succeeded = false;
+  bool SawError = false;
   std::string Failure;
   std::vector<char> Object;
   std::vector<std::string> LookupTags;
@@ -794,7 +894,8 @@ DirectPCGRunResult runFreshDirectPCG(
     StringRef Identifier, const neverc::ParallelCodeGenTuning &Tuning,
     neverc::ParallelOptimizationHooks *Hooks, bool RecordCache = true,
     const neverc::ParallelCodeGenObservers *Observers = nullptr,
-    const llvm::NevercPipelineTuningOptions *PipelineTuning = nullptr) {
+    const llvm::NevercPipelineTuningOptions *PipelineTuning = nullptr,
+    bool AddUnloweredTypeTest = false, bool PreReportError = false) {
   DirectPCGRunResult Result;
   std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
   if (!Machine) {
@@ -803,8 +904,16 @@ DirectPCGRunResult runFreshDirectPCG(
   }
 
   LLVMContext Context;
-  std::unique_ptr<Module> M =
-      createLoopDenseModule(Context, *Machine, Identifier);
+  Context.setDiagnosticHandlerCallBack(
+      [](const DiagnosticInfo &Diagnostic, void *Opaque) {
+        if (Diagnostic.getSeverity() == DS_Error)
+          static_cast<DirectPCGRunResult *>(Opaque)->SawError = true;
+      },
+      &Result);
+  if (PreReportError)
+    Context.emitError("test pre-existing parallel codegen failure");
+  std::unique_ptr<Module> M = createLoopDenseModule(
+      Context, *Machine, Identifier, AddUnloweredTypeTest);
   SmallVector<char, 0> Output;
   raw_svector_ostream OutputStream(Output);
   RecordingCache Cache(Output);
@@ -826,6 +935,151 @@ DirectPCGRunResult runFreshDirectPCG(
   if (!Result.Succeeded)
     Result.Failure = "runParallelOptAndCodeGenWithTuning declined or failed";
   return Result;
+}
+
+TEST(ParallelCodeGenCacheTest,
+     RejectsTypeMetadataIntrinsicInjectedByPartitionPostOptHook) {
+  const neverc::ParallelCodeGenTuning Tuning =
+      overlapTuning(/*MaxPartitions=*/2, /*SCEVThreshold=*/41);
+  neverc::ParallelOptimizationHooks Hooks;
+  Hooks.PostOpt = [](ModulePassManager &MPM) {
+    MPM.addPass(InjectUnloweredTypeTestPass());
+  };
+
+  DirectPCGRunResult Result =
+      runFreshDirectPCG("partition-late-type-test", Tuning, &Hooks,
+                        /*RecordCache=*/false);
+  EXPECT_FALSE(Result.Succeeded);
+  EXPECT_TRUE(Result.SawError);
+  EXPECT_TRUE(Result.Object.empty());
+}
+
+TEST(ParallelCodeGenCacheTest,
+     WholeModuleBarrierMayLegitimatelyLowerTypeMetadataIntrinsic) {
+  const neverc::ParallelCodeGenTuning Tuning =
+      overlapTuning(/*MaxPartitions=*/2, /*SCEVThreshold=*/41);
+  neverc::ParallelOptimizationHooks Hooks;
+  Hooks.WholeModulePostOpt = [](ModulePassManager &MPM) {
+    MPM.addPass(LowerTypeTestForCodeGenPass());
+  };
+
+  DirectPCGRunResult Result = runFreshDirectPCG(
+      "whole-module-lowers-type-test", Tuning, &Hooks,
+      /*RecordCache=*/false, /*Observers=*/nullptr,
+      /*PipelineTuning=*/nullptr, /*AddUnloweredTypeTest=*/true);
+  ASSERT_TRUE(Result.Succeeded) << Result.Failure;
+  EXPECT_FALSE(Result.SawError);
+  EXPECT_FALSE(Result.Object.empty());
+}
+
+TEST(ParallelCodeGenCacheTest,
+     WholeModuleDiagnosticDoesNotPublishObjectOrOptimizedIRCache) {
+  const neverc::ParallelCodeGenTuning Tuning =
+      overlapTuning(/*MaxPartitions=*/2, /*SCEVThreshold=*/41);
+  neverc::ParallelOptimizationHooks Hooks;
+  Hooks.WholeModulePostOpt = [](ModulePassManager &MPM) {
+    MPM.addPass(ReportWholeModuleOptimizationErrorPass());
+  };
+
+  DirectPCGRunResult Result =
+      runFreshDirectPCG("whole-module-reported-error", Tuning, &Hooks);
+  EXPECT_FALSE(Result.Succeeded);
+  EXPECT_TRUE(Result.SawError);
+  EXPECT_TRUE(Result.Object.empty());
+  EXPECT_TRUE(Result.Stores.empty());
+}
+
+TEST(ParallelCodeGenCacheTest,
+     ExhaustedWholeModuleCodeGenRoutesReportErrorWithoutAborting) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+
+  LLVMContext Context;
+  unsigned ErrorDiagnostics = 0;
+  Context.setDiagnosticHandlerCallBack(
+      [](const DiagnosticInfo &Diagnostic, void *Opaque) {
+        if (Diagnostic.getSeverity() == DS_Error)
+          ++*static_cast<unsigned *>(Opaque);
+      },
+      &ErrorDiagnostics);
+  std::unique_ptr<Module> M = createLoopDenseModule(
+      Context, *Machine, "whole-module-codegen-routes-exhausted");
+
+  // Partition target machines are independently constructed. Reject only the
+  // final sealed-module emission on the original target machine; the forced
+  // object-merge failure below rejects the preceding parallel route.
+  static_cast<LLVMTargetMachine &>(*Machine).setMachineEmissionFactory(
+      [](LLVMTargetMachine &, PassManagerBase &, raw_pwrite_stream &,
+         raw_pwrite_stream *, CodeGenFileType,
+         MachineModuleInfoWrapperPass &) { return true; });
+  ScopedEnvironmentVariable ForceMergeFailure(
+      "NEVERC_PCG_FORCE_MERGE_FAIL", "1");
+
+  const neverc::ParallelCodeGenTuning Tuning =
+      overlapTuning(/*MaxPartitions=*/2, /*SCEVThreshold=*/41);
+  neverc::ParallelOptimizationHooks Hooks = wholeModuleBarrier();
+  SmallVector<char, 0> Output;
+  raw_svector_ostream OutputStream(Output);
+  bool Succeeded = neverc::runParallelOptAndCodeGenWithTuning(
+      *M, *Machine, neverc::ParallelCodeGenOutputs{OutputStream},
+      /*OptLevel=*/2, Tuning, /*Cache=*/nullptr, &Hooks);
+
+  EXPECT_FALSE(Succeeded);
+  EXPECT_EQ(ErrorDiagnostics, 1u);
+  EXPECT_TRUE(Output.empty());
+}
+
+TEST(ParallelCodeGenCacheTest,
+     WholeModuleBarrierRunsStatefulMachineHooksExactlyOnce) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+
+  std::atomic<unsigned> MachineFunctionRuns{0};
+  static_cast<LLVMTargetMachine &>(*Machine).setMachinePipelineHooks(
+      std::make_shared<CountFinalMachineFunctionsHooks>(MachineFunctionRuns));
+  LLVMContext Context;
+  std::unique_ptr<Module> M = createLoopDenseModule(
+      Context, *Machine, "whole-module-stateful-machine-hook");
+
+  // Without the exactly-once guard, the final parallel route runs this hook
+  // on every partition and the forced merge decline then replays it during
+  // sealed-module serial codegen.
+  ScopedEnvironmentVariable ForceMergeFailure(
+      "NEVERC_PCG_FORCE_MERGE_FAIL", "1");
+  const neverc::ParallelCodeGenTuning Tuning =
+      overlapTuning(/*MaxPartitions=*/2, /*SCEVThreshold=*/41);
+  neverc::ParallelOptimizationHooks Hooks = wholeModuleBarrier();
+  SmallVector<char, 0> Output;
+  raw_svector_ostream OutputStream(Output);
+  ASSERT_TRUE(neverc::runParallelOptAndCodeGenWithTuning(
+      *M, *Machine, neverc::ParallelCodeGenOutputs{OutputStream},
+      /*OptLevel=*/2, Tuning, /*Cache=*/nullptr, &Hooks));
+
+  EXPECT_EQ(MachineFunctionRuns.load(std::memory_order_relaxed), 64u);
+  ASSERT_FALSE(Output.empty());
+  expectObject(StringRef(Output.data(), Output.size()));
+}
+
+TEST(ParallelCodeGenCacheTest,
+     PreExistingDiagnosticDoesNotRunHooksOrPublishObjectCache) {
+  const neverc::ParallelCodeGenTuning Tuning =
+      overlapTuning(/*MaxPartitions=*/2, /*SCEVThreshold=*/41);
+  std::atomic<unsigned> PreOptRuns{0};
+  neverc::ParallelOptimizationHooks Hooks;
+  Hooks.PreOpt = [&](ModulePassManager &) {
+    PreOptRuns.fetch_add(1, std::memory_order_relaxed);
+  };
+
+  DirectPCGRunResult Result = runFreshDirectPCG(
+      "pre-existing-reported-error", Tuning, &Hooks,
+      /*RecordCache=*/true, /*Observers=*/nullptr,
+      /*PipelineTuning=*/nullptr, /*AddUnloweredTypeTest=*/false,
+      /*PreReportError=*/true);
+  EXPECT_FALSE(Result.Succeeded);
+  EXPECT_TRUE(Result.SawError);
+  EXPECT_EQ(PreOptRuns.load(std::memory_order_relaxed), 0u);
+  EXPECT_TRUE(Result.Object.empty());
+  EXPECT_TRUE(Result.Stores.empty());
 }
 
 TEST(ParallelCodeGenCacheTest,

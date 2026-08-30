@@ -1,4 +1,5 @@
 #include "Linker/MachO/InputFiles.h"
+#include "Driver/Parallelism.h"
 #include "Linker/MachO/Config.h"
 #include "Linker/MachO/Driver.h"
 #include "Linker/MachO/Dwarf.h"
@@ -33,7 +34,12 @@
 #include <mutex>
 #include <optional>
 #include <type_traits>
+
+// MachOContextAccess defines short accessor macros such as `in`. Keep every
+// standard/product header above it so those macros cannot rewrite headers.
+// clang-format off
 #include "Linker/MachO/MachOContextAccess.h"
+// clang-format on
 
 using namespace llvm;
 namespace llvm_macho = llvm::MachO;
@@ -42,6 +48,20 @@ using namespace llvm::support::endian;
 using namespace llvm::sys;
 using namespace linker;
 using namespace linker::macho;
+
+namespace {
+struct ArchiveMemberParseObserverState {
+  ArchiveMemberParseObserverForTesting Observer = nullptr;
+  void *Context = nullptr;
+};
+
+thread_local ArchiveMemberParseObserverState ArchiveMemberParseObserver;
+} // namespace
+
+void macho::setArchiveMemberParseObserverForTesting(
+    ArchiveMemberParseObserverForTesting Observer, void *Context) {
+  ArchiveMemberParseObserver = {Observer, Context};
+}
 
 // ===----------------------------------------------------------------------===
 // File identification & parsing
@@ -369,7 +389,8 @@ void ObjFile::parseSections(ArrayRef<SectionHeader> sectionHeaders) {
       // Skip __LLVM sections entirely: their symbols reference bitcode
       // metadata, not real code/data, so parsing them produces spurious
       // duplicate-symbol errors.
-    } else if (segname == segment_names::data && name == neverc::OverrideNames::MachOSectionName) {
+    } else if (segname == segment_names::data &&
+               name == neverc::OverrideNames::MachOSectionName) {
       // NeverC override directory section. The emitter sets the section name
       // to "__DATA,__neverc_ovr"; segname is checked so an unrelated user
       // section in a different segment with the same name is left untouched.
@@ -2237,6 +2258,9 @@ Expected<InputFile *> loadArchiveMember(MemoryBufferRef mb, uint32_t modTime,
 
   switch (identify_magic(mb.getBuffer())) {
   case file_magic::macho_object:
+    if (ArchiveMemberParseObserver.Observer)
+      ArchiveMemberParseObserver.Observer(mb, parallelThreadCount(),
+                                          ArchiveMemberParseObserver.Context);
     return make<ObjFile>(mb, modTime, archiveName, /*lazy=*/false, forceHidden,
                          compatArch);
   case file_magic::bitcode:
@@ -2262,6 +2286,7 @@ Error ArchiveFile::fetch(const object::Archive::Child &c, StringRef reason) {
   if (!modTime)
     return modTime.takeError();
 
+  configureParallelismForMaterializedInput(*mb);
   Expected<InputFile *> file =
       loadArchiveMember(*mb, toTimeT(*modTime), getName(), c.getChildOffset(),
                         forceHidden, compatArch);
@@ -2424,6 +2449,7 @@ void BitcodeFile::parseLazy() {
 void macho::extract(InputFile &file, StringRef reason) {
   if (!file.lazy)
     return;
+  configureParallelismForMaterializedInput(file.mb);
   file.lazy = false;
 
   printArchiveMemberLoad(reason, &file);

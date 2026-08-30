@@ -1,6 +1,7 @@
 #include "neverc/Plugin/PluginIR.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define STRING_VIEW(Value)                                                     \
@@ -101,6 +102,17 @@ create_module_helper(const NevercIRPassInvocation *Invocation) {
   NevercIRValueHandle Function = {0, 0};
   NevercIRValueHandle Entry = {0, 0};
   NevercIRValueHandle Return = {0, 0};
+#if defined(NEVERC_TEST_LTO_INJECT_TYPE_TEST)
+  NevercIRTypeHandle I1Type = {0, 0};
+  NevercIRTypeHandle PointerType = {0, 0};
+  NevercIRTypeHandle MetadataType = {0, 0};
+  NevercIRTypeHandle TypeTestType = {0, 0};
+  NevercIRValueHandle TypeTestFunction = {0, 0};
+  NevercIRValueHandle NullPointer = {0, 0};
+  NevercIRMetadataHandle TypeIdentifierMetadata = {0, 0};
+  NevercIRValueHandle TypeIdentifier = {0, 0};
+  NevercIRValueHandle TypeTestCall = {0, 0};
+#endif
   NevercStatus Result;
 
   if (!Invocation->Builder)
@@ -130,6 +142,46 @@ create_module_helper(const NevercIRPassInvocation *Invocation) {
   if (Result.Code == NEVERC_STATUS_OK)
     Result = Invocation->Builder->SetInsertBlock(
         Invocation->Builder->Context, Invocation->Task, Builder, Entry);
+#if defined(NEVERC_TEST_LTO_INJECT_TYPE_TEST)
+  if (Result.Code == NEVERC_STATUS_OK)
+    Result = Invocation->Core->GetIntegerType(Invocation->Core->Context,
+                                              Invocation->Task, 1, &I1Type);
+  if (Result.Code == NEVERC_STATUS_OK)
+    Result = Invocation->Core->GetPointerType(
+        Invocation->Core->Context, Invocation->Task, 0, &PointerType);
+  if (Result.Code == NEVERC_STATUS_OK)
+    Result = Invocation->Core->GetPrimitiveType(
+        Invocation->Core->Context, Invocation->Task, NEVERC_IR_TYPE_METADATA,
+        &MetadataType);
+  if (Result.Code == NEVERC_STATUS_OK) {
+    NevercIRTypeHandle Parameters[2] = {PointerType, MetadataType};
+    Result = Invocation->Core->GetFunctionType(
+        Invocation->Core->Context, Invocation->Task, I1Type, Parameters, 2,
+        NEVERC_FALSE, &TypeTestType);
+  }
+  if (Result.Code == NEVERC_STATUS_OK)
+    Result = Invocation->Builder->CreateFunction(
+        Invocation->Builder->Context, Invocation->Task, Mutation, TypeTestType,
+        STRING_VIEW("llvm.type.test"), &TypeTestFunction);
+  if (Result.Code == NEVERC_STATUS_OK)
+    Result = Invocation->Core->GetNullConstant(
+        Invocation->Core->Context, Invocation->Task, PointerType, &NullPointer);
+  if (Result.Code == NEVERC_STATUS_OK)
+    Result = Invocation->Core->CreateMetadataString(
+        Invocation->Core->Context, Invocation->Task,
+        STRING_VIEW("neverc.test.late.type"), &TypeIdentifierMetadata);
+  if (Result.Code == NEVERC_STATUS_OK)
+    Result = Invocation->Core->GetMetadataAsValue(
+        Invocation->Core->Context, Invocation->Task, TypeIdentifierMetadata,
+        &TypeIdentifier);
+  if (Result.Code == NEVERC_STATUS_OK) {
+    NevercIRValueHandle Arguments[2] = {NullPointer, TypeIdentifier};
+    Result = Invocation->Builder->BuildCall(
+        Invocation->Builder->Context, Invocation->Task, Builder, TypeTestType,
+        TypeTestFunction, Arguments, 2, STRING_VIEW("late.type.test"),
+        &TypeTestCall);
+  }
+#endif
   if (Result.Code == NEVERC_STATUS_OK)
     Result = Invocation->Builder->BuildReturnVoid(
         Invocation->Builder->Context, Invocation->Task, Builder, &Return);
@@ -152,6 +204,7 @@ static NevercStatus NEVERC_CALL
 run_pass(const NevercIRPassInvocation *Invocation,
          NevercIRPreservedAnalyses *OutPreserved, void *UserData) {
   PassState *State = (PassState *)UserData;
+  int Mutated = 0;
   if (!Invocation || !OutPreserved || !State || !State->Process ||
       Invocation->Level != State->Level || !Invocation->Core ||
       neverc_handle_is_null(Invocation->Module))
@@ -186,13 +239,23 @@ run_pass(const NevercIRPassInvocation *Invocation,
     if (State->Bit == (UINT32_C(1) << 3))
       return status(NEVERC_STATUS_PLUGIN_FAILURE);
 #endif
+    if (State->Bit == (UINT32_C(1) << 3) &&
+        getenv("NEVERC_TEST_LTO_INLINE_ASM_WARNING") != NULL) {
+      NevercStatus Result = Invocation->Core->SetModuleInlineAssembly(
+          Invocation->Core->Context, Invocation->Task,
+          STRING_VIEW(".warning \"neverc private relocatable LTO warning\"\n"));
+      if (Result.Code != NEVERC_STATUS_OK)
+        return Result;
+      Mutated = 1;
+    }
   }
 
   memset(OutPreserved, 0, sizeof(*OutPreserved));
   OutPreserved->Header =
       (NevercABITableHeader){sizeof(*OutPreserved), NEVERC_IR_PASS_API_MAJOR,
                              NEVERC_IR_PASS_API_MINOR, 0};
-  OutPreserved->Flags = NEVERC_IR_PRESERVE_ALL;
+  OutPreserved->Flags =
+      Mutated ? NEVERC_IR_PRESERVE_NONE : NEVERC_IR_PRESERVE_ALL;
   return neverc_status_ok();
 }
 
@@ -244,6 +307,14 @@ static NevercStatus NEVERC_CALL task_end(const NevercCoreAPI *Core,
   if (Kind == NEVERC_TASK_LTO) {
     if (!same_handle(Task, State->LTOTask) || State->Seen != UINT32_C(0x1f))
       return status(NEVERC_STATUS_VERIFICATION_FAILED);
+#if defined(NEVERC_TEST_LTO_EXPECT_GUARD_FAILURE)
+    // A native-boundary rejection intentionally stops before ordinary backend
+    // completion. The five module callbacks must still have run exactly once,
+    // and the plugin lifecycle itself must end cleanly.
+    for (uint32_t Index = 0; Index != 5; ++Index)
+      if (State->Calls[Index] != 1)
+        return status(NEVERC_STATUS_VERIFICATION_FAILED);
+#else
     for (uint32_t Index = 5; Index != 8; ++Index)
       if (Passes[Index].InvocationCount == 0 ||
           Passes[Index].ModuleMismatch == NEVERC_TRUE)
@@ -252,6 +323,7 @@ static NevercStatus NEVERC_CALL task_end(const NevercCoreAPI *Core,
     for (uint32_t Index = 0; Index != 5; ++Index)
       if (State->Calls[Index] != 1)
         return status(NEVERC_STATUS_VERIFICATION_FAILED);
+#endif
 #endif
     State->LTOEnded = NEVERC_TRUE;
   }

@@ -1,3 +1,4 @@
+#include "Driver/Parallelism.h"
 #include "Linker/MachO/Config.h"
 #include "Linker/MachO/Driver.h"
 #include "Linker/MachO/Emit.h"
@@ -39,8 +40,13 @@
 #include "neverc/Merge/Merger.h"
 #include <algorithm>
 #include <vector>
+
+// MachOContextAccess defines short accessor macros such as `in`. Keep every
+// standard/product header above it so those macros cannot rewrite headers.
+// clang-format off
 #include "Linker/MachO/MachOContextAccess.h"
 #include "Linker/MachO/MachOLinkerContext.h"
+// clang-format on
 
 using namespace llvm;
 using namespace llvm::MachO;
@@ -49,6 +55,7 @@ using namespace llvm::opt;
 using namespace llvm::sys;
 using namespace linker;
 using namespace linker::macho;
+using linker::macho::detail::LinkInputWorkload;
 
 namespace {
 
@@ -197,6 +204,43 @@ getFrameworkSearchPaths(InputArgList &args,
                         {"/Library/Frameworks", "/System/Library/Frameworks"});
 }
 
+LinkThreadPolicy machODenseOutputThreadPolicy() {
+  LinkThreadPolicy Policy;
+  Policy.MinParallelBytes = 8ULL * 1024ULL * 1024ULL;
+  Policy.BytesPerAdditionalThread = 0;
+  // UUID/code-signature hashing follows total output size even when most
+  // inputs are tiny, so the relocation-oriented average-file gate is wrong.
+  Policy.MinAverageFileBytes = 0;
+  return Policy;
+}
+
+void configureParallelismForWorkload(unsigned RequestedThreads,
+                                     LinkInputWorkload Workload,
+                                     bool FinalizeSerial) {
+  if (commonContext().parallelConfigured())
+    return;
+
+  const LinkThreadPolicy Policy = machODenseOutputThreadPolicy();
+  if (RequestedThreads == 0 && !FinalizeSerial &&
+      (Workload.Bytes < Policy.MinParallelBytes || Workload.Files == 0 ||
+       Workload.Bytes / Workload.Files < Policy.MinAverageFileBytes))
+    return;
+
+  commonContext().configureParallelForInputWorkload(
+      RequestedThreads, Workload.Bytes, Workload.Files, Policy, FinalizeSerial);
+}
+
+std::optional<LinkInputWorkload>
+recordIncrementalInputWorkload(file_magic Magic, uint64_t Size) {
+  linker::macho::detail::IncrementalInputWorkload &Workload =
+      linker::macho::detail::incrementalInputWorkload();
+  if (Magic == file_magic::macho_object)
+    return Workload.recordNative(Size);
+  if (Magic == file_magic::bitcode)
+    return Workload.recordBitcode(Size);
+  return std::nullopt;
+}
+
 enum class LoadType {
   CommandLine,      // Library was passed as a regular CLI argument
   CommandLineForce, // Library was passed via `-force_load`
@@ -213,6 +257,12 @@ InputFile *addFile(StringRef path, LoadType loadType, bool isLazy = false,
   InputFile *newFile = nullptr;
 
   file_magic magic = identify_magic(mbref.getBuffer());
+  if (!isLazy) {
+    if (std::optional<LinkInputWorkload> Workload =
+            recordIncrementalInputWorkload(magic, mbref.getBufferSize()))
+      configureParallelismForWorkload(/*RequestedThreads=*/0, *Workload,
+                                      /*FinalizeSerial=*/false);
+  }
   switch (magic) {
   case file_magic::archive: {
     bool isCommandLineLoad = loadType != LoadType::LCLinkerOption;
@@ -364,7 +414,37 @@ void addFramework(StringRef name, bool isNeeded, bool isWeak, bool isReexport,
   error("framework not found for --framework " + name);
 }
 
+void configureParallelismForMaterializedInputs(
+    const LinkerDriverConfig &driverCfg, bool FinalizeSerial,
+    LinkInputWorkload AdditionalWorkload = {}) {
+  LinkInputWorkload Workload =
+      linker::macho::detail::incrementalInputWorkload().current();
+  Workload.merge(AdditionalWorkload);
+  // UUID and code-signature hashing benefit from the full budget once the
+  // output is large enough; tiny links still stay entirely serial.
+  configureParallelismForWorkload(driverCfg.threadCount, Workload,
+                                  FinalizeSerial);
+}
+
 } // namespace
+
+void macho::configureParallelismForLTONativeObjects(
+    ArrayRef<uint64_t> ObjectSizes) {
+  LinkInputWorkload Workload = linker::macho::detail::incrementalInputWorkload()
+                                   .replaceBitcodeWithNative(ObjectSizes);
+  configureParallelismForWorkload(/*RequestedThreads=*/0, Workload,
+                                  /*FinalizeSerial=*/false);
+}
+
+void macho::configureParallelismForMaterializedInput(MemoryBufferRef Buffer) {
+  const file_magic Magic = identify_magic(Buffer.getBuffer());
+  std::optional<LinkInputWorkload> Workload =
+      recordIncrementalInputWorkload(Magic, Buffer.getBufferSize());
+  if (!Workload || commonContext().parallelConfigured())
+    return;
+  configureParallelismForWorkload(/*RequestedThreads=*/0, *Workload,
+                                  /*FinalizeSerial=*/false);
+}
 
 // ===----------------------------------------------------------------------===
 // LC_LINKER_OPTION processing
@@ -406,6 +486,37 @@ void macho::resolveLCLinkerOptions() {
     SmallVector<StringRef> LCLinkerOptions(unprocessedLCLinkerOptions);
     unprocessedLCLinkerOptions.clear();
 
+    if (!commonContext().parallelConfigured()) {
+      LinkInputWorkload Workload =
+          linker::macho::detail::incrementalInputWorkload().current();
+      DenseSet<StringRef> SeenPaths;
+      auto Account = [&](MemoryBufferRef Buffer) {
+        file_magic Magic = identify_magic(Buffer.getBuffer());
+        if (Magic == file_magic::macho_object || Magic == file_magic::bitcode)
+          Workload.account(Buffer.getBufferSize());
+      };
+      for (const InputFile *File : inputFiles)
+        SeenPaths.insert(File->getName());
+      for (unsigned I = 0; I < LCLinkerOptions.size(); ++I) {
+        StringRef Arg = LCLinkerOptions[I];
+        std::optional<StringRef> Path;
+        if (Arg.consume_front("-l")) {
+          Path = findLibrary(Arg);
+        } else if (Arg == "-framework" && I + 1 < LCLinkerOptions.size()) {
+          Path = findFramework(LCLinkerOptions[++I]);
+        }
+        if (!Path || !SeenPaths.insert(*Path).second)
+          continue;
+        if (std::optional<MemoryBufferRef> Buffer =
+                readFile(*Path, /*reportError=*/false))
+          Account(*Buffer);
+      }
+      // Object-containing frameworks can be sized before parsing. Archives
+      // are intentionally deferred until a member is actually fetched.
+      configureParallelismForWorkload(/*RequestedThreads=*/0, Workload,
+                                      /*FinalizeSerial=*/false);
+    }
+
     for (unsigned i = 0; i < LCLinkerOptions.size(); ++i) {
       StringRef arg = LCLinkerOptions[i];
       if (arg.consume_front("-l")) {
@@ -423,6 +534,14 @@ void macho::resolveLCLinkerOptions() {
         error(arg + " is not allowed in LC_LINKER_OPTION");
       }
     }
+
+    // addLazySymbols() may have synchronously fetched archive members for
+    // already-known undefineds. The per-context accumulator records each
+    // pending member before parsing, never its archive container.
+    configureParallelismForWorkload(
+        /*RequestedThreads=*/0,
+        linker::macho::detail::incrementalInputWorkload().current(),
+        /*FinalizeSerial=*/false);
   }
 }
 
@@ -441,8 +560,11 @@ void addFileList(StringRef path, bool isLazy) {
     addFile(rerootPath(path), LoadType::CommandLine, isLazy);
 }
 
-void prefetchInputFiles(const InputArgList &args) {
+void prefetchInputFiles(const InputArgList &args, unsigned RequestedThreads) {
   TimeTraceScope timeScope("Prefetch input files");
+  if (RequestedThreads != 0 && !commonContext().parallelConfigured())
+    commonContext().configureParallel(RequestedThreads);
+
   SmallVector<StringRef, 0> paths;
   paths.reserve(args.size());
 
@@ -450,6 +572,10 @@ void prefetchInputFiles(const InputArgList &args) {
     if (path.empty())
       return;
     paths.push_back(saver().save(rerootPath(path)));
+  };
+  auto pushResolvedPath = [&](StringRef path) {
+    if (!path.empty())
+      paths.push_back(saver().save(path));
   };
 
   for (const Arg *arg : args) {
@@ -462,6 +588,21 @@ void prefetchInputFiles(const InputArgList &args) {
     case OPT_force_load:
     case OPT_load_hidden:
       pushPath(arg->getValue());
+      break;
+    case OPT_l:
+    case OPT_needed_l:
+    case OPT_reexport_l:
+    case OPT_weak_l:
+    case OPT_hidden_l:
+      if (std::optional<StringRef> Path = findLibrary(arg->getValue()))
+        pushResolvedPath(*Path);
+      break;
+    case OPT_framework:
+    case OPT_needed_framework:
+    case OPT_reexport_framework:
+    case OPT_weak_framework:
+      if (std::optional<StringRef> Path = findFramework(arg->getValue()))
+        pushResolvedPath(*Path);
       break;
     case OPT_filelist: {
       std::optional<MemoryBufferRef> buffer =
@@ -488,14 +629,38 @@ void prefetchInputFiles(const InputArgList &args) {
       uniquePaths.push_back(path);
 
   if (!parallelEnabled() || uniquePaths.size() < 8) {
-    for (StringRef path : uniquePaths)
-      (void)readFile(path, /*reportError=*/false);
+    LinkInputWorkload PrefetchedWorkload;
+    for (StringRef path : uniquePaths) {
+      std::optional<MemoryBufferRef> Buffer =
+          readFile(path, /*reportError=*/false);
+      if (!Buffer)
+        continue;
+      file_magic Magic = identify_magic(Buffer->getBuffer());
+      if (Magic == file_magic::macho_object || Magic == file_magic::bitcode)
+        PrefetchedWorkload.account(Buffer->getBufferSize());
+    }
+    // A single complex object can use the pool while it splits C strings and
+    // parses relocation sections. Configure after the serial prefetch has made
+    // its size known. Archives, dylibs and TBDs do not contribute native
+    // output until an archive member is actually materialized.
+    configureParallelismForWorkload(/*RequestedThreads=*/0, PrefetchedWorkload,
+                                    /*FinalizeSerial=*/false);
     return;
   }
 
   parallelForEach(uniquePaths, [](StringRef path) {
     (void)readFile(path, /*reportError=*/false);
   });
+}
+
+LinkInputWorkload prefetchSectCreatePayloads(const InputArgList &args) {
+  LinkInputWorkload Workload;
+  for (const Arg *Arg : args.filtered(OPT_sectcreate)) {
+    if (std::optional<MemoryBufferRef> Buffer =
+            readFile(Arg->getValue(2), /*reportError=*/false))
+      Workload.account(Buffer->getBufferSize());
+  }
+  return Workload;
 }
 
 // Match sub-library name "libfoo" against any loaded dylib whose filename is
@@ -912,9 +1077,9 @@ void handleSymbolPatterns(InputArgList &args, SymbolPatterns &symbolPatterns,
     parseSymbolPatternsFile(arg, symbolPatterns);
 }
 
-void createFiles(const InputArgList &args) {
+void createFiles(const InputArgList &args, unsigned RequestedThreads) {
   TimeTraceScope timeScope("Load input files");
-  prefetchInputFiles(args);
+  prefetchInputFiles(args, RequestedThreads);
   // This loop should be reserved for options whose exact ordering matters.
   // Other options should be handled via filtered() and/or getLastArg().
   bool isLazy = false;
@@ -1223,12 +1388,9 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
           const LinkerDriverConfig &driverCfg) {
   LinkerExecutionContext LocalExecution;
   LinkerExecutionContext &Execution =
-      driverCfg.executionContext ? *driverCfg.executionContext
-                                 : LocalExecution;
-  MachOLinkerContext &Backend =
-      Execution.createBackend<MachOLinkerContext>();
+      driverCfg.executionContext ? *driverCfg.executionContext : LocalExecution;
+  MachOLinkerContext &Backend = Execution.createBackend<MachOLinkerContext>();
   CommonLinkerContext &Common = Backend;
-  Common.configureParallel(driverCfg.threadCount);
 
   Common.e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
   Common.e.cleanupCallback = []() {
@@ -1259,9 +1421,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   MachOOptTable parser;
   InputArgList args = parser.parse(argsArr.slice(1));
 
-  Common.e.errorLimitExceededMsg =
-      "too many errors emitted, stopping now "
-      "(use -ferror-limit=0 to see all errors)";
+  Common.e.errorLimitExceededMsg = "too many errors emitted, stopping now "
+                                   "(use -ferror-limit=0 to see all errors)";
   Common.e.errorLimit = driverCfg.errorLimit;
   Common.e.verbose = driverCfg.verbose;
   Common.e.fatalWarnings = driverCfg.fatalWarnings;
@@ -1566,7 +1727,12 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     TimeTraceScope timeScope("ExecuteLinker");
 
     initLLVM(); // must be run before any call to addFile()
-    createFiles(args);
+    createFiles(args, driverCfg.threadCount);
+    // A tiny direct set may still discover a large auto-linked archive below.
+    // Select a parallel budget now when justified, but do not permanently
+    // lock an automatic one-thread result until those late inputs are known.
+    configureParallelismForMaterializedInputs(driverCfg,
+                                              /*FinalizeSerial=*/false);
 
     {
       auto reexportHandler = [](const Arg *arg,
@@ -1595,6 +1761,18 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     bool didCompileBitcodeFiles = compileBitcodeFiles();
 
     resolveLCLinkerOptions();
+
+    // -sectcreate payloads become output sections below. Read and account for
+    // them before the automatic decision without changing input-file order.
+    const LinkInputWorkload SectCreateWorkload =
+        prefetchSectCreatePayloads(args);
+
+    // The resolver preflights each LC_LINKER_OPTION batch before publishing
+    // lazy symbols. Finalize the automatic serial decision here only after all
+    // recursively discovered options and materialized inputs are known.
+    configureParallelismForMaterializedInputs(driverCfg,
+                                              /*FinalizeSerial=*/true,
+                                              SectCreateWorkload);
 
     if (didCompileBitcodeFiles)
       handleExplicitExports();

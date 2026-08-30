@@ -153,3 +153,55 @@ TEST_F(PluginLTOIRPassTest, PropagatesParallelLTOPassFailure) {
       << Result.err;
   EXPECT_FALSE(fs::exists(Output));
 }
+
+TEST_F(PluginLTOIRPassTest,
+       RejectsTypeMetadataIntrinsicInjectedAtSerialPreCodegen) {
+  const fs::path Source = tmpFile("lto_plugin_serial_late_type_test.c");
+  const fs::path Output = tmpFile("lto_plugin_serial_late_type_test");
+  writeFile(Source, ltoProgram());
+
+  CmdResult Result =
+      ncc({std::string("-fplugin=") + NEVERC_TEST_LTO_IR_PASS_UNLOWERED_PLUGIN,
+           "-O2", "-fno-builtin-mimalloc", "-fparallel-codegen=1",
+           Source.string(), "-o", Output.string()});
+  EXPECT_NE(Result.exitCode, 0);
+  EXPECT_NE(Result.err.find("unlowered LLVM intrinsic 'llvm.type.test'"),
+            std::string::npos)
+      << Result.err;
+  EXPECT_NE(Result.err.find("refusing unsafe code generation"),
+            std::string::npos)
+      << Result.err;
+  EXPECT_EQ(Result.err.find("failed to end LTO plugin task"), std::string::npos)
+      << Result.err;
+  EXPECT_EQ(Result.err.find("Destroy callback failed"), std::string::npos)
+      << Result.err;
+  EXPECT_FALSE(fs::exists(Output));
+}
+
+TEST_F(PluginLTOIRPassTest,
+       RejectsTypeMetadataIntrinsicInjectedAtParallelWholeModuleBarrier) {
+  const fs::path Source = tmpFile("lto_plugin_parallel_late_type_test.c");
+  const fs::path Output = tmpFile("lto_plugin_parallel_late_type_test");
+  writeFile(Source, ltoProgram());
+  ScopedPluginTestEnv DebugPCG("NEVERC_PCG_DEBUG", "1");
+
+  CmdResult Result =
+      ncc({std::string("-fplugin=") + NEVERC_TEST_LTO_IR_PASS_UNLOWERED_PLUGIN,
+           "-O2", "-fno-builtin-mimalloc", "-fparallel-codegen=2", "-mllvm",
+           "-neverc-pcg-min-funcs=2", "-mllvm", "-neverc-pcg-weight-floor=0",
+           Source.string(), "-o", Output.string()});
+  EXPECT_NE(Result.exitCode, 0);
+  EXPECT_NE(Result.err.find("WholeModuleBarrier=yes"), std::string::npos)
+      << Result.err;
+  EXPECT_NE(Result.err.find("unlowered LLVM intrinsic 'llvm.type.test'"),
+            std::string::npos)
+      << Result.err;
+  EXPECT_NE(Result.err.find("refusing unsafe code generation"),
+            std::string::npos)
+      << Result.err;
+  EXPECT_EQ(Result.err.find("failed to end LTO plugin task"), std::string::npos)
+      << Result.err;
+  EXPECT_EQ(Result.err.find("Destroy callback failed"), std::string::npos)
+      << Result.err;
+  EXPECT_FALSE(fs::exists(Output));
+}

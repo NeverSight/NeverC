@@ -40,6 +40,14 @@ Error backend(const Config &C, AddStreamFn AddStream,
               ModuleSummaryIndex &CombinedIndex,
               bool SkipOptimization = false);
 
+/// Runs the LTO backend and transfers ownership of each completed object to
+/// the client. This preserves AddStreamFn for existing clients while allowing
+/// in-memory linkers to avoid an extra copy and fallible temporary-file spool.
+Error backendBuffered(const Config &C, AddOwnedOutputFn AddOutput,
+                      unsigned ParallelCodeGenParallelismLevel, Module &M,
+                      ModuleSummaryIndex &CombinedIndex,
+                      bool SkipOptimization = false);
+
 Error finalizeOptimizationRemarks(
     std::unique_ptr<ToolOutputFile> DiagOutputFile);
 } // namespace lto

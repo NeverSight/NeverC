@@ -1302,6 +1302,22 @@ target_compile_definitions(neverc-test-plugin-lto-ir-pass-error PRIVATE
 set_target_properties(
   neverc-test-plugin-lto-ir-pass-error PROPERTIES PREFIX ""
 )
+add_library(neverc-test-plugin-lto-ir-pass-unlowered MODULE
+  Inputs/Plugin/IRLTOPlugin.c
+)
+target_include_directories(neverc-test-plugin-lto-ir-pass-unlowered PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-lto-ir-pass-unlowered PRIVATE
+  c_std_11
+)
+target_compile_definitions(neverc-test-plugin-lto-ir-pass-unlowered PRIVATE
+  NEVERC_TEST_LTO_EXPECT_GUARD_FAILURE=1
+  NEVERC_TEST_LTO_INJECT_TYPE_TEST=1
+)
+set_target_properties(
+  neverc-test-plugin-lto-ir-pass-unlowered PROPERTIES PREFIX ""
+)
 add_library(neverc-test-plugin-mir-pass MODULE
   Inputs/Plugin/MIRPassPlugin.c
 )
@@ -2008,6 +2024,7 @@ gtest_discover_tests(neverc-plugin-target-mc-tests
 )
 
 add_executable(neverc-plugin-dyncode-tests
+  DynCodeDriverIntegrationTests.cpp
   PluginDynCodeRequestTests.cpp
   PluginDynCodePhaseTests.cpp
   PluginDynCodeIRStageTests.cpp
@@ -2025,6 +2042,7 @@ target_link_libraries(neverc-plugin-dyncode-tests PRIVATE
   GTest::gtest_main
   LLVMCore
   nevercDynCode
+  nevercInvoke
   nevercPluginCore
   nevercPluginIO
   nevercPluginTarget
@@ -2099,6 +2117,7 @@ target_include_directories(neverc-plugin-link-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Linker/Backends/COFF
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Linker/Backends/ELF
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Linker/Backends/MachO
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../llvm/lib/LTO
 )
 target_compile_features(neverc-plugin-link-tests PRIVATE cxx_std_17)
 target_compile_definitions(neverc-plugin-link-tests PRIVATE
@@ -2586,6 +2605,7 @@ target_compile_definitions(neverc-tests PRIVATE
   NEVERC_TEST_IR_ANALYSIS_CONCURRENT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-analysis-concurrent>"
   NEVERC_TEST_LTO_IR_PASS_PLUGIN="$<TARGET_FILE:neverc-test-plugin-lto-ir-pass>"
   NEVERC_TEST_LTO_IR_PASS_ERROR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-lto-ir-pass-error>"
+  NEVERC_TEST_LTO_IR_PASS_UNLOWERED_PLUGIN="$<TARGET_FILE:neverc-test-plugin-lto-ir-pass-unlowered>"
   NEVERC_TEST_MIR_PASS_PLUGIN="$<TARGET_FILE:neverc-test-plugin-mir-pass>"
   NEVERC_TEST_MIR_PASS_INVALID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-mir-pass-invalid>"
   NEVERC_TEST_MIR_PASS_MODULE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-mir-pass-module>"
@@ -2671,6 +2691,7 @@ add_dependencies(neverc-tests
   neverc-test-plugin-ir-analysis-concurrent
   neverc-test-plugin-lto-ir-pass
   neverc-test-plugin-lto-ir-pass-error
+  neverc-test-plugin-lto-ir-pass-unlowered
   neverc-test-plugin-mir-pass
   neverc-test-plugin-mir-pass-invalid
   neverc-test-plugin-mir-pass-module

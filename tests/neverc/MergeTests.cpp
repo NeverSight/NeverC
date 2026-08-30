@@ -10,6 +10,7 @@
 
 #include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
+#include "ELF/ExtendedSectionNumbering.h"
 #include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
 #include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
 #include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
@@ -24,6 +25,7 @@
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/DebugInfo/DWARF/DWARFUnitIndex.h"
 #include "llvm/Support/DataExtractor.h"
+#include "llvm/Support/Endian.h"
 #include "llvm/Support/raw_ostream.h"
 
 // Used only by the NEVERC_BINARY-gated differential suite at end of file, but
@@ -1724,6 +1726,247 @@ SmallVector<char, 0> buildSectionedELF(ArrayRef<SecSpec> Secs,
              RelTab[i].size() * sizeof(Rela));
 
   return Buf;
+}
+
+/// Build a compact ELF64LE object whose section table crosses the gABI
+/// reserved-index boundary. Most user sections are empty, so the first
+/// extended-numbering case is only a few MiB and exercises the real public
+/// merge path without synthesizing a vmlinux-sized payload. WithRelocation
+/// gives the first and high-index user sections eight bytes each and makes a
+/// relocation in the first reference the symbol in the high section.
+SmallVector<char, 0>
+buildExtendedNumberingELF(unsigned UserSectionCount = ELF::SHN_LORESERVE,
+                          bool WithRelocation = false) {
+  using namespace ELF;
+  using Ehdr = Elf64_Ehdr;
+  using Shdr = Elf64_Shdr;
+  using Sym = Elf64_Sym;
+  using Rela = Elf64_Rela;
+  using Word = Elf64_Word;
+
+  SmallVector<char, 0> ShStr(1, '\0');
+  SmallVector<uint32_t, 0> UserNameOffsets;
+  UserNameOffsets.reserve(UserSectionCount);
+  auto AddString = [](SmallVectorImpl<char> &Table, StringRef Value) {
+    const uint32_t Offset = Table.size();
+    Table.append(Value.begin(), Value.end());
+    Table.push_back('\0');
+    return Offset;
+  };
+  for (unsigned I = 0; I < UserSectionCount; ++I) {
+    const std::string Name = (".s" + Twine(I)).str();
+    UserNameOffsets.push_back(AddString(ShStr, Name));
+  }
+  const uint32_t SymtabName = AddString(ShStr, ".symtab");
+  const uint32_t ShndxName = AddString(ShStr, ".symtab_shndx");
+  const uint32_t StrtabName = AddString(ShStr, ".strtab");
+  const uint32_t ShstrtabName = AddString(ShStr, ".shstrtab");
+  const uint32_t RelaName = WithRelocation ? AddString(ShStr, ".rela.s0") : 0;
+
+  SmallVector<char, 64> StrTab(1, '\0');
+  const uint32_t LocalName = AddString(StrTab, "high_local");
+  const uint32_t GlobalName = AddString(StrTab, "high_global");
+  const uint32_t WeakName = AddString(StrTab, "high_weak");
+  // Null, local STT_SECTION, named local, strong global, weak global. Keeping
+  // all four defined symbols in the same high-index section explicitly covers
+  // every binding/type path that the vmlinux input exercises.
+  Sym Symbols[5]{};
+  Symbols[1].st_info = (STB_LOCAL << 4) | STT_SECTION;
+  Symbols[2].st_name = LocalName;
+  Symbols[2].st_info = (STB_LOCAL << 4) | STT_OBJECT;
+  Symbols[2].st_size = WithRelocation ? 8 : 0;
+  Symbols[3].st_name = GlobalName;
+  Symbols[3].st_info = (STB_GLOBAL << 4) | STT_OBJECT;
+  Symbols[3].st_size = WithRelocation ? 8 : 0;
+  Symbols[4].st_name = WeakName;
+  Symbols[4].st_info = (STB_WEAK << 4) | STT_OBJECT;
+  Symbols[4].st_size = WithRelocation ? 8 : 0;
+  Word SymbolSectionIndices[5]{};
+  for (unsigned I = 1; I < std::size(Symbols); ++I) {
+    Symbols[I].st_shndx =
+        UserSectionCount >= SHN_LORESERVE ? SHN_XINDEX : UserSectionCount;
+    if (UserSectionCount >= SHN_LORESERVE)
+      SymbolSectionIndices[I] = UserSectionCount;
+  }
+
+  const unsigned SymtabIndex = 1 + UserSectionCount;
+  const unsigned ShndxIndex = SymtabIndex + 1;
+  const unsigned StrtabIndex = ShndxIndex + 1;
+  const unsigned ShstrtabIndex = StrtabIndex + 1;
+  const unsigned RelaIndex = ShstrtabIndex + 1;
+  const unsigned SectionCount = ShstrtabIndex + 1 + (WithRelocation ? 1 : 0);
+
+  uint64_t Offset = sizeof(Ehdr);
+  const uint64_t TargetOffset = Offset;
+  if (WithRelocation)
+    Offset += 8;
+  const uint64_t HighSectionOffset = Offset;
+  if (WithRelocation)
+    Offset += 8;
+  Offset = alignTo(Offset, alignof(Sym));
+  const uint64_t SymtabOffset = Offset;
+  Offset += sizeof(Symbols);
+  const uint64_t ShndxOffset = Offset;
+  Offset += sizeof(SymbolSectionIndices);
+  const uint64_t StrtabOffset = Offset;
+  Offset += StrTab.size();
+  const uint64_t ShstrtabOffset = Offset;
+  Offset += ShStr.size();
+  uint64_t RelaOffset = 0;
+  if (WithRelocation) {
+    Offset = alignTo(Offset, alignof(Rela));
+    RelaOffset = Offset;
+    Offset += sizeof(Rela);
+  }
+  Offset = alignTo(Offset, alignof(Shdr));
+  const uint64_t SectionTableOffset = Offset;
+
+  SmallVector<char, 0> Buffer(
+      SectionTableOffset + uint64_t(SectionCount) * sizeof(Shdr), 0);
+  auto *Header = reinterpret_cast<Ehdr *>(Buffer.data());
+  memcpy(Header->e_ident, ElfMagic, 4);
+  Header->e_ident[EI_CLASS] = ELFCLASS64;
+  Header->e_ident[EI_DATA] = ELFDATA2LSB;
+  Header->e_ident[EI_VERSION] = EV_CURRENT;
+  Header->e_type = ET_REL;
+  Header->e_machine = EM_AARCH64;
+  Header->e_version = EV_CURRENT;
+  Header->e_ehsize = sizeof(Ehdr);
+  Header->e_shentsize = sizeof(Shdr);
+  Header->e_shoff = SectionTableOffset;
+  Header->e_shnum =
+      SectionCount >= SHN_LORESERVE ? 0 : static_cast<uint16_t>(SectionCount);
+  Header->e_shstrndx = ShstrtabIndex >= SHN_LORESERVE
+                           ? SHN_XINDEX
+                           : static_cast<uint16_t>(ShstrtabIndex);
+
+  auto *Sections = reinterpret_cast<Shdr *>(Buffer.data() + SectionTableOffset);
+  if (SectionCount >= SHN_LORESERVE)
+    Sections[0].sh_size = SectionCount;
+  if (ShstrtabIndex >= SHN_LORESERVE)
+    Sections[0].sh_link = ShstrtabIndex;
+  for (unsigned I = 0; I < UserSectionCount; ++I) {
+    Shdr &Section = Sections[I + 1];
+    Section.sh_name = UserNameOffsets[I];
+    Section.sh_type = SHT_PROGBITS;
+    Section.sh_offset = sizeof(Ehdr);
+    Section.sh_addralign = 1;
+    if (WithRelocation && I == 0) {
+      Section.sh_offset = TargetOffset;
+      Section.sh_size = 8;
+      Section.sh_addralign = 8;
+    } else if (WithRelocation && I + 1 == UserSectionCount) {
+      Section.sh_offset = HighSectionOffset;
+      Section.sh_size = 8;
+      Section.sh_addralign = 8;
+    }
+  }
+  Sections[SymtabIndex].sh_name = SymtabName;
+  Sections[SymtabIndex].sh_type = SHT_SYMTAB;
+  Sections[SymtabIndex].sh_offset = SymtabOffset;
+  Sections[SymtabIndex].sh_size = sizeof(Symbols);
+  Sections[SymtabIndex].sh_link = StrtabIndex;
+  Sections[SymtabIndex].sh_info = 3;
+  Sections[SymtabIndex].sh_entsize = sizeof(Sym);
+  Sections[SymtabIndex].sh_addralign = alignof(Sym);
+  Sections[ShndxIndex].sh_name = ShndxName;
+  Sections[ShndxIndex].sh_type = SHT_SYMTAB_SHNDX;
+  Sections[ShndxIndex].sh_offset = ShndxOffset;
+  Sections[ShndxIndex].sh_size = sizeof(SymbolSectionIndices);
+  Sections[ShndxIndex].sh_link = SymtabIndex;
+  Sections[ShndxIndex].sh_entsize = sizeof(Word);
+  Sections[ShndxIndex].sh_addralign = alignof(Word);
+  Sections[StrtabIndex].sh_name = StrtabName;
+  Sections[StrtabIndex].sh_type = SHT_STRTAB;
+  Sections[StrtabIndex].sh_offset = StrtabOffset;
+  Sections[StrtabIndex].sh_size = StrTab.size();
+  Sections[StrtabIndex].sh_addralign = 1;
+  Sections[ShstrtabIndex].sh_name = ShstrtabName;
+  Sections[ShstrtabIndex].sh_type = SHT_STRTAB;
+  Sections[ShstrtabIndex].sh_offset = ShstrtabOffset;
+  Sections[ShstrtabIndex].sh_size = ShStr.size();
+  Sections[ShstrtabIndex].sh_addralign = 1;
+  if (WithRelocation) {
+    Sections[RelaIndex].sh_name = RelaName;
+    Sections[RelaIndex].sh_type = SHT_RELA;
+    Sections[RelaIndex].sh_offset = RelaOffset;
+    Sections[RelaIndex].sh_size = sizeof(Rela);
+    Sections[RelaIndex].sh_link = SymtabIndex;
+    Sections[RelaIndex].sh_info = 1;
+    Sections[RelaIndex].sh_entsize = sizeof(Rela);
+    Sections[RelaIndex].sh_addralign = alignof(Rela);
+  }
+
+  static constexpr uint8_t HighPayload[8] = {0x91, 0x82, 0x73, 0x64,
+                                             0x55, 0x46, 0x37, 0x28};
+  if (WithRelocation) {
+    memcpy(Buffer.data() + HighSectionOffset, HighPayload, sizeof(HighPayload));
+    Rela Relocation{};
+    Relocation.r_offset = 0;
+    Relocation.r_info = (uint64_t(1) << 32) | R_AARCH64_ABS64;
+    Relocation.r_addend = 3;
+    memcpy(Buffer.data() + RelaOffset, &Relocation, sizeof(Relocation));
+  }
+  memcpy(Buffer.data() + SymtabOffset, Symbols, sizeof(Symbols));
+  memcpy(Buffer.data() + ShndxOffset, SymbolSectionIndices,
+         sizeof(SymbolSectionIndices));
+  memcpy(Buffer.data() + StrtabOffset, StrTab.data(), StrTab.size());
+  memcpy(Buffer.data() + ShstrtabOffset, ShStr.data(), ShStr.size());
+  return Buffer;
+}
+
+template <typename ELFT> void expectExtendedSectionEncodingForELFT() {
+  using Ehdr = typename ELFT::Ehdr;
+  using Shdr = typename ELFT::Shdr;
+  using namespace ELF;
+
+  auto Check = [](uint64_t Count, uint64_t Names, uint16_t ExpectedCount,
+                  uint16_t ExpectedNames, uint64_t NullSize,
+                  uint32_t NullLink) {
+    Ehdr Header{};
+    Shdr Null{};
+    ASSERT_TRUE(neverc::merge::detail::encodeELFSectionHeaderNumbers<ELFT>(
+        Header, Null, Count, Names));
+    EXPECT_EQ(static_cast<uint16_t>(Header.e_shnum), ExpectedCount);
+    EXPECT_EQ(static_cast<uint16_t>(Header.e_shstrndx), ExpectedNames);
+    EXPECT_EQ(static_cast<uint64_t>(Null.sh_size), NullSize);
+    EXPECT_EQ(static_cast<uint32_t>(Null.sh_link), NullLink);
+
+    const auto *HeaderBytes = reinterpret_cast<const uint8_t *>(&Header);
+    EXPECT_EQ(support::endian::read16(HeaderBytes + offsetof(Ehdr, e_shnum),
+                                      ELFT::TargetEndianness),
+              ExpectedCount);
+    EXPECT_EQ(support::endian::read16(HeaderBytes + offsetof(Ehdr, e_shstrndx),
+                                      ELFT::TargetEndianness),
+              ExpectedNames);
+    const auto *NullBytes = reinterpret_cast<const uint8_t *>(&Null);
+    if constexpr (ELFT::Is64Bits)
+      EXPECT_EQ(support::endian::read64(NullBytes + offsetof(Shdr, sh_size),
+                                        ELFT::TargetEndianness),
+                NullSize);
+    else
+      EXPECT_EQ(support::endian::read32(NullBytes + offsetof(Shdr, sh_size),
+                                        ELFT::TargetEndianness),
+                NullSize);
+    EXPECT_EQ(support::endian::read32(NullBytes + offsetof(Shdr, sh_link),
+                                      ELFT::TargetEndianness),
+              NullLink);
+  };
+
+  Check(SHN_LORESERVE - 1, SHN_LORESERVE - 2, SHN_LORESERVE - 1,
+        SHN_LORESERVE - 2, 0, 0);
+  Check(SHN_LORESERVE, SHN_LORESERVE - 1, 0, SHN_LORESERVE - 1, SHN_LORESERVE,
+        0);
+  Check(SHN_LORESERVE + 1, SHN_LORESERVE, 0, SHN_XINDEX, SHN_LORESERVE + 1,
+        SHN_LORESERVE);
+
+  Ehdr Header{};
+  Shdr Null{};
+  EXPECT_FALSE(neverc::merge::detail::encodeELFSectionHeaderNumbers<ELFT>(
+      Header, Null, 8, 8));
+  if constexpr (!ELFT::Is64Bits)
+    EXPECT_FALSE(neverc::merge::detail::encodeELFSectionHeaderNumbers<ELFT>(
+        Header, Null, uint64_t(std::numeric_limits<uint32_t>::max()) + 1, 1));
 }
 
 struct ParsedSec {
@@ -3660,6 +3903,429 @@ TEST(MergeELF, SingleValidBuffer) {
   auto [OK, Out] = mergeELF(Bufs);
   EXPECT_TRUE(OK);
   EXPECT_TRUE(isValidELF64LE(Out));
+}
+
+TEST(MergeELF, EmitsExtendedSectionAndSymbolIndices) {
+  using namespace ELF;
+  auto Input = buildExtendedNumberingELF(/*UserSectionCount=*/SHN_LORESERVE,
+                                         /*WithRelocation=*/true);
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(std::move(Input));
+
+  auto [OK, Output] = mergeELF(Inputs);
+  ASSERT_TRUE(OK);
+  ASSERT_GE(Output.size(), sizeof(Elf64_Ehdr));
+  const auto *Header = reinterpret_cast<const Elf64_Ehdr *>(Output.data());
+  ASSERT_EQ(Header->e_shnum, 0u);
+  ASSERT_EQ(Header->e_shstrndx, SHN_XINDEX);
+  ASSERT_LE(Header->e_shoff + sizeof(Elf64_Shdr), Output.size());
+  const auto *Sections =
+      reinterpret_cast<const Elf64_Shdr *>(Output.data() + Header->e_shoff);
+  const uint64_t SectionCount = Sections[0].sh_size;
+  const uint32_t ShstrtabIndex = Sections[0].sh_link;
+  ASSERT_GT(SectionCount, SHN_LORESERVE);
+  ASSERT_LT(ShstrtabIndex, SectionCount);
+  EXPECT_EQ(Sections[ShstrtabIndex].sh_type, SHT_STRTAB);
+
+  std::optional<unsigned> SymtabIndex;
+  std::optional<unsigned> ShndxIndex;
+  std::optional<unsigned> RelaIndex;
+  for (unsigned I = 0; I < SectionCount; ++I) {
+    if (Sections[I].sh_type == SHT_SYMTAB)
+      SymtabIndex = I;
+    else if (Sections[I].sh_type == SHT_SYMTAB_SHNDX)
+      ShndxIndex = I;
+    else if (Sections[I].sh_type == SHT_RELA)
+      RelaIndex = I;
+  }
+  ASSERT_TRUE(SymtabIndex);
+  ASSERT_TRUE(ShndxIndex);
+  ASSERT_TRUE(RelaIndex);
+  ASSERT_EQ(Sections[*ShndxIndex].sh_link, *SymtabIndex);
+  ASSERT_EQ(Sections[*SymtabIndex].sh_size, 5 * sizeof(Elf64_Sym));
+  ASSERT_EQ(Sections[*SymtabIndex].sh_info, 3u);
+  ASSERT_EQ(Sections[*ShndxIndex].sh_size, 5 * sizeof(Elf64_Word));
+  const auto *Symbols = reinterpret_cast<const Elf64_Sym *>(
+      Output.data() + Sections[*SymtabIndex].sh_offset);
+  const auto *SymbolSectionIndices = reinterpret_cast<const Elf64_Word *>(
+      Output.data() + Sections[*ShndxIndex].sh_offset);
+  EXPECT_EQ(SymbolSectionIndices[0], 0u);
+  for (unsigned I = 1; I < 5; ++I) {
+    EXPECT_EQ(Symbols[I].st_shndx, SHN_XINDEX);
+    EXPECT_EQ(SymbolSectionIndices[I], SHN_LORESERVE);
+  }
+  EXPECT_EQ(Symbols[1].getBinding(), STB_LOCAL);
+  EXPECT_EQ(Symbols[1].getType(), STT_SECTION);
+  EXPECT_EQ(Symbols[2].getBinding(), STB_LOCAL);
+  EXPECT_EQ(Symbols[2].getType(), STT_OBJECT);
+  EXPECT_EQ(Symbols[2].st_size, 8u);
+  EXPECT_EQ(Symbols[3].getBinding(), STB_GLOBAL);
+  EXPECT_EQ(Symbols[3].getType(), STT_OBJECT);
+  EXPECT_EQ(Symbols[3].st_size, 8u);
+  EXPECT_EQ(Symbols[4].getBinding(), STB_WEAK);
+  EXPECT_EQ(Symbols[4].getType(), STT_OBJECT);
+  EXPECT_EQ(Symbols[4].st_size, 8u);
+
+  const uint32_t HighSectionIndex = SymbolSectionIndices[1];
+  ASSERT_LT(HighSectionIndex, SectionCount);
+  ASSERT_EQ(Sections[HighSectionIndex].sh_size, 8u);
+  ASSERT_LE(Sections[HighSectionIndex].sh_offset + 8, Output.size());
+  static constexpr uint8_t HighPayload[8] = {0x91, 0x82, 0x73, 0x64,
+                                             0x55, 0x46, 0x37, 0x28};
+  EXPECT_EQ(memcmp(Output.data() + Sections[HighSectionIndex].sh_offset,
+                   HighPayload, sizeof(HighPayload)),
+            0);
+
+  ASSERT_EQ(Sections[*RelaIndex].sh_link, *SymtabIndex);
+  ASSERT_EQ(Sections[*RelaIndex].sh_info, 1u);
+  ASSERT_EQ(Sections[*RelaIndex].sh_size, sizeof(Elf64_Rela));
+  ASSERT_LE(Sections[*RelaIndex].sh_offset + sizeof(Elf64_Rela), Output.size());
+  const auto *Relocation = reinterpret_cast<const Elf64_Rela *>(
+      Output.data() + Sections[*RelaIndex].sh_offset);
+  EXPECT_EQ(uint64_t(Relocation->r_info) >> 32, 1u);
+  EXPECT_EQ(uint32_t(uint64_t(Relocation->r_info)), R_AARCH64_ABS64);
+  EXPECT_EQ(Relocation->r_offset, 0u);
+  EXPECT_EQ(Relocation->r_addend, 3);
+
+  std::string Error;
+  EXPECT_TRUE(verifyMerge(Inputs, Output, Format::ELF64LE, {}, &Error))
+      << Error;
+}
+
+TEST(MergeELF, SectionCountEscapeStartsAtShnLoreserve) {
+  using namespace ELF;
+  struct Case {
+    unsigned UserSections;
+    uint64_t ExpectedCount;
+    bool Extended;
+  };
+  for (const Case &C : {Case{SHN_LORESERVE - 5, SHN_LORESERVE - 1, false},
+                        Case{SHN_LORESERVE - 4, SHN_LORESERVE, true}}) {
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(buildExtendedNumberingELF(C.UserSections));
+    auto [OK, Output] = mergeELF(Inputs);
+    ASSERT_TRUE(OK);
+    ASSERT_GE(Output.size(), sizeof(Elf64_Ehdr));
+    const auto *Header = reinterpret_cast<const Elf64_Ehdr *>(Output.data());
+    ASSERT_LE(Header->e_shoff + sizeof(Elf64_Shdr), Output.size());
+    const auto *Sections =
+        reinterpret_cast<const Elf64_Shdr *>(Output.data() + Header->e_shoff);
+    if (C.Extended) {
+      EXPECT_EQ(Header->e_shnum, 0u);
+      EXPECT_EQ(Sections[0].sh_size, C.ExpectedCount);
+    } else {
+      EXPECT_EQ(Header->e_shnum, C.ExpectedCount);
+      EXPECT_EQ(Sections[0].sh_size, 0u);
+    }
+    // At the exact count boundary the final table index is still directly
+    // representable; SHN_XINDEX begins only when that index itself reaches
+    // SHN_LORESERVE.
+    EXPECT_EQ(Header->e_shstrndx, C.ExpectedCount - 1);
+    EXPECT_EQ(Sections[0].sh_link, 0u);
+  }
+}
+
+TEST(MergeELF, ExtendedSectionEncodingIsClassAndEndianCorrect) {
+  expectExtendedSectionEncodingForELFT<object::ELF32LE>();
+  expectExtendedSectionEncodingForELFT<object::ELF32BE>();
+  expectExtendedSectionEncodingForELFT<object::ELF64LE>();
+  expectExtendedSectionEncodingForELFT<object::ELF64BE>();
+}
+
+TEST(MergeELF, RejectsMalformedSymtabShndxCompanion) {
+  using namespace ELF;
+  auto Input = buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Input.data());
+  ASSERT_GT(Header->e_shnum, 0u);
+  auto *Sections =
+      reinterpret_cast<Elf64_Shdr *>(Input.data() + Header->e_shoff);
+  std::optional<unsigned> ShndxIndex;
+  for (unsigned I = 0; I < Header->e_shnum; ++I)
+    if (Sections[I].sh_type == SHT_SYMTAB_SHNDX)
+      ShndxIndex = I;
+  ASSERT_TRUE(ShndxIndex);
+  ASSERT_EQ(Sections[*ShndxIndex].sh_size, 5 * sizeof(Elf64_Word));
+  auto *Indices = reinterpret_cast<Elf64_Word *>(
+      Input.data() + Sections[*ShndxIndex].sh_offset);
+  Indices[1] = 1;
+
+  for (bool Verify : {false, true}) {
+    Options Opts;
+    Opts.verify = Verify;
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(Input);
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
+
+  auto WrongEntsize = buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  Header = reinterpret_cast<Elf64_Ehdr *>(WrongEntsize.data());
+  Sections =
+      reinterpret_cast<Elf64_Shdr *>(WrongEntsize.data() + Header->e_shoff);
+  ShndxIndex.reset();
+  for (unsigned I = 0; I < Header->e_shnum; ++I)
+    if (Sections[I].sh_type == SHT_SYMTAB_SHNDX)
+      ShndxIndex = I;
+  ASSERT_TRUE(ShndxIndex);
+  Sections[*ShndxIndex].sh_entsize = 2 * sizeof(Elf64_Word);
+  for (bool Verify : {false, true}) {
+    Options Opts;
+    Opts.verify = Verify;
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(WrongEntsize);
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
+}
+
+TEST(MergeELF, RejectsOrphanDuplicateAndUnselectedSymtabShndxAtomically) {
+  using namespace ELF;
+
+  auto ExpectRejected = [](SmallVector<char, 0> Input) {
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      Options Opts;
+      Opts.verify = Verify;
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(Input);
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  };
+
+  auto Orphan = buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Orphan.data());
+  auto *Sections =
+      reinterpret_cast<Elf64_Shdr *>(Orphan.data() + Header->e_shoff);
+  std::optional<unsigned> ShndxIndex;
+  for (unsigned I = 0; I < Header->e_shnum; ++I)
+    if (Sections[I].sh_type == SHT_SYMTAB_SHNDX)
+      ShndxIndex = I;
+  ASSERT_TRUE(ShndxIndex);
+  ASSERT_EQ(Sections[1].sh_type, SHT_PROGBITS);
+  Sections[*ShndxIndex].sh_link = 1;
+  ExpectRejected(std::move(Orphan));
+
+  auto Duplicate = buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  Header = reinterpret_cast<Elf64_Ehdr *>(Duplicate.data());
+  Sections = reinterpret_cast<Elf64_Shdr *>(Duplicate.data() + Header->e_shoff);
+  ASSERT_EQ(Sections[1].sh_type, SHT_PROGBITS);
+  Sections[1].sh_type = SHT_SYMTAB_SHNDX;
+  Sections[1].sh_link = 1;
+  ExpectRejected(std::move(Duplicate));
+
+  auto AlternateSymtab = buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  Header = reinterpret_cast<Elf64_Ehdr *>(AlternateSymtab.data());
+  const unsigned OriginalSectionCount = Header->e_shnum;
+  Sections =
+      reinterpret_cast<Elf64_Shdr *>(AlternateSymtab.data() + Header->e_shoff);
+  std::optional<unsigned> SymtabIndex;
+  ShndxIndex.reset();
+  for (unsigned I = 0; I < OriginalSectionCount; ++I) {
+    if (Sections[I].sh_type == SHT_SYMTAB)
+      SymtabIndex = I;
+    else if (Sections[I].sh_type == SHT_SYMTAB_SHNDX)
+      ShndxIndex = I;
+  }
+  ASSERT_TRUE(SymtabIndex);
+  ASSERT_TRUE(ShndxIndex);
+  const Elf64_Shdr SymtabCopy = Sections[*SymtabIndex];
+  const uint64_t SectionTableOffset = Header->e_shoff;
+  AlternateSymtab.resize(AlternateSymtab.size() + sizeof(Elf64_Shdr));
+  Header = reinterpret_cast<Elf64_Ehdr *>(AlternateSymtab.data());
+  Sections = reinterpret_cast<Elf64_Shdr *>(AlternateSymtab.data() +
+                                            SectionTableOffset);
+  Sections[OriginalSectionCount] = SymtabCopy;
+  Sections[*ShndxIndex].sh_link = OriginalSectionCount;
+  Header->e_shnum = OriginalSectionCount + 1;
+  ExpectRejected(std::move(AlternateSymtab));
+}
+
+TEST(MergeELF, RejectsNonCanonicalExtendedHeaderEscapesAtomically) {
+  using namespace ELF;
+
+  auto ExpectRejected = [](SmallVector<char, 0> Input) {
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      Options Opts;
+      Opts.verify = Verify;
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(Input);
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  };
+
+  auto LowExtendedCount = buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(LowExtendedCount.data());
+  auto *Sections =
+      reinterpret_cast<Elf64_Shdr *>(LowExtendedCount.data() + Header->e_shoff);
+  ASSERT_LT(Header->e_shnum, SHN_LORESERVE);
+  Sections[0].sh_size = Header->e_shnum;
+  Header->e_shnum = 0;
+  ExpectRejected(std::move(LowExtendedCount));
+
+  auto LowExtendedNames = buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  Header = reinterpret_cast<Elf64_Ehdr *>(LowExtendedNames.data());
+  Sections =
+      reinterpret_cast<Elf64_Shdr *>(LowExtendedNames.data() + Header->e_shoff);
+  ASSERT_LT(Header->e_shstrndx, SHN_LORESERVE);
+  Sections[0].sh_link = Header->e_shstrndx;
+  Header->e_shstrndx = SHN_XINDEX;
+  ExpectRejected(std::move(LowExtendedNames));
+
+  auto ReservedCount = buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  Header = reinterpret_cast<Elf64_Ehdr *>(ReservedCount.data());
+  Header->e_shnum = SHN_LORESERVE;
+  ExpectRejected(std::move(ReservedCount));
+
+  auto ReservedNames = buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  Header = reinterpret_cast<Elf64_Ehdr *>(ReservedNames.data());
+  Header->e_shstrndx = SHN_LORESERVE;
+  ExpectRejected(std::move(ReservedNames));
+
+  auto StaleCountPayload = buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  Header = reinterpret_cast<Elf64_Ehdr *>(StaleCountPayload.data());
+  Sections = reinterpret_cast<Elf64_Shdr *>(StaleCountPayload.data() +
+                                            Header->e_shoff);
+  ASSERT_NE(Header->e_shnum, 0u);
+  Sections[0].sh_size = 1;
+  ExpectRejected(std::move(StaleCountPayload));
+
+  auto StaleNamePayload = buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  Header = reinterpret_cast<Elf64_Ehdr *>(StaleNamePayload.data());
+  Sections =
+      reinterpret_cast<Elf64_Shdr *>(StaleNamePayload.data() + Header->e_shoff);
+  ASSERT_NE(Header->e_shstrndx, SHN_XINDEX);
+  Sections[0].sh_link = 1;
+  ExpectRejected(std::move(StaleNamePayload));
+
+  auto ExtendedProgramCount =
+      buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  Header = reinterpret_cast<Elf64_Ehdr *>(ExtendedProgramCount.data());
+  Sections = reinterpret_cast<Elf64_Shdr *>(ExtendedProgramCount.data() +
+                                            Header->e_shoff);
+  ASSERT_EQ(Header->e_phnum, 0u);
+  ASSERT_EQ(Sections[0].sh_info, 0u);
+  Header->e_phnum = std::numeric_limits<uint16_t>::max();
+  Sections[0].sh_info = 1;
+  ExpectRejected(std::move(ExtendedProgramCount));
+
+  auto StaleProgramCount =
+      buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  Header = reinterpret_cast<Elf64_Ehdr *>(StaleProgramCount.data());
+  Sections = reinterpret_cast<Elf64_Shdr *>(StaleProgramCount.data() +
+                                            Header->e_shoff);
+  ASSERT_EQ(Header->e_phnum, 0u);
+  Sections[0].sh_info = 1;
+  ExpectRejected(std::move(StaleProgramCount));
+
+  auto DirectProgramHeader =
+      buildExtendedNumberingELF(/*UserSectionCount=*/8);
+  Header = reinterpret_cast<Elf64_Ehdr *>(DirectProgramHeader.data());
+  Header->e_phoff = sizeof(Elf64_Ehdr);
+  Header->e_phentsize = sizeof(Elf64_Phdr);
+  Header->e_phnum = 1;
+  ExpectRejected(std::move(DirectProgramHeader));
+}
+
+TEST(MergeELF, VerifierRejectsProgramHeaderMetadataAndEscapePayloads) {
+  using namespace ELF;
+
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(buildExtendedNumberingELF(/*UserSectionCount=*/8));
+  auto [OK, Output] = mergeELF(Inputs);
+  ASSERT_TRUE(OK);
+  ASSERT_FALSE(Output.empty());
+
+  auto ExpectRejected = [&](SmallVector<char, 0> Image, StringRef Case) {
+    SCOPED_TRACE(Case.str());
+    std::string VerifyError;
+    EXPECT_FALSE(
+        verifyMerge(Inputs, Image, Format::ELF64LE, {}, &VerifyError));
+  };
+
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    auto *Header = reinterpret_cast<Elf64_Ehdr *>(Image.data());
+    auto *Sections =
+        reinterpret_cast<Elf64_Shdr *>(Image.data() + Header->e_shoff);
+    Header->e_phnum = std::numeric_limits<uint16_t>::max();
+    Sections[0].sh_info = 1;
+    ExpectRejected(std::move(Image), "extended program-header count");
+  }
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    auto *Header = reinterpret_cast<Elf64_Ehdr *>(Image.data());
+    auto *Sections =
+        reinterpret_cast<Elf64_Shdr *>(Image.data() + Header->e_shoff);
+    Sections[0].sh_info = 1;
+    ExpectRejected(std::move(Image), "stale program-header count payload");
+  }
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    auto *Header = reinterpret_cast<Elf64_Ehdr *>(Image.data());
+    Header->e_phoff = sizeof(Elf64_Ehdr);
+    ExpectRejected(std::move(Image), "nonzero program-header offset");
+  }
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    auto *Header = reinterpret_cast<Elf64_Ehdr *>(Image.data());
+    Header->e_phentsize = sizeof(Elf64_Phdr);
+    ExpectRejected(std::move(Image), "nonzero program-header entry size");
+  }
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    auto *Header = reinterpret_cast<Elf64_Ehdr *>(Image.data());
+    Header->e_phnum = 1;
+    ExpectRejected(std::move(Image), "direct program-header count");
+  }
+}
+
+TEST(MergeELF, VerifierRejectsNonNullSectionZeroInDirectEncoding) {
+  using namespace ELF;
+
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(buildExtendedNumberingELF(/*UserSectionCount=*/8));
+  auto [OK, Output] = mergeELF(Inputs);
+  ASSERT_TRUE(OK);
+  ASSERT_FALSE(Output.empty());
+
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Output.data());
+  ASSERT_NE(Header->e_shnum, 0u);
+  auto *Sections =
+      reinterpret_cast<Elf64_Shdr *>(Output.data() + Header->e_shoff);
+  ASSERT_EQ(Sections[0].sh_type, SHT_NULL);
+  Sections[0].sh_type = SHT_PROGBITS;
+
+  std::string VerifyError;
+  EXPECT_FALSE(verifyMerge(Inputs, Output, Format::ELF64LE, {}, &VerifyError));
+}
+
+TEST(MergeELF, RejectsOutOfRangeDirectSymbolSectionIndexAtomically) {
+  using namespace ELF;
+  SecSpec Text{".text", 1};
+  SymSpec Bad{"bad_direct_section_index", 0, 0};
+  Bad.RawSectionIndex = 5;
+  const auto Input = buildSectionedELF({Text}, {Bad}, {});
+  const auto *Header = reinterpret_cast<const Elf64_Ehdr *>(Input.data());
+  ASSERT_EQ(Header->e_shnum, 5u);
+  ASSERT_EQ(*Bad.RawSectionIndex, Header->e_shnum);
+
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    Options Opts;
+    Opts.verify = Verify;
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(Input);
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
 }
 
 TEST(MergeELF, TwoPartitionsWithUndefinedSymbols) {
@@ -6705,6 +7371,54 @@ TEST(MergeELFSemantic,
                               Format::ELF64LE, Opts, &Error))
           << Error;
     }
+  }
+}
+
+TEST(MergeELFSemantic, DropsSectionSymbolsForRegeneratedMetadata) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 8, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xd4};
+  SecSpec Metadata{".llvm_addrsig", 4, 1, SHT_LLVM_ADDRSIG, 0, 0xa8};
+  SymSpec MetadataSection{"", 1, 0, false};
+  MetadataSection.Type = STT_SECTION;
+  SymSpec Function{"kept_function", 0, 0};
+
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({Text, Metadata}, {MetadataSection, Function}, {}));
+  auto [OK, Output] = mergeELF(Inputs);
+  ASSERT_TRUE(OK);
+  ElfView View = parseELF(Output);
+  ASSERT_TRUE(View.Ok);
+  EXPECT_LT(View.findSec(".llvm_addrsig"), 0);
+  ASSERT_NE(View.findSym("kept_function"), nullptr);
+  for (const ParsedSym &Symbol : View.Syms)
+    EXPECT_FALSE(Symbol.Type == STT_SECTION && Symbol.Shndx == SHN_UNDEF)
+        << "a section symbol for discarded linker metadata must not be "
+           "re-emitted as an undefined section symbol";
+}
+
+TEST(MergeELFSemantic,
+     RejectsRelocationToRegeneratedMetadataSectionSymbolAtomically) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 8, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xd4};
+  SecSpec Metadata{".llvm_addrsig", 4, 1, SHT_LLVM_ADDRSIG, 0, 0xa8};
+  SymSpec Function{"kept_function", 0, 0};
+  RelSpec Reference{0,
+                    0,
+                    "",
+                    R_X86_64_64,
+                    0,
+                    /*TargetSecSym=*/1};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({Text, Metadata}, {Function}, {Reference}));
+
+  for (bool Verify : {false, true}) {
+    Options Opts;
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
   }
 }
 

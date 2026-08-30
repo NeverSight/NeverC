@@ -17,6 +17,7 @@
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "llvm/Support/StringSaver.h"
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -32,6 +33,22 @@ namespace linker {
 
 struct SpecificAllocBase;
 
+struct LinkThreadPolicy {
+  uint64_t MinParallelBytes = 16ULL * 1024ULL * 1024ULL;
+  // Zero selects the complete available budget once MinParallelBytes is met.
+  uint64_t BytesPerAdditionalThread = 32ULL * 1024ULL * 1024ULL;
+  uint64_t MinAverageFileBytes = 4ULL * 1024ULL;
+  // Zero leaves the automatic budget uncapped.
+  unsigned MaxAutoThreads = 16;
+};
+
+/// Select a worker budget after a linker's materialized workload is known.
+/// An explicit request is preserved; zero requests an automatic budget.
+unsigned selectAdaptiveLinkThreadCount(unsigned RequestedThreads,
+                                       unsigned AvailableThreads,
+                                       uint64_t InputBytes, uint64_t InputFiles,
+                                       LinkThreadPolicy Policy);
+
 class CommonLinkerContext {
 private:
   neverc::ResourceSessionView ResourceSession;
@@ -44,6 +61,17 @@ public:
   void finalizeOwnedState() noexcept;
   void configureParallel(unsigned RequestedThreads,
                          unsigned DefaultThreadLimit = 0);
+  /// Configure the worker pool from a materialized workload. When
+  /// FinalizeSerial is false, an automatic one-thread result is left
+  /// unconfigured so inputs discovered later may still raise the budget.
+  unsigned configureParallelForInputWorkload(unsigned RequestedThreads,
+                                             uint64_t InputBytes,
+                                             uint64_t InputFiles,
+                                             LinkThreadPolicy Policy = {},
+                                             bool FinalizeSerial = true);
+  bool parallelConfigured() const {
+    return (StateFlags & ParallelConfiguredFlag) != 0;
+  }
   unsigned parallelThreadCount() const { return ParallelThreadCount; }
   unsigned parallelShardCount() const {
     return ParallelPool ? ParallelThreadCount + 1 : 1;
@@ -66,9 +94,16 @@ public:
   ErrorHandler e;
 
 private:
+  enum StateFlag : uint8_t {
+    FinalizedFlag = 1U << 0,
+    ParallelConfiguredFlag = 1U << 1,
+  };
+
   CommonLinkerContext *PreviousContext = nullptr;
   unsigned PreviousWorkerSlot = 0;
-  bool Finalized = false;
+  // This byte was the legacy Finalized field. Sharing it between internal
+  // state bits keeps every following member and the total object size stable.
+  uint8_t StateFlags = 0;
   std::mutex WorkerMutex;
   std::map<std::thread::id, unsigned> WorkerSlots;
   unsigned NextWorkerSlot = 1;

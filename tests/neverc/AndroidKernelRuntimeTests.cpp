@@ -1081,6 +1081,49 @@ TEST_F(AndroidKernelRuntimeTest,
   EXPECT_EQ(static_cast<unsigned char>(PluginBytes[FirstDiff]), 0x42U);
 }
 
+// The plugin object bridge lowers bitcode inside its own linker context.  An
+// assembler warning in module inline assembly is therefore first diagnosed by
+// that private LTO context, rather than by the compiler frontend or the outer
+// linker context.  It must still obey the driver's warning policy: -Werror
+// rejects the link without publishing the already-generated native object,
+// while -w suppresses the same warning and permits the link.
+TEST_F(AndroidKernelRuntimeTest,
+       RelocatablePluginLTOHonorsWarningPolicyAndFailsClosed) {
+  ScopedEnvironmentVariable DisableLTOCache(linker::ltoCacheEnvVar,
+                                            linker::ltoCacheDisableValue);
+  ScopedEnvironmentVariable InjectLTOAsmWarning(
+      "NEVERC_TEST_LTO_INLINE_ASM_WARNING", "1");
+  const fs::path Source = tmpFile("nvk_plugin_lto_warning.c");
+  writeFile(Source, kAndroidKernelModule);
+
+  auto LinkWithPolicy = [&](const std::string &Policy, const fs::path &Output) {
+    return ncc({std::string("-fplugin=") + NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN,
+                std::string("-fplugin=") + NEVERC_TEST_LTO_IR_PASS_PLUGIN,
+                "--target=aarch64-linux-android",
+                "-fandroid-kernel-driver-mode", "-DNVK_KERNEL=510",
+                "-fstring-encrypt-key=1", Policy, "-nostdlib", "-r",
+                Source.string(), "-o", Output.string()});
+  };
+
+  const fs::path FatalOutput = tmpFile("nvk_plugin_lto_warning_fatal.ko");
+  const CmdResult Fatal = LinkWithPolicy("-Werror", FatalOutput);
+  EXPECT_NE(Fatal.exitCode, 0) << Fatal.err;
+  EXPECT_NE(Fatal.err.find("neverc private relocatable LTO warning"),
+            std::string::npos)
+      << Fatal.err;
+  EXPECT_FALSE(fs::exists(FatalOutput))
+      << "fatal private LTO diagnostics must not publish an object";
+
+  const fs::path SuppressedOutput =
+      tmpFile("nvk_plugin_lto_warning_suppressed.ko");
+  const CmdResult Suppressed = LinkWithPolicy("-w", SuppressedOutput);
+  ASSERT_EQ(Suppressed.exitCode, 0) << Suppressed.err;
+  EXPECT_EQ(Suppressed.err.find("neverc private relocatable LTO warning"),
+            std::string::npos)
+      << Suppressed.err;
+  EXPECT_TRUE(fs::exists(SuppressedOutput));
+}
+
 // The same path with more than one translation unit.
 //
 // Choosing which definition of a name prevails needs every input's symbols

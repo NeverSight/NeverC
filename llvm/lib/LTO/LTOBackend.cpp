@@ -13,17 +13,22 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/LTO/LTOBackend.h"
+#include "TransactionalOutputStream.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/Analysis/ModuleSummaryAnalysis.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Analysis/TypeMetadataUtils.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Pass.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Passes/StandardInstrumentations.h"
@@ -365,20 +370,104 @@ bool lto::opt(const Config &Conf, TargetMachine *TM, unsigned Task, Module &Mod,
   return !Conf.PostOptModuleHook || Conf.PostOptModuleHook(Task, Mod);
 }
 
-static void codegen(const Config &Conf, TargetMachine *TM,
-                    AddStreamFn AddStream, unsigned Task, Module &Mod,
-                    const ModuleSummaryIndex &CombinedIndex) {
+static std::string unloweredTypeMetadataIntrinsicError(const Function &F) {
+  return ("unlowered LLVM intrinsic '" + F.getName() +
+          "' reached native code generation; CFI requires whole-program type "
+          "metadata lowering; refusing unsafe code generation")
+      .str();
+}
+
+static Error rejectUnloweredTypeMetadataIntrinsic(const Module &Mod) {
+  if (const Function *F = findUnloweredTypeMetadataIntrinsic(Mod)) {
+    std::string Message = unloweredTypeMetadataIntrinsicError(*F);
+    return createStringError(inconvertibleErrorCode(), "%s", Message.c_str());
+  }
+  return Error::success();
+}
+
+namespace {
+
+/// Legacy pass managers cannot stop between a client pre-codegen pass and the
+/// target's native-emission passes. If that boundary is invalid, replace every
+/// definition with a harmless unreachable stub so SelectionDAG can finish
+/// without seeing unsupported intrinsics. Keeping the GlobalValues preserves
+/// aliases, ifunc resolvers and COMDAT references while the staged bytes are
+/// discarded and the recorded error is returned after the pass manager exits.
+static void neutralizeRejectedCodeGenModule(Module &Mod) {
+  Mod.setModuleInlineAsm("");
+  for (Function &F : Mod) {
+    if (F.isDeclaration())
+      continue;
+    const GlobalValue::LinkageTypes Linkage = F.getLinkage();
+    F.deleteBody();
+    F.setLinkage(Linkage);
+    BasicBlock *Entry =
+        BasicBlock::Create(Mod.getContext(), "codegen.rejected", &F);
+    new UnreachableInst(Mod.getContext(), Entry);
+  }
+}
+
+class FinalNativeCodeGenGuardPass final : public ModulePass {
+public:
+  static char ID;
+
+  FinalNativeCodeGenGuardPass(bool &Rejected, std::string &Failure)
+      : ModulePass(ID), Rejected(Rejected), Failure(Failure) {}
+
+  bool runOnModule(Module &Mod) override {
+    if (!llvm::lto::detail::hasReportedError(Mod)) {
+      const Function *F = findUnloweredTypeMetadataIntrinsic(Mod);
+      if (!F)
+        return false;
+      Failure = unloweredTypeMetadataIntrinsicError(*F);
+    }
+
+    Rejected = true;
+    neutralizeRejectedCodeGenModule(Mod);
+    return true;
+  }
+
+  StringRef getPassName() const override {
+    return "NeverC final native codegen safety guard";
+  }
+
+private:
+  bool &Rejected;
+  std::string &Failure;
+};
+
+char FinalNativeCodeGenGuardPass::ID = 0;
+
+} // namespace
+
+template <typename PublishT>
+static Error codegenImpl(const Config &Conf, TargetMachine *TM, unsigned Task,
+                         Module &Mod,
+                         const ModuleSummaryIndex &CombinedIndex,
+                         uint64_t MemoryLimit, bool AllowSpill,
+                         PublishT &&Publish) {
+  // A preceding optimization stage may have reported a handled diagnostic.
+  // Do not invoke user hooks after that terminal state: hooks can mutate
+  // external state even when no native artifact is ultimately published.
+  if (llvm::lto::detail::hasReportedError(Mod))
+    return Error::success();
+
   if (Conf.PreCodeGenModuleHook && !Conf.PreCodeGenModuleHook(Task, Mod))
-    return;
+    return Error::success();
 
-  Expected<std::unique_ptr<CachedFileStream>> StreamOrErr =
-      AddStream(Task, Mod.getModuleIdentifier());
-  if (Error Err = StreamOrErr.takeError())
-    report_fatal_error(std::move(Err));
-  std::unique_ptr<CachedFileStream> &Stream = *StreamOrErr;
-  TM->Options.ObjectFilenameForDebug =
-      std::string(Stream->ObjectPathName.data(), Stream->ObjectPathName.size());
+  if (llvm::lto::detail::hasReportedError(Mod))
+    return Error::success();
+  // Without a mutating legacy hook the module can be rejected before target
+  // pass setup. With one, the in-pipeline guard below must observe its result.
+  if (!Conf.PreCodeGenPassesHook)
+    if (Error Err = rejectUnloweredTypeMetadataIntrinsic(Mod))
+      return Err;
 
+  // Code generation may report a handled diagnostic after writing arbitrary
+  // bytes. Stage those bytes transactionally so neither an output artifact nor
+  // a cache entry becomes visible unless the complete native pipeline succeeds.
+  llvm::lto::detail::TransactionalOutputStream Output(
+      MemoryLimit, /*TemporaryDirectory=*/{}, AllowSpill);
   legacy::PassManager CodeGenPasses;
   TargetLibraryInfoImpl TLII(Triple(Mod.getTargetTriple()));
   CodeGenPasses.add(new TargetLibraryInfoWrapperPass(TLII));
@@ -386,10 +475,58 @@ static void codegen(const Config &Conf, TargetMachine *TM,
       createImmutableModuleSummaryIndexWrapperPass(&CombinedIndex));
   if (Conf.PreCodeGenPassesHook)
     Conf.PreCodeGenPassesHook(CodeGenPasses);
-  if (TM->addPassesToEmitFile(CodeGenPasses, *Stream->OS,
+  bool NativeCodeGenRejected = false;
+  std::string NativeCodeGenFailure;
+  CodeGenPasses.add(new FinalNativeCodeGenGuardPass(NativeCodeGenRejected,
+                                                    NativeCodeGenFailure));
+  if (TM->addPassesToEmitFile(CodeGenPasses, Output,
                               /*DwoOut=*/nullptr, Conf.CGFileType))
     report_fatal_error("Failed to setup codegen");
   CodeGenPasses.run(Mod);
+  if (!NativeCodeGenFailure.empty())
+    return joinErrors(createStringError(inconvertibleErrorCode(), "%s",
+                                        NativeCodeGenFailure.c_str()),
+                      Output.discard());
+  if (NativeCodeGenRejected || llvm::lto::detail::hasReportedError(Mod) ||
+      Output.failed())
+    return Output.discard();
+
+  return std::forward<PublishT>(Publish)(Output);
+}
+
+static Error codegen(const Config &Conf, TargetMachine *TM,
+                     AddStreamFn AddStream, unsigned Task, Module &Mod,
+                     const ModuleSummaryIndex &CombinedIndex) {
+  return codegenImpl(
+      Conf, TM, Task, Mod, CombinedIndex,
+      llvm::lto::detail::DefaultTransactionalOutputMemoryLimit,
+      /*AllowSpill=*/true,
+      [&](llvm::lto::detail::TransactionalOutputStream &Output) {
+        return Output.publish(
+            AddStream, Task, Mod, [&](const CachedFileStream &Stream) {
+              // AddStream is deliberately delayed until after native
+              // emission: its interface has no cancellation operation, and
+              // destroying a cache stream publishes it. Preserve the final
+              // target-machine path state once the transaction has committed;
+              // no in-tree native emitter reads ObjectFilenameForDebug while
+              // the staged pipeline is running.
+              TM->Options.ObjectFilenameForDebug = std::string(
+                  Stream.ObjectPathName.data(), Stream.ObjectPathName.size());
+            });
+      });
+}
+
+static Error codegenBuffered(const Config &Conf, TargetMachine *TM,
+                             AddOwnedOutputFn AddOutput, unsigned Task,
+                             Module &Mod,
+                             const ModuleSummaryIndex &CombinedIndex) {
+  return codegenImpl(
+      Conf, TM, Task, Mod, CombinedIndex,
+      llvm::lto::detail::OwnedTransactionalOutputMemoryLimit,
+      /*AllowSpill=*/false,
+      [&](llvm::lto::detail::TransactionalOutputStream &Output) {
+        return Output.publishOwned(AddOutput, Task, Mod);
+      });
 }
 
 static Expected<const Target *> initAndLookupTarget(const Config &C,
@@ -417,9 +554,42 @@ Error lto::finalizeOptimizationRemarks(
   return Error::success();
 }
 
-Error lto::backend(const Config &C, AddStreamFn AddStream,
-                   unsigned ParallelCodeGenParallelismLevel, Module &Mod,
-                   ModuleSummaryIndex &CombinedIndex, bool SkipOptimization) {
+namespace {
+
+class BackendOutput final {
+public:
+  explicit BackendOutput(AddStreamFn &AddStream) : AddStream(&AddStream) {}
+  explicit BackendOutput(AddOwnedOutputFn &AddOutput)
+      : AddOutput(&AddOutput) {}
+
+  template <typename HookT>
+  Expected<llvm::lto::detail::TransactionalHookResult>
+  runHook(unsigned Task, Module &Mod, HookT &&Hook) const {
+    if (AddOutput)
+      return llvm::lto::detail::runTransactionalOwnedOutputHook(
+          *AddOutput, Task, Mod, std::forward<HookT>(Hook));
+    return llvm::lto::detail::runTransactionalOutputHook(
+        *AddStream, Task, Mod, std::forward<HookT>(Hook));
+  }
+
+  Error emit(const Config &C, TargetMachine *TM, unsigned Task, Module &Mod,
+             const ModuleSummaryIndex &CombinedIndex) const {
+    if (AddOutput)
+      return codegenBuffered(C, TM, *AddOutput, Task, Mod, CombinedIndex);
+    return codegen(C, TM, *AddStream, Task, Mod, CombinedIndex);
+  }
+
+private:
+  AddStreamFn *AddStream = nullptr;
+  AddOwnedOutputFn *AddOutput = nullptr;
+};
+
+} // namespace
+
+static Error backendImpl(const Config &C, BackendOutput &OutputMode,
+                         unsigned ParallelCodeGenParallelismLevel, Module &Mod,
+                         ModuleSummaryIndex &CombinedIndex,
+                         bool SkipOptimization) {
   auto BackendDone = make_scope_exit([&] {
     if (C.BackendDoneHook)
       C.BackendDoneHook();
@@ -436,6 +606,8 @@ Error lto::backend(const Config &C, AddStreamFn AddStream,
     if (!opt(C, TM.get(), 0, Mod, /*ExportSummary=*/&CombinedIndex))
       return Error::success();
   }
+  if (llvm::lto::detail::hasReportedError(Mod))
+    return Error::success();
 
   auto RunDeferredFuncOpt = [&]() {
     PipelineTuningOptions PTO = C.PTO;
@@ -482,16 +654,19 @@ Error lto::backend(const Config &C, AddStreamFn AddStream,
 
   bool DeferredFuncOptDone = false;
 
-  if (ParallelCodeGenParallelismLevel > 1 && C.ParallelCodeGenHook) {
-    Expected<std::unique_ptr<CachedFileStream>> StreamOrErr =
-        AddStream(0, Mod.getModuleIdentifier());
-    if (Error Err = StreamOrErr.takeError())
-      report_fatal_error(std::move(Err));
-    auto &Stream = *StreamOrErr;
-
+  if (ParallelCodeGenParallelismLevel > 1 && C.ParallelCodeGenHook &&
+      !C.PreCodeGenPassesHook && !C.PreCodeGenModuleHook) {
     if (!CodeGenOnly && C.LTOParallelOpt && C.ParallelOptCodeGenHook) {
-      if (C.ParallelOptCodeGenHook(Mod, *TM, *Stream->OS,
-                                   ParallelCodeGenParallelismLevel, C.OptLevel))
+      Expected<llvm::lto::detail::TransactionalHookResult> Result =
+          OutputMode.runHook(
+              0, Mod, [&](raw_pwrite_stream &Output) {
+                return C.ParallelOptCodeGenHook(Mod, *TM, Output,
+                                                ParallelCodeGenParallelismLevel,
+                                                C.OptLevel);
+              });
+      if (!Result)
+        return Result.takeError();
+      if (*Result != llvm::lto::detail::TransactionalHookResult::Declined)
         return Error::success();
     }
 
@@ -500,14 +675,41 @@ Error lto::backend(const Config &C, AddStreamFn AddStream,
       DeferredFuncOptDone = true;
     }
 
-    if (C.ParallelCodeGenHook(Mod, *TM, *Stream->OS,
-                              ParallelCodeGenParallelismLevel))
+    if (llvm::lto::detail::hasReportedError(Mod))
+      return Error::success();
+    if (Error Err = rejectUnloweredTypeMetadataIntrinsic(Mod))
+      return Err;
+    Expected<llvm::lto::detail::TransactionalHookResult> Result =
+        OutputMode.runHook(
+            0, Mod, [&](raw_pwrite_stream &Output) {
+              return C.ParallelCodeGenHook(Mod, *TM, Output,
+                                           ParallelCodeGenParallelismLevel);
+            });
+    if (!Result)
+      return Result.takeError();
+    if (*Result != llvm::lto::detail::TransactionalHookResult::Declined)
       return Error::success();
   }
 
   if (C.LTOParallelOpt && !CodeGenOnly && !DeferredFuncOptDone)
     RunDeferredFuncOpt();
 
-  codegen(C, TM.get(), AddStream, 0, Mod, CombinedIndex);
-  return Error::success();
+  return OutputMode.emit(C, TM.get(), 0, Mod, CombinedIndex);
+}
+
+Error lto::backend(const Config &C, AddStreamFn AddStream,
+                   unsigned ParallelCodeGenParallelismLevel, Module &Mod,
+                   ModuleSummaryIndex &CombinedIndex, bool SkipOptimization) {
+  BackendOutput OutputMode(AddStream);
+  return backendImpl(C, OutputMode, ParallelCodeGenParallelismLevel, Mod,
+                     CombinedIndex, SkipOptimization);
+}
+
+Error lto::backendBuffered(const Config &C, AddOwnedOutputFn AddOutput,
+                           unsigned ParallelCodeGenParallelismLevel,
+                           Module &Mod, ModuleSummaryIndex &CombinedIndex,
+                           bool SkipOptimization) {
+  BackendOutput OutputMode(AddOutput);
+  return backendImpl(C, OutputMode, ParallelCodeGenParallelismLevel, Mod,
+                     CombinedIndex, SkipOptimization);
 }

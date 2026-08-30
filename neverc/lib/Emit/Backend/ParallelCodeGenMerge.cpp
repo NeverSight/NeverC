@@ -14,6 +14,7 @@
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/Analysis/TypeMetadataUtils.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/Comdat.h"
@@ -88,6 +89,11 @@ bool containsXorStrSupport(const Module &M) {
   return llvm::any_of(M, [](const Function &F) {
     return XorStrNames::isSupportFunctionName(F.getName());
   });
+}
+
+bool hasReportedError(const Module &M) {
+  const DiagnosticHandler *Handler = M.getContext().getDiagHandlerPtr();
+  return Handler && Handler->HasErrors;
 }
 
 // ===----------------------------------------------------------------------===
@@ -1949,6 +1955,17 @@ bool finalizeSplitDwarfArtifacts(const Triple &Target, ArrayRef<char> Object,
 // only the actual PM.run() is concurrent.
 static std::mutex PassConfigMutex;
 
+static bool rejectUnloweredTypeMetadataIntrinsic(Module &Mod) {
+  const Function *F = findUnloweredTypeMetadataIntrinsic(Mod);
+  if (!F)
+    return false;
+  Mod.getContext().emitError(
+      "unlowered LLVM intrinsic '" + F->getName() +
+      "' reached native code generation; CFI requires whole-program type "
+      "metadata lowering; refusing unsafe code generation");
+  return true;
+}
+
 /// Final fallback after the whole-module barrier has run.  At that point
 /// replaying the caller's serial optimization path would execute externally
 /// visible plugin callbacks twice.  Emit the already-optimized, already-sealed
@@ -1957,6 +1974,9 @@ static std::mutex PassConfigMutex;
 static bool
 runSerialCodeGenAfterWholeModuleBarrier(Module &Mod, TargetMachine &TM,
                                         ParallelCodeGenOutputs Outputs) {
+  if (hasReportedError(Mod) || rejectUnloweredTypeMetadataIntrinsic(Mod))
+    return false;
+
   SmallVector<char, 0> Object;
   SmallVector<char, 0> Dwo;
   raw_svector_ostream ObjectOS(Object);
@@ -1989,6 +2009,11 @@ runSerialCodeGenAfterWholeModuleBarrier(Module &Mod, TargetMachine &TM,
   }
   PM.run(Mod);
 
+  // The serial fallback already stages its artifacts in memory. A handled
+  // diagnostic must condemn those bytes before either destination is touched.
+  if (hasReportedError(Mod))
+    return false;
+
   if (Outputs.DwarfPackage) {
     std::string Error;
     if (!finalizeSplitDwarfArtifacts(TM.getTargetTriple(), Object, Dwo,
@@ -2010,6 +2035,9 @@ runParallelCodeGenImpl(Module &Mod, TargetMachine &TM,
                        const ParallelCodeGenRequestSnapshot &Request,
                        const PartitionCacheHooks *Cache,
                        const ParallelCodeGenObservers *Observers) {
+  if (hasReportedError(Mod) || rejectUnloweredTypeMetadataIntrinsic(Mod))
+    return false;
+
   installRequestTuning(Mod.getContext(), Request);
   ParallelCGContext Ctx(Request);
   if (!Ctx.init(Mod, TM, Outputs.DwarfPackage != nullptr))
@@ -2218,6 +2246,9 @@ bool runParallelOptAndCodeGenWithTunings(
     const PartitionCacheHooks *Cache, const ParallelOptimizationHooks *Hooks,
     const ParallelCodeGenObservers *Observers,
     std::optional<unsigned> ResolvedSCEVHugeExprThreshold) {
+  if (hasReportedError(Mod))
+    return false;
+
   auto ResourcePermit = ProcessResourceBroker::global().acquireSession(
       ResourcePhase::PCGOptCodeGen, ResourceAdmissionMode::DoNotWait);
   const ParallelCodeGenRequestSnapshot Request(Tuning, PipelineTuning,
@@ -2329,6 +2360,20 @@ bool runParallelOptAndCodeGenWithTunings(
       if (Hooks && Hooks->PostOpt)
         Hooks->PostOpt(MPM);
       MPM.run(MPart, MAM);
+    }
+
+    // A whole-module barrier may legitimately consume type-test intrinsics
+    // after the independently optimized ownership slices are reassembled.
+    // Only reject here when this partition is itself about to enter native
+    // code generation; the barrier route is checked after its final hook.
+    if (!NeedsWholeModuleBarrier &&
+        rejectUnloweredTypeMetadataIntrinsic(MPart)) {
+      Ctx.Results[p].Success = false;
+      if (Ctx.EagerReclaim) {
+        PP.releaseIRAndTarget();
+        Ctx.notePreparedPartitionReleased();
+      }
+      return;
     }
 
     if (NeedsWholeModuleBarrier) {
@@ -2473,10 +2518,37 @@ bool runParallelOptAndCodeGenWithTunings(
     if (Ctx.EagerReclaim)
       WholeModulePipeline.reset();
 
+    if (hasReportedError(*Combined)) {
+      // The complete-module callback ran exactly once, but its diagnostic
+      // rejects the transaction before final codegen or optimized-IR cache
+      // publication. The outer LTO hook observes the same context error and
+      // therefore will not replay a serial optimization pipeline.
+      Ctx.releasePendingOptimizedIRBuffers();
+      Ctx.observeRetention(Observers, ParallelCodeGenRetentionPoint::Complete);
+      return false;
+    }
+
+    if (rejectUnloweredTypeMetadataIntrinsic(*Combined)) {
+      // The complete-module callback has already run and may have observable
+      // side effects. The diagnostic makes the link fail, and the outer LTO
+      // transaction observes it without replaying this callback.
+      Ctx.releasePendingOptimizedIRBuffers();
+      Ctx.observeRetention(Observers, ParallelCodeGenRetentionPoint::Complete);
+      return false;
+    }
+
     // Module-scope plugins and finalizers may create new functions or global
-    // state.  Split the resulting complete graph afresh for code generation so
-    // every definition receives exactly one deterministic owner.
-    if (runParallelCodeGenImpl(*Combined, TM, Outputs, Request,
+    // state. Split the resulting complete graph afresh for code generation so
+    // every definition receives exactly one deterministic owner. Stateful
+    // machine-pipeline hooks are the exception: if the final object merge
+    // declines, serial fallback would otherwise execute those hooks twice.
+    // Until a hook can explicitly advertise replay safety, run it exactly once
+    // on the sealed complete module.
+    const bool HasMachinePipelineHooks =
+        static_cast<LLVMTargetMachine &>(TM).getMachinePipelineHooks() !=
+        nullptr;
+    if (!HasMachinePipelineHooks &&
+        runParallelCodeGenImpl(*Combined, TM, Outputs, Request,
                                /*Cache=*/nullptr, Observers)) {
       Ctx.commitOptimizedIRCacheEntries();
       Ctx.releasePendingOptimizedIRBuffers();
@@ -2484,24 +2556,42 @@ bool runParallelOptAndCodeGenWithTunings(
       return true;
     }
 
+    if (hasReportedError(*Combined)) {
+      Ctx.releasePendingOptimizedIRBuffers();
+      Ctx.observeRetention(Observers, ParallelCodeGenRetentionPoint::Complete);
+      return false;
+    }
+
     // Do not return to lto::backend after any whole-module plugin callback has
     // run: its generic fallback would optimize the mother module and replay
     // those callbacks.  Codegen the sealed combined IR directly instead.
     if (runSerialCodeGenAfterWholeModuleBarrier(*Combined, TM, Outputs)) {
+      if (HasMachinePipelineHooks)
+        Ctx.commitOptimizedIRCacheEntries();
       Ctx.releasePendingOptimizedIRBuffers();
       Ctx.observeRetention(Observers, ParallelCodeGenRetentionPoint::Complete);
       return true;
     }
 
-    // A false return would make lto::backend optimize the original mother
-    // module and replay every externally visible plugin callback.  Both
-    // code-generation routes have already failed, so there is no correct
-    // fallback left; fail explicitly without violating exactly-once plugin
-    // semantics.
-    report_fatal_error(
+    if (hasReportedError(*Combined)) {
+      Ctx.releasePendingOptimizedIRBuffers();
+      Ctx.observeRetention(Observers, ParallelCodeGenRetentionPoint::Complete);
+      return false;
+    }
+
+    // A false return would normally let lto::backend optimize the original
+    // mother module and replay every externally visible plugin callback. Mark
+    // the shared context as failed first: the outer transaction observes that
+    // terminal diagnostic and declines without replaying the callbacks. Keep
+    // this recoverable for embedders that install a diagnostic handler rather
+    // than terminating the entire process.
+    Combined->getContext().emitError(
         "neverc: code generation failed after the whole-module IR-plugin "
-        "barrier; refusing to replay plugin passes",
-        /*gen_crash_diag=*/false);
+        "barrier; refusing to replay plugin passes");
+    Ctx.releasePendingOptimizedIRBuffers();
+    Ctx.observeRetention(Observers,
+                         ParallelCodeGenRetentionPoint::Complete);
+    return false;
   }
 
   return Ctx.finalizeResults(Mod, Outputs, Observers);

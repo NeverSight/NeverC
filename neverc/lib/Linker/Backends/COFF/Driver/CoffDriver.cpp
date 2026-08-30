@@ -1,4 +1,5 @@
 #include "COFF/COFFLinkGraphAdapter.h"
+#include "Driver/InputWorkload.h"
 #include "Link/LinkPhaseExecutor.h"
 #include "Linker/COFF/COFFLinkerContext.h"
 #include "Linker/COFF/Config.h"
@@ -56,13 +57,18 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
   LinkerExecutionContext &Execution =
       driverCfg.executionContext ? *driverCfg.executionContext : LocalExecution;
   COFFLinkerContext &ctx = Execution.createBackend<COFFLinkerContext>();
-  ctx.configureParallel(driverCfg.threadCount);
 
   ctx.e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
   ctx.e.errorLimit = driverCfg.errorLimit;
   ctx.e.logName = args::getFilenameWithoutExe(args[0]);
   ctx.e.errorLimitExceededMsg = "too many errors emitted, stopping now"
                                 " (use -ferror-limit=0 to see all errors)";
+
+  // An explicit budget is part of the invocation contract and must apply even
+  // to early-return modes such as a .def-only import-library link. Automatic
+  // selection remains deferred until materialized workload is available.
+  if (driverCfg.threadCount != 0)
+    ctx.configureParallel(driverCfg.threadCount);
 
   ctx.driver.run(args, driverCfg);
 
@@ -94,6 +100,45 @@ MBErrPair readFileSync(StringRef path) {
   if (!mbOrErr)
     return {nullptr, mbOrErr.getError()};
   return {std::move(*mbOrErr), std::error_code()};
+}
+} // namespace
+
+namespace {
+void configureParallelismForMaterializedInputs(
+    COFFLinkerContext &ctx, const LinkerDriverConfig &driverCfg,
+    ArrayRef<MemoryBufferRef> Resources, bool IncludeBitcode,
+    bool FinalizeSerial) {
+  auto MeasureFiles = [&](const auto &Files) {
+    uint64_t Bytes = 0;
+    uint64_t FileCount = 0;
+    for (const InputFile *File : Files) {
+      Bytes = SaturatingAdd<uint64_t>(Bytes, File->mb.getBufferSize());
+      FileCount = SaturatingAdd<uint64_t>(FileCount, 1);
+    }
+    return std::pair<uint64_t, uint64_t>{Bytes, FileCount};
+  };
+  const auto Native = MeasureFiles(ctx.objFileInstances);
+  const auto Bitcode = MeasureFiles(ctx.bitcodeFileInstances);
+  uint64_t ResourceBytes = 0;
+  uint64_t ResourceFiles = 0;
+  for (MemoryBufferRef Resource : Resources) {
+    ResourceBytes =
+        SaturatingAdd<uint64_t>(ResourceBytes, Resource.getBufferSize());
+    ResourceFiles = SaturatingAdd<uint64_t>(ResourceFiles, 1);
+  }
+  const auto [InputBytes, InputFiles] = detail::mergeMaterializedInputWorkload(
+      Native.first, Native.second, Bitcode.first, Bitcode.second, ResourceBytes,
+      ResourceFiles, IncludeBitcode);
+  // PE hashing and checksum work scale densely once the output is large
+  // enough, so avoid the gradual budget intended for ELF relocation work.
+  LinkThreadPolicy Policy;
+  Policy.MinParallelBytes = 8ULL * 1024ULL * 1024ULL;
+  Policy.BytesPerAdditionalThread = 0;
+  // Hashing/checksum cost follows total output size even when most inputs are
+  // tiny, so the relocation-oriented average-file gate does not apply here.
+  Policy.MinAverageFileBytes = 0;
+  ctx.configureParallelForInputWorkload(driverCfg.threadCount, InputBytes,
+                                        InputFiles, Policy, FinalizeSerial);
 }
 } // namespace
 
@@ -1737,7 +1782,15 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
 
   config->hadExplicitExports = !config->exports.empty();
 
+  // LTO can turn a compact bitcode input into a large native object. Keep an
+  // automatic one-thread choice provisional until that output is available.
+  configureParallelismForMaterializedInputs(ctx, driverCfg, resources,
+                                            /*IncludeBitcode=*/true,
+                                            /*FinalizeSerial=*/false);
   ctx.symtab.compileBitcodeFiles();
+  configureParallelismForMaterializedInputs(ctx, driverCfg, resources,
+                                            /*IncludeBitcode=*/false,
+                                            /*FinalizeSerial=*/false);
 
   if (Defined *d =
           dyn_cast_or_null<Defined>(ctx.symtab.findUnderscore("_tls_used")))
@@ -1782,6 +1835,15 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
            (config->manifest == Configuration::Default &&
             !config->manifestDependencies.empty()))
     createSideBySideManifest();
+
+  // Embedded manifests become materialized .res inputs only above. Keep an
+  // automatic serial choice provisional through that point so a resource-
+  // dominated link can still acquire the hashing/checksum worker budget it
+  // justifies. Explicit requests were configured at entry and remain
+  // idempotent here.
+  configureParallelismForMaterializedInputs(ctx, driverCfg, resources,
+                                            /*IncludeBitcode=*/false,
+                                            /*FinalizeSerial=*/true);
 
   if (auto *arg = args.getLastArg(OPT_order)) {
     if (!driverCfg.callGraphOrderingFile.empty())

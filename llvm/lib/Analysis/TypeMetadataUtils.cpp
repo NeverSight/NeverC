@@ -16,9 +16,27 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 
 using namespace llvm;
+
+const Function *llvm::findUnloweredTypeMetadataIntrinsic(const Module &M) {
+  for (const Function &F : M) {
+    if (F.use_empty())
+      continue;
+    switch (F.getIntrinsicID()) {
+    case Intrinsic::type_test:
+    case Intrinsic::public_type_test:
+    case Intrinsic::type_checked_load:
+    case Intrinsic::type_checked_load_relative:
+      return &F;
+    default:
+      break;
+    }
+  }
+  return nullptr;
+}
 
 // Search for virtual calls that call FPtr and add them to DevirtCalls.
 static void

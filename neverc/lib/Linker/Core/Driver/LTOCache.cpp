@@ -433,10 +433,15 @@ void linker::runLTOWithCache(lto::LTO &ltoObj, LTOCacheKey &cacheKey,
       return;
   }
   const uint64_t errorsBeforeRun = errorCount();
-  checkError(ltoObj.run([&](size_t task, const Twine &moduleName) {
-    return std::make_unique<CachedFileStream>(
-        std::make_unique<raw_svector_ostream>(bufs[task]));
-  }));
+  checkError(ltoObj.runBuffered(
+      [&](size_t task, const Twine &,
+          SmallVector<char, 0> &&output) -> Error {
+        if (task >= bufs.size())
+          return createStringError(inconvertibleErrorCode(),
+                                   "LTO task index is out of range");
+        static_cast<SmallVector<char, 0> &>(bufs[task]) = std::move(output);
+        return Error::success();
+      }));
   // LLVM diagnostics are delivered out-of-band through Config::DiagHandler:
   // lto::LTO::run can return Error::success() even after codegen reports an
   // error and leaves bytes in one or more task buffers.  Those bytes are not a
