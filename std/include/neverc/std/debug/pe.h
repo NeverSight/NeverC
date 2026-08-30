@@ -159,7 +159,7 @@ const char *neverc_pe_machine_string(uint16_t machine);
 #endif
 
 #ifdef __neverc__
-#include <neverc/std/_modules.h>
+#include <neverc/std/debug.h>
 #endif
 
 #endif /* NEVERC_DEBUG_PE_H */

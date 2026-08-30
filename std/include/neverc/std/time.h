@@ -148,7 +148,7 @@ struct __neverc_std_time_t {
     char __tag;
     struct __neverc_std_tzdata_t tzdata;
 };
-extern struct __neverc_std_time_t __neverc_mod_time_mod;
+extern struct __neverc_std_time_t __neverc_mod_time;
 extern struct __neverc_std_time_t time_mod;
 #endif
 

@@ -158,7 +158,7 @@ const char *neverc_macho_type_string(uint32_t type);
 #endif
 
 #ifdef __neverc__
-#include <neverc/std/_modules.h>
+#include <neverc/std/debug.h>
 #endif
 
 #endif /* NEVERC_DEBUG_MACHO_H */

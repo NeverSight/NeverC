@@ -174,4 +174,8 @@ int neverc_udp_resolve_addr(const char *addr_str, neverc_udp_addr_t *out);
 }
 #endif
 
+#ifdef __neverc__
+#include <neverc/std/net.h>
+#endif
+
 #endif /* NEVERC_NET_UDP_H */

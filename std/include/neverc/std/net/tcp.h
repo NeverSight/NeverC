@@ -162,4 +162,8 @@ int neverc_tcp_pipe(neverc_tcp_conn_t **a, neverc_tcp_conn_t **b);
 }
 #endif
 
+#ifdef __neverc__
+#include <neverc/std/net.h>
+#endif
+
 #endif /* NEVERC_NET_TCP_H */

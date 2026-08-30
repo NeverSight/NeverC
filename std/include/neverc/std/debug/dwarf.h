@@ -231,7 +231,7 @@ const char *neverc_dwarf_attr_string(uint16_t attr);
 #endif
 
 #ifdef __neverc__
-#include <neverc/std/_modules.h>
+#include <neverc/std/debug.h>
 #endif
 
 #endif /* NEVERC_DEBUG_DWARF_H */

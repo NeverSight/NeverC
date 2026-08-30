@@ -220,7 +220,7 @@ const char *neverc_elf_type_string(uint16_t type);
 
 /* ===== Std Module Dot-Syntax Support ===== */
 #ifdef __neverc__
-#include <neverc/std/_modules.h>
+#include <neverc/std/debug.h>
 #endif
 
 #endif /* NEVERC_DEBUG_ELF_H */
