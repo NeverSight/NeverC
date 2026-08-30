@@ -287,14 +287,32 @@ def relative_key(path: pathlib.Path) -> str:
     return path.relative_to(ROOT).as_posix()
 
 
+def identifier_marker_matches(marker: str, snippet: str) -> bool:
+    """Match a C/C++ identifier without accepting a type or name prefix."""
+    return bool(re.search(
+        rf"(?<![A-Za-z0-9_]){re.escape(marker)}(?![A-Za-z0-9_])",
+        snippet,
+    ))
+
+
 def allowlisted(rel: str, snippet: str, allowlist: dict) -> bool:
     rel = rel.replace("\\", "/")
     for entry in allowlist.get("entries", []):
-        files = entry.get("files", [])
-        if any(rel == f or rel.startswith(f) for f in files):
-            marker = entry.get("symbol") or entry.get("match")
-            if not marker or marker in snippet:
+        files = [path.replace("\\", "/")
+                 for path in entry.get("files", [])]
+        if rel not in files:
+            continue
+        symbol = entry.get("symbol")
+        if symbol:
+            if identifier_marker_matches(symbol, snippet):
                 return True
+            continue
+        marker = entry.get("match")
+        if marker:
+            if marker in snippet:
+                return True
+            continue
+        continue
     return False
 
 

@@ -194,6 +194,82 @@ def main() -> int:
                                snippet, allowlist),
            "undocumented file wrongly allowlisted", failures)
 
+    # 13c. The Mach-O archive observer is a test-only, dynamically scoped TLS
+    # facade. Pin its narrow exception so broadening the path/symbol match or
+    # dropping its ownership and clearing contract cannot silently weaken the
+    # release gate.
+    observer_path = "neverc/lib/Linker/Backends/MachO/Input/InputFiles.cpp"
+    observer_symbol = "ArchiveMemberParseObserver"
+    observer_entries = [
+        entry for entry in allowlist.get("entries", [])
+        if entry.get("symbol") == observer_symbol
+    ]
+    expect(len(observer_entries) == 1,
+           f"expected one {observer_symbol} allowlist entry, "
+           f"got {len(observer_entries)}", failures)
+    if len(observer_entries) == 1:
+        observer = observer_entries[0]
+        expect(observer.get("files") == [observer_path],
+               f"{observer_symbol} has imprecise files: "
+               f"{observer.get('files')}", failures)
+        for field in ("owner", "lifetime", "justification",
+                      "cleared_by_test"):
+            value = observer.get(field)
+            expect(isinstance(value, str) and bool(value.strip()),
+                   f"{observer_symbol} missing {field}", failures)
+        observer_declaration = (
+            "thread_local ArchiveMemberParseObserverState "
+            "ArchiveMemberParseObserver;"
+        )
+        expect(mod.allowlisted(observer_path, observer_declaration, allowlist),
+               f"{observer_symbol} exact declaration not allowlisted",
+               failures)
+        expect(mod.allowlisted(observer_path.replace("/", "\\"),
+                               observer_declaration, allowlist),
+               f"{observer_symbol} Windows path not allowlisted", failures)
+        expect(not mod.allowlisted(
+                   "neverc/lib/Linker/Backends/MachO/Input/Other.cpp",
+                   observer_declaration, allowlist),
+               f"{observer_symbol} allowlist escaped its exact file",
+               failures)
+        expect(not mod.allowlisted(
+                   observer_path,
+                   "thread_local int DifferentArchiveObserver;", allowlist),
+               f"{observer_symbol} allowlist matched a different symbol",
+               failures)
+        expect(not mod.allowlisted(observer_path + ".shadow.cpp",
+                                   observer_declaration, allowlist),
+               f"{observer_symbol} allowlist matched a path prefix collision",
+               failures)
+        expect(not mod.allowlisted(
+                   observer_path,
+                   "thread_local ArchiveMemberParseObserverState "
+                   "DifferentObserver;", allowlist),
+               f"{observer_symbol} allowlist matched only its type name",
+               failures)
+        expect(not mod.allowlisted(
+                   observer_path,
+                   "thread_local int ArchiveMemberParseObserverShadow;",
+                   allowlist),
+               f"{observer_symbol} allowlist matched a symbol prefix",
+               failures)
+
+        explicit_match = {
+            "entries": [{
+                "files": [observer_path],
+                "match": "archive observer hook",
+            }]
+        }
+        expect(mod.allowlisted(observer_path,
+                               "prefix archive observer hook suffix",
+                               explicit_match),
+               "explicit match entry lost substring semantics", failures)
+        missing_marker = {"entries": [{"files": [observer_path]}]}
+        expect(not mod.allowlisted(observer_path, observer_declaration,
+                                   missing_marker),
+               "markerless allowlist entry accepted every declaration",
+               failures)
+
     # 14. Locating the compiler must not depend on the host's executable
     # suffix: looking only for the extensionless name made Windows report a
     # missing binary, which the scan then treated as "nothing to do".

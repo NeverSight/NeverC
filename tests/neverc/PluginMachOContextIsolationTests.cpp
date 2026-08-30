@@ -638,9 +638,11 @@ _late_archive_symbol:
   llvm::FileRemover RemoveOutput(OutputPath);
 
   const std::string LibrarySearch = "-L" + LibraryDirectory.str().str();
-  auto Link = [&](llvm::StringRef InputPath, llvm::StringRef CommandLineLibrary,
-                  unsigned RequestedThreads, unsigned &SelectedThreads,
-                  unsigned &ArchiveMemberParseThreads, std::string &Image) {
+  auto RunLink = [&](llvm::StringRef InputPath,
+                     llvm::StringRef CommandLineLibrary,
+                     unsigned RequestedThreads, unsigned &SelectedThreads,
+                     unsigned &ArchiveMemberParseThreads, std::string &Image,
+                     ArchiveMemberParseObservation *Observation) {
     llvm::SmallVector<const char *, 6> Args = {
         "neverc-test-linker", "-e", "_macho_lc_entry", LibrarySearch.c_str()};
     std::string CommandLineLibraryOption;
@@ -649,11 +651,6 @@ _late_archive_symbol:
       Args.push_back(CommandLineLibraryOption.c_str());
     }
     Args.push_back(InputPath.data());
-    ArchiveMemberParseObservation Observation;
-    setArchiveMemberParseObserverForTesting(observeArchiveMemberParse,
-                                            &Observation);
-    auto ResetObserver = llvm::make_scope_exit(
-        [] { setArchiveMemberParseObserverForTesting(nullptr); });
     LinkerExecutionContext Execution;
     LinkerDriverConfig Config;
     Config.executionContext = &Execution;
@@ -679,12 +676,14 @@ _late_archive_symbol:
       return false;
     }
     SelectedThreads = Execution.common()->parallelThreadCount();
-    if (Observation.Calls != 1) {
-      ADD_FAILURE() << "expected exactly one parsed archive member, observed "
-                    << Observation.Calls;
-      return false;
+    if (Observation) {
+      if (Observation->Calls != 1) {
+        ADD_FAILURE() << "expected exactly one parsed archive member, observed "
+                      << Observation->Calls;
+        return false;
+      }
+      ArchiveMemberParseThreads = Observation->SelectedThreads;
     }
-    ArchiveMemberParseThreads = Observation.SelectedThreads;
     auto Buffer = llvm::MemoryBuffer::getFile(OutputPath);
     if (!Buffer) {
       ADD_FAILURE() << Buffer.getError().message();
@@ -692,6 +691,18 @@ _late_archive_symbol:
     }
     Image = (*Buffer)->getBuffer().str();
     return true;
+  };
+  auto Link = [&](llvm::StringRef InputPath, llvm::StringRef CommandLineLibrary,
+                  unsigned RequestedThreads, unsigned &SelectedThreads,
+                  unsigned &ArchiveMemberParseThreads, std::string &Image) {
+    ArchiveMemberParseObservation Observation;
+    setArchiveMemberParseObserverForTesting(observeArchiveMemberParse,
+                                            &Observation);
+    auto ResetObserver = llvm::make_scope_exit(
+        [] { setArchiveMemberParseObserverForTesting(nullptr); });
+    return RunLink(InputPath, CommandLineLibrary, RequestedThreads,
+                   SelectedThreads, ArchiveMemberParseThreads, Image,
+                   &Observation);
   };
 
   unsigned AutoThreads = 0;
@@ -775,6 +786,35 @@ _late_archive_symbol:
   EXPECT_EQ(ThinSerialParseThreads, 1U);
   EXPECT_EQ(ThinAutoImage, ThinSerialImage)
       << "thin archive member changed output across worker budgets";
+
+  // Keep the last observation alive across a subsequent unobserved link. If
+  // the scope guard stops clearing the TLS hook, that link calls the stale
+  // observer and increments this counter.
+  ArchiveMemberParseObservation ClearedObservation;
+  unsigned ObservedThreads = 0;
+  unsigned ObservedParseThreads = 0;
+  std::string ObservedImage;
+  {
+    setArchiveMemberParseObserverForTesting(observeArchiveMemberParse,
+                                            &ClearedObservation);
+    auto ResetObserver = llvm::make_scope_exit(
+        [] { setArchiveMemberParseObserverForTesting(nullptr); });
+    ASSERT_TRUE(
+        RunLink(CommandLineObjectPath, /*CommandLineLibrary=*/"tinyparse",
+                /*RequestedThreads=*/1, ObservedThreads, ObservedParseThreads,
+                ObservedImage, &ClearedObservation));
+  }
+  ASSERT_EQ(ClearedObservation.Calls, 1U);
+  const unsigned CallsAfterScope = ClearedObservation.Calls;
+  unsigned UnobservedThreads = 0;
+  unsigned UnobservedParseThreads = 0;
+  std::string UnobservedImage;
+  ASSERT_TRUE(RunLink(CommandLineObjectPath,
+                      /*CommandLineLibrary=*/"tinyparse",
+                      /*RequestedThreads=*/1, UnobservedThreads,
+                      UnobservedParseThreads, UnobservedImage,
+                      /*Observation=*/nullptr));
+  EXPECT_EQ(ClearedObservation.Calls, CallsAfterScope);
 }
 
 TEST(PluginMachOContextIsolationTest,

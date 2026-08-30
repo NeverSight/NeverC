@@ -1012,6 +1012,7 @@ TEST(ParallelCodeGenCacheTest,
       [](LLVMTargetMachine &, PassManagerBase &, raw_pwrite_stream &,
          raw_pwrite_stream *, CodeGenFileType,
          MachineModuleInfoWrapperPass &) { return true; });
+  ScopedEnvironmentVariable NoStrict("NEVERC_PCG_STRICT", nullptr);
   ScopedEnvironmentVariable ForceMergeFailure(
       "NEVERC_PCG_FORCE_MERGE_FAIL", "1");
 

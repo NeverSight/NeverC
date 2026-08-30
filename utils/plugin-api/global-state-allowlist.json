@@ -50,6 +50,14 @@
       "cleared_by_test": "PluginParallelLinkTests"
     },
     {
+      "files": ["neverc/lib/Linker/Backends/MachO/Input/InputFiles.cpp"],
+      "symbol": "ArchiveMemberParseObserver",
+      "owner": "PluginMachOContextIsolationTest archive observation scope",
+      "lifetime": "stack-scoped per test link invocation on the calling thread",
+      "justification": "Test-only callback and opaque context pointer installed immediately before a synchronous Mach-O link and cleared by make_scope_exit on every normal or early return. TLS prevents concurrent test threads from sharing the observation. The hook is not forwarded to linker workers and carries no Session/Task/options/graph/symbol/output/cache-journal payload.",
+      "cleared_by_test": "PluginMachOContextIsolationTest.AutomaticThreadsIncludeLateAutoLinkedAndCommandLineArchives"
+    },
+    {
       "files": ["neverc/lib/Plugin/Core/PluginLLVMOptionSnapshot.cpp"],
       "symbol": "GateOwnership",
       "owner": "LLVMOptionLease",
