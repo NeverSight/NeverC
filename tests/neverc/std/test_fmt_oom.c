@@ -193,10 +193,11 @@ int main(void) {
         CHECK(fwrite(bytes, 1, sizeof(bytes), input) == sizeof(bytes));
         rewind(input);
         reset_allocator(0);
-        reset_position_save(1);
+        /* Two lookahead checkpoints precede the UTF-8 probe checkpoint. */
+        reset_position_save(3);
         reset_position_restore(0);
         CHECK(neverc_fmt_fscanf(input, "%2s", output.text) == 0);
-        CHECK(position_save_count == 1);
+        CHECK(position_save_count == 3);
         CHECK(fseek_count == 0);
         CHECK(fsetpos_count == 0);
         CHECK(output.text[0] == 'Q');
@@ -219,7 +220,7 @@ int main(void) {
         reset_position_save(0);
         reset_position_restore(1);
         CHECK(neverc_fmt_fscanf(input, "%2s", output.text) == 0);
-        CHECK(position_save_count == 1);
+        CHECK(position_save_count == 3);
         CHECK(position_restore_count == 1);
         CHECK(fseek_count == 0);
         CHECK(fsetpos_count == 1);
