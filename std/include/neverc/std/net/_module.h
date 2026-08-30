@@ -1,3 +1,11 @@
+/* Windows SDK (combaseapi.h) defines `#define interface struct` for COM.
+ * This cleanup deliberately lives outside the include guard: another header
+ * can restore the macro after the marker declarations were first included,
+ * and a later net umbrella include must make dot syntax usable again. */
+#if defined(__neverc__) && defined(interface)
+#undef interface
+#endif
+
 #ifndef NEVERC_STD_NET_MODULE_H
 #define NEVERC_STD_NET_MODULE_H
 
@@ -10,12 +18,6 @@
  */
 
 #ifdef __neverc__
-
-/* Windows SDK (combaseapi.h) defines `#define interface struct` for COM.
-   Undefine it so we can use `interface` as a struct field name. */
-#ifdef interface
-#undef interface
-#endif
 
 struct __neverc_std_tcp_t { char __tag; };
 struct __neverc_std_udp_t { char __tag; };
