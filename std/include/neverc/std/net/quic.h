@@ -240,7 +240,7 @@ int neverc_quic_recv_datagram(neverc_quic_conn_t *conn,
 #endif
 
 #ifdef __neverc__
-#include <neverc/std/net.h>
+#include <neverc/std/net/_module.h>
 #endif
 
 #endif /* NEVERC_NET_QUIC_H */

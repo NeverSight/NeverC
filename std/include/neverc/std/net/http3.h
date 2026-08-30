@@ -238,7 +238,7 @@ neverc_http_response_t *neverc_http3_post_with_config(
 #endif
 
 #ifdef __neverc__
-#include <neverc/std/net.h>
+#include <neverc/std/net/_module.h>
 #endif
 
 #endif /* NEVERC_NET_HTTP3_H */

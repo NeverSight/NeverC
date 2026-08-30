@@ -774,7 +774,7 @@ void neverc_sse_close(neverc_sse_t *sse);
 #endif
 
 #ifdef __neverc__
-#include <neverc/std/net.h>
+#include <neverc/std/net/_module.h>
 #endif
 
 #endif /* NEVERC_NET_HTTP_H */
