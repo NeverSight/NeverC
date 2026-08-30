@@ -161,15 +161,19 @@ if(CMAKE_HOST_APPLE AND CMAKE_CXX_COMPILER)
 endif()
 
 # The release artifact is a single neverc executable linked from static
-# libraries, so avoid PIC/unwind/debugging extras and the associated configure
-# probes by default.
+# libraries, so avoid PIC and optional debugging extras by default.  Windows
+# still needs unwind metadata for SEH to cross ordinary non-leaf frames.
 # Static CRT (/MT) for standalone deployment and plugin compatibility.
 if(_NEVERC_HOST_MSVC)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "" FORCE)
 endif()
 
 set(LLVM_ENABLE_PIC OFF CACHE BOOL "")
-set(LLVM_ENABLE_UNWIND_TABLES OFF CACHE BOOL "")
+if(CMAKE_HOST_WIN32)
+  set(LLVM_ENABLE_UNWIND_TABLES ON CACHE BOOL "")
+else()
+  set(LLVM_ENABLE_UNWIND_TABLES OFF CACHE BOOL "")
+endif()
 set(LLVM_ENABLE_CRASH_OVERRIDES OFF CACHE BOOL "")
 set(LLVM_VERSION_PRINTER_SHOW_HOST_TARGET_INFO OFF CACHE BOOL "")
 set(LLVM_ENABLE_SUPPORT_XCODE_SIGNPOSTS FORCE_OFF CACHE STRING "")
