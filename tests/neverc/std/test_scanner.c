@@ -523,6 +523,13 @@ static void test_unterminated_literals_report_errors(void) {
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
     ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
 
+    neverc_scanner_init(&s, "'a", 2);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_CHAR);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "'a");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+
     neverc_scanner_init(&s, "`abc", 4);
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_RAWSTRING);
     ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "`abc");
