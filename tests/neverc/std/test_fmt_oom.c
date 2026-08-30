@@ -31,6 +31,8 @@ static void *controlled_realloc(void *ptr, size_t size) {
 }
 
 static size_t position_restore_count;
+static size_t fseek_count;
+static size_t fsetpos_count;
 static size_t fail_position_restore_at;
 
 static int position_restore_fails(void) {
@@ -40,10 +42,12 @@ static int position_restore_fails(void) {
 }
 
 static int controlled_fseek(FILE *stream, long offset, int origin) {
+    fseek_count++;
     return position_restore_fails() ? -1 : fseek(stream, offset, origin);
 }
 
 static int controlled_fsetpos(FILE *stream, const fpos_t *position) {
+    fsetpos_count++;
     return position_restore_fails() ? -1 : fsetpos(stream, position);
 }
 
@@ -73,6 +77,8 @@ static void reset_allocator(size_t failure) {
 
 static void reset_position_restore(size_t failure) {
     position_restore_count = 0;
+    fseek_count = 0;
+    fsetpos_count = 0;
     fail_position_restore_at = failure;
 }
 
@@ -173,6 +179,8 @@ int main(void) {
         reset_position_restore(1);
         CHECK(neverc_fmt_fscanf(input, "%2s", output.text) == 0);
         CHECK(position_restore_count == 1);
+        CHECK(fseek_count == 0);
+        CHECK(fsetpos_count == 1);
         CHECK(output.text[0] == 'Q');
         CHECK(output.text[1] == 'Q');
         CHECK(output.canary == 0xA5);
