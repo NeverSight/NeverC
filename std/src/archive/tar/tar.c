@@ -355,8 +355,10 @@ int neverc_tar_reader_next_v2(neverc_tar_reader_t *r,
                               neverc_tar_header_v2_t *hdr) {
     if (!hdr) return -1;
     memset(hdr, 0, sizeof(*hdr));
+    neverc_tar_header_v2_t parsed = {0};
     size_t next_position = 0;
-    int result = tar_reader_prepare_next(r, hdr, &next_position);
+    int result = tar_reader_prepare_next(r, &parsed, &next_position);
+    if (result == 1) *hdr = parsed;
     if (result >= 0) r->pos = next_position;
     return result;
 }
