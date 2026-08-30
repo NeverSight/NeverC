@@ -1059,6 +1059,19 @@ static int tzdata_zone_hemisphere(const neverc_tzdata_zone_t *zone) {
     if (hemi != 0) return hemi;
 
     int rule_id = tz_builtin_rule_id(zone);
+    /* Public zone values preserve their released layout and can be copied by
+     * callers, so address identity is not available here.  Recover only the
+     * coarse hemisphere metadata by IANA name.  Keep precise special rules in
+     * tz_builtin_special_offset_at() identity-based so a user-created fixed
+     * zone with a built-in name never inherits those transition rules. */
+    if (rule_id == TZ_RULE_NONE && zone->name) {
+        for (int i = 0; i < tz_count; i++) {
+            if (nc_streq(tz_table[i].name, zone->name)) {
+                rule_id = tz_table[i].rule_id;
+                break;
+            }
+        }
+    }
     if (rule_id == TZ_RULE_SOUTH)
         hemi = 2;
     else if (rule_id == TZ_RULE_NORTH || rule_id == TZ_RULE_EGYPT ||
