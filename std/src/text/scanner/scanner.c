@@ -332,8 +332,10 @@ static int scan_escape(neverc_scanner_t *s, int quote) {
     if (ch == NEVERC_SCANNER_EOF || ch == '\n') return ch;
     emit_consumed(s, start);
     if (ch == 'x') {
-        for (int i = 0; i < 2 && s->pos < s->src_len && is_hex_digit(peek_ch(s)); i++)
+        int digits = 0;
+        for (; digits < 2 && s->pos < s->src_len && is_hex_digit(peek_ch(s)); digits++)
             emit(s, next_ch(s));
+        if (digits != 2) scanner_add_error(s);
     } else if (ch == 'u') {
         for (int i = 0; i < 4 && s->pos < s->src_len && is_hex_digit(peek_ch(s)); i++)
             emit(s, next_ch(s));
