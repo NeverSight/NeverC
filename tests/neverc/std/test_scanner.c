@@ -547,6 +547,49 @@ static void test_hex_escape_requires_two_digits(void) {
     ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
 }
 
+static void test_fixed_width_escapes_require_all_digits(void) {
+    printf("[fixed_width_escapes_require_all_digits]\n");
+    neverc_scanner_t s;
+    const char *src =
+        "\"\\u00e9\" \"\\u00e\" \"\\u00eg\" "
+        "\"\\U0001f600\" \"\\U0001f60\" \"\\U0001f60g\" "
+        "\"\\123\" \"\\12\" \"\\12x\"";
+    neverc_scanner_init(&s, src, strlen(src));
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\u00e9\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 0);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\u00e\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\u00eg\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\U0001f600\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\U0001f60\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 3);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\U0001f60g\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 4);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\123\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 4);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\12\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 5);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\12x\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 6);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 6);
+}
+
 static void test_unterminated_literals_report_errors(void) {
     printf("[unterminated_literals_report_errors]\n");
     neverc_scanner_t s;
@@ -697,6 +740,7 @@ int main(void) {
     test_escaped_newline_terminates_string();
     test_unknown_escape_reports_error();
     test_hex_escape_requires_two_digits();
+    test_fixed_width_escapes_require_all_digits();
     test_unterminated_literals_report_errors();
     test_peek_skips_comments();
     test_leading_bom_is_discarded();
