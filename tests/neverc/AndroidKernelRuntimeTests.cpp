@@ -1096,17 +1096,23 @@ TEST_F(AndroidKernelRuntimeTest,
   const fs::path Source = tmpFile("nvk_plugin_lto_warning.c");
   writeFile(Source, kAndroidKernelModule);
 
-  auto LinkWithPolicy = [&](const std::string &Policy, const fs::path &Output) {
-    return ncc({std::string("-fplugin=") + NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN,
-                std::string("-fplugin=") + NEVERC_TEST_LTO_IR_PASS_PLUGIN,
-                "--target=aarch64-linux-android",
-                "-fandroid-kernel-driver-mode", "-DNVK_KERNEL=510",
-                "-fstring-encrypt-key=1", Policy, "-nostdlib", "-r",
-                Source.string(), "-o", Output.string()});
+  auto LinkWithPolicies = [&](const std::vector<std::string> &Policies,
+                              const fs::path &Output) {
+    std::vector<std::string> Args = {
+        std::string("-fplugin=") + NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN,
+        std::string("-fplugin=") + NEVERC_TEST_LTO_IR_PASS_PLUGIN,
+        "--target=aarch64-linux-android",
+        "-fandroid-kernel-driver-mode",
+        "-DNVK_KERNEL=510",
+        "-fstring-encrypt-key=1"};
+    Args.insert(Args.end(), Policies.begin(), Policies.end());
+    Args.insert(Args.end(),
+                {"-nostdlib", "-r", Source.string(), "-o", Output.string()});
+    return ncc(Args);
   };
 
   const fs::path FatalOutput = tmpFile("nvk_plugin_lto_warning_fatal.ko");
-  const CmdResult Fatal = LinkWithPolicy("-Werror", FatalOutput);
+  const CmdResult Fatal = LinkWithPolicies({"-Werror"}, FatalOutput);
   EXPECT_NE(Fatal.exitCode, 0) << Fatal.err;
   EXPECT_NE(Fatal.err.find("neverc private relocatable LTO warning"),
             std::string::npos)
@@ -1116,12 +1122,23 @@ TEST_F(AndroidKernelRuntimeTest,
 
   const fs::path SuppressedOutput =
       tmpFile("nvk_plugin_lto_warning_suppressed.ko");
-  const CmdResult Suppressed = LinkWithPolicy("-w", SuppressedOutput);
+  const CmdResult Suppressed = LinkWithPolicies({"-w"}, SuppressedOutput);
   ASSERT_EQ(Suppressed.exitCode, 0) << Suppressed.err;
   EXPECT_EQ(Suppressed.err.find("neverc private relocatable LTO warning"),
             std::string::npos)
       << Suppressed.err;
   EXPECT_TRUE(fs::exists(SuppressedOutput));
+
+  const fs::path SuppressThenFatalOutput =
+      tmpFile("nvk_plugin_lto_warning_suppress_then_fatal.ko");
+  const CmdResult SuppressThenFatal =
+      LinkWithPolicies({"-w", "-Werror"}, SuppressThenFatalOutput);
+  ASSERT_EQ(SuppressThenFatal.exitCode, 0) << SuppressThenFatal.err;
+  EXPECT_EQ(
+      SuppressThenFatal.err.find("neverc private relocatable LTO warning"),
+      std::string::npos)
+      << SuppressThenFatal.err;
+  EXPECT_TRUE(fs::exists(SuppressThenFatalOutput));
 }
 
 // The same path with more than one translation unit.

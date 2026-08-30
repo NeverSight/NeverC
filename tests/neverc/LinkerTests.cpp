@@ -750,6 +750,53 @@ TEST_F(LinkerTest, ArchiveWarningsPreserveDuplicateLibraryOccurrences) {
       << "occurrence-oriented archive warnings must not be suppressed";
 }
 
+TEST_F(LinkerTest, SuppressWarningsOverridesFatalWarningsButNotErrors) {
+  const fs::path source = tmpFile("warning_policy.c");
+  writeFile(source, "int main(void) { return 0; }");
+
+  auto linkWithPolicies = [&](const std::vector<std::string> &policies,
+                              const fs::path &output) {
+    std::vector<std::string> args = {"--target=x86_64-linux-gnu", "-nostdlib",
+                                     "-fno-lto", "-Wl,-e,main",
+                                     "-Wl,-z,neverc-test-unknown"};
+    args.insert(args.end(), policies.begin(), policies.end());
+    args.insert(args.end(), {source.string(), "-o", output.string()});
+    return ncc(args);
+  };
+
+  const fs::path fatalOutput = tmpFile("warning_policy_fatal");
+  const CmdResult fatal = linkWithPolicies({"-Werror"}, fatalOutput);
+  EXPECT_NE(fatal.exitCode, 0) << fatal.err;
+  EXPECT_TRUE(fatal.stderrContains("unknown -z value: neverc-test-unknown"))
+      << fatal.err;
+  EXPECT_FALSE(fs::exists(fatalOutput));
+
+  for (const std::vector<std::string> &policies :
+       {std::vector<std::string>{"-w", "-Werror"},
+        std::vector<std::string>{"-Werror", "-w"}}) {
+    const fs::path output =
+        tmpFile(policies.front() == "-w" ? "warning_policy_suppress_first"
+                                         : "warning_policy_suppress_last");
+    const CmdResult suppressed = linkWithPolicies(policies, output);
+    ASSERT_EQ(suppressed.exitCode, 0) << suppressed.err;
+    EXPECT_FALSE(
+        suppressed.stderrContains("unknown -z value: neverc-test-unknown"))
+        << suppressed.err;
+    EXPECT_TRUE(fs::exists(output));
+  }
+
+  const fs::path errorOutput = tmpFile("warning_policy_real_error");
+  const CmdResult error =
+      ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-fno-lto", "-w",
+           "-Wl,-e,main", source.string(), "-Wl,-lneverc_diagnostic_missing",
+           "-o", errorOutput.string()});
+  EXPECT_NE(error.exitCode, 0) << error.err;
+  EXPECT_TRUE(error.stderrContains(
+      "unable to find library -lneverc_diagnostic_missing"))
+      << error.err;
+  EXPECT_FALSE(fs::exists(errorOutput));
+}
+
 TEST_F(LinkerTest, WholeArchiveDuplicateLibraryIsNotCoalesced) {
   if (!isLinux())
     GTEST_SKIP() << "--whole-archive is an ELF linker behavior";

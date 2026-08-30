@@ -183,13 +183,13 @@ void linker::ErrorHandler::message(const Twine &msg, llvm::raw_ostream &s) {
 }
 
 void linker::ErrorHandler::warn(const Twine &msg) {
+  if (suppressWarnings)
+    return;
+
   if (fatalWarnings) {
     error(msg);
     return;
   }
-
-  if (suppressWarnings)
-    return;
 
   std::lock_guard<std::mutex> lock(mu);
   reportDiagnostic(getLocation(msg), Colors::MAGENTA, "warning", msg);
