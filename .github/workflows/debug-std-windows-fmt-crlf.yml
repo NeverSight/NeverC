@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'std-red-20260830-fmt-windows-crlf'
+      - 'std-red-20260830-fmt-windows-crlf-logs'
       - 'std-fix-20260830-fmt-windows-crlf'
 
 permissions:
@@ -62,5 +63,8 @@ jobs:
           )
           & $clang @compileArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & .\test_fmt_windows.exe
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & cmd.exe /d /c ".\test_fmt_windows.exe > test_fmt_windows.log 2>&1"
+          $testExit = $LASTEXITCODE
+          Get-Content -LiteralPath test_fmt_windows.log
+          Write-Host "test_exit=$testExit"
+          if ($testExit -ne 0) { exit $testExit }
