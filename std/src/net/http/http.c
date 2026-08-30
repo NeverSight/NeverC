@@ -279,43 +279,35 @@ static void rw_apply_gzip(neverc_http_response_writer_t *w) {
 }
 
 /* Go net/http chunkWriter.writeHeader: emit Date only if the handler
- * did not set one. Cached and double-buffered so concurrent flushes
- * never observe a torn timestamp. */
+ * did not set one. Keep the one-second cache thread-local so concurrent
+ * flushes neither contend nor share partially updated bytes. */
 static int rw_append_cached_date(nc_buf_t *hdr) {
-    static char   date_bufs[2][64];
-    static int    date_lens[2] = {0, 0};
-    static volatile int date_idx = 0;
-    static volatile time_t date_time = 0;
+    static _Thread_local struct {
+        time_t second;
+        size_t len;
+        char bytes[64];
+    } date_cache = {(time_t)-1, 0, {0}};
 
     time_t now = time(NULL);
-    if (now != date_time) {
-        int wi = 1 - date_idx;
+    if (date_cache.len == 0 || now != date_cache.second) {
         struct tm gmt;
 #ifdef _WIN32
-        gmtime_s(&gmt, &now);
+        if (gmtime_s(&gmt, &now) != 0)
+            return 0;
 #else
-        gmtime_r(&now, &gmt);
+        if (!gmtime_r(&now, &gmt))
+            return 0;
 #endif
-        date_lens[wi] = (int)strftime(date_bufs[wi],
-            sizeof(date_bufs[wi]),
+        char formatted[sizeof(date_cache.bytes)];
+        size_t len = strftime(formatted, sizeof(formatted),
             "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", &gmt);
-#if defined(__GNUC__) || defined(__clang__)
-        __atomic_thread_fence(__ATOMIC_RELEASE);
-#elif defined(_WIN32)
-        MemoryBarrier();
-#endif
-        date_idx = wi;
-        date_time = now;
+        if (len == 0)
+            return 0;
+        memcpy(date_cache.bytes, formatted, len);
+        date_cache.len = len;
+        date_cache.second = now;
     }
-    int ri = date_idx;
-#if defined(__GNUC__) || defined(__clang__)
-    __atomic_thread_fence(__ATOMIC_ACQUIRE);
-#elif defined(_WIN32)
-    MemoryBarrier();
-#endif
-    if (date_lens[ri] <= 0)
-        return 0;
-    return nc_buf_append(hdr, date_bufs[ri], (size_t)date_lens[ri]);
+    return nc_buf_append(hdr, date_cache.bytes, date_cache.len);
 }
 
 static int rw_flush(neverc_http_response_writer_t *w) {
