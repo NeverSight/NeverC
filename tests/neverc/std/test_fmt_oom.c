@@ -30,11 +30,32 @@ static void *controlled_realloc(void *ptr, size_t size) {
     return allocation_fails() ? NULL : realloc(ptr, size);
 }
 
+static size_t position_restore_count;
+static size_t fail_position_restore_at;
+
+static int position_restore_fails(void) {
+    position_restore_count++;
+    return fail_position_restore_at != 0 &&
+           position_restore_count == fail_position_restore_at;
+}
+
+static int controlled_fseek(FILE *stream, long offset, int origin) {
+    return position_restore_fails() ? -1 : fseek(stream, offset, origin);
+}
+
+static int controlled_fsetpos(FILE *stream, const fpos_t *position) {
+    return position_restore_fails() ? -1 : fsetpos(stream, position);
+}
+
 #define malloc controlled_malloc
 #define realloc controlled_realloc
+#define fseek controlled_fseek
+#define fsetpos controlled_fsetpos
 #include "../../../std/src/fmt/fmt.c"
 #undef malloc
 #undef realloc
+#undef fseek
+#undef fsetpos
 
 #define CHECK(condition)                                                     \
     do {                                                                     \
@@ -48,6 +69,11 @@ static void *controlled_realloc(void *ptr, size_t size) {
 static void reset_allocator(size_t failure) {
     allocation_count = 0;
     fail_at = failure;
+}
+
+static void reset_position_restore(size_t failure) {
+    position_restore_count = 0;
+    fail_position_restore_at = failure;
 }
 
 static FILE *open_fmt_oom_input_pipe(const unsigned char *data, size_t len) {
@@ -130,6 +156,26 @@ int main(void) {
         CHECK(value == 7.0);
         CHECK(neverc_fmt_fscanf(input, "%d", &suffix) == 1);
         CHECK(suffix == 9);
+        CHECK(fclose(input) == 0);
+    }
+
+    {
+        static const unsigned char bytes[] = {'A', 0xC2, 0xA0, 'Z'};
+        struct {
+            char text[3];
+            unsigned char canary;
+        } output = {{'Q', 'Q', '\0'}, 0xA5};
+        FILE *input = tmpfile();
+        CHECK(input != NULL);
+        CHECK(fwrite(bytes, 1, sizeof(bytes), input) == sizeof(bytes));
+        rewind(input);
+        reset_allocator(0);
+        reset_position_restore(1);
+        CHECK(neverc_fmt_fscanf(input, "%2s", output.text) == 0);
+        CHECK(position_restore_count == 1);
+        CHECK(output.text[0] == 'Q');
+        CHECK(output.text[1] == 'Q');
+        CHECK(output.canary == 0xA5);
         CHECK(fclose(input) == 0);
     }
     puts("passed");
