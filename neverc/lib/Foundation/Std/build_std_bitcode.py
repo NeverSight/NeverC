@@ -110,9 +110,10 @@ def main():
     for src in sources:
         rel = os.path.relpath(src, args.std_src_dir)
         name = sanitize_name(rel)
-        if C_IDENTIFIER.fullmatch(name) is None:
-            print(f"error: sanitized module name for {rel!r} is not a "
-                  f"C identifier: {name!r}", file=sys.stderr)
+        symbol = f"kStdBC_{args.tag}_{name}"
+        if not name or C_IDENTIFIER.fullmatch(symbol) is None:
+            print(f"error: emitted module symbol for {rel!r} is not a "
+                  f"C identifier: {symbol!r}", file=sys.stderr)
             sys.exit(1)
         previous = names.get(name)
         if previous is not None:
