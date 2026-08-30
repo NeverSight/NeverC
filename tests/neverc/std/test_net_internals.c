@@ -213,11 +213,18 @@ static void test_timer_wheel_reschedule(void) {
 static nc_timer_wheel_t *tw_cancel_wheel;
 static nc_timer_t *tw_cancel_target;
 static int tw_cancel_target_fired;
+static int tw_cancel_survivor_fired;
 
 static void tw_cancel_target_cb(nc_timer_t *timer, void *data) {
     (void)timer;
     (void)data;
     tw_cancel_target_fired++;
+}
+
+static void tw_cancel_survivor_cb(nc_timer_t *timer, void *data) {
+    (void)timer;
+    (void)data;
+    tw_cancel_survivor_fired++;
 }
 
 static void tw_cancel_sibling_cb(nc_timer_t *timer, void *data) {
@@ -233,31 +240,31 @@ static void test_timer_wheel_callback_cancel(void) {
     nc_timer_wheel_t wheel;
     nc_timer_t target;
     nc_timer_t canceler;
+    nc_timer_t survivor;
     nc_tw_init(&wheel);
     nc_timer_init(&target, tw_cancel_target_cb, NULL);
     nc_timer_init(&canceler, tw_cancel_sibling_cb, NULL);
+    nc_timer_init(&survivor, tw_cancel_survivor_cb, NULL);
     tw_cancel_wheel = &wheel;
     tw_cancel_target = &target;
     tw_cancel_target_fired = 0;
+    tw_cancel_survivor_fired = 0;
 
-    uint64_t expiry = tw_fake_now_ms + 1;
-    int slot = (int)(expiry % NC_TW_SLOTS);
-    target.expire_ms = expiry;
-    target.active = 1;
-    target.tw_prev = &canceler;
-    target.tw_next = NULL;
-    canceler.expire_ms = expiry;
-    canceler.active = 1;
-    canceler.tw_prev = NULL;
-    canceler.tw_next = &target;
-    wheel.slots[slot] = &canceler;
-    wheel.last_ms = expiry - 1;
-    tw_fake_now_ms = expiry;
+    nc_tw_add(&wheel, &survivor, 1);
+    nc_tw_add(&wheel, &target, 1);
+    nc_tw_add(&wheel, &canceler, 1);
+    tw_fake_now_ms = 5001;
     nc_tw_tick(&wheel);
 
     check_int("callback-canceled timer inactive", target.active, 0);
     check_int("callback-canceled timer did not fire",
               tw_cancel_target_fired, 0);
+    check_int("timer after callback-canceled sibling fired",
+              tw_cancel_survivor_fired, 1);
+    check_int("timer after callback-canceled sibling inactive",
+              survivor.active, 0);
+    tw_cancel_wheel = NULL;
+    tw_cancel_target = NULL;
 }
 
 /* ===== Buffer Pool Tests ===== */
