@@ -471,6 +471,7 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
             if (out_pos >= out_cap) goto err;
             dst[out_pos++] = ch;
         }
+        if (rrun == 4) goto err;
 
         uint32_t actual_block_crc =
             bz_crc32(dst + block_out_start, out_pos - block_out_start);
