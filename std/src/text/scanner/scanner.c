@@ -367,7 +367,7 @@ static int scan_string(neverc_scanner_t *s, int quote) {
         if (ch == '\n') break;
         emit_consumed(s, start);
     }
-    if (!terminated && quote == '"') scanner_add_error(s);
+    if (!terminated) scanner_add_error(s);
     return (quote == '\'') ? NEVERC_SCANNER_CHAR : NEVERC_SCANNER_STRING;
 }
 
