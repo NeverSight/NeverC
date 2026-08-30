@@ -10,6 +10,14 @@
 #define NC_TW_SLOTS 512
 
 typedef struct nc_timer nc_timer_t;
+/*
+ * Callbacks run synchronously on the wheel's owning thread and must return
+ * normally. An active timer must remain alive and be changed through its
+ * owning wheel. Callbacks may call nc_tw_add(), nc_tw_cancel(), or nested
+ * nc_tw_tick(), but must not access the wheel concurrently, reinitialize or
+ * destroy it, inspect or retain its slot/link pointers, modify those pointers
+ * directly, or escape via longjmp or exception unwinding.
+ */
 typedef void (*nc_timer_cb_t)(nc_timer_t *timer, void *data);
 
 struct nc_timer {
@@ -94,12 +102,42 @@ static inline void nc_tw_tick(nc_timer_wheel_t *tw) {
         int slot = (int)(ms % NC_TW_SLOTS);
         nc_timer_t *t = tw->slots[slot];
         while (t) {
-            nc_timer_t *next = t->tw_next;
-            if (t->active && t->expire_ms <= now) {
-                nc_tw_unlink(tw, t);
-                t->active = 0;
-                if (t->cb) t->cb(t, t->data);
+            if (!t->active || t->expire_ms > now) {
+                t = t->tw_next;
+                continue;
             }
+
+            nc_timer_cb_t cb = t->cb;
+            void *data = t->data;
+            nc_timer_t bookmark = {0};
+            /*
+             * Replace the firing timer with an inactive bookmark. Callback
+             * mutations then update its continuation through the ordinary
+             * doubly-linked-list operations.
+             */
+            bookmark.expire_ms = t->expire_ms;
+            bookmark.tw_prev = t->tw_prev;
+            bookmark.tw_next = t->tw_next;
+            if (bookmark.tw_prev)
+                bookmark.tw_prev->tw_next = &bookmark;
+            else
+                tw->slots[slot] = &bookmark;
+            if (bookmark.tw_next)
+                bookmark.tw_next->tw_prev = &bookmark;
+
+            t->tw_prev = NULL;
+            t->tw_next = NULL;
+            t->active = 0;
+            if (cb)
+                cb(t, data);
+
+            nc_timer_t *next = bookmark.tw_next;
+            if (bookmark.tw_prev)
+                bookmark.tw_prev->tw_next = bookmark.tw_next;
+            else
+                tw->slots[slot] = bookmark.tw_next;
+            if (bookmark.tw_next)
+                bookmark.tw_next->tw_prev = bookmark.tw_prev;
             t = next;
         }
     }
