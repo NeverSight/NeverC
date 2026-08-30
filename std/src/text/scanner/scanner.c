@@ -344,11 +344,16 @@ static int scan_escape(neverc_scanner_t *s, int quote) {
 }
 
 static int scan_string(neverc_scanner_t *s, int quote) {
+    int terminated = 0;
     emit(s, quote);
     while (s->pos < s->src_len) {
         size_t start = s->pos;
         int ch = next_ch(s);
-        if (ch == quote) { emit_consumed(s, start); break; }
+        if (ch == quote) {
+            emit_consumed(s, start);
+            terminated = 1;
+            break;
+        }
         if (ch == '\\') {
             emit_consumed(s, start);
             if (scan_escape(s, quote) == '\n') break;
@@ -357,17 +362,23 @@ static int scan_string(neverc_scanner_t *s, int quote) {
         if (ch == '\n') break;
         emit_consumed(s, start);
     }
+    if (!terminated && quote == '"') scanner_add_error(s);
     return (quote == '\'') ? NEVERC_SCANNER_CHAR : NEVERC_SCANNER_STRING;
 }
 
 static int scan_raw_string(neverc_scanner_t *s) {
+    int terminated = 0;
     emit(s, '`');
     while (s->pos < s->src_len) {
         size_t start = s->pos;
         int ch = next_ch(s);
         emit_consumed(s, start);
-        if (ch == '`') break;
+        if (ch == '`') {
+            terminated = 1;
+            break;
+        }
     }
+    if (!terminated) scanner_add_error(s);
     return NEVERC_SCANNER_RAWSTRING;
 }
 
@@ -395,6 +406,7 @@ static int scan_comment(neverc_scanner_t *s, int second) {
         }
     } else {
         /* C/Go block comments are not nested: the first * / ends the comment. */
+        int terminated = 0;
         while (s->pos < s->src_len) {
             size_t start = s->pos;
             int ch = next_ch(s);
@@ -403,9 +415,11 @@ static int scan_comment(neverc_scanner_t *s, int second) {
                 start = s->pos;
                 next_ch(s);
                 emit_consumed(s, start);
+                terminated = 1;
                 break;
             }
         }
+        if (!terminated) scanner_add_error(s);
     }
     return NEVERC_SCANNER_COMMENT;
 }
