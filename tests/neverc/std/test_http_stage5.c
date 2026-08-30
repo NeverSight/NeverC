@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #ifdef _WIN32
 #include <direct.h>
 #include <io.h>
@@ -61,9 +62,78 @@ typedef struct {
     char file_path[320];
 } http_stage5_route_dir_t;
 
+#define HTTP_STAGE5_DATE_THREADS 8
+
+typedef struct {
+    neverc_http_response_writer_t *writer;
+    atomic_int *ready;
+    atomic_int *start;
+    int finish_result;
+} http_stage5_date_thread_t;
+
 static int http_stage5_tcp_write_all(neverc_tcp_conn_t *connection,
                                      const void *data, size_t length);
 static void http_stage5_remove_static_file(void);
+
+static void *http_stage5_finish_date_writer(void *opaque) {
+    http_stage5_date_thread_t *thread =
+        (http_stage5_date_thread_t *)opaque;
+    atomic_fetch_add_explicit(thread->ready, 1, memory_order_release);
+    while (!atomic_load_explicit(thread->start, memory_order_acquire)) {}
+    thread->finish_result = nc_http_writer_finish(thread->writer);
+    return NULL;
+}
+
+static void http_stage5_date_cache_is_concurrent(void) {
+    neverc_http_response_writer_t *prime =
+        neverc_http_memory_writer_new();
+    CHECK(prime != NULL);
+    if (!prime) return;
+    CHECK(nc_http_writer_finish(prime) == 0);
+    neverc_http_memory_writer_free(prime);
+
+    time_t primed_second = time(NULL);
+    CHECK(primed_second != (time_t)-1);
+    if (primed_second == (time_t)-1) return;
+
+    atomic_int ready;
+    atomic_int start;
+    atomic_init(&ready, 0);
+    atomic_init(&start, 0);
+    nc_thread_t threads[HTTP_STAGE5_DATE_THREADS];
+    http_stage5_date_thread_t args[HTTP_STAGE5_DATE_THREADS];
+    int started = 0;
+
+    for (int i = 0; i < HTTP_STAGE5_DATE_THREADS; i++) {
+        http_stage5_date_thread_t *thread = &args[started];
+        memset(thread, 0, sizeof(*thread));
+        thread->writer = neverc_http_memory_writer_new();
+        CHECK(thread->writer != NULL);
+        if (!thread->writer) continue;
+        thread->ready = &ready;
+        thread->start = &start;
+        if (nc_thread_create(&threads[started],
+                             http_stage5_finish_date_writer, thread) != 0) {
+            CHECK(0);
+            neverc_http_memory_writer_free(thread->writer);
+            thread->writer = NULL;
+            continue;
+        }
+        started++;
+    }
+
+    CHECK(started == HTTP_STAGE5_DATE_THREADS);
+    while (atomic_load_explicit(&ready, memory_order_acquire) < started) {}
+    while (time(NULL) == primed_second)
+        neverc_time_sleep(NEVERC_TIME_MILLISECOND);
+    atomic_store_explicit(&start, 1, memory_order_release);
+
+    for (int i = 0; i < started; i++) {
+        CHECK(nc_thread_join(threads[i]) == 0);
+        CHECK(args[i].finish_result == 0);
+        neverc_http_memory_writer_free(args[i].writer);
+    }
+}
 
 static int http_stage5_route_dir_create(http_stage5_route_dir_t *fixture,
                                         const char *body) {
@@ -1237,6 +1307,7 @@ static void http_stage5_tls_e2e(void) {
 
 int main(void) {
     puts("HTTP stage 5 production API test suite:");
+    http_stage5_date_cache_is_concurrent();
     http_stage5_static_routes_are_mux_owned();
     int fixture_result = http_stage5_write_static_file();
     CHECK(fixture_result == 0);
