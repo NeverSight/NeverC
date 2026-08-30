@@ -145,7 +145,7 @@ static int body_injects_boundary(const unsigned char *body, size_t body_len,
              (i >= 2 && body[i - 2] == '\r' && body[i - 1] == '\n')) &&
             memcmp(body + i, delim, dlen) == 0 &&
             delimiter_after_marker(body, body_len, i + dlen, 1,
-                                   MULTIPART_NL_CRLF, NULL, NULL))
+                                   MULTIPART_NL_ANY, NULL, NULL))
             return 1;
     }
     return 0;
