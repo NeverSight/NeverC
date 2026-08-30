@@ -521,6 +521,33 @@ static void test_seal_rejects_tag_ciphertext_overlap(void) {
                memcmp(output, unchanged, sizeof(output)) == 0);
 }
 
+static void test_seal_output_may_overlap_nonce(void) {
+    printf("[seal output overlapping nonce]\n");
+    uint8_t key[16] = {0x42};
+    uint8_t nonce[12];
+    uint8_t pt[32];
+    for (int i = 0; i < 12; i++) nonce[i] = (uint8_t)(0x50 + i);
+    for (int i = 0; i < 32; i++) pt[i] = (uint8_t)(i * 13 + 7);
+
+    neverc_gcm_ctx ctx;
+    check_true("seal nonce-overlap init",
+               neverc_gcm_init(&ctx, key, sizeof(key)) == 0);
+
+    uint8_t ct_ref[32], tag_ref[16];
+    check_true("seal nonce-overlap reference",
+               neverc_gcm_seal(&ctx, nonce, pt, sizeof(pt), NULL, 0,
+                               ct_ref, tag_ref) == 0);
+
+    uint8_t layout[48] = {0};
+    uint8_t tag[16];
+    memcpy(layout + 32, nonce, sizeof(nonce));
+    int rc = neverc_gcm_seal(&ctx, layout + 32, pt, sizeof(pt), NULL, 0,
+                             layout + 4, tag);
+    check_true("seal returns one consistent ciphertext/tag pair when output overlaps nonce",
+               rc == 0 && memcmp(layout + 4, ct_ref, sizeof(ct_ref)) == 0 &&
+               memcmp(tag, tag_ref, sizeof(tag_ref)) == 0);
+}
+
 static void test_null_nonce_rejected(void) {
     printf("[null nonce rejected]\n");
     uint8_t key[16] = {0};
@@ -559,6 +586,7 @@ int main(void) {
     test_aad_overlap_with_output();
     test_open_output_may_overlap_nonce();
     test_seal_rejects_tag_ciphertext_overlap();
+    test_seal_output_may_overlap_nonce();
     test_null_nonce_rejected();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
