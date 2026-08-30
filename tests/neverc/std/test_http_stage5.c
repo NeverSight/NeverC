@@ -3,6 +3,7 @@
 #include "neverc/std/net/tcp.h"
 #include "neverc/std/thread.h"
 #include "neverc/std/time.h"
+#include "http/_http_internal.h"
 #include "network_test_support.h"
 
 #include <stdatomic.h>
@@ -55,9 +56,112 @@ typedef struct {
     size_t length;
 } http_stage5_sink_t;
 
+typedef struct {
+    char directory[256];
+    char file_path[320];
+} http_stage5_route_dir_t;
+
 static int http_stage5_tcp_write_all(neverc_tcp_conn_t *connection,
                                      const void *data, size_t length);
 static void http_stage5_remove_static_file(void);
+
+static int http_stage5_route_dir_create(http_stage5_route_dir_t *fixture,
+                                        const char *body) {
+    char directory_template[] = "neverc-http-stage5-route-XXXXXX";
+    if (!fixture || !body) return -1;
+    memset(fixture, 0, sizeof(*fixture));
+#ifdef _WIN32
+    if (_mktemp_s(directory_template, sizeof(directory_template)) != 0 ||
+        _mkdir(directory_template) != 0)
+        return -1;
+#else
+    if (!mkdtemp(directory_template)) return -1;
+#endif
+    if (snprintf(fixture->directory, sizeof(fixture->directory), "%s",
+                 directory_template) < 0 ||
+        snprintf(fixture->file_path, sizeof(fixture->file_path), "%s/%s",
+                 directory_template, "route.txt") < 0) {
+        return -1;
+    }
+
+    FILE *file = fopen(fixture->file_path, "wb");
+    if (!file) return -1;
+    size_t body_length = strlen(body);
+    int result = fwrite(body, 1U, body_length, file) == body_length ? 0 : -1;
+    if (fclose(file) != 0) result = -1;
+    return result;
+}
+
+static void http_stage5_route_dir_remove(http_stage5_route_dir_t *fixture) {
+    if (!fixture) return;
+    if (fixture->file_path[0] != '\0') (void)remove(fixture->file_path);
+#ifdef _WIN32
+    if (fixture->directory[0] != '\0') (void)_rmdir(fixture->directory);
+#else
+    if (fixture->directory[0] != '\0') (void)rmdir(fixture->directory);
+#endif
+    memset(fixture, 0, sizeof(*fixture));
+}
+
+static void http_stage5_static_routes_are_mux_owned(void) {
+    static const char first_body[] = "first mux root";
+    static const char second_body[] = "second mux root";
+    static const char route[] = "/route-context/";
+    static const char request_path[] = "/route-context/route.txt";
+    http_stage5_route_dir_t first;
+    http_stage5_route_dir_t second;
+    memset(&first, 0, sizeof(first));
+    memset(&second, 0, sizeof(second));
+
+    int first_created = http_stage5_route_dir_create(&first, first_body) == 0;
+    int second_created =
+        http_stage5_route_dir_create(&second, second_body) == 0;
+    CHECK(first_created);
+    CHECK(second_created);
+    if (!first_created || !second_created) goto cleanup;
+
+    neverc_http_mux_t *first_mux = neverc_http_new_mux();
+    neverc_http_mux_t *second_mux = neverc_http_new_mux();
+    CHECK(first_mux != NULL);
+    CHECK(second_mux != NULL);
+    if (!first_mux || !second_mux) {
+        neverc_http_mux_free(first_mux);
+        neverc_http_mux_free(second_mux);
+        goto cleanup;
+    }
+
+    neverc_http_serve_dir(first_mux, route, first.directory);
+    neverc_http_serve_dir(second_mux, route, second.directory);
+
+    neverc_http_request_t request;
+    memset(&request, 0, sizeof(request));
+    request.method = "GET";
+    request.path = request_path;
+    request.http_version = "HTTP/1.1";
+    neverc_http_response_writer_t *writer = neverc_http_memory_writer_new();
+    CHECK(writer != NULL);
+    if (writer) {
+        nc_http_mux_dispatch(second_mux, &request, writer);
+        char *response = NULL;
+        size_t response_length = 0;
+        int status =
+            neverc_http_memory_writer_result(writer, &response,
+                                              &response_length);
+        CHECK(status == 200);
+        CHECK(response != NULL);
+        CHECK(response_length == strlen(second_body));
+        CHECK(response && response_length == strlen(second_body) &&
+              memcmp(response, second_body, response_length) == 0);
+        free(response);
+        neverc_http_memory_writer_free(writer);
+    }
+    neverc_http_mux_free(first_mux);
+    neverc_http_mux_free(second_mux);
+
+cleanup:
+    http_stage5_route_dir_remove(&first);
+    http_stage5_route_dir_remove(&second);
+}
 
 static void http_stage5_access_log(const char *method, const char *path,
                                    int status, double duration_ms,
@@ -1133,6 +1237,7 @@ static void http_stage5_tls_e2e(void) {
 
 int main(void) {
     puts("HTTP stage 5 production API test suite:");
+    http_stage5_static_routes_are_mux_owned();
     int fixture_result = http_stage5_write_static_file();
     CHECK(fixture_result == 0);
     if (fixture_result != 0) {
