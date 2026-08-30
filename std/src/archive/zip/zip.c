@@ -6,6 +6,9 @@
 
 static uint16_t read16(const uint8_t *p) { return p[0] | (p[1] << 8); }
 static uint32_t read32(const uint8_t *p) { return p[0] | (p[1]<<8) | (p[2]<<16) | ((uint32_t)p[3]<<24); }
+static uint64_t read64(const uint8_t *p) {
+    return (uint64_t)read32(p) | ((uint64_t)read32(p + 4U) << 32U);
+}
 static void write16(uint8_t *p, uint16_t v) { p[0] = v; p[1] = v >> 8; }
 static void write32(uint8_t *p, uint32_t v) { p[0] = v; p[1] = v>>8; p[2] = v>>16; p[3] = v>>24; }
 
@@ -99,6 +102,26 @@ static int find_eocd(const uint8_t *data, size_t len, size_t *offset) {
     return -1;
 }
 
+static int zip64_locator_references_end(const uint8_t *data,
+                                        size_t eocd_offset) {
+    if (eocd_offset < 20U) return 0;
+    size_t locator_offset = eocd_offset - 20U;
+    const uint8_t *locator = data + locator_offset;
+    if (read32(locator) != 0x07064b50U || read32(locator + 4U) != 0U ||
+        read32(locator + 16U) != 1U)
+        return 0;
+
+    uint64_t end_offset64 = read64(locator + 8U);
+    if (end_offset64 > (uint64_t)locator_offset) return 0;
+    size_t end_offset = (size_t)end_offset64;
+    if (locator_offset - end_offset < 56U) return 0;
+    const uint8_t *zip64_end = data + end_offset;
+    if (read32(zip64_end) != 0x06064b50U) return 0;
+    uint64_t record_size = read64(zip64_end + 4U);
+    return record_size >= 44U &&
+           record_size <= (uint64_t)(locator_offset - end_offset - 12U);
+}
+
 int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t len) {
     if (!r) return -1;
     memset(r, 0, sizeof(*r));
@@ -115,14 +138,15 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
     uint16_t total_entries = read16(eocd + 10U);
     uint32_t central_size = read32(eocd + 12U);
     uint32_t central_offset = read32(eocd + 16U);
-    /* APPNOTE 4.4.21: 0xFFFF only means "see ZIP64" when a ZIP64 locator
-     * precedes the EOCD. Go readDirectoryEnd keeps the 16-bit count when
-     * findDirectory64End finds no locator, so 65535 entries stay readable. */
-    int zip64_locator = eocd_offset >= 20U &&
-        read32(data + eocd_offset - 20U) == 0x07064b50U;
+    /* APPNOTE 4.4.21 and 4.4.22 permit an exact classic count of 0xFFFF. A
+     * four-byte locator signature can occur in an arbitrary central-file
+     * comment, so only treat it as ZIP64 when the full single-disk locator
+     * references a structurally bounded ZIP64 end record. */
+    int zip64_locator = total_entries == UINT16_MAX &&
+        zip64_locator_references_end(data, eocd_offset);
     if (disk != 0 || central_disk != 0 ||
         disk_entries != total_entries ||
-        (total_entries == UINT16_MAX && zip64_locator) ||
+        zip64_locator ||
         central_size == UINT32_MAX ||
         central_offset == UINT32_MAX ||
         (uint64_t)central_offset > eocd_offset ||
