@@ -1,4 +1,4 @@
-name: debug-windows-x64-clang-lto-phase-trace
+name: debug-windows-clang-unwind-policy
 
 permissions:
   actions: read
@@ -8,286 +8,93 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - "debug-win-x64-clang-lto-phase-trace-*"
+      - "debug-win-clang-unwind-policy-*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
-  BASELINE_SHA: 0479fe6ba33efde8bdb96c8e58c0f645118e58d0
+  CANDIDATE_SHA: 25e045213bd6c174826fe38116d65caa375c0534
+  CANDIDATE_PARENT_SHA: f4f013acf9e30caa18aa589d0eb132ff5fd29bfb
   LLVM_VER: 22.1.8
-  PRIOR_RUN_ID: 33316494120
-  PRIOR_ARTIFACT: windows-x64-clang-lto-phase-trace-33316494120
 
 jobs:
-  inspect-baseline:
-    name: Exact ThinLTO and unwind-OFF baseline plus SEH evidence
-    runs-on: windows-2022
-    timeout-minutes: 30
-    steps:
-      - name: Checkout exact failing revision
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.BASELINE_SHA }}
-          fetch-depth: 1
-
-      - name: Verify diagnostic revision
-        shell: pwsh
-        run: |
-          $actual = (git rev-parse HEAD).Trim()
-          if ($actual -ne $env:BASELINE_SHA) {
-            throw "expected $env:BASELINE_SHA, checked out $actual"
-          }
-
-      - name: Cache LLVM toolchain
-        uses: actions/cache@v4
-        with:
-          path: C:\LLVM
-          key: llvm-${{ env.LLVM_VER }}-win64
-
-      - name: Install the formal-run LLVM toolchain
-        shell: pwsh
-        run: ./.github/scripts/install-llvm-windows.ps1
-
-      - name: Set up MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Reuse the exact failing binary on the GitHub runner
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.PRIOR_ARTIFACT }}
-          path: prior-artifact
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ env.PRIOR_RUN_ID }}
-
-      - name: Resolve the exact binary and record compiler macros
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $diagDir = Join-Path $PWD 'diagnostics-round2'
-          New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
-
-          $testExe = Get-ChildItem prior-artifact -Recurse `
-            -Filter neverc-plugin-link-tests.exe | Select-Object -First 1
-          $testPdb = Get-ChildItem prior-artifact -Recurse `
-            -Filter neverc-plugin-link-tests.pdb | Select-Object -First 1
-          if (-not $testExe -or -not $testPdb) {
-            throw 'the prior GitHub artifact does not contain the exact binary and PDB'
-          }
-          "TEST_EXE=$($testExe.FullName)" | Out-File $env:GITHUB_ENV -Append
-          "TEST_PDB=$($testPdb.FullName)" | Out-File $env:GITHUB_ENV -Append
-          "DIAG_DIR=$diagDir" | Out-File $env:GITHUB_ENV -Append
-          @(
-            "baseline_sha=$env:BASELINE_SHA"
-            "source_run_id=$env:PRIOR_RUN_ID"
-            "source_artifact=$env:PRIOR_ARTIFACT"
-            'configuration=ThinLTO, LLVM_ENABLE_UNWIND_TABLES=OFF'
-          ) | Set-Content (Join-Path $diagDir 'baseline-provenance.txt')
-          Get-FileHash $testExe.FullName, $testPdb.FullName -Algorithm SHA256 |
-            Format-Table Path, Hash | Out-String |
-            Tee-Object -FilePath (Join-Path $diagDir 'binary-hashes.txt')
-
-          '' | & C:\LLVM\bin\clang++.exe --target=x86_64-pc-windows-msvc `
-            -dM -E -x c++ - 2>&1 |
-            Tee-Object -FilePath (Join-Path $diagDir 'clang-predefined-macros.txt')
-          Get-Content (Join-Path $diagDir 'clang-predefined-macros.txt') |
-            Select-String '_MSC_VER|_WIN32|__SEH__|__EXCEPTIONS|__clang__'
-
-      - name: Reconfirm the exact baseline exits three times
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $filters = [ordered]@{
-            dispatcher = 'PluginCOFFContextIsolationTest.DispatcherFatalTimeTraceDoesNotPoisonNextLink'
-            direct = 'PluginCOFFContextIsolationTest.DirectFatalTimeTraceDoesNotPoisonNextLink'
-          }
-          foreach ($entry in $filters.GetEnumerator()) {
-            for ($round = 1; $round -le 3; ++$round) {
-              $stdout = Join-Path $env:DIAG_DIR "$($entry.Key)-baseline-$round.stdout.txt"
-              $stderr = Join-Path $env:DIAG_DIR "$($entry.Key)-baseline-$round.stderr.txt"
-              $process = Start-Process -FilePath $env:TEST_EXE `
-                -ArgumentList @("--gtest_filter=$($entry.Value)", `
-                  '--gtest_catch_exceptions=1', '--gtest_color=no') `
-                -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
-                -Wait -PassThru
-              $unsignedExit = [uint64]([int64]$process.ExitCode -band 0xffffffffL)
-              $result = '{0} round={1} exit={2} hex=0x{3:X8}' -f `
-                $entry.Key, $round, $process.ExitCode, $unsignedExit
-              $result | Tee-Object `
-                -FilePath (Join-Path $env:DIAG_DIR 'baseline-exit-codes.txt') -Append
-            }
-          }
-
-      - name: Record PE unwind, TLS, and PDB symbol evidence
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          & C:\LLVM\bin\llvm-readobj.exe --unwind --sections `
-            --coff-tls-directory $env:TEST_EXE 2>&1 |
-            Tee-Object -FilePath (Join-Path $env:DIAG_DIR 'llvm-readobj.txt')
-          & C:\LLVM\bin\llvm-pdbutil.exe dump -publics -globals -symbols `
-            $env:TEST_PDB 2>&1 |
-            Select-String `
-              'RunSafely|ExceptionFilter|CrashRecoveryContextImpl_create|currentContext|recoveringFromCrashSlot|HandleSeh|GTestProcessSEH|HandleExit' |
-            Tee-Object -FilePath (Join-Path $env:DIAG_DIR 'focused-pdb-symbols.txt')
-          dumpbin /pdata $env:TEST_EXE 2>&1 |
-            Tee-Object -FilePath (Join-Path $env:DIAG_DIR 'dumpbin-pdata.txt')
-
-      - name: Capture pristine first-chance exception contexts
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $cdb = Get-Item `
-            'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe' `
-            -ErrorAction SilentlyContinue
-          if (-not $cdb) {
-            $cdb = Get-ChildItem 'C:\Program Files (x86)\Windows Kits' `
-              -Recurse -Filter cdb.exe -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match '\\x64\\' } |
-              Select-Object -First 1
-          }
-          if (-not $cdb) {
-            throw 'cdb.exe not found on windows-2022'
-          }
-
-          $binDir = Split-Path -Parent $env:TEST_EXE
-          $env:_NT_SYMBOL_PATH = "$binDir;srv*C:\symcache*https://msdl.microsoft.com/download/symbols"
-          $filters = [ordered]@{
-            dispatcher = 'PluginCOFFContextIsolationTest.DispatcherFatalTimeTraceDoesNotPoisonNextLink'
-            direct = 'PluginCOFFContextIsolationTest.DirectFatalTimeTraceDoesNotPoisonNextLink'
-          }
-
-          foreach ($entry in $filters.GetEnumerator()) {
-            $dumpPath = Join-Path $env:DIAG_DIR "$($entry.Key)-first-chance.dmp"
-            $logPath = Join-Path $env:DIAG_DIR "$($entry.Key)-first-chance.txt"
-            $commands = @(
-              '.reload /f',
-              'x neverc_plugin_link_tests!*RunSafely*',
-              'x neverc_plugin_link_tests!*crc_detail*ExceptionFilter*',
-              'x neverc_plugin_link_tests!*CrashRecoveryContextImpl_create*',
-              'x neverc_plugin_link_tests!*HandleSeh*',
-              'sxe 0xe0000001',
-              'g',
-              '.echo === PRISTINE FIRST CHANCE ===',
-              '.lastevent',
-              '.exr -1',
-              'r rip',
-              'r rsp',
-              'r rbp',
-              '.fnent neverc_plugin_link_tests!llvm::CrashRecoveryContext::HandleExit',
-              'uf neverc_plugin_link_tests!llvm::CrashRecoveryContext::HandleExit',
-              'kv 80',
-              'kP 160',
-              '~*kb 80',
-              'lm',
-              ".dump /ma $dumpPath",
-              'q'
-            ) -join '; '
-
-            & $cdb.FullName -o -lines -y $env:_NT_SYMBOL_PATH `
-              -c $commands $env:TEST_EXE "--gtest_filter=$($entry.Value)" `
-              '--gtest_catch_exceptions=1' '--gtest_color=no' 2>&1 |
-              Tee-Object -FilePath $logPath
-          }
-
-      - name: Probe whether the CRC exception filter is entered
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $cdb = Get-Item `
-            'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
-          $binDir = Split-Path -Parent $env:TEST_EXE
-          $env:_NT_SYMBOL_PATH = "$binDir;srv*C:\symcache*https://msdl.microsoft.com/download/symbols"
-          $filters = [ordered]@{
-            dispatcher = 'PluginCOFFContextIsolationTest.DispatcherFatalTimeTraceDoesNotPoisonNextLink'
-            direct = 'PluginCOFFContextIsolationTest.DirectFatalTimeTraceDoesNotPoisonNextLink'
-          }
-
-          foreach ($entry in $filters.GetEnumerator()) {
-            $logPath = Join-Path $env:DIAG_DIR "$($entry.Key)-filter-probe.txt"
-            $commands = @(
-              '.reload /f',
-              'x neverc_plugin_link_tests!*CrashRecoveryContextImpl_create*',
-              'x neverc_plugin_link_tests!*crc_detail*ExceptionFilter*',
-              'x neverc_plugin_link_tests!*HandleSehExceptions*',
-              'x neverc_plugin_link_tests!*GTestProcessSEH*',
-              'bm neverc_plugin_link_tests!*CrashRecoveryContextImpl_create* ".echo CRC_CREATE_HIT; .lastevent; kP 40; gc"',
-              'bm neverc_plugin_link_tests!*crc_detail*ExceptionFilter* ".echo CRC_FILTER_HIT; .lastevent; r; dv /t /v; kP 40; gc"',
-              'bm neverc_plugin_link_tests!*HandleSehExceptions* ".echo GTEST_SEH_HIT; .lastevent; kP 40; gc"',
-              'bm neverc_plugin_link_tests!*GTestProcessSEH* ".echo GTEST_PROCESS_SEH_HIT; .lastevent; kP 40; gc"',
-              'sxd 0xe0000001',
-              'sxe 0xc0000409',
-              'g',
-              '.echo === PROCESS STOP AFTER FILTER PROBES ===',
-              '.lastevent',
-              '.exr -1',
-              'r rip',
-              'r rsp',
-              'r rbp',
-              '.fnent neverc_plugin_link_tests!llvm::CrashRecoveryContext::HandleExit',
-              'kv 80',
-              'kP 160',
-              '~*kb 80',
-              'q'
-            ) -join '; '
-
-            & $cdb.FullName -o -lines -y $env:_NT_SYMBOL_PATH `
-              -c $commands $env:TEST_EXE "--gtest_filter=$($entry.Value)" `
-              '--gtest_catch_exceptions=1' '--gtest_color=no' 2>&1 |
-              Tee-Object -FilePath $logPath
-          }
-
-      - name: Upload second-round baseline evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-x64-clang-lto-phase-trace-inspect-${{ github.run_id }}
-          path: diagnostics-round2
-          if-no-files-found: error
-          retention-days: 7
-
-  ab-controls:
+  validate:
     name: ${{ matrix.label }}
-    runs-on: windows-2022
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
-          - id: thin-unwind-off
-            label: Exact ThinLTO with unwind tables OFF baseline
-            lto_flags: -flto=thin
-            unwind: "OFF"
-          - id: thin-unwind-on
-            label: ThinLTO with unwind tables ON
-            lto_flags: -flto=thin
-            unwind: "ON"
-          - id: no-lto-unwind-off
-            label: No LTO with unwind tables OFF
-            lto_flags: ""
-            unwind: "OFF"
+          - id: x64-default-on
+            label: Windows x64 ThinLTO with candidate default
+            runner: windows-2022
+            arch: x64
+            python_arch: x64
+            msvc_arch: x64
+            compiler_target: x86_64-pc-windows-msvc
+            explicit_unwind: ""
+            expected_unwind: "ON"
+            expected_runtime: success
+            linker_flags: "-Wl,//debug"
+          - id: arm64-default-on
+            label: Windows arm64 ThinLTO with candidate default
+            runner: windows-11-arm
+            arch: arm64
+            python_arch: arm64
+            msvc_arch: arm64
+            compiler_target: aarch64-pc-windows-msvc
+            explicit_unwind: ""
+            expected_unwind: "ON"
+            expected_runtime: success
+            linker_flags: ""
+          - id: x64-explicit-off
+            label: Windows x64 ThinLTO with explicit unwind OFF
+            runner: windows-2022
+            arch: x64
+            python_arch: x64
+            msvc_arch: x64
+            compiler_target: x86_64-pc-windows-msvc
+            explicit_unwind: "OFF"
+            expected_unwind: "OFF"
+            expected_runtime: baseline-failure
+            linker_flags: "-Wl,//debug"
     env:
       BUILD_DIR: build-${{ matrix.id }}
       CASE_ID: ${{ matrix.id }}
+      CASE_ARCH: ${{ matrix.arch }}
+      COMPILER_TARGET: ${{ matrix.compiler_target }}
+      EXPLICIT_UNWIND: ${{ matrix.explicit_unwind }}
+      EXPECTED_UNWIND: ${{ matrix.expected_unwind }}
+      EXPECTED_RUNTIME: ${{ matrix.expected_runtime }}
+      LINKER_FLAGS: ${{ matrix.linker_flags }}
     steps:
-      - name: Checkout exact failing revision
+      - name: Checkout exact production candidate
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.BASELINE_SHA }}
-          fetch-depth: 1
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 2
 
-      - name: Verify diagnostic revision
+      - name: Verify exact production candidate
         shell: pwsh
         run: |
           $actual = (git rev-parse HEAD).Trim()
-          if ($actual -ne $env:BASELINE_SHA) {
-            throw "expected $env:BASELINE_SHA, checked out $actual"
+          if ($actual -ne $env:CANDIDATE_SHA) {
+            throw "expected $env:CANDIDATE_SHA, checked out $actual"
+          }
+          $parent = (git rev-parse 'HEAD^').Trim()
+          if ($parent -ne $env:CANDIDATE_PARENT_SHA) {
+            throw "expected parent $env:CANDIDATE_PARENT_SHA, found $parent"
+          }
+          $subject = (git show -s --format=%s HEAD).Trim()
+          if ($subject -ne 'cmake: preserve Windows unwind tables for crash recovery') {
+            throw "unexpected production subject: $subject"
+          }
+          $changed = @(git diff --name-only 'HEAD^' HEAD)
+          if ($changed.Count -ne 1 -or $changed[0] -ne 'neverc/cmake/caches/NeverC.cmake') {
+            throw "unexpected production boundary: $($changed -join ', ')"
           }
 
       - name: Set up CPython 3.12.10
@@ -295,8 +102,10 @@ jobs:
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12.10"
+          architecture: ${{ matrix.python_arch }}
 
-      - name: Set up pinned build dependencies
+      - name: Install x64 build dependencies
+        if: matrix.arch == 'x64'
         shell: pwsh
         run: |
           choco install ninja 7zip -y --no-progress
@@ -308,6 +117,26 @@ jobs:
           Expand-Archive cmake.zip C:\tools -Force
           Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-x86_64\bin"
 
+      - name: Install arm64-native build dependencies
+        if: matrix.arch == 'arm64'
+        shell: pwsh
+        run: |
+          choco install 7zip -y --no-progress
+
+          $cmakeVer = '3.31.11'
+          Invoke-WebRequest `
+            "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-arm64.zip" `
+            -OutFile cmake.zip
+          Expand-Archive cmake.zip C:\tools -Force
+          Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-arm64\bin"
+
+          $ninjaVer = '1.13.1'
+          Invoke-WebRequest `
+            "https://github.com/ninja-build/ninja/releases/download/v$ninjaVer/ninja-winarm64.zip" `
+            -OutFile ninja.zip
+          Expand-Archive ninja.zip C:\tools\ninja -Force
+          Add-Content $env:GITHUB_PATH "C:\tools\ninja"
+
       - name: Cache LLVM toolchain
         uses: actions/cache@v4
         with:
@@ -318,17 +147,46 @@ jobs:
         shell: pwsh
         run: ./.github/scripts/install-llvm-windows.ps1
 
+      - name: Verify the pinned LLVM toolchain
+        shell: pwsh
+        run: |
+          $version = (& C:\LLVM\bin\clang.exe --version | Out-String)
+          $version
+          if ($version -notmatch 'clang version 22\.1\.8') {
+            throw 'expected Clang 22.1.8'
+          }
+
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
 
       - name: Set up sccache
         uses: mozilla/sccache-action@v0.0.7
 
-      - name: Configure the exact A/B control
+      - name: Configure the exact candidate
         shell: bash
         run: |
           set -euxo pipefail
+
+          target_args=()
+          if [[ "$CASE_ARCH" == arm64 ]]; then
+            target_args+=(
+              -DCMAKE_SYSTEM_PROCESSOR=ARM64
+              -DCMAKE_C_COMPILER_TARGET=aarch64-pc-windows-msvc
+              -DCMAKE_CXX_COMPILER_TARGET=aarch64-pc-windows-msvc
+              -DCMAKE_ASM_COMPILER_TARGET=aarch64-pc-windows-msvc
+              -DNEVERC_NATIVE_ARCH=OFF
+            )
+          fi
+
+          unwind_args=()
+          if [[ -n "$EXPLICIT_UNWIND" ]]; then
+            unwind_args+=("-DLLVM_ENABLE_UNWIND_TABLES=$EXPLICIT_UNWIND")
+          fi
+
           cmake -S llvm -B "$BUILD_DIR" -G Ninja \
+            "${target_args[@]}" \
             -C neverc/cmake/caches/NeverC.cmake \
             -DNEVERC_INCLUDE_TESTS=ON \
             -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
@@ -336,44 +194,87 @@ jobs:
             -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            -DLLVM_ENABLE_UNWIND_TABLES=${{ matrix.unwind }} \
-            -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG ${{ matrix.lto_flags }} -ffunction-sections -fdata-sections" \
-            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG ${{ matrix.lto_flags }} -ffunction-sections -fdata-sections" \
-            -DCMAKE_EXE_LINKER_FLAGS="-Wl,//debug"
+            -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
+            -DCMAKE_EXE_LINKER_FLAGS="$LINKER_FLAGS" \
+            "${unwind_args[@]}"
 
-      - name: Record macros, cache values, and exact commands
+      - name: Verify cache and focused compile commands
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p "diagnostics-$CASE_ID"
-          printf '' | C:/LLVM/bin/clang++.exe --target=x86_64-pc-windows-msvc \
-            -dM -E -x c++ - \
-            > "diagnostics-$CASE_ID/clang-predefined-macros.txt"
-          grep -E '^#define (_MSC_VER|_WIN32|__SEH__|__EXCEPTIONS|__clang__)' \
-            "diagnostics-$CASE_ID/clang-predefined-macros.txt" || true
-          grep -E '^(LLVM_ENABLE_UNWIND_TABLES|LLVM_COMPILER_IS_GCC_COMPATIBLE|CMAKE_(C|CXX)_FLAGS_RELEASE):' \
-            "$BUILD_DIR/CMakeCache.txt" | tee "diagnostics-$CASE_ID/cache-flags.txt"
-          ninja -C "$BUILD_DIR" -t commands neverc-plugin-link-tests \
-            > "diagnostics-$CASE_ID/ninja-commands.txt"
-          grep -E -m 30 \
-            'PluginCOFFContextIsolationTests.cpp|Dispatcher.cpp|Diagnostic.cpp|CoffDriver.cpp|neverc-plugin-link-tests' \
-            "diagnostics-$CASE_ID/ninja-commands.txt" | \
-            tee "diagnostics-$CASE_ID/focused-commands.txt" || true
+          diag_dir="diagnostics-$CASE_ID"
+          mkdir -p "$diag_dir"
 
-      - name: Build only the failing test binary
+          printf '' | C:/LLVM/bin/clang++.exe --target="$COMPILER_TARGET" \
+            -dM -E -x c++ - > "$diag_dir/clang-predefined-macros.txt"
+          grep -E '^#define (_MSC_VER|_WIN32|__SEH__|__EXCEPTIONS|__clang__)' \
+            "$diag_dir/clang-predefined-macros.txt" || true
+
+          actual="$(sed -n 's/^LLVM_ENABLE_UNWIND_TABLES:BOOL=//p' \
+            "$BUILD_DIR/CMakeCache.txt")"
+          printf 'LLVM_ENABLE_UNWIND_TABLES=%s\n' "$actual" | \
+            tee "$diag_dir/cache-unwind.txt"
+          [[ "$actual" == "$EXPECTED_UNWIND" ]]
+
+          ninja -C "$BUILD_DIR" -t commands neverc-plugin-link-tests \
+            > "$diag_dir/ninja-commands.txt"
+          sources=(
+            tests/neverc/PluginCOFFContextIsolationTests.cpp
+            neverc/lib/Linker/Core/Driver/Dispatcher.cpp
+            neverc/lib/Linker/Core/Runtime/Diagnostic.cpp
+            neverc/lib/Linker/Backends/COFF/Driver/CoffDriver.cpp
+          )
+          : > "$diag_dir/focused-commands.txt"
+          for source in "${sources[@]}"; do
+            line="$(grep -F -m1 "$source" "$diag_dir/ninja-commands.txt")"
+            printf '%s\n' "$line" | tee -a "$diag_dir/focused-commands.txt"
+            [[ "$line" == *"-flto=thin"* ]]
+            [[ "$line" != *"-fno-lto"* ]]
+            if [[ "$CASE_ARCH" == arm64 ]]; then
+              [[ "$line" == *"--target=aarch64-pc-windows-msvc"* ]]
+            fi
+            if [[ "$EXPECTED_UNWIND" == ON ]]; then
+              [[ "$line" == *"-funwind-tables"* ]]
+              [[ "$line" != *"-fno-unwind-tables"* ]]
+              [[ "$line" != *"-fno-asynchronous-unwind-tables"* ]]
+            else
+              [[ "$line" != *"-funwind-tables"* ]]
+              [[ "$line" == *"-fno-unwind-tables"* ]]
+              [[ "$line" == *"-fno-asynchronous-unwind-tables"* ]]
+            fi
+          done
+
+      - name: Build only the two regression tests
         shell: bash
         run: |
           set -euxo pipefail
           cmake --build "$BUILD_DIR" --target neverc-plugin-link-tests \
             --parallel "$NUMBER_OF_PROCESSORS"
-          ls -l "$BUILD_DIR/bin/neverc-plugin-link-tests.exe" \
-            "$BUILD_DIR/bin/neverc-plugin-link-tests.pdb"
+          ls -l "$BUILD_DIR/bin/neverc-plugin-link-tests.exe"
+          ls -l "$BUILD_DIR/bin/neverc-plugin-link-tests.pdb" || true
 
-      - name: Run both exact filters three times
-        continue-on-error: true
+      - name: Verify the test binary architecture
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Continue'
+          $testExe = (Resolve-Path "$env:BUILD_DIR\bin\neverc-plugin-link-tests.exe").Path
+          $diagDir = Join-Path $PWD "diagnostics-$env:CASE_ID"
+          $headers = (& C:\LLVM\bin\llvm-readobj.exe --file-headers $testExe |
+            Out-String)
+          $headers | Set-Content (Join-Path $diagDir 'file-headers.txt')
+          $expectedMachine = if ($env:CASE_ARCH -eq 'arm64') {
+            'IMAGE_FILE_MACHINE_ARM64'
+          } else {
+            'IMAGE_FILE_MACHINE_AMD64'
+          }
+          if (-not $headers.Contains($expectedMachine)) {
+            throw "expected $expectedMachine in PE headers"
+          }
+
+      - name: Verify both exact filters three times
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
           $testExe = (Resolve-Path "$env:BUILD_DIR\bin\neverc-plugin-link-tests.exe").Path
           $diagDir = Join-Path $PWD "diagnostics-$env:CASE_ID"
           $filters = [ordered]@{
@@ -395,34 +296,65 @@ jobs:
                 $entry.Key, $round, $process.ExitCode, $unsignedExit
               $result | Tee-Object `
                 -FilePath (Join-Path $diagDir 'exit-codes.txt') -Append
-              Get-Content $stdout -ErrorAction SilentlyContinue
-              Get-Content $stderr -ErrorAction SilentlyContinue
+
+              $stdoutText = Get-Content $stdout -Raw
+              $expectedRun = "[ RUN      ] $($entry.Value)"
+              if (-not $stdoutText.Contains($expectedRun)) {
+                throw "missing gtest start marker '$expectedRun'"
+              }
+
+              if ($env:EXPECTED_RUNTIME -eq 'success') {
+                if ($process.ExitCode -ne 0) {
+                  throw "expected success: $result"
+                }
+                $expectedOk = "[       OK ] $($entry.Value)"
+                if (-not $stdoutText.Contains($expectedOk)) {
+                  throw "missing gtest success marker '$expectedOk'"
+                }
+              } else {
+                foreach ($terminal in @('[       OK ]', '[  FAILED  ]', '[  SKIPPED ]')) {
+                  $marker = "$terminal $($entry.Value)"
+                  if ($stdoutText.Contains($marker)) {
+                    throw "unexpected gtest terminal marker '$marker'"
+                  }
+                }
+                if ($entry.Key -eq 'dispatcher') {
+                  $expectedExit = [Convert]::ToUInt64('E0000001', 16)
+                } else {
+                  $expectedExit = [Convert]::ToUInt64('C0000409', 16)
+                }
+                if ($unsignedExit -ne $expectedExit) {
+                  throw "expected baseline failure 0x$($expectedExit.ToString('X8')): $result"
+                }
+              }
             }
           }
 
-      - name: Record A/B binary unwind metadata
+      - name: Record binary unwind metadata
         if: always()
         continue-on-error: true
         shell: pwsh
         run: |
           $diagDir = Join-Path $PWD "diagnostics-$env:CASE_ID"
           $testExe = "$env:BUILD_DIR\bin\neverc-plugin-link-tests.exe"
-          & C:\LLVM\bin\llvm-readobj.exe --unwind --sections `
-            --coff-tls-directory $testExe 2>&1 |
-            Tee-Object -FilePath (Join-Path $diagDir 'llvm-readobj.txt')
+          if (Test-Path $testExe) {
+            & C:\LLVM\bin\llvm-readobj.exe --unwind --sections `
+              --coff-tls-directory $testExe 2>&1 |
+              Tee-Object -FilePath (Join-Path $diagDir 'llvm-readobj.txt')
+          }
           Get-Content (Join-Path $diagDir 'exit-codes.txt') `
             -ErrorAction SilentlyContinue
 
-      - name: Upload A/B binary, symbols, and evidence
+      - name: Upload candidate evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-x64-${{ matrix.id }}-phase-trace-${{ github.run_id }}
+          name: windows-${{ matrix.id }}-unwind-policy-${{ github.run_id }}
           path: |
             diagnostics-${{ matrix.id }}
             ${{ env.BUILD_DIR }}/bin/neverc-plugin-link-tests.exe
             ${{ env.BUILD_DIR }}/bin/neverc-plugin-link-tests.pdb
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Show sccache statistics
