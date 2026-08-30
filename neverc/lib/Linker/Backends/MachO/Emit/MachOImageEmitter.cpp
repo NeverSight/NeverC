@@ -19,6 +19,7 @@
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Chunks.h"
 #include "Linker/Core/Support/FileIO.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/LEB128.h"
@@ -1293,12 +1294,17 @@ template <class LP> void OutputWriter::run() {
   // Phase 3: finalize and emit. Map file runs concurrently with LINKEDIT.
   if (!config->mapFile.empty()) {
     workers.spawn([&] {
-      if (LLVM_ENABLE_THREADS && config->driverCfg->timeTraceEnabled)
+      const bool ownsTimeTraceProfiler = LLVM_ENABLE_THREADS &&
+                                         config->driverCfg->timeTraceEnabled &&
+                                         !timeTraceProfilerEnabled();
+      if (ownsTimeTraceProfiler)
         timeTraceProfilerInitialize(config->driverCfg->timeTraceGranularity,
                                     "mapFile");
+      auto finishTimeTraceProfiler = make_scope_exit([&] {
+        if (ownsTimeTraceProfiler)
+          timeTraceProfilerFinishThread();
+      });
       writeMapFile();
-      if (LLVM_ENABLE_THREADS && config->driverCfg->timeTraceEnabled)
-        timeTraceProfilerFinishThread();
     });
   }
   finalizeLinkEdit();

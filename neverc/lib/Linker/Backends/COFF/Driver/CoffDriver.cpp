@@ -12,11 +12,13 @@
 #include "Linker/COFF/Symbols.h"
 #include "Linker/Core/Driver/ArgList.h"
 #include "Linker/Core/Driver/Dispatcher.h"
+#include "Linker/Core/Runtime/CrashRecovery.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Runtime/Stopwatch.h"
 #include "Linker/Core/Support/FileIO.h"
 #include "neverc/Invoke/InMemoryFileStore.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/BinaryFormat/Magic.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/Object/COFFImportFile.h"
@@ -31,6 +33,7 @@
 #include "llvm/Support/Parallel.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
@@ -53,10 +56,18 @@ namespace linker::coff {
 bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput,
           const LinkerDriverConfig &driverCfg) {
-  LinkerExecutionContext LocalExecution;
-  LinkerExecutionContext &Execution =
-      driverCfg.executionContext ? *driverCfg.executionContext : LocalExecution;
+  linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner TraceProfiler(
+      driverCfg.timeTraceEnabled, driverCfg.timeTraceGranularity,
+      args.empty() ? "neverc" : args.front());
+  linker::crash_recovery_detail::CrashRecoveryLocalOwner<LinkerExecutionContext>
+      ExecutionOwner(driverCfg.executionContext);
+  LinkerExecutionContext &Execution = ExecutionOwner.get();
   COFFLinkerContext &ctx = Execution.createBackend<COFFLinkerContext>();
+  llvm::CrashRecoveryContextCleanupRegistrar<
+      LinkerExecutionContext,
+      linker::crash_recovery_detail::CrashRecoveryDestroyBackendCleanup<
+          LinkerExecutionContext>>
+      CrashBackend(driverCfg.executionContext ? &Execution : nullptr);
 
   ctx.e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
   ctx.e.errorLimit = driverCfg.errorLimit;
@@ -71,6 +82,9 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
     ctx.configureParallel(driverCfg.threadCount);
 
   ctx.driver.run(args, driverCfg);
+
+  if (!ctx.config.outputFile.empty())
+    checkError(TraceProfiler.write(ctx.config.outputFile));
 
   return errorCount() == 0;
 }
@@ -1064,10 +1078,8 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
 
   config->driverCfg = &driverCfg;
 
-  if (driverCfg.timeTraceEnabled)
-    timeTraceProfilerInitialize(driverCfg.timeTraceGranularity, argsArr[0]);
-
-  llvm::TimeTraceScope timeScope("COFF link");
+  std::optional<llvm::TimeTraceScope> timeScope;
+  timeScope.emplace("COFF link");
 
   config->vfs = getVFS(args);
 
@@ -1920,13 +1932,9 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   writeOutput(ctx);
 
   rootTimer.stop();
-  if (config->driverCfg->timeTraceEnabled) {
+  if (config->driverCfg->timeTraceEnabled)
     ctx.rootTimer.print();
-    timeTraceProfilerEnd();
-
-    checkError(timeTraceProfilerWrite(std::string(), config->outputFile));
-    timeTraceProfilerCleanup();
-  }
+  timeScope.reset();
 }
 
 } // namespace linker::coff

@@ -18,11 +18,13 @@
 #include "Linker/Core/Driver/ArgList.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/Allocator.h"
+#include "Linker/Core/Runtime/CrashRecovery.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/MachO.h"
@@ -1386,10 +1388,18 @@ namespace macho {
 bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput,
           const LinkerDriverConfig &driverCfg) {
-  LinkerExecutionContext LocalExecution;
-  LinkerExecutionContext &Execution =
-      driverCfg.executionContext ? *driverCfg.executionContext : LocalExecution;
+  linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner TraceProfiler(
+      driverCfg.timeTraceEnabled, driverCfg.timeTraceGranularity,
+      argsArr.empty() ? "neverc" : argsArr.front());
+  linker::crash_recovery_detail::CrashRecoveryLocalOwner<LinkerExecutionContext>
+      ExecutionOwner(driverCfg.executionContext);
+  LinkerExecutionContext &Execution = ExecutionOwner.get();
   MachOLinkerContext &Backend = Execution.createBackend<MachOLinkerContext>();
+  llvm::CrashRecoveryContextCleanupRegistrar<
+      LinkerExecutionContext,
+      linker::crash_recovery_detail::CrashRecoveryDestroyBackendCleanup<
+          LinkerExecutionContext>>
+      CrashBackend(driverCfg.executionContext ? &Execution : nullptr);
   CommonLinkerContext &Common = Backend;
 
   Common.e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
@@ -1719,10 +1729,6 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
 
   config->progName = argsArr[0];
 
-  if (driverCfg.timeTraceEnabled)
-    timeTraceProfilerInitialize(driverCfg.timeTraceGranularity,
-                                config->progName);
-
   {
     TimeTraceScope timeScope("ExecuteLinker");
 
@@ -1842,16 +1848,11 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     depTracker->write(inputFiles, config->outputFile);
   }
 
-  if (config->driverCfg->timeTraceEnabled) {
-    checkError(timeTraceProfilerWrite(std::string(), config->outputFile));
-
-    timeTraceProfilerCleanup();
-  }
-
   if (errorCount() != 0 || config->strictAutoLink)
     for (const auto &warning : missingAutolinkWarnings)
       warn(warning);
 
+  checkError(TraceProfiler.write(config->outputFile));
   return errorCount() == 0;
 }
 } // namespace macho

@@ -2,6 +2,7 @@
 
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 
 #include <algorithm>
 
@@ -30,6 +31,7 @@ struct ReleaseMetadata {
 
 struct ReleaseTargetCase {
   const char *Name;
+  const char *TraceFormat;
   const char *Triple;
   const char *ObjectSuffix;
   const char *ImageSuffix;
@@ -41,14 +43,23 @@ struct ReleaseTargetCase {
 const std::vector<ReleaseTargetCase> &releaseTargets() {
   static const std::vector<ReleaseTargetCase> Targets = {
       {"elf",
+       "ELF",
        "x86_64-linux-gnu",
        ".o",
        ".elf",
        {"-Xlinker", "--entry=main"},
        ".so",
        {}},
-      {"macho", "arm64-apple-macos", ".o", ".macho", {}, ".dylib", {}},
+      {"macho",
+       "Mach-O",
+       "arm64-apple-macos",
+       ".o",
+       ".macho",
+       {},
+       ".dylib",
+       {}},
       {"coff",
+       "COFF",
        "x86_64-pc-windows-msvc",
        ".obj",
        ".exe",
@@ -119,6 +130,171 @@ TEST_F(DriverTest, PrintArgumentsEchoesTheDriverInvocation) {
       << Result.out;
   EXPECT_NE(Result.out.find("\"-fprint-arguments\",\n"), std::string::npos)
       << Result.out;
+}
+
+TEST_F(DriverTest, LinkTimeTraceUsesCanonicalCrossFormatPhases) {
+  const auto Source = tmpFile("link-phase-trace.c");
+  writeFile(Source, "int main(void) { return 0; }\n");
+
+  for (const ReleaseTargetCase &Target : releaseTargets()) {
+    SCOPED_TRACE(Target.Name);
+    const std::string TargetArg = std::string("--target=") + Target.Triple;
+    const auto Object = tmpFile(std::string("link-phase-trace-") + Target.Name +
+                                Target.ObjectSuffix);
+    const auto Image = tmpFile(std::string("link-phase-trace-") + Target.Name +
+                               Target.ImageSuffix);
+    const auto UntracedImage = tmpFile(std::string("link-phase-no-trace-") +
+                                       Target.Name + Target.ImageSuffix);
+
+    auto Compile =
+        ncc({TargetArg, "-fno-lto", "-fno-stack-protector", "-nostdlib", "-c",
+             Source.string(), "-o", Object.string()});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+
+    std::vector<std::string> UntracedLinkArgs = {
+        TargetArg,       "-fno-lto", "-nostdlib",
+        Object.string(), "-o",       UntracedImage.string()};
+    UntracedLinkArgs.insert(UntracedLinkArgs.end(),
+                            Target.ExecutableLinkerArgs.begin(),
+                            Target.ExecutableLinkerArgs.end());
+    auto UntracedLink = ncc(UntracedLinkArgs);
+    ASSERT_EQ(UntracedLink.exitCode, 0) << UntracedLink.err;
+    EXPECT_FALSE(fs::exists(UntracedImage.string() + ".time-trace"));
+
+    std::vector<std::string> LinkArgs = {
+        TargetArg,
+        "-fno-lto",
+        "-nostdlib",
+        "-ftime-trace",
+        "-ftime-trace-granularity=1",
+        Object.string(),
+        "-o",
+        Image.string(),
+    };
+    LinkArgs.insert(LinkArgs.end(), Target.ExecutableLinkerArgs.begin(),
+                    Target.ExecutableLinkerArgs.end());
+    auto Link = ncc(LinkArgs);
+    ASSERT_EQ(Link.exitCode, 0) << Link.err;
+
+    const fs::path TracePath(Image.string() + ".time-trace");
+    ASSERT_TRUE(fs::is_regular_file(TracePath));
+    auto Parsed = llvm::json::parse(readFile(TracePath));
+    ASSERT_TRUE(static_cast<bool>(Parsed));
+    const llvm::json::Object *Root = Parsed->getAsObject();
+    ASSERT_NE(Root, nullptr);
+    const llvm::json::Array *Events = Root->getArray("traceEvents");
+    ASSERT_NE(Events, nullptr);
+
+    const std::string Format = Target.TraceFormat;
+    bool SawDispatch = false;
+    bool SawBackend = false;
+    for (const llvm::json::Value &Value : *Events) {
+      const llvm::json::Object *Event = Value.getAsObject();
+      if (!Event || Event->getString("ph") != "X")
+        continue;
+      const llvm::StringRef Name = Event->getString("name");
+      const llvm::json::Object *Args = Event->getObject("args");
+      const llvm::StringRef Detail =
+          Args ? Args->getString("detail") : llvm::StringRef();
+      const bool IsThisFormat = Detail == Format;
+      SawDispatch |= Name == "neverc.link.dispatch" && IsThisFormat;
+      SawBackend |= Name == "neverc.link.backend" && IsThisFormat;
+    }
+
+    EXPECT_TRUE(SawDispatch)
+        << "missing canonical dispatch phase for " << Format;
+    EXPECT_TRUE(SawBackend) << "missing canonical backend phase for " << Format;
+  }
+}
+
+TEST_F(DriverTest, FailedLinkTimeTraceIsWrittenAcrossFormats) {
+  const auto Source = tmpFile("failed-link-phase-trace.c");
+  writeFile(Source,
+            "extern int neverc_phase_trace_missing(void);\n"
+            "int main(void) { return neverc_phase_trace_missing(); }\n");
+
+  for (const ReleaseTargetCase &Target : releaseTargets()) {
+    SCOPED_TRACE(Target.Name);
+    const std::string TargetArg = std::string("--target=") + Target.Triple;
+    const auto Object = tmpFile(std::string("failed-link-phase-trace-") +
+                                Target.Name + Target.ObjectSuffix);
+    const auto Image = tmpFile(std::string("failed-link-phase-trace-") +
+                               Target.Name + Target.ImageSuffix);
+    auto Compile =
+        ncc({TargetArg, "-fno-lto", "-fno-stack-protector", "-nostdlib", "-c",
+             Source.string(), "-o", Object.string()});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+
+    std::vector<std::string> LinkArgs = {
+        TargetArg,
+        "-fno-lto",
+        "-nostdlib",
+        "-ftime-trace",
+        "-ftime-trace-granularity=1",
+        Object.string(),
+        "-o",
+        Image.string(),
+    };
+    LinkArgs.insert(LinkArgs.end(), Target.ExecutableLinkerArgs.begin(),
+                    Target.ExecutableLinkerArgs.end());
+    auto Link = ncc(LinkArgs);
+    EXPECT_NE(Link.exitCode, 0);
+    EXPECT_FALSE(fs::exists(Image));
+
+    const fs::path TracePath(Image.string() + ".time-trace");
+    ASSERT_TRUE(fs::is_regular_file(TracePath));
+    auto Parsed = llvm::json::parse(readFile(TracePath));
+    ASSERT_TRUE(static_cast<bool>(Parsed));
+    const llvm::json::Object *Root = Parsed->getAsObject();
+    ASSERT_NE(Root, nullptr);
+    const llvm::json::Array *Events = Root->getArray("traceEvents");
+    ASSERT_NE(Events, nullptr);
+
+    const std::string Format = Target.TraceFormat;
+    bool SawDispatch = false;
+    bool SawBackend = false;
+    for (const llvm::json::Value &Value : *Events) {
+      const llvm::json::Object *Event = Value.getAsObject();
+      if (!Event || Event->getString("ph") != "X")
+        continue;
+      const llvm::json::Object *Args = Event->getObject("args");
+      if (!Args || Args->getString("detail") != Format)
+        continue;
+      SawDispatch |= Event->getString("name") == "neverc.link.dispatch";
+      SawBackend |= Event->getString("name") == "neverc.link.backend";
+    }
+    EXPECT_TRUE(SawDispatch) << "missing failed dispatch phase for " << Format;
+    EXPECT_TRUE(SawBackend) << "missing failed backend phase for " << Format;
+  }
+}
+
+TEST_F(DriverTest, MachOLinkTimeTraceOwnsInlineMapProfiler) {
+  const auto Source = tmpFile("macho-inline-map-time-trace.c");
+  const auto Object = tmpFile("macho-inline-map-time-trace.o");
+  const auto Image = tmpFile("macho-inline-map-time-trace.macho");
+  const auto Map = tmpFile("macho-inline-map-time-trace.map");
+  const fs::path Trace(Image.string() + ".time-trace");
+  writeFile(Source, "int main(void) { return 0; }\n");
+
+  auto Compile =
+      ncc({"--target=arm64-apple-macos", "-fno-lto", "-fno-stack-protector",
+           "-nostdlib", "-c", Source.string(), "-o", Object.string()});
+  ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+
+  auto Link = ncc({"--target=arm64-apple-macos", "-fno-lto", "-nostdlib",
+                   "-ftime-trace", "-ftime-trace-granularity=1",
+                   "-flinker-map=" + Map.string(), Object.string(), "-o",
+                   Image.string()});
+  ASSERT_EQ(Link.exitCode, 0) << Link.err;
+  ASSERT_TRUE(fs::is_regular_file(Image));
+  ASSERT_TRUE(fs::is_regular_file(Map));
+  ASSERT_TRUE(fs::is_regular_file(Trace));
+  EXPECT_GT(fileSize(Image), 0U);
+  EXPECT_GT(fileSize(Map), 0U);
+  ASSERT_GT(fileSize(Trace), 0U);
+  auto Parsed = llvm::json::parse(readFile(Trace));
+  ASSERT_TRUE(static_cast<bool>(Parsed));
+  ASSERT_NE(Parsed->getAsObject(), nullptr);
 }
 
 TEST_F(DriverTest, PreprocessedOutputRoundTripsAcrossIncludeCallbacks) {

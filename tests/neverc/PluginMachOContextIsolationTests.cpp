@@ -3,6 +3,8 @@
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "Linker/MachO/Driver.h"
 #include "Linker/MachO/MachOLinkerContext.h"
+#include "ProcessResourceBrokerInternal.h"
+#include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "neverc/Invoke/InMemoryFileStore.h"
 #include "neverc/Plugin/Host/BuiltinLLVMAsmParser.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
@@ -14,15 +16,18 @@
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/Threading.h"
+#include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/raw_ostream.h"
 #include "gtest/gtest.h"
 #include <algorithm>
 #include <atomic>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -219,6 +224,11 @@ TEST(PluginMachOContextIsolationTest,
   if (llvm::thread::hardware_concurrency() < 2)
     GTEST_SKIP() << "automatic worker selection needs two available CPUs";
 
+  neverc::ProcessResourceBrokerConfig BrokerConfig;
+  BrokerConfig.Enabled = false;
+  auto Broker = neverc::ProcessResourceBrokerTestAccess::create(BrokerConfig);
+  neverc::ScopedProcessResourceBrokerOverride Override(*Broker);
+
   initializeAssemblyTargets();
   const neverc::plugin::BuiltinTargetRoute *Route =
       neverc::plugin::findBuiltinTargetRoute("x86_64-apple-macosx13.0");
@@ -259,12 +269,19 @@ _macho_tiny_entry:
       "neverc-macho-tiny-link", "macho", OutputPath);
   ASSERT_FALSE(EC) << EC.message();
   llvm::FileRemover RemoveOutput(OutputPath);
+  llvm::SmallString<128> MapPath;
+  EC = llvm::sys::fs::createTemporaryFile("neverc-macho-tiny-link", "map",
+                                          MapPath);
+  ASSERT_FALSE(EC) << EC.message();
+  llvm::FileRemover RemoveMap(MapPath);
+  const std::string TracePath = OutputPath.str().str() + ".time-trace";
+  llvm::FileRemover RemoveTrace(TracePath);
 
   const char *DirectArgs[] = {"neverc-test-linker", "-e", "_macho_tiny_entry",
                               ObjectPath.data()};
   auto Link = [&](llvm::ArrayRef<const char *> Args, unsigned RequestedThreads,
                   unsigned &SelectedThreads, std::string &Image,
-                  llvm::StringRef Sysroot) {
+                  bool &MapRanOnWorker, llvm::StringRef Sysroot) {
     LinkerExecutionContext Execution;
     LinkerDriverConfig Config;
     Config.executionContext = &Execution;
@@ -276,6 +293,17 @@ _macho_tiny_entry:
     Config.platformSdkVersion = "13.0";
     Config.nostdlib = true;
     Config.sysroot = Sysroot.str();
+    Config.mapFile = MapPath.str().str();
+    Config.timeTraceEnabled = true;
+    Config.timeTraceGranularity = 1;
+    if (std::error_code RemoveEC = llvm::sys::fs::remove(MapPath)) {
+      ADD_FAILURE() << RemoveEC.message();
+      return false;
+    }
+    if (std::error_code RemoveEC = llvm::sys::fs::remove(TracePath)) {
+      ADD_FAILURE() << RemoveEC.message();
+      return false;
+    }
     std::string Stdout;
     std::string Stderr;
     llvm::raw_string_ostream StdoutStream(Stdout);
@@ -288,6 +316,57 @@ _macho_tiny_entry:
     }
     if (!Execution.common()) {
       ADD_FAILURE() << "Mach-O execution did not retain its linker context";
+      return false;
+    }
+    if (llvm::timeTraceProfilerEnabled()) {
+      ADD_FAILURE() << "Mach-O direct link retained its time-trace profiler";
+      return false;
+    }
+    auto Trace = llvm::MemoryBuffer::getFile(TracePath);
+    if (!Trace || (*Trace)->getBuffer().empty()) {
+      ADD_FAILURE() << (Trace ? "empty Mach-O time trace"
+                              : Trace.getError().message());
+      return false;
+    }
+    auto Parsed = llvm::json::parse((*Trace)->getBuffer());
+    if (!Parsed) {
+      ADD_FAILURE() << llvm::toString(Parsed.takeError()).str().str();
+      return false;
+    }
+    const llvm::json::Object *Root = Parsed->getAsObject();
+    const llvm::json::Array *Events =
+        Root ? Root->getArray("traceEvents") : nullptr;
+    if (!Events) {
+      ADD_FAILURE() << "Mach-O time trace has no traceEvents array";
+      return false;
+    }
+    std::optional<int64_t> MainThread;
+    std::optional<int64_t> MapThread;
+    for (const llvm::json::Value &Value : *Events) {
+      const llvm::json::Object *Event = Value.getAsObject();
+      if (!Event || Event->getString("ph") != "X")
+        continue;
+      const llvm::StringRef Name = Event->getString("name");
+      if (Name != "ExecuteLinker" && Name != "Write map file")
+        continue;
+      int64_t Thread = 0;
+      if (!Event->getInteger("tid", Thread)) {
+        ADD_FAILURE() << "Mach-O time-trace event has no integer thread ID";
+        return false;
+      }
+      if (Name == "ExecuteLinker")
+        MainThread = Thread;
+      else
+        MapThread = Thread;
+    }
+    if (!MainThread || !MapThread) {
+      ADD_FAILURE() << "Mach-O time trace is missing linker/map thread IDs";
+      return false;
+    }
+    MapRanOnWorker = *MainThread != *MapThread;
+    auto Map = llvm::MemoryBuffer::getFile(MapPath);
+    if (!Map || (*Map)->getBuffer().empty()) {
+      ADD_FAILURE() << (Map ? "empty Mach-O map" : Map.getError().message());
       return false;
     }
     SelectedThreads = Execution.common()->parallelThreadCount();
@@ -304,12 +383,16 @@ _macho_tiny_entry:
   unsigned ExplicitThreads = 0;
   std::string AutoImage;
   std::string ExplicitImage;
+  bool AutoMapWorker = true;
+  bool ExplicitMapWorker = false;
   ASSERT_TRUE(Link(DirectArgs, /*RequestedThreads=*/0, AutoThreads, AutoImage,
-                   /*Sysroot=*/{}));
+                   AutoMapWorker, /*Sysroot=*/{}));
   ASSERT_TRUE(Link(DirectArgs, /*RequestedThreads=*/2, ExplicitThreads,
-                   ExplicitImage, /*Sysroot=*/{}));
+                   ExplicitImage, ExplicitMapWorker, /*Sysroot=*/{}));
   EXPECT_EQ(AutoThreads, 1U);
   EXPECT_EQ(ExplicitThreads, 2U);
+  EXPECT_FALSE(AutoMapWorker);
+  EXPECT_TRUE(ExplicitMapWorker);
   EXPECT_EQ(AutoImage, ExplicitImage)
       << "Mach-O output changed when the selected worker budget changed";
 
@@ -352,10 +435,13 @@ _macho_tiny_entry:
 
   unsigned TinyLibrariesThreads = 0;
   std::string TinyLibrariesImage;
+  bool TinyLibrariesMapWorker = true;
   ASSERT_TRUE(Link(TinyLibraryArgs, /*RequestedThreads=*/0,
                    TinyLibrariesThreads, TinyLibrariesImage,
+                   TinyLibrariesMapWorker,
                    /*Sysroot=*/{}));
   EXPECT_EQ(TinyLibrariesThreads, 1U);
+  EXPECT_FALSE(TinyLibrariesMapWorker);
   EXPECT_EQ(TinyLibrariesImage, AutoImage)
       << "unextracted tiny libraries changed the linked image";
 
@@ -403,9 +489,12 @@ _macho_tiny_entry:
       RootLibrarySearch.c_str(), "-lrooted"};
   unsigned RootedLibraryThreads = 0;
   std::string RootedLibraryImage;
+  bool RootedLibraryMapWorker = true;
   ASSERT_TRUE(Link(RootedLibraryArgs, /*RequestedThreads=*/0,
-                   RootedLibraryThreads, RootedLibraryImage, SysrootDirectory));
+                   RootedLibraryThreads, RootedLibraryImage,
+                   RootedLibraryMapWorker, SysrootDirectory));
   EXPECT_EQ(RootedLibraryThreads, 1U);
+  EXPECT_FALSE(RootedLibraryMapWorker);
   EXPECT_EQ(RootedLibraryImage, AutoImage)
       << "resolved library prefetch rerooted an already rooted path";
 
@@ -433,9 +522,11 @@ _macho_tiny_entry:
 
   unsigned LargeThreads = 0;
   std::string LargeImage;
+  bool LargeMapWorker = false;
   ASSERT_TRUE(Link(DirectArgs, /*RequestedThreads=*/0, LargeThreads, LargeImage,
-                   /*Sysroot=*/{}));
+                   LargeMapWorker, /*Sysroot=*/{}));
   EXPECT_EQ(LargeThreads, std::min(16U, llvm::thread::hardware_concurrency()));
+  EXPECT_TRUE(LargeMapWorker);
 }
 
 TEST(PluginMachOContextIsolationTest,

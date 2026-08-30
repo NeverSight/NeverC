@@ -17,8 +17,10 @@
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/TimeProfiler.h"
 #include "gtest/gtest.h"
 #include <algorithm>
 #include <array>
@@ -612,6 +614,10 @@ build_id_entry:
   ASSERT_FALSE(EC) << EC.message();
   llvm::FileRemover RemoveParallelOutput(ParallelOutput);
   llvm::FileRemover RemoveSerialOutput(SerialOutput);
+  const std::string ParallelTrace = ParallelOutput.str().str() + ".time-trace";
+  const std::string SerialTrace = SerialOutput.str().str() + ".time-trace";
+  llvm::FileRemover RemoveParallelTrace(ParallelTrace);
+  llvm::FileRemover RemoveSerialTrace(SerialTrace);
 
   std::atomic<unsigned> LinkWriteGrants{0};
   std::atomic<unsigned> LinkWriteReleases{0};
@@ -646,16 +652,40 @@ build_id_entry:
     Config.ehFrameHdr = false;
     Config.buildId = "sha1";
     Config.threadCount = ThreadCount;
+    Config.timeTraceEnabled = true;
+    Config.timeTraceGranularity = 1;
+    const std::string TracePath = OutputPath.str() + ".time-trace";
+    ASSERT_FALSE(llvm::sys::fs::remove(TracePath));
     const char *Args[] = {"neverc-test-linker", "-e", "build_id_entry",
                           ObjectPath.data()};
     std::string Stdout;
     std::string Stderr;
     llvm::raw_string_ostream StdoutStream(Stdout);
     llvm::raw_string_ostream StderrStream(Stderr);
-    EXPECT_TRUE(linker::elf::link(Args, StdoutStream, StderrStream,
+    ASSERT_TRUE(linker::elf::link(Args, StdoutStream, StderrStream,
                                   /*exitEarly=*/false,
                                   /*disableOutput=*/false, Config))
         << Stderr;
+    EXPECT_FALSE(llvm::timeTraceProfilerEnabled());
+
+    auto Trace = llvm::MemoryBuffer::getFile(TracePath);
+    ASSERT_TRUE(static_cast<bool>(Trace)) << Trace.getError().message();
+    ASSERT_FALSE((*Trace)->getBuffer().empty());
+    auto Parsed = llvm::json::parse((*Trace)->getBuffer());
+    ASSERT_TRUE(static_cast<bool>(Parsed))
+        << llvm::toString(Parsed.takeError()).str().str();
+    const llvm::json::Object *Root = Parsed->getAsObject();
+    ASSERT_NE(Root, nullptr);
+    const llvm::json::Array *Events = Root->getArray("traceEvents");
+    ASSERT_NE(Events, nullptr);
+    unsigned CompleteMainScopes = 0;
+    for (const llvm::json::Value &Value : *Events) {
+      const llvm::json::Object *Event = Value.getAsObject();
+      if (Event && Event->getString("ph") == "X" &&
+          Event->getString("name") == "ExecuteLinker")
+        ++CompleteMainScopes;
+    }
+    EXPECT_EQ(CompleteMainScopes, 1U);
   };
 
   link(ParallelOutput, /*ThreadCount=*/0);

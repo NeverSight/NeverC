@@ -1,6 +1,7 @@
 #include "Driver/ArgumentHandlers.h"
 #include "Driver/SubcommandHandlers.h"
 #include "Linker/Core/Driver/Dispatcher.h"
+#include "Linker/Core/Runtime/CrashRecovery.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "neverc/Compiler/CompilerInvocation.h"
 #include "neverc/Compiler/FrontendTool.h"
@@ -189,10 +190,12 @@ void configureDriverCallbacks(Driver &TheDriver) {
       LinkTask = std::move(*Created);
     }
     ArrayRef<const char *> Args(ArgV.data(), ArgV.size());
-    linker::LinkerExecutionContext Execution;
+    linker::crash_recovery_detail::CrashRecoveryLocalOwner<
+        linker::LinkerExecutionContext>
+        ExecutionOwner(nullptr);
     linker::LinkerDriverConfig EffectiveCfg = DriverCfg;
     EffectiveCfg.pluginTask = LinkTask.get();
-    EffectiveCfg.executionContext = &Execution;
+    EffectiveCfg.executionContext = &ExecutionOwner.get();
     // Give the plugin link bridge a way to lower bitcode inputs of a
     // relocatable link to native objects (reusing the shared LTO pipeline) so
     // it can merge them; see LinkerDriverConfig::compileRelocatableLTO.

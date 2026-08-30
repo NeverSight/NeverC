@@ -5,6 +5,7 @@
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Driver/LinkExecutionHooks.h"
 #include "Linker/Core/Runtime/Allocator.h"
+#include "Linker/Core/Runtime/CrashRecovery.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
@@ -32,6 +33,7 @@
 #include "neverc/Foundation/Core/OutputCoordinator.h"
 #include "neverc/Foundation/Core/OutputTransaction.h"
 #include "neverc/Merge/Merger.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
@@ -130,10 +132,18 @@ namespace elf {
 bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput,
           const LinkerDriverConfig &driverCfg) {
-  LinkerExecutionContext LocalExecution;
-  LinkerExecutionContext &Execution =
-      driverCfg.executionContext ? *driverCfg.executionContext : LocalExecution;
+  linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner TraceProfiler(
+      driverCfg.timeTraceEnabled, driverCfg.timeTraceGranularity,
+      args.empty() ? "neverc" : args.front());
+  linker::crash_recovery_detail::CrashRecoveryLocalOwner<LinkerExecutionContext>
+      ExecutionOwner(driverCfg.executionContext);
+  LinkerExecutionContext &Execution = ExecutionOwner.get();
   ELFLinkerContext &Backend = Execution.createBackend<ELFLinkerContext>();
+  llvm::CrashRecoveryContextCleanupRegistrar<
+      LinkerExecutionContext,
+      linker::crash_recovery_detail::CrashRecoveryDestroyBackendCleanup<
+          LinkerExecutionContext>>
+      CrashBackend(driverCfg.executionContext ? &Execution : nullptr);
   CommonLinkerContext &Common = Backend;
 
   Common.e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
@@ -167,6 +177,9 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
   config->progName = args[0];
 
   elfState().driver.run(args, driverCfg);
+
+  if (!config->outputFile.empty())
+    checkError(TraceProfiler.write(config->outputFile));
 
   return errorCount() == 0;
 }
@@ -621,10 +634,6 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
 
   readConfigs(args, driverCfg);
 
-  if (config->driverCfg->timeTraceEnabled)
-    timeTraceProfilerInitialize(config->driverCfg->timeTraceGranularity,
-                                config->progName);
-
   {
     llvm::TimeTraceScope timeScope("ExecuteLinker");
 
@@ -640,11 +649,6 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
       return;
 
     execute(args);
-  }
-
-  if (config->driverCfg->timeTraceEnabled) {
-    checkError(timeTraceProfilerWrite(std::string(), config->outputFile));
-    timeTraceProfilerCleanup();
   }
 }
 
