@@ -4,6 +4,7 @@
 #include <string.h>
 
 #define NCI_BUFIO_MAX_EMPTY_READS 100
+#define NCI_BUFIO_MAX_EMPTY_TOKENS 100
 
 #define NCI_BUFIO_SCANNER_META_MAGIC UINT32_C(0x53434e31)
 #define NCI_BUFIO_READER_META_MAGIC  UINT32_C(0x52445231)
@@ -15,6 +16,7 @@ typedef struct {
     uint32_t magic;
     uint8_t text_saved_byte;
     uint8_t text_saved;
+    unsigned consecutive_empty_tokens;
 } nci_bufio_scanner_meta_t;
 
 typedef struct {
@@ -422,8 +424,7 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
             }
             if (split_rc > 0) {
                 const uint8_t *window = s->buf + s->start;
-                if (advance == 0 || !token || token < window ||
-                    token > window + data_len ||
+                if (!token || token < window || token > window + data_len ||
                     token_len > (size_t)(window + data_len - token) ||
                     token_len > (size_t)NEVERC_BUFIO_MAX_SCAN_TOKEN_SIZE) {
                     bufio_scanner_fail(s, token_len >
@@ -431,6 +432,18 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
                                           ? NEVERC_BUFIO_ERR_TOO_LONG
                                           : NEVERC_IO_ERR_UNEXP);
                     return 0;
+                }
+                /* Go permits zero-advance tokens at EOF, but stops a split
+                 * function that returns too many without making progress. */
+                if (s->done && advance == 0) {
+                    if (meta.consecutive_empty_tokens >=
+                        NCI_BUFIO_MAX_EMPTY_TOKENS) {
+                        bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
+                        return 0;
+                    }
+                    meta.consecutive_empty_tokens++;
+                } else {
+                    meta.consecutive_empty_tokens = 0;
                 }
                 s->token = token;
                 s->token_len = token_len;
@@ -440,10 +453,10 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
                     meta.text_saved_at = token_end;
                     meta.text_saved = 1;
                     s->buf[token_end] = '\0';
-                    if (!bufio_scanner_meta_store(s, &meta)) {
-                        bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
-                        return 0;
-                    }
+                }
+                if (!bufio_scanner_meta_store(s, &meta)) {
+                    bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
+                    return 0;
                 }
                 s->start += advance;
                 return 1;
