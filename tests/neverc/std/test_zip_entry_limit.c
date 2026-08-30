@@ -10,6 +10,7 @@
 #define LOCAL_SIZE 31U   /* 30-byte header + 1-byte name */
 #define CENTRAL_SIZE 47U /* 46-byte header + 1-byte name */
 #define LOCATOR_COMMENT 20U
+#define ZIP64_END_SIZE 56U
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -33,6 +34,11 @@ static void put32(uint8_t *p, uint32_t v) {
     p[1] = (uint8_t)(v >> 8);
     p[2] = (uint8_t)(v >> 16);
     p[3] = (uint8_t)(v >> 24);
+}
+
+static void put64(uint8_t *p, uint64_t v) {
+    put32(p, (uint32_t)v);
+    put32(p + 4, (uint32_t)(v >> 32));
 }
 
 static uint16_t get16(const uint8_t *p) {
@@ -90,6 +96,49 @@ static uint8_t *build_archive(int with_locator_magic_comment,
     return buf;
 }
 
+/* Makes the locator-magic comment point at a syntactically complete ZIP64 end
+ * record in an SFX prefix. The bytes are still a valid classic archive, but a
+ * ZIP64-aware reader switches interpretations and rejects the malformed ZIP64
+ * layout; fail closed instead of accepting a parser-differential archive. */
+static uint8_t *build_ambiguous_zip64_locator(size_t *out_len) {
+    size_t classic_len = 0;
+    uint8_t *classic = build_archive(1, &classic_len);
+    if (!classic || classic_len > SIZE_MAX - ZIP64_END_SIZE) {
+        free(classic);
+        return NULL;
+    }
+
+    size_t total = ZIP64_END_SIZE + classic_len;
+    uint8_t *buf = (uint8_t *)calloc(total, 1U);
+    if (!buf) {
+        free(classic);
+        return NULL;
+    }
+    memcpy(buf + ZIP64_END_SIZE, classic, classic_len);
+
+    const uint8_t *classic_eocd = classic + classic_len - 22U;
+    uint32_t central_size = get32(classic_eocd + 12U);
+    uint32_t central_offset = get32(classic_eocd + 16U);
+    put32(buf, 0x06064b50U);
+    put64(buf + 4U, 44U);
+    put16(buf + 12U, 45U);
+    put16(buf + 14U, 45U);
+    put64(buf + 24U, ENTRY_COUNT);
+    put64(buf + 32U, ENTRY_COUNT);
+    put64(buf + 40U, central_size);
+    put64(buf + 48U, ZIP64_END_SIZE + (uint64_t)central_offset);
+
+    uint8_t *locator = buf + total - 22U - LOCATOR_COMMENT;
+    put32(locator, 0x07064b50U);
+    put32(locator + 4U, 0U);
+    put64(locator + 8U, 0U);
+    put32(locator + 16U, 1U);
+
+    free(classic);
+    *out_len = total;
+    return buf;
+}
+
 int main(void) {
     printf("=== NeverC ZIP entry-count limit ===\n\n");
 
@@ -127,6 +176,16 @@ int main(void) {
     if (comment_result == 0)
         check_int("locator-magic comment entry count",
                   neverc_zip_reader_count(&reader), (int)ENTRY_COUNT);
+    neverc_zip_reader_free(&reader);
+    free(archive);
+
+    archive = build_ambiguous_zip64_locator(&len);
+    if (!archive) {
+        printf("  FAIL: ambiguous ZIP64 locator allocation\n");
+        return 1;
+    }
+    check_int("reject referenced ZIP64 record in file comment",
+              neverc_zip_reader_init(&reader, archive, len), -1);
     neverc_zip_reader_free(&reader);
     free(archive);
 
