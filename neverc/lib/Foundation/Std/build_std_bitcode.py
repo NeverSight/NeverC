@@ -19,14 +19,56 @@ llvm::Linker::linkModules.
 import argparse
 import glob
 import os
+import re
 import subprocess
 import sys
 import tempfile
 
 
+C_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+
+
 def sanitize_name(rel_path: str) -> str:
     """Convert a relative path like 'crypto/sha256/sha256.c' to 'crypto_sha256_sha256'."""
-    return rel_path.replace(os.sep, "_").replace("/", "_").replace(".c", "")
+    if rel_path.endswith(".c"):
+        rel_path = rel_path[:-2]
+    return rel_path.replace(os.sep, "_").replace("/", "_")
+
+
+def write_header_atomically(output_path: str, contents: str) -> None:
+    """Write contents beside output_path, then atomically replace it."""
+    output_abs = os.path.abspath(output_path)
+    output_dir = os.path.dirname(output_abs)
+    os.makedirs(output_dir, exist_ok=True)
+
+    temp_fd = None
+    temp_path = None
+    try:
+        temp_fd, temp_path = tempfile.mkstemp(
+            prefix=f".{os.path.basename(output_abs)}.",
+            suffix=".tmp",
+            dir=output_dir,
+            text=True,
+        )
+        stream = os.fdopen(
+            temp_fd, "w", encoding="utf-8", newline="\n")
+        temp_fd = None
+        with stream:
+            stream.write(contents)
+            stream.flush()
+        os.replace(temp_path, output_abs)
+        temp_path = None
+    finally:
+        if temp_fd is not None:
+            try:
+                os.close(temp_fd)
+            except OSError:
+                pass
+        if temp_path is not None:
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass
 
 
 def main():
@@ -40,12 +82,19 @@ def main():
                              "runtime's own source mappings (repeatable)")
     parser.add_argument("--target", required=True,
                         help="Target triple to compile the modules for")
+    parser.add_argument("--sysroot",
+                        help="Target SDK root forwarded to the compiler")
     parser.add_argument("--tag", required=True,
                         help="Identifier suffix for the emitted symbols, "
                              "e.g. linux_x64")
     parser.add_argument("-o", "--output", required=True,
                         help="Output .h header file")
     args = parser.parse_args()
+
+    if C_IDENTIFIER.fullmatch(args.tag) is None:
+        print(f"error: tag is not a C identifier: {args.tag!r}",
+              file=sys.stderr)
+        sys.exit(1)
 
     sources = sorted(glob.glob(
         os.path.join(args.std_src_dir, "**", "*.c"), recursive=True))
@@ -56,16 +105,24 @@ def main():
               file=sys.stderr)
         sys.exit(1)
 
-    os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+    source_specs = []  # (source_path, relative_path, sanitized_name)
+    names = {}
+    for src in sources:
+        rel = os.path.relpath(src, args.std_src_dir)
+        name = sanitize_name(rel)
+        if C_IDENTIFIER.fullmatch(name) is None:
+            print(f"error: sanitized module name for {rel!r} is not a "
+                  f"C identifier: {name!r}", file=sys.stderr)
+            sys.exit(1)
+        previous = names.get(name)
+        if previous is not None:
+            print(f"error: sanitized module name collision for {name!r}: "
+                  f"{previous!r} and {rel!r}", file=sys.stderr)
+            sys.exit(1)
+        names[name] = rel
+        source_specs.append((src, rel, name))
 
     entries = []  # (sanitized_name, bc_bytes)
-    # A module can legitimately be unavailable on a given target -- the net
-    # resolver needs Windows' DNS headers, for instance.  Record those instead
-    # of failing the whole target: a caller that reaches for a skipped module
-    # gets an undefined symbol at link time, which is a far better outcome
-    # than the alternative this split exists to remove (linking a blob whose
-    # ABI belongs to some other target).
-    unavailable = []  # (relative_path, first_diagnostic)
 
     src_dir_abs = os.path.abspath(args.std_src_dir)
     inc_dir_abs = os.path.abspath(args.std_include_dir)
@@ -78,11 +135,11 @@ def main():
         f"-fdebug-prefix-map={src_dir_abs}=runtime/std/src",
         f"-fdebug-prefix-map={inc_dir_abs}=runtime/std/include",
     ]
+    sysroot_args = (["-isysroot", args.sysroot]
+                    if args.sysroot is not None else [])
 
     with tempfile.TemporaryDirectory(prefix="neverc_std_bc_") as tmpdir:
-        for src in sources:
-            rel = os.path.relpath(src, args.std_src_dir)
-            name = sanitize_name(rel)
+        for src, rel, name in source_specs:
             bc_path = os.path.join(tmpdir, name + ".bc")
 
             cmd = [
@@ -95,19 +152,44 @@ def main():
                 f"--target={args.target}",
                 f"-I{inc_dir_abs}",
                 *path_mapping,
+                *sysroot_args,
                 os.path.abspath(src), "-o", bc_path,
             ]
             print(f"  [bc] {rel}", file=sys.stderr)
-            built = subprocess.run(cmd, capture_output=True, text=True)
+            try:
+                built = subprocess.run(cmd, capture_output=True, text=True)
+            except OSError as exc:
+                print(f"error: failed to invoke compiler for {rel}: {exc}",
+                      file=sys.stderr)
+                sys.exit(1)
             if built.returncode != 0:
                 diag = next((l for l in (built.stdout + built.stderr).splitlines()
                              if "error" in l), "compilation failed")
-                unavailable.append((rel, diag.strip()))
-                continue
+                print(f"error: failed to compile {rel}: {diag.strip()}",
+                      file=sys.stderr)
+                sys.exit(1)
 
-            with open(bc_path, "rb") as f:
-                bc_data = f.read()
+            if not os.path.isfile(bc_path):
+                print(f"error: compiler produced no bitcode for {rel}",
+                      file=sys.stderr)
+                sys.exit(1)
+            try:
+                with open(bc_path, "rb") as f:
+                    bc_data = f.read()
+            except OSError as exc:
+                print(f"error: could not read bitcode for {rel}: {exc}",
+                      file=sys.stderr)
+                sys.exit(1)
+            if not bc_data:
+                print(f"error: compiler produced empty bitcode for {rel}",
+                      file=sys.stderr)
+                sys.exit(1)
             entries.append((name, bc_data))
+
+    if len(entries) != len(source_specs):
+        print(f"error: expected {len(source_specs)} std modules, built "
+              f"{len(entries)}", file=sys.stderr)
+        sys.exit(1)
 
     # Emit the header.  StdBitcodeEntry itself is declared by BuiltinStd.cpp,
     # which includes one of these per target and so may only see it once.
@@ -134,22 +216,16 @@ def main():
                  f"{len(entries)};")
     lines.append("")
 
-    with open(args.output, "w") as f:
-        f.write("\n".join(lines))
-
-    if not entries:
-        print(f"error: no std module could be built for {args.tag} "
-              f"({args.target})", file=sys.stderr)
+    try:
+        write_header_atomically(args.output, "\n".join(lines))
+    except Exception as exc:
+        print(f"error: could not atomically write {args.output}: {exc}",
+              file=sys.stderr)
         sys.exit(1)
 
     print(f"build_std_bitcode: {len(entries)} modules for {args.tag} "
           f"({args.target}), {total_bytes} bytes -> {args.output}",
           file=sys.stderr)
-    if unavailable:
-        print(f"  {len(unavailable)} module(s) unavailable on {args.tag}:",
-              file=sys.stderr)
-        for rel, diag in unavailable:
-            print(f"    {rel}: {diag}", file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -395,6 +395,13 @@ foreach(_std_spec IN LISTS _STD_VARIANTS)
   endif()
   list(APPEND BUILTIN_STD_BITCODE_HDRS "${_std_hdr}")
 
+  set(_std_extra_args)
+  if(_std_tag STREQUAL "darwin_x64" OR
+     _std_tag STREQUAL "darwin_arm64")
+    list(APPEND _std_extra_args
+         --sysroot "${LLVM_LIBRARY_OUTPUT_INTDIR}/../runtime/macos/arm64")
+  endif()
+
   add_custom_target(neverc-bootstrap-std-bc-${_std_tag}
     COMMAND ${Python3_EXECUTABLE}
             "${BUILTIN_STD_SCRIPT_DIR}/build_std_bitcode.py"
@@ -404,10 +411,12 @@ foreach(_std_spec IN LISTS _STD_VARIANTS)
             ${NEVERC_BOOTSTRAP_PREFIX_MAP_ARGS}
             --target ${_std_triple}
             --tag ${_std_tag}
+            ${_std_extra_args}
             -o "${_std_hdr}"
     COMMAND ${CMAKE_COMMAND} -E touch
             "${CMAKE_CURRENT_SOURCE_DIR}/Std/BuiltinStd.cpp"
     DEPENDS neverc ${BUILTIN_STD_SOURCES}
+            "${BUILTIN_STD_SCRIPT_DIR}/build_std_bitcode.py"
     COMMENT
       "[NeverC] Bootstrap: compiling std library for ${_std_tag} (${_std_triple})"
   )
