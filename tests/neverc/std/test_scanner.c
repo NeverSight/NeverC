@@ -590,6 +590,33 @@ static void test_fixed_width_escapes_require_all_digits(void) {
     ASSERT_INT_EQ(neverc_scanner_error_count(&s), 6);
 }
 
+static void test_char_literals_require_one_element(void) {
+    printf("[char_literals_require_one_element]\n");
+    neverc_scanner_t s;
+    const char *src = "'' 'aa' '本' '\\n' x";
+    neverc_scanner_init(&s, src, strlen(src));
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_CHAR);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "''");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_CHAR);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "'aa'");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_CHAR);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "'本'");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_CHAR);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "'\\n'");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "x");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
+}
+
 static void test_unterminated_literals_report_errors(void) {
     printf("[unterminated_literals_report_errors]\n");
     neverc_scanner_t s;
@@ -741,6 +768,7 @@ int main(void) {
     test_unknown_escape_reports_error();
     test_hex_escape_requires_two_digits();
     test_fixed_width_escapes_require_all_digits();
+    test_char_literals_require_one_element();
     test_unterminated_literals_report_errors();
     test_peek_skips_comments();
     test_leading_bom_is_discarded();
