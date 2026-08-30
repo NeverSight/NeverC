@@ -678,6 +678,36 @@ static void test_reject_unsafe_paths(void) {
               neverc_tar_reader_next(&reader, &header), -1);
 }
 
+static void test_failed_reads_clear_headers(void) {
+    printf("[failed_reads_clear_headers]\n");
+    uint8_t block[NEVERC_TAR_BLOCK_SIZE];
+    test_fill_header(block, "link", NEVERC_TAR_SYM, 0,
+                     "../../etc/passwd");
+
+    neverc_tar_reader_t reader;
+    neverc_tar_header_v2_t header_v2;
+    neverc_tar_header_v2_t zero_v2;
+    memset(&header_v2, 0xA5, sizeof(header_v2));
+    memset(&zero_v2, 0, sizeof(zero_v2));
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("v2 rejects unsafe link",
+              neverc_tar_reader_next_v2(&reader, &header_v2), -1);
+    check_size("v2 failure keeps position", reader.pos, 0);
+    check_int("v2 failure clears header",
+              memcmp(&header_v2, &zero_v2, sizeof(header_v2)) == 0, 1);
+
+    neverc_tar_header_t header;
+    neverc_tar_header_t zero;
+    memset(&header, 0xA5, sizeof(header));
+    memset(&zero, 0, sizeof(zero));
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("legacy rejects unsafe link",
+              neverc_tar_reader_next(&reader, &header), -1);
+    check_size("legacy failure keeps position", reader.pos, 0);
+    check_int("legacy failure clears header",
+              memcmp(&header, &zero, sizeof(header)) == 0, 1);
+}
+
 static void test_gnu_magic_ignores_prefix(void) {
     printf("[gnu magic ignores prefix]\n");
     uint8_t block[NEVERC_TAR_BLOCK_SIZE] = {0};
@@ -1044,6 +1074,7 @@ int main(void) {
     test_ustar_metadata_and_long_name();
     test_malformed_headers();
     test_reject_unsafe_paths();
+    test_failed_reads_clear_headers();
     test_gnu_magic_ignores_prefix();
     test_pax_linkdata_hardlink();
     test_header_only_and_typeflags();
