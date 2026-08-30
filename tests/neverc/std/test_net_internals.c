@@ -21,6 +21,15 @@
 
 #include "neverc/std/net/tcp.h"
 
+/* Bind only the timer-wheel inline functions in this translation unit to a
+ * deterministic clock. The remaining network internals keep the platform
+ * monotonic clock when _net_internal.h is parsed below. */
+#include "../../std/src/net/_net_platform.h"
+static uint64_t tw_fake_now_ms;
+#define nc_monotonic_ms() tw_fake_now_ms
+#include "../../std/src/net/_net_timer.h"
+#undef nc_monotonic_ms
+
 /* Pull in _net_internal.h via tcp.c compilation — we test the internal APIs
  * by including the internal header directly. */
 #include "../../std/src/net/_net_internal.h"
@@ -53,6 +62,7 @@ static void tw_callback(nc_timer_t *timer, void *data) {
 static void test_timer_wheel_basic(void) {
     printf("[timer_wheel_basic]\n");
 
+    tw_fake_now_ms = 1000;
     nc_timer_wheel_t tw;
     nc_tw_init(&tw);
 
@@ -65,7 +75,7 @@ static void test_timer_wheel_basic(void) {
     nc_tw_add(&tw, &t1, 0);
     check_int("timer active", t1.active, 1);
 
-    tw.last_ms = nc_monotonic_ms() - 2;
+    tw_fake_now_ms = 1001;
     nc_tw_tick(&tw);
     check_int("timer fired", tw_fire_count, 1);
     check_true("timer data correct", tw_fire_data == (void *)0x42);
@@ -75,6 +85,7 @@ static void test_timer_wheel_basic(void) {
 static void test_timer_wheel_cancel(void) {
     printf("[timer_wheel_cancel]\n");
 
+    tw_fake_now_ms = 2000;
     nc_timer_wheel_t tw;
     nc_tw_init(&tw);
 
@@ -89,7 +100,7 @@ static void test_timer_wheel_cancel(void) {
     nc_tw_cancel(&tw, &t1);
     check_int("timer canceled", t1.active, 0);
 
-    tw.last_ms = nc_monotonic_ms() - 15;
+    tw_fake_now_ms = 2015;
     nc_tw_tick(&tw);
     check_int("canceled timer did not fire", tw_fire_count, 0);
 }
@@ -103,6 +114,7 @@ static void tw_multi_cb(nc_timer_t *timer, void *data) {
 static void test_timer_wheel_multiple(void) {
     printf("[timer_wheel_multiple]\n");
 
+    tw_fake_now_ms = 3000;
     nc_timer_wheel_t tw;
     nc_tw_init(&tw);
 
@@ -115,7 +127,7 @@ static void test_timer_wheel_multiple(void) {
         nc_tw_add(&tw, &timers[i], 0);
     }
 
-    tw.last_ms = nc_monotonic_ms() - 2;
+    tw_fake_now_ms = 3001;
     nc_tw_tick(&tw);
     check_int("all timers fired", tw_multi_count, N_TIMERS);
     #undef N_TIMERS
@@ -124,6 +136,7 @@ static void test_timer_wheel_multiple(void) {
 static void test_timer_wheel_reschedule(void) {
     printf("[timer_wheel_reschedule]\n");
 
+    tw_fake_now_ms = 4000;
     nc_timer_wheel_t tw;
     nc_tw_init(&tw);
 
@@ -135,7 +148,7 @@ static void test_timer_wheel_reschedule(void) {
     nc_tw_add(&tw, &t1, 10);
     check_int("timer still active", t1.active, 1);
 
-    tw.last_ms = nc_monotonic_ms() - 6;
+    tw_fake_now_ms = 4006;
     nc_tw_tick(&tw);
     check_int("reschedule: not fired at old time", tw_fire_count, 0);
 }
@@ -159,6 +172,7 @@ static void tw_cancel_sibling_cb(nc_timer_t *timer, void *data) {
 static void test_timer_wheel_callback_cancel(void) {
     printf("[timer_wheel_callback_cancel]\n");
 
+    tw_fake_now_ms = 5000;
     nc_timer_wheel_t wheel;
     nc_timer_t target;
     nc_timer_t canceler;
@@ -169,7 +183,7 @@ static void test_timer_wheel_callback_cancel(void) {
     tw_cancel_target = &target;
     tw_cancel_target_fired = 0;
 
-    uint64_t expiry = nc_monotonic_ms();
+    uint64_t expiry = tw_fake_now_ms + 1;
     int slot = (int)(expiry % NC_TW_SLOTS);
     target.expire_ms = expiry;
     target.active = 1;
@@ -181,6 +195,7 @@ static void test_timer_wheel_callback_cancel(void) {
     canceler.tw_next = &target;
     wheel.slots[slot] = &canceler;
     wheel.last_ms = expiry - 1;
+    tw_fake_now_ms = expiry;
     nc_tw_tick(&wheel);
 
     check_int("callback-canceled timer inactive", target.active, 0);
