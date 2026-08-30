@@ -473,6 +473,51 @@ static void test_sscanf(void) {
         }
     }
 
+#ifdef _WIN32
+    /* Text-mode positions are opaque on Windows: CRLF is read as one '\n',
+     * so a logical byte count must never be added to an ftell() value. */
+    {
+        static const unsigned char input[] = {
+            '1', '2', '\r', '\n', '3', '4', 'X'
+        };
+        char temp_dir[MAX_PATH + 1] = {0};
+        char temp_path[MAX_PATH + 1] = {0};
+        DWORD temp_len = GetTempPathA((DWORD)sizeof(temp_dir), temp_dir);
+        int have_dir = temp_len > 0 && temp_len < sizeof(temp_dir);
+        UINT created = 0;
+        check_true("fscanf Windows text-mode temp directory", have_dir);
+        if (have_dir)
+            created = GetTempFileNameA(temp_dir, "ncf", 0, temp_path);
+        check_true("fscanf Windows text-mode temp file", created != 0);
+        if (created != 0) {
+            FILE *raw = fopen(temp_path, "wb");
+            check_true("fscanf Windows text-mode raw fixture", raw != NULL);
+            if (raw) {
+                check_true("fscanf Windows text-mode raw write",
+                           fwrite(input, 1, sizeof(input), raw) ==
+                               sizeof(input));
+                check_int("fscanf Windows text-mode raw close",
+                          fclose(raw), 0);
+            }
+
+            FILE *text = fopen(temp_path, "rt");
+            check_true("fscanf Windows text-mode read fixture", text != NULL);
+            if (text) {
+                a = b = 0;
+                n = neverc_fmt_fscanf(text, "%d\n%d", &a, &b);
+                check_int("fscanf Windows text-mode count", n, 2);
+                check_int("fscanf Windows text-mode first", a, 12);
+                check_int("fscanf Windows text-mode second", b, 34);
+                check_int("fscanf Windows text-mode suffix", getc(text), 'X');
+                check_int("fscanf Windows text-mode eof", getc(text), EOF);
+                check_int("fscanf Windows text-mode close", fclose(text), 0);
+            }
+            check_true("fscanf Windows text-mode cleanup",
+                       DeleteFileA(temp_path) != 0);
+        }
+    }
+#endif
+
     /* FILE input is a byte stream: an interior NUL is data for %c, not an
      * implicit end-of-input marker. */
     {
