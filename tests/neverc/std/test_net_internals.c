@@ -267,6 +267,140 @@ static void test_timer_wheel_callback_cancel(void) {
     tw_cancel_target = NULL;
 }
 
+static nc_timer_wheel_t *tw_move_wheel;
+static nc_timer_t *tw_move_target;
+static int tw_move_target_fired;
+static int tw_move_survivor_fired;
+
+static void tw_move_target_cb(nc_timer_t *timer, void *data) {
+    (void)timer;
+    (void)data;
+    tw_move_target_fired++;
+}
+
+static void tw_move_survivor_cb(nc_timer_t *timer, void *data) {
+    (void)timer;
+    (void)data;
+    tw_move_survivor_fired++;
+}
+
+static void tw_move_sibling_cb(nc_timer_t *timer, void *data) {
+    (void)timer;
+    (void)data;
+    nc_tw_add(tw_move_wheel, tw_move_target, 2);
+}
+
+static void test_timer_wheel_callback_reschedule_next(void) {
+    printf("[timer_wheel_callback_reschedule_next]\n");
+
+    tw_fake_now_ms = 6000;
+    nc_timer_wheel_t wheel;
+    nc_timer_t target;
+    nc_timer_t mover;
+    nc_timer_t survivor;
+    nc_tw_init(&wheel);
+    nc_timer_init(&target, tw_move_target_cb, NULL);
+    nc_timer_init(&mover, tw_move_sibling_cb, NULL);
+    nc_timer_init(&survivor, tw_move_survivor_cb, NULL);
+    tw_move_wheel = &wheel;
+    tw_move_target = &target;
+    tw_move_target_fired = 0;
+    tw_move_survivor_fired = 0;
+
+    nc_tw_add(&wheel, &survivor, 1);
+    nc_tw_add(&wheel, &target, 1);
+    nc_tw_add(&wheel, &mover, 1);
+    tw_fake_now_ms = 6001;
+    nc_tw_tick(&wheel);
+
+    check_int("timer after callback-rescheduled sibling fired",
+              tw_move_survivor_fired, 1);
+    check_int("timer after callback-rescheduled sibling inactive",
+              survivor.active, 0);
+    check_int("callback-rescheduled timer deferred", tw_move_target_fired, 0);
+    check_int("callback-rescheduled timer remains active", target.active, 1);
+    check_true("callback-rescheduled timer moved to a later slot",
+               target.expire_ms == 6003);
+
+    tw_fake_now_ms = 6003;
+    nc_tw_tick(&wheel);
+    check_int("callback-rescheduled timer fired later", tw_move_target_fired, 1);
+    check_int("callback-rescheduled timer inactive", target.active, 0);
+    tw_move_wheel = NULL;
+    tw_move_target = NULL;
+}
+
+static nc_timer_wheel_t *tw_nested_wheel;
+static nc_timer_t *tw_nested_target;
+static int tw_nested_target_fired;
+static int tw_nested_canceler_fired;
+static int tw_nested_survivor_fired;
+
+static void tw_nested_target_cb(nc_timer_t *timer, void *data) {
+    (void)timer;
+    (void)data;
+    tw_nested_target_fired++;
+}
+
+static void tw_nested_survivor_cb(nc_timer_t *timer, void *data) {
+    (void)timer;
+    (void)data;
+    tw_nested_survivor_fired++;
+}
+
+static void tw_nested_cancel_cb(nc_timer_t *timer, void *data) {
+    (void)timer;
+    (void)data;
+    tw_nested_canceler_fired++;
+    nc_tw_cancel(tw_nested_wheel, tw_nested_target);
+}
+
+static void tw_nested_tick_cb(nc_timer_t *timer, void *data) {
+    (void)timer;
+    (void)data;
+    tw_fake_now_ms = 7002;
+    nc_tw_tick(tw_nested_wheel);
+}
+
+static void test_timer_wheel_callback_nested_tick(void) {
+    printf("[timer_wheel_callback_nested_tick]\n");
+
+    tw_fake_now_ms = 7000;
+    nc_timer_wheel_t wheel;
+    nc_timer_t target;
+    nc_timer_t nested_canceler;
+    nc_timer_t nested_trigger;
+    nc_timer_t survivor;
+    nc_tw_init(&wheel);
+    nc_timer_init(&target, tw_nested_target_cb, NULL);
+    nc_timer_init(&nested_canceler, tw_nested_cancel_cb, NULL);
+    nc_timer_init(&nested_trigger, tw_nested_tick_cb, NULL);
+    nc_timer_init(&survivor, tw_nested_survivor_cb, NULL);
+    tw_nested_wheel = &wheel;
+    tw_nested_target = &target;
+    tw_nested_target_fired = 0;
+    tw_nested_canceler_fired = 0;
+    tw_nested_survivor_fired = 0;
+
+    nc_tw_add(&wheel, &survivor, 1);
+    nc_tw_add(&wheel, &target, 1);
+    nc_tw_add(&wheel, &nested_trigger, 1);
+    nc_tw_add(&wheel, &nested_canceler, 2);
+    tw_fake_now_ms = 7001;
+    nc_tw_tick(&wheel);
+
+    check_int("nested canceler fired", tw_nested_canceler_fired, 1);
+    check_int("nested canceler inactive", nested_canceler.active, 0);
+    check_int("nested-canceled timer did not fire", tw_nested_target_fired, 0);
+    check_int("nested-canceled timer inactive", target.active, 0);
+    check_int("outer timer after nested cancellation fired",
+              tw_nested_survivor_fired, 1);
+    check_int("outer timer after nested cancellation inactive",
+              survivor.active, 0);
+    tw_nested_wheel = NULL;
+    tw_nested_target = NULL;
+}
+
 /* ===== Buffer Pool Tests ===== */
 
 static void test_bufpool(void) {
@@ -857,6 +991,8 @@ int main(void) {
     test_timer_wheel_callback_readd_zero();
     test_timer_wheel_reschedule();
     test_timer_wheel_callback_cancel();
+    test_timer_wheel_callback_reschedule_next();
+    test_timer_wheel_callback_nested_tick();
     test_bufpool();
     test_bufpool_stress();
     test_conn_limiter();
