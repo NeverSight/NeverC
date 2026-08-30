@@ -457,6 +457,71 @@ TEST_F(DriverTest, DarwinX64UsesUniversalMacOSSysroot) {
       << Commands;
 }
 
+TEST_F(DriverTest, DarwinWarningPolicyUsesStructuredLinkerConfig) {
+  const auto Source = tmpFile("darwin-warning-policy.c");
+  const auto Object = tmpFile("darwin-warning-policy.o");
+  const auto Sysroot = tmpFile("darwin-warning-policy-sysroot");
+  fs::create_directories(Sysroot / "usr/lib");
+  fs::create_directories(Sysroot / "usr/local/lib");
+  writeFile(Source, "int main(void) { return 0; }\n");
+
+  const CmdResult Compile = ncc(
+      {"--no-default-config", "--target=arm64-apple-macosx13.0",
+       "--sysroot=" + Sysroot.string(), "-O0", "-fno-lto", "-nostdlib",
+       "-fno-stack-protector", "-c", Source.string(), "-o", Object.string()});
+  ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+
+  auto LinkWithPolicies = [&](const std::vector<std::string> &Policies,
+                              const fs::path &Output) {
+    std::vector<std::string> Args = {"--no-default-config",
+                                     "--target=arm64-apple-macosx13.0",
+                                     "--sysroot=" + Sysroot.string(),
+                                     "-O0",
+                                     "-fno-lto",
+                                     "-nostdlib",
+                                     "-Wl,--no-uuid",
+                                     "-Wl,--no-adhoc-codesign",
+                                     "-Wl,-e,_main",
+                                     "-Wl,-pagezero-size,1"};
+    Args.insert(Args.end(), Policies.begin(), Policies.end());
+    Args.insert(Args.end(), {Object.string(), "-o", Output.string()});
+    return ncc(Args);
+  };
+
+  const auto FatalOutput = tmpFile("darwin-warning-policy-fatal.macho");
+  const CmdResult Fatal = LinkWithPolicies({"-Werror"}, FatalOutput);
+  EXPECT_NE(Fatal.exitCode, 0) << Fatal.err;
+  EXPECT_TRUE(Fatal.stderrContains("__PAGEZERO size is not page aligned"))
+      << Fatal.err;
+  EXPECT_FALSE(fs::exists(FatalOutput));
+
+  for (const std::vector<std::string> &Policies :
+       {std::vector<std::string>{"-w", "-Werror"},
+        std::vector<std::string>{"-Werror", "-w"}}) {
+    const auto Output =
+        tmpFile(Policies.front() == "-w"
+                    ? "darwin-warning-policy-suppress-then-fatal.macho"
+                    : "darwin-warning-policy-fatal-then-suppress.macho");
+    const CmdResult Suppressed = LinkWithPolicies(Policies, Output);
+    ASSERT_EQ(Suppressed.exitCode, 0) << Suppressed.err;
+    EXPECT_FALSE(
+        Suppressed.stderrContains("__PAGEZERO size is not page aligned"));
+    EXPECT_FALSE(Suppressed.stderrContains("warning:"));
+    EXPECT_FALSE(Suppressed.stderrContains("unknown argument '-w'"));
+    EXPECT_TRUE(fs::is_regular_file(Output));
+  }
+
+  const auto ErrorOutput = tmpFile("darwin-warning-policy-error.macho");
+  const CmdResult Error =
+      LinkWithPolicies({"-w", "-Wl,-segprot,__TEXT,rxq,rx"}, ErrorOutput);
+  EXPECT_NE(Error.exitCode, 0) << Error.err;
+  EXPECT_TRUE(Error.stderrContains("unknown -segprot letter 'q' in rxq"))
+      << Error.err;
+  EXPECT_FALSE(Error.stderrContains("__PAGEZERO size is not page aligned"));
+  EXPECT_FALSE(Error.stderrContains("warning:"));
+  EXPECT_FALSE(fs::exists(ErrorOutput));
+}
+
 TEST_F(DriverTest, CrossAndroid) {
   auto sysroot = neverc().parent_path().parent_path() / "runtime/android/arm64";
   if (!fs::is_directory(sysroot))

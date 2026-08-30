@@ -177,7 +177,7 @@ void darwin::Linker::AddLinkArgs(Compilation &C, const ArgList &Args,
   Args.AddAllArgs(CmdArgs, options::OPT_weak__reference__mismatches);
   Args.AddLastArg(CmdArgs, options::OPT_X_Flag);
   Args.AddAllArgs(CmdArgs, options::OPT_y);
-  Args.AddLastArg(CmdArgs, options::OPT_w);
+  // -w is conveyed via LinkerDriverConfig.suppressWarnings.
   Args.AddAllArgs(CmdArgs, options::OPT_pagezero__size);
   Args.AddAllArgs(CmdArgs, options::OPT_segs__read__);
   Args.AddLastArg(CmdArgs, options::OPT_seglinkedit);
