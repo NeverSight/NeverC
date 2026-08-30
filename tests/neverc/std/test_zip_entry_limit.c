@@ -44,11 +44,12 @@ static uint32_t get32(const uint8_t *p) {
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
-/* Builds ENTRY_COUNT empty stored entries named "f". With with_locator the
- * last central record carries a comment whose first bytes are the ZIP64
- * locator signature, so the byte before the EOCD really does look like one. */
-static uint8_t *build_archive(int with_locator, size_t *out_len) {
-    size_t comment = with_locator ? LOCATOR_COMMENT : 0U;
+/* Builds ENTRY_COUNT empty stored entries named "f". With a locator-magic
+ * comment, the last central record carries a legal file comment whose first
+ * bytes happen to equal the ZIP64 locator signature at EOCD-20. */
+static uint8_t *build_archive(int with_locator_magic_comment,
+                              size_t *out_len) {
+    size_t comment = with_locator_magic_comment ? LOCATOR_COMMENT : 0U;
     size_t central_bytes = (size_t)ENTRY_COUNT * CENTRAL_SIZE + comment;
     size_t cd_offset = (size_t)ENTRY_COUNT * LOCAL_SIZE;
     size_t total = cd_offset + central_bytes + 22U;
@@ -70,12 +71,12 @@ static uint8_t *build_archive(int with_locator, size_t *out_len) {
         put16(p + 4, 20);
         put16(p + 6, 20);
         put16(p + 28, 1);
-        if (with_locator && i == ENTRY_COUNT - 1U)
+        if (with_locator_magic_comment && i == ENTRY_COUNT - 1U)
             put16(p + 32, (uint16_t)LOCATOR_COMMENT);
         put32(p + 42, (uint32_t)((size_t)i * LOCAL_SIZE));
         p[46] = 'f';
     }
-    if (with_locator)
+    if (with_locator_magic_comment)
         put32(cd + central_bytes - LOCATOR_COMMENT, 0x07064b50U);
 
     uint8_t *eocd = buf + cd_offset + central_bytes;
@@ -118,11 +119,14 @@ int main(void) {
 
     archive = build_archive(1, &len);
     if (!archive) {
-        printf("  FAIL: locator archive allocation\n");
+        printf("  FAIL: locator-magic comment archive allocation\n");
         return 1;
     }
-    check_int("reject 0xffff count behind a zip64 locator",
-              neverc_zip_reader_init(&reader, archive, len), -1);
+    int comment_result = neverc_zip_reader_init(&reader, archive, len);
+    check_int("accept locator-magic file comment", comment_result, 0);
+    if (comment_result == 0)
+        check_int("locator-magic comment entry count",
+                  neverc_zip_reader_count(&reader), (int)ENTRY_COUNT);
     neverc_zip_reader_free(&reader);
     free(archive);
 
