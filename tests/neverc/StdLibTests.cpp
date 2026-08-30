@@ -66,6 +66,37 @@ TEST_F(StdLibTest, EmbeddedFunctionOnlyConsumer) {
                      "-std=c11 -fbuiltin-std", 0);
 }
 
+TEST_F(StdLibTest, HeaderDotSyntaxContractsCompileInIsolation) {
+  static const char *const names[] = {
+      "time_root", "debug_elf", "debug_pe", "debug_macho", "debug_dwarf",
+      "net_tcp", "net_udp", "net_http", "net_http3", "net_quic",
+  };
+  const fs::path source =
+      fs::path(stdTestDir()) / "header_dot_syntax_probe.c";
+
+  for (unsigned probe = 1; probe <= 10; ++probe) {
+    SCOPED_TRACE(names[probe - 1]);
+    std::vector<std::string> args = {
+        "--no-default-config",
+        "-std=gnu11",
+        "-fno-builtin-std",
+        "-fsyntax-only",
+        "-I" + stdSrcDir() + "/include",
+        "-DNEVERC_HEADER_PROBE=" + std::to_string(probe),
+    };
+    for (const auto &flag : sysrootFlags())
+      args.push_back(flag);
+    for (const auto &flag : archFlags())
+      args.push_back(flag);
+    args.push_back(source.string());
+
+    const CmdResult result = ncc(args);
+    EXPECT_EQ(result.exitCode, 0)
+        << names[probe - 1] << "\nstdout:\n" << result.out
+        << "\nstderr:\n" << result.err;
+  }
+}
+
 TEST_F(StdLibTest, WindowsModulesCompileWithBundledSdk) {
   const std::string sd = stdSrcDir();
   for (const char *target : {"x86_64-pc-windows-msvc",
