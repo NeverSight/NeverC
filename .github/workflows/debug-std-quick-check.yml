@@ -89,13 +89,13 @@ jobs:
           $include = Join-Path $env:GITHUB_WORKSPACE 'neverc/std/include'
           $source = Join-Path $env:RUNNER_TEMP 'net-interface-order.c'
           Set-Content $source @'
-#include <neverc/std/net/tcp.h>
-#include <neverc/std/sync.h>
-#include <neverc/std/net.h>
-int probe(neverc_net_interface_list_t *out) {
-  return net.interface.interfaces(out);
-}
-'@ -Encoding ascii
+          #include <neverc/std/net/tcp.h>
+          #include <neverc/std/sync.h>
+          #include <neverc/std/net.h>
+          int probe(neverc_net_interface_list_t *out) {
+            return net.interface.interfaces(out);
+          }
+          '@ -Encoding ascii
 
           foreach ($target in @('x86_64-pc-windows-msvc',
                                  'aarch64-pc-windows-msvc')) {
