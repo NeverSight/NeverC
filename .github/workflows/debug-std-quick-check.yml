@@ -49,6 +49,12 @@ jobs:
           QUICK_TIMEOUT: ${{ inputs.timeout }}
           QUICK_EXTRA: ${{ inputs.extra }}
         run: |
+          if [[ "$QUICK_TESTS" = "bitcode_generator_unit" ]]; then
+            unset GH_TOKEN
+            python3 tests/neverc/BuildStdBitcodeTests.py -v
+            exit
+          fi
+
           if [[ "$QUICK_TESTS" = "header_contract" ||
                 "$QUICK_TESTS" = "bitcode_darwin_x64" ]]; then
             compiler_run_id="$QUICK_DEFINES"

@@ -432,6 +432,31 @@ TEST_F(DriverTest, CrossAppleIOS) {
               "aarch64-apple-ios");
 }
 
+TEST_F(DriverTest, DarwinX64UsesUniversalMacOSSysroot) {
+  const auto UniversalSysroot =
+      neverc().parent_path().parent_path() / "runtime/macos/arm64";
+  if (!fs::is_directory(UniversalSysroot))
+    GTEST_SKIP() << "Darwin driver test needs bundled universal macOS SDK";
+
+  const auto Source = tmpFile("darwin-x64-universal-sysroot.c");
+  writeFile(Source, "int neverc_darwin_x64_sysroot(void) { return 0; }\n");
+
+  auto Result = ncc({"-###", "-c", "--target=x86_64-apple-macosx11.0",
+                     Source.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+
+  const std::string Commands = Result.err + Result.out;
+  EXPECT_NE(Commands.find(UniversalSysroot.string()), std::string::npos)
+      << "x86_64 Darwin must use the bundled universal macOS SDK\n"
+      << Commands;
+
+  const auto LegacyX64Sysroot =
+      neverc().parent_path().parent_path() / "runtime/macos/x64";
+  EXPECT_EQ(Commands.find(LegacyX64Sysroot.string()), std::string::npos)
+      << "x86_64 Darwin must not use the removed x64-only macOS SDK\n"
+      << Commands;
+}
+
 TEST_F(DriverTest, CrossAndroid) {
   auto sysroot = neverc().parent_path().parent_path() / "runtime/android/arm64";
   if (!fs::is_directory(sysroot))
