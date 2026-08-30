@@ -528,6 +528,25 @@ static void test_unknown_escape_reports_error(void) {
     ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
 }
 
+static void test_hex_escape_requires_two_digits(void) {
+    printf("[hex_escape_requires_two_digits]\n");
+    neverc_scanner_t s;
+    const char *src = "\"\\x0f\" \"\\x0\" \"\\x0g\"";
+    neverc_scanner_init(&s, src, strlen(src));
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\x0f\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 0);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\x0\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"\\x0g\"");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
+}
+
 static void test_unterminated_literals_report_errors(void) {
     printf("[unterminated_literals_report_errors]\n");
     neverc_scanner_t s;
@@ -677,6 +696,7 @@ int main(void) {
     test_eof_position();
     test_escaped_newline_terminates_string();
     test_unknown_escape_reports_error();
+    test_hex_escape_requires_two_digits();
     test_unterminated_literals_report_errors();
     test_peek_skips_comments();
     test_leading_bom_is_discarded();
