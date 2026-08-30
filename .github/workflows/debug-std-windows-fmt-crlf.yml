@@ -1,0 +1,66 @@
+name: debug-std-windows-fmt-crlf
+
+on:
+  push:
+    tags:
+      - 'std-red-20260830-fmt-windows-crlf'
+      - 'std-fix-20260830-fmt-windows-crlf'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-text-mode:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Checkout diagnostic commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 8
+
+      - name: Select exact fmt implementation
+        shell: bash
+        env:
+          RED_TAG: std-red-20260830-fmt-windows-crlf
+          RED_FMT_COMMIT: 5ea0c36550f46fe6e5164029ead7dd176ea11577
+          RED_FMT_BLOB: 9648c0866139dca37fdc257a7ded70dbeb0819f7
+          GREEN_FMT_BLOB: c2f00ddfa1ed76bfd2379415139dcea51a254663
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_NAME" == "$RED_TAG" ]]; then
+            git show "$RED_FMT_COMMIT:std/src/fmt/fmt.c" \
+              > std/src/fmt/fmt.c
+            expected="$RED_FMT_BLOB"
+          else
+            expected="$GREEN_FMT_BLOB"
+          fi
+          actual="$(git hash-object std/src/fmt/fmt.c)"
+          echo "HEAD=$GITHUB_SHA tag=$GITHUB_REF_NAME fmt_blob=$actual"
+          test "$actual" = "$expected"
+
+      - name: Compile and run fmt under Windows text mode
+        shell: pwsh
+        env:
+          ASAN_OPTIONS: halt_on_error=1:detect_leaks=0
+        run: |
+          $clang = (Get-Command clang.exe -ErrorAction Stop).Source
+          & $clang --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $compileArgs = @(
+            '-std=gnu11', '-O1', '-gcodeview', '-fno-omit-frame-pointer',
+            '-fsanitize=address', '-Wall', '-Wextra',
+            '-Wno-unused-parameter', '-Wno-unused-function',
+            '-Wno-deprecated-declarations', '-D_CRT_SECURE_NO_WARNINGS',
+            "-I$PWD/std/include",
+            'tests/neverc/std/test_fmt.c',
+            'std/src/fmt/fmt.c',
+            'std/src/strconv/format_float.c',
+            'std/src/strconv/parse_float.c',
+            'std/src/strconv/parse_int.c',
+            '-o', 'test_fmt_windows.exe'
+          )
+          & $clang @compileArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .\test_fmt_windows.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
