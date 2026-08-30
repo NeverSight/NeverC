@@ -5070,12 +5070,18 @@ neverc_http_handler_func_t neverc_http_use(neverc_http_handler_func_t handler,
  * ====================================================================== */
 
 typedef struct {
-    char pattern[256];
-    char dir_path[2048];
+    char *pattern;
+    char *dir_path;
+    size_t pattern_length;
 } static_dir_ctx_t;
 
-static static_dir_ctx_t g_static_dirs[16];
-static int g_static_dir_count = 0;
+static void static_dir_ctx_free(void *opaque) {
+    static_dir_ctx_t *context = (static_dir_ctx_t *)opaque;
+    if (!context) return;
+    free(context->pattern);
+    free(context->dir_path);
+    free(context);
+}
 
 static const char *guess_content_type(const char *path) {
     size_t len = strlen(path);
@@ -5097,12 +5103,18 @@ static const char *guess_content_type(const char *path) {
 }
 
 static void static_file_handler(neverc_http_request_t *req,
-                                  neverc_http_response_writer_t *w) {
-    for (int d = 0; d < g_static_dir_count; d++) {
-        size_t plen = strlen(g_static_dirs[d].pattern);
-        if (strncmp(req->path, g_static_dirs[d].pattern, plen) != 0) continue;
-
-        const char *relpath = req->path + plen;
+                                neverc_http_response_writer_t *w,
+                                void *opaque) {
+    static_dir_ctx_t *context = (static_dir_ctx_t *)opaque;
+    if (!context || !req || !req->path ||
+        strncmp(req->path, context->pattern,
+                context->pattern_length) != 0) {
+        neverc_http_set_status(w, 404);
+        neverc_http_write_string(w, "404 Not Found\n");
+        return;
+    }
+    {
+        const char *relpath = req->path + context->pattern_length;
         if (relpath[0] == '\0') relpath = "index.html";
 
         {
@@ -5121,7 +5133,7 @@ static void static_file_handler(neverc_http_request_t *req,
 
         char filepath[4096];
         snprintf(filepath, sizeof(filepath), "%s/%s",
-                 g_static_dirs[d].dir_path, relpath);
+                 context->dir_path, relpath);
 
         FILE *f = fopen(filepath, "rb");
         if (!f) {
@@ -5224,24 +5236,29 @@ static void static_file_handler(neverc_http_request_t *req,
         }
         return;
     }
-
-    neverc_http_set_status(w, 404);
-    neverc_http_write_string(w, "404 Not Found\n");
 }
 
 void neverc_http_serve_dir(neverc_http_mux_t *mux, const char *pattern,
                             const char *dir_path) {
-    if (!pattern || !dir_path || g_static_dir_count >= 16) return;
+    if (!pattern || !dir_path) return;
 
-    size_t pi = (size_t)g_static_dir_count;
-    snprintf(g_static_dirs[pi].pattern, sizeof(g_static_dirs[pi].pattern),
-             "%s", pattern);
-    snprintf(g_static_dirs[pi].dir_path, sizeof(g_static_dirs[pi].dir_path),
-             "%s", dir_path);
-    g_static_dir_count++;
+    static_dir_ctx_t *context =
+        (static_dir_ctx_t *)calloc(1, sizeof(*context));
+    if (!context) return;
+    context->pattern = strdup(pattern);
+    context->dir_path = strdup(dir_path);
+    context->pattern_length = strlen(pattern);
+    if (!context->pattern || !context->dir_path) {
+        static_dir_ctx_free(context);
+        return;
+    }
 
-    if (mux)
-        neverc_http_mux_handle(mux, pattern, static_file_handler);
-    else
-        neverc_http_handle_func(pattern, static_file_handler);
+    int result = mux
+        ? nc_http_mux_handle_owned_context(
+              mux, pattern, static_file_handler, context,
+              static_dir_ctx_free)
+        : nc_http_default_handle_owned_context(
+              pattern, static_file_handler, context,
+              static_dir_ctx_free);
+    if (result != 0) static_dir_ctx_free(context);
 }
