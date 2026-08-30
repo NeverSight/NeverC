@@ -471,6 +471,35 @@ static void test_aad_overlap_with_output(void) {
                memcmp(overlap_pt + 4, ct_noaad, 32) == 0);
 }
 
+static void test_open_output_may_overlap_nonce(void) {
+    printf("[open output overlapping nonce]\n");
+    uint8_t key[16] = {0x42};
+    uint8_t nonce[12];
+    uint8_t pt[32];
+    for (int i = 0; i < 12; i++) nonce[i] = (uint8_t)(0x30 + i);
+    for (int i = 0; i < 32; i++) pt[i] = (uint8_t)(i * 7 + 3);
+
+    neverc_gcm_ctx ctx;
+    check_true("overlapping-nonce init",
+               neverc_gcm_init(&ctx, key, sizeof(key)) == 0);
+
+    uint8_t ct[32], tag[16];
+    check_true("overlapping-nonce seal fixture",
+               neverc_gcm_seal(&ctx, nonce, pt, sizeof(pt),
+                               NULL, 0, ct, tag) == 0);
+
+    /* The destination starts inside the ciphertext and extends across the
+     * nonce. Open must retain the authenticated nonce before sliding the
+     * ciphertext for its supported dest-after-src overlap. */
+    uint8_t layout[48] = {0};
+    memcpy(layout, ct, sizeof(ct));
+    memcpy(layout + sizeof(ct), nonce, sizeof(nonce));
+    int rc = neverc_gcm_open(&ctx, layout + sizeof(ct),
+                             layout, sizeof(ct), NULL, 0, tag, layout + 4);
+    check_true("valid open returns the authenticated plaintext when output overlaps nonce",
+               rc == 0 && memcmp(layout + 4, pt, sizeof(pt)) == 0);
+}
+
 static void test_null_nonce_rejected(void) {
     printf("[null nonce rejected]\n");
     uint8_t key[16] = {0};
@@ -507,6 +536,7 @@ int main(void) {
     test_uninit_and_failed_reinit();
     test_aad_only();
     test_aad_overlap_with_output();
+    test_open_output_may_overlap_nonce();
     test_null_nonce_rejected();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
