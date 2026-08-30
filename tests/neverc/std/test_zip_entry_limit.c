@@ -35,6 +35,15 @@ static void put32(uint8_t *p, uint32_t v) {
     p[3] = (uint8_t)(v >> 24);
 }
 
+static uint16_t get16(const uint8_t *p) {
+    return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+}
+
+static uint32_t get32(const uint8_t *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
 /* Builds ENTRY_COUNT empty stored entries named "f". With with_locator the
  * last central record carries a comment whose first bytes are the ZIP64
  * locator signature, so the byte before the EOCD really does look like one. */
@@ -116,6 +125,35 @@ int main(void) {
               neverc_zip_reader_init(&reader, archive, len), -1);
     neverc_zip_reader_free(&reader);
     free(archive);
+
+    neverc_zip_writer_t writer;
+    neverc_zip_writer_init(&writer);
+    unsigned added = 0;
+    for (; added < ENTRY_COUNT; added++) {
+        if (neverc_zip_writer_add(&writer, "f", NULL, 0) != 0) break;
+    }
+    check_int("writer accepts 65535 entries", (int)added, (int)ENTRY_COUNT);
+    if (added == ENTRY_COUNT) {
+        check_int("writer rejects entry 65536",
+                  neverc_zip_writer_add(&writer, "f", NULL, 0), -1);
+        int close_result = neverc_zip_writer_close(&writer);
+        check_int("writer closes 65535-entry classic archive", close_result,
+                  0);
+        check_int("writer archive has complete EOCD",
+                  close_result != 0 || writer.len >= 42U, 1);
+        if (close_result == 0 && writer.len >= 42U) {
+            const uint8_t *eocd = writer.data + writer.len - 22U;
+            check_int("writer EOCD signature",
+                      get32(eocd) == UINT32_C(0x06054b50), 1);
+            check_int("writer EOCD disk entry count",
+                      get16(eocd + 8) == UINT16_MAX, 1);
+            check_int("writer EOCD total entry count",
+                      get16(eocd + 10) == UINT16_MAX, 1);
+            check_int("writer omits ZIP64 locator",
+                      get32(eocd - 20) != UINT32_C(0x07064b50), 1);
+        }
+    }
+    neverc_zip_writer_free(&writer);
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");

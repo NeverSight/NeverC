@@ -854,8 +854,8 @@ static void test_zip64_sentinels(void) {
     printf("[zip64 sentinels]\n");
     neverc_zip_writer_t writer;
     neverc_zip_writer_init(&writer);
-    writer.nentries = UINT16_MAX - 1;
-    check_int("writer rejects zip64 entry count",
+    writer.nentries = UINT16_MAX;
+    check_int("writer rejects entry 65536",
               neverc_zip_writer_add(
                   &writer, "x", (const uint8_t *)"x", 1), -1);
     neverc_zip_writer_free(&writer);
