@@ -67,11 +67,45 @@ int main(void) {
         return 1;
     }
 
-    guarded.zone.released.name = "Australia/Sydney";
+    /* Use caller-owned name storage so this contract cannot pass through
+     * compiler string pooling or pointer identity by accident. */
+    char sydney_name[] = "Australia/Sydney";
+    guarded.zone.released.name = sydney_name;
     if (neverc_tzdata_dst_hemisphere(&guarded.zone.current) != 2 ||
         neverc_tzdata_offset_for_month(&guarded.zone.current, 1) != 7200 ||
         neverc_tzdata_offset_for_month(&guarded.zone.current, 7) != 3600) {
         fputs("tzdata private hemisphere lookup failed\n", stderr);
+        return 1;
+    }
+
+    char new_york_name[] = "America/New_York";
+    guarded.zone.released.name = new_york_name;
+    if (neverc_tzdata_dst_hemisphere(&guarded.zone.current) != 1 ||
+        neverc_tzdata_offset_for_month(&guarded.zone.current, 1) != 3600 ||
+        neverc_tzdata_offset_for_month(&guarded.zone.current, 7) != 7200) {
+        fputs("tzdata private northern lookup failed\n", stderr);
+        return 1;
+    }
+
+    const neverc_tzdata_zone_t *builtin =
+        neverc_tzdata_lookup("Australia/Sydney");
+    if (!builtin) {
+        fputs("tzdata builtin Sydney lookup failed\n", stderr);
+        return 1;
+    }
+    neverc_tzdata_zone_t copied = *builtin;
+    if (neverc_tzdata_dst_hemisphere(&copied) != 2 ||
+        neverc_tzdata_offset_for_month(&copied, 1) != copied.dst_offset ||
+        neverc_tzdata_offset_for_month(&copied, 7) != copied.utc_offset) {
+        fputs("tzdata copied zone metadata lookup failed\n", stderr);
+        return 1;
+    }
+
+    guarded.zone.released.name = NULL;
+    if (neverc_tzdata_dst_hemisphere(&guarded.zone.current) != 0 ||
+        !bytes_are(guarded.before, sizeof(guarded.before), 0xa5) ||
+        !bytes_are(guarded.after, sizeof(guarded.after), 0xa5)) {
+        fputs("tzdata unnamed zone metadata lookup failed\n", stderr);
         return 1;
     }
 

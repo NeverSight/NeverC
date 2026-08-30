@@ -25,9 +25,11 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   quick-check:
+    if: inputs.tests != 'tzdata_arm64_artifact'
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -60,3 +62,57 @@ jobs:
             --timeout "$QUICK_TIMEOUT" \
             --tests "$QUICK_TESTS" \
             "${define_args[@]}"
+
+  arm64-tzdata:
+    if: inputs.tests == 'tzdata_arm64_artifact'
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install archive tool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+
+      - name: Reuse failing arm64 compiler artifact and run tzdata contract
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMPILER_RUN_ID: ${{ inputs.defines }}
+        run: |
+          [[ "$COMPILER_RUN_ID" =~ ^[1-9][0-9]*$ ]] || {
+            echo "invalid compiler run id: $COMPILER_RUN_ID" >&2
+            exit 2
+          }
+
+          mapfile -t run_metadata < <(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$COMPILER_RUN_ID" \
+            --jq '.status, .conclusion, .event, .path, .head_repository.full_name, .head_branch, .head_sha')
+          [[ "${run_metadata[*]}" = \
+            "completed failure push .github/workflows/build-linux-arm64.yml $GITHUB_REPOSITORY dev ba78c099d461a6fc799116ce1a56b540b770c9e0" ]] || {
+            echo "untrusted compiler run metadata: ${run_metadata[*]}" >&2
+            exit 1
+          }
+
+          artifact_dir="$RUNNER_TEMP/neverc-artifact"
+          compiler_dir="$RUNNER_TEMP/neverc-compiler"
+          mkdir -p "$artifact_dir" "$compiler_dir"
+          gh run download "$COMPILER_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name linux-arm64-neverc \
+            --dir "$artifact_dir"
+          7z x -y "$artifact_dir/linux-arm64-neverc.zip" \
+            "-o$compiler_dir" >/dev/null
+
+          ncc="$compiler_dir/install/bin/neverc"
+          chmod +x "$ncc"
+          sha256sum "$ncc"
+          unset GH_TOKEN
+          "$ncc" --version
+          python3 utils/ci/std-quick-check.py \
+            --cc "$ncc" \
+            --sanitize none \
+            --timeout 60 \
+            --tests tzdata_zone_abi \
+            --extra=-fno-builtin-std
