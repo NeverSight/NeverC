@@ -5,6 +5,7 @@ on:
     tags:
       - 'std-red-20260830-fmt-windows-crlf'
       - 'std-red-20260830-fmt-windows-crlf-logs'
+      - 'std-red-20260830-fmt-windows-crlf-runtime'
       - 'std-fix-20260830-fmt-windows-crlf'
 
 permissions:
@@ -63,6 +64,15 @@ jobs:
           )
           & $clang @compileArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $clangRoot = Split-Path -Parent (Split-Path -Parent $clang)
+          $asanRuntime = Get-ChildItem -Path `
+            "$clangRoot/lib/clang/*/lib/windows/clang_rt.asan_dynamic-x86_64.dll" `
+            | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $asanRuntime) {
+            throw "clang ASan runtime DLL was not found under $clangRoot"
+          }
+          Write-Host "asan_runtime=$($asanRuntime.FullName)"
+          $env:PATH = "$($asanRuntime.Directory.FullName);$env:PATH"
           & cmd.exe /d /c ".\test_fmt_windows.exe > test_fmt_windows.log 2>&1"
           $testExit = $LASTEXITCODE
           Get-Content -LiteralPath test_fmt_windows.log
