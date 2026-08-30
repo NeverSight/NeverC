@@ -35,14 +35,16 @@ class BuildStdBitcodeTests(unittest.TestCase):
         self.source_directory = self.temporary_directory / "std/src"
         self.include_directory = self.temporary_directory / "std/include"
         self.output = self.temporary_directory / "generated/std_bitcode.h"
-        self.compiler = self.temporary_directory / "fake-neverc"
+        self.compiler_script = self.temporary_directory / "fake-neverc.py"
+        self.compiler = self.temporary_directory / (
+            "fake-neverc.cmd" if os.name == "nt" else "fake-neverc"
+        )
         self.compiler_log = self.temporary_directory / "compiler-calls.jsonl"
 
         self.source_directory.mkdir(parents=True)
         self.include_directory.mkdir(parents=True)
-        self.compiler.write_text(
-            "#!{}\n".format(sys.executable)
-            + r'''import json
+        self.compiler_script.write_text(
+            r'''import json
 import os
 import sys
 from pathlib import Path
@@ -87,12 +89,26 @@ else:
 ''',
             encoding="utf-8",
         )
-        self.compiler.chmod(
-            self.compiler.stat().st_mode
-            | stat.S_IXUSR
-            | stat.S_IXGRP
-            | stat.S_IXOTH
-        )
+        if os.name == "nt":
+            self.compiler.write_text(
+                "@echo off\n"
+                "setlocal DisableDelayedExpansion\n"
+                '"%FAKE_NEVERC_PYTHON%" "%FAKE_NEVERC_SCRIPT%" %*\n'
+                "exit /b %ERRORLEVEL%\n",
+                encoding="utf-8",
+            )
+        else:
+            self.compiler.write_text(
+                "#!/bin/sh\n"
+                'exec "$FAKE_NEVERC_PYTHON" "$FAKE_NEVERC_SCRIPT" "$@"\n',
+                encoding="utf-8",
+            )
+            self.compiler.chmod(
+                self.compiler.stat().st_mode
+                | stat.S_IXUSR
+                | stat.S_IXGRP
+                | stat.S_IXOTH
+            )
 
     def write_sources(self, *relative_paths):
         sources = []
@@ -103,11 +119,24 @@ else:
             sources.append(source)
         return sources
 
-    def run_generator(self, *, tag="darwin_x64", extra_arguments=(), env=None):
+    def compiler_environment(self, env=None):
         process_environment = os.environ.copy()
-        process_environment["FAKE_NEVERC_LOG"] = str(self.compiler_log)
+        process_environment.pop("ERRORLEVEL", None)
+        for name in ("FAKE_NEVERC_FAIL_SOURCE", "FAKE_NEVERC_EMPTY_OUTPUT"):
+            process_environment.pop(name, None)
         if env:
             process_environment.update(env)
+        process_environment.update(
+            {
+                "FAKE_NEVERC_PYTHON": sys.executable,
+                "FAKE_NEVERC_SCRIPT": str(self.compiler_script),
+                "FAKE_NEVERC_LOG": str(self.compiler_log),
+            }
+        )
+        return process_environment
+
+    def run_generator(self, *, tag="darwin_x64", extra_arguments=(), env=None):
+        process_environment = self.compiler_environment(env)
 
         command = [
             sys.executable,
@@ -151,6 +180,28 @@ else:
     def assert_failed_without_replacing_output(self, result):
         self.assertNotEqual(0, result.returncode, self.process_diagnostics(result))
         self.assertEqual(SENTINEL, self.output.read_bytes())
+
+    def test_fake_compiler_launcher_propagates_exit_status(self):
+        source = self.write_sources("launcher.c")[0]
+        output = self.temporary_directory / "launcher.bc"
+
+        result = subprocess.run(
+            [str(self.compiler), str(source), "-o", str(output)],
+            capture_output=True,
+            text=True,
+            env=self.compiler_environment(
+                {"FAKE_NEVERC_FAIL_SOURCE": source.name}
+            ),
+            timeout=30,
+            check=False,
+        )
+
+        self.assertEqual(23, result.returncode, self.process_diagnostics(result))
+        self.assertFalse(output.exists())
+        self.assertEqual(
+            [[str(source), "-o", str(output)]],
+            self.compiler_calls(),
+        )
 
     def test_forwards_sysroot_as_adjacent_compiler_arguments(self):
         self.write_sources("time/time.c")
