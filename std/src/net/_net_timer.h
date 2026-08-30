@@ -53,7 +53,14 @@ static inline void nc_tw_add(nc_timer_wheel_t *tw, nc_timer_t *t,
     if (t->active)
         nc_tw_unlink(tw, t);
 
-    t->expire_ms = nc_monotonic_ms() + delay_ms;
+    uint64_t now = nc_monotonic_ms();
+    uint64_t delay = (uint64_t)delay_ms;
+    uint64_t expire_ms =
+        delay > UINT64_MAX - now ? UINT64_MAX : now + delay;
+    if (expire_ms <= tw->last_ms)
+        expire_ms =
+            tw->last_ms == UINT64_MAX ? UINT64_MAX : tw->last_ms + 1;
+    t->expire_ms = expire_ms;
     t->active = 1;
     int slot = (int)(t->expire_ms % NC_TW_SLOTS);
     t->tw_prev = NULL;
