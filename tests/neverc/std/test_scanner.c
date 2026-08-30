@@ -508,6 +508,34 @@ static void test_escaped_newline_terminates_string(void) {
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
 }
 
+static void test_unterminated_literals_report_errors(void) {
+    printf("[unterminated_literals_report_errors]\n");
+    neverc_scanner_t s;
+
+    neverc_scanner_init(&s, "\"abc", 4);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_STRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "\"abc");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+
+    neverc_scanner_init(&s, "`abc", 4);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_RAWSTRING);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "`abc");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+
+    neverc_scanner_init(&s, "/*abc", 5);
+    neverc_scanner_set_mode(&s,
+                            NEVERC_SCAN_GO_TOKENS & ~NEVERC_SCAN_SKIP_COMMENTS);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_COMMENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "/*abc");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+}
+
 static void test_peek_skips_comments(void) {
     printf("[peek_skips_comments]\n");
     neverc_scanner_t s;
@@ -621,6 +649,7 @@ int main(void) {
     test_mode_zero_digits_are_chars();
     test_eof_position();
     test_escaped_newline_terminates_string();
+    test_unterminated_literals_report_errors();
     test_peek_skips_comments();
     test_leading_bom_is_discarded();
     test_token_overflow();
