@@ -7,6 +7,7 @@ on:
       - 'std-red-20260830-fmt-windows-crlf-logs'
       - 'std-red-20260830-fmt-windows-crlf-runtime'
       - 'std-fix-20260830-fmt-windows-crlf'
+      - 'std-fix-20260830-fmt-windows-lookahead'
 
 permissions:
   contents: read
@@ -27,7 +28,7 @@ jobs:
           RED_TAG: std-red-20260830-fmt-windows-crlf
           RED_FMT_COMMIT: 5ea0c36550f46fe6e5164029ead7dd176ea11577
           RED_FMT_BLOB: 9648c0866139dca37fdc257a7ded70dbeb0819f7
-          GREEN_FMT_BLOB: c2f00ddfa1ed76bfd2379415139dcea51a254663
+          GREEN_FMT_BLOB: 5d2a1edb44d7522de60a0e064654bec676921f85
         run: |
           set -euo pipefail
           if [[ "$GITHUB_REF_NAME" == "$RED_TAG" ]]; then
