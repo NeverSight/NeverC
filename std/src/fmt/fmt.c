@@ -1548,12 +1548,6 @@ static char *scan_read_format_lines(FILE *f, const char *format) {
     return buf;
 }
 
-static int scan_rewind_unused(FILE *f, long start, size_t consumed) {
-    if (!f || start < 0 || consumed > (size_t)LONG_MAX)
-        return -1;
-    return fseek(f, start + (long)consumed, SEEK_SET);
-}
-
 /* ftell alone is not a portability-safe seekability probe. In particular,
  * the Windows CRT can report a non-negative position for a pipe even though
  * repositioning that stream is impossible. Inspect the native Windows handle
@@ -1579,20 +1573,18 @@ static int scan_file_position(FILE *f, long *position) {
     return 1;
 }
 
-/* A non-seekable FILE cannot support the line-sized lookahead used by the
- * string scanner above. Keep exactly one byte pending instead: C guarantees
- * one byte of pushback, so scan_stream_finish() can make that byte visible to
- * a later libc getc() without a process-global FILE* side table.
- *
- * The byte cursor deliberately recognizes ASCII input whitespace only. A
- * UTF-8 whitespace decision can require two or three bytes before discovering
- * that the rune is not whitespace; a pipe cannot portably put all of those
- * bytes back. Seekable streams keep using scan_formatted() and therefore keep
- * the full Unicode whitespace behavior. */
+/* Keep exactly one input byte pending: C guarantees one byte of pushback, so
+ * scan_stream_finish() can expose it to a later libc getc() without a global
+ * FILE* side table. Non-seekable streams deliberately recognize only ASCII
+ * input whitespace. On seekable streams, UTF-8 whitespace probes restore the
+ * opaque fpos_t after the pending lead byte, so a non-space rune remains
+ * byte-exact without arithmetic on text-mode FILE positions. */
 typedef struct {
     FILE *file;
     int lookahead;
     int has_lookahead;
+    int unicode_space;
+    int io_failed;
 } scan_stream_cursor_t;
 
 typedef struct {
@@ -1603,7 +1595,7 @@ typedef struct {
 
 static int scan_stream_peek(scan_stream_cursor_t *stream) {
     int c;
-    if (!stream || !stream->file) return EOF;
+    if (!stream || !stream->file || stream->io_failed) return EOF;
     if (stream->has_lookahead) return stream->lookahead;
     c = getc(stream->file);
     if (c == EOF) return EOF;
@@ -1632,12 +1624,61 @@ static int scan_ascii_is_space(int c, int allow_nl) {
     return c == ' ' || c == '\t' || c == '\r' || c == '\v' || c == '\f';
 }
 
+static int scan_stream_utf8_width(int c) {
+    unsigned char b = (unsigned char)c;
+    if (b >= 0xC2 && b <= 0xDF) return 2;
+    if (b >= 0xE0 && b <= 0xEF) return 3;
+    if (b >= 0xF0 && b <= 0xF4) return 4;
+    return 0;
+}
+
+/* Return the byte width of the next whitespace rune without consuming it. */
+static int scan_stream_space_bytes(scan_stream_cursor_t *stream,
+                                   int allow_nl) {
+    int c = scan_stream_peek(stream);
+    if (c == EOF) return 0;
+    if ((unsigned)c < 0x80U)
+        return scan_ascii_is_space(c, allow_nl) ? 1 : 0;
+    if (!stream->unicode_space) return 0;
+
+    int width = scan_stream_utf8_width(c);
+    if (width == 0) return 0;
+
+    fpos_t after_first;
+    if (fgetpos(stream->file, &after_first) != 0) {
+        stream->io_failed = 1;
+        return 0;
+    }
+
+    char raw[5] = {0};
+    raw[0] = (char)c;
+    int got = 1;
+    while (got < width) {
+        int next = getc(stream->file);
+        if (next == EOF) break;
+        raw[got++] = (char)next;
+    }
+
+    uint32_t r = 0;
+    int decoded = 0;
+    int is_space = got == width &&
+        scan_decode_rune(raw, &r, &decoded) && decoded == width &&
+        (r == '\n' ? allow_nl : scan_rune_is_space(r));
+
+    if (fsetpos(stream->file, &after_first) != 0) {
+        stream->io_failed = 1;
+        return 0;
+    }
+    return is_space ? width : 0;
+}
+
 static void scan_stream_skip_space(scan_stream_cursor_t *stream,
                                    int allow_nl) {
-    int c;
-    while ((c = scan_stream_peek(stream)) != EOF &&
-           scan_ascii_is_space(c, allow_nl))
-        (void)scan_stream_take(stream);
+    int width;
+    while ((width = scan_stream_space_bytes(stream, allow_nl)) > 0) {
+        for (int i = 0; i < width; i++)
+            (void)scan_stream_take(stream);
+    }
 }
 
 static void scan_stream_field_init(scan_stream_field_t *field,
@@ -1662,6 +1703,13 @@ static int scan_stream_field_take(scan_stream_field_t *field) {
             field->remaining--;
     }
     return c;
+}
+
+static int scan_stream_field_space_bytes(scan_stream_field_t *field,
+                                         int allow_nl) {
+    if (!field || (field->limited && field->remaining == 0))
+        return 0;
+    return scan_stream_space_bytes(field->stream, allow_nl);
 }
 
 static int scan_stream_advance_format_space(scan_stream_cursor_t *stream,
@@ -1693,7 +1741,7 @@ static int scan_stream_advance_format_space(scan_stream_cursor_t *stream,
             c = scan_stream_peek(stream);
             if (c == '\n')
                 return 0;
-            if (c != EOF && !scan_ascii_is_space(c, 0))
+            if (c != EOF && scan_stream_space_bytes(stream, 0) == 0)
                 return 0;
         }
         scan_stream_skip_space(stream, 0);
@@ -1955,19 +2003,43 @@ done:
 }
 
 static int scan_stream_string(scan_stream_field_t *field, char *out) {
-    size_t n = 0;
-    int c = scan_stream_field_peek(field);
-    if (!out || c == EOF || scan_ascii_is_space(c, 1)) return 0;
-    do {
-        out[n++] = (char)scan_stream_field_take(field);
+    scan_stream_token_t token;
+    int c;
+    int space_bytes;
+    if (!out) return 0;
+    scan_stream_token_init(&token);
+
+    c = scan_stream_field_peek(field);
+    if (c == EOF) goto done;
+    space_bytes = scan_stream_field_space_bytes(field, 1);
+    if (field->stream->io_failed || space_bytes > 0) goto done;
+
+    for (;;) {
+        if (!scan_stream_token_take(field, &token)) goto done;
         c = scan_stream_field_peek(field);
-    } while (c != EOF && !scan_ascii_is_space(c, 1));
-    out[n] = '\0';
+        if (c == EOF) break;
+        space_bytes = scan_stream_field_space_bytes(field, 1);
+        if (field->stream->io_failed) goto done;
+        if (space_bytes > 0) break;
+    }
+
+    if (token.storage_failed || token.len == SIZE_MAX ||
+        !scan_stream_token_reserve(&token, token.len + 1U))
+        goto done;
+    token.data[token.len] = '\0';
+    memcpy(out, token.data, token.len + 1U);
+    scan_stream_token_destroy(&token);
     return 1;
+
+done:
+    scan_stream_token_destroy(&token);
+    return 0;
 }
 
 static int scan_formatted_stream(FILE *f, const char *format, va_list args) {
-    scan_stream_cursor_t stream = {f, 0, 0};
+    long initial_position;
+    int unicode_space = scan_file_position(f, &initial_position);
+    scan_stream_cursor_t stream = {f, 0, 0, unicode_space, 0};
     const char *fp = format;
     va_list ap;
     int matched = 0;
@@ -2250,18 +2322,7 @@ static int scan_int_from_file(FILE *f, int *out_int) {
 }
 
 static int scan_vfscanf(FILE *f, const char *format, va_list args) {
-    long start;
-    char *input;
-    int matched;
-    size_t consumed = 0;
-    if (!scan_file_position(f, &start))
-        return scan_formatted_stream(f, format, args);
-    input = scan_read_format_lines(f, format);
-    if (!input) return 0;
-    matched = scan_formatted(input, format, args, &consumed);
-    (void)scan_rewind_unused(f, start, consumed);
-    free(input);
-    return matched;
+    return scan_formatted_stream(f, format, args);
 }
 
 int neverc_fmt_scanf(const char *format, ...) {
