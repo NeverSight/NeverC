@@ -778,6 +778,52 @@ static void test_zlib_fcheck_valid(void) {
     free(img.pixels);
 }
 
+/* PNG 3 §11.2.3 requires decoders to ignore unused bytes after the zlib
+ * datastream in the final IDAT. Chunk boundaries are semantically invisible,
+ * so a second consecutive IDAT may contain only those trailing bytes. */
+static void test_ignores_trailing_idat_bytes(void) {
+    printf("[ignores_trailing_idat_bytes]\n");
+    uint8_t pixel = 0x7f;
+    neverc_png_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 1;
+    img.height = 1;
+    img.bit_depth = 8;
+    img.color_type = NEVERC_PNG_COLOR_GRAYSCALE;
+    img.channels = 1;
+    img.stride = 1;
+    img.pixels = &pixel;
+
+    uint8_t *png = NULL;
+    size_t png_len = 0;
+    ASSERT_EQ(neverc_png_encode(&img, &png, &png_len), 0);
+    if (!png || png_len < 12U) {
+        free(png);
+        return;
+    }
+
+    static const uint8_t trailing[] = {0xde, 0xad, 0xbe, 0xef};
+    size_t with_trailing_len = 0;
+    uint8_t *with_trailing = insert_chunk(
+        png, png_len, png_len - 12U, "IDAT", trailing, sizeof(trailing),
+        &with_trailing_len);
+    ASSERT_TRUE(with_trailing != NULL);
+    if (with_trailing) {
+        neverc_png_image_t decoded;
+        int rc = neverc_png_decode(with_trailing, with_trailing_len, &decoded);
+        ASSERT_EQ(rc, 0);
+        if (rc == 0) {
+            ASSERT_EQ(decoded.width, 1);
+            ASSERT_EQ(decoded.height, 1);
+            ASSERT_EQ(decoded.channels, 1);
+            ASSERT_TRUE(decoded.pixels != NULL && decoded.pixels[0] == pixel);
+        }
+        neverc_png_free(&decoded);
+        free(with_trailing);
+    }
+    free(png);
+}
+
 static void test_encode_decode_grayscale_alpha(void) {
     printf("[encode_decode_grayscale_alpha]\n");
     neverc_png_image_t img;
@@ -1142,6 +1188,7 @@ int main(void) {
     test_large_image();
     test_chunk_crc_valid();
     test_zlib_fcheck_valid();
+    test_ignores_trailing_idat_bytes();
     test_zlib_window_bits();
     test_legal_long_deflate_stream();
     test_rejects_huge_ihdr();
