@@ -364,8 +364,10 @@ static int scan_escape(neverc_scanner_t *s, int quote) {
     return ch;
 }
 
-static int scan_string(neverc_scanner_t *s, int quote) {
+static int scan_string(neverc_scanner_t *s, int quote,
+                       size_t *element_count) {
     int terminated = 0;
+    size_t elements = 0;
     emit(s, quote);
     while (s->pos < s->src_len) {
         size_t start = s->pos;
@@ -378,12 +380,15 @@ static int scan_string(neverc_scanner_t *s, int quote) {
         if (ch == '\\') {
             emit_consumed(s, start);
             if (scan_escape(s, quote) == '\n') break;
+            elements++;
             continue;
         }
         if (ch == '\n') break;
         emit_consumed(s, start);
+        elements++;
     }
     if (!terminated) scanner_add_error(s);
+    if (element_count) *element_count = elements;
     return (quote == '\'') ? NEVERC_SCANNER_CHAR : NEVERC_SCANNER_STRING;
 }
 
@@ -503,9 +508,11 @@ again:
                s->pos < s->src_len && is_digit(peek_ch(s))) {
         s->tok_type = scan_number(s, ch);
     } else if ((s->mode & NEVERC_SCAN_CHARS) && ch == '\'') {
-        s->tok_type = scan_string(s, '\'');
+        size_t elements;
+        s->tok_type = scan_string(s, '\'', &elements);
+        if (elements != 1) scanner_add_error(s);
     } else if ((s->mode & NEVERC_SCAN_STRINGS) && ch == '"') {
-        s->tok_type = scan_string(s, '"');
+        s->tok_type = scan_string(s, '"', NULL);
     } else if ((s->mode & NEVERC_SCAN_RAWSTRINGS) && ch == '`') {
         s->tok_type = scan_raw_string(s);
     } else if ((s->mode & NEVERC_SCAN_COMMENTS) && ch == '/') {
