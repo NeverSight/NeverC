@@ -430,11 +430,15 @@ static void test_number_separators_and_prefixes(void) {
     ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0x_f00d");
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
     ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0b_10");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 0);
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
     ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0b0190");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
     ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "0o8123");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
 }
 
 static void test_prefix_floats(void) {
