@@ -218,15 +218,24 @@ int neverc_gcm_open(const neverc_gcm_ctx *ctx,
         (uint64_t)aad_len > NEVERC_GCM_MAX_AAD_BYTES)
         return -1;
 
+    uint8_t nonce_copy[12];
+    memcpy(nonce_copy, nonce, sizeof(nonce_copy));
+
     uint8_t computed_tag[16];
-    gcm_compute_tag(ctx, nonce, ciphertext, ct_len, aad, aad_len, computed_tag);
+    gcm_compute_tag(ctx, nonce_copy, ciphertext, ct_len,
+                    aad, aad_len, computed_tag);
 
     int tag_ok = neverc_subtle_constant_time_compare(computed_tag, tag, 16);
     neverc_platform_secure_zero(computed_tag, sizeof(computed_tag));
-    if (tag_ok != 1) return -1;
-
-    if (ct_len > 0 &&
-        gcm_ctr_encrypt(ctx, nonce, ciphertext, ct_len, plaintext) != 0)
+    if (tag_ok != 1) {
+        neverc_platform_secure_zero(nonce_copy, sizeof(nonce_copy));
         return -1;
-    return 0;
+    }
+
+    int rc = 0;
+    if (ct_len > 0 && gcm_ctr_encrypt(ctx, nonce_copy, ciphertext,
+                                     ct_len, plaintext) != 0)
+        rc = -1;
+    neverc_platform_secure_zero(nonce_copy, sizeof(nonce_copy));
+    return rc;
 }
