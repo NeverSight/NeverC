@@ -567,6 +567,16 @@ static void test_rejects_malformed_input(void) {
     inject.body_len = 11;
     ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
               -1);
+    /* The writer emits CRLF framing, so an LF-terminated delimiter candidate
+     * at a valid CRLF line start would make its own parser reject the output. */
+    inject.body = (const unsigned char *)"--inj\nowned";
+    inject.body_len = strlen((const char *)inject.body);
+    ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
+              -1);
+    inject.body = (const unsigned char *)"ok\r\n--inj\nowned";
+    inject.body_len = strlen((const char *)inject.body);
+    ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
+              -1);
     /* Exact `--inj` at EOF of the body becomes `--inj\r\n` on the wire. */
     inject.body = (const unsigned char *)"--inj";
     inject.body_len = 5;
