@@ -268,10 +268,22 @@ static void test_parse_message(void) {
     ASSERT_EQ(neverc_mail_parse_message("", 0, &m), -1);
     const char *no_blank = "From: a@b.com\r\nTo: c@d.com";
     ASSERT_EQ(neverc_mail_parse_message(no_blank, strlen(no_blank), &m), -1);
-    const char *no_blank_crlf = "From: a@b.com\r\n";
-    ASSERT_EQ(neverc_mail_parse_message(no_blank_crlf, strlen(no_blank_crlf),
-                                       &m),
-              -1);
+    const char *header_only_crlf = "From: a@b.com\r\n";
+    size_t header_only_crlf_len = strlen(header_only_crlf);
+    ASSERT_EQ(neverc_mail_parse_message(
+                  header_only_crlf, header_only_crlf_len, &m), 0);
+    ASSERT_EQ(m.header_count, 1);
+    ASSERT_STREQ(neverc_mail_header_get(&m, "From"), "a@b.com");
+    ASSERT_TRUE(m.body_len == 0 &&
+                m.body == header_only_crlf + header_only_crlf_len);
+    const char *header_only_lf = "From: a@b.com\n";
+    size_t header_only_lf_len = strlen(header_only_lf);
+    ASSERT_EQ(neverc_mail_parse_message(
+                  header_only_lf, header_only_lf_len, &m), 0);
+    ASSERT_EQ(m.header_count, 1);
+    ASSERT_STREQ(neverc_mail_header_get(&m, "From"), "a@b.com");
+    ASSERT_TRUE(m.body_len == 0 &&
+                m.body == header_only_lf + header_only_lf_len);
 
     const char *empty_name = ": empty-name\r\n\r\n";
     ASSERT_EQ(neverc_mail_parse_message(empty_name, strlen(empty_name), &m),
