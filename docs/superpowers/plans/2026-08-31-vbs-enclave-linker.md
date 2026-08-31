@@ -496,7 +496,7 @@ manually dispatch a brand-new workflow until it exists on the default branch:
 ```yaml
 on:
   push:
-    branches: [codex/vbs-enclave]
+    branches: [dev]
   workflow_dispatch:
     inputs:
       runtime_runner:
@@ -515,8 +515,8 @@ concurrency:
 
 - [ ] **Step 2: Add the fail-hard static/reference job**
 
-Run on `windows-2022`. Reuse pinned CMake 3.31.11 and MSVC setup, enable
-sccache, disable LTO, cap compile/link jobs to 2/1, build the compiler and
+Run on `windows-2022`. Reuse pinned CMake 3.31.11 and MSVC setup, disable LTO,
+cap compile/link jobs to 2/1, build the compiler and
 focused tests, run `COFFEnclaveLinkerTest.*`, then invoke the PowerShell static
 phase. Always upload DLLs, `dumpbin` text, JSON, versions, and logs.
 
@@ -566,18 +566,18 @@ git diff --check
 
 Expected: PASS and no whitespace errors.
 
-- [ ] **Step 2: Push the isolated branch**
+- [ ] **Step 2: Push directly to the development branch**
 
 ```bash
-git push -u origin codex/vbs-enclave
+git push origin HEAD:dev
 ```
 
-Expected: push succeeds and the branch-scoped workflow starts.
+Expected: push succeeds and the development-branch workflow starts.
 
 - [ ] **Step 3: Watch CI to a terminal state**
 
 ```bash
-gh run list --workflow vbs-enclave.yml --branch codex/vbs-enclave --limit 1
+gh run list --workflow vbs-enclave.yml --branch dev --limit 1
 gh run watch <run-id> --exit-status
 ```
 
@@ -603,7 +603,7 @@ git status --short --branch
 git log --oneline --decorate -8
 ```
 
-Expected: clean `codex/vbs-enclave` worktree with required commits pushed.
+Expected: clean worktree with required commits pushed to `dev`.
 
 ## Skill routing during execution
 

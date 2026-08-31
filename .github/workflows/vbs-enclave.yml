@@ -2,7 +2,7 @@ name: VBS enclave differential CI
 
 on:
   push:
-    branches: [dev, codex/vbs-enclave]
+    branches: [dev]
     paths:
       - neverc/include/neverc/Linker/**
       - neverc/lib/Invoke/ToolChains/MSVC.cpp
