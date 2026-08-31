@@ -393,9 +393,8 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
 
     size_t i = 0;
     while (i < len && out->header_count < NEVERC_MAIL_MAX_HEADERS) {
-        /* Empty line = end of headers. Go mail.ReadMessage / textproto
-         * ReadMIMEHeader require this terminator; EOF after the last
-         * field is not a message (the would-be body would be dropped). */
+        /* Empty line = start of the body. EOF immediately after a complete
+         * header field line is handled below as an empty body. */
         if (data[i] == '\r' && i+1 < len && data[i+1] == '\n') {
             out->body = data + i + 2;
             out->body_len = len - i - 2;
@@ -478,7 +477,13 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
         return -1;
     }
 
-    /* No blank line: do not treat leftover-less input as an empty body. */
+    /* RFC 5322 permits the optional body separator to be absent. Only accept
+     * EOF after a complete header line; an unterminated field stays invalid. */
+    if (out->header_count > 0 && len > 0 && data[len - 1] == '\n') {
+        out->body = data + len;
+        out->body_len = 0;
+        return 0;
+    }
     return -1;
 }
 
