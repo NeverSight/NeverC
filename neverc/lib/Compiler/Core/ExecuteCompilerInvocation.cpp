@@ -94,7 +94,8 @@ bool ExecuteCompilerInvocation(CompilerInstance *CI) {
     for (unsigned i = 0; i != NumArgs; ++i)
       Args[i + 1] = CI->getFrontendOpts().LLVMArgs[i].c_str();
     Args[NumArgs + 1] = nullptr;
-    parseLLVMCommandLineOptions(NumArgs + 1, Args.get());
+    if (!parseLLVMCommandLineOptions(NumArgs + 1, Args.get(), &llvm::errs()))
+      return false;
   }
 
   // If there were errors in processing arguments, don't do anything else.
@@ -159,7 +160,7 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
   // frontend argv that CreateFromArgs parses here; DirectInvocationOpts
   // overlays domains ConstructJob already resolved canonically.
   bool parallelSafe = DirectOpts && DirectOpts->ParallelSafe;
-  std::optional<plugin::PluginLLVMOptionExclusiveLease> LLVMOptionWriteLease;
+  std::optional<plugin::PluginLLVMOptionSnapshot> LLVMOptionSnapshot;
   std::optional<plugin::PluginLLVMOptionSharedLease> LLVMOptionReadLease;
   std::optional<PassTimingGlobalState> SavedPassTimingState;
   auto RestorePassTimingState = llvm::make_scope_exit([&]() {
@@ -251,7 +252,7 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
       !LLVMArgs.empty() || !CI->getCodeGenOpts().DebugPass.empty() ||
       !CI->getCodeGenOpts().LimitFloatPrecision.empty() || ConfiguresPassTiming;
   if (!parallelSafe || MutatesLLVMOptions) {
-    LLVMOptionWriteLease.emplace(plugin::pluginLLVMOptionGate());
+    LLVMOptionSnapshot.emplace(plugin::pluginLLVMOptionGate());
     SavedPassTimingState.emplace(PassTimingGlobalState{
         llvm::TimePassesIsEnabled, llvm::TimePassesPerRun});
     if (!LLVMArgs.empty()) {
@@ -260,8 +261,13 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
       Args.push_back("neverc (LLVM option parsing)");
       for (const std::string &Argument : LLVMArgs)
         Args.push_back(Argument.c_str());
-      parseLLVMCommandLineOptions(Args.size(), Args.data());
+      bool ParsedLLVMOptions =
+          parseLLVMCommandLineOptions(Args.size(), Args.data(), &llvm::errs());
       LLVMArgs.clear();
+      if (!ParsedLLVMOptions) {
+        finishFrontendPluginTasks(CI.get(), PluginInvocationTask);
+        return 1;
+      }
     } else
       llvm::cl::ResetAllOptionOccurrences();
   } else {
@@ -272,7 +278,7 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
   // while holding the option gate exclusively; parallel-safe frontends that
   // do not request timing keep a shared lease and never write this state.
   // Preserve an equivalent -mllvm timing request parsed immediately above.
-  if (LLVMOptionWriteLease) {
+  if (LLVMOptionSnapshot) {
     llvm::TimePassesIsEnabled =
         llvm::TimePassesIsEnabled || CI->getCodeGenOpts().TimePasses;
     if (ConfiguresPassTiming)

@@ -13,20 +13,22 @@ namespace neverc {
 /// short-name help alias "h") on every call. Concurrent calls from parallel
 /// in-process frontend jobs race on that registration and abort. Serial calls
 /// are safe only when preceded by ResetAllOptionOccurrences, which removes the
-/// default options before they are re-added.
-inline void parseLLVMCommandLineOptions(int argc, const char *const *argv) {
+/// default options before they are re-added. The default null error stream
+/// preserves LLVM's process-exit behavior; embedded callers may supply one to
+/// receive an ordinary false result instead.
+inline bool parseLLVMCommandLineOptions(int argc, const char *const *argv,
+                                        llvm::raw_ostream *Errs = nullptr) {
   if (plugin::pluginLLVMOptionGateHeldSharedByCurrentThread() &&
       !plugin::pluginLLVMOptionGateHeldExclusivelyByCurrentThread())
     llvm::report_fatal_error(
         "cannot mutate LLVM options under a shared option lease");
   if (plugin::pluginLLVMOptionGateHeldExclusivelyByCurrentThread()) {
     llvm::cl::ResetAllOptionOccurrences();
-    llvm::cl::ParseCommandLineOptions(argc, argv);
-    return;
+    return llvm::cl::ParseCommandLineOptions(argc, argv, /*Overview=*/"", Errs);
   }
   plugin::PluginLLVMOptionExclusiveLease Lock(plugin::pluginLLVMOptionGate());
   llvm::cl::ResetAllOptionOccurrences();
-  llvm::cl::ParseCommandLineOptions(argc, argv);
+  return llvm::cl::ParseCommandLineOptions(argc, argv, /*Overview=*/"", Errs);
 }
 
 } // namespace neverc

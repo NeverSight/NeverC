@@ -21,12 +21,11 @@
 #include "AArch64.h"
 #include "AArch64InstrInfo.h"
 #include "AArch64Subtarget.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/ADT/Statistic.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 
 using namespace llvm;
@@ -40,15 +39,27 @@ static cl::opt<unsigned> EnableCodeAlignment(
              "(bitmask: bit 0 = FCMP-FCSEL, bit 1 = CMP-CSEL)"),
     cl::init(0));
 
-static cl::opt<unsigned> FunctionAlignBytes(
+namespace {
+
+struct FunctionAlignBytesParser final : cl::parser<unsigned> {
+  explicit FunctionAlignBytesParser(cl::Option &O) : cl::parser<unsigned>(O) {}
+
+  bool parse(cl::Option &O, StringRef ArgName, StringRef Arg, unsigned &Value) {
+    if (cl::parser<unsigned>::parse(O, ArgName, Arg, Value))
+      return true;
+    if (!isPowerOf2_32(Value))
+      return O.error("'" + Arg + "' value must be a power of 2", ArgName);
+    return false;
+  }
+};
+
+} // namespace
+
+static cl::opt<unsigned, false, FunctionAlignBytesParser> FunctionAlignBytes(
     "aarch64-code-layout-opt-align-functions", cl::Hidden,
     cl::desc("Function alignment in bytes for code layout optimization "
              "(must be a power of 2)"),
-    cl::init(64), cl::callback([](const unsigned &Val) {
-      if (!isPowerOf2_32(Val))
-        report_fatal_error(
-            "aarch64-code-layout-opt-align must be a power of 2");
-    }));
+    cl::init(64));
 
 namespace llvm {
 unsigned getAArch64CodeLayoutFunctionAlignmentForTesting() {
