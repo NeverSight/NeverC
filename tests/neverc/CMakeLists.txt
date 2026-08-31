@@ -2652,6 +2652,15 @@ target_compile_definitions(neverc-tests PRIVATE
 )
 
 neverc_tests_link_neverc(neverc-tests)
+foreach(_runtime_target IN ITEMS
+    neverc-runtime-shared-msvc
+    neverc-runtime-x64-msvc
+    neverc-runtime-arm64-msvc)
+  if(TARGET ${_runtime_target})
+    add_dependencies(neverc-tests ${_runtime_target})
+  endif()
+endforeach()
+unset(_runtime_target)
 add_dependencies(neverc-tests
   neverc-test-plugin-argument-rewrite
   neverc-test-plugin-parsed-argument-rewrite

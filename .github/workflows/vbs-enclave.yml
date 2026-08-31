@@ -6,7 +6,9 @@ on:
     paths:
       - neverc/include/neverc/Linker/**
       - neverc/lib/Invoke/ToolChains/MSVC.cpp
+      - neverc/lib/Invoke/ToolChains/MSVC.h
       - neverc/lib/Linker/**
+      - runtime/windows/**
       - tests/neverc/**
       - utils/ci/run-vbs-enclave-ci.ps1
       - utils/ci/verify-vbs-enclave-pe.py
@@ -15,7 +17,9 @@ on:
     paths:
       - neverc/include/neverc/Linker/**
       - neverc/lib/Invoke/ToolChains/MSVC.cpp
+      - neverc/lib/Invoke/ToolChains/MSVC.h
       - neverc/lib/Linker/**
+      - runtime/windows/**
       - tests/neverc/**
       - utils/ci/run-vbs-enclave-ci.ps1
       - utils/ci/verify-vbs-enclave-pe.py
@@ -43,7 +47,7 @@ jobs:
   static:
     name: Static PE and Microsoft-reference gate
     runs-on: windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -85,15 +89,21 @@ jobs:
 
       - name: Build compiler and focused linker tests
         shell: pwsh
-        run: cmake --build build-vbs --target neverc neverc-plugin-link-tests --parallel 2
-
-      - name: Run focused COFF enclave linker tests
-        shell: pwsh
         run: >-
-          & .\build-vbs\bin\neverc-plugin-link-tests.exe
-          '--gtest_filter=COFFEnclaveLinkerTest.*'
+          cmake --build build-vbs --target
+          neverc neverc-plugin-link-tests neverc-tests
+          neverc-runtime-shared-msvc
+          neverc-runtime-x64-msvc neverc-runtime-arm64-msvc
+          --parallel 2
 
-      - name: Build and compare the three unsigned images
+      - name: Run focused COFF linker and driver tests
+        shell: pwsh
+        run: |
+          & .\build-vbs\bin\neverc-plugin-link-tests.exe '--gtest_filter=COFFEnclaveLinkerTest.*'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .\build-vbs\bin\neverc-tests.exe '--gtest_filter=DriverTest.WindowsVbsEnclaveUsesBundledRuntimeByDefault:DriverTest.WindowsVbsEnclaveHonorsExplicitVCToolsDir:DriverTest.WindowsVbsEnclaveHonorsExplicitWinSysRoot:DriverTest.WindowsVbsEnclaveDoesNotSelectEnclaveLibrariesImplicitly:DriverTest.WindowsVbsEnclaveLinksWithBundledRuntime'
+
+      - name: Build and compare x64 plus bundled ARM64 images
         shell: pwsh
         run: >-
           & .\utils\ci\run-vbs-enclave-ci.ps1

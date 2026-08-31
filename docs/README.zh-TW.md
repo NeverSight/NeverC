@@ -108,6 +108,14 @@ NeverC 專案的主要規劃方向：標準函式庫、EVM 智慧合約後端和
 
 ---
 
+## Windows 安全性目標
+
+| 文件 | 說明 |
+|------|------|
+| [VBS enclave DLL](vbs-enclave/README.zh-TW.md) | 連結、驗證、處理、簽署並載入與 Microsoft 相容的 VBS enclave 映像 |
+
+---
+
 ## 本地開發
 
 從原始碼建置 NeverC 並設定本地開發環境，包括 PATH 設定。

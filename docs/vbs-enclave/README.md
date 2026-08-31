@@ -1,3 +1,7 @@
+**Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
+[← Documentation index](../README.md) · [← NeverC project](../../README.md)
+
 # VBS enclave DLLs on Windows
 
 NeverC can link Microsoft-compatible VBS enclave DLLs for 64-bit Windows
@@ -13,7 +17,7 @@ Pass Microsoft linker options through the Windows driver with `-Xmslink` or
 ```powershell
 neverc.exe --target=x86_64-pc-windows-msvc -fno-lto -shared -nostdlib `
   enclave.obj guarded.obj legacy.obj `
-  vertdll.lib bcrypt.lib libcmt.lib libvcruntime.lib ucrt.lib `
+  -lvertdll -lbcrypt -llibcmt -llibvcruntime -lucrt `
   -Xmslink /INCREMENTAL:NO `
   -Xmslink /NODEFAULTLIB `
   -Xmslink /ENCLAVE `
@@ -24,8 +28,40 @@ neverc.exe --target=x86_64-pc-windows-msvc -fno-lto -shared -nostdlib `
   -o game-security-enclave.dll
 ```
 
-Use the enclave variants of the MSVC CRT and UCRT libraries. Their exact paths
-come from the installed Visual C++ toolset and Windows SDK.
+This example explicitly selects the enclave variants of the MSVC CRT and UCRT
+libraries with `-l`. Any explicit `-vctoolsdir` or `-winsysroot` selection retains
+its normal precedence. Without those overrides, every `/ENCLAVE` link on
+macOS, Linux, or Windows resolves Windows libraries only from NeverC's bundled
+target runtime; it does not auto-detect or fall back to a Visual Studio toolset
+or Windows SDK installed on the host.
+
+## Cross-host builds with the bundled runtime
+
+Compilation and COFF linking are host-independent. The same command can run on
+macOS, Linux, or Windows after installing the target runtime:
+
+```text
+neverc runtime install windows-x64
+neverc runtime install windows-arm64
+```
+
+The target package contains the Windows headers, enclave CRT, enclave UCRT,
+`vertdll.lib`, `bcrypt.lib`, and the other required Windows import libraries.
+When bundled resolution is active, only explicit `/ENCLAVE` combined with global
+`/NODEFAULTLIB` switches from the ordinary bundled CRT/UCRT directories to the
+enclave CRT/UCRT directories. In that mode, before linking, the driver verifies
+that all five bundled libraries exist: `libcmt.lib`, `libvcruntime.lib`,
+`ucrt.lib`, `vertdll.lib`, and `bcrypt.lib`. The libraries are still selected
+explicitly with `-l...`. `/ENCLAVE` by itself neither enables the enclave
+CRT/UCRT directories nor selects their libraries; it keeps the bundled ordinary
+runtime search paths.
+
+The cross-host link stage produces the unsigned, unprocessed enclave DLL.
+VEIID processing, SignTool signing, and actual loading through
+`CreateEnclave`/`LoadEnclaveImage` remain Windows-only, so move a DLL linked on
+macOS or Linux to a Windows packaging or test machine for the final three
+stages. See [Target runtimes](../runtime/README.md) for runtime installation and
+discovery.
 
 ## Required image inputs
 
@@ -52,7 +88,11 @@ originating in object-file directives.
 
 `/ENCLAVE` does not implicitly select DLL output, CFG, integrity checking,
 enclave CRT libraries, VEIID processing, or signing. Keep those choices
-explicit in the build pipeline.
+explicit in the build pipeline. In bundled-runtime mode, the enclave CRT/UCRT
+search paths and five-library validation described above activate only with
+explicit global `/NODEFAULTLIB`; without that option, the bundled ordinary
+Windows runtime paths remain in use. Explicit user toolchain overrides keep
+their normal precedence.
 
 ## Build and deployment flow
 
@@ -60,14 +100,15 @@ explicit in the build pipeline.
    `-fms-guard=cf`. Legacy objects may remain uninstrumented when the final link
    uses `/GUARD:MIXED`.
 2. Define the enclave configuration and entry point, then link against the
-   enclave CRT/UCRT plus the required Vertdll import libraries.
+   enclave CRT/UCRT plus the required Vertdll and BCrypt import libraries.
 3. Inspect the unsigned PE image and verify its load-config directory, CFG
    tables, enclave configuration pointer, and base relocations.
-4. Run the Windows SDK VEIID tool on the completed image.
-5. Sign the VEIID-processed image. Signing must be the final file mutation.
-6. In the host, check `IsEnclaveTypeSupported(ENCLAVE_TYPE_VBS)`, allocate the
-   enclave with `CreateEnclave`, load the DLL with `LoadEnclaveImage`, and call
-   `InitializeEnclave`.
+4. On Windows, run the Windows SDK VEIID tool on the completed image.
+5. On Windows, sign the VEIID-processed image with SignTool. Signing must be
+   the final file mutation.
+6. In the Windows host, check `IsEnclaveTypeSupported(ENCLAVE_TYPE_VBS)`,
+   allocate the enclave with `CreateEnclave`, load the DLL with
+   `LoadEnclaveImage`, and call `InitializeEnclave`.
 
 For anti-cheat systems, the enclave is suitable for a small verification or
 key-handling component whose code and private state need a stronger boundary

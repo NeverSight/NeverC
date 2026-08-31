@@ -107,6 +107,56 @@ bool isOrderedVBSEnclaveLinkerOption(llvm::StringRef Option) {
          Option == "--no-incremental" || Option == "--integritycheck" ||
          Option == "--no-integritycheck" || Option.starts_with("--guard=");
 }
+
+void addBundledVBSEnclaveLibraryPaths(const Driver &D,
+                                      const llvm::Triple &Triple,
+                                      const ArgList &Args,
+                                      ArgStringList &CmdArgs,
+                                      bool UseEnclaveLibraries) {
+  llvm::SmallString<128> MsvcRoot;
+  if (!getBundledMsvcSdkRoot(D, Triple, MsvcRoot)) {
+    llvm::SmallString<128> ExpectedRoot(
+        llvm::sys::path::parent_path(D.getInstalledDir()));
+    llvm::StringRef Arch = Triple.getArch() == llvm::Triple::x86_64 ? "x64"
+                           : Triple.getArch() == llvm::Triple::aarch64
+                               ? "arm64"
+                               : Triple.getArchName();
+    llvm::sys::path::append(ExpectedRoot, "runtime", "windows", Arch, "msvc");
+    D.Diag(neverc::diag::err_drv_no_such_file) << ExpectedRoot;
+    return;
+  }
+
+  llvm::SmallString<128> CRTPath(MsvcRoot);
+  llvm::sys::path::append(CRTPath, "crt", "lib");
+  if (UseEnclaveLibraries)
+    llvm::sys::path::append(CRTPath, "enclave");
+
+  llvm::SmallString<128> UCRTPath(MsvcRoot);
+  llvm::sys::path::append(UCRTPath, "sdk", "lib",
+                          UseEnclaveLibraries ? "ucrt_enclave" : "ucrt");
+
+  llvm::SmallString<128> UMLibPath(MsvcRoot);
+  llvm::sys::path::append(UMLibPath, "sdk", "lib", "um");
+
+  if (UseEnclaveLibraries) {
+    auto RequireFile = [&](llvm::StringRef Directory,
+                           llvm::StringRef Filename) {
+      llvm::SmallString<128> File(Directory);
+      llvm::sys::path::append(File, Filename);
+      if (!llvm::sys::fs::is_regular_file(File))
+        D.Diag(neverc::diag::err_drv_no_such_file) << File;
+    };
+    RequireFile(CRTPath, "libcmt.lib");
+    RequireFile(CRTPath, "libvcruntime.lib");
+    RequireFile(UCRTPath, "ucrt.lib");
+    RequireFile(UMLibPath, "vertdll.lib");
+    RequireFile(UMLibPath, "bcrypt.lib");
+  }
+
+  CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--libpath=") + CRTPath));
+  CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--libpath=") + UCRTPath));
+  CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--libpath=") + UMLibPath));
+}
 } // namespace
 
 // ===----------------------------------------------------------------------===
@@ -124,6 +174,24 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   assert((Output.isFilename() || Output.isNothing()) && "invalid output");
   // Output file is passed via LinkerDriverConfig.outputFile.
+
+  llvm::SmallVector<const char *, 8> OrderedVBSEnclaveOptions;
+  bool WantVBSEnclave = false;
+  bool SuppressAllDefaultLibraries = false;
+  for (const Arg *A :
+       Args.filtered(options::OPT_Xmslink, options::OPT_Wl_COMMA)) {
+    for (unsigned I = 0; I != A->getNumValues(); ++I) {
+      const char *Option = renderMSVCLinkerOption(Args, A->getValue(I));
+      llvm::StringRef NormalizedOption(Option);
+      SuppressAllDefaultLibraries |= NormalizedOption == "--nodefaultlib";
+      if (isOrderedVBSEnclaveLinkerOption(Option)) {
+        OrderedVBSEnclaveOptions.push_back(Option);
+        WantVBSEnclave |= NormalizedOption == "--enclave";
+      }
+    }
+  }
+  const bool UseVBSEnclaveLibraries =
+      WantVBSEnclave && SuppressAllDefaultLibraries;
 
   if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nostartfiles)) {
     if (!Args.hasArg(options::OPT_nodefaultlibs) &&
@@ -149,17 +217,40 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  // Priority: user-specified toolchain (-vctoolsdir/-winsysroot) wins over
-  // the bundled runtime/ SDK.
-  if (TC.FoundMSVCInstall()) {
-    CmdArgs.push_back(Args.MakeArgString(
-        llvm::Twine("--libpath=") +
-        TC.getSubDirectoryPath(llvm::SubDirectoryType::Lib)));
+  // Keep the normal NeverC Windows-runtime precedence: an explicit
+  // -vctoolsdir/-winsysroot wins, otherwise VBS enclave links use the bundled
+  // runtime on every host (including Windows).
+  if (WantVBSEnclave && !TC.isUserSpecifiedToolChain()) {
+    addBundledVBSEnclaveLibraryPaths(TC.getDriver(), TC.getTriple(), Args,
+                                     CmdArgs, UseVBSEnclaveLibraries);
+  } else if (TC.FoundMSVCInstall()) {
+    const std::string VCLibPath =
+        TC.getSubDirectoryPath(llvm::SubDirectoryType::Lib);
+    if (UseVBSEnclaveLibraries) {
+      llvm::SmallString<128> EnclaveCRTPath(VCLibPath);
+      llvm::sys::path::append(EnclaveCRTPath, "enclave");
+      CmdArgs.push_back(
+          Args.MakeArgString(llvm::Twine("--libpath=") + EnclaveCRTPath));
+    } else {
+      CmdArgs.push_back(
+          Args.MakeArgString(llvm::Twine("--libpath=") + VCLibPath));
+    }
     if (TC.useUniversalCRT()) {
       std::string UniversalCRTLibPath;
-      if (TC.getUniversalCRTLibraryPath(Args, UniversalCRTLibPath))
-        CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--libpath=") +
-                                             UniversalCRTLibPath));
+      if (TC.getUniversalCRTLibraryPath(Args, UniversalCRTLibPath)) {
+        if (UseVBSEnclaveLibraries) {
+          llvm::SmallString<128> EnclaveUCRTPath(UniversalCRTLibPath);
+          llvm::sys::path::remove_filename(EnclaveUCRTPath);
+          llvm::sys::path::remove_filename(EnclaveUCRTPath);
+          llvm::sys::path::append(EnclaveUCRTPath, "ucrt_enclave",
+                                  llvm::archToWindowsSDKArch(TC.getArch()));
+          CmdArgs.push_back(
+              Args.MakeArgString(llvm::Twine("--libpath=") + EnclaveUCRTPath));
+        } else {
+          CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--libpath=") +
+                                               UniversalCRTLibPath));
+        }
+      }
     }
     std::string WindowsSdkLibPath;
     if (TC.getWindowsSDKLibraryPath(Args, WindowsSdkLibPath))
@@ -251,16 +342,6 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     llvm::sys::path::replace_extension(ImplibName, "lib");
     CmdArgs.push_back(
         Args.MakeArgString(std::string("--implib=") + ImplibName));
-  }
-
-  llvm::SmallVector<const char *, 8> OrderedVBSEnclaveOptions;
-  for (const Arg *A :
-       Args.filtered(options::OPT_Xmslink, options::OPT_Wl_COMMA)) {
-    for (unsigned I = 0; I != A->getNumValues(); ++I) {
-      const char *Option = renderMSVCLinkerOption(Args, A->getValue(I));
-      if (isOrderedVBSEnclaveLinkerOption(Option))
-        OrderedVBSEnclaveOptions.push_back(Option);
-    }
   }
 
   for (const Arg *A : Args.filtered(options::OPT_Xmslink)) {

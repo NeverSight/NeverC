@@ -108,6 +108,14 @@ Comandos orientados al usuario más allá de una compilación individual.
 
 ---
 
+## Objetivos de seguridad de Windows
+
+| Documento | Descripción |
+|-----------|-------------|
+| [DLL de enclave VBS](vbs-enclave/README.es.md) | Enlazar, validar, procesar, firmar y cargar imágenes de enclave VBS compatibles con Microsoft |
+
+---
+
 ## Desarrollo local
 
 Compilar NeverC desde el código fuente y configurar el entorno de desarrollo local, incluida la configuración del PATH.

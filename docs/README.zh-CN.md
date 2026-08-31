@@ -108,6 +108,14 @@ NeverC 项目的主要规划方向：标准库、EVM 智能合约后端和 Solan
 
 ---
 
+## Windows 安全目标
+
+| 文档 | 说明 |
+|------|------|
+| [VBS enclave DLL](vbs-enclave/README.zh-CN.md) | 链接、验证、处理、签名并加载与 Microsoft 兼容的 VBS enclave 映像 |
+
+---
+
 ## 本地开发
 
 从源码构建 NeverC 并配置本地开发环境，包括 PATH 设置。

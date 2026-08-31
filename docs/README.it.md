@@ -108,6 +108,14 @@ Comandi utente oltre a una singola compilazione.
 
 ---
 
+## Target di sicurezza Windows
+
+| Documento | Descrizione |
+|-----------|-------------|
+| [DLL di enclave VBS](vbs-enclave/README.it.md) | Collegare, convalidare, elaborare, firmare e caricare immagini di enclave VBS compatibili con Microsoft |
+
+---
+
 ## Sviluppo locale
 
 Compilare NeverC dal codice sorgente e configurare l'ambiente di sviluppo locale, inclusa la configurazione del PATH.

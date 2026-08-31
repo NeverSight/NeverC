@@ -82,6 +82,7 @@ public:
   void printVerboseInfo(llvm::raw_ostream &OS) const override;
 
   bool FoundMSVCInstall() const { return !VCToolChainPath.empty(); }
+  bool isUserSpecifiedToolChain() const { return IsUserSpecifiedToolChain; }
 
 protected:
   void AddSystemIncludeWithSubfolder(const llvm::opt::ArgList &DriverArgs,

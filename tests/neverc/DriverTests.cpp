@@ -1,10 +1,12 @@
 #include "NeverCTestFixture.h"
 
+#include "llvm/Object/COFF.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
 
 #include <algorithm>
+#include <set>
 
 namespace {
 
@@ -1219,6 +1221,203 @@ TEST_F(DriverTest, WindowsVbsEnclaveLinkOptionsXmslink) {
     EXPECT_EQ(all.find(std::string("\"") + option + "\""), std::string::npos)
         << "raw MSVC option was rendered as a linker input: " << option << '\n'
         << all;
+  }
+}
+
+TEST_F(DriverTest, WindowsVbsEnclaveUsesBundledRuntimeByDefault) {
+  auto src = (testDir() / "test_basic.c").string();
+
+  for (const char *target :
+       {"x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"}) {
+    SCOPED_TRACE(target);
+    auto image = tmpFile(std::string("vbs-enclave-runtime-") + target + ".dll");
+    auto r = ncc({"-###", std::string("--target=") + target, "-nostdlib",
+                  "-shared", "-Xmslink", "/NODEFAULTLIB", "-Xmslink",
+                  "/ENCLAVE", src, "-o", image.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    const std::string all = collapseSeparators(r.err + r.out);
+    EXPECT_NE(all.find("/runtime/windows/"), std::string::npos)
+        << "VBS enclave links must use NeverC's bundled runtime\n"
+        << all;
+    EXPECT_NE(all.find("/msvc/crt/lib/enclave"), std::string::npos)
+        << "missing bundled enclave CRT search path\n"
+        << all;
+    EXPECT_NE(all.find("/msvc/sdk/lib/ucrt_enclave"), std::string::npos)
+        << "missing bundled enclave UCRT search path\n"
+        << all;
+  }
+}
+
+TEST_F(DriverTest, WindowsVbsEnclaveHonorsExplicitVCToolsDir) {
+  auto src = (testDir() / "test_basic.c").string();
+  const fs::path foreignToolchain = tmp() / "foreign-vc";
+  fs::create_directories(foreignToolchain / "lib" / "x64" / "enclave");
+
+  auto image = tmpFile("vbs-enclave-explicit-vctools.dll");
+  auto r =
+      ncc({"-###", "--target=x86_64-pc-windows-msvc", "-vctoolsdir",
+           foreignToolchain.string(), "-nostdlib", "-shared", "-Xmslink",
+           "/NODEFAULTLIB", "-Xmslink", "/ENCLAVE", src, "-o", image.string()});
+  ASSERT_EQ(r.exitCode, 0) << r.err;
+
+  const std::string all = collapseSeparators(r.err + r.out);
+  const std::string explicitRoot =
+      collapseSeparators(foreignToolchain.string());
+  EXPECT_NE(all.find(explicitRoot + "/lib/x64/enclave"), std::string::npos)
+      << "the explicit MSVC enclave runtime was not selected\n"
+      << all;
+  EXPECT_EQ(all.find("\"--libpath=" + explicitRoot + "/lib/x64\""),
+            std::string::npos)
+      << "the explicit enclave link fell back to the ordinary MSVC CRT\n"
+      << all;
+  EXPECT_EQ(all.find("/runtime/windows/x64/msvc/"), std::string::npos)
+      << "the bundled runtime overrode an explicit -vctoolsdir\n"
+      << all;
+}
+
+TEST_F(DriverTest, WindowsVbsEnclaveHonorsExplicitWinSysRoot) {
+  auto src = (testDir() / "test_basic.c").string();
+  const fs::path winSysRoot = tmp() / "foreign-winsysroot";
+  const fs::path vcRoot = winSysRoot / "VC" / "Tools" / "MSVC" / "14.99.99999";
+  const fs::path sdkRoot = winSysRoot / "Windows Kits" / "10";
+  const fs::path sdkVersion = sdkRoot / "Include" / "10.0.99999.0";
+  const fs::path enclaveUcrt =
+      sdkRoot / "Lib" / "10.0.99999.0" / "ucrt_enclave" / "x64";
+  const fs::path userMode = sdkRoot / "Lib" / "10.0.99999.0" / "um" / "x64";
+  fs::create_directories(vcRoot / "lib" / "x64" / "enclave");
+  fs::create_directories(sdkVersion);
+  fs::create_directories(enclaveUcrt);
+  fs::create_directories(userMode);
+
+  auto image = tmpFile("vbs-enclave-explicit-winsysroot.dll");
+  auto r =
+      ncc({"-###", "--target=x86_64-pc-windows-msvc", "-winsysroot",
+           winSysRoot.string(), "-nostdlib", "-shared", "-Xmslink",
+           "/NODEFAULTLIB", "-Xmslink", "/ENCLAVE", src, "-o", image.string()});
+  ASSERT_EQ(r.exitCode, 0) << r.err;
+
+  const std::string all = collapseSeparators(r.err + r.out);
+  for (const fs::path &expected :
+       {vcRoot / "lib" / "x64" / "enclave", enclaveUcrt, userMode}) {
+    EXPECT_NE(all.find(collapseSeparators(expected.string())),
+              std::string::npos)
+        << "the explicit Windows sysroot path was not selected\n"
+        << all;
+  }
+  const std::string ordinaryUcrt = collapseSeparators(
+      (sdkRoot / "Lib" / "10.0.99999.0" / "ucrt" / "x64").string());
+  EXPECT_EQ(all.find("\"--libpath=" + ordinaryUcrt + "\""), std::string::npos)
+      << "the explicit enclave link fell back to the ordinary UCRT\n"
+      << all;
+  EXPECT_EQ(all.find("/runtime/windows/x64/msvc/"), std::string::npos)
+      << "the bundled runtime overrode an explicit -winsysroot\n"
+      << all;
+}
+
+TEST_F(DriverTest, WindowsVbsEnclaveDoesNotSelectEnclaveLibrariesImplicitly) {
+  auto src = (testDir() / "test_basic.c").string();
+  for (const char *target :
+       {"x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"}) {
+    SCOPED_TRACE(target);
+    auto image =
+        tmpFile(std::string("vbs-enclave-explicit-runtime-") + target + ".dll");
+    auto r =
+        ncc({"-###", std::string("--target=") + target, "-nostdlib", "-shared",
+             "-Xmslink", "/ENCLAVE", src, "-o", image.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    const std::string all = collapseSeparators(r.err + r.out);
+    EXPECT_NE(all.find("/runtime/windows/"), std::string::npos)
+        << "VBS enclave links must use NeverC's bundled runtime\n"
+        << all;
+    EXPECT_NE(all.find("/msvc/crt/lib"), std::string::npos)
+        << "/ENCLAVE alone must select the bundled ordinary CRT\n"
+        << all;
+    EXPECT_NE(all.find("/msvc/sdk/lib/ucrt"), std::string::npos)
+        << "/ENCLAVE alone must select the bundled ordinary UCRT\n"
+        << all;
+    EXPECT_EQ(all.find("/msvc/crt/lib/enclave"), std::string::npos)
+        << "/ENCLAVE alone must not select the enclave CRT\n"
+        << all;
+    EXPECT_EQ(all.find("/msvc/sdk/lib/ucrt_enclave"), std::string::npos)
+        << "/ENCLAVE alone must not select the enclave UCRT\n"
+        << all;
+  }
+}
+
+TEST_F(DriverTest, WindowsVbsEnclaveLinksWithBundledRuntime) {
+  struct TargetCase {
+    const char *Triple;
+    const char *Machine;
+  };
+
+  const auto fixture = testDir() / "Inputs" / "VBSEnclave";
+  for (const TargetCase &target :
+       {TargetCase{"x86_64-pc-windows-msvc", "/MACHINE:X64"},
+        TargetCase{"aarch64-pc-windows-msvc", "/MACHINE:ARM64"}}) {
+    SCOPED_TRACE(target.Triple);
+    const std::string targetArg = std::string("--target=") + target.Triple;
+    std::vector<fs::path> objects;
+
+    for (const char *sourceName : {"enclave", "guarded", "legacy"}) {
+      const fs::path object =
+          tmpFile(std::string("vbs-cross-") + target.Triple + "-" + sourceName +
+                  ".obj");
+      std::vector<std::string> args = {
+          targetArg, "-x", "c", "-fno-lto", "-fno-builtin-mimalloc", "-c"};
+      if (std::string(sourceName) != "legacy")
+        args.push_back("-fms-guard=cf");
+      args.push_back((fixture / (std::string(sourceName) + ".cpp")).string());
+      args.insert(args.end(), {"-o", object.string()});
+
+      auto compile = ncc(args);
+      ASSERT_EQ(compile.exitCode, 0) << compile.err;
+      objects.push_back(object);
+    }
+
+    const fs::path image =
+        tmpFile(std::string("vbs-cross-") + target.Triple + ".dll");
+    std::vector<std::string> linkArgs = {
+        targetArg,           "-fno-lto",          "-shared",
+        "-nostdlib",         objects[0].string(), objects[1].string(),
+        objects[2].string(), "-lvertdll",         "-lbcrypt",
+        "-llibcmt",          "-llibvcruntime",    "-lucrt",
+        "-Xmslink",          "/INCREMENTAL:NO",   "-Xmslink",
+        "/NODEFAULTLIB",     "-Xmslink",          "/ENCLAVE",
+        "-Xmslink",          "/INTEGRITYCHECK",   "-Xmslink",
+        "/GUARD:MIXED",      "-Xmslink",          "/DYNAMICBASE",
+        "-Xmslink",          target.Machine,      "-o",
+        image.string(),
+    };
+
+    auto link = ncc(linkArgs);
+    ASSERT_EQ(link.exitCode, 0) << link.err;
+    ASSERT_TRUE(fs::is_regular_file(image));
+
+    auto object = llvm::object::ObjectFile::createObjectFile(image.string());
+    if (!object) {
+      ADD_FAILURE() << llvm::toString(object.takeError()).str().str();
+      continue;
+    }
+    const auto *coff =
+        llvm::dyn_cast<llvm::object::COFFObjectFile>(object->getBinary());
+    ASSERT_NE(coff, nullptr);
+
+    std::set<std::string> imports;
+    for (const llvm::object::ImportDirectoryEntryRef &entry :
+         coff->import_directories()) {
+      llvm::StringRef name;
+      if (llvm::Error error = entry.getName(name)) {
+        ADD_FAILURE() << llvm::toString(std::move(error)).str().str();
+        continue;
+      }
+      imports.insert(name.lower().str().str());
+    }
+    EXPECT_EQ(imports.count("ucrtbase_enclave.dll"), 1u);
+    EXPECT_EQ(imports.count("vertdll.dll"), 1u);
+    EXPECT_EQ(imports.count("kernel32.dll"), 0u)
+        << "ordinary Windows CRT leaked into an enclave image";
   }
 }
 

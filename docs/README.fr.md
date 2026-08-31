@@ -108,6 +108,14 @@ Commandes utilisateur au-delà d'une simple compilation.
 
 ---
 
+## Cibles de sécurité Windows
+
+| Document | Description |
+|----------|-------------|
+| [DLL d’enclave VBS](vbs-enclave/README.fr.md) | Lier, valider, traiter, signer et charger des images d’enclave VBS compatibles avec Microsoft |
+
+---
+
 ## Développement local
 
 Compiler NeverC à partir des sources et configurer l'environnement de développement local, y compris le PATH.

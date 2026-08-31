@@ -81,6 +81,45 @@ function Resolve-Toolchain {
   return $paths
 }
 
+function Resolve-BundledRuntime {
+  param([Parameter(Mandatory = $true)][string]$NeverCCompiler)
+
+  $installRoot = Split-Path (Split-Path $NeverCCompiler -Parent) -Parent
+  $paths = [ordered]@{}
+  foreach ($architecture in @('x64', 'arm64')) {
+    $runtimeRoot = Join-Path $installRoot "runtime\windows\$architecture\msvc"
+    $paths["${architecture}_enclave_libcmt"] = Require-File (Join-Path $runtimeRoot 'crt\lib\enclave\libcmt.lib') "bundled $architecture enclave libcmt.lib"
+    $paths["${architecture}_enclave_libvcruntime"] = Require-File (Join-Path $runtimeRoot 'crt\lib\enclave\libvcruntime.lib') "bundled $architecture enclave libvcruntime.lib"
+    $paths["${architecture}_enclave_ucrt"] = Require-File (Join-Path $runtimeRoot 'sdk\lib\ucrt_enclave\ucrt.lib') "bundled $architecture enclave ucrt.lib"
+    $paths["${architecture}_vertdll"] = Require-File (Join-Path $runtimeRoot 'sdk\lib\um\vertdll.lib') "bundled $architecture vertdll.lib"
+    $paths["${architecture}_bcrypt"] = Require-File (Join-Path $runtimeRoot 'sdk\lib\um\bcrypt.lib') "bundled $architecture bcrypt.lib"
+  }
+  return $paths
+}
+
+function Assert-BundledRuntimeTrace {
+  param([Parameter(Mandatory = $true)][string]$LogPath,
+        [Parameter(Mandatory = $true)][string]$Architecture,
+        [Parameter(Mandatory = $true)]$BundledRuntime)
+
+  $trace = (Get-Content -LiteralPath $LogPath -Raw).Replace('\', '/').ToLowerInvariant()
+  foreach ($assetName in @('enclave_libcmt', 'enclave_ucrt', 'vertdll')) {
+    $asset = $BundledRuntime["${Architecture}_${assetName}"]
+    $directory = (Split-Path $asset -Parent).Replace('\', '/').ToLowerInvariant()
+    if (-not $trace.Contains($directory)) {
+      throw "NeverC trace did not select bundled $Architecture runtime directory '$directory'"
+    }
+  }
+  foreach ($hostRoot in @($env:VCToolsInstallDir, $env:WindowsSdkDir)) {
+    if ($hostRoot) {
+      $normalizedHostRoot = $hostRoot.TrimEnd('\', '/').Replace('\', '/').ToLowerInvariant()
+      if ($trace.Contains($normalizedHostRoot)) {
+        throw "NeverC trace leaked host runtime path '$normalizedHostRoot' into the default VBS link"
+      }
+    }
+  }
+}
+
 function Write-Result {
   param([string]$Status, [string]$Stage, [int]$ErrorCode,
         [string]$Message, [string]$ResultPath)
@@ -123,13 +162,22 @@ if ($Phase -eq 'Static') {
     $NeverCPath = Resolve-FullPath $NeverCPath $repository
   }
   $neverc = Require-File $NeverCPath 'NeverC compiler'
+  $bundledRuntime = Resolve-BundledRuntime $neverc
+  $bundledRuntime | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactRoot 'bundled-runtime-paths.json') -Encoding utf8
+  $bundledRuntime.GetEnumerator() | ForEach-Object {
+    $item = Get-Item -LiteralPath $_.Value
+    $hash = (Get-FileHash -LiteralPath $_.Value -Algorithm SHA256).Hash
+    "{0}`t{1}`t{2}`t{3}" -f $_.Key, $_.Value, $item.Length, $hash
+  } | Set-Content -LiteralPath (Join-Path $artifactRoot 'bundled-runtime-assets.txt') -Encoding utf8
+
   $objectRoot = Join-Path $artifactRoot 'objects'
   $msvcObjectRoot = Join-Path $objectRoot 'msvc'
   $nevercObjectRoot = Join-Path $objectRoot 'neverc'
+  $nevercArm64ObjectRoot = Join-Path $objectRoot 'neverc-arm64'
   $unsignedRoot = Join-Path $artifactRoot 'unsigned'
   $runtimeRoot = Join-Path $artifactRoot 'runtime'
   $jsonRoot = Join-Path $artifactRoot 'json'
-  New-Item -ItemType Directory -Force -Path $msvcObjectRoot, $nevercObjectRoot, $unsignedRoot, $runtimeRoot, $jsonRoot | Out-Null
+  New-Item -ItemType Directory -Force -Path $msvcObjectRoot, $nevercObjectRoot, $nevercArm64ObjectRoot, $unsignedRoot, $runtimeRoot, $jsonRoot | Out-Null
 
   $guardedSources = @('enclave.cpp', 'guarded.cpp')
   foreach ($sourceName in $guardedSources) {
@@ -138,15 +186,19 @@ if ($Phase -eq 'Static') {
     Invoke-Logged $tools.cl @('/nologo', '/c', '/std:c++17', '/guard:cf', '/GS-', "/Fo$object", $source) (Join-Path $logRoot "cl-$sourceName.log") | Out-Null
     $nevercObject = Join-Path $nevercObjectRoot ($sourceName + '.obj')
     Invoke-Logged $neverc @('--target=x86_64-pc-windows-msvc', '-x', 'c', '-fno-lto', '-fno-builtin-mimalloc', '-c', '-fms-guard=cf', $source, '-o', $nevercObject) (Join-Path $logRoot "neverc-$sourceName.log") | Out-Null
+    $nevercArm64Object = Join-Path $nevercArm64ObjectRoot ($sourceName + '.obj')
+    Invoke-Logged $neverc @('--target=aarch64-pc-windows-msvc', '-x', 'c', '-fno-lto', '-fno-builtin-mimalloc', '-c', '-fms-guard=cf', $source, '-o', $nevercArm64Object) (Join-Path $logRoot "neverc-arm64-$sourceName.log") | Out-Null
   }
   $legacySource = Join-Path $fixtureRoot 'legacy.cpp'
   $legacyMsvc = Join-Path $msvcObjectRoot 'legacy.cpp.obj'
   Invoke-Logged $tools.cl @('/nologo', '/c', '/std:c++17', '/GS-', "/Fo$legacyMsvc", $legacySource) (Join-Path $logRoot 'cl-legacy.cpp.log') | Out-Null
   $legacyNeverC = Join-Path $nevercObjectRoot 'legacy.cpp.obj'
   Invoke-Logged $neverc @('--target=x86_64-pc-windows-msvc', '-x', 'c', '-fno-lto', '-fno-builtin-mimalloc', '-c', $legacySource, '-o', $legacyNeverC) (Join-Path $logRoot 'neverc-legacy.cpp.log') | Out-Null
+  $legacyNeverCArm64 = Join-Path $nevercArm64ObjectRoot 'legacy.cpp.obj'
+  Invoke-Logged $neverc @('--target=aarch64-pc-windows-msvc', '-x', 'c', '-fno-lto', '-fno-builtin-mimalloc', '-c', $legacySource, '-o', $legacyNeverCArm64) (Join-Path $logRoot 'neverc-arm64-legacy.cpp.log') | Out-Null
 
-  $host = Join-Path $artifactRoot 'vbs-enclave-host.exe'
-  Invoke-Logged $tools.cl @('/nologo', '/std:c++17', (Join-Path $fixtureRoot 'host.cpp'), "/Fe$host", '/link', '/INCREMENTAL:NO', $tools.onecore) (Join-Path $logRoot 'build-host.log') | Out-Null
+  $runtimeHost = Join-Path $artifactRoot 'vbs-enclave-host.exe'
+  Invoke-Logged $tools.cl @('/nologo', '/std:c++17', (Join-Path $fixtureRoot 'host.cpp'), "/Fe$runtimeHost", '/link', '/INCREMENTAL:NO', $tools.onecore) (Join-Path $logRoot 'build-host.log') | Out-Null
 
   $libraries = @($tools.vertdll, $tools.bcrypt, $tools.enclave_libcmt,
                  $tools.enclave_libvcruntime, $tools.enclave_ucrt)
@@ -167,20 +219,42 @@ if ($Phase -eq 'Static') {
     Invoke-Logged $tools.link $arguments (Join-Path $logRoot ("link-{0}.log" -f $entry.Key)) | Out-Null
   }
 
+  $bundledLibraries = @('-lvertdll', '-lbcrypt', '-llibcmt',
+                        '-llibvcruntime', '-lucrt')
   $integrated = Join-Path $unsignedRoot 'neverc-neverc.dll'
   $candidateArguments = @(
     '--target=x86_64-pc-windows-msvc', '-fno-lto', '-shared', '-nostdlib',
     (Join-Path $nevercObjectRoot 'enclave.cpp.obj'),
     (Join-Path $nevercObjectRoot 'guarded.cpp.obj'), $legacyNeverC
-  ) + $libraries + @(
+  ) + $bundledLibraries + @(
     '-Xmslink', '/INCREMENTAL:NO', '-Xmslink', '/NODEFAULTLIB',
     '-Xmslink', '/ENCLAVE', '-Xmslink', '/INTEGRITYCHECK',
     '-Xmslink', '/GUARD:MIXED', '-Xmslink', '/DYNAMICBASE',
     '-Xmslink', '/MACHINE:X64', '-o', $integrated
   )
+  $candidateTrace = Join-Path $logRoot 'trace-neverc-neverc.dll.log'
+  Invoke-Logged $neverc (@('-###') + $candidateArguments) $candidateTrace | Out-Null
+  Assert-BundledRuntimeTrace $candidateTrace 'x64' $bundledRuntime
   Invoke-Logged $neverc $candidateArguments (Join-Path $logRoot 'link-neverc-neverc.dll.log') | Out-Null
 
-  foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll')) {
+  $integratedArm64 = Join-Path $unsignedRoot 'neverc-neverc-arm64.dll'
+  $candidateArm64Arguments = @(
+    '--target=aarch64-pc-windows-msvc', '-fno-lto', '-shared', '-nostdlib',
+    (Join-Path $nevercArm64ObjectRoot 'enclave.cpp.obj'),
+    (Join-Path $nevercArm64ObjectRoot 'guarded.cpp.obj'), $legacyNeverCArm64
+  ) + $bundledLibraries + @(
+    '-Xmslink', '/INCREMENTAL:NO', '-Xmslink', '/NODEFAULTLIB',
+    '-Xmslink', '/ENCLAVE', '-Xmslink', '/INTEGRITYCHECK',
+    '-Xmslink', '/GUARD:MIXED', '-Xmslink', '/DYNAMICBASE',
+    '-Xmslink', '/MACHINE:ARM64', '-o', $integratedArm64
+  )
+  $candidateArm64Trace = Join-Path $logRoot 'trace-neverc-neverc-arm64.dll.log'
+  Invoke-Logged $neverc (@('-###') + $candidateArm64Arguments) $candidateArm64Trace | Out-Null
+  Assert-BundledRuntimeTrace $candidateArm64Trace 'arm64' $bundledRuntime
+  Invoke-Logged $neverc $candidateArm64Arguments (Join-Path $logRoot 'link-neverc-neverc-arm64.dll.log') | Out-Null
+
+  foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll',
+                      'neverc-neverc-arm64.dll')) {
     $image = Join-Path $unsignedRoot $name
     Invoke-Logged $python @($verifier, 'inspect', $image, '--json', (Join-Path $jsonRoot "$name.json")) (Join-Path $logRoot "verify-$name.log") | Out-Null
     Invoke-Logged $tools.dumpbin @('/headers', '/loadconfig', $image) (Join-Path $artifactRoot "$name.dumpbin.txt") | Out-Null
@@ -196,14 +270,14 @@ if ($Phase -eq 'Static') {
     Copy-Item -LiteralPath (Join-Path $unsignedRoot $name) -Destination $runtimeImage -Force
     Invoke-Logged $tools.veiid @($runtimeImage) (Join-Path $logRoot "veiid-$name.log") | Out-Null
   }
-  Write-Host "STATIC PASS: unsigned PE semantics match; VEIID runtime copies are ready in '$runtimeRoot'"
+  Write-Host "STATIC PASS: x64 reference semantics match, bundled x64/ARM64 links pass, and VEIID runtime copies are ready in '$runtimeRoot'"
   exit 0
 }
 
 $resultPath = Join-Path $artifactRoot 'runtime-result.json'
 try {
   $tools = Resolve-Toolchain
-  $host = Require-File (Join-Path $artifactRoot 'vbs-enclave-host.exe') 'runtime host'
+  $runtimeHost = Require-File (Join-Path $artifactRoot 'vbs-enclave-host.exe') 'runtime host'
   $runtimeRoot = Join-Path $artifactRoot 'runtime'
   $signedRoot = Join-Path $artifactRoot 'runtime-signed'
   New-Item -ItemType Directory -Force -Path $signedRoot | Out-Null
@@ -248,7 +322,7 @@ try {
     param([string]$Name)
     $image = Join-Path $signedRoot $Name
     $log = Join-Path $logRoot "runtime-$Name.log"
-    $exitCode = Invoke-Logged $host @($image) $log -AllowFailure
+    $exitCode = Invoke-Logged $runtimeHost @($image) $log -AllowFailure
     $stage = 'Complete'
     $errorCode = 0
     if ($exitCode -ne 0) {

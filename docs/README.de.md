@@ -108,6 +108,14 @@ Benutzerbefehle jenseits einer einzelnen Kompilierung.
 
 ---
 
+## Windows-Sicherheitsziele
+
+| Dokument | Beschreibung |
+|----------|--------------|
+| [VBS-Enklaven-DLLs](vbs-enclave/README.de.md) | Microsoft-kompatible VBS-Enklaven-Images linken, validieren, verarbeiten, signieren und laden |
+
+---
+
 ## Lokale Entwicklung
 
 NeverC aus dem Quellcode kompilieren und die lokale Entwicklungsumgebung einrichten, einschließlich PATH-Konfiguration.
