@@ -347,6 +347,14 @@ jobs:
             }
             $process.WaitForExit()
             $watch.Stop()
+            $exitCode = $null
+            try {
+              $process.Refresh()
+              if ($process.HasExited) { $exitCode = $process.ExitCode }
+            } catch {
+              $_ | Out-String | Set-Content `
+                (Join-Path $caseDir 'exit-code-error.txt')
+            }
             if ($blocker) {
               if ($Mode -eq 'tcp-occupied') { $blocker.Stop() }
               else { $blocker.Dispose() }
@@ -358,7 +366,7 @@ jobs:
             $errText = if (Test-Path $stderr) {
               [string](Get-Content $stderr -Raw)
             } else { '' }
-            $passed = -not $timedOut -and $process.ExitCode -eq 0 -and
+            $passed = -not $timedOut -and $exitCode -eq 0 -and
                       $outText -match '(?m)^passed\r?$'
             $sawReady = $outText -match 'DIAG readiness saw=1'
             $record = [pscustomobject]@{
@@ -367,8 +375,10 @@ jobs:
               forced_port = $forcedPort
               pid = $process.Id
               elapsed_ms = $watch.ElapsedMilliseconds
-              exit_code = if ($timedOut) { 'TIMEOUT' } else {
-                [string]$process.ExitCode
+              exit_code = if ($timedOut) { 'TIMEOUT' } elseif ($null -eq $exitCode) {
+                'UNKNOWN'
+              } else {
+                [string]$exitCode
               }
               passed = $passed
               saw_reported_readiness = $sawReady
