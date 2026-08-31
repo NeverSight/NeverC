@@ -44,10 +44,6 @@ jobs:
     name: Static PE and Microsoft-reference gate
     runs-on: windows-2022
     timeout-minutes: 90
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      CMAKE_C_COMPILER_LAUNCHER: sccache
-      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -71,9 +67,6 @@ jobs:
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
           arch: x64
-
-      - name: Set up sccache
-        uses: mozilla/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
 
       - name: Configure NeverC without LTO
         shell: pwsh
@@ -107,11 +100,6 @@ jobs:
           -Phase Static
           -BuildDirectory build-vbs
           -ArtifactDirectory artifacts\vbs-enclave
-
-      - name: Show sccache statistics
-        if: always()
-        shell: pwsh
-        run: sccache --show-stats
 
       - name: Upload PE evidence and VEIID runtime images
         if: always()
