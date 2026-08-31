@@ -1,6 +1,9 @@
 name: debug-std-windows-x64-clang-lto-http3
 
 on:
+  push:
+    tags:
+      - 'std-http3-startup-diag-*'
   workflow_dispatch:
     inputs:
       iterations:
@@ -242,9 +245,9 @@ jobs:
         continue-on-error: true
         shell: pwsh
         env:
-          DIAG_ITERATIONS: ${{ inputs.iterations }}
-          DIAG_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
-          DIAG_POLL_MS: ${{ inputs.poll_ms }}
+          DIAG_ITERATIONS: ${{ inputs.iterations || '32' }}
+          DIAG_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '30' }}
+          DIAG_POLL_MS: ${{ inputs.poll_ms || '100' }}
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = (Resolve-Path 'diagnostic-bin/test_http3_e2e.exe').Path
@@ -350,10 +353,10 @@ jobs:
             }
 
             $outText = if (Test-Path $stdout) {
-              Get-Content $stdout -Raw
+              [string](Get-Content $stdout -Raw)
             } else { '' }
             $errText = if (Test-Path $stderr) {
-              Get-Content $stderr -Raw
+              [string](Get-Content $stderr -Raw)
             } else { '' }
             $passed = -not $timedOut -and $process.ExitCode -eq 0 -and
                       $outText -match '(?m)^passed\r?$'
