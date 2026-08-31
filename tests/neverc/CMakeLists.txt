@@ -1850,6 +1850,7 @@ target_link_libraries(neverc-plugin-frontend-tests PRIVATE
   GTest::gtest
   GTest::gtest_main
   nevercCompiler
+  nevercEmit
   nevercPluginCore
   nevercPluginFrontend
   # nevercInvoke's Compilation constructs LinkExecutionHooksBridge, defined in
