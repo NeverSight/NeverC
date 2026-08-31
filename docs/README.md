@@ -108,6 +108,14 @@ User-facing commands beyond a single compile invocation.
 
 ---
 
+## Windows security targets
+
+| Document | Description |
+|----------|-------------|
+| [VBS enclave DLLs](vbs-enclave/README.md) | Link, validate, process, sign, and load Microsoft-compatible VBS enclave images |
+
+---
+
 ## Local Development
 
 Build NeverC from source and set up the local development environment with PATH configuration.
