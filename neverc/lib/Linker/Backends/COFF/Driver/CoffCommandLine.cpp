@@ -94,15 +94,22 @@ void LinkerDriver::parseGuard(StringRef fullArg) {
   SmallVector<StringRef, 1> splitArgs;
   fullArg.split(splitArgs, ",");
   for (StringRef arg : splitArgs) {
-    if (arg.equals_insensitive("no"))
+    if (arg.equals_insensitive("no")) {
       ctx.config.guardCF = GuardCFLevel::Off;
-    else if (arg.equals_insensitive("nolongjmp"))
+      ctx.config.guardCFMixed = false;
+    } else if (arg.equals_insensitive("mixed")) {
+      ctx.config.guardCF |= GuardCFLevel::CF;
+      ctx.config.guardCF &= ~GuardCFLevel::LongJmp;
+      ctx.config.guardCFMixed = true;
+    } else if (arg.equals_insensitive("nolongjmp"))
       ctx.config.guardCF &= ~GuardCFLevel::LongJmp;
     else if (arg.equals_insensitive("noehcont"))
       ctx.config.guardCF &= ~GuardCFLevel::EHCont;
-    else if (arg.equals_insensitive("cf") || arg.equals_insensitive("longjmp"))
+    else if (arg.equals_insensitive("cf") ||
+             arg.equals_insensitive("longjmp")) {
       ctx.config.guardCF |= GuardCFLevel::CF | GuardCFLevel::LongJmp;
-    else if (arg.equals_insensitive("ehcont"))
+      ctx.config.guardCFMixed = false;
+    } else if (arg.equals_insensitive("ehcont"))
       ctx.config.guardCF |= GuardCFLevel::CF | GuardCFLevel::EHCont;
     else
       fatal("invalid argument to --guard: " + arg);

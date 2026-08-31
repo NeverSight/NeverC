@@ -1197,6 +1197,116 @@ TEST_F(DriverTest, O0RuntimeBitcodeCanRemainOptimizable) {
       << all;
 }
 
+// Windows MSVC linker option forwarding
+TEST_F(DriverTest, WindowsVbsEnclaveLinkOptionsXmslink) {
+  auto src = (testDir() / "test_basic.c").string();
+  auto image = tmpFile("vbs-enclave-xmslink.dll");
+  auto r = ncc({"-###", "--target=x86_64-pc-windows-msvc", "-nostdlib",
+                "-shared", "-Xmslink", "/ENCLAVE", "-Xmslink", "/GUARD:MIXED",
+                "-Xmslink", "/INTEGRITYCHECK", "-Xmslink", "/INCREMENTAL:NO",
+                src, "-o", image.string()});
+  ASSERT_EQ(r.exitCode, 0) << r.err;
+
+  const std::string all = r.err + r.out;
+  for (const char *option :
+       {"--enclave", "--guard=mixed", "--integritycheck", "--no-incremental"}) {
+    EXPECT_NE(all.find(std::string("\"") + option + "\""), std::string::npos)
+        << "missing normalized linker option " << option << '\n'
+        << all;
+  }
+  for (const char *option :
+       {"/ENCLAVE", "/GUARD:MIXED", "/INTEGRITYCHECK", "/INCREMENTAL:NO"}) {
+    EXPECT_EQ(all.find(std::string("\"") + option + "\""), std::string::npos)
+        << "raw MSVC option was rendered as a linker input: " << option << '\n'
+        << all;
+  }
+}
+
+TEST_F(DriverTest, WindowsVbsEnclaveLinkOptionsWl) {
+  auto src = (testDir() / "test_basic.c").string();
+  auto image = tmpFile("vbs-enclave-wl.dll");
+  auto r =
+      ncc({"-###", "--target=x86_64-pc-windows-msvc", "-nostdlib", "-shared",
+           "-Wl,/ENCLAVE,/GUARD:MIXED,/INTEGRITYCHECK,/INCREMENTAL:NO", src,
+           "-o", image.string()});
+  ASSERT_EQ(r.exitCode, 0) << r.err;
+
+  const std::string all = r.err + r.out;
+  for (const char *option :
+       {"--enclave", "--guard=mixed", "--integritycheck", "--no-incremental"}) {
+    EXPECT_NE(all.find(std::string("\"") + option + "\""), std::string::npos)
+        << "missing normalized linker option " << option << '\n'
+        << all;
+  }
+  for (const char *option :
+       {"/ENCLAVE", "/GUARD:MIXED", "/INTEGRITYCHECK", "/INCREMENTAL:NO"}) {
+    EXPECT_EQ(all.find(std::string("\"") + option + "\""), std::string::npos)
+        << "raw MSVC option was rendered as a linker input: " << option << '\n'
+        << all;
+  }
+}
+
+TEST_F(DriverTest, WindowsMSVCForwardedBooleanNoOptions) {
+  auto src = (testDir() / "test_basic.c").string();
+  auto image = tmpFile("msvc-forwarded-no-options.dll");
+  auto r =
+      ncc({"-###", "--target=x86_64-pc-windows-msvc", "-nostdlib", "-shared",
+           "-Xmslink", "/DYNAMICBASE:NO", "-Xmslink", "/INTEGRITYCHECK:NO",
+           "-Xmslink", "/DRIVER:UPONLY", src, "-o", image.string()});
+  ASSERT_EQ(r.exitCode, 0) << r.err;
+
+  const std::string all = r.err + r.out;
+  for (const char *option : {"--no-dynamicbase", "--no-integritycheck"})
+    EXPECT_NE(all.find(std::string("\"") + option + "\""), std::string::npos)
+        << "missing normalized negative linker option " << option << '\n'
+        << all;
+  EXPECT_EQ(all.find("--dynamicbase=NO"), std::string::npos) << all;
+  EXPECT_EQ(all.find("--integritycheck=NO"), std::string::npos) << all;
+  EXPECT_NE(all.find("\"--driver=uponly\""), std::string::npos) << all;
+  EXPECT_EQ(all.find("--driver=UPONLY"), std::string::npos) << all;
+  EXPECT_EQ(all.find("unused argument"), std::string::npos) << all;
+}
+
+TEST_F(DriverTest, WindowsVbsForwardingPreservesCrossChannelOrder) {
+  auto src = (testDir() / "test_basic.c").string();
+  auto image = tmpFile("vbs-forwarding-order.dll");
+  auto r = ncc({"-###", "--target=x86_64-pc-windows-msvc", "-nostdlib",
+                "-shared", "-Wl,/INCREMENTAL:NO,/GUARD:CF", "-Xmslink",
+                "/INCREMENTAL", "-Xmslink", "/GUARD:MIXED", "-Xmslink",
+                "/ENCLAVE", src, "-o", image.string()});
+  ASSERT_EQ(r.exitCode, 0) << r.err;
+
+  const std::string all = r.err + r.out;
+  const size_t noIncremental = all.find("\"--no-incremental\"");
+  const size_t incremental = all.find("\"--incremental\"");
+  const size_t guardCF = all.find("\"--guard=cf\"");
+  const size_t guardMixed = all.find("\"--guard=mixed\"");
+  ASSERT_NE(noIncremental, std::string::npos) << all;
+  ASSERT_NE(incremental, std::string::npos) << all;
+  ASSERT_NE(guardCF, std::string::npos) << all;
+  ASSERT_NE(guardMixed, std::string::npos) << all;
+  EXPECT_LT(noIncremental, incremental) << all;
+  EXPECT_LT(guardCF, guardMixed) << all;
+  EXPECT_EQ(all.find("unused argument"), std::string::npos) << all;
+}
+
+TEST_F(DriverTest, WindowsVbsEnclaveAbsoluteInputPathIsPreserved) {
+  auto object = tmpFile("absolute-link-input.obj");
+  auto image = tmpFile("absolute-link-input.dll");
+  writeFile(object, "");
+
+  auto r = ncc({"-###", "--target=x86_64-pc-windows-msvc", "-nostdlib",
+                "-shared", object.string(), "-o", image.string()});
+  ASSERT_EQ(r.exitCode, 0) << r.err;
+
+  const std::string all = collapseSeparators(r.err + r.out);
+  const std::string expectedPath = collapseSeparators(object.string());
+  EXPECT_NE(all.find(std::string("\"") + expectedPath + "\""),
+            std::string::npos)
+      << "ordinary absolute linker input path was rewritten\n"
+      << all;
+}
+
 // Windows MSVC default runtime
 TEST_F(DriverTest, WindowsMSVCDefaultRuntime) {
   auto src = (testDir() / "test_basic.c").string();
@@ -1204,7 +1314,8 @@ TEST_F(DriverTest, WindowsMSVCDefaultRuntime) {
   EXPECT_EQ(r.exitCode, 0);
   EXPECT_TRUE(r.stderrContains("--dependent-lib=libcmt") ||
               r.contains("--dependent-lib=libcmt"))
-      << "MSVC default runtime missing libcmt\n" << r.err << r.out;
+      << "MSVC default runtime missing libcmt\n"
+      << r.err << r.out;
 }
 
 // Windows MSVC LTO compatibility

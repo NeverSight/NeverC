@@ -1454,6 +1454,7 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   config->allowBind = args.hasFlag(OPT_allowbind, OPT_allowbind_no, true);
   config->allowIsolation =
       args.hasFlag(OPT_allowisolation, OPT_allowisolation_no, true);
+  config->enclave = args.hasArg(OPT_enclave);
   config->incremental =
       args.hasFlag(OPT_incremental, OPT_incremental_no,
                    !config->doGC && config->doICF == ICFLevel::None &&
@@ -1470,6 +1471,13 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
 
   if (args.hasFlag(OPT_inferasanlibs, OPT_inferasanlibs_no, false))
     warn("ignoring '--inferasanlibs', this flag is not supported");
+
+  if (config->enclave) {
+    if (auto *arg = args.getLastArg(OPT_incremental, OPT_incremental_no);
+        arg && arg->getOption().getID() == OPT_incremental)
+      error("'--incremental' is incompatible with '--enclave'");
+    config->incremental = false;
+  }
 
   if (config->incremental && args.hasArg(OPT_profile)) {
     warn("ignoring '--incremental' due to '--profile' specification");
@@ -1732,8 +1740,14 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   ctx.symtab.addAbsolute(mangle("__guard_iat_table"), 0);
   ctx.symtab.addAbsolute(mangle("__guard_longjmp_count"), 0);
   ctx.symtab.addAbsolute(mangle("__guard_longjmp_table"), 0);
-  // Needed for MSVC 2017 15.5 CRT.
-  ctx.symtab.addAbsolute(mangle("__enclave_config"), 0);
+  // Older CRTs reference this symbol even for ordinary images. Enclave images
+  // instead require the real configuration object and load-config directory.
+  if (config->enclave) {
+    addUndefined(mangle("__enclave_config"));
+    addUndefined(mangle("_load_config_used"));
+  } else {
+    ctx.symtab.addAbsolute(mangle("__enclave_config"), 0);
+  }
   // Needed for MSVC 2019 16.8 CRT.
   ctx.symtab.addAbsolute(mangle("__guard_eh_cont_count"), 0);
   ctx.symtab.addAbsolute(mangle("__guard_eh_cont_table"), 0);
@@ -1809,6 +1823,9 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
     config->gcroot.push_back(d);
 
   run();
+  if (config->enclave && config->incremental)
+    error("'--incremental' from an input directive is incompatible with "
+          "'--enclave'");
   ctx.symtab.resolveRemainingUndefines();
   if (errorCount())
     return;

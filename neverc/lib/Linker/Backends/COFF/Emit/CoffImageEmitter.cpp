@@ -279,6 +279,7 @@ private:
   DelayLoadContents delayIdata;
   EdataContents edata;
   uint32_t tlsAlignment = 0;
+  uint32_t loadConfigDirectorySize = 0;
 
   DebugDirectoryChunk *debugDirectory = nullptr;
   std::vector<std::pair<COFF::DebugType, Chunk *>> debugRecords;
@@ -1665,6 +1666,7 @@ template <typename PEHeaderTy> void OutputWriter::writeHeader() {
         fatal("_load_config_used is too large");
       dir[LOAD_CONFIG_TABLE].RelativeVirtualAddress = b->getRVA();
       dir[LOAD_CONFIG_TABLE].Size = loadConfigSize;
+      loadConfigDirectorySize = loadConfigSize;
     }
   }
   if (!delayIdata.empty()) {
@@ -2338,22 +2340,61 @@ void OutputWriter::fixTlsAlignment() {
 
 void OutputWriter::prepareLoadConfig() {
   Symbol *sym = ctx.symtab.findUnderscore("_load_config_used");
-  auto *b = cast_if_present<DefinedRegular>(sym);
+  auto *b = dyn_cast_or_null<DefinedRegular>(sym);
   if (!b) {
-    if (ctx.config.guardCF != GuardCFLevel::Off)
+    if (ctx.config.enclave)
+      error("--enclave requires '_load_config_used' to be defined in image "
+            "data");
+    else if (ctx.config.guardCF != GuardCFLevel::Off)
       warn("Control Flow Guard is enabled but '_load_config_used' is missing");
     return;
   }
 
-  OutputSection *sec = ctx.getOutputSection(b->getChunk());
+  SectionChunk *chunk = b->getChunk();
+  OutputSection *sec = chunk ? ctx.getOutputSection(chunk) : nullptr;
+  bool hasLoadConfigData = chunk && chunk->live && chunk->hasData && sec &&
+                           b->getRVA() >= chunk->getRVA() &&
+                           b->getRVA() >= sec->getRVA();
+  uint64_t chunkOffset = 0;
+  uint64_t sectionOffset = 0;
+  if (hasLoadConfigData) {
+    chunkOffset = b->getRVA() - chunk->getRVA();
+    sectionOffset = b->getRVA() - sec->getRVA();
+    hasLoadConfigData =
+        chunkOffset <= chunk->getSize() &&
+        sizeof(ulittle32_t) <= chunk->getSize() - chunkOffset &&
+        sectionOffset <= sec->getRawSize() &&
+        sizeof(ulittle32_t) <= sec->getRawSize() - sectionOffset;
+  }
+  if (!hasLoadConfigData) {
+    if (ctx.config.enclave)
+      error("--enclave requires '_load_config_used' to be defined in live "
+            "image data");
+    else
+      warn("'_load_config_used' is not defined in live image data");
+    return;
+  }
+
   uint8_t *buf = buffer->getBufferStart();
   uint8_t *secBuf = buf + sec->getFileOff();
   uint8_t *symBuf = secBuf + (b->getRVA() - sec->getRVA());
+  uint32_t loadConfigSize = *reinterpret_cast<const ulittle32_t *>(symBuf);
+  if (loadConfigSize != loadConfigDirectorySize) {
+    error("'_load_config_used' Size changed after relocation");
+    return;
+  }
+  if (loadConfigSize < sizeof(ulittle32_t) ||
+      loadConfigSize > chunk->getSize() - chunkOffset ||
+      loadConfigSize > sec->getRawSize() - sectionOffset) {
+    error("'_load_config_used' is too large for its image data");
+    return;
+  }
+
   constexpr uint32_t expectedAlign = 8;
-  if (b->getChunk()->getAlignment() < expectedAlign)
+  if (chunk->getAlignment() < expectedAlign)
     warn("'_load_config_used' is misaligned (expected alignment to be " +
-         Twine(expectedAlign) + " bytes, got " +
-         Twine(b->getChunk()->getAlignment()) + " instead)");
+         Twine(expectedAlign) + " bytes, got " + Twine(chunk->getAlignment()) +
+         " instead)");
   else if (!isAligned(Align(expectedAlign), b->getRVA()))
     warn("'_load_config_used' is misaligned (RVA is 0x" +
          Twine::utohexstr(b->getRVA()) + " not aligned to " +
@@ -2363,10 +2404,48 @@ void OutputWriter::prepareLoadConfig() {
 }
 
 template <typename T> void OutputWriter::prepareLoadConfig(T *loadConfig) {
-  if (ctx.config.dependentLoadFlags)
-    loadConfig->DependentLoadFlags = ctx.config.dependentLoadFlags;
+  if (ctx.config.dependentLoadFlags) {
+    if (loadConfig->Size <
+        offsetof(T, DependentLoadFlags) + sizeof(T::DependentLoadFlags))
+      warn("'_load_config_used' structure too small to include "
+           "DependentLoadFlags");
+    else
+      loadConfig->DependentLoadFlags = ctx.config.dependentLoadFlags;
+  }
 
   checkLoadConfigGuardData(loadConfig);
+
+  if (!ctx.config.enclave)
+    return;
+
+  if (loadConfig->Size < offsetof(T, EnclaveConfigurationPointer) +
+                             sizeof(T::EnclaveConfigurationPointer)) {
+    error("'_load_config_used' structure too small to include "
+          "EnclaveConfigurationPointer required by --enclave");
+    return;
+  }
+
+  Symbol *sym = ctx.symtab.findUnderscore("__enclave_config");
+  auto *config = dyn_cast_or_null<DefinedRegular>(sym);
+  SectionChunk *configChunk = config ? config->getChunk() : nullptr;
+  bool hasConfigData = configChunk && configChunk->live &&
+                       configChunk->hasData &&
+                       config->getRVA() >= configChunk->getRVA();
+  if (hasConfigData) {
+    uint64_t offset = config->getRVA() - configChunk->getRVA();
+    hasConfigData = offset <= configChunk->getSize() &&
+                    sizeof(ulittle32_t) <= configChunk->getSize() - offset;
+  }
+  if (!hasConfigData) {
+    error("--enclave requires '__enclave_config' to be defined in live image "
+          "data");
+    return;
+  }
+
+  uint64_t expected = ctx.config.imageBase + config->getRVA();
+  if (loadConfig->EnclaveConfigurationPointer != expected)
+    error("EnclaveConfigurationPointer not set correctly in "
+          "'_load_config_used'");
 }
 
 template <typename T>

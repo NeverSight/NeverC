@@ -97,6 +97,8 @@ OPTION(prefix_1, "--driver", driver, Flag, INVALID, INVALID, nullptr, 0,
 OPTION(prefix_1, "--dynamicbase", dynamicbase, Flag, INVALID, INVALID, nullptr,
        0, DefaultVis, 0, "Enable ASLR (default unless /fixed)", nullptr,
        nullptr)
+OPTION(prefix_1, "--enclave", enclave, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Create a VBS enclave image", nullptr, nullptr)
 OPTION(prefix_1, "--end-lib", end_lib, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "End group of objects treated as if they were in a library", nullptr,

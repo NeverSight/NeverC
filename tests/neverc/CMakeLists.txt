@@ -2077,6 +2077,7 @@ gtest_discover_tests(neverc-plugin-dyncode-tests
 )
 
 add_executable(neverc-plugin-link-tests
+  COFFEnclaveLinkerTests.cpp
   ConcurrentLTOOptionIsolationTests.cpp
   Inputs/Plugin/GCICFPlugin.c
   Inputs/Plugin/InvalidLinkMutationPlugin.c

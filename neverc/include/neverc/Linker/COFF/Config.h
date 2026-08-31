@@ -134,6 +134,7 @@ struct Configuration {
 
   // /guard:cf
   int guardCF = GuardCFLevel::Off;
+  bool guardCFMixed = false;
 
   const LinkerDriverConfig *driverCfg = nullptr;
 
@@ -214,6 +215,7 @@ struct Configuration {
   bool warnMissingOrderSymbol = true;
   bool warnLocallyDefinedImported = true;
   bool warnLongSectionNames = true;
+  bool enclave = false;
   bool incremental = true;
   bool integrityCheck = false;
   bool killAt = false;

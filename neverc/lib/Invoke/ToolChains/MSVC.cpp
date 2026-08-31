@@ -4,6 +4,7 @@
 #include "neverc/Invoke/Compilation.h"
 #include "neverc/Invoke/Driver.h"
 #include "neverc/Invoke/Options.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
@@ -67,6 +68,44 @@ const char *getMSVCRuntimeDefaultLib(const ArgList &Args) {
   default:
     llvm_unreachable("Unexpected option ID.");
   }
+}
+
+bool isMSVCBooleanNoOption(llvm::StringRef Name) {
+  return Name == "allowbind" || Name == "allowisolation" ||
+         Name == "appcontainer" || Name == "cetcompat" ||
+         Name == "dynamicbase" || Name == "fixed" || Name == "highentropyva" ||
+         Name == "incremental" || Name == "inferasanlibs" ||
+         Name == "integritycheck" || Name == "largeaddressaware" ||
+         Name == "nxcompat" || Name == "tsaware";
+}
+
+const char *renderMSVCLinkerOption(const ArgList &Args, llvm::StringRef Value) {
+  if (!Value.starts_with("/") || Value.size() == 1 || Value.starts_with("//"))
+    return Args.MakeArgString(Value);
+
+  auto [Name, Argument] = Value.drop_front().split(':');
+  if (Name.empty() || Name.contains('/'))
+    return Args.MakeArgString(Value);
+
+  std::string NormalizedName = Name.lower().str().str();
+  if (Argument.equals_insensitive("no") &&
+      isMSVCBooleanNoOption(NormalizedName))
+    return Args.MakeArgString("--no-" + NormalizedName);
+
+  std::string Normalized = "--" + NormalizedName;
+  if (!Argument.empty()) {
+    Normalized += '=';
+    Normalized += NormalizedName == "guard" || NormalizedName == "driver"
+                      ? Argument.lower().str().str()
+                      : Argument.str();
+  }
+  return Args.MakeArgString(Normalized);
+}
+
+bool isOrderedVBSEnclaveLinkerOption(llvm::StringRef Option) {
+  return Option == "--enclave" || Option == "--incremental" ||
+         Option == "--no-incremental" || Option == "--integritycheck" ||
+         Option == "--no-integritycheck" || Option.starts_with("--guard=");
 }
 } // namespace
 
@@ -214,7 +253,24 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
         Args.MakeArgString(std::string("--implib=") + ImplibName));
   }
 
-  Args.AddAllArgValues(CmdArgs, options::OPT_Xmslink);
+  llvm::SmallVector<const char *, 8> OrderedVBSEnclaveOptions;
+  for (const Arg *A :
+       Args.filtered(options::OPT_Xmslink, options::OPT_Wl_COMMA)) {
+    for (unsigned I = 0; I != A->getNumValues(); ++I) {
+      const char *Option = renderMSVCLinkerOption(Args, A->getValue(I));
+      if (isOrderedVBSEnclaveLinkerOption(Option))
+        OrderedVBSEnclaveOptions.push_back(Option);
+    }
+  }
+
+  for (const Arg *A : Args.filtered(options::OPT_Xmslink)) {
+    A->claim();
+    for (unsigned I = 0; I != A->getNumValues(); ++I) {
+      const char *Option = renderMSVCLinkerOption(Args, A->getValue(I));
+      if (!isOrderedVBSEnclaveLinkerOption(Option))
+        CmdArgs.push_back(Option);
+    }
+  }
 
   // Control Flow Guard — build a guard spec string for LinkerDriverConfig.
   std::string GuardSpecStr;
@@ -277,10 +333,22 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       continue;
     }
 
+    if (A.getOption().matches(options::OPT_Wl_COMMA)) {
+      A.claim();
+      for (unsigned I = 0; I != A.getNumValues(); ++I) {
+        const char *Option = renderMSVCLinkerOption(Args, A.getValue(I));
+        if (!isOrderedVBSEnclaveLinkerOption(Option))
+          CmdArgs.push_back(Option);
+      }
+      continue;
+    }
+
     // Otherwise, this is some other kind of linker input option like -Wl, -z,
     // or -L. Render it, even if MSVC doesn't understand it.
     A.renderAsInput(Args, CmdArgs);
   }
+
+  CmdArgs.append(OrderedVBSEnclaveOptions);
 
   const char *Exec = Args.MakeArgString(TC.GetLinkerPath());
 
