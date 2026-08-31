@@ -50,6 +50,12 @@ static cl::opt<unsigned> FunctionAlignBytes(
             "aarch64-code-layout-opt-align must be a power of 2");
     }));
 
+namespace llvm {
+unsigned getAArch64CodeLayoutFunctionAlignmentForTesting() {
+  return ::FunctionAlignBytes.getValue();
+}
+} // namespace llvm
+
 STATISTIC(NumFunctionsAligned,
           "Number of functions with aligned (to 64-bytes by default)");
 STATISTIC(NumFcmpFcselPairsDetected,

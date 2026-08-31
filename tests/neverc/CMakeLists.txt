@@ -1835,6 +1835,7 @@ add_executable(neverc-plugin-frontend-tests
   PluginASTReadTests.cpp
   PluginASTSchemaTests.cpp
   PluginCompilerInstanceOutputTests.cpp
+  PluginLLVMOptionOrdinaryErrorTests.cpp
   PluginFrontendABICompileTests.cpp
   PluginFrontendTestSupport.cpp
   PluginMacroTests.cpp
@@ -1856,6 +1857,15 @@ target_link_libraries(neverc-plugin-frontend-tests PRIVATE
   # symbol instead of depending on static-archive member-pull ordering.
   nevercPluginLink
 )
+if("AArch64" IN_LIST LLVM_TARGETS_TO_BUILD)
+  target_link_libraries(neverc-plugin-frontend-tests PRIVATE
+    LLVMAArch64AsmParser
+    LLVMAArch64CodeGen
+    LLVMAArch64Desc
+    LLVMAArch64Info
+    LLVMAArch64Utils
+  )
+endif()
 target_include_directories(neverc-plugin-frontend-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
