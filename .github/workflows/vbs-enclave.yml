@@ -1,0 +1,191 @@
+name: VBS enclave differential CI
+
+on:
+  push:
+    branches: [dev, codex/vbs-enclave]
+    paths:
+      - neverc/include/neverc/Linker/**
+      - neverc/lib/Invoke/ToolChains/MSVC.cpp
+      - neverc/lib/Linker/**
+      - tests/neverc/**
+      - utils/ci/run-vbs-enclave-ci.ps1
+      - utils/ci/verify-vbs-enclave-pe.py
+      - .github/workflows/vbs-enclave.yml
+  pull_request:
+    paths:
+      - neverc/include/neverc/Linker/**
+      - neverc/lib/Invoke/ToolChains/MSVC.cpp
+      - neverc/lib/Linker/**
+      - tests/neverc/**
+      - utils/ci/run-vbs-enclave-ci.ps1
+      - utils/ci/verify-vbs-enclave-pe.py
+      - .github/workflows/vbs-enclave.yml
+  workflow_dispatch:
+    inputs:
+      runtime_runner:
+        description: Runner used for the differential runtime probe
+        type: choice
+        options: [windows-2025, vbs-enclave-windows-x64]
+        default: windows-2025
+      require_runtime:
+        description: Fail if the Microsoft reference cannot run
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vbs-enclave-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  static:
+    name: Static PE and Microsoft-reference gate
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Python
+        id: python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12.10"
+
+      - name: Install pinned build tools
+        shell: pwsh
+        run: |
+          choco install ninja -y
+          $cmakeVersion = '3.31.11'
+          Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.zip" -OutFile cmake.zip
+          Expand-Archive cmake.zip C:\tools -Force
+          Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVersion-windows-x86_64\bin"
+
+      - name: Set up MSVC x64
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      - name: Set up sccache
+        uses: mozilla/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
+
+      - name: Configure NeverC without LTO
+        shell: pwsh
+        run: >-
+          cmake -S llvm -B build-vbs -G Ninja
+          -C neverc/cmake/caches/NeverC.cmake
+          -DNEVERC_INCLUDE_TESTS=ON
+          -DNEVERC_ENABLE_LTO=OFF
+          -DLLVM_ENABLE_ASSERTIONS=ON
+          -DLLVM_PARALLEL_COMPILE_JOBS=2
+          -DLLVM_PARALLEL_LINK_JOBS=1
+          -DCMAKE_POLICY_DEFAULT_CMP0141=NEW
+          -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+          -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}"
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build compiler and focused linker tests
+        shell: pwsh
+        run: cmake --build build-vbs --target neverc neverc-plugin-link-tests --parallel 2
+
+      - name: Run focused COFF enclave linker tests
+        shell: pwsh
+        run: >-
+          & .\build-vbs\bin\neverc-plugin-link-tests.exe
+          '--gtest_filter=COFFEnclaveLinkerTest.*'
+
+      - name: Build and compare the three unsigned images
+        shell: pwsh
+        run: >-
+          & .\utils\ci\run-vbs-enclave-ci.ps1
+          -Phase Static
+          -BuildDirectory build-vbs
+          -ArtifactDirectory artifacts\vbs-enclave
+
+      - name: Show sccache statistics
+        if: always()
+        shell: pwsh
+        run: sccache --show-stats
+
+      - name: Upload PE evidence and VEIID runtime images
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vbs-enclave-static
+          path: artifacts/vbs-enclave
+          if-no-files-found: warn
+          retention-days: 14
+
+  runtime:
+    name: Differential runtime (${{ inputs.runtime_runner || 'windows-2025' }})
+    needs: static
+    runs-on: ${{ inputs.runtime_runner || 'windows-2025' }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12.10"
+
+      - name: Set up MSVC x64 and Windows SDK tools
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      - name: Download static artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: vbs-enclave-static
+          path: artifacts/vbs-enclave
+
+      - name: Record OS, VBS, HVCI, and test-signing state
+        shell: pwsh
+        run: |
+          $output = 'artifacts\vbs-enclave\runtime-environment.txt'
+          "Runner: $env:RUNNER_NAME" | Tee-Object -FilePath $output
+          Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber, HyperVisorPresent | Format-List | Tee-Object -FilePath $output -Append
+          try {
+            Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard | Format-List * | Tee-Object -FilePath $output -Append
+          } catch {
+            "Win32_DeviceGuard unavailable: $($_.Exception.Message)" | Tee-Object -FilePath $output -Append
+          }
+          try {
+            bcdedit /enum 2>&1 | Tee-Object -FilePath $output -Append
+          } catch {
+            "bcdedit unavailable: $($_.Exception.Message)" | Tee-Object -FilePath $output -Append
+          }
+
+      - name: Sign last and run reference-first probe
+        shell: pwsh
+        run: |
+          $required = ('${{ inputs.require_runtime }}' -eq 'true') -or ('${{ inputs.runtime_runner }}' -eq 'vbs-enclave-windows-x64')
+          $arguments = @(
+            '-Phase', 'Runtime',
+            '-ArtifactDirectory', 'artifacts\vbs-enclave'
+          )
+          if ($required) { $arguments += '-RequireRuntime' }
+          & .\utils\ci\run-vbs-enclave-ci.ps1 @arguments
+
+      - name: Publish runtime evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vbs-enclave-runtime-${{ github.run_attempt }}
+          path: |
+            artifacts/vbs-enclave/runtime-result.json
+            artifacts/vbs-enclave/runtime-environment.txt
+            artifacts/vbs-enclave/runtime-signed
+            artifacts/vbs-enclave/logs/runtime-*.log
+            artifacts/vbs-enclave/logs/sign-*.log
+            artifacts/vbs-enclave/logs/verify-signature-*.log
+          if-no-files-found: warn
+          retention-days: 14
