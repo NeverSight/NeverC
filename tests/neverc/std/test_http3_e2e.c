@@ -419,6 +419,57 @@ static void http3_test_unified_occupied_port(int occupied_socket_type) {
 
     http3_test_native_socket_close(holder);
     neverc_thread_executor_free(executor);
+
+    http3_test_unified_t retry;
+    memset(&retry, 0, sizeof(retry));
+    retry.server = server;
+    retry.files = &files;
+    retry.result = -1;
+    atomic_init(&retry.completed, 0);
+    (void)snprintf(retry.address, sizeof(retry.address),
+                   "127.0.0.1:%d", port);
+    neverc_thread_executor_t *retry_executor =
+        neverc_thread_executor_create(1U, 1U);
+    CHECK(retry_executor != NULL);
+    int retry_submitted = 0;
+    if (retry_executor) {
+        int submit_result = neverc_thread_executor_submit(
+            retry_executor, http3_test_unified_task, &retry);
+        CHECK(submit_result == NEVERC_THREAD_OK);
+        retry_submitted = submit_result == NEVERC_THREAD_OK;
+    }
+    int retry_ready = retry_submitted &&
+        http3_test_wait_unified_running(server, &retry) == 0;
+    CHECK(retry_ready);
+    if (!retry_ready) {
+        int retry_completed_before_ready = retry_submitted &&
+            atomic_load_explicit(&retry.completed, memory_order_acquire);
+        printf("retry_after=%s completed=%d result=%d running=%d bound=%d\n",
+               kind, retry_completed_before_ready,
+               retry_completed_before_ready ? retry.result : INT_MIN,
+               server ? neverc_http_unified_server_is_running(server) : 0,
+               server ? neverc_http_unified_server_bound_port(server) : -1);
+        fflush(stdout);
+        _Exit(1);
+    }
+    CHECK(neverc_http_unified_server_bound_port(server) == port);
+    neverc_http_unified_server_shutdown(server);
+    CHECK(neverc_thread_executor_shutdown(retry_executor) ==
+          NEVERC_THREAD_OK);
+    int retry_completed = atomic_load_explicit(
+        &retry.completed, memory_order_acquire);
+    printf("retry_after=%s completed=%d result=%d running=%d bound=%d\n",
+           kind, retry_completed,
+           retry_completed ? retry.result : INT_MIN,
+           neverc_http_unified_server_is_running(server),
+           neverc_http_unified_server_bound_port(server));
+    fflush(stdout);
+    CHECK(retry_completed);
+    CHECK(retry.result == 0);
+    CHECK(!neverc_http_unified_server_is_running(server));
+    CHECK(neverc_http_unified_server_bound_port(server) == -1);
+    neverc_thread_executor_free(retry_executor);
+
     neverc_http_unified_server_destroy(server);
     neverc_http_mux_free(mux);
     neverc_network_test_remove_certs(&files);
