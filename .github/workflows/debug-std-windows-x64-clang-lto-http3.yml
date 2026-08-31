@@ -377,10 +377,10 @@ jobs:
               else { $blocker.Dispose() }
             }
 
-            $outText = if (Test-Path $stdout) {
+            [string]$outText = if (Test-Path $stdout) {
               [string](Get-Content $stdout -Raw)
             } else { '' }
-            $errText = if (Test-Path $stderr) {
+            [string]$errText = if (Test-Path $stderr) {
               [string](Get-Content $stderr -Raw)
             } else { '' }
             $passed = -not $timedOut -and $exitCode -eq 0 -and
@@ -401,6 +401,9 @@ jobs:
               $Name, $Mode, $forcedPort, $watch.ElapsedMilliseconds,
               $exitCodeText, $passed, $sawReady, $sawBoth
             Write-Host $caseSummary
+            $stdoutError = ($outText -split "`r?`n" |
+              Where-Object { $_ -match 'error:|FAIL|DIAG' }) -join ' | '
+            $stderrSummary = $errText.Trim()
             $record = [pscustomobject]@{
               name = $Name
               mode = $Mode
@@ -411,9 +414,8 @@ jobs:
               passed = $passed
               saw_reported_readiness = $sawReady
               saw_tcp_udp_same_port = $sawBoth
-              stdout_error = ($outText -split "`r?`n" |
-                  Where-Object { $_ -match 'error:|FAIL|DIAG' }) -join ' | '
-              stderr = $errText.Trim()
+              stdout_error = $stdoutError
+              stderr = $stderrSummary
             }
             $script:summary.Add($record)
             if ($Mode -eq 'natural' -and -not $passed) {
