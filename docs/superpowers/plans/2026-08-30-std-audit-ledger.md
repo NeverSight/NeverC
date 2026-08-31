@@ -33,7 +33,7 @@ This ledger owns every file returned by `rg --files std tests/neverc/std`, plus 
 ## Completeness rules
 
 - All 441 files currently under `std/` are owned by their module row; `std/CMakeLists.txt`, `std/manifest.json`, root-level shared headers, and any residual file are owned by audit 23.
-- All 338 files currently under `tests/neverc/std/` are owned by their module row based on the tested module name; cross-module tests (`test_dot_syntax.c`, `test_crypto_ctx_abi.c`, `test_network_builtin.c`, and similar), shared support files, interop servers/scripts, and any residual file are owned by audit 23 unless rows 14, 19, or 20 explicitly claim them.
+- All 334 files currently under `tests/neverc/std/` are owned by their module row based on the tested module name; cross-module tests (`test_dot_syntax.c`, `test_crypto_ctx_abi.c`, `test_network_builtin.c`, and similar), shared support files, interop servers/scripts, and any residual file are owned by audit 23 unless rows 14, 19, or 20 explicitly claim them. The four named harness/fuzzer files outside that directory are counted separately in the ledger scope.
 - Generated/static tables (`std/src/html/html_entities.h`, `std/src/unicode/unicode_tables.h`, `std/src/strconv/{pow10_eisel.h,ryu_table.h}`, `std/src/hash/_wyhash_final3.h`, `std/src/crypto/aes/aes_ct_sbox.h`, and `std/src/net/idna_inc.h`) stay with their functional domain; their generator/provenance is part of the review.
 - Every manifest entry and `STD_TEST` registration is checked both by its functional owner and audit 23 for global completeness/duplication.
 - No agent may edit files, compile, or run tests. Findings require exact evidence, consequence, and a focused GitHub-only regression-test proposal.
