@@ -26,7 +26,7 @@ double neverc_math_atan2(double y, double x) {
 
     double q = neverc_math_atan(y / x);
     if (x < 0.0) {
-        if (q <= 0.0) return q + NEVERC_MATH_PI;
+        if (y > 0.0) return q + NEVERC_MATH_PI;
         return q - NEVERC_MATH_PI;
     }
     return q;
