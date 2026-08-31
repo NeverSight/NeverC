@@ -339,13 +339,30 @@ jobs:
             $process.Refresh()
             if (-not $process.HasExited) {
               $timedOut = $true
-              Get-Process -Id $process.Id | Format-List * |
-                Out-String | Set-Content (Join-Path $caseDir 'timeout-process.txt')
-              netstat -ano | Set-Content (Join-Path $caseDir 'timeout-netstat.txt')
-              & taskkill.exe /PID $process.Id /T /F |
-                Set-Content (Join-Path $caseDir 'taskkill.txt')
+              Get-Process -Id $process.Id -ErrorAction SilentlyContinue |
+                Format-List * | Out-String |
+                Set-Content (Join-Path $caseDir 'timeout-process.txt')
+              & netstat.exe -ano 2>&1 |
+                Set-Content (Join-Path $caseDir 'timeout-netstat.txt')
+              $process.Refresh()
+              if (-not $process.HasExited) {
+                try {
+                  & taskkill.exe /PID $process.Id /T /F 2>&1 |
+                    Set-Content (Join-Path $caseDir 'taskkill.txt')
+                } catch {
+                  $_ | Out-String |
+                    Set-Content (Join-Path $caseDir 'taskkill-error.txt')
+                }
+              }
+              if (-not $process.WaitForExit(5000)) {
+                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+                if (-not $process.WaitForExit(5000)) {
+                  throw "diagnostic process $($process.Id) survived forced termination"
+                }
+              }
+            } else {
+              $process.WaitForExit()
             }
-            $process.WaitForExit()
             $watch.Stop()
             $exitCode = $null
             try {
@@ -369,17 +386,28 @@ jobs:
             $passed = -not $timedOut -and $exitCode -eq 0 -and
                       $outText -match '(?m)^passed\r?$'
             $sawReady = $outText -match 'DIAG readiness saw=1'
+            $exitCodeText = if ($timedOut) {
+              'TIMEOUT'
+            } elseif ($null -eq $exitCode) {
+              'UNKNOWN'
+            } else {
+              [string]$exitCode
+            }
+            $caseFormat = (
+              'CASE name={0} mode={1} port={2} elapsed_ms={3} ' +
+              'exit={4} passed={5} ready={6} tcp_udp={7}'
+            )
+            $caseSummary = $caseFormat -f `
+              $Name, $Mode, $forcedPort, $watch.ElapsedMilliseconds,
+              $exitCodeText, $passed, $sawReady, $sawBoth
+            Write-Host $caseSummary
             $record = [pscustomobject]@{
               name = $Name
               mode = $Mode
               forced_port = $forcedPort
               pid = $process.Id
               elapsed_ms = $watch.ElapsedMilliseconds
-              exit_code = if ($timedOut) { 'TIMEOUT' } elseif ($null -eq $exitCode) {
-                'UNKNOWN'
-              } else {
-                [string]$exitCode
-              }
+              exit_code = $exitCodeText
               passed = $passed
               saw_reported_readiness = $sawReady
               saw_tcp_udp_same_port = $sawBoth
