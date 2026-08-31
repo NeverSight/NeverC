@@ -206,6 +206,7 @@ struct neverc_thread_executor {
     size_t queue_count;
     size_t active_count;
     size_t joined_count;
+    size_t exited_count;
     int accepting;
     int shutdown_started;
     int shutdown_complete;
@@ -333,6 +334,11 @@ static void *executor_worker(void *opaque) {
         if (executor->queue_count == 0 && executor->active_count == 0)
             thread_cond_broadcast(&executor->idle);
     }
+    /* This locked publication is the worker's final executor access. After
+     * the unlock it only clears TLS and returns, so exited_count proves that
+     * executor storage may be released even when native join is broken. */
+    executor->exited_count++;
+    thread_cond_broadcast(&executor->stopped);
     thread_mutex_unlock(&executor->mutex);
     neverc_thread_current_executor = NULL;
 
@@ -346,6 +352,19 @@ static void *executor_worker(void *opaque) {
 static int executor_is_current_worker(
     neverc_thread_executor_t *executor) {
     return executor && neverc_thread_current_executor == executor;
+}
+
+static void executor_wait_for_worker_exits(
+    neverc_thread_executor_t *executor, size_t target) {
+    thread_mutex_lock(&executor->mutex);
+    while (executor->exited_count < target) {
+        /* A wait error cannot justify releasing worker-owned storage. Retry
+         * fail-closed; a persistent platform failure may block teardown, but
+         * it cannot turn into a use-after-free. */
+        (void)thread_cond_wait(&executor->stopped, &executor->mutex,
+                               NULL);
+    }
+    thread_mutex_unlock(&executor->mutex);
 }
 
 neverc_thread_executor_t *neverc_thread_executor_create(
@@ -425,23 +444,18 @@ neverc_thread_executor_t *neverc_thread_executor_create(
 
     if (created != worker_count) {
         thread_mutex_lock(&executor->mutex);
+        executor->worker_count = created;
         executor->accepting = 0;
         thread_cond_broadcast(&executor->not_empty);
         thread_mutex_unlock(&executor->mutex);
 
-        for (size_t i = 0; i < created; ++i) {
-#if defined(_WIN32)
-            (void)WaitForSingleObject(executor->threads[i], INFINITE);
-            CloseHandle(executor->threads[i]);
-            executor->threads[i] = NULL;
-            executor->thread_ids[i] = 0;
-#else
-            pthread_t handle = executor->threads[i];
-            memset(&executor->threads[i], 0, sizeof(executor->threads[i]));
-            (void)pthread_join(handle, NULL);
-            executor->thread_ids[i] = 0;
-#endif
-        }
+        (void)neverc_thread_executor_shutdown(executor);
+        executor_wait_for_worker_exits(executor, created);
+        /* Retry native handle cleanup after every created worker has exited.
+         * If the platform still rejects join/close, the exit proof below
+         * keeps C storage destruction safe at the cost of a native resource
+         * leak. */
+        (void)neverc_thread_executor_shutdown(executor);
         executor_sync_destroy(executor);
         NEVERC_THREAD_FREE(executor->thread_ids);
         NEVERC_THREAD_FREE(executor->threads);
@@ -674,11 +688,10 @@ void neverc_thread_executor_free(
     if (!executor || executor_is_current_worker(executor))
         return;
     (void)neverc_thread_executor_shutdown(executor);
-    thread_mutex_lock(&executor->mutex);
-    int shutdown_complete = executor->shutdown_complete;
-    thread_mutex_unlock(&executor->mutex);
-    if (!shutdown_complete)
-        return;
+    executor_wait_for_worker_exits(executor, executor->worker_count);
+    /* As in partial-create cleanup, worker exit is the memory-safety proof;
+     * this retry is best-effort cleanup for native join resources. */
+    (void)neverc_thread_executor_shutdown(executor);
     executor_sync_destroy(executor);
     NEVERC_THREAD_FREE(executor->thread_ids);
     NEVERC_THREAD_FREE(executor->threads);
