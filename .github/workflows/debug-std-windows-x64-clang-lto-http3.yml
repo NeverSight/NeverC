@@ -37,6 +37,7 @@ jobs:
       FORMAL_ARTIFACT_ID: '9739946451'
       FORMAL_ARTIFACT_NAME: windows-x64-neverc-clang-lto
       FORMAL_ARTIFACT_DIGEST: sha256:a029f319025e8aecdd896b681b0c960adfca163c5cf6a36c74ae2bbab8366588
+      EXPECTED_STD_SOURCE_COUNT: '246'
 
     steps:
       - name: Checkout exact tagged source
@@ -110,7 +111,7 @@ jobs:
         with:
           arch: x64
 
-      - name: Restore exact compiler and prepare focused source
+      - name: Restore exact formal compiler
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -125,34 +126,134 @@ jobs:
           }
           & $compiler --version 2>&1 | Set-Content evidence/compiler-version.txt
           if ($LASTEXITCODE -ne 0) { throw 'formal compiler did not start' }
-          Copy-Item tests/neverc/std/test_http3_e2e.c `
-            tests/neverc/std/diagnostic_http3_e2e.c
 
       - name: Record focused regression source
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Get-FileHash tests/neverc/std/diagnostic_http3_e2e.c `
+          Get-FileHash tests/neverc/std/test_http3_e2e.c `
             -Algorithm SHA256 | Format-List | Out-String |
             Set-Content evidence/source.sha256.txt
 
-      - name: Compile once with the exact formal compiler
+      - name: Build tagged std and focused test with the exact formal compiler
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force diagnostic-bin | Out-Null
+          New-Item -ItemType Directory -Force `
+            diagnostic-bin/std-objects | Out-Null
           $compiler = (Resolve-Path 'formal-toolchain/install/bin/neverc.exe').Path
-          $output = Join-Path $PWD 'diagnostic-bin/test_http3_e2e.exe'
-          $arguments = @(
+          $archiverCommand = Get-Command lib.exe -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $archiverCommand) {
+            throw 'lib.exe is unavailable after MSVC setup'
+          }
+          $archiver = $archiverCommand.Source
+          (Get-Item $archiver).VersionInfo | Format-List | Out-String |
+            Set-Content evidence/archiver-version.txt
+
+          & git diff --quiet --exit-code
+          if ($LASTEXITCODE -ne 0) { throw 'tagged tracked source is modified' }
+          & git diff --cached --quiet --exit-code
+          if ($LASTEXITCODE -ne 0) { throw 'tagged index is modified' }
+          $sourceStatus = @(& git status --porcelain=v1 `
+            --untracked-files=all -- std/src std/include `
+            tests/neverc/std/test_http3_e2e.c)
+          if ($LASTEXITCODE -ne 0 -or $sourceStatus.Count -ne 0) {
+            $sourceStatus | Set-Content evidence/unexpected-source-status.txt
+            throw 'tagged std/test source tree is not pristine'
+          }
+          $sources = @(& git ls-files -- ':(glob)std/src/**/*.c')
+          if ($LASTEXITCODE -ne 0 -or
+              $sources.Count -ne [int]$env:EXPECTED_STD_SOURCE_COUNT) {
+            throw "unexpected tracked std source count: $($sources.Count)"
+          }
+          $diskSources = @(Get-ChildItem std/src -Recurse -File -Filter '*.c')
+          if ($diskSources.Count -ne $sources.Count) {
+            throw "tracked/on-disk std source mismatch: $($sources.Count)/$($diskSources.Count)"
+          }
+          $sources | Set-Content evidence/std-sources.txt
+          foreach ($source in $sources) {
+            $blob = (& git hash-object -- $source).Trim()
+            if ($LASTEXITCODE -ne 0 -or -not $blob) {
+              throw "could not hash tagged std source: $source"
+            }
+            $headBlob = (& git rev-parse "HEAD:$source").Trim()
+            if ($LASTEXITCODE -ne 0 -or -not $headBlob) {
+              throw "could not resolve tagged std blob: $source"
+            }
+            "$headBlob $blob $source" |
+              Add-Content evidence/std-source-blobs.txt
+          }
+
+          $stdFlags = @(
+            '--target=x86_64-pc-windows-msvc',
             "-I$PWD/std/include",
             "-I$PWD/std/src/net",
+            '-fno-builtin-std',
+            '-fno-builtin-mimalloc',
+            '-fno-lto',
+            '-ffreestanding',
+            '-std=gnu11',
+            '-O2',
+            '-gline-tables-only',
+            '-w'
+          )
+          $objects = [System.Collections.Generic.List[string]]::new()
+          for ($index = 0; $index -lt $sources.Count; $index++) {
+            $source = (Resolve-Path $sources[$index]).Path
+            $object = Join-Path $PWD (
+              'diagnostic-bin/std-objects/std-{0:d4}.obj' -f $index)
+            $arguments = @($stdFlags) + @('-c', $source, '-o', $object)
+            ($compiler + ' ' + ($arguments -join ' ')) |
+              Add-Content evidence/std-compile-commands.txt
+            & $compiler @arguments 1>> evidence/std-compile.stdout.txt `
+                                  2>> evidence/std-compile.stderr.txt
+            if ($LASTEXITCODE -ne 0 -or
+                -not (Test-Path $object -PathType Leaf) -or
+                (Get-Item $object).Length -eq 0) {
+              throw "tagged std compile failed: $($sources[$index])"
+            }
+            $objects.Add($object)
+          }
+
+          $archive = Join-Path $PWD 'diagnostic-bin/neverc-std-current.lib'
+          $response = Join-Path $PWD 'diagnostic-bin/std-objects.rsp'
+          $objects | ForEach-Object { '"' + $_ + '"' } |
+            Set-Content -Encoding ascii $response
+          Copy-Item $response evidence/std-objects.rsp
+          & $archiver /NOLOGO /MACHINE:X64 "/OUT:$archive" "@$response" `
+            1> evidence/archive.stdout.txt 2> evidence/archive.stderr.txt
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $archive -PathType Leaf)) {
+            throw 'tagged std archive creation failed'
+          }
+          $memberOutput = @(& $archiver /NOLOGO /LIST $archive 2>&1)
+          $memberExit = $LASTEXITCODE
+          $memberOutput | Set-Content evidence/archive-members-raw.txt
+          $members = @($memberOutput | Where-Object { $_ -match '\.obj$' })
+          if ($memberExit -ne 0 -or $members.Count -ne $sources.Count) {
+            throw "unexpected tagged std archive member count: $($members.Count)"
+          }
+          $members | Set-Content evidence/archive-members.txt
+          Get-FileHash $archive -Algorithm SHA256 |
+            Format-List | Out-String | Set-Content evidence/archive.sha256.txt
+
+          $output = Join-Path $PWD 'diagnostic-bin/test_http3_e2e.exe'
+          $arguments = @(
+            '--target=x86_64-pc-windows-msvc',
+            "-I$PWD/std/include",
+            "-I$PWD/std/src/net",
+            "-I$PWD/tests/neverc/std",
+            '-fno-builtin-std',
+            '-fno-builtin-mimalloc',
+            '-fno-lto',
             '-Wall',
             '-Wextra',
             '-Wno-unused-parameter',
             '-Wno-unused-function',
             '-O1',
             '-o', $output,
-            (Join-Path $PWD 'tests/neverc/std/diagnostic_http3_e2e.c'),
+            (Join-Path $PWD 'tests/neverc/std/test_http3_e2e.c'),
+            $archive,
             '-Wno-deprecated-declarations'
           )
           ($compiler + ' ' + ($arguments -join ' ')) |
