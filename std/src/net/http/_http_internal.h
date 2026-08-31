@@ -84,6 +84,7 @@ int nc_http_writer_add_header(neverc_http_response_writer_t *writer,
                               const char *name, const char *value);
 int nc_http_mux_is_streaming(neverc_http_mux_t *mux, const char *method,
                              const char *path);
+int nc_http_server_is_running(const neverc_http_server_t *server);
 
 typedef void (*nc_http_context_destroy_func_t)(void *context);
 

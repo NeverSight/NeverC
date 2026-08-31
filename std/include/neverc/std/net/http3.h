@@ -179,8 +179,12 @@ int neverc_http_unified_server_listen_and_serve(
     const char *cert_file, const char *key_file);
 void neverc_http_unified_server_shutdown(
     neverc_http_unified_server_t *server);
+/* True only while both the TCP HTTP/1.1+HTTP/2 listener and the UDP HTTP/3
+ * listener are ready. Startup, partial failure and shutdown return false. */
 int neverc_http_unified_server_is_running(
     const neverc_http_unified_server_t *server);
+/* Return the shared TCP/UDP port only while the unified server is ready;
+ * otherwise return -1. */
 int neverc_http_unified_server_bound_port(
     const neverc_http_unified_server_t *server);
 

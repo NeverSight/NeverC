@@ -4380,6 +4380,10 @@ int neverc_http_server_bound_port(neverc_http_server_t *server) {
     return server ? nc_atomic_load(&server->bound_port) : 0;
 }
 
+int nc_http_server_is_running(const neverc_http_server_t *server) {
+    return server ? nc_atomic_load(&server->running) : 0;
+}
+
 static neverc_http_server_config_t legacy_server_config(void) {
     neverc_http_server_config_t config = neverc_http_server_config_default();
     config.workers = g_config_workers;

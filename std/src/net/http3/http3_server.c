@@ -2353,21 +2353,58 @@ struct neverc_http_unified_server {
     nc_thread_t tcp_thread;
     int tcp_thread_started;
     int tcp_result;
-    _Atomic int bound_port;
-    _Atomic int serving;
-    _Atomic int running;
-    _Atomic int stop_requested;
+    int bound_port;
+    int serving;
+    int stop_requested;
+    int active_shutdowns;
     nc_mutex_t lock;
     nc_cond_t serve_done;
 };
 
+static int h3_unified_ready_locked(
+    const neverc_http_unified_server_t *server) {
+    return server->serving && !server->stop_requested && server->http &&
+        server->http3 && nc_http_server_is_running(server->http) &&
+        neverc_http3_server_is_running(server->http3);
+}
+
+static void h3_unified_request_shutdown(
+    neverc_http_unified_server_t *server) {
+    neverc_http_server_t *http = NULL;
+    neverc_http3_server_t *http3 = NULL;
+
+    nc_mutex_lock(&server->lock);
+    if (server->serving) {
+        server->stop_requested = 1;
+        http = server->http;
+        http3 = server->http3;
+        if (http || http3) server->active_shutdowns++;
+    }
+    nc_mutex_unlock(&server->lock);
+
+    if (http3) neverc_http3_server_stop(http3);
+    if (http) neverc_http_server_shutdown(http);
+
+    if (http || http3) {
+        nc_mutex_lock(&server->lock);
+        server->active_shutdowns--;
+        nc_cond_broadcast(&server->serve_done);
+        nc_mutex_unlock(&server->lock);
+    }
+}
+
 static void *h3_unified_tcp_worker(void *argument) {
     neverc_http_unified_server_t *server =
         (neverc_http_unified_server_t *)argument;
-    server->tcp_result = neverc_http_server_listen_and_serve_tls(
+    int result = neverc_http_server_listen_and_serve_tls(
         server->http, server->addr, server->cert_file,
         server->key_file);
-    neverc_http3_server_stop(server->http3);
+    nc_mutex_lock(&server->lock);
+    server->tcp_result = result;
+    server->stop_requested = 1;
+    neverc_http3_server_t *http3 = server->http3;
+    nc_mutex_unlock(&server->lock);
+    if (http3) neverc_http3_server_stop(http3);
     return NULL;
 }
 
@@ -2377,7 +2414,7 @@ neverc_http_unified_server_t *neverc_http_unified_server_create(
         (neverc_http_unified_server_t *)calloc(1, sizeof(*server));
     if (!server) return NULL;
     server->mux = mux;
-    atomic_store_explicit(&server->bound_port, -1, memory_order_release);
+    server->bound_port = -1;
     nc_mutex_init(&server->lock);
     nc_cond_init(&server->serve_done);
     return server;
@@ -2385,15 +2422,7 @@ neverc_http_unified_server_t *neverc_http_unified_server_create(
 
 void neverc_http_unified_server_shutdown(
     neverc_http_unified_server_t *server) {
-    if (!server || !atomic_load_explicit(&server->serving,
-                                         memory_order_acquire))
-        return;
-    atomic_store_explicit(&server->stop_requested, 1,
-                          memory_order_release);
-    nc_mutex_lock(&server->lock);
-    if (server->http3) neverc_http3_server_stop(server->http3);
-    if (server->http) neverc_http_server_shutdown(server->http);
-    nc_mutex_unlock(&server->lock);
+    if (server) h3_unified_request_shutdown(server);
 }
 
 void neverc_http_unified_server_destroy(
@@ -2401,7 +2430,7 @@ void neverc_http_unified_server_destroy(
     if (!server) return;
     neverc_http_unified_server_shutdown(server);
     nc_mutex_lock(&server->lock);
-    while (atomic_load_explicit(&server->serving, memory_order_acquire))
+    while (server->serving)
         nc_cond_wait(&server->serve_done, &server->lock);
     nc_mutex_unlock(&server->lock);
     nc_cond_destroy(&server->serve_done);
@@ -2411,26 +2440,53 @@ void neverc_http_unified_server_destroy(
 
 int neverc_http_unified_server_is_running(
     const neverc_http_unified_server_t *server) {
-    return server ? atomic_load_explicit(&server->running,
-                                          memory_order_acquire) : 0;
+    if (!server) return 0;
+    neverc_http_unified_server_t *mutable_server =
+        (neverc_http_unified_server_t *)server;
+    nc_mutex_lock(&mutable_server->lock);
+    int running = h3_unified_ready_locked(server);
+    nc_mutex_unlock(&mutable_server->lock);
+    return running;
 }
 
 int neverc_http_unified_server_bound_port(
     const neverc_http_unified_server_t *server) {
-    return server ? atomic_load_explicit(&server->bound_port,
-                                          memory_order_acquire) : -1;
+    if (!server) return -1;
+    neverc_http_unified_server_t *mutable_server =
+        (neverc_http_unified_server_t *)server;
+    nc_mutex_lock(&mutable_server->lock);
+    int port = h3_unified_ready_locked(server) ? server->bound_port : -1;
+    nc_mutex_unlock(&mutable_server->lock);
+    return port;
 }
 
 int neverc_http_unified_server_listen_and_serve(
     neverc_http_unified_server_t *server, const char *addr,
     const char *cert_file, const char *key_file) {
-    if (!server || !addr || !cert_file || !key_file ||
-        atomic_exchange_explicit(&server->serving, 1,
-                                 memory_order_acq_rel)) {
+    if (!server || !addr || !cert_file || !key_file) {
         errno = EINVAL;
         return -1;
     }
-    atomic_store_explicit(&server->stop_requested, 0, memory_order_release);
+
+    nc_mutex_lock(&server->lock);
+    if (server->serving) {
+        nc_mutex_unlock(&server->lock);
+        errno = EINVAL;
+        return -1;
+    }
+    server->serving = 1;
+    server->stop_requested = 0;
+    server->active_shutdowns = 0;
+    server->bound_port = -1;
+    server->http = NULL;
+    server->http3 = NULL;
+    server->addr = NULL;
+    server->cert_file = NULL;
+    server->key_file = NULL;
+    server->tcp_thread_started = 0;
+    server->tcp_result = -1;
+    nc_mutex_unlock(&server->lock);
+
     int result = -1;
     char host[256];
     uint16_t port = 0;
@@ -2459,26 +2515,29 @@ int neverc_http_unified_server_listen_and_serve(
     server->cert_file = cert_file;
     server->key_file = key_file;
     server->tcp_result = -1;
-    atomic_store_explicit(&server->bound_port, (int)port,
-                          memory_order_release);
-    atomic_store_explicit(&server->running, 1, memory_order_release);
+    server->bound_port = (int)port;
+    int stop_requested = server->stop_requested;
     nc_mutex_unlock(&server->lock);
 
+    if (stop_requested) {
+        result = 0;
+        h3_unified_request_shutdown(server);
+        goto release_servers;
+    }
     if (nc_thread_create(&server->tcp_thread, h3_unified_tcp_worker,
                          server) != 0) {
-        atomic_store_explicit(&server->running, 0, memory_order_release);
         goto release_servers;
     }
     server->tcp_thread_started = 1;
-    if (atomic_load_explicit(&server->stop_requested, memory_order_acquire))
-        neverc_http_unified_server_shutdown(server);
     int h3_result = neverc_http3_listen_and_serve(
         addr, http3, cert_file, key_file);
-    neverc_http_server_shutdown(http);
+    h3_unified_request_shutdown(server);
     (void)nc_thread_join(server->tcp_thread);
     server->tcp_thread_started = 0;
-    atomic_store_explicit(&server->running, 0, memory_order_release);
-    result = h3_result == 0 && server->tcp_result == 0 ? 0 : -1;
+    nc_mutex_lock(&server->lock);
+    int tcp_result = server->tcp_result;
+    nc_mutex_unlock(&server->lock);
+    result = h3_result == 0 && tcp_result == 0 ? 0 : -1;
 
 release_servers:
     nc_mutex_lock(&server->lock);
@@ -2487,14 +2546,17 @@ release_servers:
     server->addr = NULL;
     server->cert_file = NULL;
     server->key_file = NULL;
+    server->bound_port = -1;
+    while (server->active_shutdowns > 0)
+        nc_cond_wait(&server->serve_done, &server->lock);
     nc_mutex_unlock(&server->lock);
     neverc_http3_server_destroy(http3);
     neverc_http_server_free(http);
 
 done:
-    atomic_store_explicit(&server->running, 0, memory_order_release);
-    atomic_store_explicit(&server->serving, 0, memory_order_release);
     nc_mutex_lock(&server->lock);
+    server->bound_port = -1;
+    server->serving = 0;
     nc_cond_broadcast(&server->serve_done);
     nc_mutex_unlock(&server->lock);
     return result;
