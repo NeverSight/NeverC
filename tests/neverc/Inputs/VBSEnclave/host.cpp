@@ -1,6 +1,7 @@
 #include <windows.h>
 
 #include <cstdio>
+#include <cwchar>
 
 namespace {
 
