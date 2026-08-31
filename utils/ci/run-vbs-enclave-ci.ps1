@@ -1,0 +1,295 @@
+[CmdletBinding()]
+param(
+  [ValidateSet('Static', 'Runtime')]
+  [string]$Phase = 'Static',
+  [string]$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path,
+  [string]$BuildDirectory = 'build-vbs',
+  [string]$ArtifactDirectory = 'artifacts\vbs-enclave',
+  [string]$NeverCPath = '',
+  [switch]$RequireRuntime
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+
+function Resolve-FullPath {
+  param([Parameter(Mandatory = $true)][string]$PathValue,
+        [Parameter(Mandatory = $true)][string]$BasePath)
+  if ([IO.Path]::IsPathRooted($PathValue)) {
+    return [IO.Path]::GetFullPath($PathValue)
+  }
+  return [IO.Path]::GetFullPath((Join-Path $BasePath $PathValue))
+}
+
+function Require-File {
+  param([Parameter(Mandatory = $true)][string]$PathValue,
+        [Parameter(Mandatory = $true)][string]$Description)
+  if (-not (Test-Path -LiteralPath $PathValue -PathType Leaf)) {
+    throw "$Description was not found at '$PathValue'"
+  }
+  return (Resolve-Path -LiteralPath $PathValue).Path
+}
+
+function Invoke-Logged {
+  param([Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [switch]$AllowFailure)
+  $rendered = @($FilePath) + $Arguments
+  $commandLine = "COMMAND: $($rendered -join ' ')"
+  $commandLine | Set-Content -LiteralPath $LogPath -Encoding utf8
+  Write-Host $commandLine
+  $output = & $FilePath @Arguments 2>&1
+  $exitCode = $LASTEXITCODE
+  $output | Tee-Object -FilePath $LogPath -Append | Out-Host
+  if ($exitCode -ne 0 -and -not $AllowFailure) {
+    throw "command failed with exit code $exitCode; see '$LogPath'"
+  }
+  return [int]$exitCode
+}
+
+function Resolve-Toolchain {
+  if (-not $env:VCToolsInstallDir) {
+    throw 'VCToolsInstallDir is unset; run from an MSVC developer environment'
+  }
+  if (-not $env:WindowsSdkDir -or -not $env:WindowsSDKVersion) {
+    throw 'WindowsSdkDir/WindowsSDKVersion are unset; run from an MSVC developer environment'
+  }
+
+  $vcRoot = $env:VCToolsInstallDir.TrimEnd('\', '/')
+  $sdkRoot = $env:WindowsSdkDir.TrimEnd('\', '/')
+  $sdkVersion = $env:WindowsSDKVersion.TrimEnd('\', '/')
+  $vcBin = Join-Path $vcRoot 'bin\Hostx64\x64'
+  $sdkLib = Join-Path $sdkRoot "Lib\$sdkVersion"
+  $sdkBin = Join-Path $sdkRoot "Bin\$sdkVersion\x64"
+  $vcEnclave = Join-Path $vcRoot 'lib\x64\enclave'
+
+  $paths = [ordered]@{
+    cl = Require-File (Join-Path $vcBin 'cl.exe') 'MSVC compiler'
+    link = Require-File (Join-Path $vcBin 'link.exe') 'MSVC linker'
+    dumpbin = Require-File (Join-Path $vcBin 'dumpbin.exe') 'MSVC dumpbin'
+    enclave_libcmt = Require-File (Join-Path $vcEnclave 'libcmt.lib') 'enclave libcmt.lib'
+    enclave_libvcruntime = Require-File (Join-Path $vcEnclave 'libvcruntime.lib') 'enclave libvcruntime.lib'
+    enclave_ucrt = Require-File (Join-Path $sdkLib 'ucrt_enclave\x64\ucrt.lib') 'enclave ucrt.lib'
+    vertdll = Require-File (Join-Path $sdkLib 'um\x64\vertdll.lib') 'vertdll.lib'
+    bcrypt = Require-File (Join-Path $sdkLib 'um\x64\bcrypt.lib') 'bcrypt.lib'
+    onecore = Require-File (Join-Path $sdkLib 'um\x64\onecore.lib') 'onecore.lib'
+    veiid = Require-File (Join-Path $sdkBin 'veiid.exe') 'VEIID'
+    signtool = Require-File (Join-Path $sdkBin 'signtool.exe') 'SignTool'
+  }
+  return $paths
+}
+
+function Write-Result {
+  param([string]$Status, [string]$Stage, [int]$ErrorCode,
+        [string]$Message, [string]$ResultPath)
+  $result = [ordered]@{
+    status = $Status
+    stage = $Stage
+    error = $ErrorCode
+    message = $Message
+    require_runtime = [bool]$RequireRuntime
+  }
+  $result | ConvertTo-Json | Set-Content -LiteralPath $ResultPath -Encoding utf8
+  $summary = "### VBS enclave runtime: $Status`n`n- Stage: ``$Stage```n- Error: ``$ErrorCode```n- $Message`n"
+  if ($env:GITHUB_STEP_SUMMARY) {
+    $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+  }
+  Write-Host $summary
+}
+
+$repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
+$artifactRoot = Resolve-FullPath $ArtifactDirectory $repository
+$logRoot = Join-Path $artifactRoot 'logs'
+New-Item -ItemType Directory -Force -Path $artifactRoot, $logRoot | Out-Null
+$fixtureRoot = Join-Path $repository 'tests\neverc\Inputs\VBSEnclave'
+$verifier = Require-File (Join-Path $repository 'utils\ci\verify-vbs-enclave-pe.py') 'PE verifier'
+$python = (Get-Command python.exe -ErrorAction Stop).Source
+
+if ($Phase -eq 'Static') {
+  Invoke-Logged $python @($verifier, 'self-test') (Join-Path $logRoot 'verifier-self-test.log') | Out-Null
+  $tools = Resolve-Toolchain
+  $tools.GetEnumerator() | ForEach-Object { Write-Host ("{0}: {1}" -f $_.Key, $_.Value) }
+  $tools | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactRoot 'tool-paths.json') -Encoding utf8
+  $tools.GetEnumerator() | ForEach-Object {
+    $item = Get-Item -LiteralPath $_.Value
+    "{0}`t{1}`t{2}" -f $_.Key, $_.Value, $item.VersionInfo.FileVersion
+  } | Set-Content -LiteralPath (Join-Path $artifactRoot 'tool-versions.txt') -Encoding utf8
+
+  if (-not $NeverCPath) {
+    $NeverCPath = Join-Path (Resolve-FullPath $BuildDirectory $repository) 'bin\neverc.exe'
+  } else {
+    $NeverCPath = Resolve-FullPath $NeverCPath $repository
+  }
+  $neverc = Require-File $NeverCPath 'NeverC compiler'
+  $objectRoot = Join-Path $artifactRoot 'objects'
+  $msvcObjectRoot = Join-Path $objectRoot 'msvc'
+  $nevercObjectRoot = Join-Path $objectRoot 'neverc'
+  $unsignedRoot = Join-Path $artifactRoot 'unsigned'
+  $runtimeRoot = Join-Path $artifactRoot 'runtime'
+  $jsonRoot = Join-Path $artifactRoot 'json'
+  New-Item -ItemType Directory -Force -Path $msvcObjectRoot, $nevercObjectRoot, $unsignedRoot, $runtimeRoot, $jsonRoot | Out-Null
+
+  $guardedSources = @('enclave.cpp', 'guarded.cpp')
+  foreach ($sourceName in $guardedSources) {
+    $source = Join-Path $fixtureRoot $sourceName
+    $object = Join-Path $msvcObjectRoot ($sourceName + '.obj')
+    Invoke-Logged $tools.cl @('/nologo', '/c', '/std:c++17', '/guard:cf', '/GS-', "/Fo$object", $source) (Join-Path $logRoot "cl-$sourceName.log") | Out-Null
+    $nevercObject = Join-Path $nevercObjectRoot ($sourceName + '.obj')
+    Invoke-Logged $neverc @('--target=x86_64-pc-windows-msvc', '-x', 'c', '-fno-lto', '-fno-builtin-mimalloc', '-c', '-fms-guard=cf', $source, '-o', $nevercObject) (Join-Path $logRoot "neverc-$sourceName.log") | Out-Null
+  }
+  $legacySource = Join-Path $fixtureRoot 'legacy.cpp'
+  $legacyMsvc = Join-Path $msvcObjectRoot 'legacy.cpp.obj'
+  Invoke-Logged $tools.cl @('/nologo', '/c', '/std:c++17', '/GS-', "/Fo$legacyMsvc", $legacySource) (Join-Path $logRoot 'cl-legacy.cpp.log') | Out-Null
+  $legacyNeverC = Join-Path $nevercObjectRoot 'legacy.cpp.obj'
+  Invoke-Logged $neverc @('--target=x86_64-pc-windows-msvc', '-x', 'c', '-fno-lto', '-fno-builtin-mimalloc', '-c', $legacySource, '-o', $legacyNeverC) (Join-Path $logRoot 'neverc-legacy.cpp.log') | Out-Null
+
+  $host = Join-Path $artifactRoot 'vbs-enclave-host.exe'
+  Invoke-Logged $tools.cl @('/nologo', '/std:c++17', (Join-Path $fixtureRoot 'host.cpp'), "/Fe$host", '/link', '/INCREMENTAL:NO', $tools.onecore) (Join-Path $logRoot 'build-host.log') | Out-Null
+
+  $libraries = @($tools.vertdll, $tools.bcrypt, $tools.enclave_libcmt,
+                 $tools.enclave_libvcruntime, $tools.enclave_ucrt)
+  $msLinkFlags = @('/NOLOGO', '/DLL', '/INCREMENTAL:NO', '/NODEFAULTLIB',
+                   '/ENCLAVE', '/INTEGRITYCHECK', '/GUARD:MIXED',
+                   '/DYNAMICBASE', '/MACHINE:X64')
+  $outputs = [ordered]@{
+    'msvc-msvc.dll' = @(
+      (Join-Path $msvcObjectRoot 'enclave.cpp.obj'),
+      (Join-Path $msvcObjectRoot 'guarded.cpp.obj'), $legacyMsvc)
+    'neverc-msvc.dll' = @(
+      (Join-Path $nevercObjectRoot 'enclave.cpp.obj'),
+      (Join-Path $nevercObjectRoot 'guarded.cpp.obj'), $legacyNeverC)
+  }
+  foreach ($entry in $outputs.GetEnumerator()) {
+    $output = Join-Path $unsignedRoot $entry.Key
+    $arguments = @($msLinkFlags) + @("/OUT:$output", "/IMPLIB:$output.lib") + $entry.Value + $libraries
+    Invoke-Logged $tools.link $arguments (Join-Path $logRoot ("link-{0}.log" -f $entry.Key)) | Out-Null
+  }
+
+  $integrated = Join-Path $unsignedRoot 'neverc-neverc.dll'
+  $candidateArguments = @(
+    '--target=x86_64-pc-windows-msvc', '-fno-lto', '-shared', '-nostdlib',
+    (Join-Path $nevercObjectRoot 'enclave.cpp.obj'),
+    (Join-Path $nevercObjectRoot 'guarded.cpp.obj'), $legacyNeverC
+  ) + $libraries + @(
+    '-Xmslink', '/INCREMENTAL:NO', '-Xmslink', '/NODEFAULTLIB',
+    '-Xmslink', '/ENCLAVE', '-Xmslink', '/INTEGRITYCHECK',
+    '-Xmslink', '/GUARD:MIXED', '-Xmslink', '/DYNAMICBASE',
+    '-Xmslink', '/MACHINE:X64', '-o', $integrated
+  )
+  Invoke-Logged $neverc $candidateArguments (Join-Path $logRoot 'link-neverc-neverc.dll.log') | Out-Null
+
+  foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll')) {
+    $image = Join-Path $unsignedRoot $name
+    Invoke-Logged $python @($verifier, 'inspect', $image, '--json', (Join-Path $jsonRoot "$name.json")) (Join-Path $logRoot "verify-$name.log") | Out-Null
+    Invoke-Logged $tools.dumpbin @('/headers', '/loadconfig', $image) (Join-Path $artifactRoot "$name.dumpbin.txt") | Out-Null
+  }
+  Invoke-Logged $python @($verifier, 'compare',
+    (Join-Path $unsignedRoot 'neverc-msvc.dll'),
+    (Join-Path $unsignedRoot 'neverc-neverc.dll')) (Join-Path $logRoot 'compare-neverc-linkers.log') | Out-Null
+
+  # Static semantics are checked on the untouched images. Only then do we make
+  # runtime copies and let VEIID mutate them. Signing happens last in Runtime.
+  foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll')) {
+    $runtimeImage = Join-Path $runtimeRoot $name
+    Copy-Item -LiteralPath (Join-Path $unsignedRoot $name) -Destination $runtimeImage -Force
+    Invoke-Logged $tools.veiid @($runtimeImage) (Join-Path $logRoot "veiid-$name.log") | Out-Null
+  }
+  Write-Host "STATIC PASS: unsigned PE semantics match; VEIID runtime copies are ready in '$runtimeRoot'"
+  exit 0
+}
+
+$resultPath = Join-Path $artifactRoot 'runtime-result.json'
+try {
+  $tools = Resolve-Toolchain
+  $host = Require-File (Join-Path $artifactRoot 'vbs-enclave-host.exe') 'runtime host'
+  $runtimeRoot = Join-Path $artifactRoot 'runtime'
+  $signedRoot = Join-Path $artifactRoot 'runtime-signed'
+  New-Item -ItemType Directory -Force -Path $signedRoot | Out-Null
+
+  $certificate = $null
+  $certificateInMachineStore = $false
+  if ($env:VBS_ENCLAVE_CERT_THUMBPRINT) {
+    $certificate = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My |
+      Where-Object Thumbprint -eq $env:VBS_ENCLAVE_CERT_THUMBPRINT |
+      Select-Object -First 1
+    if (-not $certificate) {
+      throw "VBS_ENCLAVE_CERT_THUMBPRINT does not identify an installed certificate"
+    }
+    $certificateInMachineStore = $certificate.PSPath -like '*LocalMachine*'
+  } elseif ($RequireRuntime) {
+    throw 'required runtime needs a preinstalled VBS_ENCLAVE_CERT_THUMBPRINT certificate'
+  } else {
+    $certificate = New-SelfSignedCertificate `
+      -CertStoreLocation 'Cert:\CurrentUser\My' `
+      -DnsName 'NeverC ephemeral VBS enclave CI' `
+      -KeyUsage DigitalSignature -KeySpec Signature -KeyLength 2048 `
+      -KeyAlgorithm RSA -HashAlgorithm SHA256 `
+      -TextExtension @(
+        '2.5.29.37={text}1.3.6.1.5.5.7.3.3,1.3.6.1.4.1.311.76.57.1.15,1.3.6.1.4.1.311.97.814040577.346743379.4783502.105532346')
+    $certificatePath = Join-Path $artifactRoot 'ephemeral-vbs-enclave-ci.cer'
+    Export-Certificate -Cert $certificate -FilePath $certificatePath -Force | Out-Null
+    Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
+  }
+
+  foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll')) {
+    $source = Require-File (Join-Path $runtimeRoot $name) "VEIID runtime image $name"
+    $signed = Join-Path $signedRoot $name
+    Copy-Item -LiteralPath $source -Destination $signed -Force
+    $signArguments = @('sign', '/ph', '/fd', 'SHA256')
+    if ($certificateInMachineStore) { $signArguments += '/sm' }
+    $signArguments += @('/sha1', $certificate.Thumbprint, $signed)
+    Invoke-Logged $tools.signtool $signArguments (Join-Path $logRoot "sign-$name.log") | Out-Null
+    Invoke-Logged $tools.signtool @('verify', '/pa', '/v', $signed) (Join-Path $logRoot "verify-signature-$name.log") | Out-Null
+  }
+
+  function Invoke-RuntimeImage {
+    param([string]$Name)
+    $image = Join-Path $signedRoot $Name
+    $log = Join-Path $logRoot "runtime-$Name.log"
+    $exitCode = Invoke-Logged $host @($image) $log -AllowFailure
+    $stage = 'Complete'
+    $errorCode = 0
+    if ($exitCode -ne 0) {
+      $failureLine = Get-Content -LiteralPath $log |
+        Where-Object { $_ -match 'VBS_STAGE=(\S+) STATUS=FAIL ERROR=(\d+)' } |
+        Select-Object -Last 1
+      if ($failureLine -and $failureLine -match 'VBS_STAGE=(\S+) STATUS=FAIL ERROR=(\d+)') {
+        $stage = $Matches[1]
+        $errorCode = [int]$Matches[2]
+      } else {
+        $stage = 'HostProcess'
+        $errorCode = $exitCode
+      }
+    }
+    return [pscustomobject]@{ Name = $Name; ExitCode = $exitCode; Stage = $stage; Error = $errorCode }
+  }
+
+  $reference = Invoke-RuntimeImage 'msvc-msvc.dll'
+  if ($reference.ExitCode -ne 0) {
+    $message = "Microsoft reference failed; runner lacks a usable VBS/test-signing environment"
+    if ($RequireRuntime) {
+      Write-Result 'FAIL' $reference.Stage $reference.Error $message $resultPath
+      throw $message
+    }
+    Write-Result 'SKIP' $reference.Stage $reference.Error $message $resultPath
+    exit 0
+  }
+
+  foreach ($candidateName in @('neverc-msvc.dll', 'neverc-neverc.dll')) {
+    $candidate = Invoke-RuntimeImage $candidateName
+    if ($candidate.ExitCode -ne 0) {
+      $message = "$candidateName failed after the Microsoft reference passed"
+      Write-Result 'FAIL' $candidate.Stage $candidate.Error $message $resultPath
+      throw $message
+    }
+  }
+  Write-Result 'PASS' 'Complete' 0 'Reference and both candidates loaded and initialized.' $resultPath
+  exit 0
+} catch {
+  if (-not (Test-Path -LiteralPath $resultPath)) {
+    Write-Result 'FAIL' 'Harness' 1 $_.Exception.Message $resultPath
+  }
+  throw
+}
