@@ -1,9 +1,21 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "neverc/std/hash/crc32.h"
+
 static size_t allocation_count;
 static size_t fail_at;
+static size_t crc_bytes_read;
+
+static uint32_t measured_crc32_ieee(const uint8_t *data, size_t len) {
+    if (len > SIZE_MAX - crc_bytes_read)
+        crc_bytes_read = SIZE_MAX;
+    else
+        crc_bytes_read += len;
+    return neverc_crc32_ieee(data, len);
+}
 
 static int allocation_fails(void) {
     allocation_count++;
@@ -20,7 +32,9 @@ static void *controlled_realloc(void *ptr, size_t size) {
 
 #define malloc controlled_malloc
 #define realloc controlled_realloc
+#define neverc_crc32_ieee measured_crc32_ieee
 #include "../../../std/src/archive/zip/zip.c"
+#undef neverc_crc32_ieee
 #undef malloc
 #undef realloc
 
@@ -36,6 +50,25 @@ static void *controlled_realloc(void *ptr, size_t size) {
 static void reset_allocator(size_t failure) {
     allocation_count = 0;
     fail_at = failure;
+}
+
+static uint32_t test_read32(const uint8_t *p) {
+    return (uint32_t)p[0] |
+           ((uint32_t)p[1] << 8U) |
+           ((uint32_t)p[2] << 16U) |
+           ((uint32_t)p[3] << 24U);
+}
+
+static void test_write16(uint8_t *p, uint16_t value) {
+    p[0] = (uint8_t)value;
+    p[1] = (uint8_t)(value >> 8U);
+}
+
+static void test_write32(uint8_t *p, uint32_t value) {
+    p[0] = (uint8_t)value;
+    p[1] = (uint8_t)(value >> 8U);
+    p[2] = (uint8_t)(value >> 16U);
+    p[3] = (uint8_t)(value >> 24U);
 }
 
 int main(void) {
@@ -104,6 +137,51 @@ int main(void) {
         neverc_zip_reader_free(&r);
     }
     fail_at = 0;
+    neverc_zip_writer_free(&w);
+
+    /* A central directory may repeat one valid local range many times.  The
+     * archive is invalid regardless of the payload bytes, so overlap
+     * rejection must run before CRC work; otherwise a small directory can
+     * amplify hashing of one large payload once per duplicate entry. */
+    reset_allocator(0);
+    neverc_zip_writer_init(&w);
+    enum { duplicate_entries = 64, payload_size = 4096 };
+    uint8_t payload[payload_size];
+    memset(payload, 'z', sizeof(payload));
+    CHECK(neverc_zip_writer_add(&w, "z", payload, sizeof(payload)) == 0);
+    CHECK(neverc_zip_writer_close(&w) == 0);
+    CHECK(w.len >= 22U);
+    size_t eocd = w.len - 22U;
+    uint32_t central_offset = test_read32(w.data + eocd + 16U);
+    uint32_t central_size = test_read32(w.data + eocd + 12U);
+    CHECK(central_size > 0U);
+    CHECK((uint64_t)central_offset + central_size <= eocd);
+    size_t duplicate_size =
+        (size_t)central_offset + (size_t)central_size * duplicate_entries + 22U;
+    uint8_t *duplicate = (uint8_t *)malloc(duplicate_size);
+    CHECK(duplicate != NULL);
+    memcpy(duplicate, w.data, central_offset);
+    for (size_t i = 0; i < duplicate_entries; i++) {
+        memcpy(duplicate + central_offset + i * central_size,
+               w.data + central_offset, central_size);
+    }
+    size_t duplicate_eocd = duplicate_size - 22U;
+    memcpy(duplicate + duplicate_eocd, w.data + eocd, 22U);
+    test_write16(duplicate + duplicate_eocd + 8U, duplicate_entries);
+    test_write16(duplicate + duplicate_eocd + 10U, duplicate_entries);
+    test_write32(duplicate + duplicate_eocd + 12U,
+                 central_size * duplicate_entries);
+
+    crc_bytes_read = 0;
+    neverc_zip_reader_t duplicate_reader;
+    CHECK(neverc_zip_reader_init(
+              &duplicate_reader, duplicate, duplicate_size) == -1);
+    if (crc_bytes_read != 0)
+        fprintf(stderr, "overlapping ZIP hashed %zu payload bytes\n",
+                crc_bytes_read);
+    CHECK(crc_bytes_read == 0);
+    neverc_zip_reader_free(&duplicate_reader);
+    free(duplicate);
     neverc_zip_writer_free(&w);
 
     puts("passed");
