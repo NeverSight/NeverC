@@ -243,8 +243,6 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
             return zip_reader_fail(r, ranges);
         }
         const uint8_t *file_data = data + (size_t)data_offset;
-        if (neverc_crc32_ieee(file_data, compressed_size) != crc)
-            return zip_reader_fail(r, ranges);
 
         /* Bit 3: CRC/sizes live in a data descriptor immediately after the
          * file data (APPNOTE 4.3.9). Local CRC may be zero, so the descriptor
@@ -312,8 +310,17 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
             if (ranges[i].start < ranges[i - 1U].end)
                 return zip_reader_fail(r, ranges);
         }
-        free(ranges);
     }
+    /* Validate the local-range graph before touching payload bytes.  Central
+     * entries can otherwise alias one large stored payload and amplify the
+     * same CRC work once per entry before the overlap is finally rejected. */
+    for (uint16_t i = 0; i < total_entries; i++) {
+        if (neverc_crc32_ieee(r->file_data[i],
+                              r->files[i].compressed_size) !=
+            r->files[i].crc32)
+            return zip_reader_fail(r, ranges);
+    }
+    free(ranges);
     return 0;
 }
 
