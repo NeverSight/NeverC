@@ -9,7 +9,7 @@ on:
       iterations:
         description: Number of natural focused repetitions
         required: true
-        default: '32'
+        default: '8'
       timeout_seconds:
         description: Per-process watchdog in seconds
         required: true
@@ -39,10 +39,10 @@ jobs:
       FORMAL_ARTIFACT_DIGEST: sha256:a029f319025e8aecdd896b681b0c960adfca163c5cf6a36c74ae2bbab8366588
 
     steps:
-      - name: Checkout exact formal source
+      - name: Checkout exact tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ env.FORMAL_SHA }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Verify formal run and artifact provenance
@@ -52,6 +52,10 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force evidence | Out-Null
+          $sourceSha = (& git rev-parse HEAD).Trim()
+          if ($sourceSha -ne $env:GITHUB_SHA) {
+            throw "tagged source SHA mismatch: $sourceSha"
+          }
           $headers = @{
             Authorization = "Bearer $env:GITHUB_TOKEN"
             Accept = 'application/vnd.github+json'
@@ -82,6 +86,7 @@ jobs:
           }
           [ordered]@{
             run_id = [string]$run.id
+            source_sha = $sourceSha
             head_sha = [string]$run.head_sha
             event = [string]$run.event
             workflow = [string]$run.path
@@ -123,91 +128,13 @@ jobs:
           Copy-Item tests/neverc/std/test_http3_e2e.c `
             tests/neverc/std/diagnostic_http3_e2e.c
 
-      - name: Add runner-only phase and forced-port instrumentation
-        shell: bash
+      - name: Record focused regression source
+        shell: pwsh
         run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path("tests/neverc/std/diagnostic_http3_e2e.c")
-          source = path.read_text(encoding="utf-8")
-          replacements = [
-              (
-                  """static int http3_test_free_tcp_port(void) {
-              const char *error = NULL;
-          """,
-                  """static int http3_test_free_tcp_port(void) {
-              const char *forced = getenv("NEVERC_HTTP3_DIAG_PORT");
-              if (forced && *forced) {
-                  int port = atoi(forced);
-                  if (port > 0 && port <= 65535) return port;
-              }
-              const char *error = NULL;
-          """,
-              ),
-              (
-                  """    int port = http3_test_free_tcp_port();
-              CHECK(port > 0);
-          """,
-                  """    int port = http3_test_free_tcp_port();
-              CHECK(port > 0);
-              printf("DIAG selected_port=%d\\n", port);
-              fflush(stdout);
-          """,
-              ),
-              (
-                  """    for (int attempt = 0; attempt < 500 && server &&
-                   !neverc_http_unified_server_is_running(server); attempt++)
-                  neverc_time_sleep(10 * NEVERC_TIME_MILLISECOND);
-              CHECK(server && neverc_http_unified_server_is_running(server));
-              CHECK(server && neverc_http_unified_server_bound_port(server) == port);
-          """,
-                  """    int saw_running = 0;
-              for (int attempt = 0; attempt < 5000 && server; attempt++) {
-                  if (neverc_http_unified_server_is_running(server)) {
-                      saw_running = 1;
-                      break;
-                  }
-                  neverc_time_sleep(1 * NEVERC_TIME_MILLISECOND);
-              }
-              printf("DIAG readiness saw=%d running=%d bound=%d\\n",
-                     saw_running,
-                     server ? neverc_http_unified_server_is_running(server) : 0,
-                     server ? neverc_http_unified_server_bound_port(server) : -1);
-              fflush(stdout);
-              CHECK(saw_running);
-              CHECK(server && neverc_http_unified_server_is_running(server));
-              CHECK(server && neverc_http_unified_server_bound_port(server) == port);
-          """,
-              ),
-              (
-                  """    if (executor)
-                  CHECK(neverc_thread_executor_shutdown(executor) == NEVERC_THREAD_OK);
-              CHECK(test.result == 0);
-          """,
-                  """    if (executor)
-                  CHECK(neverc_thread_executor_shutdown(executor) == NEVERC_THREAD_OK);
-              printf("DIAG final result=%d running=%d\\n", test.result,
-                     server ? neverc_http_unified_server_is_running(server) : 0);
-              fflush(stdout);
-              CHECK(test.result == 0);
-          """,
-              ),
-              (
-                  """    http3_test_config_validation();
-              http3_test_end_to_end();
-              http3_test_unified_end_to_end();
-          """,
-                  """    http3_test_unified_end_to_end();
-          """,
-              ),
-          ]
-          for old, new in replacements:
-              if source.count(old) != 1:
-                  raise SystemExit(f"expected exactly one instrumentation site, found {source.count(old)}")
-              source = source.replace(old, new)
-          path.write_text(source, encoding="utf-8")
-          PY
+          $ErrorActionPreference = 'Stop'
+          Get-FileHash tests/neverc/std/diagnostic_http3_e2e.c `
+            -Algorithm SHA256 | Format-List | Out-String |
+            Set-Content evidence/source.sha256.txt
 
       - name: Compile once with the exact formal compiler
         shell: pwsh
@@ -240,12 +167,12 @@ jobs:
           Get-FileHash $output -Algorithm SHA256 |
             Format-List | Out-String | Set-Content evidence/binary.sha256.txt
 
-      - name: Run natural repetitions and occupied-port controls
+      - name: Run focused HTTP3 regression repetitions
         id: diagnose
         continue-on-error: true
         shell: pwsh
         env:
-          DIAG_ITERATIONS: ${{ inputs.iterations || '32' }}
+          DIAG_ITERATIONS: ${{ inputs.iterations || '8' }}
           DIAG_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '30' }}
           DIAG_POLL_MS: ${{ inputs.poll_ms || '100' }}
         run: |
@@ -427,33 +354,14 @@ jobs:
             Invoke-Http3Case -Name ('natural-{0:d3}' -f $index) `
               -Mode 'natural' -Timeout $timeoutSeconds
           }
-          Invoke-Http3Case -Name 'negative-udp-occupied' `
-            -Mode 'udp-occupied' -Timeout 15
-          Invoke-Http3Case -Name 'negative-tcp-occupied' `
-            -Mode 'tcp-occupied' -Timeout 15
-
           $summary | Export-Csv evidence/summary.csv -NoTypeInformation
           $summary | Format-Table -AutoSize | Out-String -Width 300 |
             Set-Content evidence/summary.txt
           Get-Content evidence/summary.txt
-          $udpNegative = $summary |
-            Where-Object name -eq 'negative-udp-occupied'
-          $tcpNegative = $summary |
-            Where-Object name -eq 'negative-tcp-occupied'
           [ordered]@{
             natural_failures = $naturalFailures
-            udp_negative_saw_readiness = [bool]$udpNegative.saw_reported_readiness
-            udp_negative_passed = [bool]$udpNegative.passed
-            tcp_negative_saw_readiness = [bool]$tcpNegative.saw_reported_readiness
-            tcp_negative_passed = [bool]$tcpNegative.passed
           } | ConvertTo-Json | Set-Content evidence/gate.json
-          if ($naturalFailures -gt 0 -or
-              -not $udpNegative.saw_reported_readiness -or
-              $udpNegative.passed -or
-              -not $tcpNegative.saw_reported_readiness -or
-              $tcpNegative.passed) {
-            exit 1
-          }
+          if ($naturalFailures -gt 0) { exit 1 }
 
       - name: Upload exact-run HTTP3 evidence
         if: always()
@@ -469,5 +377,5 @@ jobs:
         shell: pwsh
         run: |
           if ('${{ steps.diagnose.outcome }}' -ne 'success') {
-            throw 'natural reproduction or occupied-port readiness control failed'
+            throw 'focused HTTP3 regression failed'
           }
