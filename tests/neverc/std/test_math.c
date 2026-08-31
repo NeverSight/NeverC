@@ -2292,6 +2292,18 @@ static void test_atan2_special_cases(void) {
     check_double("atan2(+Inf,NaN)=NaN",
         neverc_math_atan2(NC_INF, NC_NAN), NC_NAN);
 
+    /* Both operands are finite and non-zero, but |y/x| is too small to
+     * survive binary64 division.  The quadrant must still come from the
+     * original signs rather than the signed-zero quotient. */
+    {
+        double smallest = neverc_math_float64frombits(0x0000000000000001ULL);
+        double largest = neverc_math_float64frombits(0x7fefffffffffffffULL);
+        check_true("atan2 finite quotient underflow keeps QIII",
+            neverc_math_float64bits(
+                neverc_math_atan2(-smallest, -largest)) ==
+            0xc00921fb54442d18ULL);
+    }
+
     /* atan2(NaN, NaN) */
     check_double("atan2(NaN,NaN)=NaN",
         neverc_math_atan2(NC_NAN, NC_NAN), NC_NAN);
