@@ -97,22 +97,29 @@ function Resolve-BundledRuntime {
   return $paths
 }
 
+function ConvertTo-TraceComparableText {
+  param([Parameter(Mandatory = $true)][string]$Text)
+
+  $normalized = $Text -replace '[\\/]+', '/'
+  return $normalized.ToLowerInvariant()
+}
+
 function Assert-BundledRuntimeTrace {
   param([Parameter(Mandatory = $true)][string]$LogPath,
         [Parameter(Mandatory = $true)][string]$Architecture,
         [Parameter(Mandatory = $true)]$BundledRuntime)
 
-  $trace = (Get-Content -LiteralPath $LogPath -Raw).Replace('\', '/').ToLowerInvariant()
+  $trace = ConvertTo-TraceComparableText (Get-Content -LiteralPath $LogPath -Raw)
   foreach ($assetName in @('enclave_libcmt', 'enclave_ucrt', 'vertdll')) {
     $asset = $BundledRuntime["${Architecture}_${assetName}"]
-    $directory = (Split-Path $asset -Parent).Replace('\', '/').ToLowerInvariant()
+    $directory = ConvertTo-TraceComparableText (Split-Path $asset -Parent)
     if (-not $trace.Contains($directory)) {
       throw "NeverC trace did not select bundled $Architecture runtime directory '$directory'"
     }
   }
   foreach ($hostRoot in @($env:VCToolsInstallDir, $env:WindowsSdkDir)) {
     if ($hostRoot) {
-      $normalizedHostRoot = $hostRoot.TrimEnd('\', '/').Replace('\', '/').ToLowerInvariant()
+      $normalizedHostRoot = ConvertTo-TraceComparableText ($hostRoot.TrimEnd('\', '/'))
       if ($trace.Contains($normalizedHostRoot)) {
         throw "NeverC trace leaked host runtime path '$normalizedHostRoot' into the default VBS link"
       }
