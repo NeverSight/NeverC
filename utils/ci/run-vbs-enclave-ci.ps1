@@ -309,11 +309,19 @@ if ($Phase -eq 'Static') {
     'neverc-msvc-arm64.dll' = 'arm64'
     'neverc-neverc-arm64.dll' = 'arm64'
   }
+  $imageLinkers = @{
+    'msvc-msvc.dll' = 'microsoft'
+    'neverc-msvc.dll' = 'microsoft'
+    'neverc-neverc.dll' = 'integrated'
+    'neverc-msvc-arm64.dll' = 'microsoft'
+    'neverc-neverc-arm64.dll' = 'integrated'
+  }
   foreach ($entry in $imageMachines.GetEnumerator()) {
     $name = $entry.Key
     $image = Join-Path $unsignedRoot $name
     Invoke-Logged $python @($verifier, 'inspect', $image, '--machine',
-      $entry.Value, '--map', $mapPaths[$name],
+      $entry.Value, '--linker', $imageLinkers[$name],
+      '--map', $mapPaths[$name],
       '--json', (Join-Path $jsonRoot "$name.json")) (Join-Path $logRoot "verify-$name.log") | Out-Null
     Invoke-Logged $tools.dumpbin @('/headers', '/loadconfig', $image) (Join-Path $artifactRoot "$name.dumpbin.txt") | Out-Null
   }

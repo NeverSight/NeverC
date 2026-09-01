@@ -97,12 +97,53 @@ REQUIRED_MAP_SYMBOLS = frozenset(EXPECTED_EXPORTS) | frozenset(
 )
 MAP_SYMBOL_LINE = re.compile(
     r"^\s*[0-9A-Fa-f]{4}:[0-9A-Fa-f]{8,16}\s+"
-    r"(\S+)\s+([0-9A-Fa-f]{8,16})(?:\s|$)")
+    r"(\S+)\s+([0-9A-Fa-f]{8,16})(?:\s+(.*\S))?\s*$")
+PUBLIC_IDENTITY_PREFIX = "public|"
+STATIC_IDENTITY_PREFIX = "static|"
+DLLMAIN_CRT_DISPATCH = (
+    "?dllmain_crt_dispatch@@YAHQEAUHINSTANCE__@@KQEAX@Z")
+# The bundled enclave CRT contributes this one live local GFID.  link.exe's
+# public MAP omits it, while the integrated map exposes its scoped identity.
+VBS_CRT_LOCAL_IDENTITY = (
+    STATIC_IDENTITY_PREFIX + "libcmt:dll_dllmain.obj|" +
+    DLLMAIN_CRT_DISPATCH)
+EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES = {
+    "x86_64": frozenset({VBS_CRT_LOCAL_IDENTITY}),
+    "arm64": frozenset({VBS_CRT_LOCAL_IDENTITY}),
+}
 
 
 class COFFMapSymbols(NamedTuple):
     required: Dict[str, int]
     unique_aliases_by_va: Dict[int, FrozenSet[str]]
+
+
+def _normalize_map_origin(origin: str) -> str:
+    normalized = origin.strip().replace("\\", "/")
+    if not normalized or normalized.startswith("<"):
+        return ""
+    archive = ""
+    member = normalized
+    if re.match(r"^[A-Za-z]:/", normalized):
+        if normalized.count(":") > 1:
+            archive_path, member = normalized.rsplit(":", 1)
+            archive = archive_path.rsplit("/", 1)[-1]
+    elif ":" in normalized:
+        archive, member = normalized.split(":", 1)
+        archive = archive.rsplit("/", 1)[-1]
+    member = member.rsplit("/", 1)[-1]
+    if archive.lower().endswith(".lib"):
+        archive = archive[:-4]
+    return "%s:%s" % (archive, member) if archive else member
+
+
+def _map_identity(scope: str, name: str, origin: str = "") -> str:
+    if scope == "public":
+        return PUBLIC_IDENTITY_PREFIX + name
+    normalized_origin = _normalize_map_origin(origin)
+    if scope == "static" and normalized_origin:
+        return (STATIC_IDENTITY_PREFIX + normalized_origin + "|" + name)
+    return ""
 
 
 def _checked_product(left: int, right: int, limit: int, what: str) -> int:
@@ -115,18 +156,36 @@ def parse_coff_map_text(text: str, label: str) -> COFFMapSymbols:
     required: Dict[str, int] = {}
     aliases_by_va: Dict[int, Set[str]] = {}
     vas_by_alias: Dict[str, Set[int]] = {}
+    scope = ""
     for line in text.splitlines():
-        match = MAP_SYMBOL_LINE.match(line)
-        if match is None:
+        if "Publics by Value" in line:
+            scope = "public"
             continue
-        name, encoded_va = match.groups()
+        if line.strip() == "Static symbols":
+            scope = "static"
+            continue
+        if line.strip() == "Exports":
+            scope = ""
+            continue
+        match = MAP_SYMBOL_LINE.match(line)
+        if match is None or not scope:
+            continue
+        name, encoded_va, trailing = match.groups()
         va = int(encoded_va, 16)
         # Compiler bookkeeping labels do not identify semantic CFG targets.
-        # A name is usable only when the map binds it to exactly one VA.
+        # Static names also need archive/member provenance because their bare
+        # names are scoped to an object, not the whole link.
         if not name.startswith((".", "$", "@")):
-            aliases_by_va.setdefault(va, set()).add(name)
-            vas_by_alias.setdefault(name, set()).add(va)
-        if name in REQUIRED_MAP_SYMBOLS:
+            origin = (trailing or "").strip()
+            if origin == "f":
+                origin = ""
+            elif origin.startswith("f "):
+                origin = origin[1:].strip()
+            identity = _map_identity(scope, name, origin)
+            if identity:
+                aliases_by_va.setdefault(va, set()).add(identity)
+                vas_by_alias.setdefault(identity, set()).add(va)
+        if scope == "public" and name in REQUIRED_MAP_SYMBOLS:
             previous = required.get(name)
             if previous is not None and previous != va:
                 raise VerificationError(
@@ -341,7 +400,8 @@ class PEImage:
 
     def inspect(self, map_symbols: COFFMapSymbols,
                 expected_machine: Optional[str] = None,
-                expected_export_name: Optional[str] = None) -> Dict[str, Any]:
+                expected_export_name: Optional[str] = None,
+                require_all_gfid_identities: bool = True) -> Dict[str, Any]:
         self.need(0, 0x40, "DOS header")
         if self.data[:2] != b"MZ":
             raise VerificationError("%s: missing MZ signature" % self.label)
@@ -584,7 +644,7 @@ class PEImage:
             gfid_metadata.append(metadata.hex())
             aliases = map_symbols.unique_aliases_by_va.get(
                 self.image_base + gfid, frozenset())
-            if not aliases:
+            if not aliases and require_all_gfid_identities:
                 raise VerificationError(
                     "%s: GFID 0x%x has no unique COFF map symbol identity" %
                     (self.label, gfid))
@@ -1076,13 +1136,16 @@ class PEImage:
 
 
 def inspect_path(path: pathlib.Path, map_path: pathlib.Path,
-                 expected_machine: Optional[str] = None) -> Dict[str, Any]:
+                 expected_machine: Optional[str] = None,
+                 require_all_gfid_identities: bool = True) -> Dict[str, Any]:
     map_symbols = parse_coff_map_path(map_path)
     return PEImage.from_path(path).inspect(
-        map_symbols, expected_machine, path.name)
+        map_symbols, expected_machine, path.name,
+        require_all_gfid_identities)
 
 
-def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
+def compare(reference: Dict[str, Any], candidate: Dict[str, Any],
+            expected_candidate_only: FrozenSet[str] = frozenset()) -> None:
     # Size and ImportEntrySize describe extensible container layouts.  Each
     # image has already been bounds-checked above; compare only the known
     # enclave policy and import semantics across linker implementations.
@@ -1098,35 +1161,70 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
         } for entry in image["exports"]}
 
     def gfid_target_identities_match() -> bool:
-        # Linkers may emit different one-sided aliases.  Compare the common,
-        # globally unique names, including both their GFID coverage and their
-        # co-location partition, so target relocation is harmless but target
-        # replacement or alias splitting fails closed.
+        # Public identities common to both maps must retain their GFID
+        # coverage and co-location partition.  link.exe does not expose one
+        # live CRT-local target in its public MAP, so the integrated map must
+        # bind that opaque reference slot to the explicit scoped identity.
         common_names = (set(reference["unique_map_symbol_names"]) &
                         set(candidate["unique_map_symbol_names"]))
 
-        def signature(image: Dict[str, Any]) -> Optional[Tuple[
-                FrozenSet[str], FrozenSet[Tuple[FrozenSet[str], int]]]]:
+        def groups(image: Dict[str, Any]) -> Optional[List[
+                Tuple[FrozenSet[str], int]]]:
             gfids = image["gfids"]
             flags = image["gfid_flags"]
             aliases = image["gfid_symbol_aliases"]
             if (len(gfids) != len(flags) or len(gfids) != len(aliases) or
                     len(set(gfids)) != len(gfids)):
                 return None
+            return [(frozenset(entry_aliases), entry_flags)
+                    for entry_aliases, entry_flags in zip(aliases, flags)]
+
+        def common_signature(
+                identity_groups: List[Tuple[FrozenSet[str], int]]) -> Tuple[
+                    FrozenSet[str],
+                    FrozenSet[Tuple[FrozenSet[str], int]],
+                    List[int]]:
             blocks = []
-            for entry_aliases, entry_flags in zip(aliases, flags):
-                block = frozenset(set(entry_aliases) & common_names)
-                if not block:
-                    return None
-                blocks.append((block, entry_flags))
+            unmatched_flags = []
+            for aliases, entry_flags in identity_groups:
+                block = aliases & common_names
+                if block:
+                    blocks.append((block, entry_flags))
+                else:
+                    unmatched_flags.append(entry_flags)
             covered_names = frozenset(
                 name for block, _ in blocks for name in block)
-            return covered_names, frozenset(blocks)
+            return covered_names, frozenset(blocks), unmatched_flags
 
-        reference_signature = signature(reference)
-        candidate_signature = signature(candidate)
-        return (reference_signature is not None and
-                reference_signature == candidate_signature)
+        reference_groups = groups(reference)
+        candidate_groups = groups(candidate)
+        if reference_groups is None or candidate_groups is None:
+            return False
+        reference_signature = common_signature(reference_groups)
+        candidate_signature = common_signature(candidate_groups)
+        if reference_signature[:2] != candidate_signature[:2]:
+            return False
+
+        expected_unshared = set(expected_candidate_only) - common_names
+        covered_expected = set()
+        candidate_unmatched_flags = []
+        for aliases, entry_flags in candidate_groups:
+            common_block = aliases & common_names
+            expected_block = aliases & expected_unshared
+            covered_expected.update(aliases & expected_candidate_only)
+            if common_block:
+                if expected_block:
+                    return False
+            else:
+                if len(expected_block) != 1:
+                    return False
+                candidate_unmatched_flags.append(entry_flags)
+        if covered_expected != set(expected_candidate_only):
+            return False
+        if len(candidate_unmatched_flags) != len(expected_unshared):
+            return False
+        return (sorted(reference_signature[2]) ==
+                sorted(candidate_unmatched_flags))
 
     checks = [
         ("machine", reference["machine"], candidate["machine"]),
@@ -1287,7 +1385,9 @@ def _synthetic_image() -> bytes:
 def _synthetic_map_text(
         symbol_overrides: Optional[Dict[str, int]] = None,
         omitted_symbols: Optional[Set[str]] = None,
-        extra_symbols: Optional[List[Tuple[str, int]]] = None) -> str:
+        extra_symbols: Optional[List[Tuple[str, int]]] = None,
+        extra_static_symbols: Optional[List[Tuple[str, int, str]]] = None
+        ) -> str:
     image_base = 0x180000000
     symbol_rvas = {
         "GuardedExercise": 0x1020,
@@ -1312,14 +1412,24 @@ def _synthetic_map_text(
         "  Address         Publics by Value              Rva+Base",
         "",
     ]
-    symbols = list(symbol_rvas.items()) + list(extra_symbols or [])
-    for name, rva in sorted(symbols):
+
+    def append_symbol(name: str, rva: int, origin: str) -> None:
         section = 2 if rva >= 0x2000 else 1
         section_offset = rva - (0x2000 if section == 2 else 0x1000)
-        suffix = " f   fixture.obj" if section == 1 else "     <linker-defined>"
+        suffix = (" f   " + origin if section == 1 else "     " + origin)
         lines.append(
             " %04x:%08x       %-26s %016x%s" %
             (section, section_offset, name, image_base + rva, suffix))
+
+    symbols = list(symbol_rvas.items()) + list(extra_symbols or [])
+    for name, rva in sorted(symbols):
+        origin = "fixture.obj" if rva < 0x2000 else "<linker-defined>"
+        append_symbol(name, rva, origin)
+    if extra_static_symbols:
+        lines.extend(("", " entry point at         0001:00000000", "",
+                      " Static symbols", ""))
+        for name, rva, origin in sorted(extra_static_symbols):
+            append_symbol(name, rva, origin)
     return "\n".join(lines) + "\n"
 
 
@@ -1791,6 +1901,7 @@ def self_test() -> None:
 
     compare_cases = []
     compare_references = {}
+    compare_expected_identities = {}
     changed_coverage = json.loads(json.dumps(reference))
     changed_coverage["exports"][0]["gfid_covered"] = True
     compare_cases.append(("export coverage change", changed_coverage,
@@ -1811,6 +1922,10 @@ def self_test() -> None:
     changed_giat["giat"]["semantics"]["present"] = False
     compare_cases.append(("GIAT semantic change", changed_giat,
                           "GIAT safety semantics"))
+    changed_gfid_flags = json.loads(json.dumps(reference))
+    changed_gfid_flags["gfid_flags"][0] = 1
+    compare_cases.append(("GFID per-entry flag change", changed_gfid_flags,
+                          "GFID semantic target identities"))
 
     extra_gfid = bytearray(valid)
     struct.pack_into("<Q", extra_gfid, 0x600 + 0x88, 3)
@@ -1844,12 +1959,16 @@ def self_test() -> None:
     static_reference_map = parse_coff_map_text(
         _synthetic_map_text(
             omitted_symbols={"InternalTargetA", "InternalTargetB"},
-            extra_symbols=[("StaticInternalTarget", 0x1018)]),
+            extra_static_symbols=[(
+                "StaticInternalTarget", 0x1018,
+                "C:\\build\\libcmt.lib:dll_dllmain.obj")]),
         "self-test/static-reference.map")
     static_candidate_map = parse_coff_map_text(
         _synthetic_map_text(
             omitted_symbols={"InternalTargetA", "InternalTargetB"},
-            extra_symbols=[("StaticInternalTarget", 0x1028)]),
+            extra_static_symbols=[(
+                "StaticInternalTarget", 0x1028,
+                "libcmt:D:\\agent\\dll_dllmain.obj")]),
         "self-test/static-candidate.map")
     compare(
         PEImage(bytes(internal_reference),
@@ -1858,6 +1977,89 @@ def self_test() -> None:
         PEImage(bytes(internal_candidate),
                 "self-test/static relocated candidate").inspect(
                     static_candidate_map))
+
+    wrong_origin_reference_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[("SameLocal", 0x1018, "libA:a.obj")]),
+        "self-test/static-wrong-origin-reference.map")
+    wrong_origin_candidate_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[("SameLocal", 0x1028, "libB:b.obj")]),
+        "self-test/static-wrong-origin-candidate.map")
+    wrong_origin_case_name = "same static name from different objects"
+    compare_cases.append((
+        wrong_origin_case_name,
+        PEImage(bytes(internal_candidate),
+                "self-test/static wrong-origin candidate").inspect(
+                    wrong_origin_candidate_map),
+        "GFID semantic target identities"))
+    compare_references[wrong_origin_case_name] = PEImage(
+        bytes(internal_reference),
+        "self-test/static wrong-origin reference").inspect(
+            wrong_origin_reference_map)
+
+    public_scope_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_symbols=[("ScopedInternal", 0x1018)]),
+        "self-test/public-scope.map")
+    static_scope_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                "ScopedInternal", 0x1028, "fixture:scoped.obj")]),
+        "self-test/static-scope.map")
+    scope_change_case_name = "public identity changed to static"
+    compare_cases.append((
+        scope_change_case_name,
+        PEImage(bytes(internal_candidate),
+                "self-test/static scope candidate").inspect(
+                    static_scope_map),
+        "GFID semantic target identities"))
+    compare_references[scope_change_case_name] = PEImage(
+        bytes(internal_reference),
+        "self-test/public scope reference").inspect(public_scope_map)
+
+    opaque_reference_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"}),
+        "self-test/opaque-reference.map")
+    expected_opaque_identity = _map_identity(
+        "static", "ExpectedOpaque", "fixture:opaque.obj")
+    opaque_candidate_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                "ExpectedOpaque", 0x1028, "fixture:opaque.obj")]),
+        "self-test/opaque-candidate.map")
+    opaque_reference_image = PEImage(
+        bytes(internal_reference), "self-test/opaque reference").inspect(
+            opaque_reference_map, require_all_gfid_identities=False)
+    compare(
+        opaque_reference_image,
+        PEImage(bytes(internal_candidate),
+                "self-test/expected opaque candidate").inspect(
+                    opaque_candidate_map),
+        frozenset({expected_opaque_identity}))
+
+    wrong_opaque_candidate_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                "ExpectedOpaque", 0x1028, "other:opaque.obj")]),
+        "self-test/wrong-opaque-candidate.map")
+    wrong_opaque_case_name = "opaque GFID has wrong scoped identity"
+    compare_cases.append((
+        wrong_opaque_case_name,
+        PEImage(bytes(internal_candidate),
+                "self-test/wrong opaque candidate").inspect(
+                    wrong_opaque_candidate_map),
+        "GFID semantic target identities"))
+    compare_references[wrong_opaque_case_name] = opaque_reference_image
+    compare_expected_identities[wrong_opaque_case_name] = frozenset(
+        {expected_opaque_identity})
 
     one_sided_alias_map = parse_coff_map_text(
         _synthetic_map_text(
@@ -1898,9 +2100,15 @@ def self_test() -> None:
             extra_symbols=[(".bf", 0x1018), (".ef", 0x1018),
                            ("$$000000", 0x1018), ("@vol.md", 0x1018)]),
         "self-test/bookkeeping-only-identity.map")
+    missing_static_origin_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA"},
+            extra_static_symbols=[("OriginlessStatic", 0x1018, "")]),
+        "self-test/missing-static-origin.map")
     identity_inspect_cases = [
         ("ambiguous internal GFID identity", ambiguous_identity_map),
         ("bookkeeping-only internal GFID identity", bookkeeping_only_map),
+        ("originless static GFID identity", missing_static_origin_map),
     ]
     for name, identity_map in identity_inspect_cases:
         try:
@@ -1958,7 +2166,8 @@ def self_test() -> None:
     for name, candidate, expected_error in compare_cases:
         try:
             comparison_reference = compare_references.get(name, reference)
-            compare(comparison_reference, candidate)
+            compare(comparison_reference, candidate,
+                    compare_expected_identities.get(name, frozenset()))
             failures.append("%s (unexpectedly compared equal)" % name)
         except VerificationError as error:
             if expected_error not in str(error):
@@ -1983,6 +2192,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                                 required=True)
     inspect_parser.add_argument("--machine", required=True,
                                 choices=("x86_64", "arm64"))
+    inspect_parser.add_argument("--linker", required=True,
+                                choices=("microsoft", "integrated"))
     inspect_parser.add_argument("--json", dest="json_path", type=pathlib.Path)
     compare_parser = subparsers.add_parser("compare")
     compare_parser.add_argument("reference", type=pathlib.Path)
@@ -1997,16 +2208,23 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.command == "self-test":
             self_test()
         elif args.command == "inspect":
-            result = inspect_path(args.image, args.map_path, args.machine)
+            result = inspect_path(
+                args.image, args.map_path, args.machine,
+                require_all_gfid_identities=(args.linker == "integrated"))
             encoded = json.dumps(result, indent=2, sort_keys=True)
             print(encoded)
             if args.json_path:
                 args.json_path.parent.mkdir(parents=True, exist_ok=True)
                 args.json_path.write_text(encoded + "\n", encoding="utf-8")
         else:
-            reference = inspect_path(args.reference, args.reference_map)
+            reference = inspect_path(
+                args.reference, args.reference_map,
+                require_all_gfid_identities=False)
             candidate = inspect_path(args.candidate, args.candidate_map)
-            compare(reference, candidate)
+            expected_candidate_only = (
+                EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES.get(
+                    candidate["machine"], frozenset()))
+            compare(reference, candidate, expected_candidate_only)
             print("PASS: %s semantically matches %s" %
                   (args.candidate, args.reference))
     except (OSError, VerificationError) as error:
