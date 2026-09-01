@@ -78,9 +78,11 @@ absolute, discarded, truncated, or incorrectly relocated definition is a link
 error.
 
 `/GUARD:MIXED` enables CFG output for a mixture of guarded and legacy object
-files. It includes the conservative address-taken targets needed by the
-unguarded objects; it is not a separate compiler instrumentation mode or a new
-PE `GuardFlags` bit.
+files. It emits five-byte GFID and GIAT entries: a four-byte RVA followed by
+one byte of metadata, which is zero for current ordinary targets. Its
+`GuardFlags` carry the CFG, protected delay-IAT, and entry-size bits. Legacy
+objects contribute address-taken targets by conservatively scanning relocations
+while excluding unwind metadata.
 
 An explicit incremental-link request is incompatible with `/ENCLAVE` and is
 rejected. The last effective `/INCREMENTAL` option is used, including options
@@ -134,5 +136,9 @@ NeverC candidate failing is a hard test failure. A configured self-hosted VBS
 runner can make runtime success mandatory.
 
 The linker supports x86-64 and ARM64 COFF enclave images. It validates the
-published configuration pointer but does not impose extra policy on the
-versioned fields inside `IMAGE_ENCLAVE_CONFIG`.
+published configuration pointer, then derives a contiguous sequence of
+80-byte `IMAGE_ENCLAVE_IMPORT` entries from the final ordinary DLL-import set.
+Entries initially contain only the import name and zero identity fields for
+VEIID to bind; the linker writes back the count, list, and entry size. Active
+delay-loaded imports are rejected. The linker does not impose extra policy on
+the versioned fields inside `IMAGE_ENCLAVE_CONFIG`.

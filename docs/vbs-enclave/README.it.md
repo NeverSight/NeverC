@@ -50,7 +50,7 @@ Un collegamento di enclave deve fornire entrambe queste definizioni di dati dell
 
 NeverC mantiene attivo `__enclave_config` durante l’eliminazione del codice inutilizzato, lo estrae da un archivio quando necessario e verifica che il puntatore load-config rilocato finale sia uguale all’indirizzo virtuale di quell’oggetto di configurazione. Una definizione mancante, assoluta, eliminata, troncata o rilocata in modo errato causa un errore di collegamento.
 
-`/GUARD:MIXED` abilita l’output CFG per una combinazione di file oggetto protetti e legacy. Include i target il cui indirizzo viene acquisito, raccolti in modo conservativo e necessari agli oggetti non protetti; non è una modalità distinta di strumentazione del compilatore né un nuovo bit PE `GuardFlags`.
+`/GUARD:MIXED` abilita l’output CFG per una combinazione di file oggetto protetti e legacy. Genera voci GFID e GIAT di cinque byte: un RVA di quattro byte seguito da un byte di metadati, pari a zero per i normali target correnti. I `GuardFlags` contengono i bit per CFG, delay-IAT protetto e dimensione della voce. Gli oggetti legacy forniscono i target il cui indirizzo viene acquisito mediante una scansione conservativa delle rilocazioni, escludendo i metadati di unwind.
 
 Una richiesta esplicita di collegamento incrementale è incompatibile con `/ENCLAVE` e viene rifiutata. Viene usata l’ultima opzione `/INCREMENTAL` effettiva, comprese le opzioni provenienti dalle direttive dei file oggetto.
 
@@ -79,4 +79,4 @@ Il workflow `VBS enclave differential CI` viene eseguito su Windows. Il suo gate
 
 La verifica a runtime esegue prima l’immagine Microsoft. Se il runner ospitato non dispone di VBS o di un ambiente di firma utilizzabile, il risultato viene indicato esplicitamente come salto dovuto all’ambiente. Dopo il corretto caricamento dell’immagine di riferimento Microsoft, il fallimento di uno dei candidati NeverC costituisce un errore di test definitivo. Un runner VBS self-hosted configurato può rendere obbligatorio il successo a runtime.
 
-Il linker supporta immagini di enclave COFF x86-64 e ARM64. Convalida il puntatore di configurazione pubblicato, ma non impone criteri aggiuntivi sui campi con versione all’interno di `IMAGE_ENCLAVE_CONFIG`.
+Il linker supporta immagini di enclave COFF x86-64 e ARM64. Convalida il puntatore di configurazione pubblicato e ricava quindi, dall’insieme finale delle importazioni DLL ordinarie, una sequenza contigua di voci `IMAGE_ENCLAVE_IMPORT` da 80 byte. Inizialmente le voci contengono soltanto il nome di importazione e campi identità a zero, che VEIID deve associare; il linker riscrive conteggio, elenco e dimensione della voce. Le importazioni con caricamento ritardato attive vengono rifiutate. Il linker non impone criteri aggiuntivi sui campi con versione all’interno di `IMAGE_ENCLAVE_CONFIG`.

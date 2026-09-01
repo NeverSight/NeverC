@@ -50,7 +50,7 @@ Ein Enklaven-Link muss beide folgenden Image-Datendefinitionen bereitstellen:
 
 NeverC hält `__enclave_config` beim Dead-Stripping am Leben, extrahiert es bei Bedarf aus einem Archiv und prüft, ob der endgültig relokierte load-config-Zeiger der virtuellen Adresse dieses Konfigurationsobjekts entspricht. Eine fehlende, absolute, verworfene, abgeschnittene oder falsch relokierte Definition ist ein Linkfehler.
 
-`/GUARD:MIXED` aktiviert die CFG-Ausgabe für eine Mischung aus geschützten und älteren Objektdateien. Es schließt die konservativ ermittelten Ziele mit übernommener Adresse ein, die von den ungeschützten Objekten benötigt werden; es ist weder ein eigener Instrumentierungsmodus des Compilers noch ein neues PE-`GuardFlags`-Bit.
+`/GUARD:MIXED` aktiviert die CFG-Ausgabe für eine Mischung aus geschützten und älteren Objektdateien. Es erzeugt fünf Byte große GFID- und GIAT-Einträge: eine vier Byte große RVA gefolgt von einem Byte Metadaten; bei aktuellen gewöhnlichen Zielen sind diese Metadaten null. Die `GuardFlags` enthalten die Bits für CFG, geschütztes Delay-IAT und die Eintragsgröße. Ältere Objekte liefern durch konservatives Scannen von Relokationen Ziele mit übernommener Adresse, wobei Unwind-Metadaten ausgeschlossen werden.
 
 Eine ausdrückliche Anforderung für inkrementelles Linken ist mit `/ENCLAVE` inkompatibel und wird abgewiesen. Die letzte wirksame `/INCREMENTAL`-Option wird verwendet, einschließlich Optionen aus Objektdatei-Direktiven.
 
@@ -79,4 +79,4 @@ Der Workflow `VBS enclave differential CI` läuft unter Windows. Sein statisches
 
 Die Laufzeitprüfung führt zuerst das Microsoft-Image aus. Fehlen dem gehosteten Runner VBS oder eine nutzbare Signierungsumgebung, wird das Ergebnis ausdrücklich als umgebungsbedingtes Überspringen ausgewiesen. Sobald das Microsoft-Referenzimage erfolgreich geladen wurde, ist das Scheitern eines der NeverC-Kandidaten ein harter Testfehler. Ein konfigurierter selbstgehosteter VBS-Runner kann den Laufzeiterfolg verbindlich machen.
 
-Der Linker unterstützt x86-64- und ARM64-COFF-Enklavenimages. Er validiert den veröffentlichten Konfigurationszeiger, erzwingt aber keine zusätzliche Richtlinie für die versionierten Felder in `IMAGE_ENCLAVE_CONFIG`.
+Der Linker unterstützt x86-64- und ARM64-COFF-Enklavenimages. Er validiert den veröffentlichten Konfigurationszeiger und leitet dann aus der endgültigen Menge gewöhnlicher DLL-Importe eine zusammenhängende Folge von 80 Byte großen `IMAGE_ENCLAVE_IMPORT`-Einträgen ab. Die Einträge enthalten anfangs nur den Importnamen und sonst nullte Identitätsfelder, damit VEIID sie binden kann; der Linker schreibt Anzahl, Liste und Eintragsgröße zurück. Aktive verzögert geladene Importe werden abgewiesen. Für die versionierten Felder in `IMAGE_ENCLAVE_CONFIG` erzwingt der Linker keine zusätzliche Richtlinie.

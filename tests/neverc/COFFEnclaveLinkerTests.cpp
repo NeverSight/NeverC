@@ -8,6 +8,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/ArchiveWriter.h"
+#include "llvm/Object/COFF.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Error.h"
@@ -38,8 +39,15 @@ constexpr uint16_t DllCharacteristicsForceIntegrity = 0x0080;
 constexpr uint16_t DllCharacteristicsGuardCF = 0x4000;
 constexpr uint32_t GuardCFInstrumented = 0x100;
 constexpr uint32_t GuardCFFunctionTablePresent = 0x400;
+constexpr uint32_t GuardCFProtectDelayLoadIAT = 0x1000;
+constexpr uint32_t GuardCFDelayLoadIATInOwnSection = 0x2000;
 constexpr uint32_t GuardCFLongJumpTablePresent = 0x10000;
 constexpr uint32_t GuardEHContinuationTablePresent = 0x400000;
+constexpr uint32_t GuardCFFunctionTableSize5Bytes = 0x10000000;
+constexpr uint32_t GuardMixedFlags =
+    GuardCFInstrumented | GuardCFFunctionTablePresent |
+    GuardCFProtectDelayLoadIAT | GuardCFDelayLoadIATInOwnSection |
+    GuardCFFunctionTableSize5Bytes;
 constexpr uint32_t BaseRelocationDirectory = 5;
 constexpr uint32_t LoadConfigDirectory = 10;
 constexpr uint16_t BaseRelocationDir64 = 10;
@@ -48,8 +56,13 @@ constexpr size_t LoadConfigGuardTableOffset = 0x80;
 constexpr size_t LoadConfigGuardCountOffset = 0x88;
 constexpr size_t LoadConfigGuardFlagsOffset = 0x90;
 constexpr size_t LoadConfigEnclavePointerOffset = 0xf8;
+constexpr size_t EnclaveConfigNumberOfImportsOffset = 12;
+constexpr size_t EnclaveConfigImportListOffset = 16;
+constexpr size_t EnclaveConfigImportEntrySizeOffset = 20;
 constexpr size_t EnclaveConfigImageIdMagicOffset = 44;
 constexpr uint32_t EnclaveConfigImageIdMagic = 0xc0decafe;
+constexpr size_t EnclaveImportSize = 80;
+constexpr size_t EnclaveImportNameOffset = 72;
 
 void initializeAssemblyTargets() {
   static std::once_flag Once;
@@ -99,6 +112,9 @@ struct LinkResult {
   bool Crashed = false;
 };
 
+InMemoryInput objectFor(llvm::StringRef Path, llvm::StringRef Triple,
+                        llvm::StringRef Assembly);
+
 llvm::Expected<llvm::SmallVector<char, 0>>
 archiveCOFF(llvm::StringRef MemberName, llvm::ArrayRef<char> Object) {
   llvm::SmallVector<llvm::NewArchiveMember, 1> Members;
@@ -112,6 +128,87 @@ archiveCOFF(llvm::StringRef MemberName, llvm::ArrayRef<char> Object) {
   llvm::SmallVector<char, 0> Result;
   Result.append((*Archive)->getBuffer().begin(), (*Archive)->getBuffer().end());
   return Result;
+}
+
+llvm::Expected<llvm::SmallVector<char, 0>>
+archiveCOFF(llvm::ArrayRef<InMemoryInput> Objects) {
+  llvm::SmallVector<llvm::NewArchiveMember, 4> Members;
+  for (const InMemoryInput &Object : Objects)
+    Members.emplace_back(llvm::MemoryBufferRef(
+        llvm::StringRef(Object.Contents.data(), Object.Contents.size()),
+        Object.Path));
+  auto Archive = llvm::writeArchiveToBuffer(
+      Members, llvm::SymtabWritingMode::NormalSymtab,
+      llvm::object::Archive::K_COFF, /*Deterministic=*/true, /*Thin=*/false);
+  if (!Archive)
+    return Archive.takeError();
+  llvm::SmallVector<char, 0> Result;
+  Result.append((*Archive)->getBuffer().begin(), (*Archive)->getBuffer().end());
+  return Result;
+}
+
+InMemoryInput importLibraryFor(
+    llvm::StringRef Path, llvm::StringRef Symbol, llvm::StringRef DLL,
+    llvm::COFF::MachineTypes Machine = llvm::COFF::IMAGE_FILE_MACHINE_AMD64) {
+  llvm::object::coff_import_header Header{};
+  Header.Sig1 = 0;
+  Header.Sig2 = UINT16_MAX;
+  Header.Version = 0;
+  Header.Machine = Machine;
+  Header.SizeOfData = Symbol.size() + 1 + DLL.size() + 1;
+  Header.TypeInfo = llvm::COFF::IMPORT_CODE | (llvm::COFF::IMPORT_NAME << 2);
+
+  llvm::SmallVector<char, 0> Member;
+  Member.append(reinterpret_cast<const char *>(&Header),
+                reinterpret_cast<const char *>(&Header) + sizeof(Header));
+  Member.append(Symbol.begin(), Symbol.end());
+  Member.push_back('\0');
+  Member.append(DLL.begin(), DLL.end());
+  Member.push_back('\0');
+  auto Archive = archiveCOFF("import.obj", Member);
+  if (!Archive) {
+    ADD_FAILURE() << llvm::toString(Archive.takeError()).str().str();
+    return {Path.str(), {}};
+  }
+  return {Path.str(), std::move(*Archive)};
+}
+
+InMemoryInput fullImportLibraryFor(llvm::StringRef Path, llvm::StringRef Triple,
+                                   llvm::StringRef ReturnInstruction) {
+  const InMemoryInput Head =
+      objectFor("a_head.obj", Triple,
+                ".section .idata$2,\"dr\"\n"
+                ".globl __full_alpha_head\n__full_alpha_head:\n"
+                "  .rva .Lfull_alpha_lookup\n  .long 0\n  .long 0\n"
+                "  .rva __full_alpha_iname\n  .rva .Lfull_alpha_iat\n"
+                ".section .idata$4,\"dr\"\n.Lfull_alpha_lookup:\n"
+                ".section .idata$5,\"dr\"\n.Lfull_alpha_iat:\n");
+  std::string SymbolAssembly =
+      ".text\n.def imported_full_alpha; .scl 2; .type 32; .endef\n"
+      ".globl imported_full_alpha\nimported_full_alpha:\n  ";
+  SymbolAssembly += ReturnInstruction.str();
+  SymbolAssembly +=
+      "\n.section .idata$7,\"dr\"\n  .rva __full_alpha_head\n"
+      ".section .idata$5,\"dr\"\n.globl __imp_imported_full_alpha\n"
+      "__imp_imported_full_alpha:\n  .rva .Lfull_alpha_hint\n  .long 0\n"
+      ".section .idata$4,\"dr\"\n  .rva .Lfull_alpha_hint\n  .long 0\n"
+      ".section .idata$6,\"dr\"\n.Lfull_alpha_hint:\n  .short 0\n"
+      "  .asciz \"imported_full_alpha\"\n";
+  const InMemoryInput Symbol =
+      objectFor("m_symbol.obj", Triple, SymbolAssembly);
+  const InMemoryInput Tail =
+      objectFor("z_tail.obj", Triple,
+                ".section .idata$4,\"dr\"\n  .quad 0\n"
+                ".section .idata$5,\"dr\"\n  .quad 0\n"
+                ".section .idata$7,\"dr\"\n.globl __full_alpha_iname\n"
+                "__full_alpha_iname:\n  .asciz \"full-alpha.dll\"\n");
+  const InMemoryInput Objects[] = {Head, Symbol, Tail};
+  auto Archive = archiveCOFF(Objects);
+  if (!Archive) {
+    ADD_FAILURE() << llvm::toString(Archive.takeError()).str().str();
+    return {Path.str(), {}};
+  }
+  return {Path.str(), std::move(*Archive)};
 }
 
 LinkResult linkCOFF(llvm::ArrayRef<llvm::StringRef> Options,
@@ -306,6 +403,25 @@ public:
     return read32(*Offset);
   }
 
+  std::optional<uint32_t> imageRVA32(uint32_t RVA) const {
+    auto Offset = rvaToOffset(RVA, sizeof(uint32_t));
+    if (!Offset)
+      return std::nullopt;
+    return read32(*Offset);
+  }
+
+  std::optional<std::string> imageCString(uint32_t RVA) const {
+    constexpr size_t MaxNameSize = 4096;
+    for (size_t Size = 1; Size <= MaxNameSize; ++Size) {
+      auto Offset = rvaToOffset(RVA, Size);
+      if (!Offset)
+        return std::nullopt;
+      if (Data[*Offset + Size - 1] == '\0')
+        return Data.substr(*Offset, Size - 1).str();
+    }
+    return std::nullopt;
+  }
+
   bool hasBaseRelocation(uint32_t TargetRVA, uint16_t Type) const {
     if (BaseRelocationRVA == 0 || BaseRelocationSize < 8)
       return false;
@@ -439,9 +555,7 @@ TEST_F(COFFEnclaveLinkerTest, AcceptsGuardMixed) {
   EXPECT_NE(*Image.loadConfig64(LoadConfigGuardTableOffset), 0U);
   EXPECT_NE(*Image.loadConfig64(LoadConfigGuardCountOffset), 0U);
   const uint32_t Flags = *Image.loadConfig32(LoadConfigGuardFlagsOffset);
-  EXPECT_NE(Flags & GuardCFInstrumented, 0U);
-  EXPECT_NE(Flags & GuardCFFunctionTablePresent, 0U);
-  EXPECT_EQ(Flags & GuardCFLongJumpTablePresent, 0U);
+  EXPECT_EQ(Flags, GuardMixedFlags);
   EXPECT_TRUE(Image.hasBaseRelocation(
       Image.loadConfigRVA() + LoadConfigGuardTableOffset, BaseRelocationDir64));
 }
@@ -449,13 +563,11 @@ TEST_F(COFFEnclaveLinkerTest, AcceptsGuardMixed) {
 TEST_F(COFFEnclaveLinkerTest, GuardMixedParserOrder) {
   const InMemoryInput Object = baseObject();
   const std::pair<llvm::StringRef, uint32_t> Cases[] = {
-      {"mixed", GuardCFInstrumented | GuardCFFunctionTablePresent},
+      {"mixed", GuardMixedFlags},
       {"mixed,no", 0},
-      {"mixed,nolongjmp", GuardCFInstrumented | GuardCFFunctionTablePresent},
-      {"mixed,ehcont", GuardCFInstrumented | GuardCFFunctionTablePresent |
-                           GuardEHContinuationTablePresent},
-      {"ehcont,mixed", GuardCFInstrumented | GuardCFFunctionTablePresent |
-                           GuardEHContinuationTablePresent},
+      {"mixed,nolongjmp", GuardMixedFlags},
+      {"mixed,ehcont", GuardMixedFlags | GuardEHContinuationTablePresent},
+      {"ehcont,mixed", GuardMixedFlags | GuardEHContinuationTablePresent},
   };
   for (auto [Guard, ExpectedFlags] : Cases) {
     SCOPED_TRACE(Guard.str());
@@ -492,15 +604,260 @@ TEST_F(COFFEnclaveLinkerTest, MixedIncludesGuardedAndUnguardedTargets) {
   ASSERT_GE(TableVA, Image.imageBase());
   auto TableOffset =
       Image.rvaToOffset(static_cast<uint32_t>(TableVA - Image.imageBase()),
-                        static_cast<size_t>(Count) * 4);
+                        static_cast<size_t>(Count) * 5);
   ASSERT_TRUE(TableOffset);
   std::vector<uint32_t> Entries;
-  for (uint64_t I = 0; I != Count; ++I)
+  for (uint64_t I = 0; I != Count; ++I) {
     Entries.push_back(
         llvm::support::endian::read32le(reinterpret_cast<const uint8_t *>(
-            Result.Image.data() + *TableOffset + I * 4)));
+            Result.Image.data() + *TableOffset + I * 5)));
+    EXPECT_EQ(static_cast<uint8_t>(Result.Image[*TableOffset + I * 5 + 4]), 0U);
+  }
   EXPECT_TRUE(std::is_sorted(Entries.begin(), Entries.end()));
   EXPECT_EQ(std::adjacent_find(Entries.begin(), Entries.end()), Entries.end());
+}
+
+TEST_F(COFFEnclaveLinkerTest, MixedIgnoresUnwindMetadataRelocations) {
+  const InMemoryInput Main = baseObject();
+  const InMemoryInput Legacy =
+      objectFor("/virtual/unwind-only.obj", X64,
+                ".text\n"
+                ".def unwind_only; .scl 2; .type 32; .endef\n"
+                ".globl unwind_only\nunwind_only:\n  retq\n"
+                ".def data_target; .scl 2; .type 32; .endef\n"
+                ".globl data_target\ndata_target:\n  retq\n"
+                ".section .pdata,\"dr\"\n"
+                "  .rva unwind_only\n  .rva unwind_only\n  .rva unwind_only\n"
+                ".section .rdata,\"dr\"\n  .quad data_target\n");
+  const LinkResult Result = link({"--guard=mixed"}, {Main, Legacy});
+  PEImage Image = inspect(Result);
+  ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardCountOffset, 8));
+  EXPECT_EQ(*Image.loadConfig64(LoadConfigGuardCountOffset), 2U);
+}
+
+TEST_F(COFFEnclaveLinkerTest, MixedDoesNotTreatExportsAsAddressTaken) {
+  const InMemoryInput Main = baseObject();
+  const InMemoryInput Export =
+      objectFor("/virtual/export-only.obj", X64,
+                ".text\n.def export_only; .scl 2; .type 32; .endef\n"
+                ".globl export_only\nexport_only:\n  retq\n");
+  const LinkResult Result =
+      link({"--guard=mixed", "--export=export_only"}, {Main, Export});
+  PEImage Image = inspect(Result);
+  ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardCountOffset, 8));
+  EXPECT_EQ(*Image.loadConfig64(LoadConfigGuardCountOffset), 1U);
+}
+
+TEST_F(COFFEnclaveLinkerTest, EnclaveSynthesizesImportIdentityList) {
+  struct Case {
+    llvm::StringRef Triple;
+    llvm::StringRef ReturnInstructions;
+    llvm::COFF::MachineTypes Machine;
+    llvm::StringRef MachineOption;
+  };
+  const Case Cases[] = {
+      {X64,
+       "callq imported_alpha\n  callq imported_alpha_extra\n  callq "
+       "imported_beta\n  retq",
+       llvm::COFF::IMAGE_FILE_MACHINE_AMD64, "--machine=x64"},
+      {Arm64,
+       "bl imported_alpha\n  bl imported_alpha_extra\n  bl imported_beta\n  "
+       "ret",
+       llvm::COFF::IMAGE_FILE_MACHINE_ARM64, "--machine=arm64"},
+  };
+
+  for (const Case &C : Cases) {
+    SCOPED_TRACE(C.Triple.str());
+    const InMemoryInput Object = baseObject(C.Triple, C.ReturnInstructions);
+    const InMemoryInput Alpha = importLibraryFor(
+        "/virtual/alpha.lib", "imported_alpha", "alpha.dll", C.Machine);
+    const InMemoryInput AlphaExtra =
+        importLibraryFor("/virtual/alpha-extra.lib", "imported_alpha_extra",
+                         "alpha.dll", C.Machine);
+    const InMemoryInput Beta = importLibraryFor(
+        "/virtual/beta.lib", "imported_beta", "beta.dll", C.Machine);
+    const InMemoryInput Unused = importLibraryFor(
+        "/virtual/unused.lib", "unused_import", "unused.dll", C.Machine);
+    const LinkResult Result = link({C.MachineOption, "--enclave"},
+                                   {Object, Alpha, AlphaExtra, Beta, Unused});
+    PEImage Image = inspect(Result);
+    const uint64_t ConfigVA =
+        *Image.loadConfig64(LoadConfigEnclavePointerOffset);
+    const auto Count =
+        Image.image32(ConfigVA + EnclaveConfigNumberOfImportsOffset);
+    const auto List = Image.image32(ConfigVA + EnclaveConfigImportListOffset);
+    const auto EntrySize =
+        Image.image32(ConfigVA + EnclaveConfigImportEntrySizeOffset);
+    ASSERT_TRUE(Count);
+    ASSERT_TRUE(List);
+    ASSERT_TRUE(EntrySize);
+    EXPECT_EQ(*Count, 2U);
+    EXPECT_NE(*List, 0U);
+    EXPECT_EQ(*EntrySize, EnclaveImportSize);
+
+    auto ImportOffset = Image.rvaToOffset(*List, 2 * EnclaveImportSize);
+    ASSERT_TRUE(ImportOffset);
+    const llvm::StringRef ExpectedNames[] = {"alpha.dll", "beta.dll"};
+    for (size_t I = 0; I != 2; ++I) {
+      const size_t Offset = *ImportOffset + I * EnclaveImportSize;
+      for (size_t Byte = 0; Byte != EnclaveImportNameOffset; ++Byte)
+        EXPECT_EQ(static_cast<uint8_t>(Result.Image[Offset + Byte]), 0U);
+      for (size_t Byte = EnclaveImportNameOffset + 4; Byte != EnclaveImportSize;
+           ++Byte)
+        EXPECT_EQ(static_cast<uint8_t>(Result.Image[Offset + Byte]), 0U);
+      const uint32_t NameRVA =
+          llvm::support::endian::read32le(reinterpret_cast<const uint8_t *>(
+              Result.Image.data() + Offset + EnclaveImportNameOffset));
+      const auto Name = Image.imageCString(NameRVA);
+      ASSERT_TRUE(Name);
+      EXPECT_EQ(*Name, ExpectedNames[I]);
+    }
+  }
+}
+
+TEST_F(COFFEnclaveLinkerTest, EnclaveSynthesizesFullFormatImportIdentityList) {
+  struct Case {
+    llvm::StringRef Triple;
+    llvm::StringRef MainInstructions;
+    llvm::StringRef ReturnInstruction;
+    llvm::StringRef MachineOption;
+  };
+  const Case Cases[] = {
+      {X64, "callq imported_full_alpha\n  retq", "retq", "--machine=x64"},
+      {Arm64, "bl imported_full_alpha\n  ret", "ret", "--machine=arm64"},
+  };
+
+  for (const Case &C : Cases) {
+    SCOPED_TRACE(C.Triple.str());
+    const InMemoryInput Object = baseObject(C.Triple, C.MainInstructions);
+    const InMemoryInput Import = fullImportLibraryFor(
+        "/virtual/full-alpha.lib", C.Triple, C.ReturnInstruction);
+    const LinkResult Result =
+        link({C.MachineOption, "--enclave"}, {Object, Import});
+    PEImage Image = inspect(Result);
+    const uint64_t ConfigVA =
+        *Image.loadConfig64(LoadConfigEnclavePointerOffset);
+    const auto Count =
+        Image.image32(ConfigVA + EnclaveConfigNumberOfImportsOffset);
+    const auto List = Image.image32(ConfigVA + EnclaveConfigImportListOffset);
+    const auto EntrySize =
+        Image.image32(ConfigVA + EnclaveConfigImportEntrySizeOffset);
+    ASSERT_TRUE(Count);
+    ASSERT_TRUE(List);
+    ASSERT_TRUE(EntrySize);
+    EXPECT_EQ(*Count, 1U);
+    EXPECT_NE(*List, 0U);
+    EXPECT_EQ(*EntrySize, EnclaveImportSize);
+
+    auto ImportOffset = Image.rvaToOffset(*List, EnclaveImportSize);
+    ASSERT_TRUE(ImportOffset);
+    const uint32_t NameRVA =
+        llvm::support::endian::read32le(reinterpret_cast<const uint8_t *>(
+            Result.Image.data() + *ImportOffset + EnclaveImportNameOffset));
+    ASSERT_TRUE(Image.imageCString(NameRVA));
+    EXPECT_EQ(*Image.imageCString(NameRVA), "full-alpha.dll");
+  }
+}
+
+TEST_F(COFFEnclaveLinkerTest, EnclaveReadsFullFormatImportNameAddends) {
+  constexpr llvm::StringLiteral RawImports =
+      ".section .idata$2,\"dr\"\n"
+      "  .rva .Llookup_one\n  .long 0\n  .long 0\n"
+      "  .rva .Ldll_names\n  .rva .Liat_one\n"
+      "  .rva .Llookup_two\n  .long 0\n  .long 0\n"
+      "  .rva .Ldll_names+8\n  .rva .Liat_two\n  .zero 20\n"
+      ".section .idata$4,\"dr\"\n.Llookup_one:\n"
+      "  .rva .Lhint_one\n  .long 0\n  .quad 0\n.Llookup_two:\n"
+      "  .rva .Lhint_two\n  .long 0\n  .quad 0\n"
+      ".section .idata$5,\"dr\"\n.Liat_one:\n"
+      "  .rva .Lhint_one\n  .long 0\n  .quad 0\n.Liat_two:\n"
+      "  .rva .Lhint_two\n  .long 0\n  .quad 0\n"
+      ".section .idata$6,\"dr\"\n.Lhint_one:\n"
+      "  .short 0\n  .asciz \"one_func\"\n.p2align 1\n.Lhint_two:\n"
+      "  .short 0\n  .asciz \"two_func\"\n"
+      ".section .idata$7,\"dr\"\n.Ldll_names:\n"
+      "  .asciz \"one.dll\"\n  .asciz \"two.dll\"\n";
+  struct Case {
+    llvm::StringRef Triple;
+    llvm::StringRef ReturnInstruction;
+    llvm::StringRef MachineOption;
+  };
+  const Case Cases[] = {
+      {X64, "retq", "--machine=x64"},
+      {Arm64, "ret", "--machine=arm64"},
+  };
+
+  for (const Case &C : Cases) {
+    SCOPED_TRACE(C.Triple.str());
+    const InMemoryInput Object = baseObject(C.Triple, C.ReturnInstruction);
+    const InMemoryInput Imports =
+        objectFor("/virtual/raw-imports.obj", C.Triple, RawImports);
+    const LinkResult Result =
+        link({C.MachineOption, "--enclave"}, {Object, Imports});
+    PEImage Image = inspect(Result);
+    const uint64_t ConfigVA =
+        *Image.loadConfig64(LoadConfigEnclavePointerOffset);
+    const uint32_t Count =
+        *Image.image32(ConfigVA + EnclaveConfigNumberOfImportsOffset);
+    const uint32_t List =
+        *Image.image32(ConfigVA + EnclaveConfigImportListOffset);
+    EXPECT_EQ(Count, 2U);
+    auto ImportOffset = Image.rvaToOffset(List, Count * EnclaveImportSize);
+    ASSERT_TRUE(ImportOffset);
+    const llvm::StringRef ExpectedNames[] = {"one.dll", "two.dll"};
+    for (size_t I = 0; I != Count; ++I) {
+      const uint32_t NameRVA =
+          llvm::support::endian::read32le(reinterpret_cast<const uint8_t *>(
+              Result.Image.data() + *ImportOffset + I * EnclaveImportSize +
+              EnclaveImportNameOffset));
+      ASSERT_TRUE(Image.imageCString(NameRVA));
+      EXPECT_EQ(*Image.imageCString(NameRVA), ExpectedNames[I]);
+    }
+  }
+}
+
+TEST_F(COFFEnclaveLinkerTest, EnclaveWithoutImportsClearsImportMetadata) {
+  const InMemoryInput Object = baseObject();
+  const LinkResult Result = link({"--enclave"}, {Object});
+  PEImage Image = inspect(Result);
+  const uint64_t ConfigVA = *Image.loadConfig64(LoadConfigEnclavePointerOffset);
+  ASSERT_TRUE(Image.image32(ConfigVA + EnclaveConfigNumberOfImportsOffset));
+  ASSERT_TRUE(Image.image32(ConfigVA + EnclaveConfigImportListOffset));
+  ASSERT_TRUE(Image.image32(ConfigVA + EnclaveConfigImportEntrySizeOffset));
+  EXPECT_EQ(*Image.image32(ConfigVA + EnclaveConfigNumberOfImportsOffset), 0U);
+  EXPECT_EQ(*Image.image32(ConfigVA + EnclaveConfigImportListOffset), 0U);
+  EXPECT_EQ(*Image.image32(ConfigVA + EnclaveConfigImportEntrySizeOffset), 0U);
+}
+
+TEST_F(COFFEnclaveLinkerTest, EnclaveRejectsShortImportMetadataPrefix) {
+  const InMemoryInput Object =
+      baseObject(X64, "retq", "0x100",
+                 ".globl __enclave_config\n__enclave_config:\n.long 16\n");
+  const LinkResult Result = link({"--enclave"}, {Object});
+  EXPECT_FALSE(Result.Succeeded);
+  EXPECT_NE(Result.Diagnostics.find("import metadata"), std::string::npos)
+      << Result.Diagnostics;
+}
+
+TEST_F(COFFEnclaveLinkerTest, EnclaveRejectsOversizedConfiguration) {
+  const InMemoryInput Object =
+      baseObject(X64, "retq", "0x100",
+                 ".globl __enclave_config\n__enclave_config:\n.long 0x1000\n");
+  const LinkResult Result = link({"--enclave"}, {Object});
+  EXPECT_FALSE(Result.Succeeded);
+  EXPECT_NE(Result.Diagnostics.find("too large"), std::string::npos)
+      << Result.Diagnostics;
+}
+
+TEST_F(COFFEnclaveLinkerTest, EnclaveRejectsDelayLoadedImports) {
+  const InMemoryInput Object = baseObject(X64, "callq imported_alpha\n  retq");
+  const InMemoryInput Alpha =
+      importLibraryFor("/virtual/alpha.lib", "imported_alpha", "alpha.dll");
+  const LinkResult Result =
+      link({"--enclave", "--delayload=alpha.dll"}, {Object, Alpha});
+  EXPECT_FALSE(Result.Succeeded);
+  EXPECT_NE(Result.Diagnostics.find("delay-loaded imports"), std::string::npos)
+      << Result.Diagnostics;
 }
 
 TEST_F(COFFEnclaveLinkerTest, EnclaveRequiresConfig) {

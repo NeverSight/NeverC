@@ -169,6 +169,28 @@ public:
   uint32_t characteristics = 0;
 };
 
+constexpr size_t enclaveImportSize = 80;
+constexpr size_t enclaveImportNameOffset = 72;
+constexpr size_t importDirectoryEntrySize = 20;
+constexpr size_t importDirectoryNameOffset = 12;
+
+// One IMAGE_ENCLAVE_IMPORT record. The linker initially permits an imported
+// image by name only; VEIID may bind the zero identity fields after linking.
+class EnclaveImportChunk : public NonSectionChunk {
+public:
+  explicit EnclaveImportChunk(Chunk *name) : dllName(name) { setAlignment(4); }
+
+  size_t getSize() const override { return enclaveImportSize; }
+
+  void writeTo(uint8_t *buf) const override {
+    memset(buf, 0, getSize());
+    write32le(buf + enclaveImportNameOffset, dllName->getRVA());
+  }
+
+private:
+  Chunk *dllName;
+};
+
 // PartialSection represents a group of chunks that contribute to an
 // OutputSection. Collating a collection of PartialSections of same name and
 // characteristics constitutes the OutputSection.
@@ -244,6 +266,7 @@ private:
   void sortExceptionTables();
   void sortCRTSectionChunks(std::vector<Chunk *> &chunks);
   void addSyntheticIdata();
+  void addEnclaveImportMetadata();
   void sortBySectionOrder(std::vector<Chunk *> &chunks);
   void fixPartialSectionChars(StringRef name, uint32_t chars);
   bool fixGnuImportChunks();
@@ -270,6 +293,7 @@ private:
   std::vector<char> strtab;
   std::vector<llvm::object::coff_symbol16> outputSymtab;
   IdataContents idata;
+  std::vector<Chunk *> enclaveImports;
   Chunk *importTableStart = nullptr;
   uint64_t importTableSize = 0;
   Chunk *edataStart = nullptr;
@@ -885,6 +909,9 @@ void OutputWriter::addSyntheticIdata() {
 
   idata.create(ctx);
 
+  if (ctx.config.enclave)
+    addEnclaveImportMetadata();
+
   // Add the .idata content in the right section groups, to allow
   // chunks from other linked in object files to be grouped together.
   // See Microsoft PE/COFF spec 5.4 for details.
@@ -904,6 +931,130 @@ void OutputWriter::addSyntheticIdata() {
         selectOutChars);
   add(ctx.config.driver ? "INIT2$7" : ".idata$7", idata.dllNames,
       selectOutChars);
+}
+
+// Build IMAGE_ENCLAVE_IMPORT entries from both supported COFF import-library
+// forms. Short import members are represented by IdataContents, while GNU
+// full-format archives contribute ordinary .idata$2 directory chunks.
+void OutputWriter::addEnclaveImportMetadata() {
+  constexpr uint32_t rdata =
+      IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ;
+  std::vector<StringRef> dllNames;
+  StringSet<> seenDLLs;
+  auto addDLL = [&](StringRef name) {
+    if (name.empty()) {
+      error("--enclave import has an empty DLL name");
+      return;
+    }
+    std::string lowerName = name.lower().str().str();
+    if (seenDLLs.insert(lowerName).second)
+      dllNames.push_back(name);
+  };
+
+  if (PartialSection *dirs = findPartialSection(".idata$2", rdata)) {
+    for (Chunk *chunk : dirs->chunks) {
+      auto *section = dyn_cast<SectionChunk>(chunk);
+      if (!section || !section->live)
+        continue;
+      ArrayRef<uint8_t> contents = section->getContents();
+      DenseMap<uint32_t, const coff_relocation *> nameRelocations;
+      for (const coff_relocation &reloc : section->getRelocs()) {
+        if (reloc.VirtualAddress < importDirectoryNameOffset ||
+            (reloc.VirtualAddress - importDirectoryNameOffset) %
+                    importDirectoryEntrySize !=
+                0)
+          continue;
+        if (!nameRelocations.try_emplace(reloc.VirtualAddress, &reloc).second)
+          error("--enclave import directory has duplicate name relocations");
+      }
+      for (size_t offset = 0;
+           offset + importDirectoryEntrySize <= contents.size();
+           offset += importDirectoryEntrySize) {
+        const coff_relocation *nameReloc = nameRelocations.lookup(
+            static_cast<uint32_t>(offset + importDirectoryNameOffset));
+
+        ArrayRef<uint8_t> entry =
+            contents.slice(offset, importDirectoryEntrySize);
+        if (!nameReloc) {
+          if (llvm::any_of(entry, [](uint8_t byte) { return byte != 0; }))
+            error("--enclave cannot derive a DLL name from an import "
+                  "directory");
+          continue;
+        }
+
+        uint16_t expectedReloc = ctx.config.machine == AMD64
+                                     ? IMAGE_REL_AMD64_ADDR32NB
+                                     : IMAGE_REL_ARM64_ADDR32NB;
+        if ((ctx.config.machine != AMD64 && ctx.config.machine != ARM64) ||
+            nameReloc->Type != expectedReloc) {
+          error("--enclave import directory name uses an unsupported "
+                "relocation");
+          continue;
+        }
+
+        auto *nameSymbol = dyn_cast_or_null<DefinedRegular>(
+            section->file->getSymbol(nameReloc->SymbolTableIndex));
+        SectionChunk *nameChunk = nameSymbol ? nameSymbol->getChunk() : nullptr;
+        if (!nameChunk || !nameChunk->live || !nameChunk->hasData) {
+          error("--enclave import directory name does not reference live "
+                "image data");
+          continue;
+        }
+        ArrayRef<uint8_t> nameContents = nameChunk->getContents();
+        uint64_t nameOffset =
+            uint64_t(nameSymbol->getValue()) +
+            read32le(contents.data() + offset + importDirectoryNameOffset);
+        if (nameOffset >= nameContents.size()) {
+          error("--enclave import directory name is outside image data");
+          continue;
+        }
+        ArrayRef<uint8_t> suffix =
+            nameContents.drop_front(static_cast<size_t>(nameOffset));
+        auto terminator = llvm::find(suffix, uint8_t(0));
+        if (terminator == suffix.end()) {
+          error("--enclave import directory name is not null-terminated");
+          continue;
+        }
+        addDLL(StringRef(reinterpret_cast<const char *>(suffix.data()),
+                         terminator - suffix.begin()));
+      }
+    }
+  }
+
+  // IdataContents orders short-import DLLs by the command-line order recorded
+  // in dllOrder. Reconstruct that order without depending on its private
+  // StringChunk representation.
+  std::vector<StringRef> shortImportNames(ctx.config.dllOrder.size());
+  for (DefinedImportData *symbol : idata.imports) {
+    if (!symbol)
+      continue;
+    std::string lowerName = symbol->getDLLName().lower().str().str();
+    auto order = ctx.config.dllOrder.find(lowerName);
+    if (order != ctx.config.dllOrder.end())
+      shortImportNames[order->second] = symbol->getDLLName();
+  }
+  for (StringRef name : shortImportNames)
+    if (!name.empty())
+      addDLL(name);
+
+  enclaveImports.reserve(dllNames.size());
+  std::vector<Chunk *> nameChunks;
+  nameChunks.reserve(dllNames.size());
+  for (StringRef name : dllNames) {
+    Chunk *nameChunk = make<StringChunk>(name);
+    nameChunks.push_back(nameChunk);
+    enclaveImports.push_back(make<EnclaveImportChunk>(nameChunk));
+  }
+  if (enclaveImports.empty())
+    return;
+
+  PartialSection *imports =
+      createPartialSection(".rdata$enclave_imports",
+                           IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ);
+  imports->chunks.insert(imports->chunks.end(), enclaveImports.begin(),
+                         enclaveImports.end());
+  imports->chunks.insert(imports->chunks.end(), nameChunks.begin(),
+                         nameChunks.end());
 }
 
 // Locate the first Chunk and size of the import directory list and the
@@ -1158,6 +1309,8 @@ void OutputWriter::createImportTables() {
     DefinedImportData *impSym = cast_or_null<DefinedImportData>(file->impSym);
     if (ctx.config.delayLoads.count(
             std::string(StringRef(file->dllName).lower().str()))) {
+      if (ctx.config.enclave)
+        error("--enclave does not support delay-loaded imports");
       if (!file->thunkSym)
         fatal("cannot delay-load " + toString(file) +
               " due to import of data: " + toString(ctx, *impSym));
@@ -1788,6 +1941,9 @@ void OutputWriter::markSymbolsWithRelocations(ObjFile *file,
     SectionChunk *sc = dyn_cast<SectionChunk>(c);
     if (!sc || !sc->live)
       continue;
+    StringRef outputName = getOutputSectionName(sc->getSectionName());
+    if (outputName == ".pdata" || outputName == ".xdata")
+      continue;
 
     for (const coff_relocation &reloc : sc->getRelocs()) {
 
@@ -1832,9 +1988,12 @@ void OutputWriter::createGuardCFTables() {
   if (config->entry)
     maybeAddAddressTakenFunction(addressTakenSyms, config->entry);
 
-  // Mark exported symbols in executable sections as address-taken.
-  for (Export &e : config->exports)
-    maybeAddAddressTakenFunction(addressTakenSyms, e.sym);
+  // Ordinary CFG treats exported code as an indirect-call target. Mixed CFG
+  // follows link.exe and only records targets proven address-taken by guarded
+  // metadata or legacy relocations; export visibility alone is insufficient.
+  if (!config->guardCFMixed)
+    for (Export &e : config->exports)
+      maybeAddAddressTakenFunction(addressTakenSyms, e.sym);
 
   // For each entry in the .giats table, check if it has a corresponding load
   // thunk (e.g. because the DLL that defines it will be delay-loaded) and, if
@@ -1852,11 +2011,11 @@ void OutputWriter::createGuardCFTables() {
       c.inputChunk->setAlignment(16);
 
   maybeAddRVATable(std::move(addressTakenSyms), "__guard_fids_table",
-                   "__guard_fids_count");
+                   "__guard_fids_count", config->guardCFMixed);
 
   // Add the Guard Address Taken IAT Entry Table (.giats).
   maybeAddRVATable(std::move(giatsRVASet), "__guard_iat_table",
-                   "__guard_iat_count");
+                   "__guard_iat_count", config->guardCFMixed);
 
   // Add the longjmp target table unless the user told us not to.
   if (config->guardCF & GuardCFLevel::LongJmp)
@@ -1876,6 +2035,10 @@ void OutputWriter::createGuardCFTables() {
     guardFlags |= uint32_t(GuardFlags::CF_LONGJUMP_TABLE_PRESENT);
   if (config->guardCF & GuardCFLevel::EHCont)
     guardFlags |= uint32_t(GuardFlags::EH_CONTINUATION_TABLE_PRESENT);
+  if (config->guardCFMixed)
+    guardFlags |= uint32_t(GuardFlags::PROTECT_DELAYLOAD_IAT) |
+                  uint32_t(GuardFlags::DELAYLOAD_IAT_IN_ITS_OWN_SECTION) |
+                  uint32_t(GuardFlags::CF_FUNCTION_TABLE_SIZE_5BYTES);
   Symbol *flagSym = ctx.symtab.findUnderscore("__guard_flags");
   cast<DefinedAbsolute>(flagSym)->setVA(guardFlags);
 }
@@ -2428,13 +2591,22 @@ template <typename T> void OutputWriter::prepareLoadConfig(T *loadConfig) {
   Symbol *sym = ctx.symtab.findUnderscore("__enclave_config");
   auto *config = dyn_cast_or_null<DefinedRegular>(sym);
   SectionChunk *configChunk = config ? config->getChunk() : nullptr;
+  OutputSection *configSection =
+      configChunk ? ctx.getOutputSection(configChunk) : nullptr;
   bool hasConfigData = configChunk && configChunk->live &&
-                       configChunk->hasData &&
-                       config->getRVA() >= configChunk->getRVA();
+                       configChunk->hasData && configSection &&
+                       config->getRVA() >= configChunk->getRVA() &&
+                       config->getRVA() >= configSection->getRVA();
+  uint64_t chunkOffset = 0;
+  uint64_t sectionOffset = 0;
   if (hasConfigData) {
-    uint64_t offset = config->getRVA() - configChunk->getRVA();
-    hasConfigData = offset <= configChunk->getSize() &&
-                    sizeof(ulittle32_t) <= configChunk->getSize() - offset;
+    chunkOffset = config->getRVA() - configChunk->getRVA();
+    sectionOffset = config->getRVA() - configSection->getRVA();
+    hasConfigData =
+        chunkOffset <= configChunk->getSize() &&
+        sizeof(ulittle32_t) <= configChunk->getSize() - chunkOffset &&
+        sectionOffset <= configSection->getRawSize() &&
+        sizeof(ulittle32_t) <= configSection->getRawSize() - sectionOffset;
   }
   if (!hasConfigData) {
     error("--enclave requires '__enclave_config' to be defined in live image "
@@ -2443,9 +2615,36 @@ template <typename T> void OutputWriter::prepareLoadConfig(T *loadConfig) {
   }
 
   uint64_t expected = ctx.config.imageBase + config->getRVA();
-  if (loadConfig->EnclaveConfigurationPointer != expected)
+  if (loadConfig->EnclaveConfigurationPointer != expected) {
     error("EnclaveConfigurationPointer not set correctly in "
           "'_load_config_used'");
+    return;
+  }
+
+  uint8_t *configBuf =
+      buffer->getBufferStart() + configSection->getFileOff() + sectionOffset;
+  uint32_t configSize = read32le(configBuf);
+  constexpr size_t requiredConfigPrefix = 24;
+  if (configSize < requiredConfigPrefix) {
+    error("'__enclave_config' structure too small to include import metadata");
+    return;
+  }
+  if (configSize > configChunk->getSize() - chunkOffset ||
+      configSize > configSection->getRawSize() - sectionOffset) {
+    error("'__enclave_config' is too large for its image data");
+    return;
+  }
+  if (enclaveImports.size() > UINT32_MAX) {
+    error("too many enclave imports");
+    return;
+  }
+
+  const uint32_t importCount = static_cast<uint32_t>(enclaveImports.size());
+  const uint32_t importList =
+      enclaveImports.empty() ? 0 : enclaveImports.front()->getRVA();
+  write32le(configBuf + 12, importCount);
+  write32le(configBuf + 16, importList);
+  write32le(configBuf + 20, importCount == 0 ? 0 : enclaveImportSize);
 }
 
 template <typename T>

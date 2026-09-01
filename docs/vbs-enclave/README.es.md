@@ -50,7 +50,7 @@ Un enlace de enclave debe proporcionar estas dos definiciones de datos de imagen
 
 NeverC mantiene vivo `__enclave_config` durante la eliminación de código muerto, lo extrae de un archivo si es necesario y verifica que el puntero load-config finalmente reubicado sea igual a la dirección virtual de ese objeto de configuración. Una definición ausente, absoluta, descartada, truncada o reubicada incorrectamente produce un error de enlace.
 
-`/GUARD:MIXED` habilita la salida CFG para una mezcla de archivos objeto protegidos y heredados. Incluye los destinos cuya dirección se toma, recopilados de forma conservadora y necesarios para los objetos no protegidos; no es un modo independiente de instrumentación del compilador ni un nuevo bit PE `GuardFlags`.
+`/GUARD:MIXED` habilita la salida CFG para una mezcla de archivos objeto protegidos y heredados. Emite entradas GFID y GIAT de cinco bytes: un RVA de cuatro bytes seguido de un byte de metadatos, que es cero en los objetivos ordinarios actuales. Sus `GuardFlags` contienen los bits de CFG, delay-IAT protegido y tamaño de entrada. Los objetos heredados aportan destinos cuya dirección se toma mediante un análisis conservador de las reubicaciones, excluyendo los metadatos de unwind.
 
 Una solicitud explícita de enlace incremental es incompatible con `/ENCLAVE` y se rechaza. Se utiliza la última opción `/INCREMENTAL` efectiva, incluidas las opciones procedentes de las directivas de los archivos objeto.
 
@@ -79,4 +79,4 @@ El workflow `VBS enclave differential CI` se ejecuta en Windows. Su puerta está
 
 La sonda de ejecución ejecuta primero la imagen de Microsoft. Si el runner alojado carece de VBS o de un entorno de firma utilizable, el resultado se marca explícitamente como omisión debida al entorno. Una vez que la imagen de referencia de Microsoft se carga correctamente, el fallo de cualquiera de los candidatos de NeverC es un fallo de prueba estricto. Un runner VBS autoalojado y configurado puede hacer obligatorio el éxito en tiempo de ejecución.
 
-El enlazador admite imágenes de enclave COFF x86-64 y ARM64. Valida el puntero de configuración publicado, pero no impone políticas adicionales sobre los campos versionados de `IMAGE_ENCLAVE_CONFIG`.
+El enlazador admite imágenes de enclave COFF x86-64 y ARM64. Valida el puntero de configuración publicado y después deriva, del conjunto final de importaciones DLL ordinarias, una secuencia contigua de entradas `IMAGE_ENCLAVE_IMPORT` de 80 bytes. Inicialmente las entradas solo contienen el nombre de importación y campos de identidad a cero para que VEIID los vincule; el enlazador escribe el recuento, la lista y el tamaño de entrada. Se rechazan las importaciones de carga diferida activas. El enlazador no impone políticas adicionales sobre los campos versionados de `IMAGE_ENCLAVE_CONFIG`.

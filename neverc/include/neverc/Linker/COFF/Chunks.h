@@ -565,7 +565,8 @@ private:
   SymbolRVASet syms;
 };
 
-// Table which contains symbol RVAs with flags. Used for /guard:ehcont.
+// Table which contains symbol RVAs with one-byte flags. Used by
+// /guard:ehcont and the five-byte GFID/GIAT form required by /guard:mixed.
 class RVAFlagTableChunk : public NonSectionChunk {
 public:
   explicit RVAFlagTableChunk(SymbolRVASet s) : syms(std::move(s)) {}

@@ -50,7 +50,7 @@ Une liaison d’enclave doit fournir ces deux définitions de données d’image
 
 NeverC maintient `__enclave_config` en vie lors de l’élimination du code mort, l’extrait d’une archive si nécessaire et vérifie que le pointeur load-config finalement relocalisé est égal à l’adresse virtuelle de cet objet de configuration. Une définition manquante, absolue, éliminée, tronquée ou incorrectement relocalisée provoque une erreur de liaison.
 
-`/GUARD:MIXED` active la sortie CFG pour un mélange de fichiers objets protégés et hérités. Il inclut les cibles dont l’adresse est prise, collectées de manière prudente et nécessaires aux objets non protégés ; ce n’est ni un mode d’instrumentation distinct du compilateur, ni un nouveau bit PE `GuardFlags`.
+`/GUARD:MIXED` active la sortie CFG pour un mélange de fichiers objets protégés et hérités. Il émet des entrées GFID et GIAT de cinq octets : une RVA de quatre octets suivie d’un octet de métadonnées, nul pour les cibles ordinaires actuelles. Les `GuardFlags` portent les bits CFG, delay-IAT protégé et taille d’entrée. Les objets hérités apportent les cibles dont l’adresse est prise en parcourant les relocalisations de manière prudente, à l’exclusion des métadonnées d’unwind.
 
 Une demande explicite de liaison incrémentale est incompatible avec `/ENCLAVE` et est donc rejetée. La dernière option `/INCREMENTAL` effective est utilisée, y compris les options provenant des directives des fichiers objets.
 
@@ -79,4 +79,4 @@ Le workflow `VBS enclave differential CI` s’exécute sous Windows. Sa barrièr
 
 La sonde d’exécution lance d’abord l’image Microsoft. Si le runner hébergé ne dispose pas de VBS ou d’un environnement de signature utilisable, le résultat est explicitement classé comme un saut dû à l’environnement. Dès que l’image de référence Microsoft se charge correctement, l’échec de l’un ou l’autre candidat NeverC constitue un échec de test ferme. Un runner VBS auto-hébergé et configuré peut rendre obligatoire la réussite à l’exécution.
 
-L’éditeur de liens prend en charge les images d’enclave COFF x86-64 et ARM64. Il valide le pointeur de configuration publié, mais n’impose aucune politique supplémentaire aux champs versionnés de `IMAGE_ENCLAVE_CONFIG`.
+L’éditeur de liens prend en charge les images d’enclave COFF x86-64 et ARM64. Il valide le pointeur de configuration publié, puis déduit de l’ensemble final des imports DLL ordinaires une séquence contiguë d’entrées `IMAGE_ENCLAVE_IMPORT` de 80 octets. Au départ, les entrées ne contiennent que le nom d’importation et des champs d’identité nuls pour la liaison par VEIID ; l’éditeur de liens réécrit le nombre, la liste et la taille d’entrée. Les imports à chargement différé actifs sont refusés. Il n’impose aucune politique supplémentaire aux champs versionnés de `IMAGE_ENCLAVE_CONFIG`.

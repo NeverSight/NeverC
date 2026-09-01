@@ -1696,6 +1696,8 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
           std::string(StringRef(arg->getValue()).lower().str()));
       config->delayLoadHelper = addUndefined("__delayLoadHelper2");
     }
+    if (config->enclave && !config->delayLoads.empty())
+      error("--enclave does not support delay-loaded imports");
   }
 
   // --- Output configuration ---
