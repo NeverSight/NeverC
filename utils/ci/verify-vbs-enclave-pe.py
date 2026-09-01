@@ -26,6 +26,7 @@ CF_INSTRUMENTED = 0x0100
 CF_FUNCTION_TABLE_PRESENT = 0x0400
 CF_LONGJUMP_TABLE_PRESENT = 0x10000
 CF_EH_CONTINUATION_TABLE_PRESENT = 0x00400000
+CF_XFG_ENABLED = 0x00800000
 CF_EXPORT_SUPPRESSION_INFO_PRESENT = 0x4000
 CF_FUNCTION_TABLE_SIZE_MASK = 0xF0000000
 CF_FUNCTION_TABLE_SIZE_5BYTES = 0x10000000
@@ -514,6 +515,10 @@ class PEImage:
         if guard_flags & CF_EH_CONTINUATION_TABLE_PRESENT:
             raise VerificationError(
                 "%s: /GUARD:MIXED unexpectedly enabled EH continuation metadata" %
+                self.label)
+        if guard_flags & CF_XFG_ENABLED:
+            raise VerificationError(
+                "%s: /GUARD:MIXED unexpectedly enabled XFG metadata" %
                 self.label)
         if not guard_table_va or not guard_count:
             raise VerificationError("%s: empty CFG function table" % self.label)
@@ -1530,6 +1535,10 @@ def self_test() -> None:
         (CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT |
          CF_FUNCTION_TABLE_SIZE_5BYTES | CF_EH_CONTINUATION_TABLE_PRESENT),
         "/GUARD:MIXED unexpectedly enabled EH continuation metadata")
+    add("implicit XFG metadata", 0x600 + 0x90, "<I",
+        (CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT |
+         CF_FUNCTION_TABLE_SIZE_5BYTES | CF_XFG_ENABLED),
+        "/GUARD:MIXED unexpectedly enabled XFG metadata")
     add("invalid GFID", 0x8A0, "<I", 0x2000,
         "GFID 0x2000 is not executable")
     mutate("undefined GFID flags", "GFID entry has undefined flags",
