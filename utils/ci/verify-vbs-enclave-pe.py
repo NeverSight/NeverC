@@ -41,12 +41,39 @@ GFID_EXPORT_SUPPRESSED = 0x02
 GFID_FID_LANGEXCPTHANDLER = 0x04
 GFID_FID_XFG = 0x08
 DIR64 = 10
+MAX_DATA_DIRECTORIES = 16
 EXPORT_DIRECTORY = 0
 IMPORT_DIRECTORY = 1
-LOAD_CONFIG_DIRECTORY = 10
-BASE_RELOCATION_DIRECTORY = 5
+RESOURCE_DIRECTORY = 2
+EXCEPTION_DIRECTORY = 3
 CERTIFICATE_DIRECTORY = 4
+BASE_RELOCATION_DIRECTORY = 5
+DEBUG_DIRECTORY = 6
+ARCHITECTURE_DIRECTORY = 7
+GLOBALPTR_DIRECTORY = 8
+TLS_DIRECTORY = 9
+LOAD_CONFIG_DIRECTORY = 10
+BOUND_IMPORT_DIRECTORY = 11
 IAT_DIRECTORY = 12
+DELAY_IMPORT_DIRECTORY = 13
+CLR_DIRECTORY = 14
+RESERVED_DIRECTORY = 15
+FORBIDDEN_DIRECTORIES = {
+    RESOURCE_DIRECTORY: "resource",
+    CERTIFICATE_DIRECTORY: "certificate",
+    ARCHITECTURE_DIRECTORY: "architecture",
+    GLOBALPTR_DIRECTORY: "global pointer",
+    TLS_DIRECTORY: "TLS",
+    BOUND_IMPORT_DIRECTORY: "bound import",
+    DELAY_IMPORT_DIRECTORY: "delay import",
+    CLR_DIRECTORY: "CLR",
+    RESERVED_DIRECTORY: "reserved",
+}
+DEBUG_DIRECTORY_ENTRY_SIZE = 28
+ALLOWED_DEBUG_TYPES = frozenset((2, 13))
+REQUIRED_EXCEPTION_EXPORTS = (
+    "GuardedIndirectCall", "GuardedExercise", "LegacyExercise",
+)
 LOAD_CONFIG_GUARD_CHECK_POINTER_OFFSET = 0x70
 LOAD_CONFIG_GUARD_DISPATCH_POINTER_OFFSET = 0x78
 LOAD_CONFIG_GFID_TABLE_OFFSET = 0x80
@@ -336,6 +363,7 @@ class PEImage:
                                            "standard import directory")
         names: List[str] = []
         normalized_names = set()
+        iat_ranges: List[Tuple[int, int]] = []
         terminated = False
         descriptor_count = import_size // IMPORT_DESCRIPTOR_SIZE
         for index in range(descriptor_count):
@@ -354,11 +382,33 @@ class PEImage:
             if not name_rva:
                 raise VerificationError("%s: standard import has a zero Name RVA" %
                                         self.label)
-            if not fields[4]:
+            first_thunk = fields[4]
+            if not first_thunk:
                 raise VerificationError("%s: standard import has a zero FirstThunk RVA" %
                                         self.label)
-            self.rva_to_offset(fields[4], 8, "standard import IAT")
-            self.rva_to_offset(fields[0] or fields[4], 8,
+            if (first_thunk & 7 or first_thunk < self.iat_rva or
+                    first_thunk > self.iat_end - 8):
+                raise VerificationError(
+                    "%s: standard import FirstThunk is not an aligned IAT slot" %
+                    self.label)
+            self.rva_to_offset(first_thunk, 8, "standard import IAT")
+            thunk_rva = first_thunk
+            while True:
+                if thunk_rva > self.iat_end - 8:
+                    raise VerificationError(
+                        "%s: unterminated standard import IAT" % self.label)
+                thunk_offset = self.rva_to_offset(
+                    thunk_rva, 8, "standard import IAT thunk")
+                if not self.u64(thunk_offset, "standard import IAT thunk"):
+                    break
+                thunk_rva += 8
+            thunk_end = thunk_rva + 8
+            if any(max(first_thunk, start) < min(thunk_end, end)
+                   for start, end in iat_ranges):
+                raise VerificationError(
+                    "%s: standard import IAT ranges overlap" % self.label)
+            iat_ranges.append((first_thunk, thunk_end))
+            self.rva_to_offset(fields[0] or first_thunk, 8,
                                "standard import lookup table")
             name = self.cstring_at_rva(name_rva, "standard import DLL name")
             normalized = name.lower()
@@ -394,6 +444,206 @@ class PEImage:
         if index >= len(self.directories):
             return (0, 0)
         return self.directories[index]
+
+    def require_read_only_range(self, rva: int, size: int, what: str) -> int:
+        offset = self.rva_to_offset(rva, size, what)
+        section = self.initialized_section_for_rva(rva)
+        if (section is None or
+                not section["characteristics"] & SECTION_MEM_READ or
+                section["characteristics"] & SECTION_MEM_WRITE):
+            raise VerificationError(
+                "%s: %s is not in initialized read-only memory" %
+                (self.label, what))
+        return offset
+
+    def inspect_iat(self) -> Tuple[int, int]:
+        iat_rva, iat_size = self.directory(IAT_DIRECTORY)
+        if not iat_rva or not iat_size:
+            raise VerificationError("%s: missing IAT directory" % self.label)
+        if iat_rva & 7 or iat_size < 8 or iat_size & 7:
+            raise VerificationError(
+                "%s: malformed PE32+ IAT directory shape" % self.label)
+        self.rva_to_offset(iat_rva, iat_size, "IAT directory")
+        if iat_rva > 0xFFFFFFFF - iat_size:
+            raise VerificationError("%s: IAT directory range overflows" %
+                                    self.label)
+        self.iat_rva = iat_rva
+        self.iat_end = iat_rva + iat_size
+        return iat_rva, iat_size
+
+    def inspect_debug_directory(self) -> int:
+        debug_rva, debug_size = self.directory(DEBUG_DIRECTORY)
+        if not debug_rva and not debug_size:
+            return 0
+        if (not debug_rva or not debug_size or
+                debug_size % DEBUG_DIRECTORY_ENTRY_SIZE):
+            raise VerificationError("%s: malformed debug directory" % self.label)
+        debug_offset = self.require_read_only_range(
+            debug_rva, debug_size, "debug directory")
+        record_count = debug_size // DEBUG_DIRECTORY_ENTRY_SIZE
+        for index in range(record_count):
+            record = debug_offset + index * DEBUG_DIRECTORY_ENTRY_SIZE
+            debug_type = self.u32(record + 12, "debug directory Type")
+            if debug_type not in ALLOWED_DEBUG_TYPES:
+                raise VerificationError(
+                    "%s: debug directory type %d is not allowed" %
+                    (self.label, debug_type))
+            payload_size = self.u32(record + 16, "debug SizeOfData")
+            payload_rva = self.u32(record + 20, "debug AddressOfRawData")
+            payload_pointer = self.u32(record + 24, "debug PointerToRawData")
+            if not payload_size or not payload_rva or not payload_pointer:
+                raise VerificationError(
+                    "%s: debug payload has incomplete location metadata" %
+                    self.label)
+            mapped_pointer = self.rva_to_offset(
+                payload_rva, payload_size, "debug RVA payload")
+            self.need(payload_pointer, payload_size, "debug file payload")
+            if mapped_pointer != payload_pointer:
+                raise VerificationError(
+                    "%s: debug RVA and file payload locations disagree" %
+                    self.label)
+        return record_count
+
+    def inspect_x64_unwind_info(self, unwind_rva: int) -> None:
+        if not unwind_rva or unwind_rva & 3:
+            raise VerificationError("%s: invalid x64 unwind-info RVA" % self.label)
+        offset = self.require_read_only_range(
+            unwind_rva, 4, "x64 unwind information")
+        version_and_flags = self.data[offset]
+        version = version_and_flags & 7
+        flags = version_and_flags >> 3
+        if version not in (1, 2) or flags & ~7 or (flags & 4 and flags & 3):
+            raise VerificationError("%s: malformed x64 unwind information" %
+                                    self.label)
+        unwind_code_count = self.data[offset + 2]
+        trailer_offset = (4 + unwind_code_count * 2 + 3) & ~3
+        trailer_size = 4 if flags & 3 else 12 if flags & 4 else 0
+        full_offset = self.require_read_only_range(
+            unwind_rva, trailer_offset + trailer_size,
+            "declared x64 unwind information")
+        if flags & 3:
+            handler_rva = self.u32(full_offset + trailer_offset,
+                                   "x64 unwind handler")
+            if not handler_rva or not self.executable_rva(handler_rva):
+                raise VerificationError(
+                    "%s: x64 unwind handler is not executable" % self.label)
+        elif flags & 4:
+            chained_begin, chained_end, chained_unwind = struct.unpack_from(
+                "<III", self.data, full_offset + trailer_offset)
+            if (not chained_begin or chained_begin >= chained_end or
+                    not self.executable_rva(chained_begin) or
+                    not self.executable_rva(chained_end - 1) or
+                    not chained_unwind or chained_unwind & 3):
+                raise VerificationError(
+                    "%s: malformed chained x64 runtime function" % self.label)
+            self.require_read_only_range(
+                chained_unwind, 4, "chained x64 unwind information")
+
+    def arm64_function_extent(self, begin_rva: int, unwind_data: int) -> int:
+        flag = unwind_data & 3
+        if flag == 3:
+            raise VerificationError("%s: reserved ARM64 unwind-data flag" %
+                                    self.label)
+        if flag:
+            function_length = (unwind_data >> 2) & 0x7FF
+            if not function_length:
+                raise VerificationError("%s: zero ARM64 packed function length" %
+                                        self.label)
+            return function_length * 4
+
+        xdata_rva = unwind_data
+        if not xdata_rva or xdata_rva & 3:
+            raise VerificationError("%s: invalid ARM64 xdata RVA" % self.label)
+        xdata_offset = self.require_read_only_range(
+            xdata_rva, 4, "ARM64 xdata header")
+        header = self.u32(xdata_offset, "ARM64 xdata header")
+        function_length = header & 0x3FFFF
+        version = (header >> 18) & 3
+        has_handler = bool(header & (1 << 20))
+        single_epilog = bool(header & (1 << 21))
+        epilog_count = (header >> 22) & 0x1F
+        code_words = (header >> 27) & 0x1F
+        if not function_length or version:
+            raise VerificationError("%s: malformed ARM64 xdata header" %
+                                    self.label)
+        header_size = 4
+        if not epilog_count and not code_words:
+            extended = self.u32(
+                self.require_read_only_range(
+                    xdata_rva, 8, "extended ARM64 xdata header") + 4,
+                "extended ARM64 xdata header")
+            if extended & 0xFF000000:
+                raise VerificationError(
+                    "%s: ARM64 xdata extended header has reserved bits" %
+                    self.label)
+            epilog_count = extended & 0xFFFF
+            code_words = (extended >> 16) & 0xFF
+            header_size = 8
+        epilog_bytes = 0 if single_epilog else epilog_count * 4
+        payload_size = (header_size + epilog_bytes + code_words * 4 +
+                        (4 if has_handler else 0))
+        payload_offset = self.require_read_only_range(
+            xdata_rva, payload_size, "declared ARM64 xdata")
+        if has_handler:
+            handler_rva = self.u32(
+                payload_offset + payload_size - 4, "ARM64 exception handler")
+            if not handler_rva or not self.executable_rva(handler_rva):
+                raise VerificationError(
+                    "%s: ARM64 exception handler is not executable" % self.label)
+        return function_length * 4
+
+    def inspect_exception_directory(self, machine_name: str,
+                                    coff_map: CoffMap) -> int:
+        exception_rva, exception_size = self.directory(EXCEPTION_DIRECTORY)
+        entry_size = 12 if machine_name == "x86_64" else 8
+        if not exception_rva or not exception_size:
+            raise VerificationError("%s: missing exception directory" % self.label)
+        if exception_size % entry_size:
+            raise VerificationError("%s: malformed exception directory size" %
+                                    self.label)
+        table_offset = self.require_read_only_range(
+            exception_rva, exception_size, "exception directory")
+        begins: List[int] = []
+        previous_end = 0
+        for index in range(exception_size // entry_size):
+            entry_offset = table_offset + index * entry_size
+            begin_rva = self.u32(entry_offset, "runtime-function BeginAddress")
+            if machine_name == "x86_64":
+                end_rva = self.u32(entry_offset + 4,
+                                   "runtime-function EndAddress")
+                unwind_rva = self.u32(entry_offset + 8,
+                                      "runtime-function UnwindData")
+                if not begin_rva or begin_rva >= end_rva:
+                    raise VerificationError(
+                        "%s: malformed x64 runtime-function range" % self.label)
+                self.inspect_x64_unwind_info(unwind_rva)
+            else:
+                unwind_data = self.u32(entry_offset + 4,
+                                       "runtime-function UnwindData")
+                function_size = self.arm64_function_extent(begin_rva, unwind_data)
+                if begin_rva > 0xFFFFFFFF - function_size:
+                    raise VerificationError(
+                        "%s: ARM64 runtime-function range overflows" % self.label)
+                end_rva = begin_rva + function_size
+            if (not self.executable_rva(begin_rva) or
+                    not self.executable_rva(end_rva - 1)):
+                raise VerificationError(
+                    "%s: runtime-function range is not executable" % self.label)
+            if begins and begin_rva <= begins[-1]:
+                raise VerificationError(
+                    "%s: exception directory is not strictly sorted" % self.label)
+            if previous_end and begin_rva < previous_end:
+                raise VerificationError(
+                    "%s: runtime-function ranges overlap" % self.label)
+            begins.append(begin_rva)
+            previous_end = end_rva
+        for name in REQUIRED_EXCEPTION_EXPORTS:
+            target_rva = self.map_symbol_rva(coff_map, name)
+            if begins.count(target_rva) != 1:
+                raise VerificationError(
+                    "%s: map-bound nonleaf export %s lacks one exact "
+                    "runtime-function start" % (self.label, name))
+        return len(begins)
 
     def inspect(self, coff_map: CoffMap,
                 expected_machine: Optional[str] = None,
@@ -455,6 +705,10 @@ class PEImage:
             raise VerificationError("%s: invalid SizeOfHeaders" % self.label)
 
         directory_count = self.u32(optional + 108, "NumberOfRvaAndSizes")
+        if directory_count > MAX_DATA_DIRECTORIES:
+            raise VerificationError(
+                "%s: more than 16 PE data directories are not allowed" %
+                self.label)
         available_directories = max(0, (optional_size - 112) // 8)
         if directory_count > available_directories:
             raise VerificationError("%s: data directories exceed optional header" %
@@ -537,12 +791,17 @@ class PEImage:
             else:
                 self.invalid_map_errors[name] = error
 
-        certificate_offset, certificate_size = self.directory(CERTIFICATE_DIRECTORY)
-        if bool(certificate_offset) != bool(certificate_size):
-            raise VerificationError("%s: malformed certificate directory" % self.label)
-        if certificate_size:
-            self.need(certificate_offset, certificate_size, "certificate table")
+        for directory_index, directory_name in FORBIDDEN_DIRECTORIES.items():
+            directory_rva, directory_size = self.directory(directory_index)
+            if directory_rva or directory_size:
+                raise VerificationError(
+                    "%s: forbidden %s data directory is nonzero" %
+                    (self.label, directory_name))
 
+        iat_rva, iat_size = self.inspect_iat()
+        debug_record_count = self.inspect_debug_directory()
+        exception_entry_count = self.inspect_exception_directory(
+            machine_name, coff_map)
         standard_imports = self.inspect_standard_imports()
 
         load_rva, load_directory_size = self.directory(LOAD_CONFIG_DIRECTORY)
@@ -721,18 +980,6 @@ class PEImage:
         giats = []
         giat_flags = []
         if giat_count:
-            iat_rva, iat_size = self.directory(IAT_DIRECTORY)
-            if not iat_rva or not iat_size:
-                raise VerificationError(
-                    "%s: nonempty GIAT lacks an IAT data directory" % self.label)
-            if iat_rva & 7 or iat_size & 7:
-                raise VerificationError(
-                    "%s: PE32+ IAT directory is not 8-byte aligned" % self.label)
-            self.rva_to_offset(iat_rva, iat_size, "IAT directory")
-            if iat_rva > 0xFFFFFFFF - iat_size:
-                raise VerificationError("%s: IAT directory range overflows" %
-                                        self.label)
-            iat_end = iat_rva + iat_size
             giat_bytes = _checked_product(giat_count, guard_stride,
                                           len(self.data), "GIAT")
             giat_table_rva = self.va_to_rva(
@@ -743,7 +990,7 @@ class PEImage:
                 entry_offset = giat_offset + index * guard_stride
                 entry_rva = self.u32(entry_offset, "GIAT entry")
                 if (entry_rva & 7 or entry_rva < iat_rva or
-                        entry_rva > iat_end - 8):
+                        entry_rva > self.iat_end - 8):
                     raise VerificationError(
                         "%s: GIAT entry 0x%x is not an aligned PE32+ IAT slot" %
                         (self.label, entry_rva))
@@ -1116,7 +1363,14 @@ class PEImage:
             "dynamic_base": True,
             "force_integrity": True,
             "guard_cf": True,
-            "signature_present": bool(certificate_size),
+            "signature_present": False,
+            "data_directories": {
+                "count": directory_count,
+                "iat_rva": iat_rva,
+                "iat_size": iat_size,
+                "exception_entry_count": exception_entry_count,
+                "debug_record_count": debug_record_count,
+            },
             "standard_imports": standard_imports,
             "load_config": {
                 "rva": load_rva,
@@ -1275,22 +1529,22 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
 
 
 def _synthetic_image() -> bytes:
-    data = bytearray(0xE00)
+    data = bytearray(0x1000)
     data[:2] = b"MZ"
     struct.pack_into("<I", data, 0x3C, 0x80)
     data[0x80:0x84] = b"PE\0\0"
     coff = 0x84
-    struct.pack_into("<HHIIIHH", data, coff, 0x8664, 3, 0, 0, 0, 0xF0,
+    struct.pack_into("<HHIIIHH", data, coff, 0x8664, 4, 0, 0, 0, 0xF0,
                      0x2022)
     optional = coff + 20
     struct.pack_into("<H", data, optional, 0x20B)
     struct.pack_into("<I", data, optional + 4, 0x200)
-    struct.pack_into("<I", data, optional + 8, 0x600)
+    struct.pack_into("<I", data, optional + 8, 0xA00)
     struct.pack_into("<I", data, optional + 16, 0x1000)
     struct.pack_into("<I", data, optional + 20, 0x1000)
     struct.pack_into("<Q", data, optional + 24, 0x180000000)
     struct.pack_into("<II", data, optional + 32, 0x1000, 0x200)
-    struct.pack_into("<II", data, optional + 56, 0x4000, 0x400)
+    struct.pack_into("<II", data, optional + 56, 0x5000, 0x400)
     struct.pack_into("<H", data, optional + 68, 3)
     struct.pack_into("<H", data, optional + 70,
                      DYNAMIC_BASE | FORCE_INTEGRITY | GUARD_CF)
@@ -1299,17 +1553,22 @@ def _synthetic_image() -> bytes:
                      0x2400, 0xD9)
     struct.pack_into("<II", data, optional + 112 + IMPORT_DIRECTORY * 8,
                      0x22C0, 3 * IMPORT_DESCRIPTOR_SIZE)
+    struct.pack_into("<II", data, optional + 112 + EXCEPTION_DIRECTORY * 8,
+                     0x4000, 3 * 12)
+    struct.pack_into("<II", data, optional + 112 + DEBUG_DIRECTORY * 8,
+                     0x4040, DEBUG_DIRECTORY_ENTRY_SIZE)
     struct.pack_into("<II", data, optional + 112 + LOAD_CONFIG_DIRECTORY * 8,
                      0x2000, 0x100)
     struct.pack_into("<II", data, optional + 112 + BASE_RELOCATION_DIRECTORY * 8,
                      0x3000, 24)
     struct.pack_into("<II", data, optional + 112 + IAT_DIRECTORY * 8,
-                     0x2100, 16)
+                     0x2100, 0x190)
     sections = optional + 0xF0
     for index, values in enumerate((
             (b".text", 0x200, 0x1000, 0x200, 0x400, 0x60000020),
             (b".rdata", 0x600, 0x2000, 0x600, 0x600, 0x40000040),
-            (b".reloc", 0x200, 0x3000, 0x200, 0xC00, 0x42000040))):
+            (b".reloc", 0x200, 0x3000, 0x200, 0xC00, 0x42000040),
+            (b".pdata", 0x200, 0x4000, 0x200, 0xE00, 0x40000040))):
         offset = sections + index * 40
         name, virtual_size, rva, raw_size, raw_pointer, flags = values
         data[offset:offset + len(name)] = name
@@ -1383,6 +1642,14 @@ def _synthetic_image() -> bytes:
                      (DIR64 << 12) | LOAD_CONFIG_ENCLAVE_POINTER_OFFSET,
                      (DIR64 << 12) | 0x100, (DIR64 << 12) | 0x108,
                      (DIR64 << 12) | 0x5E0)
+    struct.pack_into("<IIIIIIIII", data, 0xE00,
+                     0x1010, 0x1020, 0x4080,
+                     0x1020, 0x1030, 0x4084,
+                     0x1040, 0x1050, 0x4088)
+    data[0xE80:0xE8C] = b"\x01\0\0\0" * 3
+    struct.pack_into("<IIHHIIII", data, 0xE40,
+                     0, 0, 0, 0, 2, 24, 0x4060, 0xE60)
+    data[0xE60:0xE78] = b"RSDS" + bytes(20)
     return bytes(data)
 
 
@@ -1426,6 +1693,7 @@ def self_test() -> None:
         map_symbols,
         expected_machine="x86_64", expected_export_name="fixture.dll")
     cases: List[Tuple[str, bytes, str]] = []
+    arm64_cases: List[Tuple[str, bytes, str]] = []
     failures = []
     direct_negative_count = 7
     if reference.get("gfid_aliases") != [
@@ -1548,6 +1816,39 @@ def self_test() -> None:
             failures.append("inconsistent COFF map row (wrong diagnostic: %r)" %
                             str(error))
 
+    short_directory_table = bytearray(valid)
+    struct.pack_into("<I", short_directory_table, 0x98 + 108, 13)
+    no_debug = bytearray(valid)
+    struct.pack_into("<II", no_debug,
+                     0x98 + 112 + DEBUG_DIRECTORY * 8, 0, 0)
+    type_13_debug = bytearray(valid)
+    struct.pack_into("<I", type_13_debug, 0xE40 + 12, 13)
+    arm64_valid = bytearray(valid)
+    struct.pack_into("<H", arm64_valid, 0x84, 0xAA64)
+    struct.pack_into("<II", arm64_valid,
+                     0x98 + 112 + EXCEPTION_DIRECTORY * 8, 0x4000, 3 * 8)
+    arm64_valid[0xE00:0xE24] = bytes(0x24)
+    struct.pack_into("<IIIIII", arm64_valid, 0xE00,
+                     0x1010, 0x4080,
+                     0x1020, (4 << 2) | 1,
+                     0x1040, 0x4088)
+    struct.pack_into("<II", arm64_valid, 0xE80,
+                     (1 << 27) | (1 << 21) | 4, 0)
+    struct.pack_into("<II", arm64_valid, 0xE88,
+                     (1 << 27) | (1 << 21) | 4, 0)
+    positive_images = (
+        ("short data-directory table", bytes(short_directory_table), "x86_64"),
+        ("absent optional debug directory", bytes(no_debug), "x86_64"),
+        ("allowed type-13 debug directory", bytes(type_13_debug), "x86_64"),
+        ("synthetic ARM64 exception directory", bytes(arm64_valid), "arm64"),
+    )
+    for name, image, expected_machine in positive_images:
+        try:
+            PEImage(image, "self-test/%s" % name).inspect(
+                map_symbols, expected_machine)
+        except VerificationError as error:
+            failures.append("%s (unexpectedly failed: %r)" % (name, str(error)))
+
     map_cases = [
         ("missing COFF map symbols", "",
          "COFF map is missing required symbols"),
@@ -1605,6 +1906,13 @@ def self_test() -> None:
             expected_error: str) -> None:
         mutate(name, expected_error, [(offset, fmt, value)])
 
+    def mutate_arm64(name: str, expected_error: str,
+                     changes: List[Tuple[int, str, int]]) -> None:
+        mutated = bytearray(arm64_valid)
+        for offset, fmt, value in changes:
+            struct.pack_into(fmt, mutated, offset, value)
+        arm64_cases.append((name, bytes(mutated), expected_error))
+
     optional = 0x98
     add("bad DOS signature", 0, "<H", 0, "missing MZ signature")
     cases.append(("truncated PE", valid[:0x90], "truncated or out-of-bounds"))
@@ -1619,6 +1927,83 @@ def self_test() -> None:
         "missing FORCE_INTEGRITY")
     add("missing GUARD_CF", optional + 70, "<H", DYNAMIC_BASE | FORCE_INTEGRITY,
         "missing GUARD_CF")
+    add("too many data directories", optional + 108, "<I", 17,
+        "more than 16 PE data directories are not allowed")
+    add("forbidden TLS directory",
+        optional + 112 + TLS_DIRECTORY * 8, "<I", 0x2000,
+        "forbidden TLS data directory is nonzero")
+    add("forbidden delay-import directory size",
+        optional + 112 + DELAY_IMPORT_DIRECTORY * 8 + 4, "<I", 8,
+        "forbidden delay import data directory is nonzero")
+    add("forbidden CLR directory",
+        optional + 112 + CLR_DIRECTORY * 8, "<I", 0x2000,
+        "forbidden CLR data directory is nonzero")
+    add("forged certificate directory",
+        optional + 112 + CERTIFICATE_DIRECTORY * 8, "<I", 0x200,
+        "forbidden certificate data directory is nonzero")
+
+    add("missing exception directory",
+        optional + 112 + EXCEPTION_DIRECTORY * 8, "<I", 0,
+        "missing exception directory")
+    add("misaligned x64 exception directory",
+        optional + 112 + EXCEPTION_DIRECTORY * 8 + 4, "<I", 35,
+        "malformed exception directory size")
+    add("unsorted x64 exception directory", 0xE00 + 12, "<I", 0x1000,
+        "exception directory is not strictly sorted")
+    mutate("nonexecutable x64 runtime function",
+           "runtime-function range is not executable",
+           [(0xE00 + 12, "<I", 0x2000),
+            (0xE00 + 16, "<I", 0x2010)])
+    add("bad x64 unwind information", 0xE00 + 8, "<I", 0x2000,
+        "malformed x64 unwind information")
+    add("missing exact nonleaf runtime function", 0xE00, "<I", 0x1000,
+        "map-bound nonleaf export GuardedIndirectCall lacks one exact")
+
+    add("malformed debug directory size",
+        optional + 112 + DEBUG_DIRECTORY * 8 + 4, "<I", 27,
+        "malformed debug directory")
+    add("disallowed debug directory type", 0xE40 + 12, "<I", 1,
+        "debug directory type 1 is not allowed")
+    add("debug RVA payload outside image", 0xE40 + 20, "<I", 0x5000,
+        "debug RVA payload extends past SizeOfImage")
+    add("debug file payload outside file", 0xE40 + 24, "<I", 0xFF0,
+        "truncated or out-of-bounds debug file payload")
+    add("debug RVA/file payload mismatch", 0xE40 + 24, "<I", 0xE68,
+        "debug RVA and file payload locations disagree")
+
+    add("missing IAT directory",
+        optional + 112 + IAT_DIRECTORY * 8, "<I", 0,
+        "missing IAT directory")
+    add("misaligned IAT directory",
+        optional + 112 + IAT_DIRECTORY * 8, "<I", 0x2104,
+        "malformed PE32+ IAT directory shape")
+    add("short IAT directory",
+        optional + 112 + IAT_DIRECTORY * 8 + 4, "<I", 4,
+        "malformed PE32+ IAT directory shape")
+    add("IAT directory outside image",
+        optional + 112 + IAT_DIRECTORY * 8, "<I", 0x4FF8,
+        "IAT directory extends past SizeOfImage")
+    add("standard import outside declared IAT",
+        optional + 112 + IAT_DIRECTORY * 8 + 4, "<I", 16,
+        "standard import FirstThunk is not an aligned IAT slot")
+    add("unterminated standard import IAT",
+        optional + 112 + IAT_DIRECTORY * 8 + 4, "<I", 0x188,
+        "unterminated standard import IAT")
+    mutate_arm64("bad ARM64 xdata header", "malformed ARM64 xdata header",
+                 [(0xE80, "<I", 0)])
+    mutate_arm64("reserved ARM64 unwind flag",
+                 "reserved ARM64 unwind-data flag",
+                 [(0xE04, "<I", 3)])
+    mutate_arm64("unsorted ARM64 exception directory",
+                 "exception directory is not strictly sorted",
+                 [(0xE08, "<I", 0x1000)])
+    mutate_arm64("nonexecutable ARM64 runtime function",
+                 "runtime-function range is not executable",
+                 [(0xE08, "<I", 0x2000)])
+    mutate_arm64(
+        "missing exact ARM64 nonleaf runtime function",
+        "map-bound nonleaf export GuardedIndirectCall lacks one exact",
+        [(0xE00, "<I", 0x1000)])
 
     add("missing standard imports", optional + 112 + IMPORT_DIRECTORY * 8,
         "<I", 0, "missing or short standard import directory")
@@ -1866,14 +2251,8 @@ def self_test() -> None:
         "GIAT extends past SizeOfImage")
     add("oversized GIAT count", 0x600 + LOAD_CONFIG_GIAT_COUNT_OFFSET,
         "<Q", 0xFFFFFFFFFFFFFFFF, "GIAT size overflows the image")
-    add("missing IAT for nonempty GIAT",
-        optional + 112 + IAT_DIRECTORY * 8, "<I", 0,
-        "nonempty GIAT lacks an IAT data directory")
-    add("misaligned PE32+ IAT",
-        optional + 112 + IAT_DIRECTORY * 8, "<I", 0x2104,
-        "PE32+ IAT directory is not 8-byte aligned")
-    add("GIAT entry outside IAT", 0xBC0, "<I", 0x2200,
-        "GIAT entry 0x2200 is not an aligned PE32+ IAT slot")
+    add("GIAT entry outside IAT", 0xBC0, "<I", 0x2300,
+        "GIAT entry 0x2300 is not an aligned PE32+ IAT slot")
     add("misaligned GIAT entry", 0xBC0, "<I", 0x2104,
         "GIAT entry 0x2104 is not an aligned PE32+ IAT slot")
     add("unsorted GIAT", 0xBC5, "<I", 0x2100,
@@ -1881,7 +2260,7 @@ def self_test() -> None:
     add("nonzero GIAT metadata", 0xBC4, "<B", 1,
         "GIAT entry has nonzero metadata")
 
-    add("section raw data out of bounds", 0x188 + 20, "<I", 0xE00,
+    add("section raw data out of bounds", 0x188 + 20, "<I", 0xF00,
         "truncated or out-of-bounds section .text raw data")
     add("missing relocations", optional + 112 + BASE_RELOCATION_DIRECTORY * 8,
         "<I", 0, "missing base relocation directory")
@@ -1921,6 +2300,16 @@ def self_test() -> None:
     for name, image, expected_error in cases:
         try:
             PEImage(image, "self-test/%s" % name).inspect(map_symbols)
+            failures.append("%s (unexpectedly passed)" % name)
+        except VerificationError as error:
+            if expected_error not in str(error):
+                failures.append("%s (expected %r, got %r)" %
+                                (name, expected_error, str(error)))
+
+    for name, image, expected_error in arm64_cases:
+        try:
+            PEImage(image, "self-test/%s" % name).inspect(
+                map_symbols, "arm64")
             failures.append("%s (unexpectedly passed)" % name)
         except VerificationError as error:
             if expected_error not in str(error):
@@ -2143,7 +2532,7 @@ def self_test() -> None:
     print("PASS: VBS enclave PE verifier self-test (%d negative mutations; "
           "representation-independent 5-byte comparison)" %
           (direct_negative_count + len(map_cases) + len(cases) +
-           len(compare_cases)))
+           len(arm64_cases) + len(compare_cases)))
 
 
 def main(argv: Optional[List[str]] = None) -> int:
