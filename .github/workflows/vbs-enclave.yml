@@ -166,12 +166,12 @@ jobs:
         shell: pwsh
         run: |
           $required = ('${{ inputs.require_runtime }}' -eq 'true') -or ('${{ inputs.runtime_runner }}' -eq 'vbs-enclave-windows-x64')
-          $arguments = @(
-            '-Phase', 'Runtime',
-            '-ArtifactDirectory', 'artifacts\vbs-enclave'
-          )
-          if ($required) { $arguments += '-RequireRuntime' }
-          & .\utils\ci\run-vbs-enclave-ci.ps1 @arguments
+          $runtimeArguments = @{
+            Phase = 'Runtime'
+            ArtifactDirectory = 'artifacts\vbs-enclave'
+          }
+          if ($required) { $runtimeArguments.RequireRuntime = $true }
+          & .\utils\ci\run-vbs-enclave-ci.ps1 @runtimeArguments
 
       - name: Publish runtime evidence
         if: always()
