@@ -277,7 +277,13 @@ if ($Phase -eq 'Static') {
   foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll',
                       'neverc-neverc-arm64.dll')) {
     $image = Join-Path $unsignedRoot $name
-    Invoke-Logged $python @($verifier, 'inspect', $image, '--json', (Join-Path $jsonRoot "$name.json")) (Join-Path $logRoot "verify-$name.log") | Out-Null
+    $expectedMachine = if ($name -eq 'neverc-neverc-arm64.dll') {
+      'arm64'
+    } else {
+      'x86_64'
+    }
+    Invoke-Logged $python @($verifier, 'inspect', $image, '--machine',
+      $expectedMachine, '--json', (Join-Path $jsonRoot "$name.json")) (Join-Path $logRoot "verify-$name.log") | Out-Null
     Invoke-Logged $tools.dumpbin @('/headers', '/loadconfig', $image) (Join-Path $artifactRoot "$name.dumpbin.txt") | Out-Null
   }
   Invoke-Logged $python @($verifier, 'compare',

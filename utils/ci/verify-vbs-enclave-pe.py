@@ -31,6 +31,9 @@ IMPORT_DIRECTORY = 1
 LOAD_CONFIG_DIRECTORY = 10
 BASE_RELOCATION_DIRECTORY = 5
 CERTIFICATE_DIRECTORY = 4
+IAT_DIRECTORY = 12
+LOAD_CONFIG_GIAT_TABLE_OFFSET = 0xA0
+LOAD_CONFIG_GIAT_COUNT_OFFSET = 0xA8
 LOAD_CONFIG_ENCLAVE_POINTER_OFFSET = 0xF8
 LOAD_CONFIG_REQUIRED_SIZE = 0x100
 ENCLAVE_CONFIG_SIZE = 80
@@ -40,21 +43,25 @@ MAX_IMPORT_NAME_SIZE = 4096
 EXPECTED_IMPORT_NAMES = frozenset(("ucrtbase_enclave.dll", "vertdll.dll"))
 EXPECTED_FAMILY_ID = bytes.fromhex("912d7418b6534c2a8ea45739c106fd22")
 EXPECTED_IMAGE_ID = bytes.fromhex("37a8c5406fd149bb9a0ee31572bc489d")
-EXPECTED_EXPORT_KINDS = {
-    "GuardedExercise": "function",
-    "GuardedIndirectCall": "function",
-    "GuardedTarget": "function",
-    "LegacyAddressTaken": "data",
-    "LegacyExercise": "function",
-    "LegacyTarget": "function",
-}
-EXPECTED_EXPORT_GFID_COVERAGE = {
-    "GuardedExercise": False,
-    "GuardedIndirectCall": False,
-    "GuardedTarget": True,
-    "LegacyAddressTaken": False,
-    "LegacyExercise": False,
-    "LegacyTarget": True,
+EXPECTED_EXPORTS = {
+    "GuardedExercise": {
+        "kind": "function", "ordinal": 1, "gfid_covered": False,
+    },
+    "GuardedIndirectCall": {
+        "kind": "function", "ordinal": 2, "gfid_covered": False,
+    },
+    "GuardedTarget": {
+        "kind": "function", "ordinal": 3, "gfid_covered": True,
+    },
+    "LegacyAddressTaken": {
+        "kind": "data", "ordinal": 4, "gfid_covered": False,
+    },
+    "LegacyExercise": {
+        "kind": "function", "ordinal": 5, "gfid_covered": False,
+    },
+    "LegacyTarget": {
+        "kind": "function", "ordinal": 6, "gfid_covered": True,
+    },
 }
 
 
@@ -394,6 +401,62 @@ class PEImage:
                 "%s: export-suppressed GFID lacks GuardFlags suppression info" %
                 self.label)
 
+        usable_gfid_set = {
+            gfid for gfid in gfids
+            if not gfid_flags_by_rva[gfid] &
+            (GFID_FID_SUPPRESSED | GFID_EXPORT_SUPPRESSED)
+        }
+
+        giat_table_va = self.u64(
+            load_offset + LOAD_CONFIG_GIAT_TABLE_OFFSET,
+            "GuardAddressTakenIatEntryTable")
+        giat_count = self.u64(
+            load_offset + LOAD_CONFIG_GIAT_COUNT_OFFSET,
+            "GuardAddressTakenIatEntryCount")
+        if bool(giat_table_va) != bool(giat_count):
+            raise VerificationError(
+                "%s: GIAT table pointer and count are inconsistent" % self.label)
+        giat_table_rva = 0
+        giats = []
+        giat_flags = []
+        if giat_count:
+            iat_rva, iat_size = self.directory(IAT_DIRECTORY)
+            if not iat_rva or not iat_size:
+                raise VerificationError(
+                    "%s: nonempty GIAT lacks an IAT data directory" % self.label)
+            if iat_rva & 7 or iat_size & 7:
+                raise VerificationError(
+                    "%s: PE32+ IAT directory is not 8-byte aligned" % self.label)
+            self.rva_to_offset(iat_rva, iat_size, "IAT directory")
+            if iat_rva > 0xFFFFFFFF - iat_size:
+                raise VerificationError("%s: IAT directory range overflows" %
+                                        self.label)
+            iat_end = iat_rva + iat_size
+            giat_bytes = _checked_product(giat_count, guard_stride,
+                                          len(self.data), "GIAT")
+            giat_table_rva = self.va_to_rva(
+                giat_table_va, "GuardAddressTakenIatEntryTable")
+            giat_offset = self.rva_to_offset(giat_table_rva, giat_bytes,
+                                             "GIAT")
+            for index in range(giat_count):
+                entry_offset = giat_offset + index * guard_stride
+                entry_rva = self.u32(entry_offset, "GIAT entry")
+                if (entry_rva & 7 or entry_rva < iat_rva or
+                        entry_rva > iat_end - 8):
+                    raise VerificationError(
+                        "%s: GIAT entry 0x%x is not an aligned PE32+ IAT slot" %
+                        (self.label, entry_rva))
+                if giats and entry_rva <= giats[-1]:
+                    raise VerificationError(
+                        "%s: GIAT is not strictly sorted" % self.label)
+                metadata = self.data[entry_offset + 4:
+                                     entry_offset + guard_stride]
+                if any(metadata):
+                    raise VerificationError(
+                        "%s: GIAT entry has nonzero metadata" % self.label)
+                giats.append(entry_rva)
+                giat_flags.append(list(metadata))
+
         export_rva, export_size = self.directory(EXPORT_DIRECTORY)
         if not export_rva or export_size < 40:
             raise VerificationError("%s: missing or short export directory" %
@@ -410,13 +473,15 @@ class PEImage:
         names_rva = self.u32(export_offset + 32, "export AddressOfNames")
         ordinals_rva = self.u32(export_offset + 36,
                                 "export AddressOfNameOrdinals")
-        if not function_count or not name_count or name_count > function_count:
-            raise VerificationError("%s: invalid export counts" % self.label)
+        expected_export_count = len(EXPECTED_EXPORTS)
         if export_base != 1:
-            raise VerificationError("%s: export ordinal Base is not 1" % self.label)
-        if function_count != name_count:
-            raise VerificationError("%s: export table contains unnamed ordinals" %
+            raise VerificationError("%s: export ordinal Base is not 1" %
                                     self.label)
+        if (function_count != expected_export_count or
+                name_count != expected_export_count):
+            raise VerificationError(
+                "%s: export function/name counts differ from fixture contract" %
+                self.label)
         if not functions_rva or not names_rva or not ordinals_rva:
             raise VerificationError("%s: missing export address table" % self.label)
         function_bytes = _checked_product(function_count, 4, len(self.data),
@@ -432,11 +497,6 @@ class PEImage:
         ordinals_offset = self.rva_to_offset(ordinals_rva, ordinal_bytes,
                                              "export ordinal table")
         export_end = export_rva + export_size
-        usable_gfid_set = {
-            gfid for gfid in gfids
-            if not gfid_flags_by_rva[gfid] &
-            (GFID_FID_SUPPRESSED | GFID_EXPORT_SUPPRESSED)
-        }
         export_targets = []
         for index in range(function_count):
             target_rva = self.u32(functions_offset + index * 4,
@@ -468,6 +528,13 @@ class PEImage:
                     target["kind"] = "function" if executable else "data"
                     target["gfid_covered"] = target_rva in usable_gfid_set
             export_targets.append(target)
+        concrete_export_targets = [
+            target["target_rva"] for target in export_targets
+            if target["target_rva"] and target["kind"] != "forwarder"
+        ]
+        if len(concrete_export_targets) != len(set(concrete_export_targets)):
+            raise VerificationError("%s: exports alias one target RVA" %
+                                    self.label)
 
         exports = []
         seen_export_names = set()
@@ -502,18 +569,28 @@ class PEImage:
         if seen_export_ordinals != set(range(function_count)):
             raise VerificationError("%s: export ordinal table is incomplete" %
                                     self.label)
-        actual_export_kinds = {entry["name"]: entry["kind"]
-                               for entry in exports}
-        if actual_export_kinds != EXPECTED_EXPORT_KINDS:
-            raise VerificationError("%s: exports differ from fixture contract" %
-                                    self.label)
+        actual_exports = {
+            entry["name"]: {
+                "kind": entry["kind"],
+                "ordinal": entry["ordinal"],
+                "gfid_covered": entry["gfid_covered"],
+            }
+            for entry in exports
+        }
         actual_export_coverage = {
             entry["name"]: entry["gfid_covered"] for entry in exports
         }
-        if actual_export_coverage != EXPECTED_EXPORT_GFID_COVERAGE:
+        expected_export_coverage = {
+            name: entry["gfid_covered"]
+            for name, entry in EXPECTED_EXPORTS.items()
+        }
+        if actual_export_coverage != expected_export_coverage:
             raise VerificationError(
                 "%s: required export GFID coverage differs from fixture contract" %
                 self.label)
+        if actual_exports != EXPECTED_EXPORTS:
+            raise VerificationError("%s: exports differ from fixture contract" %
+                                    self.label)
         export_dll_name = self.cstring_at_rva(export_name_rva,
                                               "export DLL name")
 
@@ -657,6 +734,11 @@ class PEImage:
         if (enclave_pointer_rva, DIR64) not in relocations:
             raise VerificationError("%s: enclave pointer lacks a DIR64 base relocation" %
                                     self.label)
+        giat_pointer_rva = load_rva + LOAD_CONFIG_GIAT_TABLE_OFFSET
+        if giat_count and (giat_pointer_rva, DIR64) not in relocations:
+            raise VerificationError(
+                "%s: nonempty GIAT pointer lacks a DIR64 base relocation" %
+                self.label)
 
         return {
             "path": self.label,
@@ -703,6 +785,20 @@ class PEImage:
             },
             "gfids": gfids,
             "gfid_metadata": gfid_metadata,
+            "gfid_flags": [gfid_flags_by_rva[gfid] for gfid in gfids],
+            "giat": {
+                "table_rva": giat_table_rva,
+                "entry_size": guard_stride,
+                "count": giat_count,
+                "entries": giats,
+                "metadata": giat_flags,
+                "semantics": {
+                    "present": bool(giat_count),
+                    "entries_strictly_sorted_unique_iat_slots": True,
+                    "metadata_zero": True,
+                    "pointer_dir64_relocation": True,
+                },
+            },
             "exports": exports,
             "export_dll_name": export_dll_name,
             "enclave_pointer_dir64_relocation": True,
@@ -725,6 +821,7 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
     def export_gfid_coverage(image: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         return {entry["name"]: {
             "kind": entry["kind"],
+            "ordinal": entry["ordinal"],
             "gfid_covered": entry["gfid_covered"],
         } for entry in image["exports"]}
 
@@ -738,6 +835,8 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
          candidate["load_config"]["guard_semantics"]),
         ("export GFID coverage", export_gfid_coverage(reference),
          export_gfid_coverage(candidate)),
+        ("GIAT safety semantics", reference["giat"]["semantics"],
+         candidate["giat"]["semantics"]),
         ("standard imports", reference["standard_imports"],
          candidate["standard_imports"]),
         ("enclave configuration", enclave_semantics(reference),
@@ -781,6 +880,8 @@ def _synthetic_image() -> bytes:
                      0x2000, 0x100)
     struct.pack_into("<II", data, optional + 112 + BASE_RELOCATION_DIRECTORY * 8,
                      0x3000, 12)
+    struct.pack_into("<II", data, optional + 112 + IAT_DIRECTORY * 8,
+                     0x2100, 16)
     sections = optional + 0xF0
     for index, values in enumerate((
             (b".text", 0x200, 0x1000, 0x200, 0x400, 0x60000020),
@@ -797,7 +898,10 @@ def _synthetic_image() -> bytes:
     struct.pack_into("<Q", data, load + 0x88, 2)
     struct.pack_into("<I", data, load + 0x90,
                      CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT)
+    struct.pack_into("<QQ", data, load + LOAD_CONFIG_GIAT_TABLE_OFFSET,
+                     0x1800025C0, 2)
     struct.pack_into("<Q", data, load + 0xF8, 0x180002200)
+    struct.pack_into("<QQ", data, 0x700, 0x180001000, 0x180001030)
     enclave = 0x800
     struct.pack_into("<IIIIII", data, enclave, 80, 76, 1, 2, 0x2300,
                      ENCLAVE_IMPORT_SIZE)
@@ -818,6 +922,7 @@ def _synthetic_image() -> bytes:
     struct.pack_into("<I", data, 0x950 + 72, 0x23C0)
     data[0x9A0:0x9B5] = b"ucrtbase_enclave.dll\0"
     data[0x9C0:0x9CC] = b"vertdll.dll\0"
+    struct.pack_into("<II", data, 0xBC0, 0x2100, 0x2108)
     export = 0xA00
     export_names = (
         ("GuardedExercise", 0x1020),
@@ -841,7 +946,8 @@ def _synthetic_image() -> bytes:
         data[string_offset:string_offset + len(encoded_name)] = encoded_name
         string_offset += len(encoded_name)
     struct.pack_into("<IIHH", data, 0xC00, 0x2000, 12,
-                     (DIR64 << 12) | 0xF8, 0)
+                     (DIR64 << 12) | 0xF8,
+                     (DIR64 << 12) | LOAD_CONFIG_GIAT_TABLE_OFFSET)
     return bytes(data)
 
 
@@ -905,15 +1011,18 @@ def self_test() -> None:
     add("wrong export base", 0xA00 + 16, "<I", 2,
         "export ordinal Base is not 1")
     add("unnamed export ordinal", 0xA00 + 20, "<I", 7,
-        "export table contains unnamed ordinals")
+        "export function/name counts differ from fixture contract")
     add("export ordinal out of range", 0xA58, "<H", 6,
         "export name ordinal is out of range")
     add("aliased export ordinal", 0xA58 + 2, "<H", 0,
         "export names alias the same ordinal")
     add("aliased export target", 0xA28 + 4, "<I", 0x1020,
-        "export names alias the same target")
-    mutate("missing required export", "exports differ from fixture contract", [],
+        "exports alias one target RVA")
+    mutate("missing required export",
+           "required export GFID coverage differs from fixture contract", [],
            [(0xA78, b"X")])
+    mutate("swapped export ordinals", "exports differ from fixture contract",
+           [(0xA58, "<H", 1), (0xA5A, "<H", 0)])
 
     add("missing load config", optional + 112 + LOAD_CONFIG_DIRECTORY * 8,
         "<I", 0, "missing or short load-config directory")
@@ -1003,7 +1112,8 @@ def self_test() -> None:
            "required export GFID coverage differs from fixture contract",
            [(0x600 + 0x90, "<I", 0x10000500)],
            [(0x8A0, struct.pack("<IBIB", 0x1000, GFID_FID_SUPPRESSED,
-                               0x1030, 0))])
+                               0x1030, 0)),
+            (0xBC0, struct.pack("<IBIB", 0x2100, 0, 0x2108, 0))])
     mutate("export-suppressed GFID without GuardFlags info",
            "export-suppressed GFID lacks GuardFlags suppression info",
            [(0x600 + 0x90, "<I", 0x10000500)],
@@ -1014,11 +1124,40 @@ def self_test() -> None:
            [(0x600 + 0x90, "<I",
              0x10000500 | CF_EXPORT_SUPPRESSION_INFO_PRESENT)],
            [(0x8A0, struct.pack("<IBIB", 0x1000, GFID_EXPORT_SUPPRESSED,
-                               0x1030, 0))])
+                               0x1030, 0)),
+            (0xBC0, struct.pack("<IBIB", 0x2100, 0, 0x2108, 0))])
     add("deleted required export GFID", 0x600 + 0x88, "<Q", 1,
         "required export GFID coverage differs from fixture contract")
     add("replaced required export GFID", 0x8A4, "<I", 0x1050,
         "required export GFID coverage differs from fixture contract")
+
+    add("GIAT pointer without count",
+        0x600 + LOAD_CONFIG_GIAT_COUNT_OFFSET, "<Q", 0,
+        "GIAT table pointer and count are inconsistent")
+    add("GIAT count without pointer",
+        0x600 + LOAD_CONFIG_GIAT_TABLE_OFFSET, "<Q", 0,
+        "GIAT table pointer and count are inconsistent")
+    add("GIAT table outside image",
+        0x600 + LOAD_CONFIG_GIAT_TABLE_OFFSET, "<Q", 0x180005000,
+        "GIAT extends past SizeOfImage")
+    add("oversized GIAT count", 0x600 + LOAD_CONFIG_GIAT_COUNT_OFFSET,
+        "<Q", 0xFFFFFFFFFFFFFFFF, "GIAT size overflows the image")
+    add("missing IAT for nonempty GIAT",
+        optional + 112 + IAT_DIRECTORY * 8, "<I", 0,
+        "nonempty GIAT lacks an IAT data directory")
+    add("misaligned PE32+ IAT",
+        optional + 112 + IAT_DIRECTORY * 8, "<I", 0x2104,
+        "PE32+ IAT directory is not 8-byte aligned")
+    add("GIAT entry outside IAT", 0xBC0, "<I", 0x2200,
+        "GIAT entry 0x2200 is not an aligned PE32+ IAT slot")
+    add("misaligned GIAT entry", 0xBC0, "<I", 0x2104,
+        "GIAT entry 0x2104 is not an aligned PE32+ IAT slot")
+    add("unsorted GIAT", 0xBC4, "<I", 0x2100,
+        "GIAT is not strictly sorted")
+    mutate("nonzero GIAT metadata", "GIAT entry has nonzero metadata",
+           [(0x600 + 0x90, "<I", 0x10000500)],
+           [(0x8A0, struct.pack("<IBIB", 0x1000, 0, 0x1030, 0)),
+            (0xBC0, struct.pack("<IBIB", 0x2100, 1, 0x2108, 0))])
 
     add("section raw data out of bounds", 0x188 + 20, "<I", 0xE00,
         "truncated or out-of-bounds section .text raw data")
@@ -1028,7 +1167,11 @@ def self_test() -> None:
         "truncated base relocation block")
     add("wrong enclave relocation type", 0xC08, "<H", (3 << 12) | 0xF8,
         "enclave pointer lacks a DIR64 base relocation")
-
+    add("missing GIAT pointer relocation", 0xC0A, "<H", 0,
+        "nonempty GIAT pointer lacks a DIR64 base relocation")
+    add("wrong GIAT pointer relocation", 0xC0A, "<H",
+        (DIR64 << 12) | LOAD_CONFIG_GIAT_COUNT_OFFSET,
+        "nonempty GIAT pointer lacks a DIR64 base relocation")
     failures = []
     for name, image, expected_error in cases:
         try:
@@ -1046,11 +1189,13 @@ def self_test() -> None:
     struct.pack_into("<I", semantic_variant, 0x600, 0x108)
     struct.pack_into("<Q", semantic_variant, 0x600 + 0x80, 0x180002580)
     struct.pack_into("<Q", semantic_variant, 0x600 + 0x88, 3)
-    struct.pack_into("<I", semantic_variant, 0x600 + 0x90, 0x10003500)
+    struct.pack_into("<I", semantic_variant, 0x600 + 0x90, 0x10000500)
     for index, (gfid, metadata) in enumerate(
             ((0x1000, 0), (0x1018, GFID_FID_SUPPRESSED), (0x1030, 0))):
         struct.pack_into("<IB", semantic_variant, 0xB80 + index * 5,
                          gfid, metadata)
+    struct.pack_into("<IBIB", semantic_variant, 0xBC0,
+                     0x2100, 0, 0x2108, 0)
 
     first_descriptor = bytes(semantic_variant[0x900:0x950])
     second_descriptor = bytes(semantic_variant[0x950:0x9A0])
@@ -1060,8 +1205,10 @@ def self_test() -> None:
     struct.pack_into("<II", semantic_variant, 0x800 + 16, 0x2304, 84)
     struct.pack_into("<I", semantic_variant, 0x8C0 + 12, 0x2500)
     struct.pack_into("<I", semantic_variant, 0x8D4 + 12, 0x2520)
-    struct.pack_into("<I", semantic_variant, 0x904 + 72, 0x2500)
-    struct.pack_into("<I", semantic_variant, 0x958 + 72, 0x2520)
+    # Descriptor order and the extensible entry stride are representation
+    # details; both names still have to match the live import set exactly.
+    struct.pack_into("<I", semantic_variant, 0x904 + 72, 0x2520)
+    struct.pack_into("<I", semantic_variant, 0x958 + 72, 0x2500)
     semantic_variant[0xB00:0xB15] = b"UCRTBASE_ENCLAVE.DLL\0"
     semantic_variant[0xB20:0xB2C] = b"vertdll.dll\0"
 
@@ -1087,7 +1234,7 @@ def self_test() -> None:
     )
     if reference_shape != (0x100, 0x100, 0x500, 4, 2, 0x22A0, 80):
         raise VerificationError("self-test reference CFG shape is incorrect")
-    if variant_shape != (0x108, 0x108, 0x10003500, 5, 3, 0x2580, 84):
+    if variant_shape != (0x108, 0x108, 0x10000500, 5, 3, 0x2580, 84):
         raise VerificationError("self-test did not construct distinct legal layouts")
     compare(reference, variant)
 
@@ -1114,6 +1261,10 @@ def self_test() -> None:
     changed_cfg["load_config"]["guard_semantics"]["longjmp_table_present"] = True
     compare_cases.append(("CFG semantic change", changed_cfg,
                           "CFG safety semantics"))
+    changed_giat = json.loads(json.dumps(reference))
+    changed_giat["giat"]["semantics"]["present"] = False
+    compare_cases.append(("GIAT semantic change", changed_giat,
+                          "GIAT safety semantics"))
     for name, candidate, expected_error in compare_cases:
         try:
             compare(reference, candidate)
@@ -1136,6 +1287,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     inspect_parser = subparsers.add_parser("inspect")
     inspect_parser.add_argument("image", type=pathlib.Path)
+    inspect_parser.add_argument("--machine", choices=("x86_64", "arm64"))
     inspect_parser.add_argument("--json", dest="json_path", type=pathlib.Path)
     compare_parser = subparsers.add_parser("compare")
     compare_parser.add_argument("reference", type=pathlib.Path)
@@ -1147,6 +1299,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             self_test()
         elif args.command == "inspect":
             result = inspect_path(args.image)
+            if args.machine and result["machine"] != args.machine:
+                raise VerificationError(
+                    "%s: machine %s does not match expected %s" %
+                    (args.image, result["machine"], args.machine))
             encoded = json.dumps(result, indent=2, sort_keys=True)
             print(encoded)
             if args.json_path:

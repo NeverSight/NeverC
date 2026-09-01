@@ -51,6 +51,7 @@ Un enlace de enclave debe proporcionar estas dos definiciones de datos de imagen
 NeverC mantiene vivo `__enclave_config` durante la eliminación de código muerto, lo extrae de un archivo si es necesario y verifica que el puntero load-config finalmente reubicado sea igual a la dirección virtual de ese objeto de configuración. Una definición ausente, absoluta, descartada, truncada o reubicada incorrectamente produce un error de enlace.
 
 `/GUARD:MIXED` habilita la salida CFG para una mezcla de archivos objeto protegidos y heredados. Emite entradas GFID y GIAT de cinco bytes: un RVA de cuatro bytes seguido de un byte de metadatos, que es cero en los objetivos ordinarios actuales. Sus `GuardFlags` contienen los bits de CFG y tamaño de entrada. Los objetos heredados aportan destinos cuya dirección se toma mediante un análisis conservador de las reubicaciones, excluyendo los metadatos de unwind.
+Cuando `/GUARD:MIXED` se combina con `/GUARD:EHCONT`, la tabla de destinos de continuación de EH también usa entradas de cinco bytes: un RVA de cuatro bytes seguido de un byte de metadatos con valor cero.
 
 Una solicitud explícita de enlace incremental es incompatible con `/ENCLAVE` y se rechaza. Se utiliza la última opción `/INCREMENTAL` efectiva, incluidas las opciones procedentes de las directivas de los archivos objeto.
 
