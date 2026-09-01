@@ -1979,6 +1979,15 @@ void OutputWriter::markSymbolsWithRelocations(ObjFile *file,
       continue;
 
     for (const coff_relocation &reloc : sc->getRelocs()) {
+      // ARM64 branch relocations encode direct control flow and therefore do
+      // not make their targets valid indirect-call destinations. Keep address
+      // materialization relocations, which are the legacy evidence that a
+      // function's address was actually taken.
+      if (ctx.config.machine == ARM64 &&
+          (reloc.Type == IMAGE_REL_ARM64_BRANCH26 ||
+           reloc.Type == IMAGE_REL_ARM64_BRANCH19 ||
+           reloc.Type == IMAGE_REL_ARM64_BRANCH14))
+        continue;
 
       Symbol *ref = sc->file->getSymbol(reloc.SymbolTableIndex);
       maybeAddAddressTakenFunction(usedSymbols, ref);

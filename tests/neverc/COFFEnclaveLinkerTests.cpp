@@ -654,6 +654,37 @@ TEST_F(COFFEnclaveLinkerTest, MixedIncludesGuardedAndUnguardedTargets) {
   EXPECT_EQ(std::adjacent_find(Entries.begin(), Entries.end()), Entries.end());
 }
 
+TEST_F(COFFEnclaveLinkerTest, MixedArm64IgnoresDirectControlFlowRelocations) {
+  const InMemoryInput Main = baseObject(Arm64, "ret");
+  const InMemoryInput Branches =
+      objectFor("/virtual/legacy-arm64-branches.obj", Arm64,
+                ".text\n"
+                ".globl legacy_branch_caller\nlegacy_branch_caller:\n"
+                "  bl branch26_target\n"
+                "  b.eq branch19_target\n"
+                "  tbz w0, #0, branch14_target\n"
+                "  ret\n");
+  const InMemoryInput Targets =
+      objectFor("/virtual/legacy-arm64-targets.obj", Arm64,
+                ".text\n"
+                ".def branch26_target; .scl 2; .type 32; .endef\n"
+                ".globl branch26_target\nbranch26_target:\n  ret\n"
+                ".def branch19_target; .scl 2; .type 32; .endef\n"
+                ".globl branch19_target\nbranch19_target:\n  ret\n"
+                ".def branch14_target; .scl 2; .type 32; .endef\n"
+                ".globl branch14_target\nbranch14_target:\n  ret\n"
+                ".def address_target; .scl 2; .type 32; .endef\n"
+                ".globl address_target\naddress_target:\n  ret\n"
+                ".section .rdata,\"dr\"\n  .quad address_target\n");
+
+  const LinkResult Result =
+      link({"--machine=arm64", "--guard=mixed"}, {Main, Branches, Targets});
+  PEImage Image = inspect(Result);
+  ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardCountOffset, 8));
+  EXPECT_EQ(*Image.loadConfig64(LoadConfigGuardCountOffset), 2U)
+      << Result.Diagnostics;
+}
+
 TEST_F(COFFEnclaveLinkerTest, MixedUsesFiveByteAddressTakenIATEntries) {
   struct Case {
     llvm::StringRef Triple;
