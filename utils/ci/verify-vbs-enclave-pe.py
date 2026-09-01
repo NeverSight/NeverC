@@ -23,18 +23,23 @@ GUARD_CF = 0x4000
 SECTION_MEM_READ = 0x40000000
 SECTION_MEM_WRITE = 0x80000000
 CF_INSTRUMENTED = 0x0100
+CFW_INSTRUMENTED = 0x0200
 CF_FUNCTION_TABLE_PRESENT = 0x0400
 CF_LONGJUMP_TABLE_PRESENT = 0x10000
 CF_EH_CONTINUATION_TABLE_PRESENT = 0x00400000
-CF_EXPORT_SUPPRESSION_INFO_PRESENT = 0x4000
+CF_XFG_ENABLED = 0x00800000
+CF_PROTECT_DELAYLOAD_IAT = 0x1000
+CF_DELAYLOAD_IAT_IN_ITS_OWN_SECTION = 0x2000
 CF_FUNCTION_TABLE_SIZE_MASK = 0xF0000000
 CF_FUNCTION_TABLE_SIZE_5BYTES = 0x10000000
+CF_ALLOWED_FIXTURE_FLAGS = (CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT |
+                            CF_PROTECT_DELAYLOAD_IAT |
+                            CF_DELAYLOAD_IAT_IN_ITS_OWN_SECTION |
+                            CF_FUNCTION_TABLE_SIZE_MASK)
 GFID_FID_SUPPRESSED = 0x01
 GFID_EXPORT_SUPPRESSED = 0x02
 GFID_FID_LANGEXCPTHANDLER = 0x04
 GFID_FID_XFG = 0x08
-GFID_KNOWN_FLAGS = (GFID_FID_SUPPRESSED | GFID_EXPORT_SUPPRESSED |
-                    GFID_FID_LANGEXCPTHANDLER | GFID_FID_XFG)
 DIR64 = 10
 EXPORT_DIRECTORY = 0
 IMPORT_DIRECTORY = 1
@@ -515,6 +520,15 @@ class PEImage:
             raise VerificationError(
                 "%s: /GUARD:MIXED unexpectedly enabled EH continuation metadata" %
                 self.label)
+        if guard_flags & CF_XFG_ENABLED:
+            raise VerificationError(
+                "%s: /GUARD:MIXED unexpectedly enabled XFG metadata" %
+                self.label)
+        unsupported_guard_flags = guard_flags & ~CF_ALLOWED_FIXTURE_FLAGS
+        if unsupported_guard_flags:
+            raise VerificationError(
+                "%s: GuardFlags contain unsupported fixture bits 0x%x" %
+                (self.label, unsupported_guard_flags))
         if not guard_table_va or not guard_count:
             raise VerificationError("%s: empty CFG function table" % self.label)
         guard_stride = 4 + ((guard_flags & CF_FUNCTION_TABLE_SIZE_MASK) >> 28)
@@ -528,8 +542,6 @@ class PEImage:
                                           "CFG function table")
         gfids = []
         gfid_metadata = []
-        gfid_flags_by_rva = {}
-        has_export_suppression = False
         for index in range(guard_count):
             gfid = self.u32(guard_offset + index * guard_stride,
                             "CFG function entry")
@@ -542,36 +554,13 @@ class PEImage:
             gfids.append(gfid)
             metadata = self.data[guard_offset + index * guard_stride + 4:
                                  guard_offset + (index + 1) * guard_stride]
-            gfid_flags = metadata[0] if metadata else 0
-            if gfid_flags & ~GFID_KNOWN_FLAGS:
-                raise VerificationError("%s: GFID entry has undefined flags" %
-                                        self.label)
-            if gfid_flags & GFID_FID_LANGEXCPTHANDLER:
+            if any(metadata):
                 raise VerificationError(
-                    "%s: GFID entry unexpectedly marks a language exception "
-                    "handler" % self.label)
-            if gfid_flags & GFID_FID_XFG:
-                raise VerificationError(
-                    "%s: GFID entry unexpectedly marks an XFG target" %
+                    "%s: GFID metadata must be zero for this fixture" %
                     self.label)
-            if any(metadata[1:]):
-                raise VerificationError("%s: GFID entry has undefined metadata" %
-                                        self.label)
             gfid_metadata.append(metadata.hex())
-            gfid_flags_by_rva[gfid] = gfid_flags
-            has_export_suppression |= bool(
-                gfid_flags & GFID_EXPORT_SUPPRESSED)
-        if (has_export_suppression and
-                not guard_flags & CF_EXPORT_SUPPRESSION_INFO_PRESENT):
-            raise VerificationError(
-                "%s: export-suppressed GFID lacks GuardFlags suppression info" %
-                self.label)
 
-        usable_gfid_set = {
-            gfid for gfid in gfids
-            if not gfid_flags_by_rva[gfid] &
-            (GFID_FID_SUPPRESSED | GFID_EXPORT_SUPPRESSED)
-        }
+        gfid_set = set(gfids)
 
         giat_table_va = self.u64(
             load_offset + LOAD_CONFIG_GIAT_TABLE_OFFSET,
@@ -689,7 +678,7 @@ class PEImage:
                             (self.label, target_rva))
                     executable = bool(containing["characteristics"] & 0x20000000)
                     target["kind"] = "function" if executable else "data"
-                    target["gfid_covered"] = target_rva in usable_gfid_set
+                    target["gfid_covered"] = target_rva in gfid_set
             export_targets.append(target)
         concrete_export_targets = [
             target["target_rva"] for target in export_targets
@@ -1023,7 +1012,7 @@ class PEImage:
             },
             "gfids": gfids,
             "gfid_metadata": gfid_metadata,
-            "gfid_flags": [gfid_flags_by_rva[gfid] for gfid in gfids],
+            "gfid_flags": [0] * len(gfids),
             "giat": {
                 "table_rva": giat_table_rva,
                 "entry_size": guard_stride,
@@ -1519,6 +1508,14 @@ def self_test() -> None:
         "CFG function table size overflows the image")
     add("missing GuardFlags", 0x600 + 0x90, "<I", 0,
         "GuardFlags lack CFG instrumentation/table bits")
+    add("unexpected CFW instrumentation", 0x600 + 0x90, "<I",
+        (CF_INSTRUMENTED | CFW_INSTRUMENTED |
+         CF_FUNCTION_TABLE_PRESENT | CF_FUNCTION_TABLE_SIZE_5BYTES),
+        "GuardFlags contain unsupported fixture bits 0x200")
+    add("unknown GuardFlags bit", 0x600 + 0x90, "<I",
+        (CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT |
+         CF_FUNCTION_TABLE_SIZE_5BYTES | 0x1),
+        "GuardFlags contain unsupported fixture bits 0x1")
     add("four-byte GFID stride", 0x600 + 0x90, "<I", 0x500,
         "/GUARD:MIXED requires a 5-byte GFID stride, got 4")
     add("unsupported GFID stride", 0x600 + 0x90, "<I", 0x20000500,
@@ -1530,36 +1527,33 @@ def self_test() -> None:
         (CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT |
          CF_FUNCTION_TABLE_SIZE_5BYTES | CF_EH_CONTINUATION_TABLE_PRESENT),
         "/GUARD:MIXED unexpectedly enabled EH continuation metadata")
+    add("implicit XFG metadata", 0x600 + 0x90, "<I",
+        (CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT |
+         CF_FUNCTION_TABLE_SIZE_5BYTES | CF_XFG_ENABLED),
+        "/GUARD:MIXED unexpectedly enabled XFG metadata")
     add("invalid GFID", 0x8A0, "<I", 0x2000,
         "GFID 0x2000 is not executable")
-    mutate("undefined GFID flags", "GFID entry has undefined flags",
+    mutate("nonzero undefined GFID metadata", "GFID metadata must be zero",
            [(0x600 + 0x90, "<I", 0x10000500)],
            [(0x8A0, struct.pack("<IBIB", 0x1000, 0x10, 0x1030, 0))])
     add("language-exception-handler GFID", 0x8A4, "<B",
         GFID_FID_LANGEXCPTHANDLER,
-        "GFID entry unexpectedly marks a language exception handler")
+        "GFID metadata must be zero")
     add("XFG GFID", 0x8A9, "<B", GFID_FID_XFG,
-        "GFID entry unexpectedly marks an XFG target")
+        "GFID metadata must be zero")
     add("unsorted GFIDs", 0x8A5, "<I", 0x1000,
         "GFID table is not strictly sorted")
-    mutate("suppressed required export GFID",
-           "required export GFID coverage differs from fixture contract",
-           [(0x600 + 0x90, "<I", 0x10000500)],
-           [(0x8A0, struct.pack("<IBIB", 0x1000, GFID_FID_SUPPRESSED,
-                               0x1030, 0)),
-            (0xBC0, struct.pack("<IBIB", 0x2100, 0, 0x2108, 0))])
-    mutate("export-suppressed GFID without GuardFlags info",
-           "export-suppressed GFID lacks GuardFlags suppression info",
-           [(0x600 + 0x90, "<I", 0x10000500)],
-           [(0x8A0, struct.pack("<IBIB", 0x1000, GFID_EXPORT_SUPPRESSED,
-                               0x1030, 0))])
-    mutate("export-suppressed required export GFID",
-           "required export GFID coverage differs from fixture contract",
-           [(0x600 + 0x90, "<I",
-             0x10000500 | CF_EXPORT_SUPPRESSION_INFO_PRESENT)],
-           [(0x8A0, struct.pack("<IBIB", 0x1000, GFID_EXPORT_SUPPRESSED,
-                               0x1030, 0)),
-            (0xBC0, struct.pack("<IBIB", 0x2100, 0, 0x2108, 0))])
+    mutate("suppressed internal GFID", "GFID metadata must be zero",
+           [(0x600 + 0x88, "<Q", 3)],
+           [(0x8A0, struct.pack("<IBIBIB", 0x1000, 0,
+                               0x1018, GFID_FID_SUPPRESSED, 0x1030, 0))])
+    mutate("export-suppressed internal GFID", "GFID metadata must be zero",
+           [(0x600 + 0x88, "<Q", 3)],
+           [(0x8A0, struct.pack("<IBIBIB", 0x1000, 0,
+                               0x1018, GFID_EXPORT_SUPPRESSED, 0x1030, 0))])
+    add("export-suppression GuardFlags", 0x600 + 0x90, "<I",
+        0x10000500 | 0x4000,
+        "GuardFlags contain unsupported fixture bits 0x4000")
     add("deleted required export GFID", 0x600 + 0x88, "<Q", 1,
         "required export GFID coverage differs from fixture contract")
     add("replaced required export GFID", 0x8A5, "<I", 0x1050,
@@ -1727,7 +1721,7 @@ def self_test() -> None:
     extra_gfid = bytearray(valid)
     struct.pack_into("<Q", extra_gfid, 0x600 + 0x88, 3)
     struct.pack_into("<IBIBIB", extra_gfid, 0x8A0,
-                     0x1000, 0, 0x1018, GFID_FID_SUPPRESSED, 0x1030, 0)
+                     0x1000, 0, 0x1018, 0, 0x1030, 0)
     compare_cases.append((
         "extra valid GFID",
         PEImage(bytes(extra_gfid), "self-test/extra valid GFID").inspect(
