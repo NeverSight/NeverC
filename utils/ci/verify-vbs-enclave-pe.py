@@ -31,7 +31,10 @@ CF_FUNCTION_TABLE_SIZE_MASK = 0xF0000000
 CF_FUNCTION_TABLE_SIZE_5BYTES = 0x10000000
 GFID_FID_SUPPRESSED = 0x01
 GFID_EXPORT_SUPPRESSED = 0x02
-GFID_KNOWN_FLAGS = 0x0F
+GFID_FID_LANGEXCPTHANDLER = 0x04
+GFID_FID_XFG = 0x08
+GFID_KNOWN_FLAGS = (GFID_FID_SUPPRESSED | GFID_EXPORT_SUPPRESSED |
+                    GFID_FID_LANGEXCPTHANDLER | GFID_FID_XFG)
 DIR64 = 10
 EXPORT_DIRECTORY = 0
 IMPORT_DIRECTORY = 1
@@ -539,16 +542,25 @@ class PEImage:
             gfids.append(gfid)
             metadata = self.data[guard_offset + index * guard_stride + 4:
                                  guard_offset + (index + 1) * guard_stride]
-            if metadata and metadata[0] & ~GFID_KNOWN_FLAGS:
+            gfid_flags = metadata[0] if metadata else 0
+            if gfid_flags & ~GFID_KNOWN_FLAGS:
                 raise VerificationError("%s: GFID entry has undefined flags" %
                                         self.label)
+            if gfid_flags & GFID_FID_LANGEXCPTHANDLER:
+                raise VerificationError(
+                    "%s: GFID entry unexpectedly marks a language exception "
+                    "handler" % self.label)
+            if gfid_flags & GFID_FID_XFG:
+                raise VerificationError(
+                    "%s: GFID entry unexpectedly marks an XFG target" %
+                    self.label)
             if any(metadata[1:]):
                 raise VerificationError("%s: GFID entry has undefined metadata" %
                                         self.label)
             gfid_metadata.append(metadata.hex())
-            gfid_flags_by_rva[gfid] = metadata[0] if metadata else 0
+            gfid_flags_by_rva[gfid] = gfid_flags
             has_export_suppression |= bool(
-                metadata and metadata[0] & GFID_EXPORT_SUPPRESSED)
+                gfid_flags & GFID_EXPORT_SUPPRESSED)
         if (has_export_suppression and
                 not guard_flags & CF_EXPORT_SUPPRESSION_INFO_PRESENT):
             raise VerificationError(
@@ -1523,6 +1535,11 @@ def self_test() -> None:
     mutate("undefined GFID flags", "GFID entry has undefined flags",
            [(0x600 + 0x90, "<I", 0x10000500)],
            [(0x8A0, struct.pack("<IBIB", 0x1000, 0x10, 0x1030, 0))])
+    add("language-exception-handler GFID", 0x8A4, "<B",
+        GFID_FID_LANGEXCPTHANDLER,
+        "GFID entry unexpectedly marks a language exception handler")
+    add("XFG GFID", 0x8A9, "<B", GFID_FID_XFG,
+        "GFID entry unexpectedly marks an XFG target")
     add("unsorted GFIDs", 0x8A5, "<I", 0x1000,
         "GFID table is not strictly sorted")
     mutate("suppressed required export GFID",
@@ -1631,7 +1648,7 @@ def self_test() -> None:
     # longjmp metadata.
     struct.pack_into("<I", semantic_variant, 0x600 + 0x90, 0x10003500)
     struct.pack_into("<IBIB", semantic_variant, 0xB80,
-                     0x1000, 0x04, 0x1030, 0x08)
+                     0x1000, 0, 0x1030, 0)
     struct.pack_into("<IBIB", semantic_variant, 0xBC0,
                      0x2100, 0, 0x2108, 0)
 
