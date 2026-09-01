@@ -36,6 +36,7 @@ CF_ALLOWED_FIXTURE_FLAGS = (CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT |
                             CF_PROTECT_DELAYLOAD_IAT |
                             CF_DELAYLOAD_IAT_IN_ITS_OWN_SECTION |
                             CF_FUNCTION_TABLE_SIZE_MASK)
+X64_NONVOLATILE_GPRS = frozenset((3, 5, 6, 7, 12, 13, 14, 15))
 GFID_FID_SUPPRESSED = 0x01
 GFID_EXPORT_SUPPRESSED = 0x02
 GFID_FID_LANGEXCPTHANDLER = 0x04
@@ -123,7 +124,29 @@ REQUIRED_MAP_SYMBOLS = frozenset(EXPECTED_EXPORTS) | frozenset(
 )
 MAP_SYMBOL_LINE = re.compile(
     r"^\s*([0-9A-Fa-f]{4}):([0-9A-Fa-f]{8,16})\s+"
-    r"(\S+)\s+([0-9A-Fa-f]{8,16})(?:\s|$)")
+    r"(\S+)\s+([0-9A-Fa-f]{8,16})(?:\s+(.*\S))?\s*$")
+PUBLIC_IDENTITY_PREFIX = "public|"
+STATIC_IDENTITY_PREFIX = "static|"
+DLLMAIN_CRT_DISPATCH = (
+    "?dllmain_crt_dispatch@@YAHQEAUHINSTANCE__@@KQEAX@Z")
+VBS_CRT_MEMBER_ROOT = (
+    "intermediate/crt/vcstartup/build/mt/"
+    "libcmt_mt_enclave.vcxproj/objr")
+# link.exe does not expose this live enclave-CRT local in its public MAP.  The
+# integrated linker must expose the architecture-qualified private identity;
+# compare() may pair it only with a genuinely alias-free Microsoft GFID.
+EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES = {
+    "x86_64": frozenset({
+        STATIC_IDENTITY_PREFIX +
+        "libcmt:" + VBS_CRT_MEMBER_ROOT +
+        "/amd64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
+    }),
+    "arm64": frozenset({
+        STATIC_IDENTITY_PREFIX +
+        "libcmt:" + VBS_CRT_MEMBER_ROOT +
+        "/arm64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
+    }),
+}
 MapSymbols = Dict[str, FrozenSet[int]]
 MapEntry = Tuple[int, int, str, int]
 
@@ -133,6 +156,53 @@ class CoffMap:
                  entries: Tuple[MapEntry, ...]):
         self.symbols = symbols
         self.entries = entries
+
+
+def _normalize_map_origin(origin: str) -> str:
+    normalized = origin.strip().replace("\\", "/")
+    if not normalized or normalized.startswith("<"):
+        return ""
+    archive = ""
+    member = normalized
+    archive_path_match = re.match(
+        r"^(.*?\.lib):(.*)$", normalized, re.IGNORECASE)
+    if archive_path_match is not None:
+        archive_path, member = archive_path_match.groups()
+        archive = archive_path.rstrip("/").rsplit("/", 1)[-1]
+    elif re.match(r"^[A-Za-z]:/", normalized):
+        member = normalized
+    elif ":" in normalized:
+        archive, member = normalized.split(":", 1)
+    archive = archive.rstrip("/").rsplit("/", 1)[-1]
+    if archive.casefold().endswith(".lib"):
+        archive = archive[:-4]
+    if re.match(r"^[A-Za-z]:/", member):
+        member = member[2:]
+    parts = [part.casefold() for part in member.split("/")
+             if part not in ("", ".")]
+    # Only the pinned enclave-CRT project path has a known disposable build
+    # root.  Retain every component for all other members so unrelated
+    # project-a/.../objr/x.obj and project-b/.../objr/x.obj cannot collide.
+    vbs_root_parts = VBS_CRT_MEMBER_ROOT.split("/")
+    root_width = len(vbs_root_parts)
+    for index in range(len(parts) - root_width, -1, -1):
+        if parts[index:index + root_width] == vbs_root_parts:
+            parts = vbs_root_parts + parts[index + root_width:]
+            break
+    archive = archive.casefold()
+    member = "/".join(parts)
+    if not member:
+        return ""
+    return "%s:%s" % (archive, member) if archive else member
+
+
+def _map_identity(scope: str, name: str, origin: str = "") -> str:
+    if scope == "public":
+        return PUBLIC_IDENTITY_PREFIX + name
+    normalized_origin = _normalize_map_origin(origin)
+    if scope == "static" and normalized_origin:
+        return (STATIC_IDENTITY_PREFIX + normalized_origin + "|" + name)
+    return ""
 
 
 def _checked_product(left: int, right: int, limit: int, what: str) -> int:
@@ -145,7 +215,6 @@ def parse_coff_map_text(text: str, label: str) -> CoffMap:
     public_vas: Dict[str, Set[int]] = {}
     static_vas: Dict[str, Set[int]] = {}
     required_public_vas: Dict[str, Set[int]] = {}
-    public_occurrence_names: Set[str] = set()
     public_entries: List[MapEntry] = []
     static_entries: List[MapEntry] = []
     symbol_section: Optional[str] = None
@@ -164,30 +233,34 @@ def parse_coff_map_text(text: str, label: str) -> CoffMap:
         match = MAP_SYMBOL_LINE.match(line)
         if match is None:
             continue
-        encoded_segment, encoded_offset, name, encoded_va = match.groups()
+        (encoded_segment, encoded_offset, name, encoded_va,
+         trailing) = match.groups()
         segment = int(encoded_segment, 16)
         va = int(encoded_va, 16)
         if symbol_section == "public":
-            public_occurrence_names.add(name)
             if name in REQUIRED_MAP_SYMBOLS:
                 required_public_vas.setdefault(name, set()).add(va)
         if name.startswith((".", "$", "@")) or "<absolute>" in line.lower():
             continue
         offset = int(encoded_offset, 16)
+        origin = (trailing or "").strip()
+        if origin == "f":
+            origin = ""
+        elif origin.startswith("f "):
+            origin = origin[1:].strip()
+        identity = _map_identity(symbol_section, name, origin)
+        if not identity:
+            continue
         target_vas = public_vas if symbol_section == "public" else static_vas
         target_entries = (public_entries if symbol_section == "public"
                           else static_entries)
-        target_vas.setdefault(name, set()).add(va)
-        target_entries.append((segment, offset, name, va))
+        target_vas.setdefault(identity, set()).add(va)
+        target_entries.append((segment, offset, identity, va))
 
     names = set(public_vas) | set(static_vas)
     symbols = {
-        name: frozenset(public_vas.get(name, ()))
-        if name in public_occurrence_names
-        else frozenset(static_vas.get(name, ()))
+        name: frozenset(public_vas.get(name, static_vas.get(name, ())))
         for name in names
-        if (public_vas.get(name) if name in public_occurrence_names
-            else static_vas.get(name))
     }
     for name in sorted(REQUIRED_MAP_SYMBOLS):
         vas = sorted(required_public_vas.get(name, ()))
@@ -195,12 +268,15 @@ def parse_coff_map_text(text: str, label: str) -> CoffMap:
             raise VerificationError(
                 "%s: COFF map symbol %s has ambiguous VAs 0x%x and 0x%x" %
                 (label, name, vas[0], vas[1]))
-        selected_vas = sorted(symbols.get(name, ()))
+        selected_vas = sorted(
+            symbols.get(_map_identity("public", name), ()))
         if len(selected_vas) > 1:
             raise VerificationError(
                 "%s: COFF map symbol %s has ambiguous VAs 0x%x and 0x%x" %
                 (label, name, selected_vas[0], selected_vas[1]))
-    missing = sorted(REQUIRED_MAP_SYMBOLS - symbols.keys())
+    missing = sorted(
+        name for name in REQUIRED_MAP_SYMBOLS
+        if _map_identity("public", name) not in symbols)
     if missing:
         raise VerificationError(
             "%s: COFF map is missing required symbols: %s" %
@@ -214,8 +290,7 @@ def parse_coff_map_text(text: str, label: str) -> CoffMap:
         if entry[2] in stable_or_required)
     retained_entries += tuple(
         entry for entry in static_entries
-        if (entry[2] not in public_occurrence_names and
-            entry[2] in stable_or_required))
+        if entry[2] in stable_or_required)
     return CoffMap(symbols, retained_entries)
 
 
@@ -297,17 +372,18 @@ class PEImage:
         return va - self.image_base
 
     def map_symbol_rva(self, coff_map: CoffMap, name: str) -> int:
-        if name not in coff_map.symbols:
+        identity = _map_identity("public", name)
+        if identity not in coff_map.symbols:
             raise VerificationError(
                 "%s: COFF map is missing required symbol %s" %
                 (self.label, name))
-        symbol_vas = coff_map.symbols[name]
+        symbol_vas = coff_map.symbols[identity]
         if len(symbol_vas) != 1:
             raise VerificationError(
                 "%s: COFF map symbol %s is ambiguous" % (self.label, name))
-        if name in self.invalid_map_errors:
-            raise VerificationError(self.invalid_map_errors[name])
-        if name not in self.validated_map_names:
+        if identity in self.invalid_map_errors:
+            raise VerificationError(self.invalid_map_errors[identity])
+        if identity not in self.validated_map_names:
             raise VerificationError(
                 "%s: COFF map symbol %s has no consistent initialized image record" %
                 (self.label, name))
@@ -365,6 +441,29 @@ class PEImage:
         normalized_names = set()
         iat_ranges: List[Tuple[int, int]] = []
         terminated = False
+
+        def validate_lookup_thunk(value: int) -> None:
+            ordinal_flag = 1 << 63
+            if value & ordinal_flag:
+                if value & ~(ordinal_flag | 0xFFFF):
+                    raise VerificationError(
+                        "%s: standard import ordinal thunk has reserved bits" %
+                        self.label)
+                if value & 0xFFFF == 0:
+                    raise VerificationError(
+                        "%s: standard import ordinal thunk has ordinal zero" %
+                        self.label)
+                return
+            if value > 0xFFFFFFFF:
+                raise VerificationError(
+                    "%s: standard import name thunk is not a 32-bit RVA" %
+                    self.label)
+            name_rva = value
+            self.rva_to_offset(
+                name_rva, 3, "standard import Hint/Name entry")
+            self.cstring_at_rva(
+                name_rva + 2, "standard import function name")
+
         descriptor_count = import_size // IMPORT_DESCRIPTOR_SIZE
         for index in range(descriptor_count):
             descriptor = import_offset + index * IMPORT_DESCRIPTOR_SIZE
@@ -378,6 +477,14 @@ class PEImage:
                         self.label)
                 terminated = True
                 break
+            if fields[1]:
+                raise VerificationError(
+                    "%s: unsigned standard import TimeDateStamp is nonzero" %
+                    self.label)
+            if fields[2]:
+                raise VerificationError(
+                    "%s: unbound standard import ForwarderChain is nonzero" %
+                    self.label)
             name_rva = fields[3]
             if not name_rva:
                 raise VerificationError("%s: standard import has a zero Name RVA" %
@@ -391,25 +498,65 @@ class PEImage:
                 raise VerificationError(
                     "%s: standard import FirstThunk is not an aligned IAT slot" %
                     self.label)
-            self.rva_to_offset(first_thunk, 8, "standard import IAT")
-            thunk_rva = first_thunk
-            while True:
-                if thunk_rva > self.iat_end - 8:
+            lookup_rva = fields[0] or first_thunk
+            if lookup_rva & 7:
+                raise VerificationError(
+                    "%s: standard import lookup table is not PE32+ aligned" %
+                    self.label)
+            lookup_section = self.initialized_section_for_rva(lookup_rva)
+            if lookup_section is None:
+                raise VerificationError(
+                    "%s: standard import lookup table is not initialized" %
+                    self.label)
+            lookup_span = min(
+                lookup_section["virtual_size"] or lookup_section["raw_size"],
+                lookup_section["raw_size"])
+            lookup_end = lookup_section["rva"] + lookup_span
+            max_lookup_entries = (lookup_end - lookup_rva) // 8
+            if not max_lookup_entries:
+                raise VerificationError(
+                    "%s: truncated standard import lookup table" % self.label)
+            thunk_index = 0
+            while thunk_index < max_lookup_entries:
+                iat_thunk_rva = first_thunk + thunk_index * 8
+                if iat_thunk_rva > self.iat_end - 8:
                     raise VerificationError(
                         "%s: unterminated standard import IAT" % self.label)
-                thunk_offset = self.rva_to_offset(
-                    thunk_rva, 8, "standard import IAT thunk")
-                if not self.u64(thunk_offset, "standard import IAT thunk"):
+                lookup_thunk_rva = lookup_rva + thunk_index * 8
+                lookup_offset = self.rva_to_offset(
+                    lookup_thunk_rva, 8,
+                    "standard import lookup thunk")
+                iat_offset = self.rva_to_offset(
+                    iat_thunk_rva, 8, "standard import IAT thunk")
+                lookup_value = self.u64(
+                    lookup_offset, "standard import lookup thunk")
+                iat_value = self.u64(iat_offset, "standard import IAT thunk")
+                if not lookup_value or not iat_value:
+                    if lookup_value != iat_value:
+                        raise VerificationError(
+                            "%s: standard import lookup/IAT chain lengths differ" %
+                            self.label)
                     break
-                thunk_rva += 8
-            thunk_end = thunk_rva + 8
+                validate_lookup_thunk(lookup_value)
+                if lookup_value != iat_value:
+                    raise VerificationError(
+                        "%s: unsigned standard import IAT thunk differs from ILT" %
+                        self.label)
+                thunk_index += 1
+            else:
+                raise VerificationError(
+                    "%s: unterminated standard import lookup table" %
+                    self.label)
+            if not thunk_index:
+                raise VerificationError(
+                    "%s: standard import descriptor has no live thunks" %
+                    self.label)
+            thunk_end = first_thunk + (thunk_index + 1) * 8
             if any(max(first_thunk, start) < min(thunk_end, end)
                    for start, end in iat_ranges):
                 raise VerificationError(
                     "%s: standard import IAT ranges overlap" % self.label)
             iat_ranges.append((first_thunk, thunk_end))
-            self.rva_to_offset(fields[0] or first_thunk, 8,
-                               "standard import lookup table")
             name = self.cstring_at_rva(name_rva, "standard import DLL name")
             normalized = name.lower()
             if normalized in normalized_names:
@@ -508,23 +655,53 @@ class PEImage:
                     self.label)
         return record_count
 
-    def inspect_x64_unwind_info(self, unwind_rva: int) -> None:
-        if not unwind_rva or unwind_rva & 3:
-            raise VerificationError("%s: invalid x64 unwind-info RVA" % self.label)
-        offset = self.require_read_only_range(
-            unwind_rva, 4, "x64 unwind information")
-        version_and_flags = self.data[offset]
-        version = version_and_flags & 7
-        flags = version_and_flags >> 3
-        if version not in (1, 2) or flags & ~7 or (flags & 4 and flags & 3):
-            raise VerificationError("%s: malformed x64 unwind information" %
-                                    self.label)
-        unwind_code_count = self.data[offset + 2]
-        trailer_offset = (4 + unwind_code_count * 2 + 3) & ~3
-        trailer_size = 4 if flags & 3 else 12 if flags & 4 else 0
-        full_offset = self.require_read_only_range(
-            unwind_rva, trailer_offset + trailer_size,
-            "declared x64 unwind information")
+    def x64_v3_wod_size(self, pool: bytes, offset: int) -> int:
+        if offset < 0 or offset >= len(pool):
+            raise VerificationError(
+                "%s: truncated x64 v3 WOD sequence" % self.label)
+        first = pool[offset]
+        op3 = first & 7
+        if op3 == 4:
+            size = 1
+        elif op3 == 5:
+            size = 5
+        elif op3 == 6:
+            size = 3
+        elif op3 == 7:
+            if first >> 3 == 31:
+                raise VerificationError(
+                    "%s: invalid x64 v3 consecutive-register WOD" %
+                    self.label)
+            size = 1
+        elif first & 0x0F == 0x08:
+            size = 1
+        elif first & 0x0F == 0x09:
+            size = 5
+        elif first & 0x0F == 0x0A:
+            size = 3
+        elif first & 0x3F == 0x20:
+            size = 2
+        elif first == 0:
+            size = 2
+        elif first == 1:
+            size = 5
+        elif first == 2:
+            size = 3
+        elif first == 3:
+            size = 2
+        else:
+            raise VerificationError(
+                "%s: invalid x64 v3 WOD opcode 0x%02x" %
+                (self.label, first))
+        if offset > len(pool) - size:
+            raise VerificationError(
+                "%s: truncated x64 v3 WOD sequence" % self.label)
+        return size
+
+    def inspect_x64_unwind_trailer(
+            self, full_offset: int, trailer_offset: int, flags: int,
+            chain_seen: Set[int], chain_depth: int,
+            required_frame: Optional[Tuple[int, int]] = None) -> None:
         if flags & 3:
             handler_rva = self.u32(full_offset + trailer_offset,
                                    "x64 unwind handler")
@@ -540,8 +717,504 @@ class PEImage:
                     not chained_unwind or chained_unwind & 3):
                 raise VerificationError(
                     "%s: malformed chained x64 runtime function" % self.label)
-            self.require_read_only_range(
-                chained_unwind, 4, "chained x64 unwind information")
+            self.inspect_x64_unwind_info(
+                chained_unwind, chained_end - chained_begin,
+                chain_seen, chain_depth + 1, required_frame)
+
+    def inspect_x64_unwind_v3(
+            self, unwind_rva: int, function_size: int, offset: int,
+            flags: int, chain_seen: Set[int], chain_depth: int) -> None:
+        if flags & ~0x0F or (flags & 4 and flags & 3):
+            raise VerificationError(
+                "%s: malformed x64 v3 unwind information" % self.label)
+        payload_words = self.data[offset + 2]
+        number_of_ops = self.data[offset + 3] & 0x1F
+        number_of_epilogs = self.data[offset + 3] >> 5
+        payload_size = payload_words * 2
+        trailer_offset = (4 + payload_size + 3) & ~3
+        trailer_size = 4 if flags & 3 else 12 if flags & 4 else 0
+        declared_size = (trailer_offset + trailer_size
+                         if trailer_size else 4 + payload_size)
+        full_offset = self.require_read_only_range(
+            unwind_rva, declared_size,
+            "declared x64 v3 unwind information")
+        payload = bytes(self.data[full_offset + 4:
+                                  full_offset + 4 + payload_size])
+        cursor = 0
+        large_prolog = bool(flags & 8)
+        prolog_size = self.data[offset + 1]
+        if large_prolog:
+            if not payload:
+                raise VerificationError(
+                    "%s: truncated x64 v3 large-prolog extension" %
+                    self.label)
+            if not payload[0]:
+                raise VerificationError(
+                    "%s: x64 v3 LARGE flag requires a prolog over 255 bytes" %
+                    self.label)
+            prolog_size |= payload[0] << 8
+            cursor = 1
+        if prolog_size > function_size:
+            raise VerificationError(
+                "%s: x64 v3 prolog exceeds runtime-function range" %
+                self.label)
+
+        prolog_ip_width = 2 if large_prolog else 1
+        prolog_ip_size = number_of_ops * prolog_ip_width
+        if cursor > len(payload) - prolog_ip_size:
+            raise VerificationError(
+                "%s: truncated x64 v3 prolog IP offsets" % self.label)
+        prolog_offsets = []
+        for index in range(number_of_ops):
+            ip_offset = (struct.unpack_from("<H", payload,
+                                           cursor + index * 2)[0]
+                         if large_prolog else
+                         payload[cursor + index])
+            prolog_offsets.append(ip_offset)
+        cursor += prolog_ip_size
+        if (prolog_offsets and
+                (not prolog_size or
+                 any(value >= prolog_size for value in prolog_offsets))):
+            raise VerificationError(
+                "%s: x64 v3 prolog IP offset exceeds prolog" % self.label)
+        if any(later > earlier for earlier, later in
+               zip(prolog_offsets, prolog_offsets[1:])):
+            raise VerificationError(
+                "%s: x64 v3 prolog IP offsets are not descending" %
+                self.label)
+
+        epilogs: List[Tuple[int, int]] = []
+        previous_epilog_start: Optional[int] = None
+        epilog_direction = 0
+        inherited: Optional[
+            Tuple[int, int, int, int, Tuple[int, ...]]] = None
+        for _ in range(number_of_epilogs):
+            if cursor > len(payload) - 3:
+                raise VerificationError(
+                    "%s: truncated x64 v3 epilog descriptor" % self.label)
+            descriptor = payload[cursor]
+            epilog_flags = descriptor & 7
+            epilog_ops = descriptor >> 3
+            epilog_delta = struct.unpack_from("<h", payload, cursor + 1)[0]
+            cursor += 3
+            if epilog_flags & 4:
+                raise VerificationError(
+                    "%s: x64 v3 epilog descriptor has reserved flags" %
+                    self.label)
+            direction = 1 if epilog_delta >= 0 else -1
+            if not epilog_direction:
+                epilog_direction = direction
+                epilog_start = (epilog_delta if direction > 0 else
+                                function_size + epilog_delta)
+            else:
+                if direction != epilog_direction:
+                    raise VerificationError(
+                        "%s: x64 v3 epilog offsets change direction" %
+                        self.label)
+                assert previous_epilog_start is not None
+                epilog_start = previous_epilog_start + epilog_delta
+            if epilog_start < 0 or epilog_start >= function_size:
+                raise VerificationError(
+                    "%s: x64 v3 epilog offset is outside the fragment" %
+                    self.label)
+            previous_epilog_start = epilog_start
+
+            if epilog_ops:
+                large_epilog = bool(epilog_flags & 2)
+                extension_size = 4 if large_epilog else 3
+                ip_width = 2 if large_epilog else 1
+                ip_size = epilog_ops * ip_width
+                if cursor > len(payload) - extension_size - ip_size:
+                    raise VerificationError(
+                        "%s: truncated x64 v3 extended epilog descriptor" %
+                        self.label)
+                first_op = struct.unpack_from("<H", payload, cursor)[0]
+                last_instruction = (
+                    struct.unpack_from("<H", payload, cursor + 2)[0]
+                    if large_epilog else payload[cursor + 2])
+                cursor += extension_size
+                ip_offsets = tuple(
+                    struct.unpack_from("<H", payload, cursor + index * 2)[0]
+                    if large_epilog else payload[cursor + index]
+                    for index in range(epilog_ops))
+                cursor += ip_size
+                if any(later < earlier for earlier, later in
+                       zip(ip_offsets, ip_offsets[1:])):
+                    raise VerificationError(
+                        "%s: x64 v3 epilog IP offsets are not ascending" %
+                        self.label)
+                if any(value > last_instruction for value in ip_offsets):
+                    raise VerificationError(
+                        "%s: x64 v3 epilog IP offset exceeds its end" %
+                        self.label)
+                inherited = (epilog_flags & 3, epilog_ops, first_op,
+                             last_instruction, ip_offsets)
+            else:
+                if inherited is None:
+                    raise VerificationError(
+                        "%s: x64 v3 inherited epilog has no predecessor" %
+                        self.label)
+                (inherited_flags, epilog_ops, first_op,
+                 last_instruction, ip_offsets) = inherited
+                if epilog_flags & 3 != inherited_flags:
+                    raise VerificationError(
+                        "%s: x64 v3 inherited epilog flags differ" %
+                        self.label)
+            if epilog_start + last_instruction >= function_size:
+                raise VerificationError(
+                    "%s: x64 v3 epilog extends outside the fragment" %
+                    self.label)
+            epilogs.append((first_op, epilog_ops))
+
+        wod_pool = payload[cursor:]
+        decoded_wods: List[Tuple[int, int]] = []
+
+        def consume_wods(start: int, count: int, what: str) -> None:
+            if start < 0 or start > len(wod_pool):
+                raise VerificationError(
+                    "%s: x64 v3 %s FirstOp is outside the WOD pool" %
+                    (self.label, what))
+            wod_offset = start
+            for _ in range(count):
+                wod_end = wod_offset + self.x64_v3_wod_size(
+                    wod_pool, wod_offset)
+                for existing_start, existing_end in decoded_wods:
+                    if ((wod_offset, wod_end) ==
+                            (existing_start, existing_end)):
+                        break
+                    if max(wod_offset, existing_start) < min(
+                            wod_end, existing_end):
+                        raise VerificationError(
+                            "%s: x64 v3 WOD sequences overlap off boundary" %
+                            self.label)
+                else:
+                    decoded_wods.append((wod_offset, wod_end))
+                wod_offset = wod_end
+
+        consume_wods(0, number_of_ops, "prolog")
+        for index, (first_op, epilog_ops) in enumerate(epilogs):
+            consume_wods(first_op, epilog_ops, "epilog %d" % index)
+        self.inspect_x64_unwind_trailer(
+            full_offset, trailer_offset, flags, chain_seen, chain_depth)
+
+    def inspect_x64_unwind_info(
+            self, unwind_rva: int, function_size: int,
+            chain_seen: Optional[Set[int]] = None, chain_depth: int = 0,
+            required_frame: Optional[Tuple[int, int]] = None) -> None:
+        if not unwind_rva or unwind_rva & 3:
+            raise VerificationError("%s: invalid x64 unwind-info RVA" % self.label)
+        if chain_depth >= 32:
+            raise VerificationError(
+                "%s: chained x64 unwind information exceeds depth limit" %
+                self.label)
+        if chain_seen is None:
+            chain_seen = set()
+        if unwind_rva in chain_seen:
+            raise VerificationError(
+                "%s: cyclic chained x64 unwind information" % self.label)
+        chain_seen.add(unwind_rva)
+        offset = self.require_read_only_range(
+            unwind_rva, 4, "x64 unwind information")
+        version_and_flags = self.data[offset]
+        version = version_and_flags & 7
+        flags = version_and_flags >> 3
+        if version == 3:
+            self.inspect_x64_unwind_v3(
+                unwind_rva, function_size, offset, flags,
+                chain_seen, chain_depth)
+            return
+        if version not in (1, 2) or flags & ~7 or (flags & 4 and flags & 3):
+            raise VerificationError("%s: malformed x64 unwind information" %
+                                    self.label)
+        prolog_size = self.data[offset + 1]
+        if prolog_size > function_size:
+            raise VerificationError(
+                "%s: x64 unwind prolog exceeds runtime-function range" %
+                self.label)
+        unwind_code_count = self.data[offset + 2]
+        trailer_offset = (4 + unwind_code_count * 2 + 3) & ~3
+        trailer_size = 4 if flags & 3 else 12 if flags & 4 else 0
+        full_offset = self.require_read_only_range(
+            unwind_rva, trailer_offset + trailer_size,
+            "declared x64 unwind information")
+
+        frame_register = self.data[offset + 3] & 0x0F
+        frame_offset = self.data[offset + 3] >> 4
+        if (frame_register and
+                frame_register not in X64_NONVOLATILE_GPRS):
+            raise VerificationError(
+                "%s: x64 unwind header uses a volatile frame register" %
+                self.label)
+        if not frame_register and frame_offset:
+            raise VerificationError(
+                "%s: x64 unwind frame offset has no frame register" %
+                self.label)
+        if (required_frame is not None and
+                (frame_register, frame_offset) != required_frame):
+            raise VerificationError(
+                "%s: chained x64 unwind frame state differs from parent" %
+                self.label)
+        slot_index = 0
+        previous_code_offset: Optional[int] = None
+        set_fpreg_count = 0
+        while slot_index < unwind_code_count:
+            code = full_offset + 4 + slot_index * 2
+            code_offset = self.data[code]
+            opcode_and_info = self.data[code + 1]
+            opcode = opcode_and_info & 0x0F
+            op_info = opcode_and_info >> 4
+            if opcode == 0:
+                if op_info not in X64_NONVOLATILE_GPRS:
+                    raise VerificationError(
+                        "%s: x64 unwind opcode uses a volatile integer register" %
+                        self.label)
+                slot_width = 1
+            elif opcode == 1:
+                if op_info == 0:
+                    slot_width = 2
+                elif op_info == 1:
+                    slot_width = 3
+                else:
+                    raise VerificationError(
+                        "%s: invalid x64 unwind opcode info" % self.label)
+            elif opcode == 2:
+                slot_width = 1
+            elif opcode == 3:
+                if op_info:
+                    raise VerificationError(
+                        "%s: invalid x64 unwind opcode info" % self.label)
+                if not frame_register:
+                    raise VerificationError(
+                        "%s: x64 SET_FPREG has no valid frame register" %
+                        self.label)
+                set_fpreg_count += 1
+                slot_width = 1
+            elif opcode == 4:
+                if op_info not in X64_NONVOLATILE_GPRS:
+                    raise VerificationError(
+                        "%s: x64 unwind opcode uses a volatile integer register" %
+                        self.label)
+                slot_width = 2
+            elif opcode == 5:
+                if op_info not in X64_NONVOLATILE_GPRS:
+                    raise VerificationError(
+                        "%s: x64 unwind opcode uses a volatile integer register" %
+                        self.label)
+                slot_width = 3
+            elif opcode == 6 and version == 2:
+                slot_width = 2
+            elif opcode == 7 and version == 2:
+                slot_width = 3
+            elif opcode == 8:
+                if op_info < 6:
+                    raise VerificationError(
+                        "%s: x64 unwind opcode uses a volatile XMM register" %
+                        self.label)
+                slot_width = 2
+            elif opcode == 9:
+                if op_info < 6:
+                    raise VerificationError(
+                        "%s: x64 unwind opcode uses a volatile XMM register" %
+                        self.label)
+                slot_width = 3
+            elif opcode == 10:
+                if op_info > 1:
+                    raise VerificationError(
+                        "%s: invalid x64 unwind opcode info" % self.label)
+                slot_width = 1
+            else:
+                raise VerificationError(
+                    "%s: invalid x64 unwind opcode %d" %
+                    (self.label, opcode))
+            if slot_index + slot_width > unwind_code_count:
+                raise VerificationError(
+                    "%s: x64 unwind opcode exceeds declared slot count" %
+                    self.label)
+            # V2 epilog/spare records use the first slot's offset byte as
+            # epilog metadata, not a prolog instruction offset.
+            if opcode not in (6, 7):
+                if not code_offset or code_offset > prolog_size:
+                    raise VerificationError(
+                        "%s: x64 unwind code offset exceeds prolog" %
+                        self.label)
+                if (previous_code_offset is not None and
+                        code_offset > previous_code_offset):
+                    raise VerificationError(
+                        "%s: x64 unwind code offsets are not descending" %
+                        self.label)
+                previous_code_offset = code_offset
+            slot_index += slot_width
+
+        if (set_fpreg_count > 1 or
+                (frame_register and not flags & 4 and
+                 set_fpreg_count != 1)):
+            raise VerificationError(
+                "%s: x64 frame register requires exactly one SET_FPREG" %
+                self.label)
+
+        self.inspect_x64_unwind_trailer(
+            full_offset, trailer_offset, flags, chain_seen, chain_depth,
+            (frame_register, frame_offset) if flags & 4 else None)
+
+    def inspect_arm64_unwind_codes(self, code_offset: int,
+                                   code_size: int,
+                                   epilog_indices: List[int]) -> None:
+        code_pool = self.data[code_offset:code_offset + code_size]
+        opcode_starts: Set[int] = set()
+        opcode_interiors: Set[int] = set()
+        widths: Dict[int, int] = {}
+
+        def decode_opcode(cursor: int) -> int:
+            if cursor in opcode_interiors:
+                raise VerificationError(
+                    "%s: ARM64 unwind sequences overlap off boundary" %
+                    self.label)
+            if cursor in widths:
+                return widths[cursor]
+            opcode = code_pool[cursor]
+            if opcode <= 0xBF:
+                width = 1
+            elif opcode <= 0xDF:
+                width = 2
+            elif opcode == 0xE0:
+                width = 4
+            elif opcode in (0xE1, 0xE3, 0xE4, 0xE5, 0xE6,
+                            0xE8, 0xE9, 0xEA, 0xEB, 0xEC, 0xFC):
+                width = 1
+            elif opcode == 0xE2:
+                width = 2
+            elif opcode == 0xE7:
+                width = 3
+            else:
+                raise VerificationError(
+                    "%s: reserved ARM64 unwind opcode 0x%02x" %
+                    (self.label, opcode))
+            if cursor + width > code_size:
+                raise VerificationError(
+                    "%s: truncated ARM64 unwind opcode" % self.label)
+            if opcode == 0xE7:
+                operand = code_pool[cursor + 1]
+                mode = code_pool[cursor + 2] >> 6
+                if operand & 0x80:
+                    raise VerificationError(
+                        "%s: reserved ARM64 save-any-register encoding" %
+                        self.label)
+                register = operand & 0x1F
+                paired = bool(operand & 0x40)
+                if (mode == 0 and
+                        (register == 31 or paired and register >= 30)):
+                    raise VerificationError(
+                        "%s: invalid ARM64 save-any integer register" %
+                        self.label)
+                if mode in (1, 2) and paired and register == 31:
+                    raise VerificationError(
+                        "%s: invalid ARM64 save-any register pair" %
+                        self.label)
+                if (mode == 3 and operand & 0x10 and
+                        (operand & 0x0F) < 4):
+                    raise VerificationError(
+                        "%s: reserved ARM64 predicate-register encoding" %
+                        self.label)
+            interior = set(range(cursor + 1, cursor + width))
+            if interior & opcode_starts:
+                raise VerificationError(
+                    "%s: ARM64 unwind sequences overlap off boundary" %
+                    self.label)
+            opcode_starts.add(cursor)
+            opcode_interiors.update(interior)
+            widths[cursor] = width
+            return width
+
+        def require_terminated_sequence(start: int, what: str) -> int:
+            if start >= code_size or start in opcode_interiors:
+                raise VerificationError(
+                    "%s: %s is not an ARM64 unwind opcode boundary" %
+                    (self.label, what))
+            cursor = start
+            save_next_state: Optional[Tuple[int, int]] = None
+            while cursor < code_size:
+                width = decode_opcode(cursor)
+                opcode = code_pool[cursor]
+                if opcode == 0xE4:
+                    return cursor + width
+                if 0x20 <= opcode <= 0x3F:
+                    save_next_state = (20, 30)
+                elif 0xC8 <= opcode <= 0xCF:
+                    register = (((opcode & 3) << 2) |
+                                (code_pool[cursor + 1] >> 6))
+                    if register > 10:
+                        raise VerificationError(
+                            "%s: invalid ARM64 integer register-pair save" %
+                            self.label)
+                    save_next_state = (20 + register, 30)
+                elif 0xD0 <= opcode <= 0xD3:
+                    register = (((opcode & 3) << 2) |
+                                (code_pool[cursor + 1] >> 6))
+                    if register > 11:
+                        raise VerificationError(
+                            "%s: invalid ARM64 integer register save" %
+                            self.label)
+                    save_next_state = None
+                elif 0xD4 <= opcode <= 0xD5:
+                    register = (((opcode & 1) << 3) |
+                                (code_pool[cursor + 1] >> 5))
+                    if register > 11:
+                        raise VerificationError(
+                            "%s: invalid ARM64 pre-indexed register save" %
+                            self.label)
+                    save_next_state = None
+                elif 0xD6 <= opcode <= 0xD7:
+                    pair_selector = (((opcode & 1) << 2) |
+                                     (code_pool[cursor + 1] >> 6))
+                    if pair_selector > 5:
+                        raise VerificationError(
+                            "%s: invalid ARM64 link-register pair save" %
+                            self.label)
+                    save_next_state = None
+                elif 0xD8 <= opcode <= 0xDB:
+                    register = (((opcode & 1) << 2) |
+                                (code_pool[cursor + 1] >> 6))
+                    if register > 6:
+                        raise VerificationError(
+                            "%s: invalid ARM64 floating register-pair save" %
+                            self.label)
+                    save_next_state = (9 + register, 15)
+                elif opcode == 0xE7:
+                    operand = code_pool[cursor + 1]
+                    mode = code_pool[cursor + 2] >> 6
+                    if mode < 3 and operand & 0x40:
+                        limit = 30 if mode == 0 else 31
+                        save_next_state = (operand & 0x1F) + 1, limit
+                    else:
+                        save_next_state = None
+                elif opcode == 0xE6:
+                    if save_next_state is None:
+                        raise VerificationError(
+                            "%s: ARM64 save_next does not follow a pair save" %
+                            self.label)
+                    last_register, limit = save_next_state
+                    last_register += 2
+                    if last_register > limit:
+                        raise VerificationError(
+                            "%s: ARM64 save_next exceeds the register range" %
+                            self.label)
+                    save_next_state = last_register, limit
+                else:
+                    save_next_state = None
+                cursor += width
+            raise VerificationError(
+                "%s: %s lacks a terminating ARM64 end opcode" %
+                (self.label, what))
+
+        sequence_ends = [require_terminated_sequence(
+            0, "ARM64 prolog unwind sequence")]
+        for index, epilog_index in enumerate(epilog_indices):
+            sequence_ends.append(require_terminated_sequence(
+                epilog_index, "ARM64 epilog %d unwind index" % index))
+        covered = opcode_starts | opcode_interiors
+        if any(index not in covered for index in range(max(sequence_ends))):
+            raise VerificationError(
+                "%s: ARM64 unwind-code pool has an internal gap" % self.label)
 
     def arm64_function_extent(self, begin_rva: int, unwind_data: int) -> int:
         flag = unwind_data & 3
@@ -553,6 +1226,27 @@ class PEImage:
             if not function_length:
                 raise VerificationError("%s: zero ARM64 packed function length" %
                                         self.label)
+            if (unwind_data >> 16) & 0x0F > 10:
+                raise VerificationError(
+                    "%s: ARM64 packed unwind saves too many integer registers" %
+                    self.label)
+            reg_f = (unwind_data >> 13) & 7
+            reg_i = (unwind_data >> 16) & 0x0F
+            home_parameters = (unwind_data >> 20) & 1
+            frame_chain = (unwind_data >> 21) & 3
+            frame_size = ((unwind_data >> 23) & 0x1FF) * 16
+            saved_size = (reg_i * 8 + (8 if frame_chain == 1 else 0) +
+                          ((reg_f + 1) * 8 if reg_f else 0) +
+                          home_parameters * 64)
+            saved_size = (saved_size + 15) & ~15
+            if frame_size < saved_size:
+                raise VerificationError(
+                    "%s: ARM64 packed frame is smaller than its save area" %
+                    self.label)
+            if frame_chain in (2, 3) and frame_size - saved_size < 16:
+                raise VerificationError(
+                    "%s: ARM64 packed frame omits the frame-pointer pair" %
+                    self.label)
             return function_length * 4
 
         xdata_rva = unwind_data
@@ -565,13 +1259,13 @@ class PEImage:
         version = (header >> 18) & 3
         has_handler = bool(header & (1 << 20))
         single_epilog = bool(header & (1 << 21))
-        epilog_count = (header >> 22) & 0x1F
+        epilog_field = (header >> 22) & 0x1F
         code_words = (header >> 27) & 0x1F
         if not function_length or version:
             raise VerificationError("%s: malformed ARM64 xdata header" %
                                     self.label)
         header_size = 4
-        if not epilog_count and not code_words:
+        if not epilog_field and not code_words:
             extended = self.u32(
                 self.require_read_only_range(
                     xdata_rva, 8, "extended ARM64 xdata header") + 4,
@@ -580,14 +1274,45 @@ class PEImage:
                 raise VerificationError(
                     "%s: ARM64 xdata extended header has reserved bits" %
                     self.label)
-            epilog_count = extended & 0xFFFF
+            epilog_field = extended & 0xFFFF
             code_words = (extended >> 16) & 0xFF
             header_size = 8
-        epilog_bytes = 0 if single_epilog else epilog_count * 4
+        epilog_count = 0 if single_epilog else epilog_field
+        epilog_bytes = epilog_count * 4
         payload_size = (header_size + epilog_bytes + code_words * 4 +
                         (4 if has_handler else 0))
         payload_offset = self.require_read_only_range(
             xdata_rva, payload_size, "declared ARM64 xdata")
+        epilog_indices: List[int] = []
+        previous_epilog_offset: Optional[int] = None
+        for index in range(epilog_count):
+            scope = self.u32(
+                payload_offset + header_size + index * 4,
+                "ARM64 epilog scope")
+            epilog_offset = scope & 0x3FFFF
+            if scope & 0x003C0000:
+                raise VerificationError(
+                    "%s: ARM64 epilog scope has reserved bits" % self.label)
+            if epilog_offset >= function_length:
+                raise VerificationError(
+                    "%s: ARM64 epilog scope starts outside the function" %
+                    self.label)
+            if (previous_epilog_offset is not None and
+                    epilog_offset <= previous_epilog_offset):
+                raise VerificationError(
+                    "%s: ARM64 epilog scopes are not strictly sorted" %
+                    self.label)
+            previous_epilog_offset = epilog_offset
+            epilog_indices.append(scope >> 22)
+        if single_epilog:
+            epilog_indices.append(epilog_field)
+        code_size = code_words * 4
+        if not code_size:
+            raise VerificationError("%s: empty ARM64 unwind-code pool" %
+                                    self.label)
+        code_offset = payload_offset + header_size + epilog_bytes
+        self.inspect_arm64_unwind_codes(
+            code_offset, code_size, epilog_indices)
         if has_handler:
             handler_rva = self.u32(
                 payload_offset + payload_size - 4, "ARM64 exception handler")
@@ -620,10 +1345,15 @@ class PEImage:
                 if not begin_rva or begin_rva >= end_rva:
                     raise VerificationError(
                         "%s: malformed x64 runtime-function range" % self.label)
-                self.inspect_x64_unwind_info(unwind_rva)
+                self.inspect_x64_unwind_info(
+                    unwind_rva, end_rva - begin_rva)
             else:
                 unwind_data = self.u32(entry_offset + 4,
                                        "runtime-function UnwindData")
+                if not begin_rva or begin_rva & 3:
+                    raise VerificationError(
+                        "%s: malformed ARM64 runtime-function BeginAddress" %
+                        self.label)
                 function_size = self.arm64_function_extent(begin_rva, unwind_data)
                 if begin_rva > 0xFFFFFFFF - function_size:
                     raise VerificationError(
@@ -651,7 +1381,8 @@ class PEImage:
 
     def inspect(self, coff_map: CoffMap,
                 expected_machine: Optional[str] = None,
-                expected_export_name: Optional[str] = None) -> Dict[str, Any]:
+                expected_export_name: Optional[str] = None,
+                require_all_gfid_identities: bool = True) -> Dict[str, Any]:
         self.sections = []
         self.directories = []
         self.validated_map_names = set()
@@ -963,7 +1694,7 @@ class PEImage:
                     self.label)
             gfid_metadata.append(metadata.hex())
             aliases = sorted(stable_aliases_by_rva.get(gfid, ()))
-            if not aliases:
+            if not aliases and require_all_gfid_identities:
                 raise VerificationError(
                     "%s: GFID 0x%x has no globally unique stable COFF map alias" %
                     (self.label, gfid))
@@ -1447,13 +2178,16 @@ class PEImage:
 
 
 def inspect_path(path: pathlib.Path, map_path: pathlib.Path,
-                 expected_machine: Optional[str] = None) -> Dict[str, Any]:
+                 expected_machine: Optional[str] = None,
+                 require_all_gfid_identities: bool = True) -> Dict[str, Any]:
     map_symbols = parse_coff_map_path(map_path)
     return PEImage.from_path(path).inspect(
-        map_symbols, expected_machine, path.name)
+        map_symbols, expected_machine, path.name,
+        require_all_gfid_identities)
 
 
-def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
+def compare(reference: Dict[str, Any], candidate: Dict[str, Any],
+            expected_candidate_only: FrozenSet[str] = frozenset()) -> None:
     # Size and ImportEntrySize describe extensible container layouts.  Each
     # image has already been bounds-checked above; compare only the known
     # enclave policy and import semantics across linker implementations.
@@ -1468,26 +2202,77 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
             "gfid_covered": entry["gfid_covered"],
         } for entry in image["exports"]}
 
-    common_stable_names = (
-        set(reference["stable_symbol_names"]) &
-        set(candidate["stable_symbol_names"]))
+    def gfid_target_identities_match() -> bool:
+        common_names = (
+            set(reference["stable_symbol_names"]) &
+            set(candidate["stable_symbol_names"]))
 
-    def gfid_identity_signatures(
-            image: Dict[str, Any]) -> Optional[List[Tuple[str, ...]]]:
-        signatures = []
-        for aliases in image["gfid_aliases"]:
-            signature = tuple(sorted(set(aliases) & common_stable_names))
-            if not signature:
+        def groups(image: Dict[str, Any]) -> Optional[List[
+                Tuple[FrozenSet[str], int]]]:
+            gfids = image["gfids"]
+            flags = image["gfid_flags"]
+            aliases = image["gfid_aliases"]
+            if (len(gfids) != len(flags) or len(gfids) != len(aliases) or
+                    len(set(gfids)) != len(gfids)):
                 return None
-            signatures.append(signature)
-        return sorted(signatures)
+            return [(frozenset(entry_aliases), entry_flags)
+                    for entry_aliases, entry_flags in zip(aliases, flags)]
 
-    reference_gfid_signatures = gfid_identity_signatures(reference)
-    candidate_gfid_signatures = gfid_identity_signatures(candidate)
-    gfid_identities_match = (
-        reference_gfid_signatures is not None and
-        candidate_gfid_signatures is not None and
-        reference_gfid_signatures == candidate_gfid_signatures)
+        reference_groups = groups(reference)
+        candidate_groups = groups(candidate)
+        if reference_groups is None or candidate_groups is None:
+            return False
+        # A reference GFID that has a real name cannot be reclassified as the
+        # link.exe-only opaque CRT slot merely because the candidate omitted
+        # that name.
+        if any(aliases and not aliases & common_names
+               for aliases, _ in reference_groups):
+            return False
+
+        def common_signature(
+                identity_groups: List[Tuple[FrozenSet[str], int]]) -> Tuple[
+                    FrozenSet[str],
+                    FrozenSet[Tuple[FrozenSet[str], int]],
+                    List[int]]:
+            blocks = []
+            unmatched_flags = []
+            for aliases, entry_flags in identity_groups:
+                block = aliases & common_names
+                if block:
+                    blocks.append((block, entry_flags))
+                else:
+                    unmatched_flags.append(entry_flags)
+            covered_names = frozenset(
+                name for block, _ in blocks for name in block)
+            return covered_names, frozenset(blocks), unmatched_flags
+
+        reference_signature = common_signature(reference_groups)
+        candidate_signature = common_signature(candidate_groups)
+        if reference_signature[:2] != candidate_signature[:2]:
+            return False
+
+        expected_unshared = set(expected_candidate_only) - common_names
+        covered_expected: Set[str] = set()
+        candidate_unmatched_flags = []
+        for aliases, entry_flags in candidate_groups:
+            common_block = aliases & common_names
+            expected_block = aliases & expected_unshared
+            covered_expected.update(aliases & expected_candidate_only)
+            if common_block:
+                if expected_block:
+                    return False
+            else:
+                if len(expected_block) != 1:
+                    return False
+                candidate_unmatched_flags.append(entry_flags)
+        if covered_expected != set(expected_candidate_only):
+            return False
+        if len(candidate_unmatched_flags) != len(expected_unshared):
+            return False
+        return (sorted(reference_signature[2]) ==
+                sorted(candidate_unmatched_flags))
+
+    gfid_identities_match = gfid_target_identities_match()
 
     checks = [
         ("machine", reference["machine"], candidate["machine"]),
@@ -1657,7 +2442,12 @@ def _synthetic_image() -> bytes:
     return bytes(data)
 
 
-def _synthetic_map_text() -> str:
+def _synthetic_map_text(
+        symbol_overrides: Optional[Dict[str, int]] = None,
+        omitted_symbols: Optional[Set[str]] = None,
+        extra_symbols: Optional[List[Tuple[str, int]]] = None,
+        extra_static_symbols: Optional[List[Tuple[str, int, str]]] = None
+        ) -> str:
     image_base = 0x180000000
     symbol_rvas = {
         "GuardedExercise": 0x1020,
@@ -1673,19 +2463,31 @@ def _synthetic_map_text() -> str:
         "_guard_check_icall_nop": 0x1060,
         "_guard_dispatch_icall_nop": 0x1070,
     }
+    symbol_rvas.update(symbol_overrides or {})
+    for name in omitted_symbols or set():
+        symbol_rvas.pop(name, None)
     lines = [
         " fixture",
         "",
         "  Address         Publics by Value              Rva+Base",
         "",
     ]
-    for name, rva in sorted(symbol_rvas.items()):
+    def append_symbol(name: str, rva: int, origin: str) -> None:
         section = 2 if rva >= 0x2000 else 1
         section_offset = rva - (0x2000 if section == 2 else 0x1000)
-        suffix = " f   fixture.obj" if section == 1 else "     <linker-defined>"
+        suffix = " f   " + origin if section == 1 else "     " + origin
         lines.append(
             " %04x:%08x       %-26s %016x%s" %
             (section, section_offset, name, image_base + rva, suffix))
+    for name, rva in sorted(list(symbol_rvas.items()) +
+                            list(extra_symbols or [])):
+        origin = "fixture.obj" if rva < 0x2000 else "<linker-defined>"
+        append_symbol(name, rva, origin)
+    if extra_static_symbols:
+        lines.extend(("", " entry point at         0001:00000000", "",
+                      " Static symbols", ""))
+        for name, rva, origin in sorted(extra_static_symbols):
+            append_symbol(name, rva, origin)
     return "\n".join(lines) + "\n"
 
 
@@ -1699,9 +2501,51 @@ def self_test() -> None:
     cases: List[Tuple[str, bytes, str]] = []
     arm64_cases: List[Tuple[str, bytes, str]] = []
     failures = []
-    direct_negative_count = 7
+    direct_negative_count = 13
+    expected_fixture_identities = {
+        "x86_64": frozenset({
+            STATIC_IDENTITY_PREFIX +
+            "libcmt:" + VBS_CRT_MEMBER_ROOT +
+            "/amd64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
+        }),
+        "arm64": frozenset({
+            STATIC_IDENTITY_PREFIX +
+            "libcmt:" + VBS_CRT_MEMBER_ROOT +
+            "/arm64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
+        }),
+    }
+    if EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES != expected_fixture_identities:
+        failures.append("per-machine opaque GFID identity contract drifted")
+    short_origin_forms = {
+        _normalize_map_origin("C:\\sdk\\libcmt.lib:dll.obj"),
+        _normalize_map_origin("libcmt:D:\\agent\\dll.obj"),
+        _normalize_map_origin("LIBCMT.LIB:DLL.OBJ"),
+    }
+    if short_origin_forms != {
+            "libcmt:dll.obj", "libcmt:agent/dll.obj"}:
+        failures.append("absolute Static member provenance was not retained")
+    qualified_origins = {
+        _normalize_map_origin(
+            "libcmt:C:\\agent\\Intermediate\\crt\\vcstartup\\build\\mt\\"
+            "libcmt_mt_enclave.vcxproj\\objr\\amd64\\dll_dllmain.obj"),
+        _normalize_map_origin(
+            "libcmt:C:\\agent\\Intermediate\\crt\\vcstartup\\build\\mt\\"
+            "libcmt_mt_enclave.vcxproj\\objr\\arm64\\dll_dllmain.obj"),
+        _normalize_map_origin(
+            "libcmt:C:\\agent\\Intermediate\\crt\\vcstartup\\build\\mt\\"
+            "libcmt_mt_enclave.vcxproj\\objr\\arm64ec\\dll_dllmain.obj"),
+    }
+    if qualified_origins != {
+            "libcmt:" + VBS_CRT_MEMBER_ROOT +
+            "/amd64/dll_dllmain.obj",
+            "libcmt:" + VBS_CRT_MEMBER_ROOT +
+            "/arm64/dll_dllmain.obj",
+            "libcmt:" + VBS_CRT_MEMBER_ROOT +
+            "/arm64ec/dll_dllmain.obj"}:
+        failures.append("architecture-qualified map origins are not distinct")
     if reference.get("gfid_aliases") != [
-            ["GuardedTarget"], ["LegacyTarget"]]:
+            [_map_identity("public", "GuardedTarget")],
+            [_map_identity("public", "LegacyTarget")]]:
         failures.append("GFID stable alias sets were not reported")
     reusable_image = PEImage(valid, "self-test/reusable PE image")
     try:
@@ -1711,7 +2555,8 @@ def self_test() -> None:
             failures.append("repeated inspection changed GFID aliases")
     except VerificationError as error:
         failures.append("repeated inspection failed: %r" % str(error))
-    if map_symbols.symbols.get("InternalTargetA") != frozenset({0x180001050}):
+    internal_target_a = _map_identity("public", "InternalTargetA")
+    if map_symbols.symbols.get(internal_target_a) != frozenset({0x180001050}):
         failures.append("stable COFF map alias was not collected")
     noisy_map = parse_coff_map_text(
         map_text +
@@ -1726,7 +2571,7 @@ def self_test() -> None:
         " 0000:00001050       AbsoluteNoise              "
         "0000000180001050     <absolute>\n",
         "synthetic-noisy.map")
-    if noisy_map.symbols.get("InternalTargetA") != frozenset({0x180001050}):
+    if noisy_map.symbols.get(internal_target_a) != frozenset({0x180001050}):
         failures.append("same-VA COFF map aliases did not collapse")
     if any(name in noisy_map.symbols for name in
            (".bf", "$$000000", "@compiler", "AbsoluteNoise")):
@@ -1738,9 +2583,9 @@ def self_test() -> None:
                      0x1000, 0, 0x1030, 0, 0x1050, 0)
     unnamed_map_symbols = CoffMap(
         {name: vas for name, vas in map_symbols.symbols.items()
-         if name != "InternalTargetA"},
+         if name != internal_target_a},
         tuple(entry for entry in map_symbols.entries
-              if entry[2] != "InternalTargetA"))
+              if entry[2] != internal_target_a))
     try:
         PEImage(bytes(unnamed_gfid), "self-test/unnamed GFID").inspect(
             unnamed_map_symbols)
@@ -1759,7 +2604,8 @@ def self_test() -> None:
             bytes(unnamed_gfid),
             "self-test/linker-defined stable alias").inspect(
                 linker_defined_map)
-        if "LinkerDefinedTarget" not in linker_defined_result["gfid_aliases"][2]:
+        if (_map_identity("public", "LinkerDefinedTarget") not in
+                linker_defined_result["gfid_aliases"][2]):
             failures.append("linker-defined stable alias was not reported")
     except VerificationError as error:
         failures.append("linker-defined stable alias failed: %r" % str(error))
@@ -1787,7 +2633,7 @@ def self_test() -> None:
             bytes(unnamed_gfid),
             "self-test/static same-name pollution").inspect(
                 static_polluted_map)
-        if static_polluted_result["gfid_aliases"][2] != ["InternalTargetA"]:
+        if static_polluted_result["gfid_aliases"][2] != [internal_target_a]:
             failures.append("static same-name pollution changed public alias")
     except VerificationError as error:
         failures.append("static same-name pollution failed: %r" % str(error))
@@ -1816,7 +2662,8 @@ def self_test() -> None:
             inconsistent_map)
         failures.append("inconsistent COFF map row (unexpectedly passed)")
     except VerificationError as error:
-        if "COFF map entry GuardedTarget has inconsistent segment:offset" not in str(error):
+        if ("COFF map entry public|GuardedTarget has inconsistent "
+                "segment:offset" not in str(error)):
             failures.append("inconsistent COFF map row (wrong diagnostic: %r)" %
                             str(error))
 
@@ -1827,6 +2674,49 @@ def self_test() -> None:
                      0x98 + 112 + DEBUG_DIRECTORY * 8, 0, 0)
     type_13_debug = bytearray(valid)
     struct.pack_into("<I", type_13_debug, 0xE40 + 12, 13)
+    first_thunk_lookup = bytearray(valid)
+    struct.pack_into("<I", first_thunk_lookup, 0x8C0, 0)
+    x64_v1_slots = bytearray(valid)
+    struct.pack_into("<I", x64_v1_slots, 0xE08, 0x4090)
+    x64_v1_slots[0xE90:0xE98] = bytes((1, 4, 2, 0, 4, 1, 2, 0))
+    x64_v2_epilog = bytearray(valid)
+    struct.pack_into("<I", x64_v2_epilog, 0xE08, 0x4090)
+    x64_v2_epilog[0xE90:0xE98] = bytes((2, 4, 2, 0, 4, 6, 0, 0))
+    x64_v2_spare = bytearray(valid)
+    struct.pack_into("<I", x64_v2_spare, 0xE08, 0x4090)
+    x64_v2_spare[0xE90:0xE9C] = bytes(
+        (2, 4, 3, 0, 4, 7, 0, 0, 0, 0, 0, 0))
+    x64_v1_frame_pointer = bytearray(valid)
+    struct.pack_into("<I", x64_v1_frame_pointer, 0xE08, 0x4090)
+    x64_v1_frame_pointer[0xE90:0xE98] = bytes(
+        (1, 1, 1, 5, 1, 3, 0, 0))
+    x64_v3_standard = bytearray(valid)
+    struct.pack_into("<I", x64_v3_standard, 0xE08, 0x4090)
+    x64_v3_standard[0xE90:0xEA0] = bytes((
+        3, 4, 5, 0x21,
+        3, 0x08, 8, 0, 0, 0, 3, 0, 0x04, 0, 0, 0,
+    ))
+    x64_v3_large = bytearray(valid)
+    struct.pack_into("<II", x64_v3_large, 0xE1C, 0x1200, 0x4090)
+    x64_v3_large[0xE90:0xE98] = bytes((
+        0x43, 4, 2, 1, 1, 0, 1, 0x2C,
+    ))
+    x64_v3_inherited = bytearray(valid)
+    struct.pack_into("<I", x64_v3_inherited, 0xE08, 0x4090)
+    x64_v3_inherited[0xE90:0xEA0] = bytes((
+        3, 1, 6, 0x41, 0, 0x08, 4, 0, 0, 0, 2, 0, 0, 4, 0, 0x2C,
+    ))
+    x64_v3_large_epilog = bytearray(valid)
+    struct.pack_into("<II", x64_v3_large_epilog, 0xE1C, 0x1200, 0x4090)
+    x64_v3_large_epilog[0xE90:0xE9E] = bytes((
+        3, 0, 5, 0x20,
+        0x0A, 0x10, 0, 0, 0, 0, 1, 0, 0, 0x2C,
+    ))
+    x64_v3_chain = bytearray(valid)
+    struct.pack_into("<I", x64_v3_chain, 0xE08, 0x4090)
+    x64_v3_chain[0xE90:0xEA4] = (
+        b"\x23\0\0\0" + struct.pack("<III", 0x1010, 0x1020, 0x40A0) +
+        b"\x03\0\0\0")
     arm64_valid = bytearray(valid)
     struct.pack_into("<H", arm64_valid, 0x84, 0xAA64)
     struct.pack_into("<II", arm64_valid,
@@ -1837,14 +2727,76 @@ def self_test() -> None:
                      0x1020, (4 << 2) | 1,
                      0x1040, 0x4088)
     struct.pack_into("<II", arm64_valid, 0xE80,
-                     (1 << 27) | (1 << 21) | 4, 0)
+                     (1 << 27) | (1 << 21) | 4, 0x000000E4)
     struct.pack_into("<II", arm64_valid, 0xE88,
-                     (1 << 27) | (1 << 21) | 4, 0)
+                     (1 << 27) | (1 << 21) | 4, 0x000000E4)
+    arm64_scoped_custom = bytearray(arm64_valid)
+    struct.pack_into("<I", arm64_scoped_custom, 0xE04, 0x4090)
+    struct.pack_into("<II", arm64_scoped_custom, 0xE90,
+                     (2 << 27) | (1 << 22) | 4, 2)
+    arm64_scoped_custom[0xE98:0xEA0] = bytes(
+        (0xE8, 0xE9, 0xEA, 0xEB, 0xEC, 0xE4, 0xE3, 0xE3))
+    arm64_end_c = bytearray(arm64_valid)
+    struct.pack_into("<I", arm64_end_c, 0xE04, 0x4090)
+    struct.pack_into("<I", arm64_end_c, 0xE90,
+                     (1 << 27) | (1 << 21) | 4)
+    arm64_end_c[0xE94:0xE98] = bytes((0xE5, 0xE4, 0xE3, 0xE3))
+    arm64_save_any = bytearray(arm64_valid)
+    struct.pack_into("<I", arm64_save_any, 0xE04, 0x4090)
+    struct.pack_into("<I", arm64_save_any, 0xE90,
+                     (1 << 27) | (1 << 21) | 4)
+    arm64_save_any[0xE94:0xE98] = bytes((0xE7, 0, 0, 0xE4))
+    arm64_save_next = bytearray(arm64_valid)
+    struct.pack_into("<I", arm64_save_next, 0xE04, 0x4090)
+    struct.pack_into("<I", arm64_save_next, 0xE90,
+                     (1 << 27) | (1 << 21) | 4)
+    arm64_save_next[0xE94:0xE98] = bytes((0x20, 0xE6, 0xE4, 0xE3))
+    arm64_sve_pac = bytearray(arm64_valid)
+    struct.pack_into("<I", arm64_sve_pac, 0xE04, 0x4090)
+    struct.pack_into("<I", arm64_sve_pac, 0xE90,
+                     (2 << 27) | (1 << 21) | 4)
+    arm64_sve_pac[0xE94:0xE9C] = bytes(
+        (0xDF, 0, 0xE7, 0x14, 0xC0, 0xFC, 0xE4, 0xED))
+    arm64_extended = bytearray(arm64_valid)
+    struct.pack_into("<I", arm64_extended, 0xE04, 0x4090)
+    struct.pack_into("<III", arm64_extended, 0xE90,
+                     (1 << 21) | 4, 1 << 16, 0x000000E4)
+    arm64_fragment_packed = bytearray(arm64_valid)
+    struct.pack_into("<I", arm64_fragment_packed, 0xE0C,
+                     (4 << 2) | 2 | (2 << 16) | (1 << 20) | (3 << 21) |
+                     (8 << 23))
+    arm64_padding = bytearray(arm64_valid)
+    arm64_padding[0xE84:0xE88] = bytes((0xE4, 0xED, 0xFF, 0xF0))
     positive_images = (
         ("short data-directory table", bytes(short_directory_table), "x86_64"),
         ("absent optional debug directory", bytes(no_debug), "x86_64"),
         ("allowed type-13 debug directory", bytes(type_13_debug), "x86_64"),
+        ("FirstThunk fallback lookup table", bytes(first_thunk_lookup),
+         "x86_64"),
+        ("x64 v1 multi-slot unwind opcode", bytes(x64_v1_slots), "x86_64"),
+        ("x64 v2 two-slot epilog opcode", bytes(x64_v2_epilog), "x86_64"),
+        ("x64 v2 three-slot spare opcode", bytes(x64_v2_spare), "x86_64"),
+        ("x64 v1 frame-register unwind", bytes(x64_v1_frame_pointer),
+         "x86_64"),
+        ("x64 v3 epilog and WOD payload", bytes(x64_v3_standard), "x86_64"),
+        ("x64 v3 large-prolog WOD payload", bytes(x64_v3_large), "x86_64"),
+        ("x64 v3 inherited epilog payload", bytes(x64_v3_inherited),
+         "x86_64"),
+        ("x64 v3 large epilog payload", bytes(x64_v3_large_epilog),
+         "x86_64"),
+        ("x64 v3 chained unwind payload", bytes(x64_v3_chain), "x86_64"),
         ("synthetic ARM64 exception directory", bytes(arm64_valid), "arm64"),
+        ("ARM64 scoped custom unwind opcodes", bytes(arm64_scoped_custom),
+         "arm64"),
+        ("ARM64 chained-scope end opcode", bytes(arm64_end_c), "arm64"),
+        ("ARM64 save-any-register opcode", bytes(arm64_save_any), "arm64"),
+        ("ARM64 paired save-next opcode", bytes(arm64_save_next), "arm64"),
+        ("ARM64 SVE predicate and PAC opcodes", bytes(arm64_sve_pac),
+         "arm64"),
+        ("ARM64 extended xdata header", bytes(arm64_extended), "arm64"),
+        ("ARM64 fragment packed frame state", bytes(arm64_fragment_packed),
+         "arm64"),
+        ("ARM64 opaque unwind word padding", bytes(arm64_padding), "arm64"),
     )
     for name, image, expected_machine in positive_images:
         try:
@@ -1911,10 +2863,14 @@ def self_test() -> None:
         mutate(name, expected_error, [(offset, fmt, value)])
 
     def mutate_arm64(name: str, expected_error: str,
-                     changes: List[Tuple[int, str, int]]) -> None:
+                     changes: List[Tuple[int, str, int]],
+                     byte_changes: Optional[List[Tuple[int, bytes]]] = None
+                     ) -> None:
         mutated = bytearray(arm64_valid)
         for offset, fmt, value in changes:
             struct.pack_into(fmt, mutated, offset, value)
+        for offset, value in byte_changes or []:
+            mutated[offset:offset + len(value)] = value
         arm64_cases.append((name, bytes(mutated), expected_error))
 
     optional = 0x98
@@ -1960,6 +2916,154 @@ def self_test() -> None:
             (0xE00 + 16, "<I", 0x2010)])
     add("bad x64 unwind information", 0xE00 + 8, "<I", 0x2000,
         "malformed x64 unwind information")
+    mutate("x64 prolog exceeds function",
+           "x64 unwind prolog exceeds runtime-function range",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((1, 17, 0, 0)))])
+    mutate("invalid x64 unwind opcode", "invalid x64 unwind opcode",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((1, 4, 1, 0, 4, 11, 0, 0)))])
+    mutate("truncated x64 unwind opcode slots",
+           "x64 unwind opcode exceeds declared slot count",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((1, 4, 1, 0, 4, 1, 0, 0)))])
+    mutate("ascending x64 unwind offsets",
+           "x64 unwind code offsets are not descending",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((1, 4, 2, 0, 1, 0x30, 2, 0x30)))])
+    mutate("x64 unwind offset past prolog",
+           "x64 unwind code offset exceeds prolog",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((1, 1, 1, 0, 2, 0x30, 0, 0)))])
+    mutate("v1 reserved epilog opcode", "invalid x64 unwind opcode",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((1, 4, 2, 0, 4, 6, 0, 0)))])
+    mutate("v2 truncated epilog opcode",
+           "x64 unwind opcode exceeds declared slot count",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((2, 4, 1, 0, 4, 6, 0, 0)))])
+    mutate("v2 truncated spare opcode",
+           "x64 unwind opcode exceeds declared slot count",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((2, 4, 2, 0, 4, 7, 0, 0)))])
+    mutate("x64 SET_FPREG without frame register",
+           "x64 SET_FPREG has no valid frame register",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((1, 1, 1, 0, 1, 3, 0, 0)))])
+    mutate("x64 volatile PUSH_NONVOL register",
+           "x64 unwind opcode uses a volatile integer register",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((1, 1, 1, 0, 1, 0, 0, 0)))])
+    mutate("x64 volatile SAVE_XMM128 register",
+           "x64 unwind opcode uses a volatile XMM register",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((1, 1, 2, 0, 1, 0x58, 0, 0)))])
+    mutate("invalid x64 header frame register",
+           "x64 unwind header uses a volatile frame register",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((1, 0, 0, 1)))])
+    mutate("x64 frame register without SET_FPREG",
+           "x64 frame register requires exactly one SET_FPREG",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((1, 0, 0, 5)))])
+    mutate("chained x64 frame-register mismatch",
+           "chained x64 unwind frame state differs from parent",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, b"\x21\0\0\x05" +
+             struct.pack("<III", 0x1010, 0x1020, 0x40A0)),
+            (0xEA0, b"\x01\0\0\0")])
+    mutate("x64 v3 reserved flag",
+           "malformed x64 v3 unwind information",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((0x83, 0, 0, 0)))])
+    mutate("x64 v3 handler and chain flags",
+           "malformed x64 v3 unwind information",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((0x3B, 0, 0, 0)))])
+    mutate("truncated x64 v3 large extension",
+           "truncated x64 v3 large-prolog extension",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((0x43, 4, 0, 0)))])
+    mutate("unnecessary x64 v3 LARGE flag",
+           "x64 v3 LARGE flag requires a prolog over 255 bytes",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((0x43, 4, 2, 1, 0, 3, 0, 0x04)))])
+    mutate("x64 v3 prolog exceeds function",
+           "x64 v3 prolog exceeds runtime-function range",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((3, 17, 0, 0)))])
+    mutate("truncated x64 v3 prolog IP offsets",
+           "truncated x64 v3 prolog IP offsets",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((3, 4, 0, 1)))])
+    mutate("x64 v3 prolog IP offset past prolog",
+           "x64 v3 prolog IP offset exceeds prolog",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((3, 4, 1, 1, 4, 0x04, 0, 0)))])
+    mutate("ascending x64 v3 prolog IP offsets",
+           "x64 v3 prolog IP offsets are not descending",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((3, 4, 2, 2, 1, 2, 0x04, 0x04)))])
+    mutate("truncated x64 v3 epilog descriptor",
+           "truncated x64 v3 epilog descriptor",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((3, 0, 0, 0x20)))])
+    mutate("reserved x64 v3 epilog descriptor",
+           "x64 v3 epilog descriptor has reserved flags",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((3, 0, 2, 0x20, 4, 8, 0, 0)))])
+    mutate("x64 v3 inherited epilog without predecessor",
+           "x64 v3 inherited epilog has no predecessor",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((3, 0, 2, 0x20, 0, 8, 0, 0)))])
+    mutate("x64 v3 inherited epilog flag mismatch",
+           "x64 v3 inherited epilog flags differ",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((
+               3, 0, 6, 0x40,
+               0x08, 8, 0, 0, 0, 3, 0,
+               0x01, 2, 0, 0x04, 0,
+           )))])
+    mutate("x64 v3 FirstOp outside WOD pool",
+           "x64 v3 epilog 0 FirstOp is outside the WOD pool",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((
+               3, 4, 5, 0x21,
+               3, 0x08, 8, 0, 3, 0, 3, 0, 0x04, 0, 0, 0,
+           )))])
+    mutate("truncated x64 v3 WOD",
+           "truncated x64 v3 WOD sequence",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((3, 4, 1, 1, 3, 1, 0, 0)))])
+    mutate("invalid x64 v3 WOD",
+           "invalid x64 v3 WOD opcode",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((3, 4, 1, 1, 3, 0x0B, 0, 0)))])
+    mutate("descending x64 v3 epilog IP offsets",
+           "x64 v3 epilog IP offsets are not ascending",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((
+               3, 0, 5, 0x20,
+               0x10, 8, 0, 0, 0, 3, 2, 1, 0x04, 0x04, 0, 0,
+           )))])
+    mutate("x64 v3 FirstOp inside another WOD",
+           "x64 v3 WOD sequences overlap off boundary",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, bytes((
+               3, 4, 7, 0x21,
+               3, 0x08, 8, 0, 1, 0, 3, 0,
+               1, 0x04, 0, 0, 0, 0,
+           )))])
+    mutate("cyclic chained x64 unwind", "cyclic chained x64 unwind information",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, b"\x21\0\0\0" +
+             struct.pack("<III", 0x1010, 0x1020, 0x4090))])
+    mutate("malformed nested chained x64 unwind",
+           "malformed x64 unwind information",
+           [(0xE08, "<I", 0x4090)],
+           [(0xE90, b"\x21\0\0\0" +
+             struct.pack("<III", 0x1010, 0x1020, 0x40A0)),
+            (0xEA0, bytes(4))])
     add("missing exact nonleaf runtime function", 0xE00, "<I", 0x1000,
         "map-bound nonleaf export GuardedIndirectCall lacks one exact")
 
@@ -1997,9 +3101,131 @@ def self_test() -> None:
         "unterminated standard import IAT")
     mutate_arm64("bad ARM64 xdata header", "malformed ARM64 xdata header",
                  [(0xE80, "<I", 0)])
+    mutate_arm64(
+        "misaligned ARM64 BeginAddress",
+        "malformed ARM64 runtime-function BeginAddress",
+        [(0xE00, "<I", 0x1011)])
     mutate_arm64("reserved ARM64 unwind flag",
                  "reserved ARM64 unwind-data flag",
                  [(0xE04, "<I", 3)])
+    mutate_arm64(
+        "ARM64 packed unwind with too many integer registers",
+        "ARM64 packed unwind saves too many integer registers",
+        [(0xE0C, "<I", (4 << 2) | 2 | (11 << 16))])
+    mutate_arm64(
+        "ARM64 packed frame smaller than save area",
+        "ARM64 packed frame is smaller than its save area",
+        [(0xE0C, "<I", (4 << 2) | 1 | (2 << 16))])
+    mutate_arm64(
+        "ARM64 packed frame missing frame-pointer pair",
+        "ARM64 packed frame omits the frame-pointer pair",
+        [(0xE0C, "<I", (4 << 2) | 1 | (3 << 21))])
+    mutate_arm64(
+        "ARM64 single-epilog index outside code pool",
+        "is not an ARM64 unwind opcode boundary",
+        [(0xE80, "<I", (1 << 27) | (1 << 21) | (4 << 22) | 4)])
+    mutate_arm64(
+        "ARM64 epilog scope with reserved bits",
+        "ARM64 epilog scope has reserved bits",
+        [(0xE04, "<I", 0x4090)],
+        [(0xE90, struct.pack("<II", (1 << 27) | (1 << 22) | 4,
+                                  (1 << 18) | 2) + b"\xE4\xE3\xE3\xE3")])
+    mutate_arm64(
+        "unsorted ARM64 epilog scopes",
+        "ARM64 epilog scopes are not strictly sorted",
+        [(0xE04, "<I", 0x4090)],
+        [(0xE90, struct.pack("<III", (1 << 27) | (2 << 22) | 4,
+                                  2, 1) + b"\xE4\xE3\xE3\xE3")])
+    mutate_arm64(
+        "ARM64 epilog scope outside function",
+        "ARM64 epilog scope starts outside the function",
+        [(0xE04, "<I", 0x4090)],
+        [(0xE90, struct.pack("<II", (1 << 27) | (1 << 22) | 4,
+                                  4) + b"\xE4\xE3\xE3\xE3")])
+    mutate_arm64(
+        "ARM64 epilog scope index outside code pool",
+        "is not an ARM64 unwind opcode boundary",
+        [(0xE04, "<I", 0x4090)],
+        [(0xE90, struct.pack("<II", (1 << 27) | (1 << 22) | 4,
+                                  2 | (4 << 22)) +
+          b"\xE4\xE3\xE3\xE3")])
+    mutate_arm64(
+        "ARM64 epilog index inside multi-byte opcode",
+        "is not an ARM64 unwind opcode boundary",
+        [(0xE04, "<I", 0x4090)],
+        [(0xE90, struct.pack(
+            "<I", (1 << 27) | (1 << 21) | (1 << 22) | 4) +
+          b"\xE2\x00\xE4\xE3")])
+    mutate_arm64(
+        "ARM64 internal unwind-code gap",
+        "ARM64 unwind-code pool has an internal gap",
+        [], [(0xE80, struct.pack(
+            "<I", (1 << 27) | (1 << 21) | (3 << 22) | 4)),
+             (0xE84, b"\xE4\xED\xFF\xE4")])
+    mutate_arm64(
+        "reserved ARM64 unwind opcode",
+        "reserved ARM64 unwind opcode",
+        [], [(0xE84, b"\xED\xE4\xE3\xE3")])
+    mutate_arm64(
+        "truncated ARM64 unwind opcode",
+        "truncated ARM64 unwind opcode",
+        [], [(0xE84, b"\xE3\xE3\xE3\xE0")])
+    mutate_arm64(
+        "unterminated ARM64 unwind sequence",
+        "lacks a terminating ARM64 end opcode",
+        [], [(0xE84, b"\xE3\xE3\xE3\xE3")])
+    mutate_arm64(
+        "ARM64 end-c without real end",
+        "lacks a terminating ARM64 end opcode",
+        [], [(0xE84, b"\xE5\xE3\xE3\xE3")])
+    mutate_arm64(
+        "reserved ARM64 save-any-register encoding",
+        "reserved ARM64 save-any-register encoding",
+        [], [(0xE84, b"\xE7\x80\x00\xE4")])
+    mutate_arm64(
+        "reserved ARM64 predicate-register encoding",
+        "reserved ARM64 predicate-register encoding",
+        [], [(0xE84, b"\xE7\x10\xC0\xE4")])
+    mutate_arm64(
+        "invalid ARM64 save-any integer register",
+        "invalid ARM64 save-any integer register",
+        [], [(0xE84, b"\xE7\x1F\x00\xE4")])
+    mutate_arm64(
+        "isolated ARM64 save-next opcode",
+        "ARM64 save_next does not follow a pair save",
+        [], [(0xE84, b"\xE6\xE4\xE3\xE3")])
+    mutate_arm64(
+        "overflowing ARM64 save-next opcode",
+        "ARM64 save_next exceeds the register range",
+        [], [(0xE84, b"\xCA\x80\xE6\xE4")])
+    mutate_arm64(
+        "invalid ARM64 integer register-pair save",
+        "invalid ARM64 integer register-pair save",
+        [], [(0xE84, b"\xCA\xC0\xE4\xE3")])
+    mutate_arm64(
+        "invalid ARM64 floating register-pair save",
+        "invalid ARM64 floating register-pair save",
+        [], [(0xE84, b"\xD9\xC0\xE4\xE3")])
+    mutate_arm64(
+        "invalid ARM64 integer register save",
+        "invalid ARM64 integer register save",
+        [], [(0xE84, b"\xD3\xC0\xE4\xE3")])
+    mutate_arm64(
+        "invalid ARM64 pre-indexed register save",
+        "invalid ARM64 pre-indexed register save",
+        [], [(0xE84, b"\xD5\x80\xE4\xE3")])
+    mutate_arm64(
+        "invalid ARM64 link-register pair save",
+        "invalid ARM64 link-register pair save",
+        [], [(0xE84, b"\xD7\x80\xE4\xE3")])
+    mutate_arm64(
+        "empty ARM64 unwind-code pool",
+        "empty ARM64 unwind-code pool",
+        [(0xE80, "<I", 4), (0xE84, "<I", 0)])
+    mutate_arm64(
+        "ARM64 extended header reserved bits",
+        "ARM64 xdata extended header has reserved bits",
+        [(0xE80, "<I", 4), (0xE84, "<I", 0x01010000)])
     mutate_arm64("unsorted ARM64 exception directory",
                  "exception directory is not strictly sorted",
                  [(0xE08, "<I", 0x1000)])
@@ -2027,6 +3253,42 @@ def self_test() -> None:
         "standard import has a zero Name RVA")
     add("zero standard import IAT", 0x8C0 + 16, "<I", 0,
         "standard import has a zero FirstThunk RVA")
+    add("bound standard import timestamp", 0x8C0 + 4, "<I", 1,
+        "unsigned standard import TimeDateStamp is nonzero")
+    add("standard import forwarder chain", 0x8C0 + 8, "<I", 1,
+        "unbound standard import ForwarderChain is nonzero")
+    add("misaligned standard import lookup table", 0x8C0, "<I", 0x2254,
+        "standard import lookup table is not PE32+ aligned")
+    add("reserved ordinal thunk bits", 0x850, "<Q",
+        0x8000000000010001,
+        "standard import ordinal thunk has reserved bits")
+    add("zero import ordinal", 0x850, "<Q", 0x8000000000000000,
+        "standard import ordinal thunk has ordinal zero")
+    add("name thunk high bits", 0x850, "<Q", 0x0000000100002550,
+        "standard import name thunk is not a 32-bit RVA")
+    mutate("empty Hint/Name import", "empty standard import function name",
+           [(0x850, "<Q", 0x2550)],
+           [(0xB50, b"\0\0\0")])
+    mutate("unterminated Hint/Name import",
+           "unterminated standard import function name",
+           [(0x850, "<Q", 0x25FC)],
+           [(0xBFC, b"\0\0xy")])
+    add("lookup/IAT length mismatch", 0x850, "<Q", 0,
+        "standard import lookup/IAT chain lengths differ")
+    add("unsigned standard import IAT mismatch", 0x860, "<Q",
+        0x8000000000000002,
+        "unsigned standard import IAT thunk differs from ILT")
+    mutate("empty standard import thunk chain",
+           "standard import descriptor has no live thunks",
+           [(0x850, "<Q", 0), (0x860, "<Q", 0)])
+    mutate("unterminated standard import lookup table",
+           "unterminated standard import lookup table",
+           [(0x8C0, "<I", 0x25F8)],
+           [(0xBF8, b"\x01\0\0\0\0\0\0\x80")])
+    mutate("overlapping standard import IAT ranges",
+           "standard import IAT ranges overlap",
+           [(0x8D4, "<I", 0x2250),
+            (0x8D4 + 16, "<I", 0x2260)])
     add("standard import name outside raw section", 0x8C0 + 12, "<I", 0x2600,
         "standard import DLL name RVA is not backed by initialized raw section data")
     mutate("unterminated standard import name",
@@ -2383,11 +3645,12 @@ def self_test() -> None:
     struct.pack_into("<I", relocated, 0x8A0, 0x1028)
     struct.pack_into("<I", relocated, 0xA30, 0x1028)
     relocated_symbols = dict(map_symbols.symbols)
-    relocated_symbols["GuardedTarget"] = frozenset({0x180001028})
+    guarded_target_identity = _map_identity("public", "GuardedTarget")
+    relocated_symbols[guarded_target_identity] = frozenset({0x180001028})
     relocated_map_symbols = CoffMap(
         relocated_symbols,
         tuple((segment, 0x28, name, 0x180001028)
-              if name == "GuardedTarget" else entry
+              if name == guarded_target_identity else entry
               for entry in map_symbols.entries
               for segment, _, name, _ in (entry,)))
     compare(reference, PEImage(bytes(relocated),
@@ -2414,14 +3677,219 @@ def self_test() -> None:
             failures.append("internal GFID replacement (wrong diagnostic: %r)" %
                             str(error))
 
+    wrong_origin_reference_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                "SameLocal", 0x1050,
+                "C:\\sdk\\libA.lib:a.obj")]),
+        "self-test/static-wrong-origin-reference.map")
+    wrong_origin_candidate_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                "SameLocal", 0x1080,
+                "libB:D:\\agent\\b.obj")]),
+        "self-test/static-wrong-origin-candidate.map")
+    wrong_origin_reference = PEImage(
+        bytes(identity_reference_image),
+        "self-test/static wrong-origin reference").inspect(
+            wrong_origin_reference_map)
+    wrong_origin_candidate = PEImage(
+        bytes(identity_candidate_image),
+        "self-test/static wrong-origin candidate").inspect(
+            wrong_origin_candidate_map)
+    try:
+        compare(wrong_origin_reference, wrong_origin_candidate)
+        failures.append("same static name from different origins "
+                        "(unexpectedly compared equal)")
+    except VerificationError as error:
+        if "GFID stable symbol identities" not in str(error):
+            failures.append("same static name from different origins "
+                            "(wrong diagnostic: %r)" % str(error))
+
+    wrong_member_reference_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                "SameLocal", 0x1050,
+                "libcmt:C:\\tree-a\\project-A.vcxproj\\objr\\arm64\\"
+                "same.obj")]),
+        "self-test/static-wrong-member-reference.map")
+    wrong_member_candidate_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                "SameLocal", 0x1080,
+                "libcmt:D:\\tree-b\\project-B.vcxproj\\objr\\arm64\\"
+                "same.obj")]),
+        "self-test/static-wrong-member-candidate.map")
+    try:
+        compare(
+            PEImage(bytes(identity_reference_image),
+                    "self-test/static wrong-member reference").inspect(
+                        wrong_member_reference_map),
+            PEImage(bytes(identity_candidate_image),
+                    "self-test/static wrong-member candidate").inspect(
+                        wrong_member_candidate_map))
+        failures.append("same static name from different member paths "
+                        "(unexpectedly compared equal)")
+    except VerificationError as error:
+        if "GFID stable symbol identities" not in str(error):
+            failures.append("same static name from different member paths "
+                            "(wrong diagnostic: %r)" % str(error))
+
+    static_reference_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                "StaticInternalTarget", 0x1050,
+                "C:\\build\\libcmt.lib:D:\\agent-a\\Intermediate\\crt\\"
+                "vcstartup\\build\\mt\\libcmt_mt_enclave.vcxproj\\objr\\"
+                "amd64\\dll_dllmain.obj")]),
+        "self-test/static-relocated-reference.map")
+    static_candidate_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                "StaticInternalTarget", 0x1080,
+                "libcmt:E:\\agent-b\\Intermediate\\crt\\vcstartup\\build\\"
+                "mt\\libcmt_mt_enclave.vcxproj\\objr\\amd64\\"
+                "dll_dllmain.obj")]),
+        "self-test/static-relocated-candidate.map")
+    try:
+        compare(
+            PEImage(bytes(identity_reference_image),
+                    "self-test/static relocated reference").inspect(
+                        static_reference_map),
+            PEImage(bytes(identity_candidate_image),
+                    "self-test/static relocated candidate").inspect(
+                        static_candidate_map))
+    except VerificationError as error:
+        failures.append("same scoped Static GFID relocation failed: %r" %
+                        str(error))
+
+    public_scope_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_symbols=[("ScopedInternal", 0x1050)]),
+        "self-test/public-scope.map")
+    static_scope_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                "ScopedInternal", 0x1080, "fixture:scoped.obj")]),
+        "self-test/static-scope.map")
+    try:
+        compare(
+            PEImage(bytes(identity_reference_image),
+                    "self-test/public scope reference").inspect(
+                        public_scope_map),
+            PEImage(bytes(identity_candidate_image),
+                    "self-test/static scope candidate").inspect(
+                        static_scope_map))
+        failures.append("public identity changed to static "
+                        "(unexpectedly compared equal)")
+    except VerificationError as error:
+        if "GFID stable symbol identities" not in str(error):
+            failures.append("public identity changed to static "
+                            "(wrong diagnostic: %r)" % str(error))
+
+    originless_static_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[("OriginlessStatic", 0x1050, "")]),
+        "self-test/originless-static.map")
+    try:
+        PEImage(bytes(identity_reference_image),
+                "self-test/originless static GFID").inspect(
+                    originless_static_map)
+        failures.append("originless static GFID (unexpectedly passed)")
+    except VerificationError as error:
+        if "GFID 0x1050 has no globally unique stable COFF map alias" not in str(error):
+            failures.append("originless static GFID (wrong diagnostic: %r)" %
+                            str(error))
+
+    opaque_reference_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"}),
+        "self-test/opaque-microsoft-reference.map")
+    opaque_reference = PEImage(
+        bytes(identity_reference_image),
+        "self-test/opaque Microsoft reference").inspect(
+            opaque_reference_map, require_all_gfid_identities=False)
+    expected_opaque_identity = next(iter(
+        EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES["x86_64"]))
+    opaque_candidate_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                DLLMAIN_CRT_DISPATCH, 0x1080,
+                "libcmt:D:\\archive\\Intermediate\\crt\\vcstartup\\build\\"
+                "mt\\libcmt_mt_enclave.vcxproj\\objr\\amd64\\"
+                "dll_dllmain.obj")]),
+        "self-test/opaque-integrated-candidate.map")
+    opaque_candidate = PEImage(
+        bytes(identity_candidate_image),
+        "self-test/opaque integrated candidate").inspect(
+            opaque_candidate_map)
+    try:
+        compare(opaque_reference, opaque_candidate,
+                frozenset({expected_opaque_identity}))
+    except VerificationError as error:
+        failures.append("expected Microsoft opaque GFID pairing failed: %r" %
+                        str(error))
+
+    named_reference_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_symbols=[("UnexpectedReferencePublic", 0x1050)]),
+        "self-test/named-reference-not-opaque.map")
+    named_reference = PEImage(
+        bytes(identity_reference_image),
+        "self-test/named Microsoft reference").inspect(
+            named_reference_map, require_all_gfid_identities=False)
+    try:
+        compare(named_reference, opaque_candidate,
+                frozenset({expected_opaque_identity}))
+        failures.append("named reference-only GFID treated as opaque "
+                        "(unexpectedly compared equal)")
+    except VerificationError as error:
+        if "GFID stable symbol identities" not in str(error):
+            failures.append("named reference-only GFID treated as opaque "
+                            "(wrong diagnostic: %r)" % str(error))
+
+    wrong_arch_candidate_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                DLLMAIN_CRT_DISPATCH, 0x1080,
+                "libcmt:D:\\archive\\Intermediate\\crt\\vcstartup\\build\\"
+                "mt\\libcmt_mt_enclave.vcxproj\\objr\\arm64\\"
+                "dll_dllmain.obj")]),
+        "self-test/wrong-arch-opaque-candidate.map")
+    wrong_arch_candidate = PEImage(
+        bytes(identity_candidate_image),
+        "self-test/wrong-arch opaque candidate").inspect(
+            wrong_arch_candidate_map)
+    try:
+        compare(opaque_reference, wrong_arch_candidate,
+                frozenset({expected_opaque_identity}))
+        failures.append("ARM64 identity satisfied x64 opaque GFID "
+                        "(unexpectedly compared equal)")
+    except VerificationError as error:
+        if "GFID stable symbol identities" not in str(error):
+            failures.append("ARM64 identity satisfied x64 opaque GFID "
+                            "(wrong diagnostic: %r)" % str(error))
+
     identity_relocated_image = bytearray(identity_reference_image)
     struct.pack_into("<I", identity_relocated_image, 0x8AA, 0x1058)
     identity_relocated_symbols = dict(map_symbols.symbols)
-    identity_relocated_symbols["InternalTargetA"] = frozenset({0x180001058})
+    identity_relocated_symbols[internal_target_a] = frozenset({0x180001058})
     identity_relocated_map = CoffMap(
         identity_relocated_symbols,
         tuple((segment, 0x58, name, 0x180001058)
-              if name == "InternalTargetA" else entry
+              if name == internal_target_a else entry
               for entry in map_symbols.entries
               for segment, _, name, _ in (entry,)))
     try:
@@ -2504,11 +3972,12 @@ def self_test() -> None:
     struct.pack_into("<IBIBIB", extra_gfid, 0x8A0,
                      0x1000, 0, 0x1018, 0, 0x1030, 0)
     extra_gfid_symbols = dict(map_symbols.symbols)
-    extra_gfid_symbols["ExtraInternalTarget"] = frozenset({0x180001018})
+    extra_internal_target = _map_identity("public", "ExtraInternalTarget")
+    extra_gfid_symbols[extra_internal_target] = frozenset({0x180001018})
     extra_gfid_map_symbols = CoffMap(
         extra_gfid_symbols,
         map_symbols.entries +
-        ((1, 0x18, "ExtraInternalTarget", 0x180001018),))
+        ((1, 0x18, extra_internal_target, 0x180001018),))
     compare_cases.append((
         "extra valid GFID",
         PEImage(bytes(extra_gfid), "self-test/extra valid GFID").inspect(
@@ -2550,6 +4019,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                                 required=True)
     inspect_parser.add_argument("--machine", required=True,
                                 choices=("x86_64", "arm64"))
+    inspect_parser.add_argument("--linker", required=True,
+                                choices=("microsoft", "integrated"))
     inspect_parser.add_argument("--json", dest="json_path", type=pathlib.Path)
     compare_parser = subparsers.add_parser("compare")
     compare_parser.add_argument("reference", type=pathlib.Path)
@@ -2564,16 +4035,23 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.command == "self-test":
             self_test()
         elif args.command == "inspect":
-            result = inspect_path(args.image, args.map_path, args.machine)
+            result = inspect_path(
+                args.image, args.map_path, args.machine,
+                require_all_gfid_identities=(args.linker == "integrated"))
             encoded = json.dumps(result, indent=2, sort_keys=True)
             print(encoded)
             if args.json_path:
                 args.json_path.parent.mkdir(parents=True, exist_ok=True)
                 args.json_path.write_text(encoded + "\n", encoding="utf-8")
         else:
-            reference = inspect_path(args.reference, args.reference_map)
+            reference = inspect_path(
+                args.reference, args.reference_map,
+                require_all_gfid_identities=False)
             candidate = inspect_path(args.candidate, args.candidate_map)
-            compare(reference, candidate)
+            compare(
+                reference, candidate,
+                EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES.get(
+                    candidate["machine"], frozenset()))
             print("PASS: %s semantically matches %s" %
                   (args.candidate, args.reference))
     except (OSError, VerificationError) as error:
