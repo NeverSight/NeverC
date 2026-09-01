@@ -132,21 +132,8 @@ DLLMAIN_CRT_DISPATCH = (
 VBS_CRT_MEMBER_ROOT = (
     "intermediate/crt/vcstartup/build/mt/"
     "libcmt_mt_enclave.vcxproj/objr")
-# link.exe does not expose this live enclave-CRT local in its public MAP.  The
-# integrated linker must expose the architecture-qualified private identity;
-# compare() may pair it only with a genuinely alias-free Microsoft GFID.
-EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES = {
-    "x86_64": frozenset({
-        STATIC_IDENTITY_PREFIX +
-        "libcmt:" + VBS_CRT_MEMBER_ROOT +
-        "/amd64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
-    }),
-    "arm64": frozenset({
-        STATIC_IDENTITY_PREFIX +
-        "libcmt:" + VBS_CRT_MEMBER_ROOT +
-        "/arm64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
-    }),
-}
+VBS_CRT_MACHINE_MEMBERS = {"x86_64": "amd64", "arm64": "arm64"}
+COFF_MAP_LINKERS = frozenset({"microsoft", "integrated"})
 MapSymbols = Dict[str, FrozenSet[int]]
 MapEntry = Tuple[int, int, str, int]
 
@@ -205,13 +192,42 @@ def _map_identity(scope: str, name: str, origin: str = "") -> str:
     return ""
 
 
+def _linker_map_identity(scope: str, name: str, origin: str,
+                         linker: Optional[str],
+                         machine: Optional[str]) -> str:
+    identity = _map_identity(scope, name, origin)
+    if linker is None and machine is None:
+        return identity
+    if (linker == "microsoft" and scope == "static" and
+            name == DLLMAIN_CRT_DISPATCH and
+            _normalize_map_origin(origin) == "libcmt:dll_dllmain.obj"):
+        # link.exe intentionally abbreviates this one live enclave-CRT local
+        # to archive:member.  Its exact scope, archive, member, symbol, and PE
+        # machine make the architecture-qualified identity unambiguous.
+        return (STATIC_IDENTITY_PREFIX + "libcmt:" + VBS_CRT_MEMBER_ROOT +
+                "/" + VBS_CRT_MACHINE_MEMBERS[machine] +
+                "/dll_dllmain.obj|" + name)
+    return identity
+
+
 def _checked_product(left: int, right: int, limit: int, what: str) -> int:
     if left < 0 or right < 0 or (left and right > limit // left):
         raise VerificationError("%s size overflows the image" % what)
     return left * right
 
 
-def parse_coff_map_text(text: str, label: str) -> CoffMap:
+def parse_coff_map_text(text: str, label: str, *,
+                        linker: Optional[str] = None,
+                        machine: Optional[str] = None) -> CoffMap:
+    if (linker is None) != (machine is None):
+        raise VerificationError(
+            "%s: COFF map linker role and machine must be paired" % label)
+    if linker is not None and linker not in COFF_MAP_LINKERS:
+        raise VerificationError(
+            "%s: unsupported COFF map linker role %r" % (label, linker))
+    if machine is not None and machine not in VBS_CRT_MACHINE_MEMBERS:
+        raise VerificationError(
+            "%s: unsupported COFF map machine %r" % (label, machine))
     public_vas: Dict[str, Set[int]] = {}
     static_vas: Dict[str, Set[int]] = {}
     required_public_vas: Dict[str, Set[int]] = {}
@@ -248,7 +264,8 @@ def parse_coff_map_text(text: str, label: str) -> CoffMap:
             origin = ""
         elif origin.startswith("f "):
             origin = origin[1:].strip()
-        identity = _map_identity(symbol_section, name, origin)
+        identity = _linker_map_identity(
+            symbol_section, name, origin, linker, machine)
         if not identity:
             continue
         target_vas = public_vas if symbol_section == "public" else static_vas
@@ -294,12 +311,15 @@ def parse_coff_map_text(text: str, label: str) -> CoffMap:
     return CoffMap(symbols, retained_entries)
 
 
-def parse_coff_map_path(path: pathlib.Path) -> CoffMap:
+def parse_coff_map_path(path: pathlib.Path, *,
+                        linker: Optional[str] = None,
+                        machine: Optional[str] = None) -> CoffMap:
     try:
         text = path.read_bytes().decode("utf-8-sig", errors="replace")
     except OSError as error:
         raise VerificationError("cannot read %s: %s" % (path, error))
-    return parse_coff_map_text(text, str(path))
+    return parse_coff_map_text(
+        text, str(path), linker=linker, machine=machine)
 
 
 class PEImage:
@@ -332,6 +352,22 @@ class PEImage:
     def u64(self, offset: int, what: str) -> int:
         self.need(offset, 8, what)
         return struct.unpack_from("<Q", self.data, offset)[0]
+
+    def _coff_header(self) -> Tuple[int, str]:
+        self.need(0, 0x40, "DOS header")
+        if self.data[:2] != b"MZ":
+            raise VerificationError("%s: missing MZ signature" % self.label)
+        pe_offset = self.u32(0x3C, "e_lfanew")
+        self.need(pe_offset, 24, "PE/COFF header")
+        if self.data[pe_offset:pe_offset + 4] != b"PE\0\0":
+            raise VerificationError("%s: missing PE signature" % self.label)
+        coff = pe_offset + 4
+        machine = self.u16(coff, "Machine")
+        machines = {0x8664: "x86_64", 0xAA64: "arm64"}
+        if machine not in machines:
+            raise VerificationError("%s: unsupported machine 0x%04x" %
+                                    (self.label, machine))
+        return coff, machines[machine]
 
     def rva_to_offset(self, rva: int, size: int, what: str) -> int:
         if rva < 0 or size < 0 or rva > 0xFFFFFFFF - size:
@@ -1381,27 +1417,12 @@ class PEImage:
 
     def inspect(self, coff_map: CoffMap,
                 expected_machine: Optional[str] = None,
-                expected_export_name: Optional[str] = None,
-                require_all_gfid_identities: bool = True) -> Dict[str, Any]:
+                expected_export_name: Optional[str] = None) -> Dict[str, Any]:
         self.sections = []
         self.directories = []
         self.validated_map_names = set()
         self.invalid_map_errors = {}
-        self.need(0, 0x40, "DOS header")
-        if self.data[:2] != b"MZ":
-            raise VerificationError("%s: missing MZ signature" % self.label)
-        pe_offset = self.u32(0x3C, "e_lfanew")
-        self.need(pe_offset, 24, "PE/COFF header")
-        if self.data[pe_offset:pe_offset + 4] != b"PE\0\0":
-            raise VerificationError("%s: missing PE signature" % self.label)
-
-        coff = pe_offset + 4
-        machine = self.u16(coff, "Machine")
-        machines = {0x8664: "x86_64", 0xAA64: "arm64"}
-        if machine not in machines:
-            raise VerificationError("%s: unsupported machine 0x%04x" %
-                                    (self.label, machine))
-        machine_name = machines[machine]
+        coff, machine_name = self._coff_header()
         if expected_machine is not None and machine_name != expected_machine:
             raise VerificationError(
                 "%s: machine is %s, expected %s" %
@@ -1694,7 +1715,7 @@ class PEImage:
                     self.label)
             gfid_metadata.append(metadata.hex())
             aliases = sorted(stable_aliases_by_rva.get(gfid, ()))
-            if not aliases and require_all_gfid_identities:
+            if not aliases:
                 raise VerificationError(
                     "%s: GFID 0x%x has no globally unique stable COFF map alias" %
                     (self.label, gfid))
@@ -2179,15 +2200,15 @@ class PEImage:
 
 def inspect_path(path: pathlib.Path, map_path: pathlib.Path,
                  expected_machine: Optional[str] = None,
-                 require_all_gfid_identities: bool = True) -> Dict[str, Any]:
-    map_symbols = parse_coff_map_path(map_path)
-    return PEImage.from_path(path).inspect(
-        map_symbols, expected_machine, path.name,
-        require_all_gfid_identities)
+                 map_linker: Optional[str] = None) -> Dict[str, Any]:
+    image = PEImage.from_path(path)
+    _, machine = image._coff_header()
+    map_symbols = parse_coff_map_path(
+        map_path, linker=map_linker, machine=machine)
+    return image.inspect(map_symbols, expected_machine, path.name)
 
 
-def compare(reference: Dict[str, Any], candidate: Dict[str, Any],
-            expected_candidate_only: FrozenSet[str] = frozenset()) -> None:
+def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
     # Size and ImportEntrySize describe extensible container layouts.  Each
     # image has already been bounds-checked above; compare only the known
     # enclave policy and import semantics across linker implementations.
@@ -2222,55 +2243,24 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any],
         candidate_groups = groups(candidate)
         if reference_groups is None or candidate_groups is None:
             return False
-        # A reference GFID that has a real name cannot be reclassified as the
-        # link.exe-only opaque CRT slot merely because the candidate omitted
-        # that name.
-        if any(aliases and not aliases & common_names
-               for aliases, _ in reference_groups):
+        if any(not aliases or not aliases & common_names
+               for aliases, _ in reference_groups + candidate_groups):
             return False
-
         def common_signature(
                 identity_groups: List[Tuple[FrozenSet[str], int]]) -> Tuple[
                     FrozenSet[str],
-                    FrozenSet[Tuple[FrozenSet[str], int]],
-                    List[int]]:
+                    FrozenSet[Tuple[FrozenSet[str], int]]]:
             blocks = []
-            unmatched_flags = []
             for aliases, entry_flags in identity_groups:
                 block = aliases & common_names
-                if block:
-                    blocks.append((block, entry_flags))
-                else:
-                    unmatched_flags.append(entry_flags)
+                blocks.append((block, entry_flags))
             covered_names = frozenset(
                 name for block, _ in blocks for name in block)
-            return covered_names, frozenset(blocks), unmatched_flags
+            return covered_names, frozenset(blocks)
 
         reference_signature = common_signature(reference_groups)
         candidate_signature = common_signature(candidate_groups)
-        if reference_signature[:2] != candidate_signature[:2]:
-            return False
-
-        expected_unshared = set(expected_candidate_only) - common_names
-        covered_expected: Set[str] = set()
-        candidate_unmatched_flags = []
-        for aliases, entry_flags in candidate_groups:
-            common_block = aliases & common_names
-            expected_block = aliases & expected_unshared
-            covered_expected.update(aliases & expected_candidate_only)
-            if common_block:
-                if expected_block:
-                    return False
-            else:
-                if len(expected_block) != 1:
-                    return False
-                candidate_unmatched_flags.append(entry_flags)
-        if covered_expected != set(expected_candidate_only):
-            return False
-        if len(candidate_unmatched_flags) != len(expected_unshared):
-            return False
-        return (sorted(reference_signature[2]) ==
-                sorted(candidate_unmatched_flags))
+        return reference_signature == candidate_signature
 
     gfid_identities_match = gfid_target_identities_match()
 
@@ -2501,21 +2491,8 @@ def self_test() -> None:
     cases: List[Tuple[str, bytes, str]] = []
     arm64_cases: List[Tuple[str, bytes, str]] = []
     failures = []
-    direct_negative_count = 13
-    expected_fixture_identities = {
-        "x86_64": frozenset({
-            STATIC_IDENTITY_PREFIX +
-            "libcmt:" + VBS_CRT_MEMBER_ROOT +
-            "/amd64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
-        }),
-        "arm64": frozenset({
-            STATIC_IDENTITY_PREFIX +
-            "libcmt:" + VBS_CRT_MEMBER_ROOT +
-            "/arm64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
-        }),
-    }
-    if EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES != expected_fixture_identities:
-        failures.append("per-machine opaque GFID identity contract drifted")
+    direct_negative_count = 11
+    crt_identity_negative_count = 0
     short_origin_forms = {
         _normalize_map_origin("C:\\sdk\\libcmt.lib:dll.obj"),
         _normalize_map_origin("libcmt:D:\\agent\\dll.obj"),
@@ -3810,17 +3787,15 @@ def self_test() -> None:
             failures.append("originless static GFID (wrong diagnostic: %r)" %
                             str(error))
 
-    opaque_reference_map = parse_coff_map_text(
+    microsoft_named_reference_map = parse_coff_map_text(
         _synthetic_map_text(
-            omitted_symbols={"InternalTargetA", "InternalTargetB"}),
-        "self-test/opaque-microsoft-reference.map")
-    opaque_reference = PEImage(
-        bytes(identity_reference_image),
-        "self-test/opaque Microsoft reference").inspect(
-            opaque_reference_map, require_all_gfid_identities=False)
-    expected_opaque_identity = next(iter(
-        EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES["x86_64"]))
-    opaque_candidate_map = parse_coff_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                DLLMAIN_CRT_DISPATCH, 0x1050,
+                "libcmt:dll_dllmain.obj")]),
+        "self-test/named-microsoft-reference.map",
+        linker="microsoft", machine="x86_64")
+    integrated_full_candidate_map = parse_coff_map_text(
         _synthetic_map_text(
             omitted_symbols={"InternalTargetA", "InternalTargetB"},
             extra_static_symbols=[(
@@ -3828,36 +3803,82 @@ def self_test() -> None:
                 "libcmt:D:\\archive\\Intermediate\\crt\\vcstartup\\build\\"
                 "mt\\libcmt_mt_enclave.vcxproj\\objr\\amd64\\"
                 "dll_dllmain.obj")]),
-        "self-test/opaque-integrated-candidate.map")
-    opaque_candidate = PEImage(
-        bytes(identity_candidate_image),
-        "self-test/opaque integrated candidate").inspect(
-            opaque_candidate_map)
+        "self-test/full-integrated-candidate.map",
+        linker="integrated", machine="x86_64")
     try:
-        compare(opaque_reference, opaque_candidate,
-                frozenset({expected_opaque_identity}))
+        compare(
+            PEImage(bytes(identity_reference_image),
+                    "self-test/named Microsoft reference").inspect(
+                        microsoft_named_reference_map),
+            PEImage(bytes(identity_candidate_image),
+                    "self-test/full integrated candidate").inspect(
+                        integrated_full_candidate_map))
     except VerificationError as error:
-        failures.append("expected Microsoft opaque GFID pairing failed: %r" %
-                        str(error))
+        failures.append("named Microsoft CRT GFID did not match its pinned "
+                        "integrated identity: %r" % str(error))
 
-    named_reference_map = parse_coff_map_text(
+    expected_x64_crt_identity = (
+        STATIC_IDENTITY_PREFIX + "libcmt:" + VBS_CRT_MEMBER_ROOT +
+        "/amd64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH)
+    if microsoft_named_reference_map.symbols.get(
+            expected_x64_crt_identity) != frozenset({0x180001050}):
+        failures.append("Microsoft x64 CRT identity was not canonicalized")
+    microsoft_arm64_map = parse_coff_map_text(
         _synthetic_map_text(
             omitted_symbols={"InternalTargetA", "InternalTargetB"},
-            extra_symbols=[("UnexpectedReferencePublic", 0x1050)]),
-        "self-test/named-reference-not-opaque.map")
-    named_reference = PEImage(
-        bytes(identity_reference_image),
-        "self-test/named Microsoft reference").inspect(
-            named_reference_map, require_all_gfid_identities=False)
-    try:
-        compare(named_reference, opaque_candidate,
-                frozenset({expected_opaque_identity}))
-        failures.append("named reference-only GFID treated as opaque "
-                        "(unexpectedly compared equal)")
-    except VerificationError as error:
-        if "GFID stable symbol identities" not in str(error):
-            failures.append("named reference-only GFID treated as opaque "
-                            "(wrong diagnostic: %r)" % str(error))
+            extra_static_symbols=[(
+                DLLMAIN_CRT_DISPATCH, 0x1050,
+                "libcmt:dll_dllmain.obj")]),
+        "self-test/named-microsoft-arm64.map",
+        linker="microsoft", machine="arm64")
+    expected_arm64_crt_identity = (
+        STATIC_IDENTITY_PREFIX + "libcmt:" + VBS_CRT_MEMBER_ROOT +
+        "/arm64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH)
+    if microsoft_arm64_map.symbols.get(
+            expected_arm64_crt_identity) != frozenset({0x180001050}):
+        failures.append("Microsoft ARM64 CRT identity was not canonicalized")
+
+    def expect_crt_identity_mismatch(name: str, reference_map: CoffMap,
+                                     candidate_map: CoffMap =
+                                     integrated_full_candidate_map) -> None:
+        nonlocal crt_identity_negative_count
+        crt_identity_negative_count += 1
+        try:
+            compare(
+                PEImage(bytes(identity_reference_image),
+                        "self-test/%s reference" % name).inspect(
+                            reference_map),
+                PEImage(bytes(identity_candidate_image),
+                        "self-test/%s candidate" % name).inspect(
+                            candidate_map))
+            failures.append("%s (unexpectedly compared equal)" % name)
+        except VerificationError as error:
+            if "GFID stable symbol identities" not in str(error):
+                failures.append("%s (wrong diagnostic: %r)" %
+                                (name, str(error)))
+
+    for name, symbol, origin, scope, linker in (
+            ("Microsoft CRT wrong archive", DLLMAIN_CRT_DISPATCH,
+             "other:dll_dllmain.obj", "static", "microsoft"),
+            ("Microsoft CRT wrong member", DLLMAIN_CRT_DISPATCH,
+             "libcmt:other.obj", "static", "microsoft"),
+            ("Microsoft CRT wrong symbol", DLLMAIN_CRT_DISPATCH + "X",
+             "libcmt:dll_dllmain.obj", "static", "microsoft"),
+            ("Microsoft CRT wrong scope", DLLMAIN_CRT_DISPATCH,
+             "fixture.obj", "public", "microsoft"),
+            ("integrated CRT basename", DLLMAIN_CRT_DISPATCH,
+             "libcmt:dll_dllmain.obj", "static", "integrated")):
+        extra_symbols = ([(symbol, 0x1050)] if scope == "public" else None)
+        extra_static_symbols = (
+            [(symbol, 0x1050, origin)] if scope == "static" else None)
+        mismatch_map = parse_coff_map_text(
+            _synthetic_map_text(
+                omitted_symbols={"InternalTargetA", "InternalTargetB"},
+                extra_symbols=extra_symbols,
+                extra_static_symbols=extra_static_symbols),
+            "self-test/%s.map" % name,
+            linker=linker, machine="x86_64")
+        expect_crt_identity_mismatch(name, mismatch_map)
 
     wrong_arch_candidate_map = parse_coff_map_text(
         _synthetic_map_text(
@@ -3867,19 +3888,32 @@ def self_test() -> None:
                 "libcmt:D:\\archive\\Intermediate\\crt\\vcstartup\\build\\"
                 "mt\\libcmt_mt_enclave.vcxproj\\objr\\arm64\\"
                 "dll_dllmain.obj")]),
-        "self-test/wrong-arch-opaque-candidate.map")
-    wrong_arch_candidate = PEImage(
-        bytes(identity_candidate_image),
-        "self-test/wrong-arch opaque candidate").inspect(
-            wrong_arch_candidate_map)
+        "self-test/integrated-CRT-wrong-architecture.map",
+        linker="integrated", machine="x86_64")
+    expect_crt_identity_mismatch(
+        "integrated CRT wrong architecture", microsoft_named_reference_map,
+        wrong_arch_candidate_map)
+
+    duplicate_microsoft_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[
+                (DLLMAIN_CRT_DISPATCH, 0x1050,
+                 "libcmt:dll_dllmain.obj"),
+                (DLLMAIN_CRT_DISPATCH, 0x1080,
+                 "libcmt:dll_dllmain.obj"),
+            ]),
+        "self-test/duplicate-Microsoft-CRT-VA.map",
+        linker="microsoft", machine="x86_64")
+    crt_identity_negative_count += 1
     try:
-        compare(opaque_reference, wrong_arch_candidate,
-                frozenset({expected_opaque_identity}))
-        failures.append("ARM64 identity satisfied x64 opaque GFID "
-                        "(unexpectedly compared equal)")
+        PEImage(bytes(identity_reference_image),
+                "self-test/duplicate Microsoft CRT VA").inspect(
+                    duplicate_microsoft_map)
+        failures.append("duplicate Microsoft CRT VA (unexpectedly passed)")
     except VerificationError as error:
-        if "GFID stable symbol identities" not in str(error):
-            failures.append("ARM64 identity satisfied x64 opaque GFID "
+        if "GFID 0x1050 has no globally unique stable COFF map alias" not in str(error):
+            failures.append("duplicate Microsoft CRT VA "
                             "(wrong diagnostic: %r)" % str(error))
 
     identity_relocated_image = bytearray(identity_reference_image)
@@ -4007,7 +4041,8 @@ def self_test() -> None:
     print("PASS: VBS enclave PE verifier self-test (%d negative mutations; "
           "representation-independent 5-byte comparison)" %
           (direct_negative_count + len(map_cases) + len(cases) +
-           len(arm64_cases) + len(compare_cases)))
+           len(arm64_cases) + len(compare_cases) +
+           crt_identity_negative_count))
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -4037,7 +4072,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         elif args.command == "inspect":
             result = inspect_path(
                 args.image, args.map_path, args.machine,
-                require_all_gfid_identities=(args.linker == "integrated"))
+                map_linker=args.linker)
             encoded = json.dumps(result, indent=2, sort_keys=True)
             print(encoded)
             if args.json_path:
@@ -4046,12 +4081,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             reference = inspect_path(
                 args.reference, args.reference_map,
-                require_all_gfid_identities=False)
-            candidate = inspect_path(args.candidate, args.candidate_map)
-            compare(
-                reference, candidate,
-                EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES.get(
-                    candidate["machine"], frozenset()))
+                map_linker="microsoft")
+            candidate = inspect_path(
+                args.candidate, args.candidate_map,
+                map_linker="integrated")
+            compare(reference, candidate)
             print("PASS: %s semantically matches %s" %
                   (args.candidate, args.reference))
     except (OSError, VerificationError) as error:
