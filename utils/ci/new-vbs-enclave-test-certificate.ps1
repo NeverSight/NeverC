@@ -25,7 +25,6 @@ Set-Content -LiteralPath $StageLogPath -Value 'NeverC VBS enclave certificate bo
 $rsa = $null
 $generated = $null
 $certificate = $null
-$rootCertificate = $null
 try {
   Write-CertificateStage 'GenerateKey'
   $rsa = [Security.Cryptography.RSA]::Create()
@@ -95,26 +94,10 @@ try {
   $publicBytes = $certificate.Export(
     [Security.Cryptography.X509Certificates.X509ContentType]::Cert)
   [IO.File]::WriteAllBytes($CertificatePath, $publicBytes)
-  $rootCertificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
-    $publicBytes)
-
-  Write-CertificateStage 'InstallTrustedRoot'
-  $rootStore = [Security.Cryptography.X509Certificates.X509Store]::new(
-    [Security.Cryptography.X509Certificates.StoreName]::Root,
-    [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-  try {
-    $rootStore.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-    $rootStore.Add($rootCertificate)
-  } finally {
-    $rootStore.Close()
-    $rootStore.Dispose()
-  }
 
   $certificate.Thumbprint | Set-Content -LiteralPath $ThumbprintPath -Encoding ascii
-  Write-CertificateStage 'Complete'
   Write-Host "CERTIFICATE_THUMBPRINT=$($certificate.Thumbprint)"
 } finally {
-  if ($rootCertificate) { $rootCertificate.Dispose() }
   if ($certificate) { $certificate.Dispose() }
   if ($generated) { $generated.Dispose() }
   if ($rsa) { $rsa.Dispose() }
