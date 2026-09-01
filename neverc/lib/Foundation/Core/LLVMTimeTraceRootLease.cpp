@@ -252,8 +252,7 @@ LLVMTimeTraceRootLease::LLVMTimeTraceRootLease() {
     return;
   }
 
-  LocalParticipant.emplace();
-  Active = &*LocalParticipant;
+  Active = &LocalParticipant;
   Active->acquire();
 }
 
@@ -263,7 +262,6 @@ LLVMTimeTraceRootLease::~LLVMTimeTraceRootLease() {
   // the sole owner of the heap participant.
   ParticipantCleanup.reset();
   CrashParticipant.reset();
-  LocalParticipant.reset();
   Active = nullptr;
 }
 

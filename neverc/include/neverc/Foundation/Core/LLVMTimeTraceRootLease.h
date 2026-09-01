@@ -131,7 +131,7 @@ private:
     return Active->Binding;
   }
 
-  std::optional<Participant> LocalParticipant;
+  Participant LocalParticipant;
   std::unique_ptr<Participant> CrashParticipant;
   Participant *Active = nullptr;
   std::optional<llvm::CrashRecoveryContextCleanupRegistrar<Participant>>
