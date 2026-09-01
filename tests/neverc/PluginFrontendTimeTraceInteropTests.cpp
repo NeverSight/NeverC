@@ -1043,6 +1043,11 @@ int runBackendFatalRecoveryProbe(bool EnableAfterPrinting,
                        CodeGenerationPosition + CodeGenerationTimer.size()) !=
           llvm::StringRef::npos)
     return recoveryProbeFailure(34, "codegen timing record count changed");
+#if !defined(_WIN32)
+  // LLVM's Windows timer backend can render a stopped timer as dashes when
+  // both measured durations round to zero.  The exact record count above, the
+  // registry-drain check below, and the fresh retry remain format-independent
+  // cleanup checks there.
   const std::size_t PreviousNewline =
       FirstTiming.take_front(CodeGenerationPosition).rfind('\n');
   const std::size_t LineBegin =
@@ -1054,6 +1059,7 @@ int runBackendFatalRecoveryProbe(bool EnableAfterPrinting,
       NextNewline == llvm::StringRef::npos ? FirstTiming.size() : NextNewline);
   if (CodeGenerationLine.contains("-----"))
     return recoveryProbeFailure(35, "running codegen timer was not stopped");
+#endif
 
   std::string SecondTimingReport;
   {

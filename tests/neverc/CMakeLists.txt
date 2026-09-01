@@ -2503,13 +2503,22 @@ add_test(
 # writable plugin/dyncode symbol actually shows up.  --strict promotes the
 # source scan to a hard failure, which is what covers thread_local: the binary
 # layer deliberately ignores TLS (see the checker's module docstring).
-add_test(
-  NAME PluginGlobalState
-  COMMAND ${Python3_EXECUTABLE}
-          ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/check-global-state.py
-          --build-dir ${CMAKE_BINARY_DIR}
-          --strict
-)
+#
+# A normal Windows check-neverc build emits a PDB/CodeView-only PE, which the
+# checker correctly rejects as unscannable.  plugin-conformance owns the
+# Windows artifact gate: it links neverc with pinned lld-link /debug:symtab,
+# verifies that contract, and invokes this same checker directly.  Do not turn
+# ordinary Windows CTest into a second gate over an intentionally unsuitable
+# artifact.
+if(NOT WIN32)
+  add_test(
+    NAME PluginGlobalState
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/check-global-state.py
+            --build-dir ${CMAKE_BINARY_DIR}
+            --strict
+  )
+endif()
 add_test(
   NAME DocsNavigation
   COMMAND ${Python3_EXECUTABLE}
@@ -2548,10 +2557,12 @@ set_tests_properties(
 
 # Same group, but demangling every symbol of the linked compiler takes far
 # longer than the other meta checks, so it gets its own budget.
-set_tests_properties(
-  PluginGlobalState
-  PROPERTIES TIMEOUT 300 LABELS "plugin-meta"
-)
+if(TEST PluginGlobalState)
+  set_tests_properties(
+    PluginGlobalState
+    PROPERTIES TIMEOUT 300 LABELS "plugin-meta"
+  )
+endif()
 
 # Dependency-free contract headers (e.g. LTOCacheContract.h) shared with
 # the product code so tests never restate env var names or file naming.
