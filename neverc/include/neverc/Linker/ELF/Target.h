@@ -108,20 +108,24 @@ public:
   bool gotBaseSymInGotPlt = false;
 
   static constexpr RelType noneRel = 0;
-  RelType copyRel;
-  RelType gotRel;
-  RelType pltRel;
-  RelType relativeRel;
-  RelType iRelativeRel;
-  RelType symbolicRel;
-  RelType tlsDescRel;
-  RelType tlsGotRel;
-  RelType tlsModuleIndexRel;
-  RelType tlsOffsetRel;
+  // Target instances used to have static storage and therefore received
+  // zero-initialization before their constructors ran. Keep that contract now
+  // that each link constructs its target in the request-owned arena: not every
+  // backend assigns relocation kinds it does not support.
+  RelType copyRel = noneRel;
+  RelType gotRel = noneRel;
+  RelType pltRel = noneRel;
+  RelType relativeRel = noneRel;
+  RelType iRelativeRel = noneRel;
+  RelType symbolicRel = noneRel;
+  RelType tlsDescRel = noneRel;
+  RelType tlsGotRel = noneRel;
+  RelType tlsModuleIndexRel = noneRel;
+  RelType tlsOffsetRel = noneRel;
   unsigned gotEntrySize = config->wordsize;
-  unsigned pltEntrySize;
-  unsigned pltHeaderSize;
-  unsigned ipltEntrySize;
+  unsigned pltEntrySize = 0;
+  unsigned pltHeaderSize = 0;
+  unsigned ipltEntrySize = 0;
 
   // At least on x86_64 positions 1 and 2 are used by the first plt entry
   // to support lazy loading.
@@ -133,7 +137,7 @@ public:
 
   // A 4-byte field corresponding to one or more trap instructions, used to pad
   // executable OutputSections.
-  std::array<uint8_t, 4> trapInstr;
+  std::array<uint8_t, 4> trapInstr{};
 
   // Stores the NOP instructions of different sizes for the target and is used
   // to pad sections that are relaxed.
