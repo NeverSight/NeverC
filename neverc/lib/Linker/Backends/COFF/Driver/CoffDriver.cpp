@@ -1058,8 +1058,11 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   errorHandler().fatalWarnings = driverCfg.fatalWarnings;
   errorHandler().suppressWarnings = driverCfg.suppressWarnings;
 
+  linker::crash_recovery_detail::CrashRecoveryLocalOwner<opt::InputArgList>
+      ArgsOwner(nullptr);
+  opt::InputArgList &args = ArgsOwner.get();
   ArgParser parser(ctx);
-  opt::InputArgList args = parser.parse(argsArr);
+  parser.parse(argsArr, args);
 
   bool hasPrintArgs = false;
   for (auto arg : args) {

@@ -205,6 +205,8 @@ struct neverc_thread_executor {
     size_t queue_tail;
     size_t queue_count;
     size_t active_count;
+    size_t joined_count;
+    size_t exited_count;
     int accepting;
     int shutdown_started;
     int shutdown_complete;
@@ -332,6 +334,11 @@ static void *executor_worker(void *opaque) {
         if (executor->queue_count == 0 && executor->active_count == 0)
             thread_cond_broadcast(&executor->idle);
     }
+    /* This locked publication is the worker's final executor access. After
+     * the unlock it only clears TLS and returns, so exited_count proves that
+     * executor storage may be released even when native join is broken. */
+    executor->exited_count++;
+    thread_cond_broadcast(&executor->stopped);
     thread_mutex_unlock(&executor->mutex);
     neverc_thread_current_executor = NULL;
 
@@ -345,6 +352,19 @@ static void *executor_worker(void *opaque) {
 static int executor_is_current_worker(
     neverc_thread_executor_t *executor) {
     return executor && neverc_thread_current_executor == executor;
+}
+
+static void executor_wait_for_worker_exits(
+    neverc_thread_executor_t *executor, size_t target) {
+    thread_mutex_lock(&executor->mutex);
+    while (executor->exited_count < target) {
+        /* A wait error cannot justify releasing worker-owned storage. Retry
+         * fail-closed; a persistent platform failure may block teardown, but
+         * it cannot turn into a use-after-free. */
+        (void)thread_cond_wait(&executor->stopped, &executor->mutex,
+                               NULL);
+    }
+    thread_mutex_unlock(&executor->mutex);
 }
 
 neverc_thread_executor_t *neverc_thread_executor_create(
@@ -424,23 +444,18 @@ neverc_thread_executor_t *neverc_thread_executor_create(
 
     if (created != worker_count) {
         thread_mutex_lock(&executor->mutex);
+        executor->worker_count = created;
         executor->accepting = 0;
         thread_cond_broadcast(&executor->not_empty);
         thread_mutex_unlock(&executor->mutex);
 
-        for (size_t i = 0; i < created; ++i) {
-#if defined(_WIN32)
-            (void)WaitForSingleObject(executor->threads[i], INFINITE);
-            CloseHandle(executor->threads[i]);
-            executor->threads[i] = NULL;
-            executor->thread_ids[i] = 0;
-#else
-            pthread_t handle = executor->threads[i];
-            memset(&executor->threads[i], 0, sizeof(executor->threads[i]));
-            (void)pthread_join(handle, NULL);
-            executor->thread_ids[i] = 0;
-#endif
-        }
+        (void)neverc_thread_executor_shutdown(executor);
+        executor_wait_for_worker_exits(executor, created);
+        /* Retry native handle cleanup after every created worker has exited.
+         * If the platform still rejects join/close, the exit proof below
+         * keeps C storage destruction safe at the cost of a native resource
+         * leak. */
+        (void)neverc_thread_executor_shutdown(executor);
         executor_sync_destroy(executor);
         NEVERC_THREAD_FREE(executor->thread_ids);
         NEVERC_THREAD_FREE(executor->threads);
@@ -594,69 +609,88 @@ int neverc_thread_executor_shutdown(
         return NEVERC_THREAD_INVALID;
 
     thread_mutex_lock(&executor->mutex);
-    if (executor->shutdown_complete) {
-        int result = executor->failed
-                         ? NEVERC_THREAD_SYSTEM
-                         : NEVERC_THREAD_OK;
-        thread_mutex_unlock(&executor->mutex);
-        return result;
-    }
-    if (executor->shutdown_started) {
-        while (!executor->shutdown_complete) {
+    for (;;) {
+        if (executor->shutdown_complete) {
+            int result = executor->failed
+                             ? NEVERC_THREAD_SYSTEM
+                             : NEVERC_THREAD_OK;
+            thread_mutex_unlock(&executor->mutex);
+            return result;
+        }
+        while (executor->shutdown_started &&
+               !executor->shutdown_complete) {
             if (thread_cond_wait(&executor->stopped, &executor->mutex,
                                  NULL) != 0) {
                 thread_mutex_unlock(&executor->mutex);
                 return NEVERC_THREAD_SYSTEM;
             }
         }
-        int result = executor->failed
-                         ? NEVERC_THREAD_SYSTEM
-                         : NEVERC_THREAD_OK;
-        thread_mutex_unlock(&executor->mutex);
-        return result;
+        if (!executor->shutdown_complete)
+            break;
     }
 
     executor->shutdown_started = 1;
     executor->accepting = 0;
     thread_cond_broadcast(&executor->not_empty);
     thread_cond_broadcast(&executor->not_full);
+    size_t joined = executor->joined_count;
     thread_mutex_unlock(&executor->mutex);
 
     int join_failed = 0;
-    for (size_t i = 0; i < executor->worker_count; ++i) {
+    for (; joined < executor->worker_count; ++joined) {
 #if defined(_WIN32)
-        if (WaitForSingleObject(executor->threads[i], INFINITE) !=
-            WAIT_OBJECT_0)
+        HANDLE handle = executor->threads[joined];
+        if (WaitForSingleObject(handle, INFINITE) != WAIT_OBJECT_0) {
             join_failed = 1;
-        CloseHandle(executor->threads[i]);
-        executor->threads[i] = NULL;
+            break;
+        }
+        if (!CloseHandle(handle)) {
+            join_failed = 1;
+            break;
+        }
+        executor->threads[joined] = NULL;
 #else
-        pthread_t handle = executor->threads[i];
-        memset(&executor->threads[i], 0, sizeof(executor->threads[i]));
-        if (pthread_join(handle, NULL) != 0)
+        pthread_t handle = executor->threads[joined];
+        if (pthread_join(handle, NULL) != 0) {
             join_failed = 1;
+            break;
+        }
+        memset(&executor->threads[joined], 0,
+               sizeof(executor->threads[joined]));
 #endif
+        thread_mutex_lock(&executor->mutex);
+        executor->thread_ids[joined] = 0;
+        executor->joined_count = joined + 1;
+        thread_mutex_unlock(&executor->mutex);
     }
 
     thread_mutex_lock(&executor->mutex);
-    if (join_failed)
-        executor->failed = 1;
-    for (size_t i = 0; i < executor->worker_count; ++i)
-        executor->thread_ids[i] = 0;
-    executor->shutdown_complete = 1;
+    if (join_failed) {
+        executor->shutdown_started = 0;
+        thread_cond_broadcast(&executor->stopped);
+        thread_mutex_unlock(&executor->mutex);
+        return NEVERC_THREAD_SYSTEM;
+    }
+    executor->shutdown_complete =
+        executor->joined_count == executor->worker_count;
     thread_cond_broadcast(&executor->stopped);
     thread_cond_broadcast(&executor->idle);
+    int result = executor->failed
+                     ? NEVERC_THREAD_SYSTEM
+                     : NEVERC_THREAD_OK;
     thread_mutex_unlock(&executor->mutex);
 
-    return executor->failed
-               ? NEVERC_THREAD_SYSTEM
-               : NEVERC_THREAD_OK;
+    return result;
 }
 
 void neverc_thread_executor_free(
     neverc_thread_executor_t *executor) {
     if (!executor || executor_is_current_worker(executor))
         return;
+    (void)neverc_thread_executor_shutdown(executor);
+    executor_wait_for_worker_exits(executor, executor->worker_count);
+    /* As in partial-create cleanup, worker exit is the memory-safety proof;
+     * this retry is best-effort cleanup for native join resources. */
     (void)neverc_thread_executor_shutdown(executor);
     executor_sync_destroy(executor);
     NEVERC_THREAD_FREE(executor->thread_ids);

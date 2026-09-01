@@ -777,12 +777,11 @@ COFFOptTable::COFFOptTable() : GenericOptTable(infoTable, true) {}
 
 ArgParser::ArgParser(COFFLinkerContext &c) : ctx(c) {}
 
-opt::InputArgList ArgParser::parse(ArrayRef<const char *> argv) {
+void ArgParser::parse(ArrayRef<const char *> argv, opt::InputArgList &args) {
   unsigned missingIndex;
   unsigned missingCount;
 
-  opt::InputArgList args =
-      ctx.optTable.ParseArgs(argv.slice(1), missingIndex, missingCount);
+  args = ctx.optTable.ParseArgs(argv.slice(1), missingIndex, missingCount);
 
   // Save command line, skipping input files.
   ctx.config.argv = {argv[0]};
@@ -806,8 +805,6 @@ opt::InputArgList ArgParser::parse(ArrayRef<const char *> argv) {
       warn("ignoring unknown argument '" + arg->getAsString(args) +
            "', did you mean '" + nearest + "'");
   }
-
-  return args;
 }
 
 static StringRef normalizeMsvcDirective(StringRef tok) {

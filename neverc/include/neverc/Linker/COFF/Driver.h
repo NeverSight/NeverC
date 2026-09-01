@@ -44,7 +44,8 @@ public:
   ArgParser(COFFLinkerContext &ctx);
 
   // Parses command line options.
-  llvm::opt::InputArgList parse(llvm::ArrayRef<const char *> args);
+  void parse(llvm::ArrayRef<const char *> args,
+             llvm::opt::InputArgList &result);
 
   // Tokenizes a given string and then parses as command line options in
   // .drectve section. /EXPORT options are returned in second element
