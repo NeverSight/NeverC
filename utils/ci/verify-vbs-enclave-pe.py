@@ -483,6 +483,10 @@ class PEImage:
         record_count = debug_size // DEBUG_DIRECTORY_ENTRY_SIZE
         for index in range(record_count):
             record = debug_offset + index * DEBUG_DIRECTORY_ENTRY_SIZE
+            if self.u32(record, "debug directory Characteristics"):
+                raise VerificationError(
+                    "%s: debug directory Characteristics is nonzero" %
+                    self.label)
             debug_type = self.u32(record + 12, "debug directory Type")
             if debug_type not in ALLOWED_DEBUG_TYPES:
                 raise VerificationError(
@@ -1962,6 +1966,8 @@ def self_test() -> None:
     add("malformed debug directory size",
         optional + 112 + DEBUG_DIRECTORY * 8 + 4, "<I", 27,
         "malformed debug directory")
+    add("nonzero debug directory Characteristics", 0xE40, "<I", 1,
+        "debug directory Characteristics is nonzero")
     add("disallowed debug directory type", 0xE40 + 12, "<I", 1,
         "debug directory type 1 is not allowed")
     add("debug RVA payload outside image", 0xE40 + 20, "<I", 0x5000,
