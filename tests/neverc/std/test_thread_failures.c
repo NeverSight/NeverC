@@ -469,7 +469,9 @@ static int test_executor_free_waits_for_worker_exit(void) {
                           memory_order_release);
     atomic_store_explicit(&observe_condition_wait, 1,
                           memory_order_release);
-    executor_free_call_t call = {executor, ATOMIC_VAR_INIT(0)};
+    executor_free_call_t call;
+    call.executor = executor;
+    atomic_init(&call.finished, 0);
     thread_test_native_handle_t thread;
     CHECK(thread_test_native_start(&thread, executor_free_call, &call) == 0);
 
@@ -541,7 +543,9 @@ static int test_partial_create_waits_for_worker_exit(void) {
     atomic_store_explicit(&observe_condition_wait, 1,
                           memory_order_release);
 
-    executor_create_call_t call = {NULL, ATOMIC_VAR_INIT(0)};
+    executor_create_call_t call;
+    call.result = NULL;
+    atomic_init(&call.finished, 0);
     thread_test_native_handle_t thread;
     CHECK(thread_test_native_start(&thread, executor_create_call, &call) ==
           0);

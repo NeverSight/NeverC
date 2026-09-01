@@ -13636,9 +13636,11 @@ TEST(ParallelFrontendTiming, MultiFileTimeTracePreservesEveryRootArtifact) {
                             "-ftime-trace-granularity=0"};
   ASSERT_TRUE(compileLinkMulti(Dir, Paths, Args, Exe));
 
-  SmallVector<char, 0> LogBytes;
-  ASSERT_TRUE(readObj(Dir.file("spawn.log"), LogBytes));
-  const StringRef Log(LogBytes.data(), LogBytes.size());
+  auto LogBuffer = MemoryBuffer::getFile(
+      Dir.file("spawn.log"), /*IsText=*/false,
+      /*RequiresNullTerminator=*/false);
+  ASSERT_TRUE(static_cast<bool>(LogBuffer));
+  const StringRef Log = (*LogBuffer)->getBuffer();
   EXPECT_FALSE(Log.contains("[parallel compile:")) << Log.str();
 
   auto CountCompleteEvents = [](StringRef Path, StringRef Name) -> unsigned {

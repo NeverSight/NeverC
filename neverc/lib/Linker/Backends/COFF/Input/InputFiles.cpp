@@ -40,8 +40,6 @@ StringRef getBasename(StringRef path) {
   return sys::path::filename(path, sys::path::Style::windows);
 }
 
-constexpr StringLiteral featureOverrideSuffix = "_$fo$";
-constexpr StringLiteral featureOverrideDefaultSuffix = "_$fo_default$";
 } // namespace
 
 // Returns a string in the format of "foo.obj" or "foo.obj(bar.lib)".
@@ -81,6 +79,8 @@ ArchiveFile::ArchiveFile(COFFLinkerContext &ctx, MemoryBufferRef m)
 void ArchiveFile::parse() {
   // Parse a MemoryBufferRef as an archive file.
   file = CHECK(Archive::create(mb), this);
+  constexpr StringLiteral featureOverrideSuffix = "_$fo$";
+  constexpr StringLiteral featureOverrideDefaultSuffix = "_$fo_default$";
   const bool useFeatureOverrideDefaults =
       ctx.config.enclave && ctx.config.guardCFMixed;
 
