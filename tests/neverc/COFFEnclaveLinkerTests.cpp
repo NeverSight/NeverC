@@ -596,6 +596,20 @@ TEST_F(COFFEnclaveLinkerTest, GuardMixedParserOrder) {
   }
 }
 
+TEST_F(COFFEnclaveLinkerTest, MixedDoesNotClaimWritableDelayIATProtection) {
+  const InMemoryInput Object =
+      baseObject(X64, "callq imported_alpha\n  retq\n"
+                      ".def __delayLoadHelper2; .scl 2; .type 32; .endef\n"
+                      ".globl __delayLoadHelper2\n__delayLoadHelper2:\n  retq");
+  const InMemoryInput Alpha = importLibraryFor("/virtual/delay-alpha.lib",
+                                               "imported_alpha", "alpha.dll");
+  const LinkResult Result =
+      link({"--guard=mixed", "--delayload=alpha.dll"}, {Object, Alpha});
+  PEImage Image = inspect(Result);
+  ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardFlagsOffset, 4));
+  EXPECT_EQ(*Image.loadConfig32(LoadConfigGuardFlagsOffset), GuardMixedFlags);
+}
+
 TEST_F(COFFEnclaveLinkerTest, MixedIncludesGuardedAndUnguardedTargets) {
   const InMemoryInput Main = baseObject();
   const InMemoryInput Guarded =
@@ -758,6 +772,32 @@ TEST_F(COFFEnclaveLinkerTest, MixedUsesFiveByteEHContinuationEntries) {
     EXPECT_EQ(std::adjacent_find(Entries.begin(), Entries.end()),
               Entries.end());
   }
+}
+
+TEST_F(COFFEnclaveLinkerTest, MixedValidatesEHContinuationLoadConfigFields) {
+  constexpr llvm::StringLiteral MissingEHFields = "  .quad 0\n"
+                                                  "  .quad 0\n"
+                                                  "  .quad 0\n";
+  const InMemoryInput Main = baseObject(
+      X64, "retq", "0x118", ".globl __enclave_config\n__enclave_config:\n",
+      "  .zero 0x60\n", MissingEHFields);
+  const InMemoryInput EHCont =
+      objectFor("/virtual/unchecked-eh-continuation.obj", X64,
+                ".def @feat.00; .scl 3; .type 0; .endef\n"
+                ".globl @feat.00\n.set @feat.00, 0x4800\n"
+                ".text\n.def eh_target; .scl 2; .type 32; .endef\n"
+                ".globl eh_target\neh_target:\n  retq\n"
+                ".section .gehcont$y,\"dr\"\n  .symidx eh_target\n");
+  const LinkResult Result = link({"--guard=mixed,ehcont"}, {Main, EHCont});
+  EXPECT_TRUE(Result.Succeeded) << Result.Diagnostics;
+  EXPECT_NE(
+      Result.Diagnostics.find("GuardEHContinuationTable not set correctly"),
+      std::string::npos)
+      << Result.Diagnostics;
+  EXPECT_NE(
+      Result.Diagnostics.find("GuardEHContinuationCount not set correctly"),
+      std::string::npos)
+      << Result.Diagnostics;
 }
 
 TEST_F(COFFEnclaveLinkerTest, MixedIgnoresUnwindMetadataRelocations) {
@@ -1048,6 +1088,64 @@ TEST_F(COFFEnclaveLinkerTest, EnclaveReadsFullFormatImportNameAddends) {
       EXPECT_EQ(*Image.imageCString(NameRVA), ExpectedNames[I]);
     }
   }
+}
+
+TEST_F(COFFEnclaveLinkerTest, EnclaveRejectsPartialImportDirectoryEntry) {
+  const InMemoryInput Object = baseObject();
+  const InMemoryInput Imports =
+      objectFor("/virtual/partial-import-directory.obj", X64,
+                ".section .idata$2,\"dr\"\n.zero 21\n");
+  const LinkResult Result = link({"--enclave"}, {Object, Imports});
+  EXPECT_FALSE(Result.Succeeded);
+  EXPECT_NE(Result.Diagnostics.find("whole number of entries"),
+            std::string::npos)
+      << Result.Diagnostics;
+}
+
+TEST_F(COFFEnclaveLinkerTest,
+       EnclaveRejectsRelocationBackedZeroImportDirectoryEntry) {
+  const InMemoryInput Object = baseObject();
+  const InMemoryInput Imports =
+      objectFor("/virtual/relocated-zero-import-directory.obj", X64,
+                ".section .idata$2,\"dr\"\n"
+                "  .rva .Llookup\n  .zero 16\n"
+                ".section .idata$4,\"dr\"\n.Llookup:\n  .quad 0\n");
+  const LinkResult Result = link({"--enclave"}, {Object, Imports});
+  EXPECT_FALSE(Result.Succeeded);
+  EXPECT_NE(Result.Diagnostics.find("cannot derive a DLL name"),
+            std::string::npos)
+      << Result.Diagnostics;
+}
+
+TEST_F(COFFEnclaveLinkerTest, EnclaveRejectsImportAfterTerminator) {
+  const InMemoryInput Object = baseObject();
+  const InMemoryInput Imports =
+      objectFor("/virtual/import-after-terminator.obj", X64,
+                ".section .idata$2,\"dr\"\n.zero 20\n"
+                "  .rva .Llookup\n  .long 0\n  .long 0\n"
+                "  .rva .Ldll_name\n  .rva .Liat\n"
+                ".section .idata$4,\"dr\"\n.Llookup:\n  .quad 0\n"
+                ".section .idata$5,\"dr\"\n.Liat:\n  .quad 0\n"
+                ".section .idata$7,\"dr\"\n.Ldll_name:\n"
+                "  .asciz \"after-terminator.dll\"\n");
+  const LinkResult Result = link({"--enclave"}, {Object, Imports});
+  EXPECT_FALSE(Result.Succeeded);
+  EXPECT_NE(Result.Diagnostics.find("after its terminator"), std::string::npos)
+      << Result.Diagnostics;
+}
+
+TEST_F(COFFEnclaveLinkerTest, EnclaveRejectsShortImportAfterTerminator) {
+  const InMemoryInput Object = baseObject(X64, "callq imported_alpha\n  retq");
+  const InMemoryInput Terminator =
+      objectFor("/virtual/full-format-terminator.obj", X64,
+                ".section .idata$2,\"dr\"\n.zero 20\n");
+  const InMemoryInput Alpha = importLibraryFor(
+      "/virtual/short-after-terminator.lib", "imported_alpha", "alpha.dll");
+  const LinkResult Result = link({"--enclave"}, {Object, Terminator, Alpha});
+  EXPECT_FALSE(Result.Succeeded);
+  EXPECT_NE(Result.Diagnostics.find("short imports after its terminator"),
+            std::string::npos)
+      << Result.Diagnostics;
 }
 
 TEST_F(COFFEnclaveLinkerTest, EnclaveWithoutImportsClearsImportMetadata) {

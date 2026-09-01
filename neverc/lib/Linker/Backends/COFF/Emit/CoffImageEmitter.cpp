@@ -951,14 +951,30 @@ void OutputWriter::addEnclaveImportMetadata() {
       dllNames.push_back(name);
   };
 
+  bool sawTerminator = false;
   if (PartialSection *dirs = findPartialSection(".idata$2", rdata)) {
     for (Chunk *chunk : dirs->chunks) {
       auto *section = dyn_cast<SectionChunk>(chunk);
       if (!section || !section->live)
         continue;
       ArrayRef<uint8_t> contents = section->getContents();
+      if (contents.size() % importDirectoryEntrySize != 0) {
+        error("--enclave import directory does not contain a whole number of "
+              "entries");
+        continue;
+      }
       DenseMap<uint32_t, const coff_relocation *> nameRelocations;
+      std::vector<bool> relocatedEntries(contents.size() /
+                                         importDirectoryEntrySize);
       for (const coff_relocation &reloc : section->getRelocs()) {
+        if (reloc.VirtualAddress >= contents.size()) {
+          error("--enclave import directory has an out-of-range relocation");
+          continue;
+        }
+        // A terminator must be provably zero after relocation, not merely zero
+        // in the input section bytes.
+        relocatedEntries[reloc.VirtualAddress / importDirectoryEntrySize] =
+            true;
         if (reloc.VirtualAddress < importDirectoryNameOffset ||
             (reloc.VirtualAddress - importDirectoryNameOffset) %
                     importDirectoryEntrySize !=
@@ -975,10 +991,22 @@ void OutputWriter::addEnclaveImportMetadata() {
 
         ArrayRef<uint8_t> entry =
             contents.slice(offset, importDirectoryEntrySize);
+        const bool isZero =
+            llvm::all_of(entry, [](uint8_t byte) { return byte == 0; });
+        const bool hasRelocation =
+            relocatedEntries[offset / importDirectoryEntrySize];
+        if (sawTerminator) {
+          if (hasRelocation || !isZero)
+            error("--enclave import directory has an entry after its "
+                  "terminator");
+          continue;
+        }
         if (!nameReloc) {
-          if (llvm::any_of(entry, [](uint8_t byte) { return byte != 0; }))
+          if (!isZero || hasRelocation)
             error("--enclave cannot derive a DLL name from an import "
                   "directory");
+          else
+            sawTerminator = true;
           continue;
         }
 
@@ -1019,6 +1047,11 @@ void OutputWriter::addEnclaveImportMetadata() {
                          terminator - suffix.begin()));
       }
     }
+  }
+  if (sawTerminator && !idata.imports.empty()) {
+    error("--enclave import directory cannot append short imports after its "
+          "terminator");
+    return;
   }
 
   // IdataContents orders short-import DLLs by the command-line order recorded
@@ -2684,17 +2717,27 @@ void OutputWriter::checkLoadConfigGuardData(const T *loadConfig) {
     CHECK_ABSOLUTE(GuardAddressTakenIatEntryCount, "__guard_iat_count")
   }
 
-  if (!(ctx.config.guardCF & GuardCFLevel::LongJmp))
-    return;
-  RETURN_IF_NOT_CONTAINS(GuardLongJumpTargetCount)
-  CHECK_VA(GuardLongJumpTargetTable, "__guard_longjmp_table")
-  CHECK_ABSOLUTE(GuardLongJumpTargetCount, "__guard_longjmp_count")
+  if (ctx.config.guardCF & GuardCFLevel::LongJmp) {
+    if (loadConfigSize < offsetof(T, GuardLongJumpTargetCount) +
+                             sizeof(T::GuardLongJumpTargetCount)) {
+      warn("'_load_config_used' structure too small to include "
+           "GuardLongJumpTargetCount");
+    } else {
+      CHECK_VA(GuardLongJumpTargetTable, "__guard_longjmp_table")
+      CHECK_ABSOLUTE(GuardLongJumpTargetCount, "__guard_longjmp_count")
+    }
+  }
 
-  if (!(ctx.config.guardCF & GuardCFLevel::EHCont))
-    return;
-  RETURN_IF_NOT_CONTAINS(GuardEHContinuationCount)
-  CHECK_VA(GuardEHContinuationTable, "__guard_eh_cont_table")
-  CHECK_ABSOLUTE(GuardEHContinuationCount, "__guard_eh_cont_count")
+  if (ctx.config.guardCF & GuardCFLevel::EHCont) {
+    if (loadConfigSize < offsetof(T, GuardEHContinuationCount) +
+                             sizeof(T::GuardEHContinuationCount)) {
+      warn("'_load_config_used' structure too small to include "
+           "GuardEHContinuationCount");
+    } else {
+      CHECK_VA(GuardEHContinuationTable, "__guard_eh_cont_table")
+      CHECK_ABSOLUTE(GuardEHContinuationCount, "__guard_eh_cont_count")
+    }
+  }
 
 #undef RETURN_IF_NOT_CONTAINS
 #undef IF_CONTAINS
