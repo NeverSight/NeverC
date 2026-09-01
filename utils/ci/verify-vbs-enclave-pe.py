@@ -102,14 +102,19 @@ PUBLIC_IDENTITY_PREFIX = "public|"
 STATIC_IDENTITY_PREFIX = "static|"
 DLLMAIN_CRT_DISPATCH = (
     "?dllmain_crt_dispatch@@YAHQEAUHINSTANCE__@@KQEAX@Z")
-# The bundled enclave CRT contributes this one live local GFID.  link.exe's
-# public MAP omits it, while the integrated map exposes its scoped identity.
-VBS_CRT_LOCAL_IDENTITY = (
-    STATIC_IDENTITY_PREFIX + "libcmt:dll_dllmain.obj|" +
-    DLLMAIN_CRT_DISPATCH)
+# The bundled enclave CRT contributes one live local GFID.  link.exe's public
+# MAP omits its private identity, so this is an explicit fixture-specific
+# residual contract, not proof that the reference MAP named that target.  The
+# integrated map must preserve the architecture-qualified archive member.
 EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES = {
-    "x86_64": frozenset({VBS_CRT_LOCAL_IDENTITY}),
-    "arm64": frozenset({VBS_CRT_LOCAL_IDENTITY}),
+    "x86_64": frozenset({
+        STATIC_IDENTITY_PREFIX +
+        "libcmt:objr/amd64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
+    }),
+    "arm64": frozenset({
+        STATIC_IDENTITY_PREFIX +
+        "libcmt:objr/arm64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
+    }),
 }
 
 
@@ -124,16 +129,28 @@ def _normalize_map_origin(origin: str) -> str:
         return ""
     archive = ""
     member = normalized
-    if re.match(r"^[A-Za-z]:/", normalized):
-        if normalized.count(":") > 1:
-            archive_path, member = normalized.rsplit(":", 1)
-            archive = archive_path.rsplit("/", 1)[-1]
+    archive_path_match = re.match(r"^(.*?\.lib):(.*)$", normalized,
+                                  re.IGNORECASE)
+    if archive_path_match:
+        archive_path, member = archive_path_match.groups()
+        archive = archive_path.rsplit("/", 1)[-1]
+    elif re.match(r"^[A-Za-z]:/", normalized):
+        member = normalized
     elif ":" in normalized:
         archive, member = normalized.split(":", 1)
         archive = archive.rsplit("/", 1)[-1]
-    member = member.rsplit("/", 1)[-1]
     if archive.lower().endswith(".lib"):
         archive = archive[:-4]
+    if re.match(r"^[A-Za-z]:/", member):
+        member = member[2:]
+    parts = [part for part in member.split("/") if part not in ("", ".")]
+    objr_indexes = [index for index, part in enumerate(parts)
+                    if part.lower() == "objr"]
+    if objr_indexes:
+        parts = parts[objr_indexes[-1]:]
+    member = "/".join(parts)
+    if not member:
+        return ""
     return "%s:%s" % (archive, member) if archive else member
 
 
@@ -1163,8 +1180,8 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any],
     def gfid_target_identities_match() -> bool:
         # Public identities common to both maps must retain their GFID
         # coverage and co-location partition.  link.exe does not expose one
-        # live CRT-local target in its public MAP, so the integrated map must
-        # bind that opaque reference slot to the explicit scoped identity.
+        # live CRT-local target in its public MAP, so accept exactly one empty
+        # reference slot only under the fixture-specific residual contract.
         common_names = (set(reference["unique_map_symbol_names"]) &
                         set(candidate["unique_map_symbol_names"]))
 
@@ -1445,6 +1462,32 @@ def self_test() -> None:
         expected_machine="x86_64", expected_export_name="fixture.dll")
     cases: List[Tuple[str, bytes, str]] = []
     failures = []
+
+    expected_fixture_identities = {
+        "x86_64": frozenset({
+            STATIC_IDENTITY_PREFIX +
+            "libcmt:objr/amd64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
+        }),
+        "arm64": frozenset({
+            STATIC_IDENTITY_PREFIX +
+            "libcmt:objr/arm64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
+        }),
+    }
+    if EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES != expected_fixture_identities:
+        failures.append("per-machine opaque GFID contract drifted")
+    normalized_fixture_origins = {
+        _normalize_map_origin(
+            "libcmt:C:\\agent\\objr\\amd64\\dll_dllmain.obj"),
+        _normalize_map_origin(
+            "libcmt:C:\\agent\\objr\\arm64\\dll_dllmain.obj"),
+        _normalize_map_origin(
+            "libcmt:C:\\agent\\objr\\arm64ec\\dll_dllmain.obj"),
+    }
+    if normalized_fixture_origins != {
+            "libcmt:objr/amd64/dll_dllmain.obj",
+            "libcmt:objr/arm64/dll_dllmain.obj",
+            "libcmt:objr/arm64ec/dll_dllmain.obj"}:
+        failures.append("architecture-qualified map origins are not distinct")
 
     map_cases = [
         ("missing COFF map symbols", "",
@@ -1964,14 +2007,15 @@ def self_test() -> None:
             omitted_symbols={"InternalTargetA", "InternalTargetB"},
             extra_static_symbols=[(
                 "StaticInternalTarget", 0x1018,
-                "C:\\build\\libcmt.lib:dll_dllmain.obj")]),
+                "C:\\build\\libcmt.lib:D:\\agent-a\\objr\\amd64\\"
+                "dll_dllmain.obj")]),
         "self-test/static-reference.map")
     static_candidate_map = parse_coff_map_text(
         _synthetic_map_text(
             omitted_symbols={"InternalTargetA", "InternalTargetB"},
             extra_static_symbols=[(
                 "StaticInternalTarget", 0x1028,
-                "libcmt:D:\\agent\\dll_dllmain.obj")]),
+                "libcmt:E:\\agent-b\\objr\\amd64\\dll_dllmain.obj")]),
         "self-test/static-candidate.map")
     compare(
         PEImage(bytes(internal_reference),
@@ -2029,13 +2073,14 @@ def self_test() -> None:
         _synthetic_map_text(
             omitted_symbols={"InternalTargetA", "InternalTargetB"}),
         "self-test/opaque-reference.map")
-    expected_opaque_identity = _map_identity(
-        "static", "ExpectedOpaque", "fixture:opaque.obj")
+    expected_opaque_identity = next(iter(
+        EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES["arm64"]))
     opaque_candidate_map = parse_coff_map_text(
         _synthetic_map_text(
             omitted_symbols={"InternalTargetA", "InternalTargetB"},
             extra_static_symbols=[(
-                "ExpectedOpaque", 0x1028, "fixture:opaque.obj")]),
+                DLLMAIN_CRT_DISPATCH, 0x1028,
+                "libcmt:D:\\archive\\objr\\arm64\\dll_dllmain.obj")]),
         "self-test/opaque-candidate.map")
     opaque_reference_image = PEImage(
         bytes(internal_reference), "self-test/opaque reference").inspect(
@@ -2070,9 +2115,10 @@ def self_test() -> None:
         _synthetic_map_text(
             omitted_symbols={"InternalTargetA", "InternalTargetB"},
             extra_static_symbols=[(
-                "ExpectedOpaque", 0x1028, "other:opaque.obj")]),
+                DLLMAIN_CRT_DISPATCH, 0x1028,
+                "libcmt:D:\\archive\\objr\\arm64ec\\dll_dllmain.obj")]),
         "self-test/wrong-opaque-candidate.map")
-    wrong_opaque_case_name = "opaque GFID has wrong scoped identity"
+    wrong_opaque_case_name = "ARM64EC member cannot satisfy ARM64 opaque GFID"
     compare_cases.append((
         wrong_opaque_case_name,
         PEImage(bytes(internal_candidate),

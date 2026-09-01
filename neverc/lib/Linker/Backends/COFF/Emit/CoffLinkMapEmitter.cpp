@@ -117,7 +117,8 @@ void getSymbols(const COFFLinkerContext &ctx, std::vector<Defined *> &syms,
 
 // Construct a map from symbols to their stringified representations.
 DenseMap<Defined *, std::string> getSymbolStrings(const COFFLinkerContext &ctx,
-                                                  ArrayRef<Defined *> syms) {
+                                                  ArrayRef<Defined *> syms,
+                                                  bool preserveMemberPath) {
   std::vector<std::string> str(syms.size());
   parallelFor((size_t)0, syms.size(), [&](size_t i) {
     raw_string_ostream os(str[i]);
@@ -163,7 +164,12 @@ DenseMap<Defined *, std::string> getSymbolStrings(const COFFLinkerContext &ctx,
           sys::path::replace_extension(fileDescr, "");
           fileDescr += ":";
         }
-        fileDescr += sys::path::filename(file->getName());
+        // Static names are object-scoped.  Keep the archive member path so
+        // same-named members for different architectures remain distinct in
+        // semantic consumers of the map.  Public names are link-global and
+        // retain link.exe's basename-oriented presentation.
+        fileDescr += preserveMemberPath ? file->getName()
+                                        : sys::path::filename(file->getName());
       }
     }
     writeHeader(os, sectionIdx, address);
@@ -213,9 +219,10 @@ void linker::coff::writeMapFile(COFFLinkerContext &ctx) {
   t2.stop();
 
   ScopedTimer t3(ctx.symbolStringsTimer);
-  DenseMap<Defined *, std::string> symStr = getSymbolStrings(ctx, syms);
+  DenseMap<Defined *, std::string> symStr =
+      getSymbolStrings(ctx, syms, /*preserveMemberPath=*/false);
   DenseMap<Defined *, std::string> staticSymStr =
-      getSymbolStrings(ctx, staticSyms);
+      getSymbolStrings(ctx, staticSyms, /*preserveMemberPath=*/true);
   t3.stop();
 
   ScopedTimer t4(ctx.writeTimer);
