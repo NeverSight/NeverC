@@ -122,6 +122,53 @@ function Invoke-TimedLogged {
   return [int]$exitCode
 }
 
+function Invoke-AllowlistedVbsSignTool {
+  param([Parameter(Mandatory = $true)][string]$SignToolPath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$TargetPath,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Signed', 'Verified')][string]$ResultVerb,
+        [Parameter(Mandatory = $true)][string]$LogPath)
+
+  $exitCode = Invoke-TimedLogged $SignToolPath $Arguments $LogPath `
+    -TimeoutSeconds 60 -AllowFailure
+  if ($exitCode -eq 0) {
+    return
+  }
+  if ($exitCode -ne 2) {
+    throw "SignTool failed with exit code $exitCode; see '$LogPath'"
+  }
+
+  # SignTool documents exit code 2 as successful execution with warnings. The
+  # current Windows SDK emits one deterministic compatibility warning for VBS
+  # enclave images, so accept only that exact warning and exact success counts.
+  # The caller still performs policy verification after signing.
+  $expectedWarning = 'SignTool Warning: Note that VBS enclave support is ' +
+    'changing and updating your VBS enclave may cause you to lose support on ' +
+    'older OSes. Please visit https://go.microsoft.com/fwlink/?linkid=2312918 ' +
+    'for details.'
+  $lines = @(Get-Content -LiteralPath $LogPath | ForEach-Object { $_.Trim() })
+  $warnings = @($lines | Where-Object { $_ -clike 'SignTool Warning:*' })
+  if ($warnings.Count -ne 1 -or $warnings[0] -cne $expectedWarning) {
+    throw "SignTool returned an unallowlisted warning; see '$LogPath'"
+  }
+  if (@($lines | Where-Object { $_ -clike 'SignTool Error:*' }).Count -ne 0) {
+    throw "SignTool reported an error together with its warning; see '$LogPath'"
+  }
+
+  $successLine = 'Successfully {0}: {1}' -f `
+    $ResultVerb.ToLowerInvariant(), $TargetPath
+  if (@($lines | Where-Object { $_ -ceq $successLine }).Count -ne 1) {
+    throw "SignTool warning output lacks the exact target success line; see '$LogPath'"
+  }
+  $successCountLine = 'Number of files successfully {0}: 1' -f $ResultVerb
+  if (@($lines | Where-Object { $_ -ceq $successCountLine }).Count -ne 1 -or
+      @($lines | Where-Object { $_ -ceq 'Number of warnings: 1' }).Count -ne 1) {
+    throw "SignTool warning output has unexpected result counts; see '$LogPath'"
+  }
+  Write-Host "Accepted the single documented VBS enclave compatibility warning."
+}
+
 function New-EphemeralVbsCertificate {
   param([Parameter(Mandatory = $true)][string]$HelperPath,
         [Parameter(Mandatory = $true)][string]$CertificatePath,
@@ -534,11 +581,18 @@ try {
     $signArguments = @('sign', '/ph', '/fd', 'SHA256')
     if ($certificateInMachineStore) { $signArguments += '/sm' }
     $signArguments += @('/sha1', $certificate.Thumbprint, $signed)
-    Invoke-TimedLogged $tools.signtool $signArguments `
-      (Join-Path $logRoot "sign-$name.log") -TimeoutSeconds 60 | Out-Null
-    Invoke-TimedLogged $tools.signtool @('verify', '/pa', '/v', $signed) `
-      (Join-Path $logRoot "verify-signature-$name.log") `
-      -TimeoutSeconds 60 | Out-Null
+    Invoke-AllowlistedVbsSignTool `
+      -SignToolPath $tools.signtool `
+      -Arguments $signArguments `
+      -TargetPath $signed `
+      -ResultVerb Signed `
+      -LogPath (Join-Path $logRoot "sign-$name.log")
+    Invoke-AllowlistedVbsSignTool `
+      -SignToolPath $tools.signtool `
+      -Arguments @('verify', '/pa', '/v', $signed) `
+      -TargetPath $signed `
+      -ResultVerb Verified `
+      -LogPath (Join-Path $logRoot "verify-signature-$name.log")
   }
 
   function Invoke-RuntimeImage {
