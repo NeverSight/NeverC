@@ -127,7 +127,8 @@ function New-EphemeralVbsCertificate {
         [Parameter(Mandatory = $true)][string]$CertificatePath,
         [Parameter(Mandatory = $true)][string]$ThumbprintPath,
         [Parameter(Mandatory = $true)][string]$StageLogPath,
-        [Parameter(Mandatory = $true)][string]$ProcessLogPath)
+        [Parameter(Mandatory = $true)][string]$ProcessLogPath,
+        [Parameter(Mandatory = $true)][string]$TrustLogPath)
   $pwsh = (Get-Command pwsh.exe -ErrorAction Stop).Source
   Invoke-TimedLogged $pwsh @(
     '-NoLogo', '-NoProfile', '-NonInteractive', '-File', $HelperPath,
@@ -145,6 +146,20 @@ function New-EphemeralVbsCertificate {
   if (-not $certificate.HasPrivateKey) {
     throw 'certificate helper installed a certificate without its private key'
   }
+
+  'CERTIFICATE_STAGE=InstallTrustedRoot' |
+    Tee-Object -FilePath $StageLogPath -Append | Out-Host
+  $certutil = (Get-Command certutil.exe -ErrorAction Stop).Source
+  Invoke-TimedLogged $certutil @(
+    '-user', '-f', '-addstore', 'Root', $CertificatePath
+  ) $TrustLogPath -TimeoutSeconds 60 | Out-Null
+  $trustedCertificate = Get-Item -LiteralPath `
+    "Cert:\CurrentUser\Root\$thumbprint" -ErrorAction Stop
+  if ($trustedCertificate.Thumbprint -ne $thumbprint) {
+    throw 'trusted-root certificate does not match the signing certificate'
+  }
+  'CERTIFICATE_STAGE=Complete' |
+    Tee-Object -FilePath $StageLogPath -Append | Out-Host
   return $certificate
 }
 
@@ -263,7 +278,8 @@ if ($Phase -eq 'Certificate') {
     -CertificatePath $certificatePath `
     -ThumbprintPath $thumbprintPath `
     -StageLogPath (Join-Path $logRoot 'certificate-stages.log') `
-    -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log')
+    -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log') `
+    -TrustLogPath (Join-Path $logRoot 'certificate-trust.log')
 
   $smokeImage = Join-Path $artifactRoot 'certificate-smoke.exe'
   Invoke-TimedLogged $tools.cl @(
@@ -505,7 +521,8 @@ try {
       -CertificatePath $certificatePath `
       -ThumbprintPath $thumbprintPath `
       -StageLogPath (Join-Path $logRoot 'certificate-stages.log') `
-      -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log')
+      -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log') `
+      -TrustLogPath (Join-Path $logRoot 'certificate-trust.log')
   }
 
   foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll')) {
