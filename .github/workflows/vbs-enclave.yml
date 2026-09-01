@@ -37,14 +37,19 @@ on:
         description: Fail if the Microsoft reference cannot run
         type: boolean
         default: false
+      static_run_id:
+        description: Reuse vbs-enclave-static from this run (runtime replay only)
+        type: string
+        default: ""
 
 permissions:
   contents: read
+  actions: read
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
 # variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.static_run_id || 'full' }}
   cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
 
 jobs:
@@ -79,6 +84,7 @@ jobs:
 
   static:
     name: Static PE and Microsoft-reference gate
+    if: ${{ inputs.static_run_id == '' }}
     runs-on: windows-2022
     timeout-minutes: 180
     steps:
@@ -156,6 +162,9 @@ jobs:
   runtime:
     name: Differential runtime (${{ inputs.runtime_runner || 'windows-2025' }})
     needs: [certificate, static]
+    if: >-
+      ${{ always() && needs.certificate.result == 'success' &&
+          (needs.static.result == 'success' || inputs.static_run_id != '') }}
     runs-on: ${{ inputs.runtime_runner || 'windows-2025' }}
     timeout-minutes: 30
     steps:
@@ -173,16 +182,28 @@ jobs:
           arch: x64
 
       - name: Download static artifacts
+        if: ${{ inputs.static_run_id == '' }}
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: vbs-enclave-static
           path: artifacts/vbs-enclave
+
+      - name: Download reused static artifacts
+        if: ${{ inputs.static_run_id != '' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: vbs-enclave-static
+          path: artifacts/vbs-enclave
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.static_run_id }}
 
       - name: Record OS, VBS, HVCI, and test-signing state
         shell: pwsh
         run: |
           $output = 'artifacts\vbs-enclave\runtime-environment.txt'
           "Runner: $env:RUNNER_NAME" | Tee-Object -FilePath $output
+          "Static artifact run: ${{ inputs.static_run_id || github.run_id }}" | Tee-Object -FilePath $output -Append
           Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber, HyperVisorPresent | Format-List | Tee-Object -FilePath $output -Append
           try {
             Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard | Format-List * | Tee-Object -FilePath $output -Append

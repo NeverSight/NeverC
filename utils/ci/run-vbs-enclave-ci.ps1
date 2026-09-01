@@ -165,7 +165,8 @@ function New-EphemeralVbsCertificate {
 function Assert-AuthenticodeSignature {
   param([Parameter(Mandatory = $true)][string]$FilePath,
         [Parameter(Mandatory = $true)][string]$ExpectedThumbprint,
-        [Parameter(Mandatory = $true)][string]$LogPath)
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [switch]$RequireTrusted)
   $signature = Get-AuthenticodeSignature -LiteralPath $FilePath
   $actualThumbprint = if ($signature.SignerCertificate) {
     $signature.SignerCertificate.Thumbprint
@@ -189,8 +190,27 @@ function Assert-AuthenticodeSignature {
   if ($actualThumbprint -ne $ExpectedThumbprint) {
     throw "'$FilePath' was not signed by the expected certificate"
   }
-  if ($result.status -notin @('Valid', 'NotTrusted', 'UnknownError')) {
+  if ($RequireTrusted -and $result.status -ne 'Valid') {
+    throw "'$FilePath' does not have a trusted Authenticode signature"
+  }
+  if (-not $RequireTrusted -and
+      $result.status -notin @('Valid', 'NotTrusted', 'UnknownError')) {
     throw "'$FilePath' has invalid Authenticode status '$($result.status)'"
+  }
+}
+
+function Assert-SignToolExitCode {
+  param([Parameter(Mandatory = $true)][int]$ExitCode,
+        [Parameter(Mandatory = $true)][string]$Operation,
+        [Parameter(Mandatory = $true)][string]$LogPath)
+  # SignTool documents 2 as successful completion with warnings. VBS enclave
+  # signing emits such a compatibility warning on current Windows SDKs. The
+  # caller must still verify the resulting Authenticode signature and policy.
+  if ($ExitCode -notin @(0, 2)) {
+    throw "SignTool $Operation failed with exit code $ExitCode; see '$LogPath'"
+  }
+  if ($ExitCode -eq 2) {
+    Write-Host "SIGNTOOL_WARNING_RESULT: $Operation completed with warnings"
   }
 }
 
@@ -311,16 +331,22 @@ if ($Phase -eq 'Certificate') {
     '/nologo', '/std:c++17', (Join-Path $fixtureRoot 'host.cpp'),
     "/Fe$smokeImage", '/link', '/INCREMENTAL:NO', $tools.onecore
   ) (Join-Path $logRoot 'certificate-build-host.log') -TimeoutSeconds 120 | Out-Null
-  Invoke-TimedLogged $tools.signtool @(
+  $signLog = Join-Path $logRoot 'certificate-sign.log'
+  $signExitCode = Invoke-TimedLogged $tools.signtool @(
     'sign', '/ph', '/fd', 'SHA256', '/sha1', $certificate.Thumbprint,
     $smokeImage
-  ) (Join-Path $logRoot 'certificate-sign.log') -TimeoutSeconds 60 | Out-Null
-  Assert-AuthenticodeSignature $smokeImage $certificate.Thumbprint `
-    (Join-Path $logRoot 'certificate-verify.log')
-  Invoke-TimedLogged $tools.signtool @(
+  ) $signLog -TimeoutSeconds 60 -AllowFailure
+  Assert-SignToolExitCode $signExitCode 'sign' $signLog
+  Assert-AuthenticodeSignature `
+    -FilePath $smokeImage `
+    -ExpectedThumbprint $certificate.Thumbprint `
+    -LogPath (Join-Path $logRoot 'certificate-verify.log') `
+    -RequireTrusted
+  $verifyPolicyLog = Join-Path $logRoot 'certificate-verify-policy.log'
+  $verifyExitCode = Invoke-TimedLogged $tools.signtool @(
     'verify', '/pa', '/v', $smokeImage
-  ) (Join-Path $logRoot 'certificate-verify-policy.log') `
-    -TimeoutSeconds 60 | Out-Null
+  ) $verifyPolicyLog -TimeoutSeconds 60 -AllowFailure
+  Assert-SignToolExitCode $verifyExitCode 'verify' $verifyPolicyLog
   Write-Host 'CERTIFICATE PASS: non-interactive creation, trust, signing, and verification succeeded'
   exit 0
 }
@@ -521,14 +547,20 @@ try {
     $signArguments = @('sign', '/ph', '/fd', 'SHA256')
     if ($certificateInMachineStore) { $signArguments += '/sm' }
     $signArguments += @('/sha1', $certificate.Thumbprint, $signed)
-    Invoke-TimedLogged $tools.signtool $signArguments `
-      (Join-Path $logRoot "sign-$name.log") -TimeoutSeconds 60 | Out-Null
-    Assert-AuthenticodeSignature $signed $certificate.Thumbprint `
-      (Join-Path $logRoot "verify-signature-$name.log")
-    Invoke-TimedLogged $tools.signtool @(
+    $signLog = Join-Path $logRoot "sign-$name.log"
+    $signExitCode = Invoke-TimedLogged $tools.signtool $signArguments `
+      $signLog -TimeoutSeconds 60 -AllowFailure
+    Assert-SignToolExitCode $signExitCode 'sign' $signLog
+    Assert-AuthenticodeSignature `
+      -FilePath $signed `
+      -ExpectedThumbprint $certificate.Thumbprint `
+      -LogPath (Join-Path $logRoot "verify-signature-$name.log") `
+      -RequireTrusted
+    $verifyPolicyLog = Join-Path $logRoot "verify-signature-policy-$name.log"
+    $verifyExitCode = Invoke-TimedLogged $tools.signtool @(
       'verify', '/pa', '/v', $signed
-    ) (Join-Path $logRoot "verify-signature-policy-$name.log") `
-      -TimeoutSeconds 60 | Out-Null
+    ) $verifyPolicyLog -TimeoutSeconds 60 -AllowFailure
+    Assert-SignToolExitCode $verifyExitCode 'verify' $verifyPolicyLog
   }
 
   function Invoke-RuntimeImage {
