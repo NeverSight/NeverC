@@ -61,7 +61,7 @@ jobs:
         with:
           arch: x64
 
-      - name: Generate, sign, and inspect without prompts
+      - name: Generate, trust, sign, and verify without prompts
         shell: pwsh
         run: >-
           & .\utils\ci\run-vbs-enclave-ci.ps1

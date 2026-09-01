@@ -127,7 +127,8 @@ function New-EphemeralVbsCertificate {
         [Parameter(Mandatory = $true)][string]$CertificatePath,
         [Parameter(Mandatory = $true)][string]$ThumbprintPath,
         [Parameter(Mandatory = $true)][string]$StageLogPath,
-        [Parameter(Mandatory = $true)][string]$ProcessLogPath)
+        [Parameter(Mandatory = $true)][string]$ProcessLogPath,
+        [Parameter(Mandatory = $true)][string]$TrustLogPath)
   $pwsh = (Get-Command pwsh.exe -ErrorAction Stop).Source
   Invoke-TimedLogged $pwsh @(
     '-NoLogo', '-NoProfile', '-NonInteractive', '-File', $HelperPath,
@@ -145,6 +146,16 @@ function New-EphemeralVbsCertificate {
   if (-not $certificate.HasPrivateKey) {
     throw 'certificate helper installed a certificate without its private key'
   }
+
+  # Trusted Root is protected by an interactive Windows consent prompt on
+  # hosted runners. Trust this exact ephemeral leaf through TrustedPeople
+  # instead; it remains scoped to the current user and expires after two days.
+  $certutil = (Get-Command certutil.exe -ErrorAction Stop).Source
+  Invoke-TimedLogged $certutil @(
+    '-user', '-f', '-addstore', 'TrustedPeople', $CertificatePath
+  ) $TrustLogPath -TimeoutSeconds 30 | Out-Null
+  'CERTIFICATE_STAGE=InstallTrustedPeople' |
+    Tee-Object -FilePath $StageLogPath -Append | Out-Host
   'CERTIFICATE_STAGE=Complete' |
     Tee-Object -FilePath $StageLogPath -Append | Out-Host
   return $certificate
@@ -291,7 +302,8 @@ if ($Phase -eq 'Certificate') {
     -CertificatePath $certificatePath `
     -ThumbprintPath $thumbprintPath `
     -StageLogPath (Join-Path $logRoot 'certificate-stages.log') `
-    -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log')
+    -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log') `
+    -TrustLogPath (Join-Path $logRoot 'certificate-trust.log')
 
   $smokeImage = Join-Path $artifactRoot 'certificate-smoke.exe'
   Invoke-TimedLogged $tools.cl @(
@@ -304,7 +316,11 @@ if ($Phase -eq 'Certificate') {
   ) (Join-Path $logRoot 'certificate-sign.log') -TimeoutSeconds 60 | Out-Null
   Assert-AuthenticodeSignature $smokeImage $certificate.Thumbprint `
     (Join-Path $logRoot 'certificate-verify.log')
-  Write-Host 'CERTIFICATE PASS: non-interactive creation, signing, and inspection succeeded'
+  Invoke-TimedLogged $tools.signtool @(
+    'verify', '/pa', '/v', $smokeImage
+  ) (Join-Path $logRoot 'certificate-verify-policy.log') `
+    -TimeoutSeconds 60 | Out-Null
+  Write-Host 'CERTIFICATE PASS: non-interactive creation, trust, signing, and verification succeeded'
   exit 0
 }
 
@@ -493,7 +509,8 @@ try {
       -CertificatePath $certificatePath `
       -ThumbprintPath $thumbprintPath `
       -StageLogPath (Join-Path $logRoot 'certificate-stages.log') `
-      -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log')
+      -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log') `
+      -TrustLogPath (Join-Path $logRoot 'certificate-trust.log')
   }
 
   foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll')) {
@@ -507,6 +524,10 @@ try {
       (Join-Path $logRoot "sign-$name.log") -TimeoutSeconds 60 | Out-Null
     Assert-AuthenticodeSignature $signed $certificate.Thumbprint `
       (Join-Path $logRoot "verify-signature-$name.log")
+    Invoke-TimedLogged $tools.signtool @(
+      'verify', '/pa', '/v', $signed
+    ) (Join-Path $logRoot "verify-signature-policy-$name.log") `
+      -TimeoutSeconds 60 | Out-Null
   }
 
   function Invoke-RuntimeImage {
