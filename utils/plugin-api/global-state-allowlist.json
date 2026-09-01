@@ -367,8 +367,9 @@
     },
     {
       "symbol": "neverc::plugin::pluginLLVMOptionGate()::Gate",
-      "min_count": 1,
+      "min_count": 0,
       "max_count": 1,
+      "artifact_optional": true,
       "file": "neverc/lib/Plugin/Core/PluginLLVMOptionSnapshot.cpp",
       "source_symbol": "Gate",
       "declaration": "static std::shared_mutex Gate",

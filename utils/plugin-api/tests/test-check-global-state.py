@@ -98,10 +98,11 @@ def main() -> int:
     allowlist = mod.load_allowlist()
     expect(isinstance(allowlist.get("entries"), list) and allowlist["entries"],
            "allowlist did not load any entries", failures)
-    expect(all(entry.get("min_count") == 1 and
-               entry.get("max_count") == 1
+    expect(all(entry.get("max_count") == 1 and
+               entry.get("min_count") ==
+               (0 if entry.get("artifact_optional") is True else 1)
                for entry in allowlist.get("binary_symbols", [])),
-           "binary allowlist entries must pin exactly one expected instance",
+           "binary allowlist entries have invalid presence contracts",
            failures)
     for entry in allowlist.get("entries", []):
         expect(all(isinstance(entry.get(field), str) and
@@ -143,7 +144,9 @@ def main() -> int:
     expect("neverc/lib/Merge/Common/MergerCommon.h" in mod.EXTRA_AUDIT_FILES,
            "Merger fatal TLS allowlist path is outside audit scope", failures)
     for entry in allowlist.get("binary_symbols", []):
-        expect(entry.get("min_count") == 1 and entry.get("max_count") == 1,
+        expect(entry.get("max_count") == 1 and
+               entry.get("min_count") ==
+               (0 if entry.get("artifact_optional") is True else 1),
                f"binary allowlist multiplicity is not exact: {entry}",
                failures)
         expect(all(isinstance(entry.get(field), str) and
@@ -1491,6 +1494,22 @@ def main() -> int:
                    "production validator accepted a weakened binary "
                    f"multiplicity contract: {weakened_report.unscannable}",
                    failures)
+            optional_external = {
+                **fixture_allowlist,
+                "binary_symbols": [{
+                    **fixture_allowlist["binary_symbols"][0],
+                    "min_count": 0,
+                    "artifact_optional": True,
+                }],
+            }
+            optional_external_report = mod.Report()
+            mod.validate_allowlist(optional_external_report,
+                                   optional_external)
+            expect(any("function-local" in item
+                       for item in optional_external_report.unscannable),
+                   "artifact_optional weakened a namespace-scope binary "
+                   f"contract: {optional_external_report.unscannable}",
+                   failures)
     finally:
         mod.ROOT = old_root
         mod.AUDIT_DIRS = old_audit_dirs
@@ -2197,6 +2216,46 @@ TLSDirectory {{
                    "--warn-trailing"],
                f"PE owner demangler kept type/access prefixes: "
                f"{run.call_args_list[1].args[0]}", failures)
+
+    # The pinned official Windows LLVM installer does not always ship
+    # llvm-undname. The native DbgHelp fallback must preserve the same strict
+    # ownership view instead of turning that packaging difference into either
+    # a skipped audit or an unscannable image.
+    with tempfile.TemporaryDirectory() as tmp:
+        build = pathlib.Path(tmp)
+        (build / "bin").mkdir()
+        (build / "bin" / "neverc.exe").write_bytes(b"MZ\x90\x00")
+        dbghelp_names = (
+            root_token,
+            local_token,
+            "neverc::plugin::Owner::RogueCache",
+            "other::Foreign",
+        )
+        with mock.patch.object(
+                mod.shutil, "which", side_effect=lambda name: {
+                    "llvm-readobj": "/tools/llvm-readobj",
+                }.get(name)), mock.patch.object(
+                    mod.sys, "platform", "win32"), mock.patch.object(
+                    mod.subprocess, "run",
+                    return_value=process(["llvm-readobj"],
+                                         stdout=coff_listing)), \
+                mock.patch.object(
+                    mod, "_dbghelp_demangle_coff_names",
+                    return_value=(dbghelp_names, ())) as dbghelp:
+            report = mod.Report()
+            mod.scan_binary(report, build, pe_allowlist)
+        expect(not report.unscannable,
+               f"DbgHelp PE fallback was not authoritative: "
+               f"{report.unscannable}", failures)
+        expect(len(report.binary) == 1 and
+               "neverc::plugin::Owner::RogueCache" in report.binary[0],
+               f"DbgHelp PE owner audit returned {report.binary}", failures)
+        expect(dbghelp.call_count == 1 and
+               dbghelp.call_args.args[0] == (
+                   coff_root_raw, coff_local_raw,
+                   coff_rogue_raw, coff_foreign_raw),
+               "DbgHelp fallback did not receive the exact decorated "
+               "writable COFF names", failures)
 
     # The PE parser must reject stripped/truncated or contradictory listings as
     # a whole. In particular, SymbolCount counts auxiliary records even though

@@ -197,7 +197,7 @@ jobs:
           & neverc/.github/scripts/install-llvm-windows.ps1
 
           $llvmBin = 'C:\LLVM\bin'
-          foreach ($tool in @('lld-link.exe', 'llvm-readobj.exe', 'llvm-undname.exe')) {
+          foreach ($tool in @('lld-link.exe', 'llvm-readobj.exe')) {
             $path = Join-Path $llvmBin $tool
             if (-not (Test-Path -LiteralPath $path)) {
               throw "required PE audit tool is missing: $path"
@@ -296,9 +296,10 @@ jobs:
       # Runs here rather than through CTest because the gate needs the linked
       # compiler, and the CTest case carrying it is labelled "plugin-meta",
       # which no workflow reaches (see lint-docs.yml for the same trap).
-      # Windows is deliberately not a source-only exception: the pinned
-      # llvm-readobj/llvm-undname pair audits the lld-link COFF symbol table,
-      # including one external and one local-static completeness sentinel.
+      # Windows is deliberately not a source-only exception: pinned
+      # llvm-readobj plus the system DbgHelp undecorator audit the lld-link
+      # COFF symbol table, including one external and one local-static
+      # completeness sentinel.
       # --strict is required, not optional: the binary layer leaves thread-local
       # storage to the source scan, so without it a new undocumented
       # thread_local would pass unnoticed on every host.

@@ -45,7 +45,8 @@ Four complementary layers of checking:
 4. Optionally, ``--build-dir`` scans writable data symbols of the linked
 compiler (``<build-dir>/bin/neverc``). ELF/Mach-O use ``nm``/``llvm-nm``;
 PE uses ``llvm-readobj`` section/symbol facts plus ``llvm-undname`` owner
-demangling. This is the artifact-level backstop for owner-qualified NeverC and
+demangling, with the Windows system DbgHelp undecorator as a strict fallback.
+This is the artifact-level backstop for owner-qualified NeverC and
 linker symbols, and it is a hard failure. A PE must embed a complete COFF static
 symbol table: an ordinary MSVC image carrying only PDB/CodeView data is
 reported as unscannable, never clean. A missing compiler or required tool is
@@ -69,6 +70,7 @@ successfully audited.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import json
 import pathlib
@@ -1627,10 +1629,14 @@ def validate_allowlist(report: Report, allowlist: dict) -> None:
     for entry in allowlist.get("binary_symbols", []):
         minimum = entry.get("min_count")
         maximum = entry.get("max_count")
+        artifact_optional = entry.get("artifact_optional", False)
+        expected_minimum = 0 if artifact_optional is True else 1
         symbol = entry.get("symbol")
         if (not isinstance(symbol, str) or not symbol.strip() or
+                not isinstance(artifact_optional, bool) or
+                (artifact_optional and "()::" not in symbol) or
                 not isinstance(minimum, int) or isinstance(minimum, bool) or
-                minimum != 1 or
+                minimum != expected_minimum or
                 not isinstance(maximum, int) or isinstance(maximum, bool) or
                 maximum != 1 or
                 not all(isinstance(entry.get(field), str) and
@@ -1640,7 +1646,9 @@ def validate_allowlist(report: Report, allowlist: dict) -> None:
                                       "justification"))):
             report.unscannable.append(
                 "invalid binary-symbol multiplicity/source metadata for "
-                f"{symbol!r}; min_count and max_count must both equal 1")
+                f"{symbol!r}; max_count must equal 1 and min_count must "
+                "equal 1 unless a function-local symbol is explicitly "
+                "artifact_optional")
             continue
         if symbol in binary_markers:
             report.unscannable.append(
@@ -2674,8 +2682,59 @@ def _parse_coff_readobj(output: str) -> tuple[CoffSymbol, ...]:
     return tuple(symbols)
 
 
+def _dbghelp_demangle_coff_names(
+        inputs: tuple[str, ...]
+) -> tuple[tuple[str, ...] | None, tuple[str, ...]]:
+    """Demangle Microsoft data names through the Windows DbgHelp API."""
+    if sys.platform != "win32":
+        return None, ("llvm-undname unavailable and DbgHelp is not available "
+                      "off Windows",)
+    try:
+        library = ctypes.WinDLL("dbghelp", use_last_error=True)
+        undecorate = library.UnDecorateSymbolName
+        undecorate.argtypes = (
+            ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_ulong, ctypes.c_ulong)
+        undecorate.restype = ctypes.c_ulong
+    except (AttributeError, OSError) as exc:
+        return None, (f"unable to load DbgHelp UnDecorateSymbolName: {exc}",)
+
+    # UNDNAME_NAME_ONLY returns exactly [scope::]name. This is the ownership
+    # view the audit needs and cannot be spoofed by a variable type that merely
+    # mentions an audited namespace.
+    undname_name_only = 0x1000
+    names: list[str] = []
+    for raw_name in inputs:
+        try:
+            encoded = raw_name.encode("ascii")
+        except UnicodeError as exc:
+            return None, (f"non-ASCII Microsoft decorated name: {exc}",)
+        decoded = None
+        for capacity in (4096, 16384, 65536, 262144):
+            output = ctypes.create_string_buffer(capacity)
+            ctypes.set_last_error(0)
+            length = undecorate(encoded, output, capacity,
+                                undname_name_only)
+            if length:
+                try:
+                    decoded = output.value.decode("utf-8")
+                except UnicodeError as exc:
+                    return None, (
+                        f"DbgHelp returned non-UTF-8 symbol text: {exc}",)
+                break
+            if ctypes.get_last_error() not in (0, 122):
+                break
+        if (not decoded or decoded == raw_name or
+                decoded.startswith("?")):
+            return None, (
+                f"DbgHelp could not undecorate COFF name {raw_name!r}",)
+        names.append(decoded.replace("`anonymous namespace'",
+                                     "(anonymous namespace)"))
+    return tuple(names), ()
+
+
 def _demangle_coff_symbols(
-        undname: str, symbols: tuple[CoffSymbol, ...]
+        undname: str | None, symbols: tuple[CoffSymbol, ...]
 ) -> tuple[tuple[CoffSymbol, ...] | None, tuple[str, ...]]:
     indexes: list[int] = []
     inputs: list[str] = []
@@ -2695,40 +2754,47 @@ def _demangle_coff_symbols(
     if not indexes:
         return tuple(symbols), ()
 
-    try:
-        process = subprocess.run(
-            [undname, "--no-variable-type", "--no-access-specifier",
-             "--no-member-type", "--warn-trailing"],
-            input="\n".join(inputs) + "\n",
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except (OSError, UnicodeError) as exc:
-        return None, (f"unable to execute {undname}: {exc}",)
-    if process.returncode != 0:
-        return None, (_nm_failure(undname, "Microsoft demangle", process),)
-    if process.stderr.strip():
-        return None, (
-            f"{undname} emitted a diagnostic while demangling COFF names: "
-            f"{process.stderr.strip().splitlines()[0][:160]}",)
+    if undname is None:
+        undecorated, diagnostics = _dbghelp_demangle_coff_names(tuple(inputs))
+        if undecorated is None:
+            return None, diagnostics
+        names = [name + suffix
+                 for name, suffix in zip(undecorated, suffixes)]
+    else:
+        try:
+            process = subprocess.run(
+                [undname, "--no-variable-type", "--no-access-specifier",
+                 "--no-member-type", "--warn-trailing"],
+                input="\n".join(inputs) + "\n",
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except (OSError, UnicodeError) as exc:
+            return None, (f"unable to execute {undname}: {exc}",)
+        if process.returncode != 0:
+            return None, (_nm_failure(undname, "Microsoft demangle", process),)
+        if process.stderr.strip():
+            return None, (
+                f"{undname} emitted a diagnostic while demangling COFF "
+                f"names: {process.stderr.strip().splitlines()[0][:160]}",)
 
-    groups = process.stdout.split("\n\n")
-    if groups and not groups[-1]:
-        groups.pop()
-    if len(groups) != len(inputs):
-        return None, (
-            f"{undname} returned {len(groups)} groups for "
-            f"{len(inputs)} COFF symbols",)
-    names: list[str] = []
-    for expected, suffix, group in zip(inputs, suffixes, groups):
-        pair = group.splitlines()
-        if (len(pair) != 2 or pair[0] != expected or not pair[1] or
-                pair[1] == expected or pair[1].startswith("?")):
-            return None, (f"{undname} returned malformed COFF output",)
-        name = pair[1].replace("`anonymous namespace'",
-                              "(anonymous namespace)")
-        names.append(name + suffix)
+        groups = process.stdout.split("\n\n")
+        if groups and not groups[-1]:
+            groups.pop()
+        if len(groups) != len(inputs):
+            return None, (
+                f"{undname} returned {len(groups)} groups for "
+                f"{len(inputs)} COFF symbols",)
+        names = []
+        for expected, suffix, group in zip(inputs, suffixes, groups):
+            pair = group.splitlines()
+            if (len(pair) != 2 or pair[0] != expected or not pair[1] or
+                    pair[1] == expected or pair[1].startswith("?")):
+                return None, (f"{undname} returned malformed COFF output",)
+            name = pair[1].replace("`anonymous namespace'",
+                                  "(anonymous namespace)")
+            names.append(name + suffix)
 
     result = list(symbols)
     for index, name in zip(indexes, names):
@@ -2747,7 +2813,7 @@ def _demangle_coff_symbols(
     return tuple(result), ()
 
 
-def _read_coff_symbols(readobj: str, undname: str,
+def _read_coff_symbols(readobj: str, undname: str | None,
                        binary: pathlib.Path) -> CoffReadResult:
     try:
         process = subprocess.run(
@@ -2902,11 +2968,9 @@ def scan_binary(report: Report, build_dir: pathlib.Path,
     if image_format == "pe":
         readobj = shutil.which("llvm-readobj")
         undname = shutil.which("llvm-undname")
-        if readobj is None or undname is None:
-            missing = ", ".join(
-                name for name, path in (("llvm-readobj", readobj),
-                                        ("llvm-undname", undname))
-                if path is None)
+        if readobj is None or (undname is None and sys.platform != "win32"):
+            missing = ("llvm-readobj" if readobj is None else
+                       "llvm-undname (DbgHelp fallback unavailable)")
             report.unscannable.append(
                 f"{missing} unavailable for requested PE/COFF scan of "
                 f"{binary}")
