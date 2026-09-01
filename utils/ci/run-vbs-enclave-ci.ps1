@@ -63,11 +63,17 @@ function Resolve-Toolchain {
   $vcBin = Join-Path $vcRoot 'bin\Hostx64\x64'
   $sdkLib = Join-Path $sdkRoot "Lib\$sdkVersion"
   $sdkBin = Join-Path $sdkRoot "Bin\$sdkVersion\x64"
+  $vcEnclave = Join-Path $vcRoot 'lib\x64\enclave'
 
   $paths = [ordered]@{
     cl = Require-File (Join-Path $vcBin 'cl.exe') 'MSVC compiler'
     link = Require-File (Join-Path $vcBin 'link.exe') 'MSVC linker'
     dumpbin = Require-File (Join-Path $vcBin 'dumpbin.exe') 'MSVC dumpbin'
+    enclave_libcmt = Require-File (Join-Path $vcEnclave 'libcmt.lib') 'enclave libcmt.lib'
+    enclave_libvcruntime = Require-File (Join-Path $vcEnclave 'libvcruntime.lib') 'enclave libvcruntime.lib'
+    enclave_ucrt = Require-File (Join-Path $sdkLib 'ucrt_enclave\x64\ucrt.lib') 'enclave ucrt.lib'
+    vertdll = Require-File (Join-Path $sdkLib 'um\x64\vertdll.lib') 'vertdll.lib'
+    bcrypt = Require-File (Join-Path $sdkLib 'um\x64\bcrypt.lib') 'bcrypt.lib'
     onecore = Require-File (Join-Path $sdkLib 'um\x64\onecore.lib') 'onecore.lib'
     veiid = Require-File (Join-Path $sdkBin 'veiid.exe') 'VEIID'
     signtool = Require-File (Join-Path $sdkBin 'signtool.exe') 'SignTool'
@@ -201,44 +207,36 @@ if ($Phase -eq 'Static') {
   $runtimeHost = Join-Path $artifactRoot 'vbs-enclave-host.exe'
   Invoke-Logged $tools.cl @('/nologo', '/std:c++17', (Join-Path $fixtureRoot 'host.cpp'), "/Fe$runtimeHost", '/link', '/INCREMENTAL:NO', $tools.onecore) (Join-Path $logRoot 'build-host.log') | Out-Null
 
-  # Keep the Microsoft-link and integrated-link comparisons on the exact same
-  # runtime bits. Host toolchain paths are still recorded above for diagnosis,
-  # but must not change the reference image's object selection or CFG table.
-  $libraries = @(
+  $hostLibraries = @($tools.vertdll, $tools.bcrypt, $tools.enclave_libcmt,
+                     $tools.enclave_libvcruntime, $tools.enclave_ucrt)
+  $bundledX64Libraries = @(
     $bundledRuntime.x64_vertdll,
     $bundledRuntime.x64_bcrypt,
     $bundledRuntime.x64_enclave_libcmt,
     $bundledRuntime.x64_enclave_libvcruntime,
     $bundledRuntime.x64_enclave_ucrt
   )
-  $neverCObjectExports = @(
-    '/EXPORT:GuardedTarget',
-    '/EXPORT:GuardedIndirectCall',
-    '/EXPORT:GuardedExercise',
-    '/EXPORT:LegacyTarget',
-    '/EXPORT:LegacyExercise',
-    '/EXPORT:LegacyAddressTaken,DATA'
-  )
   $msLinkFlags = @('/NOLOGO', '/DLL', '/INCREMENTAL:NO', '/NODEFAULTLIB',
                    '/ENCLAVE', '/INTEGRITYCHECK', '/GUARD:MIXED',
-                   '/DYNAMICBASE', '/MACHINE:X64')
+                   '/DYNAMICBASE', '/MACHINE:X64', '/WX:4229')
   $outputs = [ordered]@{
-    'msvc-msvc.dll' = @(
-      (Join-Path $msvcObjectRoot 'enclave.cpp.obj'),
-      (Join-Path $msvcObjectRoot 'guarded.cpp.obj'), $legacyMsvc)
-    'neverc-msvc.dll' = @(
-      (Join-Path $nevercObjectRoot 'enclave.cpp.obj'),
-      (Join-Path $nevercObjectRoot 'guarded.cpp.obj'), $legacyNeverC)
+    'msvc-msvc.dll' = [ordered]@{
+      Objects = @((Join-Path $msvcObjectRoot 'enclave.cpp.obj'),
+                  (Join-Path $msvcObjectRoot 'guarded.cpp.obj'), $legacyMsvc)
+      Libraries = $hostLibraries
+    }
+    'neverc-msvc.dll' = [ordered]@{
+      Objects = @((Join-Path $nevercObjectRoot 'enclave.cpp.obj'),
+                  (Join-Path $nevercObjectRoot 'guarded.cpp.obj'), $legacyNeverC)
+      Libraries = $bundledX64Libraries
+    }
   }
   foreach ($entry in $outputs.GetEnumerator()) {
     $output = Join-Path $unsignedRoot $entry.Key
-    $arguments = @($msLinkFlags) + @("/OUT:$output", "/IMPLIB:$output.lib") + $entry.Value + $libraries
-    # NeverC's COFF directives use the integrated linker's canonical spelling;
-    # pass the same source-level exports explicitly to link.exe so both sides
-    # compare identical semantics rather than parser dialects.
-    if ($entry.Key -eq 'neverc-msvc.dll') {
-      $arguments += $neverCObjectExports
-    }
+    $arguments = @($msLinkFlags)
+    $arguments += @("/OUT:$output", "/IMPLIB:$output.lib")
+    $arguments += @($entry.Value['Objects'])
+    $arguments += @($entry.Value['Libraries'])
     Invoke-Logged $tools.link $arguments (Join-Path $logRoot ("link-{0}.log" -f $entry.Key)) | Out-Null
   }
 
@@ -288,7 +286,8 @@ if ($Phase -eq 'Static') {
 
   # Static semantics are checked on the untouched images. Only then do we make
   # runtime copies and let VEIID mutate them. Signing happens last in Runtime.
-  foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll')) {
+  foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll',
+                      'neverc-neverc-arm64.dll')) {
     $runtimeImage = Join-Path $runtimeRoot $name
     Copy-Item -LiteralPath (Join-Path $unsignedRoot $name) -Destination $runtimeImage -Force
     Invoke-Logged $tools.veiid @($runtimeImage) (Join-Path $logRoot "veiid-$name.log") | Out-Null

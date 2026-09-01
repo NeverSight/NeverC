@@ -4,7 +4,10 @@ on:
   push:
     branches: [dev]
     paths:
+      - llvm/lib/CodeGen/TargetLoweringObjectFileImpl.cpp
+      - llvm/lib/IR/Mangler.cpp
       - neverc/include/neverc/Linker/**
+      - neverc/lib/Emit/Target/**
       - neverc/lib/Invoke/ToolChains/MSVC.cpp
       - neverc/lib/Invoke/ToolChains/MSVC.h
       - neverc/lib/Linker/**
@@ -15,7 +18,10 @@ on:
       - .github/workflows/vbs-enclave.yml
   pull_request:
     paths:
+      - llvm/lib/CodeGen/TargetLoweringObjectFileImpl.cpp
+      - llvm/lib/IR/Mangler.cpp
       - neverc/include/neverc/Linker/**
+      - neverc/lib/Emit/Target/**
       - neverc/lib/Invoke/ToolChains/MSVC.cpp
       - neverc/lib/Invoke/ToolChains/MSVC.h
       - neverc/lib/Linker/**
@@ -101,7 +107,7 @@ jobs:
         run: |
           & .\build-vbs\bin\neverc-plugin-link-tests.exe '--gtest_filter=COFFEnclaveLinkerTest.*'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & .\build-vbs\bin\neverc-tests.exe '--gtest_filter=DriverTest.WindowsVbsEnclaveUsesBundledRuntimeByDefault:DriverTest.WindowsVbsEnclaveHonorsExplicitVCToolsDir:DriverTest.WindowsVbsEnclaveHonorsExplicitWinSysRoot:DriverTest.WindowsVbsEnclaveDoesNotSelectEnclaveLibrariesImplicitly:DriverTest.WindowsVbsEnclaveLinksWithBundledRuntime'
+          & .\build-vbs\bin\neverc-tests.exe '--gtest_filter=DriverTest.WindowsVbsEnclaveUsesBundledRuntimeByDefault:DriverTest.WindowsVbsEnclaveHonorsExplicitVCToolsDir:DriverTest.WindowsVbsEnclaveHonorsExplicitWinSysRoot:DriverTest.WindowsVbsEnclaveDoesNotSelectEnclaveLibrariesImplicitly:DriverTest.WindowsVbsEnclaveLinksWithBundledRuntime:LTOTest.ParallelCodegenEmitsMsvcLinkerDirectivesExactlyOnce'
 
       - name: Build and compare x64 plus bundled ARM64 images
         shell: pwsh

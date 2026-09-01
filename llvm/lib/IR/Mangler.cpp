@@ -191,7 +191,10 @@ void llvm::emitLinkerFlagsForGlobalCOFF(raw_ostream &OS, const GlobalValue *GV,
   if (!GV->hasDLLExportStorageClass() || GV->isDeclaration())
     return;
 
-  OS << " --export=";
+  if (TT.isWindowsMSVCEnvironment() || TT.isUEFI())
+    OS << " /EXPORT:";
+  else
+    OS << " --export=";
 
   bool NeedQuotes = GV->hasName() && !canBeUnquotedInDirective(GV->getName());
   if (NeedQuotes)
@@ -206,7 +209,10 @@ void llvm::emitLinkerFlagsForGlobalCOFF(raw_ostream &OS, const GlobalValue *GV,
 
 void llvm::emitLinkerFlagsForUsedCOFF(raw_ostream &OS, const GlobalValue *GV,
                                       const Triple &T, Mangler &M) {
-  OS << " --include=";
+  if (T.isWindowsMSVCEnvironment() || T.isUEFI())
+    OS << " /INCLUDE:";
+  else
+    OS << " --include=";
   bool NeedQuotes = GV->hasName() && !canBeUnquotedInDirective(GV->getName());
   if (NeedQuotes)
     OS << "\"";

@@ -1606,7 +1606,7 @@ void TargetLoweringObjectFileCOFF::emitLinkerDirectives(MCStreamer &Streamer,
     }
   }
 
-  // Emit --export= flags for each exported global as necessary.
+  // Emit target-appropriate export flags for each exported global as needed.
   std::string Flags;
   for (const GlobalValue &GV : M.global_values()) {
     raw_string_ostream OS(Flags);
@@ -1620,7 +1620,7 @@ void TargetLoweringObjectFileCOFF::emitLinkerDirectives(MCStreamer &Streamer,
     Flags.clear();
   }
 
-  // Emit --include= flags for each used global as necessary.
+  // Emit target-appropriate include flags for each used global as needed.
   if (const auto *LU = M.getNamedGlobal("llvm.used")) {
     assert(LU->hasInitializer() && "expected llvm.used to have an initializer");
     assert(isa<ArrayType>(LU->getValueType()) &&
@@ -1630,7 +1630,7 @@ void TargetLoweringObjectFileCOFF::emitLinkerDirectives(MCStreamer &Streamer,
         const auto *GV = cast<GlobalValue>(Op->stripPointerCasts());
         // Global symbols with internal or private linkage are not visible to
         // the linker, and thus would cause an error when the linker tried to
-        // preserve the symbol due to the `--include=` directive.
+        // preserve the symbol due to the include directive.
         if (GV->hasLocalLinkage())
           continue;
 
