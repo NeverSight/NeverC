@@ -55,7 +55,11 @@ constexpr size_t DataDirectoryOffset = 112;
 constexpr size_t LoadConfigGuardTableOffset = 0x80;
 constexpr size_t LoadConfigGuardCountOffset = 0x88;
 constexpr size_t LoadConfigGuardFlagsOffset = 0x90;
+constexpr size_t LoadConfigGuardIATTableOffset = 0xa0;
+constexpr size_t LoadConfigGuardIATCountOffset = 0xa8;
 constexpr size_t LoadConfigEnclavePointerOffset = 0xf8;
+constexpr size_t LoadConfigGuardEHContTableOffset = 0x108;
+constexpr size_t LoadConfigGuardEHContCountOffset = 0x110;
 constexpr size_t EnclaveConfigNumberOfImportsOffset = 12;
 constexpr size_t EnclaveConfigImportListOffset = 16;
 constexpr size_t EnclaveConfigImportEntrySizeOffset = 20;
@@ -485,7 +489,9 @@ private:
 std::string baseAssembly(llvm::StringRef ReturnInstruction = "retq",
                          llvm::StringRef LoadConfigSize = "0x100",
                          llvm::StringRef ConfigDefinition =
-                             ".globl __enclave_config\n__enclave_config:\n") {
+                             ".globl __enclave_config\n__enclave_config:\n",
+                         llvm::StringRef LoadConfigGuardTail = "  .zero 0x60\n",
+                         llvm::StringRef LoadConfigExtension = "") {
   std::string Assembly = ".text\n"
                          ".def enclave_entry; .scl 2; .type 32; .endef\n"
                          ".globl enclave_entry\n"
@@ -498,11 +504,13 @@ std::string baseAssembly(llvm::StringRef ReturnInstruction = "retq",
               "  .long 1\n  .long 1\n.p2align 3\n"
               ".globl _load_config_used\n_load_config_used:\n  .long ";
   Assembly += LoadConfigSize.str();
-  Assembly +=
-      "\n  .zero 0x7c\n  .quad __guard_fids_table\n"
-      "  .quad __guard_fids_count\n  .quad __guard_flags\n  .zero 0x60\n"
-      "  .quad __enclave_config\n.globl enclave_entry_address\n"
-      "enclave_entry_address:\n  .quad enclave_entry\n";
+  Assembly += "\n  .zero 0x7c\n  .quad __guard_fids_table\n"
+              "  .quad __guard_fids_count\n  .quad __guard_flags\n";
+  Assembly += LoadConfigGuardTail.str();
+  Assembly += "  .quad __enclave_config\n";
+  Assembly += LoadConfigExtension.str();
+  Assembly += ".globl enclave_entry_address\n"
+              "enclave_entry_address:\n  .quad enclave_entry\n";
   return Assembly;
 }
 
@@ -526,14 +534,18 @@ protected:
     return linkCOFF(Options, Inputs);
   }
 
-  InMemoryInput baseObject(llvm::StringRef Triple = X64,
-                           llvm::StringRef ReturnInstruction = "retq",
-                           llvm::StringRef LoadConfigSize = "0x100",
-                           llvm::StringRef ConfigDefinition =
-                               ".globl __enclave_config\n__enclave_config:\n") {
-    return objectFor(
-        "/virtual/enclave-base.obj", Triple,
-        baseAssembly(ReturnInstruction, LoadConfigSize, ConfigDefinition));
+  InMemoryInput
+  baseObject(llvm::StringRef Triple = X64,
+             llvm::StringRef ReturnInstruction = "retq",
+             llvm::StringRef LoadConfigSize = "0x100",
+             llvm::StringRef ConfigDefinition =
+                 ".globl __enclave_config\n__enclave_config:\n",
+             llvm::StringRef LoadConfigGuardTail = "  .zero 0x60\n",
+             llvm::StringRef LoadConfigExtension = "") {
+    return objectFor("/virtual/enclave-base.obj", Triple,
+                     baseAssembly(ReturnInstruction, LoadConfigSize,
+                                  ConfigDefinition, LoadConfigGuardTail,
+                                  LoadConfigExtension));
   }
 
   PEImage inspect(const LinkResult &Result) {
@@ -568,6 +580,9 @@ TEST_F(COFFEnclaveLinkerTest, GuardMixedParserOrder) {
       {"mixed,nolongjmp", GuardMixedFlags},
       {"mixed,ehcont", GuardMixedFlags | GuardEHContinuationTablePresent},
       {"ehcont,mixed", GuardMixedFlags | GuardEHContinuationTablePresent},
+      {"mixed,longjmp", GuardCFInstrumented | GuardCFFunctionTablePresent |
+                            GuardCFLongJumpTablePresent},
+      {"longjmp,mixed", GuardMixedFlags},
   };
   for (auto [Guard, ExpectedFlags] : Cases) {
     SCOPED_TRACE(Guard.str());
@@ -615,6 +630,134 @@ TEST_F(COFFEnclaveLinkerTest, MixedIncludesGuardedAndUnguardedTargets) {
   }
   EXPECT_TRUE(std::is_sorted(Entries.begin(), Entries.end()));
   EXPECT_EQ(std::adjacent_find(Entries.begin(), Entries.end()), Entries.end());
+}
+
+TEST_F(COFFEnclaveLinkerTest, MixedUsesFiveByteAddressTakenIATEntries) {
+  struct Case {
+    llvm::StringRef Triple;
+    llvm::StringRef ReturnInstruction;
+    llvm::StringRef MachineOption;
+  };
+  const Case Cases[] = {
+      {X64, "retq", "--machine=x64"},
+      {Arm64, "ret", "--machine=arm64"},
+  };
+  constexpr llvm::StringLiteral GuardTail = "  .zero 8\n"
+                                            "  .quad __guard_iat_table\n"
+                                            "  .quad __guard_iat_count\n"
+                                            "  .zero 0x48\n";
+  constexpr llvm::StringLiteral GIAT =
+      ".def @feat.00; .scl 3; .type 0; .endef\n"
+      ".globl @feat.00\n"
+      ".set @feat.00, 0x800\n"
+      ".section .idata$5,\"dr\"\n"
+      ".globl __imp_guarded_import\n"
+      "__imp_guarded_import:\n  .quad 0\n"
+      ".globl __imp_guarded_import_two\n"
+      "__imp_guarded_import_two:\n  .quad 0\n"
+      ".section .giats$y,\"dr\"\n"
+      "  .symidx __imp_guarded_import\n"
+      "  .symidx __imp_guarded_import_two\n";
+
+  for (const Case &C : Cases) {
+    SCOPED_TRACE(C.Triple.str());
+    const InMemoryInput Main =
+        baseObject(C.Triple, C.ReturnInstruction, "0x100",
+                   ".globl __enclave_config\n__enclave_config:\n", GuardTail);
+    const InMemoryInput AddressTakenIAT =
+        objectFor("/virtual/address-taken-iat.obj", C.Triple, GIAT);
+    const LinkResult Result =
+        link({C.MachineOption, "--guard=mixed"}, {Main, AddressTakenIAT});
+    PEImage Image = inspect(Result);
+
+    ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardIATTableOffset, 8));
+    ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardIATCountOffset, 8));
+    const uint64_t TableVA = *Image.loadConfig64(LoadConfigGuardIATTableOffset);
+    const uint64_t Count = *Image.loadConfig64(LoadConfigGuardIATCountOffset);
+    ASSERT_EQ(Count, 2U);
+    ASSERT_GE(TableVA, Image.imageBase());
+    auto TableOffset = Image.rvaToOffset(
+        static_cast<uint32_t>(TableVA - Image.imageBase()), Count * 5);
+    ASSERT_TRUE(TableOffset);
+    std::vector<uint32_t> Entries;
+    for (uint64_t I = 0; I != Count; ++I) {
+      Entries.push_back(
+          llvm::support::endian::read32le(reinterpret_cast<const uint8_t *>(
+              Result.Image.data() + *TableOffset + I * 5)));
+      EXPECT_EQ(static_cast<uint8_t>(Result.Image[*TableOffset + I * 5 + 4]),
+                0U);
+    }
+    EXPECT_TRUE(std::is_sorted(Entries.begin(), Entries.end()));
+    EXPECT_EQ(std::adjacent_find(Entries.begin(), Entries.end()),
+              Entries.end());
+    EXPECT_TRUE(Image.hasBaseRelocation(Image.loadConfigRVA() +
+                                            LoadConfigGuardIATTableOffset,
+                                        BaseRelocationDir64));
+  }
+}
+
+TEST_F(COFFEnclaveLinkerTest, MixedUsesFiveByteEHContinuationEntries) {
+  struct Case {
+    llvm::StringRef Triple;
+    llvm::StringRef ReturnInstructions;
+    llvm::StringRef MachineOption;
+  };
+  const Case Cases[] = {
+      {X64, "retq", "--machine=x64"},
+      {Arm64, "ret", "--machine=arm64"},
+  };
+  constexpr llvm::StringLiteral LoadConfigExtension =
+      "  .quad 0\n"
+      "  .quad __guard_eh_cont_table\n"
+      "  .quad __guard_eh_cont_count\n";
+
+  for (const Case &C : Cases) {
+    SCOPED_TRACE(C.Triple.str());
+    const InMemoryInput Main =
+        baseObject(C.Triple, C.ReturnInstructions, "0x118",
+                   ".globl __enclave_config\n__enclave_config:\n",
+                   "  .zero 0x60\n", LoadConfigExtension);
+    std::string EHAssembly = ".def @feat.00; .scl 3; .type 0; .endef\n"
+                             ".globl @feat.00\n.set @feat.00, 0x4800\n"
+                             ".text\n"
+                             ".def eh_one; .scl 2; .type 32; .endef\n"
+                             ".globl eh_one\neh_one:\n  ";
+    EHAssembly += C.ReturnInstructions.str();
+    EHAssembly += "\n.def eh_two; .scl 2; .type 32; .endef\n"
+                  ".globl eh_two\neh_two:\n  ";
+    EHAssembly += C.ReturnInstructions.str();
+    EHAssembly += "\n.section .gehcont$y,\"dr\"\n"
+                  "  .symidx eh_one\n"
+                  "  .symidx eh_two\n";
+    const InMemoryInput EHCont =
+        objectFor("/virtual/eh-continuations.obj", C.Triple, EHAssembly);
+    const LinkResult Result =
+        link({C.MachineOption, "--guard=mixed,ehcont"}, {Main, EHCont});
+    PEImage Image = inspect(Result);
+
+    ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardEHContTableOffset, 8));
+    ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardEHContCountOffset, 8));
+    const uint64_t TableVA =
+        *Image.loadConfig64(LoadConfigGuardEHContTableOffset);
+    const uint64_t Count =
+        *Image.loadConfig64(LoadConfigGuardEHContCountOffset);
+    ASSERT_EQ(Count, 2U);
+    ASSERT_GE(TableVA, Image.imageBase());
+    auto TableOffset = Image.rvaToOffset(
+        static_cast<uint32_t>(TableVA - Image.imageBase()), Count * 5);
+    ASSERT_TRUE(TableOffset);
+    std::vector<uint32_t> Entries;
+    for (uint64_t I = 0; I != Count; ++I) {
+      Entries.push_back(
+          llvm::support::endian::read32le(reinterpret_cast<const uint8_t *>(
+              Result.Image.data() + *TableOffset + I * 5)));
+      EXPECT_EQ(static_cast<uint8_t>(Result.Image[*TableOffset + I * 5 + 4]),
+                0U);
+    }
+    EXPECT_TRUE(std::is_sorted(Entries.begin(), Entries.end()));
+    EXPECT_EQ(std::adjacent_find(Entries.begin(), Entries.end()),
+              Entries.end());
+  }
 }
 
 TEST_F(COFFEnclaveLinkerTest, MixedIgnoresUnwindMetadataRelocations) {

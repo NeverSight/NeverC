@@ -83,6 +83,9 @@ one byte of metadata, which is zero for current ordinary targets. Its
 `GuardFlags` carry the CFG, protected delay-IAT, and entry-size bits. Legacy
 objects contribute address-taken targets by conservatively scanning relocations
 while excluding unwind metadata.
+When `/GUARD:MIXED` is combined with `/GUARD:EHCONT`, the EH continuation
+target table also uses five-byte entries: a four-byte RVA followed by a zero
+metadata byte.
 
 An explicit incremental-link request is incompatible with `/ENCLAVE` and is
 rejected. The last effective `/INCREMENTAL` option is used, including options

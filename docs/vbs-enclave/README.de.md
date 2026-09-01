@@ -51,6 +51,7 @@ Ein Enklaven-Link muss beide folgenden Image-Datendefinitionen bereitstellen:
 NeverC hält `__enclave_config` beim Dead-Stripping am Leben, extrahiert es bei Bedarf aus einem Archiv und prüft, ob der endgültig relokierte load-config-Zeiger der virtuellen Adresse dieses Konfigurationsobjekts entspricht. Eine fehlende, absolute, verworfene, abgeschnittene oder falsch relokierte Definition ist ein Linkfehler.
 
 `/GUARD:MIXED` aktiviert die CFG-Ausgabe für eine Mischung aus geschützten und älteren Objektdateien. Es erzeugt fünf Byte große GFID- und GIAT-Einträge: eine vier Byte große RVA gefolgt von einem Byte Metadaten; bei aktuellen gewöhnlichen Zielen sind diese Metadaten null. Die `GuardFlags` enthalten die Bits für CFG, geschütztes Delay-IAT und die Eintragsgröße. Ältere Objekte liefern durch konservatives Scannen von Relokationen Ziele mit übernommener Adresse, wobei Unwind-Metadaten ausgeschlossen werden.
+Wenn `/GUARD:MIXED` mit `/GUARD:EHCONT` kombiniert wird, verwendet die EH-Fortsetzungszieltabelle ebenfalls Fünf-Byte-Einträge: eine vier Byte große RVA gefolgt von einem Null-Metadatenbyte.
 
 Eine ausdrückliche Anforderung für inkrementelles Linken ist mit `/ENCLAVE` inkompatibel und wird abgewiesen. Die letzte wirksame `/INCREMENTAL`-Option wird verwendet, einschließlich Optionen aus Objektdatei-Direktiven.
 

@@ -29,20 +29,39 @@ EXPORT_DIRECTORY = 0
 LOAD_CONFIG_DIRECTORY = 10
 BASE_RELOCATION_DIRECTORY = 5
 CERTIFICATE_DIRECTORY = 4
+IAT_DIRECTORY = 12
+FID_SUPPRESSED = 0x01
+LOAD_CONFIG_GIAT_TABLE_OFFSET = 0xA0
+LOAD_CONFIG_GIAT_COUNT_OFFSET = 0xA8
 LOAD_CONFIG_ENCLAVE_POINTER_OFFSET = 0xF8
 LOAD_CONFIG_REQUIRED_SIZE = 0x100
 ENCLAVE_CONFIG_SIZE = 80
 ENCLAVE_IMPORT_SIZE = 80
-ENCLAVE_IMPORT_MATCH_MAX = 4
 EXPECTED_FAMILY_ID = bytes.fromhex("912d7418b6534c2a8ea45739c106fd22")
 EXPECTED_IMAGE_ID = bytes.fromhex("37a8c5406fd149bb9a0ee31572bc489d")
-EXPECTED_EXPORT_KINDS = {
-    "GuardedExercise": "function",
-    "GuardedIndirectCall": "function",
-    "GuardedTarget": "function",
-    "LegacyAddressTaken": "data",
-    "LegacyExercise": "function",
-    "LegacyTarget": "function",
+EXPECTED_ENCLAVE_IMPORT_NAMES = (
+    "ucrtbase_enclave.dll",
+    "vertdll.dll",
+)
+EXPECTED_EXPORTS = {
+    "GuardedExercise": {
+        "kind": "function", "ordinal": 1, "gfid_covered": False,
+    },
+    "GuardedIndirectCall": {
+        "kind": "function", "ordinal": 2, "gfid_covered": False,
+    },
+    "GuardedTarget": {
+        "kind": "function", "ordinal": 3, "gfid_covered": True,
+    },
+    "LegacyAddressTaken": {
+        "kind": "data", "ordinal": 4, "gfid_covered": False,
+    },
+    "LegacyExercise": {
+        "kind": "function", "ordinal": 5, "gfid_covered": False,
+    },
+    "LegacyTarget": {
+        "kind": "function", "ordinal": 6, "gfid_covered": True,
+    },
 }
 
 
@@ -309,6 +328,61 @@ class PEImage:
                                         self.label)
             gfid_flags.append(metadata[0])
 
+        effective_gfids = {
+            gfid for gfid, flags in zip(gfids, gfid_flags)
+            if not flags & FID_SUPPRESSED
+        }
+
+        giat_table_va = self.u64(
+            load_offset + LOAD_CONFIG_GIAT_TABLE_OFFSET,
+            "GuardAddressTakenIatEntryTable")
+        giat_count = self.u64(
+            load_offset + LOAD_CONFIG_GIAT_COUNT_OFFSET,
+            "GuardAddressTakenIatEntryCount")
+        if bool(giat_table_va) != bool(giat_count):
+            raise VerificationError(
+                "%s: GIAT table pointer and count are inconsistent" % self.label)
+        giat_table_rva = 0
+        giats = []
+        giat_flags = []
+        if giat_count:
+            iat_rva, iat_size = self.directory(IAT_DIRECTORY)
+            if not iat_rva or not iat_size:
+                raise VerificationError(
+                    "%s: nonempty GIAT lacks an IAT data directory" % self.label)
+            if iat_rva & 7 or iat_size & 7:
+                raise VerificationError(
+                    "%s: PE32+ IAT directory is not 8-byte aligned" % self.label)
+            self.rva_to_offset(iat_rva, iat_size, "IAT directory")
+            if iat_rva > 0xFFFFFFFF - iat_size:
+                raise VerificationError("%s: IAT directory range overflows" %
+                                        self.label)
+            iat_end = iat_rva + iat_size
+            giat_bytes = _checked_product(giat_count, guard_stride,
+                                          len(self.data), "GIAT")
+            giat_table_rva = self.va_to_rva(
+                giat_table_va, "GuardAddressTakenIatEntryTable")
+            giat_offset = self.rva_to_offset(giat_table_rva, giat_bytes,
+                                             "GIAT")
+            for index in range(giat_count):
+                entry_offset = giat_offset + index * guard_stride
+                entry_rva = self.u32(entry_offset, "GIAT entry")
+                if (entry_rva & 7 or entry_rva < iat_rva or
+                        entry_rva > iat_end - 8):
+                    raise VerificationError(
+                        "%s: GIAT entry 0x%x is not an aligned PE32+ IAT slot" %
+                        (self.label, entry_rva))
+                if giats and entry_rva <= giats[-1]:
+                    raise VerificationError(
+                        "%s: GIAT is not strictly sorted" % self.label)
+                metadata = self.data[entry_offset + 4:
+                                     entry_offset + guard_stride]
+                if any(metadata):
+                    raise VerificationError(
+                        "%s: GIAT entry has nonzero metadata" % self.label)
+                giats.append(entry_rva)
+                giat_flags.append(list(metadata))
+
         export_rva, export_size = self.directory(EXPORT_DIRECTORY)
         if not export_rva or export_size < 40:
             raise VerificationError("%s: missing or short export directory" %
@@ -325,8 +399,15 @@ class PEImage:
         names_rva = self.u32(export_offset + 32, "export AddressOfNames")
         ordinals_rva = self.u32(export_offset + 36,
                                 "export AddressOfNameOrdinals")
-        if not function_count or not name_count or name_count > function_count:
-            raise VerificationError("%s: invalid export counts" % self.label)
+        expected_export_count = len(EXPECTED_EXPORTS)
+        if export_base != 1:
+            raise VerificationError("%s: export ordinal Base is not 1" %
+                                    self.label)
+        if (function_count != expected_export_count or
+                name_count != expected_export_count):
+            raise VerificationError(
+                "%s: export function/name counts differ from fixture contract" %
+                self.label)
         if not functions_rva or not names_rva or not ordinals_rva:
             raise VerificationError("%s: missing export address table" % self.label)
         function_bytes = _checked_product(function_count, 4, len(self.data),
@@ -342,7 +423,6 @@ class PEImage:
         ordinals_offset = self.rva_to_offset(ordinals_rva, ordinal_bytes,
                                              "export ordinal table")
         export_end = export_rva + export_size
-        gfid_set = set(gfids)
         export_targets = []
         for index in range(function_count):
             target_rva = self.u32(functions_offset + index * 4,
@@ -372,11 +452,19 @@ class PEImage:
                     executable = bool(containing[0]["characteristics"] &
                                       0x20000000)
                     target["kind"] = "function" if executable else "data"
-                    target["gfid_covered"] = target_rva in gfid_set
+                    target["gfid_covered"] = target_rva in effective_gfids
             export_targets.append(target)
+        concrete_export_targets = [
+            target["target_rva"] for target in export_targets
+            if target["target_rva"] and target["kind"] != "forwarder"
+        ]
+        if len(concrete_export_targets) != len(set(concrete_export_targets)):
+            raise VerificationError("%s: exports alias one target RVA" %
+                                    self.label)
 
         exports = []
         seen_export_names = set()
+        seen_ordinal_indices = set()
         for index in range(name_count):
             name_rva = self.u32(names_offset + index * 4,
                                 "export name pointer")
@@ -390,14 +478,27 @@ class PEImage:
             if ordinal_index >= function_count:
                 raise VerificationError("%s: export name ordinal is out of range" %
                                         self.label)
+            if ordinal_index in seen_ordinal_indices:
+                raise VerificationError("%s: export names alias one ordinal" %
+                                        self.label)
+            seen_ordinal_indices.add(ordinal_index)
             target = export_targets[ordinal_index]
             if target["kind"] == "absent":
                 raise VerificationError("%s: named export %s has no target" %
                                         (self.label, name))
             exports.append({"name": name, **target})
-        actual_export_kinds = {entry["name"]: entry["kind"]
-                               for entry in exports}
-        if actual_export_kinds != EXPECTED_EXPORT_KINDS:
+        if seen_ordinal_indices != set(range(function_count)):
+            raise VerificationError(
+                "%s: export address table contains unnamed ordinals" % self.label)
+        actual_exports = {
+            entry["name"]: {
+                "kind": entry["kind"],
+                "ordinal": entry["ordinal"],
+                "gfid_covered": entry["gfid_covered"],
+            }
+            for entry in exports
+        }
+        if actual_exports != EXPECTED_EXPORTS:
             raise VerificationError("%s: exports differ from fixture contract" %
                                     self.label)
         export_dll_name = self.c_string_at_rva(export_name_rva,
@@ -423,49 +524,51 @@ class PEImage:
         import_list = self.u32(enclave_offset + 16, "enclave ImportList")
         import_entry_size = self.u32(enclave_offset + 20,
                                      "enclave ImportEntrySize")
+        if import_count != len(EXPECTED_ENCLAVE_IMPORT_NAMES):
+            raise VerificationError(
+                "%s: enclave import count differs from fixture contract" %
+                self.label)
+        if not import_list or import_entry_size != ENCLAVE_IMPORT_SIZE:
+            raise VerificationError(
+                "%s: enclave import list does not use two 80-byte descriptors" %
+                self.label)
         imports = []
-        if import_count:
-            if not import_list or not import_entry_size:
-                raise VerificationError("%s: invalid enclave import list" % self.label)
-            if import_entry_size != ENCLAVE_IMPORT_SIZE:
-                raise VerificationError("%s: enclave import entry size is %d, expected %d" %
-                                        (self.label, import_entry_size,
-                                         ENCLAVE_IMPORT_SIZE))
-            import_bytes = _checked_product(import_count, import_entry_size,
-                                            len(self.data), "enclave import list")
-            import_offset = self.rva_to_offset(import_list, import_bytes,
-                                               "enclave import list")
-            for index in range(import_count):
-                entry_offset = import_offset + index * ENCLAVE_IMPORT_SIZE
-                match_type = self.u32(entry_offset, "enclave import MatchType")
-                if match_type > ENCLAVE_IMPORT_MATCH_MAX:
-                    raise VerificationError("%s: invalid enclave import MatchType %d" %
-                                            (self.label, match_type))
-                minimum_security_version = self.u32(
-                    entry_offset + 4, "enclave import MinimumSecurityVersion")
-                unique_or_author_id = self.data[entry_offset + 8:entry_offset + 40]
-                family_id = self.data[entry_offset + 40:entry_offset + 56]
-                image_id = self.data[entry_offset + 56:entry_offset + 72]
-                import_name_rva = self.u32(entry_offset + 72,
-                                           "enclave import ImportName")
-                reserved = self.u32(entry_offset + 76, "enclave import Reserved")
-                if reserved:
-                    raise VerificationError("%s: enclave import Reserved is nonzero" %
-                                            self.label)
-                imports.append({
-                    "match_type": match_type,
-                    "minimum_security_version": minimum_security_version,
-                    "unique_or_author_id": unique_or_author_id.hex(),
-                    "family_id": family_id.hex(),
-                    "image_id": image_id.hex(),
-                    "import_name_rva": import_name_rva,
-                    "name": self.c_string_at_rva(import_name_rva,
-                                                  "enclave import name"),
-                    "reserved": reserved,
-                })
-        elif import_list or import_entry_size:
-            raise VerificationError("%s: zero imports have nonzero list metadata" %
-                                    self.label)
+        import_bytes = _checked_product(import_count, import_entry_size,
+                                        len(self.data), "enclave import list")
+        import_offset = self.rva_to_offset(import_list, import_bytes,
+                                           "enclave import list")
+        for index in range(import_count):
+            entry_offset = import_offset + index * ENCLAVE_IMPORT_SIZE
+            match_type = self.u32(entry_offset, "enclave import MatchType")
+            minimum_security_version = self.u32(
+                entry_offset + 4, "enclave import MinimumSecurityVersion")
+            unique_or_author_id = self.data[entry_offset + 8:entry_offset + 40]
+            family_id = self.data[entry_offset + 40:entry_offset + 56]
+            image_id = self.data[entry_offset + 56:entry_offset + 72]
+            import_name_rva = self.u32(entry_offset + 72,
+                                       "enclave import ImportName")
+            reserved = self.u32(entry_offset + 76, "enclave import Reserved")
+            if (match_type or minimum_security_version or
+                    any(unique_or_author_id) or any(family_id) or
+                    any(image_id) or reserved):
+                raise VerificationError(
+                    "%s: enclave import identity fields are not all zero" %
+                    self.label)
+            imports.append({
+                "match_type": match_type,
+                "minimum_security_version": minimum_security_version,
+                "unique_or_author_id": unique_or_author_id.hex(),
+                "family_id": family_id.hex(),
+                "image_id": image_id.hex(),
+                "import_name_rva": import_name_rva,
+                "name": self.c_string_at_rva(import_name_rva,
+                                              "enclave import name"),
+                "reserved": reserved,
+            })
+        if tuple(entry["name"] for entry in imports) != EXPECTED_ENCLAVE_IMPORT_NAMES:
+            raise VerificationError(
+                "%s: enclave import names/order differ from fixture contract" %
+                self.label)
         family_id = self.data[enclave_offset + 24:enclave_offset + 40]
         image_id = self.data[enclave_offset + 40:enclave_offset + 56]
         image_version = self.u32(enclave_offset + 56, "enclave ImageVersion")
@@ -514,6 +617,11 @@ class PEImage:
         if (enclave_pointer_rva, DIR64) not in relocations:
             raise VerificationError("%s: enclave pointer lacks a DIR64 base relocation" %
                                     self.label)
+        giat_pointer_rva = load_rva + LOAD_CONFIG_GIAT_TABLE_OFFSET
+        if giat_count and (giat_pointer_rva, DIR64) not in relocations:
+            raise VerificationError(
+                "%s: nonempty GIAT pointer lacks a DIR64 base relocation" %
+                self.label)
 
         return {
             "path": self.label,
@@ -552,6 +660,13 @@ class PEImage:
             },
             "gfids": gfids,
             "gfid_flags": gfid_flags,
+            "giat": {
+                "table_rva": giat_table_rva,
+                "entry_size": guard_stride,
+                "count": giat_count,
+                "entries": giats,
+                "metadata": giat_flags,
+            },
             "exports": exports,
             "export_dll_name": export_dll_name,
             "enclave_pointer_dir64_relocation": True,
@@ -576,8 +691,17 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
     def export_gfid_coverage(image: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         return {entry["name"]: {
             "kind": entry["kind"],
+            "ordinal": entry["ordinal"],
             "gfid_covered": entry["gfid_covered"],
         } for entry in image["exports"]}
+
+    def comparable_giat(image: Dict[str, Any]) -> Dict[str, Any]:
+        giat = image["giat"]
+        return {
+            "entry_size": giat["entry_size"],
+            "count": giat["count"],
+            "metadata": giat["metadata"],
+        }
 
     checks = [
         ("machine", reference["machine"], candidate["machine"]),
@@ -598,6 +722,8 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
          sorted(candidate["gfid_flags"])),
         ("export GFID coverage", export_gfid_coverage(reference),
          export_gfid_coverage(candidate)),
+        ("GIAT semantics", comparable_giat(reference),
+         comparable_giat(candidate)),
         ("enclave configuration", enclave_configuration(reference),
          enclave_configuration(candidate)),
         ("enclave import descriptors", comparable_imports(reference),
@@ -639,6 +765,8 @@ def _synthetic_image() -> bytes:
                      0x2000, 0x100)
     struct.pack_into("<II", data, optional + 112 + BASE_RELOCATION_DIRECTORY * 8,
                      0x3000, 12)
+    struct.pack_into("<II", data, optional + 112 + IAT_DIRECTORY * 8,
+                     0x2100, 16)
     sections = optional + 0xF0
     for index, values in enumerate((
             (b".text", 0x200, 0x1000, 0x200, 0x400, 0x60000020),
@@ -658,19 +786,24 @@ def _synthetic_image() -> bytes:
                      PROTECT_DELAYLOAD_IAT |
                      DELAYLOAD_IAT_IN_ITS_OWN_SECTION |
                      CF_FUNCTION_TABLE_SIZE_5BYTES)
+    struct.pack_into("<QQ", data, load + LOAD_CONFIG_GIAT_TABLE_OFFSET,
+                     0x180002120, 2)
     struct.pack_into("<Q", data, load + 0xF8, 0x180002200)
+    struct.pack_into("<QQ", data, 0x700, 0x180001000, 0x180001030)
+    for index, iat_rva in enumerate((0x2100, 0x2108)):
+        struct.pack_into("<I", data, 0x720 + index * 5, iat_rva)
     enclave = 0x800
-    struct.pack_into("<IIIIII", data, enclave, 80, 76, 1, 1, 0x2290, 80)
+    struct.pack_into("<IIIIII", data, enclave, 80, 76, 1, 2, 0x2130, 80)
     data[enclave + 24:enclave + 40] = EXPECTED_FAMILY_ID
     data[enclave + 40:enclave + 56] = EXPECTED_IMAGE_ID
     struct.pack_into("<IIQII", data, enclave + 56, 0x10000, 1,
                      0x20000000, 1, 1)
     for index, target_rva in enumerate((0x1000, 0x1030)):
         struct.pack_into("<I", data, 0x860 + index * 5, target_rva)
-    enclave_import = 0x890
-    struct.pack_into("<II", data, enclave_import, 0, 0)
-    struct.pack_into("<II", data, enclave_import + 72, 0x22E0, 0)
-    data[0x8E0:0x8EC] = b"vertdll.dll\0"
+    for entry_offset, name_rva in ((0x730, 0x21D0), (0x780, 0x21E8)):
+        struct.pack_into("<II", data, entry_offset + 72, name_rva, 0)
+    data[0x7D0:0x7E5] = b"ucrtbase_enclave.dll\0"
+    data[0x7E8:0x7F4] = b"vertdll.dll\0"
     export = 0x900
     export_names = (
         ("GuardedExercise", 0x1020),
@@ -694,7 +827,8 @@ def _synthetic_image() -> bytes:
         data[string_offset:string_offset + len(encoded_name)] = encoded_name
         string_offset += len(encoded_name)
     struct.pack_into("<IIHH", data, 0xA00, 0x2000, 12,
-                     (DIR64 << 12) | 0xF8, 0)
+                     (DIR64 << 12) | 0xF8,
+                     (DIR64 << 12) | LOAD_CONFIG_GIAT_TABLE_OFFSET)
     return bytes(data)
 
 
@@ -726,12 +860,24 @@ def self_test() -> None:
     add("short enclave config", 0x800, "<I", 76)
     add("wrong minimum config", 0x800 + 4, "<I", 8)
     add("non-debuggable enclave", 0x800 + 8, "<I", 0)
+    zero_imports = bytearray(valid)
+    struct.pack_into("<III", zero_imports, 0x800 + 12, 0, 0, 0)
+    cases.append(("zero enclave imports", bytes(zero_imports)))
     add("zero enclave import list", 0x800 + 16, "<I", 0)
     add("bad enclave import entry size", 0x800 + 20, "<I", 79)
-    add("invalid enclave import MatchType", 0x890, "<I", 5)
-    add("bad enclave import ImportName RVA", 0x890 + 72, "<I", 0x5000)
-    add("empty enclave import name", 0x8E0, "<B", 0)
-    add("nonzero enclave import reserved", 0x890 + 76, "<I", 1)
+    add("nonzero enclave import MatchType", 0x730, "<I", 1)
+    add("nonzero enclave import minimum security", 0x734, "<I", 1)
+    add("nonzero enclave import unique identity", 0x738, "<B", 1)
+    add("nonzero enclave import family identity", 0x758, "<B", 1)
+    add("nonzero enclave import image identity", 0x768, "<B", 1)
+    add("bad enclave import ImportName RVA", 0x778, "<I", 0x5000)
+    add("wrong enclave import name", 0x7D0, "<B", ord("x"))
+    add("empty enclave import name", 0x7D0, "<B", 0)
+    reversed_imports = bytearray(valid)
+    struct.pack_into("<II", reversed_imports, 0x778, 0x21E8, 0)
+    struct.pack_into("<II", reversed_imports, 0x7C8, 0x21D0, 0)
+    cases.append(("reversed enclave import names", bytes(reversed_imports)))
+    add("nonzero enclave import reserved", 0x77C, "<I", 1)
     add("wrong family ID", 0x800 + 24, "<Q", 0)
     add("wrong image ID", 0x800 + 40, "<Q", 0)
     add("wrong image version", 0x800 + 56, "<I", 2)
@@ -751,12 +897,43 @@ def self_test() -> None:
         CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT | CF_LONGJUMP_TABLE_PRESENT)
     add("invalid GFID", 0x860, "<I", 0x2000)
     add("undefined GFID flags", 0x864, "<B", 4)
+    add("suppressed required GFID", 0x864, "<B", FID_SUPPRESSED)
     add("unsorted GFIDs", 0x865, "<I", 0x1000)
+    add("wrong export Base", 0x910, "<I", 7)
+    swapped_ordinals = bytearray(valid)
+    struct.pack_into("<HH", swapped_ordinals, 0x958, 1, 0)
+    cases.append(("swapped export ordinals", bytes(swapped_ordinals)))
+    add("aliased export ordinal", 0x95A, "<H", 0)
+    add("aliased export target", 0x92C, "<I", 0x1020)
+    unnamed_export = bytearray(valid)
+    unnamed_export[0x870:0x888] = valid[0x928:0x940]
+    struct.pack_into("<I", unnamed_export, 0x888, 0x1050)
+    struct.pack_into("<I", unnamed_export, 0x914, 7)
+    struct.pack_into("<I", unnamed_export, 0x91C, 0x2270)
+    cases.append(("extra unnamed export ordinal", bytes(unnamed_export)))
+    add("GIAT pointer without count",
+        0x600 + LOAD_CONFIG_GIAT_COUNT_OFFSET, "<Q", 0)
+    add("GIAT count without pointer",
+        0x600 + LOAD_CONFIG_GIAT_TABLE_OFFSET, "<Q", 0)
+    add("GIAT table outside image",
+        0x600 + LOAD_CONFIG_GIAT_TABLE_OFFSET, "<Q", 0x180005000)
+    add("missing IAT for nonempty GIAT", optional + 112 + IAT_DIRECTORY * 8,
+        "<I", 0)
+    add("GIAT entry outside IAT", 0x720, "<I", 0x2200)
+    add("misaligned GIAT entry", 0x720, "<I", 0x2104)
+    add("unsorted GIAT", 0x725, "<I", 0x2100)
+    add("nonzero GIAT metadata", 0x724, "<B", 1)
+    four_byte_giat = bytearray(valid)
+    struct.pack_into("<II", four_byte_giat, 0x720, 0x2100, 0x2108)
+    cases.append(("four-byte GIAT packing", bytes(four_byte_giat)))
     add("section raw data out of bounds", 0x188 + 20, "<I", 0xC00)
     add("missing relocations", optional + 112 + BASE_RELOCATION_DIRECTORY * 8,
         "<I", 0)
     add("invalid relocation block", 0xA04, "<I", 10)
     add("wrong enclave relocation type", 0xA08, "<H", (3 << 12) | 0xF8)
+    add("missing GIAT pointer relocation", 0xA0A, "<H", 0)
+    add("wrong GIAT pointer relocation", 0xA0A, "<H",
+        (DIR64 << 12) | LOAD_CONFIG_GIAT_COUNT_OFFSET)
     failures = []
     for name, image in cases:
         try:
@@ -810,6 +987,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     inspect_parser = subparsers.add_parser("inspect")
     inspect_parser.add_argument("image", type=pathlib.Path)
+    inspect_parser.add_argument("--machine", choices=("x86_64", "arm64"))
     inspect_parser.add_argument("--json", dest="json_path", type=pathlib.Path)
     compare_parser = subparsers.add_parser("compare")
     compare_parser.add_argument("reference", type=pathlib.Path)
@@ -821,6 +999,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             self_test()
         elif args.command == "inspect":
             result = inspect_path(args.image)
+            if args.machine and result["machine"] != args.machine:
+                raise VerificationError(
+                    "%s: machine %s does not match expected %s" %
+                    (args.image, result["machine"], args.machine))
             encoded = json.dumps(result, indent=2, sort_keys=True)
             print(encoded)
             if args.json_path:
