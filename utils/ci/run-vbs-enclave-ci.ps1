@@ -147,16 +147,19 @@ function New-EphemeralVbsCertificate {
     throw 'certificate helper installed a certificate without its private key'
   }
 
-  'CERTIFICATE_STAGE=InstallTrustedRoot' |
+  # A self-signed leaf belongs in TrustedPeople. Adding it to Root can trigger
+  # an OS security prompt even when certutil is forced and PowerShell is
+  # non-interactive, which would stall a hosted runner.
+  'CERTIFICATE_STAGE=InstallTrustedPeople' |
     Tee-Object -FilePath $StageLogPath -Append | Out-Host
   $certutil = (Get-Command certutil.exe -ErrorAction Stop).Source
   Invoke-TimedLogged $certutil @(
-    '-user', '-f', '-addstore', 'Root', $CertificatePath
+    '-user', '-f', '-addstore', 'TrustedPeople', $CertificatePath
   ) $TrustLogPath -TimeoutSeconds 60 | Out-Null
   $trustedCertificate = Get-Item -LiteralPath `
-    "Cert:\CurrentUser\Root\$thumbprint" -ErrorAction Stop
+    "Cert:\CurrentUser\TrustedPeople\$thumbprint" -ErrorAction Stop
   if ($trustedCertificate.Thumbprint -ne $thumbprint) {
-    throw 'trusted-root certificate does not match the signing certificate'
+    throw 'trusted-people certificate does not match the signing certificate'
   }
   'CERTIFICATE_STAGE=Complete' |
     Tee-Object -FilePath $StageLogPath -Append | Out-Host
